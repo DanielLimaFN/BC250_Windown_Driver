@@ -1,0 +1,626 @@
+﻿{
+    "schema_version":  1,
+    "captured_at":  "2026-08-23T00:15:26.2466357-03:00",
+    "objective":  "Validate SDMA ring init rollback only; no command submission and no firmware load",
+    "verdict":  "NÃO VALIDADO EM HARDWARE",
+    "passed":  true,
+    "failure":  null,
+    "environment":  {
+                        "display_service":  "BasicDisplay",
+                        "legacy_bc250v4_absent":  true,
+                        "installed_driver_sha256":  "e0d880fa79e31a5f428d4d215298b5fc4e3bfd7c64fc7d78b88e3a9dcfccd671"
+                    },
+    "pre_registers":  {
+                          "sem_wait_fail_timer":  "0x00000000",
+                          "cntl":  "0x000400C2",
+                          "chicken_bits":  "0x01AF0107",
+                          "gb_addr_config":  "0x00000044",
+                          "gb_addr_config_read":  "0x00000044",
+                          "f32_cntl":  "0x00000000",
+                          "utcl1_cntl":  "0xD0000191",
+                          "utcl1_page":  "0x000C5C20",
+                          "clk_ctrl":  "0xFF0C0100",
+                          "rb_cntl":  "0x80840000",
+                          "rb_base":  "0x00000000",
+                          "rb_base_hi":  "0x00000000",
+                          "rb_rptr":  "0x00000000",
+                          "rb_rptr_hi":  "0x00000000",
+                          "rb_wptr":  "0x00000044",
+                          "rb_wptr_hi":  "0x00000000",
+                          "wptr_poll_cntl":  "0x00401000",
+                          "rptr_addr_hi":  "0x00000000",
+                          "rptr_addr_lo":  "0x00000000",
+                          "ib_cntl":  "0x00000100",
+                          "doorbell":  "0x00000000",
+                          "minor_ptr_update":  "0x00000000",
+                          "wptr_poll_addr_hi":  "0x00000000",
+                          "wptr_poll_addr_lo":  "0x00000000"
+                      },
+    "post_registers":  {
+                           "sem_wait_fail_timer":  "0x00000000",
+                           "cntl":  "0x000400C2",
+                           "chicken_bits":  "0x01AF0107",
+                           "gb_addr_config":  "0x00000044",
+                           "gb_addr_config_read":  "0x00000044",
+                           "f32_cntl":  "0x00000000",
+                           "utcl1_cntl":  "0xD0000191",
+                           "utcl1_page":  "0x000C5C20",
+                           "clk_ctrl":  "0xFF0C0100",
+                           "rb_cntl":  "0x80840000",
+                           "rb_base":  "0x00000000",
+                           "rb_base_hi":  "0x00000000",
+                           "rb_rptr":  "0x00000000",
+                           "rb_rptr_hi":  "0x00000000",
+                           "rb_wptr":  "0x00000044",
+                           "rb_wptr_hi":  "0x00000000",
+                           "wptr_poll_cntl":  "0x00401000",
+                           "rptr_addr_hi":  "0x00000000",
+                           "rptr_addr_lo":  "0x00000000",
+                           "ib_cntl":  "0x00000100",
+                           "doorbell":  "0x00000000",
+                           "minor_ptr_update":  "0x00000000",
+                           "wptr_poll_addr_hi":  "0x00000000",
+                           "wptr_poll_addr_lo":  "0x00000000"
+                       },
+    "differences":  [
+
+                    ],
+    "commands":  [
+                     {
+                         "name":  "info_pre",
+                         "command":  "bc250ctl.exe info",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "driver          : bc250dbg v5.0  ABI 5  armamento=readonly",
+                                        "pci             : 01:00.0  1002:13FE rev 00",
+                                        "  BAR0          : 0x00000000C0000000  raw 0xC000000C",
+                                        "  BAR2          : 0x00000000D0000000  raw 0xD000000C",
+                                        "  BAR4          : 0x000000000000EF00  raw 0x0000EF01 io",
+                                        "  BAR5          : 0x00000000FE800000  raw 0xFE800000 [mapeado]",
+                                        "mmio            : 0xFE800000 +512 KB ",
+                                        "  GPU_ID        : 0x9FFF9700 (confere com a BC-250)",
+                                        "  offset          SOC15        legado      ",
+                                        "  SCRATCH_REG0  : 0x00000000   0x4D585042",
+                                        "  GRBM_STATUS   : 0x00003028   0x00000000",
+                                        "  CC_GC_ARRAY   : 0xFFF80000   0x00000000   \u003c== o desempate",
+                                        "  ** MAPA OBSERVADO: CC_GC_SHADER_ARRAY_CONFIG em 0x089BC bate com o",
+                                        "     valor bruto visto no Linux (0xFFF80000). Isto sustenta o offset",
+                                        "     SOC15, mas nao prova quantidade de CU utilizavel nem execucao.",
+                                        "smu             : nao consultado pelo baseline; use \u0027smu\u0027 explicitamente",
+                                        "termico         : NAO CALIBRADO  limite 85 C  ",
+                                        "  sondas cruas  : edge 0xFFFFFFFF  junc 0x00000000  mem 0x00001EC2",
+                                        "  ** sem calibracao o driver recusa armar \u0027unsafe\u0027.",
+                                        "     Compare as sondas com o Linux e rode \u0027thermal calib\u0027.",
+                                        "log ring        : 4096 entradas, head 13"
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_status_pre",
+                         "command":  "bc250ctl.exe sdma status",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do Motor SDMA0:",
+                                        "  STATUS_REG    : 0x46DEE557",
+                                        "  RB_CNTL       : 0x80840000 (DESABILITADO)",
+                                        "  RB_BASE       : 0x0",
+                                        "  WPTR (reg)    : 0x00000044",
+                                        "  WPTR (shadow) : 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  RPTR (reg)    : 0x00000000   (nao e fonte de verdade)",
+                                        "  RPTR (writeb.): 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  Pendente      : INDISPONIVEL (anel externo/POST; shadows nao mapeados)"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_sem_wait_fail_timer",
+                         "command":  "bc250ctl.exe reg r 0x04A04",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A04 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_cntl",
+                         "command":  "bc250ctl.exe reg r 0x049F0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000049F0 = 0x000400C2"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_chicken_bits",
+                         "command":  "bc250ctl.exe reg r 0x049F4",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000049F4 = 0x01AF0107"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_gb_addr_config",
+                         "command":  "bc250ctl.exe reg r 0x049F8",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000049F8 = 0x00000044"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_gb_addr_config_read",
+                         "command":  "bc250ctl.exe reg r 0x049FC",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000049FC = 0x00000044"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_f32_cntl",
+                         "command":  "bc250ctl.exe reg r 0x04A28",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A28 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_utcl1_cntl",
+                         "command":  "bc250ctl.exe reg r 0x04A70",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A70 = 0xD0000191"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_utcl1_page",
+                         "command":  "bc250ctl.exe reg r 0x04AA0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004AA0 = 0x000C5C20"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_clk_ctrl",
+                         "command":  "bc250ctl.exe reg r 0x049EC",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000049EC = 0xFF0C0100"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_rb_cntl",
+                         "command":  "bc250ctl.exe reg r 0x04B80",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004B80 = 0x80840000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_rb_base",
+                         "command":  "bc250ctl.exe reg r 0x04B84",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004B84 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_rb_base_hi",
+                         "command":  "bc250ctl.exe reg r 0x04B88",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004B88 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_rb_rptr",
+                         "command":  "bc250ctl.exe reg r 0x04B8C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004B8C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_rb_rptr_hi",
+                         "command":  "bc250ctl.exe reg r 0x04B90",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004B90 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_rb_wptr",
+                         "command":  "bc250ctl.exe reg r 0x04B94",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004B94 = 0x00000044"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_rb_wptr_hi",
+                         "command":  "bc250ctl.exe reg r 0x04B98",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004B98 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_wptr_poll_cntl",
+                         "command":  "bc250ctl.exe reg r 0x04B9C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004B9C = 0x00401000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_rptr_addr_hi",
+                         "command":  "bc250ctl.exe reg r 0x04BA0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004BA0 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_rptr_addr_lo",
+                         "command":  "bc250ctl.exe reg r 0x04BA4",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004BA4 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_ib_cntl",
+                         "command":  "bc250ctl.exe reg r 0x04BA8",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004BA8 = 0x00000100"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_doorbell",
+                         "command":  "bc250ctl.exe reg r 0x04BC8",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004BC8 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_minor_ptr_update",
+                         "command":  "bc250ctl.exe reg r 0x04C54",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004C54 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_wptr_poll_addr_hi",
+                         "command":  "bc250ctl.exe reg r 0x04C48",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004C48 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_wptr_poll_addr_lo",
+                         "command":  "bc250ctl.exe reg r 0x04C4C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004C4C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "arm_write",
+                         "command":  "bc250ctl.exe arm write",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "armamento agora: write"
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_init",
+                         "command":  "bc250ctl.exe sdma init vram 0x0FF00000",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "SDMA0 Ring inicializado com sucesso:",
+                                        "  Local                : VRAM, offset 0xFF00000",
+                                        "  Endereco de GPU      : 0xF40FF00000",
+                                        "  Tamanho do anel      : 1024 dwords (4096 bytes)",
+                                        "  RB_CNTL              : 0x80841015 (HABILITADO, RB_SIZE=10)"
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_status_armed",
+                         "command":  "bc250ctl.exe sdma status",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do Motor SDMA0:",
+                                        "  STATUS_REG    : 0x46DEE557",
+                                        "  RB_CNTL       : 0x80841015 (HABILITADO)",
+                                        "  RB_BASE       : 0xF40FF00000",
+                                        "  WPTR (reg)    : 0x00000000",
+                                        "  WPTR (shadow) : 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  RPTR (reg)    : 0x00000000   (nao e fonte de verdade)",
+                                        "  RPTR (writeb.): 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  Pendente      : 0 bytes"
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_rollback",
+                         "command":  "bc250ctl.exe sdma rollback",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Rollback SDMA0:",
+                                        "  snapshot presente    : sim",
+                                        "  registradores        : 24 restaurados, 0 divergencias",
+                                        "  VRAM                  : 1029 dwords restaurados, 0 divergencias",
+                                        "  RESULTADO             : estado anterior restaurado"
+                                    ]
+                     },
+                     {
+                         "name":  "arm_readonly",
+                         "command":  "bc250ctl.exe arm readonly",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "armamento agora: readonly"
+                                    ]
+                     },
+                     {
+                         "name":  "post_sem_wait_fail_timer",
+                         "command":  "bc250ctl.exe reg r 0x04A04",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A04 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_cntl",
+                         "command":  "bc250ctl.exe reg r 0x049F0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000049F0 = 0x000400C2"
+                                    ]
+                     },
+                     {
+                         "name":  "post_chicken_bits",
+                         "command":  "bc250ctl.exe reg r 0x049F4",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000049F4 = 0x01AF0107"
+                                    ]
+                     },
+                     {
+                         "name":  "post_gb_addr_config",
+                         "command":  "bc250ctl.exe reg r 0x049F8",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000049F8 = 0x00000044"
+                                    ]
+                     },
+                     {
+                         "name":  "post_gb_addr_config_read",
+                         "command":  "bc250ctl.exe reg r 0x049FC",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000049FC = 0x00000044"
+                                    ]
+                     },
+                     {
+                         "name":  "post_f32_cntl",
+                         "command":  "bc250ctl.exe reg r 0x04A28",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A28 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_utcl1_cntl",
+                         "command":  "bc250ctl.exe reg r 0x04A70",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A70 = 0xD0000191"
+                                    ]
+                     },
+                     {
+                         "name":  "post_utcl1_page",
+                         "command":  "bc250ctl.exe reg r 0x04AA0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004AA0 = 0x000C5C20"
+                                    ]
+                     },
+                     {
+                         "name":  "post_clk_ctrl",
+                         "command":  "bc250ctl.exe reg r 0x049EC",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000049EC = 0xFF0C0100"
+                                    ]
+                     },
+                     {
+                         "name":  "post_rb_cntl",
+                         "command":  "bc250ctl.exe reg r 0x04B80",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004B80 = 0x80840000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_rb_base",
+                         "command":  "bc250ctl.exe reg r 0x04B84",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004B84 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_rb_base_hi",
+                         "command":  "bc250ctl.exe reg r 0x04B88",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004B88 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_rb_rptr",
+                         "command":  "bc250ctl.exe reg r 0x04B8C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004B8C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_rb_rptr_hi",
+                         "command":  "bc250ctl.exe reg r 0x04B90",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004B90 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_rb_wptr",
+                         "command":  "bc250ctl.exe reg r 0x04B94",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004B94 = 0x00000044"
+                                    ]
+                     },
+                     {
+                         "name":  "post_rb_wptr_hi",
+                         "command":  "bc250ctl.exe reg r 0x04B98",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004B98 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_wptr_poll_cntl",
+                         "command":  "bc250ctl.exe reg r 0x04B9C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004B9C = 0x00401000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_rptr_addr_hi",
+                         "command":  "bc250ctl.exe reg r 0x04BA0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004BA0 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_rptr_addr_lo",
+                         "command":  "bc250ctl.exe reg r 0x04BA4",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004BA4 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_ib_cntl",
+                         "command":  "bc250ctl.exe reg r 0x04BA8",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004BA8 = 0x00000100"
+                                    ]
+                     },
+                     {
+                         "name":  "post_doorbell",
+                         "command":  "bc250ctl.exe reg r 0x04BC8",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004BC8 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_minor_ptr_update",
+                         "command":  "bc250ctl.exe reg r 0x04C54",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004C54 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_wptr_poll_addr_hi",
+                         "command":  "bc250ctl.exe reg r 0x04C48",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004C48 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_wptr_poll_addr_lo",
+                         "command":  "bc250ctl.exe reg r 0x04C4C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004C4C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_status_post",
+                         "command":  "bc250ctl.exe sdma status",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do Motor SDMA0:",
+                                        "  STATUS_REG    : 0x46DEE557",
+                                        "  RB_CNTL       : 0x80840000 (DESABILITADO)",
+                                        "  RB_BASE       : 0x0",
+                                        "  WPTR (reg)    : 0x00000044",
+                                        "  WPTR (shadow) : 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  RPTR (reg)    : 0x00000000   (nao e fonte de verdade)",
+                                        "  RPTR (writeb.): 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  Pendente      : INDISPONIVEL (anel externo/POST; shadows nao mapeados)"
+                                    ]
+                     }
+                 ]
+}

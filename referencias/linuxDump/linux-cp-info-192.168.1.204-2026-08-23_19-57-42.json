@@ -1,0 +1,772 @@
+{
+ "schema_version": 1,
+ "objective": "Linux reference read of the same GC MMIO byte offsets used on Windows, with amdgpu working, to decide why dw 0x5814..0x5848 of segment 1 does not decode there",
+ "captured_at": "2026-08-23T19:57:42-03:00",
+ "host": "192.168.1.204",
+ "kernel": "6.19.10-300.fc44.x86_64",
+ "pci_bdf": "0000:01:00.0",
+ "bar5_path": "/sys/bus/pci/devices/0000:01:00.0/resource5",
+ "bar5_size": 524288,
+ "read_only": true,
+ "segment_base_dw": {
+  "0": "0x1260",
+  "1": "0xA000"
+ },
+ "derivation": "byte = (segment_base_dw[BASE_IDX] + mmREG_dw) * 4",
+ "windows_reference": {
+  "GRBM_STATUS_em_repouso": "0x00003028",
+  "GRBM_STATUS2_em_repouso": "0x00000008",
+  "CP_STAT_em_repouso": "0x00000000",
+  "CP_ME_CNTL": "0x15000000 (CE_HALT|PFP_HALT|ME_HALT)",
+  "CP_RB0_CNTL_em_repouso": "0x00A00000",
+  "RLC_CNTL_boot_limpo": "0x00000000",
+  "zona_morta": "dw 0x5814..0x5848 do segmento 1 leem 0xFFFFFFFF"
+ },
+ "nao_lidos_de_proposito": [
+  {
+   "nome": "CP_PFP_UCODE_DATA",
+   "dw": "0x5815",
+   "segmento": 1,
+   "motivo": "porta de dados: ler pode avancar ponteiro interno"
+  },
+  {
+   "nome": "CP_ME_UCODE_DATA",
+   "dw": "0x5817",
+   "segmento": 1,
+   "motivo": "porta de dados"
+  },
+  {
+   "nome": "CP_CE_UCODE_DATA",
+   "dw": "0x5819",
+   "segmento": 1,
+   "motivo": "porta de dados"
+  },
+  {
+   "nome": "RLC_GPM_UCODE_DATA",
+   "dw": "0x5b62",
+   "segmento": 1,
+   "motivo": "porta de dados"
+  },
+  {
+   "nome": "GCVM_INVALIDATE_ENG0_SEM",
+   "dw": "0x1631",
+   "segmento": 0,
+   "motivo": "ler ADQUIRE o semaforo (medido em 2026-08-23)"
+  },
+  {
+   "nome": "GCVM_INVALIDATE_ENG0_REQ",
+   "dw": "0x1643",
+   "segmento": 0,
+   "motivo": "escrever dispara invalidacao"
+  }
+ ],
+ "resumo": {
+  "total": 43,
+  "respondem": 31,
+  "nao_respondem": 12,
+  "nomes_que_nao_respondem": [
+   "CP_PFP_UCODE_ADDR",
+   "CP_CE_UCODE_ADDR",
+   "CP_MEC_ME1_UCODE_ADDR",
+   "CP_PFP_IC_BASE_LO",
+   "CP_PFP_IC_BASE_HI",
+   "CP_PFP_IC_BASE_CNTL",
+   "CP_PFP_IC_OP_CNTL",
+   "CP_ME_IC_BASE_LO",
+   "CP_ME_IC_BASE_CNTL",
+   "CP_CE_IC_BASE_LO",
+   "CP_CE_IC_BASE_CNTL",
+   "RLC_GPM_UCODE_ADDR"
+  ]
+ },
+ "leituras": [
+  {
+   "nome": "GRBM_STATUS",
+   "dw": "0x0da4",
+   "segmento": 0,
+   "byte": "0x08010",
+   "papel": "controle; Windows em repouso: 0x00003028",
+   "leituras": [
+    "0x00003028",
+    "0x00003028",
+    "0x00003028"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "GRBM_STATUS2",
+   "dw": "0x0da2",
+   "segmento": 0,
+   "byte": "0x08008",
+   "papel": "controle; Windows em repouso: 0x00000008",
+   "leituras": [
+    "0x00000008",
+    "0x00000008",
+    "0x00000008"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "GRBM_GFX_CNTL",
+   "dw": "0x0dc2",
+   "segmento": 0,
+   "byte": "0x08088",
+   "papel": "usado pela interface RLCG",
+   "leituras": [
+    "0x00000000",
+    "0x00000000",
+    "0x00000000"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_STAT",
+   "dw": "0x0f40",
+   "segmento": 0,
+   "byte": "0x08680",
+   "papel": "ocupacao do CP; Windows em repouso: 0x00000000",
+   "leituras": [
+    "0x00000000",
+    "0x00000000",
+    "0x00000000"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_ME_CNTL",
+   "dw": "0x0f56",
+   "segmento": 0,
+   "byte": "0x086D8",
+   "papel": "HALT: Windows le 0x15000000 (as tres haltadas)",
+   "leituras": [
+    "0x00000000",
+    "0x00000000",
+    "0x00000000"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_PFP_INSTR_PNTR",
+   "dw": "0x0f45",
+   "segmento": 0,
+   "byte": "0x08694",
+   "papel": "PC do PFP; Windows le 0x00000000",
+   "leituras": [
+    "0x0000172E",
+    "0x0000172E",
+    "0x0000172E"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_ME_INSTR_PNTR",
+   "dw": "0x0f46",
+   "segmento": 0,
+   "byte": "0x08698",
+   "papel": "PC do ME",
+   "leituras": [
+    "0x00000E19",
+    "0x00000E19",
+    "0x00000E19"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_CE_INSTR_PNTR",
+   "dw": "0x0f47",
+   "segmento": 0,
+   "byte": "0x0869C",
+   "papel": "PC do CE",
+   "leituras": [
+    "0x000005CF",
+    "0x000005CF",
+    "0x000005CF"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_MEC1_INSTR_PNTR",
+   "dw": "0x0f48",
+   "segmento": 0,
+   "byte": "0x086A0",
+   "papel": "PC do MEC1",
+   "leituras": [
+    "0x00000447",
+    "0x00000447",
+    "0x00000447"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_CPF_STATUS",
+   "dw": "0x0e27",
+   "segmento": 0,
+   "byte": "0x0821C",
+   "papel": "status do prefetch",
+   "leituras": [
+    "0x00000000",
+    "0x00000000",
+    "0x00000000"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_CPC_STATUS",
+   "dw": "0x0e24",
+   "segmento": 0,
+   "byte": "0x08210",
+   "papel": "status do compute",
+   "leituras": [
+    "0x00000000",
+    "0x00000000",
+    "0x00000000"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_RB0_BASE",
+   "dw": "0x1de0",
+   "segmento": 0,
+   "byte": "0x0C100",
+   "papel": "base do anel GFX 0",
+   "leituras": [
+    "0x000064D0",
+    "0x000064D0",
+    "0x000064D0"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_RB0_CNTL",
+   "dw": "0x1de1",
+   "segmento": 0,
+   "byte": "0x0C104",
+   "papel": "Windows em repouso: 0x00A00000",
+   "leituras": [
+    "0x00A0080A",
+    "0x00A0080A",
+    "0x00A0080A"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_RB0_RPTR",
+   "dw": "0x0f60",
+   "segmento": 0,
+   "byte": "0x08700",
+   "papel": "RPTR do anel GFX 0",
+   "leituras": [
+    "0x00000000",
+    "0x00000000",
+    "0x00000000"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_RB0_WPTR",
+   "dw": "0x1df4",
+   "segmento": 0,
+   "byte": "0x0C150",
+   "papel": "WPTR do anel GFX 0",
+   "leituras": [
+    "0x000B4800",
+    "0x000B4800",
+    "0x000B4800"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_RB_VMID",
+   "dw": "0x1df1",
+   "segmento": 0,
+   "byte": "0x0C144",
+   "papel": "VMID do anel",
+   "leituras": [
+    "0x00000000",
+    "0x00000000",
+    "0x00000000"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_MAX_CONTEXT",
+   "dw": "0x1e4e",
+   "segmento": 0,
+   "byte": "0x0C2B8",
+   "papel": "contextos de hardware",
+   "leituras": [
+    "0x00000007",
+    "0x00000007",
+    "0x00000007"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_DEVICE_ID",
+   "dw": "0x1deb",
+   "segmento": 0,
+   "byte": "0x0C12C",
+   "papel": "id do dispositivo para o CP",
+   "leituras": [
+    "0x00000001",
+    "0x00000001",
+    "0x00000001"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "SCRATCH_REG0",
+   "dw": "0x2040",
+   "segmento": 1,
+   "byte": "0x30100",
+   "papel": "controle do segmento 1; responde no Windows",
+   "leituras": [
+    "0xDEADBEEF",
+    "0xDEADBEEF",
+    "0xDEADBEEF"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "SCRATCH_REG1",
+   "dw": "0x2041",
+   "segmento": 1,
+   "byte": "0x30104",
+   "papel": "banco de rascunho",
+   "leituras": [
+    "0x00000000",
+    "0x00000000",
+    "0x00000000"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "SCRATCH_REG7",
+   "dw": "0x2047",
+   "segmento": 1,
+   "byte": "0x3011C",
+   "papel": "banco de rascunho",
+   "leituras": [
+    "0x00000000",
+    "0x00000000",
+    "0x00000000"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "GRBM_GFX_INDEX",
+   "dw": "0x2200",
+   "segmento": 1,
+   "byte": "0x30800",
+   "papel": "responde no Windows",
+   "leituras": [
+    "0x00000000",
+    "0x00000000",
+    "0x00000000"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_MES_DOORBELL_CTRL1",
+   "dw": "0x283c",
+   "segmento": 1,
+   "byte": "0x320F0",
+   "papel": "sonda de fronteira, abaixo da zona morta",
+   "leituras": [
+    "0x00000000",
+    "0x00000000",
+    "0x00000000"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "RLC_CNTL",
+   "dw": "0x4c00",
+   "segmento": 1,
+   "byte": "0x3B000",
+   "papel": "portao do GFX; Windows boot limpo: 0x00000000",
+   "leituras": [
+    "0x00000001",
+    "0x00000001",
+    "0x00000001"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "RLC_SAFE_MODE",
+   "dw": "0x4c05",
+   "segmento": 1,
+   "byte": "0x3B014",
+   "papel": "modo seguro; Windows: 0x00000000",
+   "leituras": [
+    "0x00000000",
+    "0x00000000",
+    "0x00000000"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "RLC_PG_CNTL",
+   "dw": "0x4c43",
+   "segmento": 1,
+   "byte": "0x3B10C",
+   "papel": "power gating do GFX",
+   "leituras": [
+    "0x00000000",
+    "0x00000000",
+    "0x00000000"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "RLC_CGCG_CGLS_CTRL",
+   "dw": "0x4c49",
+   "segmento": 1,
+   "byte": "0x3B124",
+   "papel": "clock gating de granularidade grossa",
+   "leituras": [
+    "0x00000000",
+    "0x00000000",
+    "0x00000000"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "RLC_SPARE_INT",
+   "dw": "0x4ccc",
+   "segmento": 1,
+   "byte": "0x3B330",
+   "papel": "usado pela interface RLCG",
+   "leituras": [
+    "0x00000000",
+    "0x00000000",
+    "0x00000000"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "RLC_GPM_STAT",
+   "dw": "0x4e6e",
+   "segmento": 1,
+   "byte": "0x3B9B8",
+   "papel": "estado do GPM do RLC",
+   "leituras": [
+    "0x00B40016",
+    "0x00B40016",
+    "0x00B40016"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CGTT_CPF_CLK_CTRL",
+   "dw": "0x50b1",
+   "segmento": 1,
+   "byte": "0x3C2C4",
+   "papel": "SUSPEITO PRINCIPAL: clock gating do CPF",
+   "leituras": [
+    "0xF8000100",
+    "0xF8000100",
+    "0xF8000100"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CGTT_CPC_CLK_CTRL",
+   "dw": "0x50b2",
+   "segmento": 1,
+   "byte": "0x3C2C8",
+   "papel": "SUSPEITO PRINCIPAL: clock gating do CPC",
+   "leituras": [
+    "0x00000100",
+    "0x00000100",
+    "0x00000100"
+   ],
+   "valores_distintos": 1,
+   "responde": true,
+   "todos_bits_em_um": false,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_PFP_UCODE_ADDR",
+   "dw": "0x5814",
+   "segmento": 1,
+   "byte": "0x3E050",
+   "papel": "ZONA MORTA no Windows",
+   "leituras": [
+    "0xFFFFFFFF",
+    "0xFFFFFFFF",
+    "0xFFFFFFFF"
+   ],
+   "valores_distintos": 1,
+   "responde": false,
+   "todos_bits_em_um": true,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_CE_UCODE_ADDR",
+   "dw": "0x5818",
+   "segmento": 1,
+   "byte": "0x3E060",
+   "papel": "ZONA MORTA no Windows",
+   "leituras": [
+    "0xFFFFFFFF",
+    "0xFFFFFFFF",
+    "0xFFFFFFFF"
+   ],
+   "valores_distintos": 1,
+   "responde": false,
+   "todos_bits_em_um": true,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_MEC_ME1_UCODE_ADDR",
+   "dw": "0x581a",
+   "segmento": 1,
+   "byte": "0x3E068",
+   "papel": "ZONA MORTA no Windows",
+   "leituras": [
+    "0xFFFFFFFF",
+    "0xFFFFFFFF",
+    "0xFFFFFFFF"
+   ],
+   "valores_distintos": 1,
+   "responde": false,
+   "todos_bits_em_um": true,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_PFP_IC_BASE_LO",
+   "dw": "0x5840",
+   "segmento": 1,
+   "byte": "0x3E100",
+   "papel": "ZONA MORTA; amdgpu programa com o endereco do ucode",
+   "leituras": [
+    "0xFFFFFFFF",
+    "0xFFFFFFFF",
+    "0xFFFFFFFF"
+   ],
+   "valores_distintos": 1,
+   "responde": false,
+   "todos_bits_em_um": true,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_PFP_IC_BASE_HI",
+   "dw": "0x5841",
+   "segmento": 1,
+   "byte": "0x3E104",
+   "papel": "ZONA MORTA",
+   "leituras": [
+    "0xFFFFFFFF",
+    "0xFFFFFFFF",
+    "0xFFFFFFFF"
+   ],
+   "valores_distintos": 1,
+   "responde": false,
+   "todos_bits_em_um": true,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_PFP_IC_BASE_CNTL",
+   "dw": "0x5842",
+   "segmento": 1,
+   "byte": "0x3E108",
+   "papel": "ZONA MORTA; VMID/ADDRESS_CLAMP/CACHE_POLICY",
+   "leituras": [
+    "0xFFFFFFFF",
+    "0xFFFFFFFF",
+    "0xFFFFFFFF"
+   ],
+   "valores_distintos": 1,
+   "responde": false,
+   "todos_bits_em_um": true,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_PFP_IC_OP_CNTL",
+   "dw": "0x5843",
+   "segmento": 1,
+   "byte": "0x3E10C",
+   "papel": "ZONA MORTA; causou o falso positivo de COMPLETE",
+   "leituras": [
+    "0xFFFFFFFF",
+    "0xFFFFFFFF",
+    "0xFFFFFFFF"
+   ],
+   "valores_distintos": 1,
+   "responde": false,
+   "todos_bits_em_um": true,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_ME_IC_BASE_LO",
+   "dw": "0x5844",
+   "segmento": 1,
+   "byte": "0x3E110",
+   "papel": "ZONA MORTA",
+   "leituras": [
+    "0xFFFFFFFF",
+    "0xFFFFFFFF",
+    "0xFFFFFFFF"
+   ],
+   "valores_distintos": 1,
+   "responde": false,
+   "todos_bits_em_um": true,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_ME_IC_BASE_CNTL",
+   "dw": "0x5846",
+   "segmento": 1,
+   "byte": "0x3E118",
+   "papel": "ZONA MORTA",
+   "leituras": [
+    "0xFFFFFFFF",
+    "0xFFFFFFFF",
+    "0xFFFFFFFF"
+   ],
+   "valores_distintos": 1,
+   "responde": false,
+   "todos_bits_em_um": true,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_CE_IC_BASE_LO",
+   "dw": "0x5848",
+   "segmento": 1,
+   "byte": "0x3E120",
+   "papel": "ZONA MORTA",
+   "leituras": [
+    "0xFFFFFFFF",
+    "0xFFFFFFFF",
+    "0xFFFFFFFF"
+   ],
+   "valores_distintos": 1,
+   "responde": false,
+   "todos_bits_em_um": true,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "CP_CE_IC_BASE_CNTL",
+   "dw": "0x584a",
+   "segmento": 1,
+   "byte": "0x3E128",
+   "papel": "ZONA MORTA",
+   "leituras": [
+    "0xFFFFFFFF",
+    "0xFFFFFFFF",
+    "0xFFFFFFFF"
+   ],
+   "valores_distintos": 1,
+   "responde": false,
+   "todos_bits_em_um": true,
+   "fora_da_janela": false
+  },
+  {
+   "nome": "RLC_GPM_UCODE_ADDR",
+   "dw": "0x5b61",
+   "segmento": 1,
+   "byte": "0x3ED84",
+   "papel": "DECIDE: acima da zona morta",
+   "leituras": [
+    "0xFFFFFFFF",
+    "0xFFFFFFFF",
+    "0xFFFFFFFF"
+   ],
+   "valores_distintos": 1,
+   "responde": false,
+   "todos_bits_em_um": true,
+   "fora_da_janela": false
+  }
+ ]
+}

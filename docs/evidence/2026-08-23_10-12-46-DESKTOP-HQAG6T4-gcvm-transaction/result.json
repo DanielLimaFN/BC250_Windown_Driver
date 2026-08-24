@@ -1,0 +1,914 @@
+﻿{
+    "schema_version":  1,
+    "captured_at":  "2026-08-23T10:12:48.5040095-03:00",
+    "objective":  "Step 2 of the memory gate: prove the rollback path of the translation registers before writing new values",
+    "verdict":  "NÃO VALIDADO EM HARDWARE",
+    "passed":  true,
+    "failure":  null,
+    "not_covered":  [
+                        "No new value was written to any translation register: the restore rewrites what it read",
+                        "Whether the GPU accepts a real page table remains step 5"
+                    ],
+    "reboot_required":  true,
+    "environment":  {
+                        "driver_sha256":  "3426044aa66a51af35be39e1c589439dcf965d17ead52abe9e70f00eb43e1eff",
+                        "ring_dwords":  128,
+                        "registers_in_transaction":  24
+                    },
+    "gates":  [
+                  {
+                      "gate":  "A_bypass_funciona_antes",
+                      "passed":  true,
+                      "detail":  "Submissao com fence fisica e dado conferido antes de tocar a transacao.",
+                      "data":  {
+                                   "name":  "escrita_antes_da_transacao",
+                                   "exit_code":  0,
+                                   "completed":  true,
+                                   "fence_reached":  true,
+                                   "data_ok":  true,
+                                   "dados":  "  Dados conferidos    : 4 dwords, 0 divergencias (conferido no kernel)"
+                               }
+                  },
+                  {
+                      "gate":  "B_snapshot_guardado",
+                      "passed":  true,
+                      "detail":  "Os 24 registradores de configuracao de traducao ficam guardados no driver.",
+                      "data":  {
+                                   "exit_code":  0,
+                                   "saida":  [
+                                                 "Transacao GCVM (snapshot):",
+                                                 "  snapshot presente : sim",
+                                                 "  registradores     : 24",
+                                                 "    0x0A100        : 0x00080602",
+                                                 "    0x0A104        : 0x00000000",
+                                                 "    0x0A108        : 0x80100007",
+                                                 "    0x0A160        : 0x000000C1",
+                                                 "    0x0A184        : 0x00003FE0",
+                                                 "    0x0A200        : 0x007FFE80",
+                                                 "    0x0A204        : 0x007FFE80",
+                                                 "    0x0A3AC        : 0x00000000",
+                                                 "    0x0A3B0        : 0x00000000",
+                                                 "    0x0A42C        : 0x00000000",
+                                                 "    0x0A430        : 0x00000000",
+                                                 "    0x0A4AC        : 0x00000000",
+                                                 "    0x0A4B0        : 0x00000000",
+                                                 "    0x0A120        : 0x3FFFFFFC",
+                                                 "    0x0A124        : 0x00020000",
+                                                 "    0x0A13C        : 0x00000000",
+                                                 "    0x0A140        : 0x00000000",
+                                                 "    0x0A61C        : 0x00000501",
+                                                 "    0x0A614        : 0x003D0000",
+                                                 "    0x0A618        : 0x003D0800",
+                                                 "    0x0A5B0        : 0x00000000",
+                                                 "    0x0A5B4        : 0x00000000",
+                                                 "    0x0A148        : 0x00000000",
+                                                 "    0x0A150        : 0x00000000",
+                                                 "  RESULTADO         : ok"
+                                             ]
+                               }
+                  },
+                  {
+                      "gate":  "C_verify_sem_divergencia",
+                      "passed":  true,
+                      "detail":  "Entre snapshot e verify nada mudou: o estado e estavel.",
+                      "data":  {
+                                   "divergencias":  0,
+                                   "saida":  [
+                                                 "Transacao GCVM (verify):",
+                                                 "  snapshot presente : sim",
+                                                 "  registradores     : 24",
+                                                 "  divergencias      : 0",
+                                                 "  RESULTADO         : ok"
+                                             ]
+                               }
+                  },
+                  {
+                      "gate":  "D_restore_aceito_por_todos",
+                      "passed":  true,
+                      "detail":  "Cada registrador aceita de volta o valor lido, com readback conferido.",
+                      "data":  {
+                                   "restaurados":  24,
+                                   "divergencias":  0,
+                                   "saida":  [
+                                                 "Transacao GCVM (restore):",
+                                                 "  snapshot presente : sim",
+                                                 "  registradores     : 24",
+                                                 "  restaurados       : 24",
+                                                 "  divergencias      : 0",
+                                                 "  RESULTADO         : ok"
+                                             ]
+                               }
+                  },
+                  {
+                      "gate":  "E_dump_identico_apos_restore",
+                      "passed":  true,
+                      "detail":  "O dump completo de traducao continua igual depois do restore.",
+                      "data":  {
+                                   "campos_mudados":  [
+
+                                                      ]
+                               }
+                  },
+                  {
+                      "gate":  "F_bypass_funciona_depois",
+                      "passed":  true,
+                      "detail":  "Reescrever os mesmos valores nao perturbou o caminho de memoria.",
+                      "data":  {
+                                   "name":  "escrita_depois_da_transacao",
+                                   "exit_code":  0,
+                                   "completed":  true,
+                                   "fence_reached":  true,
+                                   "data_ok":  true,
+                                   "dados":  "  Dados conferidos    : 4 dwords, 0 divergencias (conferido no kernel)"
+                               }
+                  },
+                  {
+                      "gate":  "G_verify_final_sem_divergencia",
+                      "passed":  true,
+                      "detail":  "No fim do ensaio, os 24 registradores continuam iguais ao snapshot.",
+                      "data":  {
+                                   "divergencias":  0,
+                                   "saida":  [
+                                                 "Transacao GCVM (verify):",
+                                                 "  snapshot presente : sim",
+                                                 "  registradores     : 24",
+                                                 "  divergencias      : 0",
+                                                 "  RESULTADO         : ok"
+                                             ]
+                               }
+                  },
+                  {
+                      "gate":  "H_estado_final_limpo",
+                      "passed":  true,
+                      "detail":  "Destino restaurado e WPTR de volta a zero.",
+                      "data":  {
+                                   "destino_restaurado":  true,
+                                   "wptr":  0
+                               }
+                  },
+                  {
+                      "gate":  "I_sem_bugcheck",
+                      "passed":  true,
+                      "detail":  "Nenhum bugcheck na janela do ensaio.",
+                      "data":  [
+
+                               ]
+                  }
+              ],
+    "failed_gates":  [
+
+                     ],
+    "destination_before":  [
+                               "0x6EF3C885",
+                               "0x6D0B4971",
+                               "0x3446DE2F",
+                               "0x2FBE1DDB",
+                               "0xB4772620",
+                               "0xA71FBDD6",
+                               "0xF6522A8A",
+                               "0xF5AAB96E",
+                               "0x4E77CAB5",
+                               "0x4DCD4141",
+                               "0x1C82D61F",
+                               "0x1F7A55EB"
+                           ],
+    "destination_after_restore":  [
+                                      "0x6EF3C885",
+                                      "0x6D0B4971",
+                                      "0x3446DE2F",
+                                      "0x2FBE1DDB",
+                                      "0xB4772620",
+                                      "0xA71FBDD6",
+                                      "0xF6522A8A",
+                                      "0xF5AAB96E",
+                                      "0x4E77CAB5",
+                                      "0x4DCD4141",
+                                      "0x1C82D61F",
+                                      "0x1F7A55EB"
+                                  ],
+    "bugchecks":  [
+
+                  ],
+    "commands":  [
+                     {
+                         "name":  "info_pre",
+                         "command":  "bc250ctl.exe info",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "driver          : bc250dbg v14.0  ABI 14  armamento=readonly",
+                                        "pci             : 01:00.0  1002:13FE rev 00",
+                                        "  BAR0          : 0x00000000C0000000  raw 0xC000000C",
+                                        "  BAR2          : 0x00000000D0000000  raw 0xD000000C",
+                                        "  BAR4          : 0x000000000000EF00  raw 0x0000EF01 io",
+                                        "  BAR5          : 0x00000000FE800000  raw 0xFE800000 [mapeado]",
+                                        "mmio            : 0xFE800000 +512 KB ",
+                                        "  GPU_ID        : 0x9FFF9700 (confere com a BC-250)",
+                                        "  offset          SOC15        legado      ",
+                                        "  SCRATCH_REG0  : 0x00000000   0x4D585042",
+                                        "  GRBM_STATUS   : 0x00003028   0x00000000",
+                                        "  CC_GC_ARRAY   : 0xFFF80000   0x00000000   \u003c== o desempate",
+                                        "  ** MAPA OBSERVADO: CC_GC_SHADER_ARRAY_CONFIG em 0x089BC bate com o",
+                                        "     valor bruto visto no Linux (0xFFF80000). Isto sustenta o offset",
+                                        "     SOC15, mas nao prova quantidade de CU utilizavel nem execucao.",
+                                        "smu             : nao consultado pelo baseline; use \u0027smu\u0027 explicitamente",
+                                        "termico         : NAO CALIBRADO  limite 85 C  ",
+                                        "  sondas cruas  : edge 0xFFFFFFFF  junc 0x00000000  mem 0x00026540",
+                                        "  ** sem calibracao o driver recusa armar \u0027unsafe\u0027.",
+                                        "     Compare as sondas com o Linux e rode \u0027thermal calib\u0027.",
+                                        "log ring        : 4096 entradas, head 6"
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_status_pre",
+                         "command":  "bc250ctl.exe sdma status",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do Motor SDMA0:",
+                                        "  STATUS_REG    : 0x46DEE557",
+                                        "  RB_CNTL       : 0x80840000 (DESABILITADO)",
+                                        "  RB_BASE       : 0x0",
+                                        "  WPTR (reg)    : 0x00000000",
+                                        "  WPTR (shadow) : 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  RPTR (reg)    : 0x00000000   (nao e fonte de verdade)",
+                                        "  RPTR (writeb.): 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  Pendente      : 0 bytes"
+                                    ]
+                     },
+                     {
+                         "name":  "ucode_checksum_pre",
+                         "command":  "bc250ctl.exe reg r 0x04A24",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A24 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_pre_0",
+                         "command":  "bc250ctl.exe vram r 0x0FF04000",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04000 = 0x6EF3C885   (GPU 0xF40FF04000)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_pre_1",
+                         "command":  "bc250ctl.exe vram r 0x0FF04004",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04004 = 0x6D0B4971   (GPU 0xF40FF04004)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_pre_2",
+                         "command":  "bc250ctl.exe vram r 0x0FF04008",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04008 = 0x3446DE2F   (GPU 0xF40FF04008)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_pre_3",
+                         "command":  "bc250ctl.exe vram r 0x0FF0400C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF0400C = 0x2FBE1DDB   (GPU 0xF40FF0400C)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_pre_4",
+                         "command":  "bc250ctl.exe vram r 0x0FF04010",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04010 = 0xB4772620   (GPU 0xF40FF04010)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_pre_5",
+                         "command":  "bc250ctl.exe vram r 0x0FF04014",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04014 = 0xA71FBDD6   (GPU 0xF40FF04014)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_pre_6",
+                         "command":  "bc250ctl.exe vram r 0x0FF04018",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04018 = 0xF6522A8A   (GPU 0xF40FF04018)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_pre_7",
+                         "command":  "bc250ctl.exe vram r 0x0FF0401C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF0401C = 0xF5AAB96E   (GPU 0xF40FF0401C)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_pre_8",
+                         "command":  "bc250ctl.exe vram r 0x0FF04020",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04020 = 0x4E77CAB5   (GPU 0xF40FF04020)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_pre_9",
+                         "command":  "bc250ctl.exe vram r 0x0FF04024",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04024 = 0x4DCD4141   (GPU 0xF40FF04024)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_pre_10",
+                         "command":  "bc250ctl.exe vram r 0x0FF04028",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04028 = 0x1C82D61F   (GPU 0xF40FF04028)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_pre_11",
+                         "command":  "bc250ctl.exe vram r 0x0FF0402C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF0402C = 0x1F7A55EB   (GPU 0xF40FF0402C)"
+                                    ]
+                     },
+                     {
+                         "name":  "arm_write",
+                         "command":  "bc250ctl.exe arm write",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "armamento agora: write"
+                                    ]
+                     },
+                     {
+                         "name":  "psp_init",
+                         "command":  "bc250ctl.exe psp init",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "C2PMSG_64 antes : 0x80000000",
+                                        "C2PMSG_64 depois: 0x80020000",
+                                        "Anel GPCOM do PSP criado: PA 0x44FFD2000 (4096 bytes)"
+                                    ]
+                     },
+                     {
+                         "name":  "psp_loadfw",
+                         "command":  "bc250ctl.exe psp loadfw sdma0 C:\\Users\\Daniel\\Desktop\\NamixWDDM\\firmware\\cyan_skillfish2_sdma.bin",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Carregando \u0027C:\\Users\\Daniel\\Desktop\\NamixWDDM\\firmware\\cyan_skillfish2_sdma.bin\u0027 pelo PSP:",
+                                        "  tipo         : 9",
+                                        "  versao ucode : 0x34",
+                                        "  payload      : 8384 dwords (33536 bytes) a partir do offset 0x100",
+                                        "  fence        : alcancado",
+                                        "  RespStatus   : 0x00000000 \u003c== SUCESSO",
+                                        "  RespFwAddr   : 0x0000000000000000   TmrSize 0x00000000",
+                                        "  Confira se o microcontrolador acordou:",
+                                        "    bc250ctl sdma f32"
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_f32",
+                         "command":  "bc250ctl.exe sdma f32",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Microcontrolador F32 da SDMA0:",
+                                        "  F32_CNTL       : 0x00000000   HALT=0",
+                                        "  UCODE_CHECKSUM : 0x55B182E3",
+                                        "  PC             : 0x039F 0x039F 0x039F 0x0146 0x039B 0x03E0 0x039B 0x01F8 0x01F8 0x014B 0x0143 0x01F8",
+                                        "  faixa          : 0x0143 .. 0x03E0 (amplitude 0x029D)",
+                                        "  enderecos dist.: 14 de 24 amostras",
+                                        "  ** Faixa larga e 14 enderecos distintos: laco principal rodando."
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_init",
+                         "command":  "bc250ctl.exe sdma init vram 0x0FF00000 128",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "SDMA0 Ring inicializado com sucesso:",
+                                        "  Local                : VRAM, offset 0xFF00000",
+                                        "  Endereco de GPU      : 0xF40FF00000",
+                                        "  Tamanho do anel      : 128 dwords (512 bytes)",
+                                        "  RB_CNTL              : 0x8084100F (HABILITADO, RB_SIZE=7)"
+                                    ]
+                     },
+                     {
+                         "name":  "escrita_antes_da_transacao",
+                         "command":  "bc250ctl.exe sdma write 0x0FF04000 0xBC25AA01 0xBC25AA02 0xBC25AA03 0xBC25AA04",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "WRITE_LINEAR: VRAM 0x0FF04000, 4 dwords",
+                                        "  RPTR 0x0 -\u003e 0x44 (WPTR 0x44)  concluido",
+                                        "  FENCE VRAM 0x0FF03000 : poison 0x43DAFFFE -\u003e observado 0xBC250001, esperado 0xBC250001 [ALCANCADO]",
+                                        "  STATUS_REG          : 0x46DEE557 -\u003e 0x46DEED57",
+                                        "  STATUS no kick      : 0x44DC5042",
+                                        "  F32 PC              : 0x0181 -\u003e 0x0181 -\u003e 0x033A",
+                                        "  GFXOFF fisico       : 0[GFXOFF] -\u003e 0[GFXOFF] -\u003e 0[GFXOFF]",
+                                        "  GFX_MISC raw        : 0x00000000 -\u003e 0x00000000 -\u003e 0x00000000",
+                                        "  GRBM_STATUS         : 0x00003028 -\u003e 0x00003028 -\u003e 0x00003028",
+                                        "  SDMA CLK_CTRL       : 0xFF0C0100 -\u003e 0xFF0C0100 -\u003e 0xFF0C0100",
+                                        "  Fence emitida/kick  : 0xBC250001 / publicado",
+                                        "  WPTR (reg)          : 0x00000000 -\u003e 0x00000044",
+                                        "  RPTR reg/writeback  : 0x00000044 / 0x00000034",
+                                        "  WPTR shadow         : 0x00000044",
+                                        "  Dados conferidos    : 4 dwords, 0 divergencias (conferido no kernel)",
+                                        "  Conclusao do pacote : SIM (exige RPTR=WPTR, fence GPU e dado conferido)",
+                                        "  leitura de volta pelo BAR0:",
+                                        "    0x0FF04000 = 0xBC25AA01  ok",
+                                        "    0x0FF04004 = 0xBC25AA02  ok",
+                                        "    0x0FF04008 = 0xBC25AA03  ok",
+                                        "    0x0FF0400C = 0xBC25AA04  ok",
+                                        "  Resultado completo  : VALIDADO NESTA OPERACAO"
+                                    ]
+                     },
+                     {
+                         "name":  "gcvm_dump_antes",
+                         "command":  "bc250ctl.exe gcvm dump",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado de traducao do GC (somente leitura):",
+                                        "  L2_CNTL              : 0x00080602",
+                                        "  L2_CNTL2             : 0x00000000",
+                                        "  L2_CNTL3             : 0x80100007",
+                                        "  L2_CNTL4             : 0x000000C1",
+                                        "  L2_CNTL5             : 0x00003FE0",
+                                        "  FAULT_CNTL           : 0x3FFFFFFC",
+                                        "  FAULT_CNTL2          : 0x00020000",
+                                        "  FAULT_STATUS         : 0x00000000",
+                                        "  FAULT_ADDR           : 0x0000000000000000",
+                                        "  FAULT_DEFAULT_ADDR   : 0x0000000000000000",
+                                        "  CONTEXT0_CNTL        : 0x007FFE80",
+                                        "  CONTEXT1_CNTL        : 0x007FFE80",
+                                        "  CTX0_PT_BASE         : 0x0000000000000000",
+                                        "  CTX0_PT_START        : 0x0000000000000000",
+                                        "  CTX0_PT_END          : 0x0000000000000000",
+                                        "  MX_L1_TLB_CNTL       : 0x00000501",
+                                        "  SYS_APERTURE_LOW     : 0x003D0000",
+                                        "  SYS_APERTURE_HIGH    : 0x003D0800",
+                                        "  SYS_APERTURE_DEFAULT : 0x0000000000000000",
+                                        "  AGP_BASE             : 0x00000000",
+                                        "  AGP_BOT              : 0x00000000",
+                                        "  AGP_TOP              : 0x00000000",
+                                        "  FB_LOCATION_BASE     : 0x0000F400",
+                                        "  FB_LOCATION_TOP      : 0x0000F41F",
+                                        "  FB_OFFSET            : 0x00000450",
+                                        "  IDENTITY_APER_LOW    : 0x00000000",
+                                        "  IDENTITY_APER_HIGH   : 0x00000000",
+                                        "  INVALIDATE_ENG0_REQ  : 0x02F80000",
+                                        "  INVALIDATE_ENG0_ACK  : 0x00000000",
+                                        "  SEMAFORO retido      : nao (bit SEMAPHORE do ACK)",
+                                        "    GCVM_INVALIDATE_ENG0_SEM nao e lido de proposito: ler esse",
+                                        "    registrador ADQUIRE o semaforo. Use \u0027gcvm semrelease\u0027 para",
+                                        "    liberar, se algum ensaio antigo tiver adquirido.",
+                                        "  Nenhum bit e interpretado aqui. Use:",
+                                        "    python tools\\decode-gcvm.py \u003carquivo com esta saida\u003e"
+                                    ]
+                     },
+                     {
+                         "name":  "gcvm_txn_snapshot",
+                         "command":  "bc250ctl.exe gcvm txn snapshot",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Transacao GCVM (snapshot):",
+                                        "  snapshot presente : sim",
+                                        "  registradores     : 24",
+                                        "    0x0A100        : 0x00080602",
+                                        "    0x0A104        : 0x00000000",
+                                        "    0x0A108        : 0x80100007",
+                                        "    0x0A160        : 0x000000C1",
+                                        "    0x0A184        : 0x00003FE0",
+                                        "    0x0A200        : 0x007FFE80",
+                                        "    0x0A204        : 0x007FFE80",
+                                        "    0x0A3AC        : 0x00000000",
+                                        "    0x0A3B0        : 0x00000000",
+                                        "    0x0A42C        : 0x00000000",
+                                        "    0x0A430        : 0x00000000",
+                                        "    0x0A4AC        : 0x00000000",
+                                        "    0x0A4B0        : 0x00000000",
+                                        "    0x0A120        : 0x3FFFFFFC",
+                                        "    0x0A124        : 0x00020000",
+                                        "    0x0A13C        : 0x00000000",
+                                        "    0x0A140        : 0x00000000",
+                                        "    0x0A61C        : 0x00000501",
+                                        "    0x0A614        : 0x003D0000",
+                                        "    0x0A618        : 0x003D0800",
+                                        "    0x0A5B0        : 0x00000000",
+                                        "    0x0A5B4        : 0x00000000",
+                                        "    0x0A148        : 0x00000000",
+                                        "    0x0A150        : 0x00000000",
+                                        "  RESULTADO         : ok"
+                                    ]
+                     },
+                     {
+                         "name":  "gcvm_txn_verify_antes",
+                         "command":  "bc250ctl.exe gcvm txn verify",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Transacao GCVM (verify):",
+                                        "  snapshot presente : sim",
+                                        "  registradores     : 24",
+                                        "  divergencias      : 0",
+                                        "  RESULTADO         : ok"
+                                    ]
+                     },
+                     {
+                         "name":  "gcvm_txn_restore",
+                         "command":  "bc250ctl.exe gcvm txn restore",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Transacao GCVM (restore):",
+                                        "  snapshot presente : sim",
+                                        "  registradores     : 24",
+                                        "  restaurados       : 24",
+                                        "  divergencias      : 0",
+                                        "  RESULTADO         : ok"
+                                    ]
+                     },
+                     {
+                         "name":  "gcvm_dump_depois",
+                         "command":  "bc250ctl.exe gcvm dump",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado de traducao do GC (somente leitura):",
+                                        "  L2_CNTL              : 0x00080602",
+                                        "  L2_CNTL2             : 0x00000000",
+                                        "  L2_CNTL3             : 0x80100007",
+                                        "  L2_CNTL4             : 0x000000C1",
+                                        "  L2_CNTL5             : 0x00003FE0",
+                                        "  FAULT_CNTL           : 0x3FFFFFFC",
+                                        "  FAULT_CNTL2          : 0x00020000",
+                                        "  FAULT_STATUS         : 0x00000000",
+                                        "  FAULT_ADDR           : 0x0000000000000000",
+                                        "  FAULT_DEFAULT_ADDR   : 0x0000000000000000",
+                                        "  CONTEXT0_CNTL        : 0x007FFE80",
+                                        "  CONTEXT1_CNTL        : 0x007FFE80",
+                                        "  CTX0_PT_BASE         : 0x0000000000000000",
+                                        "  CTX0_PT_START        : 0x0000000000000000",
+                                        "  CTX0_PT_END          : 0x0000000000000000",
+                                        "  MX_L1_TLB_CNTL       : 0x00000501",
+                                        "  SYS_APERTURE_LOW     : 0x003D0000",
+                                        "  SYS_APERTURE_HIGH    : 0x003D0800",
+                                        "  SYS_APERTURE_DEFAULT : 0x0000000000000000",
+                                        "  AGP_BASE             : 0x00000000",
+                                        "  AGP_BOT              : 0x00000000",
+                                        "  AGP_TOP              : 0x00000000",
+                                        "  FB_LOCATION_BASE     : 0x0000F400",
+                                        "  FB_LOCATION_TOP      : 0x0000F41F",
+                                        "  FB_OFFSET            : 0x00000450",
+                                        "  IDENTITY_APER_LOW    : 0x00000000",
+                                        "  IDENTITY_APER_HIGH   : 0x00000000",
+                                        "  INVALIDATE_ENG0_REQ  : 0x02F80000",
+                                        "  INVALIDATE_ENG0_ACK  : 0x00000000",
+                                        "  SEMAFORO retido      : nao (bit SEMAPHORE do ACK)",
+                                        "    GCVM_INVALIDATE_ENG0_SEM nao e lido de proposito: ler esse",
+                                        "    registrador ADQUIRE o semaforo. Use \u0027gcvm semrelease\u0027 para",
+                                        "    liberar, se algum ensaio antigo tiver adquirido.",
+                                        "  Nenhum bit e interpretado aqui. Use:",
+                                        "    python tools\\decode-gcvm.py \u003carquivo com esta saida\u003e"
+                                    ]
+                     },
+                     {
+                         "name":  "escrita_depois_da_transacao",
+                         "command":  "bc250ctl.exe sdma write 0x0FF04010 0xBC25BB01 0xBC25BB02 0xBC25BB03 0xBC25BB04",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "WRITE_LINEAR: VRAM 0x0FF04010, 4 dwords",
+                                        "  RPTR 0x34 -\u003e 0x88 (WPTR 0x88)  concluido",
+                                        "  FENCE VRAM 0x0FF03000 : poison 0x43DAFFBA -\u003e observado 0xBC250045, esperado 0xBC250045 [ALCANCADO]",
+                                        "  STATUS_REG          : 0x46DEED57 -\u003e 0x46DEED57",
+                                        "  STATUS no kick      : 0x44DC5042",
+                                        "  F32 PC              : 0x00CB -\u003e 0x039D -\u003e 0x039F",
+                                        "  GFXOFF fisico       : 0[GFXOFF] -\u003e 0[GFXOFF] -\u003e 0[GFXOFF]",
+                                        "  GFX_MISC raw        : 0x00000000 -\u003e 0x00000000 -\u003e 0x00000000",
+                                        "  GRBM_STATUS         : 0x00003028 -\u003e 0x00003028 -\u003e 0x00003028",
+                                        "  SDMA CLK_CTRL       : 0xFF0C0100 -\u003e 0xFF0C0100 -\u003e 0xFF0C0100",
+                                        "  Fence emitida/kick  : 0xBC250045 / publicado",
+                                        "  WPTR (reg)          : 0x00000044 -\u003e 0x00000088",
+                                        "  RPTR reg/writeback  : 0x00000088 / 0x00000078",
+                                        "  WPTR shadow         : 0x00000088",
+                                        "  Dados conferidos    : 4 dwords, 0 divergencias (conferido no kernel)",
+                                        "  Conclusao do pacote : SIM (exige RPTR=WPTR, fence GPU e dado conferido)",
+                                        "  leitura de volta pelo BAR0:",
+                                        "    0x0FF04010 = 0xBC25BB01  ok",
+                                        "    0x0FF04014 = 0xBC25BB02  ok",
+                                        "    0x0FF04018 = 0xBC25BB03  ok",
+                                        "    0x0FF0401C = 0xBC25BB04  ok",
+                                        "  Resultado completo  : VALIDADO NESTA OPERACAO"
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_rollback",
+                         "command":  "bc250ctl.exe sdma rollback",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Rollback SDMA0:",
+                                        "  snapshot presente    : sim",
+                                        "  registradores        : 24 restaurados, 0 divergencias",
+                                        "  VRAM                  : 133 dwords restaurados, 0 divergencias",
+                                        "  RESULTADO             : estado anterior restaurado"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_restore_0",
+                         "command":  "bc250ctl.exe vram w 0x0FF04000 0x6EF3C885",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04000 \u003c- 0x6EF3C885   readback 0x6EF3C885   guardou"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_restore_1",
+                         "command":  "bc250ctl.exe vram w 0x0FF04004 0x6D0B4971",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04004 \u003c- 0x6D0B4971   readback 0x6D0B4971   guardou"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_restore_2",
+                         "command":  "bc250ctl.exe vram w 0x0FF04008 0x3446DE2F",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04008 \u003c- 0x3446DE2F   readback 0x3446DE2F   guardou"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_restore_3",
+                         "command":  "bc250ctl.exe vram w 0x0FF0400C 0x2FBE1DDB",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF0400C \u003c- 0x2FBE1DDB   readback 0x2FBE1DDB   guardou"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_restore_4",
+                         "command":  "bc250ctl.exe vram w 0x0FF04010 0xB4772620",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04010 \u003c- 0xB4772620   readback 0xB4772620   guardou"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_restore_5",
+                         "command":  "bc250ctl.exe vram w 0x0FF04014 0xA71FBDD6",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04014 \u003c- 0xA71FBDD6   readback 0xA71FBDD6   guardou"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_restore_6",
+                         "command":  "bc250ctl.exe vram w 0x0FF04018 0xF6522A8A",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04018 \u003c- 0xF6522A8A   readback 0xF6522A8A   guardou"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_restore_7",
+                         "command":  "bc250ctl.exe vram w 0x0FF0401C 0xF5AAB96E",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF0401C \u003c- 0xF5AAB96E   readback 0xF5AAB96E   guardou"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_restore_8",
+                         "command":  "bc250ctl.exe vram w 0x0FF04020 0x4E77CAB5",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04020 \u003c- 0x4E77CAB5   readback 0x4E77CAB5   guardou"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_restore_9",
+                         "command":  "bc250ctl.exe vram w 0x0FF04024 0x4DCD4141",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04024 \u003c- 0x4DCD4141   readback 0x4DCD4141   guardou"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_restore_10",
+                         "command":  "bc250ctl.exe vram w 0x0FF04028 0x1C82D61F",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04028 \u003c- 0x1C82D61F   readback 0x1C82D61F   guardou"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_restore_11",
+                         "command":  "bc250ctl.exe vram w 0x0FF0402C 0x1F7A55EB",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF0402C \u003c- 0x1F7A55EB   readback 0x1F7A55EB   guardou"
+                                    ]
+                     },
+                     {
+                         "name":  "psp_rollback",
+                         "command":  "bc250ctl.exe psp rollback",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Rollback PSP GPCOM:",
+                                        "  snapshot presente : sim",
+                                        "  destroy ACK       : sim",
+                                        "  registradores     : 4 restaurados, 0 divergencias",
+                                        "  RESULTADO          : ring destruido antes de liberar buffers"
+                                    ]
+                     },
+                     {
+                         "name":  "arm_readonly",
+                         "command":  "bc250ctl.exe arm readonly",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "armamento agora: readonly"
+                                    ]
+                     },
+                     {
+                         "name":  "gcvm_txn_verify_final",
+                         "command":  "bc250ctl.exe gcvm txn verify",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Transacao GCVM (verify):",
+                                        "  snapshot presente : sim",
+                                        "  registradores     : 24",
+                                        "  divergencias      : 0",
+                                        "  RESULTADO         : ok"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_post_0",
+                         "command":  "bc250ctl.exe vram r 0x0FF04000",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04000 = 0x6EF3C885   (GPU 0xF40FF04000)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_post_1",
+                         "command":  "bc250ctl.exe vram r 0x0FF04004",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04004 = 0x6D0B4971   (GPU 0xF40FF04004)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_post_2",
+                         "command":  "bc250ctl.exe vram r 0x0FF04008",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04008 = 0x3446DE2F   (GPU 0xF40FF04008)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_post_3",
+                         "command":  "bc250ctl.exe vram r 0x0FF0400C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF0400C = 0x2FBE1DDB   (GPU 0xF40FF0400C)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_post_4",
+                         "command":  "bc250ctl.exe vram r 0x0FF04010",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04010 = 0xB4772620   (GPU 0xF40FF04010)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_post_5",
+                         "command":  "bc250ctl.exe vram r 0x0FF04014",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04014 = 0xA71FBDD6   (GPU 0xF40FF04014)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_post_6",
+                         "command":  "bc250ctl.exe vram r 0x0FF04018",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04018 = 0xF6522A8A   (GPU 0xF40FF04018)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_post_7",
+                         "command":  "bc250ctl.exe vram r 0x0FF0401C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF0401C = 0xF5AAB96E   (GPU 0xF40FF0401C)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_post_8",
+                         "command":  "bc250ctl.exe vram r 0x0FF04020",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04020 = 0x4E77CAB5   (GPU 0xF40FF04020)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_post_9",
+                         "command":  "bc250ctl.exe vram r 0x0FF04024",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04024 = 0x4DCD4141   (GPU 0xF40FF04024)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_post_10",
+                         "command":  "bc250ctl.exe vram r 0x0FF04028",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04028 = 0x1C82D61F   (GPU 0xF40FF04028)"
+                                    ]
+                     },
+                     {
+                         "name":  "dest_post_11",
+                         "command":  "bc250ctl.exe vram r 0x0FF0402C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF0402C = 0x1F7A55EB   (GPU 0xF40FF0402C)"
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_status_post",
+                         "command":  "bc250ctl.exe sdma status",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do Motor SDMA0:",
+                                        "  STATUS_REG    : 0x46DEE557",
+                                        "  RB_CNTL       : 0x80840000 (DESABILITADO)",
+                                        "  RB_BASE       : 0x0",
+                                        "  WPTR (reg)    : 0x00000000",
+                                        "  WPTR (shadow) : 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  RPTR (reg)    : 0x00000000   (nao e fonte de verdade)",
+                                        "  RPTR (writeb.): 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  Pendente      : 0 bytes"
+                                    ]
+                     }
+                 ]
+}

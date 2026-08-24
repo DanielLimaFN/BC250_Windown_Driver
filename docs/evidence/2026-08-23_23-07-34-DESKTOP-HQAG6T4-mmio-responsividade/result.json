@@ -1,0 +1,1863 @@
+﻿{
+    "schema_version":  1,
+    "captured_at":  "2026-08-23T23:07:37.2889724-03:00",
+    "objective":  "Map which GC MMIO registers respond and which return all-ones, to decide whether the CP instruction-cache block is reachable at all and whether the RLC route can even start",
+    "verdict":  "NÃO VALIDADO EM HARDWARE",
+    "passed":  false,
+    "failure":  "Gates reprovados: E0_zona_morta_e_do_cp",
+    "not_covered":  [
+                        "Read only: no register was written, no firmware loaded, the driver was not armed",
+                        "All-ones is read as \"not decoding\"; this ensaio does not prove WHY a block is not decoding",
+                        "Says nothing about the CP executing"
+                    ],
+    "reboot_required":  false,
+    "contaminates_session":  false,
+    "environment":  {
+                        "segment_base_dw":  {
+                                                "seg0":  "0x1260",
+                                                "seg1":  "0xA000 (medida em 2026-08-23 17:54)"
+                                            },
+                        "derivation":  "byte = (segment_base_dw[BASE_IDX] + mmREG_dw) * 4",
+                        "repeticoes_por_registrador":  3
+                    },
+    "leituras":  [
+                     {
+                         "nome":  "GRBM_STATUS",
+                         "dw":  "0x0DA4",
+                         "segmento":  0,
+                         "byte":  "0x08010",
+                         "papel":  "controle, valor conhecido 0x00003028",
+                         "leituras":  [
+                                          "0x00003028",
+                                          "0x00003028",
+                                          "0x00003028"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "GRBM_STATUS2",
+                         "dw":  "0x0DA2",
+                         "segmento":  0,
+                         "byte":  "0x08008",
+                         "papel":  "controle",
+                         "leituras":  [
+                                          "0x00000008",
+                                          "0x00000008",
+                                          "0x00000008"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "CP_ME_CNTL",
+                         "dw":  "0x0F56",
+                         "segmento":  0,
+                         "byte":  "0x086D8",
+                         "papel":  "controle, HALT das tres engines",
+                         "leituras":  [
+                                          "0x15000000",
+                                          "0x15000000",
+                                          "0x15000000"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "CP_STAT",
+                         "dw":  "0x0F40",
+                         "segmento":  0,
+                         "byte":  "0x08680",
+                         "papel":  "ocupacao do CP",
+                         "leituras":  [
+                                          "0x00000000",
+                                          "0x00000000",
+                                          "0x00000000"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "CP_PFP_INSTR_PNTR",
+                         "dw":  "0x0F45",
+                         "segmento":  0,
+                         "byte":  "0x08694",
+                         "papel":  "PC do PFP",
+                         "leituras":  [
+                                          "0x00000000",
+                                          "0x00000000",
+                                          "0x00000000"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "CP_RB0_CNTL",
+                         "dw":  "0x1DE1",
+                         "segmento":  0,
+                         "byte":  "0x0C104",
+                         "papel":  "anel GFX 0",
+                         "leituras":  [
+                                          "0x00A00000",
+                                          "0x00A00000",
+                                          "0x00A00000"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "CP_RB0_RPTR",
+                         "dw":  "0x0F60",
+                         "segmento":  0,
+                         "byte":  "0x08700",
+                         "papel":  "anel GFX 0",
+                         "leituras":  [
+                                          "0x00000000",
+                                          "0x00000000",
+                                          "0x00000000"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "SCRATCH_REG0",
+                         "dw":  "0x2040",
+                         "segmento":  1,
+                         "byte":  "0x30100",
+                         "papel":  "controle do segmento 1, comprovadamente responde",
+                         "leituras":  [
+                                          "0x00000000",
+                                          "0x00000000",
+                                          "0x00000000"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "SCRATCH_REG7",
+                         "dw":  "0x2047",
+                         "segmento":  1,
+                         "byte":  "0x3011C",
+                         "papel":  "controle do segmento 1",
+                         "leituras":  [
+                                          "0x00000000",
+                                          "0x00000000",
+                                          "0x00000000"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "GRBM_GFX_INDEX",
+                         "dw":  "0x2200",
+                         "segmento":  1,
+                         "byte":  "0x30800",
+                         "papel":  "vizinho proximo do scratch",
+                         "leituras":  [
+                                          "0x00000000",
+                                          "0x00000000",
+                                          "0x00000000"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "CP_MES_DOORBELL_CTRL1",
+                         "dw":  "0x283C",
+                         "segmento":  1,
+                         "byte":  "0x320F0",
+                         "papel":  "sonda de fronteira, abaixo da zona morta",
+                         "leituras":  [
+                                          "0x00000000",
+                                          "0x00000000",
+                                          "0x00000000"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "RLC_CNTL",
+                         "dw":  "0x4C00",
+                         "segmento":  1,
+                         "byte":  "0x3B000",
+                         "papel":  "portao do GFX; mediu 0x0 em boot limpo",
+                         "leituras":  [
+                                          "0x00000000",
+                                          "0x00000000",
+                                          "0x00000000"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "RLC_SAFE_MODE",
+                         "dw":  "0x4C05",
+                         "segmento":  1,
+                         "byte":  "0x3B014",
+                         "papel":  "modo seguro do RLC",
+                         "leituras":  [
+                                          "0x00000000",
+                                          "0x00000000",
+                                          "0x00000000"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "RLC_PG_CNTL",
+                         "dw":  "0x4C43",
+                         "segmento":  1,
+                         "byte":  "0x3B10C",
+                         "papel":  "power gating do GFX",
+                         "leituras":  [
+                                          "0x00000000",
+                                          "0x00000000",
+                                          "0x00000000"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "RLC_CGCG_CGLS_CTRL",
+                         "dw":  "0x4C49",
+                         "segmento":  1,
+                         "byte":  "0x3B124",
+                         "papel":  "clock gating de granularidade grossa",
+                         "leituras":  [
+                                          "0x0001003C",
+                                          "0x0001003C",
+                                          "0x0001003C"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "RLC_SPARE_INT",
+                         "dw":  "0x4CCC",
+                         "segmento":  1,
+                         "byte":  "0x3B330",
+                         "papel":  "usado pela interface RLCG de acesso a registrador",
+                         "leituras":  [
+                                          "0x00000000",
+                                          "0x00000000",
+                                          "0x00000000"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "RLC_GPM_STAT",
+                         "dw":  "0x4E6E",
+                         "segmento":  1,
+                         "byte":  "0x3B9B8",
+                         "papel":  "estado do GPM do RLC",
+                         "leituras":  [
+                                          "0x00F40016",
+                                          "0x00F40016",
+                                          "0x00F40016"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "CGTT_CPF_CLK_CTRL",
+                         "dw":  "0x50B1",
+                         "segmento":  1,
+                         "byte":  "0x3C2C4",
+                         "papel":  "SUSPEITO: clock gating do CPF",
+                         "leituras":  [
+                                          "0x00000100",
+                                          "0x00000100",
+                                          "0x00000100"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "CGTT_CPC_CLK_CTRL",
+                         "dw":  "0x50B2",
+                         "segmento":  1,
+                         "byte":  "0x3C2C8",
+                         "papel":  "SUSPEITO: clock gating do CPC",
+                         "leituras":  [
+                                          "0x00000100",
+                                          "0x00000100",
+                                          "0x00000100"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  true,
+                         "todos_bits_em_um":  false
+                     },
+                     {
+                         "nome":  "CP_PFP_UCODE_ADDR",
+                         "dw":  "0x5814",
+                         "segmento":  1,
+                         "byte":  "0x3E050",
+                         "papel":  "porta de jump table do PFP",
+                         "leituras":  [
+                                          "0xFFFFFFFF",
+                                          "0xFFFFFFFF",
+                                          "0xFFFFFFFF"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  false,
+                         "todos_bits_em_um":  true
+                     },
+                     {
+                         "nome":  "CP_PFP_IC_BASE_LO",
+                         "dw":  "0x5840",
+                         "segmento":  1,
+                         "byte":  "0x3E100",
+                         "papel":  "medido: 0xFFFFFFFF",
+                         "leituras":  [
+                                          "0xFFFFFFFF",
+                                          "0xFFFFFFFF",
+                                          "0xFFFFFFFF"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  false,
+                         "todos_bits_em_um":  true
+                     },
+                     {
+                         "nome":  "CP_PFP_IC_BASE_CNTL",
+                         "dw":  "0x5842",
+                         "segmento":  1,
+                         "byte":  "0x3E108",
+                         "papel":  "medido: 0xFFFFFFFF",
+                         "leituras":  [
+                                          "0xFFFFFFFF",
+                                          "0xFFFFFFFF",
+                                          "0xFFFFFFFF"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  false,
+                         "todos_bits_em_um":  true
+                     },
+                     {
+                         "nome":  "CP_PFP_IC_OP_CNTL",
+                         "dw":  "0x5843",
+                         "segmento":  1,
+                         "byte":  "0x3E10C",
+                         "papel":  "medido: 0xFFFFFFFF, causou o falso positivo",
+                         "leituras":  [
+                                          "0xFFFFFFFF",
+                                          "0xFFFFFFFF",
+                                          "0xFFFFFFFF"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  false,
+                         "todos_bits_em_um":  true
+                     },
+                     {
+                         "nome":  "CP_ME_IC_BASE_LO",
+                         "dw":  "0x5844",
+                         "segmento":  1,
+                         "byte":  "0x3E110",
+                         "papel":  "mesma vizinhanca",
+                         "leituras":  [
+                                          "0xFFFFFFFF",
+                                          "0xFFFFFFFF",
+                                          "0xFFFFFFFF"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  false,
+                         "todos_bits_em_um":  true
+                     },
+                     {
+                         "nome":  "CP_CE_IC_BASE_LO",
+                         "dw":  "0x5848",
+                         "segmento":  1,
+                         "byte":  "0x3E120",
+                         "papel":  "mesma vizinhanca",
+                         "leituras":  [
+                                          "0xFFFFFFFF",
+                                          "0xFFFFFFFF",
+                                          "0xFFFFFFFF"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  false,
+                         "todos_bits_em_um":  true
+                     },
+                     {
+                         "nome":  "CP_MEC_ME1_UCODE_ADDR",
+                         "dw":  "0x581A",
+                         "segmento":  1,
+                         "byte":  "0x3E068",
+                         "papel":  "mesma vizinhanca, engine de compute",
+                         "leituras":  [
+                                          "0xFFFFFFFF",
+                                          "0xFFFFFFFF",
+                                          "0xFFFFFFFF"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  false,
+                         "todos_bits_em_um":  true
+                     },
+                     {
+                         "nome":  "RLC_GPM_UCODE_ADDR",
+                         "dw":  "0x5B61",
+                         "segmento":  1,
+                         "byte":  "0x3ED84",
+                         "papel":  "DECIDE: acima da zona morta. Se responder, o limite nao e de janela",
+                         "leituras":  [
+                                          "0xFFFFFFFF",
+                                          "0xFFFFFFFF",
+                                          "0xFFFFFFFF"
+                                      ],
+                         "valores_distintos":  1,
+                         "responde":  false,
+                         "todos_bits_em_um":  true
+                     }
+                 ],
+    "gates":  [
+                  {
+                      "gate":  "A_segmento_0_responde",
+                      "passed":  true,
+                      "detail":  "Todos os registradores do segmento 0 responderam: a leitura de MMIO funciona.",
+                      "data":  {
+                                   "nao_responderam":  [
+
+                                                       ],
+                                   "leituras":  [
+                                                    {
+                                                        "nome":  "GRBM_STATUS",
+                                                        "dw":  "0x0DA4",
+                                                        "segmento":  0,
+                                                        "byte":  "0x08010",
+                                                        "papel":  "controle, valor conhecido 0x00003028",
+                                                        "leituras":  [
+                                                                         "0x00003028",
+                                                                         "0x00003028",
+                                                                         "0x00003028"
+                                                                     ],
+                                                        "valores_distintos":  1,
+                                                        "responde":  true,
+                                                        "todos_bits_em_um":  false
+                                                    },
+                                                    {
+                                                        "nome":  "GRBM_STATUS2",
+                                                        "dw":  "0x0DA2",
+                                                        "segmento":  0,
+                                                        "byte":  "0x08008",
+                                                        "papel":  "controle",
+                                                        "leituras":  [
+                                                                         "0x00000008",
+                                                                         "0x00000008",
+                                                                         "0x00000008"
+                                                                     ],
+                                                        "valores_distintos":  1,
+                                                        "responde":  true,
+                                                        "todos_bits_em_um":  false
+                                                    },
+                                                    {
+                                                        "nome":  "CP_ME_CNTL",
+                                                        "dw":  "0x0F56",
+                                                        "segmento":  0,
+                                                        "byte":  "0x086D8",
+                                                        "papel":  "controle, HALT das tres engines",
+                                                        "leituras":  [
+                                                                         "0x15000000",
+                                                                         "0x15000000",
+                                                                         "0x15000000"
+                                                                     ],
+                                                        "valores_distintos":  1,
+                                                        "responde":  true,
+                                                        "todos_bits_em_um":  false
+                                                    },
+                                                    {
+                                                        "nome":  "CP_STAT",
+                                                        "dw":  "0x0F40",
+                                                        "segmento":  0,
+                                                        "byte":  "0x08680",
+                                                        "papel":  "ocupacao do CP",
+                                                        "leituras":  [
+                                                                         "0x00000000",
+                                                                         "0x00000000",
+                                                                         "0x00000000"
+                                                                     ],
+                                                        "valores_distintos":  1,
+                                                        "responde":  true,
+                                                        "todos_bits_em_um":  false
+                                                    },
+                                                    {
+                                                        "nome":  "CP_PFP_INSTR_PNTR",
+                                                        "dw":  "0x0F45",
+                                                        "segmento":  0,
+                                                        "byte":  "0x08694",
+                                                        "papel":  "PC do PFP",
+                                                        "leituras":  [
+                                                                         "0x00000000",
+                                                                         "0x00000000",
+                                                                         "0x00000000"
+                                                                     ],
+                                                        "valores_distintos":  1,
+                                                        "responde":  true,
+                                                        "todos_bits_em_um":  false
+                                                    },
+                                                    {
+                                                        "nome":  "CP_RB0_CNTL",
+                                                        "dw":  "0x1DE1",
+                                                        "segmento":  0,
+                                                        "byte":  "0x0C104",
+                                                        "papel":  "anel GFX 0",
+                                                        "leituras":  [
+                                                                         "0x00A00000",
+                                                                         "0x00A00000",
+                                                                         "0x00A00000"
+                                                                     ],
+                                                        "valores_distintos":  1,
+                                                        "responde":  true,
+                                                        "todos_bits_em_um":  false
+                                                    },
+                                                    {
+                                                        "nome":  "CP_RB0_RPTR",
+                                                        "dw":  "0x0F60",
+                                                        "segmento":  0,
+                                                        "byte":  "0x08700",
+                                                        "papel":  "anel GFX 0",
+                                                        "leituras":  [
+                                                                         "0x00000000",
+                                                                         "0x00000000",
+                                                                         "0x00000000"
+                                                                     ],
+                                                        "valores_distintos":  1,
+                                                        "responde":  true,
+                                                        "todos_bits_em_um":  false
+                                                    }
+                                                ]
+                               }
+                  },
+                  {
+                      "gate":  "B_gpu_em_repouso",
+                      "passed":  true,
+                      "detail":  "Nenhum bit de ocupacao aceso: a GPU esta em repouso e o mapa reflete o bloco, nao um travamento herdado.",
+                      "data":  {
+                                   "em_repouso":  true,
+                                   "ocupacao":  [
+
+                                                ],
+                                   "consequencia_se_reprovar":  "A GPU tem trabalho pendurado de outra sessao. O mapa continua valido como MEDICAO, mas nao serve de linha de base: reinicie e repita para separar \"bloco nao responde\" de \"bloco travado\"."
+                               }
+                  },
+                  {
+                      "gate":  "C_scratch_do_segmento_1_responde",
+                      "passed":  true,
+                      "detail":  "O banco de rascunho do segmento 1 responde: a base 0xA000 alcanca hardware vivo.",
+                      "data":  [
+                                   {
+                                       "nome":  "SCRATCH_REG0",
+                                       "dw":  "0x2040",
+                                       "segmento":  1,
+                                       "byte":  "0x30100",
+                                       "papel":  "controle do segmento 1, comprovadamente responde",
+                                       "leituras":  [
+                                                        "0x00000000",
+                                                        "0x00000000",
+                                                        "0x00000000"
+                                                    ],
+                                       "valores_distintos":  1,
+                                       "responde":  true,
+                                       "todos_bits_em_um":  false
+                                   },
+                                   {
+                                       "nome":  "SCRATCH_REG7",
+                                       "dw":  "0x2047",
+                                       "segmento":  1,
+                                       "byte":  "0x3011C",
+                                       "papel":  "controle do segmento 1",
+                                       "leituras":  [
+                                                        "0x00000000",
+                                                        "0x00000000",
+                                                        "0x00000000"
+                                                    ],
+                                       "valores_distintos":  1,
+                                       "responde":  true,
+                                       "todos_bits_em_um":  false
+                                   }
+                               ]
+                  },
+                  {
+                      "gate":  "D_mapa_registrado",
+                      "passed":  true,
+                      "detail":  "Mapa de responsividade registrado. Quem devolve todos-os-bits-em-um nao esta decodificando.",
+                      "data":  {
+                                   "nao_respondem":  [
+                                                         "CP_PFP_UCODE_ADDR",
+                                                         "CP_PFP_IC_BASE_LO",
+                                                         "CP_PFP_IC_BASE_CNTL",
+                                                         "CP_PFP_IC_OP_CNTL",
+                                                         "CP_ME_IC_BASE_LO",
+                                                         "CP_CE_IC_BASE_LO",
+                                                         "CP_MEC_ME1_UCODE_ADDR",
+                                                         "RLC_GPM_UCODE_ADDR"
+                                                     ],
+                                   "respondem":  [
+                                                     "GRBM_STATUS",
+                                                     "GRBM_STATUS2",
+                                                     "CP_ME_CNTL",
+                                                     "CP_STAT",
+                                                     "CP_PFP_INSTR_PNTR",
+                                                     "CP_RB0_CNTL",
+                                                     "CP_RB0_RPTR",
+                                                     "SCRATCH_REG0",
+                                                     "SCRATCH_REG7",
+                                                     "GRBM_GFX_INDEX",
+                                                     "CP_MES_DOORBELL_CTRL1",
+                                                     "RLC_CNTL",
+                                                     "RLC_SAFE_MODE",
+                                                     "RLC_PG_CNTL",
+                                                     "RLC_CGCG_CGLS_CTRL",
+                                                     "RLC_SPARE_INT",
+                                                     "RLC_GPM_STAT",
+                                                     "CGTT_CPF_CLK_CTRL",
+                                                     "CGTT_CPC_CLK_CTRL"
+                                                 ],
+                                   "tabela":  [
+                                                  {
+                                                      "nome":  "GRBM_STATUS",
+                                                      "dw":  "0x0DA4",
+                                                      "segmento":  0,
+                                                      "byte":  "0x08010",
+                                                      "papel":  "controle, valor conhecido 0x00003028",
+                                                      "leituras":  [
+                                                                       "0x00003028",
+                                                                       "0x00003028",
+                                                                       "0x00003028"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "GRBM_STATUS2",
+                                                      "dw":  "0x0DA2",
+                                                      "segmento":  0,
+                                                      "byte":  "0x08008",
+                                                      "papel":  "controle",
+                                                      "leituras":  [
+                                                                       "0x00000008",
+                                                                       "0x00000008",
+                                                                       "0x00000008"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "CP_ME_CNTL",
+                                                      "dw":  "0x0F56",
+                                                      "segmento":  0,
+                                                      "byte":  "0x086D8",
+                                                      "papel":  "controle, HALT das tres engines",
+                                                      "leituras":  [
+                                                                       "0x15000000",
+                                                                       "0x15000000",
+                                                                       "0x15000000"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "CP_STAT",
+                                                      "dw":  "0x0F40",
+                                                      "segmento":  0,
+                                                      "byte":  "0x08680",
+                                                      "papel":  "ocupacao do CP",
+                                                      "leituras":  [
+                                                                       "0x00000000",
+                                                                       "0x00000000",
+                                                                       "0x00000000"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "CP_PFP_INSTR_PNTR",
+                                                      "dw":  "0x0F45",
+                                                      "segmento":  0,
+                                                      "byte":  "0x08694",
+                                                      "papel":  "PC do PFP",
+                                                      "leituras":  [
+                                                                       "0x00000000",
+                                                                       "0x00000000",
+                                                                       "0x00000000"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "CP_RB0_CNTL",
+                                                      "dw":  "0x1DE1",
+                                                      "segmento":  0,
+                                                      "byte":  "0x0C104",
+                                                      "papel":  "anel GFX 0",
+                                                      "leituras":  [
+                                                                       "0x00A00000",
+                                                                       "0x00A00000",
+                                                                       "0x00A00000"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "CP_RB0_RPTR",
+                                                      "dw":  "0x0F60",
+                                                      "segmento":  0,
+                                                      "byte":  "0x08700",
+                                                      "papel":  "anel GFX 0",
+                                                      "leituras":  [
+                                                                       "0x00000000",
+                                                                       "0x00000000",
+                                                                       "0x00000000"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "SCRATCH_REG0",
+                                                      "dw":  "0x2040",
+                                                      "segmento":  1,
+                                                      "byte":  "0x30100",
+                                                      "papel":  "controle do segmento 1, comprovadamente responde",
+                                                      "leituras":  [
+                                                                       "0x00000000",
+                                                                       "0x00000000",
+                                                                       "0x00000000"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "SCRATCH_REG7",
+                                                      "dw":  "0x2047",
+                                                      "segmento":  1,
+                                                      "byte":  "0x3011C",
+                                                      "papel":  "controle do segmento 1",
+                                                      "leituras":  [
+                                                                       "0x00000000",
+                                                                       "0x00000000",
+                                                                       "0x00000000"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "GRBM_GFX_INDEX",
+                                                      "dw":  "0x2200",
+                                                      "segmento":  1,
+                                                      "byte":  "0x30800",
+                                                      "papel":  "vizinho proximo do scratch",
+                                                      "leituras":  [
+                                                                       "0x00000000",
+                                                                       "0x00000000",
+                                                                       "0x00000000"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "CP_MES_DOORBELL_CTRL1",
+                                                      "dw":  "0x283C",
+                                                      "segmento":  1,
+                                                      "byte":  "0x320F0",
+                                                      "papel":  "sonda de fronteira, abaixo da zona morta",
+                                                      "leituras":  [
+                                                                       "0x00000000",
+                                                                       "0x00000000",
+                                                                       "0x00000000"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "RLC_CNTL",
+                                                      "dw":  "0x4C00",
+                                                      "segmento":  1,
+                                                      "byte":  "0x3B000",
+                                                      "papel":  "portao do GFX; mediu 0x0 em boot limpo",
+                                                      "leituras":  [
+                                                                       "0x00000000",
+                                                                       "0x00000000",
+                                                                       "0x00000000"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "RLC_SAFE_MODE",
+                                                      "dw":  "0x4C05",
+                                                      "segmento":  1,
+                                                      "byte":  "0x3B014",
+                                                      "papel":  "modo seguro do RLC",
+                                                      "leituras":  [
+                                                                       "0x00000000",
+                                                                       "0x00000000",
+                                                                       "0x00000000"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "RLC_PG_CNTL",
+                                                      "dw":  "0x4C43",
+                                                      "segmento":  1,
+                                                      "byte":  "0x3B10C",
+                                                      "papel":  "power gating do GFX",
+                                                      "leituras":  [
+                                                                       "0x00000000",
+                                                                       "0x00000000",
+                                                                       "0x00000000"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "RLC_CGCG_CGLS_CTRL",
+                                                      "dw":  "0x4C49",
+                                                      "segmento":  1,
+                                                      "byte":  "0x3B124",
+                                                      "papel":  "clock gating de granularidade grossa",
+                                                      "leituras":  [
+                                                                       "0x0001003C",
+                                                                       "0x0001003C",
+                                                                       "0x0001003C"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "RLC_SPARE_INT",
+                                                      "dw":  "0x4CCC",
+                                                      "segmento":  1,
+                                                      "byte":  "0x3B330",
+                                                      "papel":  "usado pela interface RLCG de acesso a registrador",
+                                                      "leituras":  [
+                                                                       "0x00000000",
+                                                                       "0x00000000",
+                                                                       "0x00000000"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "RLC_GPM_STAT",
+                                                      "dw":  "0x4E6E",
+                                                      "segmento":  1,
+                                                      "byte":  "0x3B9B8",
+                                                      "papel":  "estado do GPM do RLC",
+                                                      "leituras":  [
+                                                                       "0x00F40016",
+                                                                       "0x00F40016",
+                                                                       "0x00F40016"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "CGTT_CPF_CLK_CTRL",
+                                                      "dw":  "0x50B1",
+                                                      "segmento":  1,
+                                                      "byte":  "0x3C2C4",
+                                                      "papel":  "SUSPEITO: clock gating do CPF",
+                                                      "leituras":  [
+                                                                       "0x00000100",
+                                                                       "0x00000100",
+                                                                       "0x00000100"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "CGTT_CPC_CLK_CTRL",
+                                                      "dw":  "0x50B2",
+                                                      "segmento":  1,
+                                                      "byte":  "0x3C2C8",
+                                                      "papel":  "SUSPEITO: clock gating do CPC",
+                                                      "leituras":  [
+                                                                       "0x00000100",
+                                                                       "0x00000100",
+                                                                       "0x00000100"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  true,
+                                                      "todos_bits_em_um":  false
+                                                  },
+                                                  {
+                                                      "nome":  "CP_PFP_UCODE_ADDR",
+                                                      "dw":  "0x5814",
+                                                      "segmento":  1,
+                                                      "byte":  "0x3E050",
+                                                      "papel":  "porta de jump table do PFP",
+                                                      "leituras":  [
+                                                                       "0xFFFFFFFF",
+                                                                       "0xFFFFFFFF",
+                                                                       "0xFFFFFFFF"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  false,
+                                                      "todos_bits_em_um":  true
+                                                  },
+                                                  {
+                                                      "nome":  "CP_PFP_IC_BASE_LO",
+                                                      "dw":  "0x5840",
+                                                      "segmento":  1,
+                                                      "byte":  "0x3E100",
+                                                      "papel":  "medido: 0xFFFFFFFF",
+                                                      "leituras":  [
+                                                                       "0xFFFFFFFF",
+                                                                       "0xFFFFFFFF",
+                                                                       "0xFFFFFFFF"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  false,
+                                                      "todos_bits_em_um":  true
+                                                  },
+                                                  {
+                                                      "nome":  "CP_PFP_IC_BASE_CNTL",
+                                                      "dw":  "0x5842",
+                                                      "segmento":  1,
+                                                      "byte":  "0x3E108",
+                                                      "papel":  "medido: 0xFFFFFFFF",
+                                                      "leituras":  [
+                                                                       "0xFFFFFFFF",
+                                                                       "0xFFFFFFFF",
+                                                                       "0xFFFFFFFF"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  false,
+                                                      "todos_bits_em_um":  true
+                                                  },
+                                                  {
+                                                      "nome":  "CP_PFP_IC_OP_CNTL",
+                                                      "dw":  "0x5843",
+                                                      "segmento":  1,
+                                                      "byte":  "0x3E10C",
+                                                      "papel":  "medido: 0xFFFFFFFF, causou o falso positivo",
+                                                      "leituras":  [
+                                                                       "0xFFFFFFFF",
+                                                                       "0xFFFFFFFF",
+                                                                       "0xFFFFFFFF"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  false,
+                                                      "todos_bits_em_um":  true
+                                                  },
+                                                  {
+                                                      "nome":  "CP_ME_IC_BASE_LO",
+                                                      "dw":  "0x5844",
+                                                      "segmento":  1,
+                                                      "byte":  "0x3E110",
+                                                      "papel":  "mesma vizinhanca",
+                                                      "leituras":  [
+                                                                       "0xFFFFFFFF",
+                                                                       "0xFFFFFFFF",
+                                                                       "0xFFFFFFFF"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  false,
+                                                      "todos_bits_em_um":  true
+                                                  },
+                                                  {
+                                                      "nome":  "CP_CE_IC_BASE_LO",
+                                                      "dw":  "0x5848",
+                                                      "segmento":  1,
+                                                      "byte":  "0x3E120",
+                                                      "papel":  "mesma vizinhanca",
+                                                      "leituras":  [
+                                                                       "0xFFFFFFFF",
+                                                                       "0xFFFFFFFF",
+                                                                       "0xFFFFFFFF"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  false,
+                                                      "todos_bits_em_um":  true
+                                                  },
+                                                  {
+                                                      "nome":  "CP_MEC_ME1_UCODE_ADDR",
+                                                      "dw":  "0x581A",
+                                                      "segmento":  1,
+                                                      "byte":  "0x3E068",
+                                                      "papel":  "mesma vizinhanca, engine de compute",
+                                                      "leituras":  [
+                                                                       "0xFFFFFFFF",
+                                                                       "0xFFFFFFFF",
+                                                                       "0xFFFFFFFF"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  false,
+                                                      "todos_bits_em_um":  true
+                                                  },
+                                                  {
+                                                      "nome":  "RLC_GPM_UCODE_ADDR",
+                                                      "dw":  "0x5B61",
+                                                      "segmento":  1,
+                                                      "byte":  "0x3ED84",
+                                                      "papel":  "DECIDE: acima da zona morta. Se responder, o limite nao e de janela",
+                                                      "leituras":  [
+                                                                       "0xFFFFFFFF",
+                                                                       "0xFFFFFFFF",
+                                                                       "0xFFFFFFFF"
+                                                                   ],
+                                                      "valores_distintos":  1,
+                                                      "responde":  false,
+                                                      "todos_bits_em_um":  true
+                                                  }
+                                              ]
+                               }
+                  },
+                  {
+                      "gate":  "E0_zona_morta_e_do_cp",
+                      "passed":  false,
+                      "detail":  "Um registrador ACIMA da vizinhanca do CP responde: a janela alcanca, e a nao-resposta e do bloco do CP.",
+                      "data":  {
+                                   "sonda":  {
+                                                 "nome":  "RLC_GPM_UCODE_ADDR",
+                                                 "dw":  "0x5B61",
+                                                 "segmento":  1,
+                                                 "byte":  "0x3ED84",
+                                                 "papel":  "DECIDE: acima da zona morta. Se responder, o limite nao e de janela",
+                                                 "leituras":  [
+                                                                  "0xFFFFFFFF",
+                                                                  "0xFFFFFFFF",
+                                                                  "0xFFFFFFFF"
+                                                              ],
+                                                 "valores_distintos":  1,
+                                                 "responde":  false,
+                                                 "todos_bits_em_um":  true
+                                             },
+                                   "consequencia_se_reprovar":  "Se nem acima da zona morta responde, o limite pode ser de janela ou aperture, e nao propriedade do CP. O alvo da investigacao muda."
+                               }
+                  },
+                  {
+                      "gate":  "E_rlc_cntl_responde",
+                      "passed":  true,
+                      "detail":  "RLC_CNTL responde, portanto a rota do RLC tem por onde comecar.",
+                      "data":  {
+                                   "leitura":  {
+                                                   "nome":  "RLC_CNTL",
+                                                   "dw":  "0x4C00",
+                                                   "segmento":  1,
+                                                   "byte":  "0x3B000",
+                                                   "papel":  "portao do GFX; mediu 0x0 em boot limpo",
+                                                   "leituras":  [
+                                                                    "0x00000000",
+                                                                    "0x00000000",
+                                                                    "0x00000000"
+                                                                ],
+                                                   "valores_distintos":  1,
+                                                   "responde":  true,
+                                                   "todos_bits_em_um":  false
+                                               },
+                                   "consequencia_se_reprovar":  "Se RLC_CNTL devolve 0xFFFFFFFF, o problema e anterior ao RLC: nao da para ligar o portao pelo proprio portao. A rota muda."
+                               }
+                  },
+                  {
+                      "gate":  "F_sem_bugcheck",
+                      "passed":  true,
+                      "detail":  "Nenhum bugcheck na janela do ensaio.",
+                      "data":  [
+
+                               ]
+                  }
+              ],
+    "failed_gates":  [
+                         "E0_zona_morta_e_do_cp"
+                     ],
+    "bugchecks":  [
+
+                  ],
+    "commands":  [
+                     {
+                         "name":  "info_pre",
+                         "command":  "bc250ctl.exe info",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "driver          : bc250dbg v18.0  ABI 18  armamento=readonly",
+                                        "pci             : 01:00.0  1002:13FE rev 00",
+                                        "  BAR0          : 0x00000000C0000000  raw 0xC000000C",
+                                        "  BAR2          : 0x00000000D0000000  raw 0xD000000C",
+                                        "  BAR4          : 0x000000000000EF00  raw 0x0000EF01 io",
+                                        "  BAR5          : 0x00000000FE800000  raw 0xFE800000 [mapeado]",
+                                        "mmio            : 0xFE800000 +512 KB ",
+                                        "  GPU_ID        : 0x9FFF9700 (confere com a BC-250)",
+                                        "  offset          SOC15        legado      ",
+                                        "  SCRATCH_REG0  : 0x00000000   0x4D585042",
+                                        "  GRBM_STATUS   : 0x00003028   0x00000000",
+                                        "  CC_GC_ARRAY   : 0xFFF80000   0x00000000   \u003c== o desempate",
+                                        "  ** MAPA OBSERVADO: CC_GC_SHADER_ARRAY_CONFIG em 0x089BC bate com o",
+                                        "     valor bruto visto no Linux (0xFFF80000). Isto sustenta o offset",
+                                        "     SOC15, mas nao prova quantidade de CU utilizavel nem execucao.",
+                                        "smu             : nao consultado pelo baseline; use \u0027smu\u0027 explicitamente",
+                                        "termico         : NAO CALIBRADO  limite 85 C  ",
+                                        "  sondas cruas  : edge 0xFFFFFFFF  junc 0x00000000  mem 0x00001EC2",
+                                        "  ** sem calibracao o driver recusa armar \u0027unsafe\u0027.",
+                                        "     Compare as sondas com o Linux e rode \u0027thermal calib\u0027.",
+                                        "log ring        : 4096 entradas, head 6"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_GRBM_STATUS_0",
+                         "command":  "bc250ctl.exe reg r 0x08010",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008010 = 0x00003028"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_GRBM_STATUS_1",
+                         "command":  "bc250ctl.exe reg r 0x08010",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008010 = 0x00003028"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_GRBM_STATUS_2",
+                         "command":  "bc250ctl.exe reg r 0x08010",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008010 = 0x00003028"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_GRBM_STATUS2_0",
+                         "command":  "bc250ctl.exe reg r 0x08008",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008008 = 0x00000008"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_GRBM_STATUS2_1",
+                         "command":  "bc250ctl.exe reg r 0x08008",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008008 = 0x00000008"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_GRBM_STATUS2_2",
+                         "command":  "bc250ctl.exe reg r 0x08008",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008008 = 0x00000008"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_ME_CNTL_0",
+                         "command":  "bc250ctl.exe reg r 0x086D8",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000086D8 = 0x15000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_ME_CNTL_1",
+                         "command":  "bc250ctl.exe reg r 0x086D8",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000086D8 = 0x15000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_ME_CNTL_2",
+                         "command":  "bc250ctl.exe reg r 0x086D8",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000086D8 = 0x15000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_STAT_0",
+                         "command":  "bc250ctl.exe reg r 0x08680",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008680 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_STAT_1",
+                         "command":  "bc250ctl.exe reg r 0x08680",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008680 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_STAT_2",
+                         "command":  "bc250ctl.exe reg r 0x08680",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008680 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_PFP_INSTR_PNTR_0",
+                         "command":  "bc250ctl.exe reg r 0x08694",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008694 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_PFP_INSTR_PNTR_1",
+                         "command":  "bc250ctl.exe reg r 0x08694",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008694 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_PFP_INSTR_PNTR_2",
+                         "command":  "bc250ctl.exe reg r 0x08694",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008694 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_RB0_CNTL_0",
+                         "command":  "bc250ctl.exe reg r 0x0C104",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0000C104 = 0x00A00000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_RB0_CNTL_1",
+                         "command":  "bc250ctl.exe reg r 0x0C104",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0000C104 = 0x00A00000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_RB0_CNTL_2",
+                         "command":  "bc250ctl.exe reg r 0x0C104",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0000C104 = 0x00A00000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_RB0_RPTR_0",
+                         "command":  "bc250ctl.exe reg r 0x08700",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008700 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_RB0_RPTR_1",
+                         "command":  "bc250ctl.exe reg r 0x08700",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008700 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_RB0_RPTR_2",
+                         "command":  "bc250ctl.exe reg r 0x08700",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008700 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_SCRATCH_REG0_0",
+                         "command":  "bc250ctl.exe reg r 0x30100",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00030100 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_SCRATCH_REG0_1",
+                         "command":  "bc250ctl.exe reg r 0x30100",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00030100 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_SCRATCH_REG0_2",
+                         "command":  "bc250ctl.exe reg r 0x30100",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00030100 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_SCRATCH_REG7_0",
+                         "command":  "bc250ctl.exe reg r 0x3011C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003011C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_SCRATCH_REG7_1",
+                         "command":  "bc250ctl.exe reg r 0x3011C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003011C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_SCRATCH_REG7_2",
+                         "command":  "bc250ctl.exe reg r 0x3011C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003011C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_GRBM_GFX_INDEX_0",
+                         "command":  "bc250ctl.exe reg r 0x30800",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00030800 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_GRBM_GFX_INDEX_1",
+                         "command":  "bc250ctl.exe reg r 0x30800",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00030800 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_GRBM_GFX_INDEX_2",
+                         "command":  "bc250ctl.exe reg r 0x30800",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00030800 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_MES_DOORBELL_CTRL1_0",
+                         "command":  "bc250ctl.exe reg r 0x320F0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000320F0 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_MES_DOORBELL_CTRL1_1",
+                         "command":  "bc250ctl.exe reg r 0x320F0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000320F0 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_MES_DOORBELL_CTRL1_2",
+                         "command":  "bc250ctl.exe reg r 0x320F0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000320F0 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_CNTL_0",
+                         "command":  "bc250ctl.exe reg r 0x3B000",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B000 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_CNTL_1",
+                         "command":  "bc250ctl.exe reg r 0x3B000",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B000 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_CNTL_2",
+                         "command":  "bc250ctl.exe reg r 0x3B000",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B000 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_SAFE_MODE_0",
+                         "command":  "bc250ctl.exe reg r 0x3B014",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B014 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_SAFE_MODE_1",
+                         "command":  "bc250ctl.exe reg r 0x3B014",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B014 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_SAFE_MODE_2",
+                         "command":  "bc250ctl.exe reg r 0x3B014",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B014 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_PG_CNTL_0",
+                         "command":  "bc250ctl.exe reg r 0x3B10C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B10C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_PG_CNTL_1",
+                         "command":  "bc250ctl.exe reg r 0x3B10C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B10C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_PG_CNTL_2",
+                         "command":  "bc250ctl.exe reg r 0x3B10C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B10C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_CGCG_CGLS_CTRL_0",
+                         "command":  "bc250ctl.exe reg r 0x3B124",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B124 = 0x0001003C"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_CGCG_CGLS_CTRL_1",
+                         "command":  "bc250ctl.exe reg r 0x3B124",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B124 = 0x0001003C"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_CGCG_CGLS_CTRL_2",
+                         "command":  "bc250ctl.exe reg r 0x3B124",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B124 = 0x0001003C"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_SPARE_INT_0",
+                         "command":  "bc250ctl.exe reg r 0x3B330",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B330 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_SPARE_INT_1",
+                         "command":  "bc250ctl.exe reg r 0x3B330",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B330 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_SPARE_INT_2",
+                         "command":  "bc250ctl.exe reg r 0x3B330",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B330 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_GPM_STAT_0",
+                         "command":  "bc250ctl.exe reg r 0x3B9B8",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B9B8 = 0x00F40016"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_GPM_STAT_1",
+                         "command":  "bc250ctl.exe reg r 0x3B9B8",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B9B8 = 0x00F40016"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_GPM_STAT_2",
+                         "command":  "bc250ctl.exe reg r 0x3B9B8",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003B9B8 = 0x00F40016"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CGTT_CPF_CLK_CTRL_0",
+                         "command":  "bc250ctl.exe reg r 0x3C2C4",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003C2C4 = 0x00000100"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CGTT_CPF_CLK_CTRL_1",
+                         "command":  "bc250ctl.exe reg r 0x3C2C4",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003C2C4 = 0x00000100"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CGTT_CPF_CLK_CTRL_2",
+                         "command":  "bc250ctl.exe reg r 0x3C2C4",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003C2C4 = 0x00000100"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CGTT_CPC_CLK_CTRL_0",
+                         "command":  "bc250ctl.exe reg r 0x3C2C8",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003C2C8 = 0x00000100"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CGTT_CPC_CLK_CTRL_1",
+                         "command":  "bc250ctl.exe reg r 0x3C2C8",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003C2C8 = 0x00000100"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CGTT_CPC_CLK_CTRL_2",
+                         "command":  "bc250ctl.exe reg r 0x3C2C8",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003C2C8 = 0x00000100"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_PFP_UCODE_ADDR_0",
+                         "command":  "bc250ctl.exe reg r 0x3E050",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E050 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_PFP_UCODE_ADDR_1",
+                         "command":  "bc250ctl.exe reg r 0x3E050",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E050 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_PFP_UCODE_ADDR_2",
+                         "command":  "bc250ctl.exe reg r 0x3E050",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E050 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_PFP_IC_BASE_LO_0",
+                         "command":  "bc250ctl.exe reg r 0x3E100",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E100 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_PFP_IC_BASE_LO_1",
+                         "command":  "bc250ctl.exe reg r 0x3E100",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E100 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_PFP_IC_BASE_LO_2",
+                         "command":  "bc250ctl.exe reg r 0x3E100",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E100 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_PFP_IC_BASE_CNTL_0",
+                         "command":  "bc250ctl.exe reg r 0x3E108",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E108 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_PFP_IC_BASE_CNTL_1",
+                         "command":  "bc250ctl.exe reg r 0x3E108",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E108 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_PFP_IC_BASE_CNTL_2",
+                         "command":  "bc250ctl.exe reg r 0x3E108",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E108 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_PFP_IC_OP_CNTL_0",
+                         "command":  "bc250ctl.exe reg r 0x3E10C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E10C = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_PFP_IC_OP_CNTL_1",
+                         "command":  "bc250ctl.exe reg r 0x3E10C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E10C = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_PFP_IC_OP_CNTL_2",
+                         "command":  "bc250ctl.exe reg r 0x3E10C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E10C = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_ME_IC_BASE_LO_0",
+                         "command":  "bc250ctl.exe reg r 0x3E110",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E110 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_ME_IC_BASE_LO_1",
+                         "command":  "bc250ctl.exe reg r 0x3E110",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E110 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_ME_IC_BASE_LO_2",
+                         "command":  "bc250ctl.exe reg r 0x3E110",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E110 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_CE_IC_BASE_LO_0",
+                         "command":  "bc250ctl.exe reg r 0x3E120",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E120 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_CE_IC_BASE_LO_1",
+                         "command":  "bc250ctl.exe reg r 0x3E120",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E120 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_CE_IC_BASE_LO_2",
+                         "command":  "bc250ctl.exe reg r 0x3E120",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E120 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_MEC_ME1_UCODE_ADDR_0",
+                         "command":  "bc250ctl.exe reg r 0x3E068",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E068 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_MEC_ME1_UCODE_ADDR_1",
+                         "command":  "bc250ctl.exe reg r 0x3E068",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E068 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_CP_MEC_ME1_UCODE_ADDR_2",
+                         "command":  "bc250ctl.exe reg r 0x3E068",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003E068 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_GPM_UCODE_ADDR_0",
+                         "command":  "bc250ctl.exe reg r 0x3ED84",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003ED84 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_GPM_UCODE_ADDR_1",
+                         "command":  "bc250ctl.exe reg r 0x3ED84",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003ED84 = 0xFFFFFFFF"
+                                    ]
+                     },
+                     {
+                         "name":  "rd_RLC_GPM_UCODE_ADDR_2",
+                         "command":  "bc250ctl.exe reg r 0x3ED84",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0003ED84 = 0xFFFFFFFF"
+                                    ]
+                     }
+                 ]
+}

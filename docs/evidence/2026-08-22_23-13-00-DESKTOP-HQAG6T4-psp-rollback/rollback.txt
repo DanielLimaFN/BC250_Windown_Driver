@@ -1,0 +1,82 @@
+﻿=== info_pre ===
+$ bc250ctl.exe 
+bc250ctl - instrumentacao da AMD BC-250 (bc250dbg.sys)
+  info                          baseline read-only: driver, PCI e MMIO
+  regs                          lista os registradores nomeados
+  reg r <reg|off>               le registrador do BAR5
+  reg w <reg|off> <valor>       escreve (exige arm write)
+  smn r <addr>                  le pela janela SMN
+  smn w <addr> <valor>          escreve pela janela SMN
+  smu <fila> <msg> [arg]        mensagem do mailbox do SMU
+  snap <bar|smn> <ini> <n> [f]  dump de registradores (para arquivo)
+  diff <a> <b>                  compara dois dumps
+  dumpall <arquivo>             le os 512 KB do BAR5 para arquivo
+  scan <valor> [mascara]        acha offsets que contem um valor
+  oracle [assinaturas.txt]      localiza os blocos pelo conteudo lido
+                                no Linux e decide a convencao de offset
+  run <script.bcs>              executa um experimento
+  log [-f] [-t]                 stream do log ring (-f segue, -t trace)
+  arm <readonly|write|unsafe>   nivel de armamento
+  thermal                       estado do sensor
+  thermal calib <src> <num> <den> <offmC> <limC>
+                                declara a escala do sensor e o limite
+  vbios [arquivo.bin]           extrai imagem VBIOS da tabela ACPI VFCT
+  sdma init [vram|sysram] [off] arma o ring buffer da SDMA0 (default vram)
+  sdma <status|rollback|nop [n]|load> estado, restauracao, NOPs e microcodigo
+  vram <r|w|test|scan|fillpat|checkpat>  acesso e padroes na VRAM
+  psp <status|init|rollback|loadfw ...>  mailbox GPCOM e lifecycle seguro
+  sdma <f32|reset>              estado e reinicio do microcontrolador F32
+  sdma <fill|copy|verify|diag|parsetest|srbmtest>  DMA e diagnosticos
+  gcvm <status|init>            estado e inicializacao da MMU (Contexto 0 / GART)
+  sdma stress                   BATERIA DE VALIDACAO da SDMA0: tamanhos,
+                                regioes, wraparound do anel, sequencias
+  audit                         LEGADO/INVASIVO: escreve scratch e VRAM;
+                                exige revisao antes de usar em hardware
+  fw [pasta]                    inspeciona blobs de microcodigo (.bin)
+Nivel de armamento: o driver carrega em readonly. Escrita exige 'write'.
+Mensagens de SMU capazes de mexer em clock/tensao exigem 'unsafe', que
+por sua vez exige sensor termico calibrado. Isso e deliberado: ja houve
+trava de maquina com ForceGfxFreq sem tabelas DPM.
+exit=1 timeout=False
+
+=== post_c2pmsg64 ===
+$ bc250ctl.exe 
+bc250ctl - instrumentacao da AMD BC-250 (bc250dbg.sys)
+  info                          baseline read-only: driver, PCI e MMIO
+  regs                          lista os registradores nomeados
+  reg r <reg|off>               le registrador do BAR5
+  reg w <reg|off> <valor>       escreve (exige arm write)
+  smn r <addr>                  le pela janela SMN
+  smn w <addr> <valor>          escreve pela janela SMN
+  smu <fila> <msg> [arg]        mensagem do mailbox do SMU
+  snap <bar|smn> <ini> <n> [f]  dump de registradores (para arquivo)
+  diff <a> <b>                  compara dois dumps
+  dumpall <arquivo>             le os 512 KB do BAR5 para arquivo
+  scan <valor> [mascara]        acha offsets que contem um valor
+  oracle [assinaturas.txt]      localiza os blocos pelo conteudo lido
+                                no Linux e decide a convencao de offset
+  run <script.bcs>              executa um experimento
+  log [-f] [-t]                 stream do log ring (-f segue, -t trace)
+  arm <readonly|write|unsafe>   nivel de armamento
+  thermal                       estado do sensor
+  thermal calib <src> <num> <den> <offmC> <limC>
+                                declara a escala do sensor e o limite
+  vbios [arquivo.bin]           extrai imagem VBIOS da tabela ACPI VFCT
+  sdma init [vram|sysram] [off] arma o ring buffer da SDMA0 (default vram)
+  sdma <status|rollback|nop [n]|load> estado, restauracao, NOPs e microcodigo
+  vram <r|w|test|scan|fillpat|checkpat>  acesso e padroes na VRAM
+  psp <status|init|rollback|loadfw ...>  mailbox GPCOM e lifecycle seguro
+  sdma <f32|reset>              estado e reinicio do microcontrolador F32
+  sdma <fill|copy|verify|diag|parsetest|srbmtest>  DMA e diagnosticos
+  gcvm <status|init>            estado e inicializacao da MMU (Contexto 0 / GART)
+  sdma stress                   BATERIA DE VALIDACAO da SDMA0: tamanhos,
+                                regioes, wraparound do anel, sequencias
+  audit                         LEGADO/INVASIVO: escreve scratch e VRAM;
+                                exige revisao antes de usar em hardware
+  fw [pasta]                    inspeciona blobs de microcodigo (.bin)
+Nivel de armamento: o driver carrega em readonly. Escrita exige 'write'.
+Mensagens de SMU capazes de mexer em clock/tensao exigem 'unsafe', que
+por sua vez exige sensor termico calibrado. Isso e deliberado: ja houve
+trava de maquina com ForceGfxFreq sem tabelas DPM.
+exit=1 timeout=False
+

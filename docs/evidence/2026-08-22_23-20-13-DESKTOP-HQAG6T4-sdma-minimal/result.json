@@ -1,0 +1,548 @@
+﻿{
+    "schema_version":  1,
+    "captured_at":  "2026-08-22T23:20:15.4438960-03:00",
+    "objective":  "Minimal SDMA WRITE_LINEAR with physical RPTR/WPTR, GPU fence and CPU comparison",
+    "verdict":  "NÃO VALIDADO EM HARDWARE",
+    "passed":  false,
+    "failure":  "Rollback SDMA falhou.",
+    "limitations":  [
+                        "No physical GFXOFF readback",
+                        "No synchronized clock/power/temperature trace during the short command",
+                        "Firmware runtime state persists until reboot"
+                    ],
+    "reboot_required":  true,
+    "environment":  {
+                        "display_service":  "BasicDisplay",
+                        "legacy_bc250v4_absent":  true,
+                        "driver_sha256":  "b21ad70fa72ae32556a98d9df8058155db305afe15a713d70aee942b0e94bfb9",
+                        "firmware_sha256":  "15d0d3626da7f2513f03b13bb7e02eeeeccab276276ae27d0b6067b5f25e9e95"
+                    },
+    "destination":  "0x0FF04000",
+    "destination_before":  [
+                               "0x6EF3C885",
+                               "0x6D0B4971",
+                               "0x3446DE2F",
+                               "0x2FBE1DDB"
+                           ],
+    "destination_after_restore":  [
+                                      "0x6EF3C885",
+                                      "0x6D0B4971",
+                                      "0x3446DE2F",
+                                      "0x2FBE1DDB"
+                                  ],
+    "pre_registers":  {
+                          "clk_ctrl":  "0x000C0100",
+                          "cntl":  "0x000000C2",
+                          "status":  "0x46DEE557",
+                          "ucode_checksum":  "0x00000000",
+                          "f32_cntl":  "0x00000001",
+                          "status2":  "0x0000021C"
+                      },
+    "post_registers":  {
+                           "clk_ctrl":  "0xFF0C0100",
+                           "cntl":  "0x000400C2",
+                           "status":  "0x46DEE557",
+                           "ucode_checksum":  "0x55B182E3",
+                           "f32_cntl":  "0x00000000",
+                           "status2":  "0x00000F3C"
+                       },
+    "commands":  [
+                     {
+                         "name":  "info_pre",
+                         "command":  "bc250ctl.exe info",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "driver          : bc250dbg v3.0  ABI 3  armamento=readonly",
+                                        "pci             : 01:00.0  1002:13FE rev 00",
+                                        "  BAR0          : 0x00000000C0000000  raw 0xC000000C",
+                                        "  BAR2          : 0x00000000D0000000  raw 0xD000000C",
+                                        "  BAR4          : 0x000000000000EF00  raw 0x0000EF01 io",
+                                        "  BAR5          : 0x00000000FE800000  raw 0xFE800000 [mapeado]",
+                                        "mmio            : 0xFE800000 +512 KB ",
+                                        "  GPU_ID        : 0x9FFF9700 (confere com a BC-250)",
+                                        "  offset          SOC15        legado      ",
+                                        "  SCRATCH_REG0  : 0x00000000   0x4D585042",
+                                        "  GRBM_STATUS   : 0x00003028   0x00000000",
+                                        "  CC_GC_ARRAY   : 0xFFF80000   0x00000000   \u003c== o desempate",
+                                        "  ** MAPA OBSERVADO: CC_GC_SHADER_ARRAY_CONFIG em 0x089BC bate com o",
+                                        "     valor bruto visto no Linux (0xFFF80000). Isto sustenta o offset",
+                                        "     SOC15, mas nao prova quantidade de CU utilizavel nem execucao.",
+                                        "smu             : nao consultado pelo baseline; use \u0027smu\u0027 explicitamente",
+                                        "termico         : NAO CALIBRADO  limite 85 C  ",
+                                        "  sondas cruas  : edge 0xFFFFFFFF  junc 0x00000000  mem 0x00001EC2",
+                                        "  ** sem calibracao o driver recusa armar \u0027unsafe\u0027.",
+                                        "     Compare as sondas com o Linux e rode \u0027thermal calib\u0027.",
+                                        "log ring        : 4096 entradas, head 13"
+                                    ]
+                     },
+                     {
+                         "name":  "psp_status_pre",
+                         "command":  "bc250ctl.exe psp status",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do PSP (MP0 em 0x58000):",
+                                        "  C2PMSG_64 : 0x800C0000   \u003c== TOS PRONTO (bit31)",
+                                        "  C2PMSG_81 : 0x002DFC4F   status/heartbeat do SOS (valor variavel)",
+                                        "  C2PMSG_67 : 0x00000000   WPTR do anel",
+                                        "  anel      : lo 0x00000000  hi 0x00000000  tam 0x00000000",
+                                        "  criado por nos: nao"
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_status_pre",
+                         "command":  "bc250ctl.exe sdma status",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do Motor SDMA0:",
+                                        "  STATUS_REG    : 0x46DEE557",
+                                        "  RB_CNTL       : 0x80840000 (DESABILITADO)",
+                                        "  RB_BASE       : 0x0",
+                                        "  WPTR (reg)    : 0x00000000",
+                                        "  WPTR (shadow) : 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  RPTR (reg)    : 0x00000000   (nao e fonte de verdade)",
+                                        "  RPTR (writeb.): 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  Pendente      : 0 bytes"
+                                    ]
+                     },
+                     {
+                         "name":  "smu_q0_test_pre",
+                         "command":  "bc250ctl.exe smu 0 0x01 0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "q0 msg 0x01 arg 0x0 -\u003e status 0x01 (OK) resultado 0x00000001 (1)"
+                                    ]
+                     },
+                     {
+                         "name":  "smu_gfxclk_pre",
+                         "command":  "bc250ctl.exe smu 0 0x0F 0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "q0 msg 0x0F arg 0x0 -\u003e status 0x01 (OK) resultado 0x000005DC (1500)"
+                                    ]
+                     },
+                     {
+                         "name":  "smu_active_wgp_pre",
+                         "command":  "bc250ctl.exe smu 0 0x1E 0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "q0 msg 0x1E arg 0x0 -\u003e status 0x01 (OK) resultado 0x00000000 (0)"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_clk_ctrl",
+                         "command":  "bc250ctl.exe reg r 0x049EC",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000049EC = 0x000C0100"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_cntl",
+                         "command":  "bc250ctl.exe reg r 0x049F0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000049F0 = 0x000000C2"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_status",
+                         "command":  "bc250ctl.exe reg r 0x04A14",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A14 = 0x46DEE557"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_ucode_checksum",
+                         "command":  "bc250ctl.exe reg r 0x04A24",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A24 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_f32_cntl",
+                         "command":  "bc250ctl.exe reg r 0x04A28",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A28 = 0x00000001"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_status2",
+                         "command":  "bc250ctl.exe reg r 0x04A60",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A60 = 0x0000021C"
+                                    ]
+                     },
+                     {
+                         "name":  "destination_pre_0",
+                         "command":  "bc250ctl.exe vram r 0x0FF04000",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04000 = 0x6EF3C885   (GPU 0xF40FF04000)"
+                                    ]
+                     },
+                     {
+                         "name":  "destination_pre_1",
+                         "command":  "bc250ctl.exe vram r 0x0FF04004",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04004 = 0x6D0B4971   (GPU 0xF40FF04004)"
+                                    ]
+                     },
+                     {
+                         "name":  "destination_pre_2",
+                         "command":  "bc250ctl.exe vram r 0x0FF04008",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04008 = 0x3446DE2F   (GPU 0xF40FF04008)"
+                                    ]
+                     },
+                     {
+                         "name":  "destination_pre_3",
+                         "command":  "bc250ctl.exe vram r 0x0FF0400C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF0400C = 0x2FBE1DDB   (GPU 0xF40FF0400C)"
+                                    ]
+                     },
+                     {
+                         "name":  "arm_write",
+                         "command":  "bc250ctl.exe arm write",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "armamento agora: write"
+                                    ]
+                     },
+                     {
+                         "name":  "psp_init",
+                         "command":  "bc250ctl.exe psp init",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "C2PMSG_64 antes : 0x800C0000",
+                                        "C2PMSG_64 depois: 0x80020000",
+                                        "Anel GPCOM do PSP criado: PA 0x443DCF000 (4096 bytes)"
+                                    ]
+                     },
+                     {
+                         "name":  "psp_loadfw_sdma0",
+                         "command":  "bc250ctl.exe psp loadfw sdma0 C:\\Users\\Daniel\\Desktop\\NamixWDDM\\firmware\\cyan_skillfish2_sdma.bin",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Carregando \u0027C:\\Users\\Daniel\\Desktop\\NamixWDDM\\firmware\\cyan_skillfish2_sdma.bin\u0027 pelo PSP:",
+                                        "  tipo         : 9",
+                                        "  versao ucode : 0x34",
+                                        "  payload      : 8384 dwords (33536 bytes) a partir do offset 0x100",
+                                        "  fence        : alcancado",
+                                        "  RespStatus   : 0x00000000 \u003c== SUCESSO",
+                                        "  RespFwAddr   : 0x0000000000000000   TmrSize 0x00000000",
+                                        "  Confira se o microcontrolador acordou:",
+                                        "    bc250ctl sdma f32"
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_f32",
+                         "command":  "bc250ctl.exe sdma f32",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Microcontrolador F32 da SDMA0:",
+                                        "  F32_CNTL       : 0x00000000   HALT=0",
+                                        "  UCODE_CHECKSUM : 0x55B182E3",
+                                        "  PC             : 0x0146 0x0204 0x01F9 0x01C7 0x01F9 0x01FA 0x014B 0x039F 0x039F 0x03A7 0x03A5 0x0181",
+                                        "  faixa          : 0x0142 .. 0x03E0 (amplitude 0x029E)",
+                                        "  enderecos dist.: 17 de 24 amostras",
+                                        "  ** Faixa larga e 17 enderecos distintos: laco principal rodando."
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_init",
+                         "command":  "bc250ctl.exe sdma init vram 0x0FF00000",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "SDMA0 Ring inicializado com sucesso:",
+                                        "  Local                : VRAM, offset 0xFF00000",
+                                        "  Endereco de GPU      : 0xF40FF00000",
+                                        "  RB_CNTL              : 0x80841015 (HABILITADO, RB_SIZE=10)"
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_write_fenced",
+                         "command":  "bc250ctl.exe sdma write 0x0FF04000 0xBC250001 0x13579BDF 0x2468ACE0 0x5AA55AA5",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "WRITE_LINEAR: VRAM 0x0FF04000, 4 dwords",
+                                        "  RPTR 0x0 -\u003e 0x44 (WPTR 0x44)  concluido",
+                                        "  FENCE VRAM 0x0FF03000 : poison 0x43DAFFFE -\u003e observado 0xBC250001, esperado 0xBC250001 [ALCANCADO]",
+                                        "  STATUS_REG          : 0x46DEE557 -\u003e 0x46DEED57",
+                                        "  F32 PC              : 0x03A1 -\u003e 0x00B9",
+                                        "  Conclusao do pacote : SIM (exige RPTR=WPTR e fence GPU)",
+                                        "  leitura de volta pelo BAR0:",
+                                        "    0x0FF04000 = 0xBC250001  ok",
+                                        "    0x0FF04004 = 0x13579BDF  ok",
+                                        "    0x0FF04008 = 0x2468ACE0  ok",
+                                        "    0x0FF0400C = 0x5AA55AA5  ok",
+                                        "  Resultado completo  : VALIDADO NESTA OPERACAO"
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_status_after_submit",
+                         "command":  "bc250ctl.exe sdma status",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do Motor SDMA0:",
+                                        "  STATUS_REG    : 0x46DEED57",
+                                        "  RB_CNTL       : 0x80841015 (HABILITADO)",
+                                        "  RB_BASE       : 0xF40FF00000",
+                                        "  WPTR (reg)    : 0x00000044",
+                                        "  WPTR (shadow) : 0x00000044   \u003c- valido para anel criado por este driver",
+                                        "  RPTR (reg)    : 0x00000044   (nao e fonte de verdade)",
+                                        "  RPTR (writeb.): 0x00000034   \u003c- valido para anel criado por este driver",
+                                        "  Pendente      : 16 bytes"
+                                    ]
+                     },
+                     {
+                         "name":  "smu_gfxclk_after",
+                         "command":  "bc250ctl.exe smu 0 0x0F 0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "q0 msg 0x0F arg 0x0 -\u003e status 0x01 (OK) resultado 0x000005DC (1500)"
+                                    ]
+                     },
+                     {
+                         "name":  "smu_active_wgp_after",
+                         "command":  "bc250ctl.exe smu 0 0x1E 0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "q0 msg 0x1E arg 0x0 -\u003e status 0x01 (OK) resultado 0x00000000 (0)"
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_rollback",
+                         "command":  "bc250ctl.exe sdma rollback",
+                         "exit_code":  1,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Rollback SDMA0:",
+                                        "  snapshot presente    : nao",
+                                        "  registradores        : 0 restaurados, 0 divergencias",
+                                        "  VRAM                  : 0 dwords restaurados, 0 divergencias",
+                                        "  RESULTADO             : FALHA (erro 23, status 0)"
+                                    ]
+                     },
+                     {
+                         "name":  "destination_restore_0",
+                         "command":  "bc250ctl.exe vram w 0x0FF04000 0x6EF3C885",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04000 \u003c- 0x6EF3C885   readback 0x6EF3C885   guardou"
+                                    ]
+                     },
+                     {
+                         "name":  "destination_restore_1",
+                         "command":  "bc250ctl.exe vram w 0x0FF04004 0x6D0B4971",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04004 \u003c- 0x6D0B4971   readback 0x6D0B4971   guardou"
+                                    ]
+                     },
+                     {
+                         "name":  "destination_restore_2",
+                         "command":  "bc250ctl.exe vram w 0x0FF04008 0x3446DE2F",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04008 \u003c- 0x3446DE2F   readback 0x3446DE2F   guardou"
+                                    ]
+                     },
+                     {
+                         "name":  "destination_restore_3",
+                         "command":  "bc250ctl.exe vram w 0x0FF0400C 0x2FBE1DDB",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF0400C \u003c- 0x2FBE1DDB   readback 0x2FBE1DDB   guardou"
+                                    ]
+                     },
+                     {
+                         "name":  "psp_rollback",
+                         "command":  "bc250ctl.exe psp rollback",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Rollback PSP GPCOM:",
+                                        "  snapshot presente : sim",
+                                        "  destroy ACK       : sim",
+                                        "  registradores     : 4 restaurados, 0 divergencias",
+                                        "  RESULTADO          : ring destruido antes de liberar buffers"
+                                    ]
+                     },
+                     {
+                         "name":  "arm_readonly",
+                         "command":  "bc250ctl.exe arm readonly",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "armamento agora: readonly"
+                                    ]
+                     },
+                     {
+                         "name":  "destination_post_0",
+                         "command":  "bc250ctl.exe vram r 0x0FF04000",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04000 = 0x6EF3C885   (GPU 0xF40FF04000)"
+                                    ]
+                     },
+                     {
+                         "name":  "destination_post_1",
+                         "command":  "bc250ctl.exe vram r 0x0FF04004",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04004 = 0x6D0B4971   (GPU 0xF40FF04004)"
+                                    ]
+                     },
+                     {
+                         "name":  "destination_post_2",
+                         "command":  "bc250ctl.exe vram r 0x0FF04008",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF04008 = 0x3446DE2F   (GPU 0xF40FF04008)"
+                                    ]
+                     },
+                     {
+                         "name":  "destination_post_3",
+                         "command":  "bc250ctl.exe vram r 0x0FF0400C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "vram 0x0FF0400C = 0x2FBE1DDB   (GPU 0xF40FF0400C)"
+                                    ]
+                     },
+                     {
+                         "name":  "post_clk_ctrl",
+                         "command":  "bc250ctl.exe reg r 0x049EC",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000049EC = 0xFF0C0100"
+                                    ]
+                     },
+                     {
+                         "name":  "post_cntl",
+                         "command":  "bc250ctl.exe reg r 0x049F0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000049F0 = 0x000400C2"
+                                    ]
+                     },
+                     {
+                         "name":  "post_status",
+                         "command":  "bc250ctl.exe reg r 0x04A14",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A14 = 0x46DEE557"
+                                    ]
+                     },
+                     {
+                         "name":  "post_ucode_checksum",
+                         "command":  "bc250ctl.exe reg r 0x04A24",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A24 = 0x55B182E3"
+                                    ]
+                     },
+                     {
+                         "name":  "post_f32_cntl",
+                         "command":  "bc250ctl.exe reg r 0x04A28",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A28 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_status2",
+                         "command":  "bc250ctl.exe reg r 0x04A60",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A60 = 0x00000F3C"
+                                    ]
+                     },
+                     {
+                         "name":  "psp_status_post",
+                         "command":  "bc250ctl.exe psp status",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do PSP (MP0 em 0x58000):",
+                                        "  C2PMSG_64 : 0x800C0000   \u003c== TOS PRONTO (bit31)",
+                                        "  C2PMSG_81 : 0x002E0481   status/heartbeat do SOS (valor variavel)",
+                                        "  C2PMSG_67 : 0x00000000   WPTR do anel",
+                                        "  anel      : lo 0x00000000  hi 0x00000000  tam 0x00000000",
+                                        "  criado por nos: nao"
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_status_post",
+                         "command":  "bc250ctl.exe sdma status",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do Motor SDMA0:",
+                                        "  STATUS_REG    : 0x46DEE557",
+                                        "  RB_CNTL       : 0x80840000 (DESABILITADO)",
+                                        "  RB_BASE       : 0x0",
+                                        "  WPTR (reg)    : 0x00000044",
+                                        "  WPTR (shadow) : 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  RPTR (reg)    : 0x00000000   (nao e fonte de verdade)",
+                                        "  RPTR (writeb.): 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  Pendente      : INDISPONIVEL (anel externo/POST; shadows nao mapeados)"
+                                    ]
+                     },
+                     {
+                         "name":  "smu_q0_test_post",
+                         "command":  "bc250ctl.exe smu 0 0x01 0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "q0 msg 0x01 arg 0x0 -\u003e status 0x01 (OK) resultado 0x00000001 (1)"
+                                    ]
+                     }
+                 ]
+}

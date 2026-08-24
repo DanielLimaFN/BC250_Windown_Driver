@@ -1,0 +1,32 @@
+@echo off
+setlocal enabledelayedexpansion
+call "E:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvarsall.bat" amd64 >nul 2>&1
+set "EXTRA_INC=E:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt;E:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared;E:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um;E:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\winrt"
+set "EXTRA_LIB=E:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\ucrt\x64;E:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64"
+set "INCLUDE=!EXTRA_INC!;!INCLUDE!"
+set "LIB=!EXTRA_LIB!;!LIB!"
+cl.exe /nologo /W3 /O2 "C:\AMD-BC-250\AMD-BC-250-Windows-Driver-main\test-tools\safe-test.c" /Fe"C:\AMD-BC-250\AMD-BC-250-Windows-Driver-main\output\safe-test.exe" user32.lib gdi32.lib dxgi.lib d3d11.lib d3d9.lib
+if %errorlevel% neq 0 (echo BUILD FAILED & exit /b %errorlevel%)
+
+cl.exe /nologo /O2 "C:\AMD-BC-250\AMD-BC-250-Windows-Driver-main\test-tools\sdma-selftest.c" /Fe"C:\AMD-BC-250\AMD-BC-250-Windows-Driver-main\output\sdma-selftest.exe" user32.lib
+if %errorlevel% neq 0 (echo BUILD FAILED & exit /b %errorlevel%)
+
+cl.exe /nologo /O2 "C:\AMD-BC-250\AMD-BC-250-Windows-Driver-main\test-tools\sdma-wptrtest.c" /Fe"C:\AMD-BC-250\AMD-BC-250-Windows-Driver-main\output\sdma-wptrtest.exe" user32.lib
+if %errorlevel% neq 0 (echo BUILD FAILED & exit /b %errorlevel%)
+
+cl.exe /nologo /O2 "C:\AMD-BC-250\AMD-BC-250-Windows-Driver-main\test-tools\gcvm-pt-test.c" /Fe"C:\AMD-BC-250\AMD-BC-250-Windows-Driver-main\output\gcvm-pt-test.exe" user32.lib
+if %errorlevel% neq 0 (echo BUILD FAILED & exit /b %errorlevel%)
+
+cl.exe /nologo /O2 "C:\AMD-BC-250\AMD-BC-250-Windows-Driver-main\test-tools\test-load-cp-fw.c" /Fe"C:\AMD-BC-250\AMD-BC-250-Windows-Driver-main\output\test-load-cp-fw.exe" user32.lib
+if %errorlevel% neq 0 (echo BUILD FAILED & exit /b %errorlevel%)
+
+cl.exe /nologo /O2 "C:\AMD-BC-250\AMD-BC-250-Windows-Driver-main\test-tools\me-unhalt-test.c" /Fe"C:\AMD-BC-250\AMD-BC-250-Windows-Driver-main\output\me-unhalt-test.exe"
+if %errorlevel% neq 0 (echo BUILD FAILED & exit /b %errorlevel%)
+
+cl.exe /nologo /O2 "C:\AMD-BC-250\AMD-BC-250-Windows-Driver-main\test-tools\gfx-ring-unhalted-test.c" /Fe"C:\AMD-BC-250\AMD-BC-250-Windows-Driver-main\output\gfx-ring-unhalted-test.exe"
+if %errorlevel% neq 0 (echo BUILD FAILED & exit /b %errorlevel%)
+
+cl.exe /nologo /O2 "C:\AMD-BC-250\AMD-BC-250-Windows-Driver-main\test-tools\smu-probe-test.c" /Fe"C:\AMD-BC-250\AMD-BC-250-Windows-Driver-main\output\smu-probe-test.exe"
+if %errorlevel% neq 0 (echo BUILD FAILED & exit /b %errorlevel%)
+
+echo BUILD OK

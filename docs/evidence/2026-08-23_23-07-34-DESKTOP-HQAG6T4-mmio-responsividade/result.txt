@@ -1,0 +1,430 @@
+﻿=== info_pre ===
+$ bc250ctl.exe info
+driver          : bc250dbg v18.0  ABI 18  armamento=readonly
+pci             : 01:00.0  1002:13FE rev 00
+  BAR0          : 0x00000000C0000000  raw 0xC000000C
+  BAR2          : 0x00000000D0000000  raw 0xD000000C
+  BAR4          : 0x000000000000EF00  raw 0x0000EF01 io
+  BAR5          : 0x00000000FE800000  raw 0xFE800000 [mapeado]
+mmio            : 0xFE800000 +512 KB 
+  GPU_ID        : 0x9FFF9700 (confere com a BC-250)
+  offset          SOC15        legado      
+  SCRATCH_REG0  : 0x00000000   0x4D585042
+  GRBM_STATUS   : 0x00003028   0x00000000
+  CC_GC_ARRAY   : 0xFFF80000   0x00000000   <== o desempate
+  ** MAPA OBSERVADO: CC_GC_SHADER_ARRAY_CONFIG em 0x089BC bate com o
+     valor bruto visto no Linux (0xFFF80000). Isto sustenta o offset
+     SOC15, mas nao prova quantidade de CU utilizavel nem execucao.
+smu             : nao consultado pelo baseline; use 'smu' explicitamente
+termico         : NAO CALIBRADO  limite 85 C  
+  sondas cruas  : edge 0xFFFFFFFF  junc 0x00000000  mem 0x00001EC2
+  ** sem calibracao o driver recusa armar 'unsafe'.
+     Compare as sondas com o Linux e rode 'thermal calib'.
+log ring        : 4096 entradas, head 6
+exit=0
+
+=== rd_GRBM_STATUS_0 ===
+$ bc250ctl.exe reg r 0x08010
+bar 0x00008010 = 0x00003028
+exit=0
+
+=== rd_GRBM_STATUS_1 ===
+$ bc250ctl.exe reg r 0x08010
+bar 0x00008010 = 0x00003028
+exit=0
+
+=== rd_GRBM_STATUS_2 ===
+$ bc250ctl.exe reg r 0x08010
+bar 0x00008010 = 0x00003028
+exit=0
+
+=== rd_GRBM_STATUS2_0 ===
+$ bc250ctl.exe reg r 0x08008
+bar 0x00008008 = 0x00000008
+exit=0
+
+=== rd_GRBM_STATUS2_1 ===
+$ bc250ctl.exe reg r 0x08008
+bar 0x00008008 = 0x00000008
+exit=0
+
+=== rd_GRBM_STATUS2_2 ===
+$ bc250ctl.exe reg r 0x08008
+bar 0x00008008 = 0x00000008
+exit=0
+
+=== rd_CP_ME_CNTL_0 ===
+$ bc250ctl.exe reg r 0x086D8
+bar 0x000086D8 = 0x15000000
+exit=0
+
+=== rd_CP_ME_CNTL_1 ===
+$ bc250ctl.exe reg r 0x086D8
+bar 0x000086D8 = 0x15000000
+exit=0
+
+=== rd_CP_ME_CNTL_2 ===
+$ bc250ctl.exe reg r 0x086D8
+bar 0x000086D8 = 0x15000000
+exit=0
+
+=== rd_CP_STAT_0 ===
+$ bc250ctl.exe reg r 0x08680
+bar 0x00008680 = 0x00000000
+exit=0
+
+=== rd_CP_STAT_1 ===
+$ bc250ctl.exe reg r 0x08680
+bar 0x00008680 = 0x00000000
+exit=0
+
+=== rd_CP_STAT_2 ===
+$ bc250ctl.exe reg r 0x08680
+bar 0x00008680 = 0x00000000
+exit=0
+
+=== rd_CP_PFP_INSTR_PNTR_0 ===
+$ bc250ctl.exe reg r 0x08694
+bar 0x00008694 = 0x00000000
+exit=0
+
+=== rd_CP_PFP_INSTR_PNTR_1 ===
+$ bc250ctl.exe reg r 0x08694
+bar 0x00008694 = 0x00000000
+exit=0
+
+=== rd_CP_PFP_INSTR_PNTR_2 ===
+$ bc250ctl.exe reg r 0x08694
+bar 0x00008694 = 0x00000000
+exit=0
+
+=== rd_CP_RB0_CNTL_0 ===
+$ bc250ctl.exe reg r 0x0C104
+bar 0x0000C104 = 0x00A00000
+exit=0
+
+=== rd_CP_RB0_CNTL_1 ===
+$ bc250ctl.exe reg r 0x0C104
+bar 0x0000C104 = 0x00A00000
+exit=0
+
+=== rd_CP_RB0_CNTL_2 ===
+$ bc250ctl.exe reg r 0x0C104
+bar 0x0000C104 = 0x00A00000
+exit=0
+
+=== rd_CP_RB0_RPTR_0 ===
+$ bc250ctl.exe reg r 0x08700
+bar 0x00008700 = 0x00000000
+exit=0
+
+=== rd_CP_RB0_RPTR_1 ===
+$ bc250ctl.exe reg r 0x08700
+bar 0x00008700 = 0x00000000
+exit=0
+
+=== rd_CP_RB0_RPTR_2 ===
+$ bc250ctl.exe reg r 0x08700
+bar 0x00008700 = 0x00000000
+exit=0
+
+=== rd_SCRATCH_REG0_0 ===
+$ bc250ctl.exe reg r 0x30100
+bar 0x00030100 = 0x00000000
+exit=0
+
+=== rd_SCRATCH_REG0_1 ===
+$ bc250ctl.exe reg r 0x30100
+bar 0x00030100 = 0x00000000
+exit=0
+
+=== rd_SCRATCH_REG0_2 ===
+$ bc250ctl.exe reg r 0x30100
+bar 0x00030100 = 0x00000000
+exit=0
+
+=== rd_SCRATCH_REG7_0 ===
+$ bc250ctl.exe reg r 0x3011C
+bar 0x0003011C = 0x00000000
+exit=0
+
+=== rd_SCRATCH_REG7_1 ===
+$ bc250ctl.exe reg r 0x3011C
+bar 0x0003011C = 0x00000000
+exit=0
+
+=== rd_SCRATCH_REG7_2 ===
+$ bc250ctl.exe reg r 0x3011C
+bar 0x0003011C = 0x00000000
+exit=0
+
+=== rd_GRBM_GFX_INDEX_0 ===
+$ bc250ctl.exe reg r 0x30800
+bar 0x00030800 = 0x00000000
+exit=0
+
+=== rd_GRBM_GFX_INDEX_1 ===
+$ bc250ctl.exe reg r 0x30800
+bar 0x00030800 = 0x00000000
+exit=0
+
+=== rd_GRBM_GFX_INDEX_2 ===
+$ bc250ctl.exe reg r 0x30800
+bar 0x00030800 = 0x00000000
+exit=0
+
+=== rd_CP_MES_DOORBELL_CTRL1_0 ===
+$ bc250ctl.exe reg r 0x320F0
+bar 0x000320F0 = 0x00000000
+exit=0
+
+=== rd_CP_MES_DOORBELL_CTRL1_1 ===
+$ bc250ctl.exe reg r 0x320F0
+bar 0x000320F0 = 0x00000000
+exit=0
+
+=== rd_CP_MES_DOORBELL_CTRL1_2 ===
+$ bc250ctl.exe reg r 0x320F0
+bar 0x000320F0 = 0x00000000
+exit=0
+
+=== rd_RLC_CNTL_0 ===
+$ bc250ctl.exe reg r 0x3B000
+bar 0x0003B000 = 0x00000000
+exit=0
+
+=== rd_RLC_CNTL_1 ===
+$ bc250ctl.exe reg r 0x3B000
+bar 0x0003B000 = 0x00000000
+exit=0
+
+=== rd_RLC_CNTL_2 ===
+$ bc250ctl.exe reg r 0x3B000
+bar 0x0003B000 = 0x00000000
+exit=0
+
+=== rd_RLC_SAFE_MODE_0 ===
+$ bc250ctl.exe reg r 0x3B014
+bar 0x0003B014 = 0x00000000
+exit=0
+
+=== rd_RLC_SAFE_MODE_1 ===
+$ bc250ctl.exe reg r 0x3B014
+bar 0x0003B014 = 0x00000000
+exit=0
+
+=== rd_RLC_SAFE_MODE_2 ===
+$ bc250ctl.exe reg r 0x3B014
+bar 0x0003B014 = 0x00000000
+exit=0
+
+=== rd_RLC_PG_CNTL_0 ===
+$ bc250ctl.exe reg r 0x3B10C
+bar 0x0003B10C = 0x00000000
+exit=0
+
+=== rd_RLC_PG_CNTL_1 ===
+$ bc250ctl.exe reg r 0x3B10C
+bar 0x0003B10C = 0x00000000
+exit=0
+
+=== rd_RLC_PG_CNTL_2 ===
+$ bc250ctl.exe reg r 0x3B10C
+bar 0x0003B10C = 0x00000000
+exit=0
+
+=== rd_RLC_CGCG_CGLS_CTRL_0 ===
+$ bc250ctl.exe reg r 0x3B124
+bar 0x0003B124 = 0x0001003C
+exit=0
+
+=== rd_RLC_CGCG_CGLS_CTRL_1 ===
+$ bc250ctl.exe reg r 0x3B124
+bar 0x0003B124 = 0x0001003C
+exit=0
+
+=== rd_RLC_CGCG_CGLS_CTRL_2 ===
+$ bc250ctl.exe reg r 0x3B124
+bar 0x0003B124 = 0x0001003C
+exit=0
+
+=== rd_RLC_SPARE_INT_0 ===
+$ bc250ctl.exe reg r 0x3B330
+bar 0x0003B330 = 0x00000000
+exit=0
+
+=== rd_RLC_SPARE_INT_1 ===
+$ bc250ctl.exe reg r 0x3B330
+bar 0x0003B330 = 0x00000000
+exit=0
+
+=== rd_RLC_SPARE_INT_2 ===
+$ bc250ctl.exe reg r 0x3B330
+bar 0x0003B330 = 0x00000000
+exit=0
+
+=== rd_RLC_GPM_STAT_0 ===
+$ bc250ctl.exe reg r 0x3B9B8
+bar 0x0003B9B8 = 0x00F40016
+exit=0
+
+=== rd_RLC_GPM_STAT_1 ===
+$ bc250ctl.exe reg r 0x3B9B8
+bar 0x0003B9B8 = 0x00F40016
+exit=0
+
+=== rd_RLC_GPM_STAT_2 ===
+$ bc250ctl.exe reg r 0x3B9B8
+bar 0x0003B9B8 = 0x00F40016
+exit=0
+
+=== rd_CGTT_CPF_CLK_CTRL_0 ===
+$ bc250ctl.exe reg r 0x3C2C4
+bar 0x0003C2C4 = 0x00000100
+exit=0
+
+=== rd_CGTT_CPF_CLK_CTRL_1 ===
+$ bc250ctl.exe reg r 0x3C2C4
+bar 0x0003C2C4 = 0x00000100
+exit=0
+
+=== rd_CGTT_CPF_CLK_CTRL_2 ===
+$ bc250ctl.exe reg r 0x3C2C4
+bar 0x0003C2C4 = 0x00000100
+exit=0
+
+=== rd_CGTT_CPC_CLK_CTRL_0 ===
+$ bc250ctl.exe reg r 0x3C2C8
+bar 0x0003C2C8 = 0x00000100
+exit=0
+
+=== rd_CGTT_CPC_CLK_CTRL_1 ===
+$ bc250ctl.exe reg r 0x3C2C8
+bar 0x0003C2C8 = 0x00000100
+exit=0
+
+=== rd_CGTT_CPC_CLK_CTRL_2 ===
+$ bc250ctl.exe reg r 0x3C2C8
+bar 0x0003C2C8 = 0x00000100
+exit=0
+
+=== rd_CP_PFP_UCODE_ADDR_0 ===
+$ bc250ctl.exe reg r 0x3E050
+bar 0x0003E050 = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_PFP_UCODE_ADDR_1 ===
+$ bc250ctl.exe reg r 0x3E050
+bar 0x0003E050 = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_PFP_UCODE_ADDR_2 ===
+$ bc250ctl.exe reg r 0x3E050
+bar 0x0003E050 = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_PFP_IC_BASE_LO_0 ===
+$ bc250ctl.exe reg r 0x3E100
+bar 0x0003E100 = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_PFP_IC_BASE_LO_1 ===
+$ bc250ctl.exe reg r 0x3E100
+bar 0x0003E100 = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_PFP_IC_BASE_LO_2 ===
+$ bc250ctl.exe reg r 0x3E100
+bar 0x0003E100 = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_PFP_IC_BASE_CNTL_0 ===
+$ bc250ctl.exe reg r 0x3E108
+bar 0x0003E108 = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_PFP_IC_BASE_CNTL_1 ===
+$ bc250ctl.exe reg r 0x3E108
+bar 0x0003E108 = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_PFP_IC_BASE_CNTL_2 ===
+$ bc250ctl.exe reg r 0x3E108
+bar 0x0003E108 = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_PFP_IC_OP_CNTL_0 ===
+$ bc250ctl.exe reg r 0x3E10C
+bar 0x0003E10C = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_PFP_IC_OP_CNTL_1 ===
+$ bc250ctl.exe reg r 0x3E10C
+bar 0x0003E10C = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_PFP_IC_OP_CNTL_2 ===
+$ bc250ctl.exe reg r 0x3E10C
+bar 0x0003E10C = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_ME_IC_BASE_LO_0 ===
+$ bc250ctl.exe reg r 0x3E110
+bar 0x0003E110 = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_ME_IC_BASE_LO_1 ===
+$ bc250ctl.exe reg r 0x3E110
+bar 0x0003E110 = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_ME_IC_BASE_LO_2 ===
+$ bc250ctl.exe reg r 0x3E110
+bar 0x0003E110 = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_CE_IC_BASE_LO_0 ===
+$ bc250ctl.exe reg r 0x3E120
+bar 0x0003E120 = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_CE_IC_BASE_LO_1 ===
+$ bc250ctl.exe reg r 0x3E120
+bar 0x0003E120 = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_CE_IC_BASE_LO_2 ===
+$ bc250ctl.exe reg r 0x3E120
+bar 0x0003E120 = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_MEC_ME1_UCODE_ADDR_0 ===
+$ bc250ctl.exe reg r 0x3E068
+bar 0x0003E068 = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_MEC_ME1_UCODE_ADDR_1 ===
+$ bc250ctl.exe reg r 0x3E068
+bar 0x0003E068 = 0xFFFFFFFF
+exit=0
+
+=== rd_CP_MEC_ME1_UCODE_ADDR_2 ===
+$ bc250ctl.exe reg r 0x3E068
+bar 0x0003E068 = 0xFFFFFFFF
+exit=0
+
+=== rd_RLC_GPM_UCODE_ADDR_0 ===
+$ bc250ctl.exe reg r 0x3ED84
+bar 0x0003ED84 = 0xFFFFFFFF
+exit=0
+
+=== rd_RLC_GPM_UCODE_ADDR_1 ===
+$ bc250ctl.exe reg r 0x3ED84
+bar 0x0003ED84 = 0xFFFFFFFF
+exit=0
+
+=== rd_RLC_GPM_UCODE_ADDR_2 ===
+$ bc250ctl.exe reg r 0x3ED84
+bar 0x0003ED84 = 0xFFFFFFFF
+exit=0
+

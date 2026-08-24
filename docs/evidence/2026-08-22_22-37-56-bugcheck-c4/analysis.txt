@@ -1,0 +1,185 @@
+Opened log file 'C:\Users\Daniel\Desktop\NamixWDDM\docs\evidence\2026-08-22_22-37-56-bugcheck-c4\analysis.txt'
+
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+
+   EnableRedirectToV8JsProvider : false
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.016 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 29
+
+Microsoft (R) Windows Debugger Version 10.0.26100.6584 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [C:\Windows\MEMORY.DMP]
+Kernel Bitmap Dump File: Kernel address space is available, User address space may not be available.
+
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+Deferred                                       srv*
+OK                                             C:\Windows\System32\drivers
+OK                                             C:\Users\Daniel\Desktop\bc250-win\bc250-win\BC250-V4\build
+Symbol search path is: srv*;C:\Windows\System32\drivers;C:\Users\Daniel\Desktop\bc250-win\bc250-win\BC250-V4\build
+Executable search path is: 
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Kernel.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Usb4Kd.natvis'
+Windows 10 Kernel Version 19041 MP (12 procs) Free x64
+Product: WinNt, suite: TerminalServer SingleUserTS
+Edition build lab: 19041.1.amd64fre.vb_release.191206-1406
+Kernel base = 0xfffff807`6861e000 PsLoadedModuleList = 0xfffff807`692482b0
+Debug session time: Sat Aug 22 19:32:33.375 2026 (UTC - 3:00)
+System Uptime: 0 days 0:01:31.104
+Loading Kernel Symbols
+...............................................................
+.....Page 403832 not present in the dump file. Type ".hh dbgerr004" for details
+...........................................................
+...................................
+Loading User Symbols
+
+Loading unloaded module list
+........
+For analysis of this file, run !analyze -v
+11: kd> .symfix; .sympath+ srv*;C:\Windows\System32\drivers;C:\Users\Daniel\Desktop\bc250-win\bc250-win\BC250-V4\build; .reload /f; .bugcheck; !analyze -v; kv; lmvm bc250wddm; !verifier 3 bc250wddm.sys; !verifier 0x80 bc250wddm.sys; !poolused 2; q
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+Symbol search path is: srv*;C:\Windows\System32\drivers;C:\Users\Daniel\Desktop\bc250-win\bc250-win\BC250-V4\build; .reload /f; .bugcheck; !analyze -v; kv; lmvm bc250wddm; !verifier 3 bc250wddm.sys; !verifier 0x80 bc250wddm.sys; !poolused 2; q
+Expanded Symbol search path is: cache*;SRV*https://msdl.microsoft.com/download/symbols;c:\windows\system32\drivers;c:\users\daniel\desktop\bc250-win\bc250-win\bc250-v4\build; .reload /f; .bugcheck; !analyze -v; kv; lmvm bc250wddm; !verifier 3 bc250wddm.sys; !verifier 0x80 bc250wddm.sys; !poolused 2; q
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+Deferred                                       srv*
+OK                                             C:\Windows\System32\drivers
+OK                                             C:\Users\Daniel\Desktop\bc250-win\bc250-win\BC250-V4\build
+11: kd> >> cd C:\Users\Daniel\Desktop\NamixWDDM
+        ^ Syntax error in '>> cd C:\Users\Daniel\Desktop\NamixWDDM'
+11: kd> PS C:\Users\Daniel\Desktop\NamixWDDM> powershell -ExecutionPolicy Bypass -File tools\analyze-bc250v4-dump.ps1
+        ^ No runnable debuggees error in 'PS C:\Users\Daniel\Desktop\NamixWDDM> powershell -ExecutionPolicy Bypass -File tools\analyze-bc250v4-dump.ps1'
+11: kd> [*] analisando C:\Windows\MEMORY.DMP
+        ^ Syntax error in '[*] analisando C:\Windows\MEMORY.DMP'
+11: kd> [*] saida: C:\Users\Daniel\Desktop\NamixWDDM\docs\evidence\2026-08-22_22-37-56-bugcheck-c4\analysis.txt
+        ^ Syntax error in '[*] saida: C:\Users\Daniel\Desktop\NamixWDDM\docs\evidence\2026-08-22_22-37-56-bugcheck-c4\analysis.txt'
+11: kd> 
+11: kd> ************* Preparing the environment for Debugger Extensions Gallery repositories **************
+11: kd>    ExtensionRepository : Implicit
+Couldn't resolve error at 'xtensionRepository : Implicit'
+11: kd>    UseExperimentalFeatureForNugetShare : true
+           ^ Missing whitespace after u in '   UseExperimentalFeatureForNugetShare : true'
+11: kd>    AllowNugetExeUpdate : true
+No aliases
+             ^ Extra character error in '   AllowNugetExeUpdate : true'
+11: kd>    NonInteractiveNuget : true
+           ^ Syntax error in '   NonInteractiveNuget : true'
+11: kd>    AllowNugetMSCredentialProviderInstall : true
+No aliases
+             ^ Extra character error in '   AllowNugetMSCredentialProviderInstall : true'
+11: kd>    AllowParallelInitializationOfLocalRepositories : true
+No aliases
+             ^ Extra character error in '   AllowParallelInitializationOfLocalRepositories : true'
+11: kd> 
+11: kd>    EnableRedirectToV8JsProvider : false
+Couldn't resolve error at 'nableRedirectToV8JsProvider : false'
+11: kd> 
+11: kd>    -- Configuring repositories
+           ^ Syntax error in '   -- Configuring repositories'
+11: kd>       ----> Repository : LocalInstalled, Enabled: true
+              ^ Syntax error in '      ----> Repository : LocalInstalled, Enabled: true'
+11: kd>       ----> Repository : UserExtensions, Enabled: true
+              ^ Syntax error in '      ----> Repository : UserExtensions, Enabled: true'
+11: kd> 
+11: kd> >>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+        ^ Syntax error in '>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds'
+11: kd> 
+11: kd> ************* Waiting for Debugger Extensions Gallery to Initialize **************
+11: kd> 
+11: kd> >>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.016 seconds
+        ^ Syntax error in '>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.016 seconds'
+11: kd>    ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+           ^ Syntax error in '   ----> Repository : UserExtensions, Enabled: true, Packages count: 0'
+11: kd>    ----> Repository : LocalInstalled, Enabled: true, Packages count: 29
+           ^ Syntax error in '   ----> Repository : LocalInstalled, Enabled: true, Packages count: 29'
+11: kd> 
+11: kd> Microsoft (R) Windows Debugger Version 10.0.26100.6584 AMD64
+Couldn't resolve error at 'icrosoft (R) Windows Debugger Version 10.0.26100.6584 AMD64'
+11: kd> Copyright (c) Microsoft Corporation. All rights reserved.
+Couldn't resolve error at 'opyright (c) Microsoft Corporation. All rights reserved.'
+11: kd> 
+11: kd> 
+11: kd> Loading Dump File [C:\Windows\MEMORY.DMP]
+        ^ Syntax error in 'Loading Dump File [C:\Windows\MEMORY.DMP]'
+11: kd> Kernel Bitmap Dump File: Kernel address space is available, User address space may not be available.
+Couldn't resolve error at 'ernel Bitmap Dump File: Kernel address space is available, User address space may not be available.'
+11: kd> 
+11: kd> 
+11: kd> ************* Path validation summary **************
+11: kd> Response                         Time (ms)     Location
+               ^ Bad register error in 'Response                         Time (ms)     Location'
+11: kd> Deferred                                       srv*
+Couldn't resolve error at 'eferred                                       srv*'
+11: kd> OK                                             C:\Windows\System32\drivers
+         ^ Syntax error in 'OK                                             C:\Windows\System32\drivers'
+11: kd> OK                                             C:\Users\Daniel\Desktop\bc250-win\bc250-win\BC250-V4\build
+         ^ Syntax error in 'OK                                             C:\Users\Daniel\Desktop\bc250-win\bc250-win\BC250-V4\build'
+11: kd> Symbol search path is: srv*;C:\Windows\System32\drivers;C:\Users\Daniel\Desktop\bc250-win\bc250-win\BC250-V4\build
+Couldn't resolve error at 'ymbol search path is: srv*;C:\Windows\System32\drivers;C:\Users\Daniel\Desktop\bc250-win\bc250-win\BC250-V4\build'
+11: kd> Executable search path is:
+Couldn't resolve error at 'xecutable search path is:'
+11: kd> 
+11: kd> 
+11: kd> q
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Kernel.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Usb4Kd.natvis'
