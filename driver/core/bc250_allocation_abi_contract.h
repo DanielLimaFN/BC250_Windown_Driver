@@ -1,0 +1,45 @@
+#ifndef BC250_ALLOCATION_ABI_CONTRACT_H
+#define BC250_ALLOCATION_ABI_CONTRACT_H
+
+#ifdef BC250_KERNEL_MODE
+#include <ntddk.h>
+#ifndef BC250_FIXED_WIDTH_TYPES_DEFINED
+#define BC250_FIXED_WIDTH_TYPES_DEFINED
+typedef UINT64 uint64_t;
+typedef UINT32 uint32_t;
+#endif
+#else
+#include <stdint.h>
+#endif
+
+#define BC250_ALLOCATION_PRIVATE_MAGIC 0x31414342u /* "BCA1" */
+#define BC250_ALLOCATION_PRIVATE_VERSION 1u
+#define BC250_ALLOCATION_MIN_ALIGNMENT 4096u
+#define BC250_ALLOCATION_MAX_ALIGNMENT (2u * 1024u * 1024u)
+
+typedef struct BC250_ALLOCATION_PRIVATE_V1 {
+    uint32_t Magic;
+    uint32_t Version;
+    uint32_t StructSize;
+    uint32_t Flags;
+    uint64_t AllocationToken;
+    uint64_t ByteSize;
+    uint64_t Alignment;
+} BC250_ALLOCATION_PRIVATE_V1;
+
+typedef enum BC250_ALLOCATION_ABI_STATUS {
+    BC250_ALLOCATION_ABI_OK = 0,
+    BC250_ALLOCATION_ABI_BAD_ARGUMENT,
+    BC250_ALLOCATION_ABI_BAD_SIZE,
+    BC250_ALLOCATION_ABI_BAD_MAGIC,
+    BC250_ALLOCATION_ABI_BAD_VERSION,
+    BC250_ALLOCATION_ABI_BAD_FLAGS,
+    BC250_ALLOCATION_ABI_BAD_ALIGNMENT
+} BC250_ALLOCATION_ABI_STATUS;
+
+BC250_ALLOCATION_ABI_STATUS Bc250AllocationAbiParse(
+    const void *PrivateData,
+    uint32_t PrivateDataSize,
+    BC250_ALLOCATION_PRIVATE_V1 *Request);
+
+#endif

@@ -13,6 +13,8 @@ Este diretório consolida a análise das tentativas anteriores sem autorizar o r
 7. [07_INCIDENTE_REMOCAO_BC250V4.md](07_INCIDENTE_REMOCAO_BC250V4.md) - incidente de teardown, remoção offline e contenção permanente do driver legado.
 8. [08_STATUS_PRE_WDDM.md](08_STATUS_PRE_WDDM.md) - estado consolidado, barra de progresso e checklist vivo antes do WDDM.
 9. [09_PONTO_DE_RETOMADA.md](09_PONTO_DE_RETOMADA.md) - **comece por aqui ao retomar**: o que a máquina é, o que está provado, o que não funciona, os erros que viraram regra e o próximo passo.
+10. [19_MARCO_MCDM_FAIL_CLOSED.md](19_MARCO_MCDM_FAIL_CLOSED.md) - corte mais recente do miniport instalavel: retirada de ownership fabricado, DDIs fail-closed, recovery do `bc250mcdm` e gate antes do lifecycle WDDM funcional.
+11. [20_ROADMAP_WDDM_MCDM_VULKAN_LLM.md](20_ROADMAP_WDDM_MCDM_VULKAN_LLM.md) - roadmap fase a fase do miniport MCDM, memoria/GPUVA, PM4/compute, runtime privado, Vulkan ICD e `llama.cpp` acelerado.
 
 As regras superiores continuam em [`BC250_HARDWARE_RULES.md`](../BC250_HARDWARE_RULES.md). Se houver divergência, elas prevalecem.
 

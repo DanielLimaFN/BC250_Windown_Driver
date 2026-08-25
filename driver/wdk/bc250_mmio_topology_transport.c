@@ -1,0 +1,180 @@
+#include "bc250_mmio_topology_transport.h"
+
+static void Bc250MmioTopologyClearMapping(
+    BC250_MMIO_TOPOLOGY_CONTEXT *Context)
+{
+    Context->State = BC250_MMIO_TOPOLOGY_EMPTY;
+    Context->DeviceHandle = NULL;
+    Context->UnmapMemory = NULL;
+    Context->VirtualBase = NULL;
+    Context->PhysicalStart = 0;
+    Context->Length = 0;
+    Context->BarIndex = 0;
+    Context->ReadCount = 0;
+}
+
+BC250_MMIO_TOPOLOGY_STATUS Bc250MmioTopologyInitialize(
+    BC250_MMIO_TOPOLOGY_CONTEXT *Context)
+{
+    if (Context == NULL) return BC250_MMIO_TOPOLOGY_BAD_ARGUMENT;
+    RtlZeroMemory(Context, sizeof(*Context));
+    Context->Signature = BC250_MMIO_TOPOLOGY_SIGNATURE;
+    Context->LastCallbackStatus = STATUS_NOT_SUPPORTED;
+    return BC250_MMIO_TOPOLOGY_OK;
+}
+
+BC250_MMIO_TOPOLOGY_STATUS Bc250MmioTopologyMapReadonly(
+    BC250_MMIO_TOPOLOGY_CONTEXT *Context,
+    const DXGKRNL_INTERFACE *DxgkInterface,
+    const BC250_RESOLVED_BAR_RESOURCE *ResolvedBars,
+    size_t ResolvedBarCount,
+    uint32_t MmioBarIndex)
+{
+    const SIZE_T minimumInterfaceBytes =
+        FIELD_OFFSET(DXGKRNL_INTERFACE, DxgkCbUnmapMemory) +
+        sizeof(DxgkInterface->DxgkCbUnmapMemory);
+    const uint64_t minimumLength =
+        (uint64_t)BC250_GCMC_VM_FB_LOCATION_TOP_BYTE_OFFSET +
+        sizeof(uint32_t);
+    const BC250_RESOLVED_BAR_RESOURCE *bar = NULL;
+    PHYSICAL_ADDRESS translatedAddress;
+    PVOID virtualAddress = NULL;
+    NTSTATUS status;
+    size_t matchCount = 0;
+    size_t index;
+
+    if (Context == NULL || DxgkInterface == NULL || ResolvedBars == NULL ||
+        ResolvedBarCount == 0 ||
+        Context->Signature != BC250_MMIO_TOPOLOGY_SIGNATURE) {
+        return BC250_MMIO_TOPOLOGY_BAD_ARGUMENT;
+    }
+    if (Context->State != BC250_MMIO_TOPOLOGY_EMPTY ||
+        Context->VirtualBase != NULL) {
+        return BC250_MMIO_TOPOLOGY_WRONG_STATE;
+    }
+    if (DxgkInterface->Size < minimumInterfaceBytes ||
+        DxgkInterface->DeviceHandle == NULL ||
+        DxgkInterface->DxgkCbMapMemory == NULL ||
+        DxgkInterface->DxgkCbUnmapMemory == NULL) {
+        return BC250_MMIO_TOPOLOGY_INTERFACE_TOO_SMALL;
+    }
+    for (index = 0; index < ResolvedBarCount; ++index) {
+        if (ResolvedBars[index].Index == MmioBarIndex) {
+            bar = &ResolvedBars[index];
+            ++matchCount;
+        }
+    }
+    if (matchCount != 1 || bar == NULL) {
+        return BC250_MMIO_TOPOLOGY_BAR_NOT_UNIQUE;
+    }
+    if (bar->Length < minimumLength) {
+        return BC250_MMIO_TOPOLOGY_BAR_TOO_SHORT;
+    }
+    if (bar->Length > MAXULONG) {
+        return BC250_MMIO_TOPOLOGY_BAR_TOO_LARGE;
+    }
+    if (bar->Start > MAXLONGLONG ||
+        bar->Start > MAXULONGLONG - (bar->Length - 1ull)) {
+        return BC250_MMIO_TOPOLOGY_PHYSICAL_RANGE_INVALID;
+    }
+
+    translatedAddress.QuadPart = (LONGLONG)bar->Start;
+    status = DxgkInterface->DxgkCbMapMemory(
+        DxgkInterface->DeviceHandle, translatedAddress, (ULONG)bar->Length,
+        FALSE, FALSE, MmNonCached, &virtualAddress);
+    Context->LastCallbackStatus = status;
+    if (!NT_SUCCESS(status)) return BC250_MMIO_TOPOLOGY_MAP_FAILED;
+    if (virtualAddress == NULL) {
+        return BC250_MMIO_TOPOLOGY_MAP_RETURNED_NULL;
+    }
+
+    Context->DeviceHandle = DxgkInterface->DeviceHandle;
+    Context->UnmapMemory = DxgkInterface->DxgkCbUnmapMemory;
+    Context->VirtualBase = virtualAddress;
+    Context->PhysicalStart = bar->Start;
+    Context->Length = bar->Length;
+    Context->BarIndex = MmioBarIndex;
+    Context->ReadCount = 0;
+    Context->State = BC250_MMIO_TOPOLOGY_MAPPED;
+    return BC250_MMIO_TOPOLOGY_OK;
+}
+
+static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
+{
+    return ByteOffset == BC250_RCC_CONFIG_MEMSIZE_BYTE_OFFSET ||
+        ByteOffset == BC250_DRIVER_SCRATCH_0_BYTE_OFFSET ||
+        ByteOffset == BC250_DRIVER_SCRATCH_1_BYTE_OFFSET ||
+        ByteOffset == BC250_DRIVER_SCRATCH_2_BYTE_OFFSET ||
+        ByteOffset == BC250_GCMC_VM_FB_OFFSET_BYTE_OFFSET ||
+        ByteOffset == BC250_GCMC_VM_FB_LOCATION_BASE_BYTE_OFFSET ||
+        ByteOffset == BC250_GCMC_VM_FB_LOCATION_TOP_BYTE_OFFSET;
+}
+
+uint32_t Bc250MmioTopologyRead32(
+    void *Context, uint32_t ByteOffset, uint32_t *Value)
+{
+    BC250_MMIO_TOPOLOGY_CONTEXT *transport =
+        (BC250_MMIO_TOPOLOGY_CONTEXT *)Context;
+    volatile ULONG *address;
+
+    if (Value != NULL) *Value = 0;
+    if (transport == NULL || Value == NULL ||
+        transport->Signature != BC250_MMIO_TOPOLOGY_SIGNATURE ||
+        transport->State != BC250_MMIO_TOPOLOGY_MAPPED ||
+        transport->VirtualBase == NULL ||
+        !Bc250MmioTopologyOffsetAllowed(ByteOffset) ||
+        (ByteOffset & (sizeof(uint32_t) - 1u)) != 0 ||
+        transport->Length < sizeof(uint32_t) ||
+        (uint64_t)ByteOffset > transport->Length - sizeof(uint32_t)) {
+        return 0;
+    }
+    address = (volatile ULONG *)((PUCHAR)transport->VirtualBase + ByteOffset);
+    *Value = READ_REGISTER_ULONG(address);
+    ++transport->ReadCount;
+    return 1;
+}
+
+BC250_MMIO_TOPOLOGY_STATUS Bc250MmioTopologyUnmap(
+    BC250_MMIO_TOPOLOGY_CONTEXT *Context)
+{
+    NTSTATUS status;
+
+    if (Context == NULL ||
+        Context->Signature != BC250_MMIO_TOPOLOGY_SIGNATURE) {
+        return BC250_MMIO_TOPOLOGY_BAD_ARGUMENT;
+    }
+    if (Context->State == BC250_MMIO_TOPOLOGY_EMPTY &&
+        Context->VirtualBase == NULL) {
+        return BC250_MMIO_TOPOLOGY_OK;
+    }
+    if (Context->State != BC250_MMIO_TOPOLOGY_MAPPED ||
+        Context->VirtualBase == NULL || Context->DeviceHandle == NULL ||
+        Context->UnmapMemory == NULL) {
+        return BC250_MMIO_TOPOLOGY_WRONG_STATE;
+    }
+    status = Context->UnmapMemory(Context->DeviceHandle, Context->VirtualBase);
+    Context->LastCallbackStatus = status;
+    if (!NT_SUCCESS(status)) return BC250_MMIO_TOPOLOGY_UNMAP_FAILED;
+    Bc250MmioTopologyClearMapping(Context);
+    return BC250_MMIO_TOPOLOGY_OK;
+}
+
+const char *Bc250MmioTopologyStatusName(BC250_MMIO_TOPOLOGY_STATUS Status)
+{
+    switch (Status) {
+    case BC250_MMIO_TOPOLOGY_OK: return "ok";
+    case BC250_MMIO_TOPOLOGY_BAD_ARGUMENT: return "bad_argument";
+    case BC250_MMIO_TOPOLOGY_WRONG_STATE: return "wrong_state";
+    case BC250_MMIO_TOPOLOGY_INTERFACE_TOO_SMALL:
+        return "interface_too_small";
+    case BC250_MMIO_TOPOLOGY_BAR_NOT_UNIQUE: return "bar_not_unique";
+    case BC250_MMIO_TOPOLOGY_BAR_TOO_SHORT: return "bar_too_short";
+    case BC250_MMIO_TOPOLOGY_BAR_TOO_LARGE: return "bar_too_large";
+    case BC250_MMIO_TOPOLOGY_PHYSICAL_RANGE_INVALID:
+        return "physical_range_invalid";
+    case BC250_MMIO_TOPOLOGY_MAP_FAILED: return "map_failed";
+    case BC250_MMIO_TOPOLOGY_MAP_RETURNED_NULL: return "map_returned_null";
+    case BC250_MMIO_TOPOLOGY_UNMAP_FAILED: return "unmap_failed";
+    default: return "unknown";
+    }
+}

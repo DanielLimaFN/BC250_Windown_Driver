@@ -48,6 +48,166 @@ docs/evidence/
 
 ## Princípios de implementação
 
+### 0. Recursos pertencem à stack PnP/Dxgkrnl
+
+O miniport deve obter `DXGK_DEVICE_INFO.TranslatedResourceList` por
+`DxgkCbGetDeviceInformation` dentro de `DxgkDdiStartDevice` e mapear somente
+intervalos traduzidos por `DxgkCbMapMemory`. Nunca herdar do laboratório legacy
+um endereço físico lido diretamente do PCI nem um comprimento default.
+
+O adaptador `driver/wdk/bc250_cm_resource_adapter.{h,c}` normaliza
+todas as full lists, inclusive recursos `MemoryLarge`, e chama
+`Bc250ResolveTranslatedBars`. Ele esta ligado a `DxgkDdiStartDevice` e o binding
+0.5.0.0 comprovou no hardware a ordem consultar -> normalizar -> resolver ->
+mapear -> ler -> desmontar, com Stop/Remove zero. Isso comprova recursos,
+topologia e ReBAR; nao comprova ownership da VRAM.
+
+Os contratos offline `bc250_address_contract` e `bc250_psp_contract` completam
+a fronteira de tipos: uma reserva identificada por token produz MC e PA a partir
+do mesmo offset e do mesmo snapshot runtime; somente essa origem pode serializar
+`SETUP_TMR` ou `LOAD_IP_FW`. A integração futura não deve expor uma variante que
+receba endereços brutos.
+
+`bc250_compute_bootstrap` compõe essa fronteira num preflight atômico: reservas
+herdadas só entram antes do selo, o snapshot precisa conter todas as evidências
+runtime e o manifesto CP precisa ser exatamente
+`PFP -> ME -> CE -> MEC -> MEC_JT1`. TMR e staging são persistentes, MEC/JT
+continuam separados e nenhuma função de transporte existe nessa camada. A
+integração PnP deve alimentar esse mesmo contrato; não deve reconstruir os
+payloads manualmente.
+
+O 0.5.0.0 integrou esse contrato ao binding fisico usando o manifesto auditado:
+PFP 263168, ME 263168, CE 263040, MEC principal 267440 e MEC_JT1 896 bytes. O
+preflight calculou TMR em `0x1FC00000` e staging em `0x0FFBE000`, mas preservou
+as fronteiras `FirmwareBytesStaged=0` e `PspTransportCalls=0`. O proximo passo
+nao pode tratar esse plano como alocacao efetiva. Auditoria posterior mostrou
+que exclusividade/inventario eram autoatribuidos pela DDI; precisa primeiro criar
+ownership transacional da regiao, copia verificavel e unwind antes de expor
+qualquer transporte PSP.
+
+O contrato offline seguinte esta em `bc250_firmware_staging`. Ele implementa
+backup, SHA-256 de identidade, escrita por callback, readback criptografico e
+restauracao comprovada. O estado `CONTAMINATED` e terminal quando o rollback
+falha. O componente ainda nao esta ligado a DDI nem ao binario instalavel;
+`bc250_staging_lease` impede que o transporte declare exclusividade por conta
+propria e vincula a autorizacao ao preflight/plano exatos. A emissao exige
+ownership do adaptador, espaco livre runtime, exclusao de scanout e inventario
+runtime de reservas. Esses quatro sinais ainda sao sinteticos nos testes; a DDI
+atual nao possui produtor fisico para eles.
+
+Para o scanout herdado, o WDK oferece
+`DxgkCbAcquirePostDisplayOwnership[2]`. O adaptador offline
+`bc250_post_display_reservation` valida estado, formato, pitch, overflow e
+inclusao integral no BAR antes de gerar uma reserva `SCANOUT`. Ele nao esta
+ligado ao miniport readonly porque o callback transfere ownership do display.
+`QuerySegment` apenas descreve segmentos escolhidos pelo futuro driver e
+`SetVidPnSourceAddress` ocorre depois das alocacoes; nenhum deles descobre o
+inventario preexistente exigido neste ponto.
+
+Para o TMR de IP Discovery, `bc250_discovery_tmr_reader` segue a fonte upstream
+`DRIVER_SCRATCH_0/1/2`, com duas passagens readonly e bounds contra a VRAM
+runtime. O transporte MMIO permite somente esses tres novos offsets. Tamanho
+zero nao ativa um endereço default: o fallback depende de ler e validar a
+assinatura real, ainda inacessivel fora da janela CPU-visible.
+
+`bc250_owned_adapter_contract` é a entrada anterior. Ela exige, em campos
+distintos, BAR resolvido, topologia runtime, ownership exclusivo e inventário
+completo. O comprimento do BAR define somente `CpuVisibleBytes`; `TotalBytes`
+vem da fonte runtime de VRAM. Os bits de evidência são obrigações para o
+`StartDevice`, não uma forma de o núcleo declarar ownership para si próprio.
+
+O adaptador WDK `bc250_start_device_adapter` liga
+`CM_RESOURCE_LIST -> BARs resolvidos -> ownership selado -> preflight readonly`
+e oferece inicialização, retry e teardown. A DDI real ja o chama com fontes
+runtime de topologia e mapeamento autorizado. O binding 0.5.0.0 chegou ao
+preflight apenas porque a DDI autoatribuiu exclusividade/inventario. O codigo
+atual removeu essa declaracao e para em `RUNTIME_MISSING` sem produtor externo;
+nenhuma reserva foi efetivada nem firmware transferido.
+
+O `bc250_dxgk_readonly_ddi` usa as assinaturas reais de StartDevice/StopDevice,
+chama `DxgkCbGetDeviceInformation` e foi exercitado na BC-250. Ele nunca retorna
+sucesso: mesmo o preflight fisico completo termina em
+`STATUS_NOT_SUPPORTED`, zero sources e zero children. O próximo miniport deve
+registrar essas DDIs somente enquanto esse fail-closed continuar explícito;
+retorno de sucesso fica bloqueado até existirem engine, interrupt, reset,
+power e teardown correspondentes.
+
+A imagem `bc250readonly.sys` materializa DriverEntry/Add/Remove, chama
+`DxgkInitialize` e possui INF MCDM assinado. O binding forcado executa as DDIs,
+mas StartDevice retorna `STATUS_NOT_SUPPORTED`; portanto o Codigo 43 continua
+intencional e nenhuma capacidade compute e anunciada.
+
+As bases de BAR da DDI agora vêm de `DxgkCbReadDeviceSpace` por leitura única
+do header PCI, com validação `1002:13FE`; não são mais staged pelo chamador.
+Não usar sizing write em dispositivo vivo. A lista PnP traduzida continua sendo
+a única fonte autorizada para comprimentos e interseções.
+
+O reader ReBAR compara máscara suportada, seleção atual e comprimento PnP. O
+tamanho máximo suportado nunca substitui `VramTotalBytes`: ReBAR descreve a
+abertura PCI. Divergência entre seleção e recurso bloqueia o preflight.
+
+`bc250_vram_topology_contract` fecha offline a outra metade dessa fronteira.
+Ele recebe um único snapshot tipado de `RCC_CONFIG_MEMSIZE`,
+`GCMC_VM_FB_LOCATION_BASE/TOP`, `GCMC_VM_FB_OFFSET` e da janela CPU resolvida.
+O contrato reproduz as unidades do upstream (MiB e blocos de 16 MiB), exige
+identidade GC 10.1.3 e mesma geração de snapshot, e só produz
+`BC250_VRAM_ADDRESS_SPACE` quando o tamanho RCC coincide exatamente com o
+intervalo MC. Ele não lê MMIO. O futuro reader readonly deve apenas capturar
+esses campos e entregar a estrutura; não deve duplicar a decodificação.
+
+`bc250_vram_topology_reader` já implementa esse reader como transporte
+injetável e estritamente de leitura. Ele usa os offsets finais `0x378C`,
+`0xA5AC`, `0xA600` e `0xA604`, exige duas passagens idênticas e não oferece
+primitiva de escrita.
+
+O adaptador WDK `bc250_mmio_topology_transport` agora materializa esse
+lifecycle contra as assinaturas reais de `DxgkCbMapMemory/UnmapMemory`. Ele
+mapeia somente um BAR já resolvido, kernel-only/noncached, expõe somente os
+quatro reads autorizados e preserva o mapeamento se o unmap falhar.
+
+Essa ligação agora existe na DDI readonly. O input staged deixou de aceitar
+total de VRAM, faixa MC e `FB_OFFSET`; contém somente índices de BAR, geração,
+identidade, ownership, reservas, política e manifesto. StartDevice resolve os
+BARs, captura e desmonta MMIO antes de construir ownership. Falha de unmap
+impede progresso e permanece recuperável por StopDevice. A DDI ainda retorna
+sempre `STATUS_NOT_SUPPORTED`; a imagem e registravel para o probe, mas nao
+publica um adaptador funcional.
+RemoveDevice também está subordinado a esse teardown: falha de Stop/unmap
+impede liberar o contexto nonpaged.
+
+`bc250_ip_discovery_contract` fecha o parser de identidade GC 10.1.3 com
+assinaturas, checksums e bounds do formato AMD. Ele ainda não substitui a
+identidade staged da DDI: na configuração medida, a tabela reside em
+`VramTotalBytes - 64 KiB = 0x1FFF0000`, além dos 256 MiB CPU-visible. O próximo
+componente deve obter esses 10 KiB por um caminho VRAM readonly já possuído e
+com endereço derivado da topologia; não pode remapear a janela por escrita nem
+aceitar firmware sideloaded como prova runtime.
+
+O parser de recursos deve:
+
+- percorrer todas as listas e todos os descritores, não apenas `List[0]`;
+- preservar intervalos agregados/filhos e decompor sobreposições antes de
+  classificar uma janela;
+- casar identidade de BAR por configuração PCI + intervalo atribuído, nunca
+  apenas por “tamanho maior ou igual a 256 MiB”;
+- rejeitar intervalos ambíguos, sobrepostos ou fora da lista traduzida;
+- registrar base, fim, comprimento, flags de cache e origem PnP;
+- desfazer todos os mapeamentos em `DxgkDdiStopDevice`/falha parcial.
+
+Possuir o recurso PCI também não equivale a possuir cada byte de VRAM. O
+gerenciador interno deve reservar scanout, page tables, rings, firmware, TMR e
+buffers de teste sem sobreposição. A TMR só pode ser submetida ao PSP depois de
+uma reserva desse gerenciador produzir tamanho, PA e MC/GPUVA coerentes.
+
+O núcleo de intervalos já está implementado e testado offline em
+`driver/core/bc250_vram_allocator.{h,c}`. Ele deliberadamente não converte
+offset em endereço. A camada WDDM futura deve fornecer o total e a abertura
+CPU-visible, inserir todas as reservas herdadas e só depois associar uma região
+aprovada aos tipos distintos `cpu_pa` e `gpu_mc_address`.
+
+Captura de referência desta máquina:
+`docs/evidence/2026-08-24_18-44-30-DESKTOP-HQAG6T4-pci-resources`.
+
 ### 1. Tipos de endereço não intercambiáveis
 
 Usar tipos/estruturas distintas para:
@@ -198,6 +358,8 @@ Entregas:
 - parsers por tipo de firmware;
 - loaders direct SRAM/IC base baseados no upstream exato;
 - halt/unhalt sempre explícito.
+- staging transacional com identidade SHA-256, readback e restauracao antes de
+  qualquer submit PSP. O contrato offline existe; transporte fisico ainda nao.
 
 Gates separados:
 

@@ -4,7 +4,7 @@
     OBJETIVO:
     1. Carregar ucodes (PFP, ME, CE), configurar IC_BASE, jump tables e unhalt;
     2. Inicializar o Graphics Ring Buffer 0 do CP na VRAM (0x0E200000, 4 KB);
-    3. Confirmar que as microengines estao varrendo o ucode (PC = 0x0000041E);
+    3. Observar o estado das microengines sem promover PC constante a execucao;
     4. Submeter um pacote PM4 PACKET3_NOP (4 dwords) ao anel;
     5. Medir o consumo do pacote: RPTR alcanca WPTR (executado pela GPU);
     6. Submeter a sequencia de boot (CLEAR_STATE + CONTEXT_CONTROL + NOP, 7 dwords);
@@ -39,6 +39,7 @@ $engines = @(
 if (-not $Execute) {
     throw 'Ensaio bloqueado por padrao. Use -Execute. Ele inicializa o anel PM4 e submete pacotes sob protecao transacional.'
 }
+throw 'QUARENTENA ABI 29: o init golden usa broadcast e ainda nao possui snapshot/rollback por SE/SH/instancia. Nenhuma escrita deste ensaio foi autorizada.'
 $admin = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $admin.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Execute elevado.' }
 foreach ($path in @($cli,$abiHeader,$workspaceDriver,$installedDriver)) {
@@ -152,7 +153,26 @@ try {
         ([pscustomobject]@{ CP_ME_CNTL = Format-Hex $meCntlBaseline; PFP_PC = Format-Hex $pfpPcBaseline })
 
     # -------------------------------------------------------------------------
-    # Gate C: Snapshot da transacao
+    # Gate B2: RLC fora da ROM
+    # -------------------------------------------------------------------------
+    $rlcSnap = Run 'rlc_txn_snapshot' @('rlc','txn','snapshot') -AllowFailure
+    foreach ($passo in @('stop','cgcg','pg')) {
+        Run "rlc_$passo" @('rlc',$passo) -AllowFailure | Out-Null
+    }
+    Run 'psp_init' @('psp','init') -AllowFailure | Out-Null
+    Run 'psp_loadfw_rlc' @('psp','loadfw','rlc',(Join-Path $root 'firmware\cyan_skillfish2_rlc.bin')) -AllowFailure | Out-Null
+    $rlcDepoisTxt = (Run 'rlc_status_depois' @('rlc','status') -AllowFailure).output -join "`n"
+    $romDepois = if ($rlcDepoisTxt -match 'EXEC_ROM_CODE (\d)') { [int]$Matches[1] } else { $null }
+    Add-Gate 'B2_rlc_fora_da_rom' `
+        ([bool]($null -ne $romDepois -and $romDepois -eq 0)) `
+        'RLC_GPM_STAT.RLC_EXEC_ROM_CODE = 0: o RLC executa microcodigo, nao a ROM. Pre-requisito do CP.' `
+        ([pscustomobject]@{ exec_rom_code = $romDepois; saida = $rlcDepoisTxt })
+
+    # Power gating limpo apos a carga
+    Run 'rlc_pg_pos_carga' @('rlc','pg') -AllowFailure | Out-Null
+
+    # -------------------------------------------------------------------------
+    # Gate C: Snapshot da transacao do CP
     # -------------------------------------------------------------------------
     Run 'arm_write' @('arm','write') | Out-Null
     $armado = $true
@@ -165,6 +185,20 @@ try {
         ([bool]$snapshotFeito) `
         "Snapshot dos $cpTxnCount registradores do CP capturado com sucesso." `
         ([pscustomobject]@{ exit_code = $snap.exit_code; regs = $snapRegs })
+
+    # Ungate do CPF Clock
+    $clk = Run 'cp_clocks' @('cp','clocks') -AllowFailure
+    Add-Gate 'C7_clock_do_cpf_ungated' `
+        ([bool]($clk.exit_code -eq 0)) `
+        'CGTT_CPF_CLK_CTRL un-gated (0xF8000100) para o fetcher da microengine.' `
+        ([pscustomobject]@{ exit_code = $clk.exit_code; saida = $clk.output })
+
+    # Golden Settings do CP
+    $gold = Run 'cp_golden' @('cp','golden') -AllowFailure
+    Add-Gate 'C8_cp_golden_configurado' `
+        ([bool]($gold.exit_code -eq 0)) `
+        'Registradores Golden do CP e Topologia configurados com sucesso.' `
+        ([pscustomobject]@{ exit_code = $gold.exit_code; saida = $gold.output })
 
     # -------------------------------------------------------------------------
     # Gate D: Carga dos 3 ucodes na VRAM
@@ -196,17 +230,16 @@ try {
     $invalResults = @()
     foreach ($e in $engines) {
         $inv = Run "icinval_$($e.nome)" @('cp','icinval',$e.nome) -AllowFailure
-        $invTxt = $inv.output -join "`n"
         $invalResults += [pscustomobject]@{
             engine = $e.nome
             exit_code = $inv.exit_code
-            confirmado = ($invTxt -match 'confirmou por COMPLETE')
+            pedida = ($inv.exit_code -eq 0)
             saida = $inv.output
         }
     }
     Add-Gate 'E_tres_caches_invalidadas' `
-        ([bool](@($invalResults | Where-Object { $_.confirmado }).Count -eq $engines.Count)) `
-        'INVALIDATE_CACHE_COMPLETE confirmado pelo hardware para as tres engines.' `
+        ([bool](@($invalResults | Where-Object { $_.pedida }).Count -eq $engines.Count)) `
+        'Invalidacao das caches de instrucoes emitida para as tres engines.' `
         $invalResults
 
     # -------------------------------------------------------------------------
@@ -251,6 +284,23 @@ try {
         $jtResults
 
     # -------------------------------------------------------------------------
+    # Gate G2: Readback Jump Table Status
+    # -------------------------------------------------------------------------
+    $pfpJtStat = Read-Reg 'CP_PFP_JT_STAT' 0x0C4CC
+    $ceJtStat  = Read-Reg 'CP_CE_JT_STAT'  0x0C4D0
+    $pfpJtLoaded = if ($null -ne $pfpJtStat) { $pfpJtStat -band 3 } else { $null }
+    $ceJtLoaded  = if ($null -ne $ceJtStat)  { $ceJtStat -band 3 } else { $null }
+    Add-Gate 'G2_jump_tables_latchadas' `
+        ([bool]($pfpJtLoaded -eq 3 -and $ceJtLoaded -eq 3)) `
+        'PFP e CE devem reportar JT_LOADED=3, como no Linux com o CP executando. Leitura valida com JT_LOADED=0 reprova.' `
+        ([pscustomobject]@{
+            CP_PFP_JT_STAT = Format-Hex $pfpJtStat
+            CP_CE_JT_STAT = Format-Hex $ceJtStat
+            PFP_JT_LOADED = $pfpJtLoaded
+            CE_JT_LOADED = $ceJtLoaded
+        })
+
+    # -------------------------------------------------------------------------
     # Gate H: Inicializacao do anel GFX CP Ring 0 (PM4) na VRAM
     # -------------------------------------------------------------------------
     $ringOffHex = ('0x{0:X8}' -f $RingOffset)
@@ -268,14 +318,16 @@ try {
         })
 
     # -------------------------------------------------------------------------
-    # Gate I: Microengines em execucao no loop de despacho
+    # Gate I: estado observavel das microengines. PC nao-zero e constante nao
+    # prova execucao; 0x041E foi medido inclusive sem ucode carregado.
     # -------------------------------------------------------------------------
     $pfpPc = Read-Reg 'running_PFP_PC' 0x08694
     $mePc  = Read-Reg 'running_ME_PC' 0x08698
     $cePc  = Read-Reg 'running_CE_PC' 0x0869C
-    Add-Gate 'I_microengines_em_execucao' `
-        ([bool]($pfpPc -ne 0 -and $pfpPc -ne 0xFFFFFFFF)) `
-        'PFP, ME e CE varrendo o microcodigo no loop de polling de pacotes (PC=0x0000041E).' `
+    Add-Gate 'I_ponteiros_de_instrucao_legiveis' `
+        ([bool]($null -ne $pfpPc -and $null -ne $mePc -and $null -ne $cePc -and
+                $pfpPc -ne 0xFFFFFFFF -and $mePc -ne 0xFFFFFFFF -and $cePc -ne 0xFFFFFFFF)) `
+        'Ponteiros de instrucao legiveis apos o unhalt. Este gate e apenas de observabilidade; PC constante, inclusive 0x041E, NAO prova execucao.' `
         ([pscustomobject]@{
             PFP_PC = Format-Hex $pfpPc
             ME_PC  = Format-Hex $mePc

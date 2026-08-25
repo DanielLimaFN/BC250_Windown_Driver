@@ -1,0 +1,78 @@
+﻿=== info_pre ===
+$ bc250ctl.exe info
+driver          : bc250dbg v29.0  ABI 29  armamento=readonly
+pci             : 01:00.0  1002:13FE rev 00
+  BAR0          : 0x00000000C0000000  raw 0xC000000C
+  BAR2          : 0x00000000D0000000  raw 0xD000000C
+  BAR4          : 0x000000000000EF00  raw 0x0000EF01 io
+  BAR5          : 0x00000000FE800000  raw 0xFE800000 [mapeado]
+mmio            : 0xFE800000 +512 KB 
+  GPU_ID        : 0x9FFF9700 (confere com a BC-250)
+  offset          SOC15        legado      
+  SCRATCH_REG0  : 0x00000000   0x4D585042
+  GRBM_STATUS   : 0x00003028   0x00000000
+  CC_GC_ARRAY   : 0xFFF80000   0x00000000   <== o desempate
+  ** MAPA OBSERVADO: CC_GC_SHADER_ARRAY_CONFIG em 0x089BC bate com o
+     valor bruto visto no Linux (0xFFF80000). Isto sustenta o offset
+     SOC15, mas nao prova quantidade de CU utilizavel nem execucao.
+smu             : nao consultado pelo baseline; use 'smu' explicitamente
+termico         : NAO CALIBRADO  limite 85 C  
+  sondas cruas  : edge 0xFFFFFFFF  junc 0x00000000  mem 0x00001EC2
+  ** sem calibracao o driver recusa armar 'unsafe'.
+     Compare as sondas com o Linux e rode 'thermal calib'.
+log ring        : 4096 entradas, head 6
+exit=0
+
+=== golden_preflight ===
+$ bc250ctl.exe cp golden preflight
+Golden Cyan Skillfish (preflight):
+  registradores      : 36
+  escritas           : 0
+    0x30800        : 0x00000000
+    0x08920        : 0x00000000
+    0x3C2C4        : 0x00000100
+    0x3C200        : 0x00000100
+    0x09A0C        : 0x20000000
+    0x09A08        : 0x003C0014
+    0x33610        : 0x00000007
+    0x33640        : 0xE4E4E4E4
+    0x33650        : 0x00000000
+    0x0C6DC        : 0x0000045F
+    0x09830        : 0x00000000
+    0x09838        : 0x00000000
+    0x0983C        : 0x04000000
+    0x09868        : 0x02060410
+    0x098F8        : 0x00000044
+    0x09F8C        : 0x00F00400
+    0x0A5C8        : 0x000FFFFF
+    0x33410        : 0x00000007
+    0x33440        : 0xE4E4E4E4
+    0x33894        : 0x32103210
+    0x33898        : 0x32103210
+    0x33884        : 0xFFFFFFFF
+    0x3380C        : 0xFFFFFFFF
+    0x3C2B0        : 0x00000100
+    0x33804        : 0x1402002F
+    0x33830        : 0x00002188
+    0x08BF0        : 0x08000001
+    0x08B30        : 0x842A4C02
+    0x30A04        : 0x00000000
+    0x09E7C        : 0xFFFF3108
+    0x08C30        : 0x00000030
+    0x3C240        : 0x00000000
+    0x09508        : 0x01030008
+    0x09FA0        : 0x00000000
+    0x3F040        : 0xFFFFFFFF
+    0x3F044        : 0xFFFFFFFF
+  falhas             : 4
+    0x33884        : leituras 0xFFFFFFFF / 0xFFFFFFFF
+    0x3380C        : leituras 0xFFFFFFFF / 0xFFFFFFFF
+    0x3F040        : leituras 0xFFFFFFFF / 0xFFFFFFFF
+    0x3F044        : leituras 0xFFFFFFFF / 0xFFFFFFFF
+  RESULTADO          : RECUSADO/DIVERGENCIA (status 4)
+  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]
+  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008
+  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000
+  JT_STAT pfp/ce/mec : 0x00000000 (JT_LOADED=0) / 0x00000000 (JT_LOADED=0) / 0x00000000 (JT_LOADED=0x0)
+exit=1
+

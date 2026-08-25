@@ -1,0 +1,8 @@
+﻿{
+    "Name":  "BC-250 Compute Accelerator Readonly Probe",
+    "PNPDeviceID":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
+    "Service":  "bc250readonly",
+    "Status":  "Error",
+    "ConfigManagerErrorCode":  14,
+    "Manufacturer":  "AMD BC-250 Project"
+}

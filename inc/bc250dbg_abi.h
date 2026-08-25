@@ -7,8 +7,8 @@
 #ifndef BC250DBG_ABI_H
 #define BC250DBG_ABI_H
 
-#define BC250DBG_ABI_VERSION     20u
-#define BC250DBG_DRIVER_VERSION  0x00140000u
+#define BC250DBG_ABI_VERSION     29u
+#define BC250DBG_DRIVER_VERSION  0x001D0000u
 
 #define BC250DBG_NT_DEVICE_NAME    L"\\Device\\BC250Dbg"
 #define BC250DBG_DOS_DEVICE_NAME   L"\\DosDevices\\BC250Dbg"
@@ -497,6 +497,7 @@ typedef struct _BC250DBG_VRAM_PATTERN_IO {
 #define BC250_PSP_FW_CP_PFP 2u
 #define BC250_PSP_FW_CP_CE  3u
 #define BC250_PSP_FW_CP_MEC 4u
+#define BC250_PSP_FW_CP_MEC_JT1 5u
 #define BC250_PSP_FW_RLC_G  8u
 #define BC250_PSP_FW_SDMA0  9u
 #define BC250_PSP_FW_SDMA1  10u
@@ -934,11 +935,12 @@ typedef struct _BC250DBG_GCVM_INVALIDATE_IO {
  * Nao tira nenhuma microengine do HALT. Enquanto CP_ME_CNTL mantiver
  * PFP_HALT (26), CE_HALT (24) e ME_HALT (28), tudo aqui e configuracao inerte:
  * a cache aponta para um lugar e ninguem busca. Medido no POST desta placa:
- * CP_ME_CNTL = 0x15000000, os tres halts ligados. */
+ * CP_ME_CNTL = 0x15000000, com os tres HALTs ligados. */
 #define BC250DBG_CP_ENGINE_PFP 0u
 #define BC250DBG_CP_ENGINE_ME  1u
 #define BC250DBG_CP_ENGINE_CE  2u
-#define BC250DBG_CP_ENGINE_COUNT 3u
+#define BC250DBG_CP_ENGINE_MEC 3u
+#define BC250DBG_CP_ENGINE_COUNT 4u
 
 #define BC250DBG_CP_MODE_STAGE      0u  /* copia ucode para VRAM e confere */
 #define BC250DBG_CP_MODE_ROLLBACK   1u  /* devolve a regiao de VRAM */
@@ -948,25 +950,35 @@ typedef struct _BC250DBG_GCVM_INVALIDATE_IO {
 #define BC250DBG_CP_MODE_TXN_SNAP   5u
 #define BC250DBG_CP_MODE_TXN_RESTORE 6u
 #define BC250DBG_CP_MODE_TXN_VERIFY 7u
-#define BC250DBG_CP_MODE_UNHALT     8u  /* tira as 3 engines do HALT (CP_ME_CNTL=0) */
-#define BC250DBG_CP_MODE_HALT       9u  /* volta as 3 engines para o HALT (0x15000000) */
+#define BC250DBG_CP_MODE_UNHALT     8u  /* tira as 4 engines do HALT (CP_ME_CNTL=0, CP_MEC_CNTL=0) */
+#define BC250DBG_CP_MODE_HALT       9u  /* volta as 4 engines para o HALT (0x15000000, 0x50000000) */
 #define BC250DBG_CP_MODE_SAMPLE     10u /* amostra ponteiros de instrucao e status */
+/* ABI 22: liga os cinco SOFT_OVERRIDE_* do CGTT_CPF_CLK_CTRL, no endereco
+ * correto do segmento 1, para o valor medido no Linux com o CP executando. */
+#define BC250DBG_CP_MODE_CLOCKS     11u
+/* ABI 23: teste diferencial de escrita: EXE_DISABLE=1 em IC_BASE_CNTL */
+#define BC250DBG_CP_MODE_DIFF_TEST  12u
+/* ABI 24: pulso de reset das pipes do CP, pelo CP_ME_CNTL */
+#define BC250DBG_CP_MODE_PIPE_RESET 13u
+/* ABI 24b: teste de invalidacao de I-cache pelo CP_ME_CNTL (bits 4,6,8) */
+#define BC250DBG_CP_MODE_ICACHE_MECNTL 14u
+/* ABI 29: tabela golden Cyan Skillfish, separada do steady-state do CP. */
+#define BC250DBG_CP_MODE_GOLDEN_INIT 15u
+#define BC250DBG_CP_MODE_GOLDEN_PREFLIGHT 16u
 
-#define BC250DBG_CP_MAX_UCODE_DWORDS (128u * 1024u)
-#define BC250DBG_CP_MAX_JT_DWORDS    1024u
-#define BC250DBG_CP_UCODE_SAMPLES    8u
+#define BC250DBG_CP_MAX_UCODE_DWORDS (68u * 1024u)
+#define BC250DBG_CP_MAX_JT_DWORDS    256u
+#define BC250DBG_CP_UCODE_SAMPLES    4u
 
-/* Registradores de CONFIGURACAO que o direct load escreve, e portanto os unicos
- * que a transacao precisa cobrir: IC_BASE_LO/HI/CNTL das tres engines mais
- * CP_ME_CNTL. Dez.
+/* Registradores de CONFIGURACAO que o direct load e o CP golden init escrevem,
+ * cobertos pela transacao (snapshot/restore/verify).
  *
- * Ficam FORA, porque escrever neles e ACAO e nao configuracao:
- *   IC_OP_CNTL   - escrever INVALIDATE_CACHE dispara a invalidacao;
- *   UCODE_ADDR   - trava de endereco da porta de escrita;
- *   UCODE_DATA   - porta de escrita da jump table.
- * Restaurar qualquer um desses seria acao disfarcada de restauracao — a mesma
- * regra que manteve GCVM_INVALIDATE_ENG0_REQ fora da transacao do GCVM. */
-#define BC250DBG_CP_TXN_REG_COUNT 10u
+ * ABI 27: 30 registradores (incluindo CPC/MEC, clocks e golden). */
+#define BC250DBG_CP_TXN_REG_COUNT 30u
+#define BC250DBG_CP_GOLDEN_REG_COUNT 34u
+#define BC250DBG_CP_GOLDEN_AUDIT_REG_COUNT 36u /* 34 golden + CPG/CPC GPA */
+#define BC250DBG_CP_REPORT_REG_COUNT BC250DBG_CP_GOLDEN_AUDIT_REG_COUNT
+#define BC250DBG_CP_MAX_WRITES 40u /* 34 golden + restore do GRBM_GFX_INDEX */
 #define BC250DBG_CP_TXN_BAD_SAMPLES 6u
 
 typedef struct _BC250DBG_CP_UCODE_IO {
@@ -975,6 +987,58 @@ typedef struct _BC250DBG_CP_UCODE_IO {
     unsigned long VramOffset;        /* onde o ucode fica na VRAM, alinhado 4 KB */
     unsigned long DwordCount;        /* dwords do payload (STAGE) ou da jt (JT) */
     unsigned long UcodeVersion;      /* escrito em UCODE_ADDR no fim da jt */
+
+    /* ---- ENTRADA (ABI 25): tudo abaixo TEM de ficar antes de GpuAddr ----
+     *
+     * O DEFEITO QUE ISTO CORRIGE, E ELE CUSTOU TRES ENSAIOS
+     *
+     * BcCpUcode() zera a "metade de saida" com
+     *
+     *     RtlZeroMemory(Io + FIELD_OFFSET(..., GpuAddr), sizeof - offset)
+     *
+     * Ou seja: GpuAddr e a fronteira, e TUDO depois dela e zerado antes de ser
+     * usado. Os campos de entrada das ABIs 21, 23 e 24 foram acrescentados no
+     * FIM da estrutura, ou seja, do lado errado da fronteira. Chegavam do user
+     * mode preenchidos e eram zerados pelo driver antes da primeira leitura.
+     *
+     * Consequencia, medida e conferida na evidencia:
+     *
+     *   ABI 21 / 02:07  'cp icbase -va' escreveu o endereco FISICO. O ensaio de
+     *                   VA traduzida nunca testou VA. A evidencia mostrava
+     *                   "queria 0x0E000000 / 0x000000F4" e eu li por cima.
+     *   ABI 23 / 08:45  o A/B do EXE_DISABLE rodou com o bit em 0 nas DUAS
+     *                   passagens. "Identico bit a bit" comparava configuracoes
+     *                   identicas.
+     *   ABI 24 / 13:03  o pulso de reset nunca assertou: escreveu 0x15000000 nos
+     *                   dois lados. A hipotese do dominio de reset NAO foi
+     *                   testada.
+     *
+     * A guarda C_ASSERT no fim deste arquivo impede a reincidencia: campo de
+     * entrada depois de GpuAddr passa a ser erro de compilacao, nao ensaio
+     * perdido. */
+
+    /* ABI 21: endereco explicito para o IC_BASE, em vez do fisico derivado.
+     * O caso de uso e apontar para uma VA que a page table do VMID 0 resolve,
+     * reproduzindo o que o amdgpu faz com endereco de GTT.
+     * OverrideValid = 0 mantem o comportamento anterior, byte a byte. */
+    unsigned long OverrideValid;
+    unsigned long long OverrideGpuAddr;
+
+    /* ABI 23: EXE_DISABLE do IC_BASE_CNTL, para o teste diferencial.
+     * IC_BASE_* e write-only, entao nenhum readback confirma aceitacao. Escrever
+     * dois valores que o hardware deveria tratar de forma diferente e comparar o
+     * COMPORTAMENTO e o unico jeito de medir efeito: PC diferente entre 0 e 1
+     * prova que a escrita chega; identico e evidencia de que nao produz efeito. */
+    unsigned long ExeDisable;
+
+    /* ABI 24: pulso de reset das pipes pelo CP_ME_CNTL.
+     * Mascaras do gc_10_1_0_sh_mask.h completo:
+     *   CE/PFP/ME_INVALIDATE_ICACHE  bits 4,6,8    0x00000150
+     *   CE/PFP/ME_PIPE0/1_RESET      bits 16..21   0x003F0000
+     * O dominio de reset das microengines esta DENTRO do CP_ME_CNTL — nosso
+     * 0x15000000 tem os tres HALT e zero reset.
+     * PipeResetAssert: 1 assere os seis bits mantendo os HALT; 0 limpa. */
+    unsigned long PipeResetAssert;
     /* Saida de contexto. */
     unsigned long long GpuAddr;      /* endereco de GPU do ucode */
     unsigned long RegBaseLo, RegBaseHi, RegBaseCntl, RegOpCntl;
@@ -987,25 +1051,13 @@ typedef struct _BC250DBG_CP_UCODE_IO {
     /* ICINVAL */
     unsigned long OpCntlBefore, OpCntlAfterWrite, OpCntlAfterWait;
     unsigned long PollIterations, TimedOut;
-    /* ICBASE / JT: antes, querido, depois, por escrita. */
+    /* ICBASE / JT / GOLDEN: antes, querido, depois, por escrita. */
     unsigned long WriteCount;
-    unsigned long WrOffset[8], WrBefore[8], WrWanted[8], WrAfter[8];
-    /* ABI 20: esta escrita foi para registrador WRITE-ONLY?
-     *
-     * Medido em 2026-08-23, nos dois sistemas: CP_*_IC_* e CP_*_UCODE_ADDR leem
-     * 0xFFFFFFFF, e o CP funciona no Linux com essa mesma leitura. A unica
-     * explicacao consistente e que sao write-only — a escrita vale, a leitura
-     * nao.
-     *
-     * A guarda BcRegResponds() foi criada para matar um falso positivo, mas se
-     * aplicada aqui BLOQUEARIA exatamente a escrita que funciona no Linux. A
-     * correcao nao e desligar a guarda: e classificar o registrador e nunca
-     * afirmar confirmacao onde ela e impossivel.
-     *
-     * WrWriteOnly[i] = 1 diz "esta escrita nao pode ser conferida por readback".
-     * A prova, nesses casos, muda de lugar: passa a ser o ponteiro de instrucao
-     * da microengine andando. */
-    unsigned long WrWriteOnly[8];
+    unsigned long WrOffset[BC250DBG_CP_MAX_WRITES];
+    unsigned long WrBefore[BC250DBG_CP_MAX_WRITES];
+    unsigned long WrWanted[BC250DBG_CP_MAX_WRITES];
+    unsigned long WrAfter[BC250DBG_CP_MAX_WRITES];
+    unsigned long WrWriteOnly[BC250DBG_CP_MAX_WRITES];
     /* ICINVAL: o COMPLETE e legivel neste hardware? */
     unsigned long InvConfirmavel;
     /* Transacao. */
@@ -1013,13 +1065,36 @@ typedef struct _BC250DBG_CP_UCODE_IO {
     unsigned long BadOffset[BC250DBG_CP_TXN_BAD_SAMPLES];
     unsigned long BadGot[BC250DBG_CP_TXN_BAD_SAMPLES];
     unsigned long BadWant[BC250DBG_CP_TXN_BAD_SAMPLES];
-    unsigned long Offsets[BC250DBG_CP_TXN_REG_COUNT];
-    unsigned long Values[BC250DBG_CP_TXN_REG_COUNT];
+    /* ABI 29: capacidade para o preflight readonly das 34 golden + 2 GPA. */
+    unsigned long Offsets[BC250DBG_CP_REPORT_REG_COUNT];
+    unsigned long Values[BC250DBG_CP_REPORT_REG_COUNT];
     /* Estado do CP, lido em toda operacao. */
     unsigned long CpMeCntl, CpStat, GrbmStatus, GrbmStatus2;
     unsigned long PfpInstrPntr, MeInstrPntr, CeInstrPntr, Mec1InstrPntr;
+    /* ABI 26: Status de carga da Jump Table nas microengines (JT_LOADED). */
+    unsigned long PfpJtStat, CeJtStat, MecJtStat;
     /* O payload segue esta estrutura, DwordCount dwords, como no LOAD_IP_FW. */
 } BC250DBG_CP_UCODE_IO;
+
+/* GUARDA DE COMPILACAO (ABI 25)
+ *
+ * BcCpUcode() zera de GpuAddr ate o fim da estrutura. Todo campo de ENTRADA tem
+ * de ficar ANTES dessa fronteira. Acrescentar um campo de entrada depois dela
+ * compila hoje e falha silenciosamente em hardware — foi o que aconteceu com as
+ * ABIs 21, 23 e 24, e custou tres ensaios com boot limpo cada.
+ *
+ * Estas linhas transformam esse erro em erro de compilacao. Ao acrescentar um
+ * campo de entrada novo, acrescente tambem a linha correspondente aqui. */
+#ifdef C_ASSERT
+C_ASSERT(FIELD_OFFSET(BC250DBG_CP_UCODE_IO, OverrideValid) <
+         FIELD_OFFSET(BC250DBG_CP_UCODE_IO, GpuAddr));
+C_ASSERT(FIELD_OFFSET(BC250DBG_CP_UCODE_IO, OverrideGpuAddr) <
+         FIELD_OFFSET(BC250DBG_CP_UCODE_IO, GpuAddr));
+C_ASSERT(FIELD_OFFSET(BC250DBG_CP_UCODE_IO, ExeDisable) <
+         FIELD_OFFSET(BC250DBG_CP_UCODE_IO, GpuAddr));
+C_ASSERT(FIELD_OFFSET(BC250DBG_CP_UCODE_IO, PipeResetAssert) <
+         FIELD_OFFSET(BC250DBG_CP_UCODE_IO, GpuAddr));
+#endif
 
 /* Bring-up do RLC.
  *
@@ -1136,6 +1211,10 @@ typedef struct _BC250DBG_GFX_INIT_IO {
 typedef struct _BC250DBG_GFX_SUBMIT_IO {
     unsigned long Size, DwordCount, Data[BC250DBG_GFX_SUBMIT_MAX_DW];
     unsigned long RptrBefore, RptrAfter, Wptr, Completed, Status;
+    /* Diagnostico de estado das microengines do CP durante a submissao */
+    unsigned long CpMeCntl, CpMecCntl, CpStat;
+    unsigned long PfpInstrPntr, MeInstrPntr, CeInstrPntr, Mec1InstrPntr;
+    unsigned long PfpJtStat, CeJtStat, MecJtStat;
 } BC250DBG_GFX_SUBMIT_IO;
 typedef struct _BC250DBG_GFX_STATUS_IO {
     unsigned long Size, MeCntl, Rb0Cntl;

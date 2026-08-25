@@ -1,0 +1,22 @@
+﻿{
+    "SchemaVersion":  1,
+    "Sequence":  16,
+    "LastField":  16,
+    "LastValue":  0,
+    "DriverEntryReached":  1,
+    "InitializationDataReady":  1,
+    "DxgkInitializeStatus":  0,
+    "AddDeviceEntered":  1,
+    "AddDeviceStatus":  0,
+    "StartDeviceEntered":  1,
+    "InterfaceAccepted":  1,
+    "DeviceInfoStatus":  0,
+    "PciStatus":  0,
+    "PciBytesRead":  64,
+    "BarCount":  3,
+    "RuntimeMissing":  1,
+    "RemoveDeviceEntered":  1,
+    "StopDeviceEntered":  1,
+    "StopDeviceStatus":  0,
+    "RemoveDeviceStatus":  0
+}

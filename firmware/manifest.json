@@ -19,7 +19,12 @@
       },
       "payload_sha256": "faeb5f1356057e3c16f7d07f5f30783bdc4e17394570a1497a97458517130057",
       "structurally_valid": true,
-      "issues": []
+      "issues": [],
+      "gfx_header": {
+        "ucode_feature_version": 32,
+        "jt_offset_dwords": 65536,
+        "jt_size_dwords": 96
+      }
     },
     {
       "name": "cyan_skillfish2_me.bin",
@@ -38,7 +43,12 @@
       },
       "payload_sha256": "47eb26bb1a22a4fcd6d3350012a52a7eb9192278e810b670a39651a1d71ce030",
       "structurally_valid": true,
-      "issues": []
+      "issues": [],
+      "gfx_header": {
+        "ucode_feature_version": 32,
+        "jt_offset_dwords": 65536,
+        "jt_size_dwords": 128
+      }
     },
     {
       "name": "cyan_skillfish2_mec.bin",
@@ -57,7 +67,15 @@
       },
       "payload_sha256": "3e1fdf268a6580fe755f4a8a506181a670da71c28e599a77318e5b2d65e597a2",
       "structurally_valid": true,
-      "issues": []
+      "issues": [],
+      "gfx_header": {
+        "ucode_feature_version": 32,
+        "jt_offset_dwords": 66860,
+        "jt_size_dwords": 224,
+        "mec_main_payload_bytes": 267440,
+        "mec_jt_payload_bytes": 896,
+        "mec_jt_end_bytes": 268336
+      }
     },
     {
       "name": "cyan_skillfish2_mec2.bin",
@@ -76,7 +94,15 @@
       },
       "payload_sha256": "3e1fdf268a6580fe755f4a8a506181a670da71c28e599a77318e5b2d65e597a2",
       "structurally_valid": true,
-      "issues": []
+      "issues": [],
+      "gfx_header": {
+        "ucode_feature_version": 32,
+        "jt_offset_dwords": 66860,
+        "jt_size_dwords": 224,
+        "mec_main_payload_bytes": 267440,
+        "mec_jt_payload_bytes": 896,
+        "mec_jt_end_bytes": 268336
+      }
     },
     {
       "name": "cyan_skillfish2_pfp.bin",
@@ -95,7 +121,12 @@
       },
       "payload_sha256": "5aa30f3b2e1c697ad2bfe02643777552d5351ec6813572271f01320f65ca7367",
       "structurally_valid": true,
-      "issues": []
+      "issues": [],
+      "gfx_header": {
+        "ucode_feature_version": 32,
+        "jt_offset_dwords": 65536,
+        "jt_size_dwords": 128
+      }
     },
     {
       "name": "cyan_skillfish2_rlc.bin",

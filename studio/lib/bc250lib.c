@@ -1154,6 +1154,19 @@ int Bc250PspLoadIpFw(BC250_CTX *ctx, uint32_t fwType, const uint32_t *dwords,
     size_t totalBytes = sizeof(BC250DBG_PSP_LOAD_FW_IO) + count * sizeof(uint32_t);
     int rc;
 
+    if (fwType >= BC250_PSP_FW_CP_ME && fwType <= BC250_PSP_FW_CP_MEC_JT1) {
+        (void)ctx;
+        (void)dwords;
+        (void)count;
+        if (out) {
+            memset(out, 0, sizeof(*out));
+            out->Size = sizeof(*out);
+            out->FwType = fwType;
+            out->RespStatus = BC250DBG_OPS_BADOP;
+        }
+        return ERROR_NOT_SUPPORTED;
+    }
+
     io = (BC250DBG_PSP_LOAD_FW_IO *)malloc(totalBytes);
     if (!io) return ERROR_NOT_ENOUGH_MEMORY;
 
@@ -1348,9 +1361,12 @@ int Bc250VramVerifyPattern(BC250_CTX *ctx, BC250DBG_VRAM_PATTERN_IO *io)
 
 int Bc250PspSetupTmr(BC250_CTX *ctx, BC250DBG_PSP_SETUP_TMR_IO *io)
 {
+    (void)ctx;
     if (!io) return ERROR_INVALID_PARAMETER;
+    memset(io, 0, sizeof(*io));
     io->Size = sizeof(*io);
-    return Ioctl(ctx, IOCTL_BC250DBG_PSP_SETUP_TMR, io, sizeof(*io), io, sizeof(*io), NULL);
+    io->RespStatus = BC250DBG_OPS_BADOP;
+    return ERROR_NOT_SUPPORTED;
 }
 
 int Bc250GfxInit(BC250_CTX *ctx, BC250DBG_GFX_INIT_IO *io)

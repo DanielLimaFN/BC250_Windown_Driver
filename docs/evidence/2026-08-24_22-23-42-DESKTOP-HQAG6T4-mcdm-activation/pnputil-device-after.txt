@@ -1,0 +1,10 @@
+﻿Utilitßrio PnP da Microsoft
+
+ID da InstÔncia:                PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041
+DescriþÒo do Dispositivo:         Adaptador de VÝdeo Bßsico da Microsoft
+Nome da Classe:                 Display
+GUID de Classe:                 {4d36e968-e325-11ce-bfc1-08002be10318}
+Nome do Fabricante:          (Tipos padrÒo de vÝdeo)
+Status:                     Iniciado
+Nome do Driver:                display.inf
+

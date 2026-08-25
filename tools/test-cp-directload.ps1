@@ -4,8 +4,14 @@
     POR QUE DIRECT LOAD
 
     Medido em 2026-08-23 14:21: o SOS desta placa ACEITA o RLC e RECUSA as quatro
-    microengines do CP com 0x80000203. Coerente com o upstream — psp_v11_0_8 nao
-    tem load_ip_fw para o CP. O GFX10 carrega o CP grafico por direct load.
+    microengines do CP com 0x80000203 na sequencia entao usada.
+
+    CORRECAO DE 2026-08-24: a conclusao seguinte foi revogada. Embora
+    psp_v11_0_8.c implemente apenas o transporte do ring, amdgpu_psp.c generico
+    envia LOAD_IP_FW para os ucodes CP quando load_type=AMDGPU_FW_LOAD_PSP.
+    Logo 0x80000203 nao prova que o chip exige direct load; pode refletir ordem,
+    TMR, endereco MC ou empacotamento divergente. Este harness continua em
+    quarentena pelos gates golden ABI 29.
 
     O MECANISMO, DE gfx_v10_0_cp_gfx_load_pfp_microcode()
 

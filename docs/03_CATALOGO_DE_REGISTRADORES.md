@@ -871,10 +871,14 @@ metades importam:
   independente, com origem de payload diferente. Dois caminhos distintos
   chegando ao mesmo código tornam improvável que seja defeito de protocolo.
 
-E isso é coerente com o upstream: o PSP desta geração (`psp_v11_0_8`) não tem
-caminho de `load_ip_fw` para o CP. **O CP gráfico do GFX10 é carregado por
-direct load**, com o driver apontando a cache de instruções da microengine para
-o ucode em memória — `gfx_v10_0_cp_gfx_load_pfp_microcode()` e irmãs.
+Conclusão histórica revogada em 2026-08-24: o fato de `psp_v11_0_8.c` conter
+somente as funções do ring não elimina `LOAD_IP_FW`. O caminho genérico de
+`amdgpu_psp.c`, quando `firmware.load_type == AMDGPU_FW_LOAD_PSP`, percorre a
+lista de ucodes e envia `LOAD_IP_FW`, incluindo CE, PFP, ME, MEC e a Jump Table
+do MEC. Portanto o `0x80000203` continua sendo fato físico daquela sequência,
+mas **não prova** que a BC-250 exige direct load. A sequência usada também não
+reproduzia a ordem completa do upstream (`SETUP_TMR`, CP antes de RLC e MEC/JT
+separados).
 
 ### O que ainda não se sabe
 

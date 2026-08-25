@@ -1,17 +1,213 @@
 # Estado consolidado antes do WDDM
 
-Atualizado em: 2026-08-23. Gate mínimo e rollback confirmados no silício; o
-gate de recuperação está reprovado e é o bloqueador atual.
+Atualizacao offline apos o binding 0.5.0.0: o contrato
+`bc250_firmware_staging` passou `/W4 /WX` com transporte falso. Ele valida
+SHA-256 antes de I/O, guarda o conteudo anterior, confere readback, restaura em
+falha e bloqueia fechamento se o rollback nao puder ser provado. Os hashes de
+PFP/ME/CE/MEC/MEC_JT1 estao amarrados ao manifesto compilado e ao auditor dos
+blobs. O novo `bc250_staging_lease` exige os selos do preflight/snapshot e
+evidencias distintas de espaco livre, exclusao de scanout e reservas runtime;
+lease adulterada ou obsoleta falha antes de I/O. A evidencia dos testes e
+sintetica e a DDI ainda nao consegue produzi-la. Nada foi ligado a DDI ou
+instalado; percentuais fisicos nao mudam.
+
+Atualizacao offline de post-display ownership: foi implementado e testado o
+adaptador de `DxgkCbAcquirePostDisplayOwnership[2]`. Uma resposta valida produz
+reserva `SCANOUT` a partir do endereco fisico/pitch/altura, somente se a faixa
+cabe no BAR PnP unico. O callback transfere ownership, portanto o componente nao
+foi ligado a DDI/sys nem chamado no hardware. Isso identifica uma fonte para o
+framebuffer herdado, mas ainda nao fornece inventario integral de VRAM.
+
+Atualizacao offline do Discovery TMR: `bc250_discovery_tmr_reader` captura
+`DRIVER_SCRATCH_0/1/2` duas vezes via allowlist MMIO, exige valores estaveis e
+valida offset/tamanho contra a VRAM runtime. Tamanho zero e `NOT_REPORTED`; o
+fallback no fim da VRAM segue bloqueado sem assinatura fisica. Testes puros e
+atraves do transporte BAR falso passaram; nada foi ligado a telemetria/sys.
+Depois desse trabalho, o recovery foi executado em Modo de Seguranca. A
+verificacao normal confirmou `BasicDisplay`, Codigo 0, somente `display.inf`,
+nenhum pacote BC250 readonly e nenhum reboot pendente. Este e o baseline atual.
+
+Atualizacao MCDM 0.5.0.0, evidencia de 2026-08-24 22:43: o schema 5 passou no
+hardware ate `ReadonlyGatePassed=1`. PCI, tres BARs, MMIO/topologia e ReBAR sao
+leituras fisicas validas. Auditoria posterior encontrou que
+`EXCLUSIVE_ADAPTER` e `INVENTORY_COMPLETE` eram autoatribuidos; assim ownership,
+endereco e contrato PSP apenas passaram logicamente sobre inventario nao
+comprovado. Foram planejados
+TMR `0x1FC00000`/4 MiB e staging `0x0FFBE000`/267440 bytes, sem efetivar
+reserva: `FirmwareBytesStaged=0` e `PspTransportCalls=0`. Stop/Remove retornaram
+zero; Codigo 43 e `STATUS_NOT_SUPPORTED` permanecem intencionais na evidencia.
+O `oem16.inf` foi removido depois em Modo de Seguranca e a maquina voltou a
+`BasicDisplay`, Codigo 0. Veredito: NAO VALIDADO EM HARDWARE.
+
+Atualizacao MCDM de 2026-08-25 01:22: o binding 0.4.0.0 passou topologia e
+ReBAR no silicio (mascara ReBAR `0x700`, 256 MiB selecionados/atribuidos) e
+parou intencionalmente em `RuntimeMissing=1`. `OwnershipFlags=0x7F` foi
+reclassificado: os bits de exclusividade/inventario vinham do proprio codigo.
+Stop/Remove retornaram zero; o Codigo 43 e o fail-closed esperado. O pacote
+offline 0.5.0.0 substitui tamanhos sinteticos pelo manifesto CP auditado:
+PFP 263168, ME 263168, CE 263040, MEC 267440 e MEC_JT1 896 bytes. Ele apenas
+constroi o plano candidato, registra `FirmwareBytesStaged=0` e
+`PspTransportCalls=0`, e continua retornando `STATUS_NOT_SUPPORTED`. Build
+`/W4 /WX`, testes, auditoria por hash, Inf2Cat e assinatura passaram. O ensaio
+0.4.0.0 esta em `oem16.inf`; recuperar em Modo de Seguranca antes do pre-stage
+0.5.0.0. Veredito: NAO VALIDADO EM HARDWARE.
+
+Atualizacao MCDM de 2026-08-25 01:05: 0.3.0.0 aprovou o inventario MMIO
+readonly: 8 leituras, 2 passagens, unmap zero, VRAM 512 MiB, janela CPU 256 MiB,
+FB `0xF400..0xF41F` e offset `0x450`. A versao offline 0.4.0.0 sela ownership
+com essas evidencias e audita ReBAR suportado/selecionado/atribuido antes de
+parar sem manifesto. Schema 4, `/W4 /WX`, testes, Inf2Cat e assinatura passaram.
+Recuperar `oem15.inf`/0.3.0.0 em Modo de Seguranca antes do pre-stage.
+Veredito: NAO VALIDADO EM HARDWARE.
+
+Atualizado em: 2026-08-24, após o preflight PSP readonly das 18:27 e a
+quarentena fail-closed de `SETUP_TMR`.
+Workspace em ABI 29. O bloqueador atual é **o latch da Jump Table e a execução do
+CP**: as quatro microengines saem do HALT, mas `JT_LOADED=0`, os PCs ficam
+constantes em `0x0000041E` e o RPTR não consome os pacotes PM4.
+
+Atualizacao MCDM das 22:23: `oem5.inf` esta no Driver Store, mas nao houve
+binding. O SetupAPI manteve `display.inf` por rank `00FB2008` e classificou o
+MCDM Authenticode como `Outranked`, rank `00FF2001`. O retorno 259 ocorreu antes
+de `DriverEntry`; `bc250readonly` e a telemetria nao existem, e a BC-250 segue
+em `BasicDisplay` saudavel. O proximo gate de miniport e um binding explicitamente
+forcado e recuperavel, nao outra chamada ao PnPUtil.
 
 Este é o documento vivo de passagem de sessão. Ele resume o que foi feito, o
 estado atual da máquina, o que está comprovado, o que falhou e quais gates ainda
 precisam passar antes de iniciar a implementação do miniport WDDM.
 
+Auditoria posterior, sem acesso ao hardware: com IP Discovery, o kernel obtém
+SE/SH da tabela GC; sem ela usa `cyan_skillfish_gpu_info.bin` (sem sufixo `2`).
+`tools/fwinspect.py` ganhou decodificação desse fallback e o coletor Linux agora
+arquiva também a linha de topologia do `dmesg`. Nenhum dos caminhos fornece
+diretamente a quantidade do eixo `GRBM INSTANCE`; portanto o apply golden e os
+quatro harnesses CP permanecem em quarentena na ABI 29.
+
+A captura Fedora de 14:14 confirmou a topologia consumida pelo Linux:
+`2 SE × 2 SH/SE × 10 CU/SH = 40` CUs de capacidade, mas somente `24` ativos.
+IP Discovery estava presente e confirmou GC 10.1.3 nas bases SOC15
+`0x1260/0xA000/0x02402C00`; o fallback `gpu_info` não estava instalado. O ordinal
+de instância IP não dimensiona `GRBM INSTANCE`, portanto a quarentena permanece.
+
+O preflight físico ABI 29 das 17:23 completou 36 leituras reportadas e zero
+escrita. O resultado foi recusado com quatro casos estáveis em `0xFFFFFFFF`:
+dois registros golden GL2 (`0x33884/0x3380C`) e os dois GPA auxiliares
+(`0x3F040/0x3F044`). A comparação Linux mostra `0xFFFFFFCF` nos GL2 depois do
+golden init; no Windows, `0xFFFFFFFF` continua ambíguo entre valor pré-init e
+não resposta. Os GPA não decodificam nesse estado. Classificação conservadora:
+32 golden confirmados, 2 golden ambíguos e 2 GPA indisponíveis. O apply segue
+bloqueado.
+
+Auditoria posterior corrigiu a semântica da máscara golden para a operação
+literal do upstream: `(lido & ~mask) | (or_value & mask)`. A projeção coincide
+com o sweep Linux em 30/31 registros comparáveis; apenas `RMI_SPARE` difere no
+bit 0 (`0xFFFF3101` projetado, `0xFFFF3100` Linux), ainda sem causa provada.
+Isso confirma a tabela, mas não autoriza o apply nem resolve o rollback por
+banco. O upstream seleciona SE/SA explicitamente e mantém a instância em
+broadcast; ele não dimensiona `INSTANCE_INDEX`.
+
+`RLC_RLCS_UTCL2_CNTL` (`0x3BB98`) vale `0x18` no Linux e a leitura elevada no
+Windows também retornou `0x00000018`. Isso deixa o enable
+`GPA_OVERRIDE` apagado e só programa `GPA_OVERRIDE_VALUE=3`. Não substituir os
+dois PSP_DEBUG congelados por esse registrador sem uma sequência upstream que
+prove equivalência.
+
+Auditoria posterior revogou os dois `CPG/CPC_PSP_DEBUG` como bloqueadores do
+caminho PSP: `gfx_v10_0_disable_gpa_mode()` só é chamado dentro do ramo
+`AMDGPU_FW_LOAD_DIRECT`. A captura Linux detecta `psp_v11_0_8`, reserva 4 MiB de
+TMR e inicializa o SMU; em `amdgpu_discovery.c`, o bloco PSP é adicionado no
+ramo `AMDGPU_FW_LOAD_PSP`. Isso identifica o caminho saudável como PSP, sem
+autorizar o apply golden nem provar execução no Windows.
+
+Também foi revogada a conclusão “`psp_v11_0_8` não carrega CP”. O arquivo
+específico implementa apenas o ring; `amdgpu_psp.c` genérico envia
+`LOAD_IP_FW` para a lista de firmware quando o load type é PSP. O ensaio antigo
+divergia da sequência upstream: não fazia `SETUP_TMR`, carregava RLC antes de CP
+e não separava MEC de MEC1_JT. Como PFP/ME/CE/MEC já retornaram `0x80000203` em
+2026-08-23, `tools/test-cp-psp-load.ps1` foi posto em quarentena para não gastar
+outro boot repetindo um resultado sem controle dessas diferenças.
+
+O preflight PSP físico das 18:27 fez 20 leituras e zero escritas. TOS estava
+pronto, sem ring do laboratório; `BOOTLOAD_STATUS=0`, UTCL2 permaneceu `0x18`,
+CP/MEC estavam haltados e os quatro PCs ficaram em zero. A diferença de
+`RLC_GPM_STAT` para o Linux é exatamente `0x00400000`: somente
+`RLC_EXEC_ROM_CODE`, ligado no Windows medido e desligado no Linux saudável.
+Evidência:
+`docs/evidence/2026-08-24_18-27-33-DESKTOP-HQAG6T4-cp-psp-preflight`.
+
+`SETUP_TMR` permanece bloqueado. A implementação antiga não reservava VRAM:
+ela assumia tamanho/offset fixos e fabricava PA a partir de `FB_OFFSET`. Kernel,
+biblioteca e CLI agora recusam fail-closed; o auditor estático passa. O build
+ABI 29 novo foi compilado e assinado, sem instalação, com SHA-256 do `.sys`
+`3C647C4770A3210FA67073491B1D299541EAA3DF0F2BF689A21B5E3DE1BA080B`.
+Os tipos CP 1..5 de `LOAD_IP_FW` também recusam antes de staging/IOCTL; a guarda
+não muda os caminhos RLC/SDMA já existentes.
+
+Uma captura PnP/CIM readonly às 18:44 confirmou os recursos Windows sem abrir o
+laboratório: segmentos disjuntos de 256 MiB em `0xC0000000`, 2 MiB em
+`0xD0000000` e 512 KiB em `0xFE800000`. A maior abertura CPU é 256 MiB; ela não
+alcança a TMR que o Linux colocou no offset `0x1F800000` de uma VRAM de 512 MiB.
+Isso confirma o limite da janela, mas não concede ownership de VRAM ao driver
+legacy. Evidência:
+`docs/evidence/2026-08-24_18-44-30-DESKTOP-HQAG6T4-pci-resources`.
+
+O primeiro componente do futuro miniport foi implementado offline:
+`driver/core/bc250_resource_contract.c`. Ele cruza índices/bases de BAR com
+recursos traduzidos, resolve o descritor agregado de `0x10200000` sem engolir a
+janela filha e falha em toda ambiguidade. O teste sintético obrigatório passou
+com `/W4 /WX`; isso fecha lógica de classificação, não ownership nem execução.
+
+A ponte WDK `driver/wdk/bc250_cm_resource_adapter.{h,c}` agora percorre todas
+as full lists de `CM_RESOURCE_LIST` pelo tamanho variável correto, suporta
+`MemoryLarge` e recusa layouts que exigiriam inferir bytes extras. Ela e o
+contrato compilam como objetos kernel reproduzíveis com `/W4 /WX /Brepro`; o
+teste host com os tipos reais do WDK passa para full lists variáveis e negativos.
+Agora existe um esqueleto com assinaturas reais de StartDevice/StopDevice e uma
+chamada tipada a `DxgkCbGetDeviceInformation`, exercitada somente por callback
+falso em teste WDK. Ele sempre retorna `STATUS_NOT_SUPPORTED`; o pacote foi
+pre-estagiado, mas ainda não houve binding, registro efetivo no Dxgkrnl,
+invocação física ou `DxgkCbMapMemory`.
+
+O planejador de VRAM offline também foi implementado em
+`driver/core/bc250_vram_allocator.c`. Ele separa VRAM total de abertura
+CPU-visible, mantém reservas por token/geração e recusa overlap, overflow,
+alinhamento inválido, token antigo e liberação de região persistente. O cenário
+512/256 MiB reproduz os offsets esperados apenas como teste sintético. PA e MC
+continuam ausentes; nenhuma região real foi reservada.
+
+O próximo elo offline da rota PSP/CP também existe. `bc250_address_contract`
+vincula token, offset, MC e `system_phy_addr` usando `vram_start` e
+`vram_base_offset` do mesmo snapshot. `bc250_psp_contract` serializa TMR e
+firmware CP sem aceitar endereços brutos e mantém MEC/MEC_JT1 separados. Os
+testes user-mode e a compilação WDK passam; nenhum payload foi submetido ao PSP.
+
 ## Resumo breve
 
 Progresso conservador até uma base estável pré-WDDM:
 
-`██████████████████▋░ 93%`
+`█████████████████▋░░ 88%`
+
+### O bloqueador, em cinco linhas (2026-08-24)
+
+As quatro microengines do CP saem do HALT, mas param em `0x0000041E`, o mesmo
+valor nas quatro e constante em todas as amostras. A evidência física mostra
+`JT_LOADED=0`, RPTR imóvel e ausência de resultado de `WRITE_DATA`. O RLC está
+fora da ROM e GCVM/VMID 0 passou seu gate 20/20, mas isso não prova execução do
+CP. A associação de `0x041E` ao polling da Jump Table é inferência apoiada pela
+referência; o fato físico é PC constante mais `JT_LOADED=0`.
+
+O pulso de reset das pipes também foi medido de verdade em ABI 27:
+`CP_ME_CNTL 0x15000000 -> 0x153F0000 -> 0x15000000`. Ele não alterou o latch nem
+os PCs. A hipótese estreita de reset nunca emitido está fechada; a execução
+continua não validada. Evidência:
+`docs/evidence/2026-08-24_16-28-16-DESKTOP-HQAG6T4-cp-unhalt`.
+
+```
+Projeto (pré-WDDM)      █████████████████▋░░  88%
+Bloco GCVM/CP/compute   ████████████████░░░░  80%
+CP — execução           ░░░░░░░░░░░░░░░░░░░░   0%   <- a porta
+```
 
 A máquina está isolada do driver legado: a BC-250 usa Microsoft Basic Display
 Adapter, `bc250v4` foi removido offline e `bc250dbg` é o único laboratório
@@ -93,11 +289,10 @@ esconder a limitação.
 O gate de recuperação saiu da lista: reescrito em requisitos verificáveis, foi
 medido e aprovado em 2026-08-23 08:53. Sobram três frentes, em ordem de peso:
 
-1. **GCVM/VMID0, CP e compute** — `███▌░░░░░░ 35%`. Passo 1 de 6 aprovado: page
-   table construída na VRAM e conferida entrada por entrada, com o endereço
-   físico derivado de registrador lido em runtime. Faltam os passos 2 a 6, que
-   envolvem escrever registrador de tradução, e CP/PM4 e MQD/HQD continuam
-   intocados.
+1. **CP/PM4 e compute.** GCVM/VMID 0 está provado no ensaio 20/20, RLC está fora
+   da ROM e o caminho de controle/rollback do CP funciona. Falta `JT_LOADED=3`,
+   PCs realmente executando e consumo físico do ring. MQD/HQD continua atrás
+   desse bloqueio.
 2. **Observabilidade física** — `████░░░░░░ 40%`. GFXOFF nunca foi visto
    transicionar, e carga de SDMA não serve para provocar a transição; térmica
    sem calibração; potência indisponível sem fonte confiável.
@@ -119,9 +314,11 @@ Veredito formal atual:
 - Binding de vídeo: `BasicDisplay` / Microsoft Basic Display Adapter.
 - Pacote e serviço `bc250v4`: ausentes; não reinstalar.
 - Laboratório permitido: somente `bc250dbg`.
-- Driver de laboratório instalado: `bc250dbg v7.0`, ABI 7.
-- Workspace: `v9.0`, ABI 9: o `sdma enginereset` restaura a configuração da
-  UTCL1 após o pulso. Exige `dbg/install.bat` antes do próximo ensaio.
+- Workspace: `bc250dbg` ABI 29. `cp golden preflight` audita em modo readonly as
+  34 golden settings e os dois GPA; `cp golden apply` continua fail-closed porque
+  o broadcast ainda não possui snapshot/rollback por SE/SH/instância.
+- Versão instalada: **não presumida por este documento**. Antes do próximo
+  ensaio, conferir ABI e hash; reinstalar com `dbg/install.bat` se divergirem.
 - CLI recompilado depois do último ensaio (remoção da heurística enganosa do
   `sdma fault`); o preflight só compara o hash do `.sys`, então não exige
   reinstalação.
@@ -131,13 +328,9 @@ Veredito formal atual:
 - Armamento após o ensaio: `readonly`.
 - PSP: TOS pronto; nenhum ring GPCOM registrado.
 - SDMA ring: desabilitado, base zerada e polling zerado.
-- Estado residual da sessão de 2026-08-23 01:05, ao encerrar o dia: firmware
-  SDMA carregado, engine SDMA0 com o caminho de escrita quebrado pelo caso
-  negativo de opcode reservado. Anel desabilitado, base e ponteiros zerados,
-  F32 haltado, VRAM de destino restaurada.
-- **Antes de qualquer novo ensaio: reiniciar.** O preflight recusa a sessão
-  sozinho, mas a engine quebrada também não voltaria por software — foi o que
-  os quatro degraus da escada demonstraram.
+- Estado físico atual da sessão: **não inferido da última pasta de evidência**.
+  Antes de qualquer novo ensaio mutável, reiniciar e deixar o preflight comprovar
+  boot limpo.
 - A máquina está utilizável normalmente: o display usa BasicDisplay, que não
   depende da SDMA.
 - SMU Q0: responde corretamente; TestMessage continua retornando status `1`.
@@ -146,10 +339,8 @@ Veredito formal atual:
 - Driver Verifier: configuração histórica voltada ao antigo `bc250wddm.sys` deve
   ser revisada antes de qualquer futuro miniport.
 
-O estado atual não é considerado baseline limpo por causa do firmware SDMA em
-execução e do F32 fora de HALT. Os ponteiros estão zerados e o ring está
-desabilitado, mas é obrigatório reiniciar antes da próxima confirmação física —
-foi exatamente por isso que o ensaio de robustez se recusou a rodar.
+Este documento não declara a sessão corrente como baseline. O próximo ensaio de
+hardware exige reboot e preflight de boot limpo.
 
 ## Tudo que já foi realizado
 
@@ -571,7 +762,7 @@ Três coisas o tornam decisivo em vez de sugestivo:
 
 **Não exige boot limpo e não contamina a sessão.**
 
-### 39. O PSP não carrega o CP: a frente muda de rota
+### 39. Histórico: `0x80000203` na sequência PSP incompleta
 
 Evidência: `docs/evidence/2026-08-23_14-21-34-DESKTOP-HQAG6T4-cp-firmware`.
 
@@ -585,14 +776,12 @@ CP a executar, e nada aqui o tirou de reset.
 demonstravelmente executou depois. O erro era de conteúdo, não de tipo não
 suportado.
 
-**Uma confirmação:** o `0x80000203` do CP reproduz o que a referência mediu, por
-um caminho de payload completamente diferente. Dois caminhos independentes
-chegando ao mesmo código tornam improvável defeito de protocolo.
-
-E é coerente com o upstream: `psp_v11_0_8` não tem `load_ip_fw` para o CP. O
-GFX10 usa **direct load**, e o mecanismo é a microengine buscar o próprio ucode
-da memória pela cache de instruções — `CP_PFP_IC_BASE_LO/HI` mais a jump table
-por `CP_PFP_UCODE_ADDR/DATA`.
+O `0x80000203` do CP reproduz o que a referência mediu por outro caminho de
+payload e permanece um fato. A conclusão “o PSP não carrega CP”, porém, foi
+revogada: `amdgpu_psp.c` genérico envia `LOAD_IP_FW` para CP no ramo PSP. As
+duas tentativas comparadas não reproduziam `SETUP_TMR`, ordem, endereço MC e
+separação MEC/JT do Linux. O direct-load descrito abaixo continua sendo um ramo
+upstream real, mas não é mais consequência lógica desse código de resposta.
 
 **O gate de memória virou pré-requisito do CP, não frente paralela.**
 `CP_PFP_IC_BASE_CNTL` tem campo `VMID`, que o upstream programa com 0. Se a busca
@@ -1823,12 +2012,35 @@ executado no silício.
 
 ### Gate de memória e filas antes do miniport
 
-- [ ] Validar GCVM/VMID0 com page tables reais e tipos distintos para PA, GPUVA
-  e offset de VRAM.
+- [x] Validar GCVM/VMID0 com page table real e distinção entre PA, GPUVA e
+  offset de VRAM: gate 20/20 aprovado no silício.
 - [ ] Validar coerência HDP/GCR e faults de tradução.
 - [ ] Só então considerar rings fora da VRAM fixa e buffers do sistema.
-- [ ] Carregar firmware CP estritamente pelo PSP, com lifecycle próprio.
+- [x] Identificar o caminho Linux saudável como PSP; a recusa histórica de
+  PFP/ME/CE/MEC veio de sequência incompleta e não prova direct load obrigatório.
+- [x] Implementar offline reserva TMR dinâmica e exclusiva, com MC/PA derivados
+  do mesmo token, inventário selado e manifesto CP tipado e atômico.
+- [x] Implementar offline a entrada que distingue BAR CPU-visible, VRAM total,
+  ownership exclusivo e inventário herdado antes de selar o bootstrap.
+- [x] Ligar `CM_RESOURCE_LIST` real do WDK ao preflight readonly por uma máquina
+  de estados testada, ainda sem DDI ou mapeamento.
+- [x] Implementar a DDI readonly com assinatura real, callback de device info e
+  retorno sempre fail-closed, testada sem instalação.
+- [x] Ligar `bc250readonly.sys` com DriverEntry/Add/Remove e tabela mínima,
+  `DxgkInitialize` e INF MCDM assinado/pre-estagiado; o binding ainda nao ocorreu.
+- [x] Trocar bases PCI staged por `DxgkCbReadDeviceSpace` readonly, validar
+  `1002:13FE` e cruzar com comprimentos vindos apenas dos recursos PnP.
+- [x] Percorrer ReBAR extended capability readonly e distinguir máscara
+  suportada, tamanho selecionado, comprimento atribuído e VRAM total.
+- [ ] Integrar o planejamento candidato ao ownership real do miniport e gerar o
+  preflight readonly com recursos Windows autoritativos e manifesto real. O
+  0.5.0.0 percorreu esse caminho, mas a auditoria descobriu que exclusividade e
+  inventario completo eram autoatribuidos. O codigo atual para em
+  `RUNTIME_MISSING` sem produtor externo; nenhuma reserva fisica foi efetivada.
 - [ ] Validar CP/PM4 com RPTR/WPTR, fence, scratch/resultado e status físico.
+- [x] Implementar offline staging transacional com lease selada, SHA-256,
+  readback, restauracao e estado contaminado terminal; falta produtor de
+  ownership/scanout/reservas fisicos e transporte BAR/PSP.
 - [ ] Montar KIQ/MQD/HQD e executar compute mínimo sem fallback de CPU.
 - [ ] Detectar em runtime CPU, CU/WGP utilizável, BAR/ReBAR, VRAM e GTT; não
   anunciar constantes históricas como capacidade.
@@ -1848,7 +2060,12 @@ O miniport WDDM só deve começar quando os itens abaixo forem verdadeiros:
 - nenhum caminho usa CPU, WARP, GDI ou outro fallback como prova de GPU;
 - toda escrita MMIO continua obedecendo `BC250_HARDWARE_RULES.md`.
 
-## Barra de progresso por área
+## Barra histórica por área
+
+Esta tabela foi acumulada ao longo dos ensaios e contém percentuais e hipóteses
+de épocas diferentes. Ela não é fonte de retomada. O indicador autoritativo
+atual é 88%, no topo deste documento; CP/PM4, compute e WDDM permanecem
+**NÃO VALIDADOS EM HARDWARE**.
 
 | Área | Progresso | Situação |
 |---|---:|---|
@@ -1859,33 +2076,46 @@ O miniport WDDM só deve começar quando os itens abaixo forem verdadeiros:
 | Rollback SDMA após submissão | `█████████▌ 95%` | WPTR zerado, 24 registradores restaurados e F32 haltado no fim do teardown. |
 | Clock, energia, térmica e GFXOFF | `████░░░░░░ 40%` | Nada medido. GFXOFF nunca transicionou; depende de carga GFX real, que depende do CP. Térmica sem calibração, potência sem fonte. |
 | Robustez, negativos e recuperação | `█████████░ 90%` | Gate reescrito medido e aprovado: fail-closed, detecção do estado mentiroso e falha limpa. |
-| GCVM, CP e compute pré-WDDM | `███████▍░░ 71%` | **GCVM fechado e provado no silício** (tradução por page table, 20/20 gates). **RLC fora da ROM, provado** (`EXEC_ROM_CODE` 1 → 0, `GPM_STAT` idêntico ao Linux). `IC_BASE`, `UCODE_ADDR` e `IC_OP_CNTL` são **write-only**, confirmado contra o Linux com o CP vivo: a escrita vale, a leitura nunca confirmará, e não são bloqueio. **Unhalt rodado em boot limpo (2026-08-24 00:19): o controle responde, a execução não acontece.** `CP_ME_CNTL` foi de `0x15000000` a `0x00000000` com readback confirmado e os PCs saíram de zero, voltando a zero no re-halt — mas param em `0x0000041E`, constante em 8 amostras e **igual nas três engines**, enquanto no Linux são três valores distintos, um por ucode. Todo status global (`GRBM_STATUS`, `GRBM_STATUS2`, `CP_STAT`, `CP_ME_CNTL`) é **idêntico ao Linux**, o que encerra a família "bloco desligado, gated ou pendurado". Reproduzido em segundo boot limpo (00:47) e o **controle negativo respondeu (00:54)**: sem ucode, sem `icbase` e sem jump table o PC é o mesmo `0x0000041E`, bit a bit. Três boots limpos, dois caminhos de código, resultado idêntico — **a carga do ucode não tem efeito sobre as microengines e a busca de instrução nunca acontece**. Isso encerra a linha "ucode ou cache errados" e deixa duas hipóteses: `IC_BASE` não aceito de verdade (write-only, indemonstrável por readback) ou caminho de memória para busca de instrução do CP inexistente nesta configuração — a segunda **tem base na referência**: `gfx_v10_0_cp_gfx_load_pfp_microcode()` aloca o ucode em `AMDGPU_GEM_DOMAIN_GTT` e escreve no `IC_BASE` um endereço **traduzido**, com `IC_BASE_CNTL.VMID = 0` — a busca de instrução da microengine é acesso traduzido pelo GFXHUB, e nós entregamos endereço físico cru de VRAM. Próximo passo é `gcvm dump`, somente leitura e zero boot: se a abertura de sistema do VMID 0 não cobrir `0xF4_0E00_0000`, a hipótese está confirmada. Ring PM4 e MQD/HQD seguem NÃO VALIDADOS EM HARDWARE. |
+| GCVM, CP e compute pré-WDDM | `███████▍░░ 71%` | GCVM passou 20/20 e o RLC saiu da ROM. O CP continua parado em `0x0000041E`, `JT_LOADED=0` e sem consumo PM4. A leitura `0x3BB98=0x18` coincide com o Linux. A auditoria identifica o Linux saudável no ramo PSP e retira `CPG/CPC_PSP_DEBUG` dos gates desse ramo. O `0x80000203` histórico não escolhe direct-load: o ensaio PSP antigo omitia TMR, ordem upstream, endereço MC e MEC/JT separado, e agora está em quarentena. Ring PM4 e MQD/HQD seguem **NÃO VALIDADOS EM HARDWARE**. |
 | **Total conservador pré-WDDM** | **`█████████▍ 93%`** | **RLC fora da ROM, provado. Unhalt do CP exercitado em boot limpo: o caminho de controle responde, a execução não ocorre.** Todo status global bate com o Linux onde o CP roda, o que encerra a família "bloco desligado ou pendurado"; o que resta é a busca de instrução, e os três PCs iguais em `0x0000041E` apontam para as engines nunca terem alcançado o nosso microcódigo. O +1% é hipótese eliminada e caminho estreitado, **não** função nova — nada novo executa. Próximo bloqueio: o controle `-ControleSemUcode` decide se `0x041E` é ponto de parada comum das engines ou do nosso caminho. Depois: anel PM4, compute e observabilidade física. |
 
 ## Próxima sequência recomendada
 
-1. Reiniciar a máquina: a sessão atual já tem firmware SDMA ativo e o
-   preflight do ensaio recusa por isso.
-2. `dbg/start.bat` (reinstalar somente quando o `.sys` mudar).
-3. Executar `tools/test-sdma-robustness.ps1 -Execute`. A pergunta desta
-   execução é o degrau `E3e`: o soft reset do bloco tira `CMD_OP` de `0x3F` e
-   devolve a escrita em memória?
-4. Ler `fault-decoded.txt` na pasta de evidência: o ensaio já roda o
-   decodificador e grava a comparação campo a campo.
-5. Se o soft reset recuperar, transformar isso no caminho oficial de
-   recuperação do driver e repetir em vários boots.
-6. Se não recuperar, o próximo alvo é reset em nível de GPU, o que exige
-   auditoria separada por causa do display na mesma placa.
-7. Só então atacar GFXOFF com carga GFX/compute, calibração térmica e uma fonte
-   física de potência.
-8. Avançar para GCVM/VMID0 e somente depois CP/compute.
-9. Abrir o trabalho WDDM apenas quando todos os gates pré-WDDM estiverem
-   documentados e reproduzíveis.
+1. Preservar as evidências ABI 29 das 17:23 e 18:27; não repetir preflights para
+   obter retorno verde. Ambas são resultados válidos e auditáveis offline.
+2. O ownership e o preflight TMR/CP agora existem offline: inventário selado,
+   reserva dinâmica/exclusiva, MC/PA derivados do mesmo token e manifesto
+   `PFP -> ME -> CE -> MEC -> MEC_JT1`. A cadeia esta ligada ao lifecycle
+   PnP/miniport, mas agora para corretamente em `RUNTIME_MISSING` porque ainda
+   falta um produtor Windows real de exclusividade, scanout e reservas.
+   `SETUP_TMR`, `LOAD_IP_FW` e o bringup legado permanecem em quarentena.
+   A decodificação runtime de VRAM e seu reader de duas passagens existem como
+   contratos offline: RCC, BASE/TOP, FB_OFFSET e janela CPU precisam vir do
+   mesmo snapshot e concordar antes de alimentar ownership. O transporte WDK
+   com limites de BAR e map/unmap também está ligado à DDI e passou com
+   callbacks falsos, inclusive retry após falha de unmap. O próximo gate é
+   capturar `DRIVER_SCRATCH_0/1/2` fisicamente. Se eles reportarem uma faixa,
+   ela deve guiar o reader do blob; se nao reportarem, a localizacao candidata
+   `VRAM_total - 64 KiB` so pode ser usada depois de conferir a assinatura real.
+   Fora do BAR0 de 256 MiB, isso exige reader VRAM readonly autorizado; não
+   remapear a janela por escrita, não sideloadar identidade e não inserir defaults.
+3. SE/SH já estão fechados em 2×2. Concluir a classificação das 2 entradas GL2
+   ambíguas e descobrir a
+   cardinalidade de `GRBM INSTANCE` antes de permitir
+   `GRBM_GFX_INDEX=0xE0000000` e qualquer RMW em broadcast.
+4. Separar golden settings, constants, GPA/CAM, RLC resume e CP resume em fases
+   transacionais. Os quatro harnesses antigos permanecem bloqueados na entrada.
+5. Só voltar ao ring PM4 quando o latch e os PCs demonstrarem transição. O gate
+   final continua RPTR/WPTR + fence física + resultado correto.
+6. Compute, observabilidade sob carga GFX e WDDM permanecem bloqueados até essa
+   prova.
 
 ## Arquivos principais
 
 - Regras de hardware: `BC250_HARDWARE_RULES.md`.
 - Evidências e lições: `docs/01_EVIDENCIAS_E_LICOES.md`.
+- Auditoria da ordem GFX: `docs/10_AUDITORIA_INIT_GFX_CYAN_SKILLFISH.md`.
+- Modelo de ownership TMR: `docs/11_PSP_TMR_OWNERSHIP.md`.
 - Plano do driver: `docs/04_PLANO_DO_DRIVER_NOVO.md`.
 - Marco zero: `docs/06_MARCO_ZERO_DESENVOLVIMENTO.md`.
 - Incidente legado: `docs/07_INCIDENTE_REMOCAO_BC250V4.md`.

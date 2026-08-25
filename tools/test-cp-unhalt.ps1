@@ -51,7 +51,7 @@ $workspaceDriver = Join-Path $root 'output\bc250dbg.sys'
 $installedDriver = Join-Path $env:SystemRoot 'System32\drivers\bc250dbg.sys'
 $verdict = ('N{0}O VALIDADO EM HARDWARE' -f [char]0x00C3)
 $startedAt = Get-Date
-$modoEnsaio = $(if ($ControleSemUcode) { 'CONTROLE-SEM-UCODE (10 gates)' } else { 'NORMAL (14 gates)' })
+$modoEnsaio = $(if ($ControleSemUcode) { 'CONTROLE-SEM-UCODE (13 gates)' } else { 'GOLDEN CP + PG LIMPO + UNGATE CPF (18 gates)' })
 $rlcSnapshotFeito = $false
 $pspCriado = $false
 $firmwareCarregado = $false
@@ -74,6 +74,7 @@ Write-Host "Modo do ensaio: $modoEnsaio" -ForegroundColor Cyan
 if (-not $Execute) {
     throw 'Ensaio bloqueado por padrao. Use -Execute. Ele executa unhalt sob protecao transacional e faz rollback completo.'
 }
+throw 'QUARENTENA ABI 29: o init golden usa broadcast e ainda nao possui snapshot/rollback por SE/SH/instancia. Nenhuma escrita deste ensaio foi autorizada.'
 $admin = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $admin.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Execute elevado.' }
 foreach ($path in @($cli,$abiHeader,$workspaceDriver,$installedDriver)) {
@@ -356,6 +357,41 @@ try {
         throw 'O RLC nao saiu da ROM. Sem esse pre-requisito, o unhalt do CP mediria sobre base ausente.'
     }
 
+    # -------------------------------------------------------------------------
+    # Gate B3: POWER GATING LIMPO DEPOIS DA CARGA
+    #
+    # Medido em varias execucoes: 'pg' zera RLC_PG_CNTL antes da carga, e depois
+    # que o PSP entrega o ucode o registrador aparece em 0x00000008 — posto la
+    # pelo RLC, ja fora da ROM. O Linux com o CP executando tem 0x00000000. A
+    # diferenca estava registrada como pendencia aberta, e nada na sequencia a
+    # desfazia: o 'pg' acontecia ANTES da carga.
+    #
+    # Este passo nao introduz endereco nem valor novo: e o MESMO comando 'rlc pg',
+    # no mesmo endereco 0x3B10C ja conferido, com o mesmo valor 0. A unica coisa
+    # que muda e QUANDO. E o registrador responde, logo o readback vale.
+    #
+    # RLC_PG_CNTL e controle de power gating do GFX. Um bit de gating ligado
+    # deixaria parte do pipeline sem alimentacao enquanto os registradores de
+    # status continuam plausiveis — compativel com o que sete boots mediram.
+    # NAO afirmo qual bit e o 3: o sh_mask deste projeto nao traz os campos deste
+    # registrador, e nomear campo sem header seria suposicao.
+    # -------------------------------------------------------------------------
+    $pgAntes = Read-Reg 'B3_RLC_PG_CNTL_antes' 0x3B10C
+    $pgCmd = Run 'rlc_pg_pos_carga' @('rlc','pg') -AllowFailure
+    $pgDepois = Read-Reg 'B3_RLC_PG_CNTL_depois' 0x3B10C
+    Add-Gate 'B3_power_gating_limpo_apos_carga' `
+        ([bool]($pgCmd.exit_code -eq 0 -and $null -ne $pgDepois -and $pgDepois -eq 0)) `
+        ('RLC_PG_CNTL = 0x00000000 CONFERIDO POR READBACK depois da carga do RLC, ' +
+         'igual ao Linux com o CP executando.') `
+        ([pscustomobject]@{
+            exit_code = $pgCmd.exit_code
+            RLC_PG_CNTL_antes = Format-Hex $pgAntes
+            RLC_PG_CNTL_depois = Format-Hex $pgDepois
+            referencia_linux = '0x00000000'
+            nota = 'O 0x00000008 e posto pelo RLC apos sair da ROM; o pg anterior a carga nao o alcancava.'
+            saida = $pgCmd.output
+        })
+
     $snap = Run 'snap_cp' @('cp','txn','snapshot') -AllowFailure
     $snapTxt = $snap.output -join "`n"
     $snapRegs = if ($snapTxt -match 'registradores\s+:\s+(\d+)') { [int]$Matches[1] } else { $null }
@@ -364,6 +400,49 @@ try {
         ([bool]$snapshotFeito) `
         "Snapshot dos $cpTxnCount registradores do CP capturado com sucesso." `
         ([pscustomobject]@{ exit_code = $snap.exit_code; regs = $snapRegs; saida = $snap.output })
+
+    # -------------------------------------------------------------------------
+    # Gate C7: UNGATE DO CLOCK DO CPF
+    # -------------------------------------------------------------------------
+    $clk = Run 'cp_clocks' @('cp','clocks') -AllowFailure
+    $clkTxt = $clk.output -join "`n"
+    $cpfDepois = Read-Reg 'CGTT_CPF_CLK_CTRL_depois' 0x3C2C4
+    Add-Gate 'C7_clock_do_cpf_ungated' `
+        ([bool]($clk.exit_code -eq 0 -and $null -ne $cpfDepois -and $cpfDepois -eq 0xF8000100L)) `
+        ('CGTT_CPF_CLK_CTRL = 0xF8000100 CONFERIDO POR READBACK (registrador legivel, ' +
+         'ao contrario dos IC_BASE). Valor medido no Linux com o CP executando.') `
+        ([pscustomobject]@{
+            exit_code = $clk.exit_code
+            CGTT_CPF_CLK_CTRL = Format-Hex $cpfDepois
+            esperado = '0xF8000100'
+            antes_deste_ensaio = '0x00000100 (os cinco SOFT_OVERRIDE_* em 0)'
+            endereco = '0x3C2C4  (dw 0x50B1, BASE_IDX 1)'
+            saida = $clk.output
+        })
+
+    # -------------------------------------------------------------------------
+    # Gate C8: CONFIGURACAO GOLDEN DO CP E TOPOLOGIA (Linux Sweep)
+    #
+    # Medido no dump completo do Linux:
+    #   - GRBM_GFX_INDEX = 0x00000000 (Valores em steady-state do upstream)
+    #   - CP_PFP_LOAD_CONTROL = 0x01018003 (Permissao de carga de regs pelo PFP)
+    #   - CP_ROQ1..3 / STQ / MEQ THRESHOLDS (Alocacao de filas internas do CP)
+    #   - CP_MAX_CONTEXT = 7, CP_DEVICE_ID = 1, CP_CONTEXT_CNTL = 0x00750075
+    #   - CP_SD_CNTL = 0x000005FF, CP_COHER_START_DELAY = 0x20
+    #   - CP_DMA_CNTL = 0x10100020, GE_FAST_CLKS = 0x0000493E
+    # -------------------------------------------------------------------------
+    $gold = Run 'cp_golden' @('cp','golden') -AllowFailure
+    $pfpLoadAfter = Read-Reg 'CP_PFP_LOAD_CONTROL_depois' 0x30238
+    $grbmGfxAfter = Read-Reg 'GRBM_GFX_INDEX_depois' 0x30800
+    Add-Gate 'C8_cp_golden_configurado' `
+        ([bool]($gold.exit_code -eq 0 -and $null -ne $pfpLoadAfter -and $pfpLoadAfter -eq 0x01018003L -and $null -ne $grbmGfxAfter -and $grbmGfxAfter -eq 0x00000000L)) `
+        ('Registradores Golden do CP e Topologia configurados e conferidos por readback (PFP_LOAD_CONTROL=0x01018003, GRBM_GFX_INDEX=0x00000000, ROQ/MEQ/STQ, MAX_CONTEXT).') `
+        ([pscustomobject]@{
+            exit_code = $gold.exit_code
+            CP_PFP_LOAD_CONTROL = Format-Hex $pfpLoadAfter
+            GRBM_GFX_INDEX = Format-Hex $grbmGfxAfter
+            saida = $gold.output
+        })
 
     if ($ControleSemUcode) {
         # Controle negativo: nada de ucode, icbase ou jump table. As engines
@@ -479,6 +558,29 @@ try {
             ([bool](@($jtResults | Where-Object { $_.exit_code -eq 0 }).Count -eq $engines.Count)) `
             'Jump tables escritas pela porta DATA para as tres engines com versao gravada no ADDR.' `
             $jtResults
+
+        # -------------------------------------------------------------------------
+        # Gate G2: READBACK DO STATUS DA JUMP TABLE (CP_PFP_JT_STAT / CP_CE_JT_STAT)
+        #
+        # Descoberto no Linux sweep: registradores do Segmento 0 que reportam
+        # o status de carregamento da Jump Table (JT_LOADED).
+        # -------------------------------------------------------------------------
+        $pfpJtStat = Read-Reg 'CP_PFP_JT_STAT' 0x0C4CC
+        $ceJtStat  = Read-Reg 'CP_CE_JT_STAT'  0x0C4D0
+        $mecJtStat = Read-Reg 'CP_MEC_JT_STAT' 0x0C4D4
+        $pfpJtLoaded = if ($null -ne $pfpJtStat) { $pfpJtStat -band 3 } else { $null }
+        $ceJtLoaded  = if ($null -ne $ceJtStat)  { $ceJtStat -band 3 } else { $null }
+        Add-Gate 'G2_jump_tables_latchadas' `
+            ([bool]($pfpJtLoaded -eq 3 -and $ceJtLoaded -eq 3)) `
+            'PFP e CE devem reportar JT_LOADED=3, como no Linux com o CP executando. Leitura valida com JT_LOADED=0 reprova.' `
+            ([pscustomobject]@{
+                CP_PFP_JT_STAT = Format-Hex $pfpJtStat
+                CP_CE_JT_STAT = Format-Hex $ceJtStat
+                CP_MEC_JT_STAT = Format-Hex $mecJtStat
+                PFP_JT_LOADED = $pfpJtLoaded
+                CE_JT_LOADED  = $ceJtLoaded
+                referencia_linux = 'PFP_JT_STAT = 0x00000003, CE_JT_STAT = 0x00000003 (JT_LOADED=3)'
+            })
 
     }
     # -------------------------------------------------------------------------
@@ -640,7 +742,7 @@ Add-Gate 'M_sem_bugcheck' ($bugchecks.Count -eq 0) `
 # Aborto nao e aprovacao. E tambem nao transforma gate nao alcancado em reprovado:
 # gate que nao rodou nao existe naquela execucao (licao 7). O relatorio diz
 # quantos foram medidos, de quantos, e por que parou.
-$totalGatesPrevistos = $(if ($ControleSemUcode) { 10 } else { 14 })
+$totalGatesPrevistos = $(if ($ControleSemUcode) { 12 } else { 16 })
 $passouGeral = [bool]($null -eq $abortadoPor -and
                       @($gates | Where-Object { -not $_.pass }).Count -eq 0 -and
                       $gates.Count -eq $totalGatesPrevistos)

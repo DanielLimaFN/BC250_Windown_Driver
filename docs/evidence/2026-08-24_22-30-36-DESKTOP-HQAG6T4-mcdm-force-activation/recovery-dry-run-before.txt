@@ -1,0 +1,14 @@
+﻿============================================================
+BC250 - RECUPERACAO DOS DRIVERS EXPERIMENTAIS
+Modo: DRY-RUN
+Windows: C:\Windows
+============================================================
+Nenhuma alteracao sera feita.
+Servico bc250readonly: ausente.
+Servico bc250dbg: presente.
+Servico bc250v4: ausente.
+Binario bc250readonly.sys: ausente.
+Binario bc250dbg.sys: presente.
+Binario bc250v4.sys: ausente.
+Pacote OEM registrado para o teste: oem5.inf
+DRY-RUN concluido; zero alteracoes.

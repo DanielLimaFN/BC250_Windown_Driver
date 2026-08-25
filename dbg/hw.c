@@ -4142,6 +4142,10 @@ NTSTATUS BcRlc(BC250DBG_RLC_IO *Io, const ULONG *Payload, ULONG PayloadCount)
 #define A_CP_CE_IC_BASE_HI     0x3E124  /* dw 0x5849 seg1 */
 #define A_CP_CE_IC_BASE_CNTL   0x3E128  /* dw 0x584a seg1 */
 #define A_CP_CE_IC_OP_CNTL     0x3E12C  /* dw 0x584b seg1 */
+#define A_CP_CPC_IC_BASE_LO    0x3E130  /* dw 0x584c seg1 */
+#define A_CP_CPC_IC_BASE_HI    0x3E134  /* dw 0x584d seg1 */
+#define A_CP_CPC_IC_BASE_CNTL  0x3E138  /* dw 0x584e seg1 */
+#define A_CP_CPC_IC_OP_CNTL    0x3E13C  /* dw 0x584f seg1 */
 
 /* CP Jump Table / RAM Registers (GC_BASE 0x1260 shifted) */
 #define A_CP_PFP_UCODE_ADDR    0x3E050  /* dw 0x5814 seg1 */
@@ -4150,24 +4154,77 @@ NTSTATUS BcRlc(BC250DBG_RLC_IO *Io, const ULONG *Payload, ULONG PayloadCount)
 #define A_CP_ME_UCODE_DATA     0x3E05C  /* dw 0x5817 seg1 */
 #define A_CP_CE_UCODE_ADDR     0x3E060  /* dw 0x5818 seg1 */
 #define A_CP_CE_UCODE_DATA     0x3E064  /* dw 0x5819 seg1 */
+#define A_CP_MEC_ME1_UCODE_ADDR 0x3E068 /* dw 0x581a seg1 */
+#define A_CP_MEC_ME1_UCODE_DATA 0x3E06C /* dw 0x581b seg1 */
+#define A_CPG_PSP_DEBUG        0x3F040  /* dw 0x5c10 seg1 */
+#define A_CPC_PSP_DEBUG        0x3F044  /* dw 0x5c11 seg1 */
 
 /* Segmento 0. */
 #define A_CP_ME_CNTL           0x086D8  /* dw 0x0f56 seg0 */
+#define A_CP_MEC_CNTL          0x08234  /* dw 0x0e2d seg0 */
 #define A_CP_STAT              0x08680  /* dw 0x0f40 seg0 */
 #define A_CP_PFP_INSTR_PNTR    0x08694  /* dw 0x0f45 seg0 */
 #define A_CP_ME_INSTR_PNTR     0x08698  /* dw 0x0f46 seg0 */
 #define A_CP_CE_INSTR_PNTR     0x0869C  /* dw 0x0f47 seg0 */
 #define A_CP_MEC1_INSTR_PNTR   0x086A0  /* dw 0x0f48 seg0 */
 
-/* Campos, do header autoritativo do kernel (gc_10_1_0_sh_mask.h, SHA-256
- * cba20414ecf02e91bafdcfbff7d4ba686326f0bdaf236d1a883364f08410c167).
- *
- * ATENCAO HISTORICA: dois headers de terceiros no diretorio de referencias
- * trazem PFP_HALT = bit 30 e CE_HALT = bit 29. Estao ERRADOS. O header
- * autoritativo diz CE_HALT bit 24, PFP_HALT bit 26, ME_HALT bit 28 — e e essa
- * leitura que decodifica o valor medido nesta placa, CP_ME_CNTL = 0x15000000,
- * como "as tres engines haltadas", que e o estado coerente para o POST. Com os
- * bits errados o mesmo valor viraria ME_HALT + PFP_STEP + CE_HALT. */
+/* ABI 26: Jump Table status readback (Segmento 0). */
+#define A_CP_PFP_JT_STAT       0x0C4CC  /* dw 0x1ed3 seg0 */
+#define A_CP_CE_JT_STAT        0x0C4D0  /* dw 0x1ed4 seg0 */
+#define A_CP_MEC_JT_STAT       0x0C4D4  /* dw 0x1ed5 seg0 */
+
+/* ABI 29: Golden settings Cyan Skillfish. Enderecos SOC15 conferidos com
+ * GC_BASE seg0=0x1260, seg1=0xA000 e presentes nas duas passagens do sweep. */
+#define A_GRBM_GFX_INDEX       0x30800  /* dw 0x2200 seg1 */
+#define A_GE_FAST_CLKS         0x08920  /* dw 0x0fe8 seg0 */
+#define A_CGTT_CPF_CLK_CTRL    0x3C2C4
+#define A_CGTT_SPI_CLK_CTRL    0x3C200
+#define A_CB_HW_CONTROL_3      0x09A0C
+#define A_CB_HW_CONTROL_4      0x09A08
+#define A_CH_DRAM_BURST_CTRL   0x33610
+#define A_CH_PIPE_STEER        0x33640
+#define A_CH_VC5_ENABLE        0x33650
+#define A_DB_DEBUG             0x09830
+#define A_DB_DEBUG3            0x09838
+#define A_DB_DEBUG4            0x0983C
+#define A_DB_LAST_OF_BURST_CONFIG 0x09868
+#define A_GB_ADDR_CONFIG       0x098F8
+#define A_GCR_GENERAL_CNTL     0x09F8C
+#define A_GCMC_VM_CACHEABLE_DRAM_ADDRESS_END 0x0A5C8
+#define A_GL1_DRAM_BURST_CTRL  0x33410
+#define A_GL1_PIPE_STEER       0x33440
+#define A_GL2_PIPE_STEER_0     0x33894
+#define A_GL2_PIPE_STEER_1     0x33898
+#define A_GL2A_ADDR_MATCH_MASK 0x33884
+#define A_GL2C_ADDR_MATCH_MASK 0x3380C
+#define A_GL2C_CGTT_SCLK_CTRL  0x3C2B0
+#define A_GL2C_CTRL2           0x33804
+#define A_GL2C_CTRL3           0x33830
+#define A_PA_SC_ENHANCE        0x08BF0
+#define A_PA_SC_BINNER_EVENT_CNTL_0 0x08B30
+#define A_PA_SC_LINE_STIPPLE_STATE 0x30A04
+#define A_RMI_SPARE            0x09E7C
+#define A_SQ_ARB_CONFIG        0x08C30
+#define A_SQ_LDS_CLK_CTRL      0x3C240
+#define A_TA_CNTL_AUX          0x09508
+#define A_UTCL1_CTRL           0x09FA0
+
+/* Valores steady-state do sweep. Nao pertencem a tabela golden de 34 itens. */
+#define A_CP_PFP_LOAD_CONTROL  0x30238  /* dw 0x208e seg1 */
+#define A_CP_ROQ1_THRESHOLDS   0x08754  /* dw 0x0f75 seg0 */
+#define A_CP_ROQ2_THRESHOLDS   0x08758  /* dw 0x0f76 seg0 */
+#define A_CP_ROQ3_THRESHOLDS   0x087B0  /* dw 0x0f8c seg0 */
+#define A_CP_STQ_THRESHOLDS    0x0875C  /* dw 0x0f77 seg0 */
+#define A_CP_MEQ_THRESHOLDS    0x08764  /* dw 0x0f79 seg0 */
+#define A_CP_MAX_CONTEXT       0x0C2B8  /* dw 0x1eae seg0 */
+#define A_CP_DEVICE_ID         0x0C12C  /* dw 0x1e8b seg0 */
+#define A_CP_CONTEXT_CNTL      0x0C2B4  /* dw 0x1ead seg0 */
+#define A_CP_SD_CNTL           0x0C6DC  /* dw 0x1f77 seg0 */
+#define A_CP_COHER_START_DELAY 0x301EC  /* dw 0x207b seg1 */
+#define A_CP_DMA_CNTL          0x30228  /* dw 0x208a seg1 */
+#define A_CGTT_CPC_CLK_CTRL    0x3C2C8  /* dw 0x50b2 seg1 */
+
+/* Campos, do header autoritativo do kernel (gc_10_1_0_sh_mask.h). */
 #define F_CP_ME_CNTL__CE_HALT   0x01000000u  /* shift 0x18 */
 #define F_CP_ME_CNTL__PFP_HALT  0x04000000u  /* shift 0x1a */
 #define F_CP_ME_CNTL__ME_HALT   0x10000000u  /* shift 0x1c */
@@ -4179,6 +4236,8 @@ NTSTATUS BcRlc(BC250DBG_RLC_IO *Io, const ULONG *Payload, ULONG PayloadCount)
 
 #define F_CP_IC_OP_CNTL__INVALIDATE_CACHE          0x00000001u  /* shift 0 */
 #define F_CP_IC_OP_CNTL__INVALIDATE_CACHE_COMPLETE 0x00000002u  /* shift 1 */
+#define F_CP_IC_OP_CNTL__PRIME_ICACHE              0x00000010u  /* shift 4 */
+#define F_CP_IC_OP_CNTL__ICACHE_PRIMED             0x00000020u  /* shift 5 */
 
 typedef struct _BC_CP_ENGINE_REGS {
     const char *Nome;
@@ -4197,16 +4256,105 @@ static const BC_CP_ENGINE_REGS g_CpEngines[BC250DBG_CP_ENGINE_COUNT] = {
     { "ce",  A_CP_CE_IC_BASE_LO,  A_CP_CE_IC_BASE_HI,  A_CP_CE_IC_BASE_CNTL,
       A_CP_CE_IC_OP_CNTL,  A_CP_CE_UCODE_ADDR,  A_CP_CE_UCODE_DATA,
       F_CP_ME_CNTL__CE_HALT },
+    { "mec", A_CP_CPC_IC_BASE_LO, A_CP_CPC_IC_BASE_HI, A_CP_CPC_IC_BASE_CNTL,
+      A_CP_CPC_IC_OP_CNTL, A_CP_MEC_ME1_UCODE_ADDR, A_CP_MEC_ME1_UCODE_DATA,
+      0x50000000u },
 };
 
-/* Registradores de CONFIGURACAO cobertos pela transacao. Ver o comentario na
- * ABI: IC_OP_CNTL, UCODE_ADDR e UCODE_DATA ficam FORA porque escrever neles e
- * acao, nao configuracao. */
+typedef struct _BC_CP_GOLDEN_REG {
+    ULONG Offset;
+    /* soc15_program_register_sequence: esta mascara seleciona os bits que
+     * serao SUBSTITUIDOS, nao os bits preservados. Formula autoritativa:
+     * (lido & ~WriteMask) | (OrValue & WriteMask). */
+    ULONG WriteMask;
+    ULONG OrValue;
+    BOOLEAN AllOnesIsValid;
+    const char *Name;
+} BC_CP_GOLDEN_REG;
+
+/* Copia literal de golden_settings_gc_10_0_cyan_skillfish[]. O endereco BAR
+ * deriva de (GC_BASE[BASE_IDX] + mmREG) * 4. SQ_LDS_CLK_CTRL e a unica entrada
+ * cujo valor legitimo e 0xFFFFFFFF; para todas as outras isso significa que o
+ * endereco nao respondeu e o preflight deve falhar fechado. */
+static const BC_CP_GOLDEN_REG g_CpGoldenRegs[BC250DBG_CP_GOLDEN_REG_COUNT] = {
+    { A_GRBM_GFX_INDEX,       0xFFFFFFFFu, 0xE0000000u, FALSE, "GRBM_GFX_INDEX" },
+    { A_GE_FAST_CLKS,         0x3FFFFFFFu, 0x0000493Eu, FALSE, "GE_FAST_CLKS" },
+    { A_CGTT_CPF_CLK_CTRL,    0xFCFF8FFFu, 0xF8000100u, FALSE, "CGTT_CPF_CLK_CTRL" },
+    { A_CGTT_SPI_CLK_CTRL,    0xFF7F0FFFu, 0x3C000100u, FALSE, "CGTT_SPI_CLK_CTRL" },
+    { A_CB_HW_CONTROL_3,      0xA0000000u, 0xA0000000u, FALSE, "CB_HW_CONTROL_3" },
+    { A_CB_HW_CONTROL_4,      0x00008000u, 0x003C8014u, FALSE, "CB_HW_CONTROL_4" },
+    { A_CH_DRAM_BURST_CTRL,   0x00000010u, 0x00000017u, FALSE, "CH_DRAM_BURST_CTRL" },
+    { A_CH_PIPE_STEER,        0xFFFFFFFFu, 0xD8D8D8D8u, FALSE, "CH_PIPE_STEER" },
+    { A_CH_VC5_ENABLE,        0x00000003u, 0x00000003u, FALSE, "CH_VC5_ENABLE" },
+    { A_CP_SD_CNTL,           0x800007FFu, 0x000005FFu, FALSE, "CP_SD_CNTL" },
+    { A_DB_DEBUG,             0xFFFFFFFFu, 0x20000000u, FALSE, "DB_DEBUG" },
+    { A_DB_DEBUG3,            0xFFFFFFFFu, 0x00000200u, FALSE, "DB_DEBUG3" },
+    { A_DB_DEBUG4,            0xFFFFFFFFu, 0x04800000u, FALSE, "DB_DEBUG4" },
+    { A_DB_LAST_OF_BURST_CONFIG, 0xFFFFFFFFu, 0x03860210u, FALSE, "DB_LAST_OF_BURST_CONFIG" },
+    { A_GB_ADDR_CONFIG,       0x0C1800FFu, 0x00000044u, FALSE, "GB_ADDR_CONFIG" },
+    { A_GCR_GENERAL_CNTL,     0x00009D00u, 0x00008500u, FALSE, "GCR_GENERAL_CNTL" },
+    { A_GCMC_VM_CACHEABLE_DRAM_ADDRESS_END, 0xFFFFFFFFu, 0x000FFFFFu, FALSE, "GCMC_VM_CACHEABLE_DRAM_ADDRESS_END" },
+    { A_GL1_DRAM_BURST_CTRL,  0x00000010u, 0x00000017u, FALSE, "GL1_DRAM_BURST_CTRL" },
+    { A_GL1_PIPE_STEER,       0xFCFCFCFCu, 0xD8D8D8D8u, FALSE, "GL1_PIPE_STEER" },
+    { A_GL2_PIPE_STEER_0,     0x77707770u, 0x21302130u, FALSE, "GL2_PIPE_STEER_0" },
+    { A_GL2_PIPE_STEER_1,     0x77707770u, 0x21302130u, FALSE, "GL2_PIPE_STEER_1" },
+    { A_GL2A_ADDR_MATCH_MASK, 0xFFFFFFFFu, 0xFFFFFFCFu, FALSE, "GL2A_ADDR_MATCH_MASK" },
+    { A_GL2C_ADDR_MATCH_MASK, 0xFFFFFFFFu, 0xFFFFFFCFu, FALSE, "GL2C_ADDR_MATCH_MASK" },
+    { A_GL2C_CGTT_SCLK_CTRL,  0x10000000u, 0x10000100u, FALSE, "GL2C_CGTT_SCLK_CTRL" },
+    { A_GL2C_CTRL2,           0xFC02002Fu, 0x9402002Fu, FALSE, "GL2C_CTRL2" },
+    { A_GL2C_CTRL3,           0x00002188u, 0x00000188u, FALSE, "GL2C_CTRL3" },
+    { A_PA_SC_ENHANCE,        0x08000009u, 0x08000009u, FALSE, "PA_SC_ENHANCE" },
+    { A_PA_SC_BINNER_EVENT_CNTL_0, 0xCC3FCC03u, 0x842A4C02u, FALSE, "PA_SC_BINNER_EVENT_CNTL_0" },
+    { A_PA_SC_LINE_STIPPLE_STATE, 0x0000000Fu, 0x00000000u, FALSE, "PA_SC_LINE_STIPPLE_STATE" },
+    { A_RMI_SPARE,            0xFFFF3109u, 0xFFFF3101u, FALSE, "RMI_SPARE" },
+    { A_SQ_ARB_CONFIG,        0x00000100u, 0x00000130u, FALSE, "SQ_ARB_CONFIG" },
+    { A_SQ_LDS_CLK_CTRL,      0xFFFFFFFFu, 0xFFFFFFFFu, TRUE,  "SQ_LDS_CLK_CTRL" },
+    { A_TA_CNTL_AUX,          0x00030008u, 0x01030000u, FALSE, "TA_CNTL_AUX" },
+    { A_UTCL1_CTRL,           0x00800000u, 0x00800000u, FALSE, "UTCL1_CTRL" }
+};
+
+static const ULONG g_CpGoldenAuditRegs[BC250DBG_CP_GOLDEN_AUDIT_REG_COUNT] = {
+    A_GRBM_GFX_INDEX, A_GE_FAST_CLKS, A_CGTT_CPF_CLK_CTRL, A_CGTT_SPI_CLK_CTRL,
+    A_CB_HW_CONTROL_3, A_CB_HW_CONTROL_4, A_CH_DRAM_BURST_CTRL, A_CH_PIPE_STEER,
+    A_CH_VC5_ENABLE, A_CP_SD_CNTL, A_DB_DEBUG, A_DB_DEBUG3, A_DB_DEBUG4,
+    A_DB_LAST_OF_BURST_CONFIG, A_GB_ADDR_CONFIG, A_GCR_GENERAL_CNTL,
+    A_GCMC_VM_CACHEABLE_DRAM_ADDRESS_END, A_GL1_DRAM_BURST_CTRL,
+    A_GL1_PIPE_STEER, A_GL2_PIPE_STEER_0, A_GL2_PIPE_STEER_1,
+    A_GL2A_ADDR_MATCH_MASK, A_GL2C_ADDR_MATCH_MASK, A_GL2C_CGTT_SCLK_CTRL,
+    A_GL2C_CTRL2, A_GL2C_CTRL3, A_PA_SC_ENHANCE, A_PA_SC_BINNER_EVENT_CNTL_0,
+    A_PA_SC_LINE_STIPPLE_STATE, A_RMI_SPARE, A_SQ_ARB_CONFIG, A_SQ_LDS_CLK_CTRL,
+    A_TA_CNTL_AUX, A_UTCL1_CTRL,
+    A_CPG_PSP_DEBUG, A_CPC_PSP_DEBUG
+};
+
+C_ASSERT(RTL_NUMBER_OF(g_CpGoldenRegs) == BC250DBG_CP_GOLDEN_REG_COUNT);
+C_ASSERT(RTL_NUMBER_OF(g_CpGoldenAuditRegs) == BC250DBG_CP_GOLDEN_AUDIT_REG_COUNT);
+
+/* Registradores de CONFIGURACAO cobertos pela transacao. */
 static const ULONG g_CpTxnRegs[BC250DBG_CP_TXN_REG_COUNT] = {
-    A_CP_PFP_IC_BASE_LO, A_CP_PFP_IC_BASE_HI, A_CP_PFP_IC_BASE_CNTL,
-    A_CP_ME_IC_BASE_LO,  A_CP_ME_IC_BASE_HI,  A_CP_ME_IC_BASE_CNTL,
-    A_CP_CE_IC_BASE_LO,  A_CP_CE_IC_BASE_HI,  A_CP_CE_IC_BASE_CNTL,
-    A_CP_ME_CNTL
+    A_CP_PFP_IC_BASE_LO,    A_CP_PFP_IC_BASE_HI,    A_CP_PFP_IC_BASE_CNTL,
+    A_CP_ME_IC_BASE_LO,     A_CP_ME_IC_BASE_HI,     A_CP_ME_IC_BASE_CNTL,
+    A_CP_CE_IC_BASE_LO,     A_CP_CE_IC_BASE_HI,     A_CP_CE_IC_BASE_CNTL,
+    A_CP_CPC_IC_BASE_LO,    A_CP_CPC_IC_BASE_HI,    A_CP_CPC_IC_BASE_CNTL,
+    A_CP_ME_CNTL,
+    A_CP_MEC_CNTL,
+    A_CGTT_CPF_CLK_CTRL,
+    A_CGTT_CPC_CLK_CTRL,
+    /* ABI 26: registradores golden */
+    A_GRBM_GFX_INDEX,
+    A_CP_PFP_LOAD_CONTROL,
+    A_CP_ROQ1_THRESHOLDS,
+    A_CP_ROQ2_THRESHOLDS,
+    A_CP_ROQ3_THRESHOLDS,
+    A_CP_STQ_THRESHOLDS,
+    A_CP_MEQ_THRESHOLDS,
+    A_CP_MAX_CONTEXT,
+    A_CP_DEVICE_ID,
+    A_CP_CONTEXT_CNTL,
+    A_CP_SD_CNTL,
+    A_CP_COHER_START_DELAY,
+    A_CP_DMA_CNTL,
+    A_GE_FAST_CLKS
 };
 
 C_ASSERT(RTL_NUMBER_OF(g_CpTxnRegs) == BC250DBG_CP_TXN_REG_COUNT);
@@ -4221,6 +4369,50 @@ static BOOLEAN BcCpTxnCovers(ULONG Offset)
     return FALSE;
 }
 
+static BOOLEAN BcCpGoldenAllOnesIsValid(ULONG Offset)
+{
+    ULONG i;
+    for (i = 0; i < BC250DBG_CP_GOLDEN_REG_COUNT; i++) {
+        if (g_CpGoldenRegs[i].Offset == Offset) {
+            return g_CpGoldenRegs[i].AllOnesIsValid;
+        }
+    }
+    return FALSE;
+}
+
+/* Duas leituras iguais eliminam contador/estado volatil; 0xFFFFFFFF reprova,
+ * exceto no SQ_LDS_CLK_CTRL onde esse e o valor legitimo medido no Linux e o
+ * proprio valor pedido pela tabela golden. Nenhuma escrita ocorre aqui. */
+static BOOLEAN BcCpGoldenPreflight(BC250DBG_CP_UCODE_IO *Io)
+{
+    ULONG i;
+
+    Io->RegisterCount = BC250DBG_CP_GOLDEN_AUDIT_REG_COUNT;
+    for (i = 0; i < BC250DBG_CP_GOLDEN_AUDIT_REG_COUNT; i++) {
+        ULONG first = BcRegReadRaw(g_CpGoldenAuditRegs[i]);
+        ULONG second = BcRegReadRaw(g_CpGoldenAuditRegs[i]);
+        BOOLEAN ok = (first == second) &&
+                     (first != BC_REG_NO_RESPONSE ||
+                      BcCpGoldenAllOnesIsValid(g_CpGoldenAuditRegs[i]));
+
+        Io->Offsets[i] = g_CpGoldenAuditRegs[i];
+        Io->Values[i] = second;
+        if (!ok) {
+            if (Io->Mismatches < BC250DBG_CP_TXN_BAD_SAMPLES) {
+                Io->BadOffset[Io->Mismatches] = g_CpGoldenAuditRegs[i];
+                Io->BadGot[Io->Mismatches] = second;
+                Io->BadWant[Io->Mismatches] = first;
+            }
+            Io->Mismatches++;
+            BcLogText(BC250DBG_LVL_ERROR, BC250DBG_SUB_GC,
+                      "CP golden preflight: 0x%05X nao responde ou e instavel "
+                      "(0x%08X / 0x%08X)",
+                      g_CpGoldenAuditRegs[i], first, second);
+        }
+    }
+    return (Io->Mismatches == 0);
+}
+
 /* Estado do CP, lido em toda operacao. Barato, e sem isto uma medicao nao diz
  * em que condicao o bloco estava quando ela aconteceu. */
 static VOID BcCpFillState(BC250DBG_CP_UCODE_IO *Io)
@@ -4233,6 +4425,10 @@ static VOID BcCpFillState(BC250DBG_CP_UCODE_IO *Io)
     Io->MeInstrPntr   = BcRegReadRaw(A_CP_ME_INSTR_PNTR);
     Io->CeInstrPntr   = BcRegReadRaw(A_CP_CE_INSTR_PNTR);
     Io->Mec1InstrPntr = BcRegReadRaw(A_CP_MEC1_INSTR_PNTR);
+    /* ABI 26: Status da Jump Table nas microengines */
+    Io->PfpJtStat     = BcRegReadRaw(A_CP_PFP_JT_STAT);
+    Io->CeJtStat      = BcRegReadRaw(A_CP_CE_JT_STAT);
+    Io->MecJtStat     = BcRegReadRaw(A_CP_MEC_JT_STAT);
 }
 
 static VOID BcCpFillEngineRegs(BC250DBG_CP_UCODE_IO *Io, const BC_CP_ENGINE_REGS *e)
@@ -4260,7 +4456,7 @@ static BOOLEAN BcCpWriteEx(BC250DBG_CP_UCODE_IO *Io, ULONG Offset, ULONG Value,
 {
     ULONG before, after;
 
-    if (Io->WriteCount >= 8) {
+    if (Io->WriteCount >= BC250DBG_CP_MAX_WRITES) {
         return FALSE;
     }
     before = BcRegReadRaw(Offset);
@@ -4300,7 +4496,16 @@ NTSTATUS BcCpUcode(BC250DBG_CP_UCODE_IO *Io, const ULONG *Payload, ULONG Payload
     if (Io == NULL) {
         return STATUS_INVALID_PARAMETER;
     }
-    /* Zera so a metade de saida, preservando entrada. */
+    /* Zera so a metade de saida, preservando entrada.
+     *
+     * GpuAddr E A FRONTEIRA. Campo de entrada acrescentado DEPOIS dela chega
+     * preenchido do user mode e e zerado aqui antes da primeira leitura — sem
+     * erro, sem aviso, sem divergencia de readback. Foi assim que as ABIs 21, 23
+     * e 24 perderam tres ensaios: 'cp icbase -va' escreveu o fisico, o A/B do
+     * EXE_DISABLE comparou o bit em 0 contra o bit em 0, e o pulso de reset
+     * nunca assertou.
+     *
+     * As C_ASSERT no ABI transformam a reincidencia em erro de compilacao. */
     RtlZeroMemory((PUCHAR)Io + FIELD_OFFSET(BC250DBG_CP_UCODE_IO, GpuAddr),
                   sizeof(*Io) - FIELD_OFFSET(BC250DBG_CP_UCODE_IO, GpuAddr));
     Io->Size = sizeof(*Io);
@@ -4315,6 +4520,7 @@ NTSTATUS BcCpUcode(BC250DBG_CP_UCODE_IO *Io, const ULONG *Payload, ULONG Payload
      * Todo o resto escreve, e continua exigindo armamento. */
     if (Io->Mode != BC250DBG_CP_MODE_TXN_SNAP &&
         Io->Mode != BC250DBG_CP_MODE_TXN_VERIFY &&
+        Io->Mode != BC250DBG_CP_MODE_GOLDEN_PREFLIGHT &&
         g_Dev.ArmLevel < BC250DBG_ARM_WRITE) {
         Io->Status = BC250DBG_OPS_DENIED;
         return STATUS_ACCESS_DENIED;
@@ -4346,9 +4552,17 @@ NTSTATUS BcCpUcode(BC250DBG_CP_UCODE_IO *Io, const ULONG *Payload, ULONG Payload
         BcCpFillEngineRegs(Io, e);
     }
     Io->GpuAddr = BC250_VRAM_GPU_BASE + (ULONGLONG)Io->VramOffset;
-    Io->RegisterCount = BC250DBG_CP_TXN_REG_COUNT;
-    for (i = 0; i < BC250DBG_CP_TXN_REG_COUNT; i++) {
-        Io->Offsets[i] = g_CpTxnRegs[i];
+    if (Io->Mode >= BC250DBG_CP_MODE_GOLDEN_INIT &&
+        Io->Mode <= BC250DBG_CP_MODE_GOLDEN_PREFLIGHT) {
+        Io->RegisterCount = BC250DBG_CP_GOLDEN_AUDIT_REG_COUNT;
+        for (i = 0; i < BC250DBG_CP_GOLDEN_AUDIT_REG_COUNT; i++) {
+            Io->Offsets[i] = g_CpGoldenAuditRegs[i];
+        }
+    } else {
+        Io->RegisterCount = BC250DBG_CP_TXN_REG_COUNT;
+        for (i = 0; i < BC250DBG_CP_TXN_REG_COUNT; i++) {
+            Io->Offsets[i] = g_CpTxnRegs[i];
+        }
     }
 
     switch (Io->Mode) {
@@ -4620,9 +4834,163 @@ NTSTATUS BcCpUcode(BC250DBG_CP_UCODE_IO *Io, const ULONG *Payload, ULONG Payload
     }
 
     /* ---------------- apontar a cache para o ucode ---------------- */
+    /* ---------------- ungate do clock do CPF ---------------- */
+    /* ---------------- CP_ME_CNTL por campo (ABI 24) ---------------- */
+    /* Mascaras conferidas no gc_10_1_0_sh_mask.h completo, trazido do OldDBG.
+     * Nao sao deducao: sao os campos do header autoritativo. */
+    case BC250DBG_CP_MODE_PIPE_RESET: {
+        ULONG antes, querido, depois;
+        const ULONG HALTS = 0x15000000u;   /* CE|PFP|ME _HALT, bits 24/26/28 */
+        const ULONG RESETS = 0x003F0000u;  /* CE/PFP/ME _PIPE0/1_RESET, 16..21 */
+
+        if (!g_Dev.CpTxnValid) {
+            Io->Status = BC250DBG_OPS_BADOP;
+            BcLogText(BC250DBG_LVL_ERROR, BC250DBG_SUB_GC,
+                      "CP pipereset: RECUSADO, nenhum snapshot de transacao aberto.");
+            return STATUS_SUCCESS;
+        }
+        if (!BcCpTxnCovers(A_CP_ME_CNTL)) {
+            Io->Status = BC250DBG_OPS_BADOP;
+            BcLogText(BC250DBG_LVL_ERROR, BC250DBG_SUB_GC,
+                      "CP pipereset: CP_ME_CNTL fora da transacao.");
+            return STATUS_SUCCESS;
+        }
+
+        antes = BcRegReadRaw(A_CP_ME_CNTL);
+        /* Os HALT sao MANTIDOS nos dois sentidos: o reset e das pipes, e tirar
+         * engine do HALT aqui seria acao disfarcada de configuracao. */
+        querido = Io->PipeResetAssert ? (HALTS | RESETS) : HALTS;
+        BcCpWriteChecked(Io, A_CP_ME_CNTL, querido);
+        depois = BcRegReadRaw(A_CP_ME_CNTL);
+
+        BcCpFillState(Io);
+        Io->Status = (depois == querido) ? BC250DBG_OPS_OK : BC250DBG_OPS_MISMATCH;
+        BcLogText((depois == querido) ? BC250DBG_LVL_INFO : BC250DBG_LVL_ERROR,
+                  BC250DBG_SUB_GC,
+                  "CP pipereset %s: CP_ME_CNTL 0x%08X -> 0x%08X (queria 0x%08X)",
+                  Io->PipeResetAssert ? "ASSERT" : "DEASSERT",
+                  antes, depois, querido);
+        return STATUS_SUCCESS;
+    }
+
+    case BC250DBG_CP_MODE_ICACHE_MECNTL: {
+        ULONG antes, querido, depois, limpo;
+        const ULONG INVAL = 0x00000150u;   /* CE|PFP|ME _INVALIDATE_ICACHE */
+
+        if (!g_Dev.CpTxnValid || !BcCpTxnCovers(A_CP_ME_CNTL)) {
+            Io->Status = BC250DBG_OPS_BADOP;
+            BcLogText(BC250DBG_LVL_ERROR, BC250DBG_SUB_GC,
+                      "CP icinval-mecntl: RECUSADO, transacao ausente ou nao cobre "
+                      "CP_ME_CNTL.");
+            return STATUS_SUCCESS;
+        }
+
+        antes = BcRegReadRaw(A_CP_ME_CNTL);
+        querido = antes | INVAL;
+        BcCpWriteChecked(Io, A_CP_ME_CNTL, querido);
+        depois = BcRegReadRaw(A_CP_ME_CNTL);
+
+        /* Os bits de invalidacao PODEM ser auto-limpantes: e um pedido, nao um
+         * estado. NAO afirmo qual dos dois e — relato o que a leitura devolveu e
+         * deixo o ensaio decidir. Depois devolvo o registrador ao valor de
+         * entrada, para nao deixar pedido pendurado. */
+        BcRegWriteRaw(A_CP_ME_CNTL, antes);
+        limpo = BcRegReadRaw(A_CP_ME_CNTL);
+
+        Io->OpCntlBefore = antes;
+        Io->OpCntlAfterWrite = depois;
+        Io->OpCntlAfterWait = limpo;
+        /* Confirmavel = o registrador devolveu os bits pedidos na leitura logo
+         * apos a escrita. Se nao devolveu, ou eles se auto-limpam, ou o pedido
+         * nao pegou — e essas duas coisas NAO se distinguem por readback. */
+        Io->InvConfirmavel = ((depois & INVAL) == INVAL) ? 1u : 0u;
+
+        BcCpFillState(Io);
+        Io->Status = (limpo == antes) ? BC250DBG_OPS_OK : BC250DBG_OPS_MISMATCH;
+        BcLogText(BC250DBG_LVL_INFO, BC250DBG_SUB_GC,
+                  "CP icinval-mecntl: 0x%08X -> 0x%08X (pediu 0x%08X) -> 0x%08X. "
+                  "bits lidos de volta: %s",
+                  antes, depois, querido, limpo,
+                  Io->InvConfirmavel ? "sim" : "nao (auto-limpante ou nao aceito)");
+        return STATUS_SUCCESS;
+    }
+
+    case BC250DBG_CP_MODE_CLOCKS: {
+        ULONG antes, depois;
+
+        /* Mesma exigencia de todas as escritas do CP: sem caminho de volta
+         * provado, nao se escreve. */
+        if (!g_Dev.CpTxnValid) {
+            Io->Status = BC250DBG_OPS_BADOP;
+            BcLogText(BC250DBG_LVL_ERROR, BC250DBG_SUB_GC,
+                      "CP clocks: RECUSADO, nenhum snapshot de transacao aberto.");
+            return STATUS_SUCCESS;
+        }
+        if (!BcCpTxnCovers(A_CGTT_CPF_CLK_CTRL)) {
+            Io->Status = BC250DBG_OPS_BADOP;
+            BcLogText(BC250DBG_LVL_ERROR, BC250DBG_SUB_GC,
+                      "CP clocks: CGTT_CPF_CLK_CTRL fora da transacao; o rollback "
+                      "nao o desfaria");
+            return STATUS_SUCCESS;
+        }
+        /* Este registrador RESPONDE. Diferente dos IC_BASE, aqui o readback vale
+         * como confirmacao, e por isso a escrita passa por BcCpWriteChecked. */
+        if (!BcRegResponds(A_CGTT_CPF_CLK_CTRL, NULL)) {
+            Io->Status = BC250DBG_OPS_DENIED;
+            BcLogText(BC250DBG_LVL_ERROR, BC250DBG_SUB_GC,
+                      "CP clocks: CGTT_CPF_CLK_CTRL em 0x%05X nao responde. "
+                      "Nao escrevo em endereco que nao decodifica.",
+                      A_CGTT_CPF_CLK_CTRL);
+            return STATUS_SUCCESS;
+        }
+
+        antes = BcRegReadRaw(A_CGTT_CPF_CLK_CTRL);
+        /* 0xF8000100 e o valor MEDIDO no Linux com o CP executando, nao um valor
+         * inventado nem copiado de outra geracao: os cinco SOFT_OVERRIDE_* em 1
+         * sobre o mesmo 0x100 que este sistema ja tem. */
+        BcCpWriteChecked(Io, A_CGTT_CPF_CLK_CTRL, 0xF8000100u);
+        depois = BcRegReadRaw(A_CGTT_CPF_CLK_CTRL);
+
+        BcCpFillState(Io);
+        Io->Status = (depois == 0xF8000100u) ? BC250DBG_OPS_OK : BC250DBG_OPS_MISMATCH;
+        BcLogText((depois == 0xF8000100u) ? BC250DBG_LVL_INFO : BC250DBG_LVL_ERROR,
+                  BC250DBG_SUB_GC,
+                  "CP clocks: CGTT_CPF_CLK_CTRL 0x%08X -> 0x%08X (queria 0xF8000100, "
+                  "Linux com o CP vivo). CPF e o fetcher da microengine.",
+                  antes, depois);
+        return STATUS_SUCCESS;
+    }
+
+    case BC250DBG_CP_MODE_GOLDEN_PREFLIGHT:
+        /* Somente leitura. Inclui os 34 registros golden e os dois GPA que a
+         * fase posterior do direct load precisara cobrir. */
+        Io->Status = BcCpGoldenPreflight(Io) ?
+                     BC250DBG_OPS_OK : BC250DBG_OPS_MISMATCH;
+        BcCpFillState(Io);
+        BcLogText(Io->Status == BC250DBG_OPS_OK ?
+                  BC250DBG_LVL_INFO : BC250DBG_LVL_ERROR,
+                  BC250DBG_SUB_GC,
+                  "CP golden preflight: %u registros, %u falhas; zero escrita",
+                  Io->RegisterCount, Io->Mismatches);
+        return STATUS_SUCCESS;
+
+    case BC250DBG_CP_MODE_GOLDEN_INIT:
+        /* Continua fail-closed. GRBM_GFX_INDEX=0xE0000000 faz broadcast; um
+         * snapshot unico nao preserva valores possivelmente diferentes por
+         * SE/SH/instancia. Liberar RMW antes de snapshotar a topologia inteira
+         * fabricaria rollback. */
+        Io->Status = BC250DBG_OPS_BADOP;
+        BcLogText(BC250DBG_LVL_ERROR, BC250DBG_SUB_GC,
+                  "CP golden apply: QUARENTENA, rollback por SE/SH/instancia ausente");
+        return STATUS_SUCCESS;
+
     case BC250DBG_CP_MODE_ICBASE: {
         ULONG cntl;
-        ULONGLONG addr = Io->GpuAddr;
+        /* ABI 21: se o chamador entregou um endereco explicito, e ele que vai
+         * para o IC_BASE. O caso de uso e apontar para uma VA que a page table
+         * do VMID 0 resolve, reproduzindo o que o amdgpu faz com um endereco de
+         * GTT. Sem override, o comportamento e o de antes: fisico derivado. */
+        ULONGLONG addr = Io->OverrideValid ? Io->OverrideGpuAddr : Io->GpuAddr;
 
         if (!g_Dev.CpTxnValid) {
             Io->Status = BC250DBG_OPS_BADOP;
@@ -4632,13 +5000,16 @@ NTSTATUS BcCpUcode(BC250DBG_CP_UCODE_IO *Io, const ULONG *Payload, ULONG Payload
                       "registrador do CP.");
             return STATUS_SUCCESS;
         }
-        if ((Io->VramOffset & 0xFFFu) != 0) {
+        if ((addr & 0xFFFull) != 0) {
             Io->Status = BC250DBG_OPS_RANGE;
             BcLogText(BC250DBG_LVL_ERROR, BC250DBG_SUB_GC,
-                      "CP icbase: offset 0x%X precisa de alinhamento de 4 KB",
-                      Io->VramOffset);
+                      "CP icbase: endereco 0x%llX precisa de alinhamento de 4 KB "
+                      "(o registrador so carrega os bits 31:12)",
+                      addr);
             return STATUS_SUCCESS;
         }
+        /* O registrador guarda 31:12 de LO e 63:32 de HI. Bits 11:0 sao
+         * descartados pelo hardware; ja recusamos acima. */
         /* A guarda BcRegResponds() NAO se aplica aqui.
          *
          * IC_BASE_* le 0xFFFFFFFF nos dois sistemas, e no Linux o CP FUNCIONA
@@ -4665,7 +5036,10 @@ NTSTATUS BcCpUcode(BC250DBG_CP_UCODE_IO *Io, const ULONG *Payload, ULONG Payload
         cntl = 0;
         cntl = BC_SETF(cntl, F_CP_IC_BASE_CNTL__VMID, 0, 0);
         cntl = BC_SETF(cntl, F_CP_IC_BASE_CNTL__CACHE_POLICY, 24, 0);
-        cntl = BC_SETF(cntl, F_CP_IC_BASE_CNTL__EXE_DISABLE, 23, 0);
+        /* ABI 23: normalmente 0, como o upstream. O teste diferencial usa 1 para
+         * medir se estas escritas produzem QUALQUER efeito observavel. */
+        cntl = BC_SETF(cntl, F_CP_IC_BASE_CNTL__EXE_DISABLE, 23,
+                       Io->ExeDisable ? 1 : 0);
         cntl = BC_SETF(cntl, F_CP_IC_BASE_CNTL__ADDRESS_CLAMP, 4, 1);
 
         /* CORRECAO DE 2026-08-24: aqui WrBefore era 0xFFFFFFFF de constante e
@@ -4688,10 +5062,12 @@ NTSTATUS BcCpUcode(BC250DBG_CP_UCODE_IO *Io, const ULONG *Payload, ULONG Payload
         BcCpFillEngineRegs(Io, e);
         Io->Status = BC250DBG_OPS_OK;
         BcLogText(BC250DBG_LVL_INFO, BC250DBG_SUB_GC,
-                  "CP icbase %s: GPU 0x%llX, 3 escritas WRITE-ONLY "
+                  "CP icbase %s: endereco 0x%llX (%s), 3 escritas WRITE-ONLY "
                   "(CNTL=0x%08X, LO=0x%08X, HI=0x%08X). Nao ha readback: a prova "
                   "e o ponteiro de instrucao andar depois do unhalt.",
-                  e->Nome, addr, cntl, (ULONG)(addr & 0xFFFFF000ull),
+                  e->Nome, addr,
+                  Io->OverrideValid ? "VA explicita, VMID 0" : "fisico derivado",
+                  cntl, (ULONG)(addr & 0xFFFFF000ull),
                   (ULONG)(addr >> 32));
         return STATUS_SUCCESS;
     }
@@ -4751,9 +5127,9 @@ NTSTATUS BcCpUcode(BC250DBG_CP_UCODE_IO *Io, const ULONG *Payload, ULONG Payload
         return STATUS_SUCCESS;
     }
 
-    /* ---------------- unhalt: tirar as 3 engines do HALT ---------------- */
+    /* ---------------- unhalt: tirar as 4 engines do HALT ---------------- */
     case BC250DBG_CP_MODE_UNHALT: {
-        ULONG before, after;
+        ULONG beforeMe, afterMe, beforeMec, afterMec;
 
         if (!g_Dev.CpTxnValid) {
             Io->Status = BC250DBG_OPS_BADOP;
@@ -4763,47 +5139,63 @@ NTSTATUS BcCpUcode(BC250DBG_CP_UCODE_IO *Io, const ULONG *Payload, ULONG Payload
             return STATUS_SUCCESS;
         }
 
-        before = BcRegReadRaw(A_CP_ME_CNTL);
-        /* Limpa PFP_HALT (26), ME_HALT (28), CE_HALT (24) */
+        beforeMec = BcRegReadRaw(A_CP_MEC_CNTL);
+        beforeMe  = BcRegReadRaw(A_CP_ME_CNTL);
+        /* Limpa MEC_ME1_HALT / MEC_ME2_HALT (0) e PFP/ME/CE_HALT (0) */
+        BcRegWriteRaw(A_CP_MEC_CNTL, 0);
         BcRegWriteRaw(A_CP_ME_CNTL, 0);
         KeStallExecutionProcessor(50);
-        after = BcRegReadRaw(A_CP_ME_CNTL);
+        afterMec = BcRegReadRaw(A_CP_MEC_CNTL);
+        afterMe  = BcRegReadRaw(A_CP_ME_CNTL);
 
         Io->WrOffset[0] = A_CP_ME_CNTL;
-        Io->WrBefore[0] = before;
+        Io->WrBefore[0] = beforeMe;
         Io->WrWanted[0] = 0;
-        Io->WrAfter[0]  = after;
-        Io->WriteCount = 1;
+        Io->WrAfter[0]  = afterMe;
+        Io->WrOffset[1] = A_CP_MEC_CNTL;
+        Io->WrBefore[1] = beforeMec;
+        Io->WrWanted[1] = 0;
+        Io->WrAfter[1]  = afterMec;
+        Io->WriteCount = 2;
 
         BcCpFillState(Io);
         Io->Status = BC250DBG_OPS_OK;
         BcLogText(BC250DBG_LVL_INFO, BC250DBG_SUB_GC,
-                  "CP unhalt: CP_ME_CNTL 0x%08X -> 0x%08X (PFP_PC=0x%X, ME_PC=0x%X, CE_PC=0x%X, STAT=0x%X)",
-                  before, after, Io->PfpInstrPntr, Io->MeInstrPntr, Io->CeInstrPntr, Io->CpStat);
+                  "CP unhalt: ME_CNTL 0x%08X -> 0x%08X, MEC_CNTL 0x%08X -> 0x%08X (PFP=0x%X, ME=0x%X, CE=0x%X, MEC1=0x%X, STAT=0x%X)",
+                  beforeMe, afterMe, beforeMec, afterMec,
+                  Io->PfpInstrPntr, Io->MeInstrPntr, Io->CeInstrPntr, Io->Mec1InstrPntr, Io->CpStat);
         return STATUS_SUCCESS;
     }
 
-    /* ---------------- halt: voltar as 3 engines para o HALT ---------------- */
+    /* ---------------- halt: voltar as 4 engines para o HALT ---------------- */
     case BC250DBG_CP_MODE_HALT: {
-        ULONG before, after;
+        ULONG beforeMe, afterMe, beforeMec, afterMec;
 
-        before = BcRegReadRaw(A_CP_ME_CNTL);
-        /* Reativa PFP_HALT (26), ME_HALT (28), CE_HALT (24) = 0x15000000 */
-        BcRegWriteRaw(A_CP_ME_CNTL, 0x15000000);
+        beforeMec = BcRegReadRaw(A_CP_MEC_CNTL);
+        beforeMe  = BcRegReadRaw(A_CP_ME_CNTL);
+        /* Reativa MEC_ME1_HALT/MEC_ME2_HALT (0x50000000) e PFP/ME/CE_HALT (0x15000000) */
+        BcRegWriteRaw(A_CP_MEC_CNTL, 0x50000000u);
+        BcRegWriteRaw(A_CP_ME_CNTL, 0x15000000u);
         KeStallExecutionProcessor(50);
-        after = BcRegReadRaw(A_CP_ME_CNTL);
+        afterMec = BcRegReadRaw(A_CP_MEC_CNTL);
+        afterMe  = BcRegReadRaw(A_CP_ME_CNTL);
 
         Io->WrOffset[0] = A_CP_ME_CNTL;
-        Io->WrBefore[0] = before;
-        Io->WrWanted[0] = 0x15000000;
-        Io->WrAfter[0]  = after;
-        Io->WriteCount = 1;
+        Io->WrBefore[0] = beforeMe;
+        Io->WrWanted[0] = 0x15000000u;
+        Io->WrAfter[0]  = afterMe;
+        Io->WrOffset[1] = A_CP_MEC_CNTL;
+        Io->WrBefore[1] = beforeMec;
+        Io->WrWanted[1] = 0x50000000u;
+        Io->WrAfter[1]  = afterMec;
+        Io->WriteCount = 2;
 
         BcCpFillState(Io);
         Io->Status = BC250DBG_OPS_OK;
         BcLogText(BC250DBG_LVL_INFO, BC250DBG_SUB_GC,
-                  "CP halt: CP_ME_CNTL 0x%08X -> 0x%08X (PFP_PC=0x%X, ME_PC=0x%X, CE_PC=0x%X, STAT=0x%X)",
-                  before, after, Io->PfpInstrPntr, Io->MeInstrPntr, Io->CeInstrPntr, Io->CpStat);
+                  "CP halt: ME_CNTL 0x%08X -> 0x%08X, MEC_CNTL 0x%08X -> 0x%08X (PFP=0x%X, ME=0x%X, CE=0x%X, MEC1=0x%X, STAT=0x%X)",
+                  beforeMe, afterMe, beforeMec, afterMec,
+                  Io->PfpInstrPntr, Io->MeInstrPntr, Io->CeInstrPntr, Io->Mec1InstrPntr, Io->CpStat);
         return STATUS_SUCCESS;
     }
 
@@ -5192,7 +5584,11 @@ NTSTATUS BcGfxInit(BC250DBG_GFX_INIT_IO *Io)
             BcVramWriteRaw(vramOffset + i, 0);
         }
 
-        gpuAddr = BC250_VRAM_GPU_BASE + (ULONGLONG)vramOffset;
+        if (Io->GpuAddr != 0) {
+            gpuAddr = Io->GpuAddr;
+        } else {
+            gpuAddr = BC250_VRAM_GPU_BASE + (ULONGLONG)vramOffset;
+        }
     }
 
     rptrWbAddr = gpuAddr + (ULONGLONG)size; /* logo apos o anel */
@@ -5208,29 +5604,42 @@ NTSTATUS BcGfxInit(BC250DBG_GFX_INIT_IO *Io)
 
     meCntlBefore = BcRegReadRaw(A_CP_ME_CNTL);
 
-    /* 1. Congela as microengines com HALT seguro (0x15000000) */
-    BcRegWriteRaw(A_CP_ME_CNTL, 0x15000000);
+    /* 1. Congela as 4 microengines com HALT seguro (0x15000000 e 0x50000000) */
+    BcRegWriteRaw(A_CP_MEC_CNTL, 0x50000000u);
+    BcRegWriteRaw(A_CP_ME_CNTL, 0x15000000u);
     KeStallExecutionProcessor(50);
 
     /* 2. Configura Golden Registers, clocks e contexto do CP de acordo com o padrao upstream GFX10 */
-    BcRegWriteRaw(0x0802Cu, 0xE0000000); /* mmGRBM_GFX_INDEX: Broadcast */
+    BcRegWriteRaw(0x30800u, 0x00000000); /* mmGRBM_GFX_INDEX: Instance 0, SE 0, SA 0 */
     BcRegWriteRaw(0x08088u, 0x00000000); /* mmGRBM_GFX_CNTL: Pipe 0, ME 0 */
-    BcRegWriteRaw(0x18C44u, 0xF8000100); /* mmCGTT_CPF_CLK_CTRL (CPF Clock Un-gate) */
-    BcRegWriteRaw(0x18C48u, 0x3C000100); /* mmCGTT_SPI_CLK_CTRL (SPI Clock Un-gate) */
-    BcRegWriteRaw(0x18C4Cu, 0x60000100); /* mmCGTT_SQ_CLK_CTRL (SQ Clock Un-gate) */
-    BcRegWriteRaw(0x18C50u, 0x40000100); /* mmCGTT_SQG_CLK_CTRL (SQG Clock Un-gate) */
-    BcRegWriteRaw(0x18C54u, 0xFFFF8100); /* mmCGTT_VGT_CLK_CTRL (VGT Clock Un-gate) */
-    BcRegWriteRaw(0x18C58u, 0xFEFF8100); /* mmCGTT_WD_CLK_CTRL (WD Clock Un-gate) */
+    BcRegWriteRaw(0x3C2C0u, 0x00000100); /* mmCGTT_CP_CLK_CTRL (CP Core Clock Un-gate) */
+    BcRegWriteRaw(0x3C2C4u, 0xF8000100); /* mmCGTT_CPF_CLK_CTRL (CPF Clock Un-gate) */
+    BcRegWriteRaw(0x3C2C8u, 0x00000100); /* mmCGTT_CPC_CLK_CTRL (CPC Clock Un-gate) */
+    BcRegWriteRaw(0x3C200u, 0x3C000100); /* mmCGTT_SPI_CLK_CTRL (SPI Clock Un-gate) */
+    BcRegWriteRaw(0x3C230u, 0x60000100); /* mmCGTT_SQ_CLK_CTRL (SQ Clock Un-gate) */
+    BcRegWriteRaw(0x3C234u, 0x40000100); /* mmCGTT_SQG_CLK_CTRL (SQG Clock Un-gate) */
+    BcRegWriteRaw(0x3C210u, 0xFFFF8100); /* mmCGTT_VGT_CLK_CTRL (VGT Clock Un-gate) */
+    BcRegWriteRaw(0x3C218u, 0xFEFF8100); /* mmCGTT_WD_CLK_CTRL (WD Clock Un-gate) */
+    BcRegWriteRaw(A_CP_PFP_LOAD_CONTROL, 0x01018003u); /* CP_PFP_LOAD_CONTROL */
+    BcRegWriteRaw(A_CP_ROQ1_THRESHOLDS, 0x06008010u);  /* CP_ROQ1_THRESHOLDS */
+    BcRegWriteRaw(A_CP_ROQ2_THRESHOLDS, 0x000380A0u);  /* CP_ROQ2_THRESHOLDS */
+    BcRegWriteRaw(A_CP_ROQ3_THRESHOLDS, 0x0004C120u);  /* CP_ROQ3_THRESHOLDS */
+    BcRegWriteRaw(A_CP_STQ_THRESHOLDS, 0x00804000u);   /* CP_STQ_THRESHOLDS */
+    BcRegWriteRaw(A_CP_MEQ_THRESHOLDS, 0x00008040u);   /* CP_MEQ_THRESHOLDS */
+    BcRegWriteRaw(A_CP_CONTEXT_CNTL, 0x00750075u);     /* CP_CONTEXT_CNTL */
+    BcRegWriteRaw(A_CP_COHER_START_DELAY, 0x00000020u);/* CP_COHER_START_DELAY */
+    BcRegWriteRaw(A_CP_DMA_CNTL, 0x10100020u);         /* CP_DMA_CNTL */
+    BcRegWriteRaw(A_GE_FAST_CLKS, 0x0000493Eu);        /* GE_FAST_CLKS */
+    BcRegWriteRaw(A_CPG_PSP_DEBUG, 0x00000008u);       /* mmCPG_PSP_DEBUG (GPA_OVERRIDE) */
+    BcRegWriteRaw(A_CPC_PSP_DEBUG, 0x00000008u);       /* mmCPC_PSP_DEBUG (GPA_OVERRIDE) */
     BcRegWriteRaw(0x0C6DCu, 0x000005FF); /* mmCP_SD_CNTL */
     BcRegWriteRaw(0x09F8Cu, 0x00008500); /* mmGCR_GENERAL_CNTL */
-    BcRegWriteRaw(0x09800u, 0x00000044); /* mmGB_ADDR_CONFIG */
+    BcRegWriteRaw(0x098F8u, 0x00000044); /* mmGB_ADDR_CONFIG */
     BcRegWriteRaw(0x08C34u, 0x00000101); /* mmSH_MEM_CONFIG (64-bit unaligned) */
-    BcRegWriteRaw(0x1B9C0u, 0x00000008); /* mmCPG_PSP_DEBUG (GPA override / Direct Physical) */
-    BcRegWriteRaw(0x1B9C4u, 0x00000008); /* mmCPC_PSP_DEBUG (GPA override / Direct Physical) */
     BcRegWriteRaw(0x0C12Cu, 0x00000001); /* mmCP_DEVICE_ID = 1 */
     BcRegWriteRaw(0x0C2B8u, 0x00000007); /* mmCP_MAX_CONTEXT = 7 (8 contextos de hardware) */
     BcRegWriteRaw(0x0C144u, 0x00000000); /* mmCP_RB_VMID = 0 */
-    BcRegWriteRaw(0x0C128u, 0x00000000); /* mmCP_RB_WPTR_DELAY = 0 */
+    BcRegWriteRaw(0x08704u, 0x00000000); /* mmCP_RB_WPTR_DELAY = 0 */
     BcRegWriteRaw(0x0C168u, 0x00000000); /* mmCP_RB_DOORBELL_RANGE_LOWER */
     BcRegWriteRaw(0x0C16Cu, 0x000003FE); /* mmCP_RB_DOORBELL_RANGE_UPPER */
 
@@ -5244,10 +5653,10 @@ NTSTATUS BcGfxInit(BC250DBG_GFX_INIT_IO *Io)
     BcRegWriteRaw(A_CP_RB_DOORBELL_CONTROL, 0x00000000);
     BcRegWriteRaw(A_CP_RB_WPTR_POLL_ADDR_LO, (ULONG)(wptrPollAddr & 0xFFFFFFFCull));
     BcRegWriteRaw(A_CP_RB_WPTR_POLL_ADDR_HI, (ULONG)(wptrPollAddr >> 32));
-    BcRegWriteRaw(0x08708, 0x00400100u); /* mmCP_RB_WPTR_POLL_CNTL */
+    BcRegWriteRaw(0x08708, 0x00400000u); /* mmCP_RB_WPTR_POLL_CNTL (IDLE_POLL_COUNT=64) */
 
     /* 5. Configuração do buffer do anel com RB_RPTR_WR_ENA (bit 31) para destravar escrita de RPTR */
-    rbCntl = (9u & 0x3Fu) | ((7u & 0x3Fu) << 8);
+    rbCntl = (9u & 0x3Fu) | ((7u & 0x3Fu) << 8) | (2u << 20) | (2u << 22); /* 0x00A00709 */
     BcRegWriteRaw(A_CP_RB0_CNTL, 0x80000000u | rbCntl);
     BcRegWriteRaw(A_CP_RB0_RPTR, 0);
     BcRegWriteRaw(A_CP_RB0_WPTR, 0);
@@ -5267,13 +5676,14 @@ NTSTATUS BcGfxInit(BC250DBG_GFX_INIT_IO *Io)
     /* 7. Ativa Ring 0 no CP */
     BcRegWriteRaw(0x0C680u, 1); /* mmCP_RB0_ACTIVE */
 
-    /* 8. Toda a configuracao agora esta visivel; libera os consumidores (Unhalt CE, PFP, ME) */
+    /* 8. Toda a configuracao agora esta visivel; libera os consumidores (Unhalt MEC, CE, PFP, ME) */
+    BcRegWriteRaw(A_CP_MEC_CNTL, 0x00000000);
     BcRegWriteRaw(A_CP_ME_CNTL, 0x00000000);
     KeStallExecutionProcessor(50);
 
     /* Re-afirma controle do anel e polling ativo */
     BcRegWriteRaw(A_CP_RB0_CNTL, rbCntl);
-    BcRegWriteRaw(0x08708, 0x00400100u);
+    BcRegWriteRaw(0x08708, 0x00400000u);
     BcRegWriteRaw(0x0C680u, 1);
 
     g_Dev.GfxRingInitialized = TRUE;
@@ -5363,12 +5773,22 @@ NTSTATUS BcGfxSubmit(BC250DBG_GFX_SUBMIT_IO *Io)
         KeStallExecutionProcessor(5);
     }
 
-    Io->Size        = sizeof(*Io);
-    Io->RptrBefore  = rptrBefore;
-    Io->RptrAfter   = rptrAfter;
-    Io->Wptr        = wptrFinal;
-    Io->Completed   = (rptrAfter == wptrFinal || rptrWb == wptrFinal) ? 1 : 0;
-    Io->Status      = BC250DBG_OPS_OK;
+    Io->Size          = sizeof(*Io);
+    Io->RptrBefore    = rptrBefore;
+    Io->RptrAfter     = rptrAfter;
+    Io->Wptr          = wptrFinal;
+    Io->Completed     = (rptrAfter == wptrFinal || rptrWb == wptrFinal) ? 1 : 0;
+    Io->CpMeCntl      = BcRegReadRaw(A_CP_ME_CNTL);
+    Io->CpMecCntl     = BcRegReadRaw(A_CP_MEC_CNTL);
+    Io->CpStat        = BcRegReadRaw(A_CP_STAT);
+    Io->PfpInstrPntr  = BcRegReadRaw(A_CP_PFP_INSTR_PNTR);
+    Io->MeInstrPntr   = BcRegReadRaw(A_CP_ME_INSTR_PNTR);
+    Io->CeInstrPntr   = BcRegReadRaw(A_CP_CE_INSTR_PNTR);
+    Io->Mec1InstrPntr = BcRegReadRaw(A_CP_MEC1_INSTR_PNTR);
+    Io->PfpJtStat     = BcRegReadRaw(A_CP_PFP_JT_STAT);
+    Io->CeJtStat      = BcRegReadRaw(A_CP_CE_JT_STAT);
+    Io->MecJtStat     = BcRegReadRaw(A_CP_MEC_JT_STAT);
+    Io->Status        = BC250DBG_OPS_OK;
 
     return STATUS_SUCCESS;
 }

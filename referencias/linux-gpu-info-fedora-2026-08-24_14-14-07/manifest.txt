@@ -1,0 +1,9 @@
+captured_at=2026-08-24T14:14:07-03:00
+host=fedora
+kernel=6.19.10-300.fc44.x86_64
+read_only=true
+expected_kernel_name=cyan_skillfish_gpu_info.bin
+gpu_info_role=fallback_when_ip_discovery_is_absent
+pci_device=0000:01:00.0 vendor=0x1002 device=0x13fe
+ip_discovery_sysfs=/sys/bus/pci/devices/0000:01:00.0/ip_discovery
+NOT_FOUND: nenhum gpu_info Cyan Skillfish legivel nos diretorios padrao

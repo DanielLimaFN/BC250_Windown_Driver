@@ -1,0 +1,48 @@
+﻿================================================================================
+  RELATORIO DE ENSAIO DE UNHALT E EXECUCAO DO CP (PASSO 3)
+================================================================================
+Data/Hora : 2026-08-24 13:03:41
+Host      : DESKTOP-HQAG6T4
+Driver    : C:\Users\Daniel\Desktop\NamixWDDM\output\bc250dbg.sys (SHA256: 688C6104BEF7A7A9D5B9FCA8A1A210CB4C39B6EE4B8AD298A728334E462BDF03)
+Resultado : FALHA EM GATES
+Gates     : 18 medidos de 18 previstos
+Boot      : 2026-08-24 12:52:23
+--------------------------------------------------------------------------------
+GATES:
+  [OK  ] A_headers_coerentes
+         Req : Os tres ucodes tem header v1.0, IP v10.1 e jump table descrita dentro do payload.
+  [OK  ] B_tres_engines_haltadas_e_paradas
+         Req : CP_ME_CNTL = 0x15000000 (CE/PFP/ME_HALT ativos) e os quatro ponteiros de instrucao zerados.
+  [OK  ] B2_rlc_fora_da_rom
+         Req : RLC_GPM_STAT.RLC_EXEC_ROM_CODE = 0: o RLC executa microcodigo, nao a ROM. Pre-requisito do CP.
+  [OK  ] B3_power_gating_limpo_apos_carga
+         Req : RLC_PG_CNTL = 0x00000000 CONFERIDO POR READBACK depois da carga do RLC, igual ao Linux com o CP executando.
+  [OK  ] C_snapshot_guardado
+         Req : Snapshot dos 11 registradores do CP capturado com sucesso.
+  [OK  ] C7_clock_do_cpf_ungated
+         Req : CGTT_CPF_CLK_CTRL = 0xF8000100 CONFERIDO POR READBACK (registrador legivel, ao contrario dos IC_BASE). Valor medido no Linux com o CP executando.
+  [FAIL] C8_pulso_de_reset_das_pipes
+         Req : CP_ME_CNTL foi a 0x153F0000 (seis bits de PIPE_RESET com os HALT mantidos) e voltou a 0x15000000, CONFIRMADO POR READBACK nos dois lados.
+  [OK  ] D_tres_ucodes_na_vram
+         Req : Os tres ucodes (PFP, ME, CE) gravados e conferidos dword a dword em regioes distintas da VRAM.
+  [OK  ] E_tres_caches_invalidacao_pedida
+         Req : Invalidacao de cache emitida sem recusa para as tres engines. NAO e confirmacao: IC_OP_CNTL e write-only.
+  [OK  ] F_tres_icbase_apontados
+         Req : IC_BASE_CNTL, LO e HI configurados para as tres engines.
+  [OK  ] G_tres_jump_tables_escritas
+         Req : Jump tables escritas pela porta DATA para as tres engines com versao gravada no ADDR.
+  [OK  ] G3_invalidacao_pelo_me_cntl
+         Req : OBSERVACAO, nao aprovacao: invalidacao pedida pelo CP_ME_CNTL, que RESPONDE a leitura. Bits lidos de volta ou nao lidos sao ambos informativos â€” auto-limpante e nao-aceito nao se separam por readback.
+  [OK  ] H_unhalt_executado
+         Req : CP_ME_CNTL configurado com ME_HALT=0, PFP_HALT=0, CE_HALT=0 (0x00000000).
+  [FAIL] I_ponteiros_de_instrucao_ativos
+         Req : Ao menos um ponteiro de instrucao VARIOU entre amostras. PC constante nao e execucao, mesmo diferente de zero.
+  [OK  ] J_halt_restaurado_e_parado
+         Req : CP_ME_CNTL = 0x15000000 reativado e ponteiros de instrucao estabilizados.
+  [OK  ] K_ucodes_devolvidos_sem_divergencia
+         Req : Regioes de VRAM das tres engines devolvidas e conferidas dword a dword sem divergencia.
+  [OK  ] L_registradores_devolvidos
+         Req : Todos os 11 registradores do CP devolvidos aos valores do snapshot.
+  [OK  ] M_sem_bugcheck
+         Req : Nenhum bugcheck registrado no log do sistema na janela do ensaio.
+--------------------------------------------------------------------------------

@@ -78,12 +78,11 @@ static void Usage(void)
     "                               aqui e 0 no Linux com o CP vivo — o RLC deste\n"
     "                               lado roda o bootloader interno, sem ucode.\n"
     "                               O GATE e esse bit cair para 0.\n"
-    "  cp <info|txn|stage|rollback|icinval|icbase|jt|status>\n"
-    "                               Direct load do CP: a microengine busca o\n"
-    "                               proprio ucode da memoria pela cache de\n"
-    "                               instrucoes. O PSP desta placa recusa os\n"
-    "                               firmwares do CP (0x80000203), e o upstream\n"
-    "                               nao tem load_ip_fw para eles nesta geracao.\n"
+    "  cp <info|txn|stage|rollback|icinval|icbase|jt|clocks|status>\n"
+    "                               Instrumentacao do ramo direct load. A\n"
+    "                               recusa PSP historica (0x80000203) veio de\n"
+    "                               sequencia incompleta e nao escolhe a rota.\n"
+    "                               O Linux saudavel usa LOAD_IP_FW generico.\n"
     "                               NADA aqui tira engine do HALT.\n"
     "  gcvm program <estagio>       PASSO 3: programa valores novos nos\n"
     "                               registradores de traducao, na ordem de\n"
@@ -946,7 +945,8 @@ static uint32_t PspFwTypeFromName(const char *s)
     if (_stricmp(s, "pfp")   == 0) return BC250_PSP_FW_CP_PFP;
     if (_stricmp(s, "ce")    == 0) return BC250_PSP_FW_CP_CE;
     if (_stricmp(s, "mec")   == 0) return BC250_PSP_FW_CP_MEC;
-    if (_stricmp(s, "mec2")  == 0) return 5;
+    if (_stricmp(s, "mec_jt1") == 0 || _stricmp(s, "mec2") == 0)
+        return BC250_PSP_FW_CP_MEC_JT1;
     if (_stricmp(s, "rlc")   == 0) return BC250_PSP_FW_RLC_G;
     if (_stricmp(s, "smu")   == 0) return BC250_PSP_FW_SMU;
     return (uint32_t)strtoul(s, NULL, 0);
@@ -1059,34 +1059,10 @@ static int CmdPsp(int argc, char **argv)
     }
 
     if (_stricmp(argv[2], "tmr") == 0) {
-        BC250DBG_PSP_SETUP_TMR_IO io;
-        uint32_t size = (argc >= 4) ? (uint32_t)strtoul(argv[3], NULL, 0) : 0x400000;
-        uint32_t off  = (argc >= 5) ? (uint32_t)strtoul(argv[4], NULL, 0) : 0x0F800000;
-        int rc;
-
-        memset(&io, 0, sizeof(io));
-        io.TmrSizeBytes = size;
-        io.VramOffset   = off;
-        rc = Bc250PspSetupTmr(&g_Ctx, &io);
-        if (rc) {
-            printf("falha ao enviar SETUP_TMR ao PSP: erro %d\n", rc);
-            return 1;
-        }
-
-        printf("PSP SETUP_TMR (TMR carveout na VRAM):\n"
-               "  tamanho      : %u bytes (0x%X)\n"
-               "  offset VRAM  : 0x%08X\n"
-               "  endereco GPU : 0x%llX\n"
-               "  endereco PA  : 0x%llX\n"
-               "  fence        : %s\n"
-               "  RespStatus   : 0x%08X %s\n",
-               io.TmrSizeBytes, io.TmrSizeBytes, io.VramOffset,
-               (unsigned long long)io.TmrGpuAddr,
-               (unsigned long long)io.TmrPhysAddr,
-               io.FenceReached ? "alcancado" : "TIMEOUT",
-               io.RespStatus,
-               (io.RespStatus == 0) ? "<== SUCESSO" : "<== erro");
-        return (io.RespStatus == 0) ? 0 : 1;
+        printf("PSP SETUP_TMR em QUARENTENA.\n"
+               "  Nao existe reserva dinamica exclusiva que comprove PA, MC/GPUVA e tamanho.\n"
+               "  Nenhum IOCTL foi enviado e nenhuma escrita em hardware foi solicitada.\n");
+        return 1;
     }
 
     if (_stricmp(argv[2], "loadfw") == 0 && argc >= 4) {
@@ -1099,6 +1075,13 @@ static int CmdPsp(int argc, char **argv)
         uint32_t *hdr, ucodeSz, ucodeOff, dwordCount, version;
         BC250DBG_PSP_LOAD_FW_IO out;
         int rc;
+
+        if (fwType >= BC250_PSP_FW_CP_ME && fwType <= BC250_PSP_FW_CP_MEC_JT1) {
+            printf("PSP LOAD_IP_FW para CP em QUARENTENA.\n"
+                   "  A sequencia atual nao possui TMR reservada nem endereco MC comprovado.\n"
+                   "  Nenhum arquivo foi aberto, nenhum IOCTL foi enviado e nenhuma escrita foi solicitada.\n");
+            return 1;
+        }
 
         if (path == NULL) {
             if (fwType == BC250_PSP_FW_SDMA0 || fwType == BC250_PSP_FW_SDMA1) {
@@ -1113,7 +1096,7 @@ static int CmdPsp(int argc, char **argv)
                 _snprintf_s(defPath, sizeof(defPath), _TRUNCATE, "firmware/cyan_skillfish2_ce.bin");
             } else if (fwType == BC250_PSP_FW_CP_MEC) {
                 _snprintf_s(defPath, sizeof(defPath), _TRUNCATE, "firmware/cyan_skillfish2_mec.bin");
-            } else if (fwType == 5) {
+            } else if (fwType == BC250_PSP_FW_CP_MEC_JT1) {
                 _snprintf_s(defPath, sizeof(defPath), _TRUNCATE, "firmware/cyan_skillfish2_mec2.bin");
             } else if (fwType == BC250_PSP_FW_RLC_G) {
                 _snprintf_s(defPath, sizeof(defPath), _TRUNCATE, "firmware/cyan_skillfish2_rlc.bin");
@@ -2637,12 +2620,11 @@ static int CmdFirmware(int argc, char **argv)
     return 0;
 }
 
-/* Direct load do CP: PFP, ME, CE.
+/* Instrumentacao do ramo direct load: PFP, ME, CE e MEC.
  *
- * O PSP desta placa recusa as microengines do CP (0x80000203, medido em
- * 2026-08-23 14:21) e o upstream nao tem load_ip_fw para elas nesta geracao. A
- * rota e a microengine buscar o proprio ucode da memoria pela cache de
- * instrucoes. Nada aqui tira engine nenhuma do HALT. */
+ * O 0x80000203 medido em 2026-08-23 veio de uma sequencia PSP incompleta e
+ * nao prova que esta rota seja obrigatoria. O Linux saudavel usa o LOAD_IP_FW
+ * generico depois de TMR. Nada aqui tira engine nenhuma do HALT. */
 static uint32_t CpEngineFromName(const char *s, const char **outFile)
 {
     if (_stricmp(s, "pfp") == 0) {
@@ -2656,6 +2638,10 @@ static uint32_t CpEngineFromName(const char *s, const char **outFile)
     if (_stricmp(s, "ce") == 0) {
         if (outFile) *outFile = "firmware/cyan_skillfish2_ce.bin";
         return BC250DBG_CP_ENGINE_CE;
+    }
+    if (_stricmp(s, "mec") == 0) {
+        if (outFile) *outFile = "firmware/cyan_skillfish2_mec.bin";
+        return BC250DBG_CP_ENGINE_MEC;
     }
     return 0xFFFFFFFFu;
 }
@@ -2735,6 +2721,10 @@ static void CpPrintState(const BC250DBG_CP_UCODE_IO *io)
            io->CpStat, io->GrbmStatus, io->GrbmStatus2);
     printf("  INSTR_PNTR pfp/me/ce/mec1: 0x%08lX 0x%08lX 0x%08lX 0x%08lX\n",
            io->PfpInstrPntr, io->MeInstrPntr, io->CeInstrPntr, io->Mec1InstrPntr);
+    printf("  JT_STAT pfp/ce/mec : 0x%08lX (JT_LOADED=%lu) / 0x%08lX (JT_LOADED=%lu) / 0x%08lX (JT_LOADED=0x%lX)\n",
+           io->PfpJtStat, io->PfpJtStat & 3u,
+           io->CeJtStat,  io->CeJtStat & 3u,
+           io->MecJtStat, io->MecJtStat & 0xFFu);
 }
 
 static void CpPrintWrites(const BC250DBG_CP_UCODE_IO *io)
@@ -2742,7 +2732,7 @@ static void CpPrintWrites(const BC250DBG_CP_UCODE_IO *io)
     unsigned long k;
     int algumWriteOnly = 0;
 
-    for (k = 0; k < io->WriteCount && k < 8; k++) {
+    for (k = 0; k < io->WriteCount && k < BC250DBG_CP_MAX_WRITES; k++) {
         const char *nota;
 
         /* Registrador write-only NAO pode ser declarado confirmado.
@@ -2782,11 +2772,17 @@ static int CmdCp(int argc, char **argv)
     if (argc < 3) {
         printf("uso: bc250ctl cp <subcomando>\n"
                "  cp info <pfp|me|ce> [arquivo]        le e confere o header do ucode\n"
-               "  cp txn <snapshot|restore|verify>     transacao dos 10 registradores do CP\n"
+               "  cp txn <snapshot|restore|verify>     transacao dos 25 registradores do CP\n"
+               "  cp golden <preflight|apply>          preflight readonly; apply em QUARENTENA\n"
                "  cp stage <pfp|me|ce> <off> [arq]     copia o ucode para a VRAM e confere\n"
                "  cp rollback [pfp|me|ce|all]          devolve a regiao de VRAM\n"
                "  cp icinval <pfp|me|ce>               invalida a cache de instrucoes\n"
-               "  cp icbase <pfp|me|ce> <off>          aponta IC_BASE para o ucode\n"
+               "  cp clocks                            ungate do clock do CPF (fetcher)\n"
+               "  cp pipereset <assert|deassert>       reset das pipes pelo CP_ME_CNTL\n"
+               "  cp icinval-mecntl                    invalida I-cache pelo CP_ME_CNTL\n"
+               "  cp icbase <pfp|me|ce> <off> [-va A] [-exedisable]\n"
+               "                                       aponta IC_BASE para o ucode\n"
+               "                                     (-va: endereco explicito, VMID 0)\n"
                "  cp jt <pfp|me|ce> <off> [arq]        escreve a jump table\n"
                "  cp status <pfp|me|ce>                le o estado, sem escrever nada\n"
                "  cp unhalt                            tira as 3 engines do HALT (CP_ME_CNTL=0)\n"
@@ -2983,18 +2979,150 @@ static int CmdCp(int argc, char **argv)
         return 0;
     }
 
+    if (_stricmp(argv[2], "pipereset") == 0 && argc >= 4) {
+        io.Mode = BC250DBG_CP_MODE_PIPE_RESET;
+        io.PipeResetAssert = (_stricmp(argv[3], "assert") == 0) ? 1u : 0u;
+        if (_stricmp(argv[3], "assert") != 0 && _stricmp(argv[3], "deassert") != 0) {
+            printf("uso: bc250ctl cp pipereset <assert|deassert>\n");
+            return 1;
+        }
+        rc = Bc250CpUcode(&g_Ctx, &io, NULL, 0);
+        if (rc) { printf("falha no pipereset: erro %d (rode 'arm write')\n", rc); return 1; }
+
+        printf("Reset das pipes do CP (%s), pelo CP_ME_CNTL:\n", argv[3]);
+        printf("  escritas           : %lu\n", io.WriteCount);
+        CpPrintWrites(&io);
+        if (io.Status == BC250DBG_OPS_OK) {
+            printf("  RESULTADO          : ok, CONFIRMADO POR READBACK\n");
+            printf("  ** Os HALT sao mantidos nos dois sentidos: isto mexe nas pipes,\n");
+            printf("     nao tira engine do HALT.\n");
+        } else {
+            printf("  RESULTADO          : NAO confirmado (status %lu)\n", io.Status);
+        }
+        CpPrintState(&io);
+        return (io.Status == BC250DBG_OPS_OK) ? 0 : 1;
+    }
+
+    if (_stricmp(argv[2], "icinval-mecntl") == 0) {
+        io.Mode = BC250DBG_CP_MODE_ICACHE_MECNTL;
+        rc = Bc250CpUcode(&g_Ctx, &io, NULL, 0);
+        if (rc) { printf("falha no icinval-mecntl: erro %d (rode 'arm write')\n", rc); return 1; }
+
+        printf("Invalidacao da I-cache pelo CP_ME_CNTL:\n");
+        printf("  antes              : 0x%08lX\n", io.OpCntlBefore);
+        printf("  logo apos a escrita: 0x%08lX\n", io.OpCntlAfterWrite);
+        printf("  devolvido          : 0x%08lX\n", io.OpCntlAfterWait);
+        if (io.InvConfirmavel) {
+            printf("  bits lidos de volta: SIM\n");
+        } else {
+            printf("  bits lidos de volta: NAO\n");
+            printf("  ** Auto-limpante ou nao aceito. Estas duas coisas NAO se\n");
+            printf("     distinguem por readback, e nenhuma delas e falha.\n");
+        }
+        CpPrintState(&io);
+        return (io.Status == BC250DBG_OPS_OK) ? 0 : 1;
+    }
+
+    if (_stricmp(argv[2], "clocks") == 0) {
+        io.Mode = BC250DBG_CP_MODE_CLOCKS;
+        rc = Bc250CpUcode(&g_Ctx, &io, NULL, 0);
+        if (rc) { printf("falha no clocks: erro %d (rode 'arm write')\n", rc); return 1; }
+
+        printf("Ungate do clock do CPF (Command Processor Fetcher):\n");
+        printf("  escritas           : %lu\n", io.WriteCount);
+        CpPrintWrites(&io);
+        if (io.Status == BC250DBG_OPS_OK) {
+            printf("  RESULTADO          : ok, CGTT_CPF_CLK_CTRL = 0xF8000100\n");
+            printf("  ** Este registrador RESPONDE: o readback acima e confirmacao\n");
+            printf("     de verdade, nao 'emitido sem recusa'.\n");
+        } else {
+            printf("  RESULTADO          : NAO confirmado (status %lu)\n", io.Status);
+        }
+        CpPrintState(&io);
+        return (io.Status == BC250DBG_OPS_OK) ? 0 : 1;
+    }
+
+    if (_stricmp(argv[2], "golden") == 0) {
+        unsigned long k;
+        const char *acao;
+
+        if (argc < 4) {
+            printf("uso: bc250ctl cp golden <preflight|apply>\n");
+            return 1;
+        }
+        acao = argv[3];
+        if (_stricmp(acao, "preflight") == 0) {
+            io.Mode = BC250DBG_CP_MODE_GOLDEN_PREFLIGHT;
+        } else if (_stricmp(acao, "apply") == 0) {
+            io.Mode = BC250DBG_CP_MODE_GOLDEN_INIT;
+        } else {
+            printf("uso: bc250ctl cp golden <preflight|apply>\n");
+            return 1;
+        }
+        rc = Bc250CpUcode(&g_Ctx, &io, NULL, 0);
+        if (rc) { printf("falha no golden %s: erro %d\n", acao, rc); return 1; }
+
+        printf("Golden Cyan Skillfish (%s):\n", acao);
+        printf("  registradores      : %lu\n", io.RegisterCount);
+        printf("  escritas           : %lu\n", io.WriteCount);
+        if (io.Mode == BC250DBG_CP_MODE_GOLDEN_PREFLIGHT) {
+            for (k = 0; k < io.RegisterCount && k < BC250DBG_CP_REPORT_REG_COUNT; k++) {
+                printf("    0x%05lX        : 0x%08lX\n", io.Offsets[k], io.Values[k]);
+            }
+            printf("  falhas             : %lu\n", io.Mismatches);
+            for (k = 0; k < io.Mismatches && k < BC250DBG_CP_TXN_BAD_SAMPLES; k++) {
+                printf("    0x%05lX        : leituras 0x%08lX / 0x%08lX\n",
+                       io.BadOffset[k], io.BadWant[k], io.BadGot[k]);
+            }
+        } else {
+            CpPrintWrites(&io);
+        }
+        if (io.Status == BC250DBG_OPS_OK) {
+            printf("  RESULTADO          : preflight readonly aprovado; nenhuma escrita emitida\n");
+        } else {
+            printf("  RESULTADO          : RECUSADO/DIVERGENCIA (status %lu)\n", io.Status);
+            if (io.Mode == BC250DBG_CP_MODE_GOLDEN_INIT) {
+                printf("    apply segue em QUARENTENA: falta snapshot/rollback por SE/SH/instancia.\n");
+            }
+        }
+        CpPrintState(&io);
+        return (io.Status == BC250DBG_OPS_OK) ? 0 : 1;
+    }
+
     if (_stricmp(argv[2], "icbase") == 0 && argc >= 5) {
         engine = CpEngineFromName(argv[3], NULL);
         if (engine == 0xFFFFFFFFu) { printf("engine desconhecida: %s\n", argv[3]); return 1; }
         io.Mode = BC250DBG_CP_MODE_ICBASE;
         io.Engine = engine;
         io.VramOffset = (uint32_t)strtoul(argv[4], NULL, 0);
+        /* ABI 21: -va aponta o IC_BASE para um endereco explicito. O caso de
+         * uso e uma VA que a page table do VMID 0 resolve, como o amdgpu faz
+         * com endereco de GTT. Sem -va, nada muda. */
+        for (int kva = 5; kva < argc; kva++) {
+            if ((_stricmp(argv[kva], "-va") == 0 || _stricmp(argv[kva], "-gpu") == 0) && kva + 1 < argc) {
+                io.OverrideGpuAddr = strtoull(argv[++kva], NULL, 0);
+                io.OverrideValid = 1;
+            } else if (_stricmp(argv[kva], "-exedisable") == 0) {
+                /* ABI 23: teste diferencial. Ver o comentario no ABI. */
+                io.ExeDisable = 1;
+            }
+        }
         rc = Bc250CpUcode(&g_Ctx, &io, NULL, 0);
         if (rc) { printf("falha no icbase: erro %d (rode 'arm write')\n", rc); return 1; }
 
         printf("IC_BASE da engine %s:\n", argv[3]);
-        printf("  ucode em           : VRAM 0x%08lX  ->  GPU 0x%llX\n",
-               io.VramOffset, (unsigned long long)io.GpuAddr);
+        if (io.ExeDisable) {
+            printf("  EXE_DISABLE        : 1  (TESTE DIFERENCIAL, nao e a configuracao normal)\n");
+        }
+        if (io.OverrideValid) {
+            printf("  ucode em           : VRAM 0x%08lX\n", io.VramOffset);
+            printf("  IC_BASE aponta para: VA 0x%llX  (VMID 0, pela page table)\n",
+                   (unsigned long long)io.OverrideGpuAddr);
+            printf("  ** A VA so resolve se CONTEXT0 estiver ligado e a pagina mapeada.\n");
+        } else {
+            printf("  ucode em           : VRAM 0x%08lX  ->  GPU 0x%llX\n",
+                   io.VramOffset, (unsigned long long)io.GpuAddr);
+        }
         printf("  escritas           : %lu\n", io.WriteCount);
         CpPrintWrites(&io);
         CpPrintState(&io);
@@ -3771,6 +3899,25 @@ static int CmdGcvm(int argc, char **argv)
     return 1;
 }
 
+static void GfxPrintSubmitStatus(const BC250DBG_GFX_SUBMIT_IO *io)
+{
+    printf("  RPTR Inicial : 0x%X\n"
+           "  WPTR Final   : 0x%X\n"
+           "  RPTR Final   : 0x%X\n"
+           "  Conclusao    : %s\n"
+           "  CP_ME_CNTL   : 0x%08X (MEC_CNTL 0x%08X)  CP_STAT 0x%08X\n"
+           "  INSTR_PNTR   : PFP=0x%08X  ME=0x%08X  CE=0x%08X  MEC1=0x%08X\n"
+           "  JT_STAT      : PFP=0x%08X (JT_LOADED=%u)  CE=0x%08X (JT_LOADED=%u)  MEC=0x%08X (JT_LOADED=0x%X)\n",
+           io->RptrBefore, io->Wptr, io->RptrAfter,
+           io->Completed ? ">>> SUCESSO! O CP processou os pacotes PM4 e avancou o RPTR!"
+                        : "TIMEOUT (RPTR nao alcancou WPTR)",
+           io->CpMeCntl, io->CpMecCntl, io->CpStat,
+           io->PfpInstrPntr, io->MeInstrPntr, io->CeInstrPntr, io->Mec1InstrPntr,
+           io->PfpJtStat, io->PfpJtStat & 3,
+           io->CeJtStat, io->CeJtStat & 3,
+           io->MecJtStat, io->MecJtStat & 0xFF);
+}
+
 static int CmdGfx(int argc, char **argv)
 {
     if (argc < 3) {
@@ -3780,11 +3927,16 @@ static int CmdGfx(int argc, char **argv)
 
     if (_stricmp(argv[2], "init") == 0) {
         BC250DBG_GFX_INIT_IO io;
-        int rc;
+        int rc, a;
 
         memset(&io, 0, sizeof(io));
         io.VramOffset = (argc >= 4) ? (uint32_t)strtoul(argv[3], NULL, 0) : 0x0E200000u;
-        io.RingSizeBytes = (argc >= 5) ? (uint32_t)strtoul(argv[4], NULL, 0) : 4096u;
+        io.RingSizeBytes = (argc >= 5 && argv[4][0] != '-') ? (uint32_t)strtoul(argv[4], NULL, 0) : 4096u;
+        for (a = 3; a < argc; a++) {
+            if (_stricmp(argv[a], "-gpu") == 0 && a + 1 < argc) {
+                io.GpuAddr = strtoull(argv[++a], NULL, 0);
+            }
+        }
         rc = Bc250GfxInit(&g_Ctx, &io);
         if (rc) {
             printf("falha ao inicializar anel GFX CP: erro %d\n", rc);
@@ -3853,14 +4005,8 @@ static int CmdGfx(int argc, char **argv)
             return 1;
         }
 
-        printf("Resultado da Submissao GFX CP:\n"
-               "  RPTR Inicial : 0x%X\n"
-               "  WPTR Final   : 0x%X\n"
-               "  RPTR Final   : 0x%X\n"
-               "  Conclusao    : %s\n",
-               io.RptrBefore, io.Wptr, io.RptrAfter,
-               io.Completed ? ">>> SUCESSO! O CP processou os pacotes PM4 e avancou o RPTR!"
-                            : "TIMEOUT (RPTR nao alcancou WPTR)");
+        printf("Resultado da Submissao GFX CP:\n");
+        GfxPrintSubmitStatus(&io);
         return io.Completed ? 0 : 1;
     }
 
@@ -3868,18 +4014,27 @@ static int CmdGfx(int argc, char **argv)
         BC250DBG_GFX_SUBMIT_IO io;
         int rc;
 
-        printf("Enviando sequencia PM4 de boot: CLEAR_STATE + CONTEXT_CONTROL + NOP (6 dwords)...\n");
+        printf("Enviando sequencia PM4 de boot: PREAMBLE_BEGIN + CONTEXT_CONTROL + PREAMBLE_END + CLEAR_STATE + NOP (13 dwords)...\n");
         memset(&io, 0, sizeof(io));
-        /* 1. PACKET3_CLEAR_STATE (Opcode 0x12, 0 dw payload -> count=0, total 1 dw) */
-        io.Data[0] = ((3u << 30) | (0u << 16) | (0x12u << 8)); /* 0xC0001200 */
-        /* 2. PACKET3_CONTEXT_CONTROL (Opcode 0x28, 2 dw payload -> count=1, total 3 dw) */
-        io.Data[1] = ((3u << 30) | (1u << 16) | (0x28u << 8)); /* 0xC0012800 */
-        io.Data[2] = 0x80000000u;
+        /* 1. PACKET3_PREAMBLE_CNTL: BEGIN_CLEAR_STATE (Opcode 0x4A, count=0 -> 2 dw) */
+        io.Data[0] = ((3u << 30) | (0u << 16) | (0x4Au << 8)); /* 0xC0004A00 */
+        io.Data[1] = 0x00000000u;                               /* BEGIN_CLEAR_STATE */
+        /* 2. PACKET3_CONTEXT_CONTROL (Opcode 0x28, count=1 -> 3 dw) */
+        io.Data[2] = ((3u << 30) | (1u << 16) | (0x28u << 8)); /* 0xC0012800 */
         io.Data[3] = 0x80000000u;
-        /* 3. PACKET3_NOP (Opcode 0x10, 1 dw payload -> count=0, total 2 dw) */
-        io.Data[4] = ((3u << 30) | (0u << 16) | (0x10u << 8)); /* 0xC0001000 */
-        io.Data[5] = 0x00000000u;
-        io.DwordCount = 6;
+        io.Data[4] = 0x80000000u;
+        /* 3. PACKET3_PREAMBLE_CNTL: END_CLEAR_STATE (Opcode 0x4A, count=0 -> 2 dw) */
+        io.Data[5] = ((3u << 30) | (0u << 16) | (0x4Au << 8)); /* 0xC0004A00 */
+        io.Data[6] = 0x00000001u;                               /* END_CLEAR_STATE */
+        /* 4. PACKET3_CLEAR_STATE (Opcode 0x12, count=0 -> 2 dw) */
+        io.Data[7] = ((3u << 30) | (0u << 16) | (0x12u << 8)); /* 0xC0001200 */
+        io.Data[8] = 0x00000000u;
+        /* 5. PACKET3_NOP (Opcode 0x10, count=2 -> 4 dw) */
+        io.Data[9] = ((3u << 30) | (2u << 16) | (0x10u << 8));  /* 0xC0021000 */
+        io.Data[10] = 0x5EED0001u;
+        io.Data[11] = 0x5EED0002u;
+        io.Data[12] = 0x5EED0003u;
+        io.DwordCount = 13;
 
         rc = Bc250GfxSubmit(&g_Ctx, &io);
         if (rc) {
@@ -3887,14 +4042,8 @@ static int CmdGfx(int argc, char **argv)
             return 1;
         }
 
-        printf("Resultado da Sonda GFX CP (CLEAR_STATE + CONTEXT_CONTROL + NOP):\n"
-               "  RPTR Inicial : 0x%X\n"
-               "  WPTR Final   : 0x%X\n"
-               "  RPTR Final   : 0x%X\n"
-               "  Conclusao    : %s\n",
-               io.RptrBefore, io.Wptr, io.RptrAfter,
-               io.Completed ? ">>> SUCESSO! O CP processou os pacotes PM4 e avancou o RPTR!"
-                            : "TIMEOUT (RPTR nao alcancou WPTR)");
+        printf("Resultado da Sonda GFX CP (Boot Preamble + CLEAR_STATE + NOP):\n");
+        GfxPrintSubmitStatus(&io);
         return io.Completed ? 0 : 1;
     }
 
@@ -3922,14 +4071,8 @@ static int CmdGfx(int argc, char **argv)
             return 1;
         }
 
-        printf("Resultado do PACKET3_WRITE_DATA:\n"
-               "  RPTR Inicial : 0x%X\n"
-               "  WPTR Final   : 0x%X\n"
-               "  RPTR Final   : 0x%X\n"
-               "  Conclusao    : %s\n",
-               io.RptrBefore, io.Wptr, io.RptrAfter,
-               io.Completed ? ">>> SUCESSO! O CP processou o WRITE_DATA e avancou o RPTR!"
-                            : "TIMEOUT (RPTR nao alcancou WPTR)");
+        printf("Resultado do PACKET3_WRITE_DATA:\n");
+        GfxPrintSubmitStatus(&io);
         return io.Completed ? 0 : 1;
     }
 
@@ -4262,6 +4405,13 @@ static int CmdGfx(int argc, char **argv)
         return 0;
     }
 
+    /* Fail closed antes do bloco historico abaixo: nenhum arm ou IOCTL. */
+    if (_stricmp(argv[2], "bringup") == 0) {
+        printf("GFX bringup legado em QUARENTENA: depende do SETUP_TMR fixo e inseguro.\n"
+               "Nenhum arm, IOCTL de escrita ou acesso ao hardware foi solicitado.\n");
+        return 1;
+    }
+
     if (_stricmp(argv[2], "bringup") == 0) {
         static const struct {
             uint32_t Type;
@@ -4394,7 +4544,6 @@ static int CmdGfx(int argc, char **argv)
             return 0;
         }
     }
-
     printf("subcomando gfx '%s' desconhecido.\n", argv[2]);
     return 1;
 }

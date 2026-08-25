@@ -1,12 +1,386 @@
 # Ponto de retomada
 
-Escrito em 2026-08-23, ao encerrar a sessão de trabalho. Este arquivo é
-auto-contido: dá para retomar o projeto lendo só ele, e depois aprofundar nos
-outros documentos.
+> Trabalho offline posterior ao 0.5.0.0: `bc250_firmware_staging` e seus
+> negativos passaram `/W4 /WX`. `bc250_staging_lease` agora vincula cada copia
+> ao preflight, snapshot, token, faixa e plano exatos, exigindo espaco livre e
+> exclusao de scanout/reservas comprovados em runtime. Esses sinais ainda sao
+> sinteticos nos testes. Os modulos nao participam da DDI nem do `.sys`: zero
+> hardware, zero staging real e zero PSP. O proximo corte seguro e produzir
+> essas evidencias fisicas e um transporte BAR estritamente limitado antes de
+> considerar integrar a copia. O recovery de `oem16.inf` ja foi
+> executado: estado atual confirmado por CIM/PnPUtil e `BasicDisplay`, Codigo 0,
+> somente `display.inf`, nenhum pacote experimental e nenhum reboot pendente.
+
+> Fonte de scanout preparada offline: `bc250_post_display_reservation` modela
+> `DxgkCbAcquirePostDisplayOwnership[2]`, valida o framebuffer herdado contra o
+> BAR PnP e gera uma reserva `SCANOUT`. Nao integrar ainda ao sys readonly: o
+> callback transfere ownership e pode afetar a tela. A fonte cobre somente o
+> framebuffer; inventario completo de VRAM continua ausente.
+
+> Fonte de Discovery TMR preparada offline: ler `DRIVER_SCRATCH_0/1/2` em duas
+> passagens readonly, formando offset 64-bit e tamanho e validando a faixa
+> contra a VRAM runtime. `SCRATCH_2=0` fica `NOT_REPORTED`; nao usar
+> `VRAM_total - 64 KiB` sem conferir a assinatura real. O leitor e o allowlist
+> BAR5 passaram somente com memoria falsa e ainda nao geram telemetria fisica.
+
+> **Estado autoritativo atual — binding 0.5.0.0, evidencia 2026-08-24 22:43.**
+> Schema 5 chegou a `ReadonlyGatePassed=1`: topologia 512/256 MiB e ReBAR sao
+> evidencias fisicas. Auditoria posterior mostrou que exclusividade e inventario
+> completo eram autoatribuidos, portanto ownership/endereco/payloads PSP ficam
+> apenas como contrato exercitado, nao ownership fisico. O plano candidato e TMR
+> `0x1FC00000`/4 MiB e staging `0x0FFBE000`/267440 bytes. Nada foi efetivado:
+> `FirmwareBytesStaged=0` e `PspTransportCalls=0`. StartDevice retornou
+> `STATUS_NOT_SUPPORTED`, Codigo 43, com Stop/Remove zero. Estado da maquina:
+> Na captura, `oem16.inf`/`bc250readonly` estava selecionado. O recovery
+> posterior removeu esse estado e confirmou `BasicDisplay`, Codigo 0.
+> **NAO VALIDADO EM HARDWARE.**
+
+> Atualizacao de 2026-08-25 01:22: 0.4.0.0 passou topologia/ReBAR fisicos e
+> terminou no fail-closed esperado, Codigo 43. `oem16.inf` deve ser removido em
+> Modo de Seguranca com `C:\BC250_RECOVERY.cmd` antes de qualquer pre-stage.
+> O pacote offline 0.5.0.0, schema 5, ja passou `/W4 /WX`, testes, auditoria de
+> hashes, Inf2Cat e assinatura. Ele usa os tamanhos reais PFP/ME/CE e divide o
+> unico blob MEC em MEC principal 267440 bytes e MEC_JT1 896 bytes. O caminho
+> `OwnershipFlags=0x7F` nao e mais contado como prova fisica porque seus bits
+> finais eram autoatribuidos. O pacote somente constroi um plano candidato;
+> telemetria deve mostrar zero bytes de
+> firmware staged e zero chamadas PSP. Continua retornando
+> `STATUS_NOT_SUPPORTED`. NAO VALIDADO EM HARDWARE.
+
+> Atualizacao de 2026-08-25 01:05: 0.3.0.0 mediu de forma estavel e readonly
+> VRAM 512 MiB, CPU-visible 256 MiB, FB `0xF400..0xF41F`, offset `0x450`, com
+> `MmioStatus=0`, 8 leituras, 2 passagens e unmap concluido. O pacote offline
+> 0.4.0.0 usa essas fontes e o ownership PnP para selar o inventario, depois
+> audita ReBAR sem escrita e para antes do manifesto/firmware. Schema 4 e pacote
+> assinado passaram todos os testes. O dispositivo esta em `oem15.inf`, codigo
+> 43; recuperar em Modo de Seguranca antes do pre-stage.
+
+> Atualizacao de 2026-08-24 22:23: a recuperacao esta instalada e validada em
+> `C:\BC250_RECOVERY.cmd`, e a versao MCDM 0.2.0.0 esta pre-estagiada como
+> `oem5.inf`. A primeira tentativa de binding nao carregou o miniport:
+> `display.inf` venceu por rank `00FB2008`, enquanto `oem5.inf` ficou
+> `Outranked` em `00FF2001`. O retorno 259 significa match sem driver melhor,
+> nao falha dentro do driver. A BC-250 continua em `BasicDisplay`, codigo 0;
+> `bc250readonly` e sua telemetria estao ausentes, e `bc250dbg` ficou parado.
+> O proximo comando e o preflight sem escrita `-ForceBinding`, seguido, somente
+> por decisao humana, de `-ForceBinding -Execute -IAcceptBlackScreenRisk`, como
+> documentado em `docs\15_ENSAIO_ATIVACAO_MCDM.md`.
+
+Escrito em 2026-08-23, atualizado após o preflight PSP readonly das 18:27 e a
+quarentena de `SETUP_TMR`. Este
+arquivo é o runbook operacional; se uma seção histórica abaixo divergir da seção
+0, prevalecem a seção 0, a última entrada de evidência e
+`BC250_HARDWARE_RULES.md`.
 
 Veredito global do projeto: **NÃO VALIDADO EM HARDWARE**.
 
-Progresso conservador pré-WDDM: `██████████████████▋░ 93%`
+Progresso conservador pré-WDDM: `█████████████████▋░░ 88%`
+
+Nota de retomada ABI 29: a topologia SE/SH vem da tabela GC da IP Discovery ou,
+quando ela não existe, de `cyan_skillfish_gpu_info.bin`, agora suportado pelo
+parser offline `tools/fwinspect.py`. A linha final usada pelo kernel aparece no
+`dmesg`. Nenhuma dessas fontes declara diretamente a cardinalidade de
+`GRBM_GFX_INDEX.INSTANCE_INDEX`; logo não resolve sozinha o snapshot integral
+exigido antes de escrever em broadcast.
+No próximo boot Linux, executar `sudo bash tools/collect-linux-gpu-info.sh`; o
+script arquiva Discovery, `dmesg` e eventual fallback `gpu_info`, sem acessar MMIO.
+
+Captura recebida em `referencias/linux-gpu-info-fedora-2026-08-24_14-14-07`:
+`SE=2`, `SH/SE=2`, `CU/SH=10`, `active_cu_number=24`. Assim, 40 é capacidade
+máxima de descrição e 24 é o número ativo; não anunciar 40 como utilizável.
+O gate restante é classificar os 34 golden e descobrir a cardinalidade do eixo
+interno `GRBM INSTANCE` antes de desenhar snapshot/restauração por banco.
+O preflight físico permitido foi executado às 17:23 com ABI/hash conferidos.
+Ele reportou 36 valores, zero escritas e quatro leituras `0xFFFFFFFF`:
+`GL2A_ADDR_MATCH_MASK`, `GL2C_ADDR_MATCH_MASK`, `CPG_PSP_DEBUG` e
+`CPC_PSP_DEBUG`. Resultado atual: 32 golden confirmados, 2 GL2 ambíguos e 2 GPA
+indisponíveis. O harness foi corrigido para capturar o exit 1 como evidência,
+executar `info_after` e continuar falhando fechado; uma nova captura exige
+PowerShell elevado, mas não é necessária para aceitar o resultado já medido.
+
+Correção obrigatória para qualquer implementação futura: a máscara das tabelas
+SOC15 seleciona os bits substituídos. A fórmula é
+`(lido & ~mask) | (or_value & mask)`, não `(lido & mask) | or_value`. O auditor
+offline projeta 30 mudanças, 4 valores já idempotentes e correspondência com o
+Linux em 30/31 offsets comparáveis. `RMI_SPARE` bit 0 é a única divergência e
+permanece sem explicação confirmada. Nenhum binário novo foi necessário porque
+o apply ABI 29 nunca saiu da quarentena.
+
+Build local recompilado sem instalação: ABI 29, SHA-256 do workspace
+`3C647C4770A3210FA67073491B1D299541EAA3DF0F2BF689A21B5E3DE1BA080B`.
+O driver carregado/instalado continua no hash
+`3F070A48A03AD2111E6A4EE96B3940F07F128DD11021497C6F480BBC66AA39AB`.
+Não executar harness que exige igualdade de hash sem decidir antes se o novo
+build deve ser instalado.
+
+Leitura física elevada recebida depois do preflight:
+`RLC_RLCS_UTCL2_CNTL[0x3BB98] = 0x00000018`, idêntico ao Linux. Ela confirma o
+marcador do RLC (`GPA_OVERRIDE_VALUE=3`, `GPA_OVERRIDE=0`), mas não substitui os
+dois `PSP_DEBUG` no ramo direct-load.
+
+Correção de rota: o Linux saudável usa o ramo `AMDGPU_FW_LOAD_PSP`. Os dois
+`CPG/CPC_PSP_DEBUG` só entram no ramo `AMDGPU_FW_LOAD_DIRECT` e deixam de ser
+bloqueadores do caminho PSP. Isso não libera o ensaio antigo: o upstream
+genérico envia `LOAD_IP_FW` após TMR, percorre CP antes de RLC e separa MEC de
+MEC1_JT. A sequência histórica não fazia isso e os quatro tipos CP já foram
+recusados com `0x80000203`. `tools/test-cp-psp-load.ps1` está em quarentena sem
+bypass até existir um substituto fiel e transacional.
+
+O preflight permitido foi executado às 18:27, sem instalar o build novo e sem
+escrita. Evidência:
+`docs/evidence/2026-08-24_18-27-33-DESKTOP-HQAG6T4-cp-psp-preflight`.
+Foram 20 leituras: TOS pronto, nenhum ring do laboratório,
+`BOOTLOAD_STATUS=0`, UTCL2 `0x18`, CP/MEC haltados e quatro PCs zerados. O RLC
+estava na ROM; contra o Linux, `RLC_GPM_STAT` difere somente no bit
+`RLC_EXEC_ROM_CODE`. O auditor offline da evidência passa.
+
+Próximo trabalho autorizado é offline: desenhar uma reserva TMR dinâmica e
+exclusiva. A implementação anterior assumia uma região fixa e derivava um PA
+sem provar ownership. Por isso kernel, biblioteca, `bc250ctl psp tmr` e o
+`gfx bringup` legado agora recusam fail-closed. Não executar `SETUP_TMR` ou
+`LOAD_IP_FW` até PA, MC/GPUVA e tamanho nascerem comprovadamente da mesma
+alocação. Os tipos CP 1..5 de `LOAD_IP_FW` também têm guarda no kernel e na
+biblioteca antes de staging/IOCTL; RLC e SDMA não foram incluídos nessa guarda.
+
+Captura readonly posterior, sem `bc250dbg`:
+`docs/evidence/2026-08-24_18-44-30-DESKTOP-HQAG6T4-pci-resources`.
+PnP/CIM confirmou três segmentos disjuntos atribuídos à BC-250: 256 MiB em
+`0xC0000000`, 2 MiB em `0xD0000000` e 512 KiB em `0xFE800000`. A maior janela
+CPU desta sessão é 256 MiB e não alcança a TMR Linux no offset `0x1F800000`.
+Não repetir a captura salvo mudança real de firmware/BIOS/ReBAR; o problema
+restante é ownership, não descoberta do tamanho desta configuração.
+
+Implementação offline já disponível:
+`driver/core/bc250_resource_contract.{h,c}`, com teste em
+`driver/tests/resource_contract_test.c`. `studio/build.bat` compila e executa o
+teste com warnings como erro. Não reimplementar classificação por limiar de
+tamanho. A adaptação à `CM_RESOURCE_LIST` já está em
+`driver/wdk/bc250_cm_resource_adapter.{h,c}` e compila com WDK via
+`driver/wdk/build-contract.bat`. O esqueleto
+`bc250_dxgk_readonly_ddi` já a conecta ao `DXGK_DEVICE_INFO` por uma assinatura
+real de StartDevice, mas sempre retorna `STATUS_NOT_SUPPORTED` e só foi
+exercitado por callback falso. Falta registrá-lo num miniport offline e obter
+as fontes runtime reais antes de considerar qualquer mapeamento.
+
+A imagem `driver/wdk/output/bc250readonly.sys` liga `DriverEntry` a
+`DxgkInitialize` por `displib.lib` e fornece a tabela minima MCDM com assinaturas
+reais. O pacote `driver/wdk/package/output` foi gerado, assinado e pre-estagiado
+como `oem5.inf`, mas ainda nao foi vinculado ao dispositivo. As DDIs de memoria, contexto e scheduler sao
+stubs fail-closed, e `StartDevice` continua retornando `STATUS_NOT_SUPPORTED`;
+portanto, esta imagem serve apenas ao primeiro gate real de registro/PnP, nao a
+compute ou aceleracao.
+
+As bases dos BARs já não são entrada manual da DDI: o reader WDK usa
+`DxgkCbReadDeviceSpace` somente para leitura e valida `1002:13FE`. Ele nunca faz
+sizing write; comprimentos continuam vindo da lista PnP traduzida. O teste usa
+callback falso, portanto ainda não existe captura física por esse miniport.
+
+O gate ReBAR também existe offline: tamanho selecionado deve estar na máscara
+suportada e coincidir com o recurso PnP. Mesmo que 512 MiB apareçam como
+suportados, isso não prova VRAM total; a abertura atual sintética continua
+256 MiB. Não transformar a máscara ReBAR em capacidade de memória anunciada.
+
+O passo seguinte já concluído offline é o alocador de intervalos:
+`driver/core/bc250_vram_allocator.{h,c}`, testado por
+`driver/tests/vram_allocator_test.c`. Ele não pode ser ligado ao PSP até a
+camada WDDM preencher `TotalBytes`/`CpuVisibleBytes`, registrar todas as regiões
+herdadas e fornecer conversões comprovadas da mesma reserva para PA e MC.
+
+As conversões e os payloads também estão implementados offline em
+`driver/core/bc250_address_contract.{h,c}` e
+`driver/core/bc250_psp_contract.{h,c}`. Eles exigem token + snapshot runtime,
+derivam MC/PA do mesmo offset e não aceitam endereço bruto. O próximo trabalho
+não é outro serializador: é obter esse snapshot e as reservas do lifecycle real
+do miniport, registrar todas as regiões herdadas e somente então conectar os
+payloads ao transporte PSP sob um preflight readonly.
+
+Não investigar novamente `fw_size` como possível causa: o upstream usa bytes e
+o kernel legacy, apesar da entrada chamada `DwordCount`, já enviava `Count * 4`
+bytes. A diferença pendente continua sendo ownership/TMR/endereço MC e sequência,
+não essa unidade.
+
+---
+
+## 0. Onde o projeto está, em uma página (2026-08-24 17:40)
+
+**Uma porta principal fechada, com pendências independentes ainda abertas.**
+
+| Bloco | Estado |
+|---|---|
+| PCI, MMIO, convenção de segmentos | fechado — base do seg1 (`0xA000`) medida contra registrador vivo |
+| VRAM e aberturas | fechado |
+| SDMA: init → execução → fence, com dado conferido no kernel | fechado |
+| Tradução GCVM / VMID 0 por page table (8 TB) | fechado, 20/20 gates |
+| RLC fora da ROM | fechado (`EXEC_ROM_CODE` 1 → 0, pelo PSP + ungate de CGCG/PG) |
+| Teardown transacional, fronteira fail-closed | fechado (30 CP regs, 35 GCVM regs restaurados com 0 divergências) |
+| CP: caminho de controle (halt, unhalt, snapshot, rollback, ucode staging 4 engines) | fechado |
+| Carga direta de firmware | staging e sequência implementados; aceitação efetiva ainda depende do latch |
+| **CP: execução / consumo do anel PM4** | **bloqueado: `JT_LOADED=0`, RPTR imóvel, sem resultado físico** |
+| Anel PM4, MQD/HQD, compute, GFXOFF sob carga real | atrás do CP |
+
+```
+Projeto (pré-WDDM)      █████████████████▋░░  88%
+Bloco GCVM/CP/compute   ████████████████░░░░  80%
+CP — execução           ░░░░░░░░░░░░░░░░░░░░   0%   <- a porta
+```
+
+O percentual representa trabalho de infraestrutura, não validação funcional. O
+CP, PM4, compute e WDDM permanecem **NÃO VALIDADOS EM HARDWARE**.
+
+### A porta, e o que já foi eliminado por medição
+
+As quatro microengines (`PFP`, `ME`, `CE`, `MEC1`) saem do HALT e ficam em
+`0x0000041E` — o mesmo valor nas quatro, constante em todas as amostras. O fato
+físico adicional é `JT_LOADED=0`. A correspondência de `0x041E` ao loop de
+polling da Jump Table é uma inferência apoiada pela referência, não prova de
+execução do nosso microcódigo.
+No Linux, no mesmo silício, os ponteiros avançam para a RAM de microcódigo (`0x172E` / `0x0E19` / `0x05CF`).
+
+O pulso real das seis pipes já foi executado e confirmado por readback em ABI 27:
+`0x15000000 -> 0x153F0000 -> 0x15000000`. `JT_LOADED` permaneceu zero e os PCs,
+fixos em `0x041E`. Assim, **“o reset nunca foi emitido” está fechado**, mas isso
+não valida a sequência completa de init nem a execução. Evidência:
+`docs/evidence/2026-08-24_16-28-16-DESKTOP-HQAG6T4-cp-unhalt`.
+O inventário de retomada está em
+`docs/10_AUDITORIA_INIT_GFX_CYAN_SKILLFISH.md`.
+
+Medições e fatos consolidados no silício:
+
+| Hipótese / Descoberta | Como foi verificada |
+|---|---|
+| RLC dormindo na ROM | PSP carrega `cyan_skillfish2_rlc.bin`, `RLC_ENABLE_F32 = 1` desce `EXEC_ROM_CODE` para 0 |
+| Power Gating / Clock Gating ativo no RLC | `RLC_CGCG_CGLS_CTRL = 0` e `RLC_PG_CNTL = 0` confirmados por readback |
+| Modo de Segurança GPA (Secure Boot) | Somente o ramo `AMDGPU_FW_LOAD_DIRECT` exige `GPA_OVERRIDE` em `0x3F040/0x3F044`; não é gate do ramo PSP identificado no Linux |
+| Apontamento de `IC_BASE` para VA traduzida | `bc250ctl` unificado para `-gpu` e `-va`, apontando para `0x0000080000000000` na Page Table VMID 0 |
+| Telemetria em tempo real pós-reboot | `live_test_progress.log` grava sincronicamente cada passo antes de executar |
+
+**Todo registrador que sabíamos diferir do Linux agora bate.** A abordagem por
+diff não falhou — ela terminou.
+
+### O que falta para concluir a etapa
+
+Para destravar a frente principal, falta **o CP executar uma instrução do nosso
+microcódigo**. Mesmo depois disso ainda permanecem recuperação em nível de
+dispositivo, repetição determinística e observabilidade física sob carga GFX.
+
+Três degraus, em ordem de custo:
+
+1. **Auditar o sweep Linux já coletado e a ordem upstream.** A coleta ampla já
+   existe; não há justificativa para repeti-la agora.
+2. **Inventariar a sequência completa de init do GFX.** O upstream aplica 34
+   golden settings mascarados, constantes, GPA/CAM, RLC e só então o CP. O
+   laboratório atual aplica apenas um subconjunto e em ordem diferente.
+3. **Só então implementar um ensaio transacional da ordem completa.** Cada nova
+   escrita precisa de offset/`BASE_IDX` autoritativos, máscara, snapshot,
+   rollback e readback quando o registrador permitir.
+
+### Uma coisa que precisa ficar escrita
+
+**Não se sabe quanto falta.** Pode ser um registrador que apareça no primeiro
+diff ampliado, pode ser uma sequência de inicialização inteira.
+
+O que **se sabe** é que existe solução: no mesmo hardware, no Linux, o CP executa,
+e o dump de referência prova (`SCRATCH_REG0 = 0xDEADBEEF` do ring test, três PCs
+distintos). Não é bloco fundido nem SKU castrado. A sequência existe.
+
+---
+
+## 0.1. CONCLUÍDO SEM DESTRAVAR: pulso de reset das pipes (ABI 27)
+
+Este ensaio foi executado às 16:28 e não destravou o CP. O texto abaixo fica como
+registro do desenho experimental; não deve ser repetido como próximo passo.
+
+O `gc_10_1_0_sh_mask.h` **completo** não estava no projeto — o extract em uso tem
+zero campos de `CP_ME_CNTL`. Escrevemos `0x15000000` como constante mágica durante
+oito boots. O header completo estava no `OldDBG` e traz dois grupos de bits que
+nunca tocamos:
+
+| Campo | Bits | Máscara |
+|---|---|---:|
+| `CE/PFP/ME_INVALIDATE_ICACHE` | 4, 6, 8 | `0x00000150` |
+| `CE/PFP/ME_PIPE0/1_RESET` | 16..21 | `0x003F0000` |
+
+**O domínio de reset das microengines está dentro do `CP_ME_CNTL`** — a hipótese
+nº 2 da lista, agora sem precisar de endereço novo: é o mesmo registrador que já
+lemos, escrevemos, snapshotamos e revertemos.
+
+E existe um caminho de invalidação da I-cache por um registrador que **responde**,
+em vez do `CP_*_IC_OP_CNTL`, que lê `0xFFFFFFFF` e já produziu falso positivo aqui.
+
+```
+dbg\install.bat
+dbg\start.bat
+powershell -File tools\test-cp-pipereset.ps1 -Execute
+```
+
+Na execução registrada, precisou de boot limpo e do `.sys` ABI 27. Não repetir
+esse procedimento como próximo passo; o workspace protegido agora é ABI 29.
+
+- `C8_pulso_de_reset_das_pipes` — `CP_ME_CNTL` vai a `0x153F0000` e volta a
+  `0x15000000`, confirmado por readback **nos dois lados**. Os HALT são mantidos.
+  O pulso vem **antes** da carga: reset depois destruiria o que a carga escreve.
+- `G3_invalidacao_pelo_me_cntl` — observação, não gate. Os bits podem ser
+  auto-limpantes, e "auto-limpante" não se separa de "não aceito" por readback.
+- `I_ponteiros_de_instrucao_ativos` — o gate. Exige variação entre amostras.
+
+O PC não variou. A hipótese específica do pulso nunca emitido fechou. Como a
+varredura Linux abaixo já havia sido coletada, o próximo trabalho é analisar sua
+sequência junto ao `gfx_v10_0_hw_init()`, sem nova escrita de hardware.
+
+O que a inspeção do `OldDBG` **não** achou: nenhum avanço na execução do CP. O
+`BcGfxInit` de lá é init de anel sem carga de ucode, e a sonda de anel usa
+endereços anteriores à auditoria de segmento, alguns hoje em quarentena.
+
+---
+
+## 0.2. Depois: ampliar a referência do Linux
+
+O `collect-linux-cp-info.sh` lê uma **lista curada**. É a fonte que se esgotou.
+
+Dois coletores novos trocam lista por faixa:
+
+| Script | O que lê | Risco |
+|---|---|---|
+| `tools/collect-linux-gc-sweep.sh` | 19.712 registradores das janelas do GC (seg0 `0x07D80`–`0x0CD80`, seg1 `0x30000`–`0x3E400`), duas passagens | baixo: faixa restrita, exclusão dos offsets com efeito de leitura conhecido, zero escrita |
+| `tools/collect-linux-bar-full.sh` | BAR5 inteiro, 131.072 dwords, **sem exclusões** | alto: lê o semáforo do GCVM (leitura **adquire**), FIFOs e faixas não decodificadas. Pode travar a máquina |
+
+O `gc-sweep` é o que importa para o diff; o full é bônus. As duas passagens do
+`gc-sweep` existem para que o volátil (contador, PC, status) saia do diff
+**sozinho**, sem depender de julgamento sobre o que é ruído.
+
+### A primeira coleta foi perdida, e a causa era minha
+
+2026-08-24 09:08. O `gc-sweep` rodou, o full rodou em seguida e travou a máquina.
+Depois do reset, os **três arquivos voltaram com 0 byte**: a saída estava só no
+page cache, e o `json.dump` não fazia `fsync`. Eu avisei "guarde a saída antes de
+rodar o segundo" e não fiz o script garantir isso.
+
+O ponto onde o full travou também se perdeu: o progresso usava `\r` e reescrevia
+a mesma linha da tela, e o primeiro `fsync` só vinha depois de 256 dwords.
+
+Corrigido nos dois scripts:
+
+- `flush` + `os.fsync` nos dois arquivos, e `sync` do filesystem no fim;
+- `ls -l` da saída e aviso explícito para **copiar para fora antes de seguir**;
+- no full: `fsync` a cada **16** dwords, e cada offset vai para a tela **sem
+  `\r`**, ficando no scrollback — se o arquivo se perder, a tela ainda diz onde
+  parou;
+- no full: fatias, `sh collect-linux-bar-full.sh <inicio> <fim>`, para varrer em
+  pedaços com `sync` entre eles.
+
+**Nada do que estava provado se perdeu.** O custo foi tempo.
+
+### Coleta refeita; próximo trabalho é análise
+
+A coleta persistida já existe em
+`referencias/linux-gc-sweep-192.168.1.204-2026-08-24_09-36-33.json`, e a versão
+nomeada está em `referencias/linuxDump/parsed_linux_sweep_named.json`. Não repetir
+o coletor amplo como próximo passo: primeiro extrair do sweep existente as
+diferenças estáveis entre Windows e Linux, com prioridade para registradores de
+Jump Table, reset, RLC/CP e broadcast.
+
+O coletor de BAR completo permanece ferramenta de alto risco, não etapa padrão.
+Só deve voltar a ser executado se a análise apontar uma faixa ausente concreta.
 
 ---
 
@@ -17,7 +391,7 @@ Progresso conservador pré-WDDM: `███████████████�
 | Placa | AMD BC-250, `1002:13FE`, revisão `00` |
 | Binding de vídeo | `BasicDisplay` (Microsoft Basic Display Adapter) |
 | Driver legado `bc250v4` | removido offline; **não reinstalar** |
-| Laboratório | `bc250dbg`, ABI 20, `DEMAND_START`, armamento `readonly` por padrão |
+| Laboratório | `bc250dbg`, workspace ABI 29, `DEMAND_START`, armamento `readonly` por padrão; o driver instalado ainda é ABI 27 e não deve receber comandos da CLI nova |
 | VRAM: base de GPU | `0xF4_0000_0000`, **confirmada pelo hardware** (`FB_LOCATION_BASE/TOP`) |
 | VRAM: abertura | 512 MB no FB, 256 MB visíveis pelo BAR0 |
 | Tradução de endereço | desligada em repouso, mas **provada funcionando** (2026-08-23 13:49) |
@@ -331,6 +705,8 @@ medido.*
 | `test-mmio-segment1.ps1` | **não** | **não contamina**. Aprovado 7/7: base do segmento 1 medida |
 | `test-cp-directload.ps1` | **não** | **não contamina**. Rodado: ucode na VRAM ok, `IC_BASE` recusado — a recusa estava errada, `IC_BASE_*` é write-only e não bloco morto |
 | `test-rlc-bringup.ps1` | sim | sim, firmware pelo PSP. **Aprovado: RLC fora da ROM** |
+| `test-cp-psp-load.ps1` | sim | sim, firmware pelo PSP (RLC + **os três ucodes de GFX**). Sem staging, sem `icbase`, sem jump table. 11 gates. **NÃO RODADO AINDA.** |
+| `test-cp-va-unhalt.ps1` | sim | sim, e liga a **tradução do VMID 0** (`context0` = ponto sem volta). Aponta o `IC_BASE` para VA mapeada via ABI 21. **Rodado 2026-08-24 02:07: 19/20. Tradução ligada e confirmada no silício, `FAULT_STATUS` = 0 antes e depois — a microengine não emite a busca de instrução.** |
 | `test-cp-unhalt.ps1` | sim | sim, firmware pelo PSP (RLC) + ucode do CP na VRAM, com rollback completo. **Rodado 3x em boots limpos (00:19, 00:47, 00:54): controle vivo, execução ausente, PC sempre `0x0000041E`. O controle `-ControleSemUcode` provou que a carga do ucode não tem efeito.** |
 | `test-mmio-responsividade.ps1` | não, mas **use boot limpo** | **somente leitura**, nem arma o driver. Rodado 23:07 em boot limpo |
 | `collect-linux-cp-info.sh` | roda no **Linux** | somente leitura; referência com o CP funcionando |
@@ -538,38 +914,280 @@ em espaço de usuário, e o `gfx_v10_0.c` faz read-modify-write nesse registrado
 o que sugere que o kernel lê algo útil. Não muda decisão nenhuma hoje, mas está
 apoiada em um único método de leitura.
 
-### Próximo passo: somente leitura, zero boot
+### A abertura cobre o endereço: hipótese refutada (2026-08-24)
+
+`gcvm dump`, somente leitura. Decodificado com a convenção do upstream
+(`>> 18` para a abertura, `>> 24` para o `FB_LOCATION`):
+
+| Registrador | Lido | Decodificado |
+|---|---:|---:|
+| `SYS_APERTURE_LOW` | `0x003D0000` | `0xF4_0000_0000` |
+| `SYS_APERTURE_HIGH` | `0x003D0800` | `0xF4_2000_0000` |
+| `FB_LOCATION_BASE` / `TOP` | `0xF400` / `0xF41F` | `0xF4_0000_0000` / `0xF4_1F00_0000` |
+| nosso `IC_BASE` | — | `0xF4_0E00_0000` |
+
+**Está dentro das duas faixas.** E `MX_L1_TLB_CNTL = 0x00000501` tem
+`SYSTEM_ACCESS_MODE` = 0, o bypass físico pelo qual a SDMA alcança memória.
+Endereço físico alcançável. A hipótese, como foi escrita, está **refutada**.
+
+### A diferença real com o Linux
+
+| Registrador | Aqui | Linux |
+|---|---:|---|
+| `CONTEXT0_CNTL.ENABLE_CONTEXT` | **0** | 1 |
+| `CTX0_PT_BASE` / `START` / `END` | `0x0` | page table da GART |
+| `L2_CNTL.ENABLE_L2_CACHE` | **0** | 1 |
+
+O VMID 0 daqui não tem page table e o contexto está desabilitado, enquanto o
+amdgpu entrega ao `IC_BASE` um endereço de GTT que só existe *através* dessa page
+table. A diferença é real — só não é a que eu previ.
+
+Pergunta que a leitura não resolve: **a busca de instrução da microengine honra o
+bypass do `MX_L1_TLB_CNTL`, como a SDMA, ou vai pelo UTCL1/UTCL2 do GC e exige
+contexto ativo?**
+
+### Próximo passo, nesta ordem
+
+1. **Ligar a tradução e apontar o `IC_BASE` para uma VA mapeada.** Reproduz o que
+   o amdgpu faz, e usa maquinaria **já provada no silício**: gate de memória
+   fechado, 20/20, VA `0x800000001000` → VRAM `0x0FD01000`, com rollback de 35
+   registradores conhecido. Um boot. Se funcionar, entrega o passo 3.
+   **O instrumento existe: `tools\test-cp-va-unhalt.ps1` (ABI 21).**
+2. Só depois: investigar se o `IC_BASE` é aceito de verdade. Volta ao topo agora
+   que a alternativa perdeu base, mas só entrega diagnóstico, não função.
+   Lembrar a ressalva: o kernel do Linux faz read-modify-write nesse registrador.
+
+### O instrumento do passo 1: `test-cp-va-unhalt.ps1`
+
+**ABI 21** (`0x00150000`). A única mudança de driver é um campo novo em
+`BC250DBG_CP_UCODE_IO`:
+
+```c
+unsigned long OverrideValid;
+unsigned long long OverrideGpuAddr;
+```
+
+Com `OverrideValid = 0` o comportamento é byte a byte o de antes — físico
+derivado. Na CLI:
 
 ```
-studio\output\bc250ctl.exe gcvm dump
+bc250ctl.exe cp icbase <pfp|me|ce> <off> -va <endereco>
 ```
 
-O que olhar — em GFXHUB v2, acesso de VMID 0 dentro de
-`[SYSTEM_APERTURE_LOW, HIGH]` resolve direto para VRAM via `FB_LOCATION`, sem page
-table:
+O ensaio junta os dois caminhos que já existem, sem inventar um terceiro:
 
-| Registrador | Endereço |
+| Fase | De onde vem | Gates |
+|---|---|---|
+| Page table cobrindo a VRAM do ucode | `test-gcvm-translate.ps1` (20/20) | `C2` |
+| Transação do GCVM antes de escrever | idem | `C3` |
+| Sete estágios, **mesma contagem de escritas medida** (6/10/6/4/1/5/1) | idem | `C4` |
+| `CONTEXT0_CNTL.ENABLE_CONTEXT` lido do silício | novo | `C5` |
+| Invalidação da TLB com ACK do hardware | idem | `C6` |
+| RLC pelo PSP, ucode, `icbase -va`, jump table, unhalt | `test-cp-unhalt.ps1` | `B2`, `D`–`H` |
+| **Falha de tradução antes e depois do unhalt** | novo | `H2` |
+
+Vinte gates no modo normal, dezesseis no controle.
+
+**A page table mapeia a VRAM do ucode, não `0x0FD00000`:** alvo `PfpOffset`
+(`0x0E000000`), 336 páginas de 4 KB (o ucode da última engine termina em
+`0x0E140500`, então 322 é o mínimo). VA base em 8 TB, `0x0000_0800_0000_0000`, e
+a VA de cada engine é a base mais o deslocamento de VRAM dela — a tabela é linear
+a partir de `PfpOffset`.
+
+**O gate `H2` é o achado que este ensaio pode produzir mesmo falhando.**
+`GCVM_L2_PROTECTION_FAULT_STATUS` / `_ADDR` são lidos antes e depois do unhalt.
+Ele é registrado como **observação, não aprovação**, porque os dois resultados
+são informativos e opostos:
+
+- **falha nova, com `FAULT_ADDR` na faixa de VA do ucode** → a microengine
+  **emitiu** a busca de instrução e a tradução a rejeitou. Primeira evidência
+  positiva de que a busca acontece, e diz onde consertar;
+- **nenhuma falha, PC parado no mesmo lugar** → a busca não chega nem a tentar
+  traduzir; o bloqueio está antes do caminho de memória.
+
+O veredito do ensaio **não** deriva da contagem de gates (lição 25): deriva de o
+PC variar entre amostras. Todos os vinte gates podem passar com o CP parado — foi
+exatamente o que os três boots anteriores mostraram.
+
+### O A/B respondeu: as escritas de `IC_BASE_CNTL` não têm efeito (2026-08-24 08:45)
+
+| | `EXE_DISABLE = 0` | `EXE_DISABLE = 1` |
+|---|---:|---:|
+| PFP / ME / CE | `041E` / `041E` / `041E` | **`041E` / `041E` / `041E`** |
+| variou entre amostras | não | não |
+
+Mesmo boot, mesmo RLC, mesmo ucode conferido, mesmo ungate de CPF. Um bit de
+diferença, zero diferença de comportamento.
+
+**A suspeita de que o bloco não aceita escrita nesses registradores deixou de ser
+inverificável e passou a ter evidência positiva** — sem readback, que era o
+impedimento.
+
+**Atenção ao ler a saída daquela execução:** ela imprimiu "o bit MUDOU o
+comportamento", que é **falso**. `Read-Pntrs` já faz o próprio laço de amostras;
+envolvi a chamada num segundo laço, `$pntrsB[0].CP_PFP_INSTR_PNTR` não existe
+nessa forma, `StrictMode 1.0` devolveu `$null` e a comparação com `$null` deu
+diferença. Os `0x` vazios na saída eram o sintoma. Corrigido, com `throw` se os
+três ponteiros não vierem — a mesma guarda que o lado A já tinha e que eu não
+replicara. Lição 26.
+
+Sete boots limpos, e o `0x0000041E` sobreviveu a tudo: físico, traduzido com
+contexto ligado e zero falhas, nada carregado, PSP, clock do fetcher, `EXE_DISABLE`
+invertido.
+
+### Próximo passo: por que o bloco não aceita escrita
+
+Nenhum destes é especulação livre — os três saíram da auditoria de endereços:
+
+1. **`GRBM_GFX_INDEX` nunca foi programado no caminho do CP.** O único lugar do
+   driver que tentava escrevê-lo usava `0x0802C`; o correto é `0x30800`. Começar
+   **lendo** o valor atual (`bc250ctl reg 0x30800`) — zero boot, zero risco.
+2. **`CPG_PSP_DEBUG` / `CPC_PSP_DEBUG`** ("GPA override / Direct Physical" no
+   bloco herdado) **não existem no header autoritativo** e estão em quarentena.
+   Voltam à mesa se a origem dos endereços for estabelecida.
+3. **Domínio de reset do bloco do CP.** `GRBM_STATUS` bate com o Linux em
+   execução, o que enfraquece a hipótese — mas ela não foi testada diretamente.
+
+### Histórico: A/B do `EXE_DISABLE` (2026-08-24, ABI 23)
+
+O ungate do CPF **funcionou e não era o bloqueio**. Medido às 08:32, com readback
+de verdade: `0x3C2C4 : 0x00000100 -> 0xF8000100`. A pendência de 08-23 está
+fechada, e o PC seguiu `0x0000041E`.
+
+Seis boots, seis configurações, mesmo valor. A lista de diferenças com o Linux
+está quase vazia — só sobra o próprio sintoma.
+
+E sobra uma afirmação que era **indemonstrável**: "`IC_BASE_*` é write-only, logo
+nenhum readback pode dizer se a escrita foi aceita".
+
+Dá para medir efeito sem readback: escrever dois valores que o hardware deveria
+tratar de forma diferente e comparar o comportamento.
+
+```
+dbg\install.bat
+dbg\start.bat
+powershell -File tools	est-cp-icbase-ab.ps1 -Execute
+```
+
+18 gates, um boot. As duas passagens no MESMO boot, com o mesmo RLC, o mesmo ucode
+e o mesmo ungate — só o bit `EXE_DISABLE` muda.
+
+| Resultado | O que significa |
 |---|---|
-| `GCMC_VM_FB_LOCATION_BASE` / `TOP` | `0x0A600` / `0x0A604` |
-| `GCMC_VM_SYSTEM_APERTURE_LOW_ADDR` / `HIGH` | `0x0A614` / `0x0A618` |
-| `GCMC_VM_SYSTEM_APERTURE_DEFAULT_ADDR_LSB` / `MSB` | `0x0A5B0` / `0x0A5B4` |
+| PC **diferente** entre A e B | as escritas de `IC_BASE_CNTL` **chegam** ao hardware; a pergunta passa a ser por que a busca não resolve mesmo aceita |
+| PC **idêntico bit a bit** | as escritas não produzem efeito observável; a suspeita ganha **evidência positiva**, e o trabalho vira descobrir o que falta para o bloco aceitar escrita |
 
-- abertura **não** cobre `0xF4_0E00_0000` → hipótese confirmada; a correção é
-  apontar o `IC_BASE` para endereço que o VMID 0 resolva;
-- abertura **cobre** → hipótese cai, e o foco volta para o `IC_BASE` não ser
-  aceito.
+`P_diferencial_do_exe_disable` é sempre verdadeiro de propósito: os dois
+resultados são informativos e opostos, e reprovar um esconderia metade da
+informação (lição 25).
 
-A favor: o gate de memória já está fechado e provado (tradução por page table,
-20/20, VA `0x800000001000` → VRAM `0x0FD01000`). Há tradução funcionando aqui que
-o CP não usa; falta ligar uma na outra, não inventar outra.
+### O ungate do CPF: feito, e a pendência fechada (2026-08-24 08:32)
+
+### Histórico: ungate do clock do CPF (2026-08-24, ABI 22)
+
+`CGTT_CPF_CLK_CTRL` lê `0x00000100` aqui e `0xF8000100` no Linux com o CP
+executando. Pendência **sem explicação** desde 08-23. A explicação apareceu numa
+auditoria de endereços, sem hardware: `BcGfxInit()` escrevia o registrador em
+`0x18C44`, que é o `dw 0x50B1` somado à base do **segmento 0**. O header diz
+`BASE_IDX 1`, logo o byte é `0x3C2C4`. **O ungate nunca chegou ao registrador.**
+Lição 12, mais uma vez — e com ela oito outros endereços errados no mesmo bloco,
+além de dois (`CPG/CPC_PSP_DEBUG`) que não existem no header e foram para
+quarentena.
+
+**CPF é o Command Processor FETCHER**: o bloco que faz a busca de instrução. Clock
+gated ali produz exatamente o observado em cinco boots — PC `0x0000041E`
+constante, e zero falhas de tradução com a tradução ligada. E como `IC_OP_CNTL` e
+`IC_BASE_*` são do domínio do CPF, um clock parado explicaria **também** por que
+aquelas escritas parecem não ter efeito.
+
+ABI 22: `CP_TXN_REG_COUNT` 10 → 11 (o registrador entrou na transação, o rollback
+o desfaz), modo `CLOCKS`, CLI `cp clocks`. **Este registrador responde** — o
+`0xF8000100` é conferido por readback de verdade, e o gate exige o valor exato.
+
+O ungate entra como gate `C7`, **antes** do staging, do `icinval` e do `icbase`.
+15 gates. Precisa de boot limpo.
+
+```
+dbg\install.bat
+dbg\start.bat
+powershell -File tools	est-cp-unhalt.ps1 -Execute
+```
+
+### Histórico: a sequência PSP incompleta foi repetida (2026-08-24 02:14)
+
+`0x80000203` nos três tipos, fence alcançado, `CP_ME_CNTL` seguindo `0x15000000`.
+**Isto já estava medido e documentado em 2026-08-23 14:21**, com os mesmos quatro
+tipos e o mesmo código; propus o ensaio sem consultar a evidência do projeto e
+gastei um boot reproduzindo o conhecido. Regra: antes de propor ensaio que gasta
+boot, `grep` o valor no `docs/`.
+
+O que saiu de novo, por conferência de arquivo e não por hardware: a hipótese "os
+`.bin` do CP não são assinados" **cai** — todos os seis firmwares têm header de
+`0x100` + ucode e sobra zero, inclusive o `rlc`, que o PSP aceita.
+
+### O passo 1 rodou, e o resultado é um achado (2026-08-24 02:07)
+
+19 de 20 gates. A tradução ligou **de verdade**, lida do silício:
+`CONTEXT0_CNTL 0x007FFE80 → 0x007FFE01`, `CTX0_PT_BASE_LO = 0x5FF10000`, TLB
+invalidada com ACK, sete estágios com a mesma contagem de escritas do gate de
+memória (6/10/6/4/1/5/1). O `IC_BASE` das três engines recebeu VA mapeada.
+
+```
+PFP / ME / CE     0x0000041E / 0x0000041E / 0x0000041E   (8 amostras, sem variação)
+FAULT_STATUS      antes 0x00000000    depois 0x00000000
+FAULT_ADDR        antes 0x0           depois 0x0
+```
+
+**Nenhuma falha de tradução.** Com contexto ligado e o `IC_BASE` dentro da faixa
+mapeada, uma busca emitida teria acertado (PC andaria) ou falhado
+(`FAULT_STATUS` acenderia). Nem um, nem outro: **a microengine não emite a busca
+de instrução.** O bloqueio está antes do caminho de memória.
+
+Quatro boots, quatro configurações, mesmo `0x0000041E`: com ucode e `IC_BASE`
+físico (00:19), reproduzido (00:47), **sem nada carregado** (00:54), e com
+**tradução ligada e VA mapeada** (02:07). A família de hipóteses de endereço está
+encerrada por inteiro.
+
+### Histórico revogado: harness de carga do CP pelo PSP
+
+Todas as quatro execuções assumiram carga **direta**. Se este chip carrega o GFX
+pelo PSP, o driver nunca deveria tocar o `IC_BASE` — o PSP escreve no TMR dele e
+libera as engines —, e a busca não acontecer seria o esperado nas quatro.
+
+Esse plano não deve ser executado. O mesmo `LOAD_IP_FW` já havia sido exercitado
+e retornado `0x80000203`; depois, a auditoria encontrou diferenças estruturais
+com o Linux: ausência de `SETUP_TMR`, ordem RLC→CP em vez de CP→RLC, endereço
+físico de CPU em vez de MC e MEC sem a Jump Table separada. O script
+`tools/test-cp-psp-load.ps1` agora aborta antes de qualquer escrita e não possui
+bypass.
+
+- `D2_tres_ucodes_aceitos_pelo_psp` — `RespStatus = 0` nas três. **Não é
+  execução**: foi esse mesmo valor que o SDMA deu antes de existir prova.
+- `E2_estado_do_cp_apos_carga_pelo_psp` — observação, não aprovação: o
+  `CP_ME_CNTL` antes de qualquer unhalt nosso. Se o PSP libera as engines
+  sozinho, como fez com o F32 do RLC, aparece aqui.
+- `I_ponteiros_de_instrucao_ativos` — o gate. Exige **variação entre amostras**.
+- Não existe gate K: nenhum ucode vai para a VRAM pelo driver, então conferir
+  devolução de VRAM reprovaria por ausência de snapshot e esconderia o resultado
+  atrás de um vermelho falso.
+
+### Como rodar o passo 1 (já rodado, mantido para reprodução)
+
+**Precisa de reboot antes** (carrega firmware pelo PSP; o ensaio recusa sessão
+suja por conta própria). E o `.sys` mudou para ABI 21, então instalar é
+obrigatório.
+
+```
+dbg\install.bat
+dbg\start.bat
+powershell -File tools\test-cp-va-unhalt.ps1 -Execute -IAcceptTheRisk
+```
+
+`-IAcceptTheRisk` é exigido porque `gcvm program context0` é **ponto sem volta**
+declarado. O rollback conhecido (transação de 35 registradores + `ptrollback`,
+nesta ordem: desligar a tradução antes de desfazer a tabela) roda no `finally`.
 
 **Veredito do passo 3: NÃO VALIDADO EM HARDWARE.**
-
-Unhalt sem ucode, sem `icbase`, sem jump table, 10 gates. Se o PC ainda for
-`0x0000041E`, a carga não teve efeito sobre as engines e o problema está antes da
-execução — a busca de instrução nunca aconteceu, e o `IC_BASE` write-only volta
-para a mesa como suspeito. Se for outro valor, a carga mudou o comportamento e
-`0x041E` é do nosso caminho.
 
 ### Primeira tentativa perdida por sessão suja (2026-08-23 23:58)
 
@@ -600,8 +1218,8 @@ dbg\start.bat
 powershell -File tools\test-cp-unhalt.ps1 -Execute
 ```
 
-O `.sys` mudou (ABI 20), então instalar é obrigatório: o CLI recusa driver com
-ABI diferente do header contra o qual foi compilado.
+Este trecho registra a execução histórica em ABI 24. O workspace atual é ABI 29;
+qualquer repetição exige recompilar e reinstalar o conjunto atual.
 
 Quatorze gates. O que olhar, em ordem de importância:
 
@@ -669,7 +1287,8 @@ Com isso, **não há mais observação do dia sem hipótese que a cubra.**
 
 ### Depois: rodar o direct load do CP
 
-O `.sys` mudou (ABI 20), então a instalação é obrigatória:
+Este era o procedimento da ABI 24. Para reprodução hoje, usar build ABI 29 e
+confirmar hash idêntico entre workspace e driver instalado:
 
 ```
 dbg\install.bat
@@ -721,14 +1340,15 @@ O alvo é `SCRATCH_REG0..7` (`0x30100`..`0x3011C`), com controle de leitura em
 padrões complementares, oito valores distintos, e o controle tem de ficar
 intacto.
 
-### Depois: direct load do CP
+### Histórico: direct load do CP
 
-Medido em 2026-08-23 14:21: **o PSP desta placa recusa as microengines do CP**
-(`0x80000203` para pfp, me, ce, mec) e aceita o RLC (`RespStatus = 0`). Coerente
-com o upstream — `psp_v11_0_8` não tem `load_ip_fw` para o CP.
+Medido em 2026-08-23 14:21: a sequência usada recusou as microengines do CP
+(`0x80000203` para pfp, me, ce, mec) e aceitou RLC. Isso não escolhe mais a rota:
+o Linux saudável usa PSP e o código genérico envia CP por `LOAD_IP_FW`.
 
-A rota é **direct load**, e o mecanismo do GFX10 não é streaming de ucode por
-registrador. É a microengine buscar o próprio ucode da memória:
+O direct-load permanece documentado como ramo alternativo do GFX10. Seu
+mecanismo não é streaming integral de ucode por registrador; a microengine busca
+o próprio ucode da memória:
 
 1. ucode em memória alcançável pela GPU;
 2. invalidar a cache de instruções (`CP_PFP_IC_OP_CNTL.INVALIDATE_CACHE`,
@@ -820,6 +1440,31 @@ engenharia, é correção de contabilidade.
 
 ## 7. Como retomar na prática
 
+Antes de qualquer retorno ao hardware, a topologia de memória já possui um
+decoder fail-closed em `driver/core/bc250_vram_topology_contract.{h,c}`. Ele
+não acessa MMIO e exige concordância RCC/GCMC/janela CPU no mesmo snapshot. O
+reader `bc250_vram_topology_reader` também existe e exige duas passagens
+idênticas nos offsets finais. `bc250_mmio_topology_transport` implementa o
+map/unmap WDK limitado ao BAR traduzido e preserva o estado em falha de unmap.
+Ele já está ligado à DDI: topologia manual foi removida do input e o caminho
+resolve, mapeia, captura, desmonta e audita ReBAR. A DDI atual nao cria mais
+ownership sem produtor runtime de exclusividade/inventario; para em
+`RUNTIME_MISSING`. O próximo corte seguro é capturar os scratch registers do
+Discovery TMR no mesmo mapeamento readonly e conferir a seleção BAR0/BAR5 sem
+defaults; valores históricos não podem virar fallback.
+Os contratos e ambos os builds passaram apenas com callbacks sintéticos.
+StopDevice e RemoveDevice preservam contexto/pool quando o unmap falha.
+
+O parser IP Discovery já existe e valida assinaturas, checksums, bounds,
+`GC_HWID=11` e versão 10.1.3. A localizacao default candidata seria
+`VramTotalBytes - 64 KiB = 0x1FFF0000`, além dos 256 MiB CPU-visible, mas ela
+nao e aceita sem assinatura. Primeiro capturar `DRIVER_SCRATCH_0/1/2`; depois
+criar reader VRAM readonly para a faixa realmente reportada ou para validar a
+assinatura do fallback. Não usar arquivo sideloaded como identidade da unidade
+e não escrever para mover a janela.
+
+**NÃO VALIDADO EM HARDWARE.**
+
 ```
 dbg\install.bat          (só se o .sys do workspace divergir do instalado)
 dbg\start.bat
@@ -833,7 +1478,9 @@ Ordem de leitura dos documentos: este arquivo, depois
 [01_EVIDENCIAS_E_LICOES.md](01_EVIDENCIAS_E_LICOES.md) para o histórico de
 medições e revogações, [03_CATALOGO_DE_REGISTRADORES.md](03_CATALOGO_DE_REGISTRADORES.md)
 para endereços e semântica de bit, e [04_PLANO_DO_DRIVER_NOVO.md](04_PLANO_DO_DRIVER_NOVO.md)
-para o plano de VMID 0 e os requisitos que a medição impôs ao driver.
+para o plano de VMID 0 e os requisitos que a medição impôs ao driver. O modelo
+fail-closed de memória confiável está em
+[11_PSP_TMR_OWNERSHIP.md](11_PSP_TMR_OWNERSHIP.md).
 
 As regras superiores continuam em
 [`BC250_HARDWARE_RULES.md`](../BC250_HARDWARE_RULES.md). Em caso de divergência,

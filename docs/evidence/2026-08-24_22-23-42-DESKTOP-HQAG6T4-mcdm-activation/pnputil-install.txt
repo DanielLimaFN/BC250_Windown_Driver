@@ -1,0 +1,9 @@
+﻿Utilitßrio PnP da Microsoft
+
+Adicionando o pacote de driver:  bc250readonly.inf
+Pacote de driver adicionado com Ûxito. (Jß existe no sistema)
+Nome Publicado:         oem5.inf
+O pacote de driver estß atualizado no dispositivo:  PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041
+
+Total de pacotes de driver:  1
+Pacotes de driver adicionados:  0

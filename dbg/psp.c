@@ -316,6 +316,22 @@ NTSTATUS BcPspLoadIpFw(ULONG FwType, const ULONG *Dwords, ULONG Count,
     ULONG fwBytes, fenceReached = 0;
     NTSTATUS status;
 
+    if (FwType >= BC250_PSP_FW_CP_ME && FwType <= BC250_PSP_FW_CP_MEC_JT1) {
+        if (Out) {
+            Out->FenceReached = 0;
+            Out->RespStatus = BC250DBG_OPS_BADOP;
+        }
+        /*
+         * QUARENTENA CP: o caminho atual usa PA de uma alocacao host como
+         * fw_phy_addr e nao possui TMR reservada. O upstream envia o endereco
+         * MC do buffer depois de SETUP_TMR e separa MEC de MEC_JT1.
+         */
+        BcLogText(BC250DBG_LVL_WARN, BC250DBG_SUB_PSP,
+                  "PSP: LOAD_IP_FW CP tipo %u em quarentena (sem TMR/endereco MC)",
+                  FwType);
+        return STATUS_NOT_SUPPORTED;
+    }
+
     if (g_Dev.Mmio == NULL) {
         return STATUS_DEVICE_NOT_READY;
     }
@@ -417,66 +433,28 @@ NTSTATUS BcPspLoadIpFw(ULONG FwType, const ULONG *Dwords, ULONG Count,
 /* GFX_CMD_ID_SETUP_TMR (0x05)                                              */
 /* ------------------------------------------------------------------------ */
 
-#define A_GCMC_VM_FB_OFFSET 0x0A5AC
-
 NTSTATUS BcPspSetupTmr(ULONG TmrSizeBytes, ULONG VramOffset,
                        BC250DBG_PSP_SETUP_TMR_IO *Out)
 {
-    ULONG *cmd, *ucmd, *resp;
-    ULONG fenceReached = 0;
-    ULONGLONG tmrGpuAddr, tmrPhysAddr;
-    ULONG fbOffset;
-    NTSTATUS status;
+    UNREFERENCED_PARAMETER(TmrSizeBytes);
+    UNREFERENCED_PARAMETER(VramOffset);
 
-    if (g_Dev.Mmio == NULL) return STATUS_DEVICE_NOT_READY;
-    if (g_Dev.ArmLevel < BC250DBG_ARM_WRITE) return STATUS_ACCESS_DENIED;
-    if (!g_Dev.PspRingCreated) return STATUS_DEVICE_NOT_READY;
-
-    status = BcPspEnsureBuffers();
-    if (!NT_SUCCESS(status)) return status;
-
-    if (TmrSizeBytes == 0) TmrSizeBytes = 0x400000; /* 4 MB padrao */
-    if (VramOffset == 0)   VramOffset   = 0x0F800000; /* 248 MB na VRAM */
-
-    fbOffset = BcRegReadRaw(A_GCMC_VM_FB_OFFSET); /* 0x450 */
-    tmrGpuAddr  = BC250_VRAM_GPU_BASE + (ULONGLONG)VramOffset;
-    tmrPhysAddr = ((ULONGLONG)fbOffset << 24) + (ULONGLONG)VramOffset;
-
-    cmd = (ULONG *)g_Dev.PspCmdVa;
-    RtlZeroMemory(cmd, BC250_PSP_CMD_BUF_SIZE);
-
-    cmd[PSP_CMD_BUF_SIZE_DW]    = BC250_PSP_CMD_BUF_DECLARED; /* 0x400 */
-    cmd[PSP_CMD_BUF_VERSION_DW] = 1;
-    cmd[PSP_CMD_ID_DW]          = 0x05; /* GFX_CMD_ID_SETUP_TMR */
-
-    ucmd = cmd + PSP_CMD_UNION_DW;
-    ucmd[0] = (ULONG)(tmrGpuAddr & 0xFFFFFFFFull); /* buf_phy_addr_lo (GPU MC/VA) */
-    ucmd[1] = (ULONG)(tmrGpuAddr >> 32);          /* buf_phy_addr_hi */
-    ucmd[2] = TmrSizeBytes;                       /* buf_size */
-    ucmd[3] = 0x2;                                /* tmr_flags (virt_phy_addr=1) */
-    ucmd[4] = (ULONG)(tmrPhysAddr & 0xFFFFFFFFull);/* system_phy_addr_lo (CPU Physical) */
-    ucmd[5] = (ULONG)(tmrPhysAddr >> 32);         /* system_phy_addr_hi */
-
-    KeMemoryBarrier();
-
-    status = BcPspSubmit(&fenceReached);
-
-    resp = cmd + (864 / sizeof(ULONG));
     if (Out) {
-        Out->Size         = sizeof(BC250DBG_PSP_SETUP_TMR_IO);
-        Out->FenceReached = fenceReached;
-        Out->RespStatus   = resp[PSP_RESP_STATUS_DW];
-        Out->TmrGpuAddr   = tmrGpuAddr;
-        Out->TmrPhysAddr  = tmrPhysAddr;
-        Out->TmrSizeBytes = TmrSizeBytes;
-        Out->VramOffset   = VramOffset;
+        RtlZeroMemory(Out, sizeof(*Out));
+        Out->Size = sizeof(*Out);
+        Out->RespStatus = BC250DBG_OPS_BADOP;
     }
 
-    BcLogText(BC250DBG_LVL_INFO, BC250DBG_SUB_PSP,
-              "PSP: SETUP_TMR size 0x%X, GPU 0x%llX, PA 0x%llX -> RespStatus=0x%08X",
-              TmrSizeBytes, tmrGpuAddr, tmrPhysAddr, (Out ? Out->RespStatus : 0));
-
-    return status;
+    /*
+     * QUARENTENA: a implementacao anterior assumia tamanho e offset fixos e
+     * fabricava o endereco fisico a partir de FB_OFFSET. Isso
+     * nao prova reserva exclusiva e conflita com a deteccao dinamica exigida
+     * pelo hardware. Reabilitar somente quando uma unica alocacao reservada
+     * fornecer, de forma comprovada, PA de CPU, endereco MC/GPU e tamanho.
+     */
+    BcLogText(BC250DBG_LVL_WARN, BC250DBG_SUB_PSP,
+              "PSP: SETUP_TMR em quarentena: nao ha reserva dinamica exclusiva");
+    return STATUS_NOT_SUPPORTED;
 }
 
 /* ------------------------------------------------------------------------ */
