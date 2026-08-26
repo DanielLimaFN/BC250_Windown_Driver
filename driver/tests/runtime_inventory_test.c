@@ -33,6 +33,8 @@ void * __cdecl memcpy(void *Destination, const void *Source, size_t Length)
 
 static BC250_RUNTIME_INVENTORY_INPUT g_input;
 static BC250_RUNTIME_INVENTORY_REPORT g_report;
+static BC250_RUNTIME_INVENTORY_INPUT g_partialInput;
+static BC250_RUNTIME_INVENTORY_REPORT g_partialReport;
 static BC250_CP_BOOTSTRAP g_bootstrap;
 static BC250_CP_BOOTSTRAP_REPORT g_preflight;
 
@@ -51,6 +53,7 @@ static int Bc250RunRuntimeInventoryTest(void)
     uint32_t i;
 
     memset(&g_input, 0, sizeof(g_input));
+    g_input.EvidenceFlags = BC250_RUNTIME_EVIDENCE_COMPLETE;
     g_input.HasScanout = 1;
     g_input.ScanoutReservation.Offset = 0x00100000ull;
     g_input.ScanoutReservation.Length = 8294400ull;
@@ -89,6 +92,23 @@ static int Bc250RunRuntimeInventoryTest(void)
         (BC250_OWNERSHIP_EXCLUSIVE_ADAPTER |
          BC250_OWNERSHIP_INVENTORY_COMPLETE));
     CHECK(g_report.StagingEvidenceFlags == BC250_STAGING_EVIDENCE_REQUIRED);
+
+    {
+        g_partialInput = g_input;
+        g_partialInput.EvidenceFlags = BC250_RUNTIME_EVIDENCE_SCANOUT_PROBED |
+            BC250_RUNTIME_EVIDENCE_DISCOVERY_TMR_PROBED;
+        g_partialInput.HasDiscoveryTmr = 0;
+        g_partialInput.PlatformCarveoutCount = 0;
+        CHECK(Bc250BuildRuntimeVramInventory(
+            &g_partialInput, 0x20000000ull, 0x10000000ull, 42,
+            &g_partialReport) == BC250_RUNTIME_INVENTORY_INCOMPLETE);
+        CHECK(g_partialReport.ReservationCount == 1u);
+        CHECK(g_partialReport.TotalReservedBytes == 8294400ull);
+        CHECK(g_partialReport.TotalFreeBytes == 0u &&
+            g_partialReport.CpuVisibleFreeBytes == 0u);
+        CHECK(g_partialReport.OwnershipEvidenceFlags == 0u &&
+            g_partialReport.StagingEvidenceFlags == 0u);
+    }
 
     /* Test Bootstrap integration with the completed inventory */
     CHECK(Bc250CpBootstrapInit(

@@ -1,13 +1,13 @@
 # Roadmap BC-250: MCDM/WDDM, Vulkan compute e LLMs no Windows
 
-Atualizado em 2026-08-25.
+Atualizado em 2026-08-26.
 
-Estado inicial: **NAO VALIDADO EM HARDWARE**.
+Estado atual: **TLB GFXHUB VALIDADO; CANDIDATO GCVM OWNED/VMID8 INERTE PRONTO; ACELERACAO NAO VALIDADA**.
 
 ```text
-Conformidade BC250_HARDWARE_RULES   45%
-Miniport MCDM funcional            20%
-Memoria/GPUVA WDDM                  0%
+Conformidade BC250_HARDWARE_RULES   72%
+Miniport MCDM funcional            43%
+Memoria/GPUVA WDDM                 25%
 PM4/compute pelo miniport           0%
 Vulkan ICD                          0%
 LLM acelerado                       0%
@@ -72,7 +72,7 @@ Regras:
 
 ## Fase 0 - baseline, recuperacao e pacote fail-closed
 
-Status: **em andamento, 75%**.
+Status: **em andamento, 99%**.
 
 Objetivo: garantir que qualquer binario instalavel falhe sem inventar aceleracao
 e possa ser removido em Modo de Seguranca.
@@ -109,7 +109,76 @@ Auditoria read-only de 2026-08-25:
 - `audit-bc250-recovery-readiness.ps1` transforma a divergencia em gate exit 1;
 - o gate foi conectado antes da primeira mutacao do builder; uma tentativa
   bloqueada preservou todos os hashes de `output_active`;
-- sincronizar `C:\BC250_RECOVERY.cmd` continua exigindo autorizacao explicita.
+- naquele momento, sincronizar `C:\BC250_RECOVERY.cmd` ainda exigia autorizacao
+  explicita; o marco seguinte registra a sincronizacao concluida.
+
+Marco de pacote fail-closed 1.0.1.0 em 2026-08-25:
+
+- recovery foi sincronizado pelo usuario e o auditor passou com hashes
+  identicos;
+- `oem18.inf` nao existe mais; o servico `bc250mcdm` permanece parado e sem
+  binario, portanto ainda exige limpeza antes de ensaio de binding;
+- pacote 1.0.1.0 foi reconstruido, catalogado e assinado sem erros/avisos;
+- manifesto externo registra origem bruta, SYS assinado, INF, catalogo,
+  recovery, certificado e `HardwareValidated=false`;
+- auditor independente do pacote passou em integridade, Authenticode e
+  identidade; nenhuma instalacao, stage ou troca de binding foi realizada;
+- detalhes em `docs\22_PACOTE_MCDM_FAIL_CLOSED_1.0.1.0.md`.
+
+Marco de pre-binding limpo em 2026-08-25:
+
+- gate read-only exige BasicDisplay Codigo 0, cardinalidade fisica unica,
+  recovery/pacote integros, zero servicos/binarios/INFs experimentais, marcador
+  ausente e nenhum reboot pendente conhecido;
+- host passou em todos os itens exceto o servico `bc250mcdm`, presente e
+  parado; por isso o gate e o stage retornam exit 1;
+- stage 1.0.1.0 foi separado do binding e usa somente `/add-driver`; a auditoria
+  de seguranca proibe `/install`, `INSTALLFLAG_FORCE` e NewDev nesse script;
+- detalhes em `docs\23_GATE_PREBINDING_MCDM_1.0.1.0.md`.
+
+Marco de host limpo em 2026-08-25:
+
+- recovery real foi executado pelo usuario e seguido de reboot;
+- recovery, pacote e pre-binding retornaram exit 0 independentemente;
+- BC-250 esta em BasicDisplay Codigo 0; todos os servicos e binarios
+  experimentais estao ausentes; nao ha INF experimental, marcador ou reboot
+  pendente conhecido;
+- preflight do stage retornou exit 0 e a verificacao posterior confirmou zero
+  escrita (`marker=false`, cardinalidade INF MCDM zero);
+- o pre-stage separado foi autorizado e concluido posteriormente, sem binding.
+
+Marco de stage sem binding em 2026-08-25:
+
+- o usuario executou o stage elevado; `pnputil /add-driver` publicou somente
+  `oem19.inf` e criou `C:\BC250_TEST_OEMINF.txt`;
+- auditoria independente confirmou exatamente um INF e um diretorio no
+  FileRepository, com INF/SYS/CAT identicos ao manifesto e assinaturas validas;
+- a BC-250 permaneceu em `BasicDisplay`, Codigo 0; `bc250mcdm` continuou
+  ausente e nenhum `bc250mcdm.sys` apareceu em `System32\drivers`;
+- o recovery em `DRY-RUN` reconhece tanto `oem19.inf` quanto o marcador;
+- `tools\audit-bc250mcdm-staged.ps1` retornou exit 0;
+- harness de binding foi preparado e passou em `DRY-RUN`, com zero escrita e
+  dupla trava `-Execute -IAcceptBlackScreenRisk` para a rota mutavel;
+- nenhum binding ou validacao fisica do miniport ocorreu;
+- detalhes em `docs\24_STAGE_MCDM_1.0.1.0.md`.
+
+Marco de binding fail-closed 1.0.1.0 em 2026-08-25:
+
+- binding forcado foi autorizado explicitamente e a API NewDev retornou sucesso,
+  sem reboot requerido;
+- `DriverEntry`, inicializacao da tabela, `AddDevice` e `StartDevice` foram
+  observados fisicamente; Stop/Remove tambem ocorreram no unwind;
+- PCI retornou 64 bytes; tres BARs foram resolvidos; a leitura readonly de
+  topologia foi estavel em duas passagens;
+- foram observados 512 MiB de VRAM, 256 MiB CPU-visible e ReBAR atribuido de
+  256 MiB;
+- discovery TMR retornou `NOT_REPORTED` (status 5, tamanho zero), logo
+  `RuntimeMissing=1` bloqueou `StartDevice` e o dispositivo ficou em Codigo 43;
+- nenhum PM4, firmware, PSP, queue, fence ou compute foi executado;
+- `tools\audit-bc250mcdm-failclosed-binding.ps1` retornou exit 0;
+- falta executar recovery em Modo de Seguranca e provar `BasicDisplay`, Codigo 0,
+  para concluir a Fase 0;
+- detalhes em `docs\25_BINDING_FAIL_CLOSED_MCDM_1.0.1.0.md`.
 
 ## Fase 1 - tabela MCDM minima e lifecycle de objetos
 
@@ -275,7 +344,7 @@ Fechamento estrutural da Fase 1 em 2026-08-25:
 
 ## Fase 2 - ownership PnP e inventario runtime integral
 
-Status: **0%**.
+Status: **100% para o escopo conservador atual**.
 
 Objetivo: produzir as evidencias que hoje estao ausentes, sem constantes.
 
@@ -300,9 +369,103 @@ Gate de saida:
 - rollback devolve ownership/display anterior;
 - duas capturas fisicas identicas apos reboot limpo.
 
+Marco fisico de post-display ownership em 2026-08-25:
+
+- pacote 1.1.0.0 integrou `DxgkCbAcquirePostDisplayOwnership2` somente depois
+  do inventario PCI/BAR/topologia/ReBAR e manteve `StartDevice` fail-closed;
+- callback 2 retornou sucesso e `FrameBufferStateInitializedByFirmware`;
+- framebuffer observado: 2560 x 1080, pitch 10240, 11.059.200 bytes;
+- endereco fisico `0x00000000C0000000`, offset zero dentro do BAR VRAM;
+- a faixa inteira passou nos limites do BAR PnP CPU-visible de 256 MiB;
+- topologia repetiu 512 MiB VRAM, 256 MiB CPU-visible, tres BARs e duas
+  passagens MMIO estaveis; Discovery TMR continuou `NOT_REPORTED`;
+- binding terminou em Codigo 43 por `RuntimeMissing=1`, sem PM4/compute;
+- evidencia em
+  `docs\evidence\2026-08-25_19-29-47-DESKTOP-HQAG6T4-mcdm-replace`;
+- detalhes em `docs\26_POST_DISPLAY_OWNERSHIP_FISICO_1.1.0.0.md`.
+
+Pendencias para fechar a fase: inventario das demais reservas (PSP/TMR, page
+tables, rings e firmware), selo integral de geracao e segunda captura apos
+reboot limpo.
+
+Marco de inventario parcial 1.2.0.0 em 2026-08-25:
+
+- o contrato deixou de promover qualquer conjunto de reservas para
+  `INVENTORY_COMPLETE` sem tres provas independentes: scanout sondado,
+  Discovery TMR sondado e carveouts de plataforma sondados;
+- o ensaio fisico retornou `INCOMPLETE`, evidence flags `0x3`, uma reserva e
+  11.059.200 bytes conhecidos como ocupados;
+- `RuntimeInventoryComplete=0`; ownership/staging permanecem desligados e zero
+  bytes sao tratados como livres enquanto faltam os carveouts;
+- SYS ativo corresponde ao hash assinado do pacote 1.2.0.0;
+- detalhes em `docs\27_INVENTARIO_RUNTIME_PARCIAL_1.2.0.0.md`.
+
+Marco de snapshot de plataforma 1.3.0.0 em 2026-08-25:
+
+- captura física passou com schema 10, 24 leituras e duas passagens estáveis;
+- GCVM base/start/end zerados: nenhuma page table herdada ativa;
+- CP RB0 em repouso (`CNTL=0x00A00000`) e base sentinela `0xFEDCBAEF` fora da
+  VRAM; SDMA0 desabilitado (`0x80840000`) e base zero;
+- nenhum ring herdado desses engines foi promovido a reserva;
+- inventário segue incompleto porque PSP/TMR e outros carveouts continuam sem
+  prova; PM4/compute não foram executados;
+- evidencia em
+  `docs\evidence\2026-08-25_19-55-48-DESKTOP-HQAG6T4-mcdm-replace`;
+- detalhes em `docs\28_SNAPSHOT_REGISTRADORES_PLATAFORMA_1.3.0.0.md`.
+
+Marco de ponteiros e mailbox 1.4.0.0 em 2026-08-25:
+
+- 54 leituras físicas coerentes em duas passagens, schema 11;
+- ponteiros e writebacks CP/SDMA todos zero; nenhum ring herdado válido;
+- mailboxes PSP 35/36 não reportam endereço e a 81 é heartbeat variável;
+- a descrição GPCOM precisa ser lida em `C2PMSG_64/67/69/70/71` antes de
+  classificar qualquer reserva PSP;
+- evidencia em
+  `docs\evidence\2026-08-25_20-35-01-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Marco PSP/GPCOM 1.5.0.0 em 2026-08-25:
+
+- schema 12, 64 leituras coerentes em duas passagens e SYS ativo confirmado;
+- TOS pronto em `C2PMSG_64=0x80000000`;
+- WPTR, endereço e tamanho GPCOM zerados: nenhum ring PSP herdado ativo;
+- mailbox 81 confirmada como heartbeat, não reserva;
+- TMR interna do PSP continua não reportada e não foi inferida por constante;
+- evidencia em
+  `docs\evidence\2026-08-25_20-39-11-DESKTOP-HQAG6T4-mcdm-replace`;
+- detalhes em `docs\30_PSP_GPCOM_READONLY_1.5.0.0.md`.
+
+Repetição pós-reboot 1.5.0.0:
+
+- todos os campos estruturais repetiram sem divergência;
+- apenas o heartbeat PSP 81 mudou, como esperado;
+- gate de repetibilidade pós-reboot: PASS;
+- evidencia em
+  `docs\evidence\2026-08-25_20-43-40-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Marco de inventário integral 1.6.0.0:
+
+- inventário físico `OK`, flags `0x7`, duas reservas e 257.376.256 bytes
+  CPU-visible livres;
+- a metade não visível foi preservada integralmente, sem constante TMR;
+- gate de inventário integral: PASS EM HARDWARE;
+- evidencia em
+  `docs\evidence\2026-08-25_20-46-41-DESKTOP-HQAG6T4-mcdm-replace`;
+- detalhes em `docs\31_INVENTARIO_OPACO_NAO_VISIVEL_1.6.0.0.md`.
+
+Marco de runtime selado 1.7.0.0:
+
+- segunda passagem atingiu `PREFLIGHT_READY` com ownership `0x7F`;
+- TMR e staging foram alocados apenas no plano, dentro dos 256 MiB visíveis;
+- zero escrita de firmware e zero chamada PSP;
+- a Fase 2 está fechada para a política conservadora que reserva integralmente
+  a VRAM não visível;
+- evidencia em
+  `docs\evidence\2026-08-26_01-36-01-DESKTOP-HQAG6T4-mcdm-replace`;
+- detalhes em `docs\32_PREFLIGHT_RUNTIME_SELADO_1.7.0.0.md`.
+
 ## Fase 3 - segmentos VidMm, GPUVA e page tables
 
-Status: **0%**.
+Status: **25% fisico**.
 
 Objetivo: substituir enderecos fixos por memoria administrada pelo Windows e
 isolada por processo.
@@ -327,6 +490,145 @@ Gate fisico:
 - unmap provoca fault controlado, nunca acesso ao buffer anterior;
 - paging e eviction sob pressao sem corrupcao;
 - rollback volta ao estado pre-teste.
+
+Marco de transação VRAM 1.8.0.0 em 2026-08-26:
+
+- primeira escrita owned executada em 64 bytes do staging planejado;
+- write/readback e restauração dos bytes originais passaram;
+- nenhuma escrita atingiu scanout, VRAM não visível, PSP ou engines;
+- isso prova acesso CPU à memória owned, mas ainda não prova VidMm, GPUVA ou
+  acesso da GPU;
+- evidencia em
+  `docs\evidence\2026-08-26_01-41-23-DESKTOP-HQAG6T4-mcdm-replace`;
+- detalhes em `docs\33_TRANSACAO_VRAM_REVERSIVEL_1.8.0.0.md`.
+
+Candidato de capacidades runtime 1.9.0.0 em 2026-08-26:
+
+- `QueryAdapterInfo` passa a derivar driver caps, physical caps e um segmento
+  local CPU-visible do inventario fisico integral;
+- dois nos sao descritos: SDMA0 para copy/paging e Compute MEC;
+- tamanho local e endereco CPU vem do snapshot runtime e do BAR PnP, nunca de
+  constantes do callback;
+- GART, GPUVA, GPU MMU, submit e engine operacional continuam desativados;
+- build, testes offline, auditoria, catalogo e assinatura passaram;
+- o segmento exclui explicitamente o scanout e o staging/TMR planejado;
+- o pacote 1.9.0.0 ainda precisa do ensaio fisico schema 17 e permanece
+  intencionalmente em Codigo 43;
+- detalhes em
+  `docs\\34_CAPACIDADES_RUNTIME_SEGMENTO_LOCAL_1.9.0.0.md`.
+
+Resultado fisico 1.9.0.0:
+
+- schema 17 e SYS ativo identico ao pacote;
+- provider retornou dois nos, base `0x00A8C000` e tamanho `0x0F132000`;
+- inventario, segundo preflight e transacao VRAM permaneceram aprovados;
+- Code 43 continua intencional; VidMm, GPUVA e engine ainda nao foram ativados;
+- evidencia em
+  `docs\\evidence\\2026-08-26_02-01-26-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Correcao de conformidade 1.10.0.0:
+
+- a revisao da especificacao oficial identificou que MCDM exige
+  `QUERYSEGMENT4` e proibe `QUERYSEGMENT/2/3`;
+- `NUMPOWERCOMPONENTS` e `HISTORYBUFFERPRECISION` foram adicionados;
+- `SupportNonVGA` foi zerado;
+- caps completos agora exigem gates separados de GPUVA, paging, TDR,
+  preempcao, submit e history buffer; a imagem fisica mantem todos desligados;
+- detalhes em
+  `docs\\35_CONFORMIDADE_QUERYADAPTERINFO_MCDM_1.10.0.0.md`.
+
+Resultado fisico 1.10.0.0:
+
+- schema 18, SYS ativo identico ao pacote e Code 43 intencional;
+- `McdmSegment4Ready=1`, base `0x00A8C000`, tamanho `0x0F132000`;
+- `McdmFullCapsReady=0`, portanto GPUVA, paging e submit nao anunciados;
+- inventario, segundo preflight e transacao VRAM preservados;
+- evidencia em
+  `docs\\evidence\\2026-08-26_02-19-18-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Candidato 1.11.0.0:
+
+- a private ABI de allocation descreve segmento 1, read/write set 1,
+  CPU-visible e limite derivado de `LocalSegmentBytes`;
+- `GPUMMUCAPS` e `PAGETABLELEVELDESC` foram implementados atras de
+  `FullMcdmReady` e `GpuVaReady`;
+- o provider de producao mantem esses gates em zero ate existir root page table
+  e paging fisicos;
+- detalhes em
+  `docs\\36_ALLOCATION_SEGMENTO_GPUVA_LATENTE_1.11.0.0.md`.
+
+Resultado fisico 1.11.0.0:
+
+- schema 19 e SYS ativo identico ao pacote;
+- `AllocationSegmentSet=1`, limite `0x0F132000`;
+- `GpuVaDescriptorReady=0`, conforme o gate fail-closed;
+- evidencia em
+  `docs\\evidence\\2026-08-26_03-32-48-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Candidato 1.12.0.0:
+
+- `SetRootPageTable` associa `SegmentId/SegmentOffset` ao processo dono do
+  contexto, com alinhamento, bounds e ownership;
+- `GetRootPageTableSize` permanece zero para a hierarquia fixa de quatro
+  niveis, conforme a semantica WDDM;
+- producao mantem `RootPageTableAbiReady=0` ate existir paging real;
+- detalhes em `docs\\37_ROOT_PAGE_TABLE_OWNED_1.12.0.0.md`.
+
+Resultado fisico 1.12.0.0:
+
+- schema 20, SYS ativo identico ao pacote e Code 43 intencional;
+- `RootPageTableAbiReady=0`, `RootPageTableMaxEntries=0`;
+- geometria e transacao VRAM preservadas;
+- evidencia em
+  `docs\\evidence\\2026-08-26_08-13-48-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Candidato 1.13.0.0:
+
+- `BuildPagingBuffer` traduz `UPDATE_PAGE_TABLE` CPU-virtual imediatamente;
+- `DXGK_PTE` local vira PTE GC10 com base do segmento fisicamente derivada;
+- validacao em duas passagens impede escrita parcial;
+- system/GART, large pages, TLB flush e demais operacoes permanecem fechados;
+- detalhes em `docs\\38_UPDATE_PAGE_TABLE_CPU_VIRTUAL_1.13.0.0.md`.
+
+Resultado fisico 1.13.0.0:
+
+- gate nao aprovado: `PagingCpuUpdateReady` ausente;
+- causa: pacote assinado com SYS anterior a mudanca de telemetria;
+- o empacotador agora bloqueia SYS mais antigo que qualquer fonte do driver;
+- evidencia em
+  `docs\\evidence\\2026-08-26_08-19-47-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Candidato 1.14.0.0:
+
+- remove o falso TLB flush por SDMA NOP;
+- modela GFXHUB engine 17, request/ACK, range, leitura dummy e VMID 1..15;
+- execucao MMIO permanece fechada e `TlbFlushPhysicalReady=0`;
+- detalhes em `docs\\39_GFXHUB_TLB_PLAN_PROVENANCE_1.14.0.0.md`.
+
+Resultado fisico 1.14.0.0:
+
+- schema 22 e SYS ativo identico ao pacote;
+- `PagingCpuUpdateReady=0` e `TlbFlushPhysicalReady=0` presentes;
+- procedencia/observabilidade aprovadas, sem write ou invalidacao TLB;
+- evidencia em
+  `docs\\evidence\\2026-08-26_08-27-42-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Candidato 1.15.0.0:
+
+- write MMIO autorizado e restrito a range/request GFXHUB engine 17;
+- request VMID 8 seguido da leitura dummy exigida para GC 10.1.3;
+- ACK `0xA318` somente leitura, rejeitando all-ones e timeout acima de 1000 us;
+- range anterior restaurado e conferido em sucesso ou falha;
+- detalhes em `docs\\40_GFXHUB_TLB_TRANSACAO_FISICA_1.15.0.0.md`.
+
+Resultado fisico 1.15.0.0:
+
+- request engine 17/VMID 8 aceito e relido: `0x00F80100`;
+- ACK `0x00000000 -> 0x00000100` no primeiro poll;
+- range integral programado e estado anterior restaurado;
+- `TlbFlushPhysicalReady=1` com SYS ativo identico ao pacote;
+- evidencia em
+  `docs\\evidence\\2026-08-26_08-51-40-DESKTOP-HQAG6T4-mcdm-replace`.
 
 ## Fase 4 - PSP, TMR e firmware owned
 
@@ -595,10 +897,14 @@ fence GPU e resultado, ele e apenas uma fachada proibida pelas regras.
 
 ## 4. Proximo incremento autorizado
 
-Implementar a Fase 1 em pequenos cortes:
+O candidato 1.16.0.0 associa uma page table owned ao VMID 8, escreve uma PTE
+para um buffer owned, programa PT base/start/end com o contexto desabilitado,
+executa TLB e restaura VRAM/registradores. O ensaio fisico ainda esta pendente;
+detalhes em `docs\41_GCVM_BACKING_OWNED_VMID8_INERTE_1.16.0.0.md`.
 
-1. manter memoria, paging e submit fail-closed;
-2. auditar a divergencia entre recovery instalado e fonte sem alterar o host;
-3. sincronizar recovery somente com autorizacao explicita;
-4. concluir o binding fail-closed da Fase 0;
-5. iniciar a Fase 2 com ownership PnP e inventario runtime integral.
+Apos esse gate, habilitar o contexto por tempo limitado e comprovar traducao
+consumida pela SDMA com RPTR/WPTR, fence GPU, destino integral, faults e
+rollback. Manter `PagingCpuUpdateReady=0`,
+`RootPageTableAbiReady=0` e `GpuVaDescriptorReady=0` ate esse gate completo.
+Monitored fence/IH/TDR e submit owned continuam obrigatorios antes do primeiro
+`StartDevice=STATUS_SUCCESS`.

@@ -6,6 +6,8 @@
 
 #include "../core/bc250_resource_contract.h"
 #include "../core/bc250_discovery_tmr_reader.h"
+#include "../core/bc250_platform_register_snapshot.h"
+#include "../core/bc250_gcvm_vmid8_transaction.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,6 +44,7 @@ typedef struct BC250_MMIO_TOPOLOGY_CONTEXT {
     uint64_t Length;
     uint32_t BarIndex;
     uint32_t ReadCount;
+    uint32_t WriteCount;
     NTSTATUS LastCallbackStatus;
 } BC250_MMIO_TOPOLOGY_CONTEXT;
 
@@ -60,6 +63,11 @@ uint32_t Bc250MmioTopologyRead32(
     _In_ void *Context,
     _In_ uint32_t ByteOffset,
     _Out_ uint32_t *Value);
+
+uint32_t Bc250MmioTopologyWrite32(
+    _In_ void *Context,
+    _In_ uint32_t ByteOffset,
+    _In_ uint32_t Value);
 
 BC250_MMIO_TOPOLOGY_STATUS Bc250MmioTopologyUnmap(
     _Inout_ BC250_MMIO_TOPOLOGY_CONTEXT *Context);

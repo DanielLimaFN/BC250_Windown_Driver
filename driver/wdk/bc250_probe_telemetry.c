@@ -86,6 +86,161 @@ static PCWSTR Bc250ProbeFieldName(BC250_PROBE_FIELD Field)
         return L"DiscoveryTmrReadCount";
     case BC250_PROBE_DISCOVERY_TMR_STABLE_PASSES:
         return L"DiscoveryTmrStablePasses";
+    case BC250_PROBE_POST_DISPLAY_STATUS: return L"PostDisplayStatus";
+    case BC250_PROBE_POST_DISPLAY_CALLBACK_STATUS:
+        return L"PostDisplayCallbackStatus";
+    case BC250_PROBE_POST_DISPLAY_USED_CALLBACK2:
+        return L"PostDisplayUsedCallback2";
+    case BC250_PROBE_POST_DISPLAY_FRAMEBUFFER_STATE:
+        return L"PostDisplayFramebufferState";
+    case BC250_PROBE_POST_DISPLAY_TARGET_ID: return L"PostDisplayTargetId";
+    case BC250_PROBE_POST_DISPLAY_WIDTH: return L"PostDisplayWidth";
+    case BC250_PROBE_POST_DISPLAY_HEIGHT: return L"PostDisplayHeight";
+    case BC250_PROBE_POST_DISPLAY_PITCH: return L"PostDisplayPitch";
+    case BC250_PROBE_POST_DISPLAY_PHYSICAL_LOW32:
+        return L"PostDisplayPhysicalLow32";
+    case BC250_PROBE_POST_DISPLAY_PHYSICAL_HIGH32:
+        return L"PostDisplayPhysicalHigh32";
+    case BC250_PROBE_POST_DISPLAY_BYTES: return L"PostDisplayBytes";
+    case BC250_PROBE_POST_DISPLAY_VRAM_OFFSET_LOW32:
+        return L"PostDisplayVramOffsetLow32";
+    case BC250_PROBE_POST_DISPLAY_VRAM_OFFSET_HIGH32:
+        return L"PostDisplayVramOffsetHigh32";
+    case BC250_PROBE_RUNTIME_INVENTORY_STATUS:
+        return L"RuntimeInventoryStatus";
+    case BC250_PROBE_RUNTIME_INVENTORY_EVIDENCE_FLAGS:
+        return L"RuntimeInventoryEvidenceFlags";
+    case BC250_PROBE_RUNTIME_INVENTORY_RESERVATION_COUNT:
+        return L"RuntimeInventoryReservationCount";
+    case BC250_PROBE_RUNTIME_INVENTORY_RESERVED_LOW32:
+        return L"RuntimeInventoryReservedLow32";
+    case BC250_PROBE_RUNTIME_INVENTORY_RESERVED_HIGH32:
+        return L"RuntimeInventoryReservedHigh32";
+    case BC250_PROBE_RUNTIME_INVENTORY_COMPLETE:
+        return L"RuntimeInventoryComplete";
+    case BC250_PROBE_PLATFORM_SNAPSHOT_STATUS:
+        return L"PlatformSnapshotStatus";
+    case BC250_PROBE_PLATFORM_SNAPSHOT_READ_COUNT:
+        return L"PlatformSnapshotReadCount";
+    case BC250_PROBE_PLATFORM_SNAPSHOT_STABLE_PASSES:
+        return L"PlatformSnapshotStablePasses";
+    case BC250_PROBE_GCVM_PT_BASE_LO: return L"GcvmPtBaseLo";
+    case BC250_PROBE_GCVM_PT_BASE_HI: return L"GcvmPtBaseHi";
+    case BC250_PROBE_GCVM_PT_START_LO: return L"GcvmPtStartLo";
+    case BC250_PROBE_GCVM_PT_START_HI: return L"GcvmPtStartHi";
+    case BC250_PROBE_GCVM_PT_END_LO: return L"GcvmPtEndLo";
+    case BC250_PROBE_GCVM_PT_END_HI: return L"GcvmPtEndHi";
+    case BC250_PROBE_CP_RB0_BASE: return L"CpRb0Base";
+    case BC250_PROBE_CP_RB0_BASE_HI: return L"CpRb0BaseHi";
+    case BC250_PROBE_CP_RB0_CNTL: return L"CpRb0Cntl";
+    case BC250_PROBE_SDMA0_RB_BASE: return L"Sdma0RbBase";
+    case BC250_PROBE_SDMA0_RB_BASE_HI: return L"Sdma0RbBaseHi";
+    case BC250_PROBE_SDMA0_RB_CNTL: return L"Sdma0RbCntl";
+    case BC250_PROBE_CP_RB0_RPTR: return L"CpRb0Rptr";
+    case BC250_PROBE_CP_RB0_RPTR_ADDR_LO: return L"CpRb0RptrAddrLo";
+    case BC250_PROBE_CP_RB0_RPTR_ADDR_HI: return L"CpRb0RptrAddrHi";
+    case BC250_PROBE_CP_RB0_WPTR: return L"CpRb0Wptr";
+    case BC250_PROBE_CP_RB0_WPTR_HI: return L"CpRb0WptrHi";
+    case BC250_PROBE_SDMA0_RB_RPTR: return L"Sdma0RbRptr";
+    case BC250_PROBE_SDMA0_RB_RPTR_HI: return L"Sdma0RbRptrHi";
+    case BC250_PROBE_SDMA0_RB_WPTR: return L"Sdma0RbWptr";
+    case BC250_PROBE_SDMA0_RB_WPTR_HI: return L"Sdma0RbWptrHi";
+    case BC250_PROBE_SDMA0_RB_RPTR_ADDR_LO:
+        return L"Sdma0RbRptrAddrLo";
+    case BC250_PROBE_SDMA0_RB_RPTR_ADDR_HI:
+        return L"Sdma0RbRptrAddrHi";
+    case BC250_PROBE_PSP_C2PMSG_35: return L"PspC2pmsg35";
+    case BC250_PROBE_PSP_C2PMSG_36: return L"PspC2pmsg36";
+    case BC250_PROBE_PSP_C2PMSG_37: return L"PspC2pmsg37";
+    case BC250_PROBE_PSP_C2PMSG_81: return L"PspC2pmsg81";
+    case BC250_PROBE_PSP_C2PMSG_64: return L"PspC2pmsg64";
+    case BC250_PROBE_PSP_C2PMSG_67: return L"PspC2pmsg67";
+    case BC250_PROBE_PSP_C2PMSG_69: return L"PspC2pmsg69";
+    case BC250_PROBE_PSP_C2PMSG_70: return L"PspC2pmsg70";
+    case BC250_PROBE_PSP_C2PMSG_71: return L"PspC2pmsg71";
+    case BC250_PROBE_RUNTIME_INVENTORY_FREE_LOW32:
+        return L"RuntimeInventoryFreeLow32";
+    case BC250_PROBE_RUNTIME_INVENTORY_FREE_HIGH32:
+        return L"RuntimeInventoryFreeHigh32";
+    case BC250_PROBE_RUNTIME_INVENTORY_CPU_FREE_LOW32:
+        return L"RuntimeInventoryCpuFreeLow32";
+    case BC250_PROBE_RUNTIME_STAGE_STATUS: return L"RuntimeStageStatus";
+    case BC250_PROBE_SECOND_PREFLIGHT_STAGE:
+        return L"SecondPreflightStage";
+    case BC250_PROBE_SECOND_READONLY_GATE_PASSED:
+        return L"SecondReadonlyGatePassed";
+    case BC250_PROBE_VRAM_PROBE_STATUS: return L"VramProbeStatus";
+    case BC250_PROBE_VRAM_PROBE_OFFSET_LOW32:
+        return L"VramProbeOffsetLow32";
+    case BC250_PROBE_VRAM_PROBE_BYTES: return L"VramProbeBytes";
+    case BC250_PROBE_VRAM_PROBE_READBACK_PASSED:
+        return L"VramProbeReadbackPassed";
+    case BC250_PROBE_VRAM_PROBE_RESTORE_PASSED:
+        return L"VramProbeRestorePassed";
+    case BC250_PROBE_RUNTIME_CAPS_STATUS: return L"RuntimeCapsStatus";
+    case BC250_PROBE_RUNTIME_CAPS_READY: return L"RuntimeCapsReady";
+    case BC250_PROBE_RUNTIME_CAPS_BASE_LOW32:
+        return L"RuntimeCapsBaseLow32";
+    case BC250_PROBE_RUNTIME_CAPS_LOCAL_LOW32:
+        return L"RuntimeCapsLocalLow32";
+    case BC250_PROBE_RUNTIME_CAPS_NODE_COUNT:
+        return L"RuntimeCapsNodeCount";
+    case BC250_PROBE_MCDM_FULL_CAPS_READY:
+        return L"McdmFullCapsReady";
+    case BC250_PROBE_MCDM_SEGMENT4_READY:
+        return L"McdmSegment4Ready";
+    case BC250_PROBE_ALLOCATION_SEGMENT_SET:
+        return L"AllocationSegmentSet";
+    case BC250_PROBE_ALLOCATION_MAX_LOW32:
+        return L"AllocationMaxLow32";
+    case BC250_PROBE_GPUVA_DESCRIPTOR_READY:
+        return L"GpuVaDescriptorReady";
+    case BC250_PROBE_ROOT_PAGE_TABLE_ABI_READY:
+        return L"RootPageTableAbiReady";
+    case BC250_PROBE_ROOT_PAGE_TABLE_MAX_ENTRIES:
+        return L"RootPageTableMaxEntries";
+    case BC250_PROBE_PAGING_CPU_UPDATE_READY:
+        return L"PagingCpuUpdateReady";
+    case BC250_PROBE_TLB_FLUSH_PHYSICAL_READY:
+        return L"TlbFlushPhysicalReady";
+    case BC250_PROBE_TLB_TRANSACTION_STATUS:
+        return L"TlbTransactionStatus";
+    case BC250_PROBE_TLB_VMID: return L"TlbVmid";
+    case BC250_PROBE_TLB_ENGINE_ID: return L"TlbEngineId";
+    case BC250_PROBE_TLB_REQUEST_VALUE: return L"TlbRequestValue";
+    case BC250_PROBE_TLB_RANGE_LOW_BEFORE: return L"TlbRangeLowBefore";
+    case BC250_PROBE_TLB_RANGE_HIGH_BEFORE: return L"TlbRangeHighBefore";
+    case BC250_PROBE_TLB_RANGE_LOW_PROGRAMMED:
+        return L"TlbRangeLowProgrammed";
+    case BC250_PROBE_TLB_RANGE_HIGH_PROGRAMMED:
+        return L"TlbRangeHighProgrammed";
+    case BC250_PROBE_TLB_REQUEST_DUMMY_READ:
+        return L"TlbRequestDummyRead";
+    case BC250_PROBE_TLB_ACK_BEFORE: return L"TlbAckBefore";
+    case BC250_PROBE_TLB_ACK_AFTER: return L"TlbAckAfter";
+    case BC250_PROBE_TLB_POLL_COUNT: return L"TlbPollCount";
+    case BC250_PROBE_TLB_REQUEST_WRITTEN: return L"TlbRequestWritten";
+    case BC250_PROBE_TLB_DUMMY_READ_COMPLETED:
+        return L"TlbDummyReadCompleted";
+    case BC250_PROBE_TLB_ACK_OBSERVED: return L"TlbAckObserved";
+    case BC250_PROBE_TLB_RANGE_RESTORE_PASSED:
+        return L"TlbRangeRestorePassed";
+    case BC250_PROBE_GCVM_BACKING_STATUS: return L"GcvmBackingStatus";
+    case BC250_PROBE_GCVM_PT_OFFSET_LOW32: return L"GcvmPtOffsetLow32";
+    case BC250_PROBE_GCVM_PT_PHYSICAL_LOW32: return L"GcvmPtPhysicalLow32";
+    case BC250_PROBE_GCVM_PT_PHYSICAL_HIGH32: return L"GcvmPtPhysicalHigh32";
+    case BC250_PROBE_GCVM_TARGET_OFFSET_LOW32: return L"GcvmTargetOffsetLow32";
+    case BC250_PROBE_GCVM_FIRST_PTE_LOW32: return L"GcvmFirstPteLow32";
+    case BC250_PROBE_GCVM_FIRST_PTE_HIGH32: return L"GcvmFirstPteHigh32";
+    case BC250_PROBE_GCVM_BACKING_OWNED: return L"GcvmBackingOwned";
+    case BC250_PROBE_GCVM_BACKING_READBACK: return L"GcvmBackingReadback";
+    case BC250_PROBE_GCVM_BACKING_RESTORE: return L"GcvmBackingRestore";
+    case BC250_PROBE_GCVM_VMID8_STATUS: return L"GcvmVmid8Status";
+    case BC250_PROBE_GCVM_VMID8_CNTL_BEFORE: return L"GcvmVmid8CntlBefore";
+    case BC250_PROBE_GCVM_VMID8_READBACK: return L"GcvmVmid8Readback";
+    case BC250_PROBE_GCVM_VMID8_TLB_PASSED: return L"GcvmVmid8TlbPassed";
+    case BC250_PROBE_GCVM_VMID8_RESTORE: return L"GcvmVmid8Restore";
+    case BC250_PROBE_GCVM_INERT_PHYSICAL_READY: return L"GcvmInertPhysicalReady";
     default: return NULL;
     }
 }

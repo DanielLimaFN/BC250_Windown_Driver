@@ -22,10 +22,10 @@ if ($clPath) {
 
 # Assinar bc250compute.sys
 $signTool = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe"
-if (Test-Path "$OutputDir\bc250compute.sys") {
-    & $signTool sign /a /v /s PrivateCertStore /n "BC250-TestCert" /t "http://timestamp.digicert.com" "$OutputDir\bc250compute.sys" 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        & $signTool sign /a /v /s PrivateCertStore /n "BC250-TestCert" "$OutputDir\bc250compute.sys"
+$thumb = "8D14413F3B97AEF9D7F78A1CA8D9EA99A3FBAD3B"
+foreach ($targetSys in @("$OutputDir\bc250compute.sys", "$RepoRoot\driver\wdk\output\bc250compute.sys", "$RepoRoot\driver\wdk\output\bc250compute_pkg.sys")) {
+    if (Test-Path $targetSys) {
+        & $signTool sign /sha1 $thumb /fd SHA256 $targetSys
     }
 }
 

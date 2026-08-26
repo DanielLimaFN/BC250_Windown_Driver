@@ -15,6 +15,14 @@ Este diretório consolida a análise das tentativas anteriores sem autorizar o r
 9. [09_PONTO_DE_RETOMADA.md](09_PONTO_DE_RETOMADA.md) - **comece por aqui ao retomar**: o que a máquina é, o que está provado, o que não funciona, os erros que viraram regra e o próximo passo.
 10. [19_MARCO_MCDM_FAIL_CLOSED.md](19_MARCO_MCDM_FAIL_CLOSED.md) - corte mais recente do miniport instalavel: retirada de ownership fabricado, DDIs fail-closed, recovery do `bc250mcdm` e gate antes do lifecycle WDDM funcional.
 11. [20_ROADMAP_WDDM_MCDM_VULKAN_LLM.md](20_ROADMAP_WDDM_MCDM_VULKAN_LLM.md) - roadmap fase a fase do miniport MCDM, memoria/GPUVA, PM4/compute, runtime privado, Vulkan ICD e `llama.cpp` acelerado.
+12. [34_CAPACIDADES_RUNTIME_SEGMENTO_LOCAL_1.9.0.0.md](34_CAPACIDADES_RUNTIME_SEGMENTO_LOCAL_1.9.0.0.md) - gate fisico da geometria local derivada do inventario, com base e tamanho contiguos fora do scanout/staging.
+13. [35_CONFORMIDADE_QUERYADAPTERINFO_MCDM_1.10.0.0.md](35_CONFORMIDADE_QUERYADAPTERINFO_MCDM_1.10.0.0.md) - correcao para `QUERYSEGMENT4` e demais consultas obrigatorias do compute-only KMD.
+14. [36_ALLOCATION_SEGMENTO_GPUVA_LATENTE_1.11.0.0.md](36_ALLOCATION_SEGMENTO_GPUVA_LATENTE_1.11.0.0.md) - segmento local conectado a allocations e consultas GPUVA mantidas atras de gates reais.
+15. [37_ROOT_PAGE_TABLE_OWNED_1.12.0.0.md](37_ROOT_PAGE_TABLE_OWNED_1.12.0.0.md) - associacao de root page table por processo com endereco VidMm e ownership de contexto.
+16. [38_UPDATE_PAGE_TABLE_CPU_VIRTUAL_1.13.0.0.md](38_UPDATE_PAGE_TABLE_CPU_VIRTUAL_1.13.0.0.md) - traducao imediata de `DXGK_PTE` para PTE GC10, ainda atras dos gates GPUVA/paging.
+17. [39_GFXHUB_TLB_PLAN_PROVENANCE_1.14.0.0.md](39_GFXHUB_TLB_PLAN_PROVENANCE_1.14.0.0.md) - sela a procedencia do SYS e substitui o falso NOP por um plano GFXHUB engine 17 fail-closed.
+18. [40_GFXHUB_TLB_TRANSACAO_FISICA_1.15.0.0.md](40_GFXHUB_TLB_TRANSACAO_FISICA_1.15.0.0.md) - executa request MMIO engine 17 com dummy read, ACK limitado e restauracao do range.
+19. [41_GCVM_BACKING_OWNED_VMID8_INERTE_1.16.0.0.md](41_GCVM_BACKING_OWNED_VMID8_INERTE_1.16.0.0.md) - page table e buffer owned, PTE fisica, programacao inerte do VMID8 e rollback integral.
 
 As regras superiores continuam em [`BC250_HARDWARE_RULES.md`](../BC250_HARDWARE_RULES.md). Se houver divergência, elas prevalecem.
 

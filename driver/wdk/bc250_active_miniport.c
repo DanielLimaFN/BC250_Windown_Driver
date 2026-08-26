@@ -2,6 +2,7 @@
 #include "bc250_mcdm_callbacks.h"
 #include "bc250_display_ddi.h"
 #include "bc250_probe_telemetry.h"
+#include "bc250_cp_firmware_manifest.h"
 #include "../core/bc250_adapter_info_contract.h"
 #include "../core/bc250_allocation_abi_contract.h"
 #include "../core/bc250_mcdm_debug_contract.h"
@@ -12,6 +13,69 @@ DRIVER_INITIALIZATION_DATA g_Bc250ActiveInitializationData;
 static EX_PUSH_LOCK g_Bc250AdapterDirectoryLock;
 static BC250_DXGK_ACTIVE_CONTEXT *
     g_Bc250AdapterDirectory[BC250_ACTIVE_MAX_ADAPTERS];
+
+static uint32_t Bc250ActiveExecuteGcvmBacking(
+    void *Context, uint64_t PageTablePhysical);
+
+static NTSTATUS Bc250ActiveQueryRuntimeCaps(
+    HANDLE AdapterContext,
+    BC250_MCDM_RUNTIME_CAPS *Caps)
+{
+    BC250_DXGK_ACTIVE_CONTEXT *context =
+        (BC250_DXGK_ACTIVE_CONTEXT *)AdapterContext;
+    uint32_t i;
+    uint64_t localStart = 0u;
+    uint64_t localEnd;
+    uint64_t cpuVisibleBytes;
+    if (Caps == NULL) return STATUS_INVALID_PARAMETER;
+    RtlZeroMemory(Caps, sizeof(*Caps));
+    if (context == NULL || context->Signature != BC250_ACTIVE_SIGNATURE ||
+        context->RuntimeInventoryStatus != BC250_RUNTIME_INVENTORY_OK ||
+        context->VramProbeStatus != BC250_VRAM_PROBE_OK) {
+        return STATUS_DEVICE_NOT_READY;
+    }
+    cpuVisibleBytes = context->RuntimeInventoryReport.CpuVisibleBytes;
+    localEnd = context->Core.StartDevice.Preflight.FirmwarePlans[0]
+        .Binding.Offset;
+    if (context->SecondPreflightStage != BC250_DXGK_STAGE_PREFLIGHT_READY ||
+        context->Core.StartDevice.Preflight.FirmwareCount !=
+            BC250_CP_BOOTSTRAP_FIRMWARE_COUNT ||
+        localEnd == 0u || localEnd > cpuVisibleBytes) {
+        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
+    for (i = 0u;
+         i < context->RuntimeInventoryReport.ReservationCount;
+         ++i) {
+        const BC250_INHERITED_VRAM_RESERVATION *reservation =
+            &context->RuntimeInventoryReport.Reservations[i];
+        uint64_t reservationEnd;
+        if (reservation->Offset >= cpuVisibleBytes) continue;
+        reservationEnd = reservation->Length >
+            cpuVisibleBytes - reservation->Offset ?
+            cpuVisibleBytes : reservation->Offset + reservation->Length;
+        if (reservationEnd > localStart) localStart = reservationEnd;
+    }
+    if (localStart >= localEnd) {
+        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
+    for (i = 0u; i < context->Core.ResolvedBarCount; ++i) {
+        if (context->Core.ResolvedBars[i].Index ==
+            BC250_PCI_VRAM_APERTURE_BAR_INDEX) {
+            Caps->CpuPhysicalStart =
+                context->Core.ResolvedBars[i].Start + localStart;
+            break;
+        }
+    }
+    if (i == context->Core.ResolvedBarCount || Caps->CpuPhysicalStart == 0u) {
+        RtlZeroMemory(Caps, sizeof(*Caps));
+        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
+    Caps->LocalSegmentBaseOffset = localStart;
+    Caps->LocalSegmentBytes = localEnd - localStart;
+    Caps->NodeCount = BC250_ADAPTER_NODE_COUNT;
+    Caps->Ready = 1u;
+    return STATUS_SUCCESS;
+}
 
 static NTSTATUS Bc250ActiveRegisterAdapter(
     BC250_DXGK_ACTIVE_CONTEXT *Context)
@@ -347,6 +411,65 @@ static NTSTATUS Bc250ActiveDestroyContextLifecycle(HANDLE ContextHandle)
         (BC250_MCDM_HANDLE)ContextHandle);
 }
 
+NTSTATUS Bc250ActiveSetRootPageTableObject(
+    BC250_DXGK_ACTIVE_CONTEXT *context,
+    BC250_MCDM_HANDLE ContextHandle,
+    uint32_t SegmentId,
+    uint64_t Address,
+    uint32_t NumEntries,
+    uint32_t MaxEntries)
+{
+    BC250_MCDM_OBJECT_STATUS status;
+
+    if (context == NULL || context->Signature != BC250_ACTIVE_SIGNATURE ||
+        ContextHandle == NULL || MaxEntries == 0u) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if ((SegmentId != 0u && SegmentId != 1u) ||
+        ((SegmentId == 0u) != (Address == 0u)) ||
+        (SegmentId == 1u &&
+         (Address >= context->AllocationSegmentBytes ||
+          (UINT64)NumEntries * sizeof(UINT64) >
+            context->AllocationSegmentBytes - Address))) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (InterlockedCompareExchange(&context->IsActive, 1, 1) != 1 ||
+        InterlockedCompareExchange(
+            &context->RootPageTableAbiReady, 1, 1) != 1 ||
+        context->RootPageTableMaxEntries != MaxEntries) {
+        return STATUS_DEVICE_NOT_READY;
+    }
+    KeEnterCriticalRegion();
+    ExAcquirePushLockExclusive(&context->ObjectLock);
+    if (InterlockedCompareExchange(&context->IsActive, 1, 1) != 1 ||
+        InterlockedCompareExchange(
+            &context->RootPageTableAbiReady, 1, 1) != 1) {
+        ExReleasePushLockExclusive(&context->ObjectLock);
+        KeLeaveCriticalRegion();
+        return STATUS_DEVICE_NOT_READY;
+    }
+    status = Bc250McdmObjectSetRootPageTable(&context->Objects,
+        (BC250_MCDM_HANDLE)ContextHandle, SegmentId, Address,
+        NumEntries, MaxEntries);
+    ExReleasePushLockExclusive(&context->ObjectLock);
+    KeLeaveCriticalRegion();
+    return Bc250ObjectStatusToNtStatus(status);
+}
+
+static NTSTATUS Bc250ActiveSetRootPageTableLifecycle(
+    HANDLE AdapterContext,
+    HANDLE ContextHandle,
+    UINT32 SegmentId,
+    UINT64 Address,
+    UINT32 NumEntries,
+    UINT32 MaxEntries)
+{
+    return Bc250ActiveSetRootPageTableObject(
+        (BC250_DXGK_ACTIVE_CONTEXT *)AdapterContext,
+        (BC250_MCDM_HANDLE)ContextHandle,
+        SegmentId, Address, NumEntries, MaxEntries);
+}
+
 static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
     HANDLE AdapterContext,
     DXGKARG_CREATEALLOCATION *CreateAllocation)
@@ -378,7 +501,10 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                 if (Bc250AllocationAbiParse(info->pPrivateDriverData,
                         info->PrivateDriverDataSize, &request) !=
                         BC250_ALLOCATION_ABI_OK ||
-                    request.ByteSize > (uint64_t)(SIZE_T)~(SIZE_T)0) {
+                    request.ByteSize > (uint64_t)(SIZE_T)~(SIZE_T)0 ||
+                    context->AllocationSegmentSet != 1u ||
+                    context->AllocationSegmentBytes == 0u ||
+                    request.ByteSize > context->AllocationSegmentBytes) {
                     result = STATUS_INVALID_PARAMETER;
                     break;
                 }
@@ -402,9 +528,16 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                 info->Size = (SIZE_T)request.ByteSize;
                 info->PitchAlignedSize = (SIZE_T)request.ByteSize;
                 info->Alignment = (UINT)request.Alignment;
-                info->SupportedReadSegmentSet = 0u;
-                info->SupportedWriteSegmentSet = 0u;
+                info->PreferredSegment.Value = 0u;
+                info->PreferredSegment.SegmentId0 = 1u;
+                info->SupportedReadSegmentSet =
+                    context->AllocationSegmentSet;
+                info->SupportedWriteSegmentSet =
+                    context->AllocationSegmentSet;
                 info->EvictionSegmentSet = 0u;
+                info->PhysicalAdapterIndex = 0u;
+                info->FlagsWddm2.Value = 0u;
+                info->FlagsWddm2.CpuVisible = 1u;
                 info->hAllocation = handle;
                 ++created;
             }
@@ -783,6 +916,37 @@ NTSTATUS APIENTRY Bc250DxgkDdiAddDeviceActive(
     RtlZeroMemory(&context->ContextAbi, sizeof(context->ContextAbi));
     InterlockedExchange(&context->ContextAbiReady, 0);
     InterlockedExchange(&context->AllocationAbiReady, 0);
+    InterlockedExchange(&context->RootPageTableAbiReady, 0);
+    context->AllocationSegmentBytes = 0u;
+    context->AllocationSegmentSet = 0u;
+    context->RootPageTableMaxEntries = 0u;
+    context->PostDisplayStatus = BC250_POST_DISPLAY_BAD_ARGUMENT;
+    context->PostDisplayCallbackStatus = STATUS_NOT_SUPPORTED;
+    RtlZeroMemory(&context->PostDisplayReservation,
+                  sizeof(context->PostDisplayReservation));
+    RtlZeroMemory(&context->PostDisplayEvidence,
+                  sizeof(context->PostDisplayEvidence));
+    context->RuntimeInventoryStatus = BC250_RUNTIME_INVENTORY_BAD_ARGUMENT;
+    RtlZeroMemory(&context->RuntimeInventoryInput,
+                  sizeof(context->RuntimeInventoryInput));
+    RtlZeroMemory(&context->RuntimeInventoryReport,
+                  sizeof(context->RuntimeInventoryReport));
+    RtlZeroMemory(&context->SealedRuntime,
+                  sizeof(context->SealedRuntime));
+    context->RuntimeStageStatus = STATUS_NOT_SUPPORTED;
+    context->SecondPreflightStage = BC250_DXGK_STAGE_EMPTY;
+    context->VramProbeStatus = BC250_VRAM_PROBE_BAD_ARGUMENT;
+    RtlZeroMemory(&context->VramProbeEvidence,
+                  sizeof(context->VramProbeEvidence));
+    context->TlbTransactionStatus = BC250_TLB_TRANSACTION_BAD_ARGUMENT;
+    RtlZeroMemory(&context->TlbTransactionEvidence,
+                  sizeof(context->TlbTransactionEvidence));
+    context->GcvmBackingStatus = BC250_GCVM_BACKING_BAD_ARGUMENT;
+    RtlZeroMemory(&context->GcvmBackingEvidence,
+                  sizeof(context->GcvmBackingEvidence));
+    context->GcvmVmid8Status = BC250_GCVM_VMID8_BAD_ARGUMENT;
+    RtlZeroMemory(&context->GcvmVmid8Evidence,
+                  sizeof(context->GcvmVmid8Evidence));
     context->SubmissionsCount = 0;
     context->ResetsCount = 0;
 
@@ -832,9 +996,296 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
         NumberOfVideoPresentSources,
         NumberOfChildren);
 
+    if (preflightStatus == STATUS_NOT_SUPPORTED &&
+        context->Core.LastStage == BC250_DXGK_STAGE_RUNTIME_MISSING &&
+        context->Core.ResolvedBarCount != 0u &&
+        context->Core.TopologyEvidence.AddressSpace.SnapshotGeneration != 0u) {
+        context->PostDisplayStatus = Bc250AcquirePostDisplayReservation(
+            &context->Core.DxgkInterface,
+            context->Core.ResolvedBars,
+            context->Core.ResolvedBarCount,
+            BC250_PCI_VRAM_APERTURE_BAR_INDEX,
+            context->Core.TopologyEvidence.AddressSpace.SnapshotGeneration,
+            &context->PostDisplayReservation,
+            &context->PostDisplayEvidence,
+            &context->PostDisplayCallbackStatus);
+        Bc250ProbeRecord(BC250_PROBE_POST_DISPLAY_STATUS,
+            (ULONG)context->PostDisplayStatus);
+        Bc250ProbeRecord(BC250_PROBE_POST_DISPLAY_CALLBACK_STATUS,
+            (ULONG)context->PostDisplayCallbackStatus);
+        Bc250ProbeRecord(BC250_PROBE_POST_DISPLAY_USED_CALLBACK2,
+            context->PostDisplayEvidence.UsedOwnershipCallback2);
+        Bc250ProbeRecord(BC250_PROBE_POST_DISPLAY_FRAMEBUFFER_STATE,
+            context->PostDisplayEvidence.FrameBufferState);
+        Bc250ProbeRecord(BC250_PROBE_POST_DISPLAY_TARGET_ID,
+            context->PostDisplayEvidence.TargetId);
+        Bc250ProbeRecord(BC250_PROBE_POST_DISPLAY_WIDTH,
+            context->PostDisplayEvidence.Width);
+        Bc250ProbeRecord(BC250_PROBE_POST_DISPLAY_HEIGHT,
+            context->PostDisplayEvidence.Height);
+        Bc250ProbeRecord(BC250_PROBE_POST_DISPLAY_PITCH,
+            context->PostDisplayEvidence.Pitch);
+        Bc250ProbeRecord(BC250_PROBE_POST_DISPLAY_PHYSICAL_LOW32,
+            (ULONG)context->PostDisplayEvidence.PhysicalStart);
+        Bc250ProbeRecord(BC250_PROBE_POST_DISPLAY_PHYSICAL_HIGH32,
+            (ULONG)(context->PostDisplayEvidence.PhysicalStart >> 32));
+        Bc250ProbeRecord(BC250_PROBE_POST_DISPLAY_BYTES,
+            (ULONG)context->PostDisplayEvidence.Length);
+        Bc250ProbeRecord(BC250_PROBE_POST_DISPLAY_VRAM_OFFSET_LOW32,
+            (ULONG)context->PostDisplayEvidence.VramOffset);
+        Bc250ProbeRecord(BC250_PROBE_POST_DISPLAY_VRAM_OFFSET_HIGH32,
+            (ULONG)(context->PostDisplayEvidence.VramOffset >> 32));
+
+        context->RuntimeInventoryInput.EvidenceFlags =
+            BC250_RUNTIME_EVIDENCE_SCANOUT_PROBED |
+            BC250_RUNTIME_EVIDENCE_DISCOVERY_TMR_PROBED |
+            BC250_RUNTIME_EVIDENCE_PLATFORM_CARVEOUTS_PROBED;
+        if (context->PostDisplayStatus == BC250_POST_DISPLAY_OK) {
+            context->RuntimeInventoryInput.HasScanout = 1u;
+            context->RuntimeInventoryInput.ScanoutReservation =
+                context->PostDisplayReservation;
+        }
+        if (context->Core.LastDiscoveryTmrStatus ==
+            BC250_DISCOVERY_TMR_OK) {
+            context->RuntimeInventoryInput.HasDiscoveryTmr = 1u;
+            context->RuntimeInventoryInput.DiscoveryTmrEvidence =
+                context->Core.DiscoveryTmrEvidence;
+        }
+        if (context->Core.TopologyEvidence.AddressSpace.TotalBytes >
+            context->Core.TopologyEvidence.AddressSpace.CpuVisibleBytes) {
+            BC250_INHERITED_VRAM_RESERVATION *opaque =
+                &context->RuntimeInventoryInput.PlatformCarveouts[0];
+            opaque->Offset =
+                context->Core.TopologyEvidence.AddressSpace.CpuVisibleBytes;
+            opaque->Length =
+                context->Core.TopologyEvidence.AddressSpace.TotalBytes -
+                context->Core.TopologyEvidence.AddressSpace.CpuVisibleBytes;
+            opaque->Alignment = 0x1000u;
+            opaque->Role = BC250_VRAM_ROLE_PLATFORM_RESERVED;
+            opaque->Flags = BC250_VRAM_REGION_PERSISTENT;
+            context->RuntimeInventoryInput.PlatformCarveoutCount = 1u;
+        }
+        context->RuntimeInventoryStatus = Bc250BuildRuntimeVramInventory(
+            &context->RuntimeInventoryInput,
+            context->Core.TopologyEvidence.AddressSpace.TotalBytes,
+            context->Core.TopologyEvidence.AddressSpace.CpuVisibleBytes,
+            context->Core.TopologyEvidence.AddressSpace.SnapshotGeneration,
+            &context->RuntimeInventoryReport);
+        Bc250ProbeRecord(BC250_PROBE_RUNTIME_INVENTORY_STATUS,
+            (ULONG)context->RuntimeInventoryStatus);
+        Bc250ProbeRecord(BC250_PROBE_RUNTIME_INVENTORY_EVIDENCE_FLAGS,
+            context->RuntimeInventoryReport.EvidenceFlags);
+        Bc250ProbeRecord(BC250_PROBE_RUNTIME_INVENTORY_RESERVATION_COUNT,
+            context->RuntimeInventoryReport.ReservationCount);
+        Bc250ProbeRecord(BC250_PROBE_RUNTIME_INVENTORY_RESERVED_LOW32,
+            (ULONG)context->RuntimeInventoryReport.TotalReservedBytes);
+        Bc250ProbeRecord(BC250_PROBE_RUNTIME_INVENTORY_RESERVED_HIGH32,
+            (ULONG)(context->RuntimeInventoryReport.TotalReservedBytes >> 32));
+        Bc250ProbeRecord(BC250_PROBE_RUNTIME_INVENTORY_COMPLETE,
+            context->RuntimeInventoryStatus == BC250_RUNTIME_INVENTORY_OK ?
+                1u : 0u);
+        Bc250ProbeRecord(BC250_PROBE_RUNTIME_INVENTORY_FREE_LOW32,
+            (ULONG)context->RuntimeInventoryReport.TotalFreeBytes);
+        Bc250ProbeRecord(BC250_PROBE_RUNTIME_INVENTORY_FREE_HIGH32,
+            (ULONG)(context->RuntimeInventoryReport.TotalFreeBytes >> 32));
+        Bc250ProbeRecord(BC250_PROBE_RUNTIME_INVENTORY_CPU_FREE_LOW32,
+            (ULONG)context->RuntimeInventoryReport.CpuVisibleFreeBytes);
+        if (context->RuntimeInventoryStatus == BC250_RUNTIME_INVENTORY_OK) {
+            RtlZeroMemory(&context->SealedRuntime,
+                sizeof(context->SealedRuntime));
+            context->SealedRuntime.ReservationCount =
+                context->RuntimeInventoryReport.ReservationCount;
+            RtlCopyMemory(context->SealedRuntime.Reservations,
+                context->RuntimeInventoryReport.Reservations,
+                sizeof(context->RuntimeInventoryReport.Reservations));
+            context->SealedRuntime.VramApertureBarIndex =
+                BC250_PCI_VRAM_APERTURE_BAR_INDEX;
+            context->SealedRuntime.MmioBarIndex = BC250_PCI_MMIO_BAR_INDEX;
+            context->SealedRuntime.TopologyReaderIdentityFlags =
+                BC250_TOPOLOGY_READER_IDENTITY_REQUIRED;
+            context->SealedRuntime.RuntimeOwnershipFlags =
+                context->RuntimeInventoryReport.OwnershipEvidenceFlags;
+            context->SealedRuntime.SnapshotGeneration =
+                context->RuntimeInventoryReport.SnapshotGeneration;
+            context->SealedRuntime.ManifestCount =
+                BC250_CP_BOOTSTRAP_FIRMWARE_COUNT;
+            Bc250GetCpFirmwareManifestContract(
+                &context->SealedRuntime.Policy,
+                context->SealedRuntime.Manifest);
+            context->RuntimeStageStatus = Bc250DxgkReadonlyStageRuntime(
+                &context->Core, &context->SealedRuntime);
+            Bc250ProbeRecord(BC250_PROBE_RUNTIME_STAGE_STATUS,
+                (ULONG)context->RuntimeStageStatus);
+            if (NT_SUCCESS(context->RuntimeStageStatus)) {
+                preflightStatus = Bc250DxgkDdiStartDeviceReadonly(
+                    &context->Core, DxgkStartInfo, DxgkInterface,
+                    NumberOfVideoPresentSources, NumberOfChildren);
+                context->SecondPreflightStage = context->Core.LastStage;
+                Bc250ProbeRecord(BC250_PROBE_SECOND_PREFLIGHT_STAGE,
+                    context->SecondPreflightStage);
+                Bc250ProbeRecord(BC250_PROBE_SECOND_READONLY_GATE_PASSED,
+                    context->Core.ReadonlyGatePassed);
+                if (context->Core.ReadonlyGatePassed == 1u &&
+                    context->Core.LastStage == BC250_DXGK_STAGE_PREFLIGHT_READY) {
+                    context->VramProbeStatus = Bc250RunVramProbeTransaction(
+                        &context->Core.DxgkInterface,
+                        context->Core.ResolvedBars,
+                        context->Core.ResolvedBarCount,
+                        BC250_PCI_VRAM_APERTURE_BAR_INDEX,
+                        context->Core.StartDevice.Preflight.FirmwarePlans[0]
+                            .Binding.Offset,
+                        &context->VramProbeEvidence);
+                    Bc250ProbeRecord(BC250_PROBE_VRAM_PROBE_STATUS,
+                        (ULONG)context->VramProbeStatus);
+                    Bc250ProbeRecord(BC250_PROBE_VRAM_PROBE_OFFSET_LOW32,
+                        (ULONG)context->VramProbeEvidence.Offset);
+                    Bc250ProbeRecord(BC250_PROBE_VRAM_PROBE_BYTES,
+                        context->VramProbeEvidence.Bytes);
+                    Bc250ProbeRecord(BC250_PROBE_VRAM_PROBE_READBACK_PASSED,
+                        context->VramProbeEvidence.WriteReadbackPassed);
+                    Bc250ProbeRecord(BC250_PROBE_VRAM_PROBE_RESTORE_PASSED,
+                        context->VramProbeEvidence.RestorePassed);
+                    if (context->VramProbeStatus == BC250_VRAM_PROBE_OK &&
+                        context->VramProbeEvidence.WriteReadbackPassed != 0u &&
+                        context->VramProbeEvidence.RestorePassed != 0u) {
+                        context->GcvmBackingStatus =
+                            Bc250RunGcvmBackingTransaction(
+                                &context->Core.StartDevice.Owned.Bootstrap
+                                    .Allocator,
+                                context->Core.StartDevice.Owned.Bootstrap
+                                    .AddressSpace.VramBaseOffset,
+                                &context->Core.DxgkInterface,
+                                context->Core.ResolvedBars,
+                                context->Core.ResolvedBarCount,
+                                BC250_PCI_VRAM_APERTURE_BAR_INDEX,
+                                Bc250ActiveExecuteGcvmBacking,
+                                context,
+                                &context->GcvmBackingEvidence);
+                    }
+                    Bc250ProbeRecord(BC250_PROBE_TLB_TRANSACTION_STATUS,
+                        (ULONG)context->TlbTransactionStatus);
+                    Bc250ProbeRecord(BC250_PROBE_TLB_VMID,
+                        context->TlbTransactionEvidence.Vmid);
+                    Bc250ProbeRecord(BC250_PROBE_TLB_ENGINE_ID,
+                        context->TlbTransactionEvidence.EngineId);
+                    Bc250ProbeRecord(BC250_PROBE_TLB_REQUEST_VALUE,
+                        context->TlbTransactionEvidence.RequestValue);
+                    Bc250ProbeRecord(BC250_PROBE_TLB_RANGE_LOW_BEFORE,
+                        context->TlbTransactionEvidence.RangeLowBefore);
+                    Bc250ProbeRecord(BC250_PROBE_TLB_RANGE_HIGH_BEFORE,
+                        context->TlbTransactionEvidence.RangeHighBefore);
+                    Bc250ProbeRecord(BC250_PROBE_TLB_RANGE_LOW_PROGRAMMED,
+                        context->TlbTransactionEvidence.RangeLowProgrammed);
+                    Bc250ProbeRecord(BC250_PROBE_TLB_RANGE_HIGH_PROGRAMMED,
+                        context->TlbTransactionEvidence.RangeHighProgrammed);
+                    Bc250ProbeRecord(BC250_PROBE_TLB_REQUEST_DUMMY_READ,
+                        context->TlbTransactionEvidence.RequestDummyRead);
+                    Bc250ProbeRecord(BC250_PROBE_TLB_ACK_BEFORE,
+                        context->TlbTransactionEvidence.AckBefore);
+                    Bc250ProbeRecord(BC250_PROBE_TLB_ACK_AFTER,
+                        context->TlbTransactionEvidence.AckAfter);
+                    Bc250ProbeRecord(BC250_PROBE_TLB_POLL_COUNT,
+                        context->TlbTransactionEvidence.PollCount);
+                    Bc250ProbeRecord(BC250_PROBE_TLB_REQUEST_WRITTEN,
+                        context->TlbTransactionEvidence.RequestWritten);
+                    Bc250ProbeRecord(BC250_PROBE_TLB_DUMMY_READ_COMPLETED,
+                        context->TlbTransactionEvidence.DummyReadCompleted);
+                    Bc250ProbeRecord(BC250_PROBE_TLB_ACK_OBSERVED,
+                        context->TlbTransactionEvidence.AckObserved);
+                    Bc250ProbeRecord(BC250_PROBE_TLB_RANGE_RESTORE_PASSED,
+                        context->TlbTransactionEvidence.RangeRestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_GCVM_BACKING_STATUS,
+                        (ULONG)context->GcvmBackingStatus);
+                    Bc250ProbeRecord(BC250_PROBE_GCVM_PT_OFFSET_LOW32,
+                        (ULONG)context->GcvmBackingEvidence.PageTableOffset);
+                    Bc250ProbeRecord(BC250_PROBE_GCVM_PT_PHYSICAL_LOW32,
+                        (ULONG)context->GcvmBackingEvidence.PageTablePhysical);
+                    Bc250ProbeRecord(BC250_PROBE_GCVM_PT_PHYSICAL_HIGH32,
+                        (ULONG)(context->GcvmBackingEvidence.PageTablePhysical >> 32));
+                    Bc250ProbeRecord(BC250_PROBE_GCVM_TARGET_OFFSET_LOW32,
+                        (ULONG)context->GcvmBackingEvidence.TargetOffset);
+                    Bc250ProbeRecord(BC250_PROBE_GCVM_FIRST_PTE_LOW32,
+                        (ULONG)context->GcvmBackingEvidence.FirstPte);
+                    Bc250ProbeRecord(BC250_PROBE_GCVM_FIRST_PTE_HIGH32,
+                        (ULONG)(context->GcvmBackingEvidence.FirstPte >> 32));
+                    Bc250ProbeRecord(BC250_PROBE_GCVM_BACKING_OWNED,
+                        context->GcvmBackingEvidence.OwnershipPassed);
+                    Bc250ProbeRecord(BC250_PROBE_GCVM_BACKING_READBACK,
+                        context->GcvmBackingEvidence.WriteReadbackPassed);
+                    Bc250ProbeRecord(BC250_PROBE_GCVM_BACKING_RESTORE,
+                        context->GcvmBackingEvidence.RestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_GCVM_VMID8_STATUS,
+                        (ULONG)context->GcvmVmid8Status);
+                    Bc250ProbeRecord(BC250_PROBE_GCVM_VMID8_CNTL_BEFORE,
+                        context->GcvmVmid8Evidence.ContextControlBefore);
+                    Bc250ProbeRecord(BC250_PROBE_GCVM_VMID8_READBACK,
+                        context->GcvmVmid8Evidence.ProgramReadbackPassed);
+                    Bc250ProbeRecord(BC250_PROBE_GCVM_VMID8_TLB_PASSED,
+                        context->GcvmVmid8Evidence.TlbFlushPassed);
+                    Bc250ProbeRecord(BC250_PROBE_GCVM_VMID8_RESTORE,
+                        context->GcvmVmid8Evidence.RestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_GCVM_INERT_PHYSICAL_READY,
+                        context->GcvmVmid8Evidence.PhysicalReady != 0u &&
+                        context->GcvmBackingEvidence.ExecutePassed != 0u &&
+                        context->GcvmBackingEvidence.RestorePassed != 0u);
+                    {
+                        BC250_MCDM_RUNTIME_CAPS caps;
+                        NTSTATUS capsStatus = Bc250ActiveQueryRuntimeCaps(
+                            context, &caps);
+                        Bc250ProbeRecord(BC250_PROBE_RUNTIME_CAPS_STATUS,
+                            (ULONG)capsStatus);
+                        Bc250ProbeRecord(BC250_PROBE_RUNTIME_CAPS_READY,
+                            caps.Ready);
+                        Bc250ProbeRecord(BC250_PROBE_RUNTIME_CAPS_BASE_LOW32,
+                            (ULONG)caps.LocalSegmentBaseOffset);
+                        Bc250ProbeRecord(BC250_PROBE_RUNTIME_CAPS_LOCAL_LOW32,
+                            (ULONG)caps.LocalSegmentBytes);
+                        Bc250ProbeRecord(BC250_PROBE_RUNTIME_CAPS_NODE_COUNT,
+                            caps.NodeCount);
+                        Bc250ProbeRecord(BC250_PROBE_MCDM_FULL_CAPS_READY,
+                            caps.FullMcdmReady);
+                        Bc250ProbeRecord(BC250_PROBE_MCDM_SEGMENT4_READY,
+                            caps.Ready);
+                        if (NT_SUCCESS(capsStatus) && caps.Ready != 0u) {
+                            context->AllocationSegmentBytes =
+                                caps.LocalSegmentBytes;
+                            context->AllocationSegmentSet = 1u;
+                        }
+                        Bc250ProbeRecord(
+                            BC250_PROBE_ALLOCATION_SEGMENT_SET,
+                            context->AllocationSegmentSet);
+                        Bc250ProbeRecord(
+                            BC250_PROBE_ALLOCATION_MAX_LOW32,
+                            (ULONG)context->AllocationSegmentBytes);
+                        Bc250ProbeRecord(
+                            BC250_PROBE_GPUVA_DESCRIPTOR_READY,
+                            caps.GpuVaReady != 0u &&
+                            caps.GpuVaBitCount != 0u &&
+                            caps.PageTableLevelCount != 0u);
+                        Bc250ProbeRecord(
+                            BC250_PROBE_ROOT_PAGE_TABLE_ABI_READY,
+                            (ULONG)InterlockedCompareExchange(
+                                &context->RootPageTableAbiReady, 1, 1));
+                        Bc250ProbeRecord(
+                            BC250_PROBE_ROOT_PAGE_TABLE_MAX_ENTRIES,
+                            context->RootPageTableMaxEntries);
+                        Bc250ProbeRecord(
+                            BC250_PROBE_PAGING_CPU_UPDATE_READY,
+                            caps.GpuVaReady != 0u &&
+                            caps.PagingReady != 0u);
+                        Bc250ProbeRecord(
+                            BC250_PROBE_TLB_FLUSH_PHYSICAL_READY,
+                            context->TlbTransactionEvidence.PhysicalReady);
+                    }
+                }
+            }
+        }
+    }
+
     InterlockedExchange(&context->IsActive, 0);
     InterlockedExchange(&context->ContextAbiReady, 0);
     InterlockedExchange(&context->AllocationAbiReady, 0);
+    InterlockedExchange(&context->RootPageTableAbiReady, 0);
     Bc250ProbeRecordFirstFailure(preflightStatus);
     return preflightStatus;
 }
@@ -853,6 +1304,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiStopDeviceActive(
     InterlockedExchange(&context->IsActive, 0);
     InterlockedExchange(&context->ContextAbiReady, 0);
     InterlockedExchange(&context->AllocationAbiReady, 0);
+    InterlockedExchange(&context->RootPageTableAbiReady, 0);
     KeEnterCriticalRegion();
     ExAcquirePushLockExclusive(&context->ObjectLock);
     destroyedObjects = 0u;
@@ -909,12 +1361,15 @@ NTSTATUS Bc250BuildActiveInitializationData(
     Bc250McdmInstallContextLifecycle(
         Bc250ActiveCreateContextLifecycle,
         Bc250ActiveDestroyContextLifecycle);
+    Bc250McdmInstallGpuVaLifecycle(
+        Bc250ActiveSetRootPageTableLifecycle);
     Bc250McdmInstallAllocationLifecycle(
         Bc250ActiveCreateAllocationLifecycle,
         Bc250ActiveDestroyAllocationLifecycle,
         Bc250ActiveOpenAllocationLifecycle,
         Bc250ActiveCloseAllocationLifecycle);
     Bc250McdmInstallDebugLifecycle(Bc250ActiveCollectDebugLifecycle);
+    Bc250McdmInstallRuntimeCapsProvider(Bc250ActiveQueryRuntimeCaps);
 
     return Bc250McdmPopulateRequiredCallbacks(InitializationData);
 }
@@ -941,4 +1396,97 @@ NTSTATUS DriverEntry(
 #else
     return STATUS_SUCCESS;
 #endif
+}
+static void Bc250ActiveTlbStall(void *Context, uint32_t Microseconds)
+{
+    UNREFERENCED_PARAMETER(Context);
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeStallExecutionProcessor(Microseconds);
+#else
+    UNREFERENCED_PARAMETER(Microseconds);
+#endif
+}
+
+static uint32_t Bc250ActiveVmidRead32(
+    void *Context, uint32_t ByteOffset, uint32_t *Value)
+{
+    BC250_DXGK_ACTIVE_CONTEXT *active =
+        (BC250_DXGK_ACTIVE_CONTEXT *)Context;
+    if (active == NULL) return 0u;
+    return Bc250MmioTopologyRead32(
+        &active->Core.MmioTransport, ByteOffset, Value);
+}
+
+static uint32_t Bc250ActiveVmidWrite32(
+    void *Context, uint32_t ByteOffset, uint32_t Value)
+{
+    BC250_DXGK_ACTIVE_CONTEXT *active =
+        (BC250_DXGK_ACTIVE_CONTEXT *)Context;
+    if (active == NULL) return 0u;
+    return Bc250MmioTopologyWrite32(
+        &active->Core.MmioTransport, ByteOffset, Value);
+}
+
+static uint32_t Bc250ActiveFlushMappedGfxhubTlb(void *Context)
+{
+    BC250_DXGK_ACTIVE_CONTEXT *active =
+        (BC250_DXGK_ACTIVE_CONTEXT *)Context;
+    BC250_PAGING_FLUSH_TLB_PARAMS params;
+    BC250_GFXHUB_TLB_FLUSH_PLAN plan;
+    BC250_TLB_TRANSACTION_INTERFACE interfaceData;
+
+    if (active == NULL) return 0u;
+    RtlZeroMemory(&active->TlbTransactionEvidence,
+        sizeof(active->TlbTransactionEvidence));
+    RtlZeroMemory(&params, sizeof(params));
+    params.Vmid = 8u;
+    params.HubIndex = 0u;
+    params.FlushType = 0u;
+    if (Bc250PagingBuildGfxhubTlbFlushPlan(&params, &plan) !=
+        BC250_PAGING_OK) {
+        active->TlbTransactionStatus = BC250_TLB_TRANSACTION_BAD_PLAN;
+        return 0u;
+    }
+    RtlZeroMemory(&interfaceData, sizeof(interfaceData));
+    interfaceData.Read32 = Bc250MmioTopologyRead32;
+    interfaceData.Write32 = Bc250MmioTopologyWrite32;
+    interfaceData.Stall = Bc250ActiveTlbStall;
+    interfaceData.Context = &active->Core.MmioTransport;
+    interfaceData.Identity = BC250_TLB_TRANSPORT_IDENTITY;
+    active->TlbTransactionStatus = Bc250RunGfxhubTlbTransaction(
+        &plan, &interfaceData, 1000u, &active->TlbTransactionEvidence);
+    return active->TlbTransactionStatus == BC250_TLB_TRANSACTION_OK &&
+        active->TlbTransactionEvidence.PhysicalReady != 0u;
+}
+
+static uint32_t Bc250ActiveExecuteGcvmBacking(
+    void *Context, uint64_t PageTablePhysical)
+{
+    BC250_DXGK_ACTIVE_CONTEXT *active =
+        (BC250_DXGK_ACTIVE_CONTEXT *)Context;
+    BC250_GCVM_VMID8_INTERFACE interfaceData;
+    BC250_MMIO_TOPOLOGY_STATUS mmioStatus;
+
+    if (active == NULL) return 0u;
+    mmioStatus = Bc250MmioTopologyMapReadonly(
+        &active->Core.MmioTransport, &active->Core.DxgkInterface,
+        active->Core.ResolvedBars, active->Core.ResolvedBarCount,
+        BC250_PCI_MMIO_BAR_INDEX);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK) return 0u;
+    RtlZeroMemory(&interfaceData, sizeof(interfaceData));
+    interfaceData.Read32 = Bc250ActiveVmidRead32;
+    interfaceData.Write32 = Bc250ActiveVmidWrite32;
+    interfaceData.Flush = Bc250ActiveFlushMappedGfxhubTlb;
+    interfaceData.Context = active;
+    interfaceData.Identity = BC250_GCVM_VMID8_IDENTITY;
+    active->GcvmVmid8Status = Bc250RunGcvmVmid8InertTransaction(
+        PageTablePhysical, &interfaceData, &active->GcvmVmid8Evidence);
+
+    mmioStatus = Bc250MmioTopologyUnmap(&active->Core.MmioTransport);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK) {
+        active->GcvmVmid8Evidence.PhysicalReady = 0u;
+        return 0u;
+    }
+    return active->GcvmVmid8Status == BC250_GCVM_VMID8_OK &&
+        active->GcvmVmid8Evidence.PhysicalReady != 0u;
 }

@@ -11,6 +11,7 @@ static void Bc250MmioTopologyClearMapping(
     Context->Length = 0;
     Context->BarIndex = 0;
     Context->ReadCount = 0;
+    Context->WriteCount = 0;
 }
 
 BC250_MMIO_TOPOLOGY_STATUS Bc250MmioTopologyInitialize(
@@ -95,6 +96,7 @@ BC250_MMIO_TOPOLOGY_STATUS Bc250MmioTopologyMapReadonly(
     Context->Length = bar->Length;
     Context->BarIndex = MmioBarIndex;
     Context->ReadCount = 0;
+    Context->WriteCount = 0;
     Context->State = BC250_MMIO_TOPOLOGY_MAPPED;
     return BC250_MMIO_TOPOLOGY_OK;
 }
@@ -107,7 +109,63 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == BC250_DRIVER_SCRATCH_2_BYTE_OFFSET ||
         ByteOffset == BC250_GCMC_VM_FB_OFFSET_BYTE_OFFSET ||
         ByteOffset == BC250_GCMC_VM_FB_LOCATION_BASE_BYTE_OFFSET ||
-        ByteOffset == BC250_GCMC_VM_FB_LOCATION_TOP_BYTE_OFFSET;
+        ByteOffset == BC250_GCMC_VM_FB_LOCATION_TOP_BYTE_OFFSET ||
+        ByteOffset == BC250_REG_GCVM_PT_BASE_LO ||
+        ByteOffset == BC250_REG_GCVM_PT_BASE_HI ||
+        ByteOffset == BC250_REG_GCVM_PT_START_LO ||
+        ByteOffset == BC250_REG_GCVM_PT_START_HI ||
+        ByteOffset == BC250_REG_GCVM_PT_END_LO ||
+        ByteOffset == BC250_REG_GCVM_PT_END_HI ||
+        ByteOffset == BC250_REG_CP_RB0_BASE ||
+        ByteOffset == BC250_REG_CP_RB0_BASE_HI ||
+        ByteOffset == BC250_REG_CP_RB0_CNTL ||
+        ByteOffset == BC250_REG_SDMA0_RB_BASE ||
+        ByteOffset == BC250_REG_SDMA0_RB_BASE_HI ||
+        ByteOffset == BC250_REG_SDMA0_RB_CNTL ||
+        ByteOffset == BC250_REG_CP_RB0_RPTR ||
+        ByteOffset == BC250_REG_CP_RB0_RPTR_ADDR_LO ||
+        ByteOffset == BC250_REG_CP_RB0_RPTR_ADDR_HI ||
+        ByteOffset == BC250_REG_CP_RB0_WPTR ||
+        ByteOffset == BC250_REG_CP_RB0_WPTR_HI ||
+        ByteOffset == BC250_REG_SDMA0_RB_RPTR ||
+        ByteOffset == BC250_REG_SDMA0_RB_RPTR_HI ||
+        ByteOffset == BC250_REG_SDMA0_RB_WPTR ||
+        ByteOffset == BC250_REG_SDMA0_RB_WPTR_HI ||
+        ByteOffset == BC250_REG_SDMA0_RB_RPTR_ADDR_LO ||
+        ByteOffset == BC250_REG_SDMA0_RB_RPTR_ADDR_HI ||
+        ByteOffset == BC250_REG_PSP_C2PMSG_35 ||
+        ByteOffset == BC250_REG_PSP_C2PMSG_36 ||
+        ByteOffset == BC250_REG_PSP_C2PMSG_37 ||
+        ByteOffset == BC250_REG_PSP_C2PMSG_81 ||
+        ByteOffset == BC250_REG_PSP_C2PMSG_64 ||
+        ByteOffset == BC250_REG_PSP_C2PMSG_67 ||
+        ByteOffset == BC250_REG_PSP_C2PMSG_69 ||
+        ByteOffset == BC250_REG_PSP_C2PMSG_70 ||
+        ByteOffset == BC250_REG_PSP_C2PMSG_71 ||
+        ByteOffset == 0xA2D0u ||
+        ByteOffset == 0xA318u ||
+        ByteOffset == 0xA3A4u ||
+        ByteOffset == 0xA3A8u ||
+        ByteOffset == BC250_GCVM_VMID8_CNTL ||
+        ByteOffset == BC250_GCVM_VMID8_PT_BASE_LO ||
+        ByteOffset == BC250_GCVM_VMID8_PT_BASE_HI ||
+        ByteOffset == BC250_GCVM_VMID8_PT_START_LO ||
+        ByteOffset == BC250_GCVM_VMID8_PT_START_HI ||
+        ByteOffset == BC250_GCVM_VMID8_PT_END_LO ||
+        ByteOffset == BC250_GCVM_VMID8_PT_END_HI;
+}
+
+static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
+{
+    return ByteOffset == 0xA2D0u ||
+        ByteOffset == 0xA3A4u ||
+        ByteOffset == 0xA3A8u ||
+        ByteOffset == BC250_GCVM_VMID8_PT_BASE_LO ||
+        ByteOffset == BC250_GCVM_VMID8_PT_BASE_HI ||
+        ByteOffset == BC250_GCVM_VMID8_PT_START_LO ||
+        ByteOffset == BC250_GCVM_VMID8_PT_START_HI ||
+        ByteOffset == BC250_GCVM_VMID8_PT_END_LO ||
+        ByteOffset == BC250_GCVM_VMID8_PT_END_HI;
 }
 
 uint32_t Bc250MmioTopologyRead32(
@@ -132,6 +190,30 @@ uint32_t Bc250MmioTopologyRead32(
     *Value = READ_REGISTER_ULONG(address);
     ++transport->ReadCount;
     return 1;
+}
+
+uint32_t Bc250MmioTopologyWrite32(
+    void *Context, uint32_t ByteOffset, uint32_t Value)
+{
+    BC250_MMIO_TOPOLOGY_CONTEXT *transport =
+        (BC250_MMIO_TOPOLOGY_CONTEXT *)Context;
+    volatile ULONG *address;
+
+    if (transport == NULL ||
+        transport->Signature != BC250_MMIO_TOPOLOGY_SIGNATURE ||
+        transport->State != BC250_MMIO_TOPOLOGY_MAPPED ||
+        transport->VirtualBase == NULL ||
+        !Bc250MmioTopologyWriteOffsetAllowed(ByteOffset) ||
+        (ByteOffset & (sizeof(uint32_t) - 1u)) != 0 ||
+        transport->Length < sizeof(uint32_t) ||
+        (uint64_t)ByteOffset > transport->Length - sizeof(uint32_t)) {
+        return 0u;
+    }
+    address = (volatile ULONG *)((PUCHAR)transport->VirtualBase + ByteOffset);
+    WRITE_REGISTER_ULONG(address, Value);
+    KeMemoryBarrier();
+    ++transport->WriteCount;
+    return 1u;
 }
 
 BC250_MMIO_TOPOLOGY_STATUS Bc250MmioTopologyUnmap(

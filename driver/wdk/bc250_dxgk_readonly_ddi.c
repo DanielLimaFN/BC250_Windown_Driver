@@ -25,14 +25,19 @@ static void Bc250DxgkResetStartState(BC250_DXGK_READONLY_CONTEXT *Context)
         BC250_VRAM_TOPOLOGY_READER_BAD_ARGUMENT;
     Context->LastDiscoveryTmrStatus =
         BC250_DISCOVERY_TMR_BAD_ARGUMENT;
+    Context->LastPlatformSnapshotStatus =
+        BC250_PLATFORM_SNAPSHOT_BAD_ARGUMENT;
     Context->PciBytesRead = 0;
     Context->DiscoveredBarCount = 0;
     Context->ResolvedBarCount = 0;
+    RtlZeroMemory(Context->ResolvedBars, sizeof(Context->ResolvedBars));
     RtlZeroMemory(&Context->RebarEvidence, sizeof(Context->RebarEvidence));
     RtlZeroMemory(&Context->TopologyEvidence,
                   sizeof(Context->TopologyEvidence));
     RtlZeroMemory(&Context->DiscoveryTmrEvidence,
                   sizeof(Context->DiscoveryTmrEvidence));
+    RtlZeroMemory(&Context->PlatformSnapshot,
+                  sizeof(Context->PlatformSnapshot));
     (void)Bc250MmioTopologyInitialize(&Context->MmioTransport);
 }
 
@@ -94,8 +99,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceReadonly(
     BC250_MMIO_TOPOLOGY_STATUS mmioStatus;
     BC250_VRAM_TOPOLOGY_READER_STATUS topologyReaderStatus;
     BC250_DISCOVERY_TMR_STATUS discoveryTmrStatus;
-    BC250_RESOLVED_BAR_RESOURCE
-        resolvedBars[BC250_RESOURCE_MAX_BARS];
+    BC250_PLATFORM_SNAPSHOT_STATUS platformSnapshotStatus;
     BC250_START_DEVICE_TOPOLOGY capturedTopology;
     BC250_VRAM_TOPOLOGY_READER_INTERFACE topologyReader;
     size_t resolvedBarCount = 0;
@@ -167,10 +171,10 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceReadonly(
     }
     context->DiscoveredBarCount = (uint32_t)discoveredBarCount;
 
-    RtlZeroMemory(resolvedBars, sizeof(resolvedBars));
+    RtlZeroMemory(context->ResolvedBars, sizeof(context->ResolvedBars));
     cmStatus = Bc250ResolveCmTranslatedBars(
         deviceInfo.TranslatedResourceList, context->DiscoveredBars,
-        context->DiscoveredBarCount, resolvedBars,
+        context->DiscoveredBarCount, context->ResolvedBars,
         BC250_RESOURCE_MAX_BARS, &resolvedBarCount, &resourceStatus);
     context->LastCmStatus = cmStatus;
     context->LastResourceStatus = resourceStatus;
@@ -184,10 +188,10 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceReadonly(
         return STATUS_DEVICE_CONFIGURATION_ERROR;
     }
     for (i = 0; i < resolvedBarCount; ++i) {
-        if (resolvedBars[i].Index ==
+        if (context->ResolvedBars[i].Index ==
             BC250_PCI_VRAM_APERTURE_BAR_INDEX) {
             ++apertureCount;
-            cpuVisibleBytes = resolvedBars[i].Length;
+            cpuVisibleBytes = context->ResolvedBars[i].Length;
         }
     }
     if (apertureCount != 1 || cpuVisibleBytes == 0) {
@@ -197,7 +201,8 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceReadonly(
     context->LastStage = BC250_DXGK_STAGE_RESOURCES_RESOLVED;
 
     mmioStatus = Bc250MmioTopologyMapReadonly(
-        &context->MmioTransport, &context->DxgkInterface, resolvedBars,
+        &context->MmioTransport, &context->DxgkInterface,
+        context->ResolvedBars,
         resolvedBarCount, BC250_PCI_MMIO_BAR_INDEX);
     context->LastMmioStatus = mmioStatus;
     context->LastCallbackStatus =
@@ -263,6 +268,80 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceReadonly(
         BC250_PROBE_DISCOVERY_TMR_STABLE_PASSES,
         context->DiscoveryTmrEvidence.StablePasses);
 
+    platformSnapshotStatus = Bc250CapturePlatformRegistersReadonly(
+        &topologyReader, snapshotGeneration, &context->PlatformSnapshot);
+    context->LastPlatformSnapshotStatus = platformSnapshotStatus;
+    Bc250ProbeRecord(BC250_PROBE_PLATFORM_SNAPSHOT_STATUS,
+        (ULONG)platformSnapshotStatus);
+    Bc250ProbeRecord(BC250_PROBE_PLATFORM_SNAPSHOT_READ_COUNT,
+        context->PlatformSnapshot.ReadCount);
+    Bc250ProbeRecord(BC250_PROBE_PLATFORM_SNAPSHOT_STABLE_PASSES,
+        context->PlatformSnapshot.StablePasses);
+    Bc250ProbeRecord(BC250_PROBE_GCVM_PT_BASE_LO,
+        context->PlatformSnapshot.GcvmPtBaseLo);
+    Bc250ProbeRecord(BC250_PROBE_GCVM_PT_BASE_HI,
+        context->PlatformSnapshot.GcvmPtBaseHi);
+    Bc250ProbeRecord(BC250_PROBE_GCVM_PT_START_LO,
+        context->PlatformSnapshot.GcvmPtStartLo);
+    Bc250ProbeRecord(BC250_PROBE_GCVM_PT_START_HI,
+        context->PlatformSnapshot.GcvmPtStartHi);
+    Bc250ProbeRecord(BC250_PROBE_GCVM_PT_END_LO,
+        context->PlatformSnapshot.GcvmPtEndLo);
+    Bc250ProbeRecord(BC250_PROBE_GCVM_PT_END_HI,
+        context->PlatformSnapshot.GcvmPtEndHi);
+    Bc250ProbeRecord(BC250_PROBE_CP_RB0_BASE,
+        context->PlatformSnapshot.CpRb0Base);
+    Bc250ProbeRecord(BC250_PROBE_CP_RB0_BASE_HI,
+        context->PlatformSnapshot.CpRb0BaseHi);
+    Bc250ProbeRecord(BC250_PROBE_CP_RB0_CNTL,
+        context->PlatformSnapshot.CpRb0Cntl);
+    Bc250ProbeRecord(BC250_PROBE_SDMA0_RB_BASE,
+        context->PlatformSnapshot.Sdma0RbBase);
+    Bc250ProbeRecord(BC250_PROBE_SDMA0_RB_BASE_HI,
+        context->PlatformSnapshot.Sdma0RbBaseHi);
+    Bc250ProbeRecord(BC250_PROBE_SDMA0_RB_CNTL,
+        context->PlatformSnapshot.Sdma0RbCntl);
+    Bc250ProbeRecord(BC250_PROBE_CP_RB0_RPTR,
+        context->PlatformSnapshot.CpRb0Rptr);
+    Bc250ProbeRecord(BC250_PROBE_CP_RB0_RPTR_ADDR_LO,
+        context->PlatformSnapshot.CpRb0RptrAddrLo);
+    Bc250ProbeRecord(BC250_PROBE_CP_RB0_RPTR_ADDR_HI,
+        context->PlatformSnapshot.CpRb0RptrAddrHi);
+    Bc250ProbeRecord(BC250_PROBE_CP_RB0_WPTR,
+        context->PlatformSnapshot.CpRb0Wptr);
+    Bc250ProbeRecord(BC250_PROBE_CP_RB0_WPTR_HI,
+        context->PlatformSnapshot.CpRb0WptrHi);
+    Bc250ProbeRecord(BC250_PROBE_SDMA0_RB_RPTR,
+        context->PlatformSnapshot.Sdma0RbRptr);
+    Bc250ProbeRecord(BC250_PROBE_SDMA0_RB_RPTR_HI,
+        context->PlatformSnapshot.Sdma0RbRptrHi);
+    Bc250ProbeRecord(BC250_PROBE_SDMA0_RB_WPTR,
+        context->PlatformSnapshot.Sdma0RbWptr);
+    Bc250ProbeRecord(BC250_PROBE_SDMA0_RB_WPTR_HI,
+        context->PlatformSnapshot.Sdma0RbWptrHi);
+    Bc250ProbeRecord(BC250_PROBE_SDMA0_RB_RPTR_ADDR_LO,
+        context->PlatformSnapshot.Sdma0RbRptrAddrLo);
+    Bc250ProbeRecord(BC250_PROBE_SDMA0_RB_RPTR_ADDR_HI,
+        context->PlatformSnapshot.Sdma0RbRptrAddrHi);
+    Bc250ProbeRecord(BC250_PROBE_PSP_C2PMSG_35,
+        context->PlatformSnapshot.PspC2pmsg35);
+    Bc250ProbeRecord(BC250_PROBE_PSP_C2PMSG_36,
+        context->PlatformSnapshot.PspC2pmsg36);
+    Bc250ProbeRecord(BC250_PROBE_PSP_C2PMSG_37,
+        context->PlatformSnapshot.PspC2pmsg37);
+    Bc250ProbeRecord(BC250_PROBE_PSP_C2PMSG_81,
+        context->PlatformSnapshot.PspC2pmsg81);
+    Bc250ProbeRecord(BC250_PROBE_PSP_C2PMSG_64,
+        context->PlatformSnapshot.PspC2pmsg64);
+    Bc250ProbeRecord(BC250_PROBE_PSP_C2PMSG_67,
+        context->PlatformSnapshot.PspC2pmsg67);
+    Bc250ProbeRecord(BC250_PROBE_PSP_C2PMSG_69,
+        context->PlatformSnapshot.PspC2pmsg69);
+    Bc250ProbeRecord(BC250_PROBE_PSP_C2PMSG_70,
+        context->PlatformSnapshot.PspC2pmsg70);
+    Bc250ProbeRecord(BC250_PROBE_PSP_C2PMSG_71,
+        context->PlatformSnapshot.PspC2pmsg71);
+
     mmioStatus = Bc250MmioTopologyUnmap(&context->MmioTransport);
     context->LastMmioStatus = mmioStatus;
     context->LastCallbackStatus =
@@ -273,6 +352,10 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceReadonly(
         return STATUS_DEVICE_CONFIGURATION_ERROR;
     }
     if (topologyReaderStatus != BC250_VRAM_TOPOLOGY_READER_OK) {
+        context->LastStage = BC250_DXGK_STAGE_REJECTED;
+        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
+    if (platformSnapshotStatus != BC250_PLATFORM_SNAPSHOT_OK) {
         context->LastStage = BC250_DXGK_STAGE_REJECTED;
         return STATUS_DEVICE_CONFIGURATION_ERROR;
     }
@@ -294,7 +377,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceReadonly(
         context->TopologyEvidence.Snapshot.GcmcVmFbOffset);
 
     rebarStatus = Bc250ReadRebarReadonly(
-        &context->DxgkInterface, resolvedBars, resolvedBarCount,
+        &context->DxgkInterface, context->ResolvedBars, resolvedBarCount,
         BC250_PCI_VRAM_APERTURE_BAR_INDEX,
         &context->RebarEvidence, &context->LastCallbackStatus);
     context->LastRebarStatus = rebarStatus;

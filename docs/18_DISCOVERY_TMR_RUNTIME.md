@@ -48,3 +48,16 @@ O leitor ainda nao esta ligado a telemetria da DDI/sys e nao foi executado no
 silicio.
 
 **NAO VALIDADO EM HARDWARE**
+
+## Resultado fisico e efeito no inventario - 2026-08-25
+
+Nos pacotes 1.1.0.0 e 1.2.0.0, as duas passagens fisicas sobre
+`DRIVER_SCRATCH_0/1/2` foram estaveis, mas o tamanho retornado foi zero. O
+resultado e `BC250_DISCOVERY_TMR_NOT_REPORTED`, nao uma falha de transporte.
+
+O pacote 1.2.0.0 registra que a fonte foi sondada por meio do flag
+`BC250_RUNTIME_EVIDENCE_DISCOVERY_TMR_PROBED`, mas nao cria uma reserva TMR.
+Junto do scanout, isso produz evidence flags `0x3` e inventario
+`INCOMPLETE`. Ausencia reportada nao e convertida em memoria livre.
+
+**NAO VALIDADO EM HARDWARE**

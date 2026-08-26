@@ -8,6 +8,7 @@
 #include "bc250_pci_bar_reader.h"
 #include "bc250_rebar_reader.h"
 #include "bc250_mmio_topology_transport.h"
+#include "../core/bc250_platform_register_snapshot.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -60,14 +61,17 @@ typedef struct BC250_DXGK_READONLY_CONTEXT {
     BC250_MMIO_TOPOLOGY_STATUS LastMmioStatus;
     BC250_VRAM_TOPOLOGY_READER_STATUS LastTopologyReaderStatus;
     BC250_DISCOVERY_TMR_STATUS LastDiscoveryTmrStatus;
+    BC250_PLATFORM_SNAPSHOT_STATUS LastPlatformSnapshotStatus;
     ULONG PciBytesRead;
     PDEVICE_OBJECT PhysicalDeviceObject;
     BC250_PCI_BAR_RESOURCE DiscoveredBars[BC250_RESOURCE_MAX_BARS];
     uint32_t DiscoveredBarCount;
+    BC250_RESOLVED_BAR_RESOURCE ResolvedBars[BC250_RESOURCE_MAX_BARS];
     uint32_t ResolvedBarCount;
     BC250_REBAR_EVIDENCE RebarEvidence;
     BC250_VRAM_TOPOLOGY_READER_EVIDENCE TopologyEvidence;
     BC250_DISCOVERY_TMR_EVIDENCE DiscoveryTmrEvidence;
+    BC250_PLATFORM_REGISTER_SNAPSHOT PlatformSnapshot;
     BC250_MMIO_TOPOLOGY_CONTEXT MmioTransport;
     DXGKRNL_INTERFACE DxgkInterface;
     BC250_DXGK_READONLY_INPUT Runtime;

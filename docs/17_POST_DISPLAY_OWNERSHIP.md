@@ -39,12 +39,36 @@ Os testes usam callbacks sinteticos e cobrem callback 1/2, estado desconhecido,
 pitch insuficiente, formato nao suportado, faixa fora do BAR, BAR duplicado e
 falha do callback. O build passa com `/W4 /WX`.
 
+## Integracao e ensaio fisico de 2026-08-25
+
+O pacote MCDM 1.1.0.0 ligou o adaptador ao `StartDevice` ativo depois da
+captura readonly de PCI, recursos, topologia e ReBAR. O retorno continua
+fail-closed depois da coleta; nenhuma allocation ou submissao foi habilitada.
+
+Na BC-250 de teste, `DxgkCbAcquirePostDisplayOwnership2` retornou sucesso:
+
+```text
+FrameBufferState=1 (InitializedByFirmware)
+TargetId=0xFFFFFFFF
+Width=2560
+Height=1080
+Pitch=10240
+PhysicalStart=0x00000000C0000000
+Length=11059200
+VramOffset=0
+```
+
+A faixa coube integralmente no BAR VRAM CPU-visible atribuido pelo PnP. A
+evidencia bruta esta em
+`docs\evidence\2026-08-25_19-29-47-DESKTOP-HQAG6T4-mcdm-replace`.
+
 ## Limite restante
 
 Essa reserva prova somente a faixa do framebuffer herdado. Ela nao prova que o
 restante da VRAM esta livre, nao enumera page tables, carveouts de firmware,
 PSP/TMR ou outras reservas da plataforma e nao autoriza staging. Ainda e
-necessario um produtor runtime de inventario completo e uma fase mutante
-explicitamente recuperavel para adquirir post-display ownership.
+necessario completar o produtor runtime com page tables, carveouts, rings,
+firmware e PSP/TMR. A aquisicao de post-display ownership agora esta comprovada
+fisicamente, mas so representa a reserva de scanout.
 
 **NAO VALIDADO EM HARDWARE**

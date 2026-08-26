@@ -257,6 +257,7 @@ static int Bc250RunActiveMiniportTest(void)
         HANDLE openHandles[2];
         UINT allocationIndex;
         UINT capacityStartSlot;
+        BC250_MCDM_OBJECT_RECORD processRecord;
         CHECK(activeCtx->Signature == BC250_ACTIVE_SIGNATURE);
         CHECK(activeCtx->PhysicalDeviceObject == &fakeDeviceObject);
         CHECK(activeCtx->Core.RuntimeStaged == 0u);
@@ -332,6 +333,21 @@ static int Bc250RunActiveMiniportTest(void)
         contextHandle = createContext.hContext;
         CHECK(contextHandle != NULL);
         CHECK(createContext.ContextInfo.DmaBufferSize == 4096u);
+        activeCtx->AllocationSegmentBytes = 0x0F132000ull;
+        CHECK(Bc250ActiveSetRootPageTableObject(activeCtx, contextHandle,
+            1u, 0x0000000000345000ull, 512u, 512u) ==
+            STATUS_DEVICE_NOT_READY);
+        activeCtx->RootPageTableMaxEntries = 512u;
+        InterlockedExchange(&activeCtx->RootPageTableAbiReady, 1);
+        CHECK(Bc250ActiveSetRootPageTableObject(activeCtx, contextHandle,
+            1u, 0x0000000000345000ull, 512u, 512u) == STATUS_SUCCESS);
+        CHECK(Bc250McdmObjectLookup(&activeCtx->Objects, processHandle,
+            BC250_MCDM_OBJECT_PROCESS, processHandle, &processRecord) ==
+            BC250_MCDM_OBJECT_OK);
+        CHECK(processRecord.RootPageTableAddress ==
+            0x0000000000345000ull &&
+            processRecord.RootPageTableSegmentId == 1u &&
+            processRecord.RootPageTableEntries == 512u);
         CHECK(initData.DxgkDdiDestroyDevice(deviceHandle) ==
             STATUS_DEVICE_BUSY);
         CHECK(initData.DxgkDdiDestroyContext(
@@ -365,14 +381,25 @@ static int Bc250RunActiveMiniportTest(void)
             &createAllocation) == STATUS_DEVICE_NOT_READY);
         CHECK(allocationInfo[0].hAllocation == NULL &&
             allocationInfo[1].hAllocation == NULL);
+        activeCtx->AllocationSegmentBytes = 0x0F132000ull;
+        activeCtx->AllocationSegmentSet = 1u;
         InterlockedExchange(&activeCtx->AllocationAbiReady, 1);
+        allocationPrivate[1].ByteSize = 0x0F133000ull;
+        CHECK(initData.DxgkDdiCreateAllocation(activeCtx,
+            &createAllocation) == STATUS_INVALID_PARAMETER);
+        CHECK(allocationInfo[0].hAllocation == NULL &&
+            allocationInfo[1].hAllocation == NULL);
+        allocationPrivate[1].ByteSize = 65536u;
         CHECK(initData.DxgkDdiCreateAllocation(activeCtx,
             &createAllocation) == STATUS_SUCCESS);
         allocationHandles[0] = allocationInfo[0].hAllocation;
         allocationHandles[1] = allocationInfo[1].hAllocation;
         CHECK(allocationHandles[0] != NULL && allocationHandles[1] != NULL);
         CHECK(allocationInfo[0].Size == 65536u &&
-            allocationInfo[0].SupportedReadSegmentSet == 0u);
+            allocationInfo[0].SupportedReadSegmentSet == 1u &&
+            allocationInfo[0].SupportedWriteSegmentSet == 1u &&
+            allocationInfo[0].PreferredSegment.SegmentId0 == 1u &&
+            allocationInfo[0].FlagsWddm2.CpuVisible == 1u);
 
         memset(openInfo, 0, sizeof(openInfo));
         memset(&openAllocation, 0, sizeof(openAllocation));

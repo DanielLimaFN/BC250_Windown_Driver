@@ -309,6 +309,45 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectFindAllocationByToken(
     return BC250_MCDM_OBJECT_INVALID_HANDLE;
 }
 
+BC250_MCDM_OBJECT_STATUS Bc250McdmObjectSetRootPageTable(
+    BC250_MCDM_OBJECT_REGISTRY *Registry,
+    BC250_MCDM_HANDLE Context,
+    uint32_t SegmentId,
+    uint64_t Address,
+    uint32_t NumEntries,
+    uint32_t MaxEntries)
+{
+    BC250_MCDM_OBJECT_RECORD contextRecord;
+    BC250_MCDM_OBJECT_RECORD *process;
+    BC250_MCDM_OBJECT_STATUS status;
+
+    if (MaxEntries == 0u || (SegmentId != 0u && SegmentId != 1u) ||
+        ((Address == 0u) != (NumEntries == 0u)) ||
+        ((Address == 0u) != (SegmentId == 0u)) ||
+        (Address != 0u && ((Address & 0xFFFull) != 0u ||
+         (Address & ~0x0000FFFFFFFFF000ull) != 0u)) ||
+        NumEntries > MaxEntries) {
+        return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+    }
+    status = Bc250McdmObjectLookup(Registry, Context,
+        BC250_MCDM_OBJECT_CONTEXT, NULL, &contextRecord);
+    if (status != BC250_MCDM_OBJECT_OK) return status;
+    process = Bc250McdmFindObject(Registry, contextRecord.OwnerProcess);
+    if (process == NULL ||
+        process->Signature != BC250_MCDM_OBJECT_LIVE_SIGNATURE ||
+        process->Type != BC250_MCDM_OBJECT_PROCESS) {
+        return BC250_MCDM_OBJECT_BAD_REGISTRY;
+    }
+    process->RootPageTableAddress = Address;
+    process->RootPageTableSegmentId = SegmentId;
+    process->RootPageTableEntries = NumEntries;
+    ++process->RootPageTableSetCount;
+    if (process->RootPageTableSetCount == 0u) {
+        process->RootPageTableSetCount = 1u;
+    }
+    return BC250_MCDM_OBJECT_OK;
+}
+
 BC250_MCDM_OBJECT_STATUS Bc250McdmObjectDestroy(
     BC250_MCDM_OBJECT_REGISTRY *Registry,
     BC250_MCDM_HANDLE Handle,

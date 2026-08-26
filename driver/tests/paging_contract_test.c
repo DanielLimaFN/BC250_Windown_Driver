@@ -33,6 +33,7 @@ static int Bc250RunPagingContractTest(void)
     BC250_PAGING_FILL_PARAMS fillParams;
     BC250_PAGING_UPDATE_PAGE_TABLE_PARAMS updateParams;
     BC250_PAGING_FLUSH_TLB_PARAMS flushParams;
+    BC250_GFXHUB_TLB_FLUSH_PLAN flushPlan;
     BC250_PAGING_REQUEST request;
 
     memset(g_pagingBuffer, 0, sizeof(g_pagingBuffer));
@@ -92,14 +93,42 @@ static int Bc250RunPagingContractTest(void)
     CHECK(Bc250GcvmDecodePte(g_pteBuffer[3], &physAddrOut, &flagsOut) == BC250_GCVM_OK);
     CHECK(physAddrOut == 0x00000000C0003000ull);
 
-    /* 4. Test Flush TLB */
+    /* 4. Build the GC 10.1.3 GFXHUB invalidation plan without MMIO. */
     memset(&flushParams, 0, sizeof(flushParams));
-    flushParams.Vmid = 0u;
+    memset(&flushPlan, 0, sizeof(flushPlan));
+    flushParams.Vmid = 8u;
     flushParams.HubIndex = 0u;
+    flushParams.FlushType = 0u;
+
+    CHECK(Bc250PagingBuildGfxhubTlbFlushPlan(
+        &flushParams, &flushPlan) == BC250_PAGING_OK);
+    CHECK(flushPlan.EngineId == 17u);
+    CHECK(flushPlan.RequestRegisterOffset == 0xA2D0u);
+    CHECK(flushPlan.AckRegisterOffset == 0xA318u);
+    CHECK(flushPlan.RangeLowRegisterOffset == 0xA3A4u);
+    CHECK(flushPlan.RangeHighRegisterOffset == 0xA3A8u);
+    CHECK(flushPlan.RequestValue == 0x00F80100u);
+    CHECK(flushPlan.AckMask == 0x00000100u);
+    CHECK(flushPlan.ExpectedRangeLow == 0xFFFFFFFFu);
+    CHECK(flushPlan.ExpectedRangeHigh == 0x0000001Fu);
+    CHECK(flushPlan.RequiresDummyRequestRead == 1u);
+    CHECK(flushPlan.UsesSemaphore == 0u);
 
     CHECK(Bc250PagingBuildFlushTlb(
-        &flushParams, g_pagingBuffer, TEST_PAGING_BUFFER_DWORDS, &cursor) == BC250_PAGING_OK);
-    CHECK(cursor == 13u); /* 12 + 1 NOP barrier */
+        &flushParams, g_pagingBuffer, TEST_PAGING_BUFFER_DWORDS, &cursor) ==
+        BC250_PAGING_UNSUPPORTED_OPERATION);
+    CHECK(cursor == 12u);
+    flushParams.Vmid = 0u;
+    CHECK(Bc250PagingBuildGfxhubTlbFlushPlan(
+        &flushParams, &flushPlan) == BC250_PAGING_BAD_ARGUMENT);
+    flushParams.Vmid = 8u;
+    flushParams.HubIndex = 1u;
+    CHECK(Bc250PagingBuildGfxhubTlbFlushPlan(
+        &flushParams, &flushPlan) == BC250_PAGING_BAD_ARGUMENT);
+    flushParams.HubIndex = 0u;
+    flushParams.FlushType = 8u;
+    CHECK(Bc250PagingBuildGfxhubTlbFlushPlan(
+        &flushParams, &flushPlan) == BC250_PAGING_BAD_ARGUMENT);
 
     /* 5. Test Unified Request Dispatcher */
     memset(&request, 0, sizeof(request));

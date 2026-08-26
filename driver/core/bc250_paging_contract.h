@@ -58,7 +58,24 @@ typedef struct BC250_PAGING_UPDATE_PAGE_TABLE_PARAMS {
 typedef struct BC250_PAGING_FLUSH_TLB_PARAMS {
     uint32_t Vmid;
     uint32_t HubIndex; /* 0 = GFXHUB, 1 = MMHUB */
+    uint32_t FlushType;
 } BC250_PAGING_FLUSH_TLB_PARAMS;
+
+typedef struct BC250_GFXHUB_TLB_FLUSH_PLAN {
+    uint32_t Vmid;
+    uint32_t EngineId;
+    uint32_t FlushType;
+    uint32_t RequestRegisterOffset;
+    uint32_t AckRegisterOffset;
+    uint32_t RangeLowRegisterOffset;
+    uint32_t RangeHighRegisterOffset;
+    uint32_t RequestValue;
+    uint32_t AckMask;
+    uint32_t ExpectedRangeLow;
+    uint32_t ExpectedRangeHigh;
+    uint32_t RequiresDummyRequestRead;
+    uint32_t UsesSemaphore;
+} BC250_GFXHUB_TLB_FLUSH_PLAN;
 
 typedef struct BC250_PAGING_REQUEST {
     BC250_PAGING_OPERATION_TYPE Operation;
@@ -93,6 +110,10 @@ BC250_PAGING_STATUS Bc250PagingBuildFlushTlb(
     uint32_t *PagingBuffer,
     uint32_t BufferDwords,
     uint32_t *CursorDwords);
+
+BC250_PAGING_STATUS Bc250PagingBuildGfxhubTlbFlushPlan(
+    const BC250_PAGING_FLUSH_TLB_PARAMS *Params,
+    BC250_GFXHUB_TLB_FLUSH_PLAN *Plan);
 
 BC250_PAGING_STATUS Bc250PagingBuildRequest(
     const BC250_PAGING_REQUEST *Request,

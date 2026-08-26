@@ -12,7 +12,7 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
 }
 
 #define CHECK(Expression) do { if (!(Expression)) return 0; } while (0)
-#define BC250_TEST_MMIO_BYTES 0x0000B000u
+#define BC250_TEST_MMIO_BYTES 0x00060000u
 
 static unsigned char g_mmio[BC250_TEST_MMIO_BYTES];
 static uint32_t g_mapCalls;
@@ -85,6 +85,43 @@ static int Bc250Prepare(
     value = (uint32_t *)(void *)(g_mmio +
         BC250_DRIVER_SCRATCH_2_BYTE_OFFSET);
     *value = 0x10000u;
+#define SET_REG(Offset, Value) do { \
+    value = (uint32_t *)(void *)(g_mmio + (Offset)); \
+    *value = (Value); \
+} while (0)
+    SET_REG(BC250_REG_GCVM_PT_BASE_LO, 0x11111111u);
+    SET_REG(BC250_REG_GCVM_PT_BASE_HI, 0x22222222u);
+    SET_REG(BC250_REG_GCVM_PT_START_LO, 0x33333333u);
+    SET_REG(BC250_REG_GCVM_PT_START_HI, 0x44444444u);
+    SET_REG(BC250_REG_GCVM_PT_END_LO, 0x55555555u);
+    SET_REG(BC250_REG_GCVM_PT_END_HI, 0x66666666u);
+    SET_REG(BC250_REG_CP_RB0_BASE, 0x77777777u);
+    SET_REG(BC250_REG_CP_RB0_BASE_HI, 0x88888888u);
+    SET_REG(BC250_REG_CP_RB0_CNTL, 0x99999999u);
+    SET_REG(BC250_REG_SDMA0_RB_BASE, 0xAAAAAAAAu);
+    SET_REG(BC250_REG_SDMA0_RB_BASE_HI, 0xBBBBBBBBu);
+    SET_REG(BC250_REG_SDMA0_RB_CNTL, 0xCCCCCCCCu);
+    SET_REG(BC250_REG_CP_RB0_RPTR, 0x10u);
+    SET_REG(BC250_REG_CP_RB0_RPTR_ADDR_LO, 0x20u);
+    SET_REG(BC250_REG_CP_RB0_RPTR_ADDR_HI, 0x30u);
+    SET_REG(BC250_REG_CP_RB0_WPTR, 0x40u);
+    SET_REG(BC250_REG_CP_RB0_WPTR_HI, 0x50u);
+    SET_REG(BC250_REG_SDMA0_RB_RPTR, 0x60u);
+    SET_REG(BC250_REG_SDMA0_RB_RPTR_HI, 0x70u);
+    SET_REG(BC250_REG_SDMA0_RB_WPTR, 0x80u);
+    SET_REG(BC250_REG_SDMA0_RB_WPTR_HI, 0x90u);
+    SET_REG(BC250_REG_SDMA0_RB_RPTR_ADDR_LO, 0xA0u);
+    SET_REG(BC250_REG_SDMA0_RB_RPTR_ADDR_HI, 0xB0u);
+    SET_REG(BC250_REG_PSP_C2PMSG_35, 0x35u);
+    SET_REG(BC250_REG_PSP_C2PMSG_36, 0x36u);
+    SET_REG(BC250_REG_PSP_C2PMSG_37, 0x37u);
+    SET_REG(BC250_REG_PSP_C2PMSG_81, 0x81u);
+    SET_REG(BC250_REG_PSP_C2PMSG_64, 0x64u);
+    SET_REG(BC250_REG_PSP_C2PMSG_67, 0x67u);
+    SET_REG(BC250_REG_PSP_C2PMSG_69, 0x69u);
+    SET_REG(BC250_REG_PSP_C2PMSG_70, 0x70u);
+    SET_REG(BC250_REG_PSP_C2PMSG_71, 0x71u);
+#undef SET_REG
     return 1;
 }
 
@@ -96,6 +133,7 @@ static int Bc250RunMmioTopologyTransportTest(void)
     BC250_VRAM_TOPOLOGY_READER_INTERFACE readerInterface;
     BC250_VRAM_TOPOLOGY_READER_EVIDENCE evidence;
     BC250_DISCOVERY_TMR_EVIDENCE tmrEvidence;
+    BC250_PLATFORM_REGISTER_SNAPSHOT platformSnapshot;
     uint32_t value;
 
     CHECK(Bc250Prepare(&interfaceData, &bars[0], &context));
@@ -104,6 +142,10 @@ static int Bc250RunMmioTopologyTransportTest(void)
     CHECK(g_mapCalls == 1u && context.State == BC250_MMIO_TOPOLOGY_MAPPED);
     CHECK(Bc250MmioTopologyRead32(&context, 0x100u, &value) == 0u);
     CHECK(value == 0u && context.ReadCount == 0u);
+    CHECK(Bc250MmioTopologyWrite32(&context, 0x100u, 1u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(&context, 0xA3A4u, 0xFFFFFFFFu) == 1u);
+    CHECK(Bc250MmioTopologyRead32(&context, 0xA3A4u, &value) == 1u);
+    CHECK(value == 0xFFFFFFFFu && context.WriteCount == 1u);
     memset(&readerInterface, 0, sizeof(readerInterface));
     readerInterface.Read32 = Bc250MmioTopologyRead32;
     readerInterface.Context = &context;
@@ -111,14 +153,29 @@ static int Bc250RunMmioTopologyTransportTest(void)
     CHECK(Bc250CaptureVramTopologyReadonly(
         &readerInterface, 0x10000000ull, 81u, &evidence) ==
         BC250_VRAM_TOPOLOGY_READER_OK);
-    CHECK(context.ReadCount == 8u && evidence.ReadCount == 8u);
+    CHECK(context.ReadCount == 9u && evidence.ReadCount == 8u);
     CHECK(evidence.AddressSpace.TotalBytes == 0x20000000ull);
     CHECK(Bc250CaptureDiscoveryTmrReadonly(
         &readerInterface, evidence.AddressSpace.TotalBytes, 81u,
         &tmrEvidence) == BC250_DISCOVERY_TMR_OK);
-    CHECK(context.ReadCount == 14u && tmrEvidence.ReadCount == 6u);
+    CHECK(context.ReadCount == 15u && tmrEvidence.ReadCount == 6u);
     CHECK(tmrEvidence.Offset == 0x1FFF0000ull &&
           tmrEvidence.Length == 0x10000ull);
+    CHECK(Bc250CapturePlatformRegistersReadonly(
+        &readerInterface, 81u, &platformSnapshot) ==
+        BC250_PLATFORM_SNAPSHOT_OK);
+    CHECK(context.ReadCount == 79u && platformSnapshot.ReadCount == 64u);
+    CHECK(platformSnapshot.StablePasses == 2u);
+    CHECK(platformSnapshot.GcvmPtBaseLo == 0x11111111u);
+    CHECK(platformSnapshot.GcvmPtEndHi == 0x66666666u);
+    CHECK(platformSnapshot.CpRb0BaseHi == 0x88888888u);
+    CHECK(platformSnapshot.Sdma0RbCntl == 0xCCCCCCCCu);
+    CHECK(platformSnapshot.CpRb0RptrAddrHi == 0x30u);
+    CHECK(platformSnapshot.Sdma0RbRptrAddrHi == 0xB0u);
+    CHECK(platformSnapshot.PspC2pmsg35 == 0x35u);
+    CHECK(platformSnapshot.PspC2pmsg81 == 0x81u);
+    CHECK(platformSnapshot.PspC2pmsg64 == 0x64u);
+    CHECK(platformSnapshot.PspC2pmsg71 == 0x71u);
     CHECK(Bc250MmioTopologyUnmap(&context) == BC250_MMIO_TOPOLOGY_OK);
     CHECK(g_unmapCalls == 1u && context.State == BC250_MMIO_TOPOLOGY_EMPTY);
     CHECK(context.VirtualBase == NULL);

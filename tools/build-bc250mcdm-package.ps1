@@ -8,12 +8,12 @@ $sourceInf = Join-Path $root 'driver\wdk\package\bc250mcdm.inf'
 $driverObject = Join-Path $root 'driver\wdk\output\bc250_active_miniport_driver.obj'
 $buildContract = Join-Path $root 'driver\wdk\build-contract.bat'
 $packageDir = Join-Path $root 'driver\wdk\package\output_active'
+$packageManifest = Join-Path $root 'driver\wdk\package\output_active.manifest.json'
 $recoveryRoot = 'C:\BC250_RECOVERY.cmd'
 $certificateThumbprint = '8D14413F3B97AEF9D7F78A1CA8D9EA99A3FBAD3B'
 $manifestAudit = Join-Path $root 'tools\audit-bc250-cp-manifest.py'
 $safetyAudit = Join-Path $root 'tools\audit-bc250mcdm-safety.py'
 $ddiAudit = Join-Path $root 'tools\audit-mcdm-ddi-matrix.py'
-$recoveryAudit = Join-Path $root 'tools\audit-bc250-recovery-readiness.ps1'
 
 function Find-Tool([string]$Name, [string[]]$Candidates) {
     foreach ($candidate in $Candidates) {
@@ -28,12 +28,30 @@ if (-not (Test-Path -LiteralPath $sourceSys)) {
     throw "Imagem ausente: $sourceSys. Execute driver\wdk\build-contract.bat."
 }
 if (-not (Test-Path -LiteralPath $sourceInf)) { throw "INF ausente: $sourceInf" }
+$driverSourceFiles = @(
+    Get-ChildItem -LiteralPath (Join-Path $root 'driver\core') -Recurse -File |
+        Where-Object { $_.Extension -in @('.c', '.h') }
+    Get-ChildItem -LiteralPath (Join-Path $root 'driver\wdk') -Recurse -File |
+        Where-Object {
+            $_.Extension -in @('.c', '.h') -and
+            $_.FullName -notmatch '\\output(\\|$)' -and
+            $_.FullName -notmatch '\\package(\\|$)'
+        }
+)
+$newestDriverSource = $driverSourceFiles |
+    Sort-Object LastWriteTimeUtc -Descending |
+    Select-Object -First 1
+if ($null -ne $newestDriverSource -and
+    (Get-Item -LiteralPath $sourceSys).LastWriteTimeUtc -lt
+        $newestDriverSource.LastWriteTimeUtc) {
+    throw "Imagem stale: $($newestDriverSource.FullName) e mais novo que bc250mcdm.sys. Execute driver\wdk\build-contract.bat."
+}
 if (-not (Test-Path -LiteralPath $recoveryRoot)) {
     throw 'Recuperacao C:\BC250_RECOVERY.cmd ausente.'
 }
-& powershell -NoProfile -ExecutionPolicy Bypass -File $recoveryAudit
-if ($LASTEXITCODE -ne 0) {
-    throw 'Pacote bloqueado: recovery instalado nao cobre integralmente bc250mcdm.'
+if ((Get-FileHash -LiteralPath $recoveryRoot -Algorithm SHA256).Hash -ne
+    (Get-FileHash -LiteralPath (Join-Path $root 'tools\BC250_RECOVERY.cmd') -Algorithm SHA256).Hash) {
+    throw 'Pacote bloqueado: recovery instalado diverge da fonte versionada.'
 }
 
 & python $ddiAudit
@@ -114,5 +132,25 @@ foreach ($signedPath in @($packageSys, $packageCat)) {
     }
 }
 
+$driverVersionLine = Get-Content -LiteralPath $packageInf |
+    Where-Object { $_ -match '^DriverVer=' } |
+    Select-Object -First 1
+$manifest = [ordered]@{
+    SchemaVersion = 1
+    BuildKind = 'MCDM_FAIL_CLOSED'
+    BuiltAtUtc = [DateTime]::UtcNow.ToString('o')
+    DriverVer = $driverVersionLine -replace '^DriverVer=', ''
+    HardwareValidated = $false
+    SourceSysSha256 = (Get-FileHash -LiteralPath $sourceSys -Algorithm SHA256).Hash
+    PackageSysSha256 = (Get-FileHash -LiteralPath $packageSys -Algorithm SHA256).Hash
+    PackageInfSha256 = (Get-FileHash -LiteralPath $packageInf -Algorithm SHA256).Hash
+    PackageCatSha256 = (Get-FileHash -LiteralPath $packageCat -Algorithm SHA256).Hash
+    RecoverySha256 = (Get-FileHash -LiteralPath $recoveryRoot -Algorithm SHA256).Hash
+    SignerThumbprint = $certificateThumbprint
+    Verdict = 'NAO VALIDADO EM HARDWARE'
+}
+$manifest | ConvertTo-Json | Set-Content -LiteralPath $packageManifest -Encoding utf8
+
 Write-Host "Pacote MCDM fail-closed construido: $packageDir"
+Write-Host "Manifesto de build: $packageManifest"
 Write-Host "NAO VALIDADO EM HARDWARE; ativacao permanece bloqueada ate os gates runtime."

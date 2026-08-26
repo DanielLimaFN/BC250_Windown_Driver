@@ -54,6 +54,20 @@ static int Bc250RunMcdmObjectContractTest(void)
     CHECK(Bc250McdmObjectLookup(&g_registry, contextA,
         BC250_MCDM_OBJECT_CONTEXT, processA, &record) == BC250_MCDM_OBJECT_OK);
     CHECK(record.Generation != 0u && record.Parent == deviceA);
+    CHECK(Bc250McdmObjectSetRootPageTable(&g_registry, contextA,
+        1u, 0x0000000012345000ull, 512u, 512u) == BC250_MCDM_OBJECT_OK);
+    CHECK(Bc250McdmObjectLookup(&g_registry, processA,
+        BC250_MCDM_OBJECT_PROCESS, processA, &record) ==
+        BC250_MCDM_OBJECT_OK);
+    CHECK(record.RootPageTableSegmentId == 1u &&
+        record.RootPageTableAddress == 0x0000000012345000ull &&
+        record.RootPageTableEntries == 512u &&
+        record.RootPageTableSetCount == 1u);
+    CHECK(Bc250McdmObjectSetRootPageTable(&g_registry, contextA,
+        1u, 0x0000000012345001ull, 512u, 512u) ==
+        BC250_MCDM_OBJECT_BAD_ARGUMENT);
+    CHECK(Bc250McdmObjectSetRootPageTable(&g_registry, contextA,
+        0u, 0u, 0u, 512u) == BC250_MCDM_OBJECT_OK);
     CHECK(Bc250McdmObjectLookup(&g_registry, allocationA,
         BC250_MCDM_OBJECT_ALLOCATION, NULL, &record) == BC250_MCDM_OBJECT_OK);
     CHECK(record.OwnerProcess == NULL && record.Parent == NULL &&

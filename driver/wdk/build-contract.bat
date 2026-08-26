@@ -72,6 +72,10 @@ echo [cc] bc250_discovery_tmr_reader.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_discovery_tmr_reader.obj" "%ROOTDIR%\driver\core\bc250_discovery_tmr_reader.c"
 if errorlevel 1 exit /b 1
 
+echo [cc] bc250_platform_register_snapshot.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_platform_register_snapshot.obj" "%ROOTDIR%\driver\core\bc250_platform_register_snapshot.c"
+if errorlevel 1 exit /b 1
+
 echo [cc] bc250_ip_discovery_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_ip_discovery_contract.obj" "%ROOTDIR%\driver\core\bc250_ip_discovery_contract.c"
 if errorlevel 1 exit /b 1
@@ -126,6 +130,14 @@ if errorlevel 1 exit /b 1
 
 echo [cc] bc250_paging_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_paging_contract.obj" "%ROOTDIR%\driver\core\bc250_paging_contract.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_gfxhub_tlb_transaction.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gfxhub_tlb_transaction.obj" "%ROOTDIR%\driver\core\bc250_gfxhub_tlb_transaction.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_gcvm_vmid8_transaction.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gcvm_vmid8_transaction.obj" "%ROOTDIR%\driver\core\bc250_gcvm_vmid8_transaction.c"
 if errorlevel 1 exit /b 1
 
 echo [cc] bc250_adapter_info_contract.c
@@ -198,6 +210,14 @@ if errorlevel 1 exit /b 1
 
 echo [cc] bc250_post_display_reservation.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_post_display_reservation.obj" "%SRCDIR%bc250_post_display_reservation.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_vram_probe_transaction.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_vram_probe_transaction.obj" "%SRCDIR%bc250_vram_probe_transaction.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_gcvm_backing_transaction.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gcvm_backing_transaction.obj" "%SRCDIR%bc250_gcvm_backing_transaction.c"
 if errorlevel 1 exit /b 1
 
 echo [cc] bc250_mmio_topology_transport.c
@@ -341,6 +361,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\mmio_topology_transport_test.obj" kernel32.lib
 if errorlevel 1 exit /b 1
 
@@ -419,6 +440,9 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_platform_register_snapshot.obj" ^
+  "%ODIR%\bc250_post_display_reservation.obj" ^
+  "%ODIR%\bc250_vram_probe_transaction.obj" ^
   "%ODIR%\bc250_dxgk_readonly_ddi.obj" ^
   "%ODIR%\bc250_probe_telemetry.obj" ^
   "%ODIR%\dxgk_readonly_ddi_test.obj" kernel32.lib
@@ -646,6 +670,43 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo [cc] gfxhub_tlb_transaction_test.c
+cl %CFLAGS% /Fo"%ODIR%\gfxhub_tlb_transaction_test.obj" "%ROOTDIR%\driver\tests\gfxhub_tlb_transaction_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] gfxhub_tlb_transaction_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gfxhub_tlb_transaction_test.exe" ^
+  "%ODIR%\bc250_gcvm_contract.obj" ^
+  "%ODIR%\bc250_sdma_packet_builder.obj" ^
+  "%ODIR%\bc250_paging_contract.obj" ^
+  "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^
+  "%ODIR%\gfxhub_tlb_transaction_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\gfxhub_tlb_transaction_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(gfxhub_tlb_transaction_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
+echo [cc] gcvm_vmid8_transaction_test.c
+cl %CFLAGS% /Fo"%ODIR%\gcvm_vmid8_transaction_test.obj" "%ROOTDIR%\driver\tests\gcvm_vmid8_transaction_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] gcvm_vmid8_transaction_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gcvm_vmid8_transaction_test.exe" ^
+  "%ODIR%\bc250_gcvm_vmid8_transaction.obj" ^
+  "%ODIR%\gcvm_vmid8_transaction_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\gcvm_vmid8_transaction_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(gcvm_vmid8_transaction_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
 echo [cc] adapter_info_contract_test.c
 cl %CFLAGS% /Fo"%ODIR%\adapter_info_contract_test.obj" "%ROOTDIR%\driver\tests\adapter_info_contract_test.c"
 if errorlevel 1 exit /b 1
@@ -709,6 +770,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_tdr_recovery_contract.obj" ^
   "%ODIR%\bc250_context_dispatcher_contract.obj" ^
   "%ODIR%\bc250_paging_contract.obj" ^
+  "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^
   "%ODIR%\bc250_ih_contract.obj" ^
   "%ODIR%\bc250_sdma_packet_builder.obj" ^
   "%ODIR%\bc250_pm4_packet_builder.obj" ^
@@ -858,6 +920,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_context_dispatcher_contract.obj" ^
   "%ODIR%\bc250_ih_contract.obj" ^
   "%ODIR%\bc250_paging_contract.obj" ^
+  "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^
   "%ODIR%\bc250_adapter_info_contract.obj" ^
   "%ODIR%\bc250_segment_contract.obj" ^
   "%ODIR%\bc250_tdr_recovery_contract.obj" ^
@@ -869,6 +932,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\global_readiness_audit_test.obj" kernel32.lib
 if errorlevel 1 exit /b 1
 
@@ -921,12 +985,16 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_platform_register_snapshot.obj" ^
+  "%ODIR%\bc250_post_display_reservation.obj" ^
+  "%ODIR%\bc250_vram_probe_transaction.obj" ^
   "%ODIR%\bc250_dxgk_readonly_ddi.obj" ^
   "%ODIR%\bc250_adapter_info_contract.obj" ^
   "%ODIR%\bc250_segment_contract.obj" ^
   "%ODIR%\bc250_tdr_recovery_contract.obj" ^
   "%ODIR%\bc250_context_dispatcher_contract.obj" ^
   "%ODIR%\bc250_paging_contract.obj" ^
+  "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^
   "%ODIR%\bc250_ih_contract.obj" ^
   "%ODIR%\bc250_sdma_packet_builder.obj" ^
   "%ODIR%\bc250_pm4_packet_builder.obj" ^
@@ -966,6 +1034,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_context_dispatcher_contract.obj" ^
   "%ODIR%\bc250_ih_contract.obj" ^
   "%ODIR%\bc250_paging_contract.obj" ^
+  "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^
   "%ODIR%\bc250_adapter_info_contract.obj" ^
   "%ODIR%\bc250_segment_contract.obj" ^
   "%ODIR%\bc250_tdr_recovery_contract.obj" ^
@@ -984,6 +1053,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\bc250_dxgk_readonly_ddi.obj" ^
   "%ODIR%\bc250_mcdm_callbacks.obj" ^
   "%ODIR%\bc250_probe_telemetry_driver.obj" ^
@@ -1008,6 +1078,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_address_contract.obj" ^
   "%ODIR%\bc250_psp_contract.obj" ^
   "%ODIR%\bc250_compute_bootstrap.obj" ^
+  "%ODIR%\bc250_runtime_inventory.obj" ^
   "%ODIR%\bc250_owned_adapter_contract.obj" ^
   "%ODIR%\bc250_cm_resource_adapter.obj" ^
   "%ODIR%\bc250_start_device_adapter.obj" ^
@@ -1018,6 +1089,10 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_platform_register_snapshot.obj" ^
+  "%ODIR%\bc250_post_display_reservation.obj" ^
+  "%ODIR%\bc250_vram_probe_transaction.obj" ^
+  "%ODIR%\bc250_gcvm_backing_transaction.obj" ^
   "%ODIR%\bc250_dxgk_readonly_ddi.obj" ^
   "%ODIR%\bc250_adapter_info_contract.obj" ^
   "%ODIR%\bc250_segment_contract.obj" ^
@@ -1036,6 +1111,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_mcdm_callbacks.obj" ^
   "%ODIR%\bc250_display_ddi.obj" ^
   "%ODIR%\bc250_probe_telemetry.obj" ^
+  "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^
+  "%ODIR%\bc250_gcvm_vmid8_transaction.obj" ^
   "%ODIR%\bc250_active_miniport.obj" ^
   "%ODIR%\active_miniport_test.obj" kernel32.lib
 if errorlevel 1 exit /b 1
@@ -1101,10 +1178,16 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_platform_register_snapshot.obj" ^
+  "%ODIR%\bc250_post_display_reservation.obj" ^
+  "%ODIR%\bc250_vram_probe_transaction.obj" ^
   "%ODIR%\bc250_dxgk_readonly_ddi.obj" ^
   "%ODIR%\bc250_mcdm_callbacks.obj" ^
   "%ODIR%\bc250_display_ddi.obj" ^
   "%ODIR%\bc250_probe_telemetry_driver.obj" ^
+  "%ODIR%\bc250_gcvm_backing_transaction.obj" ^
+  "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^
+  "%ODIR%\bc250_gcvm_vmid8_transaction.obj" ^
   "%ODIR%\bc250_active_miniport_driver.obj" ^
   "%WDK%\Lib\%WDKVER%\km\x64\ntoskrnl.lib" ^
   "%WDK%\Lib\%WDKVER%\km\x64\hal.lib" ^
@@ -1163,7 +1246,7 @@ echo GOLDEN SETTINGS CONTRACT: OK ^(34 entries + RMW + 2-pass preflight + LIFO r
 echo COMPUTE MQD CONTRACT: OK ^(GFX10 512B MQD + EOP buffer + HQD queue bounds, offline^)
 echo CONTEXT DISPATCHER CONTRACT: OK ^(SDMA + Compute engine context dispatch + IB + EOP fences, offline^)
 echo INTERRUPT HANDLER CONTRACT: OK ^(GFX10 16B IV vectors + SDMA/CP routing + modular RPTR, offline^)
-echo PAGING BUFFER CONTRACT: OK ^(SDMA Transfer + Const Fill + GCVM Page Table updates + TLB flush, offline^)
+echo PAGING/TLB CONTRACT: OK ^(GFXHUB engine 17 ACK validated; owned VMID8 inert transaction hardware pending^)
 echo ADAPTER INFO CONTRACT: OK ^(2 nodes: SDMA0 + Compute MEC + 48-bit GPUVA, offline^)
 echo SEGMENT CONTRACT: OK ^(Segment 1 Local VRAM + Segment 2 GART Aperture, offline^)
 echo TDR RECOVERY CONTRACT: OK ^(Two-pass hang detection + Node 0/1 atomic reset + HQD dequeue, offline^)
@@ -1178,7 +1261,7 @@ echo MCDM OBJECT LIFECYCLE: OK ^(typed handles + allocation open/close + debug s
 echo DXGK READONLY DDI: OK ^(real signature + callback + fail-closed^)
 echo PCI BAR READER: OK ^(DxgkCbReadDeviceSpace readonly, no sizing writes^)
 echo REBAR READER: OK ^(supported + selected + assigned, readonly^)
-echo POST-DISPLAY RESERVATION: OK ^(ownership callback modeled offline; not linked to DDI^)
+echo POST-DISPLAY RESERVATION: OK ^(active StartDevice integration + fail-closed telemetry^)
 echo READONLY MCDM IMAGE: OK ^(DriverEntry links DxgkInitialize via displib; StartDevice fail-closed^)
 echo MCDM DEVELOPMENT IMAGE: OK ^(DriverEntry links DxgkInitialize; StartDevice fail-closed^)
 echo KERNEL COMPUTE SERVICE: OK ^(DriverEntry links IoCreateDevice; Direct MMIO + SDMA + MEC0 IOCTLs^)

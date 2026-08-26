@@ -58,6 +58,10 @@ typedef struct BC250_MCDM_OBJECT_RECORD {
     uint64_t AllocationToken;
     uint64_t AllocationBytes;
     uint64_t AllocationAlignment;
+    uint64_t RootPageTableAddress;
+    uint32_t RootPageTableSegmentId;
+    uint32_t RootPageTableEntries;
+    uint32_t RootPageTableSetCount;
 } BC250_MCDM_OBJECT_RECORD;
 
 typedef struct BC250_MCDM_OBJECT_REGISTRY {
@@ -102,6 +106,14 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectFindAllocationByToken(
     const BC250_MCDM_OBJECT_REGISTRY *Registry,
     uint64_t AllocationToken,
     BC250_MCDM_HANDLE *Handle);
+
+BC250_MCDM_OBJECT_STATUS Bc250McdmObjectSetRootPageTable(
+    BC250_MCDM_OBJECT_REGISTRY *Registry,
+    BC250_MCDM_HANDLE Context,
+    uint32_t SegmentId,
+    uint64_t Address,
+    uint32_t NumEntries,
+    uint32_t MaxEntries);
 
 BC250_MCDM_OBJECT_STATUS Bc250McdmObjectLookup(
     const BC250_MCDM_OBJECT_REGISTRY *Registry,

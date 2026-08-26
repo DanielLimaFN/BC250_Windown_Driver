@@ -44,6 +44,33 @@ DXGKDDI_QUERY_CHILD_STATUS Bc250McdmQueryChildStatus;
 DXGKDDI_QUERY_CHILD_RELATIONS Bc250McdmQueryChildRelations;
 DXGKDDI_UNLOAD Bc250McdmUnload;
 
+typedef struct BC250_MCDM_RUNTIME_CAPS {
+    UINT64 LocalSegmentBaseOffset;
+    UINT64 LocalSegmentBytes;
+    UINT64 CpuPhysicalStart;
+    UINT32 NodeCount;
+    UINT32 Ready;
+    UINT32 FullMcdmReady;
+    UINT32 GpuVaReady;
+    UINT32 PagingReady;
+    UINT32 TdrReady;
+    UINT32 PreemptionReady;
+    UINT32 SubmitReady;
+    UINT32 HistoryBufferReady;
+    UINT32 GpuVaBitCount;
+    UINT32 PageTableLevelCount;
+    UINT32 PageTableIndexBitCount;
+    UINT32 PageTableSizeBytes;
+    UINT32 PageTableAlignmentBytes;
+} BC250_MCDM_RUNTIME_CAPS;
+
+typedef NTSTATUS (*BC250_MCDM_QUERY_RUNTIME_CAPS)(
+    _In_ HANDLE AdapterContext,
+    _Out_ BC250_MCDM_RUNTIME_CAPS *Caps);
+
+VOID Bc250McdmInstallRuntimeCapsProvider(
+    _In_opt_ BC250_MCDM_QUERY_RUNTIME_CAPS Provider);
+
 typedef NTSTATUS (*BC250_MCDM_CREATE_PROCESS_OBJECT)(
     _In_ HANDLE AdapterContext,
     _In_ const void *ExternalOwner,
@@ -69,6 +96,14 @@ typedef NTSTATUS (*BC250_MCDM_CREATE_CONTEXT_OBJECT)(
 
 typedef NTSTATUS (*BC250_MCDM_DESTROY_CONTEXT_OBJECT)(
     _In_ HANDLE ContextHandle);
+
+typedef NTSTATUS (*BC250_MCDM_SET_ROOT_PAGE_TABLE_OBJECT)(
+    _In_ HANDLE AdapterContext,
+    _In_ HANDLE ContextHandle,
+    _In_ UINT32 SegmentId,
+    _In_ UINT64 Address,
+    _In_ UINT32 NumEntries,
+    _In_ UINT32 MaxEntries);
 
 typedef NTSTATUS (*BC250_MCDM_CREATE_ALLOCATION_OBJECTS)(
     _In_ HANDLE AdapterContext,
@@ -101,6 +136,9 @@ VOID Bc250McdmInstallDeviceLifecycle(
 VOID Bc250McdmInstallContextLifecycle(
     _In_opt_ BC250_MCDM_CREATE_CONTEXT_OBJECT CreateContextObject,
     _In_opt_ BC250_MCDM_DESTROY_CONTEXT_OBJECT DestroyContextObject);
+
+VOID Bc250McdmInstallGpuVaLifecycle(
+    _In_opt_ BC250_MCDM_SET_ROOT_PAGE_TABLE_OBJECT SetRootPageTableObject);
 
 VOID Bc250McdmInstallAllocationLifecycle(
     _In_opt_ BC250_MCDM_CREATE_ALLOCATION_OBJECTS CreateAllocationObjects,

@@ -83,3 +83,17 @@ token administrativo:
 - nenhum servico, INF, driver ou binding foi alterado.
 
 A sincronizacao precisa ser executada pelo usuario em um terminal elevado.
+
+## Sincronizacao concluida pelo usuario
+
+O usuario executou o instalador em terminal elevado. A verificacao posterior
+comprovou:
+
+- fonte e `C:\BC250_RECOVERY.cmd` byte a byte identicos;
+- SHA-256 comum:
+  `2B0367F2C5501609841C0768B6B78F67143D2E336A48A898F29B2F2D88F61ADD`;
+- auditor de readiness com exit 0;
+- servico `bc250mcdm` ainda presente, parado e sem SYS;
+- `oem18.inf` nao existe mais e nenhum INF MCDM correspondente foi localizado;
+- somente instalacao do script e `DRY-RUN` foram executados; nenhuma remocao
+  real, instalacao de driver ou troca de binding ocorreu.

@@ -39,6 +39,16 @@ BC250_RUNTIME_INVENTORY_STATUS Bc250BuildRuntimeVramInventory(
     if (Input->PlatformCarveoutCount > BC250_VRAM_MAX_REGIONS) {
         return BC250_RUNTIME_INVENTORY_BAD_ARGUMENT;
     }
+    if ((Input->EvidenceFlags & ~BC250_RUNTIME_EVIDENCE_COMPLETE) != 0u ||
+        (Input->HasScanout != 0 &&
+         (Input->EvidenceFlags & BC250_RUNTIME_EVIDENCE_SCANOUT_PROBED) == 0u) ||
+        (Input->HasDiscoveryTmr != 0 &&
+         (Input->EvidenceFlags & BC250_RUNTIME_EVIDENCE_DISCOVERY_TMR_PROBED) == 0u) ||
+        (Input->PlatformCarveoutCount != 0 &&
+         (Input->EvidenceFlags &
+          BC250_RUNTIME_EVIDENCE_PLATFORM_CARVEOUTS_PROBED) == 0u)) {
+        return BC250_RUNTIME_INVENTORY_BAD_ARGUMENT;
+    }
 
     memset(&candidate, 0, sizeof(candidate));
 
@@ -133,19 +143,26 @@ BC250_RUNTIME_INVENTORY_STATUS Bc250BuildRuntimeVramInventory(
     }
 
     candidate.SnapshotGeneration = SnapshotGeneration;
+    candidate.EvidenceFlags = Input->EvidenceFlags;
     candidate.ReservationCount = count;
     candidate.VramTotalBytes = VramTotalBytes;
     candidate.CpuVisibleBytes = CpuVisibleBytes;
     candidate.TotalReservedBytes = totalReserved;
-    candidate.TotalFreeBytes = VramTotalBytes - totalReserved;
+    candidate.TotalFreeBytes = 0;
     candidate.CpuVisibleReservedBytes = cpuReserved;
-    candidate.CpuVisibleFreeBytes = CpuVisibleBytes - cpuReserved;
-    candidate.OwnershipEvidenceFlags =
-        BC250_OWNERSHIP_EXCLUSIVE_ADAPTER |
-        BC250_OWNERSHIP_INVENTORY_COMPLETE;
-    candidate.StagingEvidenceFlags = BC250_STAGING_EVIDENCE_REQUIRED;
+    candidate.CpuVisibleFreeBytes = 0;
 
     *Report = candidate;
+    if ((Input->EvidenceFlags & BC250_RUNTIME_EVIDENCE_COMPLETE) !=
+        BC250_RUNTIME_EVIDENCE_COMPLETE) {
+        return BC250_RUNTIME_INVENTORY_INCOMPLETE;
+    }
+    Report->TotalFreeBytes = VramTotalBytes - totalReserved;
+    Report->CpuVisibleFreeBytes = CpuVisibleBytes - cpuReserved;
+    Report->OwnershipEvidenceFlags =
+        BC250_OWNERSHIP_EXCLUSIVE_ADAPTER |
+        BC250_OWNERSHIP_INVENTORY_COMPLETE;
+    Report->StagingEvidenceFlags = BC250_STAGING_EVIDENCE_REQUIRED;
     return BC250_RUNTIME_INVENTORY_OK;
 }
 
@@ -154,6 +171,7 @@ const char *Bc250RuntimeInventoryStatusName(
 {
     switch (Status) {
     case BC250_RUNTIME_INVENTORY_OK: return "ok";
+    case BC250_RUNTIME_INVENTORY_INCOMPLETE: return "incomplete";
     case BC250_RUNTIME_INVENTORY_BAD_ARGUMENT: return "bad_argument";
     case BC250_RUNTIME_INVENTORY_SCANOUT_INVALID:
         return "scanout_invalid";

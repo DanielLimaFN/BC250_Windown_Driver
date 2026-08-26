@@ -97,24 +97,44 @@ BC250_PAGING_STATUS Bc250PagingBuildFlushTlb(
     uint32_t BufferDwords,
     uint32_t *CursorDwords)
 {
-    BC250_SDMA_STATUS sdmaStatus;
-
     if (Params == NULL || PagingBuffer == NULL || CursorDwords == NULL) {
         return BC250_PAGING_BAD_ARGUMENT;
     }
-    if (Params->Vmid >= 16u) {
+    (void)BufferDwords;
+
+    /* A GFXHUB invalidation is MMIO + dummy read + ACK, never an SDMA NOP. */
+    return BC250_PAGING_UNSUPPORTED_OPERATION;
+}
+
+BC250_PAGING_STATUS Bc250PagingBuildGfxhubTlbFlushPlan(
+    const BC250_PAGING_FLUSH_TLB_PARAMS *Params,
+    BC250_GFXHUB_TLB_FLUSH_PLAN *Plan)
+{
+    const uint32_t invalidateAllLevels = 0x00F80000u;
+
+    if (Params == NULL || Plan == NULL) {
+        return BC250_PAGING_BAD_ARGUMENT;
+    }
+    if (Params->HubIndex != 0u || Params->Vmid == 0u ||
+        Params->Vmid >= 16u || Params->FlushType > 7u) {
         return BC250_PAGING_BAD_ARGUMENT;
     }
 
-    /* Emit SDMA NOP sequence representing synchronized TLB flush barrier */
-    sdmaStatus = Bc250SdmaEmitNop(PagingBuffer, BufferDwords, CursorDwords, 0u);
-    if (sdmaStatus == BC250_SDMA_RING_FULL) {
-        return BC250_PAGING_BUFFER_TOO_SMALL;
-    }
-    if (sdmaStatus != BC250_SDMA_OK) {
-        return BC250_PAGING_BAD_ARGUMENT;
-    }
-
+    memset(Plan, 0, sizeof(*Plan));
+    Plan->Vmid = Params->Vmid;
+    Plan->EngineId = 17u;
+    Plan->FlushType = Params->FlushType;
+    Plan->RequestRegisterOffset = 0xA2D0u;
+    Plan->AckRegisterOffset = 0xA318u;
+    Plan->RangeLowRegisterOffset = 0xA3A4u;
+    Plan->RangeHighRegisterOffset = 0xA3A8u;
+    Plan->RequestValue = (1u << Params->Vmid) |
+        (Params->FlushType << 16) | invalidateAllLevels;
+    Plan->AckMask = 1u << Params->Vmid;
+    Plan->ExpectedRangeLow = 0xFFFFFFFFu;
+    Plan->ExpectedRangeHigh = 0x0000001Fu;
+    Plan->RequiresDummyRequestRead = 1u;
+    Plan->UsesSemaphore = 0u;
     return BC250_PAGING_OK;
 }
 

@@ -29,8 +29,67 @@ static DXGKARG_CREATECONTEXT g_createContext;
 static DXGKARG_CREATEPROCESS g_createProcess;
 static DXGKARG_GETROOTPAGETABLESIZE g_rootPageTableSize;
 static DXGKARG_SUBMITCOMMANDVIRTUAL g_submitVirtual;
-static DXGK_QUERYSEGMENTOUT g_segmentOut;
+static DXGK_QUERYSEGMENTIN4 g_segmentIn;
+static DXGK_QUERYSEGMENTOUT4 g_segmentOut;
+static DXGK_SEGMENTDESCRIPTOR4 g_segmentDescriptor;
+static DXGK_QUERYGPUMMUCAPSIN g_gpuMmuIn;
+static DXGK_GPUMMUCAPS g_gpuMmuCaps;
+static DXGK_QUERYPAGETABLELEVELDESCIN g_pageLevelIn;
+static DXGK_PAGE_TABLE_LEVEL_DESC g_pageLevelDesc;
 static UINT g_numNodesOut;
+static UINT g_fullMcdmReady;
+static UINT64 g_rootAddress;
+static UINT32 g_rootEntries;
+static DXGKARG_BUILDPAGINGBUFFER g_paging;
+static DXGK_PTE g_pagingEntries[2];
+static UINT64 g_pageTable[512];
+
+static NTSTATUS Bc250TestSetRootPageTable(
+    HANDLE AdapterContext,
+    HANDLE ContextHandle,
+    UINT32 SegmentId,
+    UINT64 Address,
+    UINT32 NumEntries,
+    UINT32 MaxEntries)
+{
+    if (AdapterContext != (HANDLE)0x250 ||
+        ContextHandle != (HANDLE)0x253 || SegmentId != 1u ||
+        MaxEntries != 512u) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    g_rootAddress = Address;
+    g_rootEntries = NumEntries;
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS Bc250TestRuntimeCaps(
+    HANDLE AdapterContext, BC250_MCDM_RUNTIME_CAPS *Caps)
+{
+    if (AdapterContext != (HANDLE)0x250 || Caps == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    memset(Caps, 0, sizeof(*Caps));
+    Caps->LocalSegmentBaseOffset = 0x00A8C000ull;
+    Caps->LocalSegmentBytes = 0x0F132000ull;
+    Caps->CpuPhysicalStart = 0xC0A8C000ull;
+    Caps->NodeCount = 2u;
+    Caps->Ready = 1u;
+    Caps->FullMcdmReady = g_fullMcdmReady;
+    Caps->GpuVaReady = g_fullMcdmReady;
+    Caps->PagingReady = g_fullMcdmReady;
+    Caps->TdrReady = g_fullMcdmReady;
+    Caps->PreemptionReady = g_fullMcdmReady;
+    Caps->SubmitReady = g_fullMcdmReady;
+    Caps->HistoryBufferReady = g_fullMcdmReady;
+    if (g_fullMcdmReady != 0u) {
+        Caps->GpuVaBitCount = 48u;
+        Caps->PageTableLevelCount = 4u;
+        Caps->PageTableIndexBitCount = 9u;
+        Caps->PageTableSizeBytes = 4096u;
+        Caps->PageTableAlignmentBytes = 4096u;
+    }
+    return STATUS_SUCCESS;
+}
 
 static int Bc250RunMcdmCallbacksTest(void)
 {
@@ -65,7 +124,22 @@ static int Bc250RunMcdmCallbacksTest(void)
     g_queryInfo.pOutputData = &driverCaps;
     g_queryInfo.OutputDataSize = sizeof(driverCaps);
 
-    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) == STATUS_NOT_SUPPORTED);
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) == STATUS_DEVICE_NOT_READY);
+    g_fullMcdmReady = 0u;
+    Bc250McdmInstallRuntimeCapsProvider(Bc250TestRuntimeCaps);
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) == STATUS_DEVICE_NOT_READY);
+    g_fullMcdmReady = 1u;
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) == STATUS_SUCCESS);
+    CHECK(driverCaps.WDDMVersion == DXGKDDI_WDDMv2_7);
+    CHECK(driverCaps.MiscCaps.ComputeOnly == 1u);
+    CHECK(driverCaps.SupportNonVGA == FALSE);
+    CHECK(driverCaps.SupportPerEngineTDR == TRUE);
+    CHECK(driverCaps.SchedulingCaps.MultiEngineAware == 1u);
+    CHECK(driverCaps.SchedulingCaps.PreemptionAware == 1u);
+    CHECK(driverCaps.SchedulingCaps.LowIrqlPreemptCommand == 1u);
+    CHECK(driverCaps.MemoryManagementCaps.VirtualAddressingSupported == 1u);
+    CHECK(driverCaps.MemoryManagementCaps.GpuMmuSupported == 1u);
+    CHECK(driverCaps.MemoryManagementCaps.ParavirtualizationSupported == 1u);
 
     memset(&physCaps, 0, sizeof(physCaps));
     memset(&g_queryInfo, 0, sizeof(g_queryInfo));
@@ -73,24 +147,148 @@ static int Bc250RunMcdmCallbacksTest(void)
     g_queryInfo.pOutputData = &physCaps;
     g_queryInfo.OutputDataSize = sizeof(physCaps);
 
-    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) == STATUS_NOT_SUPPORTED);
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) == STATUS_SUCCESS);
+    CHECK(physCaps.NumExecutionNodes == 2u);
 
-    /* 3. Test QueryAdapterInfo - QUERYSEGMENT */
-    memset(&g_segmentOut, 0, sizeof(g_segmentOut));
+    /* GPUVA descriptors exist only behind the full runtime gate. */
+    memset(&g_gpuMmuIn, 0, sizeof(g_gpuMmuIn));
+    memset(&g_gpuMmuCaps, 0, sizeof(g_gpuMmuCaps));
     memset(&g_queryInfo, 0, sizeof(g_queryInfo));
-    g_queryInfo.Type = DXGKQAITYPE_QUERYSEGMENT;
+    g_queryInfo.Type = DXGKQAITYPE_GPUMMUCAPS;
+    g_queryInfo.pInputData = &g_gpuMmuIn;
+    g_queryInfo.InputDataSize = sizeof(g_gpuMmuIn);
+    g_queryInfo.pOutputData = &g_gpuMmuCaps;
+    g_queryInfo.OutputDataSize = sizeof(g_gpuMmuCaps);
+    g_fullMcdmReady = 0u;
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) ==
+        STATUS_DEVICE_NOT_READY);
+    g_fullMcdmReady = 1u;
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) ==
+        STATUS_SUCCESS);
+    CHECK(g_gpuMmuCaps.PageTableUpdateMode ==
+        DXGK_PAGETABLEUPDATE_CPU_VIRTUAL);
+    CHECK(g_gpuMmuCaps.VirtualAddressBitCount == 48u);
+    CHECK(g_gpuMmuCaps.PageTableLevelCount == 4u);
+
+    memset(&g_pageLevelIn, 0, sizeof(g_pageLevelIn));
+    memset(&g_pageLevelDesc, 0, sizeof(g_pageLevelDesc));
+    memset(&g_queryInfo, 0, sizeof(g_queryInfo));
+    g_queryInfo.Type = DXGKQAITYPE_PAGETABLELEVELDESC;
+    g_queryInfo.pInputData = &g_pageLevelIn;
+    g_queryInfo.InputDataSize = sizeof(g_pageLevelIn);
+    g_queryInfo.pOutputData = &g_pageLevelDesc;
+    g_queryInfo.OutputDataSize = sizeof(g_pageLevelDesc);
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) ==
+        STATUS_SUCCESS);
+    CHECK(g_pageLevelDesc.PageTableIndexBitCount == 9u);
+    CHECK(g_pageLevelDesc.PageTableSegmentId == 1u);
+    CHECK(g_pageLevelDesc.PagingProcessPageTableSegmentId == 1u);
+    CHECK(g_pageLevelDesc.PageTableSizeInBytes == 4096u);
+    CHECK(g_pageLevelDesc.PageTableAlignmentInBytes == 4096u);
+    g_pageLevelIn.LevelIndex = 4u;
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) ==
+        STATUS_INVALID_PARAMETER);
+    g_pageLevelIn.LevelIndex = 0u;
+    {
+        DXGKARG_SETROOTPAGETABLE setRoot;
+        memset(&setRoot, 0, sizeof(setRoot));
+        setRoot.hContext = (HANDLE)0x253;
+        setRoot.Address.SegmentId = 1u;
+        setRoot.Address.SegmentOffset = 0x0000000000345000ull;
+        setRoot.NumEntries = 512u;
+        Bc250McdmInstallGpuVaLifecycle(Bc250TestSetRootPageTable);
+        Bc250McdmSetRootPageTable((HANDLE)0x250, &setRoot);
+        CHECK(g_rootAddress == 0x0000000000345000ull);
+        CHECK(g_rootEntries == 512u);
+    }
+    {
+        memset(&g_paging, 0, sizeof(g_paging));
+        memset(g_pagingEntries, 0, sizeof(g_pagingEntries));
+        memset(g_pageTable, 0xCC, sizeof(g_pageTable));
+        g_pagingEntries[0].Valid = 1u;
+        g_pagingEntries[0].CacheCoherent = 1u;
+        g_pagingEntries[0].ReadOnly = 1u;
+        g_pagingEntries[0].NoExecute = 1u;
+        g_pagingEntries[0].Segment = 1u;
+        g_pagingEntries[0].PageTablePageSize =
+            DXGK_PTE_PAGE_TABLE_PAGE_4KB;
+        g_pagingEntries[0].PageAddress = 0x2000u;
+        g_paging.Operation = DXGK_OPERATION_UPDATE_PAGE_TABLE;
+        g_paging.UpdatePageTable.PageTableLevel = 0u;
+        g_paging.UpdatePageTable.PageTableAddress.CpuVirtual = g_pageTable;
+        g_paging.UpdatePageTable.pPageTableEntries = g_pagingEntries;
+        g_paging.UpdatePageTable.StartIndex = 3u;
+        g_paging.UpdatePageTable.NumPageTableEntries = 2u;
+        g_paging.UpdatePageTable.UpdateMode =
+            DXGK_PAGETABLEUPDATE_CPU_VIRTUAL;
+        CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
+            STATUS_SUCCESS);
+        CHECK(g_pageTable[2] == 0xCCCCCCCCCCCCCCCCull);
+        CHECK(g_pageTable[3] == 0x0000000000A8E025ull);
+        CHECK(g_pageTable[4] == 0u);
+        g_pagingEntries[0].Segment = 0u;
+        g_pageTable[3] = 0x1122334455667788ull;
+        CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
+            STATUS_NOT_SUPPORTED);
+        CHECK(g_pageTable[3] == 0x1122334455667788ull);
+    }
+
+    /* 3. MCDM requires QUERYSEGMENT4 and prohibits legacy segment queries. */
+    memset(&g_segmentOut, 0, sizeof(g_segmentOut));
+    memset(&g_segmentDescriptor, 0, sizeof(g_segmentDescriptor));
+    memset(&g_segmentIn, 0, sizeof(g_segmentIn));
+    memset(&g_queryInfo, 0, sizeof(g_queryInfo));
+    g_queryInfo.Type = DXGKQAITYPE_QUERYSEGMENT4;
+    g_queryInfo.pInputData = &g_segmentIn;
+    g_queryInfo.InputDataSize = sizeof(g_segmentIn);
     g_queryInfo.pOutputData = &g_segmentOut;
     g_queryInfo.OutputDataSize = sizeof(g_segmentOut);
 
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) == STATUS_SUCCESS);
+    CHECK(g_segmentOut.NbSegment == 1u);
+    g_segmentOut.pSegmentDescriptor = (BYTE *)&g_segmentDescriptor;
+    g_segmentOut.SegmentDescriptorStride = sizeof(g_segmentDescriptor) - 1u;
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) == STATUS_INVALID_PARAMETER);
+    g_segmentOut.SegmentDescriptorStride = sizeof(g_segmentDescriptor);
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) == STATUS_SUCCESS);
+    CHECK(g_segmentDescriptor.BaseAddress.QuadPart == 0x00A8C000ll);
+    CHECK(g_segmentDescriptor.CpuTranslatedAddress.QuadPart == 0xC0A8C000ll);
+    CHECK(g_segmentDescriptor.Size == 0x0F132000ull);
+    CHECK(g_segmentDescriptor.CommitLimit == 0u);
+    CHECK(g_segmentDescriptor.Flags.CpuVisible == 1u);
+    g_queryInfo.Type = DXGKQAITYPE_QUERYSEGMENT;
     CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) == STATUS_NOT_SUPPORTED);
+    g_queryInfo.Type = DXGKQAITYPE_QUERYSEGMENT3;
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) == STATUS_NOT_SUPPORTED);
+
+    {
+        UINT powerComponents = 99u;
+        DXGKARG_HISTORYBUFFERPRECISION precision[2];
+        memset(&g_queryInfo, 0, sizeof(g_queryInfo));
+        g_queryInfo.Type = DXGKQAITYPE_NUMPOWERCOMPONENTS;
+        g_queryInfo.pOutputData = &powerComponents;
+        g_queryInfo.OutputDataSize = sizeof(powerComponents);
+        CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) == STATUS_SUCCESS);
+        CHECK(powerComponents == 0u);
+        memset(precision, 0, sizeof(precision));
+        g_queryInfo.Type = DXGKQAITYPE_HISTORYBUFFERPRECISION;
+        g_queryInfo.pOutputData = precision;
+        g_queryInfo.OutputDataSize = sizeof(precision);
+        CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) == STATUS_SUCCESS);
+        CHECK(precision[0].PrecisionBits == 32u);
+        CHECK(precision[1].PrecisionBits == 32u);
+    }
 
     /* 4. Test GetNodeMetadata - Node 0 (SDMA) */
     memset(&g_nodeMetadata, 0, sizeof(g_nodeMetadata));
-    CHECK(Bc250McdmGetNodeMetadata((HANDLE)0x250, 0u, &g_nodeMetadata) == STATUS_NOT_SUPPORTED);
+    CHECK(Bc250McdmGetNodeMetadata((HANDLE)0x250, 0u, &g_nodeMetadata) == STATUS_SUCCESS);
+    CHECK(g_nodeMetadata.EngineType == DXGK_ENGINE_TYPE_COPY);
+    CHECK(g_nodeMetadata.GpuMmuSupported == TRUE);
 
     /* 5. Test GetNodeMetadata - Node 1 (Compute) */
     memset(&g_nodeMetadata, 0, sizeof(g_nodeMetadata));
-    CHECK(Bc250McdmGetNodeMetadata((HANDLE)0x250, 1u, &g_nodeMetadata) == STATUS_NOT_SUPPORTED);
+    CHECK(Bc250McdmGetNodeMetadata((HANDLE)0x250, 1u, &g_nodeMetadata) == STATUS_SUCCESS);
+    CHECK(g_nodeMetadata.EngineType == DXGK_ENGINE_TYPE_OTHER);
 
     /* 6. Test QueryEngineStatus */
     memset(&g_engineStatus, 0, sizeof(g_engineStatus));
