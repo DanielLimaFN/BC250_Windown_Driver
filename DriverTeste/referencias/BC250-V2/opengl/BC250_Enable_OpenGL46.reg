@@ -1,0 +1,64 @@
+Windows Registry Editor Version 5.00
+
+; ==============================================================================
+; Ativação Global do Driver OpenGL 4.60 ICD para AMD BC-250 (Cyan Skillfish)
+; ==============================================================================
+
+; 1. Vinculação direta ao Adaptador de Vídeo WDDM (0000)
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000]
+"OpenGLDriverName"=hex(7):61,00,74,00,69,00,6f,00,36,00,78,00,78,00,78,00,2e,\
+  00,64,00,6c,00,6c,00,00,00,00,00
+"OpenGLDriverName_Wow"=hex(7):61,00,74,00,69,00,6f,00,36,00,78,00,78,00,2e,\
+  00,64,00,6c,00,6c,00,00,00,00,00
+"OpenGLVersion"=dword:00000001
+"OpenGLFlags"=dword:00000001
+
+; 2. ICD no Subsistema OpenGL do Windows (64-bit)
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\atio6xxx]
+"DLL"="atio6xxx.dll"
+"Version"=dword:00000002
+"DriverVersion"=dword:00000001
+"Flags"=dword:00000001
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\Radeon]
+"DLL"="atio6xxx.dll"
+"Version"=dword:00000002
+"DriverVersion"=dword:00000001
+"Flags"=dword:00000001
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\MSAMD]
+"DLL"="atio6xxx.dll"
+"Version"=dword:00000002
+"DriverVersion"=dword:00000001
+"Flags"=dword:00000001
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\amdbc250vulkan]
+"DLL"="atio6xxx.dll"
+"Version"=dword:00000002
+"DriverVersion"=dword:00000001
+"Flags"=dword:00000001
+
+; 3. ICD no Subsistema OpenGL do Windows (32-bit / WOW64)
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\atio6xxx]
+"DLL"="atio6xxx.dll"
+"Version"=dword:00000002
+"DriverVersion"=dword:00000001
+"Flags"=dword:00000001
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\Radeon]
+"DLL"="atio6xxx.dll"
+"Version"=dword:00000002
+"DriverVersion"=dword:00000001
+"Flags"=dword:00000001
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\MSAMD]
+"DLL"="atio6xxx.dll"
+"Version"=dword:00000002
+"DriverVersion"=dword:00000001
+"Flags"=dword:00000001
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\amdbc250vulkan]
+"DLL"="atio6xxx.dll"
+"Version"=dword:00000002
+"DriverVersion"=dword:00000001
+"Flags"=dword:00000001

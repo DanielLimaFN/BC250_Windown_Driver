@@ -1,0 +1,54 @@
+[Version]
+Signature="$Windows NT$"
+Class=ComputeAccelerator
+ClassGuid={F01A9D53-3FF6-48D2-9F97-C8A7004BE10C}
+Provider=%ProviderName%
+DriverVer=08/26/2026,1.16.0.0
+CatalogFile=bc250mcdm.cat
+PnpLockdown=1
+
+[DestinationDirs]
+BC250Mcdm.CopyFiles=12
+
+[SourceDisksNames]
+1=%DiskName%,,,.
+
+[SourceDisksFiles]
+bc250mcdm.sys=1
+
+[Manufacturer]
+%ManufacturerName%=BC250,NTamd64
+
+[BC250.NTamd64]
+%DeviceName%=BC250Mcdm.Install,PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00
+%DeviceName%=BC250Mcdm.Install,PCI\VEN_1002&DEV_13FE&SUBSYS_00001022
+%DeviceName%=BC250Mcdm.Install,PCI\VEN_1002&DEV_13FE
+
+[BC250Mcdm.Install]
+FeatureScore=50
+CopyFiles=BC250Mcdm.CopyFiles
+
+[BC250Mcdm.Install.Services]
+AddService=bc250mcdm,0x00000002,BC250Mcdm.Service
+
+[BC250Mcdm.Service]
+DisplayName=%ServiceName%
+ServiceType=1
+StartType=3
+ErrorControl=1
+ServiceBinary=%12%\bc250mcdm.sys
+AddReg=BC250Mcdm.DriverReg
+
+[BC250Mcdm.DriverReg]
+HKR,Parameters\Probe,SchemaVersion,0x00010001,24
+HKR,Parameters\Driver,ActiveMode,0x00010001,1
+
+[BC250Mcdm.CopyFiles]
+bc250mcdm.sys
+
+[Strings]
+ProviderName="BC-250 Driver Project"
+ManufacturerName="AMD BC-250 Project"
+DiskName="BC-250 MCDM Fail-Closed Development Driver"
+DeviceName="BC-250 MCDM Fail-Closed Development Adapter"
+ServiceName="BC-250 MCDM Fail-Closed Development Driver"

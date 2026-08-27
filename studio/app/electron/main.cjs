@@ -11,7 +11,7 @@ function createWindow() {
     minHeight: 580,
     frame: false, // Frameless for custom Windows 11 titlebar
     transparent: false,
-    backgroundColor: '#0d0d10',
+    backgroundColor: '#eff4fb',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
@@ -20,16 +20,15 @@ function createWindow() {
     autoHideMenuBar: true,
   });
 
-  const devUrl = 'http://localhost:5173';
-  const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+  const distFile = path.join(__dirname, '../dist/index.html');
+  const isDev = process.env.NODE_ENV === 'development' && process.env.VITE_DEV_SERVER_URL;
 
   if (isDev) {
-    mainWindow.loadURL(devUrl).catch(() => {
-      // If dev server isn't running yet, wait and load dist
-      mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL).catch(() => {
+      mainWindow.loadFile(distFile);
     });
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadFile(distFile);
   }
 
   // Handle window controls

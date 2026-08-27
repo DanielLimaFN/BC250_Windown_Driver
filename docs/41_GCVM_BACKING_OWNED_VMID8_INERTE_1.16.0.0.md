@@ -2,19 +2,18 @@
 
 Data: 2026-08-26.
 
-Status: **CANDIDATO CONSTRUIDO; ENSAIO FISICO PENDENTE; ACELERACAO NAO VALIDADA**.
+Status: **GATE FISICO APROVADO; ACELERACAO NAO VALIDADA**.
 
 ```text
-Conformidade BC250_HARDWARE_RULES   72%
+Conformidade BC250_HARDWARE_RULES   76%
 Miniport MCDM funcional            43%
-Memoria/GPUVA WDDM                 25%
+Memoria/GPUVA WDDM                 32%
 PM4/compute pelo miniport           0%
 Vulkan ICD                          0%
 LLM acelerado                       0%
 ```
 
-Os percentuais permanecem inalterados ate a telemetria do hardware aprovar o
-novo gate.
+Os percentuais subiram somente depois da telemetria fisica aprovar o gate.
 
 ## Objetivo
 
@@ -76,3 +75,17 @@ Depois da aprovacao fisica deste candidato, o proximo pacote podera habilitar
 um contexto GCVM por tempo limitado e mandar a SDMA consumir um VA. O gate so
 sobe com RPTR alcancando WPTR, fence escrita pela GPU, destino integral correto,
 faults ausentes e rollback completo.
+
+## Resultado fisico
+
+Evidencia `2026-08-26_09-33-47-DESKTOP-HQAG6T4-mcdm-replace`:
+
+- page table offset `0x0FBBC000`, MC `0x4_5FBBC000`;
+- target offset `0x0FBBD000`;
+- PTE `0x4_5FBBD061`, exatamente `VALID|READ|WRITE` para o target owned;
+- `GcvmBackingStatus=0`, readback e restore iguais a 1;
+- contexto anterior `0x007FFE80`, portanto `ENABLE_CONTEXT=0`;
+- `GcvmVmid8Status=0`, readback, TLB e restore iguais a 1;
+- ACK TLB `0x00000100` no primeiro poll;
+- `GcvmInertPhysicalReady=1`;
+- sinais GPUVA operacionais permaneceram em zero.

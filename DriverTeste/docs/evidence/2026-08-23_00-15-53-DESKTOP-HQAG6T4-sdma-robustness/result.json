@@ -1,0 +1,248 @@
+﻿{
+    "schema_version":  1,
+    "captured_at":  "2026-08-23T00:15:53.9347243-03:00",
+    "objective":  "SDMA robustness: repetition, ring wraparound, idle/resume, negative cases and recovery",
+    "verdict":  "NÃO VALIDADO EM HARDWARE",
+    "passed":  false,
+    "failure":  "Preflight recusado: estado SDMA residual RB_CNTL=0x80840000 BASE=0x0 WPTR=0x00000044.",
+    "limitations":  [
+                        "A single passing run does not establish determinism; repeat across reboots",
+                        "Physical power telemetry remains unavailable and temperature is uncalibrated",
+                        "Firmware runtime state persists until reboot"
+                    ],
+    "reboot_required":  false,
+    "environment":  {
+                        "display_service":  "BasicDisplay",
+                        "legacy_bc250v4_absent":  true,
+                        "driver_sha256":  "e0d880fa79e31a5f428d4d215298b5fc4e3bfd7c64fc7d78b88e3a9dcfccd671",
+                        "firmware_sha256":  "15d0d3626da7f2513f03b13bb7e02eeeeccab276276ae27d0b6067b5f25e9e95",
+                        "ring_offset":  "0x0FF00000",
+                        "ring_dwords":  128,
+                        "submissions":  12,
+                        "idle_seconds":  6,
+                        "bad_opcode_executed":  false
+                    },
+    "phases":  [
+
+               ],
+    "sequence":  [
+
+                 ],
+    "wrap_observed":  false,
+    "resume":  null,
+    "negatives":  [
+
+                  ],
+    "recovery":  [
+
+                 ],
+    "pre_registers":  null,
+    "post_registers":  {
+                           "clk_ctrl":  "0xFF0C0100",
+                           "cntl":  "0x000400C2",
+                           "status":  "0x46DEE557",
+                           "ucode_checksum":  "0x55B182E3",
+                           "f32_cntl":  "0x00000000",
+                           "status2":  "0x000006F0"
+                       },
+    "post_state":  {
+                       "rb_cntl":  2156134400,
+                       "rb_base":  0,
+                       "wptr":  68
+                   },
+    "destination":  "0x0FF04000",
+    "destination_before":  [
+
+                           ],
+    "destination_after_restore":  [
+
+                                  ],
+    "bugchecks":  [
+
+                  ],
+    "telemetry":  {
+                      "sample_count":  0,
+                      "gfxoff_state_histogram":  [
+
+                                                 ],
+                      "sampler_error":  null,
+                      "power_available":  false,
+                      "file":  null
+                  },
+    "commands":  [
+                     {
+                         "name":  "info_pre",
+                         "command":  "bc250ctl.exe info",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "driver          : bc250dbg v5.0  ABI 5  armamento=readonly",
+                                        "pci             : 01:00.0  1002:13FE rev 00",
+                                        "  BAR0          : 0x00000000C0000000  raw 0xC000000C",
+                                        "  BAR2          : 0x00000000D0000000  raw 0xD000000C",
+                                        "  BAR4          : 0x000000000000EF00  raw 0x0000EF01 io",
+                                        "  BAR5          : 0x00000000FE800000  raw 0xFE800000 [mapeado]",
+                                        "mmio            : 0xFE800000 +512 KB ",
+                                        "  GPU_ID        : 0x9FFF9700 (confere com a BC-250)",
+                                        "  offset          SOC15        legado      ",
+                                        "  SCRATCH_REG0  : 0x00000000   0x4D585042",
+                                        "  GRBM_STATUS   : 0x00003028   0x00000000",
+                                        "  CC_GC_ARRAY   : 0xFFF80000   0x00000000   \u003c== o desempate",
+                                        "  ** MAPA OBSERVADO: CC_GC_SHADER_ARRAY_CONFIG em 0x089BC bate com o",
+                                        "     valor bruto visto no Linux (0xFFF80000). Isto sustenta o offset",
+                                        "     SOC15, mas nao prova quantidade de CU utilizavel nem execucao.",
+                                        "smu             : nao consultado pelo baseline; use \u0027smu\u0027 explicitamente",
+                                        "termico         : NAO CALIBRADO  limite 85 C  ",
+                                        "  sondas cruas  : edge 0xFFFFFFFF  junc 0x00000000  mem 0x00002417",
+                                        "  ** sem calibracao o driver recusa armar \u0027unsafe\u0027.",
+                                        "     Compare as sondas com o Linux e rode \u0027thermal calib\u0027.",
+                                        "log ring        : 4096 entradas, head 20"
+                                    ]
+                     },
+                     {
+                         "name":  "psp_status_pre",
+                         "command":  "bc250ctl.exe psp status",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do PSP (MP0 em 0x58000):",
+                                        "  C2PMSG_64 : 0x800C0000   \u003c== TOS PRONTO (bit31)",
+                                        "  C2PMSG_81 : 0x003319E0   status/heartbeat do SOS (valor variavel)",
+                                        "  C2PMSG_67 : 0x00000000   WPTR do anel",
+                                        "  anel      : lo 0x00000000  hi 0x00000000  tam 0x00000000",
+                                        "  criado por nos: nao"
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_status_pre",
+                         "command":  "bc250ctl.exe sdma status",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do Motor SDMA0:",
+                                        "  STATUS_REG    : 0x46DEE557",
+                                        "  RB_CNTL       : 0x80840000 (DESABILITADO)",
+                                        "  RB_BASE       : 0x0",
+                                        "  WPTR (reg)    : 0x00000044",
+                                        "  WPTR (shadow) : 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  RPTR (reg)    : 0x00000000   (nao e fonte de verdade)",
+                                        "  RPTR (writeb.): 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  Pendente      : INDISPONIVEL (anel externo/POST; shadows nao mapeados)"
+                                    ]
+                     },
+                     {
+                         "name":  "post_clk_ctrl",
+                         "command":  "bc250ctl.exe reg r 0x049EC",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000049EC = 0xFF0C0100"
+                                    ]
+                     },
+                     {
+                         "name":  "post_cntl",
+                         "command":  "bc250ctl.exe reg r 0x049F0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000049F0 = 0x000400C2"
+                                    ]
+                     },
+                     {
+                         "name":  "post_status",
+                         "command":  "bc250ctl.exe reg r 0x04A14",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A14 = 0x46DEE557"
+                                    ]
+                     },
+                     {
+                         "name":  "post_ucode_checksum",
+                         "command":  "bc250ctl.exe reg r 0x04A24",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A24 = 0x55B182E3"
+                                    ]
+                     },
+                     {
+                         "name":  "post_f32_cntl",
+                         "command":  "bc250ctl.exe reg r 0x04A28",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A28 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_status2",
+                         "command":  "bc250ctl.exe reg r 0x04A60",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00004A60 = 0x000006F0"
+                                    ]
+                     },
+                     {
+                         "name":  "sdma_status_post",
+                         "command":  "bc250ctl.exe sdma status",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do Motor SDMA0:",
+                                        "  STATUS_REG    : 0x46DEE557",
+                                        "  RB_CNTL       : 0x80840000 (DESABILITADO)",
+                                        "  RB_BASE       : 0x0",
+                                        "  WPTR (reg)    : 0x00000044",
+                                        "  WPTR (shadow) : 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  RPTR (reg)    : 0x00000000   (nao e fonte de verdade)",
+                                        "  RPTR (writeb.): 0x00000000   \u003c- valido para anel criado por este driver",
+                                        "  Pendente      : INDISPONIVEL (anel externo/POST; shadows nao mapeados)"
+                                    ]
+                     },
+                     {
+                         "name":  "psp_status_post",
+                         "command":  "bc250ctl.exe psp status",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do PSP (MP0 em 0x58000):",
+                                        "  C2PMSG_64 : 0x800C0000   \u003c== TOS PRONTO (bit31)",
+                                        "  C2PMSG_81 : 0x003319FD   status/heartbeat do SOS (valor variavel)",
+                                        "  C2PMSG_67 : 0x00000000   WPTR do anel",
+                                        "  anel      : lo 0x00000000  hi 0x00000000  tam 0x00000000",
+                                        "  criado por nos: nao"
+                                    ]
+                     },
+                     {
+                         "name":  "info_post",
+                         "command":  "bc250ctl.exe info",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "driver          : bc250dbg v5.0  ABI 5  armamento=readonly",
+                                        "pci             : 01:00.0  1002:13FE rev 00",
+                                        "  BAR0          : 0x00000000C0000000  raw 0xC000000C",
+                                        "  BAR2          : 0x00000000D0000000  raw 0xD000000C",
+                                        "  BAR4          : 0x000000000000EF00  raw 0x0000EF01 io",
+                                        "  BAR5          : 0x00000000FE800000  raw 0xFE800000 [mapeado]",
+                                        "mmio            : 0xFE800000 +512 KB ",
+                                        "  GPU_ID        : 0x9FFF9700 (confere com a BC-250)",
+                                        "  offset          SOC15        legado      ",
+                                        "  SCRATCH_REG0  : 0x00000000   0x4D585042",
+                                        "  GRBM_STATUS   : 0x00003028   0x00000000",
+                                        "  CC_GC_ARRAY   : 0xFFF80000   0x00000000   \u003c== o desempate",
+                                        "  ** MAPA OBSERVADO: CC_GC_SHADER_ARRAY_CONFIG em 0x089BC bate com o",
+                                        "     valor bruto visto no Linux (0xFFF80000). Isto sustenta o offset",
+                                        "     SOC15, mas nao prova quantidade de CU utilizavel nem execucao.",
+                                        "smu             : nao consultado pelo baseline; use \u0027smu\u0027 explicitamente",
+                                        "termico         : NAO CALIBRADO  limite 85 C  ",
+                                        "  sondas cruas  : edge 0xFFFFFFFF  junc 0x00000000  mem 0x00001EC2",
+                                        "  ** sem calibracao o driver recusa armar \u0027unsafe\u0027.",
+                                        "     Compare as sondas com o Linux e rode \u0027thermal calib\u0027.",
+                                        "log ring        : 4096 entradas, head 20"
+                                    ]
+                     }
+                 ]
+}

@@ -1,0 +1,365 @@
+﻿=== info_pre ===
+$ bc250ctl.exe info
+driver          : bc250dbg v17.0  ABI 17  armamento=readonly
+pci             : 01:00.0  1002:13FE rev 00
+  BAR0          : 0x00000000C0000000  raw 0xC000000C
+  BAR2          : 0x00000000D0000000  raw 0xD000000C
+  BAR4          : 0x000000000000EF00  raw 0x0000EF01 io
+  BAR5          : 0x00000000FE800000  raw 0xFE800000 [mapeado]
+mmio            : 0xFE800000 +512 KB 
+  GPU_ID        : 0x9FFF9714 
+  offset          SOC15        legado      
+  SCRATCH_REG0  : 0x00000000   0x4D585042
+  GRBM_STATUS   : 0x00003028   0x00000000
+  CC_GC_ARRAY   : 0xFFF80000   0x00000000   <== o desempate
+  ** MAPA OBSERVADO: CC_GC_SHADER_ARRAY_CONFIG em 0x089BC bate com o
+     valor bruto visto no Linux (0xFFF80000). Isto sustenta o offset
+     SOC15, mas nao prova quantidade de CU utilizavel nem execucao.
+smu             : nao consultado pelo baseline; use 'smu' explicitamente
+termico         : NAO CALIBRADO  limite 85 C  
+  sondas cruas  : edge 0xFFFFFFFF  junc 0x00000000  mem 0x00001EC2
+  ** sem calibracao o driver recusa armar 'unsafe'.
+     Compare as sondas com o Linux e rode 'thermal calib'.
+log ring        : 4096 entradas, head 6
+exit=0
+
+=== orig_0 ===
+$ bc250ctl.exe reg r 0x30100
+bar 0x00030100 = 0x00000000
+exit=0
+
+=== orig_1 ===
+$ bc250ctl.exe reg r 0x30104
+bar 0x00030104 = 0x00000000
+exit=0
+
+=== orig_2 ===
+$ bc250ctl.exe reg r 0x30108
+bar 0x00030108 = 0x00000000
+exit=0
+
+=== orig_3 ===
+$ bc250ctl.exe reg r 0x3010C
+bar 0x0003010C = 0x00000000
+exit=0
+
+=== orig_4 ===
+$ bc250ctl.exe reg r 0x30110
+bar 0x00030110 = 0x00000000
+exit=0
+
+=== orig_5 ===
+$ bc250ctl.exe reg r 0x30114
+bar 0x00030114 = 0x00000000
+exit=0
+
+=== orig_6 ===
+$ bc250ctl.exe reg r 0x30118
+bar 0x00030118 = 0x00000000
+exit=0
+
+=== orig_7 ===
+$ bc250ctl.exe reg r 0x3011C
+bar 0x0003011C = 0x00000000
+exit=0
+
+=== controle_antes ===
+$ bc250ctl.exe reg r 0x0CA80
+bar 0x0000CA80 = 0x00000000
+exit=0
+
+=== test_antes_GRBM_STATUS ===
+$ bc250ctl.exe reg r 0x08010
+bar 0x00008010 = 0x00003028
+exit=0
+
+=== test_antes_GRBM_STATUS2 ===
+$ bc250ctl.exe reg r 0x08008
+bar 0x00008008 = 0x00000008
+exit=0
+
+=== test_antes_CP_STAT ===
+$ bc250ctl.exe reg r 0x08680
+bar 0x00008680 = 0x00000000
+exit=0
+
+=== test_antes_CP_ME_CNTL ===
+$ bc250ctl.exe reg r 0x086D8
+bar 0x000086D8 = 0x15000000
+exit=0
+
+=== arm_write ===
+$ bc250ctl.exe arm write
+armamento agora: write
+exit=0
+
+=== padraoA_w0 ===
+$ bc250ctl.exe reg w 0x30100 0xBC250000
+bar 0x00030100 <- 0xBC250000   readback 0xBC250000   guardou
+exit=0
+
+=== padraoA_w1 ===
+$ bc250ctl.exe reg w 0x30104 0xBC250001
+bar 0x00030104 <- 0xBC250001   readback 0xBC250001   guardou
+exit=0
+
+=== padraoA_w2 ===
+$ bc250ctl.exe reg w 0x30108 0xBC250002
+bar 0x00030108 <- 0xBC250002   readback 0xBC250002   guardou
+exit=0
+
+=== padraoA_w3 ===
+$ bc250ctl.exe reg w 0x3010C 0xBC250003
+bar 0x0003010C <- 0xBC250003   readback 0xBC250003   guardou
+exit=0
+
+=== padraoA_w4 ===
+$ bc250ctl.exe reg w 0x30110 0xBC250004
+bar 0x00030110 <- 0xBC250004   readback 0xBC250004   guardou
+exit=0
+
+=== padraoA_w5 ===
+$ bc250ctl.exe reg w 0x30114 0xBC250005
+bar 0x00030114 <- 0xBC250005   readback 0xBC250005   guardou
+exit=0
+
+=== padraoA_w6 ===
+$ bc250ctl.exe reg w 0x30118 0xBC250006
+bar 0x00030118 <- 0xBC250006   readback 0xBC250006   guardou
+exit=0
+
+=== padraoA_w7 ===
+$ bc250ctl.exe reg w 0x3011C 0xBC250007
+bar 0x0003011C <- 0xBC250007   readback 0xBC250007   guardou
+exit=0
+
+=== padraoA_r0 ===
+$ bc250ctl.exe reg r 0x30100
+bar 0x00030100 = 0xBC250000
+exit=0
+
+=== padraoA_r1 ===
+$ bc250ctl.exe reg r 0x30104
+bar 0x00030104 = 0xBC250001
+exit=0
+
+=== padraoA_r2 ===
+$ bc250ctl.exe reg r 0x30108
+bar 0x00030108 = 0xBC250002
+exit=0
+
+=== padraoA_r3 ===
+$ bc250ctl.exe reg r 0x3010C
+bar 0x0003010C = 0xBC250003
+exit=0
+
+=== padraoA_r4 ===
+$ bc250ctl.exe reg r 0x30110
+bar 0x00030110 = 0xBC250004
+exit=0
+
+=== padraoA_r5 ===
+$ bc250ctl.exe reg r 0x30114
+bar 0x00030114 = 0xBC250005
+exit=0
+
+=== padraoA_r6 ===
+$ bc250ctl.exe reg r 0x30118
+bar 0x00030118 = 0xBC250006
+exit=0
+
+=== padraoA_r7 ===
+$ bc250ctl.exe reg r 0x3011C
+bar 0x0003011C = 0xBC250007
+exit=0
+
+=== padraoB_w0 ===
+$ bc250ctl.exe reg w 0x30100 0x43DAFFFF
+bar 0x00030100 <- 0x43DAFFFF   readback 0x43DAFFFF   guardou
+exit=0
+
+=== padraoB_w1 ===
+$ bc250ctl.exe reg w 0x30104 0x43DAFFFE
+bar 0x00030104 <- 0x43DAFFFE   readback 0x43DAFFFE   guardou
+exit=0
+
+=== padraoB_w2 ===
+$ bc250ctl.exe reg w 0x30108 0x43DAFFFD
+bar 0x00030108 <- 0x43DAFFFD   readback 0x43DAFFFD   guardou
+exit=0
+
+=== padraoB_w3 ===
+$ bc250ctl.exe reg w 0x3010C 0x43DAFFFC
+bar 0x0003010C <- 0x43DAFFFC   readback 0x43DAFFFC   guardou
+exit=0
+
+=== padraoB_w4 ===
+$ bc250ctl.exe reg w 0x30110 0x43DAFFFB
+bar 0x00030110 <- 0x43DAFFFB   readback 0x43DAFFFB   guardou
+exit=0
+
+=== padraoB_w5 ===
+$ bc250ctl.exe reg w 0x30114 0x43DAFFFA
+bar 0x00030114 <- 0x43DAFFFA   readback 0x43DAFFFA   guardou
+exit=0
+
+=== padraoB_w6 ===
+$ bc250ctl.exe reg w 0x30118 0x43DAFFF9
+bar 0x00030118 <- 0x43DAFFF9   readback 0x43DAFFF9   guardou
+exit=0
+
+=== padraoB_w7 ===
+$ bc250ctl.exe reg w 0x3011C 0x43DAFFF8
+bar 0x0003011C <- 0x43DAFFF8   readback 0x43DAFFF8   guardou
+exit=0
+
+=== padraoB_r0 ===
+$ bc250ctl.exe reg r 0x30100
+bar 0x00030100 = 0x43DAFFFF
+exit=0
+
+=== padraoB_r1 ===
+$ bc250ctl.exe reg r 0x30104
+bar 0x00030104 = 0x43DAFFFE
+exit=0
+
+=== padraoB_r2 ===
+$ bc250ctl.exe reg r 0x30108
+bar 0x00030108 = 0x43DAFFFD
+exit=0
+
+=== padraoB_r3 ===
+$ bc250ctl.exe reg r 0x3010C
+bar 0x0003010C = 0x43DAFFFC
+exit=0
+
+=== padraoB_r4 ===
+$ bc250ctl.exe reg r 0x30110
+bar 0x00030110 = 0x43DAFFFB
+exit=0
+
+=== padraoB_r5 ===
+$ bc250ctl.exe reg r 0x30114
+bar 0x00030114 = 0x43DAFFFA
+exit=0
+
+=== padraoB_r6 ===
+$ bc250ctl.exe reg r 0x30118
+bar 0x00030118 = 0x43DAFFF9
+exit=0
+
+=== padraoB_r7 ===
+$ bc250ctl.exe reg r 0x3011C
+bar 0x0003011C = 0x43DAFFF8
+exit=0
+
+=== controle_depois ===
+$ bc250ctl.exe reg r 0x0CA80
+bar 0x0000CA80 = 0x00000000
+exit=0
+
+=== test_depois_GRBM_STATUS ===
+$ bc250ctl.exe reg r 0x08010
+bar 0x00008010 = 0x00003028
+exit=0
+
+=== test_depois_GRBM_STATUS2 ===
+$ bc250ctl.exe reg r 0x08008
+bar 0x00008008 = 0x00000008
+exit=0
+
+=== test_depois_CP_STAT ===
+$ bc250ctl.exe reg r 0x08680
+bar 0x00008680 = 0x00000000
+exit=0
+
+=== test_depois_CP_ME_CNTL ===
+$ bc250ctl.exe reg r 0x086D8
+bar 0x000086D8 = 0x15000000
+exit=0
+
+=== restore_0 ===
+$ bc250ctl.exe reg w 0x30100 0x00000000
+bar 0x00030100 <- 0x00000000   readback 0x00000000   guardou
+exit=0
+
+=== restore_1 ===
+$ bc250ctl.exe reg w 0x30104 0x00000000
+bar 0x00030104 <- 0x00000000   readback 0x00000000   guardou
+exit=0
+
+=== restore_2 ===
+$ bc250ctl.exe reg w 0x30108 0x00000000
+bar 0x00030108 <- 0x00000000   readback 0x00000000   guardou
+exit=0
+
+=== restore_3 ===
+$ bc250ctl.exe reg w 0x3010C 0x00000000
+bar 0x0003010C <- 0x00000000   readback 0x00000000   guardou
+exit=0
+
+=== restore_4 ===
+$ bc250ctl.exe reg w 0x30110 0x00000000
+bar 0x00030110 <- 0x00000000   readback 0x00000000   guardou
+exit=0
+
+=== restore_5 ===
+$ bc250ctl.exe reg w 0x30114 0x00000000
+bar 0x00030114 <- 0x00000000   readback 0x00000000   guardou
+exit=0
+
+=== restore_6 ===
+$ bc250ctl.exe reg w 0x30118 0x00000000
+bar 0x00030118 <- 0x00000000   readback 0x00000000   guardou
+exit=0
+
+=== restore_7 ===
+$ bc250ctl.exe reg w 0x3011C 0x00000000
+bar 0x0003011C <- 0x00000000   readback 0x00000000   guardou
+exit=0
+
+=== arm_readonly ===
+$ bc250ctl.exe arm readonly
+armamento agora: readonly
+exit=0
+
+=== post_0 ===
+$ bc250ctl.exe reg r 0x30100
+bar 0x00030100 = 0x00000000
+exit=0
+
+=== post_1 ===
+$ bc250ctl.exe reg r 0x30104
+bar 0x00030104 = 0x00000000
+exit=0
+
+=== post_2 ===
+$ bc250ctl.exe reg r 0x30108
+bar 0x00030108 = 0x00000000
+exit=0
+
+=== post_3 ===
+$ bc250ctl.exe reg r 0x3010C
+bar 0x0003010C = 0x00000000
+exit=0
+
+=== post_4 ===
+$ bc250ctl.exe reg r 0x30110
+bar 0x00030110 = 0x00000000
+exit=0
+
+=== post_5 ===
+$ bc250ctl.exe reg r 0x30114
+bar 0x00030114 = 0x00000000
+exit=0
+
+=== post_6 ===
+$ bc250ctl.exe reg r 0x30118
+bar 0x00030118 = 0x00000000
+exit=0
+
+=== post_7 ===
+$ bc250ctl.exe reg r 0x3011C
+bar 0x0003011C = 0x00000000
+exit=0
+

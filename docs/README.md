@@ -23,6 +23,24 @@ Este diretório consolida a análise das tentativas anteriores sem autorizar o r
 17. [39_GFXHUB_TLB_PLAN_PROVENANCE_1.14.0.0.md](39_GFXHUB_TLB_PLAN_PROVENANCE_1.14.0.0.md) - sela a procedencia do SYS e substitui o falso NOP por um plano GFXHUB engine 17 fail-closed.
 18. [40_GFXHUB_TLB_TRANSACAO_FISICA_1.15.0.0.md](40_GFXHUB_TLB_TRANSACAO_FISICA_1.15.0.0.md) - executa request MMIO engine 17 com dummy read, ACK limitado e restauracao do range.
 19. [41_GCVM_BACKING_OWNED_VMID8_INERTE_1.16.0.0.md](41_GCVM_BACKING_OWNED_VMID8_INERTE_1.16.0.0.md) - page table e buffer owned, PTE fisica, programacao inerte do VMID8 e rollback integral.
+20. [42_PSP_GPCOM_RING_TRANSACAO_1.17.0.0.md](42_PSP_GPCOM_RING_TRANSACAO_1.17.0.0.md) - primeira transicao TOS create/destroy, posteriormente reforcada pelo status estrito.
+21. [43_PSP_ACK_ESTRITO_1.18.0.0.md](43_PSP_ACK_ESTRITO_1.18.0.0.md) - reforca o ACK do GPCOM com status baixo zero e registra o gate fisico aprovado.
+22. [44_PSP_LOAD_IP_FW_SDMA0_1.19.0.0.md](44_PSP_LOAD_IP_FW_SDMA0_1.19.0.0.md) - envia firmware SDMA0 pelo GPCOM e exige fence PSP, resposta, checksum e teardown.
+23. [45_PSP_LOAD_IP_FW_PAYLOAD_1.20.0.0.md](45_PSP_LOAD_IP_FW_PAYLOAD_1.20.0.0.md) - remove o header AMD do payload entregue ao PSP, preservando autenticacao do arquivo completo.
+24. [46_PSP_PAYLOAD_ALINHADO_1.21.0.0.md](46_PSP_PAYLOAD_ALINHADO_1.21.0.0.md) - copia o payload autenticado para uma PA alinhada e telemetra todos os buffers PSP.
+25. [47_SDMA_F32_ATIVA_1.22.0.0.md](47_SDMA_F32_ATIVA_1.22.0.0.md) - executa reset/run transacional da F32, mede o PC fisico e restaura o snapshot.
+26. [48_SDMA_RING_COPY_FENCE_1.23.0.0.md](48_SDMA_RING_COPY_FENCE_1.23.0.0.md) - primeiro COPY real no ring SDMA owned, com RPTR/WPTR, fence, dados e rollback.
+27. [49_SDMA_COPY_LAYOUT_1.24.0.0.md](49_SDMA_COPY_LAYOUT_1.24.0.0.md) - corrige a ordem Navi10 do COPY e telemetra a publicacao do WPTR.
+28. [50_SDMA_WRITE_LINEAR_1.25.0.0.md](50_SDMA_WRITE_LINEAR_1.25.0.0.md) - reproduz no miniport o WRITE_LINEAR de quatro dwords ja provado no legacy.
+29. [51_SDMA_LAYOUT_LEGACY_DIAGNOSTICO_1.26.0.0.md](51_SDMA_LAYOUT_LEGACY_DIAGNOSTICO_1.26.0.0.md) - reproduz o layout fisico legacy e captura falhas SDMA/UTCL.
+30. [52_SDMA_LAYOUT_CONTIGUO_OWNED_1.27.0.0.md](52_SDMA_LAYOUT_CONTIGUO_OWNED_1.27.0.0.md) - preserva o layout relativo em um unico bloco owned livre.
+31. [53_SDMA_GATE_RPTR_MMIO_DADOS_1.28.0.0.md](53_SDMA_GATE_RPTR_MMIO_DADOS_1.28.0.0.md) - usa RPTR MMIO, fence GPU e comparacao de dados como gate fisico.
+32. [54_RLC_PSP_EXEC_ROM_1.29.0.0.md](54_RLC_PSP_EXEC_ROM_1.29.0.0.md) - carrega RLC tipo 8 e exige a saida fisica da ROM.
+33. [55_PFP_DIRECT_LOAD_ISOLADO_1.30.0.0.md](55_PFP_DIRECT_LOAD_ISOLADO_1.30.0.0.md) - carrega somente o PFP em VRAM owned e exige movimento real do PC com rollback.
+34. [56_RLC_ALREADY_ACTIVE_1.31.0.0.md](56_RLC_ALREADY_ACTIVE_1.31.0.0.md) - evita recarregar o RLC quando o preflight ja o encontra fora da ROM.
+35. [57_RLC_F32_EXPLICITO_1.32.0.0.md](57_RLC_F32_EXPLICITO_1.32.0.0.md) - ativa explicitamente o F32 do RLC depois da carga PSP.
+36. [58_RLC_ISOLADO_1.33.0.0.md](58_RLC_ISOLADO_1.33.0.0.md) - separa o RLC da primeira tentativa de unhalt do PFP após a tela preta.
+37. [59_HANDOFF_IA_2026-08-27.md](59_HANDOFF_IA_2026-08-27.md) - contexto autocontido para outra IA continuar a partir do gate PFP.
 
 As regras superiores continuam em [`BC250_HARDWARE_RULES.md`](../BC250_HARDWARE_RULES.md). Se houver divergência, elas prevalecem.
 

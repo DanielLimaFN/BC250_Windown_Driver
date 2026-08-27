@@ -1,0 +1,78 @@
+;=============================================================================
+; AMD BC-250 Native WDDM 2.0+ Display-Only Miniport INF (BC250-V4)
+; Copyright (c) 2026 AMD BC-250 Driver Project
+;=============================================================================
+
+[Version]
+Signature="$Windows NT$"
+Class=Display
+ClassGUID={4d36e968-e325-11ce-bfc1-08002be10318}
+Provider=%ProviderString%
+DriverVer=08/22/2026, 1.0.0822.1737
+CatalogFile=wddm.cat
+PnpLockdown=1
+
+[DestinationDirs]
+DefaultDestDir = 12
+bc250wddm_Files_KM = 12
+
+[SourceDisksNames]
+1 = %DiskDescription%,,,.
+
+[SourceDisksFiles]
+bc250wddm.sys = 1
+
+[Manufacturer]
+%ManufacturerName% = AMD, NTamd64
+
+[AMD.NTamd64]
+%BC250DeviceName% = bc250wddm_Inst, PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00
+%BC250DeviceName% = bc250wddm_Inst, PCI\VEN_1002&DEV_13FE&SUBSYS_13FE1002&REV_C4
+%BC250DeviceName% = bc250wddm_Inst, PCI\VEN_1002&DEV_13FE
+
+[bc250wddm_Inst]
+FeatureScore = F0
+CopyFiles = bc250wddm_Files_KM
+AddReg = bc250wddm_AddReg
+
+[bc250wddm_AddReg]
+HKR,, VgaCompatible, 0x00010001, 0
+HKR,, "DriverDesc", %REG_SZ%, "AMD BC-250 (Cyan Skillfish, RDNA 1.0) V4"
+HKR,, "HardwareInformation.ChipType", %REG_SZ%, "AMD Cyan Skillfish / Oberon (GFX10.1.3)"
+HKR,, "HardwareInformation.AdapterString", %REG_SZ%, "AMD BC-250 (Cyan Skillfish, RDNA 1.0)"
+HKR,, "HardwareInformation.DacType", %REG_SZ%, "Internal DAC (60Hz - 144Hz)"
+
+[bc250wddm_Inst.Services]
+AddService = bc250v4, 0x00000002, bc250v4_Service_Inst
+
+[bc250v4_Service_Inst]
+DisplayName = %ServiceName%
+ServiceType = 1
+StartType = 3
+ErrorControl = 0
+LoadOrderGroup = Video
+ServiceBinary = %12%\bc250wddm.sys
+AddReg = bc250v4_Service_AddReg
+
+[bc250v4_Service_AddReg]
+HKR,, SkipHwBringup, 0x00010001, 1
+HKR,, EnableDangerousEscapes, 0x00010001, 0
+HKR,, HwUnhaltCp, 0x00010001, 0
+HKR,, HwInitMaxStep, 0x00010001, 0
+HKR,, HwInitFirmware, 0x00010001, 1
+HKR,, HwInitGfxRing, 0x00010001, 1
+HKR,, HwInitSdmaRing, 0x00010001, 1
+
+[bc250wddm_Files_KM]
+bc250wddm.sys
+
+[Strings]
+ProviderString = "AMD BC-250 Driver Project"
+ManufacturerName = "Advanced Micro Devices, Inc."
+DiskDescription = "AMD BC-250 WDDM 2.0+ Driver Installation Disk"
+BC250DeviceName = "AMD BC-250 (Cyan Skillfish, RDNA 1.0)"
+ServiceName = "AMD BC-250 High Performance Graphics Driver V4"
+REG_SZ = 0x00000000
+REG_DWORD = 0x00010001
+REG_QWORD = 0x000B0001
+REG_MULTI_SZ = 0x00010000

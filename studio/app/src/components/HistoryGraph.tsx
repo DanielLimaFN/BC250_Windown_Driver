@@ -57,11 +57,11 @@ export const HistoryGraph: React.FC<HistoryGraphProps> = ({
   const id = `graph-${title.replace(/\s+/g, '-')}`;
 
   return (
-    <div className="bg-[#151518]/70 border border-white/5 rounded-lg p-2.5 flex flex-col justify-between relative overflow-hidden backdrop-blur-sm">
+    <div className="surface-subtle relative flex flex-col justify-between overflow-hidden p-3">
       <div className="flex justify-between items-center mb-1">
-        <span className="text-xs text-zinc-400 font-medium">{title}</span>
+        <span className="text-xs font-medium text-[var(--text-muted)]">{title}</span>
         {currentValue !== undefined && (
-          <span className="text-xs font-semibold text-white">
+          <span className="text-xs font-semibold text-[var(--text-strong)]">
             {currentValue}{unit}
           </span>
         )}
@@ -75,7 +75,7 @@ export const HistoryGraph: React.FC<HistoryGraphProps> = ({
         >
           <defs>
             <linearGradient id={`${id}-area`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#f25056" stopOpacity="0.25" />
+              <stop offset="0%" stopColor="#c2414a" stopOpacity="0.24" />
               <stop offset="100%" stopColor="#f25056" stopOpacity="0.0" />
             </linearGradient>
             <filter id={`${id}-glow`} x="-20%" y="-20%" width="140%" height="140%">
@@ -101,7 +101,7 @@ export const HistoryGraph: React.FC<HistoryGraphProps> = ({
             <path
               d={pathD}
               fill="none"
-              stroke="#f25056"
+              stroke="#c2414a"
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"

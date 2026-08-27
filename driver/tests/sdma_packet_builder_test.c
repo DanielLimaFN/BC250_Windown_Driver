@@ -41,21 +41,40 @@ static int Bc250RunSdmaPacketBuilderTest(void)
     CHECK(cursor == 7u);
     CHECK(g_ring[0] == 0x00000001u); /* Opcode 1, Subop 0 */
     CHECK(g_ring[1] == 4095u);       /* ByteCount - 1 */
-    CHECK(g_ring[2] == 0x01000000u); /* Src Low */
-    CHECK(g_ring[3] == 0x00000000u); /* Src High */
-    CHECK(g_ring[4] == 0x02000000u); /* Dst Low */
-    CHECK(g_ring[5] == 0x00000000u); /* Dst High */
-    CHECK(g_ring[6] == 0x00000000u); /* Reserved */
+    CHECK(g_ring[2] == 0x00000000u); /* Endian/reserved */
+    CHECK(g_ring[3] == 0x01000000u); /* Src Low */
+    CHECK(g_ring[4] == 0x00000000u); /* Src High */
+    CHECK(g_ring[5] == 0x02000000u); /* Dst Low */
+    CHECK(g_ring[6] == 0x00000000u); /* Dst High */
 
     /* 2. Test FENCE emission */
     CHECK(Bc250SdmaEmitFence(
         g_ring, TEST_RING_DWORDS, &cursor,
         0x000000000FF00000ull, 0xBC250001u) == BC250_SDMA_OK);
     CHECK(cursor == 11u);
-    CHECK(g_ring[7] == 0x00000005u); /* Opcode 5 */
+    CHECK(g_ring[7] == 0x00030005u); /* Opcode 5, MTYPE UC */
     CHECK(g_ring[8] == 0x0FF00000u); /* Fence Low */
     CHECK(g_ring[9] == 0x00000000u); /* Fence High */
     CHECK(g_ring[10] == 0xBC250001u); /* Sequence */
+    CHECK(Bc250SdmaEmitGcr(
+        g_ring, TEST_RING_DWORDS, &cursor) == BC250_SDMA_OK);
+    CHECK(cursor == 16u);
+    CHECK(g_ring[11] == 17u);
+    CHECK(g_ring[12] == 0u);
+    CHECK(g_ring[13] == 0xC3A10000u);
+    CHECK(g_ring[14] == 0u && g_ring[15] == 0u);
+
+    cursor = 0u;
+    memset(g_ring, 0, sizeof(g_ring));
+    {
+        const uint32_t data[4] = {0x11223344u,0x55667788u,0xA5A5A5A5u,0xBC250125u};
+        CHECK(Bc250SdmaEmitWriteLinear(g_ring, TEST_RING_DWORDS, &cursor,
+            0x000000F40FF04000ull, data, 4u) == BC250_SDMA_OK);
+        CHECK(cursor == 8u);
+        CHECK(g_ring[0] == 2u && g_ring[1] == 0x0FF04000u &&
+            g_ring[2] == 0x000000F4u && g_ring[3] == 3u);
+        CHECK(g_ring[4] == data[0] && g_ring[7] == data[3]);
+    }
 
     /* 3. Test CONST_FILL emission */
     cursor = 0;

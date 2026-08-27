@@ -1,19 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { TitleBar } from './components/TitleBar';
 import { Sidebar, ViewType } from './components/Sidebar';
+import { DonationModal } from './components/DonationModal';
 import { DashboardView } from './views/DashboardView';
+import { SystemView } from './views/SystemView';
 import { PerformanceView } from './views/PerformanceView';
 import { UnlockerView } from './views/UnlockerView';
 import { DriverManagerView } from './views/DriverManagerView';
 import { SettingsView } from './views/SettingsView';
 
 export const App: React.FC = () => {
-  const { i18n } = useTranslation();
+  const { i18n, t } = useTranslation();
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [language, setLanguage] = useState(i18n.language || 'pt');
   const [pollingRate, setPollingRate] = useState(500);
+  const [isDonateOpen, setIsDonateOpen] = useState(false);
 
   // Live Telemetry Mock Engine
   const [telemetry, setTelemetry] = useState({
@@ -74,48 +77,71 @@ export const App: React.FC = () => {
     return () => clearInterval(timer);
   }, [pollingRate]);
 
+  const viewLabels = useMemo<Record<ViewType, string>>(
+    () => ({
+      dashboard: t('nav.dashboard'),
+      system: t('nav.system', 'Sistema'),
+      performance: t('nav.performance'),
+      unlocker: t('nav.unlocker'),
+      driver: t('nav.driverManager'),
+      settings: t('nav.settings'),
+    }),
+    [t]
+  );
+
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#0d0d10] text-fluent-text select-none overflow-hidden relative">
-      {/* Background Ambient Glows */}
+    <div className="relative h-screen w-screen overflow-hidden p-3 md:p-4">
       <div className="ambient-glow-left" />
       <div className="ambient-glow-right" />
 
-      {/* Windows 11 Title Bar */}
-      <TitleBar
-        currentLanguage={language}
-        onLanguageChange={handleLanguageChange}
+      {/* Global Donation Modal */}
+      <DonationModal
+        isOpen={isDonateOpen}
+        onClose={() => setIsDonateOpen(false)}
       />
 
-      {/* Main App Workspace */}
-      <div className="flex-1 flex overflow-hidden relative z-10">
-        {/* Navigation Sidebar */}
-        <Sidebar
-          currentView={currentView}
-          onViewChange={setCurrentView}
-          collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+      <div className="app-shell relative z-10 flex h-full w-full flex-col">
+        <TitleBar
+          currentLanguage={language}
+          currentViewLabel={viewLabels[currentView]}
+          onLanguageChange={handleLanguageChange}
+          onOpenDonate={() => setIsDonateOpen(true)}
         />
 
-        {/* View Switcher Container */}
-        <main className="flex-1 flex flex-col overflow-hidden relative">
-          {currentView === 'dashboard' && (
-            <DashboardView
-              telemetry={telemetry}
-              onNavigate={setCurrentView}
-            />
-          )}
-          {currentView === 'performance' && <PerformanceView />}
-          {currentView === 'unlocker' && <UnlockerView />}
-          {currentView === 'driver' && <DriverManagerView />}
-          {currentView === 'settings' && (
-            <SettingsView
-              currentLanguage={language}
-              onLanguageChange={handleLanguageChange}
-              pollingRate={pollingRate}
-              onPollingRateChange={setPollingRate}
-            />
-          )}
-        </main>
+        <div className="flex flex-1 overflow-hidden bg-[rgba(255,255,255,0.22)]">
+          <Sidebar
+            currentView={currentView}
+            onViewChange={setCurrentView}
+            collapsed={sidebarCollapsed}
+            onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+            onOpenDonate={() => setIsDonateOpen(true)}
+          />
+
+          <main className="flex-1 overflow-hidden bg-[linear-gradient(180deg,rgba(249,251,254,0.74)_0%,rgba(239,244,251,0.78)_100%)]">
+            {currentView === 'dashboard' && (
+              <DashboardView
+                telemetry={telemetry}
+                onNavigate={setCurrentView}
+                onOpenDonate={() => setIsDonateOpen(true)}
+              />
+            )}
+            {currentView === 'system' && (
+              <SystemView onOpenDonate={() => setIsDonateOpen(true)} />
+            )}
+            {currentView === 'performance' && <PerformanceView />}
+            {currentView === 'unlocker' && <UnlockerView />}
+            {currentView === 'driver' && <DriverManagerView />}
+            {currentView === 'settings' && (
+              <SettingsView
+                currentLanguage={language}
+                onLanguageChange={handleLanguageChange}
+                pollingRate={pollingRate}
+                onPollingRateChange={setPollingRate}
+                onOpenDonate={() => setIsDonateOpen(true)}
+              />
+            )}
+          </main>
+        </div>
       </div>
     </div>
   );

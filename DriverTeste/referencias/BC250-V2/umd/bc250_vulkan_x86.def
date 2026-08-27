@@ -1,0 +1,7 @@
+LIBRARY amdbc250vulkan32
+EXPORTS
+    vk_icdGetInstanceProcAddr = _vk_icdGetInstanceProcAddr@8
+    vk_icdGetPhysicalDeviceProcAddr = _vk_icdGetPhysicalDeviceProcAddr@8
+    vk_icdNegotiateLoaderICDInterfaceVersion = _vk_icdNegotiateLoaderICDInterfaceVersion@4
+    vkGetInstanceProcAddr = _vkGetInstanceProcAddr@8
+    vkGetDeviceProcAddr = _vkGetDeviceProcAddr@8

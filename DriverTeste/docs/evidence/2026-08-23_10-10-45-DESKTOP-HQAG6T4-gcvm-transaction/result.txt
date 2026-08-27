@@ -1,0 +1,43 @@
+﻿=== info_pre ===
+$ bc250ctl.exe info
+driver          : bc250dbg v14.0  ABI 14  armamento=readonly
+pci             : 01:00.0  1002:13FE rev 00
+  BAR0          : 0x00000000C0000000  raw 0xC000000C
+  BAR2          : 0x00000000D0000000  raw 0xD000000C
+  BAR4          : 0x000000000000EF00  raw 0x0000EF01 io
+  BAR5          : 0x00000000FE800000  raw 0xFE800000 [mapeado]
+mmio            : 0xFE800000 +512 KB 
+  GPU_ID        : 0x9FFF9700 (confere com a BC-250)
+  offset          SOC15        legado      
+  SCRATCH_REG0  : 0x00000000   0x4D585042
+  GRBM_STATUS   : 0x80003028   0x00000000
+  CC_GC_ARRAY   : 0xFFF80000   0x00000000   <== o desempate
+  ** MAPA OBSERVADO: CC_GC_SHADER_ARRAY_CONFIG em 0x089BC bate com o
+     valor bruto visto no Linux (0xFFF80000). Isto sustenta o offset
+     SOC15, mas nao prova quantidade de CU utilizavel nem execucao.
+smu             : nao consultado pelo baseline; use 'smu' explicitamente
+termico         : NAO CALIBRADO  limite 85 C  
+  sondas cruas  : edge 0xFFFFFFFF  junc 0x00000000  mem 0x00001EC2
+  ** sem calibracao o driver recusa armar 'unsafe'.
+     Compare as sondas com o Linux e rode 'thermal calib'.
+log ring        : 4096 entradas, head 6
+exit=0
+
+=== sdma_status_pre ===
+$ bc250ctl.exe sdma status
+Estado do Motor SDMA0:
+  STATUS_REG    : 0x46DEE557
+  RB_CNTL       : 0x80840000 (DESABILITADO)
+  RB_BASE       : 0x0
+  WPTR (reg)    : 0x00000000
+  WPTR (shadow) : 0x00000000   <- valido para anel criado por este driver
+  RPTR (reg)    : 0x00000000   (nao e fonte de verdade)
+  RPTR (writeb.): 0x00000000   <- valido para anel criado por este driver
+  Pendente      : 0 bytes
+exit=0
+
+=== ucode_checksum_pre ===
+$ bc250ctl.exe reg r 0x04A24
+bar 0x00004A24 = 0x55B182E3
+exit=0
+

@@ -1,0 +1,1200 @@
+﻿     dvs: {Driver Setup Import Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf} 22:19:17.786
+     sto:      {Copy Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf} 22:19:17.789
+     sto:           Driver Package = C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf
+     sto:           Flags          = 0x00000007
+     sto:           Destination    = C:\Users\Daniel\AppData\Local\Temp\{92eb71e2-0c8c-c443-895d-d33cff43075b}
+     sto:           Copying driver package files to 'C:\Users\Daniel\AppData\Local\Temp\{92eb71e2-0c8c-c443-895d-d33cff43075b}'.
+     flq:           {FILE_QUEUE_COMMIT} 22:19:17.791
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{92eb71e2-0c8c-c443-895d-d33cff43075b}\bc250readonly.cat'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf' to 'C:\Users\Daniel\AppData\Local\Temp\{92eb71e2-0c8c-c443-895d-d33cff43075b}\bc250readonly.inf'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.sys' to 'C:\Users\Daniel\AppData\Local\Temp\{92eb71e2-0c8c-c443-895d-d33cff43075b}\bc250readonly.sys'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 22:19:17.799
+     sto:      {Copy Driver Package: exit(0x00000000)} 22:19:17.799
+     ump:      Import flags: 0x00000000
+     pol:      {Driver package policy check} 22:19:17.807
+     pol:      {Driver package policy check - exit(0x00000000)} 22:19:17.807
+     sto:      {Stage Driver Package: C:\Users\Daniel\AppData\Local\Temp\{92eb71e2-0c8c-c443-895d-d33cff43075b}\bc250readonly.inf} 22:19:17.808
+     inf:           {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{92eb71e2-0c8c-c443-895d-d33cff43075b}\bc250readonly.inf} 22:19:17.810
+     inf:                Driver package 'bc250readonly.inf' is configurable.
+     inf:           {Query Configurability: exit(0x00000000)} 22:19:17.811
+     flq:           {FILE_QUEUE_COMMIT} 22:19:17.813
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{92eb71e2-0c8c-c443-895d-d33cff43075b}\bc250readonly.cat' to 'C:\Windows\System32\DriverStore\Temp\{29bfcdac-954d-fb48-9f7e-402c053f2995}\bc250readonly.cat'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{92eb71e2-0c8c-c443-895d-d33cff43075b}\bc250readonly.inf' to 'C:\Windows\System32\DriverStore\Temp\{29bfcdac-954d-fb48-9f7e-402c053f2995}\bc250readonly.inf'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{92eb71e2-0c8c-c443-895d-d33cff43075b}\bc250readonly.sys' to 'C:\Windows\System32\DriverStore\Temp\{29bfcdac-954d-fb48-9f7e-402c053f2995}\bc250readonly.sys'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 22:19:17.822
+     sto:           {DRIVERSTORE IMPORT VALIDATE} 22:19:17.823
+     sig:                Driver package catalog is valid.
+     sig:                {_VERIFY_FILE_SIGNATURE} 22:19:17.838
+     sig:                     Key      = bc250readonly.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{29bfcdac-954d-fb48-9f7e-402c053f2995}\bc250readonly.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{29bfcdac-954d-fb48-9f7e-402c053f2995}\bc250readonly.cat
+!    sig:                     Verifying file against specific (valid) catalog failed.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0x800b0109)} 22:19:17.841
+     sig:                {_VERIFY_FILE_SIGNATURE} 22:19:17.843
+     sig:                     Key      = bc250readonly.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{29bfcdac-954d-fb48-9f7e-402c053f2995}\bc250readonly.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{29bfcdac-954d-fb48-9f7e-402c053f2995}\bc250readonly.cat
+     sig:                     Success: File is signed in Authenticode(tm) catalog.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0xe0000241)} 22:19:17.844
+     sto:           {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 22:19:17.844
+     sig:           Signer Score  = 0x0F000000 (Authenticode)
+     sig:           Signer Name   = BC250-WDDM Development Test
+     sto:           {Core Driver Package Import: bc250readonly.inf_amd64_4e8c8542a4db961f} 22:19:17.844
+     sto:                {DRIVERSTORE IMPORT BEGIN} 22:19:17.844
+     sto:                {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 22:19:17.844
+     cpy:                {Copy Directory: C:\Windows\System32\DriverStore\Temp\{29bfcdac-954d-fb48-9f7e-402c053f2995}} 22:19:17.844
+     cpy:                     Target Path = C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_4e8c8542a4db961f
+     cpy:                {Copy Directory: exit(0x00000000)} 22:19:17.844
+     idb:                {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_4e8c8542a4db961f\bc250readonly.inf} 22:19:17.844
+     idb:                     Created driver package object 'bc250readonly.inf_amd64_4e8c8542a4db961f' in DRIVERS database node.
+     idb:                     Created driver INF file object 'oem5.inf' in DRIVERS database node.
+     idb:                     Registered driver package 'bc250readonly.inf_amd64_4e8c8542a4db961f' with 'oem5.inf'.
+     idb:                {Register Driver Package: exit(0x00000000)} 22:19:17.844
+     idb:                {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_4e8c8542a4db961f\bc250readonly.inf} 22:19:17.844
+     idb:                     Activating driver package 'bc250readonly.inf_amd64_4e8c8542a4db961f'.
+     cpy:                     Published 'bc250readonly.inf_amd64_4e8c8542a4db961f\bc250readonly.inf' to 'oem5.inf'.
+     idb:                     Indexed 2 device IDs for 'bc250readonly.inf_amd64_4e8c8542a4db961f'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                {Publish Driver Package: exit(0x00000000)} 22:19:17.859
+     sto:                {DRIVERSTORE IMPORT END} 22:19:17.859
+     dvi:                     Flushed all driver package files to disk. Time = 0 ms
+     sig:                     Installed catalog 'bc250readonly.cat' as 'oem5.cat'.
+     sto:                {DRIVERSTORE IMPORT END: exit(0x00000000)} 22:19:17.859
+     sto:           {Core Driver Package Import: exit(0x00000000)} 22:19:17.859
+     sto:      {Stage Driver Package: exit(0x00000000)} 22:19:17.875
+     dvs: {Driver Setup Import Driver Package - exit (0x00000000)} 22:19:17.937
+<<<  Section end 2026/08/24 22:19:17.937
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Driver Install (DrvSetupInstallDriver) - C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf]
+>>>  Section start 2026/08/24 22:23:42.437
+      cmd: "C:\Windows\system32\pnputil.exe" /add-driver C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf /install
+     dvs: Flags: 0x00000000
+     dvs: {Driver Setup Import Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf} 22:23:42.437
+     dvs:      Driver package already imported as 'oem5.inf'.
+     dvs: {Driver Setup Import Driver Package - exit (0x00000000)} 22:23:42.469
+     dvs: {Driver Setup Update Device: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 22:23:42.484
+     utl:      {Select Drivers - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 22:23:42.484
+     utl:           Driver Node:
+     utl:                Status         - Selected | Installed
+     utl:                Driver INF     - display.inf (C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf)
+     utl:                Class GUID     - {4d36e968-e325-11ce-bfc1-08002be10318}
+     utl:                Driver Version - 06/21/2006,10.0.19041.868
+     utl:                Configuration  - PCI\CC_0300 [MSBDA]
+     utl:                Driver Rank    - 00FB2008
+     utl:                Signer Score   - Inbox (0D000003)
+     utl:           Driver Node:
+     utl:                Status         - Outranked
+     utl:                Driver INF     - oem5.inf (C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_4e8c8542a4db961f\bc250readonly.inf)
+     utl:                Class GUID     - {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     utl:                Driver Version - 08/24/2026,0.2.0.0
+     utl:                Configuration  - PCI\VEN_1002&DEV_13FE
+     utl:                Driver Rank    - 00FF2001
+     utl:                Signer Score   - Authenticode (0F000000)
+     utl:      {Select Drivers - exit(0x00000000} 22:23:42.500
+     dvs:      Device does not need an update.
+!    dvs:      No better matching drivers found for device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041'.
+     dvs: {Driver Setup Update Device - exit(0x00000000)} 22:23:42.500
+!    dvs: No devices were updated.
+<<<  Section end 2026/08/24 22:23:42.500
+<<<  [Exit status: FAILURE(0x00000103)]
+
+
+>>>  [Device Install (UpdateDriverForPlugAndPlayDevices) - PCI\VEN_1002&DEV_13FE]
+>>>  Section start 2026/08/24 22:30:36.890
+      cmd: "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -ExecutionPolicy Bypass -File tools\activate-bc250readonly-probe.ps1 -ForceBinding -Execute -IAcceptBlackScreenRisk
+     ndv: INF path: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf
+     ndv: Install flags: 0x00000001
+     ndv: {Update Device Driver - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     ndv:      Search options: 0x00000080
+     ndv:      Searching single INF 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf'
+     dvi:      {Build Driver List} 22:30:36.906
+     dvi:           Searching for hardware ID(s):
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:                pci\ven_1002&dev_13fe&cc_030000
+     dvi:                pci\ven_1002&dev_13fe&cc_0300
+     dvi:           Searching for compatible ID(s):
+     dvi:                pci\ven_1002&dev_13fe&rev_00
+     dvi:                pci\ven_1002&dev_13fe
+     dvi:                pci\ven_1002&cc_030000
+     dvi:                pci\ven_1002&cc_0300
+     dvi:                pci\ven_1002
+     dvi:                pci\cc_030000&dt_1
+     dvi:                pci\cc_030000
+     dvi:                pci\cc_0300&dt_1
+     dvi:                pci\cc_0300
+     dvi:           Created Driver Node:
+     dvi:                HardwareID   - PCI\VEN_1002&DEV_13FE
+     dvi:                InfName      - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output\bc250readonly.inf
+     dvi:                DevDesc      - BC-250 Compute Accelerator Readonly Probe
+     dvi:                Section      - BC250Readonly.Install
+     dvi:                Rank         - 0x00ff2001
+     dvi:                Signer Score - Authenticode
+     dvi:                DrvDate      - 08/24/2026
+     dvi:                Version      - 0.2.0.0
+     dvi:      {Build Driver List - exit(0x00000000)} 22:30:36.937
+     dvi:      {DIF_SELECTBESTCOMPATDRV} 22:30:36.937
+     dvi:           Default installer: Enter 22:30:36.937
+     dvi:                {Select Best Driver}
+     dvi:                     Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     dvi:                     Selected Driver:
+     dvi:                          Description - BC-250 Compute Accelerator Readonly Probe
+     dvi:                          InfFile     - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output\bc250readonly.inf
+     dvi:                          Section     - BC250Readonly.Install
+     dvi:                {Select Best Driver - exit(0x00000000)}
+     dvi:           Default installer: Exit
+     dvi:      {DIF_SELECTBESTCOMPATDRV - exit(0x00000000)} 22:30:36.953
+     ndv:      Force Installing Driver:
+     ndv:           Inf Name       - bc250readonly.inf
+     ndv:           Driver Date    - 08/24/2026
+     ndv:           Driver Version - 0.2.0.0
+     ndv:      Driver package 'C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_4e8c8542a4db961f\bc250readonly.inf' is already imported.
+     sto:      {Setup Import Driver Package: c:\users\daniel\desktop\namixwddm\driver\wdk\package\output\bc250readonly.inf} 22:30:36.953
+     sto:           Driver package already imported as 'oem5.inf'.
+     sto:      {Setup Import Driver Package - exit (0x00000000)} 22:30:36.953
+     dvi:      Searching for hardware ID(s):
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:           pci\ven_1002&dev_13fe&cc_030000
+     dvi:           pci\ven_1002&dev_13fe&cc_0300
+     dvi:      Searching for compatible ID(s):
+     dvi:           pci\ven_1002&dev_13fe&rev_00
+     dvi:           pci\ven_1002&dev_13fe
+     dvi:           pci\ven_1002&cc_030000
+     dvi:           pci\ven_1002&cc_0300
+     dvi:           pci\ven_1002
+     dvi:           pci\cc_030000&dt_1
+     dvi:           pci\cc_030000
+     dvi:           pci\cc_0300&dt_1
+     dvi:           pci\cc_0300
+     dvi:      Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 22:30:37.024
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 22:30:37.078
+     dvi:                     Device Status: 0x0180200a
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_4e8c8542a4db961f\bc250readonly.inf}
+     sto:                          Source Filter  = pci\ven_1002&dev_13fe
+     inf:                          Class GUID     = {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: BC-250 Compute Accelerator Readonly Probe}
+     inf:                               Section Name = BC250Readonly.Install
+     inf:                               {Add Service: bc250readonly}
+     inf:                                    Start Type    = 3
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 1
+     inf:                                    Image Path    = \SystemRoot\System32\drivers\bc250readonly.sys
+     inf:                                    Display Name  = BC-250 MCDM Readonly Probe
+     inf:                                    Created new service 'bc250readonly'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\VEN_1002&DEV_13FE
+     inf:                               {Configure Driver Configuration: BC250Readonly.Install}
+     inf:                                    Service Name  = bc250readonly
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 22:30:37.094
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_4e8c8542a4db961f\bc250readonly.sys' to 'C:\Windows\System32\drivers\bc250readonly.sys'.
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 22:30:37.110
+     dvi:                          Existing files modified, may need to restart related services.
+     sto:                     {Configure Driver Package: exit(0x00000bc3)}
+     dvi:                     Restart required for any devices using this driver.
+     dvi:                     Install Device: Configuring device. 22:30:37.112
+     dvi:                          Configuration: oem5.inf:pci\ven_1002&dev_13fe,BC250Readonly.Install
+     dvi:                     Install Device: Configuring device completed. 22:30:37.116
+     dvi:                     Device Status: 0x0180200a
+     dvi:                     {Restarting Devices} 22:30:37.117
+     dvi:                          Query-remove: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                          Start: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+!    dvi:                          Device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041' not started: Device has problem: 0x25 (CM_PROB_FAILED_DRIVER_ENTRY), problem status: 0xc0000059.
+     dvi:                     {Restarting Devices exit} 22:30:37.239
+     dvi:                {Configure Device - exit(0x00000000)} 22:30:37.240
+     dvi:           {Core Device Install - exit(0x00000000)} 22:30:37.241
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     ndv: {Update Device Driver - exit(00000000)}
+     ndv: {Install Related Drivers} 22:30:37.244
+     ndv: {Install Related Drivers: exit(0x00000000)} 22:30:37.246
+!    ndv: Reboot needed to complete driver update.
+<<<  Section end 2026/08/24 22:30:37.247
+<<<  [Exit status: SUCCESS]
+
+
+[Boot Session: 2026/08/24 23:39:29.500]
+
+>>>  [Driver Uninstall (DrvSetupUninstallDriver) - oem5.inf]
+>>>  Section start 2026/08/24 23:40:53.218
+      cmd: pnputil.exe  /delete-driver "oem5.inf" /uninstall /force 
+     dvs: Flags: 0x00000000
+     dvs: {Driver Setup Update Device: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 23:40:53.265
+     utl:      {Select Drivers - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 23:40:53.280
+     utl:           Driver Node:
+     utl:                Status         - Selected
+     utl:                Driver INF     - display.inf (C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf)
+     utl:                Class GUID     - {4d36e968-e325-11ce-bfc1-08002be10318}
+     utl:                Driver Version - 06/21/2006,10.0.19041.868
+     utl:                Configuration  - PCI\CC_0300 [MSBDA]
+     utl:                Driver Rank    - 00FB2008
+     utl:                Signer Score   - Inbox (0D000003)
+     utl:      {Select Drivers - exit(0x00000000} 23:40:53.280
+     dvs:      Installing next best driver (display.inf) on device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041'.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 23:40:53.327
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 23:40:53.358
+     dvi:                     Device Status: 0x01802000
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf}
+     sto:                          Source Filter  = PCI\CC_0300
+     inf:                          Class GUID     = {4d36e968-e325-11ce-bfc1-08002be10318}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: Microsoft Basic Display Adapter}
+     inf:                               Section Name = MSBDA
+     inf:                               {Add Service: BasicDisplay}
+     inf:                                    Start Type    = 1
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 0
+     inf:                                    Image Path    = \SystemRoot\System32\DriverStore\FileRepository\basicdisplay.inf_amd64_fc93ae411c02f280\BasicDisplay.sys
+     inf:                                    Group         = Video
+     inf:                                    Updated service 'BasicDisplay'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\CC_0300
+     inf:                               {Configure Driver Configuration: MSBDA}
+     inf:                                    Service Name  = BasicDisplay
+     inf:                                    Exclude IDs   = PCI\VEN_1414&DEV_5353
+     inf:                                    Included INFs = basicdisplay.inf
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 23:40:53.374
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 23:40:53.374
+     sto:                     {Configure Driver Package: exit(0x00000000)}
+     dvi:                     Install Device: Configuring device. 23:40:53.374
+     dvi:                          Configuration: display.inf:PCI\CC_0300,MSBDA
+     dvi:                     Install Device: Configuring device completed. 23:40:53.390
+     dvi:                     Device Status: 0x01802000
+!    dvi:                     Device restart was skipped (DONOTCALLCONFIGMG).
+     dvi:                {Configure Device - exit(0x00000000)} 23:40:53.390
+     dvi:                Device Status: 0x01802000
+     dvi:                Install Device: Starting device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041'. 23:40:53.390
+     dvi:                Install Device: Starting device completed. 23:40:53.390
+!    dvi:                Device not started (unknown reason): Device has no problem.
+     dvi:           {Core Device Install - exit(0x00000000)} 23:40:53.390
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     dvs:      {Install Related Drivers} 23:40:53.390
+     dvs:      {Install Related Drivers: exit(0x00000000)} 23:40:53.390
+     dvs: {Driver Setup Update Device - exit(0x00000000)} 23:40:53.390
+     dvs: {Driver Setup Delete Driver Package: oem5.inf} 23:40:53.390
+     ump:      Delete flags: 0x00000002
+     pol:      {Driver package policy check} 23:40:53.405
+     pol:      {Driver package policy check - exit(0x00000000)} 23:40:53.405
+     sto:      {Unstage Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_4e8c8542a4db961f\bc250readonly.inf} 23:40:53.405
+     sto:           {Core Driver Package Delete: bc250readonly.inf_amd64_4e8c8542a4db961f} 23:40:53.405
+     sto:                {DRIVERSTORE DELETE BEGIN} 23:40:53.405
+     sto:                {DRIVERSTORE DELETE BEGIN: exit(0x00000000)} 23:40:53.405
+     sto:                {Unconfigure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_4e8c8542a4db961f\bc250readonly.inf}
+     inf:                     Class GUID     = {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     inf:                     Class Options  = Configurable
+     inf:                     {Unconfigure Driver: BC-250 Compute Accelerator Readonly Probe}
+     inf:                          Section Name = BC250Readonly.Install
+     inf:                          {Add Service: bc250readonly}
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250readonly\Parameters\Probe\SchemaVersion
+     inf:                               Deleted service 'bc250readonly'.
+     inf:                          {Add Service: exit(0x00000000)}
+     inf:                          Hardware Id  = PCI\VEN_1002&DEV_13FE
+     inf:                     {Unconfigure Driver: exit(0x00000000)}
+     flq:                     {FILE_QUEUE_COMMIT} 23:40:53.421
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\bc250readonly.sys'
+     flq:                          DeleteFile: 'C:                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
+[Boot Session: 2026/08/24 23:41:15.500]
+
+>>>  [Driver Install (DrvSetupInstallDriver) - C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf]
+>>>  Section start 2026/08/24 23:51:11.800
+      cmd: "C:\Windows\system32\pnputil.exe" /add-driver C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf
+     dvs: Flags: 0x00000040
+     dvs: {Driver Setup Import Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf} 23:51:11.801
+     sto:      {Copy Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf} 23:51:11.831
+     sto:           Driver Package = C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf
+     sto:           Flags          = 0x00000007
+     sto:           Destination    = C:\Users\Daniel\AppData\Local\Temp\{d9dab937-0184-1244-bd19-3692044bfd3c}
+     sto:           Copying driver package files to 'C:\Users\Daniel\AppData\Local\Temp\{d9dab937-0184-1244-bd19-3692044bfd3c}'.
+     flq:           {FILE_QUEUE_COMMIT} 23:51:11.833
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{d9dab937-0184-1244-bd19-3692044bfd3c}\bc250readonly.cat'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf' to 'C:\Users\Daniel\AppData\Local\Temp\{d9dab937-0184-1244-bd19-3692044bfd3c}\bc250readonly.inf'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.sys' to 'C:\Users\Daniel\AppData\Local\Temp\{d9dab937-0184-1244-bd19-3692044bfd3c}\bc250readonly.sys'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 23:51:11.841
+     sto:      {Copy Driver Package: exit(0x00000000)} 23:51:11.841
+     ump:      Import flags: 0x00000000
+     pol:      {Driver package policy check} 23:51:11.899
+     pol:      {Driver package policy check - exit(0x00000000)} 23:51:11.899
+     sto:      {Stage Driver Package: C:\Users\Daniel\AppData\Local\Temp\{d9dab937-0184-1244-bd19-3692044bfd3c}\bc250readonly.inf} 23:51:11.900
+     inf:           {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{d9dab937-0184-1244-bd19-3692044bfd3c}\bc250readonly.inf} 23:51:11.902
+     inf:                Driver package 'bc250readonly.inf' is configurable.
+     inf:           {Query Configurability: exit(0x00000000)} 23:51:11.903
+     flq:           {FILE_QUEUE_COMMIT} 23:51:11.904
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{d9dab937-0184-1244-bd19-3692044bfd3c}\bc250readonly.cat' to 'C:\Windows\System32\DriverStore\Temp\{560d7e45-b981-2d47-a0c3-13b2c291e75f}\bc250readonly.cat'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{d9dab937-0184-1244-bd19-3692044bfd3c}\bc250readonly.inf' to 'C:\Windows\System32\DriverStore\Temp\{560d7e45-b981-2d47-a0c3-13b2c291e75f}\bc250readonly.inf'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{d9dab937-0184-1244-bd19-3692044bfd3c}\bc250readonly.sys' to 'C:\Windows\System32\DriverStore\Temp\{560d7e45-b981-2d47-a0c3-13b2c291e75f}\bc250readonly.sys'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 23:51:11.914
+     sto:           {DRIVERSTORE IMPORT VALIDATE} 23:51:11.915
+     sig:                Driver package catalog is valid.
+     sig:                {_VERIFY_FILE_SIGNATURE} 23:51:11.929
+     sig:                     Key      = bc250readonly.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{560d7e45-b981-2d47-a0c3-13b2c291e75f}\bc250readonly.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{560d7e45-b981-2d47-a0c3-13b2c291e75f}\bc250readonly.cat
+!    sig:                     Verifying file against specific (valid) catalog failed.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0x800b0109)} 23:51:11.932
+     sig:                {_VERIFY_FILE_SIGNATURE} 23:51:11.934
+     sig:                     Key      = bc250readonly.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{560d7e45-b981-2d47-a0c3-13b2c291e75f}\bc250readonly.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{560d7e45-b981-2d47-a0c3-13b2c291e75f}\bc250readonly.cat
+     sig:                     Success: File is signed in Authenticode(tm) catalog.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0xe0000241)} 23:51:11.941
+     sto:           {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 23:51:11.942
+     sig:           Signer Score  = 0x0F000000 (Authenticode)
+     sig:           Signer Name   = BC250-WDDM Development Test
+     sto:           {Core Driver Package Import: bc250readonly.inf_amd64_df65bf1b145f0636} 23:51:11.944
+     sto:                {DRIVERSTORE IMPORT BEGIN} 23:51:11.944
+     sto:                {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 23:51:11.944
+     cpy:                {Copy Directory: C:\Windows\System32\DriverStore\Temp\{560d7e45-b981-2d47-a0c3-13b2c291e75f}} 23:51:11.944
+     cpy:                     Target Path = C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_df65bf1b145f0636
+     cpy:                {Copy Directory: exit(0x00000000)} 23:51:11.947
+     idb:                {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_df65bf1b145f0636\bc250readonly.inf} 23:51:11.947
+     idb:                     Created driver package object 'bc250readonly.inf_amd64_df65bf1b145f0636' in DRIVERS database node.
+     idb:                     Created driver INF file object 'oem6.inf' in DRIVERS database node.
+     idb:                     Registered driver package 'bc250readonly.inf_amd64_df65bf1b145f0636' with 'oem6.inf'.
+     idb:                {Register Driver Package: exit(0x00000000)} 23:51:11.951
+     idb:                {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_df65bf1b145f0636\bc250readonly.inf} 23:51:11.951
+     idb:                     Activating driver package 'bc250readonly.inf_amd64_df65bf1b145f0636'.
+     cpy:                     Published 'bc250readonly.inf_amd64_df65bf1b145f0636\bc250readonly.inf' to 'oem6.inf'.
+     idb:                     Indexed 2 device IDs for 'bc250readonly.inf_amd64_df65bf1b145f0636'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                {Publish Driver Package: exit(0x00000000)} 23:51:11.958
+     sto:                {DRIVERSTORE IMPORT END} 23:51:11.959
+     dvi:                     Flushed all driver package files to disk. Time = 0 ms
+     sig:                     Installed catalog 'bc250readonly.cat' as 'oem6.cat'.
+     sto:                {DRIVERSTORE IMPORT END: exit(0x00000000)} 23:51:11.970
+     sto:           {Core Driver Package Import: exit(0x00000000)} 23:51:11.970
+     sto:      {Stage Driver Package: exit(0x00000000)} 23:51:11.971
+     dvs: {Driver Setup Import Driver Package - exit (0x00000000)} 23:51:12.041
+<<<  Section end 2026/08/24 23:51:12.041
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (UpdateDriverForPlugAndPlayDevices) - PCI\VEN_1002&DEV_13FE]
+>>>  Section start 2026/08/24 23:51:50.610
+      cmd: "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -ExecutionPolicy Bypass -File tools\activate-bc250readonly-probe.ps1 -ForceBinding -Execute -IAcceptBlackScreenRisk
+     ndv: INF path: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf
+     ndv: Install flags: 0x00000001
+     ndv: {Update Device Driver - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     ndv:      Search options: 0x00000080
+     ndv:      Searching single INF 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf'
+     dvi:      {Build Driver List} 23:51:50.626
+     dvi:           Searching for hardware ID(s):
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:                pci\ven_1002&dev_13fe&cc_030000
+     dvi:                pci\ven_1002&dev_13fe&cc_0300
+     dvi:           Searching for compatible ID(s):
+     dvi:                pci\ven_1002&dev_13fe&rev_00
+     dvi:                pci\ven_1002&dev_13fe
+     dvi:                pci\ven_1002&cc_030000
+     dvi:                pci\ven_1002&cc_0300
+     dvi:                pci\ven_1002
+     dvi:                pci\cc_030000&dt_1
+     dvi:                pci\cc_030000
+     dvi:                pci\cc_0300&dt_1
+     dvi:                pci\cc_0300
+     dvi:           Created Driver Node:
+     dvi:                HardwareID   - PCI\VEN_1002&DEV_13FE
+     dvi:                InfName      - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output\bc250readonly.inf
+     dvi:                DevDesc      - BC-250 Compute Accelerator Readonly Probe
+     dvi:                Section      - BC250Readonly.Install
+     dvi:                Rank         - 0x00ff2001
+     dvi:                Signer Score - Authenticode
+     dvi:                DrvDate      - 08/24/2026
+     dvi:                Version      - 0.2.1.0
+     dvi:      {Build Driver List - exit(0x00000000)} 23:51:50.637
+     dvi:      {DIF_SELECTBESTCOMPATDRV} 23:51:50.637
+     dvi:           Default installer: Enter 23:51:50.638
+     dvi:                {Select Best Driver}
+     dvi:                     Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     dvi:                     Selected Driver:
+     dvi:                          Description - BC-250 Compute Accelerator Readonly Probe
+     dvi:                          InfFile     - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output\bc250readonly.inf
+     dvi:                          Section     - BC250Readonly.Install
+     dvi:                {Select Best Driver - exit(0x00000000)}
+     dvi:           Default installer: Exit
+     dvi:      {DIF_SELECTBESTCOMPATDRV - exit(0x00000000)} 23:51:50.641
+     ndv:      Force Installing Driver:
+     ndv:           Inf Name       - bc250readonly.inf
+     ndv:           Driver Date    - 08/24/2026
+     ndv:           Driver Version - 0.2.1.0
+     ndv:      Driver package 'C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_df65bf1b145f0636\bc250readonly.inf' is already imported.
+     sto:      {Setup Import Driver Package: c:\users\daniel\desktop\namixwddm\driver\wdk\package\output\bc250readonly.inf} 23:51:50.644
+     sto:           Driver package already imported as 'oem6.inf'.
+     sto:      {Setup Import Driver Package - exit (0x00000000)} 23:51:50.646
+     dvi:      Searching for hardware ID(s):
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:           pci\ven_1002&dev_13fe&cc_030000
+     dvi:           pci\ven_1002&dev_13fe&cc_0300
+     dvi:      Searching for compatible ID(s):
+     dvi:           pci\ven_1002&dev_13fe&rev_00
+     dvi:           pci\ven_1002&dev_13fe
+     dvi:           pci\ven_1002&cc_030000
+     dvi:           pci\ven_1002&cc_0300
+     dvi:           pci\ven_1002
+     dvi:           pci\cc_030000&dt_1
+     dvi:           pci\cc_030000
+     dvi:           pci\cc_0300&dt_1
+     dvi:           pci\cc_0300
+     dvi:      Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 23:51:50.668
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 23:51:50.742
+     dvi:                     Device Status: 0x0180200a
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_df65bf1b145f0636\bc250readonly.inf}
+     sto:                          Source Filter  = pci\ven_1002&dev_13fe
+     inf:                          Class GUID     = {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: BC-250 Compute Accelerator Readonly Probe}
+     inf:                               Section Name = BC250Readonly.Install
+     inf:                               {Add Service: bc250readonly}
+     inf:                                    Start Type    = 3
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 1
+     inf:                                    Image Path    = \SystemRoot\System32\drivers\bc250readonly.sys
+     inf:                                    Display Name  = BC-250 MCDM Readonly Probe
+     inf:                                    Created new service 'bc250readonly'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\VEN_1002&DEV_13FE
+     inf:                               {Configure Driver Configuration: BC250Readonly.Install}
+     inf:                                    Service Name  = bc250readonly
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 23:51:50.759
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_df65bf1b145f0636\bc250readonly.sys' to 'C:\Windows\System32\drivers\bc250readonly.sys'.
+     idb:                               Last driver package 'bc250readonly.inf_amd64_4e8c8542a4db961f' to copy 'C:\Windows\System32\drivers\bc250readonly.sys' needs reconfiguration.
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 23:51:50.763
+     dvi:                          Existing files modified, may need to restart related services.
+     sto:                     {Configure Driver Package: exit(0x00000bc3)}
+     dvi:                     Restart required for any devices using this driver.
+     dvi:                     Install Device: Configuring device. 23:51:50.765
+     dvi:                          Configuration: oem6.inf:pci\ven_1002&dev_13fe,BC250Readonly.Install
+     dvi:                     Install Device: Configuring device completed. 23:51:50.769
+     dvi:                     Device Status: 0x0180200a
+     dvi:                     {Restarting Devices} 23:51:50.770
+     dvi:                          Query-remove: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                          Start: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+!    dvi:                          Device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041' not started: Device has problem: 0x25 (CM_PROB_FAILED_DRIVER_ENTRY), problem status: 0xc0000059.
+     dvi:                     {Restarting Devices exit} 23:51:50.864
+     dvi:                {Configure Device - exit(0x00000000)} 23:51:50.865
+     dvi:           {Core Device Install - exit(0x00000000)} 23:51:50.866
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     ndv: {Update Device Driver - exit(00000000)}
+     ndv: {Install Related Drivers} 23:51:50.869
+     ndv: {Install Related Drivers: exit(0x00000000)} 23:51:50.870
+!    ndv: Reboot needed to complete driver update.
+<<<  Section end 2026/08/24 23:51:50.872
+<<<  [Exit status: SUCCESS]
+
+
+[Boot Session: 2026/08/25 00:07:20.500]
+
+>>>  [Driver Uninstall (DrvSetupUninstallDriver) - oem6.inf]
+>>>  Section start 2026/08/25 00:08:42.271
+      cmd: pnputil.exe  /delete-driver "oem6.inf" /uninstall /force 
+     dvs: Flags: 0x00000000
+     dvs: {Driver Setup Update Device: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 00:08:42.318
+     utl:      {Select Drivers - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 00:08:42.318
+     utl:           Driver Node:
+     utl:                Status         - Selected
+     utl:                Driver INF     - display.inf (C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf)
+     utl:                Class GUID     - {4d36e968-e325-11ce-bfc1-08002be10318}
+     utl:                Driver Version - 06/21/2006,10.0.19041.868
+     utl:                Configuration  - PCI\CC_0300 [MSBDA]
+     utl:                Driver Rank    - 00FB2008
+     utl:                Signer Score   - Inbox (0D000003)
+     utl:      {Select Drivers - exit(0x00000000} 00:08:42.333
+     dvs:      Installing next best driver (display.inf) on device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041'.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 00:08:42.380
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 00:08:42.411
+     dvi:                     Device Status: 0x01802000
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf}
+     sto:                          Source Filter  = PCI\CC_0300
+     inf:                          Class GUID     = {4d36e968-e325-11ce-bfc1-08002be10318}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: Microsoft Basic Display Adapter}
+     inf:                               Section Name = MSBDA
+     inf:                               {Add Service: BasicDisplay}
+     inf:                                    Start Type    = 1
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 0
+     inf:                                    Image Path    = \SystemRoot\System32\DriverStore\FileRepository\basicdisplay.inf_amd64_fc93ae411c02f280\BasicDisplay.sys
+     inf:                                    Group         = Video
+     inf:                                    Updated service 'BasicDisplay'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\CC_0300
+     inf:                               {Configure Driver Configuration: MSBDA}
+     inf:                                    Service Name  = BasicDisplay
+     inf:                                    Exclude IDs   = PCI\VEN_1414&DEV_5353
+     inf:                                    Included INFs = basicdisplay.inf
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 00:08:42.427
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 00:08:42.427
+     sto:                     {Configure Driver Package: exit(0x00000000)}
+     dvi:                     Install Device: Configuring device. 00:08:42.427
+     dvi:                          Configuration: display.inf:PCI\CC_0300,MSBDA
+     dvi:                     Install Device: Configuring device completed. 00:08:42.443
+     dvi:                     Device Status: 0x01802000
+!    dvi:                     Device restart was skipped (DONOTCALLCONFIGMG).
+     dvi:                {Configure Device - exit(0x00000000)} 00:08:42.443
+     dvi:                Device Status: 0x01802000
+     dvi:                Install Device: Starting device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041'. 00:08:42.443
+     dvi:                Install Device: Starting device completed. 00:08:42.443
+!    dvi:                Device not started (unknown reason): Device has no problem.
+     dvi:           {Core Device Install - exit(0x00000000)} 00:08:42.443
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     dvs:      {Install Related Drivers} 00:08:42.443
+     dvs:      {Install Related Drivers: exit(0x00000000)} 00:08:42.443
+     dvs: {Driver Setup Update Device - exit(0x00000000)} 00:08:42.443
+     dvs: {Driver Setup Delete Driver Package: oem6.inf} 00:08:42.443
+     ump:      Delete flags: 0x00000002
+     pol:      {Driver package policy check} 00:08:42.458
+     pol:      {Driver package policy check - exit(0x00000000)} 00:08:42.458
+     sto:      {Unstage Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_df65bf1b145f0636\bc250readonly.inf} 00:08:42.458
+     sto:           {Core Driver Package Delete: bc250readonly.inf_amd64_df65bf1b145f0636} 00:08:42.458
+     sto:                {DRIVERSTORE DELETE BEGIN} 00:08:42.458
+     sto:                {DRIVERSTORE DELETE BEGIN: exit(0x00000000)} 00:08:42.458
+     sto:                {Unconfigure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_df65bf1b145f0636\bc250readonly.inf}
+     inf:                     Class GUID     = {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     inf:                     Class Options  = Configurable
+     inf:                     {Unconfigure Driver: BC-250 Compute Accelerator Readonly Probe}
+     inf:                          Section Name = BC250Readonly.Install
+     inf:                          {Add Service: bc250readonl                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+[Boot Session: 2026/08/25 00:17:16.500]
+
+>>>  [Driver Install (DrvSetupInstallDriver) - C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf]
+>>>  Section start 2026/08/25 00:18:49.100
+      cmd: "C:\Windows\system32\pnputil.exe" /add-driver C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf
+     dvs: Flags: 0x00000040
+     dvs: {Driver Setup Import Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf} 00:18:49.101
+     sto:      {Copy Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf} 00:18:49.106
+     sto:           Driver Package = C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf
+     sto:           Flags          = 0x00000007
+     sto:           Destination    = C:\Users\Daniel\AppData\Local\Temp\{fd08776f-d781-ee48-bbac-03a744876166}
+     sto:           Copying driver package files to 'C:\Users\Daniel\AppData\Local\Temp\{fd08776f-d781-ee48-bbac-03a744876166}'.
+     flq:           {FILE_QUEUE_COMMIT} 00:18:49.109
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{fd08776f-d781-ee48-bbac-03a744876166}\bc250readonly.cat'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf' to 'C:\Users\Daniel\AppData\Local\Temp\{fd08776f-d781-ee48-bbac-03a744876166}\bc250readonly.inf'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.sys' to 'C:\Users\Daniel\AppData\Local\Temp\{fd08776f-d781-ee48-bbac-03a744876166}\bc250readonly.sys'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 00:18:49.116
+     sto:      {Copy Driver Package: exit(0x00000000)} 00:18:49.116
+     ump:      Import flags: 0x00000000
+     pol:      {Driver package policy check} 00:18:49.167
+     pol:      {Driver package policy check - exit(0x00000000)} 00:18:49.167
+     sto:      {Stage Driver Package: C:\Users\Daniel\AppData\Local\Temp\{fd08776f-d781-ee48-bbac-03a744876166}\bc250readonly.inf} 00:18:49.168
+     inf:           {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{fd08776f-d781-ee48-bbac-03a744876166}\bc250readonly.inf} 00:18:49.170
+     inf:                Driver package 'bc250readonly.inf' is configurable.
+     inf:           {Query Configurability: exit(0x00000000)} 00:18:49.172
+     flq:           {FILE_QUEUE_COMMIT} 00:18:49.173
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{fd08776f-d781-ee48-bbac-03a744876166}\bc250readonly.cat' to 'C:\Windows\System32\DriverStore\Temp\{f42d4c39-d085-f540-871a-411c1dc87536}\bc250readonly.cat'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{fd08776f-d781-ee48-bbac-03a744876166}\bc250readonly.inf' to 'C:\Windows\System32\DriverStore\Temp\{f42d4c39-d085-f540-871a-411c1dc87536}\bc250readonly.inf'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{fd08776f-d781-ee48-bbac-03a744876166}\bc250readonly.sys' to 'C:\Windows\System32\DriverStore\Temp\{f42d4c39-d085-f540-871a-411c1dc87536}\bc250readonly.sys'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 00:18:49.182
+     sto:           {DRIVERSTORE IMPORT VALIDATE} 00:18:49.183
+     sig:                Driver package catalog is valid.
+     sig:                {_VERIFY_FILE_SIGNATURE} 00:18:49.199
+     sig:                     Key      = bc250readonly.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{f42d4c39-d085-f540-871a-411c1dc87536}\bc250readonly.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{f42d4c39-d085-f540-871a-411c1dc87536}\bc250readonly.cat
+!    sig:                     Verifying file against specific (valid) catalog failed.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0x800b0109)} 00:18:49.202
+     sig:                {_VERIFY_FILE_SIGNATURE} 00:18:49.204
+     sig:                     Key      = bc250readonly.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{f42d4c39-d085-f540-871a-411c1dc87536}\bc250readonly.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{f42d4c39-d085-f540-871a-411c1dc87536}\bc250readonly.cat
+     sig:                     Success: File is signed in Authenticode(tm) catalog.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0xe0000241)} 00:18:49.210
+     sto:           {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 00:18:49.211
+     sig:           Signer Score  = 0x0F000000 (Authenticode)
+     sig:           Signer Name   = BC250-WDDM Development Test
+     sto:           {Core Driver Package Import: bc250readonly.inf_amd64_703ff9f483e2754c} 00:18:49.213
+     sto:                {DRIVERSTORE IMPORT BEGIN} 00:18:49.213
+     sto:                {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 00:18:49.214
+     cpy:                {Copy Directory: C:\Windows\System32\DriverStore\Temp\{f42d4c39-d085-f540-871a-411c1dc87536}} 00:18:49.214
+     cpy:                     Target Path = C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_703ff9f483e2754c
+     cpy:                {Copy Directory: exit(0x00000000)} 00:18:49.216
+     idb:                {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_703ff9f483e2754c\bc250readonly.inf} 00:18:49.217
+     idb:                     Created driver package object 'bc250readonly.inf_amd64_703ff9f483e2754c' in DRIVERS database node.
+     idb:                     Created driver INF file object 'oem10.inf' in DRIVERS database node.
+     idb:                     Registered driver package 'bc250readonly.inf_amd64_703ff9f483e2754c' with 'oem10.inf'.
+     idb:                {Register Driver Package: exit(0x00000000)} 00:18:49.220
+     idb:                {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_703ff9f483e2754c\bc250readonly.inf} 00:18:49.221
+     idb:                     Activating driver package 'bc250readonly.inf_amd64_703ff9f483e2754c'.
+     cpy:                     Published 'bc250readonly.inf_amd64_703ff9f483e2754c\bc250readonly.inf' to 'oem10.inf'.
+     idb:                     Indexed 2 device IDs for 'bc250readonly.inf_amd64_703ff9f483e2754c'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 15 ms
+     idb:                {Publish Driver Package: exit(0x00000000)} 00:18:49.228
+     sto:                {DRIVERSTORE IMPORT END} 00:18:49.229
+     dvi:                     Flushed all driver package files to disk. Time = 0 ms
+     sig:                     Installed catalog 'bc250readonly.cat' as 'oem10.cat'.
+     sto:                {DRIVERSTORE IMPORT END: exit(0x00000000)} 00:18:49.320
+     sto:           {Core Driver Package Import: exit(0x00000000)} 00:18:49.321
+     sto:      {Stage Driver Package: exit(0x00000000)} 00:18:49.322
+     dvs: {Driver Setup Import Driver Package - exit (0x00000000)} 00:18:49.389
+<<<  Section end 2026/08/25 00:18:49.390
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (UpdateDriverForPlugAndPlayDevices) - PCI\VEN_1002&DEV_13FE]
+>>>  Section start 2026/08/25 00:20:13.370
+      cmd: "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -ExecutionPolicy Bypass -File tools\activate-bc250readonly-probe.ps1 -ForceBinding -Execute -IAcceptBlackScreenRisk
+     ndv: INF path: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf
+     ndv: Install flags: 0x00000001
+     ndv: {Update Device Driver - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     ndv:      Search options: 0x00000080
+     ndv:      Searching single INF 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf'
+     dvi:      {Build Driver List} 00:20:13.387
+     dvi:           Searching for hardware ID(s):
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:                pci\ven_1002&dev_13fe&cc_030000
+     dvi:                pci\ven_1002&dev_13fe&cc_0300
+     dvi:           Searching for compatible ID(s):
+     dvi:                pci\ven_1002&dev_13fe&rev_00
+     dvi:                pci\ven_1002&dev_13fe
+     dvi:                pci\ven_1002&cc_030000
+     dvi:                pci\ven_1002&cc_0300
+     dvi:                pci\ven_1002
+     dvi:                pci\cc_030000&dt_1
+     dvi:                pci\cc_030000
+     dvi:                pci\cc_0300&dt_1
+     dvi:                pci\cc_0300
+     dvi:           Created Driver Node:
+     dvi:                HardwareID   - PCI\VEN_1002&DEV_13FE
+     dvi:                InfName      - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output\bc250readonly.inf
+     dvi:                DevDesc      - BC-250 Compute Accelerator Readonly Probe
+     dvi:                Section      - BC250Readonly.Install
+     dvi:                Rank         - 0x00ff2001
+     dvi:                Signer Score - Authenticode
+     dvi:                DrvDate      - 08/24/2026
+     dvi:                Version      - 0.2.2.0
+     dvi:      {Build Driver List - exit(0x00000000)} 00:20:13.400
+     dvi:      {DIF_SELECTBESTCOMPATDRV} 00:20:13.400
+     dvi:           Default installer: Enter 00:20:13.401
+     dvi:                {Select Best Driver}
+     dvi:                     Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     dvi:                     Selected Driver:
+     dvi:                          Description - BC-250 Compute Accelerator Readonly Probe
+     dvi:                          InfFile     - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output\bc250readonly.inf
+     dvi:                          Section     - BC250Readonly.Install
+     dvi:                {Select Best Driver - exit(0x00000000)}
+     dvi:           Default installer: Exit
+     dvi:      {DIF_SELECTBESTCOMPATDRV - exit(0x00000000)} 00:20:13.404
+     ndv:      Force Installing Driver:
+     ndv:           Inf Name       - bc250readonly.inf
+     ndv:           Driver Date    - 08/24/2026
+     ndv:           Driver Version - 0.2.2.0
+     ndv:      Driver package 'C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_703ff9f483e2754c\bc250readonly.inf' is already imported.
+     sto:      {Setup Import Driver Package: c:\users\daniel\desktop\namixwddm\driver\wdk\package\output\bc250readonly.inf} 00:20:13.408
+     sto:           Driver package already imported as 'oem10.inf'.
+     sto:      {Setup Import Driver Package - exit (0x00000000)} 00:20:13.410
+     dvi:      Searching for hardware ID(s):
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:           pci\ven_1002&dev_13fe&cc_030000
+     dvi:           pci\ven_1002&dev_13fe&cc_0300
+     dvi:      Searching for compatible ID(s):
+     dvi:           pci\ven_1002&dev_13fe&rev_00
+     dvi:           pci\ven_1002&dev_13fe
+     dvi:           pci\ven_1002&cc_030000
+     dvi:           pci\ven_1002&cc_0300
+     dvi:           pci\ven_1002
+     dvi:           pci\cc_030000&dt_1
+     dvi:           pci\cc_030000
+     dvi:           pci\cc_0300&dt_1
+     dvi:           pci\cc_0300
+     dvi:      Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 00:20:13.431
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 00:20:13.505
+     dvi:                     Device Status: 0x0180200a
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_703ff9f483e2754c\bc250readonly.inf}
+     sto:                          Source Filter  = pci\ven_1002&dev_13fe
+     inf:                          Class GUID     = {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: BC-250 Compute Accelerator Readonly Probe}
+     inf:                               Section Name = BC250Readonly.Install
+     inf:                               {Add Service: bc250readonly}
+     inf:                                    Start Type    = 3
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 1
+     inf:                                    Image Path    = \SystemRoot\System32\drivers\bc250readonly.sys
+     inf:                                    Display Name  = BC-250 MCDM Readonly Probe
+     inf:                                    Created new service 'bc250readonly'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\VEN_1002&DEV_13FE
+     inf:                               {Configure Driver Configuration: BC250Readonly.Install}
+     inf:                                    Service Name  = bc250readonly
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 00:20:13.522
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_703ff9f483e2754c\bc250readonly.sys' to 'C:\Windows\System32\drivers\bc250readonly.sys'.
+     idb:                               Last driver package 'bc250readonly.inf_amd64_df65bf1b145f0636' to copy 'C:\Windows\System32\drivers\bc250readonly.sys' needs reconfiguration.
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 00:20:13.526
+     dvi:                          Existing files modified, may need to restart related services.
+     sto:                     {Configure Driver Package: exit(0x00000bc3)}
+     dvi:                     Restart required for any devices using this driver.
+     dvi:                     Install Device: Configuring device. 00:20:13.528
+     dvi:                          Configuration: oem10.inf:pci\ven_1002&dev_13fe,BC250Readonly.Install
+     dvi:                     Install Device: Configuring device completed. 00:20:13.532
+     dvi:                     Device Status: 0x0180200a
+     dvi:                     {Restarting Devices} 00:20:13.534
+     dvi:                          Query-remove: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                          Start: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                          Restart verified: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                     {Restarting Devices exit} 00:20:13.652
+     dvi:                {Configure Device - exit(0x00000000)} 00:20:13.653
+     dvi:           {Core Device Install - exit(0x00000000)} 00:20:13.654
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     ndv: {Update Device Driver - exit(00000000)}
+     ndv: {Install Related Drivers} 00:20:13.658
+     ndv: {Install Related Drivers: exit(0x00000000)} 00:20:13.659
+<<<  Section end 2026/08/25 00:20:13.660
+<<<  [Exit status: SUCCESS]
+
+
+[Boot Session: 2026/08/25 00:25:01.500]
+
+>>>  [Driver Uninstall (DrvSetupUninstallDriver) - oem10.inf]
+>>>  Section start 2026/08/25 00:26:55.243
+      cmd: pnputil.exe  /delete-driver "oem10.inf" /uninstall /force 
+     dvs: Flags: 0x00000000
+     dvs: {Driver Setup Update Device: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 00:26:55.290
+     utl:      {Select Drivers - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 00:26:55.290
+     utl:           Driver Node:
+     utl:                Status         - Selected
+     utl:                Driver INF     - display.inf (C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf)
+     utl:                Class GUID     - {4d36e968-e325-11ce-bfc1-08002be10318}
+     utl:                Driver Version - 06/21/2006,10.0.19041.868
+     utl:                Configuration  - PCI\CC_0300 [MSBDA]
+     utl:                Driver Rank    - 00FB2008
+     utl:                Signer Score   - Inbox (0D000003)
+     utl:      {Select Drivers - exit(0x00000000} 00:26:55.290
+     dvs:      Installing next best driver (display.inf) on device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041'.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 00:26:55.337
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 00:26:55.368
+     dvi:                     Device Status: 0x01802000
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf}
+     sto:                          Source Filter  = PCI\CC_0300
+     inf:                          Class GUID     = {4d36e968-e325-11ce-bfc1-08002be10318}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: Microsoft Basic Display Adapter}
+     inf:                               Section Name = MSBDA
+     inf:                               {Add Service: BasicDisplay}
+     inf:                                    Start Type    = 1
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 0
+     inf:                                    Image Path    = \SystemRoot\System32\DriverStore\FileRepository\basicdisplay.inf_amd64_fc93ae411c02f280\BasicDisplay.sys
+     inf:                                    Group         = Video
+     inf:                                    Updated service 'BasicDisplay'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\CC_0300
+     inf:                               {Configure Driver Configuration: MSBDA}
+     inf:                                    Service Name  = BasicDisplay
+     inf:                                    Exclude IDs   = PCI\VEN_1414&DEV_5353
+     inf:                                    Included INFs = basicdisplay.inf
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 00:26:55.383
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 00:26:55.383
+     sto:                     {Configure Driver Package: exit(0x00000000)}
+     dvi:                     Install Device: Configuring device. 00:26:55.383
+     dvi:                          Configuration: display.inf:PCI\CC_0300,MSBDA
+     dvi:                     Install Device: Configuring device completed. 00:26:55.383
+     dvi:                     Device Status: 0x01802000
+!    dvi:                     Device restart was skipped (DONOTCALLCONFIGMG).
+     dvi:                {Configure Device - exit(0x00000000)} 00:26:55.399
+     dvi:                Device Status: 0x01802000
+     dvi:                Install Device: Starting device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041'. 00:26:55.399
+     dvi:                Install Device: Starting device completed. 00:26:55.399
+!    dvi:                Device not started (unknown reason): Device has no problem.
+     dvi:           {Core Device Install - exit(0x00000000)} 00:26:55.399
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     dvs:      {Install Related Drivers} 00:26:55.399
+     dvs:      {Install Related Drivers: exit(0x00000000)} 00:26:55.399
+     dvs: {Driver Setup Update Device - exit(0x00000000)} 00:26:55.399
+     dvs: {Driver Setup Delete Driver Package: oem10.inf} 00:26:55.399
+     ump:      Delete flags: 0x00000002
+     pol:      {Driver package policy check} 00:26:55.415
+     pol:      {Driver package policy check - exit(0x00000000)} 00:26:55.415
+     sto:      {Unstage Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_703ff9f483e2754c\bc250readonly.inf} 00:26:55.415
+     sto:           {Core Driver Package Delete: bc250readonly.inf_amd64_703ff9f483e2754c} 00:26:55.415
+     sto:                {DRIVERSTORE DELETE BEGIN} 00:26:55.415
+     sto:                {DRIVERSTORE DELETE BEGIN: exit(0x00000000)} 00:26:55.415
+     sto:                {Unconfigure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_703ff9f483e2754c\bc250readonly.inf}
+     inf:                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
+[Boot Session: 2026/08/25 00:27:47.500]
+
+>>>  [Driver Install (DrvSetupInstallDriver) - C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf]
+>>>  Section start 2026/08/25 00:29:37.665
+      cmd: "C:\Windows\system32\pnputil.exe" /add-driver C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf
+     dvs: Flags: 0x00000040
+     dvs: {Driver Setup Import Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf} 00:29:37.665
+     sto:      {Copy Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf} 00:29:37.671
+     sto:           Driver Package = C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf
+     sto:           Flags          = 0x00000007
+     sto:           Destination    = C:\Users\Daniel\AppData\Local\Temp\{b33889be-53c0-2840-913e-94e7df5ee889}
+     sto:           Copying driver package files to 'C:\Users\Daniel\AppData\Local\Temp\{b33889be-53c0-2840-913e-94e7df5ee889}'.
+     flq:           {FILE_QUEUE_COMMIT} 00:29:37.674
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{b33889be-53c0-2840-913e-94e7df5ee889}\bc250readonly.cat'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf' to 'C:\Users\Daniel\AppData\Local\Temp\{b33889be-53c0-2840-913e-94e7df5ee889}\bc250readonly.inf'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.sys' to 'C:\Users\Daniel\AppData\Local\Temp\{b33889be-53c0-2840-913e-94e7df5ee889}\bc250readonly.sys'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 00:29:37.681
+     sto:      {Copy Driver Package: exit(0x00000000)} 00:29:37.681
+     ump:      Import flags: 0x00000000
+     pol:      {Driver package policy check} 00:29:37.739
+     pol:      {Driver package policy check - exit(0x00000000)} 00:29:37.739
+     sto:      {Stage Driver Package: C:\Users\Daniel\AppData\Local\Temp\{b33889be-53c0-2840-913e-94e7df5ee889}\bc250readonly.inf} 00:29:37.740
+     inf:           {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{b33889be-53c0-2840-913e-94e7df5ee889}\bc250readonly.inf} 00:29:37.742
+     inf:                Driver package 'bc250readonly.inf' is configurable.
+     inf:           {Query Configurability: exit(0x00000000)} 00:29:37.744
+     flq:           {FILE_QUEUE_COMMIT} 00:29:37.745
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{b33889be-53c0-2840-913e-94e7df5ee889}\bc250readonly.cat' to 'C:\Windows\System32\DriverStore\Temp\{f7c6001e-8880-9946-8077-cd2170ec4fa4}\bc250readonly.cat'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{b33889be-53c0-2840-913e-94e7df5ee889}\bc250readonly.inf' to 'C:\Windows\System32\DriverStore\Temp\{f7c6001e-8880-9946-8077-cd2170ec4fa4}\bc250readonly.inf'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{b33889be-53c0-2840-913e-94e7df5ee889}\bc250readonly.sys' to 'C:\Windows\System32\DriverStore\Temp\{f7c6001e-8880-9946-8077-cd2170ec4fa4}\bc250readonly.sys'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 00:29:37.754
+     sto:           {DRIVERSTORE IMPORT VALIDATE} 00:29:37.755
+     sig:                Driver package catalog is valid.
+     sig:                {_VERIFY_FILE_SIGNATURE} 00:29:37.771
+     sig:                     Key      = bc250readonly.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{f7c6001e-8880-9946-8077-cd2170ec4fa4}\bc250readonly.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{f7c6001e-8880-9946-8077-cd2170ec4fa4}\bc250readonly.cat
+!    sig:                     Verifying file against specific (valid) catalog failed.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0x800b0109)} 00:29:37.774
+     sig:                {_VERIFY_FILE_SIGNATURE} 00:29:37.776
+     sig:                     Key      = bc250readonly.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{f7c6001e-8880-9946-8077-cd2170ec4fa4}\bc250readonly.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{f7c6001e-8880-9946-8077-cd2170ec4fa4}\bc250readonly.cat
+     sig:                     Success: File is signed in Authenticode(tm) catalog.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0xe0000241)} 00:29:37.782
+     sto:           {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 00:29:37.784
+     sig:           Signer Score  = 0x0F000000 (Authenticode)
+     sig:           Signer Name   = BC250-WDDM Development Test
+     sto:           {Core Driver Package Import: bc250readonly.inf_amd64_e85eeffe8eb33c20} 00:29:37.785
+     sto:                {DRIVERSTORE IMPORT BEGIN} 00:29:37.785
+     sto:                {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 00:29:37.785
+     cpy:                {Copy Directory: C:\Windows\System32\DriverStore\Temp\{f7c6001e-8880-9946-8077-cd2170ec4fa4}} 00:29:37.786
+     cpy:                     Target Path = C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_e85eeffe8eb33c20
+     cpy:                {Copy Directory: exit(0x00000000)} 00:29:37.788
+     idb:                {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_e85eeffe8eb33c20\bc250readonly.inf} 00:29:37.789
+     idb:                     Created driver package object 'bc250readonly.inf_amd64_e85eeffe8eb33c20' in DRIVERS database node.
+     idb:                     Created driver INF file object 'oem13.inf' in DRIVERS database node.
+     idb:                     Registered driver package 'bc250readonly.inf_amd64_e85eeffe8eb33c20' with 'oem13.inf'.
+     idb:                {Register Driver Package: exit(0x00000000)} 00:29:37.791
+     idb:                {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_e85eeffe8eb33c20\bc250readonly.inf} 00:29:37.792
+     idb:                     Activating driver package 'bc250readonly.inf_amd64_e85eeffe8eb33c20'.
+     cpy:                     Published 'bc250readonly.inf_amd64_e85eeffe8eb33c20\bc250readonly.inf' to 'oem13.inf'.
+     idb:                     Indexed 2 device IDs for 'bc250readonly.inf_amd64_e85eeffe8eb33c20'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                {Publish Driver Package: exit(0x00000000)} 00:29:37.800
+     sto:                {DRIVERSTORE IMPORT END} 00:29:37.801
+     dvi:                     Flushed all driver package files to disk. Time = 0 ms
+     sig:                     Installed catalog 'bc250readonly.cat' as 'oem13.cat'.
+     sto:                {DRIVERSTORE IMPORT END: exit(0x00000000)} 00:29:37.813
+     sto:           {Core Driver Package Import: exit(0x00000000)} 00:29:37.814
+     sto:      {Stage Driver Package: exit(0x00000000)} 00:29:37.815
+     dvs: {Driver Setup Import Driver Package - exit (0x00000000)} 00:29:37.884
+<<<  Section end 2026/08/25 00:29:37.884
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (UpdateDriverForPlugAndPlayDevices) - PCI\VEN_1002&DEV_13FE]
+>>>  Section start 2026/08/25 00:30:26.606
+      cmd: "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -ExecutionPolicy Bypass -File tools\activate-bc250readonly-probe.ps1 -ForceBinding -Execute -IAcceptBlackScreenRisk
+     ndv: INF path: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf
+     ndv: Install flags: 0x00000001
+     ndv: {Update Device Driver - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     ndv:      Search options: 0x00000080
+     ndv:      Searching single INF 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf'
+     dvi:      {Build Driver List} 00:30:26.622
+     dvi:           Searching for hardware ID(s):
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:                pci\ven_1002&dev_13fe&cc_030000
+     dvi:                pci\ven_1002&dev_13fe&cc_0300
+     dvi:           Searching for compatible ID(s):
+     dvi:                pci\ven_1002&dev_13fe&rev_00
+     dvi:                pci\ven_1002&dev_13fe
+     dvi:                pci\ven_1002&cc_030000
+     dvi:                pci\ven_1002&cc_0300
+     dvi:                pci\ven_1002
+     dvi:                pci\cc_030000&dt_1
+     dvi:                pci\cc_030000
+     dvi:                pci\cc_0300&dt_1
+     dvi:                pci\cc_0300
+     dvi:           Created Driver Node:
+     dvi:                HardwareID   - PCI\VEN_1002&DEV_13FE
+     dvi:                InfName      - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output\bc250readonly.inf
+     dvi:                DevDesc      - BC-250 Compute Accelerator Readonly Probe
+     dvi:                Section      - BC250Readonly.Install
+     dvi:                Rank         - 0x00ff2001
+     dvi:                Signer Score - Authenticode
+     dvi:                DrvDate      - 08/25/2026
+     dvi:                Version      - 0.2.3.0
+     dvi:      {Build Driver List - exit(0x00000000)} 00:30:26.633
+     dvi:      {DIF_SELECTBESTCOMPATDRV} 00:30:26.633
+     dvi:           Default installer: Enter 00:30:26.634
+     dvi:                {Select Best Driver}
+     dvi:                     Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     dvi:                     Selected Driver:
+     dvi:                          Description - BC-250 Compute Accelerator Readonly Probe
+     dvi:                          InfFile     - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output\bc250readonly.inf
+     dvi:                          Section     - BC250Readonly.Install
+     dvi:                {Select Best Driver - exit(0x00000000)}
+     dvi:           Default installer: Exit
+     dvi:      {DIF_SELECTBESTCOMPATDRV - exit(0x00000000)} 00:30:26.637
+     ndv:      Force Installing Driver:
+     ndv:           Inf Name       - bc250readonly.inf
+     ndv:           Driver Date    - 08/25/2026
+     ndv:           Driver Version - 0.2.3.0
+     ndv:      Driver package 'C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_e85eeffe8eb33c20\bc250readonly.inf' is already imported.
+     sto:      {Setup Import Driver Package: c:\users\daniel\desktop\namixwddm\driver\wdk\package\output\bc250readonly.inf} 00:30:26.641
+     sto:           Driver package already imported as 'oem13.inf'.
+     sto:      {Setup Import Driver Package - exit (0x00000000)} 00:30:26.642
+     dvi:      Searching for hardware ID(s):
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:           pci\ven_1002&dev_13fe&cc_030000
+     dvi:           pci\ven_1002&dev_13fe&cc_0300
+     dvi:      Searching for compatible ID(s):
+     dvi:           pci\ven_1002&dev_13fe&rev_00
+     dvi:           pci\ven_1002&dev_13fe
+     dvi:           pci\ven_1002&cc_030000
+     dvi:           pci\ven_1002&cc_0300
+     dvi:           pci\ven_1002
+     dvi:           pci\cc_030000&dt_1
+     dvi:           pci\cc_030000
+     dvi:           pci\cc_0300&dt_1
+     dvi:           pci\cc_0300
+     dvi:      Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 00:30:26.663
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 00:30:26.733
+     dvi:                     Device Status: 0x0180200a
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_e85eeffe8eb33c20\bc250readonly.inf}
+     sto:                          Source Filter  = pci\ven_1002&dev_13fe
+     inf:                          Class GUID     = {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: BC-250 Compute Accelerator Readonly Probe}
+     inf:                               Section Name = BC250Readonly.Install
+     inf:                               {Add Service: bc250readonly}
+     inf:                                    Start Type    = 3
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 1
+     inf:                                    Image Path    = \SystemRoot\System32\drivers\bc250readonly.sys
+     inf:                                    Display Name  = BC-250 MCDM Readonly Probe
+     inf:                                    Created new service 'bc250readonly'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\VEN_1002&DEV_13FE
+     inf:                               {Configure Driver Configuration: BC250Readonly.Install}
+     inf:                                    Service Name  = bc250readonly
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 00:30:26.750
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_e85eeffe8eb33c20\bc250readonly.sys' to 'C:\Windows\System32\drivers\bc250readonly.sys'.
+     idb:                               Last driver package 'bc250readonly.inf_amd64_703ff9f483e2754c' to copy 'C:\Windows\System32\drivers\bc250readonly.sys' needs reconfiguration.
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 00:30:26.755
+     dvi:                          Existing files modified, may need to restart related services.
+     sto:                     {Configure Driver Package: exit(0x00000bc3)}
+     dvi:                     Restart required for any devices using this driver.
+     dvi:                     Install Device: Configuring device. 00:30:26.757
+     dvi:                          Configuration: oem13.inf:pci\ven_1002&dev_13fe,BC250Readonly.Install
+     dvi:                     Install Device: Configuring device completed. 00:30:26.760
+     dvi:                     Device Status: 0x0180200a
+     dvi:                     {Restarting Devices} 00:30:26.762
+     dvi:                          Query-remove: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                          Start: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                          Restart verified: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                     {Restarting Devices exit} 00:30:26.880
+     dvi:                {Configure Device - exit(0x00000000)} 00:30:26.881
+     dvi:           {Core Device Install - exit(0x00000000)} 00:30:26.883
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     ndv: {Update Device Driver - exit(00000000)}
+     ndv: {Install Related Drivers} 00:30:26.886
+     ndv: {Install Related Drivers: exit(0x00000000)} 00:30:26.887
+<<<  Section end 2026/08/25 00:30:26.888
+<<<  [Exit status: SUCCESS]
+
+
+[Boot Session: 2026/08/25 00:53:03.500]
+
+>>>  [Driver Uninstall (DrvSetupUninstallDriver) - oem13.inf]
+>>>  Section start 2026/08/25 00:54:07.972
+      cmd: pnputil.exe  /delete-driver "oem13.inf" /uninstall /force 
+     dvs: Flags: 0x00000000
+     dvs: {Driver Setup Update Device: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 00:54:08.019
+     utl:      {Select Drivers - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 00:54:08.034
+     utl:           Driver Node:
+     utl:                Status         - Selected
+     utl:                Driver INF     - display.inf (C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf)
+     utl:                Class GUID     - {4d36e968-e325-11ce-bfc1-08002be10318}
+     utl:                Driver Version - 06/21/2006,10.0.19041.868
+     utl:                Configuration  - PCI\CC_0300 [MSBDA]
+     utl:                Driver Rank    - 00FB2008
+     utl:                Signer Score   - Inbox (0D000003)
+     utl:      {Select Drivers - exit(0x00000000} 00:54:08.034
+     dvs:      Installing next best driver (display.inf) on device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041'.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 00:54:08.081
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 00:54:08.113
+     dvi:                     Device Status: 0x01802000
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf}
+     sto:                          Source Filter  = PCI\CC_0300
+     inf:                          Class GUID     = {4d36e968-e325-11ce-bfc1-08002be10318}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: Microsoft Basic Display Adapter}
+     inf:                               Section Name = MSBDA
+     inf:                               {Add Service: BasicDisplay}
+     inf:                                    Start Type    = 1
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 0
+     inf:                                    Image Path    = \SystemRoot\System32\DriverStore\FileRepository\basicdisplay.inf_amd64_fc93ae411c02f280\BasicDisplay.sys
+     inf:                                    Group         = Video
+     inf:                                    Updated service 'BasicDisplay'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\CC_0300
+     inf:                               {Configure Driver Configuration: MSBDA}
+     inf:                                    Service Name  = BasicDisplay
+     inf:                                    Exclude IDs   = PCI\VEN_1414&DEV_5353
+     inf:                                    Included INFs = basicdisplay.inf
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 00:54:08.128
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 00:54:08.128
+     sto:                     {Configure Driver Package: exit(0x00000000)}
+     dvi:                     Install Device: Configuring device. 00:54:08.128
+     dvi:                          Configuration: display.inf:PCI\CC_0300,MSBDA
+     dvi:                     Install Device: Configuring device completed. 00:54:08.144
+     dvi:                     Device Status: 0x01802000
+!    dvi:                     Device restart was skipped (DONOTCALLCONFIGMG).
+     dvi:                {Configure Device - exit(0x00000000)} 00:54:08.144
+     dvi:                Device Status: 0x01802000
+     dvi:                Install Device: Starting device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041'. 00:54:08.144
+     dvi:                Install Device: Starting device completed. 00:54:08.144
+!    dvi:                Device not started (unknown reason): Device has no problem.
+     dvi:           {Core Device Install - exit(0x00000000)} 00:54:08.144
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     dvs:      {Install Related Drivers} 00:54:08.144
+     dvs:      {Install Related Drivers: exit(0x00000000)} 00:54:08.144
+     dvs: {Driver Setup Update Device - exit(0x00000000)} 00:54:08.144
+     dvs: {Driver Setup Delete Driver Package: oem13.inf} 00:54:08.144
+     ump:      Delete flags: 0x00000002
+     pol:      {Driver package policy check} 00:54:08.159
+     pol:      {Driver package policy check - exit(0x00000000)} 00:54:08.159
+     sto:      {Unstage Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_e85eeffe8eb33c20\bc250readonly.inf} 00:54:08.159
+     sto:           {Core Driver Package Delete: bc250r                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
+[Boot Session: 2026/08/25 00:54:30.500]
+
+>>>  [Driver Install (DrvSetupInstallDriver) - C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf]
+>>>  Section start 2026/08/25 00:55:59.244
+      cmd: "C:\Windows\system32\pnputil.exe" /add-driver C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf
+     dvs: Flags: 0x00000040
+     dvs: {Driver Setup Import Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf} 00:55:59.245
+     sto:      {Copy Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf} 00:55:59.247
+     sto:           Driver Package = C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf
+     sto:           Flags          = 0x00000007
+     sto:           Destination    = C:\Users\Daniel\AppData\Local\Temp\{3448f24e-1e6b-ce42-8586-3ed9fa35ce0e}
+     sto:           Copying driver package files to 'C:\Users\Daniel\AppData\Local\Temp\{3448f24e-1e6b-ce42-8586-3ed9fa35ce0e}'.
+     flq:           {FILE_QUEUE_COMMIT} 00:55:59.250
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{3448f24e-1e6b-ce42-8586-3ed9fa35ce0e}\bc250readonly.cat'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf' to 'C:\Users\Daniel\AppData\Local\Temp\{3448f24e-1e6b-ce42-8586-3ed9fa35ce0e}\bc250readonly.inf'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.sys' to 'C:\Users\Daniel\AppData\Local\Temp\{3448f24e-1e6b-ce42-8586-3ed9fa35ce0e}\bc250readonly.sys'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 00:55:59.257
+     sto:      {Copy Driver Package: exit(0x00000000)} 00:55:59.257
+     ump:      Import flags: 0x00000000
+     pol:      {Driver package policy check} 00:55:59.305
+     pol:      {Driver package policy check - exit(0x00000000)} 00:55:59.305
+     sto:      {Stage Driver Package: C:\Users\Daniel\AppData\Local\Temp\{3448f24e-1e6b-ce42-8586-3ed9fa35ce0e}\bc250readonly.inf} 00:55:59.306
+     inf:           {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{3448f24e-1e6b-ce42-8586-3ed9fa35ce0e}\bc250readonly.inf} 00:55:59.308
+     inf:                Driver package 'bc250readonly.inf' is configurable.
+     inf:           {Query Configurability: exit(0x00000000)} 00:55:59.309
+     flq:           {FILE_QUEUE_COMMIT} 00:55:59.310
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{3448f24e-1e6b-ce42-8586-3ed9fa35ce0e}\bc250readonly.cat' to 'C:\Windows\System32\DriverStore\Temp\{00d61b9d-1b30-d74f-a83d-02c33401d423}\bc250readonly.cat'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{3448f24e-1e6b-ce42-8586-3ed9fa35ce0e}\bc250readonly.inf' to 'C:\Windows\System32\DriverStore\Temp\{00d61b9d-1b30-d74f-a83d-02c33401d423}\bc250readonly.inf'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{3448f24e-1e6b-ce42-8586-3ed9fa35ce0e}\bc250readonly.sys' to 'C:\Windows\System32\DriverStore\Temp\{00d61b9d-1b30-d74f-a83d-02c33401d423}\bc250readonly.sys'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 00:55:59.319
+     sto:           {DRIVERSTORE IMPORT VALIDATE} 00:55:59.320
+     sig:                Driver package catalog is valid.
+     sig:                {_VERIFY_FILE_SIGNATURE} 00:55:59.335
+     sig:                     Key      = bc250readonly.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{00d61b9d-1b30-d74f-a83d-02c33401d423}\bc250readonly.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{00d61b9d-1b30-d74f-a83d-02c33401d423}\bc250readonly.cat
+!    sig:                     Verifying file against specific (valid) catalog failed.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0x800b0109)} 00:55:59.338
+     sig:                {_VERIFY_FILE_SIGNATURE} 00:55:59.340
+     sig:                     Key      = bc250readonly.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{00d61b9d-1b30-d74f-a83d-02c33401d423}\bc250readonly.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{00d61b9d-1b30-d74f-a83d-02c33401d423}\bc250readonly.cat
+     sig:                     Success: File is signed in Authenticode(tm) catalog.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0xe0000241)} 00:55:59.347
+     sto:           {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 00:55:59.348
+     sig:           Signer Score  = 0x0F000000 (Authenticode)
+     sig:           Signer Name   = BC250-WDDM Development Test
+     sto:           {Core Driver Package Import: bc250readonly.inf_amd64_2a7873fd5fa8d8cf} 00:55:59.349
+     sto:                {DRIVERSTORE IMPORT BEGIN} 00:55:59.350
+     sto:                {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 00:55:59.350
+     cpy:                {Copy Directory: C:\Windows\System32\DriverStore\Temp\{00d61b9d-1b30-d74f-a83d-02c33401d423}} 00:55:59.350
+     cpy:                     Target Path = C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_2a7873fd5fa8d8cf
+     cpy:                {Copy Directory: exit(0x00000000)} 00:55:59.352
+     idb:                {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_2a7873fd5fa8d8cf\bc250readonly.inf} 00:55:59.353
+     idb:                     Created driver package object 'bc250readonly.inf_amd64_2a7873fd5fa8d8cf' in DRIVERS database node.
+     idb:                     Created driver INF file object 'oem14.inf' in DRIVERS database node.
+     idb:                     Registered driver package 'bc250readonly.inf_amd64_2a7873fd5fa8d8cf' with 'oem14.inf'.
+     idb:                {Register Driver Package: exit(0x00000000)} 00:55:59.356
+     idb:                {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_2a7873fd5fa8d8cf\bc250readonly.inf} 00:55:59.356
+     idb:                     Activating driver package 'bc250readonly.inf_amd64_2a7873fd5fa8d8cf'.
+     cpy:                     Published 'bc250readonly.inf_amd64_2a7873fd5fa8d8cf\bc250readonly.inf' to 'oem14.inf'.
+     idb:                     Indexed 2 device IDs for 'bc250readonly.inf_amd64_2a7873fd5fa8d8cf'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                {Publish Driver Package: exit(0x00000000)} 00:55:59.362
+     sto:                {DRIVERSTORE IMPORT END} 00:55:59.363
+     dvi:                     Flushed all driver package files to disk. Time = 0 ms
+     sig:                     Installed catalog 'bc250readonly.cat' as 'oem14.cat'.
+     sto:                {DRIVERSTORE IMPORT END: exit(0x00000000)} 00:55:59.374
+     sto:           {Core Driver Package Import: exit(0x00000000)} 00:55:59.374
+     sto:      {Stage Driver Package: exit(0x00000000)} 00:55:59.375
+     dvs: {Driver Setup Import Driver Package - exit (0x00000000)} 00:55:59.444
+<<<  Section end 2026/08/25 00:55:59.445
+<<<  [Exit status: SUCCESS]
+

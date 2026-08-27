@@ -1,0 +1,165 @@
+#ifndef BC250_PM4_PACKET_BUILDER_H
+#define BC250_PM4_PACKET_BUILDER_H
+
+#ifdef BC250_KERNEL_MODE
+#include <ntddk.h>
+#ifndef BC250_FIXED_WIDTH_TYPES_DEFINED
+#define BC250_FIXED_WIDTH_TYPES_DEFINED
+typedef UINT64 uint64_t;
+typedef UINT32 uint32_t;
+#endif
+#else
+#include <stddef.h>
+#include <stdint.h>
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define BC250_PM4_TYPE_3 3u
+
+#define BC250_PM4_TYPE3_HEADER(Opcode, Count) \
+    (((uint32_t)BC250_PM4_TYPE_3 << 30) | \
+     ((((uint32_t)(Count) - 1u) & 0x3FFFu) << 16) | \
+     (((uint32_t)(Opcode) & 0xFFu) << 8))
+
+#define BC250_PM4_IT_NOP                 0x10u
+#define BC250_PM4_IT_SET_BASE            0x11u
+#define BC250_PM4_IT_DISPATCH_DIRECT     0x15u
+#define BC250_PM4_IT_DISPATCH_INDIRECT   0x16u
+#define BC250_PM4_IT_WRITE_DATA          0x37u
+#define BC250_PM4_IT_WAIT_REG_MEM        0x3Cu
+#define BC250_PM4_IT_INDIRECT_BUFFER     0x3Fu
+#define BC250_PM4_IT_COPY_DATA           0x40u
+#define BC250_PM4_IT_EVENT_WRITE         0x46u
+#define BC250_PM4_IT_EVENT_WRITE_EOP     0x47u
+#define BC250_PM4_IT_RELEASE_MEM         0x49u
+#define BC250_PM4_IT_SET_CONFIG_REG      0x68u
+#define BC250_PM4_IT_SET_CONTEXT_REG     0x69u
+#define BC250_PM4_IT_SET_SH_REG          0x76u
+#define BC250_PM4_IT_SET_UCONFIG_REG     0x77u
+
+#define BC250_PM4_CONFIG_REG_BASE  0x2000u
+#define BC250_PM4_CONTEXT_REG_BASE 0xA000u
+#define BC250_PM4_SH_REG_BASE      0x2C00u
+#define BC250_PM4_UCONFIG_REG_BASE 0xC000u
+
+#define BC250_PM4_WD_ENGINE_ME  (0u << 30)
+#define BC250_PM4_WD_ENGINE_PFP (1u << 30)
+#define BC250_PM4_WD_DST_REG    (0u << 8)
+#define BC250_PM4_WD_DST_MEM    (5u << 8)
+#define BC250_PM4_WD_CONFIRM    (1u << 20)
+
+#define BC250_PM4_WAIT_ALWAYS 0u
+#define BC250_PM4_WAIT_LT     1u
+#define BC250_PM4_WAIT_LE     2u
+#define BC250_PM4_WAIT_EQ     3u
+#define BC250_PM4_WAIT_NE     4u
+#define BC250_PM4_WAIT_GE     5u
+#define BC250_PM4_WAIT_GT     6u
+
+#define BC250_PM4_EVENT_BOTTOM_OF_PIPE       0x3Au
+#define BC250_PM4_EVENT_CS_PARTIAL_FLUSH     0x40u
+#define BC250_PM4_EVENT_EOP                  0x46u
+
+typedef enum BC250_PM4_STATUS {
+    BC250_PM4_OK = 0,
+    BC250_PM4_BAD_ARGUMENT,
+    BC250_PM4_RING_FULL,
+    BC250_PM4_MISALIGNED,
+    BC250_PM4_PAYLOAD_TOO_LARGE,
+    BC250_PM4_OUT_OF_BOUNDS
+} BC250_PM4_STATUS;
+
+BC250_PM4_STATUS Bc250Pm4EmitNop(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t ExtraCount);
+
+BC250_PM4_STATUS Bc250Pm4EmitWriteData(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t Control,
+    uint64_t DstAddress,
+    const uint32_t *Data,
+    uint32_t DwordCount);
+
+BC250_PM4_STATUS Bc250Pm4EmitSetShReg(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t RegDwordOffset,
+    const uint32_t *Values,
+    uint32_t Count);
+
+BC250_PM4_STATUS Bc250Pm4EmitSetContextReg(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t RegDwordOffset,
+    const uint32_t *Values,
+    uint32_t Count);
+
+BC250_PM4_STATUS Bc250Pm4EmitSetUconfigReg(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t RegDwordOffset,
+    const uint32_t *Values,
+    uint32_t Count);
+
+BC250_PM4_STATUS Bc250Pm4EmitWaitRegMem(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t Control,
+    uint64_t Address,
+    uint32_t RefValue,
+    uint32_t Mask,
+    uint32_t PollIntervalUs);
+
+BC250_PM4_STATUS Bc250Pm4EmitIndirectBuffer(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint64_t IbAddress,
+    uint32_t SizeInDwords,
+    uint32_t Vmid);
+
+BC250_PM4_STATUS Bc250Pm4EmitReleaseMem(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t EventType,
+    uint32_t EventFlags,
+    uint64_t FenceAddress,
+    uint64_t FenceSequence);
+
+BC250_PM4_STATUS Bc250Pm4EmitEventWrite(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t EventType);
+
+BC250_PM4_STATUS Bc250Pm4RingComputeAvailableSpace(
+    uint32_t RingDwords,
+    uint32_t RptrDwords,
+    uint32_t WptrDwords,
+    uint32_t *AvailableDwords);
+
+BC250_PM4_STATUS Bc250Pm4RingAdvanceWptr(
+    uint32_t RingDwords,
+    uint32_t CurrentWptrDwords,
+    uint32_t EmittedDwords,
+    uint32_t *NewWptrDwords);
+
+const char *Bc250Pm4StatusName(BC250_PM4_STATUS Status);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

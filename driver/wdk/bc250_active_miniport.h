@@ -14,6 +14,9 @@
 #include "../core/bc250_runtime_inventory.h"
 #include "../core/bc250_gfxhub_tlb_transaction.h"
 #include "../core/bc250_gcvm_vmid8_transaction.h"
+#include "../core/bc250_psp_ring_transaction.h"
+#include "../core/bc250_psp_load_fw_transaction.h"
+#include "../core/bc250_sdma_f32_transaction.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,6 +24,125 @@ extern "C" {
 
 #define BC250_ACTIVE_SIGNATURE 0x4D434431u /* "MCD1" */
 #define BC250_ACTIVE_POOL_TAG  'ADCB'
+
+typedef enum BC250_SDMA_RING_WORK_STATUS {
+    BC250_SDMA_RING_WORK_OK = 0,
+    BC250_SDMA_RING_WORK_BAD_ARGUMENT,
+    BC250_SDMA_RING_WORK_ALLOCATION_FAILED,
+    BC250_SDMA_RING_WORK_REGION_FAILED,
+    BC250_SDMA_RING_WORK_APERTURE_INVALID,
+    BC250_SDMA_RING_WORK_MAP_FAILED,
+    BC250_SDMA_RING_WORK_INHERITED_ACTIVE,
+    BC250_SDMA_RING_WORK_PACKET_FAILED,
+    BC250_SDMA_RING_WORK_MMIO_FAILED,
+    BC250_SDMA_RING_WORK_READBACK_FAILED,
+    BC250_SDMA_RING_WORK_TIMEOUT,
+    BC250_SDMA_RING_WORK_FENCE_FAILED,
+    BC250_SDMA_RING_WORK_DATA_FAILED,
+    BC250_SDMA_RING_WORK_RESTORE_FAILED,
+    BC250_SDMA_RING_WORK_UNMAP_FAILED,
+    BC250_SDMA_RING_WORK_RELEASE_FAILED
+} BC250_SDMA_RING_WORK_STATUS;
+
+typedef struct BC250_SDMA_RING_WORK_EVIDENCE {
+    uint32_t FixedReservationStatus;
+    uint32_t AllocationMode;
+    uint64_t RingMcAddress;
+    uint64_t WorkMcAddress;
+    uint64_t RingOffset;
+    uint64_t WorkOffset;
+    uint32_t RptrBefore;
+    uint32_t RptrAfter;
+    uint32_t WptrPublished;
+    uint32_t WptrRegisterAfterKick;
+    uint32_t WptrShadowAfterKick;
+    uint32_t RbCntlApplied;
+    uint32_t RingHeaderReadback;
+    uint32_t RptrRegisterAfter;
+    uint32_t WptrPollCntlApplied;
+    uint32_t FencePoison;
+    uint32_t FenceExpected;
+    uint32_t FenceObserved;
+    uint32_t Polls;
+    uint32_t ComparedDwords;
+    uint32_t MismatchCount;
+    uint32_t StatusBefore;
+    uint32_t StatusKick;
+    uint32_t StatusAfter;
+    uint32_t PcKick;
+    uint32_t Status1After;
+    uint32_t Status2After;
+    uint32_t Status3After;
+    uint32_t ErrorLogAfter;
+    uint32_t Utcl1ReadStatusAfter;
+    uint32_t Utcl1WriteStatusAfter;
+    uint32_t Utcl1ReadXnack0After;
+    uint32_t Utcl1ReadXnack1After;
+    uint32_t Utcl1WriteXnack0After;
+    uint32_t Utcl1WriteXnack1After;
+    uint32_t Utcl1TimeoutAfter;
+    uint32_t RegisterRestorePassed;
+    uint32_t MemoryRestorePassed;
+    uint32_t PhysicalReady;
+} BC250_SDMA_RING_WORK_EVIDENCE;
+
+typedef struct BC250_RLC_LOAD_EVIDENCE {
+    uint32_t CntlBefore;
+    uint32_t GpmStatBefore;
+    uint32_t CntlAfter;
+    uint32_t GpmStatAfter;
+    uint32_t ExecRomBefore;
+    uint32_t ExecRomAfter;
+    uint32_t EnableF32After;
+    uint32_t CntlRestorePassed;
+    uint32_t AlreadyActive;
+    uint32_t PhysicalReady;
+} BC250_RLC_LOAD_EVIDENCE;
+
+typedef enum BC250_PFP_DIRECT_LOAD_STATUS {
+    BC250_PFP_DIRECT_LOAD_OK = 0,
+    BC250_PFP_DIRECT_LOAD_BAD_ARGUMENT,
+    BC250_PFP_DIRECT_LOAD_FIRMWARE_FAILED,
+    BC250_PFP_DIRECT_LOAD_ALLOCATION_FAILED,
+    BC250_PFP_DIRECT_LOAD_REGION_FAILED,
+    BC250_PFP_DIRECT_LOAD_APERTURE_INVALID,
+    BC250_PFP_DIRECT_LOAD_MAP_FAILED,
+    BC250_PFP_DIRECT_LOAD_MMIO_FAILED,
+    BC250_PFP_DIRECT_LOAD_INHERITED_ACTIVE,
+    BC250_PFP_DIRECT_LOAD_STAGING_FAILED,
+    BC250_PFP_DIRECT_LOAD_PC_STATIC,
+    BC250_PFP_DIRECT_LOAD_RESTORE_FAILED,
+    BC250_PFP_DIRECT_LOAD_UNMAP_FAILED,
+    BC250_PFP_DIRECT_LOAD_RELEASE_FAILED
+} BC250_PFP_DIRECT_LOAD_STATUS;
+
+typedef struct BC250_PFP_DIRECT_LOAD_EVIDENCE {
+    uint64_t FirmwareMcAddress;
+    uint64_t FirmwareOffset;
+    uint32_t FirmwareBytes;
+    uint32_t JumpTableDwords;
+    uint32_t UcodeVersion;
+    uint32_t StagedDwords;
+    uint32_t StagingMismatches;
+    uint32_t CpMeCntlBefore;
+    uint32_t CpMeCntlApplied;
+    uint32_t CpMeCntlAfter;
+    uint32_t RlcCntlBefore;
+    uint32_t RlcCntlApplied;
+    uint32_t PfpPcBefore;
+    uint32_t PfpPcFirst;
+    uint32_t PfpPcLast;
+    uint32_t PfpPcTransitions;
+    uint32_t PfpPcSamples;
+    uint32_t FaultStatusBefore;
+    uint32_t FaultStatusAfter;
+    uint32_t FaultAddressLow;
+    uint32_t FaultAddressHigh;
+    uint32_t WriteOnlyPortsProgrammed;
+    uint32_t RegisterRestorePassed;
+    uint32_t MemoryRestorePassed;
+    uint32_t PhysicalReady;
+} BC250_PFP_DIRECT_LOAD_EVIDENCE;
 
 typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     uint32_t Signature;
@@ -45,6 +167,24 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     BC250_GCVM_BACKING_EVIDENCE GcvmBackingEvidence;
     BC250_GCVM_VMID8_STATUS GcvmVmid8Status;
     BC250_GCVM_VMID8_EVIDENCE GcvmVmid8Evidence;
+    BC250_PSP_RING_STATUS PspRingStatus;
+    BC250_PSP_RING_EVIDENCE PspRingEvidence;
+    PVOID DeferredPspRingVirtual;
+    BC250_PSP_LOAD_FW_STATUS PspLoadFwStatus;
+    BC250_PSP_LOAD_FW_EVIDENCE PspLoadFwEvidence;
+    BC250_PSP_LOAD_FW_STATUS PspRlcLoadStatus;
+    BC250_PSP_LOAD_FW_EVIDENCE PspRlcLoadEvidence;
+    BC250_RLC_LOAD_EVIDENCE RlcLoadEvidence;
+    BC250_PFP_DIRECT_LOAD_STATUS PfpDirectLoadStatus;
+    BC250_PFP_DIRECT_LOAD_EVIDENCE PfpDirectLoadEvidence;
+    BC250_SDMA_F32_STATUS SdmaF32Status;
+    BC250_SDMA_F32_EVIDENCE SdmaF32Evidence;
+    BC250_SDMA_RING_WORK_STATUS SdmaRingWorkStatus;
+    BC250_SDMA_RING_WORK_EVIDENCE SdmaRingWorkEvidence;
+    PVOID DeferredPspLoadRing;
+    PVOID DeferredPspLoadCommand;
+    PVOID DeferredPspLoadFence;
+    PVOID DeferredPspLoadFirmware;
     EX_PUSH_LOCK ObjectLock;
     BC250_MCDM_OBJECT_REGISTRY Objects;
     DXGK_CONTEXTINFO ContextAbi;
@@ -112,6 +252,14 @@ NTSTATUS Bc250ActiveSetRootPageTableObject(
     uint64_t Address,
     uint32_t NumEntries,
     uint32_t MaxEntries);
+
+BC250_SDMA_RING_WORK_STATUS Bc250ActiveRunSdmaRingWork(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_SDMA_RING_WORK_EVIDENCE *Evidence);
+
+BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_PFP_DIRECT_LOAD_EVIDENCE *Evidence);
 
 #ifdef __cplusplus
 }

@@ -25,6 +25,7 @@ extern "C" {
 #define BC250_SDMA_OP_SEM        7u
 #define BC250_SDMA_OP_POLL_REGMEM 8u
 #define BC250_SDMA_OP_CONST_FILL 11u
+#define BC250_SDMA_OP_GCR_REQ    17u
 
 #define BC250_SDMA_SUBOP_COPY_LINEAR 0u
 #define BC250_SDMA_SUBOP_WRITE_LINEAR 0u
@@ -38,8 +39,10 @@ extern "C" {
 
 #define BC250_SDMA_DWORDS_NOP(Extra)  (1u + (Extra))
 #define BC250_SDMA_DWORDS_COPY_LINEAR 7u
+#define BC250_SDMA_DWORDS_WRITE_LINEAR_BASE 4u
 #define BC250_SDMA_DWORDS_CONST_FILL  5u
 #define BC250_SDMA_DWORDS_FENCE       4u
+#define BC250_SDMA_DWORDS_GCR_REQ     5u
 #define BC250_SDMA_DWORDS_TRAP        2u
 #define BC250_SDMA_DWORDS_POLL_REGMEM 6u
 
@@ -66,6 +69,14 @@ BC250_SDMA_STATUS Bc250SdmaEmitCopyLinear(
     uint64_t DstAddress,
     uint32_t ByteCount);
 
+BC250_SDMA_STATUS Bc250SdmaEmitWriteLinear(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint64_t DstAddress,
+    const uint32_t *Data,
+    uint32_t DwordCount);
+
 BC250_SDMA_STATUS Bc250SdmaEmitConstFill(
     uint32_t *RingBuffer,
     uint32_t RingDwords,
@@ -80,6 +91,11 @@ BC250_SDMA_STATUS Bc250SdmaEmitFence(
     uint32_t *CursorDwords,
     uint64_t FenceAddress,
     uint32_t FenceSequence);
+
+BC250_SDMA_STATUS Bc250SdmaEmitGcr(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords);
 
 BC250_SDMA_STATUS Bc250SdmaEmitTrap(
     uint32_t *RingBuffer,

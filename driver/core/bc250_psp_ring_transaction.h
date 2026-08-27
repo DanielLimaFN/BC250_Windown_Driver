@@ -18,6 +18,8 @@ typedef UINT32 uint32_t;
 #define BC250_PSP_RING_C2PMSG_70 0x00058218u
 #define BC250_PSP_RING_C2PMSG_71 0x0005821Cu
 #define BC250_PSP_RING_TOS_READY 0x80000000u
+#define BC250_PSP_RING_ACK_MASK  0x8000FFFFu
+#define BC250_PSP_RING_ACK_VALUE 0x80000000u
 #define BC250_PSP_RING_CREATE_KM 0x00020000u
 #define BC250_PSP_RING_DESTROY   0x000C0000u
 #define BC250_PSP_RING_BYTES     0x00001000u
@@ -58,6 +60,8 @@ typedef struct BC250_PSP_RING_EVIDENCE {
     uint32_t RingSizeBefore;
     uint32_t CreateAck;
     uint32_t DestroyAck;
+    uint32_t CreateCommandObserved;
+    uint32_t DestroyCommandObserved;
     uint32_t CreatePolls;
     uint32_t DestroyPolls;
     uint32_t CreatePassed;

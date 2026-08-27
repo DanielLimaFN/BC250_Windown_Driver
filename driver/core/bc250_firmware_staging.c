@@ -158,7 +158,7 @@ static void Bc250Sha256Final(
     memset(Context, 0, sizeof(*Context));
 }
 
-static void Bc250Sha256(
+void Bc250FirmwareSha256(
     const void *Data,
     uint32_t Length,
     unsigned char Digest[BC250_FIRMWARE_SHA256_BYTES])
@@ -169,7 +169,7 @@ static void Bc250Sha256(
     Bc250Sha256Final(&context, Digest);
 }
 
-static int Bc250DigestEqual(
+int Bc250FirmwareDigestEqual(
     const unsigned char *Left,
     const unsigned char *Right)
 {
@@ -235,7 +235,7 @@ static int Bc250RestoreInternal(BC250_FIRMWARE_STAGING_CONTEXT *Context)
             Context->RollbackBuffer,
             Context->PayloadBytes) ||
         !Bc250HashTransport(Context, digest) ||
-        !Bc250DigestEqual(digest, Context->OriginalSha256)) {
+        !Bc250FirmwareDigestEqual(digest, Context->OriginalSha256)) {
         memset(digest, 0, sizeof(digest));
         Context->State = BC250_FIRMWARE_STAGING_CONTAMINATED;
         return 0;
@@ -314,8 +314,8 @@ BC250_FIRMWARE_STAGING_STATUS Bc250FirmwareStageVerified(
         return BC250_FIRMWARE_STAGING_BAD_ARGUMENT;
     }
 
-    Bc250Sha256(Payload, PayloadBytes, sourceDigest);
-    if (!Bc250DigestEqual(sourceDigest, ExpectedSha256)) {
+    Bc250FirmwareSha256(Payload, PayloadBytes, sourceDigest);
+    if (!Bc250FirmwareDigestEqual(sourceDigest, ExpectedSha256)) {
         memset(sourceDigest, 0, sizeof(sourceDigest));
         return BC250_FIRMWARE_STAGING_IDENTITY_REJECTED;
     }
@@ -337,7 +337,7 @@ BC250_FIRMWARE_STAGING_STATUS Bc250FirmwareStageVerified(
         Context->LastFailure = BC250_FIRMWARE_STAGING_READ_FAILED;
         return BC250_FIRMWARE_STAGING_READ_FAILED;
     }
-    Bc250Sha256(RollbackBuffer, PayloadBytes, Context->OriginalSha256);
+    Bc250FirmwareSha256(RollbackBuffer, PayloadBytes, Context->OriginalSha256);
 
     if (!Transport->Write(
             Transport->Context, relativeOffset, Payload, PayloadBytes)) {
@@ -353,7 +353,7 @@ BC250_FIRMWARE_STAGING_STATUS Bc250FirmwareStageVerified(
         return Bc250RestoreInternal(Context) ? failure :
             BC250_FIRMWARE_STAGING_ROLLBACK_FAILED;
     }
-    if (!Bc250DigestEqual(readbackDigest, Context->StagedSha256)) {
+    if (!Bc250FirmwareDigestEqual(readbackDigest, Context->StagedSha256)) {
         failure = BC250_FIRMWARE_STAGING_VERIFY_FAILED;
         Context->LastFailure = failure;
         memset(readbackDigest, 0, sizeof(readbackDigest));

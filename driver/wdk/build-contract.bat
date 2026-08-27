@@ -140,6 +140,18 @@ echo [cc] bc250_gcvm_vmid8_transaction.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_gcvm_vmid8_transaction.obj" "%ROOTDIR%\driver\core\bc250_gcvm_vmid8_transaction.c"
 if errorlevel 1 exit /b 1
 
+echo [cc] bc250_psp_ring_transaction.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_psp_ring_transaction.obj" "%ROOTDIR%\driver\core\bc250_psp_ring_transaction.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_psp_load_fw_transaction.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_psp_load_fw_transaction.obj" "%ROOTDIR%\driver\core\bc250_psp_load_fw_transaction.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_sdma_f32_transaction.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_sdma_f32_transaction.obj" "%ROOTDIR%\driver\core\bc250_sdma_f32_transaction.c"
+if errorlevel 1 exit /b 1
+
 echo [cc] bc250_adapter_info_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_adapter_info_contract.obj" "%ROOTDIR%\driver\core\bc250_adapter_info_contract.c"
 if errorlevel 1 exit /b 1
@@ -232,6 +244,14 @@ echo [cc] bc250_active_miniport.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_active_miniport.obj" "%SRCDIR%bc250_active_miniport.c"
 if errorlevel 1 exit /b 1
 
+echo [cc] bc250_sdma_ring_work.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_sdma_ring_work.obj" "%SRCDIR%bc250_sdma_ring_work.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_pfp_direct_load.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_pfp_direct_load.obj" "%SRCDIR%bc250_pfp_direct_load.c"
+if errorlevel 1 exit /b 1
+
 echo [cc] bc250_mcdm_callbacks.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_mcdm_callbacks.obj" "%SRCDIR%bc250_mcdm_callbacks.c"
 if errorlevel 1 exit /b 1
@@ -257,6 +277,17 @@ if errorlevel 1 exit /b 1
 echo [cc] bc250_active_miniport.c ^(Dxgk registration^)
 cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 ^
   /Fo"%ODIR%\bc250_active_miniport_driver.obj" "%SRCDIR%bc250_active_miniport.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_sdma_ring_work.c ^(Dxgk registration^)
+cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 ^
+  /Fo"%ODIR%\bc250_sdma_ring_work_driver.obj" "%SRCDIR%bc250_sdma_ring_work.c"
+if errorlevel 1 exit /b 1
+
+
+echo [cc] bc250_pfp_direct_load.c ^(Dxgk registration^)
+cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 ^
+  /Fo"%ODIR%\bc250_pfp_direct_load_driver.obj" "%SRCDIR%bc250_pfp_direct_load.c"
 if errorlevel 1 exit /b 1
 
 echo [cc] bc250_compute_service.c
@@ -707,6 +738,57 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo [cc] psp_ring_transaction_test.c
+cl %CFLAGS% /Fo"%ODIR%\psp_ring_transaction_test.obj" "%ROOTDIR%\driver\tests\psp_ring_transaction_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] psp_ring_transaction_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\psp_ring_transaction_test.exe" ^
+  "%ODIR%\bc250_psp_ring_transaction.obj" ^
+  "%ODIR%\psp_ring_transaction_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\psp_ring_transaction_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(psp_ring_transaction_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
+echo [cc] psp_load_fw_transaction_test.c
+cl %CFLAGS% /Fo"%ODIR%\psp_load_fw_transaction_test.obj" "%ROOTDIR%\driver\tests\psp_load_fw_transaction_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] psp_load_fw_transaction_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\psp_load_fw_transaction_test.exe" ^
+  "%ODIR%\bc250_psp_load_fw_transaction.obj" ^
+  "%ODIR%\psp_load_fw_transaction_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\psp_load_fw_transaction_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(psp_load_fw_transaction_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
+echo [cc] sdma_f32_transaction_test.c
+cl %CFLAGS% /Fo"%ODIR%\sdma_f32_transaction_test.obj" "%ROOTDIR%\driver\tests\sdma_f32_transaction_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] sdma_f32_transaction_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\sdma_f32_transaction_test.exe" ^
+  "%ODIR%\bc250_sdma_f32_transaction.obj" ^
+  "%ODIR%\sdma_f32_transaction_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\sdma_f32_transaction_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(sdma_f32_transaction_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
 echo [cc] adapter_info_contract_test.c
 cl %CFLAGS% /Fo"%ODIR%\adapter_info_contract_test.obj" "%ROOTDIR%\driver\tests\adapter_info_contract_test.c"
 if errorlevel 1 exit /b 1
@@ -911,6 +993,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_psp_contract.obj" ^
   "%ODIR%\bc250_compute_bootstrap.obj" ^
   "%ODIR%\bc250_staging_lease.obj" ^
+  "%ODIR%\bc250_firmware_staging.obj" ^
   "%ODIR%\bc250_runtime_inventory.obj" ^
   "%ODIR%\bc250_gcvm_contract.obj" ^
   "%ODIR%\bc250_sdma_packet_builder.obj" ^
@@ -1113,6 +1196,10 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_probe_telemetry.obj" ^
   "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^
   "%ODIR%\bc250_gcvm_vmid8_transaction.obj" ^
+  "%ODIR%\bc250_psp_ring_transaction.obj" ^
+  "%ODIR%\bc250_psp_load_fw_transaction.obj" ^
+  "%ODIR%\bc250_sdma_f32_transaction.obj" ^
+  "%ODIR%\bc250_sdma_ring_work.obj" ^
   "%ODIR%\bc250_active_miniport.obj" ^
   "%ODIR%\active_miniport_test.obj" kernel32.lib
 if errorlevel 1 exit /b 1
@@ -1151,6 +1238,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_psp_contract.obj" ^
   "%ODIR%\bc250_compute_bootstrap.obj" ^
   "%ODIR%\bc250_staging_lease.obj" ^
+  "%ODIR%\bc250_firmware_staging.obj" ^
   "%ODIR%\bc250_runtime_inventory.obj" ^
   "%ODIR%\bc250_gcvm_contract.obj" ^
   "%ODIR%\bc250_sdma_packet_builder.obj" ^
@@ -1188,6 +1276,11 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_gcvm_backing_transaction.obj" ^
   "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^
   "%ODIR%\bc250_gcvm_vmid8_transaction.obj" ^
+  "%ODIR%\bc250_psp_ring_transaction.obj" ^
+  "%ODIR%\bc250_psp_load_fw_transaction.obj" ^
+  "%ODIR%\bc250_sdma_f32_transaction.obj" ^
+  "%ODIR%\bc250_sdma_ring_work_driver.obj" ^
+  "%ODIR%\bc250_pfp_direct_load_driver.obj" ^
   "%ODIR%\bc250_active_miniport_driver.obj" ^
   "%WDK%\Lib\%WDKVER%\km\x64\ntoskrnl.lib" ^
   "%WDK%\Lib\%WDKVER%\km\x64\hal.lib" ^
@@ -1246,7 +1339,7 @@ echo GOLDEN SETTINGS CONTRACT: OK ^(34 entries + RMW + 2-pass preflight + LIFO r
 echo COMPUTE MQD CONTRACT: OK ^(GFX10 512B MQD + EOP buffer + HQD queue bounds, offline^)
 echo CONTEXT DISPATCHER CONTRACT: OK ^(SDMA + Compute engine context dispatch + IB + EOP fences, offline^)
 echo INTERRUPT HANDLER CONTRACT: OK ^(GFX10 16B IV vectors + SDMA/CP routing + modular RPTR, offline^)
-echo PAGING/TLB CONTRACT: OK ^(GFXHUB engine 17 ACK validated; owned VMID8 inert transaction hardware pending^)
+echo PAGING/TLB CONTRACT: OK ^(GFXHUB ACK + owned VMID8 inert transaction validated in hardware^)
 echo ADAPTER INFO CONTRACT: OK ^(2 nodes: SDMA0 + Compute MEC + 48-bit GPUVA, offline^)
 echo SEGMENT CONTRACT: OK ^(Segment 1 Local VRAM + Segment 2 GART Aperture, offline^)
 echo TDR RECOVERY CONTRACT: OK ^(Two-pass hang detection + Node 0/1 atomic reset + HQD dequeue, offline^)

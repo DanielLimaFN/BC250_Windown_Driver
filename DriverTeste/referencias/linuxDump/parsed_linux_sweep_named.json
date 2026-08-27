@@ -1,0 +1,9489 @@
+[
+  {
+    "offset": "0x08000",
+    "value": "0x000000FF",
+    "names": [
+      "GRBM_CNTL"
+    ]
+  },
+  {
+    "offset": "0x08004",
+    "value": "0x00000020",
+    "names": [
+      "GRBM_SKEW_CNTL"
+    ]
+  },
+  {
+    "offset": "0x08014",
+    "value": "0x00000006",
+    "names": [
+      "GRBM_STATUS_SE0"
+    ]
+  },
+  {
+    "offset": "0x08018",
+    "value": "0x00000006",
+    "names": [
+      "GRBM_STATUS_SE1"
+    ]
+  },
+  {
+    "offset": "0x08030",
+    "value": "0x00001008",
+    "names": [
+      "GRBM_GFX_CLKEN_CNTL"
+    ]
+  },
+  {
+    "offset": "0x08034",
+    "value": "0x00000030",
+    "names": [
+      "GRBM_WAIT_IDLE_CLOCKS"
+    ]
+  },
+  {
+    "offset": "0x08038",
+    "value": "0x00000006",
+    "names": [
+      "GRBM_STATUS_SE2"
+    ]
+  },
+  {
+    "offset": "0x0803C",
+    "value": "0x00000006",
+    "names": [
+      "GRBM_STATUS_SE3"
+    ]
+  },
+  {
+    "offset": "0x08040",
+    "value": "0x00000001",
+    "names": [
+      "GRBM_PM_CNTL"
+    ]
+  },
+  {
+    "offset": "0x08054",
+    "value": "0x00FFFFFD",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x08058",
+    "value": "0x80007D80",
+    "names": [
+      "GRBM_READ_ERROR"
+    ]
+  },
+  {
+    "offset": "0x0805C",
+    "value": "0x00020000",
+    "names": [
+      "GRBM_READ_ERROR2"
+    ]
+  },
+  {
+    "offset": "0x0806C",
+    "value": "0x0003FFFF",
+    "names": [
+      "GRBM_TRAP_ADDR_MSK"
+    ]
+  },
+  {
+    "offset": "0x0808C",
+    "value": "0x00011000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x08098",
+    "value": "0x00002891",
+    "names": [
+      "GRBM_UTCL2_INVAL_RANGE_START"
+    ]
+  },
+  {
+    "offset": "0x0809C",
+    "value": "0x000028EA",
+    "names": [
+      "GRBM_UTCL2_INVAL_RANGE_END"
+    ]
+  },
+  {
+    "offset": "0x080A0",
+    "value": "0x00069C18",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x08100",
+    "value": "0xFBBF6A2D",
+    "names": [
+      "GRBM_SCRATCH_REG0"
+    ]
+  },
+  {
+    "offset": "0x08104",
+    "value": "0x4DEC7C6D",
+    "names": [
+      "GRBM_SCRATCH_REG1"
+    ]
+  },
+  {
+    "offset": "0x08108",
+    "value": "0xE5EDE85D",
+    "names": [
+      "GRBM_SCRATCH_REG2"
+    ]
+  },
+  {
+    "offset": "0x0810C",
+    "value": "0xBADE9942",
+    "names": [
+      "GRBM_SCRATCH_REG3"
+    ]
+  },
+  {
+    "offset": "0x08110",
+    "value": "0xBEF49529",
+    "names": [
+      "GRBM_SCRATCH_REG4"
+    ]
+  },
+  {
+    "offset": "0x08114",
+    "value": "0x3EF6DBBB",
+    "names": [
+      "GRBM_SCRATCH_REG5"
+    ]
+  },
+  {
+    "offset": "0x08118",
+    "value": "0xACC6BFE5",
+    "names": [
+      "GRBM_SCRATCH_REG6"
+    ]
+  },
+  {
+    "offset": "0x0811C",
+    "value": "0xE2FF3B9D",
+    "names": [
+      "GRBM_SCRATCH_REG7"
+    ]
+  },
+  {
+    "offset": "0x08248",
+    "value": "0x00000002",
+    "names": [
+      "CP_CPF_GRBM_FREE_COUNT"
+    ]
+  },
+  {
+    "offset": "0x0829C",
+    "value": "0x00000002",
+    "names": [
+      "CP_CPC_HALT_HYST_COUNT"
+    ]
+  },
+  {
+    "offset": "0x08674",
+    "value": "0x00000C00",
+    "names": [
+      "CP_STALLED_STAT1"
+    ]
+  },
+  {
+    "offset": "0x0868C",
+    "value": "0x000C0C0C",
+    "names": [
+      "CP_GRBM_FREE_COUNT"
+    ]
+  },
+  {
+    "offset": "0x08694",
+    "value": "0x0000172E",
+    "names": [
+      "CP_PFP_INSTR_PNTR"
+    ]
+  },
+  {
+    "offset": "0x08698",
+    "value": "0x00000E19",
+    "names": [
+      "CP_ME_INSTR_PNTR"
+    ]
+  },
+  {
+    "offset": "0x0869C",
+    "value": "0x000005CF",
+    "names": [
+      "CP_CE_INSTR_PNTR"
+    ]
+  },
+  {
+    "offset": "0x086A0",
+    "value": "0x00000447",
+    "names": [
+      "CP_MEC1_INSTR_PNTR"
+    ]
+  },
+  {
+    "offset": "0x086A4",
+    "value": "0x00000491",
+    "names": [
+      "CP_MEC2_INSTR_PNTR"
+    ]
+  },
+  {
+    "offset": "0x08708",
+    "value": "0x00400000",
+    "names": [
+      "CP_RB_WPTR_POLL_CNTL"
+    ]
+  },
+  {
+    "offset": "0x08754",
+    "value": "0x06008010",
+    "names": [
+      "CP_ROQ1_THRESHOLDS"
+    ]
+  },
+  {
+    "offset": "0x08758",
+    "value": "0x000380A0",
+    "names": [
+      "CP_ROQ2_THRESHOLDS"
+    ]
+  },
+  {
+    "offset": "0x0875C",
+    "value": "0x00804000",
+    "names": [
+      "CP_STQ_THRESHOLDS"
+    ]
+  },
+  {
+    "offset": "0x08764",
+    "value": "0x00008040",
+    "names": [
+      "CP_MEQ_THRESHOLDS"
+    ]
+  },
+  {
+    "offset": "0x08768",
+    "value": "0x02000080",
+    "names": [
+      "CP_ROQ_AVAIL"
+    ]
+  },
+  {
+    "offset": "0x0876C",
+    "value": "0x00000200",
+    "names": [
+      "CP_STQ_AVAIL"
+    ]
+  },
+  {
+    "offset": "0x08770",
+    "value": "0x00800200",
+    "names": [
+      "CP_ROQ2_AVAIL"
+    ]
+  },
+  {
+    "offset": "0x08774",
+    "value": "0x00000200",
+    "names": [
+      "CP_MEQ_AVAIL"
+    ]
+  },
+  {
+    "offset": "0x08788",
+    "value": "0x05000500",
+    "names": [
+      "CP_ROQ_IB2_STAT"
+    ]
+  },
+  {
+    "offset": "0x08798",
+    "value": "0x02000080",
+    "names": [
+      "CP_CEQ1_AVAIL"
+    ]
+  },
+  {
+    "offset": "0x0879C",
+    "value": "0x00800200",
+    "names": [
+      "CP_CEQ2_AVAIL"
+    ]
+  },
+  {
+    "offset": "0x087A4",
+    "value": "0x01000100",
+    "names": [
+      "CP_CE_ROQ_IB1_STAT"
+    ]
+  },
+  {
+    "offset": "0x087A8",
+    "value": "0x05000500",
+    "names": [
+      "CP_CE_ROQ_IB2_STAT"
+    ]
+  },
+  {
+    "offset": "0x087AC",
+    "value": "0x09000900",
+    "names": [
+      "CP_CE_ROQ_DB_STAT"
+    ]
+  },
+  {
+    "offset": "0x087B0",
+    "value": "0x0004C120",
+    "names": [
+      "CP_ROQ3_THRESHOLDS"
+    ]
+  },
+  {
+    "offset": "0x087B4",
+    "value": "0x09000900",
+    "names": [
+      "CP_ROQ_DB_STAT"
+    ]
+  },
+  {
+    "offset": "0x087DC",
+    "value": "0x04000000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x088B0",
+    "value": "0x0000007D",
+    "names": [
+      "VGT_VTX_VECT_EJECT_REG"
+    ]
+  },
+  {
+    "offset": "0x088B4",
+    "value": "0x00000200",
+    "names": [
+      "VGT_DMA_DATA_FIFO_DEPTH"
+    ]
+  },
+  {
+    "offset": "0x088B8",
+    "value": "0x00000020",
+    "names": [
+      "VGT_DMA_REQ_FIFO_DEPTH"
+    ]
+  },
+  {
+    "offset": "0x088BC",
+    "value": "0x00000020",
+    "names": [
+      "VGT_DRAW_INIT_FIFO_DEPTH"
+    ]
+  },
+  {
+    "offset": "0x088C4",
+    "value": "0x09000000",
+    "names": [
+      "VGT_CACHE_INVALIDATION"
+    ]
+  },
+  {
+    "offset": "0x088D0",
+    "value": "0x105000C0",
+    "names": [
+      "VGT_FIFO_DEPTHS"
+    ]
+  },
+  {
+    "offset": "0x088D4",
+    "value": "0x00000010",
+    "names": [
+      "VGT_GS_VERTEX_REUSE"
+    ]
+  },
+  {
+    "offset": "0x088D8",
+    "value": "0x00000002",
+    "names": [
+      "VGT_MC_LAT_CNTL"
+    ]
+  },
+  {
+    "offset": "0x088E0",
+    "value": "0x0000000D",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x088E4",
+    "value": "0x80012AA4",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x088E8",
+    "value": "0x0000000D",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x088EC",
+    "value": "0x04005000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x088F0",
+    "value": "0x000005CD",
+    "names": [
+      "VGT_CNTL_STATUS"
+    ]
+  },
+  {
+    "offset": "0x088F4",
+    "value": "0x0000000D",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x088F8",
+    "value": "0x00000009",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x0890C",
+    "value": "0x00000080",
+    "names": [
+      "WD_UTCL1_CNTL"
+    ]
+  },
+  {
+    "offset": "0x08914",
+    "value": "0x00000400",
+    "names": [
+      "GE_PC_CNTL"
+    ]
+  },
+  {
+    "offset": "0x08918",
+    "value": "0x00000080",
+    "names": [
+      "IA_UTCL1_CNTL"
+    ]
+  },
+  {
+    "offset": "0x08920",
+    "value": "0x0000493E",
+    "names": [
+      "GE_FAST_CLKS"
+    ]
+  },
+  {
+    "offset": "0x08988",
+    "value": "0x0000C000",
+    "names": [
+      "VGT_TF_RING_SIZE"
+    ]
+  },
+  {
+    "offset": "0x08990",
+    "value": "0x000000FE",
+    "names": [
+      "GE_PRIV_CONTROL"
+    ]
+  },
+  {
+    "offset": "0x089A0",
+    "value": "0x000001FF",
+    "names": [
+      "VGT_VS_MAX_WAVE_ID"
+    ]
+  },
+  {
+    "offset": "0x089A4",
+    "value": "0x000003FF",
+    "names": [
+      "VGT_GS_MAX_WAVE_ID"
+    ]
+  },
+  {
+    "offset": "0x089AC",
+    "value": "0x00FC0001",
+    "names": [
+      "CC_GC_SHADER_ARRAY_CONFIG_GEN0"
+    ]
+  },
+  {
+    "offset": "0x089BC",
+    "value": "0xFFF80000",
+    "names": [
+      "CC_GC_SHADER_ARRAY_CONFIG"
+    ]
+  },
+  {
+    "offset": "0x089D4",
+    "value": "0x00092400",
+    "names": [
+      "VGT_STRMOUT_DELAY"
+    ]
+  },
+  {
+    "offset": "0x08A04",
+    "value": "0x8E586800",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x08A14",
+    "value": "0x00A00007",
+    "names": [
+      "PA_CL_ENHANCE"
+    ]
+  },
+  {
+    "offset": "0x08A54",
+    "value": "0x00000100",
+    "names": [
+      "PA_SC_FIFO_DEPTH_CNTL"
+    ]
+  },
+  {
+    "offset": "0x08B24",
+    "value": "0x00FFFFFF",
+    "names": [
+      "PA_SC_FORCE_EOV_MAX_CNTS"
+    ]
+  },
+  {
+    "offset": "0x08B30",
+    "value": "0x842A4C02",
+    "names": [
+      "PA_SC_BINNER_EVENT_CNTL_0"
+    ]
+  },
+  {
+    "offset": "0x08B34",
+    "value": "0x82000008",
+    "names": [
+      "PA_SC_BINNER_EVENT_CNTL_1"
+    ]
+  },
+  {
+    "offset": "0x08B38",
+    "value": "0x9118AAB8",
+    "names": [
+      "PA_SC_BINNER_EVENT_CNTL_2"
+    ]
+  },
+  {
+    "offset": "0x08B3C",
+    "value": "0xC2400024",
+    "names": [
+      "PA_SC_BINNER_EVENT_CNTL_3"
+    ]
+  },
+  {
+    "offset": "0x08B70",
+    "value": "0x00000020",
+    "names": [
+      "PA_SC_ENHANCE_2"
+    ]
+  },
+  {
+    "offset": "0x08B78",
+    "value": "0x08000000",
+    "names": [
+      "PA_SC_BINNER_CNTL_OVERRIDE"
+    ]
+  },
+  {
+    "offset": "0x08B80",
+    "value": "0x00000100",
+    "names": [
+      "PA_PH_INTERFACE_FIFO_SIZE"
+    ]
+  },
+  {
+    "offset": "0x08B8C",
+    "value": "0xCC426403",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x08B90",
+    "value": "0x00360040",
+    "names": [
+      "PA_SC_BC_WAVE_BREAK"
+    ]
+  },
+  {
+    "offset": "0x08BF0",
+    "value": "0x08000009",
+    "names": [
+      "PA_SC_ENHANCE"
+    ]
+  },
+  {
+    "offset": "0x08BF4",
+    "value": "0x04040000",
+    "names": [
+      "PA_SC_ENHANCE_1"
+    ]
+  },
+  {
+    "offset": "0x08C00",
+    "value": "0x01180000",
+    "names": [
+      "SQ_CONFIG"
+    ]
+  },
+  {
+    "offset": "0x08C04",
+    "value": "0x000A2000",
+    "names": [
+      "SQC_CONFIG"
+    ]
+  },
+  {
+    "offset": "0x08C0C",
+    "value": "0x0000007F",
+    "names": [
+      "SQ_RANDOM_WAVE_PRI"
+    ]
+  },
+  {
+    "offset": "0x08C14",
+    "value": "0x0000D001",
+    "names": [
+      "SQ_FIFO_SIZES"
+    ]
+  },
+  {
+    "offset": "0x08C2C",
+    "value": "0x00000001",
+    "names": [
+      "SP_CONFIG"
+    ]
+  },
+  {
+    "offset": "0x08C30",
+    "value": "0x00000130",
+    "names": [
+      "SQ_ARB_CONFIG"
+    ]
+  },
+  {
+    "offset": "0x08C34",
+    "value": "0x0000C00C",
+    "names": [
+      "SH_MEM_CONFIG"
+    ]
+  },
+  {
+    "offset": "0x08C50",
+    "value": "0x00FFFFFF",
+    "names": [
+      "SQ_INTERRUPT_AUTO_MASK"
+    ]
+  },
+  {
+    "offset": "0x08C5C",
+    "value": "0x00000580",
+    "names": [
+      "SQG_UTCL0_CNTL1"
+    ]
+  },
+  {
+    "offset": "0x08D28",
+    "value": "0xF000F000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x08DE4",
+    "value": "0xBEBEBEEF",
+    "names": [
+      "SQ_IND_DATA"
+    ]
+  },
+  {
+    "offset": "0x08DEC",
+    "value": "0xBEBEBEEF",
+    "names": [
+      "SQ_CMD"
+    ]
+  },
+  {
+    "offset": "0x08DF0",
+    "value": "0x00000048",
+    "names": [
+      "SQ_TIME_HI"
+    ]
+  },
+  {
+    "offset": "0x08F4C",
+    "value": "0x00000480",
+    "names": [
+      "SQC_ICACHE_UTCL0_CNTL1"
+    ]
+  },
+  {
+    "offset": "0x08F50",
+    "value": "0x00000400",
+    "names": [
+      "SQC_ICACHE_UTCL0_CNTL2"
+    ]
+  },
+  {
+    "offset": "0x08F54",
+    "value": "0x00000500",
+    "names": [
+      "SQC_DCACHE_UTCL0_CNTL1"
+    ]
+  },
+  {
+    "offset": "0x08F58",
+    "value": "0x00000400",
+    "names": [
+      "SQC_DCACHE_UTCL0_CNTL2"
+    ]
+  },
+  {
+    "offset": "0x09060",
+    "value": "0x00000020",
+    "names": [
+      "SX_DEBUG_1"
+    ]
+  },
+  {
+    "offset": "0x090E8",
+    "value": "0x020000FF",
+    "names": [
+      "SPI_PS_MAX_WAVE_ID"
+    ]
+  },
+  {
+    "offset": "0x090EC",
+    "value": "0x00000004",
+    "names": [
+      "SPI_START_PHASE"
+    ]
+  },
+  {
+    "offset": "0x09100",
+    "value": "0xC062C688",
+    "names": [
+      "SPI_CONFIG_CNTL"
+    ]
+  },
+  {
+    "offset": "0x09108",
+    "value": "0x0016288B",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09118",
+    "value": "0xFDDEFBE5",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09138",
+    "value": "0x00000011",
+    "names": [
+      "SPI_CONFIG_CNTL_2"
+    ]
+  },
+  {
+    "offset": "0x0913C",
+    "value": "0x000C0104",
+    "names": [
+      "SPI_CONFIG_CNTL_1"
+    ]
+  },
+  {
+    "offset": "0x092AC",
+    "value": "0x00000100",
+    "names": [
+      "SPI_WF_LIFETIME_LIMIT_0"
+    ]
+  },
+  {
+    "offset": "0x092B0",
+    "value": "0x00000100",
+    "names": [
+      "SPI_WF_LIFETIME_LIMIT_1"
+    ]
+  },
+  {
+    "offset": "0x092B4",
+    "value": "0x00000100",
+    "names": [
+      "SPI_WF_LIFETIME_LIMIT_2"
+    ]
+  },
+  {
+    "offset": "0x092B8",
+    "value": "0x00000100",
+    "names": [
+      "SPI_WF_LIFETIME_LIMIT_3"
+    ]
+  },
+  {
+    "offset": "0x092BC",
+    "value": "0x00000100",
+    "names": [
+      "SPI_WF_LIFETIME_LIMIT_4"
+    ]
+  },
+  {
+    "offset": "0x092C0",
+    "value": "0x00000100",
+    "names": [
+      "SPI_WF_LIFETIME_LIMIT_5"
+    ]
+  },
+  {
+    "offset": "0x092C4",
+    "value": "0x00000100",
+    "names": [
+      "SPI_WF_LIFETIME_LIMIT_6"
+    ]
+  },
+  {
+    "offset": "0x092C8",
+    "value": "0x00000100",
+    "names": [
+      "SPI_WF_LIFETIME_LIMIT_7"
+    ]
+  },
+  {
+    "offset": "0x092CC",
+    "value": "0x00000100",
+    "names": [
+      "SPI_WF_LIFETIME_LIMIT_8"
+    ]
+  },
+  {
+    "offset": "0x092D0",
+    "value": "0x00000100",
+    "names": [
+      "SPI_WF_LIFETIME_LIMIT_9"
+    ]
+  },
+  {
+    "offset": "0x09354",
+    "value": "0x0000FFFF",
+    "names": [
+      "SPI_LB_WGP_MASK"
+    ]
+  },
+  {
+    "offset": "0x0935C",
+    "value": "0x00000007",
+    "names": [
+      "SPI_PG_ENABLE_STATIC_WGP_MASK"
+    ]
+  },
+  {
+    "offset": "0x09360",
+    "value": "0x0000203C",
+    "names": [
+      "SPI_GDS_CREDITS"
+    ]
+  },
+  {
+    "offset": "0x09364",
+    "value": "0x10000400",
+    "names": [
+      "SPI_SX_EXPORT_BUFFER_SIZES"
+    ]
+  },
+  {
+    "offset": "0x09368",
+    "value": "0x00800040",
+    "names": [
+      "SPI_SX_SCOREBOARD_BUFFER_SIZES"
+    ]
+  },
+  {
+    "offset": "0x09394",
+    "value": "0x07050000",
+    "names": [
+      "SPI_LB_DATA_PERWGP_WAVE_HSGS"
+    ]
+  },
+  {
+    "offset": "0x09398",
+    "value": "0x07070000",
+    "names": [
+      "SPI_LB_DATA_PERWGP_WAVE_VSPS"
+    ]
+  },
+  {
+    "offset": "0x0939C",
+    "value": "0x00000707",
+    "names": [
+      "SPI_LB_DATA_PERWGP_WAVE_CS"
+    ]
+  },
+  {
+    "offset": "0x093A8",
+    "value": "0x848CBCC3",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x094A4",
+    "value": "0x61183000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x094A8",
+    "value": "0x00000824",
+    "names": [
+      "TD_POWER_CNTL"
+    ]
+  },
+  {
+    "offset": "0x09500",
+    "value": "0x22222222",
+    "names": [
+      "TA_POWER_CNTL"
+    ]
+  },
+  {
+    "offset": "0x09504",
+    "value": "0xA004005A",
+    "names": [
+      "TA_CNTL"
+    ]
+  },
+  {
+    "offset": "0x09508",
+    "value": "0x01030000",
+    "names": [
+      "TA_CNTL_AUX"
+    ]
+  },
+  {
+    "offset": "0x09510",
+    "value": "0x40000040",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09724",
+    "value": "0x00100000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09830",
+    "value": "0x20000000",
+    "names": [
+      "DB_DEBUG"
+    ]
+  },
+  {
+    "offset": "0x09834",
+    "value": "0x00000420",
+    "names": [
+      "DB_DEBUG2"
+    ]
+  },
+  {
+    "offset": "0x09838",
+    "value": "0x00000200",
+    "names": [
+      "DB_DEBUG3"
+    ]
+  },
+  {
+    "offset": "0x0983C",
+    "value": "0x04800000",
+    "names": [
+      "DB_DEBUG4"
+    ]
+  },
+  {
+    "offset": "0x09850",
+    "value": "0x410013FF",
+    "names": [
+      "DB_CREDIT_LIMIT"
+    ]
+  },
+  {
+    "offset": "0x09854",
+    "value": "0x0A040A04",
+    "names": [
+      "DB_WATERMARKS"
+    ]
+  },
+  {
+    "offset": "0x09868",
+    "value": "0x03860210",
+    "names": [
+      "DB_LAST_OF_BURST_CONFIG"
+    ]
+  },
+  {
+    "offset": "0x0986C",
+    "value": "0x00000001",
+    "names": [
+      "DB_RING_CONTROL"
+    ]
+  },
+  {
+    "offset": "0x09870",
+    "value": "0x04040404",
+    "names": [
+      "DB_MEM_ARB_WATERMARKS"
+    ]
+  },
+  {
+    "offset": "0x09878",
+    "value": "0x00150055",
+    "names": [
+      "DB_RMI_BC_GL2_CACHE_CONTROL"
+    ]
+  },
+  {
+    "offset": "0x0987C",
+    "value": "0x00002000",
+    "names": [
+      "DB_EXCEPTION_CONTROL"
+    ]
+  },
+  {
+    "offset": "0x098B0",
+    "value": "0x21C09C37",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x098B4",
+    "value": "0x038000E0",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x098B8",
+    "value": "0x00200000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x098BC",
+    "value": "0x00F00000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x098C0",
+    "value": "0x003B0000",
+    "names": [
+      "DB_DFSM_CONFIG"
+    ]
+  },
+  {
+    "offset": "0x098C8",
+    "value": "0x000003E8",
+    "names": [
+      "DB_DFSM_TILES_IN_FLIGHT"
+    ]
+  },
+  {
+    "offset": "0x098CC",
+    "value": "0x000000C8",
+    "names": [
+      "DB_DFSM_PRIMS_IN_FLIGHT"
+    ]
+  },
+  {
+    "offset": "0x098D0",
+    "value": "0x000F4240",
+    "names": [
+      "DB_DFSM_WATCHDOG"
+    ]
+  },
+  {
+    "offset": "0x098D4",
+    "value": "0x000007FF",
+    "names": [
+      "DB_DFSM_FLUSH_ENABLE"
+    ]
+  },
+  {
+    "offset": "0x098D8",
+    "value": "0xDE8955CC",
+    "names": [
+      "DB_DFSM_FLUSH_AUX_EVENT"
+    ]
+  },
+  {
+    "offset": "0x098F0",
+    "value": "0x001F1700",
+    "names": [
+      "CC_RB_REDUNDANCY"
+    ]
+  },
+  {
+    "offset": "0x098F8",
+    "value": "0x00000044",
+    "names": [
+      "GB_ADDR_CONFIG"
+    ]
+  },
+  {
+    "offset": "0x09904",
+    "value": "0x76543210",
+    "names": [
+      "CC_RB_DAISY_CHAIN"
+    ]
+  },
+  {
+    "offset": "0x09908",
+    "value": "0x00000044",
+    "names": [
+      "GB_ADDR_CONFIG_READ"
+    ]
+  },
+  {
+    "offset": "0x09A08",
+    "value": "0x003C8014",
+    "names": [
+      "CB_HW_CONTROL_4"
+    ]
+  },
+  {
+    "offset": "0x09A0C",
+    "value": "0xA0000000",
+    "names": [
+      "CB_HW_CONTROL_3"
+    ]
+  },
+  {
+    "offset": "0x09A10",
+    "value": "0x00040000",
+    "names": [
+      "CB_HW_CONTROL"
+    ]
+  },
+  {
+    "offset": "0x09A14",
+    "value": "0x10000000",
+    "names": [
+      "CB_HW_CONTROL_1"
+    ]
+  },
+  {
+    "offset": "0x09A18",
+    "value": "0x24000000",
+    "names": [
+      "CB_HW_CONTROL_2"
+    ]
+  },
+  {
+    "offset": "0x09A20",
+    "value": "0x00029000",
+    "names": [
+      "CB_HW_MEM_ARBITER_RD"
+    ]
+  },
+  {
+    "offset": "0x09A24",
+    "value": "0x00029000",
+    "names": [
+      "CB_HW_MEM_ARBITER_WR"
+    ]
+  },
+  {
+    "offset": "0x09A28",
+    "value": "0x00550055",
+    "names": [
+      "CB_RMI_BC_GL2_CACHE_CONTROL"
+    ]
+  },
+  {
+    "offset": "0x09A38",
+    "value": "0x0B101410",
+    "names": [
+      "CB_CACHE_EVICT_POINTS"
+    ]
+  },
+  {
+    "offset": "0x09A64",
+    "value": "0x00008800",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09A88",
+    "value": "0x0000E000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09AA4",
+    "value": "0x000FF000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09AA8",
+    "value": "0x00020000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09AAC",
+    "value": "0x0005C000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09AB0",
+    "value": "0x0001F01F",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09AB4",
+    "value": "0x000000E0",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09C04",
+    "value": "0x0000003F",
+    "names": [
+      "GCEA_SDP_REQ_CNTL"
+    ]
+  },
+  {
+    "offset": "0x09C08",
+    "value": "0x0DE8BFF0",
+    "names": [
+      "GCEA_MISC"
+    ]
+  },
+  {
+    "offset": "0x09C20",
+    "value": "0x04000000",
+    "names": [
+      "GCEA_PERFCOUNTER_RSLT_CNTL"
+    ]
+  },
+  {
+    "offset": "0x09C24",
+    "value": "0x20000220",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09C28",
+    "value": "0x009D3059",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09C38",
+    "value": "0x00001A0F",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09C68",
+    "value": "0x637F637F",
+    "names": [
+      "GCEA_GL2C_XBR_CREDITS"
+    ]
+  },
+  {
+    "offset": "0x09C6C",
+    "value": "0x00333333",
+    "names": [
+      "GCEA_GL2C_XBR_MAXBURST"
+    ]
+  },
+  {
+    "offset": "0x09C74",
+    "value": "0x0000AAAA",
+    "names": [
+      "GCEA_PROBE_MAP"
+    ]
+  },
+  {
+    "offset": "0x09C78",
+    "value": "0x00000300",
+    "names": [
+      "GCEA_ERR_STATUS"
+    ]
+  },
+  {
+    "offset": "0x09C80",
+    "value": "0x00FF1008",
+    "names": [
+      "SPI_PQEV_CTRL"
+    ]
+  },
+  {
+    "offset": "0x09DC0",
+    "value": "0x00009489",
+    "names": [
+      "GCEA_DRAM_BANK_ARB"
+    ]
+  },
+  {
+    "offset": "0x09DCC",
+    "value": "0x18000000",
+    "names": [
+      "GCEA_SDP_BACKDOOR_CMDCREDITS1"
+    ]
+  },
+  {
+    "offset": "0x09DD4",
+    "value": "0x18000000",
+    "names": [
+      "GCEA_SDP_BACKDOOR_DATACREDITS1"
+    ]
+  },
+  {
+    "offset": "0x09DD8",
+    "value": "0x08404040",
+    "names": [
+      "GCEA_SDP_BACKDOOR_MISCCREDITS"
+    ]
+  },
+  {
+    "offset": "0x09DEC",
+    "value": "0x00000001",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09E00",
+    "value": "0x02000000",
+    "names": [
+      "RMI_GENERAL_CNTL"
+    ]
+  },
+  {
+    "offset": "0x09E04",
+    "value": "0x00000203",
+    "names": [
+      "RMI_GENERAL_CNTL1"
+    ]
+  },
+  {
+    "offset": "0x09E08",
+    "value": "0x20000000",
+    "names": [
+      "RMI_GENERAL_STATUS"
+    ]
+  },
+  {
+    "offset": "0x09E0C",
+    "value": "0x00020100",
+    "names": [
+      "RMI_SUBBLOCK_STATUS0"
+    ]
+  },
+  {
+    "offset": "0x09E1C",
+    "value": "0x00000F00",
+    "names": [
+      "RMI_XBAR_CONFIG"
+    ]
+  },
+  {
+    "offset": "0x09E20",
+    "value": "0x0003FCFF",
+    "names": [
+      "RMI_PROBE_POP_LOGIC_CNTL"
+    ]
+  },
+  {
+    "offset": "0x09E24",
+    "value": "0x00000564",
+    "names": [
+      "RMI_UTC_XNACK_N_MISC_CNTL"
+    ]
+  },
+  {
+    "offset": "0x09E28",
+    "value": "0x02000200",
+    "names": [
+      "RMI_DEMUX_CNTL"
+    ]
+  },
+  {
+    "offset": "0x09E2C",
+    "value": "0x00020000",
+    "names": [
+      "RMI_UTCL1_CNTL1"
+    ]
+  },
+  {
+    "offset": "0x09E30",
+    "value": "0x00010400",
+    "names": [
+      "RMI_UTCL1_CNTL2"
+    ]
+  },
+  {
+    "offset": "0x09E38",
+    "value": "0x4004001E",
+    "names": [
+      "RMI_TCIW_FORMATTER0_CNTL"
+    ]
+  },
+  {
+    "offset": "0x09E3C",
+    "value": "0x4004001E",
+    "names": [
+      "RMI_TCIW_FORMATTER1_CNTL"
+    ]
+  },
+  {
+    "offset": "0x09E40",
+    "value": "0x001FFE00",
+    "names": [
+      "RMI_SCOREBOARD_CNTL"
+    ]
+  },
+  {
+    "offset": "0x09E44",
+    "value": "0x00016668",
+    "names": [
+      "RMI_SCOREBOARD_STATUS0"
+    ]
+  },
+  {
+    "offset": "0x09E50",
+    "value": "0x08000800",
+    "names": [
+      "RMI_XBAR_ARBITER_CONFIG"
+    ]
+  },
+  {
+    "offset": "0x09E58",
+    "value": "0x04208822",
+    "names": [
+      "RMI_CLOCK_CNTRL"
+    ]
+  },
+  {
+    "offset": "0x09E60",
+    "value": "0xBCAA9987",
+    "names": [
+      "RMI_RB_GLX_CID_MAP"
+    ]
+  },
+  {
+    "offset": "0x09E64",
+    "value": "0x94000000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09E70",
+    "value": "0x60104000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09E7C",
+    "value": "0xFFFF3100",
+    "names": [
+      "RMI_SPARE"
+    ]
+  },
+  {
+    "offset": "0x09E80",
+    "value": "0x00000A00",
+    "names": [
+      "RMI_SPARE_1"
+    ]
+  },
+  {
+    "offset": "0x09E88",
+    "value": "0x00000010",
+    "names": [
+      "CC_RMI_REDUNDANCY"
+    ]
+  },
+  {
+    "offset": "0x09E8C",
+    "value": "0x00000010",
+    "names": [
+      "GC_USER_RMI_REDUNDANCY"
+    ]
+  },
+  {
+    "offset": "0x09F30",
+    "value": "0xBAADADD9",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09F34",
+    "value": "0xBAADADD9",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09F38",
+    "value": "0xBAADADD9",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09F3C",
+    "value": "0xBAADADD9",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09F70",
+    "value": "0xBAADADD9",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09F74",
+    "value": "0xBAADADD9",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09F78",
+    "value": "0xBAADADD9",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09F7C",
+    "value": "0xBAADADD9",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x09F80",
+    "value": "0x00000004",
+    "names": [
+      "PMM_GENERAL_CNTL"
+    ]
+  },
+  {
+    "offset": "0x09F84",
+    "value": "0x80000000",
+    "names": [
+      "GCR_PIO_CNTL"
+    ]
+  },
+  {
+    "offset": "0x09F8C",
+    "value": "0x00F08500",
+    "names": [
+      "GCR_GENERAL_CNTL"
+    ]
+  },
+  {
+    "offset": "0x09F94",
+    "value": "0x00218030",
+    "names": [
+      "GCR_CMD_STATUS"
+    ]
+  },
+  {
+    "offset": "0x09FA0",
+    "value": "0x00800000",
+    "names": [
+      "UTCL1_CTRL"
+    ]
+  },
+  {
+    "offset": "0x09FA4",
+    "value": "0x0019E4A2",
+    "names": [
+      "UTCL1_ALOG"
+    ]
+  },
+  {
+    "offset": "0x0A100",
+    "value": "0x00080E01",
+    "names": [
+      "GCVM_L2_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A108",
+    "value": "0x80130009",
+    "names": [
+      "GCVM_L2_CNTL3"
+    ]
+  },
+  {
+    "offset": "0x0A110",
+    "value": "0x00000090",
+    "names": [
+      "GCVM_DUMMY_PAGE_FAULT_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A11C",
+    "value": "0x0000010F",
+    "names": [
+      "GCVM_INVALIDATE_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A120",
+    "value": "0x3FFFFFFC",
+    "names": [
+      "GCVM_L2_PROTECTION_FAULT_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A124",
+    "value": "0x00060000",
+    "names": [
+      "GCVM_L2_PROTECTION_FAULT_CNTL2"
+    ]
+  },
+  {
+    "offset": "0x0A13C",
+    "value": "0x0007E3FC",
+    "names": [
+      "GCVM_L2_PROTECTION_FAULT_DEFAULT_ADDR_LO32"
+    ]
+  },
+  {
+    "offset": "0x0A144",
+    "value": "0x60F50FEB",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x0A14C",
+    "value": "0x0000000F",
+    "names": [
+      "GCVM_L2_CONTEXT1_IDENTITY_APERTURE_LOW_ADDR_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A160",
+    "value": "0x00000001",
+    "names": [
+      "GCVM_L2_CNTL4"
+    ]
+  },
+  {
+    "offset": "0x0A174",
+    "value": "0x00000002",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x0A17C",
+    "value": "0x00000080",
+    "names": [
+      "GCVM_L2_CGTT_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x0A180",
+    "value": "0x00000018",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x0A184",
+    "value": "0x00003FE0",
+    "names": [
+      "GCVM_L2_CNTL5"
+    ]
+  },
+  {
+    "offset": "0x0A200",
+    "value": "0x007FFE01",
+    "names": [
+      "GCVM_CONTEXT0_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A204",
+    "value": "0x007FFE87",
+    "names": [
+      "GCVM_CONTEXT1_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A208",
+    "value": "0x007FFE87",
+    "names": [
+      "GCVM_CONTEXT2_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A20C",
+    "value": "0x007FFE87",
+    "names": [
+      "GCVM_CONTEXT3_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A210",
+    "value": "0x007FFE87",
+    "names": [
+      "GCVM_CONTEXT4_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A214",
+    "value": "0x007FFE87",
+    "names": [
+      "GCVM_CONTEXT5_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A218",
+    "value": "0x007FFE87",
+    "names": [
+      "GCVM_CONTEXT6_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A21C",
+    "value": "0x007FFE87",
+    "names": [
+      "GCVM_CONTEXT7_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A220",
+    "value": "0x007FFE87",
+    "names": [
+      "GCVM_CONTEXT8_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A224",
+    "value": "0x007FFE87",
+    "names": [
+      "GCVM_CONTEXT9_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A228",
+    "value": "0x007FFE87",
+    "names": [
+      "GCVM_CONTEXT10_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A22C",
+    "value": "0x007FFE87",
+    "names": [
+      "GCVM_CONTEXT11_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A230",
+    "value": "0x007FFE87",
+    "names": [
+      "GCVM_CONTEXT12_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A234",
+    "value": "0x007FFE87",
+    "names": [
+      "GCVM_CONTEXT13_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A238",
+    "value": "0x007FFE87",
+    "names": [
+      "GCVM_CONTEXT14_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A23C",
+    "value": "0x007FFE87",
+    "names": [
+      "GCVM_CONTEXT15_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A28C",
+    "value": "0x00F80080",
+    "names": [
+      "GCVM_INVALIDATE_ENG0_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A290",
+    "value": "0x02F80000",
+    "names": [
+      "GCVM_INVALIDATE_ENG1_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A294",
+    "value": "0x02F80000",
+    "names": [
+      "GCVM_INVALIDATE_ENG2_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A298",
+    "value": "0x02F80000",
+    "names": [
+      "GCVM_INVALIDATE_ENG3_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A29C",
+    "value": "0x02F80000",
+    "names": [
+      "GCVM_INVALIDATE_ENG4_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A2A0",
+    "value": "0x02F80000",
+    "names": [
+      "GCVM_INVALIDATE_ENG5_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A2A4",
+    "value": "0x02F80000",
+    "names": [
+      "GCVM_INVALIDATE_ENG6_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A2A8",
+    "value": "0x02F80000",
+    "names": [
+      "GCVM_INVALIDATE_ENG7_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A2AC",
+    "value": "0x02F80000",
+    "names": [
+      "GCVM_INVALIDATE_ENG8_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A2B0",
+    "value": "0x02F80000",
+    "names": [
+      "GCVM_INVALIDATE_ENG9_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A2B4",
+    "value": "0x02F80000",
+    "names": [
+      "GCVM_INVALIDATE_ENG10_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A2B8",
+    "value": "0x02F80000",
+    "names": [
+      "GCVM_INVALIDATE_ENG11_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A2BC",
+    "value": "0x00F80001",
+    "names": [
+      "GCVM_INVALIDATE_ENG12_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A2C0",
+    "value": "0x02F80000",
+    "names": [
+      "GCVM_INVALIDATE_ENG13_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A2C4",
+    "value": "0x02F80000",
+    "names": [
+      "GCVM_INVALIDATE_ENG14_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A2C8",
+    "value": "0x02F80000",
+    "names": [
+      "GCVM_INVALIDATE_ENG15_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A2CC",
+    "value": "0x02F80000",
+    "names": [
+      "GCVM_INVALIDATE_ENG16_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A2D0",
+    "value": "0x00F80001",
+    "names": [
+      "GCVM_INVALIDATE_ENG17_REQ"
+    ]
+  },
+  {
+    "offset": "0x0A2D4",
+    "value": "0x00010080",
+    "names": [
+      "GCVM_INVALIDATE_ENG0_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A2D8",
+    "value": "0x00010000",
+    "names": [
+      "GCVM_INVALIDATE_ENG1_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A2DC",
+    "value": "0x00010000",
+    "names": [
+      "GCVM_INVALIDATE_ENG2_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A2E0",
+    "value": "0x00010000",
+    "names": [
+      "GCVM_INVALIDATE_ENG3_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A2E4",
+    "value": "0x00010000",
+    "names": [
+      "GCVM_INVALIDATE_ENG4_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A2E8",
+    "value": "0x00010000",
+    "names": [
+      "GCVM_INVALIDATE_ENG5_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A2EC",
+    "value": "0x00010000",
+    "names": [
+      "GCVM_INVALIDATE_ENG6_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A2F0",
+    "value": "0x00010000",
+    "names": [
+      "GCVM_INVALIDATE_ENG7_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A2F4",
+    "value": "0x00010000",
+    "names": [
+      "GCVM_INVALIDATE_ENG8_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A2F8",
+    "value": "0x00010000",
+    "names": [
+      "GCVM_INVALIDATE_ENG9_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A2FC",
+    "value": "0x00010000",
+    "names": [
+      "GCVM_INVALIDATE_ENG10_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A300",
+    "value": "0x00010000",
+    "names": [
+      "GCVM_INVALIDATE_ENG11_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A304",
+    "value": "0x00010001",
+    "names": [
+      "GCVM_INVALIDATE_ENG12_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A308",
+    "value": "0x00010000",
+    "names": [
+      "GCVM_INVALIDATE_ENG13_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A30C",
+    "value": "0x00010000",
+    "names": [
+      "GCVM_INVALIDATE_ENG14_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A310",
+    "value": "0x00010000",
+    "names": [
+      "GCVM_INVALIDATE_ENG15_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A314",
+    "value": "0x00010000",
+    "names": [
+      "GCVM_INVALIDATE_ENG16_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A318",
+    "value": "0x00010001",
+    "names": [
+      "GCVM_INVALIDATE_ENG17_ACK"
+    ]
+  },
+  {
+    "offset": "0x0A320",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG0_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A328",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG1_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A330",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG2_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A338",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG3_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A340",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG4_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A348",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG5_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A350",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG6_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A358",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG7_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A360",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG8_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A368",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG9_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A370",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG10_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A378",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG11_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A380",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG12_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A388",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG13_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A390",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG14_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A398",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG15_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A3A0",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG16_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A3A8",
+    "value": "0x0000001F",
+    "names": [
+      "GCVM_INVALIDATE_ENG17_ADDR_RANGE_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A3AC",
+    "value": "0x6FE00001",
+    "names": [
+      "GCVM_CONTEXT0_PAGE_TABLE_BASE_ADDR_LO32"
+    ]
+  },
+  {
+    "offset": "0x0A3B0",
+    "value": "0x00000004",
+    "names": [
+      "GCVM_CONTEXT0_PAGE_TABLE_BASE_ADDR_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A4AC",
+    "value": "0x0001FFFF",
+    "names": [
+      "GCVM_CONTEXT0_PAGE_TABLE_END_ADDR_LO32"
+    ]
+  },
+  {
+    "offset": "0x0A4B8",
+    "value": "0x0000000F",
+    "names": [
+      "GCVM_CONTEXT1_PAGE_TABLE_END_ADDR_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A4C0",
+    "value": "0x0000000F",
+    "names": [
+      "GCVM_CONTEXT2_PAGE_TABLE_END_ADDR_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A4C8",
+    "value": "0x0000000F",
+    "names": [
+      "GCVM_CONTEXT3_PAGE_TABLE_END_ADDR_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A4D0",
+    "value": "0x0000000F",
+    "names": [
+      "GCVM_CONTEXT4_PAGE_TABLE_END_ADDR_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A4D8",
+    "value": "0x0000000F",
+    "names": [
+      "GCVM_CONTEXT5_PAGE_TABLE_END_ADDR_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A4E0",
+    "value": "0x0000000F",
+    "names": [
+      "GCVM_CONTEXT6_PAGE_TABLE_END_ADDR_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A4E8",
+    "value": "0x0000000F",
+    "names": [
+      "GCVM_CONTEXT7_PAGE_TABLE_END_ADDR_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A4F0",
+    "value": "0x0000000F",
+    "names": [
+      "GCVM_CONTEXT8_PAGE_TABLE_END_ADDR_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A4F8",
+    "value": "0x0000000F",
+    "names": [
+      "GCVM_CONTEXT9_PAGE_TABLE_END_ADDR_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A500",
+    "value": "0x0000000F",
+    "names": [
+      "GCVM_CONTEXT10_PAGE_TABLE_END_ADDR_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A508",
+    "value": "0x0000000F",
+    "names": [
+      "GCVM_CONTEXT11_PAGE_TABLE_END_ADDR_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A510",
+    "value": "0x0000000F",
+    "names": [
+      "GCVM_CONTEXT12_PAGE_TABLE_END_ADDR_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A518",
+    "value": "0x0000000F",
+    "names": [
+      "GCVM_CONTEXT13_PAGE_TABLE_END_ADDR_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A520",
+    "value": "0x0000000F",
+    "names": [
+      "GCVM_CONTEXT14_PAGE_TABLE_END_ADDR_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A528",
+    "value": "0x0000000F",
+    "names": [
+      "GCVM_CONTEXT15_PAGE_TABLE_END_ADDR_HI32"
+    ]
+  },
+  {
+    "offset": "0x0A590",
+    "value": "0x00008000",
+    "names": [
+      "GCMC_VM_NB_MMIOBASE"
+    ]
+  },
+  {
+    "offset": "0x0A594",
+    "value": "0x0000FFFF",
+    "names": [
+      "GCMC_VM_NB_MMIOLIMIT"
+    ]
+  },
+  {
+    "offset": "0x0A598",
+    "value": "0x00800000",
+    "names": [
+      "GCMC_VM_NB_PCI_CTRL"
+    ]
+  },
+  {
+    "offset": "0x0A59C",
+    "value": "0x00000008",
+    "names": [
+      "GCMC_VM_NB_PCI_ARB"
+    ]
+  },
+  {
+    "offset": "0x0A5A0",
+    "value": "0x80000000",
+    "names": [
+      "GCMC_VM_NB_TOP_OF_DRAM_SLOT1"
+    ]
+  },
+  {
+    "offset": "0x0A5A4",
+    "value": "0x80000001",
+    "names": [
+      "GCMC_VM_NB_LOWER_TOP_OF_DRAM2"
+    ]
+  },
+  {
+    "offset": "0x0A5A8",
+    "value": "0x00000004",
+    "names": [
+      "GCMC_VM_NB_UPPER_TOP_OF_DRAM2"
+    ]
+  },
+  {
+    "offset": "0x0A5AC",
+    "value": "0x00000450",
+    "names": [
+      "GCMC_VM_FB_OFFSET"
+    ]
+  },
+  {
+    "offset": "0x0A5B0",
+    "value": "0x00450A8B",
+    "names": [
+      "GCMC_VM_SYSTEM_APERTURE_DEFAULT_ADDR_LSB"
+    ]
+  },
+  {
+    "offset": "0x0A5B8",
+    "value": "0x00000001",
+    "names": [
+      "GCMC_VM_STEERING"
+    ]
+  },
+  {
+    "offset": "0x0A5C0",
+    "value": "0x00000208",
+    "names": [
+      "GCMC_MEM_POWER_LS"
+    ]
+  },
+  {
+    "offset": "0x0A5C8",
+    "value": "0x000FFFFF",
+    "names": [
+      "GCMC_VM_CACHEABLE_DRAM_ADDRESS_END"
+    ]
+  },
+  {
+    "offset": "0x0A5CC",
+    "value": "0x00000002",
+    "names": [
+      "GCMC_VM_APT_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A5D4",
+    "value": "0x00000450",
+    "names": [
+      "GCMC_VM_LOCAL_HBM_ADDRESS_START"
+    ]
+  },
+  {
+    "offset": "0x0A5D8",
+    "value": "0x0000046F",
+    "names": [
+      "GCMC_VM_LOCAL_HBM_ADDRESS_END"
+    ]
+  },
+  {
+    "offset": "0x0A600",
+    "value": "0x0000F400",
+    "names": [
+      "GCMC_VM_FB_LOCATION_BASE"
+    ]
+  },
+  {
+    "offset": "0x0A604",
+    "value": "0x0000F41F",
+    "names": [
+      "GCMC_VM_FB_LOCATION_TOP"
+    ]
+  },
+  {
+    "offset": "0x0A60C",
+    "value": "0x00FFFFFF",
+    "names": [
+      "GCMC_VM_AGP_BOT"
+    ]
+  },
+  {
+    "offset": "0x0A614",
+    "value": "0x003D0000",
+    "names": [
+      "GCMC_VM_SYSTEM_APERTURE_LOW_ADDR"
+    ]
+  },
+  {
+    "offset": "0x0A618",
+    "value": "0x003D07FF",
+    "names": [
+      "GCMC_VM_SYSTEM_APERTURE_HIGH_ADDR"
+    ]
+  },
+  {
+    "offset": "0x0A61C",
+    "value": "0x00001D59",
+    "names": [
+      "GCMC_VM_MX_L1_TLB_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A800",
+    "value": "0xA9503AAA",
+    "names": [
+      "GCEA_DRAM_RD_CLI2GRP_MAP0"
+    ]
+  },
+  {
+    "offset": "0x0A804",
+    "value": "0xA9503AAA",
+    "names": [
+      "GCEA_DRAM_RD_CLI2GRP_MAP1"
+    ]
+  },
+  {
+    "offset": "0x0A808",
+    "value": "0xA9503AAA",
+    "names": [
+      "GCEA_DRAM_WR_CLI2GRP_MAP0"
+    ]
+  },
+  {
+    "offset": "0x0A80C",
+    "value": "0xA9503AAA",
+    "names": [
+      "GCEA_DRAM_WR_CLI2GRP_MAP1"
+    ]
+  },
+  {
+    "offset": "0x0A810",
+    "value": "0x00000924",
+    "names": [
+      "GCEA_DRAM_RD_GRP2VC_MAP"
+    ]
+  },
+  {
+    "offset": "0x0A814",
+    "value": "0x00000324",
+    "names": [
+      "GCEA_DRAM_WR_GRP2VC_MAP"
+    ]
+  },
+  {
+    "offset": "0x0A818",
+    "value": "0x7800091B",
+    "names": [
+      "GCEA_DRAM_RD_LAZY"
+    ]
+  },
+  {
+    "offset": "0x0A81C",
+    "value": "0x11710901",
+    "names": [
+      "GCEA_DRAM_WR_LAZY"
+    ]
+  },
+  {
+    "offset": "0x0A820",
+    "value": "0x16D14444",
+    "names": [
+      "GCEA_DRAM_RD_CAM_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A824",
+    "value": "0x16DB4444",
+    "names": [
+      "GCEA_DRAM_WR_CAM_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A828",
+    "value": "0x20081607",
+    "names": [
+      "GCEA_DRAM_PAGE_BURST"
+    ]
+  },
+  {
+    "offset": "0x0A82C",
+    "value": "0x00DB6249",
+    "names": [
+      "GCEA_DRAM_RD_PRI_AGE"
+    ]
+  },
+  {
+    "offset": "0x0A830",
+    "value": "0x00DB6249",
+    "names": [
+      "GCEA_DRAM_WR_PRI_AGE"
+    ]
+  },
+  {
+    "offset": "0x0A834",
+    "value": "0x00000DB6",
+    "names": [
+      "GCEA_DRAM_RD_PRI_QUEUING"
+    ]
+  },
+  {
+    "offset": "0x0A838",
+    "value": "0x00000DB6",
+    "names": [
+      "GCEA_DRAM_WR_PRI_QUEUING"
+    ]
+  },
+  {
+    "offset": "0x0A83C",
+    "value": "0x00000924",
+    "names": [
+      "GCEA_DRAM_RD_PRI_FIXED"
+    ]
+  },
+  {
+    "offset": "0x0A840",
+    "value": "0x00000924",
+    "names": [
+      "GCEA_DRAM_WR_PRI_FIXED"
+    ]
+  },
+  {
+    "offset": "0x0A844",
+    "value": "0x0000FDB6",
+    "names": [
+      "GCEA_DRAM_RD_PRI_URGENCY"
+    ]
+  },
+  {
+    "offset": "0x0A848",
+    "value": "0x0000FDB6",
+    "names": [
+      "GCEA_DRAM_WR_PRI_URGENCY"
+    ]
+  },
+  {
+    "offset": "0x0A84C",
+    "value": "0x3F3F3F3F",
+    "names": [
+      "GCEA_DRAM_RD_PRI_QUANT_PRI1"
+    ]
+  },
+  {
+    "offset": "0x0A850",
+    "value": "0x7F7F7F7F",
+    "names": [
+      "GCEA_DRAM_RD_PRI_QUANT_PRI2"
+    ]
+  },
+  {
+    "offset": "0x0A858",
+    "value": "0x3F3F3F3F",
+    "names": [
+      "GCEA_DRAM_WR_PRI_QUANT_PRI1"
+    ]
+  },
+  {
+    "offset": "0x0A85C",
+    "value": "0x7F7F7F7F",
+    "names": [
+      "GCEA_DRAM_WR_PRI_QUANT_PRI2"
+    ]
+  },
+  {
+    "offset": "0x0A8D0",
+    "value": "0x0000001F",
+    "names": [
+      "GCEA_ADDRNORM_BASE_ADDR0"
+    ]
+  },
+  {
+    "offset": "0x0A8D4",
+    "value": "0x00047000",
+    "names": [
+      "GCEA_ADDRNORM_LIMIT_ADDR0"
+    ]
+  },
+  {
+    "offset": "0x0A90C",
+    "value": "0x00008001",
+    "names": [
+      "GCEA_ADDRNORMDRAM_HOLE_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0A91C",
+    "value": "0x000023CF",
+    "names": [
+      "GCEA_ADDRDEC_BANK_CFG"
+    ]
+  },
+  {
+    "offset": "0x0A920",
+    "value": "0xFFFFF000",
+    "names": [
+      "GCEA_ADDRDEC_MISC_CFG"
+    ]
+  },
+  {
+    "offset": "0x0A924",
+    "value": "0x22220001",
+    "names": [
+      "GCEA_ADDRDECDRAM_ADDR_HASH_BANK0"
+    ]
+  },
+  {
+    "offset": "0x0A928",
+    "value": "0x11110001",
+    "names": [
+      "GCEA_ADDRDECDRAM_ADDR_HASH_BANK1"
+    ]
+  },
+  {
+    "offset": "0x0A92C",
+    "value": "0x08888001",
+    "names": [
+      "GCEA_ADDRDECDRAM_ADDR_HASH_BANK2"
+    ]
+  },
+  {
+    "offset": "0x0A930",
+    "value": "0x04444001",
+    "names": [
+      "GCEA_ADDRDECDRAM_ADDR_HASH_BANK3"
+    ]
+  },
+  {
+    "offset": "0x0A99C",
+    "value": "0x00000001",
+    "names": [
+      "GCEA_ADDRDEC0_BASE_ADDR_CS2"
+    ]
+  },
+  {
+    "offset": "0x0A9BC",
+    "value": "0x003FFFFE",
+    "names": [
+      "GCEA_ADDRDEC0_ADDR_MASK_SECCS01"
+    ]
+  },
+  {
+    "offset": "0x0A9C0",
+    "value": "0xFFFFFFFE",
+    "names": [
+      "GCEA_ADDRDEC0_ADDR_MASK_SECCS23"
+    ]
+  },
+  {
+    "offset": "0x0A9C8",
+    "value": "0xFFFFFFFE",
+    "names": [
+      "GCEA_ADDRDEC0_ADDR_CFG_CS23"
+    ]
+  },
+  {
+    "offset": "0x0A9CC",
+    "value": "0x00124008",
+    "names": [
+      "GCEA_ADDRDEC0_ADDR_SEL_CS01"
+    ]
+  },
+  {
+    "offset": "0x0A9D0",
+    "value": "0x00050408",
+    "names": [
+      "GCEA_ADDRDEC0_ADDR_SEL_CS23"
+    ]
+  },
+  {
+    "offset": "0x0A9D4",
+    "value": "0x24008765",
+    "names": [
+      "GCEA_ADDRDEC0_COL_SEL_LO_CS01"
+    ]
+  },
+  {
+    "offset": "0x0A9D8",
+    "value": "0x04076543",
+    "names": [
+      "GCEA_ADDRDEC0_COL_SEL_LO_CS23"
+    ]
+  },
+  {
+    "offset": "0x0A9DC",
+    "value": "0x00000008",
+    "names": [
+      "GCEA_ADDRDEC0_COL_SEL_HI_CS01"
+    ]
+  },
+  {
+    "offset": "0x0A9E0",
+    "value": "0x00000008",
+    "names": [
+      "GCEA_ADDRDEC0_COL_SEL_HI_CS23"
+    ]
+  },
+  {
+    "offset": "0x0A9E4",
+    "value": "0xFDC76543",
+    "names": [
+      "GCEA_ADDRDEC0_RM_SEL_CS01"
+    ]
+  },
+  {
+    "offset": "0x0A9E8",
+    "value": "0x87654321",
+    "names": [
+      "GCEA_ADDRDEC0_RM_SEL_CS23"
+    ]
+  },
+  {
+    "offset": "0x0A9F0",
+    "value": "0xA9876543",
+    "names": [
+      "GCEA_ADDRDEC0_RM_SEL_SECCS23"
+    ]
+  },
+  {
+    "offset": "0x0AA24",
+    "value": "0xFFFFFFFE",
+    "names": [
+      "GCEA_ADDRDEC1_ADDR_CFG_CS01"
+    ]
+  },
+  {
+    "offset": "0x0AA28",
+    "value": "0xFFFFFFFE",
+    "names": [
+      "GCEA_ADDRDEC1_ADDR_CFG_CS23"
+    ]
+  },
+  {
+    "offset": "0x0AA2C",
+    "value": "0xFFFFFFFE",
+    "names": [
+      "GCEA_ADDRDEC1_ADDR_SEL_CS01"
+    ]
+  },
+  {
+    "offset": "0x0AA30",
+    "value": "0xFFFFFFFE",
+    "names": [
+      "GCEA_ADDRDEC1_ADDR_SEL_CS23"
+    ]
+  },
+  {
+    "offset": "0x0AA34",
+    "value": "0x00050408",
+    "names": [
+      "GCEA_ADDRDEC1_COL_SEL_LO_CS01"
+    ]
+  },
+  {
+    "offset": "0x0AA38",
+    "value": "0x00050408",
+    "names": [
+      "GCEA_ADDRDEC1_COL_SEL_LO_CS23"
+    ]
+  },
+  {
+    "offset": "0x0AA3C",
+    "value": "0x04076543",
+    "names": [
+      "GCEA_ADDRDEC1_COL_SEL_HI_CS01"
+    ]
+  },
+  {
+    "offset": "0x0AA40",
+    "value": "0x04076543",
+    "names": [
+      "GCEA_ADDRDEC1_COL_SEL_HI_CS23"
+    ]
+  },
+  {
+    "offset": "0x0AA44",
+    "value": "0x00000008",
+    "names": [
+      "GCEA_ADDRDEC1_RM_SEL_CS01"
+    ]
+  },
+  {
+    "offset": "0x0AA48",
+    "value": "0x00000008",
+    "names": [
+      "GCEA_ADDRDEC1_RM_SEL_CS23"
+    ]
+  },
+  {
+    "offset": "0x0AA4C",
+    "value": "0x87654321",
+    "names": [
+      "GCEA_ADDRDEC1_RM_SEL_SECCS01"
+    ]
+  },
+  {
+    "offset": "0x0AA50",
+    "value": "0x87654321",
+    "names": [
+      "GCEA_ADDRDEC1_RM_SEL_SECCS23"
+    ]
+  },
+  {
+    "offset": "0x0AA54",
+    "value": "0xA9876543",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x0AA58",
+    "value": "0xA9876543",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x0AAD4",
+    "value": "0x00600000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x0AB74",
+    "value": "0xA9503AAA",
+    "names": [
+      "GCEA_IO_RD_CLI2GRP_MAP0"
+    ]
+  },
+  {
+    "offset": "0x0AB78",
+    "value": "0xA9503AAA",
+    "names": [
+      "GCEA_IO_RD_CLI2GRP_MAP1"
+    ]
+  },
+  {
+    "offset": "0x0AB7C",
+    "value": "0xA9503AAA",
+    "names": [
+      "GCEA_IO_WR_CLI2GRP_MAP0"
+    ]
+  },
+  {
+    "offset": "0x0AB80",
+    "value": "0xA9503AAA",
+    "names": [
+      "GCEA_IO_WR_CLI2GRP_MAP1"
+    ]
+  },
+  {
+    "offset": "0x0AB84",
+    "value": "0x00007777",
+    "names": [
+      "GCEA_IO_RD_COMBINE_FLUSH"
+    ]
+  },
+  {
+    "offset": "0x0AB88",
+    "value": "0x00007777",
+    "names": [
+      "GCEA_IO_WR_COMBINE_FLUSH"
+    ]
+  },
+  {
+    "offset": "0x0AB8C",
+    "value": "0x1F031F03",
+    "names": [
+      "GCEA_IO_GROUP_BURST"
+    ]
+  },
+  {
+    "offset": "0x0AB90",
+    "value": "0x00DB6249",
+    "names": [
+      "GCEA_IO_RD_PRI_AGE"
+    ]
+  },
+  {
+    "offset": "0x0AB94",
+    "value": "0x00DB6249",
+    "names": [
+      "GCEA_IO_WR_PRI_AGE"
+    ]
+  },
+  {
+    "offset": "0x0AB98",
+    "value": "0x00000DB6",
+    "names": [
+      "GCEA_IO_RD_PRI_QUEUING"
+    ]
+  },
+  {
+    "offset": "0x0AB9C",
+    "value": "0x00000DB6",
+    "names": [
+      "GCEA_IO_WR_PRI_QUEUING"
+    ]
+  },
+  {
+    "offset": "0x0ABA0",
+    "value": "0x00000924",
+    "names": [
+      "GCEA_IO_RD_PRI_FIXED"
+    ]
+  },
+  {
+    "offset": "0x0ABA4",
+    "value": "0x00000924",
+    "names": [
+      "GCEA_IO_WR_PRI_FIXED"
+    ]
+  },
+  {
+    "offset": "0x0ABA8",
+    "value": "0x00000492",
+    "names": [
+      "GCEA_IO_RD_PRI_URGENCY"
+    ]
+  },
+  {
+    "offset": "0x0ABAC",
+    "value": "0x00000492",
+    "names": [
+      "GCEA_IO_WR_PRI_URGENCY"
+    ]
+  },
+  {
+    "offset": "0x0ABB8",
+    "value": "0x3F3F3F3F",
+    "names": [
+      "GCEA_IO_RD_PRI_QUANT_PRI1"
+    ]
+  },
+  {
+    "offset": "0x0ABBC",
+    "value": "0x7F7F7F7F",
+    "names": [
+      "GCEA_IO_RD_PRI_QUANT_PRI2"
+    ]
+  },
+  {
+    "offset": "0x0ABC4",
+    "value": "0x3F3F3F3F",
+    "names": [
+      "GCEA_IO_WR_PRI_QUANT_PRI1"
+    ]
+  },
+  {
+    "offset": "0x0ABC8",
+    "value": "0x7F7F7F7F",
+    "names": [
+      "GCEA_IO_WR_PRI_QUANT_PRI2"
+    ]
+  },
+  {
+    "offset": "0x0ABD0",
+    "value": "0x0010207F",
+    "names": [
+      "GCEA_SDP_ARB_DRAM"
+    ]
+  },
+  {
+    "offset": "0x0ABD8",
+    "value": "0x00007FFF",
+    "names": [
+      "GCEA_SDP_ARB_FINAL"
+    ]
+  },
+  {
+    "offset": "0x0ABE8",
+    "value": "0x3F3F3F4F",
+    "names": [
+      "GCEA_SDP_CREDITS"
+    ]
+  },
+  {
+    "offset": "0x0AC08",
+    "value": "0x679C0000",
+    "names": [
+      "TCP_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0AC18",
+    "value": "0x80400000",
+    "names": [
+      "TCP_CREDIT"
+    ]
+  },
+  {
+    "offset": "0x0B004",
+    "value": "0x0000FFFF",
+    "names": [
+      "SPI_SHADER_PGM_RSRC4_PS"
+    ]
+  },
+  {
+    "offset": "0x0B01C",
+    "value": "0x003FFFFF",
+    "names": [
+      "SPI_SHADER_PGM_RSRC3_PS"
+    ]
+  },
+  {
+    "offset": "0x0B020",
+    "value": "0x00008015",
+    "names": [
+      "SPI_SHADER_PGM_LO_PS"
+    ]
+  },
+  {
+    "offset": "0x0B024",
+    "value": "0x00000080",
+    "names": [
+      "SPI_SHADER_PGM_HI_PS"
+    ]
+  },
+  {
+    "offset": "0x0B028",
+    "value": "0x002C0004",
+    "names": [
+      "SPI_SHADER_PGM_RSRC1_PS"
+    ]
+  },
+  {
+    "offset": "0x0B02C",
+    "value": "0x0000000E",
+    "names": [
+      "SPI_SHADER_PGM_RSRC2_PS"
+    ]
+  },
+  {
+    "offset": "0x0B030",
+    "value": "0x00000580",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_0"
+    ]
+  },
+  {
+    "offset": "0x0B034",
+    "value": "0x1FFCCCBD",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_1"
+    ]
+  },
+  {
+    "offset": "0x0B040",
+    "value": "0x88888888",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_4"
+    ]
+  },
+  {
+    "offset": "0x0B044",
+    "value": "0xD4BD5A4A",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_5"
+    ]
+  },
+  {
+    "offset": "0x0B048",
+    "value": "0xEE0DD590",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_6"
+    ]
+  },
+  {
+    "offset": "0x0B04C",
+    "value": "0x9B8ACA90",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_7"
+    ]
+  },
+  {
+    "offset": "0x0B050",
+    "value": "0xCD5FDD4E",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_8"
+    ]
+  },
+  {
+    "offset": "0x0B054",
+    "value": "0x78DD70BD",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_9"
+    ]
+  },
+  {
+    "offset": "0x0B058",
+    "value": "0x58F5DCD9",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_10"
+    ]
+  },
+  {
+    "offset": "0x0B05C",
+    "value": "0x5673EDEF",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_11"
+    ]
+  },
+  {
+    "offset": "0x0B060",
+    "value": "0x8DF19D7C",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_12"
+    ]
+  },
+  {
+    "offset": "0x0B064",
+    "value": "0x8D0892FF",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_13"
+    ]
+  },
+  {
+    "offset": "0x0B068",
+    "value": "0xCDDEA52D",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_14"
+    ]
+  },
+  {
+    "offset": "0x0B06C",
+    "value": "0xFDD99C8E",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_15"
+    ]
+  },
+  {
+    "offset": "0x0B070",
+    "value": "0xE4F1FCFC",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_16"
+    ]
+  },
+  {
+    "offset": "0x0B074",
+    "value": "0x1BCC2D5C",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_17"
+    ]
+  },
+  {
+    "offset": "0x0B078",
+    "value": "0xDECAECDC",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_18"
+    ]
+  },
+  {
+    "offset": "0x0B07C",
+    "value": "0xCE69CCFD",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_19"
+    ]
+  },
+  {
+    "offset": "0x0B080",
+    "value": "0x1CFC58F4",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_20"
+    ]
+  },
+  {
+    "offset": "0x0B084",
+    "value": "0xCBEBE8B2",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_21"
+    ]
+  },
+  {
+    "offset": "0x0B088",
+    "value": "0xDC06DE9D",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_22"
+    ]
+  },
+  {
+    "offset": "0x0B08C",
+    "value": "0xEC94C8FB",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_23"
+    ]
+  },
+  {
+    "offset": "0x0B090",
+    "value": "0x48FBDFDD",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_24"
+    ]
+  },
+  {
+    "offset": "0x0B094",
+    "value": "0xFB9DEF4C",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_25"
+    ]
+  },
+  {
+    "offset": "0x0B098",
+    "value": "0x2ECB4FDD",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_26"
+    ]
+  },
+  {
+    "offset": "0x0B09C",
+    "value": "0x15BFFC9D",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_27"
+    ]
+  },
+  {
+    "offset": "0x0B0A0",
+    "value": "0xB608CDC0",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_28"
+    ]
+  },
+  {
+    "offset": "0x0B0A4",
+    "value": "0x188D5D4C",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_29"
+    ]
+  },
+  {
+    "offset": "0x0B0A8",
+    "value": "0x75D8A9D8",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_30"
+    ]
+  },
+  {
+    "offset": "0x0B0AC",
+    "value": "0xCD0DDA9F",
+    "names": [
+      "SPI_SHADER_USER_DATA_PS_31"
+    ]
+  },
+  {
+    "offset": "0x0B0C0",
+    "value": "0x00000007",
+    "names": [
+      "SPI_SHADER_REQ_CTRL_PS"
+    ]
+  },
+  {
+    "offset": "0x0B104",
+    "value": "0x0000FFFF",
+    "names": [
+      "SPI_SHADER_PGM_RSRC4_VS"
+    ]
+  },
+  {
+    "offset": "0x0B118",
+    "value": "0x03E5FD2C",
+    "names": [
+      "SPI_SHADER_PGM_RSRC3_VS"
+    ]
+  },
+  {
+    "offset": "0x0B11C",
+    "value": "0x0000002D",
+    "names": [
+      "SPI_SHADER_LATE_ALLOC_VS"
+    ]
+  },
+  {
+    "offset": "0x0B120",
+    "value": "0xBE9D18FA",
+    "names": [
+      "SPI_SHADER_PGM_LO_VS"
+    ]
+  },
+  {
+    "offset": "0x0B124",
+    "value": "0xC5819FF8",
+    "names": [
+      "SPI_SHADER_PGM_HI_VS"
+    ]
+  },
+  {
+    "offset": "0x0B128",
+    "value": "0xDED1C1DC",
+    "names": [
+      "SPI_SHADER_PGM_RSRC1_VS"
+    ]
+  },
+  {
+    "offset": "0x0B12C",
+    "value": "0x6859D0E8",
+    "names": [
+      "SPI_SHADER_PGM_RSRC2_VS"
+    ]
+  },
+  {
+    "offset": "0x0B130",
+    "value": "0x00000580",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_0"
+    ]
+  },
+  {
+    "offset": "0x0B134",
+    "value": "0x9C621A99",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_1"
+    ]
+  },
+  {
+    "offset": "0x0B138",
+    "value": "0x953D785D",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_2"
+    ]
+  },
+  {
+    "offset": "0x0B13C",
+    "value": "0xBCDBD48D",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_3"
+    ]
+  },
+  {
+    "offset": "0x0B140",
+    "value": "0xF72D98D8",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_4"
+    ]
+  },
+  {
+    "offset": "0x0B144",
+    "value": "0x0D5D0CC1",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_5"
+    ]
+  },
+  {
+    "offset": "0x0B148",
+    "value": "0xFDCE6D4F",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_6"
+    ]
+  },
+  {
+    "offset": "0x0B14C",
+    "value": "0x99F8FFCD",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_7"
+    ]
+  },
+  {
+    "offset": "0x0B150",
+    "value": "0xC4DF5A33",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_8"
+    ]
+  },
+  {
+    "offset": "0x0B154",
+    "value": "0x5C09C2CE",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_9"
+    ]
+  },
+  {
+    "offset": "0x0B158",
+    "value": "0xBE24D5ED",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_10"
+    ]
+  },
+  {
+    "offset": "0x0B15C",
+    "value": "0x04C9F0D5",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_11"
+    ]
+  },
+  {
+    "offset": "0x0B160",
+    "value": "0xC54F52FC",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_12"
+    ]
+  },
+  {
+    "offset": "0x0B164",
+    "value": "0xC520CD88",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_13"
+    ]
+  },
+  {
+    "offset": "0x0B168",
+    "value": "0x4CFCDDF5",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_14"
+    ]
+  },
+  {
+    "offset": "0x0B16C",
+    "value": "0x4A6630ED",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_15"
+    ]
+  },
+  {
+    "offset": "0x0B170",
+    "value": "0x3E8A16B1",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_16"
+    ]
+  },
+  {
+    "offset": "0x0B174",
+    "value": "0x9CE4CB74",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_17"
+    ]
+  },
+  {
+    "offset": "0x0B178",
+    "value": "0x09C9BE5B",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_18"
+    ]
+  },
+  {
+    "offset": "0x0B17C",
+    "value": "0x67C8CECA",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_19"
+    ]
+  },
+  {
+    "offset": "0x0B180",
+    "value": "0xDDFC6759",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_20"
+    ]
+  },
+  {
+    "offset": "0x0B184",
+    "value": "0xBC94B55D",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_21"
+    ]
+  },
+  {
+    "offset": "0x0B188",
+    "value": "0xCBCCFD5F",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_22"
+    ]
+  },
+  {
+    "offset": "0x0B18C",
+    "value": "0xD99FDFFC",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_23"
+    ]
+  },
+  {
+    "offset": "0x0B190",
+    "value": "0x547BBE11",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_24"
+    ]
+  },
+  {
+    "offset": "0x0B194",
+    "value": "0x8DD54B8C",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_25"
+    ]
+  },
+  {
+    "offset": "0x0B198",
+    "value": "0x53B90B0C",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_26"
+    ]
+  },
+  {
+    "offset": "0x0B19C",
+    "value": "0x95FBE0D5",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_27"
+    ]
+  },
+  {
+    "offset": "0x0B1A0",
+    "value": "0xBE9ADF5C",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_28"
+    ]
+  },
+  {
+    "offset": "0x0B1A4",
+    "value": "0xF5C75E9C",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_29"
+    ]
+  },
+  {
+    "offset": "0x0B1A8",
+    "value": "0xCD928BED",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_30"
+    ]
+  },
+  {
+    "offset": "0x0B1AC",
+    "value": "0x6FDDD98C",
+    "names": [
+      "SPI_SHADER_USER_DATA_VS_31"
+    ]
+  },
+  {
+    "offset": "0x0B204",
+    "value": "0x0018FFFF",
+    "names": [
+      "SPI_SHADER_PGM_RSRC4_GS"
+    ]
+  },
+  {
+    "offset": "0x0B21C",
+    "value": "0x003FFFF3",
+    "names": [
+      "SPI_SHADER_PGM_RSRC3_GS"
+    ]
+  },
+  {
+    "offset": "0x0B220",
+    "value": "0xCF8D1910",
+    "names": [
+      "SPI_SHADER_PGM_LO_GS"
+    ]
+  },
+  {
+    "offset": "0x0B224",
+    "value": "0x13A9E3DB",
+    "names": [
+      "SPI_SHADER_PGM_HI_GS"
+    ]
+  },
+  {
+    "offset": "0x0B228",
+    "value": "0x602C0001",
+    "names": [
+      "SPI_SHADER_PGM_RSRC1_GS"
+    ]
+  },
+  {
+    "offset": "0x0B22C",
+    "value": "0x00000028",
+    "names": [
+      "SPI_SHADER_PGM_RSRC2_GS"
+    ]
+  },
+  {
+    "offset": "0x0B230",
+    "value": "0x00000580",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_0"
+    ]
+  },
+  {
+    "offset": "0x0B234",
+    "value": "0xD65BFFFE",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_1"
+    ]
+  },
+  {
+    "offset": "0x0B240",
+    "value": "0x41400000",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_4"
+    ]
+  },
+  {
+    "offset": "0x0B24C",
+    "value": "0x445C8000",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_7"
+    ]
+  },
+  {
+    "offset": "0x0B25C",
+    "value": "0xCDFBDF16",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_11"
+    ]
+  },
+  {
+    "offset": "0x0B264",
+    "value": "0x00108001",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_13"
+    ]
+  },
+  {
+    "offset": "0x0B26C",
+    "value": "0x1104022C",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_15"
+    ]
+  },
+  {
+    "offset": "0x0B274",
+    "value": "0x00108001",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_17"
+    ]
+  },
+  {
+    "offset": "0x0B27C",
+    "value": "0x1104022C",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_19"
+    ]
+  },
+  {
+    "offset": "0x0B280",
+    "value": "0x0BC01240",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_20"
+    ]
+  },
+  {
+    "offset": "0x0B284",
+    "value": "0x00048001",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_21"
+    ]
+  },
+  {
+    "offset": "0x0B288",
+    "value": "0x00000040",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_22"
+    ]
+  },
+  {
+    "offset": "0x0B28C",
+    "value": "0x11016204",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_23"
+    ]
+  },
+  {
+    "offset": "0x0B290",
+    "value": "0x06802C80",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_24"
+    ]
+  },
+  {
+    "offset": "0x0B294",
+    "value": "0x00048001",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_25"
+    ]
+  },
+  {
+    "offset": "0x0B298",
+    "value": "0x000000A0",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_26"
+    ]
+  },
+  {
+    "offset": "0x0B29C",
+    "value": "0x11016204",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_27"
+    ]
+  },
+  {
+    "offset": "0x0B2A0",
+    "value": "0xDD07F3FB",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_28"
+    ]
+  },
+  {
+    "offset": "0x0B2A4",
+    "value": "0x6ED172FF",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_29"
+    ]
+  },
+  {
+    "offset": "0x0B2A8",
+    "value": "0x7C471328",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_30"
+    ]
+  },
+  {
+    "offset": "0x0B2AC",
+    "value": "0xFAFBD8D9",
+    "names": [
+      "SPI_SHADER_USER_DATA_GS_31"
+    ]
+  },
+  {
+    "offset": "0x0B2C0",
+    "value": "0x00093955",
+    "names": [
+      "SPI_SHADER_REQ_CTRL_ESGS"
+    ]
+  },
+  {
+    "offset": "0x0B31C",
+    "value": "0x04B45FA2",
+    "names": [
+      "SPI_SHADER_PGM_RSRC3_ES"
+    ]
+  },
+  {
+    "offset": "0x0B320",
+    "value": "0x0000201A",
+    "names": [
+      "SPI_SHADER_PGM_LO_ES"
+    ]
+  },
+  {
+    "offset": "0x0B324",
+    "value": "0x00000080",
+    "names": [
+      "SPI_SHADER_PGM_HI_ES"
+    ]
+  },
+  {
+    "offset": "0x0B328",
+    "value": "0xC673F75C",
+    "names": [
+      "SPI_SHADER_PGM_RSRC1_ES"
+    ]
+  },
+  {
+    "offset": "0x0B32C",
+    "value": "0x0650C75D",
+    "names": [
+      "SPI_SHADER_PGM_RSRC2_ES"
+    ]
+  },
+  {
+    "offset": "0x0B330",
+    "value": "0xA82D9BCC",
+    "names": [
+      "SPI_SHADER_USER_DATA_ES_0"
+    ]
+  },
+  {
+    "offset": "0x0B334",
+    "value": "0xB2BECDC6",
+    "names": [
+      "SPI_SHADER_USER_DATA_ES_1"
+    ]
+  },
+  {
+    "offset": "0x0B338",
+    "value": "0x9B4CE6DC",
+    "names": [
+      "SPI_SHADER_USER_DATA_ES_2"
+    ]
+  },
+  {
+    "offset": "0x0B33C",
+    "value": "0xF74F0CAE",
+    "names": [
+      "SPI_SHADER_USER_DATA_ES_3"
+    ]
+  },
+  {
+    "offset": "0x0B340",
+    "value": "0x99725B01",
+    "names": [
+      "SPI_SHADER_USER_DATA_ES_4"
+    ]
+  },
+  {
+    "offset": "0x0B344",
+    "value": "0xD9C9946F",
+    "names": [
+      "SPI_SHADER_USER_DATA_ES_5"
+    ]
+  },
+  {
+    "offset": "0x0B348",
+    "value": "0x484C9CCF",
+    "names": [
+      "SPI_SHADER_USER_DATA_ES_6"
+    ]
+  },
+  {
+    "offset": "0x0B34C",
+    "value": "0xC984BD8E",
+    "names": [
+      "SPI_SHADER_USER_DATA_ES_7"
+    ]
+  },
+  {
+    "offset": "0x0B350",
+    "value": "0x4DC2F998",
+    "names": [
+      "SPI_SHADER_USER_DATA_ES_8"
+    ]
+  },
+  {
+    "offset": "0x0B354",
+    "value": "0xF0C37B26",
+    "names": [
+      "SPI_SHADER_USER_DATA_ES_9"
+    ]
+  },
+  {
+    "offset": "0x0B358",
+    "value": "0x819599DA",
+    "names": [
+      "SPI_SHADER_USER_DATA_ES_10"
+    ]
+  },
+  {
+    "offset": "0x0B35C",
+    "value": "0x69F6DE3C",
+    "names": [
+      "SPI_SHADER_USER_DATA_ES_11"
+    ]
+  },
+  {
+    "offset": "0x0B360",
+    "value": "0xDDEB2F16",
+    "names": [
+      "SPI_SHADER_USER_DATA_ES_12"
+    ]
+  },
+  {
+    "offset": "0x0B364",
+    "value": "0x1FE7403F",
+    "names": [
+      "SPI_SHADER_USER_DATA_ES_13"
+    ]
+  },
+  {
+    "offset": "0x0B368",
+    "value": "0x8520E7C5",
+    "names": [
+      "SPI_SHADER_USER_DATA_ES_14"
+    ]
+  },
+  {
+    "offset": "0x0B36C",
+    "value": "0xFE19B39B",
+    "names": [
+      "SPI_SHADER_USER_DATA_ES_15"
+    ]
+  },
+  {
+    "offset": "0x0B404",
+    "value": "0x0000FFFF",
+    "names": [
+      "SPI_SHADER_PGM_RSRC4_HS"
+    ]
+  },
+  {
+    "offset": "0x0B41C",
+    "value": "0xFFFF003F",
+    "names": [
+      "SPI_SHADER_PGM_RSRC3_HS"
+    ]
+  },
+  {
+    "offset": "0x0B420",
+    "value": "0x9D91B81F",
+    "names": [
+      "SPI_SHADER_PGM_LO_HS"
+    ]
+  },
+  {
+    "offset": "0x0B424",
+    "value": "0xD919ECFC",
+    "names": [
+      "SPI_SHADER_PGM_HI_HS"
+    ]
+  },
+  {
+    "offset": "0x0B428",
+    "value": "0x5FBD9D73",
+    "names": [
+      "SPI_SHADER_PGM_RSRC1_HS"
+    ]
+  },
+  {
+    "offset": "0x0B42C",
+    "value": "0x9ECFE0DC",
+    "names": [
+      "SPI_SHADER_PGM_RSRC2_HS"
+    ]
+  },
+  {
+    "offset": "0x0B430",
+    "value": "0x00000580",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_0"
+    ]
+  },
+  {
+    "offset": "0x0B434",
+    "value": "0xD7E658EE",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_1"
+    ]
+  },
+  {
+    "offset": "0x0B438",
+    "value": "0xC8E0725F",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_2"
+    ]
+  },
+  {
+    "offset": "0x0B43C",
+    "value": "0xDC519EF9",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_3"
+    ]
+  },
+  {
+    "offset": "0x0B440",
+    "value": "0xAA88DFA2",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_4"
+    ]
+  },
+  {
+    "offset": "0x0B444",
+    "value": "0x8159EC7A",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_5"
+    ]
+  },
+  {
+    "offset": "0x0B448",
+    "value": "0x0FECF8BE",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_6"
+    ]
+  },
+  {
+    "offset": "0x0B44C",
+    "value": "0x3EDA8896",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_7"
+    ]
+  },
+  {
+    "offset": "0x0B450",
+    "value": "0xFCDC849C",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_8"
+    ]
+  },
+  {
+    "offset": "0x0B454",
+    "value": "0x0850C8C1",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_9"
+    ]
+  },
+  {
+    "offset": "0x0B458",
+    "value": "0xEE89C588",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_10"
+    ]
+  },
+  {
+    "offset": "0x0B45C",
+    "value": "0x8C2B9D9D",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_11"
+    ]
+  },
+  {
+    "offset": "0x0B460",
+    "value": "0xDFDD4D9D",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_12"
+    ]
+  },
+  {
+    "offset": "0x0B464",
+    "value": "0x42C21EC1",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_13"
+    ]
+  },
+  {
+    "offset": "0x0B468",
+    "value": "0x0A55EDD1",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_14"
+    ]
+  },
+  {
+    "offset": "0x0B46C",
+    "value": "0xEF30D65B",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_15"
+    ]
+  },
+  {
+    "offset": "0x0B470",
+    "value": "0x09CDC7FC",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_16"
+    ]
+  },
+  {
+    "offset": "0x0B474",
+    "value": "0x6947054A",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_17"
+    ]
+  },
+  {
+    "offset": "0x0B478",
+    "value": "0x88989985",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_18"
+    ]
+  },
+  {
+    "offset": "0x0B47C",
+    "value": "0xD5BCCC10",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_19"
+    ]
+  },
+  {
+    "offset": "0x0B480",
+    "value": "0xF299CC38",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_20"
+    ]
+  },
+  {
+    "offset": "0x0B484",
+    "value": "0xDCC4064D",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_21"
+    ]
+  },
+  {
+    "offset": "0x0B488",
+    "value": "0xD5E948CC",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_22"
+    ]
+  },
+  {
+    "offset": "0x0B48C",
+    "value": "0xD89FA6E9",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_23"
+    ]
+  },
+  {
+    "offset": "0x0B490",
+    "value": "0x11C59986",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_24"
+    ]
+  },
+  {
+    "offset": "0x0B494",
+    "value": "0xCD978D00",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_25"
+    ]
+  },
+  {
+    "offset": "0x0B498",
+    "value": "0x6C1C4BC1",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_26"
+    ]
+  },
+  {
+    "offset": "0x0B49C",
+    "value": "0xBFF957B9",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_27"
+    ]
+  },
+  {
+    "offset": "0x0B4A0",
+    "value": "0x9D0DCDD2",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_28"
+    ]
+  },
+  {
+    "offset": "0x0B4A4",
+    "value": "0xB89D12DD",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_29"
+    ]
+  },
+  {
+    "offset": "0x0B4A8",
+    "value": "0x3AD90409",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_30"
+    ]
+  },
+  {
+    "offset": "0x0B4AC",
+    "value": "0x18869AB1",
+    "names": [
+      "SPI_SHADER_USER_DATA_HS_31"
+    ]
+  },
+  {
+    "offset": "0x0B4C0",
+    "value": "0x00099198",
+    "names": [
+      "SPI_SHADER_REQ_CTRL_LSHS"
+    ]
+  },
+  {
+    "offset": "0x0B51C",
+    "value": "0xEB6F55C0",
+    "names": [
+      "SPI_SHADER_PGM_RSRC3_LS"
+    ]
+  },
+  {
+    "offset": "0x0B520",
+    "value": "0xC848ACC4",
+    "names": [
+      "SPI_SHADER_PGM_LO_LS"
+    ]
+  },
+  {
+    "offset": "0x0B524",
+    "value": "0x00000080",
+    "names": [
+      "SPI_SHADER_PGM_HI_LS"
+    ]
+  },
+  {
+    "offset": "0x0B528",
+    "value": "0x60A5DDF8",
+    "names": [
+      "SPI_SHADER_PGM_RSRC1_LS"
+    ]
+  },
+  {
+    "offset": "0x0B52C",
+    "value": "0x019D7DFD",
+    "names": [
+      "SPI_SHADER_PGM_RSRC2_LS"
+    ]
+  },
+  {
+    "offset": "0x0B530",
+    "value": "0xB323B7CD",
+    "names": [
+      "SPI_SHADER_USER_DATA_LS_0"
+    ]
+  },
+  {
+    "offset": "0x0B534",
+    "value": "0xEC7CDD4E",
+    "names": [
+      "SPI_SHADER_USER_DATA_LS_1"
+    ]
+  },
+  {
+    "offset": "0x0B538",
+    "value": "0x99FFCEA3",
+    "names": [
+      "SPI_SHADER_USER_DATA_LS_2"
+    ]
+  },
+  {
+    "offset": "0x0B53C",
+    "value": "0x8E5E3020",
+    "names": [
+      "SPI_SHADER_USER_DATA_LS_3"
+    ]
+  },
+  {
+    "offset": "0x0B540",
+    "value": "0x4DCCBFEA",
+    "names": [
+      "SPI_SHADER_USER_DATA_LS_4"
+    ]
+  },
+  {
+    "offset": "0x0B544",
+    "value": "0xCB9DBFDF",
+    "names": [
+      "SPI_SHADER_USER_DATA_LS_5"
+    ]
+  },
+  {
+    "offset": "0x0B548",
+    "value": "0x04F9EC47",
+    "names": [
+      "SPI_SHADER_USER_DATA_LS_6"
+    ]
+  },
+  {
+    "offset": "0x0B54C",
+    "value": "0xB73D8CD3",
+    "names": [
+      "SPI_SHADER_USER_DATA_LS_7"
+    ]
+  },
+  {
+    "offset": "0x0B550",
+    "value": "0x8F194909",
+    "names": [
+      "SPI_SHADER_USER_DATA_LS_8"
+    ]
+  },
+  {
+    "offset": "0x0B554",
+    "value": "0xEE8BFF2D",
+    "names": [
+      "SPI_SHADER_USER_DATA_LS_9"
+    ]
+  },
+  {
+    "offset": "0x0B558",
+    "value": "0xE3EDE359",
+    "names": [
+      "SPI_SHADER_USER_DATA_LS_10"
+    ]
+  },
+  {
+    "offset": "0x0B55C",
+    "value": "0xF3EF18F5",
+    "names": [
+      "SPI_SHADER_USER_DATA_LS_11"
+    ]
+  },
+  {
+    "offset": "0x0B560",
+    "value": "0x5E1E4419",
+    "names": [
+      "SPI_SHADER_USER_DATA_LS_12"
+    ]
+  },
+  {
+    "offset": "0x0B564",
+    "value": "0xF9F1E154",
+    "names": [
+      "SPI_SHADER_USER_DATA_LS_13"
+    ]
+  },
+  {
+    "offset": "0x0B568",
+    "value": "0xDFF7179E",
+    "names": [
+      "SPI_SHADER_USER_DATA_LS_14"
+    ]
+  },
+  {
+    "offset": "0x0B56C",
+    "value": "0xEE1E3F6D",
+    "names": [
+      "SPI_SHADER_USER_DATA_LS_15"
+    ]
+  },
+  {
+    "offset": "0x0B800",
+    "value": "0x00000045",
+    "names": [
+      "COMPUTE_DISPATCH_INITIATOR"
+    ]
+  },
+  {
+    "offset": "0x0B804",
+    "value": "0x00000001",
+    "names": [
+      "COMPUTE_DIM_X"
+    ]
+  },
+  {
+    "offset": "0x0B808",
+    "value": "0x00000100",
+    "names": [
+      "COMPUTE_DIM_Y"
+    ]
+  },
+  {
+    "offset": "0x0B80C",
+    "value": "0x00000001",
+    "names": [
+      "COMPUTE_DIM_Z"
+    ]
+  },
+  {
+    "offset": "0x0B810",
+    "value": "0x1F938B10",
+    "names": [
+      "COMPUTE_START_X"
+    ]
+  },
+  {
+    "offset": "0x0B814",
+    "value": "0xFAF9C8FC",
+    "names": [
+      "COMPUTE_START_Y"
+    ]
+  },
+  {
+    "offset": "0x0B818",
+    "value": "0xEB9ABB8F",
+    "names": [
+      "COMPUTE_START_Z"
+    ]
+  },
+  {
+    "offset": "0x0B81C",
+    "value": "0x00000040",
+    "names": [
+      "COMPUTE_NUM_THREAD_X"
+    ]
+  },
+  {
+    "offset": "0x0B820",
+    "value": "0x00000001",
+    "names": [
+      "COMPUTE_NUM_THREAD_Y"
+    ]
+  },
+  {
+    "offset": "0x0B824",
+    "value": "0x00000001",
+    "names": [
+      "COMPUTE_NUM_THREAD_Z"
+    ]
+  },
+  {
+    "offset": "0x0B82C",
+    "value": "0xDFBFA8BE",
+    "names": [
+      "COMPUTE_PERFCOUNT_ENABLE"
+    ]
+  },
+  {
+    "offset": "0x0B830",
+    "value": "0x00002004",
+    "names": [
+      "COMPUTE_PGM_LO"
+    ]
+  },
+  {
+    "offset": "0x0B834",
+    "value": "0x00000080",
+    "names": [
+      "COMPUTE_PGM_HI"
+    ]
+  },
+  {
+    "offset": "0x0B838",
+    "value": "0xB9B8EE0D",
+    "names": [
+      "COMPUTE_DISPATCH_PKT_ADDR_LO"
+    ]
+  },
+  {
+    "offset": "0x0B83C",
+    "value": "0x83E1A0CB",
+    "names": [
+      "COMPUTE_DISPATCH_PKT_ADDR_HI"
+    ]
+  },
+  {
+    "offset": "0x0B840",
+    "value": "0xBBBA4B7C",
+    "names": [
+      "COMPUTE_DISPATCH_SCRATCH_BASE_LO"
+    ]
+  },
+  {
+    "offset": "0x0B844",
+    "value": "0xB89F17AB",
+    "names": [
+      "COMPUTE_DISPATCH_SCRATCH_BASE_HI"
+    ]
+  },
+  {
+    "offset": "0x0B848",
+    "value": "0x002C0001",
+    "names": [
+      "COMPUTE_PGM_RSRC1"
+    ]
+  },
+  {
+    "offset": "0x0B84C",
+    "value": "0x00000996",
+    "names": [
+      "COMPUTE_PGM_RSRC2"
+    ]
+  },
+  {
+    "offset": "0x0B850",
+    "value": "0xEFBB8BB8",
+    "names": [
+      "COMPUTE_VMID"
+    ]
+  },
+  {
+    "offset": "0x0B854",
+    "value": "0x01000000",
+    "names": [
+      "COMPUTE_RESOURCE_LIMITS"
+    ]
+  },
+  {
+    "offset": "0x0B860",
+    "value": "0x00000300",
+    "names": [
+      "COMPUTE_TMPRING_SIZE"
+    ]
+  },
+  {
+    "offset": "0x0B86C",
+    "value": "0xBD31DBFA",
+    "names": [
+      "COMPUTE_RESTART_X"
+    ]
+  },
+  {
+    "offset": "0x0B870",
+    "value": "0xCBBACFFA",
+    "names": [
+      "COMPUTE_RESTART_Y"
+    ]
+  },
+  {
+    "offset": "0x0B874",
+    "value": "0x9A7733B2",
+    "names": [
+      "COMPUTE_RESTART_Z"
+    ]
+  },
+  {
+    "offset": "0x0B878",
+    "value": "0xBDFF5515",
+    "names": [
+      "COMPUTE_THREAD_TRACE_ENABLE"
+    ]
+  },
+  {
+    "offset": "0x0B87C",
+    "value": "0xF75E657D",
+    "names": [
+      "COMPUTE_MISC_RESERVED"
+    ]
+  },
+  {
+    "offset": "0x0B880",
+    "value": "0x5FB52156",
+    "names": [
+      "COMPUTE_DISPATCH_ID"
+    ]
+  },
+  {
+    "offset": "0x0B884",
+    "value": "0x5747B2DF",
+    "names": [
+      "COMPUTE_THREADGROUP_ID"
+    ]
+  },
+  {
+    "offset": "0x0B888",
+    "value": "0xF77FF351",
+    "names": [
+      "COMPUTE_REQ_CTRL"
+    ]
+  },
+  {
+    "offset": "0x0B88C",
+    "value": "0x3F9CA6BC",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x0B8A4",
+    "value": "0x8A08FD38",
+    "names": [
+      "COMPUTE_DDID_INDEX"
+    ]
+  },
+  {
+    "offset": "0x0B8A8",
+    "value": "0x2F971B3C",
+    "names": [
+      "COMPUTE_SHADER_CHKSUM"
+    ]
+  },
+  {
+    "offset": "0x0B8AC",
+    "value": "0x00000580",
+    "names": [
+      "COMPUTE_RELAUNCH"
+    ]
+  },
+  {
+    "offset": "0x0B8B0",
+    "value": "0xBCBF8FD8",
+    "names": [
+      "COMPUTE_WAVE_RESTORE_ADDR_LO"
+    ]
+  },
+  {
+    "offset": "0x0B8B4",
+    "value": "0x0127E350",
+    "names": [
+      "COMPUTE_WAVE_RESTORE_ADDR_HI"
+    ]
+  },
+  {
+    "offset": "0x0B8BC",
+    "value": "0x00100440",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x0B8D8",
+    "value": "0x92000204",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x0B8E0",
+    "value": "0x00400000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x0B900",
+    "value": "0x00000580",
+    "names": [
+      "COMPUTE_USER_DATA_0"
+    ]
+  },
+  {
+    "offset": "0x0B904",
+    "value": "0xBCBF8FD8",
+    "names": [
+      "COMPUTE_USER_DATA_1"
+    ]
+  },
+  {
+    "offset": "0x0B908",
+    "value": "0x0127E350",
+    "names": [
+      "COMPUTE_USER_DATA_2"
+    ]
+  },
+  {
+    "offset": "0x0B910",
+    "value": "0x00100440",
+    "names": [
+      "COMPUTE_USER_DATA_4"
+    ]
+  },
+  {
+    "offset": "0x0B92C",
+    "value": "0x92000204",
+    "names": [
+      "COMPUTE_USER_DATA_11"
+    ]
+  },
+  {
+    "offset": "0x0B934",
+    "value": "0x00400000",
+    "names": [
+      "COMPUTE_USER_DATA_13"
+    ]
+  },
+  {
+    "offset": "0x0C0D4",
+    "value": "0x0000052C",
+    "names": [
+      "CP_EOPQ_WAIT_TIME"
+    ]
+  },
+  {
+    "offset": "0x0C0D8",
+    "value": "0x00001020",
+    "names": [
+      "CP_CPC_MGCG_SYNC_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C0F0",
+    "value": "0x00000080",
+    "names": [
+      "CPG_UTCL1_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C0F4",
+    "value": "0x00000080",
+    "names": [
+      "CPC_UTCL1_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C0F8",
+    "value": "0x00000080",
+    "names": [
+      "CPF_UTCL1_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C100",
+    "value": "0x000064D0",
+    "names": [
+      "CP_RB0_BASE",
+      "CP_RB_BASE"
+    ]
+  },
+  {
+    "offset": "0x0C104",
+    "value": "0x00A0080A",
+    "names": [
+      "CP_RB0_CNTL",
+      "CP_RB_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C10C",
+    "value": "0x00401040",
+    "names": [
+      "CP_RB0_RPTR_ADDR",
+      "CP_RB_RPTR_ADDR"
+    ]
+  },
+  {
+    "offset": "0x0C114",
+    "value": "0x000007FF",
+    "names": [
+      "CP_RB0_BUFSZ_MASK",
+      "CP_RB_BUFSZ_MASK"
+    ]
+  },
+  {
+    "offset": "0x0C124",
+    "value": "0x05C00000",
+    "names": [
+      "CP_INT_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C12C",
+    "value": "0x00000001",
+    "names": [
+      "CP_DEVICE_ID"
+    ]
+  },
+  {
+    "offset": "0x0C130",
+    "value": "0x08081020",
+    "names": [
+      "CP_ME0_PIPE_PRIORITY_CNTS",
+      "CP_RING_PRIORITY_CNTS"
+    ]
+  },
+  {
+    "offset": "0x0C134",
+    "value": "0x00000002",
+    "names": [
+      "CP_ME0_PIPE0_PRIORITY",
+      "CP_RING0_PRIORITY"
+    ]
+  },
+  {
+    "offset": "0x0C138",
+    "value": "0x00000002",
+    "names": [
+      "CP_ME0_PIPE1_PRIORITY",
+      "CP_RING1_PRIORITY"
+    ]
+  },
+  {
+    "offset": "0x0C164",
+    "value": "0x00000008",
+    "names": [
+      "CP_PROCESS_QUANTUM"
+    ]
+  },
+  {
+    "offset": "0x0C168",
+    "value": "0x00000458",
+    "names": [
+      "CP_RB_DOORBELL_RANGE_LOWER"
+    ]
+  },
+  {
+    "offset": "0x0C16C",
+    "value": "0x0FFFFFFC",
+    "names": [
+      "CP_RB_DOORBELL_RANGE_UPPER"
+    ]
+  },
+  {
+    "offset": "0x0C174",
+    "value": "0x00000450",
+    "names": [
+      "CP_MEC_DOORBELL_RANGE_UPPER"
+    ]
+  },
+  {
+    "offset": "0x0C180",
+    "value": "0xFEDCBADF",
+    "names": [
+      "CP_RB1_BASE"
+    ]
+  },
+  {
+    "offset": "0x0C184",
+    "value": "0x00A00000",
+    "names": [
+      "CP_RB1_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C1A4",
+    "value": "0x02000000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x0C1A8",
+    "value": "0x05C00000",
+    "names": [
+      "CP_INT_CNTL_RING0"
+    ]
+  },
+  {
+    "offset": "0x0C1E4",
+    "value": "0x00020200",
+    "names": [
+      "CP_MEM_SLP_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C1FC",
+    "value": "0x00400000",
+    "names": [
+      "CP_DEBUG"
+    ]
+  },
+  {
+    "offset": "0x0C204",
+    "value": "0x00401000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x0C214",
+    "value": "0x05800000",
+    "names": [
+      "CP_ME1_PIPE0_INT_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C218",
+    "value": "0x05800000",
+    "names": [
+      "CP_ME1_PIPE1_INT_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C21C",
+    "value": "0x05800000",
+    "names": [
+      "CP_ME1_PIPE2_INT_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C220",
+    "value": "0x05800000",
+    "names": [
+      "CP_ME1_PIPE3_INT_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C228",
+    "value": "0x20000000",
+    "names": [
+      "CP_ME2_PIPE1_INT_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C254",
+    "value": "0x04000000",
+    "names": [
+      "CP_ME1_INT_STAT_DEBUG"
+    ]
+  },
+  {
+    "offset": "0x0C264",
+    "value": "0x08081020",
+    "names": [
+      "CP_ME1_PIPE_PRIORITY_CNTS"
+    ]
+  },
+  {
+    "offset": "0x0C268",
+    "value": "0x00000002",
+    "names": [
+      "CP_ME1_PIPE0_PRIORITY"
+    ]
+  },
+  {
+    "offset": "0x0C26C",
+    "value": "0x00000002",
+    "names": [
+      "CP_ME1_PIPE1_PRIORITY"
+    ]
+  },
+  {
+    "offset": "0x0C270",
+    "value": "0x00000002",
+    "names": [
+      "CP_ME1_PIPE2_PRIORITY"
+    ]
+  },
+  {
+    "offset": "0x0C274",
+    "value": "0x00000002",
+    "names": [
+      "CP_ME1_PIPE3_PRIORITY"
+    ]
+  },
+  {
+    "offset": "0x0C278",
+    "value": "0x08081020",
+    "names": [
+      "CP_ME2_PIPE_PRIORITY_CNTS"
+    ]
+  },
+  {
+    "offset": "0x0C27C",
+    "value": "0x00000002",
+    "names": [
+      "CP_ME2_PIPE0_PRIORITY"
+    ]
+  },
+  {
+    "offset": "0x0C280",
+    "value": "0x00000002",
+    "names": [
+      "CP_ME2_PIPE1_PRIORITY"
+    ]
+  },
+  {
+    "offset": "0x0C284",
+    "value": "0x00000002",
+    "names": [
+      "CP_ME2_PIPE2_PRIORITY"
+    ]
+  },
+  {
+    "offset": "0x0C288",
+    "value": "0x00000002",
+    "names": [
+      "CP_ME2_PIPE3_PRIORITY"
+    ]
+  },
+  {
+    "offset": "0x0C2A0",
+    "value": "0x00000002",
+    "names": [
+      "CP_CE_INTR_ROUTINE_START"
+    ]
+  },
+  {
+    "offset": "0x0C2A4",
+    "value": "0x00000002",
+    "names": [
+      "CP_PFP_INTR_ROUTINE_START"
+    ]
+  },
+  {
+    "offset": "0x0C2A8",
+    "value": "0x00000002",
+    "names": [
+      "CP_ME_INTR_ROUTINE_START"
+    ]
+  },
+  {
+    "offset": "0x0C2AC",
+    "value": "0x00000002",
+    "names": [
+      "CP_MEC1_INTR_ROUTINE_START"
+    ]
+  },
+  {
+    "offset": "0x0C2B0",
+    "value": "0x00000002",
+    "names": [
+      "CP_MEC2_INTR_ROUTINE_START"
+    ]
+  },
+  {
+    "offset": "0x0C2B4",
+    "value": "0x00750075",
+    "names": [
+      "CP_CONTEXT_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C2B8",
+    "value": "0x00000007",
+    "names": [
+      "CP_MAX_CONTEXT"
+    ]
+  },
+  {
+    "offset": "0x0C2BC",
+    "value": "0x40404040",
+    "names": [
+      "CP_IQ_WAIT_TIME1"
+    ]
+  },
+  {
+    "offset": "0x0C2C0",
+    "value": "0x40404040",
+    "names": [
+      "CP_IQ_WAIT_TIME2"
+    ]
+  },
+  {
+    "offset": "0x0C2D0",
+    "value": "0x05800000",
+    "names": [
+      "CPC_INT_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C2E0",
+    "value": "0x00000002",
+    "names": [
+      "CP_PQ_STATUS"
+    ]
+  },
+  {
+    "offset": "0x0C2E4",
+    "value": "0x00008000",
+    "names": [
+      "CP_CE_CS_PARTITION_INDEX"
+    ]
+  },
+  {
+    "offset": "0x0C328",
+    "value": "0x00000040",
+    "names": [
+      "CP_IQ_WAIT_TIME3"
+    ]
+  },
+  {
+    "offset": "0x0C348",
+    "value": "0x01000000",
+    "names": [
+      "CP_GFX_HPD_STATUS0"
+    ]
+  },
+  {
+    "offset": "0x0C34C",
+    "value": "0x00000001",
+    "names": [
+      "CP_GFX_HPD_CONTROL0"
+    ]
+  },
+  {
+    "offset": "0x0C378",
+    "value": "0x1FFEE000",
+    "names": [
+      "CP_GFX_MQD_BASE_ADDR"
+    ]
+  },
+  {
+    "offset": "0x0C37C",
+    "value": "0x000000F4",
+    "names": [
+      "CP_GFX_MQD_BASE_ADDR_HI"
+    ]
+  },
+  {
+    "offset": "0x0C380",
+    "value": "0x00000001",
+    "names": [
+      "CP_GFX_HQD_ACTIVE"
+    ]
+  },
+  {
+    "offset": "0x0C394",
+    "value": "0x00000A01",
+    "names": [
+      "CP_GFX_HQD_QUANTUM"
+    ]
+  },
+  {
+    "offset": "0x0C398",
+    "value": "0x000064D0",
+    "names": [
+      "CP_GFX_HQD_BASE"
+    ]
+  },
+  {
+    "offset": "0x0C3A4",
+    "value": "0x00401040",
+    "names": [
+      "CP_GFX_HQD_RPTR_ADDR"
+    ]
+  },
+  {
+    "offset": "0x0C3AC",
+    "value": "0x00401060",
+    "names": [
+      "CP_RB_WPTR_POLL_ADDR_LO"
+    ]
+  },
+  {
+    "offset": "0x0C3B4",
+    "value": "0xC0000458",
+    "names": [
+      "CP_RB_DOORBELL_CONTROL"
+    ]
+  },
+  {
+    "offset": "0x0C3BC",
+    "value": "0x00A0080A",
+    "names": [
+      "CP_GFX_HQD_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C3E0",
+    "value": "0x40000000",
+    "names": [
+      "CP_GFX_HQD_HQ_STATUS0"
+    ]
+  },
+  {
+    "offset": "0x0C3E8",
+    "value": "0x00000100",
+    "names": [
+      "CP_GFX_MQD_CONTROL"
+    ]
+  },
+  {
+    "offset": "0x0C408",
+    "value": "0x000064D0",
+    "names": [
+      "CP_GFX_HQD_CE_BASE"
+    ]
+  },
+  {
+    "offset": "0x0C414",
+    "value": "0x00401040",
+    "names": [
+      "CP_GFX_HQD_CE_RPTR_ADDR"
+    ]
+  },
+  {
+    "offset": "0x0C41C",
+    "value": "0x00401060",
+    "names": [
+      "CP_GFX_HQD_CE_WPTR_POLL_ADDR_LO"
+    ]
+  },
+  {
+    "offset": "0x0C428",
+    "value": "0x00A0080A",
+    "names": [
+      "CP_GFX_HQD_CE_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C438",
+    "value": "0xC0000458",
+    "names": [
+      "CP_CE_DOORBELL_CONTROL"
+    ]
+  },
+  {
+    "offset": "0x0C480",
+    "value": "0x6FA7AC80",
+    "names": [
+      "CP_DMA_WATCH0_ADDR_LO"
+    ]
+  },
+  {
+    "offset": "0x0C484",
+    "value": "0x0000FCEC",
+    "names": [
+      "CP_DMA_WATCH0_ADDR_HI"
+    ]
+  },
+  {
+    "offset": "0x0C488",
+    "value": "0x6E069600",
+    "names": [
+      "CP_DMA_WATCH0_MASK"
+    ]
+  },
+  {
+    "offset": "0x0C490",
+    "value": "0x62367400",
+    "names": [
+      "CP_DMA_WATCH1_ADDR_LO"
+    ]
+  },
+  {
+    "offset": "0x0C494",
+    "value": "0x00007DC8",
+    "names": [
+      "CP_DMA_WATCH1_ADDR_HI"
+    ]
+  },
+  {
+    "offset": "0x0C498",
+    "value": "0xF43F8680",
+    "names": [
+      "CP_DMA_WATCH1_MASK"
+    ]
+  },
+  {
+    "offset": "0x0C4A0",
+    "value": "0x8AF58580",
+    "names": [
+      "CP_DMA_WATCH2_ADDR_LO"
+    ]
+  },
+  {
+    "offset": "0x0C4A4",
+    "value": "0x00004DE5",
+    "names": [
+      "CP_DMA_WATCH2_ADDR_HI"
+    ]
+  },
+  {
+    "offset": "0x0C4A8",
+    "value": "0xED4FF600",
+    "names": [
+      "CP_DMA_WATCH2_MASK"
+    ]
+  },
+  {
+    "offset": "0x0C4B0",
+    "value": "0xB63D3B00",
+    "names": [
+      "CP_DMA_WATCH3_ADDR_LO"
+    ]
+  },
+  {
+    "offset": "0x0C4B4",
+    "value": "0x0000C2D7",
+    "names": [
+      "CP_DMA_WATCH3_ADDR_HI"
+    ]
+  },
+  {
+    "offset": "0x0C4B8",
+    "value": "0xDB586380",
+    "names": [
+      "CP_DMA_WATCH3_MASK"
+    ]
+  },
+  {
+    "offset": "0x0C4C0",
+    "value": "0x51B6E538",
+    "names": [
+      "CP_DMA_WATCH_STAT_ADDR_LO"
+    ]
+  },
+  {
+    "offset": "0x0C4C4",
+    "value": "0x0000A224",
+    "names": [
+      "CP_DMA_WATCH_STAT_ADDR_HI"
+    ]
+  },
+  {
+    "offset": "0x0C4CC",
+    "value": "0x00000003",
+    "names": [
+      "CP_PFP_JT_STAT"
+    ]
+  },
+  {
+    "offset": "0x0C4D0",
+    "value": "0x00000003",
+    "names": [
+      "CP_CE_JT_STAT"
+    ]
+  },
+  {
+    "offset": "0x0C4D4",
+    "value": "0x000000FF",
+    "names": [
+      "CP_MEC_JT_STAT"
+    ]
+  },
+  {
+    "offset": "0x0C680",
+    "value": "0x00000001",
+    "names": [
+      "CP_RB0_ACTIVE",
+      "CP_RB_ACTIVE"
+    ]
+  },
+  {
+    "offset": "0x0C6CC",
+    "value": "0x0001C7F0",
+    "names": [
+      "CPF_GCR_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C6DC",
+    "value": "0x000005FF",
+    "names": [
+      "CP_SD_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0C71C",
+    "value": "0x07FFFFFF",
+    "names": [
+      "SPI_WCL_PIPE_PERCENT_GFX"
+    ]
+  },
+  {
+    "offset": "0x0C720",
+    "value": "0x07C1F07F",
+    "names": [
+      "SPI_WCL_PIPE_PERCENT_HP3D"
+    ]
+  },
+  {
+    "offset": "0x0C724",
+    "value": "0x0000007F",
+    "names": [
+      "SPI_WCL_PIPE_PERCENT_CS0"
+    ]
+  },
+  {
+    "offset": "0x0C728",
+    "value": "0x0000007F",
+    "names": [
+      "SPI_WCL_PIPE_PERCENT_CS1"
+    ]
+  },
+  {
+    "offset": "0x0C72C",
+    "value": "0x0000007F",
+    "names": [
+      "SPI_WCL_PIPE_PERCENT_CS2"
+    ]
+  },
+  {
+    "offset": "0x0C730",
+    "value": "0x0000007F",
+    "names": [
+      "SPI_WCL_PIPE_PERCENT_CS3"
+    ]
+  },
+  {
+    "offset": "0x0C734",
+    "value": "0x0000007F",
+    "names": [
+      "SPI_WCL_PIPE_PERCENT_CS4"
+    ]
+  },
+  {
+    "offset": "0x0C738",
+    "value": "0x0000007F",
+    "names": [
+      "SPI_WCL_PIPE_PERCENT_CS5"
+    ]
+  },
+  {
+    "offset": "0x0C73C",
+    "value": "0x0000007F",
+    "names": [
+      "SPI_WCL_PIPE_PERCENT_CS6"
+    ]
+  },
+  {
+    "offset": "0x0C740",
+    "value": "0x0000007F",
+    "names": [
+      "SPI_WCL_PIPE_PERCENT_CS7"
+    ]
+  },
+  {
+    "offset": "0x0C748",
+    "value": "0xFF008000",
+    "names": [
+      "SPI_GDBG_TRAP_CONFIG"
+    ]
+  },
+  {
+    "offset": "0x0CA04",
+    "value": "0x0000FF00",
+    "names": [
+      "DIDT_IND_DATA"
+    ]
+  },
+  {
+    "offset": "0x0CA10",
+    "value": "0x01000100",
+    "names": [
+      "GC_CAC_CTRL_1"
+    ]
+  },
+  {
+    "offset": "0x0CA14",
+    "value": "0x0000000F",
+    "names": [
+      "GC_CAC_CTRL_2"
+    ]
+  },
+  {
+    "offset": "0x0CA28",
+    "value": "0xFFFF0000",
+    "names": [
+      "GC_DIDT_CTRL1"
+    ]
+  },
+  {
+    "offset": "0x0CA2C",
+    "value": "0x1880000F",
+    "names": [
+      "GC_DIDT_CTRL2"
+    ]
+  },
+  {
+    "offset": "0x0CA34",
+    "value": "0x00002000",
+    "names": [
+      "GC_THROTTLE_CTRL"
+    ]
+  },
+  {
+    "offset": "0x0CA38",
+    "value": "0x00003C00",
+    "names": [
+      "GC_EDC_CTRL"
+    ]
+  },
+  {
+    "offset": "0x0CA4C",
+    "value": "0x00CC0660",
+    "names": [
+      "GC_THROTTLE_CTRL1"
+    ]
+  },
+  {
+    "offset": "0x0CA70",
+    "value": "0x00000056",
+    "names": [
+      "GC_CAC_IND_INDEX"
+    ]
+  },
+  {
+    "offset": "0x0CA88",
+    "value": "0x40000000",
+    "names": [
+      "TCP_WATCH0_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0CA94",
+    "value": "0x40000000",
+    "names": [
+      "TCP_WATCH1_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0CAA0",
+    "value": "0x40000000",
+    "names": [
+      "TCP_WATCH2_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0CAAC",
+    "value": "0x40000000",
+    "names": [
+      "TCP_WATCH3_CNTL"
+    ]
+  },
+  {
+    "offset": "0x0CAD0",
+    "value": "0x0000200A",
+    "names": [
+      "TCP_CNTL2"
+    ]
+  },
+  {
+    "offset": "0x0CAD4",
+    "value": "0x00800400",
+    "names": [
+      "TCP_UTCL0_CNTL1"
+    ]
+  },
+  {
+    "offset": "0x0CAD8",
+    "value": "0x00000400",
+    "names": [
+      "TCP_UTCL0_CNTL2"
+    ]
+  },
+  {
+    "offset": "0x0CC04",
+    "value": "0x00010000",
+    "names": [
+      "GDS_VMID0_SIZE"
+    ]
+  },
+  {
+    "offset": "0x0CC80",
+    "value": "0x00400000",
+    "names": [
+      "GDS_GWS_VMID0"
+    ]
+  },
+  {
+    "offset": "0x0CD20",
+    "value": "0x000004FF",
+    "names": [
+      "GDS_COMPUTE_MAX_WAVE_ID"
+    ]
+  },
+  {
+    "offset": "0x30000",
+    "value": "0x00401080",
+    "names": [
+      "CP_EOP_DONE_ADDR_LO"
+    ]
+  },
+  {
+    "offset": "0x300D4",
+    "value": "0x00000001",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x30100",
+    "value": "0xDEADBEEF",
+    "names": [
+      "SCRATCH_REG0"
+    ]
+  },
+  {
+    "offset": "0x30190",
+    "value": "0x1FFF9700",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x30194",
+    "value": "0x000000F4",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x30198",
+    "value": "0x00014000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x3019C",
+    "value": "0x000000F4",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x301B4",
+    "value": "0x00400700",
+    "names": [
+      "CP_ME_MC_RADDR_LO"
+    ]
+  },
+  {
+    "offset": "0x301B8",
+    "value": "0x07008001",
+    "names": [
+      "CP_ME_MC_RADDR_HI"
+    ]
+  },
+  {
+    "offset": "0x301E0",
+    "value": "0x60300007",
+    "names": [
+      "CP_DMA_ME_CONTROL"
+    ]
+  },
+  {
+    "offset": "0x301EC",
+    "value": "0x00000020",
+    "names": [
+      "CP_COHER_START_DELAY"
+    ]
+  },
+  {
+    "offset": "0x30228",
+    "value": "0x10100020",
+    "names": [
+      "CP_DMA_CNTL"
+    ]
+  },
+  {
+    "offset": "0x30238",
+    "value": "0x01018003",
+    "names": [
+      "CP_PFP_LOAD_CONTROL"
+    ]
+  },
+  {
+    "offset": "0x30274",
+    "value": "0x00008001",
+    "names": [
+      "CP_DMA_ME_CMD_ADDR_HI"
+    ]
+  },
+  {
+    "offset": "0x30300",
+    "value": "0x000000A8",
+    "names": [
+      "CP_IB1_CMD_BUFSZ"
+    ]
+  },
+  {
+    "offset": "0x30334",
+    "value": "0x00008001",
+    "names": [
+      "CP_IB1_BASE_HI"
+    ]
+  },
+  {
+    "offset": "0x30354",
+    "value": "0x06603000",
+    "names": [
+      "CP_EOP_DONE_EVENT_CNTL"
+    ]
+  },
+  {
+    "offset": "0x30358",
+    "value": "0x22010000",
+    "names": [
+      "CP_EOP_DONE_DATA_CNTL"
+    ]
+  },
+  {
+    "offset": "0x3035C",
+    "value": "0x80000000",
+    "names": [
+      "CP_EOP_DONE_CNTX_ID"
+    ]
+  },
+  {
+    "offset": "0x303A0",
+    "value": "0xD0A64000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x303E8",
+    "value": "0x00000001",
+    "names": [
+      "CP_INDEX_TYPE"
+    ]
+  },
+  {
+    "offset": "0x30400",
+    "value": "0x000000FF",
+    "names": [
+      "CP_ME_COHER_SIZE_HI"
+    ]
+  },
+  {
+    "offset": "0x30910",
+    "value": "0x55EC656D",
+    "names": [
+      "VGT_STRMOUT_BUFFER_FILLED_SIZE_0"
+    ]
+  },
+  {
+    "offset": "0x30914",
+    "value": "0xD7EF83FB",
+    "names": [
+      "VGT_STRMOUT_BUFFER_FILLED_SIZE_1"
+    ]
+  },
+  {
+    "offset": "0x30918",
+    "value": "0xF477F982",
+    "names": [
+      "VGT_STRMOUT_BUFFER_FILLED_SIZE_2"
+    ]
+  },
+  {
+    "offset": "0x3091C",
+    "value": "0xDA89CFFC",
+    "names": [
+      "VGT_STRMOUT_BUFFER_FILLED_SIZE_3"
+    ]
+  },
+  {
+    "offset": "0x30938",
+    "value": "0x0000C000",
+    "names": [
+      "VGT_TF_RING_SIZE_UMD"
+    ]
+  },
+  {
+    "offset": "0x3096C",
+    "value": "0x0000F680",
+    "names": [
+      "GE_CNTL"
+    ]
+  },
+  {
+    "offset": "0x30980",
+    "value": "0x000001FF",
+    "names": [
+      "GE_PC_ALLOC"
+    ]
+  },
+  {
+    "offset": "0x30A10",
+    "value": "0x7FFF7FFF",
+    "names": [
+      "PA_SC_SCREEN_EXTENT_MIN_0"
+    ]
+  },
+  {
+    "offset": "0x30A14",
+    "value": "0x80008000",
+    "names": [
+      "PA_SC_SCREEN_EXTENT_MAX_0"
+    ]
+  },
+  {
+    "offset": "0x30A18",
+    "value": "0x7FFF7FFF",
+    "names": [
+      "PA_SC_SCREEN_EXTENT_MIN_1"
+    ]
+  },
+  {
+    "offset": "0x30A2C",
+    "value": "0x80008000",
+    "names": [
+      "PA_SC_SCREEN_EXTENT_MAX_1"
+    ]
+  },
+  {
+    "offset": "0x30A84",
+    "value": "0x00003BFF",
+    "names": [
+      "PA_SC_P3D_TRAP_SCREEN_H"
+    ]
+  },
+  {
+    "offset": "0x30A88",
+    "value": "0x000017C9",
+    "names": [
+      "PA_SC_P3D_TRAP_SCREEN_V"
+    ]
+  },
+  {
+    "offset": "0x30A8C",
+    "value": "0x00009F7B",
+    "names": [
+      "PA_SC_P3D_TRAP_SCREEN_OCCURRENCE"
+    ]
+  },
+  {
+    "offset": "0x30AA4",
+    "value": "0x00003FFB",
+    "names": [
+      "PA_SC_HP3D_TRAP_SCREEN_H"
+    ]
+  },
+  {
+    "offset": "0x30AA8",
+    "value": "0x00003DDD",
+    "names": [
+      "PA_SC_HP3D_TRAP_SCREEN_V"
+    ]
+  },
+  {
+    "offset": "0x30AAC",
+    "value": "0x0000AADE",
+    "names": [
+      "PA_SC_HP3D_TRAP_SCREEN_OCCURRENCE"
+    ]
+  },
+  {
+    "offset": "0x30AC4",
+    "value": "0x00003BFF",
+    "names": [
+      "PA_SC_TRAP_SCREEN_H"
+    ]
+  },
+  {
+    "offset": "0x30AC8",
+    "value": "0x000017C9",
+    "names": [
+      "PA_SC_TRAP_SCREEN_V"
+    ]
+  },
+  {
+    "offset": "0x30ACC",
+    "value": "0x00009F7B",
+    "names": [
+      "PA_SC_TRAP_SCREEN_OCCURRENCE"
+    ]
+  },
+  {
+    "offset": "0x30AF0",
+    "value": "0x4DCD4DCD",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x30AF4",
+    "value": "0x4DCD4DCD",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x30AF8",
+    "value": "0x4DCD4DCD",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x30AFC",
+    "value": "0x4DCD4DCD",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x30B00",
+    "value": "0x4DCD4DCD",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x30B04",
+    "value": "0x4DCD4DCD",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x30B08",
+    "value": "0x4DCD4DCD",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x30B0C",
+    "value": "0x4DCD4DCD",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x30D00",
+    "value": "0xBEBEBEEF",
+    "names": [
+      "SQ_THREAD_TRACE_USERDATA_0"
+    ]
+  },
+  {
+    "offset": "0x30D04",
+    "value": "0xBEBEBEEF",
+    "names": [
+      "SQ_THREAD_TRACE_USERDATA_1"
+    ]
+  },
+  {
+    "offset": "0x30D08",
+    "value": "0xBEBEBEEF",
+    "names": [
+      "SQ_THREAD_TRACE_USERDATA_2"
+    ]
+  },
+  {
+    "offset": "0x30D0C",
+    "value": "0xBEBEBEEF",
+    "names": [
+      "SQ_THREAD_TRACE_USERDATA_3"
+    ]
+  },
+  {
+    "offset": "0x30D10",
+    "value": "0xBEBEBEEF",
+    "names": [
+      "SQ_THREAD_TRACE_USERDATA_4"
+    ]
+  },
+  {
+    "offset": "0x30D14",
+    "value": "0xBEBEBEEF",
+    "names": [
+      "SQ_THREAD_TRACE_USERDATA_5"
+    ]
+  },
+  {
+    "offset": "0x30D18",
+    "value": "0xBEBEBEEF",
+    "names": [
+      "SQ_THREAD_TRACE_USERDATA_6"
+    ]
+  },
+  {
+    "offset": "0x30D1C",
+    "value": "0xBEBEBEEF",
+    "names": [
+      "SQ_THREAD_TRACE_USERDATA_7"
+    ]
+  },
+  {
+    "offset": "0x30E00",
+    "value": "0x01002700",
+    "names": [
+      "TA_CS_BC_BASE_ADDR"
+    ]
+  },
+  {
+    "offset": "0x30E04",
+    "value": "0x00000080",
+    "names": [
+      "TA_CS_BC_BASE_ADDR_HI"
+    ]
+  },
+  {
+    "offset": "0x30E08",
+    "value": "0x40000040",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x30E0C",
+    "value": "0x40000040",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x30E14",
+    "value": "0x40000040",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x31100",
+    "value": "0xC062C688",
+    "names": [
+      "SPI_CONFIG_CNTL_REMAP"
+    ]
+  },
+  {
+    "offset": "0x31104",
+    "value": "0x000C0104",
+    "names": [
+      "SPI_CONFIG_CNTL_1_REMAP"
+    ]
+  },
+  {
+    "offset": "0x31108",
+    "value": "0x00000011",
+    "names": [
+      "SPI_CONFIG_CNTL_2_REMAP"
+    ]
+  },
+  {
+    "offset": "0x320E8",
+    "value": "0x00000008",
+    "names": [
+      "CP_MES_PROCESS_QUANTUM_PIPE0"
+    ]
+  },
+  {
+    "offset": "0x320EC",
+    "value": "0x00000008",
+    "names": [
+      "CP_MES_PROCESS_QUANTUM_PIPE1"
+    ]
+  },
+  {
+    "offset": "0x33000",
+    "value": "0x00055555",
+    "names": [
+      "GUS_IO_RD_COMBINE_FLUSH"
+    ]
+  },
+  {
+    "offset": "0x33010",
+    "value": "0x0003FFFF",
+    "names": [
+      "GUS_IO_RD_PRI_AGE_COEFF"
+    ]
+  },
+  {
+    "offset": "0x33014",
+    "value": "0x0003FFFF",
+    "names": [
+      "GUS_IO_WR_PRI_AGE_COEFF"
+    ]
+  },
+  {
+    "offset": "0x33018",
+    "value": "0x0003FFFF",
+    "names": [
+      "GUS_IO_RD_PRI_QUEUING"
+    ]
+  },
+  {
+    "offset": "0x3301C",
+    "value": "0x0003FFFF",
+    "names": [
+      "GUS_IO_WR_PRI_QUEUING"
+    ]
+  },
+  {
+    "offset": "0x33038",
+    "value": "0x1F1F1F1F",
+    "names": [
+      "GUS_IO_RD_PRI_QUANT_PRI1"
+    ]
+  },
+  {
+    "offset": "0x3303C",
+    "value": "0x3F3F3F3F",
+    "names": [
+      "GUS_IO_RD_PRI_QUANT_PRI2"
+    ]
+  },
+  {
+    "offset": "0x33040",
+    "value": "0x7F7F7F7F",
+    "names": [
+      "GUS_IO_RD_PRI_QUANT_PRI3"
+    ]
+  },
+  {
+    "offset": "0x33048",
+    "value": "0x1F1F1F1F",
+    "names": [
+      "GUS_IO_WR_PRI_QUANT_PRI1"
+    ]
+  },
+  {
+    "offset": "0x3304C",
+    "value": "0x3F3F3F3F",
+    "names": [
+      "GUS_IO_WR_PRI_QUANT_PRI2"
+    ]
+  },
+  {
+    "offset": "0x33050",
+    "value": "0x7F7F7F7F",
+    "names": [
+      "GUS_IO_WR_PRI_QUANT_PRI3"
+    ]
+  },
+  {
+    "offset": "0x33058",
+    "value": "0x00001F1F",
+    "names": [
+      "GUS_IO_RD_PRI_QUANT1_PRI1"
+    ]
+  },
+  {
+    "offset": "0x3305C",
+    "value": "0x00003F3F",
+    "names": [
+      "GUS_IO_RD_PRI_QUANT1_PRI2"
+    ]
+  },
+  {
+    "offset": "0x33060",
+    "value": "0x00007F7F",
+    "names": [
+      "GUS_IO_RD_PRI_QUANT1_PRI3"
+    ]
+  },
+  {
+    "offset": "0x33064",
+    "value": "0x0000FFFF",
+    "names": [
+      "GUS_IO_RD_PRI_QUANT1_PRI4"
+    ]
+  },
+  {
+    "offset": "0x33068",
+    "value": "0x00001F1F",
+    "names": [
+      "GUS_IO_WR_PRI_QUANT1_PRI1"
+    ]
+  },
+  {
+    "offset": "0x3306C",
+    "value": "0x00003F3F",
+    "names": [
+      "GUS_IO_WR_PRI_QUANT1_PRI2"
+    ]
+  },
+  {
+    "offset": "0x33070",
+    "value": "0x00007F7F",
+    "names": [
+      "GUS_IO_WR_PRI_QUANT1_PRI3"
+    ]
+  },
+  {
+    "offset": "0x33074",
+    "value": "0x0000FFFF",
+    "names": [
+      "GUS_IO_WR_PRI_QUANT1_PRI4"
+    ]
+  },
+  {
+    "offset": "0x33078",
+    "value": "0x00555555",
+    "names": [
+      "GUS_DRAM_COMBINE_FLUSH"
+    ]
+  },
+  {
+    "offset": "0x3307C",
+    "value": "0x00000FFF",
+    "names": [
+      "GUS_DRAM_COMBINE_RD_WR_EN"
+    ]
+  },
+  {
+    "offset": "0x33080",
+    "value": "0x00001249",
+    "names": [
+      "GUS_DRAM_PRI_AGE_RATE"
+    ]
+  },
+  {
+    "offset": "0x33084",
+    "value": "0x0003FFFF",
+    "names": [
+      "GUS_DRAM_PRI_AGE_COEFF"
+    ]
+  },
+  {
+    "offset": "0x33088",
+    "value": "0x0003EDB6",
+    "names": [
+      "GUS_DRAM_PRI_QUEUING"
+    ]
+  },
+  {
+    "offset": "0x33098",
+    "value": "0x0F0F0F0F",
+    "names": [
+      "GUS_DRAM_PRI_QUANT_PRI1"
+    ]
+  },
+  {
+    "offset": "0x3309C",
+    "value": "0x1F1F1F1F",
+    "names": [
+      "GUS_DRAM_PRI_QUANT_PRI2"
+    ]
+  },
+  {
+    "offset": "0x330A0",
+    "value": "0x3F3F3F3F",
+    "names": [
+      "GUS_DRAM_PRI_QUANT_PRI3"
+    ]
+  },
+  {
+    "offset": "0x330A4",
+    "value": "0x7F7F7F7F",
+    "names": [
+      "GUS_DRAM_PRI_QUANT_PRI4"
+    ]
+  },
+  {
+    "offset": "0x330AC",
+    "value": "0x00000F0F",
+    "names": [
+      "GUS_DRAM_PRI_QUANT1_PRI1"
+    ]
+  },
+  {
+    "offset": "0x330B0",
+    "value": "0x00001F1F",
+    "names": [
+      "GUS_DRAM_PRI_QUANT1_PRI2"
+    ]
+  },
+  {
+    "offset": "0x330B4",
+    "value": "0x00003F3F",
+    "names": [
+      "GUS_DRAM_PRI_QUANT1_PRI3"
+    ]
+  },
+  {
+    "offset": "0x330B8",
+    "value": "0x00007F7F",
+    "names": [
+      "GUS_DRAM_PRI_QUANT1_PRI4"
+    ]
+  },
+  {
+    "offset": "0x330BC",
+    "value": "0x0000FFFF",
+    "names": [
+      "GUS_DRAM_PRI_QUANT1_PRI5"
+    ]
+  },
+  {
+    "offset": "0x330C0",
+    "value": "0x05040504",
+    "names": [
+      "GUS_IO_GROUP_BURST"
+    ]
+  },
+  {
+    "offset": "0x330C4",
+    "value": "0x00000504",
+    "names": [
+      "GUS_DRAM_GROUP_BURST"
+    ]
+  },
+  {
+    "offset": "0x330C8",
+    "value": "0x00007FFF",
+    "names": [
+      "GUS_SDP_ARB_FINAL"
+    ]
+  },
+  {
+    "offset": "0x330CC",
+    "value": "0x0000A000",
+    "names": [
+      "GUS_SDP_QOS_VC_PRIORITY"
+    ]
+  },
+  {
+    "offset": "0x330D0",
+    "value": "0x003F3FFF",
+    "names": [
+      "GUS_SDP_CREDITS"
+    ]
+  },
+  {
+    "offset": "0x330D4",
+    "value": "0x07070000",
+    "names": [
+      "GUS_SDP_TAG_RESERVE0"
+    ]
+  },
+  {
+    "offset": "0x330D8",
+    "value": "0x00000707",
+    "names": [
+      "GUS_SDP_TAG_RESERVE1"
+    ]
+  },
+  {
+    "offset": "0x330DC",
+    "value": "0x02041000",
+    "names": [
+      "GUS_SDP_VCC_RESERVE0"
+    ]
+  },
+  {
+    "offset": "0x330E0",
+    "value": "0x00000002",
+    "names": [
+      "GUS_SDP_VCC_RESERVE1"
+    ]
+  },
+  {
+    "offset": "0x330E4",
+    "value": "0x02040000",
+    "names": [
+      "GUS_SDP_VCD_RESERVE0"
+    ]
+  },
+  {
+    "offset": "0x330E8",
+    "value": "0x00000002",
+    "names": [
+      "GUS_SDP_VCD_RESERVE1"
+    ]
+  },
+  {
+    "offset": "0x330EC",
+    "value": "0x0000001F",
+    "names": [
+      "GUS_SDP_REQ_CNTL"
+    ]
+  },
+  {
+    "offset": "0x330F0",
+    "value": "0x00008017",
+    "names": [
+      "GUS_MISC"
+    ]
+  },
+  {
+    "offset": "0x33108",
+    "value": "0x04000000",
+    "names": [
+      "GUS_PERFCOUNTER_RSLT_CNTL"
+    ]
+  },
+  {
+    "offset": "0x3310C",
+    "value": "0x00000300",
+    "names": [
+      "GUS_ERR_STATUS"
+    ]
+  },
+  {
+    "offset": "0x33110",
+    "value": "0x00001FFE",
+    "names": [
+      "GUS_MISC2"
+    ]
+  },
+  {
+    "offset": "0x33114",
+    "value": "0x20204000",
+    "names": [
+      "GUS_SDP_BACKDOOR_CMDCREDITS0"
+    ]
+  },
+  {
+    "offset": "0x33118",
+    "value": "0x2A000010",
+    "names": [
+      "GUS_SDP_BACKDOOR_CMDCREDITS1"
+    ]
+  },
+  {
+    "offset": "0x3311C",
+    "value": "0x20200000",
+    "names": [
+      "GUS_SDP_BACKDOOR_DATACREDITS0"
+    ]
+  },
+  {
+    "offset": "0x33120",
+    "value": "0x2B000010",
+    "names": [
+      "GUS_SDP_BACKDOOR_DATACREDITS1"
+    ]
+  },
+  {
+    "offset": "0x33124",
+    "value": "0x00004040",
+    "names": [
+      "GUS_SDP_BACKDOOR_MISCCREDITS"
+    ]
+  },
+  {
+    "offset": "0x33128",
+    "value": "0x00000001",
+    "names": [
+      "GUS_SDP_ENABLE"
+    ]
+  },
+  {
+    "offset": "0x331B0",
+    "value": "0x0000000A",
+    "names": [
+      "GUS_WRRSP_FIFO_CNTL"
+    ]
+  },
+  {
+    "offset": "0x33400",
+    "value": "0x00000004",
+    "names": [
+      "GL1_ARB_CTRL"
+    ]
+  },
+  {
+    "offset": "0x33408",
+    "value": "0x000000CF",
+    "names": [
+      "GL1_DRAM_BURST_MASK"
+    ]
+  },
+  {
+    "offset": "0x33410",
+    "value": "0x00000017",
+    "names": [
+      "GL1_DRAM_BURST_CTRL"
+    ]
+  },
+  {
+    "offset": "0x33440",
+    "value": "0xD8D8D8D8",
+    "names": [
+      "GL1_PIPE_STEER"
+    ]
+  },
+  {
+    "offset": "0x33500",
+    "value": "0x000000F0",
+    "names": [
+      "GL1C_CTRL"
+    ]
+  },
+  {
+    "offset": "0x33504",
+    "value": "0x80000000",
+    "names": [
+      "GL1C_STATUS"
+    ]
+  },
+  {
+    "offset": "0x33508",
+    "value": "0x0000000F",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x33600",
+    "value": "0x00000004",
+    "names": [
+      "CH_ARB_CTRL"
+    ]
+  },
+  {
+    "offset": "0x33608",
+    "value": "0x000000CF",
+    "names": [
+      "CH_DRAM_BURST_MASK"
+    ]
+  },
+  {
+    "offset": "0x33610",
+    "value": "0x00000017",
+    "names": [
+      "CH_DRAM_BURST_CTRL"
+    ]
+  },
+  {
+    "offset": "0x33640",
+    "value": "0xD8D8D8D8",
+    "names": [
+      "CH_PIPE_STEER"
+    ]
+  },
+  {
+    "offset": "0x33650",
+    "value": "0x00000003",
+    "names": [
+      "CH_VC5_ENABLE"
+    ]
+  },
+  {
+    "offset": "0x33700",
+    "value": "0x0000000F",
+    "names": [
+      "CHC_CTRL"
+    ]
+  },
+  {
+    "offset": "0x33708",
+    "value": "0x000000FF",
+    "names": [
+      "CHCG_CTRL"
+    ]
+  },
+  {
+    "offset": "0x33800",
+    "value": "0xF35FFF7F",
+    "names": [
+      "GL2C_CTRL"
+    ]
+  },
+  {
+    "offset": "0x33804",
+    "value": "0x9402002F",
+    "names": [
+      "GL2C_CTRL2"
+    ]
+  },
+  {
+    "offset": "0x3380C",
+    "value": "0xFFFFFFCF",
+    "names": [
+      "GL2C_ADDR_MATCH_MASK"
+    ]
+  },
+  {
+    "offset": "0x33810",
+    "value": "0x00000007",
+    "names": [
+      "GL2C_ADDR_MATCH_SIZE"
+    ]
+  },
+  {
+    "offset": "0x33814",
+    "value": "0x00000010",
+    "names": [
+      "GL2C_WBINVL2"
+    ]
+  },
+  {
+    "offset": "0x3381C",
+    "value": "0x42108421",
+    "names": [
+      "GL2C_CM_CTRL0"
+    ]
+  },
+  {
+    "offset": "0x33820",
+    "value": "0x180F1008",
+    "names": [
+      "GL2C_CM_CTRL1"
+    ]
+  },
+  {
+    "offset": "0x33828",
+    "value": "0x00010000",
+    "names": [
+      "GL2C_MDC_PF_FLAG_CTRL"
+    ]
+  },
+  {
+    "offset": "0x33830",
+    "value": "0x00000188",
+    "names": [
+      "GL2C_CTRL3"
+    ]
+  },
+  {
+    "offset": "0x33884",
+    "value": "0xFFFFFFCF",
+    "names": [
+      "GL2A_ADDR_MATCH_MASK"
+    ]
+  },
+  {
+    "offset": "0x33888",
+    "value": "0x00000007",
+    "names": [
+      "GL2A_ADDR_MATCH_SIZE"
+    ]
+  },
+  {
+    "offset": "0x33890",
+    "value": "0x00000002",
+    "names": [
+      "GL2A_CTRL"
+    ]
+  },
+  {
+    "offset": "0x33894",
+    "value": "0x21302130",
+    "names": [
+      "GL2_PIPE_STEER_0"
+    ]
+  },
+  {
+    "offset": "0x33898",
+    "value": "0x21302130",
+    "names": [
+      "GL2_PIPE_STEER_1"
+    ]
+  },
+  {
+    "offset": "0x36000",
+    "value": "0x000003FF",
+    "names": [
+      "CPG_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36004",
+    "value": "0x000FFFFF",
+    "names": [
+      "CPG_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36008",
+    "value": "0x000FFFFF",
+    "names": [
+      "CPG_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3600C",
+    "value": "0x000003FF",
+    "names": [
+      "CPC_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36010",
+    "value": "0x000FFFFF",
+    "names": [
+      "CPC_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36014",
+    "value": "0x000003FF",
+    "names": [
+      "CPF_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36018",
+    "value": "0x000FFFFF",
+    "names": [
+      "CPF_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x3601C",
+    "value": "0x000FFFFF",
+    "names": [
+      "CPF_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36024",
+    "value": "0x000FFFFF",
+    "names": [
+      "CPC_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36054",
+    "value": "0x00000007",
+    "names": [
+      "CP_DRAW_WINDOW_CNTL"
+    ]
+  },
+  {
+    "offset": "0x36200",
+    "value": "0x000FFFFF",
+    "names": [
+      "GE_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36204",
+    "value": "0x000FFFFF",
+    "names": [
+      "GE_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36208",
+    "value": "0x000FFFFF",
+    "names": [
+      "GE_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3620C",
+    "value": "0x000FFFFF",
+    "names": [
+      "GE_PERFCOUNTER1_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36210",
+    "value": "0x000FFFFF",
+    "names": [
+      "GE_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36214",
+    "value": "0x000FFFFF",
+    "names": [
+      "GE_PERFCOUNTER2_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36218",
+    "value": "0x000FFFFF",
+    "names": [
+      "GE_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3621C",
+    "value": "0x000FFFFF",
+    "names": [
+      "GE_PERFCOUNTER3_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36220",
+    "value": "0x000003FF",
+    "names": [
+      "GE_PERFCOUNTER4_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36228",
+    "value": "0x000003FF",
+    "names": [
+      "GE_PERFCOUNTER5_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36230",
+    "value": "0x000003FF",
+    "names": [
+      "GE_PERFCOUNTER6_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36238",
+    "value": "0x000003FF",
+    "names": [
+      "GE_PERFCOUNTER7_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36240",
+    "value": "0x000003FF",
+    "names": [
+      "GE_PERFCOUNTER8_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36248",
+    "value": "0x000003FF",
+    "names": [
+      "GE_PERFCOUNTER9_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36250",
+    "value": "0x000003FF",
+    "names": [
+      "GE_PERFCOUNTER10_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36258",
+    "value": "0x000003FF",
+    "names": [
+      "GE_PERFCOUNTER11_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36400",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_SU_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36404",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_SU_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36408",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_SU_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3640C",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_SU_PERFCOUNTER1_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36410",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_SU_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36414",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_SU_PERFCOUNTER2_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36418",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_SU_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3641C",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_SU_PERFCOUNTER3_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36500",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_SC_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36504",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_SC_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36508",
+    "value": "0x000003FF",
+    "names": [
+      "PA_SC_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3650C",
+    "value": "0x000003FF",
+    "names": [
+      "PA_SC_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36510",
+    "value": "0x000003FF",
+    "names": [
+      "PA_SC_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36514",
+    "value": "0x000003FF",
+    "names": [
+      "PA_SC_PERFCOUNTER4_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36518",
+    "value": "0x000003FF",
+    "names": [
+      "PA_SC_PERFCOUNTER5_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3651C",
+    "value": "0x000003FF",
+    "names": [
+      "PA_SC_PERFCOUNTER6_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36520",
+    "value": "0x000003FF",
+    "names": [
+      "PA_SC_PERFCOUNTER7_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36600",
+    "value": "0x000FFFFF",
+    "names": [
+      "SPI_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36604",
+    "value": "0x000FFFFF",
+    "names": [
+      "SPI_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36608",
+    "value": "0x000FFFFF",
+    "names": [
+      "SPI_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3660C",
+    "value": "0x000FFFFF",
+    "names": [
+      "SPI_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36610",
+    "value": "0x000FFFFF",
+    "names": [
+      "SPI_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36614",
+    "value": "0x000FFFFF",
+    "names": [
+      "SPI_PERFCOUNTER1_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36618",
+    "value": "0x000FFFFF",
+    "names": [
+      "SPI_PERFCOUNTER2_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x3661C",
+    "value": "0x000FFFFF",
+    "names": [
+      "SPI_PERFCOUNTER3_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36620",
+    "value": "0x000003FF",
+    "names": [
+      "SPI_PERFCOUNTER4_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36624",
+    "value": "0x000003FF",
+    "names": [
+      "SPI_PERFCOUNTER5_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36628",
+    "value": "0xFCB87430",
+    "names": [
+      "SPI_PERFCOUNTER_BINS"
+    ]
+  },
+  {
+    "offset": "0x36700",
+    "value": "0x0000F000",
+    "names": [
+      "SQ_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36704",
+    "value": "0x0000F000",
+    "names": [
+      "SQ_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36708",
+    "value": "0x0000F000",
+    "names": [
+      "SQ_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3670C",
+    "value": "0x0000F000",
+    "names": [
+      "SQ_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36710",
+    "value": "0x0000F000",
+    "names": [
+      "SQ_PERFCOUNTER4_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36714",
+    "value": "0x0000F000",
+    "names": [
+      "SQ_PERFCOUNTER5_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36718",
+    "value": "0x0000F000",
+    "names": [
+      "SQ_PERFCOUNTER6_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3671C",
+    "value": "0x0000F000",
+    "names": [
+      "SQ_PERFCOUNTER7_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36720",
+    "value": "0x0000F000",
+    "names": [
+      "SQ_PERFCOUNTER8_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36724",
+    "value": "0x0000F000",
+    "names": [
+      "SQ_PERFCOUNTER9_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36728",
+    "value": "0x0000F000",
+    "names": [
+      "SQ_PERFCOUNTER10_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3672C",
+    "value": "0x0000F000",
+    "names": [
+      "SQ_PERFCOUNTER11_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36730",
+    "value": "0x0000F000",
+    "names": [
+      "SQ_PERFCOUNTER12_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36734",
+    "value": "0x0000F000",
+    "names": [
+      "SQ_PERFCOUNTER13_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36738",
+    "value": "0x0000F000",
+    "names": [
+      "SQ_PERFCOUNTER14_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3673C",
+    "value": "0x0000F000",
+    "names": [
+      "SQ_PERFCOUNTER15_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36780",
+    "value": "0x00000200",
+    "names": [
+      "SQ_PERFCOUNTER_CTRL"
+    ]
+  },
+  {
+    "offset": "0x36800",
+    "value": "0x000FFFFF",
+    "names": [
+      "GCEA_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36804",
+    "value": "0x000FFFFF",
+    "names": [
+      "GCEA_PERFCOUNTER2_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36900",
+    "value": "0x000FFFFF",
+    "names": [
+      "SX_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36904",
+    "value": "0x000FFFFF",
+    "names": [
+      "SX_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36908",
+    "value": "0x000003FF",
+    "names": [
+      "SX_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3690C",
+    "value": "0x000003FF",
+    "names": [
+      "SX_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36910",
+    "value": "0x000FFFFF",
+    "names": [
+      "SX_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36914",
+    "value": "0x000FFFFF",
+    "names": [
+      "SX_PERFCOUNTER1_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36A00",
+    "value": "0x000FFFFF",
+    "names": [
+      "GDS_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36A04",
+    "value": "0x000003FF",
+    "names": [
+      "GDS_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36A08",
+    "value": "0x000003FF",
+    "names": [
+      "GDS_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36A0C",
+    "value": "0x000003FF",
+    "names": [
+      "GDS_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36A10",
+    "value": "0x000FFFFF",
+    "names": [
+      "GDS_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36B00",
+    "value": "0x000FFFFF",
+    "names": [
+      "TA_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36B04",
+    "value": "0x000FFFFF",
+    "names": [
+      "TA_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36B08",
+    "value": "0x000003FF",
+    "names": [
+      "TA_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36C00",
+    "value": "0x000FFFFF",
+    "names": [
+      "TD_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36C04",
+    "value": "0x000FFFFF",
+    "names": [
+      "TD_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36C08",
+    "value": "0x000003FF",
+    "names": [
+      "TD_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36D00",
+    "value": "0x000FFFFF",
+    "names": [
+      "TCP_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36D04",
+    "value": "0x000FFFFF",
+    "names": [
+      "TCP_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36D08",
+    "value": "0x000FFFFF",
+    "names": [
+      "TCP_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36D0C",
+    "value": "0x000FFFFF",
+    "names": [
+      "TCP_PERFCOUNTER1_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36D10",
+    "value": "0x000003FF",
+    "names": [
+      "TCP_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36D14",
+    "value": "0x000003FF",
+    "names": [
+      "TCP_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36E00",
+    "value": "0x000FFFFF",
+    "names": [
+      "GL2C_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36E04",
+    "value": "0x000FFFFF",
+    "names": [
+      "GL2C_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36E08",
+    "value": "0x000FFFFF",
+    "names": [
+      "GL2C_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36E0C",
+    "value": "0x000FFFFF",
+    "names": [
+      "GL2C_PERFCOUNTER1_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36E10",
+    "value": "0x000003FF",
+    "names": [
+      "GL2C_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36E14",
+    "value": "0x000003FF",
+    "names": [
+      "GL2C_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36E40",
+    "value": "0x000FFFFF",
+    "names": [
+      "GL2A_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36E44",
+    "value": "0x000FFFFF",
+    "names": [
+      "GL2A_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36E48",
+    "value": "0x000FFFFF",
+    "names": [
+      "GL2A_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36E4C",
+    "value": "0x000FFFFF",
+    "names": [
+      "GL2A_PERFCOUNTER1_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36E50",
+    "value": "0x000003FF",
+    "names": [
+      "GL2A_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36E54",
+    "value": "0x000003FF",
+    "names": [
+      "GL2A_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36E80",
+    "value": "0x000FFFFF",
+    "names": [
+      "GL1C_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36E84",
+    "value": "0x000FFFFF",
+    "names": [
+      "GL1C_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36E88",
+    "value": "0x000003FF",
+    "names": [
+      "GL1C_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36E8C",
+    "value": "0x000003FF",
+    "names": [
+      "GL1C_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36E90",
+    "value": "0x000003FF",
+    "names": [
+      "GL1C_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36E98",
+    "value": "0x000FFFFF",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x36E9C",
+    "value": "0x000FFFFF",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x36EA0",
+    "value": "0x000003FF",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x36EA4",
+    "value": "0x000003FF",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x36EA8",
+    "value": "0x000003FF",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x36F00",
+    "value": "0x000FFFFF",
+    "names": [
+      "CHC_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36F04",
+    "value": "0x000FFFFF",
+    "names": [
+      "CHC_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36F08",
+    "value": "0x000003FF",
+    "names": [
+      "CHC_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36F0C",
+    "value": "0x000003FF",
+    "names": [
+      "CHC_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36F10",
+    "value": "0x000003FF",
+    "names": [
+      "CHC_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36F18",
+    "value": "0x000FFFFF",
+    "names": [
+      "CHCG_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36F1C",
+    "value": "0x000FFFFF",
+    "names": [
+      "CHCG_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x36F20",
+    "value": "0x000003FF",
+    "names": [
+      "CHCG_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36F24",
+    "value": "0x000003FF",
+    "names": [
+      "CHCG_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x36F28",
+    "value": "0x000003FF",
+    "names": [
+      "CHCG_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37004",
+    "value": "0x000FFFFF",
+    "names": [
+      "CB_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37008",
+    "value": "0x000FFFFF",
+    "names": [
+      "CB_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x3700C",
+    "value": "0x000003FF",
+    "names": [
+      "CB_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37010",
+    "value": "0x000003FF",
+    "names": [
+      "CB_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37014",
+    "value": "0x000003FF",
+    "names": [
+      "CB_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37100",
+    "value": "0x000FFFFF",
+    "names": [
+      "DB_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37104",
+    "value": "0x000FFFFF",
+    "names": [
+      "DB_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x37108",
+    "value": "0x000FFFFF",
+    "names": [
+      "DB_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3710C",
+    "value": "0x000FFFFF",
+    "names": [
+      "DB_PERFCOUNTER1_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x37110",
+    "value": "0x000003FF",
+    "names": [
+      "DB_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37118",
+    "value": "0x000003FF",
+    "names": [
+      "DB_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37264",
+    "value": "0x00004800",
+    "names": [
+      "RLC_SPM_ACCUM_STATUS"
+    ]
+  },
+  {
+    "offset": "0x37270",
+    "value": "0x00000001",
+    "names": [
+      "RLC_SPM_ACCUM_THRESHOLD"
+    ]
+  },
+  {
+    "offset": "0x37274",
+    "value": "0x00000001",
+    "names": [
+      "RLC_SPM_ACCUM_SAMPLES_REQUESTED"
+    ]
+  },
+  {
+    "offset": "0x37390",
+    "value": "0x00000001",
+    "names": [
+      "RLC_PERFMON_CLK_CNTL"
+    ]
+  },
+  {
+    "offset": "0x37400",
+    "value": "0x000FFFFF",
+    "names": [
+      "RMI_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37404",
+    "value": "0x000FFFFF",
+    "names": [
+      "RMI_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x37408",
+    "value": "0x000003FF",
+    "names": [
+      "RMI_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3740C",
+    "value": "0x000FFFFF",
+    "names": [
+      "RMI_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37410",
+    "value": "0x000FFFFF",
+    "names": [
+      "RMI_PERFCOUNTER2_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x37414",
+    "value": "0x000003FF",
+    "names": [
+      "RMI_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x374D0",
+    "value": "0x04000000",
+    "names": [
+      "GCMC_VM_L2_PERFCOUNTER_RSLT_CNTL"
+    ]
+  },
+  {
+    "offset": "0x374F0",
+    "value": "0x0000FFFF",
+    "names": [
+      "GCVML2_PERFCOUNTER2_0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x374F4",
+    "value": "0x0000FFFF",
+    "names": [
+      "GCVML2_PERFCOUNTER2_1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x374F8",
+    "value": "0x0000FFFF",
+    "names": [
+      "GCVML2_PERFCOUNTER2_0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x374FC",
+    "value": "0x0000FFFF",
+    "names": [
+      "GCVML2_PERFCOUNTER2_1_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x37580",
+    "value": "0x000FFFFF",
+    "names": [
+      "GCR_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37584",
+    "value": "0x000FFFFF",
+    "names": [
+      "GCR_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x37588",
+    "value": "0x000003FF",
+    "names": [
+      "GCR_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3758C",
+    "value": "0x000003FF",
+    "names": [
+      "UTCL1_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37590",
+    "value": "0x000003FF",
+    "names": [
+      "UTCL1_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37600",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_PH_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37604",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_PH_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x37608",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_PH_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3760C",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_PH_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37610",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_PH_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37614",
+    "value": "0x000003FF",
+    "names": [
+      "PA_PH_PERFCOUNTER4_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37618",
+    "value": "0x000003FF",
+    "names": [
+      "PA_PH_PERFCOUNTER5_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3761C",
+    "value": "0x000003FF",
+    "names": [
+      "PA_PH_PERFCOUNTER6_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37620",
+    "value": "0x000003FF",
+    "names": [
+      "PA_PH_PERFCOUNTER7_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37640",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_PH_PERFCOUNTER1_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x37644",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_PH_PERFCOUNTER2_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x37648",
+    "value": "0x000FFFFF",
+    "names": [
+      "PA_PH_PERFCOUNTER3_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x37700",
+    "value": "0x000FFFFF",
+    "names": [
+      "GL1A_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37704",
+    "value": "0x000FFFFF",
+    "names": [
+      "GL1A_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x37708",
+    "value": "0x000003FF",
+    "names": [
+      "GL1A_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3770C",
+    "value": "0x000003FF",
+    "names": [
+      "GL1A_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37710",
+    "value": "0x000003FF",
+    "names": [
+      "GL1A_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37780",
+    "value": "0x000FFFFF",
+    "names": [
+      "CHA_PERFCOUNTER0_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37784",
+    "value": "0x000FFFFF",
+    "names": [
+      "CHA_PERFCOUNTER0_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x37788",
+    "value": "0x000003FF",
+    "names": [
+      "CHA_PERFCOUNTER1_SELECT"
+    ]
+  },
+  {
+    "offset": "0x3778C",
+    "value": "0x000003FF",
+    "names": [
+      "CHA_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37790",
+    "value": "0x000003FF",
+    "names": [
+      "CHA_PERFCOUNTER3_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37800",
+    "value": "0x000FFFFF",
+    "names": [
+      "GUS_PERFCOUNTER2_SELECT"
+    ]
+  },
+  {
+    "offset": "0x37804",
+    "value": "0x000FFFFF",
+    "names": [
+      "GUS_PERFCOUNTER2_SELECT1"
+    ]
+  },
+  {
+    "offset": "0x3B000",
+    "value": "0x00000001",
+    "names": [
+      "RLC_CNTL"
+    ]
+  },
+  {
+    "offset": "0x3B00C",
+    "value": "0x0000000D",
+    "names": [
+      "RLC_F32_UCODE_VERSION"
+    ]
+  },
+  {
+    "offset": "0x3B018",
+    "value": "0x00020200",
+    "names": [
+      "RLC_MEM_SLP_CNTL"
+    ]
+  },
+  {
+    "offset": "0x3B034",
+    "value": "0x00000004",
+    "names": [
+      "RLC_REFCLOCK_TIMESTAMP_MSB"
+    ]
+  },
+  {
+    "offset": "0x3B038",
+    "value": "0x00000063",
+    "names": [
+      "RLC_GPM_TIMER_INT_0"
+    ]
+  },
+  {
+    "offset": "0x3B03C",
+    "value": "0x00006789",
+    "names": [
+      "RLC_GPM_TIMER_INT_1"
+    ]
+  },
+  {
+    "offset": "0x3B040",
+    "value": "0x000004F6",
+    "names": [
+      "RLC_GPM_TIMER_INT_2"
+    ]
+  },
+  {
+    "offset": "0x3B054",
+    "value": "0x00000063",
+    "names": [
+      "RLC_GPM_TIMER_INT_3"
+    ]
+  },
+  {
+    "offset": "0x3B068",
+    "value": "0x00018800",
+    "names": [
+      "RLC_MGCG_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3B07C",
+    "value": "0x00000004",
+    "names": [
+      "RLC_PG_DELAY_2"
+    ]
+  },
+  {
+    "offset": "0x3B0A0",
+    "value": "0x00000004",
+    "names": [
+      "RLC_GPM_THREAD_RESET"
+    ]
+  },
+  {
+    "offset": "0x3B110",
+    "value": "0x08080808",
+    "names": [
+      "RLC_GPM_THREAD_PRIORITY"
+    ]
+  },
+  {
+    "offset": "0x3B114",
+    "value": "0x00000001",
+    "names": [
+      "RLC_GPM_THREAD_ENABLE"
+    ]
+  },
+  {
+    "offset": "0x3B128",
+    "value": "0x00021711",
+    "names": [
+      "RLC_CGCG_RAMP_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3B12C",
+    "value": "0x0000001F",
+    "names": [
+      "RLC_DYN_PG_STATUS"
+    ]
+  },
+  {
+    "offset": "0x3B134",
+    "value": "0x00101010",
+    "names": [
+      "RLC_PG_DELAY"
+    ]
+  },
+  {
+    "offset": "0x3B140",
+    "value": "0x00000001",
+    "names": [
+      "RLC_LB_ALWAYS_ACTIVE_WGP_MASK"
+    ]
+  },
+  {
+    "offset": "0x3B144",
+    "value": "0x00601008",
+    "names": [
+      "RLC_LB_PARAMS"
+    ]
+  },
+  {
+    "offset": "0x3B148",
+    "value": "0x00400401",
+    "names": [
+      "RLC_LB_DELAY"
+    ]
+  },
+  {
+    "offset": "0x3B14C",
+    "value": "0x00000003",
+    "names": [
+      "RLC_PG_ALWAYS_ON_WGP_MASK"
+    ]
+  },
+  {
+    "offset": "0x3B150",
+    "value": "0x0000000C",
+    "names": [
+      "RLC_MAX_PG_WGP"
+    ]
+  },
+  {
+    "offset": "0x3B164",
+    "value": "0x00000003",
+    "names": [
+      "RLC_SERDES_RD_INDEX"
+    ]
+  },
+  {
+    "offset": "0x3B174",
+    "value": "0x03610012",
+    "names": [
+      "RLC_SERDES_RD_DATA_3"
+    ]
+  },
+  {
+    "offset": "0x3B17C",
+    "value": "0x00096512",
+    "names": [
+      "RLC_SERDES_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3B180",
+    "value": "0x00000001",
+    "names": [
+      "RLC_SERDES_DATA"
+    ]
+  },
+  {
+    "offset": "0x3B1B8",
+    "value": "0x0000FFE7",
+    "names": [
+      "RLC_STATIC_PG_STATUS"
+    ]
+  },
+  {
+    "offset": "0x3B1C0",
+    "value": "0x00CA0000",
+    "names": [
+      "RLC_SPM_INT_INFO_2"
+    ]
+  },
+  {
+    "offset": "0x3B1C4",
+    "value": "0x0000000F",
+    "names": [
+      "RLC_SPM_MC_CNTL"
+    ]
+  },
+  {
+    "offset": "0x3B1D0",
+    "value": "0x00003000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x3B1D4",
+    "value": "0x000830E0",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x3B200",
+    "value": "0x00000002",
+    "names": [
+      "RLC_SRM_CNTL"
+    ]
+  },
+  {
+    "offset": "0x3B208",
+    "value": "0x00000800",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x3B220",
+    "value": "0x00000001",
+    "names": [
+      "RLC_SRM_GPM_COMMAND_STATUS"
+    ]
+  },
+  {
+    "offset": "0x3B228",
+    "value": "0x00000001",
+    "names": [
+      "RLC_SRM_RLCV_COMMAND_STATUS"
+    ]
+  },
+  {
+    "offset": "0x3B288",
+    "value": "0x00A8C000",
+    "names": [
+      "RLC_CSIB_ADDR_LO"
+    ]
+  },
+  {
+    "offset": "0x3B28C",
+    "value": "0x000000F4",
+    "names": [
+      "RLC_CSIB_ADDR_HI"
+    ]
+  },
+  {
+    "offset": "0x3B290",
+    "value": "0x000003B5",
+    "names": [
+      "RLC_CSIB_LENGTH"
+    ]
+  },
+  {
+    "offset": "0x3B294",
+    "value": "0x00000001",
+    "names": [
+      "RLC_PACE_INT_STAT"
+    ]
+  },
+  {
+    "offset": "0x3B2A4",
+    "value": "0x00000013",
+    "names": [
+      "RLC_SMU_COMMAND"
+    ]
+  },
+  {
+    "offset": "0x3B2A8",
+    "value": "0x5850C0C8",
+    "names": [
+      "RLC_CP_SCHEDULERS"
+    ]
+  },
+  {
+    "offset": "0x3B2AC",
+    "value": "0x020E512C",
+    "names": [
+      "RLC_SMU_ARGUMENT_1"
+    ]
+  },
+  {
+    "offset": "0x3B2C8",
+    "value": "0x00000080",
+    "names": [
+      "RLC_GPM_UTCL1_CNTL_0"
+    ]
+  },
+  {
+    "offset": "0x3B2CC",
+    "value": "0x00000080",
+    "names": [
+      "RLC_GPM_UTCL1_CNTL_1"
+    ]
+  },
+  {
+    "offset": "0x3B2D0",
+    "value": "0x00000080",
+    "names": [
+      "RLC_GPM_UTCL1_CNTL_2"
+    ]
+  },
+  {
+    "offset": "0x3B2D4",
+    "value": "0x00000080",
+    "names": [
+      "RLC_SPM_UTCL1_CNTL"
+    ]
+  },
+  {
+    "offset": "0x3B314",
+    "value": "0x0001003C",
+    "names": [
+      "RLC_CGCG_CGLS_CTRL_3D"
+    ]
+  },
+  {
+    "offset": "0x3B318",
+    "value": "0x00021711",
+    "names": [
+      "RLC_CGCG_RAMP_CTRL_3D"
+    ]
+  },
+  {
+    "offset": "0x3B334",
+    "value": "0x00000080",
+    "names": [
+      "RLC_PREWALKER_UTCL1_CNTL"
+    ]
+  },
+  {
+    "offset": "0x3B338",
+    "value": "0x80000000",
+    "names": [
+      "RLC_PREWALKER_UTCL1_TRIG"
+    ]
+  },
+  {
+    "offset": "0x3B394",
+    "value": "0x0000020E",
+    "names": [
+      "RLC_SMU_ARGUMENT_3"
+    ]
+  },
+  {
+    "offset": "0x3B410",
+    "value": "0x00000063",
+    "names": [
+      "RLC_PACE_TIMER_INT_0"
+    ]
+  },
+  {
+    "offset": "0x3B418",
+    "value": "0x00000063",
+    "names": [
+      "RLC_PACE_TIMER_INT_1"
+    ]
+  },
+  {
+    "offset": "0x3B428",
+    "value": "0x00000007",
+    "names": [
+      "RLC_CP_STAT_INVAL_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3B510",
+    "value": "0x00000001",
+    "names": [
+      "RLC_PCC_STRETCH_HYSTERESIS_CNTL"
+    ]
+  },
+  {
+    "offset": "0x3B988",
+    "value": "0x0003B984",
+    "names": [
+      "RLC_RLCS_EXCEPTION_REG_1"
+    ]
+  },
+  {
+    "offset": "0x3B98C",
+    "value": "0x0003B984",
+    "names": [
+      "RLC_RLCS_EXCEPTION_REG_2"
+    ]
+  },
+  {
+    "offset": "0x3B990",
+    "value": "0x0003B984",
+    "names": [
+      "RLC_RLCS_EXCEPTION_REG_3"
+    ]
+  },
+  {
+    "offset": "0x3B994",
+    "value": "0x0003B984",
+    "names": [
+      "RLC_RLCS_EXCEPTION_REG_4"
+    ]
+  },
+  {
+    "offset": "0x3B9A0",
+    "value": "0x00000003",
+    "names": [
+      "RLC_RLCS_CGCG_REQUEST"
+    ]
+  },
+  {
+    "offset": "0x3B9A4",
+    "value": "0x00000024",
+    "names": [
+      "RLC_RLCS_CGCG_STATUS"
+    ]
+  },
+  {
+    "offset": "0x3B9B0",
+    "value": "0x000000FE",
+    "names": [
+      "RLC_RLCS_SOC_DS_CNTL"
+    ]
+  },
+  {
+    "offset": "0x3B9B4",
+    "value": "0x000000FE",
+    "names": [
+      "RLC_RLCS_GFX_DS_CNTL"
+    ]
+  },
+  {
+    "offset": "0x3B9B8",
+    "value": "0x00B40016",
+    "names": [
+      "RLC_GPM_STAT",
+      "RLC_RLCS_GPM_STAT"
+    ]
+  },
+  {
+    "offset": "0x3B9D8",
+    "value": "0x00000001",
+    "names": [
+      "RLC_RLCS_GRBM_SOFT_RESET"
+    ]
+  },
+  {
+    "offset": "0x3BA04",
+    "value": "0x00000010",
+    "names": [
+      "RLC_RLCS_IH_STATUS"
+    ]
+  },
+  {
+    "offset": "0x3BA38",
+    "value": "0x00000004",
+    "names": [
+      "RLC_RLCS_POWER_BRAKE_CNTL"
+    ]
+  },
+  {
+    "offset": "0x3BB0C",
+    "value": "0x00010100",
+    "names": [
+      "RLC_RLCS_CMP_IDLE_CNTL"
+    ]
+  },
+  {
+    "offset": "0x3BB10",
+    "value": "0x00000004",
+    "names": [
+      "RLC_RLCS_POWER_BRAKE_CNTL_TH1"
+    ]
+  },
+  {
+    "offset": "0x3BB14",
+    "value": "0x0003B984",
+    "names": [
+      "RLC_RLCS_AUXILIARY_REG_1"
+    ]
+  },
+  {
+    "offset": "0x3BB18",
+    "value": "0x0003B984",
+    "names": [
+      "RLC_RLCS_AUXILIARY_REG_2"
+    ]
+  },
+  {
+    "offset": "0x3BB1C",
+    "value": "0x0003B984",
+    "names": [
+      "RLC_RLCS_AUXILIARY_REG_3"
+    ]
+  },
+  {
+    "offset": "0x3BB20",
+    "value": "0x0003B984",
+    "names": [
+      "RLC_RLCS_AUXILIARY_REG_4"
+    ]
+  },
+  {
+    "offset": "0x3BB30",
+    "value": "0x00008000",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x3BB50",
+    "value": "0x0000012C",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x3BB54",
+    "value": "0x00000014",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x3BB58",
+    "value": "0x0000020E",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x3BB60",
+    "value": "0x0000000A",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x3BB6C",
+    "value": "0x0001869F",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x3BB84",
+    "value": "0x0000020E",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x3BB98",
+    "value": "0x00000018",
+    "names": [
+      "RLC_RLCS_UTCL2_CNTL"
+    ]
+  },
+  {
+    "offset": "0x3BB9C",
+    "value": "0x0001006E",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x3C000",
+    "value": "0xC0F40200",
+    "names": [
+      "CGTS_SA0_QUAD0_SM_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C004",
+    "value": "0x00004421",
+    "names": [
+      "CGTS_SA0_QUAD0_CLK_MONITOR_DELAY_REG"
+    ]
+  },
+  {
+    "offset": "0x3C008",
+    "value": "0xC0F40200",
+    "names": [
+      "CGTS_SA0_QUAD1_SM_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C00C",
+    "value": "0x00004020",
+    "names": [
+      "CGTS_SA0_QUAD1_CLK_MONITOR_DELAY_REG"
+    ]
+  },
+  {
+    "offset": "0x3C010",
+    "value": "0xC0F40200",
+    "names": [
+      "CGTS_SA1_QUAD0_SM_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C014",
+    "value": "0x00004421",
+    "names": [
+      "CGTS_SA1_QUAD0_CLK_MONITOR_DELAY_REG"
+    ]
+  },
+  {
+    "offset": "0x3C018",
+    "value": "0xC0F40200",
+    "names": [
+      "CGTS_SA1_QUAD1_SM_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C01C",
+    "value": "0x00004020",
+    "names": [
+      "CGTS_SA1_QUAD1_CLK_MONITOR_DELAY_REG"
+    ]
+  },
+  {
+    "offset": "0x3C024",
+    "value": "0x0000CFCC",
+    "names": [
+      "CGTS_RD_REG"
+    ]
+  },
+  {
+    "offset": "0x3C030",
+    "value": "0x00006666",
+    "names": [
+      "CGTS_STATUS_REG"
+    ]
+  },
+  {
+    "offset": "0x3C040",
+    "value": "0x00200400",
+    "names": [
+      "CGTS_SA0_WGP00_CU0_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C044",
+    "value": "0x00500C04",
+    "names": [
+      "CGTS_SA0_WGP00_CU0_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C048",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA0_WGP00_CU0_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C04C",
+    "value": "0x00002408",
+    "names": [
+      "CGTS_SA0_WGP00_CU0_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C050",
+    "value": "0x00000400",
+    "names": [
+      "CGTS_SA0_WGP00_CU1_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C054",
+    "value": "0x00000803",
+    "names": [
+      "CGTS_SA0_WGP00_CU1_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C058",
+    "value": "0x00001404",
+    "names": [
+      "CGTS_SA0_WGP00_CU1_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C05C",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA0_WGP00_CU1_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C060",
+    "value": "0x00200400",
+    "names": [
+      "CGTS_SA0_WGP01_CU0_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C064",
+    "value": "0x00500C04",
+    "names": [
+      "CGTS_SA0_WGP01_CU0_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C068",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA0_WGP01_CU0_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C06C",
+    "value": "0x00002408",
+    "names": [
+      "CGTS_SA0_WGP01_CU0_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C070",
+    "value": "0x00000400",
+    "names": [
+      "CGTS_SA0_WGP01_CU1_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C074",
+    "value": "0x00000803",
+    "names": [
+      "CGTS_SA0_WGP01_CU1_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C078",
+    "value": "0x00001404",
+    "names": [
+      "CGTS_SA0_WGP01_CU1_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C07C",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA0_WGP01_CU1_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C080",
+    "value": "0x00200400",
+    "names": [
+      "CGTS_SA0_WGP02_CU0_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C084",
+    "value": "0x00500C04",
+    "names": [
+      "CGTS_SA0_WGP02_CU0_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C088",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA0_WGP02_CU0_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C08C",
+    "value": "0x00002408",
+    "names": [
+      "CGTS_SA0_WGP02_CU0_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C090",
+    "value": "0x00000400",
+    "names": [
+      "CGTS_SA0_WGP02_CU1_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C094",
+    "value": "0x00000803",
+    "names": [
+      "CGTS_SA0_WGP02_CU1_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C098",
+    "value": "0x00001404",
+    "names": [
+      "CGTS_SA0_WGP02_CU1_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C09C",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA0_WGP02_CU1_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0A0",
+    "value": "0x00200400",
+    "names": [
+      "CGTS_SA0_WGP10_CU0_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0A4",
+    "value": "0x00500C04",
+    "names": [
+      "CGTS_SA0_WGP10_CU0_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0A8",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA0_WGP10_CU0_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0AC",
+    "value": "0x00002408",
+    "names": [
+      "CGTS_SA0_WGP10_CU0_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0B0",
+    "value": "0x00000400",
+    "names": [
+      "CGTS_SA0_WGP10_CU1_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0B4",
+    "value": "0x00000803",
+    "names": [
+      "CGTS_SA0_WGP10_CU1_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0B8",
+    "value": "0x00001404",
+    "names": [
+      "CGTS_SA0_WGP10_CU1_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0BC",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA0_WGP10_CU1_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0C0",
+    "value": "0x00200400",
+    "names": [
+      "CGTS_SA0_WGP11_CU0_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0C4",
+    "value": "0x00500C04",
+    "names": [
+      "CGTS_SA0_WGP11_CU0_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0C8",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA0_WGP11_CU0_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0CC",
+    "value": "0x00002408",
+    "names": [
+      "CGTS_SA0_WGP11_CU0_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0D0",
+    "value": "0x00000400",
+    "names": [
+      "CGTS_SA0_WGP11_CU1_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0D4",
+    "value": "0x00000803",
+    "names": [
+      "CGTS_SA0_WGP11_CU1_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0D8",
+    "value": "0x00001404",
+    "names": [
+      "CGTS_SA0_WGP11_CU1_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0DC",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA0_WGP11_CU1_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0E0",
+    "value": "0x00200400",
+    "names": [
+      "CGTS_SA1_WGP00_CU0_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0E4",
+    "value": "0x00500C04",
+    "names": [
+      "CGTS_SA1_WGP00_CU0_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0E8",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA1_WGP00_CU0_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0EC",
+    "value": "0x00002408",
+    "names": [
+      "CGTS_SA1_WGP00_CU0_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0F0",
+    "value": "0x00000400",
+    "names": [
+      "CGTS_SA1_WGP00_CU1_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0F4",
+    "value": "0x00000803",
+    "names": [
+      "CGTS_SA1_WGP00_CU1_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0F8",
+    "value": "0x00001404",
+    "names": [
+      "CGTS_SA1_WGP00_CU1_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C0FC",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA1_WGP00_CU1_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C100",
+    "value": "0x00200400",
+    "names": [
+      "CGTS_SA1_WGP01_CU0_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C104",
+    "value": "0x00500C04",
+    "names": [
+      "CGTS_SA1_WGP01_CU0_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C108",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA1_WGP01_CU0_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C10C",
+    "value": "0x00002408",
+    "names": [
+      "CGTS_SA1_WGP01_CU0_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C110",
+    "value": "0x00000400",
+    "names": [
+      "CGTS_SA1_WGP01_CU1_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C114",
+    "value": "0x00000803",
+    "names": [
+      "CGTS_SA1_WGP01_CU1_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C118",
+    "value": "0x00001404",
+    "names": [
+      "CGTS_SA1_WGP01_CU1_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C11C",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA1_WGP01_CU1_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C120",
+    "value": "0x00200400",
+    "names": [
+      "CGTS_SA1_WGP02_CU0_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C124",
+    "value": "0x00500C04",
+    "names": [
+      "CGTS_SA1_WGP02_CU0_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C128",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA1_WGP02_CU0_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C12C",
+    "value": "0x00002408",
+    "names": [
+      "CGTS_SA1_WGP02_CU0_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C130",
+    "value": "0x00000400",
+    "names": [
+      "CGTS_SA1_WGP02_CU1_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C134",
+    "value": "0x00000803",
+    "names": [
+      "CGTS_SA1_WGP02_CU1_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C138",
+    "value": "0x00001404",
+    "names": [
+      "CGTS_SA1_WGP02_CU1_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C13C",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA1_WGP02_CU1_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C140",
+    "value": "0x00200400",
+    "names": [
+      "CGTS_SA1_WGP10_CU0_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C144",
+    "value": "0x00500C04",
+    "names": [
+      "CGTS_SA1_WGP10_CU0_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C148",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA1_WGP10_CU0_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C14C",
+    "value": "0x00002408",
+    "names": [
+      "CGTS_SA1_WGP10_CU0_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C150",
+    "value": "0x00000400",
+    "names": [
+      "CGTS_SA1_WGP10_CU1_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C154",
+    "value": "0x00000803",
+    "names": [
+      "CGTS_SA1_WGP10_CU1_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C158",
+    "value": "0x00001404",
+    "names": [
+      "CGTS_SA1_WGP10_CU1_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C15C",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA1_WGP10_CU1_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C160",
+    "value": "0x00200400",
+    "names": [
+      "CGTS_SA1_WGP11_CU0_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C164",
+    "value": "0x00500C04",
+    "names": [
+      "CGTS_SA1_WGP11_CU0_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C168",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA1_WGP11_CU0_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C16C",
+    "value": "0x00002408",
+    "names": [
+      "CGTS_SA1_WGP11_CU0_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C170",
+    "value": "0x00000400",
+    "names": [
+      "CGTS_SA1_WGP11_CU1_SIMD0_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C174",
+    "value": "0x00000803",
+    "names": [
+      "CGTS_SA1_WGP11_CU1_SIMD1_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C178",
+    "value": "0x00001404",
+    "names": [
+      "CGTS_SA1_WGP11_CU1_TATD_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C17C",
+    "value": "0x00001C06",
+    "names": [
+      "CGTS_SA1_WGP11_CU1_TCP_CTRL_REG"
+    ]
+  },
+  {
+    "offset": "0x3C1F4",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_SPI_PS_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C1F8",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_SPIS_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C200",
+    "value": "0x3C000100",
+    "names": [
+      "CGTT_SPI_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C204",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_PC_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C208",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_BCI_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C210",
+    "value": "0x00018100",
+    "names": [
+      "CGTT_VGT_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C214",
+    "value": "0x06000100",
+    "names": [
+      "CGTT_IA_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C218",
+    "value": "0x00018100",
+    "names": [
+      "CGTT_WD_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C21C",
+    "value": "0x00018100",
+    "names": [
+      "CGTT_GS_NGG_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C220",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_PA_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C224",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_SC_CLK_CTRL0"
+    ]
+  },
+  {
+    "offset": "0x3C228",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_SC_CLK_CTRL1"
+    ]
+  },
+  {
+    "offset": "0x3C22C",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_SC_CLK_CTRL2"
+    ]
+  },
+  {
+    "offset": "0x3C230",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_SQ_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C234",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_SQG_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C250",
+    "value": "0x0000C100",
+    "names": [
+      "CGTT_SX_CLK_CTRL0"
+    ]
+  },
+  {
+    "offset": "0x3C254",
+    "value": "0x0000C100",
+    "names": [
+      "CGTT_SX_CLK_CTRL1"
+    ]
+  },
+  {
+    "offset": "0x3C258",
+    "value": "0x0000C100",
+    "names": [
+      "CGTT_SX_CLK_CTRL2"
+    ]
+  },
+  {
+    "offset": "0x3C25C",
+    "value": "0x0000C100",
+    "names": [
+      "CGTT_SX_CLK_CTRL3"
+    ]
+  },
+  {
+    "offset": "0x3C260",
+    "value": "0x0000C100",
+    "names": [
+      "CGTT_SX_CLK_CTRL4"
+    ]
+  },
+  {
+    "offset": "0x3C270",
+    "value": "0x00000100",
+    "names": [
+      "TD_CGTT_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C274",
+    "value": "0x00000100",
+    "names": [
+      "TA_CGTT_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C280",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_GDS_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C290",
+    "value": "0x00000100",
+    "names": [
+      "DB_CGTT_CLK_CTRL_0"
+    ]
+  },
+  {
+    "offset": "0x3C2A0",
+    "value": "0x00000100",
+    "names": [
+      "CB_CGTT_SCLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C2A4",
+    "value": "0x00000100",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x3C2B0",
+    "value": "0x10000100",
+    "names": [
+      "GL2C_CGTT_SCLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C2B4",
+    "value": "0x00000100",
+    "names": [
+      "GL2A_CGTT_SCLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C2B8",
+    "value": "0x00000100",
+    "names": [
+      "GL2A_CGTT_SCLK_CTRL_1"
+    ]
+  },
+  {
+    "offset": "0x3C2C0",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_CP_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C2C4",
+    "value": "0xF8000100",
+    "names": [
+      "CGTT_CPF_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C2C8",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_CPC_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C2D4",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_RLC_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C300",
+    "value": "0x00000100",
+    "names": [
+      "RMI_CGTT_SCLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C308",
+    "value": "0x00000100",
+    "names": [
+      "GCR_CGTT_SCLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C30C",
+    "value": "0x00000100",
+    "names": [
+      "UTCL1_CGTT_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C310",
+    "value": "0x00000100",
+    "names": [
+      "GCEA_CGTT_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C340",
+    "value": "0x00000100",
+    "names": [
+      "SE_CAC_CGTT_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C360",
+    "value": "0x00000100",
+    "names": [
+      "GC_CAC_CGTT_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C380",
+    "value": "0x00000100",
+    "names": [
+      "GRBM_CGTT_CLK_CNTL"
+    ]
+  },
+  {
+    "offset": "0x3C3B0",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_GL1C_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C3B4",
+    "value": "0x00000100",
+    "names": [
+      "UNKNOWN"
+    ]
+  },
+  {
+    "offset": "0x3C3B8",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_CHC_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C3BC",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_CHCG_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C3C0",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_GL1A_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C3C4",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_CHA_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C3D0",
+    "value": "0x00000100",
+    "names": [
+      "GUS_CGTT_CLK_CTRL"
+    ]
+  },
+  {
+    "offset": "0x3C3E0",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_PH_CLK_CTRL0"
+    ]
+  },
+  {
+    "offset": "0x3C3E4",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_PH_CLK_CTRL1"
+    ]
+  },
+  {
+    "offset": "0x3C3E8",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_PH_CLK_CTRL2"
+    ]
+  },
+  {
+    "offset": "0x3C3EC",
+    "value": "0x00000100",
+    "names": [
+      "CGTT_PH_CLK_CTRL3"
+    ]
+  }
+]

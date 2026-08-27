@@ -54,20 +54,25 @@ export const PerformanceView: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col gap-5 text-fluent-text z-10">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-white">
-          {t('performance.title')}
-        </h1>
-        <p className="text-xs text-zinc-400 mt-0.5">
-          {t('performance.subtitle')}
-        </p>
-      </div>
+    <div className="z-10 flex flex-1 flex-col gap-5 overflow-y-auto p-5 md:p-7">
+      <section className="page-hero">
+        <p className="page-kicker">Perfis e Ajustes</p>
+        <div className="mt-2 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <h1 className="page-title">{t('performance.title')}</h1>
+            <p className="mt-3 text-sm text-[var(--text-muted)]">
+              {t('performance.subtitle')}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="toolbar-chip">Perfil ativo: {t('performance.profileGaming')}</span>
+            <span className="toolbar-chip">Fan {fanSpeed}%</span>
+          </div>
+        </div>
+      </section>
 
-      {/* Profiles Grid */}
-      <div className="bg-[#1c1c20]/80 border border-white/5 rounded-xl p-4 shadow-fluent-card backdrop-blur-md flex flex-col gap-3">
-        <span className="text-xs font-semibold text-zinc-300">
+      <div className="surface-card flex flex-col gap-3 p-5">
+        <span className="text-xs font-semibold text-[var(--text-base)]">
           {t('performance.profiles')}
         </span>
 
@@ -87,18 +92,18 @@ export const PerformanceView: React.FC = () => {
                 onClick={() => applyProfile(prof.id)}
                 className={`p-3.5 rounded-lg border flex flex-col items-start gap-1.5 transition-all text-left ${
                   isSelected
-                    ? 'bg-[#f25056]/15 border-[#f25056] shadow-[0_0_12px_rgba(242,80,86,0.3)]'
-                    : 'bg-[#242429] border-white/5 hover:border-white/10'
+                    ? 'bg-[var(--accent-soft)] border-[var(--accent-line)] shadow-[var(--shadow-soft)]'
+                    : 'bg-white border-[var(--border-soft)] hover:border-[var(--border-strong)]'
                 }`}
               >
                 <div className="flex items-center justify-between w-full">
-                  <Icon className={`w-4 h-4 ${isSelected ? 'text-[#f25056]' : 'text-zinc-400'}`} />
-                  {isSelected && <Check className="w-3.5 h-3.5 text-[#f25056]" />}
+                  <Icon className={`w-4 h-4 ${isSelected ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`} />
+                  {isSelected && <Check className="w-3.5 h-3.5 text-[var(--accent)]" />}
                 </div>
-                <span className="text-sm font-semibold text-white mt-1">
+                <span className="mt-1 text-sm font-semibold text-[var(--text-strong)]">
                   {prof.label}
                 </span>
-                <span className="text-[11px] text-zinc-400">
+                <span className="text-[11px] text-[var(--text-muted)]">
                   {prof.desc}
                 </span>
               </button>
@@ -107,12 +112,10 @@ export const PerformanceView: React.FC = () => {
         </div>
       </div>
 
-      {/* Manual Fine Tuning Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Frequencies and Power */}
-        <div className="bg-[#1c1c20]/80 border border-white/5 rounded-xl p-4 shadow-fluent-card backdrop-blur-md flex flex-col gap-4">
-          <h2 className="text-sm font-semibold text-zinc-100 flex items-center gap-2">
-            <Gauge className="w-4 h-4 text-[#f25056]" />
+        <div className="surface-card flex flex-col gap-4 p-5">
+          <h2 className="section-title flex items-center gap-2">
+            <Gauge className="w-4 h-4 text-[var(--accent)]" />
             {t('performance.clocks')}
           </h2>
 
@@ -150,10 +153,9 @@ export const PerformanceView: React.FC = () => {
           />
         </div>
 
-        {/* Fan Curve / Thermal Control */}
-        <div className="bg-[#1c1c20]/80 border border-white/5 rounded-xl p-4 shadow-fluent-card backdrop-blur-md flex flex-col gap-4">
-          <h2 className="text-sm font-semibold text-zinc-100 flex items-center gap-2">
-            <Wind className="w-4 h-4 text-[#f25056]" />
+        <div className="surface-card flex flex-col gap-4 p-5">
+          <h2 className="section-title flex items-center gap-2">
+            <Wind className="w-4 h-4 text-[var(--accent)]" />
             {t('performance.fanControl')}
           </h2>
 
@@ -163,8 +165,8 @@ export const PerformanceView: React.FC = () => {
               onClick={() => setFanAuto(true)}
               className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium border transition-all ${
                 fanAuto
-                  ? 'bg-[#f25056]/15 border-[#f25056] text-white'
-                  : 'bg-[#242429] border-white/5 text-zinc-400 hover:text-white'
+                  ? 'bg-[var(--accent-soft)] border-[var(--accent-line)] text-[var(--accent)]'
+                  : 'bg-white border-[var(--border-soft)] text-[var(--text-muted)] hover:text-[var(--text-strong)]'
               }`}
             >
               {t('performance.fanAuto')}
@@ -174,8 +176,8 @@ export const PerformanceView: React.FC = () => {
               onClick={() => setFanAuto(false)}
               className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium border transition-all ${
                 !fanAuto
-                  ? 'bg-[#f25056]/15 border-[#f25056] text-white'
-                  : 'bg-[#242429] border-white/5 text-zinc-400 hover:text-white'
+                  ? 'bg-[var(--accent-soft)] border-[var(--accent-line)] text-[var(--accent)]'
+                  : 'bg-white border-[var(--border-soft)] text-[var(--text-muted)] hover:text-[var(--text-strong)]'
               }`}
             >
               {t('performance.fanManual')}
@@ -191,25 +193,24 @@ export const PerformanceView: React.FC = () => {
             onChange={setFanSpeed}
           />
 
-          <div className="p-3 bg-[#151518] rounded-lg border border-white/5 text-xs text-zinc-400 flex flex-col gap-1">
+          <div className="surface-subtle flex flex-col gap-1 p-3 text-xs text-[var(--text-muted)]">
             <div className="flex justify-between">
               <span>Target Junction Temp:</span>
-              <span className="text-zinc-200 font-semibold">82°C</span>
+              <span className="font-semibold text-[var(--text-strong)]">82°C</span>
             </div>
             <div className="flex justify-between">
               <span>Acoustic Acoustic Limit:</span>
-              <span className="text-zinc-200 font-semibold">2800 RPM</span>
+              <span className="font-semibold text-[var(--text-strong)]">2800 RPM</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Action Footer */}
       <div className="flex items-center justify-between pt-2">
         <button
           type="button"
           onClick={handleReset}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#242429] hover:bg-[#2e2e36] text-xs font-medium text-zinc-300 transition-all border border-white/5"
+          className="button-secondary flex items-center gap-2"
         >
           <RotateCcw className="w-3.5 h-3.5" />
           {t('performance.revert')}
@@ -217,7 +218,7 @@ export const PerformanceView: React.FC = () => {
 
         <div className="flex items-center gap-3">
           {applied && (
-            <span className="text-xs text-emerald-400 flex items-center gap-1 font-medium">
+            <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
               <Check className="w-4 h-4" />
               {t('performance.appliedSuccess')}
             </span>
@@ -225,7 +226,7 @@ export const PerformanceView: React.FC = () => {
           <button
             type="button"
             onClick={handleApply}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-[#f25056] hover:bg-[#ef383f] text-xs font-semibold text-white shadow-[0_0_15px_rgba(242,80,86,0.5)] transition-all active:scale-[0.98]"
+            className="button-primary flex items-center gap-2 px-6"
           >
             {t('performance.apply')}
           </button>

@@ -37,7 +37,10 @@ export const CircularGauge: React.FC<CircularGaugeProps> = ({
 
   return (
     <div className="flex flex-col items-center justify-center select-none group">
-      <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
+      <div
+        className="relative flex items-center justify-center rounded-full border border-[var(--border-soft)] bg-white/60 shadow-[var(--shadow-soft)]"
+        style={{ width: size, height: size }}
+      >
         <svg
           width={size}
           height={size}
@@ -65,7 +68,7 @@ export const CircularGauge: React.FC<CircularGaugeProps> = ({
             cy={size / 2}
             r={radius}
             fill="none"
-            stroke="rgba(255, 255, 255, 0.08)"
+            stroke="rgba(111, 123, 140, 0.14)"
             strokeWidth={strokeWidth}
             strokeDasharray={`${totalArcLength} ${circumference}`}
             strokeLinecap="round"
@@ -89,11 +92,11 @@ export const CircularGauge: React.FC<CircularGaugeProps> = ({
 
         {/* Center Content */}
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
-          <span className="text-xl font-bold tracking-tight text-white transition-all duration-300">
+          <span className="text-xl font-bold tracking-tight text-[var(--text-strong)] transition-all duration-300">
             {value}{unit}
           </span>
           {subValue && (
-            <span className="text-[11px] text-zinc-400 font-medium -mt-0.5">
+            <span className="text-[11px] font-medium -mt-0.5 text-[var(--text-muted)]">
               {subValue}
             </span>
           )}
@@ -101,7 +104,7 @@ export const CircularGauge: React.FC<CircularGaugeProps> = ({
       </div>
 
       {/* Underneath Label */}
-      <span className="text-xs text-zinc-400 mt-1 font-medium tracking-wide">
+      <span className="mt-2 text-xs font-medium tracking-wide text-[var(--text-muted)]">
         {label}
       </span>
     </div>

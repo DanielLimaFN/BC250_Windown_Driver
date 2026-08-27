@@ -1,0 +1,50 @@
+[Version]
+Signature="$Windows NT$"
+Class=ComputeAccelerator
+ClassGuid={F01A9D53-3FF6-48D2-9F97-C8A7004BE10C}
+Provider=%ProviderName%
+DriverVer=08/25/2026,0.5.0.0
+CatalogFile=bc250readonly.cat
+PnpLockdown=1
+
+[DestinationDirs]
+BC250Readonly.CopyFiles=12
+
+[SourceDisksNames]
+1=%DiskName%,,,.
+
+[SourceDisksFiles]
+bc250readonly.sys=1
+
+[Manufacturer]
+%ManufacturerName%=BC250,NTamd64
+
+[BC250.NTamd64]
+%DeviceName%=BC250Readonly.Install,PCI\VEN_1002&DEV_13FE
+
+[BC250Readonly.Install]
+CopyFiles=BC250Readonly.CopyFiles
+
+[BC250Readonly.Install.Services]
+AddService=bc250readonly,0x00000002,BC250Readonly.Service
+
+[BC250Readonly.Service]
+DisplayName=%ServiceName%
+ServiceType=1
+StartType=3
+ErrorControl=1
+ServiceBinary=%12%\bc250readonly.sys
+AddReg=BC250Readonly.ProbeReg
+
+[BC250Readonly.ProbeReg]
+HKR,Parameters\Probe,SchemaVersion,0x00010001,6
+
+[BC250Readonly.CopyFiles]
+bc250readonly.sys
+
+[Strings]
+ProviderName="BC-250 Driver Project"
+ManufacturerName="AMD BC-250 Project"
+DiskName="BC-250 MCDM Readonly Probe"
+DeviceName="BC-250 Compute Accelerator Readonly Probe"
+ServiceName="BC-250 MCDM Readonly Probe"

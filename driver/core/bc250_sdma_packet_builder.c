@@ -65,11 +65,11 @@ BC250_SDMA_STATUS Bc250SdmaEmitCopyLinear(
 
     Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, header);
     Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, countField);
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, 0u); /* endian */
     Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(SrcAddress & 0xFFFFFFFFull));
     Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(SrcAddress >> 32));
     Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(DstAddress & 0xFFFFFFFFull));
     Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(DstAddress >> 32));
-    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, 0); /* Reserved / Flags */
 
     return BC250_SDMA_OK;
 }
@@ -108,6 +108,33 @@ BC250_SDMA_STATUS Bc250SdmaEmitConstFill(
     return BC250_SDMA_OK;
 }
 
+BC250_SDMA_STATUS Bc250SdmaEmitWriteLinear(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint64_t DstAddress,
+    const uint32_t *Data,
+    uint32_t DwordCount)
+{
+    uint32_t i;
+    if (RingBuffer == NULL || CursorDwords == NULL || Data == NULL ||
+        !Bc250IsPowerOfTwo32(RingDwords)) return BC250_SDMA_BAD_ARGUMENT;
+    if (DwordCount == 0u || DwordCount > 64u)
+        return BC250_SDMA_PAYLOAD_TOO_LARGE;
+    if ((DstAddress & 3u) != 0u) return BC250_SDMA_MISALIGNED;
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        BC250_SDMA_OP_WRITE | (BC250_SDMA_SUBOP_WRITE_LINEAR << 8));
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        (uint32_t)DstAddress);
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        (uint32_t)(DstAddress >> 32));
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        DwordCount - 1u);
+    for (i = 0u; i < DwordCount; ++i)
+        Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, Data[i]);
+    return BC250_SDMA_OK;
+}
+
 BC250_SDMA_STATUS Bc250SdmaEmitFence(
     uint32_t *RingBuffer,
     uint32_t RingDwords,
@@ -124,13 +151,29 @@ BC250_SDMA_STATUS Bc250SdmaEmitFence(
         return BC250_SDMA_MISALIGNED;
     }
 
-    header = (BC250_SDMA_OP_FENCE & 0xFFu);
+    header = (BC250_SDMA_OP_FENCE & 0xFFu) | (3u << 16); /* MTYPE_UC */
 
     Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, header);
     Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(FenceAddress & 0xFFFFFFFFull));
     Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(FenceAddress >> 32));
     Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, FenceSequence);
 
+    return BC250_SDMA_OK;
+}
+
+BC250_SDMA_STATUS Bc250SdmaEmitGcr(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords)
+{
+    if (RingBuffer == NULL || CursorDwords == NULL ||
+        !Bc250IsPowerOfTwo32(RingDwords)) return BC250_SDMA_BAD_ARGUMENT;
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        BC250_SDMA_OP_GCR_REQ);
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, 0u);
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, 0xC3A10000u);
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, 0u);
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, 0u);
     return BC250_SDMA_OK;
 }
 

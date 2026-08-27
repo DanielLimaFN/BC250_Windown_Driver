@@ -241,6 +241,173 @@ static PCWSTR Bc250ProbeFieldName(BC250_PROBE_FIELD Field)
     case BC250_PROBE_GCVM_VMID8_TLB_PASSED: return L"GcvmVmid8TlbPassed";
     case BC250_PROBE_GCVM_VMID8_RESTORE: return L"GcvmVmid8Restore";
     case BC250_PROBE_GCVM_INERT_PHYSICAL_READY: return L"GcvmInertPhysicalReady";
+    case BC250_PROBE_PSP_RING_STATUS: return L"PspRingStatus";
+    case BC250_PROBE_PSP_RING_PHYSICAL_LOW32: return L"PspRingPhysicalLow32";
+    case BC250_PROBE_PSP_RING_C2PMSG64_BEFORE: return L"PspRingC2pmsg64Before";
+    case BC250_PROBE_PSP_RING_CREATE_ACK: return L"PspRingCreateAck";
+    case BC250_PROBE_PSP_RING_DESTROY_ACK: return L"PspRingDestroyAck";
+    case BC250_PROBE_PSP_RING_CREATE_POLLS: return L"PspRingCreatePolls";
+    case BC250_PROBE_PSP_RING_DESTROY_POLLS: return L"PspRingDestroyPolls";
+    case BC250_PROBE_PSP_RING_CREATE_PASSED: return L"PspRingCreatePassed";
+    case BC250_PROBE_PSP_RING_DESTROY_PASSED: return L"PspRingDestroyPassed";
+    case BC250_PROBE_PSP_RING_RESTORE_PASSED: return L"PspRingRestorePassed";
+    case BC250_PROBE_PSP_RING_PHYSICAL_READY: return L"PspRingPhysicalReady";
+    case BC250_PROBE_PSP_LOAD_FW_STATUS: return L"PspLoadFwStatus";
+    case BC250_PROBE_PSP_LOAD_FW_BYTES: return L"PspLoadFwBytes";
+    case BC250_PROBE_PSP_LOAD_FW_TYPE: return L"PspLoadFwType";
+    case BC250_PROBE_PSP_LOAD_FW_RING_LOW: return L"PspLoadFwRingLow";
+    case BC250_PROBE_PSP_LOAD_FW_RING_HIGH: return L"PspLoadFwRingHigh";
+    case BC250_PROBE_PSP_LOAD_FW_COMMAND_LOW: return L"PspLoadFwCommandLow";
+    case BC250_PROBE_PSP_LOAD_FW_COMMAND_HIGH: return L"PspLoadFwCommandHigh";
+    case BC250_PROBE_PSP_LOAD_FW_FENCE_LOW: return L"PspLoadFwFenceLow";
+    case BC250_PROBE_PSP_LOAD_FW_FENCE_HIGH: return L"PspLoadFwFenceHigh";
+    case BC250_PROBE_PSP_LOAD_FW_PAYLOAD_LOW: return L"PspLoadFwPayloadLow";
+    case BC250_PROBE_PSP_LOAD_FW_PAYLOAD_HIGH: return L"PspLoadFwPayloadHigh";
+    case BC250_PROBE_PSP_LOAD_FW_CREATE_ACK: return L"PspLoadFwCreateAck";
+    case BC250_PROBE_PSP_LOAD_FW_FENCE_EXPECTED: return L"PspLoadFwFenceExpected";
+    case BC250_PROBE_PSP_LOAD_FW_FENCE_OBSERVED: return L"PspLoadFwFenceObserved";
+    case BC250_PROBE_PSP_LOAD_FW_FENCE_POLLS: return L"PspLoadFwFencePolls";
+    case BC250_PROBE_PSP_LOAD_FW_RESPONSE_STATUS: return L"PspLoadFwResponseStatus";
+    case BC250_PROBE_PSP_LOAD_FW_CHECKSUM_BEFORE: return L"PspLoadFwChecksumBefore";
+    case BC250_PROBE_PSP_LOAD_FW_CHECKSUM_AFTER: return L"PspLoadFwChecksumAfter";
+    case BC250_PROBE_PSP_LOAD_FW_DESTROY_ACK: return L"PspLoadFwDestroyAck";
+    case BC250_PROBE_PSP_LOAD_FW_FENCE_PASSED: return L"PspLoadFwFencePassed";
+    case BC250_PROBE_PSP_LOAD_FW_RESPONSE_PASSED: return L"PspLoadFwResponsePassed";
+    case BC250_PROBE_PSP_LOAD_FW_CHECKSUM_PASSED: return L"PspLoadFwChecksumPassed";
+    case BC250_PROBE_PSP_LOAD_FW_DESTROY_PASSED: return L"PspLoadFwDestroyPassed";
+    case BC250_PROBE_PSP_LOAD_FW_RESTORE_PASSED: return L"PspLoadFwRestorePassed";
+    case BC250_PROBE_PSP_LOAD_FW_PHYSICAL_READY: return L"PspLoadFwPhysicalReady";
+    case BC250_PROBE_PSP_RLC_LOAD_STATUS: return L"PspRlcLoadStatus";
+    case BC250_PROBE_PSP_RLC_LOAD_BYTES: return L"PspRlcLoadBytes";
+    case BC250_PROBE_PSP_RLC_LOAD_TYPE: return L"PspRlcLoadType";
+    case BC250_PROBE_PSP_RLC_LOAD_FENCE_EXPECTED:
+        return L"PspRlcLoadFenceExpected";
+    case BC250_PROBE_PSP_RLC_LOAD_FENCE_OBSERVED:
+        return L"PspRlcLoadFenceObserved";
+    case BC250_PROBE_PSP_RLC_LOAD_FENCE_POLLS:
+        return L"PspRlcLoadFencePolls";
+    case BC250_PROBE_PSP_RLC_LOAD_RESPONSE_STATUS:
+        return L"PspRlcLoadResponseStatus";
+    case BC250_PROBE_PSP_RLC_LOAD_DESTROY_PASSED:
+        return L"PspRlcLoadDestroyPassed";
+    case BC250_PROBE_PSP_RLC_LOAD_RESTORE_PASSED:
+        return L"PspRlcLoadRestorePassed";
+    case BC250_PROBE_PSP_RLC_LOAD_PHYSICAL_READY:
+        return L"PspRlcLoadPhysicalReady";
+    case BC250_PROBE_RLC_CNTL_BEFORE: return L"RlcCntlBefore";
+    case BC250_PROBE_RLC_GPM_BEFORE: return L"RlcGpmBefore";
+    case BC250_PROBE_RLC_CNTL_AFTER: return L"RlcCntlAfter";
+    case BC250_PROBE_RLC_GPM_AFTER: return L"RlcGpmAfter";
+    case BC250_PROBE_RLC_EXEC_ROM_BEFORE: return L"RlcExecRomBefore";
+    case BC250_PROBE_RLC_EXEC_ROM_AFTER: return L"RlcExecRomAfter";
+    case BC250_PROBE_RLC_ENABLE_F32_AFTER: return L"RlcEnableF32After";
+    case BC250_PROBE_RLC_CNTL_RESTORE: return L"RlcCntlRestore";
+    case BC250_PROBE_RLC_ALREADY_ACTIVE: return L"RlcAlreadyActive";
+    case BC250_PROBE_RLC_PHYSICAL_READY: return L"RlcPhysicalReady";
+    case BC250_PROBE_PFP_DIRECT_STATUS: return L"PfpDirectStatus";
+    case BC250_PROBE_PFP_DIRECT_MC_LOW: return L"PfpDirectMcLow";
+    case BC250_PROBE_PFP_DIRECT_MC_HIGH: return L"PfpDirectMcHigh";
+    case BC250_PROBE_PFP_DIRECT_BYTES: return L"PfpDirectBytes";
+    case BC250_PROBE_PFP_DIRECT_JT_DWORDS: return L"PfpDirectJtDwords";
+    case BC250_PROBE_PFP_DIRECT_VERSION: return L"PfpDirectVersion";
+    case BC250_PROBE_PFP_DIRECT_STAGED_DWORDS:
+        return L"PfpDirectStagedDwords";
+    case BC250_PROBE_PFP_DIRECT_STAGING_MISMATCHES:
+        return L"PfpDirectStagingMismatches";
+    case BC250_PROBE_PFP_DIRECT_ME_CNTL_BEFORE:
+        return L"PfpDirectMeCntlBefore";
+    case BC250_PROBE_PFP_DIRECT_ME_CNTL_APPLIED:
+        return L"PfpDirectMeCntlApplied";
+    case BC250_PROBE_PFP_DIRECT_ME_CNTL_AFTER:
+        return L"PfpDirectMeCntlAfter";
+    case BC250_PROBE_PFP_DIRECT_RLC_CNTL_BEFORE:
+        return L"PfpDirectRlcCntlBefore";
+    case BC250_PROBE_PFP_DIRECT_RLC_CNTL_APPLIED:
+        return L"PfpDirectRlcCntlApplied";
+    case BC250_PROBE_PFP_DIRECT_PC_BEFORE: return L"PfpDirectPcBefore";
+    case BC250_PROBE_PFP_DIRECT_PC_FIRST: return L"PfpDirectPcFirst";
+    case BC250_PROBE_PFP_DIRECT_PC_LAST: return L"PfpDirectPcLast";
+    case BC250_PROBE_PFP_DIRECT_PC_TRANSITIONS:
+        return L"PfpDirectPcTransitions";
+    case BC250_PROBE_PFP_DIRECT_PC_SAMPLES: return L"PfpDirectPcSamples";
+    case BC250_PROBE_PFP_DIRECT_FAULT_BEFORE:
+        return L"PfpDirectFaultBefore";
+    case BC250_PROBE_PFP_DIRECT_FAULT_AFTER:
+        return L"PfpDirectFaultAfter";
+    case BC250_PROBE_PFP_DIRECT_FAULT_ADDR_LOW:
+        return L"PfpDirectFaultAddrLow";
+    case BC250_PROBE_PFP_DIRECT_FAULT_ADDR_HIGH:
+        return L"PfpDirectFaultAddrHigh";
+    case BC250_PROBE_PFP_DIRECT_PORTS_PROGRAMMED:
+        return L"PfpDirectPortsProgrammed";
+    case BC250_PROBE_PFP_DIRECT_REG_RESTORE:
+        return L"PfpDirectRegRestore";
+    case BC250_PROBE_PFP_DIRECT_MEM_RESTORE:
+        return L"PfpDirectMemRestore";
+    case BC250_PROBE_PFP_DIRECT_PHYSICAL_READY:
+        return L"PfpDirectPhysicalReady";
+    case BC250_PROBE_SDMA_F32_STATUS: return L"SdmaF32Status";
+    case BC250_PROBE_SDMA_F32_CLOCK_BEFORE: return L"SdmaF32ClockBefore";
+    case BC250_PROBE_SDMA_F32_CONTROL_BEFORE: return L"SdmaF32ControlBefore";
+    case BC250_PROBE_SDMA_F32_CONTROL_APPLIED: return L"SdmaF32ControlApplied";
+    case BC250_PROBE_SDMA_F32_F32_BEFORE: return L"SdmaF32F32Before";
+    case BC250_PROBE_SDMA_F32_F32_APPLIED: return L"SdmaF32F32Applied";
+    case BC250_PROBE_SDMA_F32_PC_FIRST: return L"SdmaF32PcFirst";
+    case BC250_PROBE_SDMA_F32_PC_LAST: return L"SdmaF32PcLast";
+    case BC250_PROBE_SDMA_F32_PC_TRANSITIONS: return L"SdmaF32PcTransitions";
+    case BC250_PROBE_SDMA_F32_APPLY_READBACK: return L"SdmaF32ApplyReadback";
+    case BC250_PROBE_SDMA_F32_RESTORE: return L"SdmaF32Restore";
+    case BC250_PROBE_SDMA_F32_PHYSICAL_READY: return L"SdmaF32PhysicalReady";
+    case BC250_PROBE_SDMA_RING_WORK_STATUS: return L"SdmaRingWorkStatus";
+    case BC250_PROBE_SDMA_RING_FIXED_RESERVATION_STATUS:
+        return L"SdmaRingFixedReservationStatus";
+    case BC250_PROBE_SDMA_RING_ALLOCATION_MODE:
+        return L"SdmaRingAllocationMode";
+    case BC250_PROBE_SDMA_RING_RING_LOW: return L"SdmaRingRingLow";
+    case BC250_PROBE_SDMA_RING_RING_HIGH: return L"SdmaRingRingHigh";
+    case BC250_PROBE_SDMA_RING_WORK_LOW: return L"SdmaRingWorkLow";
+    case BC250_PROBE_SDMA_RING_WORK_HIGH: return L"SdmaRingWorkHigh";
+    case BC250_PROBE_SDMA_RING_RPTR_BEFORE: return L"SdmaRingRptrBefore";
+    case BC250_PROBE_SDMA_RING_RPTR_AFTER: return L"SdmaRingRptrAfter";
+    case BC250_PROBE_SDMA_RING_WPTR: return L"SdmaRingWptr";
+    case BC250_PROBE_SDMA_RING_WPTR_REGISTER: return L"SdmaRingWptrRegister";
+    case BC250_PROBE_SDMA_RING_WPTR_SHADOW: return L"SdmaRingWptrShadow";
+    case BC250_PROBE_SDMA_RING_RB_CNTL: return L"SdmaRingRbCntl";
+    case BC250_PROBE_SDMA_RING_HEADER: return L"SdmaRingHeader";
+    case BC250_PROBE_SDMA_RING_RPTR_REGISTER: return L"SdmaRingRptrRegister";
+    case BC250_PROBE_SDMA_RING_POLL_CNTL: return L"SdmaRingPollCntl";
+    case BC250_PROBE_SDMA_RING_FENCE_POISON: return L"SdmaRingFencePoison";
+    case BC250_PROBE_SDMA_RING_FENCE_EXPECTED: return L"SdmaRingFenceExpected";
+    case BC250_PROBE_SDMA_RING_FENCE_OBSERVED: return L"SdmaRingFenceObserved";
+    case BC250_PROBE_SDMA_RING_POLLS: return L"SdmaRingPolls";
+    case BC250_PROBE_SDMA_RING_COMPARED_DWORDS: return L"SdmaRingComparedDwords";
+    case BC250_PROBE_SDMA_RING_MISMATCHES: return L"SdmaRingMismatches";
+    case BC250_PROBE_SDMA_RING_STATUS_BEFORE: return L"SdmaRingStatusBefore";
+    case BC250_PROBE_SDMA_RING_STATUS_KICK: return L"SdmaRingStatusKick";
+    case BC250_PROBE_SDMA_RING_STATUS_AFTER: return L"SdmaRingStatusAfter";
+    case BC250_PROBE_SDMA_RING_PC_KICK: return L"SdmaRingPcKick";
+    case BC250_PROBE_SDMA_RING_STATUS1_AFTER: return L"SdmaRingStatus1After";
+    case BC250_PROBE_SDMA_RING_STATUS2_AFTER: return L"SdmaRingStatus2After";
+    case BC250_PROBE_SDMA_RING_STATUS3_AFTER: return L"SdmaRingStatus3After";
+    case BC250_PROBE_SDMA_RING_ERROR_LOG_AFTER:
+        return L"SdmaRingErrorLogAfter";
+    case BC250_PROBE_SDMA_RING_UTCL1_RD_STATUS_AFTER:
+        return L"SdmaRingUtcl1ReadStatusAfter";
+    case BC250_PROBE_SDMA_RING_UTCL1_WR_STATUS_AFTER:
+        return L"SdmaRingUtcl1WriteStatusAfter";
+    case BC250_PROBE_SDMA_RING_UTCL1_RD_XNACK0_AFTER:
+        return L"SdmaRingUtcl1ReadXnack0After";
+    case BC250_PROBE_SDMA_RING_UTCL1_RD_XNACK1_AFTER:
+        return L"SdmaRingUtcl1ReadXnack1After";
+    case BC250_PROBE_SDMA_RING_UTCL1_WR_XNACK0_AFTER:
+        return L"SdmaRingUtcl1WriteXnack0After";
+    case BC250_PROBE_SDMA_RING_UTCL1_WR_XNACK1_AFTER:
+        return L"SdmaRingUtcl1WriteXnack1After";
+    case BC250_PROBE_SDMA_RING_UTCL1_TIMEOUT_AFTER:
+        return L"SdmaRingUtcl1TimeoutAfter";
+    case BC250_PROBE_SDMA_RING_REG_RESTORE: return L"SdmaRingRegRestore";
+    case BC250_PROBE_SDMA_RING_MEM_RESTORE: return L"SdmaRingMemRestore";
+    case BC250_PROBE_SDMA_RING_PHYSICAL_READY: return L"SdmaRingPhysicalReady";
     default: return NULL;
     }
 }

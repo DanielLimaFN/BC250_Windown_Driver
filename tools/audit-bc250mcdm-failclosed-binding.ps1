@@ -44,7 +44,7 @@ if (-not (Test-Path -LiteralPath $probePath)) {
 } else {
     $probe = Get-ItemProperty -LiteralPath $probePath
     foreach ($expected in @(
-        @{ Name='SchemaVersion'; Value=24 },
+        @{ Name='SchemaVersion'; Value=39 },
         @{ Name='DriverEntryReached'; Value=1 },
         @{ Name='InitializationDataReady'; Value=1 },
         @{ Name='AddDeviceEntered'; Value=1 },
@@ -87,7 +87,64 @@ if (-not (Test-Path -LiteralPath $probePath)) {
         @{ Name='GcvmVmid8Readback'; Value=1 },
         @{ Name='GcvmVmid8TlbPassed'; Value=1 },
         @{ Name='GcvmVmid8Restore'; Value=1 },
-        @{ Name='GcvmInertPhysicalReady'; Value=1 }
+        @{ Name='GcvmInertPhysicalReady'; Value=1 },
+        @{ Name='PspRingStatus'; Value=0 },
+        @{ Name='PspRingCreatePassed'; Value=1 },
+        @{ Name='PspRingDestroyPassed'; Value=1 },
+        @{ Name='PspRingRestorePassed'; Value=1 },
+        @{ Name='PspRingPhysicalReady'; Value=1 },
+        @{ Name='PspLoadFwStatus'; Value=0 },
+        @{ Name='PspLoadFwBytes'; Value=33536 },
+        @{ Name='PspLoadFwType'; Value=9 },
+        @{ Name='PspLoadFwFenceExpected'; Value=1 },
+        @{ Name='PspLoadFwFenceObserved'; Value=1 },
+        @{ Name='PspLoadFwResponseStatus'; Value=0 },
+        @{ Name='PspLoadFwFencePassed'; Value=1 },
+        @{ Name='PspLoadFwResponsePassed'; Value=1 },
+        @{ Name='PspLoadFwChecksumPassed'; Value=1 },
+        @{ Name='PspLoadFwDestroyPassed'; Value=1 },
+        @{ Name='PspLoadFwRestorePassed'; Value=1 },
+        @{ Name='PspLoadFwPhysicalReady'; Value=1 },
+        @{ Name='PspRlcLoadStatus'; Value=0 },
+        @{ Name='PspRlcLoadType'; Value=8 },
+        @{ Name='PspRlcLoadPhysicalReady'; Value=1 },
+        @{ Name='RlcExecRomAfter'; Value=0 },
+        @{ Name='RlcEnableF32After'; Value=1 },
+        @{ Name='RlcCntlRestore'; Value=1 },
+        @{ Name='RlcPhysicalReady'; Value=1 },
+        @{ Name='PfpDirectStatus'; Value=1 },
+        @{ Name='PfpDirectBytes'; Value=0 },
+        @{ Name='PfpDirectJtDwords'; Value=0 },
+        @{ Name='PfpDirectVersion'; Value=0 },
+        @{ Name='PfpDirectStagedDwords'; Value=0 },
+        @{ Name='PfpDirectStagingMismatches'; Value=0 },
+        @{ Name='PfpDirectPcSamples'; Value=0 },
+        @{ Name='PfpDirectPortsProgrammed'; Value=0 },
+        @{ Name='PfpDirectRegRestore'; Value=0 },
+        @{ Name='PfpDirectMemRestore'; Value=0 },
+        @{ Name='PfpDirectPhysicalReady'; Value=0 },
+        @{ Name='SdmaF32Status'; Value=0 },
+        @{ Name='SdmaF32F32Applied'; Value=0 },
+        @{ Name='SdmaF32ApplyReadback'; Value=1 },
+        @{ Name='SdmaF32Restore'; Value=1 },
+        @{ Name='SdmaF32PhysicalReady'; Value=1 },
+        @{ Name='SdmaRingWorkStatus'; Value=0 },
+        @{ Name='SdmaRingFixedReservationStatus'; Value=5 },
+        @{ Name='SdmaRingAllocationMode'; Value=2 },
+        @{ Name='SdmaRingRptrBefore'; Value=0 },
+        @{ Name='SdmaRingRptrRegister'; Value=68 },
+        @{ Name='SdmaRingWptr'; Value=68 },
+        @{ Name='SdmaRingWptrRegister'; Value=68 },
+        @{ Name='SdmaRingWptrShadow'; Value=68 },
+        @{ Name='SdmaRingHeader'; Value=2 },
+        @{ Name='SdmaRingFencePoison'; Value=0x43DAFFFE },
+        @{ Name='SdmaRingFenceExpected'; Value=[uint64]3156541731 },
+        @{ Name='SdmaRingFenceObserved'; Value=[uint64]3156541731 },
+        @{ Name='SdmaRingComparedDwords'; Value=4 },
+        @{ Name='SdmaRingMismatches'; Value=0 },
+        @{ Name='SdmaRingRegRestore'; Value=1 },
+        @{ Name='SdmaRingMemRestore'; Value=1 },
+        @{ Name='SdmaRingPhysicalReady'; Value=1 }
     )) {
         $property = $probe.PSObject.Properties[$expected.Name]
         if ($null -eq $property -or [uint32]$property.Value -ne [uint32]$expected.Value) {
@@ -116,6 +173,69 @@ if (-not (Test-Path -LiteralPath $probePath)) {
         ($pte -band [uint64]0x0000FFFFFFFFF000) -ne $expectedTarget) {
         $errors.Add('PTE GCVM nao corresponde ao buffer owned e flags VALID|READ|WRITE')
     }
+    $ringMc = ([uint64][uint32]$probe.SdmaRingRingHigh -shl 32) -bor
+        [uint64][uint32]$probe.SdmaRingRingLow
+    $workMc = ([uint64][uint32]$probe.SdmaRingWorkHigh -shl 32) -bor
+        [uint64][uint32]$probe.SdmaRingWorkLow
+    if ($ringMc -eq 0 -or $workMc -ne ($ringMc + [uint64]0x1000)) {
+        $errors.Add('ring/work nao formam o layout contiguo relativo esperado')
+    }
+    $tosReadyMask = [uint32]2147483648
+    $pspAckMask = [uint32]2147549183
+    $pspAckValue = [uint32]2147483648
+    if (([uint32]$probe.PspRingC2pmsg64Before -band $tosReadyMask) -eq 0 -or
+        [uint32]$probe.PspRingCreateAck -eq [uint32]::MaxValue -or
+        ([uint32]$probe.PspRingCreateAck -band $pspAckMask) -ne $pspAckValue -or
+        [uint32]$probe.PspRingDestroyAck -eq [uint32]::MaxValue -or
+        ([uint32]$probe.PspRingDestroyAck -band $pspAckMask) -ne $pspAckValue) {
+        $errors.Add('ACK fisico de create/destroy do ring PSP ausente')
+    }
+    foreach ($name in @('PspRingCreatePolls','PspRingDestroyPolls')) {
+        if ([uint32]$probe.$name -eq 0 -or [uint32]$probe.$name -gt 500) {
+            $errors.Add("poll PSP fora de 1..500: $name")
+        }
+    }
+    if ([uint32]$probe.PspLoadFwFencePolls -eq 0 -or
+        [uint32]$probe.PspLoadFwFencePolls -gt 500) {
+        $errors.Add('poll do fence PSP LOAD_IP_FW fora de 1..500')
+    }
+    if ([uint32]$probe.RlcAlreadyActive -eq 0 -and
+        ([uint32]$probe.PspRlcLoadFencePolls -eq 0 -or
+         [uint32]$probe.PspRlcLoadFencePolls -gt 500 -or
+         [uint32]$probe.PspRlcLoadBytes -ne 25088 -or
+         [uint32]$probe.PspRlcLoadFenceObserved -ne 1 -or
+         [uint32]$probe.PspRlcLoadResponseStatus -ne 0 -or
+         [uint32]$probe.PspRlcLoadDestroyPassed -ne 1 -or
+         [uint32]$probe.PspRlcLoadRestorePassed -ne 1)) {
+        $errors.Add('transacao PSP RLC nova incompleta')
+    }
+    if ([uint32]$probe.PspLoadFwChecksumAfter -eq 0 -or
+        [uint32]$probe.PspLoadFwChecksumAfter -eq [uint32]::MaxValue) {
+        $errors.Add('checksum fisico SDMA ausente, zero ou all-ones')
+    }
+    foreach ($name in @('PspLoadFwCreateAck','PspLoadFwDestroyAck')) {
+        if ([uint32]$probe.$name -eq [uint32]::MaxValue -or
+            ([uint32]$probe.$name -band $pspAckMask) -ne $pspAckValue) {
+            $errors.Add("ACK PSP LOAD_IP_FW invalido: $name")
+        }
+    }
+    if ([uint32]$probe.SdmaF32PcTransitions -eq 0) {
+        $errors.Add('PC fisico da F32 SDMA permaneceu estatico')
+    }
+    if (([uint32]$probe.SdmaF32ControlApplied -band [uint32]0x00040000) -eq 0) {
+        $errors.Add('readback do CNTL SDMA nao contem a mascara aplicada')
+    }
+    if ([uint32]$probe.SdmaRingPolls -eq 0 -or
+        [uint32]$probe.SdmaRingPolls -gt 1000) {
+        $errors.Add('poll do ring SDMA fora de 1..1000')
+    }
+    if ([uint32]$probe.SdmaRingRptrRegister -ne [uint32]$probe.SdmaRingWptr) {
+        $errors.Add('RPTR MMIO fisico da SDMA nao alcancou WPTR')
+    }
+    if ([uint32]$probe.SdmaRingFenceObserved -eq
+        [uint32]$probe.SdmaRingFencePoison) {
+        $errors.Add('fence SDMA permaneceu no poison')
+    }
 }
 
 Write-Host 'BC250 MCDM FAIL-CLOSED BINDING AUDIT'
@@ -132,6 +252,20 @@ if ($null -ne $probe) {
     Write-Host "  runtime missing: $($probe.RuntimeMissing)"
     Write-Host "  TLB: status=$($probe.TlbTransactionStatus) vmid=$($probe.TlbVmid) engine=$($probe.TlbEngineId) ackBefore=$('{0:X8}' -f [uint32]$probe.TlbAckBefore) ackAfter=$('{0:X8}' -f [uint32]$probe.TlbAckAfter) polls=$($probe.TlbPollCount) restore=$($probe.TlbRangeRestorePassed)"
     Write-Host "  GCVM inert: backing=$($probe.GcvmBackingStatus) vmid8=$($probe.GcvmVmid8Status) pt=$('{0:X8}{1:X8}' -f [uint32]$probe.GcvmPtPhysicalHigh32,[uint32]$probe.GcvmPtPhysicalLow32) readback=$($probe.GcvmBackingReadback)/$($probe.GcvmVmid8Readback) restore=$($probe.GcvmBackingRestore)/$($probe.GcvmVmid8Restore)"
+    Write-Host "  PSP ring: status=$($probe.PspRingStatus) pa=$('{0:X8}' -f [uint32]$probe.PspRingPhysicalLow32) createAck=$('{0:X8}' -f [uint32]$probe.PspRingCreateAck) destroyAck=$('{0:X8}' -f [uint32]$probe.PspRingDestroyAck) restore=$($probe.PspRingRestorePassed)"
+    Write-Host "  PSP SDMA FW: status=$($probe.PspLoadFwStatus) bytes=$($probe.PspLoadFwBytes) type=$($probe.PspLoadFwType) fence=$($probe.PspLoadFwFenceObserved)/$($probe.PspLoadFwFenceExpected) polls=$($probe.PspLoadFwFencePolls) response=$($probe.PspLoadFwResponseStatus) checksum=$('{0:X8}' -f [uint32]$probe.PspLoadFwChecksumAfter) destroy/restore=$($probe.PspLoadFwDestroyPassed)/$($probe.PspLoadFwRestorePassed)"
+    Write-Host "  PSP RLC FW: status=$($probe.PspRlcLoadStatus) bytes=$($probe.PspRlcLoadBytes) type=$($probe.PspRlcLoadType) fence=$($probe.PspRlcLoadFenceObserved)/$($probe.PspRlcLoadFenceExpected) polls=$($probe.PspRlcLoadFencePolls) response=$($probe.PspRlcLoadResponseStatus) destroy/restore=$($probe.PspRlcLoadDestroyPassed)/$($probe.PspRlcLoadRestorePassed)"
+    Write-Host "  RLC: CNTL=$('{0:X8}' -f [uint32]$probe.RlcCntlBefore)->$('{0:X8}' -f [uint32]$probe.RlcCntlAfter) GPM=$('{0:X8}' -f [uint32]$probe.RlcGpmBefore)->$('{0:X8}' -f [uint32]$probe.RlcGpmAfter) ROM=$($probe.RlcExecRomBefore)->$($probe.RlcExecRomAfter) F32=$($probe.RlcEnableF32After) already=$($probe.RlcAlreadyActive) restore=$($probe.RlcCntlRestore)"
+    Write-Host "  PFP direct: status=$($probe.PfpDirectStatus) mc=$('{0:X8}{1:X8}' -f [uint32]$probe.PfpDirectMcHigh,[uint32]$probe.PfpDirectMcLow) staged=$($probe.PfpDirectStagedDwords)dw/$($probe.PfpDirectStagingMismatches)mismatch JT=$($probe.PfpDirectJtDwords) version=$('{0:X}' -f [uint32]$probe.PfpDirectVersion)"
+    Write-Host "  PFP physical: PC=$('{0:X8}' -f [uint32]$probe.PfpDirectPcBefore)->$('{0:X8}' -f [uint32]$probe.PfpDirectPcFirst)->$('{0:X8}' -f [uint32]$probe.PfpDirectPcLast) transitions=$($probe.PfpDirectPcTransitions)/$($probe.PfpDirectPcSamples) HALT=$('{0:X8}' -f [uint32]$probe.PfpDirectMeCntlBefore)->$('{0:X8}' -f [uint32]$probe.PfpDirectMeCntlApplied)->$('{0:X8}' -f [uint32]$probe.PfpDirectMeCntlAfter) fault=$('{0:X8}' -f [uint32]$probe.PfpDirectFaultBefore)->$('{0:X8}' -f [uint32]$probe.PfpDirectFaultAfter) restore=$($probe.PfpDirectRegRestore)/$($probe.PfpDirectMemRestore)"
+    Write-Host "  PSP buffers: ring=$('{0:X8}{1:X8}' -f [uint32]$probe.PspLoadFwRingHigh,[uint32]$probe.PspLoadFwRingLow) cmd=$('{0:X8}{1:X8}' -f [uint32]$probe.PspLoadFwCommandHigh,[uint32]$probe.PspLoadFwCommandLow) fence=$('{0:X8}{1:X8}' -f [uint32]$probe.PspLoadFwFenceHigh,[uint32]$probe.PspLoadFwFenceLow) payload=$('{0:X8}{1:X8}' -f [uint32]$probe.PspLoadFwPayloadHigh,[uint32]$probe.PspLoadFwPayloadLow)"
+    Write-Host "  SDMA F32: status=$($probe.SdmaF32Status) pc=$($probe.SdmaF32PcFirst)->$($probe.SdmaF32PcLast) transitions=$($probe.SdmaF32PcTransitions) readback/restore=$($probe.SdmaF32ApplyReadback)/$($probe.SdmaF32Restore)"
+    Write-Host "  SDMA ring: status=$($probe.SdmaRingWorkStatus) RPTR-mmio/wb/WPTR=$($probe.SdmaRingRptrRegister)/$($probe.SdmaRingRptrAfter)/$($probe.SdmaRingWptr) fence=$('{0:X8}' -f [uint32]$probe.SdmaRingFencePoison)->$('{0:X8}' -f [uint32]$probe.SdmaRingFenceObserved) data=$($probe.SdmaRingComparedDwords)dw/$($probe.SdmaRingMismatches)mismatch polls=$($probe.SdmaRingPolls) restore=$($probe.SdmaRingRegRestore)/$($probe.SdmaRingMemRestore)"
+    Write-Host "  SDMA allocation: fixedStatus=$($probe.SdmaRingFixedReservationStatus) mode=$($probe.SdmaRingAllocationMode) ring=$('{0:X8}{1:X8}' -f [uint32]$probe.SdmaRingRingHigh,[uint32]$probe.SdmaRingRingLow) work=$('{0:X8}{1:X8}' -f [uint32]$probe.SdmaRingWorkHigh,[uint32]$probe.SdmaRingWorkLow)"
+    Write-Host "  SDMA publish: WPTR reg/shadow=$($probe.SdmaRingWptrRegister)/$($probe.SdmaRingWptrShadow) RB_CNTL=$('{0:X8}' -f [uint32]$probe.SdmaRingRbCntl)"
+    Write-Host "  SDMA visibility: header=$('{0:X8}' -f [uint32]$probe.SdmaRingHeader) RPTR-reg=$($probe.SdmaRingRptrRegister) poll=$('{0:X8}' -f [uint32]$probe.SdmaRingPollCntl)"
+    Write-Host "  SDMA diagnostic: status1/2/3=$('{0:X8}' -f [uint32]$probe.SdmaRingStatus1After)/$('{0:X8}' -f [uint32]$probe.SdmaRingStatus2After)/$('{0:X8}' -f [uint32]$probe.SdmaRingStatus3After) error=$('{0:X8}' -f [uint32]$probe.SdmaRingErrorLogAfter)"
+    Write-Host "  SDMA UTCL: rd/wr=$('{0:X8}' -f [uint32]$probe.SdmaRingUtcl1ReadStatusAfter)/$('{0:X8}' -f [uint32]$probe.SdmaRingUtcl1WriteStatusAfter) rx=$('{0:X8}' -f [uint32]$probe.SdmaRingUtcl1ReadXnack0After):$('{0:X8}' -f [uint32]$probe.SdmaRingUtcl1ReadXnack1After) wx=$('{0:X8}' -f [uint32]$probe.SdmaRingUtcl1WriteXnack0After):$('{0:X8}' -f [uint32]$probe.SdmaRingUtcl1WriteXnack1After) timeout=$('{0:X8}' -f [uint32]$probe.SdmaRingUtcl1TimeoutAfter)"
 }
 
 if ($errors.Count -ne 0) {
@@ -141,5 +275,5 @@ if ($errors.Count -ne 0) {
     exit 1
 }
 Write-Host 'BC250 MCDM FAIL-CLOSED BINDING AUDIT: PASS'
-Write-Host 'PM4/COMPUTE NAO EXECUTADOS; NAO VALIDADO EM HARDWARE'
+Write-Host 'RLC ISOLADO; PFP/PM4/COMPUTE NAO EXECUTADOS; NAO VALIDADO EM HARDWARE'
 exit 0

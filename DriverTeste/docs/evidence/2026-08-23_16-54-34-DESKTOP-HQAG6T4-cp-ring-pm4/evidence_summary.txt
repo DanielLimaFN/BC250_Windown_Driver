@@ -1,0 +1,42 @@
+﻿================================================================================
+  RELATORIO DE ENSAIO DO GFX RING 0 E PACOTES PM4 (PASSO 4)
+================================================================================
+Data/Hora : 2026-08-23 16:54:44
+Host      : DESKTOP-HQAG6T4
+Driver    : C:\Users\Daniel\Desktop\NamixWDDM\output\bc250dbg.sys (SHA256: CFC7AA3F214BD2567C9B70EF8577FAB249188543DB1F3F7C226F0A368E4CC5CD)
+Resultado : FALHA EM GATES
+--------------------------------------------------------------------------------
+GATES:
+  [OK  ] A_headers_coerentes
+         Req : Os tres ucodes tem header v1.0, IP v10.1 e jump table descrita dentro do payload.
+  [OK  ] B_baseline_haltado
+         Req : CP_ME_CNTL = 0x15000000 (CE/PFP/ME_HALT ativos) e ponteiro de instrucao zerado.
+  [OK  ] C_snapshot_guardado
+         Req : Snapshot dos 10 registradores do CP capturado com sucesso.
+  [OK  ] D_tres_ucodes_na_vram
+         Req : Os tres ucodes (PFP, ME, CE) gravados e conferidos dword a dword na VRAM.
+  [OK  ] E_tres_caches_invalidadas
+         Req : INVALIDATE_CACHE_COMPLETE confirmado pelo hardware para as tres engines.
+  [OK  ] F_tres_icbase_apontados
+         Req : IC_BASE_CNTL, LO e HI configurados para as tres engines.
+  [OK  ] G_tres_jump_tables_escritas
+         Req : Jump tables escritas pela porta DATA para as tres engines com versao gravada no ADDR.
+  [OK  ] H_anel_gfx_inicializado
+         Req : Graphics Ring Buffer 0 configurado na VRAM e habilitado com sucesso.
+  [OK  ] I_microengines_em_execucao
+         Req : PFP, ME e CE varrendo o microcodigo no loop de polling de pacotes (PC=0x0000041E).
+  [FAIL] J_submissao_pm4_nop
+         Req : Pacote PM4 PACKET3_NOP submetido ao anel e consumido pela GPU (RPTR alcancou WPTR).
+  [FAIL] K_submissao_pm4_probe
+         Req : Sequencia PM4 de contexto (CLEAR_STATE + CONTEXT_CONTROL) processada com exito pelo CP.
+  [FAIL] K2_submissao_pm4_writedata
+         Req : Comprovacao autonoma de silicio: PACKET3_WRITE_DATA (0xCAFEBABE) processado pela GPU.
+  [OK  ] L_halt_reativado
+         Req : CP_ME_CNTL = 0x15000000 reativado e microengines pausadas.
+  [OK  ] M_rollback_completo
+         Req : Regioes de VRAM devolvidas e conferidas dword a dword sem divergencias.
+  [OK  ] N_registradores_devolvidos
+         Req : Todos os 10 registradores do CP devolvidos aos valores do snapshot.
+  [OK  ] O_sem_bugcheck
+         Req : O sistema operacional permaneceu estavel sem BugCheck durante todo o ensaio PM4.
+--------------------------------------------------------------------------------

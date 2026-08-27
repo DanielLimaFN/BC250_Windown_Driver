@@ -168,7 +168,7 @@ def main() -> int:
 
     print("CP manifest: OK (PFP/ME/CE + MEC principal/JT1 derivados)")
     print("mec2.bin nao e fonte de MEC_JT1")
-    print("Zero escrita de firmware; zero chamada PSP.")
+    print("CP permanece sem escrita/PSP; LOAD_IP_FW SDMA0/RLC e auditado separadamente.")
     print("Veredito: NAO VALIDADO EM HARDWARE")
     return 0
 

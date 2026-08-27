@@ -9,6 +9,15 @@ extern "C" {
 
 #define BC250_FIRMWARE_SHA256_BYTES 32u
 
+void Bc250FirmwareSha256(
+    const void *Data,
+    uint32_t Length,
+    unsigned char Digest[BC250_FIRMWARE_SHA256_BYTES]);
+
+int Bc250FirmwareDigestEqual(
+    const unsigned char Left[BC250_FIRMWARE_SHA256_BYTES],
+    const unsigned char Right[BC250_FIRMWARE_SHA256_BYTES]);
+
 #define BC250_STAGING_TRANSPORT_CPU_VISIBLE       0x00000001u
 #define BC250_STAGING_TRANSPORT_COHERENT_READBACK 0x00000002u
 #define BC250_STAGING_TRANSPORT_REQUIRED \

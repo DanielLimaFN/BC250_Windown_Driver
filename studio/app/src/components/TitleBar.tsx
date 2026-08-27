@@ -1,15 +1,19 @@
 import React from 'react';
-import { Minus, Square, X, Cpu, Globe } from 'lucide-react';
+import { Minus, Square, X, Cpu, Globe, Heart } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 interface TitleBarProps {
   currentLanguage: string;
+  currentViewLabel: string;
   onLanguageChange: (lang: string) => void;
+  onOpenDonate?: () => void;
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
   currentLanguage,
+  currentViewLabel,
   onLanguageChange,
+  onOpenDonate,
 }) => {
   const { t } = useTranslation();
 
@@ -36,61 +40,79 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   };
 
   return (
-    <header className="h-9 w-full bg-[#121215] border-b border-white/5 flex items-center justify-between px-3 select-none z-50">
-      {/* App Icon & Title */}
-      <div className="flex items-center gap-2.5">
-        <div className="w-4 h-4 rounded bg-gradient-to-br from-[#f25056] to-[#b91c1c] flex items-center justify-center shadow-[0_0_8px_rgba(242,80,86,0.5)]">
-          <Cpu className="w-3 h-3 text-white" />
+    <header className="z-50 flex h-14 w-full items-center justify-between border-b border-[var(--border-soft)] bg-[rgba(255,255,255,0.88)] px-4 select-none titlebar-drag">
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)] shadow-[var(--shadow-soft)]">
+          <Cpu className="h-4 w-4" />
         </div>
-        <span className="text-xs font-semibold tracking-wide text-zinc-200">
-          {t('app.title')}
-        </span>
+        <div className="flex flex-col">
+          <span className="text-sm font-semibold tracking-tight text-[var(--text-strong)]">
+            {t('app.title')}
+          </span>
+          <span className="text-[11px] text-[var(--text-muted)]">
+            {currentViewLabel} • Studio Preview
+          </span>
+        </div>
       </div>
 
-      {/* Center/Right Controls: Quick Language Switcher + Window buttons */}
-      <div className="flex items-center gap-2">
-        {/* Quick Language Toggle */}
-        <div className="flex items-center bg-[#1c1c20] border border-white/10 rounded px-1.5 py-0.5 gap-1">
-          <Globe className="w-3 h-3 text-zinc-400" />
+      <div className="flex items-center gap-2.5 titlebar-no-drag">
+        <div className="toolbar-chip hidden md:flex">
+          <span className="h-2 w-2 rounded-full bg-[var(--success)]" />
+          Modo visual sem integração
+        </div>
+
+        {onOpenDonate && (
+          <button
+            type="button"
+            onClick={onOpenDonate}
+            className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50/90 px-3 py-1.5 text-[11px] font-semibold text-rose-600 shadow-2xs transition-all hover:bg-rose-100 hover:border-rose-300"
+            title={t('donate.title', 'Apoiar o Desenvolvimento do Driver')}
+          >
+            <Heart className="h-3.5 w-3.5 fill-current text-rose-500 animate-pulse" />
+            <span>{t('donate.buttonLabel', 'Doar')}</span>
+          </button>
+        )}
+
+        <div className="toolbar-chip">
+          <Globe className="h-3.5 w-3.5 text-[var(--text-muted)]" />
           <select
             value={currentLanguage}
             onChange={(e) => onLanguageChange(e.target.value)}
             aria-label="Selecionar Idioma"
-            className="bg-transparent text-[11px] text-zinc-200 font-medium focus:outline-none cursor-pointer pr-1"
+            className="cursor-pointer bg-transparent pr-1 text-[11px] font-medium text-[var(--text-strong)] focus:outline-none"
           >
             {languages.map((lang) => (
-              <option key={lang.code} value={lang.code} className="bg-[#1c1c20] text-zinc-200">
+              <option key={lang.code} value={lang.code} className="bg-white text-[var(--text-strong)]">
                 {lang.label}
               </option>
             ))}
           </select>
         </div>
 
-        {/* Windows Standard Buttons */}
-        <div className="flex items-center -mr-2">
+        <div className="flex items-center gap-1">
           <button
             type="button"
             aria-label="Minimizar"
             onClick={handleMinimize}
-            className="w-9 h-9 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--text-strong)]"
           >
-            <Minus className="w-3.5 h-3.5" />
+            <Minus className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
             aria-label="Maximizar"
             onClick={handleMaximize}
-            className="w-9 h-9 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--text-strong)]"
           >
-            <Square className="w-3 h-3" />
+            <Square className="h-3 w-3" />
           </button>
           <button
             type="button"
             aria-label="Fechar"
             onClick={handleClose}
-            className="w-9 h-9 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-[#e81123] transition-colors"
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-[var(--text-muted)] transition-colors hover:bg-[#e81123] hover:text-[#ffffff]"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>

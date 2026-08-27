@@ -1,0 +1,155 @@
+#ifndef BC250_MCDM_CALLBACKS_H
+#define BC250_MCDM_CALLBACKS_H
+
+#include <ntddk.h>
+#include <dispmprt.h>
+
+DXGKDDI_BUILDPAGINGBUFFER Bc250McdmBuildPagingBuffer;
+DXGKDDI_CALIBRATEGPUCLOCK Bc250McdmCalibrateGpuClock;
+DXGKDDI_CLOSEALLOCATION Bc250McdmCloseAllocation;
+DXGKDDI_COLLECTDBGINFO Bc250McdmCollectDbgInfo;
+DXGKDDI_CREATEALLOCATION Bc250McdmCreateAllocation;
+DXGKDDI_CREATECONTEXT Bc250McdmCreateContext;
+DXGKDDI_CREATEDEVICE Bc250McdmCreateDevice;
+DXGKDDI_CREATEPROCESS Bc250McdmCreateProcess;
+DXGKDDI_DESCRIBEALLOCATION Bc250McdmDescribeAllocation;
+DXGKDDI_DESTROYALLOCATION Bc250McdmDestroyAllocation;
+DXGKDDI_DESTROYCONTEXT Bc250McdmDestroyContext;
+DXGKDDI_DESTROYDEVICE Bc250McdmDestroyDevice;
+DXGKDDI_DESTROYPROCESS Bc250McdmDestroyProcess;
+DXGKDDI_DISPATCH_IO_REQUEST Bc250McdmDispatchIoRequest;
+DXGKDDI_DPC_ROUTINE Bc250McdmDpcRoutine;
+DXGKDDI_FORMATHISTORYBUFFER Bc250McdmFormatHistoryBuffer;
+DXGKDDI_GETNODEMETADATA Bc250McdmGetNodeMetadata;
+DXGKDDI_GETROOTPAGETABLESIZE Bc250McdmGetRootPageTableSize;
+DXGKDDI_GETSTANDARDALLOCATIONDRIVERDATA
+    Bc250McdmGetStandardAllocationDriverData;
+DXGKDDI_INTERRUPT_ROUTINE Bc250McdmInterruptRoutine;
+DXGKDDI_OPENALLOCATIONINFO Bc250McdmOpenAllocation;
+DXGKDDI_PREEMPTCOMMAND Bc250McdmPreemptCommand;
+DXGKDDI_QUERYADAPTERINFO Bc250McdmQueryAdapterInfo;
+DXGKDDI_QUERYDEPENDENTENGINEGROUP Bc250McdmQueryDependentEngineGroup;
+DXGKDDI_QUERY_DEVICE_DESCRIPTOR Bc250McdmQueryDeviceDescriptor;
+DXGKDDI_QUERYENGINESTATUS Bc250McdmQueryEngineStatus;
+DXGKDDI_RESET_DEVICE Bc250McdmResetDevice;
+DXGKDDI_RESETENGINE Bc250McdmResetEngine;
+DXGKDDI_RESETFROMTIMEOUT Bc250McdmResetFromTimeout;
+DXGKDDI_RESTARTFROMTIMEOUT Bc250McdmRestartFromTimeout;
+DXGKDDI_SET_POWER_STATE Bc250McdmSetPowerState;
+DXGKDDI_SETROOTPAGETABLE Bc250McdmSetRootPageTable;
+DXGKDDI_SETSTABLEPOWERSTATE Bc250McdmSetStablePowerState;
+DXGKDDI_SETVIRTUALMACHINEDATA Bc250McdmSetVirtualMachineData;
+DXGKDDI_SUBMITCOMMANDVIRTUAL Bc250McdmSubmitCommandVirtual;
+DXGKDDI_QUERY_CHILD_STATUS Bc250McdmQueryChildStatus;
+DXGKDDI_QUERY_CHILD_RELATIONS Bc250McdmQueryChildRelations;
+DXGKDDI_UNLOAD Bc250McdmUnload;
+
+typedef struct BC250_MCDM_RUNTIME_CAPS {
+    UINT64 LocalSegmentBaseOffset;
+    UINT64 LocalSegmentBytes;
+    UINT64 CpuPhysicalStart;
+    UINT32 NodeCount;
+    UINT32 Ready;
+    UINT32 FullMcdmReady;
+    UINT32 GpuVaReady;
+    UINT32 PagingReady;
+    UINT32 TdrReady;
+    UINT32 PreemptionReady;
+    UINT32 SubmitReady;
+    UINT32 HistoryBufferReady;
+    UINT32 GpuVaBitCount;
+    UINT32 PageTableLevelCount;
+    UINT32 PageTableIndexBitCount;
+    UINT32 PageTableSizeBytes;
+    UINT32 PageTableAlignmentBytes;
+} BC250_MCDM_RUNTIME_CAPS;
+
+typedef NTSTATUS (*BC250_MCDM_QUERY_RUNTIME_CAPS)(
+    _In_ HANDLE AdapterContext,
+    _Out_ BC250_MCDM_RUNTIME_CAPS *Caps);
+
+VOID Bc250McdmInstallRuntimeCapsProvider(
+    _In_opt_ BC250_MCDM_QUERY_RUNTIME_CAPS Provider);
+
+typedef NTSTATUS (*BC250_MCDM_CREATE_PROCESS_OBJECT)(
+    _In_ HANDLE AdapterContext,
+    _In_ const void *ExternalOwner,
+    _Out_ HANDLE *ProcessHandle);
+
+typedef NTSTATUS (*BC250_MCDM_DESTROY_PROCESS_OBJECT)(
+    _In_ HANDLE AdapterContext,
+    _In_ HANDLE ProcessHandle);
+
+typedef NTSTATUS (*BC250_MCDM_CREATE_DEVICE_OBJECT)(
+    _In_ HANDLE AdapterContext,
+    _In_ HANDLE ProcessHandle,
+    _Out_ HANDLE *DeviceHandle);
+
+typedef NTSTATUS (*BC250_MCDM_DESTROY_DEVICE_OBJECT)(
+    _In_ HANDLE DeviceHandle);
+
+typedef NTSTATUS (*BC250_MCDM_CREATE_CONTEXT_OBJECT)(
+    _In_ HANDLE DeviceHandle,
+    _In_ UINT NodeOrdinal,
+    _Out_ HANDLE *ContextHandle,
+    _Out_ DXGK_CONTEXTINFO *ContextInfo);
+
+typedef NTSTATUS (*BC250_MCDM_DESTROY_CONTEXT_OBJECT)(
+    _In_ HANDLE ContextHandle);
+
+typedef NTSTATUS (*BC250_MCDM_SET_ROOT_PAGE_TABLE_OBJECT)(
+    _In_ HANDLE AdapterContext,
+    _In_ HANDLE ContextHandle,
+    _In_ UINT32 SegmentId,
+    _In_ UINT64 Address,
+    _In_ UINT32 NumEntries,
+    _In_ UINT32 MaxEntries);
+
+typedef NTSTATUS (*BC250_MCDM_CREATE_ALLOCATION_OBJECTS)(
+    _In_ HANDLE AdapterContext,
+    _Inout_ DXGKARG_CREATEALLOCATION *CreateAllocation);
+
+typedef NTSTATUS (*BC250_MCDM_DESTROY_ALLOCATION_OBJECTS)(
+    _In_ HANDLE AdapterContext,
+    _In_ const DXGKARG_DESTROYALLOCATION *DestroyAllocation);
+
+typedef NTSTATUS (*BC250_MCDM_OPEN_ALLOCATION_OBJECTS)(
+    _In_ HANDLE DeviceContext,
+    _In_ const DXGKARG_OPENALLOCATION *OpenAllocation);
+
+typedef NTSTATUS (*BC250_MCDM_CLOSE_ALLOCATION_OBJECTS)(
+    _In_ HANDLE DeviceContext,
+    _In_ const DXGKARG_CLOSEALLOCATION *CloseAllocation);
+
+typedef NTSTATUS (*BC250_MCDM_COLLECT_DEBUG_SNAPSHOT)(
+    _In_ HANDLE AdapterContext,
+    _In_ const DXGKARG_COLLECTDBGINFO *CollectDebugInfo);
+
+VOID Bc250McdmInstallProcessLifecycle(
+    _In_opt_ BC250_MCDM_CREATE_PROCESS_OBJECT CreateProcessObject,
+    _In_opt_ BC250_MCDM_DESTROY_PROCESS_OBJECT DestroyProcessObject);
+
+VOID Bc250McdmInstallDeviceLifecycle(
+    _In_opt_ BC250_MCDM_CREATE_DEVICE_OBJECT CreateDeviceObject,
+    _In_opt_ BC250_MCDM_DESTROY_DEVICE_OBJECT DestroyDeviceObject);
+
+VOID Bc250McdmInstallContextLifecycle(
+    _In_opt_ BC250_MCDM_CREATE_CONTEXT_OBJECT CreateContextObject,
+    _In_opt_ BC250_MCDM_DESTROY_CONTEXT_OBJECT DestroyContextObject);
+
+VOID Bc250McdmInstallGpuVaLifecycle(
+    _In_opt_ BC250_MCDM_SET_ROOT_PAGE_TABLE_OBJECT SetRootPageTableObject);
+
+VOID Bc250McdmInstallAllocationLifecycle(
+    _In_opt_ BC250_MCDM_CREATE_ALLOCATION_OBJECTS CreateAllocationObjects,
+    _In_opt_ BC250_MCDM_DESTROY_ALLOCATION_OBJECTS DestroyAllocationObjects,
+    _In_opt_ BC250_MCDM_OPEN_ALLOCATION_OBJECTS OpenAllocationObjects,
+    _In_opt_ BC250_MCDM_CLOSE_ALLOCATION_OBJECTS CloseAllocationObjects);
+
+VOID Bc250McdmInstallDebugLifecycle(
+    _In_opt_ BC250_MCDM_COLLECT_DEBUG_SNAPSHOT CollectDebugSnapshot);
+
+NTSTATUS Bc250McdmPopulateRequiredCallbacks(
+    _Inout_ DRIVER_INITIALIZATION_DATA *InitializationData);
+
+#endif

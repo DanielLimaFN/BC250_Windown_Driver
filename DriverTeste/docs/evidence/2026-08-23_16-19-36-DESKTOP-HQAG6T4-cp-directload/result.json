@@ -1,0 +1,1641 @@
+﻿{
+    "schema_version":  1,
+    "captured_at":  "2026-08-23T16:19:41.4793459-03:00",
+    "objective":  "CP front, step 2: direct load of PFP/ME/CE ucode into VRAM and point each instruction cache at it, without releasing any engine from HALT",
+    "verdict":  "NÃO VALIDADO EM HARDWARE",
+    "passed":  true,
+    "failure":  null,
+    "not_covered":  [
+                        "No engine was released from HALT: nothing here proves the CP executes",
+                        "The driver keeps a single ucode snapshot, so the three engines were staged one at a time; simultaneous staging is a requirement of the next step",
+                        "The jump table port (UCODE_DATA) writes the microengine internal RAM and has no readback; only ADDR is verified",
+                        "The instruction cache fetch was configured with VMID 0 but translation was NOT enabled: the POST bypass was active throughout",
+                        "No GFX ring, no PM4 packet, no compute"
+                    ],
+    "reboot_required":  false,
+    "contaminates_session":  false,
+    "environment":  {
+                        "driver_sha256":  "3b3991bbc41fde8f191c020dc319bcdd87b59666bbef1010e7f437a0bddc9aef",
+                        "cp_txn_registers":  10,
+                        "ucode_vram_offset":  "0x0E000000",
+                        "segment1_base_dw":  "0xA000, conferida contra registrador vivo em 2026-08-23 17:54",
+                        "halt_bits":  "CE_HALT bit 24, PFP_HALT bit 26, ME_HALT bit 28, do header autoritativo",
+                        "pointer_samples":  6
+                    },
+    "firmware_headers":  [
+                             {
+                                 "engine":  "pfp",
+                                 "versao":  "0x00000094",
+                                 "payload_dwords":  65792,
+                                 "jump_table":  {
+                                                    "inicio":  65536,
+                                                    "fim":  65664,
+                                                    "dwords":  128
+                                                },
+                                 "ok":  true
+                             },
+                             {
+                                 "engine":  "me",
+                                 "versao":  "0x00000063",
+                                 "payload_dwords":  65792,
+                                 "jump_table":  {
+                                                    "inicio":  65536,
+                                                    "fim":  65664,
+                                                    "dwords":  128
+                                                },
+                                 "ok":  true
+                             },
+                             {
+                                 "engine":  "ce",
+                                 "versao":  "0x00000025",
+                                 "payload_dwords":  65760,
+                                 "jump_table":  {
+                                                    "inicio":  65536,
+                                                    "fim":  65632,
+                                                    "dwords":  96
+                                                },
+                                 "ok":  true
+                             }
+                         ],
+    "engines":  [
+                    {
+                        "engine":  "pfp",
+                        "stage":  {
+                                      "exit_code":  0,
+                                      "dwords":  65792,
+                                      "divergencias":  0,
+                                      "saida":  [
+                                                    "Ucode da engine pfp na VRAM:",
+                                                    "  destino            : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                                    "  snapshot           : guardado, 65792 dwords",
+                                                    "  escritos           : 65792 dwords, 0 divergencias",
+                                                    "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                    "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                    "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                    "  RESULTADO          : ok"
+                                                ]
+                                  },
+                        "icinval":  {
+                                        "exit_code":  0,
+                                        "confirmado":  true,
+                                        "saida":  [
+                                                      "Invalidacao da cache de instrucoes (pfp):",
+                                                      "  IC_OP_CNTL         : 0xFFFFFFFF -\u003e 0xFFFFFFFF -\u003e 0xFFFFFFFF",
+                                                      "  espera             : 0 iteracoes de 1 us",
+                                                      "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                      "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                      "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                      "  RESULTADO          : ok, o hardware confirmou por COMPLETE"
+                                                  ]
+                                    },
+                        "icbase":  {
+                                       "exit_code":  0,
+                                       "escritas":  3,
+                                       "confirmado":  true,
+                                       "saida":  [
+                                                     "IC_BASE da engine pfp:",
+                                                     "  ucode em           : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                                     "  escritas           : 3",
+                                                     "    0x3E108        : 0xFFFFFFFF -\u003e 0x00000010  (queria 0x00000010)",
+                                                     "    0x3E100        : 0xFFFFFFFF -\u003e 0x0E000000  (queria 0x0E000000)",
+                                                     "    0x3E104        : 0xFFFFFFFF -\u003e 0x000000F4  (queria 0x000000F4)",
+                                                     "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                     "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                     "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                     "  RESULTADO          : ok, IC_BASE apontado para o ucode",
+                                                     "  ** a cache aponta para o ucode. Ninguem busca ainda: as engines",
+                                                     "     continuam em HALT."
+                                                 ]
+                                   },
+                        "jt":  {
+                                   "exit_code":  0,
+                                   "dwords":  128,
+                                   "saida":  [
+                                                 "Jump table da engine pfp:",
+                                                 "  dwords escritos    : 128 pela porta DATA",
+                                                 "  versao no ADDR     : 0x00000094  (ADDR releu 0xFFFFFFFF)",
+                                                 "  ** a porta DATA escreve na RAM interna da microengine: nao ha",
+                                                 "     readback possivel dela. O que se confere e o ADDR.",
+                                                 "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                 "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                 "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                 "  RESULTADO          : ok"
+                                             ]
+                               },
+                        "rollback":  {
+                                         "exit_code":  0,
+                                         "divergencias":  0,
+                                         "saida":  [
+                                                       "Rollback do ucode do CP:",
+                                                       "  snapshot presente  : sim",
+                                                       "  dwords devolvidos  : 65792, 0 divergencias",
+                                                       "  RESULTADO          : ok, regiao de VRAM devolvida"
+                                                   ]
+                                     },
+                        "ok":  true
+                    },
+                    {
+                        "engine":  "me",
+                        "stage":  {
+                                      "exit_code":  0,
+                                      "dwords":  65792,
+                                      "divergencias":  0,
+                                      "saida":  [
+                                                    "Ucode da engine me na VRAM:",
+                                                    "  destino            : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                                    "  snapshot           : guardado, 65792 dwords",
+                                                    "  escritos           : 65792 dwords, 0 divergencias",
+                                                    "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                    "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                    "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                    "  RESULTADO          : ok"
+                                                ]
+                                  },
+                        "icinval":  {
+                                        "exit_code":  0,
+                                        "confirmado":  true,
+                                        "saida":  [
+                                                      "Invalidacao da cache de instrucoes (me):",
+                                                      "  IC_OP_CNTL         : 0xFFFFFFFF -\u003e 0xFFFFFFFF -\u003e 0xFFFFFFFF",
+                                                      "  espera             : 0 iteracoes de 1 us",
+                                                      "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                      "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                      "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                      "  RESULTADO          : ok, o hardware confirmou por COMPLETE"
+                                                  ]
+                                    },
+                        "icbase":  {
+                                       "exit_code":  0,
+                                       "escritas":  3,
+                                       "confirmado":  true,
+                                       "saida":  [
+                                                     "IC_BASE da engine me:",
+                                                     "  ucode em           : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                                     "  escritas           : 3",
+                                                     "    0x3E118        : 0xFFFFFFFF -\u003e 0x00000010  (queria 0x00000010)",
+                                                     "    0x3E110        : 0xFFFFFFFF -\u003e 0x0E000000  (queria 0x0E000000)",
+                                                     "    0x3E114        : 0xFFFFFFFF -\u003e 0x000000F4  (queria 0x000000F4)",
+                                                     "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                     "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                     "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                     "  RESULTADO          : ok, IC_BASE apontado para o ucode",
+                                                     "  ** a cache aponta para o ucode. Ninguem busca ainda: as engines",
+                                                     "     continuam em HALT."
+                                                 ]
+                                   },
+                        "jt":  {
+                                   "exit_code":  0,
+                                   "dwords":  128,
+                                   "saida":  [
+                                                 "Jump table da engine me:",
+                                                 "  dwords escritos    : 128 pela porta DATA",
+                                                 "  versao no ADDR     : 0x00000063  (ADDR releu 0xFFFFFFFF)",
+                                                 "  ** a porta DATA escreve na RAM interna da microengine: nao ha",
+                                                 "     readback possivel dela. O que se confere e o ADDR.",
+                                                 "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                 "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                 "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                 "  RESULTADO          : ok"
+                                             ]
+                               },
+                        "rollback":  {
+                                         "exit_code":  0,
+                                         "divergencias":  0,
+                                         "saida":  [
+                                                       "Rollback do ucode do CP:",
+                                                       "  snapshot presente  : sim",
+                                                       "  dwords devolvidos  : 65792, 0 divergencias",
+                                                       "  RESULTADO          : ok, regiao de VRAM devolvida"
+                                                   ]
+                                     },
+                        "ok":  true
+                    },
+                    {
+                        "engine":  "ce",
+                        "stage":  {
+                                      "exit_code":  0,
+                                      "dwords":  65760,
+                                      "divergencias":  0,
+                                      "saida":  [
+                                                    "Ucode da engine ce na VRAM:",
+                                                    "  destino            : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                                    "  snapshot           : guardado, 65760 dwords",
+                                                    "  escritos           : 65760 dwords, 0 divergencias",
+                                                    "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                    "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                    "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                    "  RESULTADO          : ok"
+                                                ]
+                                  },
+                        "icinval":  {
+                                        "exit_code":  0,
+                                        "confirmado":  true,
+                                        "saida":  [
+                                                      "Invalidacao da cache de instrucoes (ce):",
+                                                      "  IC_OP_CNTL         : 0xFFFFFFFF -\u003e 0xFFFFFFFF -\u003e 0xFFFFFFFF",
+                                                      "  espera             : 0 iteracoes de 1 us",
+                                                      "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                      "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                      "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                      "  RESULTADO          : ok, o hardware confirmou por COMPLETE"
+                                                  ]
+                                    },
+                        "icbase":  {
+                                       "exit_code":  0,
+                                       "escritas":  3,
+                                       "confirmado":  true,
+                                       "saida":  [
+                                                     "IC_BASE da engine ce:",
+                                                     "  ucode em           : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                                     "  escritas           : 3",
+                                                     "    0x3E128        : 0xFFFFFFFF -\u003e 0x00000010  (queria 0x00000010)",
+                                                     "    0x3E120        : 0xFFFFFFFF -\u003e 0x0E000000  (queria 0x0E000000)",
+                                                     "    0x3E124        : 0xFFFFFFFF -\u003e 0x000000F4  (queria 0x000000F4)",
+                                                     "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                     "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                     "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                     "  RESULTADO          : ok, IC_BASE apontado para o ucode",
+                                                     "  ** a cache aponta para o ucode. Ninguem busca ainda: as engines",
+                                                     "     continuam em HALT."
+                                                 ]
+                                   },
+                        "jt":  {
+                                   "exit_code":  0,
+                                   "dwords":  96,
+                                   "saida":  [
+                                                 "Jump table da engine ce:",
+                                                 "  dwords escritos    : 96 pela porta DATA",
+                                                 "  versao no ADDR     : 0x00000025  (ADDR releu 0xFFFFFFFF)",
+                                                 "  ** a porta DATA escreve na RAM interna da microengine: nao ha",
+                                                 "     readback possivel dela. O que se confere e o ADDR.",
+                                                 "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                 "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                 "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                 "  RESULTADO          : ok"
+                                             ]
+                               },
+                        "rollback":  {
+                                         "exit_code":  0,
+                                         "divergencias":  0,
+                                         "saida":  [
+                                                       "Rollback do ucode do CP:",
+                                                       "  snapshot presente  : sim",
+                                                       "  dwords devolvidos  : 65760, 0 divergencias",
+                                                       "  RESULTADO          : ok, regiao de VRAM devolvida"
+                                                   ]
+                                     },
+                        "ok":  true
+                    }
+                ],
+    "gates":  [
+                  {
+                      "gate":  "A_headers_coerentes",
+                      "passed":  true,
+                      "detail":  "Header v1.0, IP v10.1 e jump table dentro do payload nas tres engines.",
+                      "data":  [
+                                   {
+                                       "engine":  "pfp",
+                                       "versao":  "0x00000094",
+                                       "payload_dwords":  65792,
+                                       "jump_table":  {
+                                                          "inicio":  65536,
+                                                          "fim":  65664,
+                                                          "dwords":  128
+                                                      },
+                                       "ok":  true
+                                   },
+                                   {
+                                       "engine":  "me",
+                                       "versao":  "0x00000063",
+                                       "payload_dwords":  65792,
+                                       "jump_table":  {
+                                                          "inicio":  65536,
+                                                          "fim":  65664,
+                                                          "dwords":  128
+                                                      },
+                                       "ok":  true
+                                   },
+                                   {
+                                       "engine":  "ce",
+                                       "versao":  "0x00000025",
+                                       "payload_dwords":  65760,
+                                       "jump_table":  {
+                                                          "inicio":  65536,
+                                                          "fim":  65632,
+                                                          "dwords":  96
+                                                      },
+                                       "ok":  true
+                                   }
+                               ]
+                  },
+                  {
+                      "gate":  "B_tres_engines_haltadas_e_paradas",
+                      "passed":  true,
+                      "detail":  "PFP_HALT, ME_HALT e CE_HALT ligados, e nenhum ponteiro de instrucao se move.",
+                      "data":  {
+                                   "cp_me_cntl":  "0x15000000",
+                                   "pfp_halt":  true,
+                                   "me_halt":  true,
+                                   "ce_halt":  true,
+                                   "ponteiros":  {
+                                                     "primeira":  {
+                                                                      "CP_PFP_INSTR_PNTR":  "0x00000000",
+                                                                      "CP_ME_INSTR_PNTR":  "0x00000000",
+                                                                      "CP_CE_INSTR_PNTR":  "0x00000000",
+                                                                      "CP_MEC1_INSTR_PNTR":  "0x00000000"
+                                                                  },
+                                                     "valores_distintos":  {
+                                                                               "CP_PFP_INSTR_PNTR":  1,
+                                                                               "CP_ME_INSTR_PNTR":  1,
+                                                                               "CP_CE_INSTR_PNTR":  1,
+                                                                               "CP_MEC1_INSTR_PNTR":  1
+                                                                           },
+                                                     "algum_em_movimento":  false
+                                                 }
+                               }
+                  },
+                  {
+                      "gate":  "C_recusa_sem_snapshot",
+                      "passed":  true,
+                      "detail":  "Sem caminho de volta provado, o driver recusa escrever em registrador do CP.",
+                      "data":  {
+                                   "exit_code":  1,
+                                   "saida":  [
+                                                 "IC_BASE da engine pfp:",
+                                                 "  ucode em           : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                                 "  escritas           : 0",
+                                                 "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                 "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                 "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                 "  RESULTADO          : FALHOU (status 5)",
+                                                 "    RECUSADO: rode \u0027cp txn snapshot\u0027 antes. O driver nao escreve",
+                                                 "    em registrador do CP sem caminho de volta provado."
+                                             ]
+                               }
+                  },
+                  {
+                      "gate":  "D_snapshot_guardado",
+                      "passed":  true,
+                      "detail":  "Os 10 registradores de configuracao do CP ficam guardados no driver.",
+                      "data":  {
+                                   "exit_code":  0,
+                                   "esperados":  10,
+                                   "saida":  [
+                                                 "Transacao do CP (snapshot):",
+                                                 "  snapshot presente  : sim",
+                                                 "  registradores      : 10",
+                                                 "    0x3E100        : 0xFFFFFFFF",
+                                                 "    0x3E104        : 0xFFFFFFFF",
+                                                 "    0x3E108        : 0xFFFFFFFF",
+                                                 "    0x3E110        : 0xFFFFFFFF",
+                                                 "    0x3E114        : 0xFFFFFFFF",
+                                                 "    0x3E118        : 0xFFFFFFFF",
+                                                 "    0x3E120        : 0xFFFFFFFF",
+                                                 "    0x3E124        : 0xFFFFFFFF",
+                                                 "    0x3E128        : 0xFFFFFFFF",
+                                                 "    0x086D8        : 0x15000000",
+                                                 "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                 "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                 "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                 "  RESULTADO          : ok"
+                                             ]
+                               }
+                  },
+                  {
+                      "gate":  "E_ucode_na_vram_conferido",
+                      "passed":  true,
+                      "detail":  "O ucode das tres engines foi escrito na VRAM e conferido dword a dword.",
+                      "data":  [
+                                   {
+                                       "engine":  "pfp",
+                                       "stage":  {
+                                                     "exit_code":  0,
+                                                     "dwords":  65792,
+                                                     "divergencias":  0,
+                                                     "saida":  [
+                                                                   "Ucode da engine pfp na VRAM:",
+                                                                   "  destino            : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                                                   "  snapshot           : guardado, 65792 dwords",
+                                                                   "  escritos           : 65792 dwords, 0 divergencias",
+                                                                   "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                                   "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                                   "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                                   "  RESULTADO          : ok"
+                                                               ]
+                                                 }
+                                   },
+                                   {
+                                       "engine":  "me",
+                                       "stage":  {
+                                                     "exit_code":  0,
+                                                     "dwords":  65792,
+                                                     "divergencias":  0,
+                                                     "saida":  [
+                                                                   "Ucode da engine me na VRAM:",
+                                                                   "  destino            : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                                                   "  snapshot           : guardado, 65792 dwords",
+                                                                   "  escritos           : 65792 dwords, 0 divergencias",
+                                                                   "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                                   "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                                   "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                                   "  RESULTADO          : ok"
+                                                               ]
+                                                 }
+                                   },
+                                   {
+                                       "engine":  "ce",
+                                       "stage":  {
+                                                     "exit_code":  0,
+                                                     "dwords":  65760,
+                                                     "divergencias":  0,
+                                                     "saida":  [
+                                                                   "Ucode da engine ce na VRAM:",
+                                                                   "  destino            : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                                                   "  snapshot           : guardado, 65760 dwords",
+                                                                   "  escritos           : 65760 dwords, 0 divergencias",
+                                                                   "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                                   "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                                   "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                                   "  RESULTADO          : ok"
+                                                               ]
+                                                 }
+                                   }
+                               ]
+                  },
+                  {
+                      "gate":  "F_cache_invalidada_com_confirmacao",
+                      "passed":  true,
+                      "detail":  "INVALIDATE_CACHE_COMPLETE aceso pelo hardware nas tres engines.",
+                      "data":  [
+                                   {
+                                       "engine":  "pfp",
+                                       "icinval":  {
+                                                       "exit_code":  0,
+                                                       "confirmado":  true,
+                                                       "saida":  [
+                                                                     "Invalidacao da cache de instrucoes (pfp):",
+                                                                     "  IC_OP_CNTL         : 0xFFFFFFFF -\u003e 0xFFFFFFFF -\u003e 0xFFFFFFFF",
+                                                                     "  espera             : 0 iteracoes de 1 us",
+                                                                     "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                                     "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                                     "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                                     "  RESULTADO          : ok, o hardware confirmou por COMPLETE"
+                                                                 ]
+                                                   }
+                                   },
+                                   {
+                                       "engine":  "me",
+                                       "icinval":  {
+                                                       "exit_code":  0,
+                                                       "confirmado":  true,
+                                                       "saida":  [
+                                                                     "Invalidacao da cache de instrucoes (me):",
+                                                                     "  IC_OP_CNTL         : 0xFFFFFFFF -\u003e 0xFFFFFFFF -\u003e 0xFFFFFFFF",
+                                                                     "  espera             : 0 iteracoes de 1 us",
+                                                                     "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                                     "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                                     "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                                     "  RESULTADO          : ok, o hardware confirmou por COMPLETE"
+                                                                 ]
+                                                   }
+                                   },
+                                   {
+                                       "engine":  "ce",
+                                       "icinval":  {
+                                                       "exit_code":  0,
+                                                       "confirmado":  true,
+                                                       "saida":  [
+                                                                     "Invalidacao da cache de instrucoes (ce):",
+                                                                     "  IC_OP_CNTL         : 0xFFFFFFFF -\u003e 0xFFFFFFFF -\u003e 0xFFFFFFFF",
+                                                                     "  espera             : 0 iteracoes de 1 us",
+                                                                     "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                                     "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                                     "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                                     "  RESULTADO          : ok, o hardware confirmou por COMPLETE"
+                                                                 ]
+                                                   }
+                                   }
+                               ]
+                  },
+                  {
+                      "gate":  "G_icbase_aponta_para_o_ucode",
+                      "passed":  true,
+                      "detail":  "IC_BASE_CNTL, LO e HI configurados para as tres engines.",
+                      "data":  [
+                                   {
+                                       "engine":  "pfp",
+                                       "icbase":  {
+                                                      "exit_code":  0,
+                                                      "escritas":  3,
+                                                      "confirmado":  true,
+                                                      "saida":  [
+                                                                    "IC_BASE da engine pfp:",
+                                                                    "  ucode em           : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                                                    "  escritas           : 3",
+                                                                    "    0x3E108        : 0xFFFFFFFF -\u003e 0x00000010  (queria 0x00000010)",
+                                                                    "    0x3E100        : 0xFFFFFFFF -\u003e 0x0E000000  (queria 0x0E000000)",
+                                                                    "    0x3E104        : 0xFFFFFFFF -\u003e 0x000000F4  (queria 0x000000F4)",
+                                                                    "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                                    "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                                    "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                                    "  RESULTADO          : ok, IC_BASE apontado para o ucode",
+                                                                    "  ** a cache aponta para o ucode. Ninguem busca ainda: as engines",
+                                                                    "     continuam em HALT."
+                                                                ]
+                                                  }
+                                   },
+                                   {
+                                       "engine":  "me",
+                                       "icbase":  {
+                                                      "exit_code":  0,
+                                                      "escritas":  3,
+                                                      "confirmado":  true,
+                                                      "saida":  [
+                                                                    "IC_BASE da engine me:",
+                                                                    "  ucode em           : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                                                    "  escritas           : 3",
+                                                                    "    0x3E118        : 0xFFFFFFFF -\u003e 0x00000010  (queria 0x00000010)",
+                                                                    "    0x3E110        : 0xFFFFFFFF -\u003e 0x0E000000  (queria 0x0E000000)",
+                                                                    "    0x3E114        : 0xFFFFFFFF -\u003e 0x000000F4  (queria 0x000000F4)",
+                                                                    "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                                    "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                                    "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                                    "  RESULTADO          : ok, IC_BASE apontado para o ucode",
+                                                                    "  ** a cache aponta para o ucode. Ninguem busca ainda: as engines",
+                                                                    "     continuam em HALT."
+                                                                ]
+                                                  }
+                                   },
+                                   {
+                                       "engine":  "ce",
+                                       "icbase":  {
+                                                      "exit_code":  0,
+                                                      "escritas":  3,
+                                                      "confirmado":  true,
+                                                      "saida":  [
+                                                                    "IC_BASE da engine ce:",
+                                                                    "  ucode em           : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                                                    "  escritas           : 3",
+                                                                    "    0x3E128        : 0xFFFFFFFF -\u003e 0x00000010  (queria 0x00000010)",
+                                                                    "    0x3E120        : 0xFFFFFFFF -\u003e 0x0E000000  (queria 0x0E000000)",
+                                                                    "    0x3E124        : 0xFFFFFFFF -\u003e 0x000000F4  (queria 0x000000F4)",
+                                                                    "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                                    "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                                    "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                                    "  RESULTADO          : ok, IC_BASE apontado para o ucode",
+                                                                    "  ** a cache aponta para o ucode. Ninguem busca ainda: as engines",
+                                                                    "     continuam em HALT."
+                                                                ]
+                                                  }
+                                   }
+                               ]
+                  },
+                  {
+                      "gate":  "H_jump_table_escrita",
+                      "passed":  true,
+                      "detail":  "A jump table foi escrita pela porta DATA nas tres engines, com o ADDR conferido.",
+                      "data":  [
+                                   {
+                                       "engine":  "pfp",
+                                       "jt":  {
+                                                  "exit_code":  0,
+                                                  "dwords":  128,
+                                                  "saida":  [
+                                                                "Jump table da engine pfp:",
+                                                                "  dwords escritos    : 128 pela porta DATA",
+                                                                "  versao no ADDR     : 0x00000094  (ADDR releu 0xFFFFFFFF)",
+                                                                "  ** a porta DATA escreve na RAM interna da microengine: nao ha",
+                                                                "     readback possivel dela. O que se confere e o ADDR.",
+                                                                "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                                "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                                "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                                "  RESULTADO          : ok"
+                                                            ]
+                                              }
+                                   },
+                                   {
+                                       "engine":  "me",
+                                       "jt":  {
+                                                  "exit_code":  0,
+                                                  "dwords":  128,
+                                                  "saida":  [
+                                                                "Jump table da engine me:",
+                                                                "  dwords escritos    : 128 pela porta DATA",
+                                                                "  versao no ADDR     : 0x00000063  (ADDR releu 0xFFFFFFFF)",
+                                                                "  ** a porta DATA escreve na RAM interna da microengine: nao ha",
+                                                                "     readback possivel dela. O que se confere e o ADDR.",
+                                                                "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                                "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                                "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                                "  RESULTADO          : ok"
+                                                            ]
+                                              }
+                                   },
+                                   {
+                                       "engine":  "ce",
+                                       "jt":  {
+                                                  "exit_code":  0,
+                                                  "dwords":  96,
+                                                  "saida":  [
+                                                                "Jump table da engine ce:",
+                                                                "  dwords escritos    : 96 pela porta DATA",
+                                                                "  versao no ADDR     : 0x00000025  (ADDR releu 0xFFFFFFFF)",
+                                                                "  ** a porta DATA escreve na RAM interna da microengine: nao ha",
+                                                                "     readback possivel dela. O que se confere e o ADDR.",
+                                                                "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                                "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                                "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                                "  RESULTADO          : ok"
+                                                            ]
+                                              }
+                                   }
+                               ]
+                  },
+                  {
+                      "gate":  "I_ucode_devolvido",
+                      "passed":  true,
+                      "detail":  "A regiao de VRAM voltou ao conteudo anterior nas tres passagens.",
+                      "data":  [
+                                   {
+                                       "engine":  "pfp",
+                                       "rollback":  {
+                                                        "exit_code":  0,
+                                                        "divergencias":  0,
+                                                        "saida":  [
+                                                                      "Rollback do ucode do CP:",
+                                                                      "  snapshot presente  : sim",
+                                                                      "  dwords devolvidos  : 65792, 0 divergencias",
+                                                                      "  RESULTADO          : ok, regiao de VRAM devolvida"
+                                                                  ]
+                                                    }
+                                   },
+                                   {
+                                       "engine":  "me",
+                                       "rollback":  {
+                                                        "exit_code":  0,
+                                                        "divergencias":  0,
+                                                        "saida":  [
+                                                                      "Rollback do ucode do CP:",
+                                                                      "  snapshot presente  : sim",
+                                                                      "  dwords devolvidos  : 65792, 0 divergencias",
+                                                                      "  RESULTADO          : ok, regiao de VRAM devolvida"
+                                                                  ]
+                                                    }
+                                   },
+                                   {
+                                       "engine":  "ce",
+                                       "rollback":  {
+                                                        "exit_code":  0,
+                                                        "divergencias":  0,
+                                                        "saida":  [
+                                                                      "Rollback do ucode do CP:",
+                                                                      "  snapshot presente  : sim",
+                                                                      "  dwords devolvidos  : 65760, 0 divergencias",
+                                                                      "  RESULTADO          : ok, regiao de VRAM devolvida"
+                                                                  ]
+                                                    }
+                                   }
+                               ]
+                  },
+                  {
+                      "gate":  "J_cp_continua_parado_e_haltado",
+                      "passed":  true,
+                      "detail":  "Nenhum ponteiro de instrucao se moveu e CP_ME_CNTL nao mudou: nada saiu do HALT.",
+                      "data":  {
+                                   "cp_me_cntl_antes":  "0x15000000",
+                                   "cp_me_cntl_depois":  "0x15000000",
+                                   "ponteiros_antes":  {
+                                                           "primeira":  {
+                                                                            "CP_PFP_INSTR_PNTR":  "0x00000000",
+                                                                            "CP_ME_INSTR_PNTR":  "0x00000000",
+                                                                            "CP_CE_INSTR_PNTR":  "0x00000000",
+                                                                            "CP_MEC1_INSTR_PNTR":  "0x00000000"
+                                                                        },
+                                                           "valores_distintos":  {
+                                                                                     "CP_PFP_INSTR_PNTR":  1,
+                                                                                     "CP_ME_INSTR_PNTR":  1,
+                                                                                     "CP_CE_INSTR_PNTR":  1,
+                                                                                     "CP_MEC1_INSTR_PNTR":  1
+                                                                                 },
+                                                           "algum_em_movimento":  false
+                                                       },
+                                   "ponteiros_depois":  {
+                                                            "primeira":  {
+                                                                             "CP_PFP_INSTR_PNTR":  "0x00000000",
+                                                                             "CP_ME_INSTR_PNTR":  "0x00000000",
+                                                                             "CP_CE_INSTR_PNTR":  "0x00000000",
+                                                                             "CP_MEC1_INSTR_PNTR":  "0x00000000"
+                                                                         },
+                                                            "valores_distintos":  {
+                                                                                      "CP_PFP_INSTR_PNTR":  1,
+                                                                                      "CP_ME_INSTR_PNTR":  1,
+                                                                                      "CP_CE_INSTR_PNTR":  1,
+                                                                                      "CP_MEC1_INSTR_PNTR":  1
+                                                                                  },
+                                                            "algum_em_movimento":  false
+                                                        }
+                               }
+                  },
+                  {
+                      "gate":  "K_registradores_devolvidos",
+                      "passed":  true,
+                      "detail":  "Os 10 registradores do CP voltaram ao snapshot, com readback conferido.",
+                      "data":  {
+                                   "restaurados":  10,
+                                   "esperados":  10,
+                                   "divergencias":  0,
+                                   "saida":  [
+                                                 "Transacao do CP (restore):",
+                                                 "  snapshot presente  : sim",
+                                                 "  registradores      : 10",
+                                                 "  restaurados        : 10",
+                                                 "  divergencias       : 0",
+                                                 "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                                 "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                                 "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                                 "  RESULTADO          : ok"
+                                             ]
+                               }
+                  },
+                  {
+                      "gate":  "L_sem_bugcheck",
+                      "passed":  true,
+                      "detail":  "Nenhum bugcheck na janela do ensaio.",
+                      "data":  [
+
+                               ]
+                  }
+              ],
+    "failed_gates":  [
+
+                     ],
+    "bugchecks":  [
+
+                  ],
+    "commands":  [
+                     {
+                         "name":  "info_pre",
+                         "command":  "bc250ctl.exe info",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "driver          : bc250dbg v18.0  ABI 18  armamento=readonly",
+                                        "pci             : 01:00.0  1002:13FE rev 00",
+                                        "  BAR0          : 0x00000000C0000000  raw 0xC000000C",
+                                        "  BAR2          : 0x00000000D0000000  raw 0xD000000C",
+                                        "  BAR4          : 0x000000000000EF00  raw 0x0000EF01 io",
+                                        "  BAR5          : 0x00000000FE800000  raw 0xFE800000 [mapeado]",
+                                        "mmio            : 0xFE800000 +512 KB ",
+                                        "  GPU_ID        : 0x9FFF9714 ",
+                                        "  offset          SOC15        legado      ",
+                                        "  SCRATCH_REG0  : 0x00000000   0x4D585042",
+                                        "  GRBM_STATUS   : 0x00003028   0x00000000",
+                                        "  CC_GC_ARRAY   : 0xFFF80000   0x00000000   \u003c== o desempate",
+                                        "  ** MAPA OBSERVADO: CC_GC_SHADER_ARRAY_CONFIG em 0x089BC bate com o",
+                                        "     valor bruto visto no Linux (0xFFF80000). Isto sustenta o offset",
+                                        "     SOC15, mas nao prova quantidade de CU utilizavel nem execucao.",
+                                        "smu             : nao consultado pelo baseline; use \u0027smu\u0027 explicitamente",
+                                        "termico         : NAO CALIBRADO  limite 85 C  ",
+                                        "  sondas cruas  : edge 0xFFFFFFFF  junc 0x00000000  mem 0x00001EC2",
+                                        "  ** sem calibracao o driver recusa armar \u0027unsafe\u0027.",
+                                        "     Compare as sondas com o Linux e rode \u0027thermal calib\u0027.",
+                                        "log ring        : 4096 entradas, head 6"
+                                    ]
+                     },
+                     {
+                         "name":  "cp_info_pfp",
+                         "command":  "bc250ctl.exe cp info pfp firmware\\cyan_skillfish2_pfp.bin",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Header do ucode \u0027firmware\\cyan_skillfish2_pfp.bin\u0027:",
+                                        "  header             : v1.0, 44 bytes",
+                                        "  IP                 : v10.1",
+                                        "  ucode_version      : 0x00000094",
+                                        "  feature_version    : 0x00000020",
+                                        "  payload            : 263168 bytes (65792 dwords) no offset 0x100",
+                                        "  jump table         : dw 65536 .. 65664 (128 dwords, 512 bytes)",
+                                        "  crc32 declarado    : 0x5CE9E15D",
+                                        "  RESULTADO          : header coerente, jump table dentro do payload",
+                                        "  ** header coerente NAO diz nada sobre o CP funcionar."
+                                    ]
+                     },
+                     {
+                         "name":  "cp_info_me",
+                         "command":  "bc250ctl.exe cp info me firmware\\cyan_skillfish2_me.bin",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Header do ucode \u0027firmware\\cyan_skillfish2_me.bin\u0027:",
+                                        "  header             : v1.0, 44 bytes",
+                                        "  IP                 : v10.1",
+                                        "  ucode_version      : 0x00000063",
+                                        "  feature_version    : 0x00000020",
+                                        "  payload            : 263168 bytes (65792 dwords) no offset 0x100",
+                                        "  jump table         : dw 65536 .. 65664 (128 dwords, 512 bytes)",
+                                        "  crc32 declarado    : 0x9709DE5E",
+                                        "  RESULTADO          : header coerente, jump table dentro do payload",
+                                        "  ** header coerente NAO diz nada sobre o CP funcionar."
+                                    ]
+                     },
+                     {
+                         "name":  "cp_info_ce",
+                         "command":  "bc250ctl.exe cp info ce firmware\\cyan_skillfish2_ce.bin",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Header do ucode \u0027firmware\\cyan_skillfish2_ce.bin\u0027:",
+                                        "  header             : v1.0, 44 bytes",
+                                        "  IP                 : v10.1",
+                                        "  ucode_version      : 0x00000025",
+                                        "  feature_version    : 0x00000020",
+                                        "  payload            : 263040 bytes (65760 dwords) no offset 0x100",
+                                        "  jump table         : dw 65536 .. 65632 (96 dwords, 384 bytes)",
+                                        "  crc32 declarado    : 0x14F5BFFF",
+                                        "  RESULTADO          : header coerente, jump table dentro do payload",
+                                        "  ** header coerente NAO diz nada sobre o CP funcionar."
+                                    ]
+                     },
+                     {
+                         "name":  "cp_status_inicial",
+                         "command":  "bc250ctl.exe cp status pfp",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do CP (engine pfp):",
+                                        "  IC_BASE            : 0xFFFFFFFFFFFFFFFF",
+                                        "  IC_BASE_CNTL       : 0xFFFFFFFF  (VMID 15, ADDRESS_CLAMP 1)",
+                                        "  IC_OP_CNTL         : 0xFFFFFFFF  (COMPLETE 1)",
+                                        "  portas UCODE       : ADDR 0x3E050  DATA 0x3E054",
+                                        "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                        "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                        "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_PFP_INSTR_PNTR_0",
+                         "command":  "bc250ctl.exe reg r 0x08694",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008694 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_ME_INSTR_PNTR_0",
+                         "command":  "bc250ctl.exe reg r 0x08698",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008698 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_CE_INSTR_PNTR_0",
+                         "command":  "bc250ctl.exe reg r 0x0869C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0000869C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_MEC1_INSTR_PNTR_0",
+                         "command":  "bc250ctl.exe reg r 0x086A0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000086A0 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_PFP_INSTR_PNTR_1",
+                         "command":  "bc250ctl.exe reg r 0x08694",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008694 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_ME_INSTR_PNTR_1",
+                         "command":  "bc250ctl.exe reg r 0x08698",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008698 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_CE_INSTR_PNTR_1",
+                         "command":  "bc250ctl.exe reg r 0x0869C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0000869C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_MEC1_INSTR_PNTR_1",
+                         "command":  "bc250ctl.exe reg r 0x086A0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000086A0 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_PFP_INSTR_PNTR_2",
+                         "command":  "bc250ctl.exe reg r 0x08694",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008694 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_ME_INSTR_PNTR_2",
+                         "command":  "bc250ctl.exe reg r 0x08698",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008698 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_CE_INSTR_PNTR_2",
+                         "command":  "bc250ctl.exe reg r 0x0869C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0000869C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_MEC1_INSTR_PNTR_2",
+                         "command":  "bc250ctl.exe reg r 0x086A0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000086A0 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_PFP_INSTR_PNTR_3",
+                         "command":  "bc250ctl.exe reg r 0x08694",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008694 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_ME_INSTR_PNTR_3",
+                         "command":  "bc250ctl.exe reg r 0x08698",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008698 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_CE_INSTR_PNTR_3",
+                         "command":  "bc250ctl.exe reg r 0x0869C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0000869C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_MEC1_INSTR_PNTR_3",
+                         "command":  "bc250ctl.exe reg r 0x086A0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000086A0 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_PFP_INSTR_PNTR_4",
+                         "command":  "bc250ctl.exe reg r 0x08694",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008694 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_ME_INSTR_PNTR_4",
+                         "command":  "bc250ctl.exe reg r 0x08698",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008698 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_CE_INSTR_PNTR_4",
+                         "command":  "bc250ctl.exe reg r 0x0869C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0000869C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_MEC1_INSTR_PNTR_4",
+                         "command":  "bc250ctl.exe reg r 0x086A0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000086A0 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_PFP_INSTR_PNTR_5",
+                         "command":  "bc250ctl.exe reg r 0x08694",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008694 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_ME_INSTR_PNTR_5",
+                         "command":  "bc250ctl.exe reg r 0x08698",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008698 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_CE_INSTR_PNTR_5",
+                         "command":  "bc250ctl.exe reg r 0x0869C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0000869C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_inicial_CP_MEC1_INSTR_PNTR_5",
+                         "command":  "bc250ctl.exe reg r 0x086A0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000086A0 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "arm_write",
+                         "command":  "bc250ctl.exe arm write",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "armamento agora: write"
+                                    ]
+                     },
+                     {
+                         "name":  "icbase_sem_snapshot",
+                         "command":  "bc250ctl.exe cp icbase pfp 0x0E000000",
+                         "exit_code":  1,
+                         "timed_out":  false,
+                         "output":  [
+                                        "IC_BASE da engine pfp:",
+                                        "  ucode em           : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                        "  escritas           : 0",
+                                        "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                        "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                        "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                        "  RESULTADO          : FALHOU (status 5)",
+                                        "    RECUSADO: rode \u0027cp txn snapshot\u0027 antes. O driver nao escreve",
+                                        "    em registrador do CP sem caminho de volta provado."
+                                    ]
+                     },
+                     {
+                         "name":  "cp_txn_snapshot",
+                         "command":  "bc250ctl.exe cp txn snapshot",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Transacao do CP (snapshot):",
+                                        "  snapshot presente  : sim",
+                                        "  registradores      : 10",
+                                        "    0x3E100        : 0xFFFFFFFF",
+                                        "    0x3E104        : 0xFFFFFFFF",
+                                        "    0x3E108        : 0xFFFFFFFF",
+                                        "    0x3E110        : 0xFFFFFFFF",
+                                        "    0x3E114        : 0xFFFFFFFF",
+                                        "    0x3E118        : 0xFFFFFFFF",
+                                        "    0x3E120        : 0xFFFFFFFF",
+                                        "    0x3E124        : 0xFFFFFFFF",
+                                        "    0x3E128        : 0xFFFFFFFF",
+                                        "    0x086D8        : 0x15000000",
+                                        "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                        "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                        "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                        "  RESULTADO          : ok"
+                                    ]
+                     },
+                     {
+                         "name":  "stage_pfp",
+                         "command":  "bc250ctl.exe cp stage pfp 0x0E000000 firmware\\cyan_skillfish2_pfp.bin",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Ucode da engine pfp na VRAM:",
+                                        "  destino            : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                        "  snapshot           : guardado, 65792 dwords",
+                                        "  escritos           : 65792 dwords, 0 divergencias",
+                                        "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                        "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                        "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                        "  RESULTADO          : ok"
+                                    ]
+                     },
+                     {
+                         "name":  "icinval_pfp",
+                         "command":  "bc250ctl.exe cp icinval pfp",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Invalidacao da cache de instrucoes (pfp):",
+                                        "  IC_OP_CNTL         : 0xFFFFFFFF -\u003e 0xFFFFFFFF -\u003e 0xFFFFFFFF",
+                                        "  espera             : 0 iteracoes de 1 us",
+                                        "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                        "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                        "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                        "  RESULTADO          : ok, o hardware confirmou por COMPLETE"
+                                    ]
+                     },
+                     {
+                         "name":  "icbase_pfp",
+                         "command":  "bc250ctl.exe cp icbase pfp 0x0E000000",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "IC_BASE da engine pfp:",
+                                        "  ucode em           : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                        "  escritas           : 3",
+                                        "    0x3E108        : 0xFFFFFFFF -\u003e 0x00000010  (queria 0x00000010)",
+                                        "    0x3E100        : 0xFFFFFFFF -\u003e 0x0E000000  (queria 0x0E000000)",
+                                        "    0x3E104        : 0xFFFFFFFF -\u003e 0x000000F4  (queria 0x000000F4)",
+                                        "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                        "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                        "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                        "  RESULTADO          : ok, IC_BASE apontado para o ucode",
+                                        "  ** a cache aponta para o ucode. Ninguem busca ainda: as engines",
+                                        "     continuam em HALT."
+                                    ]
+                     },
+                     {
+                         "name":  "jt_pfp",
+                         "command":  "bc250ctl.exe cp jt pfp 0x0E000000 firmware\\cyan_skillfish2_pfp.bin",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Jump table da engine pfp:",
+                                        "  dwords escritos    : 128 pela porta DATA",
+                                        "  versao no ADDR     : 0x00000094  (ADDR releu 0xFFFFFFFF)",
+                                        "  ** a porta DATA escreve na RAM interna da microengine: nao ha",
+                                        "     readback possivel dela. O que se confere e o ADDR.",
+                                        "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                        "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                        "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                        "  RESULTADO          : ok"
+                                    ]
+                     },
+                     {
+                         "name":  "rollback_pfp",
+                         "command":  "bc250ctl.exe cp rollback",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Rollback do ucode do CP:",
+                                        "  snapshot presente  : sim",
+                                        "  dwords devolvidos  : 65792, 0 divergencias",
+                                        "  RESULTADO          : ok, regiao de VRAM devolvida"
+                                    ]
+                     },
+                     {
+                         "name":  "stage_me",
+                         "command":  "bc250ctl.exe cp stage me 0x0E000000 firmware\\cyan_skillfish2_me.bin",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Ucode da engine me na VRAM:",
+                                        "  destino            : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                        "  snapshot           : guardado, 65792 dwords",
+                                        "  escritos           : 65792 dwords, 0 divergencias",
+                                        "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                        "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                        "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                        "  RESULTADO          : ok"
+                                    ]
+                     },
+                     {
+                         "name":  "icinval_me",
+                         "command":  "bc250ctl.exe cp icinval me",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Invalidacao da cache de instrucoes (me):",
+                                        "  IC_OP_CNTL         : 0xFFFFFFFF -\u003e 0xFFFFFFFF -\u003e 0xFFFFFFFF",
+                                        "  espera             : 0 iteracoes de 1 us",
+                                        "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                        "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                        "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                        "  RESULTADO          : ok, o hardware confirmou por COMPLETE"
+                                    ]
+                     },
+                     {
+                         "name":  "icbase_me",
+                         "command":  "bc250ctl.exe cp icbase me 0x0E000000",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "IC_BASE da engine me:",
+                                        "  ucode em           : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                        "  escritas           : 3",
+                                        "    0x3E118        : 0xFFFFFFFF -\u003e 0x00000010  (queria 0x00000010)",
+                                        "    0x3E110        : 0xFFFFFFFF -\u003e 0x0E000000  (queria 0x0E000000)",
+                                        "    0x3E114        : 0xFFFFFFFF -\u003e 0x000000F4  (queria 0x000000F4)",
+                                        "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                        "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                        "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                        "  RESULTADO          : ok, IC_BASE apontado para o ucode",
+                                        "  ** a cache aponta para o ucode. Ninguem busca ainda: as engines",
+                                        "     continuam em HALT."
+                                    ]
+                     },
+                     {
+                         "name":  "jt_me",
+                         "command":  "bc250ctl.exe cp jt me 0x0E000000 firmware\\cyan_skillfish2_me.bin",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Jump table da engine me:",
+                                        "  dwords escritos    : 128 pela porta DATA",
+                                        "  versao no ADDR     : 0x00000063  (ADDR releu 0xFFFFFFFF)",
+                                        "  ** a porta DATA escreve na RAM interna da microengine: nao ha",
+                                        "     readback possivel dela. O que se confere e o ADDR.",
+                                        "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                        "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                        "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                        "  RESULTADO          : ok"
+                                    ]
+                     },
+                     {
+                         "name":  "rollback_me",
+                         "command":  "bc250ctl.exe cp rollback",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Rollback do ucode do CP:",
+                                        "  snapshot presente  : sim",
+                                        "  dwords devolvidos  : 65792, 0 divergencias",
+                                        "  RESULTADO          : ok, regiao de VRAM devolvida"
+                                    ]
+                     },
+                     {
+                         "name":  "stage_ce",
+                         "command":  "bc250ctl.exe cp stage ce 0x0E000000 firmware\\cyan_skillfish2_ce.bin",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Ucode da engine ce na VRAM:",
+                                        "  destino            : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                        "  snapshot           : guardado, 65760 dwords",
+                                        "  escritos           : 65760 dwords, 0 divergencias",
+                                        "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                        "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                        "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                        "  RESULTADO          : ok"
+                                    ]
+                     },
+                     {
+                         "name":  "icinval_ce",
+                         "command":  "bc250ctl.exe cp icinval ce",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Invalidacao da cache de instrucoes (ce):",
+                                        "  IC_OP_CNTL         : 0xFFFFFFFF -\u003e 0xFFFFFFFF -\u003e 0xFFFFFFFF",
+                                        "  espera             : 0 iteracoes de 1 us",
+                                        "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                        "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                        "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                        "  RESULTADO          : ok, o hardware confirmou por COMPLETE"
+                                    ]
+                     },
+                     {
+                         "name":  "icbase_ce",
+                         "command":  "bc250ctl.exe cp icbase ce 0x0E000000",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "IC_BASE da engine ce:",
+                                        "  ucode em           : VRAM 0x0E000000  -\u003e  GPU 0xF40E000000",
+                                        "  escritas           : 3",
+                                        "    0x3E128        : 0xFFFFFFFF -\u003e 0x00000010  (queria 0x00000010)",
+                                        "    0x3E120        : 0xFFFFFFFF -\u003e 0x0E000000  (queria 0x0E000000)",
+                                        "    0x3E124        : 0xFFFFFFFF -\u003e 0x000000F4  (queria 0x000000F4)",
+                                        "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                        "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                        "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                        "  RESULTADO          : ok, IC_BASE apontado para o ucode",
+                                        "  ** a cache aponta para o ucode. Ninguem busca ainda: as engines",
+                                        "     continuam em HALT."
+                                    ]
+                     },
+                     {
+                         "name":  "jt_ce",
+                         "command":  "bc250ctl.exe cp jt ce 0x0E000000 firmware\\cyan_skillfish2_ce.bin",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Jump table da engine ce:",
+                                        "  dwords escritos    : 96 pela porta DATA",
+                                        "  versao no ADDR     : 0x00000025  (ADDR releu 0xFFFFFFFF)",
+                                        "  ** a porta DATA escreve na RAM interna da microengine: nao ha",
+                                        "     readback possivel dela. O que se confere e o ADDR.",
+                                        "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                        "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                        "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                        "  RESULTADO          : ok"
+                                    ]
+                     },
+                     {
+                         "name":  "rollback_ce",
+                         "command":  "bc250ctl.exe cp rollback",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Rollback do ucode do CP:",
+                                        "  snapshot presente  : sim",
+                                        "  dwords devolvidos  : 65760, 0 divergencias",
+                                        "  RESULTADO          : ok, regiao de VRAM devolvida"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_PFP_INSTR_PNTR_0",
+                         "command":  "bc250ctl.exe reg r 0x08694",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008694 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_ME_INSTR_PNTR_0",
+                         "command":  "bc250ctl.exe reg r 0x08698",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008698 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_CE_INSTR_PNTR_0",
+                         "command":  "bc250ctl.exe reg r 0x0869C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0000869C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_MEC1_INSTR_PNTR_0",
+                         "command":  "bc250ctl.exe reg r 0x086A0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000086A0 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_PFP_INSTR_PNTR_1",
+                         "command":  "bc250ctl.exe reg r 0x08694",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008694 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_ME_INSTR_PNTR_1",
+                         "command":  "bc250ctl.exe reg r 0x08698",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008698 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_CE_INSTR_PNTR_1",
+                         "command":  "bc250ctl.exe reg r 0x0869C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0000869C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_MEC1_INSTR_PNTR_1",
+                         "command":  "bc250ctl.exe reg r 0x086A0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000086A0 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_PFP_INSTR_PNTR_2",
+                         "command":  "bc250ctl.exe reg r 0x08694",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008694 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_ME_INSTR_PNTR_2",
+                         "command":  "bc250ctl.exe reg r 0x08698",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008698 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_CE_INSTR_PNTR_2",
+                         "command":  "bc250ctl.exe reg r 0x0869C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0000869C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_MEC1_INSTR_PNTR_2",
+                         "command":  "bc250ctl.exe reg r 0x086A0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000086A0 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_PFP_INSTR_PNTR_3",
+                         "command":  "bc250ctl.exe reg r 0x08694",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008694 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_ME_INSTR_PNTR_3",
+                         "command":  "bc250ctl.exe reg r 0x08698",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008698 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_CE_INSTR_PNTR_3",
+                         "command":  "bc250ctl.exe reg r 0x0869C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0000869C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_MEC1_INSTR_PNTR_3",
+                         "command":  "bc250ctl.exe reg r 0x086A0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000086A0 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_PFP_INSTR_PNTR_4",
+                         "command":  "bc250ctl.exe reg r 0x08694",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008694 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_ME_INSTR_PNTR_4",
+                         "command":  "bc250ctl.exe reg r 0x08698",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008698 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_CE_INSTR_PNTR_4",
+                         "command":  "bc250ctl.exe reg r 0x0869C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0000869C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_MEC1_INSTR_PNTR_4",
+                         "command":  "bc250ctl.exe reg r 0x086A0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000086A0 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_PFP_INSTR_PNTR_5",
+                         "command":  "bc250ctl.exe reg r 0x08694",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008694 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_ME_INSTR_PNTR_5",
+                         "command":  "bc250ctl.exe reg r 0x08698",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00008698 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_CE_INSTR_PNTR_5",
+                         "command":  "bc250ctl.exe reg r 0x0869C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0000869C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pntr_final_CP_MEC1_INSTR_PNTR_5",
+                         "command":  "bc250ctl.exe reg r 0x086A0",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x000086A0 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "cp_status_final",
+                         "command":  "bc250ctl.exe cp status pfp",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do CP (engine pfp):",
+                                        "  IC_BASE            : 0xFFFFFFFFFFFFFFFF",
+                                        "  IC_BASE_CNTL       : 0xFFFFFFFF  (VMID 15, ADDRESS_CLAMP 1)",
+                                        "  IC_OP_CNTL         : 0xFFFFFFFF  (COMPLETE 1)",
+                                        "  portas UCODE       : ADDR 0x3E050  DATA 0x3E054",
+                                        "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                        "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                        "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "cp_txn_restore",
+                         "command":  "bc250ctl.exe cp txn restore",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Transacao do CP (restore):",
+                                        "  snapshot presente  : sim",
+                                        "  registradores      : 10",
+                                        "  restaurados        : 10",
+                                        "  divergencias       : 0",
+                                        "  CP_ME_CNTL         : 0x15000000  [PFP_HALT ME_HALT CE_HALT]",
+                                        "  CP_STAT / GRBM     : 0x00000000 / 0x00003028  GRBM2 0x00000008",
+                                        "  INSTR_PNTR pfp/me/ce/mec1: 0x00000000 0x00000000 0x00000000 0x00000000",
+                                        "  RESULTADO          : ok"
+                                    ]
+                     },
+                     {
+                         "name":  "arm_readonly",
+                         "command":  "bc250ctl.exe arm readonly",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "armamento agora: readonly"
+                                    ]
+                     }
+                 ]
+}

@@ -1,0 +1,15 @@
+﻿{
+    "schema_version":  1,
+    "created_at":  "2026-08-22T19:28:25.1367703-03:00",
+    "hardware_id":  "PCI\\VEN_1002\u0026DEV_13FE",
+    "instance_id":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
+    "service":  "bc250v4",
+    "inf_name":  "oem48.inf",
+    "driver_provider":  "AMD BC-250 Driver Project",
+    "driver_version":  "1.0.822.1737",
+    "driver_date":  "\/Date(1787356800000)\/",
+    "installed_sys":  "C:\\Windows\\System32\\drivers\\bc250wddm.sys",
+    "installed_sys_sha256":  "3e09e17ce9bb7e72c067a9d0e88a8a1c11e9513a8556f9d6589226ea7b386c3c",
+    "exported_inf":  "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\recovery\\bc250v4-2026-08-22_19-28-24\\driver-package\\wddm.inf",
+    "restore_command":  "powershell -ExecutionPolicy Bypass -File restore-legacy-driver.ps1 -BackupDirectory \u003cbackup\u003e -Reboot"
+}

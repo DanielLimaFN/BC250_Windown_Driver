@@ -51,7 +51,7 @@ static int Bc250RunSubmitCommandContractTest(void)
     CHECK(g_testResult.EmittedDwords == 4u);
     CHECK(g_testResult.UpdatedWptr == 4u);
     CHECK(g_testResult.IsSuccessful == 1u);
-    CHECK(g_testRing[0] == BC250_SDMA_OP_FENCE);
+    CHECK(g_testRing[0] == (BC250_SDMA_OP_FENCE | (3u << 16)));
     CHECK(g_testRing[1] == 0x20000000u);
     CHECK(g_testRing[3] == 101u);
 

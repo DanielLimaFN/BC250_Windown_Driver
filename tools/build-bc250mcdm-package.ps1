@@ -5,6 +5,9 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $sourceSys = Join-Path $root 'driver\wdk\output\bc250mcdm.sys'
 $sourceInf = Join-Path $root 'driver\wdk\package\bc250mcdm.inf'
+$sourceSdmaFirmware = Join-Path $root 'firmware\cyan_skillfish2_sdma.bin'
+$sourceRlcFirmware = Join-Path $root 'firmware\cyan_skillfish2_rlc.bin'
+$sourcePfpFirmware = Join-Path $root 'firmware\cyan_skillfish2_pfp.bin'
 $driverObject = Join-Path $root 'driver\wdk\output\bc250_active_miniport_driver.obj'
 $buildContract = Join-Path $root 'driver\wdk\build-contract.bat'
 $packageDir = Join-Path $root 'driver\wdk\package\output_active'
@@ -28,6 +31,24 @@ if (-not (Test-Path -LiteralPath $sourceSys)) {
     throw "Imagem ausente: $sourceSys. Execute driver\wdk\build-contract.bat."
 }
 if (-not (Test-Path -LiteralPath $sourceInf)) { throw "INF ausente: $sourceInf" }
+if (-not (Test-Path -LiteralPath $sourceSdmaFirmware)) { throw "Firmware SDMA ausente: $sourceSdmaFirmware" }
+if (-not (Test-Path -LiteralPath $sourceRlcFirmware)) { throw "Firmware RLC ausente: $sourceRlcFirmware" }
+if (-not (Test-Path -LiteralPath $sourcePfpFirmware)) { throw "Firmware PFP ausente: $sourcePfpFirmware" }
+if ((Get-Item -LiteralPath $sourceSdmaFirmware).Length -ne 33792 -or
+    (Get-FileHash -LiteralPath $sourceSdmaFirmware -Algorithm SHA256).Hash -ne
+        '15D0D3626DA7F2513F03B13BB7E02EEEECCAB276276AE27D0B6067B5F25E9E95') {
+    throw 'Firmware SDMA diverge do tamanho/hash aprovado.'
+}
+if ((Get-Item -LiteralPath $sourceRlcFirmware).Length -ne 25344 -or
+    (Get-FileHash -LiteralPath $sourceRlcFirmware -Algorithm SHA256).Hash -ne
+        '20ACEFDB6128A36275F4382425A109A7C9927F6053EAB685BB51164FF1D18CFB') {
+    throw 'Firmware RLC diverge do tamanho/hash aprovado.'
+}
+if ((Get-Item -LiteralPath $sourcePfpFirmware).Length -ne 263424 -or
+    (Get-FileHash -LiteralPath $sourcePfpFirmware -Algorithm SHA256).Hash -ne
+        '50E56DC1913571FF589425D2B059BDDFC5E8A2B4BC22D3EB78CAC75D1E0479A1') {
+    throw 'Firmware PFP diverge do tamanho/hash aprovado.'
+}
 $driverSourceFiles = @(
     Get-ChildItem -LiteralPath (Join-Path $root 'driver\core') -Recurse -File |
         Where-Object { $_.Extension -in @('.c', '.h') }
@@ -107,9 +128,15 @@ New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
 $packageSys = Join-Path $packageDir 'bc250mcdm.sys'
 $packageInf = Join-Path $packageDir 'bc250mcdm.inf'
 $packageCat = Join-Path $packageDir 'bc250mcdm.cat'
+$packageSdmaFirmware = Join-Path $packageDir 'cyan_skillfish2_sdma.bin'
+$packageRlcFirmware = Join-Path $packageDir 'cyan_skillfish2_rlc.bin'
+$packagePfpFirmware = Join-Path $packageDir 'cyan_skillfish2_pfp.bin'
 Remove-Item -LiteralPath $packageCat -Force -ErrorAction SilentlyContinue
 Copy-Item -LiteralPath $sourceSys -Destination $packageSys -Force
 Copy-Item -LiteralPath $sourceInf -Destination $packageInf -Force
+Copy-Item -LiteralPath $sourceSdmaFirmware -Destination $packageSdmaFirmware -Force
+Copy-Item -LiteralPath $sourceRlcFirmware -Destination $packageRlcFirmware -Force
+Copy-Item -LiteralPath $sourcePfpFirmware -Destination $packagePfpFirmware -Force
 
 & $signtool sign /sha1 $certificateThumbprint /fd SHA256 $packageSys
 if ($LASTEXITCODE -ne 0) { throw 'Assinatura do .sys falhou.' }
@@ -145,6 +172,9 @@ $manifest = [ordered]@{
     PackageSysSha256 = (Get-FileHash -LiteralPath $packageSys -Algorithm SHA256).Hash
     PackageInfSha256 = (Get-FileHash -LiteralPath $packageInf -Algorithm SHA256).Hash
     PackageCatSha256 = (Get-FileHash -LiteralPath $packageCat -Algorithm SHA256).Hash
+    SdmaFirmwareSha256 = (Get-FileHash -LiteralPath $packageSdmaFirmware -Algorithm SHA256).Hash
+    RlcFirmwareSha256 = (Get-FileHash -LiteralPath $packageRlcFirmware -Algorithm SHA256).Hash
+    PfpFirmwareSha256 = (Get-FileHash -LiteralPath $packagePfpFirmware -Algorithm SHA256).Hash
     RecoverySha256 = (Get-FileHash -LiteralPath $recoveryRoot -Algorithm SHA256).Hash
     SignerThumbprint = $certificateThumbprint
     Verdict = 'NAO VALIDADO EM HARDWARE'

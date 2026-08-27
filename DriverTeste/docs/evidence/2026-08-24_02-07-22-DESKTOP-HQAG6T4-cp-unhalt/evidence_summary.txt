@@ -1,0 +1,52 @@
+﻿================================================================================
+  RELATORIO DE ENSAIO DE UNHALT E EXECUCAO DO CP (PASSO 3)
+================================================================================
+Data/Hora : 2026-08-24 02:07:31
+Host      : DESKTOP-HQAG6T4
+Driver    : C:\Users\Daniel\Desktop\NamixWDDM\output\bc250dbg.sys (SHA256: 0813BC852DB37B5F1BD1C5C73BEBBF47DF838DC414739E6A4B3F41406333483F)
+Resultado : FALHA EM GATES
+Gates     : 20 medidos de 20 previstos
+Boot      : 2026-08-24 02:06:17
+--------------------------------------------------------------------------------
+GATES:
+  [OK  ] A_headers_coerentes
+         Req : Os tres ucodes tem header v1.0, IP v10.1 e jump table descrita dentro do payload.
+  [OK  ] B_tres_engines_haltadas_e_paradas
+         Req : CP_ME_CNTL = 0x15000000 (CE/PFP/ME_HALT ativos) e os quatro ponteiros de instrucao zerados.
+  [OK  ] B2_rlc_fora_da_rom
+         Req : RLC_GPM_STAT.RLC_EXEC_ROM_CODE = 0: o RLC executa microcodigo, nao a ROM. Pre-requisito do CP.
+  [OK  ] C_snapshot_guardado
+         Req : Snapshot dos 10 registradores do CP capturado com sucesso.
+  [OK  ] C2_page_table_do_ucode_construida
+         Req : As 336 PTEs cobrem a VRAM do ucode e foram conferidas uma por uma.
+  [OK  ] C3_snapshot_do_gcvm
+         Req : Transacao do GCVM aberta: existe caminho de volta provado antes de escrever.
+  [OK  ] C4_estagios_de_traducao
+         Req : Os sete estagios do GCVM aplicados com a MESMA contagem de escritas medida no gate de memoria (6/10/6/4/1/5/1), zero divergencias, inclusive context0.
+  [OK  ] C5_contexto0_ligado_no_silicio
+         Req : CONTEXT0_CNTL.ENABLE_CONTEXT = 1 e PAGE_TABLE_BASE nao-zero, lidos do hardware.
+  [OK  ] C6_tlb_invalidada_com_ack
+         Req : ACK do hardware confirmou a invalidacao da TLB do VMID 0.
+  [OK  ] D_tres_ucodes_na_vram
+         Req : Os tres ucodes (PFP, ME, CE) gravados e conferidos dword a dword em regioes distintas da VRAM.
+  [OK  ] E_tres_caches_invalidacao_pedida
+         Req : Invalidacao de cache emitida sem recusa para as tres engines. NAO e confirmacao: IC_OP_CNTL e write-only.
+  [OK  ] F_tres_icbase_apontados_por_va
+         Req : IC_BASE_CNTL, LO e HI escritos para as tres engines com VA traduzida. ATENCAO: sao registradores WRITE-ONLY. Isto atesta que as escritas foram emitidas sem recusa, NAO que o hardware as aceitou.
+  [OK  ] G_tres_jump_tables_escritas
+         Req : Jump tables escritas pela porta DATA para as tres engines com versao gravada no ADDR.
+  [OK  ] H_unhalt_executado
+         Req : CP_ME_CNTL configurado com ME_HALT=0, PFP_HALT=0, CE_HALT=0 (0x00000000).
+  [OK  ] H2_falha_de_traducao_observada
+         Req : OBSERVACAO, nao aprovacao: FAULT_STATUS/_ADDR lidos antes e depois do unhalt. Qualquer um dos dois resultados e informativo, por isso este item nao reprova.
+  [FAIL] I_ponteiros_de_instrucao_ativos
+         Req : Ao menos um ponteiro de instrucao VARIOU entre amostras. PC constante nao e execucao, mesmo diferente de zero.
+  [OK  ] J_halt_restaurado_e_parado
+         Req : CP_ME_CNTL = 0x15000000 reativado e ponteiros de instrucao estabilizados.
+  [OK  ] K_ucodes_devolvidos_sem_divergencia
+         Req : Regioes de VRAM das tres engines devolvidas e conferidas dword a dword sem divergencia.
+  [OK  ] L_registradores_devolvidos
+         Req : Todos os 10 registradores do CP devolvidos aos valores do snapshot.
+  [OK  ] M_sem_bugcheck
+         Req : Nenhum bugcheck registrado no log do sistema na janela do ensaio.
+--------------------------------------------------------------------------------

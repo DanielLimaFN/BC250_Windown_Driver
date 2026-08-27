@@ -1,4 +1,6 @@
 @echo off
 cd /d "%~dp0"
-echo Iniciando Painel BC-250 em modo Desktop Nativo (Electron)...
-npx electron electron/main.cjs
+if not exist "%~dp0BC250Studio.exe" (
+    call npm run package
+)
+start "" "%~dp0BC250Studio.exe"

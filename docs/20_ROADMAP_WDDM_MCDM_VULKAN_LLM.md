@@ -2,12 +2,12 @@
 
 Atualizado em 2026-08-26.
 
-Estado atual: **TLB GFXHUB VALIDADO; CANDIDATO GCVM OWNED/VMID8 INERTE PRONTO; ACELERACAO NAO VALIDADA**.
+Estado atual: **FIRMWARE SDMA0 E F32 ATIVA APROVADOS; PROXIMO GATE E O RING SDMA COM COPY/FENCE; ACELERACAO NAO VALIDADA**.
 
 ```text
-Conformidade BC250_HARDWARE_RULES   72%
-Miniport MCDM funcional            43%
-Memoria/GPUVA WDDM                 25%
+Conformidade BC250_HARDWARE_RULES   91%
+Miniport MCDM funcional            54%
+Memoria/GPUVA WDDM                 32%
 PM4/compute pelo miniport           0%
 Vulkan ICD                          0%
 LLM acelerado                       0%
@@ -630,9 +630,247 @@ Resultado fisico 1.15.0.0:
 - evidencia em
   `docs\\evidence\\2026-08-26_08-51-40-DESKTOP-HQAG6T4-mcdm-replace`.
 
+Resultado fisico 1.16.0.0:
+
+- pagina de tabela e alvo alocados pelo allocator owned;
+- PTE `VALID|READ|WRITE` escrita, relida e restaurada;
+- VMID8 programado ainda desabilitado, TLB fisica concluida e todos os
+  registradores restaurados;
+- evidencia em
+  `docs\\evidence\\2026-08-26_09-33-47-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Resultado fisico 1.17.0.0, refinado pelo pacote seguinte:
+
+- o KMD escreveu `0x00020000`/`0x000C0000` e o PSP publicou o bit 31;
+- o poll provou resposta TOS, mas ainda nao verificava o status baixo;
+- evidencia preservada em
+  `docs\\evidence\\2026-08-26_12-26-53-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Resultado fisico 1.18.0.0:
+
+- exige `(C2PMSG_64 & 0x8000FFFF) == 0x80000000`;
+- teste de regressao mantem cada comando stale e comprova timeout fail-closed;
+- schema 26 e auditor recusam os dois falsos ACKs do pacote anterior;
+- create/destroy passaram no primeiro poll com status baixo zero;
+- restauracao integral e `PspRingPhysicalReady=1`;
+- evidencia em
+  `docs\\evidence\\2026-08-26_12-50-42-DESKTOP-HQAG6T4-mcdm-replace`;
+- detalhes em `docs\\43_PSP_ACK_ESTRITO_1.18.0.0.md`.
+
 ## Fase 4 - PSP, TMR e firmware owned
 
-Status: **contratos offline 60%; hardware 0%**.
+Status: **contratos offline 78%; hardware 65%**.
+
+Resultado fisico 1.19.0.0:
+
+- GPCOM create e destroy com ACK estrito;
+- `LOAD_IP_FW` consumido, fence PSP `0 -> 1` no segundo poll;
+- resposta bruta `0xFFFF0008` e teardown integral;
+- firmware recusado porque o header AMD de 256 bytes foi incluido no payload;
+- evidencia em
+  `docs\\evidence\\2026-08-26_13-12-27-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Candidato 1.20.0.0:
+
+- autentica o arquivo completo de 33.792 bytes;
+- envia apenas `PA + 0x100`, 33.536 bytes, como no ensaio legacy aprovado;
+- checksum e medido do silicio e nao fixado no KMD;
+- detalhes em `docs\\45_PSP_LOAD_IP_FW_PAYLOAD_1.20.0.0.md`.
+
+Resultado fisico 1.20.0.0:
+
+- fence PSP novamente no segundo poll, mas resposta `0xFFFF0008`;
+- diferenca restante: `PA + 0x100` desalinhada, enquanto o legacy copiava o
+  payload para o inicio alinhado de uma alocacao nova;
+- evidencia em
+  `docs\\evidence\\2026-08-26_13-16-37-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Resultado fisico 1.21.0.0:
+
+- payload movido para PA alinhada;
+- SHA-256 separado do payload validado antes do DMA;
+- PAs completas de ring/comando/fence/payload persistidas no schema 29;
+- PSP retornou status zero, fence `0 -> 1` em tres polls e checksum fisico
+  `0x55B182E3`;
+- destroy e restauracao passaram, sem buffer liberado enquanto pertencente ao
+  PSP;
+- evidencia em
+  `docs\evidence\2026-08-26_13-21-21-DESKTOP-HQAG6T4-mcdm-replace`;
+- detalhes em `docs\\46_PSP_PAYLOAD_ALINHADO_1.21.0.0.md`.
+
+Resultado fisico 1.22.0.0:
+
+- reset F32 SDMA0 transacional apos o `LOAD_IP_FW` aprovado;
+- readback das mascaras de clock/reset e amostragem do PC fisico;
+- PC avancou de `385` para `932`, com 12 transicoes em 16 amostras;
+- readback da configuracao e restauracao integral passaram;
+- evidencia em
+  `docs\evidence\2026-08-26_13-30-47-DESKTOP-HQAG6T4-mcdm-replace`;
+- detalhes em `docs\47_SDMA_F32_ATIVA_1.22.0.0.md`;
+- ainda nao constitui submissao nem aceleracao.
+
+Proximo gate:
+
+- ring SDMA owned, com enderecos MC derivados da topologia detectada;
+- pacote `COPY` seguido de fence com poison;
+- exigir `RPTR == WPTR`, fence escrita pela SDMA e comparacao integral do
+  destino;
+- rollback do ring e de toda memoria owned.
+
+Candidato 1.23.0.0 implementado para esse gate:
+
+- duas paginas CPU-visible obtidas do allocator owned;
+- enderecos MC derivados da topologia runtime;
+- `COPY_LINEAR` de 256 bytes seguido de fence com poison;
+- schema 31 exige `RPTR == WPTR`, fence, 64 dwords corretos e rollback;
+- detalhes em `docs\48_SDMA_RING_COPY_FENCE_1.23.0.0.md`.
+
+Resultado fisico 1.23.0.0:
+
+- F32 permaneceu ativa e `STATUS_REG` mudou no kick;
+- RPTR ficou zero e a fence permaneceu no poison por 1000 polls;
+- registradores e memoria foram restaurados integralmente;
+- causa isolada: campo endian/reservado do COPY estava no dword final, em vez
+  de preceder os enderecos;
+- evidencia em
+  `docs\evidence\2026-08-26_17-47-29-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Candidato 1.24.0.0:
+
+- layout COPY Navi10 corrigido para `header,count,endian,src,dst`;
+- GCR e FENCE MTYPE_UC mantidos;
+- schema 32 registra WPTR no registrador, shadow e RB_CNTL aplicado;
+- detalhes em `docs\49_SDMA_COPY_LAYOUT_1.24.0.0.md`.
+
+Resultado fisico 1.24.0.0:
+
+- WPTR chegou a 64 tanto no registrador quanto no shadow;
+- `RB_CNTL=0x80841015`, F32 ativa e rollback integral;
+- RPTR permaneceu zero e a fence no poison;
+- portanto o layout corrigido nao foi suficiente para fazer o consumidor
+  buscar o ring;
+- evidencia em
+  `docs\evidence\2026-08-26_17-53-47-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Candidato 1.25.0.0:
+
+- reproduz o `WRITE_LINEAR` de quatro dwords aprovado no legacy;
+- usa primitivas de registro para todas as leituras/escritas BAR0;
+- mantem GCR, fence UC e teardown integral;
+- schema 33 acrescenta header, RPTR MMIO e controle de polling;
+- detalhes em `docs\50_SDMA_WRITE_LINEAR_1.25.0.0.md`.
+
+Resultado fisico 1.25.0.0:
+
+- firmware/F32 e rollback continuaram aprovados;
+- header, `WPTR` registrador/shadow e `RB_CNTL` foram confirmados;
+- `RPTR` registrador/writeback permaneceu zero e o fence no poison;
+- evidencia: `docs/evidence/2026-08-26_18-01-43-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Candidato 1.26.0.0:
+
+- reserva pelo allocator o layout contiguo exato comprovado no legacy em
+  `0x0FF00000..0x0FF04FFF`;
+- schema 34 captura STATUS1/2/3, ERROR_LOG e estados/XNACK/timeout UTCL1;
+- detalhes em `docs\51_SDMA_LAYOUT_LEGACY_DIAGNOSTICO_1.26.0.0.md`.
+
+Resultado fisico 1.26.0.0:
+
+- firmware/F32 permaneceu aprovado;
+- reserva exata em `0x0FF00000..0x0FF04FFF` colidiu no allocator;
+- o ensaio abortou antes de qualquer escrita ou submissao;
+- evidencia: `docs/evidence/2026-08-26_18-09-01-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Candidato 1.27.0.0:
+
+- aloca um unico bloco owned contiguo de 20 KiB em endereco livre;
+- preserva os deslocamentos relativos ring/RPTR/WPTR/fence/destino do legacy;
+- schema 35 registra colisao fixa, modo dinamico, MCs e diagnosticos UTCL;
+- detalhes em `docs\52_SDMA_LAYOUT_CONTIGUO_OWNED_1.27.0.0.md`.
+
+Resultado fisico 1.27.0.0:
+
+- ring consumido: `RPTR MMIO == WPTR == 68`;
+- fence fisica mudou de `0x43DAFFFE` para `0xBC250123`;
+- writeback de RPTR permaneceu em 52, igual ao legado funcional;
+- rollback integral; comparacao de dados nao executada pelo gate antigo;
+- evidencia: `docs/evidence/2026-08-26_18-12-58-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Candidato 1.28.0.0:
+
+- conclui pelo RPTR MMIO junto da fence fisica;
+- preserva RPTR writeback como diagnostico;
+- prossegue obrigatoriamente para a comparacao dos quatro dwords;
+- detalhes em `docs\53_SDMA_GATE_RPTR_MMIO_DADOS_1.28.0.0.md`.
+
+Resultado fisico 1.28.0.0 - marco SDMA:
+
+- firmware aceito pelo PSP e F32 fisicamente ativa, com 14 transicoes;
+- `RPTR MMIO == WPTR == 68`;
+- fence GPU `0x43DAFFFE -> 0xBC250123`;
+- quatro dwords produzidos, zero divergencias contra a CPU;
+- rollback de registradores e memoria `1/1`;
+- evidencia: `docs/evidence/2026-08-26_18-15-42-DESKTOP-HQAG6T4-mcdm-replace`;
+- **SDMA validada nesta operacao fisica**;
+- PM4/compute permanecem nao validados.
+
+Proxima frente ativa:
+
+- integrar no miniport a carga RLC tipo 8 ja comprovada no laboratorio;
+- exigir `RLC_GPM_STAT.EXEC_ROM_CODE: 1 -> 0` e `RLC_ENABLE_F32` fisicos;
+- usar direct-load owned para PFP/ME/CE/MEC/JT1, pois o PSP recusa os tipos CP
+  nesta unidade com `0x80000203`;
+- somente depois criar MQD/HQD, submeter PM4 e fechar o tripe compute.
+
+Candidato 1.29.0.0:
+
+- inclui o firmware RLC autenticado no pacote;
+- generaliza o transporte PSP provado para o tipo 8 sem aplicar a verificacao
+  de checksum especifica da SDMA;
+- exige fence/resposta PSP e a transicao fisica
+  `RLC_GPM_STAT.EXEC_ROM_CODE: 1 -> 0`;
+- registra `RLC_CNTL`, `RLC_GPM_STAT`, enable F32 e restore no schema 37;
+- detalhes em `docs\54_RLC_PSP_EXEC_ROM_1.29.0.0.md`.
+
+Resultado fisico 1.29.0.0:
+
+- PSP aceitou RLC tipo 8 com fence `1/1`, resposta zero e teardown completo;
+- `RLC_GPM_STAT.EXEC_ROM_CODE: 1 -> 0`;
+- `RLC_CNTL.RLC_ENABLE_F32=1`, seguido de restore confirmado;
+- evidencia:
+  `docs/evidence/2026-08-26_18-28-15-DESKTOP-HQAG6T4-mcdm-replace`;
+- RLC validado no escopo de carga e saida da ROM; PM4/compute nao executados.
+
+Candidato 1.30.0.0:
+
+- direct-load isolado do PFP em VRAM owned CPU-visible;
+- autentica arquivo/payload e compara 65792 dwords depois do staging;
+- programa IC base/jump table write-only sem fabricar readback;
+- libera apenas `PFP_HALT`, mede 32 amostras do PC e faults GFXHUB;
+- restaura `CP_ME_CNTL`, `RLC_CNTL` e toda a VRAM;
+- schema 38; detalhes em
+  `docs\55_PFP_DIRECT_LOAD_ISOLADO_1.30.0.0.md`.
+
+Resultado 1.30.0.0: o RLC ja estava fora da ROM no preflight; a recarga o
+devolveu a ROM e o gate bloqueou antes de qualquer staging/escrita do PFP.
+Evidencia: `docs/evidence/2026-08-26_22-19-24-DESKTOP-HQAG6T4-mcdm-replace`.
+
+Candidato 1.31.0.0: reconhece RLC ja ativo (`ROM 0 -> 0` + F32 observado),
+evita a recarga destrutiva e libera o primeiro ensaio fisico real do PFP.
+
+Resultado 1.31.0.0: PSP aceitou o RLC, mas `RLC_CNTL=0` e `ROM 1 -> 1`;
+PFP corretamente nao executado. O 1.32 ativa explicitamente o F32 depois da
+carga PSP e mede a saida da ROM antes de prosseguir.
+
+Resultado fisico 1.33.0.0:
+
+- gate RLC isolado aprovado sem tela preta;
+- `RLC_CNTL 0 -> 1`, `EXEC_ROM_CODE 1 -> 0`, F32 ativo e restore confirmado;
+- SDMA completa repetida com sucesso;
+- PFP deliberadamente nao executado;
+- evidencia:
+  `docs/evidence/2026-08-26_22-32-01-DESKTOP-HQAG6T4-mcdm-replace`;
+- a tela preta do 1.32 fica isolada no caminho PFP, nao na ativacao do RLC.
 
 Objetivo: inicializar firmware sem memoria fabricada nem DMA use-after-free.
 
@@ -705,7 +943,7 @@ Gate fisico:
 
 ## Fase 7 - CP/PM4 GFX ring pelo miniport
 
-Status: **0% no miniport; bloqueio historico conhecido**.
+Status: **RLC fisico aprovado; candidato PFP isolado construido; PM4 0%**.
 
 Objetivo: destravar `JT_LOADED`, executar PM4 e fechar o gate que bloqueia
 compute.
@@ -897,14 +1135,17 @@ fence GPU e resultado, ele e apenas uma fachada proibida pelas regras.
 
 ## 4. Proximo incremento autorizado
 
-O candidato 1.16.0.0 associa uma page table owned ao VMID 8, escreve uma PTE
-para um buffer owned, programa PT base/start/end com o contexto desabilitado,
-executa TLB e restaura VRAM/registradores. O ensaio fisico ainda esta pendente;
+O pacote 1.16.0.0 associou uma page table owned ao VMID 8, escreveu uma PTE
+para um buffer owned, programou PT base/start/end com o contexto desabilitado,
+executou TLB e restaurou VRAM/registradores. O ensaio fisico foi aprovado;
 detalhes em `docs\41_GCVM_BACKING_OWNED_VMID8_INERTE_1.16.0.0.md`.
 
-Apos esse gate, habilitar o contexto por tempo limitado e comprovar traducao
-consumida pela SDMA com RPTR/WPTR, fence GPU, destino integral, faults e
-rollback. Manter `PagingCpuUpdateReady=0`,
+O pacote 1.18.0.0 aprovou create/destroy do ring GPCOM owned com ACK estrito.
+O candidato 1.19.0.0 envia `LOAD_IP_FW` para SDMA0 usando firmware autenticado,
+fence PSP, resposta bruta, checksum e teardown. Se aprovado, o proximo gate
+configura um ring SDMA owned ainda em enderecamento fisico/bypass e comprova
+RPTR/WPTR, fence GPU, copia integral, faults e rollback. Manter
+`PagingCpuUpdateReady=0`,
 `RootPageTableAbiReady=0` e `GpuVaDescriptorReady=0` ate esse gate completo.
 Monitored fence/IH/TDR e submit owned continuam obrigatorios antes do primeiro
 `StartDevice=STATUS_SUCCESS`.

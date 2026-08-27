@@ -26,23 +26,20 @@ export const SingleSlider: React.FC<SingleSliderProps> = ({
   return (
     <div className="flex flex-col gap-1.5 w-full select-none">
       <div className="flex justify-between items-center text-xs">
-        <span className="text-zinc-300 font-medium">{label}</span>
-        <span className="bg-[#242429] px-2 py-0.5 rounded text-white font-semibold border border-white/5 shadow-inner">
+        <span className="font-medium text-[var(--text-base)]">{label}</span>
+        <span className="rounded-full border border-[var(--border-soft)] bg-white px-2.5 py-1 font-semibold text-[var(--text-strong)] shadow-[var(--shadow-soft)]">
           {value}{unit}
         </span>
       </div>
 
       <div className="relative flex items-center w-full h-6">
-        {/* Track Background */}
-        <div className="absolute w-full h-1.5 bg-white/10 rounded-full" />
+        <div className="absolute w-full h-1.5 rounded-full bg-[rgba(111,123,140,0.18)]" />
         
-        {/* Filled Active Track */}
         <div
-          className="absolute h-1.5 bg-[#f25056] rounded-full shadow-[0_0_8px_rgba(242,80,86,0.6)]"
+          className="absolute h-1.5 rounded-full bg-[var(--accent)] shadow-[0_0_0_3px_rgba(194,65,74,0.12)]"
           style={{ width: `${percentage}%` }}
         />
 
-        {/* Input */}
         <input
           type="range"
           min={min}
@@ -53,15 +50,14 @@ export const SingleSlider: React.FC<SingleSliderProps> = ({
           className="absolute w-full h-6 opacity-0 cursor-pointer z-10"
         />
 
-        {/* Thumb Visual */}
         <div
-          className="absolute w-4 h-4 bg-[#f25056] border-2 border-white rounded-full shadow-[0_0_10px_rgba(242,80,86,0.9)] pointer-events-none transform -translate-x-1/2 transition-transform hover:scale-110"
+          className="pointer-events-none absolute h-4 w-4 -translate-x-1/2 rounded-full border-[3px] border-[var(--accent)] bg-white shadow-[0_0_0_3px_rgba(194,65,74,0.12)] transition-transform"
           style={{ left: `${percentage}%` }}
         />
       </div>
 
       {showLimits && (
-        <div className="flex justify-between text-[11px] text-zinc-500 font-medium">
+        <div className="flex justify-between text-[11px] font-medium text-[var(--text-soft)]">
           <span>{min}</span>
           <span>{max}</span>
         </div>
@@ -105,32 +101,29 @@ export const DualRangeSlider: React.FC<DualRangeSliderProps> = ({
   return (
     <div className="flex flex-col gap-1.5 w-full select-none">
       <div className="flex justify-between items-center text-xs">
-        <span className="text-zinc-300 font-medium">{label}</span>
+        <span className="font-medium text-[var(--text-base)]">{label}</span>
         <div className="flex items-center gap-1">
-          <span className="bg-[#242429] px-2 py-0.5 rounded text-white font-semibold border border-white/5">
+          <span className="rounded-full border border-[var(--border-soft)] bg-white px-2.5 py-1 font-semibold text-[var(--text-strong)] shadow-[var(--shadow-soft)]">
             {minVal}
           </span>
-          <span className="text-zinc-500">-</span>
-          <span className="bg-[#242429] px-2 py-0.5 rounded text-white font-semibold border border-white/5">
+          <span className="text-[var(--text-soft)]">-</span>
+          <span className="rounded-full border border-[var(--border-soft)] bg-white px-2.5 py-1 font-semibold text-[var(--text-strong)] shadow-[var(--shadow-soft)]">
             {maxVal} {unit}
           </span>
         </div>
       </div>
 
       <div className="relative flex items-center w-full h-6">
-        {/* Track Background */}
-        <div className="absolute w-full h-1.5 bg-white/10 rounded-full" />
+        <div className="absolute w-full h-1.5 rounded-full bg-[rgba(111,123,140,0.18)]" />
 
-        {/* Highlighted Selected Range */}
         <div
-          className="absolute h-1.5 bg-[#f25056] rounded-full shadow-[0_0_8px_rgba(242,80,86,0.6)]"
+          className="absolute h-1.5 rounded-full bg-[var(--accent)] shadow-[0_0_0_3px_rgba(194,65,74,0.12)]"
           style={{
             left: `${minPercent}%`,
             width: `${maxPercent - minPercent}%`,
           }}
         />
 
-        {/* Native Inputs */}
         <input
           type="range"
           min={min}
@@ -150,18 +143,17 @@ export const DualRangeSlider: React.FC<DualRangeSliderProps> = ({
           className="absolute w-full h-6 opacity-0 cursor-pointer z-30 pointer-events-auto"
         />
 
-        {/* Visual Thumbs */}
         <div
-          className="absolute w-4 h-4 bg-[#f25056] border-2 border-white rounded-full shadow-[0_0_10px_rgba(242,80,86,0.9)] pointer-events-none transform -translate-x-1/2"
+          className="pointer-events-none absolute h-4 w-4 -translate-x-1/2 rounded-full border-[3px] border-[var(--accent)] bg-white shadow-[0_0_0_3px_rgba(194,65,74,0.12)]"
           style={{ left: `${minPercent}%` }}
         />
         <div
-          className="absolute w-4 h-4 bg-[#f25056] border-2 border-white rounded-full shadow-[0_0_10px_rgba(242,80,86,0.9)] pointer-events-none transform -translate-x-1/2"
+          className="pointer-events-none absolute h-4 w-4 -translate-x-1/2 rounded-full border-[3px] border-[var(--accent)] bg-white shadow-[0_0_0_3px_rgba(194,65,74,0.12)]"
           style={{ left: `${maxPercent}%` }}
         />
       </div>
 
-      <div className="flex justify-between text-[11px] text-zinc-500 font-medium">
+      <div className="flex justify-between text-[11px] font-medium text-[var(--text-soft)]">
         <span>{min}</span>
         <span>{max}</span>
       </div>

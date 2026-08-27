@@ -1,0 +1,178 @@
+{
+  "schema_version": 1,
+  "purpose": "identidade e validacao estrutural; nao prova aceitacao ou execucao no silicio",
+  "firmware": [
+    {
+      "name": "cyan_skillfish2_ce.bin",
+      "kind": "amdgpu_common_firmware",
+      "psp_fw_type": 3,
+      "size_bytes": 263296,
+      "sha256": "5946efbf7e46ccfe7e9f965da56c35b1187469d1c1a49c8a9eff433eb3ab4723",
+      "header": {
+        "size_bytes": 44,
+        "version": "1.0",
+        "ip_version": "10.1",
+        "ucode_version": 37,
+        "ucode_size_bytes": 263040,
+        "ucode_offset_bytes": 256,
+        "crc32": "0x14f5bfff"
+      },
+      "payload_sha256": "faeb5f1356057e3c16f7d07f5f30783bdc4e17394570a1497a97458517130057",
+      "structurally_valid": true,
+      "issues": [],
+      "gfx_header": {
+        "ucode_feature_version": 32,
+        "jt_offset_dwords": 65536,
+        "jt_size_dwords": 96
+      }
+    },
+    {
+      "name": "cyan_skillfish2_me.bin",
+      "kind": "amdgpu_common_firmware",
+      "psp_fw_type": 1,
+      "size_bytes": 263424,
+      "sha256": "d4ed4d968de0d7720f7c8215d42fdae727bf99cdf43cee6f8f864dc2584b17e2",
+      "header": {
+        "size_bytes": 44,
+        "version": "1.0",
+        "ip_version": "10.1",
+        "ucode_version": 99,
+        "ucode_size_bytes": 263168,
+        "ucode_offset_bytes": 256,
+        "crc32": "0x9709de5e"
+      },
+      "payload_sha256": "47eb26bb1a22a4fcd6d3350012a52a7eb9192278e810b670a39651a1d71ce030",
+      "structurally_valid": true,
+      "issues": [],
+      "gfx_header": {
+        "ucode_feature_version": 32,
+        "jt_offset_dwords": 65536,
+        "jt_size_dwords": 128
+      }
+    },
+    {
+      "name": "cyan_skillfish2_mec.bin",
+      "kind": "amdgpu_common_firmware",
+      "psp_fw_type": 4,
+      "size_bytes": 268592,
+      "sha256": "b1c1f843a8faaa2de537d6ba05052a3776b5a1b73f8a3c3f5ed9d568489776a4",
+      "header": {
+        "size_bytes": 44,
+        "version": "1.0",
+        "ip_version": "10.1",
+        "ucode_version": 144,
+        "ucode_size_bytes": 268336,
+        "ucode_offset_bytes": 256,
+        "crc32": "0x3bb301c1"
+      },
+      "payload_sha256": "3e1fdf268a6580fe755f4a8a506181a670da71c28e599a77318e5b2d65e597a2",
+      "structurally_valid": true,
+      "issues": [],
+      "gfx_header": {
+        "ucode_feature_version": 32,
+        "jt_offset_dwords": 66860,
+        "jt_size_dwords": 224,
+        "mec_main_payload_bytes": 267440,
+        "mec_jt_payload_bytes": 896,
+        "mec_jt_end_bytes": 268336
+      }
+    },
+    {
+      "name": "cyan_skillfish2_mec2.bin",
+      "kind": "amdgpu_common_firmware",
+      "psp_fw_type": 5,
+      "size_bytes": 268592,
+      "sha256": "b1c1f843a8faaa2de537d6ba05052a3776b5a1b73f8a3c3f5ed9d568489776a4",
+      "header": {
+        "size_bytes": 44,
+        "version": "1.0",
+        "ip_version": "10.1",
+        "ucode_version": 144,
+        "ucode_size_bytes": 268336,
+        "ucode_offset_bytes": 256,
+        "crc32": "0x3bb301c1"
+      },
+      "payload_sha256": "3e1fdf268a6580fe755f4a8a506181a670da71c28e599a77318e5b2d65e597a2",
+      "structurally_valid": true,
+      "issues": [],
+      "gfx_header": {
+        "ucode_feature_version": 32,
+        "jt_offset_dwords": 66860,
+        "jt_size_dwords": 224,
+        "mec_main_payload_bytes": 267440,
+        "mec_jt_payload_bytes": 896,
+        "mec_jt_end_bytes": 268336
+      }
+    },
+    {
+      "name": "cyan_skillfish2_pfp.bin",
+      "kind": "amdgpu_common_firmware",
+      "psp_fw_type": 2,
+      "size_bytes": 263424,
+      "sha256": "50e56dc1913571ff589425d2b059bddfc5e8a2b4bc22d3eb78cac75d1e0479a1",
+      "header": {
+        "size_bytes": 44,
+        "version": "1.0",
+        "ip_version": "10.1",
+        "ucode_version": 148,
+        "ucode_size_bytes": 263168,
+        "ucode_offset_bytes": 256,
+        "crc32": "0x5ce9e15d"
+      },
+      "payload_sha256": "5aa30f3b2e1c697ad2bfe02643777552d5351ec6813572271f01320f65ca7367",
+      "structurally_valid": true,
+      "issues": [],
+      "gfx_header": {
+        "ucode_feature_version": 32,
+        "jt_offset_dwords": 65536,
+        "jt_size_dwords": 128
+      }
+    },
+    {
+      "name": "cyan_skillfish2_rlc.bin",
+      "kind": "amdgpu_common_firmware",
+      "psp_fw_type": 8,
+      "size_bytes": 25344,
+      "sha256": "20acefdb6128a36275f4382425a109a7c9927f6053eab685bb51164ff1d18cfb",
+      "header": {
+        "size_bytes": 104,
+        "version": "2.0",
+        "ip_version": "10.1",
+        "ucode_version": 13,
+        "ucode_size_bytes": 25088,
+        "ucode_offset_bytes": 256,
+        "crc32": "0x776a0649"
+      },
+      "payload_sha256": "16794b4817ccb8e82e45fe3524aec7a8a0e58d032e76ac1c3385c417a145be48",
+      "structurally_valid": true,
+      "issues": []
+    },
+    {
+      "name": "cyan_skillfish2_sdma.bin",
+      "kind": "amdgpu_common_firmware",
+      "psp_fw_type": 9,
+      "size_bytes": 33792,
+      "sha256": "15d0d3626da7f2513f03b13bb7e02eeeeccab276276ae27d0b6067b5f25e9e95",
+      "header": {
+        "size_bytes": 48,
+        "version": "1.0",
+        "ip_version": "5.0",
+        "ucode_version": 52,
+        "ucode_size_bytes": 33536,
+        "ucode_offset_bytes": 256,
+        "crc32": "0xf2f45029"
+      },
+      "payload_sha256": "acba51d3d734637f5acbbabf3a7da5cecdc4909628d79a40f29f5a39eb1338fe",
+      "structurally_valid": true,
+      "issues": []
+    },
+    {
+      "name": "vbios_bc250.bin",
+      "kind": "atom_vbios",
+      "size_bytes": 55296,
+      "sha256": "bf4f1e3c77e27700b226265161cf7d0f92773dc2269c572aa47826c9f2830f22",
+      "structurally_valid": true,
+      "issues": []
+    }
+  ]
+}

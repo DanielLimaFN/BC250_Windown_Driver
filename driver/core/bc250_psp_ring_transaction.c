@@ -12,7 +12,8 @@ static uint32_t Bc250PspPollAck(
                 BC250_PSP_RING_C2PMSG_64, Ack)) return 0u;
         *Polls = i;
         if (*Ack != 0xFFFFFFFFu &&
-            (*Ack & BC250_PSP_RING_TOS_READY) != 0u) return 1u;
+            (*Ack & BC250_PSP_RING_ACK_MASK) ==
+                BC250_PSP_RING_ACK_VALUE) return 1u;
         Interface->Stall(Interface->Context, 1000u);
     }
     return 0u;
@@ -86,17 +87,27 @@ BC250_PSP_RING_STATUS Bc250RunPspRingTransaction(
         goto Restore;
     }
     Interface->Stall(Interface->Context, 20000u);
+    if (!Interface->Read32(Interface->Context, BC250_PSP_RING_C2PMSG_64,
+            &Evidence->CreateCommandObserved)) {
+        status = BC250_PSP_RING_READ_FAILED;
+        goto Destroy;
+    }
     if (!Bc250PspPollAck(Interface, MaxPolls, &Evidence->CreatePolls,
             &Evidence->CreateAck)) {
         status = BC250_PSP_RING_CREATE_TIMEOUT;
     } else {
         Evidence->CreatePassed = 1u;
     }
+Destroy:
     if (!Interface->Write32(Interface->Context, BC250_PSP_RING_C2PMSG_64,
             BC250_PSP_RING_DESTROY)) {
         return BC250_PSP_RING_WRITE_FAILED;
     }
     Interface->Stall(Interface->Context, 20000u);
+    if (!Interface->Read32(Interface->Context, BC250_PSP_RING_C2PMSG_64,
+            &Evidence->DestroyCommandObserved)) {
+        return BC250_PSP_RING_READ_FAILED;
+    }
     if (!Bc250PspPollAck(Interface, MaxPolls, &Evidence->DestroyPolls,
             &Evidence->DestroyAck)) {
         return BC250_PSP_RING_DESTROY_TIMEOUT;

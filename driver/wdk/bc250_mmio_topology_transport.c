@@ -152,7 +152,39 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == BC250_GCVM_VMID8_PT_START_LO ||
         ByteOffset == BC250_GCVM_VMID8_PT_START_HI ||
         ByteOffset == BC250_GCVM_VMID8_PT_END_LO ||
-        ByteOffset == BC250_GCVM_VMID8_PT_END_HI;
+        ByteOffset == BC250_GCVM_VMID8_PT_END_HI ||
+        ByteOffset == BC250_PSP_RING_C2PMSG_64 ||
+        ByteOffset == BC250_PSP_RING_C2PMSG_67 ||
+        ByteOffset == BC250_PSP_RING_C2PMSG_69 ||
+        ByteOffset == BC250_PSP_RING_C2PMSG_70 ||
+        ByteOffset == BC250_PSP_RING_C2PMSG_71 ||
+        ByteOffset == 0x00004A24u ||
+        ByteOffset == BC250_SDMA0_CLK_CTRL ||
+        ByteOffset == BC250_SDMA0_CNTL ||
+        ByteOffset == BC250_SDMA0_F32_CNTL ||
+        ByteOffset == BC250_SDMA0_STATUS2_REG ||
+        ByteOffset == 0x00003FC4u || ByteOffset == 0x00003FCCu ||
+        ByteOffset == 0x00004A04u || ByteOffset == 0x000049F4u ||
+        ByteOffset == 0x000049F8u || ByteOffset == 0x000049FCu ||
+        ByteOffset == 0x00004A14u || ByteOffset == 0x00004A18u ||
+        ByteOffset == 0x00004A60u || ByteOffset == 0x00004A70u ||
+        ByteOffset == 0x00004A78u || ByteOffset == 0x00004A7Cu ||
+        ByteOffset == 0x00004A80u || ByteOffset == 0x00004AA0u ||
+        ByteOffset == 0x00004A8Cu || ByteOffset == 0x00004A90u ||
+        ByteOffset == 0x00004A94u || ByteOffset == 0x00004A98u ||
+        ByteOffset == 0x00004A9Cu || ByteOffset == 0x00004AB0u ||
+        ByteOffset == 0x00004AC0u ||
+        ByteOffset == 0x00004B9Cu || ByteOffset == 0x00004BA0u ||
+        ByteOffset == 0x00004BA4u || ByteOffset == 0x00004BA8u ||
+        ByteOffset == 0x00004BC8u || ByteOffset == 0x00004C48u ||
+        ByteOffset == 0x00004C4Cu || ByteOffset == 0x00004C54u ||
+        ByteOffset == 0x0003B000u || ByteOffset == 0x0003B9B8u ||
+        ByteOffset == 0x000086D8u || ByteOffset == 0x00008694u ||
+        ByteOffset == 0x0000A130u || ByteOffset == 0x0000A134u ||
+        ByteOffset == 0x0000A138u ||
+        ByteOffset == 0x0003E050u || ByteOffset == 0x0003E054u ||
+        ByteOffset == 0x0003E100u || ByteOffset == 0x0003E104u ||
+        ByteOffset == 0x0003E108u || ByteOffset == 0x0003E10Cu;
 }
 
 static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
@@ -165,7 +197,31 @@ static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == BC250_GCVM_VMID8_PT_START_LO ||
         ByteOffset == BC250_GCVM_VMID8_PT_START_HI ||
         ByteOffset == BC250_GCVM_VMID8_PT_END_LO ||
-        ByteOffset == BC250_GCVM_VMID8_PT_END_HI;
+        ByteOffset == BC250_GCVM_VMID8_PT_END_HI ||
+        ByteOffset == BC250_PSP_RING_C2PMSG_64 ||
+        ByteOffset == BC250_PSP_RING_C2PMSG_67 ||
+        ByteOffset == BC250_PSP_RING_C2PMSG_69 ||
+        ByteOffset == BC250_PSP_RING_C2PMSG_70 ||
+        ByteOffset == BC250_PSP_RING_C2PMSG_71 ||
+        ByteOffset == BC250_SDMA0_CLK_CTRL ||
+        ByteOffset == BC250_SDMA0_CNTL ||
+        ByteOffset == BC250_SDMA0_F32_CNTL ||
+        ByteOffset == 0x00003FC4u || ByteOffset == 0x00003FCCu ||
+        ByteOffset == 0x00004A04u || ByteOffset == 0x000049F4u ||
+        ByteOffset == 0x000049F8u || ByteOffset == 0x000049FCu ||
+        ByteOffset == 0x00004A70u || ByteOffset == 0x00004A80u ||
+        ByteOffset == 0x00004AA0u || ByteOffset == 0x00004B80u ||
+        ByteOffset == 0x00004B84u || ByteOffset == 0x00004B88u ||
+        ByteOffset == 0x00004B8Cu || ByteOffset == 0x00004B90u ||
+        ByteOffset == 0x00004B94u || ByteOffset == 0x00004B98u ||
+        ByteOffset == 0x00004B9Cu || ByteOffset == 0x00004BA0u ||
+        ByteOffset == 0x00004BA4u || ByteOffset == 0x00004BA8u ||
+        ByteOffset == 0x00004BC8u || ByteOffset == 0x00004C48u ||
+        ByteOffset == 0x00004C4Cu || ByteOffset == 0x00004C54u ||
+        ByteOffset == 0x0003B000u || ByteOffset == 0x000086D8u ||
+        ByteOffset == 0x0003E050u || ByteOffset == 0x0003E054u ||
+        ByteOffset == 0x0003E100u || ByteOffset == 0x0003E104u ||
+        ByteOffset == 0x0003E108u || ByteOffset == 0x0003E10Cu;
 }
 
 uint32_t Bc250MmioTopologyRead32(

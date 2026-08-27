@@ -63,7 +63,7 @@ static int Bc250RunPreemptionContractTest(void)
     CHECK(cursor == 4u);
     CHECK(g_preemptResult.EmittedFenceDwords == 4u);
     CHECK(g_preemptResult.IsSuccessful == 1u);
-    CHECK(g_preemptRing[0] == BC250_SDMA_OP_FENCE);
+    CHECK(g_preemptRing[0] == (BC250_SDMA_OP_FENCE | (3u << 16)));
     CHECK(g_preemptRing[1] == 0x20000000u);
     CHECK(g_preemptRing[3] == 601u);
 

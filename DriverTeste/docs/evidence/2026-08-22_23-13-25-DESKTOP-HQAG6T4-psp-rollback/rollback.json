@@ -1,0 +1,246 @@
+﻿{
+    "schema_version":  1,
+    "captured_at":  "2026-08-22T23:13:25.9399520-03:00",
+    "objective":  "PSP GPCOM create/destroy rollback only; no firmware load",
+    "verdict":  "NÃO VALIDADO EM HARDWARE",
+    "passed":  false,
+    "failure":  "rollback PSP falhou",
+    "driver_sha256":  "b21ad70fa72ae32556a98d9df8058155db305afe15a713d70aee942b0e94bfb9",
+    "pre":  {
+                "c2pmsg64":  "0x80000000",
+                "wptr":  "0x00000000",
+                "ring_lo":  "0x00000000",
+                "ring_hi":  "0x00000000",
+                "ring_size":  "0x00000000"
+            },
+    "post":  {
+                 "c2pmsg64":  "0x80020000",
+                 "wptr":  "0x00000000",
+                 "ring_lo":  "0x43DCF000",
+                 "ring_hi":  "0x00000004",
+                 "ring_size":  "0x00001000"
+             },
+    "differences":  [
+                        {
+                            "register":  "c2pmsg64",
+                            "before":  "0x80000000",
+                            "after":  "0x80020000"
+                        },
+                        {
+                            "register":  "ring_lo",
+                            "before":  "0x00000000",
+                            "after":  "0x43DCF000"
+                        },
+                        {
+                            "register":  "ring_hi",
+                            "before":  "0x00000000",
+                            "after":  "0x00000004"
+                        },
+                        {
+                            "register":  "ring_size",
+                            "before":  "0x00000000",
+                            "after":  "0x00001000"
+                        }
+                    ],
+    "commands":  [
+                     {
+                         "name":  "info_pre",
+                         "command":  "bc250ctl.exe info",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "driver          : bc250dbg v3.0  ABI 3  armamento=readonly",
+                                        "pci             : 01:00.0  1002:13FE rev 00",
+                                        "  BAR0          : 0x00000000C0000000  raw 0xC000000C",
+                                        "  BAR2          : 0x00000000D0000000  raw 0xD000000C",
+                                        "  BAR4          : 0x000000000000EF00  raw 0x0000EF01 io",
+                                        "  BAR5          : 0x00000000FE800000  raw 0xFE800000 [mapeado]",
+                                        "mmio            : 0xFE800000 +512 KB ",
+                                        "  GPU_ID        : 0x9FFF9700 (confere com a BC-250)",
+                                        "  offset          SOC15        legado      ",
+                                        "  SCRATCH_REG0  : 0x00000000   0x4D585042",
+                                        "  GRBM_STATUS   : 0x00003028   0x00000000",
+                                        "  CC_GC_ARRAY   : 0xFFF80000   0x00000000   \u003c== o desempate",
+                                        "  ** MAPA OBSERVADO: CC_GC_SHADER_ARRAY_CONFIG em 0x089BC bate com o",
+                                        "     valor bruto visto no Linux (0xFFF80000). Isto sustenta o offset",
+                                        "     SOC15, mas nao prova quantidade de CU utilizavel nem execucao.",
+                                        "smu             : nao consultado pelo baseline; use \u0027smu\u0027 explicitamente",
+                                        "termico         : NAO CALIBRADO  limite 85 C  ",
+                                        "  sondas cruas  : edge 0xFFFFFFFF  junc 0x00000000  mem 0x00001EC2",
+                                        "  ** sem calibracao o driver recusa armar \u0027unsafe\u0027.",
+                                        "     Compare as sondas com o Linux e rode \u0027thermal calib\u0027.",
+                                        "log ring        : 4096 entradas, head 5"
+                                    ]
+                     },
+                     {
+                         "name":  "psp_status_pre",
+                         "command":  "bc250ctl.exe psp status",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do PSP (MP0 em 0x58000):",
+                                        "  C2PMSG_64 : 0x80000000   \u003c== TOS PRONTO (bit31)",
+                                        "  C2PMSG_81 : 0x002D5C6D   status/heartbeat do SOS (valor variavel)",
+                                        "  C2PMSG_67 : 0x00000000   WPTR do anel",
+                                        "  anel      : lo 0x00000000  hi 0x00000000  tam 0x00000000",
+                                        "  criado por nos: nao"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_c2pmsg64",
+                         "command":  "bc250ctl.exe reg r 0x58200",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00058200 = 0x80000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_wptr",
+                         "command":  "bc250ctl.exe reg r 0x5820C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0005820C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_ring_lo",
+                         "command":  "bc250ctl.exe reg r 0x58214",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00058214 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_ring_hi",
+                         "command":  "bc250ctl.exe reg r 0x58218",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00058218 = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "pre_ring_size",
+                         "command":  "bc250ctl.exe reg r 0x5821C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0005821C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "arm_write",
+                         "command":  "bc250ctl.exe arm write",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "armamento agora: write"
+                                    ]
+                     },
+                     {
+                         "name":  "psp_init",
+                         "command":  "bc250ctl.exe psp init",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "C2PMSG_64 antes : 0x80000000",
+                                        "C2PMSG_64 depois: 0x80020000",
+                                        "Anel GPCOM do PSP criado: PA 0x443DCF000 (4096 bytes)"
+                                    ]
+                     },
+                     {
+                         "name":  "psp_status_armed",
+                         "command":  "bc250ctl.exe psp status",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do PSP (MP0 em 0x58000):",
+                                        "  C2PMSG_64 : 0x80020000   \u003c== TOS PRONTO (bit31)",
+                                        "  C2PMSG_81 : 0x002D5CAD   status/heartbeat do SOS (valor variavel)",
+                                        "  C2PMSG_67 : 0x00000000   WPTR do anel",
+                                        "  anel      : lo 0x43DCF000  hi 0x00000004  tam 0x00001000",
+                                        "  criado por nos: sim  (PA 0x443DCF000)"
+                                    ]
+                     },
+                     {
+                         "name":  "psp_rollback",
+                         "command":  "bc250ctl.exe psp rollback",
+                         "exit_code":  1,
+                         "timed_out":  false,
+                         "output":  [
+                                        "subcomando psp desconhecido: rollback"
+                                    ]
+                     },
+                     {
+                         "name":  "arm_readonly",
+                         "command":  "bc250ctl.exe arm readonly",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "armamento agora: readonly"
+                                    ]
+                     },
+                     {
+                         "name":  "post_c2pmsg64",
+                         "command":  "bc250ctl.exe reg r 0x58200",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00058200 = 0x80020000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_wptr",
+                         "command":  "bc250ctl.exe reg r 0x5820C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0005820C = 0x00000000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_ring_lo",
+                         "command":  "bc250ctl.exe reg r 0x58214",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00058214 = 0x43DCF000"
+                                    ]
+                     },
+                     {
+                         "name":  "post_ring_hi",
+                         "command":  "bc250ctl.exe reg r 0x58218",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x00058218 = 0x00000004"
+                                    ]
+                     },
+                     {
+                         "name":  "post_ring_size",
+                         "command":  "bc250ctl.exe reg r 0x5821C",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "bar 0x0005821C = 0x00001000"
+                                    ]
+                     },
+                     {
+                         "name":  "psp_status_post",
+                         "command":  "bc250ctl.exe psp status",
+                         "exit_code":  0,
+                         "timed_out":  false,
+                         "output":  [
+                                        "Estado do PSP (MP0 em 0x58000):",
+                                        "  C2PMSG_64 : 0x80020000   \u003c== TOS PRONTO (bit31)",
+                                        "  C2PMSG_81 : 0x002D5CC0   status/heartbeat do SOS (valor variavel)",
+                                        "  C2PMSG_67 : 0x00000000   WPTR do anel",
+                                        "  anel      : lo 0x43DCF000  hi 0x00000004  tam 0x00001000",
+                                        "  criado por nos: sim  (PA 0x443DCF000)"
+                                    ]
+                     }
+                 ]
+}

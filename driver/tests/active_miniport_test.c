@@ -44,6 +44,40 @@ void * __cdecl memcpy(void *Destination, const void *Source, size_t Length)
 
 static __declspec(align(16)) unsigned char g_pool[32768];
 static int g_poolAllocated;
+static __declspec(align(4096)) unsigned char g_contiguousPage[4096];
+static int g_contiguousAllocated;
+
+static PVOID Bc250TestAllocateContiguous(
+    SIZE_T NumberOfBytes, PHYSICAL_ADDRESS LowestAcceptableAddress,
+    PHYSICAL_ADDRESS HighestAcceptableAddress,
+    PHYSICAL_ADDRESS BoundaryAddressMultiple,
+    MEMORY_CACHING_TYPE CacheType)
+{
+    UNREFERENCED_PARAMETER(LowestAcceptableAddress);
+    UNREFERENCED_PARAMETER(HighestAcceptableAddress);
+    UNREFERENCED_PARAMETER(BoundaryAddressMultiple);
+    UNREFERENCED_PARAMETER(CacheType);
+    if (g_contiguousAllocated || NumberOfBytes > sizeof(g_contiguousPage)) return NULL;
+    g_contiguousAllocated = 1;
+    memset(g_contiguousPage, 0, sizeof(g_contiguousPage));
+    return g_contiguousPage;
+}
+static VOID Bc250TestFreeContiguous(PVOID BaseAddress)
+{
+    if (BaseAddress == g_contiguousPage) g_contiguousAllocated = 0;
+}
+static PHYSICAL_ADDRESS Bc250TestGetPhysicalAddress(PVOID BaseAddress)
+{
+    PHYSICAL_ADDRESS address;
+    address.QuadPart = BaseAddress == g_contiguousPage ? 0x12345000ll : 0ll;
+    return address;
+}
+PVOID (*__imp_MmAllocateContiguousMemorySpecifyCache)(
+    SIZE_T, PHYSICAL_ADDRESS, PHYSICAL_ADDRESS, PHYSICAL_ADDRESS,
+    MEMORY_CACHING_TYPE) = Bc250TestAllocateContiguous;
+VOID (*__imp_MmFreeContiguousMemory)(PVOID) = Bc250TestFreeContiguous;
+PHYSICAL_ADDRESS (*__imp_MmGetPhysicalAddress)(PVOID) =
+    Bc250TestGetPhysicalAddress;
 
 static PVOID Bc250TestAllocatePool2(
     POOL_FLAGS Flags,

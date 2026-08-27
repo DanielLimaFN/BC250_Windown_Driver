@@ -67,7 +67,7 @@ static int Bc250RunContextDispatcherContractTest(void)
     CHECK(cursor == 11u); /* 7 dwords copy + 4 dwords fence */
     CHECK(g_dispatchRing[0] == 0x00000001u); /* COPY_LINEAR */
     CHECK(g_dispatchRing[1] == 4095u);
-    CHECK(g_dispatchRing[7] == 0x00000005u); /* FENCE */
+    CHECK(g_dispatchRing[7] == 0x00030005u); /* FENCE, MTYPE UC */
     CHECK(g_dispatchRing[10] == 0xBC250001u);
 
     /* 3. Test Compute Submission */

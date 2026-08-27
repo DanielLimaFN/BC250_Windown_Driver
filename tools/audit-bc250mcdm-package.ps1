@@ -20,12 +20,18 @@ function Require-File([string]$Path, [string]$Label) {
 $packageSys = Join-Path $packageDir 'bc250mcdm.sys'
 $packageInf = Join-Path $packageDir 'bc250mcdm.inf'
 $packageCat = Join-Path $packageDir 'bc250mcdm.cat'
+$packageSdmaFirmware = Join-Path $packageDir 'cyan_skillfish2_sdma.bin'
+$packageRlcFirmware = Join-Path $packageDir 'cyan_skillfish2_rlc.bin'
+$packagePfpFirmware = Join-Path $packageDir 'cyan_skillfish2_pfp.bin'
 $requiredFiles = @(
     @{ Path = $manifestPath; Label = 'manifesto' },
     @{ Path = $sourceSys; Label = 'SYS bruto' },
     @{ Path = $packageSys; Label = 'SYS assinado' },
     @{ Path = $packageInf; Label = 'INF' },
     @{ Path = $packageCat; Label = 'catalogo' },
+    @{ Path = $packageSdmaFirmware; Label = 'firmware SDMA' },
+    @{ Path = $packageRlcFirmware; Label = 'firmware RLC' },
+    @{ Path = $packagePfpFirmware; Label = 'firmware PFP' },
     @{ Path = $recoveryPath; Label = 'recovery instalado' }
 )
 foreach ($required in $requiredFiles) {
@@ -52,6 +58,9 @@ $hashChecks = @(
     @{ Path = $packageSys; Expected = $manifest.PackageSysSha256; Label = 'SYS assinado' },
     @{ Path = $packageInf; Expected = $manifest.PackageInfSha256; Label = 'INF' },
     @{ Path = $packageCat; Expected = $manifest.PackageCatSha256; Label = 'catalogo' },
+    @{ Path = $packageSdmaFirmware; Expected = $manifest.SdmaFirmwareSha256; Label = 'firmware SDMA' },
+    @{ Path = $packageRlcFirmware; Expected = $manifest.RlcFirmwareSha256; Label = 'firmware RLC' },
+    @{ Path = $packagePfpFirmware; Expected = $manifest.PfpFirmwareSha256; Label = 'firmware PFP' },
     @{ Path = $recoveryPath; Expected = $manifest.RecoverySha256; Label = 'recovery' }
 )
 foreach ($check in $hashChecks) {
@@ -76,7 +85,10 @@ foreach ($needle in @(
     'PCI\VEN_1002&DEV_13FE',
     'AddService=bc250mcdm,',
     'ServiceBinary=%12%\bc250mcdm.sys',
-    'CatalogFile=bc250mcdm.cat'
+    'CatalogFile=bc250mcdm.cat',
+    'cyan_skillfish2_sdma.bin',
+    'cyan_skillfish2_rlc.bin',
+    'cyan_skillfish2_pfp.bin'
 )) {
     if (-not $inf.Contains($needle)) { $errors.Add("identidade INF ausente: $needle") }
 }
@@ -89,6 +101,9 @@ Write-Host "  DriverVer: $($manifest.DriverVer)"
 Write-Host "  source SYS: $($manifest.SourceSysSha256)"
 Write-Host "  signed SYS: $($manifest.PackageSysSha256)"
 Write-Host "  catalog:    $($manifest.PackageCatSha256)"
+Write-Host "  SDMA FW:    $($manifest.SdmaFirmwareSha256)"
+Write-Host "  RLC FW:     $($manifest.RlcFirmwareSha256)"
+Write-Host "  PFP FW:     $($manifest.PfpFirmwareSha256)"
 Write-Host "  signer:     $($manifest.SignerThumbprint)"
 Write-Host '  install/binding performed: NO'
 Write-Host '  hardware validation: NO'

@@ -51,8 +51,9 @@ static int Bc250RunPagingContractTest(void)
     CHECK(cursor == 7u);
     CHECK(g_pagingBuffer[0] == 0x00000001u); /* SDMA_OP_COPY_LINEAR */
     CHECK(g_pagingBuffer[1] == 8191u);       /* count - 1 */
-    CHECK(g_pagingBuffer[2] == 0x01000000u); /* src lo */
-    CHECK(g_pagingBuffer[4] == 0x02000000u); /* dst lo */
+    CHECK(g_pagingBuffer[2] == 0u);          /* endian/reserved */
+    CHECK(g_pagingBuffer[3] == 0x01000000u); /* src lo */
+    CHECK(g_pagingBuffer[5] == 0x02000000u); /* dst lo */
 
     /* 2. Test SDMA Const Fill */
     memset(&fillParams, 0, sizeof(fillParams));

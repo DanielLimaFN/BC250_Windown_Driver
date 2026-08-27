@@ -1,0 +1,84 @@
+﻿[Device Install Log]
+     OS Version = 10.0.19045
+     Service Pack = 0.0
+     Suite = 0x0100
+     ProductType = 1
+     Architecture = amd64
+
+[BeginLog]
+
+[Boot Session: 2026/08/25 01:03:29.500]
+
+>>>  [Driver Install (DrvSetupInstallDriver) - C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf]
+>>>  Section start 2026/08/25 01:04:46.632
+      cmd: "C:\Windows\system32\pnputil.exe" /add-driver C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf
+     dvs: Flags: 0x00000040
+     dvs: {Driver Setup Import Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf} 01:04:46.633
+     sto:      {Copy Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf} 01:04:46.636
+     sto:           Driver Package = C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf
+     sto:           Flags          = 0x00000007
+     sto:           Destination    = C:\Users\Daniel\AppData\Local\Temp\{70230ded-288e-e84b-aa57-63c406c4efbc}
+     sto:           Copying driver package files to 'C:\Users\Daniel\AppData\Local\Temp\{70230ded-288e-e84b-aa57-63c406c4efbc}'.
+     flq:           {FILE_QUEUE_COMMIT} 01:04:46.638
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{70230ded-288e-e84b-aa57-63c406c4efbc}\bc250readonly.cat'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.inf' to 'C:\Users\Daniel\AppData\Local\Temp\{70230ded-288e-e84b-aa57-63c406c4efbc}\bc250readonly.inf'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output\bc250readonly.sys' to 'C:\Users\Daniel\AppData\Local\Temp\{70230ded-288e-e84b-aa57-63c406c4efbc}\bc250readonly.sys'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 01:04:46.646
+     sto:      {Copy Driver Package: exit(0x00000000)} 01:04:46.646
+     ump:      Import flags: 0x00000000
+     pol:      {Driver package policy check} 01:04:46.702
+     pol:      {Driver package policy check - exit(0x00000000)} 01:04:46.703
+     sto:      {Stage Driver Package: C:\Users\Daniel\AppData\Local\Temp\{70230ded-288e-e84b-aa57-63c406c4efbc}\bc250readonly.inf} 01:04:46.703
+     inf:           {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{70230ded-288e-e84b-aa57-63c406c4efbc}\bc250readonly.inf} 01:04:46.706
+     inf:                Driver package 'bc250readonly.inf' is configurable.
+     inf:           {Query Configurability: exit(0x00000000)} 01:04:46.707
+     flq:           {FILE_QUEUE_COMMIT} 01:04:46.708
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{70230ded-288e-e84b-aa57-63c406c4efbc}\bc250readonly.cat' to 'C:\Windows\System32\DriverStore\Temp\{dda9bfd0-9753-4d4a-b56c-aa79ec7401f7}\bc250readonly.cat'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{70230ded-288e-e84b-aa57-63c406c4efbc}\bc250readonly.inf' to 'C:\Windows\System32\DriverStore\Temp\{dda9bfd0-9753-4d4a-b56c-aa79ec7401f7}\bc250readonly.inf'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{70230ded-288e-e84b-aa57-63c406c4efbc}\bc250readonly.sys' to 'C:\Windows\System32\DriverStore\Temp\{dda9bfd0-9753-4d4a-b56c-aa79ec7401f7}\bc250readonly.sys'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 01:04:46.718
+     sto:           {DRIVERSTORE IMPORT VALIDATE} 01:04:46.718
+     sig:                Driver package catalog is valid.
+     sig:                {_VERIFY_FILE_SIGNATURE} 01:04:46.732
+     sig:                     Key      = bc250readonly.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{dda9bfd0-9753-4d4a-b56c-aa79ec7401f7}\bc250readonly.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{dda9bfd0-9753-4d4a-b56c-aa79ec7401f7}\bc250readonly.cat
+!    sig:                     Verifying file against specific (valid) catalog failed.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0x800b0109)} 01:04:46.736
+     sig:                {_VERIFY_FILE_SIGNATURE} 01:04:46.737
+     sig:                     Key      = bc250readonly.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{dda9bfd0-9753-4d4a-b56c-aa79ec7401f7}\bc250readonly.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{dda9bfd0-9753-4d4a-b56c-aa79ec7401f7}\bc250readonly.cat
+     sig:                     Success: File is signed in Authenticode(tm) catalog.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0xe0000241)} 01:04:46.743
+     sto:           {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 01:04:46.744
+     sig:           Signer Score  = 0x0F000000 (Authenticode)
+     sig:           Signer Name   = BC250-WDDM Development Test
+     sto:           {Core Driver Package Import: bc250readonly.inf_amd64_18f88b5e8bf7d25b} 01:04:46.746
+     sto:                {DRIVERSTORE IMPORT BEGIN} 01:04:46.746
+     sto:                {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 01:04:46.746
+     cpy:                {Copy Directory: C:\Windows\System32\DriverStore\Temp\{dda9bfd0-9753-4d4a-b56c-aa79ec7401f7}} 01:04:46.746
+     cpy:                     Target Path = C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_18f88b5e8bf7d25b
+     cpy:                {Copy Directory: exit(0x00000000)} 01:04:46.749
+     idb:                {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_18f88b5e8bf7d25b\bc250readonly.inf} 01:04:46.749
+     idb:                     Created driver package object 'bc250readonly.inf_amd64_18f88b5e8bf7d25b' in DRIVERS database node.
+     idb:                     Created driver INF file object 'oem15.inf' in DRIVERS database node.
+     idb:                     Registered driver package 'bc250readonly.inf_amd64_18f88b5e8bf7d25b' with 'oem15.inf'.
+     idb:                {Register Driver Package: exit(0x00000000)} 01:04:46.752
+     idb:                {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250readonly.inf_amd64_18f88b5e8bf7d25b\bc250readonly.inf} 01:04:46.752
+     idb:                     Activating driver package 'bc250readonly.inf_amd64_18f88b5e8bf7d25b'.
+     cpy:                     Published 'bc250readonly.inf_amd64_18f88b5e8bf7d25b\bc250readonly.inf' to 'oem15.inf'.
+     idb:                     Indexed 2 device IDs for 'bc250readonly.inf_amd64_18f88b5e8bf7d25b'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                {Publish Driver Package: exit(0x00000000)} 01:04:46.759
+     sto:                {DRIVERSTORE IMPORT END} 01:04:46.760
+     dvi:                     Flushed all driver package files to disk. Time = 0 ms
+     sig:                     Installed catalog 'bc250readonly.cat' as 'oem15.cat'.
+     sto:                {DRIVERSTORE IMPORT END: exit(0x00000000)} 01:04:46.770
+     sto:           {Core Driver Package Import: exit(0x00000000)} 01:04:46.770
+     sto:      {Stage Driver Package: exit(0x00000000)} 01:04:46.771
+     dvs: {Driver Setup Import Driver Package - exit (0x00000000)} 01:04:46.839
+<<<  Section end 2026/08/25 01:04:46.839
+<<<  [Exit status: SUCCESS]
+

@@ -6,6 +6,7 @@
 #include "../core/bc250_adapter_info_contract.h"
 #include "../core/bc250_allocation_abi_contract.h"
 #include "../core/bc250_mcdm_debug_contract.h"
+#include "../core/bc250_firmware_staging.h"
 
 DRIVER_INITIALIZATION_DATA g_Bc250ActiveInitializationData;
 
@@ -16,6 +17,22 @@ static BC250_DXGK_ACTIVE_CONTEXT *
 
 static uint32_t Bc250ActiveExecuteGcvmBacking(
     void *Context, uint64_t PageTablePhysical);
+static BC250_PSP_RING_STATUS Bc250ActiveProbePspRing(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_PSP_RING_EVIDENCE *Evidence);
+static BC250_PSP_LOAD_FW_STATUS Bc250ActiveLoadSdmaFirmware(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_PSP_LOAD_FW_EVIDENCE *Evidence);
+static BC250_PSP_LOAD_FW_STATUS Bc250ActiveLoadRlcFirmware(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_PSP_LOAD_FW_EVIDENCE *Evidence,
+    BC250_RLC_LOAD_EVIDENCE *RlcEvidence);
+static void Bc250ActiveTlbStall(void *Context, uint32_t Microseconds);
+static void Bc250ActivePspBarrier(void *Context);
+static uint32_t Bc250ActiveVmidRead32(
+    void *Context, uint32_t ByteOffset, uint32_t *Value);
+static uint32_t Bc250ActiveVmidWrite32(
+    void *Context, uint32_t ByteOffset, uint32_t Value);
 
 static NTSTATUS Bc250ActiveQueryRuntimeCaps(
     HANDLE AdapterContext,
@@ -95,6 +112,340 @@ static NTSTATUS Bc250ActiveRegisterAdapter(
     ExReleasePushLockExclusive(&g_Bc250AdapterDirectoryLock);
     KeLeaveCriticalRegion();
     return status;
+}
+
+static BC250_PSP_LOAD_FW_STATUS Bc250ActiveLoadSdmaFirmware(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_PSP_LOAD_FW_EVIDENCE *Evidence)
+{
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    static const unsigned char expectedDigest[BC250_FIRMWARE_SHA256_BYTES] = {
+        0x15,0xD0,0xD3,0x62,0x6D,0xA7,0xF2,0x51,
+        0x3F,0x03,0xB1,0x3B,0xB7,0xE0,0x2E,0xEE,
+        0xEC,0xCA,0xB2,0x76,0x27,0x6A,0xE2,0x7D,
+        0x0B,0x60,0x67,0xB5,0xF2,0x5E,0x9E,0x95
+    };
+    static const unsigned char expectedPayloadDigest[BC250_FIRMWARE_SHA256_BYTES] = {
+        0xAC,0xBA,0x51,0xD3,0xD7,0x34,0x63,0x7F,
+        0x5A,0xCB,0xBA,0xBF,0x3A,0x7D,0xA5,0xCE,
+        0xCD,0xC4,0x90,0x96,0x28,0xD7,0x9A,0x40,
+        0xF2,0x9F,0x5A,0x39,0xEB,0x13,0x38,0xFE
+    };
+    UNICODE_STRING path = RTL_CONSTANT_STRING(
+        L"\\SystemRoot\\System32\\drivers\\cyan_skillfish2_sdma.bin");
+    OBJECT_ATTRIBUTES attributes;
+    IO_STATUS_BLOCK ioStatus;
+    FILE_STANDARD_INFORMATION fileInfo;
+    HANDLE file = NULL;
+    PHYSICAL_ADDRESS low, high, boundary;
+    PVOID ring = NULL, command = NULL, fence = NULL, firmware = NULL;
+    PHYSICAL_ADDRESS ringPa, commandPa, fencePa, firmwarePa;
+    unsigned char digest[BC250_FIRMWARE_SHA256_BYTES];
+    BC250_PSP_LOAD_FW_INTERFACE interfaceData;
+    BC250_SDMA_F32_INTERFACE f32Interface;
+    BC250_PSP_LOAD_FW_STATUS status = BC250_PSP_LOAD_FW_BAD_ARGUMENT;
+    BC250_MMIO_TOPOLOGY_STATUS mmioStatus;
+    NTSTATUS ntStatus;
+    uint32_t safeToFree = 1u;
+
+    if (Context == NULL || Evidence == NULL) return status;
+    RtlZeroMemory(Evidence, sizeof(*Evidence));
+    InitializeObjectAttributes(&attributes, &path,
+        OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    ntStatus = ZwCreateFile(&file, GENERIC_READ | SYNCHRONIZE, &attributes,
+        &ioStatus, NULL, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_OPEN,
+        FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE, NULL, 0u);
+    if (!NT_SUCCESS(ntStatus)) return status;
+    ntStatus = ZwQueryInformationFile(file, &ioStatus, &fileInfo,
+        sizeof(fileInfo), FileStandardInformation);
+    if (!NT_SUCCESS(ntStatus) || fileInfo.EndOfFile.QuadPart != 33792) {
+        ZwClose(file);
+        return status;
+    }
+    low.QuadPart = 0;
+    high.QuadPart = 0xFFFFFFFFFFull;
+    boundary.QuadPart = 0;
+    ring = MmAllocateContiguousMemorySpecifyCache(
+        BC250_PSP_RING_BYTES, low, high, boundary, MmNonCached);
+    command = MmAllocateContiguousMemorySpecifyCache(
+        BC250_PSP_LOAD_FW_COMMAND_BYTES, low, high, boundary, MmNonCached);
+    fence = MmAllocateContiguousMemorySpecifyCache(
+        PAGE_SIZE, low, high, boundary, MmNonCached);
+    firmware = MmAllocateContiguousMemorySpecifyCache(
+        33792u, low, high, boundary, MmNonCached);
+    if (ring == NULL || command == NULL || fence == NULL || firmware == NULL)
+        goto Cleanup;
+    RtlZeroMemory(ring, BC250_PSP_RING_BYTES);
+    RtlZeroMemory(command, BC250_PSP_LOAD_FW_COMMAND_BYTES);
+    RtlZeroMemory(fence, PAGE_SIZE);
+    RtlZeroMemory(firmware, 33792u);
+    ntStatus = ZwReadFile(file, NULL, NULL, NULL, &ioStatus, firmware,
+        33792u, NULL, NULL);
+    if (!NT_SUCCESS(ntStatus) || ioStatus.Information != 33792u) goto Cleanup;
+    Bc250FirmwareSha256(firmware, 33792u, digest);
+    if (!Bc250FirmwareDigestEqual(digest, expectedDigest)) goto Cleanup;
+    RtlMoveMemory(firmware, (PUCHAR)firmware + 0x100u, 33536u);
+    RtlZeroMemory((PUCHAR)firmware + 33536u, 0x100u);
+    Bc250FirmwareSha256(firmware, 33536u, digest);
+    if (!Bc250FirmwareDigestEqual(digest, expectedPayloadDigest)) goto Cleanup;
+    ringPa = MmGetPhysicalAddress(ring);
+    commandPa = MmGetPhysicalAddress(command);
+    fencePa = MmGetPhysicalAddress(fence);
+    firmwarePa = MmGetPhysicalAddress(firmware);
+    if (ringPa.QuadPart == 0 || commandPa.QuadPart == 0 ||
+        fencePa.QuadPart == 0 || firmwarePa.QuadPart == 0) goto Cleanup;
+    mmioStatus = Bc250MmioTopologyMapReadonly(
+        &Context->Core.MmioTransport, &Context->Core.DxgkInterface,
+        Context->Core.ResolvedBars, Context->Core.ResolvedBarCount,
+        BC250_PCI_MMIO_BAR_INDEX);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK) {
+        status = BC250_PSP_LOAD_FW_READ_FAILED;
+        goto Cleanup;
+    }
+    RtlZeroMemory(&interfaceData, sizeof(interfaceData));
+    interfaceData.Read32 = Bc250ActiveVmidRead32;
+    interfaceData.Write32 = Bc250ActiveVmidWrite32;
+    interfaceData.Stall = Bc250ActiveTlbStall;
+    interfaceData.Barrier = Bc250ActivePspBarrier;
+    interfaceData.Context = Context;
+    interfaceData.Identity = BC250_PSP_LOAD_FW_IDENTITY;
+    status = Bc250RunPspLoadFirmwareTransaction(
+        (uint64_t)ringPa.QuadPart, (uint32_t *)ring,
+        (uint64_t)commandPa.QuadPart, (uint32_t *)command,
+        (uint64_t)fencePa.QuadPart, (volatile uint32_t *)fence,
+        (uint64_t)firmwarePa.QuadPart, 33536u,
+        BC250_PSP_LOAD_FW_SDMA0_TYPE, &interfaceData, 500u, Evidence);
+    if (status == BC250_PSP_LOAD_FW_OK && Evidence->PhysicalReady != 0u) {
+        RtlZeroMemory(&f32Interface, sizeof(f32Interface));
+        f32Interface.Read32 = Bc250ActiveVmidRead32;
+        f32Interface.Write32 = Bc250ActiveVmidWrite32;
+        f32Interface.Stall = Bc250ActiveTlbStall;
+        f32Interface.Context = Context;
+        f32Interface.Identity = BC250_SDMA_F32_IDENTITY;
+        Context->SdmaF32Status = Bc250RunSdmaF32Transaction(
+            &f32Interface, &Context->SdmaF32Evidence);
+        if (Context->SdmaF32Status == BC250_SDMA_F32_OK &&
+            Context->SdmaF32Evidence.PhysicalReady != 0u) {
+            Context->SdmaRingWorkStatus = Bc250ActiveRunSdmaRingWork(
+                Context, &Context->SdmaRingWorkEvidence);
+        }
+    }
+    mmioStatus = Bc250MmioTopologyUnmap(&Context->Core.MmioTransport);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK &&
+        status == BC250_PSP_LOAD_FW_OK) {
+        status = BC250_PSP_LOAD_FW_RESTORE_FAILED;
+        Evidence->PhysicalReady = 0u;
+    }
+    if (Evidence->CreatePassed != 0u && Evidence->DestroyPassed == 0u)
+        safeToFree = 0u;
+Cleanup:
+    if (file != NULL) ZwClose(file);
+    if (safeToFree != 0u) {
+        if (firmware != NULL) MmFreeContiguousMemory(firmware);
+        if (fence != NULL) MmFreeContiguousMemory(fence);
+        if (command != NULL) MmFreeContiguousMemory(command);
+        if (ring != NULL) MmFreeContiguousMemory(ring);
+    } else {
+        Context->DeferredPspLoadRing = ring;
+        Context->DeferredPspLoadCommand = command;
+        Context->DeferredPspLoadFence = fence;
+        Context->DeferredPspLoadFirmware = firmware;
+    }
+    return status;
+#else
+    UNREFERENCED_PARAMETER(Context);
+    if (Evidence != NULL) RtlZeroMemory(Evidence, sizeof(*Evidence));
+    return BC250_PSP_LOAD_FW_BAD_ARGUMENT;
+#endif
+}
+
+static BC250_PSP_LOAD_FW_STATUS Bc250ActiveLoadRlcFirmware(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_PSP_LOAD_FW_EVIDENCE *Evidence,
+    BC250_RLC_LOAD_EVIDENCE *RlcEvidence)
+{
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    static const unsigned char expectedDigest[BC250_FIRMWARE_SHA256_BYTES] = {
+        0x20,0xAC,0xEF,0xDB,0x61,0x28,0xA3,0x62,
+        0x75,0xF4,0x38,0x24,0x25,0xA1,0x09,0xA7,
+        0xC9,0x92,0x7F,0x60,0x53,0xEA,0xB6,0x85,
+        0xBB,0x51,0x16,0x4F,0xF1,0xD1,0x8C,0xFB
+    };
+    static const unsigned char expectedPayloadDigest[BC250_FIRMWARE_SHA256_BYTES] = {
+        0x16,0x79,0x4B,0x48,0x17,0xCC,0xB8,0xE8,
+        0x2E,0x45,0xFE,0x35,0x24,0xAE,0xC7,0xA8,
+        0xA0,0xE5,0x8D,0x03,0x2E,0x76,0xAC,0x1C,
+        0x33,0x85,0xC4,0x17,0xA1,0x45,0xBE,0x48
+    };
+    UNICODE_STRING path = RTL_CONSTANT_STRING(
+        L"\\SystemRoot\\System32\\drivers\\cyan_skillfish2_rlc.bin");
+    OBJECT_ATTRIBUTES attributes;
+    IO_STATUS_BLOCK ioStatus;
+    FILE_STANDARD_INFORMATION fileInfo;
+    HANDLE file = NULL;
+    PHYSICAL_ADDRESS low, high, boundary;
+    PVOID ring = NULL, command = NULL, fence = NULL, firmware = NULL;
+    PHYSICAL_ADDRESS ringPa, commandPa, fencePa, firmwarePa;
+    unsigned char digest[BC250_FIRMWARE_SHA256_BYTES];
+    BC250_PSP_LOAD_FW_INTERFACE interfaceData;
+    BC250_PSP_LOAD_FW_STATUS status = BC250_PSP_LOAD_FW_BAD_ARGUMENT;
+    BC250_MMIO_TOPOLOGY_STATUS mmioStatus;
+    NTSTATUS ntStatus;
+    uint32_t cntlReadback = 0u, safeToFree = 1u;
+    const uint32_t rlcCntl = 0x0003B000u;
+    const uint32_t rlcGpmStat = 0x0003B9B8u;
+    const uint32_t execRomMask = 0x00400000u;
+
+    if (Context == NULL || Evidence == NULL || RlcEvidence == NULL)
+        return status;
+    RtlZeroMemory(Evidence, sizeof(*Evidence));
+    RtlZeroMemory(RlcEvidence, sizeof(*RlcEvidence));
+    InitializeObjectAttributes(&attributes, &path,
+        OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    ntStatus = ZwCreateFile(&file, GENERIC_READ | SYNCHRONIZE, &attributes,
+        &ioStatus, NULL, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_OPEN,
+        FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE, NULL, 0u);
+    if (!NT_SUCCESS(ntStatus)) return status;
+    ntStatus = ZwQueryInformationFile(file, &ioStatus, &fileInfo,
+        sizeof(fileInfo), FileStandardInformation);
+    if (!NT_SUCCESS(ntStatus) || fileInfo.EndOfFile.QuadPart != 25344) {
+        ZwClose(file);
+        return status;
+    }
+    low.QuadPart = 0;
+    high.QuadPart = 0xFFFFFFFFFFull;
+    boundary.QuadPart = 0;
+    ring = MmAllocateContiguousMemorySpecifyCache(
+        BC250_PSP_RING_BYTES, low, high, boundary, MmNonCached);
+    command = MmAllocateContiguousMemorySpecifyCache(
+        BC250_PSP_LOAD_FW_COMMAND_BYTES, low, high, boundary, MmNonCached);
+    fence = MmAllocateContiguousMemorySpecifyCache(
+        PAGE_SIZE, low, high, boundary, MmNonCached);
+    firmware = MmAllocateContiguousMemorySpecifyCache(
+        25344u, low, high, boundary, MmNonCached);
+    if (ring == NULL || command == NULL || fence == NULL || firmware == NULL)
+        goto Cleanup;
+    RtlZeroMemory(ring, BC250_PSP_RING_BYTES);
+    RtlZeroMemory(command, BC250_PSP_LOAD_FW_COMMAND_BYTES);
+    RtlZeroMemory(fence, PAGE_SIZE);
+    RtlZeroMemory(firmware, 25344u);
+    ntStatus = ZwReadFile(file, NULL, NULL, NULL, &ioStatus, firmware,
+        25344u, NULL, NULL);
+    if (!NT_SUCCESS(ntStatus) || ioStatus.Information != 25344u) goto Cleanup;
+    Bc250FirmwareSha256(firmware, 25344u, digest);
+    if (!Bc250FirmwareDigestEqual(digest, expectedDigest)) goto Cleanup;
+    RtlMoveMemory(firmware, (PUCHAR)firmware + 0x100u, 25088u);
+    RtlZeroMemory((PUCHAR)firmware + 25088u, 0x100u);
+    Bc250FirmwareSha256(firmware, 25088u, digest);
+    if (!Bc250FirmwareDigestEqual(digest, expectedPayloadDigest)) goto Cleanup;
+    ringPa = MmGetPhysicalAddress(ring);
+    commandPa = MmGetPhysicalAddress(command);
+    fencePa = MmGetPhysicalAddress(fence);
+    firmwarePa = MmGetPhysicalAddress(firmware);
+    if (ringPa.QuadPart == 0 || commandPa.QuadPart == 0 ||
+        fencePa.QuadPart == 0 || firmwarePa.QuadPart == 0) goto Cleanup;
+    mmioStatus = Bc250MmioTopologyMapReadonly(
+        &Context->Core.MmioTransport, &Context->Core.DxgkInterface,
+        Context->Core.ResolvedBars, Context->Core.ResolvedBarCount,
+        BC250_PCI_MMIO_BAR_INDEX);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK) {
+        status = BC250_PSP_LOAD_FW_READ_FAILED;
+        goto Cleanup;
+    }
+    if (!Bc250ActiveVmidRead32(Context, rlcCntl, &RlcEvidence->CntlBefore) ||
+        !Bc250ActiveVmidRead32(Context, rlcGpmStat,
+            &RlcEvidence->GpmStatBefore)) {
+        status = BC250_PSP_LOAD_FW_READ_FAILED;
+        goto Unmap;
+    }
+    RlcEvidence->ExecRomBefore =
+        (RlcEvidence->GpmStatBefore & execRomMask) != 0u;
+    if (RlcEvidence->ExecRomBefore == 0u) {
+        RlcEvidence->AlreadyActive = 1u;
+        status = BC250_PSP_LOAD_FW_OK;
+        Evidence->FirmwareType = BC250_PSP_LOAD_FW_RLC_TYPE;
+        if (Bc250ActiveVmidWrite32(Context, rlcCntl,
+                RlcEvidence->CntlBefore | 1u) &&
+            Bc250ActiveVmidRead32(Context, rlcCntl,
+                &RlcEvidence->CntlAfter) &&
+            Bc250ActiveVmidRead32(Context, rlcGpmStat,
+                &RlcEvidence->GpmStatAfter)) {
+            RlcEvidence->ExecRomAfter =
+                (RlcEvidence->GpmStatAfter & execRomMask) != 0u;
+            RlcEvidence->EnableF32After = RlcEvidence->CntlAfter & 1u;
+            if (RlcEvidence->ExecRomAfter == 0u &&
+                RlcEvidence->EnableF32After != 0u) {
+                RlcEvidence->PhysicalReady = 1u;
+                Evidence->PhysicalReady = 1u;
+            }
+        }
+        goto RestoreRlc;
+    }
+    RtlZeroMemory(&interfaceData, sizeof(interfaceData));
+    interfaceData.Read32 = Bc250ActiveVmidRead32;
+    interfaceData.Write32 = Bc250ActiveVmidWrite32;
+    interfaceData.Stall = Bc250ActiveTlbStall;
+    interfaceData.Barrier = Bc250ActivePspBarrier;
+    interfaceData.Context = Context;
+    interfaceData.Identity = BC250_PSP_LOAD_FW_IDENTITY;
+    status = Bc250RunPspLoadFirmwareTransaction(
+        (uint64_t)ringPa.QuadPart, (uint32_t *)ring,
+        (uint64_t)commandPa.QuadPart, (uint32_t *)command,
+        (uint64_t)fencePa.QuadPart, (volatile uint32_t *)fence,
+        (uint64_t)firmwarePa.QuadPart, 25088u,
+        BC250_PSP_LOAD_FW_RLC_TYPE, &interfaceData, 500u, Evidence);
+    if (status == BC250_PSP_LOAD_FW_OK && Evidence->PhysicalReady != 0u &&
+        Bc250ActiveVmidWrite32(Context, rlcCntl,
+            RlcEvidence->CntlBefore | 1u)) {
+        KeStallExecutionProcessor(1000u);
+    }
+    if (status == BC250_PSP_LOAD_FW_OK && Evidence->PhysicalReady != 0u &&
+        Bc250ActiveVmidRead32(Context, rlcCntl, &RlcEvidence->CntlAfter) &&
+        Bc250ActiveVmidRead32(Context, rlcGpmStat,
+            &RlcEvidence->GpmStatAfter)) {
+        RlcEvidence->ExecRomAfter =
+            (RlcEvidence->GpmStatAfter & execRomMask) != 0u;
+        RlcEvidence->EnableF32After = RlcEvidence->CntlAfter & 1u;
+        if (RlcEvidence->ExecRomBefore != 0u &&
+            RlcEvidence->ExecRomAfter == 0u &&
+            RlcEvidence->EnableF32After != 0u)
+            RlcEvidence->PhysicalReady = 1u;
+    }
+RestoreRlc:
+    if (Bc250ActiveVmidWrite32(Context, rlcCntl, RlcEvidence->CntlBefore) &&
+        Bc250ActiveVmidRead32(Context, rlcCntl, &cntlReadback) &&
+        cntlReadback == RlcEvidence->CntlBefore)
+        RlcEvidence->CntlRestorePassed = 1u;
+Unmap:
+    mmioStatus = Bc250MmioTopologyUnmap(&Context->Core.MmioTransport);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK &&
+        status == BC250_PSP_LOAD_FW_OK) {
+        status = BC250_PSP_LOAD_FW_RESTORE_FAILED;
+        Evidence->PhysicalReady = 0u;
+        RlcEvidence->PhysicalReady = 0u;
+    }
+    if (Evidence->CreatePassed != 0u && Evidence->DestroyPassed == 0u)
+        safeToFree = 0u;
+Cleanup:
+    if (file != NULL) ZwClose(file);
+    if (safeToFree != 0u) {
+        if (firmware != NULL) MmFreeContiguousMemory(firmware);
+        if (fence != NULL) MmFreeContiguousMemory(fence);
+        if (command != NULL) MmFreeContiguousMemory(command);
+        if (ring != NULL) MmFreeContiguousMemory(ring);
+    } else {
+        Context->DeferredPspLoadRing = ring;
+        Context->DeferredPspLoadCommand = command;
+        Context->DeferredPspLoadFence = fence;
+        Context->DeferredPspLoadFirmware = firmware;
+    }
+    return status;
+#else
+    UNREFERENCED_PARAMETER(Context);
+    if (Evidence != NULL) RtlZeroMemory(Evidence, sizeof(*Evidence));
+    if (RlcEvidence != NULL) RtlZeroMemory(RlcEvidence, sizeof(*RlcEvidence));
+    return BC250_PSP_LOAD_FW_BAD_ARGUMENT;
+#endif
 }
 
 static VOID Bc250ActiveUnregisterAdapter(
@@ -947,6 +1298,31 @@ NTSTATUS APIENTRY Bc250DxgkDdiAddDeviceActive(
     context->GcvmVmid8Status = BC250_GCVM_VMID8_BAD_ARGUMENT;
     RtlZeroMemory(&context->GcvmVmid8Evidence,
                   sizeof(context->GcvmVmid8Evidence));
+    context->PspRingStatus = BC250_PSP_RING_BAD_ARGUMENT;
+    RtlZeroMemory(&context->PspRingEvidence,
+                  sizeof(context->PspRingEvidence));
+    context->DeferredPspRingVirtual = NULL;
+    context->PspLoadFwStatus = BC250_PSP_LOAD_FW_BAD_ARGUMENT;
+    RtlZeroMemory(&context->PspLoadFwEvidence,
+                  sizeof(context->PspLoadFwEvidence));
+    context->PspRlcLoadStatus = BC250_PSP_LOAD_FW_BAD_ARGUMENT;
+    RtlZeroMemory(&context->PspRlcLoadEvidence,
+                  sizeof(context->PspRlcLoadEvidence));
+    RtlZeroMemory(&context->RlcLoadEvidence,
+                  sizeof(context->RlcLoadEvidence));
+    context->PfpDirectLoadStatus = BC250_PFP_DIRECT_LOAD_BAD_ARGUMENT;
+    RtlZeroMemory(&context->PfpDirectLoadEvidence,
+                  sizeof(context->PfpDirectLoadEvidence));
+    context->SdmaF32Status = BC250_SDMA_F32_BAD_ARGUMENT;
+    RtlZeroMemory(&context->SdmaF32Evidence,
+                  sizeof(context->SdmaF32Evidence));
+    context->SdmaRingWorkStatus = BC250_SDMA_RING_WORK_BAD_ARGUMENT;
+    RtlZeroMemory(&context->SdmaRingWorkEvidence,
+                  sizeof(context->SdmaRingWorkEvidence));
+    context->DeferredPspLoadRing = NULL;
+    context->DeferredPspLoadCommand = NULL;
+    context->DeferredPspLoadFence = NULL;
+    context->DeferredPspLoadFirmware = NULL;
     context->SubmissionsCount = 0;
     context->ResetsCount = 0;
 
@@ -1228,6 +1604,313 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                         context->GcvmVmid8Evidence.PhysicalReady != 0u &&
                         context->GcvmBackingEvidence.ExecutePassed != 0u &&
                         context->GcvmBackingEvidence.RestorePassed != 0u);
+                    if (context->GcvmBackingStatus == BC250_GCVM_BACKING_OK &&
+                        context->GcvmVmid8Evidence.PhysicalReady != 0u) {
+                        context->PspRingStatus = Bc250ActiveProbePspRing(
+                            context, &context->PspRingEvidence);
+                    }
+                    if (context->PspRingStatus == BC250_PSP_RING_OK &&
+                        context->PspRingEvidence.PhysicalReady != 0u) {
+                        context->PspLoadFwStatus = Bc250ActiveLoadSdmaFirmware(
+                            context, &context->PspLoadFwEvidence);
+                        if (context->PspLoadFwStatus ==
+                                BC250_PSP_LOAD_FW_OK &&
+                            context->SdmaRingWorkStatus ==
+                                BC250_SDMA_RING_WORK_OK &&
+                            context->SdmaRingWorkEvidence.PhysicalReady != 0u) {
+                            context->PspRlcLoadStatus =
+                                Bc250ActiveLoadRlcFirmware(context,
+                                    &context->PspRlcLoadEvidence,
+                                    &context->RlcLoadEvidence);
+                            /* 1.33: gate RLC isolado. O 1.32 apagou a tela
+                             * antes da coleta e nao permite atribuir a falha
+                             * ao RLC ou ao unhalt do PFP. Nao tocar no CP ate
+                             * o RLC explicito produzir evidencia sozinho. */
+                        }
+                    }
+                    Bc250ProbeRecord(BC250_PROBE_PSP_RING_STATUS,
+                        (ULONG)context->PspRingStatus);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_RING_PHYSICAL_LOW32,
+                        (ULONG)context->PspRingEvidence.RingPhysical);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_RING_C2PMSG64_BEFORE,
+                        context->PspRingEvidence.C2pmsg64Before);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_RING_CREATE_ACK,
+                        context->PspRingEvidence.CreateAck);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_RING_DESTROY_ACK,
+                        context->PspRingEvidence.DestroyAck);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_RING_CREATE_POLLS,
+                        context->PspRingEvidence.CreatePolls);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_RING_DESTROY_POLLS,
+                        context->PspRingEvidence.DestroyPolls);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_RING_CREATE_PASSED,
+                        context->PspRingEvidence.CreatePassed);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_RING_DESTROY_PASSED,
+                        context->PspRingEvidence.DestroyPassed);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_RING_RESTORE_PASSED,
+                        context->PspRingEvidence.RestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_RING_PHYSICAL_READY,
+                        context->PspRingEvidence.PhysicalReady);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_STATUS,
+                        (ULONG)context->PspLoadFwStatus);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_BYTES,
+                        context->PspLoadFwEvidence.FirmwareBytes);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_TYPE,
+                        context->PspLoadFwEvidence.FirmwareType);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_RING_LOW,
+                        (ULONG)context->PspLoadFwEvidence.RingPhysical);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_RING_HIGH,
+                        (ULONG)(context->PspLoadFwEvidence.RingPhysical >> 32));
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_COMMAND_LOW,
+                        (ULONG)context->PspLoadFwEvidence.CommandPhysical);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_COMMAND_HIGH,
+                        (ULONG)(context->PspLoadFwEvidence.CommandPhysical >> 32));
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_FENCE_LOW,
+                        (ULONG)context->PspLoadFwEvidence.FencePhysical);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_FENCE_HIGH,
+                        (ULONG)(context->PspLoadFwEvidence.FencePhysical >> 32));
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_PAYLOAD_LOW,
+                        (ULONG)context->PspLoadFwEvidence.FirmwarePhysical);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_PAYLOAD_HIGH,
+                        (ULONG)(context->PspLoadFwEvidence.FirmwarePhysical >> 32));
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_CREATE_ACK,
+                        context->PspLoadFwEvidence.CreateAck);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_FENCE_EXPECTED,
+                        context->PspLoadFwEvidence.FenceExpected);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_FENCE_OBSERVED,
+                        context->PspLoadFwEvidence.FenceObserved);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_FENCE_POLLS,
+                        context->PspLoadFwEvidence.FencePolls);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_RESPONSE_STATUS,
+                        context->PspLoadFwEvidence.ResponseStatus);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_CHECKSUM_BEFORE,
+                        context->PspLoadFwEvidence.ChecksumBefore);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_CHECKSUM_AFTER,
+                        context->PspLoadFwEvidence.ChecksumAfter);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_DESTROY_ACK,
+                        context->PspLoadFwEvidence.DestroyAck);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_FENCE_PASSED,
+                        context->PspLoadFwEvidence.FencePassed);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_RESPONSE_PASSED,
+                        context->PspLoadFwEvidence.ResponsePassed);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_CHECKSUM_PASSED,
+                        context->PspLoadFwEvidence.ChecksumPassed);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_DESTROY_PASSED,
+                        context->PspLoadFwEvidence.DestroyPassed);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_RESTORE_PASSED,
+                        context->PspLoadFwEvidence.RestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_LOAD_FW_PHYSICAL_READY,
+                        context->PspLoadFwEvidence.PhysicalReady);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_RLC_LOAD_STATUS,
+                        (ULONG)context->PspRlcLoadStatus);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_RLC_LOAD_BYTES,
+                        context->PspRlcLoadEvidence.FirmwareBytes);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_RLC_LOAD_TYPE,
+                        context->PspRlcLoadEvidence.FirmwareType);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_PSP_RLC_LOAD_FENCE_EXPECTED,
+                        context->PspRlcLoadEvidence.FenceExpected);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_PSP_RLC_LOAD_FENCE_OBSERVED,
+                        context->PspRlcLoadEvidence.FenceObserved);
+                    Bc250ProbeRecord(BC250_PROBE_PSP_RLC_LOAD_FENCE_POLLS,
+                        context->PspRlcLoadEvidence.FencePolls);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_PSP_RLC_LOAD_RESPONSE_STATUS,
+                        context->PspRlcLoadEvidence.ResponseStatus);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_PSP_RLC_LOAD_DESTROY_PASSED,
+                        context->PspRlcLoadEvidence.DestroyPassed);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_PSP_RLC_LOAD_RESTORE_PASSED,
+                        context->PspRlcLoadEvidence.RestorePassed);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_PSP_RLC_LOAD_PHYSICAL_READY,
+                        context->PspRlcLoadEvidence.PhysicalReady);
+                    Bc250ProbeRecord(BC250_PROBE_RLC_CNTL_BEFORE,
+                        context->RlcLoadEvidence.CntlBefore);
+                    Bc250ProbeRecord(BC250_PROBE_RLC_GPM_BEFORE,
+                        context->RlcLoadEvidence.GpmStatBefore);
+                    Bc250ProbeRecord(BC250_PROBE_RLC_CNTL_AFTER,
+                        context->RlcLoadEvidence.CntlAfter);
+                    Bc250ProbeRecord(BC250_PROBE_RLC_GPM_AFTER,
+                        context->RlcLoadEvidence.GpmStatAfter);
+                    Bc250ProbeRecord(BC250_PROBE_RLC_EXEC_ROM_BEFORE,
+                        context->RlcLoadEvidence.ExecRomBefore);
+                    Bc250ProbeRecord(BC250_PROBE_RLC_EXEC_ROM_AFTER,
+                        context->RlcLoadEvidence.ExecRomAfter);
+                    Bc250ProbeRecord(BC250_PROBE_RLC_ENABLE_F32_AFTER,
+                        context->RlcLoadEvidence.EnableF32After);
+                    Bc250ProbeRecord(BC250_PROBE_RLC_CNTL_RESTORE,
+                        context->RlcLoadEvidence.CntlRestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_RLC_ALREADY_ACTIVE,
+                        context->RlcLoadEvidence.AlreadyActive);
+                    Bc250ProbeRecord(BC250_PROBE_RLC_PHYSICAL_READY,
+                        context->RlcLoadEvidence.PhysicalReady);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_STATUS,
+                        (ULONG)context->PfpDirectLoadStatus);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_MC_LOW,
+                        (ULONG)context->PfpDirectLoadEvidence.FirmwareMcAddress);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_MC_HIGH,
+                        (ULONG)(context->PfpDirectLoadEvidence.FirmwareMcAddress >> 32));
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_BYTES,
+                        context->PfpDirectLoadEvidence.FirmwareBytes);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_JT_DWORDS,
+                        context->PfpDirectLoadEvidence.JumpTableDwords);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_VERSION,
+                        context->PfpDirectLoadEvidence.UcodeVersion);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_STAGED_DWORDS,
+                        context->PfpDirectLoadEvidence.StagedDwords);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_PFP_DIRECT_STAGING_MISMATCHES,
+                        context->PfpDirectLoadEvidence.StagingMismatches);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_ME_CNTL_BEFORE,
+                        context->PfpDirectLoadEvidence.CpMeCntlBefore);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_ME_CNTL_APPLIED,
+                        context->PfpDirectLoadEvidence.CpMeCntlApplied);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_ME_CNTL_AFTER,
+                        context->PfpDirectLoadEvidence.CpMeCntlAfter);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_RLC_CNTL_BEFORE,
+                        context->PfpDirectLoadEvidence.RlcCntlBefore);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_RLC_CNTL_APPLIED,
+                        context->PfpDirectLoadEvidence.RlcCntlApplied);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_PC_BEFORE,
+                        context->PfpDirectLoadEvidence.PfpPcBefore);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_PC_FIRST,
+                        context->PfpDirectLoadEvidence.PfpPcFirst);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_PC_LAST,
+                        context->PfpDirectLoadEvidence.PfpPcLast);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_PC_TRANSITIONS,
+                        context->PfpDirectLoadEvidence.PfpPcTransitions);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_PC_SAMPLES,
+                        context->PfpDirectLoadEvidence.PfpPcSamples);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_FAULT_BEFORE,
+                        context->PfpDirectLoadEvidence.FaultStatusBefore);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_FAULT_AFTER,
+                        context->PfpDirectLoadEvidence.FaultStatusAfter);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_FAULT_ADDR_LOW,
+                        context->PfpDirectLoadEvidence.FaultAddressLow);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_FAULT_ADDR_HIGH,
+                        context->PfpDirectLoadEvidence.FaultAddressHigh);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_PORTS_PROGRAMMED,
+                        context->PfpDirectLoadEvidence.WriteOnlyPortsProgrammed);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_REG_RESTORE,
+                        context->PfpDirectLoadEvidence.RegisterRestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_MEM_RESTORE,
+                        context->PfpDirectLoadEvidence.MemoryRestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_PHYSICAL_READY,
+                        context->PfpDirectLoadEvidence.PhysicalReady);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_F32_STATUS,
+                        (ULONG)context->SdmaF32Status);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_F32_CLOCK_BEFORE,
+                        context->SdmaF32Evidence.ClockBefore);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_F32_CONTROL_BEFORE,
+                        context->SdmaF32Evidence.ControlBefore);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_F32_CONTROL_APPLIED,
+                        context->SdmaF32Evidence.ControlApplied);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_F32_F32_BEFORE,
+                        context->SdmaF32Evidence.F32Before);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_F32_F32_APPLIED,
+                        context->SdmaF32Evidence.F32Applied);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_F32_PC_FIRST,
+                        context->SdmaF32Evidence.PcFirst);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_F32_PC_LAST,
+                        context->SdmaF32Evidence.PcLast);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_F32_PC_TRANSITIONS,
+                        context->SdmaF32Evidence.PcTransitions);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_F32_APPLY_READBACK,
+                        context->SdmaF32Evidence.ApplyReadbackPassed);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_F32_RESTORE,
+                        context->SdmaF32Evidence.RestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_F32_PHYSICAL_READY,
+                        context->SdmaF32Evidence.PhysicalReady);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_WORK_STATUS,
+                        (ULONG)context->SdmaRingWorkStatus);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_SDMA_RING_FIXED_RESERVATION_STATUS,
+                        context->SdmaRingWorkEvidence.FixedReservationStatus);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_ALLOCATION_MODE,
+                        context->SdmaRingWorkEvidence.AllocationMode);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_RING_LOW,
+                        (ULONG)context->SdmaRingWorkEvidence.RingMcAddress);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_RING_HIGH,
+                        (ULONG)(context->SdmaRingWorkEvidence.RingMcAddress >> 32));
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_WORK_LOW,
+                        (ULONG)context->SdmaRingWorkEvidence.WorkMcAddress);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_WORK_HIGH,
+                        (ULONG)(context->SdmaRingWorkEvidence.WorkMcAddress >> 32));
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_RPTR_BEFORE,
+                        context->SdmaRingWorkEvidence.RptrBefore);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_RPTR_AFTER,
+                        context->SdmaRingWorkEvidence.RptrAfter);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_WPTR,
+                        context->SdmaRingWorkEvidence.WptrPublished);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_WPTR_REGISTER,
+                        context->SdmaRingWorkEvidence.WptrRegisterAfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_WPTR_SHADOW,
+                        context->SdmaRingWorkEvidence.WptrShadowAfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_RB_CNTL,
+                        context->SdmaRingWorkEvidence.RbCntlApplied);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_HEADER,
+                        context->SdmaRingWorkEvidence.RingHeaderReadback);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_RPTR_REGISTER,
+                        context->SdmaRingWorkEvidence.RptrRegisterAfter);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_POLL_CNTL,
+                        context->SdmaRingWorkEvidence.WptrPollCntlApplied);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_FENCE_POISON,
+                        context->SdmaRingWorkEvidence.FencePoison);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_FENCE_EXPECTED,
+                        context->SdmaRingWorkEvidence.FenceExpected);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_FENCE_OBSERVED,
+                        context->SdmaRingWorkEvidence.FenceObserved);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_POLLS,
+                        context->SdmaRingWorkEvidence.Polls);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_COMPARED_DWORDS,
+                        context->SdmaRingWorkEvidence.ComparedDwords);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_MISMATCHES,
+                        context->SdmaRingWorkEvidence.MismatchCount);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_STATUS_BEFORE,
+                        context->SdmaRingWorkEvidence.StatusBefore);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_STATUS_KICK,
+                        context->SdmaRingWorkEvidence.StatusKick);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_STATUS_AFTER,
+                        context->SdmaRingWorkEvidence.StatusAfter);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_PC_KICK,
+                        context->SdmaRingWorkEvidence.PcKick);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_STATUS1_AFTER,
+                        context->SdmaRingWorkEvidence.Status1After);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_STATUS2_AFTER,
+                        context->SdmaRingWorkEvidence.Status2After);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_STATUS3_AFTER,
+                        context->SdmaRingWorkEvidence.Status3After);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_ERROR_LOG_AFTER,
+                        context->SdmaRingWorkEvidence.ErrorLogAfter);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_SDMA_RING_UTCL1_RD_STATUS_AFTER,
+                        context->SdmaRingWorkEvidence.Utcl1ReadStatusAfter);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_SDMA_RING_UTCL1_WR_STATUS_AFTER,
+                        context->SdmaRingWorkEvidence.Utcl1WriteStatusAfter);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_SDMA_RING_UTCL1_RD_XNACK0_AFTER,
+                        context->SdmaRingWorkEvidence.Utcl1ReadXnack0After);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_SDMA_RING_UTCL1_RD_XNACK1_AFTER,
+                        context->SdmaRingWorkEvidence.Utcl1ReadXnack1After);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_SDMA_RING_UTCL1_WR_XNACK0_AFTER,
+                        context->SdmaRingWorkEvidence.Utcl1WriteXnack0After);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_SDMA_RING_UTCL1_WR_XNACK1_AFTER,
+                        context->SdmaRingWorkEvidence.Utcl1WriteXnack1After);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_SDMA_RING_UTCL1_TIMEOUT_AFTER,
+                        context->SdmaRingWorkEvidence.Utcl1TimeoutAfter);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_REG_RESTORE,
+                        context->SdmaRingWorkEvidence.RegisterRestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_MEM_RESTORE,
+                        context->SdmaRingWorkEvidence.MemoryRestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_PHYSICAL_READY,
+                        context->SdmaRingWorkEvidence.PhysicalReady);
                     {
                         BC250_MCDM_RUNTIME_CAPS caps;
                         NTSTATUS capsStatus = Bc250ActiveQueryRuntimeCaps(
@@ -1407,6 +2090,14 @@ static void Bc250ActiveTlbStall(void *Context, uint32_t Microseconds)
 #endif
 }
 
+static void Bc250ActivePspBarrier(void *Context)
+{
+    UNREFERENCED_PARAMETER(Context);
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeMemoryBarrier();
+#endif
+}
+
 static uint32_t Bc250ActiveVmidRead32(
     void *Context, uint32_t ByteOffset, uint32_t *Value)
 {
@@ -1489,4 +2180,62 @@ static uint32_t Bc250ActiveExecuteGcvmBacking(
     }
     return active->GcvmVmid8Status == BC250_GCVM_VMID8_OK &&
         active->GcvmVmid8Evidence.PhysicalReady != 0u;
+}
+
+static BC250_PSP_RING_STATUS Bc250ActiveProbePspRing(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_PSP_RING_EVIDENCE *Evidence)
+{
+    PHYSICAL_ADDRESS low, high, boundary, ringPhysical;
+    PVOID ringVirtual;
+    BC250_PSP_RING_INTERFACE interfaceData;
+    BC250_MMIO_TOPOLOGY_STATUS mmioStatus;
+    BC250_PSP_RING_STATUS status;
+
+    if (Context == NULL || Evidence == NULL) return BC250_PSP_RING_BAD_ARGUMENT;
+    low.QuadPart = 0;
+    high.QuadPart = 0xFFFFFFFFull;
+    boundary.QuadPart = 0;
+    ringVirtual = MmAllocateContiguousMemorySpecifyCache(
+        BC250_PSP_RING_BYTES, low, high, boundary, MmNonCached);
+    if (ringVirtual == NULL) return BC250_PSP_RING_BAD_ARGUMENT;
+    RtlZeroMemory(ringVirtual, BC250_PSP_RING_BYTES);
+    ringPhysical = MmGetPhysicalAddress(ringVirtual);
+    if (ringPhysical.QuadPart == 0 ||
+        (ringPhysical.QuadPart & (BC250_PSP_RING_BYTES - 1u)) != 0u ||
+        (ULONGLONG)ringPhysical.QuadPart > 0xFFFFFFFFull) {
+        MmFreeContiguousMemory(ringVirtual);
+        return BC250_PSP_RING_BAD_ARGUMENT;
+    }
+    mmioStatus = Bc250MmioTopologyMapReadonly(
+        &Context->Core.MmioTransport, &Context->Core.DxgkInterface,
+        Context->Core.ResolvedBars, Context->Core.ResolvedBarCount,
+        BC250_PCI_MMIO_BAR_INDEX);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK) {
+        MmFreeContiguousMemory(ringVirtual);
+        return BC250_PSP_RING_READ_FAILED;
+    }
+    RtlZeroMemory(&interfaceData, sizeof(interfaceData));
+    interfaceData.Read32 = Bc250ActiveVmidRead32;
+    interfaceData.Write32 = Bc250ActiveVmidWrite32;
+    interfaceData.Stall = Bc250ActiveTlbStall;
+    interfaceData.Context = Context;
+    interfaceData.Identity = BC250_PSP_RING_IDENTITY;
+    status = Bc250RunPspRingTransaction(
+        (uint64_t)ringPhysical.QuadPart, &interfaceData, 500u, Evidence);
+    mmioStatus = Bc250MmioTopologyUnmap(&Context->Core.MmioTransport);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK && status == BC250_PSP_RING_OK) {
+        status = BC250_PSP_RING_RESTORE_FAILED;
+        Evidence->PhysicalReady = 0u;
+    }
+    if (Evidence->DestroyPassed != 0u ||
+        status == BC250_PSP_RING_TOS_NOT_READY ||
+        status == BC250_PSP_RING_INHERITED_ACTIVE ||
+        status == BC250_PSP_RING_READ_FAILED ||
+        status == BC250_PSP_RING_BAD_ARGUMENT) {
+        MmFreeContiguousMemory(ringVirtual);
+    } else {
+        Context->DeferredPspRingVirtual = ringVirtual;
+    }
+    return status;
 }

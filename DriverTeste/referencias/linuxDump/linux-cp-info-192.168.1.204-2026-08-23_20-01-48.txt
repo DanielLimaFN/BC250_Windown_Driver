@@ -1,0 +1,236 @@
+=== sistema ===
+Linux 192.168.1.204 6.19.10-300.fc44.x86_64 #1 SMP PREEMPT_DYNAMIC Wed Mar 25 18:23:49 UTC 2026 x86_64 GNU/Linux
+
+=== driver em uso ===
+01:00.0 VGA compatible controller [0300]: Advanced Micro Devices, Inc. [AMD/ATI] Cyan Skillfish [BC-250] [1002:13fe]
+	Subsystem: Advanced Micro Devices, Inc. [AMD] Device [1022:0000]
+	Kernel driver in use: amdgpu
+	Kernel modules: amdgpu
+
+=== dmesg: amdgpu, gfx, psp, rlc, cp, ring ===
+[    7.727837] amdgpu: Virtual CRAT table created for CPU
+[    7.727864] amdgpu: Topology: Add CPU node
+[    7.728026] amdgpu 0000:01:00.0: enabling device (0006 -> 0007)
+[    7.728121] amdgpu 0000:01:00.0: amdgpu: initializing kernel modesetting (CYAN_SKILLFISH 0x1002:0x13FE 0x1022:0x0000 0x00).
+[    7.728141] amdgpu 0000:01:00.0: amdgpu: register mmio base: 0xFE800000
+[    7.728143] amdgpu 0000:01:00.0: amdgpu: register mmio size: 524288
+[    7.730741] amdgpu 0000:01:00.0: amdgpu: detected ip block number 0 <common_v1_0_0> (nv_common)
+[    7.730747] amdgpu 0000:01:00.0: amdgpu: detected ip block number 1 <gmc_v10_0_0> (gmc_v10_0)
+[    7.730751] amdgpu 0000:01:00.0: amdgpu: detected ip block number 2 <ih_v5_0_0> (navi10_ih)
+[    7.730755] amdgpu 0000:01:00.0: amdgpu: detected ip block number 3 <psp_v11_0_8> (psp)
+[    7.730758] amdgpu 0000:01:00.0: amdgpu: detected ip block number 4 <smu_v11_0_0> (smu)
+[    7.730762] amdgpu 0000:01:00.0: amdgpu: detected ip block number 5 <dce_v1_0_0> (dm)
+[    7.730766] amdgpu 0000:01:00.0: amdgpu: detected ip block number 6 <gfx_v10_0_0> (gfx_v10_0)
+[    7.730769] amdgpu 0000:01:00.0: amdgpu: detected ip block number 7 <sdma_v5_0_0> (sdma_v5_0)
+[    7.730786] amdgpu 0000:01:00.0: amdgpu: Fetched VBIOS from VFCT
+[    7.730790] amdgpu: ATOM BIOS: 113-AMDRBN-003
+[    7.785139] amdgpu 0000:01:00.0: vgaarb: deactivate vga console
+[    7.785151] amdgpu 0000:01:00.0: amdgpu: Trusted Memory Zone (TMZ) feature disabled as experimental (default)
+[    7.785224] amdgpu 0000:01:00.0: amdgpu: vm size is 262144 GB, 4 levels, block size is 9-bit, fragment size is 9-bit
+[    7.785244] amdgpu 0000:01:00.0: amdgpu: VRAM: 512M 0x000000F400000000 - 0x000000F41FFFFFFF (512M used)
+[    7.785252] amdgpu 0000:01:00.0: amdgpu: GART: 512M 0x0000000000000000 - 0x000000001FFFFFFF
+[    7.785714] amdgpu 0000:01:00.0: amdgpu: amdgpu: 512M of VRAM memory ready
+[    7.785726] amdgpu 0000:01:00.0: amdgpu: amdgpu: 7598M of GTT memory ready.
+[    7.808812] amdgpu 0000:01:00.0: amdgpu: reserve 0x400000 from 0xf41f800000 for PSP TMR
+[    7.845160] amdgpu 0000:01:00.0: amdgpu: SMU is initialized successfully!
+[    7.845836] amdgpu 0000:01:00.0: amdgpu: [drm] Display Core v3.2.359 initialized on DCN 2.0.1
+[    7.910793] amdgpu 0000:01:00.0: [drm] dal_irq_service_ack: src: 3
+[    7.910836] WARNING: drivers/gpu/drm/amd/amdgpu/../display/dc/irq/irq_service.c:169 at dal_irq_service_ack.cold+0x31/0x78 [amdgpu], CPU#2: (udev-worker)/621
+[    7.911991] Modules linked in: amdgpu(+) amdxcp drm_panel_backlight_quirks gpu_sched drm_buddy drm_ttm_helper ttm r8169 drm_exec i2c_algo_bit nvme_tcp drm_suballoc_helper drm_display_helper ghash_clmulni_intel serio_raw nvme_fabrics nvme realtek sp5100_tco cec video nvme_core wmi nvme_keyring nvme_auth hkdf sunrpc be2iscsi bnx2i cnic uio cxgb4i cxgb4 tls cxgb3i cxgb3 mdio libcxgbi libcxgb qla4xxx iscsi_boot_sysfs iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi fuse i2c_dev nfnetlink
+[    7.912075] RIP: 0010:dal_irq_service_ack.cold+0x31/0x78 [amdgpu]
+[    7.912701]  dal_irq_service_set+0x4c/0x130 [amdgpu]
+[    7.913338]  ? __pfx_dm_hw_init+0x10/0x10 [amdgpu]
+[    7.913937]  amdgpu_dm_hpd_init+0x52/0x170 [amdgpu]
+[    7.914510]  dm_hw_init+0x36/0x90 [amdgpu]
+[    7.915072]  amdgpu_device_ip_init+0x690/0x810 [amdgpu]
+[    7.915587]  amdgpu_device_init.cold+0x348/0x81b [amdgpu]
+[    7.916101]  amdgpu_driver_load_kms+0x13/0x80 [amdgpu]
+[    7.916529]  amdgpu_pci_probe+0x204/0x5c0 [amdgpu]
+[    7.917023]  ? __pfx_amdgpu_init+0x10/0x10 [amdgpu]
+[    7.917445]  ? amdgpu_init+0x36/0xff0 [amdgpu]
+[    7.918014] amdgpu 0000:01:00.0: [drm] *ERROR* dal_irq_service_dummy_ack: called for non-implemented irq source, src_id=0, ext_id=0
+[    7.918018] amdgpu 0000:01:00.0: [drm] dal_irq_service_set: src: 3, st: 0
+[    7.918040] WARNING: drivers/gpu/drm/amd/amdgpu/../display/dc/irq/irq_service.c:129 at dal_irq_service_set.cold+0x5f/0x7b [amdgpu], CPU#2: (udev-worker)/621
+[    7.918559] Modules linked in: amdgpu(+) amdxcp drm_panel_backlight_quirks gpu_sched drm_buddy drm_ttm_helper ttm r8169 drm_exec i2c_algo_bit nvme_tcp drm_suballoc_helper drm_display_helper ghash_clmulni_intel serio_raw nvme_fabrics nvme realtek sp5100_tco cec video nvme_core wmi nvme_keyring nvme_auth hkdf sunrpc be2iscsi bnx2i cnic uio cxgb4i cxgb4 tls cxgb3i cxgb3 mdio libcxgbi libcxgb qla4xxx iscsi_boot_sysfs iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi fuse i2c_dev nfnetlink
+[    7.918628] RIP: 0010:dal_irq_service_set.cold+0x5f/0x7b [amdgpu]
+[    7.919166]  ? __pfx_dm_hw_init+0x10/0x10 [amdgpu]
+[    7.919726]  amdgpu_dm_hpd_init+0x52/0x170 [amdgpu]
+[    7.920279]  dm_hw_init+0x36/0x90 [amdgpu]
+[    7.920836]  amdgpu_device_ip_init+0x690/0x810 [amdgpu]
+[    7.921349]  amdgpu_device_init.cold+0x348/0x81b [amdgpu]
+[    7.921856]  amdgpu_driver_load_kms+0x13/0x80 [amdgpu]
+[    7.922276]  amdgpu_pci_probe+0x204/0x5c0 [amdgpu]
+[    7.922772]  ? __pfx_amdgpu_init+0x10/0x10 [amdgpu]
+[    7.923193]  ? amdgpu_init+0x36/0xff0 [amdgpu]
+[    7.923748] amdgpu 0000:01:00.0: [drm] *ERROR* dal_irq_service_dummy_set: called for non-implemented irq source, src_id=0, ext_id=0
+[    7.923751] amdgpu 0000:01:00.0: amdgpu: [drm] *ERROR* Failed to clear hpd(rx) source=3 on init
+[    7.923754] amdgpu 0000:01:00.0: [drm] dal_irq_service_ack: src: 4
+[    7.923768] amdgpu 0000:01:00.0: [drm] *ERROR* dal_irq_service_dummy_ack: called for non-implemented irq source, src_id=0, ext_id=0
+[    7.923771] amdgpu 0000:01:00.0: [drm] dal_irq_service_set: src: 4, st: 0
+[    7.923782] amdgpu 0000:01:00.0: [drm] *ERROR* dal_irq_service_dummy_set: called for non-implemented irq source, src_id=0, ext_id=0
+[    7.923785] amdgpu 0000:01:00.0: amdgpu: [drm] *ERROR* Failed to clear hpd(rx) source=4 on init
+[    7.923787] amdgpu 0000:01:00.0: [drm] dal_irq_service_ack: src: 5
+[    7.923799] amdgpu 0000:01:00.0: [drm] *ERROR* dal_irq_service_dummy_ack: called for non-implemented irq source, src_id=0, ext_id=0
+[    7.923801] amdgpu 0000:01:00.0: [drm] dal_irq_service_set: src: 5, st: 0
+[    7.923812] amdgpu 0000:01:00.0: [drm] *ERROR* dal_irq_service_dummy_set: called for non-implemented irq source, src_id=0, ext_id=0
+[    7.923815] amdgpu 0000:01:00.0: amdgpu: [drm] *ERROR* Failed to clear hpd(rx) source=5 on init
+[    7.923817] amdgpu 0000:01:00.0: [drm] dal_irq_service_ack: src: 6
+[    7.923828] amdgpu 0000:01:00.0: [drm] *ERROR* dal_irq_service_dummy_ack: called for non-implemented irq source, src_id=0, ext_id=0
+[    7.923831] amdgpu 0000:01:00.0: [drm] dal_irq_service_set: src: 6, st: 0
+[    7.923842] amdgpu 0000:01:00.0: [drm] *ERROR* dal_irq_service_dummy_set: called for non-implemented irq source, src_id=0, ext_id=0
+[    7.923845] amdgpu 0000:01:00.0: amdgpu: [drm] *ERROR* Failed to clear hpd(rx) source=6 on init
+[    7.923851] amdgpu 0000:01:00.0: [drm] dal_irq_service_ack: src: 9
+[    7.923862] amdgpu 0000:01:00.0: [drm] *ERROR* dal_irq_service_dummy_ack: called for non-implemented irq source, src_id=0, ext_id=0
+[    7.923865] amdgpu 0000:01:00.0: [drm] dal_irq_service_set: src: 9, st: 0
+[    7.923876] amdgpu 0000:01:00.0: [drm] *ERROR* dal_irq_service_dummy_set: called for non-implemented irq source, src_id=0, ext_id=0
+[    7.923879] amdgpu 0000:01:00.0: amdgpu: [drm] *ERROR* Failed to clear hpd(rx) source=9 on init
+[    7.923881] amdgpu 0000:01:00.0: [drm] dal_irq_service_ack: src: 10
+[    7.923892] amdgpu 0000:01:00.0: [drm] *ERROR* dal_irq_service_dummy_ack: called for non-implemented irq source, src_id=0, ext_id=0
+[    7.923895] amdgpu 0000:01:00.0: [drm] dal_irq_service_set: src: 10, st: 0
+[    7.923906] amdgpu 0000:01:00.0: [drm] *ERROR* dal_irq_service_dummy_set: called for non-implemented irq source, src_id=0, ext_id=0
+[    7.923909] amdgpu 0000:01:00.0: amdgpu: [drm] *ERROR* Failed to clear hpd(rx) source=10 on init
+[    7.923911] amdgpu 0000:01:00.0: [drm] dal_irq_service_ack: src: 11
+[    7.923923] amdgpu 0000:01:00.0: [drm] *ERROR* dal_irq_service_dummy_ack: called for non-implemented irq source, src_id=0, ext_id=0
+[    7.923925] amdgpu 0000:01:00.0: [drm] dal_irq_service_set: src: 11, st: 0
+[    7.923937] amdgpu 0000:01:00.0: [drm] *ERROR* dal_irq_service_dummy_set: called for non-implemented irq source, src_id=0, ext_id=0
+[    7.923939] amdgpu 0000:01:00.0: amdgpu: [drm] *ERROR* Failed to clear hpd(rx) source=11 on init
+[    7.923942] amdgpu 0000:01:00.0: [drm] dal_irq_service_ack: src: 12
+[    7.923953] amdgpu 0000:01:00.0: [drm] *ERROR* dal_irq_service_dummy_ack: called for non-implemented irq source, src_id=0, ext_id=0
+[    7.923956] amdgpu 0000:01:00.0: [drm] dal_irq_service_set: src: 12, st: 0
+[    7.923967] amdgpu 0000:01:00.0: [drm] *ERROR* dal_irq_service_dummy_set: called for non-implemented irq source, src_id=0, ext_id=0
+[    7.923970] amdgpu 0000:01:00.0: amdgpu: [drm] *ERROR* Failed to clear hpd(rx) source=12 on init
+[    7.924315] amdgpu 0000:01:00.0: amdgpu: kiq ring mec 2 pipe 1 q 0
+[    8.432378] amdgpu 0000:01:00.0: amdgpu: Fence fallback timer expired on ring sdma0
+[    8.432554] kfd kfd: amdgpu: Allocated 3969056 bytes on gart
+[    8.432592] kfd kfd: amdgpu: Total number of KFD nodes to be created: 1
+[    8.936377] amdgpu 0000:01:00.0: amdgpu: Fence fallback timer expired on ring sdma0
+[    8.936479] amdgpu: Virtual CRAT table created for GPU
+[    8.936958] amdgpu: Topology: Add dGPU node [0x13fe:0x1002]
+[    8.936967] kfd kfd: amdgpu: added device 1002:13fe
+[    8.936988] amdgpu 0000:01:00.0: amdgpu: SE 2, SH per SE 2, CU per SH 10, active_cu_number 24
+[    8.937000] amdgpu 0000:01:00.0: amdgpu: ring gfx_0.0.0 uses VM inv eng 0 on hub 0
+[    8.937008] amdgpu 0000:01:00.0: amdgpu: ring comp_1.0.0 uses VM inv eng 1 on hub 0
+[    8.937015] amdgpu 0000:01:00.0: amdgpu: ring comp_1.1.0 uses VM inv eng 4 on hub 0
+[    8.937021] amdgpu 0000:01:00.0: amdgpu: ring comp_1.2.0 uses VM inv eng 5 on hub 0
+[    8.937027] amdgpu 0000:01:00.0: amdgpu: ring comp_1.3.0 uses VM inv eng 6 on hub 0
+[    8.937033] amdgpu 0000:01:00.0: amdgpu: ring comp_1.0.1 uses VM inv eng 7 on hub 0
+[    8.937039] amdgpu 0000:01:00.0: amdgpu: ring comp_1.1.1 uses VM inv eng 8 on hub 0
+[    8.937045] amdgpu 0000:01:00.0: amdgpu: ring comp_1.2.1 uses VM inv eng 9 on hub 0
+[    8.937051] amdgpu 0000:01:00.0: amdgpu: ring comp_1.3.1 uses VM inv eng 10 on hub 0
+[    8.937057] amdgpu 0000:01:00.0: amdgpu: ring kiq_0.2.1.0 uses VM inv eng 11 on hub 0
+[    8.937063] amdgpu 0000:01:00.0: amdgpu: ring sdma0 uses VM inv eng 12 on hub 0
+[    8.937070] amdgpu 0000:01:00.0: amdgpu: ring sdma1 uses VM inv eng 13 on hub 0
+[    8.937674] amdgpu 0000:01:00.0: amdgpu: Runtime PM not available
+[    8.938967] amdgpu 0000:01:00.0: [drm] Registered 2 planes with drm panic
+[    8.953421] [drm] Initialized amdgpu 3.64.0 for 0000:01:00.0 on minor 1
+[    8.954459] amdgpu 0000:01:00.0: amdgpu: [drm] Failed to setup vendor infoframe on connector DP-1: -22
+[    8.960607] fbcon: amdgpudrmfb (fb0) is primary device
+[    8.960759] amdgpu 0000:01:00.0: [drm] fb0: amdgpudrmfb frame buffer device
+[   10.689677] Modules linked in: zram lz4hc_compress lz4_compress amdgpu amdxcp drm_panel_backlight_quirks gpu_sched drm_buddy drm_ttm_helper ttm r8169 drm_exec i2c_algo_bit nvme_tcp drm_suballoc_helper drm_display_helper ghash_clmulni_intel serio_raw nvme_fabrics nvme realtek sp5100_tco cec video nvme_core wmi nvme_keyring nvme_auth hkdf sunrpc be2iscsi bnx2i cnic uio cxgb4i cxgb4 tls cxgb3i cxgb3 mdio libcxgbi libcxgb qla4xxx iscsi_boot_sysfs iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi fuse i2c_dev nfnetlink
+[   10.690119] Modules linked in: zram lz4hc_compress lz4_compress amdgpu amdxcp drm_panel_backlight_quirks gpu_sched drm_buddy drm_ttm_helper ttm r8169 drm_exec i2c_algo_bit nvme_tcp drm_suballoc_helper drm_display_helper ghash_clmulni_intel serio_raw nvme_fabrics nvme realtek sp5100_tco cec video nvme_core wmi nvme_keyring nvme_auth hkdf sunrpc be2iscsi bnx2i cnic uio cxgb4i cxgb4 tls cxgb3i cxgb3 mdio libcxgbi libcxgb qla4xxx iscsi_boot_sysfs iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi fuse i2c_dev nfnetlink
+[   10.690496] Modules linked in: zram lz4hc_compress lz4_compress amdgpu amdxcp drm_panel_backlight_quirks gpu_sched drm_buddy drm_ttm_helper ttm r8169 drm_exec i2c_algo_bit nvme_tcp drm_suballoc_helper drm_display_helper ghash_clmulni_intel serio_raw nvme_fabrics nvme realtek sp5100_tco cec video nvme_core wmi nvme_keyring nvme_auth hkdf sunrpc be2iscsi bnx2i cnic uio cxgb4i cxgb4 tls cxgb3i cxgb3 mdio libcxgbi libcxgb qla4xxx iscsi_boot_sysfs iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi fuse i2c_dev nfnetlink
+[   10.691962] Modules linked in: zram lz4hc_compress lz4_compress amdgpu amdxcp drm_panel_backlight_quirks gpu_sched drm_buddy drm_ttm_helper ttm r8169 drm_exec i2c_algo_bit nvme_tcp drm_suballoc_helper drm_display_helper ghash_clmulni_intel serio_raw nvme_fabrics nvme realtek sp5100_tco cec video nvme_core wmi nvme_keyring nvme_auth hkdf sunrpc be2iscsi bnx2i cnic uio cxgb4i cxgb4 tls cxgb3i cxgb3 mdio libcxgbi libcxgb qla4xxx iscsi_boot_sysfs iscsi_tcp libiscsi_tcp libiscsi scsi_transport_iscsi fuse i2c_dev nfnetlink
+[   11.123059] snd_hda_intel 0000:01:00.1: bound 0000:01:00.0 (ops amdgpu_dm_audio_component_bind_ops [amdgpu])
+
+=== amdgpu_firmware_info (tipo de load e versoes) ===
+VCE feature version: 0, firmware version: 0x00000000
+UVD feature version: 0, firmware version: 0x00000000
+MC feature version: 0, firmware version: 0x00000000
+ME feature version: 32, firmware version: 0x00000063
+PFP feature version: 32, firmware version: 0x00000094
+CE feature version: 32, firmware version: 0x00000025
+RLC feature version: 0, firmware version: 0x0000000d
+RLC SRLC feature version: 0, firmware version: 0x00000000
+RLC SRLG feature version: 0, firmware version: 0x00000000
+RLC SRLS feature version: 0, firmware version: 0x00000000
+RLCP feature version: 0, firmware version: 0x00000000
+RLCV feature version: 0, firmware version: 0x00000000
+MEC feature version: 32, firmware version: 0x00000090
+MEC2 feature version: 32, firmware version: 0x00000090
+IMU feature version: 0, firmware version: 0x00000000
+SOS feature version: 0, firmware version: 0x00000000
+ASD feature version: 0, firmware version: 0x00000000
+TA XGMI feature version: 0x00000000, firmware version: 0x00000000
+TA RAS feature version: 0x00000000, firmware version: 0x00000000
+TA HDCP feature version: 0x00000000, firmware version: 0x00000000
+TA DTM feature version: 0x00000000, firmware version: 0x00000000
+TA RAP feature version: 0x00000000, firmware version: 0x00000000
+TA SECUREDISPLAY feature version: 0x00000000, firmware version: 0x00000000
+SMC feature version: 0, program: 0, firmware version: 0x00580600 (88.6.0)
+SDMA0 feature version: 50, firmware version: 0x00000034
+SDMA1 feature version: 50, firmware version: 0x00000034
+VCN feature version: 0, firmware version: 0x00000000
+DMCU feature version: 0, firmware version: 0x00000000
+DMCUB feature version: 0, firmware version: 0x00000000
+TOC feature version: 0, firmware version: 0x00000000
+MES_KIQ feature version: 0, firmware version: 0x00000000
+MES feature version: 0, firmware version: 0x00000000
+VPE feature version: 0, firmware version: 0x00000000
+VBIOS version: 113-AMDRBN-003
+
+=== amdgpu_gpu_recover / gfxoff, se existirem ===
+--- amdgpu_gfxoff_status
+--- amdgpu_gfxoff_count
+--- amdgpu_gfxoff_residency
+
+=== pp_dpm / power, para contexto de clock ===
+--- pp_dpm_sclk
+0: 1000Mhz 
+1: 1500Mhz *
+2: 2000Mhz 
+--- pp_dpm_mclk
+0: 450Mhz *
+--- power_dpm_force_performance_level
+auto
+
+=== leitura de MMIO, mesmos offsets do Windows ===
+registrador              dw      seg  byte      leitura      veredito
+GRBM_STATUS              0x0da4  0    0x08010   0x00003028   responde
+GRBM_STATUS2             0x0da2  0    0x08008   0x00000008   responde
+GRBM_GFX_CNTL            0x0dc2  0    0x08088   0x00000000   responde
+CP_STAT                  0x0f40  0    0x08680   0x00000000   responde
+CP_ME_CNTL               0x0f56  0    0x086D8   0x00000000   responde
+CP_PFP_INSTR_PNTR        0x0f45  0    0x08694   0x0000172E   responde
+CP_ME_INSTR_PNTR         0x0f46  0    0x08698   0x00000E19   responde
+CP_CE_INSTR_PNTR         0x0f47  0    0x0869C   0x000005CF   responde
+CP_MEC1_INSTR_PNTR       0x0f48  0    0x086A0   0x00000447   responde
+CP_CPF_STATUS            0x0e27  0    0x0821C   0x00000000   responde
+CP_CPC_STATUS            0x0e24  0    0x08210   0x00000000   responde
+CP_RB0_BASE              0x1de0  0    0x0C100   0x000064D0   responde
+CP_RB0_CNTL              0x1de1  0    0x0C104   0x00A0080A   responde
+CP_RB0_RPTR              0x0f60  0    0x08700   0x00000300   responde
+CP_RB0_WPTR              0x1df4  0    0x0C150   0x00092B00   responde
+CP_RB_VMID               0x1df1  0    0x0C144   0x00000000   responde
+CP_MAX_CONTEXT           0x1e4e  0    0x0C2B8   0x00000007   responde
+CP_DEVICE_ID             0x1deb  0    0x0C12C   0x00000001   responde
+SCRATCH_REG0             0x2040  1    0x30100   0xDEADBEEF   responde
+SCRATCH_REG1             0x2041  1    0x30104   0x00000000   responde
+SCRATCH_REG7             0x2047  1    0x3011C   0x00000000   responde
+GRBM_GFX_INDEX           0x2200  1    0x30800   0x00000000   responde
+CP_MES_DOORBELL_CTRL1    0x283c  1    0x320F0   0x00000000   responde
+RLC_CNTL                 0x4c00  1    0x3B000   0x00000001   responde
+RLC_SAFE_MODE            0x4c05  1    0x3B014   0x00000000   responde
+RLC_PG_CNTL              0x4c43  1    0x3B10C   0x00000000   responde
+RLC_CGCG_CGLS_CTRL       0x4c49  1    0x3B124   0x00000000   responde
+RLC_SPARE_INT            0x4ccc  1    0x3B330   0x00000000   responde
+RLC_GPM_STAT             0x4e6e  1    0x3B9B8   0x00B40016   responde
+CGTT_CPF_CLK_CTRL        0x50b1  1    0x3C2C4   0xF8000100   responde
+CGTT_CPC_CLK_CTRL        0x50b2  1    0x3C2C8   0x00000100   responde
+CP_PFP_UCODE_ADDR        0x5814  1    0x3E050   0xFFFFFFFF   NAO RESPONDE
+CP_CE_UCODE_ADDR         0x5818  1    0x3E060   0xFFFFFFFF   NAO RESPONDE
+CP_MEC_ME1_UCODE_ADDR    0x581a  1    0x3E068   0xFFFFFFFF   NAO RESPONDE
+CP_PFP_IC_BASE_LO        0x5840  1    0x3E100   0xFFFFFFFF   NAO RESPONDE
+CP_PFP_IC_BASE_HI        0x5841  1    0x3E104   0xFFFFFFFF   NAO RESPONDE
+CP_PFP_IC_BASE_CNTL      0x5842  1    0x3E108   0xFFFFFFFF   NAO RESPONDE
+CP_PFP_IC_OP_CNTL        0x5843  1    0x3E10C   0xFFFFFFFF   NAO RESPONDE
+CP_ME_IC_BASE_LO         0x5844  1    0x3E110   0xFFFFFFFF   NAO RESPONDE
+CP_ME_IC_BASE_CNTL       0x5846  1    0x3E118   0xFFFFFFFF   NAO RESPONDE
+CP_CE_IC_BASE_LO         0x5848  1    0x3E120   0xFFFFFFFF   NAO RESPONDE
+CP_CE_IC_BASE_CNTL       0x584a  1    0x3E128   0xFFFFFFFF   NAO RESPONDE
+RLC_GPM_UCODE_ADDR       0x5b61  1    0x3ED84   0xFFFFFFFF   NAO RESPONDE
+
+Fronteira da zona que nao responde:
+  ultimo que responde ABAIXO : CGTT_CPC_CLK_CTRL        0x3C2C8
+  zona morta                 : 0x3E050 .. 0x3ED84
+  nada acima da zona morta respondeu
+
