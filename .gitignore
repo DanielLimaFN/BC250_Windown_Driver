@@ -1,4 +1,4 @@
-﻿# Build outputs
+# Build outputs
 output/
 tmp/
 *.obj
@@ -14,6 +14,7 @@ tmp/
 # Studio build & dependencies
 studio/output/
 studio/app/dist/
+studio/app/dist-win/
 studio/app/node_modules/
 node_modules/
 
