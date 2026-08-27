@@ -44,7 +44,7 @@ if (-not (Test-Path -LiteralPath $probePath)) {
 } else {
     $probe = Get-ItemProperty -LiteralPath $probePath
     foreach ($expected in @(
-        @{ Name='SchemaVersion'; Value=39 },
+        @{ Name='SchemaVersion'; Value=40 },
         @{ Name='DriverEntryReached'; Value=1 },
         @{ Name='InitializationDataReady'; Value=1 },
         @{ Name='AddDeviceEntered'; Value=1 },
@@ -112,17 +112,17 @@ if (-not (Test-Path -LiteralPath $probePath)) {
         @{ Name='RlcEnableF32After'; Value=1 },
         @{ Name='RlcCntlRestore'; Value=1 },
         @{ Name='RlcPhysicalReady'; Value=1 },
-        @{ Name='PfpDirectStatus'; Value=1 },
-        @{ Name='PfpDirectBytes'; Value=0 },
-        @{ Name='PfpDirectJtDwords'; Value=0 },
-        @{ Name='PfpDirectVersion'; Value=0 },
-        @{ Name='PfpDirectStagedDwords'; Value=0 },
+        @{ Name='PfpDirectStatus'; Value=0 },
+        @{ Name='PfpDirectBytes'; Value=263168 },
+        @{ Name='PfpDirectJtDwords'; Value=128 },
+        @{ Name='PfpDirectVersion'; Value=0x94 },
+        @{ Name='PfpDirectStagedDwords'; Value=65792 },
         @{ Name='PfpDirectStagingMismatches'; Value=0 },
-        @{ Name='PfpDirectPcSamples'; Value=0 },
+        @{ Name='PfpDirectPcSamples'; Value=1 },
         @{ Name='PfpDirectPortsProgrammed'; Value=0 },
-        @{ Name='PfpDirectRegRestore'; Value=0 },
-        @{ Name='PfpDirectMemRestore'; Value=0 },
-        @{ Name='PfpDirectPhysicalReady'; Value=0 },
+        @{ Name='PfpDirectRegRestore'; Value=1 },
+        @{ Name='PfpDirectMemRestore'; Value=1 },
+        @{ Name='PfpDirectPhysicalReady'; Value=1 },
         @{ Name='SdmaF32Status'; Value=0 },
         @{ Name='SdmaF32F32Applied'; Value=0 },
         @{ Name='SdmaF32ApplyReadback'; Value=1 },
@@ -275,5 +275,5 @@ if ($errors.Count -ne 0) {
     exit 1
 }
 Write-Host 'BC250 MCDM FAIL-CLOSED BINDING AUDIT: PASS'
-Write-Host 'RLC ISOLADO; PFP/PM4/COMPUTE NAO EXECUTADOS; NAO VALIDADO EM HARDWARE'
+Write-Host 'PFP STAGING ISOLADO; PM4/COMPUTE NAO EXECUTADOS; NAO VALIDADO EM HARDWARE'
 exit 0

@@ -1622,10 +1622,16 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                                 Bc250ActiveLoadRlcFirmware(context,
                                     &context->PspRlcLoadEvidence,
                                     &context->RlcLoadEvidence);
-                            /* 1.33: gate RLC isolado. O 1.32 apagou a tela
-                             * antes da coleta e nao permite atribuir a falha
-                             * ao RLC ou ao unhalt do PFP. Nao tocar no CP ate
-                             * o RLC explicito produzir evidencia sozinho. */
+                            /* 1.34: Micro-Gate 1: PFP staging e integridade de memoria
+                             * isolados sob HALT absoluto (sem escritas MMIO no CP). */
+                            if (context->PspRlcLoadStatus ==
+                                    BC250_PSP_LOAD_FW_OK &&
+                                context->RlcLoadEvidence.PhysicalReady != 0u) {
+                                context->PfpDirectLoadStatus =
+                                    Bc250ActiveRunPfpDirectLoad(
+                                        context,
+                                        &context->PfpDirectLoadEvidence);
+                            }
                         }
                     }
                     Bc250ProbeRecord(BC250_PROBE_PSP_RING_STATUS,

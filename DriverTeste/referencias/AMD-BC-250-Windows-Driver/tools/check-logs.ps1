@@ -1,1 +1,0 @@
-Get-WinEvent -LogName System -MaxEvents 30 | Where-Object { $_.TimeCreated -gt (Get-Date).AddMinutes(-30) -and $_.Level -le 3 } | Select-Object TimeCreated, Id, LevelDisplayName, Message | Format-List
