@@ -377,6 +377,7 @@ BC250_SDMA_RING_WORK_STATUS Bc250ActiveRunSdmaRingWork(
     Bc250SdmaDeviceWrite(&work[BC250_SDMA_WPTR_OFFSET / 4u + 1u], 0u);
     (void)Bc250SdmaDeviceRead(&ring[0]);
     KeMemoryBarrier();
+    KeStallExecutionProcessor(50u);
     if (!Bc250SdmaHdp(Context) ||
         !Bc250SdmaWrite(Context, R_MINOR_PTR, F_MINOR_PTR) ||
         !Bc250SdmaWrite(Context, R_RB_WPTR, Evidence->WptrPublished) ||
@@ -403,8 +404,9 @@ BC250_SDMA_RING_WORK_STATUS Bc250ActiveRunSdmaRingWork(
         Evidence->Polls = i;
         if (Evidence->RptrRegisterAfter == Evidence->WptrPublished &&
             Evidence->FenceObserved == Evidence->FenceExpected) break;
-        KeStallExecutionProcessor(1000u);
     }
+    (void)Bc250SdmaHdp(Context);
+    Evidence->RptrAfter = Bc250SdmaDeviceRead(&work[BC250_SDMA_RPTR_OFFSET / 4u]);
     (void)Bc250SdmaRead(Context, R_STATUS, &Evidence->StatusAfter);
     (void)Bc250SdmaRead(Context, R_RB_RPTR, &Evidence->RptrRegisterAfter);
     (void)Bc250SdmaRead(Context, R_STATUS1, &Evidence->Status1After);

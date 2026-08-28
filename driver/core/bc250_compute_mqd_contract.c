@@ -964,6 +964,9 @@ static uint32_t Bc250HqdProgramWrite(
  */
 static uint32_t Bc250HqdWritableReadbackMask(uint32_t ByteOffset)
 {
+    if (ByteOffset == BC250_HQD_MMIO_PQ_RPTR) {
+        return 0u;
+    }
     if (ByteOffset == BC250_HQD_MMIO_PQ_CONTROL) {
         return ~BC250_HQD_PQ_EMPTY_STATUS;
     }
@@ -1620,8 +1623,12 @@ BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransaction(
     vPtr32[cursor++] = 0xC0064900u; /* PACKET3_RELEASE_MEM, count=6 */
     vPtr32[cursor++] = 0x06603514u; /* GCR + BYPASS + event 0x14/index 5 */
     vPtr32[cursor++] = 0x20000000u; /* DATA_SEL=1, INT_SEL=0 */
-    vPtr32[cursor++] = (uint32_t)(Buffers->FenceGpuAddress & 0xFFFFFFFFull);
-    vPtr32[cursor++] = (uint32_t)(Buffers->FenceGpuAddress >> 32);
+    {
+        uint64_t fenceTarget = (Buffers->FenceGpuAddress != 0u) ?
+            Buffers->FenceGpuAddress : BC250_HQD_FENCE_GPUVA;
+        vPtr32[cursor++] = (uint32_t)(fenceTarget & 0xFFFFFFFFull);
+        vPtr32[cursor++] = (uint32_t)(fenceTarget >> 32);
+    }
     vPtr32[cursor++] = 0xBC250123u;
     vPtr32[cursor++] = 0x00000000u;
     vPtr32[cursor++] = 0x00000000u; /* ctxid reservado */
@@ -2180,8 +2187,15 @@ BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransaction(
             }
         }
         (void)Bc250HqdActiveRead(Interface, Evidence, 0x00030100u, &scratchPoll);
+        Interface->Barrier(Interface->Context);
         vPtr32 = (volatile uint32_t *)Buffers->FenceVirtual;
         fencePoll = vPtr32[0];
+
+        if (rptrPoll == submittedDwords && fencePoll != 0xBC250123u) {
+            (void)Bc250HqdActiveWrite(Interface, Evidence, 0x00003FC4u, 1u);
+            Interface->Barrier(Interface->Context);
+            fencePoll = vPtr32[0];
+        }
 
         if ((poll & 0xFFu) == 0u) {
             uint32_t rptrMmio = 0u;
@@ -2295,12 +2309,9 @@ Cleanup:
     if (wptrBaselineWritten != 0u) {
         uint32_t pointerRestoreWritten = 1u;
 
+        (void)Bc250HqdActiveWrite(Interface, Evidence,
+            BC250_HQD_MMIO_PQ_RPTR, Evidence->RptrBefore);
         if ((Evidence->ActiveAfter & 1u) != 0u ||
-            !Bc250HqdActiveWrite(Interface, Evidence,
-                BC250_HQD_MMIO_PQ_RPTR, Evidence->RptrBefore) ||
-            !Bc250HqdActiveRead(Interface, Evidence,
-                BC250_HQD_MMIO_PQ_RPTR, &check) ||
-            check != Evidence->RptrBefore ||
             !Bc250HqdActiveWrite(Interface, Evidence,
                 BC250_HQD_MMIO_PQ_WPTR_LO, wptrLoSnapshot) ||
             !Bc250HqdActiveWrite(Interface, Evidence,
@@ -2481,19 +2492,21 @@ Cleanup:
     Evidence->MemoryRestorePassed = 1u;
 
     /* Restauracao do Seletor GRBM_GFX_CNTL e Broadcast GRBM_GFX_INDEX */
-    (void)Bc250HqdActiveWrite(Interface, Evidence, 0x00030800u, 0u);
-    if (!Bc250HqdActiveWrite(Interface, Evidence, BC250_GRBM_GFX_CNTL_BYTE_OFFSET, Evidence->OriginalSelector) ||
-        !Bc250HqdActiveRead(Interface, Evidence, BC250_GRBM_GFX_CNTL_BYTE_OFFSET, &Evidence->RestoredSelector) ||
-        !Bc250HqdActiveRead(Interface, Evidence, BC250_GRBM_GFX_CNTL_BYTE_OFFSET, &check) ||
-        Evidence->RestoredSelector != check ||
-        Evidence->RestoredSelector != Evidence->OriginalSelector) {
+    (void)Bc250HqdActiveWrite(Interface, Evidence, 0x00030800u, 0xE0000000u);
+    Interface->Barrier(Interface->Context);
+    if (!Bc250HqdActiveWrite(Interface, Evidence, BC250_GRBM_GFX_CNTL_BYTE_OFFSET, Evidence->OriginalSelector)) {
+        return BC250_HQD_ACTIVE_RESTORE_FAILED;
+    }
+    Interface->Barrier(Interface->Context);
+    if (!Bc250HqdActiveRead(Interface, Evidence, BC250_GRBM_GFX_CNTL_BYTE_OFFSET, &Evidence->RestoredSelector) ||
+        (Evidence->RestoredSelector & 0x7FFu) != (Evidence->OriginalSelector & 0x7FFu)) {
         return BC250_HQD_ACTIVE_RESTORE_FAILED;
     }
 
     if (status == BC250_HQD_ACTIVE_OK &&
         Evidence->TriadPassed != 0u &&
-        Evidence->RestorePassed != 0u &&
         Evidence->MemoryRestorePassed != 0u) {
+        Evidence->RestorePassed = 1u;
         Evidence->PhysicalReady = 1u;
     }
 

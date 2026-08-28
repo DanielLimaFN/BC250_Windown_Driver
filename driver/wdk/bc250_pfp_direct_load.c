@@ -947,7 +947,7 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
         if (value != previousPc) ++Evidence->PfpPcTransitions;
         previousPc = value;
 
-        if (Evidence->Rb0RptrAfter >= (cursor - 1u) &&
+        if (Evidence->Rb0RptrAfter >= cursor &&
             (Evidence->Rb0FenceAfter == BC250_CP_RB0_FENCE_VALUE ||
              Evidence->Rb0FenceAfter == 0x22222222u ||
              scratchAfter == 0x22222222u)) {
@@ -955,6 +955,7 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
         }
         KeStallExecutionProcessor(200u);
     }
+    (void)Bc250PfpRead(Context, R_CP_RB0_RPTR, &Evidence->Rb0RptrAfter);
     Evidence->PfpPcSamples = 4u;
 
     (void)Bc250PfpWrite(Context, R_CP_RB0_ACTIVE, 0u);
