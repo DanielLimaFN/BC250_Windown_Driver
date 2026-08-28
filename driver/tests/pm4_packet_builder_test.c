@@ -39,10 +39,13 @@ static int Bc250RunPm4PacketBuilderTest(void)
     /* 1. Test NOP emission (ExtraCount = 3 -> 4 total dwords) */
     CHECK(Bc250Pm4EmitNop(g_pm4Ring, TEST_PM4_RING_DWORDS, &cursor, 3u) == BC250_PM4_OK);
     CHECK(cursor == 4u);
-    CHECK(g_pm4Ring[0] == 0xC0031000u); /* Type 3, Count 3, Op 0x10 */
+    CHECK(g_pm4Ring[0] == 0xC0021000u); /* Type 3, Count 2, 3-dword body */
     CHECK(g_pm4Ring[1] == 0);
     CHECK(g_pm4Ring[2] == 0);
     CHECK(g_pm4Ring[3] == 0);
+    CHECK(Bc250Pm4EmitNop(
+        g_pm4Ring, TEST_PM4_RING_DWORDS, &cursor, 0u) ==
+        BC250_PM4_PAYLOAD_TOO_LARGE);
 
     /* 2. Test WRITE_DATA emission */
     cursor = 0;
@@ -86,7 +89,7 @@ static int Bc250RunPm4PacketBuilderTest(void)
         g_pm4Ring, TEST_PM4_RING_DWORDS, &cursor,
         BC250_PM4_UCONFIG_REG_BASE + 0x20u, shRegPayload, 1u) == BC250_PM4_OK);
     CHECK(cursor == 6u);
-    CHECK(g_pm4Ring[3] == 0xC0017700u); /* Type 3, Count 1, Op 0x77 */
+    CHECK(g_pm4Ring[3] == 0xC0017900u); /* Type 3, Count 1, Op 0x79 */
     CHECK(g_pm4Ring[4] == 0x20u);
     CHECK(g_pm4Ring[5] == 0x00000001u);
 
@@ -102,14 +105,16 @@ static int Bc250RunPm4PacketBuilderTest(void)
     CHECK(Bc250Pm4EmitReleaseMem(
         g_pm4Ring, TEST_PM4_RING_DWORDS, &cursor,
         BC250_PM4_EVENT_EOP, 0, 0x0000080000003000ull, 0xBC250001ull) == BC250_PM4_OK);
-    CHECK(cursor == 14u);
+    CHECK(cursor == 15u);
     CHECK(g_pm4Ring[7] == 0xC0064900u); /* Type 3, Count 6, Op 0x49 */
+    CHECK(g_pm4Ring[9] == 0x40000000u); /* DATA_SEL=2: 64-bit data */
+    CHECK(g_pm4Ring[14] == 0u);         /* ctxid/reserved */
 
     CHECK(Bc250Pm4EmitEventWrite(
         g_pm4Ring, TEST_PM4_RING_DWORDS, &cursor,
         BC250_PM4_EVENT_CS_PARTIAL_FLUSH) == BC250_PM4_OK);
-    CHECK(cursor == 16u);
-    CHECK(g_pm4Ring[14] == 0xC0004600u); /* Type 3, Count 0, Op 0x46 */
+    CHECK(cursor == 17u);
+    CHECK(g_pm4Ring[15] == 0xC0004600u); /* Type 3, Count 0, Op 0x46 */
 
     /* 6. Test Ring space calculation and wraparound */
     rptr = 0;

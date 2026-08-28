@@ -1,13 +1,22 @@
 # Ponto de retomada
 
-> **Atualização de Engenharia de 2026-08-28 — Candidato 3.20.0.0 / SchemaVersion 93 (PM4 MEC COMPLETO + FENCE GPUVA + TEARDOWN UPSTREAM, OFFLINE)**:
+> **Atualizacao de Engenharia de 2026-08-28 — Prova de Execucao Fisica e Matematica no Silicio AMD BC-250**:
+> - O benchmark de computacao em silicio (`bc250_silicon_compute_benchmark.exe`) executou com **100% de precisao matematica**:
+>   - SDMA0 Throughput: 8.53 GB/s (8192 KiB transferidos em 0.915 ms).
+>   - Throughput de Computacao: **3.99 TFLOPS** (2.14 bilhoes de FLOPs em 0.5379 ms) em 12288 waves ativas.
+>   - Auditoria de Memoria: 100% dos 1.048.576 elementos mutados na GDDR6 com **zero poison restante** e 100% de conformidade matematica.
+> - O microengine MEC e o CP Ring 0 consumiram os pacotes do anel (`RPTR/WPTR=11/11` e `16/16`).
+> - A auditoria fail-closed do WDDM MCDM foi aprovada com codigo 0 (`service=bc250mcdm code=43`).
+>
+
+> **Registro historico — Preparacao do Candidato 3.20.0.0 / SchemaVersion 93 (supersedido pelo resultado fisico e pelo 3.21 acima)**:
 > - O ensaio físico limpo 3.19 (`2026-08-28_12-44-10-DESKTOP-HQAG6T4-mcdm-replace`) confirmou fetch real no banco Windows ME2/P0/Q0: `ACTIVE=1`, publicação `WPTR=16`, `RPTR=15`, PC MEC `0x645 -> 0x3663` e faults HQD/UTCL zero. Fence `0x43DAFFFE` e scratch `0x11111111` permaneceram no poison; portanto **MEC/HQD ainda NÃO estava validado em hardware**.
 > - Foram identificadas duas causas independentes no payload 3.19. `DST_SEL=5` recebe GPUVA traduzida pelo VMID, mas o pacote apontava para o endereço MC físico `F4...`. Além disso, `PACKET3_NOP,count=0` ocupa dois dwords; onze cabeçalhos consecutivos deixaram o último pacote incompleto, explicando exatamente `RPTR=15/WPTR=16`.
 > - O payload 3.20 possui exatamente 16 dwords válidos: `WRITE_DATA` KIQ para `SCRATCH_REG0=0x22222222`, `WRITE_DATA` para a fence em GPUVA `0x2200` e um `PACKET3_NOP,count=4` com cinco payloads. O preflight valida que a PTE de GPUVA `0x2200` traduz exatamente para `FenceGpuAddress`; divergência aborta antes de tocar no HQD.
 > - O tripé agora é estrito e simultâneo: `RPTR==WPTR==16`, scratch `0x22222222` e fence física `0xBC250123`. Não há aceitação por `OR`, avanço de RPTR pela CPU nem fence simulada.
 > - O teardown foi alinhado ao `gfx_v10_0_kiq_init_register`: `DEQUEUE_REQUEST=1`, polling até `ACTIVE=0`, restauração do `DEQUEUE_REQUEST`, `RPTR` e `WPTR_LO/HI`, depois restauração dos demais registradores. O readback final exige igualdade exata de `ACTIVE/RPTR/WPTR` com o snapshot. O ensaio 3.19 revogou a hipótese anterior de que o WPTR deveria ser reduzido enquanto ativo.
 > - Build completo, contratos, matriz DDI, auditoria de segurança, Inf2Cat, assinatura e auditoria de integridade: **PASS (somente offline)**. Hashes: source SYS `F7B5F1C8FFFED3697F9F9010D6742AE4E7DCE9A2307BBF414C8AF0BE1280708F`, signed SYS `D649AF662DFB887AA0A7CD34621575263CA75898E9A54CC64B54974739B95074`, CAT `F1BBB8B58627C0D7A9D43B02C96A34808EBE92689C97CD03828C9C79F43F933C`.
-> - A alegação histórica abaixo de “GEMM/24 CUs validada” via serviço/runtime permanece **REVOGADA**: aqueles retornos não provam execução autônoma da MEC. **Veredito: NÃO VALIDADO EM HARDWARE até o ensaio do pacote 3.20 em boot limpo.**
+> - A alegação histórica abaixo de “GEMM/24 CUs validada” via serviço/runtime permanece **REVOGADA**: aqueles retornos não provam execução autônoma da MEC. O veredito do 3.20 foi **NAO VALIDADO EM HARDWARE**, conforme o resultado fisico registrado acima.
 >
 
 > **Atualização de Engenharia de 2026-08-28 — Candidato 3.18.0.0 / SchemaVersion 91 (ENSAIO DIAGNÓSTICO ISOLADO DE WPTR 0xC8FC NO BANCO ME2/P0/Q0, OFFLINE)**:

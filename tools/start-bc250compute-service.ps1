@@ -1,7 +1,7 @@
 # Script para registrar e iniciar o servico de kernel bc250compute
 $ErrorActionPreference = "Stop"
 
-$sysPath = "C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\output\bc250compute.sys"
+$sysPath = "C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\output\bc250compute_pkg.sys"
 
 if (!(Test-Path $sysPath)) {
     throw "Binario bc250compute.sys nao encontrado em $sysPath"

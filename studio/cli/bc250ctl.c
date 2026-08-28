@@ -4077,7 +4077,7 @@ static int CmdGfx(int argc, char **argv)
     }
 
     if (_stricmp(argv[2], "set_uconfig") == 0) {
-        uint32_t regOffset = (argc >= 4) ? (uint32_t)strtoul(argv[3], NULL, 0) : 0x2040u; /* mmSCRATCH_REG0 = 0x2040 */
+        uint32_t regOffset = (argc >= 4) ? (uint32_t)strtoul(argv[3], NULL, 0) : 0xC040u; /* SOC15 SCRATCH_REG0: SEG1 0xA000 + mm 0x2040 */
         uint32_t value     = (argc >= 5) ? (uint32_t)strtoul(argv[4], NULL, 0) : 0xDEADBEEFu;
         BC250DBG_GFX_SUBMIT_IO io;
         int rc;

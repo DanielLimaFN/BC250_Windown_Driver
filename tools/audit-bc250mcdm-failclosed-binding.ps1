@@ -44,7 +44,7 @@ if (-not (Test-Path -LiteralPath $probePath)) {
 } else {
     $probe = Get-ItemProperty -LiteralPath $probePath
     foreach ($expected in @(
-        @{ Name='SchemaVersion'; Value=93 },
+        @{ Name='SchemaVersion'; Value=94 },
         @{ Name='DriverEntryReached'; Value=1 },
         @{ Name='InitializationDataReady'; Value=1 },
         @{ Name='AddDeviceEntered'; Value=1 },
@@ -397,6 +397,12 @@ if (-not (Test-Path -LiteralPath $probePath)) {
             $errors.Add('submissao HQD executada sem coerencia/ACK comprovados')
         }
         if (($actStatus -eq 0 -or $actStatus -eq 7) -and
+            ([uint32]$probe.HqdActiveWptrApplied -ne 11 -or
+             [uint32]$probe.HqdActiveWptrShadow -ne 11 -or
+             [uint32]$probe.HqdActiveDoorbellValueApplied -ne 11)) {
+            $errors.Add('submissao HQD divergiu do payload canonico 3+8 dwords')
+        }
+        if (($actStatus -eq 0 -or $actStatus -eq 7) -and
             (([uint32]$probe.HqdActiveDoorbellIndex * 4) -ne
                 [uint32]$probe.HqdActiveDoorbellOffset -or
              [uint32]$probe.HqdActiveDoorbellOffset -ne
@@ -440,9 +446,11 @@ if (-not (Test-Path -LiteralPath $probePath)) {
                 [uint32]$probe.HqdActiveRlcCpSchedulersRestorePassed -ne 1) {
                 $errors.Add('transacao RLC_CP_SCHEDULERS sem RMW/readback/rollback integral')
             }
-            if ([uint32]$probe.HqdActiveWptrAfterKick -ne 16 -and
+            if ([uint32]$probe.HqdActiveWptrAfterKick -ne
+                    [uint32]$probe.HqdActiveWptrApplied -and
                 ([uint32]$probe.HqdActiveDirectWptrKickApplied -ne 1 -or
-                 [uint32]$probe.HqdActiveDirectWptrReadback -ne 16 -or
+                 [uint32]$probe.HqdActiveDirectWptrReadback -ne
+                    [uint32]$probe.HqdActiveWptrApplied -or
                  [uint32]$probe.HqdActiveDirectWptrRestorePolls -lt 1 -or
                  [uint32]$probe.HqdActiveDirectWptrRestorePolls -gt 1000 -or
                  [uint32]$probe.HqdActiveDirectWptrRestorePassed -ne 1)) {

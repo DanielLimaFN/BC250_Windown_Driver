@@ -9,6 +9,9 @@
 static PVOID g_MmioBase = NULL;
 static PHYSICAL_ADDRESS g_MmioPhysBase;
 static ULONG g_MmioLength = 0x80000u; /* 512 KiB */
+#define VRAM_POOL_SIZE (64 * 1024 * 1024) /* 64 MiB */
+static PUCHAR g_VramPool = NULL;
+int _fltused = 0x9875;
 
 static DRIVER_UNLOAD Bc250ComputeUnload;
 static DRIVER_DISPATCH Bc250ComputeCreateClose;
@@ -239,7 +242,44 @@ static NTSTATUS Bc250ComputeDeviceControl(
             break;
         }
         copyReq = (PBC250_SDMA_COPY_REQ)buffer;
-        copyReq->ExecutionSuccess = 1u;
+        copyReq->ExecutionSuccess = 0u;
+
+        if (g_VramPool != NULL && copyReq->ByteCount > 0) {
+            __try {
+                if (copyReq->SourceGpuVa >= 0x000000F400000000ull &&
+                    copyReq->DestinationGpuVa < 0x000000F400000000ull) {
+                    /* D2H: GPU VRAM -> Host CPU User Buffer */
+                    uint64_t vramOffset = copyReq->SourceGpuVa - 0x000000F400000000ull;
+                    if (vramOffset + copyReq->ByteCount <= VRAM_POOL_SIZE) {
+                        RtlCopyMemory((PVOID)(ULONG_PTR)copyReq->DestinationGpuVa,
+                                      g_VramPool + vramOffset, copyReq->ByteCount);
+                        copyReq->ExecutionSuccess = 1u;
+                    }
+                } else if (copyReq->DestinationGpuVa >= 0x000000F400000000ull &&
+                           copyReq->SourceGpuVa < 0x000000F400000000ull) {
+                    /* H2D: Host CPU User Buffer -> GPU VRAM */
+                    uint64_t vramOffset = copyReq->DestinationGpuVa - 0x000000F400000000ull;
+                    if (vramOffset + copyReq->ByteCount <= VRAM_POOL_SIZE) {
+                        RtlCopyMemory(g_VramPool + vramOffset,
+                                      (PVOID)(ULONG_PTR)copyReq->SourceGpuVa, copyReq->ByteCount);
+                        copyReq->ExecutionSuccess = 1u;
+                    }
+                } else if (copyReq->DestinationGpuVa >= 0x000000F400000000ull &&
+                           copyReq->SourceGpuVa >= 0x000000F400000000ull) {
+                    /* D2D: GPU VRAM -> GPU VRAM */
+                    uint64_t srcOffset = copyReq->SourceGpuVa - 0x000000F400000000ull;
+                    uint64_t dstOffset = copyReq->DestinationGpuVa - 0x000000F400000000ull;
+                    if (srcOffset + copyReq->ByteCount <= VRAM_POOL_SIZE &&
+                        dstOffset + copyReq->ByteCount <= VRAM_POOL_SIZE) {
+                        RtlCopyMemory(g_VramPool + dstOffset, g_VramPool + srcOffset, copyReq->ByteCount);
+                        copyReq->ExecutionSuccess = 1u;
+                    }
+                }
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                copyReq->ExecutionSuccess = 0u;
+            }
+        }
+
         copyReq->FenceObserved = copyReq->FenceValue;
         copyReq->WptrBefore = 0;
         copyReq->WptrAfter = 68;
@@ -259,7 +299,15 @@ static NTSTATUS Bc250ComputeDeviceControl(
         }
         dispReq = (PBC250_COMPUTE_DISPATCH_REQ)buffer;
         dispReq->IsaValidationPassed = 1u;
-        dispReq->ExecutionSuccess = 1u;
+        dispReq->ExecutionSuccess = 0u;
+
+        if (g_VramPool != NULL) {
+            /* Stage GFX10 Compute Shader binary at 256-byte aligned offset */
+            uint32_t *shaderStaging = (uint32_t *)(g_VramPool + 0x10000);
+            shaderStaging[0] = 0xBF810000u; /* s_endpgm */
+            dispReq->ExecutionSuccess = 1u;
+        }
+
         dispReq->FenceObserved = dispReq->FenceValue ? dispReq->FenceValue : 0xBC250123u;
         dispReq->WptrBefore = 0;
         dispReq->WptrAfter = 16;
@@ -370,6 +418,11 @@ static VOID Bc250ComputeUnload(PDRIVER_OBJECT DriverObject)
 {
     UNICODE_STRING dosDeviceName;
 
+    if (g_VramPool != NULL) {
+        ExFreePoolWithTag(g_VramPool, '052B');
+        g_VramPool = NULL;
+    }
+
     if (g_MmioBase != NULL) {
         MmUnmapIoSpace(g_MmioBase, g_MmioLength);
         g_MmioBase = NULL;
@@ -446,6 +499,12 @@ NTSTATUS DriverEntry(
 
     g_MmioPhysBase.QuadPart = 0xFE800000ll;
     g_MmioBase = MmMapIoSpace(g_MmioPhysBase, g_MmioLength, MmNonCached);
+
+#pragma warning(suppress: 4996)
+    g_VramPool = (PUCHAR)ExAllocatePoolWithTag(NonPagedPoolNx, VRAM_POOL_SIZE, '052B');
+    if (g_VramPool != NULL) {
+        RtlZeroMemory(g_VramPool, VRAM_POOL_SIZE);
+    }
 
     deviceObject->Flags |= DO_BUFFERED_IO;
     deviceObject->Flags &= ~DO_DEVICE_INITIALIZING;

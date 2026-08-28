@@ -67,9 +67,9 @@ static int Bc250RunSubmitCommandContractTest(void)
     CHECK(Bc250BuildComputeRingSubmission(
         &g_testReq, g_testRing, TEST_SUBMIT_RING_DWORDS, &cursor, &g_testResult) == BC250_SUBMISSION_OK);
 
-    CHECK(cursor == 15u); /* 4 + 11 dwords */
-    CHECK(g_testResult.EmittedDwords == 11u);
-    CHECK(g_testResult.UpdatedWptr == 15u);
+    CHECK(cursor == 16u); /* cursor inicial 4 + IB 4 + RELEASE_MEM 8 */
+    CHECK(g_testResult.EmittedDwords == 12u);
+    CHECK(g_testResult.UpdatedWptr == 16u);
     CHECK(g_testResult.IsSuccessful == 1u);
 
     /* Check PM4 Indirect Buffer Packet (DW 4..7) */
@@ -77,10 +77,11 @@ static int Bc250RunSubmitCommandContractTest(void)
     CHECK(g_testRing[5] == 0x10000000u); /* Base lo */
     CHECK(g_testRing[7] == (1024u | (1u << 20))); /* 4096 / 4 dwords + valid bit */
 
-    /* Check PM4 Release Mem Packet (DW 8..14) */
+    /* Check PM4 Release Mem Packet (DW 8..15) */
     CHECK(g_testRing[8] == 0xC0064900u); /* IT_RELEASE_MEM */
     CHECK(g_testRing[11] == 0x20000000u); /* Fence addr lo */
     CHECK(g_testRing[13] == 202u);        /* Fence data lo */
+    CHECK(g_testRing[15] == 0u);          /* ctxid/reserved */
 
     /* 3. Test Unified Router */
     cursor = 0;

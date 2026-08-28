@@ -72,13 +72,14 @@ static int Bc250RunPreemptionContractTest(void)
     g_preemptReq.NodeIndex = BC250_ADAPTER_NODE_COMPUTE;
     CHECK(Bc250PreemptCommand(
         &g_preemptReq, g_preemptRing, TEST_PREEMPT_RING_DWORDS, &cursor, &g_preemptResult) == BC250_PREEMPTION_OK);
-    CHECK(cursor == 7u);
-    CHECK(g_preemptResult.EmittedFenceDwords == 7u);
+    CHECK(cursor == 8u);
+    CHECK(g_preemptResult.EmittedFenceDwords == 8u);
     CHECK(g_preemptResult.HqdDequeued == 1u);
     CHECK(g_preemptResult.IsSuccessful == 1u);
     CHECK(g_preemptRing[0] == 0xC0064900u); /* IT_RELEASE_MEM */
     CHECK(g_preemptRing[3] == 0x20000000u); /* Fence addr lo */
     CHECK(g_preemptRing[5] == 601u);        /* Fence data lo */
+    CHECK(g_preemptRing[7] == 0u);          /* ctxid/reserved */
 
     /* 5. Test Error Handling */
     g_preemptReq.PreemptionFenceGpuVa = 0x0000000020000001ull;

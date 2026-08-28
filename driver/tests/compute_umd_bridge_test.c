@@ -130,7 +130,7 @@ static int Bc250RunComputeUmdBridgeTest(void)
     CHECK(Bc250SubmitCommand(
         &submitReq, g_umdRing, TEST_UMD_RING_DWORDS, &cursor, &submitRes) == BC250_SUBMISSION_OK);
     CHECK(submitRes.UpdatedWptr == cursor);
-    CHECK(submitRes.EmittedDwords == 11u); /* 4 DW Indirect Buffer + 7 DW Release Mem */
+    CHECK(submitRes.EmittedDwords == 12u); /* 4 DW Indirect Buffer + 8 DW Release Mem */
 
     return 1;
 }

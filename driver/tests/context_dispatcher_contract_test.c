@@ -83,12 +83,13 @@ static int Bc250RunContextDispatcherContractTest(void)
 
     CHECK(Bc250ContextBuildComputeSubmission(
         &g_computeContext, &g_submitDesc, g_dispatchRing, TEST_RING_SIZE, &cursor) == BC250_DISPATCH_OK);
-    CHECK(cursor == 11u); /* 4 dwords IB + 7 dwords RELEASE_MEM */
-    CHECK(g_dispatchRing[0] == 0xC0033F00u); /* IT_INDIRECT_BUFFER (count 3, op 0x3F) */
+    CHECK(cursor == 12u); /* 4 dwords IB + 8 dwords RELEASE_MEM */
+    CHECK(g_dispatchRing[0] == 0xC0023F00u); /* IT_INDIRECT_BUFFER (count 2, op 0x3F) */
     CHECK(g_dispatchRing[1] == 0x00004000u); /* Addr Lo */
     CHECK(g_dispatchRing[2] == 0x00000800u); /* Addr Hi */
     CHECK(g_dispatchRing[3] == 32u);         /* Size Dwords | (VMID 0 << 24) */
     CHECK(g_dispatchRing[4] == 0xC0064900u); /* IT_RELEASE_MEM (count 6, op 0x49) */
+    CHECK(g_dispatchRing[11] == 0u);         /* ctxid/reserved */
 
     /* 4. Test Error Handling */
     /* Mismatched engine / context ID */

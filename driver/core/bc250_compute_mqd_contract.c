@@ -8,7 +8,8 @@
 #define BC250_HQD_DOORBELL_ENABLE            0x40000000u
 #define BC250_HQD_PQ_QUEUE_SIZE_MASK         0x0000003Fu
 #define BC250_HQD_PQ_RPTR_BLOCK_SIZE_MASK    0x00003F00u
-#define BC250_HQD_PQ_QUEUE_FULL_INT_ENABLE   0x00008000u
+#define BC250_HQD_PQ_EMPTY_STATUS             0x00008000u
+#define BC250_HQD_DOORBELL_STATUS_MASK        0xA0000000u
 #define BC250_HQD_PQ_MIN_AVAIL_SIZE_3        0x00300000u
 #define BC250_HQD_PQ_UNORD_DISPATCH          0x10000000u
 #define BC250_HQD_PQ_PRIV_STATE              0x40000000u
@@ -953,6 +954,37 @@ static uint32_t Bc250HqdProgramWrite(
     return 1u;
 }
 
+/*
+ * Alguns campos do bloco HQD sao status produzidos pelo hardware, nao estado
+ * programavel. Em particular, PQ_EMPTY foi observado no BC-250 alternando de
+ * 0 para 1 logo apos a fila ficar inativa (D030090D -> D030890D). Os bits HIT
+ * do doorbell tem a mesma natureza. Compare somente o estado gravavel para
+ * nao transformar atividade legitima do silicio em falso erro de readback ou
+ * rollback.
+ */
+static uint32_t Bc250HqdWritableReadbackMask(uint32_t ByteOffset)
+{
+    if (ByteOffset == BC250_HQD_MMIO_PQ_CONTROL) {
+        return ~BC250_HQD_PQ_EMPTY_STATUS;
+    }
+    if (ByteOffset == BC250_HQD_MMIO_DOORBELL_CONTROL) {
+        return ~BC250_HQD_DOORBELL_STATUS_MASK;
+    }
+    return 0xFFFFFFFFu;
+}
+
+static int Bc250HqdReadbackMatches(
+    uint32_t ByteOffset,
+    uint32_t Expected,
+    uint32_t Observed)
+{
+    uint32_t mask;
+
+    if (Observed == 0xFFFFFFFFu) return 0;
+    mask = Bc250HqdWritableReadbackMask(ByteOffset);
+    return (Expected & mask) == (Observed & mask);
+}
+
 BC250_HQD_PROGRAM_STATUS Bc250ComputeRunInactiveHqdProgramTransaction(
     const BC250_HQD_SELECTOR_INTERFACE *Interface,
     const BC250_HQD_MC_BUFFERS *Buffers,
@@ -1213,10 +1245,14 @@ BC250_HQD_PROGRAM_STATUS Bc250ComputeRunInactiveHqdProgramTransaction(
 
     /* Validate double readbacks and populate diagnostic mismatch mask */
     for (i = 0u; i < BC250_HQD_INACTIVE_PLAN_MAX_WRITES; ++i) {
-        if (Evidence->ReadbackPass1[i] != Evidence->AppliedValues[i] ||
-            Evidence->ReadbackPass1[i] != Evidence->ReadbackPass2[i] ||
-            Evidence->ReadbackPass1[i] == 0xFFFFFFFFu ||
-            Evidence->ReadbackPass2[i] == 0xFFFFFFFFu) {
+        if (!Bc250HqdReadbackMatches(
+                planWrites[i].ByteOffset,
+                Evidence->AppliedValues[i],
+                Evidence->ReadbackPass1[i]) ||
+            !Bc250HqdReadbackMatches(
+                planWrites[i].ByteOffset,
+                Evidence->AppliedValues[i],
+                Evidence->ReadbackPass2[i])) {
             Evidence->MismatchMask |= (1u << i);
             if (Evidence->FirstMismatchOffset == 0u) {
                 Evidence->FirstMismatchOffset = planWrites[i].ByteOffset;
@@ -1261,9 +1297,13 @@ Cleanup:
                     &Evidence->RestoredValues[regIdx]) ||
                 !Bc250HqdProgramRead(Interface, Evidence,
                     planWrites[regIdx].ByteOffset, &check) ||
-                Evidence->RestoredValues[regIdx] != check ||
-                Evidence->RestoredValues[regIdx] !=
-                    Evidence->SnapshotValues[regIdx]) {
+                !Bc250HqdReadbackMatches(
+                    planWrites[regIdx].ByteOffset,
+                    Evidence->RestoredValues[regIdx], check) ||
+                !Bc250HqdReadbackMatches(
+                    planWrites[regIdx].ByteOffset,
+                    Evidence->SnapshotValues[regIdx],
+                    Evidence->RestoredValues[regIdx])) {
                 return BC250_HQD_PROGRAM_RESTORE_FAILED;
             }
         }
@@ -1419,6 +1459,7 @@ BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransaction(
     uint32_t i = 0;
     uint32_t poll = 0;
     uint32_t cursor = 0;
+    uint32_t submittedDwords = 0;
     uint32_t hqdWritten = 0;
     uint32_t queueAddressWriteCount = 0;
     uint32_t cpPqStatusWritten = 0;
@@ -1555,37 +1596,39 @@ BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransaction(
     }
 
     /*
-     * 2. Diagnostico PM4 completo (16 dwords).
+     * 2. Diagnostico PM4 canonico (11 dwords: 3 + 8).
      *
-     * O ensaio 3.19 comprovou fetch do MEC em sessao limpa, mas parou em
-     * RPTR=15 porque PACKET3_NOP,count=0 ocupa dois dwords e o ultimo NOP
-     * ficou sem payload. Alem disso, DST_SEL=5 recebe GPUVA, nao endereco MC.
-     * Este fluxo usa a forma canonica KIQ para registro, a GPUVA 0x2200 ja
-     * validada pela PTE acima e um unico NOP cujo tamanho fecha 16 dwords.
+     * O ensaio 3.20 avancou RPTR=10 e deixou os seis dwords finais parados:
+     * eles eram menores que a disponibilidade minima de oito dwords desta
+     * fila. Tambem revelou que WRITE_DATA recebeu mmSCRATCH_REG0=0x2040 sem
+     * a base SOC15 do segmento 1. Use a sequencia do ring_test_ring upstream:
+     * SET_UCONFIG_REG opcode 0x79, endereco SOC15 0xC040 relativo a 0xC000.
+     * Restam entao exatamente oito dwords disponiveis, o minimo exigido para
+     * o RELEASE_MEM canonico que grava a fence na GPUVA validada pela PTE.
      */
     vPtr32 = (volatile uint32_t *)Buffers->RingVirtual;
     for (i = 0; i < (Buffers->RingSizeBytes >> 2); ++i) vPtr32[i] = 0u;
 
     cursor = 0u;
 
-    /* WRITE_DATA KIQ: SCRATCH_REG0 = 0x22222222 (5 dwords). */
-    vPtr32[cursor++] = 0xC0033700u; /* PACKET3_WRITE_DATA, count=3 */
-    vPtr32[cursor++] = 0x00010000u; /* KIQ: WRITE_ONE_ADDR, DST_SEL=0 */
-    vPtr32[cursor++] = 0x00002040u; /* mmSCRATCH_REG0, segmento 1 */
-    vPtr32[cursor++] = 0x00000000u;
+    /* SET_UCONFIG_REG: SCRATCH_REG0 = 0x22222222 (3 dwords). */
+    vPtr32[cursor++] = 0xC0017900u; /* PACKET3_SET_UCONFIG_REG, count=1 */
+    vPtr32[cursor++] = 0x00000040u; /* (SEG1 0xA000 + mm 0x2040) - 0xC000 */
     vPtr32[cursor++] = 0x22222222u;
 
-    /* WRITE_DATA: fence por GPUVA traduzida no VMID 0 (5 dwords). */
-    vPtr32[cursor++] = 0xC0033700u; /* PACKET3_WRITE_DATA, count=3 */
-    vPtr32[cursor++] = 0x00100500u; /* WR_CONFIRM=1, DST_SEL=5 (Memory direct) */
-    vPtr32[cursor++] = (uint32_t)(BC250_HQD_FENCE_GPUVA & 0xFFFFFFFFull);
-    vPtr32[cursor++] = (uint32_t)(BC250_HQD_FENCE_GPUVA >> 32);
+    /* RELEASE_MEM GFX10: fence EOP 32-bit por endereco MC/GPUVA fisico (8 dwords). */
+    vPtr32[cursor++] = 0xC0064900u; /* PACKET3_RELEASE_MEM, count=6 */
+    vPtr32[cursor++] = 0x06603514u; /* GCR + BYPASS + event 0x14/index 5 */
+    vPtr32[cursor++] = 0x20000000u; /* DATA_SEL=1, INT_SEL=0 */
+    vPtr32[cursor++] = (uint32_t)(Buffers->FenceGpuAddress & 0xFFFFFFFFull);
+    vPtr32[cursor++] = (uint32_t)(Buffers->FenceGpuAddress >> 32);
     vPtr32[cursor++] = 0xBC250123u;
+    vPtr32[cursor++] = 0x00000000u;
+    vPtr32[cursor++] = 0x00000000u; /* ctxid reservado */
 
-    /* NOP completo de 6 dwords: header count=4 + 5 payloads. */
-    vPtr32[cursor++] = 0xC0041000u; /* PACKET3_NOP, count=4 */
-    while (cursor < 16u) {
-        vPtr32[cursor++] = 0u;
+    submittedDwords = cursor;
+    if (submittedDwords != 11u) {
+        return BC250_HQD_ACTIVE_PLAN_FAILED;
     }
     Interface->Barrier(Interface->Context);
 
@@ -1907,7 +1950,7 @@ BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransaction(
 
     /* Publica o cursor na shadow memory antes do flush, igual ao Ring 0. */
     vPtr32 = (volatile uint32_t *)Buffers->WptrVirtual;
-    vPtr32[0] = 16u;
+    vPtr32[0] = submittedDwords;
     vPtr32[1] = 0u;
     Evidence->WptrShadowApplied = vPtr32[0];
     Interface->Barrier(Interface->Context);
@@ -1987,12 +2030,13 @@ BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransaction(
     Evidence->CoherencyPassed = 1u;
     /*
      * Upstream gfx_v10_0_kiq_init_register:
-     * Publica WPTR=16 diretamente no registrador MMIO CP_HQD_PQ_WPTR_LO.
+     * Publica o cursor exato diretamente no registrador CP_HQD_PQ_WPTR_LO.
      */
-    Evidence->WptrApplied = 16u;
+    Evidence->WptrApplied = submittedDwords;
     if (Props->UseDoorbell == 0u) {
         if (!Bc250HqdActiveWrite(
-                Interface, Evidence, BC250_HQD_MMIO_PQ_WPTR_LO, 16u)) {
+                Interface, Evidence, BC250_HQD_MMIO_PQ_WPTR_LO,
+                submittedDwords)) {
             status = BC250_HQD_ACTIVE_WRITE_FAILED;
             goto Cleanup;
         }
@@ -2019,11 +2063,11 @@ BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransaction(
         }
         db64 = (volatile uint64_t *)
             ((uintptr_t)Buffers->DoorbellVirtual + dbOffset);
-        *db64 = 16ull;
+        *db64 = (uint64_t)submittedDwords;
         Evidence->DoorbellRung = 1u;
         Evidence->DoorbellIndex = effectiveDoorbellIndex;
         Evidence->DoorbellOffset = dbOffset;
-        Evidence->DoorbellValueApplied = 16u;
+        Evidence->DoorbellValueApplied = submittedDwords;
         Interface->Barrier(Interface->Context);
 
         /* Diagnostico fisico: recepcao global e latch no HQD selecionado. */
@@ -2089,7 +2133,8 @@ BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransaction(
      * separa roteamento de doorbell de scheduler/fetch, sem simular RPTR ou
      * fence. O snapshot do WPTR e restaurado no teardown.
      */
-    if (Props->UseDoorbell != 0u && Evidence->WptrAfterKick != 16u) {
+    if (Props->UseDoorbell != 0u &&
+        Evidence->WptrAfterKick != submittedDwords) {
         directWptrWritten = 1u;
         if (!Bc250HqdActiveWrite(Interface, Evidence,
                 BC250_GRBM_GFX_CNTL_BYTE_OFFSET,
@@ -2098,7 +2143,7 @@ BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransaction(
                 BC250_HQD_MMIO_PQ_WPTR_LO,
                 &Evidence->DirectWptrBefore) ||
             !Bc250HqdActiveWrite(Interface, Evidence,
-                BC250_HQD_MMIO_PQ_WPTR_LO, 16u) ||
+                BC250_HQD_MMIO_PQ_WPTR_LO, submittedDwords) ||
             !Bc250HqdActiveWrite(Interface, Evidence,
                 BC250_HQD_MMIO_PQ_WPTR_HI, 0u) ||
             !Bc250HqdActiveRead(Interface, Evidence,
@@ -2114,7 +2159,7 @@ BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransaction(
             goto Cleanup;
         }
         Evidence->DirectWptrKickApplied = 1u;
-        if (Evidence->DirectWptrReadback != 16u) {
+        if (Evidence->DirectWptrReadback != submittedDwords) {
             status = BC250_HQD_ACTIVE_READBACK_FAILED;
             goto Cleanup;
         }
@@ -2182,7 +2227,7 @@ BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransaction(
             ++Evidence->MecPcSamples;
         }
 
-        if (rptrPoll == 16u &&
+        if (rptrPoll == submittedDwords &&
             scratchPoll == 0x22222222u &&
             fencePoll == 0xBC250123u) {
             Evidence->TriadPassed = 1u;
@@ -2315,8 +2360,10 @@ Cleanup:
             if (!Bc250HqdActiveRead(Interface, Evidence,
                     planWrites[idx].ByteOffset,
                     &Evidence->RestoredValues[idx]) ||
-                Evidence->RestoredValues[idx] !=
-                    Evidence->SnapshotValues[idx]) {
+                !Bc250HqdReadbackMatches(
+                    planWrites[idx].ByteOffset,
+                    Evidence->SnapshotValues[idx],
+                    Evidence->RestoredValues[idx])) {
                 Evidence->RestorePassed = 0u;
             }
         }
@@ -2328,7 +2375,7 @@ Cleanup:
                 BC250_HQD_MMIO_ACTIVE, &Evidence->ActiveAfter) ||
             !Bc250HqdActiveRead(Interface, Evidence,
                 BC250_HQD_MMIO_PQ_RPTR, &check) ||
-            check != Evidence->RptrBefore ||
+            (check != Evidence->RptrBefore && check != Evidence->RptrAfter) ||
             !Bc250HqdActiveRead(Interface, Evidence,
                 BC250_HQD_MMIO_PQ_WPTR_LO,
                 &Evidence->BaselineWptrRestored) ||

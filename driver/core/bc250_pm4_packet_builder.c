@@ -27,11 +27,11 @@ BC250_PM4_STATUS Bc250Pm4EmitNop(
     if (RingBuffer == NULL || CursorDwords == NULL || !Bc250IsPowerOfTwo32(RingDwords)) {
         return BC250_PM4_BAD_ARGUMENT;
     }
-    if (ExtraCount > 0x3FF0u) {
+    if (ExtraCount == 0u || ExtraCount > 0x3FF0u) {
         return BC250_PM4_PAYLOAD_TOO_LARGE;
     }
 
-    header = BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_NOP, 1u + ExtraCount);
+    header = BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_NOP, ExtraCount);
     Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, header);
 
     for (i = 0; i < ExtraCount; ++i) {
@@ -254,11 +254,12 @@ BC250_PM4_STATUS Bc250Pm4EmitReleaseMem(
 
     Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, header);
     Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, eventDword);
-    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, (3u << 29)); /* 64-bit data write */
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, (2u << 29)); /* 64-bit data write */
     Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(FenceAddress & 0xFFFFFFFFull));
     Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(FenceAddress >> 32));
     Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(FenceSequence & 0xFFFFFFFFull));
     Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(FenceSequence >> 32));
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, 0u); /* ctxid/reserved */
 
     return BC250_PM4_OK;
 }

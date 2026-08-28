@@ -158,6 +158,28 @@ bc250_status_t bc250_mem_copy_d2h(bc250_device_t *device, void *dst_host, uint64
     return BC250_ERROR_EXECUTION_FAILED;
 }
 
+bc250_status_t bc250_mem_copy_d2d(bc250_device_t *device, uint64_t dst_gpu_va, uint64_t src_gpu_va, size_t bytes)
+{
+    BC250_SDMA_COPY_REQ req;
+    DWORD bytesReturned = 0;
+
+    if (device == NULL || dst_gpu_va == 0 || src_gpu_va == 0 || bytes == 0) {
+        return BC250_ERROR_INVALID_ARGUMENT;
+    }
+
+    ZeroMemory(&req, sizeof(req));
+    req.SourceGpuVa = src_gpu_va;
+    req.DestinationGpuVa = dst_gpu_va;
+    req.ByteCount = (uint32_t)bytes;
+    req.FenceValue = ++device->fence_counter;
+
+    if (DeviceIoControl(device->handle, IOCTL_BC250_SDMA_COPY, &req, sizeof(req),
+                        &req, sizeof(req), &bytesReturned, NULL) && req.ExecutionSuccess) {
+        return BC250_SUCCESS;
+    }
+    return BC250_ERROR_EXECUTION_FAILED;
+}
+
 bc250_status_t bc250_dispatch_kernel(
     bc250_device_t *device,
     const uint32_t *shader_dwords,

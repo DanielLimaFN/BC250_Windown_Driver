@@ -79,6 +79,7 @@ static uint32_t g_hdpInvalidate = 0u;
 static uint32_t g_simulateComputeExecution = 0u;
 static uint32_t g_requireInactiveForWptrRestore = 0u;
 static uint32_t g_seenActiveOne = 0u;
+static uint32_t g_reportPqEmptyStatus = 0u;
 
 static uint32_t Bc250TestHqdRead32(
     void *Context, uint32_t ByteOffset, uint32_t *Value)
@@ -194,6 +195,10 @@ static uint32_t Bc250TestHqdRead32(
             *Value = 0x12345678u;
         } else {
             *Value = g_hqdBankRegs[bank][idx];
+            if (ByteOffset == BC250_HQD_MMIO_PQ_CONTROL &&
+                g_reportPqEmptyStatus != 0u) {
+                *Value |= 0x00008000u;
+            }
         }
         return 1u;
     }
@@ -326,8 +331,8 @@ static void Bc250TestHqdBarrier(void *Context)
 {
     (void)Context;
     if (g_simulateComputeExecution) {
-        g_rptrRegister = 16u;
-        g_testRptrBuffer[0] = 16u;
+        g_rptrRegister = 11u;
+        g_testRptrBuffer[0] = 11u;
         g_scratchRegister = 0x22222222u;
         g_testFenceBuffer[0] = 0xBC250123u;
     }
@@ -666,6 +671,16 @@ static int Bc250RunComputeMqdContractTest(void)
         CHECK(g_testFenceBuffer[0] == 0u);
         CHECK(g_testMqdBuffer[0] == 0u);
 
+        /* 8.1.1 PQ_EMPTY e status fisico; nao e falha de estado gravavel. */
+        g_reportPqEmptyStatus = 1u;
+        CHECK(Bc250ComputeRunInactiveHqdProgramTransaction(
+            &selectorInterface, &buffers, &g_testProps, &g_testMqd,
+            &progEvidence) == BC250_HQD_PROGRAM_OK);
+        CHECK(progEvidence.MismatchMask == 0u);
+        CHECK(progEvidence.ApplyReadbackPassed == 1u);
+        CHECK(progEvidence.RestorePassed == 1u);
+        g_reportPqEmptyStatus = 0u;
+
         /* 8.2 Controles Negativos: Parametros Nulos e Desalinhamento */
         CHECK(Bc250ComputeRunInactiveHqdProgramTransaction(
             NULL, &buffers, &g_testProps, &g_testMqd, &progEvidence) ==
@@ -821,11 +836,11 @@ static int Bc250RunComputeMqdContractTest(void)
             &actEvidence) == BC250_HQD_ACTIVE_PM4_NOT_CONSUMED);
         CHECK(actEvidence.MemoryVerificationPassed == 1u);
         CHECK(actEvidence.ActiveConfirmed == 1u);
-        CHECK(actEvidence.WptrApplied == 16u);
+        CHECK(actEvidence.WptrApplied == 11u);
         CHECK(actEvidence.DoorbellRung == 1u);
         CHECK(actEvidence.DoorbellIndex == 0x44u);
         CHECK(actEvidence.DoorbellOffset == 0x110u);
-        CHECK(actEvidence.DoorbellValueApplied == 16u);
+        CHECK(actEvidence.DoorbellValueApplied == 11u);
         CHECK(actEvidence.DoorbellRangeLowerApplied == 0x00000110u);
         CHECK(actEvidence.DoorbellRangeLowerReadback == 0x00000110u);
         CHECK(actEvidence.DoorbellRangeUpperApplied == 0x0FFFFFFCu);
@@ -844,12 +859,12 @@ static int Bc250RunComputeMqdContractTest(void)
         CHECK(actEvidence.BaselineWptrRestorePassed == 1u);
         CHECK(actEvidence.DirectWptrKickApplied == 1u);
         CHECK(actEvidence.DirectWptrBefore == 0u);
-        CHECK(actEvidence.DirectWptrReadback == 16u);
+        CHECK(actEvidence.DirectWptrReadback == 11u);
         CHECK(actEvidence.DirectWptrRestored == 16u);
         CHECK(actEvidence.DirectWptrRestorePolls == 1u);
         CHECK(actEvidence.DirectWptrRestorePassed == 1u);
         CHECK(actEvidence.RptrMmioLast == 0u);
-        CHECK(actEvidence.WptrMmioLast == 16u);
+        CHECK(actEvidence.WptrMmioLast == 11u);
         CHECK(actEvidence.HqStatus0PollLast == 0u);
         CHECK(actEvidence.HqdErrorPollLast == 0u);
         CHECK(actEvidence.SelectedSelector == 0x00000008u);
@@ -908,9 +923,9 @@ static int Bc250RunComputeMqdContractTest(void)
             &selectorInterface, &buffers, &g_testProps, &g_testMqd,
             &actEvidence) == BC250_HQD_ACTIVE_OK);
         CHECK(actEvidence.TriadPassed == 1u);
-        CHECK(actEvidence.RptrAfter == 16u);
-        CHECK(actEvidence.RptrMmioLast == 16u);
-        CHECK(actEvidence.WptrMmioLast == 16u);
+        CHECK(actEvidence.RptrAfter == 11u);
+        CHECK(actEvidence.RptrMmioLast == 11u);
+        CHECK(actEvidence.WptrMmioLast == 11u);
         CHECK(actEvidence.ScratchAfter == 0x22222222u);
         CHECK(actEvidence.FenceAfter == 0xBC250123u);
         CHECK(actEvidence.DoorbellRung == 1u);

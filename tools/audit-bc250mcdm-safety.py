@@ -38,6 +38,12 @@ def main() -> int:
                             "bc250_gfxhub_tlb_transaction.c")
     mmio_transport_path = (ROOT / "driver" / "wdk" /
                            "bc250_mmio_topology_transport.c")
+    compute_mqd_path = (ROOT / "driver" / "core" /
+                        "bc250_compute_mqd_contract.c")
+    pm4_builder_path = (ROOT / "driver" / "core" /
+                        "bc250_pm4_packet_builder.c")
+    pm4_header_path = (ROOT / "driver" / "core" /
+                       "bc250_pm4_packet_builder.h")
 
     active = active_path.read_text(encoding="utf-8")
     callbacks = callbacks_path.read_text(encoding="utf-8")
@@ -54,7 +60,35 @@ def main() -> int:
     paging = paging_path.read_text(encoding="utf-8")
     tlb_transaction = tlb_transaction_path.read_text(encoding="utf-8")
     mmio_transport = mmio_transport_path.read_text(encoding="utf-8")
+    compute_mqd = compute_mqd_path.read_text(encoding="utf-8")
+    pm4_builder = pm4_builder_path.read_text(encoding="utf-8")
+    pm4_header = pm4_header_path.read_text(encoding="utf-8")
     errors: list[str] = []
+
+    # PM4 GFX10 must be structurally complete before any hardware claim.
+    for needle in (
+        "BC250_PM4_IT_SET_UCONFIG_REG     0x79u",
+        "BC250_PM4_UCONFIG_REG_BASE 0xC000u",
+    ):
+        require(pm4_header, needle, "canonical GFX10 UCONFIG encoding", errors)
+    for needle in (
+        "ExtraCount == 0u",
+        "BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_NOP, ExtraCount)",
+        "(2u << 29)",
+        "0u); /* ctxid/reserved */",
+    ):
+        require(pm4_builder, needle, "complete PM4 packet encoding", errors)
+    for needle in (
+        "0xC0017900u",
+        "0x00000040u",
+        "0xC0064900u",
+        "0x06603514u",
+        "0x20000000u",
+        "submittedDwords != 11u",
+        "rptrPoll == submittedDwords",
+    ):
+        require(compute_mqd, needle, "canonical HQD 3+8 dword payload", errors)
+    forbid(compute_mqd, "0x00002040u", "raw segment-less SCRATCH PM4 target", errors)
 
     # Runtime evidence must not be synthesized by AddDevice/StartDevice.
     forbid(active, "Bc250BuildDefaultActiveRuntime", "synthetic runtime builder", errors)

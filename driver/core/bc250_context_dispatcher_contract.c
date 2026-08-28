@@ -150,7 +150,7 @@ BC250_DISPATCH_STATUS Bc250ContextBuildComputeSubmission(
 
     if (Desc->CommandBufferSizeDwords > 0) {
         /* Emit IT_INDIRECT_BUFFER (4 dwords packet) */
-        ibHeader = BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_INDIRECT_BUFFER, 4u);
+        ibHeader = BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_INDIRECT_BUFFER, 3u);
         RingBuffer[*CursorDwords & (RingDwords - 1u)] = ibHeader;
         (*CursorDwords)++;
 

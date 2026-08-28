@@ -93,7 +93,7 @@ BC250_PREEMPTION_STATUS Bc250PreemptCommand(
             return BC250_PREEMPTION_BAD_ARGUMENT;
         }
 
-        Result->EmittedFenceDwords = 7u;
+        Result->EmittedFenceDwords = 8u;
         Result->HqdDequeued = 1u;
         Result->PreemptedWptr = *CursorDwords;
         Result->IsSuccessful = 1u;

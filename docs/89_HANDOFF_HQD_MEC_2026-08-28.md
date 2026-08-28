@@ -17,6 +17,14 @@ Não declare compute funcional sem o tripé físico no silício: `RPTR` consumin
 
 O CP Ring 0 e SDMA0 não autorizam afirmar que a fila MEC/HQD execute. São engines independentes.
 
+## Atualizacao mais recente: 3.20 medido, 3.21 pronto para ensaio
+
+O ensaio fisico 3.20 esta em `docs/evidence/2026-08-28_13-06-52-DESKTOP-HQAG6T4-mcdm-replace`. O MEC avancou `RPTR=0->10` com `WPTR=16`, mas scratch e fence permaneceram no poison. Os dez dwords correspondem exatamente aos dois pacotes de cinco dwords; os seis restantes nao atingiram o lote minimo de oito dwords configurado na fila.
+
+O candidato 3.21 / SchemaVersion 94 corrige duas causas concretas: usa o `SET_UCONFIG_REG` GFX10 autoritativo (`opcode 0x79`, offset relativo `0x40` para o SOC15 `0xC040`) e o combina com um `RELEASE_MEM` EOP canonico de oito dwords. O stream `3+8` publica `WPTR=11`; depois do primeiro pacote restam exatamente os oito dwords exigidos pelo lote minimo, sem cauda. O mismatch `0xD030090D -> 0xD030890D` em `CP_HQD_PQ_CONTROL` foi classificado pelo header GC10.1 como `PQ_EMPTY`, campo de status, e deixou de reprovar o estado gravavel; cursores e `ACTIVE` continuam estritos.
+
+Pacote assinado: source SYS `6289A160CB4F1748ECDE2E574935C389F1998ECDD7DF8A117D671383FC8B4BD4`, signed SYS `BE60A36E98B6FB9BD485285078052A22BF77D6B663A33996C8A7F28EC89C390E`, CAT `8A0DAA5EDBAA136485B56897E8FB902AC07D2CFB16800850DCF02704C319276E`. **NAO VALIDADO EM HARDWARE ate `RPTR/WPTR=11/11`, scratch, fence e rollback passarem juntos.**
+
 ## Evidência HQD mais recente: 3.18.0.0
 
 O último ensaio físico está em `docs/evidence/2026-08-28_09-07-20-DESKTOP-HQAG6T4-mcdm-replace`.

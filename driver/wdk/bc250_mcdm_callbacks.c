@@ -7,6 +7,8 @@
 #include "../core/bc250_ih_contract.h"
 #include "../core/bc250_preemption_contract.h"
 #include "../core/bc250_gpu_clock_contract.h"
+#include "../core/bc250_sdma_packet_builder.h"
+#include "../core/bc250_pm4_packet_builder.h"
 
 #define BC250_MCDM_UNSUPPORTED_1(Name, Type1, Arg1) \
     NTSTATUS APIENTRY Name(Type1 Arg1) \
@@ -114,6 +116,82 @@ static NTSTATUS Bc250McdmBuildCpuPageTableUpdate(
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS Bc250McdmBuildTransferVirtual(
+    DXGKARG_BUILDPAGINGBUFFER *Args)
+{
+    DXGK_BUILDPAGINGBUFFER_TRANSFERVIRTUAL *transfer;
+    uint32_t *dmaBuffer;
+    uint32_t dwordsAvailable;
+    uint32_t cursor = 0;
+    BC250_SDMA_STATUS sdmaStatus;
+
+    if (Args == NULL || Args->pDmaBuffer == NULL) return STATUS_INVALID_PARAMETER;
+    transfer = &Args->TransferVirtual;
+    if (transfer->TransferSizeInBytes == 0 || transfer->TransferSizeInBytes > BC250_SDMA_COPY_MAX_BYTES) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if ((transfer->SourceVirtualAddress & 3u) != 0 || (transfer->DestinationVirtualAddress & 3u) != 0) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    dmaBuffer = (uint32_t *)Args->pDmaBuffer;
+    dwordsAvailable = Args->DmaSize / (uint32_t)sizeof(uint32_t);
+    if (dwordsAvailable < BC250_SDMA_DWORDS_COPY_LINEAR) {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    sdmaStatus = Bc250SdmaEmitCopyLinear(
+        dmaBuffer,
+        dwordsAvailable,
+        &cursor,
+        transfer->SourceVirtualAddress,
+        transfer->DestinationVirtualAddress,
+        (uint32_t)transfer->TransferSizeInBytes);
+
+    if (sdmaStatus != BC250_SDMA_OK) return STATUS_UNSUCCESSFUL;
+
+    Args->pDmaBuffer = (PVOID)(dmaBuffer + cursor);
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS Bc250McdmBuildFillVirtual(
+    DXGKARG_BUILDPAGINGBUFFER *Args)
+{
+    DXGK_BUILDPAGINGBUFFER_FILLVIRTUAL *fill;
+    uint32_t *dmaBuffer;
+    uint32_t dwordsAvailable;
+    uint32_t cursor = 0;
+    BC250_SDMA_STATUS sdmaStatus;
+
+    if (Args == NULL || Args->pDmaBuffer == NULL) return STATUS_INVALID_PARAMETER;
+    fill = &Args->FillVirtual;
+    if (fill->FillSizeInBytes == 0 || fill->FillSizeInBytes > BC250_SDMA_FILL_MAX_BYTES) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if ((fill->DestinationVirtualAddress & 3u) != 0) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    dmaBuffer = (uint32_t *)Args->pDmaBuffer;
+    dwordsAvailable = Args->DmaSize / (uint32_t)sizeof(uint32_t);
+    if (dwordsAvailable < BC250_SDMA_DWORDS_CONST_FILL) {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    sdmaStatus = Bc250SdmaEmitConstFill(
+        dmaBuffer,
+        dwordsAvailable,
+        &cursor,
+        fill->DestinationVirtualAddress,
+        fill->FillPattern,
+        (uint32_t)fill->FillSizeInBytes);
+
+    if (sdmaStatus != BC250_SDMA_OK) return STATUS_UNSUCCESSFUL;
+
+    Args->pDmaBuffer = (PVOID)(dmaBuffer + cursor);
+    return STATUS_SUCCESS;
+}
+
 VOID Bc250McdmInstallRuntimeCapsProvider(
     BC250_MCDM_QUERY_RUNTIME_CAPS Provider)
 {
@@ -177,19 +255,26 @@ NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(
     if (hAdapter == NULL || pBuildPagingBuffer == NULL) {
         return STATUS_INVALID_PARAMETER;
     }
-    if (pBuildPagingBuffer->Operation != DXGK_OPERATION_UPDATE_PAGE_TABLE) {
-        if (pBuildPagingBuffer->pDmaBuffer == NULL) {
-            return STATUS_INVALID_PARAMETER;
-        }
-        return STATUS_NOT_SUPPORTED;
-    }
     if (g_Bc250QueryRuntimeCaps == NULL ||
         !NT_SUCCESS(g_Bc250QueryRuntimeCaps((HANDLE)hAdapter, &caps)) ||
         caps.FullMcdmReady == 0u || caps.GpuVaReady == 0u ||
         caps.PagingReady == 0u) {
         return STATUS_DEVICE_NOT_READY;
     }
-    return Bc250McdmBuildCpuPageTableUpdate(&caps, pBuildPagingBuffer);
+
+    switch (pBuildPagingBuffer->Operation) {
+    case DXGK_OPERATION_UPDATE_PAGE_TABLE:
+        return Bc250McdmBuildCpuPageTableUpdate(&caps, pBuildPagingBuffer);
+
+    case DXGK_OPERATION_VIRTUAL_TRANSFER:
+        return Bc250McdmBuildTransferVirtual(pBuildPagingBuffer);
+
+    case DXGK_OPERATION_VIRTUAL_FILL:
+        return Bc250McdmBuildFillVirtual(pBuildPagingBuffer);
+
+    default:
+        return STATUS_NOT_SUPPORTED;
+    }
 }
 
 NTSTATUS APIENTRY Bc250McdmCloseAllocation(
@@ -785,15 +870,57 @@ NTSTATUS APIENTRY Bc250McdmSubmitCommandVirtual(
     CONST HANDLE hAdapter,
     CONST DXGKARG_SUBMITCOMMANDVIRTUAL *pSubmitCommand)
 {
-    UNREFERENCED_PARAMETER(hAdapter);
+    BC250_MCDM_RUNTIME_CAPS caps;
+    BC250_GPU_CONTEXT context;
+    BC250_SUBMIT_COMMAND_DESC desc;
+    BC250_DISPATCH_STATUS dispatchStatus;
 
-    if (pSubmitCommand == NULL || pSubmitCommand->hContext == NULL ||
+    if (hAdapter == NULL || pSubmitCommand == NULL ||
+        pSubmitCommand->hContext == NULL ||
         pSubmitCommand->DmaBufferSize == 0u ||
         pSubmitCommand->NodeOrdinal >= BC250_ADAPTER_NODE_COUNT) {
         return STATUS_INVALID_PARAMETER;
     }
 
-    return STATUS_NOT_SUPPORTED;
+    if (g_Bc250QueryRuntimeCaps == NULL ||
+        !NT_SUCCESS(g_Bc250QueryRuntimeCaps((HANDLE)hAdapter, &caps)) ||
+        caps.FullMcdmReady == 0u || caps.SubmitReady == 0u) {
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    if (pSubmitCommand->DmaBufferVirtualAddress == 0) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* Validação e despacho formal da submissão WDDM 2.0+ */
+    RtlZeroMemory(&context, sizeof(context));
+    context.ContextId = (uint32_t)(ULONG_PTR)pSubmitCommand->hContext;
+    context.EngineType = (pSubmitCommand->NodeOrdinal == 0) ? BC250_ENGINE_TYPE_SDMA : BC250_ENGINE_TYPE_COMPUTE;
+    context.NodeOrdinal = pSubmitCommand->NodeOrdinal;
+    context.EngineAffinity = (1u << pSubmitCommand->NodeOrdinal);
+    context.RingGpuAddress = 0xF400000000ull;
+    context.RingSizeDwords = 1024u;
+    context.IsActive = 1;
+
+    RtlZeroMemory(&desc, sizeof(desc));
+    desc.ContextId = context.ContextId;
+    desc.EngineType = context.EngineType;
+    desc.FenceSequence = (uint32_t)pSubmitCommand->SubmissionFenceId;
+    desc.FenceGpuAddress = 0xF400002200ull;
+
+    if (context.EngineType == BC250_ENGINE_TYPE_SDMA) {
+        desc.CopySizeBytes = pSubmitCommand->DmaBufferSize;
+    } else {
+        desc.CommandBufferGpuAddress = pSubmitCommand->DmaBufferVirtualAddress;
+        desc.CommandBufferSizeDwords = pSubmitCommand->DmaBufferSize / (uint32_t)sizeof(uint32_t);
+    }
+
+    dispatchStatus = Bc250ContextValidateSubmission(&context, &desc);
+    if (dispatchStatus != BC250_DISPATCH_OK) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 BOOLEAN Bc250McdmInterruptRoutine(

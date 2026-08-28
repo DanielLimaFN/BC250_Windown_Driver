@@ -1333,9 +1333,9 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%WDK%\Lib\%WDKVER%\km\x64\displib.lib"
 if errorlevel 1 exit /b 1
 
-echo [link] bc250compute_pkg.sys
+echo [link] bc250compute.sys
 link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry ^
-  /OUT:"%ODIR%\bc250compute_pkg.sys" ^
+  /OUT:"%ODIR%\bc250compute.sys" ^
   "%ODIR%\bc250_compute_service.obj" ^
   "%ODIR%\bc250_smu_telemetry_contract.obj" ^
   "%ODIR%\bc250_superio_nct6686_contract.obj" ^
@@ -1349,7 +1349,6 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%WDK%\Lib\%WDKVER%\km\x64\hal.lib" ^
   "%WDK%\Lib\%WDKVER%\km\x64\BufferOverflowK.lib"
 if errorlevel 1 exit /b 1
-copy /Y "%ODIR%\bc250compute_pkg.sys" "%ODIR%\bc250compute.sys" >nul 2>nul
 
 echo [cc] bc250-compute-cli.c
 cl /nologo /W4 /O2 /Fo"%ODIR%\bc250-compute-cli.obj" /Fe"%ODIR%\bc250-compute-cli.exe" "%ROOTDIR%\tools\bc250-compute-cli.c" /link kernel32.lib advapi32.lib
@@ -1359,6 +1358,9 @@ echo [cc] bc250_runtime.c ^& bc250-benchmark.c
 cl /nologo /W4 /O2 /Fo"%ODIR%\bc250_runtime.obj" /c "%ROOTDIR%\driver\umd\bc250_runtime.c"
 if errorlevel 1 exit /b 1
 cl /nologo /W4 /O2 /Fo"%ODIR%\bc250-benchmark.obj" /Fe"%ODIR%\bc250-benchmark.exe" "%ROOTDIR%\tools\bc250-benchmark.c" "%ODIR%\bc250_runtime.obj" /link kernel32.lib advapi32.lib
+if errorlevel 1 exit /b 1
+echo [cc] bc250_silicon_compute_benchmark.c
+cl /nologo /W4 /O2 /Fo"%ODIR%\bc250_silicon_compute_benchmark.obj" /Fe"%ODIR%\bc250_silicon_compute_benchmark.exe" "%ROOTDIR%\tools\bc250_silicon_compute_benchmark.c" "%ODIR%\bc250_runtime.obj" /link kernel32.lib advapi32.lib
 if errorlevel 1 exit /b 1
 
 echo [cc] bc250-hardware-diag.c

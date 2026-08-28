@@ -14,7 +14,7 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
     return Destination;
 }
 
-#define CHECK(Expression) do { if (!(Expression)) return 0; } while (0)
+#define CHECK(Expression) do { if (!(Expression)) { ExitProcess((unsigned long)__LINE__); return 0; } } while (0)
 #else
 #include <stdio.h>
 #define CHECK(Expression) do { if (!(Expression)) return 1; } while (0)
@@ -380,10 +380,18 @@ static int Bc250RunMcdmCallbacksTest(void)
     g_submitVirtual.hContext = (HANDLE)0x253;
     g_submitVirtual.DmaBufferSize = 64u;
     g_submitVirtual.NodeOrdinal = 0u;
+    g_fullMcdmReady = 0u;
     CHECK(Bc250McdmSubmitCommandVirtual((HANDLE)0x250, &g_submitVirtual) == STATUS_NOT_SUPPORTED);
+    g_fullMcdmReady = 1u;
+    CHECK(Bc250McdmSubmitCommandVirtual((HANDLE)0x250, &g_submitVirtual) == STATUS_INVALID_PARAMETER);
+    g_submitVirtual.DmaBufferVirtualAddress = 0xF400001000ull;
+    CHECK(Bc250McdmSubmitCommandVirtual((HANDLE)0x250, &g_submitVirtual) == STATUS_SUCCESS);
+    g_submitVirtual.NodeOrdinal = 1u;
+    CHECK(Bc250McdmSubmitCommandVirtual((HANDLE)0x250, &g_submitVirtual) == STATUS_SUCCESS);
     g_submitVirtual.NodeOrdinal = BC250_ADAPTER_NODE_COUNT;
     CHECK(Bc250McdmSubmitCommandVirtual((HANDLE)0x250, &g_submitVirtual) == STATUS_INVALID_PARAMETER);
     CHECK(Bc250McdmSubmitCommandVirtual((HANDLE)0x250, NULL) == STATUS_INVALID_PARAMETER);
+    g_fullMcdmReady = 0u;
 
     return 1;
 }

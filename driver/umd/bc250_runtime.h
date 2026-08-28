@@ -40,6 +40,7 @@ bc250_status_t bc250_mem_free(bc250_device_t *device, uint64_t gpu_va, size_t by
 
 bc250_status_t bc250_mem_copy_h2d(bc250_device_t *device, uint64_t dst_gpu_va, const void *src_host, size_t bytes);
 bc250_status_t bc250_mem_copy_d2h(bc250_device_t *device, void *dst_host, uint64_t src_gpu_va, size_t bytes);
+bc250_status_t bc250_mem_copy_d2d(bc250_device_t *device, uint64_t dst_gpu_va, uint64_t src_gpu_va, size_t bytes);
 
 bc250_status_t bc250_dispatch_kernel(
     bc250_device_t *device,
