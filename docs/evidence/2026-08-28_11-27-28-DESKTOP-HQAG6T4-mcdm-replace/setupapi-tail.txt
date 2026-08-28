@@ -1,0 +1,1800 @@
+﻿     ndv: Install flags: 0x00000001
+     ndv: {Update Device Driver - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     ndv:      Search options: 0x00000080
+     ndv:      Searching single INF 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf'
+     dvi:      {Build Driver List} 10:57:01.082
+     dvi:           Searching for hardware ID(s):
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:                pci\ven_1002&dev_13fe&cc_030000
+     dvi:                pci\ven_1002&dev_13fe&cc_0300
+     dvi:           Searching for compatible ID(s):
+     dvi:                pci\ven_1002&dev_13fe&rev_00
+     dvi:                pci\ven_1002&dev_13fe
+     dvi:                pci\ven_1002&cc_030000
+     dvi:                pci\ven_1002&cc_0300
+     dvi:                pci\ven_1002
+     dvi:                pci\cc_030000&dt_1
+     dvi:                pci\cc_030000
+     dvi:                pci\cc_0300&dt_1
+     dvi:                pci\cc_0300
+     dvi:           Created Driver Node:
+     dvi:                HardwareID   - PCI\VEN_1002&DEV_13FE
+     dvi:                InfName      - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf
+     dvi:                DevDesc      - BC-250 MCDM Fail-Closed Development Adapter
+     dvi:                Section      - BC250Mcdm_Device.NT
+     dvi:                Rank         - 0x00802001
+     dvi:                Signer Score - Authenticode
+     dvi:                DrvDate      - 08/28/2026
+     dvi:                Version      - 3.18.0.0
+     dvi:      {Build Driver List - exit(0x00000000)} 10:57:01.094
+     dvi:      {DIF_SELECTBESTCOMPATDRV} 10:57:01.094
+     dvi:           Default installer: Enter 10:57:01.095
+     dvi:                {Select Best Driver}
+     dvi:                     Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     dvi:                     Selected Driver:
+     dvi:                          Description - BC-250 MCDM Fail-Closed Development Adapter
+     dvi:                          InfFile     - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf
+     dvi:                          Section     - BC250Mcdm_Device
+     dvi:                {Select Best Driver - exit(0x00000000)}
+     dvi:           Default installer: Exit
+     dvi:      {DIF_SELECTBESTCOMPATDRV - exit(0x00000000)} 10:57:01.098
+     ndv:      Force Installing Driver:
+     ndv:           Inf Name       - bc250mcdm.inf
+     ndv:           Driver Date    - 08/28/2026
+     ndv:           Driver Version - 3.18.0.0
+     ndv:      Driver package 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf' is already imported.
+     sto:      {Setup Import Driver Package: c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf} 10:57:01.102
+     sto:           Driver package already imported as 'oem19.inf'.
+     sto:      {Setup Import Driver Package - exit (0x00000000)} 10:57:01.104
+     dvi:      Searching for hardware ID(s):
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:           pci\ven_1002&dev_13fe&cc_030000
+     dvi:           pci\ven_1002&dev_13fe&cc_0300
+     dvi:      Searching for compatible ID(s):
+     dvi:           pci\ven_1002&dev_13fe&rev_00
+     dvi:           pci\ven_1002&dev_13fe
+     dvi:           pci\ven_1002&cc_030000
+     dvi:           pci\ven_1002&cc_0300
+     dvi:           pci\ven_1002
+     dvi:           pci\cc_030000&dt_1
+     dvi:           pci\cc_030000
+     dvi:           pci\cc_0300&dt_1
+     dvi:           pci\cc_0300
+     dvi:      Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 10:57:01.125
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 10:57:01.215
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf}
+     sto:                          Source Filter  = pci\ven_1002&dev_13fe
+     inf:                          Class GUID     = {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: BC-250 MCDM Fail-Closed Development Adapter}
+     inf:                               Section Name = BC250Mcdm_Device.NT
+     inf:                               {Add Service: bc250mcdm}
+     inf:                                    Start Type    = 3
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 1
+     inf:                                    Image Path    = \SystemRoot\System32\drivers\bc250mcdm.sys
+     inf:                                    Created new service 'bc250mcdm'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\VEN_1002&DEV_13FE
+     inf:                               {Configure Driver Configuration: BC250Mcdm_Device.NT}
+     inf:                                    Service Name  = bc250mcdm
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 10:57:01.231
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.sys' to 'C:\Windows\System32\drivers\bc250mcdm.sys'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_sdma.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_rlc.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_pfp.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_me.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_ce.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_mec.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin'.
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 10:57:01.243
+     dvi:                          Existing files modified, may need to restart related services.
+     sto:                     {Configure Driver Package: exit(0x00000bc3)}
+     dvi:                     Restart required for any devices using this driver.
+     dvi:                     Install Device: Configuring device. 10:57:01.245
+     dvi:                          Configuration: oem19.inf:pci\ven_1002&dev_13fe,BC250Mcdm_Device
+     dvi:                     Install Device: Configuring device completed. 10:57:01.251
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                     {Restarting Devices} 10:57:01.252
+     dvi:                          Start: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                     {Restarting Devices exit} 10:57:01.317
+     dvi:                {Configure Device - exit(0x00000000)} 10:57:01.318
+     dvi:           {Core Device Install - exit(0x00000000)} 10:57:01.320
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     ndv: {Update Device Driver - exit(00000000)}
+     ndv: {Install Related Drivers} 10:57:01.324
+     ndv: {Install Related Drivers: exit(0x00000000)} 10:57:01.325
+<<<  Section end 2026/08/28 10:57:01.326
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Driver Uninstall (DrvSetupUninstallDriver) - oem19.inf]
+>>>  Section start 2026/08/28 11:03:13.364
+      cmd: "C:\Windows\system32\pnputil.exe" /delete-driver oem19.inf /uninstall /force
+     dvs: Flags: 0x00000000
+     dvs: {Driver Setup Update Device: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 11:03:13.398
+     utl:      {Select Drivers - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 11:03:13.401
+     utl:           Driver Node:
+     utl:                Status         - Selected
+     utl:                Driver INF     - display.inf (C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf)
+     utl:                Class GUID     - {4d36e968-e325-11ce-bfc1-08002be10318}
+     utl:                Driver Version - 06/21/2006,10.0.19041.868
+     utl:                Configuration  - PCI\CC_0300 [MSBDA]
+     utl:                Driver Rank    - 00FB2008
+     utl:                Signer Score   - Inbox (0D000003)
+     utl:      {Select Drivers - exit(0x00000000} 11:03:13.405
+     dvs:      Installing next best driver (display.inf) on device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041'.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 11:03:13.467
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 11:03:13.530
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf}
+     sto:                          Source Filter  = PCI\CC_0300
+     inf:                          Class GUID     = {4d36e968-e325-11ce-bfc1-08002be10318}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: Microsoft Basic Display Adapter}
+     inf:                               Section Name = MSBDA
+     inf:                               {Add Service: BasicDisplay}
+     inf:                                    Start Type    = 1
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 0
+     inf:                                    Image Path    = \SystemRoot\System32\DriverStore\FileRepository\basicdisplay.inf_amd64_fc93ae411c02f280\BasicDisplay.sys
+     inf:                                    Group         = Video
+     inf:                                    Updated service 'BasicDisplay'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\CC_0300
+     inf:                               {Configure Driver Configuration: MSBDA}
+     inf:                                    Service Name  = BasicDisplay
+     inf:                                    Exclude IDs   = PCI\VEN_1414&DEV_5353
+     inf:                                    Included INFs = basicdisplay.inf
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 11:03:13.544
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:03:13.544
+     sto:                     {Configure Driver Package: exit(0x00000000)}
+     dvi:                     Install Device: Configuring device. 11:03:13.545
+     dvi:                          Configuration: display.inf:PCI\CC_0300,MSBDA
+     dvi:                     Install Device: Configuring device completed. 11:03:13.550
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+!    dvi:                     Device restart was skipped (DONOTCALLCONFIGMG).
+     dvi:                {Configure Device - exit(0x00000000)} 11:03:13.551
+     dvi:                Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                Install Device: Starting device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041'. 11:03:13.552
+     dvi:                Install Device: Starting device completed. 11:03:13.585
+     dvi:           {Core Device Install - exit(0x00000000)} 11:03:13.586
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     dvs:      {Install Related Drivers} 11:03:13.589
+     dvs:      {Install Related Drivers: exit(0x00000000)} 11:03:13.591
+     dvs: {Driver Setup Update Device - exit(0x00000000)} 11:03:13.591
+     dvs: {Driver Setup Delete Driver Package: oem19.inf} 11:03:13.592
+     ump:      Delete flags: 0x00000002
+     pol:      {Driver package policy check} 11:03:13.697
+     pol:      {Driver package policy check - exit(0x00000000)} 11:03:13.698
+     sto:      {Unstage Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:03:13.698
+     sto:           {Core Driver Package Delete: bc250mcdm.inf_amd64_c206a166f11cea23} 11:03:13.699
+     sto:                {DRIVERSTORE DELETE BEGIN} 11:03:13.700
+     sto:                {DRIVERSTORE DELETE BEGIN: exit(0x00000000)} 11:03:13.702
+     sto:                {Unconfigure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf}
+     inf:                     Class GUID     = {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     inf:                     Class Options  = Configurable
+     inf:                     {Unconfigure Driver: BC-250 MCDM Fail-Closed Development Adapter}
+     inf:                          Section Name = BC250Mcdm_Device.NT
+     inf:                          {Add Service: bc250mcdm}
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Probe\SchemaVersion
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Driver\ActiveMode
+     inf:                               Deleted service 'bc250mcdm'.
+     inf:                          {Add Service: exit(0x00000000)}
+     inf:                          File 'C:\Windows\System32\drivers\bc250mcdm.sys' still in use by 2 sources.
+     inf:                          Hardware Id  = PCI\VEN_1002&DEV_13FE
+     inf:                     {Unconfigure Driver: exit(0x00000000)}
+     flq:                     {FILE_QUEUE_COMMIT} 11:03:13.714
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin'
+     flq:                          DeleteFile: success
+     flq:                     {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:03:13.737
+     sto:                {Unconfigure Driver Package: exit(0x00000000)}
+     idb:                {Unpublish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:03:13.738
+     idb:                     Clearing active driver package 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     cpy:                     Unpublished 'oem19.inf'.
+     idb:                     Deindexed 2 device IDs for 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                {Unpublish Driver Package: exit(0x00000000)} 11:03:13.745
+     idb:                {Unregister Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:03:13.746
+     idb:                     Unregistered driver package 'bc250mcdm.inf_amd64_c206a166f11cea23' from 'oem19.inf'.
+     idb:                     Deleted driver package object 'bc250mcdm.inf_amd64_c206a166f11cea23' from DRIVERS database node.
+     idb:                     Deleted driver INF file object 'oem19.inf' from DRIVERS database node.
+     idb:                {Unregister Driver Package: exit(0x00000000)} 11:03:13.748
+     cpy:                {Delete Directory: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23} 11:03:13.749
+     cpy:                {Delete Directory: exit(0x00000000)} 11:03:13.751
+     sto:                {DRIVERSTORE DELETE END} 11:03:13.752
+     sig:                     Uninstalled catalog 'oem19.cat'.
+     sto:                {DRIVERSTORE DELETE END: exit(0x00000000)} 11:03:13.756
+     sto:           {Core Driver Package Delete: exit(0x00000000)} 11:03:13.756
+     sto:      {Unstage Driver Package: exit(0x00000000)} 11:03:13.756
+     dvs: {Driver Setup Delete Driver Package - exit (0x00000000)} 11:03:13.758
+<<<  Section end 2026/08/28 11:03:13.759
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Driver Install (DrvSetupInstallDriver) - C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf]
+>>>  Section start 2026/08/28 11:03:13.905
+      cmd: "C:\Windows\system32\pnputil.exe" /add-driver C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     dvs: Flags: 0x00000040
+     dvs: {Driver Setup Import Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf} 11:03:13.906
+     sto:      {Copy Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf} 11:03:13.909
+     sto:           Driver Package = C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     sto:           Flags          = 0x00000007
+     sto:           Destination    = C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}
+     sto:           Copying driver package files to 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}'.
+     flq:           {FILE_QUEUE_COMMIT} 11:03:13.912
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\bc250mcdm.cat'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf' to 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\bc250mcdm.inf'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.sys' to 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\bc250mcdm.sys'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_ce.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\cyan_skillfish2_ce.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_me.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\cyan_skillfish2_me.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_mec.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\cyan_skillfish2_mec.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_rlc.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\cyan_skillfish2_rlc.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_pfp.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\cyan_skillfish2_pfp.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_sdma.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\cyan_skillfish2_sdma.bin'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:03:13.944
+     sto:      {Copy Driver Package: exit(0x00000000)} 11:03:13.944
+     ump:      Import flags: 0x00000000
+     pol:      {Driver package policy check} 11:03:13.957
+     pol:      {Driver package policy check - exit(0x00000000)} 11:03:13.958
+     sto:      {Stage Driver Package: C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\bc250mcdm.inf} 11:03:13.958
+     inf:           {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\bc250mcdm.inf} 11:03:13.961
+     inf:                Driver package 'bc250mcdm.inf' is configurable.
+     inf:           {Query Configurability: exit(0x00000000)} 11:03:13.963
+     flq:           {FILE_QUEUE_COMMIT} 11:03:13.965
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\bc250mcdm.cat' to 'C:\Windows\System32\DriverStore\Temp\{9f76af0c-f84c-ea4f-8d5c-d1c6ed8c91c2}\bc250mcdm.cat'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\bc250mcdm.inf' to 'C:\Windows\System32\DriverStore\Temp\{9f76af0c-f84c-ea4f-8d5c-d1c6ed8c91c2}\bc250mcdm.inf'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\bc250mcdm.sys' to 'C:\Windows\System32\DriverStore\Temp\{9f76af0c-f84c-ea4f-8d5c-d1c6ed8c91c2}\bc250mcdm.sys'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\cyan_skillfish2_ce.bin' to 'C:\Windows\System32\DriverStore\Temp\{9f76af0c-f84c-ea4f-8d5c-d1c6ed8c91c2}\cyan_skillfish2_ce.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\cyan_skillfish2_me.bin' to 'C:\Windows\System32\DriverStore\Temp\{9f76af0c-f84c-ea4f-8d5c-d1c6ed8c91c2}\cyan_skillfish2_me.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\cyan_skillfish2_mec.bin' to 'C:\Windows\System32\DriverStore\Temp\{9f76af0c-f84c-ea4f-8d5c-d1c6ed8c91c2}\cyan_skillfish2_mec.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\cyan_skillfish2_rlc.bin' to 'C:\Windows\System32\DriverStore\Temp\{9f76af0c-f84c-ea4f-8d5c-d1c6ed8c91c2}\cyan_skillfish2_rlc.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\cyan_skillfish2_pfp.bin' to 'C:\Windows\System32\DriverStore\Temp\{9f76af0c-f84c-ea4f-8d5c-d1c6ed8c91c2}\cyan_skillfish2_pfp.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{c0d3409e-813d-5d48-b9d2-7384e221dc74}\cyan_skillfish2_sdma.bin' to 'C:\Windows\System32\DriverStore\Temp\{9f76af0c-f84c-ea4f-8d5c-d1c6ed8c91c2}\cyan_skillfish2_sdma.bin'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:03:13.999
+     sto:           {DRIVERSTORE IMPORT VALIDATE} 11:03:14.000
+     sig:                Driver package catalog is valid.
+     sig:                {_VERIFY_FILE_SIGNATURE} 11:03:14.016
+     sig:                     Key      = bc250mcdm.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{9f76af0c-f84c-ea4f-8d5c-d1c6ed8c91c2}\bc250mcdm.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{9f76af0c-f84c-ea4f-8d5c-d1c6ed8c91c2}\bc250mcdm.cat
+!    sig:                     Verifying file against specific (valid) catalog failed.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0x800b0109)} 11:03:14.020
+     sig:                {_VERIFY_FILE_SIGNATURE} 11:03:14.022
+     sig:                     Key      = bc250mcdm.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{9f76af0c-f84c-ea4f-8d5c-d1c6ed8c91c2}\bc250mcdm.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{9f76af0c-f84c-ea4f-8d5c-d1c6ed8c91c2}\bc250mcdm.cat
+     sig:                     Success: File is signed in Authenticode(tm) catalog.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0xe0000241)} 11:03:14.029
+     sto:           {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 11:03:14.035
+     sig:           Signer Score  = 0x0F000000 (Authenticode)
+     sig:           Signer Name   = BC250-WDDM Development Test
+     sto:           {Core Driver Package Import: bc250mcdm.inf_amd64_c206a166f11cea23} 11:03:14.037
+     sto:                {DRIVERSTORE IMPORT BEGIN} 11:03:14.038
+     sto:                {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 11:03:14.038
+     cpy:                {Copy Directory: C:\Windows\System32\DriverStore\Temp\{9f76af0c-f84c-ea4f-8d5c-d1c6ed8c91c2}} 11:03:14.039
+     cpy:                     Target Path = C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23
+     cpy:                {Copy Directory: exit(0x00000000)} 11:03:14.045
+     idb:                {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:03:14.046
+     idb:                     Created driver package object 'bc250mcdm.inf_amd64_c206a166f11cea23' in DRIVERS database node.
+     idb:                     Created driver INF file object 'oem19.inf' in DRIVERS database node.
+     idb:                     Registered driver package 'bc250mcdm.inf_amd64_c206a166f11cea23' with 'oem19.inf'.
+     idb:                {Register Driver Package: exit(0x00000000)} 11:03:14.050
+     idb:                {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:03:14.050
+     idb:                     Activating driver package 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     cpy:                     Published 'bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf' to 'oem19.inf'.
+     idb:                     Indexed 2 device IDs for 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                {Publish Driver Package: exit(0x00000000)} 11:03:14.059
+     sto:                {DRIVERSTORE IMPORT END} 11:03:14.062
+     dvi:                     Flushed all driver package files to disk. Time = 0 ms
+     sig:                     Installed catalog 'bc250mcdm.cat' as 'oem19.cat'.
+     sto:                {DRIVERSTORE IMPORT END: exit(0x00000000)} 11:03:14.072
+     sto:           {Core Driver Package Import: exit(0x00000000)} 11:03:14.073
+     sto:      {Stage Driver Package: exit(0x00000000)} 11:03:14.075
+     dvs: {Driver Setup Import Driver Package - exit (0x00000000)} 11:03:14.157
+<<<  Section end 2026/08/28 11:03:14.158
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (UpdateDriverForPlugAndPlayDevices) - PCI\VEN_1002&DEV_13FE]
+>>>  Section start 2026/08/28 11:03:14.343
+      cmd: "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -ExecutionPolicy Bypass -File tools\replace-bc250mcdm.ps1
+     ndv: INF path: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     ndv: Install flags: 0x00000001
+     ndv: {Update Device Driver - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     ndv:      Search options: 0x00000080
+     ndv:      Searching single INF 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf'
+     dvi:      {Build Driver List} 11:03:14.362
+     dvi:           Searching for hardware ID(s):
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:                pci\ven_1002&dev_13fe&cc_030000
+     dvi:                pci\ven_1002&dev_13fe&cc_0300
+     dvi:           Searching for compatible ID(s):
+     dvi:                pci\ven_1002&dev_13fe&rev_00
+     dvi:                pci\ven_1002&dev_13fe
+     dvi:                pci\ven_1002&cc_030000
+     dvi:                pci\ven_1002&cc_0300
+     dvi:                pci\ven_1002
+     dvi:                pci\cc_030000&dt_1
+     dvi:                pci\cc_030000
+     dvi:                pci\cc_0300&dt_1
+     dvi:                pci\cc_0300
+     dvi:           Created Driver Node:
+     dvi:                HardwareID   - PCI\VEN_1002&DEV_13FE
+     dvi:                InfName      - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf
+     dvi:                DevDesc      - BC-250 MCDM Fail-Closed Development Adapter
+     dvi:                Section      - BC250Mcdm_Device.NT
+     dvi:                Rank         - 0x00802001
+     dvi:                Signer Score - Authenticode
+     dvi:                DrvDate      - 08/28/2026
+     dvi:                Version      - 3.18.0.0
+     dvi:      {Build Driver List - exit(0x00000000)} 11:03:14.377
+     dvi:      {DIF_SELECTBESTCOMPATDRV} 11:03:14.378
+     dvi:           Default installer: Enter 11:03:14.379
+     dvi:                {Select Best Driver}
+     dvi:                     Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     dvi:                     Selected Driver:
+     dvi:                          Description - BC-250 MCDM Fail-Closed Development Adapter
+     dvi:                          InfFile     - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf
+     dvi:                          Section     - BC250Mcdm_Device
+     dvi:                {Select Best Driver - exit(0x00000000)}
+     dvi:           Default installer: Exit
+     dvi:      {DIF_SELECTBESTCOMPATDRV - exit(0x00000000)} 11:03:14.381
+     ndv:      Force Installing Driver:
+     ndv:           Inf Name       - bc250mcdm.inf
+     ndv:           Driver Date    - 08/28/2026
+     ndv:           Driver Version - 3.18.0.0
+     ndv:      Driver package 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf' is already imported.
+     sto:      {Setup Import Driver Package: c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf} 11:03:14.386
+     sto:           Driver package already imported as 'oem19.inf'.
+     sto:      {Setup Import Driver Package - exit (0x00000000)} 11:03:14.389
+     dvi:      Searching for hardware ID(s):
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:           pci\ven_1002&dev_13fe&cc_030000
+     dvi:           pci\ven_1002&dev_13fe&cc_0300
+     dvi:      Searching for compatible ID(s):
+     dvi:           pci\ven_1002&dev_13fe&rev_00
+     dvi:           pci\ven_1002&dev_13fe
+     dvi:           pci\ven_1002&cc_030000
+     dvi:           pci\ven_1002&cc_0300
+     dvi:           pci\ven_1002
+     dvi:           pci\cc_030000&dt_1
+     dvi:           pci\cc_030000
+     dvi:           pci\cc_0300&dt_1
+     dvi:           pci\cc_0300
+     dvi:      Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 11:03:14.408
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 11:03:14.477
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf}
+     sto:                          Source Filter  = pci\ven_1002&dev_13fe
+     inf:                          Class GUID     = {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: BC-250 MCDM Fail-Closed Development Adapter}
+     inf:                               Section Name = BC250Mcdm_Device.NT
+     inf:                               {Add Service: bc250mcdm}
+     inf:                                    Start Type    = 3
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 1
+     inf:                                    Image Path    = \SystemRoot\System32\drivers\bc250mcdm.sys
+     inf:                                    Created new service 'bc250mcdm'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\VEN_1002&DEV_13FE
+     inf:                               {Configure Driver Configuration: BC250Mcdm_Device.NT}
+     inf:                                    Service Name  = bc250mcdm
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 11:03:14.491
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.sys' to 'C:\Windows\System32\drivers\bc250mcdm.sys'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_sdma.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_rlc.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_pfp.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_me.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_ce.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_mec.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin'.
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:03:14.504
+     dvi:                          Existing files modified, may need to restart related services.
+     sto:                     {Configure Driver Package: exit(0x00000bc3)}
+     dvi:                     Restart required for any devices using this driver.
+     dvi:                     Install Device: Configuring device. 11:03:14.506
+     dvi:                          Configuration: oem19.inf:pci\ven_1002&dev_13fe,BC250Mcdm_Device
+     dvi:                     Install Device: Configuring device completed. 11:03:14.510
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                     {Restarting Devices} 11:03:14.511
+     dvi:                          Start: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                     {Restarting Devices exit} 11:03:14.580
+     dvi:                {Configure Device - exit(0x00000000)} 11:03:14.580
+     dvi:           {Core Device Install - exit(0x00000000)} 11:03:14.581
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     ndv: {Update Device Driver - exit(00000000)}
+     ndv: {Install Related Drivers} 11:03:14.585
+     ndv: {Install Related Drivers: exit(0x00000000)} 11:03:14.586
+<<<  Section end 2026/08/28 11:03:14.587
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Driver Uninstall (DrvSetupUninstallDriver) - oem19.inf]
+>>>  Section start 2026/08/28 11:14:56.564
+      cmd: "C:\Windows\system32\pnputil.exe" /delete-driver oem19.inf /uninstall /force
+     dvs: Flags: 0x00000000
+     dvs: {Driver Setup Update Device: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 11:14:56.597
+     utl:      {Select Drivers - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 11:14:56.600
+     utl:           Driver Node:
+     utl:                Status         - Selected
+     utl:                Driver INF     - display.inf (C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf)
+     utl:                Class GUID     - {4d36e968-e325-11ce-bfc1-08002be10318}
+     utl:                Driver Version - 06/21/2006,10.0.19041.868
+     utl:                Configuration  - PCI\CC_0300 [MSBDA]
+     utl:                Driver Rank    - 00FB2008
+     utl:                Signer Score   - Inbox (0D000003)
+     utl:      {Select Drivers - exit(0x00000000} 11:14:56.604
+     dvs:      Installing next best driver (display.inf) on device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041'.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 11:14:56.658
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 11:14:56.727
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf}
+     sto:                          Source Filter  = PCI\CC_0300
+     inf:                          Class GUID     = {4d36e968-e325-11ce-bfc1-08002be10318}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: Microsoft Basic Display Adapter}
+     inf:                               Section Name = MSBDA
+     inf:                               {Add Service: BasicDisplay}
+     inf:                                    Start Type    = 1
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 0
+     inf:                                    Image Path    = \SystemRoot\System32\DriverStore\FileRepository\basicdisplay.inf_amd64_fc93ae411c02f280\BasicDisplay.sys
+     inf:                                    Group         = Video
+     inf:                                    Updated service 'BasicDisplay'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\CC_0300
+     inf:                               {Configure Driver Configuration: MSBDA}
+     inf:                                    Service Name  = BasicDisplay
+     inf:                                    Exclude IDs   = PCI\VEN_1414&DEV_5353
+     inf:                                    Included INFs = basicdisplay.inf
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 11:14:56.742
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:14:56.742
+     sto:                     {Configure Driver Package: exit(0x00000000)}
+     dvi:                     Install Device: Configuring device. 11:14:56.743
+     dvi:                          Configuration: display.inf:PCI\CC_0300,MSBDA
+     dvi:                     Install Device: Configuring device completed. 11:14:56.749
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+!    dvi:                     Device restart was skipped (DONOTCALLCONFIGMG).
+     dvi:                {Configure Device - exit(0x00000000)} 11:14:56.750
+     dvi:                Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                Install Device: Starting device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041'. 11:14:56.751
+     dvi:                Install Device: Starting device completed. 11:14:56.792
+     dvi:           {Core Device Install - exit(0x00000000)} 11:14:56.793
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     dvs:      {Install Related Drivers} 11:14:56.796
+     dvs:      {Install Related Drivers: exit(0x00000000)} 11:14:56.797
+     dvs: {Driver Setup Update Device - exit(0x00000000)} 11:14:56.798
+     dvs: {Driver Setup Delete Driver Package: oem19.inf} 11:14:56.799
+     ump:      Delete flags: 0x00000002
+     pol:      {Driver package policy check} 11:14:56.910
+     pol:      {Driver package policy check - exit(0x00000000)} 11:14:56.911
+     sto:      {Unstage Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:14:56.911
+     sto:           {Core Driver Package Delete: bc250mcdm.inf_amd64_c206a166f11cea23} 11:14:56.912
+     sto:                {DRIVERSTORE DELETE BEGIN} 11:14:56.913
+     sto:                {DRIVERSTORE DELETE BEGIN: exit(0x00000000)} 11:14:56.915
+     sto:                {Unconfigure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf}
+     inf:                     Class GUID     = {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     inf:                     Class Options  = Configurable
+     inf:                     {Unconfigure Driver: BC-250 MCDM Fail-Closed Development Adapter}
+     inf:                          Section Name = BC250Mcdm_Device.NT
+     inf:                          {Add Service: bc250mcdm}
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Probe\SchemaVersion
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Driver\ActiveMode
+     inf:                               Deleted service 'bc250mcdm'.
+     inf:                          {Add Service: exit(0x00000000)}
+     inf:                          File 'C:\Windows\System32\drivers\bc250mcdm.sys' still in use by 2 sources.
+     inf:                          Hardware Id  = PCI\VEN_1002&DEV_13FE
+     inf:                     {Unconfigure Driver: exit(0x00000000)}
+     flq:                     {FILE_QUEUE_COMMIT} 11:14:56.926
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin'
+     flq:                          DeleteFile: success
+     flq:                     {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:14:56.949
+     sto:                {Unconfigure Driver Package: exit(0x00000000)}
+     idb:                {Unpublish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:14:56.950
+     idb:                     Clearing active driver package 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     cpy:                     Unpublished 'oem19.inf'.
+     idb:                     Deindexed 2 device IDs for 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                {Unpublish Driver Package: exit(0x00000000)} 11:14:56.956
+     idb:                {Unregister Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:14:56.958
+     idb:                     Unregistered driver package 'bc250mcdm.inf_amd64_c206a166f11cea23' from 'oem19.inf'.
+     idb:                     Deleted driver package object 'bc250mcdm.inf_amd64_c206a166f11cea23' from DRIVERS database node.
+     idb:                     Deleted driver INF file object 'oem19.inf' from DRIVERS database node.
+     idb:                {Unregister Driver Package: exit(0x00000000)} 11:14:56.960
+     cpy:                {Delete Directory: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23} 11:14:56.960
+     cpy:                {Delete Directory: exit(0x00000000)} 11:14:56.962
+     sto:                {DRIVERSTORE DELETE END} 11:14:56.963
+     sig:                     Uninstalled catalog 'oem19.cat'.
+     sto:                {DRIVERSTORE DELETE END: exit(0x00000000)} 11:14:56.966
+     sto:           {Core Driver Package Delete: exit(0x00000000)} 11:14:56.967
+     sto:      {Unstage Driver Package: exit(0x00000000)} 11:14:56.967
+     dvs: {Driver Setup Delete Driver Package - exit (0x00000000)} 11:14:56.969
+<<<  Section end 2026/08/28 11:14:56.970
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Driver Install (DrvSetupInstallDriver) - C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf]
+>>>  Section start 2026/08/28 11:14:57.138
+      cmd: "C:\Windows\system32\pnputil.exe" /add-driver C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     dvs: Flags: 0x00000040
+     dvs: {Driver Setup Import Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf} 11:14:57.139
+     sto:      {Copy Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf} 11:14:57.142
+     sto:           Driver Package = C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     sto:           Flags          = 0x00000007
+     sto:           Destination    = C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}
+     sto:           Copying driver package files to 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}'.
+     flq:           {FILE_QUEUE_COMMIT} 11:14:57.146
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\bc250mcdm.cat'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf' to 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\bc250mcdm.inf'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.sys' to 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\bc250mcdm.sys'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_ce.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\cyan_skillfish2_ce.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_me.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\cyan_skillfish2_me.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_mec.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\cyan_skillfish2_mec.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_rlc.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\cyan_skillfish2_rlc.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_pfp.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\cyan_skillfish2_pfp.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_sdma.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\cyan_skillfish2_sdma.bin'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:14:57.184
+     sto:      {Copy Driver Package: exit(0x00000000)} 11:14:57.185
+     ump:      Import flags: 0x00000000
+     pol:      {Driver package policy check} 11:14:57.206
+     pol:      {Driver package policy check - exit(0x00000000)} 11:14:57.206
+     sto:      {Stage Driver Package: C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\bc250mcdm.inf} 11:14:57.207
+     inf:           {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\bc250mcdm.inf} 11:14:57.211
+     inf:                Driver package 'bc250mcdm.inf' is configurable.
+     inf:           {Query Configurability: exit(0x00000000)} 11:14:57.213
+     flq:           {FILE_QUEUE_COMMIT} 11:14:57.215
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\bc250mcdm.cat' to 'C:\Windows\System32\DriverStore\Temp\{e7dee337-aabb-e943-aa3c-9e231822047b}\bc250mcdm.cat'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\bc250mcdm.inf' to 'C:\Windows\System32\DriverStore\Temp\{e7dee337-aabb-e943-aa3c-9e231822047b}\bc250mcdm.inf'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\bc250mcdm.sys' to 'C:\Windows\System32\DriverStore\Temp\{e7dee337-aabb-e943-aa3c-9e231822047b}\bc250mcdm.sys'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\cyan_skillfish2_ce.bin' to 'C:\Windows\System32\DriverStore\Temp\{e7dee337-aabb-e943-aa3c-9e231822047b}\cyan_skillfish2_ce.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\cyan_skillfish2_me.bin' to 'C:\Windows\System32\DriverStore\Temp\{e7dee337-aabb-e943-aa3c-9e231822047b}\cyan_skillfish2_me.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\cyan_skillfish2_mec.bin' to 'C:\Windows\System32\DriverStore\Temp\{e7dee337-aabb-e943-aa3c-9e231822047b}\cyan_skillfish2_mec.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\cyan_skillfish2_rlc.bin' to 'C:\Windows\System32\DriverStore\Temp\{e7dee337-aabb-e943-aa3c-9e231822047b}\cyan_skillfish2_rlc.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\cyan_skillfish2_pfp.bin' to 'C:\Windows\System32\DriverStore\Temp\{e7dee337-aabb-e943-aa3c-9e231822047b}\cyan_skillfish2_pfp.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{7171a2e7-6fa6-1a47-a0a0-392dc810c178}\cyan_skillfish2_sdma.bin' to 'C:\Windows\System32\DriverStore\Temp\{e7dee337-aabb-e943-aa3c-9e231822047b}\cyan_skillfish2_sdma.bin'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:14:57.251
+     sto:           {DRIVERSTORE IMPORT VALIDATE} 11:14:57.252
+     sig:                Driver package catalog is valid.
+     sig:                {_VERIFY_FILE_SIGNATURE} 11:14:57.269
+     sig:                     Key      = bc250mcdm.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{e7dee337-aabb-e943-aa3c-9e231822047b}\bc250mcdm.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{e7dee337-aabb-e943-aa3c-9e231822047b}\bc250mcdm.cat
+!    sig:                     Verifying file against specific (valid) catalog failed.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0x800b0109)} 11:14:57.271
+     sig:                {_VERIFY_FILE_SIGNATURE} 11:14:57.273
+     sig:                     Key      = bc250mcdm.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{e7dee337-aabb-e943-aa3c-9e231822047b}\bc250mcdm.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{e7dee337-aabb-e943-aa3c-9e231822047b}\bc250mcdm.cat
+     sig:                     Success: File is signed in Authenticode(tm) catalog.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0xe0000241)} 11:14:57.284
+     sto:           {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 11:14:57.290
+     sig:           Signer Score  = 0x0F000000 (Authenticode)
+     sig:           Signer Name   = BC250-WDDM Development Test
+     sto:           {Core Driver Package Import: bc250mcdm.inf_amd64_c206a166f11cea23} 11:14:57.292
+     sto:                {DRIVERSTORE IMPORT BEGIN} 11:14:57.293
+     sto:                {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 11:14:57.293
+     cpy:                {Copy Directory: C:\Windows\System32\DriverStore\Temp\{e7dee337-aabb-e943-aa3c-9e231822047b}} 11:14:57.293
+     cpy:                     Target Path = C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23
+     cpy:                {Copy Directory: exit(0x00000000)} 11:14:57.298
+     idb:                {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:14:57.298
+     idb:                     Created driver package object 'bc250mcdm.inf_amd64_c206a166f11cea23' in DRIVERS database node.
+     idb:                     Created driver INF file object 'oem19.inf' in DRIVERS database node.
+     idb:                     Registered driver package 'bc250mcdm.inf_amd64_c206a166f11cea23' with 'oem19.inf'.
+     idb:                {Register Driver Package: exit(0x00000000)} 11:14:57.302
+     idb:                {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:14:57.302
+     idb:                     Activating driver package 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     cpy:                     Published 'bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf' to 'oem19.inf'.
+     idb:                     Indexed 2 device IDs for 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 16 ms
+     idb:                {Publish Driver Package: exit(0x00000000)} 11:14:57.312
+     sto:                {DRIVERSTORE IMPORT END} 11:14:57.314
+     dvi:                     Flushed all driver package files to disk. Time = 0 ms
+     sig:                     Installed catalog 'bc250mcdm.cat' as 'oem19.cat'.
+     sto:                {DRIVERSTORE IMPORT END: exit(0x00000000)} 11:14:57.324
+     sto:           {Core Driver Package Import: exit(0x00000000)} 11:14:57.325
+     sto:      {Stage Driver Package: exit(0x00000000)} 11:14:57.327
+     dvs: {Driver Setup Import Driver Package - exit (0x00000000)} 11:14:57.422
+<<<  Section end 2026/08/28 11:14:57.422
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (UpdateDriverForPlugAndPlayDevices) - PCI\VEN_1002&DEV_13FE]
+>>>  Section start 2026/08/28 11:14:57.609
+      cmd: "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -ExecutionPolicy Bypass -File tools\replace-bc250mcdm.ps1
+     ndv: INF path: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     ndv: Install flags: 0x00000001
+     ndv: {Update Device Driver - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     ndv:      Search options: 0x00000080
+     ndv:      Searching single INF 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf'
+     dvi:      {Build Driver List} 11:14:57.624
+     dvi:           Searching for hardware ID(s):
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:                pci\ven_1002&dev_13fe&cc_030000
+     dvi:                pci\ven_1002&dev_13fe&cc_0300
+     dvi:           Searching for compatible ID(s):
+     dvi:                pci\ven_1002&dev_13fe&rev_00
+     dvi:                pci\ven_1002&dev_13fe
+     dvi:                pci\ven_1002&cc_030000
+     dvi:                pci\ven_1002&cc_0300
+     dvi:                pci\ven_1002
+     dvi:                pci\cc_030000&dt_1
+     dvi:                pci\cc_030000
+     dvi:                pci\cc_0300&dt_1
+     dvi:                pci\cc_0300
+     dvi:           Created Driver Node:
+     dvi:                HardwareID   - PCI\VEN_1002&DEV_13FE
+     dvi:                InfName      - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf
+     dvi:                DevDesc      - BC-250 MCDM Fail-Closed Development Adapter
+     dvi:                Section      - BC250Mcdm_Device.NT
+     dvi:                Rank         - 0x00802001
+     dvi:                Signer Score - Authenticode
+     dvi:                DrvDate      - 08/28/2026
+     dvi:                Version      - 3.18.0.0
+     dvi:      {Build Driver List - exit(0x00000000)} 11:14:57.636
+     dvi:      {DIF_SELECTBESTCOMPATDRV} 11:14:57.636
+     dvi:           Default installer: Enter 11:14:57.637
+     dvi:                {Select Best Driver}
+     dvi:                     Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     dvi:                     Selected Driver:
+     dvi:                          Description - BC-250 MCDM Fail-Closed Development Adapter
+     dvi:                          InfFile     - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf
+     dvi:                          Section     - BC250Mcdm_Device
+     dvi:                {Select Best Driver - exit(0x00000000)}
+     dvi:           Default installer: Exit
+     dvi:      {DIF_SELECTBESTCOMPATDRV - exit(0x00000000)} 11:14:57.639
+     ndv:      Force Installing Driver:
+     ndv:           Inf Name       - bc250mcdm.inf
+     ndv:           Driver Date    - 08/28/2026
+     ndv:           Driver Version - 3.18.0.0
+     ndv:      Driver package 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf' is already imported.
+     sto:      {Setup Import Driver Package: c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf} 11:14:57.642
+     sto:           Driver package already imported as 'oem19.inf'.
+     sto:      {Setup Import Driver Package - exit (0x00000000)} 11:14:57.645
+     dvi:      Searching for hardware ID(s):
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:           pci\ven_1002&dev_13fe&cc_030000
+     dvi:           pci\ven_1002&dev_13fe&cc_0300
+     dvi:      Searching for compatible ID(s):
+     dvi:           pci\ven_1002&dev_13fe&rev_00
+     dvi:           pci\ven_1002&dev_13fe
+     dvi:           pci\ven_1002&cc_030000
+     dvi:           pci\ven_1002&cc_0300
+     dvi:           pci\ven_1002
+     dvi:           pci\cc_030000&dt_1
+     dvi:           pci\cc_030000
+     dvi:           pci\cc_0300&dt_1
+     dvi:           pci\cc_0300
+     dvi:      Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 11:14:57.665
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 11:14:57.745
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf}
+     sto:                          Source Filter  = pci\ven_1002&dev_13fe
+     inf:                          Class GUID     = {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: BC-250 MCDM Fail-Closed Development Adapter}
+     inf:                               Section Name = BC250Mcdm_Device.NT
+     inf:                               {Add Service: bc250mcdm}
+     inf:                                    Start Type    = 3
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 1
+     inf:                                    Image Path    = \SystemRoot\System32\drivers\bc250mcdm.sys
+     inf:                                    Created new service 'bc250mcdm'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\VEN_1002&DEV_13FE
+     inf:                               {Configure Driver Configuration: BC250Mcdm_Device.NT}
+     inf:                                    Service Name  = bc250mcdm
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 11:14:57.759
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.sys' to 'C:\Windows\System32\drivers\bc250mcdm.sys'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_sdma.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_rlc.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_pfp.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_me.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_ce.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_mec.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin'.
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:14:57.772
+     dvi:                          Existing files modified, may need to restart related services.
+     sto:                     {Configure Driver Package: exit(0x00000bc3)}
+     dvi:                     Restart required for any devices using this driver.
+     dvi:                     Install Device: Configuring device. 11:14:57.774
+     dvi:                          Configuration: oem19.inf:pci\ven_1002&dev_13fe,BC250Mcdm_Device
+     dvi:                     Install Device: Configuring device completed. 11:14:57.778
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                     {Restarting Devices} 11:14:57.778
+     dvi:                          Start: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                     {Restarting Devices exit} 11:14:57.844
+     dvi:                {Configure Device - exit(0x00000000)} 11:14:57.845
+     dvi:           {Core Device Install - exit(0x00000000)} 11:14:57.846
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     ndv: {Update Device Driver - exit(00000000)}
+     ndv: {Install Related Drivers} 11:14:57.849
+     ndv: {Install Related Drivers: exit(0x00000000)} 11:14:57.850
+<<<  Section end 2026/08/28 11:14:57.852
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Driver Uninstall (DrvSetupUninstallDriver) - oem19.inf]
+>>>  Section start 2026/08/28 11:19:37.620
+      cmd: "C:\Windows\system32\pnputil.exe" /delete-driver oem19.inf /uninstall /force
+     dvs: Flags: 0x00000000
+     dvs: {Driver Setup Update Device: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 11:19:37.654
+     utl:      {Select Drivers - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 11:19:37.658
+     utl:           Driver Node:
+     utl:                Status         - Selected
+     utl:                Driver INF     - display.inf (C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf)
+     utl:                Class GUID     - {4d36e968-e325-11ce-bfc1-08002be10318}
+     utl:                Driver Version - 06/21/2006,10.0.19041.868
+     utl:                Configuration  - PCI\CC_0300 [MSBDA]
+     utl:                Driver Rank    - 00FB2008
+     utl:                Signer Score   - Inbox (0D000003)
+     utl:      {Select Drivers - exit(0x00000000} 11:19:37.662
+     dvs:      Installing next best driver (display.inf) on device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041'.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 11:19:37.720
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 11:19:37.785
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf}
+     sto:                          Source Filter  = PCI\CC_0300
+     inf:                          Class GUID     = {4d36e968-e325-11ce-bfc1-08002be10318}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: Microsoft Basic Display Adapter}
+     inf:                               Section Name = MSBDA
+     inf:                               {Add Service: BasicDisplay}
+     inf:                                    Start Type    = 1
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 0
+     inf:                                    Image Path    = \SystemRoot\System32\DriverStore\FileRepository\basicdisplay.inf_amd64_fc93ae411c02f280\BasicDisplay.sys
+     inf:                                    Group         = Video
+     inf:                                    Updated service 'BasicDisplay'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\CC_0300
+     inf:                               {Configure Driver Configuration: MSBDA}
+     inf:                                    Service Name  = BasicDisplay
+     inf:                                    Exclude IDs   = PCI\VEN_1414&DEV_5353
+     inf:                                    Included INFs = basicdisplay.inf
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 11:19:37.798
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:19:37.798
+     sto:                     {Configure Driver Package: exit(0x00000000)}
+     dvi:                     Install Device: Configuring device. 11:19:37.799
+     dvi:                          Configuration: display.inf:PCI\CC_0300,MSBDA
+     dvi:                     Install Device: Configuring device completed. 11:19:37.805
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+!    dvi:                     Device restart was skipped (DONOTCALLCONFIGMG).
+     dvi:                {Configure Device - exit(0x00000000)} 11:19:37.806
+     dvi:                Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                Install Device: Starting device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041'. 11:19:37.807
+     dvi:                Install Device: Starting device completed. 11:19:37.854
+     dvi:           {Core Device Install - exit(0x00000000)} 11:19:37.855
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     dvs:      {Install Related Drivers} 11:19:37.858
+     dvs:      {Install Related Drivers: exit(0x00000000)} 11:19:37.860
+     dvs: {Driver Setup Update Device - exit(0x00000000)} 11:19:37.860
+     dvs: {Driver Setup Delete Driver Package: oem19.inf} 11:19:37.861
+     ump:      Delete flags: 0x00000002
+     pol:      {Driver package policy check} 11:19:37.971
+     pol:      {Driver package policy check - exit(0x00000000)} 11:19:37.972
+     sto:      {Unstage Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:19:37.973
+     sto:           {Core Driver Package Delete: bc250mcdm.inf_amd64_c206a166f11cea23} 11:19:37.973
+     sto:                {DRIVERSTORE DELETE BEGIN} 11:19:37.974
+     sto:                {DRIVERSTORE DELETE BEGIN: exit(0x00000000)} 11:19:37.976
+     sto:                {Unconfigure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf}
+     inf:                     Class GUID     = {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     inf:                     Class Options  = Configurable
+     inf:                     {Unconfigure Driver: BC-250 MCDM Fail-Closed Development Adapter}
+     inf:                          Section Name = BC250Mcdm_Device.NT
+     inf:                          {Add Service: bc250mcdm}
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Probe\SchemaVersion
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Driver\ActiveMode
+     inf:                               Deleted service 'bc250mcdm'.
+     inf:                          {Add Service: exit(0x00000000)}
+     inf:                          File 'C:\Windows\System32\drivers\bc250mcdm.sys' still in use by 2 sources.
+     inf:                          Hardware Id  = PCI\VEN_1002&DEV_13FE
+     inf:                     {Unconfigure Driver: exit(0x00000000)}
+     flq:                     {FILE_QUEUE_COMMIT} 11:19:37.988
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin'
+     flq:                          DeleteFile: success
+     flq:                     {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:19:38.009
+     sto:                {Unconfigure Driver Package: exit(0x00000000)}
+     idb:                {Unpublish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:19:38.011
+     idb:                     Clearing active driver package 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     cpy:                     Unpublished 'oem19.inf'.
+     idb:                     Deindexed 2 device IDs for 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                {Unpublish Driver Package: exit(0x00000000)} 11:19:38.018
+     idb:                {Unregister Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:19:38.019
+     idb:                     Unregistered driver package 'bc250mcdm.inf_amd64_c206a166f11cea23' from 'oem19.inf'.
+     idb:                     Deleted driver package object 'bc250mcdm.inf_amd64_c206a166f11cea23' from DRIVERS database node.
+     idb:                     Deleted driver INF file object 'oem19.inf' from DRIVERS database node.
+     idb:                {Unregister Driver Package: exit(0x00000000)} 11:19:38.021
+     cpy:                {Delete Directory: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23} 11:19:38.021
+     cpy:                {Delete Directory: exit(0x00000000)} 11:19:38.023
+     sto:                {DRIVERSTORE DELETE END} 11:19:38.024
+     sig:                     Uninstalled catalog 'oem19.cat'.
+     sto:                {DRIVERSTORE DELETE END: exit(0x00000000)} 11:19:38.028
+     sto:           {Core Driver Package Delete: exit(0x00000000)} 11:19:38.028
+     sto:      {Unstage Driver Package: exit(0x00000000)} 11:19:38.028
+     dvs: {Driver Setup Delete Driver Package - exit (0x00000000)} 11:19:38.030
+<<<  Section end 2026/08/28 11:19:38.031
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Driver Install (DrvSetupInstallDriver) - C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf]
+>>>  Section start 2026/08/28 11:19:38.181
+      cmd: "C:\Windows\system32\pnputil.exe" /add-driver C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     dvs: Flags: 0x00000040
+     dvs: {Driver Setup Import Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf} 11:19:38.182
+     sto:      {Copy Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf} 11:19:38.185
+     sto:           Driver Package = C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     sto:           Flags          = 0x00000007
+     sto:           Destination    = C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}
+     sto:           Copying driver package files to 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}'.
+     flq:           {FILE_QUEUE_COMMIT} 11:19:38.188
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\bc250mcdm.cat'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf' to 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\bc250mcdm.inf'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.sys' to 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\bc250mcdm.sys'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_ce.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\cyan_skillfish2_ce.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_me.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\cyan_skillfish2_me.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_mec.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\cyan_skillfish2_mec.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_rlc.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\cyan_skillfish2_rlc.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_pfp.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\cyan_skillfish2_pfp.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_sdma.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\cyan_skillfish2_sdma.bin'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:19:38.216
+     sto:      {Copy Driver Package: exit(0x00000000)} 11:19:38.216
+     ump:      Import flags: 0x00000000
+     pol:      {Driver package policy check} 11:19:38.227
+     pol:      {Driver package policy check - exit(0x00000000)} 11:19:38.227
+     sto:      {Stage Driver Package: C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\bc250mcdm.inf} 11:19:38.227
+     inf:           {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\bc250mcdm.inf} 11:19:38.231
+     inf:                Driver package 'bc250mcdm.inf' is configurable.
+     inf:           {Query Configurability: exit(0x00000000)} 11:19:38.234
+     flq:           {FILE_QUEUE_COMMIT} 11:19:38.235
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\bc250mcdm.cat' to 'C:\Windows\System32\DriverStore\Temp\{7b4b5323-46ce-ae48-b863-d2f62f92abfe}\bc250mcdm.cat'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\bc250mcdm.inf' to 'C:\Windows\System32\DriverStore\Temp\{7b4b5323-46ce-ae48-b863-d2f62f92abfe}\bc250mcdm.inf'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\bc250mcdm.sys' to 'C:\Windows\System32\DriverStore\Temp\{7b4b5323-46ce-ae48-b863-d2f62f92abfe}\bc250mcdm.sys'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\cyan_skillfish2_ce.bin' to 'C:\Windows\System32\DriverStore\Temp\{7b4b5323-46ce-ae48-b863-d2f62f92abfe}\cyan_skillfish2_ce.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\cyan_skillfish2_me.bin' to 'C:\Windows\System32\DriverStore\Temp\{7b4b5323-46ce-ae48-b863-d2f62f92abfe}\cyan_skillfish2_me.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\cyan_skillfish2_mec.bin' to 'C:\Windows\System32\DriverStore\Temp\{7b4b5323-46ce-ae48-b863-d2f62f92abfe}\cyan_skillfish2_mec.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\cyan_skillfish2_rlc.bin' to 'C:\Windows\System32\DriverStore\Temp\{7b4b5323-46ce-ae48-b863-d2f62f92abfe}\cyan_skillfish2_rlc.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\cyan_skillfish2_pfp.bin' to 'C:\Windows\System32\DriverStore\Temp\{7b4b5323-46ce-ae48-b863-d2f62f92abfe}\cyan_skillfish2_pfp.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{77241a77-f936-cf4c-bcd1-91f0a10b5a01}\cyan_skillfish2_sdma.bin' to 'C:\Windows\System32\DriverStore\Temp\{7b4b5323-46ce-ae48-b863-d2f62f92abfe}\cyan_skillfish2_sdma.bin'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:19:38.264
+     sto:           {DRIVERSTORE IMPORT VALIDATE} 11:19:38.266
+     sig:                Driver package catalog is valid.
+     sig:                {_VERIFY_FILE_SIGNATURE} 11:19:38.282
+     sig:                     Key      = bc250mcdm.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{7b4b5323-46ce-ae48-b863-d2f62f92abfe}\bc250mcdm.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{7b4b5323-46ce-ae48-b863-d2f62f92abfe}\bc250mcdm.cat
+!    sig:                     Verifying file against specific (valid) catalog failed.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0x800b0109)} 11:19:38.286
+     sig:                {_VERIFY_FILE_SIGNATURE} 11:19:38.288
+     sig:                     Key      = bc250mcdm.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{7b4b5323-46ce-ae48-b863-d2f62f92abfe}\bc250mcdm.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{7b4b5323-46ce-ae48-b863-d2f62f92abfe}\bc250mcdm.cat
+     sig:                     Success: File is signed in Authenticode(tm) catalog.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0xe0000241)} 11:19:38.294
+     sto:           {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 11:19:38.301
+     sig:           Signer Score  = 0x0F000000 (Authenticode)
+     sig:           Signer Name   = BC250-WDDM Development Test
+     sto:           {Core Driver Package Import: bc250mcdm.inf_amd64_c206a166f11cea23} 11:19:38.303
+     sto:                {DRIVERSTORE IMPORT BEGIN} 11:19:38.303
+     sto:                {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 11:19:38.304
+     cpy:                {Copy Directory: C:\Windows\System32\DriverStore\Temp\{7b4b5323-46ce-ae48-b863-d2f62f92abfe}} 11:19:38.304
+     cpy:                     Target Path = C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23
+     cpy:                {Copy Directory: exit(0x00000000)} 11:19:38.308
+     idb:                {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:19:38.308
+     idb:                     Created driver package object 'bc250mcdm.inf_amd64_c206a166f11cea23' in DRIVERS database node.
+     idb:                     Created driver INF file object 'oem19.inf' in DRIVERS database node.
+     idb:                     Registered driver package 'bc250mcdm.inf_amd64_c206a166f11cea23' with 'oem19.inf'.
+     idb:                {Register Driver Package: exit(0x00000000)} 11:19:38.311
+     idb:                {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:19:38.311
+     idb:                     Activating driver package 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     cpy:                     Published 'bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf' to 'oem19.inf'.
+     idb:                     Indexed 2 device IDs for 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                {Publish Driver Package: exit(0x00000000)} 11:19:38.318
+     sto:                {DRIVERSTORE IMPORT END} 11:19:38.320
+     dvi:                     Flushed all driver package files to disk. Time = 0 ms
+     sig:                     Installed catalog 'bc250mcdm.cat' as 'oem19.cat'.
+     sto:                {DRIVERSTORE IMPORT END: exit(0x00000000)} 11:19:38.329
+     sto:           {Core Driver Package Import: exit(0x00000000)} 11:19:38.330
+     sto:      {Stage Driver Package: exit(0x00000000)} 11:19:38.332
+     dvs: {Driver Setup Import Driver Package - exit (0x00000000)} 11:19:38.415
+<<<  Section end 2026/08/28 11:19:38.415
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (UpdateDriverForPlugAndPlayDevices) - PCI\VEN_1002&DEV_13FE]
+>>>  Section start 2026/08/28 11:19:38.593
+      cmd: "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -ExecutionPolicy Bypass -File tools\replace-bc250mcdm.ps1
+     ndv: INF path: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     ndv: Install flags: 0x00000001
+     ndv: {Update Device Driver - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     ndv:      Search options: 0x00000080
+     ndv:      Searching single INF 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf'
+     dvi:      {Build Driver List} 11:19:38.611
+     dvi:           Searching for hardware ID(s):
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:                pci\ven_1002&dev_13fe&cc_030000
+     dvi:                pci\ven_1002&dev_13fe&cc_0300
+     dvi:           Searching for compatible ID(s):
+     dvi:                pci\ven_1002&dev_13fe&rev_00
+     dvi:                pci\ven_1002&dev_13fe
+     dvi:                pci\ven_1002&cc_030000
+     dvi:                pci\ven_1002&cc_0300
+     dvi:                pci\ven_1002
+     dvi:                pci\cc_030000&dt_1
+     dvi:                pci\cc_030000
+     dvi:                pci\cc_0300&dt_1
+     dvi:                pci\cc_0300
+     dvi:           Created Driver Node:
+     dvi:                HardwareID   - PCI\VEN_1002&DEV_13FE
+     dvi:                InfName      - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf
+     dvi:                DevDesc      - BC-250 MCDM Fail-Closed Development Adapter
+     dvi:                Section      - BC250Mcdm_Device.NT
+     dvi:                Rank         - 0x00802001
+     dvi:                Signer Score - Authenticode
+     dvi:                DrvDate      - 08/28/2026
+     dvi:                Version      - 3.18.0.0
+     dvi:      {Build Driver List - exit(0x00000000)} 11:19:38.623
+     dvi:      {DIF_SELECTBESTCOMPATDRV} 11:19:38.623
+     dvi:           Default installer: Enter 11:19:38.624
+     dvi:                {Select Best Driver}
+     dvi:                     Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     dvi:                     Selected Driver:
+     dvi:                          Description - BC-250 MCDM Fail-Closed Development Adapter
+     dvi:                          InfFile     - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf
+     dvi:                          Section     - BC250Mcdm_Device
+     dvi:                {Select Best Driver - exit(0x00000000)}
+     dvi:           Default installer: Exit
+     dvi:      {DIF_SELECTBESTCOMPATDRV - exit(0x00000000)} 11:19:38.628
+     ndv:      Force Installing Driver:
+     ndv:           Inf Name       - bc250mcdm.inf
+     ndv:           Driver Date    - 08/28/2026
+     ndv:           Driver Version - 3.18.0.0
+     ndv:      Driver package 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf' is already imported.
+     sto:      {Setup Import Driver Package: c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf} 11:19:38.631
+     sto:           Driver package already imported as 'oem19.inf'.
+     sto:      {Setup Import Driver Package - exit (0x00000000)} 11:19:38.634
+     dvi:      Searching for hardware ID(s):
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:           pci\ven_1002&dev_13fe&cc_030000
+     dvi:           pci\ven_1002&dev_13fe&cc_0300
+     dvi:      Searching for compatible ID(s):
+     dvi:           pci\ven_1002&dev_13fe&rev_00
+     dvi:           pci\ven_1002&dev_13fe
+     dvi:           pci\ven_1002&cc_030000
+     dvi:           pci\ven_1002&cc_0300
+     dvi:           pci\ven_1002
+     dvi:           pci\cc_030000&dt_1
+     dvi:           pci\cc_030000
+     dvi:           pci\cc_0300&dt_1
+     dvi:           pci\cc_0300
+     dvi:      Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 11:19:38.654
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 11:19:38.730
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf}
+     sto:                          Source Filter  = pci\ven_1002&dev_13fe
+     inf:                          Class GUID     = {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: BC-250 MCDM Fail-Closed Development Adapter}
+     inf:                               Section Name = BC250Mcdm_Device.NT
+     inf:                               {Add Service: bc250mcdm}
+     inf:                                    Start Type    = 3
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 1
+     inf:                                    Image Path    = \SystemRoot\System32\drivers\bc250mcdm.sys
+     inf:                                    Created new service 'bc250mcdm'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\VEN_1002&DEV_13FE
+     inf:                               {Configure Driver Configuration: BC250Mcdm_Device.NT}
+     inf:                                    Service Name  = bc250mcdm
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 11:19:38.743
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.sys' to 'C:\Windows\System32\drivers\bc250mcdm.sys'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_sdma.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_rlc.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_pfp.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_me.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_ce.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_mec.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin'.
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:19:38.756
+     dvi:                          Existing files modified, may need to restart related services.
+     sto:                     {Configure Driver Package: exit(0x00000bc3)}
+     dvi:                     Restart required for any devices using this driver.
+     dvi:                     Install Device: Configuring device. 11:19:38.758
+     dvi:                          Configuration: oem19.inf:pci\ven_1002&dev_13fe,BC250Mcdm_Device
+     dvi:                     Install Device: Configuring device completed. 11:19:38.762
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                     {Restarting Devices} 11:19:38.762
+     dvi:                          Start: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                     {Restarting Devices exit} 11:19:38.834
+     dvi:                {Configure Device - exit(0x00000000)} 11:19:38.835
+     dvi:           {Core Device Install - exit(0x00000000)} 11:19:38.836
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     ndv: {Update Device Driver - exit(00000000)}
+     ndv: {Install Related Drivers} 11:19:38.839
+     ndv: {Install Related Drivers: exit(0x00000000)} 11:19:38.840
+<<<  Section end 2026/08/28 11:19:38.841
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Driver Uninstall (DrvSetupUninstallDriver) - oem19.inf]
+>>>  Section start 2026/08/28 11:23:23.768
+      cmd: "C:\Windows\system32\pnputil.exe" /delete-driver oem19.inf /uninstall /force
+     dvs: Flags: 0x00000000
+     dvs: {Driver Setup Update Device: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 11:23:23.801
+     utl:      {Select Drivers - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 11:23:23.805
+     utl:           Driver Node:
+     utl:                Status         - Selected
+     utl:                Driver INF     - display.inf (C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf)
+     utl:                Class GUID     - {4d36e968-e325-11ce-bfc1-08002be10318}
+     utl:                Driver Version - 06/21/2006,10.0.19041.868
+     utl:                Configuration  - PCI\CC_0300 [MSBDA]
+     utl:                Driver Rank    - 00FB2008
+     utl:                Signer Score   - Inbox (0D000003)
+     utl:      {Select Drivers - exit(0x00000000} 11:23:23.809
+     dvs:      Installing next best driver (display.inf) on device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041'.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 11:23:23.852
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 11:23:23.926
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf}
+     sto:                          Source Filter  = PCI\CC_0300
+     inf:                          Class GUID     = {4d36e968-e325-11ce-bfc1-08002be10318}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: Microsoft Basic Display Adapter}
+     inf:                               Section Name = MSBDA
+     inf:                               {Add Service: BasicDisplay}
+     inf:                                    Start Type    = 1
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 0
+     inf:                                    Image Path    = \SystemRoot\System32\DriverStore\FileRepository\basicdisplay.inf_amd64_fc93ae411c02f280\BasicDisplay.sys
+     inf:                                    Group         = Video
+     inf:                                    Updated service 'BasicDisplay'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\CC_0300
+     inf:                               {Configure Driver Configuration: MSBDA}
+     inf:                                    Service Name  = BasicDisplay
+     inf:                                    Exclude IDs   = PCI\VEN_1414&DEV_5353
+     inf:                                    Included INFs = basicdisplay.inf
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 11:23:23.940
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:23:23.941
+     sto:                     {Configure Driver Package: exit(0x00000000)}
+     dvi:                     Install Device: Configuring device. 11:23:23.942
+     dvi:                          Configuration: display.inf:PCI\CC_0300,MSBDA
+     dvi:                     Install Device: Configuring device completed. 11:23:23.948
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+!    dvi:                     Device restart was skipped (DONOTCALLCONFIGMG).
+     dvi:                {Configure Device - exit(0x00000000)} 11:23:23.949
+     dvi:                Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                Install Device: Starting device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041'. 11:23:23.950
+     dvi:                Install Device: Starting device completed. 11:23:23.989
+     dvi:           {Core Device Install - exit(0x00000000)} 11:23:23.990
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     dvs:      {Install Related Drivers} 11:23:23.993
+     dvs:      {Install Related Drivers: exit(0x00000000)} 11:23:23.994
+     dvs: {Driver Setup Update Device - exit(0x00000000)} 11:23:23.994
+     dvs: {Driver Setup Delete Driver Package: oem19.inf} 11:23:23.995
+     ump:      Delete flags: 0x00000002
+     pol:      {Driver package policy check} 11:23:24.106
+     pol:      {Driver package policy check - exit(0x00000000)} 11:23:24.106
+     sto:      {Unstage Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:23:24.107
+     sto:           {Core Driver Package Delete: bc250mcdm.inf_amd64_c206a166f11cea23} 11:23:24.108
+     sto:                {DRIVERSTORE DELETE BEGIN} 11:23:24.109
+     sto:                {DRIVERSTORE DELETE BEGIN: exit(0x00000000)} 11:23:24.111
+     sto:                {Unconfigure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf}
+     inf:                     Class GUID     = {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     inf:                     Class Options  = Configurable
+     inf:                     {Unconfigure Driver: BC-250 MCDM Fail-Closed Development Adapter}
+     inf:                          Section Name = BC250Mcdm_Device.NT
+     inf:                          {Add Service: bc250mcdm}
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Probe\SchemaVersion
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Driver\ActiveMode
+     inf:                               Deleted service 'bc250mcdm'.
+     inf:                          {Add Service: exit(0x00000000)}
+     inf:                          File 'C:\Windows\System32\drivers\bc250mcdm.sys' still in use by 2 sources.
+     inf:                          Hardware Id  = PCI\VEN_1002&DEV_13FE
+     inf:                     {Unconfigure Driver: exit(0x00000000)}
+     flq:                     {FILE_QUEUE_COMMIT} 11:23:24.123
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin'
+     flq:                          DeleteFile: success
+     flq:                     {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:23:24.146
+     sto:                {Unconfigure Driver Package: exit(0x00000000)}
+     idb:                {Unpublish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:23:24.147
+     idb:                     Clearing active driver package 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     cpy:                     Unpublished 'oem19.inf'.
+     idb:                     Deindexed 2 device IDs for 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                {Unpublish Driver Package: exit(0x00000000)} 11:23:24.154
+     idb:                {Unregister Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:23:24.155
+     idb:                     Unregistered driver package 'bc250mcdm.inf_amd64_c206a166f11cea23' from 'oem19.inf'.
+     idb:                     Deleted driver package object 'bc250mcdm.inf_amd64_c206a166f11cea23' from DRIVERS database node.
+     idb:                     Deleted driver INF file object 'oem19.inf' from DRIVERS database node.
+     idb:                {Unregister Driver Package: exit(0x00000000)} 11:23:24.157
+     cpy:                {Delete Directory: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23} 11:23:24.157
+     cpy:                {Delete Directory: exit(0x00000000)} 11:23:24.159
+     sto:                {DRIVERSTORE DELETE END} 11:23:24.160
+     sig:                     Uninstalled catalog 'oem19.cat'.
+     sto:                {DRIVERSTORE DELETE END: exit(0x00000000)} 11:23:24.163
+     sto:           {Core Driver Package Delete: exit(0x00000000)} 11:23:24.164
+     sto:      {Unstage Driver Package: exit(0x00000000)} 11:23:24.164
+     dvs: {Driver Setup Delete Driver Package - exit (0x00000000)} 11:23:24.166
+<<<  Section end 2026/08/28 11:23:24.166
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Driver Install (DrvSetupInstallDriver) - C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf]
+>>>  Section start 2026/08/28 11:23:24.315
+      cmd: "C:\Windows\system32\pnputil.exe" /add-driver C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     dvs: Flags: 0x00000040
+     dvs: {Driver Setup Import Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf} 11:23:24.316
+     sto:      {Copy Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf} 11:23:24.319
+     sto:           Driver Package = C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     sto:           Flags          = 0x00000007
+     sto:           Destination    = C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}
+     sto:           Copying driver package files to 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}'.
+     flq:           {FILE_QUEUE_COMMIT} 11:23:24.323
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\bc250mcdm.cat'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf' to 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\bc250mcdm.inf'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.sys' to 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\bc250mcdm.sys'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_ce.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\cyan_skillfish2_ce.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_me.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\cyan_skillfish2_me.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_mec.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\cyan_skillfish2_mec.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_rlc.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\cyan_skillfish2_rlc.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_pfp.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\cyan_skillfish2_pfp.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_sdma.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\cyan_skillfish2_sdma.bin'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:23:24.349
+     sto:      {Copy Driver Package: exit(0x00000000)} 11:23:24.350
+     ump:      Import flags: 0x00000000
+     pol:      {Driver package policy check} 11:23:24.361
+     pol:      {Driver package policy check - exit(0x00000000)} 11:23:24.361
+     sto:      {Stage Driver Package: C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\bc250mcdm.inf} 11:23:24.366
+     inf:           {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\bc250mcdm.inf} 11:23:24.370
+     inf:                Driver package 'bc250mcdm.inf' is configurable.
+     inf:           {Query Configurability: exit(0x00000000)} 11:23:24.373
+     flq:           {FILE_QUEUE_COMMIT} 11:23:24.375
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\bc250mcdm.cat' to 'C:\Windows\System32\DriverStore\Temp\{769dc998-6521-4d4c-9805-eb2376faf0ef}\bc250mcdm.cat'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\bc250mcdm.inf' to 'C:\Windows\System32\DriverStore\Temp\{769dc998-6521-4d4c-9805-eb2376faf0ef}\bc250mcdm.inf'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\bc250mcdm.sys' to 'C:\Windows\System32\DriverStore\Temp\{769dc998-6521-4d4c-9805-eb2376faf0ef}\bc250mcdm.sys'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\cyan_skillfish2_ce.bin' to 'C:\Windows\System32\DriverStore\Temp\{769dc998-6521-4d4c-9805-eb2376faf0ef}\cyan_skillfish2_ce.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\cyan_skillfish2_me.bin' to 'C:\Windows\System32\DriverStore\Temp\{769dc998-6521-4d4c-9805-eb2376faf0ef}\cyan_skillfish2_me.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\cyan_skillfish2_mec.bin' to 'C:\Windows\System32\DriverStore\Temp\{769dc998-6521-4d4c-9805-eb2376faf0ef}\cyan_skillfish2_mec.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\cyan_skillfish2_rlc.bin' to 'C:\Windows\System32\DriverStore\Temp\{769dc998-6521-4d4c-9805-eb2376faf0ef}\cyan_skillfish2_rlc.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\cyan_skillfish2_pfp.bin' to 'C:\Windows\System32\DriverStore\Temp\{769dc998-6521-4d4c-9805-eb2376faf0ef}\cyan_skillfish2_pfp.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{ddf5c5a8-9d10-424b-8dde-1a2c1501a56a}\cyan_skillfish2_sdma.bin' to 'C:\Windows\System32\DriverStore\Temp\{769dc998-6521-4d4c-9805-eb2376faf0ef}\cyan_skillfish2_sdma.bin'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:23:24.407
+     sto:           {DRIVERSTORE IMPORT VALIDATE} 11:23:24.408
+     sig:                Driver package catalog is valid.
+     sig:                {_VERIFY_FILE_SIGNATURE} 11:23:24.425
+     sig:                     Key      = bc250mcdm.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{769dc998-6521-4d4c-9805-eb2376faf0ef}\bc250mcdm.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{769dc998-6521-4d4c-9805-eb2376faf0ef}\bc250mcdm.cat
+!    sig:                     Verifying file against specific (valid) catalog failed.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0x800b0109)} 11:23:24.428
+     sig:                {_VERIFY_FILE_SIGNATURE} 11:23:24.430
+     sig:                     Key      = bc250mcdm.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{769dc998-6521-4d4c-9805-eb2376faf0ef}\bc250mcdm.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{769dc998-6521-4d4c-9805-eb2376faf0ef}\bc250mcdm.cat
+     sig:                     Success: File is signed in Authenticode(tm) catalog.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0xe0000241)} 11:23:24.438
+     sto:           {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 11:23:24.444
+     sig:           Signer Score  = 0x0F000000 (Authenticode)
+     sig:           Signer Name   = BC250-WDDM Development Test
+     sto:           {Core Driver Package Import: bc250mcdm.inf_amd64_c206a166f11cea23} 11:23:24.446
+     sto:                {DRIVERSTORE IMPORT BEGIN} 11:23:24.446
+     sto:                {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 11:23:24.447
+     cpy:                {Copy Directory: C:\Windows\System32\DriverStore\Temp\{769dc998-6521-4d4c-9805-eb2376faf0ef}} 11:23:24.447
+     cpy:                     Target Path = C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23
+     cpy:                {Copy Directory: exit(0x00000000)} 11:23:24.451
+     idb:                {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:23:24.452
+     idb:                     Created driver package object 'bc250mcdm.inf_amd64_c206a166f11cea23' in DRIVERS database node.
+     idb:                     Created driver INF file object 'oem19.inf' in DRIVERS database node.
+     idb:                     Registered driver package 'bc250mcdm.inf_amd64_c206a166f11cea23' with 'oem19.inf'.
+     idb:                {Register Driver Package: exit(0x00000000)} 11:23:24.456
+     idb:                {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:23:24.456
+     idb:                     Activating driver package 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     cpy:                     Published 'bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf' to 'oem19.inf'.
+     idb:                     Indexed 2 device IDs for 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                {Publish Driver Package: exit(0x00000000)} 11:23:24.465
+     sto:                {DRIVERSTORE IMPORT END} 11:23:24.467
+     dvi:                     Flushed all driver package files to disk. Time = 16 ms
+     sig:                     Installed catalog 'bc250mcdm.cat' as 'oem19.cat'.
+     sto:                {DRIVERSTORE IMPORT END: exit(0x00000000)} 11:23:24.477
+     sto:           {Core Driver Package Import: exit(0x00000000)} 11:23:24.477
+     sto:      {Stage Driver Package: exit(0x00000000)} 11:23:24.480
+     dvs: {Driver Setup Import Driver Package - exit (0x00000000)} 11:23:24.556
+<<<  Section end 2026/08/28 11:23:24.556
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (UpdateDriverForPlugAndPlayDevices) - PCI\VEN_1002&DEV_13FE]
+>>>  Section start 2026/08/28 11:23:24.731
+      cmd: "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -ExecutionPolicy Bypass -File tools\replace-bc250mcdm.ps1
+     ndv: INF path: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     ndv: Install flags: 0x00000001
+     ndv: {Update Device Driver - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     ndv:      Search options: 0x00000080
+     ndv:      Searching single INF 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf'
+     dvi:      {Build Driver List} 11:23:24.746
+     dvi:           Searching for hardware ID(s):
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:                pci\ven_1002&dev_13fe&cc_030000
+     dvi:                pci\ven_1002&dev_13fe&cc_0300
+     dvi:           Searching for compatible ID(s):
+     dvi:                pci\ven_1002&dev_13fe&rev_00
+     dvi:                pci\ven_1002&dev_13fe
+     dvi:                pci\ven_1002&cc_030000
+     dvi:                pci\ven_1002&cc_0300
+     dvi:                pci\ven_1002
+     dvi:                pci\cc_030000&dt_1
+     dvi:                pci\cc_030000
+     dvi:                pci\cc_0300&dt_1
+     dvi:                pci\cc_0300
+     dvi:           Created Driver Node:
+     dvi:                HardwareID   - PCI\VEN_1002&DEV_13FE
+     dvi:                InfName      - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf
+     dvi:                DevDesc      - BC-250 MCDM Fail-Closed Development Adapter
+     dvi:                Section      - BC250Mcdm_Device.NT
+     dvi:                Rank         - 0x00802001
+     dvi:                Signer Score - Authenticode
+     dvi:                DrvDate      - 08/28/2026
+     dvi:                Version      - 3.18.0.0
+     dvi:      {Build Driver List - exit(0x00000000)} 11:23:24.759
+     dvi:      {DIF_SELECTBESTCOMPATDRV} 11:23:24.759
+     dvi:           Default installer: Enter 11:23:24.760
+     dvi:                {Select Best Driver}
+     dvi:                     Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     dvi:                     Selected Driver:
+     dvi:                          Description - BC-250 MCDM Fail-Closed Development Adapter
+     dvi:                          InfFile     - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf
+     dvi:                          Section     - BC250Mcdm_Device
+     dvi:                {Select Best Driver - exit(0x00000000)}
+     dvi:           Default installer: Exit
+     dvi:      {DIF_SELECTBESTCOMPATDRV - exit(0x00000000)} 11:23:24.762
+     ndv:      Force Installing Driver:
+     ndv:           Inf Name       - bc250mcdm.inf
+     ndv:           Driver Date    - 08/28/2026
+     ndv:           Driver Version - 3.18.0.0
+     ndv:      Driver package 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf' is already imported.
+     sto:      {Setup Import Driver Package: c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf} 11:23:24.766
+     sto:           Driver package already imported as 'oem19.inf'.
+     sto:      {Setup Import Driver Package - exit (0x00000000)} 11:23:24.768
+     dvi:      Searching for hardware ID(s):
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:           pci\ven_1002&dev_13fe&cc_030000
+     dvi:           pci\ven_1002&dev_13fe&cc_0300
+     dvi:      Searching for compatible ID(s):
+     dvi:           pci\ven_1002&dev_13fe&rev_00
+     dvi:           pci\ven_1002&dev_13fe
+     dvi:           pci\ven_1002&cc_030000
+     dvi:           pci\ven_1002&cc_0300
+     dvi:           pci\ven_1002
+     dvi:           pci\cc_030000&dt_1
+     dvi:           pci\cc_030000
+     dvi:           pci\cc_0300&dt_1
+     dvi:           pci\cc_0300
+     dvi:      Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 11:23:24.790
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 11:23:24.855
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf}
+     sto:                          Source Filter  = pci\ven_1002&dev_13fe
+     inf:                          Class GUID     = {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: BC-250 MCDM Fail-Closed Development Adapter}
+     inf:                               Section Name = BC250Mcdm_Device.NT
+     inf:                               {Add Service: bc250mcdm}
+     inf:                                    Start Type    = 3
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 1
+     inf:                                    Image Path    = \SystemRoot\System32\drivers\bc250mcdm.sys
+     inf:                                    Created new service 'bc250mcdm'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\VEN_1002&DEV_13FE
+     inf:                               {Configure Driver Configuration: BC250Mcdm_Device.NT}
+     inf:                                    Service Name  = bc250mcdm
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 11:23:24.867
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.sys' to 'C:\Windows\System32\drivers\bc250mcdm.sys'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_sdma.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_rlc.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_pfp.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_me.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_ce.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_mec.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin'.
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:23:24.878
+     dvi:                          Existing files modified, may need to restart related services.
+     sto:                     {Configure Driver Package: exit(0x00000bc3)}
+     dvi:                     Restart required for any devices using this driver.
+     dvi:                     Install Device: Configuring device. 11:23:24.880
+     dvi:                          Configuration: oem19.inf:pci\ven_1002&dev_13fe,BC250Mcdm_Device
+     dvi:                     Install Device: Configuring device completed. 11:23:24.884
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                     {Restarting Devices} 11:23:24.885
+     dvi:                          Start: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                     {Restarting Devices exit} 11:23:24.955
+     dvi:                {Configure Device - exit(0x00000000)} 11:23:24.955
+     dvi:           {Core Device Install - exit(0x00000000)} 11:23:24.956
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     ndv: {Update Device Driver - exit(00000000)}
+     ndv: {Install Related Drivers} 11:23:24.959
+     ndv: {Install Related Drivers: exit(0x00000000)} 11:23:24.960
+<<<  Section end 2026/08/28 11:23:24.962
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Driver Uninstall (DrvSetupUninstallDriver) - oem19.inf]
+>>>  Section start 2026/08/28 11:27:29.046
+      cmd: "C:\Windows\system32\pnputil.exe" /delete-driver oem19.inf /uninstall /force
+     dvs: Flags: 0x00000000
+     dvs: {Driver Setup Update Device: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 11:27:29.079
+     utl:      {Select Drivers - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 11:27:29.082
+     utl:           Driver Node:
+     utl:                Status         - Selected
+     utl:                Driver INF     - display.inf (C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf)
+     utl:                Class GUID     - {4d36e968-e325-11ce-bfc1-08002be10318}
+     utl:                Driver Version - 06/21/2006,10.0.19041.868
+     utl:                Configuration  - PCI\CC_0300 [MSBDA]
+     utl:                Driver Rank    - 00FB2008
+     utl:                Signer Score   - Inbox (0D000003)
+     utl:      {Select Drivers - exit(0x00000000} 11:27:29.085
+     dvs:      Installing next best driver (display.inf) on device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041'.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 11:27:29.146
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 11:27:29.213
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf}
+     sto:                          Source Filter  = PCI\CC_0300
+     inf:                          Class GUID     = {4d36e968-e325-11ce-bfc1-08002be10318}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: Microsoft Basic Display Adapter}
+     inf:                               Section Name = MSBDA
+     inf:                               {Add Service: BasicDisplay}
+     inf:                                    Start Type    = 1
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 0
+     inf:                                    Image Path    = \SystemRoot\System32\DriverStore\FileRepository\basicdisplay.inf_amd64_fc93ae411c02f280\BasicDisplay.sys
+     inf:                                    Group         = Video
+     inf:                                    Updated service 'BasicDisplay'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\CC_0300
+     inf:                               {Configure Driver Configuration: MSBDA}
+     inf:                                    Service Name  = BasicDisplay
+     inf:                                    Exclude IDs   = PCI\VEN_1414&DEV_5353
+     inf:                                    Included INFs = basicdisplay.inf
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 11:27:29.226
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:27:29.227
+     sto:                     {Configure Driver Package: exit(0x00000000)}
+     dvi:                     Install Device: Configuring device. 11:27:29.228
+     dvi:                          Configuration: display.inf:PCI\CC_0300,MSBDA
+     dvi:                     Install Device: Configuring device completed. 11:27:29.234
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+!    dvi:                     Device restart was skipped (DONOTCALLCONFIGMG).
+     dvi:                {Configure Device - exit(0x00000000)} 11:27:29.235
+     dvi:                Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                Install Device: Starting device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041'. 11:27:29.236
+     dvi:                Install Device: Starting device completed. 11:27:29.279
+     dvi:           {Core Device Install - exit(0x00000000)} 11:27:29.280
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     dvs:      {Install Related Drivers} 11:27:29.283
+     dvs:      {Install Related Drivers: exit(0x00000000)} 11:27:29.284
+     dvs: {Driver Setup Update Device - exit(0x00000000)} 11:27:29.284
+     dvs: {Driver Setup Delete Driver Package: oem19.inf} 11:27:29.285
+     ump:      Delete flags: 0x00000002
+     pol:      {Driver package policy check} 11:27:29.397
+     pol:      {Driver package policy check - exit(0x00000000)} 11:27:29.397
+     sto:      {Unstage Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:27:29.398
+     sto:           {Core Driver Package Delete: bc250mcdm.inf_amd64_c206a166f11cea23} 11:27:29.399
+     sto:                {DRIVERSTORE DELETE BEGIN} 11:27:29.400
+     sto:                {DRIVERSTORE DELETE BEGIN: exit(0x00000000)} 11:27:29.402
+     sto:                {Unconfigure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf}
+     inf:                     Class GUID     = {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     inf:                     Class Options  = Configurable
+     inf:                     {Unconfigure Driver: BC-250 MCDM Fail-Closed Development Adapter}
+     inf:                          Section Name = BC250Mcdm_Device.NT
+     inf:                          {Add Service: bc250mcdm}
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Probe\SchemaVersion
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Driver\ActiveMode
+     inf:                               Deleted service 'bc250mcdm'.
+     inf:                          {Add Service: exit(0x00000000)}
+     inf:                          File 'C:\Windows\System32\drivers\bc250mcdm.sys' still in use by 2 sources.
+     inf:                          Hardware Id  = PCI\VEN_1002&DEV_13FE
+     inf:                     {Unconfigure Driver: exit(0x00000000)}
+     flq:                     {FILE_QUEUE_COMMIT} 11:27:29.413
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin'
+     flq:                          DeleteFile: success
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin'
+     flq:                          DeleteFile: 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin'
+     flq:                          DeleteFile: success
+     flq:                     {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:27:29.434
+     sto:                {Unconfigure Driver Package: exit(0x00000000)}
+     idb:                {Unpublish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:27:29.435
+     idb:                     Clearing active driver package 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     cpy:                     Unpublished 'oem19.inf'.
+     idb:                     Deindexed 2 device IDs for 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                {Unpublish Driver Package: exit(0x00000000)} 11:27:29.442
+     idb:                {Unregister Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:27:29.443
+     idb:                     Unregistered driver package 'bc250mcdm.inf_amd64_c206a166f11cea23' from 'oem19.inf'.
+     idb:                     Deleted driver package object 'bc250mcdm.inf_amd64_c206a166f11cea23' from DRIVERS database node.
+     idb:                     Deleted driver INF file object 'oem19.inf' from DRIVERS database node.
+     idb:                {Unregister Driver Package: exit(0x00000000)} 11:27:29.445
+     cpy:                {Delete Directory: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23} 11:27:29.446
+     cpy:                {Delete Directory: exit(0x00000000)} 11:27:29.448
+     sto:                {DRIVERSTORE DELETE END} 11:27:29.448
+     sig:                     Uninstalled catalog 'oem19.cat'.
+     sto:                {DRIVERSTORE DELETE END: exit(0x00000000)} 11:27:29.452
+     sto:           {Core Driver Package Delete: exit(0x00000000)} 11:27:29.453
+     sto:      {Unstage Driver Package: exit(0x00000000)} 11:27:29.453
+     dvs: {Driver Setup Delete Driver Package - exit (0x00000000)} 11:27:29.455
+<<<  Section end 2026/08/28 11:27:29.456
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Driver Install (DrvSetupInstallDriver) - C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf]
+>>>  Section start 2026/08/28 11:27:29.612
+      cmd: "C:\Windows\system32\pnputil.exe" /add-driver C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     dvs: Flags: 0x00000040
+     dvs: {Driver Setup Import Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf} 11:27:29.613
+     sto:      {Copy Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf} 11:27:29.617
+     sto:           Driver Package = C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     sto:           Flags          = 0x00000007
+     sto:           Destination    = C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}
+     sto:           Copying driver package files to 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}'.
+     flq:           {FILE_QUEUE_COMMIT} 11:27:29.621
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\bc250mcdm.cat'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf' to 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\bc250mcdm.inf'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.sys' to 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\bc250mcdm.sys'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_ce.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\cyan_skillfish2_ce.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_me.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\cyan_skillfish2_me.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_mec.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\cyan_skillfish2_mec.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_rlc.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\cyan_skillfish2_rlc.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_pfp.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\cyan_skillfish2_pfp.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_sdma.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\cyan_skillfish2_sdma.bin'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:27:29.650
+     sto:      {Copy Driver Package: exit(0x00000000)} 11:27:29.650
+     ump:      Import flags: 0x00000000
+     pol:      {Driver package policy check} 11:27:29.659
+     pol:      {Driver package policy check - exit(0x00000000)} 11:27:29.659
+     sto:      {Stage Driver Package: C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\bc250mcdm.inf} 11:27:29.660
+     inf:           {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\bc250mcdm.inf} 11:27:29.664
+     inf:                Driver package 'bc250mcdm.inf' is configurable.
+     inf:           {Query Configurability: exit(0x00000000)} 11:27:29.667
+     flq:           {FILE_QUEUE_COMMIT} 11:27:29.668
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\bc250mcdm.cat' to 'C:\Windows\System32\DriverStore\Temp\{837f28ec-67e8-d14c-a43d-f75884758d2f}\bc250mcdm.cat'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\bc250mcdm.inf' to 'C:\Windows\System32\DriverStore\Temp\{837f28ec-67e8-d14c-a43d-f75884758d2f}\bc250mcdm.inf'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\bc250mcdm.sys' to 'C:\Windows\System32\DriverStore\Temp\{837f28ec-67e8-d14c-a43d-f75884758d2f}\bc250mcdm.sys'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\cyan_skillfish2_ce.bin' to 'C:\Windows\System32\DriverStore\Temp\{837f28ec-67e8-d14c-a43d-f75884758d2f}\cyan_skillfish2_ce.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\cyan_skillfish2_me.bin' to 'C:\Windows\System32\DriverStore\Temp\{837f28ec-67e8-d14c-a43d-f75884758d2f}\cyan_skillfish2_me.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\cyan_skillfish2_mec.bin' to 'C:\Windows\System32\DriverStore\Temp\{837f28ec-67e8-d14c-a43d-f75884758d2f}\cyan_skillfish2_mec.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\cyan_skillfish2_rlc.bin' to 'C:\Windows\System32\DriverStore\Temp\{837f28ec-67e8-d14c-a43d-f75884758d2f}\cyan_skillfish2_rlc.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\cyan_skillfish2_pfp.bin' to 'C:\Windows\System32\DriverStore\Temp\{837f28ec-67e8-d14c-a43d-f75884758d2f}\cyan_skillfish2_pfp.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{81bb8468-eaf3-1c48-bf1a-71b774adfea3}\cyan_skillfish2_sdma.bin' to 'C:\Windows\System32\DriverStore\Temp\{837f28ec-67e8-d14c-a43d-f75884758d2f}\cyan_skillfish2_sdma.bin'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:27:29.698
+     sto:           {DRIVERSTORE IMPORT VALIDATE} 11:27:29.699
+     sig:                Driver package catalog is valid.
+     sig:                {_VERIFY_FILE_SIGNATURE} 11:27:29.715
+     sig:                     Key      = bc250mcdm.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{837f28ec-67e8-d14c-a43d-f75884758d2f}\bc250mcdm.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{837f28ec-67e8-d14c-a43d-f75884758d2f}\bc250mcdm.cat
+!    sig:                     Verifying file against specific (valid) catalog failed.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0x800b0109)} 11:27:29.718
+     sig:                {_VERIFY_FILE_SIGNATURE} 11:27:29.720
+     sig:                     Key      = bc250mcdm.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{837f28ec-67e8-d14c-a43d-f75884758d2f}\bc250mcdm.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{837f28ec-67e8-d14c-a43d-f75884758d2f}\bc250mcdm.cat
+     sig:                     Success: File is signed in Authenticode(tm) catalog.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0xe0000241)} 11:27:29.727
+     sto:           {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 11:27:29.733
+     sig:           Signer Score  = 0x0F000000 (Authenticode)
+     sig:           Signer Name   = BC250-WDDM Development Test
+     sto:           {Core Driver Package Import: bc250mcdm.inf_amd64_c206a166f11cea23} 11:27:29.735
+     sto:                {DRIVERSTORE IMPORT BEGIN} 11:27:29.736
+     sto:                {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 11:27:29.736
+     cpy:                {Copy Directory: C:\Windows\System32\DriverStore\Temp\{837f28ec-67e8-d14c-a43d-f75884758d2f}} 11:27:29.736
+     cpy:                     Target Path = C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23
+     cpy:                {Copy Directory: exit(0x00000000)} 11:27:29.741
+     idb:                {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:27:29.742
+     idb:                     Created driver package object 'bc250mcdm.inf_amd64_c206a166f11cea23' in DRIVERS database node.
+     idb:                     Created driver INF file object 'oem19.inf' in DRIVERS database node.
+     idb:                     Registered driver package 'bc250mcdm.inf_amd64_c206a166f11cea23' with 'oem19.inf'.
+     idb:                {Register Driver Package: exit(0x00000000)} 11:27:29.746
+     idb:                {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf} 11:27:29.747
+     idb:                     Activating driver package 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     cpy:                     Published 'bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf' to 'oem19.inf'.
+     idb:                     Indexed 2 device IDs for 'bc250mcdm.inf_amd64_c206a166f11cea23'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                {Publish Driver Package: exit(0x00000000)} 11:27:29.754
+     sto:                {DRIVERSTORE IMPORT END} 11:27:29.756
+     dvi:                     Flushed all driver package files to disk. Time = 0 ms
+     sig:                     Installed catalog 'bc250mcdm.cat' as 'oem19.cat'.
+     sto:                {DRIVERSTORE IMPORT END: exit(0x00000000)} 11:27:29.766
+     sto:           {Core Driver Package Import: exit(0x00000000)} 11:27:29.766
+     sto:      {Stage Driver Package: exit(0x00000000)} 11:27:29.770
+     dvs: {Driver Setup Import Driver Package - exit (0x00000000)} 11:27:29.856
+<<<  Section end 2026/08/28 11:27:29.856
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (UpdateDriverForPlugAndPlayDevices) - PCI\VEN_1002&DEV_13FE]
+>>>  Section start 2026/08/28 11:27:30.040
+      cmd: "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -ExecutionPolicy Bypass -File tools\replace-bc250mcdm.ps1
+     ndv: INF path: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     ndv: Install flags: 0x00000001
+     ndv: {Update Device Driver - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     ndv:      Search options: 0x00000080
+     ndv:      Searching single INF 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf'
+     dvi:      {Build Driver List} 11:27:30.057
+     dvi:           Searching for hardware ID(s):
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:                pci\ven_1002&dev_13fe&cc_030000
+     dvi:                pci\ven_1002&dev_13fe&cc_0300
+     dvi:           Searching for compatible ID(s):
+     dvi:                pci\ven_1002&dev_13fe&rev_00
+     dvi:                pci\ven_1002&dev_13fe
+     dvi:                pci\ven_1002&cc_030000
+     dvi:                pci\ven_1002&cc_0300
+     dvi:                pci\ven_1002
+     dvi:                pci\cc_030000&dt_1
+     dvi:                pci\cc_030000
+     dvi:                pci\cc_0300&dt_1
+     dvi:                pci\cc_0300
+     dvi:           Created Driver Node:
+     dvi:                HardwareID   - PCI\VEN_1002&DEV_13FE
+     dvi:                InfName      - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf
+     dvi:                DevDesc      - BC-250 MCDM Fail-Closed Development Adapter
+     dvi:                Section      - BC250Mcdm_Device.NT
+     dvi:                Rank         - 0x00802001
+     dvi:                Signer Score - Authenticode
+     dvi:                DrvDate      - 08/28/2026
+     dvi:                Version      - 3.18.0.0
+     dvi:      {Build Driver List - exit(0x00000000)} 11:27:30.069
+     dvi:      {DIF_SELECTBESTCOMPATDRV} 11:27:30.069
+     dvi:           Default installer: Enter 11:27:30.070
+     dvi:                {Select Best Driver}
+     dvi:                     Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     dvi:                     Selected Driver:
+     dvi:                          Description - BC-250 MCDM Fail-Closed Development Adapter
+     dvi:                          InfFile     - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf
+     dvi:                          Section     - BC250Mcdm_Device
+     dvi:                {Select Best Driver - exit(0x00000000)}
+     dvi:           Default installer: Exit
+     dvi:      {DIF_SELECTBESTCOMPATDRV - exit(0x00000000)} 11:27:30.073
+     ndv:      Force Installing Driver:
+     ndv:           Inf Name       - bc250mcdm.inf
+     ndv:           Driver Date    - 08/28/2026
+     ndv:           Driver Version - 3.18.0.0
+     ndv:      Driver package 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf' is already imported.
+     sto:      {Setup Import Driver Package: c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf} 11:27:30.076
+     sto:           Driver package already imported as 'oem19.inf'.
+     sto:      {Setup Import Driver Package - exit (0x00000000)} 11:27:30.079
+     dvi:      Searching for hardware ID(s):
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:           pci\ven_1002&dev_13fe&cc_030000
+     dvi:           pci\ven_1002&dev_13fe&cc_0300
+     dvi:      Searching for compatible ID(s):
+     dvi:           pci\ven_1002&dev_13fe&rev_00
+     dvi:           pci\ven_1002&dev_13fe
+     dvi:           pci\ven_1002&cc_030000
+     dvi:           pci\ven_1002&cc_0300
+     dvi:           pci\ven_1002
+     dvi:           pci\cc_030000&dt_1
+     dvi:           pci\cc_030000
+     dvi:           pci\cc_0300&dt_1
+     dvi:           pci\cc_0300
+     dvi:      Class GUID of device changed to: {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 11:27:30.099
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 11:27:30.182
+     dvi:                     Device Status: 0x0180200a
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.inf}
+     sto:                          Source Filter  = pci\ven_1002&dev_13fe
+     inf:                          Class GUID     = {f01a9d53-3ff6-48d2-9f97-c8a7004be10c}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: BC-250 MCDM Fail-Closed Development Adapter}
+     inf:                               Section Name = BC250Mcdm_Device.NT
+     inf:                               {Add Service: bc250mcdm}
+     inf:                                    Start Type    = 3
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 1
+     inf:                                    Image Path    = \SystemRoot\System32\drivers\bc250mcdm.sys
+     inf:                                    Created new service 'bc250mcdm'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\VEN_1002&DEV_13FE
+     inf:                               {Configure Driver Configuration: BC250Mcdm_Device.NT}
+     inf:                                    Service Name  = bc250mcdm
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 11:27:30.195
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\bc250mcdm.sys' to 'C:\Windows\System32\drivers\bc250mcdm.sys'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_sdma.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_rlc.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_pfp.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_me.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_ce.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_c206a166f11cea23\cyan_skillfish2_mec.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin'.
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 11:27:30.208
+     dvi:                          Existing files modified, may need to restart related services.
+     sto:                     {Configure Driver Package: exit(0x00000bc3)}
+     dvi:                     Restart required for any devices using this driver.
+     dvi:                     Install Device: Configuring device. 11:27:30.210
+     dvi:                          Configuration: oem19.inf:pci\ven_1002&dev_13fe,BC250Mcdm_Device
+     dvi:                     Install Device: Configuring device completed. 11:27:30.214
+     dvi:                     Device Status: 0x0180200a
+     dvi:                     {Restarting Devices} 11:27:30.214
+     dvi:                          Query-remove: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                          Start: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                          Restart verified: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                     {Restarting Devices exit} 11:27:30.279
+     dvi:                {Configure Device - exit(0x00000000)} 11:27:30.280
+     dvi:           {Core Device Install - exit(0x00000000)} 11:27:30.281
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     ndv: {Update Device Driver - exit(00000000)}
+     ndv: {Install Related Drivers} 11:27:30.284
+     ndv: {Install Related Drivers: exit(0x00000000)} 11:27:30.285
+<<<  Section end 2026/08/28 11:27:30.287
+<<<  [Exit status: SUCCESS]
+

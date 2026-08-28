@@ -17,6 +17,8 @@
 #include "../core/bc250_psp_ring_transaction.h"
 #include "../core/bc250_psp_load_fw_transaction.h"
 #include "../core/bc250_sdma_f32_transaction.h"
+#include "../core/bc250_vram_allocator.h"
+#include "../core/bc250_compute_mqd_contract.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -113,7 +115,8 @@ typedef enum BC250_PFP_DIRECT_LOAD_STATUS {
     BC250_PFP_DIRECT_LOAD_PC_STATIC,
     BC250_PFP_DIRECT_LOAD_RESTORE_FAILED,
     BC250_PFP_DIRECT_LOAD_UNMAP_FAILED,
-    BC250_PFP_DIRECT_LOAD_RELEASE_FAILED
+    BC250_PFP_DIRECT_LOAD_RELEASE_FAILED,
+    BC250_PFP_DIRECT_LOAD_PM4_NOT_CONSUMED
 } BC250_PFP_DIRECT_LOAD_STATUS;
 
 typedef struct BC250_PFP_DIRECT_LOAD_EVIDENCE {
@@ -134,11 +137,23 @@ typedef struct BC250_PFP_DIRECT_LOAD_EVIDENCE {
     uint32_t PfpPcLast;
     uint32_t PfpPcTransitions;
     uint32_t PfpPcSamples;
+    uint32_t MePcBefore;
+    uint32_t MePcLast;
+    uint32_t CePcBefore;
+    uint32_t CePcLast;
     uint32_t FaultStatusBefore;
     uint32_t FaultStatusAfter;
     uint32_t FaultAddressLow;
     uint32_t FaultAddressHigh;
     uint32_t WriteOnlyPortsProgrammed;
+    uint32_t Rb0ActiveBefore;
+    uint32_t Rb0ActiveApplied;
+    uint32_t Rb0ActiveAfter;
+    uint32_t Rb0RptrBefore;
+    uint32_t Rb0RptrAfter;
+    uint32_t Rb0WptrApplied;
+    uint32_t Rb0FenceBefore;
+    uint32_t Rb0FenceAfter;
     uint32_t RegisterRestorePassed;
     uint32_t MemoryRestorePassed;
     uint32_t PhysicalReady;
@@ -177,6 +192,19 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     BC250_RLC_LOAD_EVIDENCE RlcLoadEvidence;
     BC250_PFP_DIRECT_LOAD_STATUS PfpDirectLoadStatus;
     BC250_PFP_DIRECT_LOAD_EVIDENCE PfpDirectLoadEvidence;
+    BC250_HQD_PREFLIGHT_STATUS HqdPreflightStatus;
+    BC250_HQD_READONLY_SNAPSHOT HqdPreflightSnapshot;
+    uint32_t HqdPreflightReadCount;
+    BC250_HQD_SELECTOR_STATUS MecHqdSelectorStatus;
+    BC250_HQD_SELECTOR_EVIDENCE MecHqdSelectorEvidence;
+    BC250_HQD_BANK_PROBE_STATUS MecHqdBankProbeStatus;
+    BC250_HQD_BANK_PROBE_EVIDENCE MecHqdBankProbeEvidence;
+    BC250_HQD_PROGRAM_STATUS HqdProgramStatus;
+    BC250_HQD_PROGRAM_EVIDENCE HqdProgramEvidence;
+    BC250_HQD_WPTR_DIAGNOSTIC_STATUS HqdWptrDiagStatus;
+    BC250_HQD_WPTR_DIAGNOSTIC_EVIDENCE HqdWptrDiagEvidence;
+    BC250_HQD_ACTIVE_STATUS HqdActiveStatus;
+    BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE HqdActiveEvidence;
     BC250_SDMA_F32_STATUS SdmaF32Status;
     BC250_SDMA_F32_EVIDENCE SdmaF32Evidence;
     BC250_SDMA_RING_WORK_STATUS SdmaRingWorkStatus;
@@ -260,6 +288,10 @@ BC250_SDMA_RING_WORK_STATUS Bc250ActiveRunSdmaRingWork(
 BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
     BC250_DXGK_ACTIVE_CONTEXT *Context,
     BC250_PFP_DIRECT_LOAD_EVIDENCE *Evidence);
+
+BC250_HQD_PROGRAM_STATUS Bc250ActiveRunInactiveHqdProgramTransaction(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_HQD_PROGRAM_EVIDENCE *Evidence);
 
 #ifdef __cplusplus
 }

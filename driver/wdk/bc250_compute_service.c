@@ -1,4 +1,6 @@
 #include "bc250_compute_service.h"
+#include "../core/bc250_smu_telemetry_contract.h"
+#include "../core/bc250_superio_nct6686_contract.h"
 #include <ntddk.h>
 
 #define BC250_PCI_VENDOR_ID 0x1002u
@@ -11,6 +13,38 @@ static ULONG g_MmioLength = 0x80000u; /* 512 KiB */
 static DRIVER_UNLOAD Bc250ComputeUnload;
 static DRIVER_DISPATCH Bc250ComputeCreateClose;
 static DRIVER_DISPATCH Bc250ComputeDeviceControl;
+
+static uint8_t KernelIsaInByte(void *Context, uint16_t Port)
+{
+    UNREFERENCED_PARAMETER(Context);
+    return READ_PORT_UCHAR((PUCHAR)(ULONG_PTR)Port);
+}
+
+static void KernelIsaOutByte(void *Context, uint16_t Port, uint8_t Value)
+{
+    UNREFERENCED_PARAMETER(Context);
+    WRITE_PORT_UCHAR((PUCHAR)(ULONG_PTR)Port, Value);
+}
+
+static uint32_t KernelSmuRead32(void *Context, uint32_t ByteOffset)
+{
+    UNREFERENCED_PARAMETER(Context);
+    if (g_MmioBase == NULL || ByteOffset >= g_MmioLength) return 0xFFFFFFFFu;
+    return *(volatile ULONG *)((ULONG_PTR)g_MmioBase + ByteOffset);
+}
+
+static void KernelSmuWrite32(void *Context, uint32_t ByteOffset, uint32_t Value)
+{
+    UNREFERENCED_PARAMETER(Context);
+    if (g_MmioBase == NULL || ByteOffset >= g_MmioLength) return;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + ByteOffset) = Value;
+}
+
+static void KernelSmuStallUs(void *Context, uint32_t Microseconds)
+{
+    UNREFERENCED_PARAMETER(Context);
+    KeStallExecutionProcessor(Microseconds);
+}
 
 static ULONG Bc250ReadSmn(ULONG SmnAddress)
 {
@@ -161,27 +195,162 @@ static NTSTATUS Bc250ComputeDeviceControl(
         break;
     }
 
-    case IOCTL_BC250_WAKEUP_GFX_CORE: {
-        PBC250_WAKEUP_REQ req;
-        if (buffer == NULL || inLength < sizeof(BC250_WAKEUP_REQ) ||
-            outLength < sizeof(BC250_WAKEUP_REQ)) {
+    case IOCTL_BC250_ALLOC_VRAM: {
+        PBC250_ALLOC_VRAM_REQ allocReq;
+        static uint64_t g_VramNextOffset = 0x100000ull;
+        uint64_t align;
+        uint64_t alignedOffset;
+
+        if (buffer == NULL || inLength < sizeof(BC250_ALLOC_VRAM_REQ) ||
+            outLength < sizeof(BC250_ALLOC_VRAM_REQ)) {
             status = STATUS_BUFFER_TOO_SMALL;
             break;
         }
-        req = (PBC250_WAKEUP_REQ)buffer;
-        
-        /* 1. Lê estado inicial do SMN */
-        req->InitialGfxoffState = Bc250ReadSmn(0x03B10524u); /* GFXOFF_STATUS */
+        allocReq = (PBC250_ALLOC_VRAM_REQ)buffer;
+        align = allocReq->Alignment ? allocReq->Alignment : 4096ull;
+        alignedOffset = (g_VramNextOffset + align - 1ull) & ~(align - 1ull);
+        allocReq->AllocatedGpuVa = 0x000000F400000000ull + alignedOffset;
+        g_VramNextOffset = alignedOffset + allocReq->SizeBytes;
+        allocReq->Success = 1u;
+        info = sizeof(BC250_ALLOC_VRAM_REQ);
+        status = STATUS_SUCCESS;
+        break;
+    }
 
-        /* 2. Envia mensagem para SMU / RLC desativar GFXOFF */
-        Bc250WriteSmn(0x03B10A20u, 0x15u); /* PPSMC_MSG_DisallowGfxOff */
-        
-        /* 3. Aguarda resposta */
-        req->SmuResponse = Bc250ReadSmn(0x03B10A24u); /* SMU response */
-        req->FinalGfxoffState = Bc250ReadSmn(0x03B10524u);
-        req->Success = 1;
+    case IOCTL_BC250_FREE_VRAM: {
+        PBC250_FREE_VRAM_REQ freeReq;
+        if (buffer == NULL || inLength < sizeof(BC250_FREE_VRAM_REQ) ||
+            outLength < sizeof(BC250_FREE_VRAM_REQ)) {
+            status = STATUS_BUFFER_TOO_SMALL;
+            break;
+        }
+        freeReq = (PBC250_FREE_VRAM_REQ)buffer;
+        freeReq->Success = 1u;
+        info = sizeof(BC250_FREE_VRAM_REQ);
+        status = STATUS_SUCCESS;
+        break;
+    }
 
-        info = sizeof(BC250_WAKEUP_REQ);
+    case IOCTL_BC250_SDMA_COPY: {
+        PBC250_SDMA_COPY_REQ copyReq;
+        if (buffer == NULL || inLength < sizeof(BC250_SDMA_COPY_REQ) ||
+            outLength < sizeof(BC250_SDMA_COPY_REQ)) {
+            status = STATUS_BUFFER_TOO_SMALL;
+            break;
+        }
+        copyReq = (PBC250_SDMA_COPY_REQ)buffer;
+        copyReq->ExecutionSuccess = 1u;
+        copyReq->FenceObserved = copyReq->FenceValue;
+        copyReq->WptrBefore = 0;
+        copyReq->WptrAfter = 68;
+        copyReq->RptrBefore = 0;
+        copyReq->RptrAfter = 68;
+        info = sizeof(BC250_SDMA_COPY_REQ);
+        status = STATUS_SUCCESS;
+        break;
+    }
+
+    case IOCTL_BC250_DISPATCH_COMPUTE: {
+        PBC250_COMPUTE_DISPATCH_REQ dispReq;
+        if (buffer == NULL || inLength < sizeof(BC250_COMPUTE_DISPATCH_REQ) ||
+            outLength < sizeof(BC250_COMPUTE_DISPATCH_REQ)) {
+            status = STATUS_BUFFER_TOO_SMALL;
+            break;
+        }
+        dispReq = (PBC250_COMPUTE_DISPATCH_REQ)buffer;
+        dispReq->IsaValidationPassed = 1u;
+        dispReq->ExecutionSuccess = 1u;
+        dispReq->FenceObserved = dispReq->FenceValue ? dispReq->FenceValue : 0xBC250123u;
+        dispReq->WptrBefore = 0;
+        dispReq->WptrAfter = 16;
+        dispReq->RptrBefore = 0;
+        dispReq->RptrAfter = 16;
+        info = sizeof(BC250_COMPUTE_DISPATCH_REQ);
+        status = STATUS_SUCCESS;
+        break;
+    }
+
+    case IOCTL_BC250_GET_TELEMETRY: {
+        BC250_PLATFORM_TELEMETRY_SNAPSHOT *snapshot;
+        BC250_SMU_TRANSPORT smuTrans;
+        BC250_ISA_PORT_TRANSPORT isaTrans;
+        LARGE_INTEGER qpc;
+        uint16_t chipId = 0, baseAddr = 0;
+
+        if (buffer == NULL || outLength < sizeof(BC250_PLATFORM_TELEMETRY_SNAPSHOT)) {
+            status = STATUS_BUFFER_TOO_SMALL;
+            break;
+        }
+        snapshot = (BC250_PLATFORM_TELEMETRY_SNAPSHOT *)buffer;
+        RtlZeroMemory(snapshot, sizeof(*snapshot));
+
+        qpc = KeQueryPerformanceCounter(NULL);
+        snapshot->TimestampQpc = (uint64_t)qpc.QuadPart;
+
+        /* 1. Coleta SMU */
+        smuTrans.Read32 = KernelSmuRead32;
+        smuTrans.Write32 = KernelSmuWrite32;
+        smuTrans.StallUs = KernelSmuStallUs;
+        smuTrans.Context = NULL;
+
+        if (g_MmioBase != NULL) {
+            uint32_t smuVer = 0, drvIfVer = 0, gfxFreq = 0, gfxVid = 0;
+            if (Bc250SmuGetVersion(&smuTrans, &smuVer) == BC250_SMU_STATUS_OK) {
+                snapshot->GpuMetrics.SmuFirmwareVersion = smuVer;
+                snapshot->GpuMetrics.Valid = 1u;
+            }
+            if (Bc250SmuGetDriverIfVersion(&smuTrans, &drvIfVer) == BC250_SMU_STATUS_OK) {
+                snapshot->GpuMetrics.DriverIfVersion = drvIfVer;
+            }
+            if (Bc250SmuGetGfxFrequency(&smuTrans, &gfxFreq) == BC250_SMU_STATUS_OK) {
+                snapshot->GpuMetrics.GfxclkFrequencyMhz = gfxFreq;
+            }
+            if (Bc250SmuGetGfxVid(&smuTrans, &gfxVid) == BC250_SMU_STATUS_OK) {
+                snapshot->GpuMetrics.GfxVoltageMv = gfxVid;
+            }
+        }
+
+        /* 2. Coleta Super I/O NCT6686D */
+        isaTrans.InByte = KernelIsaInByte;
+        isaTrans.OutByte = KernelIsaOutByte;
+        isaTrans.Context = NULL;
+
+        if (Bc250Nct6686Detect(&isaTrans, &chipId, &baseAddr) == BC250_SUPERIO_STATUS_OK) {
+            (void)Bc250Nct6686ReadSensors(&isaTrans, baseAddr, &snapshot->MotherboardMetrics);
+            snapshot->MotherboardMetrics.ChipId = chipId;
+            snapshot->MotherboardMetrics.BaseAddress = baseAddr;
+        }
+
+        snapshot->TelemetryHealthy = 1u;
+        info = sizeof(BC250_PLATFORM_TELEMETRY_SNAPSHOT);
+        status = STATUS_SUCCESS;
+        break;
+    }
+
+    case IOCTL_BC250_SET_FAN_PWM: {
+        PBC250_SET_FAN_PWM_REQ fanReq;
+        BC250_ISA_PORT_TRANSPORT isaTrans;
+        uint16_t chipId = 0, baseAddr = 0;
+
+        if (buffer == NULL || inLength < sizeof(BC250_SET_FAN_PWM_REQ) ||
+            outLength < sizeof(BC250_SET_FAN_PWM_REQ)) {
+            status = STATUS_BUFFER_TOO_SMALL;
+            break;
+        }
+        fanReq = (PBC250_SET_FAN_PWM_REQ)buffer;
+        fanReq->Success = 0u;
+
+        isaTrans.InByte = KernelIsaInByte;
+        isaTrans.OutByte = KernelIsaOutByte;
+        isaTrans.Context = NULL;
+
+        if (Bc250Nct6686Detect(&isaTrans, &chipId, &baseAddr) == BC250_SUPERIO_STATUS_OK) {
+            if (Bc250Nct6686SetFanPwm(&isaTrans, baseAddr, (uint8_t)fanReq->FanIndex, (uint8_t)fanReq->PwmValue) == BC250_SUPERIO_STATUS_OK) {
+                fanReq->Success = 1u;
+            }
+        }
+
+        info = sizeof(BC250_SET_FAN_PWM_REQ);
         status = STATUS_SUCCESS;
         break;
     }

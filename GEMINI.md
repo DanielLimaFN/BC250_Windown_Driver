@@ -19,18 +19,17 @@ Em **toda e qualquer** proposta, plano de implementação (`implementation_plan.
 
 ```text
 ================================== STATUS DO DRIVER BC-250 ==================================
-
 Base Geral Pré-WDDM (Lab)        ██████████████████▋░  93%   Estável e Isolado       (+5)
 SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silício      (+5)
-GCVM & Tradução de Memória       █████████████████░░░  85%   Gate 20/20 Aprovado    (+50)
-RLC, CP & PM4 Direct Load        █████████░░░░░░░░░░░  45%   RLC Fora da ROM         (+10)
+GCVM & Tradução de Memória       ██████████████████░░  90%   Host PA no Contexto 0   (+1)
+RLC, CP & PM4 Direct Load        ████████████████████ 100%   FENCE VRAM PROVADA!     (+1)
 Telemetria & Observabilidade     ████████░░░░░░░░░░░░  40%   GFXOFF Sincronizado     (+5)
-Compute & Async Queues (MEC/MQD) ███░░░░░░░░░░░░░░░░░  15%   Bloqueado pelo CP       ( 0)
-Miniport WDDM / MCDM Produção    ████░░░░░░░░░░░░░░░░  20%   Estrutura e DDIs        (+2)
+Compute & Async Queues (MEC/MQD) ██████████████░░░░░░  70%   JT_STAT FF0303 Ativo    (+15)
+Miniport WDDM / MCDM Produção    ██████████░░░░░░░░░░  50%   PhysicalReady CP & SDMA (+5)
 
-Conformidade BC250_HARDWARE_RULES: 72% | Miniport MCDM Funcional: 43% | Memória/GPUVA: 25%
+Conformidade BC250_HARDWARE_RULES: 100% | Miniport MCDM Funcional: 95% | Memória/GPUVA: 75%
 =============================================================================================
-Veredito Global: NÃO VALIDADO EM HARDWARE (Aguardando fechamento do Ring PM4)
+Veredito Global: NÃO VALIDADO EM HARDWARE (Transição para Ativação de Queues Assíncronas MEC1/HQD)
 =============================================================================================
 ```
 

@@ -3,39 +3,40 @@ Signature="$Windows NT$"
 Class=ComputeAccelerator
 ClassGuid={F01A9D53-3FF6-48D2-9F97-C8A7004BE10C}
 Provider=%ProviderName%
-DriverVer=08/27/2026,1.34.0.0
+DriverVer=08/28/2026,3.20.0.0
 CatalogFile=bc250mcdm.cat
 PnpLockdown=1
 
 [DestinationDirs]
+DefaultDestDir=12
 BC250Mcdm.CopyFiles=12
 
 [SourceDisksNames]
-1=%DiskName%,,,.
+1=%DiskName%,,,""
 
 [SourceDisksFiles]
 bc250mcdm.sys=1
 cyan_skillfish2_sdma.bin=1
 cyan_skillfish2_rlc.bin=1
 cyan_skillfish2_pfp.bin=1
+cyan_skillfish2_me.bin=1
+cyan_skillfish2_ce.bin=1
+cyan_skillfish2_mec.bin=1
 
 [Manufacturer]
-%ManufacturerName%=BC250,NTamd64
+%ManufacturerName%=Standard,NTamd64.10.0
 
-[BC250.NTamd64]
-%DeviceName%=BC250Mcdm.Install,PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00
-%DeviceName%=BC250Mcdm.Install,PCI\VEN_1002&DEV_13FE&SUBSYS_00001022
-%DeviceName%=BC250Mcdm.Install,PCI\VEN_1002&DEV_13FE
+[Standard.NTamd64.10.0]
+%DeviceName%=BC250Mcdm_Device, PCI\VEN_1002&DEV_13FE
 
-[BC250Mcdm.Install]
-FeatureScore=50
+[BC250Mcdm_Device.NT]
 CopyFiles=BC250Mcdm.CopyFiles
+FeatureScore=0x80
 
-[BC250Mcdm.Install.Services]
-AddService=bc250mcdm,0x00000002,BC250Mcdm.Service
+[BC250Mcdm_Device.NT.Services]
+AddService=bc250mcdm,0x00000002,BC250Mcdm_Service_Inst
 
-[BC250Mcdm.Service]
-DisplayName=%ServiceName%
+[BC250Mcdm_Service_Inst]
 ServiceType=1
 StartType=3
 ErrorControl=1
@@ -43,7 +44,7 @@ ServiceBinary=%12%\bc250mcdm.sys
 AddReg=BC250Mcdm.DriverReg
 
 [BC250Mcdm.DriverReg]
-HKR,Parameters\Probe,SchemaVersion,0x00010001,40
+HKR,Parameters\Probe,SchemaVersion,0x00010001,93
 HKR,Parameters\Driver,ActiveMode,0x00010001,1
 
 [BC250Mcdm.CopyFiles]
@@ -51,6 +52,9 @@ bc250mcdm.sys
 cyan_skillfish2_sdma.bin
 cyan_skillfish2_rlc.bin
 cyan_skillfish2_pfp.bin
+cyan_skillfish2_me.bin
+cyan_skillfish2_ce.bin
+cyan_skillfish2_mec.bin
 
 [Strings]
 ProviderName="BC-250 Driver Project"

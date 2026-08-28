@@ -61,7 +61,12 @@ BC250_PSP_LOAD_FW_STATUS Bc250RunPspLoadFirmwareTransaction(
         Interface->Barrier == NULL || Interface->Identity !=
             BC250_PSP_LOAD_FW_IDENTITY || MaxPolls == 0u || FirmwareBytes == 0u ||
         (FirmwareType != BC250_PSP_LOAD_FW_SDMA0_TYPE &&
-         FirmwareType != BC250_PSP_LOAD_FW_RLC_TYPE) ||
+         FirmwareType != BC250_PSP_LOAD_FW_RLC_TYPE &&
+         FirmwareType != BC250_PSP_LOAD_FW_CP_ME_TYPE &&
+         FirmwareType != BC250_PSP_LOAD_FW_CP_PFP_TYPE &&
+         FirmwareType != BC250_PSP_LOAD_FW_CP_CE_TYPE &&
+         FirmwareType != BC250_PSP_LOAD_FW_CP_MEC_TYPE &&
+         FirmwareType != BC250_PSP_LOAD_FW_CP_MEC_JT1_TYPE) ||
         (RingPhysical & 0xFFFu) != 0u || (CommandPhysical & 0xFFFu) != 0u ||
         (FencePhysical & 0xFFFu) != 0u ||
         (FirmwarePhysical & 0xFFFu) != 0u || RingPhysical > 0xFFFFFFFFFFull ||

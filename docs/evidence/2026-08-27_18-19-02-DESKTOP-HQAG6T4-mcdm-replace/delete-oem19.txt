@@ -1,0 +1,4 @@
+﻿Utilitßrio PnP da Microsoft
+
+Pacote de driver desinstalado.
+Pacote de drivers excluÝdo com Ûxito.

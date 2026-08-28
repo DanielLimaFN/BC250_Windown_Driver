@@ -6,7 +6,6 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$bindingAudit = Join-Path $root 'tools\audit-bc250mcdm-failclosed-binding.ps1'
 $recoveryAudit = Join-Path $root 'tools\audit-bc250-recovery-readiness.ps1'
 $prebindingAudit = Join-Path $root 'tools\audit-bc250mcdm-prebinding.ps1'
 $manifestPath = Join-Path $root 'driver\wdk\package\output_active.manifest.json'
@@ -15,8 +14,27 @@ $driverPath = Join-Path $env:SystemRoot 'System32\drivers\bc250mcdm.sys'
 $targetInf = 'oem19.inf'
 $instancePrefix = 'PCI\VEN_1002&DEV_13FE'
 
-foreach ($path in @($bindingAudit,$recoveryAudit,$prebindingAudit,$manifestPath,$markerPath,'C:\BC250_RECOVERY.cmd')) {
+foreach ($path in @($recoveryAudit,$prebindingAudit,$manifestPath,$markerPath,'C:\BC250_RECOVERY.cmd')) {
     if (-not (Test-Path -LiteralPath $path)) { throw "Artefato ausente: $path" }
+}
+
+$manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+if (-not (Test-Path -LiteralPath $driverPath)) {
+    throw 'Rollback recusado: bc250mcdm.sys instalado ausente.'
+}
+$installedDriverHash = (Get-FileHash -LiteralPath $driverPath -Algorithm SHA256).Hash
+$installedSignature = Get-AuthenticodeSignature -LiteralPath $driverPath
+if ($installedSignature.Status -ne 'Valid' -or $null -eq $installedSignature.SignerCertificate -or
+    $installedSignature.SignerCertificate.Thumbprint -ne $manifest.SignerThumbprint) {
+    throw 'Rollback recusado: assinatura do bc250mcdm.sys instalado nao corresponde ao signer autorizado.'
+}
+
+$preflightDevices = @(Get-CimInstance Win32_PnPEntity | Where-Object {
+    $_.PNPDeviceID -like "$instancePrefix*"
+})
+if ($preflightDevices.Count -ne 1 -or $preflightDevices[0].Service -ne 'bc250mcdm' -or
+    $preflightDevices[0].ConfigManagerErrorCode -ne 43) {
+    throw 'Rollback recusado: binding atual nao e bc250mcdm Codigo 43 fail-closed.'
 }
 
 $markerLines = @(Get-Content -LiteralPath $markerPath)
@@ -39,10 +57,9 @@ foreach ($identity in @(
     }
 }
 
-& powershell -NoProfile -ExecutionPolicy Bypass -File $bindingAudit
-if ($LASTEXITCODE -ne 0) { throw 'Rollback recusado: estado fail-closed nao passou no gate.' }
-
 Write-Host "Preflight aprovado: remover somente $targetInf e restaurar BasicDisplay."
+Write-Host "  installed SYS SHA256: $installedDriverHash"
+Write-Host "  signer: $($installedSignature.SignerCertificate.Thumbprint)"
 Write-Warning 'A tela pode piscar ou apagar durante a troca de driver.'
 Write-Warning 'Fallback: Modo de Seguranca -> C:\BC250_RECOVERY.cmd -> reboot.'
 if (-not $Execute) {
@@ -63,8 +80,23 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     throw 'Rollback online exige PowerShell elevado.'
 }
 
-$secondGate = (& powershell -NoProfile -ExecutionPolicy Bypass -File $bindingAudit 2>&1) -join "`n"
-if ($LASTEXITCODE -ne 0) { throw 'Estado mudou antes da remocao; rollback abortado.' }
+$secondDevices = @(Get-CimInstance Win32_PnPEntity | Where-Object {
+    $_.PNPDeviceID -like "$instancePrefix*"
+})
+$secondHash = if (Test-Path -LiteralPath $driverPath) {
+    (Get-FileHash -LiteralPath $driverPath -Algorithm SHA256).Hash
+} else { $null }
+if ($secondDevices.Count -ne 1 -or $secondDevices[0].Service -ne 'bc250mcdm' -or
+    $secondDevices[0].ConfigManagerErrorCode -ne 43 -or
+    $secondHash -ne $installedDriverHash) {
+    throw 'Estado mudou antes da remocao; rollback abortado.'
+}
+$secondGate = @(
+    'BC250 ONLINE ROLLBACK SECOND GATE: PASS',
+    "device service/code: $($secondDevices[0].Service) / $($secondDevices[0].ConfigManagerErrorCode)",
+    "installed SYS SHA256: $secondHash",
+    "signer: $($installedSignature.SignerCertificate.Thumbprint)"
+) -join "`n"
 
 $stamp = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
 $evidenceDir = Join-Path $root "docs\evidence\$stamp-$($env:COMPUTERNAME)-mcdm-online-rollback"
@@ -132,17 +164,24 @@ if ($null -ne $service) {
 }
 
 if (Test-Path -LiteralPath $driverPath) {
-    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     $driverHash = (Get-FileHash -LiteralPath $driverPath -Algorithm SHA256).Hash
-    if ($driverHash -ne $manifest.PackageSysSha256) {
-        throw 'SYS residual diverge do manifesto; arquivo preservado para analise.'
+    if ($driverHash -ne $installedDriverHash) {
+        throw 'SYS residual diverge do binario assinado capturado no preflight; arquivo preservado para analise.'
     }
     $quarantineDir = 'C:\BC250_DRIVER_QUARANTINE'
     if (-not (Test-Path -LiteralPath $quarantineDir)) {
         New-Item -ItemType Directory -Path $quarantineDir | Out-Null
     }
     $quarantinePath = Join-Path $quarantineDir "bc250mcdm-$stamp.sys.disabled"
-    Move-Item -LiteralPath $driverPath -Destination $quarantinePath
+    try {
+        Move-Item -LiteralPath $driverPath -Destination $quarantinePath -ErrorAction Stop
+    } catch [System.UnauthorizedAccessException] {
+        & takeown.exe /F $driverPath /A | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'takeown falhou no binario experimental exato.' }
+        & icacls.exe $driverPath /grant '*S-1-5-32-544:F' | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'icacls falhou no binario experimental exato.' }
+        Move-Item -LiteralPath $driverPath -Destination $quarantinePath -ErrorAction Stop
+    }
 }
 
 Remove-Item -LiteralPath $markerPath

@@ -324,16 +324,20 @@ def main() -> int:
 
     require(rollback, "$targetInf = 'oem19.inf'",
             "exact online rollback target", errors)
-    require(rollback, "audit-bc250mcdm-failclosed-binding.ps1",
-            "fail-closed state gate before rollback", errors)
+    require(rollback, "$preflightDevices[0].ConfigManagerErrorCode -ne 43",
+            "fail-closed Code 43 state gate before rollback", errors)
+    require(rollback, "$secondHash -ne $installedDriverHash",
+            "second immutable-state gate before rollback", errors)
     require(rollback, "if (-not $Execute)",
             "zero-write default rollback mode", errors)
     require(rollback, "if (-not $IAcceptDisplayInterruptionRisk)",
             "explicit online rollback risk acceptance", errors)
     require(rollback, "pnputil.exe /delete-driver $targetInf /uninstall /force",
             "exact package uninstall operation", errors)
-    require(rollback, "PackageSysSha256",
-            "residual SYS hash gate", errors)
+    require(rollback, "$driverHash -ne $installedDriverHash",
+            "captured installed SYS residual hash gate", errors)
+    require(rollback, "$manifest.SignerThumbprint",
+            "authorized signer gate for installed SYS", errors)
     require(rollback, "audit-bc250mcdm-prebinding.ps1",
             "clean-host proof after rollback", errors)
     for forbidden_rollback_path in (

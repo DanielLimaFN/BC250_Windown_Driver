@@ -1,0 +1,8 @@
+﻿Utilitßrio PnP da Microsoft
+
+Adicionando o pacote de driver:  bc250mcdm.inf
+Pacote de drivers adicionado com Ûxito.
+Nome Publicado:         oem19.inf
+
+Total de pacotes de driver:  1
+Pacotes de driver adicionados:  1

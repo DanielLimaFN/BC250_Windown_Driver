@@ -23,6 +23,9 @@ $packageCat = Join-Path $packageDir 'bc250mcdm.cat'
 $packageSdmaFirmware = Join-Path $packageDir 'cyan_skillfish2_sdma.bin'
 $packageRlcFirmware = Join-Path $packageDir 'cyan_skillfish2_rlc.bin'
 $packagePfpFirmware = Join-Path $packageDir 'cyan_skillfish2_pfp.bin'
+$packageMeFirmware = Join-Path $packageDir 'cyan_skillfish2_me.bin'
+$packageCeFirmware = Join-Path $packageDir 'cyan_skillfish2_ce.bin'
+$packageMecFirmware = Join-Path $packageDir 'cyan_skillfish2_mec.bin'
 $requiredFiles = @(
     @{ Path = $manifestPath; Label = 'manifesto' },
     @{ Path = $sourceSys; Label = 'SYS bruto' },
@@ -32,6 +35,9 @@ $requiredFiles = @(
     @{ Path = $packageSdmaFirmware; Label = 'firmware SDMA' },
     @{ Path = $packageRlcFirmware; Label = 'firmware RLC' },
     @{ Path = $packagePfpFirmware; Label = 'firmware PFP' },
+    @{ Path = $packageMeFirmware; Label = 'firmware ME' },
+    @{ Path = $packageCeFirmware; Label = 'firmware CE' },
+    @{ Path = $packageMecFirmware; Label = 'firmware MEC' },
     @{ Path = $recoveryPath; Label = 'recovery instalado' }
 )
 foreach ($required in $requiredFiles) {
@@ -61,6 +67,9 @@ $hashChecks = @(
     @{ Path = $packageSdmaFirmware; Expected = $manifest.SdmaFirmwareSha256; Label = 'firmware SDMA' },
     @{ Path = $packageRlcFirmware; Expected = $manifest.RlcFirmwareSha256; Label = 'firmware RLC' },
     @{ Path = $packagePfpFirmware; Expected = $manifest.PfpFirmwareSha256; Label = 'firmware PFP' },
+    @{ Path = $packageMeFirmware; Expected = $manifest.MeFirmwareSha256; Label = 'firmware ME' },
+    @{ Path = $packageCeFirmware; Expected = $manifest.CeFirmwareSha256; Label = 'firmware CE' },
+    @{ Path = $packageMecFirmware; Expected = $manifest.MecFirmwareSha256; Label = 'firmware MEC' },
     @{ Path = $recoveryPath; Expected = $manifest.RecoverySha256; Label = 'recovery' }
 )
 foreach ($check in $hashChecks) {
@@ -88,7 +97,10 @@ foreach ($needle in @(
     'CatalogFile=bc250mcdm.cat',
     'cyan_skillfish2_sdma.bin',
     'cyan_skillfish2_rlc.bin',
-    'cyan_skillfish2_pfp.bin'
+    'cyan_skillfish2_pfp.bin',
+    'cyan_skillfish2_me.bin',
+    'cyan_skillfish2_ce.bin',
+    'cyan_skillfish2_mec.bin'
 )) {
     if (-not $inf.Contains($needle)) { $errors.Add("identidade INF ausente: $needle") }
 }
@@ -104,6 +116,8 @@ Write-Host "  catalog:    $($manifest.PackageCatSha256)"
 Write-Host "  SDMA FW:    $($manifest.SdmaFirmwareSha256)"
 Write-Host "  RLC FW:     $($manifest.RlcFirmwareSha256)"
 Write-Host "  PFP FW:     $($manifest.PfpFirmwareSha256)"
+Write-Host "  ME FW:      $($manifest.MeFirmwareSha256)"
+Write-Host "  CE FW:      $($manifest.CeFirmwareSha256)"
 Write-Host "  signer:     $($manifest.SignerThumbprint)"
 Write-Host '  install/binding performed: NO'
 Write-Host '  hardware validation: NO'

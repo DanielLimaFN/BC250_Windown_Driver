@@ -8,6 +8,9 @@ $sourceInf = Join-Path $root 'driver\wdk\package\bc250mcdm.inf'
 $sourceSdmaFirmware = Join-Path $root 'firmware\cyan_skillfish2_sdma.bin'
 $sourceRlcFirmware = Join-Path $root 'firmware\cyan_skillfish2_rlc.bin'
 $sourcePfpFirmware = Join-Path $root 'firmware\cyan_skillfish2_pfp.bin'
+$sourceMeFirmware = Join-Path $root 'firmware\cyan_skillfish2_me.bin'
+$sourceCeFirmware = Join-Path $root 'firmware\cyan_skillfish2_ce.bin'
+$sourceMecFirmware = Join-Path $root 'firmware\cyan_skillfish2_mec.bin'
 $driverObject = Join-Path $root 'driver\wdk\output\bc250_active_miniport_driver.obj'
 $buildContract = Join-Path $root 'driver\wdk\build-contract.bat'
 $packageDir = Join-Path $root 'driver\wdk\package\output_active'
@@ -34,6 +37,7 @@ if (-not (Test-Path -LiteralPath $sourceInf)) { throw "INF ausente: $sourceInf" 
 if (-not (Test-Path -LiteralPath $sourceSdmaFirmware)) { throw "Firmware SDMA ausente: $sourceSdmaFirmware" }
 if (-not (Test-Path -LiteralPath $sourceRlcFirmware)) { throw "Firmware RLC ausente: $sourceRlcFirmware" }
 if (-not (Test-Path -LiteralPath $sourcePfpFirmware)) { throw "Firmware PFP ausente: $sourcePfpFirmware" }
+if (-not (Test-Path -LiteralPath $sourceMecFirmware)) { throw "Firmware MEC ausente: $sourceMecFirmware" }
 if ((Get-Item -LiteralPath $sourceSdmaFirmware).Length -ne 33792 -or
     (Get-FileHash -LiteralPath $sourceSdmaFirmware -Algorithm SHA256).Hash -ne
         '15D0D3626DA7F2513F03B13BB7E02EEEECCAB276276AE27D0B6067B5F25E9E95') {
@@ -48,6 +52,11 @@ if ((Get-Item -LiteralPath $sourcePfpFirmware).Length -ne 263424 -or
     (Get-FileHash -LiteralPath $sourcePfpFirmware -Algorithm SHA256).Hash -ne
         '50E56DC1913571FF589425D2B059BDDFC5E8A2B4BC22D3EB78CAC75D1E0479A1') {
     throw 'Firmware PFP diverge do tamanho/hash aprovado.'
+}
+if ((Get-Item -LiteralPath $sourceMecFirmware).Length -ne 268592 -or
+    (Get-FileHash -LiteralPath $sourceMecFirmware -Algorithm SHA256).Hash -ne
+        'B1C1F843A8FAAA2DE537D6BA05052A3776B5A1B73F8A3C3F5ED9D568489776A4') {
+    throw 'Firmware MEC diverge do tamanho/hash aprovado.'
 }
 $driverSourceFiles = @(
     Get-ChildItem -LiteralPath (Join-Path $root 'driver\core') -Recurse -File |
@@ -131,12 +140,18 @@ $packageCat = Join-Path $packageDir 'bc250mcdm.cat'
 $packageSdmaFirmware = Join-Path $packageDir 'cyan_skillfish2_sdma.bin'
 $packageRlcFirmware = Join-Path $packageDir 'cyan_skillfish2_rlc.bin'
 $packagePfpFirmware = Join-Path $packageDir 'cyan_skillfish2_pfp.bin'
+$packageMeFirmware = Join-Path $packageDir 'cyan_skillfish2_me.bin'
+$packageCeFirmware = Join-Path $packageDir 'cyan_skillfish2_ce.bin'
+$packageMecFirmware = Join-Path $packageDir 'cyan_skillfish2_mec.bin'
 Remove-Item -LiteralPath $packageCat -Force -ErrorAction SilentlyContinue
 Copy-Item -LiteralPath $sourceSys -Destination $packageSys -Force
 Copy-Item -LiteralPath $sourceInf -Destination $packageInf -Force
 Copy-Item -LiteralPath $sourceSdmaFirmware -Destination $packageSdmaFirmware -Force
 Copy-Item -LiteralPath $sourceRlcFirmware -Destination $packageRlcFirmware -Force
 Copy-Item -LiteralPath $sourcePfpFirmware -Destination $packagePfpFirmware -Force
+Copy-Item -LiteralPath $sourceMeFirmware -Destination $packageMeFirmware -Force
+Copy-Item -LiteralPath $sourceCeFirmware -Destination $packageCeFirmware -Force
+Copy-Item -LiteralPath $sourceMecFirmware -Destination $packageMecFirmware -Force
 
 & $signtool sign /sha1 $certificateThumbprint /fd SHA256 $packageSys
 if ($LASTEXITCODE -ne 0) { throw 'Assinatura do .sys falhou.' }
@@ -175,6 +190,9 @@ $manifest = [ordered]@{
     SdmaFirmwareSha256 = (Get-FileHash -LiteralPath $packageSdmaFirmware -Algorithm SHA256).Hash
     RlcFirmwareSha256 = (Get-FileHash -LiteralPath $packageRlcFirmware -Algorithm SHA256).Hash
     PfpFirmwareSha256 = (Get-FileHash -LiteralPath $packagePfpFirmware -Algorithm SHA256).Hash
+    MeFirmwareSha256 = (Get-FileHash -LiteralPath $packageMeFirmware -Algorithm SHA256).Hash
+    CeFirmwareSha256 = (Get-FileHash -LiteralPath $packageCeFirmware -Algorithm SHA256).Hash
+    MecFirmwareSha256 = (Get-FileHash -LiteralPath $packageMecFirmware -Algorithm SHA256).Hash
     RecoverySha256 = (Get-FileHash -LiteralPath $recoveryRoot -Algorithm SHA256).Hash
     SignerThumbprint = $certificateThumbprint
     Verdict = 'NAO VALIDADO EM HARDWARE'

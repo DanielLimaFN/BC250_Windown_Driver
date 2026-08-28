@@ -34,6 +34,780 @@ static uint32_t Bc250ActiveVmidRead32(
 static uint32_t Bc250ActiveVmidWrite32(
     void *Context, uint32_t ByteOffset, uint32_t Value);
 
+static BC250_HQD_PREFLIGHT_STATUS Bc250ActiveProbeHqdReadonly(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_HQD_READONLY_SNAPSHOT *Snapshot,
+    uint32_t *ReadCount)
+{
+    static const uint32_t offsets[BC250_HQD_PREFLIGHT_REGISTER_COUNT] = {
+        BC250_GRBM_GFX_CNTL_BYTE_OFFSET,
+        BC250_HQD_MMIO_MQD_BASE_LO,
+        BC250_HQD_MMIO_MQD_BASE_HI,
+        BC250_HQD_MMIO_ACTIVE,
+        BC250_HQD_MMIO_VMID,
+        BC250_HQD_MMIO_PQ_BASE_LO,
+        BC250_HQD_MMIO_PQ_BASE_HI,
+        BC250_HQD_MMIO_PQ_RPTR,
+        BC250_HQD_MMIO_DOORBELL_CONTROL,
+        BC250_HQD_MMIO_PQ_CONTROL,
+        BC250_HQD_MMIO_PQ_WPTR_LO,
+        BC250_HQD_MMIO_PQ_WPTR_HI,
+        BC250_GRBM_GFX_CNTL_BYTE_OFFSET
+    };
+    uint32_t pass1[BC250_HQD_PREFLIGHT_REGISTER_COUNT];
+    uint32_t pass2[BC250_HQD_PREFLIGHT_REGISTER_COUNT];
+    BC250_MMIO_TOPOLOGY_STATUS mmioStatus;
+    BC250_HQD_PREFLIGHT_STATUS status =
+        BC250_HQD_PREFLIGHT_TRANSPORT_FAILED;
+    uint32_t reads = 0u, writes = 0u, index;
+
+    if (Context == NULL || Snapshot == NULL || ReadCount == NULL) {
+        return BC250_HQD_PREFLIGHT_BAD_ARGUMENT;
+    }
+    RtlZeroMemory(Snapshot, sizeof(*Snapshot));
+    *ReadCount = 0u;
+    mmioStatus = Bc250MmioTopologyMapReadonly(
+        &Context->Core.MmioTransport, &Context->Core.DxgkInterface,
+        Context->Core.ResolvedBars, Context->Core.ResolvedBarCount,
+        BC250_PCI_MMIO_BAR_INDEX);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK) return status;
+
+    for (index = 0u; index < BC250_HQD_PREFLIGHT_REGISTER_COUNT; ++index) {
+        if (!Bc250MmioTopologyRead32(
+                &Context->Core.MmioTransport, offsets[index], &pass1[index])) {
+            goto Unmap;
+        }
+    }
+    KeMemoryBarrier();
+    for (index = 0u; index < BC250_HQD_PREFLIGHT_REGISTER_COUNT; ++index) {
+        if (!Bc250MmioTopologyRead32(
+                &Context->Core.MmioTransport, offsets[index], &pass2[index])) {
+            goto Unmap;
+        }
+    }
+    status = Bc250ComputeHqdReadonlyPreflight(pass1, pass2, Snapshot);
+
+Unmap:
+    reads = Context->Core.MmioTransport.ReadCount;
+    writes = Context->Core.MmioTransport.WriteCount;
+    mmioStatus = Bc250MmioTopologyUnmap(&Context->Core.MmioTransport);
+    *ReadCount = reads;
+    if (writes != 0u) return BC250_HQD_PREFLIGHT_WRITE_DETECTED;
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK)
+        return BC250_HQD_PREFLIGHT_TRANSPORT_FAILED;
+    return status;
+}
+
+static BC250_HQD_SELECTOR_STATUS Bc250ActiveProbeMecHqdSelected(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_HQD_SELECTOR_EVIDENCE *Evidence)
+{
+    BC250_HQD_SELECTOR_INTERFACE interfaceData;
+    BC250_MMIO_TOPOLOGY_STATUS mmioStatus;
+    BC250_HQD_SELECTOR_STATUS status;
+    uint32_t reads, writes;
+
+    if (Context == NULL || Evidence == NULL)
+        return BC250_HQD_SELECTOR_BAD_ARGUMENT;
+    RtlZeroMemory(Evidence, sizeof(*Evidence));
+    mmioStatus = Bc250MmioTopologyMapReadonly(
+        &Context->Core.MmioTransport, &Context->Core.DxgkInterface,
+        Context->Core.ResolvedBars, Context->Core.ResolvedBarCount,
+        BC250_PCI_MMIO_BAR_INDEX);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK)
+        return BC250_HQD_SELECTOR_PREFLIGHT_FAILED;
+    RtlZeroMemory(&interfaceData, sizeof(interfaceData));
+    interfaceData.Read32 = Bc250MmioTopologyRead32;
+    interfaceData.Write32 = Bc250MmioTopologyWrite32;
+    interfaceData.Barrier = Bc250ActivePspBarrier;
+    interfaceData.Context = &Context->Core.MmioTransport;
+    status = Bc250ComputeProbeMecHqdSelected(&interfaceData, Evidence);
+    reads = Context->Core.MmioTransport.ReadCount;
+    writes = Context->Core.MmioTransport.WriteCount;
+    mmioStatus = Bc250MmioTopologyUnmap(&Context->Core.MmioTransport);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK ||
+        reads != Evidence->ReadCalls || writes != Evidence->WriteCalls) {
+        Evidence->PhysicalReady = 0u;
+        return BC250_HQD_SELECTOR_RESTORE_FAILED;
+    }
+    return status;
+}
+
+static BC250_HQD_BANK_PROBE_STATUS Bc250ActiveProbeMecHqdBankIsolation(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_HQD_BANK_PROBE_EVIDENCE *Evidence)
+{
+    BC250_HQD_SELECTOR_INTERFACE interfaceData;
+    BC250_MMIO_TOPOLOGY_STATUS mmioStatus;
+    BC250_HQD_BANK_PROBE_STATUS status;
+    uint32_t reads, writes;
+
+    if (Context == NULL || Evidence == NULL)
+        return BC250_HQD_BANK_PROBE_BAD_ARGUMENT;
+    RtlZeroMemory(Evidence, sizeof(*Evidence));
+    mmioStatus = Bc250MmioTopologyMapReadonly(
+        &Context->Core.MmioTransport, &Context->Core.DxgkInterface,
+        Context->Core.ResolvedBars, Context->Core.ResolvedBarCount,
+        BC250_PCI_MMIO_BAR_INDEX);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK)
+        return BC250_HQD_BANK_PROBE_PREFLIGHT_FAILED;
+    RtlZeroMemory(&interfaceData, sizeof(interfaceData));
+    interfaceData.Read32 = Bc250MmioTopologyRead32;
+    interfaceData.Write32 = Bc250MmioTopologyWrite32;
+    interfaceData.Barrier = Bc250ActivePspBarrier;
+    interfaceData.Context = &Context->Core.MmioTransport;
+    status = Bc250ComputeProbeMecHqdBankIsolation(
+        &interfaceData, Evidence);
+    reads = Context->Core.MmioTransport.ReadCount;
+    writes = Context->Core.MmioTransport.WriteCount;
+    mmioStatus = Bc250MmioTopologyUnmap(&Context->Core.MmioTransport);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK ||
+        reads != Evidence->ReadCalls || writes != Evidence->WriteCalls) {
+        Evidence->PhysicalReady = 0u;
+        return BC250_HQD_BANK_PROBE_RESTORE_FAILED;
+    }
+    return status;
+}
+
+static BC250_HQD_WPTR_DIAGNOSTIC_STATUS Bc250ActiveProbeMecHqdWptrBehavior(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_HQD_WPTR_DIAGNOSTIC_EVIDENCE *Evidence)
+{
+    BC250_HQD_SELECTOR_INTERFACE interfaceData;
+    BC250_MMIO_TOPOLOGY_STATUS mmioStatus;
+    BC250_HQD_WPTR_DIAGNOSTIC_STATUS status;
+    uint32_t reads, writes;
+
+    if (Context == NULL || Evidence == NULL)
+        return BC250_HQD_WPTR_DIAG_BAD_ARGUMENT;
+    RtlZeroMemory(Evidence, sizeof(*Evidence));
+    mmioStatus = Bc250MmioTopologyMapReadonly(
+        &Context->Core.MmioTransport, &Context->Core.DxgkInterface,
+        Context->Core.ResolvedBars, Context->Core.ResolvedBarCount,
+        BC250_PCI_MMIO_BAR_INDEX);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK)
+        return BC250_HQD_WPTR_DIAG_PREFLIGHT_FAILED;
+    RtlZeroMemory(&interfaceData, sizeof(interfaceData));
+    interfaceData.Read32 = Bc250MmioTopologyRead32;
+    interfaceData.Write32 = Bc250MmioTopologyWrite32;
+    interfaceData.Barrier = Bc250ActivePspBarrier;
+    interfaceData.Context = &Context->Core.MmioTransport;
+    status = Bc250ComputeProbeMecHqdWptrBehavior(&interfaceData, Evidence);
+    reads = Context->Core.MmioTransport.ReadCount;
+    writes = Context->Core.MmioTransport.WriteCount;
+    mmioStatus = Bc250MmioTopologyUnmap(&Context->Core.MmioTransport);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK ||
+        reads != Evidence->ReadCalls || writes != Evidence->WriteCalls) {
+        Evidence->PhysicalReady = 0u;
+        return BC250_HQD_WPTR_DIAG_RESTORE_FAILED;
+    }
+    return status;
+}
+
+BC250_HQD_PROGRAM_STATUS Bc250ActiveRunInactiveHqdProgramTransaction(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_HQD_PROGRAM_EVIDENCE *Evidence)
+{
+    BC250_HQD_SELECTOR_INTERFACE interfaceData;
+    BC250_HQD_MC_BUFFERS buffers;
+    BC250_COMPUTE_MQD_PROPERTIES props;
+    BC250_GFX10_COMPUTE_MQD mqd;
+    BC250_MMIO_TOPOLOGY_STATUS mmioStatus;
+    BC250_HQD_PROGRAM_STATUS status;
+    BC250_VRAM_ALLOCATOR *allocator;
+    const BC250_VRAM_ADDRESS_SPACE *addressSpace;
+    BC250_VRAM_TOKEN token = {0};
+    BC250_VRAM_REGION region = {0};
+    BC250_VRAM_STATUS vramStatus;
+    const BC250_RESOLVED_BAR_RESOURCE *bar = NULL;
+    PHYSICAL_ADDRESS physical;
+    volatile uint32_t *mapped = NULL;
+    NTSTATUS ntStatus;
+    uint32_t totalBytes = 73728u; /* 72 KiB */
+    uint32_t reads, writes;
+    uint32_t i;
+    size_t matchCount = 0;
+
+    if (Context == NULL || Evidence == NULL)
+        return BC250_HQD_PROGRAM_BAD_ARGUMENT;
+
+    RtlZeroMemory(Evidence, sizeof(*Evidence));
+    RtlZeroMemory(&buffers, sizeof(buffers));
+    RtlZeroMemory(&props, sizeof(props));
+    RtlZeroMemory(&mqd, sizeof(mqd));
+
+    allocator = &Context->Core.StartDevice.Owned.Bootstrap.Allocator;
+    addressSpace = &Context->Core.TopologyEvidence.AddressSpace;
+    if (addressSpace->TotalBytes == 0u || addressSpace->VramMcStart == 0u) {
+        return BC250_HQD_PROGRAM_PREFLIGHT_FAILED;
+    }
+
+    for (i = 0; i < Context->Core.ResolvedBarCount; ++i) {
+        if (Context->Core.ResolvedBars[i].Index == BC250_PCI_VRAM_APERTURE_BAR_INDEX) {
+            bar = &Context->Core.ResolvedBars[i];
+            ++matchCount;
+        }
+    }
+    if (matchCount != 1 || bar == NULL) {
+        return BC250_HQD_PROGRAM_PREFLIGHT_FAILED;
+    }
+
+    vramStatus = Bc250VramAllocate(
+        allocator, totalBytes, 256u,
+        BC250_VRAM_ROLE_MQD, BC250_VRAM_ALLOC_CPU_VISIBLE, &token);
+    if (vramStatus != BC250_VRAM_OK) {
+        return BC250_HQD_PROGRAM_PREFLIGHT_FAILED;
+    }
+
+    if (Bc250VramGetRegion(allocator, token, &region) != BC250_VRAM_OK) {
+        (void)Bc250VramRelease(allocator, token);
+        return BC250_HQD_PROGRAM_PREFLIGHT_FAILED;
+    }
+
+    physical.QuadPart = (LONGLONG)(bar->Start + region.Offset);
+    ntStatus = Context->Core.DxgkInterface.DxgkCbMapMemory(
+        Context->Core.DxgkInterface.DeviceHandle,
+        physical,
+        (ULONG)totalBytes,
+        FALSE,
+        FALSE,
+        MmNonCached,
+        (PVOID *)&mapped);
+    if (!NT_SUCCESS(ntStatus) || mapped == NULL) {
+        (void)Bc250VramRelease(allocator, token);
+        return BC250_HQD_PROGRAM_PREFLIGHT_FAILED;
+    }
+
+    buffers.MqdVirtual = (volatile void *)((PUCHAR)mapped + 0x0000);
+    buffers.MqdGpuAddress = addressSpace->VramMcStart + region.Offset + 0x0000;
+    buffers.MqdSizeBytes = BC250_MQD_SIZE_BYTES;
+
+    buffers.RingVirtual = (volatile void *)((PUCHAR)mapped + 0x0200);
+    buffers.RingGpuAddress = addressSpace->VramMcStart + region.Offset + 0x0200;
+    buffers.RingSizeBytes = 65536u;
+
+    buffers.EopVirtual = (volatile void *)((PUCHAR)mapped + 0x10200);
+    buffers.EopGpuAddress = addressSpace->VramMcStart + region.Offset + 0x10200;
+    buffers.EopSizeBytes = 4096u;
+
+    buffers.RptrVirtual = (volatile void *)((PUCHAR)mapped + 0x11200);
+    buffers.RptrGpuAddress = addressSpace->VramMcStart + region.Offset + 0x11200;
+    buffers.RptrSizeBytes = 8u;
+
+    buffers.WptrVirtual = (volatile void *)((PUCHAR)mapped + 0x11300);
+    buffers.WptrGpuAddress = addressSpace->VramMcStart + region.Offset + 0x11300;
+    buffers.WptrSizeBytes = 8u;
+
+    buffers.FenceVirtual = (volatile void *)((PUCHAR)mapped + 0x11400);
+    buffers.FenceGpuAddress = addressSpace->VramMcStart + region.Offset + 0x11400;
+    buffers.FenceSizeBytes = 8u;
+
+    props.MqdGpuAddress = buffers.MqdGpuAddress;
+    props.HqdBaseGpuAddress = buffers.RingGpuAddress;
+    props.QueueSizeDwords = 16384u;
+    props.EopGpuAddress = buffers.EopGpuAddress;
+    props.EopSizeBytes = 4096u;
+    props.RptrGpuAddress = buffers.RptrGpuAddress;
+    props.WptrGpuAddress = buffers.WptrGpuAddress;
+    props.UseDoorbell = 0u;
+    props.DoorbellIndex = 0u;
+    props.PipePriority = 0u;
+    props.QueuePriority = 0u;
+    props.HqdActive = 0u;
+
+    mmioStatus = Bc250MmioTopologyMapReadonly(
+        &Context->Core.MmioTransport, &Context->Core.DxgkInterface,
+        Context->Core.ResolvedBars, Context->Core.ResolvedBarCount,
+        BC250_PCI_MMIO_BAR_INDEX);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK) {
+        (void)Context->Core.DxgkInterface.DxgkCbUnmapMemory(
+            Context->Core.DxgkInterface.DeviceHandle, (PVOID)mapped);
+        (void)Bc250VramRelease(allocator, token);
+        return BC250_HQD_PROGRAM_PREFLIGHT_FAILED;
+    }
+
+    RtlZeroMemory(&interfaceData, sizeof(interfaceData));
+    interfaceData.Read32 = Bc250MmioTopologyRead32;
+    interfaceData.Write32 = Bc250MmioTopologyWrite32;
+    interfaceData.Barrier = Bc250ActivePspBarrier;
+    interfaceData.Context = &Context->Core.MmioTransport;
+
+    status = Bc250ComputeRunInactiveHqdProgramTransaction(
+        &interfaceData, &buffers, &props, &mqd, Evidence);
+
+    reads = Context->Core.MmioTransport.ReadCount;
+    writes = Context->Core.MmioTransport.WriteCount;
+    mmioStatus = Bc250MmioTopologyUnmap(&Context->Core.MmioTransport);
+
+    (void)Context->Core.DxgkInterface.DxgkCbUnmapMemory(
+        Context->Core.DxgkInterface.DeviceHandle, (PVOID)mapped);
+    (void)Bc250VramRelease(allocator, token);
+
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK ||
+        reads != Evidence->ReadCalls || writes != Evidence->WriteCalls) {
+        Evidence->PhysicalReady = 0u;
+        return BC250_HQD_PROGRAM_RESTORE_FAILED;
+    }
+
+    return status;
+}
+
+static BC250_HQD_ACTIVE_STATUS Bc250ActiveRunActiveHqdSubmissionTransaction(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE *Evidence)
+{
+    BC250_HQD_SELECTOR_INTERFACE interfaceData;
+    BC250_HQD_MC_BUFFERS buffers;
+    BC250_COMPUTE_MQD_PROPERTIES props;
+    BC250_GFX10_COMPUTE_MQD mqd;
+    BC250_MMIO_TOPOLOGY_STATUS mmioStatus;
+    BC250_HQD_ACTIVE_STATUS status;
+    BC250_VRAM_ALLOCATOR *allocator;
+    const BC250_VRAM_ADDRESS_SPACE *addressSpace;
+    BC250_VRAM_TOKEN token = {0};
+    BC250_VRAM_REGION region = {0};
+    BC250_VRAM_STATUS vramStatus;
+    const BC250_RESOLVED_BAR_RESOURCE *bar = NULL;
+    PHYSICAL_ADDRESS physical;
+    volatile uint32_t *mapped = NULL;
+    NTSTATUS ntStatus;
+    uint32_t totalBytes = 131072u; /* 128 KiB para garantir alinhamento de 64 KiB no anel */
+    uint32_t reads, writes;
+    uint32_t i;
+    size_t matchCount = 0;
+
+    if (Context == NULL || Evidence == NULL)
+        return BC250_HQD_ACTIVE_BAD_ARGUMENT;
+
+    RtlZeroMemory(Evidence, sizeof(*Evidence));
+    Evidence->GfxOffApplicable = 0u;
+    Evidence->GfxOffGuardPassed = 1u;
+    Evidence->GfxOffRestorePassed = 1u;
+    RtlZeroMemory(&buffers, sizeof(buffers));
+    RtlZeroMemory(&props, sizeof(props));
+    RtlZeroMemory(&mqd, sizeof(mqd));
+
+    allocator = &Context->Core.StartDevice.Owned.Bootstrap.Allocator;
+    addressSpace = &Context->Core.TopologyEvidence.AddressSpace;
+    if (addressSpace->TotalBytes == 0u || addressSpace->VramMcStart == 0u) {
+        return BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
+    }
+
+    for (i = 0; i < Context->Core.ResolvedBarCount; ++i) {
+        if (Context->Core.ResolvedBars[i].Index == BC250_PCI_VRAM_APERTURE_BAR_INDEX) {
+            bar = &Context->Core.ResolvedBars[i];
+            ++matchCount;
+        }
+    }
+    if (matchCount != 1 || bar == NULL) {
+        return BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
+    }
+
+    vramStatus = Bc250VramAllocate(
+        allocator, totalBytes, 65536u,
+        BC250_VRAM_ROLE_MQD, BC250_VRAM_ALLOC_CPU_VISIBLE, &token);
+    if (vramStatus != BC250_VRAM_OK) {
+        return BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
+    }
+
+    if (Bc250VramGetRegion(allocator, token, &region) != BC250_VRAM_OK) {
+        (void)Bc250VramRelease(allocator, token);
+        return BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
+    }
+
+    physical.QuadPart = (LONGLONG)(bar->Start + region.Offset);
+    ntStatus = Context->Core.DxgkInterface.DxgkCbMapMemory(
+        Context->Core.DxgkInterface.DeviceHandle,
+        physical,
+        (ULONG)totalBytes,
+        FALSE,
+        FALSE,
+        MmNonCached,
+        (PVOID *)&mapped);
+    if (!NT_SUCCESS(ntStatus) || mapped == NULL) {
+        (void)Bc250VramRelease(allocator, token);
+        return BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
+    }
+
+    {
+        uint64_t basePhys = (addressSpace->VramMcStart + region.Offset);
+
+        /* Enderecos MC fisicos em VRAM para o microengine MEC (VMID 0) */
+        buffers.MqdVirtual = (volatile void *)((PUCHAR)mapped + 0x0000);
+        buffers.MqdGpuAddress = basePhys + 0x0000ull;
+        buffers.MqdSizeBytes = BC250_MQD_SIZE_BYTES;
+
+        buffers.EopVirtual = (volatile void *)((PUCHAR)mapped + 0x1000);
+        buffers.EopGpuAddress = basePhys + 0x1000ull;
+        buffers.EopSizeBytes = 4096u;
+
+        buffers.RptrVirtual = (volatile void *)((PUCHAR)mapped + 0x2000);
+        buffers.RptrGpuAddress = basePhys + 0x2000ull;
+        buffers.RptrSizeBytes = 256u;
+
+        buffers.WptrVirtual = (volatile void *)((PUCHAR)mapped + 0x2100);
+        buffers.WptrGpuAddress = basePhys + 0x2100ull;
+        buffers.WptrSizeBytes = 256u;
+
+        buffers.FenceVirtual = (volatile void *)((PUCHAR)mapped + 0x2200);
+        buffers.FenceGpuAddress = basePhys + 0x2200ull;
+        buffers.FenceSizeBytes = 256u;
+
+        /* Page Table Context 0 (VMID 0) em 0x3000 (4 KiB = 512 PTEs) */
+        buffers.PtVirtual = (volatile void *)((PUCHAR)mapped + 0x3000);
+        buffers.PtGpuAddress = basePhys + 0x3000ull;
+        buffers.PtSizeBytes = 4096u;
+
+        {
+            volatile uint64_t *pPt = (volatile uint64_t *)buffers.PtVirtual;
+            uint32_t pteIdx;
+            for (pteIdx = 0u; pteIdx < 512u; ++pteIdx) {
+                uint64_t pagePhys = basePhys + ((uint64_t)pteIdx * 4096ull);
+                pPt[pteIdx] = (pagePhys & 0x0000FFFFFFFFF000ull) | 0xE1ull;
+            }
+            KeMemoryBarrier();
+        }
+
+        /* Ring buffer em 0x10000 (64 KiB) perfeitamente alinhado a 64 KiB */
+        buffers.RingVirtual = (volatile void *)((PUCHAR)mapped + 0x10000);
+        buffers.RingGpuAddress = basePhys + 0x10000ull;
+        buffers.RingSizeBytes = 65536u;
+    }
+
+    props.MqdGpuAddress = buffers.MqdGpuAddress;
+    props.HqdBaseGpuAddress = buffers.RingGpuAddress;
+    props.QueueSizeDwords = 16384u;
+    props.EopGpuAddress = buffers.EopGpuAddress;
+    props.EopSizeBytes = 4096u;
+    props.RptrGpuAddress = buffers.RptrGpuAddress;
+    props.WptrGpuAddress = buffers.WptrGpuAddress;
+    volatile void *doorbellMapped = NULL;
+    NTSTATUS dbStatus = STATUS_SUCCESS;
+
+    props.UseDoorbell = 0u;
+    props.DoorbellIndex = 0u;
+    props.PipePriority = 0u;
+    props.QueuePriority = 0u;
+    props.HqdActive = 1u;
+
+    if (Context->Core.ResolvedBarCount > BC250_ADAPTER_DOORBELL_BAR_INDEX &&
+        Context->Core.ResolvedBars[BC250_ADAPTER_DOORBELL_BAR_INDEX].Length >= 4096) {
+        PHYSICAL_ADDRESS dbPhysical;
+        dbPhysical.QuadPart = (LONGLONG)Context->Core.ResolvedBars[BC250_ADAPTER_DOORBELL_BAR_INDEX].Start;
+        dbStatus = Context->Core.DxgkInterface.DxgkCbMapMemory(
+            Context->Core.DxgkInterface.DeviceHandle,
+            dbPhysical,
+            (ULONG)Context->Core.ResolvedBars[BC250_ADAPTER_DOORBELL_BAR_INDEX].Length,
+            FALSE,
+            FALSE,
+            MmNonCached,
+            (PVOID *)&doorbellMapped);
+        if (NT_SUCCESS(dbStatus) && doorbellMapped != NULL) {
+            buffers.DoorbellVirtual = doorbellMapped;
+            buffers.DoorbellSizeBytes = (uint32_t)Context->Core.ResolvedBars[BC250_ADAPTER_DOORBELL_BAR_INDEX].Length;
+            props.UseDoorbell = 1u;
+            /* A transacao deriva o indice KIQ da faixa MEC fisica. */
+            props.DoorbellIndex = 0u;
+        }
+    }
+
+    mmioStatus = Bc250MmioTopologyMapReadonly(
+        &Context->Core.MmioTransport, &Context->Core.DxgkInterface,
+        Context->Core.ResolvedBars, Context->Core.ResolvedBarCount,
+        BC250_PCI_MMIO_BAR_INDEX);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK) {
+        if (doorbellMapped != NULL) {
+            (void)Context->Core.DxgkInterface.DxgkCbUnmapMemory(
+                Context->Core.DxgkInterface.DeviceHandle, (PVOID)doorbellMapped);
+        }
+        (void)Context->Core.DxgkInterface.DxgkCbUnmapMemory(
+            Context->Core.DxgkInterface.DeviceHandle, (PVOID)mapped);
+        (void)Bc250VramRelease(allocator, token);
+        return BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
+    }
+
+    RtlZeroMemory(&interfaceData, sizeof(interfaceData));
+    interfaceData.Read32 = Bc250MmioTopologyRead32;
+    interfaceData.Write32 = Bc250MmioTopologyWrite32;
+    interfaceData.Barrier = Bc250ActivePspBarrier;
+    interfaceData.Context = &Context->Core.MmioTransport;
+
+    /*
+     * Cyan Skillfish2 (PCI 1002:13FE) usa SMU 11.8. O ABI oficial nao
+     * possui AllowGfxOff/DisallowGfxOff e o caminho upstream configura
+     * clock/power gating como nao aplicavel. Nao emita mensagens Van Gogh
+     * neste ASIC. A protecao real da submissao permanece nos preflights de
+     * firmware/MEC, coerencia HDP/L2, readback e tripé fisico.
+     */
+    status = Bc250ComputeRunActiveHqdSubmissionTransaction(
+        &interfaceData, &buffers, &props, &mqd, Evidence);
+    Evidence->GfxOffApplicable = 0u;
+    Evidence->GfxOffGuardPassed = 1u;
+    Evidence->GfxOffRestorePassed = 1u;
+
+    reads = Context->Core.MmioTransport.ReadCount;
+    writes = Context->Core.MmioTransport.WriteCount;
+    mmioStatus = Bc250MmioTopologyUnmap(&Context->Core.MmioTransport);
+
+    if (doorbellMapped != NULL) {
+        (void)Context->Core.DxgkInterface.DxgkCbUnmapMemory(
+            Context->Core.DxgkInterface.DeviceHandle, (PVOID)doorbellMapped);
+    }
+    (void)Context->Core.DxgkInterface.DxgkCbUnmapMemory(
+        Context->Core.DxgkInterface.DeviceHandle, (PVOID)mapped);
+    (void)Bc250VramRelease(allocator, token);
+
+    if (status == BC250_HQD_ACTIVE_OK &&
+        (mmioStatus != BC250_MMIO_TOPOLOGY_OK ||
+         reads != Evidence->ReadCalls || writes != Evidence->WriteCalls)) {
+        Evidence->PhysicalReady = 0u;
+        return BC250_HQD_ACTIVE_RESTORE_FAILED;
+    }
+
+    return status;
+}
+
+static void Bc250ActiveRecordHqdSubmission(
+    const BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    const BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE *e;
+
+    if (Context == NULL) return;
+    e = &Context->HqdActiveEvidence;
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_STATUS,
+        (ULONG)Context->HqdActiveStatus);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_SELECTED_SELECTOR,
+        e->SelectedSelector);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_BEFORE, e->ActiveBefore);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_APPLIED, e->ActiveApplied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_AFTER, e->ActiveAfter);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RPTR_BEFORE, e->RptrBefore);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RPTR_AFTER, e->RptrAfter);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_APPLIED, e->WptrApplied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_FENCE_BEFORE, e->FenceBefore);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_FENCE_AFTER, e->FenceAfter);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_SCRATCH_BEFORE, e->ScratchBefore);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_SCRATCH_AFTER, e->ScratchAfter);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_POLL_ITERATIONS, e->PollIterations);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_TRIAD_PASSED, e->TriadPassed);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RESTORE_PASSED, e->RestorePassed);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_MEM_RESTORE_PASSED,
+        e->MemoryRestorePassed);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_PHYSICAL_READY, e->PhysicalReady);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DOORBELL_RUNG, e->DoorbellRung);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DOORBELL_INDEX, e->DoorbellIndex);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DOORBELL_OFFSET, e->DoorbellOffset);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DOORBELL_VALUE_APPLIED,
+        e->DoorbellValueApplied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DB_RANGE_LOWER_BEFORE,
+        e->DoorbellRangeLowerBefore);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DB_RANGE_LOWER_APPLIED,
+        e->DoorbellRangeLowerApplied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DB_RANGE_LOWER_READBACK,
+        e->DoorbellRangeLowerReadback);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DB_RANGE_UPPER_BEFORE,
+        e->DoorbellRangeUpperBefore);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DB_RANGE_UPPER_APPLIED,
+        e->DoorbellRangeUpperApplied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DB_RANGE_UPPER_READBACK,
+        e->DoorbellRangeUpperReadback);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CP_PQ_STATUS_BEFORE,
+        e->CpPqStatusBefore);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CP_PQ_STATUS_APPLIED,
+        e->CpPqStatusApplied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CP_PQ_STATUS_READBACK,
+        e->CpPqStatusReadback);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_POLL_CNTL_BEFORE,
+        e->WptrPollCntlBefore);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_POLL_CNTL_APPLIED,
+        e->WptrPollCntlApplied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_POLL_CNTL_READBACK,
+        e->WptrPollCntlReadback);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_SELECTOR_RELEASED_BEFORE_KICK,
+        e->SelectorReleasedBeforeKick);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CP_PQ_STATUS_AFTER_KICK,
+        e->CpPqStatusAfterKick);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DOORBELL_CONTROL_AFTER_KICK,
+        e->DoorbellControlAfterKick);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_AFTER_KICK,
+        e->WptrAfterKick);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RPTR_AFTER_KICK,
+        e->RptrAfterKick);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_INITIAL_WPTR_LO,
+        e->InitialWptrLo);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_INITIAL_WPTR_HI,
+        e->InitialWptrHi);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_BASELINE_WPTR_APPLIED,
+        e->BaselineWptrApplied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_BASELINE_WPTR_READBACK,
+        e->BaselineWptrReadback);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_BASELINE_WPTR_RESTORED,
+        e->BaselineWptrRestored);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_BASELINE_WPTR_RESTORE_POLLS,
+        e->BaselineWptrRestorePolls);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_BASELINE_WPTR_RESTORE_PASSED,
+        e->BaselineWptrRestorePassed);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DIRECT_WPTR_KICK_APPLIED,
+        e->DirectWptrKickApplied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DIRECT_WPTR_BEFORE,
+        e->DirectWptrBefore);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DIRECT_WPTR_READBACK,
+        e->DirectWptrReadback);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DIRECT_RPTR_AFTER_KICK,
+        e->DirectRptrAfterKick);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DIRECT_WPTR_RESTORED,
+        e->DirectWptrRestored);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DIRECT_WPTR_RESTORE_POLLS,
+        e->DirectWptrRestorePolls);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DIRECT_WPTR_RESTORE_PASSED,
+        e->DirectWptrRestorePassed);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RPTR_MMIO_LAST,
+        e->RptrMmioLast);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_MMIO_LAST,
+        e->WptrMmioLast);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_HQ_STATUS0_POLL_LAST,
+        e->HqStatus0PollLast);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_HQD_ERROR_POLL_LAST,
+        e->HqdErrorPollLast);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RLC_CP_SCHEDULERS_BEFORE,
+        e->RlcCpSchedulersBefore);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RLC_CP_SCHEDULERS_APPLIED,
+        e->RlcCpSchedulersApplied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RLC_CP_SCHEDULERS_READBACK,
+        e->RlcCpSchedulersReadback);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RLC_CP_SCHEDULERS_AFTER_KICK,
+        e->RlcCpSchedulersAfterKick);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RLC_CP_SCHEDULERS_RESTORED,
+        e->RlcCpSchedulersRestored);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RLC_CP_SCHEDULERS_RESTORE_PASSED,
+        e->RlcCpSchedulersRestorePassed);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_HQ_STATUS0_AFTER_KICK,
+        e->HqStatus0AfterKick);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_HQ_CONTROL0_AFTER_KICK,
+        e->HqControl0AfterKick);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_HQD_ERROR_AFTER_KICK,
+        e->HqdErrorAfterKick);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CPC_UTCL1_ERROR_AFTER_KICK,
+        e->CpcUtcl1ErrorAfterKick);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CPC_UTCL1_STATUS_AFTER_KICK,
+        e->CpcUtcl1StatusAfterKick);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CPF_UTCL1_STATUS_AFTER_KICK,
+        e->CpfUtcl1StatusAfterKick);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CPC_INT_STATUS_AFTER_KICK,
+        e->CpcIntStatusAfterKick);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_ME1_PIPE0_INT_STATUS_AFTER_KICK,
+        e->Me1Pipe0IntStatusAfterKick);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_ME2_PIPE1_INT_STATUS_AFTER_KICK,
+        e->Me2Pipe1IntStatusAfterKick);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_ME2_PIPE0_INT_STATUS_AFTER_KICK,
+        e->Me2Pipe0IntStatusAfterKick);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_PQ_BASE_LO, e->PqBaseLoApplied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_PQ_BASE_HI, e->PqBaseHiApplied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_POLL_ADDR_LO,
+        e->WptrPollAddrLoApplied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_POLL_ADDR_HI,
+        e->WptrPollAddrHiApplied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_SHADOW, e->WptrShadowApplied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CP_MEC_CNTL_READBACK,
+        e->CpMecCntlReadback);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_MEC_PC_FIRST, e->MecPcFirst);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_MEC_PC_LAST, e->MecPcLast);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_MEC_PC_TRANSITIONS,
+        e->MecPcTransitions);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_MEC_PC_SAMPLES, e->MecPcSamples);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_PQ_CONTROL_OBSERVED,
+        e->PqControlObserved);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_HDP_INVALIDATE_APPLIED,
+        e->HdpInvalidateApplied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GCVM_L2_BEFORE,
+        e->GcvmL2Cntl2Before);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GCVM_L2_APPLIED,
+        e->GcvmL2Cntl2Applied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GCVM_L2_READBACK,
+        e->GcvmL2Cntl2Readback);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GCVM_REQ_APPLIED,
+        e->GcvmInvalidateRequestApplied);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GCVM_REQ_READBACK,
+        e->GcvmInvalidateRequestReadback);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GCVM_ACK_BEFORE,
+        e->GcvmInvalidateAckBefore);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GCVM_ACK_AFTER,
+        e->GcvmInvalidateAckAfter);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GCVM_POLLS,
+        e->GcvmInvalidatePolls);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_COHERENCY_PASSED,
+        e->CoherencyPassed);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GFXOFF_APPLICABLE,
+        e->GfxOffApplicable);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GFXOFF_STATE_BEFORE,
+        e->GfxOffStateBefore);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GFXOFF_STATE_GUARDED,
+        e->GfxOffStateGuarded);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GFXOFF_STATE_AFTER,
+        e->GfxOffStateAfter);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GFXOFF_DISALLOW_RESPONSE,
+        e->GfxOffDisallowResponse);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GFXOFF_ALLOW_RESPONSE,
+        e->GfxOffAllowResponse);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GFXOFF_GUARD_PASSED,
+        e->GfxOffGuardPassed);
+    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GFXOFF_RESTORE_PASSED,
+        e->GfxOffRestorePassed);
+}
+
+static void Bc250ActiveRecordHqdWptrDiag(
+    const BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    const BC250_HQD_WPTR_DIAGNOSTIC_EVIDENCE *e;
+
+    if (Context == NULL) return;
+    e = &Context->HqdWptrDiagEvidence;
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_STATUS,
+        (ULONG)Context->HqdWptrDiagStatus);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_ORIGINAL_SELECTOR,
+        e->OriginalSelector);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_TARGET_SELECTOR,
+        e->TargetSelector);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_ACTIVE_BEFORE,
+        e->ActiveBeforePass1);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_RPTR_BEFORE,
+        e->RptrBeforePass1);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_WPTR_LO_BEFORE,
+        e->WptrLoBeforePass1);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_WPTR_HI_BEFORE,
+        e->WptrHiBeforePass1);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_PQ_CONTROL_BEFORE,
+        e->PqControlBeforePass1);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_STABLE_PREFLIGHT_PASSED,
+        e->StablePreflightPassed);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_TEST_VALUE_WRITTEN,
+        e->TestValueWritten);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_FIRST_READBACK,
+        e->FirstReadback);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_SERIES_MATCH_INDEX,
+        e->SeriesMatchIndex);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_SELECTOR_UNMODIFIED,
+        e->SelectorRemainedUnmodified);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_RESTORED_VALUE_OBSERVED,
+        e->RestoredValueObserved);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_RESTORE_POLLS,
+        e->RestorePolls);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_RESTORE_PASSED,
+        e->RestorePassed);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_ACTIVE_AFTER,
+        e->ActiveAfterPass1);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_WPTR_LO_AFTER,
+        e->WptrLoAfterPass1);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_SELECTOR_RESTORE_PASSED,
+        e->SelectorRestorePassed);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_READ_CALLS,
+        e->ReadCalls);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_WRITE_CALLS,
+        e->WriteCalls);
+    Bc250ProbeRecord(BC250_PROBE_HQD_WPTR_DIAG_PHYSICAL_READY,
+        e->PhysicalReady);
+}
+
 static NTSTATUS Bc250ActiveQueryRuntimeCaps(
     HANDLE AdapterContext,
     BC250_MCDM_RUNTIME_CAPS *Caps)
@@ -1313,6 +2087,28 @@ NTSTATUS APIENTRY Bc250DxgkDdiAddDeviceActive(
     context->PfpDirectLoadStatus = BC250_PFP_DIRECT_LOAD_BAD_ARGUMENT;
     RtlZeroMemory(&context->PfpDirectLoadEvidence,
                   sizeof(context->PfpDirectLoadEvidence));
+    context->HqdPreflightStatus = BC250_HQD_PREFLIGHT_BAD_ARGUMENT;
+    RtlZeroMemory(&context->HqdPreflightSnapshot,
+                  sizeof(context->HqdPreflightSnapshot));
+    context->HqdPreflightReadCount = 0u;
+    context->MecHqdSelectorStatus = BC250_HQD_SELECTOR_BAD_ARGUMENT;
+    RtlZeroMemory(&context->MecHqdSelectorEvidence,
+                  sizeof(context->MecHqdSelectorEvidence));
+    context->MecHqdBankProbeStatus = BC250_HQD_BANK_PROBE_BAD_ARGUMENT;
+    RtlZeroMemory(&context->MecHqdBankProbeEvidence,
+                  sizeof(context->MecHqdBankProbeEvidence));
+    context->HqdProgramStatus = BC250_HQD_PROGRAM_BAD_ARGUMENT;
+    RtlZeroMemory(&context->HqdProgramEvidence,
+                  sizeof(context->HqdProgramEvidence));
+    context->HqdWptrDiagStatus = BC250_HQD_WPTR_DIAG_BAD_ARGUMENT;
+    RtlZeroMemory(&context->HqdWptrDiagEvidence,
+                  sizeof(context->HqdWptrDiagEvidence));
+    context->HqdActiveStatus = BC250_HQD_ACTIVE_BAD_ARGUMENT;
+    RtlZeroMemory(&context->HqdActiveEvidence,
+                  sizeof(context->HqdActiveEvidence));
+    context->HqdActiveEvidence.GfxOffApplicable = 0u;
+    context->HqdActiveEvidence.GfxOffGuardPassed = 1u;
+    context->HqdActiveEvidence.GfxOffRestorePassed = 1u;
     context->SdmaF32Status = BC250_SDMA_F32_BAD_ARGUMENT;
     RtlZeroMemory(&context->SdmaF32Evidence,
                   sizeof(context->SdmaF32Evidence));
@@ -1503,6 +2299,471 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                     context->Core.ReadonlyGatePassed);
                 if (context->Core.ReadonlyGatePassed == 1u &&
                     context->Core.LastStage == BC250_DXGK_STAGE_PREFLIGHT_READY) {
+                    context->HqdPreflightStatus =
+                        Bc250ActiveProbeHqdReadonly(
+                            context, &context->HqdPreflightSnapshot,
+                            &context->HqdPreflightReadCount);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PREFLIGHT_STATUS,
+                        (ULONG)context->HqdPreflightStatus);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PREFLIGHT_READ_COUNT,
+                        context->HqdPreflightReadCount);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_STABLE_PASSES,
+                        context->HqdPreflightSnapshot.StablePasses);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_SELECTOR,
+                        context->HqdPreflightSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_SELECTOR_BEFORE]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE,
+                        context->HqdPreflightSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_ACTIVE]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_MQD_BASE_LO,
+                        context->HqdPreflightSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_MQD_BASE_LO]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_MQD_BASE_HI,
+                        context->HqdPreflightSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_MQD_BASE_HI]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_VMID,
+                        context->HqdPreflightSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_VMID]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PQ_BASE_LO,
+                        context->HqdPreflightSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_PQ_BASE_LO]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PQ_BASE_HI,
+                        context->HqdPreflightSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_PQ_BASE_HI]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PQ_RPTR,
+                        context->HqdPreflightSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_PQ_RPTR]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_DOORBELL_CONTROL,
+                        context->HqdPreflightSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_DOORBELL_CONTROL]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PQ_CONTROL,
+                        context->HqdPreflightSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_PQ_CONTROL]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PQ_WPTR_LO,
+                        context->HqdPreflightSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_PQ_WPTR_LO]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PQ_WPTR_HI,
+                        context->HqdPreflightSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_PQ_WPTR_HI]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_INACTIVE,
+                        context->HqdPreflightSnapshot.HqdWasInactive);
+                    if (context->HqdPreflightStatus ==
+                            BC250_HQD_PREFLIGHT_SELECTOR_NOT_COMPUTE &&
+                        context->HqdPreflightSnapshot.HqdWasInactive != 0u) {
+                        context->MecHqdSelectorStatus =
+                            Bc250ActiveProbeMecHqdSelected(
+                                context, &context->MecHqdSelectorEvidence);
+                    }
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_SELECTOR_STATUS,
+                        (ULONG)context->MecHqdSelectorStatus);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_ORIGINAL_SELECTOR,
+                        context->MecHqdSelectorEvidence.OriginalSelector);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_APPLIED_SELECTOR,
+                        context->MecHqdSelectorEvidence.AppliedSelector);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_MEC_HQD_APPLIED_READBACK_FIRST,
+                        context->MecHqdSelectorEvidence
+                            .AppliedSelectorReadbackFirst);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_MEC_HQD_APPLIED_READBACK_LAST,
+                        context->MecHqdSelectorEvidence
+                            .AppliedSelectorReadbackLast);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_RESTORED_SELECTOR,
+                        context->MecHqdSelectorEvidence.RestoredSelector);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_READ_CALLS,
+                        context->MecHqdSelectorEvidence.ReadCalls);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_WRITE_CALLS,
+                        context->MecHqdSelectorEvidence.WriteCalls);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_APPLY_READBACK,
+                        context->MecHqdSelectorEvidence.ApplyReadbackPassed);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_RESTORE,
+                        context->MecHqdSelectorEvidence.RestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_PHYSICAL_READY,
+                        context->MecHqdSelectorEvidence.PhysicalReady);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_STATUS,
+                        (ULONG)context->MecHqdSelectorEvidence.HqdStatus);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_STABLE_PASSES,
+                        context->MecHqdSelectorEvidence.HqdSnapshot.StablePasses);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_ACTIVE,
+                        context->MecHqdSelectorEvidence.HqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_ACTIVE]);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_MQD_BASE_LO,
+                        context->MecHqdSelectorEvidence.HqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_MQD_BASE_LO]);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_MQD_BASE_HI,
+                        context->MecHqdSelectorEvidence.HqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_MQD_BASE_HI]);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_PQ_BASE_LO,
+                        context->MecHqdSelectorEvidence.HqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_PQ_BASE_LO]);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_PQ_BASE_HI,
+                        context->MecHqdSelectorEvidence.HqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_PQ_BASE_HI]);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_PQ_RPTR,
+                        context->MecHqdSelectorEvidence.HqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_PQ_RPTR]);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_PQ_WPTR_LO,
+                        context->MecHqdSelectorEvidence.HqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_PQ_WPTR_LO]);
+                    Bc250ProbeRecord(BC250_PROBE_MEC_HQD_PQ_WPTR_HI,
+                        context->MecHqdSelectorEvidence.HqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_PQ_WPTR_HI]);
+                    if (context->MecHqdSelectorStatus ==
+                            BC250_HQD_SELECTOR_READBACK_FAILED &&
+                        context->MecHqdSelectorEvidence.RestorePassed != 0u) {
+                        context->MecHqdBankProbeStatus =
+                            Bc250ActiveProbeMecHqdBankIsolation(
+                                context, &context->MecHqdBankProbeEvidence);
+                    }
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_PROBE_STATUS,
+                        (ULONG)context->MecHqdBankProbeStatus);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_ORIGINAL_SELECTOR,
+                        context->MecHqdBankProbeEvidence.OriginalSelector);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK0_ACTIVE,
+                        context->MecHqdBankProbeEvidence.Bank0Active);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK0_PRIORITY,
+                        context->MecHqdBankProbeEvidence.Bank0Priority);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_CANDIDATE_ACTIVE,
+                        context->MecHqdBankProbeEvidence.CandidateActive);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_CANDIDATE_PRIORITY,
+                        context->MecHqdBankProbeEvidence.CandidatePriority);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_POISON_PRIORITY,
+                        context->MecHqdBankProbeEvidence.PoisonPriority);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_POISON_READBACK,
+                        context->MecHqdBankProbeEvidence.PoisonReadback);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK0_CROSS_READBACK,
+                        context->MecHqdBankProbeEvidence.Bank0CrossReadback);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_HQD_BANK_CANDIDATE_CROSS_READBACK,
+                        context->MecHqdBankProbeEvidence
+                            .CandidateCrossReadback);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_HQD_BANK_CANDIDATE_RESTORE_READBACK,
+                        context->MecHqdBankProbeEvidence
+                            .CandidateRestoreReadback);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK0_FINAL_READBACK,
+                        context->MecHqdBankProbeEvidence.Bank0FinalReadback);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_FINAL_SELECTOR,
+                        context->MecHqdBankProbeEvidence.FinalSelector);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_READ_CALLS,
+                        context->MecHqdBankProbeEvidence.ReadCalls);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_WRITE_CALLS,
+                        context->MecHqdBankProbeEvidence.WriteCalls);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_POISON_PASSED,
+                        context->MecHqdBankProbeEvidence.PoisonReadbackPassed);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_ISOLATION_PASSED,
+                        context->MecHqdBankProbeEvidence.BankIsolationPassed);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_RESTORE_PASSED,
+                        context->MecHqdBankProbeEvidence.RestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_PHYSICAL_READY,
+                        context->MecHqdBankProbeEvidence.PhysicalReady);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_HQD_CAPTURE_PASSED,
+                        context->MecHqdBankProbeEvidence.HqdCapturePassed);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_HQD_STABLE_PASSES,
+                        context->MecHqdBankProbeEvidence.CandidateHqdSnapshot.StablePasses);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_HQD_INACTIVE,
+                        context->MecHqdBankProbeEvidence.CandidateHqdSnapshot.HqdWasInactive);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_HQD_SELECTOR_OBSERVED,
+                        context->MecHqdBankProbeEvidence.CandidateHqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_SELECTOR_BEFORE]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_HQD_ACTIVE,
+                        context->MecHqdBankProbeEvidence.CandidateHqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_ACTIVE]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_HQD_MQD_BASE_LO,
+                        context->MecHqdBankProbeEvidence.CandidateHqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_MQD_BASE_LO]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_HQD_MQD_BASE_HI,
+                        context->MecHqdBankProbeEvidence.CandidateHqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_MQD_BASE_HI]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_HQD_VMID,
+                        context->MecHqdBankProbeEvidence.CandidateHqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_VMID]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_HQD_PQ_BASE_LO,
+                        context->MecHqdBankProbeEvidence.CandidateHqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_PQ_BASE_LO]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_HQD_PQ_BASE_HI,
+                        context->MecHqdBankProbeEvidence.CandidateHqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_PQ_BASE_HI]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_HQD_PQ_RPTR,
+                        context->MecHqdBankProbeEvidence.CandidateHqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_PQ_RPTR]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_HQD_DOORBELL_CONTROL,
+                        context->MecHqdBankProbeEvidence.CandidateHqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_DOORBELL_CONTROL]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_HQD_PQ_CONTROL,
+                        context->MecHqdBankProbeEvidence.CandidateHqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_PQ_CONTROL]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_HQD_PQ_WPTR_LO,
+                        context->MecHqdBankProbeEvidence.CandidateHqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_PQ_WPTR_LO]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_BANK_HQD_PQ_WPTR_HI,
+                        context->MecHqdBankProbeEvidence.CandidateHqdSnapshot.Values[
+                            BC250_HQD_PREFLIGHT_PQ_WPTR_HI]);
+                    if (context->MecHqdBankProbeStatus ==
+                            BC250_HQD_BANK_PROBE_OK &&
+                        context->MecHqdBankProbeEvidence.PhysicalReady != 0u) {
+                        context->HqdProgramStatus =
+                            Bc250ActiveRunInactiveHqdProgramTransaction(
+                                context, &context->HqdProgramEvidence);
+                    }
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_STATUS,
+                        (ULONG)context->HqdProgramStatus);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_ORIGINAL_SELECTOR,
+                        context->HqdProgramEvidence.OriginalSelector);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_SELECTED_SELECTOR,
+                        context->HqdProgramEvidence.SelectedSelector);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_RESTORED_SELECTOR,
+                        context->HqdProgramEvidence.RestoredSelector);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_READ_CALLS,
+                        context->HqdProgramEvidence.ReadCalls);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_WRITE_CALLS,
+                        context->HqdProgramEvidence.WriteCalls);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_MEMORY_PASSED,
+                        context->HqdProgramEvidence.MemoryVerificationPassed);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_READBACK_PASSED,
+                        context->HqdProgramEvidence.ApplyReadbackPassed);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_ACTIVE_ZERO,
+                        context->HqdProgramEvidence.ActiveRemainedZero);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_RESTORE_PASSED,
+                        context->HqdProgramEvidence.RestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_MEM_RESTORE_PASSED,
+                        context->HqdProgramEvidence.MemoryRestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_PHYSICAL_READY,
+                        context->HqdProgramEvidence.PhysicalReady);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_MQD_BASE_LO,
+                        context->HqdProgramEvidence.AppliedValues[0]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_MQD_BASE_HI,
+                        context->HqdProgramEvidence.AppliedValues[1]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_PQ_BASE_LO,
+                        context->HqdProgramEvidence.AppliedValues[11]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_PQ_BASE_HI,
+                        context->HqdProgramEvidence.AppliedValues[12]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_PQ_CONTROL,
+                        context->HqdProgramEvidence.AppliedValues[14]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_ACTIVE_READBACK,
+                        context->HqdProgramEvidence.ActiveReadbackPass1);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_MISMATCH_MASK,
+                        context->HqdProgramEvidence.MismatchMask);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_MISMATCH_OFFSET,
+                        context->HqdProgramEvidence.FirstMismatchOffset);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_MISMATCH_WRITTEN,
+                        context->HqdProgramEvidence.FirstMismatchWritten);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_MISMATCH_READ1,
+                        context->HqdProgramEvidence.FirstMismatchRead1);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_MISMATCH_READ2,
+                        context->HqdProgramEvidence.FirstMismatchRead2);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_READBACK_MQD_BASE_LO,
+                        context->HqdProgramEvidence.ReadbackPass1[0]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_READBACK_MQD_BASE_HI,
+                        context->HqdProgramEvidence.ReadbackPass1[1]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_READBACK_PQ_BASE_LO,
+                        context->HqdProgramEvidence.ReadbackPass1[11]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_READBACK_PQ_BASE_HI,
+                        context->HqdProgramEvidence.ReadbackPass1[12]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_PROGRAM_READBACK_PQ_CONTROL,
+                        context->HqdProgramEvidence.ReadbackPass1[14]);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_STATUS,
+                        (ULONG)context->HqdActiveStatus);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_SELECTED_SELECTOR,
+                        context->HqdActiveEvidence.SelectedSelector);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_BEFORE,
+                        context->HqdActiveEvidence.ActiveBefore);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_APPLIED,
+                        context->HqdActiveEvidence.ActiveApplied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_AFTER,
+                        context->HqdActiveEvidence.ActiveAfter);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RPTR_BEFORE,
+                        context->HqdActiveEvidence.RptrBefore);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RPTR_AFTER,
+                        context->HqdActiveEvidence.RptrAfter);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_APPLIED,
+                        context->HqdActiveEvidence.WptrApplied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_FENCE_BEFORE,
+                        context->HqdActiveEvidence.FenceBefore);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_FENCE_AFTER,
+                        context->HqdActiveEvidence.FenceAfter);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_SCRATCH_BEFORE,
+                        context->HqdActiveEvidence.ScratchBefore);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_SCRATCH_AFTER,
+                        context->HqdActiveEvidence.ScratchAfter);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_POLL_ITERATIONS,
+                        context->HqdActiveEvidence.PollIterations);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_TRIAD_PASSED,
+                        context->HqdActiveEvidence.TriadPassed);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RESTORE_PASSED,
+                        context->HqdActiveEvidence.RestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_MEM_RESTORE_PASSED,
+                        context->HqdActiveEvidence.MemoryRestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_PHYSICAL_READY,
+                        context->HqdActiveEvidence.PhysicalReady);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DOORBELL_RUNG,
+                        context->HqdActiveEvidence.DoorbellRung);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DOORBELL_INDEX,
+                        context->HqdActiveEvidence.DoorbellIndex);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DOORBELL_OFFSET,
+                        context->HqdActiveEvidence.DoorbellOffset);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DOORBELL_VALUE_APPLIED,
+                        context->HqdActiveEvidence.DoorbellValueApplied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DB_RANGE_LOWER_BEFORE,
+                        context->HqdActiveEvidence.DoorbellRangeLowerBefore);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DB_RANGE_LOWER_APPLIED,
+                        context->HqdActiveEvidence.DoorbellRangeLowerApplied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DB_RANGE_LOWER_READBACK,
+                        context->HqdActiveEvidence.DoorbellRangeLowerReadback);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DB_RANGE_UPPER_BEFORE,
+                        context->HqdActiveEvidence.DoorbellRangeUpperBefore);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DB_RANGE_UPPER_APPLIED,
+                        context->HqdActiveEvidence.DoorbellRangeUpperApplied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DB_RANGE_UPPER_READBACK,
+                        context->HqdActiveEvidence.DoorbellRangeUpperReadback);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CP_PQ_STATUS_BEFORE,
+                        context->HqdActiveEvidence.CpPqStatusBefore);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CP_PQ_STATUS_APPLIED,
+                        context->HqdActiveEvidence.CpPqStatusApplied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CP_PQ_STATUS_READBACK,
+                        context->HqdActiveEvidence.CpPqStatusReadback);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_POLL_CNTL_BEFORE,
+                        context->HqdActiveEvidence.WptrPollCntlBefore);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_POLL_CNTL_APPLIED,
+                        context->HqdActiveEvidence.WptrPollCntlApplied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_POLL_CNTL_READBACK,
+                        context->HqdActiveEvidence.WptrPollCntlReadback);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_SELECTOR_RELEASED_BEFORE_KICK,
+                        context->HqdActiveEvidence.SelectorReleasedBeforeKick);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CP_PQ_STATUS_AFTER_KICK,
+                        context->HqdActiveEvidence.CpPqStatusAfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DOORBELL_CONTROL_AFTER_KICK,
+                        context->HqdActiveEvidence.DoorbellControlAfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_AFTER_KICK,
+                        context->HqdActiveEvidence.WptrAfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RPTR_AFTER_KICK,
+                        context->HqdActiveEvidence.RptrAfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_INITIAL_WPTR_LO,
+                        context->HqdActiveEvidence.InitialWptrLo);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_INITIAL_WPTR_HI,
+                        context->HqdActiveEvidence.InitialWptrHi);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_BASELINE_WPTR_APPLIED,
+                        context->HqdActiveEvidence.BaselineWptrApplied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_BASELINE_WPTR_READBACK,
+                        context->HqdActiveEvidence.BaselineWptrReadback);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_BASELINE_WPTR_RESTORED,
+                        context->HqdActiveEvidence.BaselineWptrRestored);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_BASELINE_WPTR_RESTORE_POLLS,
+                        context->HqdActiveEvidence.BaselineWptrRestorePolls);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_BASELINE_WPTR_RESTORE_PASSED,
+                        context->HqdActiveEvidence.BaselineWptrRestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DIRECT_WPTR_KICK_APPLIED,
+                        context->HqdActiveEvidence.DirectWptrKickApplied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DIRECT_WPTR_BEFORE,
+                        context->HqdActiveEvidence.DirectWptrBefore);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DIRECT_WPTR_READBACK,
+                        context->HqdActiveEvidence.DirectWptrReadback);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DIRECT_RPTR_AFTER_KICK,
+                        context->HqdActiveEvidence.DirectRptrAfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DIRECT_WPTR_RESTORED,
+                        context->HqdActiveEvidence.DirectWptrRestored);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DIRECT_WPTR_RESTORE_POLLS,
+                        context->HqdActiveEvidence.DirectWptrRestorePolls);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_DIRECT_WPTR_RESTORE_PASSED,
+                        context->HqdActiveEvidence.DirectWptrRestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RPTR_MMIO_LAST,
+                        context->HqdActiveEvidence.RptrMmioLast);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_MMIO_LAST,
+                        context->HqdActiveEvidence.WptrMmioLast);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_HQ_STATUS0_POLL_LAST,
+                        context->HqdActiveEvidence.HqStatus0PollLast);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_HQD_ERROR_POLL_LAST,
+                        context->HqdActiveEvidence.HqdErrorPollLast);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RLC_CP_SCHEDULERS_BEFORE,
+                        context->HqdActiveEvidence.RlcCpSchedulersBefore);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RLC_CP_SCHEDULERS_APPLIED,
+                        context->HqdActiveEvidence.RlcCpSchedulersApplied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RLC_CP_SCHEDULERS_READBACK,
+                        context->HqdActiveEvidence.RlcCpSchedulersReadback);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RLC_CP_SCHEDULERS_AFTER_KICK,
+                        context->HqdActiveEvidence.RlcCpSchedulersAfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RLC_CP_SCHEDULERS_RESTORED,
+                        context->HqdActiveEvidence.RlcCpSchedulersRestored);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_RLC_CP_SCHEDULERS_RESTORE_PASSED,
+                        context->HqdActiveEvidence.RlcCpSchedulersRestorePassed);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_HQ_STATUS0_AFTER_KICK,
+                        context->HqdActiveEvidence.HqStatus0AfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_HQ_CONTROL0_AFTER_KICK,
+                        context->HqdActiveEvidence.HqControl0AfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_HQD_ERROR_AFTER_KICK,
+                        context->HqdActiveEvidence.HqdErrorAfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CPC_UTCL1_ERROR_AFTER_KICK,
+                        context->HqdActiveEvidence.CpcUtcl1ErrorAfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CPC_UTCL1_STATUS_AFTER_KICK,
+                        context->HqdActiveEvidence.CpcUtcl1StatusAfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CPF_UTCL1_STATUS_AFTER_KICK,
+                        context->HqdActiveEvidence.CpfUtcl1StatusAfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CPC_INT_STATUS_AFTER_KICK,
+                        context->HqdActiveEvidence.CpcIntStatusAfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_ME1_PIPE0_INT_STATUS_AFTER_KICK,
+                        context->HqdActiveEvidence.Me1Pipe0IntStatusAfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_ME2_PIPE1_INT_STATUS_AFTER_KICK,
+                        context->HqdActiveEvidence.Me2Pipe1IntStatusAfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_ME2_PIPE0_INT_STATUS_AFTER_KICK,
+                        context->HqdActiveEvidence.Me2Pipe0IntStatusAfterKick);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_PQ_BASE_LO,
+                        context->HqdActiveEvidence.PqBaseLoApplied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_PQ_BASE_HI,
+                        context->HqdActiveEvidence.PqBaseHiApplied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_POLL_ADDR_LO,
+                        context->HqdActiveEvidence.WptrPollAddrLoApplied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_POLL_ADDR_HI,
+                        context->HqdActiveEvidence.WptrPollAddrHiApplied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_WPTR_SHADOW,
+                        context->HqdActiveEvidence.WptrShadowApplied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_CP_MEC_CNTL_READBACK,
+                        context->HqdActiveEvidence.CpMecCntlReadback);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_MEC_PC_FIRST,
+                        context->HqdActiveEvidence.MecPcFirst);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_MEC_PC_LAST,
+                        context->HqdActiveEvidence.MecPcLast);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_MEC_PC_TRANSITIONS,
+                        context->HqdActiveEvidence.MecPcTransitions);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_MEC_PC_SAMPLES,
+                        context->HqdActiveEvidence.MecPcSamples);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_PQ_CONTROL_OBSERVED,
+                        context->HqdActiveEvidence.PqControlObserved);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_HDP_INVALIDATE_APPLIED,
+                        context->HqdActiveEvidence.HdpInvalidateApplied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GCVM_L2_BEFORE,
+                        context->HqdActiveEvidence.GcvmL2Cntl2Before);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GCVM_L2_APPLIED,
+                        context->HqdActiveEvidence.GcvmL2Cntl2Applied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GCVM_L2_READBACK,
+                        context->HqdActiveEvidence.GcvmL2Cntl2Readback);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GCVM_REQ_APPLIED,
+                        context->HqdActiveEvidence.GcvmInvalidateRequestApplied);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GCVM_REQ_READBACK,
+                        context->HqdActiveEvidence.GcvmInvalidateRequestReadback);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GCVM_ACK_BEFORE,
+                        context->HqdActiveEvidence.GcvmInvalidateAckBefore);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GCVM_ACK_AFTER,
+                        context->HqdActiveEvidence.GcvmInvalidateAckAfter);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GCVM_POLLS,
+                        context->HqdActiveEvidence.GcvmInvalidatePolls);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_COHERENCY_PASSED,
+                        context->HqdActiveEvidence.CoherencyPassed);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GFXOFF_APPLICABLE,
+                        context->HqdActiveEvidence.GfxOffApplicable);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GFXOFF_STATE_BEFORE,
+                        context->HqdActiveEvidence.GfxOffStateBefore);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GFXOFF_STATE_GUARDED,
+                        context->HqdActiveEvidence.GfxOffStateGuarded);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GFXOFF_STATE_AFTER,
+                        context->HqdActiveEvidence.GfxOffStateAfter);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GFXOFF_DISALLOW_RESPONSE,
+                        context->HqdActiveEvidence.GfxOffDisallowResponse);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GFXOFF_ALLOW_RESPONSE,
+                        context->HqdActiveEvidence.GfxOffAllowResponse);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GFXOFF_GUARD_PASSED,
+                        context->HqdActiveEvidence.GfxOffGuardPassed);
+                    Bc250ProbeRecord(BC250_PROBE_HQD_ACTIVE_GFXOFF_RESTORE_PASSED,
+                        context->HqdActiveEvidence.GfxOffRestorePassed);
                     context->VramProbeStatus = Bc250RunVramProbeTransaction(
                         &context->Core.DxgkInterface,
                         context->Core.ResolvedBars,
@@ -1616,21 +2877,18 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                         if (context->PspLoadFwStatus ==
                                 BC250_PSP_LOAD_FW_OK &&
                             context->SdmaRingWorkStatus ==
-                                BC250_SDMA_RING_WORK_OK &&
-                            context->SdmaRingWorkEvidence.PhysicalReady != 0u) {
-                            context->PspRlcLoadStatus =
-                                Bc250ActiveLoadRlcFirmware(context,
-                                    &context->PspRlcLoadEvidence,
-                                    &context->RlcLoadEvidence);
-                            /* 1.34: Micro-Gate 1: PFP staging e integridade de memoria
-                             * isolados sob HALT absoluto (sem escritas MMIO no CP). */
-                            if (context->PspRlcLoadStatus ==
-                                    BC250_PSP_LOAD_FW_OK &&
-                                context->RlcLoadEvidence.PhysicalReady != 0u) {
-                                context->PfpDirectLoadStatus =
-                                    Bc250ActiveRunPfpDirectLoad(
-                                        context,
-                                        &context->PfpDirectLoadEvidence);
+                                BC250_SDMA_RING_WORK_OK) {
+                            context->PfpDirectLoadStatus =
+                                Bc250ActiveRunPfpDirectLoad(
+                                    context,
+                                    &context->PfpDirectLoadEvidence);
+                            if (context->PfpDirectLoadStatus ==
+                                    BC250_PFP_DIRECT_LOAD_OK &&
+                                context->PfpDirectLoadEvidence.PhysicalReady != 0u) {
+                                context->HqdActiveStatus =
+                                    Bc250ActiveRunActiveHqdSubmissionTransaction(
+                                        context, &context->HqdActiveEvidence);
+                                Bc250ActiveRecordHqdSubmission(context);
                             }
                         }
                     }
@@ -1789,6 +3047,14 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                         context->PfpDirectLoadEvidence.PfpPcTransitions);
                     Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_PC_SAMPLES,
                         context->PfpDirectLoadEvidence.PfpPcSamples);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_ME_PC_BEFORE,
+                        context->PfpDirectLoadEvidence.MePcBefore);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_ME_PC_LAST,
+                        context->PfpDirectLoadEvidence.MePcLast);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_CE_PC_BEFORE,
+                        context->PfpDirectLoadEvidence.CePcBefore);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_CE_PC_LAST,
+                        context->PfpDirectLoadEvidence.CePcLast);
                     Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_FAULT_BEFORE,
                         context->PfpDirectLoadEvidence.FaultStatusBefore);
                     Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_FAULT_AFTER,
@@ -1799,6 +3065,22 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                         context->PfpDirectLoadEvidence.FaultAddressHigh);
                     Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_PORTS_PROGRAMMED,
                         context->PfpDirectLoadEvidence.WriteOnlyPortsProgrammed);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_RB0_ACTIVE_BEFORE,
+                        context->PfpDirectLoadEvidence.Rb0ActiveBefore);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_RB0_ACTIVE_APPLIED,
+                        context->PfpDirectLoadEvidence.Rb0ActiveApplied);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_RB0_ACTIVE_AFTER,
+                        context->PfpDirectLoadEvidence.Rb0ActiveAfter);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_RB0_RPTR_BEFORE,
+                        context->PfpDirectLoadEvidence.Rb0RptrBefore);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_RB0_RPTR_AFTER,
+                        context->PfpDirectLoadEvidence.Rb0RptrAfter);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_RB0_WPTR_APPLIED,
+                        context->PfpDirectLoadEvidence.Rb0WptrApplied);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_RB0_FENCE_BEFORE,
+                        context->PfpDirectLoadEvidence.Rb0FenceBefore);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_RB0_FENCE_AFTER,
+                        context->PfpDirectLoadEvidence.Rb0FenceAfter);
                     Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_REG_RESTORE,
                         context->PfpDirectLoadEvidence.RegisterRestorePassed);
                     Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_MEM_RESTORE,

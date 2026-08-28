@@ -180,6 +180,14 @@ echo [cc] bc250_power_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_power_contract.obj" "%ROOTDIR%\driver\core\bc250_power_contract.c"
 if errorlevel 1 exit /b 1
 
+echo [cc] bc250_smu_telemetry_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_smu_telemetry_contract.obj" "%ROOTDIR%\driver\core\bc250_smu_telemetry_contract.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_superio_nct6686_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_superio_nct6686_contract.obj" "%ROOTDIR%\driver\core\bc250_superio_nct6686_contract.c"
+if errorlevel 1 exit /b 1
+
 echo [cc] bc250_isa_validator.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_isa_validator.obj" "%ROOTDIR%\driver\core\bc250_isa_validator.c"
 if errorlevel 1 exit /b 1
@@ -856,6 +864,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_ih_contract.obj" ^
   "%ODIR%\bc250_sdma_packet_builder.obj" ^
   "%ODIR%\bc250_pm4_packet_builder.obj" ^
+  "%ODIR%\bc250_compute_mqd_contract.obj" ^
   "%ODIR%\bc250_gcvm_contract.obj" ^
   "%ODIR%\bc250_submit_command_contract.obj" ^
   "%ODIR%\bc250_preemption_contract.obj" ^
@@ -980,6 +989,40 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo [cc] smu_telemetry_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\smu_telemetry_contract_test.obj" "%ROOTDIR%\driver\tests\smu_telemetry_contract_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] smu_telemetry_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\smu_telemetry_contract_test.exe" ^
+  "%ODIR%\bc250_smu_telemetry_contract.obj" ^
+  "%ODIR%\smu_telemetry_contract_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\smu_telemetry_contract_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(smu_telemetry_contract_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
+echo [cc] superio_nct6686_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\superio_nct6686_contract_test.obj" "%ROOTDIR%\driver\tests\superio_nct6686_contract_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] superio_nct6686_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\superio_nct6686_contract_test.exe" ^
+  "%ODIR%\bc250_superio_nct6686_contract.obj" ^
+  "%ODIR%\superio_nct6686_contract_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\superio_nct6686_contract_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(superio_nct6686_contract_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
 echo [cc] global_readiness_audit_test.c
 cl %CFLAGS% /Fo"%ODIR%\global_readiness_audit_test.obj" "%ROOTDIR%\driver\tests\global_readiness_audit_test.c"
 if errorlevel 1 exit /b 1
@@ -1082,6 +1125,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_sdma_packet_builder.obj" ^
   "%ODIR%\bc250_pm4_packet_builder.obj" ^
   "%ODIR%\bc250_gcvm_contract.obj" ^
+  "%ODIR%\bc250_compute_mqd_contract.obj" ^
   "%ODIR%\bc250_submit_command_contract.obj" ^
   "%ODIR%\bc250_preemption_contract.obj" ^
   "%ODIR%\bc250_gpu_clock_contract.obj" ^
@@ -1185,6 +1229,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_ih_contract.obj" ^
   "%ODIR%\bc250_sdma_packet_builder.obj" ^
   "%ODIR%\bc250_pm4_packet_builder.obj" ^
+  "%ODIR%\bc250_compute_mqd_contract.obj" ^
   "%ODIR%\bc250_gcvm_contract.obj" ^
   "%ODIR%\bc250_submit_command_contract.obj" ^
   "%ODIR%\bc250_preemption_contract.obj" ^
@@ -1292,6 +1337,8 @@ echo [link] bc250compute_pkg.sys
 link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry ^
   /OUT:"%ODIR%\bc250compute_pkg.sys" ^
   "%ODIR%\bc250_compute_service.obj" ^
+  "%ODIR%\bc250_smu_telemetry_contract.obj" ^
+  "%ODIR%\bc250_superio_nct6686_contract.obj" ^
   "%ODIR%\bc250_vram_allocator.obj" ^
   "%ODIR%\bc250_isa_validator.obj" ^
   "%ODIR%\bc250_sdma_packet_builder.obj" ^

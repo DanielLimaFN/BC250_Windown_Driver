@@ -180,11 +180,83 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == 0x00004C4Cu || ByteOffset == 0x00004C54u ||
         ByteOffset == 0x0003B000u || ByteOffset == 0x0003B9B8u ||
         ByteOffset == 0x000086D8u || ByteOffset == 0x00008694u ||
+        ByteOffset == 0x00008698u || ByteOffset == 0x0000869Cu ||
         ByteOffset == 0x0000A130u || ByteOffset == 0x0000A134u ||
         ByteOffset == 0x0000A138u ||
         ByteOffset == 0x0003E050u || ByteOffset == 0x0003E054u ||
+        ByteOffset == 0x0003E058u || ByteOffset == 0x0003E05Cu ||
+        ByteOffset == 0x0003E060u || ByteOffset == 0x0003E064u ||
         ByteOffset == 0x0003E100u || ByteOffset == 0x0003E104u ||
-        ByteOffset == 0x0003E108u || ByteOffset == 0x0003E10Cu;
+        ByteOffset == 0x0003E108u || ByteOffset == 0x0003E10Cu ||
+        ByteOffset == 0x0003E110u || ByteOffset == 0x0003E114u ||
+        ByteOffset == 0x0003E118u || ByteOffset == 0x0003E11Cu ||
+        ByteOffset == 0x0003E120u || ByteOffset == 0x0003E124u ||
+        ByteOffset == 0x0003E128u || ByteOffset == 0x0003E12Cu ||
+        ByteOffset == 0x0000C2B8u || ByteOffset == 0x0000C12Cu ||
+        ByteOffset == 0x0000C680u || ByteOffset == 0x0000C144u ||
+        ByteOffset == 0x00008704u || ByteOffset == 0x00008708u ||
+        ByteOffset == 0x0000C168u || ByteOffset == 0x0000C16Cu ||
+        ByteOffset == 0x0000C170u || ByteOffset == 0x0000C174u ||
+        ByteOffset == 0x0000C170u || ByteOffset == 0x0000C174u ||
+        ByteOffset == 0x0000C2E0u || ByteOffset == 0x0000C20Cu ||
+        ByteOffset == 0x0000C3B4u ||
+        ByteOffset == BC250_HQD_MMIO_RLC_CP_SCHEDULERS ||
+        ByteOffset == BC250_HQD_MMIO_CPC_UTCL1_ERROR ||
+        ByteOffset == BC250_HQD_MMIO_CP_ME1_PIPE0_INT_STATUS ||
+        ByteOffset == BC250_HQD_MMIO_CP_ME2_PIPE1_INT_STATUS ||
+        ByteOffset == BC250_HQD_MMIO_CP_ME2_PIPE0_INT_STATUS ||
+        ByteOffset == BC250_HQD_MMIO_CPC_INT_STATUS ||
+        ByteOffset == BC250_HQD_MMIO_CPC_UTCL1_STATUS ||
+        ByteOffset == BC250_HQD_MMIO_CPF_UTCL1_STATUS ||
+        ByteOffset == BC250_HQD_MMIO_HQ_STATUS0 ||
+        ByteOffset == BC250_HQD_MMIO_HQ_CONTROL0 ||
+        ByteOffset == BC250_HQD_MMIO_HQD_ERROR ||
+        ByteOffset == 0x0000C10Cu || ByteOffset == 0x0000C110u ||
+        ByteOffset == 0x0000C3ACu || ByteOffset == 0x0000C3B0u ||
+        ByteOffset == 0x00008234u || ByteOffset == 0x0000A104u ||
+        ByteOffset == 0x00030934u || ByteOffset == 0x00030A04u ||
+        ByteOffset == 0x0000A28Cu || ByteOffset == 0x0000A2D4u ||
+        ByteOffset == 0x0003C2C4u ||
+        ByteOffset == 0x00008920u || ByteOffset == 0x0000C6DCu ||
+        ByteOffset == 0x0000C4CCu || ByteOffset == 0x0000C4D0u ||
+        ByteOffset == 0x0000C4D4u || ByteOffset == 0x00030804u ||
+        ByteOffset == 0x0000A200u || ByteOffset == 0x0000A3ACu ||
+        ByteOffset == 0x0000A3B0u || ByteOffset == 0x0000A42Cu ||
+        ByteOffset == 0x0000A430u || ByteOffset == 0x0000A4ACu ||
+        ByteOffset == 0x0003E068u || ByteOffset == 0x0003E06Cu ||
+        ByteOffset == 0x0003E130u || ByteOffset == 0x0003E134u ||
+        ByteOffset == 0x0003E138u || ByteOffset == 0x0003E13Cu ||
+        ByteOffset == 0x00008008u || ByteOffset == 0x00008010u ||
+        ByteOffset == 0x00008020u ||
+        ByteOffset == BC250_GRBM_GFX_CNTL_BYTE_OFFSET ||
+        ByteOffset == BC250_HQD_MMIO_MQD_BASE_LO ||
+        ByteOffset == BC250_HQD_MMIO_MQD_BASE_HI ||
+        ByteOffset == BC250_HQD_MMIO_MQD_CONTROL ||
+        ByteOffset == BC250_HQD_MMIO_EOP_BASE_LO ||
+        ByteOffset == BC250_HQD_MMIO_EOP_BASE_HI ||
+        ByteOffset == BC250_HQD_MMIO_EOP_CONTROL ||
+        ByteOffset == BC250_HQD_MMIO_ACTIVE ||
+        ByteOffset == BC250_HQD_MMIO_VMID ||
+        ByteOffset == BC250_HQD_MMIO_PERSISTENT_STATE ||
+        ByteOffset == BC250_HQD_MMIO_PIPE_PRIORITY ||
+        ByteOffset == BC250_HQD_MMIO_QUEUE_PRIORITY ||
+        ByteOffset == BC250_HQD_MMIO_QUANTUM ||
+        ByteOffset == BC250_HQD_MMIO_PQ_BASE_LO ||
+        ByteOffset == BC250_HQD_MMIO_PQ_BASE_HI ||
+        ByteOffset == BC250_HQD_MMIO_PQ_RPTR ||
+        ByteOffset == BC250_HQD_MMIO_RPTR_REPORT_LO ||
+        ByteOffset == BC250_HQD_MMIO_RPTR_REPORT_HI ||
+        ByteOffset == BC250_HQD_MMIO_WPTR_POLL_LO ||
+        ByteOffset == BC250_HQD_MMIO_WPTR_POLL_HI ||
+        ByteOffset == BC250_HQD_MMIO_DOORBELL_CONTROL ||
+        ByteOffset == BC250_HQD_MMIO_PQ_CONTROL ||
+        ByteOffset == BC250_HQD_MMIO_IB_CONTROL ||
+        ByteOffset == BC250_HQD_MMIO_DEQUEUE_REQUEST ||
+        ByteOffset == BC250_HQD_MMIO_PQ_WPTR_LO ||
+        ByteOffset == BC250_HQD_MMIO_PQ_WPTR_HI ||
+        ByteOffset == 0x00030100u ||
+        ByteOffset == 0x000086A0u || ByteOffset == 0x000086A4u ||
+        ByteOffset == 0x0000A4B0u || ByteOffset == 0x00030800u;
 }
 
 static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
@@ -220,8 +292,74 @@ static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == 0x00004C4Cu || ByteOffset == 0x00004C54u ||
         ByteOffset == 0x0003B000u || ByteOffset == 0x000086D8u ||
         ByteOffset == 0x0003E050u || ByteOffset == 0x0003E054u ||
+        ByteOffset == 0x0003E058u || ByteOffset == 0x0003E05Cu ||
+        ByteOffset == 0x0003E060u || ByteOffset == 0x0003E064u ||
         ByteOffset == 0x0003E100u || ByteOffset == 0x0003E104u ||
-        ByteOffset == 0x0003E108u || ByteOffset == 0x0003E10Cu;
+        ByteOffset == 0x0003E108u || ByteOffset == 0x0003E10Cu ||
+        ByteOffset == 0x0003E110u || ByteOffset == 0x0003E114u ||
+        ByteOffset == 0x0003E118u || ByteOffset == 0x0003E11Cu ||
+        ByteOffset == 0x0003E120u || ByteOffset == 0x0003E124u ||
+        ByteOffset == 0x0003E128u || ByteOffset == 0x0003E12Cu ||
+        ByteOffset == 0x0000C2B8u || ByteOffset == 0x0000C12Cu ||
+        ByteOffset == BC250_REG_CP_RB0_BASE ||
+        ByteOffset == BC250_REG_CP_RB0_BASE_HI ||
+        ByteOffset == BC250_REG_CP_RB0_CNTL ||
+        ByteOffset == BC250_REG_CP_RB0_RPTR ||
+        ByteOffset == BC250_REG_CP_RB0_WPTR ||
+        ByteOffset == BC250_REG_CP_RB0_WPTR_HI ||
+        ByteOffset == 0x0000C680u || ByteOffset == 0x0000C144u ||
+        ByteOffset == 0x00008704u || ByteOffset == 0x00008708u ||
+        ByteOffset == 0x0000C168u || ByteOffset == 0x0000C16Cu ||
+        ByteOffset == 0x0000C170u || ByteOffset == 0x0000C174u ||
+        ByteOffset == 0x0000C170u || ByteOffset == 0x0000C174u ||
+        ByteOffset == 0x0000C2E0u || ByteOffset == 0x0000C20Cu ||
+        ByteOffset == 0x0000C3B4u ||
+        ByteOffset == BC250_HQD_MMIO_RLC_CP_SCHEDULERS ||
+        ByteOffset == 0x0000C10Cu || ByteOffset == 0x0000C110u ||
+        ByteOffset == 0x0000C3ACu || ByteOffset == 0x0000C3B0u ||
+        ByteOffset == 0x00008234u || ByteOffset == 0x0000A104u ||
+        ByteOffset == 0x00030934u || ByteOffset == 0x00030A04u ||
+        ByteOffset == 0x0000A28Cu || ByteOffset == 0x0000A2D4u ||
+        ByteOffset == 0x0003C2C4u ||
+        ByteOffset == 0x00008920u || ByteOffset == 0x0000C6DCu ||
+        ByteOffset == 0x00030804u ||
+        ByteOffset == 0x0000A200u || ByteOffset == 0x0000A3ACu ||
+        ByteOffset == 0x0000A3B0u || ByteOffset == 0x0000A42Cu ||
+        ByteOffset == 0x0000A430u || ByteOffset == 0x0000A4ACu ||
+        ByteOffset == 0x0003E068u || ByteOffset == 0x0003E06Cu ||
+        ByteOffset == 0x0003E130u || ByteOffset == 0x0003E134u ||
+        ByteOffset == 0x0003E138u || ByteOffset == 0x0003E13Cu ||
+        ByteOffset == 0x00008008u || ByteOffset == 0x00008010u ||
+        ByteOffset == 0x00008020u ||
+        ByteOffset == BC250_GRBM_GFX_CNTL_BYTE_OFFSET ||
+        ByteOffset == BC250_HQD_MMIO_MQD_BASE_LO ||
+        ByteOffset == BC250_HQD_MMIO_MQD_BASE_HI ||
+        ByteOffset == BC250_HQD_MMIO_MQD_CONTROL ||
+        ByteOffset == BC250_HQD_MMIO_EOP_BASE_LO ||
+        ByteOffset == BC250_HQD_MMIO_EOP_BASE_HI ||
+        ByteOffset == BC250_HQD_MMIO_EOP_CONTROL ||
+        ByteOffset == BC250_HQD_MMIO_VMID ||
+        ByteOffset == BC250_HQD_MMIO_PERSISTENT_STATE ||
+        ByteOffset == BC250_HQD_MMIO_PIPE_PRIORITY ||
+        ByteOffset == BC250_HQD_MMIO_QUEUE_PRIORITY ||
+        ByteOffset == BC250_HQD_MMIO_QUANTUM ||
+        ByteOffset == BC250_HQD_MMIO_PQ_BASE_LO ||
+        ByteOffset == BC250_HQD_MMIO_PQ_BASE_HI ||
+        ByteOffset == BC250_HQD_MMIO_PQ_RPTR ||
+        ByteOffset == BC250_HQD_MMIO_RPTR_REPORT_LO ||
+        ByteOffset == BC250_HQD_MMIO_RPTR_REPORT_HI ||
+        ByteOffset == BC250_HQD_MMIO_WPTR_POLL_LO ||
+        ByteOffset == BC250_HQD_MMIO_WPTR_POLL_HI ||
+        ByteOffset == BC250_HQD_MMIO_DOORBELL_CONTROL ||
+        ByteOffset == BC250_HQD_MMIO_PQ_CONTROL ||
+        ByteOffset == BC250_HQD_MMIO_IB_CONTROL ||
+        ByteOffset == BC250_HQD_MMIO_DEQUEUE_REQUEST ||
+        ByteOffset == BC250_HQD_MMIO_ACTIVE ||
+        ByteOffset == BC250_HQD_MMIO_PQ_WPTR_LO ||
+        ByteOffset == BC250_HQD_MMIO_PQ_WPTR_HI ||
+        ByteOffset == 0x00030100u ||
+        ByteOffset == 0x000086A0u ||
+        ByteOffset == 0x0000A4B0u || ByteOffset == 0x00030800u;
 }
 
 uint32_t Bc250MmioTopologyRead32(

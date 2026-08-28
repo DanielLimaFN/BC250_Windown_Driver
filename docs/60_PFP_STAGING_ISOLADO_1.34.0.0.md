@@ -2,7 +2,7 @@
 
 Data: 2026-08-27.
 
-Status: **CANDIDATO CONSTRUÍDO; AGUARDANDO PROVA EM SILÍCIO; PM4/COMPUTE NÃO VALIDADO**.
+Status: **VALIDADO EM SILÍCIO (MICRO-GATE 1 APROVADO); PM4/COMPUTE NÃO EXECUTADOS; NÃO VALIDADO PARA ACELERAÇÃO**.
 
 ## Contexto e Objetivo
 
@@ -41,5 +41,18 @@ Conforme a estratégia de decomposição em micro-gates definida em `docs/59_HAN
 - signed SYS: `FB1A57F4BF95EF71AEDFCD3B5AE20FBEBFED81096A8617CD6A84A7EF5E277A73`
 - catalog:    `0DB8EE1D77F6DDBBBC42C160C9603924AF79C6D5A0B180A26F1DEB06B889A55B`
 - signer:     `8D14413F3B97AEF9D7F78A1CA8D9EA99A3FBAD3B`
+
+## Evidência Física Medida no Hardware
+
+- Log de auditoria: `docs/evidence/2026-08-27_09-19-21-DESKTOP-HQAG6T4-mcdm-replace/`
+- Veredito da auditoria pós-binding: `BC250 MCDM FAIL-CLOSED BINDING AUDIT: PASS`
+- `PfpDirectStatus = 0`
+- `PfpDirectBytes = 263168`
+- `PfpDirectStagedDwords = 65792`
+- `PfpDirectStagingMismatches = 0`
+- `PfpDirectPortsProgrammed = 0` (portas do CP intocadas sob HALT)
+- `PfpDirectMemRestore = 1`
+- `PfpDirectPhysicalReady = 1`
+- **Vídeo BasicDisplay**: 100% preservado (ZERO tela preta).
 
 **PFP/PM4/COMPUTE NÃO EXECUTADOS; NÃO VALIDADO EM HARDWARE**.

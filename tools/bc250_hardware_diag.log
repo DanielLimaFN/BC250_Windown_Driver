@@ -1,0 +1,58 @@
+================================================================================
+   AMD BC-250 — DIAGNOSTICO SEGURO DE HARDWARE & TELEMETRIA EM SILICIO         
+================================================================================
+
+[PASSO 1] Abrindo conexao de kernel com \\.\Bc250Compute...
+[+] Conexao estabelecida com sucesso!
+
+[PASSO 2] Consultando informacoes gerais da APU (IOCTL_BC250_GET_HARDWARE_INFO)...
+  Silicon:          AMD BC-250 (Oberon RDNA2)
+  CPU Zen 2 Cores:  8
+  GPU RDNA2 CUs:    24 (12 WGPs)
+  VRAM Total:       512 MiB (Visivel: 256 MiB, ReBAR: 256 MiB)
+  BAR5 Base MMIO:   0xFE800000 (Tamanho: 0x80000)
+
+[PASSO 3] Consultando sensores de telemetria (IOCTL_BC250_GET_TELEMETRY)...
+  Timestamp QPC:    5506027945
+
+  --- NUVOTON NCT6686D SUPER I/O (Base 0x0A20, Chip 0xD441) ---
+    Temp VRM MOS:     -1 °C [OK]
+    Temp CPU Die:     -1 °C
+    Temp System/PCB:  -1 °C
+    Linha +12V:       24.48 V (24480 mV)
+    Linha +5V:        10.20 V (10200 mV)
+    Linha +3.3V:      6.12 V (6120 mV)
+    Vcore / SoC:      2040 mV / 2040 mV
+    Ventoinhas (PWM / RPM):
+      Fan 1: 0 RPM (PWM: 255/255 = 100%)
+      Fan 2: 0 RPM (PWM: 255/255 = 100%)
+      Fan 3: 0 RPM (PWM: 255/255 = 100%)
+      Fan 4: 0 RPM (PWM: 255/255 = 100%)
+      Fan 5: 0 RPM (PWM: 255/255 = 100%)
+      Fan 6: 0 RPM (PWM: 255/255 = 100%)
+      Fan 7: 0 RPM (PWM: 255/255 = 100%)
+      Fan 8: 0 RPM (PWM: 255/255 = 100%)
+
+  [AMD SMU v11.8] GFXOFF / Standby ou Mailbox Inativa.
+
+[PASSO 5] Testando leitura de registradores seguros catalogados...
+  Lendo [01/16] 0x08000 (GRBM_CHIP_REV)... Valor: 0x00000018 [OK]
+  Lendo [02/16] 0x08010 (GRBM_STATUS)... Valor: 0xA0003028 [OK]
+  Lendo [03/16] 0x08014 (GRBM_STATUS2)... Valor: 0x00000006 [OK]
+  Lendo [04/16] 0x08A00 (SCRATCH_REG0)... Valor: 0x00000000 [OK]
+  Lendo [05/16] 0x08A04 (SCRATCH_REG1)... Valor: 0x23460000 [OK]
+  Lendo [06/16] 0x08A08 (SCRATCH_REG2)... Valor: 0x00000000 [OK]
+  Lendo [07/16] 0x08A0C (SCRATCH_REG3)... Valor: 0x00000000 [OK]
+  Lendo [08/16] 0x09100 (CC_GC_SHADER_ARRAY_CONFIG)... Valor: 0xC062C688 [OK]
+  Lendo [09/16] 0x0C12C (CP_DEVICE_ID)... Valor: 0x00000001 [OK]
+  Lendo [10/16] 0x0C2B8 (CP_MAX_CONTEXT)... Valor: 0x00000007 [OK]
+  Lendo [11/16] 0x0C6DC (CP_SD_CNTL)... Valor: 0x0000077F [OK]
+  Lendo [12/16] 0x34000 (SDMA0_UCODE_CHECKSUM)... Valor: 0x00000000 [OK]
+  Lendo [13/16] 0x34020 (SDMA0_GFX_RB_RPTR)... Valor: 0x00000000 [OK]
+  Lendo [14/16] 0x34028 (SDMA0_GFX_RB_WPTR)... Valor: 0x00000000 [OK]
+  Lendo [15/16] 0x34024 (SDMA0_GFX_RB_WPTR_HI)... Valor: 0x00000000 [OK]
+  Lendo [16/16] 0x3B208 (SMU_C2PMSG_66 (Status))... Valor: 0x00000800 [OK]
+
+================================================================================
+   DIAGNOSTICO CONCLUIDO COM SUCESSO! LOG SALVO EM bc250_hardware_diag.log      
+================================================================================

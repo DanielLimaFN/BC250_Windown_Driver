@@ -118,16 +118,22 @@ Valores/protocolo associados:
 
 Mensagens são IDs, não endereços. As mais relevantes registradas foram Q0 `0x01/02/03/0F/1E/37/38/3D`, controle `0x39/3A/3B/3C`, e Q3 `0x1E/8B/8C/8F/98/9A`. Cada ID é dependente da queue e deve ser whitelisted com faixa de argumentos.
 
+O BC-250 `1002:13FE` e identificado pelo upstream como Cyan Skillfish2 e usa
+SMU 11.8. O header `smu_v11_8_ppsmc.h` nao define `AllowGfxOff` nem
+`DisallowGfxOff`: `0x1D` e `ClearTelemetryMax`, e `0x1E` e
+`QueryActiveWgp`. Portanto `0x14`, `0x15`, `0x1D` e `0x1E` ficam proibidos
+como comandos de GFXOFF neste ASIC. Os IDs 0x1D/0x1E do ABI Van Gogh/SMU
+11.5 nao podem ser transplantados para Cyan Skillfish2.
+
 ### SMUIO - readback físico de GFXOFF
 
 | Registro | base byte | mmREG | BAR5 byte | Classe | Estado observado |
 |---|---:|---:|---:|---:|---|
-| `SMUIO_GFX_MISC_CNTL` | `0x5A000` | `0x00C5` | `0x5A314` | P1/P2 | Cinco leituras readonly e a ABI 4 retornaram `0x00000000`; bits `2:1=0`, GFXOFF no estado ocioso. Falta observar transição sob carga. |
+| `SMUIO_GFX_MISC_CNTL` | `0x5A000` | `0x00C5` | `0x5A314` | Q | Derivacao e semantica pertencem ao caminho Van Gogh; leituras `0` no BC-250 nao decodificam estado GFXOFF e nao autorizam escrita. |
 
-Derivação: `0x5A000 + 0x00C5 * 4 = 0x5A314`. O `vangogh_ppt.c`
-upstream local define `PWR_GFXOFF_STATUS` nos bits `2:1`: `0=GFXOFF`, `1=saindo`,
-`2=ativo` e `3=entrando`. Esse registro é readback físico; a máscara de features
-SMU e `QueryActiveWgp` continuam sendo evidências auxiliares, não substitutas.
+Derivacao historica: `0x5A000 + 0x00C5 * 4 = 0x5A314`. A decodificacao
+`PWR_GFXOFF_STATUS[2:1]` existe no `vangogh_ppt.c`, mas nao no
+`cyan_skillfish_ppt.c`; por isso ela nao e evidencia valida no BC-250.
 
 ## GC10.1.3 - status, seleção e topologia
 
@@ -148,6 +154,26 @@ SMU e `QueryActiveWgp` continuam sendo evidências auxiliares, não substitutas.
 | `SCRATCH_REG1` | `0x2041` | 1 | `0x30104` | P1/P0 | round-trip/adjacente usado em diagnóstico. |
 | `GRBM_GFX_INDEX` | `0x2200` | 1 | `0x30800` | P1/P2 | seleção SE/SH/instance; restaurar broadcast após teste. |
 | `RLC_PG_ALWAYS_ON_WGP_MASK` | `0x4C53` | 1 | `0x3B14C` | P1/P2 | observado `0x00000003`. |
+| `RLC_CP_SCHEDULERS` | `0x4CAA` | 1 | `0x3B2A8` | P1/P2 | leitura física Windows `0x58504840`; candidato 3.14 decodifica `scheduler0` existente e acrescenta somente `ENABLE`, resultando neste boot em `0x585048C0` e seletor `ME2/P0/Q0=0x8`. Dump Linux BC-250 mede `0x5850C0C8`. |
+
+### Diagnóstico read-only MEC/HQD pós-doorbell (candidato 3.11)
+
+| Registro | mmREG | idx | BAR5 byte | Leitura diagnóstica |
+|---|---:|---:|---:|---|
+| `CPC_UTCL1_ERROR` | `0x1DFF` | 0 | `0xC17C` | halt/fault do caminho de tradução CPC. |
+| `CP_ME1_PIPE0_INT_STATUS` | `0x1E2D` | 0 | `0xC234` | interrupções/faults do pipe MEC1/P0. |
+| `CP_ME2_PIPE1_INT_STATUS` | `0x1E32` | 0 | `0xC248` | interrupções/faults da KIQ Linux MEC2/P1. |
+| `CP_ME2_PIPE0_INT_STATUS` | `0x1E31` | 0 | `0xC244` | interrupções/faults da atribuição scheduler0 deste boot MEC2/P0. |
+| `CPC_INT_STATUS` | `0x1E55` | 0 | `0xC2D4` | status global de interrupção CPC. |
+| `CPC_UTCL1_STATUS` | `0x1F55` | 0 | `0xC6D4` | atividade/tradução UTCL1 do CPC. |
+| `CPF_UTCL1_STATUS` | `0x1F56` | 0 | `0xC6D8` | atividade/tradução UTCL1 do CPF. |
+| `CP_HQD_HQ_STATUS0` | `0x1FC9` | 0 | `0xC8A4` | `QUEUE_IDLE[30]`, init e estado do HQD selecionado. |
+| `CP_HQD_HQ_CONTROL0` | `0x1FCA` | 0 | `0xC8A8` | controle observável do HQD selecionado. |
+| `CP_HQD_ERROR` | `0x1FDC` | 0 | `0xC8F0` | faults PQ/IB/EOP/RPTR/WPTR/UTCL1 por fila. |
+
+Os nove registros de fault/status permanecem somente leitura. Apenas
+`RLC_CP_SCHEDULERS=0x3B2A8` recebe escrita no candidato 3.12, limitada pelo
+contrato a RMW do byte baixo, readback integral e restauração do snapshot.
 
 ### Bloco COMPUTE completo derivado
 
@@ -181,7 +207,52 @@ Esses registros configuram estado de dispatch; eles não substituem firmware, MQ
 | `CP_RB0_BASE_HI` | `0x1E51` idx0 | `0x0C2C4` | P1/P2 | high separado no layout GC10.1. |
 | `CP_RB_WPTR_POLL_ADDR_LO/HI` | `0x1E8B/1E8C` idx0 | `0x0C3AC/0C3B0` | P1/P2 | GPUVA do shadow WPTR. |
 | `CP_RB_DOORBELL_CONTROL` | `0x1E8D` idx0 | `0x0C3B4` | P1/P2 | habilitação/índice de doorbell. |
-| `CP_DEVICE_ID` | a auditar | `0x0C684` usado | P2 | Não levar ao código novo até reconciliar com header. |
+| `CP_DEVICE_ID` | `0x1DEB` idx0 | `0x0C12C` | P1/P2 | Reconciliado com `gc_10_1_0_offset.h`; ainda exige snapshot/readback no ensaio. |
+| `CP_MEC_DOORBELL_RANGE_LOWER/UPPER` | `0x1DFC/1DFD` idx0 | `0x0C170/0C174` | P1/P2 | Faixa global MEC; inclui base GC `0x4980`. `0x77F0/0x77F4` era cálculo incompleto e fica em quarentena. |
+| `CP_PQ_WPTR_POLL_CNTL` | `0x1E23` idx0 | `0x0C20C` | P1/P2 | `EN` é bit 31. `0x788C` era cálculo sem base GC e fica em quarentena. |
+| `CP_PQ_STATUS` | `0x1E58` idx0 | `0x0C2E0` | P1/P2 | `DOORBELL_ENABLE` é bit 1; Linux sweep observou `0x2`. `0x7960` fica em quarentena. |
+
+## MEC / HQD / MQD de compute (GC10.1)
+
+Derivação autoritativa local: `gc_10_1_0_offset.h`, todos com `BASE_IDX=0`.
+O bloco `gc_cpphqddec` começa em `BAR5+0x0C800`. Estes endereços estão
+classificados para **preflight readonly**; ativação ou dequeue continuam P2 e
+exigem snapshot integral da HQD selecionada.
+
+O banco é indireto e depende de `GRBM_GFX_CNTL`. No primeiro preflight, o
+miniport lê o seletor antes e depois de cada passagem e não o altera. A seleção
+canônica candidata para MEC1/pipe0/queue0/VMID0 é `0x00000004`; seletor `0`
+identifica outro banco e deve produzir `SELECTOR_NOT_COMPUTE`, nunca sucesso MEC.
+
+| Registro | mmREG | BAR5 byte | Classe | Nota |
+|---|---:|---:|---:|---|
+| `CP_MQD_BASE_ADDR` | `0x1FA9` | `0x0C824` | P1/P2 | endereço MQD baixo; não é `0x9104`. |
+| `CP_MQD_BASE_ADDR_HI` | `0x1FAA` | `0x0C828` | P1/P2 | endereço MQD alto; não é `0x9108`. |
+| `CP_HQD_ACTIVE` | `0x1FAB` | `0x0C82C` | P1/P2 | bit ativo; não é `0x910C`. |
+| `CP_HQD_VMID` | `0x1FAC` | `0x0C830` | P1/P2 | VMID da fila; primeiro ensaio limitado a VMID 0. |
+| `CP_HQD_PERSISTENT_STATE` | `0x1FAD` | `0x0C834` | P1/P2 | `PRELOAD_SIZE` vem do MQD. |
+| `CP_HQD_PIPE_PRIORITY` | `0x1FAE` | `0x0C838` | P1/P2 | prioridade estática da pipe. |
+| `CP_HQD_QUEUE_PRIORITY` | `0x1FAF` | `0x0C83C` | P1/P2 | prioridade estática da fila. |
+| `CP_HQD_QUANTUM` | `0x1FB0` | `0x0C840` | P1/P2 | quantum da HQD. |
+| `CP_HQD_PQ_BASE` | `0x1FB1` | `0x0C844` | P1/P2 | base do ring deslocada por 8. |
+| `CP_HQD_PQ_BASE_HI` | `0x1FB2` | `0x0C848` | P1/P2 | parte alta da base. |
+| `CP_HQD_PQ_RPTR` | `0x1FB3` | `0x0C84C` | P0/P1 | cursor físico primário da prova. |
+| `CP_HQD_PQ_RPTR_REPORT_ADDR` | `0x1FB4` | `0x0C850` | P1/P2 | writeback de RPTR baixo. |
+| `CP_HQD_PQ_RPTR_REPORT_ADDR_HI` | `0x1FB5` | `0x0C854` | P1/P2 | writeback de RPTR alto. |
+| `CP_HQD_PQ_WPTR_POLL_ADDR` | `0x1FB6` | `0x0C858` | P1/P2 | shadow WPTR baixo. |
+| `CP_HQD_PQ_WPTR_POLL_ADDR_HI` | `0x1FB7` | `0x0C85C` | P1/P2 | shadow WPTR alto. |
+| `CP_HQD_PQ_DOORBELL_CONTROL` | `0x1FB8` | `0x0C860` | P1/P2 | índice e enable de doorbell. |
+| `CP_HQD_PQ_CONTROL` | `0x1FBA` | `0x0C868` | P1/P2 | tamanho, RPTR block e atributos KMD. |
+| `CP_HQD_DEQUEUE_REQUEST` | `0x1FC1` | `0x0C884` | P1/P2 | teardown; aguardar `ACTIVE=0`. |
+| `CP_MQD_CONTROL` | `0x1FCB` | `0x0C8AC` | P1/P2 | VMID do MQD. |
+| `CP_HQD_EOP_BASE_ADDR` | `0x1FCE` | `0x0C8B8` | P1/P2 | EOP base deslocada por 8. |
+| `CP_HQD_EOP_BASE_ADDR_HI` | `0x1FCF` | `0x0C8BC` | P1/P2 | EOP base alta. |
+| `CP_HQD_EOP_CONTROL` | `0x1FD0` | `0x0C8C0` | P1/P2 | tamanho do EOP. |
+| `CP_HQD_PQ_WPTR_LO` | `0x1FDF` | `0x0C8FC` | P0/P2 | cursor baixo; não é `0x9130`. |
+| `CP_HQD_PQ_WPTR_HI` | `0x1FE0` | `0x0C900` | P0/P2 | cursor alto e latch conforme upstream. |
+
+Os offsets `0x9104`, `0x9108`, `0x910C` e `0x9130` ficam em quarentena para
+este ASIC: não correspondem ao mapa GC10.1 derivado pelo SOC15.
 
 ## Golden/context usados nas tentativas
 

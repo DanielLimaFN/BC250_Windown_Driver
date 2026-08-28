@@ -121,6 +121,7 @@ static int Bc250Prepare(
     SET_REG(BC250_REG_PSP_C2PMSG_69, 0x69u);
     SET_REG(BC250_REG_PSP_C2PMSG_70, 0x70u);
     SET_REG(BC250_REG_PSP_C2PMSG_71, 0x71u);
+    SET_REG(BC250_HQD_MMIO_ACTIVE, 0x250u);
 #undef SET_REG
     return 1;
 }
@@ -176,6 +177,37 @@ static int Bc250RunMmioTopologyTransportTest(void)
     CHECK(platformSnapshot.PspC2pmsg81 == 0x81u);
     CHECK(platformSnapshot.PspC2pmsg64 == 0x64u);
     CHECK(platformSnapshot.PspC2pmsg71 == 0x71u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_ACTIVE, &value) == 1u);
+    CHECK(value == 0x250u && context.ReadCount == 80u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_ACTIVE, 1u) == 1u);
+    CHECK(context.WriteCount == 2u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_QUEUE_PRIORITY, &value) == 1u);
+    CHECK(value == 0u && context.ReadCount == 81u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_QUEUE_PRIORITY, 7u) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_QUEUE_PRIORITY, &value) == 1u);
+    CHECK(value == 7u && context.ReadCount == 82u && context.WriteCount == 3u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_QUEUE_PRIORITY, 0u) == 1u);
+    CHECK(context.WriteCount == 4u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_RLC_CP_SCHEDULERS, &value) == 1u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_RLC_CP_SCHEDULERS, 0xA0u) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_RLC_CP_SCHEDULERS, &value) == 1u);
+    CHECK(value == 0xA0u);
+    CHECK(Bc250MmioTopologyRead32(&context, 0x0000DA60u, &value) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(&context, 0x0000DA60u, 1u) == 0u);
+    CHECK(Bc250MmioTopologyRead32(&context, 0x0003F040u, &value) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(&context, 0x0003F040u, 1u) == 0u);
+    CHECK(Bc250MmioTopologyRead32(&context, 0x000032D4u, &value) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(&context, 0x000032D4u, 1u) == 0u);
+    CHECK(context.ReadCount == 84u && context.WriteCount == 5u);
     CHECK(Bc250MmioTopologyUnmap(&context) == BC250_MMIO_TOPOLOGY_OK);
     CHECK(g_unmapCalls == 1u && context.State == BC250_MMIO_TOPOLOGY_EMPTY);
     CHECK(context.VirtualBase == NULL);

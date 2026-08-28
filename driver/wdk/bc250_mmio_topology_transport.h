@@ -10,6 +10,7 @@
 #include "../core/bc250_gcvm_vmid8_transaction.h"
 #include "../core/bc250_psp_ring_transaction.h"
 #include "../core/bc250_sdma_f32_transaction.h"
+#include "../core/bc250_compute_mqd_contract.h"
 
 #ifdef __cplusplus
 extern "C" {
