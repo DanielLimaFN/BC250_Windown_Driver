@@ -32,3 +32,6 @@ node_modules/
 # Compute contract isolated build output
 driver/wdk/output_compute/
 tools/monitor/*.exe
+
+# Laboratory bring-up image (nunca vai para o pacote assinado)
+driver/wdk/output_lab/
