@@ -215,6 +215,22 @@ não recebia. Mesmo numa imagem de laboratório com o bring-up compilado, o tuna
 sempre o default. A flag foi acrescentada em `build-contract.bat`, mas **ela sozinha não liga
 nada** — é pré-requisito, não interruptor.
 
+**Como as 167 capturas foram produzidas** — respondido pelo histórico, não por suposição:
+
+| Período | Estado do código | Bring-up |
+|---|---|---|
+| até 28/08 21:35 | **sem `SkipHwBringup`** — o bring-up rodava incondicionalmente | ✅ rodava → **as 167 capturas** |
+| 28/08 21:35 (`6acb6c8`) | tunable introduzido, default 1; `PERSISTENT_TELEMETRY` não chegava ao arquivo, logo sempre 1 | ⬜ desligado na prática |
+| 29/08 07:25 (`771d108` *"WDDM FUNCIONAL"*) | gate `UNSAFE_STARTDEVICE_HW_BRINGUP` compila o caminho fora | ⬜ desligado por contrato |
+
+A última captura é de 28/08 21:14; o tunable nasceu 21 minutos depois. **Todas as capturas
+são anteriores ao tunable** — ele nunca controlou nada, em nenhum momento. E o commit que
+fez o display funcionar de forma confiável é exatamente o que removeu o bring-up do caminho.
+
+> Isso também explica o nome do commit: o display virou *"WDDM FUNCIONAL"* **porque** o
+> bring-up saiu. Não é coincidência — é a mesma troca que a seção 6 descreve, resolvida por
+> remoção em vez de convergência.
+
 **O que isso exige para testar o ENG17 (commit `7e926c0`)**: uma **variante de build de
 laboratório** com `BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP`, separada do pacote de
 produção e fora do caminho auditado. É decisão de projeto, não ajuste de configuração — e o
