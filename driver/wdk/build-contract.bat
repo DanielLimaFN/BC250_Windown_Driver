@@ -295,8 +295,17 @@ cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 ^
   /Fo"%ODIR%\bc250_readonly_miniport_driver.obj" "%SRCDIR%bc250_readonly_miniport.c"
 if errorlevel 1 exit /b 1
 
+rem BC250_ENABLE_PERSISTENT_TELEMETRY e' obrigatorio aqui, nao opcional.
+rem Em bc250_active_miniport.c essa macro guarda Bc250ActiveReadTunable(), a
+rem unica leitura de tunable do driver, com um unico chamador: SkipHwBringup.
+rem Sem ela a funcao compila para "return DefaultValue" e o valor gravado em
+rem HKLM\...\Services\bc250mcdm\Parameters\SkipHwBringup e' IGNORADO - o driver
+rem se comporta como se fosse sempre 1 e o bring-up de hardware nunca liga.
+rem Diagnosticado em 2026-08-29: o ensaio F4d nao mediu nada porque o
+rem StartDevice registrou echo=1 com o registro em 0. Ver
+rem STATUS_E_ROADMAP_CONSOLIDADO.md secao 2.0.2.
 echo [cc] bc250_active_miniport.c ^(Dxgk registration^)
-cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 ^
+cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 /DBC250_ENABLE_PERSISTENT_TELEMETRY=1 ^
   /Fo"%ODIR%\bc250_active_miniport_driver.obj" "%SRCDIR%bc250_active_miniport.c"
 if errorlevel 1 exit /b 1
 

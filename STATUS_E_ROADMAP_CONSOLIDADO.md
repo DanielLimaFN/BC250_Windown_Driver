@@ -162,6 +162,58 @@ O passo 3 exige um caminho que carregue o ucode do CP sem passar pelo `StartDevi
 natural é expor a carga de firmware como IOCTL no `bc250compute`, que já provou coexistir
 com o display.
 
+### 2.0.2 ACHADO P0 — o tunable `SkipHwBringup` nunca funcionou
+
+Diagnosticado em 2026-08-29, ao executar o ensaio F4d pela primeira vez com o driver
+corretamente instalado. O ensaio não mediu nada, e a razão não era o hardware.
+
+**Sintoma**: com `HKLM\...\Services\bc250mcdm\Parameters\SkipHwBringup = 0` gravado às
+11:47:23, o `StartDevice` provocado pelo ensaio às 11:50:08 registrou `echo = 1`. A
+telemetria era fresca (confirmado pelo `LastWriteTime` da chave `Probe`), o ciclo
+Disable/Enable funcionou (`CycleError` vazio), `StartDeviceEntered=1` — e mesmo assim
+`PfpDirectStatus` sequer apareceu: o caminho do PFP nunca rodou.
+
+**Causa raiz** — flags de compilação por unidade em `driver/wdk/build-contract.bat`:
+
+```bat
+[cc] bc250_probe_telemetry.c (persistent registry)
+cl %CFLAGS% /DBC250_ENABLE_PERSISTENT_TELEMETRY=1 ...   <- so' este arquivo recebia
+
+[cc] bc250_active_miniport.c (Dxgk registration)
+cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 ...      <- SEM a macro
+```
+
+`Bc250ActiveReadTunable` vive em `bc250_active_miniport.c` e sua leitura do registro está
+dentro de `#if defined(BC250_ENABLE_PERSISTENT_TELEMETRY)`. Como a macro nunca chegava nesse
+arquivo, a função compilava para o ramo `#else`:
+
+```c
+UNREFERENCED_PARAMETER(ValueName);
+return DefaultValue;      /* SkipHwBringup sempre 1 */
+```
+
+**Consequências:**
+
+1. O valor `SkipHwBringup` no registro **nunca teve efeito algum**. Toda tentativa de ligar o
+   bring-up por registro foi no-op silencioso.
+2. A linha `HKR,Parameters,SkipHwBringup,0x00010001,1` do
+   [`bc250mcdm.inf:51`](driver/wdk/package/bc250mcdm.inf:51) é decorativa.
+3. O eco em `Probe` reportava fielmente o que o driver decidiu (1) — não o que estava
+   configurado (0). O eco estava certo; a configuração é que não era lida.
+4. A telemetria do `Probe` continuava sendo gravada porque isso mora em
+   `bc250_probe_telemetry.c`, arquivo diferente, que **recebia** a macro. Foi o que mascarou
+   o problema: telemetria viva dava a impressão de que a leitura de tunable também estava.
+
+**Correção**: acrescentar `/DBC250_ENABLE_PERSISTENT_TELEMETRY=1` à compilação de
+`bc250_active_miniport.c` no alvo de driver. O escopo é preciso — a macro aparece **uma única
+vez** nesse arquivo, guardando somente `Bc250ActiveReadTunable`, que tem **um único chamador**
+(`SkipHwBringup`, linha 2364). Não habilita nenhum outro caminho.
+
+> **Lição para a disciplina de evidência do projeto**: um ensaio pode falhar por não estar
+> medindo nada, e isso se parece com falha do hardware. O `status=-1` / `FAIL-NO-START` do
+> ensaio era ausência de telemetria, não PFP parado. Sem cruzar o eco com o tunable e o
+> `LastWriteTime` da chave, a conclusão natural — e errada — seria "o ENG17 não resolveu".
+
 ### 2.1 A assinatura é binária e determinística
 
 Correlacionando `PFP physical:` com `CP PM4 ring:` nas 167 capturas:
