@@ -295,15 +295,22 @@ cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 ^
   /Fo"%ODIR%\bc250_readonly_miniport_driver.obj" "%SRCDIR%bc250_readonly_miniport.c"
 if errorlevel 1 exit /b 1
 
-rem BC250_ENABLE_PERSISTENT_TELEMETRY e' obrigatorio aqui, nao opcional.
-rem Em bc250_active_miniport.c essa macro guarda Bc250ActiveReadTunable(), a
-rem unica leitura de tunable do driver, com um unico chamador: SkipHwBringup.
-rem Sem ela a funcao compila para "return DefaultValue" e o valor gravado em
-rem HKLM\...\Services\bc250mcdm\Parameters\SkipHwBringup e' IGNORADO - o driver
-rem se comporta como se fosse sempre 1 e o bring-up de hardware nunca liga.
-rem Diagnosticado em 2026-08-29: o ensaio F4d nao mediu nada porque o
-rem StartDevice registrou echo=1 com o registro em 0. Ver
-rem STATUS_E_ROADMAP_CONSOLIDADO.md secao 2.0.2.
+rem BC250_ENABLE_PERSISTENT_TELEMETRY habilita Bc250ActiveReadTunable(), a unica
+rem leitura de tunable do driver. Sem ela a funcao compila para
+rem "return DefaultValue" e o valor gravado em Parameters\SkipHwBringup seria
+rem ignorado mesmo que o caminho de bring-up estivesse compilado.
+rem
+rem ATENCAO - esta flag sozinha NAO liga o bring-up de hardware, e nao e' isso
+rem que ela conserta. O chamador de Bc250ActiveReadTunable esta dentro do #else
+rem de BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP (bc250_active_miniport.c:2339),
+rem que a imagem de producao NAO define - por contrato de seguranca auditado em
+rem tools\audit-bc250mcdm-safety.py, que inclusive PROIBE definir essa macro
+rem aqui. Na imagem de producao o eco e' fixo:
+rem Bc250ProbeRecord(BC250_PROBE_SKIP_HW_BRINGUP, 1u).
+rem
+rem Ou seja: esta flag corrige um bug latente, que so' se manifesta numa imagem
+rem de laboratorio com o bring-up compilado. Ver STATUS_E_ROADMAP_CONSOLIDADO.md
+rem secao 2.0.2.
 echo [cc] bc250_active_miniport.c ^(Dxgk registration^)
 cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 /DBC250_ENABLE_PERSISTENT_TELEMETRY=1 ^
   /Fo"%ODIR%\bc250_active_miniport_driver.obj" "%SRCDIR%bc250_active_miniport.c"

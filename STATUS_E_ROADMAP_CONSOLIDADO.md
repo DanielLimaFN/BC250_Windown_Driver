@@ -162,57 +162,69 @@ O passo 3 exige um caminho que carregue o ucode do CP sem passar pelo `StartDevi
 natural é expor a carga de firmware como IOCTL no `bc250compute`, que já provou coexistir
 com o display.
 
-### 2.0.2 ACHADO P0 — o tunable `SkipHwBringup` nunca funcionou
+### 2.0.2 ACHADO P0 — o bring-up é desligado em tempo de compilação, por contrato
 
-Diagnosticado em 2026-08-29, ao executar o ensaio F4d pela primeira vez com o driver
-corretamente instalado. O ensaio não mediu nada, e a razão não era o hardware.
+> **Correção de diagnóstico.** A primeira versão desta seção culpava a flag
+> `BC250_ENABLE_PERSISTENT_TELEMETRY`. **Estava errada** — essa era metade menor da história.
+> A causa real é outra e é deliberada.
 
-**Sintoma**: com `HKLM\...\Services\bc250mcdm\Parameters\SkipHwBringup = 0` gravado às
-11:47:23, o `StartDevice` provocado pelo ensaio às 11:50:08 registrou `echo = 1`. A
-telemetria era fresca (confirmado pelo `LastWriteTime` da chave `Probe`), o ciclo
-Disable/Enable funcionou (`CycleError` vazio), `StartDeviceEntered=1` — e mesmo assim
-`PfpDirectStatus` sequer apareceu: o caminho do PFP nunca rodou.
+**Sintoma**: com `Parameters\SkipHwBringup = 0` gravado às 11:47:23, o `StartDevice`
+provocado pelo ensaio às 11:50:08 registrou `echo = 1`. Telemetria fresca (confirmado pelo
+`LastWriteTime` da chave `Probe`), `CycleError` vazio, `StartDeviceEntered=1` — e
+`PfpDirectStatus` sequer apareceu.
 
-**Causa raiz** — flags de compilação por unidade em `driver/wdk/build-contract.bat`:
-
-```bat
-[cc] bc250_probe_telemetry.c (persistent registry)
-cl %CFLAGS% /DBC250_ENABLE_PERSISTENT_TELEMETRY=1 ...   <- so' este arquivo recebia
-
-[cc] bc250_active_miniport.c (Dxgk registration)
-cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 ...      <- SEM a macro
-```
-
-`Bc250ActiveReadTunable` vive em `bc250_active_miniport.c` e sua leitura do registro está
-dentro de `#if defined(BC250_ENABLE_PERSISTENT_TELEMETRY)`. Como a macro nunca chegava nesse
-arquivo, a função compilava para o ramo `#else`:
+**Causa real** — [`bc250_active_miniport.c:2339`](driver/wdk/bc250_active_miniport.c:2339):
 
 ```c
-UNREFERENCED_PARAMETER(ValueName);
-return DefaultValue;      /* SkipHwBringup sempre 1 */
+#if !defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)
+    /*
+     * Production display image: StartDevice ends after inheriting the GOP
+     * scanout.  Compute/GCVM/CP/HQD transactions are deliberately absent
+     * from this compiled path; a registry value must never be able to turn
+     * destructive laboratory bring-up on during PnP display ownership.
+     */
+    Bc250ProbeRecord(BC250_PROBE_SKIP_HW_BRINGUP, 1u);   /* eco FIXO em 1 */
+    ...
+    return STATUS_SUCCESS;
+#else
+    ULONG skipHw = Bc250ActiveReadTunable(L"SkipHwBringup", 1);   /* linha 2364 */
 ```
+
+Na imagem de produção o caminho inteiro de bring-up — junto com a leitura do tunable — é
+**compilado fora**. O `echo = 1` não veio de leitura nenhuma: é a constante da linha 2346.
+
+**E isso é contrato auditado, não descuido.** `tools/audit-bc250mcdm-safety.py:110-122`
+*exige* o gate, *exige* o comentário `"registry value must never be able to turn"`, *exige* o
+`Bc250ProbeRecord(..., 1u)` — e **proíbe** tanto `#define BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP`
+no fonte quanto `/DBC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP` no script de build. Esse
+auditor roda dentro de `build-bc250mcdm-package.ps1` (saída `BC250 MCDM SAFETY AUDIT: PASS`).
 
 **Consequências:**
 
-1. O valor `SkipHwBringup` no registro **nunca teve efeito algum**. Toda tentativa de ligar o
-   bring-up por registro foi no-op silencioso.
-2. A linha `HKR,Parameters,SkipHwBringup,0x00010001,1` do
-   [`bc250mcdm.inf:51`](driver/wdk/package/bc250mcdm.inf:51) é decorativa.
-3. O eco em `Probe` reportava fielmente o que o driver decidiu (1) — não o que estava
-   configurado (0). O eco estava certo; a configuração é que não era lida.
-4. A telemetria do `Probe` continuava sendo gravada porque isso mora em
-   `bc250_probe_telemetry.c`, arquivo diferente, que **recebia** a macro. Foi o que mascarou
-   o problema: telemetria viva dava a impressão de que a leitura de tunable também estava.
+1. **Nenhum valor de registro pode ligar o bring-up no pacote de produção.** Por desenho, não
+   por bug. Todas as tentativas de hoje eram impossíveis por construção.
+2. As 167 capturas históricas com bring-up ativo **não vieram do pacote de produção** — vieram
+   de uma **imagem de laboratório**, compilada com a macro definida. Produção e laboratório
+   são dois binários diferentes, e o documento tratava os dois como um só.
+3. O eco em `Probe` é honesto sobre o comportamento (o driver realmente pulou o bring-up), mas
+   não reflete o registro — e não tem como refletir.
 
-**Correção**: acrescentar `/DBC250_ENABLE_PERSISTENT_TELEMETRY=1` à compilação de
-`bc250_active_miniport.c` no alvo de driver. O escopo é preciso — a macro aparece **uma única
-vez** nesse arquivo, guardando somente `Bc250ActiveReadTunable`, que tem **um único chamador**
-(`SkipHwBringup`, linha 2364). Não habilita nenhum outro caminho.
+**Bug latente encontrado de passagem**: `Bc250ActiveReadTunable` está guardada por
+`BC250_ENABLE_PERSISTENT_TELEMETRY`, macro que o alvo de driver de `bc250_active_miniport.c`
+não recebia. Mesmo numa imagem de laboratório com o bring-up compilado, o tunable retornaria
+sempre o default. A flag foi acrescentada em `build-contract.bat`, mas **ela sozinha não liga
+nada** — é pré-requisito, não interruptor.
 
-> **Lição para a disciplina de evidência do projeto**: um ensaio pode falhar por não estar
-> medindo nada, e isso se parece com falha do hardware. O `status=-1` / `FAIL-NO-START` do
-> ensaio era ausência de telemetria, não PFP parado. Sem cruzar o eco com o tunable e o
-> `LastWriteTime` da chave, a conclusão natural — e errada — seria "o ENG17 não resolveu".
+**O que isso exige para testar o ENG17 (commit `7e926c0`)**: uma **variante de build de
+laboratório** com `BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP`, separada do pacote de
+produção e fora do caminho auditado. É decisão de projeto, não ajuste de configuração — e o
+contrato de segurança existente foi escrito justamente para tornar essa decisão explícita.
+
+> **Lição de disciplina**: um ensaio pode falhar por não estar medindo nada, e isso se parece
+> com falha de hardware. Pior: pode se parecer com uma causa raiz plausível e errada. A
+> primeira explicação (flag de telemetria) era coerente com os sintomas, compilava, e estava
+> errada. Só a inspeção do binário — ausência de `RtlQueryRegistryValues` no `.obj` — e a
+> leitura do `#if` que envolve o chamador fecharam o diagnóstico.
 
 ### 2.1 A assinatura é binária e determinística
 
