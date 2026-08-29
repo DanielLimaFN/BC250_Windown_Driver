@@ -21,7 +21,8 @@ typedef struct BC250_DISPLAY_STATE {
     DXGKRNL_INTERFACE DxgkInterface;
     DXGK_DISPLAY_INFORMATION PostDisplayInfo;
     ULONG DisplayAcquired;
-    ULONG SourceVisible;
+    volatile LONG SourceVisible;
+    volatile LONG VidPnCommitted;
     PHYSICAL_ADDRESS FrameBufferPhysical;
     PVOID FrameBufferVirtual;
     ULONG FrameBufferSize;
@@ -30,15 +31,26 @@ typedef struct BC250_DISPLAY_STATE {
     KTIMER VsyncTimer;
     KDPC VsyncDpc;
     BOOLEAN VsyncTimerInitialized;
-    BOOLEAN VsyncEnabled;
-    ULONG VsyncCount;
+    volatile LONG DisplayStarted;
+    volatile LONG PowerStateD0;
+    volatile LONG VsyncRequested;
+    volatile LONG VsyncEnabled;
+    volatile LONG VsyncCount;
+    volatile LONG VsyncProofRecorded;
+    volatile LONG IsSupportedVidPnCount;
+    volatile LONG CommitVidPnCount;
+    volatile LONG ControlInterruptCount;
+    volatile LONG PresentCount;
+    volatile LONG ForceFullPresent;
+    EX_RUNDOWN_REF PresentRundown;
+    BOOLEAN PresentRundownInitialized;
     UCHAR Edid[128];
     BOOLEAN EdidValid;
 } BC250_DISPLAY_STATE;
 
 extern BC250_DISPLAY_STATE g_Bc250DisplayState;
 
-void Bc250DisplayInit(
+NTSTATUS Bc250DisplayInit(
     _In_ const DXGKRNL_INTERFACE *DxgkInterface,
     _In_ const DXGK_DISPLAY_INFORMATION *PostDisplayInfo);
 

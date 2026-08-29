@@ -32,7 +32,7 @@ $matchingInfs = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
 Get-ChildItem -LiteralPath $infRoot -Filter 'oem*.inf' | ForEach-Object {
     $text = Get-Content -LiteralPath $_.FullName -Raw -ErrorAction SilentlyContinue
     if ($null -ne $text -and
-        $text -match '(?im)^Class=ComputeAccelerator\s*$' -and
+        $text -match '(?im)^Class=(ComputeAccelerator|Display)\s*$' -and
         $text -match '(?i)PCI\\VEN_1002&DEV_13FE' -and
         $text -match '(?im)^AddService=bc250mcdm,' -and
         $text -match '(?im)^ServiceBinary=%12%\\bc250mcdm\.sys\s*$') {

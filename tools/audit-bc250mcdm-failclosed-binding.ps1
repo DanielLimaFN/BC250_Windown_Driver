@@ -49,7 +49,7 @@ if (-not (Test-Path -LiteralPath $probePath)) {
         exit 0
     }
     foreach ($expected in @(
-        @{ Name='SchemaVersion'; Value=94 },
+        @{ Name='SchemaVersion'; Value=96 },
         @{ Name='DriverEntryReached'; Value=1 },
         @{ Name='InitializationDataReady'; Value=1 },
         @{ Name='AddDeviceEntered'; Value=1 },

@@ -10,12 +10,12 @@ $manifestPath = Join-Path $root 'driver\wdk\package\output_active.manifest.json'
 $markerPath = 'C:\BC250_TEST_OEMINF.txt'
 $driverPath = Join-Path $env:SystemRoot 'System32\drivers\bc250mcdm.sys'
 $instancePrefix = 'PCI\VEN_1002&DEV_13FE'
-$targetInf = 'oem19.inf'
 
 $markerLines = @(Get-Content -LiteralPath $markerPath -ErrorAction SilentlyContinue)
-if ($markerLines.Count -ne 1 -or $markerLines[0] -cne $targetInf) {
-    throw 'Continuacao recusada: marcador nao identifica exclusivamente oem19.inf.'
+if ($markerLines.Count -ne 1 -or $markerLines[0] -notmatch '^oem\d+\.inf$') {
+    throw 'Continuacao recusada: marcador nao contem um unico nome OEM valido.'
 }
+$targetInf = $markerLines[0].ToLowerInvariant()
 if (Test-Path -LiteralPath (Join-Path $env:SystemRoot "INF\$targetInf")) {
     throw 'Continuacao recusada: oem19.inf ainda existe; use o rollback principal.'
 }

@@ -11,7 +11,6 @@ $prebindingAudit = Join-Path $root 'tools\audit-bc250mcdm-prebinding.ps1'
 $manifestPath = Join-Path $root 'driver\wdk\package\output_active.manifest.json'
 $markerPath = 'C:\BC250_TEST_OEMINF.txt'
 $driverPath = Join-Path $env:SystemRoot 'System32\drivers\bc250mcdm.sys'
-$targetInf = 'oem19.inf'
 $instancePrefix = 'PCI\VEN_1002&DEV_13FE'
 
 foreach ($path in @($recoveryAudit,$prebindingAudit,$manifestPath,$markerPath,'C:\BC250_RECOVERY.cmd')) {
@@ -23,6 +22,10 @@ if (-not (Test-Path -LiteralPath $driverPath)) {
     throw 'Rollback recusado: bc250mcdm.sys instalado ausente.'
 }
 $installedDriverHash = (Get-FileHash -LiteralPath $driverPath -Algorithm SHA256).Hash
+$expectedDriverHash = [string]$manifest.PackageSysSha256
+if ($installedDriverHash -ne $expectedDriverHash) {
+    throw 'Rollback recusado: hash do bc250mcdm.sys instalado diverge do pacote autorizado.'
+}
 $installedSignature = Get-AuthenticodeSignature -LiteralPath $driverPath
 if ($installedSignature.Status -ne 'Valid' -or $null -eq $installedSignature.SignerCertificate -or
     $installedSignature.SignerCertificate.Thumbprint -ne $manifest.SignerThumbprint) {
@@ -33,21 +36,28 @@ $preflightDevices = @(Get-CimInstance Win32_PnPEntity | Where-Object {
     $_.PNPDeviceID -like "$instancePrefix*"
 })
 if ($preflightDevices.Count -ne 1 -or $preflightDevices[0].Service -ne 'bc250mcdm' -or
-    $preflightDevices[0].ConfigManagerErrorCode -ne 43) {
-    throw 'Rollback recusado: binding atual nao e bc250mcdm Codigo 43 fail-closed.'
+    $preflightDevices[0].ConfigManagerErrorCode -notin @(0,43)) {
+    throw 'Rollback recusado: binding atual nao e bc250mcdm Codigo 0/43.'
 }
 
 $markerLines = @(Get-Content -LiteralPath $markerPath)
-if ($markerLines.Count -ne 1 -or $markerLines[0] -cne $targetInf) {
-    throw "Rollback recusado: marcador nao identifica exclusivamente $targetInf."
+if ($markerLines.Count -ne 1 -or $markerLines[0] -notmatch '^oem\d+\.inf$') {
+    throw 'Rollback recusado: marcador nao contem um unico nome OEM valido.'
 }
+$targetInf = $markerLines[0].ToLowerInvariant()
 $installedInf = Join-Path $env:SystemRoot "INF\$targetInf"
 if (-not (Test-Path -LiteralPath $installedInf)) {
     throw "Rollback recusado: $installedInf ausente."
 }
 $infText = Get-Content -LiteralPath $installedInf -Raw
+$installedInfHash = (Get-FileHash -LiteralPath $installedInf -Algorithm SHA256).Hash
+if ($installedInfHash -ne [string]$manifest.PackageInfSha256) {
+    throw "Rollback recusado: hash de $targetInf diverge do pacote autorizado."
+}
+if ($infText -notmatch '(?im)^Class=(ComputeAccelerator|Display)\s*$') {
+    throw "Rollback recusado: classe nao autorizada em $targetInf."
+}
 foreach ($identity in @(
-    'Class=ComputeAccelerator',
     'PCI\VEN_1002&DEV_13FE',
     'AddService=bc250mcdm,',
     'ServiceBinary=%12%\bc250mcdm.sys'
@@ -87,7 +97,7 @@ $secondHash = if (Test-Path -LiteralPath $driverPath) {
     (Get-FileHash -LiteralPath $driverPath -Algorithm SHA256).Hash
 } else { $null }
 if ($secondDevices.Count -ne 1 -or $secondDevices[0].Service -ne 'bc250mcdm' -or
-    $secondDevices[0].ConfigManagerErrorCode -ne 43 -or
+    $secondDevices[0].ConfigManagerErrorCode -notin @(0,43) -or
     $secondHash -ne $installedDriverHash) {
     throw 'Estado mudou antes da remocao; rollback abortado.'
 }

@@ -51,7 +51,7 @@ Get-ChildItem -LiteralPath (Join-Path $env:SystemRoot 'INF') -Filter 'oem*.inf' 
     ForEach-Object {
         $infText = Get-Content -LiteralPath $_.FullName -Raw -ErrorAction SilentlyContinue
         if ($null -eq $infText -or
-            $infText -notmatch '(?im)^Class=ComputeAccelerator\s*$' -or
+            $infText -notmatch '(?im)^Class=(ComputeAccelerator|Display)\s*$' -or
             $infText -notmatch '(?i)PCI\\VEN_1002&DEV_13FE') { return }
         $isReadonly = $infText -match '(?im)^AddService=bc250readonly,' -and
             $infText -match '(?im)^ServiceBinary=%12%\\bc250readonly\.sys\s*$'

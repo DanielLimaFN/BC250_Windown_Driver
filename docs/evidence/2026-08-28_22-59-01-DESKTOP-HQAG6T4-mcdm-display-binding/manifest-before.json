@@ -1,0 +1,17 @@
+﻿{
+    "started":  "2026-08-28T22:59:01.7960518-03:00",
+    "published_inf":  "oem19.inf",
+    "instance_id":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
+    "service_before":  "BasicDisplay",
+    "problem_code_before":  0,
+    "binding_api":  "UpdateDriverForPlugAndPlayDevicesW_INSTALLFLAG_FORCE",
+    "package_inf_sha256":  "7F7BD998F35A39E4E3BBC5A6A26920F67B7267CD5A4F194FB8E6CACFA5475A1D",
+    "package_sys_sha256":  "683409CB2C7BB6C3B92843DC337CADDEF1DA2B899818D883DBAF6487FDEEB96D",
+    "package_cat_sha256":  "5C4BCC116BEB7B0EF65081956DD9E9EF4928ED3812C45E27BA256CEE8CC996DC",
+    "recovery_sha256":  "B3B8FEE7BCA18D8C26A4B6FA03A669796CA01809C0C4E6EB665C4604B7E044F1",
+    "watchdog_timeout_seconds":  120,
+    "watchdog_token":  "505c53f2-df82-4a37-a917-9da58e315bb4",
+    "visual_confirmation_command":  "powershell -NoProfile -ExecutionPolicy Bypass -File \"C:\\Users\\Daniel\\Desktop\\NamixWDDM\\tools\\confirm-bc250mcdm-display.ps1\" -EvidenceDir \"C:\\Users\\Daniel\\Desktop\\NamixWDDM\\docs\\evidence\\2026-08-28_22-59-01-DESKTOP-HQAG6T4-mcdm-display-binding\" -InstanceId \"PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041\" -Token \"505c53f2-df82-4a37-a917-9da58e315bb4\" -IConfirmDisplayIsVisible",
+    "hardware_validated":  false,
+    "verdict":  "NAO VALIDADO EM HARDWARE"
+}

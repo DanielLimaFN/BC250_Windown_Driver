@@ -663,6 +663,27 @@ static PCWSTR Bc250ProbeFieldName(BC250_PROBE_FIELD Field)
     case BC250_PROBE_DMM_QAI_STATUS: return L"DmmQaiStatus";
     case BC250_PROBE_DMM_DISPLAY_MAPPED: return L"DmmDisplayMapped";
     case BC250_PROBE_DMM_VSYNC_COUNT: return L"DmmVsyncCount";
+    case BC250_PROBE_DMM_IS_SUPPORTED_COUNT:
+        return L"DmmIsSupportedCount";
+    case BC250_PROBE_DMM_IS_SUPPORTED_STATUS:
+        return L"DmmIsSupportedStatus";
+    case BC250_PROBE_DMM_IS_SUPPORTED_RESULT:
+        return L"DmmIsSupportedResult";
+    case BC250_PROBE_DMM_COMMIT_COUNT: return L"DmmCommitCount";
+    case BC250_PROBE_DMM_COMMIT_STATUS: return L"DmmCommitStatus";
+    case BC250_PROBE_DMM_COMMIT_HAS_PATH: return L"DmmCommitHasPath";
+    case BC250_PROBE_DMM_COMMIT_SUPPORTED:
+        return L"DmmCommitSupported";
+    case BC250_PROBE_DMM_CONTROL_INTERRUPT_COUNT:
+        return L"DmmControlInterruptCount";
+    case BC250_PROBE_DMM_CONTROL_INTERRUPT_TYPE:
+        return L"DmmControlInterruptType";
+    case BC250_PROBE_DMM_CONTROL_INTERRUPT_ENABLE:
+        return L"DmmControlInterruptEnable";
+    case BC250_PROBE_DMM_PRESENT_ENTERED: return L"DmmPresentEntered";
+    case BC250_PROBE_DMM_PRESENT_STATUS: return L"DmmPresentStatus";
+    case BC250_PROBE_DMM_PRESENT_SOURCE_PITCH:
+        return L"DmmPresentSourcePitch";
     case BC250_PROBE_SKIP_HW_BRINGUP: return L"SkipHwBringup";
     default: return NULL;
     }

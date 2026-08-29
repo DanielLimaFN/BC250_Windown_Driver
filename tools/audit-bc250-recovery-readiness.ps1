@@ -64,7 +64,7 @@ Get-ChildItem -LiteralPath (Join-Path $env:SystemRoot 'INF') -Filter 'oem*.inf' 
     ForEach-Object {
         $text = Get-Content -LiteralPath $_.FullName -Raw -ErrorAction SilentlyContinue
         if ($null -ne $text -and
-            $text.Contains('Class=ComputeAccelerator') -and
+            $text -match '(?im)^Class=(ComputeAccelerator|Display)\s*$' -and
             $text.Contains('PCI\VEN_1002&DEV_13FE') -and
             $text.Contains('AddService=bc250mcdm,') -and
             $text.Contains('ServiceBinary=%12%\bc250mcdm.sys')) {

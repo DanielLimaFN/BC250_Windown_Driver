@@ -1,0 +1,40 @@
+{
+  "captured_at": "2026-08-28T23:42:37.6285988-03:00",
+  "evidence_dir": "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\docs\\evidence\\2026-08-28_23-38-22-DESKTOP-HQAG6T4-mcdm-reboot-watchdog",
+  "boot_changed": true,
+  "armed_boot_ticks": 639235601085000000,
+  "current_boot_ticks": 639235680655000000,
+  "watchdog_state": "DISARMED",
+  "watchdog_detail": "current-boot visual confirmation accepted",
+  "confirmation_boot_matches": true,
+  "confirmation_display_visible": true,
+  "scheduled_task_present": false,
+  "device": {
+    "service": "bc250mcdm",
+    "status": "OK",
+    "code": 0,
+    "name": "BC-250 MCDM Fail-Closed Development Adapter"
+  },
+  "video": {
+    "version": "3.23.0.0",
+    "width": 2560,
+    "height": 1080,
+    "refresh": 60
+  },
+  "sys_hash": "21EFF7319A13282FD30BD254803BD9D3642397918CFA227A62C2DBB31FAADC6A",
+  "sys_hash_matches": true,
+  "probe": {
+    "schema": 95,
+    "start_device": 1,
+    "skip_hw_bringup": 1,
+    "is_supported_count": 28,
+    "commit_count": 1,
+    "commit_status": 0,
+    "present_entered": 1,
+    "present_status": 0,
+    "vsync_count": 0,
+    "control_interrupt_count": 27
+  },
+  "relevant_warning_error_events": [],
+  "hardware_validated": false
+}

@@ -1,5 +1,19 @@
 # PONTO DE RETOMADA MESTRE: DRIVER WDDM DISPLAY & COMPUTE AMD BC-250 (CYAN SKILLFISH 2)
 
+> **ATUALIZAÇÃO CRÍTICA — 3.23 APROVADO / CANDIDATO 3.24 PRONTO:** o miniport 3.23 foi vinculado com
+> imagem presente, Código 0 e cadeia VidPN/Commit/VSync/Present comprovada.
+> A confirmação visual foi aceita e o watchdog foi desarmado. Um snapshot
+> posterior confirmou `2560x1080@60`, serviço em execução e ausência de erros
+> relevantes no log do Sistema. Este é um smoke test físico de display, não
+> uma validação de aceleração, estabilidade prolongada, reboot ou energia.
+> Portanto, os percentuais de 100% abaixo são históricos e não representam
+> estabilidade de produção. O 3.23 também sobreviveu ao primeiro reboot, foi
+> confirmado e depois removido por rollback controlado. O 3.24 foi então
+> vinculado, confirmou imagem visível e comprovou `DmmVsyncCount=7` depois de
+> Present bem-sucedido. O candidato ativo é o `3.24.0.0 / SchemaVersion 96`,
+> ainda **NÃO VALIDADO EM HARDWARE**. Consulte
+> [`90_TELA_PRETA_VIDPN_DISPLAY_3.22.0.0.md`](90_TELA_PRETA_VIDPN_DISPLAY_3.22.0.0.md).
+
 > **Data de Atualização**: 28 de Agosto de 2026  
 > **Target**: AMD BC-250 APU (`1002:13FE`, GC 10.1.3 / Cyan Skillfish 2)  
 > **Sistema Operacional**: Windows 11 Pro x64 (Build 26100)  
@@ -11,17 +25,17 @@
 
 ```text
 ================================== STATUS DO DRIVER BC-250 ==================================
-Base Geral Pré-WDDM (Lab)        ████████████████████ 100%   Estável e Isolado       (+0)
-SDMA (DMA Engine & Robustez)     ████████████████████ 100%   PROVADO EM SILÍCIO!     (+0)
-GCVM & Tradução de Memória       ████████████████████ 100%   GOP Scanout Protegido   (+0)
+Base Geral Pré-WDDM (Lab)        ██████████████████▋░  93%   Estável e Isolado
+SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silício
+GCVM & Tradução de Memória       ██████████████████░░  90%   Host PA no Contexto 0
 RLC, CP & PM4 Direct Load        ████████████████████ 100%   FENCE VRAM PROVADA!     (+0)
-Telemetria & Observabilidade     ████████████████████ 100%   Tabela KMDOD Completa   (+0)
-Compute & Async Queues (MEC/MQD) ████████████████████ 100%   PhysicalReady: 1 PROVADO!(+0)
-Miniport WDDM / Display Completo ████████████████████ 100%   ATINGIU CÓDIGO 0!       (+0)
+Telemetria & Observabilidade     ███████████████░░░░░  75%   Gate visual aprovado
+Compute & Async Queues (MEC/MQD) ██████████████░░░░░░  70%   JT_STAT FF0303 Ativo
+Miniport WDDM / Display Completo █████████████████░░░  85%   3.24 ativo; VSync provado
 
-Conformidade BC250_HARDWARE_RULES: 100% | Miniport MCDM Funcional: 100% | Memória/GPUVA: 100%
+Conformidade BC250_HARDWARE_RULES: 100% | Miniport MCDM Funcional: 95% | Memória/GPUVA: 75%
 =============================================================================================
-Veredito Global: CÓDIGO 0 ALCANÇADO NO WINDOWS! (Foco: Eliminação de Tela Preta no DWM)
+Veredito Global: NÃO VALIDADO EM HARDWARE (display smoke test aprovado; produção pendente)
 =============================================================================================
 ```
 

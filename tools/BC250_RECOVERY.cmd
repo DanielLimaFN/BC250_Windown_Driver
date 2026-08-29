@@ -127,7 +127,7 @@ if "!PACKAGE_COUNT!"=="0" call :note Pacotes experimentais BC250 detectados: nen
 exit /b 0
 
 :is_bc250_package
-findstr.exe /I /C:"Class=ComputeAccelerator" "%~1" >nul 2>&1
+findstr.exe /I /C:"Class=ComputeAccelerator" /C:"Class=Display" "%~1" >nul 2>&1
 if errorlevel 1 exit /b 1
 findstr.exe /I /C:"PCI\VEN_1002&DEV_13FE" "%~1" >nul 2>&1
 if errorlevel 1 exit /b 1

@@ -2243,16 +2243,46 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
         {
             DXGK_DISPLAY_INFORMATION postDisplayInfo;
             RtlZeroMemory(&postDisplayInfo, sizeof(postDisplayInfo));
-            postDisplayInfo.Width = context->PostDisplayEvidence.Width ? context->PostDisplayEvidence.Width : 1920;
-            postDisplayInfo.Height = context->PostDisplayEvidence.Height ? context->PostDisplayEvidence.Height : 1080;
-            postDisplayInfo.Pitch = context->PostDisplayEvidence.Pitch ? context->PostDisplayEvidence.Pitch : (postDisplayInfo.Width * 4);
+            postDisplayInfo.Width = context->PostDisplayEvidence.Width;
+            postDisplayInfo.Height = context->PostDisplayEvidence.Height;
+            postDisplayInfo.Pitch = context->PostDisplayEvidence.Pitch;
             postDisplayInfo.ColorFormat = D3DDDIFMT_A8R8G8B8;
             postDisplayInfo.PhysicAddress.QuadPart = (LONGLONG)context->PostDisplayEvidence.PhysicalStart;
             postDisplayInfo.TargetId = 0;
             postDisplayInfo.AcpiId = 0;
-            Bc250DisplayInit(&context->Core.DxgkInterface, &postDisplayInfo);
+            preflightStatus = Bc250DisplayInit(
+                &context->Core.DxgkInterface, &postDisplayInfo);
+            if (!NT_SUCCESS(preflightStatus)) {
+                Bc250DisplayTeardown();
+                Bc250ProbeRecordFirstFailure(preflightStatus);
+                return preflightStatus;
+            }
         }
 
+#if !defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)
+        /*
+         * Production display image: StartDevice ends after inheriting the GOP
+         * scanout.  Compute/GCVM/CP/HQD transactions are deliberately absent
+         * from this compiled path; a registry value must never be able to turn
+         * destructive laboratory bring-up on during PnP display ownership.
+         */
+        Bc250ProbeRecord(BC250_PROBE_SKIP_HW_BRINGUP, 1u);
+        *NumberOfVideoPresentSources = 1;
+        *NumberOfChildren = 1;
+        InterlockedExchange(&context->ContextAbiReady, 0);
+        InterlockedExchange(&context->AllocationAbiReady, 0);
+        InterlockedExchange(&context->RootPageTableAbiReady, 0);
+        InterlockedExchange(&context->IsActive, 1);
+        return STATUS_SUCCESS;
+    }
+
+    InterlockedExchange(&context->IsActive, 0);
+    InterlockedExchange(&context->ContextAbiReady, 0);
+    InterlockedExchange(&context->AllocationAbiReady, 0);
+    InterlockedExchange(&context->RootPageTableAbiReady, 0);
+    Bc250ProbeRecordFirstFailure(preflightStatus);
+    return preflightStatus;
+#else
         {
             ULONG skipHw = Bc250ActiveReadTunable(L"SkipHwBringup", 1);
             Bc250ProbeRecord(BC250_PROBE_SKIP_HW_BRINGUP, skipHw);
@@ -3330,6 +3360,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
     InterlockedExchange(&context->RootPageTableAbiReady, 0);
     Bc250ProbeRecordFirstFailure(preflightStatus);
     return preflightStatus;
+#endif
 }
 
 NTSTATUS APIENTRY Bc250DxgkDdiStopDeviceActive(

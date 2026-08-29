@@ -3,7 +3,7 @@ Signature="$Windows NT$"
 Class=Display
 ClassGuid={4d36e968-e325-11ce-bfc1-08002be10318}
 Provider=%ProviderName%
-DriverVer=08/28/2026,3.21.0.0
+DriverVer=08/28/2026,3.24.0.0
 CatalogFile=bc250mcdm.cat
 PnpLockdown=1
 
@@ -46,7 +46,7 @@ ServiceBinary=%12%\bc250mcdm.sys
 AddReg=BC250Mcdm.DriverReg
 
 [BC250Mcdm.DriverReg]
-HKR,Parameters\Probe,SchemaVersion,0x00010001,94
+HKR,Parameters\Probe,SchemaVersion,0x00010001,96
 HKR,Parameters\Driver,ActiveMode,0x00010001,1
 HKR,Parameters,SkipHwBringup,0x00010001,1
 

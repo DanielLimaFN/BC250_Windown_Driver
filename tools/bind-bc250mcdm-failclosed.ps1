@@ -1,20 +1,23 @@
 [CmdletBinding()]
 param(
     [switch]$Execute,
-    [switch]$IAcceptBlackScreenRisk
+    [switch]$IAcceptBlackScreenRisk,
+    [ValidateRange(30,600)][int]$WatchdogTimeoutSeconds = 120
 )
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $stagedAudit = Join-Path $root 'tools\audit-bc250mcdm-staged.ps1'
 $collector = Join-Path $root 'tools\capture-bc250mcdm-binding.ps1'
+$watchdog = Join-Path $root 'tools\watch-bc250mcdm-binding.ps1'
+$confirmDisplay = Join-Path $root 'tools\confirm-bc250mcdm-display.ps1'
 $packageInf = Join-Path $root 'driver\wdk\package\output_active\bc250mcdm.inf'
 $manifestPath = Join-Path $root 'driver\wdk\package\output_active.manifest.json'
 $markerPath = 'C:\BC250_TEST_OEMINF.txt'
 $recoveryPath = 'C:\BC250_RECOVERY.cmd'
 $hardwareId = 'PCI\VEN_1002&DEV_13FE'
 
-foreach ($path in @($stagedAudit,$collector,$packageInf,$manifestPath,$recoveryPath,$markerPath)) {
+foreach ($path in @($stagedAudit,$collector,$watchdog,$confirmDisplay,$packageInf,$manifestPath,$recoveryPath,$markerPath)) {
     if (-not (Test-Path -LiteralPath $path)) { throw "Artefato ausente: $path" }
 }
 
@@ -84,10 +87,15 @@ namespace Bc250McdmNewDev
 }
 
 $stamp = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
-$evidenceDir = Join-Path $root "docs\evidence\$stamp-$($env:COMPUTERNAME)-mcdm-1.0.1.0-failclosed-binding"
+$evidenceDir = Join-Path $root "docs\evidence\$stamp-$($env:COMPUTERNAME)-mcdm-display-binding"
 New-Item -ItemType Directory -Path $evidenceDir | Out-Null
 $startTime = Get-Date
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+$watchdogToken = [guid]::NewGuid().ToString('D')
+$confirmationCommand =
+    "powershell -NoProfile -ExecutionPolicy Bypass -File `"$confirmDisplay`" " +
+    "-EvidenceDir `"$evidenceDir`" -InstanceId `"$($device.PNPDeviceID)`" " +
+    "-Token `"$watchdogToken`" -IConfirmDisplayIsVisible"
 $before = [ordered]@{
     started = $startTime.ToString('o')
     published_inf = $publishedName
@@ -99,6 +107,9 @@ $before = [ordered]@{
     package_sys_sha256 = $manifest.PackageSysSha256
     package_cat_sha256 = $manifest.PackageCatSha256
     recovery_sha256 = $manifest.RecoverySha256
+    watchdog_timeout_seconds = $WatchdogTimeoutSeconds
+    watchdog_token = $watchdogToken
+    visual_confirmation_command = $confirmationCommand
     hardware_validated = $false
     verdict = 'NAO VALIDADO EM HARDWARE'
 }
@@ -114,6 +125,23 @@ SE A TELA ESTIVER PRETA:
 2. Execute C:\BC250_RECOVERY.cmd
 3. Reinicie o Windows.
 '@ | Set-Content -LiteralPath (Join-Path $evidenceDir 'RECOVERY.txt') -Encoding ASCII
+
+$watchdogArguments =
+    "-NoProfile -ExecutionPolicy Bypass -File `"$watchdog`" " +
+    "-EvidenceDir `"$evidenceDir`" " +
+    "-InstanceId `"$($device.PNPDeviceID)`" " +
+    "-TargetInf `"$publishedName`" -Token `"$watchdogToken`" " +
+    "-TimeoutSeconds $WatchdogTimeoutSeconds -Execute"
+$watchdogProcess = Start-Process -FilePath powershell.exe -ArgumentList $watchdogArguments `
+    -WindowStyle Hidden -PassThru
+Start-Sleep -Milliseconds 750
+if ($watchdogProcess.HasExited) {
+    throw "Binding bloqueado: watchdog encerrou antes da mutacao (exit=$($watchdogProcess.ExitCode))."
+}
+$watchdogProcess.Id | Set-Content -LiteralPath (Join-Path $evidenceDir 'watchdog-process-id.txt') -Encoding ASCII
+$confirmationCommand | Set-Content -LiteralPath (Join-Path $evidenceDir 'CONFIRM_DISPLAY.cmd.txt') -Encoding ASCII
+Write-Warning "WATCHDOG ARMADO: rollback automatico em $WatchdogTimeoutSeconds segundos sem confirmacao visual."
+Write-Host "Com a imagem visivel, confirme usando: $confirmationCommand"
 
 $collectorArguments =
     "-NoProfile -ExecutionPolicy Bypass -File `"$collector`" " +
@@ -155,6 +183,20 @@ try {
 Write-Host "Evidencia: $evidenceDir"
 Write-Host "Binding API: success=$nativeOk win32=$win32Error reboot=$rebootRequired"
 Write-Host 'Analise device-after.json e probe-registry.json; Codigo 0 nao implica compute.'
+if ($nativeOk) {
+    Write-Warning "O watchdog continua armado. Digite DISPLAY_OK somente se a imagem estiver visivel."
+    $visualAnswer = Read-Host 'Confirmacao visual'
+    if ($visualAnswer -ceq 'DISPLAY_OK') {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $confirmDisplay `
+            -EvidenceDir $evidenceDir -InstanceId $device.PNPDeviceID `
+            -Token $watchdogToken -IConfirmDisplayIsVisible
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning 'Confirmacao recusada; watchdog permanece armado.'
+        }
+    } else {
+        Write-Warning 'Confirmacao ausente ou incorreta; watchdog permanece armado.'
+    }
+}
 Write-Host 'NAO VALIDADO EM HARDWARE'
 if (-not $nativeOk) { exit 1 }
 exit 0
