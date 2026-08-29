@@ -53,6 +53,49 @@ Não faça este ensaio sem acesso remoto ou sem estar disposto a usar o recovery
 
 ---
 
+## 2.5 Cadeia de instalação — build NÃO é suficiente
+
+> Aprendido na marra em 2026-08-29: rodar `build-bc250mcdm-package.ps1` e ir direto para o
+> `bind` **não funciona**. Faltam um passo e uma limpeza.
+
+**O `bind` não faz o stage.** Ele exige o pacote já publicado via `pnputil /add-driver` e o
+marcador `C:\BC250_TEST_OEMINF.txt` preenchido com o `oemNN.inf` publicado. A cadeia real:
+
+```text
+build-bc250mcdm-package.ps1      -> assina o pacote em driver\wdk\package\output_active
+        |
+stage-bc250mcdm-package.ps1      -> pnputil /add-driver + grava o marcador   <- PASSO OMITIDO
+        |
+bind-bc250mcdm-failclosed.ps1    -> liga o dispositivo ao bc250mcdm
+```
+
+**O gate de pré-binding é a checklist autoritativa.** É read-only, então rode-o entre cada
+passo em vez de adivinhar:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools\audit-bc250mcdm-prebinding.ps1
+```
+
+Ele exige host limpo: **sem** serviço `bc250mcdm`, **sem** `System32\drivers\bc250mcdm.sys`,
+**sem** marcador preexistente, e **sem reboot pendente**.
+
+### Armadilhas conhecidas
+
+| Sintoma no gate | Causa | Resolução |
+|---|---|---|
+| `servico bc250mcdm apareceu durante stage` | Serviço residual de instalação anterior | `sc.exe delete bc250mcdm` |
+| `bc250mcdm.sys apareceu em System32\drivers` | Binário residual | Geralmente sai no reboot via `PendingFileRenameOperations` |
+| `marcador OEM preexistente` | `C:\BC250_TEST_OEMINF.txt` obsoleto — o stage **recusa** se ele já existir | Apagar o arquivo |
+| `reboot pendente: PendingFileRenameOperations` | `clean_all_drivers.ps1` agendou exclusões | **Reiniciar** |
+| `cardinalidade INF MCDM inesperada: 0` | O stage nunca rodou | Rodar `stage-bc250mcdm-package.ps1 -Execute` |
+| `hash divergente no FileRepository` | Pacote novo sobre publicação antiga | Despublicar antes (`clean_all_drivers.ps1`) |
+
+`clean_all_drivers.ps1` remove INF e FileRepository e desliga o dispositivo para
+`BasicDisplay`, mas **deixa o serviço e o `.sys` em System32** — os dois itens que o gate
+reprova. Contar com ele sozinho não basta.
+
+---
+
 ## 3. Reconfiguração para o modo de ensaio
 
 O tunable é lido via `RTL_REGISTRY_SERVICES` + `bc250mcdm\Parameters`
