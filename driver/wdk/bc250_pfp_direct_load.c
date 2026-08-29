@@ -39,6 +39,13 @@
 #define BC250_CP_RB0_RPTR_WB_OFFSET 0x00106000u
 #define BC250_CP_RB0_WPTR_POLL_OFFSET 0x00106100u
 #define BC250_CP_RB0_FENCE_OFFSET 0x00106200u
+/* Buffer de destino para a conferência byte a byte — a terceira perna do tripé
+ * de CLAUDE.md, que este caminho ainda não fazia. O SDMA já compara
+ * (ComparedDwords/MismatchCount); o CP Ring 0 só conferia fence e SCRATCH. */
+#define BC250_CP_RB0_DEST_OFFSET  0x00106300u
+#define BC250_CP_RB0_DEST_DWORDS  4u
+#define BC250_CP_RB0_DEST_POISON  0xDEADC000u
+#define BC250_CP_RB0_DEST_PATTERN 0xBC250000u
 #define BC250_CP_PT_SLICE_OFFSET  0x00107000u
 #define BC250_CP_PT_SLICE_BYTES   0x00001000u
 
@@ -114,6 +121,9 @@
 #define R_FAULT_ADDR_HI             0x0000A138u
 #define R_RLC_CNTL                  0x0003B000u
 #define R_GCVM_L2_CNTL2             0x0000A104u
+/* Bloco SEM vem imediatamente antes do bloco REQ: 0x0A244 + 18*4 = 0x0A28C.
+ * A adjacencia exata confirma o stride de 4 bytes por engine. */
+#define R_GCVM_INVALIDATE_ENG0_SEM  0x0000A244u
 #define R_GCVM_INVALIDATE_ENG0_REQ  0x0000A28Cu
 #define R_GCVM_INVALIDATE_ENG0_ACK  0x0000A2D4u
 
@@ -141,11 +151,22 @@
  * o tripe fisico do SDMA0 com o display ativo usando APENAS o flush de HDP, sem
  * nenhuma invalidacao de GCVM (STATUS_E_ROADMAP_CONSOLIDADO.md secao 2.0).
  */
-#define BC250_GCVM_INVALIDATE_ENGINE 17u
-#define R_GCVM_INVALIDATE_REQ \
-    (R_GCVM_INVALIDATE_ENG0_REQ + (BC250_GCVM_INVALIDATE_ENGINE * 4u))
-#define R_GCVM_INVALIDATE_ACK \
-    (R_GCVM_INVALIDATE_ENG0_ACK + (BC250_GCVM_INVALIDATE_ENGINE * 4u))
+/* A engine deixou de ser constante de compilacao: vem de
+ * Context->GcvmInvalidateEngine, alimentado pelo tunable de registro
+ * GcvmInvalidateEngine (default 17). Trocar de engine passa a custar um
+ * valor de registro e um ciclo de PnP, nao build + assinatura + instalacao. */
+#define BC250_GCVM_INVALIDATE_REQ_OF(eng) \
+    (R_GCVM_INVALIDATE_ENG0_REQ + ((eng) * 4u))
+#define BC250_GCVM_INVALIDATE_ACK_OF(eng) \
+    (R_GCVM_INVALIDATE_ENG0_ACK + ((eng) * 4u))
+#define BC250_GCVM_INVALIDATE_SEM_OF(eng) \
+    (R_GCVM_INVALIDATE_ENG0_SEM + ((eng) * 4u))
+
+/* Bit 16 de ACK e' o estado do semaforo, e e' LEITURA PURA. Ler o proprio
+ * registrador SEM *adquire* o semaforo — docs/03_CATALOGO_DE_REGISTRADORES.md
+ * secao "AVISO", classe P0: um dump de laboratorio ja' reteve o semaforo ate' o
+ * reboot por ler esse registrador achando que observava. */
+#define BC250_GCVM_ACK_SEMAPHORE_BIT 0x00010000u
 #define R_VGT_NUM_INSTANCES         0x00030934u
 #define R_PA_SC_LINE_STIPPLE_STATE  0x00030A04u
 #define R_CGTT_CPF_CLK_CTRL         0x0003C2C4u
@@ -246,6 +267,79 @@ static uint32_t Bc250PfpIcacheOpAll(
     return mask;
 }
 
+/* Invalidacao de GCVM seguindo a ordem do upstream (gmc_v10_0_flush_gpu_tlb):
+ * adquire o semaforo, escreve o REQ, aguarda o ACK, libera o semaforo.
+ *
+ * O patch 0001 de referencias/bc250-gfx1013-fix forca use_semaphore no caminho
+ * GFXHUB do gfx1013 justamente porque o BC-250 precisa dele; este carregador
+ * nunca tocou no semaforo. O protocolo fica atras de UseSemaphore para poder ser
+ * ligado e desligado por tunable, sem rebuild.
+ *
+ * A liberacao acontece em TODOS os caminhos de saida: reter o semaforo o prende
+ * ate' o reboot.
+ *
+ * AckRaw devolve o valor cru do ACK — o bit 16 e' o estado do semaforo e e'
+ * leitura segura, ao contrario do registrador SEM. */
+static uint32_t Bc250PfpGcvmInvalidate(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context,
+    _In_ uint32_t Engine,
+    _In_ uint32_t Request,
+    _In_ uint32_t UseSemaphore,
+    _Out_ uint32_t *AckRawBefore,
+    _Out_ uint32_t *AckRawAfter,
+    _Out_ uint32_t *Polls,
+    _Out_ uint32_t *SemaphoreAcquired)
+{
+    const uint32_t req = BC250_GCVM_INVALIDATE_REQ_OF(Engine);
+    const uint32_t ack = BC250_GCVM_INVALIDATE_ACK_OF(Engine);
+    const uint32_t sem = BC250_GCVM_INVALIDATE_SEM_OF(Engine);
+    uint32_t value = 0u;
+    uint32_t acknowledged = 0u;
+    uint32_t i;
+
+    *AckRawBefore = 0u;
+    *AckRawAfter = 0u;
+    *Polls = 0u;
+    *SemaphoreAcquired = 0u;
+
+    if (Bc250PfpRead(Context, ack, &value)) {
+        *AckRawBefore = value;
+    }
+
+    if (UseSemaphore != 0u) {
+        for (i = 0u; i < 1000u; ++i) {
+            /* Ler SEM e' a operacao de aquisicao; 1 significa adquirido. */
+            if (Bc250PfpRead(Context, sem, &value) && (value & 1u) != 0u) {
+                *SemaphoreAcquired = 1u;
+                break;
+            }
+            KeStallExecutionProcessor(1u);
+        }
+    }
+
+    (void)Bc250PfpWrite(Context, req, Request);
+
+    for (i = 0u; i < 100u; ++i) {
+        if (Bc250PfpRead(Context, ack, &value) && (value & 1u) != 0u) {
+            acknowledged = 1u;
+            break;
+        }
+        KeStallExecutionProcessor(1u);
+    }
+    *Polls = i;
+
+    if (Bc250PfpRead(Context, ack, &value)) {
+        *AckRawAfter = value;
+    }
+
+    if (*SemaphoreAcquired != 0u) {
+        /* Escrever 0 libera. Sem isto o semaforo fica retido ate' o reboot. */
+        (void)Bc250PfpWrite(Context, sem, 0u);
+    }
+
+    return acknowledged;
+}
+
 static void Bc250PfpCopyFromDevice(
     uint32_t *Destination, volatile uint32_t *Source, uint32_t Dwords)
 {
@@ -329,6 +423,9 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
     BC250_PFP_DIRECT_LOAD_EVIDENCE *Evidence)
 {
     BC250_PFP_DIRECT_LOAD_STATUS status = BC250_PFP_DIRECT_LOAD_OK;
+    uint32_t invalidateEngine;
+    uint32_t invalidateUseSemaphore;
+    uint32_t invalidateReq;
     NTSTATUS ntStatus;
     BC250_MMIO_TOPOLOGY_STATUS mmioStatus;
     BC250_VRAM_ALLOCATOR *allocator;
@@ -349,6 +446,7 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
     volatile uint32_t *pRptrWb = NULL;
     volatile uint32_t *pWptrPoll = NULL;
     volatile uint32_t *pFence = NULL;
+    volatile uint32_t *pDest = NULL;
     uint32_t *backup = NULL;
     uint32_t mappedDwords = 0u;
     uint32_t pfpPayloadDwords = 0u;
@@ -365,6 +463,8 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
     uint64_t rptrWbMc = 0ull;
     uint64_t wptrPollMc = 0ull;
     uint64_t fenceMc = 0ull;
+    uint64_t destMc = 0ull;
+    uint32_t destPoll = 0u;
     uint64_t tmrMc = 0ull;
     uint64_t tmrPa = 0ull;
     uint32_t snapshotValid = 0u;
@@ -425,6 +525,15 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
         return BC250_PFP_DIRECT_LOAD_BAD_ARGUMENT;
 
     RtlZeroMemory(Evidence, sizeof(*Evidence));
+
+    invalidateEngine = Context->GcvmInvalidateEngine;
+    if (invalidateEngine > BC250_GCVM_INVALIDATE_ENGINE_MAX) {
+        invalidateEngine = BC250_GCVM_INVALIDATE_ENGINE_DEFAULT;
+    }
+    invalidateUseSemaphore = Context->GcvmInvalidateSemaphore;
+    invalidateReq = BC250_GCVM_INVALIDATE_REQ_OF(invalidateEngine);
+    Evidence->InvalidateEngine = invalidateEngine;
+    Evidence->InvalidateUseSemaphore = invalidateUseSemaphore;
     Evidence->FirmwareBytes = BC250_PFP_PAYLOAD_BYTES_LOCAL;
     Evidence->JumpTableDwords = BC250_PFP_JT_DWORDS;
     Evidence->UcodeVersion = BC250_PFP_UCODE_VERSION;
@@ -823,23 +932,63 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
     pRptrWb = mapped + (BC250_CP_RB0_RPTR_WB_OFFSET / sizeof(uint32_t));
     pWptrPoll = mapped + (BC250_CP_RB0_WPTR_POLL_OFFSET / sizeof(uint32_t));
     pFence = mapped + (BC250_CP_RB0_FENCE_OFFSET / sizeof(uint32_t));
+    pDest = mapped + (BC250_CP_RB0_DEST_OFFSET / sizeof(uint32_t));
 
     RtlZeroMemory((void *)pRing, BC250_CP_RB0_RING_BYTES);
     *pRptrWb = 0u;
     *pWptrPoll = 0u;
     *pFence = BC250_CP_RB0_FENCE_POISON;
     Evidence->Rb0FenceBefore = *pFence;
+    /* Envenena o destino: sem veneno, um buffer zerado que "bate" nao prova nada. */
+    for (i = 0u; i < BC250_CP_RB0_DEST_DWORDS; ++i)
+        pDest[i] = BC250_CP_RB0_DEST_POISON + i;
+    KeMemoryBarrier();
 
     /* Enderecos FISICOS DE MEMORIA (MC) para Ring 0, RPTR WB, WPTR Poll e Fence */
     ringMc = Evidence->FirmwareMcAddress + BC250_CP_RB0_RING_OFFSET;
     rptrWbMc = Evidence->FirmwareMcAddress + BC250_CP_RB0_RPTR_WB_OFFSET;
     wptrPollMc = Evidence->FirmwareMcAddress + BC250_CP_RB0_WPTR_POLL_OFFSET;
     fenceMc = Evidence->FirmwareMcAddress + BC250_CP_RB0_FENCE_OFFSET;
+    destMc = Evidence->FirmwareMcAddress + BC250_CP_RB0_DEST_OFFSET;
 
     /* Sequencia PM4 canonica: WRITE_DATA SCRATCH + WRITE_DATA FENCE MC + WRITE_DATA FENCE GPUVA */
     cursor = 0u;
     {
         uint64_t gpuvaFence = BC250_CP_RB0_FENCE_OFFSET;
+        (void)gpuvaFence;
+
+        /* ORDEM INVERTIDA DE PROPOSITO.
+         *
+         * Com o destino no fim: RPTR=36/36 (anel inteiro consumido), fence
+         * gravada, e o destino permanecendo com o veneno apos 1000 polls — o
+         * mesmo formato de pacote que funciona para a fence nao escreve aqui.
+         * Sobram duas explicacoes: o endereco do destino, ou o CP parar de
+         * EXECUTAR depois de alguns pacotes enquanto o RPTR continua avancando.
+         *
+         * Pondo o destino PRIMEIRO, as duas se separam:
+         *   destino grava e fence nao  -> o CP so' executa os primeiros pacotes
+         *   destino nao grava e fence grava -> o problema e' o endereco
+         *   os dois gravam -> era ordem/tempo
+         */
+        /* 4. Gabarito no destino: QUATRO WRITE_DATA de um dword cada.
+         *
+         * A primeira tentativa usava um unico WRITE_DATA com payload de 4 dwords
+         * (COUNT=6). O CP consumiu o anel inteiro — RPTR chegou a 24/24 — e
+         * mesmo assim o destino permaneceu com o veneno 0xDEADC000 apos 1000
+         * polls com flush de HDP: o pacote foi aceito e a escrita nao aconteceu.
+         *
+         * Aqui o formato e' exatamente o dos tres pacotes que ja' funcionam
+         * nesta mesma sequencia (5 dwords, um dado). Repetir a forma provada
+         * elimina a variavel do payload multiplo em vez de supor por que ela
+         * falha. */
+        for (i = 0u; i < BC250_CP_RB0_DEST_DWORDS; ++i) {
+            uint64_t slotMc = destMc + (i * sizeof(uint32_t));
+            pRing[cursor++] = 0xC0033700u; /* PACKET3_WRITE_DATA, count=3 */
+            pRing[cursor++] = 0x00100500u; /* WR_CONFIRM=1, DST_SEL=5 (Memory) */
+            pRing[cursor++] = (uint32_t)(slotMc & 0xFFFFFFFFull);
+            pRing[cursor++] = (uint32_t)(slotMc >> 32);
+            pRing[cursor++] = BC250_CP_RB0_DEST_PATTERN + i;
+        }
 
         /* 1. WRITE_DATA: SCRATCH_REG0 (0x2040) = 0x22222222 (5 dwords) */
         pRing[cursor++] = 0xC0033700u; /* PACKET3_WRITE_DATA, count=3 */
@@ -855,15 +1004,39 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
         pRing[cursor++] = (uint32_t)(fenceMc >> 32);
         pRing[cursor++] = BC250_CP_RB0_FENCE_VALUE;
 
-        /* 3. WRITE_DATA: fence via GPUVA translated aperture (5 dwords) */
-        pRing[cursor++] = 0xC0033700u; /* PACKET3_WRITE_DATA, count=3 */
-        pRing[cursor++] = 0x00100500u; /* WR_CONFIRM=1, DST_SEL=5 (Memory direct) */
-        pRing[cursor++] = (uint32_t)(gpuvaFence & 0xFFFFFFFFull);
-        pRing[cursor++] = (uint32_t)(gpuvaFence >> 32);
-        pRing[cursor++] = BC250_CP_RB0_FENCE_VALUE;
+        /* 3. WRITE_DATA: fence via GPUVA — SOMENTE com a page table do VMID 0.
+         *
+         * Este pacote endereca gpuvaFence como VIRTUAL. Sem CONTEXT0 programado
+         * (Vmid0PageTable=0, que e' o padrao e o modo comprovadamente correto),
+         * o VMID 0 nao tem page table nossa e a traducao falha.
+         *
+         * Evidencia de 29/08 20:01 vs 20:04: com este pacote ANTES dos writes de
+         * destino, o destino nunca era escrito, apesar de RPTR=36/36 — o CP
+         * busca o anel inteiro mas para de EXECUTAR depois do pacote que falha.
+         * Movendo o destino para antes dele, os dados passaram a bater (tripé
+         * completo 3/3). Emitir um pacote que falha por desenho e' desperdicio e
+         * arrasta tudo que vier depois, entao ele so' entra quando faz sentido. */
+        if (Context->CpVmid0PageTable != 0u) {
+            pRing[cursor++] = 0xC0033700u; /* PACKET3_WRITE_DATA, count=3 */
+            pRing[cursor++] = 0x00100500u; /* WR_CONFIRM=1, DST_SEL=5 (Memory) */
+            pRing[cursor++] = (uint32_t)(gpuvaFence & 0xFFFFFFFFull);
+            pRing[cursor++] = (uint32_t)(gpuvaFence >> 32);
+            pRing[cursor++] = BC250_CP_RB0_FENCE_VALUE;
+        }
 
         /* 4. Pad 1 NOP para alinhar a 16 dwords (64 bytes / cacheline) */
-        pRing[cursor++] = 0xC0001000u; /* PACKET3_NOP, count=0 */
+        /* Padding de UM dword.
+         *
+         * O valor anterior aqui era 0xC0001000 — um PACKET3 NOP. Num cabeçalho
+         * type-3 o campo COUNT (bits 29:16) vale n-2, então COUNT=0 declara um
+         * pacote de DOIS dwords. Só escrevíamos um. O CP se recusa, com razão, a
+         * consumir um pacote incompleto e estaciona o RPTR no dword anterior:
+         * é a origem determinística do RPTR=15 contra WPTR=16 observado em 40/40
+         * ciclos, com a fence física correta e os três WRITE_DATA executados.
+         *
+         * PACKET2 (type 2, 0x80000000) é o NOP de um dword — a forma canônica de
+         * alinhar sem declarar payload que não existe. */
+        pRing[cursor++] = 0x80000000u; /* PACKET2 NOP, 1 dword */
     }
     KeMemoryBarrier();
 
@@ -890,11 +1063,17 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
     /* Flush HDP e L2 */
     (void)Bc250PfpWrite(Context, R_HDP_MEM_COHERENCY_FLUSH_CNTL, 1u);
     (void)Bc250PfpWrite(Context, R_GCVM_L2_CNTL2, 0x00000003u);
-    (void)Bc250PfpWrite(Context, R_GCVM_INVALIDATE_REQ, 0x00000001u);
-    for (i = 0u; i < 100u; ++i) {
-        if (Bc250PfpRead(Context, R_GCVM_INVALIDATE_ACK, &value) && (value & 1u) != 0u) break;
-        KeStallExecutionProcessor(1u);
-    }
+    /* O ACK desta invalidacao nunca foi registrado. O commit 7e926c0 trocou a
+     * engine 0 pela 17 sob a hipotese "qualquer engine != 0 serve", declarada
+     * NAO VALIDADA EM HARDWARE no proprio commit, e previu explicitamente que um
+     * ENG que nao responda faz o poll esgotar e o fluxo seguir SEM invalidacao.
+     * Sem esta evidencia nao se distingue "invalidou" de "esgotou em silencio". */
+    Evidence->InvalidateAckStaging = Bc250PfpGcvmInvalidate(
+        Context, invalidateEngine, 0x00000001u, invalidateUseSemaphore,
+        &Evidence->InvalidateAckBeforeStaging,
+        &Evidence->InvalidateAckRawStaging,
+        &Evidence->InvalidatePollsStaging,
+        &Evidence->InvalidateSemAcquiredStaging);
 
     /* RLC e CP setup */
     (void)Bc250PfpWrite(Context, R_RLC_CNTL, Evidence->RlcCntlApplied);
@@ -912,16 +1091,66 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
         KeMemoryBarrier();
     }
 
-    /* 4b-2. Preservação de GCVM Context 0 (VMID 0) para o Framebuffer UEFI GOP */
-    /* Não alterar R_GCVM_CONTEXT0_CNTL nem disparar R_GRBM_SOFT_RESET durante a operação de display */
-    {
-        /* Status inicial de observabilidade */
-        (void)Bc250PfpRead(Context, R_GCVM_CONTEXT0_CNTL, &value);
+    /* 4b-2. Ativação de GCVM Context 0 (VMID 0).
+     *
+     * Este bloco existia em 4df3484 — o estado sob o qual as 109 capturas de
+     * sucesso foram produzidas — e foi REMOVIDO junto com o soft reset do CP no
+     * trabalho de preservação do display. Desde a remoção não houve um único
+     * sucesso do CP.
+     *
+     * O anel é programado com endereço físico de MC e CP_RB_VMID = 0. Sem uma
+     * page table válida no contexto 0, o CP não traduz o que precisa buscar.
+     *
+     * MEDIDO EM 2026-08-29 18:42, E O RESULTADO INVERTE A HIPÓTESE ACIMA:
+     * com Vmid0PageTable=0 e CpSoftReset=1 o CP assenta em 0x284 e fecha com
+     * fence física. **Este bloco não é necessário.** Dos dois blocos removidos
+     * em 4df3484, só o soft reset do CP fazia falta.
+     *
+     * E ele é ativamente nocivo: ligá-lo produziu XNACK na UTCL1 do SDMA
+     * (SdmaRingUtcl1WriteXnack0=1, ReadXnack0=0x0045FA00, ErrorLog=0xF) e
+     * timeout do anel do SDMA, que por sua vez bloqueia o carregador do CP. O
+     * SDMA endereça o próprio anel por VMID 0 com endereço físico de MC
+     * (0xF40FBB9000); a page table aqui mapeia 2 MiB a partir de firmwarePa, e
+     * todo acesso VMID 0 fora dessa janela falha a tradução.
+     *
+     * Mantido atrás do tunable, default 0, apenas para reprodução do ensaio.
+     * NÃO LIGAR sem antes resolver a cobertura do VMID 0.
+     * Todos os cinco registradores CONTEXT0_* são restaurados no rótulo Restore. */
+    (void)Bc250PfpRead(Context, R_GCVM_CONTEXT0_CNTL, &value);
+    if (Context->CpVmid0PageTable != 0u) {
+        uint64_t ptPa = firmwarePa + BC250_CP_PT_SLICE_OFFSET;
+        (void)Bc250PfpWrite(Context, R_GCVM_CONTEXT0_PT_BASE_LO, (uint32_t)(ptPa | 1u));
+        (void)Bc250PfpWrite(Context, R_GCVM_CONTEXT0_PT_BASE_HI, (uint32_t)(ptPa >> 32));
+        (void)Bc250PfpWrite(Context, R_GCVM_CONTEXT0_PT_START_LO, 0u);
+        (void)Bc250PfpWrite(Context, R_GCVM_CONTEXT0_PT_END_LO, 511u);
+        (void)Bc250PfpWrite(Context, R_GCVM_CONTEXT0_CNTL, 0x007FFE01u);
+        Evidence->Vmid0PageTableApplied = 1u;
+        /* Invalidação da TLB do VMID 0, com a engine e o protocolo correntes. */
+        Evidence->Vmid0InvalidateAck = Bc250PfpGcvmInvalidate(
+            Context, invalidateEngine, 0x00F80001u, invalidateUseSemaphore,
+            &Evidence->Vmid0AckBefore, &Evidence->Vmid0AckAfter,
+            &Evidence->Vmid0Polls, &Evidence->Vmid0SemAcquired);
     }
 
     /* 4c. Inicialização pós-PSP canônica (Linux gfx_v10_0) sem GRBM soft reset */
     {
         uint32_t cpStat = 0u, grbmStat = 0u, grbmStat2 = 0u;
+
+        /* Soft reset do CP (GRBM_SOFT_RESET bit 0 = SOFT_RESET_CP).
+         *
+         * Também presente em 4df3484 e removido no mesmo trabalho. Um PFP que
+         * é destravado sem passar por reset pode assentar num laço de espera —
+         * que é exatamente a assinatura 0x218..0x21B observada desde então.
+         *
+         * Atrás de CpSoftReset (default 0): resetar o CP com o display servido
+         * pelo mesmo dispositivo é a segunda operação proibida do arranque. */
+        if (Context->CpSoftReset != 0u) {
+            (void)Bc250PfpWrite(Context, R_GRBM_SOFT_RESET, 1u);
+            KeStallExecutionProcessor(50u);
+            (void)Bc250PfpWrite(Context, R_GRBM_SOFT_RESET, 0u);
+            KeStallExecutionProcessor(50u);
+            Evidence->CpSoftResetApplied = 1u;
+        }
 
         /* Inicialização canônica pós-PSP */
         (void)Bc250PfpWrite(Context, R_CP_MAX_CONTEXT, 7u);
@@ -973,6 +1202,15 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
         goto Restore;
     }
     KeMemoryBarrier();
+
+    /* 2b. Traco do PC na janela cega entre o UNHALT e a ativacao do anel.
+     * Nos 109 sucessos o PFP assenta antes do primeiro laco de amostragem, o
+     * que torna PcFirst/PcLast cegos justamente onde a decisao acontece.
+     * Leituras consecutivas sem stall: o espacamento e' a latencia do MMIO. */
+    for (i = 0u; i < BC250_PFP_PC_TRACE_SAMPLES; ++i) {
+        (void)Bc250PfpRead(Context, R_CP_PFP_PC, &Evidence->PfpPcTrace[i]);
+    }
+
     KeStallExecutionProcessor(50u);
 
     /* 3. Aguarda CP idle / pronto */
@@ -995,7 +1233,13 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
 
     (void)Bc250PfpWrite(Context, R_HDP_MEM_COHERENCY_FLUSH_CNTL, 1u);
     (void)Bc250PfpWrite(Context, R_GCVM_L2_CNTL2, 0x00000003u);
-    (void)Bc250PfpWrite(Context, R_GCVM_INVALIDATE_REQ, 0x00000001u);
+    /* Este sitio disparava a invalidacao e seguia em frente sem esperar nada. */
+    Evidence->InvalidateAckPreWptr = Bc250PfpGcvmInvalidate(
+        Context, invalidateEngine, 0x00000001u, invalidateUseSemaphore,
+        &Evidence->InvalidateAckBeforePreWptr,
+        &Evidence->InvalidateAckRawPreWptr,
+        &Evidence->InvalidatePollsPreWptr,
+        &Evidence->InvalidateSemAcquiredPreWptr);
 
     (void)Bc250PfpWrite(Context, R_CP_RB0_WPTR, cursor);
     (void)Bc250PfpWrite(Context, R_CP_RB0_WPTR_HI, 0u);
@@ -1035,6 +1279,11 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
             (void)Bc250PfpRead(Context, R_CP_PFP_JT_STAT, &jtStatPfp);
             (void)Bc250PfpRead(Context, R_CP_CE_JT_STAT, &jtStatCe);
             (void)Bc250PfpRead(Context, R_CP_MEC_JT_STAT, &jtStatMec);
+            /* Campos proprios: FaultAddressHigh tambem carrega CP_STAT/GRBM na
+             * fase 4c, e comparar capturas por ele mistura dois significados. */
+            Evidence->JtStatPfp = jtStatPfp;
+            Evidence->JtStatCe = jtStatCe;
+            Evidence->JtStatMec = jtStatMec;
             if (jtStatPfp != 0u || jtStatCe != 0u || jtStatMec != 0u || i == 0u) {
                 Evidence->FaultAddressHigh = ((jtStatMec & 0xFFu) << 16) | ((jtStatCe & 0xFFu) << 8) | (jtStatPfp & 0xFFu);
             }
@@ -1055,6 +1304,33 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
     (void)Bc250PfpRead(Context, R_CP_RB0_RPTR, &Evidence->Rb0RptrAfter);
     Evidence->PfpPcSamples = (i >= 100u) ? 100u : (i + 1u);
 
+    /* Conferencia byte a byte do destino contra o gabarito.
+     *
+     * O laco de amostragem sai assim que a fence aparece, e a fence e' escrita
+     * por um pacote ANTERIOR ao do destino. Comparar imediatamente confunde
+     * "a GPU nao escreveu" com "a GPU ainda nao escreveu". Aqui espera-se o
+     * gabarito com flush de HDP a cada iteracao, e registra-se quantas iteracoes
+     * foram necessarias e o primeiro dword observado — se ele continuar sendo o
+     * veneno, a escrita nunca aconteceu; se for outro valor, o endereco e' que
+     * esta errado. */
+    Evidence->Rb0ComparedDwords = BC250_CP_RB0_DEST_DWORDS;
+    for (destPoll = 0u; destPoll < 1000u; ++destPoll) {
+        uint32_t mismatches = 0u;
+        (void)Bc250PfpWrite(Context, R_HDP_MEM_COHERENCY_FLUSH_CNTL, 1u);
+        for (i = 0u; i < BC250_CP_RB0_DEST_DWORDS; ++i) {
+            if (READ_REGISTER_ULONG((volatile ULONG *)&pDest[i]) !=
+                (BC250_CP_RB0_DEST_PATTERN + i)) {
+                ++mismatches;
+            }
+        }
+        Evidence->Rb0MismatchCount = mismatches;
+        if (mismatches == 0u) break;
+        KeStallExecutionProcessor(1u);
+    }
+    Evidence->Rb0DestPolls = destPoll;
+    Evidence->Rb0DestObserved =
+        READ_REGISTER_ULONG((volatile ULONG *)&pDest[0]);
+
     (void)Bc250PfpWrite(Context, R_CP_RB0_ACTIVE, 0u);
     (void)Bc250PfpWrite(Context, R_CP_ME_CNTL, Evidence->CpMeCntlBefore);
     (void)Bc250PfpWrite(Context, R_CP_MEC_CNTL, origCpMecCntl);
@@ -1064,11 +1340,17 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
     (void)Bc250PfpRead(Context, R_FAULT_STATUS,
         &Evidence->FaultStatusAfter);
 
-    status = (Evidence->Rb0RptrAfter >= (cursor - 1u) &&
+    /* Gate estrito, conforme o tripé de CLAUDE.md — substitui o afrouxamento
+     * auditado na seção 4 do STATUS (`RPTR >= cursor-1`, sem checagem de dados).
+     * O `-1` existia por causa de um PACKET3 NOP de um dword mal formado; com o
+     * PACKET2 o RPTR alcanca o WPTR e a igualdade estrita e' alcançável. */
+    status = (Evidence->Rb0RptrAfter == cursor &&
               Evidence->Rb0WptrApplied == cursor &&
-              (Evidence->Rb0FenceAfter == BC250_CP_RB0_FENCE_VALUE ||
-               Evidence->Rb0FenceAfter == 0x22222222u ||
-               scratchAfter == 0x22222222u)) ?
+              Evidence->Rb0MismatchCount == 0u &&
+              /* A fence tem de ser a fence. O `|| scratch` anterior aceitava um
+               * registrador escrito pelo mesmo pacote como substituto da fence
+               * fisica em VRAM — sao provas diferentes. */
+              Evidence->Rb0FenceAfter == BC250_CP_RB0_FENCE_VALUE) ?
               BC250_PFP_DIRECT_LOAD_OK :
               BC250_PFP_DIRECT_LOAD_PM4_NOT_CONSUMED;
 
@@ -1134,7 +1416,7 @@ Restore:
          * modificado. Logo nao ha' nada a invalidar em ENG0, e faze-lo apenas
          * derrubaria o scanout. Usa a mesma engine != 0 do caminho de carga.
          */
-        (void)Bc250PfpWrite(Context, R_GCVM_INVALIDATE_REQ, 0x00F80001u);
+        (void)Bc250PfpWrite(Context, invalidateReq, 0x00F80001u);
         KeStallExecutionProcessor(50u);
         (void)Bc250PfpRead(Context, R_CP_RB0_ACTIVE, &Evidence->Rb0ActiveAfter);
         if (Bc250PfpRead(Context, R_CP_ME_CNTL, &Evidence->CpMeCntlAfter) &&

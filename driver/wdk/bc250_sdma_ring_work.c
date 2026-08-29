@@ -343,9 +343,12 @@ BC250_SDMA_RING_WORK_STATUS Bc250ActiveRunSdmaRingWork(
         !Bc250SdmaWrite(Context, R_DOORBELL, value & ~F_DOORBELL_ENABLE) ||
         !Bc250SdmaRead(Context, R_CLK_CTRL, &value) ||
         !Bc250SdmaWrite(Context, R_CLK_CTRL, value | 0xFF000000u) ||
-        !Bc250SdmaRead(Context, R_CNTL, &value) ||
+        !Bc250SdmaRead(Context, R_CNTL, &Evidence->CntlBefore) ||
         !Bc250SdmaWrite(Context, R_CNTL,
-            value | F_UTC_L1 | F_MIDCMD | F_AUTO_CTXSW) ||
+            (Evidence->CntlApplied =
+                (Context->SdmaAutoCtxSw != 0u)
+                    ? (Evidence->CntlBefore | F_UTC_L1 | F_MIDCMD | F_AUTO_CTXSW)
+                    : ((Evidence->CntlBefore | F_UTC_L1 | F_MIDCMD) & ~F_AUTO_CTXSW))) ||
         !Bc250SdmaRead(Context, R_UTCL1_CNTL, &value) ||
         !Bc250SdmaWrite(Context, R_UTCL1_CNTL,
             (value & ~(0x00000E00u | 0x0000003Eu)) |
@@ -372,6 +375,12 @@ BC250_SDMA_RING_WORK_STATUS Bc250ActiveRunSdmaRingWork(
     if (Bc250SdmaRead(Context, R_WPTR_POLL_CNTL, &value))
         Evidence->WptrPollCntlApplied = value;
     (void)Bc250SdmaRead(Context, R_STATUS, &Evidence->StatusBefore);
+    /* Bit 11 de SDMA0_STATUS_REG = EX_IDLE_POLL_TIMER_EXPIRE. No soak de 40
+     * ciclos de 29/08 18:56 ele separou os dois grupos sem excecao: limpo nos
+     * 37 ciclos bons (STATUS_before=0x46DEE557), aceso nos 3 que deram timeout
+     * (0x46DEED57). E' estado herdado, lido antes de qualquer escrita nossa. */
+    Evidence->ExIdlePollExpiredBefore =
+        (Evidence->StatusBefore & 0x00000800u) ? 1u : 0u;
     Bc250SdmaDeviceWrite(&work[BC250_SDMA_WPTR_OFFSET / 4u],
         Evidence->WptrPublished);
     Bc250SdmaDeviceWrite(&work[BC250_SDMA_WPTR_OFFSET / 4u + 1u], 0u);
@@ -393,6 +402,19 @@ BC250_SDMA_RING_WORK_STATUS Bc250ActiveRunSdmaRingWork(
     (void)Bc250SdmaRead(Context, R_STATUS, &Evidence->StatusKick);
     if (Bc250SdmaRead(Context, R_STATUS2, &value))
         Evidence->PcKick = (value >> 2) & 0x3FFFu;
+    /* Snapshot ANTES do poll. ERROR_LOG e os XNACK da UTCL1 sao latches: em
+     * 29/08 as duas falhas distintas trouxeram valores identicos
+     * (ErrorLog=0xF, RdXnack0=0x0045FA00, WrXnack0=1), o que nao distingue
+     * "falhou agora" de "falhou uma vez em algum ciclo anterior". Sem o par
+     * antes/depois nao se pode atribuir a falta de traducao a este ciclo. */
+    (void)Bc250SdmaRead(Context, R_ERROR_LOG, &Evidence->ErrorLogBefore);
+    (void)Bc250SdmaRead(Context, R_UTCL1_RD_XNACK0,
+        &Evidence->Utcl1ReadXnack0Before);
+    (void)Bc250SdmaRead(Context, R_UTCL1_WR_XNACK0,
+        &Evidence->Utcl1WriteXnack0Before);
+    (void)Bc250SdmaRead(Context, R_UTCL1_TIMEOUT,
+        &Evidence->Utcl1TimeoutBefore);
+
     for (i = 1u; i <= 1000u; ++i) {
         (void)Bc250SdmaHdp(Context);
         Evidence->RptrAfter = Bc250SdmaDeviceRead(

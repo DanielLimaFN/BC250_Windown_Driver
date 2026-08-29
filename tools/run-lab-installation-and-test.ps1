@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Executa o ciclo completo de instalação de laboratório com Watchdog e ensaio F4d (ENG17/PFP).
 #>
@@ -51,7 +51,7 @@ Write-Host "====================================================================
 if (Test-Path -LiteralPath (Join-Path $root 'tools\_last_lab_binding.json')) {
     $lastBinding = Get-Content -LiteralPath (Join-Path $root 'tools\_last_lab_binding.json') -Raw | ConvertFrom-Json
     Write-Host "`nPara desarmar o watchdog e manter o driver se a tela estiver OK:" -ForegroundColor Green
-    Write-Host "powershell -ExecutionPolicy Bypass -File tools\confirm-bc250mcdm-display.ps1 -EvidenceDir `"$($lastBinding.evidence_dir)`" -InstanceId `"$($lastBinding.instance_id)`" -Token `"$($lastBinding.watchdog_token)`" -IConfirmDisplayIsVisible"
+    Write-Host "powershell -ExecutionPolicy Bypass -File tools\confirm-bc250mcdm-lab.ps1 -EvidenceDir `"$($lastBinding.evidence_dir)`" -InstanceId `"$($lastBinding.instance_id)`" -Token `"$($lastBinding.watchdog_token)`" -IConfirmDisplayIsVisible"
     Write-Host "`nOu para reverter imediatamente para o BasicDisplay:" -ForegroundColor Yellow
     Write-Host "powershell -ExecutionPolicy Bypass -File tools\rollback-bc250mcdm-lab.ps1 -Execute -IAcceptDisplayInterruptionRisk"
 }

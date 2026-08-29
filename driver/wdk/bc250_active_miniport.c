@@ -63,6 +63,29 @@ static ULONG Bc250ActiveReadTunable(PCWSTR ValueName, ULONG DefaultValue)
 #endif
 }
 
+/* Le um tunable e informa se ele existe de fato.
+ *
+ * Bc250ActiveReadTunable devolve o default tanto quando o valor vale o default
+ * quanto quando a leitura falha — e RtlQueryRegistryValues exige PASSIVE_LEVEL,
+ * entao "falhou" e' um resultado possivel dependendo de onde e' chamado. Ler
+ * duas vezes com defaults diferentes separa os dois casos: se os resultados
+ * batem, o valor existe; se divergem, cada chamada devolveu o proprio default e
+ * nao ha' valor legivel. */
+static ULONG Bc250ActiveReadTunableChecked(
+    PCWSTR ValueName, ULONG DefaultValue, ULONG *Present)
+{
+    ULONG asZero = Bc250ActiveReadTunable(ValueName, 0u);
+    ULONG asOne = Bc250ActiveReadTunable(ValueName, 1u);
+
+    if (asZero == asOne) {
+        if (Present != NULL) *Present = 1u;
+        return asZero;
+    }
+
+    if (Present != NULL) *Present = 0u;
+    return DefaultValue;
+}
+
 static BC250_HQD_PREFLIGHT_STATUS Bc250ActiveProbeHqdReadonly(
     BC250_DXGK_ACTIVE_CONTEXT *Context,
     BC250_HQD_READONLY_SNAPSHOT *Snapshot,
@@ -2362,7 +2385,35 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
 #else
         {
             ULONG skipHw = Bc250ActiveReadTunable(L"SkipHwBringup", 1);
+            ULONG present = 0u;
             Bc250ProbeRecord(BC250_PROBE_SKIP_HW_BRINGUP, skipHw);
+
+            /* Os tunables do carregador do CP sao lidos AQUI, e nao no sitio de
+             * uso: este ponto e' PASSIVE_LEVEL comprovado — e' onde
+             * SkipHwBringup funciona desde sempre. Lidos no sitio de uso, os
+             * tres voltavam sempre o default. */
+            context->GcvmInvalidateEngine = Bc250ActiveReadTunableChecked(
+                L"GcvmInvalidateEngine",
+                BC250_GCVM_INVALIDATE_ENGINE_DEFAULT, &present);
+            context->TunableEnginePresent = present;
+            context->GcvmInvalidateSemaphore = Bc250ActiveReadTunableChecked(
+                L"GcvmInvalidateSemaphore", 0u, &present);
+            context->TunableSemaphorePresent = present;
+            context->CpSoftReset = Bc250ActiveReadTunableChecked(
+                L"CpSoftReset", 0u, &present);
+            context->TunableSoftResetPresent = present;
+            context->CpVmid0PageTable = Bc250ActiveReadTunableChecked(
+                L"Vmid0PageTable", 0u, &present);
+            context->TunableVmid0Present = present;
+            /* 1 preserva o comportamento atual (liga AUTO_CTXSW_ENABLE antes do
+             * kick do anel). O upstream faz o contrario durante o bring-up. */
+            context->SdmaAutoCtxSw =
+                Bc250ActiveReadTunableChecked(L"SdmaAutoCtxSw", 1u, &present);
+            Bc250ProbeRecord(BC250_PROBE_TUNABLE_READ_OK,
+                (context->TunableEnginePresent << 0) |
+                (context->TunableSemaphorePresent << 1) |
+                (context->TunableSoftResetPresent << 2) |
+                (context->TunableVmid0Present << 3));
             if (skipHw != 0) {
                 if (NumberOfVideoPresentSources != NULL) *NumberOfVideoPresentSources = 1;
                 if (NumberOfChildren != NULL) *NumberOfChildren = 1;
@@ -3222,6 +3273,63 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                     Bc250ProbeRecord(
                         BC250_PROBE_PFP_DIRECT_IC_PRIME_UNHALT_MASK,
                         context->PfpDirectLoadEvidence.IcachePrimeUnhaltMask);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_COMPARED_DWORDS,
+                        context->PfpDirectLoadEvidence.Rb0ComparedDwords);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_MISMATCHES,
+                        context->PfpDirectLoadEvidence.Rb0MismatchCount);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_DEST_POLLS,
+                        context->PfpDirectLoadEvidence.Rb0DestPolls);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_DEST_OBSERVED,
+                        context->PfpDirectLoadEvidence.Rb0DestObserved);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_JT_STAT_PFP,
+                        context->PfpDirectLoadEvidence.JtStatPfp);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_JT_STAT_CE,
+                        context->PfpDirectLoadEvidence.JtStatCe);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_JT_STAT_MEC,
+                        context->PfpDirectLoadEvidence.JtStatMec);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_INV_ENGINE,
+                        context->PfpDirectLoadEvidence.InvalidateEngine);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_INV_ACK_BEFORE_STAGING,
+                        context->PfpDirectLoadEvidence.InvalidateAckBeforeStaging);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_INV_ACK_STAGING,
+                        context->PfpDirectLoadEvidence.InvalidateAckStaging);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_INV_ACK_BEFORE_PRE_WPTR,
+                        context->PfpDirectLoadEvidence.InvalidateAckBeforePreWptr);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_INV_USE_SEMAPHORE,
+                        context->PfpDirectLoadEvidence.InvalidateUseSemaphore);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_INV_ACK_RAW_STAGING,
+                        context->PfpDirectLoadEvidence.InvalidateAckRawStaging);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_INV_ACK_RAW_PRE_WPTR,
+                        context->PfpDirectLoadEvidence.InvalidateAckRawPreWptr);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_INV_SEM_ACQ_STAGING,
+                        context->PfpDirectLoadEvidence.InvalidateSemAcquiredStaging);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_INV_SEM_ACQ_PRE_WPTR,
+                        context->PfpDirectLoadEvidence.InvalidateSemAcquiredPreWptr);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_CP_SOFT_RESET,
+                        context->PfpDirectLoadEvidence.CpSoftResetApplied);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_VMID0_PT,
+                        context->PfpDirectLoadEvidence.Vmid0PageTableApplied);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_VMID0_INV_ACK,
+                        context->PfpDirectLoadEvidence.Vmid0InvalidateAck);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_VMID0_ACK_AFTER,
+                        context->PfpDirectLoadEvidence.Vmid0AckAfter);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_INV_POLLS_STAGING,
+                        context->PfpDirectLoadEvidence.InvalidatePollsStaging);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_INV_ACK_PRE_WPTR,
+                        context->PfpDirectLoadEvidence.InvalidateAckPreWptr);
+                    Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_INV_POLLS_PRE_WPTR,
+                        context->PfpDirectLoadEvidence.InvalidatePollsPreWptr);
+                    {
+                        uint32_t traceIndex;
+                        for (traceIndex = 0u;
+                             traceIndex < BC250_PFP_PC_TRACE_SAMPLES;
+                             ++traceIndex) {
+                            Bc250ProbeRecord(
+                                (BC250_PROBE_FIELD)(
+                                    BC250_PROBE_PFP_DIRECT_PC_TRACE_00 + traceIndex),
+                                context->PfpDirectLoadEvidence.PfpPcTrace[traceIndex]);
+                        }
+                    }
                     Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_ME_PC_BEFORE,
                         context->PfpDirectLoadEvidence.MePcBefore);
                     Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_ME_PC_LAST,
@@ -3347,6 +3455,20 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                         context->SdmaRingWorkEvidence.Status3After);
                     Bc250ProbeRecord(BC250_PROBE_SDMA_RING_ERROR_LOG_AFTER,
                         context->SdmaRingWorkEvidence.ErrorLogAfter);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_ERROR_LOG_BEFORE,
+                        context->SdmaRingWorkEvidence.ErrorLogBefore);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_CNTL_BEFORE,
+                        context->SdmaRingWorkEvidence.CntlBefore);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_CNTL_APPLIED,
+                        context->SdmaRingWorkEvidence.CntlApplied);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_EX_IDLE_EXPIRED,
+                        context->SdmaRingWorkEvidence.ExIdlePollExpiredBefore);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_RD_XNACK0_BEFORE,
+                        context->SdmaRingWorkEvidence.Utcl1ReadXnack0Before);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_WR_XNACK0_BEFORE,
+                        context->SdmaRingWorkEvidence.Utcl1WriteXnack0Before);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_UTCL1_TIMEOUT_BEFORE,
+                        context->SdmaRingWorkEvidence.Utcl1TimeoutBefore);
                     Bc250ProbeRecord(
                         BC250_PROBE_SDMA_RING_UTCL1_RD_STATUS_AFTER,
                         context->SdmaRingWorkEvidence.Utcl1ReadStatusAfter);

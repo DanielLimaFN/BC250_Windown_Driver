@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [switch]$Execute,
     [switch]$IAcceptBlackScreenRisk,
@@ -10,7 +10,9 @@ $root = Split-Path -Parent $PSScriptRoot
 $packageInf = Join-Path $root 'driver\wdk\package\output_lab\bc250mcdm.inf'
 $manifestPath = Join-Path $root 'driver\wdk\package\output_lab.manifest.json'
 $watchdogScript = Join-Path $root 'tools\watch-bc250mcdm-lab.ps1'
-$confirmScript = Join-Path $root 'tools\confirm-bc250mcdm-display.ps1'
+# Gate proprio do laboratorio: o de producao exige SkipHwBringup=1 e por isso
+# rejeita este binding sempre, por construcao (doc 95 secao B3).
+$confirmScript = Join-Path $root 'tools\confirm-bc250mcdm-lab.ps1'
 $markerPath = 'C:\BC250_TEST_OEMINF.txt'
 $recoveryPath = 'C:\BC250_RECOVERY.cmd'
 $hardwareId = 'PCI\VEN_1002&DEV_13FE'
@@ -76,6 +78,22 @@ $publishedName | Set-Content -LiteralPath $markerPath -Encoding ascii
 Write-Host "  Pacote publicado como: $publishedName" -ForegroundColor Green
 
 # 3. Armar o Watchdog em segundo plano
+#
+# Dois watchdogs simultaneos brigam pelo mesmo dispositivo: o mais antigo dispara
+# o rollback (que remove o pacote OEM) no meio do binding do mais novo, e o
+# UpdateDriverForPlugAndPlayDevicesW falha com win32=2. Aconteceu em 29/08 18:14,
+# com os PIDs 3092 e 908 armados ao mesmo tempo.
+$liveWatchdogs = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like '*watch-bc250mcdm-lab.ps1*' })
+if ($liveWatchdogs.Count -gt 0) {
+    Write-Host ''
+    Write-Host 'ERRO: ja existe watchdog de laboratorio armado:' -ForegroundColor Red
+    foreach ($w in $liveWatchdogs) { Write-Host ("  PID {0}" -f $w.ProcessId) -ForegroundColor Red }
+    Write-Host 'Confirme o binding anterior, deixe-o expirar, ou encerre o processo:' -ForegroundColor Yellow
+    Write-Host ("  Stop-Process -Id {0} -Force" -f $liveWatchdogs[0].ProcessId) -ForegroundColor Yellow
+    throw 'Binding abortado: watchdog concorrente ativo.'
+}
+
 Write-Host "`n[2/4] Armando Watchdog de Rollback ($WatchdogTimeoutSeconds s)..." -ForegroundColor Yellow
 $stamp = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
 $evidenceDir = Join-Path $root "docs\evidence\$stamp-$($env:COMPUTERNAME)-lab-binding"
@@ -132,8 +150,12 @@ $win32Error = if ($nativeOk) { 0 } else { [Runtime.InteropServices.Marshal]::Get
 Write-Host "  UpdateDriverForPlugAndPlayDevicesW: success=$nativeOk win32=$win32Error reboot=$rebootRequired"
 
 if (-not $nativeOk) {
-    Write-Warning "NewDev falhou, tentando fallback com pnputil /install..."
-    & pnputil.exe /install /driver $publishedName
+    # 'pnputil /install /driver <oemN.inf>' nao existe: so' imprime a tela de
+    # uso. Parecia fallback e nao era.
+    Write-Warning "NewDev falhou (win32=$win32Error), tentando fallback valido..."
+    $fallback = (& pnputil.exe /add-driver $packageInf /install 2>&1) -join "`n"
+    $fallback | Write-Host
+    if ($LASTEXITCODE -ne 0) { Write-Warning "Fallback pnputil tambem falhou: exit=$LASTEXITCODE" }
 }
 
 # 5. Configurar SkipHwBringup = 0 nos parametros do servico
@@ -168,11 +190,30 @@ if (Test-Path $driverInstalledPath) {
     }
 }
 
+# Vincular NAO e' ter vinculado: o script ja' anunciou "INSTALADO!" com o
+# dispositivo em BasicDisplay e, depois, sem servico nenhum. Conferir aqui, e
+# desarmar o proprio watchdog se falhou - deixa-lo armado so' produz mais um
+# rollback em cima de um estado que ja' esta quebrado.
+if ($devAfter.Service -ne 'bc250mcdm') {
+    Write-Host ''
+    Write-Host "BINDING NAO PEGOU: dispositivo em '$($devAfter.Service)', esperado bc250mcdm." -ForegroundColor Red
+    if ($win32Error -eq 1072) {
+        Write-Host 'win32=1072 = ERROR_SERVICE_MARKED_FOR_DELETE.' -ForegroundColor Red
+        Write-Host 'O servico bc250mcdm esta pendente de exclusao e nao pode ser recriado' -ForegroundColor Yellow
+        Write-Host 'ate' + [char]39 + ' o sistema soltar a referencia. Isso exige REINICIAR.' -ForegroundColor Yellow
+    }
+    Write-Host 'Desarmando o watchdog desta tentativa para nao empilhar rollbacks.' -ForegroundColor Yellow
+    if ($null -ne $watchdogProcess -and -not $watchdogProcess.HasExited) {
+        Stop-Process -Id $watchdogProcess.Id -Force -ErrorAction SilentlyContinue
+    }
+    throw "Binding de laboratorio falhou (win32=$win32Error)."
+}
+
 Write-Host "`n==========================================================================" -ForegroundColor Green
 Write-Host "DRIVER DE LABORATORIO INSTALADO!" -ForegroundColor Green
 Write-Host "O Watchdog continua armado por $WatchdogTimeoutSeconds segundos." -ForegroundColor Yellow
 Write-Host "Se o video estiver visivel, confirme para desarmar o rollback:" -ForegroundColor Yellow
-Write-Host "powershell -ExecutionPolicy Bypass -File tools\confirm-bc250mcdm-display.ps1 -EvidenceDir `"$evidenceDir`" -InstanceId `"$($device.PNPDeviceID)`" -Token `"$watchdogToken`" -IConfirmDisplayIsVisible"
+Write-Host "powershell -ExecutionPolicy Bypass -File tools\confirm-bc250mcdm-lab.ps1 -EvidenceDir `"$evidenceDir`" -InstanceId `"$($device.PNPDeviceID)`" -Token `"$watchdogToken`" -IConfirmDisplayIsVisible"
 Write-Host "==========================================================================" -ForegroundColor Green
 
 [ordered]@{

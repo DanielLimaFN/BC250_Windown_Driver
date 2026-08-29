@@ -336,6 +336,97 @@ static PCWSTR Bc250ProbeFieldName(BC250_PROBE_FIELD Field)
         return L"PfpDirectIcInvUnhaltMask";
     case BC250_PROBE_PFP_DIRECT_IC_PRIME_UNHALT_MASK:
         return L"PfpDirectIcPrimeUnhaltMask";
+    case BC250_PROBE_PFP_DIRECT_JT_STAT_PFP: return L"PfpDirectJtStatPfp";
+    case BC250_PROBE_PFP_DIRECT_JT_STAT_CE:  return L"PfpDirectJtStatCe";
+    case BC250_PROBE_PFP_DIRECT_JT_STAT_MEC: return L"PfpDirectJtStatMec";
+    case BC250_PROBE_PFP_DIRECT_PC_TRACE_00:
+        return L"PfpDirectPcTrace00";
+    case BC250_PROBE_PFP_DIRECT_PC_TRACE_01:
+        return L"PfpDirectPcTrace01";
+    case BC250_PROBE_PFP_DIRECT_PC_TRACE_02:
+        return L"PfpDirectPcTrace02";
+    case BC250_PROBE_PFP_DIRECT_PC_TRACE_03:
+        return L"PfpDirectPcTrace03";
+    case BC250_PROBE_PFP_DIRECT_PC_TRACE_04:
+        return L"PfpDirectPcTrace04";
+    case BC250_PROBE_PFP_DIRECT_PC_TRACE_05:
+        return L"PfpDirectPcTrace05";
+    case BC250_PROBE_PFP_DIRECT_PC_TRACE_06:
+        return L"PfpDirectPcTrace06";
+    case BC250_PROBE_PFP_DIRECT_PC_TRACE_07:
+        return L"PfpDirectPcTrace07";
+    case BC250_PROBE_PFP_DIRECT_PC_TRACE_08:
+        return L"PfpDirectPcTrace08";
+    case BC250_PROBE_PFP_DIRECT_PC_TRACE_09:
+        return L"PfpDirectPcTrace09";
+    case BC250_PROBE_PFP_DIRECT_PC_TRACE_10:
+        return L"PfpDirectPcTrace10";
+    case BC250_PROBE_PFP_DIRECT_PC_TRACE_11:
+        return L"PfpDirectPcTrace11";
+    case BC250_PROBE_PFP_DIRECT_PC_TRACE_12:
+        return L"PfpDirectPcTrace12";
+    case BC250_PROBE_PFP_DIRECT_PC_TRACE_13:
+        return L"PfpDirectPcTrace13";
+    case BC250_PROBE_PFP_DIRECT_PC_TRACE_14:
+        return L"PfpDirectPcTrace14";
+    case BC250_PROBE_PFP_DIRECT_PC_TRACE_15:
+        return L"PfpDirectPcTrace15";
+    case BC250_PROBE_PFP_DIRECT_INV_ENGINE:
+        return L"PfpDirectInvEngine";
+    case BC250_PROBE_PFP_DIRECT_INV_ACK_STAGING:
+        return L"PfpDirectInvAckStaging";
+    case BC250_PROBE_PFP_DIRECT_INV_POLLS_STAGING:
+        return L"PfpDirectInvPollsStaging";
+    case BC250_PROBE_PFP_DIRECT_INV_ACK_PRE_WPTR:
+        return L"PfpDirectInvAckPreWptr";
+    case BC250_PROBE_PFP_DIRECT_INV_POLLS_PRE_WPTR:
+        return L"PfpDirectInvPollsPreWptr";
+    case BC250_PROBE_PFP_DIRECT_INV_ACK_BEFORE_STAGING:
+        return L"PfpDirectInvAckBeforeStaging";
+    case BC250_PROBE_PFP_DIRECT_INV_ACK_BEFORE_PRE_WPTR:
+        return L"PfpDirectInvAckBeforePreWptr";
+    case BC250_PROBE_PFP_DIRECT_INV_USE_SEMAPHORE:
+        return L"PfpDirectInvUseSemaphore";
+    case BC250_PROBE_PFP_DIRECT_INV_ACK_RAW_STAGING:
+        return L"PfpDirectInvAckRawStaging";
+    case BC250_PROBE_PFP_DIRECT_INV_ACK_RAW_PRE_WPTR:
+        return L"PfpDirectInvAckRawPreWptr";
+    case BC250_PROBE_PFP_DIRECT_INV_SEM_ACQ_STAGING:
+        return L"PfpDirectInvSemAcqStaging";
+    case BC250_PROBE_PFP_DIRECT_INV_SEM_ACQ_PRE_WPTR:
+        return L"PfpDirectInvSemAcqPreWptr";
+    case BC250_PROBE_PFP_DIRECT_CP_SOFT_RESET:
+        return L"PfpDirectCpSoftReset";
+    case BC250_PROBE_PFP_DIRECT_VMID0_PT:
+        return L"PfpDirectVmid0PageTable";
+    case BC250_PROBE_PFP_DIRECT_VMID0_INV_ACK:
+        return L"PfpDirectVmid0InvAck";
+    case BC250_PROBE_PFP_DIRECT_VMID0_ACK_AFTER:
+        return L"PfpDirectVmid0AckAfter";
+    case BC250_PROBE_TUNABLE_READ_OK:
+        return L"TunableReadOkMask";
+    case BC250_PROBE_SDMA_RING_ERROR_LOG_BEFORE:
+        return L"SdmaRingErrorLogBefore";
+    case BC250_PROBE_SDMA_RING_RD_XNACK0_BEFORE:
+        return L"SdmaRingUtcl1ReadXnack0Before";
+    case BC250_PROBE_SDMA_RING_WR_XNACK0_BEFORE:
+        return L"SdmaRingUtcl1WriteXnack0Before";
+    case BC250_PROBE_SDMA_RING_UTCL1_TIMEOUT_BEFORE:
+        return L"SdmaRingUtcl1TimeoutBefore";
+    case BC250_PROBE_SDMA_RING_CNTL_BEFORE:
+        return L"SdmaRingCntlBefore";
+    case BC250_PROBE_SDMA_RING_CNTL_APPLIED:
+        return L"SdmaRingCntlApplied";
+    case BC250_PROBE_SDMA_RING_EX_IDLE_EXPIRED:
+        return L"SdmaRingExIdlePollExpired";
+    case BC250_PROBE_PFP_DIRECT_COMPARED_DWORDS:
+        return L"PfpDirectComparedDwords";
+    case BC250_PROBE_PFP_DIRECT_MISMATCHES:
+        return L"PfpDirectMismatches";
+    case BC250_PROBE_PFP_DIRECT_DEST_POLLS:
+        return L"PfpDirectDestPolls";
+    case BC250_PROBE_PFP_DIRECT_DEST_OBSERVED:
+        return L"PfpDirectDestObserved";
     case BC250_PROBE_PFP_DIRECT_ME_PC_BEFORE: return L"PfpDirectMePcBefore";
     case BC250_PROBE_PFP_DIRECT_ME_PC_LAST: return L"PfpDirectMePcLast";
     case BC250_PROBE_PFP_DIRECT_CE_PC_BEFORE: return L"PfpDirectCePcBefore";

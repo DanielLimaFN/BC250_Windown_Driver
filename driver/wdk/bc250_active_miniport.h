@@ -76,6 +76,13 @@ typedef struct BC250_SDMA_RING_WORK_EVIDENCE {
     uint32_t Status1After;
     uint32_t Status2After;
     uint32_t Status3After;
+    uint32_t CntlBefore;
+    uint32_t CntlApplied;
+    uint32_t ExIdlePollExpiredBefore;
+    uint32_t ErrorLogBefore;
+    uint32_t Utcl1ReadXnack0Before;
+    uint32_t Utcl1WriteXnack0Before;
+    uint32_t Utcl1TimeoutBefore;
     uint32_t ErrorLogAfter;
     uint32_t Utcl1ReadStatusAfter;
     uint32_t Utcl1WriteStatusAfter;
@@ -101,6 +108,20 @@ typedef struct BC250_RLC_LOAD_EVIDENCE {
     uint32_t AlreadyActive;
     uint32_t PhysicalReady;
 } BC250_RLC_LOAD_EVIDENCE;
+
+#define BC250_PFP_PC_TRACE_SAMPLES 16u
+
+/* Engine de invalidacao de GCVM usada pelo carregador do CP.
+ *
+ * Ajustavel em runtime pelo valor de registro
+ * HKLM\SYSTEM\CurrentControlSet\Servicesc250mcdm\Parameters\GcvmInvalidateEngine,
+ * para que trocar de engine custe um valor de registro e um ciclo de PnP em vez
+ * de build + assinatura + instalacao.
+ *
+ * ATENCAO: o valor 0 e' o Display Engine (VMID 0). Selecionar 0 e' uma decisao
+ * deliberada de bisseccao e derruba o scanout - so' com o watchdog armado. */
+#define BC250_GCVM_INVALIDATE_ENGINE_DEFAULT 17u
+#define BC250_GCVM_INVALIDATE_ENGINE_MAX     17u
 
 typedef enum BC250_PFP_DIRECT_LOAD_STATUS {
     BC250_PFP_DIRECT_LOAD_OK = 0,
@@ -155,6 +176,10 @@ typedef struct BC250_PFP_DIRECT_LOAD_EVIDENCE {
     uint32_t Rb0WptrApplied;
     uint32_t Rb0FenceBefore;
     uint32_t Rb0FenceAfter;
+    uint32_t Rb0ComparedDwords;
+    uint32_t Rb0MismatchCount;
+    uint32_t Rb0DestPolls;
+    uint32_t Rb0DestObserved;
     uint32_t RegisterRestorePassed;
     uint32_t MemoryRestorePassed;
     uint32_t PhysicalReady;
@@ -163,6 +188,36 @@ typedef struct BC250_PFP_DIRECT_LOAD_EVIDENCE {
     uint32_t IcacheInvalidateEntryMask;
     uint32_t IcacheInvalidateUnhaltMask;
     uint32_t IcachePrimeUnhaltMask;
+    /* JT_LOADED de CP_*_JT_STAT: 2 bits em PFP/CE, 8 bits no MEC. */
+    uint32_t JtStatPfp;
+    uint32_t JtStatCe;
+    uint32_t JtStatMec;
+    /* PC do PFP logo apos o UNHALT, antes da ativacao do anel. */
+    uint32_t PfpPcTrace[BC250_PFP_PC_TRACE_SAMPLES];
+    /* Invalidacao de GCVM: qual engine, e se ela realmente respondeu. */
+    uint32_t InvalidateEngine;
+    /* ACK lido ANTES de escrever o REQ. Se ja' vier 1, um ACK observado depois
+     * pode ser residual: "0 polls" nao distingue resposta imediata de bit
+     * preso. Sem este campo a medicao do ACK nao conclui nada. */
+    uint32_t InvalidateUseSemaphore;
+    uint32_t InvalidateAckBeforeStaging;
+    uint32_t InvalidateAckRawStaging;
+    uint32_t InvalidateAckStaging;
+    uint32_t InvalidatePollsStaging;
+    uint32_t InvalidateSemAcquiredStaging;
+    uint32_t InvalidateAckBeforePreWptr;
+    uint32_t InvalidateAckRawPreWptr;
+    uint32_t InvalidateAckPreWptr;
+    uint32_t InvalidatePollsPreWptr;
+    uint32_t InvalidateSemAcquiredPreWptr;
+    /* Blocos restaurados de 4df3484, o estado das 109 capturas de sucesso. */
+    uint32_t CpSoftResetApplied;
+    uint32_t Vmid0PageTableApplied;
+    uint32_t Vmid0InvalidateAck;
+    uint32_t Vmid0AckBefore;
+    uint32_t Vmid0AckAfter;
+    uint32_t Vmid0Polls;
+    uint32_t Vmid0SemAcquired;
 } BC250_PFP_DIRECT_LOAD_EVIDENCE;
 
 typedef struct BC250_DXGK_ACTIVE_CONTEXT {
@@ -196,6 +251,15 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     BC250_PSP_LOAD_FW_STATUS PspRlcLoadStatus;
     BC250_PSP_LOAD_FW_EVIDENCE PspRlcLoadEvidence;
     BC250_RLC_LOAD_EVIDENCE RlcLoadEvidence;
+    uint32_t GcvmInvalidateEngine;
+    uint32_t GcvmInvalidateSemaphore;
+    uint32_t CpSoftReset;
+    uint32_t CpVmid0PageTable;
+    uint32_t SdmaAutoCtxSw;
+    uint32_t TunableEnginePresent;
+    uint32_t TunableSemaphorePresent;
+    uint32_t TunableSoftResetPresent;
+    uint32_t TunableVmid0Present;
     BC250_PFP_DIRECT_LOAD_STATUS PfpDirectLoadStatus;
     BC250_PFP_DIRECT_LOAD_EVIDENCE PfpDirectLoadEvidence;
     BC250_HQD_PREFLIGHT_STATUS HqdPreflightStatus;

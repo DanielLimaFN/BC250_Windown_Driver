@@ -27,10 +27,10 @@ Base Geral Pré-WDDM (Lab)         ███████████████
 SDMA0 (engine + display vivo)     ███████████████████░ 95%  ███████████████████░ 95%  Tripe COM display ativo (2.0)
 GCVM/VMID8 (mecanismo MMIO)       ██████████████████░░ 90%  ██████████████████░░ 90%  Invalidate/ACK + PTE rollback
 GCVM sob VidMm (F3, produção)     ███████░░░░░░░░░░░░░ 35%  ░░░░░░░░░░░░░░░░░░░░  0%  Sem paging sob pressão
-CP / PM4 Ring 0 (bancada)         █████████████████░░░ 85%  ███████████████░░░░░ 75%  110/167; falha intermitente
+CP / PM4 Ring 0 (COM display vivo) ███████████████████░ 95%  ██████████████████░░ 90%  Tripe COMPLETO 3/3 (2.0.4)
 RLC (fora do StartDevice)         ████████░░░░░░░░░░░░ 40%  ░░░░░░░░░░░░░░░░░░░░  0%  Proibido no arranque normal
 Telemetria & Observabilidade      ███████████████░░░░░ 75%  ████████████░░░░░░░░ 60%  Gate visual aprovado
-Compute MEC / HQD (PM4 na fila)   ████████████████░░░░ 80%  ██████████████░░░░░░ 70%  Tripé fechado 26x (seção 3.4)
+Compute MEC / HQD (PM4 na fila)   █████████████████░░░ 85%  ███████████████░░░░░ 75%  Gate estrito COM display vivo (2.0.4)
 Compute — dispatch de shader      ██░░░░░░░░░░░░░░░░░░ 10%  ░░░░░░░░░░░░░░░░░░░░  0%  Nenhum kernel executado
 Display WDDM (candidato 3.24)     █████████████████░░░ 85%  ████████░░░░░░░░░░░░ 40%  Smoke test, 1 sessão só
 IH / Monitored Fences / TDR       ░░░░░░░░░░░░░░░░░░░░  0%  ░░░░░░░░░░░░░░░░░░░░  0%  Não iniciado
@@ -39,8 +39,12 @@ Veredito Global: NÃO VALIDADO EM HARDWARE (produção)
   Provados em bancada: SDMA, CP Ring 0, GCVM/VMID8 e a fila de compute MEC/HQD (tripé, 26x)
   CONVERGENCIA PARCIAL: SDMA fecha o tripé COM o display vivo, sem tela preta (seção 2.0)
   CONVERGENCIA AMPLIADA: bring-up completo no StartDevice com o display vivo (seção 2.0.3)
-  Bloqueio atual: o PFP não assenta em 0x284 — cai no loop de fetch 0x218..0x21B
-  Não provados: dispatch de shader, CP consumindo ring, IH/TDR, robustez do 3.24
+  CONVERGENCIA F7: CP consome o ring e o HQD fecha o gate, COM o display vivo (seção 2.0.4)
+  CP Ring 0: TRIPE COMPLETO 39/39 dos ciclos em que rodou (soak de 40) — RPTR==WPTR
+             estrito, fence fisica com veneno verificado, dados byte a byte, display vivo
+  Gate do CP corrigido: sem `>= cursor-1`, sem `|| scratch`, com checagem de dados
+  Bloqueio atual: intermitencia do SDMA (2/40) e dispatch de shader (0%)
+  Não provados: dispatch de shader, RPTR==WPTR estrito no CP, IH/TDR, robustez do 3.24
 =========================================================================================================
 ```
 
@@ -278,8 +282,60 @@ derruba o display"* deixou de ser verdade observável.
    tinha `MeCntlBefore=0` / `PcBefore=0x21A`, sem precedente. Re-HALT restaurado.
 
 Com as duas fora do caminho, o modo de falha real é `FAIL-FETCH-LOOP`: `PC=0x21B`,
-`transitions=47/100`, `RPTR/WPTR=0/16`, fence envenenada. O diferencial contra as 140 capturas
-de sucesso isola `CP_MEC_JT_STAT` (`0xFE` contra `0xFF`) e os PCs finais de ME e CE.
+`transitions=47/100`, `RPTR/WPTR=0/16`, fence envenenada.
+
+**E o diferencial contra o corpus deu resultado negativo.** No cluster homogêneo
+`CP_MEC_JT_STAT=0xFF` — 109 sucessos contra 11 falhas — os 487 campos do probe separam os dois
+grupos por exatamente dois campos, `PfpDirectStatus` e `PfpDirectPhysicalReady`, ambos
+derivados do desfecho. **Nenhum campo do retrato de `StartDevice` prevê a falha**, o que
+confirma a pendência 4 do doc 94 e converge com a seção 2.2: o mesmo binário sucede e falha
+dentro do mesmo boot. O discriminador é temporal, e o instrumento para vê-lo não existia.
+
+### 2.0.4 F7 RESOLVIDO — CP e compute com o display vivo (2026-08-29 18:24)
+
+> **Isto substitui o diagnóstico das seções 2.1 e 2.2.** A "intermitência do PFP" era
+> regressão de código, não fenômeno de silício.
+
+A bissecção contra `4df3484` — o commit sob o qual as 109 capturas de sucesso foram produzidas
+— mostrou que o trabalho de preservação do display **removeu dois blocos** do carregador do CP:
+a ativação de `GCVM_CONTEXT0` (VMID 0) e o `GRBM_SOFT_RESET` do CP. Reativados por tunable:
+
+```text
+iter  status  PC-final  trans/amostras  RPTR/WPTR   fence-CP   HQD
+   1       0  00000284       2/100        15/16     BC250123    1   OK-SETTLED
+   2       0  00000284       2/100        15/16     BC250123    1   OK-SETTLED
+   3       0  00000284       2/100        15/16     BC250123    1   OK-SETTLED
+```
+
+Primeiros sucessos do CP desde 28/08 21:14, com `bc250mcdm` servindo o display,
+`ConfigManagerErrorCode=0`, `DmmVsyncCount=4` e **zero eventos de display/TDR/bugcheck**.
+
+O compute veio junto: `HqdActiveStatus=0`, `HqdActiveTriadPassed=1`, `RptrAfter=11`, fence
+`0xBC250123`. O estágio do HQD só roda quando o direct load retorna OK — estava bloqueado pela
+mesma causa.
+
+**Consequência para a seção 6**: programar `CONTEXT0_PT_BASE` do VMID 0 e disparar
+`GRBM_SOFT_RESET` rodaram três vezes com o display vivo, sem um único evento. A causa-raiz nº 1
+não se sustenta como formulada.
+
+**Refinado às 18:42 — dos dois blocos, só um faz falta.** Com `Vmid0PageTable=0` e
+`CpSoftReset=1` o CP assenta em `0x284` e fecha com fence física. **A ativação do
+`GCVM_CONTEXT0` do VMID 0 não é necessária** — e é nociva: ligá-la produziu XNACK na UTCL1 do
+SDMA (`Utcl1WriteXnack0=1`, `ReadXnack0=0x0045FA00`, `ErrorLog=0xF`) e timeout do anel do
+SDMA, que por sua vez bloqueia o carregador do CP, porque o estágio do CP roda atrás de
+`SdmaRingWorkStatus == OK`. O SDMA endereça o próprio anel por VMID 0 com endereço físico de
+MC (`0xF40FBB9000`), e a page table do CP mapeia só 2 MiB a partir de `firmwarePa`.
+
+Consequência importante: **a receita que traz o CP de volta não toca no VMID 0.** O risco de
+tela preta que justificava manter o bring-up fora da produção some junto — sobra apenas o
+`GRBM_SOFT_RESET` do CP.
+
+**O que ainda não fecha**: `RPTR=15` contra `WPTR=16`, determinístico nas corridas. O
+tripé exige igualdade estrita; o gate do CP aceita `RPTR >= cursor-1` (o afrouxamento da seção
+4). Enquanto isso não for resolvido, a perna do CP Ring 0 é **`NÃO VALIDADO EM HARDWARE`**.
+
+Tunables: `CpSoftReset` e `Vmid0PageTable`, ambos default 0, lidos no `StartDevice`. Detalhes
+em [`docs/95`](docs/95_ICACHE_POLL_PFP_CONGELADO.md) § D.
 
 ### 2.1 A assinatura é binária e determinística
 
