@@ -1,1 +1,0 @@
-[    8.974964] amdgpu 0000:01:00.0: amdgpu: SE 2, SH per SE 2, CU per SH 10, active_cu_number 24

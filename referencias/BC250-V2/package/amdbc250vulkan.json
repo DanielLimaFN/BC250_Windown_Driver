@@ -1,7 +1,0 @@
-{
-    "file_format_version": "1.0.0",
-    "ICD": {
-        "library_path": ".\\amdbc250vulkan.dll",
-        "api_version": "1.2.0"
-    }
-}

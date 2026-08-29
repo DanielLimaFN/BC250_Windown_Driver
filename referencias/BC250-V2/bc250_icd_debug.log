@@ -1,4 +1,0 @@
-EnsureDriver: D3DKMTOpen status=0x0 hAdapter=0x40000780
-EnsureDriver: capsValid=1 status=0x0
-EnsureDriver: D3DKMTOpen status=0x0 hAdapter=0x40000800
-EnsureDriver: capsValid=1 status=0x0

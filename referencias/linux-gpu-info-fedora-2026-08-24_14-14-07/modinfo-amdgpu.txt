@@ -1,9 +1,0 @@
-firmware:       amdgpu/cyan_skillfish_gpu_info.bin
-firmware:       amdgpu/cyan_skillfish2_rlc.bin
-firmware:       amdgpu/cyan_skillfish2_mec2.bin
-firmware:       amdgpu/cyan_skillfish2_mec.bin
-firmware:       amdgpu/cyan_skillfish2_me.bin
-firmware:       amdgpu/cyan_skillfish2_pfp.bin
-firmware:       amdgpu/cyan_skillfish2_ce.bin
-firmware:       amdgpu/cyan_skillfish2_sdma1.bin
-firmware:       amdgpu/cyan_skillfish2_sdma.bin
