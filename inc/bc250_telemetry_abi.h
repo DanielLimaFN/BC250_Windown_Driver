@@ -28,9 +28,9 @@ extern "C" {
  */
 
 /* SMU Mailbox Command / Response Register Offsets (MP1 SMN MMIO Aperture) */
-#define BC250_SMU_MMIO_C2PMSG_66            0x0003B208u /* Response / Status Code */
-#define BC250_SMU_MMIO_C2PMSG_67            0x0003B20Cu /* Message ID / Kick */
-#define BC250_SMU_MMIO_C2PMSG_82            0x0003B248u /* Message Argument (32-bit) */
+#define BC250_SMU_MMIO_C2PMSG_66            0x03B10A68u /* Response / Status Code */
+#define BC250_SMU_MMIO_C2PMSG_67            0x03B10A08u /* Message ID / Kick */
+#define BC250_SMU_MMIO_C2PMSG_82            0x03B10A48u /* Message Argument (32-bit) */
 
 /* SMU Response Status Codes */
 #define BC250_SMU_RESP_OK                   0x00000001u

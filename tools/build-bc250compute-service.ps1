@@ -14,10 +14,15 @@ Write-Host "Compilando bc250compute.sys e bc250-compute-cli.exe..."
 
 cmd.exe /c "driver\wdk\build-contract.bat"
 
+if (Test-Path "$RepoRoot\driver\wdk\output\bc250compute.sys") {
+    Copy-Item -Force "$RepoRoot\driver\wdk\output\bc250compute.sys" "$RepoRoot\driver\wdk\output\bc250compute_pkg.sys"
+}
+
 # Compilar bc250-compute-cli.exe com cl.exe
 $clPath = (where.exe cl.exe | Select-Object -First 1)
 if ($clPath) {
     & cl.exe /nologo /W4 /O2 /Fe"$OutputDir\bc250-compute-cli.exe" "$RepoRoot\tools\bc250-compute-cli.c" /link kernel32.lib advapi32.lib
+    & cl.exe /nologo /W4 /O2 /Fe"$OutputDir\bc250-gpuva-sdma-gate.exe" "$RepoRoot\tools\bc250-gpuva-sdma-gate.c" /link kernel32.lib
 }
 
 # Assinar bc250compute.sys

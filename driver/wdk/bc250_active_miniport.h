@@ -19,6 +19,7 @@
 #include "../core/bc250_sdma_f32_transaction.h"
 #include "../core/bc250_vram_allocator.h"
 #include "../core/bc250_compute_mqd_contract.h"
+#include "../core/bc250_gpuva_sdma_broker_contract.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -215,6 +216,9 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     PVOID DeferredPspLoadFirmware;
     EX_PUSH_LOCK ObjectLock;
     BC250_MCDM_OBJECT_REGISTRY Objects;
+    /* In-memory authority only; it never performs MMIO or submission. */
+    BC250_GPUVA_SDMA_BROKER GpuvaSdmaBroker;
+    volatile LONG GpuvaSdmaBrokerReady;
     DXGK_CONTEXTINFO ContextAbi;
     volatile LONG ContextAbiReady;
     volatile LONG AllocationAbiReady;
@@ -280,6 +284,21 @@ NTSTATUS Bc250ActiveSetRootPageTableObject(
     uint64_t Address,
     uint32_t NumEntries,
     uint32_t MaxEntries);
+
+NTSTATUS Bc250ActiveIssueGpuvaSdmaLease(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_MCDM_HANDLE OwnerProcess,
+    BC250_MCDM_HANDLE OpenAllocation,
+    uint64_t GpuVa,
+    uint64_t ByteCount,
+    uint64_t *LeaseId);
+
+NTSTATUS Bc250ActiveValidateGpuvaSdmaLeasePair(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    uint64_t SourceLeaseId,
+    uint64_t DestinationLeaseId,
+    uint64_t FenceGpuVa,
+    uint64_t ByteCount);
 
 BC250_SDMA_RING_WORK_STATUS Bc250ActiveRunSdmaRingWork(
     BC250_DXGK_ACTIVE_CONTEXT *Context,

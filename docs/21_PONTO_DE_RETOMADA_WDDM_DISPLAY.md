@@ -105,6 +105,10 @@ A inicialização PnP de exibição (`StartDevice`) deve ser **exclusivamente fo
 3. **NÃO EXECUTAR** testes agressivos de registradores (`PfpDirectLoad`, `HqdActive`, `TlbFlush`) durante o `StartDevice`.
 4. Deixar esses testes e a ativação de anéis assíncronos de compute (SDMA / MEC HQD) para serem disparados sob demanda (via IOCTL / Escape / submissão UMD) ou no serviço isolado `bc250compute.sys`.
 
+O primeiro gate isolado está em [`92_COMPUTE_GPUVA_SDMA_GATE.md`](92_COMPUTE_GPUVA_SDMA_GATE.md).
+Ele ainda não executa hardware: valida a ABI de dois contextos e falha fechado
+até que um backend proprietário do adaptador possa provar GPUVA, SDMA e fence.
+
 ### Passo 2: Corrigir a Sincronização do VSync
 Em `driver/wdk/bc250_display_ddi.c`, encapsular o disparo de VSync com `DxgkCbSynchronizeExecution`:
 ```c

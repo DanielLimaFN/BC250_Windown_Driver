@@ -49,6 +49,69 @@
 #define IOCTL_BC250_SET_FAN_PWM \
     CTL_CODE(BC250_IOCTL_TYPE, 0x80B, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
+/*
+ * First compute bring-up gate.  This IOCTL intentionally does not accept a
+ * physical address, MMIO offset, doorbell, VMID or ring pointer from user
+ * mode.  A future adapter-owned backend must resolve the two opaque leases to
+ * allocations and process GPUVAs created by the MCDM miniport.
+ */
+#define IOCTL_BC250_GPUVA_SDMA_TWO_CONTEXT \
+    CTL_CODE(BC250_IOCTL_TYPE, 0x80C, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define BC250_GPUVA_SDMA_TWO_CONTEXT_VERSION 1u
+#define BC250_GPUVA_SDMA_PAGE_SIZE            4096ull
+#define BC250_GPUVA_SDMA_MAX_BYTES            0x00400000u
+
+#define BC250_GPUVA_SDMA_FLAG_DRY_RUN         0x00000001u
+#define BC250_GPUVA_SDMA_FLAG_EXECUTE          0x00000002u
+
+typedef enum _BC250_GPUVA_SDMA_BACKEND_STATE {
+    Bc250GpuvaSdmaBackendUninitialized = 0,
+    Bc250GpuvaSdmaBackendNoAdapterOwner = 1,
+    Bc250GpuvaSdmaBackendReady = 2
+} BC250_GPUVA_SDMA_BACKEND_STATE;
+
+typedef enum _BC250_GPUVA_SDMA_GATE_STATUS {
+    Bc250GpuvaSdmaGateNotRun = 0,
+    Bc250GpuvaSdmaGateBadAbi = 1,
+    Bc250GpuvaSdmaGateBadRequest = 2,
+    Bc250GpuvaSdmaGatePreflightPassed = 3,
+    Bc250GpuvaSdmaGateBackendUnavailable = 4
+} BC250_GPUVA_SDMA_GATE_STATUS;
+
+typedef struct _BC250_GPUVA_SDMA_TWO_CONTEXT_REQ {
+    ULONG     Size;
+    ULONG     Version;
+    ULONG     Flags;
+    ULONG     ByteCount;
+    /* Opaque, adapter-issued allocation leases. Never physical addresses. */
+    ULONGLONG SourceLeaseId;
+    ULONGLONG DestinationLeaseId;
+    ULONGLONG SourceGpuVa;
+    ULONGLONG DestinationGpuVa;
+    ULONGLONG FenceGpuVa;
+    ULONG     FenceExpected;
+    ULONG     SourcePoison;
+    ULONG     DestinationPoison;
+    ULONG     Reserved0;
+
+    /* Output evidence. All physical-proof fields remain zero in dry run. */
+    ULONG     GateStatus;
+    ULONG     BackendState;
+    ULONG     PreflightPassed;
+    ULONG     MappingIsolationPassed;
+    ULONG     ExecutionAttempted;
+    ULONG     PhysicalFenceObserved;
+    ULONG     DataMismatches;
+    ULONG     RollbackPerformed;
+    ULONG     HardwareValidated;
+    ULONG     Reserved1;
+    ULONGLONG WptrBefore;
+    ULONGLONG WptrAfter;
+    ULONGLONG RptrBefore;
+    ULONGLONG RptrAfter;
+} BC250_GPUVA_SDMA_TWO_CONTEXT_REQ, *PBC250_GPUVA_SDMA_TWO_CONTEXT_REQ;
+
 typedef struct _BC250_HARDWARE_INFO {
     ULONG  CpuCoreCount;
     ULONG  GpuCuCount;
@@ -98,6 +161,7 @@ typedef struct _BC250_SDMA_COPY_REQ {
     ULONG     RptrAfter;
     ULONG     FenceObserved;
     ULONG     ExecutionSuccess;
+    ULONG     UcodeChecksum;
 } BC250_SDMA_COPY_REQ, *PBC250_SDMA_COPY_REQ;
 
 typedef struct _BC250_COMPUTE_DISPATCH_REQ {

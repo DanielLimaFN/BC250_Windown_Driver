@@ -1365,6 +1365,10 @@ NTSTATUS Bc250ActiveDestroyProcessObject(
         KeLeaveCriticalRegion();
         return STATUS_DEVICE_NOT_READY;
     }
+    if (InterlockedCompareExchange(&Context->GpuvaSdmaBrokerReady, 1, 1) == 1) {
+        (void)Bc250GpuvaSdmaBrokerRevokeForObject(&Context->GpuvaSdmaBroker,
+            Handle, NULL, NULL);
+    }
     status = Bc250McdmObjectDestroy(&Context->Objects, Handle,
         BC250_MCDM_OBJECT_PROCESS, Handle);
     ExReleasePushLockExclusive(&Context->ObjectLock);
@@ -1626,6 +1630,64 @@ static NTSTATUS Bc250ActiveSetRootPageTableLifecycle(
         (BC250_DXGK_ACTIVE_CONTEXT *)AdapterContext,
         (BC250_MCDM_HANDLE)ContextHandle,
         SegmentId, Address, NumEntries, MaxEntries);
+}
+
+NTSTATUS Bc250ActiveIssueGpuvaSdmaLease(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_MCDM_HANDLE OwnerProcess,
+    BC250_MCDM_HANDLE OpenAllocation,
+    uint64_t GpuVa,
+    uint64_t ByteCount,
+    uint64_t *LeaseId)
+{
+    BC250_GPUVA_SDMA_BROKER_STATUS status;
+
+    if (LeaseId != NULL) *LeaseId = 0ull;
+    if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE ||
+        OwnerProcess == NULL || OpenAllocation == NULL || LeaseId == NULL ||
+        InterlockedCompareExchange(&Context->IsActive, 1, 1) != 1 ||
+        InterlockedCompareExchange(&Context->GpuvaSdmaBrokerReady, 1, 1) != 1) {
+        return STATUS_DEVICE_NOT_READY;
+    }
+    KeEnterCriticalRegion();
+    ExAcquirePushLockExclusive(&Context->ObjectLock);
+    status = Bc250GpuvaSdmaBrokerIssueLease(&Context->GpuvaSdmaBroker,
+        &Context->Objects, OwnerProcess, OpenAllocation, GpuVa, ByteCount,
+        LeaseId);
+    ExReleasePushLockExclusive(&Context->ObjectLock);
+    KeLeaveCriticalRegion();
+    if (status == BC250_GPUVA_SDMA_BROKER_OK) return STATUS_SUCCESS;
+    if (status == BC250_GPUVA_SDMA_BROKER_MAPPING_NOT_READY) {
+        return STATUS_DEVICE_NOT_READY;
+    }
+    if (status == BC250_GPUVA_SDMA_BROKER_NO_SPACE) {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    return STATUS_INVALID_PARAMETER;
+}
+
+NTSTATUS Bc250ActiveValidateGpuvaSdmaLeasePair(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    uint64_t SourceLeaseId,
+    uint64_t DestinationLeaseId,
+    uint64_t FenceGpuVa,
+    uint64_t ByteCount)
+{
+    BC250_GPUVA_SDMA_BROKER_STATUS status;
+
+    if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE ||
+        InterlockedCompareExchange(&Context->IsActive, 1, 1) != 1 ||
+        InterlockedCompareExchange(&Context->GpuvaSdmaBrokerReady, 1, 1) != 1) {
+        return STATUS_DEVICE_NOT_READY;
+    }
+    KeEnterCriticalRegion();
+    ExAcquirePushLockShared(&Context->ObjectLock);
+    status = Bc250GpuvaSdmaBrokerValidatePair(&Context->GpuvaSdmaBroker,
+        SourceLeaseId, DestinationLeaseId, FenceGpuVa, ByteCount);
+    ExReleasePushLockShared(&Context->ObjectLock);
+    KeLeaveCriticalRegion();
+    return status == BC250_GPUVA_SDMA_BROKER_OK ? STATUS_SUCCESS :
+        STATUS_INVALID_PARAMETER;
 }
 
 static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
@@ -1952,6 +2014,12 @@ static NTSTATUS Bc250ActiveCloseAllocationLifecycle(
             for (index = 0u;
                  NT_SUCCESS(result) && index < CloseAllocation->NumAllocations;
                  ++index) {
+                if (InterlockedCompareExchange(
+                        &context->GpuvaSdmaBrokerReady, 1, 1) == 1) {
+                    (void)Bc250GpuvaSdmaBrokerRevokeForObject(
+                        &context->GpuvaSdmaBroker, NULL,
+                        CloseAllocation->pOpenHandleList[index], NULL);
+                }
                 objectStatus = Bc250McdmObjectDestroy(&context->Objects,
                     CloseAllocation->pOpenHandleList[index],
                     BC250_MCDM_OBJECT_OPEN_ALLOCATION,
@@ -2070,6 +2138,15 @@ NTSTATUS APIENTRY Bc250DxgkDdiAddDeviceActive(
             (ULONG)STATUS_DEVICE_CONFIGURATION_ERROR);
         return STATUS_DEVICE_CONFIGURATION_ERROR;
     }
+    if (Bc250GpuvaSdmaBrokerInitialize(&context->GpuvaSdmaBroker,
+            ((uint64_t)(KeQueryPerformanceCounter(NULL).QuadPart) | 1ull)) !=
+        BC250_GPUVA_SDMA_BROKER_OK) {
+        ExFreePoolWithTag(context, BC250_ACTIVE_POOL_TAG);
+        Bc250ProbeRecord(BC250_PROBE_ADD_DEVICE_STATUS,
+            (ULONG)STATUS_DEVICE_CONFIGURATION_ERROR);
+        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
+    InterlockedExchange(&context->GpuvaSdmaBrokerReady, 1);
     InterlockedExchange(&context->IsActive, 0);
     RtlZeroMemory(&context->ContextAbi, sizeof(context->ContextAbi));
     InterlockedExchange(&context->ContextAbiReady, 0);

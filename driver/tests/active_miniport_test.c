@@ -124,6 +124,29 @@ static VOID FASTCALL Bc250TestReleasePushLockExclusiveEx(
     UNREFERENCED_PARAMETER(Flags);
     (void)InterlockedExchange64((volatile LONG64 *)PushLock, 0);
 }
+static VOID FASTCALL Bc250TestAcquirePushLockSharedEx(
+    PEX_PUSH_LOCK PushLock, ULONG Flags)
+{
+    UNREFERENCED_PARAMETER(Flags);
+    while (InterlockedCompareExchange64(
+            (volatile LONG64 *)PushLock, 1, 0) != 0) {
+        (void)SwitchToThread();
+    }
+}
+static VOID FASTCALL Bc250TestReleasePushLockSharedEx(
+    PEX_PUSH_LOCK PushLock, ULONG Flags)
+{
+    UNREFERENCED_PARAMETER(Flags);
+    (void)InterlockedExchange64((volatile LONG64 *)PushLock, 0);
+}
+static LARGE_INTEGER Bc250TestQueryPerformanceCounter(
+    PLARGE_INTEGER PerformanceFrequency)
+{
+    LARGE_INTEGER val;
+    if (PerformanceFrequency != NULL) PerformanceFrequency->QuadPart = 10000000ll;
+    val.QuadPart = 1000000ll;
+    return val;
+}
 
 VOID (*__imp_KeEnterCriticalRegion)(VOID) = Bc250TestEnterCriticalRegion;
 VOID (*__imp_KeLeaveCriticalRegion)(VOID) = Bc250TestLeaveCriticalRegion;
@@ -131,6 +154,12 @@ VOID (FASTCALL *__imp_ExAcquirePushLockExclusiveEx)(PEX_PUSH_LOCK, ULONG) =
     Bc250TestAcquirePushLockExclusiveEx;
 VOID (FASTCALL *__imp_ExReleasePushLockExclusiveEx)(PEX_PUSH_LOCK, ULONG) =
     Bc250TestReleasePushLockExclusiveEx;
+VOID (FASTCALL *__imp_ExAcquirePushLockSharedEx)(PEX_PUSH_LOCK, ULONG) =
+    Bc250TestAcquirePushLockSharedEx;
+VOID (FASTCALL *__imp_ExReleasePushLockSharedEx)(PEX_PUSH_LOCK, ULONG) =
+    Bc250TestReleasePushLockSharedEx;
+LARGE_INTEGER (*__imp_KeQueryPerformanceCounter)(PLARGE_INTEGER) =
+    Bc250TestQueryPerformanceCounter;
 
 static unsigned long g_failureLine;
 #define CHECK(Expression) do { \
@@ -457,6 +486,134 @@ static int Bc250RunActiveMiniportTest(void)
         openHandles[0] = openInfo[0].hDeviceSpecificAllocation;
         openHandles[1] = openInfo[1].hDeviceSpecificAllocation;
         CHECK(openHandles[0] != NULL && openHandles[1] != NULL);
+
+        {
+            uint64_t leaseA1 = 0ull, leaseA2 = 0ull, badLease = 0ull;
+            CHECK(Bc250ActiveIssueGpuvaSdmaLease(activeCtx, processHandle,
+                openHandles[0], 0x100000ull, 4096u, &leaseA1) == STATUS_SUCCESS);
+            CHECK(leaseA1 != 0ull);
+            CHECK(Bc250ActiveIssueGpuvaSdmaLease(activeCtx, processHandle,
+                openHandles[1], 0x200000ull, 4096u, &leaseA2) == STATUS_SUCCESS);
+            CHECK(leaseA2 != 0ull && leaseA2 != leaseA1);
+
+            /* Invalid parameters: unaligned GPUVA and byte count overflow */
+            CHECK(Bc250ActiveIssueGpuvaSdmaLease(activeCtx, processHandle,
+                openHandles[0], 0x100001ull, 4096u, &badLease) == STATUS_INVALID_PARAMETER);
+            CHECK(Bc250ActiveIssueGpuvaSdmaLease(activeCtx, processHandle,
+                openHandles[0], 0x100000ull, 0x10000000ull, &badLease) == STATUS_INVALID_PARAMETER);
+
+            /* Intra-process pair must be rejected (PAIR_NOT_ISOLATED) */
+            CHECK(Bc250ActiveValidateGpuvaSdmaLeasePair(activeCtx, leaseA1,
+                leaseA2, 0x300000ull, 4096u) == STATUS_INVALID_PARAMETER);
+
+            /* Test cross-process isolation with a distinct process B */
+            {
+                DXGKARG_CREATEPROCESS createProcessB;
+                DXGKARG_CREATEDEVICE createDeviceB;
+                DXGKARG_CREATECONTEXT createContextB;
+                DXGKARG_CREATEALLOCATION createAllocationB;
+                DXGKARG_OPENALLOCATION openAllocationB;
+                DXGK_ALLOCATIONINFO allocationInfoB;
+                DXGK_OPENALLOCATIONINFO openInfoB;
+                BC250_ALLOCATION_PRIVATE_V1 allocationPrivateB;
+                HANDLE processB = NULL, deviceB = NULL, contextB = NULL, openB = NULL;
+                uint64_t leaseB = 0ull;
+
+                memset(&createProcessB, 0, sizeof(createProcessB));
+                createProcessB.hDxgkProcess = (HANDLE)(ULONG_PTR)0xB250u;
+                CHECK(initData.DxgkDdiCreateProcess(activeCtx, &createProcessB) == STATUS_SUCCESS);
+                processB = createProcessB.hKmdProcess;
+                CHECK(processB != NULL);
+
+                memset(&createDeviceB, 0, sizeof(createDeviceB));
+                createDeviceB.hDevice = (HANDLE)(ULONG_PTR)0xB251u;
+                createDeviceB.hKmdProcess = processB;
+                CHECK(initData.DxgkDdiCreateDevice(activeCtx, &createDeviceB) == STATUS_SUCCESS);
+                deviceB = createDeviceB.hDevice;
+
+                memset(&allocationPrivateB, 0, sizeof(allocationPrivateB));
+                allocationPrivateB.Magic = BC250_ALLOCATION_PRIVATE_MAGIC;
+                allocationPrivateB.Version = BC250_ALLOCATION_PRIVATE_VERSION;
+                allocationPrivateB.StructSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
+                allocationPrivateB.AllocationToken = 0xB110u;
+                allocationPrivateB.ByteSize = 65536u;
+                allocationPrivateB.Alignment = 4096u;
+
+                memset(&allocationInfoB, 0, sizeof(allocationInfoB));
+                allocationInfoB.pPrivateDriverData = &allocationPrivateB;
+                allocationInfoB.PrivateDriverDataSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
+
+                memset(&createAllocationB, 0, sizeof(createAllocationB));
+                createAllocationB.NumAllocations = 1u;
+                createAllocationB.pAllocationInfo = &allocationInfoB;
+                CHECK(initData.DxgkDdiCreateAllocation(activeCtx, &createAllocationB) == STATUS_SUCCESS);
+
+                memset(&openInfoB, 0, sizeof(openInfoB));
+                openInfoB.hAllocation = 0xDB10u;
+                openInfoB.pPrivateDriverData = &allocationPrivateB;
+                openInfoB.PrivateDriverDataSize = sizeof(allocationPrivateB);
+                memset(&openAllocationB, 0, sizeof(openAllocationB));
+                openAllocationB.NumAllocations = 1u;
+                openAllocationB.pOpenAllocation = &openInfoB;
+                CHECK(initData.DxgkDdiOpenAllocation(deviceB, &openAllocationB) == STATUS_SUCCESS);
+                openB = openInfoB.hDeviceSpecificAllocation;
+                CHECK(openB != NULL);
+
+                /* Rejection before root page table is set */
+                CHECK(Bc250ActiveIssueGpuvaSdmaLease(activeCtx, processB, openB,
+                    0x400000ull, 4096u, &leaseB) == STATUS_DEVICE_NOT_READY);
+
+                memset(&createContextB, 0, sizeof(createContextB));
+                createContextB.hContext = (HANDLE)(ULONG_PTR)0xB252u;
+                CHECK(initData.DxgkDdiCreateContext(deviceB, &createContextB) == STATUS_SUCCESS);
+                contextB = createContextB.hContext;
+
+                CHECK(Bc250ActiveSetRootPageTableObject(activeCtx, contextB, 1u,
+                    0x0000000000445000ull, 512u, 512u) == STATUS_SUCCESS);
+
+                /* Issuance succeeds after root page table is set */
+                CHECK(Bc250ActiveIssueGpuvaSdmaLease(activeCtx, processB, openB,
+                    0x400000ull, 4096u, &leaseB) == STATUS_SUCCESS);
+                CHECK(leaseB != 0ull && leaseB != leaseA1);
+
+                /* Cross-process pair validation succeeds */
+                CHECK(Bc250ActiveValidateGpuvaSdmaLeasePair(activeCtx, leaseA1,
+                    leaseB, 0x500000ull, 4096u) == STATUS_SUCCESS);
+
+                /* Same lease aliasing is rejected */
+                CHECK(Bc250ActiveValidateGpuvaSdmaLeasePair(activeCtx, leaseA1,
+                    leaseA1, 0x500000ull, 4096u) == STATUS_INVALID_PARAMETER);
+
+                CHECK(initData.DxgkDdiDestroyContext(contextB) == STATUS_SUCCESS);
+
+                /* Teardown process B and verify lease revocation */
+                {
+                    DXGKARG_CLOSEALLOCATION closeB;
+                    DXGKARG_DESTROYALLOCATION destroyB;
+                    HANDLE openBList[1];
+                    HANDLE allocBList[1];
+
+                    openBList[0] = openB;
+                    memset(&closeB, 0, sizeof(closeB));
+                    closeB.NumAllocations = 1u;
+                    closeB.pOpenHandleList = openBList;
+                    CHECK(initData.DxgkDdiCloseAllocation(deviceB, &closeB) == STATUS_SUCCESS);
+
+                    allocBList[0] = allocationInfoB.hAllocation;
+                    memset(&destroyB, 0, sizeof(destroyB));
+                    destroyB.NumAllocations = 1u;
+                    destroyB.pAllocationList = allocBList;
+                    CHECK(initData.DxgkDdiDestroyAllocation(activeCtx, &destroyB) == STATUS_SUCCESS);
+
+                    CHECK(initData.DxgkDdiDestroyDevice(deviceB) == STATUS_SUCCESS);
+                    CHECK(initData.DxgkDdiDestroyProcess(activeCtx, processB) == STATUS_SUCCESS);
+
+                    /* Stale lease validation fails */
+                    CHECK(Bc250ActiveValidateGpuvaSdmaLeasePair(activeCtx, leaseA1,
+                        leaseB, 0x500000ull, 4096u) == STATUS_INVALID_PARAMETER);
+                }
+            }
+        }
 
         memset(&destroyAllocation, 0, sizeof(destroyAllocation));
         destroyAllocation.NumAllocations = 2u;

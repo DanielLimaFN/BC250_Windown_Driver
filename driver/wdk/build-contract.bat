@@ -204,6 +204,14 @@ echo [cc] bc250_allocation_abi_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_allocation_abi_contract.obj" "%ROOTDIR%\driver\core\bc250_allocation_abi_contract.c"
 if errorlevel 1 exit /b 1
 
+echo [cc] bc250_gpuva_sdma_broker_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gpuva_sdma_broker_contract.obj" "%ROOTDIR%\driver\core\bc250_gpuva_sdma_broker_contract.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_gpuva_sdma_executor_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gpuva_sdma_executor_contract.obj" "%ROOTDIR%\driver\core\bc250_gpuva_sdma_executor_contract.c"
+if errorlevel 1 exit /b 1
+
 echo [cc] bc250_cm_resource_adapter.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_cm_resource_adapter.obj" "%SRCDIR%bc250_cm_resource_adapter.c"
 if errorlevel 1 exit /b 1
@@ -902,6 +910,43 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo [cc] gpuva_sdma_broker_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\gpuva_sdma_broker_contract_test.obj" "%ROOTDIR%\driver\tests\gpuva_sdma_broker_contract_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] gpuva_sdma_broker_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gpuva_sdma_broker_contract_test.exe" ^
+  "%ODIR%\bc250_mcdm_object_contract.obj" ^
+  "%ODIR%\bc250_gpuva_sdma_broker_contract.obj" ^
+  "%ODIR%\gpuva_sdma_broker_contract_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\gpuva_sdma_broker_contract_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(gpuva_sdma_broker_contract_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
+echo [cc] gpuva_sdma_executor_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\gpuva_sdma_executor_contract_test.obj" "%ROOTDIR%\driver\tests\gpuva_sdma_executor_contract_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] gpuva_sdma_executor_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gpuva_sdma_executor_contract_test.exe" ^
+  "%ODIR%\bc250_mcdm_object_contract.obj" ^
+  "%ODIR%\bc250_gpuva_sdma_broker_contract.obj" ^
+  "%ODIR%\bc250_gpuva_sdma_executor_contract.obj" ^
+  "%ODIR%\gpuva_sdma_executor_contract_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\gpuva_sdma_executor_contract_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(gpuva_sdma_executor_contract_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
 echo [cc] allocation_abi_contract_test.c
 cl %CFLAGS% /Fo"%ODIR%\allocation_abi_contract_test.obj" "%ROOTDIR%\driver\tests\allocation_abi_contract_test.c"
 if errorlevel 1 exit /b 1
@@ -1204,6 +1249,7 @@ echo [link] active_miniport_test.exe
 link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   /OUT:"%ODIR%\active_miniport_test.exe" ^
   "%ODIR%\bc250_mcdm_object_contract.obj" ^
+  "%ODIR%\bc250_gpuva_sdma_broker_contract.obj" ^
   "%ODIR%\bc250_allocation_abi_contract.obj" ^
   "%ODIR%\bc250_resource_contract.obj" ^
   "%ODIR%\bc250_vram_allocator.obj" ^
@@ -1281,6 +1327,7 @@ echo [link] bc250mcdm.sys
 link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry ^
   /OUT:"%ODIR%\bc250mcdm.sys" ^
   "%ODIR%\bc250_mcdm_object_contract.obj" ^
+  "%ODIR%\bc250_gpuva_sdma_broker_contract.obj" ^
   "%ODIR%\bc250_allocation_abi_contract.obj" ^
   "%ODIR%\bc250_resource_contract.obj" ^
   "%ODIR%\bc250_vram_allocator.obj" ^
@@ -1338,9 +1385,13 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%WDK%\Lib\%WDKVER%\km\x64\displib.lib"
 if errorlevel 1 exit /b 1
 
-echo [link] bc250compute.sys
+if exist "%ODIR%\bc250compute_pkg.sys" (
+  del "%ODIR%\bc250compute_pkg.sys" >nul 2>&1
+)
+
+echo [link] bc250compute_pkg.sys
 link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry ^
-  /OUT:"%ODIR%\bc250compute.sys" ^
+  /OUT:"%ODIR%\bc250compute_pkg.sys" ^
   "%ODIR%\bc250_compute_service.obj" ^
   "%ODIR%\bc250_smu_telemetry_contract.obj" ^
   "%ODIR%\bc250_superio_nct6686_contract.obj" ^
@@ -1350,6 +1401,9 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_pm4_packet_builder.obj" ^
   "%ODIR%\bc250_gpu_clock_contract.obj" ^
   "%ODIR%\bc250_power_contract.obj" ^
+  "%ODIR%\bc250_psp_load_fw_transaction.obj" ^
+  "%ODIR%\bc250_psp_ring_transaction.obj" ^
+  "%ODIR%\bc250_sdma_f32_transaction.obj" ^
   "%WDK%\Lib\%WDKVER%\km\x64\ntoskrnl.lib" ^
   "%WDK%\Lib\%WDKVER%\km\x64\hal.lib" ^
   "%WDK%\Lib\%WDKVER%\km\x64\BufferOverflowK.lib"
@@ -1357,6 +1411,10 @@ if errorlevel 1 exit /b 1
 
 echo [cc] bc250-compute-cli.c
 cl /nologo /W4 /O2 /Fo"%ODIR%\bc250-compute-cli.obj" /Fe"%ODIR%\bc250-compute-cli.exe" "%ROOTDIR%\tools\bc250-compute-cli.c" /link kernel32.lib advapi32.lib
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250-gpuva-sdma-gate.c
+cl /nologo /W4 /O2 /Fo"%ODIR%\bc250-gpuva-sdma-gate.obj" /Fe"%ODIR%\bc250-gpuva-sdma-gate.exe" "%ROOTDIR%\tools\bc250-gpuva-sdma-gate.c" /link kernel32.lib
 if errorlevel 1 exit /b 1
 
 echo [cc] bc250_runtime.c ^& bc250-benchmark.c
