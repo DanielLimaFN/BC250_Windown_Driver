@@ -99,6 +99,36 @@
 #define R_GCVM_L2_CNTL2             0x0000A104u
 #define R_GCVM_INVALIDATE_ENG0_REQ  0x0000A28Cu
 #define R_GCVM_INVALIDATE_ENG0_ACK  0x0000A2D4u
+
+/*
+ * Engine de invalidacao usada para flush de TLB/L2 durante a carga do CP.
+ *
+ * O Engine 0 NAO pode ser usado: no BC-250 ele e' tambem o Display Engine
+ * (VMID 0), e invalida-lo desliga o scanout imediatamente. Essa e' a causa-raiz
+ * no. 2 da tela preta, documentada em
+ * docs/21_PONTO_DE_RETOMADA_WDDM_DISPLAY.md e em STATUS_E_ROADMAP_CONSOLIDADO.md
+ * secao 2.0.1.
+ *
+ * Aqui a invalidacao tem proposito de coerencia de cache, nao semantico: ela
+ * acompanha o flush de HDP para que o CP enxergue o firmware recem-escrito.
+ * Qualquer engine != 0 serve.
+ *
+ * Stride confirmado contra docs/03_CATALOGO_DE_REGISTRADORES.md:277-278, que
+ * cataloga ENG0 e ENG17:
+ *
+ *     REQ_ENGn = 0x0000A28C + n*4     ENG0=0x0A28C   ENG17=0x0A2D0
+ *     ACK_ENGn = 0x0000A2D4 + n*4     ENG0=0x0A2D4   ENG17=0x0A318
+ *
+ * Se a engine escolhida nao responder, o poll de ACK esgota e o fluxo segue sem
+ * invalidacao. Esse modo de falha e' aceitavel: o caminho do bc250compute fecha
+ * o tripe fisico do SDMA0 com o display ativo usando APENAS o flush de HDP, sem
+ * nenhuma invalidacao de GCVM (STATUS_E_ROADMAP_CONSOLIDADO.md secao 2.0).
+ */
+#define BC250_GCVM_INVALIDATE_ENGINE 17u
+#define R_GCVM_INVALIDATE_REQ \
+    (R_GCVM_INVALIDATE_ENG0_REQ + (BC250_GCVM_INVALIDATE_ENGINE * 4u))
+#define R_GCVM_INVALIDATE_ACK \
+    (R_GCVM_INVALIDATE_ENG0_ACK + (BC250_GCVM_INVALIDATE_ENGINE * 4u))
 #define R_VGT_NUM_INSTANCES         0x00030934u
 #define R_PA_SC_LINE_STIPPLE_STATE  0x00030A04u
 #define R_CGTT_CPF_CLK_CTRL         0x0003C2C4u
@@ -786,9 +816,9 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
     /* Flush HDP e L2 */
     (void)Bc250PfpWrite(Context, R_HDP_MEM_COHERENCY_FLUSH_CNTL, 1u);
     (void)Bc250PfpWrite(Context, R_GCVM_L2_CNTL2, 0x00000003u);
-    (void)Bc250PfpWrite(Context, R_GCVM_INVALIDATE_ENG0_REQ, 0x00000001u);
+    (void)Bc250PfpWrite(Context, R_GCVM_INVALIDATE_REQ, 0x00000001u);
     for (i = 0u; i < 100u; ++i) {
-        if (Bc250PfpRead(Context, R_GCVM_INVALIDATE_ENG0_ACK, &value) && (value & 1u) != 0u) break;
+        if (Bc250PfpRead(Context, R_GCVM_INVALIDATE_ACK, &value) && (value & 1u) != 0u) break;
         KeStallExecutionProcessor(1u);
     }
 
@@ -883,7 +913,7 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
 
     (void)Bc250PfpWrite(Context, R_HDP_MEM_COHERENCY_FLUSH_CNTL, 1u);
     (void)Bc250PfpWrite(Context, R_GCVM_L2_CNTL2, 0x00000003u);
-    (void)Bc250PfpWrite(Context, R_GCVM_INVALIDATE_ENG0_REQ, 0x00000001u);
+    (void)Bc250PfpWrite(Context, R_GCVM_INVALIDATE_REQ, 0x00000001u);
 
     (void)Bc250PfpWrite(Context, R_CP_RB0_WPTR, cursor);
     (void)Bc250PfpWrite(Context, R_CP_RB0_WPTR_HI, 0u);
@@ -1013,7 +1043,13 @@ Restore:
         (void)Bc250PfpWrite(Context, R_GCVM_CONTEXT0_PT_START_LO, origCtx0PtStartLo);
         (void)Bc250PfpWrite(Context, R_GCVM_CONTEXT0_PT_BASE_HI, origCtx0PtBaseHi);
         (void)Bc250PfpWrite(Context, R_GCVM_CONTEXT0_PT_BASE_LO, origCtx0PtBaseLo);
-        (void)Bc250PfpWrite(Context, R_GCVM_INVALIDATE_ENG0_REQ, 0x00F80001u);
+        /*
+         * Restore: os registradores GCVM_CONTEXT0_* acima sao reescritos com os
+         * valores ORIGINAIS lidos no preflight - o contexto do display nunca e'
+         * modificado. Logo nao ha' nada a invalidar em ENG0, e faze-lo apenas
+         * derrubaria o scanout. Usa a mesma engine != 0 do caminho de carga.
+         */
+        (void)Bc250PfpWrite(Context, R_GCVM_INVALIDATE_REQ, 0x00F80001u);
         KeStallExecutionProcessor(50u);
         (void)Bc250PfpRead(Context, R_CP_RB0_ACTIVE, &Evidence->Rb0ActiveAfter);
         if (Bc250PfpRead(Context, R_CP_ME_CNTL, &Evidence->CpMeCntlAfter) &&
