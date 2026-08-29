@@ -57,6 +57,8 @@ param(
 
     [switch]$StopOnFirstFailure,
 
+    [switch]$AllowDriverMismatch,
+
     [ValidateRange(1, 120)]
     [int]$SettleSeconds = 8,
 
@@ -67,6 +69,9 @@ $ErrorActionPreference = 'Stop'
 
 $root       = Split-Path -Parent $PSScriptRoot
 $probePath  = 'HKLM:\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Probe'
+$paramPath  = 'HKLM:\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters'
+$driverPath = Join-Path $env:SystemRoot 'System32\drivers\bc250mcdm.sys'
+$builtPath  = Join-Path $root 'driver\wdk\output\bc250mcdm.sys'
 $deviceGlob = 'PCI\VEN_1002&DEV_13FE*'
 
 # Assinaturas conhecidas do PC final do PFP (secao 2.1 do STATUS consolidado).
@@ -133,11 +138,38 @@ if (Test-Path -LiteralPath $probePath) {
     $schema = $probe.SchemaVersion
     Write-Host ("  SchemaVersion  : {0}" -f $schema)
 
-    $skip = 0
-    if ($null -ne $probe.PSObject.Properties['SkipHwBringup']) { $skip = [uint32]$probe.SkipHwBringup }
-    Write-Host ("  SkipHwBringup  : {0}" -f $skip)
-    if ($skip -eq 1) {
-        $blockers.Add('SkipHwBringup=1 - o bring-up de hardware esta DESLIGADO; o ensaio mediria nada. Zere este valor antes de executar.')
+    <#
+      SkipHwBringup existe em DOIS lugares e eles significam coisas diferentes:
+
+        Parameters\SkipHwBringup        TUNABLE - lido pelo driver via
+                                        RTL_REGISTRY_SERVICES em
+                                        Bc250ActiveReadTunable(). Decide o
+                                        PROXIMO StartDevice. E' o que importa
+                                        para autorizar o ensaio.
+
+        Parameters\Probe\SkipHwBringup  ECHO - gravado pelo driver como
+                                        telemetria durante o StartDevice.
+                                        Descreve o boot ATUAL e so' muda quando
+                                        o dispositivo reinicia.
+
+      Gatear pelo eco e' errado nos dois sentidos: bloqueia ensaio valido logo
+      apos alterar o tunable, e libera ensaio que mediria nada se o tunable
+      tiver sido posto de volta em 1 sem reiniciar o dispositivo.
+    #>
+    $skipTunable = 1
+    $tunableProp = Get-ItemProperty -LiteralPath $paramPath -Name SkipHwBringup -ErrorAction SilentlyContinue
+    if ($null -ne $tunableProp) { $skipTunable = [uint32]$tunableProp.SkipHwBringup }
+
+    $skipEcho = -1
+    if ($null -ne $probe.PSObject.Properties['SkipHwBringup']) { $skipEcho = [int]$probe.SkipHwBringup }
+
+    Write-Host ("  SkipHwBringup  : tunable={0} (proximo StartDevice) | echo={1} (boot atual)" -f $skipTunable, $skipEcho)
+
+    if ($skipTunable -ne 0) {
+        $blockers.Add("SkipHwBringup=$skipTunable em Parameters - o bring-up de hardware ficara DESLIGADO no proximo StartDevice; o ensaio mediria nada. Grave 0 nesse valor antes de executar.")
+    }
+    if ($skipEcho -ne -1 -and $skipEcho -ne $skipTunable) {
+        $warnings.Add("tunable ($skipTunable) difere do echo ($skipEcho): a alteracao so' vale a partir do proximo StartDevice, que este ensaio provoca na primeira iteracao")
     }
 
     if ($null -ne $probe.PSObject.Properties['PfpDirectPcLast']) {
@@ -152,6 +184,30 @@ if (Test-Path -LiteralPath $probePath) {
     }
 } else {
     $blockers.Add("chave de telemetria ausente: $probePath")
+}
+
+<#
+  O ensaio exercita o driver INSTALADO em System32\drivers, nao o que esta em
+  driver\wdk\output. Se o bind foi bloqueado - e o gate fail-closed bloqueia
+  sempre que ja' existe instalacao ativa - o build novo NAO entrou, e o ensaio
+  mediria o codigo antigo achando que mede o novo.
+
+  Foi exatamente o que quase aconteceu em 2026-08-29 com a troca do ENG17.
+#>
+if ((Test-Path -LiteralPath $driverPath) -and (Test-Path -LiteralPath $builtPath)) {
+    $hInst  = (Get-FileHash -LiteralPath $driverPath -Algorithm SHA256).Hash
+    $hBuilt = (Get-FileHash -LiteralPath $builtPath  -Algorithm SHA256).Hash
+    Write-Host ("  SYS instalado  : {0}  {1}" -f $hInst.Substring(0,16), (Get-Item $driverPath).LastWriteTime)
+    Write-Host ("  SYS compilado  : {0}  {1}" -f $hBuilt.Substring(0,16), (Get-Item $builtPath).LastWriteTime)
+    if ($hInst -ne $hBuilt) {
+        if ($AllowDriverMismatch) {
+            $warnings.Add('driver instalado DIVERGE do build local - prosseguindo por -AllowDriverMismatch; o ensaio mede o codigo INSTALADO')
+        } else {
+            $blockers.Add('driver instalado DIVERGE do build local: o ensaio mediria o codigo antigo. Instale o build (bind), ou passe -AllowDriverMismatch para ensaiar o instalado de proposito.')
+        }
+    }
+} else {
+    $warnings.Add('nao foi possivel comparar o SYS instalado com o build local')
 }
 
 $recovery = Join-Path $root 'tools\BC250_RECOVERY.cmd'
