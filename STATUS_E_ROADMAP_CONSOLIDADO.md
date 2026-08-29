@@ -114,6 +114,54 @@ aperturas proibidas durante o arranque. O compute em si já convive.
 F7 se reduz a um problema bem menor: **carregar o firmware do CP sem invalidar o Engine 0**.
 O SDMA é a prova de existência de que a coexistência é possível.
 
+### 2.0.1 Auditoria das três causas-raiz — sobrou uma
+
+Revisitando a seção 6 à luz do ensaio e do código atual:
+
+| Causa-raiz (seção 6) | Estado real hoje | Evidência |
+|---|---|---|
+| **1. Invasão do framebuffer** | ✅ **já mitigada** | A page table é montada em memória de host (`firmwarePa`, endereços `0xF40F…`), muito longe do scanout em `0xC0000000`. E **`R_GCVM_CONTEXT0_PT_BASE_*` nunca é programado** — só lido em [503-507](driver/wdk/bc250_pfp_direct_load.c:503) e restaurado em [1011-1015](driver/wdk/bc250_pfp_direct_load.c:1011). Há comentário explícito em [810-812](driver/wdk/bc250_pfp_direct_load.c:810) preservando o VMID 0 para o framebuffer UEFI GOP |
+| **2. Invalidação do Engine 0** | ❌ **ainda presente** | [linha 789](driver/wdk/bc250_pfp_direct_load.c:789) e [linha 886](driver/wdk/bc250_pfp_direct_load.c:886) |
+| **3. Escrita em `R_RLC_CNTL`** | 🟡 **não fatal em runtime** | O `bc250compute` escreve nesse registrador ([linha 713](driver/wdk/bc250_compute_service.c:713)) e o display sobreviveu ao ensaio. A proibição vale para o `StartDevice` |
+
+**Sobrou a causa-raiz nº 2 — e ela tem substituto direto.**
+
+O propósito da invalidação não é semântico, é **flush de cache/TLB**. O código a usa em par
+com o flush de HDP, com o comentário `/* Flush HDP e L2 */`:
+
+```c
+Bc250PfpWrite(Context, R_HDP_MEM_COHERENCY_FLUSH_CNTL, 1u);
+Bc250PfpWrite(Context, R_GCVM_L2_CNTL2, 0x00000003u);
+Bc250PfpWrite(Context, R_GCVM_INVALIDATE_ENG0_REQ, 0x00000001u);   /* <- mata o scanout */
+```
+
+O catálogo do próprio projeto ([`03_CATALOGO_DE_REGISTRADORES.md:277-278`](docs/03_CATALOGO_DE_REGISTRADORES.md:277))
+lista **duas** engines de invalidação, e o stride fecha aritmeticamente:
+
+```text
+ENG0_REQ  = 0x0A28C    ENG0_ACK  = 0x0A2D4
+ENG17_REQ = 0x0A2D0    ENG17_ACK = 0x0A318
+            0x0A28C + 17*4         0x0A2D4 + 17*4     -> stride de 4 bytes, confirmado
+```
+
+Ou seja: `REQ_ENGn = 0x0A28C + n*4` e `ACK_ENGn = 0x0A2D4 + n*4`. **Existe engine de
+invalidação disponível que não é a do display.**
+
+**Mudança proposta para fechar o F7** — mínima e testável:
+
+1. Trocar `R_GCVM_INVALIDATE_ENG0_REQ/ACK` por uma engine ≠ 0 (ENG17 é o candidato já
+   catalogado) nas duas ocorrências do caminho de carga do CP.
+2. Manter o `HDP_MEM_COHERENCY_FLUSH_CNTL` — o `bc250compute` fecha o tripé do SDMA com o
+   display vivo usando **apenas** esse flush, sem nenhuma invalidação de GCVM. É a prova de
+   que o flush de HDP sozinho já dá coerência suficiente para engine que busca de memória.
+3. Reexecutar o ensaio da seção 2.0 com o ucode do CP carregado. **Se o CP consumir o ring
+   com o display vivo, F7 está fechado.**
+
+O passo 3 exige um caminho que carregue o ucode do CP sem passar pelo `StartDevice` — hoje o
+único carregador é o PFP direct load, que só roda com `SkipHwBringup=0`. A alternativa
+natural é expor a carga de firmware como IOCTL no `bc250compute`, que já provou coexistir
+com o display.
+
 ### 2.1 A assinatura é binária e determinística
 
 Correlacionando `PFP physical:` com `CP PM4 ring:` nas 167 capturas:
@@ -631,6 +679,7 @@ nada com o monitor ligado — e essa é a demo que normalmente se espera ver fun
 | 8 | Homologar ou corrigir o critério `RPTR >= cursor - 1` do CP — **fazer depois de P0**, apertar o gate antes do diagnóstico gera falhas inseparáveis | P2 | seção 4.1 |
 | 9 | **1.152 linhas não commitadas** em `bc250_compute_service.c` (+784), `bc250_active_miniport.c` (+77) e outros, sobre `771d108`. Commitar ou stashar antes dos ensaios, para que o resultado tenha um SHA de referência. | P1 | `git status` |
 | 10 | **Não existe instrumento de runtime** — os 100 campos de `Parameters\Probe` são retrato de `StartDevice` e nenhum muda com o driver ativo. Sem contador vivo não há como provar liveness de VSync nem de fence. Pré-requisito natural de F5b. | P1 | seção 2.7 |
+| 0 | **F7 tem caminho concreto**: trocar `INVALIDATE_ENG0` por ENG17 (`0x0A2D0`/`0x0A318`) nas duas ocorrências do carregador do CP, e expor a carga de ucode como IOCTL no `bc250compute`, que já provou coexistir com o display | **P0** | seção 2.0.1 |
 | 11 | **Bugcheck `0x124` (WHEA_UNCORRECTABLE_ERROR) encerrou a sessão de ~8,9 h em 29/08 08:35.** Inédito em 7 dias, sem dump, sem aviso de display. Verificar reincidência antes de creditar qualquer soak. | **P0** | seção 2.6 |
 | 12 | Ensaio F4d exige `SkipHwBringup=0`, o que religa o bring-up no dispositivo que serve o display — decisão de bancada com risco de tela preta | **P0** | seção 2.3 |
 
