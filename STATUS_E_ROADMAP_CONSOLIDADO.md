@@ -38,8 +38,9 @@ IH / Monitored Fences / TDR       ░░░░░░░░░░░░░░░�
 Veredito Global: NÃO VALIDADO EM HARDWARE (produção)
   Provados em bancada: SDMA, CP Ring 0, GCVM/VMID8 e a fila de compute MEC/HQD (tripé, 26x)
   CONVERGENCIA PARCIAL: SDMA fecha o tripé COM o display vivo, sem tela preta (seção 2.0)
-  Bloqueio atual: carregar o firmware do CP sem invalidar o Engine 0
-  Não provados: dispatch de shader, CP com display vivo, IH/TDR, robustez do 3.24
+  CONVERGENCIA AMPLIADA: bring-up completo no StartDevice com o display vivo (seção 2.0.3)
+  Bloqueio atual: o PFP não assenta em 0x284 — cai no loop de fetch 0x218..0x21B
+  Não provados: dispatch de shader, CP consumindo ring, IH/TDR, robustez do 3.24
 =========================================================================================================
 ```
 
@@ -121,7 +122,7 @@ Revisitando a seção 6 à luz do ensaio e do código atual:
 | Causa-raiz (seção 6) | Estado real hoje | Evidência |
 |---|---|---|
 | **1. Invasão do framebuffer** | ✅ **já mitigada** | A page table é montada em memória de host (`firmwarePa`, endereços `0xF40F…`), muito longe do scanout em `0xC0000000`. E **`R_GCVM_CONTEXT0_PT_BASE_*` nunca é programado** — só lido em [503-507](driver/wdk/bc250_pfp_direct_load.c:503) e restaurado em [1011-1015](driver/wdk/bc250_pfp_direct_load.c:1011). Há comentário explícito em [810-812](driver/wdk/bc250_pfp_direct_load.c:810) preservando o VMID 0 para o framebuffer UEFI GOP |
-| **2. Invalidação do Engine 0** | ❌ **ainda presente** | [linha 789](driver/wdk/bc250_pfp_direct_load.c:789) e [linha 886](driver/wdk/bc250_pfp_direct_load.c:886) |
+| **2. Invalidação do Engine 0** | ✅ **resolvida e demonstrada** | Substituída pelo ENG17 no commit `7e926c0`. Em 2026-08-29 15:12 o bring-up completo rodou no `StartDevice` com o display vivo, sem tela preta e sem nenhum evento de display/TDR (seção 2.0.3) |
 | **3. Escrita em `R_RLC_CNTL`** | 🟡 **não fatal em runtime** | O `bc250compute` escreve nesse registrador ([linha 713](driver/wdk/bc250_compute_service.c:713)) e o display sobreviveu ao ensaio. A proibição vale para o `StartDevice` |
 
 **Sobrou a causa-raiz nº 2 — e ela tem substituto direto.**
@@ -241,6 +242,44 @@ contrato de segurança existente foi escrito justamente para tornar essa decisã
 > primeira explicação (flag de telemetria) era coerente com os sintomas, compilava, e estava
 > errada. Só a inspeção do binário — ausência de `RtlQueryRegistryValues` no `.obj` — e a
 > leitura do `#if` que envolve o chamador fecharam o diagnóstico.
+
+### 2.0.3 CONVERGÊNCIA AMPLIADA — bring-up completo com o display vivo (2026-08-29 15:12)
+
+> **Isto revisa a seção 6 e fecha a causa-raiz nº 2 da seção 2.0.1.**
+
+Imagem de laboratório assinada e vinculada, boot limpo às 15:11:11, `SkipHwBringup=0`. O
+`StartDevice` executou PFP direct load, CP, GCVM e HQD **enquanto o dispositivo detinha o
+display** — incluindo a invalidação de TLB, agora no ENG17.
+
+```text
+Servico=bc250mcdm  ConfigMgrError=0   SkipHwBringup=0   <- bring-up RODOU
+DmmVsyncCount=4    DmmPresentEntered=1  DmmPresentStatus=0
+DmmCommitCount=1   DmmIsSupportedCount=20  DmmControlInterruptCount=65
+eventos de display/TDR/bugcheck desde o boot: 0
+```
+
+A tela continuou funcionando. **O cenário de tela preta que justificava manter o bring-up fora
+da imagem de produção não se reproduziu.** Evidência em
+[`docs/95`](docs/95_ICACHE_POLL_PFP_CONGELADO.md) § B4 e no `watchdog-disarm.json` de
+[`2026-08-29_15-12-09-...-lab-binding`](docs/evidence/2026-08-29_15-12-09-DESKTOP-HQAG6T4-lab-binding).
+
+**Limite honesto**: um boot, uma sessão. Não é soak nem reprodução independente, e o CP
+continua sem consumir o ring (`status=14`). O que mudou é que *"carregar o firmware do CP
+derruba o display"* deixou de ser verdade observável.
+
+**Duas contaminações removidas nesta sessão**, ambas documentadas no doc 95:
+
+1. **I-Cache sem poll** — `CP_*_IC_OP_CNTL` recebia `0x11` (invalidar + primar juntos) sem
+   nunca ler os bits de conclusão. Corrigido com poll obrigatório; as máscaras agora são
+   telemetria (`15/15` = os quatro engines confirmaram). **A I-Cache não era a causa.**
+2. **CP herdado em execução** — `bc250_compute_service.c` tinha dois UNHALT e nenhum re-HALT,
+   deixando o CP destravado até o próximo reboot. Em 171/171 observações válidas do corpus o
+   CP chegou em HALT (`0x15000000`) e em 177/177 o PFP chegou no PC 0; a corrida das 15:01
+   tinha `MeCntlBefore=0` / `PcBefore=0x21A`, sem precedente. Re-HALT restaurado.
+
+Com as duas fora do caminho, o modo de falha real é `FAIL-FETCH-LOOP`: `PC=0x21B`,
+`transitions=47/100`, `RPTR/WPTR=0/16`, fence envenenada. O diferencial contra as 140 capturas
+de sucesso isola `CP_MEC_JT_STAT` (`0xFE` contra `0xFF`) e os PCs finais de ME e CE.
 
 ### 2.1 A assinatura é binária e determinística
 

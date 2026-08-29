@@ -86,6 +86,23 @@
 #define R_CP_CE_IC_OP_CNTL          0x0003E12Cu
 #define R_CP_CPC_IC_OP_CNTL         0x0003E13Cu
 
+/* Campos de CP_*_IC_OP_CNTL, conferidos em inc/linux_ref/gc_10_1_0_sh_mask.h:39510.
+ * INVALIDATE_CACHE e PRIME_ICACHE sao comandos; os bits COMPLETE/PRIMED sao o
+ * status que o hardware sobe quando a operacao termina. Escrever o comando sem
+ * aguardar o status deixa um fill de cache em voo, e destravar o microengine
+ * nesse estado congela o PFP. */
+#define BC250_IC_OP_INVALIDATE_CACHE          0x00000001u
+#define BC250_IC_OP_INVALIDATE_CACHE_COMPLETE 0x00000002u
+#define BC250_IC_OP_PRIME_ICACHE              0x00000010u
+#define BC250_IC_OP_ICACHE_PRIMED             0x00000020u
+#define BC250_IC_OP_POLL_ITERATIONS           1000u
+
+/* Bits da mascara de evidencia por engine, na ordem PFP/ME/CE/CPC. */
+#define BC250_IC_ENGINE_PFP                   0x00000001u
+#define BC250_IC_ENGINE_ME                    0x00000002u
+#define BC250_IC_ENGINE_CE                    0x00000004u
+#define BC250_IC_ENGINE_CPC                   0x00000008u
+
 #define R_GCVM_CONTEXT0_CNTL        0x0000A200u
 #define R_GCVM_CONTEXT0_PT_BASE_LO  0x0000A3ACu
 #define R_GCVM_CONTEXT0_PT_BASE_HI  0x0000A3B0u
@@ -175,6 +192,58 @@ static uint32_t Bc250PfpWrite(
 {
     return Bc250MmioTopologyWrite32(
         &Context->Core.MmioTransport, Offset, Value);
+}
+
+/* Dispara uma operacao de I-Cache num CP_*_IC_OP_CNTL e aguarda o bit de
+ * conclusao correspondente. Retorna 1 somente se o hardware confirmou. */
+_Check_return_
+static uint32_t Bc250PfpIcacheOp(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context,
+    _In_ uint32_t OpRegister,
+    _In_ uint32_t OpMask,
+    _In_ uint32_t CompleteMask)
+{
+    uint32_t value = 0u;
+    uint32_t i;
+
+    if (!Bc250PfpRead(Context, OpRegister, &value))
+        return 0u;
+
+    /* Formula de bits SOC15: preserva o restante do registrador. */
+    value = (value & ~OpMask) | OpMask;
+    if (!Bc250PfpWrite(Context, OpRegister, value))
+        return 0u;
+
+    for (i = 0u; i < BC250_IC_OP_POLL_ITERATIONS; ++i) {
+        if (Bc250PfpRead(Context, OpRegister, &value) &&
+            (value & CompleteMask) != 0u) {
+            return 1u;
+        }
+        KeStallExecutionProcessor(1u);
+    }
+
+    return 0u;
+}
+
+/* Aplica a mesma operacao aos quatro microengines e devolve a mascara das que
+ * confirmaram. Mascara diferente de 0x0F e evidencia de cache nao tratada. */
+static uint32_t Bc250PfpIcacheOpAll(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context,
+    _In_ uint32_t OpMask,
+    _In_ uint32_t CompleteMask)
+{
+    uint32_t mask = 0u;
+
+    if (Bc250PfpIcacheOp(Context, R_CP_PFP_IC_OP_CNTL, OpMask, CompleteMask))
+        mask |= BC250_IC_ENGINE_PFP;
+    if (Bc250PfpIcacheOp(Context, R_CP_ME_IC_OP_CNTL, OpMask, CompleteMask))
+        mask |= BC250_IC_ENGINE_ME;
+    if (Bc250PfpIcacheOp(Context, R_CP_CE_IC_OP_CNTL, OpMask, CompleteMask))
+        mask |= BC250_IC_ENGINE_CE;
+    if (Bc250PfpIcacheOp(Context, R_CP_CPC_IC_OP_CNTL, OpMask, CompleteMask))
+        mask |= BC250_IC_ENGINE_CPC;
+
+    return mask;
 }
 
 static void Bc250PfpCopyFromDevice(
@@ -543,11 +612,16 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
     Evidence->Rb0RptrBefore = origRb0Rptr;
 
     snapshotValid = 1u;
-    if ((Evidence->CpMeCntlBefore & (BC250_PFP_HALT | BC250_ME_HALT | BC250_CE_HALT)) !=
-        (BC250_PFP_HALT | BC250_ME_HALT | BC250_CE_HALT)) {
-        status = BC250_PFP_DIRECT_LOAD_INHERITED_ACTIVE;
-        goto Restore;
-    }
+    /* Coloca os microengines em HALT e invalida os caches de instrução para evitar loop residual (F4d) */
+    (void)Bc250PfpWrite(Context, R_CP_ME_CNTL, (BC250_PFP_HALT | BC250_ME_HALT | BC250_CE_HALT));
+    (void)Bc250PfpWrite(Context, R_CP_MEC_CNTL, 0x00000003u);
+    KeMemoryBarrier();
+    KeStallExecutionProcessor(50u);
+
+    /* Aqui so' invalida. Primar a cache antes do staging encheria a I-Cache com
+     * o conteudo antigo; o PRIME correto acontece depois, no sitio 1b. */
+    Evidence->IcacheInvalidateEntryMask = Bc250PfpIcacheOpAll(
+        Context, BC250_IC_OP_INVALIDATE_CACHE, BC250_IC_OP_INVALIDATE_CACHE_COMPLETE);
 
     /* 4a. Staging dos 4 payloads na VRAM para conferência */
     pfpMapped = mapped + (BC250_CP_PFP_SLICE_OFFSET / sizeof(uint32_t));
@@ -884,6 +958,14 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
     (void)Bc250PfpWrite(Context, R_VGT_NUM_INSTANCES, 1u);
     (void)Bc250PfpWrite(Context, R_PA_SC_LINE_STIPPLE_STATE, 0u);
 
+    /* 1b. Invalidação estrita de I-Cache antes do UNHALT */
+    Evidence->IcacheInvalidateUnhaltMask = Bc250PfpIcacheOpAll(
+        Context, BC250_IC_OP_INVALIDATE_CACHE, BC250_IC_OP_INVALIDATE_CACHE_COMPLETE);
+    Evidence->IcachePrimeUnhaltMask = Bc250PfpIcacheOpAll(
+        Context, BC250_IC_OP_PRIME_ICACHE, BC250_IC_OP_ICACHE_PRIMED);
+    KeMemoryBarrier();
+    KeStallExecutionProcessor(50u);
+
     /* 2. UNHALT CP e MEC */
     (void)Bc250PfpWrite(Context, R_CP_MEC_CNTL, 0x00000000u);
     if (!Bc250PfpWrite(Context, R_CP_ME_CNTL, Evidence->CpMeCntlApplied)) {
@@ -971,7 +1053,7 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
         KeStallExecutionProcessor(200u);
     }
     (void)Bc250PfpRead(Context, R_CP_RB0_RPTR, &Evidence->Rb0RptrAfter);
-    Evidence->PfpPcSamples = 4u;
+    Evidence->PfpPcSamples = (i >= 100u) ? 100u : (i + 1u);
 
     (void)Bc250PfpWrite(Context, R_CP_RB0_ACTIVE, 0u);
     (void)Bc250PfpWrite(Context, R_CP_ME_CNTL, Evidence->CpMeCntlBefore);
@@ -1035,6 +1117,9 @@ Restore:
         (void)Bc250PfpWrite(Context, R_GRBM_GFX_CNTL, 0u);
         (void)Bc250PfpWrite(Context, R_CP_MAX_CONTEXT, origCpMaxContext);
         (void)Bc250PfpWrite(Context, R_CP_SCRATCH_REG0, origScratchReg0);
+        /* Restaurando com os engines em HALT: invalidar basta, primar nao. */
+        (void)Bc250PfpIcacheOpAll(Context,
+            BC250_IC_OP_INVALIDATE_CACHE, BC250_IC_OP_INVALIDATE_CACHE_COMPLETE);
         (void)Bc250PfpWrite(Context, R_CP_MEC_CNTL, origCpMecCntl);
         (void)Bc250PfpWrite(Context, R_CP_ME_CNTL, Evidence->CpMeCntlBefore);
         (void)Bc250PfpWrite(Context, R_RLC_CNTL, Evidence->RlcCntlBefore);

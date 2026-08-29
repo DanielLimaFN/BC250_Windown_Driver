@@ -330,6 +330,12 @@ static PCWSTR Bc250ProbeFieldName(BC250_PROBE_FIELD Field)
     case BC250_PROBE_PFP_DIRECT_PC_TRANSITIONS:
         return L"PfpDirectPcTransitions";
     case BC250_PROBE_PFP_DIRECT_PC_SAMPLES: return L"PfpDirectPcSamples";
+    case BC250_PROBE_PFP_DIRECT_IC_INV_ENTRY_MASK:
+        return L"PfpDirectIcInvEntryMask";
+    case BC250_PROBE_PFP_DIRECT_IC_INV_UNHALT_MASK:
+        return L"PfpDirectIcInvUnhaltMask";
+    case BC250_PROBE_PFP_DIRECT_IC_PRIME_UNHALT_MASK:
+        return L"PfpDirectIcPrimeUnhaltMask";
     case BC250_PROBE_PFP_DIRECT_ME_PC_BEFORE: return L"PfpDirectMePcBefore";
     case BC250_PROBE_PFP_DIRECT_ME_PC_LAST: return L"PfpDirectMePcLast";
     case BC250_PROBE_PFP_DIRECT_CE_PC_BEFORE: return L"PfpDirectCePcBefore";

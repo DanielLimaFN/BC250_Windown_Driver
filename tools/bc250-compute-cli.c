@@ -80,19 +80,81 @@ int main(void)
         printf("  Estado Final GFXOFF:   0x%08lX\n\n", wakeupReq.FinalGfxoffState);
     }
 
-    /* 3. Re-testar leitura de registradores do Core GC */
-    printf("--- ETAPA 3: RE-TESTANDO REGISTRADORES DO GRAPHICS CORE ---\n");
-    ZeroMemory(&mmioReq, sizeof(mmioReq));
-    mmioReq.Offset = 0x2000;
-    if (DeviceIoControl(hDevice, (DWORD)IOCTL_BC250_READ_MMIO_REG, &mmioReq, sizeof(mmioReq),
-                        &mmioReq, sizeof(mmioReq), &bytesReturned, NULL)) {
-        printf("  Offset 0x02000 (GRBM_CHIP_REV): 0x%08lX\n", mmioReq.Value);
+    /* 3. Auditoria dos Registradores de Microcódigo e Motores CP/MEC */
+    printf("--- ETAPA 3: AUDITORIA DOS REGISTRADORES DE MICROCODE E CP/MEC ---\n");
+    static const struct { ULONG Offset; const char *Name; } cpRegs[] = {
+        { 0x00008000u, "GRBM_CHIP_REV" },
+        { 0x00008004u, "GRBM_STATUS" },
+        { 0x00008008u, "GRBM_STATUS2" },
+        { 0x00008680u, "CP_STAT" },
+        { 0x000086D8u, "CP_ME_CNTL" },
+        { 0x00008234u, "CP_MEC_CNTL" },
+        { 0x00008694u, "CP_PFP_PC" },
+        { 0x00008698u, "CP_ME_PC" },
+        { 0x0000869Cu, "CP_CE_PC" },
+        { 0x000086A0u, "CP_MEC1_PC" },
+        { 0x000086A4u, "CP_MEC2_PC" },
+        { 0x0000C4CCu, "CP_PFP_JT_STAT" },
+        { 0x00008700u, "CP_RB0_RPTR" },
+        { 0x0000C150u, "CP_RB0_WPTR" },
+        { 0x0000C680u, "CP_RB0_ACTIVE" },
+        { 0x0000C100u, "CP_RB0_BASE" },
+        { 0x0000C104u, "CP_RB0_CNTL" },
+        { 0x0000A200u, "GCVM_CTX0_CNTL" },
+        { 0x0000A3ACu, "GCVM_CTX0_PT_BASE" },
+        { 0x0000A42Cu, "GCVM_CTX0_START" },
+        { 0x0000A4ACu, "GCVM_CTX0_END" },
+        { 0x00003B00u, "RLC_CNTL" }
+    };
+    for (i = 0; i < sizeof(cpRegs) / sizeof(cpRegs[0]); ++i) {
+        BC250_MMIO_REG_REQ mmReq;
+        ZeroMemory(&mmReq, sizeof(mmReq));
+        mmReq.Offset = cpRegs[i].Offset;
+        if (DeviceIoControl(hDevice, (DWORD)IOCTL_BC250_READ_MMIO_REG, &mmReq, sizeof(mmReq),
+                            &mmReq, sizeof(mmReq), &bytesReturned, NULL)) {
+            printf("  [MMIO 0x%05lX] %-18s = 0x%08lX\n", mmReq.Offset, cpRegs[i].Name, mmReq.Value);
+        }
+    }
+    printf("\n");
+
+    /* 4. Ensaio do Motor SDMA */
+    printf("\n--- ETAPA 4: TESTE DO MOTOR SDMA (DMA FENCE TRIPOD) ---\n");
+    BC250_SDMA_COPY_REQ sdmaReq;
+    ZeroMemory(&sdmaReq, sizeof(sdmaReq));
+    sdmaReq.ByteCount = 16;
+    sdmaReq.FenceValue = 0xBC250123u;
+    if (DeviceIoControl(hDevice, (DWORD)IOCTL_BC250_SDMA_COPY, &sdmaReq, sizeof(sdmaReq),
+                        &sdmaReq, sizeof(sdmaReq), &bytesReturned, NULL)) {
+        printf("  SDMA RPTR / WPTR:      %lu / %lu\n", sdmaReq.RptrAfter, sdmaReq.WptrAfter);
+        printf("  SDMA Fence Observada:  0x%08lX (Esperado: 0x%08lX)\n", sdmaReq.FenceObserved, sdmaReq.FenceValue);
+        printf("  Veredito SDMA:         %s\n", (sdmaReq.ExecutionSuccess != 0) ? "[SUCESSO - TRIPE PROVADO]" : "[FALHA]");
     }
 
-    mmioReq.Offset = 0x2004;
-    if (DeviceIoControl(hDevice, (DWORD)IOCTL_BC250_READ_MMIO_REG, &mmioReq, sizeof(mmioReq),
-                        &mmioReq, sizeof(mmioReq), &bytesReturned, NULL)) {
-        printf("  Offset 0x02004 (GRBM_STATUS):   0x%08lX\n", mmioReq.Value);
+    /* 5. Ensaio do Motor CP Ring 0 (PM4 Direct Dispatch) */
+    printf("\n--- ETAPA 5: TESTE DO MOTOR CP RING 0 (PM4 WRITE_DATA & EOP FENCE) ---\n");
+    BC250_COMPUTE_DISPATCH_REQ ring0Req;
+    ZeroMemory(&ring0Req, sizeof(ring0Req));
+    ring0Req.WorkgroupSizeX = 100; /* Ring 0 mode */
+    ring0Req.FenceValue = 0xBC250123u;
+    if (DeviceIoControl(hDevice, (DWORD)IOCTL_BC250_DISPATCH_COMPUTE, &ring0Req, sizeof(ring0Req),
+                        &ring0Req, sizeof(ring0Req), &bytesReturned, NULL)) {
+        printf("  Ring 0 RPTR / WPTR:    %lu / %lu\n", ring0Req.RptrAfter, ring0Req.WptrAfter);
+        printf("  Ring 0 Fence:          0x%08lX (Esperado: 0x%08lX)\n", ring0Req.FenceObserved, ring0Req.FenceValue);
+        printf("  Veredito Ring 0:       %s\n", (ring0Req.ExecutionSuccess != 0) ? "[SUCESSO - PM4 RING 0 PROVADO]" : "[FALHA]");
+    }
+
+    /* 6. Ensaio da Fila Assíncrona de Computação MEC1 / HQD com MQD 512B */
+    printf("\n--- ETAPA 6: TESTE DA FILA ASSINCRONA MEC1 / HQD (MQD 512B & EOP FENCE) ---\n");
+    BC250_COMPUTE_DISPATCH_REQ hqdReq;
+    ZeroMemory(&hqdReq, sizeof(hqdReq));
+    hqdReq.WorkgroupSizeX = 1; /* HQD mode */
+    hqdReq.FenceValue = 0xBC250123u;
+    if (DeviceIoControl(hDevice, (DWORD)IOCTL_BC250_DISPATCH_COMPUTE, &hqdReq, sizeof(hqdReq),
+                        &hqdReq, sizeof(hqdReq), &bytesReturned, NULL)) {
+        printf("  HQD ACTIVE Readback:   0x%08lX\n", hqdReq.WptrBefore);
+        printf("  HQD RPTR / WPTR:       %lu / %lu\n", hqdReq.RptrAfter, hqdReq.WptrAfter);
+        printf("  HQD Fence Observada:   0x%08lX (Esperado: 0x%08lX)\n", hqdReq.FenceObserved, hqdReq.FenceValue);
+        printf("  Veredito MEC1/HQD:     %s\n", (hqdReq.ExecutionSuccess != 0) ? "[SUCESSO - FILA ASSINCRONA PROVADA]" : "[FALHA]");
     }
 
     CloseHandle(hDevice);

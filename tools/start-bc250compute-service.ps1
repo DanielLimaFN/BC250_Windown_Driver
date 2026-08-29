@@ -25,6 +25,12 @@ for ($i = 0; $i -lt 10; $i++) {
     Start-Sleep -Milliseconds 500
 }
 
+# Atualizar binario
+$srcSys = "C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\output\bc250compute.sys"
+if (Test-Path $srcSys) {
+    Copy-Item -LiteralPath $srcSys -Destination $sysPath -Force
+}
+
 # 3. Criar servico de kernel
 $createRes = & sc.exe create bc250compute type= kernel binPath= $sysPath 2>&1
 if ($LASTEXITCODE -ne 0) {

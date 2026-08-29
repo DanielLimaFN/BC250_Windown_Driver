@@ -1401,13 +1401,13 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%WDK%\Lib\%WDKVER%\km\x64\displib.lib"
 if errorlevel 1 exit /b 1
 
-if exist "%ODIR%\bc250compute_pkg.sys" (
-  del "%ODIR%\bc250compute_pkg.sys" >nul 2>&1
+if exist "%ODIR%\bc250compute.sys" (
+  del "%ODIR%\bc250compute.sys" >nul 2>&1
 )
 
-echo [link] bc250compute_pkg.sys
+echo [link] bc250compute.sys
 link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry ^
-  /OUT:"%ODIR%\bc250compute_pkg.sys" ^
+  /OUT:"%ODIR%\bc250compute.sys" ^
   "%ODIR%\bc250_compute_service.obj" ^
   "%ODIR%\bc250_smu_telemetry_contract.obj" ^
   "%ODIR%\bc250_superio_nct6686_contract.obj" ^
@@ -1420,6 +1420,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_psp_load_fw_transaction.obj" ^
   "%ODIR%\bc250_psp_ring_transaction.obj" ^
   "%ODIR%\bc250_sdma_f32_transaction.obj" ^
+  "%ODIR%\bc250_compute_mqd_contract.obj" ^
   "%WDK%\Lib\%WDKVER%\km\x64\ntoskrnl.lib" ^
   "%WDK%\Lib\%WDKVER%\km\x64\hal.lib" ^
   "%WDK%\Lib\%WDKVER%\km\x64\BufferOverflowK.lib"

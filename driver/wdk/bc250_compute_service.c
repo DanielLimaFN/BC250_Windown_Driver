@@ -5,6 +5,7 @@
 #include "../core/bc250_pm4_packet_builder.h"
 #include "../core/bc250_psp_load_fw_transaction.h"
 #include "../core/bc250_sdma_f32_transaction.h"
+#include "../core/bc250_compute_mqd_contract.h"
 #include <ntddk.h>
 
 #define BC250_PCI_VENDOR_ID 0x1002u
@@ -642,7 +643,6 @@ static NTSTATUS Bc250ComputeExecutePm4Dispatch(PBC250_COMPUTE_DISPATCH_REQ req)
     volatile uint32_t *wptrPoll;
     volatile uint32_t *fenceBuf;
     volatile uint32_t *dstBuf;
-    uint64_t ringMc, workMc, rptrWbMc, wptrPollMc, fenceMc, dstMc;
     uint32_t ringPacket[64];
     uint32_t cursor = 0;
     uint32_t testVal = 0xBC250555u;
@@ -662,12 +662,11 @@ static NTSTATUS Bc250ComputeExecutePm4Dispatch(PBC250_COMPUTE_DISPATCH_REQ req)
     fenceBuf = &work[0x2000 / 4];
     dstBuf = &work[0x3000 / 4];
 
-    ringMc = BC250_MC_VRAM_BASE + BC250_SAFE_VRAM_OFFSET + 0x10000ull;
-    workMc = ringMc + 0x4000ull;
-    rptrWbMc = workMc;
-    wptrPollMc = workMc + 0x1000ull;
-    fenceMc = workMc + 0x2000ull;
-    dstMc = workMc + 0x3000ull;
+    uint64_t ringGpuva = 0x00000000ull;
+    uint64_t rptrWbGpuva = 0x00004000ull;
+    uint64_t wptrPollGpuva = 0x00005000ull;
+    uint64_t fenceGpuva = 0x00006000ull;
+    uint64_t dstGpuva = 0x00007000ull;
 
     *rptrWb = 0u;
     *wptrPoll = 0u;
@@ -675,18 +674,18 @@ static NTSTATUS Bc250ComputeExecutePm4Dispatch(PBC250_COMPUTE_DISPATCH_REQ req)
     *dstBuf = 0xDEADBEEFu;
 
     /* Canonical PM4 Packets matching bc250_pfp_direct_load.c */
-    /* 1. WRITE_DATA: fence via MC physical aperture (5 dwords) */
+    /* 1. WRITE_DATA: fence via GPUVA translated aperture (5 dwords) */
     ringPacket[cursor++] = 0xC0033700u; /* PACKET3_WRITE_DATA, count=3 */
     ringPacket[cursor++] = 0x00100500u; /* WR_CONFIRM=1, DST_SEL=5 (Memory direct) */
-    ringPacket[cursor++] = (uint32_t)(fenceMc & 0xFFFFFFFFull);
-    ringPacket[cursor++] = (uint32_t)(fenceMc >> 32);
+    ringPacket[cursor++] = (uint32_t)(fenceGpuva & 0xFFFFFFFFull);
+    ringPacket[cursor++] = (uint32_t)(fenceGpuva >> 32);
     ringPacket[cursor++] = expectedFence;
 
-    /* 2. WRITE_DATA: dst via MC physical aperture (5 dwords) */
+    /* 2. WRITE_DATA: dst via GPUVA translated aperture (5 dwords) */
     ringPacket[cursor++] = 0xC0033700u; /* PACKET3_WRITE_DATA, count=3 */
     ringPacket[cursor++] = 0x00100500u; /* WR_CONFIRM=1, DST_SEL=5 (Memory direct) */
-    ringPacket[cursor++] = (uint32_t)(dstMc & 0xFFFFFFFFull);
-    ringPacket[cursor++] = (uint32_t)(dstMc >> 32);
+    ringPacket[cursor++] = (uint32_t)(dstGpuva & 0xFFFFFFFFull);
+    ringPacket[cursor++] = (uint32_t)(dstGpuva >> 32);
     ringPacket[cursor++] = testVal;
 
     /* Pad with NOP to 16 dwords */
@@ -704,8 +703,42 @@ static NTSTATUS Bc250ComputeExecutePm4Dispatch(PBC250_COMPUTE_DISPATCH_REQ req)
         (*(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0003C2C4u) & ~0xFCFF8FFFu) | 0xF8000100u;
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00008920u) =
         (*(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00008920u) & ~0x3FFFFFFFu) | 0x0000493Eu;
-    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C6DCu) =
-        (*(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C6DCu) & ~0x800007FFu) | 0x000005FFu;
+    /* Configura WGP e SPI dispatch masks por SE/SH (40 CU / WGP dispatch unlock) */
+    {
+        ULONG se, sh;
+        for (se = 0; se < 4; se++) {
+            for (sh = 0; sh < 2; sh++) {
+                *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00030800u) = (se << 2) | (sh << 0) | 0x80000000u;
+                *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x000089BCu) = 0u;    /* CC_GC_SHADER_ARRAY_CONFIG */
+                *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000935Cu) = 0x1Fu; /* SPI_PG_ENABLE_STATIC_WGP_MASK */
+                *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0003B14Cu) = 0x1Fu; /* RLC_PG_ALWAYS_ON_WGP_MASK */
+            }
+        }
+        *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00030800u) = 0xE0000000u; /* Broadcast */
+    }
+
+    /* Prepara Page Table VMID 0 na VRAM: mapeia 2 MiB (512 PTEs) com Host Physical Address */
+    volatile uint64_t *pPt = (volatile uint64_t *)((PUCHAR)vramBase + 0x8000);
+    uint64_t ptMc = BC250_MC_VRAM_BASE + BC250_SAFE_VRAM_OFFSET + 0x10000ull + 0x8000ull;
+    uint32_t pteIdx;
+    for (pteIdx = 0u; pteIdx < 512u; ++pteIdx) {
+        uint64_t pagePhys = vramPa.QuadPart + (pteIdx * 4096ull);
+        pPt[pteIdx] = (pagePhys & 0x0000FFFFFFFFF000ull) | 0xE1ull;
+    }
+    KeMemoryBarrier();
+
+    /* Ativa GCVM Context 0 com a Page Table */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A3ACu) = (uint32_t)(ptMc & 0xFFFFFFFCull); /* R_GCVM_CONTEXT0_PT_BASE_LO */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A3B0u) = (uint32_t)(ptMc >> 32); /* R_GCVM_CONTEXT0_PT_BASE_HI */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A42Cu) = 0u; /* R_GCVM_CONTEXT0_PT_START_LO */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A4ACu) = 511u; /* R_GCVM_CONTEXT0_PT_END_LO */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A200u) = 0x007FFE81u; /* R_GCVM_CONTEXT0_CNTL (ENABLE_CONTEXT=1) */
+
+    /* Flush HDP e TLB Invalidate */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00003FC4u) = 1u; /* HDP_MEM_COHERENCY_FLUSH_CNTL */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A104u) = 3u; /* GCVM_L2_CNTL2 */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A2D0u) = 1u; /* GCVM_INVALIDATE_REQ */
+    KeStallExecutionProcessor(50u);
 
     /* Canonical CP Ring 0 Configuration matching bc250_pfp_direct_load.c */
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00030800u) = 0xE0000000u; /* R_GRBM_GFX_INDEX */
@@ -715,12 +748,12 @@ static NTSTATUS Bc250ComputeExecutePm4Dispatch(PBC250_COMPUTE_DISPATCH_REQ req)
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C12Cu) = 1u; /* R_CP_DEVICE_ID */
 
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C3B4u) = 0u; /* R_CP_RB_DOORBELL_CONTROL */
-    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C100u) = (uint32_t)(ringMc >> 8); /* R_CP_RB0_BASE */
-    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C2C4u) = (uint32_t)((ringMc >> 8) >> 32); /* R_CP_RB0_BASE_HI */
-    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C10Cu) = (uint32_t)rptrWbMc; /* R_CP_RB0_RPTR_ADDR */
-    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C110u) = (uint32_t)(rptrWbMc >> 32); /* R_CP_RB0_RPTR_ADDR_HI */
-    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C3ACu) = (uint32_t)wptrPollMc; /* R_CP_RB_WPTR_POLL_ADDR_LO */
-    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C3B0u) = (uint32_t)(wptrPollMc >> 32); /* R_CP_RB_WPTR_POLL_ADDR_HI */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C100u) = (uint32_t)(ringGpuva >> 8); /* R_CP_RB0_BASE */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C2C4u) = (uint32_t)((ringGpuva >> 8) >> 32); /* R_CP_RB0_BASE_HI */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C10Cu) = (uint32_t)rptrWbGpuva; /* R_CP_RB0_RPTR_ADDR */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C110u) = (uint32_t)(rptrWbGpuva >> 32); /* R_CP_RB0_RPTR_ADDR_HI */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C3ACu) = (uint32_t)wptrPollGpuva; /* R_CP_RB_WPTR_POLL_ADDR_LO */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C3B0u) = (uint32_t)(wptrPollGpuva >> 32); /* R_CP_RB_WPTR_POLL_ADDR_HI */
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C144u) = 0u; /* R_CP_RB_VMID */
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00008704u) = 0u; /* R_CP_RB_WPTR_DELAY */
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00008708u) = 0x00403004u; /* R_CP_RB_WPTR_POLL_CNTL */
@@ -730,8 +763,18 @@ static NTSTATUS Bc250ComputeExecutePm4Dispatch(PBC250_COMPUTE_DISPATCH_REQ req)
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C150u) = 0u; /* R_CP_RB0_WPTR */
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C154u) = 0u; /* R_CP_RB0_WPTR_HI */
 
+    /* Prime I-Cache and setup context state */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00028A60u) = 1u; /* R_VGT_NUM_INSTANCES */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00028A64u) = 0u; /* R_PA_SC_LINE_STIPPLE_STATE */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C4D0u) = 0x00000011u; /* R_CP_PFP_IC_OP_CNTL */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C4D4u) = 0x00000011u; /* R_CP_ME_IC_OP_CNTL */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C4D8u) = 0x00000011u; /* R_CP_CE_IC_OP_CNTL */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C4DCu) = 0x00000011u; /* R_CP_CPC_IC_OP_CNTL */
+    KeMemoryBarrier();
+    KeStallExecutionProcessor(50u);
+
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00008234u) = 0x00000000u; /* R_CP_MEC_CNTL unhalt */
-    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x000086D8u) &= ~0x31000000u; /* Unhalt PFP, ME, CE */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x000086D8u) = 0x00000000u; /* R_CP_ME_CNTL unhalt */
     KeMemoryBarrier();
     KeStallExecutionProcessor(50u);
 
@@ -749,6 +792,7 @@ static NTSTATUS Bc250ComputeExecutePm4Dispatch(PBC250_COMPUTE_DISPATCH_REQ req)
 
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C150u) = cursor; /* R_CP_RB0_WPTR */
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C154u) = 0u;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C3B4u) = 0x80000000u; /* R_CP_RB_DOORBELL_CONTROL (DOORBELL_HIT) */
     KeMemoryBarrier();
 
     for (p = 0; p < 20000; p++) {
@@ -765,13 +809,281 @@ static NTSTATUS Bc250ComputeExecutePm4Dispatch(PBC250_COMPUTE_DISPATCH_REQ req)
     req->FenceValue = expectedFence;
 
     ULONG dataVal = *dstBuf;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A200u) = 0x007FFE80u; /* Restore Context 0 disabled */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A3ACu) = 0u;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A4ACu) = 0u;
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C680u) = 0u; /* R_CP_RB0_ACTIVE disable */
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C104u) = 0u; /* R_CP_RB0_CNTL disable */
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C150u) = 0u; /* R_CP_RB0_WPTR = 0 */
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C154u) = 0u;
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00008700u) = 0u; /* R_CP_RB0_RPTR = 0 */
-    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x000086D8u) |= 0x31000000u; /* Re-halt PFP, ME, CE */
-    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00008234u) = 0x00000001u; /* Re-halt MEC */
+
+    /* Re-HALT dos microengines. Sem isto o CP fica destravado ate' o proximo
+     * reboot, e o StartDevice seguinte herda um PFP ja' em execucao: nas 171
+     * capturas com observacao valida do corpus, CP_ME_CNTL antes do direct load
+     * e' 0x15000000 (PFP|ME|CE em HALT) em 171/171, e PfpDirectPcBefore e' 0 em
+     * 177/177. Restaurar valores capturados aqui propagaria o estado corrompido,
+     * entao o alvo e' explicito. */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x000086D8u) = 0x15000000u; /* R_CP_ME_CNTL: PFP|ME|CE HALT */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00008234u) = 0x00000003u; /* R_CP_MEC_CNTL: MEC1|MEC2 HALT */
+    KeMemoryBarrier();
+
+    MmUnmapIoSpace(vramBase, BC250_SAFE_VRAM_SIZE);
+
+    req->ExecutionSuccess = ((req->RptrAfter == cursor || req->FenceObserved == expectedFence) && dataVal == testVal) ? 1u : 0u;
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS Bc250ComputeExecuteHqdDispatch(PBC250_COMPUTE_DISPATCH_REQ req)
+{
+    PHYSICAL_ADDRESS vramPa;
+    PVOID vramBase;
+    volatile uint32_t *mqdBase;
+    volatile uint32_t *eopBase;
+    volatile uint32_t *ring;
+    volatile uint32_t *work;
+    volatile uint32_t *rptrWb;
+    volatile uint32_t *wptrPoll;
+    volatile uint32_t *fenceBuf;
+    volatile uint32_t *dstBuf;
+    BC250_COMPUTE_MQD_PROPERTIES mqdProps;
+    BC250_GFX10_COMPUTE_MQD mqd;
+    uint32_t ringPacket[64];
+    uint32_t cursor = 0;
+    uint32_t testVal = 0xBC250555u;
+    uint32_t expectedFence = 0xBC250123u;
+    ULONG rptr = 0, p, i;
+
+    if (g_MmioBase == NULL) return STATUS_DEVICE_NOT_READY;
+
+    /* VRAM Mapping: 64 KiB slice above safe scratch area */
+    vramPa.QuadPart = (LONGLONG)(BC250_SAFE_VRAM_PHYS_BASE + BC250_SAFE_VRAM_OFFSET + 0x20000ull);
+    vramBase = MmMapIoSpaceEx(vramPa, BC250_SAFE_VRAM_SIZE, PAGE_READWRITE | PAGE_NOCACHE);
+    if (vramBase == NULL) return STATUS_INSUFFICIENT_RESOURCES;
+
+    /* Layout in VRAM:
+     * 0x0000: MQD (512 bytes)
+     * 0x1000: EOP buffer (4096 bytes)
+     * 0x2000: HQD Ring (4096 bytes / 1024 dwords)
+     * 0x3000: Work (RPTR WB @ 0, WPTR poll @ 0x100, Fence @ 0x200, Dst @ 0x300)
+     */
+    mqdBase  = (volatile uint32_t *)vramBase;
+    eopBase  = (volatile uint32_t *)((PUCHAR)vramBase + 0x1000);
+    ring     = (volatile uint32_t *)((PUCHAR)vramBase + 0x2000);
+    work     = (volatile uint32_t *)((PUCHAR)vramBase + 0x3000);
+
+    rptrWb   = &work[0];
+    wptrPoll = &work[0x100 / 4];
+    fenceBuf = &work[0x200 / 4];
+    dstBuf   = &work[0x300 / 4];
+
+    uint64_t mqdGpuva      = 0x00000000ull;
+    uint64_t eopGpuva      = 0x00001000ull;
+    uint64_t ringGpuva     = 0x00002000ull;
+    uint64_t rptrWbGpuva   = 0x00003000ull;
+    uint64_t wptrPollGpuva = 0x00003100ull;
+    uint64_t fenceGpuva    = 0x00003200ull;
+    uint64_t dstGpuva      = 0x00003300ull;
+
+    /* Initialize memory buffers */
+    RtlZeroMemory((void *)mqdBase, BC250_MQD_SIZE_BYTES);
+    RtlZeroMemory((void *)eopBase, BC250_HQD_DEFAULT_EOP_BYTES);
+    RtlZeroMemory((void *)ring, 0x1000);
+    *rptrWb   = 0u;
+    *wptrPoll = 0u;
+    *fenceBuf = 0x43DAFFFEu; /* Poison */
+    *dstBuf   = 0xDEADBEEFu; /* Poison */
+
+    /* Initialize GFX10 Compute MQD */
+    RtlZeroMemory(&mqdProps, sizeof(mqdProps));
+    mqdProps.MqdGpuAddress     = mqdGpuva;
+    mqdProps.HqdBaseGpuAddress = ringGpuva;
+    mqdProps.QueueSizeDwords   = 512;
+    mqdProps.EopGpuAddress     = eopGpuva;
+    mqdProps.EopSizeBytes      = 4096;
+    mqdProps.RptrGpuAddress    = rptrWbGpuva;
+    mqdProps.WptrGpuAddress    = wptrPollGpuva;
+    mqdProps.UseDoorbell       = 0; /* Polling mode */
+    mqdProps.HqdActive         = 1;
+    mqdProps.PipePriority      = 0;
+    mqdProps.QueuePriority     = 0;
+
+    (void)Bc250ComputeMqdInit(&mqdProps, &mqd);
+    RtlCopyMemory((void *)mqdBase, &mqd, sizeof(mqd));
+    /* 1. Build PM4 command packet stream (Canonical WRITE_DATA for compute) */
+    /* 1a. WRITE_DATA to dstMc = testVal (0xBC250555) (5 dwords) */
+    ringPacket[cursor++] = 0xC0033700u; /* PACKET3_WRITE_DATA, count=3 */
+    ringPacket[cursor++] = 0x00100500u; /* WR_CONFIRM=1, DST_SEL=5 (Memory direct) */
+    ringPacket[cursor++] = (uint32_t)(dstGpuva & 0xFFFFFFFFull);
+    ringPacket[cursor++] = (uint32_t)(dstGpuva >> 32);
+    ringPacket[cursor++] = testVal;
+
+    /* 1b. WRITE_DATA to fenceMc = expectedFence (0xBC250123) (5 dwords) */
+    ringPacket[cursor++] = 0xC0033700u; /* PACKET3_WRITE_DATA, count=3 */
+    ringPacket[cursor++] = 0x00100500u; /* WR_CONFIRM=1, DST_SEL=5 (Memory direct) */
+    ringPacket[cursor++] = (uint32_t)(fenceGpuva & 0xFFFFFFFFull);
+    ringPacket[cursor++] = (uint32_t)(fenceGpuva >> 32);
+    ringPacket[cursor++] = expectedFence;
+
+    /* Pad to 16 dwords with NOP (6 dwords) */
+    while (cursor % 16 != 0) {
+        ringPacket[cursor++] = 0xC0001000u; /* PACKET3_NOP */
+    }
+
+    for (i = 0; i < cursor; i++) {
+        ring[i] = ringPacket[i];
+    }
+    KeMemoryBarrier();
+
+    /* Un-gate CPF, GE, and CP clocks */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0003C2C4u) =
+        (*(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0003C2C4u) & ~0xFCFF8FFFu) | 0xF8000100u;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00008920u) =
+        (*(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00008920u) & ~0x3FFFFFFFu) | 0x0000493Eu;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C6DCu) =
+        (*(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C6DCu) & ~0x800007FFu) | 0x000005FFu;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0003B000u) |= 1u; /* R_RLC_CNTL */
+
+    /* Prime I-Cache and setup context state */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00028A60u) = 1u; /* R_VGT_NUM_INSTANCES */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00028A64u) = 0u; /* R_PA_SC_LINE_STIPPLE_STATE */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C4D0u) = 0x00000011u; /* R_CP_PFP_IC_OP_CNTL */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C4D4u) = 0x00000011u; /* R_CP_ME_IC_OP_CNTL */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C4D8u) = 0x00000011u; /* R_CP_CE_IC_OP_CNTL */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C4DCu) = 0x00000011u; /* R_CP_CPC_IC_OP_CNTL */
+    KeMemoryBarrier();
+    KeStallExecutionProcessor(50u);
+
+    /* Unhalt CP, MEC1 and MEC2 */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00008234u) = 0x00000000u; /* R_CP_MEC_CNTL unhalt */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x000086D8u) = 0x00000000u; /* R_CP_ME_CNTL unhalt */
+    KeMemoryBarrier();
+    KeStallExecutionProcessor(50u);
+
+    /* Configura WGP e SPI dispatch masks por SE/SH (40 CU / WGP dispatch unlock) */
+    {
+        ULONG se, sh;
+        for (se = 0; se < 4; se++) {
+            for (sh = 0; sh < 2; sh++) {
+                *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00030800u) = (se << 2) | (sh << 0) | 0x80000000u;
+                *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x000089BCu) = 0u;    /* CC_GC_SHADER_ARRAY_CONFIG */
+                *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000935Cu) = 0x1Fu; /* SPI_PG_ENABLE_STATIC_WGP_MASK */
+                *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0003B14Cu) = 0x1Fu; /* RLC_PG_ALWAYS_ON_WGP_MASK */
+            }
+        }
+        *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00030800u) = 0xE0000000u; /* Broadcast */
+    }
+
+    /* Prepara Page Table VMID 0 na VRAM: mapeia 2 MiB (512 PTEs) com Host Physical Address */
+    volatile uint64_t *pPt = (volatile uint64_t *)((PUCHAR)vramBase + 0x8000);
+    uint64_t ptMc = BC250_MC_VRAM_BASE + BC250_SAFE_VRAM_OFFSET + 0x20000ull + 0x8000ull;
+    uint32_t pteIdx;
+    for (pteIdx = 0u; pteIdx < 512u; ++pteIdx) {
+        uint64_t pagePhys = vramPa.QuadPart + (pteIdx * 4096ull);
+        pPt[pteIdx] = (pagePhys & 0x0000FFFFFFFFF000ull) | 0xE1ull;
+    }
+    KeMemoryBarrier();
+
+    /* Ativa GCVM Context 0 com a Page Table */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A3ACu) = (uint32_t)(ptMc & 0xFFFFFFFCull); /* R_GCVM_CONTEXT0_PT_BASE_LO */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A3B0u) = (uint32_t)(ptMc >> 32); /* R_GCVM_CONTEXT0_PT_BASE_HI */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A42Cu) = 0u; /* R_GCVM_CONTEXT0_PT_START_LO */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A4ACu) = 511u; /* R_GCVM_CONTEXT0_PT_END_LO */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A200u) = 0x007FFE81u; /* R_GCVM_CONTEXT0_CNTL (ENABLE_CONTEXT=1) */
+
+    /* Flush HDP e TLB Invalidate */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00003FC4u) = 1u; /* HDP_MEM_COHERENCY_FLUSH_CNTL */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A104u) = 3u; /* GCVM_L2_CNTL2 */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A2D0u) = 1u; /* GCVM_INVALIDATE_REQ */
+    KeStallExecutionProcessor(50u);
+
+    /* 2. Select MEC2 Pipe 1 Queue 0 (0x9) via GRBM_GFX_CNTL and broadcast GFX_INDEX */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00030800u) = 0xE0000000u; /* R_GRBM_GFX_INDEX */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_GRBM_GFX_CNTL_BYTE_OFFSET) =
+        (req->GridDimX == 1) ? BC250_HQD_SELECTOR_MEC1_P0_Q0_V0 : BC250_HQD_SELECTOR_MEC2_P1_Q0_V0;
+    KeMemoryBarrier();
+    KeStallExecutionProcessor(20u);
+
+    /* 3. Program HQD indirect register bank using verified MQD descriptor fields */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_ACTIVE) = 0u;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_MQD_BASE_LO) = mqd.CpMqdBaseAddrLo;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_MQD_BASE_HI) = mqd.CpMqdBaseAddrHi;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_EOP_BASE_LO) = (uint32_t)(eopGpuva >> 8);
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_EOP_BASE_HI) = (uint32_t)((eopGpuva >> 8) >> 32);
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_EOP_CONTROL) = mqd.CpHqdEopControl ? mqd.CpHqdEopControl : 10u;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_PQ_BASE_LO)  = (uint32_t)(ringGpuva >> 8);
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_PQ_BASE_HI)  = (uint32_t)((ringGpuva >> 8) >> 32);
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_PQ_RPTR)     = 0u;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_RPTR_REPORT_LO) = mqd.CpHqdPqRptrReportAddrLo;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_RPTR_REPORT_HI) = mqd.CpHqdPqRptrReportAddrHi;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_WPTR_POLL_LO)   = mqd.CpHqdPqWptrPollAddrLo;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_WPTR_POLL_HI)   = mqd.CpHqdPqWptrPollAddrHi;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL) = 0x00403004u;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_DOORBELL_CONTROL) = mqd.CpHqdPqDoorbellControl;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_PQ_CONTROL)     = mqd.CpHqdPqControl;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_PQ_WPTR_LO)    = 0u;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_PQ_WPTR_HI)    = 0u;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_MQD_CONTROL)   = mqd.CpMqdControl;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_ACTIVE)        = 1u;
+    KeMemoryBarrier();
+    KeStallExecutionProcessor(50u);
+
+    req->WptrBefore = *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_ACTIVE);
+
+    /* 4. Flush and kick WPTR */
+    *wptrPoll = cursor;
+    KeMemoryBarrier();
+    Bc250ComputeHdpFlush();
+
+    /* Coherence Flush (HDP, L2 e ENG17) */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00003FC4u) = 1u; /* HDP_MEM_COHERENCY_FLUSH_CNTL */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A104u) = 3u; /* GCVM_L2_CNTL2 */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A2D0u) = 1u; /* GCVM_INVALIDATE_REQ (ENG17) */
+
+    req->RptrBefore = *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_PQ_RPTR);
+    req->WptrAfter = cursor;
+
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_PQ_WPTR_LO) = cursor;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_PQ_WPTR_HI) = 0u;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_DOORBELL_CONTROL) = 0x80000000u; /* DOORBELL_HIT */
+    KeMemoryBarrier();
+
+    /* 5. Poll for completion */
+    for (p = 0; p < 20000; p++) {
+        Bc250ComputeHdpFlush();
+        rptr = *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_PQ_RPTR);
+        uint32_t wb = *rptrWb;
+        uint32_t f = *fenceBuf;
+        if ((rptr == cursor || wb == cursor) || f == expectedFence) break;
+        KeStallExecutionProcessor(5);
+    }
+
+    req->RptrAfter = (*rptrWb != 0) ? *rptrWb : rptr;
+    req->FenceObserved = *fenceBuf;
+    req->FenceValue = expectedFence;
+
+    ULONG dataVal = *dstBuf;
+
+    /* 6. Teardown HQD */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A200u) = 0x007FFE80u; /* Restore Context 0 disabled */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A3ACu) = 0u;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A4ACu) = 0u;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_DEQUEUE_REQUEST) = 1u;
+    KeStallExecutionProcessor(50u);
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HQD_MMIO_ACTIVE) = 0u;
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_GRBM_GFX_CNTL_BYTE_OFFSET) = 0u;
+    KeMemoryBarrier();
+
+    /* Re-HALT dos microengines. Sem isto o CP fica destravado ate' o proximo
+     * reboot, e o StartDevice seguinte herda um PFP ja' em execucao: nas 171
+     * capturas com observacao valida do corpus, CP_ME_CNTL antes do direct load
+     * e' 0x15000000 (PFP|ME|CE em HALT) em 171/171, e PfpDirectPcBefore e' 0 em
+     * 177/177. Restaurar valores capturados aqui propagaria o estado corrompido,
+     * entao o alvo e' explicito. */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x000086D8u) = 0x15000000u; /* R_CP_ME_CNTL: PFP|ME|CE HALT */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00008234u) = 0x00000003u; /* R_CP_MEC_CNTL: MEC1|MEC2 HALT */
+    KeMemoryBarrier();
+
     MmUnmapIoSpace(vramBase, BC250_SAFE_VRAM_SIZE);
 
     req->ExecutionSuccess = ((req->RptrAfter == cursor || req->FenceObserved == expectedFence) && dataVal == testVal) ? 1u : 0u;
@@ -1003,7 +1315,11 @@ static NTSTATUS Bc250ComputeDeviceControl(
             break;
         }
         dispReq = (PBC250_COMPUTE_DISPATCH_REQ)buffer;
-        status = Bc250ComputeExecutePm4Dispatch(dispReq);
+        if (dispReq->WorkgroupSizeX == 100) {
+            status = Bc250ComputeExecutePm4Dispatch(dispReq);
+        } else {
+            status = Bc250ComputeExecuteHqdDispatch(dispReq);
+        }
         info = sizeof(BC250_COMPUTE_DISPATCH_REQ);
         break;
     }

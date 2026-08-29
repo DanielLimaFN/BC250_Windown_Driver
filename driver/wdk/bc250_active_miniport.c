@@ -3213,6 +3213,15 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                         context->PfpDirectLoadEvidence.PfpPcTransitions);
                     Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_PC_SAMPLES,
                         context->PfpDirectLoadEvidence.PfpPcSamples);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_PFP_DIRECT_IC_INV_ENTRY_MASK,
+                        context->PfpDirectLoadEvidence.IcacheInvalidateEntryMask);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_PFP_DIRECT_IC_INV_UNHALT_MASK,
+                        context->PfpDirectLoadEvidence.IcacheInvalidateUnhaltMask);
+                    Bc250ProbeRecord(
+                        BC250_PROBE_PFP_DIRECT_IC_PRIME_UNHALT_MASK,
+                        context->PfpDirectLoadEvidence.IcachePrimeUnhaltMask);
                     Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_ME_PC_BEFORE,
                         context->PfpDirectLoadEvidence.MePcBefore);
                     Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_ME_PC_LAST,

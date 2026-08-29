@@ -1,0 +1,67 @@
+[Version]
+Signature="$Windows NT$"
+Class=Display
+ClassGuid={4d36e968-e325-11ce-bfc1-08002be10318}
+Provider=%ProviderName%
+DriverVer=08/29/2026,3.24.2.0
+CatalogFile=bc250mcdm.cat
+PnpLockdown=1
+
+[DestinationDirs]
+DefaultDestDir=12
+BC250Mcdm.CopyFiles=12
+
+[SourceDisksNames]
+1=%DiskName%,,,""
+
+[SourceDisksFiles]
+bc250mcdm.sys=1
+cyan_skillfish2_sdma.bin=1
+cyan_skillfish2_rlc.bin=1
+cyan_skillfish2_pfp.bin=1
+cyan_skillfish2_me.bin=1
+cyan_skillfish2_ce.bin=1
+cyan_skillfish2_mec.bin=1
+
+[Manufacturer]
+%ManufacturerName%=Standard,NTamd64.10.0
+
+[Standard.NTamd64.10.0]
+%DeviceName%=BC250Mcdm_Device, PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00
+%DeviceName%=BC250Mcdm_Device, PCI\VEN_1002&DEV_13FE
+
+[BC250Mcdm_Device.NT]
+CopyFiles=BC250Mcdm.CopyFiles
+FeatureScore=00
+
+[BC250Mcdm_Device.NT.Services]
+AddService=bc250mcdm,0x00000002,BC250Mcdm_Service_Inst
+
+[BC250Mcdm_Service_Inst]
+ServiceType=1
+StartType=3
+ErrorControl=0
+LoadOrderGroup=Video
+ServiceBinary=%12%\bc250mcdm.sys
+AddReg=BC250Mcdm.DriverReg
+
+[BC250Mcdm.DriverReg]
+HKR,Parameters\Probe,SchemaVersion,0x00010001,96
+HKR,Parameters\Driver,ActiveMode,0x00010001,1
+HKR,Parameters,SkipHwBringup,0x00010001,0
+
+[BC250Mcdm.CopyFiles]
+bc250mcdm.sys
+cyan_skillfish2_sdma.bin
+cyan_skillfish2_rlc.bin
+cyan_skillfish2_pfp.bin
+cyan_skillfish2_me.bin
+cyan_skillfish2_ce.bin
+cyan_skillfish2_mec.bin
+
+[Strings]
+ProviderName="BC-250 Driver Project"
+ManufacturerName="AMD BC-250 Project"
+DiskName="BC-250 MCDM Fail-Closed Development Driver"
+DeviceName="BC-250 MCDM Fail-Closed Development Adapter"
+ServiceName="BC-250 MCDM Fail-Closed Development Driver"

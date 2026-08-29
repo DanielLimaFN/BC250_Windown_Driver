@@ -158,6 +158,11 @@ typedef struct BC250_PFP_DIRECT_LOAD_EVIDENCE {
     uint32_t RegisterRestorePassed;
     uint32_t MemoryRestorePassed;
     uint32_t PhysicalReady;
+    /* Mascaras PFP/ME/CE/CPC (bits 0..3) das operacoes de I-Cache que o
+     * hardware confirmou. 0x0F = os quatro engines confirmaram. */
+    uint32_t IcacheInvalidateEntryMask;
+    uint32_t IcacheInvalidateUnhaltMask;
+    uint32_t IcachePrimeUnhaltMask;
 } BC250_PFP_DIRECT_LOAD_EVIDENCE;
 
 typedef struct BC250_DXGK_ACTIVE_CONTEXT {

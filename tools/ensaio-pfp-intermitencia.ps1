@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Ensaio F4d - caracteriza a falha intermitente do PFP (PC em loop 0x17F5 vs assentado 0x284).
 
@@ -76,9 +76,16 @@ $deviceGlob = 'PCI\VEN_1002&DEV_13FE*'
 
 # Assinaturas conhecidas do PC final do PFP (secao 2.1 do STATUS consolidado).
 $PC_SETTLED   = 0x00000284
-$PC_LOOP_A    = 0x000017F5
-$PC_LOOP_B    = 0x000017F6
+$PC_LOOP_A    = 0x000017F4
+$PC_LOOP_B    = 0x000017F5
+$PC_LOOP_C    = 0x000017F6
 $PC_STALL_OLD = 0x0000041E
+# Loop de fetch de instrucoes do PFP (doc 95). Distinto do loop alto 0x17Fx.
+$PC_FETCH_LO  = 0x00000218
+$PC_FETCH_HI  = 0x0000021B
+# Estado herdado que 171/171 capturas validas do corpus tinham antes do direct
+# load: PFP|ME|CE em HALT. Qualquer outro valor significa CP ja' em execucao.
+$ME_CNTL_HALTED = 0x15000000
 
 function To-Hex32 {
     param($Value)
@@ -87,9 +94,15 @@ function To-Hex32 {
 }
 
 function Get-PfpVerdict {
-    param([uint32]$PcLast, [uint32]$Transitions)
+    param([uint32]$PcLast, [uint32]$Transitions, [uint32]$Samples)
     if ($PcLast -eq $PC_SETTLED)   { return 'OK-SETTLED' }
-    if ($PcLast -eq $PC_LOOP_A -or $PcLast -eq $PC_LOOP_B) { return 'FAIL-LOOP' }
+    if ($PcLast -eq $PC_LOOP_A -or $PcLast -eq $PC_LOOP_B -or $PcLast -eq $PC_LOOP_C) {
+        # Mesmo PC, dois modos de falha distintos: com muitas amostras e no maximo
+        # uma transicao, o microengine nao esta em loop -- esta parado.
+        if ($Samples -ge 8 -and $Transitions -le 1) { return 'FAIL-FROZEN' }
+        return 'FAIL-LOOP'
+    }
+    if ($PcLast -ge $PC_FETCH_LO -and $PcLast -le $PC_FETCH_HI) { return 'FAIL-FETCH-LOOP' }
     if ($PcLast -eq $PC_STALL_OLD) { return 'FAIL-STALL-OLD' }
     if ($PcLast -eq 0)             { return 'FAIL-NO-START' }
     return 'FAIL-UNKNOWN'
@@ -275,8 +288,8 @@ Write-Host ''
 Write-Host ("Executando {0} ciclos de StartDevice sem reboot." -f $Iterations) -ForegroundColor Cyan
 Write-Host ("Saida: {0}" -f $OutFile)
 Write-Host ''
-Write-Host 'iter  status  PC-final  trans  RPTR/WPTR   fence-CP            HQD  veredito'
-Write-Host '----  ------  --------  -----  ----------  ------------------  ---  ------------------'
+Write-Host 'iter  status  PC-final  trans/amostras  RPTR/WPTR   fence-CP            HQD  IC inv/prime  ME_CNTL/PC antes    veredito'
+Write-Host '----  ------  --------  --------------  ----------  ------------------  ---  ------------  ------------------  ------------------'
 
 $rows       = [System.Collections.Generic.List[object]]::new()
 $firstFail  = 0
@@ -311,6 +324,12 @@ for ($i = 1; $i -le $Iterations; $i++) {
     $fence     = 0
     $hqdTriad  = 0
     $hqdStatus = -1
+    $samples   = 0
+    $icInvEntry  = -1
+    $icInvUnhalt = -1
+    $icPrime     = -1
+    $meCntlBefore = -1
+    $pcBefore     = 0
 
     if ($null -ne $p.PSObject.Properties['PfpDirectStatus'])         { $pfpStatus = [int]$p.PfpDirectStatus }
     if ($null -ne $p.PSObject.Properties['PfpDirectPcLast'])         { $pcLast    = [uint32]$p.PfpDirectPcLast }
@@ -320,8 +339,20 @@ for ($i = 1; $i -le $Iterations; $i++) {
     if ($null -ne $p.PSObject.Properties['PfpDirectRb0FenceAfter'])  { $fence     = [uint32]$p.PfpDirectRb0FenceAfter }
     if ($null -ne $p.PSObject.Properties['HqdActiveTriadPassed'])    { $hqdTriad  = [uint32]$p.HqdActiveTriadPassed }
     if ($null -ne $p.PSObject.Properties['HqdActiveStatus'])         { $hqdStatus = [int]$p.HqdActiveStatus }
+    if ($null -ne $p.PSObject.Properties['PfpDirectPcSamples'])      { $samples   = [uint32]$p.PfpDirectPcSamples }
+    if ($null -ne $p.PSObject.Properties['PfpDirectIcInvEntryMask']) { $icInvEntry  = [int]$p.PfpDirectIcInvEntryMask }
+    if ($null -ne $p.PSObject.Properties['PfpDirectIcInvUnhaltMask']){ $icInvUnhalt = [int]$p.PfpDirectIcInvUnhaltMask }
+    if ($null -ne $p.PSObject.Properties['PfpDirectIcPrimeUnhaltMask']) { $icPrime  = [int]$p.PfpDirectIcPrimeUnhaltMask }
+    if ($null -ne $p.PSObject.Properties['PfpDirectMeCntlBefore'])   { $meCntlBefore = [uint32]$p.PfpDirectMeCntlBefore }
+    if ($null -ne $p.PSObject.Properties['PfpDirectPcBefore'])       { $pcBefore     = [uint32]$p.PfpDirectPcBefore }
 
-    $verdict = Get-PfpVerdict $pcLast $trans
+    $verdict = Get-PfpVerdict $pcLast $trans $samples
+
+    # O direct load pressupoe herdar o CP em HALT no PC 0. Sem isso o ensaio nao
+    # esta medindo o carregador, e sim um CP que ja' estava rodando (doc 95).
+    if ($meCntlBefore -ge 0 -and ($meCntlBefore -ne $ME_CNTL_HALTED -or $pcBefore -ne 0)) {
+        $verdict = "FAIL-INHERITED-ACTIVE ($verdict)"
+    }
 
     # Consistencia da hipotese: PC=0x284 <=> PfpDirectStatus=0. Divergir aqui e' um achado.
     $predicted = ($verdict -eq 'OK-SETTLED')
@@ -333,14 +364,29 @@ for ($i = 1; $i -le $Iterations; $i++) {
     $color = 'Green'
     if (-not $actual) { $color = 'Red' }
 
-    Write-Host ("{0,4}  {1,6}  {2}  {3,5}  {4,4}/{5,-5}  {6}  {7,3}  {8}" -f `
-        $i, $pfpStatus, (To-Hex32 $pcLast), $trans, $rptr, $wptr, (To-Hex32 $fence), $hqdTriad, $verdict) -ForegroundColor $color
+    $icText = ("{0}/{1}" -f $icInvUnhalt, $icPrime)
+    if ($icInvUnhalt -lt 0) { $icText = 'AUSENTE' }
+
+    $inhText = 'AUSENTE'
+    if ($meCntlBefore -ge 0) {
+        $inhText = ("{0}/{1}" -f (To-Hex32 ([uint32]$meCntlBefore)), (To-Hex32 $pcBefore))
+    }
+
+    Write-Host ("{0,4}  {1,6}  {2}  {3,6}/{4,-7}  {5,4}/{6,-5}  {7}  {8,3}  {9,-12}  {10,-18}  {11}" -f `
+        $i, $pfpStatus, (To-Hex32 $pcLast), $trans, $samples, $rptr, $wptr, (To-Hex32 $fence), `
+        $hqdTriad, $icText, $inhText, $verdict) -ForegroundColor $color
 
     $rows.Add([pscustomobject]@{
         Iteration      = $i
         PfpDirectStatus= $pfpStatus
         PfpPcLast      = (To-Hex32 $pcLast)
         PfpPcTransitions = $trans
+        PfpPcSamples   = $samples
+        IcInvEntryMask = $icInvEntry
+        IcInvUnhaltMask= $icInvUnhalt
+        IcPrimeUnhaltMask = $icPrime
+        MeCntlBefore   = (To-Hex32 ([uint32][math]::Max($meCntlBefore,0)))
+        PfpPcBefore    = (To-Hex32 $pcBefore)
         Rb0RptrAfter   = $rptr
         Rb0WptrApplied = $wptr
         Rb0FenceAfter  = (To-Hex32 $fence)
@@ -360,11 +406,24 @@ for ($i = 1; $i -le $Iterations; $i++) {
 
 $rows | Export-Csv -LiteralPath $OutFile -NoTypeInformation -Encoding UTF8
 
+# Gate de instrumentacao: um ensaio que nao mede nada se parece com hardware
+# falhando. Se os campos de I-Cache nao chegaram, o binario carregado e' antigo
+# e nenhuma conclusao sobre a cache pode ser tirada desta corrida.
+$semIc = @($rows | Where-Object { $_.IcInvUnhaltMask -lt 0 }).Count
+if ($semIc -gt 0) {
+    Write-Host ''
+    Write-Host ("AVISO: {0}/{1} ciclos sem PfpDirectIcInvUnhaltMask." -f $semIc, $rows.Count) -ForegroundColor Yellow
+    Write-Host '       O driver carregado e anterior a instrumentacao de I-Cache.' -ForegroundColor Yellow
+    Write-Host '       Reconstrua e reinstale a imagem de laboratorio antes de concluir.' -ForegroundColor Yellow
+}
+
 # ------------------------------------------------------------------ RESUMO --
 
 $total    = $rows.Count
 $okCount  = @($rows | Where-Object { $_.PfpDirectStatus -eq 0 }).Count
 $loop     = @($rows | Where-Object { $_.Verdict -like 'FAIL-LOOP*' }).Count
+$frozen   = @($rows | Where-Object { $_.Verdict -like 'FAIL-FROZEN*' }).Count
+$inherit  = @($rows | Where-Object { $_.Verdict -like 'FAIL-INHERITED-ACTIVE*' }).Count
 $diverge  = @($rows | Where-Object { $_.Verdict -like '*!DIVERGE*' }).Count
 
 Write-Host ''
@@ -372,6 +431,14 @@ Write-Host '=== RESUMO ===' -ForegroundColor Cyan
 Write-Host ("  Ciclos executados     : {0}" -f $total)
 Write-Host ("  Sucessos (status=0)   : {0}" -f $okCount)
 Write-Host ("  Falhas modo LOOP      : {0}" -f $loop)
+Write-Host ("  Falhas modo CONGELADO : {0}" -f $frozen)
+Write-Host ("  CP herdado EM EXECUCAO: {0}" -f $inherit)
+if ($inherit -gt 0) {
+    Write-Host ''
+    Write-Host 'ATENCAO: o CP nao chegou em HALT no PC 0. O direct load foi aplicado' -ForegroundColor Yellow
+    Write-Host '         sobre um CP ja em execucao, condicao ausente das 177 capturas' -ForegroundColor Yellow
+    Write-Host '         historicas. Reinicie a maquina antes de tirar conclusoes.' -ForegroundColor Yellow
+}
 if ($firstFail -gt 0) {
     Write-Host ("  Primeira falha em     : iteracao {0}" -f $firstFail) -ForegroundColor Yellow
 } else {
