@@ -24,7 +24,7 @@ barra só cria a ilusão de que algo está "quase lá" quando a prova está em z
 Área                              Implementado           Provado (tripé)        Escopo real da prova
 ---------------------------------------------------------------------------------------------------------
 Base Geral Pré-WDDM (Lab)         ██████████████████▋░ 93%  █████████████████▋░░ 88%  Bancada isolada
-SDMA0 (engine, bancada)           ███████████████████░ 95%  ███████████████████░ 95%  RPTR=WPTR=68 + fence + 4dw
+SDMA0 (engine + display vivo)     ███████████████████░ 95%  ███████████████████░ 95%  Tripe COM display ativo (2.0)
 GCVM/VMID8 (mecanismo MMIO)       ██████████████████░░ 90%  ██████████████████░░ 90%  Invalidate/ACK + PTE rollback
 GCVM sob VidMm (F3, produção)     ███████░░░░░░░░░░░░░ 35%  ░░░░░░░░░░░░░░░░░░░░  0%  Sem paging sob pressão
 CP / PM4 Ring 0 (bancada)         █████████████████░░░ 85%  ███████████████░░░░░ 75%  110/167; falha intermitente
@@ -37,8 +37,9 @@ IH / Monitored Fences / TDR       ░░░░░░░░░░░░░░░�
 =========================================================================================================
 Veredito Global: NÃO VALIDADO EM HARDWARE (produção)
   Provados em bancada: SDMA, CP Ring 0, GCVM/VMID8 e a fila de compute MEC/HQD (tripé, 26x)
-  Bloqueio atual: falha intermitente do PFP (seção 2) — gargalo único de CP e compute
-  Não provados: dispatch de shader, convergência display+compute, IH/TDR, robustez do 3.24
+  CONVERGENCIA PARCIAL: SDMA fecha o tripé COM o display vivo, sem tela preta (seção 2.0)
+  Bloqueio atual: carregar o firmware do CP sem invalidar o Engine 0
+  Não provados: dispatch de shader, CP com display vivo, IH/TDR, robustez do 3.24
 =========================================================================================================
 ```
 
@@ -55,6 +56,63 @@ e isso precisa ser homologado ou corrigido.**
 > **Esta seção substitui a recomendação anterior (soak do display).** A auditoria do corpus
 > revelou uma falha intermitente no PFP que é pré-requisito de tudo o mais — inclusive do
 > compute, que **já fecha o tripé** quando o PFP sobe limpo (seção 3.4).
+
+### 2.0 CONVERGÊNCIA PARCIAL DEMONSTRADA — SDMA com o display vivo (2026-08-29)
+
+> **Isto revisa a premissa da seção 6.** Display e compute **não são** globalmente
+> incompatíveis. O SDMA já convive com o display servido pelo `bc250mcdm`.
+
+Ensaio executado em 2026-08-29, com `bc250mcdm` em Código 0 servindo o display
+(`SkipHwBringup=1`) e o serviço de kernel `bc250compute` carregado simultaneamente.
+Ferramenta: `tools\monitor\bc250_silicon_runner.exe` (IOCTL sobre `\\.\Bc250Compute`).
+
+**TESTE 1 — SDMA0: tripé completo, com o monitor ligado**
+
+```text
+UCode Checksum : 0xAB6305C6 (valido)
+WPTR Ring      : 0 -> 68
+RPTR Ring      : 0 -> 68          <- RPTR == WPTR ESTRITO
+Fence Fisica   : 0xBC250123       <- gravada pela GPU em VRAM
+Bytes Copiados : 16 bytes em 0.095 ms, integridade conferida
+```
+
+Estado do display **depois** do ensaio: `servico=bc250mcdm`, `ConfigManagerErrorCode=0`,
+`DmmPresentStatus=0`, `DmmCommitStatus=0`, **zero eventos de display/TDR desde o boot**.
+A tela não apagou.
+
+**Por que funcionou**: o caminho do `bc250compute` **não invalida o Engine 0** — não há
+nenhuma ocorrência de `GCVM_INVALIDATE` em `bc250_compute_service.c`. A causa-raiz nº 2 da
+seção 6 está ausente desse caminho. Note também que ele **escreve em `R_RLC_CNTL`**
+([`bc250_compute_service.c:713`](driver/wdk/bc250_compute_service.c:713)) e ainda assim o
+display sobreviveu — a proibição da causa-raiz nº 3 vale para o `StartDevice`, não para
+escrita em runtime.
+
+**TESTE 2 — CP PM4: não consumiu**
+
+```text
+WPTR Ring : 0 -> 16
+RPTR Ring : 0 -> 0          <- ring nao consumido
+Fence EOP : 0x43DAFFFE      <- permaneceu envenenada
+Tempo     : 198.8 ms (polling esgotado)
+```
+
+**Cuidado ao interpretar**: essa assinatura (`RPTR=0/16`, fence envenenada) é idêntica à do
+modo de falha do PFP da seção 2.1 — **mas quase certamente não é a mesma causa**. Com
+`SkipHwBringup=1` o `StartDevice` retorna cedo e o **PFP direct load nunca rodou neste boot**:
+o CP está sem ucode. Ring sem firmware não consome pacotes. O SDMA funcionou justamente por
+ter ucode próprio válido (`checksum=0xAB6305C6`).
+
+Atribuir essa falha à intermitência seria erro de diagnóstico. São hipóteses distintas e o
+ensaio ainda não as separa.
+
+**Consequência para o F7 — o problema é mais específico do que o documento dizia**
+
+Não é "display e compute não convergem". É: **o caminho que carrega o firmware do CP (PFP
+direct load) é que derruba o display** — porque é ele que invalida o ENG0 e escreve em
+aperturas proibidas durante o arranque. O compute em si já convive.
+
+F7 se reduz a um problema bem menor: **carregar o firmware do CP sem invalidar o Engine 0**.
+O SDMA é a prova de existência de que a coexistência é possível.
 
 ### 2.1 A assinatura é binária e determinística
 
@@ -151,7 +209,55 @@ ensaio é **read-only**. Ferramenta: `tools\soak-bc250mcdm-display.ps1`.
 | Mudança de modo em runtime | ⬜ | `CommitVidPn` só foi exercitado no modo nativo |
 | Watchdog de rollback ainda armado | ⬜ | Confirmar que a reversão para `BasicDisplay` continua viva |
 
-### 2.6 Descoberta: não existe instrumento de runtime no driver
+### 2.6 ACHADO P0 — bugcheck `0x124` encerrou a sessão mais longa com o driver
+
+Levantado em 2026-08-29 ao tentar creditar tempo de uptime já decorrido para o F4c.
+**A sessão mais longa com o driver carregado não terminou limpa — terminou em erro fatal de
+hardware.**
+
+Histórico de boots (`Kernel-General` 12/13) e desligamentos sujos (`Kernel-Power` 41):
+
+| Janela | Duração | Fim |
+|---|---|---|
+| 28/08 23:41 → 29/08 ~08:35 | **~8,9 h** (driver gravado 23:50) | **`Kernel-Power` 41, BugcheckCode 292 = `0x124`** |
+| 29/08 08:35 → agora | 1,8 h | em curso, limpa |
+
+Detalhes do evento (`29/08/2026 08:35:23`):
+
+```text
+BugcheckCode         = 292  (0x124  WHEA_UNCORRECTABLE_ERROR)
+BugcheckParameter1   = 0x10
+BugcheckInfoFromEFI  = true
+PowerButtonTimestamp = 0
+LongPowerButtonPressDetected = false
+```
+
+**Por que isso importa:**
+
+1. **É inédito na janela de 7 dias.** Há 54 registros de `Kernel-Power` 41 em 7 dias, mas
+   51 deles têm `BugcheckCode=0` — reset físico/queda de energia, coerentes com o fluxo de
+   desenvolvimento de dar hard reset após tela preta. Os outros são três `0xC4`
+   (`DRIVER_VERIFIER_DETECTED_VIOLATION`) de 22/08, já registrados em `docs/evidence/`.
+   **O `0x124` aparece uma única vez, e é o mais recente.**
+2. **Não há dump.** `BugcheckInfoFromEFI=true` indica que o registro veio do firmware; o
+   único `MEMORY.DMP` na máquina é de 22/08. Sem dump, não há análise de causa raiz.
+3. **Não houve aviso no nível de display.** A varredura da janela 23:41→08:35 não achou
+   nenhum evento de `Display`/`dxgkrnl`/TDR. Foi de saudável a fatal sem degradação visível.
+4. **`WHEA_UNCORRECTABLE_ERROR` é erro de hardware**, não de software — MCE de CPU, erro
+   fatal de PCIe, ou similar. **Não é atribuível ao driver com a evidência disponível**, e
+   seria desonesto afirmar que é. Mas ocorreu ao fim da sessão mais longa com o driver
+   carregado, num alvo que é uma placa de mineração em plataforma modificada.
+
+**Consequência direta para o F4c**: não é possível creditar as ~8,9 h como soak aprovado.
+A janela terminou em erro fatal. O critério de soak passa a exigir **também** ausência de
+`Kernel-Power` 41 com `BugcheckCode != 0` na janela.
+
+**Ações**: (a) verificar se o `0x124` reincide — só a repetição distingue evento isolado de
+padrão; (b) conferir se a captura de dump completo está armada, para que uma reincidência
+renda material de análise; (c) não tratar como bug do driver até haver evidência que ligue
+os dois.
+
+### 2.7 Descoberta: não existe instrumento de runtime no driver
 
 Verificado empiricamente em 2026-08-29: amostrando os **100 campos** de
 `Parameters\Probe` com 20 s de intervalo e o driver ativo, **nenhum campo muda**. A telemetria
@@ -440,7 +546,7 @@ Linux/Vulkan/Mesa), mas com modelo de driver fundamentalmente diferente.
 | **F4d** — **Caracterizar a intermitência do PFP** *(PRÓXIMA AÇÃO)* | Descobrir por que o PFP entra em loop em `0x17F5` em vez de assentar em `0x284` | ⬜ 0% — **sem código novo, só ensaio** | Seção 2; assinatura 110/110 |
 | **F4c** — Robustez do display 3.24 *(em paralelo)* | Reboot próprio, soak, suspend/resume, mode change | ⬜ 0% — **sem código novo, só ensaio** | Seção 2.4 |
 | **F5a** — **Detecção de hang + reset mínimo** *(cindida de F5)* | Não travar a máquina quando o compute falhar com display vivo | ⬜ 0% — **paralela a F7** | — |
-| **F7** — Convergência Display + Compute | Contrato de mapa VRAM; bring-up sem tela preta | ⬜ 0% | Causa raiz mapeada (doc 21 + `bc250_pfp_direct_load.c:886`) |
+| **F7** — Convergência Display + Compute | Contrato de mapa VRAM; bring-up sem tela preta | 🟡 **SDMA convergiu** (seção 2.0); falta o CP | Causa raiz mapeada (doc 21 + `bc250_pfp_direct_load.c:886`) |
 | **F5b** — IH ring real + monitored fences | Conclusão assíncrona real, sem polling de user mode | ⬜ 0% físico | Não iniciado |
 | **F6** — SDMA pelo Dxgkrnl | SDMA como engine real do miniport | ⬜ 0% (motor provado, integração não) | Doc 92: broker/lease ainda ABI-only |
 | **F8a** — MEC/HQD: PM4 na fila de compute | Submissão por doorbell + fence VRAM | ✅ **Tripé fechado 26x** | `status=0 RPTR/WPTR=11/11 fence=BC250123 triad=1` (seção 3.4) |
@@ -524,8 +630,9 @@ nada com o monitor ligado — e essa é a demo que normalmente se espera ver fun
 | 7 | **Doc 92 e código em desacordo sobre GFXOFF** — doc manda mailbox `0x15`/`0x14`, código declara `GfxOffApplicable=0` com justificativa SMU 11.8 | P2 | seção 2.3 |
 | 8 | Homologar ou corrigir o critério `RPTR >= cursor - 1` do CP — **fazer depois de P0**, apertar o gate antes do diagnóstico gera falhas inseparáveis | P2 | seção 4.1 |
 | 9 | **1.152 linhas não commitadas** em `bc250_compute_service.c` (+784), `bc250_active_miniport.c` (+77) e outros, sobre `771d108`. Commitar ou stashar antes dos ensaios, para que o resultado tenha um SHA de referência. | P1 | `git status` |
-| 10 | **Não existe instrumento de runtime** — os 100 campos de `Parameters\Probe` são retrato de `StartDevice` e nenhum muda com o driver ativo. Sem contador vivo não há como provar liveness de VSync nem de fence. Pré-requisito natural de F5b. | P1 | seção 2.6 |
-| 11 | Ensaio F4d exige `SkipHwBringup=0`, o que religa o bring-up no dispositivo que serve o display — decisão de bancada com risco de tela preta | **P0** | seção 2.3 |
+| 10 | **Não existe instrumento de runtime** — os 100 campos de `Parameters\Probe` são retrato de `StartDevice` e nenhum muda com o driver ativo. Sem contador vivo não há como provar liveness de VSync nem de fence. Pré-requisito natural de F5b. | P1 | seção 2.7 |
+| 11 | **Bugcheck `0x124` (WHEA_UNCORRECTABLE_ERROR) encerrou a sessão de ~8,9 h em 29/08 08:35.** Inédito em 7 dias, sem dump, sem aviso de display. Verificar reincidência antes de creditar qualquer soak. | **P0** | seção 2.6 |
+| 12 | Ensaio F4d exige `SkipHwBringup=0`, o que religa o bring-up no dispositivo que serve o display — decisão de bancada com risco de tela preta | **P0** | seção 2.3 |
 
 ### 9.1 Ferramentas criadas para estas pendências
 
