@@ -24,6 +24,17 @@ void * __cdecl memcpy(void *Destination, const void *Source, size_t Length)
 
 #define CHECK(Expression) do { if (!(Expression)) return 0; } while (0)
 
+void Bc250ProbeRecord(int Field, unsigned long Value)
+{
+    (void)Field;
+    (void)Value;
+}
+
+void Bc250ProbeRecordFirstFailure(long Status)
+{
+    (void)Status;
+}
+
 static int Bc250RunDisplayVidPnTest(void)
 {
     DRIVER_INITIALIZATION_DATA initData;
@@ -49,7 +60,7 @@ static int Bc250RunDisplayVidPnTest(void)
     /* 2. Test QueryChildRelations */
     CHECK(Bc250DxgkDdiQueryChildRelations(NULL, &childDescriptor, sizeof(childDescriptor)) == STATUS_SUCCESS);
     CHECK(childDescriptor.ChildDeviceType == TypeVideoOutput);
-    CHECK(childDescriptor.ChildUid == 1);
+    CHECK(childDescriptor.ChildUid == 0);
     CHECK(childDescriptor.ChildCapabilities.HpdAwareness == HpdAwarenessAlwaysConnected);
 
     /* 3. Test QueryChildStatus */

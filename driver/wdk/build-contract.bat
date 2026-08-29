@@ -264,8 +264,13 @@ echo [cc] bc250_mcdm_callbacks.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_mcdm_callbacks.obj" "%SRCDIR%bc250_mcdm_callbacks.c"
 if errorlevel 1 exit /b 1
 
-echo [cc] bc250_display_ddi.c
+echo [cc] bc250_display_ddi.c (offline)
 cl %CFLAGS% /Fo"%ODIR%\bc250_display_ddi.obj" "%SRCDIR%bc250_display_ddi.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_display_ddi.c (Dxgk registration)
+cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 ^
+  /Fo"%ODIR%\bc250_display_ddi_driver.obj" "%SRCDIR%bc250_display_ddi.c"
 if errorlevel 1 exit /b 1
 
 echo [cc] bc250_probe_telemetry.c ^(offline^)
@@ -1316,7 +1321,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_vram_probe_transaction.obj" ^
   "%ODIR%\bc250_dxgk_readonly_ddi.obj" ^
   "%ODIR%\bc250_mcdm_callbacks.obj" ^
-  "%ODIR%\bc250_display_ddi.obj" ^
+  "%ODIR%\bc250_display_ddi_driver.obj" ^
   "%ODIR%\bc250_probe_telemetry_driver.obj" ^
   "%ODIR%\bc250_gcvm_backing_transaction.obj" ^
   "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^

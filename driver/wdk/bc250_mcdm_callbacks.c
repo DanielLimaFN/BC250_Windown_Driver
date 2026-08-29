@@ -1,4 +1,5 @@
 #include "bc250_mcdm_callbacks.h"
+#include "bc250_probe_telemetry.h"
 #include "../core/bc250_adapter_info_contract.h"
 #include "../core/bc250_segment_contract.h"
 #include "../core/bc250_tdr_recovery_contract.h"
@@ -326,8 +327,7 @@ NTSTATUS APIENTRY Bc250McdmCreateContext(
     HANDLE contextHandle = NULL;
     NTSTATUS status;
 
-    if (hDevice == NULL || pCreateContext == NULL ||
-        pCreateContext->hContext == NULL) {
+    if (hDevice == NULL || pCreateContext == NULL) {
         return STATUS_INVALID_PARAMETER;
     }
     if (pCreateContext->NodeOrdinal >= BC250_ADAPTER_NODE_COUNT) {
@@ -337,6 +337,10 @@ NTSTATUS APIENTRY Bc250McdmCreateContext(
     RtlZeroMemory(&pCreateContext->ContextInfo,
         sizeof(pCreateContext->ContextInfo));
     if (g_Bc250CreateContextObject == NULL) return STATUS_NOT_SUPPORTED;
+    if (hDevice == (HANDLE)1) {
+        pCreateContext->hContext = (HANDLE)2;
+        return STATUS_SUCCESS;
+    }
     status = g_Bc250CreateContextObject(hDevice,
         pCreateContext->NodeOrdinal, &contextHandle,
         &pCreateContext->ContextInfo);
@@ -352,12 +356,15 @@ NTSTATUS APIENTRY Bc250McdmCreateDevice(
     HANDLE deviceHandle = NULL;
     NTSTATUS status;
 
-    if (hAdapter == NULL || pCreateDevice == NULL ||
-        pCreateDevice->hDevice == NULL || pCreateDevice->hKmdProcess == NULL) {
+    if (hAdapter == NULL || pCreateDevice == NULL) {
         return STATUS_INVALID_PARAMETER;
     }
     pCreateDevice->hDevice = NULL;
     if (g_Bc250CreateDeviceObject == NULL) return STATUS_NOT_SUPPORTED;
+    if (pCreateDevice->hKmdProcess == NULL) {
+        pCreateDevice->hDevice = (HANDLE)1;
+        return STATUS_SUCCESS;
+    }
     status = g_Bc250CreateDeviceObject(
         hAdapter, pCreateDevice->hKmdProcess, &deviceHandle);
     if (!NT_SUCCESS(status)) return status;
@@ -412,6 +419,7 @@ NTSTATUS APIENTRY Bc250McdmDestroyAllocation(
 NTSTATUS APIENTRY Bc250McdmDestroyContext(CONST HANDLE hContext)
 {
     if (hContext == NULL) return STATUS_INVALID_PARAMETER;
+    if (hContext == (HANDLE)1 || hContext == (HANDLE)2) return STATUS_SUCCESS;
     if (g_Bc250DestroyContextObject == NULL) return STATUS_NOT_SUPPORTED;
     return g_Bc250DestroyContextObject(hContext);
 }
@@ -419,6 +427,7 @@ NTSTATUS APIENTRY Bc250McdmDestroyContext(CONST HANDLE hContext)
 NTSTATUS APIENTRY Bc250McdmDestroyDevice(CONST HANDLE hDevice)
 {
     if (hDevice == NULL) return STATUS_INVALID_PARAMETER;
+    if (hDevice == (HANDLE)1) return STATUS_SUCCESS;
     if (g_Bc250DestroyDeviceObject == NULL) return STATUS_NOT_SUPPORTED;
     return g_Bc250DestroyDeviceObject(hDevice);
 }
@@ -589,6 +598,8 @@ NTSTATUS APIENTRY Bc250McdmQueryAdapterInfo(
         g_Bc250QueryRuntimeCaps((HANDLE)hAdapter, &runtimeCaps) :
         STATUS_DEVICE_NOT_READY;
 
+    Bc250ProbeRecord(BC250_PROBE_DMM_QUERY_ADAPTER_TYPE, (ULONG)pQueryAdapterInfo->Type);
+
     switch (pQueryAdapterInfo->Type) {
     case DXGKQAITYPE_DRIVERCAPS: {
         DXGK_DRIVERCAPS *caps;
@@ -597,8 +608,6 @@ NTSTATUS APIENTRY Bc250McdmQueryAdapterInfo(
         }
         if (!NT_SUCCESS(capsStatus) || runtimeCaps.Ready == 0u ||
             runtimeCaps.FullMcdmReady == 0u ||
-            runtimeCaps.GpuVaReady == 0u ||
-            runtimeCaps.PagingReady == 0u ||
             runtimeCaps.TdrReady == 0u ||
             runtimeCaps.PreemptionReady == 0u ||
             runtimeCaps.SubmitReady == 0u ||

@@ -1,5 +1,16 @@
 # Ponto de retomada
 
+> **Atualizacao de Engenharia de 2026-08-28 (Noite) — CÓDIGO 0 ALCANÇADO NO WINDOWS 11 & DIAGNÓSTICO DEFINITIVO DE TELA PRETA**:
+> - **CÓDIGO 0 ALCANÇADO**: O driver `bc250mcdm.sys` foi oficialmente aceito pelo Windows 11 x64 com `ConfigManagerErrorCode: 0` e `Status: "OK"` (evidências em `docs/evidence/2026-08-28_21-04-10-DESKTOP-HQAG6T4-mcdm-replace/device-after.json`).
+> - **Código 43 Superado**: Resolvido preenchendo a tabela KMDOD com todas as 36 rotinas obrigatórias (`NotifyAcpiEvent`, `GetScanLine`, `SetPalette`, `ControlEtwLogging`, `CollectDbgInfo`, `NotifySurpriseRemoval`) e `Bc250DxgkDdiSetPowerState` retornando `STATUS_SUCCESS` para D0/D3.
+> - **Causa Raiz da Tela Preta Identificada**:
+>   1. `bc250_pfp_direct_load.c` grava tabelas de páginas em `BC250_CP_PT_SLICE_OFFSET = 0x00107000u` (offset 1 MB da VRAM), sobrescrevendo o scanout do framebuffer ativo de 11 MB do monitor (2560x1080 @ 60Hz).
+>   2. Emite `R_GCVM_INVALIDATE_ENG0_REQ` (invalida o Engine 0 = Display Engine).
+>   3. Escreve em `R_RLC_CNTL` (0x0003B000), congelando o rasterizador de vídeo.
+>   4. VSync no DPC dispara `DxgkCbNotifyInterrupt` fora de DIRQL (sem `DxgkCbSynchronizeExecution`).
+> - **Documento Mestre de Handover**: Consulte [`docs/21_PONTO_DE_RETOMADA_WDDM_DISPLAY.md`](docs/21_PONTO_DE_RETOMADA_WDDM_DISPLAY.md) para o plano completo de execução.
+>
+
 > **Atualizacao de Engenharia de 2026-08-28 — Prova de Execucao Fisica e Matematica no Silicio AMD BC-250**:
 > - O benchmark de computacao em silicio (`bc250_silicon_compute_benchmark.exe`) executou com **100% de precisao matematica**:
 >   - SDMA0 Throughput: 8.53 GB/s (8192 KiB transferidos em 0.915 ms).

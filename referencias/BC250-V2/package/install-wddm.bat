@@ -5,6 +5,6 @@ echo ========================================================
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install-wddm.ps1" %*
 set "INSTALL_RESULT=%errorlevel%"
 echo.
-echo Resultado do instalador: %INSTALL_RESULT% (BuildId esperado: 8211934)
+echo Resultado do instalador: %INSTALL_RESULT% (BuildId esperado: 8281809)
 pause
 exit /b %INSTALL_RESULT%

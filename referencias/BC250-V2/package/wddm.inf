@@ -8,7 +8,7 @@ Signature="$Windows NT$"
 Class=Display
 ClassGUID={4d36e968-e325-11ce-bfc1-08002be10318}
 Provider=%ProviderString%
-DriverVer=08/21/2026, 1.0.0821.1935
+DriverVer=08/28/2026, 1.0.0828.1809
 CatalogFile=wddm.cat
 PnpLockdown=1
 

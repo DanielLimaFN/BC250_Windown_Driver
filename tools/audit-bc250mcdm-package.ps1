@@ -90,7 +90,7 @@ foreach ($signedPath in @($packageSys, $packageCat)) {
 
 $inf = Get-Content -LiteralPath $packageInf -Raw
 foreach ($needle in @(
-    'Class=ComputeAccelerator',
+    'Class=Display',
     'PCI\VEN_1002&DEV_13FE',
     'AddService=bc250mcdm,',
     'ServiceBinary=%12%\bc250mcdm.sys',

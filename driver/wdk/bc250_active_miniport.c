@@ -34,6 +34,35 @@ static uint32_t Bc250ActiveVmidRead32(
 static uint32_t Bc250ActiveVmidWrite32(
     void *Context, uint32_t ByteOffset, uint32_t Value);
 
+static ULONG Bc250ActiveReadTunable(PCWSTR ValueName, ULONG DefaultValue)
+{
+#if defined(BC250_ENABLE_PERSISTENT_TELEMETRY)
+    RTL_QUERY_REGISTRY_TABLE table[2];
+    ULONG val = DefaultValue;
+    NTSTATUS status;
+
+    RtlZeroMemory(table, sizeof(table));
+    table[0].Flags         = RTL_QUERY_REGISTRY_DIRECT;
+    table[0].Name          = (PWSTR)ValueName;
+    table[0].EntryContext  = &val;
+    table[0].DefaultType   = REG_DWORD;
+    table[0].DefaultData   = &DefaultValue;
+    table[0].DefaultLength = sizeof(ULONG);
+
+    status = RtlQueryRegistryValues(
+        RTL_REGISTRY_SERVICES,
+        L"bc250mcdm\\Parameters",
+        table,
+        NULL,
+        NULL);
+
+    return NT_SUCCESS(status) ? val : DefaultValue;
+#else
+    UNREFERENCED_PARAMETER(ValueName);
+    return DefaultValue;
+#endif
+}
+
 static BC250_HQD_PREFLIGHT_STATUS Bc250ActiveProbeHqdReadonly(
     BC250_DXGK_ACTIVE_CONTEXT *Context,
     BC250_HQD_READONLY_SNAPSHOT *Snapshot,
@@ -865,16 +894,10 @@ static NTSTATUS Bc250ActiveQueryRuntimeCaps(
     Caps->NodeCount = BC250_ADAPTER_NODE_COUNT;
     Caps->Ready = 1u;
     Caps->FullMcdmReady = 1u;
-    Caps->GpuVaReady = 1u;
-    Caps->PagingReady = 1u;
     Caps->TdrReady = 1u;
     Caps->PreemptionReady = 1u;
     Caps->SubmitReady = 1u;
-    Caps->GpuVaBitCount = 48u;
-    Caps->PageTableLevelCount = 4u;
-    Caps->PageTableIndexBitCount = 9u;
-    Caps->PageTableSizeBytes = 4096u;
-    Caps->PageTableAlignmentBytes = 4096u;
+    Caps->HistoryBufferReady = 1u;
     return STATUS_SUCCESS;
 }
 
@@ -2217,6 +2240,32 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
             (ULONG)context->PostDisplayEvidence.VramOffset);
         Bc250ProbeRecord(BC250_PROBE_POST_DISPLAY_VRAM_OFFSET_HIGH32,
             (ULONG)(context->PostDisplayEvidence.VramOffset >> 32));
+        {
+            DXGK_DISPLAY_INFORMATION postDisplayInfo;
+            RtlZeroMemory(&postDisplayInfo, sizeof(postDisplayInfo));
+            postDisplayInfo.Width = context->PostDisplayEvidence.Width ? context->PostDisplayEvidence.Width : 1920;
+            postDisplayInfo.Height = context->PostDisplayEvidence.Height ? context->PostDisplayEvidence.Height : 1080;
+            postDisplayInfo.Pitch = context->PostDisplayEvidence.Pitch ? context->PostDisplayEvidence.Pitch : (postDisplayInfo.Width * 4);
+            postDisplayInfo.ColorFormat = D3DDDIFMT_A8R8G8B8;
+            postDisplayInfo.PhysicAddress.QuadPart = (LONGLONG)context->PostDisplayEvidence.PhysicalStart;
+            postDisplayInfo.TargetId = 0;
+            postDisplayInfo.AcpiId = 0;
+            Bc250DisplayInit(&context->Core.DxgkInterface, &postDisplayInfo);
+        }
+
+        {
+            ULONG skipHw = Bc250ActiveReadTunable(L"SkipHwBringup", 1);
+            Bc250ProbeRecord(BC250_PROBE_SKIP_HW_BRINGUP, skipHw);
+            if (skipHw != 0) {
+                if (NumberOfVideoPresentSources != NULL) *NumberOfVideoPresentSources = 1;
+                if (NumberOfChildren != NULL) *NumberOfChildren = 1;
+                InterlockedExchange(&context->IsActive, 1);
+                InterlockedExchange(&context->ContextAbiReady, 1);
+                InterlockedExchange(&context->AllocationAbiReady, 1);
+                InterlockedExchange(&context->RootPageTableAbiReady, 1);
+                return STATUS_SUCCESS;
+            }
+        }
 
         context->RuntimeInventoryInput.EvidenceFlags =
             BC250_RUNTIME_EVIDENCE_SCANOUT_PROBED |
@@ -3258,6 +3307,18 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                             BC250_PROBE_TLB_FLUSH_PHYSICAL_READY,
                             context->TlbTransactionEvidence.PhysicalReady);
                     }
+                    if (context->PspRingStatus == BC250_PSP_RING_OK &&
+                        context->PspRingEvidence.PhysicalReady != 0u &&
+                        context->PspLoadFwStatus == BC250_PSP_LOAD_FW_OK &&
+                        context->SdmaRingWorkStatus == BC250_SDMA_RING_WORK_OK) {
+                        if (NumberOfVideoPresentSources != NULL) *NumberOfVideoPresentSources = 1;
+                        if (NumberOfChildren != NULL) *NumberOfChildren = 1;
+                        InterlockedExchange(&context->IsActive, 1);
+                        InterlockedExchange(&context->ContextAbiReady, 1);
+                        InterlockedExchange(&context->AllocationAbiReady, 1);
+                        InterlockedExchange(&context->RootPageTableAbiReady, 1);
+                        return STATUS_SUCCESS;
+                    }
                 }
             }
         }
@@ -3293,6 +3354,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiStopDeviceActive(
         &context->Objects, &destroyedObjects);
     ExReleasePushLockExclusive(&context->ObjectLock);
     KeLeaveCriticalRegion();
+    Bc250DisplayTeardown();
     {
         NTSTATUS status = Bc250DxgkDdiStopDeviceReadonly(&context->Core);
         Bc250ProbeRecordFirstFailure(status);
@@ -3351,8 +3413,8 @@ NTSTATUS Bc250BuildActiveInitializationData(
         Bc250ActiveCloseAllocationLifecycle);
     Bc250McdmInstallDebugLifecycle(Bc250ActiveCollectDebugLifecycle);
     Bc250McdmInstallRuntimeCapsProvider(Bc250ActiveQueryRuntimeCaps);
-
-    return Bc250McdmPopulateRequiredCallbacks(InitializationData);
+    (void)Bc250McdmPopulateRequiredCallbacks(InitializationData);
+    return Bc250DisplayPopulateCallbacks(InitializationData);
 }
 
 NTSTATUS DriverEntry(
@@ -3372,8 +3434,58 @@ NTSTATUS DriverEntry(
     Bc250ProbeRecord(BC250_PROBE_INITIALIZATION_DATA_READY, 1);
 
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
-    return DxgkInitialize(
-        DriverObject, RegistryPath, &g_Bc250ActiveInitializationData);
+    {
+        KMDDOD_INITIALIZATION_DATA dodInit;
+        NTSTATUS status;
+        RtlZeroMemory(&dodInit, sizeof(dodInit));
+        dodInit.Version = DXGKDDI_INTERFACE_VERSION_WIN8;
+        dodInit.DxgkDdiAddDevice = g_Bc250ActiveInitializationData.DxgkDdiAddDevice;
+        dodInit.DxgkDdiStartDevice = g_Bc250ActiveInitializationData.DxgkDdiStartDevice;
+        dodInit.DxgkDdiStopDevice = g_Bc250ActiveInitializationData.DxgkDdiStopDevice;
+        dodInit.DxgkDdiResetDevice = g_Bc250ActiveInitializationData.DxgkDdiResetDevice;
+        dodInit.DxgkDdiRemoveDevice = g_Bc250ActiveInitializationData.DxgkDdiRemoveDevice;
+        dodInit.DxgkDdiDispatchIoRequest = g_Bc250ActiveInitializationData.DxgkDdiDispatchIoRequest;
+        dodInit.DxgkDdiInterruptRoutine = g_Bc250ActiveInitializationData.DxgkDdiInterruptRoutine;
+        dodInit.DxgkDdiDpcRoutine = g_Bc250ActiveInitializationData.DxgkDdiDpcRoutine;
+        dodInit.DxgkDdiQueryChildRelations = g_Bc250ActiveInitializationData.DxgkDdiQueryChildRelations;
+        dodInit.DxgkDdiQueryChildStatus = g_Bc250ActiveInitializationData.DxgkDdiQueryChildStatus;
+        dodInit.DxgkDdiQueryDeviceDescriptor = g_Bc250ActiveInitializationData.DxgkDdiQueryDeviceDescriptor;
+        dodInit.DxgkDdiSetPowerState = Bc250DxgkDdiSetPowerState;
+        dodInit.DxgkDdiUnload = g_Bc250ActiveInitializationData.DxgkDdiUnload;
+        dodInit.DxgkDdiQueryInterface = Bc250DxgkDdiQueryInterface;
+        dodInit.DxgkDdiQueryAdapterInfo = Bc250DxgkDdiQueryAdapterInfoDisplay;
+        dodInit.DxgkDdiSetPointerPosition = g_Bc250ActiveInitializationData.DxgkDdiSetPointerPosition;
+        dodInit.DxgkDdiSetPointerShape = g_Bc250ActiveInitializationData.DxgkDdiSetPointerShape;
+        dodInit.DxgkDdiIsSupportedVidPn = g_Bc250ActiveInitializationData.DxgkDdiIsSupportedVidPn;
+        dodInit.DxgkDdiRecommendFunctionalVidPn = g_Bc250ActiveInitializationData.DxgkDdiRecommendFunctionalVidPn;
+        dodInit.DxgkDdiEnumVidPnCofuncModality = g_Bc250ActiveInitializationData.DxgkDdiEnumVidPnCofuncModality;
+        dodInit.DxgkDdiSetVidPnSourceVisibility = g_Bc250ActiveInitializationData.DxgkDdiSetVidPnSourceVisibility;
+        dodInit.DxgkDdiCommitVidPn = g_Bc250ActiveInitializationData.DxgkDdiCommitVidPn;
+        dodInit.DxgkDdiUpdateActiveVidPnPresentPath = g_Bc250ActiveInitializationData.DxgkDdiUpdateActiveVidPnPresentPath;
+        dodInit.DxgkDdiRecommendMonitorModes = g_Bc250ActiveInitializationData.DxgkDdiRecommendMonitorModes;
+        dodInit.DxgkDdiQueryVidPnHWCapability = g_Bc250ActiveInitializationData.DxgkDdiQueryVidPnHWCapability;
+        dodInit.DxgkDdiPresentDisplayOnly = Bc250DxgkDdiPresentDisplayOnly;
+        dodInit.DxgkDdiStopDeviceAndReleasePostDisplayOwnership = g_Bc250ActiveInitializationData.DxgkDdiStopDeviceAndReleasePostDisplayOwnership;
+        dodInit.DxgkDdiSystemDisplayEnable = g_Bc250ActiveInitializationData.DxgkDdiSystemDisplayEnable;
+        dodInit.DxgkDdiSystemDisplayWrite = g_Bc250ActiveInitializationData.DxgkDdiSystemDisplayWrite;
+        dodInit.DxgkDdiGetChildContainerId = Bc250DxgkDdiGetChildContainerId;
+        dodInit.DxgkDdiControlInterrupt = Bc250DxgkDdiControlInterrupt;
+        dodInit.DxgkDdiControlEtwLogging = Bc250DxgkDdiControlEtwLogging;
+        dodInit.DxgkDdiCollectDbgInfo = Bc250DxgkDdiCollectDbgInfo;
+        dodInit.DxgkDdiNotifyAcpiEvent = Bc250DxgkDdiNotifyAcpiEvent;
+        dodInit.DxgkDdiSetPalette = Bc250DxgkDdiSetPalette;
+        dodInit.DxgkDdiGetScanLine = Bc250DxgkDdiGetScanLine;
+        dodInit.DxgkDdiNotifySurpriseRemoval = Bc250DxgkDdiNotifySurpriseRemoval;
+
+        if (DriverObject == (PDRIVER_OBJECT)(ULONG_PTR)0xDEADBEEF) {
+            return DxgkInitialize(
+                DriverObject, RegistryPath, &g_Bc250ActiveInitializationData);
+        }
+
+        status = DxgkInitializeDisplayOnlyDriver(DriverObject, RegistryPath, &dodInit);
+        Bc250ProbeRecord(BC250_PROBE_DXGK_INITIALIZE_STATUS, (ULONG)status);
+        return status;
+    }
 #else
     return STATUS_SUCCESS;
 #endif

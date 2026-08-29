@@ -9,8 +9,6 @@
 static PVOID g_MmioBase = NULL;
 static PHYSICAL_ADDRESS g_MmioPhysBase;
 static ULONG g_MmioLength = 0x80000u; /* 512 KiB */
-#define VRAM_POOL_SIZE (64 * 1024 * 1024) /* 64 MiB */
-static PUCHAR g_VramPool = NULL;
 int _fltused = 0x9875;
 
 static DRIVER_UNLOAD Bc250ComputeUnload;
@@ -104,19 +102,12 @@ static NTSTATUS Bc250ComputeDeviceControl(
         }
         hwInfo = (PBC250_HARDWARE_INFO)buffer;
         RtlZeroMemory(hwInfo, sizeof(BC250_HARDWARE_INFO));
-        hwInfo->CpuCoreCount = 8;
-        hwInfo->GpuCuCount = 24;
-        hwInfo->GpuWgpCount = 12;
-        hwInfo->VramTotalMiB = 512;
-        hwInfo->CpuVisibleMiB = 256;
-        hwInfo->RebarSupportedMask = 0x700;
-        hwInfo->RebarSelectedMiB = 256;
-        hwInfo->MmioPhysicalBase = 0xFE800000u;
+        /* Do not manufacture a topology or clocks.  The active MCDM miniport
+         * owns PCI resource discovery and is the only supported live backend. */
         hwInfo->MmioLength = g_MmioLength;
-        hwInfo->GfxoffState = 0;
-        hwInfo->GpuClockMhz = 2000;
-        hwInfo->MemoryClockMhz = 1750;
-        RtlCopyMemory(hwInfo->SiliconName, "AMD BC-250 (Oberon RDNA2)", 26);
+        RtlCopyMemory(hwInfo->SiliconName,
+                      "BC250 physical backend unavailable",
+                      sizeof("BC250 physical backend unavailable"));
         info = sizeof(BC250_HARDWARE_INFO);
         status = STATUS_SUCCESS;
         break;
@@ -200,23 +191,18 @@ static NTSTATUS Bc250ComputeDeviceControl(
 
     case IOCTL_BC250_ALLOC_VRAM: {
         PBC250_ALLOC_VRAM_REQ allocReq;
-        static uint64_t g_VramNextOffset = 0x100000ull;
-        uint64_t align;
-        uint64_t alignedOffset;
-
         if (buffer == NULL || inLength < sizeof(BC250_ALLOC_VRAM_REQ) ||
             outLength < sizeof(BC250_ALLOC_VRAM_REQ)) {
             status = STATUS_BUFFER_TOO_SMALL;
             break;
         }
         allocReq = (PBC250_ALLOC_VRAM_REQ)buffer;
-        align = allocReq->Alignment ? allocReq->Alignment : 4096ull;
-        alignedOffset = (g_VramNextOffset + align - 1ull) & ~(align - 1ull);
-        allocReq->AllocatedGpuVa = 0x000000F400000000ull + alignedOffset;
-        g_VramNextOffset = alignedOffset + allocReq->SizeBytes;
-        allocReq->Success = 1u;
+        UNREFERENCED_PARAMETER(allocReq);
+        /* A CPU pool must never be presented as GPU VRAM. */
+        allocReq->AllocatedGpuVa = 0u;
+        allocReq->Success = 0u;
         info = sizeof(BC250_ALLOC_VRAM_REQ);
-        status = STATUS_SUCCESS;
+        status = STATUS_NOT_SUPPORTED;
         break;
     }
 
@@ -228,9 +214,9 @@ static NTSTATUS Bc250ComputeDeviceControl(
             break;
         }
         freeReq = (PBC250_FREE_VRAM_REQ)buffer;
-        freeReq->Success = 1u;
+        freeReq->Success = 0u;
         info = sizeof(BC250_FREE_VRAM_REQ);
-        status = STATUS_SUCCESS;
+        status = STATUS_NOT_SUPPORTED;
         break;
     }
 
@@ -242,51 +228,9 @@ static NTSTATUS Bc250ComputeDeviceControl(
             break;
         }
         copyReq = (PBC250_SDMA_COPY_REQ)buffer;
-        copyReq->ExecutionSuccess = 0u;
-
-        if (g_VramPool != NULL && copyReq->ByteCount > 0) {
-            __try {
-                if (copyReq->SourceGpuVa >= 0x000000F400000000ull &&
-                    copyReq->DestinationGpuVa < 0x000000F400000000ull) {
-                    /* D2H: GPU VRAM -> Host CPU User Buffer */
-                    uint64_t vramOffset = copyReq->SourceGpuVa - 0x000000F400000000ull;
-                    if (vramOffset + copyReq->ByteCount <= VRAM_POOL_SIZE) {
-                        RtlCopyMemory((PVOID)(ULONG_PTR)copyReq->DestinationGpuVa,
-                                      g_VramPool + vramOffset, copyReq->ByteCount);
-                        copyReq->ExecutionSuccess = 1u;
-                    }
-                } else if (copyReq->DestinationGpuVa >= 0x000000F400000000ull &&
-                           copyReq->SourceGpuVa < 0x000000F400000000ull) {
-                    /* H2D: Host CPU User Buffer -> GPU VRAM */
-                    uint64_t vramOffset = copyReq->DestinationGpuVa - 0x000000F400000000ull;
-                    if (vramOffset + copyReq->ByteCount <= VRAM_POOL_SIZE) {
-                        RtlCopyMemory(g_VramPool + vramOffset,
-                                      (PVOID)(ULONG_PTR)copyReq->SourceGpuVa, copyReq->ByteCount);
-                        copyReq->ExecutionSuccess = 1u;
-                    }
-                } else if (copyReq->DestinationGpuVa >= 0x000000F400000000ull &&
-                           copyReq->SourceGpuVa >= 0x000000F400000000ull) {
-                    /* D2D: GPU VRAM -> GPU VRAM */
-                    uint64_t srcOffset = copyReq->SourceGpuVa - 0x000000F400000000ull;
-                    uint64_t dstOffset = copyReq->DestinationGpuVa - 0x000000F400000000ull;
-                    if (srcOffset + copyReq->ByteCount <= VRAM_POOL_SIZE &&
-                        dstOffset + copyReq->ByteCount <= VRAM_POOL_SIZE) {
-                        RtlCopyMemory(g_VramPool + dstOffset, g_VramPool + srcOffset, copyReq->ByteCount);
-                        copyReq->ExecutionSuccess = 1u;
-                    }
-                }
-            } __except (EXCEPTION_EXECUTE_HANDLER) {
-                copyReq->ExecutionSuccess = 0u;
-            }
-        }
-
-        copyReq->FenceObserved = copyReq->FenceValue;
-        copyReq->WptrBefore = 0;
-        copyReq->WptrAfter = 68;
-        copyReq->RptrBefore = 0;
-        copyReq->RptrAfter = 68;
+        RtlZeroMemory(copyReq, sizeof(*copyReq));
         info = sizeof(BC250_SDMA_COPY_REQ);
-        status = STATUS_SUCCESS;
+        status = STATUS_NOT_SUPPORTED;
         break;
     }
 
@@ -298,23 +242,9 @@ static NTSTATUS Bc250ComputeDeviceControl(
             break;
         }
         dispReq = (PBC250_COMPUTE_DISPATCH_REQ)buffer;
-        dispReq->IsaValidationPassed = 1u;
-        dispReq->ExecutionSuccess = 0u;
-
-        if (g_VramPool != NULL) {
-            /* Stage GFX10 Compute Shader binary at 256-byte aligned offset */
-            uint32_t *shaderStaging = (uint32_t *)(g_VramPool + 0x10000);
-            shaderStaging[0] = 0xBF810000u; /* s_endpgm */
-            dispReq->ExecutionSuccess = 1u;
-        }
-
-        dispReq->FenceObserved = dispReq->FenceValue ? dispReq->FenceValue : 0xBC250123u;
-        dispReq->WptrBefore = 0;
-        dispReq->WptrAfter = 16;
-        dispReq->RptrBefore = 0;
-        dispReq->RptrAfter = 16;
+        RtlZeroMemory(dispReq, sizeof(*dispReq));
         info = sizeof(BC250_COMPUTE_DISPATCH_REQ);
-        status = STATUS_SUCCESS;
+        status = STATUS_NOT_SUPPORTED;
         break;
     }
 
@@ -418,11 +348,6 @@ static VOID Bc250ComputeUnload(PDRIVER_OBJECT DriverObject)
 {
     UNICODE_STRING dosDeviceName;
 
-    if (g_VramPool != NULL) {
-        ExFreePoolWithTag(g_VramPool, '052B');
-        g_VramPool = NULL;
-    }
-
     if (g_MmioBase != NULL) {
         MmUnmapIoSpace(g_MmioBase, g_MmioLength);
         g_MmioBase = NULL;
@@ -499,12 +424,6 @@ NTSTATUS DriverEntry(
 
     g_MmioPhysBase.QuadPart = 0xFE800000ll;
     g_MmioBase = MmMapIoSpace(g_MmioPhysBase, g_MmioLength, MmNonCached);
-
-#pragma warning(suppress: 4996)
-    g_VramPool = (PUCHAR)ExAllocatePoolWithTag(NonPagedPoolNx, VRAM_POOL_SIZE, '052B');
-    if (g_VramPool != NULL) {
-        RtlZeroMemory(g_VramPool, VRAM_POOL_SIZE);
-    }
 
     deviceObject->Flags |= DO_BUFFERED_IO;
     deviceObject->Flags &= ~DO_DEVICE_INITIALIZING;

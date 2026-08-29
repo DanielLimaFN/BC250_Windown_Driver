@@ -808,31 +808,16 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
         KeMemoryBarrier();
     }
 
-    /* 4b-2. Ativação de GCVM Context 0 (VMID 0) com Host Physical Address da Page Table (conforme Linux e dbg/hw.c) */
+    /* 4b-2. Preservação de GCVM Context 0 (VMID 0) para o Framebuffer UEFI GOP */
+    /* Não alterar R_GCVM_CONTEXT0_CNTL nem disparar R_GRBM_SOFT_RESET durante a operação de display */
     {
-        uint64_t ptPa = firmwarePa + BC250_CP_PT_SLICE_OFFSET;
-        (void)Bc250PfpWrite(Context, R_GCVM_CONTEXT0_PT_BASE_LO, (uint32_t)(ptPa | 1u));
-        (void)Bc250PfpWrite(Context, R_GCVM_CONTEXT0_PT_BASE_HI, (uint32_t)(ptPa >> 32));
-        (void)Bc250PfpWrite(Context, R_GCVM_CONTEXT0_PT_START_LO, 0u);
-        (void)Bc250PfpWrite(Context, R_GCVM_CONTEXT0_PT_END_LO, 511u);
-        (void)Bc250PfpWrite(Context, R_GCVM_CONTEXT0_CNTL, 0x007FFE01u);
-        /* Invalidação da TLB do VMID 0 */
-        (void)Bc250PfpWrite(Context, R_GCVM_INVALIDATE_ENG0_REQ, 0x00F80001u);
-        for (i = 0u; i < 100u; ++i) {
-            if (Bc250PfpRead(Context, R_GCVM_INVALIDATE_ENG0_ACK, &value) && (value & 1u) != 0u) break;
-            KeStallExecutionProcessor(1u);
-        }
+        /* Status inicial de observabilidade */
+        (void)Bc250PfpRead(Context, R_GCVM_CONTEXT0_CNTL, &value);
     }
 
-    /* 4c. Soft-reset do CP e inicialização pós-PSP canônica (Linux gfx_v10_0) */
+    /* 4c. Inicialização pós-PSP canônica (Linux gfx_v10_0) sem GRBM soft reset */
     {
         uint32_t cpStat = 0u, grbmStat = 0u, grbmStat2 = 0u;
-
-        /* Soft-reset do CP via GRBM_SOFT_RESET (bit 0 = SOFT_RESET_CP) */
-        (void)Bc250PfpWrite(Context, R_GRBM_SOFT_RESET, 1u);
-        KeStallExecutionProcessor(50u);
-        (void)Bc250PfpWrite(Context, R_GRBM_SOFT_RESET, 0u);
-        KeStallExecutionProcessor(50u);
 
         /* Inicialização canônica pós-PSP */
         (void)Bc250PfpWrite(Context, R_CP_MAX_CONTEXT, 7u);

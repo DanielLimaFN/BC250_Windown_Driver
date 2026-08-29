@@ -20,6 +20,12 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
 #define CHECK(Expression) do { if (!(Expression)) return 1; } while (0)
 #endif
 
+void Bc250ProbeRecord(int Field, unsigned long Value)
+{
+    (void)Field;
+    (void)Value;
+}
+
 static DRIVER_INITIALIZATION_DATA g_initData;
 static DXGKARG_QUERYADAPTERINFO g_queryInfo;
 static DXGKARG_GETNODEMETADATA g_nodeMetadata;

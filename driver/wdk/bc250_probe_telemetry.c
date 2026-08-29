@@ -654,6 +654,16 @@ static PCWSTR Bc250ProbeFieldName(BC250_PROBE_FIELD Field)
     case BC250_PROBE_HQD_WPTR_DIAG_READ_CALLS: return L"HqdWptrDiagReadCalls";
     case BC250_PROBE_HQD_WPTR_DIAG_WRITE_CALLS: return L"HqdWptrDiagWriteCalls";
     case BC250_PROBE_HQD_WPTR_DIAG_PHYSICAL_READY: return L"HqdWptrDiagPhysicalReady";
+    case BC250_PROBE_DMM_QUERY_ADAPTER_TYPE: return L"DmmQueryAdapterType";
+    case BC250_PROBE_DMM_CHILD_RELATIONS_CALLED: return L"DmmChildRelationsCalled";
+    case BC250_PROBE_DMM_CHILD_STATUS_CALLED: return L"DmmChildStatusCalled";
+    case BC250_PROBE_DMM_DESCRIPTOR_CALLED: return L"DmmDescriptorCalled";
+    case BC250_PROBE_DMM_VIDPN_QUERY_CALLED: return L"DmmVidPnQueryCalled";
+    case BC250_PROBE_DMM_QAI_OUTSIZE: return L"DmmQaiOutSize";
+    case BC250_PROBE_DMM_QAI_STATUS: return L"DmmQaiStatus";
+    case BC250_PROBE_DMM_DISPLAY_MAPPED: return L"DmmDisplayMapped";
+    case BC250_PROBE_DMM_VSYNC_COUNT: return L"DmmVsyncCount";
+    case BC250_PROBE_SKIP_HW_BRINGUP: return L"SkipHwBringup";
     default: return NULL;
     }
 }

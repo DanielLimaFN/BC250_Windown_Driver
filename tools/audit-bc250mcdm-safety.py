@@ -310,7 +310,7 @@ def main() -> int:
         require(recovery, needle, "active recovery coverage", errors)
 
     for needle in (
-        "Class=ComputeAccelerator",
+        "Class=Display",
         "PCI\\VEN_1002&DEV_13FE",
         "AddService=bc250mcdm,",
         "ServiceBinary=%12%\\bc250mcdm.sys",
