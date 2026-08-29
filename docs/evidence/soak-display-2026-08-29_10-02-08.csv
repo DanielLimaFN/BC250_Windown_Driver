@@ -1,0 +1,7 @@
+﻿"Timestamp","Service","ConfigMgrError","SkipHwBringup","DmmVsyncCount","DmmPresentStatus","DmmCommitStatus","DmmPresentEntered","Note","Sample","DisplayEvts","Situacao"
+"2026-08-29 10:02:09","bc250mcdm","0","1","2","0","0","1","","1","0","estavel"
+"2026-08-29 10:02:29","bc250mcdm","0","1","2","0","0","1","","2","0","estavel"
+"2026-08-29 10:02:49","bc250mcdm","0","1","2","0","0","1","","3","0","estavel"
+"2026-08-29 10:03:09","bc250mcdm","0","1","2","0","0","1","","4","0","estavel"
+"2026-08-29 10:03:29","bc250mcdm","0","1","2","0","0","1","","5","0","estavel"
+"2026-08-29 10:03:50","bc250mcdm","0","1","2","0","0","1","","6","0","estavel"

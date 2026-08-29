@@ -28,3 +28,7 @@ node_modules/
 # Temporary files
 *.tmp
 *~
+
+# Compute contract isolated build output
+driver/wdk/output_compute/
+tools/monitor/*.exe
