@@ -71,7 +71,7 @@ $root       = Split-Path -Parent $PSScriptRoot
 $probePath  = 'HKLM:\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Probe'
 $paramPath  = 'HKLM:\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters'
 $driverPath = Join-Path $env:SystemRoot 'System32\drivers\bc250mcdm.sys'
-$builtPath  = Join-Path $root 'driver\wdk\output\bc250mcdm.sys'
+$manifestPath = Join-Path $root 'driver\wdk\package\output_active.manifest.json'
 $deviceGlob = 'PCI\VEN_1002&DEV_13FE*'
 
 # Assinaturas conhecidas do PC final do PFP (secao 2.1 do STATUS consolidado).
@@ -187,27 +187,43 @@ if (Test-Path -LiteralPath $probePath) {
 }
 
 <#
-  O ensaio exercita o driver INSTALADO em System32\drivers, nao o que esta em
-  driver\wdk\output. Se o bind foi bloqueado - e o gate fail-closed bloqueia
-  sempre que ja' existe instalacao ativa - o build novo NAO entrou, e o ensaio
-  mediria o codigo antigo achando que mede o novo.
+  O ensaio exercita o driver INSTALADO em System32\drivers. Se o bind nao rodou
+  - e o gate fail-closed bloqueia sempre que o host nao esta limpo - o build novo
+  nao entrou, e o ensaio mediria o codigo antigo achando que mede o novo.
 
-  Foi exatamente o que quase aconteceu em 2026-08-29 com a troca do ENG17.
+  COMPARAR CONTRA O QUE: nao contra driver\wdk\output\bc250mcdm.sys. Esse e' o
+  binario ANTES da assinatura; build-bc250mcdm-package.ps1 assina o arquivo e o
+  hash muda. O que e' instalado e' o pacote assinado, cujo SHA256 esta em
+  output_active.manifest.json como PackageSysSha256 - a mesma fonte que
+  audit-bc250mcdm-failclosed-binding.ps1 usa.
+
+  Comparar com o build cru gera falso positivo: em 2026-08-29 o ensaio foi
+  bloqueado logo apos um bind bem-sucedido, com o driver correto instalado.
 #>
-if ((Test-Path -LiteralPath $driverPath) -and (Test-Path -LiteralPath $builtPath)) {
-    $hInst  = (Get-FileHash -LiteralPath $driverPath -Algorithm SHA256).Hash
-    $hBuilt = (Get-FileHash -LiteralPath $builtPath  -Algorithm SHA256).Hash
+if (Test-Path -LiteralPath $driverPath) {
+    $hInst = (Get-FileHash -LiteralPath $driverPath -Algorithm SHA256).Hash
     Write-Host ("  SYS instalado  : {0}  {1}" -f $hInst.Substring(0,16), (Get-Item $driverPath).LastWriteTime)
-    Write-Host ("  SYS compilado  : {0}  {1}" -f $hBuilt.Substring(0,16), (Get-Item $builtPath).LastWriteTime)
-    if ($hInst -ne $hBuilt) {
-        if ($AllowDriverMismatch) {
-            $warnings.Add('driver instalado DIVERGE do build local - prosseguindo por -AllowDriverMismatch; o ensaio mede o codigo INSTALADO')
-        } else {
-            $blockers.Add('driver instalado DIVERGE do build local: o ensaio mediria o codigo antigo. Instale o build (bind), ou passe -AllowDriverMismatch para ensaiar o instalado de proposito.')
+
+    $hPackage = $null
+    if (Test-Path -LiteralPath $manifestPath) {
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        if ($null -ne $manifest.PackageSysSha256) { $hPackage = $manifest.PackageSysSha256 }
+    }
+
+    if ($null -eq $hPackage) {
+        $warnings.Add('manifesto do pacote ausente ou sem PackageSysSha256 - nao foi possivel confirmar qual driver sera ensaiado')
+    } else {
+        Write-Host ("  SYS do pacote  : {0}  (manifesto assinado)" -f $hPackage.Substring(0,16))
+        if ($hInst -ne $hPackage) {
+            if ($AllowDriverMismatch) {
+                $warnings.Add('driver instalado DIVERGE do pacote assinado - prosseguindo por -AllowDriverMismatch; o ensaio mede o codigo INSTALADO')
+            } else {
+                $blockers.Add('driver instalado DIVERGE do pacote assinado: o ensaio mediria outro codigo. Rode stage + bind, ou passe -AllowDriverMismatch para ensaiar o instalado de proposito.')
+            }
         }
     }
 } else {
-    $warnings.Add('nao foi possivel comparar o SYS instalado com o build local')
+    $blockers.Add("bc250mcdm.sys ausente em $driverPath - nao ha driver instalado para ensaiar")
 }
 
 $recovery = Join-Path $root 'tools\BC250_RECOVERY.cmd'
