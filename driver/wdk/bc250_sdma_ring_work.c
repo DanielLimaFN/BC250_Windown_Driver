@@ -269,6 +269,75 @@ BC250_SDMA_RING_WORK_STATUS Bc250ActiveRunSdmaRingWork(
         status = BC250_SDMA_RING_WORK_INHERITED_ACTIVE;
         goto Cleanup;
     }
+    /* Recuperacao do latch EX_IDLE_POLL_TIMER_EXPIRE (bit 11 de STATUS_REG).
+     *
+     * Correlacao medida em 129 ciclos de 29/08: 3 falhas do SDMA, TODAS com o
+     * latch aceso na entrada, e ZERO falhas sem ele. Condicao necessaria, nao
+     * suficiente (2 das 5 ocorrencias sobreviveram).
+     *
+     * A simetria com o CP e' direta: la', o que destravou o motor foi um reset
+     * antes do bring-up. Aqui, um HALT/UNHALT controlado do F32 antes de
+     * programar o anel. Fica atras de SdmaWakeOnExIdle (default 0) e so' dispara
+     * quando o latch esta aceso — nao muda nada nos outros ciclos. */
+    /* Des-gating de clock ANTES de qualquer sondagem.
+     *
+     * Medido em 29/08 20:43: com EX_IDLE_POLL_TIMER_EXPIRE aceso na entrada, o
+     * bit sobrevive ao HALT/UNHALT do F32 E a 10 ms de espera
+     * (ExIdleClearPolls=10000 esgotados). Nao e' nivel transitorio nem estado do
+     * microengine: e' persistente e vem de fora dele.
+     *
+     * O suspeito imediato e' clock gating. Este estagio ja' escreve
+     * CLK_CTRL |= 0xFF000000, mas so' no meio da programacao do anel — depois de
+     * ja' termos sondado e tentado acordar um motor possivelmente sem clock.
+     * Aqui o mesmo write acontece primeiro. Atras de SdmaEarlyClkUngate. */
+    if (Context->SdmaEarlyClkUngate != 0u) {
+        uint32_t clk = 0u;
+        if (Bc250SdmaRead(Context, R_CLK_CTRL, &clk)) {
+            Evidence->ClkCtrlAtEntry = clk;
+            (void)Bc250SdmaWrite(Context, R_CLK_CTRL, clk | 0xFF000000u);
+            KeStallExecutionProcessor(50u);
+            Evidence->EarlyClkUngateApplied = 1u;
+        }
+    }
+
+    (void)Bc250SdmaRead(Context, R_STATUS, &Evidence->StatusAtEntry);
+    Evidence->ExIdleAtEntry =
+        (Evidence->StatusAtEntry & 0x00000800u) ? 1u : 0u;
+    if (Evidence->ExIdleAtEntry != 0u && Context->SdmaWakeOnExIdle != 0u) {
+        uint32_t f32 = 0u;
+        if (Bc250SdmaRead(Context, R_F32_CNTL, &f32)) {
+            (void)Bc250SdmaWrite(Context, R_F32_CNTL, f32 | F_F32_HALT);
+            KeStallExecutionProcessor(50u);
+            (void)Bc250SdmaWrite(Context, R_F32_CNTL, f32 & ~F_F32_HALT);
+            KeStallExecutionProcessor(50u);
+            Evidence->WakeApplied = 1u;
+        }
+        (void)Bc250SdmaRead(Context, R_STATUS, &Evidence->StatusAfterWake);
+
+        /* Medido em 29/08 20:29: o HALT/UNHALT do F32 NAO limpa o bit
+         * (wake aplicado=1, latch depois=1) e o ciclo falhou mesmo assim. Entao
+         * ou o bit e' um latch que so' outro mecanismo apaga, ou e' um NIVEL que
+         * reflete uma condicao em curso — e nivel se resolve esperando.
+         *
+         * Aqui espera-se ate' ~10 ms pelo bit cair, registrando quantos polls
+         * foram precisos. Se cair: e' nivel transitorio e o remedio e' esperar.
+         * Se nao cair em 10 ms: e' persistente e a origem esta fora do
+         * microengine (clock/power/SMU), nao em algo que este estagio controle. */
+        for (Evidence->ExIdleClearPolls = 0u;
+             Evidence->ExIdleClearPolls < 10000u;
+             ++Evidence->ExIdleClearPolls) {
+            uint32_t st = 0u;
+            if (Bc250SdmaRead(Context, R_STATUS, &st) &&
+                (st & 0x00000800u) == 0u) {
+                Evidence->StatusAfterWake = st;
+                break;
+            }
+            KeStallExecutionProcessor(1u);
+        }
+        Evidence->ExIdleAfterWake =
+            (Evidence->StatusAfterWake & 0x00000800u) ? 1u : 0u;
+    }
+
     RtlZeroMemory(packets, sizeof(packets));
     if (Bc250SdmaEmitWriteLinear(packets, 32u, &cursor,
             Evidence->WorkMcAddress + BC250_SDMA_DEST_OFFSET,
@@ -450,7 +519,13 @@ BC250_SDMA_RING_WORK_STATUS Bc250ActiveRunSdmaRingWork(
     (void)Bc250SdmaRead(Context, R_UTCL1_TIMEOUT,
         &Evidence->Utcl1TimeoutAfter);
     if (Evidence->RptrRegisterAfter != Evidence->WptrPublished) {
-        status = BC250_SDMA_RING_WORK_TIMEOUT;
+        /* Nao altera o comportamento — so' o nome do desfecho. Sair mais cedo
+         * quando o latch esta aceso seria errado: 2 das 3 ocorrencias mais
+         * recentes sobreviveram, entao abortar transformaria ciclos bons em
+         * falhas. Aqui apenas se distingue a causa provavel no relatorio. */
+        status = (Evidence->ExIdleAtEntry != 0u)
+            ? BC250_SDMA_RING_WORK_EX_IDLE_BLOCKED
+            : BC250_SDMA_RING_WORK_TIMEOUT;
         goto Restore;
     }
     if (Evidence->FenceObserved != Evidence->FenceExpected ||

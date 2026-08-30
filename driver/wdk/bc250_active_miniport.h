@@ -44,7 +44,13 @@ typedef enum BC250_SDMA_RING_WORK_STATUS {
     BC250_SDMA_RING_WORK_DATA_FAILED,
     BC250_SDMA_RING_WORK_RESTORE_FAILED,
     BC250_SDMA_RING_WORK_UNMAP_FAILED,
-    BC250_SDMA_RING_WORK_RELEASE_FAILED
+    BC250_SDMA_RING_WORK_RELEASE_FAILED,
+    /* 16 — o anel nao foi consumido E o motor ja' chegou com
+     * EX_IDLE_POLL_TIMER_EXPIRE aceso. Em 249 ciclos de 29/08, as 5 falhas do
+     * SDMA tiveram o bit e nenhuma ocorreu sem ele. Nome proprio para nao
+     * confundir "o motor ja' estava bloqueado antes de comecarmos" com "o anel
+     * nao foi consumido", que sao diagnosticos diferentes. */
+    BC250_SDMA_RING_WORK_EX_IDLE_BLOCKED
 } BC250_SDMA_RING_WORK_STATUS;
 
 typedef struct BC250_SDMA_RING_WORK_EVIDENCE {
@@ -79,6 +85,14 @@ typedef struct BC250_SDMA_RING_WORK_EVIDENCE {
     uint32_t CntlBefore;
     uint32_t CntlApplied;
     uint32_t ExIdlePollExpiredBefore;
+    uint32_t StatusAtEntry;
+    uint32_t ExIdleAtEntry;
+    uint32_t WakeApplied;
+    uint32_t StatusAfterWake;
+    uint32_t ExIdleAfterWake;
+    uint32_t ExIdleClearPolls;
+    uint32_t ClkCtrlAtEntry;
+    uint32_t EarlyClkUngateApplied;
     uint32_t ErrorLogBefore;
     uint32_t Utcl1ReadXnack0Before;
     uint32_t Utcl1WriteXnack0Before;
@@ -256,6 +270,8 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     uint32_t CpSoftReset;
     uint32_t CpVmid0PageTable;
     uint32_t SdmaAutoCtxSw;
+    uint32_t SdmaWakeOnExIdle;
+    uint32_t SdmaEarlyClkUngate;
     uint32_t TunableEnginePresent;
     uint32_t TunableSemaphorePresent;
     uint32_t TunableSoftResetPresent;

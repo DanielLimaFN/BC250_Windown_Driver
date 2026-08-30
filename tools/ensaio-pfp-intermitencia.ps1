@@ -94,6 +94,18 @@ param(
     [ValidateRange(-1, 1)]
     [int]$SdmaAutoCtxSw = -1,
 
+    # HALT/UNHALT do F32 quando o SDMA chega com EX_IDLE_POLL_TIMER_EXPIRE aceso.
+    # Em 129 ciclos, as 3 falhas do SDMA tiveram o latch e nenhuma falha ocorreu
+    # sem ele: condicao necessaria. Este e' o mesmo remedio que destravou o CP.
+    [ValidateRange(-1, 1)]
+    [int]$SdmaWakeOnExIdle = -1,
+
+    # Des-gating de CLK_CTRL antes de sondar o SDMA. O latch sobrevive ao
+    # HALT/UNHALT do F32 e a 10 ms de espera, entao a origem esta fora do
+    # microengine e clock e' o primeiro suspeito.
+    [ValidateRange(-1, 1)]
+    [int]$SdmaEarlyClkUngate = -1,
+
     [string]$OutFile
 )
 
@@ -366,7 +378,9 @@ function Set-Bc250Tunables {
             @{ Name = 'GcvmInvalidateSemaphore'; Value = $GcvmInvalidateSemaphore },
             @{ Name = 'CpSoftReset';             Value = $CpSoftReset },
             @{ Name = 'Vmid0PageTable';          Value = $Vmid0PageTable },
-            @{ Name = 'SdmaAutoCtxSw';           Value = $SdmaAutoCtxSw })) {
+            @{ Name = 'SdmaAutoCtxSw';           Value = $SdmaAutoCtxSw },
+            @{ Name = 'SdmaWakeOnExIdle';        Value = $SdmaWakeOnExIdle },
+            @{ Name = 'SdmaEarlyClkUngate';      Value = $SdmaEarlyClkUngate })) {
         if ($tun.Value -lt 0) { continue }
         Set-ItemProperty -Path $tk -Name $tun.Name -Value $tun.Value -Type DWord -Force
         $e = (Get-ItemProperty -LiteralPath $tk).PSObject.Properties[$tun.Name]
@@ -455,6 +469,8 @@ for ($i = 1; $i -le $Iterations; $i++) {
     # ciclos, porque o registro so' guarda o ultimo e o diferencial exige os dois.
     $sdStatB = -1; $sdRptrB = -1; $sdF32Ctl = -1; $sdF32F32 = -1
     $sdExIdle = -1; $sdCntlB = -1; $sdCntlA = -1
+    $sdExEntry = -1; $sdWake = -1; $sdExAfter = -1; $sdExPolls = -1
+    $sdClk = -1; $sdClkApplied = -1
     $sdF32Pc = -1; $sdF32Tr = -1; $sdRbCntl = -1; $sdHdr = -1
     $trace = @()
 
@@ -506,6 +522,12 @@ for ($i = 1; $i -le $Iterations; $i++) {
     if ($null -ne $p.PSObject.Properties['SdmaRingExIdlePollExpired'])  { $sdExIdle = [int]$p.SdmaRingExIdlePollExpired }
     if ($null -ne $p.PSObject.Properties['SdmaRingCntlBefore'])         { $sdCntlB = To-U32 $p.SdmaRingCntlBefore }
     if ($null -ne $p.PSObject.Properties['SdmaRingCntlApplied'])        { $sdCntlA = To-U32 $p.SdmaRingCntlApplied }
+    if ($null -ne $p.PSObject.Properties['SdmaRingExIdleAtEntry'])      { $sdExEntry = [int]$p.SdmaRingExIdleAtEntry }
+    if ($null -ne $p.PSObject.Properties['SdmaRingWakeApplied'])        { $sdWake = [int]$p.SdmaRingWakeApplied }
+    if ($null -ne $p.PSObject.Properties['SdmaRingExIdleAfterWake'])    { $sdExAfter = [int]$p.SdmaRingExIdleAfterWake }
+    if ($null -ne $p.PSObject.Properties['SdmaRingExIdleClearPolls'])   { $sdExPolls = [int]$p.SdmaRingExIdleClearPolls }
+    if ($null -ne $p.PSObject.Properties['SdmaRingClkCtrlAtEntry'])     { $sdClk = To-U32 $p.SdmaRingClkCtrlAtEntry }
+    if ($null -ne $p.PSObject.Properties['SdmaRingEarlyClkUngate'])     { $sdClkApplied = [int]$p.SdmaRingEarlyClkUngate }
     if ($null -ne $p.PSObject.Properties['SdmaRingRptrBefore'])         { $sdRptrB = [uint32]$p.SdmaRingRptrBefore }
     if ($null -ne $p.PSObject.Properties['SdmaF32ControlBefore'])       { $sdF32Ctl = To-U32 $p.SdmaF32ControlBefore }
     if ($null -ne $p.PSObject.Properties['SdmaF32F32Before'])           { $sdF32F32 = To-U32 $p.SdmaF32F32Before }
@@ -591,8 +613,13 @@ for ($i = 1; $i -le $Iterations; $i++) {
         # O estagio do CP roda atras de SdmaRingWorkStatus == OK. Quando o SDMA
         # falha, o carregador do CP nem e' chamado e a linha sai toda zerada.
         if ($sdmaStatus -gt 0) {
-            Write-Host ("        SDMA status={0} polls={1} WPTR/RPTR={2}/{3}   <- o CP foi PULADO, nao falhou" -f `
-                $sdmaStatus, $sdmaPolls, $sdmaWptr, $sdmaRptr) -ForegroundColor Red
+            $sdmaTxt = switch ($sdmaStatus) {
+                10 { 'TIMEOUT (anel nao consumido)' }
+                16 { 'EX_IDLE_BLOCKED (motor ja bloqueado ANTES do ensaio)' }
+                default { "codigo $sdmaStatus" }
+            }
+            Write-Host ("        SDMA {0}  polls={1} WPTR/RPTR={2}/{3}   <- o CP foi PULADO, nao falhou" -f `
+                $sdmaTxt, $sdmaPolls, $sdmaWptr, $sdmaRptr) -ForegroundColor Red
             Write-Host ("        SDMA herdado : STATUS_before={0} RPTR_before={1} F32ctl={2} F32={3} rbCntl={4} hdr={5} F32pc={6} tr={7}" -f `
                 (To-Hex32 ([uint32][math]::Max($sdStatB,0))), $sdRptrB, (To-Hex32 ([uint32][math]::Max($sdF32Ctl,0))), `
                 (To-Hex32 ([uint32][math]::Max($sdF32F32,0))), (To-Hex32 ([uint32][math]::Max($sdRbCntl,0))), `
@@ -606,6 +633,15 @@ for ($i = 1; $i -le $Iterations; $i++) {
                 } else {
                     Write-Host '        latches inalterados    : os XNACK sao residuais, nao deste ciclo' -ForegroundColor Yellow
                 }
+            }
+        }
+        if ($sdExEntry -eq 1) {
+            $exTxt = if ($sdExAfter -eq 0) { "CAIU apos $sdExPolls polls (~$sdExPolls us) - e NIVEL transitorio" }
+                     else { "PERSISTE apos $sdExPolls polls (~10 ms) - origem fora do microengine" }
+            Write-Host ("        SDMA EX_IDLE na entrada : wake aplicado={0}, {1}" -f $sdWake, $exTxt) -ForegroundColor Yellow
+            if ($sdClkApplied -ge 0) {
+                Write-Host ("        SDMA CLK_CTRL entrada   : {0}  des-gating aplicado={1}" -f `
+                    (To-Hex32 (To-U32 $sdClk)), $sdClkApplied) -ForegroundColor Yellow
             }
         }
         if ($cmpDw -ge 0) {
@@ -704,6 +740,12 @@ for ($i = 1; $i -le $Iterations; $i++) {
         SdmaRbCntl         = (To-Hex32 ([uint32][math]::Max($sdRbCntl,0)))
         SdmaRingHeader     = $sdHdr
         SdmaExIdlePollExpired = $sdExIdle
+        SdmaExIdleAtEntry  = $sdExEntry
+        SdmaWakeApplied    = $sdWake
+        SdmaExIdleAfterWake = $sdExAfter
+        SdmaExIdleClearPolls = $sdExPolls
+        SdmaClkCtrlAtEntry = (To-Hex32 (To-U32 $sdClk))
+        SdmaEarlyClkUngate = $sdClkApplied
         SdmaCntlBefore     = (To-Hex32 ([uint32][math]::Max($sdCntlB,0)))
         SdmaCntlApplied    = (To-Hex32 ([uint32][math]::Max($sdCntlA,0)))
         InvPollsStaging= $invPolls1
@@ -774,8 +816,19 @@ $exIdleBad = @($rows | Where-Object { $_.SdmaExIdlePollExpired -eq 1 }).Count
 if ($exIdleBad -ge 0) {
     Write-Host ("  EX_IDLE_POLL expirado : {0}   <- estado herdado pelo SDMA" -f $exIdleBad)
 }
+$wakeN = @($rows | Where-Object { $_.SdmaWakeApplied -eq 1 }).Count
+if ($wakeN -gt 0) {
+    $wakeCleared = @($rows | Where-Object { $_.SdmaWakeApplied -eq 1 -and $_.SdmaExIdleAfterWake -eq 0 }).Count
+    $wakeSaved = @($rows | Where-Object { $_.SdmaWakeApplied -eq 1 -and $_.SdmaWorkStatus -eq 0 }).Count
+    Write-Host ("  Wake do SDMA aplicado : {0}   limpou o latch: {1}   ciclo salvo: {2}" -f `
+        $wakeN, $wakeCleared, $wakeSaved) -ForegroundColor Cyan
+}
 if ($sdmaFail -gt 0) {
+    $sdmaBlocked = @($rows | Where-Object { $_.SdmaWorkStatus -eq 16 }).Count
     Write-Host ("  Falhas do SDMA        : {0}   <- bloqueiam o estagio do CP" -f $sdmaFail) -ForegroundColor Yellow
+    if ($sdmaBlocked -gt 0) {
+        Write-Host ("    dessas, EX_IDLE_BLOCKED : {0}   (motor ja bloqueado na entrada)" -f $sdmaBlocked) -ForegroundColor Yellow
+    }
 }
 Write-Host ("  Falhas modo LOOP      : {0}" -f $loop)
 Write-Host ("  Falhas modo CONGELADO : {0}" -f $frozen)

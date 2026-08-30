@@ -2409,6 +2409,10 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
              * kick do anel). O upstream faz o contrario durante o bring-up. */
             context->SdmaAutoCtxSw =
                 Bc250ActiveReadTunableChecked(L"SdmaAutoCtxSw", 1u, &present);
+            context->SdmaWakeOnExIdle =
+                Bc250ActiveReadTunableChecked(L"SdmaWakeOnExIdle", 0u, &present);
+            context->SdmaEarlyClkUngate =
+                Bc250ActiveReadTunableChecked(L"SdmaEarlyClkUngate", 0u, &present);
             Bc250ProbeRecord(BC250_PROBE_TUNABLE_READ_OK,
                 (context->TunableEnginePresent << 0) |
                 (context->TunableSemaphorePresent << 1) |
@@ -3463,6 +3467,18 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                         context->SdmaRingWorkEvidence.CntlApplied);
                     Bc250ProbeRecord(BC250_PROBE_SDMA_RING_EX_IDLE_EXPIRED,
                         context->SdmaRingWorkEvidence.ExIdlePollExpiredBefore);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_EX_IDLE_AT_ENTRY,
+                        context->SdmaRingWorkEvidence.ExIdleAtEntry);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_WAKE_APPLIED,
+                        context->SdmaRingWorkEvidence.WakeApplied);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_EX_IDLE_AFTER_WAKE,
+                        context->SdmaRingWorkEvidence.ExIdleAfterWake);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_EX_IDLE_CLEAR_POLLS,
+                        context->SdmaRingWorkEvidence.ExIdleClearPolls);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_CLK_AT_ENTRY,
+                        context->SdmaRingWorkEvidence.ClkCtrlAtEntry);
+                    Bc250ProbeRecord(BC250_PROBE_SDMA_RING_EARLY_CLK_UNGATE,
+                        context->SdmaRingWorkEvidence.EarlyClkUngateApplied);
                     Bc250ProbeRecord(BC250_PROBE_SDMA_RING_RD_XNACK0_BEFORE,
                         context->SdmaRingWorkEvidence.Utcl1ReadXnack0Before);
                     Bc250ProbeRecord(BC250_PROBE_SDMA_RING_WR_XNACK0_BEFORE,

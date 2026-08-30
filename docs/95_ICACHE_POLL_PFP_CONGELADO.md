@@ -761,3 +761,60 @@ torna a origem do latch o alvo certo, e dá um preditor barato para um gate de p
 | Dispatch de shader | ❌ 0%, nenhum kernel executado |
 
 Receita: `CpSoftReset=1`, `Vmid0PageTable=0`, `SdmaAutoCtxSw=0`.
+
+---
+
+# Adendo 10 — o latch do SDMA, com n=249
+
+## J1. Condição necessária, validada
+
+Somando todas as corridas com telemetria de latch em 29/08:
+
+```text
+corrida  ciclos falhas  latch latch+fail  wake   clk
+-12-35       40      0      1          0     0     0
+-36-18       40      2      3          2     0     0
+-12-02       40      1      1          1     0     0
+-29-22       60      1      1          1     1     0
+-48-52       60      1      3          1     3    60
+(mais tres corridas de 3 ciclos, sem ocorrencia)
+
+TOTAL: 249 ciclos, 5 falhas, 9 com latch, 5 falharam com latch, 0 falhas SEM latch
+```
+
+**Nenhuma das 5 falhas do SDMA ocorreu sem `EX_IDLE_POLL_TIMER_EXPIRE` aceso na entrada.**
+Com n=249 isso deixa de ser coincidência: o bit é **condição necessária** e serve como
+preditor barato para um gate de preflight.
+
+## J2. Três remédios tentados, nenhum limpa o bit
+
+| Remédio | Resultado |
+|---|---|
+| `HALT/UNHALT` do F32 | latch permanece |
+| espera de ~10 ms (`ExIdleClearPolls=10000`) | latch permanece |
+| des-gating precoce de `CLK_CTRL` (`0x000C0100` na entrada) | latch permanece |
+
+O bit não é nível transitório nem estado do microengine, e não cai com clock. A origem está
+fora do SDMA — SMU ou power são os candidatos restantes, e isso é outra classe de trabalho.
+
+## J3. O que NÃO se pode afirmar
+
+Por regime de mitigação:
+
+```text
+sem mitigacao   latch=5  falharam=3  sobreviveram=2
+so wake         latch=1  falharam=1  sobreviveram=0
+wake+clk        latch=3  falharam=1  sobreviveram=2
+```
+
+**Os números são pequenos demais para dizer que as mitigações reduzem a probabilidade de
+falha.** 5 das 9 ocorrências do latch falharam no total; a diferença entre regimes cabe no
+ruído. Registrar isso importa: seria fácil olhar "wake+clk: 1 de 3" e declarar melhoria.
+
+## J4. Próximo passo recomendado
+
+Como o latch nunca cai e prevê a falha, o estágio do SDMA deveria **nomear a condição** em vez
+de entrar num timeout de 1000 polls que se parece com falha genérica: um status próprio
+(`EX_IDLE_BLOCKED`) separa "o motor estava bloqueado antes de começarmos" de "o anel não foi
+consumido". Isso não corrige a origem, mas para de confundir dois diagnósticos — que foi
+exatamente o erro que custou várias corridas hoje.

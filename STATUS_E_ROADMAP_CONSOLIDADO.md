@@ -43,7 +43,10 @@ Veredito Global: NÃO VALIDADO EM HARDWARE (produção)
   CP Ring 0: TRIPE COMPLETO 39/39 dos ciclos em que rodou (soak de 40) — RPTR==WPTR
              estrito, fence fisica com veneno verificado, dados byte a byte, display vivo
   Gate do CP corrigido: sem `>= cursor-1`, sem `|| scratch`, com checagem de dados
-  Bloqueio atual: intermitencia do SDMA (2/40) e dispatch de shader (0%)
+  Bloqueio atual: intermitencia do SDMA — 5 falhas em 249 ciclos, TODAS com
+                  EX_IDLE_POLL_TIMER_EXPIRE aceso na entrada e nenhuma sem ele.
+                  O bit nao cai com reset do F32, 10 ms de espera nem des-gating
+                  de clock: origem fora do microengine. E dispatch de shader (0%)
   Não provados: dispatch de shader, RPTR==WPTR estrito no CP, IH/TDR, robustez do 3.24
 =========================================================================================================
 ```

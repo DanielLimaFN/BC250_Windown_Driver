@@ -427,6 +427,18 @@ static PCWSTR Bc250ProbeFieldName(BC250_PROBE_FIELD Field)
         return L"PfpDirectDestPolls";
     case BC250_PROBE_PFP_DIRECT_DEST_OBSERVED:
         return L"PfpDirectDestObserved";
+    case BC250_PROBE_SDMA_RING_EX_IDLE_AT_ENTRY:
+        return L"SdmaRingExIdleAtEntry";
+    case BC250_PROBE_SDMA_RING_WAKE_APPLIED:
+        return L"SdmaRingWakeApplied";
+    case BC250_PROBE_SDMA_RING_EX_IDLE_AFTER_WAKE:
+        return L"SdmaRingExIdleAfterWake";
+    case BC250_PROBE_SDMA_RING_EX_IDLE_CLEAR_POLLS:
+        return L"SdmaRingExIdleClearPolls";
+    case BC250_PROBE_SDMA_RING_CLK_AT_ENTRY:
+        return L"SdmaRingClkCtrlAtEntry";
+    case BC250_PROBE_SDMA_RING_EARLY_CLK_UNGATE:
+        return L"SdmaRingEarlyClkUngate";
     case BC250_PROBE_PFP_DIRECT_ME_PC_BEFORE: return L"PfpDirectMePcBefore";
     case BC250_PROBE_PFP_DIRECT_ME_PC_LAST: return L"PfpDirectMePcLast";
     case BC250_PROBE_PFP_DIRECT_CE_PC_BEFORE: return L"PfpDirectCePcBefore";
