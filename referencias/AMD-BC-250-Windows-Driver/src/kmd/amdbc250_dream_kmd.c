@@ -728,8 +728,9 @@ DreamV3DdiAddDevice(
     DevExt->GrbmGfxIndexOffset = AMDBC250_REG_GRBM_GFX_INDEX;
 
     /* Initialize hardware quirks from Linux driver knowledge */
-    /* BC-250 is UMA: 16GB shared, VRAM split configurable in BIOS */
-    DevExt->VisibleVramBytes = 4ULL * 1024 * 1024 * 1024; /* 4GB default (BIOS configurable) */
+    /* BC-250 is UMA: 16GB GDDR6 shared, VRAM split configurable via CMOS UMA_SIZE (BIOS 512M) */
+    DevExt->VisibleVramBytes = 0; /* Will be set by DreamV3DetectVram reading CMOS 0x90 UMA_SIZE */
+    DevExt->TotalVramBytes = 0;   /* DetectVram will set from FB_LOCATION / CMOS / fallback */
     DevExt->NumDisplayPipes = 4;  /* DCN 2.1: 4 pipes */
     DevExt->CurrentTemperatureC = 0;
     DevExt->NextGpuVa = 0x100000000ULL; /* GPU VA starts at 4GB */

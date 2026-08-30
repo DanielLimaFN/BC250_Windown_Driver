@@ -23,6 +23,9 @@ extern "C" {
 #define BC250_MAX_LDS_BYTES_PER_WGP  (64u * 1024u)
 #define BC250_OPCODE_S_ENDPGM        0xBF810000u
 #define BC250_PM4_HEADER_DISPATCH_DIRECT 0xC0031500u
+#define BC250_DISPATCH_COMPUTE_SHADER_EN 0x00000001u
+#define BC250_DISPATCH_FORCE_START_000   0x00000004u
+#define BC250_DISPATCH_CS_W32_EN         0x00008000u
 
 typedef enum BC250_WAVEFRONT_SIZE {
     BC250_WAVE32 = 0,
@@ -68,6 +71,15 @@ BC250_ISA_STATUS Bc250BuildComputeDispatchPacket(
     uint32_t DimX,
     uint32_t DimY,
     uint32_t DimZ);
+
+BC250_ISA_STATUS Bc250BuildComputeDispatchPacketEx(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t DimX,
+    uint32_t DimY,
+    uint32_t DimZ,
+    uint32_t Initiator);
 
 const char *Bc250IsaStatusName(BC250_ISA_STATUS Status);
 

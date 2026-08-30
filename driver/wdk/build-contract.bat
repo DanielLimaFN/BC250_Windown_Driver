@@ -192,6 +192,14 @@ echo [cc] bc250_isa_validator.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_isa_validator.obj" "%ROOTDIR%\driver\core\bc250_isa_validator.c"
 if errorlevel 1 exit /b 1
 
+echo [cc] bc250_compute_dispatch_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_compute_dispatch_contract.obj" "%ROOTDIR%\driver\core\bc250_compute_dispatch_contract.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_observable_shader.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_observable_shader.obj" "%ROOTDIR%\driver\core\bc250_observable_shader.c"
+if errorlevel 1 exit /b 1
+
 echo [cc] bc250_owned_adapter_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_owned_adapter_contract.obj" "%ROOTDIR%\driver\core\bc250_owned_adapter_contract.c"
 if errorlevel 1 exit /b 1
@@ -673,6 +681,10 @@ if errorlevel 1 exit /b 1
 echo [link] compute_mqd_contract_test.exe
 link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   /OUT:"%ODIR%\compute_mqd_contract_test.exe" ^
+  "%ODIR%\bc250_pm4_packet_builder.obj" ^
+  "%ODIR%\bc250_isa_validator.obj" ^
+  "%ODIR%\bc250_compute_dispatch_contract.obj" ^
+  "%ODIR%\bc250_observable_shader.obj" ^
   "%ODIR%\bc250_compute_mqd_contract.obj" ^
   "%ODIR%\compute_mqd_contract_test.obj" kernel32.lib
 if errorlevel 1 exit /b 1
@@ -680,6 +692,42 @@ if errorlevel 1 exit /b 1
 "%ODIR%\compute_mqd_contract_test.exe"
 if errorlevel 1 (
   echo TESTE FALHOU ^(compute_mqd_contract_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
+echo [cc] compute_dispatch_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\compute_dispatch_contract_test.obj" "%ROOTDIR%\driver\tests\compute_dispatch_contract_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] compute_dispatch_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\compute_dispatch_contract_test.exe" ^
+  "%ODIR%\bc250_pm4_packet_builder.obj" ^
+  "%ODIR%\bc250_isa_validator.obj" ^
+  "%ODIR%\bc250_compute_dispatch_contract.obj" ^
+  "%ODIR%\compute_dispatch_contract_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\compute_dispatch_contract_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(compute_dispatch_contract_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
+echo [cc] observable_shader_test.c
+cl %CFLAGS% /Fo"%ODIR%\observable_shader_test.obj" "%ROOTDIR%\driver\tests\observable_shader_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] observable_shader_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\observable_shader_test.exe" ^
+  "%ODIR%\bc250_observable_shader.obj" ^
+  "%ODIR%\observable_shader_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\observable_shader_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(observable_shader_test^) - Linha/Codigo: %errorlevel%
   exit /b 1
 )
 
@@ -893,7 +941,10 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_ih_contract.obj" ^
   "%ODIR%\bc250_sdma_packet_builder.obj" ^
   "%ODIR%\bc250_pm4_packet_builder.obj" ^
+  "%ODIR%\bc250_isa_validator.obj" ^
   "%ODIR%\bc250_compute_mqd_contract.obj" ^
+  "%ODIR%\bc250_compute_dispatch_contract.obj" ^
+  "%ODIR%\bc250_observable_shader.obj" ^
   "%ODIR%\bc250_gcvm_contract.obj" ^
   "%ODIR%\bc250_submit_command_contract.obj" ^
   "%ODIR%\bc250_preemption_contract.obj" ^
@@ -1108,7 +1159,10 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_sdma_packet_builder.obj" ^
   "%ODIR%\bc250_pm4_packet_builder.obj" ^
   "%ODIR%\bc250_golden_settings_contract.obj" ^
+  "%ODIR%\bc250_isa_validator.obj" ^
   "%ODIR%\bc250_compute_mqd_contract.obj" ^
+  "%ODIR%\bc250_compute_dispatch_contract.obj" ^
+  "%ODIR%\bc250_observable_shader.obj" ^
   "%ODIR%\bc250_context_dispatcher_contract.obj" ^
   "%ODIR%\bc250_ih_contract.obj" ^
   "%ODIR%\bc250_paging_contract.obj" ^
@@ -1192,6 +1246,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_pm4_packet_builder.obj" ^
   "%ODIR%\bc250_gcvm_contract.obj" ^
   "%ODIR%\bc250_compute_mqd_contract.obj" ^
+  "%ODIR%\bc250_compute_dispatch_contract.obj" ^
+  "%ODIR%\bc250_observable_shader.obj" ^
   "%ODIR%\bc250_submit_command_contract.obj" ^
   "%ODIR%\bc250_preemption_contract.obj" ^
   "%ODIR%\bc250_gpu_clock_contract.obj" ^
@@ -1224,6 +1280,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_pm4_packet_builder.obj" ^
   "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_compute_mqd_contract.obj" ^
+  "%ODIR%\bc250_compute_dispatch_contract.obj" ^
+  "%ODIR%\bc250_observable_shader.obj" ^
   "%ODIR%\bc250_context_dispatcher_contract.obj" ^
   "%ODIR%\bc250_ih_contract.obj" ^
   "%ODIR%\bc250_paging_contract.obj" ^
@@ -1297,6 +1355,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_sdma_packet_builder.obj" ^
   "%ODIR%\bc250_pm4_packet_builder.obj" ^
   "%ODIR%\bc250_compute_mqd_contract.obj" ^
+  "%ODIR%\bc250_compute_dispatch_contract.obj" ^
+  "%ODIR%\bc250_observable_shader.obj" ^
   "%ODIR%\bc250_gcvm_contract.obj" ^
   "%ODIR%\bc250_submit_command_contract.obj" ^
   "%ODIR%\bc250_preemption_contract.obj" ^
@@ -1358,6 +1418,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_pm4_packet_builder.obj" ^
   "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_compute_mqd_contract.obj" ^
+  "%ODIR%\bc250_compute_dispatch_contract.obj" ^
+  "%ODIR%\bc250_observable_shader.obj" ^
   "%ODIR%\bc250_context_dispatcher_contract.obj" ^
   "%ODIR%\bc250_ih_contract.obj" ^
   "%ODIR%\bc250_paging_contract.obj" ^
@@ -1421,6 +1483,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_psp_ring_transaction.obj" ^
   "%ODIR%\bc250_sdma_f32_transaction.obj" ^
   "%ODIR%\bc250_compute_mqd_contract.obj" ^
+  "%ODIR%\bc250_compute_dispatch_contract.obj" ^
+  "%ODIR%\bc250_observable_shader.obj" ^
   "%WDK%\Lib\%WDKVER%\km\x64\ntoskrnl.lib" ^
   "%WDK%\Lib\%WDKVER%\km\x64\hal.lib" ^
   "%WDK%\Lib\%WDKVER%\km\x64\BufferOverflowK.lib"
@@ -1434,13 +1498,13 @@ echo [cc] bc250-gpuva-sdma-gate.c
 cl /nologo /W4 /O2 /Fo"%ODIR%\bc250-gpuva-sdma-gate.obj" /Fe"%ODIR%\bc250-gpuva-sdma-gate.exe" "%ROOTDIR%\tools\bc250-gpuva-sdma-gate.c" /link kernel32.lib
 if errorlevel 1 exit /b 1
 
-echo [cc] bc250_runtime.c ^& bc250-benchmark.c
+rem bc250-benchmark.c e bc250_silicon_compute_benchmark.c foram REMOVIDOS em 2026-08-29.
+rem Nao mediam nada: GFLOPS de um kernel que nunca foi despachado, topologia e banda como
+rem strings fixas, e "Integridade: 100%% VERIFICADA" incondicional comparando contra uma
+rem constante em vez do buffer lido. Ver STATUS_E_ROADMAP_CONSOLIDADO.md secao 8.1.
+rem O UMD segue compilado: e' consumido pela suite de testes e e' a base da Fase 1.
+echo [cc] bc250_runtime.c
 cl /nologo /W4 /O2 /Fo"%ODIR%\bc250_runtime.obj" /c "%ROOTDIR%\driver\umd\bc250_runtime.c"
-if errorlevel 1 exit /b 1
-cl /nologo /W4 /O2 /Fo"%ODIR%\bc250-benchmark.obj" /Fe"%ODIR%\bc250-benchmark.exe" "%ROOTDIR%\tools\bc250-benchmark.c" "%ODIR%\bc250_runtime.obj" /link kernel32.lib advapi32.lib
-if errorlevel 1 exit /b 1
-echo [cc] bc250_silicon_compute_benchmark.c
-cl /nologo /W4 /O2 /Fo"%ODIR%\bc250_silicon_compute_benchmark.obj" /Fe"%ODIR%\bc250_silicon_compute_benchmark.exe" "%ROOTDIR%\tools\bc250_silicon_compute_benchmark.c" "%ODIR%\bc250_runtime.obj" /link kernel32.lib advapi32.lib
 if errorlevel 1 exit /b 1
 
 echo [cc] bc250-hardware-diag.c
@@ -1477,6 +1541,8 @@ echo PREEMPTION CONTRACT: OK ^(DxgkDdiPreemptCommand + HQD dequeue + SDMA preemp
 echo GPU CLOCK CONTRACT: OK ^(DxgkDdiCalibrateGpuClock + 100MHz timestamp counter + QPC sync, offline^)
 echo POWER MANAGEMENT CONTRACT: OK ^(DxgkDdiSetPowerState D0/D3 + SetStablePowerState + GFXOFF gating, offline^)
 echo ISA VALIDATOR ^& COMPUTE UMD: OK ^(Wave32/64 + SGPR/VGPR/LDS bounds + IT_DISPATCH_DIRECT, offline^)
+echo OBSERVABLE COMPUTE DISPATCH: OK ^(shader state + complete dispatch + post-dispatch fence + strict verdict, offline^)
+echo OBSERVABLE GFX1010 SHADER: OK ^(allowlisted blob + SHA-256 provenance + negative mutation test, offline^)
 echo CONTRACT INTEGRATION AUDIT: OK ^(offline structures only; not hardware readiness^)
 echo MCDM DDI CALLBACK TABLE: OK ^(36 minimum + 5 GPUVA pointers; semantics fail-closed^)
 echo MCDM OBJECT LIFECYCLE: OK ^(typed handles + allocation open/close + debug snapshot + Stop race, offline^)

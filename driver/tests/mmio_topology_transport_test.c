@@ -122,6 +122,9 @@ static int Bc250Prepare(
     SET_REG(BC250_REG_PSP_C2PMSG_70, 0x70u);
     SET_REG(BC250_REG_PSP_C2PMSG_71, 0x71u);
     SET_REG(BC250_HQD_MMIO_ACTIVE, 0x250u);
+    SET_REG(BC250_HQD_MMIO_CC_GC_SHADER_ARRAY_CONFIG, 0xFFF80000u);
+    SET_REG(BC250_HQD_MMIO_SPI_PG_STATIC_WGP_MASK, 0x0000FFFFu);
+    SET_REG(BC250_HQD_MMIO_RLC_PG_ALWAYS_ON_WGP_MASK, 0x00000003u);
 #undef SET_REG
     return 1;
 }
@@ -195,19 +198,101 @@ static int Bc250RunMmioTopologyTransportTest(void)
         &context, BC250_HQD_MMIO_QUEUE_PRIORITY, 0u) == 1u);
     CHECK(context.WriteCount == 4u);
     CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_EOP_RPTR, &value) == 1u);
+    CHECK(value == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_EOP_RPTR, 0x80000000u) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_EOP_RPTR, &value) == 1u);
+    CHECK(value == 0x80000000u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_EOP_RPTR, 0u) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_EOP_RPTR, &value) == 1u);
+    CHECK(value == 0u);
+    /*
+     * CP_PQ_WPTR_POLL_CNTL1 (0xC210) entra na allowlist de leitura e escrita
+     * para o candidato 3.30; o offset foi catalogado a partir de
+     * mmCP_PQ_WPTR_POLL_CNTL1 = dw 0x1E24 com a base +0x1260 dwords.
+     */
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1, &value) == 1u);
+    CHECK(value == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1, 1u) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1, &value) == 1u);
+    CHECK(value == 1u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1, 0u) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
         &context, BC250_HQD_MMIO_RLC_CP_SCHEDULERS, &value) == 1u);
     CHECK(Bc250MmioTopologyWrite32(
         &context, BC250_HQD_MMIO_RLC_CP_SCHEDULERS, 0xA0u) == 1u);
     CHECK(Bc250MmioTopologyRead32(
         &context, BC250_HQD_MMIO_RLC_CP_SCHEDULERS, &value) == 1u);
     CHECK(value == 0xA0u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_CC_GC_SHADER_ARRAY_CONFIG, &value) == 1u);
+    CHECK(value == 0xFFF80000u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_SPI_PG_STATIC_WGP_MASK, &value) == 1u);
+    CHECK(value == 0x0000FFFFu);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_RLC_PG_ALWAYS_ON_WGP_MASK, &value) == 1u);
+    CHECK(value == 0x00000003u);
+    /*
+     * Candidato 3.34: diagnostico de stall do CP/CPC. Legiveis, e NUNCA
+     * gravaveis - sao estado do proprio microengine. Escrever neles seria
+     * mexer no que estamos tentando observar.
+     */
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_CP_CPC_STATUS, &value) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_CP_CPC_BUSY_STAT, &value) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_CP_CPC_STALLED_STAT1, &value) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_CP_CPF_BUSY_STAT, &value) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_CP_MEC_ME1_HEADER_DUMP, &value) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_CP_MEC_ME2_HEADER_DUMP, &value) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_CP_STALLED_STAT1, &value) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_CP_STAT, &value) == 1u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_CP_CPC_STATUS, 0u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_CP_CPC_BUSY_STAT, 0u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_CP_CPC_STALLED_STAT1, 0u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_CP_CPF_BUSY_STAT, 0u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_CP_MEC_ME1_HEADER_DUMP, 0u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_CP_MEC_ME2_HEADER_DUMP, 0u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_CP_STALLED_STAT1, 0u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_CP_STAT, 0u) == 0u);
+
+    /* Esses tres offsets nunca entram na allowlist de escrita. */
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_CC_GC_SHADER_ARRAY_CONFIG, 0u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_SPI_PG_STATIC_WGP_MASK, 0u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_RLC_PG_ALWAYS_ON_WGP_MASK, 0u) == 0u);
     CHECK(Bc250MmioTopologyRead32(&context, 0x0000DA60u, &value) == 0u);
     CHECK(Bc250MmioTopologyWrite32(&context, 0x0000DA60u, 1u) == 0u);
     CHECK(Bc250MmioTopologyRead32(&context, 0x0003F040u, &value) == 0u);
     CHECK(Bc250MmioTopologyWrite32(&context, 0x0003F040u, 1u) == 0u);
     CHECK(Bc250MmioTopologyRead32(&context, 0x000032D4u, &value) == 0u);
     CHECK(Bc250MmioTopologyWrite32(&context, 0x000032D4u, 1u) == 0u);
-    CHECK(context.ReadCount == 84u && context.WriteCount == 5u);
+    CHECK(context.ReadCount == 100u && context.WriteCount == 9u);
     CHECK(Bc250MmioTopologyUnmap(&context) == BC250_MMIO_TOPOLOGY_OK);
     CHECK(g_unmapCalls == 1u && context.State == BC250_MMIO_TOPOLOGY_EMPTY);
     CHECK(context.VirtualBase == NULL);

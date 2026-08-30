@@ -198,9 +198,22 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == 0x0000C168u || ByteOffset == 0x0000C16Cu ||
         ByteOffset == 0x0000C170u || ByteOffset == 0x0000C174u ||
         ByteOffset == 0x0000C170u || ByteOffset == 0x0000C174u ||
-        ByteOffset == 0x0000C2E0u || ByteOffset == 0x0000C20Cu ||
+        ByteOffset == 0x0000C2E0u || ByteOffset == 0x0000C20Cu || ByteOffset == 0x0000C210u ||
+        /* 3.34: diagnostico de stall do CP/CPC, SOMENTE leitura. */
+        ByteOffset == BC250_HQD_MMIO_CP_CPC_STATUS ||
+        ByteOffset == BC250_HQD_MMIO_CP_CPC_BUSY_STAT ||
+        ByteOffset == BC250_HQD_MMIO_CP_CPC_STALLED_STAT1 ||
+        ByteOffset == BC250_HQD_MMIO_CP_CPF_BUSY_STAT ||
+        ByteOffset == BC250_HQD_MMIO_CP_MEC_ME1_HEADER_DUMP ||
+        ByteOffset == BC250_HQD_MMIO_CP_MEC_ME2_HEADER_DUMP ||
+        ByteOffset == BC250_HQD_MMIO_CP_STALLED_STAT1 ||
+        ByteOffset == BC250_HQD_MMIO_CP_STAT ||
         ByteOffset == 0x0000C3B4u ||
         ByteOffset == BC250_HQD_MMIO_RLC_CP_SCHEDULERS ||
+        /* WGP topology/power policy: catalogued read-only preflight. */
+        ByteOffset == BC250_HQD_MMIO_CC_GC_SHADER_ARRAY_CONFIG ||
+        ByteOffset == BC250_HQD_MMIO_SPI_PG_STATIC_WGP_MASK ||
+        ByteOffset == BC250_HQD_MMIO_RLC_PG_ALWAYS_ON_WGP_MASK ||
         ByteOffset == BC250_HQD_MMIO_CPC_UTCL1_ERROR ||
         ByteOffset == BC250_HQD_MMIO_CP_ME1_PIPE0_INT_STATUS ||
         ByteOffset == BC250_HQD_MMIO_CP_ME2_PIPE1_INT_STATUS ||
@@ -234,6 +247,7 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == BC250_HQD_MMIO_MQD_CONTROL ||
         ByteOffset == BC250_HQD_MMIO_EOP_BASE_LO ||
         ByteOffset == BC250_HQD_MMIO_EOP_BASE_HI ||
+        ByteOffset == BC250_HQD_MMIO_EOP_RPTR ||
         ByteOffset == BC250_HQD_MMIO_EOP_CONTROL ||
         ByteOffset == BC250_HQD_MMIO_ACTIVE ||
         ByteOffset == BC250_HQD_MMIO_VMID ||
@@ -312,7 +326,7 @@ static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == 0x0000C168u || ByteOffset == 0x0000C16Cu ||
         ByteOffset == 0x0000C170u || ByteOffset == 0x0000C174u ||
         ByteOffset == 0x0000C170u || ByteOffset == 0x0000C174u ||
-        ByteOffset == 0x0000C2E0u || ByteOffset == 0x0000C20Cu ||
+        ByteOffset == 0x0000C2E0u || ByteOffset == 0x0000C20Cu || ByteOffset == 0x0000C210u ||
         ByteOffset == 0x0000C3B4u ||
         ByteOffset == BC250_HQD_MMIO_RLC_CP_SCHEDULERS ||
         ByteOffset == 0x0000C10Cu || ByteOffset == 0x0000C110u ||
@@ -337,6 +351,7 @@ static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == BC250_HQD_MMIO_MQD_CONTROL ||
         ByteOffset == BC250_HQD_MMIO_EOP_BASE_LO ||
         ByteOffset == BC250_HQD_MMIO_EOP_BASE_HI ||
+        ByteOffset == BC250_HQD_MMIO_EOP_RPTR ||
         ByteOffset == BC250_HQD_MMIO_EOP_CONTROL ||
         ByteOffset == BC250_HQD_MMIO_VMID ||
         ByteOffset == BC250_HQD_MMIO_PERSISTENT_STATE ||

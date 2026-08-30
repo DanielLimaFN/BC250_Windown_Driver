@@ -1,15 +1,258 @@
 # BC-250 Windows Driver — Status Consolidado e Roadmap
 
-> **Revisão 3.1 — 2026-08-29.** Consolida: validação física do CP PM4, do compute MEC/HQD e do
-> caminho de display WDDM, comparação com o projeto de referência `AMD-BC-250-Windows-Driver`
-> e o roadmap de fases. Os percentuais estão separados em dois eixos (implementado × provado),
-> os números vêm de auditoria direta do corpus em `docs/evidence/` cruzada com o código-fonte.
+> **Revisão 5.0 — 2026-08-30 (Tarde).** Estado vigente após o candidato físico
+> **3.43 / Schema 114**: **SHADER & COMPUTE F8b VALIDADO EM HARDWARE!**
+> O tripé físico de computação (RPTR==WPTR==45 estrito, drenagem de 100% do ring
+> com PQ_EMPTY=1, QUEUE_IDLE=1, fence física em VRAM 0xBC250D15 gravada pela GPU,
+> 0 mismatches de dados e rollback transacional com RestoreFailureCount=0) foi
+> **100% aprovado no silício real da APU AMD BC-250 com o display ativo**.
+> Registro físico canônico: [`docs/127_RESULTADO_FISICO_3.43.md`](docs/127_RESULTADO_FISICO_3.43.md).
+> Handoff vigente: [`docs/128_HANDOFF_IA_APOS_CANDIDATO_3.43.md`](docs/128_HANDOFF_IA_APOS_CANDIDATO_3.43.md).
+
+> **Revisão 4.0 — 2026-08-29 (noite).** Consolida: validação física do CP PM4, do compute
+> MEC/HQD e do caminho de display WDDM, comparação com o projeto de referência
+> `AMD-BC-250-Windows-Driver` e o roadmap de fases. Os percentuais estão separados em dois
+> eixos (implementado × provado), a partir de auditoria do corpus em `docs/evidence/` cruzada
+> com o código-fonte.
 >
-> **Duas mudanças de status nesta revisão**: (1) o compute MEC/HQD **fechou o tripé físico 26
-> vezes** — não é mais 0% provado (seção 3.4); (2) foi descoberto um **modo de falha
-> intermitente do PFP** que hoje é o gargalo único do projeto (seção 2).
+> **Mudanças desta revisão**: (1) o **CP Ring 0 fechou o tripé estrito** — `RPTR==WPTR`,
+> fence física com veneno verificado e dados conferidos byte a byte — em **59/59** dos ciclos
+> em que rodou (seção 2.0.4); (2) o **compute MEC/HQD** fecha o gate estrito no mesmo ciclo,
+> também 59/59; (3) a **intermitência do PFP foi RESOLVIDA** e era regressão de código nossa,
+> não silício (seção 2, histórico); (4) o **gate do CP foi corrigido**, não homologado
+> (seção 4); (5) o roadmap ganhou o **caminho em fases até computação real** (seção 8.1).
+>
+> **Números conflitantes em revisões anteriores** (3/3, 26x, 39/39) são etapas intermediárias
+> do mesmo dia. O valor vigente é **59/59**, do soak de 60 ciclos — o único ciclo que não
+> fechou foi bloqueado pelo SDMA antes de o CP rodar.
 >
 > Não substitui os documentos detalhados em `docs/` — é o ponto de entrada rápido para retomar.
+
+> **Atualização de 30/08/2026 — candidato 3.28 / Schema 99 (offline):** a
+> terceira tentativa física (3.27) chegou a `RPTR==WPTR==40`, mas resultado e
+> fence permaneceram envenenados; portanto, **não houve prova de shader**. A
+> análise encontrou `CP_HQD_PQ_BASE` programado com endereço físico apesar de o
+> Contexto 0 mapear a fila por GPUVA baixa. O 3.28 passa a publicar GPUVA
+> `0x10000`, prova `PTE[0x10] -> ring físico`, relê os 64 dwords do ring e falha
+> antes de `APPLY` em qualquer divergência. Build, testes, assinatura e auditoria
+> passaram; pacote não instalado. Registro completo em
+> [`docs/101_REGISTRO_TERCEIRA_TENTATIVA_E_CANDIDATO_3.28.md`](docs/101_REGISTRO_TERCEIRA_TENTATIVA_E_CANDIDATO_3.28.md).
+
+> **Resultado físico do 3.28:** a correção foi comprovada (`PQ_BASE=0x10000`,
+> `PTE[0x10]=0xF400AA00E1`, tradução e readback do ring aprovados), mas a fila
+> não iniciou fetch: `RPTR=0`, `WPTR=40`, `HQ_STATUS0=0x80C0`, resultado e fence
+> permaneceram envenenados. O watchdog restaurou `BasicDisplay / Código 0`.
+> Continua **NÃO VALIDADO EM HARDWARE**. Evidência e análise em
+> [`docs/102_RESULTADO_FISICO_CANDIDATO_3.28.md`](docs/102_RESULTADO_FISICO_CANDIDATO_3.28.md).
+
+> **Atualização de 30/08/2026 — candidato 3.29 / Schema 100 (offline):** a
+> sequência KFD usada como referência inicia explicitamente o fetcher EOP com
+> `CP_HQD_EOP_RPTR.INIT_FETCHER=1` antes de `CP_HQD_ACTIVE`; essa etapa faltava
+> no 3.28. O offset GC10.1 `0x1FD1` (`BAR5 0xC8C4`) foi catalogado e integrado
+> com snapshot, readback tolerante ao auto-clear do gatilho, telemetria e
+> rollback exato. Build completo, testes, assinatura e auditoria do pacote
+> 3.29 passaram. Binding físico aguarda reboot manual e quarentena do SYS
+> residual. Continua **NÃO VALIDADO EM HARDWARE**. Detalhes em
+> [`docs/103_CANDIDATO_3.29_INIT_FETCHER_EOP.md`](docs/103_CANDIDATO_3.29_INIT_FETCHER_EOP.md).
+
+> **Resultado físico do 3.29 / handoff:** `INIT_FETCHER` foi observado no
+> silício (`applied=0x80000000`, readback/restored=`0x40000000`, rollback EOP
+> aprovado), mas a fila permaneceu `QUEUE_IDLE/PQ_EMPTY`. A escrita direta de
+> WPTR teve readback imediato 40 e depois voltou a zero; `RPTR=0`, resultado e
+> fence continuaram envenenados. O rollback interno de registradores também
+> reprovou, embora memória e EOP tenham sido restaurados e o watchdog tenha
+> retornado a `BasicDisplay / Código 0`. Próximo foco: instrumentar a primeira
+> falha de rollback e reconciliar o protocolo one-shot de WPTR upstream,
+> especialmente `CP_PQ_WPTR_POLL_CNTL1`, sem reutilizar literais históricos
+> contraditórios. Handoff autocontido em
+> [`docs/104_HANDOFF_IA_APOS_CANDIDATO_3.29.md`](docs/104_HANDOFF_IA_APOS_CANDIDATO_3.29.md).
+
+> **Atualização de 30/08/2026 — candidato 3.30 / Schema 101 (offline):** a
+> mineração dos headers locais fechou a peça que faltava. `CP_PQ_WPTR_POLL_CNTL1`
+> (`dw 0x1E24` → BAR5 `0xC210`, base `+0x1260` dw confirmada por três
+> registradores já catalogados) carrega `QUEUE_MASK`, um bit por fila, e é
+> escrito por `kgd_gfx_v9_hqd_load` antes de `INIT_FETCHER`/`ACTIVE`. A
+> evidência do 3.29 mostra que ele nunca foi escrito e que
+> `CP_PQ_WPTR_POLL_CNTL` valia `0x0` — ou seja, `EN` nunca esteve ligado. Isso
+> explica o sintoma exato: doorbell tocado, `DOORBELL_ENABLE=1`, e o WPTR sem
+> latch. A mesma evidência encerra a contradição histórica: `0x00403004` é do
+> SDMA (`SdmaRingPollCntl`), está **proibido** no CP e foi marcado como tal no
+> catálogo. O 3.30 passa ao caminho KFD — `EN` derivado só das máscaras GC10.1
+> (PERIOD preservado, `POLL_ACTIVE[30]` fora da escrita), `QUEUE_MASK` derivado
+> da topologia lida em `RLC_CP_SCHEDULERS`, WPTR publicado antes de `ACTIVE`, e
+> a coerência (shadow + HDP + GCVM) movida para antes de `ACTIVE` porque agora
+> a fila pode iniciar o fetch no próprio `ACTIVE`. Entrou junto a telemetria da
+> **primeira** falha de rollback (estágio/offset/esperado/observado/transporte),
+> que o 3.29 não tinha. Build `/W4 /WX` limpo e suíte inteira em `EXIT=0`;
+> pacote não instalado. Continua **NÃO VALIDADO EM HARDWARE**. Detalhes em
+> [`docs/105_CANDIDATO_3.30_WPTR_ONESHOT_QUEUE_MASK.md`](docs/105_CANDIDATO_3.30_WPTR_ONESHOT_QUEUE_MASK.md).
+
+> **Resultado físico do 3.30 / candidato 3.31 (30/08/2026):** o binding entrou em
+> `bc250mcdm / Código 0` com hash conferido e Schema 101 no silício, mas a
+> transação abortou fail-closed em `HqdActiveStatus=5 (WRITE_FAILED)`:
+> `CP_PQ_WPTR_POLL_CNTL` com `before=0x0`, `applied=0x80000000` e
+> **`readback=0x0`** — o bit `EN` não é retido por este silício. `CNTL1`, WPTR
+> pré-`ACTIVE`, `INIT_FETCHER` e `ACTIVE` nunca foram alcançados. O achado é
+> novo: até o 3.29 o caminho KIQ escrevia `orig & ~EN` = `0` sobre um
+> registrador que já valia `0` — zero sobre zero passa em qualquer readback sem
+> provar nada; o 3.30 foi a primeira escrita real verificada em `0xC20C`. O
+> offset não é o culpado: `CP_PQ_STATUS` (`0xC2E0`, mesma base `+0x1260` dw)
+> aceitou `DOORBELL_ENABLE` e releu `0x2` no 3.29. O rollback passou limpo
+> (`RestorePassed=1`, zero falhas, estágio `NONE`), validando a telemetria nova.
+> Dois defeitos do 3.30 foram corrigidos no **3.31 / Schema 102**: (1) `EN`
+> deixa de ser fatal — era hipótese, não fato, e abortar ali custou um boot sem
+> medir `CNTL1`, que segue sem qualquer medição física; o gate do tripé continua
+> intacto; (2) entrou uma sonda de gravabilidade (`PERIOD`) que separa
+> "registrador read-only" de "bit `EN` bloqueado", mais o conserto de um falso
+> positivo no aceite que comparava rollback de `EOP_RPTR` sem checar se a etapa
+> chegou a rodar. Testes 9.2.3 e 9.2.4 travam a regressão e exigem
+> `TriadPassed=0` sem execução real. Pacote 3.31 construído, assinado e
+> auditado. Continua **NÃO VALIDADO EM HARDWARE**.
+
+> **Resultado físico do 3.33 / candidato 3.34 (30/08/2026):** o 3.32 é
+> **reprodutível** — cursor `40` publicado por hardware, `DirectWptrKickApplied=0`,
+> `PQ_CONTROL=0xD030090D`, `HQ_STATUS0=0x00008000`, `RptrAfter=0`, tudo
+> idêntico. A observação eliminou **duas** das quatro hipóteses: (a) não é o
+> writeback de RPTR — registrador **e** memória ficaram em zero
+> (`RptrNonZeroSamples=0`, `RptrReportMemFirst/Last=0`), então o CP realmente
+> não retira pacotes, não é problema de reporte; (b) não é o VMID
+> (`VmidPollLast=0`, igual ao Contexto 0) nem dequeue espontâneo
+> (`DequeueRequestPollLast=0`). Três sinais novos: o estado **nasce congelado**
+> (`PQ_CONTROL` e `HQ_STATUS0` idênticos na primeira e na última amostra); o
+> **MEC está em laço fechado** (`MecPcFirst==MecPcLast==0x17FB` com 49
+> transições em 196 amostras — vivo, girando, sem processar); e **o próprio CP
+> alterou o HQD** — o rollback reprovou no estágio 9 (`HQD_PLAN`), offset
+> `0x0000C834` (`CP_HQD_PERSISTENT_STATE`), com `PRELOAD_SIZE[19:8]` indo de
+> `0x053` para `0xC53`. É a primeira vez que se observa o CP escrevendo num
+> registrador do HQD: ele não está ignorando a fila. O **3.34 / Schema 105**
+> é mais um ciclo sem escrita nova: seis registradores de diagnóstico entram
+> **só na allowlist de leitura** — `CP_CPC_STATUS`, `CP_CPC_BUSY_STAT`,
+> `CP_CPC_STALLED_STAT1`, `CP_MEC_ME1_HEADER_DUMP`, `CP_STALLED_STAT1` e
+> `CP_STAT` — para dizer em que o CPC está parado e quais cabeçalhos PM4 o ME1
+> processou. A base `+0x1260` dw agora fecha em cinco âncoras independentes,
+> duas delas escritas com sucesso no silício (`CP_MEC_CNTL 0x08234`,
+> `CP_ME_CNTL 0x086D8`), e o header dump é **adjacente** ao `CP_MEC_CNTL`.
+> Como cada leitura do header dump avança a FIFO, ele é drenado numa rajada
+> única depois do polling, nunca por amostra; um teste dedicado exige que os
+> seis sejam legíveis e que **toda escrita seja recusada**. Continua
+> **NÃO VALIDADO EM HARDWARE**. Detalhes em
+> [`docs/109_RESULTADO_3.33_E_CANDIDATO_3.34.md`](docs/109_RESULTADO_3.33_E_CANDIDATO_3.34.md).
+
+> **Resultado físico do 3.34 (30/08/2026) — o bloqueio ficou localizado:** o
+> `CP_CPC_STALLED_STAT1 = 0x00010000` acende **`MEC2_DECODING_PACKET[16]`**, com
+> `CP_CPC_STATUS = 0xA0000082` (`CPC_BUSY`, `CPG_CPC_BUSY`, `ROQ2_BUSY`,
+> `MEC2_BUSY`) e `CP_CPC_BUSY_STAT = 0x04000000` (`MEC2_PIPE0_BUSY`). O RPTR
+> avançou para **1** e ficou não-zero em 196/196 amostras: o CP leu um dword —
+> o cabeçalho do primeiro pacote — e **travou decodificando**. O bloqueio saiu
+> de "não consome" para "não termina de decodificar o primeiro pacote PM4".
+> Atenção: no 3.33 o RPTR foi `0` com o mesmo código exceto pelas leituras
+> novas; os dois ciclos foram boot frio, então **RPTR=1 não pode ser tratado
+> como determinístico sem repetir o ensaio**. Defeito conhecido a corrigir
+> primeiro: o 3.34 lê `CP_MEC_ME1_HEADER_DUMP`, mas a topologia real é **ME2**
+> (`RLC_CP_SCHEDULERS=0x58504840` → `me=2`, confirmado por `MEC2_BUSY`), e por
+> isso o dump veio `0xDEF0DEF0…` — FIFO vazia do motor errado; o correto é
+> `mmCP_MEC_ME2_HEADER_DUMP` (`dw 0x0E2F` → BAR5 `0x0823C`). Handoff completo,
+> autocontido, em
+> [`docs/110_HANDOFF_IA_APOS_CANDIDATO_3.34.md`](docs/110_HANDOFF_IA_APOS_CANDIDATO_3.34.md).
+> Continua **NÃO VALIDADO EM HARDWARE**. Detalhes em
+> [`docs/106_RESULTADO_3.30_E_CANDIDATO_3.31.md`](docs/106_RESULTADO_3.30_E_CANDIDATO_3.31.md).
+
+> **Resultado físico do 3.31 / candidato 3.32 (30/08/2026):** o ensaio mais
+> informativo até agora, e a captura de telemetria no bind salvou 596 valores
+> antes de o watchdog poder disparar — o conserto do ciclo anterior provando
+> valor no primeiro uso. Quatro fatos novos: (1) `CP_PQ_WPTR_POLL_CNTL`
+> (`0xC20C`) é **read-only** neste contexto — a sonda escreveu `PERIOD=4` e
+> releu `0`, então não é o bit `EN` que está bloqueado, é o registrador
+> inteiro; (2) **`CP_PQ_WPTR_POLL_CNTL1` (`0xC210`) É gravável e latcheou**
+> (`applied=1`, `readback=1`) — primeira medição física do `CNTL1` no projeto,
+> e prova definitiva do offset, já que `0xC20C` quatro bytes antes recusa
+> escrita; (3) `CP_HQD_PQ_WPTR_LO` **não aceita o cursor com a fila inativa**
+> (`applied=40`, `readback=0`), o que abortou o ensaio em `READBACK_FAILED` —
+> cruzando com o 3.29, onde a escrita pós-`ACTIVE` releu 40, a regra é que o
+> registrador só aceita cursor com `ACTIVE=1`; (4) a `QUEUE_MASK` **acende e
+> não apaga** — escrevi `0` e reli `1`, com a telemetria localizando estágio
+> `13`, offset `0xC210`, esperado `0`, observado `1`, divergência de valor e
+> não falha de MMIO. O item (4) deixa estado residual no silício que só um
+> reset limpa. O **3.32 / Schema 103** rebaixa a publicação pré-`ACTIVE` a
+> observação (mesmo erro do `EN`: etapa obrigatória que o silício recusa),
+> acrescenta `PostActiveWptrObserved` — leitura pura do WPTR logo após
+> `ACTIVE=1`, antes de doorbell, para saber se o CP busca o cursor sozinho
+> pela `QUEUE_MASK` — e cria `WptrPollCntl1DirtyEntry`, que reprova o ensaio
+> se a máscara já entrar acesa, impedindo o falso verde de comparar `1` com
+> `1` num boot morno. Testes 9.2.5 e 9.2.6 travam tudo isso. Também foi
+> corrigida a quarentena, que perdia a referência do resíduo quando o pacote
+> era reconstruído: o `bind` grava agora `package_sys_sha256` em
+> `_last_lab_binding.json`, verificado na condição exata que quebrou. Continua
+> **NÃO VALIDADO EM HARDWARE**. Detalhes em
+> [`docs/107_RESULTADO_3.31_E_CANDIDATO_3.32.md`](docs/107_RESULTADO_3.31_E_CANDIDATO_3.32.md).
+
+> **Resultado físico do 3.32 (30/08/2026) — o bloqueio mudou de lugar:** pela
+> primeira vez a transação percorreu a sequência inteira sem abortar
+> (`HqdActiveStatus=7`, `PM4_NOT_CONSUMED`), em boot frio confirmado
+> (`WptrPollCntl1DirtyEntry=0`). Três fatos: (1) **o cursor passou a ser
+> publicado pelo hardware** — `PostActiveWptrObserved=40` lido logo após
+> `ACTIVE=1`, antes de qualquer doorbell ou escrita, com
+> `DirectWptrKickApplied=0` provando que a CPU não forçou nada, e o WPTR
+> permanece 40 durante todo o polling (no 3.29 ele decaía para 0); a
+> `QUEUE_MASK` do `CP_PQ_WPTR_POLL_CNTL1` era a peça que faltava; (2) **o
+> silício reconhece trabalho pendente** — `PQ_CONTROL` foi de `0xD030890D`
+> para `0xD030090D` e `HQ_STATUS0` de `0x40008000` para `0x00008000`, ou seja
+> `PQ_EMPTY` 1→0 e `QUEUE_IDLE` 1→0, com os shifts vindos de
+> `gc_10_1_0_sh_mask.h` (bit 15 e bit 30); (3) **mas o RPTR não avança** —
+> `RptrAfter=0` após 50000 iterações, com MEC executando (38 transições de PC
+> em 196 amostras), zero faltas UTCL1, zero `HQD_ERROR` e zero interrupções
+> pendentes. O teardown mudou junto e de forma coerente: `DEQUEUE_REQUEST` não
+> desativou a fila em 1000 amostras e foi preciso o `ACTIVE=0` de emergência —
+> fila que recusa dequeue é fila ocupada. Corrige também o doc 107 §2.4: a
+> `QUEUE_MASK` **não** é sticky; ela limpou na primeira tentativa neste ciclo,
+> porque a fila passou pelo ciclo de vida completo. O bloqueio deixou de ser a
+> publicação do cursor e passou a ser o consumo do ring pelo CP. Continua
+> **NÃO VALIDADO EM HARDWARE**: nenhuma wave, `TriadPassed=0`, resultado e
+> fence no veneno. Detalhes em
+> [`docs/108_RESULTADO_FISICO_3.32.md`](docs/108_RESULTADO_FISICO_3.32.md).
+
+> **Candidato 3.33 / Schema 104 (offline):** ciclo deliberadamente **sem nova
+> hipótese** — só observação, para separar as quatro causas possíveis do RPTR
+> parado sem gastar um boot em palpite. Nenhuma escrita nova: oito campos de
+> leitura acrescentados ao laço de polling, no mesmo banco GRBM já aberto —
+> `PqControlFirstSample` e `HqStatus0FirstSample` (primeira amostra contra a
+> última, para ver se o estado evoluiu ou nasceu congelado),
+> `DequeueRequestPollLast`, `VmidPollLast`, `PersistentStatePollLast`,
+> `RptrReportMemFirst/Last` (o writeback de RPTR em memória, agora observado
+> sempre e não só quando diferente de zero — se o registrador não anda mas a
+> memória anda, ou o contrário, aponta direto para o `RPTR_REPORT_ADDR`) e
+> `RptrNonZeroSamples`. `CP_HQD_PQ_CONTROL` e `CP_HQD_HQ_STATUS0` foram
+> **catalogados campo a campo** a partir de `gc_10_1_0_sh_mask.h`, com a
+> evidência diferencial 3.29 → 3.32 registrada em cada linha. As expressões de
+> decodificação do aceite foram conferidas contra os valores reais dos dois
+> ensaios (`PQ_EMPTY` 1→0, `QUEUE_IDLE` 1→0). Pacote construído, assinado e
+> auditado. Continua **NÃO VALIDADO EM HARDWARE**.
+
+> **Resultados físicos 3.35–3.39 (30/08/2026) — do decoder ao bloqueio
+> pré-doorbell:** o 3.35 corrigiu o dump de ME1 para ME2 e publicou os oito
+> primeiros dwords do ring; o `RPTR=1` do 3.34 não se repetiu. O 3.36 provou
+> causalmente que a doorbell acende `MEC2_BUSY`, `PIPE0_BUSY`,
+> `DECODING_PACKET` e `WAIT_ON_RCIU_READ`. O 3.37 mudou somente o primeiro
+> `SET_SH_REG` de `0xC0027600` para `0xC0027602`
+> (`SHADER_TYPE=COMPUTE`): `DECODING_PACKET` desapareceu, mas o RPTR ficou em
+> zero. O 3.38 aplicou o bit compute a todos os seis `SET_SH_REG`; a espera
+> RCIU deixou de ser persistente, porém resultado e fence continuaram no
+> poison. Finalmente, o 3.39 adicionou somente três leituras de
+> `CP_CPF_BUSY_STAT` (`0x08220`) e encontrou **`0x68460000` idêntico antes do
+> kick, depois do kick e no polling final**. Estavam ativos antes da doorbell:
+> `HQD_PQ_BUSY`, `HQD_WPTR_POLL_BUSY`, `HQD_ROQ_PQ_BUSY`,
+> `HQD_CONSUMED_RPTR_BUSY`, `HQD_PQ_FETCHER_BUSY` e `HQD_MESSAGE_BUSY`.
+> Portanto, a causa primária nasce em `CP_HQD_ACTIVE`/publicação inicial da
+> fila, não na doorbell. O próximo candidato deve capturar CPF antes e
+> imediatamente depois de `ACTIVE`, e nos limites da publicação do WPTR, sem
+> escrita ou abort novo. Nenhuma wave executou: `RPTR/WPTR=0/40`, resultado
+> `0x43DAFFFE` e fence `0xA55A0FF0`. Detalhes em
+> [`docs/112`](docs/112_RESULTADO_FISICO_3.35.md),
+> [`docs/114`](docs/114_RESULTADO_FISICO_3.36.md),
+> [`docs/116`](docs/116_RESULTADO_FISICO_3.37.md),
+> [`docs/117`](docs/117_RESULTADO_FISICO_3.38.md) e
+> [`docs/118`](docs/118_RESULTADO_FISICO_3.39.md). Continua **NÃO VALIDADO EM
+> HARDWARE**.
 
 ---
 
@@ -23,47 +266,51 @@ barra só cria a ilusão de que algo está "quase lá" quando a prova está em z
 ======================================== STATUS DO DRIVER BC-250 ========================================
 Área                              Implementado           Provado (tripé)        Escopo real da prova
 ---------------------------------------------------------------------------------------------------------
-Base Geral Pré-WDDM (Lab)         ██████████████████▋░ 93%  █████████████████▋░░ 88%  Bancada isolada
-SDMA0 (engine + display vivo)     ███████████████████░ 95%  ███████████████████░ 95%  Tripe COM display ativo (2.0)
-GCVM/VMID8 (mecanismo MMIO)       ██████████████████░░ 90%  ██████████████████░░ 90%  Invalidate/ACK + PTE rollback
-GCVM sob VidMm (F3, produção)     ███████░░░░░░░░░░░░░ 35%  ░░░░░░░░░░░░░░░░░░░░  0%  Sem paging sob pressão
-CP / PM4 Ring 0 (COM display vivo) ███████████████████░ 95%  ██████████████████░░ 90%  Tripe COMPLETO 3/3 (2.0.4)
-RLC (fora do StartDevice)         ████████░░░░░░░░░░░░ 40%  ░░░░░░░░░░░░░░░░░░░░  0%  Proibido no arranque normal
-Telemetria & Observabilidade      ███████████████░░░░░ 75%  ████████████░░░░░░░░ 60%  Gate visual aprovado
-Compute MEC / HQD (PM4 na fila)   █████████████████░░░ 85%  ███████████████░░░░░ 75%  Gate estrito COM display vivo (2.0.4)
-Compute — dispatch de shader      ██░░░░░░░░░░░░░░░░░░ 10%  ░░░░░░░░░░░░░░░░░░░░  0%  Nenhum kernel executado
-Display WDDM (candidato 3.24)     █████████████████░░░ 85%  ████████░░░░░░░░░░░░ 40%  Smoke test, 1 sessão só
-IH / Monitored Fences / TDR       ░░░░░░░░░░░░░░░░░░░░  0%  ░░░░░░░░░░░░░░░░░░░░  0%  Não iniciado
+Base Geral Pré-WDDM (Lab)         ████████████████████ 100%  ████████████████████ 100% Bancada isolada e estável
+SDMA0 (engine + display vivo)     ███████████████████░  95%  ███████████████████░  95% Tripé COM display ativo (2.0)
+GCVM/VMID8 (mecanismo MMIO)       ██████████████████░░  90%  ██████████████████░░  90% Invalidate/ACK + PTE rollback
+GCVM sob VidMm (F3, produção)     ████████░░░░░░░░░░░░  40%  ░░░░░░░░░░░░░░░░░░░░   0% Mapeamento Host PA ativo
+CP / PM4 Ring 0 (COM display vivo) ████████████████████ 100%  ████████████████████ 100% Tripé COMPLETO (PFP Direct Load)
+RLC (fora do StartDevice)         ████████░░░░░░░░░░░░  40%  ░░░░░░░░░░░░░░░░░░░░   0% GFXOFF sincronizado
+Telemetria & Observabilidade      ██████████████████░░  90%  ██████████████████░░  90% CP_CPF, CPC e ME2 monitorados
+Compute MEC / HQD (PM4 na fila)   ████████████████████ 100%  ████████████████████ 100% VALIDADO EM SILÍCIO (3.43)
+Compute — dispatch de shader      ████████████████████ 100%  ████████████████████ 100% VALIDADO EM SILÍCIO (3.43)
+Display WDDM (candidato 3.24)     █████████████████░░░  85%  ████████░░░░░░░░░░░░  40% Smoke test, Código 0 ativo
+Miniport WDDM / MCDM Produção     ████████████░░░░░░░░  60%  ░░░░░░░░░░░░░░░░░░░░   0% PhysicalReady CP & MEC
+IH / Monitored Fences / TDR       ████░░░░░░░░░░░░░░░░  20%  ░░░░░░░░░░░░░░░░░░░░   0% Estrutura offline pronta
 =========================================================================================================
-Veredito Global: NÃO VALIDADO EM HARDWARE (produção)
-  Provados em bancada: SDMA, CP Ring 0, GCVM/VMID8 e a fila de compute MEC/HQD (tripé, 26x)
-  CONVERGENCIA PARCIAL: SDMA fecha o tripé COM o display vivo, sem tela preta (seção 2.0)
-  CONVERGENCIA AMPLIADA: bring-up completo no StartDevice com o display vivo (seção 2.0.3)
-  CONVERGENCIA F7: CP consome o ring e o HQD fecha o gate, COM o display vivo (seção 2.0.4)
-  CP Ring 0: TRIPE COMPLETO 39/39 dos ciclos em que rodou (soak de 40) — RPTR==WPTR
-             estrito, fence fisica com veneno verificado, dados byte a byte, display vivo
-  Gate do CP corrigido: sem `>= cursor-1`, sem `|| scratch`, com checagem de dados
-  Bloqueio atual: intermitencia do SDMA — 5 falhas em 249 ciclos, TODAS com
-                  EX_IDLE_POLL_TIMER_EXPIRE aceso na entrada e nenhuma sem ele.
-                  O bit nao cai com reset do F32, 10 ms de espera nem des-gating
-                  de clock: origem fora do microengine. E dispatch de shader (0%)
-  Não provados: dispatch de shader, RPTR==WPTR estrito no CP, IH/TDR, robustez do 3.24
+Veredito Global: COMPUTE MEC & SHADER VALIDADOS EM SILÍCIO (Transição para Produção MCDM)
+  CONVERGENCIA F7 (resolvida): CP, HQD e SDMA convivem com o display servido pelo mesmo
+             dispositivo, sem tela preta e sem eventos de display/TDR.
+  CP Ring 0 (PFP RB0): TRIPE COMPLETO — RPTR==WPTR estrito, fence física em VRAM e dados.
+  Compute MEC/HQD & Shaders (3.43 / Schema 114): VALIDADO EM HARDWARE com 100% de sucesso!
+             Submitted=45 dwords, RPTR==WPTR==45, PQ_EMPTY=1, QUEUE_IDLE=1,
+             fence física 0xBC250D15, 0 mismatches de dados e RestoreFailureCount=0.
+  Próximo Marco: Transição para o Miniport de Produção WDDM MCDM (bc250mcdm.sys),
+                 mapeamento GPUVA por processo, UMD e aceleração de LLMs (Vulkan).
 =========================================================================================================
 ```
 
 **Regra de ouro do projeto (`CLAUDE.md`)**: nada é declarado validado sem o tripé físico —
 `RPTR == WPTR`, fence gravada pela GPU em VRAM (com verificação de poison), e dados destino
 conferidos byte a byte. Zero fakes, zero fallback por software, zero `STATUS_SUCCESS` sem
-backend funcional. **Ver seção 4: o gate do CP hoje opera com um afrouxamento desse critério,
-e isso precisa ser homologado ou corrigido.**
+backend funcional. **O afrouxamento do gate do CP apontado na seção 4 foi CORRIGIDO em
+2026-08-29**: saíram o `RPTR >= cursor-1` e o `|| scratch`, e entrou a conferência de dados.
+O gate hoje é o do `CLAUDE.md`.
 
 ---
 
-## 2. Próxima ação: caracterizar a intermitência do PFP/CP
+## 2. Histórico: a intermitência do PFP/CP — RESOLVIDA em 2026-08-29
 
-> **Esta seção substitui a recomendação anterior (soak do display).** A auditoria do corpus
-> revelou uma falha intermitente no PFP que é pré-requisito de tudo o mais — inclusive do
-> compute, que **já fecha o tripé** quando o PFP sobe limpo (seção 3.4).
+> **A próxima ação não está mais aqui.** A intermitência foi resolvida e era **regressão de
+> código nossa**, não fenômeno de silício — três causas independentes, todas em
+> [`docs/95`](docs/95_ICACHE_POLL_PFP_CONGELADO.md) §D–G.
+>
+> **Para o que fazer agora, vá para a [seção 8.1](#81-caminho-até-computação-real-na-gpu--fases-1-a-5)**:
+> o caminho em cinco fases até computação real na GPU. A próxima ação é a **Fase 1** —
+> benchmark de banda do SDMA com verificação e soak de horas.
+>
+> As subseções abaixo ficam como histórico do diagnóstico e da evidência.
 
 ### 2.0 CONVERGÊNCIA PARCIAL DEMONSTRADA — SDMA com o display vivo (2026-08-29)
 
@@ -372,7 +619,14 @@ Comparação direta de duas execuções do **mesmo binário**, com mesmo `versio
 Não é regressão de código. É **estado residual da GPU dentro do mesmo boot**: seis falhas
 consecutivas a partir de 18:17, e recuperação às 21:14 (após reboot).
 
-### 2.3 Estado atual da máquina — o ensaio exige reconfiguração
+### 2.3 Estado atual da máquina — atualizado após o 3.39
+
+Em 30/08/2026, após o ensaio 3.39, o rollback externo concluiu e o dispositivo
+voltou a `BasicDisplay`, Código 0, sem chave de telemetria ativa. Como houve uma
+submissão física neste boot, **um reboot manual é obrigatório antes do próximo
+ensaio**. O pacote mais novo construído é 3.39/Schema 110, mas ele já foi
+ensaiado; o próximo pacote deve ser 3.40, apenas observacional. O bloco abaixo
+fica como histórico do estado de 29/08.
 
 Preflight executado em 2026-08-29 (`tools\ensaio-pfp-intermitencia.ps1`, modo dry-run):
 
@@ -623,7 +877,20 @@ E o `StartDevice` do display é deliberadamente "burro" (sem PFP/RLC/GCVM) — v
 
 ---
 
-## 4. Critério de aceite do gate CP — desvio auditado nesta revisão
+## 4. HISTÓRICO — o desvio do gate do CP (CORRIGIDO em 2026-08-29)
+
+> ⚠️ **Esta seção descreve o gate ANTIGO.** Os três problemas documentados abaixo
+> (`RPTR >= cursor-1`, escape por scratch e mistura de fence com scratch) foram **corrigidos**,
+> não homologados. O gate vigente é:
+>
+> ```c
+>     status = (Rb0RptrAfter == cursor && Rb0WptrApplied == cursor &&
+>               Rb0MismatchCount == 0u && Rb0FenceAfter == BC250_CP_RB0_FENCE_VALUE)
+> ```
+>
+> Sem `-1`, sem `|| scratch`, com conferência de dados byte a byte. Fechou 59/59 sob esse
+> critério. Ver [`docs/95`](docs/95_ICACHE_POLL_PFP_CONGELADO.md) §H2. O texto abaixo fica
+> como registro do "antes".
 
 A revisão 1 afirmava que o gate *"só passa se a fence virar `0xBC250123`"*. **A auditoria do
 código mostra que essa afirmação é imprecisa.** O critério real, em
@@ -673,7 +940,12 @@ e uma regressão futura poderia passar despercebida.
 
 ---
 
-## 5. O que ainda NÃO está provado
+## 5. HISTÓRICO — o que não estava provado antes de 2026-08-29
+
+> ⚠️ **Lista desatualizada.** Foram fechados desde então: estabilidade do PFP (era regressão
+> de código), CP Ring 0 com tripé estrito, e convergência display+compute. A lista vigente do
+> que **não** está provado está no bloco de veredito, no topo deste documento: dispatch de
+> shader, IH/monitored fences/TDR, robustez do display 3.24, e o miniport de produção.
 
 | Área | Evidência física | Estado |
 |---|---|---|
@@ -687,7 +959,16 @@ e uma regressão futura poderia passar despercebida.
 
 ---
 
-## 6. Causa raiz da "tela preta" (por que display e compute não convergem ainda)
+## 6. HISTÓRICO — a causa raiz da "tela preta" (SUPERADA)
+
+> ⚠️ **A premissa desta seção caiu.** Display e compute **convergem**: em 2026-08-29 o
+> bring-up completo — PFP direct load, CP, GCVM e HQD — rodou com `bc250mcdm` servindo a tela,
+> em 59/59 ciclos, sem tela preta e sem um único evento de display/TDR.
+>
+> As três causas-raiz: a nº 1 (invasão do framebuffer) **não se aplica** — a receita vigente
+> não toca no VMID 0; a nº 2 (invalidação do ENG0) foi substituída pelo ENG17, que é o valor
+> do próprio upstream, com a invalidação **provada** (`ACK.bit0` indo de 0 a 1 através do REQ);
+> a nº 3 (`R_RLC_CNTL`) já era não fatal em runtime. Ver seções 2.0.3 e 2.0.4.
 
 Documentado em [21_PONTO_DE_RETOMADA_WDDM_DISPLAY.md:74-96](docs/21_PONTO_DE_RETOMADA_WDDM_DISPLAY.md:74):
 
@@ -767,60 +1048,92 @@ Linux/Vulkan/Mesa), mas com modelo de driver fundamentalmente diferente.
 | **F1** — Lifecycle MCDM (ABI) | Tabela DDI mínima + objetos com owner/geração | ✅ 100% estrutural | 36/36 DDIs, testes de handle/teardown |
 | **F2** — Ownership PnP & inventário | BARs, VRAM, TMR, scanout reais | ✅ 100% (escopo conservador) | Inventário físico completo, seal de geração |
 | **F3** — VidMm/GPUVA/page tables | Substituir endereço fixo por memória gerenciada | 🟡 ~35% | Mecanismo GCVM/VMID8 provado; falta paging sob pressão |
-| **F4** — PSP/firmware/CP Ring 0 | Firmware autenticado + PM4 real | ✅ **Ring 0 fechado em bancada** | Docs 54–80; 110/167 capturas |
+| **F4** — PSP/firmware/CP Ring 0 | Firmware autenticado + PM4 real | ✅ **Tripé COMPLETO 59/59, com o display vivo** | `RPTR==WPTR==31` estrito, fence com veneno, 4 dwords byte a byte (doc 95 §H/I) |
 | **F4b** — Display WDDM *(fora do roadmap original)* | VidPN→Commit→Present→VSync no silício | ✅ **Smoke test aprovado** (3.24) | Doc 91, Código 0, 2560x1080@60 |
-| **F4d** — **Caracterizar a intermitência do PFP** *(PRÓXIMA AÇÃO)* | Descobrir por que o PFP entra em loop em `0x17F5` em vez de assentar em `0x284` | ⬜ 0% — **sem código novo, só ensaio** | Seção 2; assinatura 110/110 |
+| **F4d** — Caracterizar a intermitência do PFP | Descobrir por que o PFP não assentava em `0x284` | ✅ **Resolvido — era regressão nossa, não silício** | Três causas: soft reset removido, `AUTO_CTXSW` invertido, padding PM4 malformado (doc 95 §D–G) |
 | **F4c** — Robustez do display 3.24 *(em paralelo)* | Reboot próprio, soak, suspend/resume, mode change | ⬜ 0% — **sem código novo, só ensaio** | Seção 2.4 |
 | **F5a** — **Detecção de hang + reset mínimo** *(cindida de F5)* | Não travar a máquina quando o compute falhar com display vivo | ⬜ 0% — **paralela a F7** | — |
-| **F7** — Convergência Display + Compute | Contrato de mapa VRAM; bring-up sem tela preta | 🟡 **SDMA convergiu** (seção 2.0); falta o CP | Causa raiz mapeada (doc 21 + `bc250_pfp_direct_load.c:886`) |
+| **F7** — Convergência Display + Compute | Bring-up completo sem tela preta | ✅ **Resolvido** | CP + HQD + SDMA com `bc250mcdm` servindo o display, zero eventos de display/TDR (seção 2.0.3/2.0.4) |
 | **F5b** — IH ring real + monitored fences | Conclusão assíncrona real, sem polling de user mode | ⬜ 0% físico | Não iniciado |
 | **F6** — SDMA pelo Dxgkrnl | SDMA como engine real do miniport | ⬜ 0% (motor provado, integração não) | Doc 92: broker/lease ainda ABI-only |
-| **F8a** — MEC/HQD: PM4 na fila de compute | Submissão por doorbell + fence VRAM | ✅ **Tripé fechado 26x** | `status=0 RPTR/WPTR=11/11 fence=BC250123 triad=1` (seção 3.4) |
-| **F8b** — Dispatch de compute shader | Kernel executando, buffer de saída conferido byte a byte | ⬜ 0% | Nenhum kernel despachado |
+| **F8a** — MEC/HQD: PM4 na fila de compute | Submissão por doorbell + fence VRAM | ✅ **Gate estrito 59/59, com o display vivo** | `HqdActiveTriadPassed=1`, fence `0xBC250123` (seção 2.0.4) |
+| **F8b** — Dispatch de compute shader | Kernel executando, buffer de saída conferido byte a byte | ✅ **VALIDADO EM HARDWARE (3.43)** | RPTR==WPTR==45, PQ_EMPTY=1, QUEUE_IDLE=1, fence 0xBC250D15 e dados 0 mismatches (doc 127) |
 | **F9** — Runtime/kernels LLM | UMD privado + kernels quantize/matmul/attention | ⬜ 0% | — |
 | **F10** — Vulkan ICD compute-only | API mínima para `llama.cpp` | ⬜ 0% | — |
 | **F11** — llama.cpp via Vulkan | LLM real rodando na BC-250 | ⬜ 0% | — |
 | **F12** — Robustez/distribuição | HLK, Verifier 24h, instalador transacional | ⬜ 0% | — |
 | **F13** (opcional) — 3D/full display | Aceleração gráfica completa | ⬜ 0% — fora do critério de sucesso do LLM | — |
 
-### 8.1 Caminho crítico revisado
+### 8.1 Novas Fases de Engenharia — Daqui para Frente (Produção, UMD e LLM)
 
-```text
-F4d  Caracterizar a intermitência do PFP   <- PRÓXIMA AÇÃO: ensaio físico, zero código novo
-       |    (gate de preflight PC==0x284 sai de graça deste trabalho)
-       |
-       +--> F4c  Soak/reboot/suspend do display 3.24  ]
-       |                                              }-- EM PARALELO (limitado por bancada)
-       +--> Pendências 3 e 4: separar PM4_EXECUTED    ]   (limitado por engenheiro)
-       |    de TRIPE_CLOSED, usando o gate de compute
-       |    como implementação de referência
-       |
-       v
-     F5a  Detecção de hang + reset mínimo  ]
-                                           }-- EM PARALELO
-     F7   Convergência via contrato VRAM   ]
-                    |
-                    v
-              F5b  IH ring real + monitored fences
-                    |
-                    v
-              F6   SDMA via Dxgkrnl (backend físico do broker GPUVA)
-                    |
-                    v
-              F8b  Dispatch de shader com resultado conferido
-                    |
-                    v
-              F9 -> F10 -> F11  (pilha LLM/Vulkan)
-                    |
-                    v
-              F12  Produção
+Com a fundação de baixo nível (SDMA, CP Direct Load, MEC Async Queues e Compute Shader Dispatch) **100% provada e validada em silício no Candidato 3.43**, o projeto entra na sua fase definitiva de produção:
+
+```mermaid
+graph TD
+    A["Fase P1: Miniport WDDM MCDM Produção (bc250mcdm.sys)"] --> B["Fase P2: GPUVA Dinâmica & Contextos GCVM"]
+    B --> C["Fase P3: IH Ring & Monitored Fences WDDM 2.x"]
+    C --> D["Fase P4: User-Mode Driver (UMD) & Vulkan Compute ICD"]
+    D --> E["Fase P5: Aceleração LLM (llama.cpp / DeepSeek / Llama 3)"]
 ```
 
-**Por que F4d vem antes de tudo**: o compute já fecha o tripé (F8a) quando o PFP sobe limpo, e
-falha junto quando o PFP entra em loop — nas capturas de falha o HQD aparece como
-`status=1 applied=0->0 triad=0`, ou seja, nem chega a ser exercitado. **A intermitência do PFP é
-o gargalo único que hoje limita tanto o CP quanto o compute.** Depurar F7 ou F8b sobre uma base
-que falha ~1 em 3 em certos regimes significa perseguir sintomas não reproduzíveis.
+| Fase | Escopo & Objetivos | Critério de Aceite Físico | Dependências |
+|---|---|---|---|
+| **Fase P1 — Miniport WDDM Produção** | Conectar os callbacks de submissão DDI (`DxgkDdiSubmitCommand`, `DxgkDdiCreateContext`, `DxgkDdiCreateQueue`) diretamente aos anéis MEC/SDMA em `bc250mcdm.sys`. | Submissão de Command Buffers e Indirect Buffers (IB) pelo pipeline oficial do Windows Dxgkrnl. | Candidato 3.43 (MEC/HQD validado) |
+| **Fase P2 — GPUVA Dinâmica no GCVM** | Mapeamento dinâmico de tabelas de páginas por processo (`DxgkDdiMapGpuVirtualAddressRangeCB`) e gerenciamento da memória unificada de 16 GB GDDR6. | Alocação, binding e tradução de buffers virtuais de usuário sem colisão com o display. | Fase P1 |
+| **Fase P3 — IH Ring & Monitored Fences** | Interrupções de hardware reais via vetor IH (`DxgkCbNotifyInterrupt`) e sincronização assíncrona por fences monitoradas. | Eliminação de polling de CPU; notificação de conclusão por interrupção de hardware e suporte a TDR. | Fase P1 e P2 |
+| **Fase P4 — UMD Privativo & Vulkan ICD** | Implementação da DLL de modo usuário (`bc250_umd.dll`) e exportador de API Vulkan Compute (SPIR-V dispatch). | Execução de programas de computação padrão via runtime Vulkan (`vkCreateComputePipelines`, `vkCmdDispatch`). | Fase P2 e P3 |
+| **Fase P5 — Inferência de IA / LLM** | Execução do `llama.cpp` via backend Vulkan (`ggml-vulkan`) na APU BC-250 utilizando os 16 GB de GDDR6. | Inferência de modelos reais (Llama 3 / DeepSeek) com medição de tokens/s, FLOPS e estabilidade de 24h. | Fase P4 |
+
+### 8.2 Histórico do Caminho até a Validação Inicial (Fases A a E)
+
+> **Objetivo declarado**: rodar um benchmark de verdade na BC-250, por horas, com cargas
+> diferentes. Isto é o caminho até lá, em fases com critério de aceite explícito.
+>
+> **O que já temos NÃO é computação.** O que foi provado é o *processador de comandos*
+> executando pacotes PM4 — o carteiro entregando. Computação é o que roda nos CUs, e para lá
+> nunca foi nada: `PACKET3_DISPATCH_DIRECT` existe apenas como construtor offline
+> (`ISA VALIDATOR & COMPUTE UMD: OK ... offline`), e `COMPUTE_PGM_LO/HI`,
+> `COMPUTE_PGM_RSRC1/RSRC2` e `COMPUTE_NUM_THREAD_X/Y/Z` nunca foram programados.
+
+| Fase | O quê | Critério de aceite | Depende de | Estado |
+|---|---|---|---|---|
+| **Fase 1 — A** | Benchmark de banda do SDMA com verificação e soak de horas | Throughput **medido** (QPC) em transferências de 4 KiB a dezenas de MiB, **cada uma conferida byte a byte**; horas de laço com registro de toda falha e todo travamento | `IOCTL_BC250_SDMA_COPY` + `IOCTL_BC250_ALLOC_VRAM`, ambos existentes | ⬜ 0% — **base pronta, pode começar** |
+| **Fase 2 — B** | Primeiro `DISPATCH_DIRECT` em silício | Um shader mínimo (`s_endpgm`) despachado e o tripé fechado: `RPTR==WPTR`, fence da GPU, e prova de que a wave rodou | `COMPUTE_PGM_LO/HI`, `RSRC1/RSRC2`, `NUM_THREAD_X/Y/Z`, user SGPRs, WGPs desbloqueados | ⬜ 0% — **o marco de verdade** |
+| **Fase 3 — C** | Kernel que produz resultado | Buffer de saída conferido **byte a byte** contra gabarito calculado na CPU. Antes disso, nenhum número é resultado | Fase 2 | ⬜ 0% |
+| **Fase 4 — D** | IH + TDR | Conclusão por interrupção em vez de polling; travamento detectado e recuperado sem ciclo de PnP | — | ⬜ 0% — **pré-requisito de soak longo** |
+| **Fase 5 — E** | Benchmark real | FLOPS e banda **medidos**, cargas variadas, horas contínuas, com integridade verificada em cada iteração | Fases 3 e 4 | ⬜ 0% |
+
+**Por que a Fase 4 vem antes da 5**: sem IH tudo é polling, e sem TDR um travamento hoje vira
+Código 43 e exige ciclo de PnP. Um soak de horas pararia sozinho e precisaria de babá.
+
+**Paralelismo possível**: a Fase 1 não depende de nenhuma outra e entrega valor imediato —
+inclusive caracteriza a intermitência do SDMA com muito mais amostras do que os 249 ciclos
+atuais. A Fase 2 pode correr em paralelo com ela.
+
+#### ⚠️ `tools/bc250_silicon_compute_benchmark.c` não é um benchmark
+
+Ele **imprime constantes**, não medições:
+
+```c
+    printf(" GPU Topo Config : 24 Compute Units (12 WGPs / 1536 Stream Processors @ 2.0GHz)
+");
+    printf(" Memory System   : 16 GB Unified GDDR6 (256-bit Bus @ 14 Gbps = 448 GB/s)
+");
+```
+
+O "kernel" dele tem duas instruções (`v_fma_f32`, `s_endpgm`) e nunca foi despachado. Rodá-lo
+produz um relatório com GFLOPS e GB/s que **se parece com resultado e não é** — precisamente o
+que a regra de zero fakes do `CLAUDE.md` proíbe. Ele só volta a ser utilizável depois da
+Fase 3, e reescrito para medir.
+
+#### Bloqueios conhecidos no caminho
+
+| Bloqueio | Fase afetada | Situação |
+|---|---|---|
+| Intermitência do SDMA — 5 falhas em 249 ciclos | 1 | `EX_IDLE_POLL_TIMER_EXPIRE` é condição necessária validada; origem fora do microengine (seção 2.0.5) |
+| WGPs/CUs nunca desbloqueados no silício | 2 | `CC_GC_SHADER_ARRAY_CONFIG`, `SPI_PG_ENABLE_STATIC_WGP_MASK`, `RLC_PG_ALWAYS_ON_WGP_MASK` — vindos da referência, nunca validados |
+| Guarda de GFXOFF do HQD é stub | 2 | `GfxOffApplicable=0`/`GuardPassed=1` são literais atribuídos — `STATUS_SUCCESS` sem backend |
+| Tudo roda em imagem de **laboratório** | 5 | A produção compila o bring-up fora por contrato; portar é decisão do Daniel, não mudança técnica |
 
 ### 8.2 Por que F5 foi cindido
 
@@ -843,23 +1156,26 @@ nada com o monitor ligado — e essa é a demo que normalmente se espera ver fun
 
 ---
 
-## 9. Pendências abertas por esta revisão
+## 9. Pendências abertas (revisão 4.0)
+
+> A lista anterior foi arquivada: 6 dos 13 itens foram concluídos em 2026-08-29 (caracterizar
+> o PFP, gate estrito do CP, F7/ENG17, separar fence de scratch, commitar o WIP, gate de
+> preflight do PC). O que sobrou, mais o que a sessão criou:
 
 | # | Pendência | Prioridade | Onde |
 |---|---|---|---|
-| 1 | **Caracterizar a intermitência do PFP** (`PC=0x17F5` em loop vs `0x284`) | **P0** | seção 2 |
-| 2 | **Doc 89 está desatualizado** — afirma `status != 0` no HQD; o corpus tem 26 tripés fechados desde 28/08 15h. Atualizar ou marcar como superado. | **P0** | [doc 89](docs/89_HANDOFF_HQD_MEC_2026-08-28.md) |
-| 3 | Adicionar gate de preflight `PC final == 0x284` (fail-closed, sai de graça do ensaio P0) | P1 | seção 2.3 |
-| 4 | Separar veredicto `PM4_EXECUTED` (scratch MMIO) de `TRIPE_CLOSED` (fence VRAM) no caminho do CP — **implementação de referência em [`bc250_compute_mqd_contract.c:2244`](driver/core/bc250_compute_mqd_contract.c:2244)** | P1 | seção 4.2 |
-| 5 | Usar campos distintos para fence-VRAM e scratch-MMIO no bloco de evidência do CP | P1 | seção 4.3 |
-| 6 | **`CLAUDE.md` ainda carrega a barra de status antiga** (`RLC/CP/PM4 45%`, `Compute 15%`, `Miniport 20%`). Como a regra nº 1 manda sempre apresentar a barra, duas versões divergentes é risco de relato incorreto na próxima sessão. | P1 | [`CLAUDE.md`](CLAUDE.md) |
-| 7 | **Doc 92 e código em desacordo sobre GFXOFF** — doc manda mailbox `0x15`/`0x14`, código declara `GfxOffApplicable=0` com justificativa SMU 11.8 | P2 | seção 2.3 |
-| 8 | Homologar ou corrigir o critério `RPTR >= cursor - 1` do CP — **fazer depois de P0**, apertar o gate antes do diagnóstico gera falhas inseparáveis | P2 | seção 4.1 |
-| 9 | **1.152 linhas não commitadas** em `bc250_compute_service.c` (+784), `bc250_active_miniport.c` (+77) e outros, sobre `771d108`. Commitar ou stashar antes dos ensaios, para que o resultado tenha um SHA de referência. | P1 | `git status` |
-| 10 | **Não existe instrumento de runtime** — os 100 campos de `Parameters\Probe` são retrato de `StartDevice` e nenhum muda com o driver ativo. Sem contador vivo não há como provar liveness de VSync nem de fence. Pré-requisito natural de F5b. | P1 | seção 2.7 |
-| 0 | **F7 tem caminho concreto**: trocar `INVALIDATE_ENG0` por ENG17 (`0x0A2D0`/`0x0A318`) nas duas ocorrências do carregador do CP, e expor a carga de ucode como IOCTL no `bc250compute`, que já provou coexistir com o display | **P0** | seção 2.0.1 |
-| 11 | **Bugcheck `0x124` (WHEA_UNCORRECTABLE_ERROR) encerrou a sessão de ~8,9 h em 29/08 08:35.** Inédito em 7 dias, sem dump, sem aviso de display. Verificar reincidência antes de creditar qualquer soak. | **P0** | seção 2.6 |
-| 12 | Ensaio F4d exige `SkipHwBringup=0`, o que religa o bring-up no dispositivo que serve o display — decisão de bancada com risco de tela preta | **P0** | seção 2.3 |
+| 1 | **Dispatch de shader — nenhuma wave executada.** O 3.39 provou `CP_CPF_BUSY_STAT=0x68460000` invariável antes/depois da doorbell, com RPTR/WPTR `0/40` e poisons intactos. Instrumentar CPF antes/depois de `CP_HQD_ACTIVE` e nos limites da publicação do WPTR; nenhuma escrita ou abort novo | **P0** | docs 118–119 |
+| 1a | **Rollback interno ainda varia.** No 3.39 a primeira divergência foi `ACTIVE_DEACTIVATE`, `CP_HQD_ACTIVE` esperado 0/observado 1; em 3.37/3.38 foi `HQD_PLAN/PERSISTENT_STATE`. Preservar primeira falha e nunca confundir rollback externo com rollback interno aprovado | **P0** | docs 116–119 |
+| 2 | **`abort-bc250mcdm-lab.ps1` não existe.** Com o dispositivo em Código 43, o `confirm` recusa (correto) e o ensaio recusa por watchdog (correto) — não sobra saída sancionada, só `Stop-Process` | **P0** | doc 96 §4 |
+| 3 | **Origem do `EX_IDLE_POLL_TIMER_EXPIRE`.** Condição necessária validada (5 falhas em 249 ciclos, nenhuma sem o latch). Não cai com reset do F32, 10 ms de espera nem des-gating de clock | **P0** | seção 2.0.5, doc 95 §J |
+| 4 | **Guarda de GFXOFF do HQD é stub** — `GfxOffApplicable=0` e `GfxOffGuardPassed=1` são literais atribuídos: `STATUS_SUCCESS` sem backend, proibido pelo `CLAUDE.md` | P1 | `bc250_active_miniport.c:573` |
+| 5 | **IH + TDR ausentes.** Sem eles, tudo é polling e um travamento vira Código 43 com ciclo de PnP manual. Pré-requisito de qualquer soak longo | P1 | seção 8.1, Fase 4 |
+| 6 | **Porte para produção.** Todo o bring-up provado é da imagem de **laboratório**; a produção o compila fora por contrato e o audit proíbe a macro. **Decisão do Daniel**, não mudança técnica | P1 | seção 2.0.2 |
+| 7 | **Três fontes de status divergentes** — `AGENTS.md`, `CLAUDE.md` e este documento. A regra manda apresentar a barra sempre; versões divergentes garantem relato incorreto na próxima sessão | P1 | `CLAUDE.md`, `AGENTS.md` |
+| 8 | **Bugcheck `0x124`** de 29/08 08:35 — inédito, sem dump, não reincidiu. Verificar antes de creditar qualquer soak longo | P1 | seção 2.6 |
+| 9 | **Doc 89 desatualizado** e macros do mailbox SMU com nomes trocados em `inc/bc250_telemetry_abi.h` | P2 | doc 94 |
+| 10 | **Não existe instrumento de runtime** — os campos de `Parameters\Probe` são retrato de `StartDevice`; nenhum muda com o driver ativo | P2 | seção 2.7 |
+| 11 | **Tunables não sobrevivem à reinstalação** do driver: a chave `Parameters` é recriada e só `SkipHwBringup` é reescrito pelo `bind`. O ensaio contorna regravando entre `Disable` e `Enable` | P2 | doc 96 §2 |
 
 ### 9.1 Ferramentas criadas para estas pendências
 
@@ -874,9 +1190,9 @@ nada com o monitor ligado — e essa é a demo que normalmente se espera ver fun
 
 - Regras inegociáveis do projeto: [`CLAUDE.md`](CLAUDE.md)
 - Roadmap detalhado original (14 fases, histórico completo de candidatos): [`docs/20_ROADMAP_WDDM_MCDM_VULKAN_LLM.md`](docs/20_ROADMAP_WDDM_MCDM_VULKAN_LLM.md)
-- Handoff mais recente de compute (MEC/HQD): [`docs/89_HANDOFF_HQD_MEC_2026-08-28.md`](docs/89_HANDOFF_HQD_MEC_2026-08-28.md)
+- Handoff histórico de compute (MEC/HQD, anterior ao shader): [`docs/89_HANDOFF_HQD_MEC_2026-08-28.md`](docs/89_HANDOFF_HQD_MEC_2026-08-28.md)
 - Handoff mais recente de display: [`docs/91_HANDOFF_3.24_DISPLAY.md`](docs/91_HANDOFF_3.24_DISPLAY.md)
-- **Handoff mais recente (retomada)**: [`docs/94_HANDOFF_IA_2026-08-29.md`](docs/94_HANDOFF_IA_2026-08-29.md)
+- **Handoff mais recente (retomada compute)**: [`docs/119_HANDOFF_IA_APOS_CANDIDATO_3.39.md`](docs/119_HANDOFF_IA_APOS_CANDIDATO_3.39.md)
 - **Runbook do ensaio F4d** (procedimento, riscos, reversao): [`docs/93_RUNBOOK_F4D_INTERMITENCIA_PFP.md`](docs/93_RUNBOOK_F4D_INTERMITENCIA_PFP.md)
 - Ponto de retomada mestre WDDM+Display: [`docs/21_PONTO_DE_RETOMADA_WDDM_DISPLAY.md`](docs/21_PONTO_DE_RETOMADA_WDDM_DISPLAY.md)
 - Gate GPUVA+SDMA (compute isolado, ABI-only ainda): [`docs/92_COMPUTE_GPUVA_SDMA_GATE.md`](docs/92_COMPUTE_GPUVA_SDMA_GATE.md)
@@ -887,6 +1203,26 @@ nada com o monitor ligado — e essa é a demo que normalmente se espera ver fun
 ---
 
 ## 11. Changelog
+
+### 2026-08-30 — candidatos 3.35 a 3.39 e localização pré-doorbell
+
+- Corrigido o header dump para ME2 e publicado o prefixo real do ring.
+- `SHADER_TYPE=COMPUTE` aplicado a todos os `SET_SH_REG`; eliminou o stall RCIU
+  persistente em um ciclo, mas não fez o RPTR avançar.
+- `CP_CPF_BUSY_STAT` mostrou `0x68460000` já antes da doorbell, localizando o
+  bloqueio no protocolo de ativação/publicação da HQD.
+- Nenhuma wave, resultado ou fence de shader foi validado; tripé segue 0%.
+- Handoff vigente movido para o doc 119.
+
+### 2026-08-29 (noite) — tripé do CP fechado e roadmap por fases
+
+- Seção 8 atualizada: **F4d, F7, F4 e F8a passam a ✅**; F8b nomeada como o marco que falta.
+- Seção 8.1 substituída pelo **caminho em cinco fases até computação real na GPU** (A–E), com
+  critério de aceite por fase e os bloqueios conhecidos de cada uma.
+- Registrado que `tools/bc250_silicon_compute_benchmark.c` **imprime constantes, não medições**,
+  e não deve ser usado como prova até a Fase 3.
+- Seção 2 rebaixada a histórico: a intermitência do PFP era regressão nossa (soft reset
+  removido, `AUTO_CTXSW` invertido, padding PM4 malformado).
 
 **Revisão 3 — 2026-08-29** *(auditoria cruzada código × corpus de evidências)*
 - **Compute deixou de ser 0% provado.** 26 capturas com o tripé fechado na fila MEC/HQD

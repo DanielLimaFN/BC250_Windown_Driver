@@ -1,0 +1,14 @@
+﻿{
+    "captured_at":  "2026-08-30T08:38:43.8527525-03:00",
+    "source":  "C:\\Windows\\System32\\drivers\\bc250mcdm.sys",
+    "destination":  "C:\\BC250_DRIVER_QUARANTINE\\bc250mcdm.pre-f8b2-20260830-083843.sys",
+    "sha256":  "11D0E7DF08E07FD40DCB13A37D6D4FFD266F2B4ED920CEC3130C5C7B738DECEB",
+    "authorized_hashes":  [
+                              "63BA15E6E3F4EC044D39F46900B868B56BA25332D01C54C58DAD68F2E3D18455",
+                              "11D0E7DF08E07FD40DCB13A37D6D4FFD266F2B4ED920CEC3130C5C7B738DECEB"
+                          ],
+    "device_service":  "BasicDisplay",
+    "device_code":  0,
+    "action":  "MOVED_TO_RECOVERABLE_QUARANTINE",
+    "hardware_validated":  false
+}

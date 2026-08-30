@@ -1,4 +1,5 @@
 #include "../core/bc250_compute_mqd_contract.h"
+#include "../core/bc250_observable_shader.h"
 
 #include <string.h>
 
@@ -45,6 +46,7 @@ static uint32_t g_forceAllOnes;
 static uint32_t g_forceActiveOnReadback;
 static uint32_t g_forceWptrOnReadback;
 static uint32_t g_forceRestoreError;
+static uint32_t g_eopInitAutoClear;
 
 static unsigned char g_testMqdBuffer[512];
 static uint32_t g_testRingBuffer[16384];
@@ -52,6 +54,8 @@ static unsigned char g_testEopBuffer[4096];
 static uint32_t g_testRptrBuffer[2];
 static uint32_t g_testWptrBuffer[2];
 static uint32_t g_testFenceBuffer[2];
+static uint32_t g_testShaderBuffer[64];
+static uint32_t g_testResultBuffer[4];
 static uint32_t g_testDoorbellBuffer[1024];
 static uint64_t g_testPtBuffer[512];
 
@@ -65,7 +69,18 @@ static uint32_t g_dbRangeLo = 0u;
 static uint32_t g_dbRangeHi = 0u;
 static uint32_t g_cpPqStatus = 0u;
 static uint32_t g_cpPqWptrPollCntl = 0u;
+static uint32_t g_cpPqWptrPollCntl1 = 0u;
+static uint32_t g_cpPqWptrPollCntl1Sticky = 0u;
+static uint32_t g_cpPqWptrPollCntlRejectEn = 0u;
+static uint32_t g_cpPqWptrPollCntlReadOnly = 0u;
+/* Silicio do 3.31: CP_HQD_PQ_WPTR_LO so aceita cursor com a fila ativa. */
+static uint32_t g_wptrRejectWhileInactive = 0u;
+/* Silicio do 3.31: a QUEUE_MASK nao volta a zero. */
+static uint32_t g_cpPqWptrPollCntl1NeverClears = 0u;
 static uint32_t g_rlcCpSchedulers = 0x58504840u;
+static uint32_t g_ccShaderArrayConfig = 0xFFF80000u;
+static uint32_t g_spiStaticWgpMask = 0x0000FFFFu;
+static uint32_t g_rlcAlwaysOnWgpMask = 0x00000003u;
 static uint32_t g_gcvmL2Cntl2 = 0x12340000u;
 static uint32_t g_gcvmCtx0Cntl = 0u;
 static uint32_t g_gcvmCtx0PtBaseLo = 0u;
@@ -73,10 +88,12 @@ static uint32_t g_gcvmCtx0PtBaseHi = 0u;
 static uint32_t g_gcvmCtx0PtStartLo = 0u;
 static uint32_t g_gcvmCtx0PtEndLo = 0u;
 static uint32_t g_gcvmEng0Req = 0u;
+static uint32_t g_gcvmEng0Ack = 1u;
 static uint32_t g_gcvmInvalidateReq = 0u;
 static uint32_t g_gcvmInvalidateAck = BC250_HQD_GCVM_INVALIDATE_VMID0;
 static uint32_t g_hdpInvalidate = 0u;
 static uint32_t g_simulateComputeExecution = 0u;
+static uint32_t g_simulateObservableDispatch = 0u;
 static uint32_t g_requireInactiveForWptrRestore = 0u;
 static uint32_t g_seenActiveOne = 0u;
 static uint32_t g_reportPqEmptyStatus = 0u;
@@ -120,8 +137,24 @@ static uint32_t Bc250TestHqdRead32(
         *Value = g_cpPqWptrPollCntl;
         return 1u;
     }
+    if (ByteOffset == BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1) {
+        *Value = g_cpPqWptrPollCntl1;
+        return 1u;
+    }
     if (ByteOffset == BC250_HQD_MMIO_RLC_CP_SCHEDULERS) {
         *Value = g_rlcCpSchedulers;
+        return 1u;
+    }
+    if (ByteOffset == BC250_HQD_MMIO_CC_GC_SHADER_ARRAY_CONFIG) {
+        *Value = g_ccShaderArrayConfig;
+        return 1u;
+    }
+    if (ByteOffset == BC250_HQD_MMIO_SPI_PG_STATIC_WGP_MASK) {
+        *Value = g_spiStaticWgpMask;
+        return 1u;
+    }
+    if (ByteOffset == BC250_HQD_MMIO_RLC_PG_ALWAYS_ON_WGP_MASK) {
+        *Value = g_rlcAlwaysOnWgpMask;
         return 1u;
     }
     if (ByteOffset == BC250_HQD_MMIO_HDP_READ_CACHE_INVALIDATE) {
@@ -154,6 +187,10 @@ static uint32_t Bc250TestHqdRead32(
     }
     if (ByteOffset == BC250_HQD_MMIO_GCVM_INVALIDATE_REQ) {
         *Value = g_gcvmInvalidateReq;
+        return 1u;
+    }
+    if (ByteOffset == 0x0000A2D4u) {
+        *Value = g_gcvmEng0Ack;
         return 1u;
     }
     if (ByteOffset == BC250_HQD_MMIO_GCVM_INVALIDATE_ACK) {
@@ -237,7 +274,37 @@ static uint32_t Bc250TestHqdWrite32(
         return 1u;
     }
     if (ByteOffset == BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL) {
-        g_cpPqWptrPollCntl = Value;
+        uint32_t accepted;
+
+        /* Silicio read-only neste contexto: a escrita e aceita e ignorada. */
+        if (g_cpPqWptrPollCntlReadOnly != 0u) {
+            return 1u;
+        }
+        /* POLL_ACTIVE[30] e status do CP: nao aceita escrita. */
+        accepted = Value & ~BC250_HQD_WPTR_POLL_ACTIVE_MASK;
+        /* Observado no 3.30: EN[31] nao e retido por este silicio. */
+        if (g_cpPqWptrPollCntlRejectEn != 0u) {
+            accepted &= ~BC250_HQD_WPTR_POLL_ENABLE_MASK;
+        }
+        g_cpPqWptrPollCntl =
+            (g_cpPqWptrPollCntl & BC250_HQD_WPTR_POLL_ACTIVE_MASK) | accepted;
+        return 1u;
+    }
+    if (ByteOffset == BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1) {
+        /*
+         * Injecao de falha: com Sticky, a mascara de fila nao aceita voltar
+         * a zero.  Serve para provar que o rollback localiza o estagio.
+         */
+        if (g_cpPqWptrPollCntl1Sticky != 0u && Value == 0u) {
+            return 1u;
+        }
+        /* A mascara acende e nao apaga, como o silicio do 3.31. */
+        if (g_cpPqWptrPollCntl1NeverClears != 0u &&
+            (Value & g_cpPqWptrPollCntl1) != g_cpPqWptrPollCntl1) {
+            g_cpPqWptrPollCntl1 |= Value;
+            return 1u;
+        }
+        g_cpPqWptrPollCntl1 = Value;
         return 1u;
     }
     if (ByteOffset == BC250_HQD_MMIO_RLC_CP_SCHEDULERS) {
@@ -274,6 +341,7 @@ static uint32_t Bc250TestHqdWrite32(
     }
     if (ByteOffset == BC250_HQD_MMIO_GCVM_INVALIDATE_ENG0_REQ) {
         g_gcvmEng0Req = Value;
+        g_gcvmEng0Ack |= 1u;
         return 1u;
     }
     if (ByteOffset == BC250_HQD_MMIO_GCVM_INVALIDATE_REQ) {
@@ -306,8 +374,18 @@ static uint32_t Bc250TestHqdWrite32(
             (g_activeRegister & 1u) != 0u) {
             return 1u;
         }
+        /* Fila inativa recusa cursor diferente de zero (observado no 3.31). */
+        if (g_wptrRejectWhileInactive != 0u && Value != 0u &&
+            (g_activeRegister & 1u) == 0u) {
+            return 1u;
+        }
         g_wptrRegister = Value;
-        if (g_simulateComputeExecution) {
+        if (g_simulateObservableDispatch && Value != 0u) {
+            g_rptrRegister = Value;
+            g_testRptrBuffer[0] = Value;
+            g_testResultBuffer[0] = BC250_DISPATCH_RESULT_VALUE;
+            g_testFenceBuffer[0] = BC250_DISPATCH_FENCE_VALUE;
+        } else if (g_simulateComputeExecution) {
             g_rptrRegister = Value;
             g_testRptrBuffer[0] = Value;
             g_scratchRegister = 0x22222222u;
@@ -321,7 +399,10 @@ static uint32_t Bc250TestHqdWrite32(
     }
     if (ByteOffset >= 0xC800u && ByteOffset <= 0xC900u) {
         uint32_t idx = (ByteOffset - 0xC800u) >> 2;
-        g_hqdBankRegs[bank][idx] = Value;
+        g_hqdBankRegs[bank][idx] =
+            ByteOffset == BC250_HQD_MMIO_EOP_RPTR &&
+            g_eopInitAutoClear != 0u ?
+                (Value & ~0x80000000u) : Value;
         return 1u;
     }
     return 0u;
@@ -342,6 +423,7 @@ static int Bc250RunComputeMqdContractTest(void)
 {
     uint32_t available = 0;
     uint32_t wptr = 0;
+    uint32_t i = 0;
     volatile uint32_t registerOffset = 0;
     BC250_HQD_SELECTOR_INTERFACE selectorInterface;
     BC250_HQD_SELECTOR_EVIDENCE selectorEvidence;
@@ -388,7 +470,7 @@ static int Bc250RunComputeMqdContractTest(void)
     CHECK((g_testMqd.CpHqdPqControl & 0x3Fu) == 13u); /* 16384 -> order 14, 14-1 = 13 */
     CHECK(g_testMqd.CpHqdPqControl == 0xD030090Du);
     CHECK(g_testMqd.CpHqdPqDoorbellControl == 0x40000080u);
-    CHECK(g_testMqd.CpHqdPersistentState == 0x00005300u);
+    CHECK(g_testMqd.CpHqdPersistentState == 0x00005301u);
     CHECK(g_testMqd.CpHqdIbControl == 0x00300000u);
     CHECK(g_testMqd.CpHqdQuantum == 0x00000111u);
     CHECK(g_testMqd.CpHqdActive == 1u);
@@ -781,6 +863,14 @@ static int Bc250RunComputeMqdContractTest(void)
         buffers.FenceGpuAddress = 0x0000080000003200ull;
         buffers.FenceSizeBytes = sizeof(g_testFenceBuffer);
 
+        buffers.ShaderVirtual = g_testShaderBuffer;
+        buffers.ShaderGpuAddress = 0x0000080000005000ull;
+        buffers.ShaderSizeBytes = sizeof(g_testShaderBuffer);
+
+        buffers.ResultVirtual = g_testResultBuffer;
+        buffers.ResultGpuAddress = 0x0000080000006000ull;
+        buffers.ResultSizeBytes = sizeof(g_testResultBuffer);
+
         buffers.DoorbellVirtual = g_testDoorbellBuffer;
         buffers.DoorbellSizeBytes = sizeof(g_testDoorbellBuffer);
 
@@ -789,6 +879,9 @@ static int Bc250RunComputeMqdContractTest(void)
         buffers.PtSizeBytes = sizeof(g_testPtBuffer);
         memset(g_testPtBuffer, 0, sizeof(g_testPtBuffer));
         g_testPtBuffer[2] = 0x0000080000003000ull | 0xE1ull;
+        g_testPtBuffer[4] = 0x0000080000005000ull | 0xE1ull;
+        g_testPtBuffer[5] = 0x0000080000006000ull | 0xE1ull;
+        g_testPtBuffer[16] = buffers.RingGpuAddress | 0xE1ull;
 
         g_testProps.MqdGpuAddress = buffers.MqdGpuAddress;
         g_testProps.HqdBaseGpuAddress = buffers.RingGpuAddress;
@@ -818,7 +911,8 @@ static int Bc250RunComputeMqdContractTest(void)
         g_dbRangeLo = 0x00000110u;
         g_dbRangeHi = 0x0FFFFFFCu;
         g_cpPqStatus = 0u;
-        g_cpPqWptrPollCntl = 0x80000004u;
+        g_cpPqWptrPollCntl = 0x40000004u;
+        g_cpPqWptrPollCntl1 = 0u;
         g_rlcCpSchedulers = 0x58504840u;
         g_simulateComputeExecution = 0u;
 
@@ -846,9 +940,28 @@ static int Bc250RunComputeMqdContractTest(void)
         CHECK(actEvidence.DoorbellRangeUpperApplied == 0x0FFFFFFCu);
         CHECK(actEvidence.DoorbellRangeUpperReadback == 0x0FFFFFFCu);
         CHECK(actEvidence.CpPqStatusReadback == 0x00000002u);
-        CHECK(actEvidence.WptrPollCntlBefore == 0x80000004u);
-        CHECK(actEvidence.WptrPollCntlApplied == 0x00000004u);
-        CHECK(actEvidence.WptrPollCntlReadback == 0x00000004u);
+        /*
+         * Candidato 3.30: EN[31] ligado, PERIOD[7:0] preservado do silicio
+         * e POLL_ACTIVE[30] fora da escrita, por ser status do CP.
+         */
+        CHECK(actEvidence.WptrPollCntlBefore == 0x40000004u);
+        CHECK(actEvidence.WptrPollCntlProbeApplied == 0x00000004u);
+        CHECK(actEvidence.WptrPollCntlProbeReadback == 0x40000004u);
+        CHECK(actEvidence.WptrPollCntlWritable == 1u);
+        CHECK(actEvidence.WptrPollCntlApplied == 0x80000004u);
+        CHECK(actEvidence.WptrPollCntlReadback == 0xC0000004u);
+        CHECK(actEvidence.WptrPollCntlEnLatched == 1u);
+        CHECK(actEvidence.WptrPollCntl1Before == 0u);
+        CHECK(actEvidence.QueueMaskBit == 0u);
+        CHECK(actEvidence.WptrPollCntl1Applied == 1u);
+        CHECK(actEvidence.WptrPollCntl1Readback == 1u);
+        CHECK(actEvidence.WptrPollCntl1Restored == 0u);
+        CHECK(actEvidence.WptrPollCntl1RestorePassed == 1u);
+        CHECK(g_cpPqWptrPollCntl1 == 0u);
+        CHECK(g_cpPqWptrPollCntl == 0x40000004u);
+        CHECK(actEvidence.PreActiveWptrApplied == 11u);
+        CHECK(actEvidence.PreActiveWptrReadback == 11u);
+        CHECK(actEvidence.PreActiveWptrPublished == 1u);
         CHECK(actEvidence.SelectorReleasedBeforeKick == 1u);
         CHECK(actEvidence.InitialWptrLo == 16u);
         CHECK(actEvidence.InitialWptrHi == 0u);
@@ -857,12 +970,12 @@ static int Bc250RunComputeMqdContractTest(void)
         CHECK(actEvidence.BaselineWptrRestored == 16u);
         CHECK(actEvidence.BaselineWptrRestorePolls == 1u);
         CHECK(actEvidence.BaselineWptrRestorePassed == 1u);
-        CHECK(actEvidence.DirectWptrKickApplied == 1u);
-        CHECK(actEvidence.DirectWptrBefore == 0u);
-        CHECK(actEvidence.DirectWptrReadback == 11u);
-        CHECK(actEvidence.DirectWptrRestored == 16u);
-        CHECK(actEvidence.DirectWptrRestorePolls == 1u);
-        CHECK(actEvidence.DirectWptrRestorePassed == 1u);
+        /*
+         * Com o WPTR publicado antes de ACTIVE, o WptrAfterKick ja vale o
+         * cursor e o diagnostico de escrita direta nao e mais acionado.
+         */
+        CHECK(actEvidence.WptrAfterKick == 11u);
+        CHECK(actEvidence.DirectWptrKickApplied == 0u);
         CHECK(actEvidence.RptrMmioLast == 0u);
         CHECK(actEvidence.WptrMmioLast == 11u);
         CHECK(actEvidence.HqStatus0PollLast == 0u);
@@ -875,6 +988,11 @@ static int Bc250RunComputeMqdContractTest(void)
         CHECK(actEvidence.RlcCpSchedulersRestored == 0x58504840u);
         CHECK(actEvidence.RlcCpSchedulersRestorePassed == 1u);
         CHECK(g_rlcCpSchedulers == 0x58504840u);
+        CHECK(actEvidence.EopRptrBefore == 0u);
+        CHECK(actEvidence.EopRptrApplied == 0x80000000u);
+        CHECK(actEvidence.EopRptrReadback == 0x80000000u);
+        CHECK(actEvidence.EopRptrRestored == 0u);
+        CHECK(actEvidence.EopRptrRestorePassed == 1u);
         CHECK(actEvidence.HdpInvalidateApplied == 1u);
         CHECK(actEvidence.GcvmL2Cntl2Before == 0x12340000u);
         CHECK(actEvidence.GcvmL2Cntl2Applied == 0x12340003u);
@@ -892,6 +1010,13 @@ static int Bc250RunComputeMqdContractTest(void)
         CHECK(g_gcvmL2Cntl2 == 0x12340000u);
         CHECK(actEvidence.TriadPassed == 0u);
         CHECK(actEvidence.RestorePassed == 1u);
+        CHECK(actEvidence.RestoreFailureCount == 0u);
+        CHECK(actEvidence.FirstRestoreFailureStage ==
+              (uint32_t)BC250_HQD_RESTORE_STAGE_NONE);
+        CHECK(actEvidence.FirstRestoreFailureOffset == 0u);
+        CHECK(actEvidence.FirstRestoreFailureExpected == 0u);
+        CHECK(actEvidence.FirstRestoreFailureObserved == 0u);
+        CHECK(actEvidence.FirstRestoreFailureTransport == 0u);
         CHECK(actEvidence.MemoryRestorePassed == 1u);
         CHECK(actEvidence.PhysicalReady == 0u);
         CHECK(g_wptrRegister == 16u);
@@ -905,16 +1030,198 @@ static int Bc250RunComputeMqdContractTest(void)
         g_activeRegister = 0u;
         g_seenActiveOne = 0u;
         g_requireInactiveForWptrRestore = 1u;
+        g_eopInitAutoClear = 1u;
         CHECK(Bc250ComputeRunActiveHqdSubmissionTransaction(
             &selectorInterface, &buffers, &g_testProps, &g_testMqd,
             &actEvidence) == BC250_HQD_ACTIVE_PM4_NOT_CONSUMED);
         CHECK(actEvidence.InitialWptrLo == 0u);
         CHECK(actEvidence.BaselineWptrRestored == 0u);
         CHECK(actEvidence.BaselineWptrRestorePassed == 1u);
+        CHECK(actEvidence.EopRptrApplied == 0x80000000u);
+        CHECK(actEvidence.EopRptrReadback == 0u);
+        CHECK(actEvidence.EopRptrRestorePassed == 1u);
         CHECK(actEvidence.RestorePassed == 1u);
         CHECK(g_wptrRegister == 0u);
         CHECK(g_rptrRegister == 0u);
         g_requireInactiveForWptrRestore = 0u;
+        g_eopInitAutoClear = 0u;
+
+        /*
+         * 9.2.1 Candidato 3.30 - a mascara de fila vem da topologia real.
+         * RLC_CP_SCHEDULERS com ME2/pipe 1 deve produzir bit 8 (1 << (1*8 + 0)),
+         * nunca um literal fixo.
+         */
+        g_wptrRegister = 0u;
+        g_activeRegister = 0u;
+        g_seenActiveOne = 0u;
+        g_rlcCpSchedulers = 0x58504848u;
+        g_cpPqWptrPollCntl1 = 0u;
+        CHECK(Bc250ComputeRunActiveHqdSubmissionTransaction(
+            &selectorInterface, &buffers, &g_testProps, &g_testMqd,
+            &actEvidence) == BC250_HQD_ACTIVE_PM4_NOT_CONSUMED);
+        CHECK(actEvidence.QueueMaskBit == 8u);
+        CHECK(actEvidence.WptrPollCntl1Applied == 0x00000100u);
+        CHECK(actEvidence.WptrPollCntl1Readback == 0x00000100u);
+        CHECK(actEvidence.WptrPollCntl1RestorePassed == 1u);
+        CHECK(g_cpPqWptrPollCntl1 == 0u);
+        CHECK(actEvidence.RestorePassed == 1u);
+        CHECK(actEvidence.RestoreFailureCount == 0u);
+        g_rlcCpSchedulers = 0x58504840u;
+
+        /*
+         * 9.2.2 Telemetria de rollback: a PRIMEIRA falha deve ser localizada
+         * por estagio, offset, esperado e observado.  O agregado sozinho nao
+         * permitia diagnosticar o ensaio 3.29.
+         */
+        g_wptrRegister = 0u;
+        g_activeRegister = 0u;
+        g_seenActiveOne = 0u;
+        g_cpPqWptrPollCntl1 = 0u;
+        g_cpPqWptrPollCntl1Sticky = 1u;
+        CHECK(Bc250ComputeRunActiveHqdSubmissionTransaction(
+            &selectorInterface, &buffers, &g_testProps, &g_testMqd,
+            &actEvidence) == BC250_HQD_ACTIVE_PM4_NOT_CONSUMED);
+        CHECK(actEvidence.RestorePassed == 0u);
+        CHECK(actEvidence.WptrPollCntl1RestorePassed == 0u);
+        CHECK(actEvidence.RestoreFailureCount == 1u);
+        CHECK(actEvidence.FirstRestoreFailureStage ==
+              (uint32_t)BC250_HQD_RESTORE_STAGE_WPTR_POLL_CNTL1);
+        CHECK(actEvidence.FirstRestoreFailureOffset ==
+              BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1);
+        CHECK(actEvidence.FirstRestoreFailureExpected == 0u);
+        CHECK(actEvidence.FirstRestoreFailureObserved == 1u);
+        CHECK(actEvidence.FirstRestoreFailureTransport == 0u);
+        g_cpPqWptrPollCntl1Sticky = 0u;
+        g_cpPqWptrPollCntl1 = 0u;
+
+        /*
+         * 9.2.3 Reproduz o silicio do ensaio 3.30: EN[31] nao e retido.
+         * A transacao NAO pode abortar por isso - o 3.30 parou aqui e nunca
+         * chegou a CP_PQ_WPTR_POLL_CNTL1, ao WPTR pre-ACTIVE, ao INIT_FETCHER
+         * nem ao ACTIVE, gastando um ensaio fisico inteiro.
+         */
+        g_wptrRegister = 0u;
+        g_activeRegister = 0u;
+        g_seenActiveOne = 0u;
+        g_cpPqWptrPollCntl = 0x00000000u;
+        g_cpPqWptrPollCntl1 = 0u;
+        g_cpPqWptrPollCntlRejectEn = 1u;
+        CHECK(Bc250ComputeRunActiveHqdSubmissionTransaction(
+            &selectorInterface, &buffers, &g_testProps, &g_testMqd,
+            &actEvidence) == BC250_HQD_ACTIVE_PM4_NOT_CONSUMED);
+        CHECK(actEvidence.WptrPollCntlWritable == 1u);
+        CHECK(actEvidence.WptrPollCntlEnLatched == 0u);
+        /* A sequencia seguiu adiante, que era o objetivo do 3.31. */
+        CHECK(actEvidence.WptrPollCntl1Applied == 1u);
+        CHECK(actEvidence.WptrPollCntl1Readback == 1u);
+        CHECK(actEvidence.PreActiveWptrPublished == 1u);
+        CHECK(actEvidence.EopRptrApplied == 0x80000000u);
+        CHECK(actEvidence.ActiveConfirmed == 1u);
+        /* Sem execucao real, o tripe continua reprovado: nada afrouxou. */
+        CHECK(actEvidence.TriadPassed == 0u);
+        CHECK(actEvidence.PhysicalReady == 0u);
+        CHECK(actEvidence.RestorePassed == 1u);
+        CHECK(g_cpPqWptrPollCntl == 0x00000000u);
+        g_cpPqWptrPollCntlRejectEn = 0u;
+
+        /*
+         * 9.2.4 Registrador inteiramente read-only: a sonda de PERIOD precisa
+         * distinguir este caso do anterior, e a sequencia segue mesmo assim.
+         */
+        g_wptrRegister = 0u;
+        g_activeRegister = 0u;
+        g_seenActiveOne = 0u;
+        g_cpPqWptrPollCntl = 0x00000000u;
+        g_cpPqWptrPollCntl1 = 0u;
+        g_cpPqWptrPollCntlReadOnly = 1u;
+        CHECK(Bc250ComputeRunActiveHqdSubmissionTransaction(
+            &selectorInterface, &buffers, &g_testProps, &g_testMqd,
+            &actEvidence) == BC250_HQD_ACTIVE_PM4_NOT_CONSUMED);
+        CHECK(actEvidence.WptrPollCntlWritable == 0u);
+        CHECK(actEvidence.WptrPollCntlEnLatched == 0u);
+        CHECK(actEvidence.PreActiveWptrPublished == 1u);
+        CHECK(actEvidence.ActiveConfirmed == 1u);
+        CHECK(actEvidence.TriadPassed == 0u);
+        CHECK(actEvidence.RestorePassed == 1u);
+        g_cpPqWptrPollCntlReadOnly = 0u;
+        g_cpPqWptrPollCntl = 0x40000004u;
+
+        /*
+         * 9.2.5 Reproduz o silicio medido no 3.31, os tres fatos juntos:
+         * CP_PQ_WPTR_POLL_CNTL read-only, CP_HQD_PQ_WPTR_LO recusando o
+         * cursor com a fila inativa, e QUEUE_MASK que acende e nao apaga.
+         *
+         * O 3.31 abortou no segundo desses (READBACK_FAILED) e nunca chegou
+         * a ACTIVE. Aqui a transacao TEM de prosseguir e chegar ao fim.
+         */
+        g_wptrRegister = 0u;
+        g_activeRegister = 0u;
+        g_seenActiveOne = 0u;
+        g_cpPqWptrPollCntl = 0x00000000u;
+        g_cpPqWptrPollCntl1 = 0u;
+        g_cpPqWptrPollCntlReadOnly = 1u;
+        g_wptrRejectWhileInactive = 1u;
+        g_cpPqWptrPollCntl1NeverClears = 1u;
+        CHECK(Bc250ComputeRunActiveHqdSubmissionTransaction(
+            &selectorInterface, &buffers, &g_testProps, &g_testMqd,
+            &actEvidence) == BC250_HQD_ACTIVE_PM4_NOT_CONSUMED);
+        /* Entrou limpo: a mascara estava apagada antes do ensaio. */
+        CHECK(actEvidence.WptrPollCntl1DirtyEntry == 0u);
+        CHECK(actEvidence.WptrPollCntlWritable == 0u);
+        CHECK(actEvidence.WptrPollCntlEnLatched == 0u);
+        /* A publicacao pre-ACTIVE falhou, mas NAO abortou o ensaio. */
+        CHECK(actEvidence.PreActiveWptrApplied == 11u);
+        CHECK(actEvidence.PreActiveWptrPublished == 0u);
+        /* E a sequencia chegou ate o fim, que era o objetivo do 3.32. */
+        CHECK(actEvidence.WptrPollCntl1Applied == 1u);
+        CHECK(actEvidence.EopRptrApplied == 0x80000000u);
+        CHECK(actEvidence.ActiveConfirmed == 1u);
+        /* A mascara nao apaga: rollback reprovado e localizado no estagio. */
+        CHECK(actEvidence.WptrPollCntl1ClearAttempts == 3u);
+        CHECK(actEvidence.WptrPollCntl1RestorePassed == 0u);
+        CHECK(actEvidence.RestorePassed == 0u);
+        CHECK(actEvidence.FirstRestoreFailureStage ==
+              (uint32_t)BC250_HQD_RESTORE_STAGE_WPTR_POLL_CNTL1);
+        CHECK(actEvidence.FirstRestoreFailureOffset ==
+              BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1);
+        CHECK(actEvidence.FirstRestoreFailureObserved == 1u);
+        /* Sem execucao real o tripe continua reprovado. */
+        CHECK(actEvidence.TriadPassed == 0u);
+        CHECK(actEvidence.PhysicalReady == 0u);
+        /*
+         * Candidato 3.33: a instrumentacao de observacao tem de estar
+         * populada e coerente. Sem consumo, o RPTR nunca sai de zero nem no
+         * registrador nem no writeback em memoria, e a primeira amostra de
+         * PQ_CONTROL/HQ_STATUS0 tem de ter sido capturada.
+         */
+        CHECK(actEvidence.MecPcSamples != 0u);
+        CHECK(actEvidence.PqControlFirstSample == actEvidence.PqControlObserved);
+        CHECK(actEvidence.HqStatus0FirstSample == actEvidence.HqStatus0PollLast);
+        CHECK(actEvidence.RptrNonZeroSamples == 0u);
+        CHECK(actEvidence.RptrReportMemFirst == 0u);
+        CHECK(actEvidence.RptrReportMemLast == 0u);
+        CHECK(actEvidence.DequeueRequestPollLast == 0u);
+
+        /*
+         * 9.2.6 Boot morno: a mascara ja entra acesa. O rollback compararia
+         * 1 com 1 e daria falso verde; DirtyEntry existe para denunciar.
+         */
+        g_wptrRegister = 0u;
+        g_activeRegister = 0u;
+        g_seenActiveOne = 0u;
+        CHECK(g_cpPqWptrPollCntl1 == 1u);
+        CHECK(Bc250ComputeRunActiveHqdSubmissionTransaction(
+            &selectorInterface, &buffers, &g_testProps, &g_testMqd,
+            &actEvidence) == BC250_HQD_ACTIVE_PM4_NOT_CONSUMED);
+        CHECK(actEvidence.WptrPollCntl1Before == 1u);
+        CHECK(actEvidence.WptrPollCntl1DirtyEntry == 1u);
+        CHECK(actEvidence.WptrPollCntl1RestorePassed == 1u);
+
+        g_cpPqWptrPollCntlReadOnly = 0u;
+        g_wptrRejectWhileInactive = 0u;
+        g_cpPqWptrPollCntl1NeverClears = 0u;
+        g_cpPqWptrPollCntl1 = 0u;
+        g_cpPqWptrPollCntl = 0x40000004u;
 
         /* 9.3 Caso com Simulacao: Triade aprovada com sucesso */
         g_wptrRegister = 16u;
@@ -938,6 +1245,187 @@ static int Bc250RunComputeMqdContractTest(void)
         CHECK(actEvidence.BaselineWptrRestorePassed == 1u);
         CHECK(g_wptrRegister == 16u);
         g_simulateComputeExecution = 0u;
+
+        /*
+         * 9.4 Dispatch observavel: o fake representa somente a resposta do
+         * silicio; a transacao ainda deve exigir dado, fence posterior,
+         * RPTR==WPTR e rollback byte-exato no mesmo ciclo.
+         */
+        {
+            BC250_HQD_SHADER_DISPATCH_EVIDENCE dispatchEvidence;
+            uint32_t shaderBefore[BC250_OBSERVABLE_SHADER_DWORDS];
+            uint32_t ringBefore[BC250_DISPATCH_RING_MIN_DWORDS];
+            uint32_t mqdBefore[BC250_MQD_SIZE_DWORDS];
+            uint32_t resultBefore = 0x13579BDFu;
+            uint32_t fenceBefore0 = 0x2468ACE0u;
+            uint32_t fenceBefore1 = 0x11223344u;
+            uint32_t rptrBefore0 = 0x01020304u;
+            uint32_t rptrBefore1 = 0x05060708u;
+            uint32_t wptrBefore0 = 0x11121314u;
+            uint32_t wptrBefore1 = 0x15161718u;
+            uint32_t eopBefore0 = 0x55AA55AAu;
+            uint32_t ibControlBefore = 0x00C0FFEEu;
+            uint32_t eopRptrBefore = 0x00000025u;
+            BC250_HQD_ACTIVE_STATUS dispatchStatus;
+
+            for (i = 0u; i < BC250_OBSERVABLE_SHADER_DWORDS; ++i) {
+                shaderBefore[i] = 0x90000000u + i;
+                g_testShaderBuffer[i] = shaderBefore[i];
+            }
+            for (i = 0u; i < BC250_DISPATCH_RING_MIN_DWORDS; ++i) {
+                ringBefore[i] = 0xA0000000u + i;
+                g_testRingBuffer[i] = ringBefore[i];
+            }
+            for (i = 0u; i < BC250_MQD_SIZE_DWORDS; ++i) {
+                mqdBefore[i] = 0xB0000000u + i;
+                ((uint32_t *)g_testMqdBuffer)[i] = mqdBefore[i];
+            }
+            g_testResultBuffer[0] = resultBefore;
+            g_testFenceBuffer[0] = fenceBefore0;
+            g_testFenceBuffer[1] = fenceBefore1;
+            g_wptrRegister = 16u;
+            g_rptrRegister = 0u;
+            g_testRptrBuffer[0] = rptrBefore0;
+            g_testRptrBuffer[1] = rptrBefore1;
+            g_testWptrBuffer[0] = wptrBefore0;
+            g_testWptrBuffer[1] = wptrBefore1;
+            ((uint32_t *)g_testEopBuffer)[0] = eopBefore0;
+            g_hqdBankRegs[1][(BC250_HQD_MMIO_IB_CONTROL - 0xC800u) >> 2] =
+                ibControlBefore;
+            g_hqdBankRegs[1][(BC250_HQD_MMIO_EOP_RPTR - 0xC800u) >> 2] =
+                eopRptrBefore;
+            g_simulateObservableDispatch = 1u;
+
+            /* O PQ_BASE recebe GPUVA; a PTE prova o backing fisico separado. */
+            g_testProps.HqdBaseGpuAddress = BC250_HQD_RING_GPUVA;
+
+            CHECK(Bc250ValidateObservableShaderManifest(
+                Bc250GetObservableShaderManifest()) != 0);
+            CHECK(buffers.ShaderVirtual != NULL);
+            CHECK(buffers.ShaderSizeBytes >= 256u);
+            CHECK((buffers.ShaderGpuAddress & 0xFFull) == 0u);
+            CHECK(buffers.ResultVirtual != NULL);
+            CHECK(buffers.ResultSizeBytes >= 4u);
+            CHECK(((g_testPtBuffer[4] & 0x0000FFFFFFFFF000ull) |
+                  0x0000000000000000ull) == buffers.ShaderGpuAddress);
+            CHECK(((g_testPtBuffer[5] & 0x0000FFFFFFFFF000ull) |
+                  0x0000000000000000ull) == buffers.ResultGpuAddress);
+
+            /* Nenhum WGP nao-harvestado/always-on: aborta antes de APPLY. */
+            g_rlcAlwaysOnWgpMask = 0u;
+            CHECK(Bc250ComputeRunObservableShaderDispatchTransaction(
+                &selectorInterface, &buffers, &g_testProps, &g_testMqd,
+                &actEvidence, &dispatchEvidence) ==
+                BC250_HQD_ACTIVE_PREFLIGHT_FAILED);
+            CHECK(g_testShaderBuffer[0] == shaderBefore[0]);
+            CHECK(g_testResultBuffer[0] == resultBefore);
+            CHECK(g_testFenceBuffer[0] == fenceBefore0);
+            CHECK(g_testRingBuffer[0] == ringBefore[0]);
+            g_rlcAlwaysOnWgpMask = 0x00000003u;
+
+            dispatchStatus = Bc250ComputeRunObservableShaderDispatchTransaction(
+                &selectorInterface, &buffers, &g_testProps, &g_testMqd,
+                &actEvidence, &dispatchEvidence);
+            if (dispatchStatus != BC250_HQD_ACTIVE_OK) {
+                return 2000 + (int)dispatchStatus;
+            }
+            CHECK(dispatchEvidence.CcShaderArrayPass1 == 0xFFF80000u);
+            CHECK(dispatchEvidence.CcShaderArrayPass2 == 0xFFF80000u);
+            CHECK(dispatchEvidence.SpiStaticWgpMaskPass1 == 0x0000FFFFu);
+            CHECK(dispatchEvidence.SpiStaticWgpMaskPass2 == 0x0000FFFFu);
+            CHECK(dispatchEvidence.RlcAlwaysOnWgpMaskPass1 == 0x00000003u);
+            CHECK(dispatchEvidence.RlcAlwaysOnWgpMaskPass2 == 0x00000003u);
+            CHECK(dispatchEvidence.NonHarvestedWgpMask == 0x00000007u);
+            CHECK(dispatchEvidence.AlwaysOnNonHarvestedWgpMask == 0x00000003u);
+            CHECK(dispatchEvidence.WgpPreflightPassed == 1u);
+            CHECK(dispatchEvidence.RingGpuVaLow == 0x00010000u);
+            CHECK(dispatchEvidence.RingGpuVaHigh == 0u);
+            CHECK(dispatchEvidence.RingPhysicalLow ==
+                  (uint32_t)buffers.RingGpuAddress);
+            CHECK(dispatchEvidence.RingPhysicalHigh ==
+                  (uint32_t)(buffers.RingGpuAddress >> 32));
+            CHECK(dispatchEvidence.RingPteLow ==
+                  (uint32_t)g_testPtBuffer[16]);
+            CHECK(dispatchEvidence.RingPteHigh ==
+                  (uint32_t)(g_testPtBuffer[16] >> 32));
+            CHECK(dispatchEvidence.RingTranslationPassed == 1u);
+            CHECK(dispatchEvidence.RingReadbackMismatchCount == 0u);
+            CHECK(dispatchEvidence.RingReadbackPassed == 1u);
+            CHECK(dispatchEvidence.RingDword[0] == 0xC0027602u);
+            CHECK(dispatchEvidence.RingDword[1] == 0x0000020Cu);
+            CHECK(dispatchEvidence.RingDword[2] == 0x00000040u);
+            CHECK(dispatchEvidence.RingDword[3] == 0u);
+            CHECK(dispatchEvidence.RingDword[4] == 0xC0027602u);
+            CHECK(dispatchEvidence.RingDword[5] == 0x00000212u);
+            CHECK(dispatchEvidence.RingDword[6] != 0u);
+            CHECK(dispatchEvidence.RingDword[7] != 0u);
+            CHECK(actEvidence.PqBaseLoApplied == 0x00000100u);
+            CHECK(actEvidence.PqBaseHiApplied == 0u);
+            CHECK(actEvidence.CpMecCntlApplied == 0x40000000u);
+            CHECK(actEvidence.CpMecCntlReadback == 0x40000000u);
+            CHECK(actEvidence.CpMecCntlAfter == 0x50000000u);
+            CHECK(actEvidence.EopRptrBefore == eopRptrBefore);
+            CHECK(actEvidence.EopRptrApplied == 0x80000000u);
+            CHECK(actEvidence.EopRptrReadback == 0x80000000u);
+            CHECK(actEvidence.EopRptrRestored == eopRptrBefore);
+            CHECK(actEvidence.EopRptrRestorePassed == 1u);
+            CHECK(dispatchEvidence.Plan.FenceIsAfterDispatch == 1u);
+            CHECK(dispatchEvidence.Plan.SubmittedDwords >
+                  dispatchEvidence.Plan.DispatchPacketIndex);
+            CHECK(dispatchEvidence.ShaderReadbackPassed == 1u);
+            CHECK(dispatchEvidence.Observation.RptrAfter ==
+                  dispatchEvidence.Plan.SubmittedDwords);
+            CHECK(dispatchEvidence.Observation.WptrAfter ==
+                  dispatchEvidence.Plan.SubmittedDwords);
+            CHECK(dispatchEvidence.Observation.ResultBefore ==
+                  BC250_DISPATCH_RESULT_POISON);
+            CHECK(dispatchEvidence.Observation.ResultAfter ==
+                  BC250_DISPATCH_RESULT_VALUE);
+            CHECK(dispatchEvidence.Observation.FenceBefore ==
+                  BC250_DISPATCH_FENCE_POISON);
+            CHECK(dispatchEvidence.Observation.FenceAfter ==
+                  BC250_DISPATCH_FENCE_VALUE);
+            CHECK(dispatchEvidence.Observation.ResultMismatchCount == 0u);
+            CHECK(dispatchEvidence.Verdict.TriadPassed == 1u);
+            CHECK(dispatchEvidence.Verdict.RollbackPassed == 1u);
+            CHECK(dispatchEvidence.PhysicalReady == 1u);
+            CHECK(actEvidence.PhysicalReady == 1u);
+            CHECK(g_testResultBuffer[0] == resultBefore);
+            CHECK(g_testFenceBuffer[0] == fenceBefore0);
+            CHECK(g_testFenceBuffer[1] == fenceBefore1);
+            CHECK(g_testRptrBuffer[0] == rptrBefore0);
+            CHECK(g_testRptrBuffer[1] == rptrBefore1);
+            CHECK(g_testWptrBuffer[0] == wptrBefore0);
+            CHECK(g_testWptrBuffer[1] == wptrBefore1);
+            CHECK(((uint32_t *)g_testEopBuffer)[0] == eopBefore0);
+            CHECK(g_hqdBankRegs[1][
+                  (BC250_HQD_MMIO_IB_CONTROL - 0xC800u) >> 2] ==
+                  ibControlBefore);
+            CHECK(g_hqdBankRegs[1][
+                  (BC250_HQD_MMIO_EOP_RPTR - 0xC800u) >> 2] ==
+                  eopRptrBefore);
+            for (i = 0u; i < BC250_MQD_SIZE_DWORDS; ++i) {
+                CHECK(((uint32_t *)g_testMqdBuffer)[i] == mqdBefore[i]);
+            }
+            for (i = 0u; i < BC250_OBSERVABLE_SHADER_DWORDS; ++i) {
+                CHECK(g_testShaderBuffer[i] == shaderBefore[i]);
+            }
+            for (i = 0u; i < BC250_DISPATCH_RING_MIN_DWORDS; ++i) {
+                CHECK(g_testRingBuffer[i] == ringBefore[i]);
+            }
+            g_simulateObservableDispatch = 0u;
+
+            /* PTE do ring incorreta: falha antes de qualquer APPLY. */
+            g_testPtBuffer[16] =
+                (buffers.RingGpuAddress + 0x1000ull) | 0xE1ull;
+            CHECK(Bc250ComputeRunObservableShaderDispatchTransaction(
+                &selectorInterface, &buffers, &g_testProps, &g_testMqd,
+                &actEvidence, &dispatchEvidence) ==
+                BC250_HQD_ACTIVE_MEMORY_FAILED);
+            CHECK(dispatchEvidence.RingTranslationPassed == 0u);
+            CHECK(g_testRingBuffer[0] == ringBefore[0]);
+            g_testPtBuffer[16] = buffers.RingGpuAddress | 0xE1ull;
+        }
     }
 
     /* 10. Nomes de status */

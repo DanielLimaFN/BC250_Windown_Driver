@@ -64,6 +64,26 @@ BC250_ISA_STATUS Bc250BuildComputeDispatchPacket(
     uint32_t DimY,
     uint32_t DimZ)
 {
+    return Bc250BuildComputeDispatchPacketEx(
+        RingBuffer,
+        RingDwords,
+        CursorDwords,
+        DimX,
+        DimY,
+        DimZ,
+        BC250_DISPATCH_COMPUTE_SHADER_EN |
+        BC250_DISPATCH_FORCE_START_000);
+}
+
+BC250_ISA_STATUS Bc250BuildComputeDispatchPacketEx(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t DimX,
+    uint32_t DimY,
+    uint32_t DimZ,
+    uint32_t Initiator)
+{
     if (RingBuffer == NULL || CursorDwords == NULL) {
         return BC250_ISA_BAD_ARGUMENT;
     }
@@ -72,7 +92,12 @@ BC250_ISA_STATUS Bc250BuildComputeDispatchPacket(
         return BC250_ISA_BAD_ARGUMENT;
     }
 
-    if (*CursorDwords + 4u > RingDwords) {
+    if ((Initiator & BC250_DISPATCH_COMPUTE_SHADER_EN) == 0u) {
+        return BC250_ISA_BAD_ARGUMENT;
+    }
+
+    /* Header count=3 means FOUR payload dwords on PACKET3. */
+    if (*CursorDwords + 5u > RingDwords) {
         return BC250_ISA_BUFFER_TOO_SMALL;
     }
 
@@ -80,6 +105,7 @@ BC250_ISA_STATUS Bc250BuildComputeDispatchPacket(
     RingBuffer[(*CursorDwords)++] = DimX;
     RingBuffer[(*CursorDwords)++] = DimY;
     RingBuffer[(*CursorDwords)++] = DimZ;
+    RingBuffer[(*CursorDwords)++] = Initiator;
 
     return BC250_ISA_OK;
 }

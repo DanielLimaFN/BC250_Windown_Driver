@@ -13,6 +13,8 @@ typedef UINT32 uint32_t;
 #include <stdint.h>
 #endif
 
+#include "bc250_compute_dispatch_contract.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -28,6 +30,7 @@ extern "C" {
 #define BC250_HQD_MIN_QUEUE_DWORDS        64u
 #define BC250_HQD_MAX_QUEUE_DWORDS        (1024u * 1024u)
 #define BC250_HQD_DEFAULT_EOP_BYTES       4096u
+#define BC250_HQD_RING_GPUVA              0x0000000000010000ull
 
 /* GRBM_GFX_CNTL (BAR5 byte offset) selects the indirect HQD register bank. */
 #define BC250_GRBM_GFX_CNTL_BYTE_OFFSET   0x00008088u
@@ -60,6 +63,7 @@ extern "C" {
 #define BC250_HQD_MMIO_EOP_BASE_LO        0x0000C8B8u
 #define BC250_HQD_MMIO_EOP_BASE_HI        0x0000C8BCu
 #define BC250_HQD_MMIO_EOP_CONTROL        0x0000C8C0u
+#define BC250_HQD_MMIO_EOP_RPTR           0x0000C8C4u
 #define BC250_HQD_MMIO_PQ_WPTR_LO         0x0000C8FCu
 #define BC250_HQD_MMIO_PQ_WPTR_HI         0x0000C900u
 
@@ -77,9 +81,43 @@ extern "C" {
 #define BC250_HQD_MMIO_CP_MEC_DB_RANGE_LOWER      0x0000C170u
 #define BC250_HQD_MMIO_CP_MEC_DB_RANGE_UPPER      0x0000C174u
 #define BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL       0x0000C20Cu
+/*
+ * CP_PQ_WPTR_POLL_CNTL1 (mmCP_PQ_WPTR_POLL_CNTL1 = dw 0x1E24, BASE_IDX 0).
+ * A base dw->BAR5 deste bloco e +0x1260 dwords, confirmada por tres
+ * registradores ja catalogados: 0x1E23->0xC20C, 0x1E2D->0xC234 e
+ * 0x1E55->0xC2D4.  Logo 0x1E24 -> (0x1E24 + 0x1260) * 4 = 0xC210.
+ * QUEUE_MASK ocupa os 32 bits (gc_10_1_0_sh_mask.h: QUEUE_MASK_MASK).
+ */
+#define BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1      0x0000C210u
 #define BC250_HQD_MMIO_CP_PQ_STATUS                0x0000C2E0u
 /* Read-only scheduler/fault diagnostics.  RLC uses GC BASE_IDX 1. */
 #define BC250_HQD_MMIO_RLC_CP_SCHEDULERS           0x0003B2A8u
+#define BC250_HQD_MMIO_CC_GC_SHADER_ARRAY_CONFIG   0x000089BCu
+#define BC250_HQD_MMIO_SPI_PG_STATIC_WGP_MASK      0x0000935Cu
+#define BC250_HQD_MMIO_RLC_PG_ALWAYS_ON_WGP_MASK   0x0003B14Cu
+#define BC250_HQD_CC_INACTIVE_WGPS_MASK             0xFFFF0000u
+#define BC250_HQD_CC_INACTIVE_WGPS_SHIFT            16u
+/*
+ * Diagnostico de stall do CP/CPC - candidato 3.34, somente leitura.
+ *
+ * Derivados de gc_10_1_0_offset.h com a base +0x1260 dwords, a mesma que ja
+ * fecha em cinco registradores independentes, dois deles escritos com sucesso
+ * no silicio: CP_MEC_CNTL (dw 0x0E2D -> 0x8234) e CP_ME_CNTL
+ * (dw 0x0F56 -> 0x86D8). CP_MEC_ME1_HEADER_DUMP e adjacente ao CP_MEC_CNTL.
+ *
+ * Estes registradores NUNCA entram na allowlist de escrita.
+ */
+#define BC250_HQD_MMIO_CP_CPC_STATUS               0x00008210u
+#define BC250_HQD_MMIO_CP_CPC_BUSY_STAT            0x00008214u
+#define BC250_HQD_MMIO_CP_CPC_STALLED_STAT1        0x00008218u
+#define BC250_HQD_MMIO_CP_CPF_STATUS               0x0000821Cu
+#define BC250_HQD_MMIO_CP_CPF_BUSY_STAT            0x00008220u
+#define BC250_HQD_MMIO_CP_CPF_STALLED_STAT1        0x00008224u
+#define BC250_HQD_MMIO_CP_MEC_ME1_HEADER_DUMP      0x00008238u
+#define BC250_HQD_MMIO_CP_MEC_ME2_HEADER_DUMP      0x0000823Cu
+#define BC250_HQD_MMIO_CP_STALLED_STAT1            0x00008674u
+#define BC250_HQD_MMIO_CP_STAT                     0x00008680u
+#define BC250_HQD_MEC_HEADER_DUMP_DEPTH            4u
 #define BC250_HQD_MMIO_CPC_UTCL1_ERROR             0x0000C17Cu
 #define BC250_HQD_MMIO_CP_ME1_PIPE0_INT_STATUS     0x0000C234u
 #define BC250_HQD_MMIO_CP_ME2_PIPE1_INT_STATUS     0x0000C248u
@@ -94,6 +132,18 @@ extern "C" {
 #define BC250_HQD_GCVM_INVALIDATE_REQ_VMID0         0x00F80001u
 #define BC250_HQD_GCVM_L2_INVALIDATE_MASK          0x00000003u
 #define BC250_HQD_WPTR_POLL_ENABLE_MASK            0x80000000u
+/* CP_PQ_WPTR_POLL_CNTL: PERIOD[7:0], DISABLE_PEND_REQ_ONE_SHOT[29],
+ * POLL_ACTIVE[30] (status read-only) e EN[31].  O literal historico
+ * 0x00403004 pertence ao SDMA (SdmaRingPollCntl) e NAO ao CP; ele fica
+ * proibido neste caminho.
+ */
+#define BC250_HQD_WPTR_POLL_PERIOD_MASK            0x000000FFu
+#define BC250_HQD_WPTR_POLL_ACTIVE_MASK            0x40000000u
+/* PERIOD de sonda: valor arbitrario dentro de PERIOD[7:0], restaurado depois. */
+#define BC250_HQD_WPTR_POLL_PROBE_PERIOD           0x00000004u
+/* CP_PQ_WPTR_POLL_CNTL1: um bit por fila; MEC1 usa 8 filas por pipe. */
+#define BC250_HQD_QUEUES_PER_PIPE                  8u
+#define BC250_HQD_QUEUE_MASK_MAX_BIT               31u
 #define BC250_HQD_CP_PQ_DOORBELL_UPDATED_MASK       0x00000001u
 #define BC250_HQD_CP_PQ_DOORBELL_ENABLE_MASK        0x00000002u
 #define BC250_HQD_DOORBELL_BIF_DROP_MASK            0x00000002u
@@ -433,6 +483,15 @@ typedef struct BC250_HQD_MC_BUFFERS {
     uint64_t FenceGpuAddress;
     uint32_t FenceSizeBytes;
 
+    /* Optional, required only by the observable CU shader transaction. */
+    volatile void *ShaderVirtual;
+    uint64_t ShaderGpuAddress;
+    uint32_t ShaderSizeBytes;
+
+    volatile void *ResultVirtual;
+    uint64_t ResultGpuAddress;
+    uint32_t ResultSizeBytes;
+
     volatile void *DoorbellVirtual;
     uint32_t DoorbellSizeBytes;
 
@@ -487,8 +546,38 @@ typedef enum BC250_HQD_ACTIVE_STATUS {
     BC250_HQD_ACTIVE_PM4_NOT_CONSUMED,
     BC250_HQD_ACTIVE_FENCE_FAILED,
     BC250_HQD_ACTIVE_SCRATCH_FAILED,
+    BC250_HQD_ACTIVE_SHADER_FAILED,
+    BC250_HQD_ACTIVE_RESULT_FAILED,
     BC250_HQD_ACTIVE_RESTORE_FAILED
 } BC250_HQD_ACTIVE_STATUS;
+
+/*
+ * Estagios do rollback interno.  O agregado RestorePassed nao permitia
+ * localizar a falha observada no ensaio 3.29; cada sitio passa agora a
+ * registrar o PRIMEIRO estagio que reprovou, com offset, esperado e lido.
+ */
+typedef enum BC250_HQD_RESTORE_STAGE {
+    BC250_HQD_RESTORE_STAGE_NONE = 0,
+    BC250_HQD_RESTORE_STAGE_ACTIVE_DEACTIVATE,
+    BC250_HQD_RESTORE_STAGE_ACTIVE_READBACK,
+    BC250_HQD_RESTORE_STAGE_DEQUEUE_REQUEST,
+    BC250_HQD_RESTORE_STAGE_POINTER_WRITE,
+    BC250_HQD_RESTORE_STAGE_POINTER_CONVERGE,
+    BC250_HQD_RESTORE_STAGE_IB_CONTROL,
+    BC250_HQD_RESTORE_STAGE_EOP_RPTR,
+    BC250_HQD_RESTORE_STAGE_QUEUE_ADDRESS,
+    BC250_HQD_RESTORE_STAGE_HQD_PLAN,
+    BC250_HQD_RESTORE_STAGE_FINAL_BANK,
+    BC250_HQD_RESTORE_STAGE_CP_PQ_STATUS,
+    BC250_HQD_RESTORE_STAGE_WPTR_POLL_CNTL,
+    BC250_HQD_RESTORE_STAGE_WPTR_POLL_CNTL1,
+    BC250_HQD_RESTORE_STAGE_GCVM_L2_CNTL2,
+    BC250_HQD_RESTORE_STAGE_RLC_CP_SCHEDULERS,
+    BC250_HQD_RESTORE_STAGE_GCVM_CONTEXT0,
+    BC250_HQD_RESTORE_STAGE_CP_MEC_CNTL,
+    BC250_HQD_RESTORE_STAGE_CP_ME_CNTL,
+    BC250_HQD_RESTORE_STAGE_COUNT
+} BC250_HQD_RESTORE_STAGE;
 
 typedef struct BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE {
     uint32_t OriginalSelector;
@@ -531,6 +620,11 @@ typedef struct BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE {
     uint32_t MecPcTransitions;
     uint32_t MecPcSamples;
     uint32_t PqControlObserved;
+    uint32_t EopRptrBefore;
+    uint32_t EopRptrApplied;
+    uint32_t EopRptrReadback;
+    uint32_t EopRptrRestored;
+    uint32_t EopRptrRestorePassed;
 
     uint32_t DoorbellRung;
     uint32_t DoorbellIndex;
@@ -548,6 +642,121 @@ typedef struct BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE {
     uint32_t WptrPollCntlBefore;
     uint32_t WptrPollCntlApplied;
     uint32_t WptrPollCntlReadback;
+    /*
+     * Candidato 3.31 - sonda de gravabilidade do CP_PQ_WPTR_POLL_CNTL.
+     *
+     * O ensaio 3.30 escreveu EN=1 e releu 0x00000000: o bit nao e retido.
+     * Ate 3.29 isso passava despercebido porque o caminho KIQ escrevia
+     * `orig & ~EN` = 0 sobre um registrador que ja valia 0 - uma escrita de
+     * zero sobre zero passa em qualquer readback.  A sonda escreve PERIOD
+     * (campo comum, sem efeito de habilitacao) e rele, separando duas
+     * hipoteses: registrador read-only neste contexto (nada gruda) contra
+     * bit EN especificamente bloqueado (PERIOD gruda, EN nao).
+     */
+    uint32_t WptrPollCntlProbeApplied;
+    uint32_t WptrPollCntlProbeReadback;
+    uint32_t WptrPollCntlWritable;
+    uint32_t WptrPollCntlEnLatched;
+    /* CP_PQ_WPTR_POLL_CNTL1 (queue mask) - candidato 3.30. */
+    uint32_t WptrPollCntl1Before;
+    uint32_t WptrPollCntl1Applied;
+    uint32_t WptrPollCntl1Readback;
+    uint32_t WptrPollCntl1Restored;
+    uint32_t WptrPollCntl1RestorePassed;
+    uint32_t QueueMaskBit;
+    /* Publicacao one-shot do WPTR na ordem KFD, antes de ACTIVE. */
+    uint32_t PreActiveWptrApplied;
+    uint32_t PreActiveWptrReadback;
+    uint32_t PreActiveWptrPublished;
+    /*
+     * Candidato 3.32.
+     *
+     * PostActiveWptrObserved: WPTR lido logo apos ACTIVE=1 e ANTES de
+     * qualquer doorbell ou escrita direta. Responde sozinho a pergunta que
+     * sobrou do 3.31: com a fila dentro da QUEUE_MASK, o CP busca o cursor
+     * do shadow por conta propria?
+     *
+     * WptrPollCntl1DirtyEntry: o 3.31 provou que a QUEUE_MASK nao volta a
+     * zero. Num boot morno o snapshot entraria com o bit ja aceso e o
+     * rollback "passaria" comparando 1 com 1 - um falso verde. Este campo
+     * denuncia essa condicao.
+     */
+    uint32_t PostActiveWptrObserved;
+    uint32_t WptrPollCntl1DirtyEntry;
+    uint32_t WptrPollCntl1ClearAttempts;
+    /*
+     * Candidato 3.33 - observacao do consumo do ring.
+     *
+     * O 3.32 deixou a fila nao-vazia (PQ_EMPTY=0), nao-ociosa (QUEUE_IDLE=0),
+     * com o cursor publicado pelo hardware e o MEC executando - e ainda assim
+     * RPTR=0 depois de 50000 iteracoes. Estes campos separam as hipoteses sem
+     * mudar nenhuma escrita: sao todos leitura.
+     *
+     * Primeira amostra x ultima permite ver se o estado evoluiu durante o
+     * polling ou ficou congelado desde o inicio.
+     */
+    uint32_t PqControlFirstSample;
+    uint32_t HqStatus0FirstSample;
+    uint32_t DequeueRequestPollLast;
+    uint32_t VmidPollLast;
+    uint32_t PersistentStatePollLast;
+    uint32_t RptrReportMemFirst;
+    uint32_t RptrReportMemLast;
+    uint32_t RptrNonZeroSamples;
+    /*
+     * Candidato 3.34 - por que o CPC nao consome.
+     *
+     * O 3.33 eliminou o writeback de RPTR (registrador e memoria ambos em
+     * zero) e o VMID (0, igual ao Contexto 0). Sobrou o CP travado antes de
+     * retirar o pacote, com o MEC em laco (PC volta sempre a 0x17FB) e o
+     * proprio CP tendo alterado CP_HQD_PERSISTENT_STATE.
+     *
+     * CP_CPC_STATUS / BUSY_STAT / STALLED_STAT1 dizem em que o CPC esta
+     * parado. Os dumps ME1/ME2 entregam os cabecalhos PM4 processados; ME2 e
+     * o alvo observado no silicio e ME1 permanece como controle.
+     *
+     * O header dump e uma FIFO de depuracao: cada leitura avanca o ponteiro
+     * interno. Por isso ele e lido UMA vez, em rajada curta, depois do laco
+     * de polling - nunca a cada amostra.
+     */
+    uint32_t CpcStatusFirst;
+    uint32_t CpcStatusLast;
+    uint32_t CpcBusyStatLast;
+    uint32_t CpfBusyStatBeforeActive;
+    uint32_t CpfBusyStatAfterActive;
+    uint32_t CpfBusyStatBeforeWptr;
+    uint32_t CpfBusyStatAfterWptr;
+    uint32_t CpfBusyStatLast;
+    uint32_t CpfStalledStat1BeforeActive;
+    uint32_t CpfStalledStat1AfterActive;
+    uint32_t CpfStalledStat1BeforeKick;
+    uint32_t CpfStalledStat1AfterKick;
+    uint32_t CpfStalledStat1Last;
+    uint32_t CpfStatusAfterActive;
+    uint32_t CpfStatusAfterKick;
+    uint32_t DequeueRequestApplied;
+    uint32_t DequeueRequestReadback;
+    uint32_t DequeueRequestRestored;
+    uint32_t DequeueRequestRestorePassed;
+    uint32_t CpcStalledStat1Last;
+    uint32_t CpStatFirst;
+    uint32_t CpStatLast;
+    uint32_t CpStalledStat1After;
+    uint32_t MecMe1HeaderDump[BC250_HQD_MEC_HEADER_DUMP_DEPTH];
+    uint32_t MecMe2HeaderDumpBeforeActive[BC250_HQD_MEC_HEADER_DUMP_DEPTH];
+    uint32_t MecMe2HeaderDump[BC250_HQD_MEC_HEADER_DUMP_DEPTH];
+    uint32_t CpcStatusBeforeKick;
+    uint32_t CpcBusyStatBeforeKick;
+    uint32_t CpfBusyStatBeforeKick;
+    uint32_t CpcStalledStat1BeforeKick;
+    uint32_t CpStatBeforeKick;
+    uint32_t CpStalledStat1BeforeKick;
+    uint32_t CpcStatusAfterKick;
+    uint32_t CpcBusyStatAfterKick;
+    uint32_t CpfBusyStatAfterKick;
+    uint32_t CpcStalledStat1AfterKick;
+    uint32_t CpStatAfterKick;
+    uint32_t CpStalledStat1AfterKick;
     uint32_t SelectorReleasedBeforeKick;
     uint32_t CpPqStatusAfterKick;
     uint32_t DoorbellControlAfterKick;
@@ -624,9 +833,53 @@ typedef struct BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE {
     uint32_t ActiveConfirmed;
     uint32_t TriadPassed;
     uint32_t RestorePassed;
+    /*
+     * Localizacao da PRIMEIRA reprovacao de rollback.  Stage usa
+     * BC250_HQD_RESTORE_STAGE; Offset e o byte offset BAR5 quando
+     * aplicavel, ou 0 para estagios sem registrador unico.
+     */
+    uint32_t FirstRestoreFailureStage;
+    uint32_t FirstRestoreFailureOffset;
+    uint32_t FirstRestoreFailureExpected;
+    uint32_t FirstRestoreFailureObserved;
+    /* 1 = a propria chamada MMIO falhou; 0 = valor lido divergiu. */
+    uint32_t FirstRestoreFailureTransport;
+    uint32_t RestoreFailureCount;
     uint32_t MemoryRestorePassed;
     uint32_t PhysicalReady;
 } BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE;
+
+typedef struct BC250_HQD_SHADER_DISPATCH_EVIDENCE {
+    BC250_COMPUTE_DISPATCH_PLAN_EVIDENCE Plan;
+    BC250_COMPUTE_DISPATCH_OBSERVATION Observation;
+    BC250_COMPUTE_DISPATCH_VERDICT Verdict;
+    uint32_t CcShaderArrayPass1;
+    uint32_t CcShaderArrayPass2;
+    uint32_t SpiStaticWgpMaskPass1;
+    uint32_t SpiStaticWgpMaskPass2;
+    uint32_t RlcAlwaysOnWgpMaskPass1;
+    uint32_t RlcAlwaysOnWgpMaskPass2;
+    uint32_t NonHarvestedWgpMask;
+    uint32_t AlwaysOnNonHarvestedWgpMask;
+    uint32_t WgpPreflightPassed;
+    uint32_t RingGpuVaLow;
+    uint32_t RingGpuVaHigh;
+    uint32_t RingPhysicalLow;
+    uint32_t RingPhysicalHigh;
+    uint32_t RingPteLow;
+    uint32_t RingPteHigh;
+    uint32_t RingTranslationPassed;
+    uint32_t RingReadbackMismatchCount;
+    uint32_t RingReadbackPassed;
+    uint32_t RingDword[8];
+    uint32_t ShaderReadbackMismatchCount;
+    uint32_t ShaderReadbackPassed;
+    uint32_t ShaderRestorePassed;
+    uint32_t ResultRestorePassed;
+    uint32_t FenceRestorePassed;
+    uint32_t RingRestorePassed;
+    uint32_t PhysicalReady;
+} BC250_HQD_SHADER_DISPATCH_EVIDENCE;
 
 BC250_HQD_PROGRAM_STATUS Bc250ComputeRunInactiveHqdProgramTransaction(
     const BC250_HQD_SELECTOR_INTERFACE *Interface,
@@ -641,6 +894,19 @@ BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransaction(
     const BC250_COMPUTE_MQD_PROPERTIES *Props,
     BC250_GFX10_COMPUTE_MQD *Mqd,
     BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE *Evidence);
+
+/*
+ * Physical path for the single allowlisted gfx1010 shader.  PhysicalReady is
+ * impossible unless CU result, post-dispatch fence, RPTR/WPTR and both
+ * register/memory rollback all pass in the same transaction.
+ */
+BC250_HQD_ACTIVE_STATUS Bc250ComputeRunObservableShaderDispatchTransaction(
+    const BC250_HQD_SELECTOR_INTERFACE *Interface,
+    const BC250_HQD_MC_BUFFERS *Buffers,
+    const BC250_COMPUTE_MQD_PROPERTIES *Props,
+    BC250_GFX10_COMPUTE_MQD *Mqd,
+    BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE *ActiveEvidence,
+    BC250_HQD_SHADER_DISPATCH_EVIDENCE *DispatchEvidence);
 
 const char *Bc250MqdStatusName(BC250_MQD_STATUS Status);
 const char *Bc250HqdProgramStatusName(BC250_HQD_PROGRAM_STATUS Status);

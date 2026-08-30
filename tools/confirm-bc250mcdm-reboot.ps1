@@ -54,7 +54,7 @@ if (-not $vsyncProved) {
     throw 'Confirmacao de reboot recusada: VSync real seguido por Present nao foi comprovado.'
 }
 $requiredProbe = [ordered]@{
-    SchemaVersion = 96
+    SchemaVersion = 98
     SkipHwBringup = 1
     StartDeviceEntered = 1
     DmmIsSupportedStatus = 0

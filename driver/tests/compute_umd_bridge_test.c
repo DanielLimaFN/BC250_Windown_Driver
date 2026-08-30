@@ -111,11 +111,14 @@ static int Bc250RunComputeUmdBridgeTest(void)
     cursor = 0;
     CHECK(Bc250BuildComputeDispatchPacket(
         g_umdRing, TEST_UMD_RING_DWORDS, &cursor, 64u, 64u, 1u) == BC250_ISA_OK);
-    CHECK(cursor == 4u);
+    CHECK(cursor == 5u);
     CHECK(g_umdRing[0] == BC250_PM4_HEADER_DISPATCH_DIRECT);
     CHECK(g_umdRing[1] == 64u);
     CHECK(g_umdRing[2] == 64u);
     CHECK(g_umdRing[3] == 1u);
+    CHECK(g_umdRing[4] ==
+        (BC250_DISPATCH_COMPUTE_SHADER_EN |
+         BC250_DISPATCH_FORCE_START_000));
 
     /* 8. Test End-to-End Compute Dispatch Submission (UMD -> KMD Contract) */
     memset(&submitReq, 0, sizeof(submitReq));

@@ -703,19 +703,11 @@ static NTSTATUS Bc250ComputeExecutePm4Dispatch(PBC250_COMPUTE_DISPATCH_REQ req)
         (*(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0003C2C4u) & ~0xFCFF8FFFu) | 0xF8000100u;
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00008920u) =
         (*(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00008920u) & ~0x3FFFFFFFu) | 0x0000493Eu;
-    /* Configura WGP e SPI dispatch masks por SE/SH (40 CU / WGP dispatch unlock) */
-    {
-        ULONG se, sh;
-        for (se = 0; se < 4; se++) {
-            for (sh = 0; sh < 2; sh++) {
-                *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00030800u) = (se << 2) | (sh << 0) | 0x80000000u;
-                *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x000089BCu) = 0u;    /* CC_GC_SHADER_ARRAY_CONFIG */
-                *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000935Cu) = 0x1Fu; /* SPI_PG_ENABLE_STATIC_WGP_MASK */
-                *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0003B14Cu) = 0x1Fu; /* RLC_PG_ALWAYS_ON_WGP_MASK */
-            }
-        }
-        *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00030800u) = 0xE0000000u; /* Broadcast */
-    }
+    /*
+     * Preserve firmware harvest/power masks.  A compute transaction must
+     * prove an available WGP by read-only preflight; it must never clear the
+     * harvest map or manufacture a 40-CU topology.
+     */
 
     /* Prepara Page Table VMID 0 na VRAM: mapeia 2 MiB (512 PTEs) com Host Physical Address */
     volatile uint64_t *pPt = (volatile uint64_t *)((PUCHAR)vramBase + 0x8000);
@@ -960,19 +952,7 @@ static NTSTATUS Bc250ComputeExecuteHqdDispatch(PBC250_COMPUTE_DISPATCH_REQ req)
     KeMemoryBarrier();
     KeStallExecutionProcessor(50u);
 
-    /* Configura WGP e SPI dispatch masks por SE/SH (40 CU / WGP dispatch unlock) */
-    {
-        ULONG se, sh;
-        for (se = 0; se < 4; se++) {
-            for (sh = 0; sh < 2; sh++) {
-                *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00030800u) = (se << 2) | (sh << 0) | 0x80000000u;
-                *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x000089BCu) = 0u;    /* CC_GC_SHADER_ARRAY_CONFIG */
-                *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000935Cu) = 0x1Fu; /* SPI_PG_ENABLE_STATIC_WGP_MASK */
-                *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0003B14Cu) = 0x1Fu; /* RLC_PG_ALWAYS_ON_WGP_MASK */
-            }
-        }
-        *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00030800u) = 0xE0000000u; /* Broadcast */
-    }
+    /* Preserve firmware harvest/power masks; no synthetic 40-CU unlock. */
 
     /* Prepara Page Table VMID 0 na VRAM: mapeia 2 MiB (512 PTEs) com Host Physical Address */
     volatile uint64_t *pPt = (volatile uint64_t *)((PUCHAR)vramBase + 0x8000);

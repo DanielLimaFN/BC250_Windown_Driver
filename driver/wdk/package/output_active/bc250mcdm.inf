@@ -46,9 +46,13 @@ ServiceBinary=%12%\bc250mcdm.sys
 AddReg=BC250Mcdm.DriverReg
 
 [BC250Mcdm.DriverReg]
-HKR,Parameters\Probe,SchemaVersion,0x00010001,96
+HKR,Parameters\Probe,SchemaVersion,0x00010001,98
 HKR,Parameters\Driver,ActiveMode,0x00010001,1
 HKR,Parameters,SkipHwBringup,0x00010001,1
+HKR,Parameters,ShaderDispatch,0x00010001,0
+HKR,Parameters,CpSoftReset,0x00010001,0
+HKR,Parameters,Vmid0PageTable,0x00010001,0
+HKR,Parameters,SdmaAutoCtxSw,0x00010001,1
 
 [BC250Mcdm.CopyFiles]
 bc250mcdm.sys

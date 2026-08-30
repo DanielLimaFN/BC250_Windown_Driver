@@ -18,6 +18,7 @@ extern "C" {
 #endif
 
 #define BC250_PM4_TYPE_3 3u
+#define BC250_PM4_SHADER_TYPE_COMPUTE (1u << 1)
 
 #define BC250_PM4_TYPE3_HEADER(Opcode, Count) \
     (((uint32_t)BC250_PM4_TYPE_3 << 30) | \

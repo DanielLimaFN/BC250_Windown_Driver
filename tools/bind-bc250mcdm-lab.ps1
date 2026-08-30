@@ -1,13 +1,17 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [switch]$Execute,
     [switch]$IAcceptBlackScreenRisk,
+    [switch]$EnableShaderDispatch,
     [ValidateRange(30,600)][int]$WatchdogTimeoutSeconds = 180
 )
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$packageInf = Join-Path $root 'driver\wdk\package\output_lab\bc250mcdm.inf'
+$packageDir = Join-Path $root 'driver\wdk\package\output_lab'
+$packageInf = Join-Path $packageDir 'bc250mcdm.inf'
+$packageSys = Join-Path $packageDir 'bc250mcdm.sys'
+$packageCat = Join-Path $packageDir 'bc250mcdm.cat'
 $manifestPath = Join-Path $root 'driver\wdk\package\output_lab.manifest.json'
 $watchdogScript = Join-Path $root 'tools\watch-bc250mcdm-lab.ps1'
 # Gate proprio do laboratorio: o de producao exige SkipHwBringup=1 e por isso
@@ -16,6 +20,16 @@ $confirmScript = Join-Path $root 'tools\confirm-bc250mcdm-lab.ps1'
 $markerPath = 'C:\BC250_TEST_OEMINF.txt'
 $recoveryPath = 'C:\BC250_RECOVERY.cmd'
 $hardwareId = 'PCI\VEN_1002&DEV_13FE'
+
+function Assert-ArtifactHash([string]$Path, [string]$ExpectedHash, [string]$Label) {
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "Artefato ausente ($Label): $Path"
+    }
+    $actualHash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+    if ($actualHash -ne $ExpectedHash) {
+        throw "Hash divergente ($Label): observado=$actualHash esperado=$ExpectedHash"
+    }
+}
 
 if (-not (Test-Path -LiteralPath $packageInf) -or -not (Test-Path -LiteralPath $manifestPath)) {
     throw "Pacote de laboratorio nao encontrado. Execute tools\package-bc250mcdm-lab.ps1 primeiro."
@@ -35,6 +49,56 @@ if ($devices.Count -ne 1) {
     throw "Dispositivo BC-250 nao encontrado ou multiplos encontrados."
 }
 $device = $devices[0]
+$manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+if ($manifest.BuildKind -ne 'MCDM_LAB_BRINGUP' -or [bool]$manifest.HardwareValidated -or
+    [uint32]$manifest.TelemetrySchemaVersion -ne 114 -or [uint32]$manifest.SkipHwBringup -ne 0) {
+    throw 'Contrato do manifesto de laboratorio invalido (kind/validacao/schema/bring-up).'
+}
+Assert-ArtifactHash $packageSys $manifest.PackageSysSha256 'SYS'
+Assert-ArtifactHash $packageInf $manifest.PackageInfSha256 'INF'
+Assert-ArtifactHash $packageCat $manifest.PackageCatSha256 'CAT'
+Assert-ArtifactHash (Join-Path $packageDir 'cyan_skillfish2_sdma.bin') $manifest.SdmaFirmwareSha256 'SDMA firmware'
+Assert-ArtifactHash (Join-Path $packageDir 'cyan_skillfish2_rlc.bin') $manifest.RlcFirmwareSha256 'RLC firmware'
+Assert-ArtifactHash (Join-Path $packageDir 'cyan_skillfish2_pfp.bin') $manifest.PfpFirmwareSha256 'PFP firmware'
+Assert-ArtifactHash (Join-Path $packageDir 'cyan_skillfish2_me.bin') $manifest.MeFirmwareSha256 'ME firmware'
+Assert-ArtifactHash (Join-Path $packageDir 'cyan_skillfish2_ce.bin') $manifest.CeFirmwareSha256 'CE firmware'
+Assert-ArtifactHash (Join-Path $packageDir 'cyan_skillfish2_mec.bin') $manifest.MecFirmwareSha256 'MEC firmware'
+Assert-ArtifactHash $recoveryPath $manifest.RecoverySha256 'recuperacao'
+foreach ($signedArtifact in @($packageSys, $packageCat)) {
+    $signature = Get-AuthenticodeSignature -LiteralPath $signedArtifact
+    if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
+        $signature.SignerCertificate.Thumbprint -ne $manifest.SignerThumbprint) {
+        throw "Assinatura invalida ou signer divergente: $signedArtifact"
+    }
+}
+
+$infText = Get-Content -LiteralPath $packageInf -Raw
+$expectedInfValues = [ordered]@{
+    'Parameters\Probe,SchemaVersion' = 114
+    'Parameters\Driver,ActiveMode' = 1
+    'Parameters,SkipHwBringup' = 0
+    'Parameters,ShaderDispatch' = $(if ($EnableShaderDispatch) { 1 } else { 0 })
+    'Parameters,CpSoftReset' = $(if ($EnableShaderDispatch) { 1 } else { 0 })
+    'Parameters,Vmid0PageTable' = 0
+    'Parameters,SdmaAutoCtxSw' = $(if ($EnableShaderDispatch) { 0 } else { 1 })
+}
+foreach ($entry in $expectedInfValues.GetEnumerator()) {
+    $escapedName = [regex]::Escape($entry.Key)
+    if ([regex]::Matches(
+            $infText,
+            "(?m)^HKR,$escapedName,0x00010001,$($entry.Value)\s*$").Count -ne 1) {
+        throw "INF diverge do contrato solicitado: $($entry.Key)=$($entry.Value)."
+    }
+}
+if ($EnableShaderDispatch -and -not [bool]$manifest.ShaderDispatchEnabled) {
+    throw 'Pacote nao habilita shader: reempacote com package-bc250mcdm-lab.ps1 -EnableShaderDispatch.'
+}
+if ($EnableShaderDispatch -and
+    (-not [bool]$manifest.CpSoftResetEnabled -or
+     [bool]$manifest.Vmid0PageTableEnabled -or
+     [bool]$manifest.SdmaAutoCtxSwEnabled)) {
+    throw 'Receita F8b invalida no manifesto: exige CpSoftReset=1, Vmid0PageTable=0 e SdmaAutoCtxSw=0.'
+}
 
 Write-Host "=== BINDING DE LABORATORIO (BC-250 MCDM) COM WATCHDOG ===" -ForegroundColor Magenta
 Write-Host "  Dispositivo: $($device.PNPDeviceID)"
@@ -45,7 +109,11 @@ Write-Host ""
 
 if (-not $Execute -or -not $IAcceptBlackScreenRisk) {
     Write-Host "Modo Dry-Run. Para executar:" -ForegroundColor Yellow
-    Write-Host "powershell -ExecutionPolicy Bypass -File tools\bind-bc250mcdm-lab.ps1 -Execute -IAcceptBlackScreenRisk"
+    # A dica precisa repetir -EnableShaderDispatch: sem ela o contrato do
+    # INF exige ShaderDispatch=0 e o binding falha antes deste ponto.
+    $shaderFlag = $(if ($EnableShaderDispatch) { ' -EnableShaderDispatch' } else { '' })
+    Write-Host ("powershell -ExecutionPolicy Bypass -File tools\bind-bc250mcdm-lab.ps1" +
+        " -Execute -IAcceptBlackScreenRisk" + $shaderFlag)
     exit 0
 }
 
@@ -166,6 +234,18 @@ if (-not (Test-Path $paramKey)) {
 }
 Set-ItemProperty -Path $paramKey -Name "SkipHwBringup" -Value 0 -Type DWord -Force
 Write-Host "  SkipHwBringup = 0 configurado." -ForegroundColor Green
+Set-ItemProperty -Path $paramKey -Name "ShaderDispatch" `
+    -Value ($(if ($EnableShaderDispatch) { 1 } else { 0 })) -Type DWord -Force
+Write-Host ("  ShaderDispatch = {0} configurado." -f
+    $(if ($EnableShaderDispatch) { 1 } else { 0 })) -ForegroundColor Green
+Set-ItemProperty -Path $paramKey -Name "CpSoftReset" `
+    -Value ($(if ($EnableShaderDispatch) { 1 } else { 0 })) -Type DWord -Force
+Set-ItemProperty -Path $paramKey -Name "Vmid0PageTable" -Value 0 -Type DWord -Force
+Set-ItemProperty -Path $paramKey -Name "SdmaAutoCtxSw" `
+    -Value ($(if ($EnableShaderDispatch) { 0 } else { 1 })) -Type DWord -Force
+Write-Host ("  Receita F8b: CpSoftReset={0}, Vmid0PageTable=0, SdmaAutoCtxSw={1}." -f
+    $(if ($EnableShaderDispatch) { 1 } else { 0 }),
+    $(if ($EnableShaderDispatch) { 0 } else { 1 })) -ForegroundColor Green
 
 # Verificar estado do dispositivo
 Start-Sleep -Seconds 3
@@ -209,6 +289,36 @@ if ($devAfter.Service -ne 'bc250mcdm') {
     throw "Binding de laboratorio falhou (win32=$win32Error)."
 }
 
+# Captura imediata da telemetria, ANTES de o watchdog poder disparar.
+#
+# No ciclo 3.30 o watchdog expirou e fez rollback automatico antes de o
+# confirm rodar: o servico bc250mcdm sumiu levando a chave Probe junto e a
+# evidencia canonica do ensaio se perdeu. O ensaio e caro e so cabe uma
+# submissao por boot; a captura nao pode depender de uma acao humana dentro
+# da janela do watchdog.
+$probeKeyPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Probe'
+try {
+    if (Test-Path -LiteralPath $probeKeyPath) {
+        $probeSnapshot = Get-ItemProperty -LiteralPath $probeKeyPath -ErrorAction Stop
+        $probeOrdered = [ordered]@{}
+        foreach ($probeProperty in ($probeSnapshot.PSObject.Properties |
+                Where-Object { $_.Name -notlike 'PS*' } |
+                Sort-Object Name)) {
+            $probeOrdered[$probeProperty.Name] = $probeProperty.Value
+        }
+        $probeOrdered | ConvertTo-Json -Depth 4 |
+            Set-Content -LiteralPath (Join-Path $evidenceDir 'probe-registry-at-bind.json') -Encoding UTF8
+        $probeRegPath = 'HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Probe'
+        & reg.exe export $probeRegPath (Join-Path $evidenceDir 'probe-registry-at-bind.txt') /y | Out-Null
+        Write-Host ("  Telemetria capturada no bind: {0} valores." -f $probeOrdered.Count) -ForegroundColor Cyan
+    } else {
+        Write-Host '  AVISO: chave de telemetria ausente logo apos o binding.' -ForegroundColor Yellow
+    }
+} catch {
+    # Best-effort: a captura nunca pode derrubar o ensaio nem o watchdog.
+    Write-Host ("  AVISO: falha ao capturar telemetria no bind: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+}
+
 Write-Host "`n==========================================================================" -ForegroundColor Green
 Write-Host "DRIVER DE LABORATORIO INSTALADO!" -ForegroundColor Green
 Write-Host "O Watchdog continua armado por $WatchdogTimeoutSeconds segundos." -ForegroundColor Yellow
@@ -221,4 +331,8 @@ Write-Host "====================================================================
     watchdog_token = $watchdogToken
     instance_id = $device.PNPDeviceID
     published_inf = $publishedName
+    # Registro duravel do que foi realmente instalado. A quarentena
+    # depende disto para reconhecer o residuo mesmo depois de o
+    # pacote ter sido reconstruido para um candidato posterior.
+    package_sys_sha256 = (Get-FileHash -LiteralPath $pkgSysPath -Algorithm SHA256).Hash
 } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'tools\_last_lab_binding.json') -Encoding UTF8

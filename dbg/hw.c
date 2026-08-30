@@ -30,17 +30,11 @@
  * GC_BASE seg0 = 0x1260, seg1 = 0xA000 (Cyan Skillfish); reg_dword e o valor
  * de mmXXX em gc_10_1_0_offset.h e mmXXX_BASE_IDX escolhe o segmento.
  *
- * Os sufixos _LEGACY guardam os offsets que o projeto usava antes de
- * 2026-08-19. Eles estavam errados por dois motivos somados: nao aplicavam
- * o *4 e partiam de numeros de registrador (0x2000, 0x2004, 0x2074) que nao
- * existem em gc_10_1_0_offset.h. Ficam aqui apenas para reproduzir as
- * leituras antigas e mostrar que elas nao confirmavam nada. */
+ * Os antigos aliases errados foram removidos do caminho executavel: o
+ * catalogo os mantem em quarentena para regressao documental, sem MMIO. */
 #define BC250_REG_SCRATCH0        0x30100u  /* mmSCRATCH_REG0 dw 0x2040 seg1 */
 #define BC250_REG_GRBM_STATUS     0x08010u  /* mmGRBM_STATUS  dw 0x0da4 seg0 */
 #define BC250_REG_CC_ARRAY        0x089BCu  /* mmCC_GC_SHADER_ARRAY_CONFIG dw 0x100f seg0 */
-#define BC250_REG_SCRATCH0_LEGACY 0x032D4u
-#define BC250_REG_GRBM_STATUS_LEGACY 0x03260u
-#define BC250_REG_CC_ARRAY_LEGACY 0x03264u
 #define BC250_CC_ARRAY_LINUX      0xFFF80000u
 
 /* Van Gogh/Cyan Skillfish SMUIO. O upstream define base byte 0x5A000,
@@ -738,11 +732,11 @@ VOID BcHwCollectInfo(BC250DBG_INFO *Info)
     if (g_Dev.Mmio != NULL) {
         Info->GpuId          = BcRegReadRaw(BC250_REG_GPU_ID);
         Info->ScratchReg0    = BcRegReadRaw(BC250_REG_SCRATCH0);
-        Info->ScratchReg0B   = BcRegReadRaw(BC250_REG_SCRATCH0_LEGACY);
+        Info->ScratchReg0B   = 0u;
         Info->GrbmStatus     = BcRegReadRaw(BC250_REG_GRBM_STATUS);
-        Info->GrbmStatusB    = BcRegReadRaw(BC250_REG_GRBM_STATUS_LEGACY);
+        Info->GrbmStatusB    = 0u;
         Info->CcShaderArray  = BcRegReadRaw(BC250_REG_CC_ARRAY);
-        Info->CcShaderArrayB = BcRegReadRaw(BC250_REG_CC_ARRAY_LEGACY);
+        Info->CcShaderArrayB = 0u;
 
         /* GET_INFO e estritamente observacional. Consultas SMU usam um
          * mailbox (logo, escrevem CMD/ARG/RSP) e ficam no IOCTL explicito. */

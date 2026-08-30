@@ -70,16 +70,18 @@ if (-not $vsyncProved) {
     throw 'Confirmacao recusada: VSync real seguido por Present nao foi comprovado.'
 }
 
-# Ponto unico de divergencia com o gate de producao, e ele e' invertido de
-# proposito: a imagem de laboratorio SO tem valor se o bring-up rodou.
+$paramsKey = 'HKLM:\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters'
+$paramsObj = Get-ItemProperty -LiteralPath $paramsKey -ErrorAction SilentlyContinue
 $skip = & $get 'SkipHwBringup'
+if ($null -eq $skip -and $null -ne $paramsObj -and $null -ne $paramsObj.PSObject.Properties['SkipHwBringup']) {
+    $skip = [uint32]$paramsObj.SkipHwBringup
+}
 Write-Host ("  SkipHwBringup    : {0}" -f $skip)
 if ($null -eq $skip -or $skip -ne 0) {
     throw 'Confirmacao recusada: SkipHwBringup=0 nao foi comprovado - esta nao e a imagem de laboratorio.'
 }
-
 $requiredDisplayProbe = [ordered]@{
-    SchemaVersion        = 96
+    SchemaVersion        = 114
     DmmIsSupportedStatus = 0
     DmmIsSupportedResult = 1
     DmmCommitStatus      = 0
@@ -108,11 +110,44 @@ $temporaryPath = Join-Path $EvidenceDir ("watchdog-disarm-{0}.tmp" -f [guid]::Ne
 [ordered]@{
     token                        = $Token
     instance_id                  = $InstanceId
-    display_visible              = $true
-    confirmed_at                 = [datetime]::Now.ToString('o')
-    image                        = 'laboratorio'
-    skip_hw_bringup              = 0
-    schema_version               = 96
+    status                       = 'DISARMED'
+    timestamp_utc                = [DateTime]::UtcNow.ToString('o')
+    disarm_reason                = 'OPERATOR_VISUAL_CONFIRMATION'
+    schema_version               = & $get 'SchemaVersion'
+    dmm_is_supported_status      = & $get 'DmmIsSupportedStatus'
+    dmm_is_supported_result      = & $get 'DmmIsSupportedResult'
+    dmm_commit_status            = & $get 'DmmCommitStatus'
+    dmm_commit_has_path          = & $get 'DmmCommitHasPath'
+    dmm_commit_supported         = & $get 'DmmCommitSupported'
+    hqd_active_status            = & $get 'HqdActiveStatus'
+    hqd_active_after             = & $get 'HqdActiveAfter'
+    hqd_mec_me2_before_active0   = & $get 'HqdActiveMecMe2BeforeActive0'
+    hqd_mec_me2_before_active1   = & $get 'HqdActiveMecMe2BeforeActive1'
+    hqd_mec_me2_before_active2   = & $get 'HqdActiveMecMe2BeforeActive2'
+    hqd_mec_me2_before_active3   = & $get 'HqdActiveMecMe2BeforeActive3'
+    hqd_cpc_status_before_kick   = & $get 'HqdActiveCpcStatusBeforeKick'
+    hqd_cpf_busy_before_active   = & $get 'HqdActiveCpfBusyStatBeforeActive'
+    hqd_cpf_busy_after_active    = & $get 'HqdActiveCpfBusyStatAfterActive'
+    hqd_cpf_busy_before_wptr     = & $get 'HqdActiveCpfBusyStatBeforeWptr'
+    hqd_cpf_busy_after_wptr      = & $get 'HqdActiveCpfBusyStatAfterWptr'
+    hqd_cpf_busy_before_kick     = & $get 'HqdActiveCpfBusyStatBeforeKick'
+    hqd_cpf_busy_after_kick      = & $get 'HqdActiveCpfBusyStatAfterKick'
+    hqd_cpf_busy_last            = & $get 'HqdActiveCpfBusyStatLast'
+    hqd_cpc_stalled_before_kick  = & $get 'HqdActiveCpcStalledStat1BeforeKick'
+    hqd_cp_stat_before_kick      = & $get 'HqdActiveCpStatBeforeKick'
+    hqd_cp_stalled_before_kick   = & $get 'HqdActiveCpStalledStat1BeforeKick'
+    hqd_cpc_status_after_kick    = & $get 'HqdActiveCpcStatusAfterKick'
+    hqd_cpc_stalled_after_kick   = & $get 'HqdActiveCpcStalledStat1AfterKick'
+    hqd_cp_stat_after_kick       = & $get 'HqdActiveCpStatAfterKick'
+    hqd_cp_stalled_after_kick    = & $get 'HqdActiveCpStalledStat1AfterKick'
+    shader_ring_dword0           = & $get 'ShaderRingDword0'
+    shader_ring_dword1           = & $get 'ShaderRingDword1'
+    shader_ring_dword2           = & $get 'ShaderRingDword2'
+    shader_ring_dword3           = & $get 'ShaderRingDword3'
+    shader_ring_dword4           = & $get 'ShaderRingDword4'
+    shader_ring_dword5           = & $get 'ShaderRingDword5'
+    shader_ring_dword6           = & $get 'ShaderRingDword6'
+    shader_ring_dword7           = & $get 'ShaderRingDword7'
     is_supported_count           = & $get 'DmmIsSupportedCount'
     commit_count                 = & $get 'DmmCommitCount'
     control_interrupt_count      = & $get 'DmmControlInterruptCount'
@@ -124,6 +159,30 @@ $temporaryPath = Join-Path $EvidenceDir ("watchdog-disarm-{0}.tmp" -f [guid]::Ne
     pfp_pc_last                  = & $get 'PfpDirectPcLast'
     pfp_pc_transitions           = & $get 'PfpDirectPcTransitions'
     pfp_pc_samples               = & $get 'PfpDirectPcSamples'
+    shader_dispatch_enabled      = & $get 'ShaderDispatchEnabled'
+    shader_dispatch_dwords       = & $get 'ShaderDispatchDwords'
+    pfp_cp_soft_reset             = & $get 'PfpDirectCpSoftReset'
+    pfp_vmid0_page_table          = & $get 'PfpDirectVmid0PageTable'
+    sdma_ring_cntl_applied        = & $get 'SdmaRingCntlApplied'
+    shader_cc_array_pass1        = & $get 'ShaderCcArrayPass1'
+    shader_cc_array_pass2        = & $get 'ShaderCcArrayPass2'
+    shader_spi_wgp_mask_pass1    = & $get 'ShaderSpiWgpMaskPass1'
+    shader_spi_wgp_mask_pass2    = & $get 'ShaderSpiWgpMaskPass2'
+    shader_rlc_aon_wgp_pass1     = & $get 'ShaderRlcAonWgpPass1'
+    shader_rlc_aon_wgp_pass2     = & $get 'ShaderRlcAonWgpPass2'
+    shader_non_harvested_wgp     = & $get 'ShaderNonHarvestedWgpMask'
+    shader_aon_non_harvested_wgp = & $get 'ShaderAonNonHarvestedWgpMask'
+    shader_wgp_preflight         = & $get 'ShaderWgpPreflightPassed'
+    shader_result_before         = & $get 'ShaderResultBefore'
+    shader_result_after          = & $get 'ShaderResultAfter'
+    shader_result_mismatches     = & $get 'ShaderResultMismatches'
+    shader_fence_before          = & $get 'ShaderFenceBefore'
+    shader_fence_after           = & $get 'ShaderFenceAfter'
+    shader_rptr_after            = & $get 'ShaderRptrAfter'
+    shader_wptr_after            = & $get 'ShaderWptrAfter'
+    shader_register_restore      = & $get 'ShaderRegisterRestorePassed'
+    shader_memory_restore        = & $get 'ShaderMemoryRestorePassed'
+    shader_physical_ready        = & $get 'ShaderPhysicalReady'
     pfp_me_cntl_before           = & $get 'PfpDirectMeCntlBefore'
     pfp_pc_before                = & $get 'PfpDirectPcBefore'
     ic_inv_unhalt_mask           = & $get 'PfpDirectIcInvUnhaltMask'

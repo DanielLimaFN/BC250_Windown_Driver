@@ -129,20 +129,17 @@ class Bc250Validator:
         return success
 
     def print_status_bar(self):
-        # Mandatory status bar as per AGENTS.md rules
-        print("================================== STATUS DO DRIVER BC-250 ==================================")
-        print("Base Geral Pré-WDDM (Lab)        ██████████████████▋░  93%   Estável e Isolado       (+5)")
-        print("SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silício      (+5)")
-        print("GCVM & Tradução de Memória       ██████████████████░░  90%   Host PA no Contexto 0   (+1)")
-        print("RLC, CP & PM4 Direct Load        ████████████████████ 100%   FENCE VRAM PROVADA!     (+1)")
-        print("Telemetria & Observabilidade     ████████░░░░░░░░░░░░  40%   GFXOFF Sincronizado     (+5)")
-        print("Compute & Async Queues (MEC/MQD) ██████████████░░░░░░  70%   JT_STAT FF0303 Ativo    (+15)")
-        print("Miniport WDDM / MCDM Produção    ██████████░░░░░░░░░░  50%   PhysicalReady CP & SDMA (+5)")
-        print("")
-        print("Conformidade BC250_HARDWARE_RULES: 100% | Miniport MCDM Funcional: 95% | Memória/GPUVA: 75%")
-        print("=============================================================================================")
-        print("Veredito Global: NÃO VALIDADO EM HARDWARE (Transição para Ativação de Queues Assíncronas MEC1/HQD)")
-        print("=============================================================================================\n")
+        # A barra impressa aqui era HARDCODED: percentuais e frases como
+        # "FENCE VRAM PROVADA!" fixas no codigo, independentes de qualquer medicao
+        # feita por esta ferramenta. Removida em 2026-08-29 — imprimir progresso
+        # inventado dentro de um validador e' o oposto do que ele existe para fazer.
+        #
+        # A fonte de verdade e' STATUS_E_ROADMAP_CONSOLIDADO.md.
+        #
+        # O RESTO desta ferramenta mede de verdade: poison/verify byte a byte e
+        # tempo real por perf_counter. Por isso ela ficou, e e' a base da Fase 1.
+        print("Estado do projeto: ver STATUS_E_ROADMAP_CONSOLIDADO.md")
+        print("Esta ferramenta reporta apenas o que ela propria mede.")
 
     def run_all(self):
         self.print_status_bar()

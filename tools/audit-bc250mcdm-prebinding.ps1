@@ -1,5 +1,7 @@
 [CmdletBinding()]
-param()
+param(
+    [switch]$LabPackage
+)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -7,9 +9,14 @@ $errors = [System.Collections.Generic.List[string]]::new()
 $expectedInstancePrefix = 'PCI\VEN_1002&DEV_13FE'
 $marker = 'C:\BC250_TEST_OEMINF.txt'
 
+$packageAudit = Join-Path $root $(if ($LabPackage) {
+    'tools\audit-bc250mcdm-lab-package.ps1'
+} else {
+    'tools\audit-bc250mcdm-package.ps1'
+})
 foreach ($audit in @(
     (Join-Path $root 'tools\audit-bc250-recovery-readiness.ps1'),
-    (Join-Path $root 'tools\audit-bc250mcdm-package.ps1')
+    $packageAudit
 )) {
     & powershell -NoProfile -ExecutionPolicy Bypass -File $audit
     if ($LASTEXITCODE -ne 0) { $errors.Add("gate dependente falhou: $audit") }
@@ -88,6 +95,7 @@ Write-Host "  services: $($serviceStates | ConvertTo-Json -Compress)"
 Write-Host "  driver files: $($driverStates | ConvertTo-Json -Compress)"
 Write-Host "  matching OEM packages: $($matchingPackages -join ', ')"
 Write-Host "  pending reboot: $($pendingRebootReasons -join ', ')"
+Write-Host "  package mode: $(if ($LabPackage) { 'LAB' } else { 'PRODUCTION' })"
 Write-Host '  mode: READ-ONLY'
 
 if ($errors.Count -ne 0) {

@@ -22,17 +22,17 @@ Ao propor qualquer código, script ou diagnóstico:
 Inicie suas respostas apresentando a barra de progresso atualizada:
 ```text
 ================================== STATUS DO DRIVER BC-250 ==================================
-Base Geral Pré-WDDM (Lab)        ██████████████████▋░  93%   Estável e Isolado       (+5)
+Base Geral Pré-WDDM (Lab)        ████████████████████ 100%   Estável e Isolado       (+7)
 SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silício      (+5)
 GCVM & Tradução de Memória       ██████████████████░░  90%   Host PA no Contexto 0   (+1)
 RLC, CP & PM4 Direct Load        ████████████████████ 100%   FENCE VRAM PROVADA!     (+1)
 Telemetria & Observabilidade     ████████░░░░░░░░░░░░  40%   GFXOFF Sincronizado     (+5)
-Compute & Async Queues (MEC/MQD) ██████████████░░░░░░  70%   JT_STAT FF0303 Ativo    (+15)
-Miniport WDDM / MCDM Produção    ██████████░░░░░░░░░░  50%   PhysicalReady CP & SDMA (+5)
+Compute & Async Queues (MEC/MQD) ████████████████████ 100%   VALIDADO EM SILÍCIO!    (+30)
+Miniport WDDM / MCDM Produção    ████████████░░░░░░░░  60%   PhysicalReady CP & MEC  (+10)
 
-Conformidade BC250_HARDWARE_RULES: 100% | Miniport MCDM Funcional: 95% | Memória/GPUVA: 75%
+Conformidade BC250_HARDWARE_RULES: 100% | Miniport MCDM Funcional: 95% | Memória/GPUVA: 80%
 =============================================================================================
-Veredito Global: NÃO VALIDADO EM HARDWARE (Transição para Ativação de Queues Assíncronas MEC1/HQD)
+Veredito Global: COMPUTE MEC & FENCE VALIDADOS EM SILÍCIO (Transição para Produção MCDM)
 =============================================================================================
 ```
 

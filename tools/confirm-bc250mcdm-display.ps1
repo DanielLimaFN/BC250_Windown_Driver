@@ -39,7 +39,7 @@ if ($null -eq $probe.PSObject.Properties['SkipHwBringup'] -or
     throw 'Confirmacao recusada: SkipHwBringup=1 nao foi comprovado.'
 }
 $requiredDisplayProbe = [ordered]@{
-    SchemaVersion = 96
+    SchemaVersion = 98
     DmmIsSupportedStatus = 0
     DmmIsSupportedResult = 1
     DmmCommitStatus = 0
@@ -71,7 +71,7 @@ $temporaryPath = Join-Path $EvidenceDir ("watchdog-disarm-{0}.tmp" -f [guid]::Ne
     display_visible = $true
     confirmed_at = [datetime]::Now.ToString('o')
     skip_hw_bringup = 1
-    schema_version = 96
+    schema_version = 98
     is_supported_count = [uint32]$probe.DmmIsSupportedCount
     commit_count = [uint32]$probe.DmmCommitCount
     control_interrupt_count = [uint32]$probe.DmmControlInterruptCount

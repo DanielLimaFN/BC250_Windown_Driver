@@ -167,7 +167,7 @@ Derivacao historica: `0x5A000 + 0x00C5 * 4 = 0x5A314`. A decodificacao
 | `CPC_INT_STATUS` | `0x1E55` | 0 | `0xC2D4` | status global de interrupção CPC. |
 | `CPC_UTCL1_STATUS` | `0x1F55` | 0 | `0xC6D4` | atividade/tradução UTCL1 do CPC. |
 | `CPF_UTCL1_STATUS` | `0x1F56` | 0 | `0xC6D8` | atividade/tradução UTCL1 do CPF. |
-| `CP_HQD_HQ_STATUS0` | `0x1FC9` | 0 | `0xC8A4` | `QUEUE_IDLE[30]`, init e estado do HQD selecionado. |
+| `CP_HQD_HQ_STATUS0` | `0x1FC9` | 0 | `0xC8A4` | `DEQUEUE_STATUS[1:0]`, `DEQUEUE_RETRY_CNT[3:2]`, `SCRATCH_RAM_INIT[7]`, `TCL2_DIRTY[8]`, `PG_ACTIVATED[9]`, `QUEUE_IDLE[30]`, `DB_UPDATED_MSG_EN[31]` (`gc_10_1_0_sh_mask.h`). **Evidência diferencial 3.29 → 3.32:** `0x40008000` → `0x00008000`, `QUEUE_IDLE` 1→0 com a fila realmente ocupada. |
 | `CP_HQD_HQ_CONTROL0` | `0x1FCA` | 0 | `0xC8A8` | controle observável do HQD selecionado. |
 | `CP_HQD_ERROR` | `0x1FDC` | 0 | `0xC8F0` | faults PQ/IB/EOP/RPTR/WPTR/UTCL1 por fila. |
 
@@ -209,7 +209,8 @@ Esses registros configuram estado de dispatch; eles não substituem firmware, MQ
 | `CP_RB_DOORBELL_CONTROL` | `0x1E8D` idx0 | `0x0C3B4` | P1/P2 | habilitação/índice de doorbell. |
 | `CP_DEVICE_ID` | `0x1DEB` idx0 | `0x0C12C` | P1/P2 | Reconciliado com `gc_10_1_0_offset.h`; ainda exige snapshot/readback no ensaio. |
 | `CP_MEC_DOORBELL_RANGE_LOWER/UPPER` | `0x1DFC/1DFD` idx0 | `0x0C170/0C174` | P1/P2 | Faixa global MEC; inclui base GC `0x4980`. `0x77F0/0x77F4` era cálculo incompleto e fica em quarentena. |
-| `CP_PQ_WPTR_POLL_CNTL` | `0x1E23` idx0 | `0x0C20C` | P1/P2 | `EN` é bit 31. `0x788C` era cálculo sem base GC e fica em quarentena. |
+| `CP_PQ_WPTR_POLL_CNTL` | `0x1E23` idx0 | `0x0C20C` | P1/P2 | `PERIOD[7:0]`, `DISABLE_PEND_REQ_ONE_SHOT[29]`, `POLL_ACTIVE[30]` (status) e `EN[31]`. `0x788C` era cálculo sem base GC e fica em quarentena. **`0x00403004` é do SDMA (`SdmaRingPollCntl`) e está PROIBIDO neste registrador.** |
+| `CP_PQ_WPTR_POLL_CNTL1` | `0x1E24` idx0 | `0x0C210` | P1/P2 | `QUEUE_MASK[31:0]`, um bit por fila (`gc_10_1_0_sh_mask.h`). Base `+0x1260` dw confirmada por `0x1E23→0xC20C`, `0x1E2D→0xC234` e `0x1E55→0xC2D4`. Escrito por `kgd_gfx_v9_hqd_load` antes de `INIT_FETCHER`/`ACTIVE`. Candidato 3.30. |
 | `CP_PQ_STATUS` | `0x1E58` idx0 | `0x0C2E0` | P1/P2 | `DOORBELL_ENABLE` é bit 1; Linux sweep observou `0x2`. `0x7960` fica em quarentena. |
 
 ## MEC / HQD / MQD de compute (GC10.1)
@@ -242,18 +243,27 @@ identifica outro banco e deve produzir `SELECTOR_NOT_COMPUTE`, nunca sucesso MEC
 | `CP_HQD_PQ_WPTR_POLL_ADDR` | `0x1FB6` | `0x0C858` | P1/P2 | shadow WPTR baixo. |
 | `CP_HQD_PQ_WPTR_POLL_ADDR_HI` | `0x1FB7` | `0x0C85C` | P1/P2 | shadow WPTR alto. |
 | `CP_HQD_PQ_DOORBELL_CONTROL` | `0x1FB8` | `0x0C860` | P1/P2 | índice e enable de doorbell. |
-| `CP_HQD_PQ_CONTROL` | `0x1FBA` | `0x0C868` | P1/P2 | tamanho, RPTR block e atributos KMD. |
+| `CP_HQD_PQ_CONTROL` | `0x1FBA` | `0x0C868` | P1/P2 | `QUEUE_SIZE[5:0]`, `WPTR_CARRY[6]`, `RPTR_CARRY[7]`, `RPTR_BLOCK_SIZE[13:8]`, `QUEUE_FULL_EN[14]`, **`PQ_EMPTY[15]`**, `ENDIAN_SWAP[17:16]`, `SLOT_BASED_WPTR[18]`, `MIN_AVAIL_SIZE[22:20]`, `EXE_DISABLE[23]`, `CACHE_POLICY[25:24]`, `PQ_VOLATILE[26]`, `NO_UPDATE_RPTR[27]`, `UNORD_DISPATCH[28]`, `TUNNEL_DISPATCH[29]`, `PRIV_STATE[30]`, `KMD_QUEUE[31]` (`gc_10_1_0_sh_mask.h`). **Evidência diferencial 3.29 → 3.32:** `0xD030890D` → `0xD030090D`, `PQ_EMPTY` 1→0. Decodificado no 3.32: `QUEUE_SIZE=13` (ring 64 KB), `RPTR_BLOCK_SIZE=9`, `NO_UPDATE_RPTR=0`, `EXE_DISABLE=0`. |
 | `CP_HQD_DEQUEUE_REQUEST` | `0x1FC1` | `0x0C884` | P1/P2 | teardown; aguardar `ACTIVE=0`. |
 | `CP_MQD_CONTROL` | `0x1FCB` | `0x0C8AC` | P1/P2 | VMID do MQD. |
 | `CP_HQD_EOP_BASE_ADDR` | `0x1FCE` | `0x0C8B8` | P1/P2 | EOP base deslocada por 8. |
 | `CP_HQD_EOP_BASE_ADDR_HI` | `0x1FCF` | `0x0C8BC` | P1/P2 | EOP base alta. |
 | `CP_HQD_EOP_CONTROL` | `0x1FD0` | `0x0C8C0` | P1/P2 | tamanho do EOP. |
+| `CP_HQD_EOP_RPTR` | `0x1FD1` | `0x0C8C4` | P1/P2 | `INIT_FETCHER[31]`; candidato 3.29 segue `kgd_gfx_v9_hqd_load`: snapshot, escrita do gatilho antes de `CP_HQD_ACTIVE`, readback sem RPTR/RESET/DEQUEUE inesperados (`RPTR_EQ_CSMD_WPTR[30]` e permitido) e rollback verificado. |
 | `CP_HQD_PQ_WPTR_LO` | `0x1FDF` | `0x0C8FC` | P0/P2 | cursor baixo; não é `0x9130`. |
 | `CP_HQD_PQ_WPTR_HI` | `0x1FE0` | `0x0C900` | P0/P2 | cursor alto e latch conforme upstream. |
 
 Os offsets `0x9104`, `0x9108`, `0x910C` e `0x9130` ficam em quarentena para
 este ASIC: não correspondem ao mapa GC10.1 derivado pelo SOC15.
 
+| `CP_CPC_STATUS` | `0x0E24` idx0 | `0x08210` | P1/P2 | Estado do CPC. **Somente leitura** no transporte. Candidato 3.34. |
+| `CP_CPC_BUSY_STAT` | `0x0E25` idx0 | `0x08214` | P1/P2 | Unidades ocupadas do CPC. **Somente leitura**. |
+| `CP_CPC_STALLED_STAT1` | `0x0E26` idx0 | `0x08218` | P1/P2 | Motivo de stall do CPC. **Somente leitura**. |
+| `CP_CPF_BUSY_STAT` | `0x0E28` idx0 | `0x08220` | P1/P2 | Ocupacao do prefetch/HQD; candidato 3.39 captura antes, depois e no polling final. **Somente leitura**. |
+| `CP_MEC_ME1_HEADER_DUMP` | `0x0E2E` idx0 | `0x08238` | P1/P2 | FIFO de cabecalhos PM4 processados pelo ME1; **cada leitura avanca o ponteiro**, por isso e drenado uma unica vez apos o polling. **Somente leitura**. Adjacente a `CP_MEC_CNTL` (`0x0E2D` -> `0x08234`), que ja e escrito com sucesso no silicio — ancora forte do offset. |
+| `CP_MEC_ME2_HEADER_DUMP` | `0x0E2F` idx0 | `0x0823C` | P1/P2 | FIFO de cabecalhos PM4 do ME2, motor ativo observado no candidato 3.34. No 3.36 e drenado antes de `ACTIVE` e novamente apos o polling para separar resíduo de conteúdo produzido no ciclo; ME1 permanece como controle. **Somente leitura**; escrita proibida pelo transporte e por teste dedicado. |
+| `CP_STALLED_STAT1` | `0x0F3D` idx0 | `0x08674` | P1/P2 | Stall do CP graficos. **Somente leitura**. |
+| `CP_STAT` | `0x0F40` idx0 | `0x08680` | P1/P2 | Estado agregado do CP. **Somente leitura**. |
 ## Golden/context usados nas tentativas
 
 | Registro | BAR5 byte | Classe | Nota |

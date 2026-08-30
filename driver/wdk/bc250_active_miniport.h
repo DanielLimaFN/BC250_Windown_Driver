@@ -272,10 +272,12 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     uint32_t SdmaAutoCtxSw;
     uint32_t SdmaWakeOnExIdle;
     uint32_t SdmaEarlyClkUngate;
+    uint32_t ShaderDispatch;
     uint32_t TunableEnginePresent;
     uint32_t TunableSemaphorePresent;
     uint32_t TunableSoftResetPresent;
     uint32_t TunableVmid0Present;
+    uint32_t TunableShaderDispatchPresent;
     BC250_PFP_DIRECT_LOAD_STATUS PfpDirectLoadStatus;
     BC250_PFP_DIRECT_LOAD_EVIDENCE PfpDirectLoadEvidence;
     BC250_HQD_PREFLIGHT_STATUS HqdPreflightStatus;
@@ -291,6 +293,7 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     BC250_HQD_WPTR_DIAGNOSTIC_EVIDENCE HqdWptrDiagEvidence;
     BC250_HQD_ACTIVE_STATUS HqdActiveStatus;
     BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE HqdActiveEvidence;
+    BC250_HQD_SHADER_DISPATCH_EVIDENCE HqdShaderDispatchEvidence;
     BC250_SDMA_F32_STATUS SdmaF32Status;
     BC250_SDMA_F32_EVIDENCE SdmaF32Evidence;
     BC250_SDMA_RING_WORK_STATUS SdmaRingWorkStatus;

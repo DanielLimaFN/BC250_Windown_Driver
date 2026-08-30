@@ -49,7 +49,7 @@ if (-not (Test-Path -LiteralPath $probePath)) {
         exit 0
     }
     foreach ($expected in @(
-        @{ Name='SchemaVersion'; Value=96 },
+        @{ Name='SchemaVersion'; Value=98 },
         @{ Name='DriverEntryReached'; Value=1 },
         @{ Name='InitializationDataReady'; Value=1 },
         @{ Name='AddDeviceEntered'; Value=1 },
@@ -383,6 +383,8 @@ if (-not (Test-Path -LiteralPath $probePath)) {
     }
     if ($null -ne $probe.PSObject.Properties['HqdActiveStatus']) {
         $actStatus = [uint32]$probe.HqdActiveStatus
+        $shaderEnabled = $null -ne $probe.PSObject.Properties['ShaderDispatchEnabled'] -and
+            [uint32]$probe.ShaderDispatchEnabled -eq 1
         if ([uint32]$probe.HqdActiveGfxOffApplicable -ne 0 -or
             [uint32]$probe.HqdActiveGfxOffDisallowResponse -ne 0 -or
             [uint32]$probe.HqdActiveGfxOffAllowResponse -ne 0 -or
@@ -401,7 +403,7 @@ if (-not (Test-Path -LiteralPath $probePath)) {
              (([uint32]$probe.HqdActiveGcvmAckAfter -band 1) -eq 0))) {
             $errors.Add('submissao HQD executada sem coerencia/ACK comprovados')
         }
-        if (($actStatus -eq 0 -or $actStatus -eq 7) -and
+        if (-not $shaderEnabled -and ($actStatus -eq 0 -or $actStatus -eq 7) -and
             ([uint32]$probe.HqdActiveWptrApplied -ne 11 -or
              [uint32]$probe.HqdActiveWptrShadow -ne 11 -or
              [uint32]$probe.HqdActiveDoorbellValueApplied -ne 11)) {
@@ -463,13 +465,57 @@ if (-not (Test-Path -LiteralPath $probePath)) {
             }
         }
         if ($actStatus -eq 0) {
-            if ([uint32]$probe.HqdActiveTriadPassed -ne 1 -or
-                [uint32]$probe.HqdActiveRptrAfter -ne [uint32]$probe.HqdActiveWptrApplied -or
-                ([int64]$probe.HqdActiveFenceAfter -band 0xFFFFFFFFL) -ne 0xBC250123L -or
-                [uint32]$probe.HqdActiveScratchAfter -ne [uint32]0x22222222 -or
-                [uint32]$probe.HqdActiveRestorePassed -ne 1 -or
-                [uint32]$probe.HqdActiveMemRestorePassed -ne 1 -or
-                [uint32]$probe.HqdActivePhysicalReady -ne 1) {
+            if ($shaderEnabled) {
+                foreach ($name in @(
+                    'ShaderDispatchDwords','ShaderDispatchPacketIndex',
+                    'ShaderFencePacketIndex','ShaderFenceAfterDispatch',
+                    'ShaderCcArrayPass1','ShaderCcArrayPass2',
+                    'ShaderSpiWgpMaskPass1','ShaderSpiWgpMaskPass2',
+                    'ShaderRlcAonWgpPass1','ShaderRlcAonWgpPass2',
+                    'ShaderNonHarvestedWgpMask',
+                    'ShaderAonNonHarvestedWgpMask',
+                    'ShaderWgpPreflightPassed',
+                    'ShaderReadbackPassed','ShaderReadbackMismatches',
+                    'ShaderResultBefore','ShaderResultAfter',
+                    'ShaderResultMismatches','ShaderFenceBefore',
+                    'ShaderFenceAfter','ShaderRptrAfter','ShaderWptrAfter',
+                    'ShaderRegisterRestorePassed','ShaderMemoryRestorePassed',
+                    'ShaderTriadPassed','ShaderPhysicalReady')) {
+                    if ($null -eq $probe.PSObject.Properties[$name]) {
+                        $errors.Add("telemetria do dispatch observavel ausente: $name")
+                    }
+                }
+                if ([uint32]$probe.ShaderDispatchDwords -eq 0 -or
+                    [uint32]$probe.ShaderFencePacketIndex -le
+                        [uint32]$probe.ShaderDispatchPacketIndex -or
+                    [uint32]$probe.ShaderFenceAfterDispatch -ne 1 -or
+                    [uint32]$probe.ShaderCcArrayPass1 -ne [uint32]$probe.ShaderCcArrayPass2 -or
+                    [uint32]$probe.ShaderSpiWgpMaskPass1 -ne [uint32]$probe.ShaderSpiWgpMaskPass2 -or
+                    [uint32]$probe.ShaderRlcAonWgpPass1 -ne [uint32]$probe.ShaderRlcAonWgpPass2 -or
+                    [uint32]$probe.ShaderAonNonHarvestedWgpMask -eq 0 -or
+                    [uint32]$probe.ShaderWgpPreflightPassed -ne 1 -or
+                    [uint32]$probe.ShaderReadbackPassed -ne 1 -or
+                    [uint32]$probe.ShaderReadbackMismatches -ne 0 -or
+                    ([int64]$probe.ShaderResultBefore -band 0xFFFFFFFFL) -ne 0x43DAFFFEL -or
+                    ([int64]$probe.ShaderResultAfter -band 0xFFFFFFFFL) -ne 0xBC250C01L -or
+                    [uint32]$probe.ShaderResultMismatches -ne 0 -or
+                    ([int64]$probe.ShaderFenceBefore -band 0xFFFFFFFFL) -ne 0xA55A0FF0L -or
+                    ([int64]$probe.ShaderFenceAfter -band 0xFFFFFFFFL) -ne 0xBC250D15L -or
+                    [uint32]$probe.ShaderRptrAfter -ne [uint32]$probe.ShaderDispatchDwords -or
+                    [uint32]$probe.ShaderWptrAfter -ne [uint32]$probe.ShaderDispatchDwords -or
+                    [uint32]$probe.ShaderRegisterRestorePassed -ne 1 -or
+                    [uint32]$probe.ShaderMemoryRestorePassed -ne 1 -or
+                    [uint32]$probe.ShaderTriadPassed -ne 1 -or
+                    [uint32]$probe.ShaderPhysicalReady -ne 1) {
+                    $errors.Add('dispatch observavel OK sem dado/fence/RPTR-WPTR/rollback integral')
+                }
+            } elseif ([uint32]$probe.HqdActiveTriadPassed -ne 1 -or
+                    [uint32]$probe.HqdActiveRptrAfter -ne [uint32]$probe.HqdActiveWptrApplied -or
+                    ([int64]$probe.HqdActiveFenceAfter -band 0xFFFFFFFFL) -ne 0xBC250123L -or
+                    [uint32]$probe.HqdActiveScratchAfter -ne [uint32]0x22222222 -or
+                    [uint32]$probe.HqdActiveRestorePassed -ne 1 -or
+                    [uint32]$probe.HqdActiveMemRestorePassed -ne 1 -or
+                    [uint32]$probe.HqdActivePhysicalReady -ne 1) {
                 $errors.Add('submissao HQD ativa OK sem triade e rollback integral')
             }
         } elseif ($actStatus -eq 7) {
@@ -481,6 +527,18 @@ if (-not (Test-Path -LiteralPath $probePath)) {
                 $errors.Add('submissao HQD PM4_NOT_CONSUMED nao concluiu rollback fail-closed')
             }
         }
+    }
+    $shaderRecipeEnabled =
+        $null -ne $probe.PSObject.Properties['ShaderDispatchEnabled'] -and
+        [uint32]$probe.ShaderDispatchEnabled -eq 1
+    if ($shaderRecipeEnabled -and
+        ($null -eq $probe.PSObject.Properties['PfpDirectCpSoftReset'] -or
+         $null -eq $probe.PSObject.Properties['PfpDirectVmid0PageTable'] -or
+         $null -eq $probe.PSObject.Properties['SdmaRingCntlApplied'] -or
+         [uint32]$probe.PfpDirectCpSoftReset -ne 1 -or
+         [uint32]$probe.PfpDirectVmid0PageTable -ne 0 -or
+         (([uint32]$probe.SdmaRingCntlApplied -band 0x00040000) -ne 0))) {
+        $errors.Add('receita F8b ausente: exige CpSoftReset=1, Vmid0PageTable=0 e SDMA AUTO_CTXSW=0')
     }
     $pfpStatus = [uint32]$probe.PfpDirectStatus
     if ($pfpStatus -eq 0) {

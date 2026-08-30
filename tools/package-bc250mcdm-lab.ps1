@@ -8,7 +8,9 @@
     e assina ambos com o certificado de teste.
 #>
 [CmdletBinding()]
-param()
+param(
+    [switch]$EnableShaderDispatch
+)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -41,6 +43,8 @@ if (-not (Test-Path -LiteralPath $sourceInf)) { throw "INF ausente: $sourceInf" 
 if (-not (Test-Path -LiteralPath $sourceSdmaFirmware)) { throw "Firmware SDMA ausente: $sourceSdmaFirmware" }
 if (-not (Test-Path -LiteralPath $sourceRlcFirmware)) { throw "Firmware RLC ausente: $sourceRlcFirmware" }
 if (-not (Test-Path -LiteralPath $sourcePfpFirmware)) { throw "Firmware PFP ausente: $sourcePfpFirmware" }
+if (-not (Test-Path -LiteralPath $sourceMeFirmware)) { throw "Firmware ME ausente: $sourceMeFirmware" }
+if (-not (Test-Path -LiteralPath $sourceCeFirmware)) { throw "Firmware CE ausente: $sourceCeFirmware" }
 if (-not (Test-Path -LiteralPath $sourceMecFirmware)) { throw "Firmware MEC ausente: $sourceMecFirmware" }
 
 if (-not (Test-Path -LiteralPath $recoveryRoot)) {
@@ -63,6 +67,40 @@ if (-not $certificate) {
     throw "Certificado de teste com chave privada ausente: $certificateThumbprint"
 }
 
+# Guarda de frescor: o empacotador apenas COPIA driver\wdk\output_lab\bc250mcdm.sys.
+# Quem o compila e tools\build-bc250mcdm-lab-bringup.ps1 -Execute. Sem esta
+# checagem, um SYS obsoleto era assinado e empacotado em silencio, gastando um
+# ensaio fisico inteiro com o binario do candidato anterior.
+if (-not (Test-Path -LiteralPath $sourceSys -PathType Leaf)) {
+    throw ("Imagem de laboratorio ausente: $sourceSys. " +
+        'Rode tools\build-bc250mcdm-lab-bringup.ps1 -Execute ' +
+        '-IUnderstandThisEnablesDestructiveBringup antes de empacotar.')
+}
+$sourceSysStamp = (Get-Item -LiteralPath $sourceSys).LastWriteTimeUtc
+$staleSources = @(
+    Get-ChildItem -LiteralPath (Join-Path $root 'driver\core'),
+                                (Join-Path $root 'driver\wdk') `
+        -Recurse -File -Include '*.c', '*.h' -ErrorAction SilentlyContinue |
+    Where-Object {
+        $_.FullName -notlike '*\package\*' -and
+        $_.FullName -notlike '*\output*\*' -and
+        $_.LastWriteTimeUtc -gt $sourceSysStamp
+    }
+)
+if ($staleSources.Count -ne 0) {
+    Write-Host 'FONTES MAIS NOVAS QUE A IMAGEM DE LABORATORIO:'
+    foreach ($stale in ($staleSources | Select-Object -First 10)) {
+        Write-Host ("  - {0} ({1:u})" -f
+            $stale.FullName.Substring($root.Length + 1), $stale.LastWriteTimeUtc)
+    }
+    if ($staleSources.Count -gt 10) {
+        Write-Host ("  ... e mais {0} arquivo(s)" -f ($staleSources.Count - 10))
+    }
+    throw ('SYS de laboratorio esta obsoleto em relacao as fontes. ' +
+        'Rode tools\build-bc250mcdm-lab-bringup.ps1 -Execute ' +
+        '-IUnderstandThisEnablesDestructiveBringup e empacote de novo.')
+}
+
 New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
 $packageSys = Join-Path $packageDir 'bc250mcdm.sys'
 $packageInf = Join-Path $packageDir 'bc250mcdm.inf'
@@ -77,18 +115,51 @@ $packageMecFirmware = Join-Path $packageDir 'cyan_skillfish2_mec.bin'
 Remove-Item -LiteralPath $packageCat -Force -ErrorAction SilentlyContinue
 Copy-Item -LiteralPath $sourceSys -Destination $packageSys -Force
 
-# No INF de laboratorio, colocamos DriverVer mais novo e SkipHwBringup = 0 diretamente
+# No INF de laboratorio, colocamos DriverVer mais novo e os gates explicitos.
 $infContent = Get-Content -LiteralPath $sourceInf
 $infContent = $infContent | ForEach-Object {
     if ($_ -match '^DriverVer=') {
-        'DriverVer=08/29/2026,3.24.2.0'
+        'DriverVer=08/30/2026,3.43.0.0'
+    } elseif ($_ -match 'HKR,Parameters\\Probe,SchemaVersion,0x00010001,98') {
+        'HKR,Parameters\Probe,SchemaVersion,0x00010001,114'
     } elseif ($_ -match 'HKR,Parameters,SkipHwBringup,0x00010001,1') {
         'HKR,Parameters,SkipHwBringup,0x00010001,0'
+    } elseif ($_ -match 'HKR,Parameters,ShaderDispatch,0x00010001,0') {
+        'HKR,Parameters,ShaderDispatch,0x00010001,{0}' -f
+            ($(if ($EnableShaderDispatch) { 1 } else { 0 }))
+    } elseif ($_ -match 'HKR,Parameters,CpSoftReset,0x00010001,0') {
+        'HKR,Parameters,CpSoftReset,0x00010001,{0}' -f
+            ($(if ($EnableShaderDispatch) { 1 } else { 0 }))
+    } elseif ($_ -match 'HKR,Parameters,Vmid0PageTable,0x00010001,0') {
+        'HKR,Parameters,Vmid0PageTable,0x00010001,0'
+    } elseif ($_ -match 'HKR,Parameters,SdmaAutoCtxSw,0x00010001,1') {
+        'HKR,Parameters,SdmaAutoCtxSw,0x00010001,{0}' -f
+            ($(if ($EnableShaderDispatch) { 0 } else { 1 }))
     } else {
         $_
     }
 }
 $infContent | Set-Content -LiteralPath $packageInf -Encoding ascii
+
+$expectedInfValues = [ordered]@{
+    'Parameters\Probe,SchemaVersion' = 114
+    'Parameters\Driver,ActiveMode' = 1
+    'Parameters,SkipHwBringup' = 0
+    'Parameters,ShaderDispatch' = $(if ($EnableShaderDispatch) { 1 } else { 0 })
+    'Parameters,CpSoftReset' = $(if ($EnableShaderDispatch) { 1 } else { 0 })
+    'Parameters,Vmid0PageTable' = 0
+    'Parameters,SdmaAutoCtxSw' = $(if ($EnableShaderDispatch) { 0 } else { 1 })
+}
+$renderedInf = Get-Content -LiteralPath $packageInf -Raw
+foreach ($entry in $expectedInfValues.GetEnumerator()) {
+    $escapedName = [regex]::Escape($entry.Key)
+    $matches = [regex]::Matches(
+        $renderedInf,
+        "(?m)^HKR,$escapedName,0x00010001,$($entry.Value)\s*$")
+    if ($matches.Count -ne 1) {
+        throw "INF de laboratorio nao materializou exatamente uma vez: $($entry.Key)=$($entry.Value)."
+    }
+}
 
 Copy-Item -LiteralPath $sourceSdmaFirmware -Destination $packageSdmaFirmware -Force
 Copy-Item -LiteralPath $sourceRlcFirmware -Destination $packageRlcFirmware -Force
@@ -123,6 +194,12 @@ $manifest = [ordered]@{
     BuiltAtUtc = [DateTime]::UtcNow.ToString('o')
     DriverVer = $driverVersionLine -replace '^DriverVer=', ''
     HardwareValidated = $false
+    TelemetrySchemaVersion = 114
+    SkipHwBringup = 0
+    ShaderDispatchEnabled = [bool]$EnableShaderDispatch
+    CpSoftResetEnabled = [bool]$EnableShaderDispatch
+    Vmid0PageTableEnabled = $false
+    SdmaAutoCtxSwEnabled = -not [bool]$EnableShaderDispatch
     SourceSysSha256 = (Get-FileHash -LiteralPath $sourceSys -Algorithm SHA256).Hash
     PackageSysSha256 = (Get-FileHash -LiteralPath $packageSys -Algorithm SHA256).Hash
     PackageInfSha256 = (Get-FileHash -LiteralPath $packageInf -Algorithm SHA256).Hash

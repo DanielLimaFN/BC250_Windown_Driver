@@ -1,0 +1,44 @@
+﻿=== BINDING DE LABORATORIO (BC-250 MCDM) COM WATCHDOG ===
+  Dispositivo: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+  Servico atual: BasicDisplay
+  Pacote: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab\bc250mcdm.inf
+  Watchdog Timeout: 180 segundos
+
+[1/4] Estagiando pacote de laboratorio via pnputil...
+Utilitßrio PnP da Microsoft
+
+Adicionando o pacote de driver:  bc250mcdm.inf
+Pacote de drivers adicionado com Ûxito.
+Nome Publicado:         oem19.inf
+
+Total de pacotes de driver:  1
+Pacotes de driver adicionados:  1
+  Pacote publicado como: oem19.inf
+
+[2/4] Armando Watchdog de Rollback (180 s)...
+  Watchdog ativo (PID: 5596)
+
+[3/4] Vinculando driver ao hardware...
+  UpdateDriverForPlugAndPlayDevicesW: success=True win32=0 reboot=False
+
+[4/4] Configurando parametros de execucao no registro...
+  SkipHwBringup = 0 configurado.
+  ShaderDispatch = 1 configurado.
+
+Estado do dispositivo:
+  Service: bc250mcdm
+  Status: OK
+  ConfigManagerErrorCode: 0
+  Hash instalado: A291649A51206658
+  Hash do pacote: A291649A51206658
+  Binario em System32\drivers ATUALIZADO com sucesso!
+
+==========================================================================
+DRIVER DE LABORATORIO INSTALADO!
+O Watchdog continua armado por 180 segundos.
+Se o video estiver visivel, confirme para desarmar o rollback:
+powershell -ExecutionPolicy Bypass -File tools\confirm-bc250mcdm-lab.ps1 -EvidenceDir 
+"C:\Users\Daniel\Desktop\NamixWDDM\docs\evidence\2026-08-30_00-18-41-DESKTOP-HQAG6T4-lab-binding" -InstanceId 
+"PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041" -Token "3b19ad1c-d9c1-41d7-ae30-60e632e2e314" 
+-IConfirmDisplayIsVisible
+==========================================================================

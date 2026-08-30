@@ -723,6 +723,87 @@ static PCWSTR Bc250ProbeFieldName(BC250_PROBE_FIELD Field)
     case BC250_PROBE_HQD_ACTIVE_MEC_PC_TRANSITIONS: return L"HqdActiveMecPcTransitions";
     case BC250_PROBE_HQD_ACTIVE_MEC_PC_SAMPLES: return L"HqdActiveMecPcSamples";
     case BC250_PROBE_HQD_ACTIVE_PQ_CONTROL_OBSERVED: return L"HqdActivePqControlObserved";
+    case BC250_PROBE_HQD_ACTIVE_EOP_RPTR_BEFORE: return L"HqdActiveEopRptrBefore";
+    case BC250_PROBE_HQD_ACTIVE_EOP_RPTR_APPLIED: return L"HqdActiveEopRptrApplied";
+    case BC250_PROBE_HQD_ACTIVE_EOP_RPTR_READBACK: return L"HqdActiveEopRptrReadback";
+    case BC250_PROBE_HQD_ACTIVE_EOP_RPTR_RESTORED: return L"HqdActiveEopRptrRestored";
+    case BC250_PROBE_HQD_ACTIVE_EOP_RPTR_RESTORE_PASSED: return L"HqdActiveEopRptrRestorePassed";
+    case BC250_PROBE_HQD_ACTIVE_WPTR_POLL_CNTL1_BEFORE: return L"HqdActiveWptrPollCntl1Before";
+    case BC250_PROBE_HQD_ACTIVE_WPTR_POLL_CNTL1_APPLIED: return L"HqdActiveWptrPollCntl1Applied";
+    case BC250_PROBE_HQD_ACTIVE_WPTR_POLL_CNTL1_READBACK: return L"HqdActiveWptrPollCntl1Readback";
+    case BC250_PROBE_HQD_ACTIVE_WPTR_POLL_CNTL1_RESTORED: return L"HqdActiveWptrPollCntl1Restored";
+    case BC250_PROBE_HQD_ACTIVE_WPTR_POLL_CNTL1_RESTORE_PASSED: return L"HqdActiveWptrPollCntl1RestorePassed";
+    case BC250_PROBE_HQD_ACTIVE_QUEUE_MASK_BIT: return L"HqdActiveQueueMaskBit";
+    case BC250_PROBE_HQD_ACTIVE_PRE_ACTIVE_WPTR_APPLIED: return L"HqdActivePreActiveWptrApplied";
+    case BC250_PROBE_HQD_ACTIVE_PRE_ACTIVE_WPTR_READBACK: return L"HqdActivePreActiveWptrReadback";
+    case BC250_PROBE_HQD_ACTIVE_PRE_ACTIVE_WPTR_PUBLISHED: return L"HqdActivePreActiveWptrPublished";
+    case BC250_PROBE_HQD_ACTIVE_FIRST_RESTORE_FAIL_STAGE: return L"HqdActiveFirstRestoreFailureStage";
+    case BC250_PROBE_HQD_ACTIVE_FIRST_RESTORE_FAIL_OFFSET: return L"HqdActiveFirstRestoreFailureOffset";
+    case BC250_PROBE_HQD_ACTIVE_FIRST_RESTORE_FAIL_EXPECTED: return L"HqdActiveFirstRestoreFailureExpected";
+    case BC250_PROBE_HQD_ACTIVE_FIRST_RESTORE_FAIL_OBSERVED: return L"HqdActiveFirstRestoreFailureObserved";
+    case BC250_PROBE_HQD_ACTIVE_FIRST_RESTORE_FAIL_TRANSPORT: return L"HqdActiveFirstRestoreFailureTransport";
+    case BC250_PROBE_HQD_ACTIVE_RESTORE_FAILURE_COUNT: return L"HqdActiveRestoreFailureCount";
+    case BC250_PROBE_HQD_ACTIVE_WPTR_POLL_CNTL_PROBE_APPLIED: return L"HqdActiveWptrPollCntlProbeApplied";
+    case BC250_PROBE_HQD_ACTIVE_WPTR_POLL_CNTL_PROBE_READBACK: return L"HqdActiveWptrPollCntlProbeReadback";
+    case BC250_PROBE_HQD_ACTIVE_WPTR_POLL_CNTL_WRITABLE: return L"HqdActiveWptrPollCntlWritable";
+    case BC250_PROBE_HQD_ACTIVE_WPTR_POLL_CNTL_EN_LATCHED: return L"HqdActiveWptrPollCntlEnLatched";
+    case BC250_PROBE_HQD_ACTIVE_POST_ACTIVE_WPTR_OBSERVED: return L"HqdActivePostActiveWptrObserved";
+    case BC250_PROBE_HQD_ACTIVE_WPTR_POLL_CNTL1_DIRTY_ENTRY: return L"HqdActiveWptrPollCntl1DirtyEntry";
+    case BC250_PROBE_HQD_ACTIVE_WPTR_POLL_CNTL1_CLEAR_ATTEMPTS: return L"HqdActiveWptrPollCntl1ClearAttempts";
+    case BC250_PROBE_HQD_ACTIVE_PQ_CONTROL_FIRST_SAMPLE: return L"HqdActivePqControlFirstSample";
+    case BC250_PROBE_HQD_ACTIVE_HQ_STATUS0_FIRST_SAMPLE: return L"HqdActiveHqStatus0FirstSample";
+    case BC250_PROBE_HQD_ACTIVE_DEQUEUE_REQUEST_POLL_LAST: return L"HqdActiveDequeueRequestPollLast";
+    case BC250_PROBE_HQD_ACTIVE_VMID_POLL_LAST: return L"HqdActiveVmidPollLast";
+    case BC250_PROBE_HQD_ACTIVE_PERSISTENT_STATE_POLL_LAST: return L"HqdActivePersistentStatePollLast";
+    case BC250_PROBE_HQD_ACTIVE_RPTR_REPORT_MEM_FIRST: return L"HqdActiveRptrReportMemFirst";
+    case BC250_PROBE_HQD_ACTIVE_RPTR_REPORT_MEM_LAST: return L"HqdActiveRptrReportMemLast";
+    case BC250_PROBE_HQD_ACTIVE_RPTR_NON_ZERO_SAMPLES: return L"HqdActiveRptrNonZeroSamples";
+    case BC250_PROBE_HQD_ACTIVE_CPC_STATUS_FIRST: return L"HqdActiveCpcStatusFirst";
+    case BC250_PROBE_HQD_ACTIVE_CPC_STATUS_LAST: return L"HqdActiveCpcStatusLast";
+    case BC250_PROBE_HQD_ACTIVE_CPC_BUSY_STAT_LAST: return L"HqdActiveCpcBusyStatLast";
+    case BC250_PROBE_HQD_ACTIVE_CPF_BUSY_STAT_LAST: return L"HqdActiveCpfBusyStatLast";
+    case BC250_PROBE_HQD_ACTIVE_CPC_STALLED_STAT1_LAST: return L"HqdActiveCpcStalledStat1Last";
+    case BC250_PROBE_HQD_ACTIVE_CP_STAT_FIRST: return L"HqdActiveCpStatFirst";
+    case BC250_PROBE_HQD_ACTIVE_CP_STAT_LAST: return L"HqdActiveCpStatLast";
+    case BC250_PROBE_HQD_ACTIVE_CP_STALLED_STAT1_AFTER: return L"HqdActiveCpStalledStat1After";
+    case BC250_PROBE_HQD_ACTIVE_MEC_ME1_HEADER_DUMP0: return L"HqdActiveMecMe1HeaderDump0";
+    case BC250_PROBE_HQD_ACTIVE_MEC_ME1_HEADER_DUMP1: return L"HqdActiveMecMe1HeaderDump1";
+    case BC250_PROBE_HQD_ACTIVE_MEC_ME1_HEADER_DUMP2: return L"HqdActiveMecMe1HeaderDump2";
+    case BC250_PROBE_HQD_ACTIVE_MEC_ME1_HEADER_DUMP3: return L"HqdActiveMecMe1HeaderDump3";
+    case BC250_PROBE_HQD_ACTIVE_MEC_ME2_HEADER_DUMP0: return L"HqdActiveMecMe2HeaderDump0";
+    case BC250_PROBE_HQD_ACTIVE_MEC_ME2_HEADER_DUMP1: return L"HqdActiveMecMe2HeaderDump1";
+    case BC250_PROBE_HQD_ACTIVE_MEC_ME2_HEADER_DUMP2: return L"HqdActiveMecMe2HeaderDump2";
+    case BC250_PROBE_HQD_ACTIVE_MEC_ME2_HEADER_DUMP3: return L"HqdActiveMecMe2HeaderDump3";
+    case BC250_PROBE_HQD_ACTIVE_MEC_ME2_BEFORE_ACTIVE0: return L"HqdActiveMecMe2BeforeActive0";
+    case BC250_PROBE_HQD_ACTIVE_MEC_ME2_BEFORE_ACTIVE1: return L"HqdActiveMecMe2BeforeActive1";
+    case BC250_PROBE_HQD_ACTIVE_MEC_ME2_BEFORE_ACTIVE2: return L"HqdActiveMecMe2BeforeActive2";
+    case BC250_PROBE_HQD_ACTIVE_MEC_ME2_BEFORE_ACTIVE3: return L"HqdActiveMecMe2BeforeActive3";
+    case BC250_PROBE_HQD_ACTIVE_CPC_STATUS_BEFORE_KICK: return L"HqdActiveCpcStatusBeforeKick";
+    case BC250_PROBE_HQD_ACTIVE_CPC_BUSY_BEFORE_KICK: return L"HqdActiveCpcBusyStatBeforeKick";
+    case BC250_PROBE_HQD_ACTIVE_CPF_BUSY_BEFORE_KICK: return L"HqdActiveCpfBusyStatBeforeKick";
+    case BC250_PROBE_HQD_ACTIVE_CPC_STALLED_BEFORE_KICK: return L"HqdActiveCpcStalledStat1BeforeKick";
+    case BC250_PROBE_HQD_ACTIVE_CP_STAT_BEFORE_KICK: return L"HqdActiveCpStatBeforeKick";
+    case BC250_PROBE_HQD_ACTIVE_CP_STALLED_BEFORE_KICK: return L"HqdActiveCpStalledStat1BeforeKick";
+    case BC250_PROBE_HQD_ACTIVE_CPC_STATUS_AFTER_KICK: return L"HqdActiveCpcStatusAfterKick";
+    case BC250_PROBE_HQD_ACTIVE_CPC_BUSY_AFTER_KICK: return L"HqdActiveCpcBusyStatAfterKick";
+    case BC250_PROBE_HQD_ACTIVE_CPF_BUSY_AFTER_KICK: return L"HqdActiveCpfBusyStatAfterKick";
+    case BC250_PROBE_HQD_ACTIVE_CPF_BUSY_BEFORE_ACTIVE: return L"HqdActiveCpfBusyStatBeforeActive";
+    case BC250_PROBE_HQD_ACTIVE_CPF_BUSY_AFTER_ACTIVE: return L"HqdActiveCpfBusyStatAfterActive";
+    case BC250_PROBE_HQD_ACTIVE_CPF_BUSY_BEFORE_WPTR: return L"HqdActiveCpfBusyStatBeforeWptr";
+    case BC250_PROBE_HQD_ACTIVE_CPF_BUSY_AFTER_WPTR: return L"HqdActiveCpfBusyStatAfterWptr";
+    case BC250_PROBE_HQD_ACTIVE_CPF_STALLED_BEFORE_ACTIVE: return L"HqdActiveCpfStalledStat1BeforeActive";
+    case BC250_PROBE_HQD_ACTIVE_CPF_STALLED_AFTER_ACTIVE: return L"HqdActiveCpfStalledStat1AfterActive";
+    case BC250_PROBE_HQD_ACTIVE_CPF_STALLED_BEFORE_KICK: return L"HqdActiveCpfStalledStat1BeforeKick";
+    case BC250_PROBE_HQD_ACTIVE_CPF_STALLED_AFTER_KICK: return L"HqdActiveCpfStalledStat1AfterKick";
+    case BC250_PROBE_HQD_ACTIVE_CPF_STALLED_LAST: return L"HqdActiveCpfStalledStat1Last";
+    case BC250_PROBE_HQD_ACTIVE_CPF_STATUS_AFTER_ACTIVE: return L"HqdActiveCpfStatusAfterActive";
+    case BC250_PROBE_HQD_ACTIVE_CPF_STATUS_AFTER_KICK: return L"HqdActiveCpfStatusAfterKick";
+    case BC250_PROBE_HQD_ACTIVE_DEQUEUE_REQUEST_APPLIED: return L"HqdActiveDequeueRequestApplied";
+    case BC250_PROBE_HQD_ACTIVE_DEQUEUE_REQUEST_READBACK: return L"HqdActiveDequeueRequestReadback";
+    case BC250_PROBE_HQD_ACTIVE_DEQUEUE_REQUEST_RESTORE_PASSED: return L"HqdActiveDequeueRequestRestorePassed";
+    case BC250_PROBE_HQD_ACTIVE_CPC_STALLED_AFTER_KICK: return L"HqdActiveCpcStalledStat1AfterKick";
+    case BC250_PROBE_HQD_ACTIVE_CP_STAT_AFTER_KICK: return L"HqdActiveCpStatAfterKick";
+    case BC250_PROBE_HQD_ACTIVE_CP_STALLED_AFTER_KICK: return L"HqdActiveCpStalledStat1AfterKick";
     case BC250_PROBE_HQD_ACTIVE_HDP_INVALIDATE_APPLIED: return L"HqdActiveHdpInvalidateApplied";
     case BC250_PROBE_HQD_ACTIVE_GCVM_L2_BEFORE: return L"HqdActiveGcvmL2Before";
     case BC250_PROBE_HQD_ACTIVE_GCVM_L2_APPLIED: return L"HqdActiveGcvmL2Applied";
@@ -794,6 +875,86 @@ static PCWSTR Bc250ProbeFieldName(BC250_PROBE_FIELD Field)
     case BC250_PROBE_DMM_PRESENT_SOURCE_PITCH:
         return L"DmmPresentSourcePitch";
     case BC250_PROBE_SKIP_HW_BRINGUP: return L"SkipHwBringup";
+    case BC250_PROBE_SHADER_DISPATCH_ENABLED:
+        return L"ShaderDispatchEnabled";
+    case BC250_PROBE_SHADER_DISPATCH_DWORDS:
+        return L"ShaderDispatchDwords";
+    case BC250_PROBE_SHADER_DISPATCH_PACKET_INDEX:
+        return L"ShaderDispatchPacketIndex";
+    case BC250_PROBE_SHADER_FENCE_PACKET_INDEX:
+        return L"ShaderFencePacketIndex";
+    case BC250_PROBE_SHADER_FENCE_AFTER_DISPATCH:
+        return L"ShaderFenceAfterDispatch";
+    case BC250_PROBE_SHADER_CC_ARRAY_PASS1:
+        return L"ShaderCcArrayPass1";
+    case BC250_PROBE_SHADER_CC_ARRAY_PASS2:
+        return L"ShaderCcArrayPass2";
+    case BC250_PROBE_SHADER_SPI_WGP_MASK_PASS1:
+        return L"ShaderSpiWgpMaskPass1";
+    case BC250_PROBE_SHADER_SPI_WGP_MASK_PASS2:
+        return L"ShaderSpiWgpMaskPass2";
+    case BC250_PROBE_SHADER_RLC_AON_WGP_PASS1:
+        return L"ShaderRlcAonWgpPass1";
+    case BC250_PROBE_SHADER_RLC_AON_WGP_PASS2:
+        return L"ShaderRlcAonWgpPass2";
+    case BC250_PROBE_SHADER_NON_HARVESTED_WGP:
+        return L"ShaderNonHarvestedWgpMask";
+    case BC250_PROBE_SHADER_AON_NON_HARVESTED_WGP:
+        return L"ShaderAonNonHarvestedWgpMask";
+    case BC250_PROBE_SHADER_WGP_PREFLIGHT_PASSED:
+        return L"ShaderWgpPreflightPassed";
+    case BC250_PROBE_SHADER_RING_GPUVA_LOW:
+        return L"ShaderRingGpuVaLow";
+    case BC250_PROBE_SHADER_RING_GPUVA_HIGH:
+        return L"ShaderRingGpuVaHigh";
+    case BC250_PROBE_SHADER_RING_PHYSICAL_LOW:
+        return L"ShaderRingPhysicalLow";
+    case BC250_PROBE_SHADER_RING_PHYSICAL_HIGH:
+        return L"ShaderRingPhysicalHigh";
+    case BC250_PROBE_SHADER_RING_PTE_LOW:
+        return L"ShaderRingPteLow";
+    case BC250_PROBE_SHADER_RING_PTE_HIGH:
+        return L"ShaderRingPteHigh";
+    case BC250_PROBE_SHADER_RING_TRANSLATION_PASSED:
+        return L"ShaderRingTranslationPassed";
+    case BC250_PROBE_SHADER_RING_READBACK_PASSED:
+        return L"ShaderRingReadbackPassed";
+    case BC250_PROBE_SHADER_RING_READBACK_MISMATCHES:
+        return L"ShaderRingReadbackMismatches";
+    case BC250_PROBE_SHADER_RING_DWORD0: return L"ShaderRingDword0";
+    case BC250_PROBE_SHADER_RING_DWORD1: return L"ShaderRingDword1";
+    case BC250_PROBE_SHADER_RING_DWORD2: return L"ShaderRingDword2";
+    case BC250_PROBE_SHADER_RING_DWORD3: return L"ShaderRingDword3";
+    case BC250_PROBE_SHADER_RING_DWORD4: return L"ShaderRingDword4";
+    case BC250_PROBE_SHADER_RING_DWORD5: return L"ShaderRingDword5";
+    case BC250_PROBE_SHADER_RING_DWORD6: return L"ShaderRingDword6";
+    case BC250_PROBE_SHADER_RING_DWORD7: return L"ShaderRingDword7";
+    case BC250_PROBE_SHADER_READBACK_PASSED:
+        return L"ShaderReadbackPassed";
+    case BC250_PROBE_SHADER_READBACK_MISMATCHES:
+        return L"ShaderReadbackMismatches";
+    case BC250_PROBE_SHADER_RESULT_BEFORE:
+        return L"ShaderResultBefore";
+    case BC250_PROBE_SHADER_RESULT_AFTER:
+        return L"ShaderResultAfter";
+    case BC250_PROBE_SHADER_RESULT_MISMATCHES:
+        return L"ShaderResultMismatches";
+    case BC250_PROBE_SHADER_FENCE_BEFORE:
+        return L"ShaderFenceBefore";
+    case BC250_PROBE_SHADER_FENCE_AFTER:
+        return L"ShaderFenceAfter";
+    case BC250_PROBE_SHADER_RPTR_AFTER:
+        return L"ShaderRptrAfter";
+    case BC250_PROBE_SHADER_WPTR_AFTER:
+        return L"ShaderWptrAfter";
+    case BC250_PROBE_SHADER_REG_RESTORE:
+        return L"ShaderRegisterRestorePassed";
+    case BC250_PROBE_SHADER_MEM_RESTORE:
+        return L"ShaderMemoryRestorePassed";
+    case BC250_PROBE_SHADER_TRIAD_PASSED:
+        return L"ShaderTriadPassed";
+    case BC250_PROBE_SHADER_PHYSICAL_READY:
+        return L"ShaderPhysicalReady";
     default: return NULL;
     }
 }
