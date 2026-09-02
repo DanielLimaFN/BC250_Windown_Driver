@@ -50,7 +50,7 @@ $manifestOut = Join-Path $wdkDir 'package\output_renderonly_safe.manifest.json'
 $firmwareDir = Join-Path $root 'firmware'
 
 $driverVer   = '09/01/2026,3.78.0.0'
-$schema      = 133
+$schema      = 134
 $ledgerPath  = Join-Path $wdkDir 'package\renderonly-safe-candidate-ledger.json'
 
 Write-Host ''

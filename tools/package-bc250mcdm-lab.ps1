@@ -135,12 +135,12 @@ if (Test-Path -LiteralPath $sourcePdb) {
 # assercao logo abaixo. Ate o 3.74 eram dois literais independentes, e bastou
 # atualizar um deles para o empacotamento quebrar com "nao materializou
 # exatamente uma vez" — uma mensagem que descreve o sintoma, nao a causa.
-$labSchemaVersion = 133
+$labSchemaVersion = 134
 
 $infContent = Get-Content -LiteralPath $sourceInf
 $infContent = $infContent | ForEach-Object {
     if ($_ -match '^DriverVer=') {
-        'DriverVer=09/01/2026,3.79.0.0'
+        'DriverVer=09/02/2026,3.80.0.0'
     } elseif ($_ -match '^HKR,Parameters\\Probe,SchemaVersion,0x00010001,\d+$') {
         'HKR,Parameters\Probe,SchemaVersion,0x00010001,{0}' -f $labSchemaVersion
     } elseif ($_ -match 'HKR,Parameters,SkipHwBringup,0x00010001,1') {

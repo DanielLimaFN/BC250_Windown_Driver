@@ -239,4 +239,34 @@ NTSTATUS Bc250McdmSetWddmContractVersion(
     _In_ DXGK_WDDMVERSION Version);
 DXGK_WDDMVERSION Bc250McdmGetWddmContractVersion(VOID);
 
+/*
+ * ==========================================================================
+ * MiscCaps.ComputeOnly declarado ao dxgkrnl.
+ *
+ * O DESTINO DO PROJETO E' WDDM DISPLAY+RENDER DE VERDADE: desktop acelerado,
+ * Vulkan, jogos. ComputeOnly NAO e' direcao, e' andaime.
+ *
+ * Por que existe assim mesmo: o valor precisa concordar com o que o
+ * StartDevice reporta em sources/children, e isso varia por perfil.
+ *   - DISPLAY_RENDER  -> 1 source, 1 child  -> ComputeOnly = 0  (o produto)
+ *   - DISPLAY_ONLY    -> KMDOD              -> ComputeOnly = 0
+ *   - RENDER_ONLY_LAB -> 0 sources, 0 child -> ComputeOnly = 1  (laboratorio)
+ *
+ * A licao de 2026-08-31 esta' no comentario do case DRIVERCAPS: declarar
+ * ComputeOnly=1 ENQUANTO se enumera uma fonte de video fez o dxgkrnl rejeitar
+ * o adaptador com Kernel-PnP 411 / 0xC00000E5. O defeito nunca foi o bit
+ * sozinho, foi o par incoerente. Amarrar o bit ao perfil e' o que impede que
+ * o par volte a divergir.
+ *
+ * O default e' 0 de proposito: qualquer caminho que esqueca de chamar o
+ * setter reporta o valor do PRODUTO, nunca o do laboratorio.
+ *
+ * O setter e' chamado exclusivamente por
+ * Bc250BuildActiveInitializationDataForProfile, onde o perfil ja' foi
+ * validado, e ha' teste de contrato exigindo 0 nos perfis de producao.
+ * ==========================================================================
+ */
+NTSTATUS Bc250McdmSetComputeOnly(_In_ ULONG ComputeOnly);
+ULONG Bc250McdmGetComputeOnly(VOID);
+
 #endif

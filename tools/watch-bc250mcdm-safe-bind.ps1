@@ -6,6 +6,36 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# ==========================================================================
+# Guardiao SYSTEM do safe-bind.
+#
+# Post-mortem do 3.79 (01/09/2026), que motivou esta revisao:
+#   21:53:07  guardiao armado, OBSERVING
+#   21:53:10  bc250mcdm instalado; PnP marca o dispositivo como STARTED
+#   21:57:09  timeout de 240 s sem confirmacao; Codigo 43 observado
+#   21:57:09  BC250_RECOVERY.cmd remove pacote, servico, SYS e o no PnP,
+#             mas declara fracasso apos esperas fixas de 3 s e 5 s
+#   21:57:18  shutdown.exe /r disparado por SYSTEM (evento 1074)
+#   21:57:48  Kernel-Power 41: o desligamento nao terminou limpo
+#   21:57:59  no boot seguinte o guardiao gravou NO_ACTION, "ja estava
+#             restaurado no timeout", SOBRESCREVENDO o estado anterior
+#
+# Tres defeitos, corrigidos aqui:
+#   1. NO_ACTION era ambiguo. Dizia ao mesmo tempo "nada estava errado" e "o
+#      reboot da recovery deu certo". Virou NO_ROLLBACK_REQUIRED e
+#      POST_REBOOT_VERIFIED, que sao fatos diferentes.
+#   2. O state.json era sobrescrito a cada transicao, e a ultima escrita
+#      apagava a historia. Agora existe um journal append-only: a evidencia
+#      nao se autodestroi.
+#   3. Uma leitura unica de PnP decidia o rollback. Agora sao cinco amostras,
+#      e todas precisam concordar (fail-closed).
+#
+# Contrato externo preservado de proposito:
+#   - o estado textual OBSERVING e' lido por bind-bc250mcdm-lab.ps1 e por
+#     bind-bc250mcdm-renderonly-safe.ps1; nao renomear;
+#   - os campos de armed.json so' podem ser acrescentados, nunca removidos.
+# ==========================================================================
+
 function Write-AtomicJson([string]$Path, [object]$Value) {
     $temporary = "$Path.$([guid]::NewGuid().ToString('N')).tmp"
     $Value | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $temporary -Encoding UTF8
@@ -34,16 +64,136 @@ if (-not [guid]::TryParseExact([string]$config.token, 'D', [ref]$parsedToken)) {
 }
 
 $statePath = Join-Path ([string]$config.evidence_dir) 'safe-bind-watchdog-state.json'
+$journalPath = Join-Path ([string]$config.evidence_dir) 'safe-bind-watchdog-journal.jsonl'
+$finalPath = Join-Path ([string]$config.evidence_dir) 'safe-bind-final.json'
 $confirmationPath = Join-Path ([string]$config.evidence_dir) 'safe-bind-confirmation.json'
 $attemptPath = Join-Path ([string]$config.evidence_dir) 'safe-bind-rollback-attempt.json'
+$samplesPath = Join-Path ([string]$config.evidence_dir) 'safe-bind-pnp-samples.json'
+
+# Semeado a partir do state.json que sobreviveu ao boot anterior, quando houver.
+$script:previousState = 'NONE'
+if (Test-Path -LiteralPath $statePath -PathType Leaf) {
+    try {
+        $script:previousState =
+            [string](Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json).state
+    } catch { $script:previousState = 'UNREADABLE' }
+}
+$script:attemptNumber = 1
+$script:recoveryExitCode = $null
+$script:shutdownExitCode = $null
+$script:lastSamples = @()
 
 function Write-State([string]$State, [string]$Detail, [int]$ExitCode = 0) {
-    Write-AtomicJson $statePath ([ordered]@{
+    $record = [ordered]@{
         state = $State
+        previous_state = $script:previousState
+        attempt_number = $script:attemptNumber
         detail = $Detail
         timestamp = (Get-Date).ToString('o')
         boot_ticks = [long](Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks
         exit_code = $ExitCode
+        hardware_validated = $false
+    }
+    Write-AtomicJson $statePath $record
+    # Append-only: e' o unico artefato que nenhuma transicao posterior apaga.
+    try {
+        $line = ($record | ConvertTo-Json -Depth 8 -Compress)
+        [IO.File]::AppendAllText(
+            $journalPath, $line + [Environment]::NewLine,
+            (New-Object Text.UTF8Encoding($false)))
+    } catch { }
+    $script:previousState = $State
+}
+
+# --------------------------------------------------------------------------
+# Veredito de PnP por AMOSTRAGEM.
+#
+# Uma leitura unica pega o dispositivo no meio de uma transicao e decide
+# errado. Sao cinco amostras com 1 s de intervalo, e "saudavel" exige que
+# TODAS concordem: fail-closed, porque o custo de um rollback desnecessario e'
+# muito menor que o de deixar um adaptador quebrado ligado.
+# --------------------------------------------------------------------------
+function Get-Bc250PnpVerdict {
+    $samples = @()
+    for ($i = 1; $i -le 5; $i++) {
+        $devices = @(Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue |
+            Where-Object { $_.PNPDeviceID -eq [string]$config.instance_id })
+        # device_count, e nao "count": num [ordered]@{} o nome count colide
+        # com a propriedade Count do proprio dicionario. Medido no PS 5.1
+        # desta maquina, o adaptador prioriza a chave e devolve o valor certo
+        # — mas a leitura fica ambigua para quem revisa, e o desempate depende
+        # do adaptador. O nome explicito remove a duvida.
+        $samples += [ordered]@{
+            index = $i
+            at = (Get-Date).ToString('o')
+            device_count = $devices.Count
+            service = $(if ($devices.Count -eq 1) { [string]$devices[0].Service } else { $null })
+            code = $(if ($devices.Count -eq 1) { [uint32]$devices[0].ConfigManagerErrorCode } else { $null })
+        }
+        if ($i -lt 5) { Start-Sleep -Seconds 1 }
+    }
+    $healthy = ($samples.Count -eq 5)
+    foreach ($s in $samples) {
+        if ($s.device_count -ne 1 -or $s.service -ne 'BasicDisplay' -or $s.code -ne 0) {
+            $healthy = $false
+        }
+    }
+    $script:lastSamples = $samples
+    try { Write-AtomicJson $samplesPath $samples } catch { }
+    return [pscustomobject]@{ healthy = $healthy; samples = $samples }
+}
+
+# --------------------------------------------------------------------------
+# A4 — arquivamento e limpeza do diretorio do guardiao.
+#
+# Chamar SEMPRE depois do Unregister-ScheduledTask. Na ordem inversa, a tarefa
+# AtStartup fica apontando para um script que nao existe mais, e o proximo
+# boot dispara um powershell que morre sem gravar estado nenhum.
+#
+# Falha de remocao nunca derruba o guardiao: e' registrada em cleanup_ok.
+# --------------------------------------------------------------------------
+function Invoke-Bc250SafeGuardCleanup {
+    $guardDir = 'C:\BC250_SAFE_GUARD'
+    try {
+        $archive = Join-Path ([string]$config.evidence_dir) 'safe-guard-archive'
+        if (-not (Test-Path -LiteralPath $archive)) {
+            New-Item -ItemType Directory -Path $archive -Force | Out-Null
+        }
+        foreach ($name in @('armed.json','watch-bc250mcdm-safe-bind.ps1')) {
+            $source = Join-Path $guardDir $name
+            if (Test-Path -LiteralPath $source -PathType Leaf) {
+                Copy-Item -LiteralPath $source -Destination $archive -Force
+            }
+        }
+        Remove-Item -LiteralPath $guardDir -Recurse -Force -ErrorAction Stop
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Complete-Bc250SafeBind([string]$FinalState, [string]$Detail, [int]$ExitCode = 0) {
+    # Capturado ANTES do Write-State: aquele avanca $script:previousState para
+    # o estado final, e o final.json passaria a registrar previous_state igual
+    # a final_state -- perdendo justamente a transicao que interessa ler.
+    $stateBefore = $script:previousState
+    Write-State $FinalState $Detail $ExitCode
+    Unregister-ScheduledTask -TaskName ([string]$config.task_name) `
+        -Confirm:$false -ErrorAction SilentlyContinue
+    $cleanupOk = Invoke-Bc250SafeGuardCleanup
+    Write-AtomicJson $finalPath ([ordered]@{
+        final_state = $FinalState
+        previous_state = $stateBefore
+        detail = $Detail
+        attempt_number = $script:attemptNumber
+        timestamp = (Get-Date).ToString('o')
+        boot_ticks = [long](Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks
+        armed_boot_ticks = [long]$config.armed_boot_ticks
+        recovery_exit_code = $script:recoveryExitCode
+        shutdown_exit_code = $script:shutdownExitCode
+        pnp_samples = $script:lastSamples
+        journal_path = $journalPath
+        cleanup_ok = $cleanupOk
         hardware_validated = $false
     })
 }
@@ -60,11 +210,12 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 if (-not (Test-Path -LiteralPath ([string]$config.recovery_path) -PathType Leaf) -or
     (Get-FileHash -LiteralPath ([string]$config.recovery_path) -Algorithm SHA256).Hash -ne
         [string]$config.recovery_sha256) {
+    # Nao limpa nem desregistra: sem recovery integra o guardiao nao pode
+    # prometer rollback, e o operador precisa encontrar o estado como esta'.
     Write-State 'BLOCKED' 'recovery ausente ou alterada' 12
     exit 12
 }
 $currentBootTicks = [long](Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks
-$attemptNumber = 1
 $retryAfterBoot = $false
 if (Test-Path -LiteralPath $attemptPath) {
     $previousAttempt = Get-Content -LiteralPath $attemptPath -Raw | ConvertFrom-Json
@@ -73,7 +224,7 @@ if (Test-Path -LiteralPath $attemptPath) {
         Write-State 'BLOCKED' 'rollback ja foi tentado neste boot ou atingiu o limite de 2 boots' 11
         exit 11
     }
-    $attemptNumber = [uint32]$previousAttempt.attempt_number + 1
+    $script:attemptNumber = [uint32]$previousAttempt.attempt_number + 1
     $retryAfterBoot = $true
 }
 
@@ -94,8 +245,8 @@ do {
                 [string]$confirmation.instance_id -eq [string]$config.instance_id -and
                 [long]$confirmation.boot_ticks -eq $currentBoot -and
                 [bool]$confirmation.display_visible) {
-                Write-State 'DISARMED' 'confirmacao visual e estado PnP estavel aceitos'
-                Unregister-ScheduledTask -TaskName ([string]$config.task_name) -Confirm:$false -ErrorAction SilentlyContinue
+                Complete-Bc250SafeBind 'DISARMED' `
+                    'confirmacao visual e estado PnP estavel aceitos'
                 exit 0
             }
         } catch { }
@@ -103,17 +254,30 @@ do {
     Start-Sleep -Milliseconds 250
 } until ((Get-Date) -ge $deadline)
 
-$devices = @(Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue |
-    Where-Object { $_.PNPDeviceID -eq [string]$config.instance_id })
-if ($devices.Count -eq 1 -and $devices[0].Service -eq 'BasicDisplay' -and
-    [uint32]$devices[0].ConfigManagerErrorCode -eq 0) {
-    Write-State 'NO_ACTION' 'BasicDisplay Codigo 0 ja estava restaurado no timeout'
-    Unregister-ScheduledTask -TaskName ([string]$config.task_name) -Confirm:$false -ErrorAction SilentlyContinue
+$verdict = Get-Bc250PnpVerdict
+if ($verdict.healthy) {
+    if ($retryAfterBoot) {
+        # Este boot veio DEPOIS de uma recovery que nao fechou online. A
+        # imagem voltou por causa do reboot que este guardiao pediu.
+        Complete-Bc250SafeBind 'POST_REBOOT_VERIFIED' `
+            'BasicDisplay Codigo 0 confirmado em 5 amostras apos o reboot da recovery'
+    } else {
+        # Nunca houve rollback: o dispositivo simplesmente nunca quebrou.
+        Complete-Bc250SafeBind 'NO_ROLLBACK_REQUIRED' `
+            'BasicDisplay Codigo 0 confirmado em 5 amostras no timeout; nenhum rollback foi necessario'
+    }
     exit 0
+}
+if ($retryAfterBoot) {
+    # Fica no journal mesmo que o state.json seja sobrescrito adiante.
+    Write-State 'POST_REBOOT_FAILED' `
+        'apos o reboot da recovery o dispositivo continua fora de BasicDisplay/Codigo 0'
 }
 
 # SNAPSHOT antes do rollback: preserva a causa mesmo quando a tela esta preta
 # e o operador nao consegue executar o inspetor manualmente.
+$devices = @(Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue |
+    Where-Object { $_.PNPDeviceID -eq [string]$config.instance_id })
 $devices | Select-Object PNPDeviceID,Service,Status,ConfigManagerErrorCode |
     ConvertTo-Json -Depth 4 | Set-Content -LiteralPath `
     (Join-Path ([string]$config.evidence_dir) 'safe-bind-pnp-before-rollback.json') -Encoding UTF8
@@ -137,25 +301,80 @@ $events | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath `
 
 Write-AtomicJson $attemptPath ([ordered]@{
     attempted_at = (Get-Date).ToString('o')
-    attempt_number = $attemptNumber
+    attempt_number = $script:attemptNumber
     boot_ticks = $currentBootTicks
     observed_service = $(if ($devices.Count -eq 1) { [string]$devices[0].Service } else { '<count-ne-1>' })
     observed_code = $(if ($devices.Count -eq 1) { [uint32]$devices[0].ConfigManagerErrorCode } else { $null })
+    pnp_samples = $script:lastSamples
     reason = 'ausencia de confirmacao explicita; qualquer Codigo, inclusive 39/43, exige rollback'
 })
 Write-State 'ROLLBACK_STARTED' 'timeout sem confirmacao; executando recovery autorizada'
-$output = (& cmd.exe /d /c ([string]$config.recovery_path) 2>&1) -join "`n"
-$exitCode = $LASTEXITCODE
+
+# --------------------------------------------------------------------------
+# Execucao blindada da recovery.
+#
+# ARMADILHA REAL do PowerShell 5.1: com $ErrorActionPreference = 'Stop', a
+# forma "& nativo ... 2>&1" transforma CADA linha de stderr em um
+# NativeCommandError TERMINANTE. Se a recovery escrever qualquer coisa em
+# stderr, o script morre exatamente entre executar o rollback e pedir o
+# reboot — o pior lugar possivel para morrer, porque a maquina fica com a
+# tela apagada e ninguem pede o reinicio.
+#
+# Por isso: preferencia rebaixada para Continue durante a chamada, try/finally
+# para restaurar, e sentinela 1000 para "nem chegou a rodar", distinguivel dos
+# codigos reais do .cmd (0, 1, 2, 5).
+# --------------------------------------------------------------------------
+$previousEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+$exitCode = 1000
+$output = ''
+try {
+    $output = (& cmd.exe /d /c ([string]$config.recovery_path) 2>&1 |
+        ForEach-Object { [string]$_ }) -join "`n"
+    if ($null -ne $LASTEXITCODE) { $exitCode = [int]$LASTEXITCODE }
+} catch {
+    $output = "EXCECAO AO EXECUTAR RECOVERY: $($_.Exception.Message)"
+} finally {
+    $ErrorActionPreference = $previousEap
+}
+$script:recoveryExitCode = $exitCode
 $output | Set-Content -LiteralPath (Join-Path ([string]$config.evidence_dir) 'safe-bind-recovery.txt') -Encoding UTF8
-if ($exitCode -ne 0) {
-    if ([bool]$config.automatic_recovery_reboot -and $attemptNumber -eq 1) {
-        Write-State 'RECOVERY_REBOOT_REQUESTED' 'recovery online incompleta; reboot automatico em 10 s' $exitCode
-        & shutdown.exe /r /t 10 /f /d p:2:4 /c "BC250 safe-bind recovery"
-        exit $exitCode
+
+if ($exitCode -eq 0) {
+    # A recovery diz que fechou. Confirmar por amostragem propria antes de
+    # acreditar: exit 0 e' afirmacao do script, nao medicao do PnP.
+    $afterVerdict = Get-Bc250PnpVerdict
+    if ($afterVerdict.healthy) {
+        Complete-Bc250SafeBind 'RECOVERY_OK_ONLINE' `
+            'recovery fechou sem reboot e BasicDisplay Codigo 0 foi confirmado em 5 amostras'
+        exit 0
     }
-    Write-State 'ROLLBACK_FAILED' 'recovery falhou apos dois boots; execute C:\BC250_RECOVERY.cmd' $exitCode
+    Write-State 'ROLLED_BACK' `
+        'recovery devolveu 0 mas o PnP ainda nao confirmou BasicDisplay; escalando para reboot' 0
+}
+
+if ([bool]$config.automatic_recovery_reboot -and $script:attemptNumber -eq 1) {
+    Write-State 'RECOVERY_REBOOT_REQUESTED' `
+        'recovery online incompleta; reboot automatico em 10 s' $exitCode
+    # Sem 2>&1 aqui, pela mesma armadilha documentada acima.
+    & shutdown.exe /r /t 10 /f /d p:2:4 /c "BC250 safe-bind recovery"
+    $script:shutdownExitCode = $LASTEXITCODE
+    if ($script:shutdownExitCode -ne 0) {
+        Write-State 'RECOVERY_REBOOT_REQUESTED' `
+            ("shutdown.exe falhou (exit=$($script:shutdownExitCode)); escalando para Restart-Computer") `
+            $exitCode
+        try {
+            Restart-Computer -Force
+        } catch {
+            Write-State 'ROLLBACK_FAILED' `
+                ("shutdown.exe e Restart-Computer falharam: $($_.Exception.Message); " +
+                 'reinicie manualmente e execute C:\BC250_RECOVERY.cmd') $exitCode
+        }
+    }
+    # NAO desregistrar nem limpar: o proximo boot precisa de armed.json e do
+    # script para confirmar POST_REBOOT_VERIFIED.
     exit $exitCode
 }
-Write-State 'ROLLED_BACK' 'BasicDisplay restaurado pela recovery'
-Unregister-ScheduledTask -TaskName ([string]$config.task_name) -Confirm:$false -ErrorAction SilentlyContinue
-exit 0
+
+Write-State 'ROLLBACK_FAILED' 'recovery falhou apos dois boots; execute C:\BC250_RECOVERY.cmd' $exitCode
+exit $exitCode

@@ -41,6 +41,26 @@ void Bc250ProbeMarkDdi(unsigned long DdiId)
     ++g_Bc250TestDdiMarks;
 }
 
+/*
+ * Schema 134: o bitmap de DXGKQAITYPE tambem e' instrumentacao pura. Aqui ele
+ * fica observavel para que um contrato possa afirmar que o tipo perguntado
+ * chegou ao publicador.
+ */
+unsigned long g_Bc250TestQaiTypeSeenLo;
+unsigned long g_Bc250TestQaiTypeSeenHi;
+
+void Bc250ProbeMarkQaiType(unsigned long Type)
+{
+    if (Type >= 64u) {
+        return;
+    }
+    if (Type < 32u) {
+        g_Bc250TestQaiTypeSeenLo |= (1u << Type);
+    } else {
+        g_Bc250TestQaiTypeSeenHi |= (1u << (Type - 32u));
+    }
+}
+
 static DRIVER_INITIALIZATION_DATA g_initData;
 static DXGKARG_QUERYADAPTERINFO g_queryInfo;
 static DXGKARG_GETNODEMETADATA g_nodeMetadata;

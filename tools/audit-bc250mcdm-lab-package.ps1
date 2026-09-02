@@ -98,6 +98,29 @@ if ($expectedSchema -ge 128) {
         }
     }
 }
+if ($expectedSchema -ge 134) {
+    # Catraca contra a armadilha do empacotador.
+    #
+    # tools\package-bc250mcdm-lab.ps1 NAO compila o SYS: ele copia e assina o
+    # que estiver em driver\wdk\output. Pular o build de laboratorio assina o
+    # binario do candidato anterior com o INF novo, e o ensaio inteiro roda
+    # sobre codigo que ninguem escreveu neste ciclo. Procurar os nomes de
+    # campo como UTF-16 dentro do SYS assinado e' a prova barata de que o
+    # binario e o schema pertencem ao mesmo candidato.
+    foreach ($requiredTelemetry in @(
+            'AbiReadyContext',
+            'AbiReadyAllocation',
+            'AbiReadyRootPageTable',
+            'AbiReadyPublishCount',
+            'V5QaiTypeSeenLo',
+            'V5QaiTypeSeenHi',
+            'V5DdiHist00',
+            'V5DdiHist15')) {
+        if (-not (Test-BinaryContainsUnicode $packageSys $requiredTelemetry)) {
+            $errors.Add("telemetria Schema 134 ausente do SYS: $requiredTelemetry")
+        }
+    }
+}
 if (-not (Test-Path -LiteralPath $sourceSys -PathType Leaf) -or
     (Get-FileHash -LiteralPath $sourceSys -Algorithm SHA256).Hash -ne
         $manifest.SourceSysSha256) {

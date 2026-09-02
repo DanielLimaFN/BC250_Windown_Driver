@@ -97,6 +97,21 @@ $progress = [ordered]@{
     V5LifecycleState     = Get-Field 'V5LifecycleState'
     StopDeviceEntered    = Get-Field 'StopDeviceEntered'
     RemoveDeviceEntered  = Get-Field 'RemoveDeviceEntered'
+    # Schema 134 — informativos, NUNCA criterio de gate.
+    #
+    # Este inspetor audita a imagem SEGURA, cujo contrato e' justamente nao
+    # subir hardware; promover qualquer um destes a criterio transformaria o
+    # gate em outra coisa.
+    AbiReadyContext       = Get-Field 'AbiReadyContext'
+    AbiReadyAllocation    = Get-Field 'AbiReadyAllocation'
+    AbiReadyRootPageTable = Get-Field 'AbiReadyRootPageTable'
+    AbiReadyPublishCount  = Get-Field 'AbiReadyPublishCount'
+    V5QaiTypeSeenLo       = Get-Field 'V5QaiTypeSeenLo'
+    V5QaiTypeSeenHi       = Get-Field 'V5QaiTypeSeenHi'
+    V5DdiHist00           = Get-Field 'V5DdiHist00'
+    V5DdiHist01           = Get-Field 'V5DdiHist01'
+    V5DdiHist02           = Get-Field 'V5DdiHist02'
+    V5DdiHist03           = Get-Field 'V5DdiHist03'
 }
 
 $report = [ordered]@{

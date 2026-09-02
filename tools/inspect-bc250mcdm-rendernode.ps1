@@ -58,7 +58,22 @@ $fieldNames = @(
     'V5StopSubmitInFlight','V5StopDrainIterations','V5StopSnapshotOk',
     'V5StopLockFailures','V5StopRejectedWhileStopping','V5StopFirstStatus',
     'V5LifecycleState',
-    'RemoveDeviceEntered','RemoveDeviceStatus'
+    'RemoveDeviceEntered','RemoveDeviceStatus',
+    # Schema 134 — as tres ABIs deixam de ser invisiveis.
+    #
+    # AbiReadyPublishCount responde "o publicador rodou?".  Valor 1 significa
+    # que apenas o AddDevice publicou, e portanto o StartDevice nao alcancou
+    # nenhum caminho de retorno.
+    'AbiReadyContext','AbiReadyAllocation','AbiReadyRootPageTable',
+    'AbiReadyPublishCount',
+    # Schema 134 — bitmap de DXGKQAITYPE perguntados pelo dxgkrnl.
+    # Bit 1 = DRIVERCAPS, bit 29 = WDDMDEVICECAPS. No 3.79 so' o 29 acendeu.
+    'V5QaiTypeSeenLo','V5QaiTypeSeenHi',
+    # Schema 134 — anel de rastro de DDI. Hist00 e' a marca mais recente.
+    'V5DdiHist00','V5DdiHist01','V5DdiHist02','V5DdiHist03',
+    'V5DdiHist04','V5DdiHist05','V5DdiHist06','V5DdiHist07',
+    'V5DdiHist08','V5DdiHist09','V5DdiHist10','V5DdiHist11',
+    'V5DdiHist12','V5DdiHist13','V5DdiHist14','V5DdiHist15'
 )
 
 # Schema 130: cada slot e' um REG_BINARY de 28 bytes com o GUID inteiro.

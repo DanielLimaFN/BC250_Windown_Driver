@@ -19,7 +19,18 @@ param(
     [switch]$DisableWatchdog,
     [switch]$IAcceptNoAutomaticRollback,
     [switch]$IAcceptAutomaticRecoveryReboot,
-    [ValidateRange(30,600)][int]$WatchdogTimeoutSeconds = 180
+    [ValidateRange(30,600)][int]$WatchdogTimeoutSeconds = 180,
+    # Janela do ciclo fire-and-collect do perfil physical render-only.
+    #
+    # Nesse perfil NAO existe caminho de confirmacao humana: o ensaio troca o
+    # BasicDisplay na unica funcao PCI com saida de video, entao a tela apaga
+    # por construcao e ninguem consegue rodar o confirmador. Ate o 3.79 o
+    # roteiro fingia que existia confirmacao, o operador nao podia dar, o
+    # guardiao expirava e o ensaio terminava em rollback de emergencia.
+    # Agora o proprio binder espera esta janela, tira o retrato, faz o
+    # rollback e reinicia. O fim e' o mesmo; a diferenca e' que passa a ser
+    # o contrato, e nao um acidente.
+    [ValidateRange(30,240)][int]$PhysicalWindowSeconds = 60
 )
 
 $ErrorActionPreference = 'Stop'
@@ -37,6 +48,64 @@ $markerPath = 'C:\BC250_TEST_OEMINF.txt'
 $cleanBootMarkerPath = 'C:\BC250_REQUIRE_CLEAN_BOOT.json'
 $recoveryPath = 'C:\BC250_RECOVERY.cmd'
 $hardwareId = 'PCI\VEN_1002&DEV_13FE'
+
+# --------------------------------------------------------------------------
+# A4 — desarmar e arquivar o guardiao SYSTEM.
+#
+# Ate o 3.79 o unico desarme neste script era Stop-Process sobre
+# $watchdogProcess. Com -EnablePhysicalRenderOnly esse processo NAO EXISTE: o
+# guardiao roda como tarefa agendada SYSTEM. Um bind que falhava deixava a
+# tarefa AtStartup armada sobre um estado ja' quebrado, e ela disparava
+# rollback no boot seguinte.
+#
+# Sempre desregistra ANTES de remover o diretorio: na ordem inversa a tarefa
+# fica apontando para um script inexistente.
+# --------------------------------------------------------------------------
+function Disarm-Bc250SafeGuard([string]$TaskName, [string]$EvidenceDir) {
+    $guardDir = 'C:\BC250_SAFE_GUARD'
+    try {
+        Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+    } catch { }
+    try {
+        if ($EvidenceDir -and (Test-Path -LiteralPath $EvidenceDir)) {
+            $archive = Join-Path $EvidenceDir 'safe-guard-archive'
+            if (-not (Test-Path -LiteralPath $archive)) {
+                New-Item -ItemType Directory -Path $archive -Force | Out-Null
+            }
+            foreach ($name in @('armed.json','watch-bc250mcdm-safe-bind.ps1')) {
+                $source = Join-Path $guardDir $name
+                if (Test-Path -LiteralPath $source -PathType Leaf) {
+                    Copy-Item -LiteralPath $source -Destination $archive -Force
+                }
+            }
+        }
+        Remove-Item -LiteralPath $guardDir -Recurse -Force -ErrorAction Stop
+        return $true
+    } catch { return $false }
+}
+
+# --------------------------------------------------------------------------
+# Execucao blindada de um .cmd nativo.
+#
+# No PowerShell 5.1, "& nativo ... 2>&1" com $ErrorActionPreference = 'Stop'
+# transforma cada linha de stderr em NativeCommandError TERMINANTE. No fluxo
+# fire-and-collect isso mataria o script entre o rollback e o reboot, que e'
+# exatamente onde nao se pode morrer.
+# --------------------------------------------------------------------------
+function Invoke-Bc250NativeCmd([string]$Path) {
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $code = 1000   # sentinela: nem chegou a rodar
+    $text = ''
+    try {
+        $text = (& cmd.exe /d /c $Path 2>&1 | ForEach-Object { [string]$_ }) -join "`n"
+        if ($null -ne $LASTEXITCODE) { $code = [int]$LASTEXITCODE }
+    } catch {
+        $text = "EXCECAO AO EXECUTAR ${Path}: $($_.Exception.Message)"
+    } finally { $ErrorActionPreference = $previousEap }
+    return [pscustomobject]@{ exit_code = $code; output = $text }
+}
 
 function Assert-ArtifactHash([string]$Path, [string]$ExpectedHash, [string]$Label) {
     if (-not (Test-Path -LiteralPath $Path)) {
@@ -257,6 +326,15 @@ if ($EnablePhysicalRenderOnly -and -not $DisableWatchdog -and
     $WatchdogTimeoutSeconds -lt 120) {
     throw 'Physical render-only exige WatchdogTimeoutSeconds entre 120 e 600.'
 }
+# A janela do binder tem de caber com folga dentro da do guardiao. Se as duas
+# expirarem juntas, binder e guardiao disparam a MESMA recovery em paralelo:
+# um remove o pacote enquanto o outro ainda le a chave Probe, e a evidencia
+# do ensaio sai truncada.
+if ($EnablePhysicalRenderOnly -and -not $DisableWatchdog -and
+    $PhysicalWindowSeconds -ge ($WatchdogTimeoutSeconds - 30)) {
+    throw ("PhysicalWindowSeconds ($PhysicalWindowSeconds) precisa ser pelo menos 30 s menor " +
+        "que WatchdogTimeoutSeconds ($WatchdogTimeoutSeconds).")
+}
 
 # 1. Limpeza de marcador OEM e pacotes anteriores
 if (Test-Path -LiteralPath $markerPath) {
@@ -347,10 +425,26 @@ if ($DisableWatchdog) {
         Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
             -Principal $taskPrincipal -Settings $settings -Force | Out-Null
         Start-ScheduledTask -TaskName $taskName
-        Start-Sleep -Seconds 1
+        # Espera por deadline em vez de um unico Start-Sleep 1: sob carga, a
+        # tarefa SYSTEM pode levar mais de um segundo para gravar o primeiro
+        # estado, e o binder abortava um guardiao perfeitamente saudavel.
         $guardState = Join-Path $evidenceDir 'safe-bind-watchdog-state.json'
-        if (-not (Test-Path $guardState) -or
-            (Get-Content $guardState -Raw | ConvertFrom-Json).state -ne 'OBSERVING') {
+        $guardDeadline = (Get-Date).AddSeconds(10)
+        $guardObserving = $false
+        do {
+            Start-Sleep -Milliseconds 250
+            if (Test-Path $guardState) {
+                try {
+                    $guardObserving =
+                        ((Get-Content $guardState -Raw | ConvertFrom-Json).state -eq 'OBSERVING')
+                } catch { $guardObserving = $false }
+            }
+        } until ($guardObserving -or (Get-Date) -ge $guardDeadline)
+        if (-not $guardObserving) {
+            # Desregistrar antes de abortar: uma tarefa AtStartup orfa
+            # dispararia rollback no proximo boot, sobre um bind que nem
+            # chegou a acontecer.
+            Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
             throw 'Watchdog SYSTEM nao entrou em OBSERVING.'
         }
         Write-Host "  Watchdog SYSTEM ativo; reboot automatico autorizado." -ForegroundColor Green
@@ -516,6 +610,14 @@ if ($devAfter.Service -ne 'bc250mcdm') {
     if ($null -ne $watchdogProcess -and -not $watchdogProcess.HasExited) {
         Stop-Process -Id $watchdogProcess.Id -Force -ErrorAction SilentlyContinue
     }
+    # No perfil physical render-only o guardiao nao e' um processo filho e sim
+    # uma tarefa SYSTEM: o Stop-Process acima nao o alcanca. Sem este desarme,
+    # o bind falho deixava a tarefa AtStartup viva e ela executava rollback no
+    # proximo boot, sobre um sistema que ja' estava intacto.
+    if ($EnablePhysicalRenderOnly -and -not $DisableWatchdog) {
+        $disarmOk = Disarm-Bc250SafeGuard 'BC250-SafeBindGuard' $evidenceDir
+        Write-Host ("  Guardiao SYSTEM desarmado (limpeza_ok={0})." -f $disarmOk) -ForegroundColor Yellow
+    }
     throw "Binding de laboratorio falhou (win32=$win32Error)."
 }
 
@@ -549,6 +651,135 @@ try {
     Write-Host ("  AVISO: falha ao capturar telemetria no bind: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
 }
 
+# Registro duravel do que foi realmente instalado, gravado ANTES de qualquer
+# ciclo que possa reiniciar a maquina. A quarentena depende disto para
+# reconhecer o residuo mesmo depois de o pacote ter sido reconstruido para um
+# candidato posterior; se so' fosse escrito no fim, o caminho
+# fire-and-collect (que termina em reboot) nunca o produziria.
+[ordered]@{
+    evidence_dir = $evidenceDir
+    watchdog_token = $watchdogToken
+    watchdog_disabled = [bool]$DisableWatchdog
+    instance_id = $device.PNPDeviceID
+    published_inf = $publishedName
+    package_sys_sha256 = (Get-FileHash -LiteralPath $pkgSysPath -Algorithm SHA256).Hash
+} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'tools\_last_lab_binding.json') -Encoding UTF8
+
+# ==========================================================================
+# A3 — ciclo FIRE-AND-COLLECT do perfil physical render-only.
+#
+# Este perfil nao tem, e nao pode ter, confirmacao humana: ele substitui o
+# BasicDisplay na unica funcao PCI com saida de video, entao a tela apaga por
+# construcao e o operador nao consegue rodar o confirmador. Ate o 3.79 o
+# roteiro mantinha a ficcao da confirmacao; na pratica todo ensaio terminava
+# em timeout do guardiao seguido de rollback de emergencia, e o operador
+# ficava no escuro sem saber se aquilo era falha ou o comportamento previsto.
+#
+# Aqui o desfecho vira contrato explicito: janela fixa, retrato, rollback e
+# reboot -- todos incondicionais. Nao existe caminho de sucesso que deixe o
+# driver instalado, e por isso nao existe mais ambiguidade de leitura.
+#
+# O que este bloco NAO faz, deliberadamente: escrever
+# safe-bind-confirmation.json. Aquele arquivo afirma display_visible=$true e,
+# com a tela apagada, seria uma mentira gravada em evidencia -- exatamente o
+# tipo de falso sucesso que o projeto proibe. Em vez de forjar a confirmacao,
+# o binder assume o controle desregistrando a tarefa.
+# ==========================================================================
+if ($EnablePhysicalRenderOnly) {
+    Write-Host ''
+    Write-Host '=== CICLO FIRE-AND-COLLECT (physical render-only) ===' -ForegroundColor Magenta
+    Write-Host ("  Janela de bring-up: $PhysicalWindowSeconds s. Rollback e reboot sao automaticos.")
+
+    # (a) Serie temporal do PnP durante a janela.
+    $physicalSamples = @()
+    $windowDeadline = (Get-Date).AddSeconds($PhysicalWindowSeconds)
+    $sampleIndex = 0
+    do {
+        $sampleIndex++
+        $sampleDevices = @(Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue |
+            Where-Object { $_.PNPDeviceID -eq [string]$device.PNPDeviceID })
+        $physicalSamples += [ordered]@{
+            index = $sampleIndex
+            at = (Get-Date).ToString('o')
+            device_count = $sampleDevices.Count
+            service = $(if ($sampleDevices.Count -eq 1) { [string]$sampleDevices[0].Service } else { $null })
+            code = $(if ($sampleDevices.Count -eq 1) { [uint32]$sampleDevices[0].ConfigManagerErrorCode } else { $null })
+        }
+        Start-Sleep -Seconds 2
+    } until ((Get-Date) -ge $windowDeadline)
+    $physicalSamples | ConvertTo-Json -Depth 4 |
+        Set-Content -LiteralPath (Join-Path $evidenceDir 'physical-pnp-samples.json') -Encoding UTF8
+    Write-Host ("  {0} amostras de PnP gravadas." -f $physicalSamples.Count) -ForegroundColor Cyan
+
+    # (b) Segundo retrato da telemetria: o do bind pegou o driver recem-carregado,
+    #     este pega o estado depois de o dxgkrnl ter decidido o que fazer com ele.
+    try {
+        if (Test-Path -LiteralPath $probeKeyPath) {
+            $finalSnapshot = Get-ItemProperty -LiteralPath $probeKeyPath -ErrorAction Stop
+            $finalOrdered = [ordered]@{}
+            foreach ($finalProperty in ($finalSnapshot.PSObject.Properties |
+                    Where-Object { $_.Name -notlike 'PS*' } | Sort-Object Name)) {
+                $finalOrdered[$finalProperty.Name] = $finalProperty.Value
+            }
+            $finalOrdered | ConvertTo-Json -Depth 4 |
+                Set-Content -LiteralPath (Join-Path $evidenceDir 'probe-registry-final.json') -Encoding UTF8
+            & reg.exe export 'HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Probe' `
+                (Join-Path $evidenceDir 'probe-registry-final.txt') /y | Out-Null
+            Write-Host ("  Telemetria final: {0} valores." -f $finalOrdered.Count) -ForegroundColor Cyan
+        } else {
+            Write-Host '  AVISO: chave de telemetria ausente no fim da janela.' -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host ("  AVISO: falha ao capturar telemetria final: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+    }
+
+    # (c) Assumir o controle antes de mexer no pacote, para nao disputar a
+    #     mesma recovery com o guardiao.
+    if (-not $DisableWatchdog) {
+        $disarmOk = Disarm-Bc250SafeGuard 'BC250-SafeBindGuard' $evidenceDir
+        Write-Host ("  Guardiao SYSTEM assumido pelo binder (limpeza_ok={0})." -f $disarmOk) -ForegroundColor Yellow
+    }
+
+    # (d) Rollback incondicional.
+    Write-Host '  Executando rollback...' -ForegroundColor Yellow
+    $rollback = Invoke-Bc250NativeCmd $recoveryPath
+    [ordered]@{
+        executed_at = (Get-Date).ToString('o')
+        recovery_path = $recoveryPath
+        exit_code = $rollback.exit_code
+        output = $rollback.output
+        hardware_validated = $false
+    } | ConvertTo-Json -Depth 4 |
+        Set-Content -LiteralPath (Join-Path $evidenceDir 'physical-rollback.json') -Encoding UTF8
+    Write-Host ("  Recovery exit={0}." -f $rollback.exit_code)
+
+    # (e) Marcador de boot limpo, no mesmo formato de rollback-bc250mcdm-lab.ps1.
+    #     Estado de fila nao cai com desbind; so' o boot frio limpa.
+    [ordered]@{
+        state = 'CLEAN_BOOT_REQUIRED'
+        rollback_boot_ticks = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.
+            ToUniversalTime().Ticks
+        rollback_completed_at = (Get-Date).ToString('o')
+        restored_service = 'BasicDisplay'
+        restored_code = 0
+        hardware_validated = $false
+    } | ConvertTo-Json | Set-Content -LiteralPath $cleanBootMarkerPath -Encoding UTF8
+
+    # (f) Reboot incondicional, com escalada se o shutdown recusar.
+    Write-Host '  Reiniciando em 15 s. A evidencia ja esta gravada.' -ForegroundColor Yellow
+    & shutdown.exe /r /t 15 /f /d p:2:4 /c "BC250 fire-and-collect"
+    $shutdownExit = $LASTEXITCODE
+    if ($shutdownExit -ne 0) {
+        Write-Host ("  shutdown.exe falhou (exit=$shutdownExit); escalando para Restart-Computer.") -ForegroundColor Red
+        Restart-Computer -Force
+    }
+    Write-Host ''
+    Write-Host 'Evidencia deste ensaio:' -ForegroundColor Cyan
+    Write-Host "  $evidenceDir"
+    Write-Host 'NAO VALIDADO EM HARDWARE ate haver fence fisica e conferencia byte a byte.' -ForegroundColor Yellow
+    exit 0
+}
+
 Write-Host "`n==========================================================================" -ForegroundColor Green
 Write-Host "DRIVER DE LABORATORIO INSTALADO!" -ForegroundColor Green
 if ($DisableWatchdog) {
@@ -556,24 +787,8 @@ if ($DisableWatchdog) {
     Write-Host "Em caso de falha use: $recoveryPath" -ForegroundColor Yellow
 } else {
     Write-Host "O Watchdog continua armado por $WatchdogTimeoutSeconds segundos." -ForegroundColor Yellow
-    if ($EnablePhysicalRenderOnly) {
-        Write-Host 'Ensaio diagnostico: NAO desarme. O guardiao capturara a telemetria,' -ForegroundColor Yellow
-        Write-Host 'removera o driver e reiniciara automaticamente se necessario.' -ForegroundColor Yellow
-    } else {
-        Write-Host "Se o video estiver visivel, confirme para desarmar o rollback:" -ForegroundColor Yellow
-        Write-Host "powershell -NoProfile -ExecutionPolicy Bypass -File `"$confirmScript`" -EvidenceDir `"$evidenceDir`" -InstanceId `"$($device.PNPDeviceID)`" -Token `"$watchdogToken`" -IConfirmDisplayIsVisible"
-    }
+    Write-Host "Se o video estiver visivel, confirme para desarmar o rollback:" -ForegroundColor Yellow
+    Write-Host "powershell -NoProfile -ExecutionPolicy Bypass -File `"$confirmScript`" -EvidenceDir `"$evidenceDir`" -InstanceId `"$($device.PNPDeviceID)`" -Token `"$watchdogToken`" -IConfirmDisplayIsVisible"
 }
 Write-Host "==========================================================================" -ForegroundColor Green
 
-[ordered]@{
-    evidence_dir = $evidenceDir
-    watchdog_token = $watchdogToken
-    watchdog_disabled = [bool]$DisableWatchdog
-    instance_id = $device.PNPDeviceID
-    published_inf = $publishedName
-    # Registro duravel do que foi realmente instalado. A quarentena
-    # depende disto para reconhecer o residuo mesmo depois de o
-    # pacote ter sido reconstruido para um candidato posterior.
-    package_sys_sha256 = (Get-FileHash -LiteralPath $pkgSysPath -Algorithm SHA256).Hash
-} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'tools\_last_lab_binding.json') -Encoding UTF8

@@ -67,6 +67,26 @@ DXGK_WDDMVERSION Bc250McdmGetWddmContractVersion(VOID)
         &g_Bc250WddmContractVersion, 0, 0);
 }
 
+/*
+ * Default 0 = display+render, o destino do projeto. Ver o bloco extenso em
+ * bc250_mcdm_callbacks.h antes de mexer.
+ */
+static volatile LONG g_Bc250McdmComputeOnly = 0;
+
+NTSTATUS Bc250McdmSetComputeOnly(ULONG ComputeOnly)
+{
+    if (ComputeOnly > 1u) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    InterlockedExchange(&g_Bc250McdmComputeOnly, (LONG)ComputeOnly);
+    return STATUS_SUCCESS;
+}
+
+ULONG Bc250McdmGetComputeOnly(VOID)
+{
+    return (ULONG)InterlockedCompareExchange(&g_Bc250McdmComputeOnly, 0, 0);
+}
+
 NTSTATUS Bc250McdmEncodeVidMmPte(
     const BC250_MCDM_RUNTIME_CAPS *Caps,
     const DXGK_PTE *Source,
@@ -703,6 +723,17 @@ NTSTATUS APIENTRY Bc250McdmQueryAdapterInfo(
     type = (pQueryAdapterInfo != NULL) ? (ULONG)pQueryAdapterInfo->Type : 0xFFFFFFFFu;
     Bc250ProbeRecord(BC250_PROBE_V5_QAI_LAST_TYPE, type);
     Bc250ProbeRecord(BC250_PROBE_V5_QAI_LAST_STATUS, (ULONG)status);
+    /*
+     * Bitmap acumulado (schema 134). Guarda de NULL obrigatoria: com
+     * pQueryAdapterInfo nulo, type vale 0xFFFFFFFF e envenenaria o bitmap.
+     *
+     * O 3.79 soube por acaso que o dxgkrnl parou depois de WDDMDEVICECAPS
+     * (29) sem jamais pedir DRIVERCAPS (1). O bitmap torna isso uma leitura
+     * direta em vez de uma inferencia sobre o ultimo valor sobrevivente.
+     */
+    if (pQueryAdapterInfo != NULL) {
+        Bc250ProbeMarkQaiType(type);
+    }
     if (status == STATUS_NOT_SUPPORTED) {
         Bc250ProbeRecord(BC250_PROBE_V5_QAI_LAST_UNSUPPORTED_TYPE, type);
         Bc250ProbeRecord(BC250_PROBE_V5_QAI_UNSUPPORTED_COUNT,
@@ -802,17 +833,26 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         caps->GpuEngineTopology.NbAsymetricProcessingNodes =
             runtimeCaps.NodeCount;
         /*
-         * Alvo: WDDM display+render. ComputeOnly era 1, herdado do alvo MCDM
-         * original, e contradizia diretamente o restante do driver:
-         * Class=Display no INF, uma fonte de video e um filho reportados pelo
-         * StartDevice, e a tabela de VidPn inteira preenchida.
+         * ALVO DO PROJETO: WDDM display+render. Nos perfis de producao este
+         * valor e' 0, e ha' teste de contrato que falha o build se deixar de
+         * ser — ver Bc250RunComputeOnlyProfileTest.
          *
-         * Um adaptador ComputeOnly nao apresenta nada. Declarar ComputeOnly e
-         * ao mesmo tempo enumerar fonte de video e' o tipo de inconsistencia
-         * que o dxgkrnl rejeita com STATUS_INTERNAL_ERROR generico — foi o
-         * observado no silicio em 2026-08-31 (Kernel-PnP 411, 0xC00000E5).
+         * ComputeOnly era 1 fixo, herdado do alvo MCDM original, e contradizia
+         * o resto do driver: Class=Display no INF, uma fonte de video e um
+         * filho reportados pelo StartDevice, e a tabela de VidPn inteira
+         * preenchida. Um adaptador ComputeOnly nao apresenta nada. Declarar
+         * ComputeOnly ENQUANTO se enumera fonte de video e' a inconsistencia
+         * que o dxgkrnl rejeitou com Kernel-PnP 411 / 0xC00000E5 no silicio em
+         * 2026-08-31.
+         *
+         * A licao nao foi "ComputeOnly e' proibido", foi "o par tem de ser
+         * coerente". O perfil RENDER_ONLY_LAB reporta 0 sources e 0 children,
+         * e para ELE o valor coerente e' 1. Por isso o bit passou a ser
+         * derivado do perfil, em vez de literal: quem decide e'
+         * Bc250BuildActiveInitializationDataForProfile, com o perfil ja'
+         * validado.
          */
-        caps->MiscCaps.ComputeOnly = 0u;
+        caps->MiscCaps.ComputeOnly = Bc250McdmGetComputeOnly();
         return STATUS_SUCCESS;
     }
 

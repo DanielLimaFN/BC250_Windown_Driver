@@ -1091,6 +1091,81 @@ typedef enum BC250_PROBE_FIELD {
     BC250_PROBE_V5_START_DEVICE_RETURN_STAGE,
     BC250_PROBE_V5_UNSAFE_BRINGUP_COMPILED,
 
+    /*
+     * Schema 134 — as tres ABIs deixam de ser invisiveis.
+     *
+     * O ensaio do 3.79 (evidencia
+     * docs/evidence/2026-09-01_21-53-07-DESKTOP-HQAG6T4-lab-binding) provou
+     * P1/P2/HQD no silicio e ainda assim terminou em Codigo 43.  Ao auditar o
+     * porque, dois dos tres gates pedidos — ContextAbiReady e
+     * AllocationAbiReady — simplesmente NAO EXISTIAM como telemetria: viviam
+     * so' como membros volatile do contexto (bc250_active_miniport.h:353-355),
+     * escritos por InterlockedExchange e jamais publicados.  Auditar um gate
+     * que nao e' observavel e' adivinhacao.
+     *
+     * RootPageTable ganha campo NOVO em vez de reusar o legado
+     * BC250_PROBE_ROOT_PAGE_TABLE_ABI_READY: aquele e' gravado antes da
+     * promocao e a auditoria fail-closed depende de ele continuar em zero.
+     * Os tres aqui sao lidos no MESMO instante, pelo mesmo publicador, em
+     * todo caminho de retorno do StartDevice.
+     *
+     * PUBLISH_COUNT aplica a licao do Schema 133: sem ele, tres zeros nao
+     * distinguem "as ABIs nao ficaram prontas" de "o publicador nunca rodou".
+     */
+    BC250_PROBE_V5_ABI_READY_CONTEXT,
+    BC250_PROBE_V5_ABI_READY_ALLOCATION,
+    BC250_PROBE_V5_ABI_READY_ROOT_PAGE_TABLE,
+    BC250_PROBE_V5_ABI_READY_PUBLISH_COUNT,
+
+    /*
+     * Schema 134 — bitmap dos DXGKQAITYPE que o dxgkrnl chegou a perguntar.
+     *
+     * No 3.79 o V5QaiLastType veio 29 (DXGKQAITYPE_WDDMDEVICECAPS) com
+     * QaiCalls=1: soube-se por acidente que DRIVERCAPS nunca foi pedido, e e'
+     * exatamente esse o dado que localiza onde o dxgkrnl desiste.  Um bitmap
+     * responde "quais perguntou" sem depender do ultimo valor sobrevivente.
+     * Lo cobre os tipos 0..31, Hi cobre 32..63 — o enum do WDK vai ate 48.
+     */
+    BC250_PROBE_V5_QAI_TYPE_SEEN_LO,
+    BC250_PROBE_V5_QAI_TYPE_SEEN_HI,
+
+    /*
+     * Schema 134 — MiscCaps.ComputeOnly efetivamente declarado ao dxgkrnl.
+     *
+     * O destino do projeto e' display+render, onde este campo TEM de sair 0.
+     * Um 1 aqui so' e' legitimo acompanhado de V5AdapterProfile=2
+     * (RENDER_ONLY_LAB) e de V5StartDeviceSources/Children em zero. Qualquer
+     * outra combinacao e' o par incoerente que o dxgkrnl rejeitou em
+     * 2026-08-31, agora visivel na evidencia em vez de deduzido do fonte.
+     */
+    BC250_PROBE_V5_COMPUTE_ONLY_DECLARED,
+
+    /*
+     * Schema 134 — rastro de DDI de 3 para 16 posicoes.
+     *
+     * Hist00 e' a marca mais recente, Hist15 a decima-sexta mais recente.
+     * Com apenas tres slots o 3.79 entregou "58, 1, 58" e a sequencia
+     * completa do carregamento se perdeu.  ESTES DEZESSEIS PRECISAM FICAR
+     * CONTIGUOS E NESTA ORDEM: a publicacao indexa por aritmetica sobre
+     * BC250_PROBE_V5_DDI_HIST_00.
+     */
+    BC250_PROBE_V5_DDI_HIST_00,
+    BC250_PROBE_V5_DDI_HIST_01,
+    BC250_PROBE_V5_DDI_HIST_02,
+    BC250_PROBE_V5_DDI_HIST_03,
+    BC250_PROBE_V5_DDI_HIST_04,
+    BC250_PROBE_V5_DDI_HIST_05,
+    BC250_PROBE_V5_DDI_HIST_06,
+    BC250_PROBE_V5_DDI_HIST_07,
+    BC250_PROBE_V5_DDI_HIST_08,
+    BC250_PROBE_V5_DDI_HIST_09,
+    BC250_PROBE_V5_DDI_HIST_10,
+    BC250_PROBE_V5_DDI_HIST_11,
+    BC250_PROBE_V5_DDI_HIST_12,
+    BC250_PROBE_V5_DDI_HIST_13,
+    BC250_PROBE_V5_DDI_HIST_14,
+    BC250_PROBE_V5_DDI_HIST_15,
+
     /* Sentinela: mantem o reset integral completo por construcao. */
     BC250_PROBE_FIELD_COUNT
 } BC250_PROBE_FIELD;
@@ -1298,9 +1373,30 @@ VOID Bc250ProbeResetRenderTrace(VOID);
 #define BC250_V5_DDI_PATCH                        64u
 #define BC250_V5_DDI_RENDER                       65u
 #define BC250_V5_DDI_SUBMIT_COMMAND               66u
+/*
+ * Ciclo de vida PnP. Ate o 3.79 estas quatro nao eram marcadas, e o rastro
+ * comecava no meio do carregamento: nao havia como saber, so' pelo registro,
+ * se o StartDevice sequer fora chamado antes das QAI.
+ */
+#define BC250_V5_DDI_ADD_DEVICE                   67u
+#define BC250_V5_DDI_START_DEVICE                 68u
+#define BC250_V5_DDI_STOP_DEVICE                  69u
+#define BC250_V5_DDI_REMOVE_DEVICE                70u
+
+/* Profundidade do anel de rastro. Ver BC250_PROBE_V5_DDI_HIST_00. */
+#define BC250_V5_DDI_HISTORY_COUNT 16u
 
 /* Marca a entrada de uma DDI. Sem registro, sem lock: seguro em qualquer IRQL. */
 VOID Bc250ProbeMarkDdi(_In_ ULONG DdiId);
+
+/*
+ * Marca que um DXGKQAITYPE foi perguntado pelo dxgkrnl.
+ *
+ * Publica no registro na hora, e nao no teardown: o Codigo 43 pode chegar sem
+ * que StopDevice execute, e QueryAdapterInfo e' de baixa frequencia — o custo
+ * de duas escritas por chamada e' irrelevante e a evidencia sobrevive.
+ */
+VOID Bc250ProbeMarkQaiType(_In_ ULONG Type);
 
 /* Publica o rastro no registro. Chamar no inicio do teardown. */
 VOID Bc250ProbeSnapshotDdiTrace(VOID);

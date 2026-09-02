@@ -552,9 +552,27 @@ def main() -> int:
     # congelar a contradicao que o dxgkrnl rejeita com STATUS_INTERNAL_ERROR.
     # A propriedade de seguranca que importa continua garantida logo acima:
     # SupportNonVGA nao pode ser TRUE.
+    #
+    # 2026-09-02: o bit deixou de ser literal e passou a ser derivado do
+    # perfil, porque o perfil de laboratorio RENDER_ONLY_LAB reporta 0 sources
+    # e 0 children e para ELE o valor coerente e' 1. O forbid abaixo continua
+    # valendo -- ele impede que alguem volte a cravar 1u no fonte --, mas
+    # sozinho ele nao alcanca mais o caso derivado.
+    #
+    # Por isso os dois require: o primeiro garante que o valor vem do getter
+    # (e nao de um literal novo), e o segundo garante que o UNICO perfil que
+    # recebe 1 e' o de laboratorio. A garantia de que os perfis de PRODUCAO
+    # reportam 0 e' fechada por Bc250RunAdapterProfileTest, que quebra o build.
     forbid(callbacks, "caps->MiscCaps.ComputeOnly = 1u",
            "compute-only capability incompatible with display+render target",
            errors)
+    require(callbacks, "caps->MiscCaps.ComputeOnly = Bc250McdmGetComputeOnly();",
+            "compute-only capability must be derived from the adapter profile",
+            errors)
+    require(active,
+            "(Profile == BC250_ADAPTER_PROFILE_RENDER_ONLY_LAB) ? 1u : 0u",
+            "compute-only may only be declared by the laboratory profile",
+            errors)
     forbid(active, "BC250_RUNTIME_EVIDENCE_COMPLETE;",
            "fabricated complete runtime inventory", errors)
     require(active, "BC250_RUNTIME_EVIDENCE_PLATFORM_CARVEOUTS_PROBED",

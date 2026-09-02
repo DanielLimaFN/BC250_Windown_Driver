@@ -796,6 +796,8 @@ static int Bc250RunRenderTraceResetTest(void)
 {
     BC250_PROBE_FIELD field;
     ULONG value;
+    ULONG sequenceBefore;
+    ULONG sequenceAfter;
     BC250_V5_QI_RECORD record;
 
     /*
@@ -881,6 +883,53 @@ static int Bc250RunRenderTraceResetTest(void)
     Bc250ProbeResetSubmissionEvidence();
     (void)Bc250ProbeGetOffline(&field, &value);
     QCHECK(value == 0u);
+
+    /*
+     * 7. Schema 134 — o anel de 16 posicoes e' publicado por inteiro.
+     *
+     * O caminho offline so' guarda o ULTIMO campo, entao o anel nao pode ser
+     * lido campo a campo aqui. O que E' observavel e' o contador de sequencia:
+     * um snapshot precisa gravar exatamente 20 valores (16 do anel + LAST +
+     * PREV + PREV2 + MARKS). Se alguem quebrar a contiguidade do enum ou
+     * esquecer um campo, este numero muda.
+     */
+    Bc250ProbeResetRenderTrace();
+    sequenceBefore = Bc250ProbeGetOffline(NULL, NULL);
+    Bc250ProbeSnapshotDdiTrace();
+    sequenceAfter = Bc250ProbeGetOffline(&field, &value);
+    QCHECK(sequenceAfter - sequenceBefore == 20u);
+    /* MARKS continua sendo o ultimo: ha' assercoes acima que dependem disso. */
+    QCHECK(field == BC250_PROBE_V5_DDI_MARKS);
+
+    /*
+     * 8. Schema 134 — bitmap de DXGKQAITYPE.
+     *
+     * Tipo >= 32 acende bit em Hi, que e' o ultimo campo publicado.
+     */
+    Bc250ProbeResetRenderTrace();
+    sequenceBefore = Bc250ProbeGetOffline(NULL, NULL);
+    Bc250ProbeMarkQaiType(40u);
+    sequenceAfter = Bc250ProbeGetOffline(&field, &value);
+    QCHECK(sequenceAfter - sequenceBefore == 2u);
+    QCHECK(field == BC250_PROBE_V5_QAI_TYPE_SEEN_HI);
+    QCHECK(value == (1u << 8));
+
+    /*
+     * 9. Tipo fora do contrato do WDK e' DESCARTADO, nao truncado: um
+     *    deslocamento de 64 ou mais e' comportamento indefinido em C e
+     *    acenderia um bit alheio. Nenhuma gravacao pode acontecer.
+     */
+    sequenceBefore = Bc250ProbeGetOffline(NULL, NULL);
+    Bc250ProbeMarkQaiType(64u);
+    Bc250ProbeMarkQaiType(0xFFFFFFFFu);
+    QCHECK(Bc250ProbeGetOffline(NULL, NULL) == sequenceBefore);
+
+    /* 10. O reset zera o bitmap acumulado, e nao so' o valor publicado. */
+    Bc250ProbeResetRenderTrace();
+    Bc250ProbeMarkQaiType(33u);
+    (void)Bc250ProbeGetOffline(&field, &value);
+    QCHECK(field == BC250_PROBE_V5_QAI_TYPE_SEEN_HI);
+    QCHECK(value == (1u << 1));
     return 1;
 }
 
@@ -1090,11 +1139,58 @@ static int Bc250RunAdapterProfileTest(void)
         DXGKDDI_WDDMv2_7, BC250_ADAPTER_PROFILE_DISPLAY_RENDER) ==
         STATUS_SUCCESS);
 
+    /*
+     * TRAVA DO DESTINO DO PROJETO.
+     *
+     * O alvo e' WDDM display+render de verdade -- desktop acelerado, Vulkan,
+     * jogos. ComputeOnly e' andaime de laboratorio, nunca direcao.
+     *
+     * Ate aqui a garantia era um forbid textual em audit-bc250mcdm-safety.py
+     * sobre o literal "caps->MiscCaps.ComputeOnly = 1u". Agora que o valor e'
+     * derivado do perfil, aquele grep nao alcanca mais o caso, e a garantia
+     * passa a ser esta: se alguem fizer um perfil de PRODUCAO declarar
+     * compute-only, o build quebra aqui.
+     */
+    CHECK(Bc250McdmGetComputeOnly() == 0u);
+
     memset(&g_initDataRenderOnly, 0xCC, sizeof(g_initDataRenderOnly));
     CHECK(Bc250BuildActiveInitializationDataForProfile(
         &g_initDataRenderOnly, DXGKDDI_INTERFACE_VERSION_WDDM2_7,
         DXGKDDI_WDDMv2_7, BC250_ADAPTER_PROFILE_RENDER_ONLY_LAB) ==
         STATUS_SUCCESS);
+
+    /* Somente o perfil de laboratorio pode declarar compute-only. */
+    CHECK(Bc250McdmGetComputeOnly() == 1u);
+
+    /*
+     * E o valor precisa VOLTAR a zero ao reconstruir um perfil de producao:
+     * um bit pegajoso faria o adaptador de destino herdar o do laboratorio.
+     */
+    CHECK(Bc250BuildActiveInitializationDataForProfile(
+        &g_initDataDisplayRender, DXGKDDI_INTERFACE_VERSION_WDDM2_7,
+        DXGKDDI_WDDMv2_7, BC250_ADAPTER_PROFILE_DISPLAY_RENDER) ==
+        STATUS_SUCCESS);
+    CHECK(Bc250McdmGetComputeOnly() == 0u);
+
+    /* O perfil KMDOD tambem e' de producao. */
+    CHECK(Bc250BuildActiveInitializationDataForProfile(
+        &g_initDataDisplayRender, DXGKDDI_INTERFACE_VERSION_WDDM2_0,
+        DXGKDDI_WDDMv2, BC250_ADAPTER_PROFILE_DISPLAY_ONLY) ==
+        STATUS_SUCCESS);
+    CHECK(Bc250McdmGetComputeOnly() == 0u);
+
+    /* Restaura a tabela render-only que os testes seguintes comparam. */
+    memset(&g_initDataRenderOnly, 0xCC, sizeof(g_initDataRenderOnly));
+    CHECK(Bc250BuildActiveInitializationDataForProfile(
+        &g_initDataRenderOnly, DXGKDDI_INTERFACE_VERSION_WDDM2_7,
+        DXGKDDI_WDDMv2_7, BC250_ADAPTER_PROFILE_RENDER_ONLY_LAB) ==
+        STATUS_SUCCESS);
+    memset(&g_initDataDisplayRender, 0xCC, sizeof(g_initDataDisplayRender));
+    CHECK(Bc250BuildActiveInitializationDataForProfile(
+        &g_initDataDisplayRender, DXGKDDI_INTERFACE_VERSION_WDDM2_7,
+        DXGKDDI_WDDMv2_7, BC250_ADAPTER_PROFILE_DISPLAY_RENDER) ==
+        STATUS_SUCCESS);
+    CHECK(Bc250McdmGetComputeOnly() == 0u);
 
     CHECK(Bc250BuildActiveInitializationDataForProfile(
         &g_initDataRenderOnly, DXGKDDI_INTERFACE_VERSION_WDDM2_7,

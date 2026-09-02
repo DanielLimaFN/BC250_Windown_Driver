@@ -12,6 +12,10 @@ if /I "%MODE%"=="DRY-RUN" set "LOG=NUL"
 set "OEM_MARKER=%SystemDrive%\BC250_TEST_OEMINF.txt"
 set "DRIVER_DIR=%SystemRoot%\System32\drivers"
 set "INSTANCE_ID=PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041"
+rem Janela de espera por BasicDisplay. Ver :poll_basic_display.
+set "POLL_TIMEOUT=90"
+set "POLL_INTERVAL=2"
+set "RESCAN_EVERY=20"
 
 >"%LOG%" echo BC250 recovery - mode=%MODE% - %DATE% %TIME%
 call :note ============================================================
@@ -214,8 +218,8 @@ exit /b 0
 call :note Reabilitando o dispositivo e solicitando nova enumeracao PnP.
 pnputil.exe /enable-device "%INSTANCE_ID%" >>"%LOG%" 2>&1
 pnputil.exe /scan-devices >>"%LOG%" 2>&1
-timeout.exe /t 3 /nobreak >nul
-call :check_basic_display
+call :note Aguardando BasicDisplay por ate %POLL_TIMEOUT% s (amostra a cada %POLL_INTERVAL% s).
+call :poll_basic_display %POLL_TIMEOUT%
 if not errorlevel 1 (
     call :note BasicDisplay Codigo 0 confirmado por leitura CIM independente.
     exit /b 0
@@ -238,8 +242,8 @@ call :note AVISO: BasicDisplay nao confirmado; removendo o no PnP orfao.
 pnputil.exe /remove-device "%INSTANCE_ID%" >>"%LOG%" 2>&1
 if errorlevel 1 call :note AVISO: remove-device falhou; pode nao existir nesta versao do pnputil.
 pnputil.exe /scan-devices >>"%LOG%" 2>&1
-timeout.exe /t 5 /nobreak >nul
-call :check_basic_display
+call :note Aguardando reenumeracao por ate %POLL_TIMEOUT% s apos remover o no.
+call :poll_basic_display %POLL_TIMEOUT%
 if not errorlevel 1 (
     call :note BasicDisplay Codigo 0 confirmado apos remocao do no PnP.
     exit /b 0
@@ -250,6 +254,29 @@ call :note Se persistir, remova o no manualmente e reenumere:
 call :note   pnputil /remove-device "%INSTANCE_ID%"
 call :note   pnputil /scan-devices
 exit /b 1
+
+:poll_basic_display
+rem ---------------------------------------------------------------------
+rem Espera ATIVA por BasicDisplay/Codigo 0. Recebe o timeout em segundos.
+rem
+rem Ate o 3.79 havia aqui "timeout /t 3" e "timeout /t 5" fixos. Reenumerar um
+rem no de classe Display recem-removido nao cabe em 5 s: em 01/09/2026 21:57 a
+rem recuperacao declarou fracasso cedo demais, o watchdog escalou para reboot
+rem e a imagem so' voltou depois de reiniciar a maquina. Evidencia em
+rem docs\evidence\2026-09-01_21-53-07-DESKTOP-HQAG6T4-lab-binding.
+rem
+rem O laco inteiro roda em UM processo PowerShell, de proposito:
+rem   1. 45 chamadas a :check_basic_display seriam 45 inicializacoes de
+rem      powershell.exe (0,5 a 1,5 s cada) e a cadencia derraparia;
+rem   2. timeout.exe aborta com "Input redirection is not supported" quando
+rem      este script e' chamado com stdin redirecionado, que e' exatamente
+rem      como o watchdog SYSTEM e os auditores o invocam.
+rem
+rem Cada amostra vai para o log. Um fracasso passa a ser uma serie temporal
+rem auditavel, e nao mais uma unica leitura sem contexto.
+rem ---------------------------------------------------------------------
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$id='%INSTANCE_ID%'; $start=Get-Date; $deadline=$start.AddSeconds([int]'%~1'); $lastScan=$start; $i=0; $d=@(); while($true){ $i++; $d=@(Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue | Where-Object {$_.PNPDeviceID -eq $id}); if($d.Count -eq 1){ $svc=[string]$d[0].Service; $code=[string][uint32]$d[0].ConfigManagerErrorCode } else { $svc='count=' + $d.Count; $code='n/a' }; Write-Host ('  amostra {0} t={1}s Service={2} Codigo={3}' -f $i,[int]((Get-Date)-$start).TotalSeconds,$svc,$code); if($d.Count -eq 1 -and $d[0].Service -eq 'BasicDisplay' -and [uint32]$d[0].ConfigManagerErrorCode -eq 0){ exit 0 }; if((Get-Date) -ge $deadline){ break }; if(((Get-Date)-$lastScan).TotalSeconds -ge %RESCAN_EVERY%){ Write-Host '  reenumerando: pnputil /scan-devices'; pnputil.exe /scan-devices | Out-Null; $lastScan=Get-Date }; Start-Sleep -Seconds %POLL_INTERVAL% }; $d | Format-List PNPDeviceID,Service,Status,ConfigManagerErrorCode | Out-String | Write-Host; exit 1" >>"%LOG%" 2>&1
+exit /b %errorlevel%
 
 :check_basic_display
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$d=@(Get-CimInstance Win32_PnPEntity | Where-Object {$_.PNPDeviceID -eq '%INSTANCE_ID%'}); if($d.Count -eq 1 -and $d[0].Service -eq 'BasicDisplay' -and [uint32]$d[0].ConfigManagerErrorCode -eq 0){exit 0}; $d | Format-List PNPDeviceID,Service,Status,ConfigManagerErrorCode | Out-String | Write-Host; exit 1" >>"%LOG%" 2>&1

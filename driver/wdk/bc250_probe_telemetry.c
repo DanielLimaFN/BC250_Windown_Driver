@@ -1443,6 +1443,42 @@ static PCWSTR Bc250ProbeFieldName(BC250_PROBE_FIELD Field)
         return L"V5StartDeviceReturnStage";
     case BC250_PROBE_V5_UNSAFE_BRINGUP_COMPILED:
         return L"V5UnsafeBringupCompiled";
+
+    /* Schema 134 — as tres ABIs e o contador que prova a publicacao. */
+    case BC250_PROBE_V5_ABI_READY_CONTEXT:
+        return L"AbiReadyContext";
+    case BC250_PROBE_V5_ABI_READY_ALLOCATION:
+        return L"AbiReadyAllocation";
+    case BC250_PROBE_V5_ABI_READY_ROOT_PAGE_TABLE:
+        return L"AbiReadyRootPageTable";
+    case BC250_PROBE_V5_ABI_READY_PUBLISH_COUNT:
+        return L"AbiReadyPublishCount";
+
+    /* Schema 134 — bitmap de DXGKQAITYPE perguntados. */
+    case BC250_PROBE_V5_QAI_TYPE_SEEN_LO:
+        return L"V5QaiTypeSeenLo";
+    case BC250_PROBE_V5_QAI_TYPE_SEEN_HI:
+        return L"V5QaiTypeSeenHi";
+    case BC250_PROBE_V5_COMPUTE_ONLY_DECLARED:
+        return L"V5ComputeOnlyDeclared";
+
+    /* Schema 134 — anel de rastro de DDI. Hist00 e' o mais recente. */
+    case BC250_PROBE_V5_DDI_HIST_00: return L"V5DdiHist00";
+    case BC250_PROBE_V5_DDI_HIST_01: return L"V5DdiHist01";
+    case BC250_PROBE_V5_DDI_HIST_02: return L"V5DdiHist02";
+    case BC250_PROBE_V5_DDI_HIST_03: return L"V5DdiHist03";
+    case BC250_PROBE_V5_DDI_HIST_04: return L"V5DdiHist04";
+    case BC250_PROBE_V5_DDI_HIST_05: return L"V5DdiHist05";
+    case BC250_PROBE_V5_DDI_HIST_06: return L"V5DdiHist06";
+    case BC250_PROBE_V5_DDI_HIST_07: return L"V5DdiHist07";
+    case BC250_PROBE_V5_DDI_HIST_08: return L"V5DdiHist08";
+    case BC250_PROBE_V5_DDI_HIST_09: return L"V5DdiHist09";
+    case BC250_PROBE_V5_DDI_HIST_10: return L"V5DdiHist10";
+    case BC250_PROBE_V5_DDI_HIST_11: return L"V5DdiHist11";
+    case BC250_PROBE_V5_DDI_HIST_12: return L"V5DdiHist12";
+    case BC250_PROBE_V5_DDI_HIST_13: return L"V5DdiHist13";
+    case BC250_PROBE_V5_DDI_HIST_14: return L"V5DdiHist14";
+    case BC250_PROBE_V5_DDI_HIST_15: return L"V5DdiHist15";
     default: return NULL;
     }
 }
@@ -1512,6 +1548,38 @@ static volatile LONG g_Bc250V5PrevDdi;
 static volatile LONG g_Bc250V5Prev2Ddi;
 static volatile LONG g_Bc250V5DdiMarks;
 
+/*
+ * Anel de 16 marcas (schema 134). A janela de tres slots do 3.79 devolveu
+ * "58, 1, 58" e nao permitiu reconstruir o carregamento inteiro. O anel
+ * guarda apenas TRANSICOES, pela mesma razao da supressao abaixo.
+ */
+static volatile LONG g_Bc250V5DdiHistory[BC250_V5_DDI_HISTORY_COUNT];
+static volatile LONG g_Bc250V5DdiHistoryIndex;
+
+/* Bitmap de DXGKQAITYPE perguntados. Lo = 0..31, Hi = 32..63. */
+static volatile LONG g_Bc250V5QaiTypeSeenLo;
+static volatile LONG g_Bc250V5QaiTypeSeenHi;
+
+/*
+ * Zera os acumuladores do schema 134 que vivem em memoria.
+ *
+ * A varredura do enum em Bc250ProbeResetAllVolatile zera o REGISTRO, nunca a
+ * variavel estatica que o alimenta: sem isto, um bitmap de QAI do
+ * carregamento anterior voltaria a ser publicado no carregamento seguinte.
+ * Laco em vez de RtlZeroMemory porque o array e' volatile (C4090 sob /WX).
+ */
+static VOID Bc250ProbeResetSchema134State(VOID)
+{
+    ULONG i;
+
+    for (i = 0u; i < BC250_V5_DDI_HISTORY_COUNT; ++i) {
+        InterlockedExchange(&g_Bc250V5DdiHistory[i], 0);
+    }
+    InterlockedExchange(&g_Bc250V5DdiHistoryIndex, 0);
+    InterlockedExchange(&g_Bc250V5QaiTypeSeenLo, 0);
+    InterlockedExchange(&g_Bc250V5QaiTypeSeenHi, 0);
+}
+
 VOID Bc250ProbeMarkDdi(ULONG DdiId)
 {
     LONG previous = InterlockedExchange(&g_Bc250V5LastDdi, (LONG)DdiId);
@@ -1522,16 +1590,64 @@ VOID Bc250ProbeMarkDdi(ULONG DdiId)
      */
     if (previous != (LONG)DdiId) {
         LONG older = InterlockedExchange(&g_Bc250V5PrevDdi, previous);
+        LONG slot = InterlockedIncrement(&g_Bc250V5DdiHistoryIndex) - 1;
         InterlockedExchange(&g_Bc250V5Prev2Ddi, older);
+        InterlockedExchange(
+            &g_Bc250V5DdiHistory[((ULONG)slot) % BC250_V5_DDI_HISTORY_COUNT],
+            (LONG)DdiId);
     }
     InterlockedIncrement(&g_Bc250V5DdiMarks);
 }
 
+VOID Bc250ProbeMarkQaiType(ULONG Type)
+{
+    /*
+     * O enum DXGK_QUERYADAPTERINFOTYPE do WDK 10.0.26100 termina em 48.
+     * Qualquer coisa acima de 63 nao cabe no bitmap e e' descartada em vez de
+     * envenenar um bit alheio.
+     */
+    if (Type >= 64u) {
+        return;
+    }
+    if (Type < 32u) {
+        InterlockedOr(&g_Bc250V5QaiTypeSeenLo, (LONG)(1u << Type));
+    } else {
+        InterlockedOr(&g_Bc250V5QaiTypeSeenHi, (LONG)(1u << (Type - 32u)));
+    }
+    Bc250ProbeRecord(BC250_PROBE_V5_QAI_TYPE_SEEN_LO,
+        (ULONG)InterlockedCompareExchange(&g_Bc250V5QaiTypeSeenLo, 0, 0));
+    Bc250ProbeRecord(BC250_PROBE_V5_QAI_TYPE_SEEN_HI,
+        (ULONG)InterlockedCompareExchange(&g_Bc250V5QaiTypeSeenHi, 0, 0));
+}
+
 VOID Bc250ProbeSnapshotDdiTrace(VOID)
 {
+    LONG rawWritten = InterlockedCompareExchange(
+        &g_Bc250V5DdiHistoryIndex, 0, 0);
+    ULONG written = (rawWritten < 0) ? 0u : (ULONG)rawWritten;
+    ULONG age;
+
+    /*
+     * Hist00 e' a marca mais recente. Slots ainda nao preenchidos saem em
+     * zero explicitamente, para nao herdarem o conteudo do boot anterior.
+     * A indexacao por aritmetica exige que os dezesseis campos do enum
+     * fiquem contiguos a partir de BC250_PROBE_V5_DDI_HIST_00.
+     */
+    for (age = 1u; age <= BC250_V5_DDI_HISTORY_COUNT; ++age) {
+        ULONG value = 0u;
+        if (written >= age) {
+            value = (ULONG)g_Bc250V5DdiHistory[
+                (written - age) % BC250_V5_DDI_HISTORY_COUNT];
+        }
+        Bc250ProbeRecord(
+            (BC250_PROBE_FIELD)((ULONG)BC250_PROBE_V5_DDI_HIST_00 + (age - 1u)),
+            value);
+    }
+
     Bc250ProbeRecord(BC250_PROBE_V5_LAST_DDI, (ULONG)g_Bc250V5LastDdi);
     Bc250ProbeRecord(BC250_PROBE_V5_PREV_DDI, (ULONG)g_Bc250V5PrevDdi);
     Bc250ProbeRecord(BC250_PROBE_V5_PREV2_DDI, (ULONG)g_Bc250V5Prev2Ddi);
+    /* DDI_MARKS permanece a ULTIMA gravacao: ha' teste que depende disso. */
     Bc250ProbeRecord(BC250_PROBE_V5_DDI_MARKS, (ULONG)g_Bc250V5DdiMarks);
 }
 
@@ -1656,17 +1772,40 @@ VOID Bc250ProbeResetRenderTrace(VOID)
         BC250_PROBE_V5_START_DEVICE_STATUS,
         BC250_PROBE_V5_START_DEVICE_SOURCES,
         BC250_PROBE_V5_START_DEVICE_CHILDREN,
+        BC250_PROBE_V5_ABI_READY_CONTEXT,
+        BC250_PROBE_V5_ABI_READY_ALLOCATION,
+        BC250_PROBE_V5_ABI_READY_ROOT_PAGE_TABLE,
+        BC250_PROBE_V5_ABI_READY_PUBLISH_COUNT,
         /* Bloco V5: QueryAdapterInfo. */
         BC250_PROBE_V5_QAI_CALLS,
         BC250_PROBE_V5_QAI_LAST_TYPE,
         BC250_PROBE_V5_QAI_LAST_STATUS,
         BC250_PROBE_V5_QAI_LAST_UNSUPPORTED_TYPE,
         BC250_PROBE_V5_QAI_UNSUPPORTED_COUNT,
+        BC250_PROBE_V5_QAI_TYPE_SEEN_LO,
+        BC250_PROBE_V5_QAI_TYPE_SEEN_HI,
+        BC250_PROBE_V5_COMPUTE_ONLY_DECLARED,
         /* Bloco V5: rastro de DDI e QueryInterface. */
         BC250_PROBE_V5_LAST_DDI,
         BC250_PROBE_V5_PREV_DDI,
         BC250_PROBE_V5_PREV2_DDI,
         BC250_PROBE_V5_DDI_MARKS,
+        BC250_PROBE_V5_DDI_HIST_00,
+        BC250_PROBE_V5_DDI_HIST_01,
+        BC250_PROBE_V5_DDI_HIST_02,
+        BC250_PROBE_V5_DDI_HIST_03,
+        BC250_PROBE_V5_DDI_HIST_04,
+        BC250_PROBE_V5_DDI_HIST_05,
+        BC250_PROBE_V5_DDI_HIST_06,
+        BC250_PROBE_V5_DDI_HIST_07,
+        BC250_PROBE_V5_DDI_HIST_08,
+        BC250_PROBE_V5_DDI_HIST_09,
+        BC250_PROBE_V5_DDI_HIST_10,
+        BC250_PROBE_V5_DDI_HIST_11,
+        BC250_PROBE_V5_DDI_HIST_12,
+        BC250_PROBE_V5_DDI_HIST_13,
+        BC250_PROBE_V5_DDI_HIST_14,
+        BC250_PROBE_V5_DDI_HIST_15,
         BC250_PROBE_V5_QI_CALLS,
         BC250_PROBE_V5_QI_LAST_GUID_D1,
         BC250_PROBE_V5_QI_PREV_GUID_D1,
@@ -1737,6 +1876,7 @@ VOID Bc250ProbeResetRenderTrace(VOID)
     InterlockedExchange(&g_Bc250V5PostStartStage, 0);
     InterlockedExchange(&g_Bc250V5QiWriteIndex, 0);
     RtlZeroMemory(g_Bc250V5QiSlots, sizeof(g_Bc250V5QiSlots));
+    Bc250ProbeResetSchema134State();
 
     for (i = 0u; i < (ULONG)RTL_NUMBER_OF(s_renderFields); ++i) {
         Bc250ProbeRecord(s_renderFields[i], 0u);
@@ -1760,6 +1900,7 @@ VOID Bc250ProbeResetAllVolatile(VOID)
     InterlockedExchange(&g_Bc250V5PostStartStage, 0);
     InterlockedExchange(&g_Bc250V5QiWriteIndex, 0);
     RtlZeroMemory(g_Bc250V5QiSlots, sizeof(g_Bc250V5QiSlots));
+    Bc250ProbeResetSchema134State();
 
     /*
      * Varredura integral. Nao ha' lista de campos a manter em dia: qualquer

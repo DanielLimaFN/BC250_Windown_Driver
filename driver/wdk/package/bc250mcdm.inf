@@ -46,8 +46,8 @@ ServiceBinary=%12%\bc250mcdm.sys
 AddReg=BC250Mcdm.DriverReg
 
 [BC250Mcdm.DriverReg]
-HKR,Parameters\Probe,SchemaVersion,0x00010001,132
-HKR,Parameters,WddmContractVersion,0x00010001,20
+HKR,Parameters\Probe,SchemaVersion,0x00010001,134
+HKR,Parameters,WddmContractVersion,0x00010001,27
 HKR,Parameters\Driver,ActiveMode,0x00010001,1
 HKR,Parameters,RenderNode,0x00010001,0
 HKR,Parameters,RenderOnlyLab,0x00010001,0

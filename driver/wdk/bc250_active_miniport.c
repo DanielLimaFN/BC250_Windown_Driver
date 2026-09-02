@@ -2424,6 +2424,46 @@ static NTSTATUS Bc250ActiveCollectDebugLifecycle(
     return result;
 }
 
+/*
+ * Publica as tres flags de ABI como telemetria.
+ *
+ * Motivo (3.79, 2026-09-01): o ensaio provou P1/P2/HQD no silicio, terminou em
+ * Codigo 43, e a auditoria pediu ContextAbiReady, AllocationAbiReady e
+ * RootPageTableAbiReady.  Nenhuma das duas primeiras existia como campo de
+ * telemetria — so' como membro volatile do contexto.  Um gate que nao e'
+ * observavel nao pode ser auditado.
+ *
+ * Le sempre o valor REAL do contexto com InterlockedCompareExchange(x,1,1);
+ * nunca grava literal.  Publicar um 1 constante aqui seria precisamente o
+ * falso sucesso que o projeto proibe.
+ *
+ * AbiReadyPublishCount existe porque, sem ele, os tres zeros continuariam
+ * ambiguos: "as ABIs nao ficaram prontas" e "este publicador nunca rodou"
+ * produzem exatamente a mesma leitura.  E' a licao do Schema 133.
+ *
+ * Definida antes do AddDevice porque o AddDevice tambem publica a linha de
+ * base.  NAO chamar no zeramento do StopDevice: apagaria a medicao do
+ * StartDevice antes de o operador conseguir ler o registro.
+ */
+static void Bc250ActivePublishAbiReadyTelemetry(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    static volatile LONG s_publishCount;
+
+    if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE) {
+        return;
+    }
+    Bc250ProbeRecord(BC250_PROBE_V5_ABI_READY_CONTEXT,
+        (ULONG)InterlockedCompareExchange(&Context->ContextAbiReady, 1, 1));
+    Bc250ProbeRecord(BC250_PROBE_V5_ABI_READY_ALLOCATION,
+        (ULONG)InterlockedCompareExchange(&Context->AllocationAbiReady, 1, 1));
+    Bc250ProbeRecord(BC250_PROBE_V5_ABI_READY_ROOT_PAGE_TABLE,
+        (ULONG)InterlockedCompareExchange(
+            &Context->RootPageTableAbiReady, 1, 1));
+    Bc250ProbeRecord(BC250_PROBE_V5_ABI_READY_PUBLISH_COUNT,
+        (ULONG)InterlockedIncrement(&s_publishCount));
+}
+
 NTSTATUS APIENTRY Bc250DxgkDdiAddDeviceActive(
     CONST PDEVICE_OBJECT PhysicalDeviceObject,
     PVOID *MiniportDeviceContext)
@@ -2431,6 +2471,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiAddDeviceActive(
     BC250_DXGK_ACTIVE_CONTEXT *context;
     NTSTATUS status;
 
+    Bc250ProbeMarkDdi(BC250_V5_DDI_ADD_DEVICE);
     Bc250ProbeRecord(BC250_PROBE_ADD_DEVICE_ENTERED, 1);
     if (MiniportDeviceContext != NULL) *MiniportDeviceContext = NULL;
     if (PhysicalDeviceObject == NULL || MiniportDeviceContext == NULL) {
@@ -2517,6 +2558,12 @@ NTSTATUS APIENTRY Bc250DxgkDdiAddDeviceActive(
     context->AllocationSegmentBytes = 0u;
     context->AllocationSegmentSet = 0u;
     context->RootPageTableMaxEntries = 0u;
+    /*
+     * Linha de base do AddDevice: fixa AbiReadyPublishCount=1 com as tres
+     * flags em zero.  Se o registro terminar o ensaio com PublishCount=1, o
+     * StartDevice nao chegou a nenhum de seus caminhos de retorno.
+     */
+    Bc250ActivePublishAbiReadyTelemetry(context);
     context->PostDisplayStatus = BC250_POST_DISPLAY_BAD_ARGUMENT;
     context->PostDisplayCallbackStatus = STATUS_NOT_SUPPORTED;
     RtlZeroMemory(&context->PostDisplayReservation,
@@ -2756,6 +2803,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
             InterlockedExchange(&context->AllocationAbiReady, 0);
             InterlockedExchange(&context->RootPageTableAbiReady, 0);
             InterlockedExchange(&context->IsActive, 0);
+            Bc250ActivePublishAbiReadyTelemetry(context);
             Bc250ProbeRecordFirstFailure(STATUS_DEVICE_NOT_READY);
             return STATUS_DEVICE_NOT_READY;
 #endif
@@ -2834,6 +2882,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
         InterlockedExchange(&context->RootPageTableAbiReady, 0);
         InterlockedExchange(&context->IsActive, 1);
         Bc250ActiveArmLifecycle(context);
+        Bc250ActivePublishAbiReadyTelemetry(context);
         return STATUS_SUCCESS;
     }
 
@@ -2842,6 +2891,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
     InterlockedExchange(&context->ContextAbiReady, 0);
     InterlockedExchange(&context->AllocationAbiReady, 0);
     InterlockedExchange(&context->RootPageTableAbiReady, 0);
+    Bc250ActivePublishAbiReadyTelemetry(context);
     Bc250ProbeRecordFirstFailure(preflightStatus);
     return preflightStatus;
 #else
@@ -2914,6 +2964,7 @@ Bc250PhysicalRenderBringup:
                     InterlockedExchange(&context->ContextAbiReady, 0);
                     InterlockedExchange(&context->AllocationAbiReady, 0);
                     InterlockedExchange(&context->RootPageTableAbiReady, 0);
+                    Bc250ActivePublishAbiReadyTelemetry(context);
                     Bc250ProbeRecordFirstFailure(STATUS_DEVICE_NOT_READY);
                     return STATUS_DEVICE_NOT_READY;
                 }
@@ -2924,6 +2975,7 @@ Bc250PhysicalRenderBringup:
                 InterlockedExchange(&context->ContextAbiReady, 1);
                 InterlockedExchange(&context->AllocationAbiReady, 1);
                 InterlockedExchange(&context->RootPageTableAbiReady, 1);
+                Bc250ActivePublishAbiReadyTelemetry(context);
                 return STATUS_SUCCESS;
             }
         }
@@ -4292,6 +4344,7 @@ Bc250PhysicalRenderBringup:
                         InterlockedExchange(&context->ContextAbiReady, 1);
                         InterlockedExchange(&context->AllocationAbiReady, 1);
                         InterlockedExchange(&context->RootPageTableAbiReady, 1);
+                        Bc250ActivePublishAbiReadyTelemetry(context);
                         return STATUS_SUCCESS;
                     }
                 }
@@ -4304,6 +4357,7 @@ Bc250PhysicalRenderBringup:
     InterlockedExchange(&context->ContextAbiReady, 0);
     InterlockedExchange(&context->AllocationAbiReady, 0);
     InterlockedExchange(&context->RootPageTableAbiReady, 0);
+    Bc250ActivePublishAbiReadyTelemetry(context);
     if (context->PersistentSubmission == 1u &&
         persistentReady == FALSE) {
         preflightStatus = !NT_SUCCESS(persistentStatus) ?
@@ -4352,6 +4406,12 @@ static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason(
      */
     Bc250ProbeSnapshotDdiTrace();
     Bc250ProbeSnapshotQueryInterfaces();
+    /*
+     * A marca de StopDevice vem DEPOIS do snapshot acima: marcar antes
+     * empurraria a propria StopDevice para dentro do retrato e apagaria uma
+     * posicao do rastro que interessa mais.
+     */
+    Bc250ProbeMarkDdi(BC250_V5_DDI_STOP_DEVICE);
     Bc250ProbeRecord(BC250_PROBE_STOP_DEVICE_ENTERED, 1);
     if (context == NULL ||
         context->Signature != BC250_ACTIVE_SIGNATURE) {
@@ -4466,6 +4526,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiRemoveDeviceActive(
         (BC250_DXGK_ACTIVE_CONTEXT *)MiniportDeviceContext;
     NTSTATUS status = STATUS_SUCCESS;
 
+    Bc250ProbeMarkDdi(BC250_V5_DDI_REMOVE_DEVICE);
     Bc250ProbeRecord(BC250_PROBE_REMOVE_DEVICE_ENTERED, 1);
     if (context == NULL ||
         context->Signature != BC250_ACTIVE_SIGNATURE) {
@@ -4490,6 +4551,14 @@ NTSTATUS APIENTRY Bc250DxgkDdiRemoveDeviceActive(
     context->PhysicalDeviceObject = NULL;
     context->Core.PhysicalDeviceObject = NULL;
     ExFreePoolWithTag(context, BC250_ACTIVE_POOL_TAG);
+    /*
+     * Segundo retrato, agora com Stop e Remove ja' marcadas. So' e' seguro
+     * republicar porque o anel do schema 134 tem 16 posicoes: com os tres
+     * slots antigos, esta chamada apagaria justamente a historia anterior ao
+     * teardown. Depois do ExFreePoolWithTag de proposito — o rastro vive em
+     * estatica global, nao no contexto liberado.
+     */
+    Bc250ProbeSnapshotDdiTrace();
     Bc250ProbeRecord(BC250_PROBE_REMOVE_DEVICE_STATUS, (ULONG)status);
     return status;
 }
@@ -5525,7 +5594,14 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceV5Telemetry(
 {
     BC250_DXGK_ACTIVE_CONTEXT *context =
         (BC250_DXGK_ACTIVE_CONTEXT *)MiniportDeviceContext;
-    NTSTATUS status = Bc250DxgkDdiStartDeviceActive(
+    NTSTATUS status;
+
+    /*
+     * Marca ANTES de entrar: se o StartDevice travar ou o dxgkrnl desistir
+     * durante a chamada, o rastro precisa registrar que ela comecou.
+     */
+    Bc250ProbeMarkDdi(BC250_V5_DDI_START_DEVICE);
+    status = Bc250DxgkDdiStartDeviceActive(
         MiniportDeviceContext, DxgkStartInfo, DxgkInterface,
         NumberOfVideoPresentSources, NumberOfChildren);
 
@@ -5673,6 +5749,26 @@ NTSTATUS Bc250BuildActiveInitializationDataForProfile(
     if (!NT_SUCCESS(Bc250McdmSetWddmContractVersion(WddmVersion))) {
         return STATUS_INVALID_PARAMETER;
     }
+    /*
+     * MiscCaps.ComputeOnly amarrado ao perfil, e este e' o UNICO ponto do
+     * driver que o decide.
+     *
+     * O destino do projeto e' WDDM display+render de verdade; nos dois perfis
+     * de producao o valor e' 0. So' o perfil de laboratorio RENDER_ONLY_LAB,
+     * que reporta 0 sources e 0 children, declara 1 — porque para ele essa e'
+     * a resposta coerente. Declarar ComputeOnly enquanto se enumera fonte de
+     * video foi o que o dxgkrnl rejeitou em 2026-08-31 com Kernel-PnP 411.
+     *
+     * Escrito como expressao condicional, e nunca como literal solto, para
+     * que seja impossivel um perfil de producao herdar o valor do laboratorio
+     * por esquecimento de um caminho novo.
+     */
+    if (!NT_SUCCESS(Bc250McdmSetComputeOnly(
+            (Profile == BC250_ADAPTER_PROFILE_RENDER_ONLY_LAB) ? 1u : 0u))) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    Bc250ProbeRecord(BC250_PROBE_V5_COMPUTE_ONLY_DECLARED,
+        Bc250McdmGetComputeOnly());
     RtlZeroMemory(InitializationData, sizeof(*InitializationData));
     InitializationData->Version = InterfaceVersion;
     InitializationData->DxgkDdiAddDevice = Bc250DxgkDdiAddDeviceActive;
