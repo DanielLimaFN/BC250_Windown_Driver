@@ -2,6 +2,7 @@
 """Fail-closed static gate for the installable BC-250 MCDM package."""
 
 from pathlib import Path
+import re
 import sys
 
 
@@ -16,6 +17,59 @@ def require(text: str, needle: str, label: str, errors: list[str]) -> None:
 def forbid(text: str, needle: str, label: str, errors: list[str]) -> None:
     if needle in text:
         errors.append(f"forbidden {label}: {needle}")
+
+
+def audit_probe_field_names(errors: list[str]) -> None:
+    """Todo membro do enum de telemetria precisa de nome, e nomes unicos.
+
+    Motivo (2026-09-02): o switch de Bc250ProbeFieldName tem um ramo
+    `default: return NULL`, entao o MSVC nao emite C4061/C4062 e o build
+    /W4 /WX passa limpo mesmo com campos sem case. Quatro campos gravados em
+    todo bind por bc250_dxgk_readonly_ddi.c estavam nessa situacao: o valor
+    nunca aparecia no registro, e a chave aberta em Bc250ProbeRecord vazava um
+    handle de kernel por chamada.
+
+    Nome duplicado e' o mesmo defeito pelo avesso: dois campos escreveriam no
+    mesmo valor do registro e um apagaria a evidencia do outro em silencio.
+
+    Este audit fecha as duas portas por construcao.
+    """
+    header = (ROOT / "driver/wdk/bc250_probe_telemetry.h").read_text(
+        encoding="utf-8", errors="replace")
+    source = (ROOT / "driver/wdk/bc250_probe_telemetry.c").read_text(
+        encoding="utf-8", errors="replace")
+
+    match = re.search(
+        r"typedef enum[^{]*\{(.*?)\}\s*BC250_PROBE_FIELD", header, re.S)
+    if match is None:
+        errors.append("enum BC250_PROBE_FIELD nao localizado no header")
+        return
+    body = re.sub(r"/\*.*?\*/", "", match.group(1), flags=re.S)
+    members = [
+        chunk.strip().split("=")[0].strip() for chunk in body.split(",")
+    ]
+    members = [
+        name for name in members
+        if re.match(r"^BC250_PROBE_[A-Z0-9_]+$", name)
+        and name != "BC250_PROBE_FIELD_COUNT"
+    ]
+    if not members:
+        errors.append("enum BC250_PROBE_FIELD veio vazio do parser")
+        return
+
+    cases = set(re.findall(r"case\s+(BC250_PROBE_[A-Z0-9_]+)\s*:", source))
+    missing = [name for name in members if name not in cases]
+    if missing:
+        shown = ", ".join(missing[:8])
+        suffix = f" (e mais {len(missing) - 8})" if len(missing) > 8 else ""
+        errors.append(
+            f"campos de telemetria sem nome mapeado, vazam handle: {shown}{suffix}")
+
+    names = re.findall(r'return\s+L"([A-Za-z0-9_]+)"\s*;', source)
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        errors.append(
+            "nomes de telemetria duplicados: " + ", ".join(duplicates[:8]))
 
 
 def function_body(text: str, signature: str) -> str:
@@ -1079,6 +1133,8 @@ def main() -> int:
     ):
         forbid(rollback, forbidden_rollback_path,
                "broad or protected online rollback target", errors)
+
+    audit_probe_field_names(errors)
 
     if errors:
         print("BC250 MCDM SAFETY AUDIT: FAILED")

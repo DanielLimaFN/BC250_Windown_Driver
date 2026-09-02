@@ -260,6 +260,19 @@ if (Test-Path -LiteralPath $builtSys) {
 # exercitado". Aconteceu em 2026-08-31 12:03 com WPTR remanescente 204.
 # --------------------------------------------------------------------------
 $probeKey = 'HKLM:\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Probe'
+if (-not (Test-Path -LiteralPath $probeKey)) {
+    # Silencio nao e' aprovacao.
+    #
+    # Depois de um rollback a chave some junto com o servico, e este guard
+    # passa sem avaliar nada. Ate 2026-09-02 ele nao dizia isso, e a ausencia
+    # de reclamacao se lia como "engine verificada limpa" -- que e' o oposto
+    # do que aconteceu. Quem realmente protege este caso e o marcador de boot
+    # limpo conferido acima; aqui so' se declara que a checagem nao foi
+    # avaliavel.
+    Write-Host ('  Engine: chave de telemetria ausente (rollback anterior); ' +
+        'guard nao avaliavel. A protecao efetiva e o marcador de boot limpo.') `
+        -ForegroundColor DarkYellow
+}
 if (Test-Path -LiteralPath $probeKey) {
     $probeNow = Get-ItemProperty -LiteralPath $probeKey
     # REG_DWORD chega como Int32 e pode vir negativo; normalizar para 32 bits.

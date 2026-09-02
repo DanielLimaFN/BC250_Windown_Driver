@@ -1462,6 +1462,20 @@ static PCWSTR Bc250ProbeFieldName(BC250_PROBE_FIELD Field)
     case BC250_PROBE_V5_COMPUTE_ONLY_DECLARED:
         return L"V5ComputeOnlyDeclared";
 
+    /*
+     * Orfaos corrigidos em 2026-09-02. Os quatro sao gravados por
+     * bc250_dxgk_readonly_ddi.c em todo bind e nunca tiveram nome: o valor
+     * jamais apareceu no registro e o handle vazava a cada chamada.
+     */
+    case BC250_PROBE_REBAR_READ_COUNT:
+        return L"RebarReadCount";
+    case BC250_PROBE_MANIFEST_CONTRACT_VERSION:
+        return L"ManifestContractVersion";
+    case BC250_PROBE_ADDRESS_STATUS:
+        return L"AddressStatus";
+    case BC250_PROBE_PSP_STATUS:
+        return L"PspStatus";
+
     /* Schema 134 — anel de rastro de DDI. Hist00 e' o mais recente. */
     case BC250_PROBE_V5_DDI_HIST_00: return L"V5DdiHist00";
     case BC250_PROBE_V5_DDI_HIST_01: return L"V5DdiHist01";
@@ -1516,11 +1530,27 @@ VOID Bc250ProbeRecord(BC250_PROBE_FIELD Field, ULONG Value)
                 OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
             status = ZwOpenKey(&key, KEY_SET_VALUE, &attributes);
         }
-        if (fieldName != NULL && NT_SUCCESS(status)) {
-            Bc250ProbeWriteValue(key, L"Sequence", sequence);
-            Bc250ProbeWriteValue(key, L"LastField", (ULONG)Field);
-            Bc250ProbeWriteValue(key, L"LastValue", Value);
-            Bc250ProbeWriteValue(key, fieldName, Value);
+        /*
+         * O ZwClose fica FORA do teste de fieldName.
+         *
+         * Ate 2026-09-02 ele vivia dentro do bloco, e um campo sem nome
+         * mapeado vazava o handle de kernel aberto acima. Nao era teorico:
+         * quatro campos gravados por bc250_dxgk_readonly_ddi.c nao tinham
+         * case no switch, entao todo bind vazava quatro handles, e cada
+         * Bc250ProbeResetAllVolatile vazava mais quatro.
+         *
+         * Fechar sempre que a chave abriu e a correcao; os quatro cases
+         * faltantes foram acrescentados no mesmo lote; e o audit offline
+         * passou a exigir cobertura total do enum, para que a classe inteira
+         * de defeito reprove no build em vez de vazar em silencio.
+         */
+        if (NT_SUCCESS(status)) {
+            if (fieldName != NULL) {
+                Bc250ProbeWriteValue(key, L"Sequence", sequence);
+                Bc250ProbeWriteValue(key, L"LastField", (ULONG)Field);
+                Bc250ProbeWriteValue(key, L"LastValue", Value);
+                Bc250ProbeWriteValue(key, fieldName, Value);
+            }
             ZwClose(key);
         }
     }

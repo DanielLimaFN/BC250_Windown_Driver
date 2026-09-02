@@ -1,6 +1,6 @@
 # Checklist completo — BC-250 WDDM display+render
 
-**Data-base:** 2026-09-01  
+**Data-base:** 2026-09-02 (candidato 3.80; ver [`docs/162_ENCERRAMENTO_GATE_1_5_RENDER_ONLY.md`](docs/162_ENCERRAMENTO_GATE_1_5_RENDER_ONLY.md) e [`docs/161_PLANO_MESTRE_POS_GATE_1_5.md`](docs/161_PLANO_MESTRE_POS_GATE_1_5.md))  
 **Meta final:** BC-250 funcionando no Windows como GPU normal: DisplayPort, desktop acelerado, WDDM display+render, Vulkan, jogos e LLMs com processamento real na GPU.  
 **Legenda:** ✅ validado em hardware · 🧪 implementado/provado offline · 🟡 parcial · ⛔ bloqueado · ⬜ não iniciado · 🧹 corrigir/remover.
 
@@ -17,7 +17,7 @@
 | 5 | Catalogo de registradores | 🟡 | Registradores compute catalogados; inventario DCN parcial | Promover somente offsets DCN com proveniencia e readback |
 | 6 | Driver de laboratorio | ✅ | Diagnostico e telemetria isolados | Preservar separacao de producao |
 | 7 | Recovery manual | ✅ | `C:\BC250_RECOVERY.cmd` funcional | Revalidar sempre que INF/servico mudar |
-| 8 | Watchdog automatico | 🟡 | Implementado historicamente | Usuario optou por nao usar; manter disponivel, nao obrigatorio |
+| 8 | Watchdog automatico | ✅ | 3.80: journal append-only, veredito PnP por 5 amostras, escalada de shutdown, final.json e limpeza. Ciclo fire-and-collect fechou sozinho em 02/09 | Manter obrigatorio em toda corrida do perfil fisico |
 | 9 | Binding sem watchdog | ✅ | Aceite explicito e recovery manual | Continuar exigindo flags de risco |
 | 10 | Hash instalado/pacote | ✅ | Binding compara SYS instalado e pacote | Incluir PDB GUID/age e hashes INF/CAT em cada candidato |
 | 11 | Assinatura de laboratorio | ✅ | Pacotes assinados e auditados | Certificacao/assinatura de producao somente no fim |
@@ -133,16 +133,16 @@
 | 91 | AddDevice | 🧪 | Retorna sucesso | Manter recursos/lifecycle corretos |
 | 92 | StartDevice | 🧪 | Retorna sucesso, 1 source/1 child | Nao sofrer Stop/Remove imediato |
 | 93 | WDDM 2.0/2.7 A/B | ✅ | Ambos consumidos; mesma falha stage 3 | Manter 2.0 baseline |
-| 94 | QueryInterface trace | ✅ | Oito GUIDs completos capturados | Corrigir decoder e nao implementar opcionais cegamente |
+| 94 | QueryInterface trace | ✅ | 3.80: os 8 GUIDs identificados no WDK (I2C, OPM x4, Miracast, WDDM3_ON_VB); **todos opcionais**, recusa nao e a causa | Resta `6BA41A33`, ausente em 10.0.22621 e 10.0.26100 |
 | 95 | QueryChildRelations | 🧪 | Uma saida + terminador; ChildUid agora 1 | Validar no full display sem tela preta |
 | 96 | QueryDeviceDescriptor | 🧪 | ChildUid 1 e EDID path | Integrar EDID real/AUX |
-| 97 | Codigo 43 | ⛔ | Ocorre apos handshake inicial | Fechar via Gate RenderOnlyLab e depois display |
+| 97 | Codigo 43 | ⛔ | 3.80: recusa **imediata** no retorno do StartDevice (5 s apos o bind); `DRIVERCAPS` nunca e perguntado | Acao anterior **invalidada**: RenderOnlyLab nao fecha isto. Ver Fase 1 do plano mestre |
 | 98 | StopDevice | 🧪 | Corrigido; tracker vazio e status 0 | Revalidar com trabalho WDDM pendente |
 | 99 | RemoveDevice | 🧪 | Status 0 | Revalidar recursos/display ownership |
-| 100 | RenderOnlyLab | ⬜ | Arquitetura definida | Tunable separado, 0 sources/children, tabela render-only |
-| 101 | Render-only Codigo 0 | ⛔ | Nunca provado | Primeiro proximo marco WDDM barato |
+| 100 | RenderOnlyLab | ✅ | Implementado e executado no silicio (3.79 e 3.80) | Concluido; perfil aposentado como diagnostico |
+| 101 | Render-only Codigo 0 | ⛔ | **REPROVADO** — estruturalmente inviavel; a recusa antecede qualquer cap de render | Encerrado. **Nao e mais marco do roteiro** |
 | 102 | Display+render Codigo 0 | ⛔ | Nunca provado | Meta apos DCN/takeover e contrato coerente |
-| 103 | QueryAdapterInfo caps | 🟡 | WDDMDEVICECAPS respondida em 2.7 | DRIVERCAPS/segments consumidos e corretos |
+| 103 | QueryAdapterInfo caps | 🟡 | `V5QaiTypeSeenLo=0x20000000`: **so o tipo 29** e perguntado, em 12 corridas | Criterio inalcancavel ate o adaptador sobreviver ao StartDevice |
 | 104 | Nodes/engines | ⬜ | Compute fisico existe | Descrever nodes WDDM e capabilities reais |
 | 105 | CreateDevice | ⛔ | Callback/objetos parciais | Chamada real pelo dxgkrnl e handle valido |
 | 106 | CreateContext/Virtual | ⛔ | Contratos parciais | Contexto real associado a VMID/GPUVA |
@@ -165,16 +165,16 @@
 |---:|---|:---:|---|---|
 | 119 | `DxgkDdiPresent` | 🧹 | Retorna `STATUS_NOT_SUPPORTED` incondicional | Nao usar no RenderOnlyLab; implementar de verdade no full display |
 | 120 | `SetDisplayPrivateDriverFormat` | 🧹 | Ignora argumentos e retorna sucesso | Remover da tabela ate existir contrato real |
-| 121 | Auditoria de falsos sucessos | ⬜ | Apenas casos manuais | Teste AST/estrutural + allowlist semantica |
+| 121 | Auditoria de falsos sucessos | 🟡 | 3.80: invariantes de ComputeOnly, catraca binario/schema no pacote, e audit exigindo cobertura total do enum de telemetria (pegou 4 campos orfaos que vazavam handle) | Falta o teste AST/semantico geral |
 | 122 | QueryVidPnHWCapability | 🟡 | Zera caps e retorna sucesso | Auditar se zero e semanticamente correto |
-| 123 | Decoder de GUIDs | 🧹 | `e922004d...` possui identificacao contraditoria | Fonte WDK exata por GUID/version/size |
+| 123 | Decoder de GUIDs | ✅ | Resolvido pela fonte WDK: 7 dos 8 identificados por nome | Resta `6BA41A33`, inexistente nos headers instalados |
 | 124 | Runbook WinDbg local | 🧹 | `-kl` nao permite breakpoints/stack/g | Exigir duas maquinas/KDNET |
 | 125 | Breakpoint `+0x10` | 🧹 | Offset instavel e nao e retorno | Usar source breakpoint/return address controlado |
 | 126 | Simbolos internos dxgkrnl | 🟡 | Podem nao existir publicamente | Validar com `x`; fallback para ETW/IFR/driver trace |
 | 127 | Matriz DDI | 🟡 | Prova ponteiros, nao semantica | Renomear saida como structural-only e adicionar testes reais |
 | 128 | Relatorio 3.74 | 🧹 | Chama causa da tela preta de definitiva sem trace | Rebaixar para hipotese forte/defeito estatico |
 | 129 | Worktree sujo | 🟡 | Muitas mudancas historicas misturadas | Preservar tudo; criar baseline/tag somente com autorizacao |
-| 130 | INF fonte vs pacote lab | 🟡 | Script reescreve versao/gates | Manifesto deve ser fonte unica ou validar divergencia explicitamente |
+| 130 | INF fonte vs pacote lab | 🟡 | Duas defasagens do template corrigidas: SchemaVersion 132→134 e WddmContractVersion 20→27 | Manifesto ainda nao e fonte unica |
 | 131 | UMD/ICD existentes no repo | 🟡 | Esqueletos podem aparentar funcionalidade | Auditar e manter desabilitados ate KMD WDDM real |
 
 ## 9. UMD, Vulkan, DirectX e OpenGL
@@ -182,8 +182,8 @@
 | # | Item | Estado | O que ja temos | O que falta / criterio de conclusao |
 |---:|---|:---:|---|---|
 | 132 | ABI KMD/UMD | 🟡 | Runtime/headers iniciais | Versionar handles, memoria, queues e erros |
-| 133 | UMD declarado no INF | ⬜ | Nao declarado corretamente | Somente declarar DLL funcional e assinada |
-| 134 | D3D UMD | ⬜ | Nao existe driver completo | Necessario para D3D nativo/DWM completo |
+| 133 | UMD declarado no INF | ⛔ | **CAMINHO CRITICO.** `rdvgwddmdx11.inf` (WDDM real desta maquina) declara `InstalledDisplayDrivers`/`UserModeDriverName` numa secao `.HW` que nosso INF nao tem | Hipotese principal do Codigo 43. Ver Fase 1/2 do plano mestre |
+| 134 | D3D UMD | ⛔ | **CAMINHO CRITICO.** `grep OpenAdapter` no repo = 0 ocorrencias; existe runtime de compute e esqueleto de ICD, nenhum e UMD de display | Bloqueia #133; provavelmente bloqueia o Codigo 43 |
 | 135 | Vulkan ICD skeleton | 🧪 | Arquivos iniciais e JSON | Nao validado; loader/device/commands reais |
 | 136 | Vulkan loader enumeration | ⬜ | Nao provada com GPU WDDM | `vulkaninfo` enumera a BC-250 sem fallback |
 | 137 | Physical device properties | ⬜ | Nao confiaveis ainda | Derivar do hardware e limitar features corretamente |
@@ -245,11 +245,18 @@
 
 ## 12. Proxima sequencia objetiva
 
+> **Re-sequenciado em 2026-09-02.** As ordens 2 e 3 originais estao encerradas
+> com reprovacao — ver [`docs/162_ENCERRAMENTO_GATE_1_5_RENDER_ONLY.md`](docs/162_ENCERRAMENTO_GATE_1_5_RENDER_ONLY.md).
+> O gargalo real subiu para os itens #133/#134 (UMD), antes enterrados na
+> secao 9. Plano completo em [`docs/161_PLANO_MESTRE_POS_GATE_1_5.md`](docs/161_PLANO_MESTRE_POS_GATE_1_5.md).
+
 | Ordem | Proximo marco | PASS obrigatorio |
 |---:|---|---|
 | 1 | Limpar falsos sucessos e corrigir ferramentas | Build/test/audit; nenhuma DDI vazia retornando sucesso |
-| 2 | Implementar `RenderOnlyLab` | Tabela sem display, 0 sources/children, testes offline |
-| 3 | Corrida RenderOnlyLab | `bc250mcdm / Codigo 0`, progresso alem do stage 3 |
+| ~~2~~ | ~~Implementar `RenderOnlyLab`~~ | **Concluido** (#100) |
+| ~~3~~ | ~~Corrida RenderOnlyLab → Codigo 0~~ | **REPROVADO** — inviavel; a recusa antecede qualquer cap de render |
+| **2'** | **Descobrir a causa do Codigo 43** | `NTSTATUS` capturado por KDNET **ou** lista fechada de divergencias do INF contra um WDDM real |
+| **3'** | **Fechar o Codigo 43** (provavelmente #133+#134) | `bc250mcdm / Codigo 0` sustentado, e o dxgkrnl avanca alem de `WDDMDEVICECAPS` |
 | 4 | D3DKMT minimo | Abrir adapter, criar device/context/allocation |
 | 5 | Submissao WDDM | Entrada pelo dxgkrnl, fence GPU e retirement real |
 | 6 | Reset/TDR | Timeout controlado recupera sem sujar engine |
@@ -265,9 +272,10 @@
 
 ## Veredito atual
 
-- **Compute direto no silicio:** VALIDADO.
+- **Compute direto no silicio:** VALIDADO. Reproduzido n=2 (3.79 e 3.80): P1 17/17, P2 16/16, zero mismatches.
 - **Display KMDOD/GOP:** VALIDADO.
-- **Render WDDM:** NAO VALIDADO EM HARDWARE.
+- **Render-only WDDM:** **REPROVADO** — estruturalmente inviavel neste caminho (Gate 1.5 encerrado em 2026-09-02).
+- **Render WDDM:** NAO VALIDADO EM HARDWARE. Codigo 43 com causa localizada na sequencia, ainda sem causa-raiz provada.
 - **Display acelerado/full WDDM:** NAO VALIDADO EM HARDWARE.
 - **Vulkan, jogos e LLM via driver WDDM:** NAO VALIDADO EM HARDWARE.
 
