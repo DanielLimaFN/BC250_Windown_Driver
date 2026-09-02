@@ -1,12 +1,15 @@
-# Script para registrar e iniciar o servico de kernel bc250compute
+# Script para registrar, assinar e iniciar o servico de kernel bc250compute
 $ErrorActionPreference = "Stop"
 
-$sysPath = "C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\output\bc250compute_pkg.sys"
+$root = Split-Path -Parent $PSScriptRoot
+$sysPath = "$root\driver\wdk\output\bc250compute_pkg.sys"
+$srcSys = "$root\driver\wdk\output\bc250compute.sys"
+$certificateThumbprint = "8D14413F3B97AEF9D7F78A1CA8D9EA99A3FBAD3B"
 
 Write-Host "Registrando e iniciando servico bc250compute..."
 
 # 1. Fechar ferramentas de diagnostico/monitor que possam estar segurando o handle do driver
-Get-Process | Where-Object { $_.Name -like "bc250_monitor*" -or $_.Name -like "bc250_silicon*" -or $_.Name -like "bc250-hardware*" } | ForEach-Object {
+Get-Process | Where-Object { $_.Name -like "bc250_monitor*" -or $_.Name -like "bc250_silicon*" -or $_.Name -like "bc250-hardware*" -or $_.Name -like "bc250-umd*" -or $_.Name -like "bc250-vulkan*" -or $_.Name -like "bc250-llm*" } | ForEach-Object {
     Write-Host "[*] Encerrando processo: $($_.ProcessName) (PID $($_.Id))..."
     Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
 }
@@ -25,10 +28,34 @@ for ($i = 0; $i -lt 10; $i++) {
     Start-Sleep -Milliseconds 500
 }
 
-# Atualizar binario
-$srcSys = "C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\output\bc250compute.sys"
+# Atualizar binario com retry seguro
 if (Test-Path $srcSys) {
-    Copy-Item -LiteralPath $srcSys -Destination $sysPath -Force
+    $copied = $false
+    for ($attempt = 0; $attempt -lt 10; $attempt++) {
+        try {
+            Copy-Item -LiteralPath $srcSys -Destination $sysPath -Force -ErrorAction Stop
+            $copied = $true
+            break
+        } catch {
+            Start-Sleep -Milliseconds 600
+        }
+    }
+}
+
+# Assinar digitalmente o binario de kernel com o certificado de teste
+$signtoolPaths = @(
+    "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe",
+    "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe"
+)
+$signtool = $null
+foreach ($p in $signtoolPaths) {
+    if (Test-Path $p) { $signtool = $p; break }
+}
+
+if ($signtool -and (Test-Path $sysPath)) {
+    Write-Host "[*] Assinando digitalmente $sysPath..."
+    & $signtool sign /sha1 $certificateThumbprint /fd SHA256 $sysPath
+    & $signtool verify /pa /v $sysPath | Out-Null
 }
 
 # 3. Criar servico de kernel

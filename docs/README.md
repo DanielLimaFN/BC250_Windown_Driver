@@ -4,6 +4,10 @@ Este diretório consolida a análise das tentativas anteriores sem autorizar o r
 
 ## Ordem de leitura
 
+**Retomada operacional vigente:**
+[`156_HANDOFF_IA_CANDIDATO_3.60.md`](156_HANDOFF_IA_CANDIDATO_3.60.md). O
+candidato 3.60 está assinado e auditado, porém **NÃO VALIDADO EM HARDWARE**.
+
 1. [01_EVIDENCIAS_E_LICOES.md](01_EVIDENCIAS_E_LICOES.md) - o que foi realmente demonstrado, o que falhou e quais conclusões históricas foram revogadas.
 2. [02_ARQUITETURA_AMDGPU.md](02_ARQUITETURA_AMDGPU.md) - modelo do Linux que deve orientar a decomposição do novo KMD.
 3. [03_CATALOGO_DE_REGISTRADORES.md](03_CATALOGO_DE_REGISTRADORES.md) - catálogo normalizado de MMIO, SMN, PSP, SMU, GCVM, CP e SDMA, incluindo endereços antigos em quarentena.

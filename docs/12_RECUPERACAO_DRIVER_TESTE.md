@@ -35,22 +35,24 @@ No Prompt de Comando:
 C:\BC250_RECOVERY.cmd /DRY-RUN
 ```
 
-## Recuperacao apos tela preta
+## Recuperacao no Windows normal
 
-1. Entre no Ambiente de Recuperacao do Windows.
-2. Abra **Opcoes avancadas > Configuracoes de Inicializacao**.
-3. Inicie o **Modo de Seguranca com Prompt de Comando**.
-4. Abra/continue no prompt elevado e execute:
+Abra CMD ou PowerShell como Administrador e execute:
 
 ```cmd
 C:\BC250_RECOVERY.cmd
 ```
 
-5. Reinicie o Windows.
+O fluxo desabilita apenas a instância PCI exata da BC-250, remove os pacotes
+OEM que passam pela identidade estrita, exclui os três serviços experimentais,
+apaga somente `bc250readonly.sys`, `bc250mcdm.sys` e `bc250dbg.sys`, reabilita o
+dispositivo e exige `BasicDisplay` Código 0 por leitura CIM independente. O
+registro da execução fica em `C:\BC250_RECOVERY.log`.
 
-A execucao real e recusada fora do Modo de Seguranca. Os `.sys` encontrados
-sao movidos, e nao apagados, para `C:\BC250_DRIVER_QUARANTINE`. O registro da
-execucao fica em `C:\BC250_RECOVERY.log`.
+Se o kernel ainda mantiver algum binário carregado, o script falha fechado.
+Nesse caso, reinicie normalmente e execute o recovery elevado outra vez. Modo
+de Segurança continua sendo uma alternativa para uma máquina sem imagem, mas
+não é mais requisito do script.
 
 ### Correcao apos o ensaio 0.2.1.0
 
@@ -59,11 +61,11 @@ Mesmo no Modo de Seguranca, o primeiro `move` recebeu acesso negado. A versao
 inicial do recuperador apenas registrava o aviso e encerrava com sucesso, o que
 deixou um binario orfao em `System32\drivers`.
 
-O recuperador agora, somente depois de o primeiro isolamento falhar:
+O recuperador agora, somente depois de a primeira exclusão falhar:
 
 1. assume propriedade do arquivo experimental de nome exato;
 2. concede controle aos Administradores usando o SID conhecido;
-3. tenta novamente mover o arquivo para a quarentena;
+3. tenta novamente apagar o arquivo experimental exato;
 4. confirma que a origem desapareceu;
 5. retorna erro global se pacote, servico ou qualquer binario nao puder ser
    tratado.
@@ -84,10 +86,18 @@ representar apenas o pacote novo. Assim, confiar exclusivamente no marcador
 nao cobria varias geracoes do pacote readonly.
 
 O recuperador agora enumera e mostra no `DRY-RUN` todos os `oem*.inf` que
-passam a identidade quadrupla acima. Na execucao em Modo de Seguranca, remove
+passam a identidade quadrupla acima. Na execução elevada, remove
 cada um por nome publicado, falha globalmente se qualquer remocao falhar e so
 entao apaga o marcador. No estado observado, a auditoria selecionou exatamente
 `oem16.inf` e `oem17.inf`; `display.inf` nao entra na enumeracao.
+
+### Revisão para recuperação elevada fora do Modo de Segurança (01/09/2026)
+
+Por decisão explícita do operador, a trava artificial de Modo de Segurança foi
+removida. Permanecem obrigatórios: elevação administrativa, escopo por nomes e
+hardware ID exatos, log, readback de ausência dos binários e confirmação final
+de `BasicDisplay` Código 0. A remoção dos três `.sys` agora é destrutiva; a
+recuperação deles exige reconstruir/reinstalar o pacote do repositório.
 
 ## Contrato para o futuro instalador
 

@@ -19,6 +19,8 @@ $config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 $required = @(
     'schema_version','task_name','token','instance_id','target_inf',
     'expected_driver_version','expected_sys_sha256','expected_inf_sha256',
+    'expected_schema_version','expected_skip_hw_bringup','lab_candidate',
+    'expected_render_node',
     'armed_boot_ticks','timeout_seconds','evidence_dir','rollback_path',
     'rollback_sha256'
 )
@@ -30,7 +32,10 @@ foreach ($name in $required) {
 if ([uint32]$config.schema_version -ne 1 -or
     [string]$config.instance_id -notmatch '(?i)^PCI\\VEN_1002&DEV_13FE(?:&|\\)' -or
     [string]$config.target_inf -notmatch '^oem\d+\.inf$' -or
-    [string]$config.expected_driver_version -ne '3.24.0.0' -or
+    [string]$config.expected_driver_version -notmatch '^\d+\.\d+\.\d+\.\d+$' -or
+    [uint32]$config.expected_schema_version -lt 1 -or
+    [uint32]$config.expected_skip_hw_bringup -gt 1 -or
+    [uint32]$config.expected_render_node -gt 1 -or
     [int]$config.timeout_seconds -lt 180 -or [int]$config.timeout_seconds -gt 600) {
     throw 'Reboot watchdog recusado: contrato de configuracao invalido.'
 }
@@ -97,7 +102,9 @@ do {
             if ([string]$confirmation.token -eq [string]$config.token -and
                 [string]$confirmation.instance_id -eq [string]$config.instance_id -and
                 [long]$confirmation.boot_ticks -eq $currentBootTicks -and
-                [bool]$confirmation.display_visible) {
+                [bool]$confirmation.display_visible -and
+                ([uint32]$config.expected_render_node -eq 0 -or
+                    [bool]$confirmation.render_node_validated)) {
                 Write-State 'DISARMED' 'current-boot visual confirmation accepted'
                 Unregister-ScheduledTask -TaskName ([string]$config.task_name) -Confirm:$false -ErrorAction SilentlyContinue
                 exit 0

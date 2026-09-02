@@ -1,0 +1,19 @@
+﻿  Servico          : bc250mcdm
+  ConfigMgrError   : 0
+  DmmVsyncCount    : 8
+  SkipHwBringup    : 0
+  SchemaVersion    : 127  (esperado 127)
+  DmmIsSupportedStatus : 0  (esperado 0)
+  DmmIsSupportedResult : 1  (esperado 1)
+  DmmCommitStatus  : 0  (esperado 0)
+  DmmCommitHasPath : 1  (esperado 1)
+  DmmCommitSupported : 1  (esperado 1)
+  DmmPresentEntered : 1  (esperado 1)
+  DmmPresentStatus : 0  (esperado 0)
+  DmmIsSupportedCount : 20
+  DmmCommitCount   : 1
+  DmmControlInterruptCount : 1
+
+Watchdog desarmado por confirmacao visual explicita.
+Display presente NAO valida compute nem aceleracao.
+NAO VALIDADO EM HARDWARE.

@@ -1,0 +1,6 @@
+captured_at=2026-08-31T00:00:00-03:00
+host=synthetic-offline-fixture
+kernel=fixture
+read_only=true
+pci_device=0000:01:00.0 vendor=0x1002 device=0x13fe
+ip_discovery_sysfs=/sys/bus/pci/devices/0000:01:00.0/ip_discovery

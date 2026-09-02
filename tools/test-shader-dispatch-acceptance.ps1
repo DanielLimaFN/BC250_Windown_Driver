@@ -48,7 +48,7 @@ if (-not (Test-Path -LiteralPath $driverPath)) {
 }
 
 $expected = [ordered]@{
-    SchemaVersion = 114
+    SchemaVersion = [uint32]$manifest.TelemetrySchemaVersion
     SkipHwBringup = 0
     ShaderDispatchEnabled = 1
     PfpDirectCpSoftReset = 1

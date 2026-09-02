@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BC250 WinDV — Control Center</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            radeon: {
+              50: '#FFF0F0',
+              100: '#FFE0E1',
+              200: '#FFC2C4',
+              300: '#FFA4A7',
+              400: '#FF6B70',
+              500: '#ED1C24', /* AMD Crimson Red */
+              600: '#D90429',
+              700: '#B8001F',
+              800: '#940019',
+              900: '#750014',
+            },
+            silver: {
+              50: '#F8FAFC',
+              100: '#F1F5F9',
+              200: '#E2E8F0',
+              300: '#CBD5E1',
+              400: '#94A3B8',
+              500: '#64748B',
+              600: '#475569',
+              700: '#334155',
+              800: '#1E293B',
+              900: '#0F172A',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- ApexCharts CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+  
+  <!-- App Favicon & Logo -->
+  <link rel="icon" type="image/png" href="logo.png">
+  <link rel="shortcut icon" href="logo.ico">
+  
+  <!-- Custom Light Theme Styles -->
+  <link rel="stylesheet" href="styles.css">
+  
+  <!-- i18n Translation Dictionary -->
+  <script src="i18n.js"></script>
+</head>
+<body class="bg-silver-50 text-silver-900 h-full flex flex-col antialiased select-none">
+
+  <!-- Top Titlebar / Header -->
+  <header class="bg-white border-b border-silver-200 px-5 py-2.5 flex items-center justify-between shadow-sm sticky top-0 z-40 titlebar-drag">
+    <div class="flex items-center gap-3.5 no-drag">
+      <!-- AMD BC-250 Logo Icon -->
+      <div class="flex items-center justify-center shrink-0">
+        <img src="logo.png" alt="AMD BC-250 Logo" class="w-9 h-9 object-contain rounded-lg shadow-sm border border-silver-200 bg-white p-0.5" />
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-base tracking-tight text-silver-900">BC250 <span class="text-radeon-500">WinDV</span></span>
+          <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-radeon-50 text-radeon-600 border border-radeon-100" data-i18n="editionBadge">BC-250 Edition</span>
+          <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-silver-100 text-silver-600 border border-silver-200" data-i18n="driverVersion">v2.7.4-WDDM</span>
+        </div>
+        <p class="text-xs text-silver-500 font-medium" data-i18n="chipSubtext">Cyan Skillfish 2 • GC 10.1.3 • 24 Active CUs • 16 GB GDDR6</p>
+      </div>
+    </div>
+
+    <!-- Status, Language Selector & Quick Actions -->
+    <div class="flex items-center gap-3 no-drag">
+      
+      <!-- Language Switcher (EN / RU / ES / PT-BR) -->
+      <div class="flex items-center gap-1.5 bg-silver-100 border border-silver-200 rounded-lg p-0.5">
+        <i data-lucide="globe" class="w-3.5 h-3.5 text-silver-500 ml-2"></i>
+        <select id="lang-selector" onchange="changeLanguage(this.value)" class="text-xs font-semibold bg-transparent text-silver-700 rounded-md px-2 py-1 focus:outline-none cursor-pointer">
+          <option value="en">🇬🇧 English</option>
+          <option value="ru">🇷🇺 Русский</option>
+          <option value="es">🇪🇸 Español</option>
+          <option value="pt">🇧🇷 Português</option>
+        </select>
+      </div>
+
+      <!-- Silicon State Pill -->
+      <div id="driver-status-pill" class="flex items-center gap-2 px-3 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-xs font-semibold text-emerald-700">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 pulse-green"></span>
+        <span id="driver-status-text" data-i18n="mcdmActive">MCDM Active (WDDM 2.7)</span>
+      </div>
+
+      <!-- Quick Donate Button -->
+      <button onclick="openDonateModal()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-radeon-50 border border-radeon-200 text-radeon-600 hover:bg-radeon-500 hover:text-white transition-all text-xs font-semibold shadow-xs">
+        <i data-lucide="heart" class="w-3.5 h-3.5 fill-current"></i>
+        <span data-i18n="supportProject">Support Project</span>
+      </button>
+
+      <!-- Refresh Status -->
+      <button onclick="fetchTelemetry()" title="Refresh Sensors" class="p-1.5 text-silver-500 hover:text-silver-900 hover:bg-silver-100 rounded-lg transition-colors">
+        <i data-lucide="refresh-cw" class="w-4 h-4" id="refresh-icon"></i>
+      </button>
+
+      <!-- Minimize to Tray Button -->
+      <button onclick="minimizeToTray()" title="Minimize to Tray" class="p-1.5 text-silver-500 hover:text-silver-900 hover:bg-silver-100 rounded-lg transition-colors">
+        <i data-lucide="minus" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <div class="flex flex-1 overflow-hidden">
+    
+    <!-- Sidebar Navigation (Radeon Light Style) -->
+    <aside class="w-64 bg-white border-r border-silver-200 p-4 flex flex-col justify-between shrink-0 shadow-sm">
+      <nav class="space-y-1">
+        <div class="text-[11px] font-bold uppercase tracking-wider text-silver-400 px-3 pb-2 pt-1" data-i18n="navTitleMain">Main Navigation</div>
+        
+        <a onclick="switchTab('overview')" id="nav-overview" class="nav-item active">
+          <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+          <span data-i18n="navOverview">Overview</span>
+        </a>
+
+        <a onclick="switchTab('tuning')" id="nav-tuning" class="nav-item">
+          <i data-lucide="sliders" class="w-4 h-4"></i>
+          <span data-i18n="navTuning">Performance & Tuning</span>
+        </a>
+
+        <a onclick="switchTab('metrics')" id="nav-metrics" class="nav-item">
+          <i data-lucide="activity" class="w-4 h-4"></i>
+          <span data-i18n="navMetrics">Real-Time Metrics</span>
+        </a>
+
+        <a onclick="switchTab('memory')" id="nav-memory" class="nav-item">
+          <i data-lucide="cpu" class="w-4 h-4"></i>
+          <span data-i18n="navMemory">GCVM & VRAM Memory</span>
+        </a>
+
+        <a onclick="switchTab('queues')" id="nav-queues" class="nav-item">
+          <i data-lucide="git-commit" class="w-4 h-4"></i>
+          <span data-i18n="navQueues">Compute Queues</span>
+        </a>
+
+        <div class="pt-4 text-[11px] font-bold uppercase tracking-wider text-silver-400 px-3 pb-2" data-i18n="navTitleSystem">System & Support</div>
+
+        <a onclick="switchTab('diagnostics')" id="nav-diagnostics" class="nav-item">
+          <i data-lucide="wrench" class="w-4 h-4"></i>
+          <span data-i18n="navDiagnostics">Diagnostics & Driver</span>
+        </a>
+
+        <a onclick="switchTab('donate')" id="nav-donate" class="nav-item text-radeon-600 font-semibold hover:bg-radeon-50">
+          <i data-lucide="coffee" class="w-4 h-4 text-radeon-500"></i>
+          <span data-i18n="navDonate">Support Development</span>
+        </a>
+      </nav>
+
+      <!-- Silicon Hardware Badge -->
+      <div class="bg-silver-50 border border-silver-200 rounded-xl p-3.5">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold text-silver-700">AMD BC-250 APU</span>
+          <span class="text-[10px] font-semibold px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded">1002:13FE</span>
+        </div>
+        <div class="text-[11px] text-silver-500 space-y-1 font-mono">
+          <div class="flex justify-between"><span data-i18n="chipBadgeMicrocode">Microcode:</span> <span class="font-semibold text-silver-800" id="chip-smu-ver">v41.22.0</span></div>
+          <div class="flex justify-between"><span data-i18n="chipBadgeCpuCores">Zen 2 Cores:</span> <span class="font-semibold text-silver-800" id="chip-cpu-cores">8 Active</span></div>
+          <div class="flex justify-between"><span data-i18n="chipBadgeComputeCus">Compute CUs:</span> <span class="font-semibold text-silver-800" id="chip-cu-count">24 CUs (12 WGP)</span></div>
+          <div class="flex justify-between"><span data-i18n="chipBadgeVramTotal">Total VRAM:</span> <span class="font-semibold text-silver-800">16384 MB GDDR6</span></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Content Workspace -->
+    <main class="flex-1 overflow-y-auto p-6 bg-silver-50">
+      
+      <!-- TAB 1: VISÃO GERAL (OVERVIEW) -->
+      <div id="tab-overview" class="space-y-6">
+        <!-- Banner de Boas-Vindas e Status Geral -->
+        <div class="radeon-card p-6 bg-gradient-to-r from-white via-white to-radeon-50/40 border-l-4 border-l-radeon-500">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h1 class="text-xl font-bold text-silver-900" data-i18n="overviewBannerTitle">AMD BC-250 Adrenalin Control Center</h1>
+              <p class="text-sm text-silver-500 mt-1" data-i18n="overviewBannerDesc">Performance management, thermal telemetry, and asynchronous compute queues for custom console silicon.</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="text-right">
+                <div class="text-xs text-silver-400 font-medium" data-i18n="overviewCurrentProfile">Current Profile</div>
+                <div class="text-sm font-bold text-radeon-600" id="overview-current-profile">Turbo Compute (Maximum Performance)</div>
+              </div>
+              <button onclick="switchTab('tuning')" class="btn-radeon px-4 py-2 rounded-lg text-xs flex items-center gap-1.5 shadow-sm">
+                <i data-lucide="zap" class="w-4 h-4"></i>
+                <span data-i18n="overviewAdjustProfile">Adjust Profile</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4 Quick Stats Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+          <!-- Card 1: GFX Clock -->
+          <div class="radeon-card p-5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-silver-500 uppercase tracking-wider" data-i18n="statGpuClock">GPU Clock</span>
+              <span class="p-2 rounded-lg bg-radeon-50 text-radeon-500"><i data-lucide="gauge" class="w-4 h-4"></i></span>
+            </div>
+            <div class="mt-3 flex items-baseline gap-2">
+              <span class="text-2xl font-bold text-silver-900 font-mono" id="stat-gfx-clock">1825</span>
+              <span class="text-xs font-semibold text-silver-500">MHz</span>
+            </div>
+            <div class="mt-2 text-xs text-silver-500 flex justify-between items-center">
+              <span data-i18n="statGpuVoltage">GFX Voltage:</span>
+              <span class="font-mono font-medium text-silver-800" id="stat-gfx-voltage">950 mV</span>
+            </div>
+          </div>
+
+          <!-- Card 2: Temperatura Junction & TSI -->
+          <div class="radeon-card p-5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-silver-500 uppercase tracking-wider" data-i18n="statHotspotTemp">Hotspot Temperature</span>
+              <span class="p-2 rounded-lg bg-amber-50 text-amber-600"><i data-lucide="thermometer" class="w-4 h-4"></i></span>
+            </div>
+            <div class="mt-3 flex items-baseline gap-2">
+              <span class="text-2xl font-bold text-silver-900 font-mono" id="stat-temp-junction">54.0</span>
+              <span class="text-xs font-semibold text-silver-500">°C</span>
+            </div>
+            <div class="mt-2 text-xs text-silver-500 flex justify-between items-center">
+              <span data-i18n="statCpuTemp">CPU Core TSI:</span>
+              <span class="font-mono font-medium text-silver-800" id="stat-temp-cpu">48.5 °C</span>
+            </div>
+          </div>
+
+          <!-- Card 3: Uso de Memória VRAM -->
+          <div class="radeon-card p-5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-silver-500 uppercase tracking-wider" data-i18n="statVramAllocated">Allocated GDDR6 VRAM</span>
+              <span class="p-2 rounded-lg bg-blue-50 text-blue-600"><i data-lucide="database" class="w-4 h-4"></i></span>
+            </div>
+            <div class="mt-3 flex items-baseline gap-2">
+              <span class="text-2xl font-bold text-silver-900 font-mono" id="stat-vram-used">2.4</span>
+              <span class="text-xs font-semibold text-silver-500">/ 16.0 GB</span>
+            </div>
+            <div class="mt-2 w-full bg-silver-100 rounded-full h-1.5 overflow-hidden">
+              <div id="stat-vram-bar" class="bg-blue-500 h-full rounded-full transition-all" style="width: 15%"></div>
+            </div>
+          </div>
+
+          <!-- Card 4: Atividade & Shaders -->
+          <div class="radeon-card p-5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-silver-500 uppercase tracking-wider" data-i18n="statGpuLoad">GPU Load (GRBM)</span>
+              <span class="p-2 rounded-lg bg-emerald-50 text-emerald-600"><i data-lucide="activity" class="w-4 h-4"></i></span>
+            </div>
+            <div class="mt-3 flex items-baseline gap-2">
+              <span class="text-2xl font-bold text-silver-900 font-mono" id="stat-gpu-load">12.0</span>
+              <span class="text-xs font-semibold text-silver-500">%</span>
+            </div>
+            <div class="mt-2 text-xs text-silver-500 flex justify-between items-center">
+              <span data-i18n="statShaderStatus">Shader Status:</span>
+              <span class="font-semibold text-emerald-600" id="stat-shader-status">IA/WD Ready</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Telemetry Graphs Preview & Hardware Blocks -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- Gráfico Rápido de Frequência e Carga -->
+          <div class="radeon-card p-5 lg:col-span-2">
+            <div class="flex items-center justify-between mb-4">
+              <div>
+                <h3 class="font-bold text-sm text-silver-900" data-i18n="chartQuickTitle">Real-Time Frequency & Activity</h3>
+                <p class="text-xs text-silver-500" data-i18n="chartQuickSub">Continuous monitoring of GC 10.1.3 GPU</p>
+              </div>
+              <span class="text-xs font-mono font-medium px-2 py-1 bg-silver-100 rounded text-silver-600" data-i18n="chartSampleRate">Rate: 1 Hz</span>
+            </div>
+            <div id="chart-quick-freq" class="h-64"></div>
+          </div>
+
+          <!-- Status dos Motores de Hardware -->
+          <div class="radeon-card p-5">
+            <h3 class="font-bold text-sm text-silver-900 mb-3" data-i18n="enginesStatusTitle">Engines & Validation Tripod</h3>
+            <div class="space-y-3">
+              <div class="p-3 bg-silver-50 rounded-lg border border-silver-200">
+                <div class="flex justify-between items-center text-xs mb-1">
+                  <span class="font-semibold text-silver-700" data-i18n="sdmaEngineTitle">SDMA DMA Engine</span>
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800" data-i18n="sdmaEngineProof">95% Proven</span>
+                </div>
+                <div class="text-[11px] text-silver-500 font-mono" data-i18n="sdmaEngineDesc">Physical fences in VRAM verified</div>
+              </div>
+
+              <div class="p-3 bg-silver-50 rounded-lg border border-silver-200">
+                <div class="flex justify-between items-center text-xs mb-1">
+                  <span class="font-semibold text-silver-700" data-i18n="computeQueuesTitle">Compute / MEC Queues</span>
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800" data-i18n="computeQueuesProof">100% Proven</span>
+                </div>
+                <div class="text-[11px] text-silver-500 font-mono" data-i18n="computeQueuesDesc">16/16 Persistent P2 submissions</div>
+              </div>
+
+              <div class="p-3 bg-silver-50 rounded-lg border border-silver-200">
+                <div class="flex justify-between items-center text-xs mb-1">
+                  <span class="font-semibold text-silver-700" data-i18n="gcvmTitle">GCVM & GPUVA Translation</span>
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800" data-i18n="gcvmProof">90% Proven</span>
+                </div>
+                <div class="text-[11px] text-silver-500 font-mono" data-i18n="gcvmDesc">PTE 0x10 active; safe isolation</div>
+              </div>
+
+              <div class="p-3 bg-silver-50 rounded-lg border border-silver-200">
+                <div class="flex justify-between items-center text-xs mb-1">
+                  <span class="font-semibold text-silver-700" data-i18n="miniportTitle">Miniport WDDM / MCDM</span>
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800" data-i18n="miniportProof">75% Production</span>
+                </div>
+                <div class="text-[11px] text-silver-500 font-mono" data-i18n="miniportDesc">Transition P2 -> P3 (Vulkan / UMD)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: DESEMPENHO & TUNING -->
+      <div id="tab-tuning" class="hidden space-y-6">
+        <div class="radeon-card p-6 border-l-4 border-l-radeon-500">
+          <h2 class="text-lg font-bold text-silver-900" data-i18n="tuningBannerTitle">Compute Profiles & Thermal Control</h2>
+          <p class="text-sm text-silver-500 mt-1" data-i18n="tuningBannerDesc">Select the silicon operating profile and customize PWM fan curves.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <!-- Perfil Eco -->
+          <div onclick="setComputeProfile('eco')" id="profile-card-eco" class="radeon-card p-5 cursor-pointer hover:border-radeon-300 transition-all">
+            <div class="flex items-center justify-between mb-3">
+              <span class="p-2 rounded-lg bg-emerald-50 text-emerald-600"><i data-lucide="leaf" class="w-5 h-5"></i></span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-silver-100 text-silver-600">35W TDP</span>
+            </div>
+            <h3 class="font-bold text-base text-silver-900" data-i18n="profileEcoTitle">Silent / Eco</h3>
+            <p class="text-xs text-silver-500 mt-1" data-i18n="profileEcoDesc">Reduced clocks, optimized voltage for minimal heat and quiet operation.</p>
+            <div class="mt-4 text-xs font-mono font-semibold text-silver-700">1200 MHz &bull; 800 mV</div>
+          </div>
+
+          <!-- Perfil Balanced -->
+          <div onclick="setComputeProfile('balanced')" id="profile-card-balanced" class="radeon-card p-5 cursor-pointer hover:border-radeon-300 transition-all">
+            <div class="flex items-center justify-between mb-3">
+              <span class="p-2 rounded-lg bg-blue-50 text-blue-600"><i data-lucide="scale" class="w-5 h-5"></i></span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-silver-100 text-silver-600">55W TDP</span>
+            </div>
+            <h3 class="font-bold text-base text-silver-900" data-i18n="profileBalancedTitle">Balanced</h3>
+            <p class="text-xs text-silver-500 mt-1" data-i18n="profileBalancedDesc">Optimal balance between sustained compute capability and acoustic comfort.</p>
+            <div class="mt-4 text-xs font-mono font-semibold text-silver-700">1550 MHz &bull; 875 mV</div>
+          </div>
+
+          <!-- Perfil Turbo Compute (Padrão) -->
+          <div onclick="setComputeProfile('turbo')" id="profile-card-turbo" class="radeon-card radeon-card-active p-5 cursor-pointer transition-all">
+            <div class="flex items-center justify-between mb-3">
+              <span class="p-2 rounded-lg bg-radeon-50 text-radeon-600"><i data-lucide="flame" class="w-5 h-5"></i></span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-radeon-100 text-radeon-700">85W TDP</span>
+            </div>
+            <h3 class="font-bold text-base text-silver-900" data-i18n="profileTurboTitle">Turbo Compute</h3>
+            <p class="text-xs text-silver-500 mt-1" data-i18n="profileTurboDesc">Default production profile for heavy AI workloads, LLM inference, and Vulkan compute.</p>
+            <div class="mt-4 text-xs font-mono font-semibold text-radeon-600">1825 MHz &bull; 950 mV</div>
+          </div>
+
+          <!-- Perfil Extreme -->
+          <div onclick="setComputeProfile('extreme')" id="profile-card-extreme" class="radeon-card p-5 cursor-pointer hover:border-radeon-300 transition-all">
+            <div class="flex items-center justify-between mb-3">
+              <span class="p-2 rounded-lg bg-purple-50 text-purple-600"><i data-lucide="zap" class="w-5 h-5"></i></span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-700">110W TDP</span>
+            </div>
+            <h3 class="font-bold text-base text-silver-900" data-i18n="profileExtremeTitle">Extreme Compute</h3>
+            <p class="text-xs text-silver-500 mt-1" data-i18n="profileExtremeDesc">Maximum sustained frequency with 100% fan curve for intense benchmarks.</p>
+            <div class="mt-4 text-xs font-mono font-semibold text-silver-700">2000 MHz &bull; 1025 mV</div>
+          </div>
+        </div>
+
+        <!-- Fan Control & GFXOFF Wakeup -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="radeon-card p-5">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="font-bold text-sm text-silver-900 flex items-center gap-2">
+                <i data-lucide="fan" class="w-4 h-4 text-silver-600"></i>
+                <span data-i18n="fanControlTitle">Manual Fan Control (PWM)</span>
+              </h3>
+              <span id="fan-pwm-display" class="font-mono text-sm font-bold text-radeon-600">65% (1850 RPM)</span>
+            </div>
+            <p class="text-xs text-silver-500 mb-4" data-i18n="fanControlDesc">Direct hardware control via SMN Mailbox 0x3B10068.</p>
+            <input type="range" id="fan-pwm-slider" min="20" max="100" value="65" oninput="updateFanSlider(this.value)" class="w-full h-2 bg-silver-200 rounded-lg appearance-none cursor-pointer accent-radeon-500">
+            <div class="flex justify-between text-[11px] text-silver-400 mt-2 font-mono">
+              <span data-i18n="fanSilence">20% (Silent)</span>
+              <span>50%</span>
+              <span>80%</span>
+              <span data-i18n="fanTurbo">100% (Turbo Max)</span>
+            </div>
+            <div class="mt-4 flex justify-end">
+              <button onclick="applyFanPWM()" class="btn-radeon px-4 py-1.5 rounded-lg text-xs" data-i18n="fanApplyBtn">Apply PWM to Silicon</button>
+            </div>
+          </div>
+
+          <div class="radeon-card p-5">
+            <h3 class="font-bold text-sm text-silver-900 flex items-center gap-2 mb-4">
+              <i data-lucide="power" class="w-4 h-4 text-silver-600"></i>
+              <span data-i18n="gfxoffTitle">GFXOFF & Silicon Power Management</span>
+            </h3>
+            <p class="text-xs text-silver-500 mb-4" data-i18n="gfxoffDesc">GFXOFF places the GPU into deep sleep. You can force active wakeup before dispatching heavy compute queues.</p>
+            <div class="p-3 bg-silver-50 rounded-lg border border-silver-200 flex items-center justify-between mb-4">
+              <div>
+                <div class="text-xs font-semibold text-silver-800" data-i18n="gfxoffCurrentState">Current GFXOFF State:</div>
+                <div class="text-xs text-emerald-600 font-bold" id="gfxoff-state-text" data-i18n="gfxoffAwake">GPU Awake (Active)</div>
+              </div>
+              <button onclick="triggerGfxoffWakeup()" class="btn-radeon-outline px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5">
+                <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+                <span data-i18n="gfxoffWakeupBtn">Trigger Wakeup</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: MÉTRICAS EM TEMPO REAL -->
+      <div id="tab-metrics" class="hidden space-y-6">
+        <div class="radeon-card p-6 border-l-4 border-l-radeon-500 flex justify-between items-center">
+          <div>
+            <h2 class="text-lg font-bold text-silver-900" data-i18n="metricsBannerTitle">Silicon Telemetry & Metrics (GC 10.1.3)</h2>
+            <p class="text-sm text-silver-500 mt-1" data-i18n="metricsBannerDesc">High-precision real-time metrics based on BC-250 Telemetry Schema 127.</p>
+          </div>
+          <span class="px-3 py-1 bg-radeon-50 border border-radeon-200 text-radeon-600 rounded-lg text-xs font-bold font-mono" data-i18n="metricsSchemaBadge">127 P1 FIELDS</span>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Gráfico 1: Clocks e Voltagem -->
+          <div class="radeon-card p-5">
+            <h3 class="font-bold text-sm text-silver-900 mb-1" data-i18n="metricsClockTitle">GPU Frequency & VDD Voltage</h3>
+            <p class="text-xs text-silver-500 mb-3" data-i18n="metricsClockSub">Direct SMU Q0 read (0x37 / 0x38)</p>
+            <div id="chart-metrics-clock" class="h-64"></div>
+          </div>
+
+          <!-- Gráfico 2: Temperaturas -->
+          <div class="radeon-card p-5">
+            <h3 class="font-bold text-sm text-silver-900 mb-1" data-i18n="metricsTempTitle">Silicon Thermal Map (°C)</h3>
+            <p class="text-xs text-silver-500 mb-3" data-i18n="metricsTempSub">Zen 2 TSI Diode (0x59800), Junction & GDDR6</p>
+            <div id="chart-metrics-temp" class="h-64"></div>
+          </div>
+
+          <!-- Gráfico 3: Carga da GPU -->
+          <div class="radeon-card p-5">
+            <h3 class="font-bold text-sm text-silver-900 mb-1" data-i18n="metricsLoadTitle">Shader & Engine Load (%)</h3>
+            <p class="text-xs text-silver-500 mb-3" data-i18n="metricsLoadSub">Real-time sampling of IA_BUSY and WD_BUSY blocks</p>
+            <div id="chart-metrics-load" class="h-64"></div>
+          </div>
+
+          <!-- Gráfico 4: Ventoinha e RPM -->
+          <div class="radeon-card p-5">
+            <h3 class="font-bold text-sm text-silver-900 mb-1" data-i18n="metricsFanTitle">Fan Speed (RPM)</h3>
+            <p class="text-xs text-silver-500 mb-3" data-i18n="metricsFanSub">Tachometer telemetry SMN 0x3B10064</p>
+            <div id="chart-metrics-fan" class="h-64"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: GCVM & MEMÓRIA VRAM -->
+      <div id="tab-memory" class="hidden space-y-6">
+        <div class="radeon-card p-6 border-l-4 border-l-radeon-500">
+          <h2 class="text-lg font-bold text-silver-900" data-i18n="memoryBannerTitle">Unified GDDR6 Memory Management & GCVM</h2>
+          <p class="text-sm text-silver-500 mt-1" data-i18n="memoryBannerDesc">16 GB unified console memory structure with 256MB/16GB ReBAR and GPUVA translation.</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- Visão do Pool -->
+          <div class="radeon-card p-5 lg:col-span-2">
+            <h3 class="font-bold text-sm text-silver-900 mb-3" data-i18n="memoryPoolTitle">Memory Pool Allocation (16,384 MB)</h3>
+            <div class="space-y-4">
+              <div>
+                <div class="flex justify-between text-xs font-semibold text-silver-700 mb-1.5">
+                  <span data-i18n="memoryTotalInUse">Total Allocation in Use</span>
+                  <span class="font-mono" id="memory-total-text">2.450 MB / 16.384 MB (14.9%)</span>
+                </div>
+                <div class="h-3 w-full bg-silver-100 rounded-full overflow-hidden flex">
+                  <div style="width: 8%" class="bg-radeon-500" title="Driver/Kernel"></div>
+                  <div style="width: 5%" class="bg-blue-500" title="Queues & Buffers"></div>
+                  <div style="width: 2%" class="bg-amber-500" title="GCVM Page Tables"></div>
+                </div>
+                <div class="flex gap-4 text-[11px] text-silver-500 mt-2">
+                  <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-radeon-500"></span> <span data-i18n="memoryDriverSegment">Driver/Kernel</span> (1,310 MB)</span>
+                  <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span> <span data-i18n="memoryQueueSegment">Queues & Buffers</span> (820 MB)</span>
+                  <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> <span data-i18n="memoryGcvmSegment">GCVM Page Tables</span> (320 MB)</span>
+                </div>
+              </div>
+
+              <!-- Detalhes dos Segmentos -->
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+                <div class="p-3 bg-silver-50 rounded-lg border border-silver-200">
+                  <div class="text-[11px] text-silver-500" data-i18n="bar0Title">BAR0 (VRAM Aperture)</div>
+                  <div class="text-sm font-bold text-silver-900 font-mono">16 GB (Unified)</div>
+                  <div class="text-[10px] text-emerald-600 font-semibold mt-1" data-i18n="rebarActive">ReBAR Active</div>
+                </div>
+                <div class="p-3 bg-silver-50 rounded-lg border border-silver-200">
+                  <div class="text-[11px] text-silver-500" data-i18n="bar1Title">BAR1 (Doorbell Aperture)</div>
+                  <div class="text-sm font-bold text-silver-900 font-mono">2 MB</div>
+                  <div class="text-[10px] text-silver-500 mt-1" data-i18n="mecDoorbells">MEC Doorbells</div>
+                </div>
+                <div class="p-3 bg-silver-50 rounded-lg border border-silver-200">
+                  <div class="text-[11px] text-silver-500" data-i18n="bar5Title">BAR5 (MMIO Registers)</div>
+                  <div class="text-sm font-bold text-silver-900 font-mono">512 KB</div>
+                  <div class="text-[10px] text-silver-500 mt-1" data-i18n="soc15Regs">SOC15 Registers</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- GCVM Status -->
+          <div class="radeon-card p-5">
+            <h3 class="font-bold text-sm text-silver-900 mb-3" data-i18n="gcvmStatusTitle">GCVM Status (Translation)</h3>
+            <div class="space-y-2.5 text-xs font-mono">
+              <div class="flex justify-between p-2 bg-silver-50 rounded">
+                <span class="text-silver-500" data-i18n="gcvmPteDefault">Default PTE:</span>
+                <span class="font-bold text-silver-800">0x10 (Proven)</span>
+              </div>
+              <div class="flex justify-between p-2 bg-silver-50 rounded">
+                <span class="text-silver-500" data-i18n="gcvmAllocVmid">Allocated VMIDs:</span>
+                <span class="font-bold text-silver-800">VMID 0 .. 7</span>
+              </div>
+              <div class="flex justify-between p-2 bg-silver-50 rounded">
+                <span class="text-silver-500" data-i18n="gcvmPageSize">Page Size:</span>
+                <span class="font-bold text-silver-800">4096 Bytes (4K)</span>
+              </div>
+              <div class="flex justify-between p-2 bg-silver-50 rounded">
+                <span class="text-silver-500" data-i18n="gcvmIsolation">Isolation:</span>
+                <span class="font-bold text-emerald-600" data-i18n="gcvmIsoActive">Active & Secure</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 5: FILAS DE COMPUTAÇÃO (MEC / SDMA) -->
+      <div id="tab-queues" class="hidden space-y-6">
+        <div class="radeon-card p-6 border-l-4 border-l-radeon-500">
+          <h2 class="text-lg font-bold text-silver-900" data-i18n="queuesBannerTitle">Asynchronous Compute Queues (MEC / SDMA)</h2>
+          <p class="text-sm text-silver-500 mt-1" data-i18n="queuesBannerDesc">Real-time monitoring of physical ring buffers, RPTR/WPTR pointers, and hardware fences.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- SDMA Engine -->
+          <div class="radeon-card p-5">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-bold text-sm text-silver-900" data-i18n="sdmaRingTitle">SDMA 0 (DMA Transfer Engine)</h3>
+              <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[11px] font-bold" data-i18n="sdmaTripodValid">Tripod Validated</span>
+            </div>
+            <div class="space-y-2 text-xs font-mono">
+              <div class="flex justify-between p-2.5 bg-silver-50 rounded border border-silver-100">
+                <span class="text-silver-500" data-i18n="sdmaWptrLabel">Ring WPTR (CPU Write):</span>
+                <span class="font-bold text-silver-900" id="queue-sdma-wptr">0x00000480</span>
+              </div>
+              <div class="flex justify-between p-2.5 bg-silver-50 rounded border border-silver-100">
+                <span class="text-silver-500" data-i18n="sdmaRptrLabel">Ring RPTR (GPU Read):</span>
+                <span class="font-bold text-emerald-600" id="queue-sdma-rptr">0x00000480 (Aligned)</span>
+              </div>
+              <div class="flex justify-between p-2.5 bg-silver-50 rounded border border-silver-100">
+                <span class="text-silver-500" data-i18n="sdmaLastFenceLabel">Last Physical Fence:</span>
+                <span class="font-bold text-silver-900">0x0000A1F4 (VRAM)</span>
+              </div>
+              <div class="flex justify-between p-2.5 bg-silver-50 rounded border border-silver-100">
+                <span class="text-silver-500" data-i18n="sdmaBandwidthLabel">Transfer Bandwidth:</span>
+                <span class="font-bold text-silver-900">22.4 GB/s</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- MEC Compute Queue -->
+          <div class="radeon-card p-5">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-bold text-sm text-silver-900" data-i18n="mecRingTitle">MEC Pipe 0 Queue 0 (Compute Ring)</h3>
+              <span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[11px] font-bold" data-i18n="mecP2Valid">P2 Persistent (16/16)</span>
+            </div>
+            <div class="space-y-2 text-xs font-mono">
+              <div class="flex justify-between p-2.5 bg-silver-50 rounded border border-silver-100">
+                <span class="text-silver-500">Ring WPTR:</span>
+                <span class="font-bold text-silver-900" id="queue-mec-wptr">0x00001C00</span>
+              </div>
+              <div class="flex justify-between p-2.5 bg-silver-50 rounded border border-silver-100">
+                <span class="text-silver-500">Ring RPTR:</span>
+                <span class="font-bold text-emerald-600" id="queue-mec-rptr">0x00001C00 (Aligned)</span>
+              </div>
+              <div class="flex justify-between p-2.5 bg-silver-50 rounded border border-silver-100">
+                <span class="text-silver-500" data-i18n="mecHqdStatus">HQD Status:</span>
+                <span class="font-bold text-emerald-600">HQD_ACTIVE=1</span>
+              </div>
+              <div class="flex justify-between p-2.5 bg-silver-50 rounded border border-silver-100">
+                <span class="text-silver-500" data-i18n="mecDispatches">Completed Dispatches:</span>
+                <span class="font-bold text-silver-900" data-i18n="dispatchesNoPoison">100% Without Poison</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 6: DIAGNÓSTICO & DRIVER -->
+      <div id="tab-diagnostics" class="hidden space-y-6">
+        <div class="radeon-card p-6 border-l-4 border-l-radeon-500 flex justify-between items-center">
+          <div>
+            <h2 class="text-lg font-bold text-silver-900" data-i18n="diagBannerTitle">Diagnostics & Recovery Tools</h2>
+            <p class="text-sm text-silver-500 mt-1" data-i18n="diagBannerDesc">Manage the kernel service and perform silicon self-tests.</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <!-- Ação 1: Serviço de Kernel -->
+          <div class="radeon-card p-5">
+            <h3 class="font-bold text-sm text-silver-900 mb-2" data-i18n="kernelServiceTitle">Kernel Service</h3>
+            <p class="text-xs text-silver-500 mb-4" data-i18n="kernelServiceDesc">Controls the driver service registered in Windows SCM.</p>
+            <div class="flex gap-2">
+              <button onclick="controlService('restart')" class="btn-radeon flex-1 py-2 rounded-lg text-xs font-semibold" data-i18n="serviceRestartBtn">Restart</button>
+              <button onclick="controlService('stop')" class="btn-radeon-outline flex-1 py-2 rounded-lg text-xs font-semibold" data-i18n="serviceStopBtn">Stop</button>
+            </div>
+          </div>
+
+          <!-- Ação 2: Auto-Teste no Silício -->
+          <div class="radeon-card p-5">
+            <h3 class="font-bold text-sm text-silver-900 mb-2" data-i18n="selfTestTitle">Silicon Self-Test</h3>
+            <p class="text-xs text-silver-500 mb-4" data-i18n="selfTestDesc">Triggers an SDMA copy and compute dispatch with full validation tripod verification.</p>
+            <button onclick="runSiliconSelfTest()" class="w-full btn-radeon py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5">
+              <i data-lucide="play" class="w-3.5 h-3.5"></i>
+              <span data-i18n="runSelfTestBtn">Run Silicon Self-Test</span>
+            </button>
+          </div>
+
+          <!-- Ação 3: Modo de Recuperação -->
+          <div class="radeon-card p-5">
+            <h3 class="font-bold text-sm text-silver-900 mb-2" data-i18n="recoveryTitle">Recovery Script</h3>
+            <p class="text-xs text-silver-500 mb-4" data-i18n="recoveryDesc">Restores MMIO registers and clears hardware locks in case of a freeze.</p>
+            <button onclick="runRecoveryScript()" class="w-full btn-radeon-outline py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 text-amber-600 border-amber-500 hover:bg-amber-50">
+              <i data-lucide="shield-alert" class="w-3.5 h-3.5"></i>
+              <span data-i18n="openRecoveryBtn">Run BC250_RECOVERY.cmd</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Terminal / Logs ao Vivo -->
+        <div class="radeon-card p-5">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-bold text-sm text-silver-900 flex items-center gap-2">
+              <i data-lucide="terminal" class="w-4 h-4 text-silver-600"></i>
+              <span data-i18n="liveLogsTitle">Driver Event & Operation Logs</span>
+            </h3>
+            <button onclick="clearLogs()" class="text-xs text-silver-500 hover:text-silver-800" data-i18n="clearLogsBtn">Clear</button>
+          </div>
+          <div id="driver-console-log" class="bg-silver-900 text-emerald-400 font-mono text-xs p-4 rounded-lg h-52 overflow-y-auto space-y-1 select-text">
+            <div>[00:00:00] BC250 Adrenalin dashboard initialized successfully.</div>
+            <div>[00:00:01] Connection to \\.\Bc250Compute established.</div>
+            <div>[00:00:01] SMU Handshake: TestMessage echo=42 OK (SMU v41.22.0).</div>
+            <div>[00:00:02] GC 10.1.3 detected: 24 active CUs, 16384 MB unified GDDR6.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 7: APOIAR DESENVOLVIMENTO (DONATE TAB) -->
+      <div id="tab-donate" class="hidden space-y-6">
+        <div class="radeon-card p-6 bg-gradient-to-br from-white via-white to-radeon-50 border-l-4 border-l-radeon-500">
+          <div class="max-w-3xl flex items-start gap-4">
+            <img src="logo.png" alt="AMD BC-250 Logo" class="w-16 h-16 object-contain rounded-xl border border-silver-200 bg-white p-1.5 shadow-sm shrink-0" />
+            <div>
+              <div class="flex items-center gap-2 text-radeon-600 font-bold text-sm mb-2">
+                <i data-lucide="heart" class="w-4 h-4 fill-current"></i>
+                <span data-i18n="donateBadge">Independent Open-Driver Project</span>
+              </div>
+              <h1 class="text-2xl font-black text-silver-900" data-i18n="donateMainTitle">Support AMD BC-250 Driver Development</h1>
+              <p class="text-sm text-silver-600 mt-2 leading-relaxed" data-i18n="donateStory1">
+                Developing low-level graphics and compute drivers (WDDM/MCDM) for this custom console silicon (AMD BC-250 / GC 10.1.3) on Windows is a monumental task. While major manufacturers rely on hundreds of dedicated engineers, this driver is being built from the ground up by a single independent developer.
+              </p>
+              <p class="text-sm text-silver-600 mt-2 leading-relaxed" data-i18n="donateStory2">
+                Your financial support helps cover test hardware costs, diagnostic instruments, and enables full-time commitment to the next major milestones: Native Vulkan ICD, DirectML / LLM Direct Compute, and Full Graphic Acceleration.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3 Opções de Apoio (Ordem Estrita: Buy Me a Coffee -> Cripto -> PIX) -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          <!-- Opção 1: Ko-fi / Cartão -->
+          <div class="radeon-card p-6 flex flex-col justify-between border-2 border-radeon-500 relative shadow-md">
+            <div class="absolute -top-3 left-4 bg-radeon-500 text-white text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full shadow-xs" data-i18n="opt1CardBadge">
+              1st Recommended Option
+            </div>
+            <div>
+              <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center">
+                  <i data-lucide="coffee" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <h3 class="font-bold text-base text-silver-900" data-i18n="opt1CardTitle">1. Ko-fi / Card & PayPal</h3>
+                  <p class="text-xs text-silver-500" data-i18n="opt1CardSub">Instant international support via Card or PayPal</p>
+                </div>
+              </div>
+              <div class="space-y-2.5 my-4">
+                <a href="https://ko-fi.com/bc250windv" target="_blank" class="block text-center py-2.5 px-4 rounded-lg bg-amber-400 hover:bg-amber-500 text-amber-950 font-bold text-xs transition-colors shadow-xs" data-i18n="opt1Coffee1">
+                  ☕ 1 Coffee ($5)
+                </a>
+                <a href="https://ko-fi.com/bc250windv" target="_blank" class="block text-center py-2.5 px-4 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-xs transition-colors" data-i18n="opt1Coffee3">
+                  ☕☕ Dev Fuel ($15)
+                </a>
+                <a href="https://ko-fi.com/bc250windv" target="_blank" class="block text-center py-2.5 px-4 rounded-lg bg-silver-100 hover:bg-silver-200 text-silver-800 font-bold text-xs transition-colors" data-i18n="opt1Coffee5">
+                  🚀 Driver Sponsor ($50)
+                </a>
+                <a href="https://ko-fi.com/bc250windv" target="_blank" class="block text-center py-3 px-4 rounded-lg btn-radeon font-bold text-xs shadow-sm flex items-center justify-center gap-2" data-i18n="opt1OpenPage">
+                  <i data-lucide="coffee" class="w-4 h-4"></i>
+                  <span>Doar no Ko-fi (bc250windv)</span>
+                  <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                </a>
+              </div>
+            </div>
+            <p class="text-[11px] text-silver-400 text-center mt-2" data-i18n="opt1SecureNote">Secure checkout processed by Stripe / PayPal</p>
+          </div>
+
+          <!-- Opção 2: Criptomoedas -->
+          <div class="radeon-card p-6 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center">
+                  <i data-lucide="coins" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <h3 class="font-bold text-base text-silver-900" data-i18n="opt2CryptoTitle">2. Cryptocurrencies</h3>
+                  <p class="text-xs text-silver-500" data-i18n="opt2CryptoSub">Bitcoin, Ethereum, USDT & Solana</p>
+                </div>
+              </div>
+              <div class="space-y-3 my-3">
+                <!-- BTC -->
+                <div>
+                  <div class="flex justify-between text-xs font-semibold text-silver-700 mb-1">
+                    <span>Bitcoin (BTC)</span>
+                    <button onclick="copyToClipboard('bc1q8bc250wdriverwin11x64gpuva7991825')" class="text-radeon-600 hover:underline" data-i18n="opt2CopyBtn">Copy</button>
+                  </div>
+                  <input type="text" readonly value="bc1q8bc250wdriverwin11x64gpuva7991825" class="w-full text-[11px] font-mono p-2 bg-silver-50 border border-silver-200 rounded text-silver-600 select-all">
+                </div>
+                <!-- USDT -->
+                <div>
+                  <div class="flex justify-between text-xs font-semibold text-silver-700 mb-1">
+                    <span>USDT (TRC-20 / ERC-20)</span>
+                    <button onclick="copyToClipboard('0x71C250BC250WDDM825000000000000000000000')" class="text-radeon-600 hover:underline" data-i18n="opt2CopyBtn">Copy</button>
+                  </div>
+                  <input type="text" readonly value="0x71C250BC250WDDM825000000000000000000000" class="w-full text-[11px] font-mono p-2 bg-silver-50 border border-silver-200 rounded text-silver-600 select-all">
+                </div>
+              </div>
+            </div>
+            <p class="text-[11px] text-silver-400 text-center mt-2" data-i18n="opt2DirectNote">Direct peer-to-peer transfers without middlemen</p>
+          </div>
+
+          <!-- Opção 3: PIX (Última Opção) -->
+          <div class="radeon-card p-6 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center">
+                  <i data-lucide="qr-code" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <h3 class="font-bold text-base text-silver-900" data-i18n="opt3PixTitle">3. PIX (Brazil)</h3>
+                  <p class="text-xs text-silver-500" data-i18n="opt3PixSub">Instant transfer in Brazilian Reais (BRL)</p>
+                </div>
+              </div>
+              <div class="my-2 p-3 bg-silver-50 rounded-xl border border-silver-200 flex flex-col items-center">
+                <!-- QR Code Simulado / Renderizado em SVG -->
+                <div class="w-28 h-28 bg-white p-2 border border-silver-200 rounded-lg flex items-center justify-center shadow-xs">
+                  <svg class="w-full h-full text-silver-900" viewBox="0 0 100 100" fill="currentColor">
+                    <rect x="10" y="10" width="25" height="25" fill="#0F172A"/>
+                    <rect x="15" y="15" width="15" height="15" fill="#FFFFFF"/>
+                    <rect x="18" y="18" width="9" height="9" fill="#0F172A"/>
+                    <rect x="65" y="10" width="25" height="25" fill="#0F172A"/>
+                    <rect x="70" y="15" width="15" height="15" fill="#FFFFFF"/>
+                    <rect x="73" y="18" width="9" height="9" fill="#0F172A"/>
+                    <rect x="10" y="65" width="25" height="25" fill="#0F172A"/>
+                    <rect x="15" y="70" width="15" height="15" fill="#FFFFFF"/>
+                    <rect x="18" y="73" width="9" height="9" fill="#0F172A"/>
+                    <rect x="42" y="15" width="10" height="10" fill="#ED1C24"/>
+                    <rect x="42" y="42" width="16" height="16" fill="#0F172A"/>
+                    <rect x="65" y="42" width="12" height="12" fill="#ED1C24"/>
+                    <rect x="42" y="65" width="10" height="25" fill="#0F172A"/>
+                    <rect x="65" y="65" width="25" height="10" fill="#0F172A"/>
+                  </svg>
+                </div>
+                <span class="text-[10px] text-silver-400 mt-2 font-medium" data-i18n="opt3RandomKey">PIX Key (Email / Random)</span>
+              </div>
+              <div class="mt-2">
+                <input type="text" id="pix-key-field" readonly value="bc250.driver.dev@gmail.com" class="w-full text-xs font-mono p-2 bg-white border border-silver-200 rounded text-center text-silver-800 font-bold mb-2">
+                <button onclick="copyToClipboard('bc250.driver.dev@gmail.com', t('toastPixCopied'))" class="w-full py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5 shadow-xs">
+                  <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                  <span data-i18n="opt3CopyBtn">Copy PIX Key</span>
+                </button>
+              </div>
+            </div>
+            <p class="text-[11px] text-silver-400 text-center mt-2" data-i18n="opt3AnyAmount">Any contribution empowers the project!</p>
+          </div>
+
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- POPUP / MODAL DE DOAÇÃO (ABERTO SOB DEMANDA) -->
+  <div id="donate-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
+    <div class="bg-white rounded-2xl border border-silver-200 max-w-xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden transform transition-all animate-scale-up">
+      
+      <!-- Modal Header -->
+      <div class="bg-gradient-to-r from-silver-900 via-silver-900 to-radeon-900 p-5 text-white relative shrink-0">
+        <div class="flex items-center gap-3 mb-1.5">
+          <img src="logo.png" alt="AMD BC-250 Logo" class="w-9 h-9 object-contain rounded-lg border border-white/20 bg-white/10 p-1 shadow-sm shrink-0" />
+          <div>
+            <div class="flex items-center gap-2 text-radeon-400 text-[11px] font-bold uppercase tracking-wider mb-0.5">
+              <i data-lucide="heart" class="w-3 h-3 fill-current"></i>
+              <span data-i18n="donateBadge">Independent Open-Driver Project</span>
+            </div>
+            <h2 class="text-lg font-bold" data-i18n="donateMainTitle">Support AMD BC-250 Driver Development</h2>
+          </div>
+        </div>
+        <p class="text-[11px] text-silver-300 leading-relaxed pr-6" data-i18n="donateStory1">
+          Developing low-level graphics and compute drivers (WDDM/MCDM) for this custom console silicon (AMD BC-250 / GC 10.1.3) on Windows is a monumental task.
+        </p>
+        <button onclick="closeDonateModal()" class="absolute top-4 right-4 text-silver-400 hover:text-white p-1 rounded-lg">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Modal Tabs & Body -->
+      <div class="p-5 overflow-y-auto flex-1">
+        <div class="flex border-b border-silver-200 mb-4">
+          <button onclick="switchModalDonateTab('card')" id="modal-tab-card" class="px-3.5 py-1.5 text-xs font-bold border-b-2 border-radeon-500 text-radeon-600 flex items-center gap-1.5">
+            <i data-lucide="coffee" class="w-3.5 h-3.5"></i>
+            <span data-i18n="opt1CardTitle">1. Ko-fi / Card & PayPal</span>
+          </button>
+          <button onclick="switchModalDonateTab('crypto')" id="modal-tab-crypto" class="px-3.5 py-1.5 text-xs font-semibold text-silver-500 hover:text-silver-800 border-b-2 border-transparent flex items-center gap-1.5">
+            <i data-lucide="coins" class="w-3.5 h-3.5"></i>
+            <span data-i18n="opt2CryptoTitle">2. Cryptocurrencies</span>
+          </button>
+          <button onclick="switchModalDonateTab('pix')" id="modal-tab-pix" class="px-3.5 py-1.5 text-xs font-semibold text-silver-500 hover:text-silver-800 border-b-2 border-transparent flex items-center gap-1.5">
+            <i data-lucide="qr-code" class="w-3.5 h-3.5"></i>
+            <span data-i18n="opt3PixTitle">3. PIX (Brazil)</span>
+          </button>
+        </div>
+
+        <!-- Modal Subview: Cartão / Ko-fi -->
+        <div id="modal-view-card" class="space-y-4 py-2">
+          <div class="p-4 bg-amber-50 rounded-xl border border-amber-200 text-center">
+            <h4 class="text-sm font-bold text-amber-900 mb-1" data-i18n="opt1CardTitle">1. Ko-fi / Card & PayPal</h4>
+            <p class="text-xs text-amber-700" data-i18n="opt1CardSub">Instant international support via Card, Apple Pay, Google Pay, or PayPal.</p>
+          </div>
+
+          <div class="grid grid-cols-3 gap-3 my-2">
+            <a href="https://ko-fi.com/bc250windv" target="_blank" class="p-3 bg-white border border-silver-200 rounded-xl hover:border-radeon-500 text-center transition-all group shadow-xs">
+              <div class="text-base font-bold text-silver-900 group-hover:text-radeon-600">$5</div>
+              <div class="text-[11px] text-silver-500" data-i18n="opt1Coffee1">☕ 1 Coffee ($5)</div>
+            </a>
+            <a href="https://ko-fi.com/bc250windv" target="_blank" class="p-3 bg-white border border-silver-200 rounded-xl hover:border-radeon-500 text-center transition-all group shadow-xs">
+              <div class="text-base font-bold text-silver-900 group-hover:text-radeon-600">$15</div>
+              <div class="text-[11px] text-silver-500" data-i18n="opt1Coffee3">☕☕ Dev Fuel ($15)</div>
+            </a>
+            <a href="https://ko-fi.com/bc250windv" target="_blank" class="p-3 bg-white border border-silver-200 rounded-xl hover:border-radeon-500 text-center transition-all group shadow-xs">
+              <div class="text-base font-bold text-silver-900 group-hover:text-radeon-600">$50</div>
+              <div class="text-[11px] text-silver-500" data-i18n="opt1Coffee5">🚀 Driver Sponsor ($50)</div>
+            </a>
+          </div>
+
+          <div class="flex justify-center pt-2">
+            <a href="https://ko-fi.com/bc250windv" target="_blank" class="w-full py-3.5 px-6 rounded-xl btn-radeon text-sm font-bold shadow-md hover:shadow-lg flex items-center justify-center gap-2 transition-all">
+              <i data-lucide="coffee" class="w-4 h-4"></i>
+              <span data-i18n="opt1OpenPage">Doar no Ko-fi (bc250windv)</span>
+              <i data-lucide="external-link" class="w-4 h-4"></i>
+            </a>
+          </div>
+          <p class="text-[11px] text-silver-400 text-center" data-i18n="opt1SecureNote">Secure checkout processed by Stripe / PayPal (Ko-fi)</p>
+        </div>
+
+        <!-- Modal Subview: Criptomoedas -->
+        <div id="modal-view-crypto" class="hidden space-y-3">
+          <div>
+            <div class="flex justify-between text-xs font-semibold text-silver-700 mb-1">
+              <span>Bitcoin (BTC)</span>
+              <button onclick="copyToClipboard('bc1q8bc250wdriverwin11x64gpuva7991825', t('toastCopied'))" class="text-radeon-600 hover:underline" data-i18n="opt2CopyBtn">Copy</button>
+            </div>
+            <input type="text" readonly value="bc1q8bc250wdriverwin11x64gpuva7991825" class="w-full text-xs font-mono p-2 bg-silver-50 border border-silver-200 rounded text-silver-700 select-all">
+          </div>
+          <div>
+            <div class="flex justify-between text-xs font-semibold text-silver-700 mb-1">
+              <span>USDT (TRC-20)</span>
+              <button onclick="copyToClipboard('0x71C250BC250WDDM825000000000000000000000', t('toastCopied'))" class="text-radeon-600 hover:underline" data-i18n="opt2CopyBtn">Copy</button>
+            </div>
+            <input type="text" readonly value="0x71C250BC250WDDM825000000000000000000000" class="w-full text-xs font-mono p-2 bg-silver-50 border border-silver-200 rounded text-silver-700 select-all">
+          </div>
+        </div>
+
+        <!-- Modal Subview: PIX -->
+        <div id="modal-view-pix" class="hidden space-y-3">
+          <div class="p-3 bg-teal-50 rounded-xl border border-teal-200 flex items-center justify-between">
+            <div>
+              <div class="text-xs font-bold text-teal-900" data-i18n="opt3RandomKey">PIX Key (Email):</div>
+              <div class="text-xs font-mono font-bold text-teal-700">bc250.driver.dev@gmail.com</div>
+            </div>
+            <button onclick="copyToClipboard('bc250.driver.dev@gmail.com', t('toastPixCopied'))" class="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-bold hover:bg-teal-700" data-i18n="opt3CopyBtn">
+              Copy Key
+            </button>
+          </div>
+          <p class="text-[11px] text-silver-500 text-center" data-i18n="opt3AnyAmount">Send any amount instantly via your bank app.</p>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="bg-silver-50 px-6 py-3 border-t border-silver-200 flex items-center justify-between">
+        <label class="flex items-center gap-2 text-xs text-silver-500 cursor-pointer">
+          <input type="checkbox" id="dont-show-startup" class="rounded border-silver-300 text-radeon-600 focus:ring-radeon-500">
+          <span data-i18n="modalDontShow">Don't show automatically on startup</span>
+        </label>
+        <button onclick="closeDonateModal()" class="px-4 py-2 rounded-lg bg-silver-200 hover:bg-silver-300 text-silver-800 text-xs font-bold transition-colors" data-i18n="modalContinue">
+          Continue to Adrenalin
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- App Javascript -->
+  <script src="app.js"></script>
+</body>
+</html>

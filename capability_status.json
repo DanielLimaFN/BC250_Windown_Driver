@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-08-31",
+  "device": "PCI\\VEN_1002&DEV_13FE",
+  "product_goal": "WDDM 2.x display+render, Vulkan, games and LLM compute",
+  "states": {
+    "offline": "Implemented or structurally tested without a complete physical gate",
+    "hardware_partial": "Observed on silicon but missing part of the production gate",
+    "hardware_proven": "Passed the scoped RPTR/WPTR, poison-fence, data and teardown gate",
+    "disabled": "Deliberately fail-closed because a required backend is absent"
+  },
+  "capabilities": {
+    "lab.sdma.controlled_copy": {
+      "state": "hardware_proven",
+      "scope": "Controlled laboratory transaction only"
+    },
+    "lab.compute.mec_persistent_p2": {
+      "state": "hardware_proven",
+      "scope": "16 controlled submissions in the canonical P2 evidence",
+      "last_regression": "2026-08-31T16:44:22-03:00",
+      "last_evidence": "docs/evidence/2026-08-31_16-44-22-DESKTOP-HQAG6T4-lab-binding",
+      "last_result": "P1 1/1 and P2 16/16 retired; RPTR equals WPTR; zero data mismatches; watchdog rollback passed"
+    },
+    "wddm.application_submission": {
+      "state": "offline",
+      "hardware_validated": false
+    },
+    "wddm.monitored_fences": {
+      "state": "offline",
+      "hardware_validated": false
+    },
+    "wddm.interrupt_handler": {
+      "state": "disabled",
+      "hardware_validated": false,
+      "reason": "OSSSYS 5.0 makes the 0x4480 family structurally coherent and rejects 0x3800, but the BC-250 IP Discovery base and physical readback are not yet captured",
+      "layout_candidate": {
+        "family": "0x4480",
+        "osssys_base_dwords": "0x10A0",
+        "osssys_base_bytes": "0x4280",
+        "source": "upstream osssys_5_0_0_offset.h",
+        "catalog_promoted": false
+      }
+    },
+    "wddm.process_gpuva_residency": {
+      "state": "offline",
+      "hardware_validated": false
+    },
+    "display.gop_display_only": {
+      "state": "hardware_partial",
+      "accelerated": false
+    },
+    "display.accelerated_present": {
+      "state": "disabled",
+      "hardware_validated": false
+    },
+    "display.native_modeset": {
+      "state": "disabled",
+      "hardware_validated": false
+    },
+    "runtime.owned_allocation": {
+      "state": "disabled",
+      "reason": "Legacy service uses a wrapping bump offset and FREE does not release a lease"
+    },
+    "runtime.sdma_copy": {
+      "state": "disabled",
+      "reason": "Legacy public path completes with CPU copies and CPU-authored fence values"
+    },
+    "runtime.submit_ib": {
+      "state": "disabled",
+      "reason": "Current request ABI has no IB GPUVA field"
+    },
+    "runtime.monitored_fence_wait": {
+      "state": "disabled",
+      "reason": "Dedicated query/wait ABI is absent"
+    },
+    "vulkan.loader_enumeration": {
+      "state": "disabled",
+      "reason": "ICD rejects instance creation unless explicitly placed in unsafe laboratory mode"
+    },
+    "vulkan.compute": {
+      "state": "disabled",
+      "hardware_validated": false
+    },
+    "vulkan.graphics_wsi": {
+      "state": "disabled",
+      "hardware_validated": false
+    },
+    "radv.wddm_submission": {
+      "state": "disabled",
+      "hardware_validated": false,
+      "last_observation": "RADV NAO SUBMETE PELO WDDM"
+    },
+    "llm.gpu_inference": {
+      "state": "disabled",
+      "hardware_validated": false
+    }
+  }
+}

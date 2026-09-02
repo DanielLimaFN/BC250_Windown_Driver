@@ -233,6 +233,10 @@ typedef enum BC250_PROBE_FIELD {
     BC250_PROBE_RLC_ALREADY_ACTIVE,
     BC250_PROBE_RLC_PHYSICAL_READY,
     BC250_PROBE_PFP_DIRECT_STATUS,
+    BC250_PROBE_PFP_SCHEDULER_BEFORE,
+    BC250_PROBE_PFP_SCHEDULER_BEFORE_READ_PASSED,
+    BC250_PROBE_PFP_SCHEDULER_AFTER,
+    BC250_PROBE_PFP_SCHEDULER_AFTER_READ_PASSED,
     BC250_PROBE_PFP_DIRECT_MC_LOW,
     BC250_PROBE_PFP_DIRECT_MC_HIGH,
     BC250_PROBE_PFP_DIRECT_BYTES,
@@ -747,14 +751,559 @@ typedef enum BC250_PROBE_FIELD {
     BC250_PROBE_SHADER_REG_RESTORE,
     BC250_PROBE_SHADER_MEM_RESTORE,
     BC250_PROBE_SHADER_TRIAD_PASSED,
-    BC250_PROBE_SHADER_PHYSICAL_READY
+    BC250_PROBE_SHADER_PHYSICAL_READY,
+
+    /* Fase P1 — motor de submissao persistente. */
+    BC250_PROBE_P1_ENGINE_STATE,
+    BC250_PROBE_P1_ACTIVATE_STATUS,
+    BC250_PROBE_P1_TEARDOWN_STATUS,
+    BC250_PROBE_P1_SUBMIT_CALLS,
+    BC250_PROBE_P1_SUBMIT_ACCEPTED,
+    BC250_PROBE_P1_SUBMIT_REJECTED_NODE,
+    BC250_PROBE_P1_SUBMIT_REJECTED_PLAN,
+    BC250_PROBE_P1_SUBMIT_REJECTED_EMIT,
+    BC250_PROBE_P1_RING_FULL_COUNT,
+    BC250_PROBE_P1_FENCE_REGRESSION_COUNT,
+    BC250_PROBE_P1_DOORBELL_KICKS,
+    BC250_PROBE_P1_DIRECT_WPTR_WRITES,
+    BC250_PROBE_P1_POLL_CALLS,
+    BC250_PROBE_P1_RETIRED_TOTAL,
+    BC250_PROBE_P1_LAST_PLAN_PAD_DWORDS,
+    BC250_PROBE_P1_LAST_WPTR_PUBLISHED,
+    BC250_PROBE_P1_LAST_WPTR_SHADOW_READBACK,
+    BC250_PROBE_P1_LAST_WPTR_MMIO_READBACK,
+    BC250_PROBE_P1_LAST_RPTR_MMIO,
+    BC250_PROBE_P1_LAST_RPTR_REPORT_MEM,
+    BC250_PROBE_P1_LAST_FENCE_OBSERVED,
+    BC250_PROBE_P1_LAST_SUBMIT_STATUS,
+    BC250_PROBE_P1_LAST_SUBMITTED_FENCE,
+    BC250_PROBE_P1_LAST_RETIRED_FENCE,
+    BC250_PROBE_P1_COHER_HDP_APPLIED,
+    BC250_PROBE_P1_COHER_L2_READBACK,
+    BC250_PROBE_P1_COHER_INVALIDATE_ACK,
+    BC250_PROBE_P1_COHER_INVALIDATE_POLLS,
+    BC250_PROBE_P1_COHERENCY_PASSED,
+    BC250_PROBE_P1_RING_WPTR,
+    BC250_PROBE_P1_RING_RPTR_SHADOW,
+    BC250_PROBE_P1_RING_WRAP_COUNT,
+    BC250_PROBE_P1_RING_PAD_DWORDS_TOTAL,
+
+    /* Fase P1 - auto-teste de submissao pelo anel persistente. */
+    BC250_PROBE_P1_SELFTEST_ATTEMPTED,
+    BC250_PROBE_P1_SELFTEST_PLAN_STATUS,
+    BC250_PROBE_P1_SELFTEST_SUBMIT_STATUS,
+    BC250_PROBE_P1_SELFTEST_IB_DWORDS,
+    BC250_PROBE_P1_SELFTEST_IB_GPUVA_LOW,
+    BC250_PROBE_P1_SELFTEST_ASSIGNED_FENCE,
+    BC250_PROBE_P1_SELFTEST_RING_WPTR_AFTER,
+    BC250_PROBE_P1_SELFTEST_RPTR_MMIO_AFTER,
+    BC250_PROBE_P1_SELFTEST_RPTR_REPORT_AFTER,
+    BC250_PROBE_P1_SELFTEST_DISPATCH_FENCE_BEFORE,
+    BC250_PROBE_P1_SELFTEST_DISPATCH_FENCE_AFTER,
+    BC250_PROBE_P1_SELFTEST_RESULT_BEFORE,
+    BC250_PROBE_P1_SELFTEST_RESULT_AFTER,
+    BC250_PROBE_P1_SELFTEST_RESULT_MISMATCHES,
+    BC250_PROBE_P1_SELFTEST_RING_FENCE_OBSERVED,
+    BC250_PROBE_P1_SELFTEST_RETIRED_COUNT,
+    BC250_PROBE_P1_SELFTEST_POLLS,
+    BC250_PROBE_P1_SELFTEST_SHADER_STAGED,
+    BC250_PROBE_P1_SELFTEST_IB_READBACK,
+    BC250_PROBE_P1_SELFTEST_TRIAD_PASSED,
+    BC250_PROBE_P1_SELFTEST_PHYSICAL_READY,
+
+    /* Candidato 3.45 - diagnostico da borda do ACTIVE. */
+    BC250_PROBE_P1_FENCE_BASELINE_WRITTEN,
+    BC250_PROBE_P1_FENCE_BASELINE_READBACK,
+    BC250_PROBE_P1_SNAP_ACT_ACTIVE,
+    BC250_PROBE_P1_SNAP_ACT_HQSTATUS0,
+    BC250_PROBE_P1_SNAP_ACT_PQCONTROL,
+    BC250_PROBE_P1_SNAP_ACT_DOORBELLCONTROL,
+    BC250_PROBE_P1_SNAP_ACT_CPPQSTATUS,
+    BC250_PROBE_P1_SNAP_ACT_CPCSTATUS,
+    BC250_PROBE_P1_SNAP_ACT_HQDERROR,
+    BC250_PROBE_P1_SNAP_ACT_PQWPTRLO,
+    BC250_PROBE_P1_SNAP_ACT_PQRPTR,
+    BC250_PROBE_P1_SNAP_ACT_MECME2HEADERDUMP,
+    BC250_PROBE_P1_SNAP_SUB_ACTIVE,
+    BC250_PROBE_P1_SNAP_SUB_HQSTATUS0,
+    BC250_PROBE_P1_SNAP_SUB_PQCONTROL,
+    BC250_PROBE_P1_SNAP_SUB_DOORBELLCONTROL,
+    BC250_PROBE_P1_SNAP_SUB_CPPQSTATUS,
+    BC250_PROBE_P1_SNAP_SUB_CPCSTATUS,
+    BC250_PROBE_P1_SNAP_SUB_HQDERROR,
+    BC250_PROBE_P1_SNAP_SUB_PQWPTRLO,
+    BC250_PROBE_P1_SNAP_SUB_PQRPTR,
+    BC250_PROBE_P1_SNAP_SUB_MECME2HEADERDUMP,
+    BC250_PROBE_P1_SNAP_RE_ACTIVE,
+    BC250_PROBE_P1_SNAP_RE_HQSTATUS0,
+    BC250_PROBE_P1_SNAP_RE_PQCONTROL,
+    BC250_PROBE_P1_SNAP_RE_DOORBELLCONTROL,
+    BC250_PROBE_P1_SNAP_RE_CPPQSTATUS,
+    BC250_PROBE_P1_SNAP_RE_CPCSTATUS,
+    BC250_PROBE_P1_SNAP_RE_HQDERROR,
+    BC250_PROBE_P1_SNAP_RE_PQWPTRLO,
+    BC250_PROBE_P1_SNAP_RE_PQRPTR,
+    BC250_PROBE_P1_SNAP_RE_MECME2HEADERDUMP,
+    BC250_PROBE_P1_REARM_ATTEMPTED,
+    BC250_PROBE_P1_REARM_ACTIVE_BEFORE,
+    BC250_PROBE_P1_REARM_DEACTIVATE_POLLS,
+    BC250_PROBE_P1_REARM_ACTIVE_AFTER_OFF,
+    BC250_PROBE_P1_REARM_ACTIVE_AFTER_ON,
+    BC250_PROBE_P1_REARM_POLLS,
+    BC250_PROBE_P1_REARM_RPTR_MMIO,
+    BC250_PROBE_P1_REARM_RPTR_REPORT,
+    BC250_PROBE_P1_REARM_DISPATCH_FENCE,
+    BC250_PROBE_P1_REARM_RESULT,
+    BC250_PROBE_P1_REARM_RING_FENCE,
+    BC250_PROBE_P1_REARM_COMPLETED,
+
+    /* Candidato 3.49 - estado global da fila persistente. */
+    BC250_PROBE_P1_SNAP_ACT_CP_MEC_CNTL,
+    BC250_PROBE_P1_SNAP_ACT_CP_ME_CNTL,
+    BC250_PROBE_P1_SNAP_ACT_RLC_SCHEDULERS,
+    BC250_PROBE_P1_SNAP_ACT_WPTR_POLL_CNTL,
+    BC250_PROBE_P1_SNAP_ACT_WPTR_POLL_CNTL1,
+    BC250_PROBE_P1_SNAP_SUB_CP_MEC_CNTL,
+    BC250_PROBE_P1_SNAP_SUB_CP_ME_CNTL,
+    BC250_PROBE_P1_SNAP_SUB_RLC_SCHEDULERS,
+    BC250_PROBE_P1_SNAP_SUB_WPTR_POLL_CNTL,
+    BC250_PROBE_P1_SNAP_SUB_WPTR_POLL_CNTL1,
+    BC250_PROBE_P1_SNAP_RE_CP_MEC_CNTL,
+    BC250_PROBE_P1_SNAP_RE_CP_ME_CNTL,
+    BC250_PROBE_P1_SNAP_RE_RLC_SCHEDULERS,
+    BC250_PROBE_P1_SNAP_RE_WPTR_POLL_CNTL,
+    BC250_PROBE_P1_SNAP_RE_WPTR_POLL_CNTL1,
+
+    /* Candidato 3.50 - re-arme completo do gatilho QUEUE_MASK. */
+    BC250_PROBE_P1_REARM_QUEUE_MASK_APPLIED,
+    BC250_PROBE_P1_REARM_QUEUE_MASK_READBACK,
+    BC250_PROBE_P1_REARM_QUEUE_MASK_PASSED,
+
+    /* Candidato 3.53 — observabilidade aprofundada da fila persistente. */
+    BC250_PROBE_P1_RING_DWORD_0,
+    BC250_PROBE_P1_RING_DWORD_1,
+    BC250_PROBE_P1_RING_DWORD_2,
+    BC250_PROBE_P1_RING_DWORD_3,
+    BC250_PROBE_P1_RING_DWORD_4,
+    BC250_PROBE_P1_RING_DWORD_5,
+    BC250_PROBE_P1_RING_DWORD_6,
+    BC250_PROBE_P1_RING_DWORD_7,
+    BC250_PROBE_P1_RING_DWORD_8,
+    BC250_PROBE_P1_RING_DWORD_9,
+    BC250_PROBE_P1_RING_DWORD_10,
+    BC250_PROBE_P1_RING_DWORD_11,
+    BC250_PROBE_P1_RING_DWORDS_MISMATCH,
+    BC250_PROBE_P1_HQD_PQ_BASE_LO,
+    BC250_PROBE_P1_HQD_PQ_BASE_HI,
+    BC250_PROBE_P1_HQD_RPTR_REPORT_ADDR_LO,
+    BC250_PROBE_P1_HQD_RPTR_REPORT_ADDR_HI,
+    BC250_PROBE_P1_HQD_WPTR_POLL_ADDR_LO,
+    BC250_PROBE_P1_HQD_WPTR_POLL_ADDR_HI,
+    BC250_PROBE_P1_HQD_VMID,
+    BC250_PROBE_P1_HQD_MQD_CONTROL,
+    BC250_PROBE_P1_HQD_IB_CONTROL,
+    BC250_PROBE_P1_POST_CPC_STATUS,
+    BC250_PROBE_P1_POST_CPC_BUSY_STAT,
+    BC250_PROBE_P1_POST_CPC_STALLED_STAT1,
+    BC250_PROBE_P1_POST_CPF_STATUS,
+    BC250_PROBE_P1_POST_CPF_BUSY_STAT,
+    BC250_PROBE_P1_POST_CPF_STALLED_STAT1,
+    BC250_PROBE_P1_POST_CP_STAT,
+    BC250_PROBE_P1_POST_CP_STALLED_STAT1,
+    BC250_PROBE_P1_POST_MEC_PC,
+
+    /* Fase P2 — Multi-Submissao Sequencial, Pipelining e Wraparound */
+    BC250_PROBE_P2_STREAM_ATTEMPTED,
+    BC250_PROBE_P2_BATCH_COUNT,
+    BC250_PROBE_P2_SUBMISSIONS_ACCEPTED,
+    BC250_PROBE_P2_SUBMISSIONS_RETIRED,
+    BC250_PROBE_P2_WRAP_COUNT,
+    BC250_PROBE_P2_RESULT_MISMATCHES,
+    BC250_PROBE_P2_LAST_FENCE_OBSERVED,
+    BC250_PROBE_P2_FINAL_WPTR,
+    BC250_PROBE_P2_FINAL_RPTR_MMIO,
+    BC250_PROBE_P2_FINAL_RPTR_REPORT,
+    BC250_PROBE_P2_TRIAD_PASSED,
+    BC250_PROBE_P2_PHYSICAL_READY,
+
+    /* Candidato 3.57 — kick canonico unico de 64 bits em BAR2+0x110. */
+    BC250_PROBE_P2_DOORBELL_WRITE_FAILURES,
+    BC250_PROBE_P2_DOORBELL_LAST_VALUE_LOW,
+    BC250_PROBE_P2_DOORBELL_LAST_VALUE_HIGH,
+    BC250_PROBE_P2_DOORBELL_CONTROL_BEFORE,
+    BC250_PROBE_P2_DOORBELL_CONTROL_AFTER,
+    BC250_PROBE_P2_DOORBELL_HIT_OBSERVED,
+
+    /*
+     * Fase V2 — retirada de fence para o dxgkrnl.  Todos observados: nenhum
+     * destes campos e' inferido ou incrementado especulativamente.
+     */
+    BC250_PROBE_V2_RETIREMENT_DPC_RUNS,
+    BC250_PROBE_V2_POLL_FAILURES,
+    BC250_PROBE_V2_NOTIFY_BATCHES,
+    BC250_PROBE_V2_NOTIFIED_TOTAL,
+    BC250_PROBE_V2_PUSH_FAILURES,
+    BC250_PROBE_V2_BACKPRESSURE,
+    BC250_PROBE_V2_FENCES_IN_FLIGHT,
+    BC250_PROBE_V2_TRACKER_PUSHED_TOTAL,
+    BC250_PROBE_V2_TRACKER_OVERFLOW,
+    BC250_PROBE_V2_TRACKER_OUT_OF_ORDER,
+    BC250_PROBE_V2_LAST_NOTIFIED_FENCE_ID,
+    BC250_PROBE_V2_INTERRUPTS_SEEN,
+
+    /*
+     * Fase V5 — modo de registro no dxgkrnl.
+     * RegistrationMode: 0 = KMDOD (display-only), 1 = WDDM display+render.
+     */
+    BC250_PROBE_V5_RENDER_NODE_REQUESTED,
+    BC250_PROBE_V5_RENDER_NODE_TUNABLE_PRESENT,
+    BC250_PROBE_V5_REGISTRATION_MODE,
+
+    /*
+     * Instrumentacao do caminho de render (2026-08-31).
+     *
+     * O boot com RenderNode=1 mostrou DxgkInitialize == 0, AddDevice == 0,
+     * StartDevice entrando, e o dispositivo em Codigo 43 — sem nenhuma forma
+     * de saber onde parou:
+     *   - nao existia campo para o retorno do StartDevice;
+     *   - Bc250McdmQueryAdapterInfo, que e' o handler do caminho WDDM
+     *     completo, nao gravava telemetria alguma (DmmQueryAdapterType vem do
+     *     handler de display, que so esta na tabela do KMDOD — no boot de
+     *     render aquele valor e' residuo do boot anterior).
+     *
+     * Estes campos sao zerados em DriverEntry para que valor velho nunca seja
+     * lido como resultado novo.
+     */
+    BC250_PROBE_V5_START_DEVICE_STATUS,
+    BC250_PROBE_V5_START_DEVICE_SOURCES,
+    BC250_PROBE_V5_START_DEVICE_CHILDREN,
+    BC250_PROBE_V5_QAI_CALLS,
+    BC250_PROBE_V5_QAI_LAST_TYPE,
+    BC250_PROBE_V5_QAI_LAST_STATUS,
+    BC250_PROBE_V5_QAI_LAST_UNSUPPORTED_TYPE,
+    BC250_PROBE_V5_QAI_UNSUPPORTED_COUNT,
+
+    /* Rastro de DDI: as tres ultimas marcas antes do teardown. */
+    BC250_PROBE_V5_LAST_DDI,
+    BC250_PROBE_V5_PREV_DDI,
+    BC250_PROBE_V5_PREV2_DDI,
+    BC250_PROBE_V5_DDI_MARKS,
+
+    /*
+     * DxgkDdiQueryInterface: qual interface o dxgkrnl pediu.
+     *
+     * O rastro do boot com o no de render ativo terminou em QueryInterface, que
+     * devolve STATUS_NOT_SUPPORTED para tudo e nao registrava o que foi pedido.
+     * Data1 e' o primeiro campo do GUID e basta para identificar a interface.
+     */
+    BC250_PROBE_V5_QI_CALLS,
+    BC250_PROBE_V5_QI_LAST_GUID_D1,
+    BC250_PROBE_V5_QI_PREV_GUID_D1,
+    BC250_PROBE_V5_QI_PREV2_GUID_D1,
+    BC250_PROBE_V5_QI_LAST_VERSION,
+    BC250_PROBE_V5_QI_LAST_SIZE,
+    BC250_PROBE_GPUVA_GATE_ELIGIBLE,
+    BC250_PROBE_GPUVA_GATE_OPERATIONAL,
+    BC250_PROBE_GPUVA_GATE_BLOCK_MASK,
+    BC250_PROBE_GPUVA_SNAPSHOT_GENERATION,
+    BC250_PROBE_GPUVA_SNAPSHOT_EPOCH,
+    BC250_PROBE_GPUVA_SNAPSHOT_LIVE_COUNT,
+    BC250_PROBE_GPUVA_LAB_PROMOTION_REQUESTED,
+    BC250_PROBE_GPUVA_LAB_PROMOTION_PRESENT,
+
+    /*
+     * Diagnostico fail-closed do StopDevice V5. Distingue uma fence WDDM
+     * realmente pendente de uma falha ao serializar a consulta pelo dxgkrnl.
+     * QueryMode: 1 = leitura direta (callback indisponivel), 2 = sincronizada.
+     */
+    BC250_PROBE_V5_STOP_FENCE_QUERY_MODE,
+    BC250_PROBE_V5_STOP_FENCE_SYNC_STATUS,
+    BC250_PROBE_V5_STOP_FENCE_SYNC_RESULT,
+    BC250_PROBE_V5_STOP_FENCE_PENDING_COUNT,
+    BC250_PROBE_V5_STOP_FENCE_RESERVED_COUNT,
+
+    /*
+     * ------------------------------------------------------------------
+     * Schema 130 — candidato 3.67.
+     *
+     * O ensaio 3.66 (evidencia
+     * docs/evidence/2026-09-01_11-34-36-DESKTOP-HQAG6T4-rendernode-inspect)
+     * fechou a pergunta do StopDevice: QueryMode=2, SyncStatus=0xC0000001,
+     * SyncResult=0, Pending=0, Reserved=0 — falha de
+     * DxgkCbSynchronizeExecution, nao fence pendente.  Mas o teardown ja era
+     * consequencia: o dxgkrnl desistiu antes, depois de UMA unica
+     * QueryAdapterInfo e sem jamais pedir DRIVERCAPS.
+     *
+     * Este bloco mede a quiescencia (para que a fotografia seja confiavel) e
+     * amplia o rastro pos-StartDevice (para nomear quem provocou o teardown).
+     * ------------------------------------------------------------------
+     */
+
+    /* Quiescencia do teardown. */
+    BC250_PROBE_V5_STOP_REASON,
+    BC250_PROBE_V5_STOP_TIMER_DRAINED,
+    BC250_PROBE_V5_STOP_DPC_DRAINED,
+    BC250_PROBE_V5_STOP_SUBMIT_INFLIGHT,
+    BC250_PROBE_V5_STOP_DRAIN_ITERATIONS,
+    BC250_PROBE_V5_STOP_SNAPSHOT_OK,
+    BC250_PROBE_V5_STOP_LOCK_FAILURES,
+    BC250_PROBE_V5_STOP_REJECTED_WHILE_STOPPING,
+    BC250_PROBE_V5_STOP_FIRST_STATUS,
+    BC250_PROBE_V5_LIFECYCLE_STATE,
+
+    /* Rastro ampliado pos-StartDevice. */
+    BC250_PROBE_V5_CHILD_RELATIONS_STATUS,
+    BC250_PROBE_V5_CHILD_RELATIONS_COUNT,
+    BC250_PROBE_V5_CHILD_RELATIONS_CALLS,
+    BC250_PROBE_V5_POST_START_STAGE,
+    BC250_PROBE_V5_QI_SLOTS_CAPTURED,
+
+    /* Schema 131: contrato efetivamente entregue/anunciado (20 ou 27). */
+    BC250_PROBE_V5_CONTRACT_VERSION,
+
+    /*
+     * Schema 132 — perfil de adaptador (Gate 1.5).
+     *
+     * Sem estes campos a corrida render-only e' ininterpretavel: um Codigo 43
+     * no estagio 3 nao diria se o perfil pedido foi de fato o que subiu.
+     * V5AdapterProfile publica o BC250_ADAPTER_PROFILE resolvido;
+     * V5DisplaySurfaceAnnounced publica se a tabela levou VidPn/Present.
+     */
+    BC250_PROBE_V5_ADAPTER_PROFILE,
+    BC250_PROBE_V5_RENDER_ONLY_LAB_REQUESTED,
+    BC250_PROBE_V5_RENDER_ONLY_LAB_TUNABLE_PRESENT,
+    BC250_PROBE_V5_PROFILE_RESOLVE_STATUS,
+    BC250_PROBE_V5_DISPLAY_SURFACE_ANNOUNCED,
+    BC250_PROBE_V5_CHILD_ENUMERATION_ENABLED,
+
+    /*
+     * Schema 133 — marcadores inequivocos de "entrou" versus "nao chamado".
+     *
+     * O post-mortem do 3.75 travou exatamente aqui: um campo em zero podia
+     * significar "a funcao nao executou" ou "executou e devolveu sucesso
+     * antigo que sobreviveu ao boot".  Estes cinco campos so' existem para
+     * responder ESSA pergunta, e sao escritos na entrada, nao na saida.
+     */
+    BC250_PROBE_V5_POST_DISPLAY_ATTEMPTED,
+    BC250_PROBE_V5_DISPLAY_INIT_ENTERED,
+    BC250_PROBE_V5_UNSAFE_BRINGUP_ENTERED,
+    BC250_PROBE_V5_RENDER_ONLY_EARLY_RETURN,
+    BC250_PROBE_V5_START_DEVICE_RETURN_STAGE,
+    BC250_PROBE_V5_UNSAFE_BRINGUP_COMPILED,
+
+    /* Sentinela: mantem o reset integral completo por construcao. */
+    BC250_PROBE_FIELD_COUNT
 } BC250_PROBE_FIELD;
+
+/*
+ * Estagios de saida de DxgkDdiStartDevice, para BC250_PROBE_V5_START_DEVICE_RETURN_STAGE.
+ * Sempre publicado, inclusive nos caminhos de falha.
+ */
+#define BC250_V5_START_RETURN_NONE            0u
+#define BC250_V5_START_RETURN_BAD_ARGS        1u
+#define BC250_V5_START_RETURN_PREFLIGHT_FAIL  2u
+#define BC250_V5_START_RETURN_RENDER_ONLY     3u
+#define BC250_V5_START_RETURN_POST_DISPLAY    4u
+#define BC250_V5_START_RETURN_DISPLAY_OK      5u
+#define BC250_V5_START_RETURN_UNSAFE_BRINGUP  6u
+
+/*
+ * Reset integral da telemetria volatil.
+ *
+ * Zera TODOS os campos do enum, de BC250_PROBE_DRIVER_ENTRY_REACHED ate a
+ * sentinela.  Substitui os resets parciais por familia, que deixavam
+ * Shader*, HqdActive* e Dmm* fora de qualquer varredura — foi por isso que a
+ * corrida 3.75 mostrou DmmChildRelationsCalled=56 e DmmIsSupportedCount=41
+ * de boots anteriores, e por isso que ShaderPhysicalReady=1 nao pode ser
+ * creditado aquela corrida.
+ *
+ * Deve ser chamado em DriverEntry, antes de qualquer registro no dxgkrnl.
+ */
+VOID Bc250ProbeResetAllVolatile(VOID);
+
+/*
+ * Marcos alcancados depois de DxgkDdiStartDevice devolver sucesso.
+ *
+ * Valor sempre crescente: o maior marco atingido e' o que fica.  Serve para
+ * responder "ate onde o dxgkrnl levou o adaptador antes de parar" sem
+ * depender da janela deslizante de tres DDIs.
+ */
+#define BC250_V5_POST_START_NONE              0u
+#define BC250_V5_POST_START_RETURNED          1u
+#define BC250_V5_POST_START_QUERY_INTERFACE   2u
+#define BC250_V5_POST_START_CHILD_RELATIONS   3u
+#define BC250_V5_POST_START_CHILD_STATUS      4u
+#define BC250_V5_POST_START_DEVICE_DESCRIPTOR 5u
+#define BC250_V5_POST_START_QAI_DRIVERCAPS    6u
+#define BC250_V5_POST_START_QAI_SEGMENT       7u
+#define BC250_V5_POST_START_VIDPN             8u
+#define BC250_V5_POST_START_CREATE_DEVICE     9u
+#define BC250_V5_POST_START_CREATE_CONTEXT   10u
+#define BC250_V5_POST_START_SUBMIT           11u
+
+VOID Bc250ProbeMarkPostStartStage(_In_ ULONG Stage);
+
+/*
+ * ==========================================================================
+ * Captura integral das interfaces pedidas por DxgkDdiQueryInterface.
+ *
+ * O 3.66 gravou apenas Data1 das TRES ultimas chamadas de OITO.  Duas foram
+ * identificadas nos headers do WDK — AF03F190 e' GUID_DEVINTERFACE_MIRACAST_
+ * DISPLAY e E922004D e' GUID_DEVINTERFACE_WDDM3_ON_VB — e a terceira,
+ * 6BA41A33, nao existe em 10.0.22621 nem em 10.0.26100.  Sem o GUID completo
+ * nao ha' como identifica-la, e as cinco primeiras chamadas se perderam.
+ *
+ * O buffer e' circular e vive em memoria: DxgkDdiQueryInterface nao pode
+ * pagar ZwOpenKey/ZwSetValueKey por chamada.  A publicacao acontece uma vez
+ * no inicio do teardown, como REG_BINARY, um valor por slot.
+ * ==========================================================================
+ */
+#define BC250_V5_QI_SLOT_COUNT 16u
+
+typedef struct BC250_V5_QI_RECORD {
+    ULONG  Data1;
+    USHORT Data2;
+    USHORT Data3;
+    UCHAR  Data4[8];
+    ULONG  Version;
+    ULONG  Size;
+    ULONG  Status;
+    ULONG  Ordinal;   /* 1 = primeira chamada do carregamento */
+} BC250_V5_QI_RECORD;
+
+/* Registra uma chamada. Barato: so memoria, sem registro. */
+VOID Bc250ProbeRecordQueryInterface(
+    _In_ const BC250_V5_QI_RECORD *Record);
+
+/* Publica os slots capturados como REG_BINARY. Chamar no teardown. */
+VOID Bc250ProbeSnapshotQueryInterfaces(VOID);
 
 VOID Bc250ProbeRecord(
     _In_ BC250_PROBE_FIELD Field,
     _In_ ULONG Value);
 
 VOID Bc250ProbeResetOffline(VOID);
+
+/*
+ * Zera o bloco de evidencia P1/P2 (submissao persistente e multi-submissao).
+ *
+ * A telemetria persistente sobrevive ao boot. Sem este reset, um boot em que o
+ * motor nem chega a subir continua exibindo P2BatchCount = 16,
+ * P2SubmissionsRetired = 16 e P2TriadPassed = 1 do boot anterior — e
+ * tools\test-p2-multi-submission.ps1, que le exatamente esses campos, deixa de
+ * reprovar por eles. Foi o que ocorreu em 2026-08-31: com o dispositivo em
+ * Codigo 43 e o motor offline, o gate apontou apenas duas falhas porque as
+ * demais estavam satisfeitas por valores velhos.
+ *
+ * Evidencia de uma corrida que nao aconteceu e' pior que ausencia de
+ * evidencia. Chamar em DriverEntry.
+ */
+VOID Bc250ProbeResetSubmissionEvidence(VOID);
+
+/*
+ * Zera o rastro de render deste carregamento: bloco V5 completo (registro,
+ * StartDevice, QueryAdapterInfo, QueryInterface, rastro de DDI, quiescencia e
+ * diagnostico de StopDevice) e os campos DMM do caminho de display.
+ *
+ * Motivo, medido em 2026-09-01: no boot com RenderNode=1 o inspetor leu
+ * DmmQaiOutSize=544, DmmChildRelationsCalled=56 e
+ * DmmControlInterruptCount=14925.  Nenhum desses valores pertencia aquele
+ * boot — os campos DMM sao escritos pelo handler de display, que so existe na
+ * tabela do KMDOD, e sobreviveram do boot anterior.  Evidencia que mistura
+ * corridas nao e' evidencia.
+ *
+ * Nao toca no bloco P1/P2: aquele tem reset proprio, chamado antes do
+ * bring-up e seguido por publicacao fisica nova.
+ *
+ * Chamar em DriverEntry, antes de registrar no dxgkrnl.
+ */
+VOID Bc250ProbeResetRenderTrace(VOID);
+
+/*
+ * ==========================================================================
+ * Fase V5 — rastro de DDI.
+ *
+ * O boot de 2026-08-31 com WDDMDEVICECAPS corrigido mostrou:
+ * DxgkInitialize OK, AddDevice OK, QueryAdapterInfo OK, StartDevice OK com o
+ * motor subindo e a P2 passando 16/16, display comitado e apresentando — e
+ * entao o dxgkrnl parou e removeu o dispositivo (Codigo 43) sem gerar evento
+ * de PnP e sem sequer pedir DRIVERCAPS.
+ *
+ * Nao ha' como saber qual foi a ultima DDI chamada antes da desistencia: as
+ * unicas marcas existentes sao Stop e Remove, que vem depois e apagam o
+ * rastro. Bc250ProbeMarkDdi e' uma marca baratissima (uma escrita atomica em
+ * memoria, sem registro) posta na entrada das DDIs; o retrato so vai ao
+ * registro quando o teardown comeca.
+ * ==========================================================================
+ */
+
+/* Identificadores estaveis. Nunca reordenar: sao lidos da telemetria. */
+#define BC250_V5_DDI_NONE                          0u
+#define BC250_V5_DDI_QUERY_ADAPTER_INFO            1u
+#define BC250_V5_DDI_CREATE_DEVICE                 2u
+#define BC250_V5_DDI_DESTROY_DEVICE                3u
+#define BC250_V5_DDI_CREATE_CONTEXT                4u
+#define BC250_V5_DDI_DESTROY_CONTEXT               5u
+#define BC250_V5_DDI_CREATE_ALLOCATION             6u
+#define BC250_V5_DDI_DESTROY_ALLOCATION            7u
+#define BC250_V5_DDI_DESCRIBE_ALLOCATION           8u
+#define BC250_V5_DDI_OPEN_ALLOCATION               9u
+#define BC250_V5_DDI_CLOSE_ALLOCATION             10u
+#define BC250_V5_DDI_BUILD_PAGING_BUFFER          11u
+#define BC250_V5_DDI_SUBMIT_COMMAND_VIRTUAL       12u
+#define BC250_V5_DDI_PREEMPT_COMMAND              13u
+#define BC250_V5_DDI_QUERY_ENGINE_STATUS          14u
+#define BC250_V5_DDI_RESET_ENGINE                 15u
+#define BC250_V5_DDI_GET_NODE_METADATA            16u
+#define BC250_V5_DDI_CALIBRATE_GPU_CLOCK          17u
+#define BC250_V5_DDI_GET_ROOT_PAGE_TABLE_SIZE     18u
+#define BC250_V5_DDI_SET_ROOT_PAGE_TABLE          19u
+#define BC250_V5_DDI_CREATE_PROCESS               20u
+#define BC250_V5_DDI_DESTROY_PROCESS              21u
+#define BC250_V5_DDI_COLLECT_DBG_INFO             22u
+#define BC250_V5_DDI_DISPATCH_IO_REQUEST          23u
+#define BC250_V5_DDI_SET_STABLE_POWER_STATE       24u
+#define BC250_V5_DDI_RESET_FROM_TIMEOUT           25u
+#define BC250_V5_DDI_RESTART_FROM_TIMEOUT         26u
+/* Geradas por macro, todas devolvendo STATUS_NOT_SUPPORTED. */
+#define BC250_V5_DDI_FORMAT_HISTORY_BUFFER        30u
+#define BC250_V5_DDI_GET_STD_ALLOCATION_DATA      31u
+#define BC250_V5_DDI_QUERY_DEPENDENT_ENGINE_GROUP 32u
+#define BC250_V5_DDI_SET_VIRTUAL_MACHINE_DATA     33u
+/* Lado de display. */
+#define BC250_V5_DDI_QUERY_CHILD_RELATIONS        40u
+#define BC250_V5_DDI_QUERY_CHILD_STATUS           41u
+#define BC250_V5_DDI_QUERY_DEVICE_DESCRIPTOR      42u
+#define BC250_V5_DDI_IS_SUPPORTED_VIDPN           43u
+#define BC250_V5_DDI_RECOMMEND_FUNCTIONAL_VIDPN   44u
+#define BC250_V5_DDI_ENUM_VIDPN_COFUNC_MODALITY   45u
+#define BC250_V5_DDI_COMMIT_VIDPN                 46u
+#define BC250_V5_DDI_SET_VIDPN_SOURCE_ADDRESS     47u
+#define BC250_V5_DDI_SET_VIDPN_SOURCE_VISIBILITY  48u
+#define BC250_V5_DDI_UPDATE_ACTIVE_VIDPN_PATH     49u
+#define BC250_V5_DDI_RECOMMEND_MONITOR_MODES      50u
+#define BC250_V5_DDI_RECOMMEND_VIDPN_TOPOLOGY     51u
+#define BC250_V5_DDI_PRESENT                      52u
+#define BC250_V5_DDI_CONTROL_INTERRUPT            53u
+#define BC250_V5_DDI_QUERY_VIDPN_HW_CAPABILITY    54u
+#define BC250_V5_DDI_SET_POINTER_POSITION         55u
+#define BC250_V5_DDI_SET_POINTER_SHAPE            56u
+#define BC250_V5_DDI_SET_POWER_STATE              57u
+#define BC250_V5_DDI_QUERY_INTERFACE              58u
+/* Fase V5 — DDIs obrigatorias adicionadas a tabela de render em 2026-08-31. */
+#define BC250_V5_DDI_QUERY_CURRENT_FENCE          60u
+#define BC250_V5_DDI_ESCAPE                       61u
+#define BC250_V5_DDI_ACQUIRE_SWIZZLING_RANGE      62u
+#define BC250_V5_DDI_RELEASE_SWIZZLING_RANGE      63u
+#define BC250_V5_DDI_PATCH                        64u
+#define BC250_V5_DDI_RENDER                       65u
+#define BC250_V5_DDI_SUBMIT_COMMAND               66u
+
+/* Marca a entrada de uma DDI. Sem registro, sem lock: seguro em qualquer IRQL. */
+VOID Bc250ProbeMarkDdi(_In_ ULONG DdiId);
+
+/* Publica o rastro no registro. Chamar no inicio do teardown. */
+VOID Bc250ProbeSnapshotDdiTrace(VOID);
 
 ULONG Bc250ProbeGetOffline(
     _Out_opt_ BC250_PROBE_FIELD *LastField,

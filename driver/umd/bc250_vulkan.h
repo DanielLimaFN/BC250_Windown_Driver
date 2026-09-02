@@ -47,12 +47,35 @@ Abstract:
 
 typedef uint32_t VkFlags;
 typedef uint32_t VkBool32;
+#define VK_TRUE 1
+#define VK_FALSE 0
+
+typedef VkFlags VkBufferUsageFlags;
+typedef VkFlags VkMemoryMapFlags;
+typedef VkFlags VkBufferCreateFlags;
+typedef VkFlags VkDeviceCreateFlags;
+typedef VkFlags VkInstanceCreateFlags;
+typedef VkFlags VkCommandPoolCreateFlags;
+typedef VkFlags VkCommandBufferUsageFlags;
+typedef VkFlags VkFenceCreateFlags;
+typedef VkFlags VkPipelineCreateFlags;
+typedef VkFlags VkShaderModuleCreateFlags;
+typedef VkFlags VkImageCreateFlags;
+typedef uint32_t VkFormat;
+typedef uint32_t VkImageType;
+typedef uint32_t VkImageTiling;
 typedef uint64_t VkDeviceSize;
 typedef uint32_t VkSampleCountFlags;
 typedef uint32_t VkQueueFlags;
 typedef uint32_t VkMemoryPropertyFlags;
 typedef uint32_t VkMemoryHeapFlags;
 typedef uint32_t VkFormatFeatureFlags;
+#define VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT         0x00000001
+#define VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT         0x00000002
+#define VK_FORMAT_FEATURE_STORAGE_IMAGE_ATOMIC_BIT  0x00000004
+#define VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT  0x00000008
+#define VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT  0x00000010
+
 typedef uint32_t VkImageUsageFlags;
 typedef uint32_t VkShaderStageFlags;
 #define VK_SHADER_STAGE_VERTEX_BIT                  0x00000001
@@ -234,6 +257,39 @@ typedef uint64_t VkSurfaceKHR;
 typedef uint64_t VkSwapchainKHR;
 
 typedef void (VKAPI_PTR *PFN_vkVoidFunction)(void);
+
+typedef enum VkSystemAllocationScope {
+    VK_SYSTEM_ALLOCATION_SCOPE_COMMAND = 0,
+    VK_SYSTEM_ALLOCATION_SCOPE_OBJECT = 1,
+    VK_SYSTEM_ALLOCATION_SCOPE_CACHE = 2,
+    VK_SYSTEM_ALLOCATION_SCOPE_DEVICE = 3,
+    VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE = 4
+} VkSystemAllocationScope;
+
+typedef enum VkInternalAllocationType {
+    VK_INTERNAL_ALLOCATION_TYPE_EXECUTABLE = 0
+} VkInternalAllocationType;
+
+typedef void* (VKAPI_PTR *PFN_vkAllocationFunction)(void* pUserData, size_t size, size_t alignment, VkSystemAllocationScope allocationScope);
+typedef void* (VKAPI_PTR *PFN_vkReallocationFunction)(void* pUserData, void* pOriginal, size_t size, size_t alignment, VkSystemAllocationScope allocationScope);
+typedef void (VKAPI_PTR *PFN_vkFreeFunction)(void* pUserData, void* pMemory);
+typedef void (VKAPI_PTR *PFN_vkInternalAllocationNotification)(void* pUserData, size_t size, VkInternalAllocationType allocationType, VkSystemAllocationScope allocationScope);
+typedef void (VKAPI_PTR *PFN_vkInternalFreeNotification)(void* pUserData, size_t size, VkInternalAllocationType allocationType, VkSystemAllocationScope allocationScope);
+
+typedef struct VkAllocationCallbacks {
+    void*                                   pUserData;
+    PFN_vkAllocationFunction                pfnAllocation;
+    PFN_vkReallocationFunction              pfnReallocation;
+    PFN_vkFreeFunction                      pfnFree;
+    PFN_vkInternalAllocationNotification    pfnInternalAllocation;
+    PFN_vkInternalFreeNotification          pfnInternalFree;
+} VkAllocationCallbacks;
+
+typedef enum VkPipelineBindPoint {
+    VK_PIPELINE_BIND_POINT_GRAPHICS = 0,
+    VK_PIPELINE_BIND_POINT_COMPUTE = 1,
+    VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR = 1000165000
+} VkPipelineBindPoint;
 
 typedef struct VkApplicationInfo {
     uint32_t    sType;
@@ -1318,6 +1374,52 @@ typedef struct VkPhysicalDeviceMaintenance4Properties {
     VkDeviceSize maxBufferSize;
 } VkPhysicalDeviceMaintenance4Properties;
 typedef VkPhysicalDeviceMaintenance4Properties VkPhysicalDeviceMaintenance4PropertiesKHR;
+
+/* ============================================================================
+   Protótipos das Funções da API Vulkan Exportadas pelo ICD
+   ============================================================================ */
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkInstance *pInstance);
+VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(VkInstance instance, const VkAllocationCallbacks *pAllocator);
+VKAPI_ATTR VkResult VKAPI_CALL vkEnumeratePhysicalDevices(VkInstance instance, uint32_t *pPhysicalDeviceCount, VkPhysicalDevice *pPhysicalDevices);
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice, VkPhysicalDeviceProperties *pProperties);
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFeatures(VkPhysicalDevice physicalDevice, VkPhysicalDeviceFeatures *pFeatures);
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceMemoryProperties(VkPhysicalDevice physicalDevice, VkPhysicalDeviceMemoryProperties *pMemoryProperties);
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyProperties(VkPhysicalDevice physicalDevice, uint32_t *pQueueFamilyPropertyCount, VkQueueFamilyProperties *pQueueFamilyProperties);
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkDevice *pDevice);
+VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(VkDevice device, const VkAllocationCallbacks *pAllocator);
+VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue *pQueue);
+VKAPI_ATTR VkResult VKAPI_CALL vkAllocateMemory(VkDevice device, const VkMemoryAllocateInfo *pAllocateInfo, const VkAllocationCallbacks *pAllocator, VkDeviceMemory *pMemory);
+VKAPI_ATTR void VKAPI_CALL vkFreeMemory(VkDevice device, VkDeviceMemory memory, const VkAllocationCallbacks *pAllocator);
+VKAPI_ATTR VkResult VKAPI_CALL vkMapMemory(VkDevice device, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags, void **ppData);
+VKAPI_ATTR void VKAPI_CALL vkUnmapMemory(VkDevice device, VkDeviceMemory memory);
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateBuffer(VkDevice device, const VkBufferCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkBuffer *pBuffer);
+VKAPI_ATTR void VKAPI_CALL vkDestroyBuffer(VkDevice device, VkBuffer buffer, const VkAllocationCallbacks *pAllocator);
+VKAPI_ATTR void VKAPI_CALL vkGetBufferMemoryRequirements(VkDevice device, VkBuffer buffer, VkMemoryRequirements *pMemoryRequirements);
+VKAPI_ATTR VkResult VKAPI_CALL vkBindBufferMemory(VkDevice device, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize memoryOffset);
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkShaderModule *pShaderModule);
+VKAPI_ATTR void VKAPI_CALL vkDestroyShaderModule(VkDevice device, VkShaderModule shaderModule, const VkAllocationCallbacks *pAllocator);
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount, const VkComputePipelineCreateInfo *pCreateInfos, const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines);
+VKAPI_ATTR void VKAPI_CALL vkDestroyPipeline(VkDevice device, VkPipeline pipeline, const VkAllocationCallbacks *pAllocator);
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateCommandPool(VkDevice device, const VkCommandPoolCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkCommandPool *pCommandPool);
+VKAPI_ATTR void VKAPI_CALL vkDestroyCommandPool(VkDevice device, VkCommandPool commandPool, const VkAllocationCallbacks *pAllocator);
+VKAPI_ATTR VkResult VKAPI_CALL vkAllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo *pAllocateInfo, VkCommandBuffer *pCommandBuffers);
+VKAPI_ATTR void VKAPI_CALL vkFreeCommandBuffers(VkDevice device, VkCommandPool commandPool, uint32_t commandBufferCount, const VkCommandBuffer *pCommandBuffers);
+VKAPI_ATTR VkResult VKAPI_CALL vkBeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo *pBeginInfo);
+VKAPI_ATTR VkResult VKAPI_CALL vkEndCommandBuffer(VkCommandBuffer commandBuffer);
+VKAPI_ATTR void VKAPI_CALL vkCmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline);
+VKAPI_ATTR void VKAPI_CALL vkCmdDispatch(VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ);
+VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSubmits, VkFence fence);
+VKAPI_ATTR VkResult VKAPI_CALL vkQueueWaitIdle(VkQueue queue);
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateFence(VkDevice device, const VkFenceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkFence *pFence);
+VKAPI_ATTR void VKAPI_CALL vkDestroyFence(VkDevice device, VkFence fence, const VkAllocationCallbacks *pAllocator);
+VKAPI_ATTR VkResult VKAPI_CALL vkWaitForFences(VkDevice device, uint32_t fenceCount, const VkFence *pFences, VkBool32 waitAll, uint64_t timeout);
+VKAPI_ATTR VkResult VKAPI_CALL vkResetFences(VkDevice device, uint32_t fenceCount, const VkFence *pFences);
+
+VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char *pName);
+VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char *pName);
+VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance instance, const char *pName);
+VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetPhysicalDeviceProcAddr(VkInstance instance, const char *pName);
+VKAPI_ATTR VkResult VKAPI_CALL vk_icdNegotiateLoaderICDInterfaceVersion(uint32_t *pVersion);
 
 /* Travas de tamanho. Se algum destes falhar na compilacao, a ABI divergiu do
    Vulkan oficial e o ICD nao pode ser usado. Valores para x64. */

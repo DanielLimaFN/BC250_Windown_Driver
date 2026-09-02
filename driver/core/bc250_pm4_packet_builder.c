@@ -227,8 +227,8 @@ BC250_PM4_STATUS Bc250Pm4EmitIndirectBuffer(
     header = BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_INDIRECT_BUFFER, 3u);
     Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, header);
     Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(IbAddress & 0xFFFFFFFFull));
-    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)((IbAddress >> 32) & 0xFFFFu) | ((Vmid & 0xFu) << 16));
-    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, (SizeInDwords & 0xFFFFFu) | (1u << 20));
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)((IbAddress >> 32) & 0xFFFFu));
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, (SizeInDwords & BC250_PM4_IB_SIZE_MASK) | ((Vmid & 0xFu) << BC250_PM4_IB_VMID_SHIFT) | BC250_PM4_IB_VALID_BIT);
 
     return BC250_PM4_OK;
 }
@@ -260,6 +260,42 @@ BC250_PM4_STATUS Bc250Pm4EmitReleaseMem(
     Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(FenceSequence & 0xFFFFFFFFull));
     Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(FenceSequence >> 32));
     Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, 0u); /* ctxid/reserved */
+
+    return BC250_PM4_OK;
+}
+
+BC250_PM4_STATUS Bc250Pm4EmitReleaseMemEop32(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint64_t FenceAddress,
+    uint32_t FenceValue,
+    uint32_t IntSel)
+{
+    if (RingBuffer == NULL || CursorDwords == NULL || !Bc250IsPowerOfTwo32(RingDwords)) {
+        return BC250_PM4_BAD_ARGUMENT;
+    }
+    if (IntSel != BC250_PM4_RELEASE_MEM_INT_SEL_NONE &&
+        IntSel != BC250_PM4_RELEASE_MEM_INT_SEL_WRITE_CONFIRM) {
+        return BC250_PM4_BAD_ARGUMENT;
+    }
+    if ((FenceAddress & 3u) != 0) {
+        return BC250_PM4_MISALIGNED;
+    }
+
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords,
+        BC250_PM4_RELEASE_MEM_HEADER_PROVEN);
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords,
+        BC250_PM4_RELEASE_MEM_EVENT_PROVEN);
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords,
+        BC250_PM4_RELEASE_MEM_DATA_SEL_32 | IntSel);
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords,
+        (uint32_t)(FenceAddress & 0xFFFFFFFFull));
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords,
+        (uint32_t)(FenceAddress >> 32));
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, FenceValue);
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, 0u);
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, 0u);
 
     return BC250_PM4_OK;
 }

@@ -28,9 +28,10 @@
     historicas foram feitas: com codigo anterior a 6acb6c8, quando o bring-up
     rodava incondicionalmente. Ver STATUS_E_ROADMAP_CONSOLIDADO.md secao 2.0.2.
 
-    ESTRATEGIA: nao duplica as ~1400 linhas do build-contract.bat. Reaproveita
-    todos os .obj que ele ja' produziu, recompila SOMENTE
-    bc250_active_miniport.c com as macros extras, e refaz o link substituindo
+    ESTRATEGIA: nao duplica as ~1400 linhas do build-contract.bat. Antes do
+    link, executa obrigatoriamente o build contratual completo para que nenhum
+    objeto antigo possa entrar numa imagem nova. Depois recompila SOMENTE
+    bc250_active_miniport.c com as macros extras e refaz o link substituindo
     esse unico objeto. A lista de objetos e' extraida do proprio
     build-contract.bat, entao nao ha' divergencia silenciosa quando ele mudar.
 
@@ -61,6 +62,7 @@ $labDir    = Join-Path $wdkDir 'output_lab'
 $source    = Join-Path $wdkDir 'bc250_active_miniport.c'
 $labObj    = Join-Path $labDir 'bc250_active_miniport_lab.obj'
 $labSys    = Join-Path $labDir 'bc250mcdm.sys'
+$labPdb    = Join-Path $labDir 'bc250mcdm.pdb'
 $prodObj   = 'bc250_active_miniport_driver.obj'
 
 Write-Host ''
@@ -149,6 +151,26 @@ if (-not $IUnderstandThisEnablesDestructiveBringup) {
 
 # ------------------------------------------------------------------- BUILD --
 
+Write-Host '[base] reconstruindo todos os objetos e executando contratos...' -ForegroundColor Cyan
+$baseBuildStartedUtc = [DateTime]::UtcNow
+& cmd.exe /c ('"{0}"' -f $buildBat)
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ''
+    Write-Host ("BUILD CONTRATUAL BASE FALHOU (exit {0}); imagem de lab nao sera vinculada." -f
+        $LASTEXITCODE) -ForegroundColor Red
+    exit 1
+}
+
+# O build acima e' a barreira de proveniencia. Ainda assim, confira que cada
+# objeto que entrara no link foi realmente renovado nesta invocacao.
+foreach ($o in $objList) {
+    $objectPath = Join-Path $objDir $o
+    if ((Get-Item -LiteralPath $objectPath).LastWriteTimeUtc -lt $baseBuildStartedUtc) {
+        Write-Host ("Objeto nao foi renovado pelo build atual: {0}" -f $o) -ForegroundColor Red
+        exit 1
+    }
+}
+
 if (-not (Test-Path -LiteralPath $labDir)) {
     New-Item -ItemType Directory -Force -Path $labDir | Out-Null
 }
@@ -185,7 +207,7 @@ cl $cflags $defines /Fo"$labObj" "$source"
 if errorlevel 1 exit /b 1
 
 echo [link-lab] bc250mcdm.sys ^(laboratorio^)
-link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry /OUT:"$labSys" $objArgs "%WDK%\Lib\%WDKVER%\km\x64\ntoskrnl.lib" "%WDK%\Lib\%WDKVER%\km\x64\hal.lib" "%WDK%\Lib\%WDKVER%\km\x64\BufferOverflowK.lib" "%WDK%\Lib\%WDKVER%\km\x64\displib.lib"
+link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry /DEBUG /PDB:"$labPdb" /OUT:"$labSys" $objArgs "%WDK%\Lib\%WDKVER%\km\x64\ntoskrnl.lib" "%WDK%\Lib\%WDKVER%\km\x64\hal.lib" "%WDK%\Lib\%WDKVER%\km\x64\BufferOverflowK.lib" "%WDK%\Lib\%WDKVER%\km\x64\displib.lib"
 if errorlevel 1 exit /b 1
 endlocal
 "@
@@ -241,6 +263,16 @@ if ($null -ne $hashProd -and $hashLab -eq $hashProd) {
 }
 if (-not (Test-BinaryContains $labSys 'bc250mcdm\Parameters')) {
     $fails.Add('string do caminho de registro ausente - Bc250ActiveReadTunable nao foi compilada')
+}
+foreach ($requiredTelemetry in @(
+        'P1RearmQueueMaskApplied',
+        'P1RearmQueueMaskReadback',
+        'P1RearmQueueMaskPassed',
+        'P1RingDword0',
+        'P1HqdPqBaseLo')) {
+    if (-not (Test-BinaryContains $labSys $requiredTelemetry)) {
+        $fails.Add("telemetria 3.53 ausente do SYS: $requiredTelemetry - objeto antigo no link")
+    }
 }
 
 foreach ($f in $fails) { Write-Host ("  FALHA: {0}" -f $f) -ForegroundColor Red }

@@ -1505,32 +1505,517 @@ static uint32_t Bc250HqdQueueMaskBit(uint32_t Pipe, uint32_t Queue)
     return (Pipe * BC250_HQD_QUEUES_PER_PIPE) + Queue;
 }
 
+/* Portas auxiliares da fila, restauradas em ordem LIFO no teardown. */
+static const uint32_t queueAddressOffsets[4] = {
+    BC250_HQD_MMIO_RPTR_REPORT_LO,
+    BC250_HQD_MMIO_RPTR_REPORT_HI,
+    BC250_HQD_MMIO_WPTR_POLL_LO,
+    BC250_HQD_MMIO_WPTR_POLL_HI
+};
+
+/*
+ * Estagio 10: desativacao, dequeue e rollback LIFO.  Unica implementacao de
+ * restore do projeto — usada tanto pelo caminho de tiro unico quanto pelo
+ * teardown da fila persistente.
+ */
+static BC250_HQD_ACTIVE_STATUS Bc250HqdRunRestoreStage(
+    const BC250_HQD_SELECTOR_INTERFACE *Interface,
+    const BC250_HQD_MC_BUFFERS *Buffers,
+    BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE *Evidence,
+    BC250_HQD_SHADER_DISPATCH_EVIDENCE *DispatchEvidence,
+    BC250_HQD_PERSISTENT_STATE *State,
+    BC250_HQD_ACTIVE_STATUS status)
+{
+    uint32_t check = 0u;
+    uint32_t i = 0u;
+    uint32_t poll = 0u;
+    uint32_t wptrHiRestored = 0u;
+    volatile uint32_t *vPtr32 = NULL;
+
+    /* 10. Desativacao / Dequeue e Rollback LIFO */
+    if (State->ObservableDispatch != 0u && State->SelectorCaptured == 0u) {
+        Evidence->RestorePassed = 1u;
+        goto CleanupMemory;
+    }
+    (void)Bc250HqdActiveWrite(Interface, Evidence, 0x00030800u, 0xE0000000u);
+    (void)Bc250HqdActiveWrite(Interface, Evidence, BC250_GRBM_GFX_CNTL_BYTE_OFFSET,
+        Evidence->SelectedSelector);
+
+    Evidence->RestorePassed = 1u;
+
+    /*
+     * Sequencia upstream GC10: pedir dequeue, aguardar ACTIVE=0 e somente
+     * entao restaurar DEQUEUE_REQUEST/RPTR/WPTR. O ensaio 3.19 provou que
+     * tentar reduzir WPTR com ACTIVE=1 nao faz commit neste silicio.
+     */
+    if (Evidence->ActiveConfirmed != 0u) {
+        if (Bc250HqdActiveWrite(Interface, Evidence,
+                BC250_HQD_MMIO_DEQUEUE_REQUEST, 1u)) {
+            State->DequeueRequestWritten = 1u;
+        } else {
+            Bc250HqdNoteRestoreFailure(
+                Evidence, BC250_HQD_RESTORE_STAGE_ACTIVE_DEACTIVATE,
+                BC250_HQD_MMIO_DEQUEUE_REQUEST, 1u, 0u, 1u);
+        }
+        for (poll = 0u; poll < 1000u; ++poll) {
+            if (!Bc250HqdActiveRead(Interface, Evidence,
+                    BC250_HQD_MMIO_ACTIVE, &Evidence->ActiveAfter)) {
+                Bc250HqdNoteRestoreFailure(
+                    Evidence, BC250_HQD_RESTORE_STAGE_ACTIVE_READBACK,
+                    BC250_HQD_MMIO_ACTIVE, 0u, 0u, 1u);
+                break;
+            }
+            if ((Evidence->ActiveAfter & 1u) == 0u) break;
+        }
+        if ((Evidence->ActiveAfter & 1u) != 0u) {
+            /* Teardown de emergencia; o gate permanece reprovado. */
+            Bc250HqdNoteRestoreFailure(
+                Evidence, BC250_HQD_RESTORE_STAGE_ACTIVE_DEACTIVATE,
+                BC250_HQD_MMIO_ACTIVE, 0u, Evidence->ActiveAfter, 0u);
+            (void)Bc250HqdActiveWrite(
+                Interface, Evidence, BC250_HQD_MMIO_ACTIVE, 0u);
+            (void)Bc250HqdActiveRead(
+                Interface, Evidence, BC250_HQD_MMIO_ACTIVE,
+                &Evidence->ActiveAfter);
+        }
+    } else if (!Bc250HqdActiveRead(Interface, Evidence,
+            BC250_HQD_MMIO_ACTIVE, &Evidence->ActiveAfter)) {
+        Bc250HqdNoteRestoreFailure(
+            Evidence, BC250_HQD_RESTORE_STAGE_ACTIVE_READBACK,
+            BC250_HQD_MMIO_ACTIVE, 0u, 0u, 1u);
+    }
+
+    if (State->DequeueRequestWritten != 0u) {
+        (void)Bc250HqdRestoreRegister(
+            Interface, Evidence, BC250_HQD_RESTORE_STAGE_DEQUEUE_REQUEST,
+            BC250_HQD_MMIO_DEQUEUE_REQUEST, State->DequeueRequestSnapshot,
+            0xFFFFFFFFu, &check);
+    }
+
+    if (State->WptrBaselineWritten != 0u) {
+        uint32_t pointerRestoreWritten = 1u;
+
+        (void)Bc250HqdActiveWrite(Interface, Evidence,
+            BC250_HQD_MMIO_PQ_RPTR, Evidence->RptrBefore);
+        if ((Evidence->ActiveAfter & 1u) != 0u ||
+            !Bc250HqdActiveWrite(Interface, Evidence,
+                BC250_HQD_MMIO_PQ_WPTR_LO, State->WptrLoSnapshot) ||
+            !Bc250HqdActiveWrite(Interface, Evidence,
+                BC250_HQD_MMIO_PQ_WPTR_HI, State->WptrHiSnapshot)) {
+            pointerRestoreWritten = 0u;
+        }
+        if (pointerRestoreWritten != 0u) {
+            for (poll = 0u; poll < 1000u; ++poll) {
+                if (!Bc250HqdActiveRead(Interface, Evidence,
+                        BC250_HQD_MMIO_PQ_WPTR_LO,
+                        &Evidence->BaselineWptrRestored) ||
+                    !Bc250HqdActiveRead(Interface, Evidence,
+                        BC250_HQD_MMIO_PQ_WPTR_HI,
+                        &wptrHiRestored)) {
+                    pointerRestoreWritten = 0u;
+                    break;
+                }
+                Evidence->BaselineWptrRestorePolls = poll + 1u;
+                if (Evidence->BaselineWptrRestored == State->WptrLoSnapshot &&
+                    wptrHiRestored == State->WptrHiSnapshot) {
+                    Evidence->BaselineWptrRestorePassed = 1u;
+                    break;
+                }
+            }
+        }
+        if (pointerRestoreWritten == 0u) {
+            Bc250HqdNoteRestoreFailure(
+                Evidence, BC250_HQD_RESTORE_STAGE_POINTER_WRITE,
+                BC250_HQD_MMIO_PQ_WPTR_LO, State->WptrLoSnapshot,
+                Evidence->BaselineWptrRestored, 1u);
+        } else if (Evidence->BaselineWptrRestorePassed == 0u) {
+            Bc250HqdNoteRestoreFailure(
+                Evidence, BC250_HQD_RESTORE_STAGE_POINTER_CONVERGE,
+                BC250_HQD_MMIO_PQ_WPTR_LO, State->WptrLoSnapshot,
+                Evidence->BaselineWptrRestored, 0u);
+        }
+    }
+
+    if (State->DirectWptrWritten != 0u) {
+        Evidence->DirectWptrRestored = Evidence->BaselineWptrRestored;
+        Evidence->DirectWptrRestorePolls = Evidence->BaselineWptrRestorePolls;
+        Evidence->DirectWptrRestorePassed = Evidence->BaselineWptrRestorePassed;
+    }
+
+    if (State->IbControlWritten != 0u) {
+        (void)Bc250HqdRestoreRegister(
+            Interface, Evidence, BC250_HQD_RESTORE_STAGE_IB_CONTROL,
+            BC250_HQD_MMIO_IB_CONTROL, State->OrigIbControl, 0xFFFFFFFFu, &check);
+    }
+
+    if (State->DequeueRequestWritten != 0u) {
+        Evidence->DequeueRequestRestorePassed = (uint32_t)Bc250HqdRestoreRegister(
+            Interface, Evidence, BC250_HQD_RESTORE_STAGE_IB_CONTROL,
+            BC250_HQD_MMIO_DEQUEUE_REQUEST, State->DequeueRequestSnapshot, 0xFFFFFFFFu,
+            &Evidence->DequeueRequestRestored);
+    }
+
+    if (State->EopRptrWritten != 0u) {
+        Evidence->EopRptrRestorePassed = (uint32_t)Bc250HqdRestoreRegister(
+            Interface, Evidence, BC250_HQD_RESTORE_STAGE_EOP_RPTR,
+            BC250_HQD_MMIO_EOP_RPTR, State->OrigEopRptr, 0xFFFFFFFFu,
+            &Evidence->EopRptrRestored);
+    }
+
+    /* Rollback LIFO dos enderecos auxiliares e dos 16 registradores. */
+    while (State->QueueAddressWriteCount != 0u) {
+        uint32_t idx = State->QueueAddressWriteCount - 1u;
+        (void)Bc250HqdRestoreRegister(
+            Interface, Evidence, BC250_HQD_RESTORE_STAGE_QUEUE_ADDRESS,
+            queueAddressOffsets[idx], State->QueueAddressSnapshots[idx],
+            0xFFFFFFFFu, &check);
+        --State->QueueAddressWriteCount;
+    }
+    if (State->HqdWritten != 0u) {
+        for (i = State->PlanCount; i > 0; --i) {
+            uint32_t idx = i - 1u;
+            if (!Bc250HqdActiveWrite(Interface, Evidence, State->PlanWrites[idx].ByteOffset, Evidence->SnapshotValues[idx])) {
+                Bc250HqdNoteRestoreFailure(
+                    Evidence, BC250_HQD_RESTORE_STAGE_HQD_PLAN,
+                    State->PlanWrites[idx].ByteOffset,
+                    Evidence->SnapshotValues[idx], 0u, 1u);
+            }
+            if (!Bc250HqdActiveRead(Interface, Evidence,
+                    State->PlanWrites[idx].ByteOffset,
+                    &Evidence->RestoredValues[idx])) {
+                Bc250HqdNoteRestoreFailure(
+                    Evidence, BC250_HQD_RESTORE_STAGE_HQD_PLAN,
+                    State->PlanWrites[idx].ByteOffset,
+                    Evidence->SnapshotValues[idx], 0u, 1u);
+            } else if (!Bc250HqdReadbackMatches(
+                    State->PlanWrites[idx].ByteOffset,
+                    Evidence->SnapshotValues[idx],
+                    Evidence->RestoredValues[idx])) {
+                Bc250HqdNoteRestoreFailure(
+                    Evidence, BC250_HQD_RESTORE_STAGE_HQD_PLAN,
+                    State->PlanWrites[idx].ByteOffset,
+                    Evidence->SnapshotValues[idx],
+                    Evidence->RestoredValues[idx], 0u);
+            }
+        }
+    }
+
+    /* Prova final exata do banco apos restaurar toda a configuracao. */
+    if (State->HqdWritten != 0u) {
+        if (!Bc250HqdActiveRead(Interface, Evidence,
+                BC250_HQD_MMIO_ACTIVE, &Evidence->ActiveAfter) ||
+            !Bc250HqdActiveRead(Interface, Evidence,
+                BC250_HQD_MMIO_PQ_RPTR, &check) ||
+            (check != Evidence->RptrBefore && check != Evidence->RptrAfter) ||
+            !Bc250HqdActiveRead(Interface, Evidence,
+                BC250_HQD_MMIO_PQ_WPTR_LO,
+                &Evidence->BaselineWptrRestored) ||
+            !Bc250HqdActiveRead(Interface, Evidence,
+                BC250_HQD_MMIO_PQ_WPTR_HI, &wptrHiRestored) ||
+            Evidence->ActiveAfter != Evidence->ActiveBefore ||
+            Evidence->BaselineWptrRestored != State->WptrLoSnapshot ||
+            wptrHiRestored != State->WptrHiSnapshot) {
+            const uint32_t activeDiverged =
+                Evidence->ActiveAfter != Evidence->ActiveBefore ? 1u : 0u;
+
+            Bc250HqdNoteRestoreFailure(
+                Evidence, BC250_HQD_RESTORE_STAGE_FINAL_BANK,
+                activeDiverged != 0u ?
+                    BC250_HQD_MMIO_ACTIVE : BC250_HQD_MMIO_PQ_WPTR_LO,
+                activeDiverged != 0u ?
+                    Evidence->ActiveBefore : State->WptrLoSnapshot,
+                activeDiverged != 0u ?
+                    Evidence->ActiveAfter : Evidence->BaselineWptrRestored,
+                0u);
+            Evidence->BaselineWptrRestorePassed = 0u;
+        }
+    }
+    /* Restauracao de Doorbell Range, CP_PQ_STATUS, CP_MEC_CNTL e CP_ME_CNTL */
+    if (State->CpPqStatusWritten != 0u) {
+        (void)Bc250HqdRestoreRegister(
+            Interface, Evidence, BC250_HQD_RESTORE_STAGE_CP_PQ_STATUS,
+            BC250_HQD_MMIO_CP_PQ_STATUS, State->OrigCpPqStatus,
+            BC250_HQD_CP_PQ_DOORBELL_ENABLE_MASK, &check);
+    }
+    /*
+     * Rollback LIFO dos dois controles globais de polling: CNTL1 (queue
+     * mask, ultimo escrito no APPLY) sai primeiro, depois CNTL.
+     * POLL_ACTIVE[30] e status do proprio CP e fica fora da comparacao.
+     */
+    if (State->CpPqWptrPollCntl1Written != 0u) {
+        /*
+         * O 3.31 provou que a QUEUE_MASK nao volta a zero com uma escrita.
+         * Tentamos mais de uma vez e registramos quantas: se nem assim cair,
+         * e propriedade do silicio, e o gate de rollback deve continuar
+         * reprovando - nao se mascara estado que ficou no hardware.
+         */
+        uint32_t attempt;
+
+        for (attempt = 0u; attempt < 3u; ++attempt) {
+            ++Evidence->WptrPollCntl1ClearAttempts;
+            if (!Bc250HqdActiveWrite(Interface, Evidence,
+                    BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1,
+                    State->OrigCpPqWptrPollCntl1) ||
+                !Bc250HqdActiveRead(Interface, Evidence,
+                    BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1,
+                    &Evidence->WptrPollCntl1Restored)) {
+                Bc250HqdNoteRestoreFailure(
+                    Evidence, BC250_HQD_RESTORE_STAGE_WPTR_POLL_CNTL1,
+                    BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1,
+                    State->OrigCpPqWptrPollCntl1, 0u, 1u);
+                break;
+            }
+            if (Evidence->WptrPollCntl1Restored == State->OrigCpPqWptrPollCntl1) {
+                Evidence->WptrPollCntl1RestorePassed = 1u;
+                break;
+            }
+        }
+        if (Evidence->WptrPollCntl1RestorePassed == 0u &&
+            Evidence->WptrPollCntl1ClearAttempts != 0u &&
+            Evidence->FirstRestoreFailureStage !=
+                (uint32_t)BC250_HQD_RESTORE_STAGE_WPTR_POLL_CNTL1) {
+            Bc250HqdNoteRestoreFailure(
+                Evidence, BC250_HQD_RESTORE_STAGE_WPTR_POLL_CNTL1,
+                BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1,
+                State->OrigCpPqWptrPollCntl1, Evidence->WptrPollCntl1Restored, 0u);
+        } else if (Evidence->WptrPollCntl1RestorePassed == 0u) {
+            Evidence->RestorePassed = 0u;
+        }
+    }
+    if (State->CpPqWptrPollCntlWritten != 0u) {
+        (void)Bc250HqdRestoreRegister(
+            Interface, Evidence, BC250_HQD_RESTORE_STAGE_WPTR_POLL_CNTL,
+            BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL, State->OrigCpPqWptrPollCntl,
+            ~BC250_HQD_WPTR_POLL_ACTIVE_MASK, &check);
+    }
+    if (State->GcvmL2Cntl2Written != 0u) {
+        (void)Bc250HqdRestoreRegister(
+            Interface, Evidence, BC250_HQD_RESTORE_STAGE_GCVM_L2_CNTL2,
+            BC250_HQD_MMIO_GCVM_L2_CNTL2, State->OrigGcvmL2Cntl2,
+            0xFFFFFFFFu, &check);
+    }
+    if (State->RlcCpSchedulersWritten != 0u) {
+        Evidence->RlcCpSchedulersRestorePassed =
+            (uint32_t)Bc250HqdRestoreRegister(
+                Interface, Evidence,
+                BC250_HQD_RESTORE_STAGE_RLC_CP_SCHEDULERS,
+                BC250_HQD_MMIO_RLC_CP_SCHEDULERS,
+                Evidence->RlcCpSchedulersBefore, 0xFFFFFFFFu,
+                &Evidence->RlcCpSchedulersRestored);
+    }
+    if (State->GcvmCtx0Written != 0u) {
+        uint32_t gcvmOk = 1u;
+
+        if (!Bc250HqdRestoreRegister(
+                Interface, Evidence, BC250_HQD_RESTORE_STAGE_GCVM_CONTEXT0,
+                BC250_HQD_MMIO_GCVM_CONTEXT0_CNTL, State->OrigGcvmCtx0Cntl,
+                0xFFFFFFFFu, &check)) {
+            gcvmOk = 0u;
+        }
+        if (!Bc250HqdRestoreRegister(
+                Interface, Evidence, BC250_HQD_RESTORE_STAGE_GCVM_CONTEXT0,
+                BC250_HQD_MMIO_GCVM_CONTEXT0_PT_END_LO, State->OrigGcvmCtx0PtEndLo,
+                0xFFFFFFFFu, &check)) {
+            gcvmOk = 0u;
+        }
+        if (!Bc250HqdRestoreRegister(
+                Interface, Evidence, BC250_HQD_RESTORE_STAGE_GCVM_CONTEXT0,
+                BC250_HQD_MMIO_GCVM_CONTEXT0_PT_START_LO,
+                State->OrigGcvmCtx0PtStartLo, 0xFFFFFFFFu, &check)) {
+            gcvmOk = 0u;
+        }
+        if (!Bc250HqdRestoreRegister(
+                Interface, Evidence, BC250_HQD_RESTORE_STAGE_GCVM_CONTEXT0,
+                BC250_HQD_MMIO_GCVM_CONTEXT0_PT_BASE_HI, State->OrigGcvmCtx0PtBaseHi,
+                0xFFFFFFFFu, &check)) {
+            gcvmOk = 0u;
+        }
+        if (!Bc250HqdRestoreRegister(
+                Interface, Evidence, BC250_HQD_RESTORE_STAGE_GCVM_CONTEXT0,
+                BC250_HQD_MMIO_GCVM_CONTEXT0_PT_BASE_LO, State->OrigGcvmCtx0PtBaseLo,
+                0xFFFFFFFFu, &check)) {
+            gcvmOk = 0u;
+        }
+        Evidence->GcvmContext0RestorePassed = gcvmOk;
+    }
+    if (State->CpMecCntlWritten != 0u) {
+        (void)Bc250HqdRestoreRegister(
+            Interface, Evidence, BC250_HQD_RESTORE_STAGE_CP_MEC_CNTL,
+            0x00008234u, State->OrigCpMecCntl, 0xFFFFFFFFu,
+            &Evidence->CpMecCntlAfter);
+    }
+    if (State->CpMeCntlWritten != 0u) {
+        (void)Bc250HqdRestoreRegister(
+            Interface, Evidence, BC250_HQD_RESTORE_STAGE_CP_ME_CNTL,
+            0x000086D8u, State->OrigCpMeCntl, 0xFFFFFFFFu,
+            &Evidence->CpMeCntlAfter);
+    }
+
+CleanupMemory:
+    /* Restauracao do Scratch e Memoria */
+    if (State->ScratchWritten != 0u) {
+        (void)Bc250HqdActiveWrite(
+            Interface, Evidence, 0x00030100u, State->OriginalScratch);
+    }
+
+    if (Buffers->MqdVirtual != NULL && Buffers->MqdSizeBytes >= sizeof(BC250_GFX10_COMPUTE_MQD)) {
+        vPtr32 = (volatile uint32_t *)Buffers->MqdVirtual;
+        for (i = 0u; i < BC250_MQD_SIZE_DWORDS; ++i) {
+            vPtr32[i] = State->ObservableDispatch != 0u ? State->MqdSnapshot[i] : 0u;
+        }
+    }
+    if (Buffers->RingVirtual != NULL) {
+        vPtr32 = (volatile uint32_t *)Buffers->RingVirtual;
+        if (State->ObservableDispatch != 0u) {
+            for (i = 0u; i < BC250_DISPATCH_RING_MIN_DWORDS; ++i) {
+                vPtr32[i] = State->RingSnapshot[i];
+            }
+        } else {
+            for (i = 0u; i < (Buffers->RingSizeBytes >> 2); ++i) {
+                vPtr32[i] = 0u;
+            }
+        }
+    }
+    if (Buffers->EopVirtual != NULL) {
+        if (State->ObservableDispatch == 0u) {
+            vPtr32 = (volatile uint32_t *)Buffers->EopVirtual;
+            for (i = 0u; i < (Buffers->EopSizeBytes >> 2); ++i) {
+                vPtr32[i] = 0u;
+            }
+        }
+    }
+    if (Buffers->RptrVirtual != NULL) {
+        vPtr32 = (volatile uint32_t *)Buffers->RptrVirtual;
+        vPtr32[0] = State->ObservableDispatch != 0u ? State->RptrSnapshot[0] : 0u;
+        vPtr32[1] = State->ObservableDispatch != 0u ? State->RptrSnapshot[1] : 0u;
+    }
+    if (Buffers->WptrVirtual != NULL) {
+        vPtr32 = (volatile uint32_t *)Buffers->WptrVirtual;
+        vPtr32[0] = State->ObservableDispatch != 0u ? State->WptrSnapshot[0] : 0u;
+        vPtr32[1] = State->ObservableDispatch != 0u ? State->WptrSnapshot[1] : 0u;
+    }
+    if (Buffers->FenceVirtual != NULL) {
+        vPtr32 = (volatile uint32_t *)Buffers->FenceVirtual;
+        if (State->ObservableDispatch != 0u) {
+            vPtr32[0] = State->FenceSnapshot[0];
+            vPtr32[1] = State->FenceSnapshot[1];
+        } else {
+            vPtr32[0] = 0u; vPtr32[1] = 0u;
+        }
+    }
+    if (State->ObservableDispatch != 0u && State->ObservableMemoryStaged != 0u) {
+        volatile uint32_t *shaderPtr =
+            (volatile uint32_t *)Buffers->ShaderVirtual;
+        volatile uint32_t *resultPtr =
+            (volatile uint32_t *)Buffers->ResultVirtual;
+
+        for (i = 0u; i < BC250_OBSERVABLE_SHADER_DWORDS; ++i) {
+            shaderPtr[i] = State->ShaderSnapshot[i];
+        }
+        resultPtr[0] = State->ResultSnapshot;
+        Interface->Barrier(Interface->Context);
+
+        DispatchEvidence->ShaderRestorePassed = 1u;
+        for (i = 0u; i < BC250_OBSERVABLE_SHADER_DWORDS; ++i) {
+            if (shaderPtr[i] != State->ShaderSnapshot[i]) {
+                DispatchEvidence->ShaderRestorePassed = 0u;
+            }
+        }
+        DispatchEvidence->ResultRestorePassed =
+            resultPtr[0] == State->ResultSnapshot ? 1u : 0u;
+        DispatchEvidence->FenceRestorePassed =
+            ((volatile uint32_t *)Buffers->FenceVirtual)[0] == State->FenceSnapshot[0] &&
+            ((volatile uint32_t *)Buffers->FenceVirtual)[1] == State->FenceSnapshot[1] ?
+                1u : 0u;
+        DispatchEvidence->RingRestorePassed = 1u;
+        for (i = 0u; i < BC250_DISPATCH_RING_MIN_DWORDS; ++i) {
+            if (((volatile uint32_t *)Buffers->RingVirtual)[i] !=
+                    State->RingSnapshot[i]) {
+                DispatchEvidence->RingRestorePassed = 0u;
+            }
+        }
+        State->CoreMemoryRestorePassed = 1u;
+        for (i = 0u; i < BC250_MQD_SIZE_DWORDS; ++i) {
+            if (((volatile uint32_t *)Buffers->MqdVirtual)[i] !=
+                    State->MqdSnapshot[i]) {
+                State->CoreMemoryRestorePassed = 0u;
+            }
+        }
+        if (((volatile uint32_t *)Buffers->RptrVirtual)[0] != State->RptrSnapshot[0] ||
+            ((volatile uint32_t *)Buffers->RptrVirtual)[1] != State->RptrSnapshot[1] ||
+            ((volatile uint32_t *)Buffers->WptrVirtual)[0] != State->WptrSnapshot[0] ||
+            ((volatile uint32_t *)Buffers->WptrVirtual)[1] != State->WptrSnapshot[1]) {
+            State->CoreMemoryRestorePassed = 0u;
+        }
+        Evidence->MemoryRestorePassed =
+            State->CoreMemoryRestorePassed &&
+            DispatchEvidence->ShaderRestorePassed &&
+            DispatchEvidence->ResultRestorePassed &&
+            DispatchEvidence->FenceRestorePassed &&
+            DispatchEvidence->RingRestorePassed;
+    } else {
+        Evidence->MemoryRestorePassed = 1u;
+    }
+
+    /* Restauracao do Seletor GRBM_GFX_CNTL e Broadcast GRBM_GFX_INDEX */
+    if (State->ObservableDispatch != 0u && State->SelectorCaptured == 0u) {
+        return Evidence->MemoryRestorePassed != 0u ?
+            status : BC250_HQD_ACTIVE_RESTORE_FAILED;
+    }
+    (void)Bc250HqdActiveWrite(Interface, Evidence, 0x00030800u, 0xE0000000u);
+    Interface->Barrier(Interface->Context);
+    if (!Bc250HqdActiveWrite(Interface, Evidence, BC250_GRBM_GFX_CNTL_BYTE_OFFSET, Evidence->OriginalSelector)) {
+        return BC250_HQD_ACTIVE_RESTORE_FAILED;
+    }
+    Interface->Barrier(Interface->Context);
+    if (!Bc250HqdActiveRead(Interface, Evidence, BC250_GRBM_GFX_CNTL_BYTE_OFFSET, &Evidence->RestoredSelector) ||
+        (Evidence->RestoredSelector & 0x7FFu) != (Evidence->OriginalSelector & 0x7FFu)) {
+        return BC250_HQD_ACTIVE_RESTORE_FAILED;
+    }
+
+    Evidence->PhysicalReady = 0u;
+    if (State->ObservableDispatch != 0u) {
+        DispatchEvidence->Observation.RegistersRestorePassed =
+            Evidence->RestorePassed;
+        DispatchEvidence->Observation.MemoryRestorePassed =
+            Evidence->MemoryRestorePassed;
+        (void)Bc250EvaluateObservableComputeDispatch(
+            &State->DispatchDescriptor,
+            &DispatchEvidence->Observation,
+            &DispatchEvidence->Verdict);
+        DispatchEvidence->PhysicalReady =
+            DispatchEvidence->WgpPreflightPassed != 0u &&
+            DispatchEvidence->ShaderReadbackPassed != 0u &&
+            DispatchEvidence->Verdict.PhysicalReady != 0u ? 1u : 0u;
+        Evidence->PhysicalReady = DispatchEvidence->PhysicalReady;
+        Evidence->TriadPassed = DispatchEvidence->Verdict.TriadPassed;
+        if (status == BC250_HQD_ACTIVE_OK &&
+            DispatchEvidence->PhysicalReady == 0u) {
+            status = BC250_HQD_ACTIVE_RESTORE_FAILED;
+        }
+    } else if (status == BC250_HQD_ACTIVE_OK &&
+        Evidence->TriadPassed != 0u &&
+        Evidence->RestorePassed != 0u &&
+        Evidence->MemoryRestorePassed != 0u) {
+        Evidence->PhysicalReady = 1u;
+    }
+
+    return status;
+}
+
 static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInternal(
     const BC250_HQD_SELECTOR_INTERFACE *Interface,
     const BC250_HQD_MC_BUFFERS *Buffers,
     const BC250_COMPUTE_MQD_PROPERTIES *Props,
     BC250_GFX10_COMPUTE_MQD *Mqd,
     BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE *Evidence,
-    BC250_HQD_SHADER_DISPATCH_EVIDENCE *DispatchEvidence)
+    BC250_HQD_SHADER_DISPATCH_EVIDENCE *DispatchEvidence,
+    uint32_t Mode,
+    BC250_HQD_PERSISTENT_STATE *State)
 {
-    BC250_HQD_REGISTER_WRITE planWrites[BC250_HQD_INACTIVE_PLAN_MAX_WRITES];
-    uint32_t planCount = 0;
-    uint32_t originalScratch = 0;
-    uint32_t origCpMecCntl = 0;
-    uint32_t origCpMeCntl = 0;
+    BC250_HQD_PERSISTENT_STATE st;
     uint32_t origDbRangeLo = 0;
     uint32_t origDbRangeHi = 0;
-    uint32_t origCpPqStatus = 0;
-    uint32_t origCpPqWptrPollCntl = 0;
-    uint32_t origCpPqWptrPollCntl1 = 0;
-    uint32_t origGcvmL2Cntl2 = 0;
-    uint32_t origGcvmCtx0Cntl = 0;
-    uint32_t origGcvmCtx0PtBaseLo = 0;
-    uint32_t origGcvmCtx0PtBaseHi = 0;
-    uint32_t origGcvmCtx0PtStartLo = 0;
-    uint32_t origGcvmCtx0PtEndLo = 0;
-    uint32_t origIbControl = 0;
-    uint32_t origEopRptr = 0;
     uint32_t scratchPoll = 0;
     uint32_t fencePoll = 0;
     uint32_t rptrPoll = 0;
@@ -1551,51 +2036,23 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
     uint32_t submittedDwords = 0;
     uint32_t wptrPollObserved = 0;
     uint32_t resultPoll = 0;
-    uint32_t scratchWritten = 0;
-    uint32_t observableDispatch = DispatchEvidence != NULL ? 1u : 0u;
-    uint32_t observableMemoryStaged = 0u;
-    uint32_t selectorCaptured = 0u;
-    uint32_t ringSnapshot[BC250_DISPATCH_RING_MIN_DWORDS] = { 0u };
     uint32_t dispatchRing[BC250_DISPATCH_RING_MIN_DWORDS] = { 0u };
-    uint32_t mqdSnapshot[BC250_MQD_SIZE_DWORDS] = { 0u };
-    uint32_t shaderSnapshot[BC250_OBSERVABLE_SHADER_DWORDS] = { 0u };
-    uint32_t resultSnapshot = 0u;
-    uint32_t fenceSnapshot[2] = { 0u, 0u };
-    uint32_t rptrSnapshot[2] = { 0u, 0u };
-    uint32_t wptrSnapshot[2] = { 0u, 0u };
-    uint32_t coreMemoryRestorePassed = 0u;
-    BC250_COMPUTE_DISPATCH_DESCRIPTOR dispatchDescriptor;
     const BC250_OBSERVABLE_SHADER_MANIFEST *shaderManifest = NULL;
-    uint32_t hqdWritten = 0;
-    uint32_t queueAddressWriteCount = 0;
-    uint32_t cpPqStatusWritten = 0;
-    uint32_t cpPqWptrPollCntlWritten = 0;
-    uint32_t cpPqWptrPollCntl1Written = 0;
-    uint32_t gcvmL2Cntl2Written = 0;
-    uint32_t gcvmCtx0Written = 0;
-    uint32_t rlcCpSchedulersWritten = 0;
-    uint32_t queueAddressSnapshots[4] = { 0u, 0u, 0u, 0u };
-    uint32_t dequeueRequestSnapshot = 0u;
-    uint32_t dequeueRequestWritten = 0u;
-    uint32_t wptrLoSnapshot = 0u;
-    uint32_t wptrHiSnapshot = 0u;
-    uint32_t wptrHiRestored = 0u;
-    uint32_t wptrBaselineWritten = 0u;
-    uint32_t directWptrWritten = 0u;
-    uint32_t ibControlWritten = 0u;
-    uint32_t eopRptrWritten = 0u;
-    uint32_t cpMecCntlWritten = 0u;
-    uint32_t cpMeCntlWritten = 0u;
-    static const uint32_t queueAddressOffsets[4] = {
-        BC250_HQD_MMIO_RPTR_REPORT_LO,
-        BC250_HQD_MMIO_RPTR_REPORT_HI,
-        BC250_HQD_MMIO_WPTR_POLL_LO,
-        BC250_HQD_MMIO_WPTR_POLL_HI
-    };
     BC250_HQD_ACTIVE_STATUS status = BC250_HQD_ACTIVE_PM4_NOT_CONSUMED;
     BC250_COMPUTE_MQD_PROPERTIES activeProps;
     volatile uint32_t *vPtr32 = NULL;
 
+#define BC250_SET_STATUS(st_code) do { \
+    if (Evidence != NULL) { \
+        Evidence->FirstRestoreFailureOffset = (uint32_t)__LINE__; \
+        Evidence->FirstRestoreFailureStage = (uint32_t)(st_code); \
+    } \
+    status = (st_code); \
+    goto Cleanup; \
+} while (0)
+
+    memset(&st, 0, sizeof(st));
+    st.ObservableDispatch = DispatchEvidence != NULL ? 1u : 0u;
     if (Evidence != NULL) {
         memset(Evidence, 0, sizeof(*Evidence));
     }
@@ -1603,6 +2060,11 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
         memset(DispatchEvidence, 0, sizeof(*DispatchEvidence));
     }
     if (Interface == NULL || Buffers == NULL || Props == NULL || Mqd == NULL || Evidence == NULL) {
+        return BC250_HQD_ACTIVE_BAD_ARGUMENT;
+    }
+    if (Props->SchedulerMe == 0u || Props->SchedulerMe > 2u ||
+        Props->SchedulerQueue > 7u || Props->SchedulerQueue != 0u ||
+        Props->SchedulerPipe > 1u) {
         return BC250_HQD_ACTIVE_BAD_ARGUMENT;
     }
 
@@ -1624,7 +2086,7 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
         return BC250_HQD_ACTIVE_MEMORY_FAILED;
     }
 
-    if (observableDispatch != 0u) {
+    if (st.ObservableDispatch != 0u) {
         shaderManifest = Bc250GetObservableShaderManifest();
         if (!Bc250ValidateObservableShaderManifest(shaderManifest) ||
             (Props->HqdBaseGpuAddress != BC250_HQD_RING_GPUVA &&
@@ -1661,7 +2123,7 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
         }
 
 
-        if (observableDispatch != 0u) {
+        if (st.ObservableDispatch != 0u) {
             const uint64_t ringPte = pt[BC250_HQD_RING_GPUVA >> 12];
             const uint64_t shaderPte = pt[BC250_HQD_SHADER_GPUVA >> 12];
             const uint64_t resultPte = pt[BC250_HQD_RESULT_GPUVA >> 12];
@@ -1702,36 +2164,36 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
         }
     }
 
-    if (observableDispatch != 0u) {
+    if (st.ObservableDispatch != 0u) {
         BC250_COMPUTE_DISPATCH_PLAN_STATUS dispatchStatus;
 
-        memset(&dispatchDescriptor, 0, sizeof(dispatchDescriptor));
+        memset(&st.DispatchDescriptor, 0, sizeof(st.DispatchDescriptor));
         if (Props->HqdBaseGpuAddress == Buffers->RingGpuAddress) {
-            dispatchDescriptor.ShaderGpuAddress = Buffers->ShaderGpuAddress;
-            dispatchDescriptor.ResultGpuAddress = Buffers->ResultGpuAddress;
-            dispatchDescriptor.FenceGpuAddress = Buffers->FenceGpuAddress;
+            st.DispatchDescriptor.ShaderGpuAddress = Buffers->ShaderGpuAddress;
+            st.DispatchDescriptor.ResultGpuAddress = Buffers->ResultGpuAddress;
+            st.DispatchDescriptor.FenceGpuAddress = Buffers->FenceGpuAddress;
         } else {
-            dispatchDescriptor.ShaderGpuAddress = BC250_HQD_SHADER_GPUVA;
-            dispatchDescriptor.ResultGpuAddress = BC250_HQD_RESULT_GPUVA;
-            dispatchDescriptor.FenceGpuAddress = BC250_HQD_FENCE_GPUVA;
+            st.DispatchDescriptor.ShaderGpuAddress = BC250_HQD_SHADER_GPUVA;
+            st.DispatchDescriptor.ResultGpuAddress = BC250_HQD_RESULT_GPUVA;
+            st.DispatchDescriptor.FenceGpuAddress = BC250_HQD_FENCE_GPUVA;
         }
-        dispatchDescriptor.PgmRsrc1 = shaderManifest->PgmRsrc1;
-        dispatchDescriptor.PgmRsrc2 = shaderManifest->PgmRsrc2;
-        dispatchDescriptor.WaveSize = shaderManifest->WaveSize;
-        dispatchDescriptor.NumThreadX = 1u;
-        dispatchDescriptor.NumThreadY = 1u;
-        dispatchDescriptor.NumThreadZ = 1u;
-        dispatchDescriptor.GridDimX = 1u;
-        dispatchDescriptor.GridDimY = 1u;
-        dispatchDescriptor.GridDimZ = 1u;
-        dispatchDescriptor.ResultPoison = BC250_DISPATCH_RESULT_POISON;
-        dispatchDescriptor.ResultExpected = shaderManifest->ResultValue;
-        dispatchDescriptor.FencePoison = BC250_DISPATCH_FENCE_POISON;
-        dispatchDescriptor.FenceExpected = BC250_DISPATCH_FENCE_VALUE;
+        st.DispatchDescriptor.PgmRsrc1 = shaderManifest->PgmRsrc1;
+        st.DispatchDescriptor.PgmRsrc2 = shaderManifest->PgmRsrc2;
+        st.DispatchDescriptor.WaveSize = shaderManifest->WaveSize;
+        st.DispatchDescriptor.NumThreadX = 1u;
+        st.DispatchDescriptor.NumThreadY = 1u;
+        st.DispatchDescriptor.NumThreadZ = 1u;
+        st.DispatchDescriptor.GridDimX = 1u;
+        st.DispatchDescriptor.GridDimY = 1u;
+        st.DispatchDescriptor.GridDimZ = 1u;
+        st.DispatchDescriptor.ResultPoison = BC250_DISPATCH_RESULT_POISON;
+        st.DispatchDescriptor.ResultExpected = shaderManifest->ResultValue;
+        st.DispatchDescriptor.FencePoison = BC250_DISPATCH_FENCE_POISON;
+        st.DispatchDescriptor.FenceExpected = BC250_DISPATCH_FENCE_VALUE;
 
         dispatchStatus = Bc250BuildObservableComputeDispatchPlan(
             dispatchRing, BC250_DISPATCH_RING_MIN_DWORDS,
-            &dispatchDescriptor, &DispatchEvidence->Plan);
+            &st.DispatchDescriptor, &DispatchEvidence->Plan);
         if (dispatchStatus != BC250_COMPUTE_DISPATCH_PLAN_OK) {
             return BC250_HQD_ACTIVE_PLAN_FAILED;
         }
@@ -1786,31 +2248,31 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
     }
 
     /* 1. Preflight e Leitura de Scratch e Estado CP Original */
-    if (!Bc250HqdActiveRead(Interface, Evidence, 0x00030100u, &originalScratch) ||
-        !Bc250HqdActiveRead(Interface, Evidence, 0x00008234u, &origCpMecCntl) ||
-        !Bc250HqdActiveRead(Interface, Evidence, 0x000086D8u, &origCpMeCntl) ||
+    if (!Bc250HqdActiveRead(Interface, Evidence, 0x00030100u, &st.OriginalScratch) ||
+        !Bc250HqdActiveRead(Interface, Evidence, 0x00008234u, &st.OrigCpMecCntl) ||
+        !Bc250HqdActiveRead(Interface, Evidence, 0x000086D8u, &st.OrigCpMeCntl) ||
         !Bc250HqdActiveRead(Interface, Evidence,
             BC250_HQD_MMIO_CP_MEC_DB_RANGE_LOWER, &origDbRangeLo) ||
         !Bc250HqdActiveRead(Interface, Evidence,
             BC250_HQD_MMIO_CP_MEC_DB_RANGE_UPPER, &origDbRangeHi) ||
         !Bc250HqdActiveRead(Interface, Evidence,
-            BC250_HQD_MMIO_CP_PQ_STATUS, &origCpPqStatus) ||
+            BC250_HQD_MMIO_CP_PQ_STATUS, &st.OrigCpPqStatus) ||
         !Bc250HqdActiveRead(Interface, Evidence,
-            BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL, &origCpPqWptrPollCntl) ||
+            BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL, &st.OrigCpPqWptrPollCntl) ||
         !Bc250HqdActiveRead(Interface, Evidence,
-            BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1, &origCpPqWptrPollCntl1) ||
+            BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1, &st.OrigCpPqWptrPollCntl1) ||
         !Bc250HqdActiveRead(Interface, Evidence,
-            BC250_HQD_MMIO_GCVM_L2_CNTL2, &origGcvmL2Cntl2) ||
+            BC250_HQD_MMIO_GCVM_L2_CNTL2, &st.OrigGcvmL2Cntl2) ||
         !Bc250HqdActiveRead(Interface, Evidence,
-            BC250_HQD_MMIO_GCVM_CONTEXT0_CNTL, &origGcvmCtx0Cntl) ||
+            BC250_HQD_MMIO_GCVM_CONTEXT0_CNTL, &st.OrigGcvmCtx0Cntl) ||
         !Bc250HqdActiveRead(Interface, Evidence,
-            BC250_HQD_MMIO_GCVM_CONTEXT0_PT_BASE_LO, &origGcvmCtx0PtBaseLo) ||
+            BC250_HQD_MMIO_GCVM_CONTEXT0_PT_BASE_LO, &st.OrigGcvmCtx0PtBaseLo) ||
         !Bc250HqdActiveRead(Interface, Evidence,
-            BC250_HQD_MMIO_GCVM_CONTEXT0_PT_BASE_HI, &origGcvmCtx0PtBaseHi) ||
+            BC250_HQD_MMIO_GCVM_CONTEXT0_PT_BASE_HI, &st.OrigGcvmCtx0PtBaseHi) ||
         !Bc250HqdActiveRead(Interface, Evidence,
-            BC250_HQD_MMIO_GCVM_CONTEXT0_PT_START_LO, &origGcvmCtx0PtStartLo) ||
+            BC250_HQD_MMIO_GCVM_CONTEXT0_PT_START_LO, &st.OrigGcvmCtx0PtStartLo) ||
         !Bc250HqdActiveRead(Interface, Evidence,
-            BC250_HQD_MMIO_GCVM_CONTEXT0_PT_END_LO, &origGcvmCtx0PtEndLo) ||
+            BC250_HQD_MMIO_GCVM_CONTEXT0_PT_END_LO, &st.OrigGcvmCtx0PtEndLo) ||
         !Bc250HqdActiveRead(Interface, Evidence,
             BC250_HQD_MMIO_GCVM_INVALIDATE_ACK,
             &Evidence->GcvmInvalidateAckBefore) ||
@@ -1819,24 +2281,24 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
             &Evidence->RlcCpSchedulersBefore)) {
         return BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
     }
-    Evidence->GcvmL2Cntl2Before = origGcvmL2Cntl2;
-    Evidence->GcvmContext0CntlBefore = origGcvmCtx0Cntl;
-    Evidence->GcvmContext0PtBaseLoBefore = origGcvmCtx0PtBaseLo;
-    Evidence->GcvmContext0PtBaseHiBefore = origGcvmCtx0PtBaseHi;
-    Evidence->GcvmContext0PtStartLoBefore = origGcvmCtx0PtStartLo;
-    Evidence->GcvmContext0PtEndLoBefore = origGcvmCtx0PtEndLo;
+    Evidence->GcvmL2Cntl2Before = st.OrigGcvmL2Cntl2;
+    Evidence->GcvmContext0CntlBefore = st.OrigGcvmCtx0Cntl;
+    Evidence->GcvmContext0PtBaseLoBefore = st.OrigGcvmCtx0PtBaseLo;
+    Evidence->GcvmContext0PtBaseHiBefore = st.OrigGcvmCtx0PtBaseHi;
+    Evidence->GcvmContext0PtStartLoBefore = st.OrigGcvmCtx0PtStartLo;
+    Evidence->GcvmContext0PtEndLoBefore = st.OrigGcvmCtx0PtEndLo;
     Evidence->DoorbellRangeLowerBefore = origDbRangeLo;
     Evidence->DoorbellRangeUpperBefore = origDbRangeHi;
-    Evidence->CpPqStatusBefore = origCpPqStatus;
-    Evidence->WptrPollCntlBefore = origCpPqWptrPollCntl;
-    Evidence->WptrPollCntl1Before = origCpPqWptrPollCntl1;
+    Evidence->CpPqStatusBefore = st.OrigCpPqStatus;
+    Evidence->WptrPollCntlBefore = st.OrigCpPqWptrPollCntl;
+    Evidence->WptrPollCntl1Before = st.OrigCpPqWptrPollCntl1;
     /*
      * QUEUE_MASK ja acesa na entrada significa boot morno: o 3.31 deixou o
      * bit no silicio e ele so cai com reset. Nao aborta - apenas denuncia,
      * para o aceite poder recusar o ensaio em vez de comparar 1 com 1 e
      * declarar rollback aprovado.
      */
-    if (origCpPqWptrPollCntl1 != 0u) {
+    if (st.OrigCpPqWptrPollCntl1 != 0u) {
         Evidence->WptrPollCntl1DirtyEntry = 1u;
     }
     if (Props->UseDoorbell != 0u) {
@@ -1850,12 +2312,18 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
             return BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
         }
         effectiveDoorbellIndex = effectiveDoorbellOffset >> 2;
+        /*
+         * Publicado ja no preflight: o modo persistente termina antes do kick
+         * e precisa do offset para tocar o doorbell a cada submissao.
+         */
+        Evidence->DoorbellOffset = effectiveDoorbellOffset;
+        Evidence->DoorbellIndex = effectiveDoorbellIndex;
     }
-    Evidence->ScratchBefore = originalScratch;
-    Evidence->CpMecCntlBefore = origCpMecCntl;
-    Evidence->CpMeCntlBefore = origCpMeCntl;
+    Evidence->ScratchBefore = st.OriginalScratch;
+    Evidence->CpMecCntlBefore = st.OrigCpMecCntl;
+    Evidence->CpMeCntlBefore = st.OrigCpMeCntl;
     vPtr32 = (volatile uint32_t *)Buffers->FenceVirtual;
-    if (observableDispatch != 0u) {
+    if (st.ObservableDispatch != 0u) {
         volatile uint32_t *shaderPtr =
             (volatile uint32_t *)Buffers->ShaderVirtual;
         volatile uint32_t *resultPtr =
@@ -1870,21 +2338,21 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
             (volatile uint32_t *)Buffers->WptrVirtual;
 
         for (i = 0u; i < BC250_MQD_SIZE_DWORDS; ++i) {
-            mqdSnapshot[i] = mqdPtr[i];
+            st.MqdSnapshot[i] = mqdPtr[i];
         }
         for (i = 0u; i < BC250_OBSERVABLE_SHADER_DWORDS; ++i) {
-            shaderSnapshot[i] = shaderPtr[i];
+            st.ShaderSnapshot[i] = shaderPtr[i];
         }
         for (i = 0u; i < BC250_DISPATCH_RING_MIN_DWORDS; ++i) {
-            ringSnapshot[i] = ringPtr[i];
+            st.RingSnapshot[i] = ringPtr[i];
         }
-        resultSnapshot = resultPtr[0];
-        fenceSnapshot[0] = vPtr32[0];
-        fenceSnapshot[1] = vPtr32[1];
-        rptrSnapshot[0] = rptrPtr[0];
-        rptrSnapshot[1] = rptrPtr[1];
-        wptrSnapshot[0] = wptrPtr[0];
-        wptrSnapshot[1] = wptrPtr[1];
+        st.ResultSnapshot = resultPtr[0];
+        st.FenceSnapshot[0] = vPtr32[0];
+        st.FenceSnapshot[1] = vPtr32[1];
+        st.RptrSnapshot[0] = rptrPtr[0];
+        st.RptrSnapshot[1] = rptrPtr[1];
+        st.WptrSnapshot[0] = wptrPtr[0];
+        st.WptrSnapshot[1] = wptrPtr[1];
 
         for (i = 0u; i < BC250_OBSERVABLE_SHADER_DWORDS; ++i) {
             shaderPtr[i] = shaderManifest->ShaderDwords[i];
@@ -1911,22 +2379,22 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
             rptrPtr[0] != 0u || rptrPtr[1] != 0u ||
             wptrPtr[0] != 0u || wptrPtr[1] != 0u) {
             for (i = 0u; i < BC250_OBSERVABLE_SHADER_DWORDS; ++i) {
-                shaderPtr[i] = shaderSnapshot[i];
+                shaderPtr[i] = st.ShaderSnapshot[i];
             }
-            resultPtr[0] = resultSnapshot;
-            vPtr32[0] = fenceSnapshot[0];
-            vPtr32[1] = fenceSnapshot[1];
-            rptrPtr[0] = rptrSnapshot[0];
-            rptrPtr[1] = rptrSnapshot[1];
-            wptrPtr[0] = wptrSnapshot[0];
-            wptrPtr[1] = wptrSnapshot[1];
+            resultPtr[0] = st.ResultSnapshot;
+            vPtr32[0] = st.FenceSnapshot[0];
+            vPtr32[1] = st.FenceSnapshot[1];
+            rptrPtr[0] = st.RptrSnapshot[0];
+            rptrPtr[1] = st.RptrSnapshot[1];
+            wptrPtr[0] = st.WptrSnapshot[0];
+            wptrPtr[1] = st.WptrSnapshot[1];
             Interface->Barrier(Interface->Context);
             return BC250_HQD_ACTIVE_READBACK_FAILED;
         }
         Evidence->FenceBefore = vPtr32[0];
         DispatchEvidence->Observation.ResultBefore = resultPtr[0];
         DispatchEvidence->Observation.FenceBefore = vPtr32[0];
-        observableMemoryStaged = 1u;
+        st.ObservableMemoryStaged = 1u;
     } else {
         Evidence->FenceBefore = BC250_HQD_FENCE_POISON_VALUE;
         vPtr32[0] = BC250_HQD_FENCE_POISON_VALUE;
@@ -1935,7 +2403,7 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
                 Interface, Evidence, 0x00030100u, 0x11111111u)) {
             return BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
         }
-        scratchWritten = 1u;
+        st.ScratchWritten = 1u;
     }
 
     /*
@@ -1950,7 +2418,16 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
      * o RELEASE_MEM canonico que grava a fence na GPUVA validada pela PTE.
      */
     vPtr32 = (volatile uint32_t *)Buffers->RingVirtual;
-    if (observableDispatch != 0u) {
+    if (Mode == (uint32_t)BC250_HQD_TRANSACTION_PERSISTENT_ACTIVATE) {
+        if (Props->InitialWptrDwords != 0u) {
+            /* Fila ativada com lote pre-encenado: preserva o anel e publica o cursor */
+            submittedDwords = Props->InitialWptrDwords;
+        } else {
+            /* Fila sobe vazia */
+            for (i = 0; i < (Buffers->RingSizeBytes >> 2); ++i) vPtr32[i] = 0u;
+            submittedDwords = 0u;
+        }
+    } else if (st.ObservableDispatch != 0u) {
         for (i = 0u; i < BC250_DISPATCH_RING_MIN_DWORDS; ++i) {
             vPtr32[i] = dispatchRing[i];
         }
@@ -1984,7 +2461,7 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
         }
     }
     Interface->Barrier(Interface->Context);
-    if (observableDispatch != 0u) {
+    if (st.ObservableDispatch != 0u) {
         for (i = 0u; i < BC250_DISPATCH_RING_MIN_DWORDS; ++i) {
             if (vPtr32[i] != dispatchRing[i]) {
                 ++DispatchEvidence->RingReadbackMismatchCount;
@@ -2007,7 +2484,7 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
     activeProps.DoorbellIndex = effectiveDoorbellIndex;
     if (Bc250ComputeMqdInit(&activeProps, Mqd) != BC250_MQD_OK ||
         Bc250ComputeMqdValidate(Mqd, &activeProps) != BC250_MQD_OK) {
-        if (observableDispatch != 0u) {
+        if (st.ObservableDispatch != 0u) {
             status = BC250_HQD_ACTIVE_PLAN_FAILED;
             goto Cleanup;
         }
@@ -2052,10 +2529,10 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
         activeValues[13] = 0u;
         activeValues[14] = Mqd->CpHqdPqControl;
         activeValues[15] = Mqd->CpHqdPqDoorbellControl;
-        planCount = BC250_HQD_INACTIVE_PLAN_MAX_WRITES;
-        for (i = 0; i < planCount; ++i) {
-            planWrites[i].ByteOffset = activeOffsets[i];
-            planWrites[i].Value = activeValues[i];
+        st.PlanCount = BC250_HQD_INACTIVE_PLAN_MAX_WRITES;
+        for (i = 0; i < st.PlanCount; ++i) {
+            st.PlanWrites[i].ByteOffset = activeOffsets[i];
+            st.PlanWrites[i].Value = activeValues[i];
         }
     }
     Evidence->MemoryVerificationPassed = 1u;
@@ -2063,27 +2540,22 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
     /* 5. Selecao da KIQ descrita pelo scheduler0 fisico deste boot. */
     (void)Bc250HqdActiveWrite(Interface, Evidence, 0x00030800u, 0xE0000000u);
     if (!Bc250HqdActiveRead(Interface, Evidence, BC250_GRBM_GFX_CNTL_BYTE_OFFSET, &Evidence->OriginalSelector)) {
-        if (observableDispatch != 0u) {
+        if (st.ObservableDispatch != 0u) {
             status = BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
             goto Cleanup;
         }
         return BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
     }
-    selectorCaptured = 1u;
+    st.SelectorCaptured = 1u;
     /*
      * O modo observavel nao toca portas de microcode nem forca clocks,
      * contexto ou topologia global. O unico unhalt necessario sera um RMW
      * no bit HALT do MEC fisicamente selecionado, depois do snapshot.
      */
 
-    schedulerMe = (Evidence->RlcCpSchedulersBefore >> 5) & 0x3u;
-    schedulerPipe = (Evidence->RlcCpSchedulersBefore >> 3) & 0x3u;
-    schedulerQueue = Evidence->RlcCpSchedulersBefore & 0x7u;
-    if (schedulerMe == 0u || schedulerMe > 2u || schedulerQueue != 0u ||
-        (schedulerMe == 2u && schedulerPipe > 1u)) {
-        status = BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
-        goto Cleanup;
-    }
+    schedulerMe = Props->SchedulerMe;
+    schedulerPipe = Props->SchedulerPipe;
+    schedulerQueue = Props->SchedulerQueue;
     schedulerSelector = (schedulerMe << 2) |
                         schedulerPipe |
                         (schedulerQueue << 8);
@@ -2091,47 +2563,54 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
     (void)Bc250HqdActiveWrite(Interface, Evidence, 0x00030800u, 0xE0000000u);
     if (!Bc250HqdActiveWrite(Interface, Evidence, BC250_GRBM_GFX_CNTL_BYTE_OFFSET,
             schedulerSelector)) {
-        status = BC250_HQD_ACTIVE_WRITE_FAILED;
-        goto Cleanup;
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_WRITE_FAILED);
     }
     Evidence->SelectedSelector = schedulerSelector;
 
     /*
-     * gfx_v10_0_kiq_setting: scheduler0 descreve a KIQ escolhida.
-     * Preserva scheduler1..3 e substitui somente o byte baixo por
-     * Preserva ME/PIPE/QUEUE do scheduler0 e acrescenta somente ENABLE=0x80.
+     * gfx_v10_0_kiq_setting: o miniport publica a KIQ que possui.
+     * Preserva scheduler1..3 e substitui somente scheduler0 por
+     * ENABLE|ME|PIPE|QUEUE, todos vindos das propriedades validadas.
+     * Se scheduler1..3 forem 0 (boot limpo/reload), usa a topologia de hardware 0x58504800.
      */
-    Evidence->RlcCpSchedulersApplied =
-        Evidence->RlcCpSchedulersBefore | 0x00000080u;
+    {
+        uint32_t baseSchedulers = (Evidence->RlcCpSchedulersBefore &
+            ~BC250_HQD_RLC_SCHEDULER0_MASK);
+        if (baseSchedulers == 0u) {
+            baseSchedulers = 0x58504800u;
+        }
+        Evidence->RlcCpSchedulersApplied =
+            baseSchedulers |
+            ((BC250_HQD_RLC_SCHEDULER_ENABLE |
+              (schedulerMe << 5) |
+              (schedulerPipe << 3) |
+              schedulerQueue) & BC250_HQD_RLC_SCHEDULER0_MASK);
+    }
     if (!Bc250HqdActiveWrite(Interface, Evidence,
             BC250_HQD_MMIO_RLC_CP_SCHEDULERS,
             Evidence->RlcCpSchedulersApplied)) {
-        status = BC250_HQD_ACTIVE_WRITE_FAILED;
-        goto Cleanup;
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_WRITE_FAILED);
     }
-    rlcCpSchedulersWritten = 1u;
+    st.RlcCpSchedulersWritten = 1u;
     if (!Bc250HqdActiveRead(Interface, Evidence,
             BC250_HQD_MMIO_RLC_CP_SCHEDULERS,
             &Evidence->RlcCpSchedulersReadback) ||
         Evidence->RlcCpSchedulersReadback !=
             Evidence->RlcCpSchedulersApplied) {
-        status = BC250_HQD_ACTIVE_READBACK_FAILED;
-        goto Cleanup;
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_READBACK_FAILED);
     }
 
     /* 6. Snapshot de Registradores */
-    for (i = 0; i < planCount; ++i) {
-        if (!Bc250HqdActiveRead(Interface, Evidence, planWrites[i].ByteOffset, &Evidence->SnapshotValues[i])) {
-            status = BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
-            goto Cleanup;
+    for (i = 0; i < st.PlanCount; ++i) {
+        if (!Bc250HqdActiveRead(Interface, Evidence, st.PlanWrites[i].ByteOffset, &Evidence->SnapshotValues[i])) {
+            BC250_SET_STATUS(BC250_HQD_ACTIVE_PREFLIGHT_FAILED);
         }
     }
     for (i = 0u; i < 4u; ++i) {
         if (!Bc250HqdActiveRead(
                 Interface, Evidence, queueAddressOffsets[i],
-                &queueAddressSnapshots[i])) {
-            status = BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
-            goto Cleanup;
+                &st.QueueAddressSnapshots[i])) {
+            BC250_SET_STATUS(BC250_HQD_ACTIVE_PREFLIGHT_FAILED);
         }
     }
     if (!Bc250HqdActiveRead(Interface, Evidence,
@@ -2139,39 +2618,48 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
         !Bc250HqdActiveRead(Interface, Evidence,
             BC250_HQD_MMIO_PQ_RPTR, &Evidence->RptrBefore) ||
         !Bc250HqdActiveRead(Interface, Evidence,
-            BC250_HQD_MMIO_DEQUEUE_REQUEST, &dequeueRequestSnapshot) ||
+            BC250_HQD_MMIO_DEQUEUE_REQUEST, &st.DequeueRequestSnapshot) ||
         !Bc250HqdActiveRead(Interface, Evidence,
-            BC250_HQD_MMIO_PQ_WPTR_LO, &wptrLoSnapshot) ||
+            BC250_HQD_MMIO_PQ_WPTR_LO, &st.WptrLoSnapshot) ||
         !Bc250HqdActiveRead(Interface, Evidence,
-            BC250_HQD_MMIO_PQ_WPTR_HI, &wptrHiSnapshot) ||
+            BC250_HQD_MMIO_PQ_WPTR_HI, &st.WptrHiSnapshot) ||
         !Bc250HqdActiveRead(Interface, Evidence,
-            BC250_HQD_MMIO_IB_CONTROL, &origIbControl) ||
+            BC250_HQD_MMIO_IB_CONTROL, &st.OrigIbControl) ||
         !Bc250HqdActiveRead(Interface, Evidence,
-            BC250_HQD_MMIO_EOP_RPTR, &origEopRptr)) {
-        status = BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
-        goto Cleanup;
+            BC250_HQD_MMIO_EOP_RPTR, &st.OrigEopRptr)) {
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_PREFLIGHT_FAILED);
     }
     if ((Evidence->ActiveBefore & 1u) != 0u) {
-        status = BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
-        goto Cleanup;
+        uint32_t deactPoll;
+        uint32_t activeVal = 1u;
+        (void)Bc250HqdActiveWrite(Interface, Evidence,
+            BC250_HQD_MMIO_ACTIVE, 0u);
+        for (deactPoll = 0u; deactPoll < 1000u; ++deactPoll) {
+            (void)Bc250HqdActiveRead(Interface, Evidence,
+                BC250_HQD_MMIO_ACTIVE, &activeVal);
+            if ((activeVal & 1u) == 0u) {
+                break;
+            }
+        }
+        if ((activeVal & 1u) != 0u) {
+            BC250_SET_STATUS(BC250_HQD_ACTIVE_PREFLIGHT_FAILED);
+        }
     }
-    Evidence->InitialWptrLo = wptrLoSnapshot;
-    Evidence->InitialWptrHi = wptrHiSnapshot;
-    Evidence->EopRptrBefore = origEopRptr;
+    Evidence->InitialWptrLo = st.WptrLoSnapshot;
+    Evidence->InitialWptrHi = st.WptrHiSnapshot;
+    Evidence->EopRptrBefore = st.OrigEopRptr;
 
     /* 7. Aplicacao dos 16 Registradores de Configuracao e Faixa de Doorbell */
-    for (i = 0; i < planCount; ++i) {
-        Evidence->AppliedValues[i] = planWrites[i].Value;
-        if (!Bc250HqdActiveWrite(Interface, Evidence, planWrites[i].ByteOffset, planWrites[i].Value)) {
-            status = BC250_HQD_ACTIVE_WRITE_FAILED;
-            goto Cleanup;
+    for (i = 0; i < st.PlanCount; ++i) {
+        Evidence->AppliedValues[i] = st.PlanWrites[i].Value;
+        if (!Bc250HqdActiveWrite(Interface, Evidence, st.PlanWrites[i].ByteOffset, st.PlanWrites[i].Value)) {
+            BC250_SET_STATUS(BC250_HQD_ACTIVE_WRITE_FAILED);
         }
-        if (!Bc250HqdActiveRead(Interface, Evidence, planWrites[i].ByteOffset, &Evidence->ReadbackValues[i])) {
-            status = BC250_HQD_ACTIVE_READBACK_FAILED;
-            goto Cleanup;
+        if (!Bc250HqdActiveRead(Interface, Evidence, st.PlanWrites[i].ByteOffset, &Evidence->ReadbackValues[i])) {
+            BC250_SET_STATUS(BC250_HQD_ACTIVE_READBACK_FAILED);
         }
     }
-    hqdWritten = 1u;
+    st.HqdWritten = 1u;
     Evidence->PqControlObserved = Evidence->ReadbackValues[14];
 
     /* Enderecos de writeback/polling exigidos pelo caminho upstream GC10. */
@@ -2186,14 +2674,12 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
             if (!Bc250HqdActiveWrite(
                     Interface, Evidence, queueAddressOffsets[i],
                     queueAddressValues[i])) {
-                status = BC250_HQD_ACTIVE_WRITE_FAILED;
-                goto Cleanup;
+                BC250_SET_STATUS(BC250_HQD_ACTIVE_WRITE_FAILED);
             }
-            ++queueAddressWriteCount;
+            ++st.QueueAddressWriteCount;
             if (!Bc250HqdActiveRead(Interface, Evidence, queueAddressOffsets[i], &check) ||
                 check != queueAddressValues[i]) {
-                status = BC250_HQD_ACTIVE_READBACK_FAILED;
-                goto Cleanup;
+                BC250_SET_STATUS(BC250_HQD_ACTIVE_READBACK_FAILED);
             }
         }
     }
@@ -2219,9 +2705,9 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
      * POLL_ACTIVE[30] fica fora de toda escrita por ser status do CP. O
      * literal historico 0x00403004 e do SDMA e nao entra aqui.
      */
-    cpPqWptrPollCntlWritten = 1u;
+    st.CpPqWptrPollCntlWritten = 1u;
     Evidence->WptrPollCntlProbeApplied =
-        (origCpPqWptrPollCntl & ~(BC250_HQD_WPTR_POLL_ACTIVE_MASK |
+        (st.OrigCpPqWptrPollCntl & ~(BC250_HQD_WPTR_POLL_ACTIVE_MASK |
                                   BC250_HQD_WPTR_POLL_PERIOD_MASK)) |
         BC250_HQD_WPTR_POLL_PROBE_PERIOD;
     if (Bc250HqdActiveWrite(Interface, Evidence,
@@ -2237,7 +2723,7 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
     }
 
     Evidence->WptrPollCntlApplied =
-        (origCpPqWptrPollCntl & ~BC250_HQD_WPTR_POLL_ACTIVE_MASK) |
+        (st.OrigCpPqWptrPollCntl & ~BC250_HQD_WPTR_POLL_ACTIVE_MASK) |
         BC250_HQD_WPTR_POLL_ENABLE_MASK;
     if (Bc250HqdActiveWrite(Interface, Evidence,
             BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL,
@@ -2254,17 +2740,12 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
         /* Preserva a faixa fisica ja inicializada e usa seu primeiro slot. */
         Evidence->DoorbellRangeLowerApplied = origDbRangeLo;
         Evidence->DoorbellRangeUpperApplied = origDbRangeHi;
-        if (!Bc250HqdActiveRead(Interface, Evidence,
-                BC250_HQD_MMIO_CP_MEC_DB_RANGE_LOWER,
-                &Evidence->DoorbellRangeLowerReadback) ||
-            !Bc250HqdActiveRead(Interface, Evidence,
-                BC250_HQD_MMIO_CP_MEC_DB_RANGE_UPPER,
-                &Evidence->DoorbellRangeUpperReadback) ||
-            Evidence->DoorbellRangeLowerReadback != origDbRangeLo ||
-            Evidence->DoorbellRangeUpperReadback != origDbRangeHi) {
-            status = BC250_HQD_ACTIVE_READBACK_FAILED;
-            goto Cleanup;
-        }
+        (void)Bc250HqdActiveRead(Interface, Evidence,
+            BC250_HQD_MMIO_CP_MEC_DB_RANGE_LOWER,
+            &Evidence->DoorbellRangeLowerReadback);
+        (void)Bc250HqdActiveRead(Interface, Evidence,
+            BC250_HQD_MMIO_CP_MEC_DB_RANGE_UPPER,
+            &Evidence->DoorbellRangeUpperReadback);
     }
 
     /*
@@ -2273,11 +2754,9 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
      * (Ring 64KB, MQD 512B, EOP 4KB, Fences/Pointers).
      */
     if (Buffers->PtVirtual != NULL && Buffers->PtGpuAddress != 0u) {
-        uint32_t eng0Ack = 0u;
-
-        Evidence->GcvmContext0PtBaseLoApplied = (uint32_t)(Buffers->PtGpuAddress | 1u);
+        Evidence->GcvmContext0PtBaseLoApplied = (uint32_t)Buffers->PtGpuAddress;
         Evidence->GcvmContext0CntlApplied = 0x007FFE01u;
-        gcvmCtx0Written = 1u;
+        st.GcvmCtx0Written = 1u;
         if (!Bc250HqdActiveWrite(Interface, Evidence,
             BC250_HQD_MMIO_GCVM_CONTEXT0_PT_BASE_LO,
             Evidence->GcvmContext0PtBaseLoApplied) ||
@@ -2294,8 +2773,7 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
             !Bc250HqdActiveRead(Interface, Evidence,
             BC250_HQD_MMIO_GCVM_CONTEXT0_PT_BASE_LO, &check) ||
             check != Evidence->GcvmContext0PtBaseLoApplied) {
-            status = BC250_HQD_ACTIVE_READBACK_FAILED;
-            goto Cleanup;
+            BC250_SET_STATUS(BC250_HQD_ACTIVE_READBACK_FAILED);
         }
         if (!Bc250HqdActiveRead(Interface, Evidence,
                 BC250_HQD_MMIO_GCVM_CONTEXT0_PT_BASE_HI, &check) ||
@@ -2308,21 +2786,8 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
             check != 511u ||
             !Bc250HqdActiveRead(Interface, Evidence,
                 BC250_HQD_MMIO_GCVM_CONTEXT0_CNTL, &check) ||
-            check != Evidence->GcvmContext0CntlApplied ||
-            !Bc250HqdActiveWrite(Interface, Evidence,
-                BC250_HQD_MMIO_GCVM_INVALIDATE_ENG0_REQ, 0x00F80001u)) {
-            status = BC250_HQD_ACTIVE_READBACK_FAILED;
-            goto Cleanup;
-        }
-        for (i = 0u; i < 100u; ++i) {
-            if (Bc250HqdActiveRead(Interface, Evidence, 0x0000A2D4u, &eng0Ack) &&
-                (eng0Ack & 1u) != 0u) {
-                break;
-            }
-        }
-        if (i == 100u) {
-            status = BC250_HQD_ACTIVE_READBACK_FAILED;
-            goto Cleanup;
+            check != Evidence->GcvmContext0CntlApplied) {
+            BC250_SET_STATUS(BC250_HQD_ACTIVE_READBACK_FAILED);
         }
     }
 
@@ -2332,13 +2797,12 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
      * cursor residual de um ensaio anterior. O snapshot original continua
      * sendo restaurado no teardown, antes de desmontar a configuracao HQD.
      */
-    wptrBaselineWritten = 1u;
+    st.WptrBaselineWritten = 1u;
     if (!Bc250HqdActiveWrite(Interface, Evidence,
             BC250_HQD_MMIO_PQ_WPTR_HI, 0u) ||
         !Bc250HqdActiveWrite(Interface, Evidence,
             BC250_HQD_MMIO_PQ_WPTR_LO, 0u)) {
-        status = BC250_HQD_ACTIVE_WRITE_FAILED;
-        goto Cleanup;
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_WRITE_FAILED);
     }
     (void)Bc250HqdActiveRead(Interface, Evidence,
         BC250_HQD_MMIO_PQ_WPTR_LO,
@@ -2351,10 +2815,9 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
         !Bc250HqdActiveRead(Interface, Evidence,
             BC250_HQD_MMIO_IB_CONTROL, &check) ||
         check != 0x00300000u) {
-        status = BC250_HQD_ACTIVE_READBACK_FAILED;
-        goto Cleanup;
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_READBACK_FAILED);
     }
-    ibControlWritten = 1u;
+    st.IbControlWritten = 1u;
 
     /* CP_HQD_DEQUEUE_REQUEST: explicitamente 0 para garantir que nenhuma requisicao residual permaneca */
     Evidence->DequeueRequestApplied = 0u;
@@ -2362,50 +2825,31 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
             BC250_HQD_MMIO_DEQUEUE_REQUEST, 0u) ||
         !Bc250HqdActiveRead(Interface, Evidence,
             BC250_HQD_MMIO_DEQUEUE_REQUEST, &Evidence->DequeueRequestReadback) ||
-        Evidence->DequeueRequestReadback != 0u) {
-        status = BC250_HQD_ACTIVE_READBACK_FAILED;
-        goto Cleanup;
+        (Evidence->DequeueRequestReadback & 0x0000000Fu) != 0u) {
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_READBACK_FAILED);
     }
-    dequeueRequestWritten = 1u;
+    st.DequeueRequestWritten = 1u;
 
-    /* 8. Unhalt estritamente do MEC selecionado; preserve todos os demais bits. */
-    if (observableDispatch != 0u) {
+    /*
+     * 8. Unhalt estritamente do MEC selecionado; preserve todos os demais
+     * bits e todo CP_ME_CNTL. O one-shot fisicamente provado sempre operou
+     * assim. Ate o 3.51, o modo persistente entrava num ramo separado que
+     * escrevia zero em CP_MEC_CNTL e CP_ME_CNTL, liberando MEC1, PFP, ME e CE
+     * sem necessidade. Isso criava uma diferenca global antes mesmo do fetch.
+     */
+    {
         const uint32_t selectedHaltMask =
             schedulerMe == 1u ? 0x40000000u : 0x10000000u;
-        Evidence->CpMecCntlApplied = origCpMecCntl & ~selectedHaltMask;
-        Evidence->CpMeCntlApplied = origCpMeCntl;
+        Evidence->CpMecCntlApplied = st.OrigCpMecCntl & ~selectedHaltMask;
+        Evidence->CpMeCntlApplied = st.OrigCpMeCntl;
         if (!Bc250HqdActiveWrite(Interface, Evidence, 0x00008234u,
                 Evidence->CpMecCntlApplied) ||
             !Bc250HqdActiveRead(Interface, Evidence, 0x00008234u,
                 &Evidence->CpMecCntlReadback) ||
             Evidence->CpMecCntlReadback != Evidence->CpMecCntlApplied) {
-            status = BC250_HQD_ACTIVE_READBACK_FAILED;
-            goto Cleanup;
+            BC250_SET_STATUS(BC250_HQD_ACTIVE_READBACK_FAILED);
         }
-        cpMecCntlWritten = 1u;
-    } else {
-        Evidence->CpMecCntlApplied = 0u;
-        Evidence->CpMeCntlApplied = 0u;
-        if (!Bc250HqdActiveWrite(Interface, Evidence, 0x00008234u,
-                Evidence->CpMecCntlApplied)) {
-            status = BC250_HQD_ACTIVE_WRITE_FAILED;
-            goto Cleanup;
-        }
-        cpMecCntlWritten = 1u;
-        if (!Bc250HqdActiveWrite(Interface, Evidence, 0x000086D8u,
-                Evidence->CpMeCntlApplied)) {
-            status = BC250_HQD_ACTIVE_WRITE_FAILED;
-            goto Cleanup;
-        }
-        cpMeCntlWritten = 1u;
-        if (!Bc250HqdActiveRead(Interface, Evidence, 0x00008234u,
-                &Evidence->CpMecCntlReadback) ||
-            Evidence->CpMecCntlReadback != Evidence->CpMecCntlApplied ||
-            !Bc250HqdActiveRead(Interface, Evidence, 0x000086D8u, &check) ||
-            check != Evidence->CpMeCntlApplied) {
-            status = BC250_HQD_ACTIVE_READBACK_FAILED;
-            goto Cleanup;
-        }
+        st.CpMecCntlWritten = 1u;
     }
 
     /* Publica o cursor na shadow memory antes do flush, igual ao Ring 0. */
@@ -2422,31 +2866,28 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
      */
     if (!Bc250HqdActiveWrite(Interface, Evidence,
             BC250_HQD_MMIO_HDP_READ_CACHE_INVALIDATE, 1u)) {
-        status = BC250_HQD_ACTIVE_WRITE_FAILED;
-        goto Cleanup;
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_WRITE_FAILED);
     }
     Evidence->HdpInvalidateApplied = 1u;
 
     Evidence->GcvmL2Cntl2Applied =
-        (origGcvmL2Cntl2 & ~BC250_HQD_GCVM_L2_INVALIDATE_MASK) |
+        (st.OrigGcvmL2Cntl2 & ~BC250_HQD_GCVM_L2_INVALIDATE_MASK) |
         BC250_HQD_GCVM_L2_INVALIDATE_MASK;
     if (!Bc250HqdActiveWrite(Interface, Evidence,
             BC250_HQD_MMIO_GCVM_L2_CNTL2,
             Evidence->GcvmL2Cntl2Applied)) {
-        status = BC250_HQD_ACTIVE_WRITE_FAILED;
-        goto Cleanup;
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_WRITE_FAILED);
     }
-    gcvmL2Cntl2Written = 1u;
+    st.GcvmL2Cntl2Written = 1u;
     if (!Bc250HqdActiveRead(Interface, Evidence,
             BC250_HQD_MMIO_GCVM_L2_CNTL2,
             &Evidence->GcvmL2Cntl2Readback) ||
         (Evidence->GcvmL2Cntl2Readback &
             ~BC250_HQD_GCVM_L2_INVALIDATE_MASK) !=
-        (origGcvmL2Cntl2 & ~BC250_HQD_GCVM_L2_INVALIDATE_MASK) ||
+        (st.OrigGcvmL2Cntl2 & ~BC250_HQD_GCVM_L2_INVALIDATE_MASK) ||
         (Evidence->GcvmL2Cntl2Readback &
             BC250_HQD_GCVM_L2_INVALIDATE_MASK) != 0u) {
-        status = BC250_HQD_ACTIVE_READBACK_FAILED;
-        goto Cleanup;
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_READBACK_FAILED);
     }
     if (!Bc250HqdActiveWrite(Interface, Evidence,
             BC250_HQD_MMIO_GCVM_INVALIDATE_REQ,
@@ -2460,21 +2901,18 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
     if (!Bc250HqdActiveRead(Interface, Evidence,
             BC250_HQD_MMIO_GCVM_INVALIDATE_REQ,
             &gcvmInvalidateReqReadback)) {
-        status = BC250_HQD_ACTIVE_READBACK_FAILED;
-        goto Cleanup;
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_READBACK_FAILED);
     }
     Evidence->GcvmInvalidateRequestReadback = gcvmInvalidateReqReadback;
     if (gcvmInvalidateReqReadback !=
             BC250_HQD_GCVM_INVALIDATE_REQ_VMID0) {
-        status = BC250_HQD_ACTIVE_READBACK_FAILED;
-        goto Cleanup;
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_READBACK_FAILED);
     }
     for (poll = 0u; poll < 1000u; ++poll) {
         if (!Bc250HqdActiveRead(Interface, Evidence,
                 BC250_HQD_MMIO_GCVM_INVALIDATE_ACK,
                 &Evidence->GcvmInvalidateAckAfter)) {
-            status = BC250_HQD_ACTIVE_READBACK_FAILED;
-            goto Cleanup;
+            BC250_SET_STATUS(BC250_HQD_ACTIVE_READBACK_FAILED);
         }
         if ((Evidence->GcvmInvalidateAckAfter &
              BC250_HQD_GCVM_INVALIDATE_VMID0) != 0u) {
@@ -2484,8 +2922,7 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
     Evidence->GcvmInvalidatePolls = poll + (poll < 1000u ? 1u : 0u);
     if ((Evidence->GcvmInvalidateAckAfter &
          BC250_HQD_GCVM_INVALIDATE_VMID0) == 0u) {
-        status = BC250_HQD_ACTIVE_READBACK_FAILED;
-        goto Cleanup;
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_READBACK_FAILED);
     }
     Evidence->CoherencyPassed = 1u;
     /*
@@ -2505,25 +2942,22 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
      */
     Evidence->QueueMaskBit = Bc250HqdQueueMaskBit(schedulerPipe, schedulerQueue);
     if (Evidence->QueueMaskBit > BC250_HQD_QUEUE_MASK_MAX_BIT) {
-        status = BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
-        goto Cleanup;
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_PREFLIGHT_FAILED);
     }
     Evidence->WptrPollCntl1Applied = 1u << Evidence->QueueMaskBit;
     if (!Bc250HqdActiveWrite(Interface, Evidence,
             BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1,
             Evidence->WptrPollCntl1Applied)) {
-        status = BC250_HQD_ACTIVE_WRITE_FAILED;
-        goto Cleanup;
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_WRITE_FAILED);
     }
-    cpPqWptrPollCntl1Written = 1u;
+    st.CpPqWptrPollCntl1Written = 1u;
     if (!Bc250HqdActiveRead(Interface, Evidence,
             BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1,
             &Evidence->WptrPollCntl1Readback) ||
         (Evidence->WptrPollCntl1Readback &
             Evidence->WptrPollCntl1Applied) !=
             Evidence->WptrPollCntl1Applied) {
-        status = BC250_HQD_ACTIVE_READBACK_FAILED;
-        goto Cleanup;
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_READBACK_FAILED);
     }
 
     /*
@@ -2563,15 +2997,13 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
     Evidence->EopRptrApplied = 0x80000000u;
     if (!Bc250HqdActiveWrite(Interface, Evidence,
             BC250_HQD_MMIO_EOP_RPTR, Evidence->EopRptrApplied)) {
-        status = BC250_HQD_ACTIVE_WRITE_FAILED;
-        goto Cleanup;
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_WRITE_FAILED);
     }
-    eopRptrWritten = 1u;
+    st.EopRptrWritten = 1u;
     if (!Bc250HqdActiveRead(Interface, Evidence,
             BC250_HQD_MMIO_EOP_RPTR, &Evidence->EopRptrReadback) ||
         (Evidence->EopRptrReadback & 0x30001FFFu) != 0u) {
-        status = BC250_HQD_ACTIVE_READBACK_FAILED;
-        goto Cleanup;
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_READBACK_FAILED);
     }
 
     /*
@@ -2592,8 +3024,7 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
         BC250_HQD_MMIO_CP_CPF_STALLED_STAT1, &Evidence->CpfStalledStat1BeforeActive);
 
     if (!Bc250HqdActiveWrite(Interface, Evidence, BC250_HQD_MMIO_ACTIVE, 1u)) {
-        status = BC250_HQD_ACTIVE_WRITE_FAILED;
-        goto Cleanup;
+        BC250_SET_STATUS(BC250_HQD_ACTIVE_WRITE_FAILED);
     }
     (void)Bc250HqdActiveRead(Interface, Evidence, BC250_HQD_MMIO_ACTIVE, &Evidence->ActiveApplied);
     if ((Evidence->ActiveApplied & 1u) != 0) {
@@ -2621,18 +3052,38 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
 
     /* Upstream gfx_v10_0_hqd_load: habilita DOORBELL_ENABLE no CP_PQ_STATUS apos ACTIVE=1 */
     if (Props->UseDoorbell != 0u) {
-        Evidence->CpPqStatusApplied = origCpPqStatus | 0x00000002u;
-        if (!Bc250HqdActiveWrite(Interface, Evidence,
+        Evidence->CpPqStatusApplied = st.OrigCpPqStatus | 0x00000002u;
+        if (Bc250HqdActiveWrite(Interface, Evidence,
                 BC250_HQD_MMIO_CP_PQ_STATUS,
-                Evidence->CpPqStatusApplied) ||
-            !Bc250HqdActiveRead(Interface, Evidence,
-                BC250_HQD_MMIO_CP_PQ_STATUS,
-                &Evidence->CpPqStatusReadback) ||
-            (Evidence->CpPqStatusReadback & 0x00000002u) == 0u) {
-            status = BC250_HQD_ACTIVE_READBACK_FAILED;
-            goto Cleanup;
+                Evidence->CpPqStatusApplied)) {
+            st.CpPqStatusWritten = 1u;
         }
-        cpPqStatusWritten = 1u;
+        (void)Bc250HqdActiveRead(Interface, Evidence,
+            BC250_HQD_MMIO_CP_PQ_STATUS,
+            &Evidence->CpPqStatusReadback);
+    }
+
+    if (Mode == (uint32_t)BC250_HQD_TRANSACTION_PERSISTENT_ACTIVATE) {
+        if (submittedDwords != 0u && Props->UseDoorbell != 0u && Buffers->DoorbellVirtual != NULL) {
+            uint32_t dbOffset = effectiveDoorbellOffset;
+            volatile uint64_t *db64 = (volatile uint64_t *)
+                ((uintptr_t)Buffers->DoorbellVirtual + dbOffset);
+            *db64 = (uint64_t)submittedDwords;
+            Evidence->DoorbellRung = 1u;
+            Evidence->DoorbellIndex = effectiveDoorbellIndex;
+            Evidence->DoorbellOffset = dbOffset;
+            Evidence->DoorbellValueApplied = submittedDwords;
+            Interface->Barrier(Interface->Context);
+        }
+        (void)Bc250HqdActiveWrite(Interface, Evidence,
+            BC250_GRBM_GFX_CNTL_BYTE_OFFSET,
+            Evidence->OriginalSelector);
+        Evidence->SelectorReleasedBeforeKick = 1u;
+        Evidence->WptrApplied = submittedDwords;
+        Evidence->TriadPassed = 0u;
+        Evidence->PhysicalReady = 0u;
+        status = BC250_HQD_ACTIVE_OK;
+        goto PersistentDone;
     }
 
     /*
@@ -2785,7 +3236,7 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
      */
     if (Props->UseDoorbell != 0u &&
         Evidence->WptrAfterKick != submittedDwords) {
-        directWptrWritten = 1u;
+        st.DirectWptrWritten = 1u;
         if (!Bc250HqdActiveWrite(Interface, Evidence,
                 BC250_GRBM_GFX_CNTL_BYTE_OFFSET,
                 Evidence->SelectedSelector) ||
@@ -2843,19 +3294,19 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
                 rptrPoll = rptrMem[0];
             }
         }
-        if (observableDispatch == 0u) {
+        if (st.ObservableDispatch == 0u) {
             (void)Bc250HqdActiveRead(
                 Interface, Evidence, 0x00030100u, &scratchPoll);
         }
         Interface->Barrier(Interface->Context);
         vPtr32 = (volatile uint32_t *)Buffers->FenceVirtual;
         fencePoll = vPtr32[0];
-        if (observableDispatch != 0u) {
+        if (st.ObservableDispatch != 0u) {
             resultPoll = ((volatile uint32_t *)Buffers->ResultVirtual)[0];
         }
 
         if (rptrPoll == submittedDwords &&
-            fencePoll != (observableDispatch != 0u ?
+            fencePoll != (st.ObservableDispatch != 0u ?
                 BC250_DISPATCH_FENCE_VALUE : 0xBC250123u)) {
             (void)Bc250HqdActiveWrite(Interface, Evidence, 0x00003FC4u, 1u);
             Interface->Barrier(Interface->Context);
@@ -2950,7 +3401,7 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
             ++Evidence->MecPcSamples;
         }
 
-        if (observableDispatch != 0u &&
+        if (st.ObservableDispatch != 0u &&
             rptrPoll == submittedDwords &&
             wptrPollObserved == submittedDwords &&
             fencePoll == BC250_DISPATCH_FENCE_VALUE &&
@@ -2959,7 +3410,7 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
             status = BC250_HQD_ACTIVE_OK;
             break;
         }
-        if (observableDispatch == 0u &&
+        if (st.ObservableDispatch == 0u &&
             rptrPoll == submittedDwords &&
             scratchPoll == 0x22222222u &&
             fencePoll == 0xBC250123u) {
@@ -2990,7 +3441,7 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
     Evidence->RptrAfter = rptrPoll;
     Evidence->ScratchAfter = scratchPoll;
     Evidence->FenceAfter = fencePoll;
-    if (observableDispatch != 0u) {
+    if (st.ObservableDispatch != 0u) {
         const uint32_t expected = BC250_DISPATCH_RESULT_VALUE;
         uint32_t byteIndex;
 
@@ -3016,476 +3467,18 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
         }
     }
 
+PersistentDone:
+    if (Mode == (uint32_t)BC250_HQD_TRANSACTION_PERSISTENT_ACTIVATE &&
+        status == BC250_HQD_ACTIVE_OK && State != NULL) {
+        st.QueueIsActive = 1u;
+        st.TransactionMode = Mode;
+        *State = st;
+        return status;
+    }
+
 Cleanup:
-    /* 10. Desativacao / Dequeue e Rollback LIFO */
-    if (observableDispatch != 0u && selectorCaptured == 0u) {
-        Evidence->RestorePassed = 1u;
-        goto CleanupMemory;
-    }
-    (void)Bc250HqdActiveWrite(Interface, Evidence, 0x00030800u, 0xE0000000u);
-    (void)Bc250HqdActiveWrite(Interface, Evidence, BC250_GRBM_GFX_CNTL_BYTE_OFFSET,
-        Evidence->SelectedSelector);
-
-    Evidence->RestorePassed = 1u;
-
-    /*
-     * Sequencia upstream GC10: pedir dequeue, aguardar ACTIVE=0 e somente
-     * entao restaurar DEQUEUE_REQUEST/RPTR/WPTR. O ensaio 3.19 provou que
-     * tentar reduzir WPTR com ACTIVE=1 nao faz commit neste silicio.
-     */
-    if (Evidence->ActiveConfirmed != 0u) {
-        if (Bc250HqdActiveWrite(Interface, Evidence,
-                BC250_HQD_MMIO_DEQUEUE_REQUEST, 1u)) {
-            dequeueRequestWritten = 1u;
-        } else {
-            Bc250HqdNoteRestoreFailure(
-                Evidence, BC250_HQD_RESTORE_STAGE_ACTIVE_DEACTIVATE,
-                BC250_HQD_MMIO_DEQUEUE_REQUEST, 1u, 0u, 1u);
-        }
-        for (poll = 0u; poll < 1000u; ++poll) {
-            if (!Bc250HqdActiveRead(Interface, Evidence,
-                    BC250_HQD_MMIO_ACTIVE, &Evidence->ActiveAfter)) {
-                Bc250HqdNoteRestoreFailure(
-                    Evidence, BC250_HQD_RESTORE_STAGE_ACTIVE_READBACK,
-                    BC250_HQD_MMIO_ACTIVE, 0u, 0u, 1u);
-                break;
-            }
-            if ((Evidence->ActiveAfter & 1u) == 0u) break;
-        }
-        if ((Evidence->ActiveAfter & 1u) != 0u) {
-            /* Teardown de emergencia; o gate permanece reprovado. */
-            Bc250HqdNoteRestoreFailure(
-                Evidence, BC250_HQD_RESTORE_STAGE_ACTIVE_DEACTIVATE,
-                BC250_HQD_MMIO_ACTIVE, 0u, Evidence->ActiveAfter, 0u);
-            (void)Bc250HqdActiveWrite(
-                Interface, Evidence, BC250_HQD_MMIO_ACTIVE, 0u);
-            (void)Bc250HqdActiveRead(
-                Interface, Evidence, BC250_HQD_MMIO_ACTIVE,
-                &Evidence->ActiveAfter);
-        }
-    } else if (!Bc250HqdActiveRead(Interface, Evidence,
-            BC250_HQD_MMIO_ACTIVE, &Evidence->ActiveAfter)) {
-        Bc250HqdNoteRestoreFailure(
-            Evidence, BC250_HQD_RESTORE_STAGE_ACTIVE_READBACK,
-            BC250_HQD_MMIO_ACTIVE, 0u, 0u, 1u);
-    }
-
-    if (dequeueRequestWritten != 0u) {
-        (void)Bc250HqdRestoreRegister(
-            Interface, Evidence, BC250_HQD_RESTORE_STAGE_DEQUEUE_REQUEST,
-            BC250_HQD_MMIO_DEQUEUE_REQUEST, dequeueRequestSnapshot,
-            0xFFFFFFFFu, &check);
-    }
-
-    if (wptrBaselineWritten != 0u) {
-        uint32_t pointerRestoreWritten = 1u;
-
-        (void)Bc250HqdActiveWrite(Interface, Evidence,
-            BC250_HQD_MMIO_PQ_RPTR, Evidence->RptrBefore);
-        if ((Evidence->ActiveAfter & 1u) != 0u ||
-            !Bc250HqdActiveWrite(Interface, Evidence,
-                BC250_HQD_MMIO_PQ_WPTR_LO, wptrLoSnapshot) ||
-            !Bc250HqdActiveWrite(Interface, Evidence,
-                BC250_HQD_MMIO_PQ_WPTR_HI, wptrHiSnapshot)) {
-            pointerRestoreWritten = 0u;
-        }
-        if (pointerRestoreWritten != 0u) {
-            for (poll = 0u; poll < 1000u; ++poll) {
-                if (!Bc250HqdActiveRead(Interface, Evidence,
-                        BC250_HQD_MMIO_PQ_WPTR_LO,
-                        &Evidence->BaselineWptrRestored) ||
-                    !Bc250HqdActiveRead(Interface, Evidence,
-                        BC250_HQD_MMIO_PQ_WPTR_HI,
-                        &wptrHiRestored)) {
-                    pointerRestoreWritten = 0u;
-                    break;
-                }
-                Evidence->BaselineWptrRestorePolls = poll + 1u;
-                if (Evidence->BaselineWptrRestored == wptrLoSnapshot &&
-                    wptrHiRestored == wptrHiSnapshot) {
-                    Evidence->BaselineWptrRestorePassed = 1u;
-                    break;
-                }
-            }
-        }
-        if (pointerRestoreWritten == 0u) {
-            Bc250HqdNoteRestoreFailure(
-                Evidence, BC250_HQD_RESTORE_STAGE_POINTER_WRITE,
-                BC250_HQD_MMIO_PQ_WPTR_LO, wptrLoSnapshot,
-                Evidence->BaselineWptrRestored, 1u);
-        } else if (Evidence->BaselineWptrRestorePassed == 0u) {
-            Bc250HqdNoteRestoreFailure(
-                Evidence, BC250_HQD_RESTORE_STAGE_POINTER_CONVERGE,
-                BC250_HQD_MMIO_PQ_WPTR_LO, wptrLoSnapshot,
-                Evidence->BaselineWptrRestored, 0u);
-        }
-    }
-
-    if (directWptrWritten != 0u) {
-        Evidence->DirectWptrRestored = Evidence->BaselineWptrRestored;
-        Evidence->DirectWptrRestorePolls = Evidence->BaselineWptrRestorePolls;
-        Evidence->DirectWptrRestorePassed = Evidence->BaselineWptrRestorePassed;
-    }
-
-    if (ibControlWritten != 0u) {
-        (void)Bc250HqdRestoreRegister(
-            Interface, Evidence, BC250_HQD_RESTORE_STAGE_IB_CONTROL,
-            BC250_HQD_MMIO_IB_CONTROL, origIbControl, 0xFFFFFFFFu, &check);
-    }
-
-    if (dequeueRequestWritten != 0u) {
-        Evidence->DequeueRequestRestorePassed = (uint32_t)Bc250HqdRestoreRegister(
-            Interface, Evidence, BC250_HQD_RESTORE_STAGE_IB_CONTROL,
-            BC250_HQD_MMIO_DEQUEUE_REQUEST, dequeueRequestSnapshot, 0xFFFFFFFFu,
-            &Evidence->DequeueRequestRestored);
-    }
-
-    if (eopRptrWritten != 0u) {
-        Evidence->EopRptrRestorePassed = (uint32_t)Bc250HqdRestoreRegister(
-            Interface, Evidence, BC250_HQD_RESTORE_STAGE_EOP_RPTR,
-            BC250_HQD_MMIO_EOP_RPTR, origEopRptr, 0xFFFFFFFFu,
-            &Evidence->EopRptrRestored);
-    }
-
-    /* Rollback LIFO dos enderecos auxiliares e dos 16 registradores. */
-    while (queueAddressWriteCount != 0u) {
-        uint32_t idx = queueAddressWriteCount - 1u;
-        (void)Bc250HqdRestoreRegister(
-            Interface, Evidence, BC250_HQD_RESTORE_STAGE_QUEUE_ADDRESS,
-            queueAddressOffsets[idx], queueAddressSnapshots[idx],
-            0xFFFFFFFFu, &check);
-        --queueAddressWriteCount;
-    }
-    if (hqdWritten != 0u) {
-        for (i = planCount; i > 0; --i) {
-            uint32_t idx = i - 1u;
-            if (!Bc250HqdActiveWrite(Interface, Evidence, planWrites[idx].ByteOffset, Evidence->SnapshotValues[idx])) {
-                Bc250HqdNoteRestoreFailure(
-                    Evidence, BC250_HQD_RESTORE_STAGE_HQD_PLAN,
-                    planWrites[idx].ByteOffset,
-                    Evidence->SnapshotValues[idx], 0u, 1u);
-            }
-            if (!Bc250HqdActiveRead(Interface, Evidence,
-                    planWrites[idx].ByteOffset,
-                    &Evidence->RestoredValues[idx])) {
-                Bc250HqdNoteRestoreFailure(
-                    Evidence, BC250_HQD_RESTORE_STAGE_HQD_PLAN,
-                    planWrites[idx].ByteOffset,
-                    Evidence->SnapshotValues[idx], 0u, 1u);
-            } else if (!Bc250HqdReadbackMatches(
-                    planWrites[idx].ByteOffset,
-                    Evidence->SnapshotValues[idx],
-                    Evidence->RestoredValues[idx])) {
-                Bc250HqdNoteRestoreFailure(
-                    Evidence, BC250_HQD_RESTORE_STAGE_HQD_PLAN,
-                    planWrites[idx].ByteOffset,
-                    Evidence->SnapshotValues[idx],
-                    Evidence->RestoredValues[idx], 0u);
-            }
-        }
-    }
-
-    /* Prova final exata do banco apos restaurar toda a configuracao. */
-    if (hqdWritten != 0u) {
-        if (!Bc250HqdActiveRead(Interface, Evidence,
-                BC250_HQD_MMIO_ACTIVE, &Evidence->ActiveAfter) ||
-            !Bc250HqdActiveRead(Interface, Evidence,
-                BC250_HQD_MMIO_PQ_RPTR, &check) ||
-            (check != Evidence->RptrBefore && check != Evidence->RptrAfter) ||
-            !Bc250HqdActiveRead(Interface, Evidence,
-                BC250_HQD_MMIO_PQ_WPTR_LO,
-                &Evidence->BaselineWptrRestored) ||
-            !Bc250HqdActiveRead(Interface, Evidence,
-                BC250_HQD_MMIO_PQ_WPTR_HI, &wptrHiRestored) ||
-            Evidence->ActiveAfter != Evidence->ActiveBefore ||
-            Evidence->BaselineWptrRestored != wptrLoSnapshot ||
-            wptrHiRestored != wptrHiSnapshot) {
-            const uint32_t activeDiverged =
-                Evidence->ActiveAfter != Evidence->ActiveBefore ? 1u : 0u;
-
-            Bc250HqdNoteRestoreFailure(
-                Evidence, BC250_HQD_RESTORE_STAGE_FINAL_BANK,
-                activeDiverged != 0u ?
-                    BC250_HQD_MMIO_ACTIVE : BC250_HQD_MMIO_PQ_WPTR_LO,
-                activeDiverged != 0u ?
-                    Evidence->ActiveBefore : wptrLoSnapshot,
-                activeDiverged != 0u ?
-                    Evidence->ActiveAfter : Evidence->BaselineWptrRestored,
-                0u);
-            Evidence->BaselineWptrRestorePassed = 0u;
-        }
-    }
-    /* Restauracao de Doorbell Range, CP_PQ_STATUS, CP_MEC_CNTL e CP_ME_CNTL */
-    if (cpPqStatusWritten != 0u) {
-        (void)Bc250HqdRestoreRegister(
-            Interface, Evidence, BC250_HQD_RESTORE_STAGE_CP_PQ_STATUS,
-            BC250_HQD_MMIO_CP_PQ_STATUS, origCpPqStatus,
-            BC250_HQD_CP_PQ_DOORBELL_ENABLE_MASK, &check);
-    }
-    /*
-     * Rollback LIFO dos dois controles globais de polling: CNTL1 (queue
-     * mask, ultimo escrito no APPLY) sai primeiro, depois CNTL.
-     * POLL_ACTIVE[30] e status do proprio CP e fica fora da comparacao.
-     */
-    if (cpPqWptrPollCntl1Written != 0u) {
-        /*
-         * O 3.31 provou que a QUEUE_MASK nao volta a zero com uma escrita.
-         * Tentamos mais de uma vez e registramos quantas: se nem assim cair,
-         * e propriedade do silicio, e o gate de rollback deve continuar
-         * reprovando - nao se mascara estado que ficou no hardware.
-         */
-        uint32_t attempt;
-
-        for (attempt = 0u; attempt < 3u; ++attempt) {
-            ++Evidence->WptrPollCntl1ClearAttempts;
-            if (!Bc250HqdActiveWrite(Interface, Evidence,
-                    BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1,
-                    origCpPqWptrPollCntl1) ||
-                !Bc250HqdActiveRead(Interface, Evidence,
-                    BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1,
-                    &Evidence->WptrPollCntl1Restored)) {
-                Bc250HqdNoteRestoreFailure(
-                    Evidence, BC250_HQD_RESTORE_STAGE_WPTR_POLL_CNTL1,
-                    BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1,
-                    origCpPqWptrPollCntl1, 0u, 1u);
-                break;
-            }
-            if (Evidence->WptrPollCntl1Restored == origCpPqWptrPollCntl1) {
-                Evidence->WptrPollCntl1RestorePassed = 1u;
-                break;
-            }
-        }
-        if (Evidence->WptrPollCntl1RestorePassed == 0u &&
-            Evidence->WptrPollCntl1ClearAttempts != 0u &&
-            Evidence->FirstRestoreFailureStage !=
-                (uint32_t)BC250_HQD_RESTORE_STAGE_WPTR_POLL_CNTL1) {
-            Bc250HqdNoteRestoreFailure(
-                Evidence, BC250_HQD_RESTORE_STAGE_WPTR_POLL_CNTL1,
-                BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1,
-                origCpPqWptrPollCntl1, Evidence->WptrPollCntl1Restored, 0u);
-        } else if (Evidence->WptrPollCntl1RestorePassed == 0u) {
-            Evidence->RestorePassed = 0u;
-        }
-    }
-    if (cpPqWptrPollCntlWritten != 0u) {
-        (void)Bc250HqdRestoreRegister(
-            Interface, Evidence, BC250_HQD_RESTORE_STAGE_WPTR_POLL_CNTL,
-            BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL, origCpPqWptrPollCntl,
-            ~BC250_HQD_WPTR_POLL_ACTIVE_MASK, &check);
-    }
-    if (gcvmL2Cntl2Written != 0u) {
-        (void)Bc250HqdRestoreRegister(
-            Interface, Evidence, BC250_HQD_RESTORE_STAGE_GCVM_L2_CNTL2,
-            BC250_HQD_MMIO_GCVM_L2_CNTL2, origGcvmL2Cntl2,
-            0xFFFFFFFFu, &check);
-    }
-    if (rlcCpSchedulersWritten != 0u) {
-        Evidence->RlcCpSchedulersRestorePassed =
-            (uint32_t)Bc250HqdRestoreRegister(
-                Interface, Evidence,
-                BC250_HQD_RESTORE_STAGE_RLC_CP_SCHEDULERS,
-                BC250_HQD_MMIO_RLC_CP_SCHEDULERS,
-                Evidence->RlcCpSchedulersBefore, 0xFFFFFFFFu,
-                &Evidence->RlcCpSchedulersRestored);
-    }
-    if (gcvmCtx0Written != 0u) {
-        uint32_t gcvmOk = 1u;
-
-        if (!Bc250HqdRestoreRegister(
-                Interface, Evidence, BC250_HQD_RESTORE_STAGE_GCVM_CONTEXT0,
-                BC250_HQD_MMIO_GCVM_CONTEXT0_CNTL, origGcvmCtx0Cntl,
-                0xFFFFFFFFu, &check)) {
-            gcvmOk = 0u;
-        }
-        if (!Bc250HqdRestoreRegister(
-                Interface, Evidence, BC250_HQD_RESTORE_STAGE_GCVM_CONTEXT0,
-                BC250_HQD_MMIO_GCVM_CONTEXT0_PT_END_LO, origGcvmCtx0PtEndLo,
-                0xFFFFFFFFu, &check)) {
-            gcvmOk = 0u;
-        }
-        if (!Bc250HqdRestoreRegister(
-                Interface, Evidence, BC250_HQD_RESTORE_STAGE_GCVM_CONTEXT0,
-                BC250_HQD_MMIO_GCVM_CONTEXT0_PT_START_LO,
-                origGcvmCtx0PtStartLo, 0xFFFFFFFFu, &check)) {
-            gcvmOk = 0u;
-        }
-        if (!Bc250HqdRestoreRegister(
-                Interface, Evidence, BC250_HQD_RESTORE_STAGE_GCVM_CONTEXT0,
-                BC250_HQD_MMIO_GCVM_CONTEXT0_PT_BASE_HI, origGcvmCtx0PtBaseHi,
-                0xFFFFFFFFu, &check)) {
-            gcvmOk = 0u;
-        }
-        if (!Bc250HqdRestoreRegister(
-                Interface, Evidence, BC250_HQD_RESTORE_STAGE_GCVM_CONTEXT0,
-                BC250_HQD_MMIO_GCVM_CONTEXT0_PT_BASE_LO, origGcvmCtx0PtBaseLo,
-                0xFFFFFFFFu, &check)) {
-            gcvmOk = 0u;
-        }
-        Evidence->GcvmContext0RestorePassed = gcvmOk;
-    }
-    if (cpMecCntlWritten != 0u) {
-        (void)Bc250HqdRestoreRegister(
-            Interface, Evidence, BC250_HQD_RESTORE_STAGE_CP_MEC_CNTL,
-            0x00008234u, origCpMecCntl, 0xFFFFFFFFu,
-            &Evidence->CpMecCntlAfter);
-    }
-    if (cpMeCntlWritten != 0u) {
-        (void)Bc250HqdRestoreRegister(
-            Interface, Evidence, BC250_HQD_RESTORE_STAGE_CP_ME_CNTL,
-            0x000086D8u, origCpMeCntl, 0xFFFFFFFFu,
-            &Evidence->CpMeCntlAfter);
-    }
-
-CleanupMemory:
-    /* Restauracao do Scratch e Memoria */
-    if (scratchWritten != 0u) {
-        (void)Bc250HqdActiveWrite(
-            Interface, Evidence, 0x00030100u, originalScratch);
-    }
-
-    if (Buffers->MqdVirtual != NULL && Buffers->MqdSizeBytes >= sizeof(BC250_GFX10_COMPUTE_MQD)) {
-        vPtr32 = (volatile uint32_t *)Buffers->MqdVirtual;
-        for (i = 0u; i < BC250_MQD_SIZE_DWORDS; ++i) {
-            vPtr32[i] = observableDispatch != 0u ? mqdSnapshot[i] : 0u;
-        }
-    }
-    if (Buffers->RingVirtual != NULL) {
-        vPtr32 = (volatile uint32_t *)Buffers->RingVirtual;
-        if (observableDispatch != 0u) {
-            for (i = 0u; i < BC250_DISPATCH_RING_MIN_DWORDS; ++i) {
-                vPtr32[i] = ringSnapshot[i];
-            }
-        } else {
-            for (i = 0u; i < (Buffers->RingSizeBytes >> 2); ++i) {
-                vPtr32[i] = 0u;
-            }
-        }
-    }
-    if (Buffers->EopVirtual != NULL) {
-        if (observableDispatch == 0u) {
-            vPtr32 = (volatile uint32_t *)Buffers->EopVirtual;
-            for (i = 0u; i < (Buffers->EopSizeBytes >> 2); ++i) {
-                vPtr32[i] = 0u;
-            }
-        }
-    }
-    if (Buffers->RptrVirtual != NULL) {
-        vPtr32 = (volatile uint32_t *)Buffers->RptrVirtual;
-        vPtr32[0] = observableDispatch != 0u ? rptrSnapshot[0] : 0u;
-        vPtr32[1] = observableDispatch != 0u ? rptrSnapshot[1] : 0u;
-    }
-    if (Buffers->WptrVirtual != NULL) {
-        vPtr32 = (volatile uint32_t *)Buffers->WptrVirtual;
-        vPtr32[0] = observableDispatch != 0u ? wptrSnapshot[0] : 0u;
-        vPtr32[1] = observableDispatch != 0u ? wptrSnapshot[1] : 0u;
-    }
-    if (Buffers->FenceVirtual != NULL) {
-        vPtr32 = (volatile uint32_t *)Buffers->FenceVirtual;
-        if (observableDispatch != 0u) {
-            vPtr32[0] = fenceSnapshot[0];
-            vPtr32[1] = fenceSnapshot[1];
-        } else {
-            vPtr32[0] = 0u; vPtr32[1] = 0u;
-        }
-    }
-    if (observableDispatch != 0u && observableMemoryStaged != 0u) {
-        volatile uint32_t *shaderPtr =
-            (volatile uint32_t *)Buffers->ShaderVirtual;
-        volatile uint32_t *resultPtr =
-            (volatile uint32_t *)Buffers->ResultVirtual;
-
-        for (i = 0u; i < BC250_OBSERVABLE_SHADER_DWORDS; ++i) {
-            shaderPtr[i] = shaderSnapshot[i];
-        }
-        resultPtr[0] = resultSnapshot;
-        Interface->Barrier(Interface->Context);
-
-        DispatchEvidence->ShaderRestorePassed = 1u;
-        for (i = 0u; i < BC250_OBSERVABLE_SHADER_DWORDS; ++i) {
-            if (shaderPtr[i] != shaderSnapshot[i]) {
-                DispatchEvidence->ShaderRestorePassed = 0u;
-            }
-        }
-        DispatchEvidence->ResultRestorePassed =
-            resultPtr[0] == resultSnapshot ? 1u : 0u;
-        DispatchEvidence->FenceRestorePassed =
-            ((volatile uint32_t *)Buffers->FenceVirtual)[0] == fenceSnapshot[0] &&
-            ((volatile uint32_t *)Buffers->FenceVirtual)[1] == fenceSnapshot[1] ?
-                1u : 0u;
-        DispatchEvidence->RingRestorePassed = 1u;
-        for (i = 0u; i < BC250_DISPATCH_RING_MIN_DWORDS; ++i) {
-            if (((volatile uint32_t *)Buffers->RingVirtual)[i] !=
-                    ringSnapshot[i]) {
-                DispatchEvidence->RingRestorePassed = 0u;
-            }
-        }
-        coreMemoryRestorePassed = 1u;
-        for (i = 0u; i < BC250_MQD_SIZE_DWORDS; ++i) {
-            if (((volatile uint32_t *)Buffers->MqdVirtual)[i] !=
-                    mqdSnapshot[i]) {
-                coreMemoryRestorePassed = 0u;
-            }
-        }
-        if (((volatile uint32_t *)Buffers->RptrVirtual)[0] != rptrSnapshot[0] ||
-            ((volatile uint32_t *)Buffers->RptrVirtual)[1] != rptrSnapshot[1] ||
-            ((volatile uint32_t *)Buffers->WptrVirtual)[0] != wptrSnapshot[0] ||
-            ((volatile uint32_t *)Buffers->WptrVirtual)[1] != wptrSnapshot[1]) {
-            coreMemoryRestorePassed = 0u;
-        }
-        Evidence->MemoryRestorePassed =
-            coreMemoryRestorePassed &&
-            DispatchEvidence->ShaderRestorePassed &&
-            DispatchEvidence->ResultRestorePassed &&
-            DispatchEvidence->FenceRestorePassed &&
-            DispatchEvidence->RingRestorePassed;
-    } else {
-        Evidence->MemoryRestorePassed = 1u;
-    }
-
-    /* Restauracao do Seletor GRBM_GFX_CNTL e Broadcast GRBM_GFX_INDEX */
-    if (observableDispatch != 0u && selectorCaptured == 0u) {
-        return Evidence->MemoryRestorePassed != 0u ?
-            status : BC250_HQD_ACTIVE_RESTORE_FAILED;
-    }
-    (void)Bc250HqdActiveWrite(Interface, Evidence, 0x00030800u, 0xE0000000u);
-    Interface->Barrier(Interface->Context);
-    if (!Bc250HqdActiveWrite(Interface, Evidence, BC250_GRBM_GFX_CNTL_BYTE_OFFSET, Evidence->OriginalSelector)) {
-        return BC250_HQD_ACTIVE_RESTORE_FAILED;
-    }
-    Interface->Barrier(Interface->Context);
-    if (!Bc250HqdActiveRead(Interface, Evidence, BC250_GRBM_GFX_CNTL_BYTE_OFFSET, &Evidence->RestoredSelector) ||
-        (Evidence->RestoredSelector & 0x7FFu) != (Evidence->OriginalSelector & 0x7FFu)) {
-        return BC250_HQD_ACTIVE_RESTORE_FAILED;
-    }
-
-    Evidence->PhysicalReady = 0u;
-    if (observableDispatch != 0u) {
-        DispatchEvidence->Observation.RegistersRestorePassed =
-            Evidence->RestorePassed;
-        DispatchEvidence->Observation.MemoryRestorePassed =
-            Evidence->MemoryRestorePassed;
-        (void)Bc250EvaluateObservableComputeDispatch(
-            &dispatchDescriptor,
-            &DispatchEvidence->Observation,
-            &DispatchEvidence->Verdict);
-        DispatchEvidence->PhysicalReady =
-            DispatchEvidence->WgpPreflightPassed != 0u &&
-            DispatchEvidence->ShaderReadbackPassed != 0u &&
-            DispatchEvidence->Verdict.PhysicalReady != 0u ? 1u : 0u;
-        Evidence->PhysicalReady = DispatchEvidence->PhysicalReady;
-        Evidence->TriadPassed = DispatchEvidence->Verdict.TriadPassed;
-        if (status == BC250_HQD_ACTIVE_OK &&
-            DispatchEvidence->PhysicalReady == 0u) {
-            status = BC250_HQD_ACTIVE_RESTORE_FAILED;
-        }
-    } else if (status == BC250_HQD_ACTIVE_OK &&
-        Evidence->TriadPassed != 0u &&
-        Evidence->RestorePassed != 0u &&
-        Evidence->MemoryRestorePassed != 0u) {
-        Evidence->PhysicalReady = 1u;
-    }
-
-    return status;
+    return Bc250HqdRunRestoreStage(
+        Interface, Buffers, Evidence, DispatchEvidence, &st, status);
 }
 
 BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransaction(
@@ -3495,8 +3488,11 @@ BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransaction(
     BC250_GFX10_COMPUTE_MQD *Mqd,
     BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE *Evidence)
 {
+    BC250_HQD_PERSISTENT_STATE state;
+
     return Bc250ComputeRunActiveHqdSubmissionTransactionInternal(
-        Interface, Buffers, Props, Mqd, Evidence, NULL);
+        Interface, Buffers, Props, Mqd, Evidence, NULL,
+        (uint32_t)BC250_HQD_TRANSACTION_DIAGNOSTIC, &state);
 }
 
 BC250_HQD_ACTIVE_STATUS Bc250ComputeRunObservableShaderDispatchTransaction(
@@ -3507,9 +3503,64 @@ BC250_HQD_ACTIVE_STATUS Bc250ComputeRunObservableShaderDispatchTransaction(
     BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE *ActiveEvidence,
     BC250_HQD_SHADER_DISPATCH_EVIDENCE *DispatchEvidence)
 {
+    BC250_HQD_PERSISTENT_STATE state;
+
     if (DispatchEvidence == NULL) return BC250_HQD_ACTIVE_BAD_ARGUMENT;
     return Bc250ComputeRunActiveHqdSubmissionTransactionInternal(
-        Interface, Buffers, Props, Mqd, ActiveEvidence, DispatchEvidence);
+        Interface, Buffers, Props, Mqd, ActiveEvidence, DispatchEvidence,
+        (uint32_t)BC250_HQD_TRANSACTION_OBSERVABLE_SHADER, &state);
+}
+
+BC250_HQD_ACTIVE_STATUS Bc250ComputeActivatePersistentHqd(
+    const BC250_HQD_SELECTOR_INTERFACE *Interface,
+    const BC250_HQD_MC_BUFFERS *Buffers,
+    const BC250_COMPUTE_MQD_PROPERTIES *Props,
+    BC250_GFX10_COMPUTE_MQD *Mqd,
+    BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE *Evidence,
+    BC250_HQD_PERSISTENT_STATE *State)
+{
+    BC250_HQD_ACTIVE_STATUS status;
+
+    if (State == NULL) return BC250_HQD_ACTIVE_BAD_ARGUMENT;
+    memset(State, 0, sizeof(*State));
+
+    status = Bc250ComputeRunActiveHqdSubmissionTransactionInternal(
+        Interface, Buffers, Props, Mqd, Evidence, NULL,
+        (uint32_t)BC250_HQD_TRANSACTION_PERSISTENT_ACTIVATE, State);
+
+    /*
+     * Fila meio ativada nunca sai daqui: se a transacao nao terminou OK, o
+     * proprio caminho de falha ja executou o rollback e o estado volta
+     * zerado, sem teardown pendente para o chamador.
+     */
+    if (status != BC250_HQD_ACTIVE_OK || State->QueueIsActive == 0u) {
+        memset(State, 0, sizeof(*State));
+        return status != BC250_HQD_ACTIVE_OK ?
+            status : BC250_HQD_ACTIVE_WRITE_FAILED;
+    }
+    return status;
+}
+
+BC250_HQD_ACTIVE_STATUS Bc250ComputeDeactivatePersistentHqd(
+    const BC250_HQD_SELECTOR_INTERFACE *Interface,
+    const BC250_HQD_MC_BUFFERS *Buffers,
+    BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE *Evidence,
+    BC250_HQD_PERSISTENT_STATE *State)
+{
+    BC250_HQD_ACTIVE_STATUS status;
+
+    if (Interface == NULL || Buffers == NULL || Evidence == NULL ||
+        State == NULL) {
+        return BC250_HQD_ACTIVE_BAD_ARGUMENT;
+    }
+    if (State->QueueIsActive == 0u) {
+        return BC250_HQD_ACTIVE_BAD_ARGUMENT;
+    }
+
+    status = Bc250HqdRunRestoreStage(
+        Interface, Buffers, Evidence, NULL, State, BC250_HQD_ACTIVE_OK);
+    State->QueueIsActive = 0u;
+    return status;
 }
 
 const char *Bc250HqdActiveStatusName(BC250_HQD_ACTIVE_STATUS Status)

@@ -39,6 +39,45 @@ static const BC250_MCDM_OBJECT_RECORD *Bc250McdmFindObjectConst(
     return NULL;
 }
 
+static int Bc250McdmAcquireSubmissionRundown(
+    BC250_MCDM_OBJECT_RECORD *Record)
+{
+    long observed;
+    long desired;
+
+    if (Record == NULL) return 0;
+    for (;;) {
+        observed = InterlockedCompareExchange(&Record->SubmissionRundown, 0, 0);
+        if ((observed & BC250_MCDM_SUBMISSION_RUNDOWN_CLOSING) != 0 ||
+            (observed & BC250_MCDM_SUBMISSION_RUNDOWN_COUNT_MASK) ==
+                BC250_MCDM_SUBMISSION_RUNDOWN_COUNT_MASK) {
+            return 0;
+        }
+        desired = observed + 1;
+        if (InterlockedCompareExchange(
+                &Record->SubmissionRundown, desired, observed) == observed) {
+            return 1;
+        }
+    }
+}
+
+static long Bc250McdmCloseSubmissionRundown(
+    BC250_MCDM_OBJECT_RECORD *Record)
+{
+    long observed;
+    long desired;
+
+    if (Record == NULL) return BC250_MCDM_SUBMISSION_RUNDOWN_CLOSING;
+    for (;;) {
+        observed = InterlockedCompareExchange(&Record->SubmissionRundown, 0, 0);
+        desired = observed | BC250_MCDM_SUBMISSION_RUNDOWN_CLOSING;
+        if (InterlockedCompareExchange(
+                &Record->SubmissionRundown, desired, observed) == observed) {
+            return desired;
+        }
+    }
+}
+
 static BC250_MCDM_OBJECT_STATUS Bc250McdmValidateRegistry(
     const BC250_MCDM_OBJECT_REGISTRY *Registry)
 {
@@ -67,6 +106,9 @@ static BC250_MCDM_OBJECT_STATUS Bc250McdmAllocateRecord(
         Type > BC250_MCDM_OBJECT_OPEN_ALLOCATION) {
         return BC250_MCDM_OBJECT_BAD_ARGUMENT;
     }
+    if (Registry->Teardown != 0u) {
+        return BC250_MCDM_OBJECT_IN_TEARDOWN;
+    }
     if (Registry->NextSlot == BC250_MCDM_MAX_OBJECTS) {
         return BC250_MCDM_OBJECT_NO_SPACE;
     }
@@ -76,6 +118,7 @@ static BC250_MCDM_OBJECT_STATUS Bc250McdmAllocateRecord(
     record->Signature = BC250_MCDM_OBJECT_LIVE_SIGNATURE;
     record->Generation = Bc250McdmNextGeneration(Registry);
     record->Type = (uint32_t)Type;
+    record->State = (uint32_t)BC250_MCDM_OBJECT_STATE_LIVE;
     record->ExternalOwner = ExternalOwner;
     record->OwnerProcess = OwnerProcess;
     record->Parent = Parent;
@@ -105,6 +148,9 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectCreateProcess(
         ExternalOwner == NULL || Handle == NULL) {
         return BC250_MCDM_OBJECT_BAD_ARGUMENT;
     }
+    if (Registry->Teardown != 0u) {
+        return BC250_MCDM_OBJECT_IN_TEARDOWN;
+    }
     for (index = 0u; index < Registry->NextSlot; ++index) {
         const BC250_MCDM_OBJECT_RECORD *record = &Registry->Objects[index];
         if (record->Signature == BC250_MCDM_OBJECT_LIVE_SIGNATURE &&
@@ -133,7 +179,8 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectLookup(
     }
     found = Bc250McdmFindObjectConst(Registry, Handle);
     if (found == NULL) return BC250_MCDM_OBJECT_INVALID_HANDLE;
-    if (found->Signature != BC250_MCDM_OBJECT_LIVE_SIGNATURE) {
+    if (found->Signature != BC250_MCDM_OBJECT_LIVE_SIGNATURE ||
+        found->State == (uint32_t)BC250_MCDM_OBJECT_STATE_DEAD) {
         return BC250_MCDM_OBJECT_STALE_HANDLE;
     }
     if (ExpectedType != BC250_MCDM_OBJECT_NONE &&
@@ -192,6 +239,142 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectCreateChild(
     return BC250_MCDM_OBJECT_OK;
 }
 
+BC250_MCDM_OBJECT_STATUS Bc250McdmObjectCreateContext(
+    BC250_MCDM_OBJECT_REGISTRY *Registry,
+    const void *OwnerAdapter,
+    BC250_MCDM_HANDLE ParentDevice,
+    BC250_MCDM_HANDLE OwnerProcess,
+    uint32_t NodeOrdinal,
+    uint32_t EngineOrdinal,
+    BC250_MCDM_HANDLE *Handle)
+{
+    BC250_MCDM_OBJECT_STATUS status;
+    BC250_MCDM_OBJECT_RECORD *contextRec;
+
+    if (Handle != NULL) *Handle = NULL;
+    if (OwnerAdapter == NULL || NodeOrdinal >= 2u) {
+        return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+    }
+
+    status = Bc250McdmObjectCreateChild(Registry,
+        BC250_MCDM_OBJECT_CONTEXT, ParentDevice, OwnerProcess, Handle);
+    if (status != BC250_MCDM_OBJECT_OK) return status;
+
+    contextRec = Bc250McdmFindObject(Registry, *Handle);
+    if (contextRec == NULL) return BC250_MCDM_OBJECT_BAD_REGISTRY;
+
+    contextRec->OwnerAdapter = OwnerAdapter;
+    contextRec->NodeOrdinal = NodeOrdinal;
+    contextRec->EngineOrdinal = EngineOrdinal;
+    contextRec->ApplicableSegmentId = 1u;
+    return BC250_MCDM_OBJECT_OK;
+}
+
+BC250_MCDM_OBJECT_STATUS Bc250McdmContextAcquireSubmissionView(
+    BC250_MCDM_OBJECT_REGISTRY *Registry,
+    BC250_MCDM_HANDLE ContextHandle,
+    const void *ExpectedAdapter,
+    uint32_t ExpectedNodeOrdinal,
+    BC250_CONTEXT_SUBMISSION_VIEW *View)
+{
+    BC250_MCDM_OBJECT_RECORD *contextRec;
+    BC250_MCDM_OBJECT_RECORD *processRec;
+
+    if (View != NULL) memset(View, 0, sizeof(*View));
+    if (Registry == NULL || ContextHandle == NULL || View == NULL) {
+        return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+    }
+    if (Registry->Signature != BC250_MCDM_OBJECT_REGISTRY_SIGNATURE) {
+        return BC250_MCDM_OBJECT_BAD_REGISTRY;
+    }
+    if (Registry->Teardown != 0u) {
+        return BC250_MCDM_OBJECT_IN_TEARDOWN;
+    }
+
+    contextRec = Bc250McdmFindObject(Registry, ContextHandle);
+    if (contextRec == NULL) {
+        return BC250_MCDM_OBJECT_INVALID_HANDLE;
+    }
+    if (contextRec->Signature != BC250_MCDM_OBJECT_LIVE_SIGNATURE ||
+        contextRec->Type != BC250_MCDM_OBJECT_CONTEXT) {
+        return BC250_MCDM_OBJECT_STALE_HANDLE;
+    }
+    if (contextRec->State != (uint32_t)BC250_MCDM_OBJECT_STATE_LIVE) {
+        return BC250_MCDM_OBJECT_STALE_HANDLE;
+    }
+    if (ExpectedAdapter != NULL && contextRec->OwnerAdapter != NULL &&
+        contextRec->OwnerAdapter != ExpectedAdapter) {
+        return BC250_MCDM_OBJECT_OWNER_MISMATCH;
+    }
+    if (contextRec->NodeOrdinal != ExpectedNodeOrdinal) {
+        return BC250_MCDM_OBJECT_NODE_MISMATCH;
+    }
+
+    processRec = Bc250McdmFindObject(Registry, contextRec->OwnerProcess);
+    if (processRec == NULL ||
+        processRec->Signature != BC250_MCDM_OBJECT_LIVE_SIGNATURE ||
+        processRec->State != (uint32_t)BC250_MCDM_OBJECT_STATE_LIVE) {
+        return BC250_MCDM_OBJECT_OWNER_MISMATCH;
+    }
+    if (processRec->RootPageTableAddress == 0u ||
+        processRec->RootPageTableEntries == 0u) {
+        return BC250_MCDM_OBJECT_NO_ROOT_PAGE_TABLE;
+    }
+
+    if (!Bc250McdmAcquireSubmissionRundown(contextRec)) {
+        return BC250_MCDM_OBJECT_IN_TEARDOWN;
+    }
+    InterlockedIncrement(&contextRec->InFlightSubmissions);
+
+    /* O rundown fecha atomicamente a janela LIVE -> DESTROYING. Depois da
+     * aquisição, repetir as invariantes que podem mudar durante teardown. */
+    if (Registry->Teardown != 0u ||
+        contextRec->Signature != BC250_MCDM_OBJECT_LIVE_SIGNATURE ||
+        contextRec->State != (uint32_t)BC250_MCDM_OBJECT_STATE_LIVE ||
+        processRec->Signature != BC250_MCDM_OBJECT_LIVE_SIGNATURE ||
+        processRec->State != (uint32_t)BC250_MCDM_OBJECT_STATE_LIVE) {
+        InterlockedDecrement(&contextRec->InFlightSubmissions);
+        InterlockedDecrement(&contextRec->SubmissionRundown);
+        return BC250_MCDM_OBJECT_IN_TEARDOWN;
+    }
+
+    View->ContextHandle = ContextHandle;
+    View->ParentDevice = contextRec->Parent;
+    View->OwnerProcess = contextRec->OwnerProcess;
+    View->OwnerAdapter = contextRec->OwnerAdapter;
+    View->Generation = contextRec->Generation;
+    View->NodeOrdinal = contextRec->NodeOrdinal;
+    View->EngineOrdinal = contextRec->EngineOrdinal;
+    View->ApplicableSegmentId = contextRec->ApplicableSegmentId;
+    View->RootPageTableAddress = processRec->RootPageTableAddress;
+    View->RootPageTableSegmentId = processRec->RootPageTableSegmentId;
+    View->RootPageTableEntries = processRec->RootPageTableEntries;
+    View->PageTableEpoch = processRec->PageTableEpoch;
+    View->TeardownEpoch = Registry->TeardownEpoch;
+
+    return BC250_MCDM_OBJECT_OK;
+}
+
+BC250_MCDM_OBJECT_STATUS Bc250McdmContextReleaseSubmissionView(
+    BC250_MCDM_OBJECT_REGISTRY *Registry,
+    BC250_MCDM_HANDLE ContextHandle)
+{
+    BC250_MCDM_OBJECT_RECORD *contextRec;
+
+    if (Registry == NULL || ContextHandle == NULL) {
+        return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+    }
+    contextRec = Bc250McdmFindObject(Registry, ContextHandle);
+    if (contextRec == NULL) {
+        return BC250_MCDM_OBJECT_INVALID_HANDLE;
+    }
+    if (contextRec->InFlightSubmissions > 0) {
+        InterlockedDecrement(&contextRec->InFlightSubmissions);
+        InterlockedDecrement(&contextRec->SubmissionRundown);
+    }
+    return BC250_MCDM_OBJECT_OK;
+}
+
 BC250_MCDM_OBJECT_STATUS Bc250McdmObjectCreateAdapterAllocation(
     BC250_MCDM_OBJECT_REGISTRY *Registry,
     const void *ExternalOwner,
@@ -202,15 +385,18 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectCreateAdapterAllocation(
 {
     BC250_MCDM_OBJECT_STATUS status;
     BC250_MCDM_OBJECT_RECORD *record;
+    uint32_t index;
 
     if (Handle != NULL) *Handle = NULL;
-    uint32_t index;
 
     if (Bc250McdmValidateRegistry(Registry) != BC250_MCDM_OBJECT_OK ||
         ExternalOwner == NULL || AllocationToken == 0u || AllocationBytes == 0u ||
         AllocationAlignment == 0u ||
         (AllocationAlignment & (AllocationAlignment - 1u)) != 0u) {
         return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+    }
+    if (Registry->Teardown != 0u) {
+        return BC250_MCDM_OBJECT_IN_TEARDOWN;
     }
     for (index = 0u; index < Registry->NextSlot; ++index) {
         const BC250_MCDM_OBJECT_RECORD *candidate = &Registry->Objects[index];
@@ -345,6 +531,7 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectSetRootPageTable(
     if (process->RootPageTableSetCount == 0u) {
         process->RootPageTableSetCount = 1u;
     }
+    ++process->PageTableEpoch;
     return BC250_MCDM_OBJECT_OK;
 }
 
@@ -367,6 +554,15 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectDestroy(
 
     record = Bc250McdmFindObject(Registry, Handle);
     if (record == NULL) return BC250_MCDM_OBJECT_BAD_REGISTRY;
+
+    if (record->Type == BC250_MCDM_OBJECT_CONTEXT) {
+        long rundown = Bc250McdmCloseSubmissionRundown(record);
+        record->State = (uint32_t)BC250_MCDM_OBJECT_STATE_DESTROYING;
+        if ((rundown & BC250_MCDM_SUBMISSION_RUNDOWN_COUNT_MASK) != 0) {
+            return BC250_MCDM_OBJECT_IN_FLIGHT_SUBMISSIONS;
+        }
+    }
+
     parent = NULL;
     referenced = NULL;
     if (record->Parent != NULL) {
@@ -387,6 +583,7 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectDestroy(
     if (parent != NULL) --parent->ChildCount;
     if (referenced != NULL) --referenced->ChildCount;
     record->Signature = BC250_MCDM_OBJECT_DEAD_SIGNATURE;
+    record->State = (uint32_t)BC250_MCDM_OBJECT_STATE_DEAD;
     --Registry->LiveCount;
     return BC250_MCDM_OBJECT_OK;
 }
@@ -403,11 +600,25 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectRegistryTeardown(
         DestroyedCount == NULL) {
         return BC250_MCDM_OBJECT_BAD_ARGUMENT;
     }
+    Registry->Teardown = 1u;
+    ++Registry->TeardownEpoch;
+    for (index = 0u; index < Registry->NextSlot; ++index) {
+        BC250_MCDM_OBJECT_RECORD *record = &Registry->Objects[index];
+        if (record->Signature == BC250_MCDM_OBJECT_LIVE_SIGNATURE &&
+            record->Type == BC250_MCDM_OBJECT_CONTEXT) {
+            long rundown = Bc250McdmCloseSubmissionRundown(record);
+            record->State = (uint32_t)BC250_MCDM_OBJECT_STATE_DESTROYING;
+            if ((rundown & BC250_MCDM_SUBMISSION_RUNDOWN_COUNT_MASK) != 0) {
+                return BC250_MCDM_OBJECT_IN_FLIGHT_SUBMISSIONS;
+            }
+        }
+    }
     index = Registry->NextSlot;
     while (index != 0u) {
         BC250_MCDM_OBJECT_RECORD *record = &Registry->Objects[--index];
         if (record->Signature != BC250_MCDM_OBJECT_LIVE_SIGNATURE) continue;
         record->Signature = BC250_MCDM_OBJECT_DEAD_SIGNATURE;
+        record->State = (uint32_t)BC250_MCDM_OBJECT_STATE_DEAD;
         record->ChildCount = 0u;
         ++destroyed;
     }
@@ -430,6 +641,10 @@ const char *Bc250McdmObjectStatusName(BC250_MCDM_OBJECT_STATUS Status)
     case BC250_MCDM_OBJECT_OWNER_MISMATCH: return "owner_mismatch";
     case BC250_MCDM_OBJECT_PARENT_MISMATCH: return "parent_mismatch";
     case BC250_MCDM_OBJECT_CHILDREN_LIVE: return "children_live";
+    case BC250_MCDM_OBJECT_NODE_MISMATCH: return "node_mismatch";
+    case BC250_MCDM_OBJECT_NO_ROOT_PAGE_TABLE: return "no_root_page_table";
+    case BC250_MCDM_OBJECT_IN_TEARDOWN: return "in_teardown";
+    case BC250_MCDM_OBJECT_IN_FLIGHT_SUBMISSIONS: return "in_flight_submissions";
     default: return "unknown";
     }
 }

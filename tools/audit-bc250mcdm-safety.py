@@ -19,32 +19,65 @@ def forbid(text: str, needle: str, label: str, errors: list[str]) -> None:
 
 
 def function_body(text: str, signature: str) -> str:
-    """Return a C function body, including braces, using balanced braces."""
-    start = text.find(signature)
-    if start < 0:
+    """Return a C function body, including braces, using balanced braces.
+
+    Skips forward declarations. Sem isso, uma funcao que possui prototipo
+    antes da definicao devolvia o corpo da funcao SEGUINTE, e todas as
+    exigencias sobre ela passavam ou falhavam pelo motivo errado — falso
+    negativo silencioso em um gate fail-closed.
+    """
+    search = 0
+    while True:
+        start = text.find(signature, search)
+        if start < 0:
+            return ""
+        search = start + len(signature)
+        # Fecha a lista de argumentos a partir do parenteses da assinatura.
+        depth = 0
+        index = text.find("(", start)
+        if index < 0:
+            continue
+        end_args = -1
+        for index in range(index, len(text)):
+            if text[index] == "(":
+                depth += 1
+            elif text[index] == ")":
+                depth -= 1
+                if depth == 0:
+                    end_args = index
+                    break
+        if end_args < 0:
+            continue
+        rest = text[end_args + 1:]
+        stripped = rest.lstrip()
+        if not stripped.startswith("{"):
+            continue  # prototipo: procura a proxima ocorrencia
+        brace = end_args + 1 + (len(rest) - len(stripped))
+        depth = 0
+        for index in range(brace, len(text)):
+            if text[index] == "{":
+                depth += 1
+            elif text[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[brace:index + 1]
         return ""
-    brace = text.find("{", start)
-    if brace < 0:
-        return ""
-    depth = 0
-    for index in range(brace, len(text)):
-        if text[index] == "{":
-            depth += 1
-        elif text[index] == "}":
-            depth -= 1
-            if depth == 0:
-                return text[brace:index + 1]
-    return ""
 
 
 def main() -> int:
     active_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+    engine_path = ROOT / "driver" / "wdk" / "bc250_submission_engine.c"
     callbacks_path = ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c"
     active_test_path = ROOT / "driver" / "tests" / "active_miniport_test.c"
     recovery_path = ROOT / "tools" / "BC250_RECOVERY.cmd"
     inf_path = ROOT / "driver" / "wdk" / "package" / "bc250mcdm.inf"
     stage_path = ROOT / "tools" / "stage-bc250mcdm-package.ps1"
     bind_path = ROOT / "tools" / "bind-bc250mcdm-failclosed.ps1"
+    lab_bind_path = ROOT / "tools" / "bind-bc250mcdm-lab.ps1"
+    lab_watchdog_path = ROOT / "tools" / "watch-bc250mcdm-lab.ps1"
+    lab_rollback_path = ROOT / "tools" / "rollback-bc250mcdm-lab.ps1"
+    render_prepare_path = ROOT / "tools" / "prepare-bc250mcdm-rendernode.ps1"
+    render_inspect_path = ROOT / "tools" / "inspect-bc250mcdm-rendernode.ps1"
     collector_path = ROOT / "tools" / "capture-bc250mcdm-binding.ps1"
     watchdog_path = ROOT / "tools" / "watch-bc250mcdm-binding.ps1"
     confirm_display_path = ROOT / "tools" / "confirm-bc250mcdm-display.ps1"
@@ -78,12 +111,18 @@ def main() -> int:
     build_path = ROOT / "driver" / "wdk" / "build-contract.bat"
 
     active = active_path.read_text(encoding="utf-8")
+    engine = engine_path.read_text(encoding="utf-8")
     callbacks = callbacks_path.read_text(encoding="utf-8")
     active_test = active_test_path.read_text(encoding="utf-8")
     recovery = recovery_path.read_text(encoding="utf-8")
     inf = inf_path.read_text(encoding="utf-8")
     stage = stage_path.read_text(encoding="utf-8")
     bind = bind_path.read_text(encoding="utf-8")
+    lab_bind = lab_bind_path.read_text(encoding="utf-8")
+    lab_watchdog = lab_watchdog_path.read_text(encoding="utf-8")
+    lab_rollback = lab_rollback_path.read_text(encoding="utf-8")
+    render_prepare = render_prepare_path.read_text(encoding="utf-8")
+    render_inspect = render_inspect_path.read_text(encoding="utf-8")
     collector = collector_path.read_text(encoding="utf-8")
     watchdog = watchdog_path.read_text(encoding="utf-8")
     confirm_display = confirm_display_path.read_text(encoding="utf-8")
@@ -110,6 +149,13 @@ def main() -> int:
     require(active,
             "#if !defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)",
             "compile-time display-only StartDevice gate", errors)
+    require(active, "Bc250ProbeSnapshotDdiTrace();",
+            "V5 DDI trace snapshot before teardown", errors)
+    require(active,
+            "InterlockedCompareExchange(&context->IsActive, 0, 0) != 0",
+            "idempotent StopDevice/RemoveDevice lifecycle", errors)
+    require(display, "Bc250ProbeMarkDdi(BC250_V5_DDI_QUERY_INTERFACE);",
+            "QueryInterface V5 DDI trace", errors)
     require(active,
             "registry value must never be able to turn",
             "non-tunable display safety contract", errors)
@@ -120,6 +166,231 @@ def main() -> int:
            "local activation of unsafe StartDevice bring-up", errors)
     forbid(build, "/DBC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP",
            "unsafe StartDevice bring-up in package build", errors)
+
+    # A lab image must not advertise persistent submission without wiring the
+    # complete physical lifecycle into the active miniport. Candidate 3.62
+    # regressed here: the engine existed but StartDevice never called it.
+    start_active = function_body(
+        active, "NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(")
+    # Desde o 3.67 Bc250DxgkDdiStopDeviceActive e' um involucro de uma linha
+    # sobre a implementacao parametrizada pelo motivo do teardown. Auditar o
+    # involucro nao provaria nada.
+    stop_active = function_body(
+        active, "static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason(")
+    quiesce_active = function_body(
+        active, "static NTSTATUS Bc250ActiveQuiesceAndSnapshotTracker(")
+    submit_wrapper = function_body(
+        active, "static NTSTATUS Bc250ActiveSubmitCommandVirtualLifecycle(")
+    submit_gate = function_body(
+        active, "BOOLEAN Bc250ActiveSubmissionGateEnter(")
+    submit_body = function_body(
+        active, "static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(")
+    one_shot_hqd = function_body(
+        active, "static BC250_HQD_ACTIVE_STATUS "
+                "Bc250ActiveRunActiveHqdSubmissionTransaction(")
+    for needle, label in (
+        ('L"PersistentSubmission"', "persistent-submission tunable read"),
+        ("Bc250SubmissionEngineOnline(context);", "persistent engine online"),
+        ("Bc250SubmissionEngineSelfTest(context);", "P1 physical self-test"),
+        ("Bc250SubmissionEngineP2StreamTest(context);", "P2 stream test"),
+        ("Bc250SubmissionEngineRecordTelemetry(context);",
+         "P1/P2 telemetry publication"),
+        ("context->SubmissionEngine.SelfTest.PhysicalReady != 0u",
+         "P1 physical-ready success gate"),
+        ("context->SubmissionEngine.P2Stream.PhysicalReady != 0u",
+         "P2 physical-ready success gate"),
+        ("(context->PersistentSubmission == 0u ||",
+         "strict persistent-submission policy gate"),
+        ("(context->ShaderDispatch == 0u ||",
+         "strict shader-dispatch policy gate"),
+    ):
+        require(start_active, needle, label, errors)
+    require(stop_active, "Bc250SubmissionEngineOffline(context);",
+            "persistent engine StopDevice teardown", errors)
+    if (stop_active and
+            stop_active.find("Bc250SubmissionEngineOffline(context);") >
+            stop_active.find("Bc250DxgkDdiStopDeviceReadonly(&context->Core)")):
+        errors.append("persistent engine teardown occurs after core teardown")
+
+    # ------------------------------------------------------------------
+    # Contrato de quiescencia do teardown (candidato 3.67).
+    #
+    # O 3.66 decidiu o teardown pelo retorno de DxgkCbSynchronizeExecution e
+    # devolveu STATUS_DEVICE_BUSY com o rastreador comprovadamente vazio
+    # (Pending=0, Reserved=0, SyncStatus=0xC0000001). O gate abaixo impede
+    # tanto a volta daquele mecanismo unico quanto a "correcao" oposta —
+    # ler os contadores sem lock e sem quiescencia.
+    # ------------------------------------------------------------------
+    require(stop_active, "Bc250ActiveQuiesceAndSnapshotTracker(",
+            "tracker quiescence before StopDevice teardown", errors)
+    require(stop_active, "pendingCount != 0u || reservedCount != 0u",
+            "fail-closed StopDevice on non-empty tracker", errors)
+    require(stop_active, "STATUS_DEVICE_BUSY",
+            "StopDevice busy verdict preserved", errors)
+    for needle, label in (
+        ("BC250_ACTIVE_LIFECYCLE_STOPPING",
+         "STOPPING state before tracker snapshot"),
+        ("Bc250WddmFenceTrackerSetAcceptingWork(tracker, FALSE)",
+         "admission gate closed before snapshot"),
+        ("Bc250ActiveRetirementTimerStop(Context);",
+         "retirement timer stopped before snapshot"),
+        ("Bc250ActiveStopFlushDpcs();", "DPC drain before snapshot"),
+        ("Bc250WddmFenceTrackerSnapshotCounts(",
+         "locked tracker snapshot"),
+        ("&Context->SubmitInFlight, 0, 0",
+         "in-flight submission drain"),
+    ):
+        require(quiesce_active, needle, label, errors)
+    # A fotografia so vale sob o lock proprio; leitura crua e' proibida em
+    # ambos os corpos.
+    for body, where in ((quiesce_active, "quiescence"), (stop_active, "StopDevice")):
+        forbid(body, "WddmFences.Count",
+               f"unsynchronized tracker Count read in {where}", errors)
+        forbid(body, "WddmFences.ReservedCount",
+               f"unsynchronized tracker ReservedCount read in {where}", errors)
+
+    if quiesce_active.count("Bc250ActiveRetirementTimerStop(Context);") < 2:
+        errors.append("missing second retirement timer stop after in-flight drain")
+
+    # O portao de ciclo de vida precisa recusar submissao nova depois do
+    # STOPPING. Desde a revisao final do 3.67 ele e' uma funcao testavel, em
+    # vez de texto enterrado no wrapper.
+    for needle, label in (
+        ("BC250_ACTIVE_LIFECYCLE_RUNNING",
+         "submission lifecycle gate"),
+        ("InterlockedIncrement(&Context->SubmitInFlight)",
+         "in-flight submission accounting"),
+    ):
+        require(submit_gate, needle, label, errors)
+    for needle, label in (
+        ("Bc250ActiveSubmissionGateEnter(context)",
+         "wrapper enters submission gate"),
+        ("Bc250ActiveSubmitCommandVirtualBody(",
+         "single-exit submission body"),
+        ("Bc250ActiveSubmissionGateLeave(context)",
+         "single submission gate release"),
+    ):
+        require(submit_wrapper, needle, label, errors)
+    require(submit_body, "BC250_ACTIVE_LIFECYCLE_RUNNING",
+            "timer rearm forbidden after STOPPING", errors)
+    require(submit_body, "Bc250ActiveRetirementTimerStart(context);",
+            "conditional retirement timer rearm", errors)
+
+    # Rastreador com lock proprio em todos os caminhos.
+    for needle, label in (
+        ("Bc250FenceLockAcquire(&Tracker->Lock", "tracker lock acquisition"),
+        ("BC250_FENCE_LOCK_SPIN_LIMIT", "bounded tracker lock spin"),
+        ("Bc250WddmFenceTrackerReserveUnlocked(", "locked reserve path"),
+        ("Bc250WddmFenceTrackerCommitUnlocked(", "locked commit path"),
+        ("Bc250WddmFenceTrackerCancelUnlocked(", "locked cancel path"),
+        ("++Tracker->RejectedWhileStopping;",
+         "admission gate rejection accounting"),
+    ):
+        require(engine, needle, label, errors)
+
+    # Evidencia nao pode misturar corridas.
+    #
+    # Ate o 3.75 este gate exigia os dois resets por familia. Eles tinham
+    # chamador real, mas cobertura incompleta: Shader*, HqdActive* e Dmm*
+    # ficavam de fora de toda varredura, e a corrida 3.75 publicou
+    # DmmChildRelationsCalled=56 e DmmIsSupportedCount=41 herdados de boots
+    # anteriores. O gate passava enquanto a contaminacao acontecia.
+    #
+    # Agora exige o reset INTEGRAL, que zera o enum inteiro e nao depende de
+    # nenhuma lista ser mantida em dia.
+    driver_entry = function_body(active, "NTSTATUS DriverEntry(")
+    require(driver_entry, "Bc250ProbeResetAllVolatile();",
+            "integral telemetry reset at load", errors)
+
+    # ORDEM do early-return render-only dentro de StartDevice.
+    #
+    # Nao basta o perfil render-only devolver zero sources/children: ele tem de
+    # faze-lo ANTES de adquirir post-display ownership e antes de
+    # Bc250DisplayInit. Um early-return colocado depois estaria tomando o
+    # scanout do GOP para so' entao desistir — o cenario de tela preta que o
+    # perfil existe para evitar. Isto e' uma propriedade de ordem no codigo, e
+    # so' analise estatica a captura; nenhum teste de tabela a veria.
+    start_device = function_body(active, "NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(")
+    early = start_device.find("BC250_ADAPTER_PROFILE_RENDER_ONLY_LAB")
+    post_display = start_device.find("Bc250AcquirePostDisplayReservation")
+    display_init = start_device.find("Bc250DisplayInit(")
+    if early == -1:
+        errors.append("StartDevice lacks the render-only early return")
+    if post_display != -1 and not (0 <= early < post_display):
+        errors.append(
+            "render-only early return does not precede post-display ownership")
+    if display_init != -1 and not (0 <= early < display_init):
+        errors.append(
+            "render-only early return does not precede Bc250DisplayInit")
+
+    # O marcador de bring-up inseguro so' pode existir sob a macro. Se ele
+    # vazar para fora do #if, a deteccao por conteudo do empacotador seguro
+    # passa a dar falso positivo em toda imagem, e o gate vira decoracao.
+    marker = "BC250-UNSAFE-STARTDEVICE-BRINGUP-COMPILED"
+    if marker in active:
+        guard = active.find("#if defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)")
+        at = active.find(marker)
+        endif = active.find("#endif", guard) if guard != -1 else -1
+        if not (0 <= guard < at < endif):
+            errors.append(
+                "unsafe bring-up marker is not enclosed by its #if guard")
+
+    # Captura integral do GUID em QueryInterface, e marcacao de DDI uma unica
+    # vez por chamada (o 3.66 marcava duas e inflava V5DdiMarks).
+    require(display, "Bc250ProbeRecordQueryInterface(&record);",
+            "full GUID capture on QueryInterface", errors)
+    require(display, "RtlCopyMemory(record.Data4",
+            "QueryInterface GUID Data4 capture", errors)
+    require(active, "Bc250ProbeSnapshotQueryInterfaces();",
+            "QueryInterface snapshot published at teardown", errors)
+    query_interface_body = function_body(
+        display, "NTSTATUS APIENTRY Bc250DxgkDdiQueryInterface(")
+    if query_interface_body.count(
+            "Bc250ProbeMarkDdi(BC250_V5_DDI_QUERY_INTERFACE);") != 1:
+        errors.append(
+            "QueryInterface must mark the DDI trace exactly once")
+
+    # Nenhuma interface pode ser aceita por suposicao para manter o
+    # adaptador vivo: a recusa continua sendo o unico retorno.
+    forbid(query_interface_body, "return STATUS_SUCCESS;",
+           "QueryInterface accepting an unimplemented interface", errors)
+    for needle, label in (
+        ("props.SchedulerMe = 2u;", "Cyan Skillfish MEC2 selector"),
+        ("props.SchedulerPipe = 0u;", "Cyan Skillfish pipe selector"),
+        ("props.SchedulerQueue = 0u;", "Cyan Skillfish queue selector"),
+    ):
+        require(one_shot_hqd, needle, label, errors)
+
+    # RenderNode must select a reachable registration path in DriverEntry.
+    # Candidate 3.63 retained DxgkInitialize only behind a DEADBEEF condition,
+    # so every real boot silently remained display-only.
+    driver_entry = function_body(active, "NTSTATUS DriverEntry(")
+    start_v5 = function_body(
+        active, "NTSTATUS APIENTRY "
+                "Bc250DxgkDdiStartDeviceV5Telemetry(")
+    for needle, label in (
+        ('L"RenderNode"', "RenderNode DriverEntry tunable read"),
+        ("renderNodePresent == 1u && renderNode == 1u",
+         "reachable full-WDDM registration gate"),
+        ("status = DxgkInitialize(", "full-WDDM registration call"),
+        ("status = DxgkInitializeDisplayOnlyDriver(",
+         "display-only registration fallback"),
+        ("BC250_PROBE_V5_REGISTRATION_MODE",
+         "registration-mode telemetry"),
+    ):
+        require(driver_entry, needle, label, errors)
+    forbid(driver_entry, "0xDEADBEEF",
+           "dead-code-only DxgkInitialize reachability", errors)
+    for needle, label in (
+        ("Bc250DxgkDdiStartDeviceActive(", "active StartDevice delegation"),
+        ("BC250_PROBE_V5_START_DEVICE_STATUS",
+         "full-WDDM StartDevice status telemetry"),
+        ("BC250_PROBE_V5_START_DEVICE_SOURCES",
+         "full-WDDM source-count telemetry"),
+        ("BC250_PROBE_V5_START_DEVICE_CHILDREN",
+         "full-WDDM child-count telemetry"),
+    ):
+        require(start_v5, needle, label, errors)
 
     vsync_dpc = function_body(display, "static VOID Bc250VsyncDpcRoutine(")
     synchronized_vsync = function_body(
@@ -269,8 +540,21 @@ def main() -> int:
             "full MCDM capability gate", errors)
     forbid(callbacks, "caps->SupportNonVGA = TRUE",
            "MCDM-prohibited non-VGA capability", errors)
-    require(callbacks, "caps->MiscCaps.ComputeOnly = 1u",
-            "compute-only driver capability", errors)
+    # Alvo do driver: WDDM display+render (jogos).
+    #
+    # Este gate exigia MiscCaps.ComputeOnly = 1u, do alvo MCDM original. Essa
+    # exigencia entrou em contradicao direta com o resto do driver assim que o
+    # miniport passou a registrar por DxgkInitialize em 2026-08-31: o INF
+    # declara Class=Display, o StartDevice reporta uma fonte de video e um
+    # filho, e a tabela de VidPn esta inteira preenchida e provada em hardware.
+    #
+    # Um adaptador ComputeOnly nao apresenta nada. Manter a exigencia seria
+    # congelar a contradicao que o dxgkrnl rejeita com STATUS_INTERNAL_ERROR.
+    # A propriedade de seguranca que importa continua garantida logo acima:
+    # SupportNonVGA nao pode ser TRUE.
+    forbid(callbacks, "caps->MiscCaps.ComputeOnly = 1u",
+           "compute-only capability incompatible with display+render target",
+           errors)
     forbid(active, "BC250_RUNTIME_EVIDENCE_COMPLETE;",
            "fabricated complete runtime inventory", errors)
     require(active, "BC250_RUNTIME_EVIDENCE_PLATFORM_CARVEOUTS_PROBED",
@@ -444,10 +728,39 @@ def main() -> int:
     require(active_test, "InterlockedCompareExchange64(",
             "atomic exclusive test lock", errors)
 
+    # Candidato 3.67: a regressao medida no silicio precisa continuar coberta
+    # offline, e o gate fail-closed precisa continuar provado nos dois lados.
+    for needle, label in (
+        ("Bc250TestSynchronizeExecutionAlwaysFails",
+         "broken DxgkCbSynchronizeExecution fixture"),
+        ("Bc250RunStopQuiescenceTest",
+         "StopDevice quiescence regression harness"),
+        ("Bc250RunTrackerRaceTest",
+         "submit/retire/stop tracker race harness"),
+        ("Bc250RunRenderTraceResetTest",
+         "render/DMM trace reset harness"),
+        ("STATUS_UNSUCCESSFUL",
+         "synchronize-execution failure reproduced offline"),
+    ):
+        require(active_test, needle, label, errors)
+    quiescence_test = function_body(
+        active_test, "static int Bc250RunStopQuiescenceTest(")
+    # Os dois lados do criterio: vazio conclui, nao-vazio continua ocupado.
+    require(quiescence_test,
+            "Bc250DxgkDdiStopDeviceActive(context) != STATUS_SUCCESS",
+            "empty-tracker teardown completes despite broken sync", errors)
+    require(quiescence_test,
+            "Bc250DxgkDdiStopDeviceActive(context) != STATUS_DEVICE_BUSY",
+            "non-empty tracker stays fail-closed", errors)
+    # O teste nao pode fabricar sucesso limpando o rastreador.
+    forbid(quiescence_test, "Bc250WddmFenceTrackerReset(",
+           "artificial tracker clear inside teardown test", errors)
+
     # Recovery must recognize the exact active service/binary identity.
     for needle in (
         "call :remove_service bc250mcdm",
-        "call :quarantine_driver bc250mcdm.sys",
+        "call :delete_driver bc250mcdm.sys",
+        "call :enable_and_verify_basic_display",
         'findstr.exe /I /C:"AddService=bc250mcdm,"',
         'findstr.exe /I /C:"ServiceBinary=%%12%%\\bc250mcdm.sys"',
     ):
@@ -534,6 +847,75 @@ def main() -> int:
             "explicit visual confirmation before watchdog disarm", errors)
     require(bind, "-IConfirmDisplayIsVisible",
             "visual confirmation acknowledgement", errors)
+
+    # The lab candidate reads RenderNode in DriverEntry and the remaining
+    # policy in StartDevice. Commit/readback must precede NewDev.
+    require(lab_bind, "PRE_BIND_POLICY_APPLIED_READBACK_OK",
+            "transactional lab pre-bind policy evidence", errors)
+    require(lab_bind, "$parametersBefore.PSObject.Properties[$entry.Key]",
+            "missing registry property-safe policy snapshot", errors)
+    require(lab_bind,
+            "PersistentSubmission = $(if ($EnablePersistentSubmission)",
+            "persistent-submission pre-bind policy", errors)
+    require(lab_bind, "RenderNode = $(if ($EnableRenderNode)",
+            "RenderNode pre-bind policy", errors)
+    require(lab_bind, "$probeNow.P1EngineState",
+            "dirty persistent-engine state gate", errors)
+    require(lab_bind, "$probeNow.P1SelfTestPhysicalReady",
+            "dirty P1 physical-ready gate", errors)
+    require(lab_bind, "$probeNow.P2PhysicalReady",
+            "dirty P2 physical-ready gate", errors)
+    require(lab_bind, "C:\\BC250_REQUIRE_CLEAN_BOOT.json",
+            "post-rollback clean-boot marker gate", errors)
+    require(lab_bind, "LastBootUpTime",
+            "post-rollback boot identity gate", errors)
+    policy_index = lab_bind.find("$requestedPolicy = [ordered]@{")
+    update_index = lab_bind.find(
+        "[Bc250LabNewDev.NativeMethods]::UpdateDriverForPlugAndPlayDevicesW(")
+    if policy_index < 0 or update_index < 0 or policy_index > update_index:
+        errors.append("lab binding policy is not applied before NewDev")
+    require(lab_watchdog, "Write-WatchdogState 'ROLLBACK_STARTED'",
+            "lab watchdog rollback transition", errors)
+    require(lab_watchdog, "-Execute -IAcceptDisplayInterruptionRisk",
+            "lab watchdog bounded rollback invocation", errors)
+    require(lab_rollback, "$devices[0].Service -eq 'BasicDisplay'",
+            "lab rollback BasicDisplay verification", errors)
+    require(lab_rollback, "$devices[0].ConfigManagerErrorCode -eq 0",
+            "lab rollback Code 0 verification", errors)
+    require(lab_rollback, "throw \"Rollback incompleto:",
+            "lab rollback fail-closed result", errors)
+    require(lab_rollback, "C:\\BC250_REQUIRE_CLEAN_BOOT.json",
+            "lab rollback clean-boot marker", errors)
+    require(lab_rollback, "rollback_boot_ticks",
+            "lab rollback boot identity snapshot", errors)
+    require(lab_rollback, "$requiresCleanBoot = -not",
+            "lab rollback conditional clean-boot decision", errors)
+    require(arm_reboot, "[switch]$RequireRenderNode",
+            "render-node reboot guard mode", errors)
+    require(arm_reboot, "V5RegistrationMode = 0",
+            "render-node pre-reboot KMDOD proof", errors)
+    require(confirm_reboot, "$requiredProbe['V5RegistrationMode'] = 1",
+            "post-reboot real V5 registration gate", errors)
+    require(confirm_reboot, "$requiredProbe['V5StartDeviceStatus'] = 0",
+            "post-reboot V5 StartDevice success gate", errors)
+    require(confirm_reboot, "$requiredProbe['P2PhysicalReady'] = 1",
+            "post-reboot P2 physical proof gate", errors)
+    require(watchdog_reboot, "[bool]$confirmation.render_node_validated",
+            "watchdog render-node confirmation gate", errors)
+    require(render_prepare, "V5RegistrationMode = 0",
+            "render promotion starts from proved KMDOD", errors)
+    require(render_prepare, "P2PhysicalReady = 1",
+            "render promotion requires physical P2", errors)
+    require(render_prepare, "Set-ItemProperty -LiteralPath $parameterKey -Name RenderNode -Value 1",
+            "render promotion apply", errors)
+    require(render_prepare, "render_node_readback = [uint32]$readback",
+            "render promotion readback evidence", errors)
+    require(render_prepare, "Remove-ItemProperty -LiteralPath $parameterKey -Name RenderNode",
+            "render promotion rollback for absent snapshot", errors)
+    require(render_inspect, "V5LastDdi",
+            "post-reboot V5 DDI trace capture", errors)
+    require(render_inspect, "Nenhum rollback automatico foi solicitado.",
+            "unguarded render inspection disclosure", errors)
     forbid(bind, "Start-Service bc250mcdm",
            "manual service start outside PnP binding", errors)
     forbid(bind, "pnputil.exe /delete-driver",

@@ -19,6 +19,7 @@ extern "C" {
 
 #define BC250_SDMA_OP_NOP        0u
 #define BC250_SDMA_OP_COPY       1u
+#define BC250_SDMA_OP_INDIRECT   4u
 #define BC250_SDMA_OP_WRITE      2u
 #define BC250_SDMA_OP_FENCE      5u
 #define BC250_SDMA_OP_TRAP       6u
@@ -44,6 +45,14 @@ extern "C" {
 #define BC250_SDMA_DWORDS_FENCE       4u
 #define BC250_SDMA_DWORDS_GCR_REQ     5u
 #define BC250_SDMA_DWORDS_TRAP        2u
+#define BC250_SDMA_DWORDS_INDIRECT    6u
+
+/*
+ * SDMA_PKT_INDIRECT_HEADER_VMID ocupa os bits 19:16 e o endereco base do IB e'
+ * mascarado com 0xFFFFFFE0 pelo upstream (sdma_v5_0_ring_emit_ib), portanto o
+ * alinhamento exigido e' de 32 bytes.
+ */
+#define BC250_SDMA_IB_ALIGNMENT_BYTES 32u
 #define BC250_SDMA_DWORDS_POLL_REGMEM 6u
 
 typedef enum BC250_SDMA_STATUS {
@@ -96,6 +105,15 @@ BC250_SDMA_STATUS Bc250SdmaEmitGcr(
     uint32_t *RingBuffer,
     uint32_t RingDwords,
     uint32_t *CursorDwords);
+
+BC250_SDMA_STATUS Bc250SdmaEmitIndirect(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint64_t IbAddress,
+    uint32_t IbSizeDwords,
+    uint64_t CsaAddress,
+    uint32_t Vmid);
 
 BC250_SDMA_STATUS Bc250SdmaEmitTrap(
     uint32_t *RingBuffer,

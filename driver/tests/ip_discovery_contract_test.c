@@ -26,6 +26,8 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
 #define TEST_BLOB_BYTES 512u
 #define TEST_TABLE_OFFSET 0x80u
 #define TEST_DIE_OFFSET 0xD0u
+#define TEST_FIRST_IP_OFFSET (TEST_DIE_OFFSET + 4u)
+#define TEST_OSSSYS_IP_OFFSET (TEST_FIRST_IP_OFFSET + 12u)
 
 static void WriteLe16(unsigned char *Bytes, size_t Offset, uint16_t Value)
 {
@@ -101,9 +103,11 @@ static uint16_t BuildBlob(unsigned char *Blob, uint8_t GcMajor,
     WriteLe16(Blob, TEST_TABLE_OFFSET + 16u, TEST_DIE_OFFSET);
     WriteLe16(Blob, TEST_DIE_OFFSET, 0u);
     WriteLe16(Blob, TEST_DIE_OFFSET + 2u,
-              (uint16_t)(DuplicateGc != 0 ? 3u : 2u));
+              (uint16_t)(DuplicateGc != 0 ? 4u : 3u));
     cursor = TEST_DIE_OFFSET + 4u;
     cursor = AppendIp(Blob, cursor, 42u, 5u, 0u, 0u, 1u, 0u);
+    cursor = AppendIp(Blob, cursor, BC250_DISCOVERY_OSSSYS_HWID,
+                      5u, 0u, 0u, 1u, 0u);
     cursor = AppendIp(Blob, cursor, BC250_DISCOVERY_GC_HWID,
                       GcMajor, 1u, 3u, 3u, Harvest);
     if (DuplicateGc != 0) {
@@ -120,6 +124,7 @@ static int Bc250RunIpDiscoveryContractTest(void)
 {
     unsigned char blob[TEST_BLOB_BYTES];
     BC250_GC_DISCOVERY_IDENTITY identity;
+    BC250_IP_DISCOVERY_IDENTITY osssys;
     uint16_t binarySize;
     uint16_t tableSize;
 
@@ -133,6 +138,37 @@ static int Bc250RunIpDiscoveryContractTest(void)
     CHECK(identity.BaseAddressCount == 3u && identity.BaseAddressWidth == 4u);
     CHECK(identity.BaseAddresses[0] == 0x1000u &&
           identity.BaseAddresses[2] == 0x3000u);
+    CHECK(Bc250ParseIpDiscoveryIdentity(blob, binarySize,
+          BC250_DISCOVERY_OSSSYS_HWID, 0u, &osssys) ==
+          BC250_IP_DISCOVERY_OK);
+    CHECK(osssys.HardwareId == BC250_DISCOVERY_OSSSYS_HWID);
+    CHECK(osssys.Major == 5u && osssys.Minor == 0u &&
+          osssys.Revision == 0u);
+    CHECK(osssys.BaseAddressCount == 1u &&
+          osssys.BaseAddresses[0] == 0x1000u);
+
+    WriteLe16(blob, TEST_OSSSYS_IP_OFFSET, 42u);
+    FinalizeChecksums(blob, (uint16_t)(binarySize - TEST_TABLE_OFFSET),
+                      binarySize);
+    CHECK(Bc250ParseIpDiscoveryIdentity(blob, binarySize,
+          BC250_DISCOVERY_OSSSYS_HWID, 0u, &osssys) ==
+          BC250_IP_DISCOVERY_TARGET_NOT_FOUND);
+
+    binarySize = BuildBlob(blob, 10u, 0u, 0u);
+    WriteLe16(blob, TEST_FIRST_IP_OFFSET, BC250_DISCOVERY_OSSSYS_HWID);
+    FinalizeChecksums(blob, (uint16_t)(binarySize - TEST_TABLE_OFFSET),
+                      binarySize);
+    CHECK(Bc250ParseIpDiscoveryIdentity(blob, binarySize,
+          BC250_DISCOVERY_OSSSYS_HWID, 0u, &osssys) ==
+          BC250_IP_DISCOVERY_TARGET_DUPLICATE);
+
+    binarySize = BuildBlob(blob, 10u, 0u, 0u);
+    blob[TEST_OSSSYS_IP_OFFSET + 7u] = 1u;
+    FinalizeChecksums(blob, (uint16_t)(binarySize - TEST_TABLE_OFFSET),
+                      binarySize);
+    CHECK(Bc250ParseIpDiscoveryIdentity(blob, binarySize,
+          BC250_DISCOVERY_OSSSYS_HWID, 0u, &osssys) ==
+          BC250_IP_DISCOVERY_TARGET_HARVESTED);
 
     binarySize = BuildBlob(blob, 11u, 0u, 0u);
     CHECK(Bc250ParseIpDiscoveryGcIdentity(blob, binarySize, &identity) ==

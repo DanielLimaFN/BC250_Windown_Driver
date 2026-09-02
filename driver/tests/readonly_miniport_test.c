@@ -119,7 +119,8 @@ static int Bc250RunReadonlyMiniportTest(void)
     CHECK(data.DxgkDdiQueryChildRelations == Bc250McdmQueryChildRelations);
     CHECK(data.DxgkDdiUnload == Bc250McdmUnload);
     CHECK(data.DxgkDdiSubmitCommand == NULL);
-    CHECK(data.DxgkDdiQueryConnectionChange == NULL);
+    CHECK(data.DxgkDdiQueryConnectionChange ==
+        Bc250McdmQueryConnectionChange);
     CHECK(data.DxgkDdiCommitVidPn == NULL);
     CHECK(Bc250McdmBuildPagingBuffer(NULL, NULL) ==
         STATUS_INVALID_PARAMETER);

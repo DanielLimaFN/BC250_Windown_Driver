@@ -892,6 +892,9 @@ static int Bc250RunComputeMqdContractTest(void)
         g_testProps.WptrGpuAddress = buffers.WptrGpuAddress;
         g_testProps.UseDoorbell = 1u;
         g_testProps.DoorbellIndex = 0u; /* derivado da faixa MEC no preflight */
+        g_testProps.SchedulerMe = 2u;
+        g_testProps.SchedulerPipe = 0u;
+        g_testProps.SchedulerQueue = 0u;
         g_testProps.PipePriority = 0u;
         g_testProps.QueuePriority = 0u;
         g_testProps.HqdActive = 1u;
@@ -1003,7 +1006,7 @@ static int Bc250RunComputeMqdContractTest(void)
               BC250_HQD_GCVM_INVALIDATE_REQ_VMID0);
         CHECK(g_gcvmInvalidateReq == BC250_HQD_GCVM_INVALIDATE_REQ_VMID0);
         CHECK(actEvidence.GcvmInvalidateAckAfter == 1u);
-        CHECK(actEvidence.GcvmContext0PtBaseLoApplied == (uint32_t)(buffers.PtGpuAddress | 1u));
+        CHECK(actEvidence.GcvmContext0PtBaseLoApplied == (uint32_t)buffers.PtGpuAddress);
         CHECK(actEvidence.GcvmContext0CntlApplied == 0x007FFE01u);
         CHECK(actEvidence.GcvmContext0RestorePassed == 1u);
         CHECK(actEvidence.CoherencyPassed == 1u);
@@ -1047,14 +1050,14 @@ static int Bc250RunComputeMqdContractTest(void)
         g_eopInitAutoClear = 0u;
 
         /*
-         * 9.2.1 Candidato 3.30 - a mascara de fila vem da topologia real.
-         * RLC_CP_SCHEDULERS com ME2/pipe 1 deve produzir bit 8 (1 << (1*8 + 0)),
-         * nunca um literal fixo.
+         * 9.2.1 A mascara de fila vem da topologia possuida pelo miniport.
+         * ME2/pipe 1 deve produzir bit 8 (1 << (1*8 + 0)).
          */
         g_wptrRegister = 0u;
         g_activeRegister = 0u;
         g_seenActiveOne = 0u;
         g_rlcCpSchedulers = 0x58504848u;
+        g_testProps.SchedulerPipe = 1u;
         g_cpPqWptrPollCntl1 = 0u;
         CHECK(Bc250ComputeRunActiveHqdSubmissionTransaction(
             &selectorInterface, &buffers, &g_testProps, &g_testMqd,
@@ -1066,6 +1069,29 @@ static int Bc250RunComputeMqdContractTest(void)
         CHECK(g_cpPqWptrPollCntl1 == 0u);
         CHECK(actEvidence.RestorePassed == 1u);
         CHECK(actEvidence.RestoreFailureCount == 0u);
+        g_testProps.SchedulerPipe = 0u;
+        g_rlcCpSchedulers = 0x58504840u;
+
+        /*
+         * 9.2.1a Candidato 3.48 - boot limpo sem scheduler herdado.
+         * Publica somente scheduler0=ENABLE|ME2|P0|Q0 (0xC0), confere e
+         * restaura exatamente o snapshot zero no teardown.
+         */
+        g_wptrRegister = 0u;
+        g_activeRegister = 0u;
+        g_seenActiveOne = 0u;
+        g_rlcCpSchedulers = 0u;
+        g_cpPqWptrPollCntl1 = 0u;
+        CHECK(Bc250ComputeRunActiveHqdSubmissionTransaction(
+            &selectorInterface, &buffers, &g_testProps, &g_testMqd,
+            &actEvidence) == BC250_HQD_ACTIVE_PM4_NOT_CONSUMED);
+        CHECK(actEvidence.RlcCpSchedulersBefore == 0u);
+        CHECK(actEvidence.RlcCpSchedulersApplied == 0x585048C0u);
+        CHECK(actEvidence.RlcCpSchedulersReadback == 0x585048C0u);
+        CHECK(actEvidence.RlcCpSchedulersRestored == 0u);
+        CHECK(actEvidence.RlcCpSchedulersRestorePassed == 1u);
+        CHECK(g_rlcCpSchedulers == 0u);
+        CHECK(actEvidence.RestorePassed == 1u);
         g_rlcCpSchedulers = 0x58504840u;
 
         /*
@@ -1425,6 +1451,47 @@ static int Bc250RunComputeMqdContractTest(void)
             CHECK(dispatchEvidence.RingTranslationPassed == 0u);
             CHECK(g_testRingBuffer[0] == ringBefore[0]);
             g_testPtBuffer[16] = buffers.RingGpuAddress | 0xE1ull;
+        }
+
+        /*
+         * 9.14 Regressao 3.52: a ativacao persistente deve usar exatamente o
+         * mesmo unhalt seletivo do one-shot. MEC2 fica livre, MEC1 continua
+         * haltado e PFP/ME/CE permanecem intocados durante toda a fila.
+         */
+        {
+            BC250_HQD_PERSISTENT_STATE persistentState;
+
+            memset(&actEvidence, 0, sizeof(actEvidence));
+            memset(&persistentState, 0, sizeof(persistentState));
+            g_activeRegister = 0u;
+            g_rptrRegister = 0u;
+            g_wptrRegister = 0u;
+            g_cpMecCntl = 0x50000000u;
+            g_cpMeCntl = 0x15000000u;
+            g_cpPqStatus = 0u;
+            g_cpPqWptrPollCntl = 0u;
+            g_cpPqWptrPollCntl1 = 0u;
+            g_rlcCpSchedulers = 0x58504840u;
+
+            CHECK(Bc250ComputeActivatePersistentHqd(
+                &selectorInterface, &buffers, &g_testProps, &g_testMqd,
+                &actEvidence, &persistentState) == BC250_HQD_ACTIVE_OK);
+            CHECK(persistentState.QueueIsActive == 1u);
+            CHECK(actEvidence.CpMecCntlBefore == 0x50000000u);
+            CHECK(actEvidence.CpMecCntlApplied == 0x40000000u);
+            CHECK(actEvidence.CpMecCntlReadback == 0x40000000u);
+            CHECK(actEvidence.CpMeCntlBefore == 0x15000000u);
+            CHECK(actEvidence.CpMeCntlApplied == 0x15000000u);
+            CHECK(g_cpMecCntl == 0x40000000u);
+            CHECK(g_cpMeCntl == 0x15000000u);
+
+            CHECK(Bc250ComputeDeactivatePersistentHqd(
+                &selectorInterface, &buffers, &actEvidence,
+                &persistentState) == BC250_HQD_ACTIVE_OK);
+            CHECK(persistentState.QueueIsActive == 0u);
+            CHECK(g_cpMecCntl == 0x50000000u);
+            CHECK(g_cpMeCntl == 0x15000000u);
+            CHECK(g_activeRegister == 0u);
         }
     }
 

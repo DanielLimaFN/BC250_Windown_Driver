@@ -1,5 +1,13 @@
 # Ponto de retomada
 
+> **RETOMADA VIGENTE — 31/08/2026 — VITÓRIA HISTÓRICA DA FASE P2 VALIDADA EM HARDWARE:**
+> O Candidato 3.61.0.0 aprovou com 100% de sucesso o ensaio físico da Fase P2:
+> **16/16 submissões aposentadas, RPTR=204, zero mismatches nos 16 slots de dados e
+> todas as 17 fences de hardware registradas na VRAM física**.
+> Documento de vitória: [`docs/159_VITORIA_HISTORICA_FASE_P2_VALIDADA_EM_HARDWARE.md`](159_VITORIA_HISTORICA_FASE_P2_VALIDADA_EM_HARDWARE.md).
+> Evidência oficial: [`docs/evidence/2026-08-31_09-19-44-DESKTOP-HQAG6T4-p2-multi-submission/p2-multi-submission-acceptance.json`](evidence/2026-08-31_09-19-44-DESKTOP-HQAG6T4-p2-multi-submission/p2-multi-submission-acceptance.json).
+> O driver foi retornado com sucesso para `BasicDisplay / Código 0`. Próximo passo é a **Fase P3 (Interfacing UMD / Runtime / Vulkan)**.
+
 > **Atualizacao de Engenharia de 2026-08-28 (Noite) — CÓDIGO 0 ALCANÇADO NO WINDOWS 11 & DIAGNÓSTICO DEFINITIVO DE TELA PRETA**:
 > - **CÓDIGO 0 ALCANÇADO**: O driver `bc250mcdm.sys` foi oficialmente aceito pelo Windows 11 x64 com `ConfigManagerErrorCode: 0` e `Status: "OK"` (evidências em `docs/evidence/2026-08-28_21-04-10-DESKTOP-HQAG6T4-mcdm-replace/device-after.json`).
 > - **Código 43 Superado**: Resolvido preenchendo a tabela KMDOD com todas as 36 rotinas obrigatórias (`NotifyAcpiEvent`, `GetScanLine`, `SetPalette`, `ControlEtwLogging`, `CollectDbgInfo`, `NotifySurpriseRemoval`) e `Bc250DxgkDdiSetPowerState` retornando `STATUS_SUCCESS` para D0/D3.

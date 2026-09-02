@@ -1,0 +1,43 @@
+﻿{
+    "inspected_at":  "2026-09-01T04:38:46.7140121-03:00",
+    "device":  {
+                   "instance_id":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
+                   "service":  "bc250mcdm",
+                   "config_manager_error":  0
+               },
+    "configured":  {
+                       "key_exists":  true,
+                       "value_exists":  true,
+                       "value":  1
+                   },
+    "probe":  {
+                  "GpuvaLabPromotionRequested":  1,
+                  "GpuvaLabPromotionPresent":  1,
+                  "GpuvaGateEligible":  null,
+                  "GpuvaGateOperational":  null,
+                  "GpuvaGateBlockMask":  null,
+                  "GpuvaSnapshotGeneration":  null,
+                  "GpuvaSnapshotEpoch":  null,
+                  "GpuvaSnapshotLiveCount":  null,
+                  "P1EngineState":  null,
+                  "V2TrackerPushedTotal":  null,
+                  "V2NotifiedTotal":  null,
+                  "V2FencesInFlight":  null,
+                  "V2TrackerOverflow":  null,
+                  "V2TrackerOutOfOrder":  null,
+                  "V2PushFailures":  null,
+                  "V2PollFailures":  null
+              },
+    "failures":  [
+                     "gate ainda nÃ£o estÃ¡ elegÃ­vel",
+                     "mÃ¡scara de bloqueio nÃ£o estÃ¡ zerada",
+                     "gate operacional nÃ£o foi promovido",
+                     "snapshot sem geraÃ§Ã£o publicada",
+                     "snapshot sem epoch publicada",
+                     "snapshot sem faixa viva",
+                     "submission engine nÃ£o estÃ¡ online"
+                 ],
+    "ready_for_controlled_submission":  false,
+    "hardware_validated":  false,
+    "verdict":  "FAIL-CLOSED; NAO EXECUTAR SUBMISSAO"
+}

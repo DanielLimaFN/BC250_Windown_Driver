@@ -1,0 +1,27 @@
+﻿{
+    "captured_at":  "2026-09-01T05:00:04.8359786-03:00",
+    "package_sys_sha256":  "A436F65712203B8898EA826A0E272F4FBF7F54A5795DFFFBE7DC131D726FBDE8",
+    "schema_version":  128,
+    "engine_state":  1,
+    "p2_batch_count":  16,
+    "p2_submissions_accepted":  16,
+    "p2_submissions_retired":  16,
+    "p2_wrap_count":  0,
+    "p2_result_mismatches":  0,
+    "p2_last_fence_observed":  17,
+    "p2_final_wptr":  204,
+    "p2_final_rptr_report":  204,
+    "p2_final_rptr_mmio":  204,
+    "p2_triad_passed":  1,
+    "p2_physical_ready":  1,
+    "p2_doorbell_write_failures":  0,
+    "p2_doorbell_last_value_low":  204,
+    "p2_doorbell_last_value_high":  0,
+    "p2_doorbell_control_before":  1073742096,
+    "p2_doorbell_control_after":  1073742096,
+    "p2_doorbell_hit_observed":  0,
+    "errors":  [
+
+               ],
+    "verdict":  "P2 MULTI-SUBMISSAO VALIDADA EM HARDWARE"
+}

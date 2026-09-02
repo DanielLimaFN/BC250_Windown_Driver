@@ -75,7 +75,7 @@ static int Bc250RunSubmitCommandContractTest(void)
     /* Check PM4 Indirect Buffer Packet (DW 4..7) */
     CHECK(g_testRing[4] == 0xC0023F00u); /* IT_INDIRECT_BUFFER */
     CHECK(g_testRing[5] == 0x10000000u); /* Base lo */
-    CHECK(g_testRing[7] == (1024u | (1u << 20))); /* 4096 / 4 dwords + valid bit */
+    CHECK(g_testRing[7] == 0x00800400u); /* 4096 / 4 dwords + VALID bit 23 */
 
     /* Check PM4 Release Mem Packet (DW 8..15) */
     CHECK(g_testRing[8] == 0xC0064900u); /* IT_RELEASE_MEM */

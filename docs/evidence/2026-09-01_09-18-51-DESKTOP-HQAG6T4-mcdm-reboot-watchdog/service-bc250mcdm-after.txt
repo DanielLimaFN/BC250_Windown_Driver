@@ -1,0 +1,8 @@
+﻿
+NOME_DO_SERVI�O: bc250mcdm 
+        TIPO               : 1  KERNEL_DRIVER  
+        ESTADO              : 1  STOPPED 
+        C�DIGO_DE_SA�DA_DO_WIN32    : 1077  (0x435)
+        C�DIGO_DE_SA�DA_DO_SERVI�O  : 0  (0x0)
+        PONTO_DE_VERIFICA��O         : 0x0
+        AGUARDAR_DICA          : 0x0

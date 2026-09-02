@@ -1,3 +1,7 @@
+#ifndef BC250_RUNTIME_EXPORTS
+#define BC250_RUNTIME_EXPORTS
+#endif
+
 #include "bc250_runtime.h"
 #include "../wdk/bc250_compute_service.h"
 #include <windows.h>
@@ -8,9 +12,10 @@ struct bc250_device {
     HANDLE handle;
     bc250_device_info_t info;
     uint32_t fence_counter;
+    CRITICAL_SECTION lock;
 };
 
-bc250_status_t bc250_device_init(bc250_device_t **device, bc250_device_info_t *info)
+BC250_API bc250_status_t bc250_device_init(bc250_device_t **device, bc250_device_info_t *info)
 {
     HANDLE hDevice;
     BC250_HARDWARE_INFO hwInfo;
@@ -34,7 +39,7 @@ bc250_status_t bc250_device_init(bc250_device_t **device, bc250_device_info_t *i
     }
 
     ZeroMemory(&hwInfo, sizeof(hwInfo));
-    if (!DeviceIoControl(hDevice, IOCTL_BC250_GET_HARDWARE_INFO, NULL, 0,
+    if (!DeviceIoControl(hDevice, (DWORD)IOCTL_BC250_GET_HARDWARE_INFO, NULL, 0,
                          &hwInfo, sizeof(hwInfo), &bytesReturned, NULL)) {
         CloseHandle(hDevice);
         return BC250_ERROR_DEVICE_NOT_FOUND;
@@ -46,12 +51,13 @@ bc250_status_t bc250_device_init(bc250_device_t **device, bc250_device_info_t *i
         return BC250_ERROR_OUT_OF_MEMORY;
     }
 
+    InitializeCriticalSection(&dev->lock);
     dev->handle = hDevice;
     dev->fence_counter = 1;
     strncpy_s(dev->info.silicon_name, sizeof(dev->info.silicon_name), hwInfo.SiliconName, _TRUNCATE);
     dev->info.cpu_cores = hwInfo.CpuCoreCount;
-    dev->info.gpu_cus = hwInfo.GpuCuCount;       /* Detectado dinamicamente (24/28/32/36/40) */
-    dev->info.gpu_wgps = hwInfo.GpuWgpCount;
+    dev->info.gpu_cus = hwInfo.GpuCuCount;       /* 24 CUs ativas */
+    dev->info.gpu_wgps = hwInfo.GpuWgpCount;     /* 12 WGPs */
     dev->info.vram_total_mib = hwInfo.VramTotalMiB;
     dev->info.cpu_visible_mib = hwInfo.CpuVisibleMiB;
     dev->info.rebar_size_mib = hwInfo.RebarSelectedMiB;
@@ -67,120 +73,66 @@ bc250_status_t bc250_device_init(bc250_device_t **device, bc250_device_info_t *i
     return BC250_SUCCESS;
 }
 
-void bc250_device_close(bc250_device_t *device)
+BC250_API void bc250_device_close(bc250_device_t *device)
 {
     if (device != NULL) {
+        EnterCriticalSection(&device->lock);
         if (device->handle != INVALID_HANDLE_VALUE) {
             CloseHandle(device->handle);
+            device->handle = INVALID_HANDLE_VALUE;
         }
+        LeaveCriticalSection(&device->lock);
+        DeleteCriticalSection(&device->lock);
         free(device);
     }
 }
 
-bc250_status_t bc250_mem_alloc(bc250_device_t *device, size_t bytes, uint64_t *gpu_va)
+BC250_API bc250_status_t bc250_mem_alloc(bc250_device_t *device, size_t bytes, uint64_t *gpu_va)
 {
-    BC250_ALLOC_VRAM_REQ req;
-    DWORD bytesReturned = 0;
-
     if (device == NULL || gpu_va == NULL || bytes == 0) return BC250_ERROR_INVALID_ARGUMENT;
-
-    ZeroMemory(&req, sizeof(req));
-    req.SizeBytes = bytes;
-    req.Alignment = 4096;
-
-    if (DeviceIoControl(device->handle, IOCTL_BC250_ALLOC_VRAM, &req, sizeof(req),
-                        &req, sizeof(req), &bytesReturned, NULL) && req.Success) {
-        *gpu_va = req.AllocatedGpuVa;
-        return BC250_SUCCESS;
-    }
-    return BC250_ERROR_OUT_OF_MEMORY;
+    *gpu_va = 0;
+    /* The legacy service is a wrapping bump allocator and FREE_VRAM does not
+     * own or release a lease.  Do not expose it as production allocation. */
+    return BC250_ERROR_NOT_SUPPORTED;
 }
 
-bc250_status_t bc250_mem_free(bc250_device_t *device, uint64_t gpu_va, size_t bytes)
+BC250_API bc250_status_t bc250_mem_free(bc250_device_t *device, uint64_t gpu_va, size_t bytes)
 {
-    BC250_FREE_VRAM_REQ req;
-    DWORD bytesReturned = 0;
-
     if (device == NULL || gpu_va == 0) return BC250_ERROR_INVALID_ARGUMENT;
-
-    ZeroMemory(&req, sizeof(req));
-    req.GpuVa = gpu_va;
-    req.SizeBytes = bytes;
-
-    if (DeviceIoControl(device->handle, IOCTL_BC250_FREE_VRAM, &req, sizeof(req),
-                        &req, sizeof(req), &bytesReturned, NULL) && req.Success) {
-        return BC250_SUCCESS;
-    }
-    return BC250_ERROR_INVALID_ARGUMENT;
+    UNREFERENCED_PARAMETER(bytes);
+    return BC250_ERROR_NOT_SUPPORTED;
 }
 
-bc250_status_t bc250_mem_copy_h2d(bc250_device_t *device, uint64_t dst_gpu_va, const void *src_host, size_t bytes)
+BC250_API bc250_status_t bc250_mem_copy_h2d(bc250_device_t *device, uint64_t dst_gpu_va, const void *src_host, size_t bytes)
 {
-    BC250_SDMA_COPY_REQ req;
-    DWORD bytesReturned = 0;
-
     if (device == NULL || src_host == NULL || dst_gpu_va == 0 || bytes == 0) {
         return BC250_ERROR_INVALID_ARGUMENT;
     }
-
-    ZeroMemory(&req, sizeof(req));
-    req.SourceGpuVa = (uint64_t)(uintptr_t)src_host;
-    req.DestinationGpuVa = dst_gpu_va;
-    req.ByteCount = (uint32_t)bytes;
-    req.FenceValue = ++device->fence_counter;
-
-    if (DeviceIoControl(device->handle, IOCTL_BC250_SDMA_COPY, &req, sizeof(req),
-                        &req, sizeof(req), &bytesReturned, NULL) && req.ExecutionSuccess) {
-        return BC250_SUCCESS;
-    }
-    return BC250_ERROR_EXECUTION_FAILED;
+    /* Fail closed: the legacy IOCTL treats a user pointer as a GPU address and
+     * completes H2D with a kernel CPU copy.  It is not a pinned/mapped SDMA
+     * transfer and must not be exposed as GPU acceleration. */
+    return BC250_ERROR_NOT_SUPPORTED;
 }
 
-bc250_status_t bc250_mem_copy_d2h(bc250_device_t *device, void *dst_host, uint64_t src_gpu_va, size_t bytes)
+BC250_API bc250_status_t bc250_mem_copy_d2h(bc250_device_t *device, void *dst_host, uint64_t src_gpu_va, size_t bytes)
 {
-    BC250_SDMA_COPY_REQ req;
-    DWORD bytesReturned = 0;
-
     if (device == NULL || dst_host == NULL || src_gpu_va == 0 || bytes == 0) {
         return BC250_ERROR_INVALID_ARGUMENT;
     }
-
-    ZeroMemory(&req, sizeof(req));
-    req.SourceGpuVa = src_gpu_va;
-    req.DestinationGpuVa = (uint64_t)(uintptr_t)dst_host;
-    req.ByteCount = (uint32_t)bytes;
-    req.FenceValue = ++device->fence_counter;
-
-    if (DeviceIoControl(device->handle, IOCTL_BC250_SDMA_COPY, &req, sizeof(req),
-                        &req, sizeof(req), &bytesReturned, NULL) && req.ExecutionSuccess) {
-        return BC250_SUCCESS;
-    }
-    return BC250_ERROR_EXECUTION_FAILED;
+    return BC250_ERROR_NOT_SUPPORTED;
 }
 
-bc250_status_t bc250_mem_copy_d2d(bc250_device_t *device, uint64_t dst_gpu_va, uint64_t src_gpu_va, size_t bytes)
+BC250_API bc250_status_t bc250_mem_copy_d2d(bc250_device_t *device, uint64_t dst_gpu_va, uint64_t src_gpu_va, size_t bytes)
 {
-    BC250_SDMA_COPY_REQ req;
-    DWORD bytesReturned = 0;
-
     if (device == NULL || dst_gpu_va == 0 || src_gpu_va == 0 || bytes == 0) {
         return BC250_ERROR_INVALID_ARGUMENT;
     }
-
-    ZeroMemory(&req, sizeof(req));
-    req.SourceGpuVa = src_gpu_va;
-    req.DestinationGpuVa = dst_gpu_va;
-    req.ByteCount = (uint32_t)bytes;
-    req.FenceValue = ++device->fence_counter;
-
-    if (DeviceIoControl(device->handle, IOCTL_BC250_SDMA_COPY, &req, sizeof(req),
-                        &req, sizeof(req), &bytesReturned, NULL) && req.ExecutionSuccess) {
-        return BC250_SUCCESS;
-    }
-    return BC250_ERROR_EXECUTION_FAILED;
+    /* The service currently implements this branch with CPU MMIO mappings,
+     * not a submitted SDMA packet. */
+    return BC250_ERROR_NOT_SUPPORTED;
 }
 
-bc250_status_t bc250_dispatch_kernel(
+BC250_API bc250_status_t bc250_dispatch_kernel(
     bc250_device_t *device,
     const uint32_t *shader_dwords,
     size_t dword_count,
@@ -192,31 +144,93 @@ bc250_status_t bc250_dispatch_kernel(
 {
     BC250_COMPUTE_DISPATCH_REQ req;
     DWORD bytesReturned = 0;
-    size_t copyDwords;
 
-    if (device == NULL || shader_dwords == NULL || dword_count == 0) {
+    if (device == NULL || shader_dwords == NULL || dword_count == 0 || dword_count > 256) {
         return BC250_ERROR_INVALID_ARGUMENT;
     }
 
     ZeroMemory(&req, sizeof(req));
-    copyDwords = dword_count < 256 ? dword_count : 256;
-    memcpy(req.ShaderCode, shader_dwords, copyDwords * sizeof(uint32_t));
-    req.ShaderCodeSize = (uint32_t)(copyDwords * sizeof(uint32_t));
-    req.WorkgroupSizeX = block_x ? block_x : 64;
-    req.GridDimX = grid_x ? grid_x : device->info.gpu_cus; /* Distribui pelos CUs dinâmicos */
+    req.ShaderCodeSize = (ULONG)dword_count;
+    memcpy(req.ShaderCode, shader_dwords, dword_count * sizeof(uint32_t));
+    req.WorkgroupSizeX = block_x;
+    req.GridDimX = grid_x;
+    req.GridDimY = 1;
+    req.GridDimZ = 1;
+
+    EnterCriticalSection(&device->lock);
     req.FenceValue = ++device->fence_counter;
 
-    if (DeviceIoControl(device->handle, IOCTL_BC250_DISPATCH_COMPUTE, &req, sizeof(req),
-                        &req, sizeof(req), &bytesReturned, NULL)) {
-        if (!req.IsaValidationPassed) {
-            return BC250_ERROR_ISA_VALIDATION_FAILED;
-        }
-        if (req.ExecutionSuccess) {
-            if (wptr_delta) *wptr_delta = req.WptrAfter - req.WptrBefore;
-            if (rptr_delta) *rptr_delta = req.RptrAfter - req.RptrBefore;
-            if (fence_observed) *fence_observed = req.FenceObserved;
-            return BC250_SUCCESS;
-        }
+    if (!DeviceIoControl(device->handle, (DWORD)IOCTL_BC250_DISPATCH_COMPUTE, &req, sizeof(req),
+                         &req, sizeof(req), &bytesReturned, NULL)) {
+        LeaveCriticalSection(&device->lock);
+        return BC250_ERROR_EXECUTION_FAILED;
     }
+
+    if (req.IsaValidationPassed == 0) {
+        LeaveCriticalSection(&device->lock);
+        return BC250_ERROR_ISA_VALIDATION_FAILED;
+    }
+
+    if (wptr_delta) *wptr_delta = req.WptrAfter - req.WptrBefore;
+    if (rptr_delta) *rptr_delta = req.RptrAfter - req.RptrBefore;
+    if (fence_observed) *fence_observed = req.FenceObserved;
+
+    LeaveCriticalSection(&device->lock);
+    return (req.ExecutionSuccess != 0) ? BC250_SUCCESS : BC250_ERROR_EXECUTION_FAILED;
+}
+
+BC250_API bc250_status_t bc250_submit_ib(
+    bc250_device_t *device,
+    uint64_t ib_gpu_va,
+    uint32_t ib_dwords,
+    uint32_t *fence_assigned,
+    uint32_t *fence_retired)
+{
+    if (device == NULL || ib_gpu_va == 0 || ib_dwords == 0) {
+        return BC250_ERROR_INVALID_ARGUMENT;
+    }
+    UNREFERENCED_PARAMETER(fence_assigned);
+    UNREFERENCED_PARAMETER(fence_retired);
+    /* BC250_COMPUTE_DISPATCH_REQ has no IB GPUVA field.  The old code silently
+     * discarded ib_gpu_va and submitted zero-filled shader storage. */
+    return BC250_ERROR_NOT_SUPPORTED;
+}
+
+BC250_API bc250_status_t bc250_poll_fence(
+    bc250_device_t *device,
+    uint32_t fence_expected,
+    uint32_t timeout_ms)
+{
+    if (device == NULL) return BC250_ERROR_INVALID_ARGUMENT;
+    UNREFERENCED_PARAMETER(fence_expected);
+    UNREFERENCED_PARAMETER(timeout_ms);
+    /* A fence query must never reuse the dispatch IOCTL: that can submit work.
+     * This becomes supported with the monitored-fence ABI. */
+    return BC250_ERROR_NOT_SUPPORTED;
+}
+
+BC250_API bc250_status_t bc250_get_telemetry(
+    bc250_device_t *device,
+    bc250_telemetry_data_t *telemetry)
+{
+    BC250_PLATFORM_TELEMETRY_SNAPSHOT snapshot;
+    DWORD bytesReturned = 0;
+
+    if (device == NULL || telemetry == NULL) return BC250_ERROR_INVALID_ARGUMENT;
+
+    ZeroMemory(&snapshot, sizeof(snapshot));
+    EnterCriticalSection(&device->lock);
+    if (DeviceIoControl(device->handle, (DWORD)IOCTL_BC250_GET_TELEMETRY, NULL, 0,
+                        &snapshot, sizeof(snapshot), &bytesReturned, NULL)) {
+        telemetry->smu_fw_version = snapshot.GpuMetrics.SmuFirmwareVersion;
+        telemetry->gfxclk_mhz = snapshot.GpuMetrics.GfxclkFrequencyMhz;
+        telemetry->gfx_voltage_mv = snapshot.GpuMetrics.GfxVoltageMv;
+        telemetry->motherboard_temp_c = (uint32_t)(snapshot.MotherboardMetrics.TempCpuC > 0 ? snapshot.MotherboardMetrics.TempCpuC : 0);
+        telemetry->fan_rpm = (uint32_t)snapshot.MotherboardMetrics.FanRpm[0];
+        telemetry->valid = snapshot.TelemetryHealthy;
+        LeaveCriticalSection(&device->lock);
+        return BC250_SUCCESS;
+    }
+    LeaveCriticalSection(&device->lock);
     return BC250_ERROR_EXECUTION_FAILED;
 }

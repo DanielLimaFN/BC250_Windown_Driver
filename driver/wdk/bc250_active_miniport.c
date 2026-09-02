@@ -34,6 +34,26 @@ static uint32_t Bc250ActiveVmidRead32(
 static uint32_t Bc250ActiveVmidWrite32(
     void *Context, uint32_t ByteOffset, uint32_t Value);
 
+/*
+ * Marcador de proveniencia do bring-up inseguro.
+ *
+ * Existe no binario SOMENTE quando BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP
+ * foi definido.  Serve para que o empacotador seguro possa PROVAR, por
+ * conteudo do .sys, que esta' assinando a imagem de producao — e nao a de
+ * laboratorio com outro INF.
+ *
+ * Nao usar nomes de tunable para essa prova: eles aparecem no .rdata como
+ * nomes de campo de telemetria mesmo na imagem de producao, e a verificacao
+ * daria falso positivo.
+ */
+#if defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)
+const WCHAR g_Bc250UnsafeBringupMarker[] =
+    L"BC250-UNSAFE-STARTDEVICE-BRINGUP-COMPILED";
+#define BC250_UNSAFE_BRINGUP_COMPILED 1u
+#else
+#define BC250_UNSAFE_BRINGUP_COMPILED 0u
+#endif
+
 static ULONG Bc250ActiveReadTunable(PCWSTR ValueName, ULONG DefaultValue)
 {
 #if defined(BC250_ENABLE_PERSISTENT_TELEMETRY)
@@ -363,6 +383,11 @@ BC250_HQD_PROGRAM_STATUS Bc250ActiveRunInactiveHqdProgramTransaction(
     props.WptrGpuAddress = buffers.WptrGpuAddress;
     props.UseDoorbell = 0u;
     props.DoorbellIndex = 0u;
+    /* Cyan Skillfish 2: a fila de compute validada usa MEC2/Pipe0/Queue0.
+     * O contrato rejeita SchedulerMe == 0 antes de qualquer acesso ao HW. */
+    props.SchedulerMe = 2u;
+    props.SchedulerPipe = 0u;
+    props.SchedulerQueue = 0u;
     props.PipePriority = 0u;
     props.QueuePriority = 0u;
     props.HqdActive = 0u;
@@ -548,6 +573,9 @@ static BC250_HQD_ACTIVE_STATUS Bc250ActiveRunActiveHqdSubmissionTransaction(
 
     props.UseDoorbell = 0u;
     props.DoorbellIndex = 0u;
+    props.SchedulerMe = 2u;
+    props.SchedulerPipe = 0u;
+    props.SchedulerQueue = 0u;
     props.PipePriority = 0u;
     props.QueuePriority = 0u;
     props.HqdActive = 1u;
@@ -1577,7 +1605,13 @@ static NTSTATUS Bc250ObjectStatusToNtStatus(
     case BC250_MCDM_OBJECT_TYPE_MISMATCH:
     case BC250_MCDM_OBJECT_OWNER_MISMATCH:
         return STATUS_INVALID_HANDLE;
+    case BC250_MCDM_OBJECT_NODE_MISMATCH:
+        return STATUS_INVALID_PARAMETER;
+    case BC250_MCDM_OBJECT_NO_ROOT_PAGE_TABLE:
+    case BC250_MCDM_OBJECT_IN_TEARDOWN:
+        return STATUS_DEVICE_NOT_READY;
     case BC250_MCDM_OBJECT_CHILDREN_LIVE:
+    case BC250_MCDM_OBJECT_IN_FLIGHT_SUBMISSIONS:
         return STATUS_DEVICE_BUSY;
     default:
         return STATUS_INVALID_PARAMETER;
@@ -1790,9 +1824,9 @@ NTSTATUS Bc250ActiveCreateContextObject(
                     &context->ContextAbiReady, 1, 1) != 1) {
                 result = STATUS_DEVICE_NOT_READY;
             } else {
-                status = Bc250McdmObjectCreateChild(&context->Objects,
-                    BC250_MCDM_OBJECT_CONTEXT, DeviceHandle,
-                    device.OwnerProcess, ContextHandle);
+                status = Bc250McdmObjectCreateContext(&context->Objects,
+                    context, DeviceHandle, device.OwnerProcess,
+                    (uint32_t)NodeOrdinal, 0u, ContextHandle);
                 result = Bc250ObjectStatusToNtStatus(status);
                 if (NT_SUCCESS(result)) *ContextInfo = context->ContextAbi;
             }
@@ -1827,6 +1861,8 @@ NTSTATUS Bc250ActiveDestroyContextObject(
         if (status != BC250_MCDM_OBJECT_INVALID_HANDLE) {
             if (status == BC250_MCDM_OBJECT_OK &&
                 InterlockedCompareExchange(&context->IsActive, 1, 1) == 1) {
+                (void)Bc250GpuvaSpaceInvalidateForObject(&context->GpuvaSpace,
+                    record.OwnerProcess, ContextHandle, NULL);
                 status = Bc250McdmObjectDestroy(&context->Objects,
                     ContextHandle, BC250_MCDM_OBJECT_CONTEXT,
                     record.OwnerProcess);
@@ -2437,6 +2473,42 @@ NTSTATUS APIENTRY Bc250DxgkDdiAddDeviceActive(
         return STATUS_DEVICE_CONFIGURATION_ERROR;
     }
     InterlockedExchange(&context->GpuvaSdmaBrokerReady, 1);
+    if (Bc250GpuvaSpaceInitialize(&context->GpuvaSpace, 48u) !=
+        BC250_GPUVA_OK) {
+        ExFreePoolWithTag(context, BC250_ACTIVE_POOL_TAG);
+        Bc250ProbeRecord(BC250_PROBE_ADD_DEVICE_STATUS,
+            (ULONG)STATUS_DEVICE_CONFIGURATION_ERROR);
+        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
+    InterlockedExchange(&context->GpuvaSpaceReady, 1);
+    if (Bc250GpuvaSnapshotStoreInitialize(&context->GpuvaSnapshots, 48u) !=
+            BC250_GPUVA_OK ||
+        Bc250GpuvaJournalInitialize(&context->GpuvaJournal) !=
+            BC250_GPUVA_JOURNAL_OK) {
+        ExFreePoolWithTag(context, BC250_ACTIVE_POOL_TAG);
+        Bc250ProbeRecord(BC250_PROBE_ADD_DEVICE_STATUS,
+            (ULONG)STATUS_DEVICE_CONFIGURATION_ERROR);
+        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
+    InterlockedExchange(&context->GpuvaJournalReady, 1);
+    context->GpuvaHierarchyPending = 0u;
+    context->GpuvaHierarchyProcess = NULL;
+    context->GpuvaHierarchyRootPageTable = 0u;
+    context->GpuvaHierarchyHighestLevel = 0u;
+    InterlockedExchange(&context->GpuvaActivationEligible, 0);
+    context->GpuvaLabPromotion = 0u;
+    context->GpuvaLabPromotionPresent = 0u;
+    context->GpuvaActivationBlockMask =
+        BC250_GPUVA_GATE_BLOCK_ADAPTER_INACTIVE |
+        BC250_GPUVA_GATE_BLOCK_CONTEXT_ABI |
+        BC250_GPUVA_GATE_BLOCK_ALLOCATION_ABI |
+        BC250_GPUVA_GATE_BLOCK_ROOT_ABI |
+        BC250_GPUVA_GATE_BLOCK_ENGINE_OFFLINE |
+        BC250_GPUVA_GATE_BLOCK_SNAPSHOT_EMPTY |
+        BC250_GPUVA_GATE_BLOCK_SNAPSHOT_EPOCH;
+    context->GpuvaActivationSnapshotGeneration = 0u;
+    context->GpuvaActivationSnapshotEpoch = 0u;
+    context->GpuvaActivationSnapshotLiveCount = 0u;
     InterlockedExchange(&context->IsActive, 0);
     RtlZeroMemory(&context->ContextAbi, sizeof(context->ContextAbi));
     InterlockedExchange(&context->ContextAbiReady, 0);
@@ -2523,6 +2595,10 @@ NTSTATUS APIENTRY Bc250DxgkDdiAddDeviceActive(
     context->DeferredPspLoadFirmware = NULL;
     context->SubmissionsCount = 0;
     context->ResetsCount = 0;
+    context->PersistentSubmission = 0u;
+    context->TunablePersistentSubmissionPresent = 0u;
+    RtlZeroMemory(&context->SubmissionEngine,
+                  sizeof(context->SubmissionEngine));
 
     status = Bc250ActiveRegisterAdapter(context);
     if (!NT_SUCCESS(status)) {
@@ -2531,9 +2607,58 @@ NTSTATUS APIENTRY Bc250DxgkDdiAddDeviceActive(
         return status;
     }
 
+    /*
+     * Arma o portao de admissao do rastreador junto com a criacao do
+     * contexto. Sao dois portoes independentes e em profundidade:
+     *
+     *   AcceptingWork  — propriedade do rastreador, armada aqui, fechada na
+     *                    quiescencia do teardown.
+     *   LifecycleState — propriedade do contexto, so vai a RUNNING quando o
+     *                    StartDevice devolve sucesso; NOT_STARTED e' zero, de
+     *                    modo que memoria zerada recusa trabalho.
+     *
+     * Nenhum dos dois sozinho autoriza submissao: SubmitCommandVirtual exige
+     * IsActive == 1 e LifecycleState == RUNNING, e a reserva ainda passa pelo
+     * AcceptingWork.
+     */
+    Bc250WddmFenceTrackerSetAcceptingWork(
+        &context->SubmissionEngine.WddmFences, TRUE);
+    InterlockedExchange(&context->LifecycleState,
+        (LONG)BC250_ACTIVE_LIFECYCLE_NOT_STARTED);
+
     *MiniportDeviceContext = context;
     Bc250ProbeRecord(BC250_PROBE_ADD_DEVICE_STATUS, (ULONG)STATUS_SUCCESS);
     return STATUS_SUCCESS;
+}
+
+/*
+ * Arma o ciclo de vida junto com IsActive (3.67).
+ *
+ * O portao de admissao do rastreador e' fail-closed por construcao: um
+ * rastreador zerado tem AcceptingWork == 0 e recusa toda reserva. Isso e'
+ * deliberado — esquecer de armar produz um adaptador que nao aceita trabalho,
+ * falha alta e imediata, em vez de um adaptador que aceita trabalho que o
+ * teardown nao consegue contabilizar.
+ *
+ * O preco e' que TODO caminho que liga IsActive precisa armar tambem. Sao
+ * tres: bring-up pulado cedo, bring-up pulado tarde e bring-up completo.
+ * Concentrar aqui evita que um quarto caminho futuro esqueca metade do par.
+ */
+static void Bc250ActiveArmLifecycle(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE) {
+        return;
+    }
+    InterlockedExchange(&Context->SubmitInFlight, 0);
+    Context->StopReason = BC250_ACTIVE_STOP_REASON_NONE;
+    Context->StopSubmitInFlightAfterDrain = 0u;
+    Context->StopDrainIterations = 0u;
+    Context->StopSnapshotFailures = 0u;
+    Bc250WddmFenceTrackerSetAcceptingWork(
+        &Context->SubmissionEngine.WddmFences, TRUE);
+    InterlockedExchange(&Context->LifecycleState,
+        (LONG)BC250_ACTIVE_LIFECYCLE_RUNNING);
 }
 
 NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
@@ -2546,6 +2671,12 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
     BC250_DXGK_ACTIVE_CONTEXT *context =
         (BC250_DXGK_ACTIVE_CONTEXT *)MiniportDeviceContext;
     NTSTATUS preflightStatus;
+#if defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)
+    NTSTATUS persistentStatus = STATUS_NOT_SUPPORTED;
+    NTSTATUS selfTestStatus = STATUS_NOT_SUPPORTED;
+    NTSTATUS p2Status = STATUS_NOT_SUPPORTED;
+    BOOLEAN persistentReady = FALSE;
+#endif
 
     Bc250ProbeRecord(BC250_PROBE_START_DEVICE_ENTERED, 1);
     if (context == NULL ||
@@ -2574,6 +2705,63 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
         context->Core.LastStage == BC250_DXGK_STAGE_RUNTIME_MISSING &&
         context->Core.ResolvedBarCount != 0u &&
         context->Core.TopologyEvidence.AddressSpace.SnapshotGeneration != 0u) {
+
+        /*
+         * Gate 1.5 — render-only.
+         *
+         * Devolve zero sources e zero children, e sai ANTES de adquirir
+         * post-display ownership e antes de Bc250DisplayInit.  Isso e' o que
+         * torna a corrida repetivel: o GOP continua dono do scanout, o modo
+         * herdado nao e' tocado, e um FAIL nao custa tela preta nem boot
+         * frio.  A pergunta que este perfil responde e' unicamente se a
+         * tabela render/base sobrevive em Codigo 0.
+         *
+         * As tres flags de ABI ficam em zero, iguais ao caminho de display
+         * de producao: promove-las aqui anunciaria objetos WDDM sem backend
+         * fisico provado, que e' exatamente o falso sucesso que o projeto
+         * proibe.  A promocao e' decisao de um gate posterior, com evidencia
+         * propria.
+         */
+        if (Bc250ActiveGetAdapterProfile() ==
+                BC250_ADAPTER_PROFILE_RENDER_ONLY_LAB) {
+            Bc250ProbeRecord(BC250_PROBE_SKIP_HW_BRINGUP, 1u);
+            /*
+             * Marcador positivo: prova que ESTE caminho executou, em vez de
+             * deduzi-lo da ausencia de outros campos. Um zero em
+             * PostDisplayAttempted so' significa "nao tentou" se existir um
+             * um em RenderOnlyEarlyReturn.
+             */
+            Bc250ProbeRecord(BC250_PROBE_V5_RENDER_ONLY_EARLY_RETURN, 1u);
+            Bc250ProbeRecord(BC250_PROBE_V5_START_DEVICE_RETURN_STAGE,
+                BC250_V5_START_RETURN_RENDER_ONLY);
+            *NumberOfVideoPresentSources = 0;
+            *NumberOfChildren = 0;
+#if defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)
+            /*
+             * Nao adquirir post-display ownership. O perfil render-only
+             * segue diretamente para o bring-up fisico comum e so podera
+             * retornar sucesso depois que RuntimeCaps/ABI/submission tiverem
+             * backend real. P1/P2 continuam sujeitos aos mesmos gates e
+             * provas fisicas do caminho display+render de laboratorio.
+             */
+            goto Bc250PhysicalRenderBringup;
+#else
+            /*
+             * Uma imagem sem bring-up compilado nao possui backend de
+             * render. Retornar sucesso aqui foi o falso positivo medido no
+             * 3.76--3.78 (RuntimeMissing=1, todas as ABIs em zero, Codigo
+             * 43). Falhar explicitamente e' o unico resultado honesto.
+             */
+            InterlockedExchange(&context->ContextAbiReady, 0);
+            InterlockedExchange(&context->AllocationAbiReady, 0);
+            InterlockedExchange(&context->RootPageTableAbiReady, 0);
+            InterlockedExchange(&context->IsActive, 0);
+            Bc250ProbeRecordFirstFailure(STATUS_DEVICE_NOT_READY);
+            return STATUS_DEVICE_NOT_READY;
+#endif
+        }
+
+        Bc250ProbeRecord(BC250_PROBE_V5_POST_DISPLAY_ATTEMPTED, 1u);
         context->PostDisplayStatus = Bc250AcquirePostDisplayReservation(
             &context->Core.DxgkInterface,
             context->Core.ResolvedBars,
@@ -2619,6 +2807,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
             postDisplayInfo.PhysicAddress.QuadPart = (LONGLONG)context->PostDisplayEvidence.PhysicalStart;
             postDisplayInfo.TargetId = 0;
             postDisplayInfo.AcpiId = 0;
+            Bc250ProbeRecord(BC250_PROBE_V5_DISPLAY_INIT_ENTERED, 1u);
             preflightStatus = Bc250DisplayInit(
                 &context->Core.DxgkInterface, &postDisplayInfo);
             if (!NT_SUCCESS(preflightStatus)) {
@@ -2636,26 +2825,42 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
          * destructive laboratory bring-up on during PnP display ownership.
          */
         Bc250ProbeRecord(BC250_PROBE_SKIP_HW_BRINGUP, 1u);
+        Bc250ProbeRecord(BC250_PROBE_V5_START_DEVICE_RETURN_STAGE,
+            BC250_V5_START_RETURN_DISPLAY_OK);
         *NumberOfVideoPresentSources = 1;
         *NumberOfChildren = 1;
         InterlockedExchange(&context->ContextAbiReady, 0);
         InterlockedExchange(&context->AllocationAbiReady, 0);
         InterlockedExchange(&context->RootPageTableAbiReady, 0);
         InterlockedExchange(&context->IsActive, 1);
+        Bc250ActiveArmLifecycle(context);
         return STATUS_SUCCESS;
     }
 
     InterlockedExchange(&context->IsActive, 0);
+    Bc250ActiveRetirementTimerStop(context);
     InterlockedExchange(&context->ContextAbiReady, 0);
     InterlockedExchange(&context->AllocationAbiReady, 0);
     InterlockedExchange(&context->RootPageTableAbiReady, 0);
     Bc250ProbeRecordFirstFailure(preflightStatus);
     return preflightStatus;
 #else
+Bc250PhysicalRenderBringup:
         {
             ULONG skipHw = Bc250ActiveReadTunable(L"SkipHwBringup", 1);
             ULONG present = 0u;
             Bc250ProbeRecord(BC250_PROBE_SKIP_HW_BRINGUP, skipHw);
+            /*
+             * Marca a ENTRADA no bloco compilado com
+             * BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP. Num pacote seguro
+             * este campo tem de ficar zero: se vier 1, o binario instalado
+             * nao e' o que o manifesto diz que e'.
+             */
+            /* A leitura do marcador garante que o linker o preserve. */
+            Bc250ProbeRecord(BC250_PROBE_V5_UNSAFE_BRINGUP_ENTERED,
+                g_Bc250UnsafeBringupMarker[0] != L'\0' ? 1u : 0u);
+            Bc250ProbeRecord(BC250_PROBE_V5_START_DEVICE_RETURN_STAGE,
+                BC250_V5_START_RETURN_UNSAFE_BRINGUP);
 
             /* Os tunables do carregador do CP sao lidos AQUI, e nao no sitio de
              * uso: este ponto e' PASSIVE_LEVEL comprovado — e' onde
@@ -2677,6 +2882,16 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
             context->ShaderDispatch = Bc250ActiveReadTunableChecked(
                 L"ShaderDispatch", 0u, &present);
             context->TunableShaderDispatchPresent = present;
+            context->PersistentSubmission = Bc250ActiveReadTunableChecked(
+                L"PersistentSubmission", 0u, &present);
+            context->TunablePersistentSubmissionPresent = present;
+            context->GpuvaLabPromotion = Bc250ActiveReadTunableChecked(
+                L"GpuvaLabPromotion", 0u, &present);
+            context->GpuvaLabPromotionPresent = present;
+            Bc250ProbeRecord(BC250_PROBE_GPUVA_LAB_PROMOTION_REQUESTED,
+                context->GpuvaLabPromotion);
+            Bc250ProbeRecord(BC250_PROBE_GPUVA_LAB_PROMOTION_PRESENT,
+                context->GpuvaLabPromotionPresent);
             /* 1 preserva o comportamento atual (liga AUTO_CTXSW_ENABLE antes do
              * kick do anel). O upstream faz o contrario durante o bring-up. */
             context->SdmaAutoCtxSw =
@@ -2690,11 +2905,22 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                 (context->TunableSemaphorePresent << 1) |
                 (context->TunableSoftResetPresent << 2) |
                 (context->TunableVmid0Present << 3) |
-                (context->TunableShaderDispatchPresent << 4));
+                (context->TunableShaderDispatchPresent << 4) |
+                (context->TunablePersistentSubmissionPresent << 5));
             if (skipHw != 0) {
+                if (Bc250ActiveGetAdapterProfile() ==
+                        BC250_ADAPTER_PROFILE_RENDER_ONLY_LAB) {
+                    InterlockedExchange(&context->IsActive, 0);
+                    InterlockedExchange(&context->ContextAbiReady, 0);
+                    InterlockedExchange(&context->AllocationAbiReady, 0);
+                    InterlockedExchange(&context->RootPageTableAbiReady, 0);
+                    Bc250ProbeRecordFirstFailure(STATUS_DEVICE_NOT_READY);
+                    return STATUS_DEVICE_NOT_READY;
+                }
                 if (NumberOfVideoPresentSources != NULL) *NumberOfVideoPresentSources = 1;
                 if (NumberOfChildren != NULL) *NumberOfChildren = 1;
                 InterlockedExchange(&context->IsActive, 1);
+                Bc250ActiveArmLifecycle(context);
                 InterlockedExchange(&context->ContextAbiReady, 1);
                 InterlockedExchange(&context->AllocationAbiReady, 1);
                 InterlockedExchange(&context->RootPageTableAbiReady, 1);
@@ -3546,6 +3772,49 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                                         context, &context->HqdActiveEvidence);
                                 Bc250ActiveRecordHqdSubmission(context);
                                 Bc250ActiveRecordShaderDispatch(context);
+
+                                /*
+                                 * P1/P2 fazem parte do StartDevice somente por
+                                 * opt-in exato. O gate one-shot precisa provar
+                                 * o caminho antes que a HQD persistente fique
+                                 * viva para as DDIs do Dxgkrnl.
+                                 */
+                                if (context->PersistentSubmission == 1u &&
+                                    context->TunablePersistentSubmissionPresent == 1u &&
+                                    context->HqdActiveStatus == BC250_HQD_ACTIVE_OK &&
+                                    context->HqdActiveEvidence.PhysicalReady != 0u) {
+                                    persistentStatus =
+                                        Bc250SubmissionEngineOnline(context);
+                                    if (NT_SUCCESS(persistentStatus)) {
+                                        selfTestStatus =
+                                            Bc250SubmissionEngineSelfTest(context);
+                                    }
+                                    if (NT_SUCCESS(persistentStatus) &&
+                                        NT_SUCCESS(selfTestStatus)) {
+                                        p2Status =
+                                            Bc250SubmissionEngineP2StreamTest(context);
+                                    }
+                                    if (NT_SUCCESS(persistentStatus) &&
+                                        NT_SUCCESS(selfTestStatus) &&
+                                        NT_SUCCESS(p2Status) &&
+                                        context->SubmissionEngine.SelfTest.PhysicalReady != 0u &&
+                                        context->SubmissionEngine.P2Stream.PhysicalReady != 0u &&
+                                        InterlockedCompareExchange(
+                                            &context->SubmissionEngine.State,
+                                            BC250_SUBMISSION_ENGINE_ONLINE,
+                                            BC250_SUBMISSION_ENGINE_ONLINE) ==
+                                                BC250_SUBMISSION_ENGINE_ONLINE) {
+                                        persistentReady = TRUE;
+                                    } else if (NT_SUCCESS(persistentStatus)) {
+                                        (void)Bc250SubmissionEngineOffline(context);
+                                    }
+                                } else if (context->PersistentSubmission == 1u) {
+                                    persistentStatus = STATUS_DEVICE_NOT_READY;
+                                } else if (context->PersistentSubmission != 0u) {
+                                    persistentStatus =
+                                        STATUS_DEVICE_CONFIGURATION_ERROR;
+                                }
+                                Bc250SubmissionEngineRecordTelemetry(context);
                             }
                         }
                     }
@@ -4000,10 +4269,26 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                     if (context->PspRingStatus == BC250_PSP_RING_OK &&
                         context->PspRingEvidence.PhysicalReady != 0u &&
                         context->PspLoadFwStatus == BC250_PSP_LOAD_FW_OK &&
-                        context->SdmaRingWorkStatus == BC250_SDMA_RING_WORK_OK) {
-                        if (NumberOfVideoPresentSources != NULL) *NumberOfVideoPresentSources = 1;
-                        if (NumberOfChildren != NULL) *NumberOfChildren = 1;
+                        context->SdmaRingWorkStatus == BC250_SDMA_RING_WORK_OK &&
+                        (context->ShaderDispatch == 0u ||
+                            (context->ShaderDispatch == 1u &&
+                             context->HqdActiveStatus == BC250_HQD_ACTIVE_OK &&
+                             context->HqdActiveEvidence.PhysicalReady != 0u)) &&
+                        (context->PersistentSubmission == 0u ||
+                            (context->PersistentSubmission == 1u &&
+                             persistentReady != FALSE))) {
+                        if (Bc250ActiveGetAdapterProfile() ==
+                                BC250_ADAPTER_PROFILE_RENDER_ONLY_LAB) {
+                            if (NumberOfVideoPresentSources != NULL)
+                                *NumberOfVideoPresentSources = 0;
+                            if (NumberOfChildren != NULL) *NumberOfChildren = 0;
+                        } else {
+                            if (NumberOfVideoPresentSources != NULL)
+                                *NumberOfVideoPresentSources = 1;
+                            if (NumberOfChildren != NULL) *NumberOfChildren = 1;
+                        }
                         InterlockedExchange(&context->IsActive, 1);
+                        Bc250ActiveArmLifecycle(context);
                         InterlockedExchange(&context->ContextAbiReady, 1);
                         InterlockedExchange(&context->AllocationAbiReady, 1);
                         InterlockedExchange(&context->RootPageTableAbiReady, 1);
@@ -4015,42 +4300,163 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
     }
 
     InterlockedExchange(&context->IsActive, 0);
+    Bc250ActiveRetirementTimerStop(context);
     InterlockedExchange(&context->ContextAbiReady, 0);
     InterlockedExchange(&context->AllocationAbiReady, 0);
     InterlockedExchange(&context->RootPageTableAbiReady, 0);
+    if (context->PersistentSubmission == 1u &&
+        persistentReady == FALSE) {
+        preflightStatus = !NT_SUCCESS(persistentStatus) ?
+            persistentStatus : (!NT_SUCCESS(selfTestStatus) ?
+                selfTestStatus : p2Status);
+        if (NT_SUCCESS(preflightStatus)) {
+            preflightStatus = STATUS_DEVICE_HARDWARE_ERROR;
+        }
+    } else if (context->PersistentSubmission != 0u &&
+               context->PersistentSubmission != 1u) {
+        preflightStatus = STATUS_DEVICE_CONFIGURATION_ERROR;
+    } else if (context->ShaderDispatch != 0u &&
+               context->ShaderDispatch != 1u) {
+        preflightStatus = STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
     Bc250ProbeRecordFirstFailure(preflightStatus);
     return preflightStatus;
 #endif
 }
 
-NTSTATUS APIENTRY Bc250DxgkDdiStopDeviceActive(
-    CONST PVOID MiniportDeviceContext)
+static NTSTATUS Bc250ActiveQuiesceAndSnapshotTracker(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context,
+    _In_ uint32_t StopReason,
+    _Out_ uint32_t *PendingCount,
+    _Out_ uint32_t *ReservedCount);
+
+static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason(
+    CONST PVOID MiniportDeviceContext,
+    uint32_t StopReason)
 {
     BC250_DXGK_ACTIVE_CONTEXT *context =
         (BC250_DXGK_ACTIVE_CONTEXT *)MiniportDeviceContext;
     uint32_t destroyedObjects;
+    uint32_t pendingCount = 0u;
+    uint32_t reservedCount = 0u;
+    BC250_MCDM_OBJECT_STATUS teardownStatus;
+    NTSTATUS engineStatus = STATUS_SUCCESS;
+    NTSTATUS quiesceStatus;
+    NTSTATUS coreStatus;
+    static LONG s_stopFirstStatusRecorded;
+    /*
+     * Publicar primeiro o rastro barato acumulado desde StartDevice. Fazer
+     * isto antes de qualquer teardown preserva a ultima DDI que levou o
+     * dxgkrnl a parar o adaptador, e agora tambem os GUIDs completos das
+     * interfaces pedidas e o marco pos-StartDevice mais avancado.
+     */
+    Bc250ProbeSnapshotDdiTrace();
+    Bc250ProbeSnapshotQueryInterfaces();
     Bc250ProbeRecord(BC250_PROBE_STOP_DEVICE_ENTERED, 1);
     if (context == NULL ||
         context->Signature != BC250_ACTIVE_SIGNATURE) {
+        Bc250ProbeRecord(BC250_PROBE_STOP_DEVICE_STATUS,
+                         (ULONG)STATUS_INVALID_PARAMETER);
         return STATUS_INVALID_PARAMETER;
     }
+
+    /*
+     * Quiescencia antes da fotografia. Nao desligar polling/engine enquanto
+     * uma fence ainda possui pin GPUVA — mas tambem nao declarar ocupado por
+     * causa de uma consulta que falhou.
+     */
+    quiesceStatus = Bc250ActiveQuiesceAndSnapshotTracker(
+        context, StopReason, &pendingCount, &reservedCount);
+    if (!NT_SUCCESS(quiesceStatus)) {
+        NTSTATUS reported = (quiesceStatus == STATUS_DEVICE_BUSY) ?
+            STATUS_DEVICE_BUSY : quiesceStatus;
+        Bc250ProbeRecordFirstFailure(reported);
+        Bc250ProbeRecord(BC250_PROBE_STOP_DEVICE_STATUS, (ULONG)reported);
+        if (InterlockedCompareExchange(&s_stopFirstStatusRecorded, 1, 0) == 0) {
+            Bc250ProbeRecord(BC250_PROBE_V5_STOP_FIRST_STATUS, (ULONG)reported);
+        }
+        /*
+         * STOPPING continua fechando novas admissoes, mas trabalho aceito
+         * antes do portao precisa conservar um mecanismo de retirement para
+         * que uma nova chamada de Stop possa progredir. Nao reabrir o portao
+         * e nao limpar o tracker.
+         */
+        if (InterlockedCompareExchange(&context->IsActive, 1, 1) == 1) {
+            Bc250ProbeRecord(BC250_PROBE_V5_STOP_TIMER_DRAINED, 0u);
+            Bc250ActiveRetirementTimerStart(context);
+        }
+        return reported;
+    }
+    if (pendingCount != 0u || reservedCount != 0u) {
+        Bc250ProbeRecordFirstFailure(STATUS_DEVICE_BUSY);
+        Bc250ProbeRecord(BC250_PROBE_STOP_DEVICE_STATUS,
+                         (ULONG)STATUS_DEVICE_BUSY);
+        if (InterlockedCompareExchange(&s_stopFirstStatusRecorded, 1, 0) == 0) {
+            Bc250ProbeRecord(BC250_PROBE_V5_STOP_FIRST_STATUS,
+                             (ULONG)STATUS_DEVICE_BUSY);
+        }
+        /* Ver comentario acima: manter retirement sem reabrir admissoes. */
+        if (InterlockedCompareExchange(&context->IsActive, 1, 1) == 1) {
+            Bc250ProbeRecord(BC250_PROBE_V5_STOP_TIMER_DRAINED, 0u);
+            Bc250ActiveRetirementTimerStart(context);
+        }
+        return STATUS_DEVICE_BUSY;
+    }
+    if (InterlockedCompareExchange(&s_stopFirstStatusRecorded, 1, 0) == 0) {
+        Bc250ProbeRecord(BC250_PROBE_V5_STOP_FIRST_STATUS, (ULONG)STATUS_SUCCESS);
+    }
     InterlockedExchange(&context->IsActive, 0);
+    Bc250ActiveRetirementTimerStop(context);
     InterlockedExchange(&context->ContextAbiReady, 0);
     InterlockedExchange(&context->AllocationAbiReady, 0);
     InterlockedExchange(&context->RootPageTableAbiReady, 0);
+    engineStatus = Bc250SubmissionEngineOffline(context);
+    Bc250ProbeRecordFirstFailure(engineStatus);
     KeEnterCriticalRegion();
     ExAcquirePushLockExclusive(&context->ObjectLock);
+    InterlockedExchange(&context->GpuvaMappingsOperational, 0);
+    InterlockedExchange(&context->GpuvaActivationEligible, 0);
+    context->GpuvaActivationBlockMask =
+        BC250_GPUVA_GATE_BLOCK_ADAPTER_INACTIVE;
+    InterlockedExchange(&context->GpuvaJournalReady, 0);
+    Bc250GpuvaJournalAbort(&context->GpuvaJournal);
+    context->GpuvaHierarchyPending = 0u;
+    context->GpuvaHierarchyProcess = NULL;
+    context->GpuvaHierarchyRootPageTable = 0u;
+    context->GpuvaHierarchyHighestLevel = 0u;
     destroyedObjects = 0u;
-    (void)Bc250McdmObjectRegistryTeardown(
+    teardownStatus = Bc250McdmObjectRegistryTeardown(
         &context->Objects, &destroyedObjects);
     ExReleasePushLockExclusive(&context->ObjectLock);
     KeLeaveCriticalRegion();
-    Bc250DisplayTeardown();
-    {
-        NTSTATUS status = Bc250DxgkDdiStopDeviceReadonly(&context->Core);
+    if (teardownStatus != BC250_MCDM_OBJECT_OK) {
+        NTSTATUS status = Bc250ObjectStatusToNtStatus(teardownStatus);
         Bc250ProbeRecordFirstFailure(status);
+        Bc250ProbeRecord(BC250_PROBE_STOP_DEVICE_STATUS, (ULONG)status);
         return status;
     }
+    Bc250DisplayTeardown();
+    coreStatus = Bc250DxgkDdiStopDeviceReadonly(&context->Core);
+    Bc250ProbeRecordFirstFailure(coreStatus);
+    if (!NT_SUCCESS(coreStatus)) {
+        Bc250ProbeRecord(BC250_PROBE_STOP_DEVICE_STATUS, (ULONG)coreStatus);
+        return coreStatus;
+    }
+    if (NT_SUCCESS(engineStatus)) {
+        InterlockedExchange(&context->LifecycleState,
+            (LONG)BC250_ACTIVE_LIFECYCLE_STOPPED);
+        Bc250ProbeRecord(BC250_PROBE_V5_LIFECYCLE_STATE,
+            BC250_ACTIVE_LIFECYCLE_STOPPED);
+    }
+    Bc250ProbeRecord(BC250_PROBE_STOP_DEVICE_STATUS, (ULONG)engineStatus);
+    return engineStatus;
+}
+
+NTSTATUS APIENTRY Bc250DxgkDdiStopDeviceActive(
+    CONST PVOID MiniportDeviceContext)
+{
+    return Bc250DxgkDdiStopDeviceActiveReason(
+        MiniportDeviceContext, BC250_ACTIVE_STOP_REASON_STOP_DEVICE);
 }
 
 NTSTATUS APIENTRY Bc250DxgkDdiRemoveDeviceActive(
@@ -4058,14 +4464,27 @@ NTSTATUS APIENTRY Bc250DxgkDdiRemoveDeviceActive(
 {
     BC250_DXGK_ACTIVE_CONTEXT *context =
         (BC250_DXGK_ACTIVE_CONTEXT *)MiniportDeviceContext;
-    NTSTATUS status;
+    NTSTATUS status = STATUS_SUCCESS;
 
     Bc250ProbeRecord(BC250_PROBE_REMOVE_DEVICE_ENTERED, 1);
     if (context == NULL ||
         context->Signature != BC250_ACTIVE_SIGNATURE) {
         return STATUS_INVALID_PARAMETER;
     }
-    status = Bc250DxgkDdiStopDeviceActive(context);
+    /*
+     * O contrato PnP normalmente chama StopDevice antes de RemoveDevice.
+     * Repetir o teardown readonly sobre o mesmo core devolvia
+     * STATUS_DEVICE_BUSY e mascarava a causa original do Codigo 43. Ainda
+     * suportamos RemoveDevice direto quando o contexto segue ativo.
+     */
+    if (InterlockedCompareExchange(&context->IsActive, 0, 0) != 0) {
+        status = Bc250DxgkDdiStopDeviceActiveReason(
+            context, BC250_ACTIVE_STOP_REASON_REMOVE_DEVICE);
+        if (!NT_SUCCESS(status)) {
+            Bc250ProbeRecord(BC250_PROBE_REMOVE_DEVICE_STATUS, (ULONG)status);
+            return status;
+        }
+    }
     Bc250ActiveUnregisterAdapter(context);
     context->Signature = 0;
     context->PhysicalDeviceObject = NULL;
@@ -4075,14 +4494,1190 @@ NTSTATUS APIENTRY Bc250DxgkDdiRemoveDeviceActive(
     return status;
 }
 
+/* ==========================================================================
+   Fase V2 / V5 — rastreador e retirada de fence para o dxgkrnl.
+   ========================================================================== */
+
+#define BC250_ACTIVE_FENCE_SYNC_PUSH    0u
+#define BC250_ACTIVE_FENCE_SYNC_DRAIN   1u
+#define BC250_ACTIVE_FENCE_SYNC_RESERVE 2u
+#define BC250_ACTIVE_FENCE_SYNC_CANCEL  3u
+#define BC250_ACTIVE_FENCE_SYNC_COMMIT  4u
+#define BC250_ACTIVE_FENCE_SYNC_QUERY   5u
+#define BC250_ACTIVE_FENCE_SYNC_PENDING 6u
+
+#define BC250_ACTIVE_FENCE_NOTIFY_BATCH 16u
+
+typedef struct BC250_ACTIVE_FENCE_SYNC {
+    BC250_DXGK_ACTIVE_CONTEXT *Context;
+    uint32_t Operation;
+
+    /* PUSH */
+    uint64_t RingFence;
+    uint32_t SubmissionFenceId;
+    uint32_t NodeOrdinal;
+    uint32_t EngineOrdinal;
+    BOOLEAN PushAccepted;
+
+    /* RESERVE / CANCEL / COMMIT */
+    uint32_t ReservationToken;
+    BOOLEAN ReserveAccepted;
+    BOOLEAN CommitAccepted;
+    uint32_t GpuvaSlot;
+    uint32_t GpuvaGeneration;
+
+    /* DRAIN */
+    uint64_t RetiredRingFence;
+    uint32_t Notified;
+    uint32_t CurrentFence;
+    uint32_t PendingCount;
+    uint32_t ReservedCount;
+} BC250_ACTIVE_FENCE_SYNC;
+
+static BOOLEAN Bc250ActiveSynchronizedFenceCallback(
+    _In_opt_ PVOID SynchronizeContext)
+{
+    BC250_ACTIVE_FENCE_SYNC *sync = (BC250_ACTIVE_FENCE_SYNC *)SynchronizeContext;
+    BC250_DXGK_ACTIVE_CONTEXT *context;
+    BC250_WDDM_FENCE_ENTRY completed[BC250_ACTIVE_FENCE_NOTIFY_BATCH];
+    DXGKARGCB_NOTIFY_INTERRUPT_DATA data;
+    uint32_t count;
+    uint32_t i;
+
+    if (sync == NULL || sync->Context == NULL) {
+        return FALSE;
+    }
+    context = sync->Context;
+    if (context->Signature != BC250_ACTIVE_SIGNATURE) {
+        return FALSE;
+    }
+
+    if (sync->Operation == BC250_ACTIVE_FENCE_SYNC_RESERVE) {
+        sync->ReserveAccepted = Bc250WddmFenceTrackerReserve(
+            &context->SubmissionEngine.WddmFences,
+            sync->SubmissionFenceId,
+            sync->NodeOrdinal,
+            sync->EngineOrdinal,
+            &sync->ReservationToken);
+        if (sync->ReserveAccepted &&
+            !Bc250WddmFenceTrackerAttachGpuvaPin(
+                &context->SubmissionEngine.WddmFences,
+                sync->ReservationToken, sync->GpuvaSlot,
+                sync->GpuvaGeneration)) {
+            (void)Bc250WddmFenceTrackerCancel(
+                &context->SubmissionEngine.WddmFences,
+                sync->ReservationToken);
+            sync->ReserveAccepted = FALSE;
+        }
+        return sync->ReserveAccepted;
+    }
+
+    if (sync->Operation == BC250_ACTIVE_FENCE_SYNC_CANCEL) {
+        return Bc250WddmFenceTrackerCancel(
+            &context->SubmissionEngine.WddmFences,
+            sync->ReservationToken);
+    }
+
+    if (sync->Operation == BC250_ACTIVE_FENCE_SYNC_COMMIT) {
+        sync->CommitAccepted = Bc250WddmFenceTrackerCommit(
+            &context->SubmissionEngine.WddmFences,
+            sync->ReservationToken,
+            sync->RingFence);
+        return sync->CommitAccepted;
+    }
+
+    if (sync->Operation == BC250_ACTIVE_FENCE_SYNC_PUSH) {
+        sync->PushAccepted = Bc250WddmFenceTrackerPush(
+            &context->SubmissionEngine.WddmFences,
+            sync->RingFence,
+            sync->SubmissionFenceId,
+            sync->NodeOrdinal,
+            sync->EngineOrdinal);
+        return sync->PushAccepted;
+    }
+
+    if (sync->Operation == BC250_ACTIVE_FENCE_SYNC_QUERY) {
+        return Bc250WddmFenceTrackerQueryCurrent(
+            &context->SubmissionEngine.WddmFences,
+            sync->NodeOrdinal,
+            &sync->CurrentFence);
+    }
+
+    if (sync->Operation == BC250_ACTIVE_FENCE_SYNC_PENDING) {
+        return Bc250WddmFenceTrackerSnapshotCounts(
+            &context->SubmissionEngine.WddmFences,
+            &sync->PendingCount,
+            &sync->ReservedCount);
+    }
+
+    if (context->Core.DxgkInterface.DxgkCbNotifyInterrupt == NULL ||
+        context->Core.DxgkInterface.DeviceHandle == NULL) {
+        return FALSE;
+    }
+
+    count = Bc250WddmFenceTrackerDrain(
+        &context->SubmissionEngine.WddmFences,
+        sync->RetiredRingFence,
+        completed,
+        BC250_ACTIVE_FENCE_NOTIFY_BATCH);
+    if (count == 0u) {
+        return FALSE;
+    }
+
+    for (i = 0u; i < count; ++i) {
+        if (completed[i].GpuvaPinValid != 0u) {
+            BC250_GPUVA_SNAPSHOT_READER reader;
+            RtlZeroMemory(&reader, sizeof(reader));
+            if (completed[i].GpuvaSlot > 1u ||
+                (uint32_t)InterlockedCompareExchange(
+                    &context->GpuvaSnapshots.SlotGeneration[
+                        completed[i].GpuvaSlot], 0, 0) !=
+                    completed[i].GpuvaGeneration) {
+                InterlockedExchange(&context->GpuvaMappingsOperational, 0);
+                return FALSE;
+            }
+            reader.Space = &context->GpuvaSnapshots.Slots[completed[i].GpuvaSlot];
+            reader.Slot = completed[i].GpuvaSlot;
+            reader.PublicationGeneration = completed[i].GpuvaGeneration;
+            reader.Acquired = 1u;
+            Bc250GpuvaSnapshotRelease(&context->GpuvaSnapshots, &reader);
+        }
+        RtlZeroMemory(&data, sizeof(data));
+        data.InterruptType = DXGK_INTERRUPT_DMA_COMPLETED;
+        data.DmaCompleted.SubmissionFenceId = completed[i].SubmissionFenceId;
+        data.DmaCompleted.NodeOrdinal = completed[i].NodeOrdinal;
+        data.DmaCompleted.EngineOrdinal = completed[i].EngineOrdinal;
+        context->Core.DxgkInterface.DxgkCbNotifyInterrupt(
+            context->Core.DxgkInterface.DeviceHandle, &data);
+    }
+
+    sync->Notified = count;
+    return TRUE;
+}
+
+/*
+ * ==========================================================================
+ * Quiescencia do rastreador antes do teardown (candidato 3.67).
+ *
+ * O que o 3.66 fazia: chamava DxgkCbSynchronizeExecution para ler Count e
+ * ReservedCount, e tratava qualquer falha dessa chamada como "ocupado".  O
+ * ensaio fisico de 2026-09-01 com RenderNode=1 mediu exatamente isso —
+ * SyncStatus=0xC0000001 (STATUS_UNSUCCESSFUL), SyncResult=0, Pending=0,
+ * Reserved=0 — e o adaptador terminou em STATUS_DEVICE_BUSY sem jamais ter
+ * tido uma fence.  Evidencia:
+ * docs/evidence/2026-09-01_11-34-36-DESKTOP-HQAG6T4-rendernode-inspect.
+ *
+ * O que este candidato NAO faz: ler os contadores direto.  Nao esta provado
+ * que a interrupcao ja foi desconectada nesse ponto do ciclo PnP, e mesmo que
+ * estivesse ainda restariam o timer de retirement (armado em 1 ms), o DPC,
+ * submissoes concorrentes e cancelamentos de reserva.  Trocar uma leitura
+ * errada por outra leitura errada nao e' correcao.
+ *
+ * O que ele faz, nesta ordem:
+ *   1. LifecycleState = STOPPING e portao de admissao do rastreador fechado —
+ *      nenhuma submissao ou reserva nova entra a partir daqui.
+ *   2. Timer de retirement parado.
+ *   3. Espera as submissoes em voo sairem e drena os DPCs ja enfileirados.
+ *   4. Fotografa Count e ReservedCount sob o lock proprio do rastreador.
+ *
+ * O criterio fail-closed NAO foi afrouxado.  Contagem diferente de zero
+ * continua devolvendo STATUS_DEVICE_BUSY; falha ao adquirir o lock ou dreno
+ * incompleto tambem.  O que mudou foi o mecanismo de consulta, que deixou de
+ * depender exclusivamente de uma chamada que pode falhar por motivos alheios
+ * ao rastreador.
+ * ==========================================================================
+ */
+
+/* Dreno limitado: 400 x 5 ms = 2 s. Estourar e' falha, nao sucesso. */
+#define BC250_ACTIVE_STOP_DRAIN_MAX_ITERATIONS 400u
+#define BC250_ACTIVE_STOP_DRAIN_INTERVAL_100NS (-50000LL) /* 5 ms relativos */
+
+static void Bc250ActiveStopDrainDelay(void)
+{
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    LARGE_INTEGER interval;
+    interval.QuadPart = BC250_ACTIVE_STOP_DRAIN_INTERVAL_100NS;
+    (void)KeDelayExecutionThread(KernelMode, FALSE, &interval);
+#endif
+}
+
+static void Bc250ActiveStopFlushDpcs(void)
+{
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeFlushQueuedDpcs();
+#endif
+}
+
+/*
+ * Torna o rastreador quiescente e fotografa as contagens.
+ *
+ * Devolve STATUS_SUCCESS somente quando a fotografia e' confiavel; nesse caso
+ * *PendingCount e *ReservedCount valem. Qualquer outro retorno significa
+ * "nao sei", e o chamador deve falhar fechado.
+ */
+static NTSTATUS Bc250ActiveQuiesceAndSnapshotTracker(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context,
+    _In_ uint32_t StopReason,
+    _Out_ uint32_t *PendingCount,
+    _Out_ uint32_t *ReservedCount)
+{
+    BC250_WDDM_FENCE_TRACKER *tracker;
+    uint32_t iterations = 0u;
+    LONG inFlight;
+
+    *PendingCount = 0u;
+    *ReservedCount = 0u;
+    if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    tracker = &Context->SubmissionEngine.WddmFences;
+
+    /* 1. STOPPING: fecha a admissao de trabalho novo. */
+    InterlockedExchange(&Context->LifecycleState,
+        (LONG)BC250_ACTIVE_LIFECYCLE_STOPPING);
+    Context->StopReason = StopReason;
+    Bc250WddmFenceTrackerSetAcceptingWork(tracker, FALSE);
+    Bc250ProbeRecord(BC250_PROBE_V5_STOP_REASON, StopReason);
+    Bc250ProbeRecord(BC250_PROBE_V5_LIFECYCLE_STATE,
+        BC250_ACTIVE_LIFECYCLE_STOPPING);
+
+    /* 2. Primeira parada do timer (ja inclui KeFlushQueuedDpcs). */
+    Bc250ActiveRetirementTimerStop(Context);
+
+    /*
+     * 3. Espera as submissoes que passaram pelo portao antes do fechamento
+     *    terminarem. Elas ainda podem comitar ou cancelar reserva, e por isso
+     *    fotografar antes delas sairem produziria numero instavel.
+     */
+    for (;;) {
+        inFlight = InterlockedCompareExchange(&Context->SubmitInFlight, 0, 0);
+        if (inFlight <= 0) {
+            break;
+        }
+        if (iterations >= BC250_ACTIVE_STOP_DRAIN_MAX_ITERATIONS) {
+            break;
+        }
+        ++iterations;
+        Bc250ActiveStopDrainDelay();
+    }
+    /*
+     * Uma submissao que ja tinha passado pelo portao podia estar entre sua
+     * ultima verificacao de RUNNING e o rearme do timer. Parar novamente
+     * depois de SubmitInFlight chegar a zero fecha essa janela. A propria
+     * submissao tambem deixa de rearmar ao observar STOPPING, mas a segunda
+     * parada e' a barreira que torna a corrida inofensiva.
+     */
+    Bc250ActiveRetirementTimerStop(Context);
+    Bc250ProbeRecord(BC250_PROBE_V5_STOP_TIMER_DRAINED, 1u);
+    /* Um DPC pode ter sido enfileirado durante a espera acima. */
+    Bc250ActiveStopFlushDpcs();
+    Bc250ProbeRecord(BC250_PROBE_V5_STOP_DPC_DRAINED, 1u);
+
+    inFlight = InterlockedCompareExchange(&Context->SubmitInFlight, 0, 0);
+    Context->StopSubmitInFlightAfterDrain =
+        (inFlight < 0) ? 0u : (uint32_t)inFlight;
+    Context->StopDrainIterations = iterations;
+    Bc250ProbeRecord(BC250_PROBE_V5_STOP_SUBMIT_INFLIGHT,
+        Context->StopSubmitInFlightAfterDrain);
+    Bc250ProbeRecord(BC250_PROBE_V5_STOP_DRAIN_ITERATIONS, iterations);
+    Bc250ProbeRecord(BC250_PROBE_V5_STOP_REJECTED_WHILE_STOPPING,
+        tracker->RejectedWhileStopping);
+
+    if (inFlight > 0) {
+        /* Dreno nao concluiu: e' ocupado de verdade, nao ruido de consulta. */
+        Bc250ProbeRecord(BC250_PROBE_V5_STOP_SNAPSHOT_OK, 0u);
+        Bc250ProbeRecord(BC250_PROBE_V5_STOP_FENCE_QUERY_MODE, 3u);
+        return STATUS_DEVICE_BUSY;
+    }
+
+    /* 4. Fotografia sob o lock proprio do rastreador. */
+    Bc250ProbeRecord(BC250_PROBE_V5_STOP_FENCE_QUERY_MODE, 3u);
+    if (!Bc250WddmFenceTrackerSnapshotCounts(
+            tracker, PendingCount, ReservedCount)) {
+        ++Context->StopSnapshotFailures;
+        Bc250ProbeRecord(BC250_PROBE_V5_STOP_SNAPSHOT_OK, 0u);
+        Bc250ProbeRecord(BC250_PROBE_V5_STOP_LOCK_FAILURES,
+            (ULONG)tracker->Lock.AcquireFailures);
+        return STATUS_UNSUCCESSFUL;
+    }
+    Bc250ProbeRecord(BC250_PROBE_V5_STOP_SNAPSHOT_OK, 1u);
+    Bc250ProbeRecord(BC250_PROBE_V5_STOP_LOCK_FAILURES,
+        (ULONG)tracker->Lock.AcquireFailures);
+    Bc250ProbeRecord(BC250_PROBE_V5_STOP_FENCE_PENDING_COUNT, *PendingCount);
+    Bc250ProbeRecord(BC250_PROBE_V5_STOP_FENCE_RESERVED_COUNT, *ReservedCount);
+
+    /*
+     * A consulta serializada continua sendo feita, mas agora e' apenas
+     * observacao: o veredito ja saiu da fotografia sob lock. Assim o proximo
+     * ensaio ainda mostra se DxgkCbSynchronizeExecution funciona no
+     * StopDevice, sem que a resposta dele decida o teardown.
+     */
+    if (Context->Core.DxgkInterface.DxgkCbSynchronizeExecution != NULL &&
+        Context->Core.DxgkInterface.DeviceHandle != NULL) {
+        BC250_ACTIVE_FENCE_SYNC sync;
+        BOOLEAN queried = FALSE;
+        NTSTATUS syncStatus;
+
+        RtlZeroMemory(&sync, sizeof(sync));
+        sync.Context = Context;
+        sync.Operation = BC250_ACTIVE_FENCE_SYNC_PENDING;
+        syncStatus = Context->Core.DxgkInterface.DxgkCbSynchronizeExecution(
+            Context->Core.DxgkInterface.DeviceHandle,
+            Bc250ActiveSynchronizedFenceCallback, &sync, 0, &queried);
+        Bc250ProbeRecord(BC250_PROBE_V5_STOP_FENCE_SYNC_STATUS,
+            (ULONG)syncStatus);
+        Bc250ProbeRecord(BC250_PROBE_V5_STOP_FENCE_SYNC_RESULT,
+            queried ? 1u : 0u);
+    } else {
+        Bc250ProbeRecord(BC250_PROBE_V5_STOP_FENCE_SYNC_STATUS,
+            (ULONG)STATUS_NOT_SUPPORTED);
+        Bc250ProbeRecord(BC250_PROBE_V5_STOP_FENCE_SYNC_RESULT, 0u);
+    }
+    return STATUS_SUCCESS;
+}
+
+static void Bc250ActiveRetireAndNotify(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    BC250_ACTIVE_FENCE_SYNC sync;
+    BOOLEAN notified = FALSE;
+    uint32_t retired = 0u;
+    NTSTATUS status;
+
+    if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE) {
+        return;
+    }
+    if (InterlockedCompareExchange(&Context->IsActive, 1, 1) != 1) {
+        return;
+    }
+    if (Context->Core.DxgkInterface.DxgkCbSynchronizeExecution == NULL ||
+        Context->Core.DxgkInterface.DeviceHandle == NULL) {
+        return;
+    }
+
+    status = Bc250SubmissionEnginePoll(Context, &retired);
+    if (!NT_SUCCESS(status)) {
+        ++Context->RetirementPollFailures;
+        return;
+    }
+
+    RtlZeroMemory(&sync, sizeof(sync));
+    sync.Context = Context;
+    sync.Operation = BC250_ACTIVE_FENCE_SYNC_DRAIN;
+    sync.RetiredRingFence = Context->SubmissionEngine.ComputeRing.LastRetiredFence;
+
+    status = Context->Core.DxgkInterface.DxgkCbSynchronizeExecution(
+        Context->Core.DxgkInterface.DeviceHandle,
+        Bc250ActiveSynchronizedFenceCallback,
+        &sync,
+        0,
+        &notified);
+    if (!NT_SUCCESS(status) || !notified || sync.Notified == 0u) {
+        return;
+    }
+
+    ++Context->RetirementNotifyBatches;
+    Context->RetirementNotifiedTotal += sync.Notified;
+
+    if (Context->Core.DxgkInterface.DxgkCbNotifyDpc != NULL) {
+        Context->Core.DxgkInterface.DxgkCbNotifyDpc(
+            Context->Core.DxgkInterface.DeviceHandle);
+    }
+}
+
+static VOID Bc250ActiveRetirementDpcRoutine(
+    _In_ PKDPC Dpc,
+    _In_opt_ PVOID DeferredContext,
+    _In_opt_ PVOID SystemArgument1,
+    _In_opt_ PVOID SystemArgument2)
+{
+    BC250_DXGK_ACTIVE_CONTEXT *context =
+        (BC250_DXGK_ACTIVE_CONTEXT *)DeferredContext;
+    UNREFERENCED_PARAMETER(Dpc);
+    UNREFERENCED_PARAMETER(SystemArgument1);
+    UNREFERENCED_PARAMETER(SystemArgument2);
+
+    if (context == NULL || context->Signature != BC250_ACTIVE_SIGNATURE) {
+        return;
+    }
+    ++context->RetirementDpcRuns;
+    Bc250ActiveRetireAndNotify(context);
+}
+
+void Bc250ActiveRetirementTimerStart(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    LARGE_INTEGER due;
+
+    if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE) {
+        return;
+    }
+    if (InterlockedCompareExchange(
+            &Context->RetirementTimerInitialized, 1, 0) == 0) {
+        KeInitializeTimer(&Context->RetirementTimer);
+        KeInitializeDpc(&Context->RetirementDpc,
+            Bc250ActiveRetirementDpcRoutine, Context);
+    }
+    if (InterlockedCompareExchange(
+            &Context->RetirementTimerRunning, 1, 0) != 0) {
+        return;
+    }
+
+    due.QuadPart = -10000LL; /* 1 ms */
+    KeSetTimerEx(&Context->RetirementTimer, due, 1, &Context->RetirementDpc);
+}
+
+void Bc250ActiveRetirementTimerStop(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    if (Context == NULL ||
+        InterlockedCompareExchange(
+            &Context->RetirementTimerInitialized, 1, 1) != 1) {
+        return;
+    }
+    InterlockedExchange(&Context->RetirementTimerRunning, 0);
+    KeCancelTimer(&Context->RetirementTimer);
+    KeFlushQueuedDpcs();
+}
+
+static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
+    HANDLE AdapterContext,
+    CONST DXGKARG_SUBMITCOMMANDVIRTUAL *pSubmitCommand)
+{
+    BC250_DXGK_ACTIVE_CONTEXT *context =
+        (BC250_DXGK_ACTIVE_CONTEXT *)AdapterContext;
+    BC250_CONTEXT_SUBMISSION_VIEW contextView;
+    BC250_GPUVA_SNAPSHOT_READER gpuvaReader;
+    BC250_MCDM_OBJECT_STATUS objStatus;
+    BC250_GPUVA_STATUS vaStatus;
+    BC250_ACTIVE_FENCE_SYNC reserveSync;
+    BOOLEAN reserved = FALSE;
+    uint64_t assignedFence = 0ull;
+    uint32_t ibSizeDwords;
+    NTSTATUS submitStatus;
+
+    RtlZeroMemory(&gpuvaReader, sizeof(gpuvaReader));
+
+    /* 1. Validar argumentos basicos fail-closed */
+    if (context == NULL || context->Signature != BC250_ACTIVE_SIGNATURE ||
+        pSubmitCommand == NULL || pSubmitCommand->hContext == NULL ||
+        pSubmitCommand->DmaBufferSize == 0u ||
+        (pSubmitCommand->DmaBufferSize % sizeof(uint32_t)) != 0u ||
+        pSubmitCommand->DmaBufferVirtualAddress == 0ull ||
+        (pSubmitCommand->DmaBufferVirtualAddress & 3ull) != 0ull ||
+        pSubmitCommand->NodeOrdinal >= BC250_ADAPTER_NODE_COUNT) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (InterlockedCompareExchange(&context->IsActive, 1, 1) != 1) {
+        return STATUS_DEVICE_NOT_READY;
+    }
+    /* O gate só é aberto por critério explícito após validação integrada. */
+    if (InterlockedCompareExchange(
+            &context->GpuvaMappingsOperational, 1, 1) != 1) {
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    ibSizeDwords = (uint32_t)(pSubmitCommand->DmaBufferSize / sizeof(uint32_t));
+
+    /* 2. Adquirir visao imutavel do contexto e incrementar InFlightSubmissions */
+    objStatus = Bc250McdmContextAcquireSubmissionView(
+        &context->Objects,
+        (BC250_MCDM_HANDLE)pSubmitCommand->hContext,
+        context,
+        pSubmitCommand->NodeOrdinal,
+        &contextView);
+    if (objStatus != BC250_MCDM_OBJECT_OK) {
+        return Bc250ObjectStatusToNtStatus(objStatus);
+    }
+
+    /* 3. Fixar o snapshot publicado durante toda a publicacao do IB. */
+    vaStatus = Bc250GpuvaSnapshotAcquire(
+        &context->GpuvaSnapshots, &gpuvaReader);
+    if (vaStatus != BC250_GPUVA_OK) {
+        Bc250McdmContextReleaseSubmissionView(&context->Objects,
+            (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
+        return vaStatus == BC250_GPUVA_BUSY ?
+            STATUS_GRAPHICS_ALLOCATION_BUSY : STATUS_DEVICE_NOT_READY;
+    }
+
+    /* 4. Validar cobertura integral sem gaps no mesmo snapshot imutavel. */
+    vaStatus = Bc250GpuvaSpaceValidateRangeCoverage(
+        gpuvaReader.Space,
+        contextView.OwnerProcess,
+        contextView.ContextHandle,
+        (uint64_t)pSubmitCommand->DmaBufferVirtualAddress,
+        (uint64_t)pSubmitCommand->DmaBufferSize,
+        BC250_PTE_READABLE,
+        gpuvaReader.Space->PageTableEpoch);
+    if (vaStatus != BC250_GPUVA_OK) {
+        Bc250GpuvaSnapshotRelease(&context->GpuvaSnapshots, &gpuvaReader);
+        Bc250McdmContextReleaseSubmissionView(&context->Objects,
+            (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
+        if (vaStatus == BC250_GPUVA_PERMISSION_DENIED) {
+            return STATUS_ACCESS_VIOLATION;
+        } else if (vaStatus == BC250_GPUVA_RANGE_OVERFLOW ||
+                   vaStatus == BC250_GPUVA_OUT_OF_BOUNDS) {
+            return STATUS_INTEGER_OVERFLOW;
+        } else if (vaStatus == BC250_GPUVA_MISALIGNED) {
+            return STATUS_DATATYPE_MISALIGNMENT;
+        } else if (vaStatus == BC250_GPUVA_IN_TEARDOWN ||
+                   vaStatus == BC250_GPUVA_NOT_RESIDENT ||
+                   vaStatus == BC250_GPUVA_STALE_EPOCH) {
+            return STATUS_DEVICE_NOT_READY;
+        }
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* 5. Reservar slot no rastreador de fences WDDM antes de tocar no anel */
+    if (context->Core.DxgkInterface.DxgkCbSynchronizeExecution == NULL ||
+        context->Core.DxgkInterface.DeviceHandle == NULL) {
+        Bc250GpuvaSnapshotRelease(&context->GpuvaSnapshots, &gpuvaReader);
+        Bc250McdmContextReleaseSubmissionView(&context->Objects,
+            (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    RtlZeroMemory(&reserveSync, sizeof(reserveSync));
+    reserveSync.Context = context;
+    reserveSync.Operation = BC250_ACTIVE_FENCE_SYNC_RESERVE;
+    reserveSync.SubmissionFenceId = pSubmitCommand->SubmissionFenceId;
+    reserveSync.NodeOrdinal = pSubmitCommand->NodeOrdinal;
+    reserveSync.EngineOrdinal = pSubmitCommand->EngineOrdinal;
+    reserveSync.GpuvaSlot = gpuvaReader.Slot;
+    reserveSync.GpuvaGeneration = gpuvaReader.PublicationGeneration;
+
+    submitStatus = context->Core.DxgkInterface.DxgkCbSynchronizeExecution(
+        context->Core.DxgkInterface.DeviceHandle,
+        Bc250ActiveSynchronizedFenceCallback,
+        &reserveSync,
+        0,
+        &reserved);
+    if (!NT_SUCCESS(submitStatus) || !reserved || !reserveSync.ReserveAccepted) {
+        ++context->RetirementBackpressure;
+        Bc250GpuvaSnapshotRelease(&context->GpuvaSnapshots, &gpuvaReader);
+        Bc250McdmContextReleaseSubmissionView(&context->Objects,
+            (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
+        return STATUS_GRAPHICS_ALLOCATION_BUSY;
+    }
+
+    /* 6. Publicar IB no anel persistente MEC */
+    submitStatus = Bc250SubmissionEngineSubmit(
+        context,
+        (uint32_t)pSubmitCommand->NodeOrdinal,
+        (uint64_t)pSubmitCommand->DmaBufferVirtualAddress,
+        ibSizeDwords,
+        &assignedFence);
+    Bc250SubmissionEngineRecordTelemetry(context);
+    if (!NT_SUCCESS(submitStatus)) {
+        /* Cancelar reserva imediatamente em caso de falha de publicacao */
+        BC250_ACTIVE_FENCE_SYNC cancelSync;
+        BOOLEAN cancelled = FALSE;
+        RtlZeroMemory(&cancelSync, sizeof(cancelSync));
+        cancelSync.Context = context;
+        cancelSync.Operation = BC250_ACTIVE_FENCE_SYNC_CANCEL;
+        cancelSync.ReservationToken = reserveSync.ReservationToken;
+        (void)context->Core.DxgkInterface.DxgkCbSynchronizeExecution(
+            context->Core.DxgkInterface.DeviceHandle,
+            Bc250ActiveSynchronizedFenceCallback,
+            &cancelSync,
+            0,
+            &cancelled);
+        Bc250GpuvaSnapshotRelease(&context->GpuvaSnapshots, &gpuvaReader);
+        Bc250McdmContextReleaseSubmissionView(&context->Objects,
+            (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
+        return submitStatus;
+    }
+
+    /* 7. Commit definitivo da fence fisica atribuida */
+    {
+        BC250_ACTIVE_FENCE_SYNC commitSync;
+        BOOLEAN committed = FALSE;
+        RtlZeroMemory(&commitSync, sizeof(commitSync));
+        commitSync.Context = context;
+        commitSync.Operation = BC250_ACTIVE_FENCE_SYNC_COMMIT;
+        commitSync.ReservationToken = reserveSync.ReservationToken;
+        commitSync.RingFence = assignedFence;
+
+        submitStatus = context->Core.DxgkInterface.DxgkCbSynchronizeExecution(
+            context->Core.DxgkInterface.DeviceHandle,
+            Bc250ActiveSynchronizedFenceCallback,
+            &commitSync,
+            0,
+            &committed);
+        if (!NT_SUCCESS(submitStatus) || !committed || !commitSync.CommitAccepted) {
+            ++context->RetirementPushFailures;
+            InterlockedExchange(&context->SubmissionEngine.State,
+                BC250_SUBMISSION_ENGINE_FAULTED);
+            Bc250GpuvaSnapshotRelease(
+                &context->GpuvaSnapshots, &gpuvaReader);
+            Bc250McdmContextReleaseSubmissionView(&context->Objects,
+                (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
+            return STATUS_DEVICE_DATA_ERROR;
+        }
+        /* A referência passa a pertencer à entrada da fence até o drain. */
+        gpuvaReader.Space = NULL;
+        gpuvaReader.Acquired = 0u;
+    }
+
+    /* 8. Iniciar retirada e liberar as duas referencias imutaveis. */
+    /*
+     * Nao rearmar depois que StopDevice fechou o portao. Se a leitura de
+     * RUNNING competir com STOPPING, a segunda parada feita pela quiescencia
+     * depois de SubmitInFlight==0 garante o cancelamento definitivo.
+     */
+    if (InterlockedCompareExchange(&context->LifecycleState, 0, 0) ==
+            (LONG)BC250_ACTIVE_LIFECYCLE_RUNNING) {
+        Bc250ActiveRetirementTimerStart(context);
+    }
+    Bc250McdmContextReleaseSubmissionView(&context->Objects,
+        (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
+    InterlockedIncrement((volatile LONG *)&context->SubmissionsCount);
+    return STATUS_SUCCESS;
+}
+
+/*
+ * Invólucro de ciclo de vida do SubmitCommandVirtual (3.67).
+ *
+ * Duas responsabilidades, ambas necessarias para que o StopDevice consiga
+ * fotografar o rastreador com confianca:
+ *
+ *   1. Recusar submissao nova assim que o contexto entra em STOPPING.
+ *   2. Contabilizar submissoes em voo, para que o dreno do teardown saiba
+ *      esperar as que ja passaram pelo portao.
+ *
+ * O corpo ficou em Bc250ActiveSubmitCommandVirtualBody justamente para que o
+ * decremento tenha um unico ponto de saida — espalhar InterlockedDecrement
+ * pelos dezoito retornos do corpo seria a forma classica de vazar a contagem
+ * em um caminho de erro e travar o teardown para sempre.
+ */
+BOOLEAN Bc250ActiveSubmissionGateEnter(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE) {
+        return FALSE;
+    }
+    if (InterlockedCompareExchange(&Context->LifecycleState, 0, 0) !=
+            (LONG)BC250_ACTIVE_LIFECYCLE_RUNNING) {
+        return FALSE;
+    }
+    (void)InterlockedIncrement(&Context->SubmitInFlight);
+    if (InterlockedCompareExchange(&Context->LifecycleState, 0, 0) !=
+            (LONG)BC250_ACTIVE_LIFECYCLE_RUNNING) {
+        (void)InterlockedDecrement(&Context->SubmitInFlight);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+void Bc250ActiveSubmissionGateLeave(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    if (Context != NULL && Context->Signature == BC250_ACTIVE_SIGNATURE) {
+        (void)InterlockedDecrement(&Context->SubmitInFlight);
+    }
+}
+
+static NTSTATUS Bc250ActiveSubmitCommandVirtualLifecycle(
+    HANDLE AdapterContext,
+    CONST DXGKARG_SUBMITCOMMANDVIRTUAL *pSubmitCommand)
+{
+    BC250_DXGK_ACTIVE_CONTEXT *context =
+        (BC250_DXGK_ACTIVE_CONTEXT *)AdapterContext;
+    NTSTATUS status;
+
+    if (context == NULL || context->Signature != BC250_ACTIVE_SIGNATURE) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (!Bc250ActiveSubmissionGateEnter(context)) {
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    Bc250ProbeMarkPostStartStage(BC250_V5_POST_START_SUBMIT);
+    status = Bc250ActiveSubmitCommandVirtualBody(AdapterContext, pSubmitCommand);
+    Bc250ActiveSubmissionGateLeave(context);
+    return status;
+}
+
+static uint32_t Bc250ActiveFlushMappedGfxhubTlb(void *Context);
+
+NTSTATUS Bc250ActiveCurrentFenceProvider(
+    _In_ HANDLE hAdapter,
+    _In_ UINT NodeOrdinal,
+    _Out_ UINT *pCurrentFence)
+{
+    BC250_DXGK_ACTIVE_CONTEXT *active = (BC250_DXGK_ACTIVE_CONTEXT *)hAdapter;
+    BC250_ACTIVE_FENCE_SYNC sync;
+    BOOLEAN queried = FALSE;
+    NTSTATUS status;
+
+    if (active == NULL || pCurrentFence == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (active->Signature != BC250_ACTIVE_SIGNATURE ||
+        active->SubmissionEngine.State != BC250_SUBMISSION_ENGINE_ONLINE) {
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    if (NodeOrdinal > BC250_SUBMISSION_NODE_COMPUTE ||
+        active->Core.DxgkInterface.DxgkCbSynchronizeExecution == NULL ||
+        active->Core.DxgkInterface.DeviceHandle == NULL) {
+        return STATUS_NOT_SUPPORTED;
+    }
+    RtlZeroMemory(&sync, sizeof(sync));
+    sync.Context = active;
+    sync.Operation = BC250_ACTIVE_FENCE_SYNC_QUERY;
+    sync.NodeOrdinal = NodeOrdinal;
+    status = active->Core.DxgkInterface.DxgkCbSynchronizeExecution(
+        active->Core.DxgkInterface.DeviceHandle,
+        Bc250ActiveSynchronizedFenceCallback,
+        &sync, 0, &queried);
+    if (!NT_SUCCESS(status) || !queried) return STATUS_DEVICE_NOT_READY;
+    *pCurrentFence = sync.CurrentFence;
+    return STATUS_SUCCESS;
+}
+
+/* Calcula prontidão do candidato, mas não autoriza produção. ObjectLock held. */
+static LONG Bc250ActiveEvaluateGpuvaActivationEligibility(
+    BC250_DXGK_ACTIVE_CONTEXT *active)
+{
+    LONG slot;
+    const BC250_GPUVA_SPACE *space = NULL;
+    uint32_t blocked = 0u;
+
+    if (active == NULL) return 0;
+    if (active->GpuvaJournal.Pending != 0u)
+        blocked |= BC250_GPUVA_GATE_BLOCK_JOURNAL_PENDING;
+    if (active->GpuvaHierarchyPending != 0u)
+        blocked |= BC250_GPUVA_GATE_BLOCK_HIERARCHY_PENDING;
+    if (InterlockedCompareExchange(&active->IsActive, 1, 1) != 1)
+        blocked |= BC250_GPUVA_GATE_BLOCK_ADAPTER_INACTIVE;
+    if (InterlockedCompareExchange(&active->ContextAbiReady, 1, 1) != 1)
+        blocked |= BC250_GPUVA_GATE_BLOCK_CONTEXT_ABI;
+    if (InterlockedCompareExchange(&active->AllocationAbiReady, 1, 1) != 1)
+        blocked |= BC250_GPUVA_GATE_BLOCK_ALLOCATION_ABI;
+    if (InterlockedCompareExchange(&active->RootPageTableAbiReady, 1, 1) != 1)
+        blocked |= BC250_GPUVA_GATE_BLOCK_ROOT_ABI;
+    if (InterlockedCompareExchange(&active->SubmissionEngine.State,
+            BC250_SUBMISSION_ENGINE_ONLINE,
+            BC250_SUBMISSION_ENGINE_ONLINE) != BC250_SUBMISSION_ENGINE_ONLINE)
+        blocked |= BC250_GPUVA_GATE_BLOCK_ENGINE_OFFLINE;
+    slot = InterlockedCompareExchange(&active->GpuvaSnapshots.ActiveSlot, 0, 0);
+    if (slot < 0 || slot > 1) {
+        blocked |= BC250_GPUVA_GATE_BLOCK_SNAPSHOT_SLOT;
+    } else {
+        space = &active->GpuvaSnapshots.Slots[(uint32_t)slot];
+        active->GpuvaActivationSnapshotGeneration = (uint32_t)
+            InterlockedCompareExchange(
+                &active->GpuvaSnapshots.SlotGeneration[(uint32_t)slot], 0, 0);
+        active->GpuvaActivationSnapshotEpoch = space->PageTableEpoch;
+        active->GpuvaActivationSnapshotLiveCount = space->LiveCount;
+        if (space->Signature != BC250_GPUVA_SPACE_SIGNATURE)
+            blocked |= BC250_GPUVA_GATE_BLOCK_SNAPSHOT_SIGNATURE;
+        if (space->LiveCount == 0u)
+            blocked |= BC250_GPUVA_GATE_BLOCK_SNAPSHOT_EMPTY;
+        if (space->PageTableEpoch == 0u)
+            blocked |= BC250_GPUVA_GATE_BLOCK_SNAPSHOT_EPOCH;
+    }
+    active->GpuvaActivationBlockMask = blocked;
+    return blocked == 0u ? 1 : 0;
+}
+
+static void Bc250ActiveRecordGpuvaGateTelemetry(
+    ULONG eligible, ULONG operational, ULONG blocked,
+    ULONG generation, ULONG epoch, ULONG liveCount)
+{
+    Bc250ProbeRecord(BC250_PROBE_GPUVA_GATE_ELIGIBLE, eligible);
+    Bc250ProbeRecord(BC250_PROBE_GPUVA_GATE_OPERATIONAL, operational);
+    Bc250ProbeRecord(BC250_PROBE_GPUVA_GATE_BLOCK_MASK, blocked);
+    Bc250ProbeRecord(BC250_PROBE_GPUVA_SNAPSHOT_GENERATION, generation);
+    Bc250ProbeRecord(BC250_PROBE_GPUVA_SNAPSHOT_EPOCH, epoch);
+    Bc250ProbeRecord(BC250_PROBE_GPUVA_SNAPSHOT_LIVE_COUNT, liveCount);
+}
+
+NTSTATUS Bc250ActiveFlushTlbHandler(
+    _In_ HANDLE hAdapter,
+    _In_ CONST struct _DXGK_BUILDPAGINGBUFFER_FLUSHTLB *pFlushTlb)
+{
+    BC250_DXGK_ACTIVE_CONTEXT *active = (BC250_DXGK_ACTIVE_CONTEXT *)hAdapter;
+    BC250_GPUVA_JOURNAL_STATUS journalStatus;
+    uint32_t generation = 0u;
+    ULONG telemetryEligible, telemetryOperational, telemetryBlocked;
+    ULONG telemetryGeneration, telemetryEpoch, telemetryLiveCount;
+
+    if (active == NULL || pFlushTlb == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (active->Signature != BC250_ACTIVE_SIGNATURE) {
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    KeEnterCriticalRegion();
+    ExAcquirePushLockExclusive(&active->ObjectLock);
+    if (InterlockedCompareExchange(&active->GpuvaJournalReady, 1, 1) != 1) {
+        ExReleasePushLockExclusive(&active->ObjectLock);
+        KeLeaveCriticalRegion();
+        return STATUS_DEVICE_NOT_READY;
+    }
+    if ((active->GpuvaJournal.Pending != 0u ||
+         active->GpuvaHierarchyPending != 0u) &&
+        (pFlushTlb->RootPageTableAddress.SegmentId != 1u ||
+         (active->GpuvaJournal.Pending != 0u &&
+          (active->GpuvaJournal.Process !=
+            (BC250_MCDM_HANDLE)pFlushTlb->hProcess ||
+           active->GpuvaJournal.ExpectedRootPageTable !=
+             pFlushTlb->RootPageTableAddress.SegmentOffset)) ||
+         (active->GpuvaHierarchyPending != 0u &&
+          (active->GpuvaHierarchyProcess !=
+             (BC250_MCDM_HANDLE)pFlushTlb->hProcess ||
+           active->GpuvaHierarchyRootPageTable !=
+             pFlushTlb->RootPageTableAddress.SegmentOffset)))) {
+        ExReleasePushLockExclusive(&active->ObjectLock);
+        KeLeaveCriticalRegion();
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (Bc250ActiveFlushMappedGfxhubTlb(active) == 0u) {
+        ExReleasePushLockExclusive(&active->ObjectLock);
+        KeLeaveCriticalRegion();
+        return STATUS_IO_DEVICE_ERROR;
+    }
+    if (active->GpuvaJournal.Pending == 0u) {
+        active->GpuvaHierarchyPending = 0u;
+        active->GpuvaHierarchyProcess = NULL;
+        active->GpuvaHierarchyRootPageTable = 0u;
+        active->GpuvaHierarchyHighestLevel = 0u;
+        InterlockedExchange(&active->GpuvaActivationEligible, 0);
+        active->GpuvaActivationBlockMask =
+            BC250_GPUVA_GATE_BLOCK_NO_LEAF_COMMIT;
+        active->GpuvaActivationSnapshotGeneration = (uint32_t)
+            InterlockedCompareExchange(
+                &active->GpuvaSnapshots.PublicationGeneration, 0, 0);
+        telemetryEligible = 0u;
+        telemetryOperational = (ULONG)InterlockedCompareExchange(
+            &active->GpuvaMappingsOperational, 0, 0);
+        telemetryBlocked = active->GpuvaActivationBlockMask;
+        telemetryGeneration = active->GpuvaActivationSnapshotGeneration;
+        telemetryEpoch = active->GpuvaActivationSnapshotEpoch;
+        telemetryLiveCount = active->GpuvaActivationSnapshotLiveCount;
+        ExReleasePushLockExclusive(&active->ObjectLock);
+        KeLeaveCriticalRegion();
+        Bc250ActiveRecordGpuvaGateTelemetry(telemetryEligible,
+            telemetryOperational, telemetryBlocked, telemetryGeneration,
+            telemetryEpoch, telemetryLiveCount);
+        return STATUS_SUCCESS;
+    }
+    journalStatus = Bc250GpuvaJournalCommitFlush(&active->GpuvaJournal,
+        &active->GpuvaSnapshots, &active->GpuvaSnapshotScratch,
+        (BC250_MCDM_HANDLE)pFlushTlb->hProcess,
+        pFlushTlb->RootPageTableAddress.SegmentOffset,
+        pFlushTlb->StartVirtualAddress, pFlushTlb->EndVirtualAddress,
+        &generation);
+    if (journalStatus == BC250_GPUVA_JOURNAL_OK) {
+        active->GpuvaHierarchyPending = 0u;
+        active->GpuvaHierarchyProcess = NULL;
+        active->GpuvaHierarchyRootPageTable = 0u;
+        active->GpuvaHierarchyHighestLevel = 0u;
+        InterlockedExchange(&active->GpuvaActivationEligible,
+            Bc250ActiveEvaluateGpuvaActivationEligibility(active));
+        if (active->GpuvaLabPromotionPresent == 1u &&
+            active->GpuvaLabPromotion == 1u &&
+            InterlockedCompareExchange(
+                &active->GpuvaActivationEligible, 0, 0) == 1) {
+            InterlockedExchange(&active->GpuvaMappingsOperational, 1);
+        } else {
+            InterlockedExchange(&active->GpuvaMappingsOperational, 0);
+        }
+    } else {
+        InterlockedExchange(&active->GpuvaActivationEligible,
+            Bc250ActiveEvaluateGpuvaActivationEligibility(active));
+    }
+    telemetryEligible = (ULONG)InterlockedCompareExchange(
+        &active->GpuvaActivationEligible, 0, 0);
+    telemetryOperational = (ULONG)InterlockedCompareExchange(
+        &active->GpuvaMappingsOperational, 0, 0);
+    telemetryBlocked = active->GpuvaActivationBlockMask;
+    telemetryGeneration = active->GpuvaActivationSnapshotGeneration;
+    telemetryEpoch = active->GpuvaActivationSnapshotEpoch;
+    telemetryLiveCount = active->GpuvaActivationSnapshotLiveCount;
+    ExReleasePushLockExclusive(&active->ObjectLock);
+    KeLeaveCriticalRegion();
+    if (journalStatus != BC250_GPUVA_JOURNAL_OK) {
+        InterlockedExchange(&active->GpuvaMappingsOperational, 0);
+        telemetryOperational = 0u;
+        Bc250ActiveRecordGpuvaGateTelemetry(telemetryEligible,
+            telemetryOperational, telemetryBlocked, telemetryGeneration,
+            telemetryEpoch, telemetryLiveCount);
+        return STATUS_IO_DEVICE_ERROR;
+    }
+    /* GpuvaMappingsOperational permanece zero até o ensaio integrado. */
+    Bc250ActiveRecordGpuvaGateTelemetry(telemetryEligible,
+        telemetryOperational, telemetryBlocked, telemetryGeneration,
+        telemetryEpoch, telemetryLiveCount);
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS Bc250ActiveUpdatePageTableHandler(
+    _In_ HANDLE hAdapter,
+    _In_ CONST BC250_MCDM_RUNTIME_CAPS *Caps,
+    _In_ DXGK_BUILDPAGINGBUFFER_UPDATEPAGETABLE *update)
+{
+    BC250_DXGK_ACTIVE_CONTEXT *active = (BC250_DXGK_ACTIVE_CONTEXT *)hAdapter;
+    BC250_MCDM_OBJECT_RECORD processRecord;
+    BC250_GPUVA_JOURNAL_PTE *entries;
+    BC250_GPUVA_JOURNAL_STATUS journalStatus;
+    UINT32 index;
+    UINT64 *destination;
+
+    if (active == NULL || Caps == NULL || update == NULL ||
+        active->Signature != BC250_ACTIVE_SIGNATURE || update->hProcess == NULL ||
+        update->PageTableLevel >= Caps->PageTableLevelCount ||
+        (update->PageTableLevel == 0u &&
+         (update->FirstPteVirtualAddress == 0u ||
+          update->NumPageTableEntries > BC250_GPUVA_JOURNAL_MAX_CHANGES))) {
+        return STATUS_NOT_SUPPORTED;
+    }
+    KeEnterCriticalRegion();
+    ExAcquirePushLockExclusive(&active->ObjectLock);
+    entries = active->GpuvaJournalStaging;
+
+    if (InterlockedCompareExchange(&active->GpuvaJournalReady, 1, 1) != 1 ||
+        Bc250McdmObjectLookup(&active->Objects,
+            (BC250_MCDM_HANDLE)update->hProcess, BC250_MCDM_OBJECT_PROCESS,
+            (BC250_MCDM_HANDLE)update->hProcess, &processRecord) !=
+                BC250_MCDM_OBJECT_OK ||
+        processRecord.RootPageTableSegmentId != 1u ||
+        processRecord.RootPageTableAddress == 0u) {
+        ExReleasePushLockExclusive(&active->ObjectLock);
+        KeLeaveCriticalRegion();
+        return STATUS_DEVICE_NOT_READY;
+    }
+    if (active->GpuvaHierarchyPending != 0u &&
+        (active->GpuvaHierarchyProcess !=
+            (BC250_MCDM_HANDLE)update->hProcess ||
+         active->GpuvaHierarchyRootPageTable !=
+            processRecord.RootPageTableAddress)) {
+        ExReleasePushLockExclusive(&active->ObjectLock);
+        KeLeaveCriticalRegion();
+        return STATUS_DEVICE_BUSY;
+    }
+    if (update->PageTableLevel == 0u) {
+        RtlZeroMemory(entries, sizeof(*entries) * update->NumPageTableEntries);
+        for (index = 0u; index < update->NumPageTableEntries; ++index) {
+            const DXGK_PTE *pte = &update->pPageTableEntries[index];
+            entries[index].Valid = pte->Valid != 0u ? 1u : 0u;
+            entries[index].Permissions = pte->Valid == 0u ? 0u : BC250_PTE_READABLE;
+            if (pte->Valid != 0u && pte->ReadOnly == 0u)
+                entries[index].Permissions |= BC250_PTE_WRITEABLE;
+            if (pte->Valid != 0u && pte->NoExecute == 0u)
+                entries[index].Permissions |= BC250_PTE_EXECUTABLE;
+            entries[index].SegmentId = (uint32_t)pte->Segment;
+            entries[index].SegmentOffset = pte->PageAddress;
+            entries[index].Allocation = (BC250_MCDM_HANDLE)update->hAllocation;
+        }
+        journalStatus = Bc250GpuvaJournalStageLeafUpdate(&active->GpuvaJournal,
+            (BC250_MCDM_HANDLE)update->hProcess,
+            processRecord.RootPageTableAddress, update->FirstPteVirtualAddress,
+            entries, update->NumPageTableEntries);
+    } else {
+        if (active->GpuvaJournal.Pending != 0u &&
+            (active->GpuvaJournal.Process !=
+                (BC250_MCDM_HANDLE)update->hProcess ||
+             active->GpuvaJournal.ExpectedRootPageTable !=
+                processRecord.RootPageTableAddress)) {
+            journalStatus = BC250_GPUVA_JOURNAL_BUSY;
+        } else {
+            active->GpuvaHierarchyPending = 1u;
+            active->GpuvaHierarchyProcess =
+                (BC250_MCDM_HANDLE)update->hProcess;
+            active->GpuvaHierarchyRootPageTable =
+                processRecord.RootPageTableAddress;
+            if (update->PageTableLevel > active->GpuvaHierarchyHighestLevel)
+                active->GpuvaHierarchyHighestLevel = update->PageTableLevel;
+            journalStatus = BC250_GPUVA_JOURNAL_OK;
+        }
+    }
+    if (journalStatus == BC250_GPUVA_JOURNAL_OK) {
+        /* Entre a escrita da PTE e o ACK do flush, snapshot e hardware
+         * representam gerações diferentes: submissão deve permanecer fechada. */
+        InterlockedExchange(&active->GpuvaMappingsOperational, 0);
+        InterlockedExchange(&active->GpuvaActivationEligible, 0);
+        destination = (UINT64 *)update->PageTableAddress.CpuVirtual;
+        for (index = 0u; index < update->NumPageTableEntries; ++index) {
+            UINT64 encoded = 0u;
+            (void)Bc250McdmEncodeVidMmPte(
+                Caps, &update->pPageTableEntries[index], &encoded);
+            destination[update->StartIndex + index] = encoded;
+        }
+    }
+    ExReleasePushLockExclusive(&active->ObjectLock);
+    KeLeaveCriticalRegion();
+    if (journalStatus == BC250_GPUVA_JOURNAL_BUSY) return STATUS_DEVICE_BUSY;
+    if (journalStatus != BC250_GPUVA_JOURNAL_OK) return STATUS_INVALID_PARAMETER;
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceV5Telemetry(
+    CONST PVOID MiniportDeviceContext,
+    PDXGK_START_INFO DxgkStartInfo,
+    PDXGKRNL_INTERFACE DxgkInterface,
+    PULONG NumberOfVideoPresentSources,
+    PULONG NumberOfChildren)
+{
+    BC250_DXGK_ACTIVE_CONTEXT *context =
+        (BC250_DXGK_ACTIVE_CONTEXT *)MiniportDeviceContext;
+    NTSTATUS status = Bc250DxgkDdiStartDeviceActive(
+        MiniportDeviceContext, DxgkStartInfo, DxgkInterface,
+        NumberOfVideoPresentSources, NumberOfChildren);
+
+    /*
+     * O ciclo de vida so abre depois de o StartDevice ter devolvido sucesso.
+     * Em falha o contexto permanece fora de RUNNING, de modo que nenhuma
+     * submissao entra em um adaptador que nunca subiu.
+     */
+    if (NT_SUCCESS(status) && context != NULL &&
+        context->Signature == BC250_ACTIVE_SIGNATURE) {
+        InterlockedExchange(&context->LifecycleState,
+            (LONG)BC250_ACTIVE_LIFECYCLE_RUNNING);
+        InterlockedExchange(&context->SubmitInFlight, 0);
+        Bc250ProbeRecord(BC250_PROBE_V5_LIFECYCLE_STATE,
+            BC250_ACTIVE_LIFECYCLE_RUNNING);
+        Bc250ProbeMarkPostStartStage(BC250_V5_POST_START_RETURNED);
+    }
+    Bc250ProbeRecord(BC250_PROBE_V5_START_DEVICE_STATUS, (ULONG)status);
+    Bc250ProbeRecord(BC250_PROBE_V5_START_DEVICE_SOURCES,
+        NumberOfVideoPresentSources != NULL ?
+            *NumberOfVideoPresentSources : 0u);
+    Bc250ProbeRecord(BC250_PROBE_V5_START_DEVICE_CHILDREN,
+        NumberOfChildren != NULL ? *NumberOfChildren : 0u);
+    return status;
+}
+
+/*
+ * Perfil do carregamento corrente.  Resolvido uma unica vez em DriverEntry,
+ * antes de qualquer registro no dxgkrnl, e consultado depois por
+ * StartDevice.  LONG volatil porque StartDevice roda fora do contexto de
+ * DriverEntry; a escrita e' unica e anterior a qualquer leitura.
+ */
+static volatile LONG g_Bc250AdapterProfile =
+    (LONG)BC250_ADAPTER_PROFILE_DISPLAY_ONLY;
+
+_Check_return_
+NTSTATUS Bc250ActiveSetAdapterProfile(_In_ BC250_ADAPTER_PROFILE Profile)
+{
+    if (Profile != BC250_ADAPTER_PROFILE_DISPLAY_ONLY &&
+        Profile != BC250_ADAPTER_PROFILE_DISPLAY_RENDER &&
+        Profile != BC250_ADAPTER_PROFILE_RENDER_ONLY_LAB) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    InterlockedExchange(&g_Bc250AdapterProfile, (LONG)Profile);
+    Bc250DisplaySetChildEnumeration(
+        Profile == BC250_ADAPTER_PROFILE_RENDER_ONLY_LAB ? FALSE : TRUE);
+    return STATUS_SUCCESS;
+}
+
+_Check_return_
+BC250_ADAPTER_PROFILE Bc250ActiveGetAdapterProfile(void)
+{
+    return (BC250_ADAPTER_PROFILE)InterlockedCompareExchange(
+        &g_Bc250AdapterProfile, 0, 0);
+}
+
+_Check_return_
+NTSTATUS Bc250ActiveResolveAdapterProfile(
+    _In_ ULONG RenderNode,
+    _In_ ULONG RenderNodePresent,
+    _In_ ULONG RenderOnlyLab,
+    _In_ ULONG RenderOnlyLabPresent,
+    _Out_ BC250_ADAPTER_PROFILE *Profile)
+{
+    if (Profile == NULL) return STATUS_INVALID_PARAMETER;
+    *Profile = BC250_ADAPTER_PROFILE_DISPLAY_ONLY;
+
+    /* Fora de {0,1} nao existe interpretacao segura: nao adivinhar. */
+    if (RenderNode > 1u || RenderOnlyLab > 1u) {
+        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
+
+    /*
+     * Um tunable ilegivel que devolveu valor nao-default e' configuracao
+     * corrompida, nao ausencia.  Ausencia legitima e' Present=0 com o
+     * default preservado, e cai no perfil herdado.
+     */
+    if (RenderNodePresent == 0u && RenderNode != 0u) {
+        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
+    if (RenderOnlyLabPresent == 0u && RenderOnlyLab != 0u) {
+        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
+
+    if (RenderOnlyLabPresent == 1u && RenderOnlyLab == 1u) {
+        /*
+         * RenderOnlyLab exige o caminho DxgkInitialize.  O caminho KMDOD e'
+         * display por definicao: pedir render-only nele e' uma combinacao
+         * sem significado, e adivinhar qual metade o operador queria seria
+         * pior do que recusar.
+         */
+        if (!(RenderNodePresent == 1u && RenderNode == 1u)) {
+            return STATUS_DEVICE_CONFIGURATION_ERROR;
+        }
+        *Profile = BC250_ADAPTER_PROFILE_RENDER_ONLY_LAB;
+        return STATUS_SUCCESS;
+    }
+
+    if (RenderNodePresent == 1u && RenderNode == 1u) {
+        *Profile = BC250_ADAPTER_PROFILE_DISPLAY_RENDER;
+        return STATUS_SUCCESS;
+    }
+
+    *Profile = BC250_ADAPTER_PROFILE_DISPLAY_ONLY;
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS Bc250BuildActiveInitializationData(
     DRIVER_INITIALIZATION_DATA *InitializationData)
 {
+    return Bc250BuildActiveInitializationDataForContract(
+        InitializationData,
+        DXGKDDI_INTERFACE_VERSION_WDDM2_7,
+        DXGKDDI_WDDMv2_7);
+}
+
+NTSTATUS Bc250BuildActiveInitializationDataForContract(
+    DRIVER_INITIALIZATION_DATA *InitializationData,
+    ULONG InterfaceVersion,
+    DXGK_WDDMVERSION WddmVersion)
+{
+    return Bc250BuildActiveInitializationDataForProfile(
+        InitializationData, InterfaceVersion, WddmVersion,
+        BC250_ADAPTER_PROFILE_DISPLAY_RENDER);
+}
+
+NTSTATUS Bc250BuildActiveInitializationDataForProfile(
+    DRIVER_INITIALIZATION_DATA *InitializationData,
+    ULONG InterfaceVersion,
+    DXGK_WDDMVERSION WddmVersion,
+    BC250_ADAPTER_PROFILE Profile)
+{
     if (InitializationData == NULL) return STATUS_INVALID_PARAMETER;
+    if (Profile != BC250_ADAPTER_PROFILE_DISPLAY_ONLY &&
+        Profile != BC250_ADAPTER_PROFILE_DISPLAY_RENDER &&
+        Profile != BC250_ADAPTER_PROFILE_RENDER_ONLY_LAB) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if ((InterfaceVersion != DXGKDDI_INTERFACE_VERSION_WDDM2_0 ||
+         WddmVersion != DXGKDDI_WDDMv2) &&
+        (InterfaceVersion != DXGKDDI_INTERFACE_VERSION_WDDM2_7 ||
+         WddmVersion != DXGKDDI_WDDMv2_7)) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (!NT_SUCCESS(Bc250McdmSetWddmContractVersion(WddmVersion))) {
+        return STATUS_INVALID_PARAMETER;
+    }
     RtlZeroMemory(InitializationData, sizeof(*InitializationData));
-    InitializationData->Version = BC250_DXGK_TARGET_INTERFACE_VERSION;
+    InitializationData->Version = InterfaceVersion;
     InitializationData->DxgkDdiAddDevice = Bc250DxgkDdiAddDeviceActive;
-    InitializationData->DxgkDdiStartDevice = Bc250DxgkDdiStartDeviceActive;
+    InitializationData->DxgkDdiStartDevice =
+        Bc250DxgkDdiStartDeviceV5Telemetry;
     InitializationData->DxgkDdiStopDevice = Bc250DxgkDdiStopDeviceActive;
     InitializationData->DxgkDdiRemoveDevice = Bc250DxgkDdiRemoveDeviceActive;
 
@@ -4104,7 +5699,34 @@ NTSTATUS Bc250BuildActiveInitializationData(
         Bc250ActiveCloseAllocationLifecycle);
     Bc250McdmInstallDebugLifecycle(Bc250ActiveCollectDebugLifecycle);
     Bc250McdmInstallRuntimeCapsProvider(Bc250ActiveQueryRuntimeCaps);
+    Bc250McdmInstallSubmissionExecutor(Bc250ActiveSubmitCommandVirtualLifecycle);
+    Bc250McdmInstallCurrentFenceProvider(Bc250ActiveCurrentFenceProvider);
+    Bc250McdmInstallUpdatePageTableHandler(Bc250ActiveUpdatePageTableHandler);
+    Bc250McdmInstallFlushTlbHandler(Bc250ActiveFlushTlbHandler);
     (void)Bc250McdmPopulateRequiredCallbacks(InitializationData);
+    /*
+     * DxgkInitialize valida a tabela completa de display+render antes de
+     * consultar DRIVERCAPS.  Estes callbacks vivem separados para que a
+     * imagem MCDM readonly continue sem as DDIs graficas, mas o miniport
+     * ativo deve instala-los explicitamente.  Ate o 3.67 a funcao existia
+     * sem chamador: o dxgkrnl encerrava o post-start com
+     * STATUS_INTERNAL_ERROR depois de QueryChildRelations.
+     */
+    (void)Bc250McdmPopulateRenderCallbacks(InitializationData);
+
+    /*
+     * Gate 1.5: o perfil render-only nao anuncia NENHUMA superficie de
+     * display.  Nao e' uma poda seletiva — podar Present mantendo VidPn e
+     * children apenas trocaria a tela preta por uma rejeicao de tabela ou um
+     * Codigo 43 mais cedo.  Ou o adaptador anuncia o conjunto coerente de
+     * display, ou nao anuncia display nenhum.
+     */
+    if (Profile == BC250_ADAPTER_PROFILE_RENDER_ONLY_LAB) {
+        Bc250ProbeRecord(BC250_PROBE_V5_DISPLAY_SURFACE_ANNOUNCED, 0u);
+        return Bc250DisplayPopulateBaseOnlyCallbacks(InitializationData);
+    }
+
+    Bc250ProbeRecord(BC250_PROBE_V5_DISPLAY_SURFACE_ANNOUNCED, 1u);
     return Bc250DisplayPopulateCallbacks(InitializationData);
 }
 
@@ -4112,15 +5734,94 @@ NTSTATUS DriverEntry(
     PDRIVER_OBJECT DriverObject,
     PUNICODE_STRING RegistryPath)
 {
+    /*
+     * Reset INTEGRAL da telemetria, antes de QUALQUER gravacao deste
+     * carregamento.
+     *
+     * Os resets anteriores eram por familia: cobriam o rastro V5 e o bloco
+     * P1/P2, e deixavam Shader*, HqdActive* e Dmm* fora de toda varredura. A
+     * corrida 3.75 publicou DmmChildRelationsCalled=56 e
+     * DmmIsSupportedCount=41 herdados de boots anteriores, e um
+     * ShaderPhysicalReady=1 que nao pode ser atribuido aquela corrida.
+     * Evidencia que mistura boots nao e' evidencia.
+     *
+     * Precisa ficar no TOPO: colocado depois da resolucao de perfil, o
+     * proprio reset apagaria os campos que acabaram de ser publicados.
+     */
+    Bc250ProbeResetAllVolatile();
     Bc250ProbeRecord(BC250_PROBE_DRIVER_ENTRY_REACHED, 1);
+    /*
+     * Fato de COMPILACAO, nao de execucao: diz qual imagem esta' carregada.
+     * Num pacote RENDERONLY_SAFE tem de ser 0. Se vier 1, o binario instalado
+     * nao e' o que o manifesto declara, e a corrida esta' invalidada antes de
+     * qualquer outra leitura.
+     */
+    Bc250ProbeRecord(BC250_PROBE_V5_UNSAFE_BRINGUP_COMPILED,
+        BC250_UNSAFE_BRINGUP_COMPILED);
     if (DriverObject == NULL || RegistryPath == NULL) {
         Bc250ProbeRecord(BC250_PROBE_DXGK_INITIALIZE_STATUS,
             (ULONG)STATUS_INVALID_PARAMETER);
         return STATUS_INVALID_PARAMETER;
     }
-    if (!NT_SUCCESS(Bc250BuildActiveInitializationData(
-            &g_Bc250ActiveInitializationData))) {
-        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    /*
+     * O perfil e' resolvido ANTES da tabela porque governa quais callbacks
+     * ela recebe.  Ler os tunables aqui tambem garante PASSIVE_LEVEL, que e'
+     * requisito de RtlQueryRegistryValues.
+     */
+    {
+        ULONG renderNodePresent = 0u;
+        ULONG renderOnlyLabPresent = 0u;
+        ULONG renderNode = Bc250ActiveReadTunableChecked(
+            L"RenderNode", 0u, &renderNodePresent);
+        ULONG renderOnlyLab = Bc250ActiveReadTunableChecked(
+            L"RenderOnlyLab", 0u, &renderOnlyLabPresent);
+        BC250_ADAPTER_PROFILE profile = BC250_ADAPTER_PROFILE_DISPLAY_ONLY;
+        NTSTATUS profileStatus = Bc250ActiveResolveAdapterProfile(
+            renderNode, renderNodePresent,
+            renderOnlyLab, renderOnlyLabPresent, &profile);
+
+        Bc250ProbeRecord(BC250_PROBE_V5_RENDER_ONLY_LAB_REQUESTED,
+            renderOnlyLab);
+        Bc250ProbeRecord(BC250_PROBE_V5_RENDER_ONLY_LAB_TUNABLE_PRESENT,
+            renderOnlyLabPresent);
+        Bc250ProbeRecord(BC250_PROBE_V5_PROFILE_RESOLVE_STATUS,
+            (ULONG)profileStatus);
+
+        if (!NT_SUCCESS(profileStatus) ||
+            !NT_SUCCESS(Bc250ActiveSetAdapterProfile(profile))) {
+            Bc250ProbeRecord(BC250_PROBE_DXGK_INITIALIZE_STATUS,
+                (ULONG)STATUS_DEVICE_CONFIGURATION_ERROR);
+            return STATUS_DEVICE_CONFIGURATION_ERROR;
+        }
+        Bc250ProbeRecord(BC250_PROBE_V5_ADAPTER_PROFILE, (ULONG)profile);
+    }
+
+    {
+        ULONG contractPresent = 0u;
+        ULONG contract = Bc250ActiveReadTunableChecked(
+            L"WddmContractVersion", 27u, &contractPresent);
+        ULONG interfaceVersion;
+        DXGK_WDDMVERSION wddmVersion;
+
+        UNREFERENCED_PARAMETER(contractPresent);
+        if (contract == 20u) {
+            interfaceVersion = DXGKDDI_INTERFACE_VERSION_WDDM2_0;
+            wddmVersion = DXGKDDI_WDDMv2;
+        } else if (contract == 27u) {
+            interfaceVersion = DXGKDDI_INTERFACE_VERSION_WDDM2_7;
+            wddmVersion = DXGKDDI_WDDMv2_7;
+        } else {
+            Bc250ProbeRecord(BC250_PROBE_DXGK_INITIALIZE_STATUS,
+                (ULONG)STATUS_DEVICE_CONFIGURATION_ERROR);
+            return STATUS_DEVICE_CONFIGURATION_ERROR;
+        }
+        Bc250ProbeRecord(BC250_PROBE_V5_CONTRACT_VERSION, contract);
+        if (!NT_SUCCESS(Bc250BuildActiveInitializationDataForProfile(
+                &g_Bc250ActiveInitializationData,
+                interfaceVersion, wddmVersion,
+                Bc250ActiveGetAdapterProfile()))) {
+            return STATUS_DEVICE_CONFIGURATION_ERROR;
+        }
     }
     Bc250ProbeRecord(BC250_PROBE_INITIALIZATION_DATA_READY, 1);
 
@@ -4128,6 +5829,74 @@ NTSTATUS DriverEntry(
     {
         KMDDOD_INITIALIZATION_DATA dodInit;
         NTSTATUS status;
+        BC250_ADAPTER_PROFILE profile = Bc250ActiveGetAdapterProfile();
+        ULONG renderNodePresent = 0u;
+        ULONG renderNode = Bc250ActiveReadTunableChecked(
+            L"RenderNode", 0u, &renderNodePresent);
+
+        /*
+         * Zera o rastro deste carregamento antes de registrar no dxgkrnl.
+         *
+         * Ate o 3.66 o reset era parcial e feito a mao: cobria seis campos
+         * V5 e deixava de fora o rastro de DDI, QueryInterface, StopDevice,
+         * RemoveDevice e o bloco DMM inteiro. O inspetor do ensaio de
+         * 2026-09-01 leu DmmQaiOutSize=544, DmmChildRelationsCalled=56 e
+         * DmmControlInterruptCount=14925 — nenhum daquele boot.
+         *
+         * Bc250ProbeResetSubmissionEvidence estava declarado, implementado e
+         * documentado com "chamar em DriverEntry", mas nao possuia UM UNICO
+         * chamador em todo o repositorio: o reset P1/P2 que a documentacao
+         * afirmava existir nunca executou. Agora executa aqui, antes do
+         * bring-up, e a publicacao fisica de P1/P2 acontece depois.
+         */
+        /* O reset integral ja' ocorreu no topo de DriverEntry. */
+        Bc250ProbeRecord(BC250_PROBE_V5_CONTRACT_VERSION,
+            Bc250ActiveReadTunable(L"WddmContractVersion", 27u));
+
+        Bc250ProbeRecord(BC250_PROBE_V5_RENDER_NODE_REQUESTED, renderNode);
+        Bc250ProbeRecord(BC250_PROBE_V5_RENDER_NODE_TUNABLE_PRESENT,
+            renderNodePresent);
+        Bc250ProbeRecord(BC250_PROBE_V5_START_DEVICE_STATUS,
+            (ULONG)STATUS_NOT_SUPPORTED);
+        Bc250ProbeRecord(BC250_PROBE_V5_QAI_LAST_STATUS,
+            (ULONG)STATUS_NOT_SUPPORTED);
+
+        Bc250ProbeRecord(BC250_PROBE_V5_ADAPTER_PROFILE, (ULONG)profile);
+
+        if (renderNode > 1u) {
+            Bc250ProbeRecord(BC250_PROBE_V5_REGISTRATION_MODE, 0u);
+            Bc250ProbeRecord(BC250_PROBE_DXGK_INITIALIZE_STATUS,
+                (ULONG)STATUS_DEVICE_CONFIGURATION_ERROR);
+            return STATUS_DEVICE_CONFIGURATION_ERROR;
+        }
+
+        /*
+         * A escolha da rotina de registro segue o perfil, nao mais o tunable
+         * cru: DISPLAY_RENDER e RENDER_ONLY_LAB usam DxgkInitialize com
+         * tabelas diferentes; DISPLAY_ONLY continua no KMDOD.  A divergencia
+         * entre perfil e RenderNode e' impossivel por construcao — o perfil
+         * foi derivado de RenderNode em DriverEntry —, mas conferir aqui
+         * mantem o fail-closed local caso alguem insira codigo entre os dois
+         * pontos.
+         */
+        if (profile == BC250_ADAPTER_PROFILE_DISPLAY_RENDER ||
+            profile == BC250_ADAPTER_PROFILE_RENDER_ONLY_LAB) {
+            if (!(renderNodePresent == 1u && renderNode == 1u)) {
+                Bc250ProbeRecord(BC250_PROBE_V5_REGISTRATION_MODE, 0u);
+                Bc250ProbeRecord(BC250_PROBE_DXGK_INITIALIZE_STATUS,
+                    (ULONG)STATUS_DEVICE_CONFIGURATION_ERROR);
+                return STATUS_DEVICE_CONFIGURATION_ERROR;
+            }
+            Bc250ProbeRecord(BC250_PROBE_V5_REGISTRATION_MODE,
+                profile == BC250_ADAPTER_PROFILE_RENDER_ONLY_LAB ? 2u : 1u);
+            status = DxgkInitialize(
+                DriverObject, RegistryPath, &g_Bc250ActiveInitializationData);
+            Bc250ProbeRecord(BC250_PROBE_DXGK_INITIALIZE_STATUS,
+                (ULONG)status);
+            return status;
+        }
+
+        Bc250ProbeRecord(BC250_PROBE_V5_REGISTRATION_MODE, 0u);
         RtlZeroMemory(&dodInit, sizeof(dodInit));
         dodInit.Version = DXGKDDI_INTERFACE_VERSION_WIN8;
         dodInit.DxgkDdiAddDevice = g_Bc250ActiveInitializationData.DxgkDdiAddDevice;
@@ -4162,16 +5931,20 @@ NTSTATUS DriverEntry(
         dodInit.DxgkDdiGetChildContainerId = Bc250DxgkDdiGetChildContainerId;
         dodInit.DxgkDdiControlInterrupt = Bc250DxgkDdiControlInterrupt;
         dodInit.DxgkDdiControlEtwLogging = Bc250DxgkDdiControlEtwLogging;
+        /*
+         * DIVIDA TECNICA DELIBERADA E TEMPORARIA — isolamento do Gate 1.5.
+         *
+         * O stub local de CollectDbgInfo e SetPalette voltam para que a
+         * tabela KMDOD do 3.76 seja byte a byte a da baseline conhecida. A
+         * troca por Bc250McdmCollectDbgInfo e a retirada de SetPalette estao
+         * certas, mas pertencem ao candidato de limpeza, nao a este.
+         * Ver o comentario extenso em Bc250DisplayPopulateCallbacks.
+         */
         dodInit.DxgkDdiCollectDbgInfo = Bc250DxgkDdiCollectDbgInfo;
         dodInit.DxgkDdiNotifyAcpiEvent = Bc250DxgkDdiNotifyAcpiEvent;
         dodInit.DxgkDdiSetPalette = Bc250DxgkDdiSetPalette;
         dodInit.DxgkDdiGetScanLine = Bc250DxgkDdiGetScanLine;
         dodInit.DxgkDdiNotifySurpriseRemoval = Bc250DxgkDdiNotifySurpriseRemoval;
-
-        if (DriverObject == (PDRIVER_OBJECT)(ULONG_PTR)0xDEADBEEF) {
-            return DxgkInitialize(
-                DriverObject, RegistryPath, &g_Bc250ActiveInitializationData);
-        }
 
         status = DxgkInitializeDisplayOnlyDriver(DriverObject, RegistryPath, &dodInit);
         Bc250ProbeRecord(BC250_PROBE_DXGK_INITIALIZE_STATUS, (ULONG)status);

@@ -34,15 +34,15 @@
    Sempre inicie suas propostas e análises com a barra de progresso do projeto:
    ```text
    ================================== STATUS DO DRIVER BC-250 ==================================
-   Base Geral Pré-WDDM (Lab)        ██████████████████▋░  93%   Estável e Isolado       (+5)
-   SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silício      (+5)
-   GCVM & Tradução de Memória       █████████████████░░░  85%   Gate 20/20 Aprovado    (+50)
-   RLC, CP & PM4 Direct Load        █████████░░░░░░░░░░░  45%   RLC Fora da ROM         (+10)
-   Telemetria & Observabilidade     ████████░░░░░░░░░░░░  40%   GFXOFF Sincronizado     (+5)
-   Compute & Async Queues (MEC/MQD) ███░░░░░░░░░░░░░░░░░  15%   Bloqueado pelo CP       ( 0)
-   Miniport WDDM / MCDM Produção    ████░░░░░░░░░░░░░░░░  20%   Estrutura e DDIs        (+2)
+   Base Geral Pre-WDDM (Lab)        ██████████████████▋░  93%   Estavel e Isolado
+   SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silicio
+   GCVM & Traducao de Memoria       ██████████████████░░  90%   PTE 0x10 provado; sem GPUVA dinamica
+   RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
+   Telemetria & Observabilidade     █████████████████░░░  85%   93 campos P1
+   Compute & Async Queues (MEC/MQD) ██████████████████░░  90%   One-shot provado n=3; fila persistente nao consome
+   Miniport WDDM / MCDM Producao    ███████░░░░░░░░░░░░░  35%   P1 em andamento (candidato 3.46)
    =============================================================================================
-   Veredito Global: NÃO VALIDADO EM HARDWARE
+   Veredito Global: NAO VALIDADO EM HARDWARE
    =============================================================================================
    ```
 

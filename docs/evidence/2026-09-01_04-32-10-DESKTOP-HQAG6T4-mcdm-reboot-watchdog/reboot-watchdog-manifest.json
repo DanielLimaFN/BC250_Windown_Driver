@@ -1,0 +1,21 @@
+﻿{
+    "schema_version":  1,
+    "armed_at":  "2026-09-01T04:32:10.7621751-03:00",
+    "armed_boot_ticks":  639237944250213650,
+    "task_name":  "BC250-RebootGuard",
+    "token":  "557f8005-7749-42b6-b3c1-79ad312d7fc8",
+    "instance_id":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
+    "target_inf":  "oem20.inf",
+    "expected_driver_version":  "3.62.0.0",
+    "expected_schema_version":  128,
+    "expected_skip_hw_bringup":  0,
+    "lab_candidate":  true,
+    "expected_sys_sha256":  "6260AA8948598DF270481D80DFEF961662AE201D2606861199FB3658D0BC3C8C",
+    "expected_inf_sha256":  "CC3668174B791B330D1C169BE1EB8F7747FACC57CE25484D50DE21D2C5C0BF7A",
+    "expected_recovery_sha256":  "B3B8FEE7BCA18D8C26A4B6FA03A669796CA01809C0C4E6EB665C4604B7E044F1",
+    "timeout_seconds":  600,
+    "evidence_dir":  "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\docs\\evidence\\2026-09-01_04-32-10-DESKTOP-HQAG6T4-mcdm-reboot-watchdog",
+    "rollback_path":  "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\tools\\rollback-bc250mcdm-lab.ps1",
+    "rollback_sha256":  "5E8CE0A0684FC61CF45C4B0F86E34C381309375FCC1FB23FE711AB56B8C4D005",
+    "hardware_validated":  false
+}

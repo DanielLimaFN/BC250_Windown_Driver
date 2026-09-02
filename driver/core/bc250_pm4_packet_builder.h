@@ -61,6 +61,27 @@ extern "C" {
 #define BC250_PM4_WAIT_GT     6u
 
 #define BC250_PM4_EVENT_BOTTOM_OF_PIPE       0x3Au
+#define BC250_PM4_EVENT_CACHE_FLUSH_AND_INV_TS 0x14u
+
+/*
+ * Forma exata de RELEASE_MEM aprovada no silicio no candidato 3.43 (fence
+ * 0xBC250D15 gravada pela GPU).  Os dois primeiros dwords sao literais
+ * conferidos byte a byte no ensaio fisico e NAO devem ser recalculados:
+ *   0xC0064900 = TYPE3(RELEASE_MEM, 8 dwords)
+ *   0x06603514 = CACHE_FLUSH_AND_INV_TS_EVENT | EVENT_INDEX(5) | GCR GL2
+ * Somente DATA_SEL/INT_SEL do terceiro dword sao parametrizados.
+ */
+#define BC250_PM4_RELEASE_MEM_HEADER_PROVEN  0xC0064900u
+#define BC250_PM4_RELEASE_MEM_EVENT_PROVEN   0x06603514u
+#define BC250_PM4_RELEASE_MEM_DATA_SEL_32    (1u << 29)
+#define BC250_PM4_RELEASE_MEM_INT_SEL_NONE   (0u << 24)
+#define BC250_PM4_RELEASE_MEM_INT_SEL_WRITE_CONFIRM (2u << 24)
+#define BC250_PM4_DWORDS_RELEASE_MEM         8u
+#define BC250_PM4_DWORDS_INDIRECT_BUFFER     4u
+#define BC250_PM4_IB_VALID_BIT               (1u << 23)
+#define BC250_PM4_IB_VMID_SHIFT              24u
+#define BC250_PM4_IB_SIZE_MASK               0x000FFFFFu
+#define BC250_PM4_PACKET2_NOP                0x80000000u
 #define BC250_PM4_EVENT_CS_PARTIAL_FLUSH     0x40u
 #define BC250_PM4_EVENT_EOP                  0x46u
 
@@ -138,6 +159,19 @@ BC250_PM4_STATUS Bc250Pm4EmitReleaseMem(
     uint32_t EventFlags,
     uint64_t FenceAddress,
     uint64_t FenceSequence);
+
+/*
+ * RELEASE_MEM de 32 bits na forma provada em silicio.  IntSel deve ser
+ * BC250_PM4_RELEASE_MEM_INT_SEL_NONE (conclusao por polling) ou
+ * BC250_PM4_RELEASE_MEM_INT_SEL_WRITE_CONFIRM (conclusao por interrupcao).
+ */
+BC250_PM4_STATUS Bc250Pm4EmitReleaseMemEop32(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint64_t FenceAddress,
+    uint32_t FenceValue,
+    uint32_t IntSel);
 
 BC250_PM4_STATUS Bc250Pm4EmitEventWrite(
     uint32_t *RingBuffer,

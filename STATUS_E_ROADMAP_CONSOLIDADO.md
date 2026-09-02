@@ -1,5 +1,168 @@
 # BC-250 Windows Driver — Status Consolidado e Roadmap
 
+> **🏆 VITÓRIA HISTÓRICA: FASE P2 MULTI-SUBMISSÃO VALIDADA EM HARDWARE NO SILÍCIO (31/08/2026)!**  
+> O Candidato **3.61.0.0** (Schema 127) corrigiu os descritores do Indirect Buffer
+> para utilizar os endereços físicos de memória na VRAM no modo Host PA. No ensaio
+> físico, a GPU **processou com sucesso o gate one-shot (`ShaderPhysicalReady=1`), o
+> Self-Test P1 (`RPTR=12`), e executou sequencialmente todas as 16 submissões da Fase P2
+> (`RPTR=204`), aposentando 16/16 submissões com zero mismatches nos 16 slots de dados e
+> todas as 17 fences de hardware gravadas na VRAM**!  
+> **`P2 MULTI-SUBMISSAO VALIDADA EM HARDWARE`**. Documento oficial:
+> [`docs/159_VITORIA_HISTORICA_FASE_P2_VALIDADA_EM_HARDWARE.md`](docs/159_VITORIA_HISTORICA_FASE_P2_VALIDADA_EM_HARDWARE.md).  
+> Evidência: [`docs/evidence/2026-08-31_09-19-44-DESKTOP-HQAG6T4-p2-multi-submission/p2-multi-submission-acceptance.json`](docs/evidence/2026-08-31_09-19-44-DESKTOP-HQAG6T4-p2-multi-submission/p2-multi-submission-acceptance.json).
+> 
+> **Correção de auditoria P0 — Fase P3.1 NÃO está funcional:**  
+> A DLL e sua ABI compilam, mas alocação/free, cópias, IB e espera de fence não possuem
+> backend de produção seguro. As rotas foram postas em fail-closed. O caminho anterior
+> usava cópia CPU, fence escrita pela CPU, allocator circular sem free e descartava a
+> GPUVA do IB. **NÃO VALIDADO EM HARDWARE como runtime de aplicação.**
+> 
+> **Correção de auditoria P0 — Fase P3.2 NÃO está funcional:**  
+> Existe um esqueleto de ICD/loader, mas faltam SPIR-V→ISA, descriptors, sincronização e
+> backend de submit. `vkCreateInstance` falha fechado por padrão e `vkQueueSubmit`
+> devolve `VK_ERROR_DEVICE_LOST`. **Vulkan compute/graphics NÃO VALIDADO EM HARDWARE.**
+> 
+> **Correção de auditoria P0 — Fase P3.3 NÃO está funcional:**  
+> Os símbolos/fontes e benchmark existem, mas não há kernels GPU gerais nem inferência
+> comprovada. Evidências WDDM recentes mostram delta zero de submissions do RADV.
+> **LLM acelerado NÃO VALIDADO EM HARDWARE.**
+
+> **Correção fail-closed pós-regressão (31/08/2026):** o INF fonte agora fixa
+> `RenderNode=0` como padrão seguro, e pacote/binder auditam esse valor antes
+> do bind. `DxgkDdiSubmitCommandVirtual` não devolve mais sucesso sem executor
+> físico instalado e não usa endereços GPU constantes para simular validação.
+> A suíte WDK integral passou. **ALTERAÇÕES AINDA NÃO VALIDADAS EM HARDWARE.**
+
+> **Candidato 3.55 / Fase P2 Multi-Submissao Sequencial.** Implementada submissão
+> contínua de $N=16$ dispatches pelo anel MEC2 persistente ativo, com slots de dados
+> e fences de dispatch isolados em VRAM, teste de wraparound cíclico e novo
+> harness `test-p2-multi-submission.ps1`. Pacote `3.55.0.0 / SchemaVersion 126`,
+> assinado e pronto para ensaio físico no silício.
+> **NAO VALIDADO EM HARDWARE.** Documento técnico:
+> [`docs/149_CANDIDATO_3.55_FASE_P2_MULTI_SUBMISSAO.md`](docs/149_CANDIDATO_3.55_FASE_P2_MULTI_SUBMISSAO.md).
+
+> **🏆 VITORIA HISTORICA: FASE P1 VALIDADA EM HARDWARE NO SILICIO (30/08/2026)!**  
+> O Candidato 3.54 corrigiu a codificação do `PACKET3_INDIRECT_BUFFER` para a
+> especificação GFX10 (`INDIRECT_BUFFER_VALID` bit 23 = `0x0080002D`). No ensaio
+> físico, a GPU **consumiu os 12 DWORDs em 1 poll (~1 ms), avançou RPTR para 12,
+> gravou a fence do dispatch (`0xBC250D15`), gravou a fence do anel (`1`), e o
+> shader de computação gravou o resultado (`0xBC250C01`) com zero mismatches**!
+> **`P1 SUBMISSAO PERSISTENTE VALIDADA EM HARDWARE`**. Documento oficial:
+> [`docs/148_VITORIA_FASE_P1_VALIDADA_EM_HARDWARE.md`](docs/148_VITORIA_FASE_P1_VALIDADA_EM_HARDWARE.md).
+> Evidência: [`docs/evidence/2026-08-30_22-31-14-DESKTOP-HQAG6T4-p1-submission/p1-submission-acceptance.json`](docs/evidence/2026-08-30_22-31-14-DESKTOP-HQAG6T4-p1-submission/p1-submission-acceptance.json).
+
+> **Candidato 3.54 / correcao PACKET3_INDIRECT_BUFFER (GFX10).** O dump do anel
+> real no 3.53 revelou que o pacote `INDIRECT_BUFFER` (`0x3F`) continha o bit 20
+> (`0x0010002D`) em vez do bit 23 (`INDIRECT_BUFFER_VALID`, `0x0080002D`),
+> fazendo o Command Packet Fetcher (CPF) descartar o branch indireto. O 3.54
+> corrigiu a codificação para a especificação exata GFX10 / SOC15.
+> Documento técnico: [`docs/147_CANDIDATO_3.54_CORRECAO_INDIRECT_BUFFER_GFX10.md`](docs/147_CANDIDATO_3.54_CORRECAO_INDIRECT_BUFFER_GFX10.md).
+
+> **Resultado fisico 3.53 / base HQD comprovada.** A observabilidade profunda
+> comprovou que o HQD aponta exatamente para a VRAM física (`PQ_BASE = 0xF400AA00`
+> e `RPTR_REPORT = 0xF400A92000`). Os 12 DWORDs foram fotografados com fidelidade.
+> Handoff autocontido: [`docs/146_CANDIDATO_3.53_OBSERVABILIDADE_ANEL_E_HQD.md`](docs/146_CANDIDATO_3.53_OBSERVABILIDADE_ANEL_E_HQD.md).
+
+> **Resultado fisico 3.52 / handoff vigente.** O unhalt seletivo foi confirmado
+> no silicio (`CP_MEC_CNTL=0x40000000`, `CP_ME_CNTL=0x15000000`) em todas as
+> fronteiras persistentes, mas a fila permaneceu em `WPTR=12/RPTR=0`; fences e
+> resultado conservaram os poisons. O proximo candidato deve ser observacional:
+> validar base/conteudo dos 12 dwords e comparar a transicao CPC/TCIU do kick
+> persistente com o one-shot aprovado. **NAO VALIDADO EM HARDWARE.** Handoff
+> autocontido: [`docs/145_HANDOFF_IA_APOS_CANDIDATO_3.52.md`](docs/145_HANDOFF_IA_APOS_CANDIDATO_3.52.md).
+
+> **Resultado 3.51 / candidato 3.52.** O re-arme completo de `QUEUE_MASK`
+> ocorreu no silício (`apply/readback/pass=1/1/1`) e não moveu o RPTR; essa
+> hipótese está encerrada. O próximo diferencial contra o one-shot aprovado é
+> global: a fila persistente zerava `CP_MEC_CNTL` e `CP_ME_CNTL`, enquanto o
+> one-shot libera somente MEC2. O 3.52 unifica a receita por RMW: espera
+> `0x40000000/0x15000000` durante toda a fila e restaura o snapshot no teardown.
+> Pacote `3.52.0.0 / SchemaVersion 123`, SHA-256
+> `94357936D791648E83C1EE6546D1B97AE731C45693B610065AA9126ED806941A`, pronto
+> offline. **NÃO VALIDADO EM HARDWARE.** Ver
+> [`docs/143_RESULTADO_FISICO_3.51_QUEUE_MASK_NAO_DESTRAVA.md`](docs/143_RESULTADO_FISICO_3.51_QUEUE_MASK_NAO_DESTRAVA.md) e
+> [`docs/144_CANDIDATO_3.52_UNHALT_SELETIVO_PERSISTENTE.md`](docs/144_CANDIDATO_3.52_UNHALT_SELETIVO_PERSISTENTE.md).
+
+> **3.50 invalidado / candidato 3.51 pronto.** O pacote 3.50 vinculou objetos
+> antigos do motor de submissão e da telemetria; portanto, não exercitou o
+> re-arme de `QUEUE_MASK`. O builder agora reconstrói obrigatoriamente todos os
+> objetos, exige timestamps da invocação atual e procura os três campos novos
+> dentro do SYS. Pacote real `3.51.0.0 / SchemaVersion 122`, SHA-256
+> `348F60DBA47E7D8EB77D816173CCB10E2669E6BE93D7B7C35462337D7B9113F2`,
+> pronto offline. **NÃO VALIDADO EM HARDWARE.** Ver
+> [`docs/141_RESULTADO_3.50_INVALIDADO_BUILD_HIBRIDO.md`](docs/141_RESULTADO_3.50_INVALIDADO_BUILD_HIBRIDO.md) e
+> [`docs/142_CANDIDATO_3.51_BUILD_INTEGRAL_QUEUE_MASK.md`](docs/142_CANDIDATO_3.51_BUILD_INTEGRAL_QUEUE_MASK.md).
+
+> **Resultado 3.49 / candidato 3.50.** A telemetria eliminou halt de MEC/ME,
+> perda do scheduler e faults do HQD: a fila aceita `WPTR=12`, mas mantém
+> `RPTR=0`. `CNTL1` é confirmado em 1 durante o load e aparece auto-limpo após
+> `ACTIVE`; o re-arme anterior não repetia esse gatilho. O 3.50 reproduz a
+> sequência completa `ACTIVE=0 -> QUEUE_MASK=1/readback -> ACTIVE=1`, sem
+> escrever RPTR ou fences. Pacote `3.50.0.0 / SchemaVersion 121` pronto
+> offline. **NÃO VALIDADO EM HARDWARE.** Ver
+> [`docs/139_RESULTADO_FISICO_3.49_ESTADO_GLOBAL_FILA.md`](docs/139_RESULTADO_FISICO_3.49_ESTADO_GLOBAL_FILA.md) e
+> [`docs/140_CANDIDATO_3.50_REARME_QUEUE_MASK.md`](docs/140_CANDIDATO_3.50_REARME_QUEUE_MASK.md).
+
+> **Resultado 3.48 / candidato 3.49.** Scheduler, one-shot e coerência P1
+> passaram, mas a fila persistente continuou em `RPTR=0`. O 3.49 é somente
+> observacional e fotografa MEC/ME, scheduler e controles de WPTR nos três
+> limites persistentes. Ver [`docs/137_RESULTADO_FISICO_3.48_SCHEDULER_E_COHERENCIA.md`](docs/137_RESULTADO_FISICO_3.48_SCHEDULER_E_COHERENCIA.md)
+> e [`docs/138_CANDIDATO_3.49_ESTADO_GLOBAL_FILA_PERSISTENTE.md`](docs/138_CANDIDATO_3.49_ESTADO_GLOBAL_FILA_PERSISTENTE.md).
+
+> **Resultado 3.47 / candidato 3.48.** O scheduler foi lido com sucesso e já
+> valia zero antes do PFP; não é efeito do soft reset. O 3.48 remove a
+> dependência de estado herdado: o miniport publica transacionalmente apenas
+> scheduler0 como ME2/P0/Q0 habilitado, preserva scheduler1..3, confere
+> readback e restaura o snapshot. **NÃO VALIDADO EM HARDWARE.** Ver
+> [`docs/135_RESULTADO_FISICO_3.47_SCHEDULER_ZERO_ANTES_PFP.md`](docs/135_RESULTADO_FISICO_3.47_SCHEDULER_ZERO_ANTES_PFP.md) e
+> [`docs/136_CANDIDATO_3.48_PUBLICACAO_TRANSACIONAL_SCHEDULER0.md`](docs/136_CANDIDATO_3.48_PUBLICACAO_TRANSACIONAL_SCHEDULER0.md).
+
+> **Candidato 3.47 — bisseção observacional preparada.** Leituras read-only de
+> `RLC_CP_SCHEDULERS` antes e depois do PFP Direct Load, cruzadas com o valor
+> já capturado no preflight HQD. O objetivo é provar se o soft reset elimina a
+> topologia antes de escrever qualquer correção. Ver
+> [`docs/134_CANDIDATO_3.47_BISSECAO_SCHEDULER_PFP.md`](docs/134_CANDIDATO_3.47_BISSECAO_SCHEDULER_PFP.md).
+
+> **Resultado físico do 3.46 — hipótese ainda não exercitada.** O pacote e o
+> display entraram em Código 0, mas `RLC_CP_SCHEDULERS=0` fez tanto a transação
+> one-shot quanto o motor persistente recusarem o preflight com status 2.
+> `P1SelfTestAttempted=0`: não houve coerência, kick nem consumo do anel. Não
+> usar seletor literal. Resultado completo em
+> [`docs/133_RESULTADO_FISICO_3.46_PREFLIGHT_SCHEDULER_ZERO.md`](docs/133_RESULTADO_FISICO_3.46_PREFLIGHT_SCHEDULER_ZERO.md).
+
+> **Revisão 7.0 — 30/08/2026 (noite). CANDIDATO 3.46 PRONTO OFFLINE.**
+> A correção indicada pelo ensaio 3.45 foi implementada: cada submissão
+> persistente agora executa invalidação HDP/GL2/GCVM, com readback, dummy-read
+> do REQ, ACK do VMID0, telemetria e falha fechada antes do kick. Pacote
+> `3.46.0.0 / SchemaVersion 117` construído e auditado. **NÃO VALIDADO EM
+> HARDWARE**; o próximo passo é o ensaio físico após boot frio. Registro:
+> [`docs/132_CANDIDATO_3.46_COHERENCIA_POR_SUBMISSAO.md`](docs/132_CANDIDATO_3.46_COHERENCIA_POR_SUBMISSAO.md).
+
+> **Revisao 6.0 - 2026-08-30 (noite). FASE P1 EM ANDAMENTO.**
+> A fila de computacao **persistente** (o que o `DxgkDdiSubmitCommandVirtual`
+> exige) esta implementada e **ativa no silicio**, mas o CP ainda nao consome
+> o anel. O ensaio 3.45 isolou a causa raiz: o caminho de submissao nao faz a
+> invalidacao de cache do lado da GPU que a transacao provada faz antes do kick.
+>
+> - Handoff vigente e autocontido: [`docs/131_HANDOFF_IA_APOS_3.45.md`](docs/131_HANDOFF_IA_APOS_3.45.md)
+> - Candidato 3.44 (P1): [`docs/129_...`](docs/129_CANDIDATO_3.44_FASE_P1_SUBMISSAO_PERSISTENTE.md)
+> - Resultado 3.44 e 3.45: [`docs/130_...`](docs/130_RESULTADO_3.44_E_CANDIDATO_3.45.md)
+>
+> O shader observavel foi **reproduzido tres vezes** (3.43, 3.44, 3.45), as duas
+> ultimas ja com o modo persistente compilado - o que prova que a extracao do
+> estagio de restore nao regrediu o caminho de tiro unico.
+>
+> **A secao 8.1 deste documento esta desatualizada**: ela declara P1 a P4 como
+> fases de producao prontas para comecar, mas `PreemptCommand` e `ResetEngine`
+> ainda devolvem `STATUS_SUCCESS` sem tocar em registrador, `ResetFromTimeout`
+> devolve `STATUS_NOT_SUPPORTED`, o IH ring nunca foi ligado e nao existe GPUVA
+> dinamica por processo. Ver secao 9 do handoff.
+>
+> **Operacao**: desligue e ligue entre binds de laboratorio. Estado de engine
+> nao cai com desbind - o ciclo das 16:50 de 30/08 foi perdido por residuo em
+> `SDMA0_GFX_RB_CNTL`.
+
+
 > **Revisão 5.0 — 2026-08-30 (Tarde).** Estado vigente após o candidato físico
 > **3.43 / Schema 114**: **SHADER & COMPUTE F8b VALIDADO EM HARDWARE!**
 > O tripé físico de computação (RPTR==WPTR==45 estrito, drenagem de 100% do ring
@@ -1192,7 +1355,7 @@ nada com o monitor ligado — e essa é a demo que normalmente se espera ver fun
 - Roadmap detalhado original (14 fases, histórico completo de candidatos): [`docs/20_ROADMAP_WDDM_MCDM_VULKAN_LLM.md`](docs/20_ROADMAP_WDDM_MCDM_VULKAN_LLM.md)
 - Handoff histórico de compute (MEC/HQD, anterior ao shader): [`docs/89_HANDOFF_HQD_MEC_2026-08-28.md`](docs/89_HANDOFF_HQD_MEC_2026-08-28.md)
 - Handoff mais recente de display: [`docs/91_HANDOFF_3.24_DISPLAY.md`](docs/91_HANDOFF_3.24_DISPLAY.md)
-- **Handoff mais recente (retomada compute)**: [`docs/119_HANDOFF_IA_APOS_CANDIDATO_3.39.md`](docs/119_HANDOFF_IA_APOS_CANDIDATO_3.39.md)
+- **Handoff vigente (retomada compute/P2)**: [`docs/156_HANDOFF_IA_CANDIDATO_3.60.md`](docs/156_HANDOFF_IA_CANDIDATO_3.60.md)
 - **Runbook do ensaio F4d** (procedimento, riscos, reversao): [`docs/93_RUNBOOK_F4D_INTERMITENCIA_PFP.md`](docs/93_RUNBOOK_F4D_INTERMITENCIA_PFP.md)
 - Ponto de retomada mestre WDDM+Display: [`docs/21_PONTO_DE_RETOMADA_WDDM_DISPLAY.md`](docs/21_PONTO_DE_RETOMADA_WDDM_DISPLAY.md)
 - Gate GPUVA+SDMA (compute isolado, ABI-only ainda): [`docs/92_COMPUTE_GPUVA_SDMA_GATE.md`](docs/92_COMPUTE_GPUVA_SDMA_GATE.md)
@@ -1203,6 +1366,20 @@ nada com o monitor ligado — e essa é a demo que normalmente se espera ver fun
 ---
 
 ## 11. Changelog
+
+### 2026-08-31 — candidatos 3.57 a 3.60 e gate físico antes da P2
+
+- O 3.57 confirmou a doorbell única `BAR2+0x110`, mas publicou por engano o IB
+  inteiro no anel persistente; nenhuma submissão foi aposentada.
+- O 3.58 restaurou `PACKET3_INDIRECT_BUFFER`, porém sem o bit 23
+  `INDIRECT_BUFFER_VALID`; o MEC não entrou no IB.
+- O 3.59 restaurou `0x0080002D`: o MEC consumiu os quatro DWORDs do descritor e
+  parou no `SET_SH_REG` dentro do IB (`RPTR MMIO=4`, `WPTR=204`).
+- A comparação com a vitória 3.54 revelou que o ramo persistente omitia o
+  one-shot físico de shader. O 3.60 restabelece a ordem
+  `one-shot -> P1 -> P2` e impede P2 quando um gate anterior falha.
+- Pacote `3.60.0.0`, Schema 127, compilado, assinado e auditado. Ainda não foi
+  vinculado: **NÃO VALIDADO EM HARDWARE**. Handoff atual no doc 156.
 
 ### 2026-08-30 — candidatos 3.35 a 3.39 e localização pré-doorbell
 

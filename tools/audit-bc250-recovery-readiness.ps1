@@ -29,7 +29,8 @@ $installedText = if (Test-Path -LiteralPath $installedPath) {
 
 foreach ($needle in @(
     'call :remove_service bc250mcdm',
-    'call :quarantine_driver bc250mcdm.sys',
+    'call :delete_driver bc250mcdm.sys',
+    'call :enable_and_verify_basic_display',
     'call :show_service bc250mcdm',
     'call :show_file bc250mcdm.sys',
     'findstr.exe /I /C:"AddService=bc250mcdm,"',

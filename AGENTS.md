@@ -22,17 +22,15 @@ Ao propor qualquer código, script ou diagnóstico:
 Inicie suas respostas apresentando a barra de progresso atualizada:
 ```text
 ================================== STATUS DO DRIVER BC-250 ==================================
-Base Geral Pré-WDDM (Lab)        ████████████████████ 100%   Estável e Isolado       (+7)
-SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silício      (+5)
-GCVM & Tradução de Memória       ██████████████████░░  90%   Host PA no Contexto 0   (+1)
-RLC, CP & PM4 Direct Load        ████████████████████ 100%   FENCE VRAM PROVADA!     (+1)
-Telemetria & Observabilidade     ████████░░░░░░░░░░░░  40%   GFXOFF Sincronizado     (+5)
-Compute & Async Queues (MEC/MQD) ████████████████████ 100%   VALIDADO EM SILÍCIO!    (+30)
-Miniport WDDM / MCDM Produção    ████████████░░░░░░░░  60%   PhysicalReady CP & MEC  (+10)
-
-Conformidade BC250_HARDWARE_RULES: 100% | Miniport MCDM Funcional: 95% | Memória/GPUVA: 80%
+Base Geral Pre-WDDM (Lab)        ██████████████████▋░  93%   Estavel e Isolado
+SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silicio
+GCVM & Traducao de Memoria       ██████████████████░░  90%   PTE 0x10 provado; sem GPUVA dinamica
+RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
+Telemetria & Observabilidade     ███████████████████░  95%   127 campos P1 (Schema 127)
+Compute & Async Queues (MEC/MQD) ████████████████████ 100%   Fases P1 e P2 provadas no silicio (16/16 submissoes)
+Miniport WDDM / MCDM Producao    ███████████████░░░░░  75%   Fase P2 Concluida; transicao para P3 (UMD/Vulkan)
 =============================================================================================
-Veredito Global: COMPUTE MEC & FENCE VALIDADOS EM SILÍCIO (Transição para Produção MCDM)
+Veredito Global: FASE P2 MULTI-SUBMISSAO PERSISTENTE VALIDADA EM HARDWARE
 =============================================================================================
 ```
 

@@ -39,13 +39,15 @@ static uint32_t Bc250RangeInside(size_t Offset, size_t Length, size_t Limit)
     return Offset <= Limit && Length <= Limit - Offset;
 }
 
-BC250_IP_DISCOVERY_STATUS Bc250ParseIpDiscoveryGcIdentity(
+BC250_IP_DISCOVERY_STATUS Bc250ParseIpDiscoveryIdentity(
     const void *Binary,
     size_t BinaryBufferBytes,
-    BC250_GC_DISCOVERY_IDENTITY *Identity)
+    uint16_t HardwareId,
+    uint8_t Instance,
+    BC250_IP_DISCOVERY_IDENTITY *Identity)
 {
     const uint8_t *bytes = (const uint8_t *)Binary;
-    BC250_GC_DISCOVERY_IDENTITY candidate;
+    BC250_IP_DISCOVERY_IDENTITY candidate;
     uint16_t binaryMajor;
     uint16_t binaryMinor;
     uint16_t binaryChecksum;
@@ -58,8 +60,8 @@ BC250_IP_DISCOVERY_STATUS Bc250ParseIpDiscoveryGcIdentity(
     uint16_t tableSize;
     uint16_t tableVersion;
     uint16_t dieCount;
-    uint32_t gcCount = 0;
-    uint32_t gcHarvested = 0;
+    uint32_t targetCount = 0;
+    uint32_t targetHarvested = 0;
     uint16_t dieIndex;
 
     if (Identity != 0) memset(Identity, 0, sizeof(*Identity));
@@ -177,11 +179,11 @@ BC250_IP_DISCOVERY_STATUS Bc250ParseIpDiscoveryGcIdentity(
                                   (size_t)tableOffset + tableSize)) {
                 return BC250_IP_DISCOVERY_IP_BOUNDS;
             }
-            if (hwId == BC250_DISCOVERY_GC_HWID && bytes[ipOffset + 2u] == 0) {
-                ++gcCount;
+            if (hwId == HardwareId && bytes[ipOffset + 2u] == Instance) {
+                ++targetCount;
                 if (tableVersion <= 2u &&
                     (bytes[ipOffset + 7u] & 0x0Fu) != 0) {
-                    gcHarvested = 1;
+                    targetHarvested = 1;
                 }
                 candidate.DieId = dieId;
                 candidate.HardwareId = hwId;
@@ -203,14 +205,35 @@ BC250_IP_DISCOVERY_STATUS Bc250ParseIpDiscoveryGcIdentity(
             ipOffset += recordBytes;
         }
     }
-    if (gcCount == 0) return BC250_IP_DISCOVERY_GC_NOT_FOUND;
-    if (gcCount != 1) return BC250_IP_DISCOVERY_GC_DUPLICATE;
-    if (gcHarvested != 0) return BC250_IP_DISCOVERY_GC_HARVESTED;
-    if (candidate.Major != 10u || candidate.Minor != 1u ||
-        candidate.Revision != 3u) {
+    if (targetCount == 0) return BC250_IP_DISCOVERY_TARGET_NOT_FOUND;
+    if (targetCount != 1) return BC250_IP_DISCOVERY_TARGET_DUPLICATE;
+    if (targetHarvested != 0) return BC250_IP_DISCOVERY_TARGET_HARVESTED;
+    *Identity = candidate;
+    return BC250_IP_DISCOVERY_OK;
+}
+
+BC250_IP_DISCOVERY_STATUS Bc250ParseIpDiscoveryGcIdentity(
+    const void *Binary,
+    size_t BinaryBufferBytes,
+    BC250_GC_DISCOVERY_IDENTITY *Identity)
+{
+    BC250_IP_DISCOVERY_STATUS status = Bc250ParseIpDiscoveryIdentity(
+        Binary, BinaryBufferBytes, BC250_DISCOVERY_GC_HWID, 0u, Identity);
+
+    if (status == BC250_IP_DISCOVERY_TARGET_NOT_FOUND) {
+        return BC250_IP_DISCOVERY_GC_NOT_FOUND;
+    }
+    if (status == BC250_IP_DISCOVERY_TARGET_DUPLICATE) {
+        return BC250_IP_DISCOVERY_GC_DUPLICATE;
+    }
+    if (status == BC250_IP_DISCOVERY_TARGET_HARVESTED) {
+        return BC250_IP_DISCOVERY_GC_HARVESTED;
+    }
+    if (status != BC250_IP_DISCOVERY_OK) return status;
+    if (Identity->Major != 10u || Identity->Minor != 1u ||
+        Identity->Revision != 3u) {
         return BC250_IP_DISCOVERY_GC_VERSION_MISMATCH;
     }
-    *Identity = candidate;
     return BC250_IP_DISCOVERY_OK;
 }
 
@@ -235,6 +258,9 @@ const char *Bc250IpDiscoveryStatusName(BC250_IP_DISCOVERY_STATUS Status)
     case BC250_IP_DISCOVERY_GC_DUPLICATE: return "gc_duplicate";
     case BC250_IP_DISCOVERY_GC_HARVESTED: return "gc_harvested";
     case BC250_IP_DISCOVERY_GC_VERSION_MISMATCH: return "gc_version_mismatch";
+    case BC250_IP_DISCOVERY_TARGET_NOT_FOUND: return "target_not_found";
+    case BC250_IP_DISCOVERY_TARGET_DUPLICATE: return "target_duplicate";
+    case BC250_IP_DISCOVERY_TARGET_HARVESTED: return "target_harvested";
     default: return "unknown";
     }
 }

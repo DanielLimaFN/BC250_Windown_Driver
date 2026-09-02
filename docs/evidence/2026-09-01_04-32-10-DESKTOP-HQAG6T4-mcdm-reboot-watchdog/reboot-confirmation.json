@@ -1,0 +1,16 @@
+﻿{
+    "token":  "557f8005-7749-42b6-b3c1-79ad312d7fc8",
+    "instance_id":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
+    "boot_ticks":  639238450615000000,
+    "display_visible":  true,
+    "confirmed_at":  "2026-09-01T04:38:36.7672352-03:00",
+    "driver_version":  "3.62.0.0",
+    "sys_sha256":  "6260AA8948598DF270481D80DFEF961662AE201D2606861199FB3658D0BC3C8C",
+    "schema_version":  128,
+    "skip_hw_bringup":  0,
+    "is_supported_count":  28,
+    "commit_count":  1,
+    "control_interrupt_count":  25,
+    "present_status":  0,
+    "hardware_validated":  false
+}

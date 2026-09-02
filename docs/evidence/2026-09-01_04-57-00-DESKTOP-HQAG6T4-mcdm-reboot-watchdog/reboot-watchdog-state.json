@@ -1,0 +1,11 @@
+﻿{
+    "state":  "DISARMED",
+    "detail":  "current-boot visual confirmation accepted",
+    "task_name":  "BC250-RebootGuard",
+    "target_inf":  "oem20.inf",
+    "instance_id":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
+    "boot_ticks":  639238462865000000,
+    "timestamp":  "2026-09-01T04:58:45.3128546-03:00",
+    "exit_code":  0,
+    "hardware_validated":  false
+}

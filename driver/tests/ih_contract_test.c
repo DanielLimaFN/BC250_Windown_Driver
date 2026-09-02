@@ -29,7 +29,8 @@ static BC250_IH_VECTOR_ENTRY g_outEntries[16];
 
 static int Bc250RunIhContractTest(void)
 {
-    uint32_t rawDwords[4];
+    uint32_t rawDwords[8];
+    BC250_IH_PROVENANCE provenance;
     BC250_IH_VECTOR_ENTRY inEntry;
     BC250_IH_VECTOR_ENTRY decodedEntry;
     uint32_t outCount = 0;
@@ -47,9 +48,9 @@ static int Bc250RunIhContractTest(void)
     g_ihProps.DoorbellIndex = 0x10u;
 
     CHECK(Bc250IhInit(&g_ihState, &g_ihProps) == BC250_IH_OK);
-    CHECK(g_ihState.RingSizeDwords == TEST_IH_RING_SIZE);
-    CHECK(g_ihState.RptrDwords == 0);
-    CHECK(g_ihState.WptrDwords == 0);
+    CHECK(g_ihState.RingSizeBytes == TEST_IH_RING_SIZE * sizeof(uint32_t));
+    CHECK(g_ihState.RptrBytes == 0);
+    CHECK(g_ihState.WptrBytes == 0);
 
     /* 2. Test Encode / Decode SDMA Trap Vector */
     memset(&inEntry, 0, sizeof(inEntry));
@@ -57,9 +58,11 @@ static int Bc250RunIhContractTest(void)
     inEntry.SrcId = BC250_IH_SRCID_SDMA_TRAP;
     inEntry.RingId = 0u;
     inEntry.Vmid = 0u;
-    inEntry.Timestamp = 0x123456789ABCDEF0ull;
+    inEntry.Timestamp = 0x000056789ABCDEF0ull;
     inEntry.Pasid = 0x0042u;
-    inEntry.ContextData = 0xCAFEu;
+    inEntry.NodeId = 0xCAu;
+    inEntry.SourceData[0] = 0x11111111u;
+    inEntry.SourceData[3] = 0x44444444u;
 
     memset(rawDwords, 0, sizeof(rawDwords));
     CHECK(Bc250IhEncodeEntry(&inEntry, rawDwords) == BC250_IH_OK);
@@ -69,9 +72,11 @@ static int Bc250RunIhContractTest(void)
 
     CHECK(decodedEntry.ClientId == BC250_IH_CLIENTID_SDMA0);
     CHECK(decodedEntry.SrcId == BC250_IH_SRCID_SDMA_TRAP);
-    CHECK(decodedEntry.Timestamp == 0x123456789ABCDEF0ull);
+    CHECK(decodedEntry.Timestamp == 0x000056789ABCDEF0ull);
     CHECK(decodedEntry.Pasid == 0x0042u);
-    CHECK(decodedEntry.ContextData == 0xCAFEu);
+    CHECK(decodedEntry.NodeId == 0xCAu);
+    CHECK(decodedEntry.SourceData[0] == 0x11111111u);
+    CHECK(decodedEntry.SourceData[3] == 0x44444444u);
 
     /* 3. Test Encode / Decode CP EOP Vector */
     memset(&inEntry, 0, sizeof(inEntry));
@@ -79,9 +84,9 @@ static int Bc250RunIhContractTest(void)
     inEntry.SrcId = BC250_IH_SRCID_CP_EOP;
     inEntry.RingId = 1u;
     inEntry.Vmid = 2u;
-    inEntry.Timestamp = 0xFEDCBA9876543210ull;
+    inEntry.Timestamp = 0x0000BA9876543210ull;
     inEntry.Pasid = 0x0084u;
-    inEntry.ContextData = 0xBEEFu;
+    inEntry.NodeId = 0xBEu;
 
     CHECK(Bc250IhEncodeEntry(&inEntry, rawDwords) == BC250_IH_OK);
     CHECK(Bc250IhDecodeEntry(rawDwords, &decodedEntry) == BC250_IH_OK);
@@ -90,9 +95,9 @@ static int Bc250RunIhContractTest(void)
     CHECK(decodedEntry.SrcId == BC250_IH_SRCID_CP_EOP);
     CHECK(decodedEntry.RingId == 1u);
     CHECK(decodedEntry.Vmid == 2u);
-    CHECK(decodedEntry.Timestamp == 0xFEDCBA9876543210ull);
+    CHECK(decodedEntry.Timestamp == 0x0000BA9876543210ull);
     CHECK(decodedEntry.Pasid == 0x0084u);
-    CHECK(decodedEntry.ContextData == 0xBEEFu);
+    CHECK(decodedEntry.NodeId == 0xBEu);
 
     /* 4. Test Ring Processing and Event Counting */
     /* Write 1 SDMA Trap and 1 CP EOP entry directly to ring */
@@ -102,26 +107,26 @@ static int Bc250RunIhContractTest(void)
 
     inEntry.ClientId = BC250_IH_CLIENTID_GRBM_CP;
     inEntry.SrcId = BC250_IH_SRCID_CP_EOP;
-    CHECK(Bc250IhEncodeEntry(&inEntry, &g_ihRing[4]) == BC250_IH_OK);
+    CHECK(Bc250IhEncodeEntry(&inEntry, &g_ihRing[8]) == BC250_IH_OK);
 
-    CHECK(Bc250IhCheckInterruptNeeded(&g_ihState, 8u) == 1);
+    CHECK(Bc250IhCheckInterruptNeeded(&g_ihState, 64u) == 1);
 
     CHECK(Bc250IhProcessRing(
-        &g_ihState, g_ihRing, 8u, g_outEntries, 16u, &outCount) == BC250_IH_OK);
+        &g_ihState, g_ihRing, 64u, g_outEntries, 16u, &outCount) == BC250_IH_OK);
     CHECK(outCount == 2u);
     CHECK(g_ihState.SdmaFenceEvents == 1u);
     CHECK(g_ihState.ComputeFenceEvents == 1u);
     CHECK(g_ihState.ProcessedCount == 2u);
-    CHECK(g_ihState.RptrDwords == 8u);
-    CHECK(Bc250IhCheckInterruptNeeded(&g_ihState, 8u) == 0);
+    CHECK(g_ihState.RptrBytes == 64u);
+    CHECK(Bc250IhCheckInterruptNeeded(&g_ihState, 64u) == 0);
 
     /* 5. Test Ring Wraparound */
-    g_ihState.RptrDwords = TEST_IH_RING_SIZE - 4u;
-    CHECK(Bc250IhEncodeEntry(&inEntry, &g_ihRing[TEST_IH_RING_SIZE - 4u]) == BC250_IH_OK);
+    g_ihState.RptrBytes = g_ihState.RingSizeBytes - BC250_IH_ENTRY_SIZE_BYTES;
+    CHECK(Bc250IhEncodeEntry(&inEntry, &g_ihRing[TEST_IH_RING_SIZE - 8u]) == BC250_IH_OK);
     CHECK(Bc250IhProcessRing(
         &g_ihState, g_ihRing, 0u, g_outEntries, 16u, &outCount) == BC250_IH_OK);
     CHECK(outCount == 1u);
-    CHECK(g_ihState.RptrDwords == 0u);
+    CHECK(g_ihState.RptrBytes == 0u);
 
     /* 6. Test Error Handling */
     CHECK(Bc250IhInit(NULL, &g_ihProps) == BC250_IH_BAD_ARGUMENT);
@@ -132,6 +137,30 @@ static int Bc250RunIhContractTest(void)
     g_ihProps.RingGpuAddress = 0x0000080000000004ull; /* Not 256 aligned */
     CHECK(Bc250IhInit(&g_ihState, &g_ihProps) == BC250_IH_MISALIGNED_ADDRESS);
     g_ihProps.RingGpuAddress = 0x0000080000000000ull;
+
+    /* 7. Nenhuma ativacao sem provenance fisica completa e coerente. */
+    memset(&provenance, 0, sizeof(provenance));
+    CHECK(Bc250IhValidateProvenance(&provenance) == BC250_IH_PROVENANCE_MISSING);
+    provenance.SnapshotGeneration = 1u;
+    provenance.RegisterLayoutProven = 1u;
+    provenance.ClientSourceMapProven = 1u;
+    provenance.VectorLayoutVersion = BC250_IH_VECTOR_LAYOUT_V4;
+    provenance.VectorEntryDwords = BC250_IH_ENTRY_SIZE_DWORDS;
+    provenance.RegisterOffsets[0] = 0x100u;
+    provenance.RegisterOffsets[1] = 0x104u;
+    provenance.RegisterOffsets[2] = 0x108u;
+    provenance.RegisterOffsets[3] = 0x10Cu;
+    provenance.RegisterOffsets[4] = 0x110u;
+    provenance.RegisterOffsets[5] = 0x114u;
+    provenance.RegisterOffsets[6] = 0x118u;
+    CHECK(Bc250IhValidateProvenance(&provenance) == BC250_IH_OK);
+    provenance.VectorEntryDwords = 4u;
+    CHECK(Bc250IhValidateProvenance(&provenance) == BC250_IH_LAYOUT_MISMATCH);
+    provenance.VectorEntryDwords = BC250_IH_ENTRY_SIZE_DWORDS;
+    provenance.RegisterOffsets[6] = provenance.RegisterOffsets[5];
+    CHECK(Bc250IhValidateProvenance(&provenance) == BC250_IH_LAYOUT_MISMATCH);
+    provenance.RegisterOffsets[6] = 0x119u;
+    CHECK(Bc250IhValidateProvenance(&provenance) == BC250_IH_MISALIGNED_ADDRESS);
 
     return 1;
 }

@@ -3,7 +3,7 @@ Signature="$Windows NT$"
 Class=Display
 ClassGuid={4d36e968-e325-11ce-bfc1-08002be10318}
 Provider=%ProviderName%
-DriverVer=08/28/2026,3.24.0.0
+DriverVer=08/31/2026,3.61.0.0
 CatalogFile=bc250mcdm.cat
 PnpLockdown=1
 
@@ -46,13 +46,18 @@ ServiceBinary=%12%\bc250mcdm.sys
 AddReg=BC250Mcdm.DriverReg
 
 [BC250Mcdm.DriverReg]
-HKR,Parameters\Probe,SchemaVersion,0x00010001,98
+HKR,Parameters\Probe,SchemaVersion,0x00010001,132
+HKR,Parameters,WddmContractVersion,0x00010001,20
 HKR,Parameters\Driver,ActiveMode,0x00010001,1
+HKR,Parameters,RenderNode,0x00010001,0
+HKR,Parameters,RenderOnlyLab,0x00010001,0
 HKR,Parameters,SkipHwBringup,0x00010001,1
 HKR,Parameters,ShaderDispatch,0x00010001,0
 HKR,Parameters,CpSoftReset,0x00010001,0
 HKR,Parameters,Vmid0PageTable,0x00010001,0
 HKR,Parameters,SdmaAutoCtxSw,0x00010001,1
+HKR,Parameters,PersistentSubmission,0x00010001,0
+HKR,Parameters,GpuvaLabPromotion,0x00010001,0
 
 [BC250Mcdm.CopyFiles]
 bc250mcdm.sys

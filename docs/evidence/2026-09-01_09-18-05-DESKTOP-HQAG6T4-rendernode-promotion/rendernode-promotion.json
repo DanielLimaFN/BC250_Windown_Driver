@@ -1,0 +1,16 @@
+﻿{
+    "state":  "PREPARED_FOR_PROTECTED_REBOOT",
+    "captured_at":  "2026-09-01T09:18:05.6867650-03:00",
+    "boot_ticks":  639238612635000000,
+    "instance_id":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
+    "sys_sha256":  "7CF0AEB87D91204508D384E87970DE7B97BF8BDDA950159185A5BCC716AE4DCF",
+    "schema_version":  128,
+    "render_node_present_before":  true,
+    "render_node_before":  0,
+    "render_node_applied":  1,
+    "render_node_readback":  1,
+    "v5_registration_mode_before":  0,
+    "p1_physical_ready":  1,
+    "p2_physical_ready":  1,
+    "hardware_validated":  false
+}

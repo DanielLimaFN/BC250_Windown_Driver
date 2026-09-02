@@ -31,6 +31,27 @@ DXGKDDI_QUERYADAPTERINFO Bc250McdmQueryAdapterInfo;
 DXGKDDI_QUERYDEPENDENTENGINEGROUP Bc250McdmQueryDependentEngineGroup;
 DXGKDDI_QUERY_DEVICE_DESCRIPTOR Bc250McdmQueryDeviceDescriptor;
 DXGKDDI_QUERYENGINESTATUS Bc250McdmQueryEngineStatus;
+/*
+ * Fase V5 — DDIs obrigatorias que faltavam na tabela de render.
+ *
+ * A auditoria estatica de 2026-08-31 comparou DRIVER_INITIALIZATION_DATA (187
+ * campos DxgkDdi*) com o que o driver preenchia (59) e encontrou estas
+ * ausentes entre as classicamente obrigatorias de um miniport WDDM 2.x com
+ * GPU VA. Ponteiro obrigatorio nulo faz o dxgkrnl abortar o start com
+ * STATUS_INTERNAL_ERROR sem chamar nada — foi o que se observou.
+ */
+DXGKDDI_QUERYCURRENTFENCE Bc250McdmQueryCurrentFence;
+DXGKDDI_ESCAPE Bc250McdmEscape;
+DXGKDDI_ACQUIRESWIZZLINGRANGE Bc250McdmAcquireSwizzlingRange;
+DXGKDDI_RELEASESWIZZLINGRANGE Bc250McdmReleaseSwizzlingRange;
+DXGKDDI_PATCH Bc250McdmPatch;
+DXGKDDI_RENDER Bc250McdmRender;
+DXGKDDI_SUBMITCOMMAND Bc250McdmSubmitCommand;
+DXGKDDI_RENDERKM Bc250McdmRenderKm;
+DXGKDDI_CANCELCOMMAND Bc250McdmCancelCommand;
+DXGKDDISETPOWERCOMPONENTFSTATE Bc250McdmSetPowerComponentFState;
+DXGKDDIPOWERRUNTIMECONTROLREQUEST Bc250McdmPowerRuntimeControlRequest;
+
 DXGKDDI_RESET_DEVICE Bc250McdmResetDevice;
 DXGKDDI_RESETENGINE Bc250McdmResetEngine;
 DXGKDDI_RESETFROMTIMEOUT Bc250McdmResetFromTimeout;
@@ -42,6 +63,7 @@ DXGKDDI_SETVIRTUALMACHINEDATA Bc250McdmSetVirtualMachineData;
 DXGKDDI_SUBMITCOMMANDVIRTUAL Bc250McdmSubmitCommandVirtual;
 DXGKDDI_QUERY_CHILD_STATUS Bc250McdmQueryChildStatus;
 DXGKDDI_QUERY_CHILD_RELATIONS Bc250McdmQueryChildRelations;
+DXGKDDI_QUERYCONNECTIONCHANGE Bc250McdmQueryConnectionChange;
 DXGKDDI_UNLOAD Bc250McdmUnload;
 
 typedef struct BC250_MCDM_RUNTIME_CAPS {
@@ -149,7 +171,72 @@ VOID Bc250McdmInstallAllocationLifecycle(
 VOID Bc250McdmInstallDebugLifecycle(
     _In_opt_ BC250_MCDM_COLLECT_DEBUG_SNAPSHOT CollectDebugSnapshot);
 
+typedef NTSTATUS (*BC250_MCDM_SUBMIT_COMMAND_EXECUTOR)(
+    _In_ HANDLE AdapterContext,
+    _In_ CONST DXGKARG_SUBMITCOMMANDVIRTUAL *SubmitCommand);
+
+VOID Bc250McdmInstallSubmissionExecutor(
+    _In_opt_ BC250_MCDM_SUBMIT_COMMAND_EXECUTOR SubmitCommandExecutor);
+
+/*
+ * Provedor da fence concluida. Devolve a ultima fence que a GPU gravou na
+ * VRAM para o no indicado. A CPU nunca inventa valor aqui: se o provedor nao
+ * estiver instalado ou o motor nao estiver online, DxgkDdiQueryCurrentFence
+ * falha em vez de reportar progresso.
+ */
+typedef NTSTATUS (*BC250_MCDM_CURRENT_FENCE_PROVIDER)(
+    _In_ HANDLE AdapterContext,
+    _In_ UINT NodeOrdinal,
+    _Out_ UINT *CompletedFenceId);
+
+/*
+ * Preenche as DDIs obrigatorias exclusivas do caminho de render. Chamada
+ * somente pelo miniport ativo; a imagem readonly nao deve expor submissao.
+ */
+NTSTATUS Bc250McdmPopulateRenderCallbacks(
+    _Inout_ DRIVER_INITIALIZATION_DATA *InitializationData);
+
+VOID Bc250McdmInstallCurrentFenceProvider(
+    _In_opt_ BC250_MCDM_CURRENT_FENCE_PROVIDER CurrentFenceProvider);
+
+struct _DXGK_BUILDPAGINGBUFFER_FLUSHTLB;
+
+typedef NTSTATUS (*BC250_MCDM_FLUSH_TLB_HANDLER)(
+    _In_ HANDLE AdapterContext,
+    _In_ CONST struct _DXGK_BUILDPAGINGBUFFER_FLUSHTLB *FlushTlb);
+
+VOID Bc250McdmInstallFlushTlbHandler(
+    _In_opt_ BC250_MCDM_FLUSH_TLB_HANDLER FlushTlbHandler);
+
+typedef NTSTATUS (*BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER)(
+    _In_ HANDLE AdapterContext,
+    _In_ CONST BC250_MCDM_RUNTIME_CAPS *Caps,
+    _In_ DXGK_BUILDPAGINGBUFFER_UPDATEPAGETABLE *UpdatePageTable);
+
+VOID Bc250McdmInstallUpdatePageTableHandler(
+    _In_opt_ BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER UpdatePageTableHandler);
+
+NTSTATUS Bc250McdmEncodeVidMmPte(
+    _In_ CONST BC250_MCDM_RUNTIME_CAPS *Caps,
+    _In_ CONST DXGK_PTE *Source,
+    _Out_ UINT64 *Encoded);
+
+typedef BOOLEAN (*BC250_MCDM_INTERRUPT_HANDLER)(
+    _In_ CONST PVOID MiniportDeviceContext,
+    _In_ ULONG MessageNumber);
+
+typedef VOID (*BC250_MCDM_DPC_HANDLER)(
+    _In_ CONST PVOID MiniportDeviceContext);
+
+VOID Bc250McdmInstallInterruptLifecycle(
+    _In_opt_ BC250_MCDM_INTERRUPT_HANDLER InterruptHandler,
+    _In_opt_ BC250_MCDM_DPC_HANDLER DpcHandler);
+
 NTSTATUS Bc250McdmPopulateRequiredCallbacks(
     _Inout_ DRIVER_INITIALIZATION_DATA *InitializationData);
+
+NTSTATUS Bc250McdmSetWddmContractVersion(
+    _In_ DXGK_WDDMVERSION Version);
+DXGK_WDDMVERSION Bc250McdmGetWddmContractVersion(VOID);
 
 #endif

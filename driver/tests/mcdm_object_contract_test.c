@@ -12,10 +12,10 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
     return Destination;
 }
 
-#define CHECK(Expression) do { if (!(Expression)) return 0; } while (0)
+#define CHECK(Expression) do { if (!(Expression)) return __LINE__; } while (0)
 #else
 #include <stdio.h>
-#define CHECK(Expression) do { if (!(Expression)) return 1; } while (0)
+#define CHECK(Expression) do { if (!(Expression)) { printf("FAIL line %d: %s\n", __LINE__, #Expression); return __LINE__; } } while (0)
 #endif
 
 static BC250_MCDM_OBJECT_REGISTRY g_registry;
@@ -133,17 +133,89 @@ static int Bc250RunMcdmObjectContractTest(void)
     CHECK(Bc250McdmObjectLookup(&g_registry, deviceB,
         BC250_MCDM_OBJECT_DEVICE, processB, &record) == BC250_MCDM_OBJECT_STALE_HANDLE);
 
-    return 1;
+    /* Testes de Contexto Seguro e Visão de Submissão */
+    {
+        static BC250_MCDM_OBJECT_REGISTRY s_registry2;
+        BC250_MCDM_HANDLE proc = NULL;
+        BC250_MCDM_HANDLE dev = NULL;
+        BC250_MCDM_HANDLE ctx = NULL;
+        BC250_CONTEXT_SUBMISSION_VIEW view;
+        const void *adapter = (const void *)0xC001;
+        const void *wrongAdapter = (const void *)0xC002;
+
+        CHECK(Bc250McdmObjectRegistryInitialize(&s_registry2) == BC250_MCDM_OBJECT_OK);
+        CHECK(Bc250McdmObjectCreateProcess(&s_registry2, (void *)0x1111, &proc) == BC250_MCDM_OBJECT_OK);
+        CHECK(Bc250McdmObjectCreateChild(&s_registry2, BC250_MCDM_OBJECT_DEVICE, proc, proc, &dev) == BC250_MCDM_OBJECT_OK);
+        
+        /* NodeOrdinal 1 (Compute MEC) */
+        CHECK(Bc250McdmObjectCreateContext(&s_registry2, adapter, dev, proc, 1u, 0u, &ctx) == BC250_MCDM_OBJECT_OK);
+        CHECK(ctx != NULL);
+
+        /* Falha antes de configurar Root Page Table */
+        CHECK(Bc250McdmContextAcquireSubmissionView(&s_registry2, ctx, adapter, 1u, &view) ==
+            BC250_MCDM_OBJECT_NO_ROOT_PAGE_TABLE);
+
+        /* Configurar Root Page Table válida */
+        CHECK(Bc250McdmObjectSetRootPageTable(&s_registry2, ctx, 1u, 0x0000000020000000ull, 1024u, 1024u) ==
+            BC250_MCDM_OBJECT_OK);
+
+        /* Aquisição com parâmetros corretos */
+        CHECK(Bc250McdmContextAcquireSubmissionView(&s_registry2, ctx, adapter, 1u, &view) ==
+            BC250_MCDM_OBJECT_OK);
+        CHECK(view.ContextHandle == ctx);
+        CHECK(view.ParentDevice == dev);
+        CHECK(view.OwnerProcess == proc);
+        CHECK(view.OwnerAdapter == adapter);
+        CHECK(view.NodeOrdinal == 1u);
+        CHECK(view.RootPageTableAddress == 0x0000000020000000ull);
+        CHECK(view.RootPageTableEntries == 1024u);
+
+        /* Rejeição por NodeOrdinal incorreto (SDMA Node 0) */
+        CHECK(Bc250McdmContextAcquireSubmissionView(&s_registry2, ctx, adapter, 0u, &view) ==
+            BC250_MCDM_OBJECT_NODE_MISMATCH);
+
+        /* Rejeição por adaptador incorreto */
+        CHECK(Bc250McdmContextAcquireSubmissionView(&s_registry2, ctx, wrongAdapter, 1u, &view) ==
+            BC250_MCDM_OBJECT_OWNER_MISMATCH);
+
+        /* Rejeição por handle nulo ou inválido */
+        CHECK(Bc250McdmContextAcquireSubmissionView(&s_registry2, NULL, adapter, 1u, &view) ==
+            BC250_MCDM_OBJECT_BAD_ARGUMENT);
+        CHECK(Bc250McdmContextAcquireSubmissionView(&s_registry2, (void *)0x9999, adapter, 1u, &view) ==
+            BC250_MCDM_OBJECT_INVALID_HANDLE);
+
+        /* Tentativa de destruição enquanto InFlightSubmissions > 0 */
+        CHECK(Bc250McdmObjectDestroy(&s_registry2, ctx, BC250_MCDM_OBJECT_CONTEXT, proc) ==
+            BC250_MCDM_OBJECT_IN_FLIGHT_SUBMISSIONS);
+
+        /* Liberação da visão */
+        CHECK(Bc250McdmContextReleaseSubmissionView(&s_registry2, ctx) == BC250_MCDM_OBJECT_OK);
+
+        /* Agora a destruição deve ter sucesso */
+        CHECK(Bc250McdmObjectDestroy(&s_registry2, ctx, BC250_MCDM_OBJECT_CONTEXT, proc) ==
+            BC250_MCDM_OBJECT_OK);
+
+        /* Tentativa de adquirir contexto morto falha com stale handle */
+        CHECK(Bc250McdmContextAcquireSubmissionView(&s_registry2, ctx, adapter, 1u, &view) ==
+            BC250_MCDM_OBJECT_STALE_HANDLE);
+
+        /* Teardown invalida aquisições */
+        CHECK(Bc250McdmObjectRegistryTeardown(&s_registry2, &destroyed) == BC250_MCDM_OBJECT_OK);
+        CHECK(Bc250McdmContextAcquireSubmissionView(&s_registry2, ctx, adapter, 1u, &view) ==
+            BC250_MCDM_OBJECT_IN_TEARDOWN);
+    }
+
+    return 0;
 }
 
 #ifdef BC250_KERNEL_MODE
 void __stdcall mainCRTStartup(void)
 {
-    ExitProcess(Bc250RunMcdmObjectContractTest() ? 0ul : 1ul);
+    ExitProcess((unsigned long)Bc250RunMcdmObjectContractTest());
 }
 #else
 int main(void)
 {
-    return Bc250RunMcdmObjectContractTest() ? 0 : 1;
+    return Bc250RunMcdmObjectContractTest();
 }
 #endif

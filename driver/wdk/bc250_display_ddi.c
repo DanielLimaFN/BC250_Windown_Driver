@@ -3,6 +3,26 @@
 
 BC250_DISPLAY_STATE g_Bc250DisplayState = { 0 };
 
+/*
+ * Nao-zero quando o carregamento corrente NAO anuncia children de video
+ * (perfil RENDER_ONLY_LAB).  Vive fora de BC250_DISPLAY_STATE porque
+ * Bc250DisplayInit zera aquela estrutura por completo.
+ */
+static volatile LONG g_Bc250DisplayChildEnumerationDisabled = 0;
+
+void Bc250DisplaySetChildEnumeration(_In_ BOOLEAN Enabled)
+{
+    InterlockedExchange(
+        &g_Bc250DisplayChildEnumerationDisabled, Enabled ? 0 : 1);
+}
+
+_Check_return_
+BOOLEAN Bc250DisplayGetChildEnumeration(void)
+{
+    return InterlockedCompareExchange(
+        &g_Bc250DisplayChildEnumerationDisabled, 0, 0) == 0 ? TRUE : FALSE;
+}
+
 #define BC250_NATIVE_HBLANK 160u
 #define BC250_NATIVE_VBLANK 45u
 
@@ -498,13 +518,27 @@ NTSTATUS APIENTRY Bc250DxgkDdiQueryChildRelations(
 
     RtlZeroMemory(ChildRelations, ChildRelationsSize);
 
+    /*
+     * Perfil sem children: a lista termina zerada.  Escrever um descritor de
+     * DisplayPort aqui contradiria o NumberOfChildren=0 de StartDevice e
+     * reintroduziria, por outro caminho, a incoerencia que o Gate 1.5 existe
+     * para eliminar.
+     */
+    if (!Bc250DisplayGetChildEnumeration()) {
+        Bc250RecordDisplayProbePassive(
+            BC250_PROBE_V5_CHILD_ENUMERATION_ENABLED, 0u);
+        return STATUS_SUCCESS;
+    }
+    Bc250RecordDisplayProbePassive(
+        BC250_PROBE_V5_CHILD_ENUMERATION_ENABLED, 1u);
+
     ChildRelations[0].ChildDeviceType = TypeVideoOutput;
-    ChildRelations[0].ChildCapabilities.Type.VideoOutput.InterfaceTechnology = D3DKMDT_VOT_OTHER;
+    ChildRelations[0].ChildCapabilities.Type.VideoOutput.InterfaceTechnology = D3DKMDT_VOT_DISPLAYPORT_EXTERNAL;
     ChildRelations[0].ChildCapabilities.Type.VideoOutput.MonitorOrientationAwareness = D3DKMDT_MOA_NONE;
     ChildRelations[0].ChildCapabilities.Type.VideoOutput.SupportsSdtvModes = FALSE;
     ChildRelations[0].ChildCapabilities.HpdAwareness = HpdAwarenessAlwaysConnected;
     ChildRelations[0].AcpiUid = 0;
-    ChildRelations[0].ChildUid = 0;
+    ChildRelations[0].ChildUid = 1;
 
     return STATUS_SUCCESS;
 }
@@ -523,7 +557,14 @@ NTSTATUS APIENTRY Bc250DxgkDdiQueryChildStatus(
     Bc250ProbeRecord(BC250_PROBE_DMM_CHILD_STATUS_CALLED, (ULONG)ChildStatus->Type);
 
     if (ChildStatus->Type == StatusConnection) {
-        ChildStatus->HotPlug.Connected = TRUE;
+        /*
+         * Sem enumeracao de children nao existe conector para reportar como
+         * ligado.  Declarar Connected=TRUE aqui num perfil que devolveu
+         * NumberOfChildren=0 seria o mesmo falso positivo que o roadmap
+         * proibe em SetDisplayPrivateDriverFormat.
+         */
+        ChildStatus->HotPlug.Connected =
+            Bc250DisplayGetChildEnumeration() ? TRUE : FALSE;
         return STATUS_SUCCESS;
     }
 
@@ -548,7 +589,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiQueryDeviceDescriptor(
         return STATUS_INVALID_PARAMETER;
     }
 
-    if (ChildUid != 0 || !g_Bc250DisplayState.EdidValid) {
+    if (ChildUid != 1 || !g_Bc250DisplayState.EdidValid) {
         return STATUS_MONITOR_NO_MORE_DESCRIPTOR_DATA;
     }
 
@@ -584,8 +625,24 @@ NTSTATUS APIENTRY Bc250DxgkDdiQueryInterface(
     _In_ CONST PVOID MiniportDeviceContext,
     _In_ PQUERY_INTERFACE QueryInterface)
 {
+    BC250_V5_QI_RECORD record;
     UNREFERENCED_PARAMETER(MiniportDeviceContext);
-    UNREFERENCED_PARAMETER(QueryInterface);
+
+    Bc250ProbeMarkDdi(BC250_V5_DDI_QUERY_INTERFACE);
+
+    if (QueryInterface != NULL && QueryInterface->InterfaceType != NULL) {
+        CONST GUID *guid = QueryInterface->InterfaceType;
+        record.Data1 = guid->Data1;
+        record.Data2 = guid->Data2;
+        record.Data3 = guid->Data3;
+        RtlCopyMemory(record.Data4, guid->Data4, sizeof(record.Data4));
+        record.Version = QueryInterface->Version;
+        record.Size = QueryInterface->Size;
+        record.Status = (ULONG)STATUS_NOT_SUPPORTED;
+        record.Ordinal = 0;
+        Bc250ProbeRecordQueryInterface(&record);
+    }
+
     return STATUS_NOT_SUPPORTED;
 }
 
@@ -1389,6 +1446,17 @@ NTSTATUS APIENTRY Bc250DxgkDdiControlInterrupt(
     return STATUS_NOT_SUPPORTED;
 }
 
+NTSTATUS APIENTRY Bc250DxgkDdiControlInterrupt2(
+    IN_CONST_HANDLE hAdapter,
+    IN_CONST_DXGKARG_CONTROLINTERRUPT2 InterruptControl)
+{
+    BOOLEAN enable = (InterruptControl.InterruptState == DXGK_INTERRUPT_ENABLE);
+    return Bc250DxgkDdiControlInterrupt(
+        hAdapter,
+        InterruptControl.InterruptType,
+        enable);
+}
+
 NTSTATUS APIENTRY Bc250DxgkDdiPresentDisplayOnly(
     CONST PVOID MiniportDeviceContext,
     CONST DXGKARG_PRESENT_DISPLAYONLY *pPresentDisplayOnly)
@@ -1650,14 +1718,54 @@ NTSTATUS APIENTRY Bc250DxgkDdiQueryVidPnHWCapability(
     return STATUS_SUCCESS;
 }
 
-NTSTATUS Bc250DisplayPopulateCallbacks(
+NTSTATUS APIENTRY Bc250DxgkDdiSetDisplayPrivateDriverFormat(
+    IN_CONST_HANDLE hAdapter,
+    IN_CONST_PDXGKARG_SETDISPLAYPRIVATEDRIVERFORMAT pSetDisplayPrivateDriverFormat)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    UNREFERENCED_PARAMETER(pSetDisplayPrivateDriverFormat);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS Bc250DisplayPopulateBaseOnlyCallbacks(
     _Inout_ DRIVER_INITIALIZATION_DATA *InitializationData)
 {
     if (InitializationData == NULL) return STATUS_INVALID_PARAMETER;
 
+    /*
+     * Enumeracao de children: obrigatoria na DRIVER_INITIALIZATION_DATA de
+     * qualquer miniport, inclusive um sem display.  As tres DDIs continuam
+     * anunciadas e respondem de forma coerente com zero children quando
+     * Bc250DisplaySetChildEnumeration(FALSE) foi chamada.
+     */
     InitializationData->DxgkDdiQueryChildRelations = Bc250DxgkDdiQueryChildRelations;
     InitializationData->DxgkDdiQueryChildStatus = Bc250DxgkDdiQueryChildStatus;
     InitializationData->DxgkDdiQueryDeviceDescriptor = Bc250DxgkDdiQueryDeviceDescriptor;
+
+    /* Base do adaptador, independente de haver saida de video. */
+    InitializationData->DxgkDdiSetPowerState = Bc250DxgkDdiSetPowerState;
+    InitializationData->DxgkDdiQueryInterface = Bc250DxgkDdiQueryInterface;
+    InitializationData->DxgkDdiControlEtwLogging = Bc250DxgkDdiControlEtwLogging;
+    InitializationData->DxgkDdiNotifyAcpiEvent = Bc250DxgkDdiNotifyAcpiEvent;
+    InitializationData->DxgkDdiNotifySurpriseRemoval = Bc250DxgkDdiNotifySurpriseRemoval;
+
+    /*
+     * ControlInterrupt/ControlInterrupt2 servem tambem aos tipos de render.
+     * Continuam fail-closed: apenas DXGK_INTERRUPT_DISPLAYONLY_VSYNC devolve
+     * sucesso, e num perfil sem display esse tipo nunca sera' pedido.
+     */
+    InitializationData->DxgkDdiControlInterrupt = Bc250DxgkDdiControlInterrupt;
+    InitializationData->DxgkDdiControlInterrupt2 = Bc250DxgkDdiControlInterrupt2;
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS Bc250DisplayPopulateCallbacks(
+    _Inout_ DRIVER_INITIALIZATION_DATA *InitializationData)
+{
+    NTSTATUS status = Bc250DisplayPopulateBaseOnlyCallbacks(InitializationData);
+    if (!NT_SUCCESS(status)) return status;
+
     InitializationData->DxgkDdiIsSupportedVidPn = Bc250DxgkDdiIsSupportedVidPn;
     InitializationData->DxgkDdiRecommendFunctionalVidPn = Bc250DxgkDdiRecommendFunctionalVidPn;
     InitializationData->DxgkDdiEnumVidPnCofuncModality = Bc250DxgkDdiEnumVidPnCofuncModality;
@@ -1668,14 +1776,59 @@ NTSTATUS Bc250DisplayPopulateCallbacks(
     InitializationData->DxgkDdiRecommendMonitorModes = Bc250DxgkDdiRecommendMonitorModes;
     InitializationData->DxgkDdiRecommendVidPnTopology = Bc250DxgkDdiRecommendVidPnTopology;
     InitializationData->DxgkDdiPresent = Bc250DxgkDdiPresent;
-    InitializationData->DxgkDdiControlInterrupt = Bc250DxgkDdiControlInterrupt;
     InitializationData->DxgkDdiStopDeviceAndReleasePostDisplayOwnership = Bc250DxgkDdiStopDeviceAndReleasePostDisplayOwnership;
     InitializationData->DxgkDdiSystemDisplayEnable = Bc250DxgkDdiSystemDisplayEnable;
     InitializationData->DxgkDdiSystemDisplayWrite = Bc250DxgkDdiSystemDisplayWrite;
     InitializationData->DxgkDdiSetPointerPosition = Bc250DxgkDdiSetPointerPosition;
     InitializationData->DxgkDdiSetPointerShape = Bc250DxgkDdiSetPointerShape;
     InitializationData->DxgkDdiQueryVidPnHWCapability = Bc250DxgkDdiQueryVidPnHWCapability;
-    InitializationData->DxgkDdiSetPowerState = Bc250DxgkDdiSetPowerState;
+    InitializationData->DxgkDdiGetScanLine = Bc250DxgkDdiGetScanLine;
+    InitializationData->DxgkDdiGetChildContainerId = Bc250DxgkDdiGetChildContainerId;
+
+    /*
+     * ==== DIVIDA TECNICA DELIBERADA E TEMPORARIA — isolamento do Gate 1.5 ===
+     *
+     * As duas DDIs abaixo sao falsos sucessos conhecidos: ignoram os
+     * argumentos e devolvem STATUS_SUCCESS sem efeito. O candidato 3.75 as
+     * retirou, e essa retirada foi correta em si — mas foi embarcada NO MESMO
+     * candidato que estreou o perfil RenderOnlyLab, junto com um bind de
+     * bring-up fisico.  Quando aquela corrida terminou em tela preta e
+     * Codigo 39, nao era possivel atribuir a falha a um eixo.
+     *
+     * Elas voltam aqui para que o 3.76 tenha EXATAMENTE a tabela KMDOD da
+     * baseline conhecida, e o unico eixo novo seja o perfil render-only.
+     *
+     * A remocao volta num candidato proprio, depois que o Gate 1.5 fechar.
+     * tools/audit-ddi-noop-callbacks.py carrega a excecao correspondente,
+     * nomeada e datada, e reprova se ela for esquecida la' dentro.
+     */
+    InitializationData->DxgkDdiSetDisplayPrivateDriverFormat = Bc250DxgkDdiSetDisplayPrivateDriverFormat;
+    InitializationData->DxgkDdiSetPalette = Bc250DxgkDdiSetPalette;
+
+    /*
+     * Texto original da retirada, preservado para o candidato de limpeza:
+     *
+     * DxgkDdiSetDisplayPrivateDriverFormat NAO e' anunciada.
+     *
+     * A implementacao existente ignora os dois argumentos e devolve
+     * STATUS_SUCCESS sem preencher saida nem alterar estado: um falso
+     * positivo puro.  A DDI e' opcional no contrato selecionado — nao ha'
+     * formato privado de display para negociar enquanto nao existir
+     * allocation primaria propria — entao a alternativa correta e' nao
+     * anuncia-la, e nao devolver erro numa DDI que prometemos atender.
+     *
+     * O simbolo permanece compilado e testado para que a reintroducao, se um
+     * dia houver contrato real, seja uma linha aqui e nao uma reescrita.
+     *
+     * DxgkDdiSetPalette sai pelo mesmo motivo, com uma justificativa mais
+     * simples: e' exigida apenas de drivers com modos palettizados, e este
+     * miniport expoe somente D3DDDIFMT_A8R8G8B8.
+     *
+     * DxgkDdiCollectDbgInfo tambem nao entra aqui: a versao com semantica
+     * real, Bc250McdmCollectDbgInfo, ja' e' instalada por
+     * Bc250McdmPopulateRequiredCallbacks.  Sobrescreve-la pelo stub local
+     * apagaria a unica implementacao que valida o buffer.
+     */
 
     return STATUS_SUCCESS;
 }

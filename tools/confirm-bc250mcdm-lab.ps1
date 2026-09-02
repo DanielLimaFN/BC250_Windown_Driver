@@ -26,6 +26,18 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# O schema esperado vem do manifesto do pacote, nunca de literal no gate.
+$confirmRoot = Split-Path -Parent $PSScriptRoot
+$confirmManifestPath = Join-Path $confirmRoot 'driver\wdk\package\output_lab.manifest.json'
+if (-not (Test-Path -LiteralPath $confirmManifestPath)) {
+    throw "Confirmacao recusada: manifesto de laboratorio ausente: $confirmManifestPath"
+}
+$confirmManifest = Get-Content -LiteralPath $confirmManifestPath -Raw | ConvertFrom-Json
+$expectedSchema = [uint32]$confirmManifest.TelemetrySchemaVersion
+if ($expectedSchema -lt 114) {
+    throw "Confirmacao recusada: schema de laboratorio invalido: $expectedSchema"
+}
+
 if (-not $IConfirmDisplayIsVisible) {
     throw 'Confirmacao recusada: falta -IConfirmDisplayIsVisible.'
 }
@@ -81,7 +93,7 @@ if ($null -eq $skip -or $skip -ne 0) {
     throw 'Confirmacao recusada: SkipHwBringup=0 nao foi comprovado - esta nao e a imagem de laboratorio.'
 }
 $requiredDisplayProbe = [ordered]@{
-    SchemaVersion        = 114
+    SchemaVersion        = $expectedSchema
     DmmIsSupportedStatus = 0
     DmmIsSupportedResult = 1
     DmmCommitStatus      = 0
@@ -111,6 +123,11 @@ $temporaryPath = Join-Path $EvidenceDir ("watchdog-disarm-{0}.tmp" -f [guid]::Ne
     token                        = $Token
     instance_id                  = $InstanceId
     status                       = 'DISARMED'
+    # watch-bc250mcdm-lab.ps1 linha 50 exige ESTE booleano para desarmar.
+    # Ele nunca era escrito: o confirm imprimia "desarmado", o watchdog nao
+    # via display_visible, e o rollback caia igual no fim do timeout. Foi o
+    # que derrubou os binds de 15:06, 16:50 e 16:55 depois da confirmacao.
+    display_visible              = $true
     timestamp_utc                = [DateTime]::UtcNow.ToString('o')
     disarm_reason                = 'OPERATOR_VISUAL_CONFIRMATION'
     schema_version               = & $get 'SchemaVersion'

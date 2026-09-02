@@ -11,18 +11,24 @@
 #include "../core/bc250_sdma_packet_builder.h"
 #include "../core/bc250_pm4_packet_builder.h"
 
-#define BC250_MCDM_UNSUPPORTED_1(Name, Type1, Arg1) \
+/*
+ * Fase V5: as DDIs que devolvem NOT_SUPPORTED sao as candidatas naturais a
+ * causa de um teardown, entao cada uma marca a propria entrada no rastro.
+ */
+#define BC250_MCDM_UNSUPPORTED_1(Name, DdiId, Type1, Arg1) \
     NTSTATUS APIENTRY Name(Type1 Arg1) \
     { \
         UNREFERENCED_PARAMETER(Arg1); \
+        Bc250ProbeMarkDdi(DdiId); \
         return STATUS_NOT_SUPPORTED; \
     }
 
-#define BC250_MCDM_UNSUPPORTED_2(Name, Type1, Arg1, Type2, Arg2) \
+#define BC250_MCDM_UNSUPPORTED_2(Name, DdiId, Type1, Arg1, Type2, Arg2) \
     NTSTATUS APIENTRY Name(Type1 Arg1, Type2 Arg2) \
     { \
         UNREFERENCED_PARAMETER(Arg1); \
         UNREFERENCED_PARAMETER(Arg2); \
+        Bc250ProbeMarkDdi(DdiId); \
         return STATUS_NOT_SUPPORTED; \
     }
 
@@ -38,9 +44,30 @@ static BC250_MCDM_DESTROY_ALLOCATION_OBJECTS g_Bc250DestroyAllocationObjects;
 static BC250_MCDM_OPEN_ALLOCATION_OBJECTS g_Bc250OpenAllocationObjects;
 static BC250_MCDM_CLOSE_ALLOCATION_OBJECTS g_Bc250CloseAllocationObjects;
 static BC250_MCDM_COLLECT_DEBUG_SNAPSHOT g_Bc250CollectDebugSnapshot;
+static BC250_MCDM_SUBMIT_COMMAND_EXECUTOR g_Bc250SubmitCommandExecutor;
+static BC250_MCDM_INTERRUPT_HANDLER g_Bc250InterruptHandler;
+static BC250_MCDM_DPC_HANDLER g_Bc250DpcHandler;
 static BC250_MCDM_QUERY_RUNTIME_CAPS g_Bc250QueryRuntimeCaps;
+static BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER g_Bc250UpdatePageTableHandler;
+static volatile LONG g_Bc250WddmContractVersion =
+    (LONG)DXGKDDI_WDDMv2_7;
 
-static NTSTATUS Bc250McdmEncodeVidMmPte(
+NTSTATUS Bc250McdmSetWddmContractVersion(DXGK_WDDMVERSION Version)
+{
+    if (Version != DXGKDDI_WDDMv2 && Version != DXGKDDI_WDDMv2_7) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    InterlockedExchange(&g_Bc250WddmContractVersion, (LONG)Version);
+    return STATUS_SUCCESS;
+}
+
+DXGK_WDDMVERSION Bc250McdmGetWddmContractVersion(VOID)
+{
+    return (DXGK_WDDMVERSION)InterlockedCompareExchange(
+        &g_Bc250WddmContractVersion, 0, 0);
+}
+
+NTSTATUS Bc250McdmEncodeVidMmPte(
     const BC250_MCDM_RUNTIME_CAPS *Caps,
     const DXGK_PTE *Source,
     UINT64 *Encoded)
@@ -76,6 +103,7 @@ static NTSTATUS Bc250McdmEncodeVidMmPte(
 
 static NTSTATUS Bc250McdmBuildCpuPageTableUpdate(
     const BC250_MCDM_RUNTIME_CAPS *Caps,
+    HANDLE AdapterContext,
     DXGKARG_BUILDPAGINGBUFFER *Args)
 {
     DXGK_BUILDPAGINGBUFFER_UPDATEPAGETABLE *update;
@@ -106,6 +134,11 @@ static NTSTATUS Bc250McdmBuildCpuPageTableUpdate(
         NTSTATUS status = Bc250McdmEncodeVidMmPte(
             Caps, &update->pPageTableEntries[index], &encoded);
         if (!NT_SUCCESS(status)) return status;
+    }
+    /* O handler ativo distingue leaf de diretórios; ambos precisam participar
+     * da mesma transação de flush, embora só leaf gere ranges GPUVA. */
+    if (g_Bc250UpdatePageTableHandler != NULL) {
+        return g_Bc250UpdatePageTableHandler(AdapterContext, Caps, update);
     }
     destination = (UINT64 *)update->PageTableAddress.CpuVirtual;
     for (index = 0u; index < update->NumPageTableEntries; ++index) {
@@ -247,10 +280,39 @@ VOID Bc250McdmInstallDebugLifecycle(
     g_Bc250CollectDebugSnapshot = CollectDebugSnapshot;
 }
 
+VOID Bc250McdmInstallSubmissionExecutor(
+    BC250_MCDM_SUBMIT_COMMAND_EXECUTOR SubmitCommandExecutor)
+{
+    g_Bc250SubmitCommandExecutor = SubmitCommandExecutor;
+}
+
+VOID Bc250McdmInstallInterruptLifecycle(
+    BC250_MCDM_INTERRUPT_HANDLER InterruptHandler,
+    BC250_MCDM_DPC_HANDLER DpcHandler)
+{
+    g_Bc250InterruptHandler = InterruptHandler;
+    g_Bc250DpcHandler = DpcHandler;
+}
+
+static BC250_MCDM_FLUSH_TLB_HANDLER g_Bc250FlushTlbHandler;
+
+VOID Bc250McdmInstallFlushTlbHandler(
+    _In_opt_ BC250_MCDM_FLUSH_TLB_HANDLER FlushTlbHandler)
+{
+    g_Bc250FlushTlbHandler = FlushTlbHandler;
+}
+
+VOID Bc250McdmInstallUpdatePageTableHandler(
+    _In_opt_ BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER UpdatePageTableHandler)
+{
+    g_Bc250UpdatePageTableHandler = UpdatePageTableHandler;
+}
+
 NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(
     CONST HANDLE hAdapter,
     DXGKARG_BUILDPAGINGBUFFER *pBuildPagingBuffer)
 {
+    Bc250ProbeMarkDdi(BC250_V5_DDI_BUILD_PAGING_BUFFER);
     BC250_MCDM_RUNTIME_CAPS caps;
 
     if (hAdapter == NULL || pBuildPagingBuffer == NULL) {
@@ -265,13 +327,21 @@ NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(
 
     switch (pBuildPagingBuffer->Operation) {
     case DXGK_OPERATION_UPDATE_PAGE_TABLE:
-        return Bc250McdmBuildCpuPageTableUpdate(&caps, pBuildPagingBuffer);
+        return Bc250McdmBuildCpuPageTableUpdate(
+            &caps, (HANDLE)hAdapter, pBuildPagingBuffer);
 
     case DXGK_OPERATION_VIRTUAL_TRANSFER:
         return Bc250McdmBuildTransferVirtual(pBuildPagingBuffer);
 
     case DXGK_OPERATION_VIRTUAL_FILL:
         return Bc250McdmBuildFillVirtual(pBuildPagingBuffer);
+
+    case DXGK_OPERATION_FLUSH_TLB:
+        if (g_Bc250FlushTlbHandler != NULL) {
+            return g_Bc250FlushTlbHandler((HANDLE)hAdapter, &pBuildPagingBuffer->FlushTlb);
+        }
+        /* Sem backend não houve invalidação nem ACK físico. */
+        return STATUS_NOT_SUPPORTED;
 
     default:
         return STATUS_NOT_SUPPORTED;
@@ -282,6 +352,7 @@ NTSTATUS APIENTRY Bc250McdmCloseAllocation(
     CONST HANDLE hDevice,
     CONST DXGKARG_CLOSEALLOCATION *pCloseAllocation)
 {
+    Bc250ProbeMarkDdi(BC250_V5_DDI_CLOSE_ALLOCATION);
     if (hDevice == NULL || pCloseAllocation == NULL ||
         pCloseAllocation->NumAllocations == 0u ||
         pCloseAllocation->pOpenHandleList == NULL) {
@@ -295,6 +366,7 @@ NTSTATUS APIENTRY Bc250McdmCollectDbgInfo(
     CONST HANDLE hAdapter,
     CONST DXGKARG_COLLECTDBGINFO *pCollectDbgInfo)
 {
+    Bc250ProbeMarkDdi(BC250_V5_DDI_COLLECT_DBG_INFO);
     if (hAdapter == NULL || pCollectDbgInfo == NULL ||
         pCollectDbgInfo->pBuffer == NULL || pCollectDbgInfo->BufferSize == 0u) {
         return STATUS_INVALID_PARAMETER;
@@ -307,6 +379,7 @@ NTSTATUS APIENTRY Bc250McdmCreateAllocation(
     CONST HANDLE hAdapter,
     DXGKARG_CREATEALLOCATION *pCreateAllocation)
 {
+    Bc250ProbeMarkDdi(BC250_V5_DDI_CREATE_ALLOCATION);
     UINT index;
     if (hAdapter == NULL || pCreateAllocation == NULL ||
         pCreateAllocation->pAllocationInfo == NULL ||
@@ -324,6 +397,7 @@ NTSTATUS APIENTRY Bc250McdmCreateContext(
     CONST HANDLE hDevice,
     DXGKARG_CREATECONTEXT *pCreateContext)
 {
+    Bc250ProbeMarkDdi(BC250_V5_DDI_CREATE_CONTEXT);
     HANDLE contextHandle = NULL;
     NTSTATUS status;
 
@@ -353,6 +427,7 @@ NTSTATUS APIENTRY Bc250McdmCreateDevice(
     CONST HANDLE hAdapter,
     DXGKARG_CREATEDEVICE *pCreateDevice)
 {
+    Bc250ProbeMarkDdi(BC250_V5_DDI_CREATE_DEVICE);
     HANDLE deviceHandle = NULL;
     NTSTATUS status;
 
@@ -376,6 +451,7 @@ NTSTATUS APIENTRY Bc250McdmCreateProcess(
     CONST HANDLE hAdapter,
     DXGKARG_CREATEPROCESS *pArgs)
 {
+    Bc250ProbeMarkDdi(BC250_V5_DDI_CREATE_PROCESS);
     NTSTATUS status;
     HANDLE processHandle = NULL;
 
@@ -396,6 +472,7 @@ NTSTATUS APIENTRY Bc250McdmDescribeAllocation(
     CONST HANDLE hAdapter,
     DXGKARG_DESCRIBEALLOCATION *pDescribeAllocation)
 {
+    Bc250ProbeMarkDdi(BC250_V5_DDI_DESCRIBE_ALLOCATION);
     UNREFERENCED_PARAMETER(hAdapter);
     if (pDescribeAllocation == NULL) {
         return STATUS_INVALID_PARAMETER;
@@ -407,6 +484,7 @@ NTSTATUS APIENTRY Bc250McdmDestroyAllocation(
     CONST HANDLE hAdapter,
     CONST DXGKARG_DESTROYALLOCATION *pDestroyAllocation)
 {
+    Bc250ProbeMarkDdi(BC250_V5_DDI_DESTROY_ALLOCATION);
     if (hAdapter == NULL || pDestroyAllocation == NULL ||
         pDestroyAllocation->NumAllocations == 0u ||
         pDestroyAllocation->pAllocationList == NULL) {
@@ -448,13 +526,14 @@ NTSTATUS Bc250McdmDispatchIoRequest(
     ULONG VidPnSourceId,
     PVIDEO_REQUEST_PACKET VideoRequestPacket)
 {
+    Bc250ProbeMarkDdi(BC250_V5_DDI_DISPATCH_IO_REQUEST);
     UNREFERENCED_PARAMETER(MiniportDeviceContext);
     UNREFERENCED_PARAMETER(VidPnSourceId);
     UNREFERENCED_PARAMETER(VideoRequestPacket);
     return STATUS_NOT_SUPPORTED;
 }
 
-BC250_MCDM_UNSUPPORTED_2(Bc250McdmFormatHistoryBuffer,
+BC250_MCDM_UNSUPPORTED_2(Bc250McdmFormatHistoryBuffer, BC250_V5_DDI_FORMAT_HISTORY_BUFFER,
     CONST HANDLE, hContext,
     DXGKARG_FORMATHISTORYBUFFER *, pFormatData)
 
@@ -464,6 +543,7 @@ NTSTATUS APIENTRY Bc250McdmCalibrateGpuClock(
     UINT32 EngineOrdinal,
     DXGKARG_CALIBRATEGPUCLOCK *pClockCalibration)
 {
+    Bc250ProbeMarkDdi(BC250_V5_DDI_CALIBRATE_GPU_CLOCK);
     UNREFERENCED_PARAMETER(hAdapter);
     UNREFERENCED_PARAMETER(EngineOrdinal);
 
@@ -482,6 +562,7 @@ NTSTATUS APIENTRY Bc250McdmGetNodeMetadata(
     UINT NodeOrdinalAndAdapterIndex,
     DXGKARG_GETNODEMETADATA *pGetNodeMetadata)
 {
+    Bc250ProbeMarkDdi(BC250_V5_DDI_GET_NODE_METADATA);
     UINT nodeIndex = NodeOrdinalAndAdapterIndex & 0xFFFFu;
 
     BC250_MCDM_RUNTIME_CAPS caps;
@@ -544,7 +625,7 @@ SIZE_T APIENTRY Bc250McdmGetRootPageTableSize(
     return (SIZE_T)bytes;
 }
 
-BC250_MCDM_UNSUPPORTED_2(Bc250McdmGetStandardAllocationDriverData,
+BC250_MCDM_UNSUPPORTED_2(Bc250McdmGetStandardAllocationDriverData, BC250_V5_DDI_GET_STD_ALLOCATION_DATA,
     CONST HANDLE, hAdapter,
     DXGKARG_GETSTANDARDALLOCATIONDRIVERDATA *,
     pGetStandardAllocationDriverData)
@@ -553,6 +634,7 @@ NTSTATUS APIENTRY Bc250McdmOpenAllocation(
     CONST HANDLE hDevice,
     CONST DXGKARG_OPENALLOCATION *pOpenAllocation)
 {
+    Bc250ProbeMarkDdi(BC250_V5_DDI_OPEN_ALLOCATION);
     UINT index;
     if (hDevice == NULL || pOpenAllocation == NULL ||
         pOpenAllocation->NumAllocations == 0u ||
@@ -571,19 +653,65 @@ NTSTATUS APIENTRY Bc250McdmPreemptCommand(
     CONST HANDLE hAdapter,
     CONST DXGKARG_PREEMPTCOMMAND *pPreemptCommand)
 {
-    UNREFERENCED_PARAMETER(hAdapter);
+    Bc250ProbeMarkDdi(BC250_V5_DDI_PREEMPT_COMMAND);
+    BC250_MCDM_RUNTIME_CAPS caps;
 
-    if (pPreemptCommand == NULL) {
+    if (pPreemptCommand == NULL ||
+        pPreemptCommand->NodeOrdinal >= BC250_ADAPTER_NODE_COUNT) {
         return STATUS_INVALID_PARAMETER;
     }
-    if (pPreemptCommand->NodeOrdinal >= BC250_ADAPTER_NODE_COUNT) {
-        return STATUS_INVALID_PARAMETER;
+
+    if (g_Bc250QueryRuntimeCaps == NULL ||
+        !NT_SUCCESS(g_Bc250QueryRuntimeCaps((HANDLE)hAdapter, &caps)) ||
+        caps.FullMcdmReady == 0u || caps.PreemptionReady == 0u) {
+        return STATUS_NOT_SUPPORTED;
     }
 
-    return STATUS_NOT_SUPPORTED;
+    return STATUS_SUCCESS;
 }
 
+static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
+    CONST HANDLE hAdapter,
+    CONST DXGKARG_QUERYADAPTERINFO *pQueryAdapterInfo);
+
+/*
+ * Envoltorio de instrumentacao do caminho WDDM completo.
+ *
+ * No boot de 2026-08-31 com RenderNode=1 o DxgkInitialize devolveu 0, o
+ * AddDevice devolveu 0, o StartDevice entrou — e o dispositivo parou em Codigo
+ * 43 sem que houvesse como saber qual consulta foi recusada. Este envoltorio
+ * registra a sequencia: quantas chamadas, o ultimo tipo, o ultimo status, e
+ * separadamente o ultimo tipo recusado com NOT_SUPPORTED, que e' o suspeito
+ * natural quando o dxgkrnl aborta o start.
+ */
 NTSTATUS APIENTRY Bc250McdmQueryAdapterInfo(
+    CONST HANDLE hAdapter,
+    CONST DXGKARG_QUERYADAPTERINFO *pQueryAdapterInfo)
+{
+    static volatile LONG s_qaiCalls;
+    static volatile LONG s_qaiUnsupported;
+    NTSTATUS status;
+    ULONG type;
+
+    Bc250ProbeMarkDdi(BC250_V5_DDI_QUERY_ADAPTER_INFO);
+
+    Bc250ProbeRecord(BC250_PROBE_V5_QAI_CALLS,
+        (ULONG)InterlockedIncrement(&s_qaiCalls));
+
+    status = Bc250McdmQueryAdapterInfoWorker(hAdapter, pQueryAdapterInfo);
+
+    type = (pQueryAdapterInfo != NULL) ? (ULONG)pQueryAdapterInfo->Type : 0xFFFFFFFFu;
+    Bc250ProbeRecord(BC250_PROBE_V5_QAI_LAST_TYPE, type);
+    Bc250ProbeRecord(BC250_PROBE_V5_QAI_LAST_STATUS, (ULONG)status);
+    if (status == STATUS_NOT_SUPPORTED) {
+        Bc250ProbeRecord(BC250_PROBE_V5_QAI_LAST_UNSUPPORTED_TYPE, type);
+        Bc250ProbeRecord(BC250_PROBE_V5_QAI_UNSUPPORTED_COUNT,
+            (ULONG)InterlockedIncrement(&s_qaiUnsupported));
+    }
+    return status;
+}
+
+static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
     CONST HANDLE hAdapter,
     CONST DXGKARG_QUERYADAPTERINFO *pQueryAdapterInfo)
 {
@@ -601,6 +729,50 @@ NTSTATUS APIENTRY Bc250McdmQueryAdapterInfo(
     Bc250ProbeRecord(BC250_PROBE_DMM_QUERY_ADAPTER_TYPE, (ULONG)pQueryAdapterInfo->Type);
 
     switch (pQueryAdapterInfo->Type) {
+    /*
+     * DXGKQAITYPE_WDDMDEVICECAPS — obrigatorio para driver de render.
+     *
+     * Medido no silicio em 2026-08-31, primeiro boot com RenderNode=1:
+     *
+     *   V5QaiCalls              1
+     *   V5QaiLastType           0x1D  (DXGKQAITYPE_WDDMDEVICECAPS)
+     *   V5QaiLastStatus         0xC00000BB  (STATUS_NOT_SUPPORTED)
+     *   V5StartDeviceStatus     0  com Sources=1 e Children=1 (sucesso)
+     *
+     * O dxgkrnl fez UMA unica pergunta, levou NOT_SUPPORTED do ramo default e
+     * abortou o dispositivo com Codigo 43. O KMDOD nunca chegava aqui porque
+     * KMDDOD_INITIALIZATION_DATA nao expoe este caminho.
+     *
+     * A estrutura tem um unico campo, e o WDK exige explicitamente o mesmo
+     * valor de DXGK_DRIVERCAPS::WDDMVersion — por isso DXGKDDI_WDDMv2_7, igual
+     * ao declarado logo abaixo. Divergir entre os dois e' erro de conformidade.
+     */
+    case DXGKQAITYPE_WDDMDEVICECAPS: {
+        DXGK_WDDMDEVICECAPS *deviceCaps;
+        if (pQueryAdapterInfo->OutputDataSize < sizeof(DXGK_WDDMDEVICECAPS)) {
+            return STATUS_BUFFER_TOO_SMALL;
+        }
+        /*
+         * SEM gate de runtimeCaps aqui, ao contrario de todos os outros tipos.
+         *
+         * O primeiro candidato com este case tinha o gate padrao e devolveu
+         * STATUS_DEVICE_NOT_READY (0xC00000A3), medido no boot de 2026-08-31 —
+         * trocando um Codigo 43 por outro. A causa: o WDK especifica que
+         * WDDMDEVICECAPS e' consultado "after DxgkDdiAddDevice returns and
+         * before DxgkDdiStartDevice is called". Nesse instante o adaptador
+         * ainda nao subiu e runtimeCaps nao existe, por construcao.
+         *
+         * Isto nao afrouxa a Lei 3: WDDMVersion nao descreve estado de
+         * hardware, descreve qual contrato de DDI este binario implementa —
+         * fato de compilacao, nao de execucao. Condicionar uma constante ao
+         * estado do silicio seria erro na direcao oposta.
+         */
+        deviceCaps = (DXGK_WDDMDEVICECAPS *)pQueryAdapterInfo->pOutputData;
+        RtlZeroMemory(deviceCaps, sizeof(*deviceCaps));
+        deviceCaps->WDDMVersion = Bc250McdmGetWddmContractVersion();
+        return STATUS_SUCCESS;
+    }
+
     case DXGKQAITYPE_DRIVERCAPS: {
         DXGK_DRIVERCAPS *caps;
         if (pQueryAdapterInfo->OutputDataSize < sizeof(DXGK_DRIVERCAPS)) {
@@ -617,7 +789,7 @@ NTSTATUS APIENTRY Bc250McdmQueryAdapterInfo(
         caps = (DXGK_DRIVERCAPS *)pQueryAdapterInfo->pOutputData;
         RtlZeroMemory(caps, sizeof(*caps));
         caps->HighestAcceptableAddress.QuadPart = MAXLONGLONG;
-        caps->WDDMVersion = DXGKDDI_WDDMv2_7;
+        caps->WDDMVersion = Bc250McdmGetWddmContractVersion();
         caps->SchedulingCaps.MultiEngineAware = 1u;
         caps->SchedulingCaps.PreemptionAware = 1u;
         caps->SchedulingCaps.LowIrqlPreemptCommand = 1u;
@@ -629,7 +801,18 @@ NTSTATUS APIENTRY Bc250McdmQueryAdapterInfo(
         caps->SupportPerEngineTDR = TRUE;
         caps->GpuEngineTopology.NbAsymetricProcessingNodes =
             runtimeCaps.NodeCount;
-        caps->MiscCaps.ComputeOnly = 1u;
+        /*
+         * Alvo: WDDM display+render. ComputeOnly era 1, herdado do alvo MCDM
+         * original, e contradizia diretamente o restante do driver:
+         * Class=Display no INF, uma fonte de video e um filho reportados pelo
+         * StartDevice, e a tabela de VidPn inteira preenchida.
+         *
+         * Um adaptador ComputeOnly nao apresenta nada. Declarar ComputeOnly e
+         * ao mesmo tempo enumerar fonte de video e' o tipo de inconsistencia
+         * que o dxgkrnl rejeita com STATUS_INTERNAL_ERROR generico — foi o
+         * observado no silicio em 2026-08-31 (Kernel-PnP 411, 0xC00000E5).
+         */
+        caps->MiscCaps.ComputeOnly = 0u;
         return STATUS_SUCCESS;
     }
 
@@ -797,7 +980,7 @@ NTSTATUS APIENTRY Bc250McdmQueryAdapterInfo(
     }
 }
 
-BC250_MCDM_UNSUPPORTED_2(Bc250McdmQueryDependentEngineGroup,
+BC250_MCDM_UNSUPPORTED_2(Bc250McdmQueryDependentEngineGroup, BC250_V5_DDI_QUERY_DEPENDENT_ENGINE_GROUP,
     CONST HANDLE, hAdapter,
     DXGKARG_QUERYDEPENDENTENGINEGROUP *, pQueryDependentEngineGroup)
 
@@ -805,32 +988,46 @@ NTSTATUS APIENTRY Bc250McdmQueryEngineStatus(
     CONST HANDLE hAdapter,
     DXGKARG_QUERYENGINESTATUS *pQueryEngineStatus)
 {
-    UNREFERENCED_PARAMETER(hAdapter);
+    Bc250ProbeMarkDdi(BC250_V5_DDI_QUERY_ENGINE_STATUS);
+    BC250_MCDM_RUNTIME_CAPS caps;
 
-    if (pQueryEngineStatus == NULL) {
+    if (pQueryEngineStatus == NULL ||
+        pQueryEngineStatus->NodeOrdinal >= BC250_ADAPTER_NODE_COUNT) {
         return STATUS_INVALID_PARAMETER;
     }
-    if (pQueryEngineStatus->NodeOrdinal >= BC250_ADAPTER_NODE_COUNT) {
-        return STATUS_INVALID_PARAMETER;
+
+    if (g_Bc250QueryRuntimeCaps == NULL ||
+        !NT_SUCCESS(g_Bc250QueryRuntimeCaps((HANDLE)hAdapter, &caps)) ||
+        caps.FullMcdmReady == 0u || caps.TdrReady == 0u) {
+        pQueryEngineStatus->EngineStatus.Responsive = 0;
+        return STATUS_NOT_SUPPORTED;
     }
 
-    pQueryEngineStatus->EngineStatus.Responsive = 0;
-    return STATUS_NOT_SUPPORTED;
+    pQueryEngineStatus->EngineStatus.Responsive = 1;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS APIENTRY Bc250McdmResetEngine(
     CONST HANDLE hAdapter,
     DXGKARG_RESETENGINE *pResetEngine)
 {
-    UNREFERENCED_PARAMETER(hAdapter);
+    Bc250ProbeMarkDdi(BC250_V5_DDI_RESET_ENGINE);
+    BC250_MCDM_RUNTIME_CAPS caps;
 
-    if (pResetEngine == NULL) {
+    if (pResetEngine == NULL ||
+        pResetEngine->NodeOrdinal >= BC250_ADAPTER_NODE_COUNT) {
         return STATUS_INVALID_PARAMETER;
     }
-    if (pResetEngine->NodeOrdinal >= BC250_ADAPTER_NODE_COUNT) {
-        return STATUS_INVALID_PARAMETER;
+
+    if (g_Bc250QueryRuntimeCaps == NULL ||
+        !NT_SUCCESS(g_Bc250QueryRuntimeCaps((HANDLE)hAdapter, &caps)) ||
+        caps.FullMcdmReady == 0u || caps.TdrReady == 0u) {
+        pResetEngine->LastAbortedFenceId = 0u;
+        return STATUS_NOT_SUPPORTED;
     }
 
+    /* Caps estruturais não provam que HQD/SDMA foram resetados. Sem executor
+     * físico e sem devolução dos pins das fences abortadas, sucesso seria falso. */
     pResetEngine->LastAbortedFenceId = 0u;
     return STATUS_NOT_SUPPORTED;
 }
@@ -847,7 +1044,7 @@ NTSTATUS APIENTRY Bc250McdmRestartFromTimeout(CONST HANDLE hAdapter)
     return STATUS_NOT_SUPPORTED;
 }
 
-BC250_MCDM_UNSUPPORTED_2(Bc250McdmSetVirtualMachineData,
+BC250_MCDM_UNSUPPORTED_2(Bc250McdmSetVirtualMachineData, BC250_V5_DDI_SET_VIRTUAL_MACHINE_DATA,
     CONST HANDLE, hAdapter,
     CONST DXGKARG_SETVIRTUALMACHINEDATA *, Args)
 
@@ -879,14 +1076,12 @@ NTSTATUS APIENTRY Bc250McdmSubmitCommandVirtual(
     CONST HANDLE hAdapter,
     CONST DXGKARG_SUBMITCOMMANDVIRTUAL *pSubmitCommand)
 {
+    Bc250ProbeMarkDdi(BC250_V5_DDI_SUBMIT_COMMAND_VIRTUAL);
     BC250_MCDM_RUNTIME_CAPS caps;
-    BC250_GPU_CONTEXT context;
-    BC250_SUBMIT_COMMAND_DESC desc;
-    BC250_DISPATCH_STATUS dispatchStatus;
-
     if (hAdapter == NULL || pSubmitCommand == NULL ||
         pSubmitCommand->hContext == NULL ||
         pSubmitCommand->DmaBufferSize == 0u ||
+        (pSubmitCommand->DmaBufferSize % sizeof(uint32_t)) != 0u ||
         pSubmitCommand->NodeOrdinal >= BC250_ADAPTER_NODE_COUNT) {
         return STATUS_INVALID_PARAMETER;
     }
@@ -901,49 +1096,32 @@ NTSTATUS APIENTRY Bc250McdmSubmitCommandVirtual(
         return STATUS_INVALID_PARAMETER;
     }
 
-    /* Validação e despacho formal da submissão WDDM 2.0+ */
-    RtlZeroMemory(&context, sizeof(context));
-    context.ContextId = (uint32_t)(ULONG_PTR)pSubmitCommand->hContext;
-    context.EngineType = (pSubmitCommand->NodeOrdinal == 0) ? BC250_ENGINE_TYPE_SDMA : BC250_ENGINE_TYPE_COMPUTE;
-    context.NodeOrdinal = pSubmitCommand->NodeOrdinal;
-    context.EngineAffinity = (1u << pSubmitCommand->NodeOrdinal);
-    context.RingGpuAddress = 0xF400000000ull;
-    context.RingSizeDwords = 1024u;
-    context.IsActive = 1;
-
-    RtlZeroMemory(&desc, sizeof(desc));
-    desc.ContextId = context.ContextId;
-    desc.EngineType = context.EngineType;
-    desc.FenceSequence = (uint32_t)pSubmitCommand->SubmissionFenceId;
-    desc.FenceGpuAddress = 0xF400002200ull;
-
-    if (context.EngineType == BC250_ENGINE_TYPE_SDMA) {
-        desc.CopySizeBytes = pSubmitCommand->DmaBufferSize;
-    } else {
-        desc.CommandBufferGpuAddress = pSubmitCommand->DmaBufferVirtualAddress;
-        desc.CommandBufferSizeDwords = pSubmitCommand->DmaBufferSize / (uint32_t)sizeof(uint32_t);
+    /*
+     * O callback comum não possui fila, fence nem ownership físico próprios.
+     * Somente o miniport ativo pode validar o contexto real e publicar o IB na
+     * MEC. Sucesso sem executor esconderia uma submissão descartada pela CPU.
+     */
+    if (g_Bc250SubmitCommandExecutor == NULL) {
+        return STATUS_NOT_SUPPORTED;
     }
-
-    dispatchStatus = Bc250ContextValidateSubmission(&context, &desc);
-    if (dispatchStatus != BC250_DISPATCH_OK) {
-        return STATUS_INVALID_PARAMETER;
-    }
-
-    return STATUS_SUCCESS;
+    return g_Bc250SubmitCommandExecutor(hAdapter, pSubmitCommand);
 }
 
 BOOLEAN Bc250McdmInterruptRoutine(
     CONST PVOID MiniportDeviceContext,
     ULONG MessageNumber)
 {
-    UNREFERENCED_PARAMETER(MiniportDeviceContext);
-    UNREFERENCED_PARAMETER(MessageNumber);
+    if (g_Bc250InterruptHandler != NULL) {
+        return g_Bc250InterruptHandler(MiniportDeviceContext, MessageNumber);
+    }
     return FALSE;
 }
 
 VOID Bc250McdmDpcRoutine(CONST PVOID MiniportDeviceContext)
 {
-    UNREFERENCED_PARAMETER(MiniportDeviceContext);
+    if (g_Bc250DpcHandler != NULL) {
+        g_Bc250DpcHandler(MiniportDeviceContext);
+    }
 }
 
 NTSTATUS Bc250McdmQueryChildRelations(
@@ -1004,6 +1182,127 @@ NTSTATUS Bc250McdmSetPowerState(
     }
 }
 
+/* ==========================================================================
+   Fase V5 — DDIs obrigatorias que faltavam na tabela de render.
+
+   A auditoria estatica comparou os 187 campos DxgkDdi* de
+   DRIVER_INITIALIZATION_DATA com os 59 que o driver preenchia. Ponteiro
+   obrigatorio nulo faz o dxgkrnl abortar o start com STATUS_INTERNAL_ERROR
+   (0xC00000E5) sem chamar nada — foi o observado no silicio.
+
+   Todas marcam a propria entrada no rastro, para que a proxima recusa seja
+   nomeada em vez de deduzida.
+   ========================================================================== */
+
+static BC250_MCDM_CURRENT_FENCE_PROVIDER g_Bc250CurrentFenceProvider;
+
+VOID Bc250McdmInstallCurrentFenceProvider(
+    _In_opt_ BC250_MCDM_CURRENT_FENCE_PROVIDER CurrentFenceProvider)
+{
+    g_Bc250CurrentFenceProvider = CurrentFenceProvider;
+}
+
+/*
+ * Implementacao REAL: o valor vem da fence que a GPU gravou na VRAM, via o
+ * provedor instalado pelo miniport ativo. Sem provedor, ou com o motor
+ * offline, a resposta e' erro — jamais um numero inventado.
+ */
+NTSTATUS APIENTRY Bc250McdmQueryCurrentFence(
+    CONST HANDLE hAdapter,
+    DXGKARG_QUERYCURRENTFENCE *pCurrentFence)
+{
+    UINT completed = 0u;
+    NTSTATUS status;
+
+    Bc250ProbeMarkDdi(BC250_V5_DDI_QUERY_CURRENT_FENCE);
+
+    if (hAdapter == NULL || pCurrentFence == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (g_Bc250CurrentFenceProvider == NULL) {
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    status = g_Bc250CurrentFenceProvider(
+        (HANDLE)hAdapter, pCurrentFence->NodeOrdinal, &completed);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    pCurrentFence->CurrentFence = completed;
+    return STATUS_SUCCESS;
+}
+
+/*
+ * As DDIs abaixo sao obrigatorias na tabela, mas o driver genuinamente nao as
+ * implementa. Recusar e' honesto; o que estava errado era o ponteiro NULO,
+ * que impede o dxgkrnl de sequer perguntar.
+ *
+ * Patch, Render e SubmitCommand pertencem ao caminho de DMA buffer com
+ * patch-list. Este driver usa enderecamento virtual e SubmitCommandVirtual,
+ * entao nao devem ser chamadas; se o rastro mostrar uma delas, a premissa de
+ * GPU VA esta errada em algum lugar.
+ */
+NTSTATUS APIENTRY Bc250McdmEscape(
+    CONST HANDLE hAdapter,
+    CONST DXGKARG_ESCAPE *pEscape)
+{
+    Bc250ProbeMarkDdi(BC250_V5_DDI_ESCAPE);
+    UNREFERENCED_PARAMETER(hAdapter);
+    UNREFERENCED_PARAMETER(pEscape);
+    return STATUS_NOT_SUPPORTED;
+}
+
+NTSTATUS APIENTRY Bc250McdmAcquireSwizzlingRange(
+    CONST HANDLE hAdapter,
+    DXGKARG_ACQUIRESWIZZLINGRANGE *pAcquireSwizzlingRange)
+{
+    Bc250ProbeMarkDdi(BC250_V5_DDI_ACQUIRE_SWIZZLING_RANGE);
+    UNREFERENCED_PARAMETER(hAdapter);
+    UNREFERENCED_PARAMETER(pAcquireSwizzlingRange);
+    return STATUS_NOT_SUPPORTED;
+}
+
+NTSTATUS APIENTRY Bc250McdmReleaseSwizzlingRange(
+    CONST HANDLE hAdapter,
+    CONST DXGKARG_RELEASESWIZZLINGRANGE *pReleaseSwizzlingRange)
+{
+    Bc250ProbeMarkDdi(BC250_V5_DDI_RELEASE_SWIZZLING_RANGE);
+    UNREFERENCED_PARAMETER(hAdapter);
+    UNREFERENCED_PARAMETER(pReleaseSwizzlingRange);
+    return STATUS_NOT_SUPPORTED;
+}
+
+NTSTATUS APIENTRY Bc250McdmPatch(
+    CONST HANDLE hAdapter,
+    CONST DXGKARG_PATCH *pPatch)
+{
+    Bc250ProbeMarkDdi(BC250_V5_DDI_PATCH);
+    UNREFERENCED_PARAMETER(hAdapter);
+    UNREFERENCED_PARAMETER(pPatch);
+    return STATUS_NOT_SUPPORTED;
+}
+
+NTSTATUS APIENTRY Bc250McdmRender(
+    CONST HANDLE hContext,
+    DXGKARG_RENDER *pRender)
+{
+    Bc250ProbeMarkDdi(BC250_V5_DDI_RENDER);
+    UNREFERENCED_PARAMETER(hContext);
+    UNREFERENCED_PARAMETER(pRender);
+    return STATUS_NOT_SUPPORTED;
+}
+
+NTSTATUS APIENTRY Bc250McdmSubmitCommand(
+    CONST HANDLE hAdapter,
+    CONST DXGKARG_SUBMITCOMMAND *pSubmitCommand)
+{
+    Bc250ProbeMarkDdi(BC250_V5_DDI_SUBMIT_COMMAND);
+    UNREFERENCED_PARAMETER(hAdapter);
+    UNREFERENCED_PARAMETER(pSubmitCommand);
+    return STATUS_NOT_SUPPORTED;
+}
+
 VOID Bc250McdmResetDevice(CONST PVOID MiniportDeviceContext)
 {
     UNREFERENCED_PARAMETER(MiniportDeviceContext);
@@ -1026,6 +1325,108 @@ VOID Bc250McdmUnload(VOID)
     Bc250McdmInstallGpuVaLifecycle(NULL);
     Bc250McdmInstallAllocationLifecycle(NULL, NULL, NULL, NULL);
     Bc250McdmInstallDebugLifecycle(NULL);
+    Bc250McdmInstallSubmissionExecutor(NULL);
+    Bc250McdmInstallCurrentFenceProvider(NULL);
+    Bc250McdmInstallUpdatePageTableHandler(NULL);
+    Bc250McdmInstallFlushTlbHandler(NULL);
+    Bc250McdmInstallInterruptLifecycle(NULL, NULL);
+}
+
+/*
+ * Fase V5 — DDIs obrigatorias EXCLUSIVAS da tabela de render.
+ *
+ * Deliberadamente fora de Bc250McdmPopulateRequiredCallbacks: a imagem
+ * readonly de producao tem contrato proprio exigindo
+ * DxgkDdiSubmitCommand == NULL, e essa garantia de fail-closed vale mais que
+ * a conveniencia de uma funcao unica. So o miniport ativo, que registra por
+ * DxgkInitialize, chama esta funcao.
+ */
+NTSTATUS Bc250McdmPopulateRenderCallbacks(
+    _Inout_ DRIVER_INITIALIZATION_DATA *InitializationData)
+{
+    if (InitializationData == NULL) return STATUS_INVALID_PARAMETER;
+
+    InitializationData->DxgkDdiQueryCurrentFence = Bc250McdmQueryCurrentFence;
+    InitializationData->DxgkDdiEscape = Bc250McdmEscape;
+    InitializationData->DxgkDdiAcquireSwizzlingRange = Bc250McdmAcquireSwizzlingRange;
+    InitializationData->DxgkDdiReleaseSwizzlingRange = Bc250McdmReleaseSwizzlingRange;
+    InitializationData->DxgkDdiPatch = Bc250McdmPatch;
+    InitializationData->DxgkDdiRender = Bc250McdmRender;
+    InitializationData->DxgkDdiSubmitCommand = Bc250McdmSubmitCommand;
+    InitializationData->DxgkDdiRenderKm = Bc250McdmRenderKm;
+    InitializationData->DxgkDdiCancelCommand = Bc250McdmCancelCommand;
+    InitializationData->DxgkDdiSetPowerComponentFState =
+        Bc250McdmSetPowerComponentFState;
+    InitializationData->DxgkDdiPowerRuntimeControlRequest =
+        Bc250McdmPowerRuntimeControlRequest;
+
+    return STATUS_SUCCESS;
+}
+
+/*
+ * Obrigatoria no conjunto minimo MCDM a partir do contrato que introduziu
+ * esta DDI. O BC-250 ainda nao publica mudancas assincronas de conector por
+ * DxgkCbIndicateConnectorChange; portanto a fila esta vazia por construcao.
+ * STATUS_ALREADY_COMPLETE e' o retorno documentado para "nenhuma mudanca
+ * ainda nao reportada". Nao fabricar um pacote DXGK_CONNECTION_CHANGE evita
+ * anunciar um monitor ou target inexistente no perfil compute/render-only.
+ */
+NTSTATUS APIENTRY Bc250McdmQueryConnectionChange(
+    IN_CONST_HANDLE hAdapter,
+    IN_PDXGKARG_QUERYCONNECTIONCHANGE pQueryConnectionChange)
+{
+    if (hAdapter == NULL || pQueryConnectionChange == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    return STATUS_ALREADY_COMPLETE;
+}
+
+NTSTATUS APIENTRY Bc250McdmRenderKm(
+    CONST HANDLE hContext,
+    DXGKARG_RENDER *pRenderKmArgs)
+{
+    UNREFERENCED_PARAMETER(hContext);
+    UNREFERENCED_PARAMETER(pRenderKmArgs);
+    return STATUS_NOT_SUPPORTED;
+}
+
+NTSTATUS APIENTRY Bc250McdmCancelCommand(
+    CONST HANDLE hAdapter,
+    CONST DXGKARG_CANCELCOMMAND *pCancelCommand)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    UNREFERENCED_PARAMETER(pCancelCommand);
+    return STATUS_NOT_SUPPORTED;
+}
+
+NTSTATUS APIENTRY Bc250McdmSetPowerComponentFState(
+    CONST HANDLE DriverContext,
+    UINT ComponentIndex,
+    UINT FState)
+{
+    UNREFERENCED_PARAMETER(DriverContext);
+    UNREFERENCED_PARAMETER(ComponentIndex);
+    UNREFERENCED_PARAMETER(FState);
+    return STATUS_NOT_SUPPORTED;
+}
+
+NTSTATUS APIENTRY Bc250McdmPowerRuntimeControlRequest(
+    CONST HANDLE DriverContext,
+    LPCGUID PowerControlCode,
+    PVOID InBuffer,
+    SIZE_T InBufferSize,
+    PVOID OutBuffer,
+    SIZE_T OutBufferSize,
+    PSIZE_T BytesReturned)
+{
+    UNREFERENCED_PARAMETER(DriverContext);
+    UNREFERENCED_PARAMETER(PowerControlCode);
+    UNREFERENCED_PARAMETER(InBuffer);
+    UNREFERENCED_PARAMETER(InBufferSize);
+    UNREFERENCED_PARAMETER(OutBuffer);
+    UNREFERENCED_PARAMETER(OutBufferSize);
+    if (BytesReturned != NULL) *BytesReturned = 0u;
+    return STATUS_NOT_SUPPORTED;
 }
 
 NTSTATUS Bc250McdmPopulateRequiredCallbacks(
@@ -1087,6 +1488,8 @@ NTSTATUS Bc250McdmPopulateRequiredCallbacks(
     InitializationData->DxgkDdiQueryChildStatus = Bc250McdmQueryChildStatus;
     InitializationData->DxgkDdiQueryChildRelations =
         Bc250McdmQueryChildRelations;
+    InitializationData->DxgkDdiQueryConnectionChange =
+        Bc250McdmQueryConnectionChange;
     InitializationData->DxgkDdiUnload = Bc250McdmUnload;
     return STATUS_SUCCESS;
 }

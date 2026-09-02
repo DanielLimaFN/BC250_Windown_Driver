@@ -1,0 +1,9 @@
+﻿BC250 LAB RESIDUE QUARANTINE PREFLIGHT: PASS
+  target: C:\Windows\System32\drivers\bc250mcdm.sys
+  sha256: C7A5B48352B27D6D32607A53275295AFE9C944EA38117E064FA99874DAE762C9
+  device: BasicDisplay / Codigo 0
+  service/marker/OEM package: absent
+BC250 LAB RESIDUE QUARANTINE: PASS
+  destination: C:\BC250_DRIVER_QUARANTINE\bc250mcdm.pre-f8b2-20260831-085907.sys
+  evidence: C:\Users\Daniel\Desktop\NamixWDDM\docs\evidence\20260831-085907-DESKTOP-HQAG6T4-f8b2-preflight
+NAO VALIDADO EM HARDWARE

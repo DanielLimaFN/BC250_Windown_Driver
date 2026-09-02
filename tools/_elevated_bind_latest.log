@@ -1,0 +1,74 @@
+﻿**********************
+Início da transcrição do Windows PowerShell
+Hora de início: 20260901171913
+Nome de Usuário: DESKTOP-HQAG6T4\Daniel
+Executar como Usuário: DESKTOP-HQAG6T4\Daniel
+Nome da Configuração: 
+Computador: DESKTOP-HQAG6T4 (Microsoft Windows NT 10.0.19045.0)
+Aplicativo Host: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\Daniel\Desktop\NamixWDDM\tools\_bind_runner.ps1
+ID do Processo: 5648
+PSVersion: 5.1.19041.2673
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.19041.2673
+BuildVersion: 10.0.19041.2673
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcrição iniciada, o arquivo de saída é C:\Users\Daniel\Desktop\NamixWDDM\tools\_elevated_bind_latest.log
+AVISO: Engine suja: a fila de computacao ainda carrega estado da sessao anterior.
+  HqdActiveBefore              = 0
+  HqdActiveBaselineWptrReadback = 0
+  P1EngineState                = 1
+  P1SelfTestPhysicalReady       = 1
+  P2PhysicalReady               = 1
+Restaure BasicDisplay e so entao faca BOOT FRIO. Reiniciar com bc250mcdm ainda instalado religa a fila persistente.
+AVISO: Prosseguindo por -IAcceptDirtyEngine: a telemetria deste ciclo NAO e evidencia.
+=== BINDING DE LABORATORIO (BC-250 MCDM) SEM WATCHDOG ===
+  Dispositivo: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+  Servico atual: bc250mcdm
+  Pacote: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab\bc250mcdm.inf
+  Rollback automatico: DESABILITADO por decisao explicita.
+  Recuperacao manual: C:\BC250_RECOVERY.cmd
+
+[1/4] Estagiando pacote de laboratorio via pnputil...
+Utilitßrio PnP da Microsoft
+
+Adicionando o pacote de driver:  bc250mcdm.inf
+Pacote de drivers adicionado com Ûxito.
+Nome Publicado:         oem20.inf
+
+Total de pacotes de driver:  1
+Pacotes de driver adicionados:  1
+  Pacote publicado como: oem20.inf
+
+[2/4] Watchdog omitido por aceite explicito; evidencia criada.
+  Politica pre-bind aplicada e verificada.
+  RenderNode=0; PersistentSubmission=1; GpuvaLabPromotion=0.
+
+[3/4] Vinculando driver ao hardware...
+  UpdateDriverForPlugAndPlayDevicesW: success=True win32=0 reboot=False
+
+[4/4] Verificando parametros efetivos pos-binding...
+  Politica pos-binding coincide com a politica pre-bind.
+  RenderNode=0; ShaderDispatch=1; PersistentSubmission=1; GPUVA=0.
+
+Estado do dispositivo:
+  Service: bc250mcdm
+  Status: Error
+  ConfigManagerErrorCode: 43
+  Hash instalado: 23E740F75615E293
+  Hash do pacote: 23E740F75615E293
+  Binario em System32\drivers ATUALIZADO com sucesso!
+  Telemetria capturada no bind: 903 valores.
+
+==========================================================================
+DRIVER DE LABORATORIO INSTALADO!
+Watchdog DESABILITADO; nao ha confirmacao temporizada a executar.
+Em caso de falha use: C:\BC250_RECOVERY.cmd
+==========================================================================
+**********************
+Fim da transcrição do Windows PowerShell
+Hora de término: 20260901171918
+**********************

@@ -1,0 +1,7 @@
+﻿{
+    "TimeCreated":  "\/Date(1788308041091)\/",
+    "Id":  7045,
+    "LevelDisplayName":  "Informações",
+    "ProviderName":  "Service Control Manager",
+    "Message":  "Foi instalado um serviço no sistema\r\n\r\nNome do Serviço:  bc250mcdm\r\nNome do Arquivo de Serviço:  \\SystemRoot\\System32\\drivers\\bc250mcdm.sys\r\nTipo de Serviço:  driver de modo kernel\r\nTipo de Início de Serviço:  iniciar demanda\r\nConta de Serviço:  "
+}

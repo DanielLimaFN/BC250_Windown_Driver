@@ -1,0 +1,56 @@
+$$ ==============================================================================
+$$ windbg_diagnose_rendernode.wds — Script WinDbg para Captura de Falha RenderNode
+$$ ==============================================================================
+
+.echo "=== INICIANDO CONFIGURACAO DE DIAGNOSTICO RENDERNODE BC-250 ==="
+
+$$ 1. Configurar caminho de simbolos (Microsoft Public + PDB local)
+.sympath+ srv*C:\symbols*https://msdl.microsoft.com/download/symbols
+.sympath+ C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\output_lab
+.sympath+ C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\output
+
+$$ 2. Abrir arquivo de log para capturar toda a sessao
+.logopen C:\Users\Daniel\Desktop\NamixWDDM\docs\evidence\windbg_rendernode_trace.log
+
+$$ 3. Recarregar modulos
+.reload /f
+
+.echo "=== CONFIGURANDO BREAKPOINTS EM DXGKRNL E BC250MCDM ==="
+
+$$ Limpar breakpoints anteriores
+bc *
+
+$$ Breakpoint no DriverEntry do nosso driver
+bu bc250mcdm!DriverEntry ".echo [HIT] bc250mcdm!DriverEntry; k 8; g"
+
+$$ Breakpoints nas DDIs do ciclo de vida
+bu bc250mcdm!Bc250DxgkDdiAddDevice ".echo [HIT] bc250mcdm!AddDevice; k 8; g"
+bu bc250mcdm!Bc250DxgkDdiStartDevice ".echo [HIT] bc250mcdm!StartDevice; k 8; g"
+bu bc250mcdm!Bc250DxgkDdiQueryChildRelations ".echo [HIT] bc250mcdm!QueryChildRelations (Buffer: rdx, Size: r8); k 10; g"
+
+$$ Breakpoint na saida de QueryChildRelations (para inspecionar buffer e retorno)
+bu bc250mcdm!Bc250DxgkDdiQueryChildRelations+0x10 ".echo [STEP] bc250mcdm!QueryChildRelations body; g"
+
+$$ Breakpoints em QueryInterface
+bu bc250mcdm!Bc250DxgkDdiQueryInterface ".echo [HIT] bc250mcdm!QueryInterface (QI: rdx); k 6; g"
+
+$$ Breakpoints em QueryAdapterInfo (se alcancado)
+bu bc250mcdm!Bc250DxgkDdiQueryAdapterInfo ".echo [HIT] bc250mcdm!QueryAdapterInfo (QAI Type: rdx); k 10; g"
+
+$$ Breakpoints de Teardown / Desmontagem no driver
+bu bc250mcdm!Bc250DxgkDdiStopDevice ".echo [ALERTA] bc250mcdm!StopDevice invocado!; k 20; .echo Chamador de StopDevice:; kb; g"
+bu bc250mcdm!Bc250DxgkDdiRemoveDevice ".echo [ALERTA] bc250mcdm!RemoveDevice invocado!; k 20; g"
+
+$$ Breakpoints internos no dxgkrnl (quem decide desmontar?)
+bu dxgkrnl!DxgkStartDevice ".echo [DXGKRNL] DxgkStartDevice; k 8; g"
+bu dxgkrnl!DxgkStopDevice ".echo [ALERTA DXGKRNL] DxgkStopDevice; k 25; g"
+bu dxgkrnl!DxgkRemoveDevice ".echo [ALERTA DXGKRNL] DxgkRemoveDevice; k 25; g"
+
+$$ Breakpoint em funcoes de erro/remocao do dxgkrnl
+bu dxgkrnl!CAdapter::Stop ".echo [ALERTA DXGKRNL] CAdapter::Stop chamado!; k 25; g"
+bu dxgkrnl!CAdapter::Remove ".echo [ALERTA DXGKRNL] CAdapter::Remove chamado!; k 25; g"
+
+$$ Listar breakpoints ativos
+bl
+
+.echo "=== DIAGNOSTICO PRONTO. EXECUTE 'g' PARA CONTINUAR A EXECUCAO ==="

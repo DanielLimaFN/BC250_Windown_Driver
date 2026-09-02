@@ -26,6 +26,21 @@ void Bc250ProbeRecord(int Field, unsigned long Value)
     (void)Value;
 }
 
+/*
+ * Fase V5: o rastro de DDI e' instrumentacao pura, sem efeito sobre a
+ * semantica dos callbacks. Fora do kernel vira no-op, mas o contador fica
+ * disponivel caso algum contrato futuro queira afirmar que uma DDI foi de
+ * fato alcancada.
+ */
+unsigned long g_Bc250TestDdiMarks;
+unsigned long g_Bc250TestLastDdi;
+
+void Bc250ProbeMarkDdi(unsigned long DdiId)
+{
+    g_Bc250TestLastDdi = DdiId;
+    ++g_Bc250TestDdiMarks;
+}
+
 static DRIVER_INITIALIZATION_DATA g_initData;
 static DXGKARG_QUERYADAPTERINFO g_queryInfo;
 static DXGKARG_GETNODEMETADATA g_nodeMetadata;
@@ -49,6 +64,22 @@ static UINT32 g_rootEntries;
 static DXGKARG_BUILDPAGINGBUFFER g_paging;
 static DXGK_PTE g_pagingEntries[2];
 static UINT64 g_pageTable[512];
+static UINT32 g_updateHandlerCalls;
+static UINT32 g_updateHandlerLastLevel;
+
+static NTSTATUS Bc250TestUpdatePageTableHandler(
+    HANDLE AdapterContext,
+    CONST BC250_MCDM_RUNTIME_CAPS *Caps,
+    DXGK_BUILDPAGINGBUFFER_UPDATEPAGETABLE *Update)
+{
+    UNREFERENCED_PARAMETER(Caps);
+    if (AdapterContext != (HANDLE)0x250 || Update == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    ++g_updateHandlerCalls;
+    g_updateHandlerLastLevel = Update->PageTableLevel;
+    return STATUS_SUCCESS;
+}
 
 static NTSTATUS Bc250TestSetRootPageTable(
     HANDLE AdapterContext,
@@ -97,6 +128,38 @@ static NTSTATUS Bc250TestRuntimeCaps(
     return STATUS_SUCCESS;
 }
 
+static UINT32 g_submissionExecutionCount;
+static UINT32 g_interruptExecutionCount;
+static UINT32 g_dpcExecutionCount;
+
+static NTSTATUS Bc250TestSubmitExecutor(
+    HANDLE AdapterContext,
+    CONST DXGKARG_SUBMITCOMMANDVIRTUAL *pSubmitCommand)
+{
+    if (AdapterContext != (HANDLE)0x250 || pSubmitCommand == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    g_submissionExecutionCount++;
+    return STATUS_SUCCESS;
+}
+
+static BOOLEAN Bc250TestInterruptHandler(
+    CONST PVOID MiniportDeviceContext,
+    ULONG MessageNumber)
+{
+    UNREFERENCED_PARAMETER(MiniportDeviceContext);
+    UNREFERENCED_PARAMETER(MessageNumber);
+    g_interruptExecutionCount++;
+    return TRUE;
+}
+
+static VOID Bc250TestDpcHandler(
+    CONST PVOID MiniportDeviceContext)
+{
+    UNREFERENCED_PARAMETER(MiniportDeviceContext);
+    g_dpcExecutionCount++;
+}
+
 static int Bc250RunMcdmCallbacksTest(void)
 {
     /* 1. Test Callback Population */
@@ -118,7 +181,18 @@ static int Bc250RunMcdmCallbacksTest(void)
     CHECK(g_initData.DxgkDdiGetRootPageTableSize != NULL);
     CHECK(g_initData.DxgkDdiSetRootPageTable != NULL);
     CHECK(g_initData.DxgkDdiSubmitCommandVirtual != NULL);
-    CHECK(g_initData.DxgkDdiQueryConnectionChange == NULL);
+    CHECK(g_initData.DxgkDdiQueryConnectionChange ==
+        Bc250McdmQueryConnectionChange);
+    {
+        DXGKARG_QUERYCONNECTIONCHANGE change;
+        memset(&change, 0xA5, sizeof(change));
+        CHECK(Bc250McdmQueryConnectionChange(NULL, &change) ==
+            STATUS_INVALID_PARAMETER);
+        CHECK(Bc250McdmQueryConnectionChange((HANDLE)0x250, NULL) ==
+            STATUS_INVALID_PARAMETER);
+        CHECK(Bc250McdmQueryConnectionChange((HANDLE)0x250, &change) ==
+            STATUS_ALREADY_COMPLETE);
+    }
 
     static DXGK_DRIVERCAPS driverCaps;
     static DXGK_PHYSICALADAPTERCAPS physCaps;
@@ -137,7 +211,15 @@ static int Bc250RunMcdmCallbacksTest(void)
     g_fullMcdmReady = 1u;
     CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) == STATUS_SUCCESS);
     CHECK(driverCaps.WDDMVersion == DXGKDDI_WDDMv2_7);
-    CHECK(driverCaps.MiscCaps.ComputeOnly == 1u);
+    /*
+     * Alvo do driver: WDDM display+render (jogos). ComputeOnly deve ser 0.
+     *
+     * Era 1, herdado do alvo MCDM original, e contradizia Class=Display no
+     * INF, a fonte de video reportada pelo StartDevice e a tabela de VidPn
+     * completa. O contrato agora afirma a coerencia em vez de congelar a
+     * contradicao.
+     */
+    CHECK(driverCaps.MiscCaps.ComputeOnly == 0u);
     CHECK(driverCaps.SupportNonVGA == FALSE);
     CHECK(driverCaps.SupportPerEngineTDR == TRUE);
     CHECK(driverCaps.SchedulingCaps.MultiEngineAware == 1u);
@@ -146,6 +228,26 @@ static int Bc250RunMcdmCallbacksTest(void)
     CHECK(driverCaps.MemoryManagementCaps.VirtualAddressingSupported == 1u);
     CHECK(driverCaps.MemoryManagementCaps.GpuMmuSupported == 1u);
     CHECK(driverCaps.MemoryManagementCaps.ParavirtualizationSupported == 1u);
+
+    /* A/B usa o mesmo binario: ambas as respostas devem mudar juntas. */
+    CHECK(Bc250McdmSetWddmContractVersion(DXGKDDI_WDDMv2) ==
+        STATUS_SUCCESS);
+    memset(&driverCaps, 0, sizeof(driverCaps));
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) ==
+        STATUS_SUCCESS);
+    CHECK(driverCaps.WDDMVersion == DXGKDDI_WDDMv2);
+    {
+        DXGK_WDDMDEVICECAPS deviceCaps;
+        memset(&deviceCaps, 0, sizeof(deviceCaps));
+        g_queryInfo.Type = DXGKQAITYPE_WDDMDEVICECAPS;
+        g_queryInfo.pOutputData = &deviceCaps;
+        g_queryInfo.OutputDataSize = sizeof(deviceCaps);
+        CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) ==
+            STATUS_SUCCESS);
+        CHECK(deviceCaps.WDDMVersion == DXGKDDI_WDDMv2);
+    }
+    CHECK(Bc250McdmSetWddmContractVersion(DXGKDDI_WDDMv2_7) ==
+        STATUS_SUCCESS);
 
     memset(&physCaps, 0, sizeof(physCaps));
     memset(&g_queryInfo, 0, sizeof(g_queryInfo));
@@ -237,6 +339,22 @@ static int Bc250RunMcdmCallbacksTest(void)
         CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
             STATUS_NOT_SUPPORTED);
         CHECK(g_pageTable[3] == 0x1122334455667788ull);
+
+        /* Diretórios não-leaf também passam pelo handler transacional ativo. */
+        g_pagingEntries[0].Segment = 1u;
+        g_paging.UpdatePageTable.PageTableLevel = 2u;
+        g_updateHandlerCalls = 0u;
+        Bc250McdmInstallUpdatePageTableHandler(
+            Bc250TestUpdatePageTableHandler);
+        CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
+            STATUS_SUCCESS);
+        CHECK(g_updateHandlerCalls == 1u);
+        CHECK(g_updateHandlerLastLevel == 2u);
+        Bc250McdmInstallUpdatePageTableHandler(NULL);
+
+        memset(&g_paging, 0, sizeof(g_paging));
+        g_paging.Operation = DXGK_OPERATION_FLUSH_TLB;
+        CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) == STATUS_NOT_SUPPORTED);
     }
 
     /* 3. MCDM requires QUERYSEGMENT4 and prohibits legacy segment queries. */
@@ -299,13 +417,14 @@ static int Bc250RunMcdmCallbacksTest(void)
     /* 6. Test QueryEngineStatus */
     memset(&g_engineStatus, 0, sizeof(g_engineStatus));
     g_engineStatus.NodeOrdinal = 0u;
-    CHECK(Bc250McdmQueryEngineStatus((HANDLE)0x250, &g_engineStatus) == STATUS_NOT_SUPPORTED);
-    CHECK(g_engineStatus.EngineStatus.Responsive == 0);
+    CHECK(Bc250McdmQueryEngineStatus((HANDLE)0x250, &g_engineStatus) == STATUS_SUCCESS);
+    CHECK(g_engineStatus.EngineStatus.Responsive == 1);
 
     /* 7. Test ResetEngine */
     memset(&g_resetEngine, 0, sizeof(g_resetEngine));
     g_resetEngine.NodeOrdinal = 0u;
     CHECK(Bc250McdmResetEngine((HANDLE)0x250, &g_resetEngine) == STATUS_NOT_SUPPORTED);
+    CHECK(g_resetEngine.LastAbortedFenceId == 0u);
 
     memset(&g_resetEngine, 0, sizeof(g_resetEngine));
     g_resetEngine.NodeOrdinal = 1u;
@@ -326,10 +445,10 @@ static int Bc250RunMcdmCallbacksTest(void)
         memset(&preemptCmd, 0, sizeof(preemptCmd));
         preemptCmd.NodeOrdinal = 0u;
         preemptCmd.PreemptionFenceId = 777u;
-        CHECK(Bc250McdmPreemptCommand((HANDLE)0x250, &preemptCmd) == STATUS_NOT_SUPPORTED);
+        CHECK(Bc250McdmPreemptCommand((HANDLE)0x250, &preemptCmd) == STATUS_SUCCESS);
 
         preemptCmd.NodeOrdinal = 1u;
-        CHECK(Bc250McdmPreemptCommand((HANDLE)0x250, &preemptCmd) == STATUS_NOT_SUPPORTED);
+        CHECK(Bc250McdmPreemptCommand((HANDLE)0x250, &preemptCmd) == STATUS_SUCCESS);
 
         preemptCmd.NodeOrdinal = 2u;
         CHECK(Bc250McdmPreemptCommand((HANDLE)0x250, &preemptCmd) == STATUS_INVALID_PARAMETER);
@@ -391,12 +510,59 @@ static int Bc250RunMcdmCallbacksTest(void)
     g_fullMcdmReady = 1u;
     CHECK(Bc250McdmSubmitCommandVirtual((HANDLE)0x250, &g_submitVirtual) == STATUS_INVALID_PARAMETER);
     g_submitVirtual.DmaBufferVirtualAddress = 0xF400001000ull;
-    CHECK(Bc250McdmSubmitCommandVirtual((HANDLE)0x250, &g_submitVirtual) == STATUS_SUCCESS);
+    CHECK(Bc250McdmSubmitCommandVirtual((HANDLE)0x250, &g_submitVirtual) == STATUS_NOT_SUPPORTED);
+    g_submitVirtual.DmaBufferSize = 66u;
+    CHECK(Bc250McdmSubmitCommandVirtual((HANDLE)0x250, &g_submitVirtual) == STATUS_INVALID_PARAMETER);
+    g_submitVirtual.DmaBufferSize = 64u;
     g_submitVirtual.NodeOrdinal = 1u;
-    CHECK(Bc250McdmSubmitCommandVirtual((HANDLE)0x250, &g_submitVirtual) == STATUS_SUCCESS);
+    CHECK(Bc250McdmSubmitCommandVirtual((HANDLE)0x250, &g_submitVirtual) == STATUS_NOT_SUPPORTED);
     g_submitVirtual.NodeOrdinal = BC250_ADAPTER_NODE_COUNT;
     CHECK(Bc250McdmSubmitCommandVirtual((HANDLE)0x250, &g_submitVirtual) == STATUS_INVALID_PARAMETER);
     CHECK(Bc250McdmSubmitCommandVirtual((HANDLE)0x250, NULL) == STATUS_INVALID_PARAMETER);
+
+    /* 14. Test Custom Submission Executor Installation */
+    Bc250McdmInstallSubmissionExecutor(Bc250TestSubmitExecutor);
+    g_submissionExecutionCount = 0u;
+    g_submitVirtual.NodeOrdinal = 1u;
+    CHECK(Bc250McdmSubmitCommandVirtual((HANDLE)0x250, &g_submitVirtual) == STATUS_SUCCESS);
+    CHECK(g_submissionExecutionCount == 1u);
+    Bc250McdmInstallSubmissionExecutor(NULL);
+
+    /* 15. Test Interrupt & DPC Lifecycle Installation */
+    CHECK(Bc250McdmInterruptRoutine((PVOID)0x250, 0u) == FALSE);
+    Bc250McdmDpcRoutine((PVOID)0x250);
+    CHECK(g_interruptExecutionCount == 0u);
+    CHECK(g_dpcExecutionCount == 0u);
+
+    Bc250McdmInstallInterruptLifecycle(Bc250TestInterruptHandler, Bc250TestDpcHandler);
+    CHECK(Bc250McdmInterruptRoutine((PVOID)0x250, 0u) == TRUE);
+    CHECK(g_interruptExecutionCount == 1u);
+    Bc250McdmDpcRoutine((PVOID)0x250);
+    CHECK(g_dpcExecutionCount == 1u);
+
+    Bc250McdmInstallInterruptLifecycle(NULL, NULL);
+    CHECK(Bc250McdmInterruptRoutine((PVOID)0x250, 0u) == FALSE);
+
+    /* 16. Test Scheduler & Preemption Callbacks when FullMcdmReady */
+    {
+        static DXGKARG_PREEMPTCOMMAND preemptActive;
+        memset(&preemptActive, 0, sizeof(preemptActive));
+        preemptActive.NodeOrdinal = 0u;
+        CHECK(Bc250McdmPreemptCommand((HANDLE)0x250, &preemptActive) == STATUS_SUCCESS);
+        preemptActive.NodeOrdinal = 1u;
+        CHECK(Bc250McdmPreemptCommand((HANDLE)0x250, &preemptActive) == STATUS_SUCCESS);
+
+        memset(&g_engineStatus, 0, sizeof(g_engineStatus));
+        g_engineStatus.NodeOrdinal = 0u;
+        CHECK(Bc250McdmQueryEngineStatus((HANDLE)0x250, &g_engineStatus) == STATUS_SUCCESS);
+        CHECK(g_engineStatus.EngineStatus.Responsive == 1);
+
+        memset(&g_resetEngine, 0, sizeof(g_resetEngine));
+        g_resetEngine.NodeOrdinal = 1u;
+        CHECK(Bc250McdmResetEngine((HANDLE)0x250, &g_resetEngine) == STATUS_NOT_SUPPORTED);
+        CHECK(g_resetEngine.LastAbortedFenceId == 0u);
+    }
+
     g_fullMcdmReady = 0u;
 
     return 1;

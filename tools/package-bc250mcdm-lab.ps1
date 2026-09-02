@@ -9,12 +9,22 @@
 #>
 [CmdletBinding()]
 param(
-    [switch]$EnableShaderDispatch
+    [switch]$EnableShaderDispatch,
+    # Fase P1: sobe a fila de computacao persistente e liga o
+    # DxgkDdiSubmitCommandVirtual real. Desligado por padrao.
+    [switch]$EnablePersistentSubmission,
+    [switch]$EnablePhysicalRenderOnly
 )
 
 $ErrorActionPreference = 'Stop'
+if ($EnablePhysicalRenderOnly -and
+    (-not $EnableShaderDispatch -or -not $EnablePersistentSubmission)) {
+    throw ('PHYSICAL_RENDER_ONLY exige -EnableShaderDispatch e ' +
+           '-EnablePersistentSubmission; sem P1/P2 fisicos o runtime nao pode ser promovido.')
+}
 $root = Split-Path -Parent $PSScriptRoot
 $sourceSys = Join-Path $root 'driver\wdk\output_lab\bc250mcdm.sys'
+$sourcePdb = Join-Path $root 'driver\wdk\output_lab\bc250mcdm.pdb'
 $sourceInf = Join-Path $root 'driver\wdk\package\bc250mcdm.inf'
 $sourceSdmaFirmware = Join-Path $root 'firmware\cyan_skillfish2_sdma.bin'
 $sourceRlcFirmware = Join-Path $root 'firmware\cyan_skillfish2_rlc.bin'
@@ -103,6 +113,7 @@ if ($staleSources.Count -ne 0) {
 
 New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
 $packageSys = Join-Path $packageDir 'bc250mcdm.sys'
+$packagePdb = Join-Path $packageDir 'bc250mcdm.pdb'
 $packageInf = Join-Path $packageDir 'bc250mcdm.inf'
 $packageCat = Join-Path $packageDir 'bc250mcdm.cat'
 $packageSdmaFirmware = Join-Path $packageDir 'cyan_skillfish2_sdma.bin'
@@ -114,14 +125,24 @@ $packageMecFirmware = Join-Path $packageDir 'cyan_skillfish2_mec.bin'
 
 Remove-Item -LiteralPath $packageCat -Force -ErrorAction SilentlyContinue
 Copy-Item -LiteralPath $sourceSys -Destination $packageSys -Force
+if (Test-Path -LiteralPath $sourcePdb) {
+    Copy-Item -LiteralPath $sourcePdb -Destination $packagePdb -Force
+}
 
 # No INF de laboratorio, colocamos DriverVer mais novo e os gates explicitos.
+#
+# O schema vive numa unica variavel usada TANTO pela reescrita QUANTO pela
+# assercao logo abaixo. Ate o 3.74 eram dois literais independentes, e bastou
+# atualizar um deles para o empacotamento quebrar com "nao materializou
+# exatamente uma vez" — uma mensagem que descreve o sintoma, nao a causa.
+$labSchemaVersion = 133
+
 $infContent = Get-Content -LiteralPath $sourceInf
 $infContent = $infContent | ForEach-Object {
     if ($_ -match '^DriverVer=') {
-        'DriverVer=08/30/2026,3.43.0.0'
-    } elseif ($_ -match 'HKR,Parameters\\Probe,SchemaVersion,0x00010001,98') {
-        'HKR,Parameters\Probe,SchemaVersion,0x00010001,114'
+        'DriverVer=09/01/2026,3.79.0.0'
+    } elseif ($_ -match '^HKR,Parameters\\Probe,SchemaVersion,0x00010001,\d+$') {
+        'HKR,Parameters\Probe,SchemaVersion,0x00010001,{0}' -f $labSchemaVersion
     } elseif ($_ -match 'HKR,Parameters,SkipHwBringup,0x00010001,1') {
         'HKR,Parameters,SkipHwBringup,0x00010001,0'
     } elseif ($_ -match 'HKR,Parameters,ShaderDispatch,0x00010001,0') {
@@ -132,6 +153,17 @@ $infContent = $infContent | ForEach-Object {
             ($(if ($EnableShaderDispatch) { 1 } else { 0 }))
     } elseif ($_ -match 'HKR,Parameters,Vmid0PageTable,0x00010001,0') {
         'HKR,Parameters,Vmid0PageTable,0x00010001,0'
+    } elseif ($_ -match 'HKR,Parameters,PersistentSubmission,0x00010001,0') {
+        'HKR,Parameters,PersistentSubmission,0x00010001,{0}' -f
+            ($(if ($EnablePersistentSubmission) { 1 } else { 0 }))
+    } elseif ($_ -match 'HKR,Parameters,WddmContractVersion,0x00010001,\d+') {
+        'HKR,Parameters,WddmContractVersion,0x00010001,27'
+    } elseif ($_ -match 'HKR,Parameters,RenderNode,0x00010001,\d+') {
+        'HKR,Parameters,RenderNode,0x00010001,{0}' -f
+            ($(if ($EnablePhysicalRenderOnly) { 1 } else { 0 }))
+    } elseif ($_ -match 'HKR,Parameters,RenderOnlyLab,0x00010001,\d+') {
+        'HKR,Parameters,RenderOnlyLab,0x00010001,{0}' -f
+            ($(if ($EnablePhysicalRenderOnly) { 1 } else { 0 }))
     } elseif ($_ -match 'HKR,Parameters,SdmaAutoCtxSw,0x00010001,1') {
         'HKR,Parameters,SdmaAutoCtxSw,0x00010001,{0}' -f
             ($(if ($EnableShaderDispatch) { 0 } else { 1 }))
@@ -142,12 +174,17 @@ $infContent = $infContent | ForEach-Object {
 $infContent | Set-Content -LiteralPath $packageInf -Encoding ascii
 
 $expectedInfValues = [ordered]@{
-    'Parameters\Probe,SchemaVersion' = 114
+    'Parameters\Probe,SchemaVersion' = $labSchemaVersion
+    'Parameters,WddmContractVersion' = 27
     'Parameters\Driver,ActiveMode' = 1
+    'Parameters,RenderNode' = $(if ($EnablePhysicalRenderOnly) { 1 } else { 0 })
+    'Parameters,RenderOnlyLab' = $(if ($EnablePhysicalRenderOnly) { 1 } else { 0 })
     'Parameters,SkipHwBringup' = 0
     'Parameters,ShaderDispatch' = $(if ($EnableShaderDispatch) { 1 } else { 0 })
     'Parameters,CpSoftReset' = $(if ($EnableShaderDispatch) { 1 } else { 0 })
     'Parameters,Vmid0PageTable' = 0
+    'Parameters,PersistentSubmission' = $(if ($EnablePersistentSubmission) { 1 } else { 0 })
+    'Parameters,GpuvaLabPromotion' = 0
     'Parameters,SdmaAutoCtxSw' = $(if ($EnableShaderDispatch) { 0 } else { 1 })
 }
 $renderedInf = Get-Content -LiteralPath $packageInf -Raw
@@ -191,15 +228,23 @@ $driverVersionLine = Get-Content -LiteralPath $packageInf |
 $manifest = [ordered]@{
     SchemaVersion = 1
     BuildKind = 'MCDM_LAB_BRINGUP'
+    # Declarado explicitamente para que o fluxo seguro possa recusar este
+    # pacote por um campo, e nao por convencao de nome de diretorio.
+    UnsafeStartDeviceBringup = $true
     BuiltAtUtc = [DateTime]::UtcNow.ToString('o')
     DriverVer = $driverVersionLine -replace '^DriverVer=', ''
     HardwareValidated = $false
-    TelemetrySchemaVersion = 114
+    TelemetrySchemaVersion = $labSchemaVersion
+    RenderNode = $(if ($EnablePhysicalRenderOnly) { 1 } else { 0 })
+    RenderOnlyLab = $(if ($EnablePhysicalRenderOnly) { 1 } else { 0 })
+    ProfileMode = $(if ($EnablePhysicalRenderOnly) { 'PHYSICAL_RENDER_ONLY' } else { 'DISPLAY_LAB' })
     SkipHwBringup = 0
     ShaderDispatchEnabled = [bool]$EnableShaderDispatch
     CpSoftResetEnabled = [bool]$EnableShaderDispatch
     Vmid0PageTableEnabled = $false
     SdmaAutoCtxSwEnabled = -not [bool]$EnableShaderDispatch
+    PersistentSubmissionEnabled = [bool]$EnablePersistentSubmission
+    GpuvaLabPromotionEnabled = $false
     SourceSysSha256 = (Get-FileHash -LiteralPath $sourceSys -Algorithm SHA256).Hash
     PackageSysSha256 = (Get-FileHash -LiteralPath $packageSys -Algorithm SHA256).Hash
     PackageInfSha256 = (Get-FileHash -LiteralPath $packageInf -Algorithm SHA256).Hash

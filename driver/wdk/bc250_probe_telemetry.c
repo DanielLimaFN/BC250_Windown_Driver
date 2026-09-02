@@ -305,6 +305,14 @@ static PCWSTR Bc250ProbeFieldName(BC250_PROBE_FIELD Field)
     case BC250_PROBE_RLC_ALREADY_ACTIVE: return L"RlcAlreadyActive";
     case BC250_PROBE_RLC_PHYSICAL_READY: return L"RlcPhysicalReady";
     case BC250_PROBE_PFP_DIRECT_STATUS: return L"PfpDirectStatus";
+    case BC250_PROBE_PFP_SCHEDULER_BEFORE:
+        return L"PfpSchedulerBefore";
+    case BC250_PROBE_PFP_SCHEDULER_BEFORE_READ_PASSED:
+        return L"PfpSchedulerBeforeReadPassed";
+    case BC250_PROBE_PFP_SCHEDULER_AFTER:
+        return L"PfpSchedulerAfter";
+    case BC250_PROBE_PFP_SCHEDULER_AFTER_READ_PASSED:
+        return L"PfpSchedulerAfterReadPassed";
     case BC250_PROBE_PFP_DIRECT_MC_LOW: return L"PfpDirectMcLow";
     case BC250_PROBE_PFP_DIRECT_MC_HIGH: return L"PfpDirectMcHigh";
     case BC250_PROBE_PFP_DIRECT_BYTES: return L"PfpDirectBytes";
@@ -955,6 +963,486 @@ static PCWSTR Bc250ProbeFieldName(BC250_PROBE_FIELD Field)
         return L"ShaderTriadPassed";
     case BC250_PROBE_SHADER_PHYSICAL_READY:
         return L"ShaderPhysicalReady";
+    case BC250_PROBE_P1_ENGINE_STATE:
+        return L"P1EngineState";
+    case BC250_PROBE_P1_ACTIVATE_STATUS:
+        return L"P1ActivateStatus";
+    case BC250_PROBE_P1_TEARDOWN_STATUS:
+        return L"P1TeardownStatus";
+    case BC250_PROBE_P1_SUBMIT_CALLS:
+        return L"P1SubmitCalls";
+    case BC250_PROBE_P1_SUBMIT_ACCEPTED:
+        return L"P1SubmitAccepted";
+    case BC250_PROBE_P1_SUBMIT_REJECTED_NODE:
+        return L"P1SubmitRejectedNode";
+    case BC250_PROBE_P1_SUBMIT_REJECTED_PLAN:
+        return L"P1SubmitRejectedPlan";
+    case BC250_PROBE_P1_SUBMIT_REJECTED_EMIT:
+        return L"P1SubmitRejectedEmit";
+    case BC250_PROBE_P1_RING_FULL_COUNT:
+        return L"P1RingFullCount";
+    case BC250_PROBE_P1_FENCE_REGRESSION_COUNT:
+        return L"P1FenceRegressionCount";
+    case BC250_PROBE_P1_DOORBELL_KICKS:
+        return L"P1DoorbellKicks";
+    case BC250_PROBE_P1_DIRECT_WPTR_WRITES:
+        return L"P1DirectWptrWrites";
+    case BC250_PROBE_P1_POLL_CALLS:
+        return L"P1PollCalls";
+    case BC250_PROBE_P1_RETIRED_TOTAL:
+        return L"P1RetiredTotal";
+    case BC250_PROBE_P1_LAST_PLAN_PAD_DWORDS:
+        return L"P1LastPlanPadDwords";
+    case BC250_PROBE_P1_LAST_WPTR_PUBLISHED:
+        return L"P1LastWptrPublished";
+    case BC250_PROBE_P1_LAST_WPTR_SHADOW_READBACK:
+        return L"P1LastWptrShadowReadback";
+    case BC250_PROBE_P1_LAST_WPTR_MMIO_READBACK:
+        return L"P1LastWptrMmioReadback";
+    case BC250_PROBE_P1_LAST_RPTR_MMIO:
+        return L"P1LastRptrMmio";
+    case BC250_PROBE_P1_LAST_RPTR_REPORT_MEM:
+        return L"P1LastRptrReportMem";
+    case BC250_PROBE_P1_LAST_FENCE_OBSERVED:
+        return L"P1LastFenceObserved";
+    case BC250_PROBE_P1_LAST_SUBMIT_STATUS:
+        return L"P1LastSubmitStatus";
+    case BC250_PROBE_P1_LAST_SUBMITTED_FENCE:
+        return L"P1LastSubmittedFence";
+    case BC250_PROBE_P1_LAST_RETIRED_FENCE:
+        return L"P1LastRetiredFence";
+    case BC250_PROBE_P1_COHER_HDP_APPLIED:
+        return L"P1CoherHdpApplied";
+    case BC250_PROBE_P1_COHER_L2_READBACK:
+        return L"P1CoherL2Readback";
+    case BC250_PROBE_P1_COHER_INVALIDATE_ACK:
+        return L"P1CoherInvalidateAck";
+    case BC250_PROBE_P1_COHER_INVALIDATE_POLLS:
+        return L"P1CoherInvalidatePolls";
+    case BC250_PROBE_P1_COHERENCY_PASSED:
+        return L"P1CoherencyPassed";
+    case BC250_PROBE_P1_RING_WPTR:
+        return L"P1RingWptr";
+    case BC250_PROBE_P1_RING_RPTR_SHADOW:
+        return L"P1RingRptrShadow";
+    case BC250_PROBE_P1_RING_WRAP_COUNT:
+        return L"P1RingWrapCount";
+    case BC250_PROBE_P1_RING_PAD_DWORDS_TOTAL:
+        return L"P1RingPadDwordsTotal";
+    case BC250_PROBE_P1_SELFTEST_ATTEMPTED:
+        return L"P1SelfTestAttempted";
+    case BC250_PROBE_P1_SELFTEST_PLAN_STATUS:
+        return L"P1SelfTestPlanStatus";
+    case BC250_PROBE_P1_SELFTEST_SUBMIT_STATUS:
+        return L"P1SelfTestSubmitStatus";
+    case BC250_PROBE_P1_SELFTEST_IB_DWORDS:
+        return L"P1SelfTestIbDwords";
+    case BC250_PROBE_P1_SELFTEST_IB_GPUVA_LOW:
+        return L"P1SelfTestIbGpuVaLow";
+    case BC250_PROBE_P1_SELFTEST_ASSIGNED_FENCE:
+        return L"P1SelfTestAssignedFence";
+    case BC250_PROBE_P1_SELFTEST_RING_WPTR_AFTER:
+        return L"P1SelfTestRingWptrAfter";
+    case BC250_PROBE_P1_SELFTEST_RPTR_MMIO_AFTER:
+        return L"P1SelfTestRptrMmioAfter";
+    case BC250_PROBE_P1_SELFTEST_RPTR_REPORT_AFTER:
+        return L"P1SelfTestRptrReportAfter";
+    case BC250_PROBE_P1_SELFTEST_DISPATCH_FENCE_BEFORE:
+        return L"P1SelfTestDispatchFenceBefore";
+    case BC250_PROBE_P1_SELFTEST_DISPATCH_FENCE_AFTER:
+        return L"P1SelfTestDispatchFenceAfter";
+    case BC250_PROBE_P1_SELFTEST_RESULT_BEFORE:
+        return L"P1SelfTestResultBefore";
+    case BC250_PROBE_P1_SELFTEST_RESULT_AFTER:
+        return L"P1SelfTestResultAfter";
+    case BC250_PROBE_P1_SELFTEST_RESULT_MISMATCHES:
+        return L"P1SelfTestResultMismatches";
+    case BC250_PROBE_P1_SELFTEST_RING_FENCE_OBSERVED:
+        return L"P1SelfTestRingFenceObserved";
+    case BC250_PROBE_P1_SELFTEST_RETIRED_COUNT:
+        return L"P1SelfTestRetiredCount";
+    case BC250_PROBE_P1_SELFTEST_POLLS:
+        return L"P1SelfTestPolls";
+    case BC250_PROBE_P1_SELFTEST_SHADER_STAGED:
+        return L"P1SelfTestShaderStaged";
+    case BC250_PROBE_P1_SELFTEST_IB_READBACK:
+        return L"P1SelfTestIbReadback";
+    case BC250_PROBE_P1_SELFTEST_TRIAD_PASSED:
+        return L"P1SelfTestTriadPassed";
+    case BC250_PROBE_P1_SELFTEST_PHYSICAL_READY:
+        return L"P1SelfTestPhysicalReady";
+    case BC250_PROBE_P1_FENCE_BASELINE_WRITTEN:
+        return L"P1FenceBaselineWritten";
+    case BC250_PROBE_P1_FENCE_BASELINE_READBACK:
+        return L"P1FenceBaselineReadback";
+    case BC250_PROBE_P1_SNAP_ACT_ACTIVE:
+        return L"P1SnapActActive";
+    case BC250_PROBE_P1_SNAP_ACT_HQSTATUS0:
+        return L"P1SnapActHqStatus0";
+    case BC250_PROBE_P1_SNAP_ACT_PQCONTROL:
+        return L"P1SnapActPqControl";
+    case BC250_PROBE_P1_SNAP_ACT_DOORBELLCONTROL:
+        return L"P1SnapActDoorbellControl";
+    case BC250_PROBE_P1_SNAP_ACT_CPPQSTATUS:
+        return L"P1SnapActCpPqStatus";
+    case BC250_PROBE_P1_SNAP_ACT_CPCSTATUS:
+        return L"P1SnapActCpcStatus";
+    case BC250_PROBE_P1_SNAP_ACT_HQDERROR:
+        return L"P1SnapActHqdError";
+    case BC250_PROBE_P1_SNAP_ACT_PQWPTRLO:
+        return L"P1SnapActPqWptrLo";
+    case BC250_PROBE_P1_SNAP_ACT_PQRPTR:
+        return L"P1SnapActPqRptr";
+    case BC250_PROBE_P1_SNAP_ACT_MECME2HEADERDUMP:
+        return L"P1SnapActMecMe2";
+    case BC250_PROBE_P1_SNAP_SUB_ACTIVE:
+        return L"P1SnapSubActive";
+    case BC250_PROBE_P1_SNAP_SUB_HQSTATUS0:
+        return L"P1SnapSubHqStatus0";
+    case BC250_PROBE_P1_SNAP_SUB_PQCONTROL:
+        return L"P1SnapSubPqControl";
+    case BC250_PROBE_P1_SNAP_SUB_DOORBELLCONTROL:
+        return L"P1SnapSubDoorbellControl";
+    case BC250_PROBE_P1_SNAP_SUB_CPPQSTATUS:
+        return L"P1SnapSubCpPqStatus";
+    case BC250_PROBE_P1_SNAP_SUB_CPCSTATUS:
+        return L"P1SnapSubCpcStatus";
+    case BC250_PROBE_P1_SNAP_SUB_HQDERROR:
+        return L"P1SnapSubHqdError";
+    case BC250_PROBE_P1_SNAP_SUB_PQWPTRLO:
+        return L"P1SnapSubPqWptrLo";
+    case BC250_PROBE_P1_SNAP_SUB_PQRPTR:
+        return L"P1SnapSubPqRptr";
+    case BC250_PROBE_P1_SNAP_SUB_MECME2HEADERDUMP:
+        return L"P1SnapSubMecMe2";
+    case BC250_PROBE_P1_SNAP_RE_ACTIVE:
+        return L"P1SnapReActive";
+    case BC250_PROBE_P1_SNAP_RE_HQSTATUS0:
+        return L"P1SnapReHqStatus0";
+    case BC250_PROBE_P1_SNAP_RE_PQCONTROL:
+        return L"P1SnapRePqControl";
+    case BC250_PROBE_P1_SNAP_RE_DOORBELLCONTROL:
+        return L"P1SnapReDoorbellControl";
+    case BC250_PROBE_P1_SNAP_RE_CPPQSTATUS:
+        return L"P1SnapReCpPqStatus";
+    case BC250_PROBE_P1_SNAP_RE_CPCSTATUS:
+        return L"P1SnapReCpcStatus";
+    case BC250_PROBE_P1_SNAP_RE_HQDERROR:
+        return L"P1SnapReHqdError";
+    case BC250_PROBE_P1_SNAP_RE_PQWPTRLO:
+        return L"P1SnapRePqWptrLo";
+    case BC250_PROBE_P1_SNAP_RE_PQRPTR:
+        return L"P1SnapRePqRptr";
+    case BC250_PROBE_P1_SNAP_RE_MECME2HEADERDUMP:
+        return L"P1SnapReMecMe2";
+    case BC250_PROBE_P1_REARM_ATTEMPTED:
+        return L"P1RearmAttempted";
+    case BC250_PROBE_P1_REARM_ACTIVE_BEFORE:
+        return L"P1RearmActiveBefore";
+    case BC250_PROBE_P1_REARM_DEACTIVATE_POLLS:
+        return L"P1RearmDeactivatePolls";
+    case BC250_PROBE_P1_REARM_ACTIVE_AFTER_OFF:
+        return L"P1RearmActiveAfterOff";
+    case BC250_PROBE_P1_REARM_ACTIVE_AFTER_ON:
+        return L"P1RearmActiveAfterOn";
+    case BC250_PROBE_P1_REARM_POLLS:
+        return L"P1RearmPolls";
+    case BC250_PROBE_P1_REARM_RPTR_MMIO:
+        return L"P1RearmRptrMmio";
+    case BC250_PROBE_P1_REARM_RPTR_REPORT:
+        return L"P1RearmRptrReport";
+    case BC250_PROBE_P1_REARM_DISPATCH_FENCE:
+        return L"P1RearmDispatchFence";
+    case BC250_PROBE_P1_REARM_RESULT:
+        return L"P1RearmResult";
+    case BC250_PROBE_P1_REARM_RING_FENCE:
+        return L"P1RearmRingFence";
+    case BC250_PROBE_P1_REARM_COMPLETED:
+        return L"P1RearmCompleted";
+    case BC250_PROBE_P1_SNAP_ACT_CP_MEC_CNTL:
+        return L"P1SnapActCpMecCntl";
+    case BC250_PROBE_P1_SNAP_ACT_CP_ME_CNTL:
+        return L"P1SnapActCpMeCntl";
+    case BC250_PROBE_P1_SNAP_ACT_RLC_SCHEDULERS:
+        return L"P1SnapActRlcSchedulers";
+    case BC250_PROBE_P1_SNAP_ACT_WPTR_POLL_CNTL:
+        return L"P1SnapActWptrPollCntl";
+    case BC250_PROBE_P1_SNAP_ACT_WPTR_POLL_CNTL1:
+        return L"P1SnapActWptrPollCntl1";
+    case BC250_PROBE_P1_SNAP_SUB_CP_MEC_CNTL:
+        return L"P1SnapSubCpMecCntl";
+    case BC250_PROBE_P1_SNAP_SUB_CP_ME_CNTL:
+        return L"P1SnapSubCpMeCntl";
+    case BC250_PROBE_P1_SNAP_SUB_RLC_SCHEDULERS:
+        return L"P1SnapSubRlcSchedulers";
+    case BC250_PROBE_P1_SNAP_SUB_WPTR_POLL_CNTL:
+        return L"P1SnapSubWptrPollCntl";
+    case BC250_PROBE_P1_SNAP_SUB_WPTR_POLL_CNTL1:
+        return L"P1SnapSubWptrPollCntl1";
+    case BC250_PROBE_P1_SNAP_RE_CP_MEC_CNTL:
+        return L"P1SnapReCpMecCntl";
+    case BC250_PROBE_P1_SNAP_RE_CP_ME_CNTL:
+        return L"P1SnapReCpMeCntl";
+    case BC250_PROBE_P1_SNAP_RE_RLC_SCHEDULERS:
+        return L"P1SnapReRlcSchedulers";
+    case BC250_PROBE_P1_SNAP_RE_WPTR_POLL_CNTL:
+        return L"P1SnapReWptrPollCntl";
+    case BC250_PROBE_P1_SNAP_RE_WPTR_POLL_CNTL1:
+        return L"P1SnapReWptrPollCntl1";
+    case BC250_PROBE_P1_REARM_QUEUE_MASK_APPLIED:
+        return L"P1RearmQueueMaskApplied";
+    case BC250_PROBE_P1_REARM_QUEUE_MASK_READBACK:
+        return L"P1RearmQueueMaskReadback";
+    case BC250_PROBE_P1_REARM_QUEUE_MASK_PASSED:
+        return L"P1RearmQueueMaskPassed";
+    case BC250_PROBE_P1_RING_DWORD_0:
+        return L"P1RingDword0";
+    case BC250_PROBE_P1_RING_DWORD_1:
+        return L"P1RingDword1";
+    case BC250_PROBE_P1_RING_DWORD_2:
+        return L"P1RingDword2";
+    case BC250_PROBE_P1_RING_DWORD_3:
+        return L"P1RingDword3";
+    case BC250_PROBE_P1_RING_DWORD_4:
+        return L"P1RingDword4";
+    case BC250_PROBE_P1_RING_DWORD_5:
+        return L"P1RingDword5";
+    case BC250_PROBE_P1_RING_DWORD_6:
+        return L"P1RingDword6";
+    case BC250_PROBE_P1_RING_DWORD_7:
+        return L"P1RingDword7";
+    case BC250_PROBE_P1_RING_DWORD_8:
+        return L"P1RingDword8";
+    case BC250_PROBE_P1_RING_DWORD_9:
+        return L"P1RingDword9";
+    case BC250_PROBE_P1_RING_DWORD_10:
+        return L"P1RingDword10";
+    case BC250_PROBE_P1_RING_DWORD_11:
+        return L"P1RingDword11";
+    case BC250_PROBE_P1_RING_DWORDS_MISMATCH:
+        return L"P1RingDwordsMismatch";
+    case BC250_PROBE_P1_HQD_PQ_BASE_LO:
+        return L"P1HqdPqBaseLo";
+    case BC250_PROBE_P1_HQD_PQ_BASE_HI:
+        return L"P1HqdPqBaseHi";
+    case BC250_PROBE_P1_HQD_RPTR_REPORT_ADDR_LO:
+        return L"P1HqdRptrReportAddrLo";
+    case BC250_PROBE_P1_HQD_RPTR_REPORT_ADDR_HI:
+        return L"P1HqdRptrReportAddrHi";
+    case BC250_PROBE_P1_HQD_WPTR_POLL_ADDR_LO:
+        return L"P1HqdWptrPollAddrLo";
+    case BC250_PROBE_P1_HQD_WPTR_POLL_ADDR_HI:
+        return L"P1HqdWptrPollAddrHi";
+    case BC250_PROBE_P1_HQD_VMID:
+        return L"P1HqdVmid";
+    case BC250_PROBE_P1_HQD_MQD_CONTROL:
+        return L"P1HqdMqdControl";
+    case BC250_PROBE_P1_HQD_IB_CONTROL:
+        return L"P1HqdIbControl";
+    case BC250_PROBE_P1_POST_CPC_STATUS:
+        return L"P1PostCpcStatus";
+    case BC250_PROBE_P1_POST_CPC_BUSY_STAT:
+        return L"P1PostCpcBusyStat";
+    case BC250_PROBE_P1_POST_CPC_STALLED_STAT1:
+        return L"P1PostCpcStalledStat1";
+    case BC250_PROBE_P1_POST_CPF_STATUS:
+        return L"P1PostCpfStatus";
+    case BC250_PROBE_P1_POST_CPF_BUSY_STAT:
+        return L"P1PostCpfBusyStat";
+    case BC250_PROBE_P1_POST_CPF_STALLED_STAT1:
+        return L"P1PostCpfStalledStat1";
+    case BC250_PROBE_P1_POST_CP_STAT:
+        return L"P1PostCpStat";
+    case BC250_PROBE_P1_POST_CP_STALLED_STAT1:
+        return L"P1PostCpStalledStat1";
+    case BC250_PROBE_P1_POST_MEC_PC:
+        return L"P1PostMecPc";
+    case BC250_PROBE_P2_STREAM_ATTEMPTED:
+        return L"P2StreamAttempted";
+    case BC250_PROBE_P2_BATCH_COUNT:
+        return L"P2BatchCount";
+    case BC250_PROBE_P2_SUBMISSIONS_ACCEPTED:
+        return L"P2SubmissionsAccepted";
+    case BC250_PROBE_P2_SUBMISSIONS_RETIRED:
+        return L"P2SubmissionsRetired";
+    case BC250_PROBE_P2_WRAP_COUNT:
+        return L"P2WrapCount";
+    case BC250_PROBE_P2_RESULT_MISMATCHES:
+        return L"P2ResultMismatches";
+    case BC250_PROBE_P2_LAST_FENCE_OBSERVED:
+        return L"P2LastFenceObserved";
+    case BC250_PROBE_P2_FINAL_WPTR:
+        return L"P2FinalWptr";
+    case BC250_PROBE_P2_FINAL_RPTR_MMIO:
+        return L"P2FinalRptrMmio";
+    case BC250_PROBE_P2_FINAL_RPTR_REPORT:
+        return L"P2FinalRptrReport";
+    case BC250_PROBE_P2_TRIAD_PASSED:
+        return L"P2TriadPassed";
+    case BC250_PROBE_P2_PHYSICAL_READY:
+        return L"P2PhysicalReady";
+    case BC250_PROBE_P2_DOORBELL_WRITE_FAILURES:
+        return L"P2DoorbellWriteFailures";
+    case BC250_PROBE_P2_DOORBELL_LAST_VALUE_LOW:
+        return L"P2DoorbellLastValueLow";
+    case BC250_PROBE_P2_DOORBELL_LAST_VALUE_HIGH:
+        return L"P2DoorbellLastValueHigh";
+    case BC250_PROBE_P2_DOORBELL_CONTROL_BEFORE:
+        return L"P2DoorbellControlBefore";
+    case BC250_PROBE_P2_DOORBELL_CONTROL_AFTER:
+        return L"P2DoorbellControlAfter";
+    case BC250_PROBE_P2_DOORBELL_HIT_OBSERVED:
+        return L"P2DoorbellHitObserved";
+
+    /* Fase V2 — retirada de fence para o dxgkrnl. */
+    case BC250_PROBE_V2_RETIREMENT_DPC_RUNS:
+        return L"V2RetirementDpcRuns";
+    case BC250_PROBE_V2_POLL_FAILURES:
+        return L"V2PollFailures";
+    case BC250_PROBE_V2_NOTIFY_BATCHES:
+        return L"V2NotifyBatches";
+    case BC250_PROBE_V2_NOTIFIED_TOTAL:
+        return L"V2NotifiedTotal";
+    case BC250_PROBE_V2_PUSH_FAILURES:
+        return L"V2PushFailures";
+    case BC250_PROBE_V2_BACKPRESSURE:
+        return L"V2Backpressure";
+    case BC250_PROBE_V2_FENCES_IN_FLIGHT:
+        return L"V2FencesInFlight";
+    case BC250_PROBE_V2_TRACKER_PUSHED_TOTAL:
+        return L"V2TrackerPushedTotal";
+    case BC250_PROBE_V2_TRACKER_OVERFLOW:
+        return L"V2TrackerOverflow";
+    case BC250_PROBE_V2_TRACKER_OUT_OF_ORDER:
+        return L"V2TrackerOutOfOrder";
+    case BC250_PROBE_V2_LAST_NOTIFIED_FENCE_ID:
+        return L"V2LastNotifiedFenceId";
+    case BC250_PROBE_V2_INTERRUPTS_SEEN:
+        return L"V2InterruptsSeen";
+
+    /* Fase V5 — modo de registro no dxgkrnl. */
+    case BC250_PROBE_V5_RENDER_NODE_REQUESTED:
+        return L"V5RenderNodeRequested";
+    case BC250_PROBE_V5_RENDER_NODE_TUNABLE_PRESENT:
+        return L"V5RenderNodeTunablePresent";
+    case BC250_PROBE_V5_REGISTRATION_MODE:
+        return L"V5RegistrationMode";
+    case BC250_PROBE_V5_START_DEVICE_STATUS:
+        return L"V5StartDeviceStatus";
+    case BC250_PROBE_V5_START_DEVICE_SOURCES:
+        return L"V5StartDeviceSources";
+    case BC250_PROBE_V5_START_DEVICE_CHILDREN:
+        return L"V5StartDeviceChildren";
+    case BC250_PROBE_V5_QAI_CALLS:
+        return L"V5QaiCalls";
+    case BC250_PROBE_V5_QAI_LAST_TYPE:
+        return L"V5QaiLastType";
+    case BC250_PROBE_V5_QAI_LAST_STATUS:
+        return L"V5QaiLastStatus";
+    case BC250_PROBE_V5_QAI_LAST_UNSUPPORTED_TYPE:
+        return L"V5QaiLastUnsupportedType";
+    case BC250_PROBE_V5_QAI_UNSUPPORTED_COUNT:
+        return L"V5QaiUnsupportedCount";
+    case BC250_PROBE_V5_LAST_DDI:
+        return L"V5LastDdi";
+    case BC250_PROBE_V5_PREV_DDI:
+        return L"V5PrevDdi";
+    case BC250_PROBE_V5_PREV2_DDI:
+        return L"V5Prev2Ddi";
+    case BC250_PROBE_V5_DDI_MARKS:
+        return L"V5DdiMarks";
+    case BC250_PROBE_V5_QI_CALLS:
+        return L"V5QiCalls";
+    case BC250_PROBE_V5_QI_LAST_GUID_D1:
+        return L"V5QiLastGuidD1";
+    case BC250_PROBE_V5_QI_PREV_GUID_D1:
+        return L"V5QiPrevGuidD1";
+    case BC250_PROBE_V5_QI_PREV2_GUID_D1:
+        return L"V5QiPrev2GuidD1";
+    case BC250_PROBE_V5_QI_LAST_VERSION:
+        return L"V5QiLastVersion";
+    case BC250_PROBE_V5_QI_LAST_SIZE:
+        return L"V5QiLastSize";
+    case BC250_PROBE_GPUVA_GATE_ELIGIBLE:
+        return L"GpuvaGateEligible";
+    case BC250_PROBE_GPUVA_GATE_OPERATIONAL:
+        return L"GpuvaGateOperational";
+    case BC250_PROBE_GPUVA_GATE_BLOCK_MASK:
+        return L"GpuvaGateBlockMask";
+    case BC250_PROBE_GPUVA_SNAPSHOT_GENERATION:
+        return L"GpuvaSnapshotGeneration";
+    case BC250_PROBE_GPUVA_SNAPSHOT_EPOCH:
+        return L"GpuvaSnapshotEpoch";
+    case BC250_PROBE_GPUVA_SNAPSHOT_LIVE_COUNT:
+        return L"GpuvaSnapshotLiveCount";
+    case BC250_PROBE_GPUVA_LAB_PROMOTION_REQUESTED:
+        return L"GpuvaLabPromotionRequested";
+    case BC250_PROBE_GPUVA_LAB_PROMOTION_PRESENT:
+        return L"GpuvaLabPromotionPresent";
+    case BC250_PROBE_V5_STOP_FENCE_QUERY_MODE:
+        return L"V5StopFenceQueryMode";
+    case BC250_PROBE_V5_STOP_FENCE_SYNC_STATUS:
+        return L"V5StopFenceSyncStatus";
+    case BC250_PROBE_V5_STOP_FENCE_SYNC_RESULT:
+        return L"V5StopFenceSyncResult";
+    case BC250_PROBE_V5_STOP_FENCE_PENDING_COUNT:
+        return L"V5StopFencePendingCount";
+    case BC250_PROBE_V5_STOP_FENCE_RESERVED_COUNT:
+        return L"V5StopFenceReservedCount";
+
+    /* Schema 130 — quiescencia do teardown. */
+    case BC250_PROBE_V5_STOP_REASON: return L"V5StopReason";
+    case BC250_PROBE_V5_STOP_TIMER_DRAINED: return L"V5StopTimerDrained";
+    case BC250_PROBE_V5_STOP_DPC_DRAINED: return L"V5StopDpcDrained";
+    case BC250_PROBE_V5_STOP_SUBMIT_INFLIGHT:
+        return L"V5StopSubmitInFlight";
+    case BC250_PROBE_V5_STOP_DRAIN_ITERATIONS:
+        return L"V5StopDrainIterations";
+    case BC250_PROBE_V5_STOP_SNAPSHOT_OK: return L"V5StopSnapshotOk";
+    case BC250_PROBE_V5_STOP_LOCK_FAILURES: return L"V5StopLockFailures";
+    case BC250_PROBE_V5_STOP_REJECTED_WHILE_STOPPING:
+        return L"V5StopRejectedWhileStopping";
+    case BC250_PROBE_V5_STOP_FIRST_STATUS: return L"V5StopFirstStatus";
+    case BC250_PROBE_V5_LIFECYCLE_STATE: return L"V5LifecycleState";
+
+    /* Schema 130 — rastro ampliado pos-StartDevice. */
+    case BC250_PROBE_V5_CHILD_RELATIONS_STATUS:
+        return L"V5ChildRelationsStatus";
+    case BC250_PROBE_V5_CHILD_RELATIONS_COUNT:
+        return L"V5ChildRelationsCount";
+    case BC250_PROBE_V5_CHILD_RELATIONS_CALLS:
+        return L"V5ChildRelationsCalls";
+    case BC250_PROBE_V5_POST_START_STAGE: return L"V5PostStartStage";
+    case BC250_PROBE_V5_QI_SLOTS_CAPTURED: return L"V5QiSlotsCaptured";
+    case BC250_PROBE_V5_CONTRACT_VERSION: return L"V5ContractVersion";
+
+    /* Schema 132 — perfil de adaptador (Gate 1.5). */
+    case BC250_PROBE_V5_ADAPTER_PROFILE:
+        return L"V5AdapterProfile";
+    case BC250_PROBE_V5_RENDER_ONLY_LAB_REQUESTED:
+        return L"V5RenderOnlyLabRequested";
+    case BC250_PROBE_V5_RENDER_ONLY_LAB_TUNABLE_PRESENT:
+        return L"V5RenderOnlyLabTunablePresent";
+    case BC250_PROBE_V5_PROFILE_RESOLVE_STATUS:
+        return L"V5ProfileResolveStatus";
+    case BC250_PROBE_V5_DISPLAY_SURFACE_ANNOUNCED:
+        return L"V5DisplaySurfaceAnnounced";
+    case BC250_PROBE_V5_CHILD_ENUMERATION_ENABLED:
+        return L"V5ChildEnumerationEnabled";
+
+    /* Schema 133 — marcadores de entrada. */
+    case BC250_PROBE_V5_POST_DISPLAY_ATTEMPTED:
+        return L"V5PostDisplayAttempted";
+    case BC250_PROBE_V5_DISPLAY_INIT_ENTERED:
+        return L"V5DisplayInitEntered";
+    case BC250_PROBE_V5_UNSAFE_BRINGUP_ENTERED:
+        return L"V5UnsafeBringupEntered";
+    case BC250_PROBE_V5_RENDER_ONLY_EARLY_RETURN:
+        return L"V5RenderOnlyEarlyReturn";
+    case BC250_PROBE_V5_START_DEVICE_RETURN_STAGE:
+        return L"V5StartDeviceReturnStage";
+    case BC250_PROBE_V5_UNSAFE_BRINGUP_COMPILED:
+        return L"V5UnsafeBringupCompiled";
     default: return NULL;
     }
 }
@@ -1011,6 +1499,296 @@ VOID Bc250ProbeResetOffline(VOID)
     InterlockedExchange(&g_Bc250ProbeLastField, 0);
     InterlockedExchange(&g_Bc250ProbeLastValue, 0);
     InterlockedExchange(&g_Bc250ProbeFirstFailure, (LONG)STATUS_SUCCESS);
+}
+
+/*
+ * Rastro de DDI. Tres marcas em janela deslizante: basta para reconstruir a
+ * ordem das ultimas chamadas antes de o dxgkrnl desistir, e e' barato o
+ * suficiente para ficar ligado em qualquer DDI, inclusive as de alta
+ * frequencia como ControlInterrupt.
+ */
+static volatile LONG g_Bc250V5LastDdi;
+static volatile LONG g_Bc250V5PrevDdi;
+static volatile LONG g_Bc250V5Prev2Ddi;
+static volatile LONG g_Bc250V5DdiMarks;
+
+VOID Bc250ProbeMarkDdi(ULONG DdiId)
+{
+    LONG previous = InterlockedExchange(&g_Bc250V5LastDdi, (LONG)DdiId);
+
+    /*
+     * Repeticao nao desloca a janela: ControlInterrupt sozinho apagaria o
+     * rastro util em poucos milissegundos.
+     */
+    if (previous != (LONG)DdiId) {
+        LONG older = InterlockedExchange(&g_Bc250V5PrevDdi, previous);
+        InterlockedExchange(&g_Bc250V5Prev2Ddi, older);
+    }
+    InterlockedIncrement(&g_Bc250V5DdiMarks);
+}
+
+VOID Bc250ProbeSnapshotDdiTrace(VOID)
+{
+    Bc250ProbeRecord(BC250_PROBE_V5_LAST_DDI, (ULONG)g_Bc250V5LastDdi);
+    Bc250ProbeRecord(BC250_PROBE_V5_PREV_DDI, (ULONG)g_Bc250V5PrevDdi);
+    Bc250ProbeRecord(BC250_PROBE_V5_PREV2_DDI, (ULONG)g_Bc250V5Prev2Ddi);
+    Bc250ProbeRecord(BC250_PROBE_V5_DDI_MARKS, (ULONG)g_Bc250V5DdiMarks);
+}
+
+/*
+ * Maior marco alcancado depois do StartDevice. Monotonico: um marco menor
+ * chegando depois nao rebaixa o valor, para que uma DDI de alta frequencia
+ * nao apague a informacao de quao longe o bring-up chegou.
+ */
+static volatile LONG g_Bc250V5PostStartStage;
+
+VOID Bc250ProbeMarkPostStartStage(ULONG Stage)
+{
+    LONG desired = (LONG)Stage;
+    for (;;) {
+        LONG current = InterlockedCompareExchange(
+            &g_Bc250V5PostStartStage, 0, 0);
+        if (current >= desired) {
+            return;
+        }
+        if (InterlockedCompareExchange(
+                &g_Bc250V5PostStartStage, desired, current) == current) {
+            return;
+        }
+    }
+}
+
+/* --------------------------------------------------------------------------
+   Buffer circular das chamadas de DxgkDdiQueryInterface.
+   -------------------------------------------------------------------------- */
+
+static BC250_V5_QI_RECORD g_Bc250V5QiSlots[BC250_V5_QI_SLOT_COUNT];
+static volatile LONG g_Bc250V5QiWriteIndex;
+
+VOID Bc250ProbeRecordQueryInterface(const BC250_V5_QI_RECORD *Record)
+{
+    LONG index;
+    ULONG slot;
+
+    if (Record == NULL) {
+        return;
+    }
+    index = InterlockedIncrement(&g_Bc250V5QiWriteIndex);
+    slot = ((ULONG)(index - 1)) % BC250_V5_QI_SLOT_COUNT;
+    g_Bc250V5QiSlots[slot] = *Record;
+    g_Bc250V5QiSlots[slot].Ordinal = (ULONG)index;
+}
+
+#if defined(BC250_ENABLE_PERSISTENT_TELEMETRY)
+
+static const PCWSTR g_Bc250V5QiSlotNames[BC250_V5_QI_SLOT_COUNT] = {
+    L"V5QiSlot00", L"V5QiSlot01", L"V5QiSlot02", L"V5QiSlot03",
+    L"V5QiSlot04", L"V5QiSlot05", L"V5QiSlot06", L"V5QiSlot07",
+    L"V5QiSlot08", L"V5QiSlot09", L"V5QiSlot10", L"V5QiSlot11",
+    L"V5QiSlot12", L"V5QiSlot13", L"V5QiSlot14", L"V5QiSlot15"
+};
+
+static VOID Bc250ProbeWriteBinary(
+    HANDLE Key, PCWSTR Name, const VOID *Data, ULONG Length)
+{
+    UNICODE_STRING valueName;
+    RtlInitUnicodeString(&valueName, Name);
+    (void)ZwSetValueKey(
+        Key, &valueName, 0, REG_BINARY, (PVOID)Data, Length);
+}
+
+#endif
+
+VOID Bc250ProbeSnapshotQueryInterfaces(VOID)
+{
+    LONG total = InterlockedCompareExchange(&g_Bc250V5QiWriteIndex, 0, 0);
+    ULONG captured = (total < 0) ? 0u : (ULONG)total;
+
+    if (captured > BC250_V5_QI_SLOT_COUNT) {
+        captured = BC250_V5_QI_SLOT_COUNT;
+    }
+    Bc250ProbeRecord(BC250_PROBE_V5_QI_SLOTS_CAPTURED, captured);
+    Bc250ProbeRecord(BC250_PROBE_V5_POST_START_STAGE,
+        (ULONG)InterlockedCompareExchange(&g_Bc250V5PostStartStage, 0, 0));
+
+#if defined(BC250_ENABLE_PERSISTENT_TELEMETRY)
+    {
+        OBJECT_ATTRIBUTES attributes;
+        HANDLE key = NULL;
+        NTSTATUS status;
+        ULONG i;
+
+        InitializeObjectAttributes(
+            &attributes, (PUNICODE_STRING)&g_Bc250ProbeRegistryPathMcdm,
+            OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+        status = ZwOpenKey(&key, KEY_SET_VALUE, &attributes);
+        if (!NT_SUCCESS(status)) {
+            InitializeObjectAttributes(
+                &attributes,
+                (PUNICODE_STRING)&g_Bc250ProbeRegistryPathReadonly,
+                OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+            status = ZwOpenKey(&key, KEY_SET_VALUE, &attributes);
+        }
+        if (!NT_SUCCESS(status)) {
+            return;
+        }
+        /*
+         * Publica todos os slots, inclusive os nao preenchidos: um slot
+         * zerado precisa aparecer como zerado, e nao herdar o conteudo do
+         * boot anterior.
+         */
+        for (i = 0u; i < BC250_V5_QI_SLOT_COUNT; ++i) {
+            Bc250ProbeWriteBinary(key, g_Bc250V5QiSlotNames[i],
+                &g_Bc250V5QiSlots[i], (ULONG)sizeof(g_Bc250V5QiSlots[i]));
+        }
+        ZwClose(key);
+    }
+#endif
+}
+
+VOID Bc250ProbeResetRenderTrace(VOID)
+{
+    static const BC250_PROBE_FIELD s_renderFields[] = {
+        /* Bloco V5: registro e StartDevice. */
+        BC250_PROBE_V5_RENDER_NODE_REQUESTED,
+        BC250_PROBE_V5_RENDER_NODE_TUNABLE_PRESENT,
+        BC250_PROBE_V5_REGISTRATION_MODE,
+        BC250_PROBE_V5_START_DEVICE_STATUS,
+        BC250_PROBE_V5_START_DEVICE_SOURCES,
+        BC250_PROBE_V5_START_DEVICE_CHILDREN,
+        /* Bloco V5: QueryAdapterInfo. */
+        BC250_PROBE_V5_QAI_CALLS,
+        BC250_PROBE_V5_QAI_LAST_TYPE,
+        BC250_PROBE_V5_QAI_LAST_STATUS,
+        BC250_PROBE_V5_QAI_LAST_UNSUPPORTED_TYPE,
+        BC250_PROBE_V5_QAI_UNSUPPORTED_COUNT,
+        /* Bloco V5: rastro de DDI e QueryInterface. */
+        BC250_PROBE_V5_LAST_DDI,
+        BC250_PROBE_V5_PREV_DDI,
+        BC250_PROBE_V5_PREV2_DDI,
+        BC250_PROBE_V5_DDI_MARKS,
+        BC250_PROBE_V5_QI_CALLS,
+        BC250_PROBE_V5_QI_LAST_GUID_D1,
+        BC250_PROBE_V5_QI_PREV_GUID_D1,
+        BC250_PROBE_V5_QI_PREV2_GUID_D1,
+        BC250_PROBE_V5_QI_LAST_VERSION,
+        BC250_PROBE_V5_QI_LAST_SIZE,
+        BC250_PROBE_V5_QI_SLOTS_CAPTURED,
+        BC250_PROBE_V5_POST_START_STAGE,
+        BC250_PROBE_V5_CONTRACT_VERSION,
+        /* Bloco V5: teardown e quiescencia. */
+        BC250_PROBE_STOP_DEVICE_ENTERED,
+        BC250_PROBE_STOP_DEVICE_STATUS,
+        BC250_PROBE_REMOVE_DEVICE_ENTERED,
+        BC250_PROBE_REMOVE_DEVICE_STATUS,
+        BC250_PROBE_V5_STOP_FENCE_QUERY_MODE,
+        BC250_PROBE_V5_STOP_FENCE_SYNC_STATUS,
+        BC250_PROBE_V5_STOP_FENCE_SYNC_RESULT,
+        BC250_PROBE_V5_STOP_FENCE_PENDING_COUNT,
+        BC250_PROBE_V5_STOP_FENCE_RESERVED_COUNT,
+        BC250_PROBE_V5_STOP_REASON,
+        BC250_PROBE_V5_STOP_TIMER_DRAINED,
+        BC250_PROBE_V5_STOP_DPC_DRAINED,
+        BC250_PROBE_V5_STOP_SUBMIT_INFLIGHT,
+        BC250_PROBE_V5_STOP_DRAIN_ITERATIONS,
+        BC250_PROBE_V5_STOP_SNAPSHOT_OK,
+        BC250_PROBE_V5_STOP_LOCK_FAILURES,
+        BC250_PROBE_V5_STOP_REJECTED_WHILE_STOPPING,
+        BC250_PROBE_V5_STOP_FIRST_STATUS,
+        BC250_PROBE_V5_LIFECYCLE_STATE,
+        BC250_PROBE_V5_CHILD_RELATIONS_STATUS,
+        BC250_PROBE_V5_CHILD_RELATIONS_COUNT,
+        BC250_PROBE_V5_CHILD_RELATIONS_CALLS,
+        /*
+         * Bloco DMM. Enumerado a mao de proposito: a faixa do enum nao e'
+         * limpa (BC250_PROBE_SKIP_HW_BRINGUP mora no meio dela e ecoa um
+         * tunable, nao uma medicao — zera-lo produziria evidencia errada).
+         */
+        BC250_PROBE_DMM_QUERY_ADAPTER_TYPE,
+        BC250_PROBE_DMM_CHILD_RELATIONS_CALLED,
+        BC250_PROBE_DMM_CHILD_STATUS_CALLED,
+        BC250_PROBE_DMM_DESCRIPTOR_CALLED,
+        BC250_PROBE_DMM_VIDPN_QUERY_CALLED,
+        BC250_PROBE_DMM_QAI_OUTSIZE,
+        BC250_PROBE_DMM_QAI_STATUS,
+        BC250_PROBE_DMM_DISPLAY_MAPPED,
+        BC250_PROBE_DMM_VSYNC_COUNT,
+        BC250_PROBE_DMM_IS_SUPPORTED_COUNT,
+        BC250_PROBE_DMM_IS_SUPPORTED_STATUS,
+        BC250_PROBE_DMM_IS_SUPPORTED_RESULT,
+        BC250_PROBE_DMM_COMMIT_COUNT,
+        BC250_PROBE_DMM_COMMIT_STATUS,
+        BC250_PROBE_DMM_COMMIT_HAS_PATH,
+        BC250_PROBE_DMM_COMMIT_SUPPORTED,
+        BC250_PROBE_DMM_CONTROL_INTERRUPT_COUNT,
+        BC250_PROBE_DMM_CONTROL_INTERRUPT_TYPE,
+        BC250_PROBE_DMM_CONTROL_INTERRUPT_ENABLE,
+        BC250_PROBE_DMM_PRESENT_ENTERED,
+        BC250_PROBE_DMM_PRESENT_STATUS,
+        BC250_PROBE_DMM_PRESENT_SOURCE_PITCH
+    };
+    ULONG i;
+
+    /* Estado em memoria primeiro, para nao republicar valor velho. */
+    InterlockedExchange(&g_Bc250V5LastDdi, 0);
+    InterlockedExchange(&g_Bc250V5PrevDdi, 0);
+    InterlockedExchange(&g_Bc250V5Prev2Ddi, 0);
+    InterlockedExchange(&g_Bc250V5DdiMarks, 0);
+    InterlockedExchange(&g_Bc250V5PostStartStage, 0);
+    InterlockedExchange(&g_Bc250V5QiWriteIndex, 0);
+    RtlZeroMemory(g_Bc250V5QiSlots, sizeof(g_Bc250V5QiSlots));
+
+    for (i = 0u; i < (ULONG)RTL_NUMBER_OF(s_renderFields); ++i) {
+        Bc250ProbeRecord(s_renderFields[i], 0u);
+    }
+    /* Os slots binarios voltam a zero no mesmo carregamento. */
+    Bc250ProbeSnapshotQueryInterfaces();
+}
+
+VOID Bc250ProbeResetAllVolatile(VOID)
+{
+    BC250_PROBE_FIELD field;
+
+    /*
+     * Estado em memoria primeiro, para nao republicar valor velho durante a
+     * propria varredura.
+     */
+    InterlockedExchange(&g_Bc250V5LastDdi, 0);
+    InterlockedExchange(&g_Bc250V5PrevDdi, 0);
+    InterlockedExchange(&g_Bc250V5Prev2Ddi, 0);
+    InterlockedExchange(&g_Bc250V5DdiMarks, 0);
+    InterlockedExchange(&g_Bc250V5PostStartStage, 0);
+    InterlockedExchange(&g_Bc250V5QiWriteIndex, 0);
+    RtlZeroMemory(g_Bc250V5QiSlots, sizeof(g_Bc250V5QiSlots));
+
+    /*
+     * Varredura integral. Nao ha' lista de campos a manter em dia: qualquer
+     * campo novo entra no reset automaticamente por estar no enum.
+     */
+    for (field = BC250_PROBE_DRIVER_ENTRY_REACHED;
+         field < BC250_PROBE_FIELD_COUNT;
+         field = (BC250_PROBE_FIELD)((ULONG)field + 1u)) {
+        Bc250ProbeRecord(field, 0u);
+    }
+
+    Bc250ProbeSnapshotQueryInterfaces();
+}
+
+VOID Bc250ProbeResetSubmissionEvidence(VOID)
+{
+    BC250_PROBE_FIELD field;
+
+    /*
+     * O intervalo de BC250_PROBE_P1_ENGINE_STATE ate
+     * BC250_PROBE_P2_DOORBELL_HIT_OBSERVED e' contiguo e contem apenas campos
+     * P1/P2 — conferido sobre o enum. Zerar por varredura mantem o reset
+     * automaticamente completo quando campos novos forem inseridos no bloco.
+     */
+    for (field = BC250_PROBE_P1_ENGINE_STATE;
+         field <= BC250_PROBE_P2_DOORBELL_HIT_OBSERVED;
+         field = (BC250_PROBE_FIELD)((ULONG)field + 1u)) {
+        Bc250ProbeRecord(field, 0u);
+    }
 }
 
 ULONG Bc250ProbeGetOffline(

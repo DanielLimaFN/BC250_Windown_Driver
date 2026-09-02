@@ -1,0 +1,11 @@
+﻿Utilit�rio PnP da Microsoft
+
+ID da Inst�ncia:                PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041
+Descri��o do Dispositivo:         BC-250 MCDM Fail-Closed Development Adapter
+Nome da Classe:                 Display
+GUID de Classe:                 {4d36e968-e325-11ce-bfc1-08002be10318}
+Nome do Fabricante:          AMD BC-250 Project
+Status:                     Problema
+C�digo do Problema:               43 (0x2B) [CM_PROB_FAILED_POST_START]
+Nome do Driver:                oem20.inf
+

@@ -1,0 +1,7 @@
+﻿Iniciando Rollback de Laboratorio...
+Removendo pacote OEM: oem20.inf
+Utilitßrio PnP da Microsoft
+
+Pacote de driver desinstalado.
+Pacote de drivers excluÝdo com Ûxito.
+Rollback de Laboratorio Concluido. Dispositivo restaurado para BasicDisplay.

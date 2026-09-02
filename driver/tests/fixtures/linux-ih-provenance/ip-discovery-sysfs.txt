@@ -1,0 +1,8 @@
+/sys/bus/pci/devices/0000:01:00.0/ip_discovery/die/0/30/0/hw_id=30,
+/sys/bus/pci/devices/0000:01:00.0/ip_discovery/die/0/30/0/base_addr=0x00000000,0x000010A0,
+/sys/bus/pci/devices/0000:01:00.0/ip_discovery/die/0/30/0/major=5,
+/sys/bus/pci/devices/0000:01:00.0/ip_discovery/die/0/30/0/minor=0,
+/sys/bus/pci/devices/0000:01:00.0/ip_discovery/die/0/30/0/revision=0,
+/sys/bus/pci/devices/0000:01:00.0/ip_discovery/die/0/30/0/num_instance=0,
+/sys/bus/pci/devices/0000:01:00.0/ip_discovery/die/0/30/0/harvest=0x0,
+/sys/bus/pci/devices/0000:01:00.0/ip_discovery/die/0/30/0/num_base_addresses=2,

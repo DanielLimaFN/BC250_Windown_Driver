@@ -70,6 +70,7 @@ DXGKDDI_RECOMMENDMONITORMODES          Bc250DxgkDdiRecommendMonitorModes;
 DXGKDDI_RECOMMENDVIDPNTOPOLOGY         Bc250DxgkDdiRecommendVidPnTopology;
 DXGKDDI_PRESENT                        Bc250DxgkDdiPresent;
 DXGKDDI_CONTROLINTERRUPT               Bc250DxgkDdiControlInterrupt;
+DXGKDDI_CONTROLINTERRUPT2              Bc250DxgkDdiControlInterrupt2;
 DXGKDDI_PRESENTDISPLAYONLY             Bc250DxgkDdiPresentDisplayOnly;
 DXGKDDI_STOP_DEVICE_AND_RELEASE_POST_DISPLAY_OWNERSHIP Bc250DxgkDdiStopDeviceAndReleasePostDisplayOwnership;
 DXGKDDI_SYSTEM_DISPLAY_ENABLE          Bc250DxgkDdiSystemDisplayEnable;
@@ -86,10 +87,39 @@ DXGKDDI_SETPALETTE                      Bc250DxgkDdiSetPalette;
 DXGKDDI_GETSCANLINE                     Bc250DxgkDdiGetScanLine;
 DXGKDDI_CONTROL_ETW_LOGGING             Bc250DxgkDdiControlEtwLogging;
 DXGKDDI_COLLECTDBGINFO                  Bc250DxgkDdiCollectDbgInfo;
+DXGKDDI_SETDISPLAYPRIVATEDRIVERFORMAT   Bc250DxgkDdiSetDisplayPrivateDriverFormat;
 DXGKDDI_NOTIFY_SURPRISE_REMOVAL         Bc250DxgkDdiNotifySurpriseRemoval;
 
 NTSTATUS Bc250DisplayPopulateCallbacks(
     _Inout_ DRIVER_INITIALIZATION_DATA *InitializationData);
+
+/*
+ * Anuncia apenas as DDIs de base que a DRIVER_INITIALIZATION_DATA exige de
+ * QUALQUER miniport, incluindo um adaptador sem display: enumeracao de
+ * children (obrigatoria na estrutura, ainda que a lista venha vazia),
+ * energia, QueryInterface, ETW, ACPI e surprise removal.
+ *
+ * Fica de fora toda a superficie de apresentacao — VidPn, Present, scanout,
+ * ponteiro, palette, scanline, SystemDisplay e post-display ownership.  Essa
+ * separacao e' o contrato do Gate 1.5: nao existe caminho de display
+ * anunciado pela metade.
+ */
+NTSTATUS Bc250DisplayPopulateBaseOnlyCallbacks(
+    _Inout_ DRIVER_INITIALIZATION_DATA *InitializationData);
+
+/*
+ * Liga/desliga a enumeracao de children de video.  Deve ser chamada antes de
+ * DxgkInitialize; o valor vale para todo o carregamento.
+ *
+ * O estado NAO vive em BC250_DISPLAY_STATE de proposito: Bc250DisplayInit
+ * zera a estrutura inteira, e um perfil resolvido em DriverEntry nao pode
+ * depender de nao ser sobrescrito por um init posterior.  O default (nunca
+ * chamada) e' habilitado, preservando o comportamento herdado.
+ */
+void Bc250DisplaySetChildEnumeration(_In_ BOOLEAN Enabled);
+
+_Check_return_
+BOOLEAN Bc250DisplayGetChildEnumeration(void);
 
 #ifdef __cplusplus
 }

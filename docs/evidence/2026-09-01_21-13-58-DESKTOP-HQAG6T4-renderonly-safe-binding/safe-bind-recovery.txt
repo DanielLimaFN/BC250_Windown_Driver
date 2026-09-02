@@ -1,0 +1,29 @@
+﻿============================================================
+BC250 - RECUPERACAO DOS DRIVERS EXPERIMENTAIS
+Modo: RUN
+Windows: C:\Windows
+============================================================
+Execucao elevada no Windows normal autorizada.
+O dispositivo BC-250 pode piscar ou perder imagem durante a troca.
+Desabilitando temporariamente o dispositivo BC-250 exato.
+Removendo pacote experimental BC250 identificado pelo conteudo: oem20.inf
+Pacote oem20.inf removido.
+Marcador OEM removido.
+Servico bc250readonly: ausente.
+Servico bc250mcdm: parando e removendo.
+Servico bc250mcdm removido ou marcado para remocao.
+Servico bc250dbg: ausente.
+Binario bc250readonly.sys: ausente.
+Apagando binario experimental exato: C:\Windows\System32\drivers\bc250mcdm.sys
+Binario bc250mcdm.sys apagado.
+Binario bc250dbg.sys: ausente.
+Reabilitando o dispositivo e solicitando nova enumeracao PnP.
+AVISO: BasicDisplay nao confirmado; removendo o no PnP orfao.
+ERRO: BasicDisplay Codigo 0 ainda nao foi confirmado. Consulte o log e reinicie.
+Se persistir, remova o no manualmente e reenumere:
+pnputil /remove-device "PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041"
+pnputil /scan-devices
+------------------------------------------------------------
+ERRO: recuperacao incompleta. Nao instale nem ative outro driver.
+Se um binario estava carregado, reinicie normalmente e execute este script outra vez.
+Consulte o log: C:\BC250_RECOVERY.log

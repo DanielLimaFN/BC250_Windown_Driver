@@ -18,14 +18,30 @@
 #include "../core/bc250_psp_load_fw_transaction.h"
 #include "../core/bc250_sdma_f32_transaction.h"
 #include "../core/bc250_vram_allocator.h"
-#include "../core/bc250_compute_mqd_contract.h"
+#include "../core/bc250_mcdm_object_contract.h"
+#include "../core/bc250_gpuva_space_contract.h"
+#include "../core/bc250_gpuva_journal_contract.h"
 #include "../core/bc250_gpuva_sdma_broker_contract.h"
+#include "bc250_submission_engine.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #define BC250_ACTIVE_SIGNATURE 0x4D434431u /* "MCD1" */
+
+#define BC250_GPUVA_GATE_BLOCK_JOURNAL_PENDING    0x00000001u
+#define BC250_GPUVA_GATE_BLOCK_HIERARCHY_PENDING  0x00000002u
+#define BC250_GPUVA_GATE_BLOCK_ADAPTER_INACTIVE   0x00000004u
+#define BC250_GPUVA_GATE_BLOCK_CONTEXT_ABI        0x00000008u
+#define BC250_GPUVA_GATE_BLOCK_ALLOCATION_ABI     0x00000010u
+#define BC250_GPUVA_GATE_BLOCK_ROOT_ABI           0x00000020u
+#define BC250_GPUVA_GATE_BLOCK_ENGINE_OFFLINE     0x00000040u
+#define BC250_GPUVA_GATE_BLOCK_SNAPSHOT_SLOT      0x00000080u
+#define BC250_GPUVA_GATE_BLOCK_SNAPSHOT_SIGNATURE 0x00000100u
+#define BC250_GPUVA_GATE_BLOCK_SNAPSHOT_EMPTY     0x00000200u
+#define BC250_GPUVA_GATE_BLOCK_SNAPSHOT_EPOCH     0x00000400u
+#define BC250_GPUVA_GATE_BLOCK_NO_LEAF_COMMIT     0x00000800u
 #define BC250_ACTIVE_POOL_TAG  'ADCB'
 
 typedef enum BC250_SDMA_RING_WORK_STATUS {
@@ -280,6 +296,11 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     uint32_t TunableShaderDispatchPresent;
     BC250_PFP_DIRECT_LOAD_STATUS PfpDirectLoadStatus;
     BC250_PFP_DIRECT_LOAD_EVIDENCE PfpDirectLoadEvidence;
+    /* Candidato 3.47: leitura pura do scheduler nos limites do PFP. */
+    uint32_t SchedulerBeforePfp;
+    uint32_t SchedulerBeforePfpReadPassed;
+    uint32_t SchedulerAfterPfp;
+    uint32_t SchedulerAfterPfpReadPassed;
     BC250_HQD_PREFLIGHT_STATUS HqdPreflightStatus;
     BC250_HQD_READONLY_SNAPSHOT HqdPreflightSnapshot;
     uint32_t HqdPreflightReadCount;
@@ -307,6 +328,27 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     /* In-memory authority only; it never performs MMIO or submission. */
     BC250_GPUVA_SDMA_BROKER GpuvaSdmaBroker;
     volatile LONG GpuvaSdmaBrokerReady;
+    BC250_GPUVA_SPACE GpuvaSpace;
+    volatile LONG GpuvaSpaceReady;
+    BC250_GPUVA_SNAPSHOT_STORE GpuvaSnapshots;
+    BC250_GPUVA_SPACE GpuvaSnapshotScratch;
+    BC250_GPUVA_JOURNAL GpuvaJournal;
+    BC250_GPUVA_JOURNAL_PTE GpuvaJournalStaging[BC250_GPUVA_JOURNAL_MAX_CHANGES];
+    volatile LONG GpuvaJournalReady;
+    uint32_t GpuvaHierarchyPending;
+    BC250_MCDM_HANDLE GpuvaHierarchyProcess;
+    uint64_t GpuvaHierarchyRootPageTable;
+    uint32_t GpuvaHierarchyHighestLevel;
+    /* Critérios offline satisfeitos; não equivale a autorização de produção. */
+    volatile LONG GpuvaActivationEligible;
+    uint32_t GpuvaLabPromotion;
+    uint32_t GpuvaLabPromotionPresent;
+    uint32_t GpuvaActivationBlockMask;
+    uint32_t GpuvaActivationSnapshotGeneration;
+    uint32_t GpuvaActivationSnapshotEpoch;
+    uint32_t GpuvaActivationSnapshotLiveCount;
+    /* Só vira 1 quando map/unmap reais do VidMm alimentarem GpuvaSpace. */
+    volatile LONG GpuvaMappingsOperational;
     DXGK_CONTEXTINFO ContextAbi;
     volatile LONG ContextAbiReady;
     volatile LONG AllocationAbiReady;
@@ -317,16 +359,189 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     volatile LONG IsActive;
     uint32_t SubmissionsCount;
     uint32_t ResetsCount;
+    /* Fase P1: fila de computacao viva entre submissoes do Dxgkrnl. */
+    uint32_t PersistentSubmission;
+    uint32_t TunablePersistentSubmissionPresent;
+    BC250_SUBMISSION_ENGINE SubmissionEngine;
+
+    /*
+     * Fase V2 — retirada de fence para o dxgkrnl.
+     *
+     * A interrupcao de conclusao do MEC nao esta provada no silicio (o anel de
+     * IH nunca foi validado neste projeto), portanto a conclusao e' descoberta
+     * por varredura periodica da fence que a GPU gravou na VRAM.  Isso e'
+     * honesto — a fonte da verdade continua sendo memoria escrita pela GPU —
+     * mas nao e' interrupt-driven, e a latencia e' a do intervalo do timer.
+     * Trocar por interrupcao real e' item posterior deste roadmap.
+     */
+    KTIMER RetirementTimer;
+    KDPC RetirementDpc;
+    volatile LONG RetirementTimerInitialized;
+    volatile LONG RetirementTimerRunning;
+    uint32_t RetirementDpcRuns;
+    uint32_t RetirementPollFailures;
+    uint32_t RetirementNotifyBatches;
+    uint32_t RetirementNotifiedTotal;
+    uint32_t RetirementPushFailures;
+    uint32_t RetirementBackpressure;
+    uint32_t InterruptsSeen;
+
+    /*
+     * Ciclo de vida explicito (candidato 3.67).
+     *
+     * IsActive sozinho nao descreve o intervalo em que o adaptador ja esta
+     * parando mas ainda tem trabalho em voo.  O ensaio 3.66 consultou o
+     * rastreador de fences com o timer de retirement ainda armado em 1 ms e
+     * com submissoes ainda admissiveis; a resposta so nao ficou corrompida
+     * porque nao havia nenhuma fence.  LifecycleState fecha essa janela antes
+     * de qualquer fotografia.
+     */
+    volatile LONG LifecycleState;
+    /* Submissoes dentro de SubmitCommandVirtual, entre o portao e a saida. */
+    volatile LONG SubmitInFlight;
+    /* Diagnostico da quiescencia, publicado no teardown. */
+    uint32_t StopReason;
+    uint32_t StopSubmitInFlightAfterDrain;
+    uint32_t StopDrainIterations;
+    uint32_t StopSnapshotFailures;
 } BC250_DXGK_ACTIVE_CONTEXT;
+
+/*
+ * Estados do ciclo de vida.
+ *
+ * NOT_STARTED — contexto existe (AddDevice) mas StartDevice ainda nao
+ *               devolveu sucesso.  Precisa valer ZERO: um contexto recem
+ *               alocado e' zerado, e o estado natural de memoria zerada tem
+ *               de ser o que RECUSA trabalho.  Numerar RUNNING como 0 faria
+ *               um contexto nunca iniciado aceitar submissao.
+ * RUNNING     — admite submissao e reserva novas.
+ * STOPPING    — nenhum trabalho novo entra; o que ja entrou termina ou e'
+ *               cancelado.  Obrigatorio antes de fotografar o rastreador.
+ * STOPPED     — teardown concluido.
+ */
+#define BC250_ACTIVE_LIFECYCLE_NOT_STARTED 0u
+#define BC250_ACTIVE_LIFECYCLE_RUNNING     1u
+#define BC250_ACTIVE_LIFECYCLE_STOPPING    2u
+#define BC250_ACTIVE_LIFECYCLE_STOPPED     3u
+
+/* Motivos de entrada em STOPPING; publicados em V5StopReason. */
+#define BC250_ACTIVE_STOP_REASON_NONE           0u
+#define BC250_ACTIVE_STOP_REASON_STOP_DEVICE    1u
+#define BC250_ACTIVE_STOP_REASON_REMOVE_DEVICE  2u
+
+/*
+ * Fase V2 — varredura de retirada de fence.  Start e' idempotente e chamado na
+ * primeira submissao aceita; Stop e' obrigatorio antes de liberar o contexto.
+ */
+void Bc250ActiveRetirementTimerStart(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
+
+void Bc250ActiveRetirementTimerStop(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
+
+/* Portao testavel usado por SubmitCommandVirtual e pela corrida Stop/Submit. */
+BOOLEAN Bc250ActiveSubmissionGateEnter(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
+
+void Bc250ActiveSubmissionGateLeave(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
+
+/*
+ * ==========================================================================
+ * Perfil de adaptador anunciado ao dxgkrnl.
+ * ==========================================================================
+ *
+ * O perfil e' resolvido UMA VEZ em DriverEntry, a partir dos tunables
+ * RenderNode e RenderOnlyLab, e governa tres decisoes que precisam ser
+ * coerentes entre si:
+ *
+ *   1. qual rotina de registro e' usada (DxgkInitialize x
+ *      DxgkInitializeDisplayOnlyDriver);
+ *   2. quais callbacks a DRIVER_INITIALIZATION_DATA anuncia;
+ *   3. quantas VidPn sources e quantos children o StartDevice devolve.
+ *
+ * A incoerencia entre (2) e (3) e' exatamente o defeito estatico encontrado
+ * no 3.74: o perfil display+render anunciava uma source e um child fisicos
+ * enquanto o unico caminho de apresentacao registrado — DxgkDdiPresent —
+ * devolvia STATUS_NOT_SUPPORTED incondicionalmente.  Amarrar as tres
+ * decisoes a um unico enum impede que a proxima corrida repita isso.
+ *
+ * RENDER_ONLY_LAB e' um perfil de DIAGNOSTICO (Gate 1.5), nao a arquitetura
+ * final.  Ele existe para responder, sem tocar em DCN/GOP, se a tabela
+ * render/base sobrevive em Codigo 0 quando nenhuma superficie de display e'
+ * anunciada.  O destino do projeto continua sendo DISPLAY_RENDER.
+ */
+typedef enum BC250_ADAPTER_PROFILE {
+    /* RenderNode=0 — KMDOD.  Display-only, PresentDisplayOnly implementado. */
+    BC250_ADAPTER_PROFILE_DISPLAY_ONLY = 0u,
+    /* RenderNode=1, RenderOnlyLab=0 — miniport WDDM completo (destino). */
+    BC250_ADAPTER_PROFILE_DISPLAY_RENDER = 1u,
+    /* RenderNode=1, RenderOnlyLab=1 — Gate 1.5.  Zero sources/children. */
+    BC250_ADAPTER_PROFILE_RENDER_ONLY_LAB = 2u
+} BC250_ADAPTER_PROFILE;
+
+/*
+ * Fixa o perfil do carregamento corrente.  Fail-closed: qualquer valor fora
+ * do enum e' recusado e o perfil anterior permanece intacto.
+ */
+_Check_return_
+NTSTATUS Bc250ActiveSetAdapterProfile(_In_ BC250_ADAPTER_PROFILE Profile);
+
+_Check_return_
+BC250_ADAPTER_PROFILE Bc250ActiveGetAdapterProfile(void);
+
+/*
+ * Traduz o par (RenderNode, RenderOnlyLab) — ja' acompanhado do respectivo
+ * bit de presenca no registro — para um perfil.
+ *
+ * Recusa, com STATUS_DEVICE_CONFIGURATION_ERROR:
+ *   - RenderNode fora de {0,1} ou RenderOnlyLab fora de {0,1};
+ *   - RenderOnlyLab=1 com RenderNode!=1, porque o caminho KMDOD e' display
+ *     por definicao e nao possui um perfil render-only coerente;
+ *   - tunable pedido mas ilegivel (Present=0 com valor nao-default), que e'
+ *     indistinguivel de configuracao corrompida.
+ */
+_Check_return_
+NTSTATUS Bc250ActiveResolveAdapterProfile(
+    _In_ ULONG RenderNode,
+    _In_ ULONG RenderNodePresent,
+    _In_ ULONG RenderOnlyLab,
+    _In_ ULONG RenderOnlyLabPresent,
+    _Out_ BC250_ADAPTER_PROFILE *Profile);
 
 NTSTATUS Bc250BuildActiveInitializationData(
     DRIVER_INITIALIZATION_DATA *InitializationData);
+
+NTSTATUS Bc250BuildActiveInitializationDataForContract(
+    DRIVER_INITIALIZATION_DATA *InitializationData,
+    ULONG InterfaceVersion,
+    DXGK_WDDMVERSION WddmVersion);
+
+/*
+ * Constroi a tabela para um perfil explicito.
+ *
+ * DISPLAY_ONLY e DISPLAY_RENDER produzem a mesma DRIVER_INITIALIZATION_DATA:
+ * o recorte KMDOD acontece depois, ao copiar para KMDDOD_INITIALIZATION_DATA.
+ * RENDER_ONLY_LAB omite toda a superficie de display.
+ */
+NTSTATUS Bc250BuildActiveInitializationDataForProfile(
+    DRIVER_INITIALIZATION_DATA *InitializationData,
+    ULONG InterfaceVersion,
+    DXGK_WDDMVERSION WddmVersion,
+    BC250_ADAPTER_PROFILE Profile);
 
 NTSTATUS APIENTRY Bc250DxgkDdiAddDeviceActive(
     CONST PDEVICE_OBJECT PhysicalDeviceObject,
     PVOID *MiniportDeviceContext);
 
 NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
+    CONST PVOID MiniportDeviceContext,
+    PDXGK_START_INFO DxgkStartInfo,
+    PDXGKRNL_INTERFACE DxgkInterface,
+    PULONG NumberOfVideoPresentSources,
+    PULONG NumberOfChildren);
+
+NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceV5Telemetry(
     CONST PVOID MiniportDeviceContext,
     PDXGK_START_INFO DxgkStartInfo,
     PDXGKRNL_INTERFACE DxgkInterface,

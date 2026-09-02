@@ -1,0 +1,25 @@
+﻿{
+    "schema":  1,
+    "phase":  "APPLIED_READBACK_OK",
+    "created_at":  "2026-09-01T04:32:01.6952432-03:00",
+    "computer":  "DESKTOP-HQAG6T4",
+    "instance_id":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
+    "service_before":  "bc250mcdm",
+    "config_manager_error_before":  0,
+    "recovery_script":  "C:\\BC250_RECOVERY.cmd",
+    "parameter_path":  "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\bc250mcdm\\Parameters",
+    "value_name":  "GpuvaLabPromotion",
+    "original":  {
+                     "key_exists":  true,
+                     "value_exists":  true,
+                     "value":  0
+                 },
+    "installed_driver_sha256":  "6260AA8948598DF270481D80DFEF961662AE201D2606861199FB3658D0BC3C8C",
+    "hardware_validated":  false,
+    "applied_at":  "2026-09-01T04:32:01.8262831-03:00",
+    "readback":  {
+                     "key_exists":  true,
+                     "value_exists":  true,
+                     "value":  1
+                 }
+}

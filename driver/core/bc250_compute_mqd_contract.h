@@ -14,6 +14,7 @@ typedef UINT32 uint32_t;
 #endif
 
 #include "bc250_compute_dispatch_contract.h"
+#include "bc250_observable_shader.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,6 +31,13 @@ extern "C" {
 #define BC250_HQD_MIN_QUEUE_DWORDS        64u
 #define BC250_HQD_MAX_QUEUE_DWORDS        (1024u * 1024u)
 #define BC250_HQD_DEFAULT_EOP_BYTES       4096u
+#define BC250_HQD_MQD_GPUVA               0x0000000000000000ull
+#define BC250_HQD_RPTR_GPUVA              0x0000000000000400ull
+#define BC250_HQD_WPTR_GPUVA              0x0000000000000500ull
+#define BC250_HQD_EOP_GPUVA               0x0000000000001000ull
+#define BC250_HQD_FENCE_GPUVA             0x0000000000002200ull
+#define BC250_HQD_SHADER_GPUVA            0x0000000000004000ull
+#define BC250_HQD_RESULT_GPUVA            0x0000000000005000ull
 #define BC250_HQD_RING_GPUVA              0x0000000000010000ull
 
 /* GRBM_GFX_CNTL (BAR5 byte offset) selects the indirect HQD register bank. */
@@ -131,6 +139,8 @@ extern "C" {
 #define BC250_HQD_GCVM_INVALIDATE_VMID0            0x00000001u
 #define BC250_HQD_GCVM_INVALIDATE_REQ_VMID0         0x00F80001u
 #define BC250_HQD_GCVM_L2_INVALIDATE_MASK          0x00000003u
+#define BC250_HQD_RLC_SCHEDULER0_MASK               0x000000FFu
+#define BC250_HQD_RLC_SCHEDULER_ENABLE              0x00000080u
 #define BC250_HQD_WPTR_POLL_ENABLE_MASK            0x80000000u
 /* CP_PQ_WPTR_POLL_CNTL: PERIOD[7:0], DISABLE_PEND_REQ_ONE_SHOT[29],
  * POLL_ACTIVE[30] (status read-only) e EN[31].  O literal historico
@@ -341,9 +351,14 @@ typedef struct BC250_COMPUTE_MQD_PROPERTIES {
     uint64_t WptrGpuAddress;
     uint32_t UseDoorbell;
     uint32_t DoorbellIndex;
+    /* Fila MEC explicitamente possuida pelo miniport; nao herdar do boot. */
+    uint32_t SchedulerMe;
+    uint32_t SchedulerPipe;
+    uint32_t SchedulerQueue;
     uint32_t PipePriority;
     uint32_t QueuePriority;
     uint32_t HqdActive;
+    uint32_t InitialWptrDwords;
 } BC250_COMPUTE_MQD_PROPERTIES;
 
 typedef struct BC250_GFX10_COMPUTE_MQD {
@@ -880,6 +895,113 @@ typedef struct BC250_HQD_SHADER_DISPATCH_EVIDENCE {
     uint32_t RingRestorePassed;
     uint32_t PhysicalReady;
 } BC250_HQD_SHADER_DISPATCH_EVIDENCE;
+
+/*
+ * Estado de teardown de uma fila de computacao ATIVA (Fase P1).
+ *
+ * Ate o candidato 3.43 toda transacao era de tiro unico: ativava, submetia e
+ * revertia dentro da mesma chamada, com os valores originais vivos apenas em
+ * variaveis locais.  O caminho de producao precisa manter a fila ativa entre
+ * submissoes, portanto esses mesmos valores tem de sobreviver a chamada.  Esta
+ * estrutura e' exatamente aquele conjunto, movido de locais para um bloco que
+ * o chamador possui e guarda ate o StopDevice.
+ *
+ * O caminho nao persistente continua usando a mesma estrutura como local, com
+ * a mesma ordem de rollback LIFO: nao existe segunda implementacao de restore.
+ */
+typedef struct BC250_HQD_PERSISTENT_STATE {
+    uint32_t QueueIsActive;
+    uint32_t TransactionMode;
+
+    BC250_HQD_REGISTER_WRITE PlanWrites[BC250_HQD_INACTIVE_PLAN_MAX_WRITES];
+    uint32_t PlanCount;
+
+    uint32_t OriginalScratch;
+    uint32_t OrigCpMecCntl;
+    uint32_t OrigCpMeCntl;
+    uint32_t OrigCpPqStatus;
+    uint32_t OrigCpPqWptrPollCntl;
+    uint32_t OrigCpPqWptrPollCntl1;
+    uint32_t OrigGcvmL2Cntl2;
+    uint32_t OrigGcvmCtx0Cntl;
+    uint32_t OrigGcvmCtx0PtBaseLo;
+    uint32_t OrigGcvmCtx0PtBaseHi;
+    uint32_t OrigGcvmCtx0PtStartLo;
+    uint32_t OrigGcvmCtx0PtEndLo;
+    uint32_t OrigIbControl;
+    uint32_t OrigEopRptr;
+
+    uint32_t QueueAddressSnapshots[4];
+    uint32_t QueueAddressWriteCount;
+    uint32_t DequeueRequestSnapshot;
+    uint32_t WptrLoSnapshot;
+    uint32_t WptrHiSnapshot;
+
+    uint32_t HqdWritten;
+    uint32_t CpPqStatusWritten;
+    uint32_t CpPqWptrPollCntlWritten;
+    uint32_t CpPqWptrPollCntl1Written;
+    uint32_t GcvmL2Cntl2Written;
+    uint32_t GcvmCtx0Written;
+    uint32_t RlcCpSchedulersWritten;
+    uint32_t DequeueRequestWritten;
+    uint32_t WptrBaselineWritten;
+    uint32_t DirectWptrWritten;
+    uint32_t IbControlWritten;
+    uint32_t EopRptrWritten;
+    uint32_t CpMecCntlWritten;
+    uint32_t CpMeCntlWritten;
+    uint32_t ScratchWritten;
+    uint32_t SelectorCaptured;
+    uint32_t ObservableDispatch;
+    uint32_t ObservableMemoryStaged;
+    uint32_t CoreMemoryRestorePassed;
+
+    uint32_t MqdSnapshot[BC250_MQD_SIZE_DWORDS];
+    uint32_t RingSnapshot[BC250_DISPATCH_RING_MIN_DWORDS];
+    uint32_t ShaderSnapshot[BC250_OBSERVABLE_SHADER_DWORDS];
+    uint32_t ResultSnapshot;
+    uint32_t FenceSnapshot[2];
+    uint32_t RptrSnapshot[2];
+    uint32_t WptrSnapshot[2];
+
+    BC250_COMPUTE_DISPATCH_DESCRIPTOR DispatchDescriptor;
+} BC250_HQD_PERSISTENT_STATE;
+
+/*
+ * Modo da transacao.  DIAGNOSTIC e OBSERVABLE_SHADER sao os dois caminhos
+ * provados em silicio e permanecem inalterados.  PERSISTENT_ACTIVATE deixa a
+ * fila ATIVA e vazia (WPTR == RPTR == 0), sem lote e sem rollback: quem chama
+ * fica dono do teardown via Bc250ComputeDeactivatePersistentHqd.
+ */
+typedef enum BC250_HQD_TRANSACTION_MODE {
+    BC250_HQD_TRANSACTION_DIAGNOSTIC = 0,
+    BC250_HQD_TRANSACTION_OBSERVABLE_SHADER = 1,
+    BC250_HQD_TRANSACTION_PERSISTENT_ACTIVATE = 2
+} BC250_HQD_TRANSACTION_MODE;
+
+/*
+ * Ativa a fila e a deixa viva.  Em caso de falha, o rollback e' executado
+ * dentro da propria chamada e State->QueueIsActive volta zerado: nunca se
+ * devolve fila meio ativada.
+ */
+BC250_HQD_ACTIVE_STATUS Bc250ComputeActivatePersistentHqd(
+    const BC250_HQD_SELECTOR_INTERFACE *Interface,
+    const BC250_HQD_MC_BUFFERS *Buffers,
+    const BC250_COMPUTE_MQD_PROPERTIES *Props,
+    BC250_GFX10_COMPUTE_MQD *Mqd,
+    BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE *Evidence,
+    BC250_HQD_PERSISTENT_STATE *State);
+
+/*
+ * Desativa a fila e executa exatamente o mesmo rollback LIFO do caminho de
+ * tiro unico, a partir do estado guardado na ativacao.
+ */
+BC250_HQD_ACTIVE_STATUS Bc250ComputeDeactivatePersistentHqd(
+    const BC250_HQD_SELECTOR_INTERFACE *Interface,
+    const BC250_HQD_MC_BUFFERS *Buffers,
+    BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE *Evidence,
+    BC250_HQD_PERSISTENT_STATE *State);
 
 BC250_HQD_PROGRAM_STATUS Bc250ComputeRunInactiveHqdProgramTransaction(
     const BC250_HQD_SELECTOR_INTERFACE *Interface,

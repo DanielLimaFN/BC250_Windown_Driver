@@ -9,9 +9,9 @@ if not "%~1"=="" if /I not "%~1"=="/DRY-RUN" goto :bad_argument
 
 set "LOG=%SystemDrive%\BC250_RECOVERY.log"
 if /I "%MODE%"=="DRY-RUN" set "LOG=NUL"
-set "QUARANTINE=%SystemDrive%\BC250_DRIVER_QUARANTINE"
 set "OEM_MARKER=%SystemDrive%\BC250_TEST_OEMINF.txt"
 set "DRIVER_DIR=%SystemRoot%\System32\drivers"
+set "INSTANCE_ID=PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041"
 
 >"%LOG%" echo BC250 recovery - mode=%MODE% - %DATE% %TIME%
 call :note ============================================================
@@ -28,21 +28,11 @@ if errorlevel 1 (
     exit /b 2
 )
 
-reg.exe query "HKLM\SYSTEM\CurrentControlSet\Control\SafeBoot\Option" /v OptionValue >nul 2>&1
-if errorlevel 1 (
-    call :note RECUSADO: a remocao real so e permitida no Modo de Seguranca.
-    call :note Entre em Recuperacao, Opcoes avancadas, Configuracoes de Inicializacao.
-    call :note Escolha Modo de Seguranca com Prompt de Comando e execute novamente.
-    exit /b 3
-)
-
-if not exist "%QUARANTINE%\" mkdir "%QUARANTINE%" >nul 2>&1
-if not exist "%QUARANTINE%\" (
-    call :note ERRO: nao foi possivel criar %QUARANTINE%.
-    exit /b 4
-)
+call :note Execucao elevada no Windows normal autorizada.
+call :note O dispositivo BC-250 pode piscar ou perder imagem durante a troca.
 
 set "RECOVERY_FAILED=0"
+call :disable_bc250_device
 call :remove_bc250_packages
 if errorlevel 1 set "RECOVERY_FAILED=1"
 call :remove_service bc250readonly
@@ -51,23 +41,26 @@ call :remove_service bc250mcdm
 if errorlevel 1 set "RECOVERY_FAILED=1"
 call :remove_service bc250dbg
 if errorlevel 1 set "RECOVERY_FAILED=1"
-call :quarantine_driver bc250readonly.sys
+call :delete_driver bc250readonly.sys
 if errorlevel 1 set "RECOVERY_FAILED=1"
-call :quarantine_driver bc250mcdm.sys
+call :delete_driver bc250mcdm.sys
 if errorlevel 1 set "RECOVERY_FAILED=1"
-call :quarantine_driver bc250dbg.sys
+call :delete_driver bc250dbg.sys
+if errorlevel 1 set "RECOVERY_FAILED=1"
+call :enable_and_verify_basic_display
 if errorlevel 1 set "RECOVERY_FAILED=1"
 
 if "!RECOVERY_FAILED!"=="1" (
     call :note ------------------------------------------------------------
     call :note ERRO: recuperacao incompleta. Nao instale nem ative outro driver.
+    call :note Se um binario estava carregado, reinicie normalmente e execute este script outra vez.
     call :note Consulte o log: %LOG%
     exit /b 5
 )
 
 call :note ------------------------------------------------------------
-call :note Recuperacao concluida. Reinicie o Windows.
-call :note Os binarios encontrados foram movidos para %QUARANTINE%.
+call :note Recuperacao concluida: BasicDisplay Codigo 0 confirmado.
+call :note Os binarios experimentais encontrados foram apagados.
 call :note Log: %LOG%
 call :note Nao foram alterados drivers AMD, BasicDisplay ou bc250v4.
 exit /b 0
@@ -126,6 +119,12 @@ for %%F in ("%SystemRoot%\INF\oem*.inf") do if exist "%%~fF" (
 if "!PACKAGE_COUNT!"=="0" call :note Pacotes experimentais BC250 detectados: nenhum.
 exit /b 0
 
+:disable_bc250_device
+call :note Desabilitando temporariamente o dispositivo BC-250 exato.
+pnputil.exe /disable-device "%INSTANCE_ID%" /force >>"%LOG%" 2>&1
+if errorlevel 1 call :note AVISO: disable-device falhou; a remocao do pacote ainda sera tentada.
+exit /b 0
+
 :is_bc250_package
 findstr.exe /I /C:"Class=ComputeAccelerator" /C:"Class=Display" "%~1" >nul 2>&1
 if errorlevel 1 exit /b 1
@@ -176,16 +175,17 @@ if errorlevel 1 (
 )
 exit /b 0
 
-:quarantine_driver
+:delete_driver
 set "SOURCE=%DRIVER_DIR%\%~1"
-set "TARGET=%QUARANTINE%\%~1.disabled"
 if not exist "!SOURCE!" (
     call :note Binario %~1: ausente.
     exit /b 0
 )
-move /Y "!SOURCE!" "!TARGET!" >>"%LOG%" 2>&1
-if errorlevel 1 (
-    call :note Primeiro isolamento de !SOURCE! falhou; aplicando ACL somente ao binario experimental exato.
+call :note Apagando binario experimental exato: !SOURCE!
+attrib.exe -R -S -H "!SOURCE!" >nul 2>&1
+del /F /Q "!SOURCE!" >>"%LOG%" 2>&1
+if exist "!SOURCE!" (
+    call :note Primeira remocao de !SOURCE! falhou; aplicando ACL somente ao binario experimental exato.
     takeown.exe /F "!SOURCE!" /A >>"%LOG%" 2>&1
     if errorlevel 1 (
         call :note ERRO: nao foi possivel assumir propriedade de !SOURCE!.
@@ -196,18 +196,64 @@ if errorlevel 1 (
         call :note ERRO: nao foi possivel conceder acesso ao Administrators em !SOURCE!.
         exit /b 1
     )
-    move /Y "!SOURCE!" "!TARGET!" >>"%LOG%" 2>&1
+    attrib.exe -R -S -H "!SOURCE!" >nul 2>&1
+    del /F /Q "!SOURCE!" >>"%LOG%" 2>&1
     if errorlevel 1 (
-        call :note ERRO: !SOURCE! continuou presente apos correcao de ACL.
+        call :note ERRO: !SOURCE! esta carregado ou continuou presente apos correcao de ACL.
         exit /b 1
     )
 )
 if exist "!SOURCE!" (
-    call :note ERRO: !SOURCE! ainda existe depois do isolamento.
+    call :note ERRO: !SOURCE! ainda existe depois da exclusao forcada.
     exit /b 1
 )
-call :note Binario %~1 isolado em !TARGET!.
+call :note Binario %~1 apagado.
 exit /b 0
+
+:enable_and_verify_basic_display
+call :note Reabilitando o dispositivo e solicitando nova enumeracao PnP.
+pnputil.exe /enable-device "%INSTANCE_ID%" >>"%LOG%" 2>&1
+pnputil.exe /scan-devices >>"%LOG%" 2>&1
+timeout.exe /t 3 /nobreak >nul
+call :check_basic_display
+if not errorlevel 1 (
+    call :note BasicDisplay Codigo 0 confirmado por leitura CIM independente.
+    exit /b 0
+)
+
+rem ---------------------------------------------------------------------
+rem No PnP orfao.
+rem
+rem Remover servico, binario e pacote do Driver Store NAO desfaz o vinculo do
+rem no de dispositivo. A chave Enum continua com Service=bc250mcdm e
+rem DeviceDesc=@oemNN.inf, apontando para o que acabou de ser apagado, e toda
+rem reenumeracao para em Codigo 19 (CM_PROB_REGISTRY). Reiniciar nao resolve:
+rem o vinculo e' persistente.
+rem
+rem Ate o 3.75 a recuperacao terminava aqui pedindo mais um reboot, e o
+rem operador ficava em laco. Removendo o no, o PnP o recria do zero na
+rem varredura seguinte e vincula BasicDisplay.
+rem ---------------------------------------------------------------------
+call :note AVISO: BasicDisplay nao confirmado; removendo o no PnP orfao.
+pnputil.exe /remove-device "%INSTANCE_ID%" >>"%LOG%" 2>&1
+if errorlevel 1 call :note AVISO: remove-device falhou; pode nao existir nesta versao do pnputil.
+pnputil.exe /scan-devices >>"%LOG%" 2>&1
+timeout.exe /t 5 /nobreak >nul
+call :check_basic_display
+if not errorlevel 1 (
+    call :note BasicDisplay Codigo 0 confirmado apos remocao do no PnP.
+    exit /b 0
+)
+
+call :note ERRO: BasicDisplay Codigo 0 ainda nao foi confirmado. Consulte o log e reinicie.
+call :note Se persistir, remova o no manualmente e reenumere:
+call :note   pnputil /remove-device "%INSTANCE_ID%"
+call :note   pnputil /scan-devices
+exit /b 1
+
+:check_basic_display
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$d=@(Get-CimInstance Win32_PnPEntity | Where-Object {$_.PNPDeviceID -eq '%INSTANCE_ID%'}); if($d.Count -eq 1 -and $d[0].Service -eq 'BasicDisplay' -and [uint32]$d[0].ConfigManagerErrorCode -eq 0){exit 0}; $d | Format-List PNPDeviceID,Service,Status,ConfigManagerErrorCode | Out-String | Write-Host; exit 1" >>"%LOG%" 2>&1
+exit /b %errorlevel%
 
 :show_service
 sc.exe query "%~1" >nul 2>&1
@@ -231,11 +277,12 @@ exit /b 1
 :help
 echo Uso:
 echo   %~nx0 /DRY-RUN   Audita sem modificar o sistema.
-echo   %~nx0            Remove o teste, somente no Modo de Seguranca elevado.
+echo   %~nx0            Remove o teste no Windows normal, em terminal elevado.
 echo.
 echo O script trata exclusivamente bc250readonly, bc250mcdm e bc250dbg. Pacotes OEM sao
 echo identificados pelo conjunto: classe ComputeAccelerator, hardware ID
 echo PCI\VEN_1002^&DEV_13FE e o par exato servico/binario bc250readonly ou
 echo bc250mcdm. O marcador continua
 echo sendo auditado, mas nao e a unica fonte para localizar pacotes orfaos.
+echo Os tres binarios experimentais sao apagados, nao movidos para quarentena.
 exit /b 0

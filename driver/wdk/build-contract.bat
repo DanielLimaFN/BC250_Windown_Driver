@@ -80,6 +80,10 @@ echo [cc] bc250_ip_discovery_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_ip_discovery_contract.obj" "%ROOTDIR%\driver\core\bc250_ip_discovery_contract.c"
 if errorlevel 1 exit /b 1
 
+echo [cc] bc250_ih_register_layout_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_ih_register_layout_contract.obj" "%ROOTDIR%\driver\core\bc250_ih_register_layout_contract.c"
+if errorlevel 1 exit /b 1
+
 echo [cc] bc250_psp_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_psp_contract.obj" "%ROOTDIR%\driver\core\bc250_psp_contract.c"
 if errorlevel 1 exit /b 1
@@ -168,6 +172,10 @@ echo [cc] bc250_submit_command_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_submit_command_contract.obj" "%ROOTDIR%\driver\core\bc250_submit_command_contract.c"
 if errorlevel 1 exit /b 1
 
+echo [cc] bc250_persistent_ring_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_persistent_ring_contract.obj" "%ROOTDIR%\driver\core\bc250_persistent_ring_contract.c"
+if errorlevel 1 exit /b 1
+
 echo [cc] bc250_preemption_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_preemption_contract.obj" "%ROOTDIR%\driver\core\bc250_preemption_contract.c"
 if errorlevel 1 exit /b 1
@@ -206,6 +214,18 @@ if errorlevel 1 exit /b 1
 
 echo [cc] bc250_mcdm_object_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_mcdm_object_contract.obj" "%ROOTDIR%\driver\core\bc250_mcdm_object_contract.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_gpuva_space_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gpuva_space_contract.obj" "%ROOTDIR%\driver\core\bc250_gpuva_space_contract.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_gpuva_snapshot_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gpuva_snapshot_contract.obj" "%ROOTDIR%\driver\core\bc250_gpuva_snapshot_contract.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_gpuva_journal_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gpuva_journal_contract.obj" "%ROOTDIR%\driver\core\bc250_gpuva_journal_contract.c"
 if errorlevel 1 exit /b 1
 
 echo [cc] bc250_allocation_abi_contract.c
@@ -268,6 +288,10 @@ echo [cc] bc250_active_miniport.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_active_miniport.obj" "%SRCDIR%bc250_active_miniport.c"
 if errorlevel 1 exit /b 1
 
+echo [cc] bc250_submission_engine.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_submission_engine.obj" "%SRCDIR%bc250_submission_engine.c"
+if errorlevel 1 exit /b 1
+
 echo [cc] bc250_sdma_ring_work.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_sdma_ring_work.obj" "%SRCDIR%bc250_sdma_ring_work.c"
 if errorlevel 1 exit /b 1
@@ -322,6 +346,11 @@ rem secao 2.0.2.
 echo [cc] bc250_active_miniport.c ^(Dxgk registration^)
 cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 /DBC250_ENABLE_PERSISTENT_TELEMETRY=1 ^
   /Fo"%ODIR%\bc250_active_miniport_driver.obj" "%SRCDIR%bc250_active_miniport.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_submission_engine.c ^(Dxgk registration^)
+cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 ^
+  /Fo"%ODIR%\bc250_submission_engine_driver.obj" "%SRCDIR%bc250_submission_engine.c"
 if errorlevel 1 exit /b 1
 
 echo [cc] bc250_sdma_ring_work.c ^(Dxgk registration^)
@@ -423,6 +452,23 @@ if errorlevel 1 exit /b 1
 "%ODIR%\ip_discovery_contract_test.exe"
 if errorlevel 1 (
   echo TESTE FALHOU ^(ip_discovery_contract_test^)
+  exit /b 1
+)
+
+echo [cc] ih_register_layout_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\ih_register_layout_contract_test.obj" "%ROOTDIR%\driver\tests\ih_register_layout_contract_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] ih_register_layout_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\ih_register_layout_contract_test.exe" ^
+  "%ODIR%\bc250_ih_register_layout_contract.obj" ^
+  "%ODIR%\ih_register_layout_contract_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\ih_register_layout_contract_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(ih_register_layout_contract_test^)
   exit /b 1
 )
 
@@ -1014,6 +1060,123 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo [cc] gpuva_space_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\gpuva_space_contract_test.obj" "%ROOTDIR%\driver\tests\gpuva_space_contract_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] gpuva_space_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gpuva_space_contract_test.exe" ^
+  "%ODIR%\bc250_gpuva_space_contract.obj" ^
+  "%ODIR%\bc250_mcdm_object_contract.obj" ^
+  "%ODIR%\gpuva_space_contract_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\gpuva_space_contract_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(gpuva_space_contract_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
+echo [cc] gpuva_snapshot_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\gpuva_snapshot_contract_test.obj" "%ROOTDIR%\driver\tests\gpuva_snapshot_contract_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] gpuva_snapshot_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gpuva_snapshot_contract_test.exe" ^
+  "%ODIR%\bc250_gpuva_snapshot_contract.obj" ^
+  "%ODIR%\bc250_gpuva_space_contract.obj" ^
+  "%ODIR%\bc250_mcdm_object_contract.obj" ^
+  "%ODIR%\gpuva_snapshot_contract_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\gpuva_snapshot_contract_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(gpuva_snapshot_contract_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
+echo [cc] gpuva_journal_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\gpuva_journal_contract_test.obj" "%ROOTDIR%\driver\tests\gpuva_journal_contract_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] gpuva_journal_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gpuva_journal_contract_test.exe" ^
+  "%ODIR%\bc250_gpuva_journal_contract.obj" ^
+  "%ODIR%\bc250_gpuva_snapshot_contract.obj" ^
+  "%ODIR%\bc250_gpuva_space_contract.obj" ^
+  "%ODIR%\bc250_mcdm_object_contract.obj" ^
+  "%ODIR%\gpuva_journal_contract_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\gpuva_journal_contract_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(gpuva_journal_contract_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
+echo [cc] wddm_submission_pipeline_test.c
+cl %CFLAGS% /Fo"%ODIR%\wddm_submission_pipeline_test.obj" "%ROOTDIR%\driver\tests\wddm_submission_pipeline_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] wddm_submission_pipeline_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\wddm_submission_pipeline_test.exe" ^
+  "%ODIR%\bc250_gpuva_space_contract.obj" ^
+  "%ODIR%\bc250_mcdm_object_contract.obj" ^
+  "%ODIR%\bc250_persistent_ring_contract.obj" ^
+  "%ODIR%\bc250_pm4_packet_builder.obj" ^
+  "%ODIR%\bc250_sdma_packet_builder.obj" ^
+  "%ODIR%\bc250_context_dispatcher_contract.obj" ^
+  "%ODIR%\bc250_compute_mqd_contract.obj" ^
+  "%ODIR%\bc250_compute_dispatch_contract.obj" ^
+  "%ODIR%\bc250_observable_shader.obj" ^
+  "%ODIR%\bc250_isa_validator.obj" ^
+  "%ODIR%\bc250_vram_allocator.obj" ^
+  "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_probe_telemetry.obj" ^
+  "%ODIR%\bc250_submission_engine.obj" ^
+  "%ODIR%\wddm_submission_pipeline_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\wddm_submission_pipeline_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(wddm_submission_pipeline_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
+echo [cc] bc250_unified_wddm_submission_test.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_unified_wddm_submission_test.obj" "%ROOTDIR%\driver\tests\bc250_unified_wddm_submission_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] bc250_unified_wddm_submission_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\bc250_unified_wddm_submission_test.exe" ^
+  "%ODIR%\bc250_gpuva_space_contract.obj" ^
+  "%ODIR%\bc250_mcdm_object_contract.obj" ^
+  "%ODIR%\bc250_persistent_ring_contract.obj" ^
+  "%ODIR%\bc250_pm4_packet_builder.obj" ^
+  "%ODIR%\bc250_sdma_packet_builder.obj" ^
+  "%ODIR%\bc250_context_dispatcher_contract.obj" ^
+  "%ODIR%\bc250_compute_mqd_contract.obj" ^
+  "%ODIR%\bc250_compute_dispatch_contract.obj" ^
+  "%ODIR%\bc250_observable_shader.obj" ^
+  "%ODIR%\bc250_isa_validator.obj" ^
+  "%ODIR%\bc250_vram_allocator.obj" ^
+  "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_probe_telemetry.obj" ^
+  "%ODIR%\bc250_submission_engine.obj" ^
+  "%ODIR%\bc250_unified_wddm_submission_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\bc250_unified_wddm_submission_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(bc250_unified_wddm_submission_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
 echo [cc] allocation_abi_contract_test.c
 cl %CFLAGS% /Fo"%ODIR%\allocation_abi_contract_test.obj" "%ROOTDIR%\driver\tests\allocation_abi_contract_test.c"
 if errorlevel 1 exit /b 1
@@ -1048,6 +1211,25 @@ if errorlevel 1 exit /b 1
 "%ODIR%\submit_command_contract_test.exe"
 if errorlevel 1 (
   echo TESTE FALHOU ^(submit_command_contract_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
+echo [cc] persistent_ring_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\persistent_ring_contract_test.obj" "%ROOTDIR%\driver\tests\persistent_ring_contract_test.c"
+if errorlevel 1 exit /b 1
+
+echo [link] persistent_ring_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\persistent_ring_contract_test.exe" ^
+  "%ODIR%\bc250_sdma_packet_builder.obj" ^
+  "%ODIR%\bc250_pm4_packet_builder.obj" ^
+  "%ODIR%\bc250_persistent_ring_contract.obj" ^
+  "%ODIR%\persistent_ring_contract_test.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+"%ODIR%\persistent_ring_contract_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(persistent_ring_contract_test^) - Linha/Codigo: %errorlevel%
   exit /b 1
 )
 
@@ -1323,6 +1505,9 @@ echo [link] active_miniport_test.exe
 link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   /OUT:"%ODIR%\active_miniport_test.exe" ^
   "%ODIR%\bc250_mcdm_object_contract.obj" ^
+  "%ODIR%\bc250_gpuva_space_contract.obj" ^
+  "%ODIR%\bc250_gpuva_snapshot_contract.obj" ^
+  "%ODIR%\bc250_gpuva_journal_contract.obj" ^
   "%ODIR%\bc250_gpuva_sdma_broker_contract.obj" ^
   "%ODIR%\bc250_allocation_abi_contract.obj" ^
   "%ODIR%\bc250_resource_contract.obj" ^
@@ -1372,6 +1557,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_psp_load_fw_transaction.obj" ^
   "%ODIR%\bc250_sdma_f32_transaction.obj" ^
   "%ODIR%\bc250_sdma_ring_work.obj" ^
+  "%ODIR%\bc250_persistent_ring_contract.obj" ^
+  "%ODIR%\bc250_submission_engine.obj" ^
   "%ODIR%\bc250_active_miniport.obj" ^
   "%ODIR%\active_miniport_test.obj" kernel32.lib
 if errorlevel 1 exit /b 1
@@ -1400,9 +1587,16 @@ if errorlevel 1 (
 )
 
 echo [link] bc250mcdm.sys
+rem /DEBUG gera o PDB privado da imagem de PRODUCAO. Sem ele, uma sessao KD
+rem sobre o candidato seguro fica sem simbolos — e o Gate 1.5 existe
+rem justamente para descobrir onde o dxgkrnl para.
 link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry ^
+  /DEBUG /PDB:"%ODIR%\bc250mcdm.pdb" ^
   /OUT:"%ODIR%\bc250mcdm.sys" ^
   "%ODIR%\bc250_mcdm_object_contract.obj" ^
+  "%ODIR%\bc250_gpuva_space_contract.obj" ^
+  "%ODIR%\bc250_gpuva_snapshot_contract.obj" ^
+  "%ODIR%\bc250_gpuva_journal_contract.obj" ^
   "%ODIR%\bc250_gpuva_sdma_broker_contract.obj" ^
   "%ODIR%\bc250_allocation_abi_contract.obj" ^
   "%ODIR%\bc250_resource_contract.obj" ^
@@ -1456,6 +1650,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_sdma_f32_transaction.obj" ^
   "%ODIR%\bc250_sdma_ring_work_driver.obj" ^
   "%ODIR%\bc250_pfp_direct_load_driver.obj" ^
+  "%ODIR%\bc250_persistent_ring_contract.obj" ^
+  "%ODIR%\bc250_submission_engine_driver.obj" ^
   "%ODIR%\bc250_active_miniport_driver.obj" ^
   "%WDK%\Lib\%WDKVER%\km\x64\ntoskrnl.lib" ^
   "%WDK%\Lib\%WDKVER%\km\x64\hal.lib" ^
@@ -1511,16 +1707,23 @@ echo [cc] bc250-hardware-diag.c
 cl /nologo /W4 /O2 /Fo"%ODIR%\bc250-hardware-diag.obj" /Fe"%ODIR%\bc250-hardware-diag.exe" "%ROOTDIR%\tools\bc250-hardware-diag.c" /link kernel32.lib advapi32.lib
 if errorlevel 1 exit /b 1
 
+echo [cc] bc250-mcdm-submit-test.c
+cl /nologo /W4 /O2 /Fo"%ODIR%\bc250-mcdm-submit-test.obj" /Fe"%ODIR%\bc250-mcdm-submit-test.exe" "%ROOTDIR%\tools\bc250-mcdm-submit-test.c" "%ODIR%\bc250_runtime.obj" /link kernel32.lib advapi32.lib
+if errorlevel 1 exit /b 1
+
 python "%ROOTDIR%\tools\audit-mcdm-ddi-matrix.py"
 if errorlevel 1 exit /b 1
 python "%ROOTDIR%\tools\audit-bc250mcdm-safety.py"
+if errorlevel 1 exit /b 1
+python "%ROOTDIR%\tools\audit-ddi-noop-callbacks.py"
 if errorlevel 1 exit /b 1
 
 echo WDK RESOURCE ADAPTER: OK ^(CM real types + variable full lists + fail-closed^)
 echo VRAM TOPOLOGY CONTRACT: OK ^(RCC + GCMC + CPU window, offline^)
 echo VRAM TOPOLOGY READER: OK ^(two stable readonly passes, offline^)
 echo DISCOVERY TMR READER: OK ^(DRIVER_SCRATCH_0/1/2, two stable readonly passes^)
-echo IP DISCOVERY CONTRACT: OK ^(GC 10.1.3 + checksums + bounds, offline^)
+echo IP DISCOVERY CONTRACT: OK ^(GC 10.1.3 + generic OSSSYS identity + checksums + bounds, offline^)
+echo IH REGISTER LAYOUT: OK ^(OSSSYS 5.0 base+dword composition; 0x4480 coherent, 0x3800 rejected, offline^)
 echo MMIO TOPOLOGY TRANSPORT: OK ^(PnP BAR bounds + map/unmap, fake callbacks^)
 echo WDK STARTDEVICE ADAPTER: OK ^(ownership + readonly preflight + teardown^)
 echo FIRMWARE STAGING CONTRACT: OK ^(sealed lease + SHA-256 + readback + restore, fake transport^)
@@ -1531,12 +1734,13 @@ echo PM4 PACKET BUILDER: OK ^(NOP + WRITE_DATA + SH/CTX/UCONFIG + RELEASE_MEM + 
 echo GOLDEN SETTINGS CONTRACT: OK ^(34 entries + RMW + 2-pass preflight + LIFO rollback, offline^)
 echo COMPUTE MQD CONTRACT: OK ^(GFX10 512B MQD + EOP buffer + HQD queue bounds, offline^)
 echo CONTEXT DISPATCHER CONTRACT: OK ^(SDMA + Compute engine context dispatch + IB + EOP fences, offline^)
-echo INTERRUPT HANDLER CONTRACT: OK ^(GFX10 16B IV vectors + SDMA/CP routing + modular RPTR, offline^)
+echo INTERRUPT HANDLER CONTRACT: OK ^(Navi/GFX10 32B IV decode + byte RPTR/WPTR + provenance gate, offline^)
 echo PAGING/TLB CONTRACT: OK ^(GFXHUB ACK + owned VMID8 inert transaction validated in hardware^)
 echo ADAPTER INFO CONTRACT: OK ^(2 nodes: SDMA0 + Compute MEC + 48-bit GPUVA, offline^)
 echo SEGMENT CONTRACT: OK ^(Segment 1 Local VRAM + Segment 2 GART Aperture, offline^)
 echo TDR RECOVERY CONTRACT: OK ^(Two-pass hang detection + Node 0/1 atomic reset + HQD dequeue, offline^)
 echo SUBMIT COMMAND CONTRACT: OK ^(DxgkDdiSubmitCommand + Indirect Buffers + Release Mem EOP, offline^)
+echo PERSISTENT RING CONTRACT: OK ^(anel persistente P1 + wraparound PACKET2 + retire de fence, offline^)
 echo PREEMPTION CONTRACT: OK ^(DxgkDdiPreemptCommand + HQD dequeue + SDMA preemption fence, offline^)
 echo GPU CLOCK CONTRACT: OK ^(DxgkDdiCalibrateGpuClock + 100MHz timestamp counter + QPC sync, offline^)
 echo POWER MANAGEMENT CONTRACT: OK ^(DxgkDdiSetPowerState D0/D3 + SetStablePowerState + GFXOFF gating, offline^)
@@ -1552,7 +1756,7 @@ echo REBAR READER: OK ^(supported + selected + assigned, readonly^)
 echo POST-DISPLAY RESERVATION: OK ^(active StartDevice integration + fail-closed telemetry^)
 echo READONLY MCDM IMAGE: OK ^(DriverEntry links DxgkInitialize via displib; StartDevice fail-closed^)
 echo MCDM DEVELOPMENT IMAGE: OK ^(DriverEntry links DxgkInitialize; StartDevice fail-closed^)
-echo KERNEL COMPUTE SERVICE: OK ^(DriverEntry links IoCreateDevice; Direct MMIO + SDMA + MEC0 IOCTLs^)
+echo KERNEL COMPUTE SERVICE: OK ^(DriverEntry links IoCreateDevice; unsafe alloc/free/copy IOCTLs fail-closed^)
 echo Zero driver, zero install, zero hardware.
 echo Veredito: NAO VALIDADO EM HARDWARE.
 endlocal

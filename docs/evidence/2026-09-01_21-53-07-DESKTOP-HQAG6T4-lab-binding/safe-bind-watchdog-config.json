@@ -1,0 +1,16 @@
+﻿{
+    "schema_version":  1,
+    "task_name":  "BC250-SafeBindGuard",
+    "token":  "ed5961c9-67da-44ee-b0f9-85f123a9f36d",
+    "instance_id":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
+    "timeout_seconds":  240,
+    "evidence_dir":  "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\docs\\evidence\\2026-09-01_21-53-07-DESKTOP-HQAG6T4-lab-binding",
+    "recovery_path":  "C:\\BC250_RECOVERY.cmd",
+    "recovery_sha256":  "E50EFE8449F661A02A0D8F6AC49AC0AD234F5F62A91951C58CDB8E202CE29456",
+    "expected_sys_sha256":  "11841C07EA751C6EEDBE2225BF7CC44961787DBD68700CDECE258F1DB271485F",
+    "expected_inf_sha256":  "3AAA16283F6F279FAADB92DBD2B9C132E7D44C108A4E7738D97CFAA1F236420A",
+    "expected_driver_version":  "09/01/2026,3.79.0.0",
+    "armed_boot_ticks":  639239064205000000,
+    "automatic_recovery_reboot":  true,
+    "hardware_validated":  false
+}

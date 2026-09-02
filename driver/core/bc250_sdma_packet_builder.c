@@ -177,6 +177,44 @@ BC250_SDMA_STATUS Bc250SdmaEmitGcr(
     return BC250_SDMA_OK;
 }
 
+BC250_SDMA_STATUS Bc250SdmaEmitIndirect(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint64_t IbAddress,
+    uint32_t IbSizeDwords,
+    uint64_t CsaAddress,
+    uint32_t Vmid)
+{
+    uint32_t header;
+
+    if (RingBuffer == NULL || CursorDwords == NULL || !Bc250IsPowerOfTwo32(RingDwords)) {
+        return BC250_SDMA_BAD_ARGUMENT;
+    }
+    if (IbSizeDwords == 0u || IbSizeDwords > 0xFFFFFu || Vmid > 0xFu) {
+        return BC250_SDMA_BAD_ARGUMENT;
+    }
+    if ((IbAddress & (uint64_t)(BC250_SDMA_IB_ALIGNMENT_BYTES - 1u)) != 0 ||
+        (CsaAddress & 3u) != 0) {
+        return BC250_SDMA_MISALIGNED;
+    }
+
+    header = (BC250_SDMA_OP_INDIRECT & 0xFFu) | ((Vmid & 0xFu) << 16);
+
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, header);
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        (uint32_t)(IbAddress & 0xFFFFFFE0ull));
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        (uint32_t)(IbAddress >> 32));
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, IbSizeDwords);
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        (uint32_t)(CsaAddress & 0xFFFFFFFFull));
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        (uint32_t)(CsaAddress >> 32));
+
+    return BC250_SDMA_OK;
+}
+
 BC250_SDMA_STATUS Bc250SdmaEmitTrap(
     uint32_t *RingBuffer,
     uint32_t RingDwords,

@@ -30,6 +30,29 @@ void Bc250ProbeRecord(int Field, unsigned long Value)
     (void)Value;
 }
 
+/* Fase V5: rastro de DDI. Instrumentacao pura; fora do kernel e' no-op. */
+void Bc250ProbeMarkDdi(unsigned long DdiId)
+{
+    (void)DdiId;
+}
+
+/* Schema 130: marco pos-StartDevice. Tambem instrumentacao pura. */
+void Bc250ProbeMarkPostStartStage(unsigned long Stage)
+{
+    (void)Stage;
+}
+
+/*
+ * Schema 130: captura integral das interfaces pedidas por
+ * DxgkDdiQueryInterface. O tipo real e' BC250_V5_QI_RECORD, mas este arquivo
+ * nao inclui bc250_probe_telemetry.h; void* basta para o stub e mantem o
+ * teste de VidPn independente do modulo de telemetria.
+ */
+void Bc250ProbeRecordQueryInterface(const void *Record)
+{
+    (void)Record;
+}
+
 void Bc250ProbeRecordFirstFailure(long Status)
 {
     (void)Status;
@@ -451,7 +474,7 @@ static int Bc250RunDisplayVidPnTest(void)
     /* 2. Test QueryChildRelations */
     CHECK(Bc250DxgkDdiQueryChildRelations(NULL, &childDescriptor, sizeof(childDescriptor)) == STATUS_SUCCESS);
     CHECK(childDescriptor.ChildDeviceType == TypeVideoOutput);
-    CHECK(childDescriptor.ChildUid == 0);
+    CHECK(childDescriptor.ChildUid == 1);
     CHECK(childDescriptor.ChildCapabilities.HpdAwareness == HpdAwarenessAlwaysConnected);
 
     /* 3. Test QueryChildStatus */

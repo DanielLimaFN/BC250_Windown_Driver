@@ -54,8 +54,8 @@ if (-not $vsyncProved) {
     throw 'Confirmacao de reboot recusada: VSync real seguido por Present nao foi comprovado.'
 }
 $requiredProbe = [ordered]@{
-    SchemaVersion = 98
-    SkipHwBringup = 1
+    SchemaVersion = [uint32]$config.expected_schema_version
+    SkipHwBringup = [uint32]$config.expected_skip_hw_bringup
     StartDeviceEntered = 1
     DmmIsSupportedStatus = 0
     DmmIsSupportedResult = 1
@@ -64,6 +64,20 @@ $requiredProbe = [ordered]@{
     DmmCommitSupported = 1
     DmmPresentEntered = 1
     DmmPresentStatus = 0
+}
+if ([uint32]$config.expected_render_node -eq 1) {
+    $requiredProbe['V5RenderNodeRequested'] = 1
+    $requiredProbe['V5RenderNodeTunablePresent'] = 1
+    $requiredProbe['V5RegistrationMode'] = 1
+    $requiredProbe['V5StartDeviceStatus'] = 0
+    $requiredProbe['V5StartDeviceSources'] = 1
+    $requiredProbe['V5StartDeviceChildren'] = 1
+    $requiredProbe['HqdActiveStatus'] = 0
+    $requiredProbe['HqdActivePhysicalReady'] = 1
+    $requiredProbe['ShaderPhysicalReady'] = 1
+    $requiredProbe['P1EngineState'] = 1
+    $requiredProbe['P1SelfTestPhysicalReady'] = 1
+    $requiredProbe['P2PhysicalReady'] = 1
 }
 foreach ($entry in $requiredProbe.GetEnumerator()) {
     $property = $probe.PSObject.Properties[$entry.Key]
@@ -106,6 +120,8 @@ $temporaryPath = "$confirmationPath.$([guid]::NewGuid().ToString('N')).tmp"
     commit_count = [uint32]$probe.DmmCommitCount
     control_interrupt_count = [uint32]$probe.DmmControlInterruptCount
     present_status = [uint32]$probe.DmmPresentStatus
+    expected_render_node = [uint32]$config.expected_render_node
+    render_node_validated = $(if ([uint32]$config.expected_render_node -eq 1) { $true } else { $false })
     hardware_validated = $false
 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $temporaryPath -Encoding UTF8
 Move-Item -LiteralPath $temporaryPath -Destination $confirmationPath -Force

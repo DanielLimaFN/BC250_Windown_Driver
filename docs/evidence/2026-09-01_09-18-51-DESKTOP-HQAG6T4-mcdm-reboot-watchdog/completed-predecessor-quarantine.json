@@ -1,0 +1,11 @@
+﻿{
+    "source":  "C:\\BC250_REBOOT_GUARD",
+    "quarantine":  "C:\\BC250_DRIVER_QUARANTINE\\BC250_REBOOT_GUARD-2026-09-01_09-18-51-completed",
+    "predecessor":  {
+                        "task_name":  "BC250-RebootGuard",
+                        "driver_version":  "3.63.0.0",
+                        "evidence_dir":  "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\docs\\evidence\\2026-09-01_04-57-00-DESKTOP-HQAG6T4-mcdm-reboot-watchdog",
+                        "boot_ticks":  639238462865000000
+                    },
+    "moved_at":  "2026-09-01T09:18:51.4860085-03:00"
+}

@@ -1,0 +1,49 @@
+﻿{
+    "captured_at":  "2026-09-01T19:20:15.1312042-03:00",
+    "build_kind":  "RENDERONLY_SAFE",
+    "driver_ver":  "09/01/2026,3.76.0.0",
+    "schema_version":  133,
+    "package_sys_sha256":  "4790316F45A324D1987CF0739296D62C8F1E67492956E84B748F4DA2CD90D5F0",
+    "device_service":  "BasicDisplay",
+    "device_code":  0,
+    "render_node":  null,
+    "render_only_lab":  null,
+    "validity_failures":  [
+                              "SchemaVersion esperado=133 observado=",
+                              "V5UnsafeBringupCompiled esperado=0 observado=",
+                              "V5ProfileResolveStatus esperado=0 observado=",
+                              "V5AdapterProfile esperado=2 observado="
+                          ],
+    "gate_failures":  [
+                          "V5RenderNodeRequested esperado=1 observado=",
+                          "V5RenderNodeTunablePresent esperado=1 observado=",
+                          "V5RenderOnlyLabRequested esperado=1 observado=",
+                          "V5RenderOnlyLabTunablePresent esperado=1 observado=",
+                          "V5RegistrationMode esperado=2 observado=",
+                          "V5StartDeviceStatus esperado=0 observado=",
+                          "V5StartDeviceReturnStage esperado=3 observado=",
+                          "V5RenderOnlyEarlyReturn esperado=1 observado=",
+                          "V5StartDeviceSources esperado=0 observado=",
+                          "V5StartDeviceChildren esperado=0 observado=",
+                          "V5DisplaySurfaceAnnounced esperado=0 observado=",
+                          "V5PostDisplayAttempted esperado=0 observado=",
+                          "V5DisplayInitEntered esperado=0 observado=",
+                          "V5UnsafeBringupEntered esperado=0 observado=",
+                          "P1EngineState esperado=0 observado=",
+                          "P1SelfTestPhysicalReady esperado=0 observado=",
+                          "P2PhysicalReady esperado=0 observado="
+                      ],
+    "progress":  {
+                     "V5PostStartStage":  null,
+                     "V5QaiCalls":  null,
+                     "V5QaiLastType":  null,
+                     "V5QaiLastStatus":  null,
+                     "V5QiCalls":  null,
+                     "V5LastDdi":  null,
+                     "V5DdiMarks":  null,
+                     "V5LifecycleState":  null,
+                     "StopDeviceEntered":  null,
+                     "RemoveDeviceEntered":  null
+                 },
+    "hardware_validated":  false
+}
