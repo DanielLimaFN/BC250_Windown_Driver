@@ -1,3 +1,0 @@
-LIBRARY dxgkrnl.sys
-EXPORTS
-    DxgkInitialize

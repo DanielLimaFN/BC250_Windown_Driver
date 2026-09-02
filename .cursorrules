@@ -1,19 +1,75 @@
 # Cursor Rules for BC250-WinDv Repository
-
 # Hardware Target: AMD BC-250 APU (1002:13FE rev 00, Cyan Skillfish 2 / GC 10.1.3)
-# OS Target: Windows 11 x64 (Kernel Mode KMDF & WDDM MCDM Miniport)
+# OS Target: Windows 11 x64 (Kernel Mode KMDF + full WDDM Display+Render miniport)
+# Last revision: 2026-09-02
+# Normative core is IDENTICAL to CLAUDE.md, AGENTS.md and GEMINI.md. Change all four together.
+
+---
+
+## 0. Goal, and the single source of truth
+
+GOAL: run games on Windows 11 on the BC-250 — 24 CUs, 16 GB GDDR6, monitor on the board's
+own DisplayPort, via D3D12/Vulkan, with NO WARP and NO software fallback.
+
+SINGLE SOURCE OF TRUTH: `BASE_DE_AVANCO.md`
+  - Table 1 = what is already validated on silicon (45 items, archived proof).
+  - Table 2 = what is missing, ordered by priority P1..P9, WITH THE TEST THAT CLOSES EACH ITEM.
+ROADMAP: `docs/164_ROADMAP_WDDM_JOGOS.md`
+NORMATIVE RULES / CONFIDENCE VOCABULARY: `rules.md`
+
+CURRENT ARCHITECTURE: display v1 is INHERITED from the UEFI GOP — single-mode VidPn,
+scanout allocation in real VRAM, `DxgkDdiPresent` in BLT model via SDMA, VSync READ from
+the OTG frame counter. DCN is NOT on the critical path. Writing to any DCN register is
+FORBIDDEN outside priority P9; reading is allowed.
+
+WHERE WE ACTUALLY ARE: the WDDM adapter has NEVER reached Code 0. `dxgkrnl` rejects the
+device on return from `StartDevice`, 5 s after bind, without ever asking for `DRIVERCAPS`
+(items 97 and 102). Direct compute and the KMDOD/GOP display ARE proven on silicon.
+Nothing of WDDM render is.
+
+CLOSED PATHS — do not reopen: render-only under `Class=Display` (failed, `docs/162`);
+`MiscCaps.ComputeOnly` (unreachable); cross-adapter / MCDM as the destination (single-die APU).
 
 ---
 
 ## 1. Project Philosophy & Hardware Validation Laws
+- ABSOLUTE HONESTY: report the measurement, never the expectation. A hypothesis is never
+  presented as a cause.
 - NEVER claim that GPU execution, acceleration, or compute works without physical silicon proof.
 - Hardware proof requires the physical tripod:
   1. RPTR reaches WPTR on the physical ring.
   2. Physical fence written by the GPU to VRAM/GTT (with poison check).
   3. Byte-by-byte data integrity verification of output buffer.
 - If physical proof is missing or partial, ALWAYS declare: "NÃO VALIDADO EM HARDWARE".
+- EVERY item closes with a NAMED TEST. State which test proves hardware execution and where
+  the evidence will be archived (`docs/evidence/`). Table 2 of `BASE_DE_AVANCO.md` already
+  specifies the required proof per item. Work without a named test is not deliverable.
 - NEVER simulate hardware progress with CPU delays, CPU-incremented fences, or mock success returns.
-- Always include the project status bar at the top of comprehensive technical responses.
+- NOT proof of acceleration: compiling, signing, loading a DLL, enumerating an API, creating
+  a device/context/pipeline, opening a window or swapchain, `vulkaninfo`, `dxdiag`, `glGetString`,
+  or any string the driver itself announces.
+- Physical runs are the scarce resource and DANIEL runs them. Answer from source reading and
+  from mining `docs/evidence/` first. Define a run budget and an abandonment criterion BEFORE
+  arming a run. Cold boot between binds.
+- Always include the project status bar at the top of comprehensive technical responses:
+
+```text
+================================== STATUS DO DRIVER BC-250 ==================================
+Base Geral Pre-WDDM (Lab)        ██████████████████▋░  93%   Estavel e Isolado
+SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silicio
+GCVM & Traducao de Memoria       ██████████████████░░  90%   PTE 0x10 provado; sem GPUVA dinamica
+RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
+Telemetria & Observabilidade     █████████████████░░░  85%   Schema 134; anel de DDI e bitmap de QAI
+Compute & Async Queues (MEC/MQD) ██████████████████░░  90%   P1 17/17 e P2 16/16 provados; fila persistente nao consome
+Miniport WDDM Display+Render     ███████░░░░░░░░░░░░░  35%   Codigo 43 no retorno do StartDevice; 3.81 assinado, ensaio pendente
+=============================================================================================
+Veredito Global: NAO VALIDADO EM HARDWARE
+=============================================================================================
+```
+
+WARNING: until 2026-09-02, AGENTS.md and GEMINI.md carried a bar claiming
+"Miniport WDDM Display+Render 100% — Code 0" and a verdict of "PROVEN ON SILICON".
+That was FALSE and contradicted the measured evidence. Do not reintroduce it.
 
 ---
 
@@ -29,6 +85,7 @@
 - All function pointers and inputs MUST be validated against `NULL`.
 - Check all NTSTATUS return values with `if (!NT_SUCCESS(status)) { ... }`.
 - Ensure clean teardown/rollback in all error branches.
+- NEVER return `STATUS_SUCCESS` from a DDI that has no functional backend. Fail closed.
 
 ---
 
@@ -36,8 +93,16 @@
 - Applying bitmasks to SOC15 registers MUST strictly follow:
   `uint32_t new_val = (read_val & ~mask) | (or_val & mask);`
 - Always follow the transactional lifecycle:
-  `PREFLIGHT -> SNAPSHOT -> APPLY -> READBACK -> TEST -> ROLLBACK / TEARDOWN`
-- NEVER write to quarantined registers (e.g., SETUP_TMR without discovery preflight, raw 0x58000 mailbox, active scanout regions).
+  `PREFLIGHT -> SNAPSHOT -> APPLY -> READBACK -> SILICON PROOF -> ROLLBACK / TEARDOWN`
+- Only use offsets catalogued in `docs/03_CATALOGO_DE_REGISTRADORES.md`, with the source cited.
+- NEVER write to quarantined registers (e.g., SETUP_TMR without discovery preflight,
+  raw 0x58000 mailbox, active scanout regions).
+- DCN addressing is SEGMENTED: the offset is `DMU_BASE.seg[BASE_IDX] + reg`, with
+  `DMU_BASE = {0x12, 0xC0, 0x34C0, 0x9000}` (from `cyan_skillfish_ip_offset.h`).
+  THERE IS NO FLAT DCN BASE. The flat `0x5000` in the reference repo collides with MMHUB
+  and is wrong.
+- Confidence vocabulary for every technical claim: P0 proven on silicon / P1 derived from
+  upstream / P2 partially observed / H hypothesis / Q quarantined (forbidden).
 
 ---
 
@@ -45,3 +110,6 @@
 - Set `$ErrorActionPreference = "Stop"` for strict error control.
 - Validate telemetry schema outputs (e.g., `MmioStatus == 0`, `RespStatus == 0`).
 - Always support dry-run / fail-closed verification before physical writes.
+- Every physical run is fire-and-collect: fixed window, portrait, unconditional rollback and reboot.
+- The packager does NOT build the SYS — it copies. Skipping the lab build signs the previous
+  candidate's binary.

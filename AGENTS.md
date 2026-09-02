@@ -1,74 +1,128 @@
-# AGENTS.md — Diretrizes Universais para Agentes de IA e Modelos Autônomos
+# AGENTS.md — Diretrizes Universais para Agentes de IA
 
-> **Instruções de Contexto e Governança para Agentes (OpenAI Codex, ChatGPT, Copilot Workspace, Auto-Agents)**  
-> *Target: AMD BC-250 (`1002:13FE`, GC 10.1.3 / Cyan Skillfish 2) | Windows 11 x64 Kernel Driver*
-
----
-
-## 🤖 1. Contexto Geral do Sistema e Arquitetura
-
-Você está atuando no repositório **BC250-WinDv**, cujo objetivo é o desenvolvimento de um driver gráfico de computação de alta performance e baixo nível para o chip **AMD BC-250**:
-- **Plataforma**: APU baseada em console, 16 GB GDDR6 unificada, CPU Zen 2 (6 ou 8 núcleos), GPU GC 10.1.3 (Cyan Skillfish 2, 24 CUs ativas).
-- **Modelo de Driver Alvo**: Driver Gráfico WDDM Display + 3D Render Completo (`Class=Display`), nativo e acelerado para Jogos (DirectX / Vulkan Gaming) no Windows 11 x64, operando em Código 0 com renderização sem tela preta.
-- **Camada de Laboratório**: Driver KMDF de diagnóstico (`bc250dbg.sys`) operando em paralelo para medições diretas de MMIO e prova no silício.
+> **Governança para qualquer agente autônomo neste repositório** (OpenAI Codex, ChatGPT,
+> Copilot Workspace, Cursor, auto-agents).
+> *Target: AMD BC-250 (`1002:13FE`, GC 10.1.3 / Cyan Skillfish 2) | Windows 11 x64*
+> **Última revisão: 2026-09-02** · Núcleo normativo idêntico a `CLAUDE.md`, `GEMINI.md` e `.cursorrules`.
 
 ---
 
-## 🔒 2. Leis Inegociáveis de Execução para Agentes
+## 🎯 1. Onde queremos chegar
 
-Ao propor qualquer código, script ou diagnóstico:
+**Jogos no Windows 11 rodando na BC-250** — 24 CUs, 16 GB GDDR6, monitor no DisplayPort da
+própria placa, D3D12/Vulkan, **sem WARP e sem fallback de software**.
 
-### A. Exibição Obrigatória da Barra de Status
-Inicie suas respostas apresentando a barra de progresso atualizada:
+**Fonte única de verdade:** [`BASE_DE_AVANCO.md`](BASE_DE_AVANCO.md).
+- **Tabela 1** — o que já está validado no silício (45 itens, com prova arquivada).
+- **Tabela 2** — o que falta, em ordem de prioridade `P1→P9`, **com o teste que fecha cada item**.
+
+**Roadmap:** [`docs/164_ROADMAP_WDDM_JOGOS.md`](docs/164_ROADMAP_WDDM_JOGOS.md).
+
+### Arquitetura vigente
+Display v1 é **por herança do UEFI GOP**: VidPn de um modo único, scanout em VRAM real,
+`DxgkDdiPresent` no modelo **blt** por SDMA, VSync **lido** do frame counter do OTG.
+**Não implementamos DCN no caminho crítico.** Escrita em registrador de DCN é **proibida**
+fora da prioridade P9. Leitura é permitida.
+
+### Onde estamos, de verdade
+O adaptador WDDM **nunca alcançou Código 0**. O `dxgkrnl` recusa o dispositivo no retorno
+do `StartDevice`, 5 s após o bind, sem nunca perguntar `DRIVERCAPS` (itens 97 e 102). O
+compute direto e o display KMDOD/GOP **estão** provados no silício. Nada de WDDM render está.
+
+---
+
+## 🛑 2. Barra de status obrigatória
+
+Abra toda resposta técnica com esta barra. **Ela reflete medição, não desejo.**
+
 ```text
 ================================== STATUS DO DRIVER BC-250 ==================================
 Base Geral Pre-WDDM (Lab)        ██████████████████▋░  93%   Estavel e Isolado
 SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silicio
 GCVM & Traducao de Memoria       ██████████████████░░  90%   PTE 0x10 provado; sem GPUVA dinamica
 RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
-Telemetria & Observabilidade     ████████████████████ 100%  134 campos (Schema 134)
-Compute & Async Queues (MEC/MQD) ████████████████████ 100%  Fases P1 e P2 provadas no silicio (16/16 submissoes)
-Miniport WDDM Display+Render     ████████████████████ 100%  Canal Display/VidPN/VSync/Present Ativo em Código 0 (2560x1080@60Hz)
+Telemetria & Observabilidade     █████████████████░░░  85%   Schema 134; anel de DDI e bitmap de QAI
+Compute & Async Queues (MEC/MQD) ██████████████████░░  90%   P1 17/17 e P2 16/16 provados; fila persistente nao consome
+Miniport WDDM Display+Render     ███████░░░░░░░░░░░░░  35%   Codigo 43 no retorno do StartDevice; 3.81 assinado, ensaio pendente
 =============================================================================================
-Veredito Global: CANAL DE VÍDEO WDDM E DISPLAY COMPROVADOS NO SILÍCIO (CÓDIGO 0)
+Veredito Global: NAO VALIDADO EM HARDWARE
 =============================================================================================
 ```
 
-### B. O Ciclo de Vida Transacional (State Machine)
-Toda interação de baixo nível com hardware deve obrigatoriamente seguir a máquina de estados:
-```text
-[PREFLIGHT] -> [SNAPSHOT] -> [APPLY] -> [READBACK] -> [PROVA NO SILÍCIO] -> [ROLLBACK/TEARDOWN]
-     |                                                       |                      |
-     +---(abortar se inválido)                               +---(falhar fechado)---+
-```
-
-1. **Preflight**: Validar permissões, verificar se a sessão de boot está limpa, checar se a engine está responsiva.
-2. **Snapshot**: Capturar o estado original dos registradores ou páginas de memória.
-3. **Apply**: Escrever no hardware respeitando as máscaras SOC15 `(lido & ~mask) | (or_val & mask)`.
-4. **Readback**: Ler de volta o registrador/memória para auditar a escrita.
-5. **Prova no Silício**: Submeter trabalho ao ring físico e validar o tripé (`RPTR == WPTR`, fence física da GPU com poison check, integridade de dados).
-6. **Rollback**: Restaurar o snapshot e liberar todos os recursos (handles, buffers, mapeamentos).
+> ⚠️ **Aviso histórico.** Até 2026-09-02 este arquivo continha uma barra declarando
+> *"Miniport WDDM Display+Render 100% — Canal Display/VidPN/VSync/Present Ativo em Código 0"*
+> e o veredito *"COMPROVADOS NO SILÍCIO"*. **Era falso** e contradizia a evidência medida.
+> Agentes que leram aquela versão produziram análises otimistas sem base. Não reintroduza.
 
 ---
 
-## 🚫 3. Anti-Alucinação e Prevenção de Falsos Positivos
+## ⚖️ 3. Leis inegociáveis
 
-Como agente de IA, você **NÃO DEVE**:
-- Alucinar que uma funcionalidade está "pronta", "acelerada" ou "funcionando" porque o código compilou com sucesso ou retornou `STATUS_SUCCESS`.
-- Sugerir o uso de fences ou sinalizações simuladas por CPU (`KeSetEvent`, incrementos manuais de ponteiro, etc.).
-- Propor fallbacks de software (WARP, loops em C) disfarçados de execução de GPU.
-- Utilizar endereços de MMIO não catalogados em [`docs/03_CATALOGO_DE_REGISTRADORES.md`](docs/03_CATALOGO_DE_REGISTRADORES.md) ou presentes em quarentena (`Q`).
-- Omitir a cláusula **`NÃO VALIDADO EM HARDWARE`** se qualquer evidência física faltar.
+1. **Sinceridade absoluta.** Reporte a medição, não a expectativa. Prova ausente →
+   escreva literalmente **`NÃO VALIDADO EM HARDWARE`**. Hipótese nunca é apresentada como causa.
+2. **Tripé no silício.** `RPTR == WPTR` + fence física gravada **pela GPU** em VRAM com
+   poison check + dados conferidos **byte a byte**. Sem os três, não houve execução.
+3. **Todo item fecha com um teste nomeado.** Diga qual teste comprova execução no hardware
+   e onde a evidência será arquivada (`docs/evidence/`). A Tabela 2 da `BASE_DE_AVANCO.md`
+   já traz a prova exigida de cada item. Trabalho sem teste nomeado não é entregável.
+4. **Zero fakes.** Proibido: fence ou timestamp incrementado pela CPU; loop de delay
+   simulando execução; `STATUS_SUCCESS` em DDI sem backend; stub/mock/no-op anunciado como
+   pronto; telemetria fixa ou estimada; WARP/GDI/llvmpipe; fallback silencioso.
+5. **Não é prova de aceleração:** compilar, assinar, carregar DLL, enumerar API, criar
+   contexto ou pipeline, abrir janela ou swapchain, `vulkaninfo`, `dxdiag`, `glGetString`,
+   ou qualquer string que o próprio driver anuncia.
+6. **Ciclo transacional fail-closed:**
+   `PREFLIGHT → SNAPSHOT → APPLY → READBACK → PROVA NO SILÍCIO → ROLLBACK/TEARDOWN`
+   Abortar se o preflight for inválido; falhar fechado em qualquer etapa.
+7. **Máscara SOC15:** `uint32_t val = (lido & ~mask) | (or_val & mask);`
+8. **Endereços com proveniência.** Só offsets catalogados em
+   [`docs/03_CATALOGO_DE_REGISTRADORES.md`](docs/03_CATALOGO_DE_REGISTRADORES.md), com
+   fonte citada; nada em quarentena. No DCN: `DMU_BASE.seg[BASE_IDX] + reg`, com
+   `DMU_BASE = {0x12, 0xC0, 0x34C0, 0x9000}` — **não existe base plana**.
+9. **Vocabulário de confiança:** P0 provado no silício · P1 derivado do upstream ·
+   P2 parcialmente observado · H hipótese · Q quarentena (proibido). Ver [`rules.md`](rules.md).
+10. **Economia de corridas.** A corrida física é o recurso escasso e é o **Daniel** quem a
+    executa. Responda primeiro por leitura de fonte e mineração de `docs/evidence/`. Defina
+    teto de corridas e critério de abandono antes de armar. Boot frio entre binds.
 
 ---
 
-## 📂 4. Mapa de Referência Rápida do Repositório
+## 🚫 4. Anti-alucinação
 
-- **ABI e Estruturas de Kernel**: [`inc/bc250dbg_abi.h`](inc/bc250dbg_abi.h)
-- **Contratos de Hardware do Miniport**: [`driver/core/`](driver/core/)
-- **Implementação do Miniport WDDM MCDM**: [`driver/wdk/`](driver/wdk/)
-- **Driver de Laboratório (KMDF)**: [`dbg/`](dbg/)
-- **Scripts de Teste e Harness**: [`tools/`](tools/)
-- **Norma Suprema de Validação**: [`BC250_HARDWARE_RULES.md`](BC250_HARDWARE_RULES.md)
-- **Documento de Retomada Técnica**: [`docs/09_PONTO_DE_RETOMADA.md`](docs/09_PONTO_DE_RETOMADA.md)
-- **Roadmap para Vulkan e LLM**: [`docs/20_ROADMAP_WDDM_MCDM_VULKAN_LLM.md`](docs/20_ROADMAP_WDDM_MCDM_VULKAN_LLM.md)
+Como agente, você **não deve**:
+- Afirmar que algo está "pronto", "acelerado" ou "funcionando" porque compilou ou retornou sucesso;
+- Declarar causa-raiz sem trace, dump ou telemetria que a sustente;
+- Reabrir caminhos encerrados: render-only sob `Class=Display` (reprovado, `docs/162`),
+  `MiscCaps.ComputeOnly` (inalcançável), cross-adapter/MCDM como destino (APU de die único);
+- Propor escrita em registrador de DCN fora da prioridade P9;
+- Omitir a cláusula **`NÃO VALIDADO EM HARDWARE`** quando faltar evidência física.
+
+---
+
+## 📂 5. Mapa do repositório
+
+| O quê | Onde |
+|---|---|
+| **Base de avanço** | [`BASE_DE_AVANCO.md`](BASE_DE_AVANCO.md) |
+| **Roadmap** | [`docs/164_ROADMAP_WDDM_JOGOS.md`](docs/164_ROADMAP_WDDM_JOGOS.md) |
+| Regras normativas | [`rules.md`](rules.md) |
+| Catálogo de registradores | [`docs/03_CATALOGO_DE_REGISTRADORES.md`](docs/03_CATALOGO_DE_REGISTRADORES.md) |
+| Provas físicas P1 / P2 | `docs/148_...` · `docs/159_...` |
+| Ownership de display (prova) | `docs/26_...` · `docs/17_...` |
+| Encerramento do render-only | `docs/162_...` |
+| Corpus de evidência | `docs/evidence/` |
+| Miniport WDDM | [`driver/wdk/`](driver/wdk/) |
+| UMD D3D / Vulkan | [`driver/umd/`](driver/umd/) |
+| Driver de laboratório KMDF | [`dbg/`](dbg/) |
+| ABI de diagnóstico | [`inc/bc250dbg_abi.h`](inc/bc250dbg_abi.h) |
+| Harness e auditorias | [`tools/`](tools/) |
+| Recuperação | [`RECOVERY_BC250V4.md`](RECOVERY_BC250V4.md) · `tools/BC250_RECOVERY.cmd` |
+| Arquivo morto (nada apagado) | [`DocsObsoletos/INDICE.md`](DocsObsoletos/INDICE.md) |
+
+---
+
+## 🔄 6. Manutenção
+
+`CLAUDE.md`, `AGENTS.md`, `GEMINI.md` e `.cursorrules` compartilham o mesmo núcleo
+normativo. **Ao mudar uma lei ou a barra de status, atualize os quatro.** Divergência entre
+eles já produziu agentes declarando sucesso inexistente.

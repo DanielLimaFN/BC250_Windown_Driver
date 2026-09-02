@@ -2,8 +2,8 @@
 
 [![Target](https://img.shields.io/badge/Target-Windows_11_x64-blue.svg)](https://microsoft.com)
 [![Architecture](https://img.shields.io/badge/Architecture-GFX10.1.3_%2F_Cyan_Skillfish-purple.svg)](docs/02_ARQUITETURA_AMDGPU.md)
-[![Status](https://img.shields.io/badge/Status-Laborat%C3%B3rio_Pr%C3%A9--WDDM_(93%25)-orange.svg)](docs/08_STATUS_PRE_WDDM.md)
-[![Silicon-Proof](https://img.shields.io/badge/Validation-Fail--Closed_Silicon_Tested-green.svg)](BC250_HARDWARE_RULES.md)
+[![Status](https://img.shields.io/badge/Status-N%C3%A3o_validado_em_hardware_(WDDM)-orange.svg)](BASE_DE_AVANCO.md)
+[![Silicon-Proof](https://img.shields.io/badge/Validation-Fail--Closed_Silicon_Tested-green.svg)](rules.md)
 
 Driver nativo para Windows e suíte de laboratório para engenharia reversa e bring-up de hardware da APU **AMD BC-250** (`1002:13FE`, revisão `00`), baseada no core gráfico **Cyan Skillfish 2 (GC / IP 10.1.3)** com 16 GB de memória GDDR6 compartilhada.
 
@@ -13,19 +13,22 @@ Driver nativo para Windows e suíte de laboratório para engenharia reversa e br
 
 ```text
 ================================== STATUS DO DRIVER BC-250 ==================================
-
-Base Geral Pré-WDDM (Lab)        ██████████████████▋░  93%   Estável e Isolado       (+5)
-SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silício      (+5)
-GCVM & Tradução de Memória       █████████████████░░░  85%   Gate 20/20 Aprovado    (+50)
-RLC, CP & PM4 Direct Load        █████████░░░░░░░░░░░  45%   RLC Fora da ROM         (+10)
-Telemetria & Observabilidade     ████████░░░░░░░░░░░░  40%   GFXOFF Sincronizado     (+5)
-Compute & Async Queues (MEC/MQD) ███░░░░░░░░░░░░░░░░░  15%   Bloqueado pelo CP       ( 0)
-Miniport WDDM / MCDM Produção    ████░░░░░░░░░░░░░░░░  20%   Estrutura e DDIs        (+2)
-
+Base Geral Pre-WDDM (Lab)        ██████████████████▊░  93%   Estavel e Isolado
+SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silicio
+GCVM & Traducao de Memoria       ██████████████████░░  90%   PTE 0x10 provado; sem GPUVA dinamica
+RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
+Telemetria & Observabilidade     █████████████████░░░  85%   Schema 134; anel de DDI e bitmap de QAI
+Compute & Async Queues (MEC/MQD) ██████████████████░░  90%   P1 17/17 e P2 16/16 provados no silicio
+Miniport WDDM Display+Render     ███████░░░░░░░░░░░░  35%   Codigo 43 no retorno do StartDevice
 =============================================================================================
-Veredito Global: NÃO VALIDADO EM HARDWARE (Aguardando fechamento do Ring PM4)
+Veredito Global: NAO VALIDADO EM HARDWARE
 =============================================================================================
 ```
+
+> **O que fazer agora:** [`BASE_DE_AVANCO.md`](BASE_DE_AVANCO.md) e o documento base do
+> projeto — Tabela 1 (ja feito, com prova fisica) e Tabela 2 (o que falta, por prioridade,
+> com o teste que fecha cada item). Roadmap detalhado em
+> [`docs/164_ROADMAP_WDDM_JOGOS.md`](docs/164_ROADMAP_WDDM_JOGOS.md).
 
 ---
 
@@ -36,7 +39,7 @@ Veredito Global: NÃO VALIDADO EM HARDWARE (Aguardando fechamento do Ring PM4)
    - **Fence física** gravada na VRAM pela própria GPU (com verificação de poison).
    - **Dados íntegros** conferidos byte a byte no destino.
 2. **Abordagem Fail-Closed & Transacional:** Toda operação de hardware no laboratório opera sob o modelo `snapshot -> apply -> readback -> rollback`. Nenhuma escrita no hardware é executada sem garantias de reversão limpa.
-3. **Compute-First / MCDM:** Priorização do modelo de computação e render-only adapter isolado do display (`BasicDisplay`) para mitigar riscos de instabilidade do desktop e tela preta durante a evolução do driver.
+3. **Display por heranca do UEFI GOP:** o destino e um miniport WDDM full display+render. O DCN **nao** esta no caminho critico: o GOP mantem OTG/DIG/PHY acesos e o driver herda o modo, apresentando por blit via SDMA. O caminho render-only/MCDM foi **reprovado por medicao** e esta encerrado (ver [`docs/162`](docs/162_ENCERRAMENTO_GATE_1_5_RENDER_ONLY.md)).
 
 ---
 
@@ -101,7 +104,7 @@ powershell -File tools\test-gcvm-translate.ps1 -Execute -IAcceptTheRisk
 
 ## 📜 Regras de Hardware & Governança
 
-Consulte o documento normativo [BC250_HARDWARE_RULES.md](BC250_HARDWARE_RULES.md) para detalhes sobre as restrições arquiteturais, métodos de exclusão de fallbacks por software e critérios formais para aprovação de gates.
+Consulte o documento normativo [BC250_HARDWARE_RULES.md](rules.md) para detalhes sobre as restrições arquiteturais, métodos de exclusão de fallbacks por software e critérios formais para aprovação de gates.
 
 ---
 

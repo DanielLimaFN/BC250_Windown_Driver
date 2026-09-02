@@ -1,80 +1,194 @@
-# CLAUDE.md — Diretrizes de Operação para Claude Code (Anthropic)
+# CLAUDE.md — Diretrizes de Operação para Claude Code
 
-> **Contexto de Projeto e Guia de Engenharia para Claude Code no Repositório BC250-WinDv**  
-> *Target: AMD BC-250 (`1002:13FE`, GC 10.1.3 / Cyan Skillfish 2) | Windows 11 x64 Kernel Driver*
-
----
-
-## ⚡ Comandos Rápidos de Build, Teste e Auditoria
-
-### 1. Driver de Laboratório (`bc250dbg.sys`)
-- **Build**: `dbg\build.bat`
-- **Instalar**: `dbg\install.bat`
-- **Iniciar Serviço**: `dbg\start.bat`
-- **Parar / Desinstalar**: `dbg\uninstall.bat`
-
-### 2. Driver de Produção WDDM MCDM (`bc250mcdm.sys`)
-- **Build e Empacotamento Assinado**: `powershell -ExecutionPolicy Bypass -File tools\build-bc250mcdm-package.ps1`
-- **Auditoria de Conformidade DDI**: `python tools\audit-mcdm-ddi-matrix.py`
-- **Auditoria de Segurança MCDM**: `python tools\audit-bc250mcdm-safety.py`
-
-### 3. Ensaios Físicos de Hardware
-- **Baseline e Responsividade MMIO**: `powershell -ExecutionPolicy Bypass -File tools\capture-baseline.ps1`
-- **Validação SDMA no Silício**: `powershell -ExecutionPolicy Bypass -File tools\test-sdma-robustness.ps1 -Execute`
-- **Validação GCVM Tradução de Memória**: `powershell -ExecutionPolicy Bypass -File tools\test-gcvm-translate.ps1 -Execute -IAcceptTheRisk`
-
-### 4. Recuperação de Emergência (Safe Mode / Rollback)
-- **Restaurar BasicDisplay**: `tools\BC250_RECOVERY.cmd` (ou `C:\BC250_RECOVERY.cmd`)
+> **Governança de engenharia do repositório BC250-WinDv**
+> *Target: AMD BC-250 (`1002:13FE`, GC 10.1.3 / Cyan Skillfish 2) | Windows 11 x64*
+> **Última revisão: 2026-09-02**
 
 ---
 
-## 🛑 Leis Inegociáveis para o Claude Code
+## 🎯 0. Onde queremos chegar
 
-1. **Apresentação Obrigatória da Barra de Status**:
-   Sempre inicie suas propostas e análises com a barra de progresso do projeto:
-   ```text
-   ================================== STATUS DO DRIVER BC-250 ==================================
-   Base Geral Pre-WDDM (Lab)        ██████████████████▋░  93%   Estavel e Isolado
-   SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silicio
-   GCVM & Traducao de Memoria       ██████████████████░░  90%   PTE 0x10 provado; sem GPUVA dinamica
-   RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
-   Telemetria & Observabilidade     █████████████████░░░  85%   93 campos P1
-   Compute & Async Queues (MEC/MQD) ██████████████████░░  90%   One-shot provado n=3; fila persistente nao consome
-   Miniport WDDM / MCDM Producao    ███████░░░░░░░░░░░░░  35%   P1 em andamento (candidato 3.46)
-   =============================================================================================
-   Veredito Global: NAO VALIDADO EM HARDWARE
-   =============================================================================================
-   ```
+**Rodar jogos no Windows 11 na BC-250**, usando as 24 CUs e os 16 GB de GDDR6, com o
+monitor ligado ao DisplayPort da própria placa, via D3D12/Vulkan, **sem WARP e sem
+fallback de software**.
 
-2. **Tripé de Validação no Silício**:
-   Não declare sucesso, aceleração ou conclusão sem o tripé físico comprovado:
-   - `RPTR == WPTR` na engine correspondente.
-   - Fence física gravada pela GPU na VRAM (com verificação de poison).
-   - Dados destino conferidos byte a byte com o gabarito.
-   Se qualquer prova estiver ausente: declare **`NÃO VALIDADO EM HARDWARE`**.
+**Fonte única de verdade sobre o que já existe e o que falta:**
+[`BASE_DE_AVANCO.md`](BASE_DE_AVANCO.md) — Tabela 1 (já feito, com prova física) e
+Tabela 2 (o que falta, em ordem de prioridade, com o teste que fecha cada item).
+**Roadmap detalhado:** [`docs/164_ROADMAP_WDDM_JOGOS.md`](docs/164_ROADMAP_WDDM_JOGOS.md).
 
-3. **Zero Fakes / Zero Software Fallbacks**:
-   - Nunca incremente fences ou timestamps via CPU.
-   - Nunca use loops de delay (`KeStallExecutionProcessor`, `Sleep`) simulando execução.
-   - Nunca retorne `STATUS_SUCCESS` em DDIs sem backend funcional.
-
-4. **Fórmula de Bits SOC15**:
-   Ao modificar registradores com máscara:
-   `uint32_t val = (lido & ~mask) | (or_val & mask);`
+**Decisão de arquitetura vigente:** display v1 é **por herança do UEFI GOP**. Não
+implementamos DCN no caminho crítico. Escrita em registrador de DCN é **proibida** fora
+da prioridade P9; leitura é permitida.
 
 ---
 
-## 💻 Padrões de Código C (Windows Kernel Mode)
+## 🛑 1. Barra de status obrigatória
 
-- **Dialeto**: C99/C11 compatível com MSVC x64 e WDK.
-- **Rigor de Compilação**: Todo código deve passar limpo em `/W4 /WX` (zero warnings).
-- **Anotações SAL**: Utilize anotações formais da Microsoft (`_In_`, `_Out_`, `_Inout_`, `_Check_return_`, `_Pre_null_`, etc.).
-- **Sem CRT de User-Mode**: Proibido `malloc`, `free`, `printf`, `exit`, etc. Use sempre primitivas de kernel:
-  - Alocação: `ExAllocatePool2(POOL_FLAG_NON_PAGED, size, tag)` ou `ExAllocatePoolWithTag`.
-  - Liberação: `ExFreePoolWithTag(ptr, tag)`.
-  - Cópia e Preenchimento: `RtlCopyMemory`, `RtlZeroMemory`, `RtlEqualMemory`.
-  - Diagnóstico: `DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, ...)`.
-- **Tratamento Defensivo de Erros**:
-  - Verifique sempre ponteiros de entrada contra `NULL`.
-  - Verifique `NTSTATUS` com `if (!NT_SUCCESS(status)) { ... return status; }`.
-  - Garanta que toda alocação ou mapeamento tenha cleanup garantido em caso de falha.
+Inicie toda proposta e análise com a barra abaixo. **Ela reflete medição, não desejo.**
+Se você a atualizar, cada número deve ter evidência em `docs/evidence/`.
+
+```text
+================================== STATUS DO DRIVER BC-250 ==================================
+Base Geral Pre-WDDM (Lab)        ██████████████████▋░  93%   Estavel e Isolado
+SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silicio
+GCVM & Traducao de Memoria       ██████████████████░░  90%   PTE 0x10 provado; sem GPUVA dinamica
+RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
+Telemetria & Observabilidade     █████████████████░░░  85%   Schema 134; anel de DDI e bitmap de QAI
+Compute & Async Queues (MEC/MQD) ██████████████████░░  90%   P1 17/17 e P2 16/16 provados; fila persistente nao consome
+Miniport WDDM Display+Render     ███████░░░░░░░░░░░░░  35%   Codigo 43 no retorno do StartDevice; 3.81 assinado, ensaio pendente
+=============================================================================================
+Veredito Global: NAO VALIDADO EM HARDWARE
+=============================================================================================
+```
+
+> ⚠️ **O adaptador WDDM nunca alcançou Código 0.** Qualquer barra que declare
+> "Display+Render 100%" ou "comprovado no silício (Código 0)" é **falsa** — ver itens 97 e
+> 102 da `BASE_DE_AVANCO.md`. Versões anteriores destes arquivos continham exatamente essa
+> afirmação falsa e foram corrigidas.
+
+---
+
+## ⚖️ 2. Leis inegociáveis
+
+### Lei 1 — Sinceridade absoluta
+Reporte o que a medição diz, não o que seria bom. Se uma prova estiver ausente, escreva
+literalmente **`NÃO VALIDADO EM HARDWARE`**. Nunca suavize, nunca arredonde para cima,
+nunca chame hipótese de causa. Se você errou antes, corrija em uma frase e siga.
+
+### Lei 2 — Tripé de validação no silício
+Não declare sucesso, aceleração ou conclusão sem as três provas físicas:
+1. `RPTR == WPTR` na engine correspondente;
+2. fence física gravada **pela GPU** na VRAM, com verificação de poison;
+3. dados destino conferidos **byte a byte** contra gabarito da CPU.
+
+### Lei 3 — Todo item fecha com um teste, e o teste é nomeado
+Ao propor ou concluir qualquer trabalho, diga **qual teste** comprova execução no hardware
+e **onde a evidência será arquivada**. A Tabela 2 da `BASE_DE_AVANCO.md` já traz a prova
+exigida de cada item — use-a. Trabalho sem teste nomeado não é entregável.
+
+### Lei 4 — Zero fakes, zero fallbacks de software
+- Nunca incremente fences ou timestamps pela CPU.
+- Nunca use `KeStallExecutionProcessor`, `Sleep` ou loop de delay simulando execução.
+- Nunca retorne `STATUS_SUCCESS` em DDI sem backend funcional.
+- Nunca trate compilação, assinatura, `vulkaninfo`, enumeração de API, carregamento de DLL
+  ou abertura de swapchain como prova de aceleração.
+- Nunca proponha WARP, GDI, llvmpipe ou emulação por CPU disfarçada de GPU.
+
+### Lei 5 — Ciclo de vida transacional
+Toda interação de baixo nível com hardware:
+```text
+[PREFLIGHT] → [SNAPSHOT] → [APPLY] → [READBACK] → [PROVA NO SILÍCIO] → [ROLLBACK/TEARDOWN]
+     |                                                    |                      |
+     +---(abortar se inválido)                            +---(falhar fechado)---+
+```
+
+### Lei 6 — Fórmula de bits SOC15
+```c
+uint32_t val = (lido & ~mask) | (or_val & mask);
+```
+
+### Lei 7 — Endereços só com proveniência
+Use apenas offsets catalogados em
+[`docs/03_CATALOGO_DE_REGISTRADORES.md`](docs/03_CATALOGO_DE_REGISTRADORES.md), com fonte
+citada. Nada em quarentena (`Q`). No DCN o endereço é
+`DMU_BASE.seg[BASE_IDX] + reg` — **não existe base plana**
+(`DMU_BASE = {0x12, 0xC0, 0x34C0, 0x9000}`).
+
+### Lei 8 — Vocabulário de confiança
+Classifique toda afirmação técnica: **P0** provado no silício · **P1** derivado do upstream
+· **P2** parcialmente observado · **H** hipótese · **Q** quarentena (proibido).
+Detalhe em [`rules.md`](rules.md).
+
+### Lei 9 — Economia de corridas físicas
+A corrida no hardware é o recurso escasso, e o **Daniel** é quem a executa — eu compilo,
+analiso e preparo. Antes de propor ensaio: responda o que puder por leitura de fonte,
+mineração de `docs/evidence/` e comparação com drivers reais da máquina. Defina teto de
+corridas e critério de abandono **antes** de armar. Boot frio entre binds.
+
+---
+
+## ⚡ 3. Comandos rápidos
+
+### Driver de laboratório (`bc250dbg.sys`)
+- Build: `dbg\build.bat` · Instalar: `dbg\install.bat`
+- Iniciar: `dbg\start.bat` · Parar/remover: `dbg\uninstall.bat`
+
+### Driver WDDM de produção (`bc250mcdm.sys`)
+```
+powershell -ExecutionPolicy Bypass -File tools\build-bc250mcdm-package.ps1
+python tools\audit-mcdm-ddi-matrix.py
+python tools\audit-bc250mcdm-safety.py
+python tools\audit-ddi-noop-callbacks.py
+```
+> ⚠️ O empacotador **não compila o SYS** — ele copia. Pular o build de laboratório assina
+> o binário do candidato anterior.
+
+### Ensaios físicos
+```
+powershell -ExecutionPolicy Bypass -File tools\capture-baseline.ps1
+powershell -ExecutionPolicy Bypass -File tools\test-sdma-robustness.ps1 -Execute
+powershell -ExecutionPolicy Bypass -File tools\test-gcvm-translate.ps1 -Execute -IAcceptTheRisk
+```
+
+### Análise de crash dump (exige PowerShell elevado)
+```
+& "C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe" -z C:\Windows\MEMORY.DMP -y "srv*C:\Symbols*https://msdl.microsoft.com/download/symbols" -c "!analyze -v; lm m bc250*; q"
+```
+
+### Recuperação de emergência
+
+| Situação | Ação |
+|---|---|
+| Windows inicia | `tools\BC250_RECOVERY.cmd` (ou `C:\BC250_RECOVERY.cmd`) restaura o BasicDisplay |
+| Windows inicia, limpeza completa | `tools\clean_all_drivers.ps1` elevado (DriverStore + SCM) |
+| **Não inicia: tela preta ou loop de boot** | `tools\BC250_WINRE_CLEAN.cmd` pelo **Prompt de Comando do WinRE**, com o arquivo num pendrive. Ver [`RECOVERY_BC250V4.md`](RECOVERY_BC250V4.md) |
+
+> ⚠️ **Nunca** use `del C:\Windows\System32\drivers\bc*.sys`. O padrão casa com
+> `bcmfn2.sys`, driver **inbox da Microsoft**. E em WinRE o Windows raramente é `C:`.
+
+---
+
+## 💻 4. Padrões de código C (Windows kernel mode)
+
+- **Dialeto:** C99/C11 compatível com MSVC x64 e WDK.
+- **Rigor:** todo código passa limpo em `/W4 /WX` — zero warnings.
+- **SAL:** `_In_`, `_Out_`, `_Inout_`, `_Check_return_`, `_Pre_null_`.
+- **Sem CRT de user-mode:** proibido `malloc`, `free`, `printf`, `exit`.
+  - Alocar: `ExAllocatePool2(POOL_FLAG_NON_PAGED, size, tag)`
+  - Liberar: `ExFreePoolWithTag(ptr, tag)`
+  - Memória: `RtlCopyMemory`, `RtlZeroMemory`, `RtlEqualMemory`
+  - Log: `DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, ...)`
+- **Defensivo:** checar ponteiros contra `NULL`; checar `NTSTATUS` com
+  `if (!NT_SUCCESS(status)) { ... return status; }`; cleanup garantido em toda falha de
+  alocação ou mapeamento.
+
+---
+
+## 📂 5. Mapa do repositório
+
+| O quê | Onde |
+|---|---|
+| **Base de avanço (o que falta, prioridade, testes)** | [`BASE_DE_AVANCO.md`](BASE_DE_AVANCO.md) |
+| **Roadmap detalhado** | [`docs/164_ROADMAP_WDDM_JOGOS.md`](docs/164_ROADMAP_WDDM_JOGOS.md) |
+| Regras normativas e vocabulário de confiança | [`rules.md`](rules.md) |
+| Catálogo de registradores | [`docs/03_CATALOGO_DE_REGISTRADORES.md`](docs/03_CATALOGO_DE_REGISTRADORES.md) |
+| Provas físicas P1 / P2 | [`docs/148...`](docs/148_VITORIA_FASE_P1_VALIDADA_EM_HARDWARE.md) · [`docs/159...`](docs/159_VITORIA_HISTORICA_FASE_P2_VALIDADA_EM_HARDWARE.md) |
+| Prova de ownership de display | [`docs/26...`](docs/26_POST_DISPLAY_OWNERSHIP_FISICO_1.1.0.0.md) |
+| Por que render-only foi reprovado | [`docs/162...`](docs/162_ENCERRAMENTO_GATE_1_5_RENDER_ONLY.md) |
+| Corpus de evidência física | `docs/evidence/` |
+| Miniport WDDM | [`driver/wdk/`](driver/wdk/) |
+| UMD (D3D / Vulkan / runtime) | [`driver/umd/`](driver/umd/) |
+| Driver de laboratório KMDF | [`dbg/`](dbg/) |
+| ABI de diagnóstico | [`inc/bc250dbg_abi.h`](inc/bc250dbg_abi.h) |
+| Harness, auditorias e scripts | [`tools/`](tools/) |
+| Recuperação | [`RECOVERY_BC250V4.md`](RECOVERY_BC250V4.md) · `tools/BC250_RECOVERY.cmd` |
+| Arquivo morto (nada apagado) | [`DocsObsoletos/INDICE.md`](DocsObsoletos/INDICE.md) |
+
+---
+
+## 🔄 6. Manutenção destes arquivos
+
+`CLAUDE.md`, `AGENTS.md`, `GEMINI.md` e `.cursorrules` compartilham o mesmo núcleo
+normativo. **Ao mudar uma lei ou a barra de status, atualize os quatro.** Divergência entre
+eles já produziu, no passado, agentes declarando sucesso inexistente.

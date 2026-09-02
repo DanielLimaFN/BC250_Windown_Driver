@@ -2,7 +2,7 @@
 
 > Procedimento de bancada para reproduzir e caracterizar a falha intermitente do PFP
 > (`PC=0x17F5` em loop vs `PC=0x284` assentado). Preparado em 2026-08-29.
-> Contexto e evidências: [`STATUS_E_ROADMAP_CONSOLIDADO.md`](../STATUS_E_ROADMAP_CONSOLIDADO.md) seção 2.
+> Contexto e evidências: [`STATUS_E_ROADMAP_CONSOLIDADO.md`](../DocsObsoletos/raiz-superseded/STATUS_E_ROADMAP_CONSOLIDADO.md) seção 2.
 
 ---
 

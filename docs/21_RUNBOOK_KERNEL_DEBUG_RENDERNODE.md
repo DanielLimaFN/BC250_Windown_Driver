@@ -4,6 +4,22 @@
 **Hardware:** AMD BC-250 (`1002:13FE`, GC 10.1.3 / Cyan Skillfish 2)  
 **Objetivo:** Capturar com precisão cirúrgica a stack trace e o status interno no `dxgkrnl.sys` que causa a desmontagem (`StopDevice` / `RemoveDevice` / Código 43) logo após o estágio de `QueryChildRelations` (`V5PostStartStage=3`).
 
+
+> ## ⚠️ STATUS: FORA DO PLANO (2026-09-02)
+>
+> **Não existe segunda máquina neste ambiente, e KDNET exige um host separado.** Este
+> runbook fica arquivado-ativo como referência para o dia em que houver um host na rede.
+>
+> **O caminho oficial de diagnóstico é a P3 da [`BASE_DE_AVANCO.md`](../BASE_DE_AVANCO.md)**,
+> em quatro camadas de uma máquina só:
+> 1. dump pós-morte (`MEMORY.DMP` + `cdb` elevado);
+> 2. telemetria interna persistida antes do `StopDevice`;
+> 3. ETW `Microsoft-Windows-DxgKrnl-Diagnostic` em sessão AutoLogger;
+> 4. bugcheck deliberado carregando o `NTSTATUS` nos parâmetros.
+>
+> Sobre `windbg -kl`: não faz breakpoint, `g`, step nem call stack — mas **lê memória do
+> kernel e roda extensões**. Útil para inspeção.
+
 ---
 
 ## 1. Pré-Requisitos e Ambiente

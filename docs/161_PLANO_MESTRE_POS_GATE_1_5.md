@@ -94,7 +94,10 @@ Esta é a fase crítica. Tudo depois dela depende do resultado.
 
 **1.B — Trilha decisiva: depurador de kernel**
 
-Pré-requisito: **segunda máquina** + KDNET. O runbook atual (#175) está marcado como rascunho e o #124 já registra que `-kl` local não permite breakpoint/stack/`g`.
+> **SUPERSEDED em 2026-09-02:** nao existe segunda maquina. A trilha 1.B foi substituida
+> pelas quatro camadas da P3 na [`BASE_DE_AVANCO.md`](../BASE_DE_AVANCO.md).
+
+Pré-requisito original: **segunda máquina** + KDNET. O runbook atual (#175) está marcado como rascunho e o #124 já registra que `-kl` local não permite breakpoint/stack/`g`.
 
 | # | Tarefa | Critério de PASS |
 |---|---|---|
