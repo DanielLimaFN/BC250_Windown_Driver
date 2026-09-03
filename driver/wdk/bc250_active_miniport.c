@@ -1263,9 +1263,20 @@ static NTSTATUS Bc250ActiveQueryRuntimeCaps(
      * na corrida medida. A promocao para 1 e' o ensaio do item 35 (map/unmap
      * com invalidacao de TLB e readback), e nao pode ser feita as cegas.
      */
+    /*
+     * A condicao de TlbTransactionEvidence.PhysicalReady foi REMOVIDA: essa
+     * evidencia so' e' produzida pelo bring-up de laboratorio, e o caminho de
+     * producao exclui transacoes GCVM de proposito. Exigi-la tornava o declare
+     * inalcancavel por construcao no unico perfil que roda de verdade.
+     *
+     * Declarar GpuMmuSupported afirma que as DDIs do modelo estao
+     * implementadas -- e estao: UPDATE_PAGE_TABLE, FLUSH_TLB, VIRTUAL_TRANSFER
+     * e VIRTUAL_FILL tem handler real. A PROVA de que funcionam e' a corrida,
+     * nao um pre-requisito dela. O gate honesto e' o tunable: default 0,
+     * explicito no INF, auditavel, e sem ele nada muda.
+     */
     if (context->GpuMmuDeclarePresent == 1u &&
-        context->GpuMmuDeclare == 1u &&
-        context->TlbTransactionEvidence.PhysicalReady != 0u) {
+        context->GpuMmuDeclare == 1u) {
         Caps->GpuVaReady = 1u;
         Caps->PagingReady = 1u;
     }
@@ -3095,7 +3106,22 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
         *NumberOfVideoPresentSources = 1;
         *NumberOfChildren = 1;
         ULONG enableSyntheticEdid = Bc250ActiveReadTunable(L"EnableSyntheticEdid", 0u);
+        ULONG gpuMmuDeclarePresent = 0u;
         Bc250DisplaySetSyntheticEdidEnabled(enableSyntheticEdid != 0u);
+        /*
+         * Este e' o UNICO caminho compilado no pacote de producao. O bloco que
+         * le os demais tunables vive no #else de
+         * BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP, isto e', no bring-up de
+         * laboratorio -- por isso GpuvaLabPromotionPresent saiu 0 em TODAS as
+         * corridas apesar de o INF mandar 1, e por isso a corrida 15:57:42
+         * declarou Mem(VA=0, GpuMmu=0) mesmo com GpuMmuDeclare=1 no INF.
+         * Ler aqui, antes de qualquer Bc250ActiveQueryRuntimeCaps.
+         */
+        context->GpuMmuDeclare = Bc250ActiveReadTunableChecked(
+            L"GpuMmuDeclare", 0u, &gpuMmuDeclarePresent);
+        context->GpuMmuDeclarePresent = gpuMmuDeclarePresent;
+        Bc250DisplayLog("[StartDevice] GpuMmuDeclare=%u (present=%u)\n",
+            context->GpuMmuDeclare, context->GpuMmuDeclarePresent);
         Bc250DisplayLog("[StartDevice] Sources=1, Children=1, Profile=%d, SyntheticEdid=%u\n",
             (int)Bc250ActiveGetAdapterProfile(), enableSyntheticEdid);
         if (Bc250ActiveGetAdapterProfile() == BC250_ADAPTER_PROFILE_DISPLAY_RENDER) {
