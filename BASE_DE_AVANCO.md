@@ -176,8 +176,8 @@ sem tela.
 
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
-| — | **Fusível anti-boot-loop persistente** | ⬜ | Falha forçada → no boot seguinte o driver recusa o bind sozinho → BasicDisplay de volta, sem intervenção |
-| 12b | Guarda de engine suja corrigida | ⬜ | Fonte de verdade sobrevive ao rollback; a guarda reprova de fato, não em silêncio (doc 161, Fase 0.5) |
+| — | **Fusível anti-boot-loop persistente** | 🧪 | Implementado em `bc250_boot_fuse.c/.h`, testado em 8 cenários offline (0 falhas) e linkado no SYS. Fecha quando o driver rodar no boot da placa |
+| 12b | Guarda de engine suja corrigida | 🧪 | Guard-rail 2 em `bind-bc250mcdm-lab.ps1` lê `C:\BC250_BOOT_FUSE.dat` sobrevivendo ao rollback; testado via `inspect-boot-fuse.ps1` |
 | — | **Limpeza offline pelo WinRE** (`tools/BC250_WINRE_CLEAN.cmd`) | 🧪 | Um arquivo `.cmd` no pendrive; detecta o volume e o `oemNN.inf` sozinho. Lógica validada em `/list` (achou os 7 resíduos, recusou `bcmfn2.sys`). **Fecha quando for usado numa sessão real de WinRE e devolver o BasicDisplay** |
 | — | Canal de observação sem tela (RDP/SSH) | ⬜ | Sessão remota funcionando com a tela preta e o SO vivo, permitindo retrato e rollback interativos |
 | **177** | **Orçamento de corridas formalizado** | ⬜ | Teto, critério de abandono e recovery escritos por etapa, **antes** de armar cada uma |
@@ -273,7 +273,7 @@ sem tela.
 
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
-| 176 | Analisar `C:\Windows\MEMORY.DMP` | ⬜ | `!analyze -v` + `lm m bc250*` com bugcheck, stack e DDI de origem |
+| 176 | Analisar `C:\Windows\MEMORY.DMP` | ✅ | `cdb.exe` rodado em 02/09: Bugcheck 0x113 (0x1C) em `SetRotationSupport+0x137` por valor residual `0x29B` em `RotationSupport` de `bc250mcdm` na DDI `EnumVidPnCofuncModality` |
 | 121b | Telemetria persistida antes do `StopDevice` | ⬜ | Status e argumentos de cada DDI sobrevivendo ao teardown e legíveis pós-reboot |
 | 174 | ETW / WPP / IFR com AutoLogger | ⬜ | Trace de alta resolução capturado atravessando o reboot, sem persistir em ISR/DPC |
 | — | Bugcheck deliberado com `NTSTATUS` nos parâmetros | ⬜ | Minidump trazendo o status exato com que o `dxgkrnl` abandonou o adaptador |
