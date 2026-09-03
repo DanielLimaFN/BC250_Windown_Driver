@@ -112,7 +112,9 @@ $rollbackExit = $LASTEXITCODE
 $rollbackOutput | Set-Content -LiteralPath (Join-Path $EvidenceDir 'watchdog-rollback.txt') -Encoding UTF8
 if ($rollbackExit -ne 0) {
     Write-WatchdogState 'ROLLBACK_FAILED' 'online rollback failed; safe-mode recovery required' $rollbackExit
+    & shutdown.exe /r /t 2 /f /d p:4:1 /c "BC250 Watchdog: reiniciando para restaurar video limpo"
     exit $rollbackExit
 }
 Write-WatchdogState 'ROLLED_BACK' 'BasicDisplay restoration completed'
+& shutdown.exe /r /t 2 /f /d p:4:1 /c "BC250 Watchdog: reiniciando para restaurar video limpo"
 exit 0

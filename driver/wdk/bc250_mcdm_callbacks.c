@@ -896,8 +896,9 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         caps->MaxPointerWidth = 0u;
         caps->MaxPointerHeight = 0u;
 
-        Bc250DisplayLog("[McdmQAI] DRIVERCAPS: ComputeOnly=%u, AlignShift=%u, OutSize=%u\n",
+        Bc250DisplayLog("[McdmQAI] DRIVERCAPS: ComputeOnly=%u, AlignShift=%u, TexWShift=%u, TexHShift=%u, OutSize=%u\n",
             caps->MiscCaps.ComputeOnly, caps->PresentationCaps.AlignmentShift,
+            caps->PresentationCaps.MaxTextureWidthShift, caps->PresentationCaps.MaxTextureHeightShift,
             pQueryAdapterInfo->OutputDataSize);
         return STATUS_SUCCESS;
     }
