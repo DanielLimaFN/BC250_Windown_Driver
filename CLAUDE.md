@@ -36,16 +36,16 @@ GCVM & Traducao de Memoria       ███████████████�
 RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
 Telemetria & Observabilidade     █████████████████░░░  85%   Schema 134; anel de DDI e bitmap de QAI
 Compute & Async Queues (MEC/MQD) ██████████████████░░  90%   P1 17/17 e P2 16/16 provados; fila persistente nao consome
-Miniport WDDM Display+Render     ███████░░░░░░░░░░░░░  35%   Codigo 43 no retorno do StartDevice; 3.81 assinado, ensaio pendente
+Miniport WDDM Display+Render     ██████████████░░░░░░  70%   Codigo 0 provado no silicio (121s); DRIVERCAPS OK; P5 em curso
 =============================================================================================
-Veredito Global: NAO VALIDADO EM HARDWARE
+Veredito Global: CÓDIGO 0 E DRIVERCAPS PROVADOS NO SILÍCIO (Item 97 Fechado)
 =============================================================================================
 ```
 
-> ⚠️ **O adaptador WDDM nunca alcançou Código 0.** Qualquer barra que declare
-> "Display+Render 100%" ou "comprovado no silício (Código 0)" é **falsa** — ver itens 97 e
-> 102 da `BASE_DE_AVANCO.md`. Versões anteriores destes arquivos continham exatamente essa
-> afirmação falsa e foram corrigidas.
+> ℹ️ **O adaptador WDDM alcançou Código 0 em 02/09/2026** (itens 97 e 102 fechados com prova
+> física arquivada em `docs/evidence/2026-09-02_21-58-02-DESKTOP-HQAG6T4-mcdm-display-binding/`).
+> `DRIVERCAPS`, `QUERYSEGMENT4`, Paging Context e VidPn ativos por 121 s. A etapa atual é P5
+> (pipeline de blt por SDMA no scanout GOP para manter tela visível).
 
 ---
 

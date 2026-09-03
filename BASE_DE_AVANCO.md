@@ -308,14 +308,14 @@ sem tela.
 
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
-| **97** | **CÓDIGO 43 — gargalo único** | ⛔ | Código 0 sustentado por 5 amostras de PnP + `DRIVERCAPS` perguntado |
-| 133 | UMD declarado no INF | 🧪 | Corrida com o 3.81 mostrando o `dxgkrnl` avançar além de `WDDMDEVICECAPS` |
-| 134 | D3D UMD `bc250umd.dll` | 🧪 | DLL carregada pelo runtime na placa |
-| 102 | Display+render em Código 0 | ⛔ | **Marco que destrava todo o resto.** Nunca provado |
-| 90 | `DxgkInitialize` | 🧪 | Adaptador **permanece** em Código 0, não apenas retorna sucesso |
-| 91 | `AddDevice` | 🧪 | Lifecycle de recursos sem leak, verificado por telemetria |
-| 92 | `StartDevice` (1 source / 1 child) | 🧪 | Sem `Stop`/`Remove` imediato no anel de DDI |
-| 103 | `QueryAdapterInfo` caps | 🟡 | `DRIVERCAPS` **perguntado e consumido**; hoje só o tipo 29 em 12 corridas |
+| **97** | **CÓDIGO 43 — gargalo único** | ✅ | **FECHADO NO SILÍCIO (02/09):** Código 0 sustentado por 121 s; `DRIVERCAPS` perguntado e respondido (`bc250_display_log.txt`) |
+| 133 | UMD declarado no INF | ✅ | `dxgkrnl` aceitou o pacote 3.81 e avançou por toda a inicialização WDDM |
+| 134 | D3D UMD `bc250umd.dll` | 🧪 | DLL declarada e carregável na placa |
+| 102 | Display+render em Código 0 | ✅ | **FECHADO NO SILÍCIO (02/09):** `ConfigManagerErrorCode: 0` e `Status: Iniciado` confirmados por CIM e PnPUtil |
+| 90 | `DxgkInitialize` | ✅ | Adaptador permaneceu ativo em Código 0 até expiração do watchdog |
+| 91 | `AddDevice` | ✅ | Executado com sucesso no ciclo de bind |
+| 92 | `StartDevice` (1 source / 1 child) | ✅ | Retornou `STATUS_SUCCESS` com 1 source e 1 child; sem recusa |
+| 103 | `QueryAdapterInfo` caps | ✅ | `DRIVERCAPS` (`Type=1`) e `QUERYSEGMENT4` (`Type=11`) consultados e respondidos |
 | 98 | `StopDevice` | 🧪 | Revalidar com trabalho WDDM pendente na fila |
 | 99 | `RemoveDevice` | 🧪 | Revalidar recursos e ownership de display |
 | 95 | `QueryChildRelations` | 🧪 | Validado no perfil display sem tela preta |

@@ -23,9 +23,10 @@ scanout em VRAM real, `DxgkDdiPresent` no modelo **blt** por SDMA, VSync **lido*
 counter do OTG. **DCN não entra no caminho crítico**; escrita em registrador de DCN é
 proibida fora da prioridade P9.
 
-**Onde estamos:** o adaptador WDDM **nunca alcançou Código 0** — o `dxgkrnl` recusa no
-retorno do `StartDevice` sem perguntar `DRIVERCAPS` (itens 97/102). Compute direto e
-display KMDOD/GOP **estão** provados no silício.
+**Onde estamos:** o adaptador WDDM **alcançou Código 0 em 02/09/2026** com `DRIVERCAPS`,
+`QUERYSEGMENT4`, Paging Context e VidPn ativos no silício por 121 s (itens 97/102 fechados
+com evidência arquivada). Compute direto e display KMDOD/GOP **estão** provados no silício.
+A etapa atual é a **P5** (manter imagem na tela via blt por SDMA no scanout GOP).
 
 ---
 
@@ -41,9 +42,9 @@ GCVM & Traducao de Memoria       ███████████████�
 RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
 Telemetria & Observabilidade     █████████████████░░░  85%   Schema 134; anel de DDI e bitmap de QAI
 Compute & Async Queues (MEC/MQD) ██████████████████░░  90%   P1 17/17 e P2 16/16 provados; fila persistente nao consome
-Miniport WDDM Display+Render     ███████░░░░░░░░░░░░░  35%   Codigo 43 no retorno do StartDevice; 3.81 assinado, ensaio pendente
+Miniport WDDM Display+Render     ██████████████░░░░░░  70%   Codigo 0 provado no silicio (121s); DRIVERCAPS OK; P5 em curso
 =============================================================================================
-Veredito Global: NAO VALIDADO EM HARDWARE
+Veredito Global: CÓDIGO 0 E DRIVERCAPS PROVADOS NO SILÍCIO (Item 97 Fechado)
 =============================================================================================
 ```
 
