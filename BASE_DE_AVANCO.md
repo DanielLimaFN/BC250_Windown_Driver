@@ -388,6 +388,7 @@ sem tela.
 
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
+| **—** | **`GpuVaReady` nunca é atribuído — causa-raiz medida do VidPN vazio** | ⛔ | **MEDIDO EM 03/09 (corrida 15:10:53, `RenderNode=1`, Código 0).** `Bc250ActiveQueryRuntimeCaps` zera a struct e atribui `Ready`, `FullMcdmReady`, `TdrReady`, `PreemptionReady`, `SubmitReady` e `HistoryBufferReady` — **`GpuVaReady` e `PagingReady` ficam 0 para sempre**, por omissão e não por gate deliberado. Cadeia completa, toda medida: `MemoryManagementCaps` = `VA=0, GpuMmu=0, IoMmu=0` → `GPUMMUCAPS` devolve `DEVICE_NOT_READY` → `DxgkDdiCreateAllocation` **0 chamadas** → sem primary allocation (`hAlloc=NULL` em 7/7 commits) → o DMM entrega VidPN **em branco** (`[EmptyProbe]`: 0 paths, SourceModeSet **0 modos**, TargetModeSet **0 modos**) → `SetVidPnSourceVisibility(Visible=0)` → tela preta. **Fecha quando o adaptador declarar um modelo de memória real (`GpuMmuSupported` ou `IoMmuSupported`) com backend que o sustente.** |
 | 104 | Nodes / engines WDDM | ⬜ | Nodes derivados do hardware e consumidos pelo scheduler |
 | 111 | Harness D3DKMT | ⬜ | Cadeia completa até `Submit` sem erro |
 | 105 | `CreateDevice` | ⛔ | Chamada real do `dxgkrnl` com handle válido |
@@ -581,6 +582,7 @@ precisa apresentar evidência nova, não argumento novo.
 | — | Cross-adapter / MCDM como destino | APU de die único: não há segundo adaptador de display real. Teto de desempenho inaceitável |
 | 41 | Shared / cross-adapter resources | Só serviria ao modo híbrido — **fora do destino** |
 | 175 | KDNET | **Sem segunda máquina.** Substituído pelas quatro camadas da P3 |
+| — | Teoria "o `E_NOTIMPL` da UMD apaga a tela" | **REFUTADA POR MEDIÇÃO (03/09, corrida 15:10:53).** Com o adaptador em Código 0 sob `RenderNode=1`, o tracer registrou que `bc250umd.dll` **nunca foi carregada por processo nenhum**. O runtime D3D não chega ao modo usuário — o bloqueio é anterior, nos caps de memória do kernel. Não reabrir sem evidência nova |
 
 ---
 
