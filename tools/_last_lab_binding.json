@@ -1,8 +1,8 @@
 ﻿{
-    "evidence_dir":  "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\docs\\evidence\\2026-09-02_08-59-42-DESKTOP-HQAG6T4-lab-binding",
-    "watchdog_token":  "6030dc36-5a45-4af2-8017-cb828104fcdf",
-    "watchdog_disabled":  false,
+    "evidence_dir":  "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\docs\\evidence\\2026-09-02_10-04-59-DESKTOP-HQAG6T4-lab-binding",
+    "watchdog_token":  null,
+    "watchdog_disabled":  true,
     "instance_id":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
     "published_inf":  "oem21.inf",
-    "package_sys_sha256":  "D93C225E1ED6417ABF083DBD1C28DBDDA82B039335C79FB2956279B935892A75"
+    "package_sys_sha256":  "493AC7CEA3317FAB0C4B025D123F73E30202A4674FF2AA107D76A872AFB423B1"
 }

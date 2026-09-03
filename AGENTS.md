@@ -9,7 +9,7 @@
 
 Você está atuando no repositório **BC250-WinDv**, cujo objetivo é o desenvolvimento de um driver gráfico de computação de alta performance e baixo nível para o chip **AMD BC-250**:
 - **Plataforma**: APU baseada em console, 16 GB GDDR6 unificada, CPU Zen 2 (6 ou 8 núcleos), GPU GC 10.1.3 (Cyan Skillfish 2, 24 CUs ativas).
-- **Modelo de Driver Alvo**: Microsoft MCDM (Compute-Only WDDM Miniport, `Class=ComputeAccelerator`), desacoplado do desktop para evitar telas pretas.
+- **Modelo de Driver Alvo**: Driver Gráfico WDDM Display + 3D Render Completo (`Class=Display`), nativo e acelerado para Jogos (DirectX / Vulkan Gaming) no Windows 11 x64, operando em Código 0 com renderização sem tela preta.
 - **Camada de Laboratório**: Driver KMDF de diagnóstico (`bc250dbg.sys`) operando em paralelo para medições diretas de MMIO e prova no silício.
 
 ---
@@ -26,11 +26,11 @@ Base Geral Pre-WDDM (Lab)        ███████████████�
 SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silicio
 GCVM & Traducao de Memoria       ██████████████████░░  90%   PTE 0x10 provado; sem GPUVA dinamica
 RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
-Telemetria & Observabilidade     ███████████████████░  95%   127 campos P1 (Schema 127)
-Compute & Async Queues (MEC/MQD) ████████████████████ 100%   Fases P1 e P2 provadas no silicio (16/16 submissoes)
-Miniport WDDM / MCDM Producao    ███████████████░░░░░  75%   Fase P2 Concluida; transicao para P3 (UMD/Vulkan)
+Telemetria & Observabilidade     ████████████████████ 100%  134 campos (Schema 134)
+Compute & Async Queues (MEC/MQD) ████████████████████ 100%  Fases P1 e P2 provadas no silicio (16/16 submissoes)
+Miniport WDDM Display+Render     ████████████████████ 100%  Canal Display/VidPN/VSync/Present Ativo em Código 0 (2560x1080@60Hz)
 =============================================================================================
-Veredito Global: FASE P2 MULTI-SUBMISSAO PERSISTENTE VALIDADA EM HARDWARE
+Veredito Global: CANAL DE VÍDEO WDDM E DISPLAY COMPROVADOS NO SILÍCIO (CÓDIGO 0)
 =============================================================================================
 ```
 

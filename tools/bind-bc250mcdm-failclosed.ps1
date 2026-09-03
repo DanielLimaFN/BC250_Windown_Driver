@@ -126,6 +126,8 @@ SE A TELA ESTIVER PRETA:
 3. Reinicie o Windows.
 '@ | Set-Content -LiteralPath (Join-Path $evidenceDir 'RECOVERY.txt') -Encoding ASCII
 
+Remove-Item -LiteralPath 'C:\BC250_DISPLAY_LOG.txt' -ErrorAction SilentlyContinue
+
 $watchdogArguments =
     "-NoProfile -ExecutionPolicy Bypass -File `"$watchdog`" " +
     "-EvidenceDir `"$evidenceDir`" " +

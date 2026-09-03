@@ -1,0 +1,9 @@
+﻿{
+    "state":  "BLOCKED",
+    "detail":  "unexpected device identity/state; safe-mode recovery required",
+    "target_inf":  "oem11.inf",
+    "instance_id":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
+    "timestamp":  "2026-09-02T14:59:11.7256625-03:00",
+    "exit_code":  2,
+    "hardware_validated":  false
+}

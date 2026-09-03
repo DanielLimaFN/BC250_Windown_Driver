@@ -36,6 +36,11 @@ try {
             Set-Content -LiteralPath (Join-Path $EvidenceDir 'probe-registry.txt') -Encoding ASCII
     }
 
+    $displayLog = 'C:\BC250_DISPLAY_LOG.txt'
+    if (Test-Path -LiteralPath $displayLog) {
+        Copy-Item -LiteralPath $displayLog -Destination (Join-Path $EvidenceDir 'bc250_display_log.txt') -Force
+    }
+
     if (Test-Path -LiteralPath $setupApiLog) {
         Get-Content -LiteralPath $setupApiLog -Tail 1600 |
             Set-Content -LiteralPath (Join-Path $EvidenceDir 'setupapi-after-tail.txt') -Encoding UTF8

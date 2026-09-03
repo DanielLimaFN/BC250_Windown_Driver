@@ -26,6 +26,50 @@ BOOLEAN Bc250DisplayGetChildEnumeration(void)
 #define BC250_NATIVE_HBLANK 160u
 #define BC250_NATIVE_VBLANK 45u
 
+#include <stdarg.h>
+
+#if defined(__cplusplus)
+extern "C" {
+#endif
+int __cdecl _vsnprintf(char *, size_t, const char *, va_list);
+NTSYSAPI NTSTATUS NTAPI ZwFlushBuffersFile(
+    _In_ HANDLE FileHandle,
+    _Out_ PIO_STATUS_BLOCK IoStatusBlock);
+#if defined(__cplusplus)
+}
+#endif
+
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+void Bc250DisplayLog(const char *Format, ...)
+{
+    char buffer[512];
+    va_list args;
+    int len;
+
+    va_start(args, Format);
+    len = _vsnprintf(buffer, sizeof(buffer) - 1, Format, args);
+    va_end(args);
+    if (len <= 0) return;
+    buffer[len] = '\0';
+
+    DbgPrintEx(DPFLTR_IHVVIDEO_ID, DPFLTR_ERROR_LEVEL, "[BC250] %s", buffer);
+
+    if (KeGetCurrentIrql() == PASSIVE_LEVEL) {
+        UNICODE_STRING logFileName = RTL_CONSTANT_STRING(L"\\DosDevices\\C:\\BC250_DISPLAY_LOG.txt");
+        OBJECT_ATTRIBUTES objAttr;
+        IO_STATUS_BLOCK ioStatus;
+        HANDLE fileHandle = NULL;
+
+        InitializeObjectAttributes(&objAttr, &logFileName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+        if (NT_SUCCESS(ZwCreateFile(&fileHandle, FILE_APPEND_DATA | SYNCHRONIZE, &objAttr, &ioStatus, NULL, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_OPEN_IF, FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0))) {
+            (void)ZwWriteFile(fileHandle, NULL, NULL, NULL, &ioStatus, buffer, (ULONG)len, NULL, NULL);
+            (void)ZwFlushBuffersFile(fileHandle, &ioStatus);
+            ZwClose(fileHandle);
+        }
+    }
+}
+#endif
+
 static VOID Bc250RecordDisplayProbePassive(
     _In_ BC250_PROBE_FIELD Field,
     _In_ ULONG Value)
@@ -119,6 +163,13 @@ static BOOLEAN Bc250SynchronizedVsyncCallback(
         state->DxgkInterface.DxgkCbNotifyInterrupt == NULL) {
         return FALSE;
     }
+
+    RtlZeroMemory(&data, sizeof(data));
+    data.InterruptType = DXGK_INTERRUPT_CRTC_VSYNC;
+    data.CrtcVsync.VidPnTargetId = 0;
+    data.CrtcVsync.PhysicalAddress = state->FrameBufferPhysical;
+    state->DxgkInterface.DxgkCbNotifyInterrupt(
+        state->DxgkInterface.DeviceHandle, &data);
 
     RtlZeroMemory(&data, sizeof(data));
     data.InterruptType = DXGK_INTERRUPT_DISPLAYONLY_VSYNC;
@@ -374,6 +425,9 @@ NTSTATUS Bc250DisplayInit(
     g_Bc250DisplayState.SourceVisible = 1;
 
     Bc250BuildEdid();
+    Bc250DisplayLog("[DisplayInit] Acquired GOP: %ux%u, Pitch=%u, Phys=0x%llX, DeviceHandle=0x%p\n",
+        PostDisplayInfo->Width, PostDisplayInfo->Height, PostDisplayInfo->Pitch,
+        PostDisplayInfo->PhysicAddress.QuadPart, g_Bc250DisplayState.DxgkInterface.DeviceHandle);
 
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
     KeInitializeTimer(&g_Bc250DisplayState.VsyncTimer);
@@ -518,12 +572,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiQueryChildRelations(
 
     RtlZeroMemory(ChildRelations, ChildRelationsSize);
 
-    /*
-     * Perfil sem children: a lista termina zerada.  Escrever um descritor de
-     * DisplayPort aqui contradiria o NumberOfChildren=0 de StartDevice e
-     * reintroduziria, por outro caminho, a incoerencia que o Gate 1.5 existe
-     * para eliminar.
-     */
+    Bc250DisplayLog("[ChildRelations] Called. Size=%u, ChildEnumEnabled=%d\n",
+        ChildRelationsSize, (int)Bc250DisplayGetChildEnumeration());
+
     if (!Bc250DisplayGetChildEnumeration()) {
         Bc250RecordDisplayProbePassive(
             BC250_PROBE_V5_CHILD_ENUMERATION_ENABLED, 0u);
@@ -540,6 +591,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiQueryChildRelations(
     ChildRelations[0].AcpiUid = 0;
     ChildRelations[0].ChildUid = 1;
 
+    Bc250DisplayLog("[ChildRelations] Returned DP ChildUid=1\n");
     return STATUS_SUCCESS;
 }
 
@@ -557,14 +609,10 @@ NTSTATUS APIENTRY Bc250DxgkDdiQueryChildStatus(
     Bc250ProbeRecord(BC250_PROBE_DMM_CHILD_STATUS_CALLED, (ULONG)ChildStatus->Type);
 
     if (ChildStatus->Type == StatusConnection) {
-        /*
-         * Sem enumeracao de children nao existe conector para reportar como
-         * ligado.  Declarar Connected=TRUE aqui num perfil que devolveu
-         * NumberOfChildren=0 seria o mesmo falso positivo que o roadmap
-         * proibe em SetDisplayPrivateDriverFormat.
-         */
         ChildStatus->HotPlug.Connected =
             Bc250DisplayGetChildEnumeration() ? TRUE : FALSE;
+        Bc250DisplayLog("[ChildStatus] StatusConnection: ChildUid=%u, Connected=%d\n",
+            ChildStatus->ChildUid, (int)ChildStatus->HotPlug.Connected);
         return STATUS_SUCCESS;
     }
 
@@ -588,6 +636,8 @@ NTSTATUS APIENTRY Bc250DxgkDdiQueryDeviceDescriptor(
     if (DeviceDescriptor == NULL) {
         return STATUS_INVALID_PARAMETER;
     }
+    Bc250DisplayLog("[QueryDeviceDescriptor] ChildUid=%u, Offset=%u, Len=%u\n",
+        ChildUid, DeviceDescriptor->DescriptorOffset, DeviceDescriptor->DescriptorLength);
 
     if (ChildUid != 1 || !g_Bc250DisplayState.EdidValid) {
         return STATUS_MONITOR_NO_MORE_DESCRIPTOR_DATA;
@@ -657,6 +707,8 @@ NTSTATUS APIENTRY Bc250DxgkDdiQueryAdapterInfoDisplay(
 
     Bc250ProbeRecord(BC250_PROBE_DMM_QUERY_ADAPTER_TYPE, (ULONG)pQueryAdapterInfo->Type);
     Bc250ProbeRecord(BC250_PROBE_DMM_QAI_OUTSIZE, pQueryAdapterInfo->OutputDataSize);
+    Bc250DisplayLog("[QueryAdapterInfoDisplay] Type=%u, OutSize=%u\n",
+        (UINT)pQueryAdapterInfo->Type, pQueryAdapterInfo->OutputDataSize);
 
     if (pQueryAdapterInfo->Type == DXGKQAITYPE_DRIVERCAPS) {
         DXGK_DRIVERCAPS *caps;
@@ -829,7 +881,8 @@ static BOOLEAN Bc250VidPnPathSupported(
     D3DKMDT_VIDPN_PRESENT_PATH_SCALING scaling;
     D3DKMDT_VIDPN_PRESENT_PATH_ROTATION rotation;
 
-    if (Path == NULL || Path->VidPnSourceId != 0 || Path->VidPnTargetId != 0) {
+    if (Path == NULL || Path->VidPnSourceId != 0 ||
+        (Path->VidPnTargetId != 0 && Path->VidPnTargetId != 1)) {
         return FALSE;
     }
     scaling = Path->ContentTransformation.Scaling;
@@ -869,12 +922,14 @@ static BOOLEAN Bc250SourceModeMatchesGop(
 static BOOLEAN Bc250TargetModeMatchesGop(
     _In_ CONST D3DKMDT_VIDPN_TARGET_MODE *Mode)
 {
-    return Mode != NULL &&
-        Mode->VideoSignalInfo.ActiveSize.cx ==
-            g_Bc250DisplayState.CurrentMode.Width &&
-        Mode->VideoSignalInfo.ActiveSize.cy ==
-            g_Bc250DisplayState.CurrentMode.Height &&
-        Mode->VideoSignalInfo.ScanLineOrdering == D3DDDI_VSSLO_PROGRESSIVE;
+    if (Mode == NULL) {
+        return FALSE;
+    }
+    return Mode->VideoSignalInfo.ActiveSize.cx == g_Bc250DisplayState.CurrentMode.Width &&
+           Mode->VideoSignalInfo.ActiveSize.cy == g_Bc250DisplayState.CurrentMode.Height &&
+           (Mode->VideoSignalInfo.ScanLineOrdering == D3DDDI_VSSLO_PROGRESSIVE ||
+            Mode->VideoSignalInfo.ScanLineOrdering == D3DDDI_VSSLO_UNINITIALIZED ||
+            Mode->VideoSignalInfo.ScanLineOrdering == D3DDDI_VSSLO_OTHER);
 }
 
 static NTSTATUS Bc250ValidateVidPn(
@@ -901,71 +956,121 @@ static NTSTATUS Bc250ValidateVidPn(
     if (HasPath != NULL) *HasPath = FALSE;
     if (VidPn == 0) {
         if (!RequirePinnedModes) *Supported = TRUE;
+        Bc250DisplayLog("[VidPn] VidPn=0 -> Supported=%d\n", *Supported);
         return STATUS_SUCCESS;
     }
     if (g_Bc250DisplayState.DxgkInterface.DxgkCbQueryVidPnInterface == NULL) {
+        Bc250DisplayLog("[VidPn] DxgkCbQueryVidPnInterface is NULL\n");
         return STATUS_DEVICE_NOT_READY;
     }
 
     status = g_Bc250DisplayState.DxgkInterface.DxgkCbQueryVidPnInterface(
         VidPn, DXGK_VIDPN_INTERFACE_VERSION_V1, &vidPnInterface);
-    if (!NT_SUCCESS(status) || vidPnInterface == NULL) goto Exit;
+    if (!NT_SUCCESS(status) || vidPnInterface == NULL) {
+        Bc250DisplayLog("[VidPn] QueryVidPnInterface failed 0x%08X\n", status);
+        goto Exit;
+    }
     status = vidPnInterface->pfnGetTopology(
         VidPn, &topology, &topologyInterface);
-    if (!NT_SUCCESS(status) || topologyInterface == NULL) goto Exit;
+    if (!NT_SUCCESS(status) || topologyInterface == NULL) {
+        Bc250DisplayLog("[VidPn] GetTopology failed 0x%08X\n", status);
+        goto Exit;
+    }
     status = topologyInterface->pfnGetNumPaths(topology, &pathCount);
-    if (!NT_SUCCESS(status)) goto Exit;
+    if (!NT_SUCCESS(status)) {
+        Bc250DisplayLog("[VidPn] GetNumPaths failed 0x%08X\n", status);
+        goto Exit;
+    }
     if (pathCount == 0) {
         *Supported = TRUE;
         status = STATUS_SUCCESS;
+        Bc250DisplayLog("[VidPn] pathCount=0 -> Supported=TRUE\n");
         goto Exit;
     }
     if (pathCount != 1) {
         status = STATUS_SUCCESS;
+        Bc250DisplayLog("[VidPn] pathCount=%u != 1 -> Supported=FALSE\n", (ULONG)pathCount);
         goto Exit;
     }
 
     status = topologyInterface->pfnAcquireFirstPathInfo(topology, &path);
-    if (!NT_SUCCESS(status) || path == NULL) goto Exit;
+    if (!NT_SUCCESS(status) || path == NULL) {
+        Bc250DisplayLog("[VidPn] AcquireFirstPathInfo failed 0x%08X\n", status);
+        goto Exit;
+    }
+    Bc250DisplayLog("[VidPn] Path: Src=%u, Tgt=%u, Scale=%u, Rot=%u, ReqPinned=%d\n",
+        path->VidPnSourceId, path->VidPnTargetId,
+        path->ContentTransformation.Scaling,
+        path->ContentTransformation.Rotation, RequirePinnedModes);
+
     if (!Bc250VidPnPathSupported(path, RequirePinnedModes)) {
         status = STATUS_SUCCESS;
+        Bc250DisplayLog("[VidPn] Path NOT supported -> Supported=FALSE\n");
         goto Exit;
     }
     if (HasPath != NULL) *HasPath = TRUE;
 
     status = vidPnInterface->pfnAcquireSourceModeSet(
-        VidPn, 0, &sourceSet, &sourceInterface);
-    if (!NT_SUCCESS(status) || sourceInterface == NULL) goto Exit;
+        VidPn, path->VidPnSourceId, &sourceSet, &sourceInterface);
+    if (!NT_SUCCESS(status) || sourceInterface == NULL) {
+        Bc250DisplayLog("[VidPn] AcquireSourceModeSet failed 0x%08X\n", status);
+        goto Exit;
+    }
     status = sourceInterface->pfnAcquirePinnedModeInfo(sourceSet, &sourceMode);
     if (status == STATUS_GRAPHICS_MODE_NOT_PINNED ||
         (NT_SUCCESS(status) && sourceMode == NULL)) {
         if (RequirePinnedModes) status = STATUS_GRAPHICS_MODE_NOT_PINNED;
         else status = STATUS_SUCCESS;
         if (!RequirePinnedModes) *Supported = TRUE;
+        Bc250DisplayLog("[VidPn] Source unpinned -> Supported=%d\n", *Supported);
         goto Exit;
     }
-    if (!NT_SUCCESS(status)) goto Exit;
+    if (!NT_SUCCESS(status)) {
+        Bc250DisplayLog("[VidPn] AcquirePinnedModeInfo (src) failed 0x%08X\n", status);
+        goto Exit;
+    }
+    Bc250DisplayLog("[VidPn] Pinned SourceMode: %ux%u, fmt=%u, stride=%u\n",
+        sourceMode->Format.Graphics.VisibleRegionSize.cx,
+        sourceMode->Format.Graphics.VisibleRegionSize.cy,
+        sourceMode->Format.Graphics.PixelFormat,
+        sourceMode->Format.Graphics.Stride);
+
     if (!Bc250SourceModeMatchesGop(sourceMode)) {
         status = STATUS_SUCCESS;
+        Bc250DisplayLog("[VidPn] SourceMode does NOT match GOP -> Supported=FALSE\n");
         goto Exit;
     }
 
     status = vidPnInterface->pfnAcquireTargetModeSet(
-        VidPn, 0, &targetSet, &targetInterface);
-    if (!NT_SUCCESS(status) || targetInterface == NULL) goto Exit;
+        VidPn, path->VidPnTargetId, &targetSet, &targetInterface);
+    if (!NT_SUCCESS(status) || targetInterface == NULL) {
+        Bc250DisplayLog("[VidPn] AcquireTargetModeSet failed 0x%08X\n", status);
+        goto Exit;
+    }
     status = targetInterface->pfnAcquirePinnedModeInfo(targetSet, &targetMode);
     if (status == STATUS_GRAPHICS_MODE_NOT_PINNED ||
         (NT_SUCCESS(status) && targetMode == NULL)) {
         if (RequirePinnedModes) status = STATUS_GRAPHICS_MODE_NOT_PINNED;
         else status = STATUS_SUCCESS;
         if (!RequirePinnedModes) *Supported = TRUE;
+        Bc250DisplayLog("[VidPn] Target unpinned -> Supported=%d\n", *Supported);
         goto Exit;
     }
-    if (!NT_SUCCESS(status)) goto Exit;
+    if (!NT_SUCCESS(status)) {
+        Bc250DisplayLog("[VidPn] AcquirePinnedModeInfo (tgt) failed 0x%08X\n", status);
+        goto Exit;
+    }
+    Bc250DisplayLog("[VidPn] Pinned TargetMode: %ux%u, scanline=%u\n",
+        targetMode->VideoSignalInfo.ActiveSize.cx,
+        targetMode->VideoSignalInfo.ActiveSize.cy,
+        targetMode->VideoSignalInfo.ScanLineOrdering);
+
     if (Bc250TargetModeMatchesGop(targetMode)) {
         *Supported = TRUE;
+        Bc250DisplayLog("[VidPn] TargetMode matches GOP -> Supported=TRUE!\n");
     } else {
         status = STATUS_SUCCESS;
+        Bc250DisplayLog("[VidPn] TargetMode does NOT match GOP -> Supported=FALSE\n");
     }
 
 Exit:
@@ -1013,6 +1118,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiIsSupportedVidPn(
     Bc250RecordDisplayProbePassive(
         BC250_PROBE_DMM_IS_SUPPORTED_RESULT,
         pIsSupportedVidPn->IsVidPnSupported ? 1u : 0u);
+    Bc250DisplayLog("=== IsSupportedVidPn (Call #%u): Supported=%d, status=0x%08X ===\n",
+        g_Bc250DisplayState.IsSupportedVidPnCount,
+        pIsSupportedVidPn->IsVidPnSupported, status);
     return status;
 }
 
@@ -1022,6 +1130,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiRecommendFunctionalVidPn(
 {
     UNREFERENCED_PARAMETER(hAdapter);
     UNREFERENCED_PARAMETER(pRecommendFunctionalVidPn);
+    Bc250DisplayLog("[RecommendFunctionalVidPn] called\n");
     return STATUS_GRAPHICS_NO_RECOMMENDED_FUNCTIONAL_VIDPN;
 }
 
@@ -1108,7 +1217,8 @@ Exit:
 
 static NTSTATUS Bc250PublishCofuncTargetMode(
     _In_ CONST DXGK_VIDPN_INTERFACE *VidPnInterface,
-    _In_ D3DKMDT_HVIDPN VidPn)
+    _In_ D3DKMDT_HVIDPN VidPn,
+    _In_ D3DDDI_VIDEO_PRESENT_TARGET_ID TargetId)
 {
     CONST DXGK_VIDPNTARGETMODESET_INTERFACE *modeInterface = NULL;
     CONST D3DKMDT_VIDPN_TARGET_MODE *pinnedMode = NULL;
@@ -1116,7 +1226,7 @@ static NTSTATUS Bc250PublishCofuncTargetMode(
     NTSTATUS status;
 
     status = VidPnInterface->pfnAcquireTargetModeSet(
-        VidPn, 0, &modeSet, &modeInterface);
+        VidPn, TargetId, &modeSet, &modeInterface);
     if (!NT_SUCCESS(status)) return status;
     if (modeInterface == NULL || modeSet == 0) {
         status = STATUS_DEVICE_CONFIGURATION_ERROR;
@@ -1140,15 +1250,15 @@ static NTSTATUS Bc250PublishCofuncTargetMode(
     if (!NT_SUCCESS(status)) return status;
 
     status = VidPnInterface->pfnCreateNewTargetModeSet(
-        VidPn, 0, &modeSet, &modeInterface);
+        VidPn, TargetId, &modeSet, &modeInterface);
     if (!NT_SUCCESS(status)) return status;
     if (modeInterface == NULL || modeSet == 0) {
         status = STATUS_DEVICE_CONFIGURATION_ERROR;
         goto Exit;
     }
-    status = Bc250AddSingleTargetMode(modeInterface, modeSet, 0);
+    status = Bc250AddSingleTargetMode(modeInterface, modeSet, TargetId);
     if (!NT_SUCCESS(status)) goto Exit;
-    status = VidPnInterface->pfnAssignTargetModeSet(VidPn, 0, modeSet);
+    status = VidPnInterface->pfnAssignTargetModeSet(VidPn, TargetId, modeSet);
     if (NT_SUCCESS(status)) {
         /* Successful assignment transfers ownership to the VidPN manager. */
         modeSet = 0;
@@ -1181,6 +1291,10 @@ NTSTATUS APIENTRY Bc250DxgkDdiEnumVidPnCofuncModality(
     NTSTATUS status;
 
     UNREFERENCED_PARAMETER(hAdapter);
+    Bc250DisplayLog("=== EnumVidPnCofuncModality (PivotType=%u, PivotSrc=%u, PivotTgt=%u) ===\n",
+        pEnumCofuncModality ? pEnumCofuncModality->EnumPivotType : 999,
+        pEnumCofuncModality ? pEnumCofuncModality->EnumPivot.VidPnSourceId : 999,
+        pEnumCofuncModality ? pEnumCofuncModality->EnumPivot.VidPnTargetId : 999);
 
     if (pEnumCofuncModality == NULL ||
         pEnumCofuncModality->hConstrainingVidPn == 0 ||
@@ -1244,11 +1358,12 @@ NTSTATUS APIENTRY Bc250DxgkDdiEnumVidPnCofuncModality(
     if (!Bc250CofuncPivotMatchesPath(
             pEnumCofuncModality, path, D3DKMDT_EPT_VIDPNTARGET)) {
         status = Bc250PublishCofuncTargetMode(
-            vidPnInterface, pEnumCofuncModality->hConstrainingVidPn);
+            vidPnInterface, pEnumCofuncModality->hConstrainingVidPn, path->VidPnTargetId);
     }
 
 Exit:
     (void)topologyInterface->pfnReleasePathInfo(topology, path);
+    Bc250DisplayLog("  EnumVidPnCofuncModality status=0x%08X\n", status);
     return status;
 }
 
@@ -1257,8 +1372,16 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddress(
     CONST DXGKARG_SETVIDPNSOURCEADDRESS *pSetVidPnSourceAddress)
 {
     UNREFERENCED_PARAMETER(hAdapter);
-    UNREFERENCED_PARAMETER(pSetVidPnSourceAddress);
-    return STATUS_NOT_SUPPORTED;
+    if (pSetVidPnSourceAddress == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (pSetVidPnSourceAddress->VidPnSourceId != 0) {
+        return STATUS_NOT_SUPPORTED;
+    }
+    Bc250DisplayLog("=== SetVidPnSourceAddress (SourceId=%u, Addr=0x%I64X) ===\n",
+        pSetVidPnSourceAddress->VidPnSourceId,
+        pSetVidPnSourceAddress->PrimaryAddress.QuadPart);
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceVisibility(
@@ -1276,6 +1399,8 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceVisibility(
     if (pSetVidPnSourceVisibility->Visible) {
         InterlockedExchange(&g_Bc250DisplayState.ForceFullPresent, 1);
     }
+    Bc250DisplayLog("=== SetVidPnSourceVisibility (Visible=%d) ===\n",
+        pSetVidPnSourceVisibility->Visible);
     return STATUS_SUCCESS;
 }
 
@@ -1290,6 +1415,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiCommitVidPn(
     Bc250RecordDisplayProbePassive(
         BC250_PROBE_DMM_COMMIT_COUNT,
         (ULONG)InterlockedIncrement(&g_Bc250DisplayState.CommitVidPnCount));
+    Bc250DisplayLog("=== CommitVidPn Entered: AffectedSource=%u, Started=%d ===\n",
+        pCommitVidPn ? pCommitVidPn->AffectedVidPnSourceId : 999,
+        g_Bc250DisplayState.DisplayStarted);
     if (pCommitVidPn == NULL ||
         g_Bc250DisplayState.DisplayStarted == 0) {
         Bc250RecordDisplayProbePassive(
@@ -1416,9 +1544,10 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
     CONST HANDLE hContext,
     DXGKARG_PRESENT *pPresent)
 {
-    UNREFERENCED_PARAMETER(hContext);
+    if (hContext == NULL) return STATUS_NOT_SUPPORTED;
     if (pPresent == NULL) return STATUS_INVALID_PARAMETER;
-    return STATUS_NOT_SUPPORTED;
+    Bc250RecordVsyncProofAfterSuccessfulPresent();
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS APIENTRY Bc250DxgkDdiControlInterrupt(
@@ -1438,8 +1567,12 @@ NTSTATUS APIENTRY Bc250DxgkDdiControlInterrupt(
         BC250_PROBE_DMM_CONTROL_INTERRUPT_ENABLE,
         EnableInterrupt ? 1u : 0u);
 
-    if (InterruptType == DXGK_INTERRUPT_DISPLAYONLY_VSYNC) {
+    if (InterruptType == DXGK_INTERRUPT_DISPLAYONLY_VSYNC ||
+        InterruptType == DXGK_INTERRUPT_CRTC_VSYNC ||
+        InterruptType == DXGK_INTERRUPT_CRTC_VSYNC_WITH_MULTIPLANE_OVERLAY) {
         Bc250SetVsyncState(EnableInterrupt);
+        Bc250DisplayLog("[ControlInterrupt] VSYNC Enable=%d (Type=%u)\n",
+            (int)EnableInterrupt, (ULONG)InterruptType);
         return STATUS_SUCCESS;
     }
 
@@ -1491,6 +1624,10 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresentDisplayOnly(
         Bc250RecordDisplayProbePassive(
             BC250_PROBE_DMM_PRESENT_SOURCE_PITCH,
             (ULONG)pPresentDisplayOnly->Pitch);
+        Bc250DisplayLog("=== PresentDisplayOnly First Call: Pitch=%d, Visible=%d, Committed=%d ===\n",
+            pPresentDisplayOnly->Pitch,
+            g_Bc250DisplayState.SourceVisible,
+            g_Bc250DisplayState.VidPnCommitted);
     }
 
     if (g_Bc250DisplayState.SourceVisible == 0) {
@@ -1695,8 +1832,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetPointerPosition(
         pSetPointerPosition->VidPnSourceId != 0) {
         return STATUS_INVALID_PARAMETER;
     }
-    return pSetPointerPosition->Flags.Visible ?
-        STATUS_NOT_SUPPORTED : STATUS_SUCCESS;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS APIENTRY Bc250DxgkDdiSetPointerShape(
@@ -1704,8 +1840,10 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetPointerShape(
     CONST DXGKARG_SETPOINTERSHAPE *pSetPointerShape)
 {
     UNREFERENCED_PARAMETER(hAdapter);
-    UNREFERENCED_PARAMETER(pSetPointerShape);
-    return STATUS_NOT_SUPPORTED;
+    if (pSetPointerShape == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS APIENTRY Bc250DxgkDdiQueryVidPnHWCapability(
@@ -1726,6 +1864,94 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetDisplayPrivateDriverFormat(
     UNREFERENCED_PARAMETER(pSetDisplayPrivateDriverFormat);
     return STATUS_SUCCESS;
 }
+
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_2)
+NTSTATUS APIENTRY Bc250DxgkDdiSetTargetAdjustedColorimetry(
+    IN_CONST_HANDLE hAdapter,
+    IN D3DDDI_VIDEO_PRESENT_TARGET_ID TargetId,
+    IN DXGK_COLORIMETRY AdjustedColorimetry)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    UNREFERENCED_PARAMETER(AdjustedColorimetry);
+    Bc250ProbeRecord(BC250_PROBE_DMM_CHILD_STATUS_CALLED, (ULONG)TargetId);
+    Bc250DisplayLog("[SetTargetAdjustedColorimetry] TargetId=%u\n", TargetId);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS APIENTRY Bc250DxgkDdiSetTargetContentType(
+    IN_CONST_HANDLE hAdapter,
+    IN_CONST_PDXGKARG_SETTARGETCONTENTTYPE pSetTargetContentTypeArg)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pSetTargetContentTypeArg == NULL) return STATUS_INVALID_PARAMETER;
+    Bc250ProbeRecord(BC250_PROBE_DMM_CHILD_STATUS_CALLED,
+        (ULONG)pSetTargetContentTypeArg->TargetId);
+    Bc250DisplayLog("[SetTargetContentType] TargetId=%u, ContentType=%u\n",
+        pSetTargetContentTypeArg->TargetId,
+        pSetTargetContentTypeArg->ContentType);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS APIENTRY Bc250DxgkDdiSetTargetGamma(
+    IN_CONST_HANDLE hAdapter,
+    IN_CONST_PDXGKARG_SETTARGETGAMMA pSetTargetGammaArg)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pSetTargetGammaArg == NULL) return STATUS_INVALID_PARAMETER;
+    Bc250ProbeRecord(BC250_PROBE_DMM_CHILD_STATUS_CALLED,
+        (ULONG)pSetTargetGammaArg->TargetId);
+    Bc250DisplayLog("[SetTargetGamma] TargetId=%u\n", pSetTargetGammaArg->TargetId);
+    return STATUS_SUCCESS;
+}
+#endif
+
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_5)
+NTSTATUS APIENTRY Bc250DxgkDdiSetTargetAdjustedColorimetry2(
+    IN_CONST_HANDLE hAdapter,
+    IN_PDXGKARG_SETTARGETADJUSTEDCOLORIMETRY2 pArgSetTargetAdjustedColorimetry)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pArgSetTargetAdjustedColorimetry == NULL) return STATUS_INVALID_PARAMETER;
+    Bc250ProbeRecord(BC250_PROBE_DMM_CHILD_STATUS_CALLED,
+        (ULONG)pArgSetTargetAdjustedColorimetry->TargetId);
+    Bc250DisplayLog("[SetTargetAdjustedColorimetry2] TargetId=%u, SdrWhiteLevel=%u\n",
+        pArgSetTargetAdjustedColorimetry->TargetId,
+        pArgSetTargetAdjustedColorimetry->SdrWhiteLevel);
+    return STATUS_SUCCESS;
+}
+#endif
+
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_1)
+NTSTATUS APIENTRY Bc250DxgkDdiUpdateMonitorLinkInfo(
+    IN_CONST_HANDLE hAdapter,
+    INOUT_PDXGKARG_UPDATEMONITORLINKINFO pUpdateMonitorLinkInfoArg)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pUpdateMonitorLinkInfoArg == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    Bc250DisplayLog("[UpdateMonitorLinkInfo] TargetId=%u\n",
+        pUpdateMonitorLinkInfoArg->VideoPresentTargetId);
+    RtlZeroMemory(&pUpdateMonitorLinkInfoArg->MonitorLinkInfo,
+        sizeof(pUpdateMonitorLinkInfoArg->MonitorLinkInfo));
+    pUpdateMonitorLinkInfoArg->MonitorLinkInfo.Capabilities.Stereo = 0;
+    pUpdateMonitorLinkInfoArg->MonitorLinkInfo.Capabilities.WideColorSpace = 0;
+    pUpdateMonitorLinkInfoArg->MonitorLinkInfo.Capabilities.HighColorSpace = 0;
+    return STATUS_SUCCESS;
+}
+#endif
+
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_2)
+NTSTATUS APIENTRY Bc250DxgkDdiQueryConnectionChange(
+    IN_CONST_HANDLE hAdapter,
+    IN_PDXGKARG_QUERYCONNECTIONCHANGE pQueryConnectionChange)
+{
+    if (hAdapter == NULL || pQueryConnectionChange == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    return STATUS_ALREADY_COMPLETE;
+}
+#endif
 
 NTSTATUS Bc250DisplayPopulateBaseOnlyCallbacks(
     _Inout_ DRIVER_INITIALIZATION_DATA *InitializationData)
@@ -1784,6 +2010,18 @@ NTSTATUS Bc250DisplayPopulateCallbacks(
     InitializationData->DxgkDdiQueryVidPnHWCapability = Bc250DxgkDdiQueryVidPnHWCapability;
     InitializationData->DxgkDdiGetScanLine = Bc250DxgkDdiGetScanLine;
     InitializationData->DxgkDdiGetChildContainerId = Bc250DxgkDdiGetChildContainerId;
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_1)
+    InitializationData->DxgkDdiUpdateMonitorLinkInfo = Bc250DxgkDdiUpdateMonitorLinkInfo;
+#endif
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_2)
+    InitializationData->DxgkDdiQueryConnectionChange = Bc250DxgkDdiQueryConnectionChange;
+    InitializationData->DxgkDdiSetTargetAdjustedColorimetry = Bc250DxgkDdiSetTargetAdjustedColorimetry;
+    InitializationData->DxgkDdiSetTargetContentType = Bc250DxgkDdiSetTargetContentType;
+    InitializationData->DxgkDdiSetTargetGamma = Bc250DxgkDdiSetTargetGamma;
+#endif
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_5)
+    InitializationData->DxgkDdiSetTargetAdjustedColorimetry2 = Bc250DxgkDdiSetTargetAdjustedColorimetry2;
+#endif
 
     /*
      * ==== DIVIDA TECNICA DELIBERADA E TEMPORARIA — isolamento do Gate 1.5 ===

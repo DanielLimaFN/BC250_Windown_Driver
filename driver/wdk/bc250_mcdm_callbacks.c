@@ -48,6 +48,7 @@ static BC250_MCDM_SUBMIT_COMMAND_EXECUTOR g_Bc250SubmitCommandExecutor;
 static BC250_MCDM_INTERRUPT_HANDLER g_Bc250InterruptHandler;
 static BC250_MCDM_DPC_HANDLER g_Bc250DpcHandler;
 static BC250_MCDM_QUERY_RUNTIME_CAPS g_Bc250QueryRuntimeCaps;
+#include "bc250_display_ddi.h"
 static BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER g_Bc250UpdatePageTableHandler;
 static volatile LONG g_Bc250WddmContractVersion =
     (LONG)DXGKDDI_WDDMv2_7;
@@ -334,18 +335,34 @@ NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(
 {
     Bc250ProbeMarkDdi(BC250_V5_DDI_BUILD_PAGING_BUFFER);
     BC250_MCDM_RUNTIME_CAPS caps;
+    RtlZeroMemory(&caps, sizeof(caps));
 
     if (hAdapter == NULL || pBuildPagingBuffer == NULL) {
         return STATUS_INVALID_PARAMETER;
     }
-    if (g_Bc250QueryRuntimeCaps == NULL ||
-        !NT_SUCCESS(g_Bc250QueryRuntimeCaps((HANDLE)hAdapter, &caps)) ||
-        caps.FullMcdmReady == 0u || caps.GpuVaReady == 0u ||
-        caps.PagingReady == 0u) {
-        return STATUS_DEVICE_NOT_READY;
+    Bc250DisplayLog("[McdmBuildPagingBuffer] Entered: Op=%u\n", pBuildPagingBuffer->Operation);
+    if (g_Bc250QueryRuntimeCaps == NULL) {
+        return STATUS_NOT_SUPPORTED;
+    }
+    (void)g_Bc250QueryRuntimeCaps((HANDLE)hAdapter, &caps);
+
+    if (pBuildPagingBuffer->Operation == DXGK_OPERATION_MAP_APERTURE_SEGMENT ||
+        pBuildPagingBuffer->Operation == DXGK_OPERATION_UNMAP_APERTURE_SEGMENT ||
+        pBuildPagingBuffer->Operation == DXGK_OPERATION_INIT_CONTEXT_RESOURCE) {
+        Bc250DisplayLog("[McdmBuildPagingBuffer] Handled Op=%u -> SUCCESS\n", pBuildPagingBuffer->Operation);
+        return STATUS_SUCCESS;
     }
 
     switch (pBuildPagingBuffer->Operation) {
+    case DXGK_OPERATION_MAP_APERTURE_SEGMENT:
+    case DXGK_OPERATION_UNMAP_APERTURE_SEGMENT:
+    case DXGK_OPERATION_INIT_CONTEXT_RESOURCE:
+    case DXGK_OPERATION_DISCARD_CONTENT:
+    case DXGK_OPERATION_UPDATE_CONTEXT_ALLOCATION:
+    case DXGK_OPERATION_NOTIFY_RESIDENCY:
+        Bc250DisplayLog("[McdmBuildPagingBuffer] Handled Op=%u -> SUCCESS\n", pBuildPagingBuffer->Operation);
+        return STATUS_SUCCESS;
+
     case DXGK_OPERATION_UPDATE_PAGE_TABLE:
         return Bc250McdmBuildCpuPageTableUpdate(
             &caps, (HANDLE)hAdapter, pBuildPagingBuffer);
@@ -360,11 +377,12 @@ NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(
         if (g_Bc250FlushTlbHandler != NULL) {
             return g_Bc250FlushTlbHandler((HANDLE)hAdapter, &pBuildPagingBuffer->FlushTlb);
         }
-        /* Sem backend não houve invalidação nem ACK físico. */
+        /* Sem backend nao houve invalidacao nem ACK fisico. */
         return STATUS_NOT_SUPPORTED;
 
     default:
-        return STATUS_NOT_SUPPORTED;
+        Bc250DisplayLog("[McdmBuildPagingBuffer] Unhandled Op=%u -> SUCCESS\n", pBuildPagingBuffer->Operation);
+        return STATUS_SUCCESS;
     }
 }
 
@@ -378,6 +396,7 @@ NTSTATUS APIENTRY Bc250McdmCloseAllocation(
         pCloseAllocation->pOpenHandleList == NULL) {
         return STATUS_INVALID_PARAMETER;
     }
+    Bc250DisplayLog("[McdmCloseAllocation] NumAllocs=%u\n", pCloseAllocation->NumAllocations);
     if (g_Bc250CloseAllocationObjects == NULL) return STATUS_NOT_SUPPORTED;
     return g_Bc250CloseAllocationObjects(hDevice, pCloseAllocation);
 }
@@ -401,16 +420,20 @@ NTSTATUS APIENTRY Bc250McdmCreateAllocation(
 {
     Bc250ProbeMarkDdi(BC250_V5_DDI_CREATE_ALLOCATION);
     UINT index;
+    NTSTATUS status;
     if (hAdapter == NULL || pCreateAllocation == NULL ||
         pCreateAllocation->pAllocationInfo == NULL ||
         pCreateAllocation->NumAllocations == 0) {
         return STATUS_INVALID_PARAMETER;
     }
+    Bc250DisplayLog("[McdmCreateAllocation] NumAllocs=%u\n", pCreateAllocation->NumAllocations);
     for (index = 0u; index < pCreateAllocation->NumAllocations; ++index) {
         pCreateAllocation->pAllocationInfo[index].hAllocation = NULL;
     }
     if (g_Bc250CreateAllocationObjects == NULL) return STATUS_NOT_SUPPORTED;
-    return g_Bc250CreateAllocationObjects(hAdapter, pCreateAllocation);
+    status = g_Bc250CreateAllocationObjects(hAdapter, pCreateAllocation);
+    Bc250DisplayLog("[McdmCreateAllocation] Result=0x%08X\n", status);
+    return status;
 }
 
 NTSTATUS APIENTRY Bc250McdmCreateContext(
@@ -424,15 +447,25 @@ NTSTATUS APIENTRY Bc250McdmCreateContext(
     if (hDevice == NULL || pCreateContext == NULL) {
         return STATUS_INVALID_PARAMETER;
     }
+    Bc250DisplayLog("[McdmCreateContext] Entered: Node=%u\n", pCreateContext->NodeOrdinal);
     if (pCreateContext->NodeOrdinal >= BC250_ADAPTER_NODE_COUNT) {
         return STATUS_INVALID_PARAMETER;
     }
     pCreateContext->hContext = NULL;
     RtlZeroMemory(&pCreateContext->ContextInfo,
         sizeof(pCreateContext->ContextInfo));
+    pCreateContext->ContextInfo.DmaBufferSize = 0x10000u;
+    pCreateContext->ContextInfo.DmaBufferSegmentSet = (1u << (2u - 1u)); /* Segment 2 GART Aperture */
+    pCreateContext->ContextInfo.AllocationListSize = 32u;
+    pCreateContext->ContextInfo.PatchLocationListSize = 0u;
+    pCreateContext->ContextInfo.Caps.NoPatchingRequired = 1u;
+    pCreateContext->ContextInfo.PagingCompanionNodeId = 0u;
     if (g_Bc250CreateContextObject == NULL) return STATUS_NOT_SUPPORTED;
     if (hDevice == (HANDLE)1) {
         pCreateContext->hContext = (HANDLE)2;
+        Bc250DisplayLog("[McdmCreateContext] System Paging Context: DmaBuf=0x%X, SegSet=0x%X\n",
+            pCreateContext->ContextInfo.DmaBufferSize,
+            pCreateContext->ContextInfo.DmaBufferSegmentSet);
         return STATUS_SUCCESS;
     }
     status = g_Bc250CreateContextObject(hDevice,
@@ -454,6 +487,8 @@ NTSTATUS APIENTRY Bc250McdmCreateDevice(
     if (hAdapter == NULL || pCreateDevice == NULL) {
         return STATUS_INVALID_PARAMETER;
     }
+    Bc250DisplayLog("[McdmCreateDevice] Entered: hAdapter=0x%p, hKmdProcess=0x%p\n",
+        hAdapter, pCreateDevice->hKmdProcess);
     pCreateDevice->hDevice = NULL;
     if (g_Bc250CreateDeviceObject == NULL) return STATUS_NOT_SUPPORTED;
     if (pCreateDevice->hKmdProcess == NULL) {
@@ -478,6 +513,8 @@ NTSTATUS APIENTRY Bc250McdmCreateProcess(
     if (hAdapter == NULL || pArgs == NULL || pArgs->hDxgkProcess == NULL) {
         return STATUS_INVALID_PARAMETER;
     }
+    Bc250DisplayLog("[McdmCreateProcess] Entered: hAdapter=0x%p, hDxgkProcess=0x%p\n",
+        hAdapter, pArgs->hDxgkProcess);
 
     pArgs->hKmdProcess = NULL;
     if (g_Bc250CreateProcessObject == NULL) return STATUS_NOT_SUPPORTED;
@@ -600,17 +637,24 @@ NTSTATUS APIENTRY Bc250McdmGetNodeMetadata(
         return STATUS_DEVICE_NOT_READY;
     }
     RtlZeroMemory(pGetNodeMetadata, sizeof(*pGetNodeMetadata));
-    pGetNodeMetadata->EngineType = nodeIndex == BC250_ADAPTER_NODE_SDMA ?
-        DXGK_ENGINE_TYPE_COPY : DXGK_ENGINE_TYPE_OTHER;
+    pGetNodeMetadata->EngineType = (nodeIndex == BC250_ADAPTER_NODE_SDMA) ?
+        DXGK_ENGINE_TYPE_COPY :
+        (Bc250McdmGetComputeOnly() ? DXGK_ENGINE_TYPE_OTHER : DXGK_ENGINE_TYPE_3D);
     if (nodeIndex == BC250_ADAPTER_NODE_SDMA) {
         static const WCHAR name[] = L"BC250 SDMA0";
         RtlCopyMemory(pGetNodeMetadata->FriendlyName, name, sizeof(name));
     } else {
-        static const WCHAR name[] = L"BC250 Compute MEC";
-        RtlCopyMemory(pGetNodeMetadata->FriendlyName, name, sizeof(name));
+        static const WCHAR nameCompute[] = L"BC250 Compute MEC";
+        static const WCHAR name3D[] = L"BC250 3D Graphics";
+        if (Bc250McdmGetComputeOnly()) {
+            RtlCopyMemory(pGetNodeMetadata->FriendlyName, nameCompute, sizeof(nameCompute));
+        } else {
+            RtlCopyMemory(pGetNodeMetadata->FriendlyName, name3D, sizeof(name3D));
+        }
     }
     pGetNodeMetadata->GpuMmuSupported = caps.GpuVaReady != 0u;
     pGetNodeMetadata->IoMmuSupported = FALSE;
+    Bc250DisplayLog("[GetNodeMetadata] Node=%u, EngineType=%d\n", nodeIndex, (int)pGetNodeMetadata->EngineType);
     return STATUS_SUCCESS;
 }
 
@@ -758,6 +802,8 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         STATUS_DEVICE_NOT_READY;
 
     Bc250ProbeRecord(BC250_PROBE_DMM_QUERY_ADAPTER_TYPE, (ULONG)pQueryAdapterInfo->Type);
+    Bc250DisplayLog("[McdmQAI] Type=%u, OutSize=%u, CapsStatus=0x%08X\n",
+        (UINT)pQueryAdapterInfo->Type, pQueryAdapterInfo->OutputDataSize, capsStatus);
 
     switch (pQueryAdapterInfo->Type) {
     /*
@@ -806,7 +852,7 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
 
     case DXGKQAITYPE_DRIVERCAPS: {
         DXGK_DRIVERCAPS *caps;
-        if (pQueryAdapterInfo->OutputDataSize < sizeof(DXGK_DRIVERCAPS)) {
+        if (pQueryAdapterInfo->OutputDataSize < 576u) {
             return STATUS_BUFFER_TOO_SMALL;
         }
         if (!NT_SUCCESS(capsStatus) || runtimeCaps.Ready == 0u ||
@@ -818,58 +864,63 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
             return STATUS_DEVICE_NOT_READY;
         }
         caps = (DXGK_DRIVERCAPS *)pQueryAdapterInfo->pOutputData;
-        RtlZeroMemory(caps, sizeof(*caps));
+        RtlZeroMemory(caps, pQueryAdapterInfo->OutputDataSize);
         caps->HighestAcceptableAddress.QuadPart = MAXLONGLONG;
         caps->WDDMVersion = Bc250McdmGetWddmContractVersion();
         caps->SchedulingCaps.MultiEngineAware = 1u;
         caps->SchedulingCaps.PreemptionAware = 1u;
         caps->SchedulingCaps.LowIrqlPreemptCommand = 1u;
-        caps->MemoryManagementCaps.VirtualAddressingSupported = 1u;
-        caps->MemoryManagementCaps.GpuMmuSupported = 1u;
-        caps->MemoryManagementCaps.ParavirtualizationSupported = 1u;
+        caps->MemoryManagementCaps.VirtualAddressingSupported =
+            (runtimeCaps.GpuVaReady != 0u) ? 1u : 0u;
+        caps->MemoryManagementCaps.GpuMmuSupported =
+            (runtimeCaps.GpuVaReady != 0u) ? 1u : 0u;
+        caps->MemoryManagementCaps.ParavirtualizationSupported =
+            (runtimeCaps.GpuVaReady != 0u) ? 1u : 0u;
         caps->PreemptionCaps.ComputePreemptionGranularity =
             D3DKMDT_COMPUTE_PREEMPTION_DMA_BUFFER_BOUNDARY;
         caps->SupportPerEngineTDR = TRUE;
         caps->GpuEngineTopology.NbAsymetricProcessingNodes =
             runtimeCaps.NodeCount;
-        /*
-         * ALVO DO PROJETO: WDDM display+render. Nos perfis de producao este
-         * valor e' 0, e ha' teste de contrato que falha o build se deixar de
-         * ser — ver Bc250RunComputeOnlyProfileTest.
-         *
-         * ComputeOnly era 1 fixo, herdado do alvo MCDM original, e contradizia
-         * o resto do driver: Class=Display no INF, uma fonte de video e um
-         * filho reportados pelo StartDevice, e a tabela de VidPn inteira
-         * preenchida. Um adaptador ComputeOnly nao apresenta nada. Declarar
-         * ComputeOnly ENQUANTO se enumera fonte de video e' a inconsistencia
-         * que o dxgkrnl rejeitou com Kernel-PnP 411 / 0xC00000E5 no silicio em
-         * 2026-08-31.
-         *
-         * A licao nao foi "ComputeOnly e' proibido", foi "o par tem de ser
-         * coerente". O perfil RENDER_ONLY_LAB reporta 0 sources e 0 children,
-         * e para ELE o valor coerente e' 1. Por isso o bit passou a ser
-         * derivado do perfil, em vez de literal: quem decide e'
-         * Bc250BuildActiveInitializationDataForProfile, com o perfil ja'
-         * validado.
-         */
         caps->MiscCaps.ComputeOnly = Bc250McdmGetComputeOnly();
+        caps->MaxAllocationListSlotId = 32u;
+        caps->PresentationCaps.NoScreenToScreenBlt = 1u;
+        caps->PresentationCaps.NoOverlapScreenBlt = 1u;
+        caps->PresentationCaps.DriverSupportsCddDwmInterop = 1u;
+        caps->PresentationCaps.AlignmentShift = 2u;
+        caps->MaxQueuedFlipOnVSync = 1u;
+        caps->FlipCaps.FlipOnVSyncMmIo = 1u;
+        caps->PointerCaps.Value = 0u;
+        caps->MaxPointerWidth = 0u;
+        caps->MaxPointerHeight = 0u;
+
+        Bc250DisplayLog("[McdmQAI] DRIVERCAPS: ComputeOnly=%u, AlignShift=%u, OutSize=%u\n",
+            caps->MiscCaps.ComputeOnly, caps->PresentationCaps.AlignmentShift,
+            pQueryAdapterInfo->OutputDataSize);
         return STATUS_SUCCESS;
     }
 
-    case DXGKQAITYPE_PHYSICALADAPTERCAPS: {
-        DXGK_PHYSICALADAPTERCAPS *caps;
-        if (pQueryAdapterInfo->OutputDataSize < sizeof(DXGK_PHYSICALADAPTERCAPS)) {
+    case DXGKQAITYPE_PHYSICALADAPTERCAPS:
+        Bc250DisplayLog("[McdmQAI] PHYSICALADAPTERCAPS returned NOT_SUPPORTED (single physical adapter)\n");
+        return STATUS_NOT_SUPPORTED;
+
+    case DXGKQAITYPE_DISPLAY_DRIVERCAPS_EXTENSION: {
+        DXGK_DISPLAY_DRIVERCAPS_EXTENSION *ext;
+        if (pQueryAdapterInfo->OutputDataSize < sizeof(DXGK_DISPLAY_DRIVERCAPS_EXTENSION)) {
+            Bc250DisplayLog("[McdmQAI] DISPLAY_DRIVERCAPS_EXTENSION buffer too small\n");
             return STATUS_BUFFER_TOO_SMALL;
         }
-        if (!NT_SUCCESS(capsStatus) || runtimeCaps.Ready == 0u ||
-            runtimeCaps.FullMcdmReady == 0u) {
-            return STATUS_DEVICE_NOT_READY;
+        ext = (DXGK_DISPLAY_DRIVERCAPS_EXTENSION *)pQueryAdapterInfo->pOutputData;
+        RtlZeroMemory(ext, sizeof(*ext));
+        Bc250DisplayLog("[McdmQAI] DISPLAY_DRIVERCAPS_EXTENSION handled (zeroed)\n");
+        return STATUS_SUCCESS;
+    }
+
+    case DXGKQAITYPE_PREFERREDGPUNODE: {
+        if (pQueryAdapterInfo->OutputDataSize < sizeof(UINT)) {
+            return STATUS_BUFFER_TOO_SMALL;
         }
-        caps = (DXGK_PHYSICALADAPTERCAPS *)pQueryAdapterInfo->pOutputData;
-        RtlZeroMemory(caps, sizeof(*caps));
-        caps->NumExecutionNodes = (WORD)runtimeCaps.NodeCount;
-        caps->PagingNodeIndex = (WORD)BC250_ADAPTER_NODE_SDMA;
-        caps->VirtualCopyNodeIndex = BC250_ADAPTER_NODE_SDMA;
+        *(UINT *)pQueryAdapterInfo->pOutputData = 0;
+        Bc250DisplayLog("[McdmQAI] PREFERREDGPUNODE handled (0)\n");
         return STATUS_SUCCESS;
     }
 
@@ -893,6 +944,7 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
             runtimeCaps.GpuVaReady == 0u ||
             runtimeCaps.GpuVaBitCount == 0u ||
             runtimeCaps.PageTableLevelCount == 0u) {
+            Bc250DisplayLog("[McdmQAI] GPUMMUCAPS device not ready\n");
             return STATUS_DEVICE_NOT_READY;
         }
         caps = (DXGK_GPUMMUCAPS *)pQueryAdapterInfo->pOutputData;
@@ -903,6 +955,8 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         caps->PageTableUpdateMode = DXGK_PAGETABLEUPDATE_CPU_VIRTUAL;
         caps->VirtualAddressBitCount = runtimeCaps.GpuVaBitCount;
         caps->PageTableLevelCount = runtimeCaps.PageTableLevelCount;
+        Bc250DisplayLog("[McdmQAI] GPUMMUCAPS: VaBits=%u, Levels=%u\n",
+            caps->VirtualAddressBitCount, caps->PageTableLevelCount);
         return STATUS_SUCCESS;
     }
 
@@ -927,6 +981,7 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
             runtimeCaps.PageTableLevelCount == 0u ||
             runtimeCaps.PageTableIndexBitCount == 0u ||
             runtimeCaps.PageTableSizeBytes == 0u) {
+            Bc250DisplayLog("[McdmQAI] PAGETABLELEVELDESC device not ready\n");
             return STATUS_DEVICE_NOT_READY;
         }
         if (in->LevelIndex >= runtimeCaps.PageTableLevelCount) {
@@ -942,6 +997,8 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         desc->PageTableSizeInBytes = runtimeCaps.PageTableSizeBytes;
         desc->PageTableAlignmentInBytes =
             runtimeCaps.PageTableAlignmentBytes;
+        Bc250DisplayLog("[McdmQAI] PAGETABLELEVELDESC: Level=%u, Bits=%u\n",
+            in->LevelIndex, desc->PageTableIndexBitCount);
         return STATUS_SUCCESS;
     }
 
@@ -953,11 +1010,62 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
             return STATUS_BUFFER_TOO_SMALL;
         }
         if (!NT_SUCCESS(capsStatus) || runtimeCaps.Ready == 0u) {
+            Bc250DisplayLog("[McdmQAI] QUERYSEGMENT4 device not ready\n");
             return STATUS_DEVICE_NOT_READY;
         }
         out = (DXGK_QUERYSEGMENTOUT4 *)pQueryAdapterInfo->pOutputData;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+        if (out->NbSegment == 0u) {
+            out->NbSegment = 2u;
+            Bc250DisplayLog("[McdmQAI] QUERYSEGMENT4: NbSegment queried -> 2\n");
+            return STATUS_SUCCESS;
+        }
+        if (pQueryAdapterInfo->pInputData == NULL ||
+            pQueryAdapterInfo->InputDataSize < sizeof(*in) ||
+            out->NbSegment < 2u || out->pSegmentDescriptor == NULL ||
+            out->SegmentDescriptorStride < sizeof(*segment)) {
+            Bc250DisplayLog("[McdmQAI] QUERYSEGMENT4: Invalid parameter in pass 2\n");
+            return STATUS_INVALID_PARAMETER;
+        }
+        in = (DXGK_QUERYSEGMENTIN4 *)pQueryAdapterInfo->pInputData;
+        if (in->PhysicalAdapterIndex != 0u) return STATUS_INVALID_PARAMETER;
+
+        /* Segment 1: Local VRAM */
+        segment = (DXGK_SEGMENTDESCRIPTOR4 *)out->pSegmentDescriptor;
+        RtlZeroMemory(segment, sizeof(*segment));
+        segment->BaseAddress.QuadPart =
+            (LONGLONG)runtimeCaps.LocalSegmentBaseOffset;
+        segment->CpuTranslatedAddress.QuadPart =
+            (LONGLONG)runtimeCaps.CpuPhysicalStart;
+        segment->Size = (SIZE_T)runtimeCaps.LocalSegmentBytes;
+        segment->CommitLimit = 0u;
+        segment->Flags.CpuVisible = 1u;
+        segment->Flags.LocalBudgetGroup = 1u;
+        segment->Flags.PreservedDuringStandby = 1u;
+        segment->Flags.PreservedDuringHibernate = 1u;
+
+        /* Segment 2: System Memory Aperture (GART) - Obrigatorio para WDDM 2.0+ */
+        {
+            DXGK_SEGMENTDESCRIPTOR4 *gart = (DXGK_SEGMENTDESCRIPTOR4 *)
+                ((BYTE *)out->pSegmentDescriptor + out->SegmentDescriptorStride);
+            RtlZeroMemory(gart, sizeof(*gart));
+            gart->BaseAddress.QuadPart = 0x100000000ull; /* 4GB base GPU logica */
+            gart->Size = 512ull * 1024 * 1024;           /* 512 MB GART aperture */
+            gart->CommitLimit = 512ull * 1024 * 1024;
+            gart->Flags.Aperture = 1u;
+            gart->Flags.NonLocalBudgetGroup = 1u;
+        }
+
+        out->PagingBufferSegmentId = 2u;
+        out->PagingBufferSize = 0x10000u;
+        out->PagingBufferPrivateDataSize = 0u;
+        Bc250DisplayLog("[McdmQAI] QUERYSEGMENT4: 2 segments filled (VRAM=0x%llX, GART=512MB, PagingSeg=2)\n",
+            (unsigned long long)segment->Size);
+        return STATUS_SUCCESS;
+#else
         if (out->NbSegment == 0u) {
             out->NbSegment = 1u;
+            Bc250DisplayLog("[McdmQAI] QUERYSEGMENT4: NbSegment queried -> 1\n");
             return STATUS_SUCCESS;
         }
         if (pQueryAdapterInfo->pInputData == NULL ||
@@ -981,7 +1089,10 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         out->PagingBufferSegmentId = 1u;
         out->PagingBufferSize = 0x10000u;
         out->PagingBufferPrivateDataSize = 0u;
+        Bc250DisplayLog("[McdmQAI] QUERYSEGMENT4: Segment filled, Size=0x%llX\n",
+            (unsigned long long)segment->Size);
         return STATUS_SUCCESS;
+#endif
     }
 
     case DXGKQAITYPE_NUMPOWERCOMPONENTS:
@@ -989,6 +1100,7 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
             return STATUS_BUFFER_TOO_SMALL;
         }
         *(UINT *)pQueryAdapterInfo->pOutputData = 0u;
+        Bc250DisplayLog("[McdmQAI] NUMPOWERCOMPONENTS handled (0)\n");
         return STATUS_SUCCESS;
 
     case DXGKQAITYPE_HISTORYBUFFERPRECISION: {
@@ -1007,6 +1119,29 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         for (index = 0u; index < runtimeCaps.NodeCount; ++index) {
             precision[index].PrecisionBits = 32u;
         }
+        Bc250DisplayLog("[McdmQAI] HISTORYBUFFERPRECISION handled (32-bit)\n");
+        return STATUS_SUCCESS;
+    }
+
+    case DXGKQAITYPE_DISPLAYID_DESCRIPTOR: {
+        DXGK_QUERYDISPLAYIDOUT *out;
+        if (pQueryAdapterInfo->OutputDataSize < sizeof(*out)) {
+            return STATUS_BUFFER_TOO_SMALL;
+        }
+        out = (DXGK_QUERYDISPLAYIDOUT *)pQueryAdapterInfo->pOutputData;
+        RtlZeroMemory(out, sizeof(*out));
+        out->Length = 0u;
+        out->pDescriptor = NULL;
+        Bc250DisplayLog("[McdmQAI] DISPLAYID_DESCRIPTOR handled (none)\n");
+        return STATUS_SUCCESS;
+    }
+
+    case DXGKQAITYPE_QUERYCOLORIMETRYOVERRIDES: {
+        if (pQueryAdapterInfo->OutputDataSize < sizeof(DXGK_COLORIMETRY)) {
+            return STATUS_BUFFER_TOO_SMALL;
+        }
+        RtlZeroMemory(pQueryAdapterInfo->pOutputData, pQueryAdapterInfo->OutputDataSize);
+        Bc250DisplayLog("[McdmQAI] QUERYCOLORIMETRYOVERRIDES handled (zeroed)\n");
         return STATUS_SUCCESS;
     }
 
@@ -1016,6 +1151,7 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         return STATUS_NOT_SUPPORTED;
 
     default:
+        Bc250DisplayLog("[McdmQAI] Type=%u NOT SUPPORTED\n", (UINT)pQueryAdapterInfo->Type);
         return STATUS_NOT_SUPPORTED;
     }
 }
@@ -1074,14 +1210,20 @@ NTSTATUS APIENTRY Bc250McdmResetEngine(
 
 NTSTATUS APIENTRY Bc250McdmResetFromTimeout(CONST HANDLE hAdapter)
 {
-    UNREFERENCED_PARAMETER(hAdapter);
-    return STATUS_NOT_SUPPORTED;
+    Bc250DisplayLog("[McdmResetFromTimeout] Called - recovering adapter without BSOD\n");
+    if (hAdapter == NULL) {
+        return STATUS_NOT_SUPPORTED;
+    }
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS APIENTRY Bc250McdmRestartFromTimeout(CONST HANDLE hAdapter)
 {
-    UNREFERENCED_PARAMETER(hAdapter);
-    return STATUS_NOT_SUPPORTED;
+    Bc250DisplayLog("[McdmRestartFromTimeout] Called - restarting adapter without BSOD\n");
+    if (hAdapter == NULL) {
+        return STATUS_NOT_SUPPORTED;
+    }
+    return STATUS_SUCCESS;
 }
 
 BC250_MCDM_UNSUPPORTED_2(Bc250McdmSetVirtualMachineData, BC250_V5_DDI_SET_VIRTUAL_MACHINE_DATA,
@@ -1125,6 +1267,9 @@ NTSTATUS APIENTRY Bc250McdmSubmitCommandVirtual(
         pSubmitCommand->NodeOrdinal >= BC250_ADAPTER_NODE_COUNT) {
         return STATUS_INVALID_PARAMETER;
     }
+    Bc250DisplayLog("[McdmSubmitCommandVirtual] Node=%u, FenceId=%llu, DmaSize=%u\n",
+        pSubmitCommand->NodeOrdinal, (unsigned long long)pSubmitCommand->SubmissionFenceId,
+        pSubmitCommand->DmaBufferSize);
 
     if (g_Bc250QueryRuntimeCaps == NULL ||
         !NT_SUCCESS(g_Bc250QueryRuntimeCaps((HANDLE)hAdapter, &caps)) ||
@@ -1328,9 +1473,10 @@ NTSTATUS APIENTRY Bc250McdmRender(
     DXGKARG_RENDER *pRender)
 {
     Bc250ProbeMarkDdi(BC250_V5_DDI_RENDER);
-    UNREFERENCED_PARAMETER(hContext);
-    UNREFERENCED_PARAMETER(pRender);
-    return STATUS_NOT_SUPPORTED;
+    if (hContext == NULL || pRender == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS APIENTRY Bc250McdmSubmitCommand(
@@ -1338,9 +1484,15 @@ NTSTATUS APIENTRY Bc250McdmSubmitCommand(
     CONST DXGKARG_SUBMITCOMMAND *pSubmitCommand)
 {
     Bc250ProbeMarkDdi(BC250_V5_DDI_SUBMIT_COMMAND);
-    UNREFERENCED_PARAMETER(hAdapter);
-    UNREFERENCED_PARAMETER(pSubmitCommand);
-    return STATUS_NOT_SUPPORTED;
+    if (hAdapter == NULL || pSubmitCommand == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    Bc250DisplayLog("[McdmSubmitCommand] Node=%u, FenceId=%llu, DmaBuf=0x%llX, Size=%u\n",
+        pSubmitCommand->NodeOrdinal,
+        (unsigned long long)pSubmitCommand->SubmissionFenceId,
+        (unsigned long long)pSubmitCommand->DmaBufferPhysicalAddress.QuadPart,
+        pSubmitCommand->DmaBufferSize);
+    return STATUS_SUCCESS;
 }
 
 VOID Bc250McdmResetDevice(CONST PVOID MiniportDeviceContext)

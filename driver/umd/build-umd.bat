@@ -37,6 +37,22 @@ echo [UMD LINK] bc250_runtime.dll
 link /nologo /DLL /OUT:"%ODIR%\bc250_runtime.dll" /IMPLIB:"%ODIR%\bc250_runtime.lib" "%ODIR%\bc250_runtime.obj" "%ODIR%\bc250_llm_kernels.obj" kernel32.lib advapi32.lib
 if errorlevel 1 exit /b 1
 
+echo [D3D UMD CC] bc250_d3d_umd.c
+cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\wdk" /I "%ROOTDIR%\inc" /Fo"%ODIR%\bc250_d3d_umd.obj" /c "%ROOTDIR%\driver\umd\bc250_d3d_umd.c"
+if errorlevel 1 exit /b 1
+
+echo [D3D UMD LINK] bc250umd.dll
+link /nologo /DLL /DEF:"%ROOTDIR%\driver\umd\bc250umd.def" /OUT:"%ODIR%\bc250umd.dll" /IMPLIB:"%ODIR%\bc250umd.lib" "%ODIR%\bc250_d3d_umd.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+echo [D3D UMD TEST CC] bc250_d3d_umd_test.c
+cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\wdk" /I "%ROOTDIR%\inc" /Fo"%ODIR%\bc250_d3d_umd_test.obj" /c "%ROOTDIR%\driver\tests\bc250_d3d_umd_test.c"
+if errorlevel 1 exit /b 1
+
+echo [D3D UMD TEST LINK] bc250_d3d_umd_test.exe
+link /nologo /OUT:"%ODIR%\bc250_d3d_umd_test.exe" "%ODIR%\bc250_d3d_umd_test.obj" "%ODIR%\bc250umd.lib" kernel32.lib
+if errorlevel 1 exit /b 1
+
 echo [VK ICD CC] bc250_vulkan_icd.c
 cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\wdk" /I "%ROOTDIR%\inc" /Fo"%ODIR%\bc250_vulkan_icd.obj" /c "%ROOTDIR%\driver\umd\bc250_vulkan_icd.c"
 if errorlevel 1 exit /b 1
@@ -80,15 +96,22 @@ if errorlevel 1 exit /b 1
 copy /y "%ROOTDIR%\driver\umd\bc250_icd.json" "%ODIR%\bc250_icd.json" >nul
 
 echo.
-echo === EXECUTANDO TESTE DE CONTRATO UMD ===
+echo === EXECUTANDO TESTE DE CONTRATO UMD RUNTIME ===
 "%ODIR%\umd_runtime_contract_test.exe"
 if errorlevel 1 exit /b 1
 
 echo.
+echo === EXECUTANDO TESTE DE CONTRATO D3D UMD ===
+"%ODIR%\bc250_d3d_umd_test.exe"
+if errorlevel 1 exit /b 1
+
+echo.
 echo =======================================================================
+echo D3D UMD:       %ODIR%\bc250umd.dll
 echo UMD RUNTIME:   %ODIR%\bc250_runtime.dll
 echo VULKAN ICD:    %ODIR%\bc250_vulkan.dll
 echo ICD MANIFEST:  %ODIR%\bc250_icd.json
+echo HARNESS D3D:   %ODIR%\bc250_d3d_umd_test.exe
 echo HARNESS UMD:   %ODIR%\bc250-umd-test.exe
 echo HARNESS VK:    %ODIR%\bc250-vulkan-test.exe
 echo HARNESS LLM:   %ODIR%\bc250-llm-benchmark.exe

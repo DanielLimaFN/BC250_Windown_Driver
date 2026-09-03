@@ -1,0 +1,6 @@
+[DisplayInit] Acquired GOP: 2560x1080, Pitch=10240, Phys=0xC0000000, DeviceHandle=0xFFFF888639BC2030
+[StartDevice] Sources=1, Children=1, Profile=1
+[ChildRelations] Called. Size=56, ChildEnumEnabled=1
+[ChildRelations] Returned DP ChildUid=1
+[McdmQAI] Type=1, OutSize=576, CapsStatus=0x00000000
+[StopDevice] Entered. Reason=2

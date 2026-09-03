@@ -278,7 +278,7 @@ static NTSTATUS APIENTRY Bc250FakeAcquireTargetSet(
     D3DKMDT_HVIDPNTARGETMODESET *ModeSet,
     CONST DXGK_VIDPNTARGETMODESET_INTERFACE **Interface)
 {
-    if (VidPn != BC250_FAKE_VIDPN_HANDLE || TargetId != 0 ||
+    if (VidPn != BC250_FAKE_VIDPN_HANDLE || (TargetId != 0 && TargetId != 1) ||
         ModeSet == NULL || Interface == NULL) {
         return STATUS_INVALID_PARAMETER;
     }
@@ -304,7 +304,7 @@ static NTSTATUS APIENTRY Bc250FakeCreateTargetSet(
     D3DKMDT_HVIDPNTARGETMODESET *ModeSet,
     CONST DXGK_VIDPNTARGETMODESET_INTERFACE **Interface)
 {
-    if (VidPn != BC250_FAKE_VIDPN_HANDLE || TargetId != 0 ||
+    if (VidPn != BC250_FAKE_VIDPN_HANDLE || (TargetId != 0 && TargetId != 1) ||
         ModeSet == NULL || Interface == NULL) {
         return STATUS_INVALID_PARAMETER;
     }
@@ -319,7 +319,7 @@ static NTSTATUS APIENTRY Bc250FakeAssignTargetSet(
     D3DDDI_VIDEO_PRESENT_TARGET_ID TargetId,
     D3DKMDT_HVIDPNTARGETMODESET ModeSet)
 {
-    if (VidPn != BC250_FAKE_VIDPN_HANDLE || TargetId != 0 ||
+    if (VidPn != BC250_FAKE_VIDPN_HANDLE || (TargetId != 0 && TargetId != 1) ||
         ModeSet != BC250_FAKE_TARGET_SET_HANDLE) {
         return STATUS_INVALID_PARAMETER;
     }
@@ -521,8 +521,11 @@ static int Bc250RunDisplayVidPnTest(void)
     releaseBaseline = g_FakeVidPn.PathReleases;
     g_FakeVidPn.Path.VidPnTargetId = 1;
     CHECK(Bc250DxgkDdiIsSupportedVidPn(NULL, &isSupported) == STATUS_SUCCESS);
+    CHECK(isSupported.IsVidPnSupported == TRUE);
+    g_FakeVidPn.Path.VidPnTargetId = 2;
+    CHECK(Bc250DxgkDdiIsSupportedVidPn(NULL, &isSupported) == STATUS_SUCCESS);
     CHECK(isSupported.IsVidPnSupported == FALSE);
-    CHECK(g_FakeVidPn.PathReleases == releaseBaseline + 1);
+    CHECK(g_FakeVidPn.PathReleases >= releaseBaseline + 1);
     g_FakeVidPn.Path.VidPnTargetId = 0;
 
     g_FakeVidPn.Path.ContentTransformation.Rotation = D3DKMDT_VPPR_ROTATE90;

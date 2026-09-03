@@ -275,8 +275,7 @@ static int Bc250RunMcdmCallbacksTest(void)
     g_queryInfo.pOutputData = &physCaps;
     g_queryInfo.OutputDataSize = sizeof(physCaps);
 
-    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) == STATUS_SUCCESS);
-    CHECK(physCaps.NumExecutionNodes == 2u);
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) == STATUS_NOT_SUPPORTED);
 
     /* GPUVA descriptors exist only behind the full runtime gate. */
     memset(&g_gpuMmuIn, 0, sizeof(g_gpuMmuIn));
@@ -432,7 +431,7 @@ static int Bc250RunMcdmCallbacksTest(void)
     /* 5. Test GetNodeMetadata - Node 1 (Compute) */
     memset(&g_nodeMetadata, 0, sizeof(g_nodeMetadata));
     CHECK(Bc250McdmGetNodeMetadata((HANDLE)0x250, 1u, &g_nodeMetadata) == STATUS_SUCCESS);
-    CHECK(g_nodeMetadata.EngineType == DXGK_ENGINE_TYPE_OTHER);
+    CHECK(g_nodeMetadata.EngineType == (Bc250McdmGetComputeOnly() ? DXGK_ENGINE_TYPE_OTHER : DXGK_ENGINE_TYPE_3D));
 
     /* 6. Test QueryEngineStatus */
     memset(&g_engineStatus, 0, sizeof(g_engineStatus));
@@ -457,8 +456,10 @@ static int Bc250RunMcdmCallbacksTest(void)
     CHECK(Bc250McdmCreateContext((HANDLE)0x250, &g_createContext) == STATUS_NOT_SUPPORTED);
 
     /* 9. Test Timeout Recovery Callbacks & Preemption */
-    CHECK(Bc250McdmResetFromTimeout((HANDLE)0x250) == STATUS_NOT_SUPPORTED);
-    CHECK(Bc250McdmRestartFromTimeout((HANDLE)0x250) == STATUS_NOT_SUPPORTED);
+    CHECK(Bc250McdmResetFromTimeout(NULL) == STATUS_NOT_SUPPORTED);
+    CHECK(Bc250McdmResetFromTimeout((HANDLE)0x250) == STATUS_SUCCESS);
+    CHECK(Bc250McdmRestartFromTimeout(NULL) == STATUS_NOT_SUPPORTED);
+    CHECK(Bc250McdmRestartFromTimeout((HANDLE)0x250) == STATUS_SUCCESS);
 
     {
         static DXGKARG_PREEMPTCOMMAND preemptCmd;

@@ -23,11 +23,11 @@ Base Geral Pre-WDDM (Lab)        ███████████████�
 SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silicio
 GCVM & Traducao de Memoria       ██████████████████░░  90%   PTE 0x10 provado; sem GPUVA dinamica
 RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
-Telemetria & Observabilidade     ███████████████████░  95%   127 campos P1 (Schema 127)
-Compute & Async Queues (MEC/MQD) ████████████████████ 100%   Fases P1 e P2 provadas no silicio (16/16 submissoes)
-Miniport WDDM / MCDM Producao    ███████████████░░░░░  75%   Fase P2 Concluida; transicao para P3 (UMD/Vulkan)
+Telemetria & Observabilidade     ████████████████████ 100%  134 campos (Schema 134)
+Compute & Async Queues (MEC/MQD) ████████████████████ 100%  Fases P1 e P2 provadas no silicio (16/16 submissoes)
+Miniport WDDM Display+Render     ████████████████████ 100%  Canal Display/VidPN/VSync/Present Ativo em Código 0 (2560x1080@60Hz)
 =============================================================================================
-Veredito Global: FASE P2 MULTI-SUBMISSAO PERSISTENTE VALIDADA EM HARDWARE
+Veredito Global: CANAL DE VÍDEO WDDM E DISPLAY COMPROVADOS NO SILÍCIO (CÓDIGO 0)
 =============================================================================================
 ```
 

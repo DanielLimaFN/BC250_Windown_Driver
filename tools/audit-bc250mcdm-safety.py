@@ -843,6 +843,9 @@ def main() -> int:
         "PCI\\VEN_1002&DEV_13FE",
         "AddService=bc250mcdm,",
         "ServiceBinary=%12%\\bc250mcdm.sys",
+        "InstalledDisplayDrivers",
+        "UserModeDriverName",
+        "bc250umd.dll",
     ):
         require(inf, needle, "strict active INF identity", errors)
 

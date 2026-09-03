@@ -32,6 +32,7 @@ $sourcePfpFirmware = Join-Path $root 'firmware\cyan_skillfish2_pfp.bin'
 $sourceMeFirmware = Join-Path $root 'firmware\cyan_skillfish2_me.bin'
 $sourceCeFirmware = Join-Path $root 'firmware\cyan_skillfish2_ce.bin'
 $sourceMecFirmware = Join-Path $root 'firmware\cyan_skillfish2_mec.bin'
+$sourceUmd = Join-Path $root 'driver\umd\output\bc250umd.dll'
 $packageDir = Join-Path $root 'driver\wdk\package\output_lab'
 $packageManifest = Join-Path $root 'driver\wdk\package\output_lab.manifest.json'
 $recoveryRoot = 'C:\BC250_RECOVERY.cmd'
@@ -122,6 +123,7 @@ $packagePfpFirmware = Join-Path $packageDir 'cyan_skillfish2_pfp.bin'
 $packageMeFirmware = Join-Path $packageDir 'cyan_skillfish2_me.bin'
 $packageCeFirmware = Join-Path $packageDir 'cyan_skillfish2_ce.bin'
 $packageMecFirmware = Join-Path $packageDir 'cyan_skillfish2_mec.bin'
+$packageUmd = Join-Path $packageDir 'bc250umd.dll'
 
 Remove-Item -LiteralPath $packageCat -Force -ErrorAction SilentlyContinue
 Copy-Item -LiteralPath $sourceSys -Destination $packageSys -Force
@@ -204,6 +206,13 @@ Copy-Item -LiteralPath $sourcePfpFirmware -Destination $packagePfpFirmware -Forc
 Copy-Item -LiteralPath $sourceMeFirmware -Destination $packageMeFirmware -Force
 Copy-Item -LiteralPath $sourceCeFirmware -Destination $packageCeFirmware -Force
 Copy-Item -LiteralPath $sourceMecFirmware -Destination $packageMecFirmware -Force
+if (Test-Path -LiteralPath $sourceUmd) {
+    Copy-Item -LiteralPath $sourceUmd -Destination $packageUmd -Force
+    & $signtool sign /sha1 $certificateThumbprint /fd SHA256 $packageUmd
+    if ($LASTEXITCODE -ne 0) { throw 'Assinatura da DLL UMD de laboratorio falhou.' }
+    & $signtool verify /pa /v $packageUmd | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Verificacao Authenticode da DLL UMD de laboratorio falhou.' }
+}
 
 & $signtool sign /sha1 $certificateThumbprint /fd SHA256 $packageSys
 if ($LASTEXITCODE -ne 0) { throw 'Assinatura do .sys de laboratorio falhou.' }

@@ -1,0 +1,22 @@
+[McdmQAI] Type=29, OutSize=4, CapsStatus=0xC00000A3
+[DisplayInit] Acquired GOP: 2560x1080, Pitch=10240, Phys=0xC0000000, DeviceHandle=0xFFFF9C86D6B6E030
+[StartDevice] Sources=1, Children=1, Profile=1
+[ChildRelations] Called. Size=56, ChildEnumEnabled=1
+[ChildRelations] Returned DP ChildUid=1
+[McdmQAI] Type=1, OutSize=584, CapsStatus=0x00000000
+[McdmQAI] DRIVERCAPS: ComputeOnly=0, AlignShift=2, CddDwm=1
+[McdmQAI] Type=16, OutSize=4, CapsStatus=0x00000000
+[McdmQAI] DISPLAY_DRIVERCAPS_EXTENSION handled (zeroed)
+[McdmQAI] Type=15, OutSize=32, CapsStatus=0x00000000
+[McdmQAI] PHYSICALADAPTERCAPS: Nodes=2, Handle=0xFFFF9C86D6B6E030, GpuMmu=0
+[McdmQAI] Type=26, OutSize=28, CapsStatus=0x00000000
+[McdmQAI] Type=26 NOT SUPPORTED
+[McdmQAI] Type=27, OutSize=128, CapsStatus=0x00000000
+[McdmQAI] Type=27 NOT SUPPORTED
+[McdmQAI] Type=11, OutSize=40, CapsStatus=0x00000000
+[McdmQAI] QUERYSEGMENT4: NbSegment queried -> 1
+[McdmQAI] Type=11, OutSize=40, CapsStatus=0x00000000
+[McdmQAI] QUERYSEGMENT4: Segment filled, Size=0x1F570000
+[McdmQAI] Type=10, OutSize=8, CapsStatus=0x00000000
+[McdmQAI] HISTORYBUFFERPRECISION handled (32-bit)
+[StopDevice] Entered. Reason=1

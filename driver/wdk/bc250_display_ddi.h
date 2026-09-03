@@ -89,6 +89,18 @@ DXGKDDI_CONTROL_ETW_LOGGING             Bc250DxgkDdiControlEtwLogging;
 DXGKDDI_COLLECTDBGINFO                  Bc250DxgkDdiCollectDbgInfo;
 DXGKDDI_SETDISPLAYPRIVATEDRIVERFORMAT   Bc250DxgkDdiSetDisplayPrivateDriverFormat;
 DXGKDDI_NOTIFY_SURPRISE_REMOVAL         Bc250DxgkDdiNotifySurpriseRemoval;
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_1)
+DXGKDDI_UPDATEMONITORLINKINFO            Bc250DxgkDdiUpdateMonitorLinkInfo;
+#endif
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_2)
+DXGKDDI_QUERYCONNECTIONCHANGE          Bc250DxgkDdiQueryConnectionChange;
+DXGKDDI_SETTARGETADJUSTEDCOLORIMETRY    Bc250DxgkDdiSetTargetAdjustedColorimetry;
+DXGKDDI_SETTARGETCONTENTTYPE            Bc250DxgkDdiSetTargetContentType;
+DXGKDDI_SETTARGETGAMMA                  Bc250DxgkDdiSetTargetGamma;
+#endif
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_5)
+DXGKDDI_SETTARGETADJUSTEDCOLORIMETRY2   Bc250DxgkDdiSetTargetAdjustedColorimetry2;
+#endif
 
 NTSTATUS Bc250DisplayPopulateCallbacks(
     _Inout_ DRIVER_INITIALIZATION_DATA *InitializationData);
@@ -120,6 +132,15 @@ void Bc250DisplaySetChildEnumeration(_In_ BOOLEAN Enabled);
 
 _Check_return_
 BOOLEAN Bc250DisplayGetChildEnumeration(void);
+
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+void Bc250DisplayLog(const char *Format, ...);
+#else
+static __inline void Bc250DisplayLog(const char *Format, ...)
+{
+    UNREFERENCED_PARAMETER(Format);
+}
+#endif
 
 #ifdef __cplusplus
 }

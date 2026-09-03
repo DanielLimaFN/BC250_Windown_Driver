@@ -1,0 +1,11 @@
+﻿
+
+TimeCreated      : 02/09/2026 14:57:12
+ProviderName     : Microsoft-Windows-Kernel-PnP
+Id               : 219
+LevelDisplayName : Aviso
+Message          : O driver \Driver\bc250mcdm falhou ao carregar para o dispositivo PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041.
+
+
+
+

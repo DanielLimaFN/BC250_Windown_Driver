@@ -1166,35 +1166,55 @@ static NTSTATUS Bc250ActiveQueryRuntimeCaps(
     uint64_t cpuVisibleBytes;
     if (Caps == NULL) return STATUS_INVALID_PARAMETER;
     RtlZeroMemory(Caps, sizeof(*Caps));
-    if (context == NULL || context->Signature != BC250_ACTIVE_SIGNATURE ||
-        context->RuntimeInventoryStatus != BC250_RUNTIME_INVENTORY_OK ||
-        context->VramProbeStatus != BC250_VRAM_PROBE_OK) {
+    if (context == NULL || context->Signature != BC250_ACTIVE_SIGNATURE) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (context->RuntimeInventoryStatus == BC250_RUNTIME_INVENTORY_OK &&
+        context->VramProbeStatus == BC250_VRAM_PROBE_OK &&
+        context->SecondPreflightStage == BC250_DXGK_STAGE_PREFLIGHT_READY &&
+        context->Core.StartDevice.Preflight.FirmwareCount ==
+            BC250_CP_BOOTSTRAP_FIRMWARE_COUNT) {
+        cpuVisibleBytes = context->RuntimeInventoryReport.CpuVisibleBytes;
+        localEnd = context->Core.StartDevice.Preflight.FirmwarePlans[0]
+            .Binding.Offset;
+        if (localEnd == 0u || localEnd > cpuVisibleBytes) {
+            return STATUS_DEVICE_CONFIGURATION_ERROR;
+        }
+        for (i = 0u;
+             i < context->RuntimeInventoryReport.ReservationCount;
+             ++i) {
+            const BC250_INHERITED_VRAM_RESERVATION *reservation =
+                &context->RuntimeInventoryReport.Reservations[i];
+            uint64_t reservationEnd;
+            if (reservation->Offset >= cpuVisibleBytes) continue;
+            reservationEnd = reservation->Length >
+                cpuVisibleBytes - reservation->Offset ?
+                cpuVisibleBytes : reservation->Offset + reservation->Length;
+            if (reservationEnd > localStart) localStart = reservationEnd;
+        }
+        if (localStart >= localEnd) {
+            return STATUS_DEVICE_CONFIGURATION_ERROR;
+        }
+    } else if (context->Core.ResolvedBarCount != 0u &&
+               context->Core.TopologyEvidence.AddressSpace.TotalBytes != 0u) {
+        uint64_t totalBytes = context->Core.TopologyEvidence.AddressSpace.TotalBytes;
+        cpuVisibleBytes = context->Core.TopologyEvidence.AddressSpace.CpuVisibleBytes;
+        if (cpuVisibleBytes == 0u) cpuVisibleBytes = totalBytes;
+        if (context->PostDisplayReservation.Length != 0u) {
+            localStart = (context->PostDisplayReservation.Offset +
+                          context->PostDisplayReservation.Length + 0xFFFFull) & ~0xFFFFull;
+        } else {
+            localStart = 0x01000000ull;
+        }
+        localEnd = totalBytes;
+        if (localStart >= localEnd) {
+            localStart = 0u;
+        }
+    } else {
         return STATUS_DEVICE_NOT_READY;
     }
-    cpuVisibleBytes = context->RuntimeInventoryReport.CpuVisibleBytes;
-    localEnd = context->Core.StartDevice.Preflight.FirmwarePlans[0]
-        .Binding.Offset;
-    if (context->SecondPreflightStage != BC250_DXGK_STAGE_PREFLIGHT_READY ||
-        context->Core.StartDevice.Preflight.FirmwareCount !=
-            BC250_CP_BOOTSTRAP_FIRMWARE_COUNT ||
-        localEnd == 0u || localEnd > cpuVisibleBytes) {
-        return STATUS_DEVICE_CONFIGURATION_ERROR;
-    }
-    for (i = 0u;
-         i < context->RuntimeInventoryReport.ReservationCount;
-         ++i) {
-        const BC250_INHERITED_VRAM_RESERVATION *reservation =
-            &context->RuntimeInventoryReport.Reservations[i];
-        uint64_t reservationEnd;
-        if (reservation->Offset >= cpuVisibleBytes) continue;
-        reservationEnd = reservation->Length >
-            cpuVisibleBytes - reservation->Offset ?
-            cpuVisibleBytes : reservation->Offset + reservation->Length;
-        if (reservationEnd > localStart) localStart = reservationEnd;
-    }
-    if (localStart >= localEnd) {
-        return STATUS_DEVICE_CONFIGURATION_ERROR;
-    }
+
     for (i = 0u; i < context->Core.ResolvedBarCount; ++i) {
         if (context->Core.ResolvedBars[i].Index ==
             BC250_PCI_VRAM_APERTURE_BAR_INDEX) {
@@ -2044,15 +2064,26 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                 BC250_ALLOCATION_PRIVATE_V1 request;
                 DXGK_ALLOCATIONINFO *info =
                     &CreateAllocation->pAllocationInfo[index];
-                if (Bc250AllocationAbiParse(info->pPrivateDriverData,
-                        info->PrivateDriverDataSize, &request) !=
-                        BC250_ALLOCATION_ABI_OK ||
-                    request.ByteSize > (uint64_t)(SIZE_T)~(SIZE_T)0 ||
-                    context->AllocationSegmentSet != 1u ||
-                    context->AllocationSegmentBytes == 0u ||
-                    request.ByteSize > context->AllocationSegmentBytes) {
-                    result = STATUS_INVALID_PARAMETER;
-                    break;
+                if (info->pPrivateDriverData != NULL && info->PrivateDriverDataSize != 0u) {
+                    if (Bc250AllocationAbiParse(info->pPrivateDriverData,
+                            info->PrivateDriverDataSize, &request) !=
+                            BC250_ALLOCATION_ABI_OK ||
+                        request.ByteSize > (uint64_t)(SIZE_T)~(SIZE_T)0 ||
+                        context->AllocationSegmentSet != 1u ||
+                        context->AllocationSegmentBytes == 0u ||
+                        request.ByteSize > context->AllocationSegmentBytes) {
+                        result = STATUS_INVALID_PARAMETER;
+                        break;
+                    }
+                } else {
+                    uint64_t allocSize = info->Size != 0u ? (uint64_t)info->Size : 4096ull;
+                    if (allocSize > (uint64_t)(SIZE_T)~(SIZE_T)0 ||
+                        context->AllocationSegmentSet != 1u ||
+                        context->AllocationSegmentBytes == 0u ||
+                        allocSize > context->AllocationSegmentBytes) {
+                        result = STATUS_INVALID_PARAMETER;
+                        break;
+                    }
                 }
             }
             for (index = 0u;
@@ -2063,8 +2094,14 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                 BC250_MCDM_OBJECT_STATUS status;
                 DXGK_ALLOCATIONINFO *info =
                     &CreateAllocation->pAllocationInfo[index];
-                (void)Bc250AllocationAbiParse(info->pPrivateDriverData,
-                    info->PrivateDriverDataSize, &request);
+                if (info->pPrivateDriverData != NULL && info->PrivateDriverDataSize != 0u) {
+                    (void)Bc250AllocationAbiParse(info->pPrivateDriverData,
+                        info->PrivateDriverDataSize, &request);
+                } else {
+                    request.AllocationToken = 0xA1100000u + index;
+                    request.ByteSize = info->Size != 0u ? (uint64_t)info->Size : 4096ull;
+                    request.Alignment = info->Alignment != 0u ? (uint64_t)info->Alignment : 4096ull;
+                }
                 status = Bc250McdmObjectCreateAdapterAllocation(
                     &context->Objects, info, request.AllocationToken,
                     request.ByteSize,
@@ -2208,23 +2245,30 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
                 BC250_ALLOCATION_PRIVATE_V1 request;
                 DXGK_OPENALLOCATIONINFO *info =
                     &OpenAllocation->pOpenAllocation[index];
-                if (info->hAllocation == 0u ||
-                    Bc250AllocationAbiParse(info->pPrivateDriverData,
-                        info->PrivateDriverDataSize, &request) !=
-                        BC250_ALLOCATION_ABI_OK) {
+                if (info->hAllocation == 0u) {
                     result = STATUS_INVALID_PARAMETER;
                     break;
                 }
-                for (other = 0u; other < index; ++other) {
-                    BC250_ALLOCATION_PRIVATE_V1 previous;
-                    DXGK_OPENALLOCATIONINFO *prior =
-                        &OpenAllocation->pOpenAllocation[other];
-                    (void)Bc250AllocationAbiParse(prior->pPrivateDriverData,
-                        prior->PrivateDriverDataSize, &previous);
-                    if (prior->hAllocation == info->hAllocation ||
-                        previous.AllocationToken == request.AllocationToken) {
+                if (info->pPrivateDriverData != NULL && info->PrivateDriverDataSize != 0u) {
+                    if (Bc250AllocationAbiParse(info->pPrivateDriverData,
+                            info->PrivateDriverDataSize, &request) !=
+                            BC250_ALLOCATION_ABI_OK) {
                         result = STATUS_INVALID_PARAMETER;
                         break;
+                    }
+                    for (other = 0u; other < index; ++other) {
+                        BC250_ALLOCATION_PRIVATE_V1 previous;
+                        DXGK_OPENALLOCATIONINFO *prior =
+                            &OpenAllocation->pOpenAllocation[other];
+                        if (prior->pPrivateDriverData != NULL && prior->PrivateDriverDataSize != 0u) {
+                            (void)Bc250AllocationAbiParse(prior->pPrivateDriverData,
+                                prior->PrivateDriverDataSize, &previous);
+                            if (prior->hAllocation == info->hAllocation ||
+                                previous.AllocationToken == request.AllocationToken) {
+                                result = STATUS_INVALID_PARAMETER;
+                                break;
+                            }
+                        }
                     }
                 }
                 if (!NT_SUCCESS(result)) break;
@@ -2236,22 +2280,28 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
                 BC250_MCDM_HANDLE allocation = NULL, openHandle = NULL;
                 DXGK_OPENALLOCATIONINFO *info =
                     &OpenAllocation->pOpenAllocation[index];
-                (void)Bc250AllocationAbiParse(info->pPrivateDriverData,
-                    info->PrivateDriverDataSize, &request);
-                objectStatus = Bc250McdmObjectFindAllocationByToken(
-                    &context->Objects, request.AllocationToken, &allocation);
-                if (objectStatus == BC250_MCDM_OBJECT_OK) {
-                    BC250_MCDM_OBJECT_RECORD allocationRecord;
-                    objectStatus = Bc250McdmObjectLookup(&context->Objects,
-                        allocation, BC250_MCDM_OBJECT_ALLOCATION, NULL,
-                        &allocationRecord);
-                    if (objectStatus == BC250_MCDM_OBJECT_OK &&
-                        (allocationRecord.AllocationBytes != request.ByteSize ||
-                         allocationRecord.AllocationAlignment !=
-                            request.Alignment)) {
-                        result = STATUS_INVALID_PARAMETER;
-                        break;
+                if (info->pPrivateDriverData != NULL && info->PrivateDriverDataSize != 0u) {
+                    (void)Bc250AllocationAbiParse(info->pPrivateDriverData,
+                        info->PrivateDriverDataSize, &request);
+                    objectStatus = Bc250McdmObjectFindAllocationByToken(
+                        &context->Objects, request.AllocationToken, &allocation);
+                    if (objectStatus == BC250_MCDM_OBJECT_OK) {
+                        BC250_MCDM_OBJECT_RECORD allocationRecord;
+                        objectStatus = Bc250McdmObjectLookup(&context->Objects,
+                            allocation, BC250_MCDM_OBJECT_ALLOCATION, NULL,
+                            &allocationRecord);
+                        if (objectStatus == BC250_MCDM_OBJECT_OK &&
+                            (allocationRecord.AllocationBytes != request.ByteSize ||
+                             allocationRecord.AllocationAlignment !=
+                                request.Alignment)) {
+                            result = STATUS_INVALID_PARAMETER;
+                            break;
+                        }
                     }
+                } else {
+                    allocation = (BC250_MCDM_HANDLE)(ULONG_PTR)info->hAllocation;
+                    objectStatus = Bc250McdmObjectLookup(&context->Objects,
+                        allocation, BC250_MCDM_OBJECT_ALLOCATION, NULL, NULL);
                 }
                 if (objectStatus == BC250_MCDM_OBJECT_OK) {
                     objectStatus = Bc250McdmObjectOpenAllocation(
@@ -2877,9 +2927,30 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
             BC250_V5_START_RETURN_DISPLAY_OK);
         *NumberOfVideoPresentSources = 1;
         *NumberOfChildren = 1;
-        InterlockedExchange(&context->ContextAbiReady, 0);
-        InterlockedExchange(&context->AllocationAbiReady, 0);
-        InterlockedExchange(&context->RootPageTableAbiReady, 0);
+        Bc250DisplayLog("[StartDevice] Sources=1, Children=1, Profile=%d\n", (int)Bc250ActiveGetAdapterProfile());
+        if (Bc250ActiveGetAdapterProfile() == BC250_ADAPTER_PROFILE_DISPLAY_RENDER) {
+            context->ContextAbi.DmaBufferSize = 0x10000u;
+            context->ContextAbi.DmaBufferSegmentSet = (1u << (2u - 1u));
+            context->ContextAbi.AllocationListSize = 32u;
+            context->ContextAbi.PatchLocationListSize = 0u;
+            context->ContextAbi.Caps.NoPatchingRequired = 1u;
+            context->ContextAbi.PagingCompanionNodeId = 0u;
+            context->AllocationSegmentSet = 1u;
+            {
+                BC250_MCDM_RUNTIME_CAPS caps;
+                if (NT_SUCCESS(Bc250ActiveQueryRuntimeCaps(context, &caps))) {
+                    context->AllocationSegmentBytes = caps.LocalSegmentBytes;
+                }
+            }
+            InterlockedExchange(&context->ContextAbiReady, 1);
+            InterlockedExchange(&context->AllocationAbiReady, 1);
+            InterlockedExchange(&context->RootPageTableAbiReady, 1);
+            InterlockedExchange(&context->GpuvaMappingsOperational, 1);
+        } else {
+            InterlockedExchange(&context->ContextAbiReady, 0);
+            InterlockedExchange(&context->AllocationAbiReady, 0);
+            InterlockedExchange(&context->RootPageTableAbiReady, 0);
+        }
         InterlockedExchange(&context->IsActive, 1);
         Bc250ActiveArmLifecycle(context);
         Bc250ActivePublishAbiReadyTelemetry(context);
@@ -4413,6 +4484,7 @@ static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason(
      */
     Bc250ProbeMarkDdi(BC250_V5_DDI_STOP_DEVICE);
     Bc250ProbeRecord(BC250_PROBE_STOP_DEVICE_ENTERED, 1);
+    Bc250DisplayLog("[StopDevice] Entered. Reason=%u\n", StopReason);
     if (context == NULL ||
         context->Signature != BC250_ACTIVE_SIGNATURE) {
         Bc250ProbeRecord(BC250_PROBE_STOP_DEVICE_STATUS,
@@ -5895,7 +5967,7 @@ NTSTATUS DriverEntry(
     {
         ULONG contractPresent = 0u;
         ULONG contract = Bc250ActiveReadTunableChecked(
-            L"WddmContractVersion", 27u, &contractPresent);
+            L"WddmContractVersion", 20u, &contractPresent);
         ULONG interfaceVersion;
         DXGK_WDDMVERSION wddmVersion;
 
