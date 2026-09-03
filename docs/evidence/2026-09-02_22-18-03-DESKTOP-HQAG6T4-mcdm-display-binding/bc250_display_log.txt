@@ -1,0 +1,13 @@
+[FUSE] STARTDEVICE AUTORIZADO: Fusivel armado para ensaio (Boots=2)
+[DisplayInit] Acquired GOP: 2560x1080, Pitch=10240, Phys=0xC0000000, DeviceHandle=0xFFFF8D033DA87030
+[StartDevice] Sources=1, Children=1, Profile=1
+[ChildRelations] Called. Size=56, ChildEnumEnabled=1
+[ChildRelations] Returned DP ChildUid=1
+[McdmQAI] Type=1, OutSize=576, CapsStatus=0x00000000
+[McdmQAI] DRIVERCAPS: ComputeOnly=0, AlignShift=2, OutSize=576
+[McdmQAI] Type=16, OutSize=4, CapsStatus=0x00000000
+[McdmQAI] DISPLAY_DRIVERCAPS_EXTENSION handled (zeroed)
+[McdmQAI] Type=15, OutSize=20, CapsStatus=0x00000000
+[McdmQAI] PHYSICALADAPTERCAPS returned NOT_SUPPORTED (single physical adapter)
+[StopDevice] Entered. Reason=1
+[FUSE] Desligamento limpo registrado: fusivel em CLEAN (Status=00000000)

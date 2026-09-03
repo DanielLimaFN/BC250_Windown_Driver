@@ -887,8 +887,8 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         caps->PresentationCaps.NoOverlapScreenBlt = 1u;
         caps->PresentationCaps.DriverSupportsCddDwmInterop = 1u;
         caps->PresentationCaps.AlignmentShift = 2u;
-        caps->MaxQueuedFlipOnVSync = 0u;
-        caps->FlipCaps.Value = 0u;
+        caps->MaxQueuedFlipOnVSync = 1u;
+        caps->FlipCaps.FlipOnVSyncMmIo = 1u;
         caps->PointerCaps.Value = 0u;
         caps->MaxPointerWidth = 0u;
         caps->MaxPointerHeight = 0u;
