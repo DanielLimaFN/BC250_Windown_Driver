@@ -117,8 +117,18 @@ $before | ConvertTo-Json -Depth 4 |
     Set-Content -LiteralPath (Join-Path $evidenceDir 'manifest-before.json') -Encoding UTF8
 $stagedAuditOutput |
     Set-Content -LiteralPath (Join-Path $evidenceDir 'staged-audit-before.txt') -Encoding UTF8
-Get-Content -LiteralPath (Join-Path $env:SystemRoot 'INF\setupapi.dev.log') -Tail 1600 |
-    Set-Content -LiteralPath (Join-Path $evidenceDir 'setupapi-before-tail.txt') -Encoding UTF8
+$setupApiLog = Join-Path $env:SystemRoot 'INF\setupapi.dev.log'
+if (-not (Test-Path -LiteralPath $setupApiLog)) {
+    $latestDevLog = Get-ChildItem -Path (Join-Path $env:SystemRoot 'INF') -Filter 'setupapi.dev*.log' -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($latestDevLog) { $setupApiLog = $latestDevLog.FullName }
+}
+if (Test-Path -LiteralPath $setupApiLog) {
+    Get-Content -LiteralPath $setupApiLog -Tail 1600 |
+        Set-Content -LiteralPath (Join-Path $evidenceDir 'setupapi-before-tail.txt') -Encoding UTF8
+} else {
+    "" | Set-Content -LiteralPath (Join-Path $evidenceDir 'setupapi-before-tail.txt') -Encoding UTF8
+}
 @'
 SE A TELA ESTIVER PRETA:
 1. Inicie o Windows em Modo de Seguranca com Prompt de Comando.
