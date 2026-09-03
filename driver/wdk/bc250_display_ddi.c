@@ -1591,10 +1591,11 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceVisibility(
          pSetVidPnSourceVisibility->VidPnSourceId != D3DDDI_ID_ALL)) {
         return STATUS_INVALID_PARAMETER;
     }
-    InterlockedExchange(&g_Bc250DisplayState.SourceVisible,
-        pSetVidPnSourceVisibility->Visible ? 1 : 0);
     if (pSetVidPnSourceVisibility->Visible) {
+        InterlockedExchange(&g_Bc250DisplayState.SourceVisible, 1);
         InterlockedExchange(&g_Bc250DisplayState.ForceFullPresent, 1);
+    } else {
+        Bc250DisplayLog("=== SetVidPnSourceVisibility (Visible=0 recebido, scanout GOP preservado) ===\n");
     }
     Bc250DisplayLog("=== SetVidPnSourceVisibility (Visible=%d) ===\n",
         pSetVidPnSourceVisibility->Visible);
@@ -1663,6 +1664,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiCommitVidPn(
          * seamless de exibicao sem tela preta.
          */
         Bc250DisplayLog("=== CommitVidPn: empty VidPN with PathPoweredOff=0 -> taking no action (preserving display) ===\n");
+        InterlockedExchange(&g_Bc250DisplayState.VidPnCommitted, 1);
+        InterlockedExchange(&g_Bc250DisplayState.SourceVisible, 1);
+        InterlockedExchange(&g_Bc250DisplayState.ForceFullPresent, 1);
         Bc250RecordDisplayProbePassive(
             BC250_PROBE_DMM_COMMIT_STATUS, (ULONG)STATUS_SUCCESS);
         return STATUS_SUCCESS;
