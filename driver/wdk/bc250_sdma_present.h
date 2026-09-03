@@ -10,7 +10,7 @@ extern "C" {
 #endif
 
 #define BC250_SDMA_LEGACY_RING_OFFSET     0x0FF00000ull
-#define BC250_SDMA_VRAM_MC_BASE           0x000450000000ull
+#define BC250_SDMA_VRAM_MC_BASE           0x000000F400000000ull
 
 #define BC250_SDMA_PRESENT_RING_DWORDS    1024u
 #define BC250_SDMA_PRESENT_RING_BYTES     (BC250_SDMA_PRESENT_RING_DWORDS * sizeof(uint32_t))
@@ -84,7 +84,8 @@ typedef struct BC250_SDMA_PRESENT_CONTEXT {
     uint32_t TripodFenceObserved;
     uint32_t TripodMismatches;
 
-    /* GOP Scanout MC address */
+    /* Endereços de VRAM e GOP Scanout MC */
+    uint64_t VramMcStart;
     uint64_t ScanoutGpuAddress;
 } BC250_SDMA_PRESENT_CONTEXT;
 
@@ -93,6 +94,7 @@ extern BC250_SDMA_PRESENT_CONTEXT g_Bc250SdmaPresent;
 NTSTATUS Bc250SdmaPresentInit(
     _In_ PHYSICAL_ADDRESS MmioBar5Physical,
     _In_ PHYSICAL_ADDRESS VramBar0Physical,
+    _In_ uint64_t VramMcStart,
     _In_ uint64_t ScanoutGpuMcAddress);
 
 BOOLEAN Bc250SdmaPresentBlt(

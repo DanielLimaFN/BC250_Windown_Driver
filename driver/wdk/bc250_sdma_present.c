@@ -39,6 +39,7 @@ static inline void Bc250SdmaRegWrite(
 NTSTATUS Bc250SdmaPresentInit(
     _In_ PHYSICAL_ADDRESS MmioBar5Physical,
     _In_ PHYSICAL_ADDRESS VramBar0Physical,
+    _In_ uint64_t VramMcStart,
     _In_ uint64_t ScanoutGpuMcAddress)
 {
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
@@ -59,6 +60,10 @@ NTSTATUS Bc250SdmaPresentInit(
     RtlZeroMemory(&g_Bc250SdmaPresent, sizeof(g_Bc250SdmaPresent));
     g_Bc250SdmaPresent.MmioBase = MmioBar5Physical;
     g_Bc250SdmaPresent.VramBase = VramBar0Physical;
+    if (VramMcStart == 0) {
+        VramMcStart = BC250_SDMA_VRAM_MC_BASE;
+    }
+    g_Bc250SdmaPresent.VramMcStart = VramMcStart;
     g_Bc250SdmaPresent.ScanoutGpuAddress = ScanoutGpuMcAddress;
     g_Bc250SdmaPresent.NextFenceSequence = BC250_SDMA_PRESENT_FENCE_INIT;
 
@@ -95,9 +100,9 @@ NTSTATUS Bc250SdmaPresentInit(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    /* Divide a janela de VRAM em Ring e Work */
+    /* Divide a janela de VRAM em Ring e Work com endereços MC autoritativos da GPU */
     g_Bc250SdmaPresent.Ring = (volatile uint32_t *)g_Bc250SdmaPresent.VramVirtual;
-    g_Bc250SdmaPresent.RingGpuAddress = BC250_SDMA_VRAM_MC_BASE + BC250_SDMA_LEGACY_RING_OFFSET;
+    g_Bc250SdmaPresent.RingGpuAddress = g_Bc250SdmaPresent.VramMcStart + BC250_SDMA_LEGACY_RING_OFFSET;
 
     g_Bc250SdmaPresent.Work = (volatile uint32_t *)(g_Bc250SdmaPresent.VramVirtual + BC250_SDMA_PRESENT_RING_BYTES);
     g_Bc250SdmaPresent.WorkGpuAddress = g_Bc250SdmaPresent.RingGpuAddress + BC250_SDMA_PRESENT_RING_BYTES;
@@ -293,6 +298,7 @@ NTSTATUS Bc250SdmaPresentInit(
 #else
     UNREFERENCED_PARAMETER(MmioBar5Physical);
     UNREFERENCED_PARAMETER(VramBar0Physical);
+    UNREFERENCED_PARAMETER(VramMcStart);
     UNREFERENCED_PARAMETER(ScanoutGpuMcAddress);
     g_Bc250SdmaPresent.Initialized = TRUE;
     g_Bc250SdmaPresent.HardwareEnabled = TRUE;

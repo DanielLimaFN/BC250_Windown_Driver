@@ -2955,7 +2955,11 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                     Bc250DisplaySetMmioBase(mmioPhys);
                 }
                 if (mmioPhys.QuadPart != 0 && vramPhys.QuadPart != 0) {
-                    (void)Bc250SdmaPresentInit(mmioPhys, vramPhys, 0x000450000000ull);
+                    uint64_t vramMcStart = context->Core.TopologyEvidence.AddressSpace.VramMcStart;
+                    if (vramMcStart == 0) {
+                        vramMcStart = BC250_SDMA_VRAM_MC_BASE;
+                    }
+                    (void)Bc250SdmaPresentInit(mmioPhys, vramPhys, vramMcStart, 0x000450000000ull);
                 }
             }
         }
