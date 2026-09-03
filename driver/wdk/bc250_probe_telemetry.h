@@ -1181,6 +1181,7 @@ typedef enum BC250_PROBE_FIELD {
 #define BC250_V5_START_RETURN_POST_DISPLAY    4u
 #define BC250_V5_START_RETURN_DISPLAY_OK      5u
 #define BC250_V5_START_RETURN_UNSAFE_BRINGUP  6u
+#define BC250_V5_START_RETURN_FUSE_TRIPPED    7u
 
 /*
  * Reset integral da telemetria volatil.

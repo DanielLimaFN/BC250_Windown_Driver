@@ -23,6 +23,7 @@
 #include "../core/bc250_gpuva_journal_contract.h"
 #include "../core/bc250_gpuva_sdma_broker_contract.h"
 #include "bc250_submission_engine.h"
+#include "bc250_boot_fuse.h"
 
 #ifdef __cplusplus
 extern "C" {
