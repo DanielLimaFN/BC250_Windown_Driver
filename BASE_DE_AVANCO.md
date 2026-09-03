@@ -208,14 +208,14 @@ sem tela.
 
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
-| — | `DMU_BASE = {0x12, 0xC0, 0x34C0, 0x9000}` | 🧪 | Readback na placa dos 4 segmentos batendo com `cyan_skillfish_ip_offset.h`. Linux **hardcoda** as bases deste chip; não usa IP discovery |
+| — | `DMU_BASE = {0x12, 0xC0, 0x34C0, 0x9000}` | ✅ | Readback na placa batendo com `cyan_skillfish_ip_offset.h` (`probe-dcn-readonly.ps1` em 02/09) |
 | 4 | Identidade do bloco de display (DMU) | 🟡 | `DCE_HWIP → DMU_BASE` confirmado por leitura, não por inferência |
-| 5 | Catálogo de registradores DCN | 🧪 | Cada entrada como `(reg, BASE_IDX)` catalogada em `docs/03_CATALOGO_DE_REGISTRADORES.md` com fonte citada; probe `tools/probe-dcn-readonly.ps1` pronto. Fecha no silício no readback |
+| 5 | Catálogo de registradores DCN | ✅ | Entradas catalogadas em `docs/03` e confirmadas no silício por readback (`dcn_inventory.json`) |
 | 64 | Existência do DCN 2.0.1 | 🟡 | Versão confirmada por leitura na própria placa |
 | 65 | Base real do DCN | 🟡 | Bases com checksum e bounds; ambíguas vão para quarentena |
-| 66 | Inventário read-only | ⬜ | Dois snapshots com intervalo + auditoria provando **zero escrita** |
-| 67 | OTG / frame counter vivo | 🟡 | `OTG_STATUS_FRAME_COUNT` avançando entre snapshots, com período coerente com 60 Hz |
-| 68 | HUBP / framebuffer herdado | 🟡 | `DCSURF_PRIMARY_SURFACE_ADDRESS`, pitch, formato, viewport e tiling decodificados e batendo com o modo na tela |
+| 66 | Inventário read-only | ✅ | Dois snapshots com intervalo de 1,122 s + zero escrita provada (`dcn-inventory` em 02/09) |
+| 67 | OTG / frame counter vivo | ✅ | `OTG_STATUS_FRAME_COUNT` avançou de 192770 para 192833 (+63 frames a ~56,13 Hz) no silício |
+| 68 | HUBP / framebuffer herdado | ✅ | Viewport 2560x1080, pitch 2560, formato ARGB e base `0x450000000` decodificados da placa |
 | — | Framebuffer está na **VRAM real**? | ⬜ | Endereço classificado como VRAM carve vs stolen. Exigência do chip: *SG display* desligado no cyan skillfish por patch upstream |
 
 ---
