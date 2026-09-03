@@ -325,6 +325,15 @@ cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 ^
   /Fo"%ODIR%\bc250_boot_fuse_driver.obj" "%SRCDIR%bc250_boot_fuse.c"
 if errorlevel 1 exit /b 1
 
+echo [cc] bc250_sdma_present.c (offline)
+cl %CFLAGS% /Fo"%ODIR%\bc250_sdma_present.obj" "%SRCDIR%bc250_sdma_present.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_sdma_present.c (Dxgk registration)
+cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 ^
+  /Fo"%ODIR%\bc250_sdma_present_driver.obj" "%SRCDIR%bc250_sdma_present.c"
+if errorlevel 1 exit /b 1
+
 echo [cc] bc250_probe_telemetry.c ^(offline^)
 cl %CFLAGS% /Fo"%ODIR%\bc250_probe_telemetry.obj" "%SRCDIR%bc250_probe_telemetry.c"
 if errorlevel 1 exit /b 1
@@ -1573,6 +1582,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_submission_engine.obj" ^
   "%ODIR%\bc250_active_miniport.obj" ^
   "%ODIR%\bc250_boot_fuse.obj" ^
+  "%ODIR%\bc250_sdma_present.obj" ^
   "%ODIR%\active_miniport_test.obj" kernel32.lib
 if errorlevel 1 exit /b 1
 
@@ -1590,6 +1600,7 @@ echo [link] display_vidpn_test.exe
 link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   /OUT:"%ODIR%\display_vidpn_test.exe" ^
   "%ODIR%\bc250_display_ddi.obj" ^
+  "%ODIR%\bc250_sdma_present.obj" ^
   "%ODIR%\display_vidpn_test.obj" kernel32.lib
 if errorlevel 1 exit /b 1
 
@@ -1677,6 +1688,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_submission_engine_driver.obj" ^
   "%ODIR%\bc250_active_miniport_driver.obj" ^
   "%ODIR%\bc250_boot_fuse_driver.obj" ^
+  "%ODIR%\bc250_sdma_present_driver.obj" ^
   "%WDK%\Lib\%WDKVER%\km\x64\ntoskrnl.lib" ^
   "%WDK%\Lib\%WDKVER%\km\x64\hal.lib" ^
   "%WDK%\Lib\%WDKVER%\km\x64\BufferOverflowK.lib" ^

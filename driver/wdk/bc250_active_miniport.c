@@ -2,6 +2,7 @@
 #include "bc250_mcdm_callbacks.h"
 #include "bc250_display_ddi.h"
 #include "bc250_probe_telemetry.h"
+#include "bc250_sdma_present.h"
 #include "bc250_cp_firmware_manifest.h"
 #include "../core/bc250_adapter_info_contract.h"
 #include "../core/bc250_allocation_abi_contract.h"
@@ -2944,6 +2945,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                         PHYSICAL_ADDRESS mmioPhys;
                         mmioPhys.QuadPart = (LONGLONG)context->Core.ResolvedBars[bIdx].Start;
                         Bc250DisplaySetMmioBase(mmioPhys);
+                        (void)Bc250SdmaPresentInit(mmioPhys, 0x000450000000ull);
                         break;
                     }
                 }
