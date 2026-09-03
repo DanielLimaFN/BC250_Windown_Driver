@@ -1033,15 +1033,10 @@ static NTSTATUS Bc250ValidateVidPn(
         goto Exit;
     }
     if (pathCount == 0) {
-        if (RequirePinnedModes) {
-            *Supported = FALSE;
-            status = STATUS_GRAPHICS_VIDPN_MODALITY_NOT_SUPPORTED;
-            Bc250DisplayLog("[VidPn] pathCount=0 with RequirePinnedModes -> Supported=FALSE\n");
-            goto Exit;
-        }
+        *HasPath = FALSE;
         *Supported = TRUE;
         status = STATUS_SUCCESS;
-        Bc250DisplayLog("[VidPn] pathCount=0 -> Supported=TRUE\n");
+        Bc250DisplayLog("[VidPn] pathCount=0 -> Supported=TRUE (empty VidPN)\n");
         goto Exit;
     }
     if (pathCount != 1) {
