@@ -210,7 +210,7 @@ sem tela.
 |---:|---|:---:|---|
 | — | `DMU_BASE = {0x12, 0xC0, 0x34C0, 0x9000}` | 🧪 | Readback na placa dos 4 segmentos batendo com `cyan_skillfish_ip_offset.h`. Linux **hardcoda** as bases deste chip; não usa IP discovery |
 | 4 | Identidade do bloco de display (DMU) | 🟡 | `DCE_HWIP → DMU_BASE` confirmado por leitura, não por inferência |
-| 5 | Catálogo de registradores DCN | 🟡 | Cada entrada como `(reg, BASE_IDX)` com fonte citada. A base plana `0x5000` do repo de referência **colide com MMHUB e está errada** |
+| 5 | Catálogo de registradores DCN | 🧪 | Cada entrada como `(reg, BASE_IDX)` catalogada em `docs/03_CATALOGO_DE_REGISTRADORES.md` com fonte citada; probe `tools/probe-dcn-readonly.ps1` pronto. Fecha no silício no readback |
 | 64 | Existência do DCN 2.0.1 | 🟡 | Versão confirmada por leitura na própria placa |
 | 65 | Base real do DCN | 🟡 | Bases com checksum e bounds; ambíguas vão para quarentena |
 | 66 | Inventário read-only | ⬜ | Dois snapshots com intervalo + auditoria provando **zero escrita** |
