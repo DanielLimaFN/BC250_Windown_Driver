@@ -155,6 +155,7 @@ static BOOLEAN Bc250SynchronizedVsyncCallback(
 {
     BC250_DISPLAY_STATE *state = (BC250_DISPLAY_STATE *)SynchronizeContext;
     DXGKARGCB_NOTIFY_INTERRUPT_DATA data;
+    LONG interruptType;
 
     if (state == NULL ||
         InterlockedCompareExchange(&state->DisplayStarted, 1, 1) == 0 ||
@@ -164,18 +165,23 @@ static BOOLEAN Bc250SynchronizedVsyncCallback(
         return FALSE;
     }
 
+    interruptType = InterlockedCompareExchange(&state->ActiveInterruptType, 0, 0);
     RtlZeroMemory(&data, sizeof(data));
-    data.InterruptType = DXGK_INTERRUPT_CRTC_VSYNC;
-    data.CrtcVsync.VidPnTargetId = 0;
-    data.CrtcVsync.PhysicalAddress = state->FrameBufferPhysical;
-    state->DxgkInterface.DxgkCbNotifyInterrupt(
-        state->DxgkInterface.DeviceHandle, &data);
 
-    RtlZeroMemory(&data, sizeof(data));
-    data.InterruptType = DXGK_INTERRUPT_DISPLAYONLY_VSYNC;
-    data.DisplayOnlyVsync.VidPnTargetId = 0;
-    state->DxgkInterface.DxgkCbNotifyInterrupt(
-        state->DxgkInterface.DeviceHandle, &data);
+    if (interruptType == (LONG)DXGK_INTERRUPT_CRTC_VSYNC ||
+        interruptType == (LONG)DXGK_INTERRUPT_CRTC_VSYNC_WITH_MULTIPLANE_OVERLAY) {
+        data.InterruptType = DXGK_INTERRUPT_CRTC_VSYNC;
+        data.CrtcVsync.VidPnTargetId = 1;
+        data.CrtcVsync.PhysicalAddress = state->FrameBufferPhysical;
+        state->DxgkInterface.DxgkCbNotifyInterrupt(
+            state->DxgkInterface.DeviceHandle, &data);
+    } else {
+        data.InterruptType = DXGK_INTERRUPT_DISPLAYONLY_VSYNC;
+        data.DisplayOnlyVsync.VidPnTargetId = 1;
+        state->DxgkInterface.DxgkCbNotifyInterrupt(
+            state->DxgkInterface.DeviceHandle, &data);
+    }
+
     InterlockedIncrement(&state->VsyncCount);
     return TRUE;
 }
@@ -1790,6 +1796,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiControlInterrupt(
     if (InterruptType == DXGK_INTERRUPT_DISPLAYONLY_VSYNC ||
         InterruptType == DXGK_INTERRUPT_CRTC_VSYNC ||
         InterruptType == DXGK_INTERRUPT_CRTC_VSYNC_WITH_MULTIPLANE_OVERLAY) {
+        InterlockedExchange(&g_Bc250DisplayState.ActiveInterruptType, (LONG)InterruptType);
         Bc250SetVsyncState(EnableInterrupt);
         Bc250DisplayLog("[ControlInterrupt] VSYNC Enable=%d (Type=%u)\n",
             (int)EnableInterrupt, (ULONG)InterruptType);

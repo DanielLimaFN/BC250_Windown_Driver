@@ -40,6 +40,7 @@ typedef struct BC250_DISPLAY_STATE {
     volatile LONG IsSupportedVidPnCount;
     volatile LONG CommitVidPnCount;
     volatile LONG ControlInterruptCount;
+    volatile LONG ActiveInterruptType;
     volatile LONG PresentCount;
     volatile LONG ForceFullPresent;
     EX_RUNDOWN_REF PresentRundown;
