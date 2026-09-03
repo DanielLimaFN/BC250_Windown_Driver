@@ -2959,10 +2959,15 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                 context->PspRingStatus = Bc250ActiveProbePspRing(context, &context->PspRingEvidence);
                 if (context->PspRingStatus == BC250_PSP_RING_OK &&
                     context->PspRingEvidence.PhysicalReady != 0u) {
-                    context->PspLoadFwStatus = Bc250ActiveLoadSdmaFirmware(context, &context->PspLoadFwEvidence);
-                    Bc250DisplayLog("[SdmaPresent] PSP Load SDMA0 FW: Status=%u, PhysicalReady=%u\n",
+                    Bc250DisplayLog("[SdmaPresent] PSP Load SDMA0 FW: Status=%u, PhysicalReady=%u, F32Status=%u, RingWorkStatus=%u (WptrPub=%u, RptrAfter=%u, Fence=%08X, Mismatches=%u)\n",
                         (uint32_t)context->PspLoadFwStatus,
-                        context->PspLoadFwEvidence.PhysicalReady);
+                        context->PspLoadFwEvidence.PhysicalReady,
+                        (uint32_t)context->SdmaF32Status,
+                        (uint32_t)context->SdmaRingWorkStatus,
+                        context->SdmaRingWorkEvidence.WptrPublished,
+                        context->SdmaRingWorkEvidence.RptrRegisterAfter,
+                        context->SdmaRingWorkEvidence.FenceObserved,
+                        context->SdmaRingWorkEvidence.MismatchCount);
                 } else {
                     Bc250DisplayLog("[SdmaPresent] PSP Ring Probe: Status=%u, PhysicalReady=%u\n",
                         (uint32_t)context->PspRingStatus,

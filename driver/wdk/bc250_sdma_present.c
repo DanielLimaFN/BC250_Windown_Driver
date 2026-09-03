@@ -251,10 +251,16 @@ NTSTATUS Bc250SdmaPresentInit(
      * 5. Poll com timeout curto (10 ms) aguardando aposentadoria de RPTR e Fence gravada pela GPU:
      */
     for (poll = 1u; poll <= 2000u; ++poll) {
-        uint32_t rptrWb = g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_RPTR_OFFSET / 4u];
-        uint32_t fenceObserved = g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_FENCE_OFFSET / 4u];
+        uint32_t rptrWb;
+        uint32_t fenceObserved;
+        uint32_t rptrReg;
 
-        if (rptrWb == cursor * sizeof(uint32_t) &&
+        Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_HDP_FLUSH - BC250_SDMA0_REG_BASE_OFFSET, 1u);
+        rptrWb = g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_RPTR_OFFSET / 4u];
+        fenceObserved = g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_FENCE_OFFSET / 4u];
+        rptrReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_RPTR - BC250_SDMA0_REG_BASE_OFFSET);
+
+        if ((rptrWb == cursor * sizeof(uint32_t) || rptrReg == cursor * sizeof(uint32_t)) &&
             fenceObserved == (BC250_SDMA_PRESENT_FENCE_INIT + 1u)) {
             g_Bc250SdmaPresent.TripodPolls = poll;
             g_Bc250SdmaPresent.TripodFenceObserved = fenceObserved;
@@ -284,13 +290,19 @@ NTSTATUS Bc250SdmaPresentInit(
             g_Bc250SdmaPresent.TripodFenceObserved,
             g_Bc250SdmaPresent.TripodPolls);
     } else {
+        uint32_t wptrReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_WPTR - BC250_SDMA0_REG_BASE_OFFSET);
+        uint32_t rptrReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_RPTR - BC250_SDMA0_REG_BASE_OFFSET);
+        uint32_t statusReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_STATUS - BC250_SDMA0_REG_BASE_OFFSET);
+        uint32_t errorLog = Bc250SdmaRegRead(&g_Bc250SdmaPresent, 0x4A18u - BC250_SDMA0_REG_BASE_OFFSET);
+
         g_Bc250SdmaPresent.TripodValidated = FALSE;
         g_Bc250SdmaPresent.HardwareEnabled = FALSE;
-        Bc250DisplayLog("[SdmaPresent] AVISO TRIPÉ: Timeout/Mismatch (Polls=%u, Fence=%08X [Poison=%08X], Mismatches=%u). Mantendo fallback fail-closed.\n",
+        Bc250DisplayLog("[SdmaPresent] AVISO TRIPÉ: Timeout/Mismatch (Polls=%u, Fence=%08X [Poison=%08X], Mismatches=%u, WPTR_Reg=%u, RPTR_Reg=%u, STATUS=%08X, ERR_LOG=%08X). Mantendo fallback fail-closed.\n",
             poll,
             g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_FENCE_OFFSET / 4u],
             BC250_SDMA_PRESENT_FENCE_POISON,
-            g_Bc250SdmaPresent.TripodMismatches);
+            g_Bc250SdmaPresent.TripodMismatches,
+            wptrReg, rptrReg, statusReg, errorLog);
     }
 
     g_Bc250SdmaPresent.Initialized = TRUE;
