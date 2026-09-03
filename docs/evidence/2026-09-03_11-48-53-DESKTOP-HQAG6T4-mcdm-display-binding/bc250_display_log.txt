@@ -1,0 +1,2 @@
+[FUSE] STARTDEVICE RECUSADO: Fusivel disparado (State=2, Boots=14, LastStatus=c0000001)
+[StartDevice] FUSIVEL ANTI-BOOT-LOOP DISPARADO: recusa StartDevice (fuseStatus=00000000, prevFuseState=2)
