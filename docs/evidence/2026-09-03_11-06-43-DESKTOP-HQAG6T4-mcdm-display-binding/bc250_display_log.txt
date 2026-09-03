@@ -1,0 +1,153 @@
+[FUSE] STARTDEVICE AUTORIZADO: Fusivel armado para ensaio (Boots=9)
+[DisplayInit] Acquired GOP: 2560x1080, Pitch=10240, Phys=0xC0000000, DeviceHandle=0xFFFFBC0A9E2CD030
+[DisplayInit] OTG VSync linked to BAR5 at 0xFE800000 (Offset 0x14030), InitialFrameCount=305374
+[SdmaPresent] PSP Load SDMA0 FW: Status=1, PhysicalReady=0, F32Status=1, RingWorkStatus=1 (WptrPub=0, RptrAfter=0, Fence=00000000, Mismatches=0)
+[SdmaPresent] Pre-Arm SDMA0: CLK=FF0C0100 STATUS=46DEE557 RBCNTL=80841014 RingGpu=0xF40FF00000 WorkGpu=0xF40FF01000
+[SdmaPresent] AVISO TRIPÉ: Timeout/Mismatch (Polls=2001, Fence=43DAFFFE [Poison=43DAFFFE], Mismatches=4, WPTR_Reg=0, RPTR_Reg=0, STATUS=46DEE557, ERR_LOG=000003FF). Mantendo fallback fail-closed.
+[StartDevice] Sources=1, Children=1, Profile=0
+[ChildRelations] Called. Size=56, ChildEnumEnabled=1
+[ChildRelations] Returned DP ChildUid=1
+[QueryAdapterInfoDisplay] Type=1, OutSize=544
+[QueryDeviceDescriptor] ChildUid=1, Offset=0, Len=256
+[QueryDeviceDescriptor] ChildUid=1, Offset=0, Len=128
+[QueryDeviceDescriptor] ChildUid=1, Offset=128, Len=128
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #1): Supported=1, status=0x00000000 ===
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #2): Supported=1, status=0x00000000 ===
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #3): Supported=1, status=0x00000000 ===
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #4): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=5, PivotSrc=4294967295, PivotTgt=4294967295) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Target unpinned -> Supported=1
+=== IsSupportedVidPn (Call #5): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=1, PivotSrc=0, PivotTgt=4294967295) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #6): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=2, PivotSrc=4294967295, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #7): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=3, PivotSrc=0, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #8): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=4, PivotSrc=0, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #9): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=5, PivotSrc=4294967295, PivotTgt=4294967295) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Target unpinned -> Supported=1
+=== IsSupportedVidPn (Call #10): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=1, PivotSrc=0, PivotTgt=4294967295) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #11): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=2, PivotSrc=4294967295, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #12): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=3, PivotSrc=0, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #13): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=4, PivotSrc=0, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #14): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=5, PivotSrc=4294967295, PivotTgt=4294967295) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Target unpinned -> Supported=1
+=== IsSupportedVidPn (Call #15): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=1, PivotSrc=0, PivotTgt=4294967295) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #16): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=2, PivotSrc=4294967295, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+=== CommitVidPn Entered: AffectedSource=0, Started=1, Flags=0x00000000 (PowerOff=0, PowerTrans=0), hAlloc=0000000000000000 ===
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=1
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== SetVidPnSourceVisibility (Visible=1) ===
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #17): Supported=1, status=0x00000000 ===
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #18): Supported=1, status=0x00000000 ===
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #19): Supported=1, status=0x00000000 ===
+[ControlInterrupt] VSYNC Enable=1 (Type=5)
+=== SetVidPnSourceVisibility (Visible=0) ===
+=== SetVidPnSourceVisibility (Visible=1) ===
+=== SetVidPnSourceVisibility (Visible=1) ===
+=== PresentDisplayOnly First Call: Pitch=10240, Visible=1, Committed=1 ===
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #20): Supported=1, status=0x00000000 ===
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #21): Supported=1, status=0x00000000 ===
+[PresentDisplayOnly #60] SDMA Blt Status: Completed=0, Submitted=0, Fallbacks=0
+[PresentDisplayOnly #120] SDMA Blt Status: Completed=0, Submitted=0, Fallbacks=0
+[PresentDisplayOnly #180] SDMA Blt Status: Completed=0, Submitted=0, Fallbacks=0
+[PresentDisplayOnly #240] SDMA Blt Status: Completed=0, Submitted=0, Fallbacks=0
+[PresentDisplayOnly #300] SDMA Blt Status: Completed=0, Submitted=0, Fallbacks=0
+[PresentDisplayOnly #360] SDMA Blt Status: Completed=0, Submitted=0, Fallbacks=0
+[ControlInterrupt] VSYNC Enable=0 (Type=5)
+[ControlInterrupt] VSYNC Enable=1 (Type=5)
+[ControlInterrupt] VSYNC Enable=0 (Type=5)
+[ControlInterrupt] VSYNC Enable=1 (Type=5)
+[ControlInterrupt] VSYNC Enable=0 (Type=5)
+[ControlInterrupt] VSYNC Enable=1 (Type=5)
+[ControlInterrupt] VSYNC Enable=0 (Type=5)
+[ControlInterrupt] VSYNC Enable=1 (Type=5)
+[ControlInterrupt] VSYNC Enable=0 (Type=5)
+[ControlInterrupt] VSYNC Enable=1 (Type=5)
+[ControlInterrupt] VSYNC Enable=0 (Type=5)
+[ControlInterrupt] VSYNC Enable=1 (Type=5)
+[ControlInterrupt] VSYNC Enable=0 (Type=5)
+[ControlInterrupt] VSYNC Enable=1 (Type=5)
+[ControlInterrupt] VSYNC Enable=0 (Type=5)
+[ControlInterrupt] VSYNC Enable=1 (Type=5)
+[ControlInterrupt] VSYNC Enable=0 (Type=5)
