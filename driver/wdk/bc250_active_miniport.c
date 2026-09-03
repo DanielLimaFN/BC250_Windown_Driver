@@ -3112,10 +3112,31 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                     context->AllocationSegmentBytes = caps.LocalSegmentBytes;
                 }
             }
+            /*
+             * Numero de entradas da root page table do modelo plano.
+             * Bc250McdmSetRootPageTable calcula 1 << PageTableIndexBitCount e
+             * Bc250ActiveSetRootPageTableObject exige igualdade exata com este
+             * campo. Ele so' era ZERADO -- mesma classe de omissao que
+             * GpuVaReady --, entao toda DxgkDdiSetRootPageTable era recusada
+             * com DEVICE_NOT_READY e o handler de UPDATE_PAGE_TABLE nunca
+             * encontrava root page table para o processo.
+             */
+            context->RootPageTableMaxEntries =
+                1u << BC250_GPUVA_PT_INDEX_BITS;
             InterlockedExchange(&context->ContextAbiReady, 1);
             InterlockedExchange(&context->AllocationAbiReady, 1);
             InterlockedExchange(&context->RootPageTableAbiReady, 1);
-            InterlockedExchange(&context->GpuvaMappingsOperational, 1);
+            /*
+             * GpuvaMappingsOperational NAO e' ligado aqui.
+             *
+             * Estava sendo posto em 1 incondicionalmente no StartDevice: antes
+             * de existir page table, antes de qualquer PTE escrita e antes de
+             * qualquer ACK de flush -- atropelando o gate de promocao que o
+             * proprio driver implementa no caminho de FLUSH_TLB
+             * (GpuvaLabPromotion + GpuvaActivationEligible). Declarar
+             * submissao operacional sem prova viola a Lei 4. O unico lugar
+             * legitimo para liga-lo e' depois de um commit de flush aceito.
+             */
         } else {
             InterlockedExchange(&context->ContextAbiReady, 0);
             InterlockedExchange(&context->AllocationAbiReady, 0);
@@ -3216,6 +3237,8 @@ Bc250PhysicalRenderBringup:
                 if (NumberOfChildren != NULL) *NumberOfChildren = 1;
                 InterlockedExchange(&context->IsActive, 1);
                 Bc250ActiveArmLifecycle(context);
+                context->RootPageTableMaxEntries =
+                    1u << BC250_GPUVA_PT_INDEX_BITS;
                 InterlockedExchange(&context->ContextAbiReady, 1);
                 InterlockedExchange(&context->AllocationAbiReady, 1);
                 InterlockedExchange(&context->RootPageTableAbiReady, 1);
@@ -4585,6 +4608,8 @@ Bc250PhysicalRenderBringup:
                         }
                         InterlockedExchange(&context->IsActive, 1);
                         Bc250ActiveArmLifecycle(context);
+                        context->RootPageTableMaxEntries =
+                            1u << BC250_GPUVA_PT_INDEX_BITS;
                         InterlockedExchange(&context->ContextAbiReady, 1);
                         InterlockedExchange(&context->AllocationAbiReady, 1);
                         InterlockedExchange(&context->RootPageTableAbiReady, 1);
