@@ -41,7 +41,6 @@ NTSTATUS Bc250SdmaPresentInit(
     _In_ uint64_t ScanoutGpuMcAddress)
 {
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
-    PHYSICAL_ADDRESS lowest, highest, boundary;
     PHYSICAL_ADDRESS sdmaRegPhysical;
     uint32_t clk, rbCntl, value;
 
@@ -72,109 +71,32 @@ NTSTATUS Bc250SdmaPresentInit(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    /* Aloca memória contígua para Ring Buffer (4KB) e Work Buffer (4KB) */
-    lowest.QuadPart = 0;
-    highest.QuadPart = 0xFFFFFFFFull; /* 32-bit físico para compatibilidade */
-    boundary.QuadPart = 0;
-    g_Bc250SdmaPresent.BufferSize = BC250_SDMA_PRESENT_BUFFER_TOTAL;
-    g_Bc250SdmaPresent.BufferVirtual = MmAllocateContiguousMemorySpecifyCache(
-        g_Bc250SdmaPresent.BufferSize,
-        lowest,
-        highest,
-        boundary,
-        MmNonCached);
-    if (g_Bc250SdmaPresent.BufferVirtual == NULL) {
-        /* Tenta sem restrição de 32-bit */
-        highest.QuadPart = 0xFFFFFFFFFFull;
-        g_Bc250SdmaPresent.BufferVirtual = MmAllocateContiguousMemorySpecifyCache(
-            g_Bc250SdmaPresent.BufferSize,
-            lowest,
-            highest,
-            boundary,
-            MmNonCached);
-    }
-    if (g_Bc250SdmaPresent.BufferVirtual == NULL) {
-        Bc250DisplayLog("[SdmaPresent] Error: Failed to allocate contiguous memory (%u bytes)\n",
-            (ULONG)g_Bc250SdmaPresent.BufferSize);
-        MmUnmapIoSpace((PVOID)g_Bc250SdmaPresent.MmioVirtual, g_Bc250SdmaPresent.MmioLength);
-        g_Bc250SdmaPresent.MmioVirtual = NULL;
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    RtlZeroMemory(g_Bc250SdmaPresent.BufferVirtual, g_Bc250SdmaPresent.BufferSize);
-    g_Bc250SdmaPresent.BufferPhysical = MmGetPhysicalAddress(g_Bc250SdmaPresent.BufferVirtual);
-
-    /* Divide o buffer em Ring e Work */
-    g_Bc250SdmaPresent.Ring = (volatile uint32_t *)g_Bc250SdmaPresent.BufferVirtual;
-    g_Bc250SdmaPresent.RingGpuAddress = (uint64_t)g_Bc250SdmaPresent.BufferPhysical.QuadPart;
-
-    g_Bc250SdmaPresent.Work = (volatile uint32_t *)((PUCHAR)g_Bc250SdmaPresent.BufferVirtual +
-        BC250_SDMA_PRESENT_RING_BYTES);
-    g_Bc250SdmaPresent.WorkGpuAddress = (uint64_t)g_Bc250SdmaPresent.BufferPhysical.QuadPart +
-        BC250_SDMA_PRESENT_RING_BYTES;
-
-    /* Inicializa offsets do work buffer */
-    g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_RPTR_OFFSET / sizeof(uint32_t)] = 0u;
-    g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_WPTR_OFFSET / sizeof(uint32_t)] = 0u;
-    g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_FENCE_OFFSET / sizeof(uint32_t)] =
-        (uint32_t)g_Bc250SdmaPresent.NextFenceSequence;
-
-    /* 
-     * Programação do hardware SDMA0 (proveniência: bc250_sdma_ring_work.c no silício):
-     * 1. Des-gating de clock
+    /*
+     * PROBE READ-ONLY de SDMA0:
+     * Lei 6: SNAPSHOT antes de tocar no hardware.
+     * Mapeia 4KB de registradores do SDMA0 e realiza leitura passiva (proveniente de BAR5).
      */
     clk = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_CLK_CTRL - BC250_SDMA0_REG_BASE_OFFSET);
-    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_CLK_CTRL - BC250_SDMA0_REG_BASE_OFFSET,
-        clk | 0xFF000000u);
-    KeStallExecutionProcessor(50u);
-
-    /* 2. Desabilita o anel antes de reconfigurar */
     rbCntl = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_CNTL - BC250_SDMA0_REG_BASE_OFFSET);
-    rbCntl = (rbCntl & ~(M_RB_SIZE | F_RB_ENABLE | F_RPTR_WB)) | (10u << 1) | F_RPTR_WB;
-    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_CNTL - BC250_SDMA0_REG_BASE_OFFSET,
-        rbCntl & ~F_RB_ENABLE);
-
-    /* 3. Zera ponteiros e programa endereços base */
-    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_RPTR - BC250_SDMA0_REG_BASE_OFFSET, 0u);
-    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_RPTR_HI - BC250_SDMA0_REG_BASE_OFFSET, 0u);
-    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_WPTR - BC250_SDMA0_REG_BASE_OFFSET, 0u);
-    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_WPTR_HI - BC250_SDMA0_REG_BASE_OFFSET, 0u);
-
-    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RPTR_ADDR_LO - BC250_SDMA0_REG_BASE_OFFSET,
-        (uint32_t)(g_Bc250SdmaPresent.WorkGpuAddress + BC250_SDMA_PRESENT_RPTR_OFFSET) & 0xFFFFFFFCu);
-    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RPTR_ADDR_HI - BC250_SDMA0_REG_BASE_OFFSET,
-        (uint32_t)((g_Bc250SdmaPresent.WorkGpuAddress + BC250_SDMA_PRESENT_RPTR_OFFSET) >> 32));
-
-    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_BASE - BC250_SDMA0_REG_BASE_OFFSET,
-        (uint32_t)(g_Bc250SdmaPresent.RingGpuAddress >> 8));
-    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_BASE_HI - BC250_SDMA0_REG_BASE_OFFSET,
-        (uint32_t)(g_Bc250SdmaPresent.RingGpuAddress >> 40));
-
-    /* 4. Desabilita doorbell para polling direto */
-    value = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_DOORBELL - BC250_SDMA0_REG_BASE_OFFSET);
-    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_DOORBELL - BC250_SDMA0_REG_BASE_OFFSET,
-        value & ~F_DOORBELL_ENABLE);
-
-    /* 5. Des-halta o microengine F32 */
     value = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_F32_CNTL - BC250_SDMA0_REG_BASE_OFFSET);
-    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_F32_CNTL - BC250_SDMA0_REG_BASE_OFFSET,
-        value & ~F_F32_HALT);
+    {
+        uint32_t regCntl = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_CNTL - BC250_SDMA0_REG_BASE_OFFSET);
+        uint32_t regStatus = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_STATUS - BC250_SDMA0_REG_BASE_OFFSET);
+        uint32_t regRbBase = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_BASE - BC250_SDMA0_REG_BASE_OFFSET);
+        uint32_t regRbRptr = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_RPTR - BC250_SDMA0_REG_BASE_OFFSET);
+        uint32_t regRbWptr = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_WPTR - BC250_SDMA0_REG_BASE_OFFSET);
+        uint32_t regDoorbell = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_DOORBELL - BC250_SDMA0_REG_BASE_OFFSET);
 
-    /* 6. Habilita o anel e Indirect Buffers */
-    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_CNTL - BC250_SDMA0_REG_BASE_OFFSET,
-        rbCntl | F_RB_ENABLE);
-    value = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_IB_CNTL - BC250_SDMA0_REG_BASE_OFFSET);
-    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_IB_CNTL - BC250_SDMA0_REG_BASE_OFFSET,
-        value | F_IB_ENABLE);
+        Bc250DisplayLog("[SdmaPresent] READ-ONLY SNAPSHOT SDMA0: CLK=%08X CNTL=%08X STATUS=%08X F32=%08X RBCNTL=%08X RBBASE=%08X RPTR=%08X WPTR=%08X DOORBELL=%08X\n",
+            clk, regCntl, regStatus, value, rbCntl, regRbBase, regRbRptr, regRbWptr, regDoorbell);
+    }
 
-    g_Bc250SdmaPresent.CurrentCursor = 0u;
-    g_Bc250SdmaPresent.HardwareEnabled = TRUE;
+    /* 
+     * Mantém HardwareEnabled = FALSE para garantir Código 0 e tela acesa via Present fail-closed.
+     * O backend de Blt executa fallback seguro para CPU até que o microcódigo esteja autenticado.
+     */
+    g_Bc250SdmaPresent.HardwareEnabled = FALSE;
     g_Bc250SdmaPresent.Initialized = TRUE;
-
-    Bc250DisplayLog("[SdmaPresent] SDMA0 Engine Initialized: RingGpu=0x%llX, WorkGpu=0x%llX, ScanoutGpu=0x%llX\n",
-        g_Bc250SdmaPresent.RingGpuAddress,
-        g_Bc250SdmaPresent.WorkGpuAddress,
-        g_Bc250SdmaPresent.ScanoutGpuAddress);
 
     return STATUS_SUCCESS;
 #else
@@ -302,11 +224,6 @@ void Bc250SdmaPresentTeardown(void)
     g_Bc250SdmaPresent.HardwareEnabled = FALSE;
 
     if (g_Bc250SdmaPresent.MmioVirtual != NULL) {
-        uint32_t rbCntl = Bc250SdmaRegRead(&g_Bc250SdmaPresent,
-            BC250_SDMA0_REG_RB_CNTL - BC250_SDMA0_REG_BASE_OFFSET);
-        Bc250SdmaRegWrite(&g_Bc250SdmaPresent,
-            BC250_SDMA0_REG_RB_CNTL - BC250_SDMA0_REG_BASE_OFFSET,
-            rbCntl & ~F_RB_ENABLE);
         MmUnmapIoSpace((PVOID)g_Bc250SdmaPresent.MmioVirtual, g_Bc250SdmaPresent.MmioLength);
         g_Bc250SdmaPresent.MmioVirtual = NULL;
     }
