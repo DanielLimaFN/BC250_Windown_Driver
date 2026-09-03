@@ -1,5 +1,6 @@
 #include "bc250_display_ddi.h"
 #include "bc250_probe_telemetry.h"
+#include "bc250_sdma_present.h"
 
 BC250_DISPLAY_STATE g_Bc250DisplayState = { 0 };
 
@@ -535,6 +536,7 @@ void Bc250DisplayTeardown(void)
         g_Bc250DisplayState.FrameBufferVirtual = NULL;
         g_Bc250DisplayState.FrameBufferSize = 0;
     }
+    Bc250SdmaPresentTeardown();
 #endif
 }
 
@@ -1928,13 +1930,25 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresentDisplayOnly(
 
     if (InterlockedExchange(
             &g_Bc250DisplayState.ForceFullPresent, 0) != 0) {
-        LONG y;
-        for (y = 0; y < (LONG)height; ++y) {
-            PUCHAR dst = frameBuffer + ((SIZE_T)y * destinationPitch);
-            CONST UCHAR *src =
-                (CONST UCHAR *)pPresentDisplayOnly->pSource +
-                ((SIZE_T)y * pPresentDisplayOnly->Pitch);
-            RtlCopyMemory(dst, src, (SIZE_T)width * 4u);
+        BOOLEAN sdmaFullDone = FALSE;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+        PHYSICAL_ADDRESS srcPhys = MmGetPhysicalAddress((PVOID)pPresentDisplayOnly->pSource);
+        if (srcPhys.QuadPart != 0 && g_Bc250SdmaPresent.HardwareEnabled) {
+            sdmaFullDone = Bc250SdmaPresentBlt(
+                (uint64_t)srcPhys.QuadPart,
+                g_Bc250SdmaPresent.ScanoutGpuAddress,
+                height * destinationPitch);
+        }
+#endif
+        if (!sdmaFullDone) {
+            LONG y;
+            for (y = 0; y < (LONG)height; ++y) {
+                PUCHAR dst = frameBuffer + ((SIZE_T)y * destinationPitch);
+                CONST UCHAR *src =
+                    (CONST UCHAR *)pPresentDisplayOnly->pSource +
+                    ((SIZE_T)y * pPresentDisplayOnly->Pitch);
+                RtlCopyMemory(dst, src, (SIZE_T)width * 4u);
+            }
         }
         KeMemoryBarrier();
         Bc250ReleasePresentAccess();
@@ -1983,18 +1997,54 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresentDisplayOnly(
                 CONST UCHAR *src = (CONST UCHAR *)pPresentDisplayOnly->pSource +
                     ((SIZE_T)y * pPresentDisplayOnly->Pitch) +
                     ((SIZE_T)clipped.left * 4u);
-                RtlCopyMemory(
-                    dst, src, (SIZE_T)(clipped.right - clipped.left) * 4u);
+                ULONG rowBytes = (ULONG)(clipped.right - clipped.left) * 4u;
+                BOOLEAN sdmaRowDone = FALSE;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+                PHYSICAL_ADDRESS rowPhys = MmGetPhysicalAddress((PVOID)src);
+                if (rowPhys.QuadPart != 0 && g_Bc250SdmaPresent.HardwareEnabled) {
+                    uint64_t dstGpu = g_Bc250SdmaPresent.ScanoutGpuAddress +
+                        ((SIZE_T)y * destinationPitch) +
+                        ((SIZE_T)clipped.left * 4u);
+                    sdmaRowDone = Bc250SdmaPresentBlt(
+                        (uint64_t)rowPhys.QuadPart,
+                        dstGpu,
+                        rowBytes);
+                }
+#endif
+                if (!sdmaRowDone) {
+                    RtlCopyMemory(
+                        dst, src, (SIZE_T)rowBytes);
+                }
             }
         }
     } else if (pPresentDisplayOnly->NumMoves == 0) {
-        LONG y;
-        for (y = 0; y < (LONG)height; y++) {
-            PUCHAR dst = frameBuffer + ((SIZE_T)y * destinationPitch);
-            CONST UCHAR *src = (CONST UCHAR *)pPresentDisplayOnly->pSource +
-                ((SIZE_T)y * pPresentDisplayOnly->Pitch);
-            RtlCopyMemory(dst, src, (SIZE_T)width * 4u);
+        BOOLEAN sdmaDone = FALSE;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+        PHYSICAL_ADDRESS srcPhys = MmGetPhysicalAddress((PVOID)pPresentDisplayOnly->pSource);
+        if (srcPhys.QuadPart != 0 && g_Bc250SdmaPresent.HardwareEnabled) {
+            sdmaDone = Bc250SdmaPresentBlt(
+                (uint64_t)srcPhys.QuadPart,
+                g_Bc250SdmaPresent.ScanoutGpuAddress,
+                height * destinationPitch);
         }
+#endif
+        if (!sdmaDone) {
+            LONG y;
+            for (y = 0; y < (LONG)height; y++) {
+                PUCHAR dst = frameBuffer + ((SIZE_T)y * destinationPitch);
+                CONST UCHAR *src = (CONST UCHAR *)pPresentDisplayOnly->pSource +
+                    ((SIZE_T)y * pPresentDisplayOnly->Pitch);
+                RtlCopyMemory(dst, src, (SIZE_T)width * 4u);
+            }
+        }
+    }
+
+    if (presentCount == 1 || (presentCount % 60) == 0) {
+        Bc250DisplayLog("[PresentDisplayOnly #%d] SDMA Blt Status: Completed=%ld, Submitted=%ld, Fallbacks=%ld\n",
+            presentCount,
+            g_Bc250SdmaPresent.BltCompletedCount,
+            g_Bc250SdmaPresent.BltSubmittedCount,
+            g_Bc250SdmaPresent.FallbackCpuCount);
     }
 
     KeMemoryBarrier();

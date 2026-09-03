@@ -1,0 +1,15 @@
+﻿{
+    "token":  "96fed0cf-c2af-4d26-a761-8185b279c0dd",
+    "instance_id":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
+    "display_visible":  true,
+    "confirmed_at":  "2026-09-03T11:09:53.1524075-03:00",
+    "skip_hw_bringup":  1,
+    "schema_version":  134,
+    "is_supported_count":  21,
+    "commit_count":  1,
+    "control_interrupt_count":  55,
+    "present_entered":  1,
+    "present_status":  0,
+    "vsync_count_at_first_present":  9,
+    "hardware_validated":  false
+}

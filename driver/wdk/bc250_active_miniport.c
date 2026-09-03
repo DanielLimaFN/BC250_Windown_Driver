@@ -2,6 +2,7 @@
 #include "bc250_mcdm_callbacks.h"
 #include "bc250_display_ddi.h"
 #include "bc250_probe_telemetry.h"
+#include "bc250_sdma_present.h"
 #include "bc250_cp_firmware_manifest.h"
 #include "../core/bc250_adapter_info_contract.h"
 #include "../core/bc250_allocation_abi_contract.h"
@@ -1300,10 +1301,15 @@ static BC250_PSP_LOAD_FW_STATUS Bc250ActiveLoadSdmaFirmware(
     ntStatus = ZwCreateFile(&file, GENERIC_READ | SYNCHRONIZE, &attributes,
         &ioStatus, NULL, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_OPEN,
         FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE, NULL, 0u);
-    if (!NT_SUCCESS(ntStatus)) return status;
+    if (!NT_SUCCESS(ntStatus)) {
+        Bc250DisplayLog("[SdmaPresent] ZwCreateFile failed: 0x%08X\n", ntStatus);
+        return status;
+    }
     ntStatus = ZwQueryInformationFile(file, &ioStatus, &fileInfo,
         sizeof(fileInfo), FileStandardInformation);
     if (!NT_SUCCESS(ntStatus) || fileInfo.EndOfFile.QuadPart != 33792) {
+        Bc250DisplayLog("[SdmaPresent] ZwQueryInformationFile failed: 0x%08X, size=%lld\n",
+            ntStatus, fileInfo.EndOfFile.QuadPart);
         ZwClose(file);
         return status;
     }
@@ -1318,21 +1324,33 @@ static BC250_PSP_LOAD_FW_STATUS Bc250ActiveLoadSdmaFirmware(
         PAGE_SIZE, low, high, boundary, MmNonCached);
     firmware = MmAllocateContiguousMemorySpecifyCache(
         33792u, low, high, boundary, MmNonCached);
-    if (ring == NULL || command == NULL || fence == NULL || firmware == NULL)
+    if (ring == NULL || command == NULL || fence == NULL || firmware == NULL) {
+        Bc250DisplayLog("[SdmaPresent] Contiguous memory alloc failed for PSP FW buffers\n");
         goto Cleanup;
+    }
     RtlZeroMemory(ring, BC250_PSP_RING_BYTES);
     RtlZeroMemory(command, BC250_PSP_LOAD_FW_COMMAND_BYTES);
     RtlZeroMemory(fence, PAGE_SIZE);
     RtlZeroMemory(firmware, 33792u);
     ntStatus = ZwReadFile(file, NULL, NULL, NULL, &ioStatus, firmware,
         33792u, NULL, NULL);
-    if (!NT_SUCCESS(ntStatus) || ioStatus.Information != 33792u) goto Cleanup;
+    if (!NT_SUCCESS(ntStatus) || ioStatus.Information != 33792u) {
+        Bc250DisplayLog("[SdmaPresent] ZwReadFile failed: 0x%08X, bytes=%llu\n",
+            ntStatus, (ULONGLONG)ioStatus.Information);
+        goto Cleanup;
+    }
     Bc250FirmwareSha256(firmware, 33792u, digest);
-    if (!Bc250FirmwareDigestEqual(digest, expectedDigest)) goto Cleanup;
+    if (!Bc250FirmwareDigestEqual(digest, expectedDigest)) {
+        Bc250DisplayLog("[SdmaPresent] Firmware header SHA-256 mismatch!\n");
+        goto Cleanup;
+    }
     RtlMoveMemory(firmware, (PUCHAR)firmware + 0x100u, 33536u);
     RtlZeroMemory((PUCHAR)firmware + 33536u, 0x100u);
     Bc250FirmwareSha256(firmware, 33536u, digest);
-    if (!Bc250FirmwareDigestEqual(digest, expectedPayloadDigest)) goto Cleanup;
+    if (!Bc250FirmwareDigestEqual(digest, expectedPayloadDigest)) {
+        Bc250DisplayLog("[SdmaPresent] Firmware payload SHA-256 mismatch!\n");
+        goto Cleanup;
+    }
     ringPa = MmGetPhysicalAddress(ring);
     commandPa = MmGetPhysicalAddress(command);
     fencePa = MmGetPhysicalAddress(fence);
@@ -1360,6 +1378,8 @@ static BC250_PSP_LOAD_FW_STATUS Bc250ActiveLoadSdmaFirmware(
         (uint64_t)fencePa.QuadPart, (volatile uint32_t *)fence,
         (uint64_t)firmwarePa.QuadPart, 33536u,
         BC250_PSP_LOAD_FW_SDMA0_TYPE, &interfaceData, 500u, Evidence);
+    Bc250DisplayLog("[SdmaPresent] Bc250RunPspLoadFirmwareTransaction status=%u, PhysReady=%u\n",
+        (uint32_t)status, Evidence->PhysicalReady);
     if (status == BC250_PSP_LOAD_FW_OK && Evidence->PhysicalReady != 0u) {
         RtlZeroMemory(&f32Interface, sizeof(f32Interface));
         f32Interface.Read32 = Bc250ActiveVmidRead32;
@@ -1369,10 +1389,15 @@ static BC250_PSP_LOAD_FW_STATUS Bc250ActiveLoadSdmaFirmware(
         f32Interface.Identity = BC250_SDMA_F32_IDENTITY;
         Context->SdmaF32Status = Bc250RunSdmaF32Transaction(
             &f32Interface, &Context->SdmaF32Evidence);
+        Bc250DisplayLog("[SdmaPresent] F32Status=%u (PhysReady=%u)\n",
+            (uint32_t)Context->SdmaF32Status,
+            Context->SdmaF32Evidence.PhysicalReady);
         if (Context->SdmaF32Status == BC250_SDMA_F32_OK &&
             Context->SdmaF32Evidence.PhysicalReady != 0u) {
             Context->SdmaRingWorkStatus = Bc250ActiveRunSdmaRingWork(
                 Context, &Context->SdmaRingWorkEvidence);
+            Bc250DisplayLog("[SdmaPresent] RingWorkStatus=%u\n",
+                (uint32_t)Context->SdmaRingWorkStatus);
         }
     }
     mmioStatus = Bc250MmioTopologyUnmap(&Context->Core.MmioTransport);
@@ -2939,13 +2964,47 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
 
             {
                 uint32_t bIdx;
+                PHYSICAL_ADDRESS mmioPhys;
+                PHYSICAL_ADDRESS vramPhys;
+                mmioPhys.QuadPart = 0;
+                vramPhys.QuadPart = 0;
                 for (bIdx = 0; bIdx < context->Core.ResolvedBarCount; ++bIdx) {
                     if (context->Core.ResolvedBars[bIdx].Index == BC250_PCI_MMIO_BAR_INDEX) {
-                        PHYSICAL_ADDRESS mmioPhys;
                         mmioPhys.QuadPart = (LONGLONG)context->Core.ResolvedBars[bIdx].Start;
-                        Bc250DisplaySetMmioBase(mmioPhys);
-                        break;
+                    } else if (context->Core.ResolvedBars[bIdx].Index == BC250_PCI_VRAM_APERTURE_BAR_INDEX) {
+                        vramPhys.QuadPart = (LONGLONG)context->Core.ResolvedBars[bIdx].Start;
                     }
+                }
+                if (mmioPhys.QuadPart != 0) {
+                    Bc250DisplaySetMmioBase(mmioPhys);
+                }
+
+                /* Carga de Firmware SDMA0 via PSP (Fail-Closed) */
+                context->PspRingStatus = Bc250ActiveProbePspRing(context, &context->PspRingEvidence);
+                if (context->PspRingStatus == BC250_PSP_RING_OK &&
+                    context->PspRingEvidence.PhysicalReady != 0u) {
+                    context->PspLoadFwStatus = Bc250ActiveLoadSdmaFirmware(context, &context->PspLoadFwEvidence);
+                    Bc250DisplayLog("[SdmaPresent] PSP Load SDMA0 FW: Status=%u, PhysicalReady=%u, F32Status=%u, RingWorkStatus=%u (WptrPub=%u, RptrAfter=%u, Fence=%08X, Mismatches=%u)\n",
+                        (uint32_t)context->PspLoadFwStatus,
+                        context->PspLoadFwEvidence.PhysicalReady,
+                        (uint32_t)context->SdmaF32Status,
+                        (uint32_t)context->SdmaRingWorkStatus,
+                        context->SdmaRingWorkEvidence.WptrPublished,
+                        context->SdmaRingWorkEvidence.RptrRegisterAfter,
+                        context->SdmaRingWorkEvidence.FenceObserved,
+                        context->SdmaRingWorkEvidence.MismatchCount);
+                } else {
+                    Bc250DisplayLog("[SdmaPresent] PSP Ring Probe: Status=%u, PhysicalReady=%u\n",
+                        (uint32_t)context->PspRingStatus,
+                        context->PspRingEvidence.PhysicalReady);
+                }
+
+                if (mmioPhys.QuadPart != 0 && vramPhys.QuadPart != 0) {
+                    uint64_t vramMcStart = context->Core.TopologyEvidence.AddressSpace.VramMcStart;
+                    if (vramMcStart == 0) {
+                        vramMcStart = BC250_SDMA_VRAM_MC_BASE;
+                    }
+                    (void)Bc250SdmaPresentInit(mmioPhys, vramPhys, vramMcStart, 0x000450000000ull);
                 }
             }
         }

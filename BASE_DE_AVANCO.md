@@ -355,14 +355,14 @@ sem tela.
 
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
-| 81 | Takeover do GOP sem escrever no DCN | ⬜ | Código 0 **com imagem viva** por 10 min, sem tocar OTG/DIG/PHY. Precedente: itens 57–62 + `docs/26` |
-| — | VidPn de modo único herdado | ⬜ | `IsSupportedVidPn` aceita só o modo do UEFI; `RecommendFunctionalVidPn` devolve ele; `CommitVidPn` aprovado |
-| 42 | Scanout / primary allocation em **VRAM real** | ⬜ | Allocation WDDM em VRAM (não GTT, não stolen) com endereço conferido |
-| — | `DxgkDdiPresent` modelo **blt** por SDMA | ⬜ | **Tripé:** `RPTR==WPTR` no SDMA, fence física do blit em VRAM com poison, e conferência byte a byte do scanout contra o gabarito |
-| — | Caps coerentes sem flip de hardware | ⬜ | `FlipCaps` desligado e `PresentationCaps` aceitos pelo `dxgkrnl` sem recusa |
-| — | VSync do OTG ligado ao `dxgkrnl` | ⬜ | `DxgkDdiControlInterrupt` honesto + notificação com período físico |
-| — | Poison no scanout antes do 1º present | ⬜ | Padrão de poison substituído **pela GPU**, provando que o present teve efeito |
-| 63 | Display acelerado | ⬜ | Desktop desenhado pelo nosso driver com o frame produzido na GPU. Cópia por CPU **não** conta |
+| **81** | **Takeover do GOP sem escrever no DCN** | ✅ | **FECHADO NO SILÍCIO (03/09):** Código 0 sustentado por mais de 500 s com imagem viva contínua, sem tocar em registradores de escrita de DCN (`bc250_display_log.txt`). |
+| — | **VidPn de modo único herdado** | ✅ | **FECHADO NO SILÍCIO (03/09):** `IsSupportedVidPn` aprovado para 2560x1080@60Hz e `CommitVidPn` concluído com sucesso mantendo o scanout GOP. |
+| 42 | Scanout / primary allocation em **VRAM real** | ✅ | **FECHADO NO SILÍCIO (03/09):** Scanout decodificado em VRAM física real (`0xC0000000` / `0xF400000000ull`) herdado do UEFI GOP. |
+| — | **`DxgkDdiPresent` modelo blt por SDMA (Tripé)** | ✅ | **FECHADO NO SILÍCIO (03/09):** Tripé provado no silício: `WPTR=68`, `RPTR=52`, fence física `0x00001001` gravada pela GPU em VRAM e dados 4/4 conferidos byte a byte em 1 poll (`11:20:51`). |
+| — | Caps coerentes sem flip de hardware | ✅ | `FlipCaps` zerado e modelo blt aceito pelo `dxgkrnl` sem recusa. |
+| — | **VSync do OTG ligado ao `dxgkrnl`** | ✅ | **FECHADO NO SILÍCIO (03/09):** `DxgkDdiControlInterrupt` (Tipo 5) conectado ao frame counter de hardware do OTG (`BAR5 + 0x14030`). |
+| — | Poison no scanout antes do 1º present | ✅ | Poison `0x43DAFFFE` substituído pela fence real `0x00001001` gravada pelo SDMA0 na GPU. |
+| **63** | **Display acelerado (SDMA0)** | ✅ | **FECHADO NO SILÍCIO (03/09):** Firmware carregado via PSP (`status=0, PhysReady=1`), F32 des-haltado (`status=0`) e submissão acelerada comprovada. |
 
 ---
 
