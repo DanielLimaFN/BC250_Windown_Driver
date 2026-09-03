@@ -1301,10 +1301,15 @@ static BC250_PSP_LOAD_FW_STATUS Bc250ActiveLoadSdmaFirmware(
     ntStatus = ZwCreateFile(&file, GENERIC_READ | SYNCHRONIZE, &attributes,
         &ioStatus, NULL, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_OPEN,
         FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE, NULL, 0u);
-    if (!NT_SUCCESS(ntStatus)) return status;
+    if (!NT_SUCCESS(ntStatus)) {
+        Bc250DisplayLog("[SdmaPresent] ZwCreateFile failed: 0x%08X\n", ntStatus);
+        return status;
+    }
     ntStatus = ZwQueryInformationFile(file, &ioStatus, &fileInfo,
         sizeof(fileInfo), FileStandardInformation);
     if (!NT_SUCCESS(ntStatus) || fileInfo.EndOfFile.QuadPart != 33792) {
+        Bc250DisplayLog("[SdmaPresent] ZwQueryInformationFile failed: 0x%08X, size=%lld\n",
+            ntStatus, fileInfo.EndOfFile.QuadPart);
         ZwClose(file);
         return status;
     }
@@ -1319,21 +1324,33 @@ static BC250_PSP_LOAD_FW_STATUS Bc250ActiveLoadSdmaFirmware(
         PAGE_SIZE, low, high, boundary, MmNonCached);
     firmware = MmAllocateContiguousMemorySpecifyCache(
         33792u, low, high, boundary, MmNonCached);
-    if (ring == NULL || command == NULL || fence == NULL || firmware == NULL)
+    if (ring == NULL || command == NULL || fence == NULL || firmware == NULL) {
+        Bc250DisplayLog("[SdmaPresent] Contiguous memory alloc failed for PSP FW buffers\n");
         goto Cleanup;
+    }
     RtlZeroMemory(ring, BC250_PSP_RING_BYTES);
     RtlZeroMemory(command, BC250_PSP_LOAD_FW_COMMAND_BYTES);
     RtlZeroMemory(fence, PAGE_SIZE);
     RtlZeroMemory(firmware, 33792u);
     ntStatus = ZwReadFile(file, NULL, NULL, NULL, &ioStatus, firmware,
         33792u, NULL, NULL);
-    if (!NT_SUCCESS(ntStatus) || ioStatus.Information != 33792u) goto Cleanup;
+    if (!NT_SUCCESS(ntStatus) || ioStatus.Information != 33792u) {
+        Bc250DisplayLog("[SdmaPresent] ZwReadFile failed: 0x%08X, bytes=%llu\n",
+            ntStatus, (ULONGLONG)ioStatus.Information);
+        goto Cleanup;
+    }
     Bc250FirmwareSha256(firmware, 33792u, digest);
-    if (!Bc250FirmwareDigestEqual(digest, expectedDigest)) goto Cleanup;
+    if (!Bc250FirmwareDigestEqual(digest, expectedDigest)) {
+        Bc250DisplayLog("[SdmaPresent] Firmware header SHA-256 mismatch!\n");
+        goto Cleanup;
+    }
     RtlMoveMemory(firmware, (PUCHAR)firmware + 0x100u, 33536u);
     RtlZeroMemory((PUCHAR)firmware + 33536u, 0x100u);
     Bc250FirmwareSha256(firmware, 33536u, digest);
-    if (!Bc250FirmwareDigestEqual(digest, expectedPayloadDigest)) goto Cleanup;
+    if (!Bc250FirmwareDigestEqual(digest, expectedPayloadDigest)) {
+        Bc250DisplayLog("[SdmaPresent] Firmware payload SHA-256 mismatch!\n");
+        goto Cleanup;
+    }
     ringPa = MmGetPhysicalAddress(ring);
     commandPa = MmGetPhysicalAddress(command);
     fencePa = MmGetPhysicalAddress(fence);
@@ -1361,6 +1378,8 @@ static BC250_PSP_LOAD_FW_STATUS Bc250ActiveLoadSdmaFirmware(
         (uint64_t)fencePa.QuadPart, (volatile uint32_t *)fence,
         (uint64_t)firmwarePa.QuadPart, 33536u,
         BC250_PSP_LOAD_FW_SDMA0_TYPE, &interfaceData, 500u, Evidence);
+    Bc250DisplayLog("[SdmaPresent] Bc250RunPspLoadFirmwareTransaction status=%u, PhysReady=%u\n",
+        (uint32_t)status, Evidence->PhysicalReady);
     if (status == BC250_PSP_LOAD_FW_OK && Evidence->PhysicalReady != 0u) {
         RtlZeroMemory(&f32Interface, sizeof(f32Interface));
         f32Interface.Read32 = Bc250ActiveVmidRead32;
@@ -1370,10 +1389,15 @@ static BC250_PSP_LOAD_FW_STATUS Bc250ActiveLoadSdmaFirmware(
         f32Interface.Identity = BC250_SDMA_F32_IDENTITY;
         Context->SdmaF32Status = Bc250RunSdmaF32Transaction(
             &f32Interface, &Context->SdmaF32Evidence);
+        Bc250DisplayLog("[SdmaPresent] F32Status=%u (PhysReady=%u)\n",
+            (uint32_t)Context->SdmaF32Status,
+            Context->SdmaF32Evidence.PhysicalReady);
         if (Context->SdmaF32Status == BC250_SDMA_F32_OK &&
             Context->SdmaF32Evidence.PhysicalReady != 0u) {
             Context->SdmaRingWorkStatus = Bc250ActiveRunSdmaRingWork(
                 Context, &Context->SdmaRingWorkEvidence);
+            Bc250DisplayLog("[SdmaPresent] RingWorkStatus=%u\n",
+                (uint32_t)Context->SdmaRingWorkStatus);
         }
     }
     mmioStatus = Bc250MmioTopologyUnmap(&Context->Core.MmioTransport);
