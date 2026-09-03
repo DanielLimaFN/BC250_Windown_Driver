@@ -210,6 +210,17 @@ static VOID Bc250VsyncDpcRoutine(
         return;
     }
 
+    if (g_Bc250DisplayState.OtgVsyncActive &&
+        g_Bc250DisplayState.OtgFrameCountRegister != NULL) {
+        ULONG currentFrame = *g_Bc250DisplayState.OtgFrameCountRegister;
+        if (currentFrame == g_Bc250DisplayState.LastOtgFrameCount) {
+            /* Quadro de hardware ainda nao avancou; aguarda proximo tick */
+            return;
+        }
+        g_Bc250DisplayState.LastOtgFrameCount = currentFrame;
+        InterlockedIncrement(&g_Bc250DisplayState.HardwareVsyncCount);
+    }
+
     status = g_Bc250DisplayState.DxgkInterface.DxgkCbSynchronizeExecution(
         g_Bc250DisplayState.DxgkInterface.DeviceHandle,
         Bc250SynchronizedVsyncCallback,
@@ -236,9 +247,10 @@ static VOID Bc250SetVsyncState(BOOLEAN Enable)
         InterlockedCompareExchange(
             &g_Bc250DisplayState.PowerStateD0, 1, 1) != 0) {
         LARGE_INTEGER due;
-        due.QuadPart = -166667LL; /* 16.66 ms = 60 Hz */
+        LONG periodMs = g_Bc250DisplayState.OtgVsyncActive ? 4 : 17;
+        due.QuadPart = -(LONGLONG)periodMs * 10000LL;
         InterlockedExchange(&g_Bc250DisplayState.VsyncEnabled, 1);
-        KeSetTimerEx(&g_Bc250DisplayState.VsyncTimer, due, 17, &g_Bc250DisplayState.VsyncDpc);
+        KeSetTimerEx(&g_Bc250DisplayState.VsyncTimer, due, periodMs, &g_Bc250DisplayState.VsyncDpc);
     } else {
         InterlockedExchange(&g_Bc250DisplayState.VsyncEnabled, 0);
         KeCancelTimer(&g_Bc250DisplayState.VsyncTimer);
@@ -474,6 +486,32 @@ NTSTATUS Bc250DisplayInit(
     return STATUS_SUCCESS;
 }
 
+void Bc250DisplaySetMmioBase(_In_ PHYSICAL_ADDRESS MmioPhysical)
+{
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    g_Bc250DisplayState.MmioPhysical = MmioPhysical;
+    if (MmioPhysical.QuadPart != 0) {
+        PHYSICAL_ADDRESS otgRegPhysical;
+        otgRegPhysical.QuadPart = MmioPhysical.QuadPart + 0x14030;
+        g_Bc250DisplayState.OtgFrameCountRegister = (volatile ULONG *)MmMapIoSpace(
+            otgRegPhysical,
+            sizeof(ULONG),
+            MmNonCached);
+        if (g_Bc250DisplayState.OtgFrameCountRegister != NULL) {
+            g_Bc250DisplayState.LastOtgFrameCount = *g_Bc250DisplayState.OtgFrameCountRegister;
+            g_Bc250DisplayState.OtgVsyncActive = TRUE;
+            Bc250DisplayLog("[DisplayInit] OTG VSync linked to BAR5 at 0x%llX (Offset 0x14030), InitialFrameCount=%u\n",
+                MmioPhysical.QuadPart, g_Bc250DisplayState.LastOtgFrameCount);
+        } else {
+            Bc250DisplayLog("[DisplayInit] WARNING: Failed to map OTG frame counter at 0x%llX\n",
+                otgRegPhysical.QuadPart);
+        }
+    }
+#else
+    UNREFERENCED_PARAMETER(MmioPhysical);
+#endif
+}
+
 void Bc250DisplayTeardown(void)
 {
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
@@ -486,6 +524,11 @@ void Bc250DisplayTeardown(void)
     if (g_Bc250DisplayState.PresentRundownInitialized) {
         ExWaitForRundownProtectionRelease(&g_Bc250DisplayState.PresentRundown);
         g_Bc250DisplayState.PresentRundownInitialized = FALSE;
+    }
+    if (g_Bc250DisplayState.OtgFrameCountRegister != NULL) {
+        MmUnmapIoSpace((PVOID)g_Bc250DisplayState.OtgFrameCountRegister, sizeof(ULONG));
+        g_Bc250DisplayState.OtgFrameCountRegister = NULL;
+        g_Bc250DisplayState.OtgVsyncActive = FALSE;
     }
     if (g_Bc250DisplayState.FrameBufferVirtual != NULL) {
         MmUnmapIoSpace(g_Bc250DisplayState.FrameBufferVirtual, g_Bc250DisplayState.FrameBufferSize);

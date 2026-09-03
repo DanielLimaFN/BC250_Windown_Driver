@@ -43,6 +43,11 @@ typedef struct BC250_DISPLAY_STATE {
     volatile LONG ActiveInterruptType;
     volatile LONG PresentCount;
     volatile LONG ForceFullPresent;
+    PHYSICAL_ADDRESS MmioPhysical;
+    volatile ULONG *OtgFrameCountRegister;
+    ULONG LastOtgFrameCount;
+    volatile LONG HardwareVsyncCount;
+    BOOLEAN OtgVsyncActive;
     EX_RUNDOWN_REF PresentRundown;
     BOOLEAN PresentRundownInitialized;
     UCHAR Edid[128];
@@ -54,6 +59,8 @@ extern BC250_DISPLAY_STATE g_Bc250DisplayState;
 NTSTATUS Bc250DisplayInit(
     _In_ const DXGKRNL_INTERFACE *DxgkInterface,
     _In_ const DXGK_DISPLAY_INFORMATION *PostDisplayInfo);
+
+void Bc250DisplaySetMmioBase(_In_ PHYSICAL_ADDRESS MmioPhysical);
 
 void Bc250DisplayTeardown(void);
 

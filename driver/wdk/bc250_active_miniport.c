@@ -2936,6 +2936,18 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                 Bc250ProbeRecordFirstFailure(preflightStatus);
                 return preflightStatus;
             }
+
+            {
+                uint32_t bIdx;
+                for (bIdx = 0; bIdx < context->Core.ResolvedBarCount; ++bIdx) {
+                    if (context->Core.ResolvedBars[bIdx].Index == BC250_PCI_MMIO_BAR_INDEX) {
+                        PHYSICAL_ADDRESS mmioPhys;
+                        mmioPhys.QuadPart = (LONGLONG)context->Core.ResolvedBars[bIdx].Start;
+                        Bc250DisplaySetMmioBase(mmioPhys);
+                        break;
+                    }
+                }
+            }
         }
 
 #if !defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)
