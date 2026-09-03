@@ -1300,55 +1300,42 @@ static NTSTATUS Bc250PublishCofuncSourceMode(
 
     status = VidPnInterface->pfnAcquireSourceModeSet(
         VidPn, 0, &modeSet, &modeInterface);
-    if (!NT_SUCCESS(status)) return status;
-    if (modeInterface == NULL || modeSet == 0) {
-        status = STATUS_DEVICE_CONFIGURATION_ERROR;
-        goto Exit;
-    }
+    if (NT_SUCCESS(status) && modeInterface != NULL && modeSet != 0) {
+        status = modeInterface->pfnAcquirePinnedModeInfo(modeSet, &pinnedMode);
+        if (status == STATUS_GRAPHICS_MODE_NOT_PINNED) {
+            pinnedMode = NULL;
+        } else if (NT_SUCCESS(status) && pinnedMode != NULL) {
+            status = Bc250SourceModeMatchesGop(pinnedMode) ?
+                STATUS_SUCCESS : STATUS_GRAPHICS_VIDPN_MODALITY_NOT_SUPPORTED;
+            (void)modeInterface->pfnReleaseModeInfo(modeSet, pinnedMode);
+            (void)VidPnInterface->pfnReleaseSourceModeSet(VidPn, modeSet);
+            return status;
+        }
 
-    status = modeInterface->pfnAcquirePinnedModeInfo(modeSet, &pinnedMode);
-    if (status == STATUS_GRAPHICS_MODE_NOT_PINNED) {
-        pinnedMode = NULL;
-    } else if (NT_SUCCESS(status) && pinnedMode != NULL) {
-        status = Bc250SourceModeMatchesGop(pinnedMode) ?
-            STATUS_SUCCESS : STATUS_GRAPHICS_VIDPN_MODALITY_NOT_SUPPORTED;
-        goto Exit;
-    } else if (!NT_SUCCESS(status)) {
-        goto Exit;
+        (void)VidPnInterface->pfnReleaseSourceModeSet(VidPn, modeSet);
+        modeSet = 0;
+        modeInterface = NULL;
     }
-
-    status = VidPnInterface->pfnReleaseSourceModeSet(VidPn, modeSet);
-    modeSet = 0;
-    modeInterface = NULL;
-    if (!NT_SUCCESS(status)) return status;
 
     status = VidPnInterface->pfnCreateNewSourceModeSet(
         VidPn, 0, &modeSet, &modeInterface);
-    if (!NT_SUCCESS(status)) return status;
-    if (modeInterface == NULL || modeSet == 0) {
-        status = STATUS_DEVICE_CONFIGURATION_ERROR;
-        goto Exit;
+    if (!NT_SUCCESS(status) || modeInterface == NULL || modeSet == 0) {
+        return NT_SUCCESS(status) ? STATUS_DEVICE_CONFIGURATION_ERROR : status;
     }
     status = Bc250AddSingleSourceMode(modeInterface, modeSet, 0);
-    if (!NT_SUCCESS(status)) goto Exit;
+    if (!NT_SUCCESS(status)) {
+        (void)VidPnInterface->pfnReleaseSourceModeSet(VidPn, modeSet);
+        return status;
+    }
     status = VidPnInterface->pfnAssignSourceModeSet(VidPn, 0, modeSet);
-    if (NT_SUCCESS(status)) {
-        /* Successful assignment transfers ownership to the VidPN manager. */
-        modeSet = 0;
+    if (!NT_SUCCESS(status)) {
+        (void)VidPnInterface->pfnReleaseSourceModeSet(VidPn, modeSet);
+        return status;
     }
+    /* Successful assignment transfers ownership to the VidPN manager. */
+    modeSet = 0;
 
-Exit:
-    if (pinnedMode != NULL && modeInterface != NULL && modeSet != 0) {
-        (void)modeInterface->pfnReleaseModeInfo(modeSet, pinnedMode);
-    }
-    if (modeSet != 0) {
-        NTSTATUS releaseStatus =
-            VidPnInterface->pfnReleaseSourceModeSet(VidPn, modeSet);
-        if (NT_SUCCESS(status) && !NT_SUCCESS(releaseStatus)) {
-            status = releaseStatus;
-        }
-    }
-    return status;
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS Bc250PublishCofuncTargetMode(
@@ -1363,55 +1350,42 @@ static NTSTATUS Bc250PublishCofuncTargetMode(
 
     status = VidPnInterface->pfnAcquireTargetModeSet(
         VidPn, TargetId, &modeSet, &modeInterface);
-    if (!NT_SUCCESS(status)) return status;
-    if (modeInterface == NULL || modeSet == 0) {
-        status = STATUS_DEVICE_CONFIGURATION_ERROR;
-        goto Exit;
-    }
+    if (NT_SUCCESS(status) && modeInterface != NULL && modeSet != 0) {
+        status = modeInterface->pfnAcquirePinnedModeInfo(modeSet, &pinnedMode);
+        if (status == STATUS_GRAPHICS_MODE_NOT_PINNED) {
+            pinnedMode = NULL;
+        } else if (NT_SUCCESS(status) && pinnedMode != NULL) {
+            status = Bc250TargetModeMatchesGop(pinnedMode) ?
+                STATUS_SUCCESS : STATUS_GRAPHICS_VIDPN_MODALITY_NOT_SUPPORTED;
+            (void)modeInterface->pfnReleaseModeInfo(modeSet, pinnedMode);
+            (void)VidPnInterface->pfnReleaseTargetModeSet(VidPn, modeSet);
+            return status;
+        }
 
-    status = modeInterface->pfnAcquirePinnedModeInfo(modeSet, &pinnedMode);
-    if (status == STATUS_GRAPHICS_MODE_NOT_PINNED) {
-        pinnedMode = NULL;
-    } else if (NT_SUCCESS(status) && pinnedMode != NULL) {
-        status = Bc250TargetModeMatchesGop(pinnedMode) ?
-            STATUS_SUCCESS : STATUS_GRAPHICS_VIDPN_MODALITY_NOT_SUPPORTED;
-        goto Exit;
-    } else if (!NT_SUCCESS(status)) {
-        goto Exit;
+        (void)VidPnInterface->pfnReleaseTargetModeSet(VidPn, modeSet);
+        modeSet = 0;
+        modeInterface = NULL;
     }
-
-    status = VidPnInterface->pfnReleaseTargetModeSet(VidPn, modeSet);
-    modeSet = 0;
-    modeInterface = NULL;
-    if (!NT_SUCCESS(status)) return status;
 
     status = VidPnInterface->pfnCreateNewTargetModeSet(
         VidPn, TargetId, &modeSet, &modeInterface);
-    if (!NT_SUCCESS(status)) return status;
-    if (modeInterface == NULL || modeSet == 0) {
-        status = STATUS_DEVICE_CONFIGURATION_ERROR;
-        goto Exit;
+    if (!NT_SUCCESS(status) || modeInterface == NULL || modeSet == 0) {
+        return NT_SUCCESS(status) ? STATUS_DEVICE_CONFIGURATION_ERROR : status;
     }
     status = Bc250AddSingleTargetMode(modeInterface, modeSet, TargetId);
-    if (!NT_SUCCESS(status)) goto Exit;
+    if (!NT_SUCCESS(status)) {
+        (void)VidPnInterface->pfnReleaseTargetModeSet(VidPn, modeSet);
+        return status;
+    }
     status = VidPnInterface->pfnAssignTargetModeSet(VidPn, TargetId, modeSet);
-    if (NT_SUCCESS(status)) {
-        /* Successful assignment transfers ownership to the VidPN manager. */
-        modeSet = 0;
+    if (!NT_SUCCESS(status)) {
+        (void)VidPnInterface->pfnReleaseTargetModeSet(VidPn, modeSet);
+        return status;
     }
+    /* Successful assignment transfers ownership to the VidPN manager. */
+    modeSet = 0;
 
-Exit:
-    if (pinnedMode != NULL && modeInterface != NULL && modeSet != 0) {
-        (void)modeInterface->pfnReleaseModeInfo(modeSet, pinnedMode);
-    }
-    if (modeSet != 0) {
-        NTSTATUS releaseStatus =
-            VidPnInterface->pfnReleaseTargetModeSet(VidPn, modeSet);
-        if (NT_SUCCESS(status) && !NT_SUCCESS(releaseStatus)) {
-            status = releaseStatus;
-        }
-    }
-    return status;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS APIENTRY Bc250DxgkDdiEnumVidPnCofuncModality(
@@ -1457,7 +1431,33 @@ NTSTATUS APIENTRY Bc250DxgkDdiEnumVidPnCofuncModality(
     }
     status = topologyInterface->pfnGetNumPaths(topology, &pathCount);
     if (!NT_SUCCESS(status)) return status;
-    if (pathCount == 0) return STATUS_SUCCESS;
+    if (pathCount == 0) {
+        D3DKMDT_VIDPN_PRESENT_PATH *newPath = NULL;
+        status = topologyInterface->pfnCreateNewPathInfo(topology, &newPath);
+        if (NT_SUCCESS(status) && newPath != NULL) {
+            RtlZeroMemory(newPath, sizeof(*newPath));
+            newPath->VidPnSourceId = 0;
+            newPath->VidPnTargetId = 1;
+            newPath->ImportanceOrdinal = D3DKMDT_VPPI_PRIMARY;
+            newPath->Content = D3DKMDT_VPPC_NOTSPECIFIED;
+            newPath->ContentTransformation.Scaling = D3DKMDT_VPPS_IDENTITY;
+            newPath->ContentTransformation.Rotation = D3DKMDT_VPPR_IDENTITY;
+            newPath->ContentTransformation.ScalingSupport.Identity = 1;
+            newPath->ContentTransformation.RotationSupport.Identity = 1;
+            newPath->ContentTransformation.RotationSupport.Offset0 = 1;
+
+            status = topologyInterface->pfnAddPath(topology, newPath);
+            if (!NT_SUCCESS(status)) {
+                Bc250DisplayLog("[EnumVidPnCofuncModality] AddPath failed 0x%08X\n", status);
+                (void)topologyInterface->pfnReleasePathInfo(topology, newPath);
+                return status;
+            }
+            pathCount = 1;
+            Bc250DisplayLog("=== EnumVidPnCofuncModality: Added Path 0->1 to empty topology ===\n");
+        } else {
+            return STATUS_SUCCESS;
+        }
+    }
     if (pathCount != 1) return STATUS_GRAPHICS_VIDPN_MODALITY_NOT_SUPPORTED;
 
     status = topologyInterface->pfnAcquireFirstPathInfo(topology, &path);
@@ -1561,9 +1561,13 @@ NTSTATUS APIENTRY Bc250DxgkDdiCommitVidPn(
     Bc250RecordDisplayProbePassive(
         BC250_PROBE_DMM_COMMIT_COUNT,
         (ULONG)InterlockedIncrement(&g_Bc250DisplayState.CommitVidPnCount));
-    Bc250DisplayLog("=== CommitVidPn Entered: AffectedSource=%u, Started=%d ===\n",
+    Bc250DisplayLog("=== CommitVidPn Entered: AffectedSource=%u, Started=%d, Flags=0x%08X (PowerOff=%u, PowerTrans=%u), hAlloc=%p ===\n",
         pCommitVidPn ? pCommitVidPn->AffectedVidPnSourceId : 999,
-        g_Bc250DisplayState.DisplayStarted);
+        g_Bc250DisplayState.DisplayStarted,
+        pCommitVidPn ? *(ULONG *)&pCommitVidPn->Flags : 0,
+        pCommitVidPn ? pCommitVidPn->Flags.PathPoweredOff : 0,
+        pCommitVidPn ? pCommitVidPn->Flags.PathPowerTransition : 0,
+        pCommitVidPn ? pCommitVidPn->hPrimaryAllocation : NULL);
     if (pCommitVidPn == NULL ||
         g_Bc250DisplayState.DisplayStarted == 0) {
         Bc250RecordDisplayProbePassive(
