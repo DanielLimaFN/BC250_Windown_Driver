@@ -1333,18 +1333,27 @@ NTSTATUS APIENTRY Bc250DxgkDdiEnumVidPnCofuncModality(
     }
 
     supportedPath = *path;
-    if (!Bc250CofuncPivotMatchesPath(
-            pEnumCofuncModality, path, D3DKMDT_EPT_SCALING)) {
-        RtlZeroMemory(&supportedPath.ContentTransformation.ScalingSupport,
-            sizeof(supportedPath.ContentTransformation.ScalingSupport));
-        supportedPath.ContentTransformation.ScalingSupport.Identity = 1;
-    }
-    if (!Bc250CofuncPivotMatchesPath(
-            pEnumCofuncModality, path, D3DKMDT_EPT_ROTATION)) {
-        RtlZeroMemory(&supportedPath.ContentTransformation.RotationSupport,
-            sizeof(supportedPath.ContentTransformation.RotationSupport));
-        supportedPath.ContentTransformation.RotationSupport.Identity = 1;
-    }
+
+    /*
+     * Display v1 por heranca de GOP: a BC-250 so suporta Identity tanto para
+     * scaling quanto para rotacao (sem DCN ativo no caminho critico).
+     *
+     * HOTFIX BUGCHECK 0x113 (0x1C):
+     * A estrutura path recebida da DMM pode conter lixo ou bits de offsets
+     * independentes (Offset90/180/270 = bits 0xE0). Se esses bits chegarem a
+     * UpdatePathSupportInfo em caminho unico nao-clone, o dxgkrnl dispara
+     * VIDEO_DXGKRNL_FATAL_ERROR (0x113, subcode 0x1C).
+     *
+     * Portanto, sanitizamos incondicionalmente ScalingSupport e RotationSupport
+     * para Identity = 1.
+     */
+    RtlZeroMemory(&supportedPath.ContentTransformation.ScalingSupport,
+        sizeof(supportedPath.ContentTransformation.ScalingSupport));
+    supportedPath.ContentTransformation.ScalingSupport.Identity = 1;
+
+    RtlZeroMemory(&supportedPath.ContentTransformation.RotationSupport,
+        sizeof(supportedPath.ContentTransformation.RotationSupport));
+    supportedPath.ContentTransformation.RotationSupport.Identity = 1;
     status = topologyInterface->pfnUpdatePathSupportInfo(
         topology, &supportedPath);
     if (!NT_SUCCESS(status)) goto Exit;
