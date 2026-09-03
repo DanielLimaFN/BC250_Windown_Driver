@@ -1605,8 +1605,13 @@ NTSTATUS APIENTRY Bc250DxgkDdiCommitVidPn(
         return status;
     }
     if (!hasPath) {
-        InterlockedExchange(&g_Bc250DisplayState.SourceVisible, 0);
-        InterlockedExchange(&g_Bc250DisplayState.VidPnCommitted, 0);
+        /*
+         * WDDM 1.2+ spec: quando o SO chama DxgkDdiCommitVidPn com VidPN vazio
+         * (sem caminhos) e Flags.PathPoweredOff == 0, o driver DEVE tomar nenhuma acao
+         * (take no action), preservando o scanout GOP ativo para transicoes
+         * seamless de exibicao sem tela preta.
+         */
+        Bc250DisplayLog("=== CommitVidPn: empty VidPN with PathPoweredOff=0 -> taking no action (preserving display) ===\n");
         Bc250RecordDisplayProbePassive(
             BC250_PROBE_DMM_COMMIT_STATUS, (ULONG)STATUS_SUCCESS);
         return STATUS_SUCCESS;
