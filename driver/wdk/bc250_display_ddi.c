@@ -1128,10 +1128,146 @@ NTSTATUS APIENTRY Bc250DxgkDdiRecommendFunctionalVidPn(
     CONST HANDLE hAdapter,
     CONST DXGKARG_RECOMMENDFUNCTIONALVIDPN *pRecommendFunctionalVidPn)
 {
+    CONST DXGK_VIDPN_INTERFACE *vidPnInterface = NULL;
+    D3DKMDT_HVIDPNTOPOLOGY topology = 0;
+    CONST DXGK_VIDPNTOPOLOGY_INTERFACE *topologyInterface = NULL;
+    SIZE_T numPaths = 0;
+    D3DKMDT_HVIDPNSOURCEMODESET sourceModeSet = 0;
+    CONST DXGK_VIDPNSOURCEMODESET_INTERFACE *sourceModeInterface = NULL;
+    CONST D3DKMDT_VIDPN_SOURCE_MODE *sourceMode = NULL;
+    D3DKMDT_HVIDPNTARGETMODESET targetModeSet = 0;
+    CONST DXGK_VIDPNTARGETMODESET_INTERFACE *targetModeInterface = NULL;
+    CONST D3DKMDT_VIDPN_TARGET_MODE *targetMode = NULL;
+    NTSTATUS status;
+
     UNREFERENCED_PARAMETER(hAdapter);
-    UNREFERENCED_PARAMETER(pRecommendFunctionalVidPn);
-    Bc250DisplayLog("[RecommendFunctionalVidPn] called\n");
-    return STATUS_GRAPHICS_NO_RECOMMENDED_FUNCTIONAL_VIDPN;
+    if (pRecommendFunctionalVidPn == NULL ||
+        pRecommendFunctionalVidPn->hRecommendedFunctionalVidPn == 0 ||
+        g_Bc250DisplayState.DxgkInterface.DxgkCbQueryVidPnInterface == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Bc250DisplayLog("[RecommendFunctionalVidPn] called, Reason=%u\n",
+        pRecommendFunctionalVidPn->RequestReason);
+
+    status = g_Bc250DisplayState.DxgkInterface.DxgkCbQueryVidPnInterface(
+        pRecommendFunctionalVidPn->hRecommendedFunctionalVidPn,
+        DXGK_VIDPN_INTERFACE_VERSION_V1,
+        &vidPnInterface);
+    if (!NT_SUCCESS(status) || vidPnInterface == NULL) {
+        Bc250DisplayLog("[RecommendFunctionalVidPn] QueryVidPnInterface failed 0x%08X\n", status);
+        return NT_SUCCESS(status) ? STATUS_DEVICE_CONFIGURATION_ERROR : status;
+    }
+
+    status = vidPnInterface->pfnGetTopology(
+        pRecommendFunctionalVidPn->hRecommendedFunctionalVidPn,
+        &topology,
+        &topologyInterface);
+    if (!NT_SUCCESS(status) || topologyInterface == NULL) {
+        Bc250DisplayLog("[RecommendFunctionalVidPn] GetTopology failed 0x%08X\n", status);
+        return NT_SUCCESS(status) ? STATUS_DEVICE_CONFIGURATION_ERROR : status;
+    }
+
+    status = topologyInterface->pfnGetNumPaths(topology, &numPaths);
+    if (!NT_SUCCESS(status)) return status;
+    if (numPaths == 0) {
+        D3DKMDT_VIDPN_PRESENT_PATH *newPath = NULL;
+        status = topologyInterface->pfnCreateNewPathInfo(topology, &newPath);
+        if (!NT_SUCCESS(status) || newPath == NULL) {
+            Bc250DisplayLog("[RecommendFunctionalVidPn] CreateNewPathInfo failed 0x%08X\n", status);
+            return NT_SUCCESS(status) ? STATUS_DEVICE_CONFIGURATION_ERROR : status;
+        }
+        RtlZeroMemory(newPath, sizeof(*newPath));
+        newPath->VidPnSourceId = 0;
+        newPath->VidPnTargetId = 1;
+        newPath->ImportanceOrdinal = D3DKMDT_VPPI_PRIMARY;
+        newPath->Content = D3DKMDT_VPPC_NOTSPECIFIED;
+        newPath->ContentTransformation.Scaling = D3DKMDT_VPPS_IDENTITY;
+        newPath->ContentTransformation.Rotation = D3DKMDT_VPPR_IDENTITY;
+        newPath->ContentTransformation.ScalingSupport.Identity = 1;
+        newPath->ContentTransformation.RotationSupport.Identity = 1;
+        newPath->ContentTransformation.RotationSupport.Offset0 = 1;
+
+        status = topologyInterface->pfnAddPath(topology, newPath);
+        if (!NT_SUCCESS(status)) {
+            Bc250DisplayLog("[RecommendFunctionalVidPn] AddPath failed 0x%08X\n", status);
+            (void)topologyInterface->pfnReleasePathInfo(topology, newPath);
+            return status;
+        }
+    }
+
+    status = vidPnInterface->pfnCreateNewSourceModeSet(
+        pRecommendFunctionalVidPn->hRecommendedFunctionalVidPn,
+        0,
+        &sourceModeSet,
+        &sourceModeInterface);
+    if (!NT_SUCCESS(status) || sourceModeInterface == NULL) {
+        Bc250DisplayLog("[RecommendFunctionalVidPn] CreateNewSourceModeSet failed 0x%08X\n", status);
+        return NT_SUCCESS(status) ? STATUS_DEVICE_CONFIGURATION_ERROR : status;
+    }
+
+    status = Bc250AddSingleSourceMode(sourceModeInterface, sourceModeSet, 0);
+    if (!NT_SUCCESS(status)) {
+        Bc250DisplayLog("[RecommendFunctionalVidPn] AddSingleSourceMode failed 0x%08X\n", status);
+        (void)vidPnInterface->pfnReleaseSourceModeSet(
+            pRecommendFunctionalVidPn->hRecommendedFunctionalVidPn, sourceModeSet);
+        return status;
+    }
+
+    status = sourceModeInterface->pfnAcquireFirstModeInfo(sourceModeSet, &sourceMode);
+    if (NT_SUCCESS(status) && sourceMode != NULL) {
+        (void)sourceModeInterface->pfnPinMode(sourceModeSet, sourceMode->Id);
+        (void)sourceModeInterface->pfnReleaseModeInfo(sourceModeSet, sourceMode);
+    }
+
+    status = vidPnInterface->pfnAssignSourceModeSet(
+        pRecommendFunctionalVidPn->hRecommendedFunctionalVidPn,
+        0,
+        sourceModeSet);
+    if (!NT_SUCCESS(status)) {
+        Bc250DisplayLog("[RecommendFunctionalVidPn] AssignSourceModeSet failed 0x%08X\n", status);
+        (void)vidPnInterface->pfnReleaseSourceModeSet(
+            pRecommendFunctionalVidPn->hRecommendedFunctionalVidPn, sourceModeSet);
+        return status;
+    }
+
+    status = vidPnInterface->pfnCreateNewTargetModeSet(
+        pRecommendFunctionalVidPn->hRecommendedFunctionalVidPn,
+        1,
+        &targetModeSet,
+        &targetModeInterface);
+    if (!NT_SUCCESS(status) || targetModeInterface == NULL) {
+        Bc250DisplayLog("[RecommendFunctionalVidPn] CreateNewTargetModeSet failed 0x%08X\n", status);
+        return NT_SUCCESS(status) ? STATUS_DEVICE_CONFIGURATION_ERROR : status;
+    }
+
+    status = Bc250AddSingleTargetMode(targetModeInterface, targetModeSet, 1);
+    if (!NT_SUCCESS(status)) {
+        Bc250DisplayLog("[RecommendFunctionalVidPn] AddSingleTargetMode failed 0x%08X\n", status);
+        (void)vidPnInterface->pfnReleaseTargetModeSet(
+            pRecommendFunctionalVidPn->hRecommendedFunctionalVidPn, targetModeSet);
+        return status;
+    }
+
+    status = targetModeInterface->pfnAcquireFirstModeInfo(targetModeSet, &targetMode);
+    if (NT_SUCCESS(status) && targetMode != NULL) {
+        (void)targetModeInterface->pfnPinMode(targetModeSet, targetMode->Id);
+        (void)targetModeInterface->pfnReleaseModeInfo(targetModeSet, targetMode);
+    }
+
+    status = vidPnInterface->pfnAssignTargetModeSet(
+        pRecommendFunctionalVidPn->hRecommendedFunctionalVidPn,
+        1,
+        targetModeSet);
+    if (!NT_SUCCESS(status)) {
+        Bc250DisplayLog("[RecommendFunctionalVidPn] AssignTargetModeSet failed 0x%08X\n", status);
+        (void)vidPnInterface->pfnReleaseTargetModeSet(
+            pRecommendFunctionalVidPn->hRecommendedFunctionalVidPn, targetModeSet);
+        return status;
+    }
+
+    Bc250DisplayLog("=== RecommendFunctionalVidPn SUCCESS: 2560x1080@60Hz pinned ===\n");
+    return STATUS_SUCCESS;
 }
 
 static BOOLEAN Bc250CofuncPivotMatchesPath(
@@ -1545,17 +1681,82 @@ NTSTATUS APIENTRY Bc250DxgkDdiRecommendVidPnTopology(
     CONST HANDLE hAdapter,
     CONST DXGKARG_RECOMMENDVIDPNTOPOLOGY *pRecommendVidPnTopology)
 {
+    CONST DXGK_VIDPN_INTERFACE *vidPnInterface = NULL;
+    D3DKMDT_HVIDPNTOPOLOGY topology = 0;
+    CONST DXGK_VIDPNTOPOLOGY_INTERFACE *topologyInterface = NULL;
+    D3DKMDT_VIDPN_PRESENT_PATH *newPath = NULL;
+    SIZE_T numPaths = 0;
+    NTSTATUS status;
+
     UNREFERENCED_PARAMETER(hAdapter);
-    UNREFERENCED_PARAMETER(pRecommendVidPnTopology);
-    return STATUS_GRAPHICS_NO_RECOMMENDED_FUNCTIONAL_VIDPN;
+    if (pRecommendVidPnTopology == NULL ||
+        pRecommendVidPnTopology->hVidPn == 0 ||
+        g_Bc250DisplayState.DxgkInterface.DxgkCbQueryVidPnInterface == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Bc250DisplayLog("[RecommendVidPnTopology] called, Reason=%u\n",
+        pRecommendVidPnTopology->RequestReason);
+
+    status = g_Bc250DisplayState.DxgkInterface.DxgkCbQueryVidPnInterface(
+        pRecommendVidPnTopology->hVidPn,
+        DXGK_VIDPN_INTERFACE_VERSION_V1,
+        &vidPnInterface);
+    if (!NT_SUCCESS(status) || vidPnInterface == NULL) {
+        Bc250DisplayLog("[RecommendVidPnTopology] QueryVidPnInterface failed 0x%08X\n", status);
+        return NT_SUCCESS(status) ? STATUS_DEVICE_CONFIGURATION_ERROR : status;
+    }
+
+    status = vidPnInterface->pfnGetTopology(
+        pRecommendVidPnTopology->hVidPn,
+        &topology,
+        &topologyInterface);
+    if (!NT_SUCCESS(status) || topologyInterface == NULL) {
+        Bc250DisplayLog("[RecommendVidPnTopology] GetTopology failed 0x%08X\n", status);
+        return NT_SUCCESS(status) ? STATUS_DEVICE_CONFIGURATION_ERROR : status;
+    }
+
+    status = topologyInterface->pfnGetNumPaths(topology, &numPaths);
+    if (NT_SUCCESS(status) && numPaths == 0) {
+        status = topologyInterface->pfnCreateNewPathInfo(topology, &newPath);
+        if (NT_SUCCESS(status) && newPath != NULL) {
+            RtlZeroMemory(newPath, sizeof(*newPath));
+            newPath->VidPnSourceId = 0;
+            newPath->VidPnTargetId = 1;
+            newPath->ImportanceOrdinal = D3DKMDT_VPPI_PRIMARY;
+            newPath->Content = D3DKMDT_VPPC_NOTSPECIFIED;
+            newPath->ContentTransformation.Scaling = D3DKMDT_VPPS_IDENTITY;
+            newPath->ContentTransformation.Rotation = D3DKMDT_VPPR_IDENTITY;
+            newPath->ContentTransformation.ScalingSupport.Identity = 1;
+            newPath->ContentTransformation.RotationSupport.Identity = 1;
+            newPath->ContentTransformation.RotationSupport.Offset0 = 1;
+
+            status = topologyInterface->pfnAddPath(topology, newPath);
+            if (!NT_SUCCESS(status)) {
+                Bc250DisplayLog("[RecommendVidPnTopology] AddPath failed 0x%08X\n", status);
+                (void)topologyInterface->pfnReleasePathInfo(topology, newPath);
+                return status;
+            }
+            Bc250DisplayLog("=== RecommendVidPnTopology SUCCESS: Path 0->1 added ===\n");
+        }
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS APIENTRY Bc250DxgkDdiPresent(
     CONST HANDLE hContext,
     DXGKARG_PRESENT *pPresent)
 {
+    static LONG s_PresentCount = 0;
+    LONG count;
     if (hContext == NULL) return STATUS_NOT_SUPPORTED;
     if (pPresent == NULL) return STATUS_INVALID_PARAMETER;
+    count = InterlockedIncrement(&s_PresentCount);
+    if (count == 1 || (count % 60) == 0) {
+        Bc250DisplayLog("[Present #%d] hContext=%p, DmaSize=%u, SubRectCnt=%u\n",
+            count, hContext, pPresent->DmaSize, pPresent->SubRectCnt);
+    }
     Bc250RecordVsyncProofAfterSuccessfulPresent();
     return STATUS_SUCCESS;
 }
