@@ -1354,6 +1354,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiEnumVidPnCofuncModality(
     RtlZeroMemory(&supportedPath.ContentTransformation.RotationSupport,
         sizeof(supportedPath.ContentTransformation.RotationSupport));
     supportedPath.ContentTransformation.RotationSupport.Identity = 1;
+    supportedPath.ContentTransformation.RotationSupport.Offset0 = 1;
     status = topologyInterface->pfnUpdatePathSupportInfo(
         topology, &supportedPath);
     if (!NT_SUCCESS(status)) goto Exit;
