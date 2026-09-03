@@ -1,6 +1,50 @@
 #include "bc250_gpuva_journal_contract.h"
 #include <string.h>
 
+/*
+ * Duas paginas consecutivas pertencem ao mesmo range quando descrevem o mesmo
+ * mapeamento: mesma validade, mesmas permissoes, mesma allocation, e -- se
+ * mapeadas -- mesmo segmento com offset consecutivo. Para paginas invalidas o
+ * offset e' irrelevante: um unmap e' um unmap.
+ */
+static uint32_t Bc250GpuvaJournalEntriesAreContiguous(
+    const BC250_GPUVA_JOURNAL_PTE *Previous,
+    const BC250_GPUVA_JOURNAL_PTE *Current)
+{
+    if ((Previous->Valid != 0u) != (Current->Valid != 0u)) return 0u;
+    if (Previous->Permissions != Current->Permissions) return 0u;
+    if (Previous->Allocation != Current->Allocation) return 0u;
+    if (Previous->OpenAllocation != Current->OpenAllocation) return 0u;
+    if (Previous->Valid == 0u) return 1u;
+    if (Previous->SegmentId != Current->SegmentId) return 0u;
+    if (Previous->SegmentOffset + BC250_GPUVA_PAGE_BYTES !=
+        Current->SegmentOffset) {
+        return 0u;
+    }
+    return 1u;
+}
+
+/* Mesma pergunta, entre um range ja' estagiado e a proxima PTE. */
+static uint32_t Bc250GpuvaJournalEntryExtendsChange(
+    const BC250_GPUVA_RANGE_RECORD *Change,
+    uint32_t ChangeIsMap,
+    uint64_t EntryGpuVa,
+    const BC250_GPUVA_JOURNAL_PTE *Entry)
+{
+    uint32_t entryIsMap = Entry->Valid != 0u ? 1u : 0u;
+    if (Change->BaseGpuVa + Change->Size != EntryGpuVa) return 0u;
+    if ((ChangeIsMap != 0u) != (entryIsMap != 0u)) return 0u;
+    if (Change->Permissions != Entry->Permissions) return 0u;
+    if (Change->Allocation != Entry->Allocation) return 0u;
+    if (Change->OpenAllocation != Entry->OpenAllocation) return 0u;
+    if (entryIsMap == 0u) return 1u;
+    if (Change->BackingSegmentId != Entry->SegmentId) return 0u;
+    if (Change->BackingSegmentOffset + Change->Size != Entry->SegmentOffset) {
+        return 0u;
+    }
+    return 1u;
+}
+
 BC250_GPUVA_JOURNAL_STATUS Bc250GpuvaJournalInitialize(
     BC250_GPUVA_JOURNAL *Journal)
 {
@@ -45,12 +89,45 @@ BC250_GPUVA_JOURNAL_STATUS Bc250GpuvaJournalStageLeafUpdate(
         (Journal->Process != Process || Journal->ExpectedRootPageTable != ExpectedRootPageTable)) {
         return BC250_GPUVA_JOURNAL_BUSY;
     }
-    if (EntryCount > BC250_GPUVA_JOURNAL_MAX_CHANGES - Journal->ChangeCount) {
-        return BC250_GPUVA_JOURNAL_NO_SPACE;
-    }
     for (index = 0u; index < EntryCount; ++index) {
         if (Entries[index].Valid != 0u && Entries[index].Permissions == 0u) {
             return BC250_GPUVA_JOURNAL_BAD_ARGUMENT;
+        }
+    }
+    /*
+     * Contagem de RUNS, nao de paginas.
+     *
+     * Antes, cada PTE virava um BC250_GPUVA_RANGE_RECORD proprio, e a
+     * capacidade era conferida em paginas. Isso torna o journal inutil sob
+     * WDDM real: a primary allocation de 2560x1080x4 sao 2700 paginas contra
+     * um teto de 256, e o CommitFlush publica esses mesmos registros em
+     * BC250_GPUVA_SPACE, que tambem tem 256 ranges. Um primary sozinho
+     * estourava os dois.
+     *
+     * Paginas contiguas em VA, com as mesmas permissoes, o mesmo segmento, a
+     * mesma allocation e offset de segmento consecutivo descrevem UM range.
+     * Uma allocation fisicamente contigua colapsa para 1 registro, que e'
+     * exatamente o que o BC250_GPUVA_RANGE_RECORD (BaseGpuVa + Size) sempre
+     * modelou.
+     */
+    {
+        uint32_t runsNeeded = 0u;
+        uint32_t mergesWithTail =
+            (Journal->Pending != 0u && Journal->ChangeCount != 0u &&
+             Bc250GpuvaJournalEntryExtendsChange(
+                 &Journal->Changes[Journal->ChangeCount - 1u],
+                 Journal->MapChanges[Journal->ChangeCount - 1u],
+                 FirstGpuVa, &Entries[0])) ? 1u : 0u;
+        for (index = 0u; index < EntryCount; ++index) {
+            if (index == 0u) {
+                if (mergesWithTail == 0u) ++runsNeeded;
+            } else if (!Bc250GpuvaJournalEntriesAreContiguous(
+                           &Entries[index - 1u], &Entries[index])) {
+                ++runsNeeded;
+            }
+        }
+        if (runsNeeded > BC250_GPUVA_JOURNAL_MAX_CHANGES - Journal->ChangeCount) {
+            return BC250_GPUVA_JOURNAL_NO_SPACE;
         }
     }
     if (Journal->Pending == 0u) {
@@ -64,10 +141,24 @@ BC250_GPUVA_JOURNAL_STATUS Bc250GpuvaJournalStageLeafUpdate(
         if (updateEnd > Journal->MaximumGpuVa) Journal->MaximumGpuVa = updateEnd;
     }
     for (index = 0u; index < EntryCount; ++index) {
-        BC250_GPUVA_RANGE_RECORD *change = &Journal->Changes[Journal->ChangeCount];
         const BC250_GPUVA_JOURNAL_PTE *entry = &Entries[index];
+        uint64_t entryVa =
+            FirstGpuVa + ((uint64_t)index * BC250_GPUVA_PAGE_BYTES);
+        BC250_GPUVA_RANGE_RECORD *change;
+
+        if (Journal->ChangeCount != 0u &&
+            Bc250GpuvaJournalEntryExtendsChange(
+                &Journal->Changes[Journal->ChangeCount - 1u],
+                Journal->MapChanges[Journal->ChangeCount - 1u],
+                entryVa, entry)) {
+            Journal->Changes[Journal->ChangeCount - 1u].Size +=
+                BC250_GPUVA_PAGE_BYTES;
+            continue;
+        }
+
+        change = &Journal->Changes[Journal->ChangeCount];
         memset(change, 0, sizeof(*change));
-        change->BaseGpuVa = FirstGpuVa + ((uint64_t)index * BC250_GPUVA_PAGE_BYTES);
+        change->BaseGpuVa = entryVa;
         change->Size = BC250_GPUVA_PAGE_BYTES;
         change->OwnerProcess = Process;
         change->Allocation = entry->Allocation;

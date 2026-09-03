@@ -39,7 +39,14 @@ static int Bc250RunGpuvaJournalContractTest(void)
 
     CHECK(Bc250GpuvaJournalStageLeafUpdate(&journal, process, 0x900000u,
         0x40000000u, entries, 2u) == BC250_GPUVA_JOURNAL_OK);
-    CHECK(journal.Pending == 1u && journal.ChangeCount == 2u);
+    /*
+     * Duas paginas contiguas, mesmas permissoes, mesmo segmento e offset
+     * consecutivo sao UM range -- nao dois registros. Ver o comentario de
+     * coalescencia em bc250_gpuva_journal_contract.c.
+     */
+    CHECK(journal.Pending == 1u && journal.ChangeCount == 1u);
+    CHECK(journal.Changes[0].BaseGpuVa == 0x40000000u);
+    CHECK(journal.Changes[0].Size == 2u * BC250_GPUVA_PAGE_BYTES);
     CHECK(Bc250GpuvaJournalCommitFlush(&journal, &store, &scratch, process,
         0xA00000u, 0u, 0u, &generation) == BC250_GPUVA_JOURNAL_MISMATCH);
     CHECK(journal.Pending == 1u);
@@ -70,6 +77,72 @@ static int Bc250RunGpuvaJournalContractTest(void)
         0x40001000u, 0x1000u, BC250_PTE_READABLE,
         reader.Space->PageTableEpoch) == BC250_GPUVA_OK);
     Bc250GpuvaSnapshotRelease(&store, &reader);
+
+    /*
+     * Coalescencia: o que a torna necessaria e o que a limita.
+     */
+    CHECK(Bc250GpuvaJournalInitialize(&journal) == BC250_GPUVA_JOURNAL_OK);
+
+    /* Offset de segmento NAO consecutivo nao pode fundir. */
+    memset(entries, 0, sizeof(entries));
+    entries[0].Valid = 1u;
+    entries[0].Permissions = BC250_PTE_READABLE;
+    entries[0].SegmentId = 1u;
+    entries[0].SegmentOffset = 0x800000u;
+    entries[0].Allocation = (BC250_MCDM_HANDLE)0x2000;
+    entries[1] = entries[0];
+    entries[1].SegmentOffset = 0x900000u; /* salto: paginas fisicas disjuntas */
+    CHECK(Bc250GpuvaJournalStageLeafUpdate(&journal, process, 0x900000u,
+        0x50000000u, entries, 2u) == BC250_GPUVA_JOURNAL_OK);
+    CHECK(journal.ChangeCount == 2u);
+
+    /* Permissoes diferentes tampouco fundem. */
+    Bc250GpuvaJournalAbort(&journal);
+    entries[1] = entries[0];
+    entries[1].SegmentOffset += BC250_GPUVA_PAGE_BYTES;
+    entries[1].Permissions = BC250_PTE_READABLE | BC250_PTE_WRITEABLE;
+    CHECK(Bc250GpuvaJournalStageLeafUpdate(&journal, process, 0x900000u,
+        0x50000000u, entries, 2u) == BC250_GPUVA_JOURNAL_OK);
+    CHECK(journal.ChangeCount == 2u);
+
+    /*
+     * REGRESSAO DO TETO DE 256: uma allocation grande e fisicamente contigua,
+     * estagiada em pedacos do tamanho do buffer de staging (como o handler do
+     * miniport faz), tem de caber em UM registro. Com um registro por pagina
+     * isto estourava o journal e o BC250_GPUVA_SPACE. A primary allocation de
+     * 2560x1080x4 sao 2700 paginas.
+     */
+    Bc250GpuvaJournalAbort(&journal);
+    {
+        static BC250_GPUVA_JOURNAL_PTE bulk[BC250_GPUVA_JOURNAL_MAX_CHANGES];
+        const uint32_t totalPages = 2700u;
+        uint32_t staged;
+        uint32_t i;
+        for (staged = 0u; staged < totalPages; ) {
+            uint32_t chunk = totalPages - staged;
+            if (chunk > BC250_GPUVA_JOURNAL_MAX_CHANGES) {
+                chunk = BC250_GPUVA_JOURNAL_MAX_CHANGES;
+            }
+            memset(bulk, 0, sizeof(bulk));
+            for (i = 0u; i < chunk; ++i) {
+                bulk[i].Valid = 1u;
+                bulk[i].Permissions = BC250_PTE_READABLE | BC250_PTE_WRITEABLE;
+                bulk[i].SegmentId = 1u;
+                bulk[i].SegmentOffset = 0x1000000u +
+                    ((uint64_t)(staged + i) * BC250_GPUVA_PAGE_BYTES);
+                bulk[i].Allocation = (BC250_MCDM_HANDLE)0x3000;
+            }
+            CHECK(Bc250GpuvaJournalStageLeafUpdate(&journal, process, 0x900000u,
+                0x60000000u + ((uint64_t)staged * BC250_GPUVA_PAGE_BYTES),
+                bulk, chunk) == BC250_GPUVA_JOURNAL_OK);
+            staged += chunk;
+        }
+        CHECK(journal.ChangeCount == 1u);
+        CHECK(journal.Changes[0].BaseGpuVa == 0x60000000u);
+        CHECK(journal.Changes[0].Size ==
+            (uint64_t)totalPages * BC250_GPUVA_PAGE_BYTES);
+    }
+    Bc250GpuvaJournalAbort(&journal);
     return 0;
 }
 

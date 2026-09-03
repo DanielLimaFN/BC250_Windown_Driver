@@ -46,18 +46,23 @@ extern "C" {
  *     VA coberta = 2 ^ (12 + INDEX_BITS)
  *     tabela     = 8 bytes por entrada * 2 ^ INDEX_BITS
  *
- * BC250_GPUVA_PT_INDEX_BITS = 20 cobre 4 GiB de VA com uma tabela de 8 MiB
- * por processo. E' o ponto de partida da v1: suficiente para desktop e para
- * o primeiro triangulo, e barato o bastante para nao dominar a VRAM. Subir
- * para 16 GiB de VA custa 22 bits e 32 MiB de tabela por processo -- e' uma
- * troca de constante, nao de arquitetura.
+ * BC250_GPUVA_PT_INDEX_BITS = 22 cobre 16 GiB de VA com uma tabela de
+ * 32 MiB por processo. Escolhido para casar com os 16 GiB de GDDR6 da placa:
+ * 4 GiB (20 bits, 8 MiB) bastaria para desktop e para o primeiro triangulo,
+ * mas nao para um jogo real, e o custo de refazer o ensaio depois e' maior
+ * que os 24 MiB extras por processo.
+ *
+ * Alem de 16 GiB o modelo plano fica caro (24 bits -> 128 MiB por processo);
+ * ali o caminho passa a ser hierarquia multi-nivel, isto e', implementar
+ * PAGE_TABLE_DEPTH > 0 no GCVM. Isso e' trabalho novo, nao troca de
+ * constante.
  *
  * BC250_GPUVA_PT_LEVEL_COUNT so podera' passar de 1 quando existir backend
  * de hierarquia com prova fisica. Declarar mais que isto e' violacao da
  * Lei 4.
  * ========================================================================= */
 #define BC250_GPUVA_PT_LEVEL_COUNT 1u
-#define BC250_GPUVA_PT_INDEX_BITS  20u
+#define BC250_GPUVA_PT_INDEX_BITS  22u
 #define BC250_GPUVA_PT_ENTRY_BYTES 8u
 #define BC250_GPUVA_PT_SIZE_BYTES \
     (BC250_GPUVA_PT_ENTRY_BYTES << BC250_GPUVA_PT_INDEX_BITS)

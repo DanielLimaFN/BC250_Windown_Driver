@@ -2654,7 +2654,15 @@ NTSTATUS APIENTRY Bc250DxgkDdiAddDeviceActive(
         return STATUS_DEVICE_CONFIGURATION_ERROR;
     }
     InterlockedExchange(&context->GpuvaSdmaBrokerReady, 1);
-    if (Bc250GpuvaSpaceInitialize(&context->GpuvaSpace, 48u) !=
+    /*
+     * O espaco de VA nao pode ser maior do que a page table consegue mapear.
+     * Com o modelo plano (PAGE_TABLE_DEPTH=0) a cobertura e'
+     * 2^BC250_GPUVA_PT_VA_BITS; declarar 48 bits aqui deixava o espaco aceitar
+     * e rastrear ranges que o hardware nunca traduziria -- inconsistencia
+     * silenciosa que so' apareceria como falha de traducao.
+     */
+    if (Bc250GpuvaSpaceInitialize(&context->GpuvaSpace,
+            BC250_GPUVA_PT_VA_BITS) !=
         BC250_GPUVA_OK) {
         ExFreePoolWithTag(context, BC250_ACTIVE_POOL_TAG);
         Bc250ProbeRecord(BC250_PROBE_ADD_DEVICE_STATUS,
@@ -5733,6 +5741,8 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
     BC250_GPUVA_JOURNAL_PTE *entries;
     BC250_GPUVA_JOURNAL_STATUS journalStatus;
     UINT32 index;
+    UINT32 chunkStart = 0u;
+    UINT32 chunkCount = 0u;
     UINT64 *destination;
 
     if (active == NULL || Caps == NULL || update == NULL ||
@@ -5740,7 +5750,8 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
         update->PageTableLevel >= Caps->PageTableLevelCount ||
         (update->PageTableLevel == 0u &&
          (update->FirstPteVirtualAddress == 0u ||
-          update->NumPageTableEntries > BC250_GPUVA_JOURNAL_MAX_CHANGES))) {
+          update->NumPageTableEntries == 0u ||
+          update->pPageTableEntries == NULL))) {
         return STATUS_NOT_SUPPORTED;
     }
     KeEnterCriticalRegion();
@@ -5768,9 +5779,28 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
         return STATUS_DEVICE_BUSY;
     }
     if (update->PageTableLevel == 0u) {
-        RtlZeroMemory(entries, sizeof(*entries) * update->NumPageTableEntries);
-        for (index = 0u; index < update->NumPageTableEntries; ++index) {
-            const DXGK_PTE *pte = &update->pPageTableEntries[index];
+        /*
+         * O buffer de staging tem BC250_GPUVA_JOURNAL_MAX_CHANGES entradas,
+         * mas o dxgkrnl pede lotes muito maiores: a primary allocation de
+         * 2560x1080x4 sozinha sao 2700 PTEs. Antes isso era recusado com
+         * NOT_SUPPORTED, o que mataria a primeira alocacao real. Agora o lote
+         * e' processado em pedacos do tamanho do staging; o journal acumula e
+         * coalesce entre chamadas, entao o particionamento e' transparente
+         * para a transacao.
+         */
+        journalStatus = BC250_GPUVA_JOURNAL_OK;
+        for (chunkStart = 0u;
+             chunkStart < update->NumPageTableEntries &&
+                 journalStatus == BC250_GPUVA_JOURNAL_OK;
+             chunkStart += chunkCount) {
+        chunkCount = update->NumPageTableEntries - chunkStart;
+        if (chunkCount > BC250_GPUVA_JOURNAL_MAX_CHANGES) {
+            chunkCount = BC250_GPUVA_JOURNAL_MAX_CHANGES;
+        }
+        RtlZeroMemory(entries, sizeof(*entries) * chunkCount);
+        for (index = 0u; index < chunkCount; ++index) {
+            const DXGK_PTE *pte =
+                &update->pPageTableEntries[chunkStart + index];
             entries[index].Valid = pte->Valid != 0u ? 1u : 0u;
             entries[index].Permissions = pte->Valid == 0u ? 0u : BC250_PTE_READABLE;
             if (pte->Valid != 0u && pte->ReadOnly == 0u)
@@ -5783,8 +5813,11 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
         }
         journalStatus = Bc250GpuvaJournalStageLeafUpdate(&active->GpuvaJournal,
             (BC250_MCDM_HANDLE)update->hProcess,
-            processRecord.RootPageTableAddress, update->FirstPteVirtualAddress,
-            entries, update->NumPageTableEntries);
+            processRecord.RootPageTableAddress,
+            update->FirstPteVirtualAddress +
+                ((UINT64)chunkStart * BC250_GPUVA_PAGE_BYTES),
+            entries, chunkCount);
+        }
     } else {
         if (active->GpuvaJournal.Pending != 0u &&
             (active->GpuvaJournal.Process !=
