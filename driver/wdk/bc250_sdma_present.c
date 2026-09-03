@@ -245,7 +245,16 @@ NTSTATUS Bc250SdmaPresentInit(
     Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_MINOR_PTR - BC250_SDMA0_REG_BASE_OFFSET, 1u);
     Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_WPTR - BC250_SDMA0_REG_BASE_OFFSET,
         cursor * sizeof(uint32_t));
+    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_WPTR_HI - BC250_SDMA0_REG_BASE_OFFSET, 0u);
     Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_MINOR_PTR - BC250_SDMA0_REG_BASE_OFFSET, 0u);
+
+    {
+        uint32_t wptrAfter = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_WPTR - BC250_SDMA0_REG_BASE_OFFSET);
+        uint32_t rptrAfter = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_RPTR - BC250_SDMA0_REG_BASE_OFFSET);
+        uint32_t statusAfter = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_STATUS - BC250_SDMA0_REG_BASE_OFFSET);
+        Bc250DisplayLog("[SdmaPresent] Post-Kick SDMA0: WPTR_Reg=%u, RPTR_Reg=%u, STATUS=%08X (TargetWPTR=%u)\n",
+            wptrAfter, rptrAfter, statusAfter, cursor * sizeof(uint32_t));
+    }
 
     /*
      * 5. Poll com timeout curto (10 ms) aguardando aposentadoria de RPTR e Fence gravada pela GPU:
