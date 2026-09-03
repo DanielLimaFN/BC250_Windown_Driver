@@ -24,8 +24,37 @@ BOOLEAN Bc250DisplayGetChildEnumeration(void)
         &g_Bc250DisplayChildEnumerationDisabled, 0, 0) == 0 ? TRUE : FALSE;
 }
 
-#define BC250_NATIVE_HBLANK 160u
-#define BC250_NATIVE_VBLANK 45u
+static volatile LONG g_Bc250DisplaySyntheticEdidEnabled = 0; /* Default: 0 (disabled) para forçar o DMM a usar DxgkDdiRecommendMonitorModes */
+
+void Bc250DisplaySetSyntheticEdidEnabled(BOOLEAN Enabled)
+{
+    InterlockedExchange(&g_Bc250DisplaySyntheticEdidEnabled, Enabled ? 1 : 0);
+    g_Bc250DisplayState.EdidValid = Enabled;
+    Bc250DisplayLog("[DisplayConfig] Synthetic EDID %s\n", Enabled ? "ENABLED" : "DISABLED (using DxgkDdiRecommendMonitorModes)");
+}
+
+_Check_return_
+BOOLEAN Bc250DisplayGetSyntheticEdidEnabled(void)
+{
+    return InterlockedCompareExchange(&g_Bc250DisplaySyntheticEdidEnabled, 0, 0) != 0;
+}
+
+/*
+ * Timings físicos reais ancorados na medição de hardware do OTG
+ * (docs/evidence/2026-09-02_21-40-32-.../dcn_inventory.json):
+ * mmOTG0_OTG_H_TOTAL: 2783 (+1 = 2784) -> HBLANK = 224
+ * mmOTG0_OTG_V_TOTAL: 1110 (+1 = 1111) -> VBLANK = 31
+ * Ancoragem: VSyncFreq = 5613 / 100 Hz (56.13 Hz)
+ * HSyncFreq = vTotal * VSyncFreq = 1111 * 56.13 = 62360.43 Hz (6236043 / 100)
+ * PixelRate = hTotal * HSyncFreq = 2784 * 62360.43 = 173,611,437 Hz
+ */
+#define BC250_NATIVE_HBLANK         224u
+#define BC250_NATIVE_VBLANK         31u
+#define BC250_NATIVE_REFRESH_NUM    5613u
+#define BC250_NATIVE_REFRESH_DEN    100u
+#define BC250_NATIVE_HSYNC_NUM      6236043u
+#define BC250_NATIVE_HSYNC_DEN      100u
+#define BC250_NATIVE_PIXEL_RATE     173611437ULL
 
 #include <stdarg.h>
 
@@ -121,15 +150,9 @@ static VOID Bc250FillNativeSignalInfo(
         BC250_NATIVE_HBLANK;
     verticalTotal = (ULONGLONG)g_Bc250DisplayState.CurrentMode.Height +
         BC250_NATIVE_VBLANK;
-    refreshNumerator =
-        g_Bc250DisplayState.CurrentMode.RefreshRateNumerator;
-    refreshDenominator =
-        g_Bc250DisplayState.CurrentMode.RefreshRateDenominator;
-    pixelRate = horizontalTotal * verticalTotal * refreshNumerator;
-    if (refreshDenominator != 0u) {
-        pixelRate = (pixelRate + (refreshDenominator / 2u)) /
-            refreshDenominator;
-    }
+    refreshNumerator = BC250_NATIVE_REFRESH_NUM;
+    refreshDenominator = BC250_NATIVE_REFRESH_DEN;
+    pixelRate = BC250_NATIVE_PIXEL_RATE;
 
     SignalInfo->VideoStandard = D3DKMDT_VSS_OTHER;
     SignalInfo->TotalSize.cx = (UINT)horizontalTotal;
@@ -138,16 +161,19 @@ static VOID Bc250FillNativeSignalInfo(
         g_Bc250DisplayState.CurrentMode.Width;
     SignalInfo->ActiveSize.cy =
         g_Bc250DisplayState.CurrentMode.Height;
-    SignalInfo->VSyncFreq.Numerator =
-        g_Bc250DisplayState.CurrentMode.RefreshRateNumerator;
-    SignalInfo->VSyncFreq.Denominator =
-        g_Bc250DisplayState.CurrentMode.RefreshRateDenominator;
-    SignalInfo->HSyncFreq.Numerator =
-        (UINT)(verticalTotal * refreshNumerator);
-    SignalInfo->HSyncFreq.Denominator =
-        g_Bc250DisplayState.CurrentMode.RefreshRateDenominator;
+    SignalInfo->VSyncFreq.Numerator = (UINT)refreshNumerator;
+    SignalInfo->VSyncFreq.Denominator = (UINT)refreshDenominator;
+    SignalInfo->HSyncFreq.Numerator = BC250_NATIVE_HSYNC_NUM;
+    SignalInfo->HSyncFreq.Denominator = BC250_NATIVE_HSYNC_DEN;
     SignalInfo->PixelRate = pixelRate;
     SignalInfo->ScanLineOrdering = D3DDDI_VSSLO_PROGRESSIVE;
+
+    Bc250DisplayLog("[SignalInfo] Active=%ux%u, Total=%ux%u, VSync=%u/%u Hz, HSync=%u/%u Hz, PixelRate=%I64u\n",
+        SignalInfo->ActiveSize.cx, SignalInfo->ActiveSize.cy,
+        SignalInfo->TotalSize.cx, SignalInfo->TotalSize.cy,
+        SignalInfo->VSyncFreq.Numerator, SignalInfo->VSyncFreq.Denominator,
+        SignalInfo->HSyncFreq.Numerator, SignalInfo->HSyncFreq.Denominator,
+        SignalInfo->PixelRate);
 }
 
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
@@ -334,7 +360,7 @@ static void Bc250BuildEdid(void)
 
     hTotal = hActive + BC250_NATIVE_HBLANK;
     vTotal = vActive + BC250_NATIVE_VBLANK;
-    clock10kHz = (ULONG)(((ULONGLONG)hTotal * vTotal * 60ULL + 5000ULL) / 10000ULL);
+    clock10kHz = (ULONG)((BC250_NATIVE_PIXEL_RATE + 5000ULL) / 10000ULL);
     if (clock10kHz > 0xFFFF) clock10kHz = 0xFFFF;
 
     hSizeMm = (hActive * 254u) / 960u;
@@ -411,6 +437,13 @@ static void Bc250BuildEdid(void)
     for (i = 0; i < 127; i++) sum += e[i];
     e[127] = (UCHAR)((0x100u - (sum & 0xFFu)) & 0xFFu);
 
+    Bc250DisplayLog("[EDID] Synthesized %u bytes, Checksum=0x%02X (sum=0x%X)\n",
+        128, e[127], sum);
+    Bc250DisplayLog("[EDID 00-15] %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n",
+        e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10], e[11], e[12], e[13], e[14], e[15]);
+    Bc250DisplayLog("[EDID DTD1] PixelClock10kHz=%u, HActive=%u, HBlank=%u, VActive=%u, VBlank=%u\n",
+        clock10kHz, hActive, BC250_NATIVE_HBLANK, vActive, BC250_NATIVE_VBLANK);
+
     g_Bc250DisplayState.EdidValid = TRUE;
 }
 
@@ -438,8 +471,8 @@ NTSTATUS Bc250DisplayInit(
     g_Bc250DisplayState.CurrentMode.Height = PostDisplayInfo->Height;
     g_Bc250DisplayState.CurrentMode.Pitch = PostDisplayInfo->Pitch;
     g_Bc250DisplayState.CurrentMode.Format = D3DDDIFMT_A8R8G8B8;
-    g_Bc250DisplayState.CurrentMode.RefreshRateNumerator = 60000;
-    g_Bc250DisplayState.CurrentMode.RefreshRateDenominator = 1000;
+    g_Bc250DisplayState.CurrentMode.RefreshRateNumerator = BC250_NATIVE_REFRESH_NUM;
+    g_Bc250DisplayState.CurrentMode.RefreshRateDenominator = BC250_NATIVE_REFRESH_DEN;
     g_Bc250DisplayState.ModeCount = 1;
     g_Bc250DisplayState.SourceVisible = 1;
 
@@ -690,7 +723,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiQueryDeviceDescriptor(
     Bc250DisplayLog("[QueryDeviceDescriptor] ChildUid=%u, Offset=%u, Len=%u\n",
         ChildUid, DeviceDescriptor->DescriptorOffset, DeviceDescriptor->DescriptorLength);
 
-    if (ChildUid != 1 || !g_Bc250DisplayState.EdidValid) {
+    if (ChildUid != 1 || !Bc250DisplayGetSyntheticEdidEnabled() || !g_Bc250DisplayState.EdidValid) {
+        Bc250DisplayLog("[QueryDeviceDescriptor] ChildUid=%u, SyntheticEdid=%d, EdidValid=%d -> STATUS_MONITOR_NO_MORE_DESCRIPTOR_DATA (forcing DxgkDdiRecommendMonitorModes)\n",
+            ChildUid, (int)Bc250DisplayGetSyntheticEdidEnabled(), (int)g_Bc250DisplayState.EdidValid);
         return STATUS_MONITOR_NO_MORE_DESCRIPTOR_DATA;
     }
 
@@ -1033,10 +1068,54 @@ static NTSTATUS Bc250ValidateVidPn(
         goto Exit;
     }
     if (pathCount == 0) {
-        *HasPath = FALSE;
-        *Supported = TRUE;
-        status = STATUS_SUCCESS;
-        Bc250DisplayLog("[VidPn] pathCount=0 -> Supported=TRUE (empty VidPN)\n");
+        /*
+         * CORRECAO DE CRASH (3.82): HasPath e' _Out_opt_ e Bc250DxgkDdiIsSupportedVidPn
+         * passa NULL. A desreferencia incondicional aqui era BSOD garantido na
+         * primeira vez que o dxgkrnl perguntasse IsSupportedVidPn sobre um VidPN
+         * vazio. As corridas 12:46/13:32/14:25 escaparam por sorte: todo
+         * IsSupportedVidPn chegou com caminho.
+         */
+        if (HasPath != NULL) *HasPath = FALSE;
+        *Supported = FALSE;
+        status = STATUS_GRAPHICS_VIDPN_MODALITY_NOT_SUPPORTED;
+        Bc250DisplayLog("[VidPn] pathCount=0 -> Supported=FALSE, HasPath=FALSE (empty topology, RequirePinned=%d)\n",
+            (int)RequirePinnedModes);
+        /*
+         * Instrumentacao 3.82 (somente leitura): distingue "o DMM montou um
+         * VidPN real e podou o caminho" de "o handle e' um VidPN recem-criado e
+         * vazio". Se os mode sets existirem, a topologia foi esvaziada de
+         * proposito; se nao existirem, o VidPN nunca foi populado.
+         */
+        {
+            CONST DXGK_VIDPNSOURCEMODESET_INTERFACE *probeSourceIface = NULL;
+            CONST DXGK_VIDPNTARGETMODESET_INTERFACE *probeTargetIface = NULL;
+            D3DKMDT_HVIDPNSOURCEMODESET probeSourceSet = 0;
+            D3DKMDT_HVIDPNTARGETMODESET probeTargetSet = 0;
+            NTSTATUS probeSourceStatus;
+            NTSTATUS probeTargetStatus;
+            SIZE_T probeSourceModes = 0;
+            SIZE_T probeTargetModes = 0;
+
+            probeSourceStatus = vidPnInterface->pfnAcquireSourceModeSet(
+                VidPn, 0, &probeSourceSet, &probeSourceIface);
+            if (NT_SUCCESS(probeSourceStatus) && probeSourceIface != NULL) {
+                (void)probeSourceIface->pfnGetNumModes(
+                    probeSourceSet, &probeSourceModes);
+                (void)vidPnInterface->pfnReleaseSourceModeSet(
+                    VidPn, probeSourceSet);
+            }
+            probeTargetStatus = vidPnInterface->pfnAcquireTargetModeSet(
+                VidPn, 1, &probeTargetSet, &probeTargetIface);
+            if (NT_SUCCESS(probeTargetStatus) && probeTargetIface != NULL) {
+                (void)probeTargetIface->pfnGetNumModes(
+                    probeTargetSet, &probeTargetModes);
+                (void)vidPnInterface->pfnReleaseTargetModeSet(
+                    VidPn, probeTargetSet);
+            }
+            Bc250DisplayLog("[VidPn][EmptyProbe] SourceModeSet: status=0x%08X, modes=%Iu | TargetModeSet: status=0x%08X, modes=%Iu\n",
+                probeSourceStatus, probeSourceModes,
+                probeTargetStatus, probeTargetModes);
+        }
         goto Exit;
     }
     if (pathCount != 1) {
@@ -1678,19 +1757,16 @@ NTSTATUS APIENTRY Bc250DxgkDdiCommitVidPn(
         return status;
     }
     if (!hasPath) {
-        /*
-         * WDDM 1.2+ spec: quando o SO chama DxgkDdiCommitVidPn com VidPN vazio
-         * (sem caminhos) e Flags.PathPoweredOff == 0, o driver DEVE tomar nenhuma acao
-         * (take no action), preservando o scanout GOP ativo para transicoes
-         * seamless de exibicao sem tela preta.
-         */
-        Bc250DisplayLog("=== CommitVidPn: empty VidPN with PathPoweredOff=0 -> taking no action (preserving display) ===\n");
-        InterlockedExchange(&g_Bc250DisplayState.VidPnCommitted, 1);
-        InterlockedExchange(&g_Bc250DisplayState.SourceVisible, 1);
-        InterlockedExchange(&g_Bc250DisplayState.ForceFullPresent, 1);
+        Bc250DisplayLog("=== CommitVidPn REJECTED (empty VidPN): AffectedSource=%u, Flags=0x%08X (PowerOff=%u, PowerTrans=%u), hAlloc=%p, Reason=NO_PATHS_IN_TOPOLOGY -> FAIL-CLOSED ===\n",
+            pCommitVidPn->AffectedVidPnSourceId,
+            *(ULONG *)&pCommitVidPn->Flags,
+            pCommitVidPn->Flags.PathPoweredOff,
+            pCommitVidPn->Flags.PathPowerTransition,
+            pCommitVidPn->hPrimaryAllocation);
         Bc250RecordDisplayProbePassive(
-            BC250_PROBE_DMM_COMMIT_STATUS, (ULONG)STATUS_SUCCESS);
-        return STATUS_SUCCESS;
+            BC250_PROBE_DMM_COMMIT_STATUS,
+            (ULONG)STATUS_GRAPHICS_VIDPN_MODALITY_NOT_SUPPORTED);
+        return STATUS_GRAPHICS_VIDPN_MODALITY_NOT_SUPPORTED;
     }
     if (!supported) {
         Bc250RecordDisplayProbePassive(
@@ -1736,13 +1812,19 @@ NTSTATUS APIENTRY Bc250DxgkDdiRecommendMonitorModes(
     if (pRecommendMonitorModes == NULL ||
         pRecommendMonitorModes->pMonitorSourceModeSetInterface == NULL ||
         pRecommendMonitorModes->hMonitorSourceModeSet == 0) {
+        Bc250DisplayLog("[RecommendMonitorModes] INVALID_PARAMETER\n");
         return STATUS_INVALID_PARAMETER;
     }
+
+    Bc250DisplayLog("=== DxgkDdiRecommendMonitorModes: TargetId=%u, hSet=%p ===\n",
+        pRecommendMonitorModes->VideoPresentTargetId,
+        pRecommendMonitorModes->hMonitorSourceModeSet);
 
     status = pRecommendMonitorModes->pMonitorSourceModeSetInterface->pfnCreateNewModeInfo(
         pRecommendMonitorModes->hMonitorSourceModeSet,
         &pMonitorSourceMode);
     if (!NT_SUCCESS(status) || pMonitorSourceMode == NULL) {
+        Bc250DisplayLog("[RecommendMonitorModes] CreateNewModeInfo failed 0x%08X\n", status);
         return status;
     }
 
@@ -1754,10 +1836,18 @@ NTSTATUS APIENTRY Bc250DxgkDdiRecommendMonitorModes(
         pRecommendMonitorModes->hMonitorSourceModeSet,
         pMonitorSourceMode);
     if (!NT_SUCCESS(status)) {
+        Bc250DisplayLog("[RecommendMonitorModes] AddMode failed 0x%08X\n", status);
         (void)pRecommendMonitorModes->pMonitorSourceModeSetInterface->pfnReleaseModeInfo(
             pRecommendMonitorModes->hMonitorSourceModeSet, pMonitorSourceMode);
         return status;
     }
+
+    Bc250DisplayLog("=== DxgkDdiRecommendMonitorModes SUCCESS: Added %ux%u @ %u/%u Hz to Target %u ===\n",
+        g_Bc250DisplayState.CurrentMode.Width,
+        g_Bc250DisplayState.CurrentMode.Height,
+        BC250_NATIVE_REFRESH_NUM,
+        BC250_NATIVE_REFRESH_DEN,
+        pRecommendMonitorModes->VideoPresentTargetId);
 
     return STATUS_SUCCESS;
 }
@@ -1842,18 +1932,13 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
         Bc250DisplayLog("[Present #%d] hContext=%p, DmaSize=%u, SubRectCnt=%u\n",
             count, hContext, pPresent->DmaSize, pPresent->SubRectCnt);
     }
-    if (g_Bc250SdmaPresent.HardwareEnabled) {
-        ULONG bytesToCopy = g_Bc250DisplayState.CurrentMode.Pitch * g_Bc250DisplayState.CurrentMode.Height;
-        if (bytesToCopy > BC250_SDMA_COPY_MAX_BYTES) {
-            bytesToCopy = BC250_SDMA_COPY_MAX_BYTES;
-        }
-        (void)Bc250SdmaPresentBlt(
-            g_Bc250SdmaPresent.ScanoutGpuAddress,
-            g_Bc250SdmaPresent.ScanoutGpuAddress,
-            bytesToCopy);
-    }
-    Bc250RecordVsyncProofAfterSuccessfulPresent();
-    return STATUS_SUCCESS;
+    /*
+     * Lei 4: Proibido retornar STATUS_SUCCESS ou executar blt no-op (origem==destino)
+     * sem mover novos pixels da superficie de render real.
+     * Enquanto o pipeline de montagem de DMA buffer e resolucao da alocacao de origem
+     * nao estiver ativo, retornamos STATUS_NOT_SUPPORTED honesto.
+     */
+    return STATUS_NOT_SUPPORTED;
 }
 
 NTSTATUS APIENTRY Bc250DxgkDdiControlInterrupt(

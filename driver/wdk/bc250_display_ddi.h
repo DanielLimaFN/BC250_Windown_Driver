@@ -63,6 +63,9 @@ NTSTATUS Bc250DisplayInit(
 
 void Bc250DisplaySetMmioBase(_In_ PHYSICAL_ADDRESS MmioPhysical);
 
+void Bc250DisplaySetSyntheticEdidEnabled(BOOLEAN Enabled);
+BOOLEAN Bc250DisplayGetSyntheticEdidEnabled(void);
+
 void Bc250DisplayTeardown(void);
 
 DXGKDDI_QUERY_CHILD_RELATIONS           Bc250DxgkDdiQueryChildRelations;

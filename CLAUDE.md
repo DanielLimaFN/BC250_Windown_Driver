@@ -36,9 +36,9 @@ GCVM & Traducao de Memoria       ███████████████�
 RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
 Telemetria & Observabilidade     █████████████████░░░  85%   Schema 134; anel de DDI e bitmap de QAI
 Compute & Async Queues (MEC/MQD) ██████████████████░░  90%   P1 17/17 e P2 16/16 provados; fila persistente nao consome
-Miniport WDDM Display+Render     ██████████████████░░  90%   P5 E TRIPÉ FECHADOS NO SILÍCIO (Item 63 OK); Código 0
+Miniport WDDM Display+Render     ████████████████░░░░  80%   Código 0 provado (97); SDMA autoteste OK (63); WDDM Present pendente
 =============================================================================================
-Veredito Global: P5 E TRIPÉ DE DISPLAY FECHADOS NO SILÍCIO (Itens 61b, 62, 63, 81 e 97 Fechados)
+Veredito Global: Display GOP e KMDOD provados (61b, 62); WDDM Present e VidPN P6 em andamento (Item 97 fechado)
 =============================================================================================
 ```
 

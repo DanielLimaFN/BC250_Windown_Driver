@@ -358,7 +358,7 @@ sem tela.
 | **81** | **Takeover do GOP sem escrever no DCN** | ✅ | **FECHADO NO SILÍCIO (03/09):** Código 0 sustentado por mais de 500 s com imagem viva contínua, sem tocar em registradores de escrita de DCN (`bc250_display_log.txt`). |
 | — | **VidPn de modo único herdado** | ✅ | **FECHADO NO SILÍCIO (03/09):** `IsSupportedVidPn` aprovado para 2560x1080@60Hz e `CommitVidPn` concluído com sucesso mantendo o scanout GOP. |
 | 42 | Scanout / primary allocation em **VRAM real** | ✅ | **FECHADO NO SILÍCIO (03/09):** Scanout decodificado em VRAM física real (`0xC0000000` / `0xF400000000ull`) herdado do UEFI GOP. |
-| — | **`DxgkDdiPresent` modelo blt por SDMA (Tripé)** | ✅ | **FECHADO NO SILÍCIO (03/09):** Tripé provado no silício: `WPTR=68`, `RPTR=52`, fence física `0x00001001` gravada pela GPU em VRAM e dados 4/4 conferidos byte a byte em 1 poll (`11:20:51`). |
+| — | **`DxgkDdiPresent` modelo blt por SDMA** | 🧪 | Autoteste de SDMA provado no silício (Item 63), mas `DxgkDdiPresent` originado pelo `dxgkrnl` **NÃO VALIDADO EM HARDWARE**. Exige `[Present #1]` com cópia física para o scanout. |
 | — | Caps coerentes sem flip de hardware | ✅ | `FlipCaps` zerado e modelo blt aceito pelo `dxgkrnl` sem recusa. |
 | — | **VSync do OTG ligado ao `dxgkrnl`** | ✅ | **FECHADO NO SILÍCIO (03/09):** `DxgkDdiControlInterrupt` (Tipo 5) conectado ao frame counter de hardware do OTG (`BAR5 + 0x14030`). |
 | — | Poison no scanout antes do 1º present | ✅ | Poison `0x43DAFFFE` substituído pela fence real `0x00001001` gravada pelo SDMA0 na GPU. |

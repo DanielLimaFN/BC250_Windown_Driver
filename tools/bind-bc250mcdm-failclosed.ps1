@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [switch]$Execute,
     [switch]$IAcceptBlackScreenRisk,
@@ -27,6 +27,18 @@ if ($LASTEXITCODE -ne 0) { throw 'Binding bloqueado: gate de stage falhou.' }
 $markerLines = @(Get-Content -LiteralPath $markerPath)
 if ($markerLines.Count -ne 1 -or $markerLines[0] -notmatch '^oem\d+\.inf$') {
     throw 'Binding bloqueado: marcador OEM invalido.'
+}
+$bootFusePath = 'C:\BC250_BOOT_FUSE.dat'
+if (Test-Path -LiteralPath $bootFusePath) {
+    $fuseRaw = [System.IO.File]::ReadAllBytes($bootFusePath)
+    if ($fuseRaw.Length -eq 40) {
+        $fuseMagic = [BitConverter]::ToUInt32($fuseRaw, 0)
+        $fuseState = [BitConverter]::ToUInt32($fuseRaw, 8)
+        if ($fuseMagic -eq 0x45535546 -and $fuseState -ne 0) {
+            $name = if ($fuseState -eq 1) { 'ARMED (1)' } elseif ($fuseState -eq 2) { 'TRIPPED (2)' } else { "$fuseState" }
+            throw "Binding bloqueado: Fusivel persistente em $name. O ensaio exige CLEAN (0). Use: powershell -ExecutionPolicy Bypass -File tools\inspect-boot-fuse.ps1 -Reset"
+        }
+    }
 }
 $publishedName = $markerLines[0].ToLowerInvariant()
 $devices = @(Get-CimInstance Win32_PnPEntity | Where-Object {
@@ -137,6 +149,10 @@ SE A TELA ESTIVER PRETA:
 '@ | Set-Content -LiteralPath (Join-Path $evidenceDir 'RECOVERY.txt') -Encoding ASCII
 
 Remove-Item -LiteralPath 'C:\BC250_DISPLAY_LOG.txt' -ErrorAction SilentlyContinue
+# Log da UMD (bc250umd.dll roda dentro de dwm.exe/apps D3D; C:\ nao e' gravavel
+# pela conta virtual do DWM, por isso o tracer usa C:\Windows\Temp).
+Remove-Item -LiteralPath 'C:\Windows\Temp\BC250_UMD_LOG.txt' -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath 'C:\BC250_UMD_LOG.txt' -ErrorAction SilentlyContinue
 
 $watchdogArguments =
     "-NoProfile -ExecutionPolicy Bypass -File `"$watchdog`" " +

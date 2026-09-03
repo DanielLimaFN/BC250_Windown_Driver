@@ -2068,6 +2068,33 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
     uint32_t directoryIndex;
     NTSTATUS result = STATUS_INVALID_HANDLE;
 
+    /*
+     * Instrumentacao 3.82 (somente leitura, zero mudanca de comportamento).
+     * Nas corridas 12:46, 13:32 e 14:25 esta DDI NAO apareceu uma unica vez no
+     * log, e todo CommitVidPn chegou com hPrimaryAllocation=NULL. Precisamos
+     * saber se o dxgkrnl chega a pedir alocacao e nos a recusamos, ou se ele
+     * nunca pede. O log entra ANTES de qualquer gate para cobrir os dois casos.
+     */
+    if (CreateAllocation != NULL) {
+        UINT logIndex;
+        Bc250DisplayLog("[CreateAllocation] ENTER: NumAllocations=%u, Flags=0x%08X (Resource=%u), hResource=%p\n",
+            CreateAllocation->NumAllocations,
+            CreateAllocation->Flags.Value,
+            CreateAllocation->Flags.Resource,
+            CreateAllocation->hResource);
+        for (logIndex = 0u;
+             logIndex < CreateAllocation->NumAllocations && logIndex < 8u;
+             ++logIndex) {
+            CONST DXGK_ALLOCATIONINFO *logInfo =
+                &CreateAllocation->pAllocationInfo[logIndex];
+            Bc250DisplayLog("[CreateAllocation]   [%u] Size=%Iu, Alignment=%u, Flags=0x%08X, PrivDataSize=%u\n",
+                logIndex, logInfo->Size, logInfo->Alignment,
+                logInfo->Flags.Value, logInfo->PrivateDriverDataSize);
+        }
+    } else {
+        Bc250DisplayLog("[CreateAllocation] ENTER: CreateAllocation=NULL\n");
+    }
+
     KeEnterCriticalRegion();
     ExAcquirePushLockExclusive(&g_Bc250AdapterDirectoryLock);
     for (directoryIndex = 0u;
@@ -3027,7 +3054,10 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
             BC250_V5_START_RETURN_DISPLAY_OK);
         *NumberOfVideoPresentSources = 1;
         *NumberOfChildren = 1;
-        Bc250DisplayLog("[StartDevice] Sources=1, Children=1, Profile=%d\n", (int)Bc250ActiveGetAdapterProfile());
+        ULONG enableSyntheticEdid = Bc250ActiveReadTunable(L"EnableSyntheticEdid", 0u);
+        Bc250DisplaySetSyntheticEdidEnabled(enableSyntheticEdid != 0u);
+        Bc250DisplayLog("[StartDevice] Sources=1, Children=1, Profile=%d, SyntheticEdid=%u\n",
+            (int)Bc250ActiveGetAdapterProfile(), enableSyntheticEdid);
         if (Bc250ActiveGetAdapterProfile() == BC250_ADAPTER_PROFILE_DISPLAY_RENDER) {
             context->ContextAbi.DmaBufferSize = 0x10000u;
             context->ContextAbi.DmaBufferSegmentSet = (1u << (2u - 1u));

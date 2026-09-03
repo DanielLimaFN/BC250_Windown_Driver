@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$EvidenceDir,
     [Parameter(Mandatory = $true)][string]$InstanceId,
@@ -39,6 +39,19 @@ try {
     $displayLog = 'C:\BC250_DISPLAY_LOG.txt'
     if (Test-Path -LiteralPath $displayLog) {
         Copy-Item -LiteralPath $displayLog -Destination (Join-Path $EvidenceDir 'bc250_display_log.txt') -Force
+    }
+
+    $umdLogCollected = $false
+    foreach ($umdLog in @('C:\Windows\Temp\BC250_UMD_LOG.txt', 'C:\BC250_UMD_LOG.txt')) {
+        if (Test-Path -LiteralPath $umdLog) {
+            Copy-Item -LiteralPath $umdLog -Destination (Join-Path $EvidenceDir 'bc250_umd_log.txt') -Force
+            $umdLogCollected = $true
+            break
+        }
+    }
+    if (-not $umdLogCollected) {
+        'bc250umd.dll nunca escreveu: a DLL nao foi carregada por nenhum processo.' |
+            Set-Content -LiteralPath (Join-Path $EvidenceDir 'bc250_umd_log.txt') -Encoding UTF8
     }
 
     if (Test-Path -LiteralPath $setupApiLog) {

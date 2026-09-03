@@ -896,10 +896,40 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         caps->MaxPointerWidth = 0u;
         caps->MaxPointerHeight = 0u;
 
+        /*
+         * Instrumentacao 3.82: ate a corrida 14:25 o log expunha 4 campos de
+         * uma estrutura de 576 bytes. Sem o retrato completo nao da para
+         * auditar por que o DMM recusa ativar o caminho sob RenderNode=1.
+         * Este bloco e' somente leitura — nao altera nenhum cap.
+         */
         Bc250DisplayLog("[McdmQAI] DRIVERCAPS: ComputeOnly=%u, AlignShift=%u, TexWShift=%u, TexHShift=%u, OutSize=%u\n",
             caps->MiscCaps.ComputeOnly, caps->PresentationCaps.AlignmentShift,
             caps->PresentationCaps.MaxTextureWidthShift, caps->PresentationCaps.MaxTextureHeightShift,
             pQueryAdapterInfo->OutputDataSize);
+        Bc250DisplayLog("[DriverCaps] WDDMVersion=%u, MaxAllocListSlotId=%u, PerEngineTDR=%u, Nodes=%u, HighestAddr=0x%I64X\n",
+            (ULONG)caps->WDDMVersion,
+            caps->MaxAllocationListSlotId,
+            (ULONG)caps->SupportPerEngineTDR,
+            caps->GpuEngineTopology.NbAsymetricProcessingNodes,
+            caps->HighestAcceptableAddress.QuadPart);
+        Bc250DisplayLog("[DriverCaps] PresentationCaps=0x%08X (NoScreenToScreenBlt=%u, NoOverlapScreenBlt=%u, CddDwmInterop=%u, SwDeviceBitmaps=%u)\n",
+            caps->PresentationCaps.Value,
+            caps->PresentationCaps.NoScreenToScreenBlt,
+            caps->PresentationCaps.NoOverlapScreenBlt,
+            caps->PresentationCaps.DriverSupportsCddDwmInterop,
+            caps->PresentationCaps.SupportSoftwareDeviceBitmaps);
+        Bc250DisplayLog("[DriverCaps] FlipCaps=0x%08X, MaxQueuedFlipOnVSync=%u, MiscCaps=0x%08X, PointerCaps=0x%08X\n",
+            caps->FlipCaps.Value,
+            caps->MaxQueuedFlipOnVSync,
+            caps->MiscCaps.Value,
+            caps->PointerCaps.Value);
+        Bc250DisplayLog("[DriverCaps] Sched(MultiEngine=%u, Preempt=%u, LowIrql=%u) Mem(VA=%u, GpuMmu=%u, Paravirt=%u)\n",
+            caps->SchedulingCaps.MultiEngineAware,
+            caps->SchedulingCaps.PreemptionAware,
+            caps->SchedulingCaps.LowIrqlPreemptCommand,
+            caps->MemoryManagementCaps.VirtualAddressingSupported,
+            caps->MemoryManagementCaps.GpuMmuSupported,
+            caps->MemoryManagementCaps.ParavirtualizationSupported);
         return STATUS_SUCCESS;
     }
 
