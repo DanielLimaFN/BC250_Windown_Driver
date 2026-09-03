@@ -57,7 +57,7 @@ Mode-set, hotplug, flip de hardware, VRR e HDR são **P9 — opcional**.
 
 # TABELA 1 — JÁ FEITO · validado no silício
 
-**45 itens** com prova física arquivada. Estes são os ativos reais do projeto.
+**47 itens** com prova física arquivada. Estes são os ativos reais do projeto.
 
 | # | Bloco | Item | Prova física que sustenta o ✅ |
 |---:|---|---|---|
@@ -94,8 +94,8 @@ Mode-set, hotplug, flip de hardware, VRR e HDR são **P9 — opcional**.
 | 58 | KMDOD | Framebuffer do GOP | Endereço, pitch e modo herdados e lidos |
 | 59 | KMDOD | VidPN KMDOD | `IsSupportedVidPn` / `CommitVidPn` aprovados |
 | 60 | KMDOD | `PresentDisplayOnly` | Entrada, status e cópia funcionais |
-| 61 | KMDOD | VSync KMDOD | Contadores e notificação observados — **por timer, não por DCN** |
-| 62 | KMDOD | **Imagem após binding** | Confirmada visualmente várias vezes — base do caminho sem DCN |
+| 61 | KMDOD | VSync KMDOD | Contadores e notificação observados (Tipo 5 / Target 1) — **por timer, não por DCN** |
+| 62 | KMDOD | **Imagem após binding (Display v1)** | Confirmada visualmente com watchdog desarmado interativamente (`DISPLAY_OK`) em 03/09 (`evidence/2026-09-03_09-39-12-...`); modo 2560x1080@60Hz pinado, `PresentDisplayOnly` copiando pixels ao scanout GOP em Código 0 |
 | 93 | WDDM | A/B contrato 2.0 vs 2.7 | Ambos consumidos; **mesma** falha no estágio 3 |
 | 94 | WDDM | Trace de `QueryInterface` | 7 dos 8 GUIDs identificados no WDK; todos opcionais — **não** são a causa |
 | 100 | WDDM | Perfil `RenderOnlyLab` | Implementado e executado no silício (3.79/3.80); perfil aposentado |
@@ -106,9 +106,11 @@ Mode-set, hotplug, flip de hardware, VRR e HDR são **P9 — opcional**.
 | 171 | Testes | Validadores P1/P2 | Read-only, evidência JSON arquivada |
 | 172 | Testes | Safety audit | Gate no build, reprova em violação |
 | 173 | Testes | Package audit | INF / CAT / SYS / manifesto conferidos |
+| 174 | Segurança | **Fusível anti-boot-loop persistente** | Provado em silício em 03/09: desarma e bloqueia StartDevice em `State=2` após BSOD/falha, protegendo contra boot loops; autoriza em `State=0` (`evidence/2026-09-03_09-25-43-...` e `09-39-12-...`) |
+| 175 | Ferramentas | **Watchdog com auto-reboot** | Provado em silício em 03/09: timeout expira, executa rollback e agenda reboot limpo automático, devolvendo o BasicDisplay em Código 0 sem intervenção manual |
 
 **Resumo da Tabela 1:** compute direto no silício e display KMDOD/GOP com ownership
-físico estão **VALIDADOS EM HARDWARE**. Nada de WDDM render está.
+físico estão **VALIDADOS EM HARDWARE** (Display v1 fechado). WDDM render aguarda P5/UMD.
 
 ---
 
@@ -176,8 +178,9 @@ sem tela.
 
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
-| — | **Fusível anti-boot-loop persistente** | 🧪 | Implementado em `bc250_boot_fuse.c/.h`, testado em 8 cenários offline (0 falhas) e linkado no SYS. Fecha quando o driver rodar no boot da placa |
-| 12b | Guarda de engine suja corrigida | 🧪 | Guard-rail 2 em `bind-bc250mcdm-lab.ps1` lê `C:\BC250_BOOT_FUSE.dat` sobrevivendo ao rollback; testado via `inspect-boot-fuse.ps1` |
+| — | **Fusível anti-boot-loop persistente** | ✅ | Validado no silício em 03/09: bloqueou `StartDevice` em `State=2` após crash protegendo o boot; liberou após reset (`State=0`) |
+| 12b | Guarda de engine suja corrigida | ✅ | Validado no silício em 03/09: leitura direta de `C:\BC250_BOOT_FUSE.dat` sobrevive a rollback e reboot |
+| — | **Watchdog com auto-reboot** | ✅ | Validado no silício em 03/09: timeout expira e reinicia automaticamente devolvendo BasicDisplay em Código 0 sem Code 43 |
 | — | **Limpeza offline pelo WinRE** (`tools/BC250_WINRE_CLEAN.cmd`) | 🧪 | Um arquivo `.cmd` no pendrive; detecta o volume e o `oemNN.inf` sozinho. Lógica validada em `/list` (achou os 7 resíduos, recusou `bcmfn2.sys`). **Fecha quando for usado numa sessão real de WinRE e devolver o BasicDisplay** |
 | — | Canal de observação sem tela (RDP/SSH) | ⬜ | Sessão remota funcionando com a tela preta e o SO vivo, permitindo retrato e rollback interativos |
 | **177** | **Orçamento de corridas formalizado** | ⬜ | Teto, critério de abandono e recovery escritos por etapa, **antes** de armar cada uma |
