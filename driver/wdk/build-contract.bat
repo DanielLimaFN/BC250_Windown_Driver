@@ -316,6 +316,13 @@ if errorlevel 1 exit /b 1
 echo [cc] bc250_display_ddi.c (Dxgk registration)
 cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 ^
   /Fo"%ODIR%\bc250_display_ddi_driver.obj" "%SRCDIR%bc250_display_ddi.c"
+echo [cc] bc250_boot_fuse.c (offline)
+cl %CFLAGS% /Fo"%ODIR%\bc250_boot_fuse.obj" "%SRCDIR%bc250_boot_fuse.c"
+if errorlevel 1 exit /b 1
+
+echo [cc] bc250_boot_fuse.c (Dxgk registration)
+cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 ^
+  /Fo"%ODIR%\bc250_boot_fuse_driver.obj" "%SRCDIR%bc250_boot_fuse.c"
 if errorlevel 1 exit /b 1
 
 echo [cc] bc250_probe_telemetry.c ^(offline^)
@@ -1565,6 +1572,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_persistent_ring_contract.obj" ^
   "%ODIR%\bc250_submission_engine.obj" ^
   "%ODIR%\bc250_active_miniport.obj" ^
+  "%ODIR%\bc250_boot_fuse.obj" ^
   "%ODIR%\active_miniport_test.obj" kernel32.lib
 if errorlevel 1 exit /b 1
 
@@ -1588,6 +1596,16 @@ if errorlevel 1 exit /b 1
 "%ODIR%\display_vidpn_test.exe"
 if errorlevel 1 (
   echo TESTE FALHOU ^(display_vidpn_test^)
+  exit /b 1
+)
+
+echo [cc] bc250_boot_fuse_test.c
+cl /nologo /W4 /WX /Fo"%ODIR%\\" /Fe"%ODIR%\bc250_boot_fuse_test.exe" "%ROOTDIR%\driver\tests\bc250_boot_fuse_test.c" "%SRCDIR%bc250_boot_fuse.c"
+if errorlevel 1 exit /b 1
+
+"%ODIR%\bc250_boot_fuse_test.exe"
+if errorlevel 1 (
+  echo TESTE FALHOU ^(bc250_boot_fuse_test^)
   exit /b 1
 )
 
@@ -1658,6 +1676,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_persistent_ring_contract.obj" ^
   "%ODIR%\bc250_submission_engine_driver.obj" ^
   "%ODIR%\bc250_active_miniport_driver.obj" ^
+  "%ODIR%\bc250_boot_fuse_driver.obj" ^
   "%WDK%\Lib\%WDKVER%\km\x64\ntoskrnl.lib" ^
   "%WDK%\Lib\%WDKVER%\km\x64\hal.lib" ^
   "%WDK%\Lib\%WDKVER%\km\x64\BufferOverflowK.lib" ^

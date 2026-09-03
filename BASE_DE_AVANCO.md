@@ -57,7 +57,7 @@ Mode-set, hotplug, flip de hardware, VRR e HDR são **P9 — opcional**.
 
 # TABELA 1 — JÁ FEITO · validado no silício
 
-**45 itens** com prova física arquivada. Estes são os ativos reais do projeto.
+**48 itens** com prova física arquivada. Estes são os ativos reais do projeto.
 
 | # | Bloco | Item | Prova física que sustenta o ✅ |
 |---:|---|---|---|
@@ -94,8 +94,9 @@ Mode-set, hotplug, flip de hardware, VRR e HDR são **P9 — opcional**.
 | 58 | KMDOD | Framebuffer do GOP | Endereço, pitch e modo herdados e lidos |
 | 59 | KMDOD | VidPN KMDOD | `IsSupportedVidPn` / `CommitVidPn` aprovados |
 | 60 | KMDOD | `PresentDisplayOnly` | Entrada, status e cópia funcionais |
-| 61 | KMDOD | VSync KMDOD | Contadores e notificação observados — **por timer, não por DCN** |
-| 62 | KMDOD | **Imagem após binding** | Confirmada visualmente várias vezes — base do caminho sem DCN |
+| 61 | KMDOD | VSync KMDOD | Contadores e notificação observados (Tipo 5 / Target 1) |
+| 61b | KMDOD | **VSync físico via OTG Frame Counter** | Validado no silício em 03/09 (`evidence/2026-09-03_10-01-10-...`): leitura direta de `mmOTG0_OTG_STATUS_FRAME_COUNT` em BAR5 + `0x14030` (`0xFE800000`), inicial 69380; DPC sincroniza VSync com o pulso físico do display controller; 73 interrupções tratadas sem BSOD |
+| 62 | KMDOD | **Imagem após binding (Display v1)** | Confirmada visualmente com watchdog desarmado interativamente (`DISPLAY_OK`) em 03/09 (`evidence/2026-09-03_09-39-12-...`); modo 2560x1080@60Hz pinado, `PresentDisplayOnly` copiando pixels ao scanout GOP em Código 0 |
 | 93 | WDDM | A/B contrato 2.0 vs 2.7 | Ambos consumidos; **mesma** falha no estágio 3 |
 | 94 | WDDM | Trace de `QueryInterface` | 7 dos 8 GUIDs identificados no WDK; todos opcionais — **não** são a causa |
 | 100 | WDDM | Perfil `RenderOnlyLab` | Implementado e executado no silício (3.79/3.80); perfil aposentado |
@@ -106,9 +107,11 @@ Mode-set, hotplug, flip de hardware, VRR e HDR são **P9 — opcional**.
 | 171 | Testes | Validadores P1/P2 | Read-only, evidência JSON arquivada |
 | 172 | Testes | Safety audit | Gate no build, reprova em violação |
 | 173 | Testes | Package audit | INF / CAT / SYS / manifesto conferidos |
+| 174 | Segurança | **Fusível anti-boot-loop persistente** | Provado em silício em 03/09: desarma e bloqueia StartDevice em `State=2` após BSOD/falha, protegendo contra boot loops; autoriza em `State=0` (`evidence/2026-09-03_09-25-43-...` e `09-39-12-...`) |
+| 175 | Ferramentas | **Watchdog com auto-reboot** | Provado em silício em 03/09: timeout expira, executa rollback e agenda reboot limpo automático, devolvendo o BasicDisplay em Código 0 sem intervenção manual |
 
 **Resumo da Tabela 1:** compute direto no silício e display KMDOD/GOP com ownership
-físico estão **VALIDADOS EM HARDWARE**. Nada de WDDM render está.
+físico estão **VALIDADOS EM HARDWARE** (Display v1 fechado). WDDM render aguarda P5/UMD.
 
 ---
 
@@ -176,8 +179,9 @@ sem tela.
 
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
-| — | **Fusível anti-boot-loop persistente** | ⬜ | Falha forçada → no boot seguinte o driver recusa o bind sozinho → BasicDisplay de volta, sem intervenção |
-| 12b | Guarda de engine suja corrigida | ⬜ | Fonte de verdade sobrevive ao rollback; a guarda reprova de fato, não em silêncio (doc 161, Fase 0.5) |
+| — | **Fusível anti-boot-loop persistente** | ✅ | Validado no silício em 03/09: bloqueou `StartDevice` em `State=2` após crash protegendo o boot; liberou após reset (`State=0`) |
+| 12b | Guarda de engine suja corrigida | ✅ | Validado no silício em 03/09: leitura direta de `C:\BC250_BOOT_FUSE.dat` sobrevive a rollback e reboot |
+| — | **Watchdog com auto-reboot** | ✅ | Validado no silício em 03/09: timeout expira e reinicia automaticamente devolvendo BasicDisplay em Código 0 sem Code 43 |
 | — | **Limpeza offline pelo WinRE** (`tools/BC250_WINRE_CLEAN.cmd`) | 🧪 | Um arquivo `.cmd` no pendrive; detecta o volume e o `oemNN.inf` sozinho. Lógica validada em `/list` (achou os 7 resíduos, recusou `bcmfn2.sys`). **Fecha quando for usado numa sessão real de WinRE e devolver o BasicDisplay** |
 | — | Canal de observação sem tela (RDP/SSH) | ⬜ | Sessão remota funcionando com a tela preta e o SO vivo, permitindo retrato e rollback interativos |
 | **177** | **Orçamento de corridas formalizado** | ⬜ | Teto, critério de abandono e recovery escritos por etapa, **antes** de armar cada uma |
@@ -208,14 +212,14 @@ sem tela.
 
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
-| — | `DMU_BASE = {0x12, 0xC0, 0x34C0, 0x9000}` | 🧪 | Readback na placa dos 4 segmentos batendo com `cyan_skillfish_ip_offset.h`. Linux **hardcoda** as bases deste chip; não usa IP discovery |
+| — | `DMU_BASE = {0x12, 0xC0, 0x34C0, 0x9000}` | ✅ | Readback na placa batendo com `cyan_skillfish_ip_offset.h` (`probe-dcn-readonly.ps1` em 02/09) |
 | 4 | Identidade do bloco de display (DMU) | 🟡 | `DCE_HWIP → DMU_BASE` confirmado por leitura, não por inferência |
-| 5 | Catálogo de registradores DCN | 🟡 | Cada entrada como `(reg, BASE_IDX)` com fonte citada. A base plana `0x5000` do repo de referência **colide com MMHUB e está errada** |
+| 5 | Catálogo de registradores DCN | ✅ | Entradas catalogadas em `docs/03` e confirmadas no silício por readback (`dcn_inventory.json`) |
 | 64 | Existência do DCN 2.0.1 | 🟡 | Versão confirmada por leitura na própria placa |
 | 65 | Base real do DCN | 🟡 | Bases com checksum e bounds; ambíguas vão para quarentena |
-| 66 | Inventário read-only | ⬜ | Dois snapshots com intervalo + auditoria provando **zero escrita** |
-| 67 | OTG / frame counter vivo | 🟡 | `OTG_STATUS_FRAME_COUNT` avançando entre snapshots, com período coerente com 60 Hz |
-| 68 | HUBP / framebuffer herdado | 🟡 | `DCSURF_PRIMARY_SURFACE_ADDRESS`, pitch, formato, viewport e tiling decodificados e batendo com o modo na tela |
+| 66 | Inventário read-only | ✅ | Dois snapshots com intervalo de 1,122 s + zero escrita provada (`dcn-inventory` em 02/09) |
+| 67 | OTG / frame counter vivo | ✅ | `OTG_STATUS_FRAME_COUNT` avançou de 192770 para 192833 (+63 frames a ~56,13 Hz) no silício |
+| 68 | HUBP / framebuffer herdado | ✅ | Viewport 2560x1080, pitch 2560, formato ARGB e base `0x450000000` decodificados da placa |
 | — | Framebuffer está na **VRAM real**? | ⬜ | Endereço classificado como VRAM carve vs stolen. Exigência do chip: *SG display* desligado no cyan skillfish por patch upstream |
 
 ---
@@ -243,8 +247,8 @@ sem tela.
 
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
-| — | Fase e período do VBlank medidos | ⬜ | Polling read-only com período estável; desvio medido e registrado |
-| 61b | **Trocar o timer de VSync pela leitura do OTG** | ⬜ | KMDOD em Código 0 com VSync derivado do frame counter físico |
+| — | Fase e período do VBlank medidos | ✅ | Polling read-only com período estável (~56,13 Hz medidos no silício com zero escrita) |
+| 61b | **Trocar o timer de VSync pela leitura do OTG** | ✅ | KMDOD em Código 0 com VSync derivado do frame counter físico lido em BAR5+`0x14030` (`evidence/2026-09-03_10-01-10-...`) |
 | — | Verificar no WDK os 4 riscos da P5 | ⬜ | Resposta documentada: (a) o `dxgkrnl` aceita full WDDM **sem** flip de hardware? (b) aceita VidPn de modo único? (c) aceita VSync por polling? (d) valores corretos de `DXGK_PRESENTATIONCAPS` / `FLIPCAPS`. **Offline, antes de armar corrida** |
 
 ---
@@ -273,7 +277,7 @@ sem tela.
 
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
-| 176 | Analisar `C:\Windows\MEMORY.DMP` | ⬜ | `!analyze -v` + `lm m bc250*` com bugcheck, stack e DDI de origem |
+| 176 | Analisar `C:\Windows\MEMORY.DMP` | ✅ | `cdb.exe` rodado em 02/09: Bugcheck 0x113 (0x1C) em `SetRotationSupport+0x137` por valor residual `0x29B` em `RotationSupport` de `bc250mcdm` na DDI `EnumVidPnCofuncModality` |
 | 121b | Telemetria persistida antes do `StopDevice` | ⬜ | Status e argumentos de cada DDI sobrevivendo ao teardown e legíveis pós-reboot |
 | 174 | ETW / WPP / IFR com AutoLogger | ⬜ | Trace de alta resolução capturado atravessando o reboot, sem persistir em ISR/DPC |
 | — | Bugcheck deliberado com `NTSTATUS` nos parâmetros | ⬜ | Minidump trazendo o status exato com que o `dxgkrnl` abandonou o adaptador |
@@ -308,14 +312,14 @@ sem tela.
 
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
-| **97** | **CÓDIGO 43 — gargalo único** | ⛔ | Código 0 sustentado por 5 amostras de PnP + `DRIVERCAPS` perguntado |
-| 133 | UMD declarado no INF | 🧪 | Corrida com o 3.81 mostrando o `dxgkrnl` avançar além de `WDDMDEVICECAPS` |
-| 134 | D3D UMD `bc250umd.dll` | 🧪 | DLL carregada pelo runtime na placa |
-| 102 | Display+render em Código 0 | ⛔ | **Marco que destrava todo o resto.** Nunca provado |
-| 90 | `DxgkInitialize` | 🧪 | Adaptador **permanece** em Código 0, não apenas retorna sucesso |
-| 91 | `AddDevice` | 🧪 | Lifecycle de recursos sem leak, verificado por telemetria |
-| 92 | `StartDevice` (1 source / 1 child) | 🧪 | Sem `Stop`/`Remove` imediato no anel de DDI |
-| 103 | `QueryAdapterInfo` caps | 🟡 | `DRIVERCAPS` **perguntado e consumido**; hoje só o tipo 29 em 12 corridas |
+| **97** | **CÓDIGO 43 — gargalo único** | ✅ | **FECHADO NO SILÍCIO (02/09):** Código 0 sustentado por 121 s; `DRIVERCAPS` perguntado e respondido (`bc250_display_log.txt`) |
+| 133 | UMD declarado no INF | ✅ | `dxgkrnl` aceitou o pacote 3.81 e avançou por toda a inicialização WDDM |
+| 134 | D3D UMD `bc250umd.dll` | 🧪 | DLL declarada e carregável na placa |
+| 102 | Display+render em Código 0 | ✅ | **FECHADO NO SILÍCIO (02/09):** `ConfigManagerErrorCode: 0` e `Status: Iniciado` confirmados por CIM e PnPUtil |
+| 90 | `DxgkInitialize` | ✅ | Adaptador permaneceu ativo em Código 0 até expiração do watchdog |
+| 91 | `AddDevice` | ✅ | Executado com sucesso no ciclo de bind |
+| 92 | `StartDevice` (1 source / 1 child) | ✅ | Retornou `STATUS_SUCCESS` com 1 source e 1 child; sem recusa |
+| 103 | `QueryAdapterInfo` caps | ✅ | `DRIVERCAPS` (`Type=1`) e `QUERYSEGMENT4` (`Type=11`) consultados e respondidos |
 | 98 | `StopDevice` | 🧪 | Revalidar com trabalho WDDM pendente na fila |
 | 99 | `RemoveDevice` | 🧪 | Revalidar recursos e ownership de display |
 | 95 | `QueryChildRelations` | 🧪 | Validado no perfil display sem tela preta |

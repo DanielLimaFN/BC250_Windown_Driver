@@ -46,6 +46,7 @@ $watchdogScript = Join-Path $root 'tools\watch-bc250mcdm-lab.ps1'
 $confirmScript = Join-Path $root 'tools\confirm-bc250mcdm-lab.ps1'
 $markerPath = 'C:\BC250_TEST_OEMINF.txt'
 $cleanBootMarkerPath = 'C:\BC250_REQUIRE_CLEAN_BOOT.json'
+$bootFusePath = 'C:\BC250_BOOT_FUSE.dat'
 $recoveryPath = 'C:\BC250_RECOVERY.cmd'
 $hardwareId = 'PCI\VEN_1002&DEV_13FE'
 
@@ -252,13 +253,47 @@ if (Test-Path -LiteralPath $builtSys) {
 }
 
 # --------------------------------------------------------------------------
-# Guard-rail 2: a engine precisa estar limpa.
+# Guard-rail 2: a engine precisa estar limpa e o fusivel integro.
 #
 # Estado de fila nao cai com desbind; so o boot frio limpa. Vincular sobre uma
 # fila ja ativa faz o motor persistente nao subir, e todos os contadores saem
 # zerados — o que se confunde com "quebrado" quando na verdade e' "nao
 # exercitado". Aconteceu em 2026-08-31 12:03 com WPTR remanescente 204.
+# A fonte de verdade persistente e' C:\BC250_BOOT_FUSE.dat, que sobrevive ao
+# rollback e ao reboot.
 # --------------------------------------------------------------------------
+if (Test-Path -LiteralPath $bootFusePath) {
+    try {
+        $fuseRaw = [System.IO.File]::ReadAllBytes($bootFusePath)
+        if ($fuseRaw.Length -eq 40) {
+            $fuseMagic = [BitConverter]::ToUInt32($fuseRaw, 0)
+            $fuseState = [BitConverter]::ToUInt32($fuseRaw, 8)
+            $fuseLastStatus = [BitConverter]::ToUInt32($fuseRaw, 16)
+            if ($fuseMagic -eq 0x45535546 -and ($fuseState -eq 1 -or $fuseState -eq 2)) {
+                $fuseStateName = if ($fuseState -eq 1) { 'ARMED (sessao anterior nao fechou limpa)' } else { 'TRIPPED (fusivel anti-boot-loop disparado)' }
+                $msg = (
+                    "Fusivel persistente acusa engine suja / falha anterior:`n" +
+                    "  Arquivo:    $bootFusePath`n" +
+                    "  Estado:     $fuseStateName ($fuseState)`n" +
+                    "  LastStatus: 0x$($fuseLastStatus.ToString('X8'))`n" +
+                    'Restaure BasicDisplay e execute BOOT FRIO antes de novo ensaio.`n' +
+                    'Apos o boot frio, use tools\inspect-boot-fuse.ps1 -Reset.')
+                if ($IAcceptDirtyEngine) {
+                    Write-Warning $msg
+                    Write-Warning 'Prosseguindo por -IAcceptDirtyEngine: a telemetria deste ciclo NAO e evidencia.'
+                } else {
+                    throw $msg
+                }
+            } else {
+                Write-Host '  Fusivel persistente (C:\BC250_BOOT_FUSE.dat): CLEAN (0).' -ForegroundColor Green
+            }
+        }
+    } catch [System.Management.Automation.RuntimeException] {
+        throw
+    } catch {
+        Write-Warning "Falha ao ler $bootFusePath: $($_.Exception.Message)"
+    }
+}
 $probeKey = 'HKLM:\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Probe'
 if (-not (Test-Path -LiteralPath $probeKey)) {
     # Silencio nao e' aprovacao.

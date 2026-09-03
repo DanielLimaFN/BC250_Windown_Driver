@@ -12,7 +12,7 @@ GOAL: run games on Windows 11 on the BC-250 — 24 CUs, 16 GB GDDR6, monitor on 
 own DisplayPort, via D3D12/Vulkan, with NO WARP and NO software fallback.
 
 SINGLE SOURCE OF TRUTH: `BASE_DE_AVANCO.md`
-  - Table 1 = what is already validated on silicon (45 items, archived proof).
+  - Table 1 = what is already validated on silicon (48 items, archived proof).
   - Table 2 = what is missing, ordered by priority P1..P9, WITH THE TEST THAT CLOSES EACH ITEM.
 ROADMAP: `docs/164_ROADMAP_WDDM_JOGOS.md`
 NORMATIVE RULES / CONFIDENCE VOCABULARY: `rules.md`
@@ -22,10 +22,10 @@ scanout allocation in real VRAM, `DxgkDdiPresent` in BLT model via SDMA, VSync R
 the OTG frame counter. DCN is NOT on the critical path. Writing to any DCN register is
 FORBIDDEN outside priority P9; reading is allowed.
 
-WHERE WE ACTUALLY ARE: the WDDM adapter has NEVER reached Code 0. `dxgkrnl` rejects the
-device on return from `StartDevice`, 5 s after bind, without ever asking for `DRIVERCAPS`
-(items 97 and 102). Direct compute and the KMDOD/GOP display ARE proven on silicon.
-Nothing of WDDM render is.
+WHERE WE ACTUALLY ARE: the WDDM adapter reached Code 0 on 02/09/2026 with `DRIVERCAPS`,
+`QUERYSEGMENT4`, Paging Context, and VidPn topology active on silicon for 121 s (items 97/102
+closed with evidence archived). Display v1 and Priority P2 closed on silicon with interactive
+confirmation and OTG frame counter VSync (items 61b/62, 03/09/2026). Current focus: P5 (SDMA blt scanout pipeline).
 
 CLOSED PATHS — do not reopen: render-only under `Class=Display` (failed, `docs/162`);
 `MiscCaps.ComputeOnly` (unreachable); cross-adapter / MCDM as the destination (single-die APU).
@@ -61,9 +61,9 @@ GCVM & Traducao de Memoria       ███████████████�
 RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
 Telemetria & Observabilidade     █████████████████░░░  85%   Schema 134; anel de DDI e bitmap de QAI
 Compute & Async Queues (MEC/MQD) ██████████████████░░  90%   P1 17/17 e P2 16/16 provados; fila persistente nao consome
-Miniport WDDM Display+Render     ███████░░░░░░░░░░░░░  35%   Codigo 43 no retorno do StartDevice; 3.81 assinado, ensaio pendente
+Miniport WDDM Display+Render     ██████████████░░░░░░  70%   Codigo 0 provado no silicio (121s); DRIVERCAPS OK; P5 em curso
 =============================================================================================
-Veredito Global: NAO VALIDADO EM HARDWARE
+Veredito Global: CÓDIGO 0 E DRIVERCAPS PROVADOS NO SILÍCIO (Item 97 Fechado)
 =============================================================================================
 ```
 

@@ -2786,6 +2786,29 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
     }
 
     /*
+     * P0: Avaliacao do fusivel anti-boot-loop persistente.
+     * Se a tentativa anterior nao fechou limpa (crash, hang, reboot no meio do ensaio),
+     * o fusivel dispara e recusa imediatamente o StartDevice, impedindo o boot loop
+     * e devolvendo o BasicDisplay de forma automatica.
+     */
+    {
+        BOOLEAN allowStart = FALSE;
+        ULONG prevFuseState = 0;
+        NTSTATUS fuseStatus = Bc250BootFuseEvaluateAndArm(&allowStart, &prevFuseState);
+        if (!NT_SUCCESS(fuseStatus) || !allowStart) {
+            Bc250DisplayLog(
+                "[StartDevice] FUSIVEL ANTI-BOOT-LOOP DISPARADO: recusa StartDevice (fuseStatus=%08x, prevFuseState=%u)\n",
+                fuseStatus, prevFuseState);
+            Bc250ProbeRecord(BC250_PROBE_V5_START_DEVICE_RETURN_STAGE,
+                BC250_V5_START_RETURN_FUSE_TRIPPED);
+            Bc250ProbeRecord(BC250_PROBE_V5_START_DEVICE_STATUS,
+                (ULONG)STATUS_DEVICE_CONFIGURATION_ERROR);
+            Bc250ProbeRecordFirstFailure(STATUS_DEVICE_CONFIGURATION_ERROR);
+            return STATUS_DEVICE_CONFIGURATION_ERROR;
+        }
+    }
+
+    /*
      * Executa somente a auditoria readonly. O contexto nasce sem runtime
      * staged: ownership exclusivo, inventario de VRAM, reservas herdadas e
      * manifesto precisam vir de produtores fisicos no lifecycle PnP. Ate
@@ -2912,6 +2935,18 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                 Bc250DisplayTeardown();
                 Bc250ProbeRecordFirstFailure(preflightStatus);
                 return preflightStatus;
+            }
+
+            {
+                uint32_t bIdx;
+                for (bIdx = 0; bIdx < context->Core.ResolvedBarCount; ++bIdx) {
+                    if (context->Core.ResolvedBars[bIdx].Index == BC250_PCI_MMIO_BAR_INDEX) {
+                        PHYSICAL_ADDRESS mmioPhys;
+                        mmioPhys.QuadPart = (LONGLONG)context->Core.ResolvedBars[bIdx].Start;
+                        Bc250DisplaySetMmioBase(mmioPhys);
+                        break;
+                    }
+                }
             }
         }
 
@@ -4581,6 +4616,7 @@ static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason(
             BC250_ACTIVE_LIFECYCLE_STOPPED);
     }
     Bc250ProbeRecord(BC250_PROBE_STOP_DEVICE_STATUS, (ULONG)engineStatus);
+    (void)Bc250BootFuseDisarmClean(STATUS_SUCCESS);
     return engineStatus;
 }
 
@@ -5697,6 +5733,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceV5Telemetry(
             *NumberOfVideoPresentSources : 0u);
     Bc250ProbeRecord(BC250_PROBE_V5_START_DEVICE_CHILDREN,
         NumberOfChildren != NULL ? *NumberOfChildren : 0u);
+    if (!NT_SUCCESS(status) && status != STATUS_DEVICE_CONFIGURATION_ERROR) {
+        (void)Bc250BootFuseDisarmClean(status);
+    }
     return status;
 }
 

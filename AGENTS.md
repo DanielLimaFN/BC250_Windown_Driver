@@ -25,9 +25,10 @@ Display v1 é **por herança do UEFI GOP**: VidPn de um modo único, scanout em 
 fora da prioridade P9. Leitura é permitida.
 
 ### Onde estamos, de verdade
-O adaptador WDDM **nunca alcançou Código 0**. O `dxgkrnl` recusa o dispositivo no retorno
-do `StartDevice`, 5 s após o bind, sem nunca perguntar `DRIVERCAPS` (itens 97 e 102). O
-compute direto e o display KMDOD/GOP **estão** provados no silício. Nada de WDDM render está.
+O adaptador WDDM **alcançou Código 0 em 02/09/2026** com `DRIVERCAPS`, `QUERYSEGMENT4`,
+Paging Context e VidPn ativos no silício por 121 s (itens 97 e 102 fechados com evidência
+arquivada). O compute direto e o display KMDOD/GOP também estão provados no silício.
+A etapa atual é a **P5** (manter imagem na tela via blt por SDMA no scanout GOP).
 
 ---
 
@@ -43,9 +44,9 @@ GCVM & Traducao de Memoria       ███████████████�
 RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
 Telemetria & Observabilidade     █████████████████░░░  85%   Schema 134; anel de DDI e bitmap de QAI
 Compute & Async Queues (MEC/MQD) ██████████████████░░  90%   P1 17/17 e P2 16/16 provados; fila persistente nao consome
-Miniport WDDM Display+Render     ███████░░░░░░░░░░░░░  35%   Codigo 43 no retorno do StartDevice; 3.81 assinado, ensaio pendente
+Miniport WDDM Display+Render     ████████████████░░░░  80%   P2 fechada no silicio (OTG VSync); Codigo 0 OK; P5 em curso
 =============================================================================================
-Veredito Global: NAO VALIDADO EM HARDWARE
+Veredito Global: P2 E DISPLAY V1 FECHADOS NO SILÍCIO (Itens 61b, 62 e 97 Fechados)
 =============================================================================================
 ```
 

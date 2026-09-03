@@ -970,3 +970,80 @@ separados).
 3. **A cache de instruções do CP traduz por VMID 0?** `CP_PFP_IC_BASE_CNTL` tem
    campo `VMID`, e o upstream o programa com 0. Se for assim, o gate de memória
    fechado ontem é pré-requisito direto do CP, não trabalho paralelo.
+
+---
+
+## Bloco de Display: Display Management Unit (DMU) / DCN 2.0.1
+
+### Proveniência e Regra de Cálculo SOC15
+
+Ao contrário do GC10 (que usa `GC_BASE`), o bloco de display da APU Cyan Skillfish 2 (`1002:13FE`) pertence à família DMU/DCE e possui quatro segmentos de base hardcodados no kernel Linux upstream.
+
+*   **Fonte autoritativa da base:** [`include/cyan_skillfish_ip_offset.h`](https://raw.githubusercontent.com/torvalds/linux/master/drivers/gpu/drm/amd/include/cyan_skillfish_ip_offset.h) e [`amdgpu/cyan_skillfish_reg_init.c`](https://raw.githubusercontent.com/torvalds/linux/master/drivers/gpu/drm/amd/amdgpu/cyan_skillfish_reg_init.c) (`adev->reg_offset[DCE_HWIP][i] = &DMU_BASE.instance[i]`).
+*   **Fonte dos offsets dos registradores:** [`include/asic_reg/dcn/dcn_2_0_0_offset.h`](https://raw.githubusercontent.com/torvalds/linux/master/drivers/gpu/drm/amd/include/asic_reg/dcn/dcn_2_0_0_offset.h).
+
+```c
+#define MAX_SEGMENT 5
+static const struct IP_BASE DMU_BASE = {{{{ 0x00000012, 0x000000C0, 0x000034C0, 0x00009000, 0 }}, ...
+```
+
+#### Bases de segmento do DMU (`DMU_BASE.segment[BASE_IDX]`):
+*   `BASE_IDX = 0`: base dwords `0x00000012` (byte base `0x00048`) — VGA Legacy I/O / Azalia Audio
+*   `BASE_IDX = 1`: base dwords `0x000000C0` (byte base `0x00300`) — VGA Render Control / DC Mem Power
+*   `BASE_IDX = 2`: base dwords `0x000034C0` (byte base `0x0D300`) — Núcleo DCN 2.0 (OTG, HUBP, DPP, MPC, DIO)
+*   `BASE_IDX = 3`: base dwords `0x00009000` (byte base `0x24000`) — DMU Controller / Microcode
+
+#### Fórmula de cálculo BAR5:
+```text
+dword_offset = DMU_BASE.segment[BASE_IDX] + mmREG_dw
+BAR5_byte    = dword_offset * 4
+```
+
+> ⚠️ **Correção de erro histórico:** O arquivo de referência `REGISTER-MAP-BC250.md` citava "DCN base 0x5000", confundindo o offset dword resultante dos registradores de OTG (`0x34C0 + 0x1B41 = 0x5001`) com uma suposta base fixa plana, colidindo com o MMHUB. **Não existe base plana.** Todo registrador DCN exige a soma de seu `BASE_IDX` específico.
+
+---
+
+### Catálogo de Registradores DCN 2.0.1
+
+#### 1. Output Timing Generator & VSync (OPTC / OTG0)
+Controla os sincronismos horizontal e vertical, o blanking e o contador de frames do display.
+
+| Registrador | mmREG (dw) | BASE_IDX | Offset dw | BAR5 Byte | Classe | Descrição / Uso |
+|---|:---:|:---:|:---:|:---:|:---:|---|
+| `mmOTG0_OTG_CONTROL` | `0x1B41` | 2 | `0x5001` | `0x14004` | P1 | Habilitação e controle mestre do OTG0. |
+| `mmOTG0_OTG_STATUS` | `0x1B49` | 2 | `0x5009` | `0x14024` | P1 | Status de sincronismo (V/H sync ativo, blanking). |
+| `mmOTG0_OTG_STATUS_POSITION` | `0x1B4A` | 2 | `0x500A` | `0x14028` | P1 | Posição atual do feixe de varredura (linha e coluna). |
+| `mmOTG0_OTG_NOM_VERT_POSITION` | `0x1B4B` | 2 | `0x500B` | `0x1402C` | P1 | Posição vertical nominal de trigger de interrupção. |
+| `mmOTG0_OTG_STATUS_FRAME_COUNT` | `0x1B4C` | 2 | `0x500C` | `0x14030` | P1 | **Contador de frames físico do hardware.** Incrementa a cada VBlank. |
+| `mmOTG0_OTG_H_TOTAL` | `0x1B2A` | 2 | `0x4FEA` | `0x13FA8` | P1 | Resolução horizontal total (pixels ativos + blanking). |
+| `mmOTG0_OTG_H_BLANK_START_END` | `0x1B2B` | 2 | `0x4FEB` | `0x13FAC` | P1 | Limites de início e fim do horizontal blanking. |
+| `mmOTG0_OTG_H_SYNC_A` | `0x1B2C` | 2 | `0x4FEC` | `0x13FB0` | P1 | Largura e posição do pulso de sincronismo horizontal. |
+| `mmOTG0_OTG_V_TOTAL` | `0x1B2F` | 2 | `0x4FEF` | `0x13FBC` | P1 | Resolução vertical total (linhas ativas + blanking). |
+| `mmOTG0_OTG_V_BLANK_START_END` | `0x1B36` | 2 | `0x4FF6` | `0x13FD8` | P1 | Limites de início e fim do vertical blanking. |
+| `mmOTG0_OTG_V_SYNC_A` | `0x1B37` | 2 | `0x4FF7` | `0x13FDC` | P1 | Largura e posição do pulso de sincronismo vertical. |
+
+#### 2. Hub Pipe (HUBP0 / HUBPREQ0) & Scanout de Superfície
+Lê os pixels da VRAM programados pelo UEFI GOP e alimenta o pipeline de scanout.
+
+| Registrador | mmREG (dw) | BASE_IDX | Offset dw | BAR5 Byte | Classe | Descrição / Uso |
+|---|:---:|:---:|:---:|:---:|:---:|---|
+| `mmHUBP0_DCSURF_SURFACE_CONFIG` | `0x05E5` | 2 | `0x3AA5` | `0x0EA94` | P1 | Formato de cor da superfície (ARGB8888, RGB565, etc.) e rotação. |
+| `mmHUBP0_DCSURF_ADDR_CONFIG` | `0x05E6` | 2 | `0x3AA6` | `0x0EA98` | P1 | Modo de endereçamento e alinhamento do buffer. |
+| `mmHUBP0_DCSURF_TILING_CONFIG` | `0x05E7` | 2 | `0x3AA7` | `0x0EA9C` | P1 | Configuração de micro/macro tiling e swizzle de memória. |
+| `mmHUBP0_DCSURF_PRI_VIEWPORT_START` | `0x05E9` | 2 | `0x3AA9` | `0x0EAA4` | P1 | Posição inicial (X, Y) do scanout na superfície. |
+| `mmHUBP0_DCSURF_PRI_VIEWPORT_DIMENSION` | `0x05EA` | 2 | `0x3AAA` | `0x0EAA8` | P1 | Dimensões ativas (Largura x Altura) da viewport na tela. |
+| `mmHUBPREQ0_DCSURF_SURFACE_PITCH` | `0x0607` | 2 | `0x3AC7` | `0x0EB1C` | P1 | Pitch (stride) da linha em pixels/bytes. |
+| `mmHUBPREQ0_DCSURF_PRIMARY_SURFACE_ADDRESS` | `0x060A` | 2 | `0x3ACA` | `0x0EB28` | P1 | **Endereço físico base da VRAM (bits [31:0]) do framebuffer do GOP.** |
+| `mmHUBPREQ0_DCSURF_PRIMARY_SURFACE_ADDRESS_HIGH` | `0x060B` | 2 | `0x3ACB` | `0x0EB2C` | P1 | Bits superiores [47:32] do endereço físico do framebuffer. |
+| `mmHUBPREQ0_DCSURF_SURFACE_INUSE` | `0x0621` | 2 | `0x3AE1` | `0x0EB84` | P1 | Endereço físico atualmente sendo lido pela engine de DMA de display. |
+| `mmHUBPREQ0_DCSURF_SURFACE_INUSE_HIGH` | `0x0622` | 2 | `0x3AE2` | `0x0EB88` | P1 | Bits superiores do endereço em uso. |
+
+#### 3. Registradores Globais e VGA Legacy (BASE_IDX 0 e 1)
+
+| Registrador | mmREG (dw) | BASE_IDX | Offset dw | BAR5 Byte | Classe | Descrição / Uso |
+|---|:---:|:---:|:---:|:---:|:---:|---|
+| `mmVGA_MEM_WRITE_PAGE_ADDR` | `0x0000` | 0 | `0x0012` | `0x00048` | P1 | Janela de escrita VGA Legacy. |
+| `mmVGA_MEM_READ_PAGE_ADDR` | `0x0001` | 0 | `0x0013` | `0x0004C` | P1 | Janela de leitura VGA Legacy. |
+| `mmVGA_RENDER_CONTROL` | `0x0000` | 1 | `0x00C0` | `0x00300` | P1 | Controle mestre do decodificador VGA / Emulação. |
+| `mmVGA_MODE_CONTROL` | `0x0002` | 1 | `0x00C2` | `0x00308` | P1 | Modo gráfico vs texto VGA. |
+| `mmDC_MEM_GLOBAL_PWR_REQ_CNTL` | `0x0003` | 1 | `0x00C3` | `0x0030C` | P1 | Controle de gating de clock e energia da memória do DC. |
