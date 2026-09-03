@@ -36,9 +36,9 @@ GCVM & Traducao de Memoria       ███████████████�
 RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
 Telemetria & Observabilidade     █████████████████░░░  85%   Schema 134; anel de DDI e bitmap de QAI
 Compute & Async Queues (MEC/MQD) ██████████████████░░  90%   P1 17/17 e P2 16/16 provados; fila persistente nao consome
-Miniport WDDM Display+Render     ████████████████░░░░  80%   Código 0 provado (97); SDMA autoteste OK (63); WDDM Present pendente
+Miniport WDDM Display+Render     ████████████████░░░░  80%   Código 0 (97); KMDOD com imagem (62); WDDM Present pendente
 =============================================================================================
-Veredito Global: Display GOP e KMDOD provados (61b, 62); WDDM Present e VidPN P6 em andamento (Item 97 fechado)
+Veredito Global: KMDOD com imagem provado (61b, 62). Sob RenderNode=1 o DMM comita topologia VAZIA (3/3 corridas 03/09) — NÃO VALIDADO EM HARDWARE
 =============================================================================================
 ```
 
