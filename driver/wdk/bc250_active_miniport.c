@@ -2954,6 +2954,21 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                 if (mmioPhys.QuadPart != 0) {
                     Bc250DisplaySetMmioBase(mmioPhys);
                 }
+
+                /* Carga de Firmware SDMA0 via PSP (Fail-Closed) */
+                context->PspRingStatus = Bc250ActiveProbePspRing(context, &context->PspRingEvidence);
+                if (context->PspRingStatus == BC250_PSP_RING_OK &&
+                    context->PspRingEvidence.PhysicalReady != 0u) {
+                    context->PspLoadFwStatus = Bc250ActiveLoadSdmaFirmware(context, &context->PspLoadFwEvidence);
+                    Bc250DisplayLog("[SdmaPresent] PSP Load SDMA0 FW: Status=%u, PhysicalReady=%u\n",
+                        (uint32_t)context->PspLoadFwStatus,
+                        context->PspLoadFwEvidence.PhysicalReady);
+                } else {
+                    Bc250DisplayLog("[SdmaPresent] PSP Ring Probe: Status=%u, PhysicalReady=%u\n",
+                        (uint32_t)context->PspRingStatus,
+                        context->PspRingEvidence.PhysicalReady);
+                }
+
                 if (mmioPhys.QuadPart != 0 && vramPhys.QuadPart != 0) {
                     uint64_t vramMcStart = context->Core.TopologyEvidence.AddressSpace.VramMcStart;
                     if (vramMcStart == 0) {
