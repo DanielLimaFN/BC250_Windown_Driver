@@ -57,7 +57,7 @@ Mode-set, hotplug, flip de hardware, VRR e HDR são **P9 — opcional**.
 
 # TABELA 1 — JÁ FEITO · validado no silício
 
-**47 itens** com prova física arquivada. Estes são os ativos reais do projeto.
+**48 itens** com prova física arquivada. Estes são os ativos reais do projeto.
 
 | # | Bloco | Item | Prova física que sustenta o ✅ |
 |---:|---|---|---|
@@ -94,7 +94,8 @@ Mode-set, hotplug, flip de hardware, VRR e HDR são **P9 — opcional**.
 | 58 | KMDOD | Framebuffer do GOP | Endereço, pitch e modo herdados e lidos |
 | 59 | KMDOD | VidPN KMDOD | `IsSupportedVidPn` / `CommitVidPn` aprovados |
 | 60 | KMDOD | `PresentDisplayOnly` | Entrada, status e cópia funcionais |
-| 61 | KMDOD | VSync KMDOD | Contadores e notificação observados (Tipo 5 / Target 1) — **por timer, não por DCN** |
+| 61 | KMDOD | VSync KMDOD | Contadores e notificação observados (Tipo 5 / Target 1) |
+| 61b | KMDOD | **VSync físico via OTG Frame Counter** | Validado no silício em 03/09 (`evidence/2026-09-03_10-01-10-...`): leitura direta de `mmOTG0_OTG_STATUS_FRAME_COUNT` em BAR5 + `0x14030` (`0xFE800000`), inicial 69380; DPC sincroniza VSync com o pulso físico do display controller; 73 interrupções tratadas sem BSOD |
 | 62 | KMDOD | **Imagem após binding (Display v1)** | Confirmada visualmente com watchdog desarmado interativamente (`DISPLAY_OK`) em 03/09 (`evidence/2026-09-03_09-39-12-...`); modo 2560x1080@60Hz pinado, `PresentDisplayOnly` copiando pixels ao scanout GOP em Código 0 |
 | 93 | WDDM | A/B contrato 2.0 vs 2.7 | Ambos consumidos; **mesma** falha no estágio 3 |
 | 94 | WDDM | Trace de `QueryInterface` | 7 dos 8 GUIDs identificados no WDK; todos opcionais — **não** são a causa |
@@ -246,8 +247,8 @@ sem tela.
 
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
-| — | Fase e período do VBlank medidos | ⬜ | Polling read-only com período estável; desvio medido e registrado |
-| 61b | **Trocar o timer de VSync pela leitura do OTG** | ⬜ | KMDOD em Código 0 com VSync derivado do frame counter físico |
+| — | Fase e período do VBlank medidos | ✅ | Polling read-only com período estável (~56,13 Hz medidos no silício com zero escrita) |
+| 61b | **Trocar o timer de VSync pela leitura do OTG** | ✅ | KMDOD em Código 0 com VSync derivado do frame counter físico lido em BAR5+`0x14030` (`evidence/2026-09-03_10-01-10-...`) |
 | — | Verificar no WDK os 4 riscos da P5 | ⬜ | Resposta documentada: (a) o `dxgkrnl` aceita full WDDM **sem** flip de hardware? (b) aceita VidPn de modo único? (c) aceita VSync por polling? (d) valores corretos de `DXGK_PRESENTATIONCAPS` / `FLIPCAPS`. **Offline, antes de armar corrida** |
 
 ---

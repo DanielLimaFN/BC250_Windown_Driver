@@ -12,7 +12,7 @@ GOAL: run games on Windows 11 on the BC-250 — 24 CUs, 16 GB GDDR6, monitor on 
 own DisplayPort, via D3D12/Vulkan, with NO WARP and NO software fallback.
 
 SINGLE SOURCE OF TRUTH: `BASE_DE_AVANCO.md`
-  - Table 1 = what is already validated on silicon (47 items, archived proof).
+  - Table 1 = what is already validated on silicon (48 items, archived proof).
   - Table 2 = what is missing, ordered by priority P1..P9, WITH THE TEST THAT CLOSES EACH ITEM.
 ROADMAP: `docs/164_ROADMAP_WDDM_JOGOS.md`
 NORMATIVE RULES / CONFIDENCE VOCABULARY: `rules.md`
@@ -24,7 +24,8 @@ FORBIDDEN outside priority P9; reading is allowed.
 
 WHERE WE ACTUALLY ARE: the WDDM adapter reached Code 0 on 02/09/2026 with `DRIVERCAPS`,
 `QUERYSEGMENT4`, Paging Context, and VidPn topology active on silicon for 121 s (items 97/102
-closed with evidence archived). Display v1 closed on silicon with interactive visual confirmation (item 62, 03/09/2026). Current focus: P2 (OTG VSync read) and P5 (SDMA blt scanout pipeline).
+closed with evidence archived). Display v1 and Priority P2 closed on silicon with interactive
+confirmation and OTG frame counter VSync (items 61b/62, 03/09/2026). Current focus: P5 (SDMA blt scanout pipeline).
 
 CLOSED PATHS — do not reopen: render-only under `Class=Display` (failed, `docs/162`);
 `MiscCaps.ComputeOnly` (unreachable); cross-adapter / MCDM as the destination (single-die APU).
