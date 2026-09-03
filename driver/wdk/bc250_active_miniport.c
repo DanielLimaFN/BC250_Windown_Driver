@@ -2940,14 +2940,22 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
 
             {
                 uint32_t bIdx;
+                PHYSICAL_ADDRESS mmioPhys;
+                PHYSICAL_ADDRESS vramPhys;
+                mmioPhys.QuadPart = 0;
+                vramPhys.QuadPart = 0;
                 for (bIdx = 0; bIdx < context->Core.ResolvedBarCount; ++bIdx) {
                     if (context->Core.ResolvedBars[bIdx].Index == BC250_PCI_MMIO_BAR_INDEX) {
-                        PHYSICAL_ADDRESS mmioPhys;
                         mmioPhys.QuadPart = (LONGLONG)context->Core.ResolvedBars[bIdx].Start;
-                        Bc250DisplaySetMmioBase(mmioPhys);
-                        (void)Bc250SdmaPresentInit(mmioPhys, 0x000450000000ull);
-                        break;
+                    } else if (context->Core.ResolvedBars[bIdx].Index == BC250_PCI_VRAM_APERTURE_BAR_INDEX) {
+                        vramPhys.QuadPart = (LONGLONG)context->Core.ResolvedBars[bIdx].Start;
                     }
+                }
+                if (mmioPhys.QuadPart != 0) {
+                    Bc250DisplaySetMmioBase(mmioPhys);
+                }
+                if (mmioPhys.QuadPart != 0 && vramPhys.QuadPart != 0) {
+                    (void)Bc250SdmaPresentInit(mmioPhys, vramPhys, 0x000450000000ull);
                 }
             }
         }
