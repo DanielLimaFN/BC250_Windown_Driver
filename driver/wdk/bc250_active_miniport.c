@@ -2146,6 +2146,12 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                 info->PhysicalAdapterIndex = 0u;
                 info->FlagsWddm2.Value = 0u;
                 info->FlagsWddm2.CpuVisible = 1u;
+                if (CreateAllocation->Flags.Resource != 0u) {
+                    info->FlagsWddm2.AccessedPhysically = 1u;
+                    g_Bc250DisplayState.hPrimaryAllocation = (HANDLE)handle;
+                    Bc250DisplayLog("[CreateAllocation] Primary Resource Allocation Identified: Handle=%p, Size=%llu\n",
+                        handle, request.ByteSize);
+                }
                 info->hAllocation = handle;
                 ++created;
             }

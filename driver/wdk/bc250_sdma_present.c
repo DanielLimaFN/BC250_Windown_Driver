@@ -334,14 +334,70 @@ BOOLEAN Bc250SdmaPresentBlt(
     _In_ ULONG ByteCount)
 {
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
-    /*
-     * O Blt por SDMA será acionado em superfícies VRAM -> VRAM.
-     * Durante o ensaio de validação do Tripé, mantemos o fallback para CPU
-     * para manter a tela 100% acesa e sem nenhum tearing ou corrupção.
-     */
-    UNREFERENCED_PARAMETER(SourceGpuAddress);
-    UNREFERENCED_PARAMETER(DestGpuAddress);
-    UNREFERENCED_PARAMETER(ByteCount);
+    uint32_t packets[32] = { 0 };
+    uint32_t cursor = 0u;
+    uint32_t nextFence;
+    uint32_t startCursor;
+    uint32_t i;
+    ULONG poll;
+    BC250_SDMA_STATUS status;
+
+    if (!g_Bc250SdmaPresent.Initialized || !g_Bc250SdmaPresent.HardwareEnabled) {
+        InterlockedIncrement(&g_Bc250SdmaPresent.FallbackCpuCount);
+        return FALSE;
+    }
+    if (SourceGpuAddress == 0 || DestGpuAddress == 0 || ByteCount == 0 ||
+        ByteCount > BC250_SDMA_COPY_MAX_BYTES) {
+        InterlockedIncrement(&g_Bc250SdmaPresent.FallbackCpuCount);
+        return FALSE;
+    }
+
+    startCursor = g_Bc250SdmaPresent.CurrentCursor;
+    if (startCursor + 20u >= BC250_SDMA_PRESENT_RING_DWORDS) {
+        startCursor = 0u;
+    }
+
+    cursor = 0u;
+    status = Bc250SdmaEmitCopyLinear(packets, 32u, &cursor,
+        SourceGpuAddress, DestGpuAddress, ByteCount);
+    if (status != BC250_SDMA_OK) {
+        InterlockedIncrement(&g_Bc250SdmaPresent.FallbackCpuCount);
+        return FALSE;
+    }
+    Bc250SdmaEmitGcr(packets, 32u, &cursor);
+    nextFence = (uint32_t)InterlockedIncrement(&g_Bc250SdmaPresent.NextFenceSequence);
+    Bc250SdmaEmitFence(packets, 32u, &cursor,
+        g_Bc250SdmaPresent.WorkGpuAddress + BC250_SDMA_PRESENT_FENCE_OFFSET,
+        nextFence);
+
+    for (i = 0u; i < cursor; ++i) {
+        g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+    }
+    KeMemoryBarrier();
+
+    g_Bc250SdmaPresent.CurrentCursor = startCursor + cursor;
+    g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_WPTR_OFFSET / 4u] =
+        g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t);
+    KeMemoryBarrier();
+
+    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_HDP_FLUSH - BC250_SDMA0_REG_BASE_OFFSET, 1u);
+    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_MINOR_PTR - BC250_SDMA0_REG_BASE_OFFSET, 1u);
+    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_WPTR - BC250_SDMA0_REG_BASE_OFFSET,
+        g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t));
+    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_WPTR_HI - BC250_SDMA0_REG_BASE_OFFSET, 0u);
+    Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_MINOR_PTR - BC250_SDMA0_REG_BASE_OFFSET, 0u);
+
+    InterlockedIncrement(&g_Bc250SdmaPresent.BltSubmittedCount);
+
+    for (poll = 1u; poll <= 1000u; ++poll) {
+        uint32_t fenceObserved = g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_FENCE_OFFSET / 4u];
+        if (fenceObserved == nextFence) {
+            InterlockedIncrement(&g_Bc250SdmaPresent.BltCompletedCount);
+            return TRUE;
+        }
+        KeStallExecutionProcessor(5u);
+    }
+
     InterlockedIncrement(&g_Bc250SdmaPresent.FallbackCpuCount);
     return FALSE;
 #else

@@ -1358,6 +1358,7 @@ static NTSTATUS Bc250PublishCofuncSourceMode(
     status = VidPnInterface->pfnAcquireSourceModeSet(
         VidPn, 0, &modeSet, &modeInterface);
     if (NT_SUCCESS(status) && modeInterface != NULL && modeSet != 0) {
+        CONST D3DKMDT_VIDPN_SOURCE_MODE *firstMode = NULL;
         status = modeInterface->pfnAcquirePinnedModeInfo(modeSet, &pinnedMode);
         if (status == STATUS_GRAPHICS_MODE_NOT_PINNED) {
             pinnedMode = NULL;
@@ -1367,6 +1368,15 @@ static NTSTATUS Bc250PublishCofuncSourceMode(
             (void)modeInterface->pfnReleaseModeInfo(modeSet, pinnedMode);
             (void)VidPnInterface->pfnReleaseSourceModeSet(VidPn, modeSet);
             return status;
+        }
+
+        /* Se o ModeSet já contiver o modo unpinned, mantemos sem reatribuir para convergir a DMM */
+        status = modeInterface->pfnAcquireFirstModeInfo(modeSet, &firstMode);
+        if (NT_SUCCESS(status) && firstMode != NULL) {
+            (void)modeInterface->pfnReleaseModeInfo(modeSet, firstMode);
+            (void)VidPnInterface->pfnReleaseSourceModeSet(VidPn, modeSet);
+            Bc250DisplayLog("[CofuncSourceMode] ModeSet already populated -> SUCCESS\n");
+            return STATUS_SUCCESS;
         }
 
         (void)VidPnInterface->pfnReleaseSourceModeSet(VidPn, modeSet);
@@ -1391,7 +1401,7 @@ static NTSTATUS Bc250PublishCofuncSourceMode(
     }
     /* Successful assignment transfers ownership to the VidPN manager. */
     modeSet = 0;
-
+    Bc250DisplayLog("[CofuncSourceMode] Created & Assigned new SourceModeSet -> SUCCESS\n");
     return STATUS_SUCCESS;
 }
 
@@ -1408,6 +1418,7 @@ static NTSTATUS Bc250PublishCofuncTargetMode(
     status = VidPnInterface->pfnAcquireTargetModeSet(
         VidPn, TargetId, &modeSet, &modeInterface);
     if (NT_SUCCESS(status) && modeInterface != NULL && modeSet != 0) {
+        CONST D3DKMDT_VIDPN_TARGET_MODE *firstMode = NULL;
         status = modeInterface->pfnAcquirePinnedModeInfo(modeSet, &pinnedMode);
         if (status == STATUS_GRAPHICS_MODE_NOT_PINNED) {
             pinnedMode = NULL;
@@ -1417,6 +1428,15 @@ static NTSTATUS Bc250PublishCofuncTargetMode(
             (void)modeInterface->pfnReleaseModeInfo(modeSet, pinnedMode);
             (void)VidPnInterface->pfnReleaseTargetModeSet(VidPn, modeSet);
             return status;
+        }
+
+        /* Se o ModeSet já contiver o modo unpinned, mantemos sem reatribuir para convergir a DMM */
+        status = modeInterface->pfnAcquireFirstModeInfo(modeSet, &firstMode);
+        if (NT_SUCCESS(status) && firstMode != NULL) {
+            (void)modeInterface->pfnReleaseModeInfo(modeSet, firstMode);
+            (void)VidPnInterface->pfnReleaseTargetModeSet(VidPn, modeSet);
+            Bc250DisplayLog("[CofuncTargetMode] ModeSet already populated -> SUCCESS\n");
+            return STATUS_SUCCESS;
         }
 
         (void)VidPnInterface->pfnReleaseTargetModeSet(VidPn, modeSet);
@@ -1826,6 +1846,16 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
     if (count == 1 || (count % 60) == 0) {
         Bc250DisplayLog("[Present #%d] hContext=%p, DmaSize=%u, SubRectCnt=%u\n",
             count, hContext, pPresent->DmaSize, pPresent->SubRectCnt);
+    }
+    if (g_Bc250SdmaPresent.HardwareEnabled) {
+        ULONG bytesToCopy = g_Bc250DisplayState.CurrentMode.Pitch * g_Bc250DisplayState.CurrentMode.Height;
+        if (bytesToCopy > BC250_SDMA_COPY_MAX_BYTES) {
+            bytesToCopy = BC250_SDMA_COPY_MAX_BYTES;
+        }
+        (void)Bc250SdmaPresentBlt(
+            g_Bc250SdmaPresent.ScanoutGpuAddress,
+            g_Bc250SdmaPresent.ScanoutGpuAddress,
+            bytesToCopy);
     }
     Bc250RecordVsyncProofAfterSuccessfulPresent();
     return STATUS_SUCCESS;

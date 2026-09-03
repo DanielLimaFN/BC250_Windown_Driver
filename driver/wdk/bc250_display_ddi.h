@@ -52,6 +52,7 @@ typedef struct BC250_DISPLAY_STATE {
     BOOLEAN PresentRundownInitialized;
     UCHAR Edid[128];
     BOOLEAN EdidValid;
+    HANDLE hPrimaryAllocation;
 } BC250_DISPLAY_STATE;
 
 extern BC250_DISPLAY_STATE g_Bc250DisplayState;
