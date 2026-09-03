@@ -62,7 +62,8 @@ AddReg=BC250Mcdm.DriverReg
 HKR,Parameters\Probe,SchemaVersion,0x00010001,134
 HKR,Parameters,WddmContractVersion,0x00010001,20
 HKR,Parameters\Driver,ActiveMode,0x00010001,1
-HKR,Parameters,RenderNode,0x00010001,1
+HKR,Parameters,RenderNode,0x00010001,0
+HKR,Parameters,EnableSyntheticEdid,0x00010001,0
 HKR,Parameters,RenderOnlyLab,0x00010001,0
 HKR,Parameters,SkipHwBringup,0x00010001,1
 HKR,Parameters,ShaderDispatch,0x00010001,0
