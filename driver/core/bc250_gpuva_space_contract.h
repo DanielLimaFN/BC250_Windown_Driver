@@ -29,6 +29,41 @@ extern "C" {
 #define BC250_GPUVA_DEFAULT_BITS 48u
 #define BC250_GPUVA_MAX_LIMIT 0x0001000000000000ull /* 2^48 */
 
+/*
+ * =========================================================================
+ * Geometria da page table declarada ao dxgkrnl (modelo GpuMmu do WDDM)
+ *
+ * PROVENIENCIA (Lei 7): docs/03_CATALOGO_DE_REGISTRADORES.md, tabela de
+ * campos de GCVM_CONTEXT0_CNTL, linha PAGE_TABLE_DEPTH -> valor 0.
+ * Profundidade 0 no GCVM significa page table PLANA, de um unico nivel --
+ * que e' exatamente o modelo que BC250_GCVM_PAGE_TABLE_PLAN implementa e
+ * que o item 29 provou no silicio (PTE 0x10, traducao conferida).
+ *
+ * A hierarquia multi-nivel do amdgpu (PDB2/PDB1/PDB0/PTB) NAO esta
+ * implementada neste driver e nao pode ser declarada.
+ *
+ * Consequencia aritmetica do modelo plano, com pagina de 4 KiB:
+ *     VA coberta = 2 ^ (12 + INDEX_BITS)
+ *     tabela     = 8 bytes por entrada * 2 ^ INDEX_BITS
+ *
+ * BC250_GPUVA_PT_INDEX_BITS = 20 cobre 4 GiB de VA com uma tabela de 8 MiB
+ * por processo. E' o ponto de partida da v1: suficiente para desktop e para
+ * o primeiro triangulo, e barato o bastante para nao dominar a VRAM. Subir
+ * para 16 GiB de VA custa 22 bits e 32 MiB de tabela por processo -- e' uma
+ * troca de constante, nao de arquitetura.
+ *
+ * BC250_GPUVA_PT_LEVEL_COUNT so podera' passar de 1 quando existir backend
+ * de hierarquia com prova fisica. Declarar mais que isto e' violacao da
+ * Lei 4.
+ * ========================================================================= */
+#define BC250_GPUVA_PT_LEVEL_COUNT 1u
+#define BC250_GPUVA_PT_INDEX_BITS  20u
+#define BC250_GPUVA_PT_ENTRY_BYTES 8u
+#define BC250_GPUVA_PT_SIZE_BYTES \
+    (BC250_GPUVA_PT_ENTRY_BYTES << BC250_GPUVA_PT_INDEX_BITS)
+#define BC250_GPUVA_PT_ALIGN_BYTES 4096u
+#define BC250_GPUVA_PT_VA_BITS (12u + BC250_GPUVA_PT_INDEX_BITS)
+
 typedef enum BC250_GPUVA_STATUS {
     BC250_GPUVA_OK = 0,
     BC250_GPUVA_BAD_ARGUMENT,

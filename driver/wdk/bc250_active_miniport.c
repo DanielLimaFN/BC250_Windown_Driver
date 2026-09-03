@@ -1237,6 +1237,38 @@ static NTSTATUS Bc250ActiveQueryRuntimeCaps(
     Caps->PreemptionReady = 1u;
     Caps->SubmitReady = 1u;
     Caps->HistoryBufferReady = 1u;
+
+    /*
+     * Geometria da page table. Descritiva, nao e' declaracao de prontidao:
+     * pode ser preenchida sempre, porque so' e' consumida quando GpuVaReady
+     * estiver ligado. Constantes com proveniencia em
+     * bc250_gpuva_space_contract.h (PAGE_TABLE_DEPTH=0 do catalogo).
+     */
+    Caps->GpuVaBitCount = BC250_GPUVA_PT_VA_BITS;
+    Caps->PageTableLevelCount = BC250_GPUVA_PT_LEVEL_COUNT;
+    Caps->PageTableIndexBitCount = BC250_GPUVA_PT_INDEX_BITS;
+    Caps->PageTableSizeBytes = BC250_GPUVA_PT_SIZE_BYTES;
+    Caps->PageTableAlignmentBytes = BC250_GPUVA_PT_ALIGN_BYTES;
+
+    /*
+     * GpuVaReady/PagingReady eram os unicos campos da struct que ninguem
+     * atribuia -- por OMISSAO, nao por gate. Isso derrubava
+     * MemoryManagementCaps.GpuMmuSupported para 0, e sem modelo de memoria o
+     * dxgkrnl nunca chama CreateAllocation, nunca cria a primary allocation e
+     * entrega ao CommitVidPn um VidPN em branco. Cadeia medida na corrida
+     * 15:10:53 de 03/09.
+     *
+     * Agora o zero e' DELIBERADO e reversivel por tunable. Fail-closed por
+     * default: sem GpuMmuDeclare=1 o adaptador se comporta exatamente como
+     * na corrida medida. A promocao para 1 e' o ensaio do item 35 (map/unmap
+     * com invalidacao de TLB e readback), e nao pode ser feita as cegas.
+     */
+    if (context->GpuMmuDeclarePresent == 1u &&
+        context->GpuMmuDeclare == 1u &&
+        context->TlbTransactionEvidence.PhysicalReady != 0u) {
+        Caps->GpuVaReady = 1u;
+        Caps->PagingReady = 1u;
+    }
     return STATUS_SUCCESS;
 }
 
@@ -3143,6 +3175,9 @@ Bc250PhysicalRenderBringup:
                 context->GpuvaLabPromotion);
             Bc250ProbeRecord(BC250_PROBE_GPUVA_LAB_PROMOTION_PRESENT,
                 context->GpuvaLabPromotionPresent);
+            context->GpuMmuDeclare = Bc250ActiveReadTunableChecked(
+                L"GpuMmuDeclare", 0u, &present);
+            context->GpuMmuDeclarePresent = present;
             /* 1 preserva o comportamento atual (liga AUTO_CTXSW_ENABLE antes do
              * kick do anel). O upstream faz o contrario durante o bring-up. */
             context->SdmaAutoCtxSw =

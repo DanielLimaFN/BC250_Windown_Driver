@@ -344,6 +344,14 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     volatile LONG GpuvaActivationEligible;
     uint32_t GpuvaLabPromotion;
     uint32_t GpuvaLabPromotionPresent;
+    /*
+     * Declara ao dxgkrnl o modelo de memoria GpuMmu (GpuVaReady/PagingReady
+     * nos runtime caps). Separado de GpuvaLabPromotion, que governa se a
+     * SUBMISSAO e' liberada. Default 0: sem ele o adaptador continua
+     * declarando Mem(VA=0, GpuMmu=0), que e' o estado medido em 03/09.
+     */
+    uint32_t GpuMmuDeclare;
+    uint32_t GpuMmuDeclarePresent;
     uint32_t GpuvaActivationBlockMask;
     uint32_t GpuvaActivationSnapshotGeneration;
     uint32_t GpuvaActivationSnapshotEpoch;
