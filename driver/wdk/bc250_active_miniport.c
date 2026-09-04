@@ -13,6 +13,9 @@ DRIVER_INITIALIZATION_DATA g_Bc250ActiveInitializationData;
 
 #define BC250_ACTIVE_MAX_ADAPTERS 8u
 static EX_PUSH_LOCK g_Bc250AdapterDirectoryLock;
+static BC250_GPUVA_JOURNAL_STATUS Bc250ActiveInitializeJournalSet(
+    BC250_DXGK_ACTIVE_CONTEXT *Context);
+
 static BC250_DXGK_ACTIVE_CONTEXT *
     g_Bc250AdapterDirectory[BC250_ACTIVE_MAX_ADAPTERS];
 
@@ -2718,7 +2721,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiAddDeviceActive(
     InterlockedExchange(&context->GpuvaSpaceReady, 1);
     if (Bc250GpuvaSnapshotStoreInitialize(&context->GpuvaSnapshots, 48u) !=
             BC250_GPUVA_OK ||
-        Bc250GpuvaJournalInitialize(&context->GpuvaJournal) !=
+        Bc250ActiveInitializeJournalSet(context) !=
             BC250_GPUVA_JOURNAL_OK) {
         ExFreePoolWithTag(context, BC250_ACTIVE_POOL_TAG);
         Bc250ProbeRecord(BC250_PROBE_ADD_DEVICE_STATUS,
@@ -4831,7 +4834,14 @@ static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason(
     context->GpuvaActivationBlockMask =
         BC250_GPUVA_GATE_BLOCK_ADAPTER_INACTIVE;
     InterlockedExchange(&context->GpuvaJournalReady, 0);
-    Bc250GpuvaJournalAbort(&context->GpuvaJournal);
+    {
+        uint32_t journalSlot;
+        for (journalSlot = 0u;
+             journalSlot < BC250_ACTIVE_GPUVA_JOURNAL_SLOTS;
+             ++journalSlot) {
+            Bc250GpuvaJournalAbort(&context->GpuvaJournals[journalSlot]);
+        }
+    }
     context->GpuvaHierarchyPending = 0u;
     context->GpuvaHierarchyProcess = NULL;
     context->GpuvaHierarchyRootPageTable = 0u;
@@ -5747,7 +5757,8 @@ static LONG Bc250ActiveEvaluateGpuvaActivationEligibility(
     uint32_t blocked = 0u;
 
     if (active == NULL) return 0;
-    if (active->GpuvaJournal.Pending != 0u)
+    if (Bc250GpuvaJournalSetAnyPending(active->GpuvaJournals,
+            BC250_ACTIVE_GPUVA_JOURNAL_SLOTS) != 0u)
         blocked |= BC250_GPUVA_GATE_BLOCK_JOURNAL_PENDING;
     if (active->GpuvaHierarchyPending != 0u)
         blocked |= BC250_GPUVA_GATE_BLOCK_HIERARCHY_PENDING;
@@ -5819,7 +5830,8 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
         (unsigned long long)pFlushTlb->StartVirtualAddress,
         (unsigned long long)pFlushTlb->EndVirtualAddress,
         pFlushTlb->hProcess,
-        active->GpuvaJournal.Pending,
+        Bc250GpuvaJournalSetAnyPending(active->GpuvaJournals,
+            BC250_ACTIVE_GPUVA_JOURNAL_SLOTS),
         active->GpuvaHierarchyPending);
 
     KeEnterCriticalRegion();
@@ -5831,11 +5843,14 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
         return STATUS_DEVICE_NOT_READY;
     }
     BOOLEAN canCommitJournal = FALSE;
-    if (active->GpuvaJournal.Pending != 0u &&
-        active->GpuvaJournal.Process == (BC250_MCDM_HANDLE)pFlushTlb->hProcess &&
+    BC250_GPUVA_JOURNAL *flushJournal = Bc250GpuvaJournalSetSelect(
+        active->GpuvaJournals, BC250_ACTIVE_GPUVA_JOURNAL_SLOTS,
+        (BC250_MCDM_HANDLE)pFlushTlb->hProcess,
+        pFlushTlb->RootPageTableAddress.SegmentOffset, 0u, NULL);
+    if (flushJournal != NULL && flushJournal->Pending != 0u &&
         pFlushTlb->RootPageTableAddress.SegmentOffset != 0u &&
-        (active->GpuvaJournal.ExpectedRootPageTable == 0u ||
-         active->GpuvaJournal.ExpectedRootPageTable == pFlushTlb->RootPageTableAddress.SegmentOffset) &&
+        (flushJournal->ExpectedRootPageTable == 0u ||
+         flushJournal->ExpectedRootPageTable == pFlushTlb->RootPageTableAddress.SegmentOffset) &&
         pFlushTlb->RootPageTableAddress.SegmentId == 1u) {
         canCommitJournal = TRUE;
     }
@@ -5854,7 +5869,7 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
         Bc250DisplayLog("[ActiveFlushTlb] FlushMappedGfxhubTlb failed -> IO_DEVICE_ERROR\n");
         return STATUS_IO_DEVICE_ERROR;
     }
-    if (!canCommitJournal || active->GpuvaJournal.Pending == 0u) {
+    if (!canCommitJournal) {
         active->GpuvaHierarchyPending = 0u;
         active->GpuvaHierarchyProcess = NULL;
         active->GpuvaHierarchyRootPageTable = 0u;
@@ -5878,10 +5893,11 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
             telemetryOperational, telemetryBlocked, telemetryGeneration,
             telemetryEpoch, telemetryLiveCount);
         Bc250DisplayLog("[ActiveFlushTlb] (Pending=%u, CanCommit=%u) Finished -> SUCCESS\n",
-            active->GpuvaJournal.Pending, canCommitJournal ? 1u : 0u);
+            flushJournal != NULL ? flushJournal->Pending : 0u,
+            canCommitJournal ? 1u : 0u);
         return STATUS_SUCCESS;
     }
-    journalStatus = Bc250GpuvaJournalCommitFlush(&active->GpuvaJournal,
+    journalStatus = Bc250GpuvaJournalCommitFlush(flushJournal,
         &active->GpuvaSnapshots, &active->GpuvaSnapshotScratch,
         (BC250_MCDM_HANDLE)pFlushTlb->hProcess,
         pFlushTlb->RootPageTableAddress.SegmentOffset,
@@ -5917,7 +5933,7 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
     ExReleasePushLockExclusive(&active->ObjectLock);
     KeLeaveCriticalRegion();
     if (journalStatus != BC250_GPUVA_JOURNAL_OK) {
-        Bc250GpuvaJournalAbort(&active->GpuvaJournal);
+        Bc250GpuvaJournalAbort(flushJournal);
         InterlockedExchange(&active->GpuvaMappingsOperational, 0);
         telemetryOperational = 0u;
         Bc250ActiveRecordGpuvaGateTelemetry(telemetryEligible,
@@ -6004,6 +6020,19 @@ static BOOLEAN Bc250ActiveResolveDisplayGpuVa(
     return resolved;
 }
 
+static BC250_GPUVA_JOURNAL_STATUS Bc250ActiveInitializeJournalSet(
+    BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    uint32_t slot;
+    if (Context == NULL) return BC250_GPUVA_JOURNAL_BAD_ARGUMENT;
+    for (slot = 0u; slot < BC250_ACTIVE_GPUVA_JOURNAL_SLOTS; ++slot) {
+        BC250_GPUVA_JOURNAL_STATUS status =
+            Bc250GpuvaJournalInitialize(&Context->GpuvaJournals[slot]);
+        if (status != BC250_GPUVA_JOURNAL_OK) return status;
+    }
+    return BC250_GPUVA_JOURNAL_OK;
+}
+
 static NTSTATUS Bc250ActiveUpdatePageTableHandler(
     _In_ HANDLE hAdapter,
     _In_ CONST BC250_MCDM_RUNTIME_CAPS *Caps,
@@ -6013,6 +6042,8 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
     BC250_MCDM_OBJECT_RECORD processRecord;
     BC250_GPUVA_JOURNAL_PTE *entries;
     BC250_GPUVA_JOURNAL_STATUS journalStatus;
+    BC250_GPUVA_JOURNAL *leafJournal = NULL;
+    uint32_t evictionKind = BC250_GPUVA_JOURNAL_EVICT_NONE;
     UINT32 index;
     UINT32 chunkStart = 0u;
     UINT32 chunkCount = 0u;
@@ -6064,14 +6095,21 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
         active->GpuvaHierarchyHighestLevel = 0u;
     }
     if (update->PageTableLevel == 0u) {
-        if (active->GpuvaJournal.Pending != 0u &&
-            (active->GpuvaJournal.Process != (BC250_MCDM_HANDLE)update->hProcess ||
-             (active->GpuvaJournal.ExpectedRootPageTable != 0u &&
-              processRecord.RootPageTableAddress != 0u &&
-              active->GpuvaJournal.ExpectedRootPageTable != processRecord.RootPageTableAddress))) {
-            Bc250DisplayLog("[ActiveUpdatePT] Journal process switch (oldProc=0x%p, newProc=0x%p) -> Aborting orphaned journal\n",
-                active->GpuvaJournal.Process, update->hProcess);
-            Bc250GpuvaJournalAbort(&active->GpuvaJournal);
+        leafJournal = Bc250GpuvaJournalSetSelect(active->GpuvaJournals,
+            BC250_ACTIVE_GPUVA_JOURNAL_SLOTS,
+            (BC250_MCDM_HANDLE)update->hProcess,
+            processRecord.RootPageTableAddress, 1u, &evictionKind);
+        if (leafJournal == NULL) {
+            ExReleasePushLockExclusive(&active->ObjectLock);
+            KeLeaveCriticalRegion();
+            Bc250DisplayLog("[ActiveUpdatePT] Sem slot de journal para o processo 0x%p -> DEVICE_NOT_READY\n",
+                update->hProcess);
+            return STATUS_DEVICE_NOT_READY;
+        }
+        if (evictionKind != BC250_GPUVA_JOURNAL_EVICT_NONE) {
+            /* Descarte explicito: nunca silencioso. */
+            Bc250DisplayLog("[ActiveUpdatePT] Journal slot reciclado (kind=%u) para o processo 0x%p\n",
+                evictionKind, update->hProcess);
         }
         /*
          * O buffer de staging tem BC250_GPUVA_JOURNAL_MAX_CHANGES entradas,
@@ -6107,7 +6145,7 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
                 entries[index].Allocation = (BC250_MCDM_HANDLE)update->hAllocation;
 
             }
-            journalStatus = Bc250GpuvaJournalStageLeafUpdate(&active->GpuvaJournal,
+            journalStatus = Bc250GpuvaJournalStageLeafUpdate(leafJournal,
                 (BC250_MCDM_HANDLE)update->hProcess,
                 processRecord.RootPageTableAddress,
                 update->FirstPteVirtualAddress +
@@ -6115,15 +6153,15 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
                 entries, chunkCount);
         }
     } else {
-        if (processRecord.RootPageTableAddress != 0u &&
-            active->GpuvaJournal.Pending != 0u &&
-            (active->GpuvaJournal.Process !=
-                (BC250_MCDM_HANDLE)update->hProcess ||
-             (active->GpuvaJournal.ExpectedRootPageTable != 0u &&
-              active->GpuvaJournal.ExpectedRootPageTable !=
-                processRecord.RootPageTableAddress))) {
-            Bc250DisplayLog("[ActiveUpdatePT Lvl>0] Journal conflict -> Aborting orphaned journal\n");
-            Bc250GpuvaJournalAbort(&active->GpuvaJournal);
+        if (processRecord.RootPageTableAddress != 0u) {
+            /*
+             * So a transacao DO MESMO processo com root divergente e' descartada;
+             * o journal de outro processo nao e mais tocado aqui.
+             */
+            (void)Bc250GpuvaJournalSetSelect(active->GpuvaJournals,
+                BC250_ACTIVE_GPUVA_JOURNAL_SLOTS,
+                (BC250_MCDM_HANDLE)update->hProcess,
+                processRecord.RootPageTableAddress, 0u, NULL);
         }
         if (processRecord.RootPageTableAddress != 0u) {
             active->GpuvaHierarchyPending = 1u;

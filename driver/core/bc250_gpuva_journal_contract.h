@@ -61,4 +61,42 @@ BC250_GPUVA_JOURNAL_STATUS Bc250GpuvaJournalCommitFlush(
 
 void Bc250GpuvaJournalAbort(BC250_GPUVA_JOURNAL *Journal);
 
+/*
+ * CONJUNTO DE JOURNALS POR PROCESSO
+ *
+ * Um BC250_GPUVA_JOURNAL descreve UMA transacao de UM processo. Com um journal
+ * unico no adaptador, dois processos paginando ao mesmo tempo se atropelam: cada
+ * troca de produtor aborta a transacao pendente do outro.
+ *
+ * PROVA (corrida 04/09 18:25, docs/evidence/2026-09-04_18-25-10-.../bc250_display_log.txt):
+ *   1335: [ActiveUpdatePT] Lvl=0, FirstPteVA=0xAC0000, hProc=...980   (V=1, Seg=1, Addr=0xAD0)
+ *   1345: [ActiveUpdatePT] Journal process switch (old=...980, new=...740)
+ *                          -> Aborting orphaned journal
+ *   1450: [ActiveFlushTlb] StartVA=0xAC0000, EndVA=0x1550000, hProc=...980
+ *   1453: [ActiveFlushTlb] Journal commit GLOBAL ... Generation=5 -> SUCCESS
+ * O commit da geracao 5 publica o que foi estagiado DEPOIS da linha 1399; o range
+ * 0xAC0000 morreu no abort da 1345 e nunca foi reencenado (so 4 ocorrencias de
+ * FirstPteVA=0xAC0000 em 2560 linhas, nenhuma apos 1399). Resultado:
+ *   [ResolveGpuVa] SpaceResolveAddress failed: status=9 (NOT_FOUND) VA=0xAC0000
+ * e o gate fail-closed do Present recusa todos os blts (Submitted=0).
+ *
+ * Bc250GpuvaJournalSetSelect da a cada processo o seu proprio journal, de modo
+ * que a intercalacao deixa de destruir transacoes.
+ */
+#define BC250_GPUVA_JOURNAL_EVICT_NONE     0u
+#define BC250_GPUVA_JOURNAL_EVICT_ROOTLESS 1u
+#define BC250_GPUVA_JOURNAL_EVICT_SMALLEST 2u
+
+BC250_GPUVA_JOURNAL *Bc250GpuvaJournalSetSelect(
+    BC250_GPUVA_JOURNAL *Journals,
+    uint32_t JournalCount,
+    BC250_MCDM_HANDLE Process,
+    uint64_t ExpectedRootPageTable,
+    uint32_t AllowClaim,
+    uint32_t *EvictionKind);
+
+uint32_t Bc250GpuvaJournalSetAnyPending(
+    const BC250_GPUVA_JOURNAL *Journals,
+    uint32_t JournalCount);
+
 #endif

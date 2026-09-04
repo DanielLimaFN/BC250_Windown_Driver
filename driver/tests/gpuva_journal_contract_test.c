@@ -202,6 +202,175 @@ static int Bc250RunGpuvaJournalContractTest(void)
             0x1000u, 0x20000000u, 0x20001000u, &generation) == BC250_GPUVA_JOURNAL_OK);
         CHECK(journal.Pending == 0u);
     }
+
+    /*
+     * CONTROLE: reproduz o DEFEITO do journal unico.
+     *
+     * Este bloco nao testa a correcao -- ele demonstra, com o mesmo enredo da
+     * corrida 04/09 18:25, que um journal unico PERDE a transacao do processo A
+     * quando B intercala. Se algum dia este CHECK comecar a falhar porque o
+     * range sobreviveu, o journal unico deixou de ser o defeito descrito e este
+     * controle deve ser reescrito junto.
+     */
+    {
+        static BC250_GPUVA_JOURNAL journalSolo;
+        static BC250_GPUVA_SNAPSHOT_STORE storeSolo;
+        static BC250_GPUVA_SPACE scratchSolo;
+        BC250_GPUVA_JOURNAL_PTE entriesSolo[4];
+        BC250_GPUVA_SNAPSHOT_READER readerSolo;
+        BC250_MCDM_HANDLE procA = (BC250_MCDM_HANDLE)0x980;
+        BC250_MCDM_HANDLE procB = (BC250_MCDM_HANDLE)0x740;
+        uint32_t generationSolo = 0u;
+        uint32_t segSolo = 0u;
+        uint64_t offSolo = 0ull;
+
+        CHECK(Bc250GpuvaJournalInitialize(&journalSolo) == BC250_GPUVA_JOURNAL_OK);
+        CHECK(Bc250GpuvaSnapshotStoreInitialize(&storeSolo, 34u) == BC250_GPUVA_OK);
+        CHECK(Bc250GpuvaSpaceInitialize(&scratchSolo, 34u) == BC250_GPUVA_OK);
+
+        /* A estagia a primary do DWM: 0xAC0000 -> segmento 1, offset 0xAD0000. */
+        memset(entriesSolo, 0, sizeof(entriesSolo));
+        entriesSolo[0].Valid = 1u;
+        entriesSolo[0].Permissions = BC250_PTE_READABLE | BC250_PTE_WRITEABLE;
+        entriesSolo[0].SegmentId = 1u;
+        entriesSolo[0].SegmentOffset = 0xAD0000ull;
+        entriesSolo[0].Allocation = (BC250_MCDM_HANDLE)0xAD;
+        CHECK(Bc250GpuvaJournalStageLeafUpdate(&journalSolo, procA,
+            0x1F56F000ull, 0xAC0000ull, entriesSolo, 1u) ==
+            BC250_GPUVA_JOURNAL_OK);
+        CHECK(journalSolo.Process == procA);
+
+        /* B intercala: o journal unico troca de dono e A e' descartado. */
+        memset(entriesSolo, 0, sizeof(entriesSolo));
+        entriesSolo[0].Valid = 1u;
+        entriesSolo[0].Permissions = BC250_PTE_READABLE;
+        entriesSolo[0].SegmentId = 1u;
+        entriesSolo[0].SegmentOffset = 0x260000ull;
+        CHECK(Bc250GpuvaJournalStageLeafUpdate(&journalSolo, procB,
+            0ull, 0x260000ull, entriesSolo, 1u) == BC250_GPUVA_JOURNAL_OK);
+        CHECK(journalSolo.Process == procB);
+
+        /* A volta e comita: publica, mas 0xAC0000 nao esta mais la. */
+        memset(entriesSolo, 0, sizeof(entriesSolo));
+        entriesSolo[0].Valid = 1u;
+        entriesSolo[0].Permissions = BC250_PTE_READABLE;
+        entriesSolo[0].SegmentId = 1u;
+        entriesSolo[0].SegmentOffset = 0xC00000ull;
+        CHECK(Bc250GpuvaJournalStageLeafUpdate(&journalSolo, procA,
+            0x1F56F000ull, 0xC00000ull, entriesSolo, 1u) ==
+            BC250_GPUVA_JOURNAL_OK);
+        CHECK(Bc250GpuvaJournalCommitFlush(&journalSolo, &storeSolo,
+            &scratchSolo, procA, 0x1F56F000ull, 0ull, 0ull,
+            &generationSolo) == BC250_GPUVA_JOURNAL_OK);
+
+        CHECK(Bc250GpuvaSnapshotAcquire(&storeSolo, &readerSolo) == BC250_GPUVA_OK);
+        /* 0xC00000 sobreviveu (foi estagiado depois da troca)... */
+        CHECK(Bc250GpuvaSpaceResolveAddress(readerSolo.Space, procA, 0xC00000ull,
+            BC250_PTE_READABLE, &segSolo, &offSolo) == BC250_GPUVA_OK);
+        /* ...mas 0xAC0000 sumiu, com o mesmo NOT_FOUND do silicio (status=9). */
+        CHECK(Bc250GpuvaSpaceResolveAddress(readerSolo.Space, procA, 0xAC0000ull,
+            BC250_PTE_READABLE, &segSolo, &offSolo) == BC250_GPUVA_NOT_FOUND);
+        Bc250GpuvaSnapshotRelease(&storeSolo, &readerSolo);
+    }
+
+    /*
+     * REGRESSAO DA CORRIDA 04/09 18:25 -- intercalacao de processos.
+     *
+     * Com um journal unico, o padrao abaixo perdia a transacao do processo A:
+     *   1335: [ActiveUpdatePT] FirstPteVA=0xAC0000, hProc=...980  (staged)
+     *   1345: Journal process switch (old=...980, new=...740) -> Aborting
+     *   1453: commit de ...980 publica a geracao 5 SEM 0xAC0000
+     *   ->   [ResolveGpuVa] SpaceResolveAddress failed: status=9 (NOT_FOUND)
+     *
+     * Com journalsMp por processo, A sobrevive a intercalacao de B e comita.
+     */
+    {
+        /* static: 4 journals sao ~112 KB e estourariam a sonda de pilha
+         * (__chkstk nao existe no build freestanding dos testes). */
+        static BC250_GPUVA_JOURNAL journalsMp[4];
+        static BC250_GPUVA_SNAPSHOT_STORE storeMp;
+        static BC250_GPUVA_SPACE scratchMp;
+        BC250_GPUVA_JOURNAL_PTE entriesMp[4];
+        BC250_GPUVA_JOURNAL *selected;
+        BC250_GPUVA_SNAPSHOT_READER readerMp;
+        BC250_MCDM_HANDLE procA = (BC250_MCDM_HANDLE)0x980;
+        BC250_MCDM_HANDLE procB = (BC250_MCDM_HANDLE)0x740;
+        uint32_t generationMp = 0u;
+        uint32_t evictionKind = 0xFFFFFFFFu;
+        uint32_t backingSegment = 0u;
+        uint64_t backingOffset = 0ull;
+        uint32_t i;
+
+        for (i = 0u; i < 4u; ++i) {
+            CHECK(Bc250GpuvaJournalInitialize(&journalsMp[i]) ==
+                BC250_GPUVA_JOURNAL_OK);
+        }
+        CHECK(Bc250GpuvaSnapshotStoreInitialize(&storeMp, 34u) ==
+            BC250_GPUVA_OK);
+        CHECK(Bc250GpuvaSpaceInitialize(&scratchMp, 34u) == BC250_GPUVA_OK);
+        CHECK(Bc250GpuvaJournalSetAnyPending(journalsMp, 4u) == 0u);
+
+        /* A estagia a primary: 0xAC0000 -> segmento 1, offset 0xAD0000. */
+        memset(entriesMp, 0, sizeof(entriesMp));
+        entriesMp[0].Valid = 1u;
+        entriesMp[0].Permissions = BC250_PTE_READABLE | BC250_PTE_WRITEABLE;
+        entriesMp[0].SegmentId = 1u;
+        entriesMp[0].SegmentOffset = 0xAD0000ull;
+        entriesMp[0].Allocation = (BC250_MCDM_HANDLE)0xAD;
+        selected = Bc250GpuvaJournalSetSelect(journalsMp, 4u, procA,
+            0x1F56F000ull, 1u, &evictionKind);
+        CHECK(selected != NULL);
+        CHECK(evictionKind == BC250_GPUVA_JOURNAL_EVICT_NONE);
+        CHECK(Bc250GpuvaJournalStageLeafUpdate(selected, procA,
+            0x1F56F000ull, 0xAC0000ull, entriesMp, 1u) ==
+            BC250_GPUVA_JOURNAL_OK);
+
+        /* B intercala. Antes isso abortava A; agora cai em outro slot. */
+        memset(entriesMp, 0, sizeof(entriesMp));
+        entriesMp[0].Valid = 1u;
+        entriesMp[0].Permissions = BC250_PTE_READABLE;
+        entriesMp[0].SegmentId = 1u;
+        entriesMp[0].SegmentOffset = 0x260000ull;
+        entriesMp[0].Allocation = (BC250_MCDM_HANDLE)0x26;
+        selected = Bc250GpuvaJournalSetSelect(journalsMp, 4u, procB,
+            0ull, 1u, &evictionKind);
+        CHECK(selected != NULL);
+        CHECK(evictionKind == BC250_GPUVA_JOURNAL_EVICT_NONE);
+        CHECK(Bc250GpuvaJournalStageLeafUpdate(selected, procB,
+            0ull, 0x260000ull, entriesMp, 1u) == BC250_GPUVA_JOURNAL_OK);
+
+        /* Os dois convivem: slots distintos, ambos pendentes. */
+        CHECK(journalsMp[0].Pending == 1u && journalsMp[0].Process == procA);
+        CHECK(journalsMp[1].Pending == 1u && journalsMp[1].Process == procB);
+
+        /* A comita. O range 0xAC0000 TEM que estar publicado. */
+        selected = Bc250GpuvaJournalSetSelect(journalsMp, 4u, procA,
+            0x1F56F000ull, 0u, &evictionKind);
+        CHECK(selected == &journalsMp[0]);
+        CHECK(Bc250GpuvaJournalCommitFlush(selected, &storeMp, &scratchMp, procA,
+            0x1F56F000ull, 0ull, 0ull, &generationMp) == BC250_GPUVA_JOURNAL_OK);
+        CHECK(journalsMp[0].Pending == 0u);
+        /* B continua intacto: o commit de A nao o tocou. */
+        CHECK(journalsMp[1].Pending == 1u && journalsMp[1].Process == procB);
+
+        CHECK(Bc250GpuvaSnapshotAcquire(&storeMp, &readerMp) == BC250_GPUVA_OK);
+        CHECK(Bc250GpuvaSpaceResolveAddress(readerMp.Space, procA, 0xAC0000ull,
+            BC250_PTE_READABLE, &backingSegment, &backingOffset) ==
+            BC250_GPUVA_OK);
+        CHECK(backingSegment == 1u && backingOffset == 0xAD0000ull);
+        /* Isolamento entre processos continua valendo. */
+        CHECK(Bc250GpuvaSpaceResolveAddress(readerMp.Space, procB, 0xAC0000ull,
+            BC250_PTE_READABLE, &backingSegment, &backingOffset) !=
+            BC250_GPUVA_OK);
+        Bc250GpuvaSnapshotRelease(&storeMp, &readerMp);
+
+        /* Sem slot livre, o despejo prefere quem nao tem root page table. */
+        CHECK(Bc250GpuvaJournalSetSelect(journalsMp, 4u,
+            (BC250_MCDM_HANDLE)0xAAA, 0x2000ull, 1u, &evictionKind) != NULL);
+        CHECK(evictionKind == BC250_GPUVA_JOURNAL_EVICT_NONE);
+        CHECK(Bc250GpuvaJournalSetAnyPending(journalsMp, 4u) == 1u);
+    }
+
     return 0;
 }
 

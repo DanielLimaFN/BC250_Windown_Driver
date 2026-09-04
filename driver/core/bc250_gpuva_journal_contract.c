@@ -65,6 +65,97 @@ void Bc250GpuvaJournalAbort(BC250_GPUVA_JOURNAL *Journal)
     Journal->ChangeCount = 0u;
 }
 
+uint32_t Bc250GpuvaJournalSetAnyPending(
+    const BC250_GPUVA_JOURNAL *Journals,
+    uint32_t JournalCount)
+{
+    uint32_t i;
+    if (Journals == NULL) return 0u;
+    for (i = 0u; i < JournalCount; ++i) {
+        if (Journals[i].Signature == BC250_GPUVA_JOURNAL_SIGNATURE &&
+            Journals[i].Pending != 0u) {
+            return 1u;
+        }
+    }
+    return 0u;
+}
+
+BC250_GPUVA_JOURNAL *Bc250GpuvaJournalSetSelect(
+    BC250_GPUVA_JOURNAL *Journals,
+    uint32_t JournalCount,
+    BC250_MCDM_HANDLE Process,
+    uint64_t ExpectedRootPageTable,
+    uint32_t AllowClaim,
+    uint32_t *EvictionKind)
+{
+    uint32_t i;
+    BC250_GPUVA_JOURNAL *freeSlot = NULL;
+    BC250_GPUVA_JOURNAL *rootless = NULL;
+    BC250_GPUVA_JOURNAL *smallest = NULL;
+
+    if (EvictionKind != NULL) *EvictionKind = BC250_GPUVA_JOURNAL_EVICT_NONE;
+    if (Journals == NULL || JournalCount == 0u || Process == NULL) return NULL;
+
+    for (i = 0u; i < JournalCount; ++i) {
+        BC250_GPUVA_JOURNAL *journal = &Journals[i];
+        if (journal->Signature != BC250_GPUVA_JOURNAL_SIGNATURE) continue;
+        if (journal->Pending == 0u) {
+            if (freeSlot == NULL) freeSlot = journal;
+            continue;
+        }
+        if (journal->Process != Process) {
+            /*
+             * Candidatos a despejo, so usados quando nao ha slot livre.
+             * Um journal com ExpectedRootPageTable == 0 nao tem root page table
+             * e portanto NUNCA podera comitar -- e o descarte menos danoso.
+             */
+            if (journal->ExpectedRootPageTable == 0u && rootless == NULL) {
+                rootless = journal;
+            }
+            if (smallest == NULL ||
+                journal->ChangeCount < smallest->ChangeCount) {
+                smallest = journal;
+            }
+            continue;
+        }
+        /*
+         * Mesmo processo. Se ambos os roots sao conhecidos e divergem, a
+         * transacao pendente pertence a uma hierarquia que nao existe mais:
+         * so nesse caso ela e' descartada, e ainda assim de forma explicita.
+         */
+        if (journal->ExpectedRootPageTable != 0u &&
+            ExpectedRootPageTable != 0u &&
+            journal->ExpectedRootPageTable != ExpectedRootPageTable) {
+            if (AllowClaim == 0u) return NULL;
+            Bc250GpuvaJournalAbort(journal);
+            if (EvictionKind != NULL) {
+                *EvictionKind = BC250_GPUVA_JOURNAL_EVICT_ROOTLESS;
+            }
+            return journal;
+        }
+        return journal;
+    }
+
+    if (AllowClaim == 0u) return NULL;
+    if (freeSlot != NULL) return freeSlot;
+
+    if (rootless != NULL) {
+        Bc250GpuvaJournalAbort(rootless);
+        if (EvictionKind != NULL) {
+            *EvictionKind = BC250_GPUVA_JOURNAL_EVICT_ROOTLESS;
+        }
+        return rootless;
+    }
+    if (smallest != NULL) {
+        Bc250GpuvaJournalAbort(smallest);
+        if (EvictionKind != NULL) {
+            *EvictionKind = BC250_GPUVA_JOURNAL_EVICT_SMALLEST;
+        }
+        return smallest;
+    }
+    return NULL;
+}
+
 BC250_GPUVA_JOURNAL_STATUS Bc250GpuvaJournalStageLeafUpdate(
     BC250_GPUVA_JOURNAL *Journal,
     BC250_MCDM_HANDLE Process,

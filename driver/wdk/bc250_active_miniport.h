@@ -251,6 +251,8 @@ typedef struct BC250_PFP_DIRECT_LOAD_EVIDENCE {
     uint32_t Vmid0SemAcquired;
 } BC250_PFP_DIRECT_LOAD_EVIDENCE;
 
+#define BC250_ACTIVE_GPUVA_JOURNAL_SLOTS 4u
+
 typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     uint32_t Signature;
     PDEVICE_OBJECT PhysicalDeviceObject;
@@ -333,7 +335,14 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     volatile LONG GpuvaSpaceReady;
     BC250_GPUVA_SNAPSHOT_STORE GpuvaSnapshots;
     BC250_GPUVA_SPACE GpuvaSnapshotScratch;
-    BC250_GPUVA_JOURNAL GpuvaJournal;
+    /*
+     * Um journal por processo. Com um journal unico, dois processos paginando
+     * ao mesmo tempo se atropelavam e cada troca de produtor abortava a
+     * transacao do outro -- foi assim que o range 0xAC0000 da primary do DWM
+     * nunca chegou ao snapshot na corrida 04/09 18:25. Ver o comentario de
+     * Bc250GpuvaJournalSetSelect em bc250_gpuva_journal_contract.h.
+     */
+    BC250_GPUVA_JOURNAL GpuvaJournals[BC250_ACTIVE_GPUVA_JOURNAL_SLOTS];
     BC250_GPUVA_JOURNAL_PTE GpuvaJournalStaging[BC250_GPUVA_JOURNAL_MAX_CHANGES];
     volatile LONG GpuvaJournalReady;
     uint32_t GpuvaHierarchyPending;
