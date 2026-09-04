@@ -37,23 +37,22 @@ Em **toda** proposta, `implementation_plan.md` ou resposta técnica, apresente:
 ```text
 ================================== STATUS DO DRIVER BC-250 ==================================
 Base Geral Pre-WDDM (Lab)        ██████████████████▋░  93%   Estavel e Isolado
-SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Arm provado no miniport de producao em 04/09 11:11 (RPTR=52, Fence=0x1001, 4/4 OK, 1 poll)
-GCVM & Traducao de Memoria       ███████████████████░  95%   04/09 17:05: 135 UPDATE_PAGE_TABLE com journalStatus=0 (inclui pagina zero) e 2 FLUSH_TLB com AckObserved=1
+SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Tripe rearmado em 04/09 18:10; encoder de paging corrigido (capacidade potencia de dois)
+GCVM & Traducao de Memoria       ███████████████████░  95%   UPDATE_PAGE_TABLE e FLUSH_TLB com journalStatus=0 e AckObserved=1; VIRTUAL_FILL de 11.075.584 bytes completo
 RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
-Telemetria & Observabilidade     ██████████████████░░  90%   Schema 134; telemetria ativa em Present, dirty rects e VidPn
+Telemetria & Observabilidade     ███████████████████░  95%   O log do driver sobrevive a BugCheck e a hard reset em C:\BC250_DISPLAY_LOG.txt
 Compute & Async Queues (MEC/MQD) ██████████████████░░  90%   P1 17/17 e P2 16/16 provados; fila persistente nao consome
-Miniport WDDM Display+Render     █████████████████░░░  85%   Código 0 por 120 s sem BugCheck; primary nunca criada em 17:05; blt P5 nao fechado
+Miniport WDDM Display+Render     ██████████████████░░  92%   CreateAllocation, CommitVidPn, SetVidPnSourceAddress e Present chamados em 18:10; blt recusado pelo gate
 =============================================================================================
-Veredito Global: a corrida 04/09 17:05 provou no silicio a correcao da pagina zero -- 135 UPDATE_PAGE_TABLE
-com journalStatus=0 (incluindo FirstPteVA=0x0, Num=16, que abortava em 16:47), dois FLUSH_TLB com AckObserved=1
-e commit de journal SUCCESS. Nao houve BugCheck, nao houve TDR, nenhum evento de erro no log do sistema e o
-fusivel anti-boot-loop NAO disparou; o dispositivo ficou em Codigo 0 os 120 s inteiros. A tela segue preta por
-OUTRO motivo, medido: o dxgkrnl NUNCA cria a alocacao primaria. GetStandardAllocationDriverData devolvia
-AllocationPrivateDriverDataSize=0, entao o VidMm abandonava a criacao antes de chamar CreateAllocation (0
-ocorrencias, com log na entrada da DDI), comitava VidPN vazia com hPrimaryAllocation=NULL 7 vezes seguidas e
-desligava a fonte. Corrigido em e458b8e reemitindo BC250_ALLOCATION_PRIVATE_V1 de 40 bytes, o mesmo formato que
-funcionou as 12:23 (50 CreateAllocation, primary de 11.075.584 bytes, SetVidPnSourceAddress chamado).
-Criacao da primary e blt de apresentacao com este binario — NAO VALIDADO EM HARDWARE.
+Veredito Global: em 04/09 18:10 a cadeia inteira de apresentacao passou a rodar pela primeira
+vez -- 33 CreateAllocation, 10 primary identificadas, VIRTUAL_FILL de 11.075.584 bytes completo,
+1 CommitVidPn real, 1 SetVidPnSourceAddress e 30 Present. Sem BugCheck, sem TDR, StopDevice
+limpo e fusivel em CLEAN. Nenhum blt foi submetido (Submitted=0): o gate fail-closed recusou a
+origem porque liamos pAllocationList quando o dxgkrnl preenche pAllocationInfo -- membros da
+mesma uniao com layouts de 24 e 32 bytes. Corrigido em dee893e, com o PhysicalAddress da origem
+agora vindo pronto do VidMm em vez de inferido pela GPUVA. O desktop existe na origem
+(Spread PRIMARY NonZero=256/256) e o scanout GOP segue zerado.
+Blt de apresentacao — NAO VALIDADO EM HARDWARE.
 Handoff completo: docs/HANDOFF_2026-09-04.md
 =============================================================================================
 ```
