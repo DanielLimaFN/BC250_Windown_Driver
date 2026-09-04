@@ -162,6 +162,7 @@ def main() -> int:
     pm4_header_path = (ROOT / "driver" / "core" /
                        "bc250_pm4_packet_builder.h")
     display_path = ROOT / "driver" / "wdk" / "bc250_display_ddi.c"
+    sdma_present_path = ROOT / "driver" / "wdk" / "bc250_sdma_present.c"
     build_path = ROOT / "driver" / "wdk" / "build-contract.bat"
 
     active = active_path.read_text(encoding="utf-8")
@@ -196,8 +197,49 @@ def main() -> int:
     pm4_builder = pm4_builder_path.read_text(encoding="utf-8")
     pm4_header = pm4_header_path.read_text(encoding="utf-8")
     display = display_path.read_text(encoding="utf-8")
+    sdma_present = sdma_present_path.read_text(encoding="utf-8")
     build = build_path.read_text(encoding="utf-8")
     errors: list[str] = []
+
+    # GPUVA/Present deve permanecer transacional: UpdatePT nao publica um
+    # cache paralelo, erro do journal nao vira sucesso e o blt so conclui com
+    # fence nova (poison substituido) mais RPTR alcancando WPTR.
+    update_pt = function_body(
+        active, "static NTSTATUS Bc250ActiveUpdatePageTableHandler(")
+    flush_tlb = function_body(
+        active, "NTSTATUS Bc250ActiveFlushTlbHandler(")
+    resolve_present = function_body(
+        display, "BOOLEAN Bc250DisplayResolvePresentSource(")
+    sdma_blt = function_body(
+        sdma_present, "BOOLEAN Bc250SdmaPresentBlt(")
+    require(update_pt, "return STATUS_DEVICE_BUSY;",
+            "journal BUSY propagated by UpdatePageTable", errors)
+    require(update_pt, "return STATUS_INVALID_PARAMETER;",
+            "journal invalid state propagated by UpdatePageTable", errors)
+    forbid(update_pt, "Bc250DisplayRecordGpuVaMapping(",
+           "GPUVA publication before journal commit/FlushTlb", errors)
+    require(flush_tlb, "return STATUS_IO_DEVICE_ERROR;",
+            "journal commit failure propagated by FlushTlb", errors)
+    require(flush_tlb, "pFlushTlb->RootPageTableAddress.SegmentOffset != 0u",
+            "nonzero root gate before journal commit", errors)
+    require(flush_tlb, "0u, 0u,\n        &generation",
+            "global journal commit after global physical TLB invalidation", errors)
+    forbid(resolve_present, "Bc250DisplayLookupPhysicalAddress(",
+           "parallel uncommitted GPUVA cache in Present", errors)
+    require(sdma_blt, "BC250_SDMA_PRESENT_FENCE_POISON;",
+            "per-blit fence poison", errors)
+    require(sdma_blt, "if (rptrReg == targetWptr)",
+            "per-blit RPTR equals WPTR gate", errors)
+    require(sdma_blt, "BLT_TRIPOD PASS",
+            "per-blit tripod telemetry", errors)
+    present_body = function_body(
+        display, "NTSTATUS APIENTRY Bc250DxgkDdiPresent(")
+    require(present_body, "BYTE_PROOF PASS:",
+            "byte-by-byte Present proof telemetry", errors)
+    require(present_body, "g_Bc250SdmaPresent.HardwareEnabled = FALSE;",
+            "SDMA disable after byte proof mismatch", errors)
+    forbid(present_body, "else if (fromPrimary)",
+           "unresolved Present fallback to SharedPrimary", errors)
 
     # Display PnP must not activate laboratory hardware transactions.
     require(active,

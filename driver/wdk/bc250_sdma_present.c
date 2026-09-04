@@ -459,6 +459,11 @@ BOOLEAN Bc250SdmaPresentBlt(
         g_Bc250SdmaPresent.WorkGpuAddress + BC250_SDMA_PRESENT_FENCE_OFFSET,
         nextFence);
 
+    /* Cada submissao precisa substituir poison; fence anterior nao e' prova. */
+    g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_FENCE_OFFSET / 4u] =
+        BC250_SDMA_PRESENT_FENCE_POISON;
+    KeMemoryBarrier();
+
     startCursor = g_Bc250SdmaPresent.CurrentCursor;
     if (startCursor + cursor >= BC250_SDMA_PRESENT_RING_DWORDS) {
         startCursor = 0u;
@@ -489,10 +494,16 @@ BOOLEAN Bc250SdmaPresentBlt(
             uint32_t rptrReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_RPTR - BC250_SDMA0_MMIO_WINDOW_START);
             uint32_t targetWptr = (uint32_t)(g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t));
             if (rptrReg == targetWptr) {
+                LONG completed;
                 g_Bc250SdmaPresent.TripodValidated = TRUE;
+                completed = InterlockedIncrement(&g_Bc250SdmaPresent.BltCompletedCount);
+                if (completed == 1 || (completed % 60) == 0) {
+                    Bc250DisplayLog("[SdmaPresent] BLT_TRIPOD PASS #%ld: WPTR=%u RPTR=%u Fence=%08X Poison=%08X Bytes=%u\n",
+                        completed, targetWptr, rptrReg, fenceObserved,
+                        BC250_SDMA_PRESENT_FENCE_POISON, ByteCount);
+                }
+                return TRUE;
             }
-            InterlockedIncrement(&g_Bc250SdmaPresent.BltCompletedCount);
-            return TRUE;
         }
         KeStallExecutionProcessor(5u);
     }

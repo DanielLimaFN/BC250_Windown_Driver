@@ -5833,6 +5833,7 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
     BOOLEAN canCommitJournal = FALSE;
     if (active->GpuvaJournal.Pending != 0u &&
         active->GpuvaJournal.Process == (BC250_MCDM_HANDLE)pFlushTlb->hProcess &&
+        pFlushTlb->RootPageTableAddress.SegmentOffset != 0u &&
         (active->GpuvaJournal.ExpectedRootPageTable == 0u ||
          active->GpuvaJournal.ExpectedRootPageTable == pFlushTlb->RootPageTableAddress.SegmentOffset) &&
         pFlushTlb->RootPageTableAddress.SegmentId == 1u) {
@@ -5884,7 +5885,7 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
         &active->GpuvaSnapshots, &active->GpuvaSnapshotScratch,
         (BC250_MCDM_HANDLE)pFlushTlb->hProcess,
         pFlushTlb->RootPageTableAddress.SegmentOffset,
-        pFlushTlb->StartVirtualAddress, pFlushTlb->EndVirtualAddress,
+        0u, 0u,
         &generation);
     if (journalStatus == BC250_GPUVA_JOURNAL_OK) {
         active->GpuvaHierarchyPending = 0u;
@@ -5922,13 +5923,16 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
         Bc250ActiveRecordGpuvaGateTelemetry(telemetryEligible,
             telemetryOperational, telemetryBlocked, telemetryGeneration,
             telemetryEpoch, telemetryLiveCount);
-        Bc250DisplayLog("[ActiveFlushTlb] Journal status=0x%08X (HW GFXHUB flush OK) -> SUCCESS\n", journalStatus);
-        return STATUS_SUCCESS;
+        Bc250DisplayLog("[ActiveFlushTlb] Journal status=0x%08X after HW GFXHUB flush -> STATUS_IO_DEVICE_ERROR\n",
+            journalStatus);
+        return STATUS_IO_DEVICE_ERROR;
     }
     /* GpuvaMappingsOperational permanece zero até o ensaio integrado. */
     Bc250ActiveRecordGpuvaGateTelemetry(telemetryEligible,
         telemetryOperational, telemetryBlocked, telemetryGeneration,
         telemetryEpoch, telemetryLiveCount);
+    Bc250DisplayLog("[ActiveFlushTlb] Journal commit GLOBAL after physical GFXHUB invalidation: Generation=%u -> SUCCESS\n",
+        generation);
     return STATUS_SUCCESS;
 }
 
@@ -5967,17 +5971,32 @@ static BOOLEAN Bc250ActiveResolveDisplayGpuVa(
             (BC250_MCDM_HANDLE)ContextHandle, BC250_MCDM_OBJECT_CONTEXT,
             NULL, &contextRecord);
         ExReleasePushLockExclusive(&active->ObjectLock);
-        if (objectStatus != BC250_MCDM_OBJECT_OK) continue;
+        if (objectStatus != BC250_MCDM_OBJECT_OK) {
+            Bc250DisplayLog("[ResolveGpuVa] Ctx=%p lookup failed: status=%u\n",
+                ContextHandle, (UINT32)objectStatus);
+            continue;
+        }
 
         RtlZeroMemory(&reader, sizeof(reader));
         resolveStatus = Bc250GpuvaSnapshotAcquire(
             &active->GpuvaSnapshots, &reader);
-        if (resolveStatus != BC250_GPUVA_OK) break;
+        if (resolveStatus != BC250_GPUVA_OK) {
+            Bc250DisplayLog("[ResolveGpuVa] SnapshotAcquire failed: status=%u\n",
+                (UINT32)resolveStatus);
+            break;
+        }
         resolveStatus = Bc250GpuvaSpaceResolveAddress(reader.Space,
             contextRecord.OwnerProcess, GpuVa, BC250_PTE_READABLE,
             SegmentId, PhysicalAddress);
         Bc250GpuvaSnapshotRelease(&active->GpuvaSnapshots, &reader);
-        resolved = resolveStatus == BC250_GPUVA_OK ? TRUE : FALSE;
+        if (resolveStatus == BC250_GPUVA_OK) {
+            resolved = TRUE;
+            Bc250DisplayLog("[ResolveGpuVa] SUCCESS: Ctx=%p Proc=%p VA=0x%llX -> Phys=0x%llX Seg=%u\n",
+                ContextHandle, contextRecord.OwnerProcess, GpuVa, *PhysicalAddress, *SegmentId);
+        } else {
+            Bc250DisplayLog("[ResolveGpuVa] SpaceResolveAddress failed: status=%u (Proc=%p VA=0x%llX)\n",
+                (UINT32)resolveStatus, contextRecord.OwnerProcess, GpuVa);
+        }
         break;
     }
     ExReleasePushLockExclusive(&g_Bc250AdapterDirectoryLock);
@@ -6087,23 +6106,6 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
                 entries[index].SegmentOffset = pte->PageAddress << 12;
                 entries[index].Allocation = (BC250_MCDM_HANDLE)update->hAllocation;
 
-                /* Registra mapeamento folha no rastreador de display para o Blt de Present */
-                {
-                    UINT64 entryVa = update->FirstPteVirtualAddress +
-                        (((UINT64)chunkStart + (UINT64)index) * BC250_GPUVA_PAGE_BYTES);
-                    if (pte->Valid != 0u && pte->Segment == 1u) {
-                        Bc250DisplayRecordGpuVaMapping(
-                            (HANDLE)update->hProcess,
-                            entryVa,
-                            pte->PageAddress << 12,
-                            BC250_GPUVA_PAGE_BYTES,
-                            (UINT32)pte->Segment);
-                    } else if (pte->Valid == 0u) {
-                        Bc250DisplayRecordGpuVaMapping(
-                            (HANDLE)update->hProcess,
-                            entryVa, 0ull, 0ull, 0u);
-                    }
-                }
             }
             journalStatus = Bc250GpuvaJournalStageLeafUpdate(&active->GpuvaJournal,
                 (BC250_MCDM_HANDLE)update->hProcess,
@@ -6164,7 +6166,17 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
     }
     ExReleasePushLockExclusive(&active->ObjectLock);
     KeLeaveCriticalRegion();
-    Bc250DisplayLog("[ActiveUpdatePT] Finished: journalStatus=%d -> SUCCESS\n", (int)journalStatus);
+    if (journalStatus == BC250_GPUVA_JOURNAL_BUSY) {
+        Bc250DisplayLog("[ActiveUpdatePT] Finished: journalStatus=%d -> STATUS_DEVICE_BUSY\n",
+            (int)journalStatus);
+        return STATUS_DEVICE_BUSY;
+    }
+    if (journalStatus != BC250_GPUVA_JOURNAL_OK) {
+        Bc250DisplayLog("[ActiveUpdatePT] Finished: journalStatus=%d -> STATUS_INVALID_PARAMETER\n",
+            (int)journalStatus);
+        return STATUS_INVALID_PARAMETER;
+    }
+    Bc250DisplayLog("[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS\n");
     return STATUS_SUCCESS;
 }
 

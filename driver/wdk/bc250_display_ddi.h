@@ -58,8 +58,8 @@ typedef struct BC250_DISPLAY_STATE {
     /*
      * Contrato DXGKARG_SETVIDPNSOURCEADDRESS (WDK 10.0.26100, d3dkmddi.h):
      * o DMM entrega PrimarySegment + PrimaryAddress + hAllocation. Essa e' a
-     * unica origem de scanout com autoridade -- nao depende de tracker de
-     * GPUVA nem de interpretacao de slot de pAllocationList.
+     * preservado para telemetria e diagnostico. No Present WDDM virtual, a
+     * origem autoritativa e' o Slot 1 resolvido pelo snapshot GPUVA comitado.
      */
     UINT PrimarySegment;
     HANDLE hPrimarySourceAllocation;
@@ -139,6 +139,13 @@ BOOLEAN Bc250DisplaySampleSurface(
     _In_ ULONG Samples,
     _Out_ ULONG *NonZeroCount,
     _Out_ ULONG *XorHash);
+
+/* Prova integral do blit: compara cada byte de duas faixas da abertura VRAM. */
+BOOLEAN Bc250DisplayCompareSurfaceBytes(
+    _In_ UINT64 SourceOffset,
+    _In_ UINT64 DestinationOffset,
+    _In_ ULONG ByteCount,
+    _Out_ UINT64 *FirstMismatchOffset);
 
 DXGKDDI_QUERY_CHILD_RELATIONS           Bc250DxgkDdiQueryChildRelations;
 DXGKDDI_QUERY_CHILD_STATUS              Bc250DxgkDdiQueryChildStatus;

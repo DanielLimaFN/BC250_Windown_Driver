@@ -320,11 +320,12 @@ BOOLEAN Bc250DisplayResolvePresentSource(
      * entrega a superficie desenhada via VirtualAddress (ex: 0xAC0000).
      */
     if (source->VirtualAddress != 0ull) {
-        if (Bc250DisplayLookupPhysicalAddress(hProcess, (UINT64)source->VirtualAddress, PhysicalAddress, SegmentId)) {
-            if (*SegmentId == 1u && *PhysicalAddress > 0ull) {
-                return TRUE;
-            }
-        }
+        /*
+         * A fonte autoritativa e' somente o snapshot publicado pelo journal
+         * depois do ACK do FlushTlb. O cache paralelo de PTEs nao participa
+         * do caminho de producao: ele podia expor uma atualizacao ainda nao
+         * comitada ou devolver backing antigo depois de um remapeamento.
+         */
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
         /* Protecao contra BugCheck 0x0A: ExAcquirePushLock nao pode ser chamado em DISPATCH_LEVEL */
         if (KeGetCurrentIrql() <= APC_LEVEL)
@@ -411,6 +412,36 @@ BOOLEAN Bc250DisplaySampleSurface(
 
     *NonZeroCount = nonZero;
     *XorHash = hash;
+    return TRUE;
+}
+
+BOOLEAN Bc250DisplayCompareSurfaceBytes(
+    _In_ UINT64 SourceOffset,
+    _In_ UINT64 DestinationOffset,
+    _In_ ULONG ByteCount,
+    _Out_ UINT64 *FirstMismatchOffset)
+{
+    volatile CONST UCHAR *base;
+    ULONG index;
+
+    if (FirstMismatchOffset != NULL) *FirstMismatchOffset = ~(UINT64)0;
+    if (FirstMismatchOffset == NULL || ByteCount == 0u ||
+        g_Bc250DisplayState.FrameBufferVirtual == NULL) return FALSE;
+    if (SourceOffset > g_Bc250DisplayState.FrameBufferSize ||
+        ByteCount > g_Bc250DisplayState.FrameBufferSize - SourceOffset ||
+        DestinationOffset > g_Bc250DisplayState.FrameBufferSize ||
+        ByteCount > g_Bc250DisplayState.FrameBufferSize - DestinationOffset) {
+        return FALSE;
+    }
+
+    base = (volatile CONST UCHAR *)g_Bc250DisplayState.FrameBufferVirtual;
+    for (index = 0u; index < ByteCount; ++index) {
+        if (base[(SIZE_T)SourceOffset + index] !=
+            base[(SIZE_T)DestinationOffset + index]) {
+            *FirstMismatchOffset = index;
+            return FALSE;
+        }
+    }
     return TRUE;
 }
 
@@ -2321,6 +2352,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
     DXGKARG_PRESENT *pPresent)
 {
     static LONG s_PresentCount = 0;
+    static LONG s_PresentByteProofState = 0;
     LONG count;
     NTSTATUS presentStatus = STATUS_NOT_SUPPORTED;
 
@@ -2360,25 +2392,21 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
          *    a imagem da tela (ex: GPUVA 0xAC0000 -> VRAM 0xC10000).
          *    Possui autoridade PRIMEIRA quando resolvida com sucesso.
          *
-         * 2. PrimarySegment/PrimaryAddress do ultimo SetVidPnSourceAddress.
-         *    Usada como fallback legitimo se o Present nao entregar slot virtual
-         *    resoluvel.
+         * O Primary de SetVidPnSourceAddress fica apenas em telemetria. A corrida
+         * 12:23 provou que copiar esse buffer pode exibir dados que nao sao o
+         * desktop; sem Slot 1 resolvido pelo snapshot, Present falha fechado.
          */
         UINT32 srcSegmentId = 0;
         BOOLEAN vaResolved = FALSE;
-        BOOLEAN fromPrimary = FALSE;
         uint64_t presentPhysical = 0;
         UINT32 presentSegmentId = 0;
         BOOLEAN presentResolved;
 
         presentResolved = Bc250DisplayResolvePresentSource(
             hContext, pPresent, &presentPhysical, &presentSegmentId);
-        fromPrimary = Bc250DisplayResolvePrimarySource(&srcPhysical, &srcSegmentId);
         if (presentResolved && presentSegmentId == 1u) {
             srcPhysical = presentPhysical;
             srcSegmentId = presentSegmentId;
-            vaResolved = TRUE;
-        } else if (fromPrimary) {
             vaResolved = TRUE;
         }
 
@@ -2519,6 +2547,23 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
 
             if (g_Bc250SdmaPresent.HardwareEnabled && dstScanoutGpu != 0 && srcGpu != dstScanoutGpu) {
                 sdmaDone = Bc250SdmaPresentBlt(srcGpu, dstScanoutGpu, scanoutBytes);
+            }
+
+            if (sdmaDone && presentResolved &&
+                InterlockedCompareExchange(&s_PresentByteProofState, 1, 0) == 0) {
+                UINT64 mismatchOffset = ~(UINT64)0;
+                if (Bc250DisplayCompareSurfaceBytes(
+                        srcPhysical, 0ull, scanoutBytes, &mismatchOffset)) {
+                    InterlockedExchange(&s_PresentByteProofState, 2);
+                    Bc250DisplayLog("[Present #%d] BYTE_PROOF PASS: Source=0x%llX Dest=0x0 Bytes=%u (byte-a-byte)\n",
+                        count, srcPhysical, scanoutBytes);
+                } else {
+                    InterlockedExchange(&s_PresentByteProofState, -1);
+                    g_Bc250SdmaPresent.HardwareEnabled = FALSE;
+                    sdmaDone = FALSE;
+                    Bc250DisplayLog("[Present #%d] BYTE_PROOF FAIL: Source=0x%llX Dest=0x0 Bytes=%u FirstMismatch=0x%llX; SDMA disabled\n",
+                        count, srcPhysical, scanoutBytes, mismatchOffset);
+                }
             }
 
             if (count <= 10 || (count % 60) == 0) {

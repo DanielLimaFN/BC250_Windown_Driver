@@ -259,7 +259,7 @@ BC250_GPUVA_STATUS Bc250GpuvaSpaceReplaceRangeTransactional(
     status = Bc250GpuvaValidateSpace(Space);
     if (status != BC250_GPUVA_OK) return status;
     if (Scratch == NULL || Scratch == Space || Param == NULL ||
-        Param->OwnerProcess == NULL || Param->BaseGpuVa == 0u ||
+        Param->OwnerProcess == NULL ||
         Param->Size == 0u || MapRange > 1u) {
         return BC250_GPUVA_BAD_ARGUMENT;
     }

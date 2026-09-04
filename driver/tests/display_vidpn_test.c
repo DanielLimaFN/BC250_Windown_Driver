@@ -516,6 +516,7 @@ static int Bc250RunDisplayVidPnTest(void)
     unsigned long index;
     ULONG releaseBaseline;
     UINT64 resolvedPhysical;
+    UINT64 firstMismatch;
     UINT32 resolvedSegment;
 
     memset(&initData, 0, sizeof(initData));
@@ -595,17 +596,17 @@ static int Bc250RunDisplayVidPnTest(void)
     CHECK(!Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
         &resolvedPhysical, &resolvedSegment));
 
-    /* Direct GPUVA tracker registration and process isolation test */
+    /* O tracker paralelo pode ser consultado para diagnostico, mas nao tem
+     * autoridade para liberar Present antes do commit do journal/FlushTlb. */
     Bc250DisplayRecordGpuVaMapping((HANDLE)0x9980, 0xAC0000ull, 0xC10000ull, 11075584ull, 1u);
     CHECK(Bc250DisplayLookupPhysicalAddress((HANDLE)0x9980, 0xAC0000ull, &resolvedPhysical, &resolvedSegment));
     CHECK(resolvedPhysical == 0xC10000ull && resolvedSegment == 1u);
     /* Process isolation: different process fails lookup */
     CHECK(!Bc250DisplayLookupPhysicalAddress((HANDLE)0x9740, 0xAC0000ull, &resolvedPhysical, &resolvedSegment));
-    /* Present resolves using registered context process */
+    /* Present continua fail-closed sem o resolver do snapshot comitado. */
     Bc250DisplayRegisterContextProcess((HANDLE)0x1234, (HANDLE)0x9980);
-    CHECK(Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
+    CHECK(!Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
         &resolvedPhysical, &resolvedSegment));
-    CHECK(resolvedPhysical == 0xC10000ull && resolvedSegment == 1u);
     Bc250DisplayUnregisterContextProcess((HANDLE)0x1234);
     Bc250DisplayClearGpuVaMappings();
     CHECK(!Bc250DisplayLookupPhysicalAddress((HANDLE)0x9980, 0xAC0000ull, &resolvedPhysical, &resolvedSegment));
@@ -892,6 +893,20 @@ static int Bc250RunDisplayVidPnTest(void)
         g_Bc250DisplayState.FrameBufferVirtual = NULL;
         CHECK(!Bc250DisplaySampleSurface(0ull, sizeof(frameBufferPixels), 16u,
             &nonZero, &xorHash));
+
+        /* Prova integral: igualdade, primeiro byte divergente e bounds. */
+        for (index = 0; index < 8; ++index) {
+            frameBufferPixels[index] = 0xA5000000u + index;
+            frameBufferPixels[index + 8] = frameBufferPixels[index];
+        }
+        g_Bc250DisplayState.FrameBufferVirtual = frameBufferPixels;
+        CHECK(Bc250DisplayCompareSurfaceBytes(0ull, 32ull, 32u, &firstMismatch));
+        CHECK(firstMismatch == ~(UINT64)0);
+        ((unsigned char *)&frameBufferPixels[8])[13] ^= 1u;
+        CHECK(!Bc250DisplayCompareSurfaceBytes(0ull, 32ull, 32u, &firstMismatch));
+        CHECK(firstMismatch == 13u);
+        CHECK(!Bc250DisplayCompareSurfaceBytes(0ull, 60ull, 8u, &firstMismatch));
+        CHECK(!Bc250DisplayCompareSurfaceBytes(0ull, 32ull, 32u, NULL));
     }
 
     return 1;

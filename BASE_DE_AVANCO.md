@@ -640,12 +640,16 @@ precisa apresentar evidência nova, não argumento novo.
 
 ## As três próximas ações (Foco estrito em P5)
 
-1. **P5 — Resolução da superfície física do DWM e eliminação de zeros:**
-   Código corrigido: o driver agora rastreia o mapeamento folha de GPUVA (`g_Bc250GpuVaTracker`), traduzindo `0xAC0000` para a VRAM física real (`0xC10000`), eliminando o `RtlZeroMemory` de `0xAD0000` e estendendo o timeout do SDMA para 50 ms.
-2. **P5 — Ensaio físico do Blt de desktop no silício:**
-   Com o buffer de origem físico correto (`0xC10000`), o SDMA0 copiará os pixels reais produzidos pelo DWM para o scanout herdado em `0xC0000000`, eliminando a tela preta e acendendo a imagem da Área de Trabalho do Windows no monitor DisplayPort.
-3. **P6 — Iniciar submissões gráficas e de compute dirigidas pelo runtime D3D:**
-   Com o desktop visível e estável, avançar na cadeia de objetos de contexto e filas D3DKMT/UMD.
+1. **P5 — Preservar o contrato fail-closed:** `UpdatePageTable` e `FlushTlb`
+   propagam falhas do journal; nenhum cache paralelo publica PTE antes do ACK.
+   Ver `docs/165_P5_FAIL_CLOSED_GPUVA_PRESENT.md`.
+2. **P5 — Fechar os portões offline:** `driver\wdk\build-contract.bat` deve
+   terminar `EXIT=0`, incluindo a trava estática GPUVA/Present.
+3. **P5 — Uma corrida física nomeada:** executar
+   `P5_DWM_BACKING_TO_GOP_SDMA_TRIPOD`, com boot frio, teto de uma corrida e
+   abandono imediato se faltar snapshot comitado, `RPTR==WPTR`, fence com
+   poison ou comparação byte a byte. Até lá, `0xAC0000 -> 0xC10000` e o desktop
+   visível permanecem **NÃO VALIDADOS EM HARDWARE**.
 
 ## Veredito
 
