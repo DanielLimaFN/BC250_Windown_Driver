@@ -51,6 +51,11 @@ call :delete_driver bc250mcdm.sys
 if errorlevel 1 set "RECOVERY_FAILED=1"
 call :delete_driver bc250dbg.sys
 if errorlevel 1 set "RECOVERY_FAILED=1"
+if exist "%SystemDrive%\BC250_BOOT_FUSE.dat" (
+    attrib.exe -R "%SystemDrive%\BC250_BOOT_FUSE.dat" >nul 2>&1
+    del /f /q "%SystemDrive%\BC250_BOOT_FUSE.dat" >nul 2>&1
+    call :note Fusivel persistente removido para rearmamento limpo.
+)
 call :enable_and_verify_basic_display
 if errorlevel 1 set "RECOVERY_FAILED=1"
 

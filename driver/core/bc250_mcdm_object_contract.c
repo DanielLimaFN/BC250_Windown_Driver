@@ -109,11 +109,11 @@ static BC250_MCDM_OBJECT_STATUS Bc250McdmAllocateRecord(
     if (Registry->Teardown != 0u) {
         return BC250_MCDM_OBJECT_IN_TEARDOWN;
     }
-    if (Registry->NextSlot == BC250_MCDM_MAX_OBJECTS) {
+    if (Registry->NextSlot >= BC250_MCDM_MAX_OBJECTS) {
         return BC250_MCDM_OBJECT_NO_SPACE;
     }
-
     record = &Registry->Objects[Registry->NextSlot++];
+
     memset(record, 0, sizeof(*record));
     record->Signature = BC250_MCDM_OBJECT_LIVE_SIGNATURE;
     record->Generation = Bc250McdmNextGeneration(Registry);

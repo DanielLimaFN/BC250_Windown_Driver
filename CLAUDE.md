@@ -2,7 +2,7 @@
 
 > **Governança de engenharia do repositório BC250-WinDv**
 > *Target: AMD BC-250 (`1002:13FE`, GC 10.1.3 / Cyan Skillfish 2) | Windows 11 x64*
-> **Última revisão: 2026-09-02**
+> **Última revisão: 2026-09-04**
 
 ---
 
@@ -31,14 +31,20 @@ Se você a atualizar, cada número deve ter evidência em `docs/evidence/`.
 ```text
 ================================== STATUS DO DRIVER BC-250 ==================================
 Base Geral Pre-WDDM (Lab)        ██████████████████▋░  93%   Estavel e Isolado
-SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silicio
-GCVM & Traducao de Memoria       ██████████████████░░  90%   PTE 0x10 provado; sem GPUVA dinamica
+SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Arm provado no miniport de producao em 04/09 11:11 (RPTR=52, Fence=0x1001, 4/4 OK, 1 poll)
+GCVM & Traducao de Memoria       ██████████████████░░  90%   PTE 0x10 provado; UpdatePT via Paging Buffer no silicio
 RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
-Telemetria & Observabilidade     █████████████████░░░  85%   Schema 134; anel de DDI e bitmap de QAI
+Telemetria & Observabilidade     ██████████████████░░  90%   Schema 134; telemetria ativa em Present, dirty rects e VidPn
 Compute & Async Queues (MEC/MQD) ██████████████████░░  90%   P1 17/17 e P2 16/16 provados; fila persistente nao consome
-Miniport WDDM Display+Render     ████████████████░░░░  80%   Código 0 (97); KMDOD com imagem (62); WDDM Present pendente
+Miniport WDDM Display+Render     █████████████████░░░  85%   Código 0 (97); VidPn pathCount=1; Present chamado; blt P5 nao fechado
 =============================================================================================
-Veredito Global: KMDOD com imagem provado (61b, 62). Sob RenderNode=1 o DMM comita topologia VAZIA (3/3 corridas 03/09) — NÃO VALIDADO EM HARDWARE
+Veredito Global: em 04/09 11:11 o SDMA0 do miniport de producao ARMOU -- tripe completo (RPTR=52, fence 0x1001
+gravada pela GPU, 4/4 bytes conferidos, 1 poll) contra timeout de 2001 polls em 09:04. Causa: janela MMIO que
+nao alcancava o bloco HDP + sequencia de coerencia divergente do modulo provado. VidPn negocia por completo
+(7 IsSupportedVidPn, 5 pivos, modo pinado batendo com o GOP a 56,13 Hz). A tela segue preta por OUTRO motivo:
+o primeiro UPDATE_PAGE_TABLE e recusado com journalStatus=3 (BUSY) -> STATUS_DEVICE_BUSY, e o dispositivo morre
+ANTES de CommitVidPn/SetVidPnSourceAddress/Present. Blt de apresentacao — NAO VALIDADO EM HARDWARE.
+Handoff completo: docs/HANDOFF_2026-09-04.md
 =============================================================================================
 ```
 

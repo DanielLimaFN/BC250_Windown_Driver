@@ -57,17 +57,22 @@ extern "C" {
  * PAGE_TABLE_DEPTH > 0 no GCVM. Isso e' trabalho novo, nao troca de
  * constante.
  *
- * BC250_GPUVA_PT_LEVEL_COUNT so podera' passar de 1 quando existir backend
- * de hierarquia com prova fisica. Declarar mais que isto e' violacao da
- * Lei 4.
+ * WDDM 2.0+ (d3dukmdt.h) exige DXGK_MIN_PAGE_TABLE_LEVEL_COUNT = 2.
+ * Para 16 GiB de VA (34 bits) com paginas de 4 KiB (12 bits de offset):
+ *   Nivel 0 (Folha): 9 bits de indice -> 512 PTEs de 8 bytes = 4 KiB por folha (cobre 2 MiB)
+ *   Nivel 1 (Raiz):  13 bits de indice -> ate 8192 PDEs na raiz redimensionavel (cobre 16 GiB)
+ * Total: 12 + 9 + 13 = 34 bits.
  * ========================================================================= */
-#define BC250_GPUVA_PT_LEVEL_COUNT 1u
-#define BC250_GPUVA_PT_INDEX_BITS  22u
+#define BC250_GPUVA_PT_LEVEL_COUNT 2u
+#define BC250_GPUVA_PT_LEAF_INDEX_BITS 9u
+#define BC250_GPUVA_PT_ROOT_INDEX_BITS 13u
+#define BC250_GPUVA_PT_INDEX_BITS  BC250_GPUVA_PT_LEAF_INDEX_BITS
 #define BC250_GPUVA_PT_ENTRY_BYTES 8u
 #define BC250_GPUVA_PT_SIZE_BYTES \
-    (BC250_GPUVA_PT_ENTRY_BYTES << BC250_GPUVA_PT_INDEX_BITS)
+    (BC250_GPUVA_PT_ENTRY_BYTES << BC250_GPUVA_PT_LEAF_INDEX_BITS)
 #define BC250_GPUVA_PT_ALIGN_BYTES 4096u
-#define BC250_GPUVA_PT_VA_BITS (12u + BC250_GPUVA_PT_INDEX_BITS)
+#define BC250_GPUVA_PT_VA_BITS (12u + BC250_GPUVA_PT_LEAF_INDEX_BITS + BC250_GPUVA_PT_ROOT_INDEX_BITS)
+#define BC250_GPUVA_PT_ROOT_MAX_ENTRIES (1u << BC250_GPUVA_PT_ROOT_INDEX_BITS)
 
 typedef enum BC250_GPUVA_STATUS {
     BC250_GPUVA_OK = 0,
@@ -169,6 +174,18 @@ BC250_GPUVA_STATUS Bc250GpuvaSpaceValidateRangeCoverage(
     uint64_t Size,
     uint32_t RequiredPermissions,
     uint32_t ExpectedPageTableEpoch);
+
+/*
+ * Resolve um unico endereco no snapshot publicado do processo. O retorno e'
+ * um offset de segmento, nao um endereco CPU nem um MC address.
+ */
+BC250_GPUVA_STATUS Bc250GpuvaSpaceResolveAddress(
+    const BC250_GPUVA_SPACE *Space,
+    BC250_MCDM_HANDLE OwnerProcess,
+    uint64_t GpuVa,
+    uint32_t RequiredPermissions,
+    uint32_t *BackingSegmentId,
+    uint64_t *BackingSegmentOffset);
 
 const char *Bc250GpuvaStatusName(BC250_GPUVA_STATUS Status);
 

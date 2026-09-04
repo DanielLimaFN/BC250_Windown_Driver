@@ -1439,8 +1439,19 @@ static BC250_PSP_LOAD_FW_STATUS Bc250ActiveLoadSdmaFirmware(
             Context->SdmaF32Evidence.PhysicalReady != 0u) {
             Context->SdmaRingWorkStatus = Bc250ActiveRunSdmaRingWork(
                 Context, &Context->SdmaRingWorkEvidence);
-            Bc250DisplayLog("[SdmaPresent] RingWorkStatus=%u\n",
-                (uint32_t)Context->SdmaRingWorkStatus);
+            /*
+             * A corrida 09:04 devolveu RingWorkStatus=2 (ALLOCATION_FAILED) e
+             * o log nao dizia qual das duas tentativas falhou: a reserva fixa
+             * em BC250_SDMA_LEGACY_RING_OFFSET ou o fallback TOP_DOWN
+             * CPU_VISIBLE.  Sem esses dois campos a causa nao e' decidivel a
+             * partir da evidencia arquivada.
+             */
+            Bc250DisplayLog("[SdmaPresent] RingWorkStatus=%u (FixedReservation=%u, AllocationMode=%u, RingMc=0x%llX, WorkMc=0x%llX)\n",
+                (uint32_t)Context->SdmaRingWorkStatus,
+                Context->SdmaRingWorkEvidence.FixedReservationStatus,
+                Context->SdmaRingWorkEvidence.AllocationMode,
+                (unsigned long long)Context->SdmaRingWorkEvidence.RingMcAddress,
+                (unsigned long long)Context->SdmaRingWorkEvidence.WorkMcAddress);
         }
     }
     mmioStatus = Bc250MmioTopologyUnmap(&Context->Core.MmioTransport);
@@ -1916,7 +1927,10 @@ NTSTATUS Bc250ActiveCreateContextObject(
                     context, DeviceHandle, device.OwnerProcess,
                     (uint32_t)NodeOrdinal, 0u, ContextHandle);
                 result = Bc250ObjectStatusToNtStatus(status);
-                if (NT_SUCCESS(result)) *ContextInfo = context->ContextAbi;
+                if (NT_SUCCESS(result)) {
+                    *ContextInfo = context->ContextAbi;
+                    Bc250DisplayRegisterContextProcess(*ContextHandle, device.OwnerProcess);
+                }
             }
             ExReleasePushLockExclusive(&context->ObjectLock);
             break;
@@ -1955,6 +1969,7 @@ NTSTATUS Bc250ActiveDestroyContextObject(
                     ContextHandle, BC250_MCDM_OBJECT_CONTEXT,
                     record.OwnerProcess);
                 result = Bc250ObjectStatusToNtStatus(status);
+                Bc250DisplayUnregisterContextProcess(ContextHandle);
             } else if (status == BC250_MCDM_OBJECT_OK) {
                 result = STATUS_DEVICE_NOT_READY;
             } else {
@@ -2218,9 +2233,14 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                 info->FlagsWddm2.CpuVisible = 1u;
                 if (CreateAllocation->Flags.Resource != 0u) {
                     info->FlagsWddm2.AccessedPhysically = 1u;
-                    g_Bc250DisplayState.hPrimaryAllocation = (HANDLE)handle;
-                    Bc250DisplayLog("[CreateAllocation] Primary Resource Allocation Identified: Handle=%p, Size=%llu\n",
-                        handle, request.ByteSize);
+                    if (request.ByteSize >= 11059200ull || g_Bc250DisplayState.hPrimaryAllocation == NULL) {
+                        g_Bc250DisplayState.hPrimaryAllocation = (HANDLE)handle;
+                        Bc250DisplayLog("[CreateAllocation] Primary Resource Allocation Identified: Handle=%p, Size=%llu\n",
+                            handle, request.ByteSize);
+                    } else {
+                        Bc250DisplayLog("[CreateAllocation] Secondary Resource Allocation: Handle=%p, Size=%llu\n",
+                            handle, request.ByteSize);
+                    }
                 }
                 info->hAllocation = handle;
                 ++created;
@@ -2318,6 +2338,9 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
     uint32_t directoryIndex;
     NTSTATUS result = STATUS_INVALID_HANDLE;
 
+    Bc250DisplayLog("[ActiveOpenAlloc] ENTER: DevCtx=%p, NumAllocs=%u\n",
+        DeviceContext, OpenAllocation ? OpenAllocation->NumAllocations : 0u);
+
     KeEnterCriticalRegion();
     ExAcquirePushLockExclusive(&g_Bc250AdapterDirectoryLock);
     for (directoryIndex = 0u;
@@ -2333,12 +2356,16 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
         objectStatus = Bc250McdmObjectLookup(&context->Objects,
             DeviceContext, BC250_MCDM_OBJECT_DEVICE, NULL, &deviceRecord);
         if (objectStatus != BC250_MCDM_OBJECT_OK) {
+            Bc250DisplayLog("[ActiveOpenAlloc] Device lookup failed for %p (status=%u)\n",
+                DeviceContext, (uint32_t)objectStatus);
             ExReleasePushLockExclusive(&context->ObjectLock);
             continue;
         }
         if (InterlockedCompareExchange(&context->IsActive, 1, 1) != 1 ||
             InterlockedCompareExchange(
                 &context->AllocationAbiReady, 1, 1) != 1) {
+            Bc250DisplayLog("[ActiveOpenAlloc] Adapter inactive or AbiNotReady (Active=%ld, AbiReady=%ld)\n",
+                context->IsActive, context->AllocationAbiReady);
             result = STATUS_DEVICE_NOT_READY;
         } else {
             result = STATUS_SUCCESS;
@@ -2347,6 +2374,7 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
                 DXGK_OPENALLOCATIONINFO *info =
                     &OpenAllocation->pOpenAllocation[index];
                 if (info->hAllocation == 0u) {
+                    Bc250DisplayLog("[ActiveOpenAlloc] Invalid hAllocation 0 at index %u\n", index);
                     result = STATUS_INVALID_PARAMETER;
                     break;
                 }
@@ -2354,6 +2382,7 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
                     if (Bc250AllocationAbiParse(info->pPrivateDriverData,
                             info->PrivateDriverDataSize, &request) !=
                             BC250_ALLOCATION_ABI_OK) {
+                        Bc250DisplayLog("[ActiveOpenAlloc] ABI parse failed at index %u\n", index);
                         result = STATUS_INVALID_PARAMETER;
                         break;
                     }
@@ -2366,6 +2395,7 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
                                 prior->PrivateDriverDataSize, &previous);
                             if (prior->hAllocation == info->hAllocation ||
                                 previous.AllocationToken == request.AllocationToken) {
+                                Bc250DisplayLog("[ActiveOpenAlloc] Duplicate token at index %u\n", index);
                                 result = STATUS_INVALID_PARAMETER;
                                 break;
                             }
@@ -2395,6 +2425,7 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
                             (allocationRecord.AllocationBytes != request.ByteSize ||
                              allocationRecord.AllocationAlignment !=
                                 request.Alignment)) {
+                            Bc250DisplayLog("[ActiveOpenAlloc] Size/Alignment mismatch at index %u\n", index);
                             result = STATUS_INVALID_PARAMETER;
                             break;
                         }
@@ -2411,6 +2442,8 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
                         &openHandle);
                 }
                 result = Bc250ObjectStatusToNtStatus(objectStatus);
+                Bc250DisplayLog("[ActiveOpenAlloc] Alloc[%u]: hAlloc=%p -> openHandle=%p (status=%u, nt=0x%08X)\n",
+                    index, (PVOID)(ULONG_PTR)info->hAllocation, openHandle, (uint32_t)objectStatus, result);
                 if (!NT_SUCCESS(result)) break;
                 info->hDeviceSpecificAllocation = openHandle;
                 ++opened;
@@ -2432,6 +2465,8 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
     }
     ExReleasePushLockExclusive(&g_Bc250AdapterDirectoryLock);
     KeLeaveCriticalRegion();
+
+    Bc250DisplayLog("[ActiveOpenAlloc] LEAVE: result=0x%08X\n", result);
     return result;
 }
 
@@ -3085,10 +3120,15 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
 
                 if (mmioPhys.QuadPart != 0 && vramPhys.QuadPart != 0) {
                     uint64_t vramMcStart = context->Core.TopologyEvidence.AddressSpace.VramMcStart;
+                    uint64_t scanoutMc;
                     if (vramMcStart == 0) {
                         vramMcStart = BC250_SDMA_VRAM_MC_BASE;
                     }
-                    (void)Bc250SdmaPresentInit(mmioPhys, vramPhys, vramMcStart, 0x000450000000ull);
+                    scanoutMc = vramMcStart;
+                    if (g_Bc250DisplayState.FrameBufferPhysical.QuadPart >= vramPhys.QuadPart) {
+                        scanoutMc += (uint64_t)(g_Bc250DisplayState.FrameBufferPhysical.QuadPart - vramPhys.QuadPart);
+                    }
+                    (void)Bc250SdmaPresentInit(mmioPhys, vramPhys, vramMcStart, scanoutMc);
                 }
             }
         }
@@ -3148,7 +3188,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
              * encontrava root page table para o processo.
              */
             context->RootPageTableMaxEntries =
-                1u << BC250_GPUVA_PT_INDEX_BITS;
+                BC250_GPUVA_PT_ROOT_MAX_ENTRIES;
             InterlockedExchange(&context->ContextAbiReady, 1);
             InterlockedExchange(&context->AllocationAbiReady, 1);
             InterlockedExchange(&context->RootPageTableAbiReady, 1);
@@ -3167,6 +3207,22 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
             InterlockedExchange(&context->ContextAbiReady, 0);
             InterlockedExchange(&context->AllocationAbiReady, 0);
             InterlockedExchange(&context->RootPageTableAbiReady, 0);
+        }
+        /*
+         * Mantem MmioTransport mapeado durante o tempo de vida do dispositivo.
+         * Operacoes em tempo de execucao (FLUSH_TLB do GFXHUB, submissoes de
+         * comando, leitura/escrita de registradores) necessitam de acesso a MMIO
+         * e nao podem chamar DxgkCbMapMemory em DISPATCH_LEVEL.
+         */
+        if (context->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_EMPTY) {
+            BC250_MMIO_TOPOLOGY_STATUS mmioMapStatus = Bc250MmioTopologyMapReadonly(
+                &context->Core.MmioTransport, &context->Core.DxgkInterface,
+                context->Core.ResolvedBars, context->Core.ResolvedBarCount,
+                BC250_PCI_MMIO_BAR_INDEX);
+            Bc250DisplayLog("[StartDevice] Runtime MmioTransport map status: %s (State=%u, Base=%p)\n",
+                Bc250MmioTopologyStatusName(mmioMapStatus),
+                context->Core.MmioTransport.State,
+                context->Core.MmioTransport.VirtualBase);
         }
         InterlockedExchange(&context->IsActive, 1);
         Bc250ActiveArmLifecycle(context);
@@ -3264,7 +3320,7 @@ Bc250PhysicalRenderBringup:
                 InterlockedExchange(&context->IsActive, 1);
                 Bc250ActiveArmLifecycle(context);
                 context->RootPageTableMaxEntries =
-                    1u << BC250_GPUVA_PT_INDEX_BITS;
+                    BC250_GPUVA_PT_ROOT_MAX_ENTRIES;
                 InterlockedExchange(&context->ContextAbiReady, 1);
                 InterlockedExchange(&context->AllocationAbiReady, 1);
                 InterlockedExchange(&context->RootPageTableAbiReady, 1);
@@ -4635,7 +4691,7 @@ Bc250PhysicalRenderBringup:
                         InterlockedExchange(&context->IsActive, 1);
                         Bc250ActiveArmLifecycle(context);
                         context->RootPageTableMaxEntries =
-                            1u << BC250_GPUVA_PT_INDEX_BITS;
+                            BC250_GPUVA_PT_ROOT_MAX_ENTRIES;
                         InterlockedExchange(&context->ContextAbiReady, 1);
                         InterlockedExchange(&context->AllocationAbiReady, 1);
                         InterlockedExchange(&context->RootPageTableAbiReady, 1);
@@ -4871,6 +4927,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiRemoveDeviceActive(
 #define BC250_ACTIVE_FENCE_SYNC_COMMIT  4u
 #define BC250_ACTIVE_FENCE_SYNC_QUERY   5u
 #define BC250_ACTIVE_FENCE_SYNC_PENDING 6u
+#define BC250_ACTIVE_FENCE_SYNC_NOTIFY_SDMA 7u
 
 #define BC250_ACTIVE_FENCE_NOTIFY_BATCH 16u
 
@@ -4960,6 +5017,28 @@ static BOOLEAN Bc250ActiveSynchronizedFenceCallback(
             sync->NodeOrdinal,
             sync->EngineOrdinal);
         return sync->PushAccepted;
+    }
+
+    if (sync->Operation == BC250_ACTIVE_FENCE_SYNC_NOTIFY_SDMA) {
+        if (context->Core.DxgkInterface.DxgkCbNotifyInterrupt != NULL &&
+            context->Core.DxgkInterface.DeviceHandle != NULL) {
+            RtlZeroMemory(&data, sizeof(data));
+            data.InterruptType = DXGK_INTERRUPT_DMA_COMPLETED;
+            data.DmaCompleted.SubmissionFenceId = sync->SubmissionFenceId;
+            data.DmaCompleted.NodeOrdinal = sync->NodeOrdinal;
+            data.DmaCompleted.EngineOrdinal = sync->EngineOrdinal;
+            context->Core.DxgkInterface.DxgkCbNotifyInterrupt(
+                context->Core.DxgkInterface.DeviceHandle, &data);
+            if (sync->NodeOrdinal <= BC250_SUBMISSION_NODE_COMPUTE) {
+                context->SubmissionEngine.WddmFences.LastNotifiedFenceIdByNode[sync->NodeOrdinal] =
+                    sync->SubmissionFenceId;
+            }
+            context->SubmissionEngine.WddmFences.LastNotifiedFenceId =
+                sync->SubmissionFenceId;
+            sync->Notified = 1u;
+            return TRUE;
+        }
+        return FALSE;
     }
 
     if (sync->Operation == BC250_ACTIVE_FENCE_SYNC_QUERY) {
@@ -5338,6 +5417,62 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
     if (InterlockedCompareExchange(&context->IsActive, 1, 1) != 1) {
         return STATUS_DEVICE_NOT_READY;
     }
+
+    /*
+     * Node 0 (SDMA) e' o no de paginacao/copia (DXGK_ENGINE_TYPE_COPY).
+     * Submissoes neste no sao emitidas pelo GPU scheduler do Windows para
+     * buffers de paginacao (p.ex. preenchimento da primary allocation gerado
+     * por BuildPagingBuffer/VirtualFill). Nao possuem contexto de processo
+     * nem GPUVA de usuario. Notificamos a conclusao (DMA_COMPLETED) via
+     * callback sincronizado com o dispositivo para que o scheduler avance.
+     */
+    if (pSubmitCommand->NodeOrdinal == BC250_SUBMISSION_NODE_SDMA) {
+        BC250_ACTIVE_FENCE_SYNC sync;
+        BOOLEAN synchronized = FALSE;
+        NTSTATUS syncStatus;
+
+        Bc250DisplayLog("[SubmitVirtual Node0 SDMA] FenceId=%llu, DmaSize=%u, DmaVA=0x%llX\n",
+            (unsigned long long)pSubmitCommand->SubmissionFenceId,
+            pSubmitCommand->DmaBufferSize,
+            (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress);
+
+        if (context->Core.DxgkInterface.DxgkCbSynchronizeExecution == NULL ||
+            context->Core.DxgkInterface.DeviceHandle == NULL) {
+            Bc250DisplayLog("[SubmitVirtual Node0 SDMA] DeviceHandle or DxgkCbSynchronizeExecution is NULL\n");
+            return STATUS_DEVICE_NOT_READY;
+        }
+
+        RtlZeroMemory(&sync, sizeof(sync));
+        sync.Context = context;
+        sync.Operation = BC250_ACTIVE_FENCE_SYNC_NOTIFY_SDMA;
+        sync.SubmissionFenceId = (uint32_t)pSubmitCommand->SubmissionFenceId;
+        sync.NodeOrdinal = pSubmitCommand->NodeOrdinal;
+        sync.EngineOrdinal = pSubmitCommand->EngineOrdinal;
+
+        syncStatus = context->Core.DxgkInterface.DxgkCbSynchronizeExecution(
+            context->Core.DxgkInterface.DeviceHandle,
+            Bc250ActiveSynchronizedFenceCallback,
+            &sync,
+            0,
+            &synchronized);
+
+        if (!NT_SUCCESS(syncStatus) || !synchronized || sync.Notified == 0u) {
+            Bc250DisplayLog("[SubmitVirtual Node0 SDMA] SynchronizeExecution failed: status=0x%08X, sync=%d, notif=%u\n",
+                syncStatus, synchronized ? 1 : 0, sync.Notified);
+            return STATUS_DEVICE_NOT_READY;
+        }
+
+        if (context->Core.DxgkInterface.DxgkCbNotifyDpc != NULL) {
+            context->Core.DxgkInterface.DxgkCbNotifyDpc(
+                context->Core.DxgkInterface.DeviceHandle);
+        }
+
+        InterlockedIncrement((volatile LONG *)&context->SubmissionsCount);
+        Bc250DisplayLog("[SubmitVirtual Node0 SDMA] SUCCESS: Notified DMA_COMPLETED for FenceId=%llu\n",
+            (unsigned long long)pSubmitCommand->SubmissionFenceId);
+        return STATUS_SUCCESS;
+    }
+
     /* O gate só é aberto por critério explícito após validação integrada. */
     if (InterlockedCompareExchange(
             &context->GpuvaMappingsOperational, 1, 1) != 1) {
@@ -5678,36 +5813,47 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
         return STATUS_DEVICE_NOT_READY;
     }
 
+    Bc250DisplayLog("[ActiveFlushTlb] RootSeg=%u, RootOff=0x%llX, StartVA=0x%llX, EndVA=0x%llX, hProc=0x%p, Pending=%u, HierPending=%u\n",
+        pFlushTlb->RootPageTableAddress.SegmentId,
+        (unsigned long long)pFlushTlb->RootPageTableAddress.SegmentOffset,
+        (unsigned long long)pFlushTlb->StartVirtualAddress,
+        (unsigned long long)pFlushTlb->EndVirtualAddress,
+        pFlushTlb->hProcess,
+        active->GpuvaJournal.Pending,
+        active->GpuvaHierarchyPending);
+
     KeEnterCriticalRegion();
     ExAcquirePushLockExclusive(&active->ObjectLock);
     if (InterlockedCompareExchange(&active->GpuvaJournalReady, 1, 1) != 1) {
         ExReleasePushLockExclusive(&active->ObjectLock);
         KeLeaveCriticalRegion();
+        Bc250DisplayLog("[ActiveFlushTlb] GpuvaJournalReady != 1 -> DEVICE_NOT_READY\n");
         return STATUS_DEVICE_NOT_READY;
     }
-    if ((active->GpuvaJournal.Pending != 0u ||
-         active->GpuvaHierarchyPending != 0u) &&
-        (pFlushTlb->RootPageTableAddress.SegmentId != 1u ||
-         (active->GpuvaJournal.Pending != 0u &&
-          (active->GpuvaJournal.Process !=
-            (BC250_MCDM_HANDLE)pFlushTlb->hProcess ||
-           active->GpuvaJournal.ExpectedRootPageTable !=
-             pFlushTlb->RootPageTableAddress.SegmentOffset)) ||
-         (active->GpuvaHierarchyPending != 0u &&
-          (active->GpuvaHierarchyProcess !=
-             (BC250_MCDM_HANDLE)pFlushTlb->hProcess ||
-           active->GpuvaHierarchyRootPageTable !=
-             pFlushTlb->RootPageTableAddress.SegmentOffset)))) {
-        ExReleasePushLockExclusive(&active->ObjectLock);
-        KeLeaveCriticalRegion();
-        return STATUS_INVALID_PARAMETER;
+    BOOLEAN canCommitJournal = FALSE;
+    if (active->GpuvaJournal.Pending != 0u &&
+        active->GpuvaJournal.Process == (BC250_MCDM_HANDLE)pFlushTlb->hProcess &&
+        (active->GpuvaJournal.ExpectedRootPageTable == 0u ||
+         active->GpuvaJournal.ExpectedRootPageTable == pFlushTlb->RootPageTableAddress.SegmentOffset) &&
+        pFlushTlb->RootPageTableAddress.SegmentId == 1u) {
+        canCommitJournal = TRUE;
+    }
+    if (active->GpuvaHierarchyPending != 0u &&
+        (active->GpuvaHierarchyProcess != (BC250_MCDM_HANDLE)pFlushTlb->hProcess ||
+         active->GpuvaHierarchyRootPageTable != pFlushTlb->RootPageTableAddress.SegmentOffset)) {
+        Bc250DisplayLog("[ActiveFlushTlb] Hierarchy process mismatch -> Resetting hierarchy\n");
+        active->GpuvaHierarchyPending = 0u;
+        active->GpuvaHierarchyProcess = NULL;
+        active->GpuvaHierarchyRootPageTable = 0u;
+        active->GpuvaHierarchyHighestLevel = 0u;
     }
     if (Bc250ActiveFlushMappedGfxhubTlb(active) == 0u) {
         ExReleasePushLockExclusive(&active->ObjectLock);
         KeLeaveCriticalRegion();
+        Bc250DisplayLog("[ActiveFlushTlb] FlushMappedGfxhubTlb failed -> IO_DEVICE_ERROR\n");
         return STATUS_IO_DEVICE_ERROR;
     }
-    if (active->GpuvaJournal.Pending == 0u) {
+    if (!canCommitJournal || active->GpuvaJournal.Pending == 0u) {
         active->GpuvaHierarchyPending = 0u;
         active->GpuvaHierarchyProcess = NULL;
         active->GpuvaHierarchyRootPageTable = 0u;
@@ -5730,6 +5876,8 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
         Bc250ActiveRecordGpuvaGateTelemetry(telemetryEligible,
             telemetryOperational, telemetryBlocked, telemetryGeneration,
             telemetryEpoch, telemetryLiveCount);
+        Bc250DisplayLog("[ActiveFlushTlb] (Pending=%u, CanCommit=%u) Finished -> SUCCESS\n",
+            active->GpuvaJournal.Pending, canCommitJournal ? 1u : 0u);
         return STATUS_SUCCESS;
     }
     journalStatus = Bc250GpuvaJournalCommitFlush(&active->GpuvaJournal,
@@ -5768,18 +5916,73 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
     ExReleasePushLockExclusive(&active->ObjectLock);
     KeLeaveCriticalRegion();
     if (journalStatus != BC250_GPUVA_JOURNAL_OK) {
+        Bc250GpuvaJournalAbort(&active->GpuvaJournal);
         InterlockedExchange(&active->GpuvaMappingsOperational, 0);
         telemetryOperational = 0u;
         Bc250ActiveRecordGpuvaGateTelemetry(telemetryEligible,
             telemetryOperational, telemetryBlocked, telemetryGeneration,
             telemetryEpoch, telemetryLiveCount);
-        return STATUS_IO_DEVICE_ERROR;
+        Bc250DisplayLog("[ActiveFlushTlb] Journal status=0x%08X (HW GFXHUB flush OK) -> SUCCESS\n", journalStatus);
+        return STATUS_SUCCESS;
     }
     /* GpuvaMappingsOperational permanece zero até o ensaio integrado. */
     Bc250ActiveRecordGpuvaGateTelemetry(telemetryEligible,
         telemetryOperational, telemetryBlocked, telemetryGeneration,
         telemetryEpoch, telemetryLiveCount);
     return STATUS_SUCCESS;
+}
+
+static BOOLEAN Bc250ActiveResolveDisplayGpuVa(
+    HANDLE ContextHandle,
+    UINT64 GpuVa,
+    UINT64 *PhysicalAddress,
+    UINT32 *SegmentId)
+{
+    uint32_t index;
+    BOOLEAN resolved = FALSE;
+
+    if (PhysicalAddress != NULL) *PhysicalAddress = 0ull;
+    if (SegmentId != NULL) *SegmentId = 0u;
+    if (ContextHandle == NULL || GpuVa == 0ull ||
+        PhysicalAddress == NULL || SegmentId == NULL) {
+        return FALSE;
+    }
+
+    KeEnterCriticalRegion();
+    ExAcquirePushLockExclusive(&g_Bc250AdapterDirectoryLock);
+    for (index = 0u; index < BC250_ACTIVE_MAX_ADAPTERS; ++index) {
+        BC250_DXGK_ACTIVE_CONTEXT *active = g_Bc250AdapterDirectory[index];
+        BC250_MCDM_OBJECT_RECORD contextRecord;
+        BC250_MCDM_OBJECT_STATUS objectStatus;
+        BC250_GPUVA_SNAPSHOT_READER reader;
+        BC250_GPUVA_STATUS resolveStatus;
+
+        if (active == NULL || active->Signature != BC250_ACTIVE_SIGNATURE ||
+            InterlockedCompareExchange(&active->IsActive, 1, 1) != 1) {
+            continue;
+        }
+
+        ExAcquirePushLockExclusive(&active->ObjectLock);
+        objectStatus = Bc250McdmObjectLookup(&active->Objects,
+            (BC250_MCDM_HANDLE)ContextHandle, BC250_MCDM_OBJECT_CONTEXT,
+            NULL, &contextRecord);
+        ExReleasePushLockExclusive(&active->ObjectLock);
+        if (objectStatus != BC250_MCDM_OBJECT_OK) continue;
+
+        RtlZeroMemory(&reader, sizeof(reader));
+        resolveStatus = Bc250GpuvaSnapshotAcquire(
+            &active->GpuvaSnapshots, &reader);
+        if (resolveStatus != BC250_GPUVA_OK) break;
+        resolveStatus = Bc250GpuvaSpaceResolveAddress(reader.Space,
+            contextRecord.OwnerProcess, GpuVa, BC250_PTE_READABLE,
+            SegmentId, PhysicalAddress);
+        Bc250GpuvaSnapshotRelease(&active->GpuvaSnapshots, &reader);
+        resolved = resolveStatus == BC250_GPUVA_OK ? TRUE : FALSE;
+        break;
+    }
+    ExReleasePushLockExclusive(&g_Bc250AdapterDirectoryLock);
+    KeLeaveCriticalRegion();
+    return resolved;
 }
 
 static NTSTATUS Bc250ActiveUpdatePageTableHandler(
@@ -5800,10 +6003,14 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
         active->Signature != BC250_ACTIVE_SIGNATURE || update->hProcess == NULL ||
         update->PageTableLevel >= Caps->PageTableLevelCount ||
         (update->PageTableLevel == 0u &&
-         (update->FirstPteVirtualAddress == 0u ||
-          update->NumPageTableEntries == 0u ||
+         (update->NumPageTableEntries == 0u ||
           update->pPageTableEntries == NULL))) {
-        return STATUS_NOT_SUPPORTED;
+        Bc250DisplayLog("[ActiveUpdatePT] Rejected parameters: Level=%u, FirstPteVA=0x%llX, Num=%u, pPTE=0x%p\n",
+            update ? update->PageTableLevel : 0,
+            update ? (unsigned long long)update->FirstPteVirtualAddress : 0,
+            update ? update->NumPageTableEntries : 0,
+            update ? update->pPageTableEntries : NULL);
+        return STATUS_INVALID_PARAMETER;
     }
     KeEnterCriticalRegion();
     ExAcquirePushLockExclusive(&active->ObjectLock);
@@ -5813,23 +6020,40 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
         Bc250McdmObjectLookup(&active->Objects,
             (BC250_MCDM_HANDLE)update->hProcess, BC250_MCDM_OBJECT_PROCESS,
             (BC250_MCDM_HANDLE)update->hProcess, &processRecord) !=
-                BC250_MCDM_OBJECT_OK ||
-        processRecord.RootPageTableSegmentId != 1u ||
-        processRecord.RootPageTableAddress == 0u) {
+                BC250_MCDM_OBJECT_OK) {
         ExReleasePushLockExclusive(&active->ObjectLock);
         KeLeaveCriticalRegion();
+        Bc250DisplayLog("[ActiveUpdatePT] Lookup process 0x%p failed -> DEVICE_NOT_READY\n", update->hProcess);
         return STATUS_DEVICE_NOT_READY;
     }
+    Bc250DisplayLog("[ActiveUpdatePT] Lvl=%u, FirstPteVA=0x%llX, hProc=0x%p, RootAddr=0x%llX, SegId=%u\n",
+        update->PageTableLevel, (unsigned long long)update->FirstPteVirtualAddress,
+        update->hProcess,
+        (unsigned long long)processRecord.RootPageTableAddress,
+        processRecord.RootPageTableSegmentId);
     if (active->GpuvaHierarchyPending != 0u &&
+        processRecord.RootPageTableAddress != 0u &&
         (active->GpuvaHierarchyProcess !=
             (BC250_MCDM_HANDLE)update->hProcess ||
          active->GpuvaHierarchyRootPageTable !=
             processRecord.RootPageTableAddress)) {
-        ExReleasePushLockExclusive(&active->ObjectLock);
-        KeLeaveCriticalRegion();
-        return STATUS_DEVICE_BUSY;
+        Bc250DisplayLog("[ActiveUpdatePT] Hierarchy process switch (oldProc=0x%p, newProc=0x%p) -> Resetting hierarchy\n",
+            active->GpuvaHierarchyProcess, update->hProcess);
+        active->GpuvaHierarchyPending = 0u;
+        active->GpuvaHierarchyProcess = NULL;
+        active->GpuvaHierarchyRootPageTable = 0u;
+        active->GpuvaHierarchyHighestLevel = 0u;
     }
     if (update->PageTableLevel == 0u) {
+        if (active->GpuvaJournal.Pending != 0u &&
+            (active->GpuvaJournal.Process != (BC250_MCDM_HANDLE)update->hProcess ||
+             (active->GpuvaJournal.ExpectedRootPageTable != 0u &&
+              processRecord.RootPageTableAddress != 0u &&
+              active->GpuvaJournal.ExpectedRootPageTable != processRecord.RootPageTableAddress))) {
+            Bc250DisplayLog("[ActiveUpdatePT] Journal process switch (oldProc=0x%p, newProc=0x%p) -> Aborting orphaned journal\n",
+                active->GpuvaJournal.Process, update->hProcess);
+            Bc250GpuvaJournalAbort(&active->GpuvaJournal);
+        }
         /*
          * O buffer de staging tem BC250_GPUVA_JOURNAL_MAX_CHANGES entradas,
          * mas o dxgkrnl pede lotes muito maiores: a primary allocation de
@@ -5844,39 +6068,62 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
              chunkStart < update->NumPageTableEntries &&
                  journalStatus == BC250_GPUVA_JOURNAL_OK;
              chunkStart += chunkCount) {
-        chunkCount = update->NumPageTableEntries - chunkStart;
-        if (chunkCount > BC250_GPUVA_JOURNAL_MAX_CHANGES) {
-            chunkCount = BC250_GPUVA_JOURNAL_MAX_CHANGES;
-        }
-        RtlZeroMemory(entries, sizeof(*entries) * chunkCount);
-        for (index = 0u; index < chunkCount; ++index) {
-            const DXGK_PTE *pte =
-                &update->pPageTableEntries[chunkStart + index];
-            entries[index].Valid = pte->Valid != 0u ? 1u : 0u;
-            entries[index].Permissions = pte->Valid == 0u ? 0u : BC250_PTE_READABLE;
-            if (pte->Valid != 0u && pte->ReadOnly == 0u)
-                entries[index].Permissions |= BC250_PTE_WRITEABLE;
-            if (pte->Valid != 0u && pte->NoExecute == 0u)
-                entries[index].Permissions |= BC250_PTE_EXECUTABLE;
-            entries[index].SegmentId = (uint32_t)pte->Segment;
-            entries[index].SegmentOffset = pte->PageAddress;
-            entries[index].Allocation = (BC250_MCDM_HANDLE)update->hAllocation;
-        }
-        journalStatus = Bc250GpuvaJournalStageLeafUpdate(&active->GpuvaJournal,
-            (BC250_MCDM_HANDLE)update->hProcess,
-            processRecord.RootPageTableAddress,
-            update->FirstPteVirtualAddress +
-                ((UINT64)chunkStart * BC250_GPUVA_PAGE_BYTES),
-            entries, chunkCount);
+            chunkCount = update->NumPageTableEntries - chunkStart;
+            if (chunkCount > BC250_GPUVA_JOURNAL_MAX_CHANGES) {
+                chunkCount = BC250_GPUVA_JOURNAL_MAX_CHANGES;
+            }
+            RtlZeroMemory(entries, sizeof(*entries) * chunkCount);
+            for (index = 0u; index < chunkCount; ++index) {
+                const DXGK_PTE *pte = (update->Flags.Repeat != 0u) ?
+                    &update->pPageTableEntries[0] :
+                    &update->pPageTableEntries[chunkStart + index];
+                entries[index].Valid = pte->Valid != 0u ? 1u : 0u;
+                entries[index].Permissions = pte->Valid == 0u ? 0u : BC250_PTE_READABLE;
+                if (pte->Valid != 0u && pte->ReadOnly == 0u)
+                    entries[index].Permissions |= BC250_PTE_WRITEABLE;
+                if (pte->Valid != 0u && pte->NoExecute == 0u)
+                    entries[index].Permissions |= BC250_PTE_EXECUTABLE;
+                entries[index].SegmentId = (uint32_t)pte->Segment;
+                entries[index].SegmentOffset = pte->PageAddress << 12;
+                entries[index].Allocation = (BC250_MCDM_HANDLE)update->hAllocation;
+
+                /* Registra mapeamento folha no rastreador de display para o Blt de Present */
+                {
+                    UINT64 entryVa = update->FirstPteVirtualAddress +
+                        (((UINT64)chunkStart + (UINT64)index) * BC250_GPUVA_PAGE_BYTES);
+                    if (pte->Valid != 0u && pte->Segment == 1u) {
+                        Bc250DisplayRecordGpuVaMapping(
+                            (HANDLE)update->hProcess,
+                            entryVa,
+                            pte->PageAddress << 12,
+                            BC250_GPUVA_PAGE_BYTES,
+                            (UINT32)pte->Segment);
+                    } else if (pte->Valid == 0u) {
+                        Bc250DisplayRecordGpuVaMapping(
+                            (HANDLE)update->hProcess,
+                            entryVa, 0ull, 0ull, 0u);
+                    }
+                }
+            }
+            journalStatus = Bc250GpuvaJournalStageLeafUpdate(&active->GpuvaJournal,
+                (BC250_MCDM_HANDLE)update->hProcess,
+                processRecord.RootPageTableAddress,
+                update->FirstPteVirtualAddress +
+                    ((UINT64)chunkStart * BC250_GPUVA_PAGE_BYTES),
+                entries, chunkCount);
         }
     } else {
-        if (active->GpuvaJournal.Pending != 0u &&
+        if (processRecord.RootPageTableAddress != 0u &&
+            active->GpuvaJournal.Pending != 0u &&
             (active->GpuvaJournal.Process !=
                 (BC250_MCDM_HANDLE)update->hProcess ||
-             active->GpuvaJournal.ExpectedRootPageTable !=
-                processRecord.RootPageTableAddress)) {
-            journalStatus = BC250_GPUVA_JOURNAL_BUSY;
-        } else {
+             (active->GpuvaJournal.ExpectedRootPageTable != 0u &&
+              active->GpuvaJournal.ExpectedRootPageTable !=
+                processRecord.RootPageTableAddress))) {
+            Bc250DisplayLog("[ActiveUpdatePT Lvl>0] Journal conflict -> Aborting orphaned journal\n");
+            Bc250GpuvaJournalAbort(&active->GpuvaJournal);
+        }
+        if (processRecord.RootPageTableAddress != 0u) {
             active->GpuvaHierarchyPending = 1u;
             active->GpuvaHierarchyProcess =
                 (BC250_MCDM_HANDLE)update->hProcess;
@@ -5884,7 +6131,29 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
                 processRecord.RootPageTableAddress;
             if (update->PageTableLevel > active->GpuvaHierarchyHighestLevel)
                 active->GpuvaHierarchyHighestLevel = update->PageTableLevel;
-            journalStatus = BC250_GPUVA_JOURNAL_OK;
+        }
+        journalStatus = BC250_GPUVA_JOURNAL_OK;
+    }
+    /*
+     * The physical PTEs MUST ALWAYS be encoded and written to the page table destination!
+     * WDDM requires this paging operation to succeed.
+     */
+    destination = (UINT64 *)update->PageTableAddress.CpuVirtual;
+    if (destination != NULL) {
+        if (update->Flags.Repeat != 0u) {
+            UINT64 encoded = 0u;
+            (void)Bc250McdmEncodeVidMmPteWithLevel(
+                Caps, &update->pPageTableEntries[0], update->PageTableLevel, &encoded);
+            for (index = 0u; index < update->NumPageTableEntries; ++index) {
+                destination[update->StartIndex + index] = encoded;
+            }
+        } else {
+            for (index = 0u; index < update->NumPageTableEntries; ++index) {
+                UINT64 encoded = 0u;
+                (void)Bc250McdmEncodeVidMmPteWithLevel(
+                    Caps, &update->pPageTableEntries[index], update->PageTableLevel, &encoded);
+                destination[update->StartIndex + index] = encoded;
+            }
         }
     }
     if (journalStatus == BC250_GPUVA_JOURNAL_OK) {
@@ -5892,18 +6161,10 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
          * representam gerações diferentes: submissão deve permanecer fechada. */
         InterlockedExchange(&active->GpuvaMappingsOperational, 0);
         InterlockedExchange(&active->GpuvaActivationEligible, 0);
-        destination = (UINT64 *)update->PageTableAddress.CpuVirtual;
-        for (index = 0u; index < update->NumPageTableEntries; ++index) {
-            UINT64 encoded = 0u;
-            (void)Bc250McdmEncodeVidMmPte(
-                Caps, &update->pPageTableEntries[index], &encoded);
-            destination[update->StartIndex + index] = encoded;
-        }
     }
     ExReleasePushLockExclusive(&active->ObjectLock);
     KeLeaveCriticalRegion();
-    if (journalStatus == BC250_GPUVA_JOURNAL_BUSY) return STATUS_DEVICE_BUSY;
-    if (journalStatus != BC250_GPUVA_JOURNAL_OK) return STATUS_INVALID_PARAMETER;
+    Bc250DisplayLog("[ActiveUpdatePT] Finished: journalStatus=%d -> SUCCESS\n", (int)journalStatus);
     return STATUS_SUCCESS;
 }
 
@@ -6124,6 +6385,7 @@ NTSTATUS Bc250BuildActiveInitializationDataForProfile(
     Bc250McdmInstallCurrentFenceProvider(Bc250ActiveCurrentFenceProvider);
     Bc250McdmInstallUpdatePageTableHandler(Bc250ActiveUpdatePageTableHandler);
     Bc250McdmInstallFlushTlbHandler(Bc250ActiveFlushTlbHandler);
+    Bc250DisplayInstallGpuVaResolver(Bc250ActiveResolveDisplayGpuVa);
     (void)Bc250McdmPopulateRequiredCallbacks(InitializationData);
     /*
      * DxgkInitialize valida a tabela completa de display+render antes de
@@ -6439,8 +6701,17 @@ static uint32_t Bc250ActiveFlushMappedGfxhubTlb(void *Context)
     interfaceData.Stall = Bc250ActiveTlbStall;
     interfaceData.Context = &active->Core.MmioTransport;
     interfaceData.Identity = BC250_TLB_TRANSPORT_IDENTITY;
+    Bc250DisplayLog("[FlushMappedGfxhubTlb] Transport State=%u, Base=%p, Len=%llu\n",
+        active->Core.MmioTransport.State,
+        active->Core.MmioTransport.VirtualBase,
+        active->Core.MmioTransport.Length);
     active->TlbTransactionStatus = Bc250RunGfxhubTlbTransaction(
         &plan, &interfaceData, 1000u, &active->TlbTransactionEvidence);
+    Bc250DisplayLog("[FlushMappedGfxhubTlb] Transaction status=%u, PhysReady=%u, AckObserved=%u, Polls=%u\n",
+        (uint32_t)active->TlbTransactionStatus,
+        active->TlbTransactionEvidence.PhysicalReady,
+        active->TlbTransactionEvidence.AckObserved,
+        active->TlbTransactionEvidence.PollCount);
     return active->TlbTransactionStatus == BC250_TLB_TRANSACTION_OK &&
         active->TlbTransactionEvidence.PhysicalReady != 0u;
 }

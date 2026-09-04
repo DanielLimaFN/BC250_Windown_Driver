@@ -35,8 +35,8 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
 #pragma function(memcpy)
 void * __cdecl memcpy(void *Destination, const void *Source, size_t Length)
 {
-    unsigned char *destination = (unsigned char *)Destination;
-    const unsigned char *source = (const unsigned char *)Source;
+    volatile unsigned char *destination = (volatile unsigned char *)Destination;
+    const volatile unsigned char *source = (const volatile unsigned char *)Source;
     size_t index;
     for (index = 0; index < Length; ++index) destination[index] = source[index];
     return Destination;
@@ -47,7 +47,7 @@ void * __cdecl memcpy(void *Destination, const void *Source, size_t Length)
  * persistente (estado de teardown do HQD + duas evidencias completas), o que
  * o levou acima de 32 KiB.  O pool do fixture acompanha.
  */
-static __declspec(align(16)) unsigned char g_pool[262144];
+static __declspec(align(16)) unsigned char g_pool[524288];
 static int g_poolAllocated;
 static __declspec(align(4096)) unsigned char g_contiguousPage[4096];
 static int g_contiguousAllocated;

@@ -1,0 +1,1 @@
+﻿bc250umd.dll nunca escreveu: a DLL nao foi carregada por nenhum processo.

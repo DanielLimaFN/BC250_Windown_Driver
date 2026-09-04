@@ -143,6 +143,65 @@ static int Bc250RunGpuvaJournalContractTest(void)
             (uint64_t)totalPages * BC250_GPUVA_PAGE_BYTES);
     }
     Bc250GpuvaJournalAbort(&journal);
+
+    /*
+     * Ordem observada no Windows em 04/09: leaf updates antes de
+     * SetRootPageTable, seguidos por FlushTlb que traz a root oficial.
+     */
+    memset(entries, 0, sizeof(entries));
+    entries[0].Valid = 1u;
+    entries[0].Permissions = BC250_PTE_READABLE | BC250_PTE_WRITEABLE;
+    entries[0].SegmentId = 1u;
+    entries[0].SegmentOffset = 0xC10000u;
+    entries[0].Allocation = (BC250_MCDM_HANDLE)0x4000;
+    CHECK(Bc250GpuvaJournalStageLeafUpdate(&journal, process, 0u,
+        0xAC0000u, entries, 1u) == BC250_GPUVA_JOURNAL_OK);
+    CHECK(journal.ExpectedRootPageTable == 0u);
+    CHECK(Bc250GpuvaJournalCommitFlush(&journal, &store, &scratch, process,
+        0x1F56F000u, 0xAC0000u, 0xAD0000u, &generation) ==
+        BC250_GPUVA_JOURNAL_OK);
+    CHECK(Bc250GpuvaSnapshotAcquire(&store, &reader) == BC250_GPUVA_OK);
+    {
+        uint32_t segment = 0u;
+        uint64_t offset = 0ull;
+        CHECK(Bc250GpuvaSpaceResolveAddress(reader.Space, process, 0xAC0000u,
+            BC250_PTE_READABLE, &segment, &offset) == BC250_GPUVA_OK);
+        CHECK(segment == 1u && offset == 0xC10000u);
+    }
+    Bc250GpuvaSnapshotRelease(&store, &reader);
+
+    /*
+     * Transicao entre multiplos processos: Process 1 estagia updates sem
+     * chamar FlushTlb. Em seguida, Process 2 chama StageLeafUpdate.
+     * O contrato deve abortar o lote pendente de Process 1 e aceitar
+     * o lote de Process 2 sem retornar BUSY.
+     */
+    {
+        BC250_MCDM_HANDLE process1 = (BC250_MCDM_HANDLE)0x1001;
+        BC250_MCDM_HANDLE process2 = (BC250_MCDM_HANDLE)0x1002;
+        memset(entries, 0, sizeof(entries));
+        entries[0].Valid = 1u;
+        entries[0].Permissions = BC250_PTE_READABLE;
+        entries[0].SegmentId = 1u;
+        entries[0].SegmentOffset = 0x500000u;
+        entries[0].Allocation = (BC250_MCDM_HANDLE)0x5001;
+        CHECK(Bc250GpuvaJournalStageLeafUpdate(&journal, process1, 0u,
+            0x10000000u, entries, 1u) == BC250_GPUVA_JOURNAL_OK);
+        CHECK(journal.Pending == 1u && journal.Process == process1);
+
+        /* Processo 2 chega: deve abortar Processo 1 e aceitar Processo 2 */
+        entries[0].SegmentOffset = 0x600000u;
+        entries[0].Allocation = (BC250_MCDM_HANDLE)0x5002;
+        CHECK(Bc250GpuvaJournalStageLeafUpdate(&journal, process2, 0u,
+            0x20000000u, entries, 1u) == BC250_GPUVA_JOURNAL_OK);
+        CHECK(journal.Pending == 1u && journal.Process == process2);
+        CHECK(journal.Changes[0].BaseGpuVa == 0x20000000u);
+
+        /* Processo 2 comita com sucesso */
+        CHECK(Bc250GpuvaJournalCommitFlush(&journal, &store, &scratch, process2,
+            0x1000u, 0x20000000u, 0x20001000u, &generation) == BC250_GPUVA_JOURNAL_OK);
+        CHECK(journal.Pending == 0u);
+    }
     return 0;
 }
 

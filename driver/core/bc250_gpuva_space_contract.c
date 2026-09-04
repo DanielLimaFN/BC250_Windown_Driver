@@ -188,6 +188,64 @@ BC250_GPUVA_STATUS Bc250GpuvaSpaceRemoveRange(
     return BC250_GPUVA_NOT_FOUND;
 }
 
+BC250_GPUVA_STATUS Bc250GpuvaSpaceResolveAddress(
+    const BC250_GPUVA_SPACE *Space,
+    BC250_MCDM_HANDLE OwnerProcess,
+    uint64_t GpuVa,
+    uint32_t RequiredPermissions,
+    uint32_t *BackingSegmentId,
+    uint64_t *BackingSegmentOffset)
+{
+    BC250_GPUVA_STATUS status;
+    uint32_t i;
+    uint32_t addressOwnedByAnotherProcess = 0u;
+
+    if (BackingSegmentId != NULL) *BackingSegmentId = 0u;
+    if (BackingSegmentOffset != NULL) *BackingSegmentOffset = 0ull;
+    status = Bc250GpuvaValidateSpace(Space);
+    if (status != BC250_GPUVA_OK) return status;
+    if (OwnerProcess == NULL || GpuVa == 0u || BackingSegmentId == NULL ||
+        BackingSegmentOffset == NULL) {
+        return BC250_GPUVA_BAD_ARGUMENT;
+    }
+    if (Space->Teardown != 0u) return BC250_GPUVA_IN_TEARDOWN;
+    if (GpuVa >= Space->MaxAddress) return BC250_GPUVA_OUT_OF_BOUNDS;
+
+    for (i = 0u; i < Space->SortedCount; ++i) {
+        const BC250_GPUVA_RANGE_RECORD *record =
+            &Space->Ranges[Space->SortedIndices[i]];
+        uint64_t withinRange;
+
+        if (record->BaseGpuVa > GpuVa) break;
+        if (GpuVa >= record->EndGpuVa) continue;
+        if (record->OwnerProcess != OwnerProcess) {
+            addressOwnedByAnotherProcess = 1u;
+            continue;
+        }
+        if (record->State == BC250_GPUVA_RANGE_TEARDOWN ||
+            record->TeardownState != 0u) {
+            return BC250_GPUVA_IN_TEARDOWN;
+        }
+        if (record->State != BC250_GPUVA_RANGE_MAPPED ||
+            record->IsResident == 0u) {
+            return BC250_GPUVA_NOT_RESIDENT;
+        }
+        if ((record->Permissions & RequiredPermissions) != RequiredPermissions) {
+            return BC250_GPUVA_PERMISSION_DENIED;
+        }
+        withinRange = GpuVa - record->BaseGpuVa;
+        if (record->BackingSegmentOffset > (uint64_t)~0ull - withinRange) {
+            return BC250_GPUVA_RANGE_OVERFLOW;
+        }
+        *BackingSegmentId = record->BackingSegmentId;
+        *BackingSegmentOffset = record->BackingSegmentOffset + withinRange;
+        return BC250_GPUVA_OK;
+    }
+
+    return addressOwnedByAnotherProcess != 0u ?
+        BC250_GPUVA_OWNER_MISMATCH : BC250_GPUVA_NOT_FOUND;
+}
+
 BC250_GPUVA_STATUS Bc250GpuvaSpaceReplaceRangeTransactional(
     BC250_GPUVA_SPACE *Space,
     BC250_GPUVA_SPACE *Scratch,

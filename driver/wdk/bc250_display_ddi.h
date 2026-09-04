@@ -53,6 +53,16 @@ typedef struct BC250_DISPLAY_STATE {
     UCHAR Edid[128];
     BOOLEAN EdidValid;
     HANDLE hPrimaryAllocation;
+    PHYSICAL_ADDRESS PrimaryAddress;
+    BOOLEAN PrimaryAddressValid;
+    /*
+     * Contrato DXGKARG_SETVIDPNSOURCEADDRESS (WDK 10.0.26100, d3dkmddi.h):
+     * o DMM entrega PrimarySegment + PrimaryAddress + hAllocation. Essa e' a
+     * unica origem de scanout com autoridade -- nao depende de tracker de
+     * GPUVA nem de interpretacao de slot de pAllocationList.
+     */
+    UINT PrimarySegment;
+    HANDLE hPrimarySourceAllocation;
 } BC250_DISPLAY_STATE;
 
 extern BC250_DISPLAY_STATE g_Bc250DisplayState;
@@ -67,6 +77,68 @@ void Bc250DisplaySetSyntheticEdidEnabled(BOOLEAN Enabled);
 BOOLEAN Bc250DisplayGetSyntheticEdidEnabled(void);
 
 void Bc250DisplayTeardown(void);
+
+typedef BOOLEAN (*BC250_DISPLAY_GPUVA_RESOLVER)(
+    _In_ HANDLE Context,
+    _In_ UINT64 Va,
+    _Out_ UINT64 *PhysicalAddress,
+    _Out_ UINT32 *SegmentId);
+
+void Bc250DisplayInstallGpuVaResolver(
+    _In_opt_ BC250_DISPLAY_GPUVA_RESOLVER Resolver);
+
+void Bc250DisplayRecordGpuVaMapping(
+    _In_opt_ HANDLE ProcessHandle,
+    _In_ UINT64 GpuVa,
+    _In_ UINT64 PhysicalAddress,
+    _In_ UINT64 ByteSize,
+    _In_ UINT32 SegmentId);
+
+BOOLEAN Bc250DisplayLookupPhysicalAddress(
+    _In_opt_ HANDLE ProcessHandle,
+    _In_ UINT64 GpuVa,
+    _Out_ UINT64 *PhysicalAddress,
+    _Out_ UINT32 *SegmentId);
+
+void Bc250DisplayRegisterContextProcess(
+    _In_ HANDLE ContextHandle,
+    _In_opt_ HANDLE ProcessHandle);
+
+void Bc250DisplayUnregisterContextProcess(
+    _In_ HANDLE ContextHandle);
+
+HANDLE Bc250DisplayGetContextProcess(
+    _In_ HANDLE ContextHandle);
+
+void Bc250DisplayClearGpuVaMappings(void);
+
+BOOLEAN Bc250DisplayResolvePresentSource(
+    _In_ HANDLE Context,
+    _In_ const DXGKARG_PRESENT *Present,
+    _Out_ UINT64 *PhysicalAddress,
+    _Out_ UINT32 *SegmentId);
+
+/*
+ * Origem de scanout com autoridade: o par PrimarySegment/PrimaryAddress
+ * publicado pelo ultimo DxgkDdiSetVidPnSourceAddress. Devolve FALSE enquanto
+ * o DMM nao tiver publicado um endereco no segmento 1 (VRAM local).
+ */
+BOOLEAN Bc250DisplayResolvePrimarySource(
+    _Out_ UINT64 *PhysicalAddress,
+    _Out_ UINT32 *SegmentId);
+
+/*
+ * Amostragem distribuida de uma superficie mapeada na abertura de VRAM.
+ * Percorre Samples pontos igualmente espacados e devolve quantos sao
+ * diferentes de zero e o XOR acumulado. Substitui a leitura de 4 DWORDs,
+ * que nao distingue "buffer zerado" de "primeiros pixels pretos".
+ */
+BOOLEAN Bc250DisplaySampleSurface(
+    _In_ UINT64 ByteOffset,
+    _In_ ULONG ByteCount,
+    _In_ ULONG Samples,
+    _Out_ ULONG *NonZeroCount,
+    _Out_ ULONG *XorHash);
 
 DXGKDDI_QUERY_CHILD_RELATIONS           Bc250DxgkDdiQueryChildRelations;
 DXGKDDI_QUERY_CHILD_STATUS              Bc250DxgkDdiQueryChildStatus;

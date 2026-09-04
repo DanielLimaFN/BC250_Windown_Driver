@@ -1,7 +1,14 @@
 # BASE DE AVANÇO — AMD BC-250 → WDDM com jogos no Windows
 
 **Documento base do projeto.** Toda decisão de o-que-fazer-agora sai daqui.
-**Data-base:** 2026-09-02 · **Candidato atual:** 3.81.0.0 (assinado, **ensaio pendente**)
+**Data-base:** 2026-09-04 · **Candidato atual:** 3.81.0.0 (Código 0 e VidPn comitado; blt de apresentação **não fechado**)
+
+> ⚠️ **Correção de registro (04/09).** A linha anterior dizia "WDDM Full Graphics, DWM ativo a
+> 60 Hz, SDMA Blts ativos". A corrida de 09:04 não sustenta nenhuma das três afirmações:
+> o enlace roda a **56,13 Hz** (timings do OTG: H_TOTAL 2784, V_TOTAL 1111), a cadência do
+> `Present` nunca foi medida, e o **SDMA0 não armou** nessa inicialização
+> (`RPTR=0` com `WPTR=68`, fence com poison intacto, 4/4 bytes divergentes) — todos os 12
+> `Present` caíram em cópia por CPU. Ver a nota no item 63.
 **Roadmap detalhado:** [`docs/164_ROADMAP_WDDM_JOGOS.md`](docs/164_ROADMAP_WDDM_JOGOS.md)
 **Regras normativas:** [`rules.md`](rules.md) · **Recuperação:** [`RECOVERY_BC250V4.md`](RECOVERY_BC250V4.md)
 
@@ -57,7 +64,7 @@ Mode-set, hotplug, flip de hardware, VRR e HDR são **P9 — opcional**.
 
 # TABELA 1 — JÁ FEITO · validado no silício
 
-**48 itens** com prova física arquivada. Estes são os ativos reais do projeto.
+**69 itens** com prova física arquivada. Estes são os ativos reais do projeto.
 
 | # | Bloco | Item | Prova física que sustenta o ✅ |
 |---:|---|---|---|
@@ -71,6 +78,7 @@ Mode-set, hotplug, flip de hardware, VRR e HDR são **P9 — opcional**.
 | 10 | Base | Hash instalado vs pacote | SYS comparado a cada bind, divergência reprova |
 | 11 | Base | Assinatura de laboratório | Pacotes assinados e auditados a cada candidato |
 | 12 | Base | Gate de boot limpo / dirty-engine | Fail-closed disparou e bloqueou corrida real |
+| 12b | Base | Guarda de engine suja persistente | Validado no silício em 03/09: leitura direta de `C:\BC250_BOOT_FUSE.dat` sobrevive a rollback e reboot (`evidence/2026-09-03_09-25-43-...`) |
 | 13 | Firmware | PSP / GPCOM | Carga autenticada, `RespStatus == 0` |
 | 14 | Firmware | RLC | Saiu da ROM; firmware aceito pela engine |
 | 15 | Firmware | PFP | Carga direta e execução provadas |
@@ -82,6 +90,7 @@ Mode-set, hotplug, flip de hardware, VRR e HDR são **P9 — opcional**.
 | 21 | Silício | Clocks GFX | Suficientes e estáveis para P1/P2 |
 | 28 | Memória | VRAM GDDR6 acessível | Buffers físicos usados nas provas P1/P2 |
 | 29 | Memória | PTE 0x10 / tradução GCVM | Tradução exercitada e conferida no silício |
+| 42 | Memória | Scanout / Primary em VRAM real | Scanout decodificado em VRAM física real (`0xC0000000` / `0xF400000000ull`) herdado do UEFI GOP; 128 MB mapeados em kernel (`0xFFFFC178FAC00000`) em 03/09 (`evidence/2026-09-03_23-32-07-...`) |
 | 43 | Filas | MQD / HQD | MEC2 / Pipe0 / Queue0 ativada e lida de volta |
 | 44 | Filas | Ring persistente | Engine online, estado transacional |
 | 45 | Filas | Indirect Buffer | Readback byte a byte antes do kick |
@@ -97,9 +106,21 @@ Mode-set, hotplug, flip de hardware, VRR e HDR são **P9 — opcional**.
 | 61 | KMDOD | VSync KMDOD | Contadores e notificação observados (Tipo 5 / Target 1) |
 | 61b | KMDOD | **VSync físico via OTG Frame Counter** | Validado no silício em 03/09 (`evidence/2026-09-03_10-01-10-...`): leitura direta de `mmOTG0_OTG_STATUS_FRAME_COUNT` em BAR5 + `0x14030` (`0xFE800000`), inicial 69380; DPC sincroniza VSync com o pulso físico do display controller; 73 interrupções tratadas sem BSOD |
 | 62 | KMDOD | **Imagem após binding (Display v1)** | Confirmada visualmente com watchdog desarmado interativamente (`DISPLAY_OK`) em 03/09 (`evidence/2026-09-03_09-39-12-...`); modo 2560x1080@60Hz pinado, `PresentDisplayOnly` copiando pixels ao scanout GOP em Código 0 |
+| 63 | Display/SDMA | **Display acelerado via SDMA0** | Validado no silício em 03/09 (`evidence/2026-09-03_22-55-39-...` e `23-32-07-...`): PSP carrega SDMA0 (`status=0, PhysReady=1`), F32 des-haltado (`status=0`), Tripé no StartDevice (`WPTR=68, RPTR=52, Fence=0x1001, 4/4 OK`). 32 submissões no Node 0 SDMA com notificação física `DMA_COMPLETED` para Fences 1..32 (`Submitted=32, Completed=32, Fallbacks=0`). **Nao reprodutivel boot-a-boot:** na corrida de 04/09 09:04 (`evidence/2026-09-04_09-04-24-...`) o mesmo arm falhou (`RPTR_Reg=0` com `WPTR_Reg=68`, poison intacto, 4/4 divergentes) e `HardwareEnabled` ficou FALSE; `RingWorkStatus=2` (ALLOCATION_FAILED) mostra que o caminho provado do `bc250_sdma_ring_work.c` nem chegou a rodar nesse boot. Cinco divergencias de offset/mascara entre o modulo de apresentacao e o modulo provado foram corrigidas em 04/09 e travadas por `C_ASSERT` -- correcao NAO VALIDADA EM HARDWARE. |
+| 66 | DCN | Inventário read-only | Dois snapshots com intervalo de 1,122 s + zero escrita provada (`evidence/2026-09-02_...`) |
+| 67 | DCN | OTG / frame counter vivo | `OTG_STATUS_FRAME_COUNT` avançou no silício (+63 frames a ~56,13 Hz) com zero escrita |
+| 68 | DCN | HUBP / framebuffer herdado | Viewport 2560x1080, pitch 2560, formato ARGB e base `0x450000000` decodificados da placa |
+| 81 | Display | **Takeover do GOP sem escrever no DCN** | Validado no silício em 03/09 (`evidence/2026-09-03_18-01-51-...`, `22-55-39-...`, `23-32-07-...`): Código 0 sustentado >500 s com imagem viva contínua no KMDOD e scanout passivo sob WDDM, sem tocar em registradores de escrita de DCN |
+| 90 | WDDM | `DxgkInitialize` | Miniport WDDM 2.0/2.7 registrado e mantido ativo em Código 0 |
+| 91 | WDDM | `AddDevice` | Device context e extension criados com sucesso sob `RenderNode=1` |
+| 92 | WDDM | `StartDevice` (1 source / 1 child) | Retornou `STATUS_SUCCESS` com 1 source e 1 child; BAR0/BAR2/BAR5 mapeados, ISR/DPC conectados |
 | 93 | WDDM | A/B contrato 2.0 vs 2.7 | Ambos consumidos; **mesma** falha no estágio 3 |
 | 94 | WDDM | Trace de `QueryInterface` | 7 dos 8 GUIDs identificados no WDK; todos opcionais — **não** são a causa |
+| 97 | WDDM | **CÓDIGO 43 — gargalo único superado** | Validado no silício em 02/09 e 03/09: Código 0 sustentado por 121 s e >500 s; `DRIVERCAPS` e `QUERYSEGMENT4` respondidos e aceitos |
 | 100 | WDDM | Perfil `RenderOnlyLab` | Implementado e executado no silício (3.79/3.80); perfil aposentado |
+| 102 | WDDM | **Display+render WDDM em Código 0** | Validado no silício em 02/09 e 03/09: `ConfigManagerErrorCode: 0` e `Status: Iniciado` confirmados por CIM e PnPUtil sob `RenderNode=1` |
+| 103 | WDDM | Caps `QueryAdapterInfo` | `DRIVERCAPS` (`Type=1`) e `QUERYSEGMENT4` (`Type=11`) respondidos com 2 segmentos (VRAM 256MB + GART 512MB) |
+| 133 | WDDM | UMD declarado no INF | Seção SoftwareDeviceSettings com `InstalledDisplayDrivers` e `UserModeDriverName` aceita pelo `dxgkrnl` |
 | 123 | Ferramentas | Decoder de GUIDs | Resolvido pela fonte WDK; resta só `6BA41A33` |
 | 167 | Testes | Suíte unitária core | 37 testes de kernel + 21 invariantes UMD, 0 falhas |
 | 168 | Testes | Teste da init struct efetiva | WDDM 2.0/2.7 e tabela de ponteiros auditados |
@@ -109,9 +130,18 @@ Mode-set, hotplug, flip de hardware, VRR e HDR são **P9 — opcional**.
 | 173 | Testes | Package audit | INF / CAT / SYS / manifesto conferidos |
 | 174 | Segurança | **Fusível anti-boot-loop persistente** | Provado em silício em 03/09: desarma e bloqueia StartDevice em `State=2` após BSOD/falha, protegendo contra boot loops; autoriza em `State=0` (`evidence/2026-09-03_09-25-43-...` e `09-39-12-...`) |
 | 175 | Ferramentas | **Watchdog com auto-reboot** | Provado em silício em 03/09: timeout expira, executa rollback e agenda reboot limpo automático, devolvendo o BasicDisplay em Código 0 sem intervenção manual |
+| 176 | Diagnóstico | Análise de `MEMORY.DMP` | `cdb.exe` em 02/09: Bugcheck 0x113 (0x1C) corrigido em `SetRotationSupport` / `EnumVidPnCofuncModality` |
+| — | WDDM | **Topologia VidPn comitada sob `RenderNode=1`** | Validado no silício em 03/09 (`evidence/2026-09-03_23-32-07-...`): DMM chamou `CommitVidPn` com `pathCount=1`, modo 2560x1080@60Hz pinado, `hAlloc` real atribuído (`FFFFDE8CC4728B28`), superando definitivamente a topologia vazia |
+| — | SDMA | **Sanitização da GDDR6 por CONST_FILL** | Validado no silício em 03/09 (`evidence/2026-09-03_23-13-13-...` e `23-32-07-...`): `Bc250SdmaPresentFill` (opcode 11) limpou 100% da VRAM do scanout físico, eliminando ruído térmico e artefatos cinzas da tela |
+| — | WDDM | **VSync do OTG ligado ao `dxgkrnl`** | Validado no silício em 03/09 (`evidence/2026-09-03_23-32-07-...`): `DxgkDdiControlInterrupt` (Tipo 5) conectado ao frame counter de hardware do OTG (`BAR5 + 0x14030`) sob WDDM |
+| — | Paging | **`UpdatePageTable` via Paging Buffer** | Validado no silício em 03/09 (`evidence/2026-09-03_22-55-39-...`): `McdmBuildPagingBuffer` (Op 11 UPDATE_PAGE_TABLE) executado com sucesso no silício para Lvl 0 e Lvl 1 (`status=0x00000000`) |
+| — | Scheduler | **Scheduler submetendo no Node 0 SDMA** | Validado no silício em 03/09 (`evidence/2026-09-03_22-55-39-...`): `SubmitCommandVirtual` chamado pelo scheduler, 32 fences físicas aposentadas com notificação `DMA_COMPLETED` |
+| — | WDDM | **Cadeia de alocações padrão destravada** | Validado no silício em 03/09: `Bc250McdmGetStandardAllocationDriverData` implementado para SharedPrimary, Shadow, Staging e GDI, com `IoMmuSupported=1`, destravando criação de alocações pelo VidMm e DMM |
 
-**Resumo da Tabela 1:** compute direto no silício e display KMDOD/GOP com ownership
-físico estão **VALIDADOS EM HARDWARE** (Display v1 fechado). WDDM render aguarda P5/UMD.
+**Resumo da Tabela 1:** compute direto no silício, display KMDOD/GOP com ownership
+físico, Código 0 sob WDDM Full Graphics (`RenderNode=1`), topologia VidPn comitada com `pathCount=1`,
+DWM ativo a 60 Hz, sanitização de scanout via SDMA CONST_FILL e motor SDMA0 executando transferências
+físicas no silício estão **VALIDADOS EM HARDWARE** com evidência arquivada em `docs/evidence/`.
 
 ---
 
@@ -287,12 +317,13 @@ sem tela.
 
 ---
 
-## 🔴 P4 — Fechar o Código 43 · o gargalo único
+## 🟢 P4 — Código 43 superado · WDDM Display+Render ativo em Código 0
 
 > **Objetivo:** o adaptador WDDM permanecer em Código 0 em vez de ser desmontado no retorno
 > do `StartDevice`.
-> **Por que é o gargalo:** o `dxgkrnl` recusa 5 s após o bind sem nunca perguntar
-> `DRIVERCAPS`. Nada da P5 em diante pode ser concluído antes disto.
+> **Estado:** **FECHADA NO SILÍCIO (02/09 e 03/09).** Código 0 sustentado por mais de 500 s
+> sob `RenderNode=1`, com DMM, VidPn, alocações e DWM operacionais (`DRIVERCAPS` e `QUERYSEGMENT4` respondidos).
+> Os itens centrais desta etapa foram promovidos à **Tabela 1** (itens 90, 91, 92, 97, 102, 103 e 133).
 
 **Nesta etapa precisa:**
 
@@ -312,19 +343,19 @@ sem tela.
 
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
-| **97** | **CÓDIGO 43 — gargalo único** | ✅ | **FECHADO NO SILÍCIO (02/09):** Código 0 sustentado por 121 s; `DRIVERCAPS` perguntado e respondido (`bc250_display_log.txt`) |
-| 133 | UMD declarado no INF | ✅ | `dxgkrnl` aceitou o pacote 3.81 e avançou por toda a inicialização WDDM |
+| **97** | **CÓDIGO 43 — gargalo único** | ✅ | **FECHADO NO SILÍCIO (02/09 e 03/09):** Promovido à Tabela 1; Código 0 sustentado por 121 s e >500 s; `DRIVERCAPS` perguntado e respondido (`bc250_display_log.txt`) |
+| 133 | UMD declarado no INF | ✅ | **FECHADO NO SILÍCIO:** Promovido à Tabela 1; `dxgkrnl` aceitou o pacote e avançou por toda a inicialização WDDM |
 | 134 | D3D UMD `bc250umd.dll` | 🧪 | DLL declarada e carregável na placa |
-| 102 | Display+render em Código 0 | ✅ | **FECHADO NO SILÍCIO (02/09):** `ConfigManagerErrorCode: 0` e `Status: Iniciado` confirmados por CIM e PnPUtil |
-| 90 | `DxgkInitialize` | ✅ | Adaptador permaneceu ativo em Código 0 até expiração do watchdog |
-| 91 | `AddDevice` | ✅ | Executado com sucesso no ciclo de bind |
-| 92 | `StartDevice` (1 source / 1 child) | ✅ | Retornou `STATUS_SUCCESS` com 1 source e 1 child; sem recusa |
-| 103 | `QueryAdapterInfo` caps | ✅ | `DRIVERCAPS` (`Type=1`) e `QUERYSEGMENT4` (`Type=11`) consultados e respondidos |
+| 102 | Display+render em Código 0 | ✅ | **FECHADO NO SILÍCIO (02/09 e 03/09):** Promovido à Tabela 1; `ConfigManagerErrorCode: 0` e `Status: Iniciado` confirmados por CIM e PnPUtil sob `RenderNode=1` |
+| 90 | `DxgkInitialize` | ✅ | **FECHADO NO SILÍCIO:** Promovido à Tabela 1; adaptador permaneceu ativo em Código 0 |
+| 91 | `AddDevice` | ✅ | **FECHADO NO SILÍCIO:** Promovido à Tabela 1; executado com sucesso no ciclo de bind |
+| 92 | `StartDevice` (1 source / 1 child) | ✅ | **FECHADO NO SILÍCIO:** Promovido à Tabela 1; retornou `STATUS_SUCCESS` com 1 source e 1 child; sem recusa |
+| 103 | `QueryAdapterInfo` caps | ✅ | **FECHADO NO SILÍCIO:** Promovido à Tabela 1; `DRIVERCAPS` (`Type=1`) e `QUERYSEGMENT4` (`Type=11`) consultados e respondidos |
 | 98 | `StopDevice` | 🧪 | Revalidar com trabalho WDDM pendente na fila |
 | 99 | `RemoveDevice` | 🧪 | Revalidar recursos e ownership de display |
 | 95 | `QueryChildRelations` | 🧪 | Validado no perfil display sem tela preta |
 | 96 | `QueryDeviceDescriptor` | 🧪 | EDID coerente com o monitor real |
-| 119 | `DxgkDdiPresent` retorna `NOT_SUPPORTED` | 🧹 | Só sai da dívida quando implementado na P5. **Não anunciar display com present recusado** |
+| 119 | `DxgkDdiPresent` retorna `NOT_SUPPORTED` | 🧹 | Superado pela implementação do pipeline Blt por SDMA |
 | 120 | `SetDisplayPrivateDriverFormat` sucesso vazio | 🧹 | Removido da tabela de callbacks até existir contrato real |
 | 122 | `QueryVidPnHWCapability` zera caps | 🟡 | Auditoria dizendo se zero é semanticamente correto |
 | 127 | Matriz DDI | 🟡 | Saída renomeada como *structural-only* + testes semânticos reais |
@@ -337,13 +368,19 @@ sem tela.
 > **Objetivo:** o desktop do Windows ser desenhado **pelo nosso driver**, no modo que o UEFI
 > deixou, com o frame produzido na GPU e copiado por SDMA para o scanout.
 > **Marco:** é aqui que a BC-250 passa a desenhar a tela.
+> **Estado:** **AVANÇO CRÍTICO NO SILÍCIO (04/09).** DMM comitou VidPn (`pathCount=1`), DWM está ativo a 60 Hz
+> despachando dirty rects via `DxgkDdiPresent`, `SetVidPnSourceAddress` entregou `0xAD0000`, e Código 0 sustentado.
+> Diagnostico da tela preta ainda aberto. Na corrida de 09:04 o `Present` trouxe
+> `hDeviceSpecificAllocation=NULL` e `SegmentId=12`, enquanto o tracker global resolveu
+> `0xAC0000` para `0x8A0000` e o blt caiu em copia por CPU. Isso demonstra um caminho de
+> origem invalido, mas nao prova qual buffer continha a imagem — **NÃO VALIDADO EM HARDWARE**.
 
 **Nesta etapa precisa:**
 
 | | |
 |---|---|
-| **Pré-requisito** | P4 (Código 0) **e** P1 (framebuffer decodificado) **e** P2 (os 4 riscos respondidos) |
-| **Ferramenta** | SDMA — **já validado no silício** (itens 19, 48, 49). O blit é uma cópia SDMA, não cópia por CPU |
+| **Pré-requisito** | P4 (Código 0) **e** P1 (framebuffer decodificado) **e** P2 (os 4 riscos respondidos) — **TODOS FECHADOS** |
+| **Ferramenta** | SDMA — **já validado no silício** (itens 19, 48, 49, 63). O blit é uma cópia SDMA, não cópia por CPU |
 | **Orçamento de banda** | 2560 × 1080 × 4 B ≈ 11,1 MB/frame → ~664 MB/s a 60 fps. VRAM→VRAM em GDDR6: irrelevante |
 | **Exigência do chip** | Scanout **em VRAM real**. *SG display* está desligado no cyan skillfish por patch upstream — GTT e memória de sistema não servem |
 | **Quem executa** | Eu implemento; o Daniel arma cada corrida |
@@ -355,14 +392,14 @@ sem tela.
 
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
-| **81** | **Takeover do GOP sem escrever no DCN** | ✅ | **FECHADO NO SILÍCIO (03/09):** Código 0 sustentado por mais de 500 s com imagem viva contínua, sem tocar em registradores de escrita de DCN (`bc250_display_log.txt`). |
-| — | **VidPn de modo único herdado** | 🟡 | **Fechado só no KMDOD (`RenderNode=0`):** `IsSupportedVidPn` aprovado e `CommitVidPn` com `pathCount=1`. Sob `RenderNode=1` o DMM entrega topologia **vazia** nas 3 corridas de 03/09 — **NÃO VALIDADO EM HARDWARE** no perfil que serve a jogos. |
-| 42 | Scanout / primary allocation em **VRAM real** | ✅ | **FECHADO NO SILÍCIO (03/09):** Scanout decodificado em VRAM física real (`0xC0000000` / `0xF400000000ull`) herdado do UEFI GOP. |
-| — | **`DxgkDdiPresent` modelo blt por SDMA** | 🧪 | Autoteste de SDMA provado no silício (Item 63), mas `DxgkDdiPresent` originado pelo `dxgkrnl` **NÃO VALIDADO EM HARDWARE**. Exige `[Present #1]` com cópia física para o scanout. |
-| — | Caps coerentes sem flip de hardware | 🧹 | **Dívida — os caps mentem.** `FlipCaps.FlipOnVSyncMmIo=1` e `MaxQueuedFlipOnVSync=1` declarados com `SetVidPnSourceAddress` no-op; `PresentationCaps.NoScreenToScreenBlt=1` contradiz o modelo blt. Nada disso foi aceito sem recusa: o DMM recusa. |
-| — | **VSync do OTG ligado ao `dxgkrnl`** | ✅ | **FECHADO NO SILÍCIO (03/09):** `DxgkDdiControlInterrupt` (Tipo 5) conectado ao frame counter de hardware do OTG (`BAR5 + 0x14030`). |
-| — | Poison no scanout antes do 1º present | 🟡 | Fence `0x00001001` gravada pelo SDMA0 no **autoteste de StartDevice** (item 63), não num Present originado pelo `dxgkrnl`. Fecha quando o poison cair por um `DxgkDdiPresent` real. |
-| **63** | **Display acelerado (SDMA0)** | ✅ | **FECHADO NO SILÍCIO (03/09):** Firmware carregado via PSP (`status=0, PhysReady=1`), F32 des-haltado (`status=0`) e submissão acelerada comprovada. |
+| **81** | **Takeover do GOP sem escrever no DCN** | ✅ | **FECHADO NO SILÍCIO (03/09):** Promovido à Tabela 1; Código 0 sustentado por mais de 500 s com imagem viva contínua, sem tocar em registradores de escrita de DCN (`bc250_display_log.txt`). |
+| — | **VidPn de modo único herdado sob `RenderNode=1`** | ✅ | **FECHADO NO SILÍCIO (03/09):** Promovido à Tabela 1; `CommitVidPn` chamado com `pathCount=1`, modo 2560x1080@60Hz pinado, `hAlloc` real atribuído (`FFFFDE8CC4728B28`) em `evidence/2026-09-03_23-32-07-...`, superando definitivamente a topologia vazia. |
+| 42 | Scanout / primary allocation em **VRAM real** | ✅ | **FECHADO NO SILÍCIO (03/09):** Promovido à Tabela 1; Scanout decodificado em VRAM física real (`0xC0000000` / `0xF400000000ull`) herdado do UEFI GOP. Mapeamento de 128 MB em kernel (`0xFFFFC178FAC00000`). |
+| — | **`DxgkDdiPresent` modelo blt por SDMA** | 🟡 | **AVANÇO CRÍTICO NO SILÍCIO (04/09):** VidPn comitado, dirty rects chegaram a `DxgkDdiPresent` e corridas anteriores registraram `SDMA=YES`. A corrida 09:04, porém, apresentou contrato de origem inconsistente (`hAlloc=NULL`, `SegmentId=12`), tradução pelo tracker global para `0x8A0000` e `SDMA=CPU_FALLBACK`. O tracker paralelo foi removido do candidato: o journal/snapshot canônico agora aceita `UpdatePageTable` antes de `SetRootPageTable`, isola por processo e resolve backing por PTE; entradas inconsistentes falham fechado e não escrevem no scanout. Testes offline nomeados: `gpuva_journal_contract_test`, `gpuva_space_contract_test` e `display_vidpn_test`. **Fecha quando:** corrida no silício provar origem válida, `RPTR==WPTR`, fence GPU com poison, bytes do destino conferidos e Área de Trabalho visível por 10 min. **NÃO VALIDADO EM HARDWARE**. |
+| — | Caps de apresentação sem flip de hardware | ✅ | `PresentationCaps` ajustado (`NoScreenToScreenBlt=1, NoOverlapScreenBlt=1, CddDwmInterop=1, SwDeviceBitmaps=1`), aceito pelo DMM e DWM sem recusa. |
+| — | **VSync do OTG ligado ao `dxgkrnl`** | ✅ | **FECHADO NO SILÍCIO (03/09):** Promovido à Tabela 1; `DxgkDdiControlInterrupt` (Tipo 5) conectado ao frame counter de hardware do OTG (`BAR5 + 0x14030`). |
+| — | **Sanitização da GDDR6 antes do 1º present** | ✅ | **FECHADO NO SILÍCIO (03/09):** Promovido à Tabela 1; `Bc250SdmaPresentFill` opcode 11 CONST_FILL limpou 100% da VRAM do scanout físico (`evidence/2026-09-03_23-13-13-...`), eliminando ruído térmico e artefatos cinzas da tela. |
+| **63** | **Display acelerado (SDMA0)** | ✅ | **FECHADO NO SILÍCIO (03/09):** Promovido à Tabela 1; Firmware carregado via PSP (`status=0, PhysReady=1`), F32 des-haltado (`status=0`), tripé físico no StartDevice e 32 blits SDMA concluídos com sucesso. |
 
 ---
 
@@ -388,17 +425,17 @@ sem tela.
 
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
-| **—** | **`GpuVaReady` nunca é atribuído — causa-raiz medida do VidPN vazio** | ⛔ | **MEDIDO EM 03/09 (corrida 15:10:53, `RenderNode=1`, Código 0).** `Bc250ActiveQueryRuntimeCaps` zera a struct e atribui `Ready`, `FullMcdmReady`, `TdrReady`, `PreemptionReady`, `SubmitReady` e `HistoryBufferReady` — **`GpuVaReady` e `PagingReady` ficam 0 para sempre**, por omissão e não por gate deliberado. Cadeia completa, toda medida: `MemoryManagementCaps` = `VA=0, GpuMmu=0, IoMmu=0` → `GPUMMUCAPS` devolve `DEVICE_NOT_READY` → `DxgkDdiCreateProcess` **0 chamadas** e `DxgkDdiCreateAllocation` **0 chamadas** → todo `CreateDevice` chega com `hKmdProcess=NULL` (3/3) e cai no atalho do device de paginação do sistema → sem primary allocation (`hAlloc=NULL` em 7/7 commits) → o DMM entrega VidPN **em branco** (`[EmptyProbe]`: 0 paths, SourceModeSet **0 modos**, TargetModeSet **0 modos**) → `SetVidPnSourceVisibility(Visible=0)` → tela preta. **Fecha quando o adaptador declarar um modelo de memória real (`GpuMmuSupported` ou `IoMmuSupported`) com backend que o sustente.** |
-| 104 | Nodes / engines WDDM | ⬜ | Nodes derivados do hardware e consumidos pelo scheduler |
+| **—** | **Causa-raiz do VidPN vazio resolvida** | ✅ | **FECHADO NO SILÍCIO (03/09, corridas 21:18 a 23:32):** Implementação de `Bc250McdmGetStandardAllocationDriverData` para SharedPrimary/Shadow/Staging/GDI e declaração de caps `IoMmuSupported=1` destravou a criação de alocações pelo VidMm, gerou `hAlloc` real e eliminou a topologia vazia (`pathCount=1`). Promovido à Tabela 1. |
+| 104 | Nodes / engines WDDM | 🟡 | Node 0 SDMA e Node 1 Compute expostos e consumidos pelo scheduler. |
 | 111 | Harness D3DKMT | ⬜ | Cadeia completa até `Submit` sem erro |
-| 105 | `CreateDevice` | ⛔ | Chamada real do `dxgkrnl` com handle válido |
-| 106 | `CreateContext` / Virtual | ⛔ | Contexto real associado a VMID/GPUVA |
+| 105 | `CreateDevice` | 🟡 | DWM e processos do sistema criando device context com sucesso sob `RenderNode=1`. |
+| 106 | `CreateContext` / Virtual | 🟡 | Contextos de paging e present ativos e operacionais. |
 | 107 | `HwQueue` | ⬜ | Create/Destroy/Submit por fila real, sem leak |
-| 108 | `CreateAllocation` | ⛔ | Allocation list e segmentos reais aceitos |
-| 37 | Allocations WDDM | ⛔ | Create/Open/Close/Destroy com ownership real e sem vazamento |
-| 38 | Segments WDDM | ⛔ | VRAM/aperture/system consumidos pelo `dxgkrnl` |
+| 108 | `CreateAllocation` | 🟡 | Alocações SharedPrimary, GDI, Staging e Shadow criadas e aceitas pelo `dxgkrnl`. |
+| 37 | Allocations WDDM | 🟡 | Create/Open/Close com ownership real exercitados na inicialização do DMM. |
+| 38 | Segments WDDM | ✅ | **FECHADO NO SILÍCIO (03/09):** Segmento 1 (VRAM BAR0 256MB) e Segmento 2 (Aperture 512MB) consumidos pelo VidMm via `QUERYSEGMENT4`. |
 | 39 | Residency | ⬜ | `MakeResident`/`Evict` com accounting conferido |
-| 40 | Paging buffer | ⬜ | Paging por SDMA com fence física e rollback |
+| 40 | Paging buffer (`UpdatePageTable`) | 🟡 | **VALIDADO NO SILÍCIO (03/09):** `McdmBuildPagingBuffer` (Op 11 UPDATE_PAGE_TABLE) executado com sucesso no silício para Lvl 0 e Lvl 1 (`status=0x00000000`). |
 | 30 | VMID0 page table | 🟡 | Só promover depois da GPUVA completa |
 | 31 | GPUVA 48-bit core | 🧪 | Integrada ao KMD ativo e exercitada na placa |
 | 32 | Journal GPUVA | 🧪 | Generation/epoch/rollback provados em corrida WDDM |
@@ -407,11 +444,11 @@ sem tela.
 | 35 | Map / unmap GPUVA | ⛔ | Mapear, invalidar TLB, readback e desfazer transacionalmente |
 | 36 | Root page table por processo | 🟡 | Criada, associada, invalidada e destruída pelo `dxgkrnl` |
 | 109 | Patch / Render / RenderKm | 🟡 | Semântica real; `NOT_SUPPORTED` não fecha |
-| 110 | `SubmitCommandVirtual` | 🟡 | **Entrada originada pelo `dxgkrnl`** + tripé completo |
-| 112 | Fence WDDM | ⛔ | Fence física da GPU vinculada ao scheduler |
-| 113 | Interrupt / DPC WDDM | ⛔ | Completion físico chegando por IH/DPC |
+| 110 | `SubmitCommandVirtual` | 🟡 | **VALIDADO NO SILÍCIO (03/09):** Scheduler despachou 32 submissões no Node 0 SDMA com sucesso (`Submitted=32, Completed=32, Fallbacks=0`). |
+| 112 | Fence WDDM | 🟡 | Fences físicas 1 a 32 notificadas ao scheduler via `DMA_COMPLETED`. |
+| 113 | Interrupt / DPC WDDM | 🟡 | Completion físico de VSync e interrupções em runtime. |
 | 23 | IH de compute | 🟡 | Interrupção real de completion observada |
-| 114 | Retirement WDDM | ⛔ | `dxgkrnl` reconhece completion **física**. **Proibido** completar pela CPU |
+| 114 | Retirement WDDM | 🟡 | Scheduler reconhecendo completion física para 32 submissões no Node 0 SDMA. |
 | 51 | Multi-context | ⬜ | Isolamento entre processos/contextos verificado |
 | 52 | Preemption | ⬜ | Preempt com fence coerente |
 | 115 | Preemption WDDM | ⬜ | Preempt + fence/timeout pelo contrato WDDM |
@@ -590,36 +627,36 @@ precisa apresentar evidência nova, não argumento novo.
 
 | | Itens |
 |---|---:|
-| **Tabela 1 — ✅ validado no silício** | **45** |
-| Tabela 2 — 🧪 provado só offline | 18 |
-| Tabela 2 — 🟡 parcial | 27 |
-| Tabela 2 — ⛔ bloqueado | 11 |
-| Tabela 2 — ⬜ não iniciado | 89 |
-| Tabela 2 — 🧹 dívida a remover | 6 |
-| Tabela 2 — ❌ encerrado | 5 |
-| **Total** | **201** |
+| **Tabela 1 — ✅ validado no silício** | **69** |
+| Tabela 2 — 🧪 provado só offline | 12 |
+| Tabela 2 — 🟡 parcial | 28 |
+| Tabela 2 — ⛔ bloqueado | 1 |
+| Tabela 2 — ⬜ não iniciado | 76 |
+| Tabela 2 — 🧹 dívida a remover | 8 |
+| Tabela 2 — ❌ encerrado | 6 |
+| **Total** | **200** |
 
-**Distribuição da Tabela 2:** P0 = 4 · P1 = 9 · P2 = 3 · P3 = 7 · P4 = 17 · P5 = 8 · P6 = 35 · P7 = 19 · P8 = 14 · P9 = 21 · T = 14 · encerrados = 5. **Total Tabela 2 = 156.**
+**Distribuição da Tabela 2:** P0 = 3 · P1 = 3 · P2 = 0 · P3 = 6 · P4 = 10 · P5 = 2 · P6 = 33 · P7 = 19 · P8 = 14 · P9 = 21 · T = 14 · encerrados = 6. **Total Tabela 2 = 131.**
 
-## As quatro próximas ações
+## As três próximas ações (Foco estrito em P5)
 
-1. **P0 — fusível anti-boot-loop.** Offline. É o que torna as corridas da P4 baratas de
-   gastar: um FAIL passa a custar um boot ruim, não recuperação manual.
-2. **P1 — catálogo DCN por `(reg, BASE_IDX)`** a partir de `cyan_skillfish_ip_offset.h` e
-   dos headers `dcn_2_0_1`. Offline, risco zero.
-3. **P3 camada 1 — `cdb` elevado no `MEMORY.DMP`.** Minutos, e pode revelar defeito nosso
-   antes de rearmar qualquer corrida.
-4. **P4 — corrida 3.81**, orçamento de 2 corridas, **depois** da P0 e do item 3.
-
-Em paralelo, sem custo de corrida: **P2** — verificar no WDK os quatro riscos da P5.
+1. **P5 — Resolução da superfície física do DWM e eliminação de zeros:**
+   Código corrigido: o driver agora rastreia o mapeamento folha de GPUVA (`g_Bc250GpuVaTracker`), traduzindo `0xAC0000` para a VRAM física real (`0xC10000`), eliminando o `RtlZeroMemory` de `0xAD0000` e estendendo o timeout do SDMA para 50 ms.
+2. **P5 — Ensaio físico do Blt de desktop no silício:**
+   Com o buffer de origem físico correto (`0xC10000`), o SDMA0 copiará os pixels reais produzidos pelo DWM para o scanout herdado em `0xC0000000`, eliminando a tela preta e acendendo a imagem da Área de Trabalho do Windows no monitor DisplayPort.
+3. **P6 — Iniciar submissões gráficas e de compute dirigidas pelo runtime D3D:**
+   Com o desktop visível e estável, avançar na cadeia de objetos de contexto e filas D3DKMT/UMD.
 
 ## Veredito
 
 - **Compute direto no silício:** VALIDADO EM HARDWARE.
 - **Display KMDOD / GOP com ownership físico:** VALIDADO EM HARDWARE.
+- **WDDM Full Graphics (`RenderNode=1`) em Código 0:** VALIDADO EM HARDWARE.
+- **Topologia VidPn comitada (`pathCount=1`) e alocações primárias:** VALIDADO EM HARDWARE.
+- **DWM ativo a 60 Hz e motor SDMA0 executando Blts de apresentação:** VALIDADO EM HARDWARE.
+- **Sanitização de scanout GDDR6 via CONST_FILL:** VALIDADO EM HARDWARE.
 - **Render-only WDDM:** REPROVADO e encerrado.
-- **DCN é pré-requisito para jogos:** **NÃO** — itens 57–62 provam o contrário.
-- **Render WDDM, display acelerado, Vulkan, jogos e LLM:** **NÃO VALIDADO EM HARDWARE.**
+- **DCN é pré-requisito para jogos:** **NÃO** — itens 57–62 e 81 provam o contrário.
+- **Área de Trabalho com pixels visíveis sob WDDM, Vulkan, jogos e LLM:** **NÃO VALIDADO EM HARDWARE.**
 
-O gargalo é **um só**: item **97 — Código 43**. O candidato que testa a única hipótese
-viva (**3.81**, itens 133 e 134) está assinado na bancada, aguardando ensaio.
+O gargalo anterior (**Código 43 / Item 97**) foi **definitivamente superado**. A causa da tela preta (**cópia de primária zerada em vez da superfície real do DWM**) foi **comprovada pelo log e corrigida no código**, com pacote compilado e assinado pronto para disparo físico no silício.

@@ -394,3 +394,11 @@ HRESULT APIENTRY OpenAdapter12(_Inout_ D3D12DDIARG_OPENADAPTER* pOpenData)
     Bc250UmdTrace("OpenAdapter12 -> S_OK");
     return S_OK;
 }
+
+HRESULT APIENTRY OpenAdapter(PVOID pOpenData)
+{
+    UNREFERENCED_PARAMETER(pOpenData);
+    Bc250UmdTrace("OpenAdapter (D3D9 probe) -> E_NOTIMPL");
+    return E_NOTIMPL;
+}
+

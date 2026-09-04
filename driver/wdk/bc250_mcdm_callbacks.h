@@ -221,6 +221,12 @@ NTSTATUS Bc250McdmEncodeVidMmPte(
     _In_ CONST DXGK_PTE *Source,
     _Out_ UINT64 *Encoded);
 
+NTSTATUS Bc250McdmEncodeVidMmPteWithLevel(
+    _In_ CONST BC250_MCDM_RUNTIME_CAPS *Caps,
+    _In_ CONST DXGK_PTE *Source,
+    _In_ UINT32 PageTableLevel,
+    _Out_ UINT64 *Encoded);
+
 typedef BOOLEAN (*BC250_MCDM_INTERRUPT_HANDLER)(
     _In_ CONST PVOID MiniportDeviceContext,
     _In_ ULONG MessageNumber);

@@ -10,6 +10,7 @@
 #include "../core/bc250_gpu_clock_contract.h"
 #include "../core/bc250_sdma_packet_builder.h"
 #include "../core/bc250_pm4_packet_builder.h"
+#include "../core/bc250_gpuva_space_contract.h"
 
 /*
  * Fase V5: as DDIs que devolvem NOT_SUPPORTED sao as candidatas naturais a
@@ -88,38 +89,117 @@ ULONG Bc250McdmGetComputeOnly(VOID)
     return (ULONG)InterlockedCompareExchange(&g_Bc250McdmComputeOnly, 0, 0);
 }
 
+NTSTATUS Bc250McdmEncodeVidMmPteWithLevel(
+    const BC250_MCDM_RUNTIME_CAPS *Caps,
+    const DXGK_PTE *Source,
+    UINT32 PageTableLevel,
+    UINT64 *Encoded)
+{
+    UINT64 physicalAddress;
+    UINT64 pageOffsetInSegment;
+    UINT32 flags;
+
+    if (Caps == NULL || Source == NULL || Encoded == NULL) {
+        Bc250DisplayLog("[EncodeVidMmPte FAIL NullParam] Caps=%p, Source=%p, Encoded=%p\n",
+            Caps, Source, Encoded);
+        return STATUS_INVALID_PARAMETER;
+    }
+    *Encoded = 0u;
+    if (Source->Valid == 0u || Source->Zero != 0u) {
+        return STATUS_SUCCESS;
+    }
+
+    if (Source->PhysicalAdapterIndex != 0u) {
+        Bc250DisplayLog("[EncodeVidMmPte FAIL PhysAdapter] PhysIdx=%u\n",
+            (UINT32)Source->PhysicalAdapterIndex);
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    /*
+     * Em ambos os niveis (folha e diretorio), PageAddress/PageTableAddress
+     * representa o Page Frame Number (PFN) de 4KB na abertura do segmento.
+     */
+    pageOffsetInSegment = Source->PageAddress << 12;
+
+    if (PageTableLevel > 0u) {
+        /*
+         * Nivel > 0: Entrada de Diretorio de Paginas (PDE).
+         * Tabelas de paginas filhas DEVEM residir no Segmento 1 (VRAM Local).
+         */
+        if (Source->Segment != 1u) {
+            Bc250DisplayLog("[EncodeVidMmPte FAIL PDE Segment] Lvl=%u, Seg=%u\n",
+                PageTableLevel, (UINT32)Source->Segment);
+            return STATUS_NOT_SUPPORTED;
+        }
+        if (pageOffsetInSegment >= Caps->LocalSegmentBytes) {
+            Bc250DisplayLog("[EncodeVidMmPte FAIL PDE LocalBounds] Lvl=%u, Pfn=0x%llX, Offset=0x%llX, MaxBytes=0x%llX\n",
+                PageTableLevel,
+                (unsigned long long)Source->PageAddress,
+                (unsigned long long)pageOffsetInSegment,
+                (unsigned long long)Caps->LocalSegmentBytes);
+            return STATUS_NOT_SUPPORTED;
+        }
+        if (Caps->LocalSegmentBaseOffset > (UINT64)~(UINT64)0 - pageOffsetInSegment) {
+            Bc250DisplayLog("[EncodeVidMmPte FAIL Overflow] Base=0x%llX, Offset=0x%llX\n",
+                (unsigned long long)Caps->LocalSegmentBaseOffset,
+                (unsigned long long)pageOffsetInSegment);
+            return STATUS_INTEGER_OVERFLOW;
+        }
+        physicalAddress = Caps->LocalSegmentBaseOffset + pageOffsetInSegment;
+        flags = BC250_PTE_VALID | BC250_PTE_READABLE | BC250_PTE_WRITEABLE;
+    } else {
+        /*
+         * Nivel 0: Entrada Folha (PTE).
+         * Suporta Segmento 1 (VRAM Local) e Segmento 0 (Memoria do Sistema / RAM do Host).
+         */
+        if (Source->LargePage != 0u ||
+            Source->PageTablePageSize != DXGK_PTE_PAGE_TABLE_PAGE_4KB) {
+            Bc250DisplayLog("[EncodeVidMmPte FAIL LeafAttrs] LP=%u, PTPgSz=%u\n",
+                (UINT32)Source->LargePage, (UINT32)Source->PageTablePageSize);
+            return STATUS_NOT_SUPPORTED;
+        }
+        flags = BC250_PTE_VALID | BC250_PTE_READABLE;
+        if (Source->ReadOnly == 0u) flags |= BC250_PTE_WRITEABLE;
+        if (Source->NoExecute == 0u) flags |= BC250_PTE_EXECUTABLE;
+        if (Source->CacheCoherent != 0u) flags |= BC250_PTE_SNOOPED;
+
+        if (Source->Segment == 1u) {
+            /* VRAM Local */
+            if (pageOffsetInSegment >= Caps->LocalSegmentBytes) {
+                Bc250DisplayLog("[EncodeVidMmPte FAIL LocalBounds] Lvl=0, Pfn=0x%llX, Offset=0x%llX, MaxBytes=0x%llX\n",
+                    (unsigned long long)Source->PageAddress,
+                    (unsigned long long)pageOffsetInSegment,
+                    (unsigned long long)Caps->LocalSegmentBytes);
+                return STATUS_NOT_SUPPORTED;
+            }
+            if (Caps->LocalSegmentBaseOffset > (UINT64)~(UINT64)0 - pageOffsetInSegment) {
+                Bc250DisplayLog("[EncodeVidMmPte FAIL Overflow] Base=0x%llX, Offset=0x%llX\n",
+                    (unsigned long long)Caps->LocalSegmentBaseOffset,
+                    (unsigned long long)pageOffsetInSegment);
+                return STATUS_INTEGER_OVERFLOW;
+            }
+            physicalAddress = Caps->LocalSegmentBaseOffset + pageOffsetInSegment;
+        } else if (Source->Segment == 0u) {
+            /* Memoria do Sistema (Segmento 0 = System Memory) */
+            physicalAddress = pageOffsetInSegment;
+            flags |= BC250_PTE_SYSTEM | BC250_PTE_SNOOPED;
+        } else {
+            Bc250DisplayLog("[EncodeVidMmPte FAIL Leaf Segment] Seg=%u\n",
+                (UINT32)Source->Segment);
+            return STATUS_NOT_SUPPORTED;
+        }
+    }
+
+    return Bc250GcvmEncodePte(physicalAddress, flags, Encoded) ==
+        BC250_GCVM_OK ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER;
+}
+
 NTSTATUS Bc250McdmEncodeVidMmPte(
     const BC250_MCDM_RUNTIME_CAPS *Caps,
     const DXGK_PTE *Source,
     UINT64 *Encoded)
 {
-    UINT64 physicalAddress;
-    UINT32 flags;
-
-    if (Caps == NULL || Source == NULL || Encoded == NULL) {
-        return STATUS_INVALID_PARAMETER;
-    }
-    *Encoded = 0u;
-    if (Source->Valid == 0u) return STATUS_SUCCESS;
-    if (Source->Zero != 0u || Source->LargePage != 0u ||
-        Source->PhysicalAdapterIndex != 0u ||
-        Source->PageTablePageSize != DXGK_PTE_PAGE_TABLE_PAGE_4KB ||
-        Source->Segment != 1u ||
-        (Source->PageAddress & (BC250_PAGE_SIZE_4K - 1u)) != 0u ||
-        Source->PageAddress >= Caps->LocalSegmentBytes) {
-        return STATUS_NOT_SUPPORTED;
-    }
-    if (Caps->LocalSegmentBaseOffset >
-        (UINT64)~(UINT64)0 - Source->PageAddress) {
-        return STATUS_INTEGER_OVERFLOW;
-    }
-    physicalAddress = Caps->LocalSegmentBaseOffset + Source->PageAddress;
-    flags = BC250_PTE_VALID | BC250_PTE_READABLE;
-    if (Source->ReadOnly == 0u) flags |= BC250_PTE_WRITEABLE;
-    if (Source->NoExecute == 0u) flags |= BC250_PTE_EXECUTABLE;
-    if (Source->CacheCoherent != 0u) flags |= BC250_PTE_SNOOPED;
-    return Bc250GcvmEncodePte(physicalAddress, flags, Encoded) ==
-        BC250_GCVM_OK ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER;
+    return Bc250McdmEncodeVidMmPteWithLevel(Caps, Source, 0u, Encoded);
 }
 
 static NTSTATUS Bc250McdmBuildCpuPageTableUpdate(
@@ -131,30 +211,74 @@ static NTSTATUS Bc250McdmBuildCpuPageTableUpdate(
     UINT64 *destination;
     UINT32 index;
     UINT32 maxEntries;
+    UINT32 levelBits;
 
     if (Caps == NULL || Args == NULL) return STATUS_INVALID_PARAMETER;
     update = &Args->UpdatePageTable;
+    Bc250DisplayLog("[UpdatePT] Lvl=%u, FirstPteVA=0x%llX, Num=%u, Start=%u, Mode=%u, Repeat=%u, CpuVa=0x%p, Flags=0x%08X\n",
+        update->PageTableLevel, (unsigned long long)update->FirstPteVirtualAddress,
+        update->NumPageTableEntries, update->StartIndex,
+        (UINT32)update->UpdateMode, update->Flags.Repeat, update->PageTableAddress.CpuVirtual,
+        *(const UINT32 *)&update->Flags);
+
+    /* Detailed logging of first few PTE entries */
+    if (update->pPageTableEntries != NULL) {
+        UINT32 logCount = update->NumPageTableEntries < 4u ? update->NumPageTableEntries : 4u;
+        for (index = 0u; index < logCount; ++index) {
+            const DXGK_PTE *p = &update->pPageTableEntries[index];
+            Bc250DisplayLog("[UpdatePT Lvl=%u Entry %u] V=%u, Z=%u, LP=%u, PhysIdx=%u, PTPgSz=%u, Seg=%u, Addr=0x%llX\n",
+                update->PageTableLevel, index,
+                (UINT32)p->Valid, (UINT32)p->Zero, (UINT32)p->LargePage,
+                (UINT32)p->PhysicalAdapterIndex, (UINT32)p->PageTablePageSize,
+                (UINT32)p->Segment, (unsigned long long)p->PageAddress);
+        }
+    }
+
     if (update->UpdateMode != DXGK_PAGETABLEUPDATE_CPU_VIRTUAL ||
         update->PageTableAddress.CpuVirtual == NULL ||
         update->pPageTableEntries == NULL ||
         update->NumPageTableEntries == 0u || update->Reserved0 != 0u ||
-        update->Flags.Reserved != 0u || update->DriverProtection != 0u ||
         update->pPageTableEntries64KB != NULL ||
         update->PageTableLevel >= Caps->PageTableLevelCount ||
         Caps->PageTableIndexBitCount == 0u ||
         Caps->PageTableIndexBitCount >= 32u) {
+        Bc250DisplayLog("[UpdatePT FAIL Header] Mode=%u, CpuVa=%p, pPTE=%p, Num=%u, Res0=%u, FlagsVal=0x%08X, Prot=%u, Lvl=%u (Caps=%u)\n",
+            (UINT32)update->UpdateMode, update->PageTableAddress.CpuVirtual,
+            update->pPageTableEntries, update->NumPageTableEntries,
+            update->Reserved0, *(const UINT32 *)&update->Flags, update->DriverProtection,
+            update->PageTableLevel, Caps->PageTableLevelCount);
         return STATUS_INVALID_PARAMETER;
     }
-    maxEntries = 1u << Caps->PageTableIndexBitCount;
+    levelBits = (update->PageTableLevel == 0u) ?
+        BC250_GPUVA_PT_LEAF_INDEX_BITS : BC250_GPUVA_PT_ROOT_INDEX_BITS;
+    maxEntries = 1u << levelBits;
     if (update->StartIndex >= maxEntries ||
         update->NumPageTableEntries > maxEntries - update->StartIndex) {
+        Bc250DisplayLog("[UpdatePT FAIL Bounds] Start=%u, Num=%u, Max=%u, LvlBits=%u\n",
+            update->StartIndex, update->NumPageTableEntries, maxEntries, levelBits);
         return STATUS_INVALID_PARAMETER;
     }
-    for (index = 0u; index < update->NumPageTableEntries; ++index) {
-        UINT64 encoded;
-        NTSTATUS status = Bc250McdmEncodeVidMmPte(
-            Caps, &update->pPageTableEntries[index], &encoded);
-        if (!NT_SUCCESS(status)) return status;
+    if (update->Flags.Repeat != 0u) {
+        UINT64 encoded = 0u;
+        NTSTATUS status = Bc250McdmEncodeVidMmPteWithLevel(
+            Caps, &update->pPageTableEntries[0], update->PageTableLevel, &encoded);
+        if (!NT_SUCCESS(status)) {
+            Bc250DisplayLog("[UpdatePT FAIL Repeat Encode] status=0x%08X\n", status);
+            return status;
+        }
+    } else {
+        for (index = 0u; index < update->NumPageTableEntries; ++index) {
+            UINT64 encoded = 0u;
+            NTSTATUS status = Bc250McdmEncodeVidMmPteWithLevel(
+                Caps, &update->pPageTableEntries[index], update->PageTableLevel, &encoded);
+            if (!NT_SUCCESS(status)) {
+                Bc250DisplayLog("[UpdatePT FAIL Encode] index=%u/%u, status=0x%08X, RawFlags=0x%016llX, RawAddr=0x%016llX\n",
+                    index, update->NumPageTableEntries, status,
+                    (unsigned long long)update->pPageTableEntries[index].Flags,
+                    (unsigned long long)update->pPageTableEntries[index].PageAddress);
+                return status;
+            }
+        }
     }
     /* O handler ativo distingue leaf de diretórios; ambos precisam participar
      * da mesma transação de flush, embora só leaf gere ranges GPUVA. */
@@ -162,11 +286,20 @@ static NTSTATUS Bc250McdmBuildCpuPageTableUpdate(
         return g_Bc250UpdatePageTableHandler(AdapterContext, Caps, update);
     }
     destination = (UINT64 *)update->PageTableAddress.CpuVirtual;
-    for (index = 0u; index < update->NumPageTableEntries; ++index) {
-        UINT64 encoded;
-        (void)Bc250McdmEncodeVidMmPte(
-            Caps, &update->pPageTableEntries[index], &encoded);
-        destination[update->StartIndex + index] = encoded;
+    if (update->Flags.Repeat != 0u) {
+        UINT64 encoded = 0u;
+        (void)Bc250McdmEncodeVidMmPteWithLevel(
+            Caps, &update->pPageTableEntries[0], update->PageTableLevel, &encoded);
+        for (index = 0u; index < update->NumPageTableEntries; ++index) {
+            destination[update->StartIndex + index] = encoded;
+        }
+    } else {
+        for (index = 0u; index < update->NumPageTableEntries; ++index) {
+            UINT64 encoded = 0u;
+            (void)Bc250McdmEncodeVidMmPteWithLevel(
+                Caps, &update->pPageTableEntries[index], update->PageTableLevel, &encoded);
+            destination[update->StartIndex + index] = encoded;
+        }
     }
     return STATUS_SUCCESS;
 }
@@ -342,7 +475,7 @@ NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(
     }
     Bc250DisplayLog("[McdmBuildPagingBuffer] Entered: Op=%u\n", pBuildPagingBuffer->Operation);
     if (g_Bc250QueryRuntimeCaps == NULL) {
-        return STATUS_NOT_SUPPORTED;
+        return STATUS_DEVICE_NOT_READY;
     }
     (void)g_Bc250QueryRuntimeCaps((HANDLE)hAdapter, &caps);
 
@@ -363,9 +496,14 @@ NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(
         Bc250DisplayLog("[McdmBuildPagingBuffer] Handled Op=%u -> SUCCESS\n", pBuildPagingBuffer->Operation);
         return STATUS_SUCCESS;
 
-    case DXGK_OPERATION_UPDATE_PAGE_TABLE:
-        return Bc250McdmBuildCpuPageTableUpdate(
+    case DXGK_OPERATION_UPDATE_PAGE_TABLE: {
+        NTSTATUS updateStatus = Bc250McdmBuildCpuPageTableUpdate(
             &caps, (HANDLE)hAdapter, pBuildPagingBuffer);
+        if (updateStatus == STATUS_NOT_SUPPORTED) {
+            updateStatus = STATUS_INVALID_PARAMETER;
+        }
+        return updateStatus;
+    }
 
     case DXGK_OPERATION_VIRTUAL_TRANSFER:
         return Bc250McdmBuildTransferVirtual(pBuildPagingBuffer);
@@ -689,10 +827,76 @@ SIZE_T APIENTRY Bc250McdmGetRootPageTableSize(
     return (SIZE_T)bytes;
 }
 
-BC250_MCDM_UNSUPPORTED_2(Bc250McdmGetStandardAllocationDriverData, BC250_V5_DDI_GET_STD_ALLOCATION_DATA,
-    CONST HANDLE, hAdapter,
-    DXGKARG_GETSTANDARDALLOCATIONDRIVERDATA *,
-    pGetStandardAllocationDriverData)
+NTSTATUS APIENTRY Bc250McdmGetStandardAllocationDriverData(
+    CONST HANDLE hAdapter,
+    DXGKARG_GETSTANDARDALLOCATIONDRIVERDATA *pGetStandardAllocationDriverData)
+{
+    Bc250ProbeMarkDdi(BC250_V5_DDI_GET_STD_ALLOCATION_DATA);
+    if (hAdapter == NULL || pGetStandardAllocationDriverData == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Bc250DisplayLog("[GetStdAllocData] Type=%u\n",
+        pGetStandardAllocationDriverData->StandardAllocationType);
+
+    switch (pGetStandardAllocationDriverData->StandardAllocationType) {
+    case D3DKMDT_STANDARDALLOCATION_SHAREDPRIMARYSURFACE: {
+        D3DKMDT_SHAREDPRIMARYSURFACEDATA *pShared =
+            pGetStandardAllocationDriverData->pCreateSharedPrimarySurfaceData;
+        if (pShared != NULL) {
+            Bc250DisplayLog("[GetStdAllocData] SharedPrimary: %ux%u, Format=%u, VidPnSourceId=%u\n",
+                pShared->Width, pShared->Height, pShared->Format, pShared->VidPnSourceId);
+        }
+        pGetStandardAllocationDriverData->AllocationPrivateDriverDataSize = 0u;
+        pGetStandardAllocationDriverData->ResourcePrivateDriverDataSize = 0u;
+        return STATUS_SUCCESS;
+    }
+
+    case D3DKMDT_STANDARDALLOCATION_SHADOWSURFACE: {
+        D3DKMDT_SHADOWSURFACEDATA *pShadow =
+            pGetStandardAllocationDriverData->pCreateShadowSurfaceData;
+        if (pShadow != NULL) {
+            pShadow->Pitch = pShadow->Width * 4u;
+            Bc250DisplayLog("[GetStdAllocData] ShadowSurface: %ux%u, Pitch=%u\n",
+                pShadow->Width, pShadow->Height, pShadow->Pitch);
+        }
+        pGetStandardAllocationDriverData->AllocationPrivateDriverDataSize = 0u;
+        pGetStandardAllocationDriverData->ResourcePrivateDriverDataSize = 0u;
+        return STATUS_SUCCESS;
+    }
+
+    case D3DKMDT_STANDARDALLOCATION_STAGINGSURFACE: {
+        D3DKMDT_STAGINGSURFACEDATA *pStaging =
+            pGetStandardAllocationDriverData->pCreateStagingSurfaceData;
+        if (pStaging != NULL) {
+            pStaging->Pitch = pStaging->Width * 4u;
+            Bc250DisplayLog("[GetStdAllocData] StagingSurface: %ux%u, Pitch=%u\n",
+                pStaging->Width, pStaging->Height, pStaging->Pitch);
+        }
+        pGetStandardAllocationDriverData->AllocationPrivateDriverDataSize = 0u;
+        pGetStandardAllocationDriverData->ResourcePrivateDriverDataSize = 0u;
+        return STATUS_SUCCESS;
+    }
+
+    case D3DKMDT_STANDARDALLOCATION_GDISURFACE: {
+        D3DKMDT_GDISURFACEDATA *pGdi =
+            pGetStandardAllocationDriverData->pCreateGdiSurfaceData;
+        if (pGdi != NULL) {
+            pGdi->Pitch = pGdi->Width * 4u;
+            Bc250DisplayLog("[GetStdAllocData] GdiSurface: %ux%u, Type=%u, Pitch=%u\n",
+                pGdi->Width, pGdi->Height, pGdi->Type, pGdi->Pitch);
+        }
+        pGetStandardAllocationDriverData->AllocationPrivateDriverDataSize = 0u;
+        pGetStandardAllocationDriverData->ResourcePrivateDriverDataSize = 0u;
+        return STATUS_SUCCESS;
+    }
+
+    default:
+        Bc250DisplayLog("[GetStdAllocData] Unsupported type=%u\n",
+            pGetStandardAllocationDriverData->StandardAllocationType);
+        return STATUS_NOT_SUPPORTED;
+    }
+}
 
 NTSTATUS APIENTRY Bc250McdmOpenAllocation(
     CONST HANDLE hDevice,
@@ -874,8 +1078,7 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
             (runtimeCaps.GpuVaReady != 0u) ? 1u : 0u;
         caps->MemoryManagementCaps.GpuMmuSupported =
             (runtimeCaps.GpuVaReady != 0u) ? 1u : 0u;
-        caps->MemoryManagementCaps.ParavirtualizationSupported =
-            (runtimeCaps.GpuVaReady != 0u) ? 1u : 0u;
+        caps->MemoryManagementCaps.ParavirtualizationSupported = 0u;
         caps->PreemptionCaps.ComputePreemptionGranularity =
             D3DKMDT_COMPUTE_PREEMPTION_DMA_BUFFER_BOUNDARY;
         caps->SupportPerEngineTDR = TRUE;
@@ -1024,15 +1227,18 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         desc = (DXGK_PAGE_TABLE_LEVEL_DESC *)
             pQueryAdapterInfo->pOutputData;
         RtlZeroMemory(desc, sizeof(*desc));
-        desc->PageTableIndexBitCount =
-            runtimeCaps.PageTableIndexBitCount;
+        if (in->LevelIndex == 0u) {
+            desc->PageTableIndexBitCount = BC250_GPUVA_PT_LEAF_INDEX_BITS;
+            desc->PageTableSizeInBytes = (1ull << BC250_GPUVA_PT_LEAF_INDEX_BITS) * sizeof(UINT64);
+        } else {
+            desc->PageTableIndexBitCount = BC250_GPUVA_PT_ROOT_INDEX_BITS;
+            desc->PageTableSizeInBytes = (1ull << BC250_GPUVA_PT_ROOT_INDEX_BITS) * sizeof(UINT64);
+        }
         desc->PageTableSegmentId = 1u;
         desc->PagingProcessPageTableSegmentId = 1u;
-        desc->PageTableSizeInBytes = runtimeCaps.PageTableSizeBytes;
-        desc->PageTableAlignmentInBytes =
-            runtimeCaps.PageTableAlignmentBytes;
-        Bc250DisplayLog("[McdmQAI] PAGETABLELEVELDESC: Level=%u, Bits=%u\n",
-            in->LevelIndex, desc->PageTableIndexBitCount);
+        desc->PageTableAlignmentInBytes = runtimeCaps.PageTableAlignmentBytes;
+        Bc250DisplayLog("[McdmQAI] PAGETABLELEVELDESC: Level=%u, Bits=%u, Size=%u\n",
+            in->LevelIndex, desc->PageTableIndexBitCount, (UINT32)desc->PageTableSizeInBytes);
         return STATUS_SUCCESS;
     }
 

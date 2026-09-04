@@ -76,7 +76,7 @@ BC250_GPUVA_JOURNAL_STATUS Bc250GpuvaJournalStageLeafUpdate(
     uint32_t index;
     uint64_t updateEnd;
     if (Journal == NULL || Journal->Signature != BC250_GPUVA_JOURNAL_SIGNATURE ||
-        Process == NULL || ExpectedRootPageTable == 0u || Entries == NULL ||
+        Process == NULL || Entries == NULL ||
         EntryCount == 0u || (FirstGpuVa & BC250_GPUVA_PAGE_MASK) != 0u) {
         return BC250_GPUVA_JOURNAL_BAD_ARGUMENT;
     }
@@ -85,9 +85,17 @@ BC250_GPUVA_JOURNAL_STATUS Bc250GpuvaJournalStageLeafUpdate(
     }
     updateEnd = FirstGpuVa + ((uint64_t)EntryCount * BC250_GPUVA_PAGE_BYTES);
     if (updateEnd > BC250_GPUVA_MAX_LIMIT) return BC250_GPUVA_JOURNAL_BAD_ARGUMENT;
-    if (Journal->Pending != 0u &&
-        (Journal->Process != Process || Journal->ExpectedRootPageTable != ExpectedRootPageTable)) {
-        return BC250_GPUVA_JOURNAL_BUSY;
+    if (Journal->Pending != 0u && Journal->Process != Process) {
+        Bc250GpuvaJournalAbort(Journal);
+    }
+    if (Journal->Pending != 0u && Journal->ExpectedRootPageTable != 0u &&
+        ExpectedRootPageTable != 0u &&
+        Journal->ExpectedRootPageTable != ExpectedRootPageTable) {
+        Bc250GpuvaJournalAbort(Journal);
+    }
+    if (Journal->Pending != 0u && Journal->ExpectedRootPageTable == 0u &&
+        ExpectedRootPageTable != 0u) {
+        Journal->ExpectedRootPageTable = ExpectedRootPageTable;
     }
     for (index = 0u; index < EntryCount; ++index) {
         if (Entries[index].Valid != 0u && Entries[index].Permissions == 0u) {
@@ -190,12 +198,13 @@ BC250_GPUVA_JOURNAL_STATUS Bc250GpuvaJournalCommitFlush(
     if (Journal->Pending == 0u || Journal->ChangeCount == 0u) {
         return BC250_GPUVA_JOURNAL_BAD_STATE;
     }
-    if (Journal->Process != Process || Journal->ExpectedRootPageTable != RootPageTable) {
+    if (Journal->Process != Process ||
+        (Journal->ExpectedRootPageTable != 0u &&
+         Journal->ExpectedRootPageTable != RootPageTable)) {
         return BC250_GPUVA_JOURNAL_MISMATCH;
     }
     if (!((FlushStartGpuVa == 0u && FlushEndGpuVa == 0u) ||
-          (FlushStartGpuVa <= Journal->MinimumGpuVa &&
-           FlushEndGpuVa >= Journal->MaximumGpuVa &&
+          (FlushEndGpuVa >= Journal->MaximumGpuVa &&
            FlushEndGpuVa > FlushStartGpuVa))) {
         return BC250_GPUVA_JOURNAL_RANGE_NOT_FLUSHED;
     }

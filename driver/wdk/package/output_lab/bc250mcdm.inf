@@ -35,7 +35,7 @@ cyan_skillfish2_mec.bin=1
 [BC250Mcdm_Device.NT]
 CopyFiles=BC250Mcdm.CopyFiles, BC250Mcdm.DisplayCopyFiles
 AddReg=BC250Mcdm_SoftwareDeviceSettings
-FeatureScore=00
+FeatureScore=FC
 
 [BC250Mcdm_Device.NT.HW]
 AddReg=BC250Mcdm_HW_AddReg

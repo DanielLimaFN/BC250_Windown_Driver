@@ -247,7 +247,7 @@ static int Bc250RunMcdmCallbacksTest(void)
     CHECK(driverCaps.SchedulingCaps.LowIrqlPreemptCommand == 1u);
     CHECK(driverCaps.MemoryManagementCaps.VirtualAddressingSupported == 1u);
     CHECK(driverCaps.MemoryManagementCaps.GpuMmuSupported == 1u);
-    CHECK(driverCaps.MemoryManagementCaps.ParavirtualizationSupported == 1u);
+    CHECK(driverCaps.MemoryManagementCaps.ParavirtualizationSupported == 0u);
 
     /* A/B usa o mesmo binario: ambas as respostas devem mudar juntas. */
     CHECK(Bc250McdmSetWddmContractVersion(DXGKDDI_WDDMv2) ==
@@ -315,6 +315,11 @@ static int Bc250RunMcdmCallbacksTest(void)
     g_pageLevelIn.LevelIndex = 4u;
     CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) ==
         STATUS_INVALID_PARAMETER);
+    g_pageLevelIn.LevelIndex = 1u;
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) ==
+        STATUS_SUCCESS);
+    CHECK(g_pageLevelDesc.PageTableIndexBitCount == 13u);
+    CHECK(g_pageLevelDesc.PageTableSizeInBytes == 65536u);
     g_pageLevelIn.LevelIndex = 0u;
     {
         DXGKARG_SETROOTPAGETABLE setRoot;
@@ -329,9 +334,10 @@ static int Bc250RunMcdmCallbacksTest(void)
         CHECK(g_rootEntries == 512u);
     }
     {
+        NTSTATUS badStatus;
         memset(&g_paging, 0, sizeof(g_paging));
-        memset(g_pagingEntries, 0, sizeof(g_pagingEntries));
         memset(g_pageTable, 0xCC, sizeof(g_pageTable));
+        memset(g_pagingEntries, 0, sizeof(g_pagingEntries));
         g_pagingEntries[0].Valid = 1u;
         g_pagingEntries[0].CacheCoherent = 1u;
         g_pagingEntries[0].ReadOnly = 1u;
@@ -339,7 +345,7 @@ static int Bc250RunMcdmCallbacksTest(void)
         g_pagingEntries[0].Segment = 1u;
         g_pagingEntries[0].PageTablePageSize =
             DXGK_PTE_PAGE_TABLE_PAGE_4KB;
-        g_pagingEntries[0].PageAddress = 0x2000u;
+        g_pagingEntries[0].PageAddress = 2u; /* PFN 2 -> 0x2000 offset */
         g_paging.Operation = DXGK_OPERATION_UPDATE_PAGE_TABLE;
         g_paging.UpdatePageTable.PageTableLevel = 0u;
         g_paging.UpdatePageTable.PageTableAddress.CpuVirtual = g_pageTable;
@@ -353,15 +359,40 @@ static int Bc250RunMcdmCallbacksTest(void)
         CHECK(g_pageTable[2] == 0xCCCCCCCCCCCCCCCCull);
         CHECK(g_pageTable[3] == 0x0000000000A8E025ull);
         CHECK(g_pageTable[4] == 0u);
+        /* Teste de Segmento 0 (Memoria do Sistema) */
         g_pagingEntries[0].Segment = 0u;
+        g_pagingEntries[0].PageAddress = 0x442C08ull;
+        CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) == STATUS_SUCCESS);
+        CHECK((g_pageTable[3] & (1ull << 1)) != 0); /* BC250_PTE_SYSTEM bit set */
+
+        /* Teste de segmento invalido (Segmento 3) */
+        g_pagingEntries[0].Segment = 3u;
         g_pageTable[3] = 0x1122334455667788ull;
-        CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
-            STATUS_NOT_SUPPORTED);
+        badStatus = Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging);
+        CHECK(badStatus == STATUS_INVALID_PARAMETER || badStatus == STATUS_NOT_SUPPORTED);
         CHECK(g_pageTable[3] == 0x1122334455667788ull);
+
+        /* Teste de repeticao (Flags.Repeat = 1) com lote grande (512 PTEs) */
+        memset(g_pagingEntries, 0, sizeof(g_pagingEntries));
+        g_pagingEntries[0].Valid = 0u;
+        g_paging.Operation = DXGK_OPERATION_UPDATE_PAGE_TABLE;
+        g_paging.UpdatePageTable.PageTableLevel = 0u;
+        g_paging.UpdatePageTable.PageTableAddress.CpuVirtual = g_pageTable;
+        g_paging.UpdatePageTable.pPageTableEntries = g_pagingEntries;
+        g_paging.UpdatePageTable.StartIndex = 0u;
+        g_paging.UpdatePageTable.NumPageTableEntries = 512u;
+        g_paging.UpdatePageTable.Flags.Repeat = 1u;
+        g_paging.UpdatePageTable.UpdateMode = DXGK_PAGETABLEUPDATE_CPU_VIRTUAL;
+        CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) == STATUS_SUCCESS);
+        CHECK(g_pageTable[0] == 0u);
+        CHECK(g_pageTable[511] == 0u);
 
         /* Diretórios não-leaf também passam pelo handler transacional ativo. */
         g_pagingEntries[0].Segment = 1u;
+        g_paging.UpdatePageTable.Flags.Repeat = 0u;
         g_paging.UpdatePageTable.PageTableLevel = 2u;
+        g_paging.UpdatePageTable.StartIndex = 3u;
+        g_paging.UpdatePageTable.NumPageTableEntries = 2u;
         g_updateHandlerCalls = 0u;
         Bc250McdmInstallUpdatePageTableHandler(
             Bc250TestUpdatePageTableHandler);
