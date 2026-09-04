@@ -32,18 +32,22 @@ Se você a atualizar, cada número deve ter evidência em `docs/evidence/`.
 ================================== STATUS DO DRIVER BC-250 ==================================
 Base Geral Pre-WDDM (Lab)        ██████████████████▋░  93%   Estavel e Isolado
 SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Arm provado no miniport de producao em 04/09 11:11 (RPTR=52, Fence=0x1001, 4/4 OK, 1 poll)
-GCVM & Traducao de Memoria       ██████████████████░░  90%   PTE 0x10 provado; UpdatePT via Paging Buffer no silicio
+GCVM & Traducao de Memoria       ███████████████████░  95%   04/09 17:05: 135 UPDATE_PAGE_TABLE com journalStatus=0 (inclui pagina zero) e 2 FLUSH_TLB com AckObserved=1
 RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
 Telemetria & Observabilidade     ██████████████████░░  90%   Schema 134; telemetria ativa em Present, dirty rects e VidPn
 Compute & Async Queues (MEC/MQD) ██████████████████░░  90%   P1 17/17 e P2 16/16 provados; fila persistente nao consome
-Miniport WDDM Display+Render     █████████████████░░░  85%   Código 0 (97); VidPn pathCount=1; Present chamado; blt P5 nao fechado
+Miniport WDDM Display+Render     █████████████████░░░  85%   Código 0 por 120 s sem BugCheck; primary nunca criada em 17:05; blt P5 nao fechado
 =============================================================================================
-Veredito Global: em 04/09 11:11 o SDMA0 do miniport de producao ARMOU -- tripe completo (RPTR=52, fence 0x1001
-gravada pela GPU, 4/4 bytes conferidos, 1 poll) contra timeout de 2001 polls em 09:04. Causa: janela MMIO que
-nao alcancava o bloco HDP + sequencia de coerencia divergente do modulo provado. VidPn negocia por completo
-(7 IsSupportedVidPn, 5 pivos, modo pinado batendo com o GOP a 56,13 Hz). A tela segue preta por OUTRO motivo:
-o primeiro UPDATE_PAGE_TABLE e recusado com journalStatus=3 (BUSY) -> STATUS_DEVICE_BUSY, e o dispositivo morre
-ANTES de CommitVidPn/SetVidPnSourceAddress/Present. Blt de apresentacao — NAO VALIDADO EM HARDWARE.
+Veredito Global: a corrida 04/09 17:05 provou no silicio a correcao da pagina zero -- 135 UPDATE_PAGE_TABLE
+com journalStatus=0 (incluindo FirstPteVA=0x0, Num=16, que abortava em 16:47), dois FLUSH_TLB com AckObserved=1
+e commit de journal SUCCESS. Nao houve BugCheck, nao houve TDR, nenhum evento de erro no log do sistema e o
+fusivel anti-boot-loop NAO disparou; o dispositivo ficou em Codigo 0 os 120 s inteiros. A tela segue preta por
+OUTRO motivo, medido: o dxgkrnl NUNCA cria a alocacao primaria. GetStandardAllocationDriverData devolvia
+AllocationPrivateDriverDataSize=0, entao o VidMm abandonava a criacao antes de chamar CreateAllocation (0
+ocorrencias, com log na entrada da DDI), comitava VidPN vazia com hPrimaryAllocation=NULL 7 vezes seguidas e
+desligava a fonte. Corrigido em e458b8e reemitindo BC250_ALLOCATION_PRIVATE_V1 de 40 bytes, o mesmo formato que
+funcionou as 12:23 (50 CreateAllocation, primary de 11.075.584 bytes, SetVidPnSourceAddress chamado).
+Criacao da primary e blt de apresentacao com este binario — NAO VALIDADO EM HARDWARE.
 Handoff completo: docs/HANDOFF_2026-09-04.md
 =============================================================================================
 ```
