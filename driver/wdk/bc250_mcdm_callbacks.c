@@ -11,6 +11,7 @@
 #include "../core/bc250_sdma_packet_builder.h"
 #include "../core/bc250_pm4_packet_builder.h"
 #include "../core/bc250_gpuva_space_contract.h"
+#include "../core/bc250_allocation_abi_contract.h"
 
 /*
  * Fase V5: as DDIs que devolvem NOT_SUPPORTED sao as candidatas naturais a
@@ -827,6 +828,75 @@ SIZE_T APIENTRY Bc250McdmGetRootPageTableSize(
     return (SIZE_T)bytes;
 }
 
+/*
+ * P5 / item 35 -- reconstrucao da private driver data das alocacoes padrao.
+ *
+ * PROVA DE REGRESSAO (mineracao do corpus, nao hipotese):
+ *   docs/evidence/2026-09-04_12-23-15.../bc250_display_log.txt (linhas 1173-1177):
+ *     [GetStdAllocData] Filled: Token=0xA1100001, Size=11075584, Align=65536
+ *     [McdmCreateAllocation] NumAllocs=1
+ *     [CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x0, PrivDataSize=40
+ *     -> primary criada, OpenAllocation OK, SetVidPnSourceAddress chamado.
+ *   docs/evidence/2026-09-04_17-05-14.../bc250_display_log.txt:
+ *     AllocationPrivateDriverDataSize=0 -> o dxgkrnl NUNCA chama CreateAllocation,
+ *     comita VidPN vazia com hPrimaryAllocation=NULL e desliga a fonte (7 ciclos).
+ *
+ * Devolver tamanho zero deixa o VidMm sem qualquer descricao da primary, e ele
+ * abandona a criacao ANTES de nos chamar. Reemitimos BC250_ALLOCATION_PRIVATE_V1
+ * no formato exato que Bc250AllocationAbiParse aceita (40 bytes, Flags=0,
+ * Alignment potencia de 2 em [4K, 2M], ByteSize multiplo do Alignment).
+ */
+#define BC250_STD_ALLOC_ALIGNMENT 65536ull
+#define BC250_STD_ALLOC_BYTES_PER_PIXEL 4ull
+
+#define BC250_STD_ALLOC_TOKEN_PRIMARY 0xA1100001ull
+#define BC250_STD_ALLOC_TOKEN_SHADOW  0xA1100002ull
+#define BC250_STD_ALLOC_TOKEN_STAGING 0xA1100003ull
+#define BC250_STD_ALLOC_TOKEN_GDI     0xA1100004ull
+
+static VOID Bc250McdmPublishStandardAllocationPrivateData(
+    _Inout_ DXGKARG_GETSTANDARDALLOCATIONDRIVERDATA *Args,
+    _In_ UINT64 Token,
+    _In_ UINT64 ByteSize)
+{
+    BC250_ALLOCATION_PRIVATE_V1 priv;
+    UINT64 aligned;
+
+    if (ByteSize == 0ull) {
+        ByteSize = BC250_STD_ALLOC_ALIGNMENT;
+    }
+    aligned = (ByteSize + (BC250_STD_ALLOC_ALIGNMENT - 1ull)) &
+        ~(BC250_STD_ALLOC_ALIGNMENT - 1ull);
+
+    /*
+     * Passe 1 (pAllocationPrivateDriverData == NULL): so o tamanho.
+     * Passe 2 (ponteiro valido): o conteudo. O dxgkrnl exige os dois.
+     */
+    Args->AllocationPrivateDriverDataSize = (UINT)sizeof(priv);
+    Args->ResourcePrivateDriverDataSize = 0u;
+
+    if (Args->pAllocationPrivateDriverData == NULL) {
+        Bc250DisplayLog("[GetStdAllocData] Size query -> AllocPrivDataSize=%u, ResPrivDataSize=0\n",
+            (ULONG)sizeof(priv));
+        return;
+    }
+
+    RtlZeroMemory(&priv, sizeof(priv));
+    priv.Magic = BC250_ALLOCATION_PRIVATE_MAGIC;
+    priv.Version = BC250_ALLOCATION_PRIVATE_VERSION;
+    priv.StructSize = (UINT32)sizeof(priv);
+    priv.Flags = 0u;
+    priv.AllocationToken = Token;
+    priv.ByteSize = aligned;
+    priv.Alignment = BC250_STD_ALLOC_ALIGNMENT;
+    RtlCopyMemory(Args->pAllocationPrivateDriverData, &priv, sizeof(priv));
+
+    Bc250DisplayLog("[GetStdAllocData] Filled: Token=0x%llX, Size=%llu, Align=%llu\n",
+        (unsigned long long)priv.AllocationToken,
+        (unsigned long long)priv.ByteSize,
+        (unsigned long long)priv.Alignment);
+}
+
 NTSTATUS APIENTRY Bc250McdmGetStandardAllocationDriverData(
     CONST HANDLE hAdapter,
     DXGKARG_GETSTANDARDALLOCATIONDRIVERDATA *pGetStandardAllocationDriverData)
@@ -836,58 +906,74 @@ NTSTATUS APIENTRY Bc250McdmGetStandardAllocationDriverData(
         return STATUS_INVALID_PARAMETER;
     }
 
-    Bc250DisplayLog("[GetStdAllocData] Type=%u\n",
-        pGetStandardAllocationDriverData->StandardAllocationType);
+    Bc250DisplayLog("[GetStdAllocData] Type=%u, pAllocPriv=%p, pResPriv=%p\n",
+        pGetStandardAllocationDriverData->StandardAllocationType,
+        pGetStandardAllocationDriverData->pAllocationPrivateDriverData,
+        pGetStandardAllocationDriverData->pResourcePrivateDriverData);
 
     switch (pGetStandardAllocationDriverData->StandardAllocationType) {
     case D3DKMDT_STANDARDALLOCATION_SHAREDPRIMARYSURFACE: {
         D3DKMDT_SHAREDPRIMARYSURFACEDATA *pShared =
             pGetStandardAllocationDriverData->pCreateSharedPrimarySurfaceData;
+        UINT64 bytes = 0ull;
         if (pShared != NULL) {
             Bc250DisplayLog("[GetStdAllocData] SharedPrimary: %ux%u, Format=%u, VidPnSourceId=%u\n",
-                pShared->Width, pShared->Height, pShared->Format, pShared->VidPnSourceId);
+                pShared->Width, pShared->Height, pShared->Format,
+                pShared->VidPnSourceId);
+            bytes = (UINT64)pShared->Width * (UINT64)pShared->Height *
+                BC250_STD_ALLOC_BYTES_PER_PIXEL;
         }
-        pGetStandardAllocationDriverData->AllocationPrivateDriverDataSize = 0u;
-        pGetStandardAllocationDriverData->ResourcePrivateDriverDataSize = 0u;
+        Bc250McdmPublishStandardAllocationPrivateData(
+            pGetStandardAllocationDriverData,
+            BC250_STD_ALLOC_TOKEN_PRIMARY, bytes);
         return STATUS_SUCCESS;
     }
 
     case D3DKMDT_STANDARDALLOCATION_SHADOWSURFACE: {
         D3DKMDT_SHADOWSURFACEDATA *pShadow =
             pGetStandardAllocationDriverData->pCreateShadowSurfaceData;
+        UINT64 bytes = 0ull;
         if (pShadow != NULL) {
-            pShadow->Pitch = pShadow->Width * 4u;
+            pShadow->Pitch = (UINT)(pShadow->Width * 4u);
             Bc250DisplayLog("[GetStdAllocData] ShadowSurface: %ux%u, Pitch=%u\n",
                 pShadow->Width, pShadow->Height, pShadow->Pitch);
+            bytes = (UINT64)pShadow->Pitch * (UINT64)pShadow->Height;
         }
-        pGetStandardAllocationDriverData->AllocationPrivateDriverDataSize = 0u;
-        pGetStandardAllocationDriverData->ResourcePrivateDriverDataSize = 0u;
+        Bc250McdmPublishStandardAllocationPrivateData(
+            pGetStandardAllocationDriverData,
+            BC250_STD_ALLOC_TOKEN_SHADOW, bytes);
         return STATUS_SUCCESS;
     }
 
     case D3DKMDT_STANDARDALLOCATION_STAGINGSURFACE: {
         D3DKMDT_STAGINGSURFACEDATA *pStaging =
             pGetStandardAllocationDriverData->pCreateStagingSurfaceData;
+        UINT64 bytes = 0ull;
         if (pStaging != NULL) {
-            pStaging->Pitch = pStaging->Width * 4u;
+            pStaging->Pitch = (UINT)(pStaging->Width * 4u);
             Bc250DisplayLog("[GetStdAllocData] StagingSurface: %ux%u, Pitch=%u\n",
                 pStaging->Width, pStaging->Height, pStaging->Pitch);
+            bytes = (UINT64)pStaging->Pitch * (UINT64)pStaging->Height;
         }
-        pGetStandardAllocationDriverData->AllocationPrivateDriverDataSize = 0u;
-        pGetStandardAllocationDriverData->ResourcePrivateDriverDataSize = 0u;
+        Bc250McdmPublishStandardAllocationPrivateData(
+            pGetStandardAllocationDriverData,
+            BC250_STD_ALLOC_TOKEN_STAGING, bytes);
         return STATUS_SUCCESS;
     }
 
     case D3DKMDT_STANDARDALLOCATION_GDISURFACE: {
         D3DKMDT_GDISURFACEDATA *pGdi =
             pGetStandardAllocationDriverData->pCreateGdiSurfaceData;
+        UINT64 bytes = 0ull;
         if (pGdi != NULL) {
-            pGdi->Pitch = pGdi->Width * 4u;
+            pGdi->Pitch = (UINT)(pGdi->Width * 4u);
             Bc250DisplayLog("[GetStdAllocData] GdiSurface: %ux%u, Type=%u, Pitch=%u\n",
                 pGdi->Width, pGdi->Height, pGdi->Type, pGdi->Pitch);
+            bytes = (UINT64)pGdi->Pitch * (UINT64)pGdi->Height;
         }
-        pGetStandardAllocationDriverData->AllocationPrivateDriverDataSize = 0u;
-        pGetStandardAllocationDriverData->ResourcePrivateDriverDataSize = 0u;
+        Bc250McdmPublishStandardAllocationPrivateData(
+            pGetStandardAllocationDriverData,
+            BC250_STD_ALLOC_TOKEN_GDI, bytes);
         return STATUS_SUCCESS;
     }
 
