@@ -338,6 +338,33 @@ static NTSTATUS Bc250McdmBuildCpuPageTableUpdate(
  */
 #define BC250_PAGING_MULTIPASS_DONE 0u
 
+/*
+ * Bc250SdmaEmit* trata o buffer como anel e mascara o cursor com
+ * (RingDwords - 1), entao exige RingDwords potencia de dois -- caso contrario
+ * devolve BC250_SDMA_BAD_ARGUMENT antes de escrever qualquer dword.
+ *
+ * PROVA (corrida 04/09 18:02, C:\BC250_DISPLAY_LOG.txt, ultimas linhas antes do
+ * BugCheck 0x10E):
+ *   [McdmBuildPagingBuffer] Entered: Op=9
+ *   [FillVirtual] SDMA encode failed: status=1 chunk=4194304 done=0
+ * status=1 e BC250_SDMA_BAD_ARGUMENT. O fatiamento em 4 MiB estava correto; o
+ * que falhou foi passar Args->DmaSize/4 direto como RingDwords. O VidMm nao
+ * garante potencia de dois nesse campo: ele entrega o que sobrou do buffer.
+ *
+ * Usamos a maior potencia de dois <= ao disponivel. Como o cursor nunca chega
+ * a essa capacidade (paramos antes de cada pacote), a mascara vira no-op e as
+ * escritas ficam lineares, que e a semantica correta de um paging buffer.
+ */
+static uint32_t Bc250PagingFloorPow2Dwords(uint32_t Dwords)
+{
+    uint32_t capacity = 1u;
+    if (Dwords == 0u) return 0u;
+    while (capacity <= (Dwords >> 1)) {
+        capacity <<= 1;
+    }
+    return capacity;
+}
+
 static NTSTATUS Bc250McdmBuildTransferVirtual(
     DXGKARG_BUILDPAGINGBUFFER *Args)
 {
@@ -376,7 +403,14 @@ static NTSTATUS Bc250McdmBuildTransferVirtual(
     }
 
     dmaBuffer = (uint32_t *)Args->pDmaBuffer;
-    dwordsAvailable = Args->DmaSize / (uint32_t)sizeof(uint32_t);
+    dwordsAvailable = Bc250PagingFloorPow2Dwords(
+        Args->DmaSize / (uint32_t)sizeof(uint32_t));
+    if (dwordsAvailable < BC250_SDMA_DWORDS_COPY_LINEAR) {
+        Bc250DisplayLog("[TransferVirtual] DmaSize=%u insuficiente (cap=%u dwords)\n",
+            Args->DmaSize, dwordsAvailable);
+        Args->MultipassOffset = (UINT)done;
+        return STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER;
+    }
 
     while (done < total) {
         UINT64 remaining = total - done;
@@ -395,9 +429,20 @@ static NTSTATUS Bc250McdmBuildTransferVirtual(
             chunk);
         if (sdmaStatus == BC250_SDMA_RING_FULL) break;
         if (sdmaStatus != BC250_SDMA_OK) {
-            Bc250DisplayLog("[TransferVirtual] SDMA encode failed: status=%d chunk=%u done=%llu\n",
-                (int)sdmaStatus, chunk, (unsigned long long)done);
-            return STATUS_INVALID_PARAMETER;
+            Bc250DisplayLog("[TransferVirtual] SDMA encode failed: status=%d chunk=%u done=%llu DmaSize=%u cap=%u\n",
+                (int)sdmaStatus, chunk, (unsigned long long)done,
+                Args->DmaSize, dwordsAvailable);
+            /*
+             * Com a capacidade ja arredondada para potencia de dois e o
+             * chunk clampado, este caminho e inalcancavel. Se ainda assim
+             * ocorrer sem nenhum progresso, nao ha status legal que peca
+             * "desista": devolver INSUFFICIENT_DMA_BUFFER faria o VidMm
+             * repetir para sempre. Preferimos o bugcheck com a linha de log
+             * acima nomeando o motivo -- foi assim que a corrida 18:02 foi
+             * diagnosticada.
+             */
+            if (done == 0ull) return STATUS_INVALID_PARAMETER;
+            break;
         }
         done += chunk;
     }
@@ -446,7 +491,14 @@ static NTSTATUS Bc250McdmBuildFillVirtual(
     }
 
     dmaBuffer = (uint32_t *)Args->pDmaBuffer;
-    dwordsAvailable = Args->DmaSize / (uint32_t)sizeof(uint32_t);
+    dwordsAvailable = Bc250PagingFloorPow2Dwords(
+        Args->DmaSize / (uint32_t)sizeof(uint32_t));
+    if (dwordsAvailable < BC250_SDMA_DWORDS_CONST_FILL) {
+        Bc250DisplayLog("[FillVirtual] DmaSize=%u insuficiente (cap=%u dwords)\n",
+            Args->DmaSize, dwordsAvailable);
+        Args->MultipassOffset = (UINT)done;
+        return STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER;
+    }
 
     while (done < total) {
         UINT64 remaining = total - done;
@@ -465,9 +517,20 @@ static NTSTATUS Bc250McdmBuildFillVirtual(
             chunk);
         if (sdmaStatus == BC250_SDMA_RING_FULL) break;
         if (sdmaStatus != BC250_SDMA_OK) {
-            Bc250DisplayLog("[FillVirtual] SDMA encode failed: status=%d chunk=%u done=%llu\n",
-                (int)sdmaStatus, chunk, (unsigned long long)done);
-            return STATUS_INVALID_PARAMETER;
+            Bc250DisplayLog("[FillVirtual] SDMA encode failed: status=%d chunk=%u done=%llu DmaSize=%u cap=%u\n",
+                (int)sdmaStatus, chunk, (unsigned long long)done,
+                Args->DmaSize, dwordsAvailable);
+            /*
+             * Com a capacidade ja arredondada para potencia de dois e o
+             * chunk clampado, este caminho e inalcancavel. Se ainda assim
+             * ocorrer sem nenhum progresso, nao ha status legal que peca
+             * "desista": devolver INSUFFICIENT_DMA_BUFFER faria o VidMm
+             * repetir para sempre. Preferimos o bugcheck com a linha de log
+             * acima nomeando o motivo -- foi assim que a corrida 18:02 foi
+             * diagnosticada.
+             */
+            if (done == 0ull) return STATUS_INVALID_PARAMETER;
+            break;
         }
         done += chunk;
     }
