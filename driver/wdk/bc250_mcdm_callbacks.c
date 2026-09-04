@@ -305,6 +305,39 @@ static NTSTATUS Bc250McdmBuildCpuPageTableUpdate(
     return STATUS_SUCCESS;
 }
 
+/*
+ * CONTRATO DE RETORNO DE DxgkDdiBuildPagingBuffer
+ *
+ * PROVA (dump C:\Windows\MEMORY.DMP da corrida 04/09 17:38, !analyze -v):
+ *   VIDEO_MEMORY_MANAGEMENT_INTERNAL (10e)
+ *   Arg1: 000000000000000b, Driver returned an invalid error code from BuildPagingBuffer.
+ *   Arg3: ffffffffc000000d  (STATUS_INVALID_PARAMETER)
+ *   STACK_TEXT:
+ *     dxgmms2!VIDMM_GLOBAL::PageInOneAllocation
+ *     dxgmms2!VIDMM_MEMORY_SEGMENT::CommitResource
+ *     dxgmms2!VIDMM_MEMORY_SEGMENT::TransferToSegment
+ *     dxgmms2!VIDMM_GLOBAL::FillAllocation
+ *     dxgmms2!VIDMM_GLOBAL::FillAllocationUsingGpuVa
+ *     dxgmms2!VIDMM_GLOBAL::CompleteBuildPagingBufferIteration -> KeBugCheckEx
+ *
+ * O VidMm estava paginando a primary (11.075.584 bytes) e pediu um VIRTUAL_FILL
+ * unico de ~10,56 MiB. O builder rejeitava qualquer pedido acima de
+ * BC250_SDMA_FILL_MAX_BYTES (4 MiB) com STATUS_INVALID_PARAMETER -- um codigo que
+ * esta DDI NAO tem permissao de devolver. O VidMm nao trata o erro: ele bugcheca.
+ *
+ * Duas correcoes:
+ *   1. Fatiamento. Um pedido maior que o maximo do pacote SDMA vira N pacotes
+ *      CONST_FILL/COPY_LINEAR consecutivos no mesmo DMA buffer.
+ *   2. Multipasse legal. Quando o DMA buffer acaba antes do fim do pedido,
+ *      gravamos o progresso em Args->MultipassOffset e devolvemos
+ *      STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER, que e o mecanismo documentado
+ *      para o VidMm nos chamar de novo continuando de onde paramos.
+ *
+ * O mesmo bugcheck com Arg3=c0000185 derrubou a corrida 16:47 pelo caminho do
+ * FLUSH_TLB: e a mesma classe de defeito, status ilegal devolvido ao VidMm.
+ */
+#define BC250_PAGING_MULTIPASS_DONE 0u
+
 static NTSTATUS Bc250McdmBuildTransferVirtual(
     DXGKARG_BUILDPAGINGBUFFER *Args)
 {
@@ -312,34 +345,73 @@ static NTSTATUS Bc250McdmBuildTransferVirtual(
     uint32_t *dmaBuffer;
     uint32_t dwordsAvailable;
     uint32_t cursor = 0;
-    BC250_SDMA_STATUS sdmaStatus;
+    UINT64 done;
+    UINT64 total;
 
     if (Args == NULL || Args->pDmaBuffer == NULL) return STATUS_INVALID_PARAMETER;
     transfer = &Args->TransferVirtual;
-    if (transfer->TransferSizeInBytes == 0 || transfer->TransferSizeInBytes > BC250_SDMA_COPY_MAX_BYTES) {
+    total = transfer->TransferSizeInBytes;
+    if (total == 0) {
+        Args->MultipassOffset = BC250_PAGING_MULTIPASS_DONE;
+        return STATUS_SUCCESS;
+    }
+    if ((transfer->SourceVirtualAddress & 3u) != 0 ||
+        (transfer->DestinationVirtualAddress & 3u) != 0) {
+        /*
+         * Inalcancavel pelo contrato: o VidMm so entrega VA alinhado a pagina.
+         * Fica fail-closed de proposito -- se um dia acontecer, queremos o
+         * bugcheck com o status na mao em vez de um blt silenciosamente errado.
+         */
+        Bc250DisplayLog("[TransferVirtual] REJECT misaligned: Src=0x%llX Dst=0x%llX Size=%llu\n",
+            (unsigned long long)transfer->SourceVirtualAddress,
+            (unsigned long long)transfer->DestinationVirtualAddress,
+            (unsigned long long)total);
         return STATUS_INVALID_PARAMETER;
     }
-    if ((transfer->SourceVirtualAddress & 3u) != 0 || (transfer->DestinationVirtualAddress & 3u) != 0) {
-        return STATUS_INVALID_PARAMETER;
+
+    done = (UINT64)Args->MultipassOffset;
+    if (done >= total) {
+        Args->MultipassOffset = BC250_PAGING_MULTIPASS_DONE;
+        return STATUS_SUCCESS;
     }
 
     dmaBuffer = (uint32_t *)Args->pDmaBuffer;
     dwordsAvailable = Args->DmaSize / (uint32_t)sizeof(uint32_t);
-    if (dwordsAvailable < BC250_SDMA_DWORDS_COPY_LINEAR) {
-        return STATUS_BUFFER_TOO_SMALL;
+
+    while (done < total) {
+        UINT64 remaining = total - done;
+        uint32_t chunk = remaining > (UINT64)BC250_SDMA_COPY_MAX_BYTES ?
+            BC250_SDMA_COPY_MAX_BYTES : (uint32_t)remaining;
+        BC250_SDMA_STATUS sdmaStatus;
+
+        if (dwordsAvailable - cursor < BC250_SDMA_DWORDS_COPY_LINEAR) break;
+
+        sdmaStatus = Bc250SdmaEmitCopyLinear(
+            dmaBuffer,
+            dwordsAvailable,
+            &cursor,
+            transfer->SourceVirtualAddress + done,
+            transfer->DestinationVirtualAddress + done,
+            chunk);
+        if (sdmaStatus == BC250_SDMA_RING_FULL) break;
+        if (sdmaStatus != BC250_SDMA_OK) {
+            Bc250DisplayLog("[TransferVirtual] SDMA encode failed: status=%d chunk=%u done=%llu\n",
+                (int)sdmaStatus, chunk, (unsigned long long)done);
+            return STATUS_INVALID_PARAMETER;
+        }
+        done += chunk;
     }
 
-    sdmaStatus = Bc250SdmaEmitCopyLinear(
-        dmaBuffer,
-        dwordsAvailable,
-        &cursor,
-        transfer->SourceVirtualAddress,
-        transfer->DestinationVirtualAddress,
-        (uint32_t)transfer->TransferSizeInBytes);
-
-    if (sdmaStatus != BC250_SDMA_OK) return STATUS_UNSUCCESSFUL;
-
     Args->pDmaBuffer = (PVOID)(dmaBuffer + cursor);
+    if (done < total) {
+        Args->MultipassOffset = (UINT)done;
+        Bc250DisplayLog("[TransferVirtual] Multipass: %llu/%llu bytes, %u dwords emitidos\n",
+            (unsigned long long)done, (unsigned long long)total, cursor);
+        return STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER;
+    }
+    Args->MultipassOffset = BC250_PAGING_MULTIPASS_DONE;
+    Bc250DisplayLog("[TransferVirtual] Completo: %llu bytes em %u dwords\n",
+        (unsigned long long)total, cursor);
     return STATUS_SUCCESS;
 }
 
@@ -350,34 +422,66 @@ static NTSTATUS Bc250McdmBuildFillVirtual(
     uint32_t *dmaBuffer;
     uint32_t dwordsAvailable;
     uint32_t cursor = 0;
-    BC250_SDMA_STATUS sdmaStatus;
+    UINT64 done;
+    UINT64 total;
 
     if (Args == NULL || Args->pDmaBuffer == NULL) return STATUS_INVALID_PARAMETER;
     fill = &Args->FillVirtual;
-    if (fill->FillSizeInBytes == 0 || fill->FillSizeInBytes > BC250_SDMA_FILL_MAX_BYTES) {
-        return STATUS_INVALID_PARAMETER;
+    total = fill->FillSizeInBytes;
+    if (total == 0) {
+        Args->MultipassOffset = BC250_PAGING_MULTIPASS_DONE;
+        return STATUS_SUCCESS;
     }
     if ((fill->DestinationVirtualAddress & 3u) != 0) {
+        Bc250DisplayLog("[FillVirtual] REJECT misaligned: Dst=0x%llX Size=%llu\n",
+            (unsigned long long)fill->DestinationVirtualAddress,
+            (unsigned long long)total);
         return STATUS_INVALID_PARAMETER;
+    }
+
+    done = (UINT64)Args->MultipassOffset;
+    if (done >= total) {
+        Args->MultipassOffset = BC250_PAGING_MULTIPASS_DONE;
+        return STATUS_SUCCESS;
     }
 
     dmaBuffer = (uint32_t *)Args->pDmaBuffer;
     dwordsAvailable = Args->DmaSize / (uint32_t)sizeof(uint32_t);
-    if (dwordsAvailable < BC250_SDMA_DWORDS_CONST_FILL) {
-        return STATUS_BUFFER_TOO_SMALL;
+
+    while (done < total) {
+        UINT64 remaining = total - done;
+        uint32_t chunk = remaining > (UINT64)BC250_SDMA_FILL_MAX_BYTES ?
+            BC250_SDMA_FILL_MAX_BYTES : (uint32_t)remaining;
+        BC250_SDMA_STATUS sdmaStatus;
+
+        if (dwordsAvailable - cursor < BC250_SDMA_DWORDS_CONST_FILL) break;
+
+        sdmaStatus = Bc250SdmaEmitConstFill(
+            dmaBuffer,
+            dwordsAvailable,
+            &cursor,
+            fill->DestinationVirtualAddress + done,
+            fill->FillPattern,
+            chunk);
+        if (sdmaStatus == BC250_SDMA_RING_FULL) break;
+        if (sdmaStatus != BC250_SDMA_OK) {
+            Bc250DisplayLog("[FillVirtual] SDMA encode failed: status=%d chunk=%u done=%llu\n",
+                (int)sdmaStatus, chunk, (unsigned long long)done);
+            return STATUS_INVALID_PARAMETER;
+        }
+        done += chunk;
     }
 
-    sdmaStatus = Bc250SdmaEmitConstFill(
-        dmaBuffer,
-        dwordsAvailable,
-        &cursor,
-        fill->DestinationVirtualAddress,
-        fill->FillPattern,
-        (uint32_t)fill->FillSizeInBytes);
-
-    if (sdmaStatus != BC250_SDMA_OK) return STATUS_UNSUCCESSFUL;
-
     Args->pDmaBuffer = (PVOID)(dmaBuffer + cursor);
+    if (done < total) {
+        Args->MultipassOffset = (UINT)done;
+        Bc250DisplayLog("[FillVirtual] Multipass: %llu/%llu bytes, %u dwords emitidos\n",
+            (unsigned long long)done, (unsigned long long)total, cursor);
+        return STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER;
+    }
+    Args->MultipassOffset = BC250_PAGING_MULTIPASS_DONE;
+    Bc250DisplayLog("[FillVirtual] Completo: %llu bytes, pattern=0x%08X, em %u dwords\n",
+        (unsigned long long)total, fill->FillPattern, cursor);
     return STATUS_SUCCESS;
 }
 
