@@ -505,7 +505,7 @@ static int Bc250RunDisplayVidPnTest(void)
     DXGKARG_ENUMVIDPNCOFUNCMODALITY enumCofunc;
     DXGKARG_COMMITVIDPN commitVidPn;
     DXGKARG_PRESENT presentArg;
-    DXGK_ALLOCATIONLIST presentAllocations[3];
+    DXGK_PRESENTALLOCATIONINFO presentAllocations[3];
     DXGKRNL_INTERFACE dxgkInterface;
     DXGK_DISPLAY_INFORMATION postDisplayInfo;
     DXGKARG_PRESENT_DISPLAYONLY displayOnly;
@@ -567,27 +567,40 @@ static int Bc250RunDisplayVidPnTest(void)
     CHECK(Bc250DxgkDdiPresent((HANDLE)0x1234, NULL) == STATUS_INVALID_PARAMETER);
     CHECK(Bc250DxgkDdiPresent((HANDLE)0x1234, &presentArg) == STATUS_NOT_SUPPORTED);
 
-    /* 5b. Contrato da origem: handle obrigatorio, segmento pre-patched valido
-     * ou GPUVA resolvida no snapshot do processo dono do contexto. */
+    /* 5b. Contrato da origem sobre DXGK_PRESENTALLOCATIONINFO (WDDM 2.0 GpuMmu).
+     *
+     * O dxgkrnl preenche pAllocationInfo, nao pAllocationList: sao membros da
+     * mesma uniao com layouts diferentes. A corrida 04/09 18:10 provou o efeito
+     * de ler o membro errado (SegmentId=16, hDev=NULL, ponteiro de kernel no
+     * slot 2). Ver o comentario em Bc250DisplayResolvePresentSource.
+     *
+     * Autoridade: PhysicalAddress + SegmentId==1 entregues pelo VidMm primeiro;
+     * GPUVA resolvida no snapshot comitado depois. hDeviceSpecificAllocation
+     * NAO e exigido -- o DWM entrega NULL nesse campo. */
     presentArg.Flags.Blt = 1u;
-    presentArg.pAllocationList = presentAllocations;
+    presentArg.pAllocationInfo = presentAllocations;
     CHECK(!Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
         &resolvedPhysical, &resolvedSegment));
-    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].hDeviceSpecificAllocation =
-        (HANDLE)0x2000;
     presentAllocations[DXGK_PRESENT_SOURCE_INDEX].SegmentId = 12u;
     presentAllocations[DXGK_PRESENT_SOURCE_INDEX].PhysicalAddress.QuadPart =
         0xAC0000ll;
     CHECK(!Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
         &resolvedPhysical, &resolvedSegment));
+    /* Segmento 1 com fisico valido resolve mesmo com hDeviceSpecificAllocation
+     * NULL, que e exatamente o formato entregue pelo DWM. */
     presentAllocations[DXGK_PRESENT_SOURCE_INDEX].SegmentId = 1u;
     presentAllocations[DXGK_PRESENT_SOURCE_INDEX].PhysicalAddress.QuadPart =
         0xAD0000ll;
+    CHECK(presentAllocations[DXGK_PRESENT_SOURCE_INDEX].hDeviceSpecificAllocation
+        == NULL);
     CHECK(Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
         &resolvedPhysical, &resolvedSegment));
     CHECK(resolvedPhysical == 0xAD0000ull && resolvedSegment == 1u);
+    /* Sem fisico utilizavel, cai para a GPUVA resolvida no snapshot. */
     presentAllocations[DXGK_PRESENT_SOURCE_INDEX].SegmentId = 0u;
-    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].VirtualAddress = 0xAC0000ull;
+    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].PhysicalAddress.QuadPart = 0ll;
+    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].AllocationVirtualAddress =
+        0xAC0000ull;
     Bc250DisplayInstallGpuVaResolver(Bc250FakeResolveGpuVa);
     CHECK(Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
         &resolvedPhysical, &resolvedSegment));

@@ -295,31 +295,70 @@ BOOLEAN Bc250DisplayLookupPhysicalAddress(
     return found;
 }
 
+/*
+ * UNIAO pAllocationList / pAllocationInfo em DXGKARG_PRESENT
+ *
+ * A partir de WDDM 2.0 com modelo GpuMmu -- que e o nosso caso
+ * (DriverCaps GpuMmu=1, WDDMVersion=0x2000) -- o dxgkrnl preenche
+ * pAllocationInfo (DXGK_PRESENTALLOCATIONINFO, 32 bytes por entrada), NAO
+ * pAllocationList (DXGK_ALLOCATIONLIST, 24 bytes por entrada). Sao membros da
+ * MESMA uniao, entao ler o membro errado nao falha: le lixo com passo errado.
+ *
+ * PROVA (corrida 04/09 18:10, docs/evidence/2026-09-04_18-10-08-.../bc250_display_log.txt):
+ *   [Present #1] Slot0: hDev=0000000000000000, Seg=0,  VA=0x0,      Phys=0x0
+ *   [Present #1] Slot1: hDev=0000000000000000, Seg=16, VA=0xAC0000, Phys=0xAC0000
+ *   [Present #1] Slot2: hDev=0000000000000000, Seg=0,  VA=0xFFFFC909A9906BC0, ...
+ *   [Present #1] REJECT source contract: SlotHAlloc=0000000000000000, SlotSeg=16
+ *
+ * Lendo com passo de 24 bytes sobre um array de 32:
+ *   Slot1.hDev  (offset 24) cai em info[0].SegmentId/PhysicalAdapterIndex  -> 0
+ *   Slot1.Seg   (offset 32) cai no dword baixo de info[1].hDeviceSpecific  -> 16 (lixo)
+ *   Slot1.VA    (offset 40) cai em info[1].AllocationVirtualAddress        -> 0xAC0000 (certo por acaso)
+ *   Slot2.hDev  (offset 48) cai em info[1].PhysicalAddress / alem do array -> ponteiro de kernel
+ *
+ * Os tres sintomas so tem explicacao com o passo de 32; nenhum tem com o de 24.
+ *
+ * Lendo a estrutura certa, o SO nos entrega PhysicalAddress e SegmentId da
+ * origem prontos. Deixa de ser necessario inferir o endereco resolvendo a GPUVA
+ * no nosso snapshot -- que era exatamente o passo que falhava com
+ * BC250_GPUVA_NOT_FOUND (status=9) para VA=0xAC0000.
+ */
 BOOLEAN Bc250DisplayResolvePresentSource(
     _In_ HANDLE Context,
     _In_ const DXGKARG_PRESENT *Present,
     _Out_ UINT64 *PhysicalAddress,
     _Out_ UINT32 *SegmentId)
 {
-    const DXGK_ALLOCATIONLIST *source;
+    const DXGK_PRESENTALLOCATIONINFO *source;
     HANDLE hProcess;
 
     if (PhysicalAddress != NULL) *PhysicalAddress = 0ull;
     if (SegmentId != NULL) *SegmentId = 0u;
-    if (Context == NULL || Present == NULL || Present->pAllocationList == NULL ||
+    if (Context == NULL || Present == NULL || Present->pAllocationInfo == NULL ||
         PhysicalAddress == NULL || SegmentId == NULL || Present->Flags.Blt == 0u) {
         return FALSE;
     }
 
-    source = &Present->pAllocationList[DXGK_PRESENT_SOURCE_INDEX];
+    source = &Present->pAllocationInfo[DXGK_PRESENT_SOURCE_INDEX];
     hProcess = Bc250DisplayGetContextProcess(Context);
+
+    /*
+     * 0. Endereco fisico entregue pelo proprio VidMm. E a fonte de maior
+     *    autoridade que existe: nao e inferencia nossa. Segmento 1 e a VRAM
+     *    local; qualquer outro segmento nao e blitavel para o scanout GOP.
+     */
+    if (source->SegmentId == 1u && source->PhysicalAddress.QuadPart > 0) {
+        *PhysicalAddress = (UINT64)source->PhysicalAddress.QuadPart;
+        *SegmentId = source->SegmentId;
+        return TRUE;
+    }
 
     /*
      * 1. Tentativa por VirtualAddress (DWM sob WDDM 2.0+).
      * Sob enderecamento virtual, hDeviceSpecificAllocation e' NULL e o DWM
      * entrega a superficie desenhada via VirtualAddress (ex: 0xAC0000).
      */
-    if (source->VirtualAddress != 0ull) {
+    if (source->AllocationVirtualAddress != 0ull) {
         /*
          * A fonte autoritativa e' somente o snapshot publicado pelo journal
          * depois do ACK do FlushTlb. O cache paralelo de PTEs nao participa
@@ -332,23 +371,12 @@ BOOLEAN Bc250DisplayResolvePresentSource(
 #endif
         {
             if (g_Bc250DisplayGpuVaResolver != NULL &&
-                g_Bc250DisplayGpuVaResolver(Context, (UINT64)source->VirtualAddress, PhysicalAddress, SegmentId)) {
+                g_Bc250DisplayGpuVaResolver(Context, (UINT64)source->AllocationVirtualAddress, PhysicalAddress, SegmentId)) {
                 if (*SegmentId == 1u && *PhysicalAddress > 0ull) {
                     return TRUE;
                 }
             }
         }
-    }
-
-    /*
-     * 2. Tentativa por endereco fisico pre-patched pelo VidMm (WDDM 1.x / alocacao fisica).
-     * Requer hDeviceSpecificAllocation preenchido e SegmentId == 1 (VRAM local).
-     */
-    if (source->hDeviceSpecificAllocation != NULL && source->SegmentId == 1u &&
-        source->PhysicalAddress.QuadPart > 0) {
-        *PhysicalAddress = (UINT64)source->PhysicalAddress.QuadPart;
-        *SegmentId = source->SegmentId;
-        return TRUE;
     }
 
     return FALSE;
@@ -2375,9 +2403,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                              g_Bc250DisplayState.CurrentMode.Height;
         BOOLEAN isBlt = (pPresent->Flags.Blt != 0);
 
-        if (pPresent->pAllocationList != NULL) {
+        if (pPresent->pAllocationInfo != NULL) {
             srcVa = (uint64_t)
-                pPresent->pAllocationList[DXGK_PRESENT_SOURCE_INDEX].VirtualAddress;
+                pPresent->pAllocationInfo[DXGK_PRESENT_SOURCE_INDEX].AllocationVirtualAddress;
         }
 
         /*
@@ -2387,7 +2415,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
          *
         /*
          * Resolucao da superficie de origem para Blt:
-         * 1. pAllocationList[DXGK_PRESENT_SOURCE_INDEX] resolvida para VRAM física
+         * 1. pAllocationInfo[DXGK_PRESENT_SOURCE_INDEX] com PhysicalAddress/SegmentId
          *    (Slot 1 / DWM sob WDDM 2.0+).  E' onde o Windows realmente compoe
          *    a imagem da tela (ex: GPUVA 0xAC0000 -> VRAM 0xC10000).
          *    Possui autoridade PRIMEIRA quando resolvida com sucesso.
@@ -2420,10 +2448,10 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                 count, isBlt ? 1u : 0u,
                 g_Bc250DisplayState.PrimaryAddressValid ? 1u : 0u,
                 g_Bc250DisplayState.PrimarySegment,
-                pPresent->pAllocationList != NULL ?
-                    pPresent->pAllocationList[DXGK_PRESENT_SOURCE_INDEX].hDeviceSpecificAllocation : NULL,
-                pPresent->pAllocationList != NULL ?
-                    pPresent->pAllocationList[DXGK_PRESENT_SOURCE_INDEX].SegmentId : 0u,
+                pPresent->pAllocationInfo != NULL ?
+                    pPresent->pAllocationInfo[DXGK_PRESENT_SOURCE_INDEX].hDeviceSpecificAllocation : NULL,
+                pPresent->pAllocationInfo != NULL ?
+                    (UINT32)pPresent->pAllocationInfo[DXGK_PRESENT_SOURCE_INDEX].SegmentId : 0u,
                 srcVa);
             srcPhysical = 0ull;
         }
@@ -2460,15 +2488,15 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                 (unsigned long long)pPresent->DmaBufferGpuVirtualAddress,
                 numSrc, numDst, pPresent->Flags.Value);
 
-            if (pPresent->pAllocationList != NULL) {
+            if (pPresent->pAllocationInfo != NULL) {
                 for (ULONG slot = 0; slot < allocLimit; ++slot) {
-                    Bc250DisplayLog("[Present #%d] Slot%u: hDev=%p, Seg=%u, Write=%u, VA=0x%llX, Phys=0x%llX\n",
+                    Bc250DisplayLog("[Present #%d] Info%u: hDev=%p, Seg=%u, PhysAdapter=%u, VA=0x%llX, Phys=0x%llX\n",
                         count, slot,
-                        pPresent->pAllocationList[slot].hDeviceSpecificAllocation,
-                        pPresent->pAllocationList[slot].SegmentId,
-                        pPresent->pAllocationList[slot].WriteOperation,
-                        (unsigned long long)pPresent->pAllocationList[slot].VirtualAddress,
-                        (unsigned long long)pPresent->pAllocationList[slot].PhysicalAddress.QuadPart);
+                        pPresent->pAllocationInfo[slot].hDeviceSpecificAllocation,
+                        (UINT32)pPresent->pAllocationInfo[slot].SegmentId,
+                        (UINT32)pPresent->pAllocationInfo[slot].PhysicalAdapterIndex,
+                        (unsigned long long)pPresent->pAllocationInfo[slot].AllocationVirtualAddress,
+                        (unsigned long long)pPresent->pAllocationInfo[slot].PhysicalAddress.QuadPart);
                 }
             }
 
