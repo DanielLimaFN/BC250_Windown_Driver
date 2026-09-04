@@ -5432,9 +5432,37 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
      * Node 0 (SDMA) e' o no de paginacao/copia (DXGK_ENGINE_TYPE_COPY).
      * Submissoes neste no sao emitidas pelo GPU scheduler do Windows para
      * buffers de paginacao (p.ex. preenchimento da primary allocation gerado
-     * por BuildPagingBuffer/VirtualFill). Nao possuem contexto de processo
-     * nem GPUVA de usuario. Notificamos a conclusao (DMA_COMPLETED) via
-     * callback sincronizado com o dispositivo para que o scheduler avance.
+     * por BuildPagingBuffer/VirtualFill).
+     *
+     * ATENCAO -- DIVIDA DECLARADA, MEDIDA NA CORRIDA 04/09 19:07:
+     *
+     * O DMA buffer NAO E EXECUTADO. Notificamos DMA_COMPLETED para o scheduler
+     * avancar, mas nenhuma engine consome os pacotes. Consequencia medida:
+     *   [FillVirtual] Completo: 11075584 bytes, pattern=0x00000000
+     * "completa" apenas no ENCODER; o preenchimento nunca roda na GPU. Por isso
+     * a primary em 0xAD0000 mantem VRAM velha, com Xor=E854A5FB identico entre
+     * boots diferentes (corridas 18:10 e 19:07), e o blt -- que esta correto e
+     * provado com tripe + BYTE_PROOF -- copia esse lixo fielmente para o
+     * scanout.
+     *
+     * POR QUE AINDA NAO EXECUTA: os pacotes do DMA buffer referenciam GPUVA
+     * (DestinationVirtualAddress). Executa-los exige um VMID com a root page
+     * table do processo instalada. Hoje nenhum VMID esta instalado:
+     * Bc250ActiveSetRootPageTableObject apenas REGISTRA a root page table no
+     * object store, e Bc250RunGcvmVmid8InertTransaction e' inerte por
+     * construcao -- programa, confere por readback, invalida a TLB e RESTAURA.
+     * O blt de apresentacao funciona porque usa endereco fisico MC
+     * (BC250_SDMA_VRAM_MC_BASE + offset) e nao passa por traducao.
+     *
+     * O QUE BLOQUEIA INSTALAR O VMID: escrever GCVM_CONTEXT8_CNTL exige os
+     * campos PAGE_TABLE_DEPTH e PAGE_TABLE_BLOCK_SIZE para o nosso espaco de
+     * 34 bits com 2 niveis (GPUMMUCAPS: VaBits=34, Levels=2). O catalogo em
+     * docs/03_CATALOGO_DE_REGISTRADORES.md so tem proveniencia para
+     * GCVM_CONTEXT0_CNTL com PAGE_TABLE_DEPTH=0 (dominio de sistema, plano).
+     * Pela Lei 7 esses campos nao podem ser escritos por inferencia.
+     *
+     * Enquanto isso, contamos e logamos explicitamente cada submissao nao
+     * executada: a Lei 4 proibe sucesso silencioso sem backend.
      */
     if (pSubmitCommand->NodeOrdinal == BC250_SUBMISSION_NODE_SDMA) {
         BC250_ACTIVE_FENCE_SYNC sync;
@@ -5478,8 +5506,15 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
         }
 
         InterlockedIncrement((volatile LONG *)&context->SubmissionsCount);
-        Bc250DisplayLog("[SubmitVirtual Node0 SDMA] SUCCESS: Notified DMA_COMPLETED for FenceId=%llu\n",
-            (unsigned long long)pSubmitCommand->SubmissionFenceId);
+        {
+            LONG notExecuted = InterlockedIncrement(
+                (volatile LONG *)&context->SubmissionsNotExecutedCount);
+            Bc250DisplayLog("[SubmitVirtual Node0 SDMA] NAO EXECUTADO #%ld: DMA buffer de %u bytes em VA=0x%llX descartado; DMA_COMPLETED notificado para FenceId=%llu\n",
+                notExecuted,
+                pSubmitCommand->DmaBufferSize,
+                (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress,
+                (unsigned long long)pSubmitCommand->SubmissionFenceId);
+        }
         return STATUS_SUCCESS;
     }
 

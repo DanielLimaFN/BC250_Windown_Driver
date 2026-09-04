@@ -345,6 +345,9 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     BC250_GPUVA_JOURNAL GpuvaJournals[BC250_ACTIVE_GPUVA_JOURNAL_SLOTS];
     BC250_GPUVA_JOURNAL_PTE GpuvaJournalStaging[BC250_GPUVA_JOURNAL_MAX_CHANGES];
     volatile LONG GpuvaJournalReady;
+    /* Submissoes cujo DMA buffer foi descartado sem execucao. Divida
+     * declarada: ver o comentario em Bc250DxgkDdiSubmitCommandVirtual. */
+    volatile LONG SubmissionsNotExecutedCount;
     uint32_t GpuvaHierarchyPending;
     BC250_MCDM_HANDLE GpuvaHierarchyProcess;
     uint64_t GpuvaHierarchyRootPageTable;
