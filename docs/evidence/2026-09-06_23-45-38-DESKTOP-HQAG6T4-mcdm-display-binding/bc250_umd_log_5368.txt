@@ -1,0 +1,17 @@
+23:45:41.938 [pid=5368 AMDRSSrcExt.exe] === bc250umd.dll CARREGADA ===
+23:45:41.938 [pid=5368 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:45:41.938 [pid=5368 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:45:41.939 [pid=5368 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:45:41.939 [pid=5368 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:45:41.939 [pid=5368 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:45:41.939 [pid=5368 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:45:41.939 [pid=5368 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:45:41.940 [pid=5368 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:45:41.940 [pid=5368 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:45:41.940 [pid=5368 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:45:41.940 [pid=5368 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:45:41.940 [pid=5368 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:45:41.955 [pid=5368 AMDRSSrcExt.exe] === bc250umd.dll CARREGADA ===
+23:45:41.955 [pid=5368 AMDRSSrcExt.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+23:45:41.955 [pid=5368 AMDRSSrcExt.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+23:45:41.955 [pid=5368 AMDRSSrcExt.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000 -> S_OK (BC250 Native)

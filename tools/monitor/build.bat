@@ -1,19 +1,12 @@
 @echo off
 setlocal enabledelayedexpansion
 
-where cl.exe >nul 2>&1
-if errorlevel 1 (
-    for %%D in (C D E F G) do (
-        for %%E in (Enterprise Professional Community BuildTools) do (
-            if exist "%%D:\Program Files\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat" (
-                call "%%D:\Program Files\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat" >nul 2>&1
-                goto :found_vs
-            )
-        )
-    )
-    echo ERRO: Visual Studio 2022 nao encontrado.
+if not exist "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat" (
+    echo ERRO: Visual Studio 2026 nao encontrado.
     exit /b 1
 )
+call "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat" >nul 2>&1
+if errorlevel 1 exit /b 1
 
 :found_vs
 set CFLAGS=/nologo /W3 /WX- /Od /D "WIN32" /D "_CONSOLE" /Gm- /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c11

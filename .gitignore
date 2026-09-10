@@ -35,3 +35,6 @@ tools/monitor/*.exe
 
 # Laboratory bring-up image (nunca vai para o pacote assinado)
 driver/wdk/output_lab/
+
+*.dmp
+referencias/

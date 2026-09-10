@@ -26,13 +26,18 @@ call :note ============================================================
 
 if /I "%MODE%"=="DRY-RUN" goto :dry_run
 
-fltmc.exe >nul 2>&1
-if errorlevel 1 (
-    call :note ERRO: abra o Prompt de Comando como Administrador.
-    exit /b 2
+reg query "HKLM\SYSTEM\CurrentControlSet\Control\MiniNT" >nul 2>&1
+if not errorlevel 1 (
+    call :note Ambiente de Recuperacao [WinRE / WinPE] detectado.
+) else (
+    fltmc.exe >nul 2>&1
+    if errorlevel 1 (
+        call :note ERRO: abra o Prompt de Comando como Administrador.
+        exit /b 2
+    )
 )
 
-call :note Execucao elevada no Windows normal autorizada.
+call :note Execucao com privilegios administrativos autorizada.
 call :note O dispositivo BC-250 pode piscar ou perder imagem durante a troca.
 
 set "RECOVERY_FAILED=0"

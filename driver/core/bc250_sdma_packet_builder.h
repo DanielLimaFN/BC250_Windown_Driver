@@ -53,6 +53,7 @@ extern "C" {
  * alinhamento exigido e' de 32 bytes.
  */
 #define BC250_SDMA_IB_ALIGNMENT_BYTES 32u
+#define BC250_SDMA_IB_PACKET_ALIGNMENT_DWORDS 8u
 #define BC250_SDMA_DWORDS_POLL_REGMEM 6u
 
 typedef enum BC250_SDMA_STATUS {
@@ -114,6 +115,16 @@ BC250_SDMA_STATUS Bc250SdmaEmitIndirect(
     uint32_t IbSizeDwords,
     uint64_t CsaAddress,
     uint32_t Vmid);
+
+/*
+ * SDMA 5.0 exige que o pacote INDIRECT de 6 DW termine em fronteira de
+ * 8 DW. O padding e' inserido ANTES do pacote, exatamente como
+ * sdma_v5_0_ring_emit_ib() do upstream.
+ */
+uint32_t Bc250SdmaIndirectPrePadDwords(uint32_t WptrDwords);
+
+/* Completa o proprio conteudo da IB ate multiplo de 8 DW. */
+uint32_t Bc250SdmaIbSizePadDwords(uint32_t IbSizeDwords);
 
 BC250_SDMA_STATUS Bc250SdmaEmitTrap(
     uint32_t *RingBuffer,

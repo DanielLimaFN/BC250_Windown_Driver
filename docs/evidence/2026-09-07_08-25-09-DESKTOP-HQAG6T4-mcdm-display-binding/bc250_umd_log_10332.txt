@@ -1,0 +1,10 @@
+08:25:12.296 [pid=10332 dxgiadaptercache.exe] === bc250umd.dll CARREGADA ===
+08:25:12.296 [pid=10332 dxgiadaptercache.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:25:12.296 [pid=10332 dxgiadaptercache.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:25:12.297 [pid=10332 dxgiadaptercache.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:25:12.297 [pid=10332 dxgiadaptercache.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:25:12.297 [pid=10332 dxgiadaptercache.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:25:12.310 [pid=10332 dxgiadaptercache.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+08:25:12.310 [pid=10332 dxgiadaptercache.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+08:25:12.314 [pid=10332 dxgiadaptercache.exe] === bc250umd.dll CARREGADA ===
+08:25:12.315 [pid=10332 dxgiadaptercache.exe] OpenAdapter12: D3D12 nao implementado nativamente -> E_NOTIMPL

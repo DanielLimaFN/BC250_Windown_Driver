@@ -1,0 +1,152 @@
+﻿
+
+TimeCreated      : 07/09/2026 15:50:03
+ProviderName     : Windows Error Reporting
+Id               : 1001
+LevelDisplayName : Informações
+Message          : Falha no bucket , tipo 0
+                   Nome do Evento: LiveKernelEvent
+                   Resposta: Não disponível
+                   ID do CAB: 0
+                   
+                   Assinatura do problema:
+                   P1: 193
+                   P2: 804
+                   P3: ffffffffc0000483
+                   P4: 108
+                   P5: fffff80195be18b8
+                   P6: 10_0_19045
+                   P7: 0_0
+                   P8: 256_1
+                   P9: 
+                   P10: 
+                   
+                   Arquivos anexados:
+                   \\?\C:\Windows\LiveKernelReports\WATCHDOG\WATCHDOG-20260907-1549.dmp
+                   \\?\C:\Windows\TEMP\WER-1875515-0.sysdata.xml
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WERACD2.tmp.WERInternalMetadata.xml
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WERACE2.tmp.xml
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WERACE1.tmp.csv
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WERAD01.tmp.txt
+                   
+                   Esses arquivos talvez estejam disponíveis em:
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\ReportArchive\Kernel_193_b236ac8217bcd9e52dec27e2614cfd1f9ba7b_00000000_cab_7460c9ff-28de-427d-8fda-37e76191fc55
+                   
+                   Símbolo da análise: 
+                   Verificando novamente se há uma solução: 0
+                   ID do Relatório: 7460c9ff-28de-427d-8fda-37e76191fc55
+                   Status do Relatório: 2049
+                   Bucket com hash: Guid do CAB: 0
+
+TimeCreated      : 07/09/2026 15:50:02
+ProviderName     : Windows Error Reporting
+Id               : 1001
+LevelDisplayName : Informações
+Message          : Falha no bucket , tipo 0
+                   Nome do Evento: LiveKernelEvent
+                   Resposta: Não disponível
+                   ID do CAB: 0
+                   
+                   Assinatura do problema:
+                   P1: 193
+                   P2: 804
+                   P3: ffffffffc0000001
+                   P4: 108
+                   P5: fffff80686aeb770
+                   P6: 10_0_19045
+                   P7: 0_0
+                   P8: 256_1
+                   P9: 
+                   P10: 
+                   
+                   Arquivos anexados:
+                   \\?\C:\Windows\LiveKernelReports\WATCHDOG\WATCHDOG-20260906-1345.dmp
+                   \\?\C:\Windows\TEMP\WER-359312-0.sysdata.xml
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER85C1.tmp.WERInternalMetadata.xml
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER85D2.tmp.xml
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER85D3.tmp.csv
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER85F3.tmp.txt
+                   
+                   Esses arquivos talvez estejam disponíveis em:
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\ReportQueue\Kernel_193_91b3ecccf8cd6724919153148ceafeeeaf323c_00000000_3bd9b6cb-3cde-4d97-a65a-8ddf89b40d90
+                   
+                   Símbolo da análise: 
+                   Verificando novamente se há uma solução: 0
+                   ID do Relatório: 3bd9b6cb-3cde-4d97-a65a-8ddf89b40d90
+                   Status do Relatório: 2049
+                   Bucket com hash: Guid do CAB: 0
+
+TimeCreated      : 07/09/2026 15:50:02
+ProviderName     : Windows Error Reporting
+Id               : 1001
+LevelDisplayName : Informações
+Message          : Falha no bucket 1220255431632931936, tipo 5
+                   Nome do Evento: WindowsWcpStoreCorruption
+                   Resposta: Não disponível
+                   ID do CAB: 0
+                   
+                   Assinatura do problema:
+                   P1: 10.0.19041.6449:1
+                   P2: FileHashMismatch
+                   P3: \winsxs\manifests\amd64_microsoft-windows-s..-installers-onecore_31bf3856ad364e35_10.0.19041.6449_none_606a68d35aaa0447.manifest
+                   P4: 
+                   P5: 
+                   P6: 
+                   P7: 
+                   P8: 
+                   P9: 
+                   P10: 
+                   
+                   Arquivos anexados:
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER2422.tmp.WERInternalMetadata.xml
+                   
+                   Esses arquivos talvez estejam disponíveis em:
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\ReportQueue\Critical_10.0.19041.6449__e6ace0f611ee37815e263c85a9849342c92e6359_00000000_d5c4f93a-b389-45dd-8e4a-36876778fc16
+                   
+                   Símbolo da análise: 
+                   Verificando novamente se há uma solução: 0
+                   ID do Relatório: d5c4f93a-b389-45dd-8e4a-36876778fc16
+                   Status do Relatório: 268959846
+                   Bucket com hash: 94febd62f380c14ce0ef37d991b8cc60Guid do CAB: 0
+
+TimeCreated      : 07/09/2026 15:50:01
+ProviderName     : Windows Error Reporting
+Id               : 1001
+LevelDisplayName : Informações
+Message          : Falha no bucket , tipo 0
+                   Nome do Evento: LiveKernelEvent
+                   Resposta: Não disponível
+                   ID do CAB: 0
+                   
+                   Assinatura do problema:
+                   P1: 193
+                   P2: 804
+                   P3: ffffffffc0000483
+                   P4: 108
+                   P5: fffff80195be18b8
+                   P6: 10_0_19045
+                   P7: 0_0
+                   P8: 256_1
+                   P9: 
+                   P10: 
+                   
+                   Arquivos anexados:
+                   \\?\C:\Windows\LiveKernelReports\WATCHDOG\WATCHDOG-20260907-1549.dmp
+                   \\?\C:\Windows\TEMP\WER-1875515-0.sysdata.xml
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WERACD2.tmp.WERInternalMetadata.xml
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WERACE2.tmp.xml
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WERACE1.tmp.csv
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WERAD01.tmp.txt
+                   
+                   Esses arquivos talvez estejam disponíveis em:
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\ReportQueue\Kernel_193_b236ac8217bcd9e52dec27e2614cfd1f9ba7b_00000000_7460c9ff-28de-427d-8fda-37e76191fc55
+                   
+                   Símbolo da análise: 
+                   Verificando novamente se há uma solução: 0
+                   ID do Relatório: 7460c9ff-28de-427d-8fda-37e76191fc55
+                   Status do Relatório: 4
+                   Bucket com hash: Guid do CAB: 0
+
+
+
+

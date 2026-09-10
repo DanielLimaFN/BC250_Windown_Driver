@@ -6,7 +6,7 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
-Start-Sleep -Seconds 12
+Start-Sleep -Seconds 30
 
 $startTime = [datetime]::Parse($StartTimeIso).ToLocalTime()
 $probeKey = 'HKLM:\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Probe'
@@ -42,12 +42,17 @@ try {
     }
 
     $umdLogCollected = $false
-    foreach ($umdLog in @('C:\Windows\Temp\BC250_UMD_LOG.txt', 'C:\BC250_UMD_LOG.txt')) {
-        if (Test-Path -LiteralPath $umdLog) {
-            Copy-Item -LiteralPath $umdLog -Destination (Join-Path $EvidenceDir 'bc250_umd_log.txt') -Force
-            $umdLogCollected = $true
-            break
-        }
+    $umdAggregate = Join-Path $EvidenceDir 'bc250_umd_log.txt'
+    $umdLogs = @(Get-ChildItem -LiteralPath 'C:\Windows\Temp' `
+        -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue |
+        Sort-Object Name)
+    foreach ($umdLog in $umdLogs) {
+        Copy-Item -LiteralPath $umdLog.FullName `
+            -Destination (Join-Path $EvidenceDir $umdLog.Name.ToLowerInvariant()) -Force
+        ("===== {0} =====" -f $umdLog.Name),
+            (Get-Content -LiteralPath $umdLog.FullName -ErrorAction SilentlyContinue) |
+            Add-Content -LiteralPath $umdAggregate -Encoding UTF8
+        $umdLogCollected = $true
     }
     if (-not $umdLogCollected) {
         'bc250umd.dll nunca escreveu: a DLL nao foi carregada por nenhum processo.' |
@@ -63,9 +68,25 @@ try {
         Select-Object TimeCreated,ProviderName,Id,LevelDisplayName,Message |
         Format-List | Out-String -Width 240 |
         Set-Content -LiteralPath (Join-Path $EvidenceDir 'system-events-after.txt') -Encoding UTF8
+
+    Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=$startTime} -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.ProviderName -match 'Application Error|Windows Error Reporting' -or
+            $_.Message -match 'dwm\.exe|0xe0464645|bc250umd'
+        } |
+        Select-Object TimeCreated,ProviderName,Id,LevelDisplayName,Message |
+        Format-List | Out-String -Width 240 |
+        Set-Content -LiteralPath (Join-Path $EvidenceDir 'application-events-after.txt') -Encoding UTF8
 } catch {
     $_ | Out-String | Set-Content -LiteralPath (Join-Path $EvidenceDir 'collector-error.txt') -Encoding UTF8
 } finally {
+    $restoreDwmCapture = Join-Path (Split-Path -Parent $PSScriptRoot) `
+        'tools\restore-dwm-crash-capture.ps1'
+    if (Test-Path -LiteralPath $restoreDwmCapture) {
+        (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $restoreDwmCapture `
+            -EvidenceDir $EvidenceDir -Execute 2>&1) |
+            Set-Content -LiteralPath (Join-Path $EvidenceDir 'dwm-localdumps-restore.txt') -Encoding UTF8
+    }
     "collector_finished=$([datetime]::Now.ToString('o'))" |
         Set-Content -LiteralPath (Join-Path $EvidenceDir 'collector-finished.txt') -Encoding ASCII
 }

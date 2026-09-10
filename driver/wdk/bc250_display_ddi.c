@@ -1,4 +1,6 @@
 #include "bc250_display_ddi.h"
+#include "bc250_driver_caps_contract.h"
+#include "bc250_blt_proof_contract.h"
 #include "bc250_probe_telemetry.h"
 #include "bc250_sdma_present.h"
 
@@ -323,33 +325,26 @@ BOOLEAN Bc250DisplayLookupPhysicalAddress(
  * no nosso snapshot -- que era exatamente o passo que falhava com
  * BC250_GPUVA_NOT_FOUND (status=9) para VA=0xAC0000.
  */
-BOOLEAN Bc250DisplayResolvePresentSource(
+static BOOLEAN Bc250DisplayResolveAllocationSlot(
     _In_ HANDLE Context,
-    _In_ const DXGKARG_PRESENT *Present,
+    _In_ const DXGK_PRESENTALLOCATIONINFO *AllocInfo,
     _Out_ UINT64 *PhysicalAddress,
     _Out_ UINT32 *SegmentId)
 {
-    const DXGK_PRESENTALLOCATIONINFO *source;
-    HANDLE hProcess;
-
     if (PhysicalAddress != NULL) *PhysicalAddress = 0ull;
     if (SegmentId != NULL) *SegmentId = 0u;
-    if (Context == NULL || Present == NULL || Present->pAllocationInfo == NULL ||
-        PhysicalAddress == NULL || SegmentId == NULL || Present->Flags.Blt == 0u) {
+    if (AllocInfo == NULL || PhysicalAddress == NULL || SegmentId == NULL) {
         return FALSE;
     }
-
-    source = &Present->pAllocationInfo[DXGK_PRESENT_SOURCE_INDEX];
-    hProcess = Bc250DisplayGetContextProcess(Context);
 
     /*
      * 0. Endereco fisico entregue pelo proprio VidMm. E a fonte de maior
      *    autoridade que existe: nao e inferencia nossa. Segmento 1 e a VRAM
      *    local; qualquer outro segmento nao e blitavel para o scanout GOP.
      */
-    if (source->SegmentId == 1u && source->PhysicalAddress.QuadPart > 0) {
-        *PhysicalAddress = (UINT64)source->PhysicalAddress.QuadPart;
-        *SegmentId = source->SegmentId;
+    if (AllocInfo->SegmentId == 1u && AllocInfo->PhysicalAddress.QuadPart > 0) {
+        *PhysicalAddress = (UINT64)AllocInfo->PhysicalAddress.QuadPart;
+        *SegmentId = AllocInfo->SegmentId;
         return TRUE;
     }
 
@@ -358,7 +353,7 @@ BOOLEAN Bc250DisplayResolvePresentSource(
      * Sob enderecamento virtual, hDeviceSpecificAllocation e' NULL e o DWM
      * entrega a superficie desenhada via VirtualAddress (ex: 0xAC0000).
      */
-    if (source->AllocationVirtualAddress != 0ull) {
+    if (AllocInfo->AllocationVirtualAddress != 0ull) {
         /*
          * A fonte autoritativa e' somente o snapshot publicado pelo journal
          * depois do ACK do FlushTlb. O cache paralelo de PTEs nao participa
@@ -371,7 +366,7 @@ BOOLEAN Bc250DisplayResolvePresentSource(
 #endif
         {
             if (g_Bc250DisplayGpuVaResolver != NULL &&
-                g_Bc250DisplayGpuVaResolver(Context, (UINT64)source->AllocationVirtualAddress, PhysicalAddress, SegmentId)) {
+                g_Bc250DisplayGpuVaResolver(Context, (UINT64)AllocInfo->AllocationVirtualAddress, PhysicalAddress, SegmentId)) {
                 if (*SegmentId == 1u && *PhysicalAddress > 0ull) {
                     return TRUE;
                 }
@@ -380,6 +375,42 @@ BOOLEAN Bc250DisplayResolvePresentSource(
     }
 
     return FALSE;
+}
+
+BOOLEAN Bc250DisplayResolvePresentSource(
+    _In_ HANDLE Context,
+    _In_ const DXGKARG_PRESENT *Present,
+    _Out_ UINT64 *PhysicalAddress,
+    _Out_ UINT32 *SegmentId)
+{
+    if (PhysicalAddress != NULL) *PhysicalAddress = 0ull;
+    if (SegmentId != NULL) *SegmentId = 0u;
+    if (Context == NULL || Present == NULL || Present->pAllocationInfo == NULL ||
+        PhysicalAddress == NULL || SegmentId == NULL || Present->Flags.Blt == 0u) {
+        return FALSE;
+    }
+
+    return Bc250DisplayResolveAllocationSlot(
+        Context, &Present->pAllocationInfo[DXGK_PRESENT_SOURCE_INDEX],
+        PhysicalAddress, SegmentId);
+}
+
+BOOLEAN Bc250DisplayResolvePresentDestination(
+    _In_ HANDLE Context,
+    _In_ const DXGKARG_PRESENT *Present,
+    _Out_ UINT64 *PhysicalAddress,
+    _Out_ UINT32 *SegmentId)
+{
+    if (PhysicalAddress != NULL) *PhysicalAddress = 0ull;
+    if (SegmentId != NULL) *SegmentId = 0u;
+    if (Context == NULL || Present == NULL || Present->pAllocationInfo == NULL ||
+        PhysicalAddress == NULL || SegmentId == NULL || Present->Flags.Blt == 0u) {
+        return FALSE;
+    }
+
+    return Bc250DisplayResolveAllocationSlot(
+        Context, &Present->pAllocationInfo[DXGK_PRESENT_DESTINATION_INDEX],
+        PhysicalAddress, SegmentId);
 }
 
 BOOLEAN Bc250DisplayResolvePrimarySource(
@@ -533,7 +564,16 @@ void Bc250DisplayLog(const char *Format, ...)
 
     DbgPrintEx(DPFLTR_IHVVIDEO_ID, DPFLTR_ERROR_LEVEL, "[BC250] %s", buffer);
 
-    if (KeGetCurrentIrql() == PASSIVE_LEVEL) {
+    /*
+     * Operacoes de paginacao (VidMm DxgkDdiBuildPagingBuffer e rotinas associadas)
+     * rodam em PASSIVE_LEVEL na paging thread do sistema, mas NUNCA podem realizar
+     * I/O sincrono de arquivo em disco. Fazer ZwCreateFile/ZwFlushBuffersFile na
+     * paging thread causa deadlock circular imediato com NTFS/Cache Manager/Storport.
+     * Quando g_Bc250PagingActiveCount > 0, o DbgPrintEx acima permanece ativo para
+     * debuggers e ETW, mas o I/O em disco e' suprimido com seguranca.
+     */
+    if (KeGetCurrentIrql() == PASSIVE_LEVEL &&
+        InterlockedCompareExchange(&g_Bc250PagingActiveCount, 0, 0) == 0) {
         UNICODE_STRING logFileName = RTL_CONSTANT_STRING(L"\\DosDevices\\C:\\BC250_DISPLAY_LOG.txt");
         OBJECT_ATTRIBUTES objAttr;
         IO_STATUS_BLOCK ioStatus;
@@ -959,14 +999,14 @@ NTSTATUS Bc250DisplayInit(
     InterlockedExchange(&g_Bc250DisplayState.PowerStateD0, 1);
 
     if (g_Bc250DisplayState.FrameBufferPhysical.QuadPart != 0) {
-        ULONG fbBytes = 128u * 1024u * 1024u; /* Tenta 128 MB primeiro para cobrir amplamente a VRAM */
+        ULONG fbBytes = 256u * 1024u * 1024u; /* 256 MB cobre 100% do BAR 0 fisico de VRAM */
         g_Bc250DisplayState.FrameBufferSize = fbBytes;
         g_Bc250DisplayState.FrameBufferVirtual = MmMapIoSpaceEx(
             g_Bc250DisplayState.FrameBufferPhysical,
             fbBytes,
             PAGE_READWRITE | PAGE_WRITECOMBINE);
         if (g_Bc250DisplayState.FrameBufferVirtual == NULL) {
-            fbBytes = 64u * 1024u * 1024u;
+            fbBytes = 128u * 1024u * 1024u;
             g_Bc250DisplayState.FrameBufferSize = fbBytes;
             g_Bc250DisplayState.FrameBufferVirtual = MmMapIoSpaceEx(
                 g_Bc250DisplayState.FrameBufferPhysical,
@@ -1300,8 +1340,26 @@ NTSTATUS APIENTRY Bc250DxgkDdiQueryAdapterInfoDisplay(
 
         caps->HighestAcceptableAddress.QuadPart = -1;
         caps->WDDMVersion = DXGKDDI_WDDMv1_2;
-        caps->SupportNonVGA = TRUE;
-        caps->SupportSmoothRotation = FALSE;
+
+        /*
+         * A1 (06/09): mesma fonte de verdade do caminho WDDM. Os valores aqui
+         * eram escritos a mao e divergiram do outro handler; agora os dois
+         * perfis saem da tabela em driver/core, que cita a exigencia da
+         * Microsoft campo a campo.
+         */
+        {
+            BC250_DRIVER_CAPS_POLICY capsPolicy;
+            if (Bc250GetDriverCapsPolicy(BC250_WDDM_DRIVER_DISPLAY_ONLY,
+                    &capsPolicy) != BC250_DRIVER_CAPS_OK) {
+                Bc250ProbeRecord(BC250_PROBE_DMM_QAI_STATUS,
+                    (ULONG)STATUS_DEVICE_CONFIGURATION_ERROR);
+                return STATUS_DEVICE_CONFIGURATION_ERROR;
+            }
+            caps->SupportNonVGA =
+                (capsPolicy.SupportNonVGA != 0u) ? TRUE : FALSE;
+            caps->SupportSmoothRotation =
+                (capsPolicy.SupportSmoothRotation != 0u) ? TRUE : FALSE;
+        }
         Bc250ProbeRecord(BC250_PROBE_DMM_QAI_STATUS, 0);
         return STATUS_SUCCESS;
     }
@@ -1890,6 +1948,10 @@ static NTSTATUS Bc250PublishCofuncSourceMode(
             (void)modeInterface->pfnReleaseModeInfo(modeSet, pinnedMode);
             (void)VidPnInterface->pfnReleaseSourceModeSet(VidPn, modeSet);
             return status;
+        } else if (!NT_SUCCESS(status)) {
+            (void)VidPnInterface->pfnReleaseSourceModeSet(VidPn, modeSet);
+            Bc250DisplayLog("[CofuncSourceMode] AcquirePinnedModeInfo failed 0x%08X\n", status);
+            return status;
         }
 
         /* Se o ModeSet já contiver o modo unpinned, mantemos sem reatribuir para convergir a DMM */
@@ -1949,6 +2011,10 @@ static NTSTATUS Bc250PublishCofuncTargetMode(
                 STATUS_SUCCESS : STATUS_GRAPHICS_VIDPN_MODALITY_NOT_SUPPORTED;
             (void)modeInterface->pfnReleaseModeInfo(modeSet, pinnedMode);
             (void)VidPnInterface->pfnReleaseTargetModeSet(VidPn, modeSet);
+            return status;
+        } else if (!NT_SUCCESS(status)) {
+            (void)VidPnInterface->pfnReleaseTargetModeSet(VidPn, modeSet);
+            Bc250DisplayLog("[CofuncTargetMode] AcquirePinnedModeInfo failed 0x%08X\n", status);
             return status;
         }
 
@@ -2079,17 +2145,24 @@ NTSTATUS APIENTRY Bc250DxgkDdiEnumVidPnCofuncModality(
      * UpdatePathSupportInfo em caminho unico nao-clone, o dxgkrnl dispara
      * VIDEO_DXGKRNL_FATAL_ERROR (0x113, subcode 0x1C).
      *
-     * Portanto, sanitizamos incondicionalmente ScalingSupport e RotationSupport
-     * para Identity = 1.
+     * A DMM, entretanto, proibe alterar o campo que corresponde ao pivo atual.
+     * Sanitizamos cada campo somente quando ele nao e' o pivo desta chamada.
+     * Assim preservamos o hotfix do 0x113 em campos mutaveis sem violar o
+     * contrato de EnumVidPnCofuncModality.
      */
-    RtlZeroMemory(&supportedPath.ContentTransformation.ScalingSupport,
-        sizeof(supportedPath.ContentTransformation.ScalingSupport));
-    supportedPath.ContentTransformation.ScalingSupport.Identity = 1;
-
-    RtlZeroMemory(&supportedPath.ContentTransformation.RotationSupport,
-        sizeof(supportedPath.ContentTransformation.RotationSupport));
-    supportedPath.ContentTransformation.RotationSupport.Identity = 1;
-    supportedPath.ContentTransformation.RotationSupport.Offset0 = 1;
+    if (!Bc250CofuncPivotMatchesPath(
+            pEnumCofuncModality, path, D3DKMDT_EPT_SCALING)) {
+        RtlZeroMemory(&supportedPath.ContentTransformation.ScalingSupport,
+            sizeof(supportedPath.ContentTransformation.ScalingSupport));
+        supportedPath.ContentTransformation.ScalingSupport.Identity = 1;
+    }
+    if (!Bc250CofuncPivotMatchesPath(
+            pEnumCofuncModality, path, D3DKMDT_EPT_ROTATION)) {
+        RtlZeroMemory(&supportedPath.ContentTransformation.RotationSupport,
+            sizeof(supportedPath.ContentTransformation.RotationSupport));
+        supportedPath.ContentTransformation.RotationSupport.Identity = 1;
+        supportedPath.ContentTransformation.RotationSupport.Offset0 = 1;
+    }
     status = topologyInterface->pfnUpdatePathSupportInfo(
         topology, &supportedPath);
     if (!NT_SUCCESS(status)) goto Exit;
@@ -2538,6 +2611,10 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                 ULONG nz = 0u, hx = 0u;
                 UINT64 primaryOffset = 0;
                 UINT32 primarySeg = 0;
+                UINT64 dstPhysical = 0;
+                UINT32 dstSegmentId = 0;
+                BOOLEAN dstResolved = Bc250DisplayResolvePresentDestination(
+                    hContext, pPresent, &dstPhysical, &dstSegmentId);
 
                 if (Bc250DisplaySampleSurface(0ull, scanoutBytes, 256u, &nz, &hx)) {
                     Bc250DisplayLog("[Present #%d] Spread SCANOUT   @ 0x%llX: NonZero=%u/256, Xor=%08X\n",
@@ -2553,6 +2630,22 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                     Bc250DisplaySampleSurface(presentPhysical, scanoutBytes, 256u, &nz, &hx)) {
                     Bc250DisplayLog("[Present #%d] Spread SLOT_SRC  @ 0x%llX: NonZero=%u/256, Xor=%08X (Seg=%u)\n",
                         count, presentPhysical, nz, hx, presentSegmentId);
+                    if (nz > 0) {
+                        Bc250DisplayLog("[Present #%d] *** DESKTOP REAL DETECTADO NA SUPERFICIE *** NonZero=%u/256, Hash=0x%08X (Phys=0x%llX)\n",
+                            count, nz, hx, presentPhysical);
+                    } else {
+                        Bc250DisplayLog("[Present #%d] AVISO: Superficie de origem 0x%llX esta com todos os pixels em zero (NonZero=0/256)\n",
+                            count, presentPhysical);
+                    }
+                }
+                if (dstResolved &&
+                    Bc250DisplaySampleSurface(dstPhysical, scanoutBytes, 256u, &nz, &hx)) {
+                    Bc250DisplayLog("[Present #%d] Spread SLOT_DST  @ 0x%llX: NonZero=%u/256, Xor=%08X (Seg=%u)\n",
+                        count, dstPhysical, nz, hx, dstSegmentId);
+                    if (nz > 0) {
+                        Bc250DisplayLog("[Present #%d] *** DESKTOP REAL DETECTADO EM SLOT_DST *** NonZero=%u/256, Hash=0x%08X (Phys=0x%llX)\n",
+                            count, nz, hx, dstPhysical);
+                    }
                 }
                 if (srcVa != 0 &&
                     Bc250DisplaySampleSurface(srcVa, scanoutBytes, 256u, &nz, &hx)) {
@@ -2565,46 +2658,127 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
         /*
          * Execucao do Blt para o scanout do UEFI GOP (offset 0):
          * Se temos a superficie primaria fisica (srcPhysical), copiamos para o scanout.
+         *
+         * SEGURANCA FAIL-CLOSED CONTRA TELA PRETA (Lei 6):
+         * Se a superficie de origem contem 100% de zeros (ex: logo apos PAGING_FILL
+         * ou antes de o DWM compor o primeiro quadro real), NAO podemos copiar zeros
+         * para o scanout do UEFI GOP. Copiar zeros apaga a imagem da tela e gera tela
+         * preta permanente. Mantemos o scanout GOP intacto e completamos a submissao
+         * com sucesso para que o escalonador do Windows continue operando sem TDR.
          */
-        if (vaResolved && srcPhysical != 0 && scanoutBytes > 0 &&
-            srcPhysical <= g_Bc250DisplayState.FrameBufferSize &&
-            scanoutBytes <= g_Bc250DisplayState.FrameBufferSize - srcPhysical) {
-            BOOLEAN sdmaDone = FALSE;
-            uint64_t srcGpu = g_Bc250SdmaPresent.VramMcStart + srcPhysical;
-            uint64_t dstScanoutGpu = g_Bc250SdmaPresent.ScanoutGpuAddress;
+        {
+            ULONG srcNz = 0u, srcHx = 0u;
+            BOOLEAN srcOk = Bc250DisplaySampleSurface(srcPhysical, scanoutBytes, 256u, &srcNz, &srcHx);
+            UINT64 effectiveSrcPhys = srcPhysical;
 
-            if (g_Bc250SdmaPresent.HardwareEnabled && dstScanoutGpu != 0 && srcGpu != dstScanoutGpu) {
-                sdmaDone = Bc250SdmaPresentBlt(srcGpu, dstScanoutGpu, scanoutBytes);
-            }
-
-            if (sdmaDone && presentResolved &&
-                InterlockedCompareExchange(&s_PresentByteProofState, 1, 0) == 0) {
-                UINT64 mismatchOffset = ~(UINT64)0;
-                if (Bc250DisplayCompareSurfaceBytes(
-                        srcPhysical, 0ull, scanoutBytes, &mismatchOffset)) {
-                    InterlockedExchange(&s_PresentByteProofState, 2);
-                    Bc250DisplayLog("[Present #%d] BYTE_PROOF PASS: Source=0x%llX Dest=0x0 Bytes=%u (byte-a-byte)\n",
-                        count, srcPhysical, scanoutBytes);
-                } else {
-                    InterlockedExchange(&s_PresentByteProofState, -1);
-                    g_Bc250SdmaPresent.HardwareEnabled = FALSE;
-                    sdmaDone = FALSE;
-                    Bc250DisplayLog("[Present #%d] BYTE_PROOF FAIL: Source=0x%llX Dest=0x0 Bytes=%u FirstMismatch=0x%llX; SDMA disabled\n",
-                        count, srcPhysical, scanoutBytes, mismatchOffset);
+            /* Se Slot 1 estiver zerado, verificar se Slot 2 (Destination/SharedPrimary) contem o desktop */
+            if (srcOk && srcNz == 0u) {
+                UINT64 dstPhysical = 0;
+                UINT32 dstSegmentId = 0;
+                if (Bc250DisplayResolvePresentDestination(hContext, pPresent, &dstPhysical, &dstSegmentId) &&
+                    dstSegmentId == 1u && dstPhysical > 0ull) {
+                    ULONG dstNz = 0u, dstHx = 0u;
+                    if (Bc250DisplaySampleSurface(dstPhysical, scanoutBytes, 256u, &dstNz, &dstHx) && dstNz > 0u) {
+                        effectiveSrcPhys = dstPhysical;
+                        srcNz = dstNz;
+                        srcHx = dstHx;
+                        Bc250DisplayLog("[Present #%d] REDIRECIONAMENTO DE ORIGEM: Slot 1 zerado, usando Slot 2 (0x%llX) com %u/256 pixels ativos!\n",
+                            count, dstPhysical, dstNz);
+                    }
                 }
             }
 
-            if (count <= 10 || (count % 60) == 0) {
-                Bc250DisplayLog("[Present #%d] Blt %u bytes (src 0x%llX -> scanout 0x0): SDMA=%s\n",
-                    count, scanoutBytes, srcPhysical, sdmaDone ? "YES" : "FAILED_CLOSED");
+            if (effectiveSrcPhys != 0 && scanoutBytes > 0 &&
+                effectiveSrcPhys <= g_Bc250DisplayState.FrameBufferSize &&
+                scanoutBytes <= g_Bc250DisplayState.FrameBufferSize - effectiveSrcPhys) {
+                BOOLEAN sdmaDone = FALSE;
+                uint64_t srcGpu = g_Bc250SdmaPresent.VramMcStart + effectiveSrcPhys;
+                uint64_t dstScanoutGpu = g_Bc250SdmaPresent.ScanoutGpuAddress;
+
+                if (g_Bc250SdmaPresent.HardwareEnabled && dstScanoutGpu != 0 && srcGpu != dstScanoutGpu) {
+                    sdmaDone = Bc250SdmaPresentBlt(srcGpu, dstScanoutGpu, scanoutBytes);
+                }
+
+                if (sdmaDone &&
+                    (count == 1 || count == 5 || count == 10 || count == 25 || count == 45)) {
+                    UINT64 mismatchOffset = ~(UINT64)0;
+                    ULONG postNz = 0u, postHx = 0u;
+                    BOOLEAN bytesMatch = Bc250DisplayCompareSurfaceBytes(
+                        effectiveSrcPhys, 0ull, scanoutBytes, &mismatchOffset);
+                    BC250_BLT_PROOF_VERDICT proofVerdict;
+
+                    if (bytesMatch) {
+                        (void)Bc250DisplaySampleSurface(0ull, scanoutBytes, 256u, &postNz, &postHx);
+                    }
+                    /*
+                     * A9/A10: a classificacao vem de driver/core, e o teste
+                     * blt_proof_contract_test trava a semantica. O driver nao
+                     * decide sozinho o que e' PASS.
+                     */
+                    proofVerdict = Bc250ClassifyBltProof(
+                        bytesMatch ? 1u : 0u, (uint32_t)postNz,
+                        bytesMatch ? 256u : 0u);
+
+                    if (!Bc250BltProofRequiresFailClosed(proofVerdict)) {
+                        if (!Bc250BltProofAllowsTripodClaim(proofVerdict)) {
+                            /*
+                             * A9 (06/09) -- ESTA linha dizia PASS.
+                             *
+                             * MEDIDO na corrida 2026-09-06 22:42: 63 de 63
+                             * amostras com NonZero=0/256 e ainda assim PASS. A
+                             * comparacao passava porque origem e destino eram
+                             * ambos zero -- ou seja, ela declarava sucesso
+                             * exatamente no caso em que a tela estava apagada.
+                             * Rotulo de falso sucesso, proibido pela Lei 4.
+                             *
+                             * Copia fiel de um frame em branco e' INCONCLUSIVA:
+                             * nao prova caminho de pixel, e tambem nao e' falha
+                             * (o DWM pode legitimamente apresentar preto). Nao
+                             * desligamos o SDMA -- apenas nos recusamos a
+                             * certificar, e contamos a sequencia de frames em
+                             * branco, que e' o sintoma da tela preta.
+                             */
+                            LONG streak = InterlockedIncrement(
+                                &g_Bc250SdmaPresent.BltBlankStreak);
+                            InterlockedExchange(&s_PresentByteProofState, 0);
+                            InterlockedExchange(
+                                &g_Bc250SdmaPresent.BltDataProofState,
+                                BC250_BLT_DATA_PROOF_BLANK);
+                            Bc250DisplayLog("[Present #%d] BYTE_PROOF INCONCLUSIVO (FRAME EM BRANCO): Source=0x%llX Dest=0x0 Bytes=%u copiados fielmente, mas PostScanout NonZero=0/256 Hash=0x%08X. Zero contra zero NAO prova caminho de pixel. BlankStreak=%ld\n",
+                                count, effectiveSrcPhys, scanoutBytes, postHx, streak);
+                        } else {
+                            InterlockedExchange(&s_PresentByteProofState, 2);
+                            InterlockedExchange(&g_Bc250SdmaPresent.BltBlankStreak, 0);
+                            InterlockedExchange(
+                                &g_Bc250SdmaPresent.BltDataProofState,
+                                BC250_BLT_DATA_PROOF_OK);
+                            Bc250DisplayLog("[Present #%d] BYTE_PROOF PASS (dados conferidos, frame com conteudo): Source=0x%llX Dest=0x0 Bytes=%u (PostScanout: NonZero=%u/256, Hash=0x%08X)\n",
+                                count, effectiveSrcPhys, scanoutBytes, postNz, postHx);
+                        }
+                    } else {
+                        InterlockedExchange(&s_PresentByteProofState, -1);
+                        InterlockedExchange(
+                            &g_Bc250SdmaPresent.BltDataProofState,
+                            BC250_BLT_DATA_PROOF_MISMATCH);
+                        g_Bc250SdmaPresent.HardwareEnabled = FALSE;
+                        sdmaDone = FALSE;
+                        Bc250DisplayLog("[Present #%d] BYTE_PROOF FAIL: Source=0x%llX Dest=0x0 Bytes=%u FirstMismatch=0x%llX; SDMA disabled\n",
+                            count, effectiveSrcPhys, scanoutBytes, mismatchOffset);
+                    }
+                }
+
+                if (count <= 10 || (count % 60) == 0) {
+                    Bc250DisplayLog("[Present #%d] Blt %u bytes (src 0x%llX -> scanout 0x0): SDMA=%s\n",
+                        count, scanoutBytes, effectiveSrcPhys, sdmaDone ? "YES" : "FAILED_CLOSED");
+                }
+                presentStatus = sdmaDone ? STATUS_SUCCESS : STATUS_IO_DEVICE_ERROR;
+            } else if (vaResolved) {
+                Bc250DisplayLog("[Present #%d] REJECT source bounds: Phys=0x%llX, Bytes=%u, Aperture=%u\n",
+                    count, effectiveSrcPhys, scanoutBytes, g_Bc250DisplayState.FrameBufferSize);
+                presentStatus = STATUS_INVALID_PARAMETER;
             }
-            presentStatus = sdmaDone ? STATUS_SUCCESS : STATUS_IO_DEVICE_ERROR;
-        } else if (vaResolved) {
-            Bc250DisplayLog("[Present #%d] REJECT source bounds: Phys=0x%llX, Bytes=%u, Aperture=%u\n",
-                count, srcPhysical, scanoutBytes, g_Bc250DisplayState.FrameBufferSize);
-            presentStatus = STATUS_INVALID_PARAMETER;
         }
-    }
+}
 
     /*
      * Emite pacote SDMA no DMA buffer para que o GPU Scheduler do Windows

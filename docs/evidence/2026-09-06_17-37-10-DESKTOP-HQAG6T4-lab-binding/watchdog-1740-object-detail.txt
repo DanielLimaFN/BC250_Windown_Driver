@@ -1,0 +1,467 @@
+
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+
+   EnableRedirectToV8JsProvider : false
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.016 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 29
+
+Microsoft (R) Windows Debugger Version 10.0.26100.6584 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [C:\Users\Daniel\Desktop\NamixWDDM\docs\evidence\2026-09-06_17-37-10-DESKTOP-HQAG6T4-lab-binding\WATCHDOG-20260906-1740.dmp]
+Mini Kernel Dump File: Only registers and stack trace are available
+
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+OK                                             C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab
+Deferred                                       srv*C:\Symbols*https://msdl.microsoft.com/download/symbols
+Symbol search path is: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab;srv*C:\Symbols*https://msdl.microsoft.com/download/symbols
+Executable search path is: 
+Windows 10 Kernel Version 19045 MP (12 procs) Free x64
+Product: WinNt, suite: TerminalServer SingleUserTS
+Edition build lab: 19041.1.amd64fre.vb_release.191206-1406
+Kernel base = 0xfffff804`71000000 PsLoadedModuleList = 0xfffff804`71c2a2b0
+Debug session time: Sun Sep  6 17:40:41.837 2026 (UTC - 3:00)
+System Uptime: 0 days 0:24:57.323
+Loading Kernel Symbols
+...............................................................
+................................................................
+.....................................
+Loading User Symbols
+
+Loading unloaded module list
+.........
+For analysis of this file, run !analyze -v
+0: kd> cdb: Reading initial command '!thread ffffb584c132a080; !thread ffffb584c26b0000; !process ffffb584c132a080 7; !process ffffb584c26b0000 7; dt nt!_ETHREAD ffffb584c132a080; dt nt!_EPROCESS ffffb584c26b0000; !object ffffb584c132a080; !object ffffb584c26b0000; q'
+THREAD ffffb584c132a080  Cid 0434.176c  Teb: 000000000028d000 Win32Thread: ffffb584c1215f50 WAIT: (Executive) KernelMode Non-Alertable
+    ffffb584c35a43e0  SynchronizationEvent
+Not impersonating
+GetUlongFromAddress: unable to read from fffff80471c1152c
+Owning Process            ffffb584bd0b4080       Image:         
+Attached Process          N/A            Image:         N/A
+fffff78000000000: Unable to get shared data
+Wait Start TickCount      83986        
+Context Switch Count      126            IdealProcessor: 8             
+ReadMemory error: Cannot get nt!KeMaximumIncrement value.
+UserTime                  00:00:00.000
+KernelTime                00:00:00.000
+Win32 Start Address 0x00007ff7476c3160
+Stack Init ffffc5893c338c90 Current ffffc5893c338310
+Base ffffc5893c339000 Limit ffffc5893c333000 Call 0000000000000000
+Priority 12  BasePriority 8  Unusual Boost 4  IoPriority 2  PagePriority 5
+Child-SP          RetAddr               : Args to Child                                                           : Call Site
+ffffc589`3c338350 fffff804`7121c9c0     : ffff9f00`4835f180 00000000`ffffffff ffffc589`00000000 fffff804`71212331 : nt!KiSwapContext+0x76
+ffffc589`3c338490 fffff804`7121beef     : 00000021`00000002 00000000`0000000a ffffc589`3c338650 00000000`00000000 : nt!KiSwapThread+0x500
+ffffc589`3c338540 fffff804`7121b793     : 00000000`00000000 fffff804`00000000 fffff6cf`57d4ef00 ffffb584`c132a1c0 : nt!KiCommitThreadWait+0x14f
+ffffc589`3c3385e0 fffff804`89f85217     : ffffb584`c35a43e0 ffffffff`00000000 00000000`00000000 ffffb584`c35a4300 : nt!KeWaitForSingleObject+0x233
+ffffc589`3c3386d0 fffff804`89f80ae5     : ffffdc85`a1882600 ffffc589`3c338901 00000002`00000001 ffffdc85`9f52ffa8 : dxgmms2!VIDMM_GLOBAL::WaitForFences+0x2d7
+ffffc589`3c338810 fffff804`89f809d2     : ffffb584`c1b11000 00000000`c0000030 ffffc589`3c338a20 00000000`ffffec7f : dxgmms2!VIDMM_GLOBAL::QueueSystemCommandAndWaitInternal+0xf9
+ffffc589`3c3388a0 fffff804`89f970fe     : ffffc589`3c338a10 fffff804`87cfcf9e ffffb584`bd0b4080 ffffb584`bc90a000 : dxgmms2!VIDMM_GLOBAL::QueueSystemCleanupCommandAndWait+0x42
+ffffc589`3c3388e0 fffff804`89f2564b     : 00000000`00000000 ffffc589`3c338b80 ffffc589`3c338a20 00000000`00000020 : dxgmms2!VIDMM_GLOBAL::VidMmFreeGpuVirtualAddress+0xaa
+ffffc589`3c338970 fffff804`87d71159     : ffffb584`c26b0000 ffffc589`3c338b80 ffffc589`3c338a20 00000000`00000001 : dxgmms2!VidMmFreeGpuVirtualAddress+0x1b
+ffffc589`3c3389a0 fffff804`7140f4f8     : ffffb584`c132a080 ffffb584`c132a080 00000000`00000000 00000000`00001ad6 : dxgkrnl!DxgkFreeGpuVirtualAddress+0x1d9
+ffffc589`3c338b00 00007fff`23b34c84     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`00000000 : nt!KiSystemServiceCopyEnd+0x28 (TrapFrame @ ffffc589`3c338b00)
+00000000`0014eaa8 00000000`00000000     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`00000000 : 0x00007fff`23b34c84
+
+ffffb584c26b0000 is not a thread object, interpreting as stack value...
+Now checking thread 0xffffb584b749b580
+Unable to get value of stack base of thread(0xffffb584b749b580)
+Now checking thread 0x0000000000000000
+Unable to get value of stack base of thread(0x00000000)
+Now checking thread 0x0000000000000000
+Unable to get value of stack base of thread(0x00000000)
+Now checking thread 0x0000000000000000
+Unable to get value of stack base of thread(0x00000000)
+Unable to read next process from process list
+TYPE mismatch for thread object at ffffb584c26b0000
+TYPE mismatch for process object at ffffb584c132a080
+TYPE mismatch for process object at ffffb584c26b0000
+   +0x000 Tcb              : _KTHREAD
+   +0x430 CreateTime       : _LARGE_INTEGER 0x01dd3e3f`8186a9e7
+   +0x438 ExitTime         : _LARGE_INTEGER 0xffffb584`c132a4b8
+   +0x438 KeyedWaitChain   : _LIST_ENTRY [ 0xffffb584`c132a4b8 - 0xffffb584`c132a4b8 ]
+   +0x448 PostBlockList    : _LIST_ENTRY [ 0x00000000`00000000 - 0x00007fff`264a2680 ]
+   +0x448 ForwardLinkShadow : (null) 
+   +0x450 StartAddress     : 0x00007fff`264a2680 Void
+   +0x458 TerminationPort  : (null) 
+   +0x458 ReaperLink       : (null) 
+   +0x458 KeyedWaitValue   : (null) 
+   +0x460 ActiveTimerListLock : 0
+   +0x468 ActiveTimerListHead : _LIST_ENTRY [ 0xffffb584`c132a4e8 - 0xffffb584`c132a4e8 ]
+   +0x478 Cid              : _CLIENT_ID
+   +0x488 KeyedWaitSemaphore : _KSEMAPHORE
+   +0x488 AlpcWaitSemaphore : _KSEMAPHORE
+   +0x4a8 ClientSecurity   : _PS_CLIENT_SECURITY_CONTEXT
+   +0x4b0 IrpList          : _LIST_ENTRY [ 0xffffb584`c132a530 - 0xffffb584`c132a530 ]
+   +0x4c0 TopLevelIrp      : 0
+   +0x4c8 DeviceToVerify   : (null) 
+   +0x4d0 Win32StartAddress : 0x00007ff7`476c3160 Void
+   +0x4d8 ChargeOnlySession : (null) 
+   +0x4e0 LegacyPowerObject : (null) 
+   +0x4e8 ThreadListEntry  : _LIST_ENTRY [ 0xffffb584`c1ffc568 - 0xffffb584`bd0b4660 ]
+   +0x4f8 RundownProtect   : _EX_RUNDOWN_REF
+   +0x500 ThreadLock       : _EX_PUSH_LOCK
+   +0x508 ReadClusterSize  : 7
+   +0x50c MmLockOrdering   : 0n0
+   +0x510 CrossThreadFlags : 0x5403
+   +0x510 Terminated       : 0y1
+   +0x510 ThreadInserted   : 0y1
+   +0x510 HideFromDebugger : 0y0
+   +0x510 ActiveImpersonationInfo : 0y0
+   +0x510 HardErrorsAreDisabled : 0y0
+   +0x510 BreakOnTermination : 0y0
+   +0x510 SkipCreationMsg  : 0y0
+   +0x510 SkipTerminationMsg : 0y0
+   +0x510 CopyTokenOnOpen  : 0y0
+   +0x510 ThreadIoPriority : 0y010
+   +0x510 ThreadPagePriority : 0y101
+   +0x510 RundownFail      : 0y0
+   +0x510 UmsForceQueueTermination : 0y0
+   +0x510 IndirectCpuSets  : 0y0
+   +0x510 DisableDynamicCodeOptOut : 0y0
+   +0x510 ExplicitCaseSensitivity : 0y0
+   +0x510 PicoNotifyExit   : 0y0
+   +0x510 DbgWerUserReportActive : 0y0
+   +0x510 ForcedSelfTrimActive : 0y0
+   +0x510 SamplingCoverage : 0y0
+   +0x510 ReservedCrossThreadFlags : 0y00000000 (0)
+   +0x514 SameThreadPassiveFlags : 0
+   +0x514 ActiveExWorker   : 0y0
+   +0x514 MemoryMaker      : 0y0
+   +0x514 StoreLockThread  : 0y00
+   +0x514 ClonedThread     : 0y0
+   +0x514 KeyedEventInUse  : 0y0
+   +0x514 SelfTerminate    : 0y0
+   +0x514 RespectIoPriority : 0y0
+   +0x514 ActivePageLists  : 0y0
+   +0x514 SecureContext    : 0y0
+   +0x514 ZeroPageThread   : 0y0
+   +0x514 WorkloadClass    : 0y0
+   +0x514 ReservedSameThreadPassiveFlags : 0y00000000000000000000 (0)
+   +0x518 SameThreadApcFlags : 0
+   +0x518 OwnsProcessAddressSpaceExclusive : 0y0
+   +0x518 OwnsProcessAddressSpaceShared : 0y0
+   +0x518 HardFaultBehavior : 0y0
+   +0x518 StartAddressInvalid : 0y0
+   +0x518 EtwCalloutActive : 0y0
+   +0x518 SuppressSymbolLoad : 0y0
+   +0x518 Prefetching      : 0y0
+   +0x518 OwnsVadExclusive : 0y0
+   +0x519 SystemPagePriorityActive : 0y0
+   +0x519 SystemPagePriority : 0y000
+   +0x519 AllowUserWritesToExecutableMemory : 0y0
+   +0x519 AllowKernelWritesToExecutableMemory : 0y0
+   +0x519 OwnsVadShared    : 0y0
+   +0x51c CacheManagerActive : 0 ''
+   +0x51d DisablePageFaultClustering : 0 ''
+   +0x51e ActiveFaultCount : 0 ''
+   +0x51f LockOrderState   : 0 ''
+   +0x520 PerformanceCountLowReserved : 0
+   +0x524 PerformanceCountHighReserved : 0n0
+   +0x528 AlpcMessageId    : 0
+   +0x530 AlpcMessage      : (null) 
+   +0x530 AlpcReceiveAttributeSet : 0
+   +0x538 AlpcWaitListEntry : _LIST_ENTRY [ 0x00000000`00000000 - 0x00000000`00000000 ]
+   +0x548 ExitStatus       : 0n-1
+   +0x54c CacheManagerCount : 0
+   +0x550 IoBoostCount     : 0
+   +0x554 IoQoSBoostCount  : 1
+   +0x558 IoQoSThrottleCount : 0
+   +0x55c KernelStackReference : 1
+   +0x560 BoostList        : _LIST_ENTRY [ 0xffffb584`c132a5e0 - 0xffffb584`c132a5e0 ]
+   +0x570 DeboostList      : _LIST_ENTRY [ 0xffffb584`c132a5f0 - 0xffffb584`c132a5f0 ]
+   +0x580 BoostListLock    : 0
+   +0x588 IrpListLock      : 0
+   +0x590 ReservedForSynchTracking : (null) 
+   +0x598 CmCallbackListHead : _SINGLE_LIST_ENTRY
+   +0x5a0 ActivityId       : (null) 
+   +0x5a8 SeLearningModeListHead : _SINGLE_LIST_ENTRY
+   +0x5b0 VerifierContext  : (null) 
+   +0x5b8 AdjustedClientToken : (null) 
+   +0x5c0 WorkOnBehalfThread : (null) 
+   +0x5c8 PropertySet      : _PS_PROPERTY_SET
+   +0x5e0 PicoContext      : (null) 
+   +0x5e8 UserFsBase       : 0
+   +0x5f0 UserGsBase       : 0
+   +0x5f8 EnergyValues     : 0xffffb584`c132a918 _THREAD_ENERGY_VALUES
+   +0x600 SelectedCpuSets  : 0
+   +0x600 SelectedCpuSetsIndirect : (null) 
+   +0x608 Silo             : 0xffffffff`fffffffd _EJOB
+   +0x610 ThreadName       : (null) 
+   +0x618 SetContextState  : (null) 
+   +0x620 LastExpectedRunTime : 0
+   +0x624 HeapData         : 0x6e810000
+   +0x628 OwnerEntryListHead : _LIST_ENTRY [ 0xffffb584`c132a6a8 - 0xffffb584`c132a6a8 ]
+   +0x638 DisownedOwnerEntryListLock : 0
+   +0x640 DisownedOwnerEntryListHead : _LIST_ENTRY [ 0xffffb584`c132a6c0 - 0xffffb584`c132a6c0 ]
+   +0x650 LockEntries      : [6] _KLOCK_ENTRY
+   +0x890 CmDbgInfo        : (null) 
+   +0x000 Pcb              : _KPROCESS
+   +0x438 ProcessLock      : _EX_PUSH_LOCK
+   +0x440 UniqueProcessId  : (null) 
+   +0x448 ActiveProcessLinks : _LIST_ENTRY [ 0xfffff804`87d6ad00 - 0xfffff804`87d6ad00 ]
+   +0x458 RundownProtect   : _EX_RUNDOWN_REF
+   +0x460 Flags2           : 0
+   +0x460 JobNotReallyActive : 0y0
+   +0x460 AccountingFolded : 0y0
+   +0x460 NewProcessReported : 0y0
+   +0x460 ExitProcessReported : 0y0
+   +0x460 ReportCommitChanges : 0y0
+   +0x460 LastReportMemory : 0y0
+   +0x460 ForceWakeCharge  : 0y0
+   +0x460 CrossSessionCreate : 0y0
+   +0x460 NeedsHandleRundown : 0y0
+   +0x460 RefTraceEnabled  : 0y0
+   +0x460 PicoCreated      : 0y0
+   +0x460 EmptyJobEvaluated : 0y0
+   +0x460 DefaultPagePriority : 0y000
+   +0x460 PrimaryTokenFrozen : 0y0
+   +0x460 ProcessVerifierTarget : 0y0
+   +0x460 RestrictSetThreadContext : 0y0
+   +0x460 AffinityPermanent : 0y0
+   +0x460 AffinityUpdateEnable : 0y0
+   +0x460 PropagateNode    : 0y0
+   +0x460 ExplicitAffinity : 0y0
+   +0x460 ProcessExecutionState : 0y00
+   +0x460 EnableReadVmLogging : 0y0
+   +0x460 EnableWriteVmLogging : 0y0
+   +0x460 FatalAccessTerminationRequested : 0y0
+   +0x460 DisableSystemAllowedCpuSet : 0y0
+   +0x460 ProcessStateChangeRequest : 0y00
+   +0x460 ProcessStateChangeInProgress : 0y0
+   +0x460 InPrivate        : 0y0
+   +0x464 Flags            : 0
+   +0x464 CreateReported   : 0y0
+   +0x464 NoDebugInherit   : 0y0
+   +0x464 ProcessExiting   : 0y0
+   +0x464 ProcessDelete    : 0y0
+   +0x464 ManageExecutableMemoryWrites : 0y0
+   +0x464 VmDeleted        : 0y0
+   +0x464 OutswapEnabled   : 0y0
+   +0x464 Outswapped       : 0y0
+   +0x464 FailFastOnCommitFail : 0y0
+   +0x464 Wow64VaSpace4Gb  : 0y0
+   +0x464 AddressSpaceInitialized : 0y00
+   +0x464 SetTimerResolution : 0y0
+   +0x464 BreakOnTermination : 0y0
+   +0x464 DeprioritizeViews : 0y0
+   +0x464 WriteWatch       : 0y0
+   +0x464 ProcessInSession : 0y0
+   +0x464 OverrideAddressSpace : 0y0
+   +0x464 HasAddressSpace  : 0y0
+   +0x464 LaunchPrefetched : 0y0
+   +0x464 Background       : 0y0
+   +0x464 VmTopDown        : 0y0
+   +0x464 ImageNotifyDone  : 0y0
+   +0x464 PdeUpdateNeeded  : 0y0
+   +0x464 VdmAllowed       : 0y0
+   +0x464 ProcessRundown   : 0y0
+   +0x464 ProcessInserted  : 0y0
+   +0x464 DefaultIoPriority : 0y000
+   +0x464 ProcessSelfDelete : 0y0
+   +0x464 SetTimerResolutionLink : 0y0
+   +0x468 CreateTime       : _LARGE_INTEGER 0x0
+   +0x470 ProcessQuotaUsage : [2] 0
+   +0x480 ProcessQuotaPeak : [2] 0
+   +0x490 PeakVirtualSize  : 0
+   +0x498 VirtualSize      : 0
+   +0x4a0 SessionProcessLinks : _LIST_ENTRY [ 0x00000000`00000000 - 0x00000000`00000000 ]
+   +0x4b0 ExceptionPortData : (null) 
+   +0x4b0 ExceptionPortValue : 0
+   +0x4b0 ExceptionPortState : 0y000
+   +0x4b8 Token            : _EX_FAST_REF
+   +0x4c0 MmReserved       : 0
+   +0x4c8 AddressCreationLock : _EX_PUSH_LOCK
+   +0x4d0 PageTableCommitmentLock : _EX_PUSH_LOCK
+   +0x4d8 RotateInProgress : (null) 
+   +0x4e0 ForkInProgress   : (null) 
+   +0x4e8 CommitChargeJob  : (null) 
+   +0x4f0 CloneRoot        : _RTL_AVL_TREE
+   +0x4f8 NumberOfPrivatePages : 0xfffff804`87e20700
+   +0x500 NumberOfLockedPages : 0
+   +0x508 Win32Process     : (null) 
+   +0x510 Job              : (null) 
+   +0x518 SectionObject    : (null) 
+   +0x520 SectionBaseAddress : (null) 
+   +0x528 Cookie           : 0
+   +0x530 WorkingSetWatch  : (null) 
+   +0x538 Win32WindowStation : (null) 
+   +0x540 InheritedFromUniqueProcessId : (null) 
+   +0x548 OwnerProcessId   : 0
+   +0x550 Peb              : (null) 
+   +0x558 Session          : (null) 
+   +0x560 Spare1           : (null) 
+   +0x568 QuotaBlock       : (null) 
+   +0x570 ObjectTable      : 0x00000000`00000001 _HANDLE_TABLE
+   +0x578 DebugPort        : 0x00000000`0076006a Void
+   +0x580 WoW64Process     : 0xffffdc85`9d5d5da0 _EWOW64PROCESS
+   +0x588 DeviceMap        : 0x00000000`0076006a Void
+   +0x590 EtwDataSource    : 0xffffdc85`9d5d5ec0 Void
+   +0x598 PageDirectoryPte : 0
+   +0x5a0 ImageFilePointer : (null) 
+   +0x5a8 ImageFileName    : [15]  "???"
+   +0x5b7 PriorityClass    : 0 ''
+   +0x5b8 SecurityPort     : (null) 
+   +0x5c0 SeAuditProcessCreationInfo : _SE_AUDIT_PROCESS_CREATION_INFO
+   +0x5c8 JobLinks         : _LIST_ENTRY [ 0x00000000`00000000 - 0x00000000`00000000 ]
+   +0x5d8 HighestUserAddress : (null) 
+   +0x5e0 ThreadListHead   : _LIST_ENTRY [ 0x00000000`00000000 - 0xffffb584`bf29e450 ]
+   +0x5f0 ActiveThreads    : 0xc09a7c38
+   +0x5f4 ImagePathHash    : 0xffffb584
+   +0x5f8 DefaultHardErrorProcessing : 0
+   +0x5fc LastThreadExitStatus : 0n0
+   +0x600 PrefetchTrace    : _EX_FAST_REF
+   +0x608 LockedPagesList  : (null) 
+   +0x610 ReadOperationCount : _LARGE_INTEGER 0x0
+   +0x618 WriteOperationCount : _LARGE_INTEGER 0x0
+   +0x620 OtherOperationCount : _LARGE_INTEGER 0x0
+   +0x628 ReadTransferCount : _LARGE_INTEGER 0x0
+   +0x630 WriteTransferCount : _LARGE_INTEGER 0x0
+   +0x638 OtherTransferCount : _LARGE_INTEGER 0xffffb584`c0ba3590
+   +0x640 CommitChargeLimit : 0x01dd3a6d`ff4c0000
+   +0x648 CommitCharge     : 0xfc0000
+   +0x650 CommitChargePeak : 0
+   +0x680 Vm               : _MMSUPPORT_FULL
+   +0x7c0 MmProcessLinks   : _LIST_ENTRY [ 0x00000000`00000000 - 0x7fffffff`ffffffff ]
+   +0x7d0 ModifiedPageCount : 0x20
+   +0x7d4 ExitStatus       : 0n0
+   +0x7d8 VadRoot          : _RTL_AVL_TREE
+   +0x7e0 VadHint          : (null) 
+   +0x7e8 VadCount         : 0
+   +0x7f0 VadPhysicalPages : 0
+   +0x7f8 VadPhysicalPagesLimit : 0x1006c903`00000000
+   +0x800 AlpcContext      : _ALPC_PROCESS_CONTEXT
+   +0x820 TimerResolutionLink : _LIST_ENTRY [ 0x00000000`00000000 - 0x00000000`00000000 ]
+   +0x830 TimerResolutionStackRecord : (null) 
+   +0x838 RequestedTimerResolution : 0
+   +0x83c SmallestTimerResolution : 0
+   +0x840 ExitTime         : _LARGE_INTEGER 0x0
+   +0x848 InvertedFunctionTable : (null) 
+   +0x850 InvertedFunctionTableLock : _EX_PUSH_LOCK
+   +0x858 ActiveThreadsHighWatermark : 0
+   +0x85c LargePrivateVadCount : 0
+   +0x860 ThreadListLock   : _EX_PUSH_LOCK
+   +0x868 WnfContext       : (null) 
+   +0x870 ServerSilo       : (null) 
+   +0x878 SignatureLevel   : 0 ''
+   +0x879 SectionSignatureLevel : 0 ''
+   +0x87a Protection       : _PS_PROTECTION
+   +0x87b HangCount        : 0y000
+   +0x87b GhostCount       : 0y000
+   +0x87b PrefilterException : 0y0
+   +0x87c Flags3           : 0
+   +0x87c Minimal          : 0y0
+   +0x87c ReplacingPageRoot : 0y0
+   +0x87c Crashed          : 0y0
+   +0x87c JobVadsAreTracked : 0y0
+   +0x87c VadTrackingDisabled : 0y0
+   +0x87c AuxiliaryProcess : 0y0
+   +0x87c SubsystemProcess : 0y0
+   +0x87c IndirectCpuSets  : 0y0
+   +0x87c RelinquishedCommit : 0y0
+   +0x87c HighGraphicsPriority : 0y0
+   +0x87c CommitFailLogged : 0y0
+   +0x87c ReserveFailLogged : 0y0
+   +0x87c SystemProcess    : 0y0
+   +0x87c HideImageBaseAddresses : 0y0
+   +0x87c AddressPolicyFrozen : 0y0
+   +0x87c ProcessFirstResume : 0y0
+   +0x87c ForegroundExternal : 0y0
+   +0x87c ForegroundSystem : 0y0
+   +0x87c HighMemoryPriority : 0y0
+   +0x87c EnableProcessSuspendResumeLogging : 0y0
+   +0x87c EnableThreadSuspendResumeLogging : 0y0
+   +0x87c SecurityDomainChanged : 0y0
+   +0x87c SecurityFreezeComplete : 0y0
+   +0x87c VmProcessorHost  : 0y0
+   +0x87c VmProcessorHostTransition : 0y0
+   +0x87c AltSyscall       : 0y0
+   +0x87c TimerResolutionIgnore : 0y0
+   +0x87c DisallowUserTerminate : 0y0
+   +0x880 DeviceAsid       : 0n0
+   +0x888 SvmData          : (null) 
+   +0x890 SvmProcessLock   : _EX_PUSH_LOCK
+   +0x898 SvmLock          : 0
+   +0x8a0 SvmProcessDeviceListHead : _LIST_ENTRY [ 0x00000000`00000000 - 0x00000000`00000000 ]
+   +0x8b0 LastFreezeInterruptTime : 0
+   +0x8b8 DiskCounters     : (null) 
+   +0x8c0 PicoContext      : (null) 
+   +0x8c8 EnclaveTable     : (null) 
+   +0x8d0 EnclaveNumber    : 0
+   +0x8d8 EnclaveLock      : _EX_PUSH_LOCK
+   +0x8e0 HighPriorityFaultsAllowed : 0
+   +0x8e8 EnergyContext    : (null) 
+   +0x8f0 VmContext        : (null) 
+   +0x8f8 SequenceNumber   : 0
+   +0x900 CreateInterruptTime : 0
+   +0x908 CreateUnbiasedInterruptTime : 0
+   +0x910 TotalUnbiasedFrozenTime : 0
+   +0x918 LastAppStateUpdateTime : 0x2000
+   +0x920 LastAppStateUptime : 0y0000000000000000000000000000000000000000000000000000000000000 (0)
+   +0x920 LastAppState     : 0y000
+   +0x928 SharedCommitCharge : 0
+   +0x930 SharedCommitLock : _EX_PUSH_LOCK
+   +0x938 SharedCommitLinks : _LIST_ENTRY [ 0x00000000`00000000 - 0x00000000`00000000 ]
+   +0x948 AllowedCpuSets   : 0
+   +0x950 DefaultCpuSets   : 0
+   +0x948 AllowedCpuSetsIndirect : (null) 
+   +0x950 DefaultCpuSetsIndirect : (null) 
+   +0x958 DiskIoAttribution : (null) 
+   +0x960 DxgProcess       : (null) 
+   +0x968 Win32KFilterSet  : 0
+   +0x970 ProcessTimerDelay : _PS_INTERLOCKED_TIMER_DELAY_VALUES
+   +0x978 KTimerSets       : 0
+   +0x97c KTimer2Sets      : 0
+   +0x980 ThreadTimerSets  : 0
+   +0x988 VirtualTimerListLock : 0
+   +0x990 VirtualTimerListHead : _LIST_ENTRY [ 0x00000000`00000000 - 0x00000000`00000000 ]
+   +0x9a0 WakeChannel      : _WNF_STATE_NAME
+   +0x9a0 WakeInfo         : _PS_PROCESS_WAKE_INFORMATION
+   +0x9d0 MitigationFlags  : 0
+   +0x9d0 MitigationFlagsValues : <anonymous-tag>
+   +0x9d4 MitigationFlags2 : 0
+   +0x9d4 MitigationFlags2Values : <anonymous-tag>
+   +0x9d8 PartitionObject  : 0x00000064`00000000 Void
+   +0x9e0 SecurityDomain   : 0x10000
+   +0x9e8 ParentSecurityDomain : 1
+   +0x9f0 CoverageSamplerContext : (null) 
+   +0x9f8 MmHotPatchContext : (null) 
+   +0xa00 DynamicEHContinuationTargetsTree : _RTL_AVL_TREE
+   +0xa08 DynamicEHContinuationTargetsLock : _EX_PUSH_LOCK
+   +0xa10 DynamicEnforcedCetCompatibleRanges : _PS_DYNAMIC_ENFORCED_ADDRESS_RANGES
+   +0xa20 DisabledComponentFlags : 0
+   +0xa28 PathRedirectionHashes : 0xffffb584`c09a8888  -> ??
+Could not read ObjectType address
+
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Kernel.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Usb4Kd.natvis'

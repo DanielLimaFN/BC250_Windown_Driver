@@ -1,0 +1,1 @@
+﻿AVISO: DWM LOCALDUMPS REGISTRY RESTORED; dumps pendentes={0}; limpeza pendente=True. Execute novamente para concluir.

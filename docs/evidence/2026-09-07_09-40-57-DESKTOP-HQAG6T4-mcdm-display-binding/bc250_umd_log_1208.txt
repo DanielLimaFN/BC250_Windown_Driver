@@ -1,0 +1,120 @@
+09:41:00.190 [pid=1208 dwm.exe] === bc250umd.dll CARREGADA ===
+09:41:00.191 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.191 [pid=1208 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+09:41:00.191 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.191 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.192 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.192 [pid=1208 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+09:41:00.194 [pid=1208 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=48, PageSize=4096, VramSegId=1 VramBytes=0xF570000, GateFlags=0x0000001B
+09:41:00.194 [pid=1208 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+09:41:00.195 [pid=1208 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+09:41:00.196 [pid=1208 dwm.exe] === bc250umd.dll CARREGADA ===
+09:41:00.196 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.196 [pid=1208 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+09:41:00.197 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.197 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.197 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.197 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.198 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.198 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.198 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.206 [pid=1208 dwm.exe] === bc250umd.dll CARREGADA ===
+09:41:00.206 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.206 [pid=1208 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+09:41:00.206 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.206 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.207 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.207 [pid=1208 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+09:41:00.209 [pid=1208 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=48, PageSize=4096, VramSegId=1 VramBytes=0xF570000, GateFlags=0x0000001B
+09:41:00.209 [pid=1208 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+09:41:00.209 [pid=1208 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+09:41:00.211 [pid=1208 dwm.exe] === bc250umd.dll CARREGADA ===
+09:41:00.211 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.211 [pid=1208 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+09:41:00.211 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.211 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.211 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.212 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.212 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.212 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.213 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.231 [pid=1208 dwm.exe] === bc250umd.dll CARREGADA ===
+09:41:00.231 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.231 [pid=1208 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+09:41:00.231 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.231 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.231 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.232 [pid=1208 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+09:41:00.233 [pid=1208 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=48, PageSize=4096, VramSegId=1 VramBytes=0xF570000, GateFlags=0x0000001B
+09:41:00.234 [pid=1208 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+09:41:00.234 [pid=1208 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+09:41:00.235 [pid=1208 dwm.exe] === bc250umd.dll CARREGADA ===
+09:41:00.236 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.236 [pid=1208 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+09:41:00.236 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.236 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.236 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.237 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.237 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.237 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.237 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.260 [pid=1208 dwm.exe] === bc250umd.dll CARREGADA ===
+09:41:00.260 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.260 [pid=1208 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+09:41:00.260 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.261 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.261 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.261 [pid=1208 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+09:41:00.264 [pid=1208 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=48, PageSize=4096, VramSegId=1 VramBytes=0xF570000, GateFlags=0x0000001B
+09:41:00.264 [pid=1208 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+09:41:00.265 [pid=1208 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+09:41:00.266 [pid=1208 dwm.exe] === bc250umd.dll CARREGADA ===
+09:41:00.267 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.267 [pid=1208 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+09:41:00.267 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.267 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.267 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.268 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.268 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.268 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.269 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.285 [pid=1208 dwm.exe] === bc250umd.dll CARREGADA ===
+09:41:00.286 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.286 [pid=1208 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+09:41:00.286 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.286 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.287 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.287 [pid=1208 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+09:41:00.290 [pid=1208 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=48, PageSize=4096, VramSegId=1 VramBytes=0xF570000, GateFlags=0x0000001B
+09:41:00.290 [pid=1208 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+09:41:00.290 [pid=1208 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+09:41:00.296 [pid=1208 dwm.exe] === bc250umd.dll CARREGADA ===
+09:41:00.296 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.296 [pid=1208 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+09:41:00.296 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.297 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.297 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.297 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.298 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.298 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.298 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.309 [pid=1208 dwm.exe] === bc250umd.dll CARREGADA ===
+09:41:00.310 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.310 [pid=1208 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+09:41:00.310 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.311 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.311 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.311 [pid=1208 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+09:41:00.314 [pid=1208 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=48, PageSize=4096, VramSegId=1 VramBytes=0xF570000, GateFlags=0x0000001B
+09:41:00.314 [pid=1208 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+09:41:00.314 [pid=1208 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+09:41:00.316 [pid=1208 dwm.exe] === bc250umd.dll CARREGADA ===
+09:41:00.316 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.316 [pid=1208 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+09:41:00.316 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.317 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.317 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.317 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+09:41:00.318 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+09:41:00.318 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+09:41:00.318 [pid=1208 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)

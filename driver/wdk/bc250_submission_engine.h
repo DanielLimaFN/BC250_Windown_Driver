@@ -303,6 +303,15 @@ typedef struct BC250_SUBMISSION_ENGINE {
     uint32_t DoorbellOffsetBytes;
     uint32_t DoorbellEnabled;
     uint32_t MmioMapped;
+    uint64_t DiagnosticSubmitTime;
+    uint64_t DiagnosticPendingFence;
+    uint32_t DiagnosticDescriptor[4];
+    uint32_t DiagnosticPendingDescriptor[4];
+    uint32_t DiagnosticQueueRaw[6];
+    uint32_t DiagnosticValidReads;
+    uint32_t DiagnosticObservedFence;
+    uint32_t DiagnosticRptr;
+    uint32_t DiagnosticWriteback;
 
     /* Estado da fila de computacao mantida ativa. */
     BC250_HQD_MC_BUFFERS Buffers;
@@ -353,6 +362,32 @@ typedef struct BC250_SUBMISSION_ENGINE {
     uint64_t LastRetiredFence;
 
     /*
+     * 3.116: dominio logico do anel versus cursores fisicos da HQD.
+     * RebasePassed so sobe quando a fila foi medida drenada e nao havia
+     * fence em voo. Nenhum caminho desta transacao escreve o RPTR.
+     */
+    uint32_t CursorReconcileAttempts;
+    uint32_t CursorReconcilePassed;
+    uint32_t CursorReconcileRejected;
+    uint32_t CursorLogicalBefore;
+    uint32_t CursorPhysicalRptrRaw;
+    uint32_t CursorPhysicalWptrRaw;
+    uint32_t CursorReconciled;
+    uint32_t CursorReconcileStatus;
+
+    /* 3.117: troca de IB_VMID somente com a HQD drenada e inativa. */
+    uint32_t VmidRetargetAttempts;
+    uint32_t VmidRetargetPassed;
+    uint32_t VmidRetargetRejected;
+    uint32_t VmidRetargetBefore;
+    uint32_t VmidRetargetAfter;
+    uint32_t VmidRetargetActiveBefore;
+    uint32_t VmidRetargetActiveAfter;
+    uint32_t VmidRetargetRptr;
+    uint32_t VmidRetargetWptr;
+    uint32_t VmidRetargetQueueMask;
+
+    /*
      * Candidato 3.46 — coerencia por submissao antes do kick.
      * Estes campos descrevem somente a ultima tentativa.  Passed so e'
      * publicado depois de HDP, GL2 e invalidate/ACK do VMID0 fecharem.
@@ -376,6 +411,14 @@ typedef struct BC250_SUBMISSION_ENGINE {
 
     /* Fase V2 — correlacao fence do anel <-> fence do WDDM. */
     BC250_WDDM_FENCE_TRACKER WddmFences;
+
+    /* Diagnostico detalhado de falha no PublishWptr (visivel em PASSIVE_LEVEL) */
+    uint32_t PublishFailStep;
+    uint32_t PublishHqdActive;
+    uint32_t PublishHqdRptr;
+    uint32_t PublishHqdError;
+    uint32_t PublishReadbackDoorbellControl;
+    uint32_t PublishTargetWptr;
 } BC250_SUBMISSION_ENGINE;
 
 struct BC250_DXGK_ACTIVE_CONTEXT;
@@ -400,6 +443,22 @@ NTSTATUS Bc250SubmissionEngineSubmit(
     _In_ uint64_t IbGpuVirtualAddress,
     _In_ uint32_t IbSizeDwords,
     _Out_ uint64_t *AssignedFence);
+
+/*
+ * Retargeta o IB_VMID da HQD persistente. Alterar CP_HQD_VMID com ACTIVE=1
+ * nao faz parte do load upstream; por isso a transacao exige fila drenada,
+ * desativa, programa/readback, rearma QUEUE_MASK e so entao reativa.
+ * RPTR nunca e' escrito.
+ */
+_Check_return_
+NTSTATUS Bc250SubmissionEngineRetargetDrainedIbVmid(
+    _Inout_ struct BC250_DXGK_ACTIVE_CONTEXT *Context,
+    _In_ uint32_t TargetVmid);
+
+/* Fotografia global somente leitura para localizar a primeira etapa do stall. */
+VOID Bc250SubmissionEngineCaptureRciuStage(
+    _Inout_ struct BC250_DXGK_ACTIVE_CONTEXT *Context,
+    _In_z_ const char *Tag);
 
 /*
  * Submete comandos PM4 diretamente no anel do no indicado e publica o cursor.
@@ -530,6 +589,11 @@ BOOLEAN Bc250WddmFenceTrackerQueryCurrent(
 
 /* Desativa a fila, executa o rollback LIFO e libera todos os recursos. */
 NTSTATUS Bc250SubmissionEngineOffline(
+    _Inout_ struct BC250_DXGK_ACTIVE_CONTEXT *Context);
+
+/* PASSIVE_LEVEL, after draining retirement DPCs and before releasing MMIO.
+ * Captures current state even when polling faulted or never ran. */
+VOID Bc250SubmissionEngineArchiveDiagnostics(
     _Inout_ struct BC250_DXGK_ACTIVE_CONTEXT *Context);
 
 /*

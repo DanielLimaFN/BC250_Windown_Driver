@@ -118,6 +118,12 @@ BOOLEAN Bc250DisplayResolvePresentSource(
     _Out_ UINT64 *PhysicalAddress,
     _Out_ UINT32 *SegmentId);
 
+BOOLEAN Bc250DisplayResolvePresentDestination(
+    _In_ HANDLE Context,
+    _In_ const DXGKARG_PRESENT *Present,
+    _Out_ UINT64 *PhysicalAddress,
+    _Out_ UINT32 *SegmentId);
+
 /*
  * Origem de scanout com autoridade: o par PrimarySegment/PrimaryAddress
  * publicado pelo ultimo DxgkDdiSetVidPnSourceAddress. Devolve FALSE enquanto
@@ -223,6 +229,8 @@ void Bc250DisplaySetChildEnumeration(_In_ BOOLEAN Enabled);
 
 _Check_return_
 BOOLEAN Bc250DisplayGetChildEnumeration(void);
+
+extern volatile LONG g_Bc250PagingActiveCount;
 
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
 void Bc250DisplayLog(const char *Format, ...);

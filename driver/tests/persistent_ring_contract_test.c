@@ -349,6 +349,63 @@ static int Bc250TestRetireAccounting(void)
     return 1;
 }
 
+static int Bc250TestDrainedCursorReconciliation(void)
+{
+    BC250_PERSISTENT_RING ring;
+    uint32_t before = 0u;
+    uint32_t reconciled = 0u;
+
+    CHECK(Bc250TestInitCompute(&ring) == BC250_PRING_OK);
+    ring.WptrDwords = 204u;
+    ring.RptrShadowDwords = 204u;
+    ring.LastSubmittedFence = 17ull;
+    ring.LastRetiredFence = 17ull;
+
+    /* Caso medido em 3.115: logico 204, HQD fisica drenada em 0/0. */
+    CHECK(Bc250PersistentRingReconcileDrainedCursor(
+        &ring, 0u, 0u, &before, &reconciled) == BC250_PRING_OK);
+    CHECK(before == 204u && reconciled == 0u);
+    CHECK(ring.WptrDwords == 0u && ring.RptrShadowDwords == 0u);
+    CHECK(ring.LastSubmittedFence == 17ull && ring.LastRetiredFence == 17ull);
+
+    /* Um cursor fisico drenado nao-zero tambem e' fonte da verdade. */
+    ring.WptrDwords = 204u;
+    ring.RptrShadowDwords = 204u;
+    CHECK(Bc250PersistentRingReconcileDrainedCursor(
+        &ring, 12u, 12u, &before, &reconciled) == BC250_PRING_OK);
+    CHECK(before == 204u && reconciled == 12u);
+
+    /* Bits de volta sao reduzidos; 16396 mod 16384 = 12. */
+    ring.WptrDwords = 204u;
+    ring.RptrShadowDwords = 204u;
+    CHECK(Bc250PersistentRingReconcileDrainedCursor(
+        &ring, 16396u, 16396u, &before, &reconciled) == BC250_PRING_OK);
+    CHECK(reconciled == 12u && ring.WptrDwords == 12u);
+
+    /* Trabalho fisico nunca e' descartado para fazer os cursores coincidirem. */
+    ring.WptrDwords = 204u;
+    ring.RptrShadowDwords = 204u;
+    CHECK(Bc250PersistentRingReconcileDrainedCursor(
+        &ring, 0u, 12u, &before, &reconciled) == BC250_PRING_CURSOR_BUSY);
+    CHECK(ring.WptrDwords == 204u && ring.RptrShadowDwords == 204u);
+
+    /* Fence pendente proibe rebase ate com hardware aparentemente drenado. */
+    ring.LastSubmittedFence = 18ull;
+    ring.LastRetiredFence = 17ull;
+    CHECK(Bc250PersistentRingReconcileDrainedCursor(
+        &ring, 0u, 0u, &before, &reconciled) == BC250_PRING_CURSOR_BUSY);
+    CHECK(ring.WptrDwords == 204u && ring.LastSubmittedFence == 18ull);
+
+    ring.LastSubmittedFence = 17ull;
+    ring.LastRetiredFence = 17ull;
+    ring.IsActive = 0u;
+    CHECK(Bc250PersistentRingReconcileDrainedCursor(
+        &ring, 0u, 0u, &before, &reconciled) == BC250_PRING_NOT_ACTIVE);
+    CHECK(Bc250PersistentRingReconcileDrainedCursor(
+        NULL, 0u, 0u, &before, &reconciled) == BC250_PRING_BAD_ARGUMENT);
+    return 1;
+}
+
 static int Bc250TestSdmaSubmission(void)
 {
     BC250_PERSISTENT_RING ring;
@@ -444,6 +501,7 @@ static int Bc250RunPersistentRingContractTest(void)
     CHECK(Bc250TestWraparoundNeverStraddles());
     CHECK(Bc250TestRingFull());
     CHECK(Bc250TestRetireAccounting());
+    CHECK(Bc250TestDrainedCursorReconciliation());
     CHECK(Bc250TestSdmaSubmission());
     CHECK(Bc250TestSdmaWrapPadIsZeroNop());
     CHECK(Bc250TestEmitGuards());

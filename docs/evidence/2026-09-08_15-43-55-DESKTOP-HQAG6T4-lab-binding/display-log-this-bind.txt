@@ -1,0 +1,1027 @@
+﻿[McdmQAI] Type=29, OutSize=4, CapsStatus=0xC00000A3
+[FUSE] STARTDEVICE AUTORIZADO: Fusivel armado para ensaio (Boots=10)
+[EDID] Synthesized 128 bytes, Checksum=0x25 (sum=0x1FDB)
+[EDID 00-15] 00 FF FF FF FF FF FF 00 08 78 FE 13 01 00 00 00
+[EDID DTD1] PixelClock10kHz=17361, HActive=2560, HBlank=224, VActive=1080, VBlank=31
+[DisplayInit] Acquired GOP: 2560x1080, Pitch=10240, Phys=0xC0000000, DeviceHandle=0xFFFFE68993CAB030
+[DisplayInit] FrameBuffer mapping: Phys=0xC0000000, Size=268435456, Virt=FFFFADF859600000
+[DisplayInit] OTG VSync linked to BAR5 at 0xFE800000 (Offset 0x14030), InitialFrameCount=4527
+[SdmaPresent] Bc250RunPspLoadFirmwareTransaction status=0, PhysReady=1
+[SdmaPresent] F32Status=0 (PhysReady=1)
+[SdmaPresent] RingWorkStatus=2 (FixedReservation=3, AllocationMode=0, RingMc=0x0, WorkMc=0x0)
+[SdmaPresent] PSP Load SDMA0 FW: Status=0, PhysicalReady=1, F32Status=0, RingWorkStatus=2 (WptrPub=0, RptrAfter=0, Fence=00000000, Mismatches=0)
+[SdmaPresent] Pre-Arm SDMA0: CLK=000C0100 STATUS=46DEE557 RBCNTL=80840000 RingGpu=0xF40FF00000 WorkGpu=0xF40FF01000
+[SdmaPresent] SDMA0 Reset: GRBM 0x00000000 -> 0x00000000, ERR_LOG 0x0000000F -> 0x0000000F, STATUS=0x46DEE557
+[SdmaPresent] Post-Kick SDMA0: WPTR_Reg=68, RPTR_Reg=0, STATUS=46DC7042 (TargetWPTR=68)
+[SdmaPresent] TRIPE_VEREDITO: TRIPE_PROVADO (TargetWPTR=68 RPTR_Wb=52 RPTR_Reg=68 Casou=REGISTRADOR FenceExp=00001001 FenceObs=00001001 Poison=43DAFFFE Mismatches=0 Polls=1)
+[SdmaPresent] TRIPÉ NO SILÍCIO COMPROVADO (Item 63)! WPTR=68 RPTR=68 (fonte REGISTRADOR) Fence=00001001 Dados=4/4 OK em 1 polls!
+[SdmaPresent] BootTripodValidated=1 (porta da cadeia de bring-up)
+[StartDevice] Global MMU transport map status: ok (State=1, Base=FFFF9E016B73B000)
+[FlushMappedGfxhubTlb] Transport State=1, Base=FFFF9E016B73B000, Len=524288
+[FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+[StartDevice] Global GFXHUB MMU initialized: Regs=26 TLB=0x00001D59 L2=0x00080E01 DummyPA=0x45FFFF000
+[StartDevice] Transporte devolvido ao preflight: unmap=ok (State=0)
+[StartDevice] Segundo preflight: status=0xC00000BB, stage=8, gate=1, MmioState=0
+[FlushMappedGfxhubTlb] Transport State=1, Base=FFFF9E016BBCC000, Len=524288
+[FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+[ChildRelations] Called. Size=56, ChildEnumEnabled=1
+[ChildRelations] Returned DP ChildUid=1
+[McdmQAI] Type=1, OutSize=584, CapsStatus=0x00000000
+[McdmQAI] DRIVERCAPS: ComputeOnly=0, AlignShift=2, TexWShift=3, TexHShift=3, OutSize=584
+[DriverCaps] WDDMVersion=9984, MaxAllocListSlotId=32, PerEngineTDR=1, Nodes=2, HighestAddr=0x7FFFFFFFFFFFFFFF
+[DriverCaps] PresentationCaps=0x1006C903 (NoScreenToScreenBlt=1, NoOverlapScreenBlt=1, CddDwmInterop=1, SwDeviceBitmaps=1)
+[DriverCaps] FlipCaps=0x00000002, MaxQueuedFlipOnVSync=1, MiscCaps=0x00000000, PointerCaps=0x00000000
+[DriverCaps] TypeCaps(NonVGA=1, SmoothRotation=0, DirectFlip=0, PerEngineTDR=1, FlipOnVSyncMmIo=1)
+[DriverCaps] Sched(MultiEngine=1, Preempt=1, LowIrql=1) Mem(VA=1, GpuMmu=1, Paravirt=0)
+[McdmQAI] Type=16, OutSize=4, CapsStatus=0x00000000
+[McdmQAI] DISPLAY_DRIVERCAPS_EXTENSION handled (zeroed)
+[McdmQAI] Type=15, OutSize=32, CapsStatus=0x00000000
+[McdmQAI] PHYSICALADAPTERCAPS returned NOT_SUPPORTED (single physical adapter)
+[McdmQAI] Type=13, OutSize=24, CapsStatus=0x00000000
+[McdmQAI] GPUMMUCAPS: VaBits=34, Levels=2
+[McdmQAI] Type=14, OutSize=20, CapsStatus=0x00000000
+[McdmQAI] PAGETABLELEVELDESC: Level=0, Bits=9, Size=4096
+[McdmQAI] Type=14, OutSize=20, CapsStatus=0x00000000
+[McdmQAI] PAGETABLELEVELDESC: Level=1, Bits=13, Size=65536
+[McdmQAI] Type=26, OutSize=28, CapsStatus=0x00000000
+[McdmQAI] Type=26 NOT SUPPORTED
+[McdmQAI] Type=27, OutSize=128, CapsStatus=0x00000000
+[McdmQAI] Type=27 NOT SUPPORTED
+[GetNodeMetadata] Node=0, EngineType=6
+[GetNodeMetadata] Node=1, EngineType=1
+[McdmQAI] Type=11, OutSize=40, CapsStatus=0x00000000
+[McdmQAI] QUERYSEGMENT4: NbSegment queried -> 2
+[McdmQAI] Type=11, OutSize=40, CapsStatus=0x00000000
+[McdmQAI] QUERYSEGMENT4: 2 segments filled (VRAM=0xF531000, GART=512MB, PagingSeg=2)
+[McdmQAI] Type=10, OutSize=8, CapsStatus=0x00000000
+[McdmQAI] HISTORYBUFFERPRECISION handled (32-bit)
+[McdmCreateProcess] Entered: hAdapter=0xFFFFE68999D43000, hDxgkProcess=0xFFFFE68993507650, Nome=<sem nome>, Flags(System=1 Gdi=0 Vm=0 VmWorker=0 Isolated=0)
+[McdmCreateDevice] Entered: hAdapter=0xFFFFE68999D43000, hKmdProcess=0xFFFFE68999D48350
+[McdmCreateDevice] OK: hDevice=0xFFFFE68999D483E0
+[McdmCreateDevice] Entered: hAdapter=0xFFFFE68999D43000, hKmdProcess=0xFFFFE68999D48350
+[McdmCreateDevice] OK: hDevice=0xFFFFE68999D48470
+[McdmCreateContext] Entered: Node=0, hDevice=0xFFFFE68999D48470, Flags=0x00000005
+[McdmCreateContext] OK: Node=0, hContext=0xFFFFE68999D48500, DmaBuf=0x10000, SegSet=0x2
+[McdmSetRootPageTable] Context=FFFFE68999D48500, SegId=1, Offset=0x0, NumEntries=512, MaxEntries=8192 (rootBits=13)
+[ActiveSetRootPT] ENTER: Ctx=FFFFE68999D48500, SegId=1, Addr=0x0, Num=512, Max=8192 (CtxMax=8192, Active=1, AbiReady=1)
+[SetRootPageTable] ROOT_MC: TopologyVramBase=0x450000000 (NAO usada; concorda com a base em uso)
+[SetRootPageTable] ROOT_MC: VramBase=0x450000000 + LocalSegBase=0xA8C000 + Offset=0x0 -> PT=0x450A8C000
+[FlushMappedGfxhubTlb] Transport State=1, Base=FFFF9E016D320000, Len=524288
+[FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+[SetRootPageTable] [Vmid8Install] readback OK: PT_BASE=450a8c000 CNTL=0x00555403 (PhysReady=1, Flush=1)
+[McdmSetRootPageTable] Result=0x00000000
+[QueryDeviceDescriptor] ChildUid=1, Offset=0, Len=256
+[QueryDeviceDescriptor] ChildUid=1, SyntheticEdid=0, EdidValid=1 -> STATUS_MONITOR_NO_MORE_DESCRIPTOR_DATA (forcing DxgkDdiRecommendMonitorModes)
+[QueryDeviceDescriptor] ChildUid=1, Offset=0, Len=128
+[QueryDeviceDescriptor] ChildUid=1, SyntheticEdid=0, EdidValid=1 -> STATUS_MONITOR_NO_MORE_DESCRIPTOR_DATA (forcing DxgkDdiRecommendMonitorModes)
+[QueryDeviceDescriptor] ChildUid=1, Offset=0, Len=128
+[QueryDeviceDescriptor] ChildUid=1, SyntheticEdid=0, EdidValid=1 -> STATUS_MONITOR_NO_MORE_DESCRIPTOR_DATA (forcing DxgkDdiRecommendMonitorModes)
+[McdmQAI] Type=20, OutSize=16, CapsStatus=0x00000000
+[McdmQAI] DISPLAYID_DESCRIPTOR handled (none)
+=== DxgkDdiRecommendMonitorModes: TargetId=1, hSet=FFFFE689991DC6A0 ===
+[SignalInfo] Active=2560x1080, Total=2784x1111, VSync=5613/100 Hz, HSync=6236043/100 Hz, PixelRate=173611437
+=== DxgkDdiRecommendMonitorModes SUCCESS: Added 2560x1080 @ 5613/100 Hz to Target 1 ===
+[UpdateMonitorLinkInfo] TargetId=1
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #1): Supported=1, status=0x00000000 ===
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #2): Supported=1, status=0x00000000 ===
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #3): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=5, PivotSrc=4294967295, PivotTgt=4294967295) ===
+[CofuncSourceMode] Created & Assigned new SourceModeSet -> SUCCESS
+[SignalInfo] Active=2560x1080, Total=2784x1111, VSync=5613/100 Hz, HSync=6236043/100 Hz, PixelRate=173611437
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Target unpinned -> Supported=1
+=== IsSupportedVidPn (Call #4): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=1, PivotSrc=0, PivotTgt=4294967295) ===
+[CofuncTargetMode] ModeSet already populated -> SUCCESS
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #5): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=2, PivotSrc=4294967295, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #6): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=3, PivotSrc=0, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #7): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=4, PivotSrc=0, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[McdmCreateProcess] Entered: hAdapter=0xFFFFE68999D43000, hDxgkProcess=0xFFFFE689939F6260, Nome=<sem nome>, Flags(System=0 Gdi=1 Vm=0 VmWorker=0 Isolated=0)
+[McdmCreateDevice] Entered: hAdapter=0xFFFFE68999D43000, hKmdProcess=0xFFFFE68999D48590
+[McdmCreateDevice] OK: hDevice=0xFFFFE68999D48620
+[McdmCreateContext] Entered: Node=0, hDevice=0xFFFFE68999D48620, Flags=0x00000006
+[McdmCreateContext] OK: Node=0, hContext=0xFFFFE68999D486B0, DmaBuf=0x10000, SegSet=0x2
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #8): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=5, PivotSrc=4294967295, PivotTgt=4294967295) ===
+[CofuncSourceMode] Created & Assigned new SourceModeSet -> SUCCESS
+[SignalInfo] Active=2560x1080, Total=2784x1111, VSync=5613/100 Hz, HSync=6236043/100 Hz, PixelRate=173611437
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Target unpinned -> Supported=1
+=== IsSupportedVidPn (Call #9): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=1, PivotSrc=0, PivotTgt=4294967295) ===
+[CofuncTargetMode] ModeSet already populated -> SUCCESS
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #10): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=2, PivotSrc=4294967295, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #11): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=3, PivotSrc=0, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #12): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=4, PivotSrc=0, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #13): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=5, PivotSrc=4294967295, PivotTgt=4294967295) ===
+[CofuncSourceMode] Created & Assigned new SourceModeSet -> SUCCESS
+[SignalInfo] Active=2560x1080, Total=2784x1111, VSync=5613/100 Hz, HSync=6236043/100 Hz, PixelRate=173611437
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Target unpinned -> Supported=1
+=== IsSupportedVidPn (Call #14): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=1, PivotSrc=0, PivotTgt=4294967295) ===
+[CofuncTargetMode] ModeSet already populated -> SUCCESS
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #15): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=2, PivotSrc=4294967295, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[GetStdAllocData] Type=1, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] SharedPrimary: 2560x1080, Format=21, VidPnSourceId=0
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=1, pAllocPriv=FFFFBD082FE47190, pResPriv=0000000000000000
+[GetStdAllocData] SharedPrimary: 2560x1080, Format=21, VidPnSourceId=0
+[GetStdAllocData] Filled: Token=0xA110000100000001, Size=11075584, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Primary token confirmed: Handle=FFFFE68999D48740, Size=11075584
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFE68999D48620, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000040000C40 -> openHandle=FFFFE68999D487D0 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmSubmitCommandVirtual] Node=0, FenceId=1, DmaSize=64
+[SubmitVirtual Node0 SDMA] FenceId=1, DmaSize=64, DmaVA=0x22F000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFE68999D48500, Proc=FFFFE68999D48350, hasRoot=1, targetPtPhys=0x450A8C000, instCtx=FFFFE68999D48500, instRoot=0x450A8C000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x22F000 Size=64 -> Segment=0 Offset=0x3CAF33000 Epoch=0
+[PT_WALK] RootMC=0x450A8C000 VramMcBase=0x450000000 LocalSegBase=0xA8C000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK IB] L0 idx=47 VRAM+0xA8D178 PTE=00000003CAF33037 -> pageMC=0x3CAF33000 flags=0x37 valid=1
+[PT_WALK IB] RESOLVIDO: VA=0x22F000 -> 0x3CAF33000 (root=MC, folha=MC)
+[PT_WALK] IB_PA_MATCH: caminhada=0x3CAF33000 cpu=0x3CAF33000 -> CONFERE
+[PT_WALK] DEST: faixa de escrita [0x240000, 0xCD0000)
+[PT_WALK DEST] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK DEST] L0 idx=64 VRAM+0xA8D200 PTE=0000000450AAC061 -> pageMC=0x450AAC000 flags=0x61 valid=1
+[PT_WALK DEST] RESOLVIDO: VA=0x240000 -> 0x450AAC000 (root=MC, folha=MC)
+[PT_WALK DEST] L1 idx=3 VRAM+0xA8C018 PDE=0000000450A8F001 -> leafPA=0x450A8F000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK DEST] L0 idx=392 VRAM+0xA8FC40 PTE=0000000450FF4061 -> pageMC=0x450FF4000 flags=0x61 valid=1
+[PT_WALK DEST] RESOLVIDO: VA=0x788000 -> 0x450FF4000 (root=MC, folha=MC)
+[PT_WALK DEST] L1 idx=6 VRAM+0xA8C030 PDE=0000000450A92001 -> leafPA=0x450A92000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK DEST] L0 idx=207 VRAM+0xA92678 PTE=000000045153B061 -> pageMC=0x45153B000 flags=0x61 valid=1
+[PT_WALK DEST] RESOLVIDO: VA=0xCCF000 -> 0x45153B000 (root=MC, folha=MC)
+[SubmitVirtual Node0 SDMA] CAMINHO_ESCOLHIDO: INDIRECT (Fill=1/11075584 bytes DestPA=0x450AAC000 DmaBytes=64 IbResolve=1 PlanoAFallback=0)
+[SubmitVirtual Node0 SDMA] IB_EFEITO_DECLARADO: DestVA=0x240000 PA=0x450AAC000 -> MC=0xF400AAC000 Size=11075584 Pattern=0x00000000 (o IB deve produzir isto; canaries plantados antes do disparo)
+[SubmitVirtual Node0 SDMA] IB_ALIGN: StartDW=17 PadDW=1 IndirectEndDW=24 EndModulo8=0 TargetWPTR=132 IbSizeDW=15 PublishedDW=16
+[SubmitVirtual Node0 SDMA] IB_TRIPE_VEREDITO #1: TRIPE_PROVADO (WPTR=132 RPTR_Reg=132 RPTR_Wb=132 Casou=WRITEBACK+REGISTRADOR Fence=00001002 Poison=43DAFFFE Canaries=5 Divergentes=0 PostGPU=[00000000 00000000 00000000 00000000 00000000] Esperado=00000000 Vmid=8 in 128 polls)
+[SubmitVirtual Node0 SDMA] IB_TRIPE PROVADO NO SILICIO #1: a GPU buscou o DMA buffer sob VMID8 e o efeito declarado esta nos bytes do destino
+[SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 64 bytes em VA=0x22F000; DMA_COMPLETED notificado para FenceId=1
+[GetStdAllocData] Type=2, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] ShadowSurface: 2560x1080, Pitch=10240
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=2, pAllocPriv=FFFFBD082FE47190, pResPriv=0000000000000000
+[GetStdAllocData] ShadowSurface: 2560x1080, Pitch=10240
+[GetStdAllocData] Filled: Token=0xA110000200000002, Size=11075584, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Render resource, not display primary: Handle=FFFFE68999D48860, Token=0xA110000200000002, Size=11075584
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFE68999D48620, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000040000CC0 -> openHandle=FFFFE68999D488F0 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmSubmitCommandVirtual] Node=0, FenceId=2, DmaSize=64
+[SubmitVirtual Node0 SDMA] FenceId=2, DmaSize=64, DmaVA=0x22F040
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFE68999D48500, Proc=FFFFE68999D48350, hasRoot=1, targetPtPhys=0x450A8C000, instCtx=FFFFE68999D48500, instRoot=0x450A8C000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x22F040 Size=64 -> Segment=0 Offset=0x3CAF33040 Epoch=0
+[PT_WALK] RootMC=0x450A8C000 VramMcBase=0x450000000 LocalSegBase=0xA8C000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK IB] L0 idx=47 VRAM+0xA8D178 PTE=00000003CAF33037 -> pageMC=0x3CAF33000 flags=0x37 valid=1
+[PT_WALK IB] RESOLVIDO: VA=0x22F040 -> 0x3CAF33040 (root=MC, folha=MC)
+[PT_WALK] IB_PA_MATCH: caminhada=0x3CAF33040 cpu=0x3CAF33040 -> CONFERE
+[PT_WALK] DEST: faixa de escrita [0x240000, 0xCD0000)
+[PT_WALK DEST] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK DEST] L0 idx=64 VRAM+0xA8D200 PTE=000000045153C061 -> pageMC=0x45153C000 flags=0x61 valid=1
+[PT_WALK DEST] RESOLVIDO: VA=0x240000 -> 0x45153C000 (root=MC, folha=MC)
+[PT_WALK DEST] L1 idx=3 VRAM+0xA8C018 PDE=0000000450A8F001 -> leafPA=0x450A8F000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK DEST] L0 idx=392 VRAM+0xA8FC40 PTE=0000000451A84061 -> pageMC=0x451A84000 flags=0x61 valid=1
+[PT_WALK DEST] RESOLVIDO: VA=0x788000 -> 0x451A84000 (root=MC, folha=MC)
+[PT_WALK DEST] L1 idx=6 VRAM+0xA8C030 PDE=0000000450A92001 -> leafPA=0x450A92000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK DEST] L0 idx=207 VRAM+0xA92678 PTE=0000000451FCB061 -> pageMC=0x451FCB000 flags=0x61 valid=1
+[PT_WALK DEST] RESOLVIDO: VA=0xCCF000 -> 0x451FCB000 (root=MC, folha=MC)
+[SubmitVirtual Node0 SDMA] CAMINHO_ESCOLHIDO: INDIRECT (Fill=1/11075584 bytes DestPA=0x45153C000 DmaBytes=64 IbResolve=1 PlanoAFallback=0)
+[SubmitVirtual Node0 SDMA] IB_EFEITO_DECLARADO: DestVA=0x240000 PA=0x45153C000 -> MC=0xF40153C000 Size=11075584 Pattern=0x00000000 (o IB deve produzir isto; canaries plantados antes do disparo)
+[SubmitVirtual Node0 SDMA] IB_ALIGN: StartDW=33 PadDW=1 IndirectEndDW=40 EndModulo8=0 TargetWPTR=196 IbSizeDW=15 PublishedDW=16
+[SubmitVirtual Node0 SDMA] IB_TRIPE_VEREDITO #2: TRIPE_PROVADO (WPTR=196 RPTR_Reg=196 RPTR_Wb=196 Casou=WRITEBACK+REGISTRADOR Fence=00001003 Poison=43DAFFFE Canaries=5 Divergentes=0 PostGPU=[00000000 00000000 00000000 00000000 00000000] Esperado=00000000 Vmid=8 in 128 polls)
+[SubmitVirtual Node0 SDMA] IB_TRIPE PROVADO NO SILICIO #2: a GPU buscou o DMA buffer sob VMID8 e o efeito declarado esta nos bytes do destino
+[SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 64 bytes em VA=0x22F040; DMA_COMPLETED notificado para FenceId=2
+=== CommitVidPn Entered: AffectedSource=0, Started=1, Flags=0x00000000 (PowerOff=0, PowerTrans=0), hAlloc=FFFFE68999D48740 ===
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=1
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+[SetTargetAdjustedColorimetry2] TargetId=1, SdrWhiteLevel=80
+=== SetVidPnSourceAddress (SourceId=0, Segment=1, Addr=0xAAC000, hAlloc=FFFFE68999D48740, ContextCount=0, Flags=0x00000001) ===
+=== SetVidPnSourceVisibility (Visible=1) ===
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #16): Supported=1, status=0x00000000 ===
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1920x40, Type=6, Pitch=7680
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFBD082FE47950, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1920x40, Type=6, Pitch=7680
+[GetStdAllocData] Filled: Token=0xA110000400000003, Size=327680, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Render resource, not display primary: Handle=FFFFE68999D48980, Token=0xA110000400000003, Size=327680
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFE68999D48620, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000040000D40 -> openHandle=FFFFE68999D48A10 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1x1, Type=6, Pitch=4
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFBD082FE47950, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1x1, Type=6, Pitch=4
+[GetStdAllocData] Filled: Token=0xA110000400000004, Size=65536, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Render resource, not display primary: Handle=FFFFE68999D48AA0, Token=0xA110000400000004, Size=65536
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFE68999D48620, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000040000DC0 -> openHandle=FFFFE68999D48B30 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2560x1080, Type=6, Pitch=10240
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFBD082FE47950, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2560x1080, Type=6, Pitch=10240
+[GetStdAllocData] Filled: Token=0xA110000400000005, Size=11075584, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Render resource, not display primary: Handle=FFFFE68999D48BC0, Token=0xA110000400000005, Size=11075584
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFE68999D48620, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000040000E40 -> openHandle=FFFFE68999D48C50 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 233x20, Type=6, Pitch=932
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFBD082FE47950, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 233x20, Type=6, Pitch=932
+[GetStdAllocData] Filled: Token=0xA110000400000006, Size=65536, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Render resource, not display primary: Handle=FFFFE68999D48CE0, Token=0xA110000400000006, Size=65536
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFE68999D48620, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000040000EC0 -> openHandle=FFFFE68999D48D70 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1x1, Type=6, Pitch=4
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFBD082FE47950, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1x1, Type=6, Pitch=4
+[GetStdAllocData] Filled: Token=0xA110000400000007, Size=65536, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Render resource, not display primary: Handle=FFFFE68999D48E00, Token=0xA110000400000007, Size=65536
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFE68999D48620, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000040000F40 -> openHandle=FFFFE68999D48E90 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1233x839, Type=6, Pitch=4932
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFBD082FE47950, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1233x839, Type=6, Pitch=4932
+[GetStdAllocData] Filled: Token=0xA110000400000008, Size=4194304, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Render resource, not display primary: Handle=FFFFE68999D48F20, Token=0xA110000400000008, Size=4194304
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFE68999D48620, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000040000FC0 -> openHandle=FFFFE68999D48FB0 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1400x900, Type=6, Pitch=5600
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFBD082FE47950, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1400x900, Type=6, Pitch=5600
+[GetStdAllocData] Filled: Token=0xA110000400000009, Size=5046272, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Render resource, not display primary: Handle=FFFFE68999D49040, Token=0xA110000400000009, Size=5046272
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFE68999D48620, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000040001040 -> openHandle=FFFFE68999D490D0 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 873x739, Type=6, Pitch=3492
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFBD082FE47950, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 873x739, Type=6, Pitch=3492
+[GetStdAllocData] Filled: Token=0xA11000040000000A, Size=2621440, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Render resource, not display primary: Handle=FFFFE68999D49160, Token=0xA11000040000000A, Size=2621440
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFE68999D48620, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=00000000400010C0 -> openHandle=FFFFE68999D491F0 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #17): Supported=1, status=0x00000000 ===
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #18): Supported=1, status=0x00000000 ===
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[GetStdAllocData] GdiSurface: 2560x40, Type=6, Pitch=10240
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFBD082FE47710, pResPriv=0000000000000000
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[GetStdAllocData] GdiSurface: 2560x40, Type=6, Pitch=10240
+[GetStdAllocData] Filled: Token=0xA11000040000000B, Size=458752, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Render resource, not display primary: Handle=FFFFE68999D49280, Token=0xA11000040000000B, Size=458752
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFE68999D48620, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000040001140 -> openHandle=FFFFE68999D49310 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] UMDRIVERPRIVATE: 104 bytes publicados (OutSize=2400, InSize=0), NodeCount=2, GateFlags=0x0000001B
+[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=34, PageTableLevels=2, PageSize=4096 (mesma fonte do GPUMMUCAPS)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+

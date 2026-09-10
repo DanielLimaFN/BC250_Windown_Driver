@@ -1,0 +1,138 @@
+#ifndef BC250_GCVM_GLOBAL_MMU_H
+#define BC250_GCVM_GLOBAL_MMU_H
+
+#ifdef BC250_KERNEL_MODE
+#include <ntddk.h>
+#ifndef BC250_FIXED_WIDTH_TYPES_DEFINED
+#define BC250_FIXED_WIDTH_TYPES_DEFINED
+typedef UINT64 uint64_t;
+typedef UINT32 uint32_t;
+#endif
+#else
+#include <stdint.h>
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define BC250_GCVM_GLOBAL_MMU_REG_COUNT 26u
+#define BC250_GCVM_GLOBAL_MMU_IDENTITY  0x474D4D55u /* GMMU */
+
+/*
+ * Offsets dos registradores globais do GFXHUB MMU.
+ * Proveniencia: dbg/hw.c (provado no silicio em 07/09/2026),
+ * docs/03_CATALOGO_DE_REGISTRADORES.md e gc_10_1_0_sh_mask.h.
+ */
+#define BC250_REG_GCMC_VM_AGP_BASE                   0x0000A610u
+#define BC250_REG_GCMC_VM_AGP_BOT                    0x0000A60Cu
+#define BC250_REG_GCMC_VM_AGP_TOP                    0x0000A608u
+#define BC250_REG_GCMC_VM_FB_LOCATION_BASE           0x0000A600u
+#define BC250_REG_GCMC_VM_FB_LOCATION_TOP            0x0000A604u
+#define BC250_REG_GCMC_VM_SYSTEM_APERTURE_LOW_ADDR   0x0000A614u
+#define BC250_REG_GCMC_VM_SYSTEM_APERTURE_HIGH_ADDR  0x0000A618u
+#define BC250_REG_GCMC_VM_SYSTEM_APERTURE_DEFAULT_ADDR_LSB 0x0000A5B0u
+#define BC250_REG_GCMC_VM_SYSTEM_APERTURE_DEFAULT_ADDR_MSB 0x0000A5B4u
+#define BC250_REG_GCVM_L2_PROT_FAULT_DEFAULT_ADDR_LO 0x0000A13Cu
+#define BC250_REG_GCVM_L2_PROT_FAULT_DEFAULT_ADDR_HI 0x0000A140u
+#define BC250_REG_GCVM_L2_PROTECTION_FAULT_CNTL2     0x0000A124u
+
+#define BC250_REG_GCVM_L2_CONTEXT1_IDENTITY_APERTURE_LOW_ADDR_LO  0x0000A148u
+#define BC250_REG_GCVM_L2_CONTEXT1_IDENTITY_APERTURE_LOW_ADDR_HI  0x0000A14Cu
+#define BC250_REG_GCVM_L2_CONTEXT1_IDENTITY_APERTURE_HIGH_ADDR_LO 0x0000A150u
+#define BC250_REG_GCVM_L2_CONTEXT1_IDENTITY_APERTURE_HIGH_ADDR_HI 0x0000A154u
+#define BC250_REG_GCVM_L2_CONTEXT_IDENTITY_PHYSICAL_OFFSET_LO     0x0000A158u
+#define BC250_REG_GCVM_L2_CONTEXT_IDENTITY_PHYSICAL_OFFSET_HI     0x0000A15Cu
+
+#define BC250_REG_GCVM_INVALIDATE_ENG0_ADDR_RANGE_LO 0x0000A31Cu
+#define BC250_REG_GCVM_INVALIDATE_ENG0_ADDR_RANGE_HI 0x0000A320u
+#define BC250_REG_GCVM_INVALIDATE_ENG17_ADDR_RANGE_LO 0x0000A3A4u
+#define BC250_REG_GCVM_INVALIDATE_ENG17_ADDR_RANGE_HI 0x0000A3A8u
+
+#define BC250_REG_GCMC_VM_MX_L1_TLB_CNTL             0x0000A61Cu
+
+#define BC250_REG_GCVM_L2_CNTL                       0x0000A100u
+#define BC250_REG_GCVM_L2_CNTL2                      0x0000A104u
+#define BC250_REG_GCVM_L2_CNTL3                      0x0000A108u
+#define BC250_REG_GCVM_L2_CNTL4                      0x0000A160u
+#define BC250_REG_GCVM_L2_CNTL5                      0x0000A184u
+
+/*
+ * Valores alvo medidos e provados no silicio em 07/09/2026:
+ * - MX_L1_TLB_CNTL: 0x00001D59 (SYSTEM_ACCESS_MODE=3, ENABLE_ADVANCED_DRIVER_MODEL=1)
+ * - L2_CNTL: 0x00080E01 (L2 ligada, fragmentos desligados, default page out)
+ * - L2_CNTL2: triggers 0x00000003 (INVALIDATE_ALL_L1_TLBS | INVALIDATE_L2_CACHE)
+ * - L2_CNTL3: 0x80130009 (BANK_SELECT=9, BIGK=6)
+ * - L2_CNTL4: 0x00000001 (VMC_TAP_PDE/PTE_REQUEST_PHYSICAL=0)
+ * - L2_CNTL5: 0x00003FE0
+ */
+#define BC250_GCVM_GLOBAL_TLB_CNTL_TARGET            0x00001D59u
+#define BC250_GCVM_GLOBAL_L2_CNTL_TARGET             0x00080E01u
+#define BC250_GCVM_GLOBAL_L2_CNTL2_TRIGGERS          0x00000003u
+#define BC250_GCVM_GLOBAL_L2_CNTL3_TARGET            0x80130009u
+#define BC250_GCVM_GLOBAL_L2_CNTL4_TARGET            0x00000001u
+#define BC250_GCVM_GLOBAL_L2_CNTL5_TARGET            0x00003FE0u
+#define BC250_GCVM_GLOBAL_FAULT_CNTL2_RETRY_BIT      0x00040000u
+
+typedef enum BC250_GCVM_GLOBAL_MMU_STATUS {
+    BC250_GCVM_GLOBAL_MMU_OK = 0,
+    BC250_GCVM_GLOBAL_MMU_BAD_ARGUMENT,
+    BC250_GCVM_GLOBAL_MMU_SNAPSHOT_FAILED,
+    BC250_GCVM_GLOBAL_MMU_WRITE_FAILED,
+    BC250_GCVM_GLOBAL_MMU_READBACK_FAILED,
+    BC250_GCVM_GLOBAL_MMU_TLB_FAILED,
+    BC250_GCVM_GLOBAL_MMU_RESTORE_FAILED
+} BC250_GCVM_GLOBAL_MMU_STATUS;
+
+typedef struct BC250_GCVM_GLOBAL_MMU_CONFIG {
+    uint64_t FbLocationStart;   /* 0 = auto-detectar de GCMC_VM_FB_LOCATION_BASE */
+    uint64_t FbLocationEnd;     /* 0 = auto-detectar de GCMC_VM_FB_LOCATION_TOP */
+    uint64_t DummyPagePhysical; /* PA da dummy fault page (alinhada a 4 KB) */
+} BC250_GCVM_GLOBAL_MMU_CONFIG;
+
+typedef uint32_t (*BC250_GCVM_MMU_READ32)(
+    void *Context, uint32_t ByteOffset, uint32_t *Value);
+typedef uint32_t (*BC250_GCVM_MMU_WRITE32)(
+    void *Context, uint32_t ByteOffset, uint32_t Value);
+typedef uint32_t (*BC250_GCVM_MMU_FLUSH)(void *Context);
+
+typedef struct BC250_GCVM_GLOBAL_MMU_INTERFACE {
+    BC250_GCVM_MMU_READ32 Read32;
+    BC250_GCVM_MMU_WRITE32 Write32;
+    BC250_GCVM_MMU_FLUSH Flush;
+    void *Context;
+    uint32_t Identity;
+} BC250_GCVM_GLOBAL_MMU_INTERFACE;
+
+typedef struct BC250_GCVM_GLOBAL_MMU_EVIDENCE {
+    uint32_t SnapshotPresent;
+    uint32_t RegisterCount;
+    uint32_t Registers[BC250_GCVM_GLOBAL_MMU_REG_COUNT];
+    uint32_t ValuesBefore[BC250_GCVM_GLOBAL_MMU_REG_COUNT];
+    uint32_t ValuesProgrammed[BC250_GCVM_GLOBAL_MMU_REG_COUNT];
+    uint32_t ProgramPassed;
+    uint32_t ReadbackPassed;
+    uint32_t TlbFlushPassed;
+    uint32_t RollbackPassed;
+    uint32_t RollbackFailureCount;
+    uint32_t RestorePassed;
+    uint32_t RestoreFailureCount;
+    uint32_t FailureStep;
+    uint32_t FailureRegister;
+    uint32_t FailureValue;
+} BC250_GCVM_GLOBAL_MMU_EVIDENCE;
+
+BC250_GCVM_GLOBAL_MMU_STATUS Bc250GcvmGlobalMmuProgram(
+    const BC250_GCVM_GLOBAL_MMU_CONFIG *Config,
+    const BC250_GCVM_GLOBAL_MMU_INTERFACE *Interface,
+    BC250_GCVM_GLOBAL_MMU_EVIDENCE *Evidence);
+
+BC250_GCVM_GLOBAL_MMU_STATUS Bc250GcvmGlobalMmuRestore(
+    const BC250_GCVM_GLOBAL_MMU_INTERFACE *Interface,
+    BC250_GCVM_GLOBAL_MMU_EVIDENCE *Evidence);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* BC250_GCVM_GLOBAL_MMU_H */

@@ -1,0 +1,21 @@
+﻿{
+    "state":  "RESTORED",
+    "token":  "f89b6969-44f5-40c8-b7c2-fbb72bb2091b",
+    "image_name":  "bc250-radv-compute-gate.exe",
+    "registry_key":  "HKLM\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\LocalDumps\\bc250-radv-compute-gate.exe",
+    "dump_folder":  "C:\\Windows\\Temp\\BC250_RADV_DUMPS_f89b696944f540c8b7c2fbb72bb2091b",
+    "prior_key_existed":  false,
+    "snapshot_file":  null,
+    "dump_count":  2,
+    "dump_type":  2,
+    "preparing_at":  "2026-09-06T17:37:16.5800377-03:00",
+    "hardware_validated":  false,
+    "armed_at":  "2026-09-06T17:37:16.7405691-03:00",
+    "registry_restored_at":  "2026-09-06T20:33:18.9771102-03:00",
+    "dump_files_collected":  0,
+    "pending_dump_files":  [
+
+                           ],
+    "dump_folder_cleanup_pending":  false,
+    "restored_at":  "2026-09-06T20:33:19.0082131-03:00"
+}

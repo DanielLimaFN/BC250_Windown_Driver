@@ -1,0 +1,144 @@
+08:05:59.563 [pid=8380 dwm.exe] === bc250umd.dll CARREGADA ===
+08:05:59.563 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.563 [pid=8380 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:05:59.564 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.564 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.564 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.565 [pid=8380 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+08:05:59.565 [pid=8380 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+08:05:59.567 [pid=8380 dwm.exe] === bc250umd.dll CARREGADA ===
+08:05:59.567 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.567 [pid=8380 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:05:59.567 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.567 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.568 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.568 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.568 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.568 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.568 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.613 [pid=8380 dwm.exe] === bc250umd.dll CARREGADA ===
+08:05:59.614 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.614 [pid=8380 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:05:59.614 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.614 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.614 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.614 [pid=8380 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+08:05:59.615 [pid=8380 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+08:05:59.616 [pid=8380 dwm.exe] === bc250umd.dll CARREGADA ===
+08:05:59.617 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.617 [pid=8380 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:05:59.617 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.617 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.617 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.618 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.618 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.618 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.618 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.629 [pid=8380 dwm.exe] === bc250umd.dll CARREGADA ===
+08:05:59.629 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.629 [pid=8380 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:05:59.629 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.629 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.629 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.629 [pid=8380 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+08:05:59.629 [pid=8380 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+08:05:59.631 [pid=8380 dwm.exe] === bc250umd.dll CARREGADA ===
+08:05:59.631 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.631 [pid=8380 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:05:59.631 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.631 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.631 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.633 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.633 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.633 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.633 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.645 [pid=8380 dwm.exe] === bc250umd.dll CARREGADA ===
+08:05:59.645 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.647 [pid=8380 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:05:59.647 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.647 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.647 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.647 [pid=8380 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+08:05:59.647 [pid=8380 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+08:05:59.649 [pid=8380 dwm.exe] === bc250umd.dll CARREGADA ===
+08:05:59.649 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.649 [pid=8380 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:05:59.649 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.649 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.649 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.649 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.651 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.651 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.651 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.661 [pid=8380 dwm.exe] === bc250umd.dll CARREGADA ===
+08:05:59.661 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.661 [pid=8380 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:05:59.661 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.661 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.661 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.663 [pid=8380 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+08:05:59.663 [pid=8380 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+08:05:59.663 [pid=8380 dwm.exe] === bc250umd.dll CARREGADA ===
+08:05:59.665 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.665 [pid=8380 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:05:59.665 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.665 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.665 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.665 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.665 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.665 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.665 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.677 [pid=8380 dwm.exe] === bc250umd.dll CARREGADA ===
+08:05:59.677 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.677 [pid=8380 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:05:59.679 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.679 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.679 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.679 [pid=8380 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+08:05:59.679 [pid=8380 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+08:05:59.681 [pid=8380 dwm.exe] === bc250umd.dll CARREGADA ===
+08:05:59.681 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.681 [pid=8380 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:05:59.681 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.681 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.681 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.681 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.681 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.681 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.683 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.695 [pid=8380 dwm.exe] === bc250umd.dll CARREGADA ===
+08:05:59.695 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.697 [pid=8380 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:05:59.697 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.697 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.697 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.697 [pid=8380 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+08:05:59.697 [pid=8380 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+08:05:59.699 [pid=8380 dwm.exe] === bc250umd.dll CARREGADA ===
+08:05:59.699 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.699 [pid=8380 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:05:59.699 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.699 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.699 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.699 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.701 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.701 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.701 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.995 [pid=8380 dwm.exe] === bc250umd.dll CARREGADA ===
+08:05:59.997 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:59.997 [pid=8380 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:05:59.997 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.997 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:59.997 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:59.999 [pid=8380 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+08:05:59.999 [pid=8380 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+08:06:00.001 [pid=8380 dwm.exe] === bc250umd.dll CARREGADA ===
+08:06:00.003 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:06:00.003 [pid=8380 dwm.exe] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:06:00.003 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:06:00.003 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:06:00.003 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:06:00.005 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:06:00.005 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:06:00.005 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:06:00.005 [pid=8380 dwm.exe] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)

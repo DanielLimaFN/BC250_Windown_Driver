@@ -1,0 +1,8 @@
+﻿Iniciando Rollback de Laboratorio...
+Removendo pacote OEM: oem35.inf
+Utilitßrio PnP da Microsoft
+
+Pacote de driver desinstalado.
+Pacote de drivers excluÝdo com Ûxito.
+Rollback de Laboratorio Concluido e verificado: BasicDisplay Codigo 0.
+BOOT FRIO obrigatorio antes do proximo binding: C:\BC250_REQUIRE_CLEAN_BOOT.json

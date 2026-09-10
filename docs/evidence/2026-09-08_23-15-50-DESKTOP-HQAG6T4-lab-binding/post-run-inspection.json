@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-09-08T23:18:26.6969550-03:00",
+  "slice_start_offset": 2928377,
+  "slice_sha256": "CD32DD233F8C66BEA45668E4C8BEC16E778107A6225E53E4FE3975B86DD86CBE",
+  "tlb_transactions": 11,
+  "tlb_status8": 0,
+  "sdma_complete_tripods": 5,
+  "device": {
+    "Name": "AMD BC-250 Graphics (Cyan Skillfish 2)",
+    "Service": "bc250mcdm",
+    "ConfigManagerErrorCode": 43
+  },
+  "system_events": [
+    {
+      "TimeCreated": "2026-09-08T23:16:12.2648168-03:00",
+      "Id": 4101,
+      "ProviderName": "Display",
+      "Message": "O driver de vídeo bc250mcdm parou de responder e se recuperou com êxito."
+    }
+  ]
+}

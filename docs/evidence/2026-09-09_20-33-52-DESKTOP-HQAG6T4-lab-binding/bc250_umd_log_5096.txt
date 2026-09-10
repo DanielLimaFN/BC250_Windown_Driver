@@ -1,0 +1,328 @@
+20:34:39.016 [pid=5096 dwm.exe] === bc250umd.dll CARREGADA ===
+20:34:39.016 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.017 [pid=5096 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+20:34:39.017 [pid=5096 dwm.exe] D3D11_LAB_PROMOTION: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion)
+20:34:39.017 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.017 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.020 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.020 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.021 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=0000000006359A98 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.021 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.021 [pid=5096 dwm.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 -> Level 10_0 e 10_1 (Caps=0x00000003)
+20:34:39.021 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.021 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.021 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.022 [pid=5096 dwm.exe] CloseAdapter: adapter=0000000006263640, Interface=0x000B000B -> S_OK
+20:34:39.023 [pid=5096 dwm.exe] === bc250umd.dll CARREGADA ===
+20:34:39.024 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.024 [pid=5096 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+20:34:39.024 [pid=5096 dwm.exe] D3D11_LAB_PROMOTION: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion)
+20:34:39.024 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.025 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.027 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.028 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.028 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=00000000062FC928 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.028 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.028 [pid=5096 dwm.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 -> Level 10_0 e 10_1 (Caps=0x00000003)
+20:34:39.028 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.028 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.029 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.029 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.029 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.030 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.032 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.033 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.033 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=00000000063BAB68 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.033 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.033 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.034 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.034 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.034 [pid=5096 dwm.exe] CloseAdapter: adapter=0000000006262BA0, Interface=0x000B000B -> S_OK
+20:34:39.034 [pid=5096 dwm.exe] CloseAdapter: adapter=0000000006262D80, Interface=0x000B000B -> S_OK
+20:34:39.066 [pid=5096 dwm.exe] === bc250umd.dll CARREGADA ===
+20:34:39.067 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.067 [pid=5096 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+20:34:39.067 [pid=5096 dwm.exe] D3D11_LAB_PROMOTION: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion)
+20:34:39.067 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.067 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.070 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.070 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.070 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=00000000065179F8 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.070 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.070 [pid=5096 dwm.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 -> Level 10_0 e 10_1 (Caps=0x00000003)
+20:34:39.070 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.070 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.071 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.071 [pid=5096 dwm.exe] CloseAdapter: adapter=0000000003C4EE50, Interface=0x000B000B -> S_OK
+20:34:39.072 [pid=5096 dwm.exe] === bc250umd.dll CARREGADA ===
+20:34:39.073 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.073 [pid=5096 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+20:34:39.073 [pid=5096 dwm.exe] D3D11_LAB_PROMOTION: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion)
+20:34:39.073 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.073 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.076 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.076 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.076 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=00000000065179F8 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.077 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.077 [pid=5096 dwm.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 -> Level 10_0 e 10_1 (Caps=0x00000003)
+20:34:39.077 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.077 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.077 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.077 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.078 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.078 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.080 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.080 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.080 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=0000000006519DC8 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.081 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.081 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.081 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.081 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.081 [pid=5096 dwm.exe] CloseAdapter: adapter=0000000003C4EE50, Interface=0x000B000B -> S_OK
+20:34:39.081 [pid=5096 dwm.exe] CloseAdapter: adapter=00000000062BA030, Interface=0x000B000B -> S_OK
+20:34:39.098 [pid=5096 dwm.exe] === bc250umd.dll CARREGADA ===
+20:34:39.099 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.099 [pid=5096 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+20:34:39.099 [pid=5096 dwm.exe] D3D11_LAB_PROMOTION: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion)
+20:34:39.099 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.100 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.103 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.103 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.103 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=0000000006517978 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.103 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.104 [pid=5096 dwm.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 -> Level 10_0 e 10_1 (Caps=0x00000003)
+20:34:39.104 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.104 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.104 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.104 [pid=5096 dwm.exe] CloseAdapter: adapter=00000000062B8C30, Interface=0x000B000B -> S_OK
+20:34:39.106 [pid=5096 dwm.exe] === bc250umd.dll CARREGADA ===
+20:34:39.107 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.107 [pid=5096 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+20:34:39.107 [pid=5096 dwm.exe] D3D11_LAB_PROMOTION: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion)
+20:34:39.107 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.107 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.110 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.110 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.110 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000651A258 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.110 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.111 [pid=5096 dwm.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 -> Level 10_0 e 10_1 (Caps=0x00000003)
+20:34:39.111 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.111 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.111 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.111 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.112 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.112 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.114 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.114 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.114 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000651A618 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.115 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.115 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.115 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.115 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.115 [pid=5096 dwm.exe] CloseAdapter: adapter=00000000062B9E50, Interface=0x000B000B -> S_OK
+20:34:39.115 [pid=5096 dwm.exe] CloseAdapter: adapter=00000000062BA210, Interface=0x000B000B -> S_OK
+20:34:39.133 [pid=5096 dwm.exe] === bc250umd.dll CARREGADA ===
+20:34:39.133 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.134 [pid=5096 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+20:34:39.134 [pid=5096 dwm.exe] D3D11_LAB_PROMOTION: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion)
+20:34:39.134 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.134 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.137 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.137 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.137 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000651EEC8 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.137 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.137 [pid=5096 dwm.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 -> Level 10_0 e 10_1 (Caps=0x00000003)
+20:34:39.137 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.138 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.138 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.138 [pid=5096 dwm.exe] CloseAdapter: adapter=00000000062BA210, Interface=0x000B000B -> S_OK
+20:34:39.140 [pid=5096 dwm.exe] === bc250umd.dll CARREGADA ===
+20:34:39.140 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.140 [pid=5096 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+20:34:39.141 [pid=5096 dwm.exe] D3D11_LAB_PROMOTION: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion)
+20:34:39.141 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.141 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.144 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.144 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.144 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000651EEC8 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.144 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.144 [pid=5096 dwm.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 -> Level 10_0 e 10_1 (Caps=0x00000003)
+20:34:39.145 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.145 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.145 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.145 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.145 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.146 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.148 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.149 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.149 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000651F288 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.149 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.149 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.149 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.149 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.150 [pid=5096 dwm.exe] CloseAdapter: adapter=0000000003C4EE50, Interface=0x000B000B -> S_OK
+20:34:39.150 [pid=5096 dwm.exe] CloseAdapter: adapter=0000000003C2CB90, Interface=0x000B000B -> S_OK
+20:34:39.166 [pid=5096 dwm.exe] === bc250umd.dll CARREGADA ===
+20:34:39.166 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.166 [pid=5096 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+20:34:39.167 [pid=5096 dwm.exe] D3D11_LAB_PROMOTION: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion)
+20:34:39.167 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.167 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.169 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.170 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.170 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000651EA38 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.170 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.170 [pid=5096 dwm.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 -> Level 10_0 e 10_1 (Caps=0x00000003)
+20:34:39.170 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.170 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.171 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.171 [pid=5096 dwm.exe] CloseAdapter: adapter=0000000003C2CB90, Interface=0x000B000B -> S_OK
+20:34:39.172 [pid=5096 dwm.exe] === bc250umd.dll CARREGADA ===
+20:34:39.173 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.173 [pid=5096 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+20:34:39.173 [pid=5096 dwm.exe] D3D11_LAB_PROMOTION: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion)
+20:34:39.173 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.173 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.176 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.176 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.176 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000651EA38 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.176 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.176 [pid=5096 dwm.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 -> Level 10_0 e 10_1 (Caps=0x00000003)
+20:34:39.176 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.176 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.177 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.177 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.177 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.177 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.179 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.180 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.180 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000651EDF8 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.180 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.180 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.180 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.180 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.181 [pid=5096 dwm.exe] CloseAdapter: adapter=0000000003C4EE50, Interface=0x000B000B -> S_OK
+20:34:39.181 [pid=5096 dwm.exe] CloseAdapter: adapter=00000000062BA210, Interface=0x000B000B -> S_OK
+20:34:39.198 [pid=5096 dwm.exe] === bc250umd.dll CARREGADA ===
+20:34:39.198 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.199 [pid=5096 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+20:34:39.199 [pid=5096 dwm.exe] D3D11_LAB_PROMOTION: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion)
+20:34:39.199 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.199 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.202 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.203 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.203 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000651EA38 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.203 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.203 [pid=5096 dwm.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 -> Level 10_0 e 10_1 (Caps=0x00000003)
+20:34:39.204 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.204 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.204 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.204 [pid=5096 dwm.exe] CloseAdapter: adapter=0000000006262BA0, Interface=0x000B000B -> S_OK
+20:34:39.206 [pid=5096 dwm.exe] === bc250umd.dll CARREGADA ===
+20:34:39.207 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.207 [pid=5096 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+20:34:39.207 [pid=5096 dwm.exe] D3D11_LAB_PROMOTION: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion)
+20:34:39.208 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.208 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.210 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.210 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.211 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000651EA38 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.211 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.211 [pid=5096 dwm.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 -> Level 10_0 e 10_1 (Caps=0x00000003)
+20:34:39.211 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.211 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.211 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.212 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.212 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.212 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.214 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.215 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.215 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000651EDF8 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.215 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.215 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.215 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.215 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.216 [pid=5096 dwm.exe] CloseAdapter: adapter=0000000003C4F350, Interface=0x000B000B -> S_OK
+20:34:39.216 [pid=5096 dwm.exe] CloseAdapter: adapter=0000000006262BA0, Interface=0x000B000B -> S_OK
+20:34:39.231 [pid=5096 dwm.exe] === bc250umd.dll CARREGADA ===
+20:34:39.231 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.231 [pid=5096 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+20:34:39.231 [pid=5096 dwm.exe] D3D11_LAB_PROMOTION: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion)
+20:34:39.232 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.232 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.234 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.235 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.235 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000651EA38 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.235 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.235 [pid=5096 dwm.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 -> Level 10_0 e 10_1 (Caps=0x00000003)
+20:34:39.235 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.236 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.236 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.236 [pid=5096 dwm.exe] CloseAdapter: adapter=00000000062BA210, Interface=0x000B000B -> S_OK
+20:34:39.238 [pid=5096 dwm.exe] === bc250umd.dll CARREGADA ===
+20:34:39.238 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.238 [pid=5096 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+20:34:39.239 [pid=5096 dwm.exe] D3D11_LAB_PROMOTION: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion)
+20:34:39.239 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.239 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.242 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.242 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.242 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000651EA38 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.242 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.242 [pid=5096 dwm.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 -> Level 10_0 e 10_1 (Caps=0x00000003)
+20:34:39.243 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.243 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.243 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.243 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.243 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.244 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.246 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.246 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.247 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000651EDF8 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.247 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.247 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.247 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.247 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.247 [pid=5096 dwm.exe] CloseAdapter: adapter=0000000003C4EE50, Interface=0x000B000B -> S_OK
+20:34:39.247 [pid=5096 dwm.exe] CloseAdapter: adapter=00000000062BA210, Interface=0x000B000B -> S_OK
+20:34:39.649 [pid=5096 dwm.exe] === bc250umd.dll CARREGADA ===
+20:34:39.650 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.650 [pid=5096 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+20:34:39.651 [pid=5096 dwm.exe] D3D11_LAB_PROMOTION: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion)
+20:34:39.651 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.651 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.655 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.655 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.656 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000651EA38 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.656 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.656 [pid=5096 dwm.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 -> Level 10_0 e 10_1 (Caps=0x00000003)
+20:34:39.657 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.657 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.657 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.658 [pid=5096 dwm.exe] CloseAdapter: adapter=0000000003C2CB90, Interface=0x000B000B -> S_OK
+20:34:39.660 [pid=5096 dwm.exe] === bc250umd.dll CARREGADA ===
+20:34:39.660 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.661 [pid=5096 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+20:34:39.661 [pid=5096 dwm.exe] D3D11_LAB_PROMOTION: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion)
+20:34:39.661 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.661 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.664 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.664 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.664 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000651EA38 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.665 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.665 [pid=5096 dwm.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 -> Level 10_0 e 10_1 (Caps=0x00000003)
+20:34:39.665 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.665 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.665 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.666 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+20:34:39.666 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+20:34:39.666 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+20:34:39.676 [pid=5096 dwm.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+20:34:39.676 [pid=5096 dwm.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+20:34:39.676 [pid=5096 dwm.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000651EDF8 -> PREENCHENDO a struct dele (5 entradas)
+20:34:39.676 [pid=5096 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+20:34:39.677 [pid=5096 dwm.exe] GetSupportedVersions: sondagem de contagem -> 2
+20:34:39.677 [pid=5096 dwm.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+20:34:39.677 [pid=5096 dwm.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+20:34:39.677 [pid=5096 dwm.exe] CloseAdapter: adapter=0000000003C4EE50, Interface=0x000B000B -> S_OK
+20:34:39.677 [pid=5096 dwm.exe] CloseAdapter: adapter=0000000003C2CB90, Interface=0x000B000B -> S_OK

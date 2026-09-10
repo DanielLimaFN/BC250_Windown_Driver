@@ -5,3 +5,20 @@ EXPORTS
     OpenAdapter10_2
     OpenAdapter11
     OpenAdapter12
+    Bc250UmdDeviceInit
+    Bc250UmdDeviceTeardown
+    Bc250Umd10DestroyDevice
+    Bc250Umd10RelocateDeviceFuncs
+    Bc250Umd10Flush
+    Bc250UmdPopulateDeviceFuncs10_1
+    Bc250UmdPopulateDeviceFuncs11
+    Bc250UmdPopulateDxgiBaseFuncs
+    Bc250Umd10CreateDevice
+    Bc250Umd10CloseAdapter
+    Bc250Umd10CalcPrivateDeviceSize
+    Bc250Umd10GetCaps
+    Bc250Umd10GetSupportedVersions
+    Bc250UmdBuildNode1ProofCommand
+    Bc250UmdStartNode1Submission
+    Bc250UmdSubmitNode1Proof
+    Bc250UmdRunNode1ProofTransaction

@@ -1,0 +1,32 @@
+[WDDM_WINSYS pid=1456] Allocate ENTER: Token=0x434D440005B00001 Size=65536 Align=4096
+[WDDM_WINSYS pid=1456] Allocate LEAVE: hr=0x00000000 hAlloc=0x40000180
+[WDDM_WINSYS pid=1456] MapAllocation ENTER: hAlloc=0x40000180 Min=0x10000 Max=0x3FFFFFFFF Pages=16 Exec=1
+[WDDM_WINSYS pid=1456] MapAllocation LEAVE: hr=0x8000000A VA=0x11000 PagingFence=7001
+[WDDM_WINSYS pid=1456] MakeResident ENTER: hAlloc=0x40000180 hPagingQueue=0x40000100
+[WDDM_WINSYS pid=1456] MakeResident LEAVE: hr=0x8000000A PagingFence=7002
+[WDDM_WINSYS pid=1456] Allocate ENTER: Token=0x5052460005B00001 Size=4096 Align=4096
+[WDDM_WINSYS pid=1456] Allocate LEAVE: hr=0x00000000 hAlloc=0x400001c0
+[WDDM_WINSYS pid=1456] MapAllocation ENTER: hAlloc=0x400001c0 Min=0x10000 Max=0x3FFFFFFFF Pages=1 Exec=0
+[WDDM_WINSYS pid=1456] MapAllocation LEAVE: hr=0x8000000A VA=0x21000 PagingFence=7003
+[WDDM_WINSYS pid=1456] MakeResident ENTER: hAlloc=0x400001c0 hPagingQueue=0x40000100
+[WDDM_WINSYS pid=1456] MakeResident LEAVE: hr=0x8000000A PagingFence=7004
+[WDDM_WINSYS pid=1456] WaitPaging ENTER: TargetFence=7004 CurrentFence=7003 SyncObj=0x400000c0
+[WDDM_WINSYS pid=1456] WaitPaging LEAVE: hr=0x00000000 TargetFence=7004 CurrentFence=7004
+[WDDM_WINSYS pid=1456] Upload ENTER: hAlloc=0x400001c0 Bytes=20
+[WDDM_WINSYS pid=1456] Upload LEAVE: hr=0x00000000 Bytes=20
+[WDDM_WINSYS pid=1456] Read ENTER: hAlloc=0x400001c0 Bytes=20
+[WDDM_WINSYS pid=1456] Read LEAVE: hr=0x00000000 Bytes=20
+[WDDM_WINSYS pid=1456] CreateMonitoredFence ENTER: InitialValue=1138425854
+[WDDM_WINSYS pid=1456] CreateMonitoredFence LEAVE: hr=0x00000000 hSync=0x40000200 CpuVa=0000000000470040 GpuVa=0x10040
+[WDDM_WINSYS pid=1456] WaitPaging SKIP (already reached): TargetFence=7002 CurrentFence=7004
+[WDDM_WINSYS pid=1456] Upload ENTER: hAlloc=0x40000180 Bytes=68
+[WDDM_WINSYS pid=1456] Upload LEAVE: hr=0x00000000 Bytes=68
+[WDDM_WINSYS pid=1456] WaitForFenceFromCpu ENTER: TargetFence=3156545281 CurrentFence=1138425854 SyncObj=0x40000200
+[WDDM_WINSYS pid=1456] WaitForFenceFromCpu LEAVE: hr=0x00000000 TargetFence=3156545281 CurrentFence=18446744073709551615
+[WDDM_WINSYS pid=1456] DestroyMonitoredFence ENTER: hSync=0x40000200
+[WDDM_WINSYS pid=1456] DestroyMonitoredFence LEAVE: hr=0x00000000
+[WDDM_WINSYS pid=1456] Evict ENTER: hAlloc=0x400001c0
+[WDDM_WINSYS pid=1456] Evict LEAVE: hr=0x88760870 NumBytesToTrim=0
+[WDDM_WINSYS pid=1456] Evict ENTER: hAlloc=0x40000180
+[WDDM_WINSYS pid=1456] Evict LEAVE: hr=0x88760870 NumBytesToTrim=0
+tripod UMD nao fechou; log=C:\Windows\Temp\BC250_UMD_LOG_1456.txt CreateDevice=0x887A0005

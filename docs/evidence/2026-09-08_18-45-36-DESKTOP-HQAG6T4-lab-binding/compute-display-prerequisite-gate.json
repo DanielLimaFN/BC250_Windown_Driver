@@ -1,0 +1,9 @@
+﻿{
+    "state":  "PASSED",
+    "shared_primary":  true,
+    "commit_vidpn":  true,
+    "set_vidpn_source_address":  true,
+    "start_offset":  1663833,
+    "checked_at":  "2026-09-08T18:45:40.8454425-03:00",
+    "hardware_validated":  false
+}

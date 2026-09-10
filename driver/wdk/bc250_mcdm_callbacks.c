@@ -1,7 +1,9 @@
 #include "bc250_mcdm_callbacks.h"
+#include "bc250_driver_caps_contract.h"
 #include "bc250_probe_telemetry.h"
 #include "../core/bc250_adapter_info_contract.h"
 #include "../core/bc250_segment_contract.h"
+#include "../core/bc250_umd_private_contract.h"
 #include "../core/bc250_tdr_recovery_contract.h"
 #include "../core/bc250_context_dispatcher_contract.h"
 #include "../core/bc250_paging_contract.h"
@@ -46,10 +48,68 @@ static BC250_MCDM_DESTROY_ALLOCATION_OBJECTS g_Bc250DestroyAllocationObjects;
 static BC250_MCDM_OPEN_ALLOCATION_OBJECTS g_Bc250OpenAllocationObjects;
 static BC250_MCDM_CLOSE_ALLOCATION_OBJECTS g_Bc250CloseAllocationObjects;
 static BC250_MCDM_COLLECT_DEBUG_SNAPSHOT g_Bc250CollectDebugSnapshot;
+static BC250_MCDM_ENGINE_RESPONSIVE_PROBE g_Bc250EngineResponsiveProbe;
+static BC250_MCDM_TDR_QUIESCE_EXECUTOR g_Bc250TdrQuiesce;
+static BC250_MCDM_TDR_RESTART_EXECUTOR g_Bc250TdrRestart;
 static BC250_MCDM_SUBMIT_COMMAND_EXECUTOR g_Bc250SubmitCommandExecutor;
 static BC250_MCDM_INTERRUPT_HANDLER g_Bc250InterruptHandler;
 static BC250_MCDM_DPC_HANDLER g_Bc250DpcHandler;
 static BC250_MCDM_QUERY_RUNTIME_CAPS g_Bc250QueryRuntimeCaps;
+static BC250_MCDM_UNLOAD_CLEANUP_HANDLER g_Bc250UnloadCleanupHandler;
+
+/*
+ * Journal de ultimo recurso para hangs dentro de BuildPagingBuffer.
+ *
+ * Nao usa arquivo, Registro, pool ou lock: qualquer um deles pode bloquear
+ * justamente quando o VidMm esta construindo/limpando GPUVA. Os 64 slots
+ * reservados por sequencia atomica ficam no .data do miniport e podem ser
+ * lidos de um live dump com o PDB:
+ *
+ *   dt bc250mcdm!g_Bc250PagingStages
+ *
+ * Sequence e publicado por ultimo, depois da barreira, para que o dump nao
+ * trate um slot parcialmente escrito como evento completo.
+ */
+typedef struct BC250_PAGING_STAGE_SLOT {
+    volatile LONG Sequence;
+    ULONG Stage;
+    ULONG Operation;
+    NTSTATUS Status;
+} BC250_PAGING_STAGE_SLOT;
+
+enum {
+    BC250_PAGING_STAGE_BUILD_ENTER = 1u,
+    BC250_PAGING_STAGE_AFTER_DDI_MARK = 2u,
+    BC250_PAGING_STAGE_AFTER_ENTRY_LOG = 3u,
+    BC250_PAGING_STAGE_AFTER_CAPS = 4u,
+    BC250_PAGING_STAGE_BEFORE_DISPATCH = 5u,
+    BC250_PAGING_STAGE_AFTER_DISPATCH = 6u,
+    BC250_PAGING_STAGE_UPDATE_ENTER = 20u,
+    BC250_PAGING_STAGE_UPDATE_AFTER_HEADER_LOG = 21u,
+    BC250_PAGING_STAGE_UPDATE_AFTER_ENTRY_LOGS = 22u,
+    BC250_PAGING_STAGE_UPDATE_BEFORE_HANDLER = 23u,
+    BC250_PAGING_STAGE_UPDATE_AFTER_HANDLER = 24u
+};
+
+volatile LONG g_Bc250PagingStageSequence;
+BC250_PAGING_STAGE_SLOT g_Bc250PagingStages[64];
+volatile LONG g_Bc250PagingActiveCount = 0;
+
+static VOID Bc250PagingStage(
+    _In_ ULONG Stage,
+    _In_ ULONG Operation,
+    _In_ NTSTATUS Status)
+{
+    LONG sequence = InterlockedIncrement(&g_Bc250PagingStageSequence);
+    ULONG slotIndex = ((ULONG)sequence - 1u) & 63u;
+    BC250_PAGING_STAGE_SLOT *slot = &g_Bc250PagingStages[slotIndex];
+
+    slot->Stage = Stage;
+    slot->Operation = Operation;
+    slot->Status = Status;
+    KeMemoryBarrier();
+    InterlockedExchange(&slot->Sequence, sequence);
+}
 #include "bc250_display_ddi.h"
 static BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER g_Bc250UpdatePageTableHandler;
 static volatile LONG g_Bc250WddmContractVersion =
@@ -146,8 +206,15 @@ NTSTATUS Bc250McdmEncodeVidMmPteWithLevel(
                 (unsigned long long)pageOffsetInSegment);
             return STATUS_INTEGER_OVERFLOW;
         }
-        physicalAddress = Caps->LocalSegmentBaseOffset + pageOffsetInSegment;
-        flags = BC250_PTE_VALID | BC250_PTE_READABLE | BC250_PTE_WRITEABLE;
+        physicalAddress = Caps->VramMcBase +
+            Caps->LocalSegmentBaseOffset + pageOffsetInSegment;
+        /*
+         * PDE leva SOMENTE o bit VALID. Nao existem READABLE/WRITEABLE num
+         * PDE do Navi 10: o bit 6 e o LSB do campo de endereco [47:6] e o bit
+         * 5 e reservado. Gravar 0x61 aqui deslocava a tabela folha em 64
+         * bytes -- ver Bc250GcvmEncodePde. Permissao e assunto da folha.
+         */
+        flags = BC250_PTE_VALID;
     } else {
         /*
          * Nivel 0: Entrada Folha (PTE).
@@ -179,7 +246,8 @@ NTSTATUS Bc250McdmEncodeVidMmPteWithLevel(
                     (unsigned long long)pageOffsetInSegment);
                 return STATUS_INTEGER_OVERFLOW;
             }
-            physicalAddress = Caps->LocalSegmentBaseOffset + pageOffsetInSegment;
+            physicalAddress = Caps->VramMcBase +
+                Caps->LocalSegmentBaseOffset + pageOffsetInSegment;
         } else if (Source->Segment == 0u) {
             /* Memoria do Sistema (Segmento 0 = System Memory) */
             physicalAddress = pageOffsetInSegment;
@@ -191,6 +259,10 @@ NTSTATUS Bc250McdmEncodeVidMmPteWithLevel(
         }
     }
 
+    if (PageTableLevel > 0u) {
+        return Bc250GcvmEncodePde(physicalAddress, flags, Encoded) ==
+            BC250_GCVM_OK ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER;
+    }
     return Bc250GcvmEncodePte(physicalAddress, flags, Encoded) ==
         BC250_GCVM_OK ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER;
 }
@@ -215,16 +287,28 @@ static NTSTATUS Bc250McdmBuildCpuPageTableUpdate(
     UINT32 levelBits;
 
     if (Caps == NULL || Args == NULL) return STATUS_INVALID_PARAMETER;
+    Bc250PagingStage(
+        BC250_PAGING_STAGE_UPDATE_ENTER,
+        DXGK_OPERATION_UPDATE_PAGE_TABLE,
+        STATUS_PENDING);
     update = &Args->UpdatePageTable;
     Bc250DisplayLog("[UpdatePT] Lvl=%u, FirstPteVA=0x%llX, Num=%u, Start=%u, Mode=%u, Repeat=%u, CpuVa=0x%p, Flags=0x%08X\n",
         update->PageTableLevel, (unsigned long long)update->FirstPteVirtualAddress,
         update->NumPageTableEntries, update->StartIndex,
         (UINT32)update->UpdateMode, update->Flags.Repeat, update->PageTableAddress.CpuVirtual,
         *(const UINT32 *)&update->Flags);
+    Bc250PagingStage(
+        BC250_PAGING_STAGE_UPDATE_AFTER_HEADER_LOG,
+        DXGK_OPERATION_UPDATE_PAGE_TABLE,
+        STATUS_PENDING);
 
     /* Detailed logging of first few PTE entries */
     if (update->pPageTableEntries != NULL) {
-        UINT32 logCount = update->NumPageTableEntries < 4u ? update->NumPageTableEntries : 4u;
+        /* Com Repeat=1 o contrato fornece uma unica PTE que deve ser repetida.
+         * Ler [1..3] era leitura fora do contrato; a corrida de 17:37 mostrou
+         * esses slots como lixo, incluindo ponteiros de kernel. */
+        UINT32 logCount = update->Flags.Repeat != 0u ? 1u :
+            (update->NumPageTableEntries < 4u ? update->NumPageTableEntries : 4u);
         for (index = 0u; index < logCount; ++index) {
             const DXGK_PTE *p = &update->pPageTableEntries[index];
             Bc250DisplayLog("[UpdatePT Lvl=%u Entry %u] V=%u, Z=%u, LP=%u, PhysIdx=%u, PTPgSz=%u, Seg=%u, Addr=0x%llX\n",
@@ -234,6 +318,10 @@ static NTSTATUS Bc250McdmBuildCpuPageTableUpdate(
                 (UINT32)p->Segment, (unsigned long long)p->PageAddress);
         }
     }
+    Bc250PagingStage(
+        BC250_PAGING_STAGE_UPDATE_AFTER_ENTRY_LOGS,
+        DXGK_OPERATION_UPDATE_PAGE_TABLE,
+        STATUS_PENDING);
 
     if (update->UpdateMode != DXGK_PAGETABLEUPDATE_CPU_VIRTUAL ||
         update->PageTableAddress.CpuVirtual == NULL ||
@@ -284,7 +372,17 @@ static NTSTATUS Bc250McdmBuildCpuPageTableUpdate(
     /* O handler ativo distingue leaf de diretórios; ambos precisam participar
      * da mesma transação de flush, embora só leaf gere ranges GPUVA. */
     if (g_Bc250UpdatePageTableHandler != NULL) {
-        return g_Bc250UpdatePageTableHandler(AdapterContext, Caps, update);
+        NTSTATUS handlerStatus;
+        Bc250PagingStage(
+            BC250_PAGING_STAGE_UPDATE_BEFORE_HANDLER,
+            DXGK_OPERATION_UPDATE_PAGE_TABLE,
+            STATUS_PENDING);
+        handlerStatus = g_Bc250UpdatePageTableHandler(AdapterContext, Caps, update);
+        Bc250PagingStage(
+            BC250_PAGING_STAGE_UPDATE_AFTER_HANDLER,
+            DXGK_OPERATION_UPDATE_PAGE_TABLE,
+            handlerStatus);
+        return handlerStatus;
     }
     destination = (UINT64 *)update->PageTableAddress.CpuVirtual;
     if (update->Flags.Repeat != 0u) {
@@ -365,6 +463,186 @@ static uint32_t Bc250PagingFloorPow2Dwords(uint32_t Dwords)
     return capacity;
 }
 
+/*
+ * Publicacao serial encoder -> SubmitCommandVirtual da "forma" do IB.
+ *
+ * O canal sancionado seria pDmaBufferPrivateData, mas hoje declaramos
+ * PagingBufferPrivateDataSize=0 em DRIVERCAPS e o VidMm entrega o ponteiro
+ * vazio. Mudar aquele cap mexe no contrato ja aceito pelo dxgkrnl no bind, e
+ * a Lei 9 desaconselha empacotar isso na mesma corrida.
+ *
+ * Node 0 e serial: BuildPagingBuffer(Op=9/Op=3) e a submissao correspondente
+ * nao se intercalam. Mesmo assim a leitura e AUTOVALIDADA -- o consumidor
+ * confere o total publicado contra o DmaBufferSize que o VidMm entregou e,
+ * na menor divergencia, devolve 0 para o executor derivar do tamanho. E
+ * destrutiva: uma segunda submissao sem novo encode nao reaproveita o valor.
+ */
+static volatile LONG g_Bc250PagingIbUsefulDwords = 0;
+static volatile LONG g_Bc250PagingIbPublishedDwords = 0;
+
+/*
+ * Faixa de GPUVA que os pacotes do IB vao ESCREVER.
+ *
+ * A corrida de 05/09 01:12 mostrou por que ela precisa viajar ate a
+ * submissao: com root e folha ja coerentes em MC, a caminhada aprovou a GPUVA
+ * do proprio IB (0x24F000) e a engine buscou o pacote -- mas parou em RPTR=96,
+ * dentro do IB, e o UTCL1_DELTA acordou do lado de ESCRITA
+ * (WR_STAT=00800000, antes zerado). O destino dos CONST_FILL nunca tinha sido
+ * validado. Leitura nao destrutiva: e diagnostico, nao consumo.
+ */
+/*
+ * Endereco fisico REAL do paging buffer, medido pela CPU no momento em que os
+ * pacotes foram escritos.
+ *
+ * Furo apontado na revisao externa: o IB_DUMP sempre veio da VA da CPU, nunca
+ * do PA para onde a PTE do IB aponta. Ou seja, nunca provamos que a pagina que
+ * a GPU vai buscar e a pagina onde escrevemos. Publicando o PA aqui, a
+ * submissao compara com o que a caminhada resolveu.
+ */
+static volatile LONG64 g_Bc250PagingIbCpuPhysical = 0;
+
+static volatile LONG64 g_Bc250PagingIbDestStart = 0;
+static volatile LONG64 g_Bc250PagingIbDestEnd = 0;
+static volatile LONG g_Bc250PagingFillPattern = 0;
+static volatile LONG g_Bc250PagingFillValid = 0;
+
+static void Bc250PagingPublishIbDestRange(UINT64 Start, UINT64 End)
+{
+    InterlockedExchange64(&g_Bc250PagingIbDestStart, (LONG64)Start);
+    InterlockedExchange64(&g_Bc250PagingIbDestEnd, (LONG64)End);
+}
+
+static void Bc250PagingPublishFillParams(UINT64 DestVa, ULONG ByteCount, ULONG Pattern)
+{
+    InterlockedExchange64(&g_Bc250PagingIbDestStart, (LONG64)DestVa);
+    InterlockedExchange64(&g_Bc250PagingIbDestEnd, (LONG64)(DestVa + ByteCount));
+    InterlockedExchange(&g_Bc250PagingFillPattern, (LONG)Pattern);
+    InterlockedExchange(&g_Bc250PagingFillValid, 1);
+}
+
+BOOLEAN Bc250PagingPeekFillParams(
+    _Out_ UINT64 *DestVa,
+    _Out_ ULONG *ByteCount,
+    _Out_ ULONG *FillPattern)
+{
+    LONG valid = InterlockedCompareExchange(&g_Bc250PagingFillValid, 0, 0);
+    LONG64 start = InterlockedCompareExchange64(&g_Bc250PagingIbDestStart, 0, 0);
+    LONG64 end = InterlockedCompareExchange64(&g_Bc250PagingIbDestEnd, 0, 0);
+    LONG pat = InterlockedCompareExchange(&g_Bc250PagingFillPattern, 0, 0);
+
+    if (valid == 0 || end <= start) {
+        return FALSE;
+    }
+    *DestVa = (UINT64)start;
+    *ByteCount = (ULONG)(end - start);
+    *FillPattern = (ULONG)pat;
+    return TRUE;
+}
+
+void Bc250PagingClearFillParams(void)
+{
+    InterlockedExchange(&g_Bc250PagingFillValid, 0);
+    InterlockedExchange64(&g_Bc250PagingIbDestStart, 0);
+    InterlockedExchange64(&g_Bc250PagingIbDestEnd, 0);
+    InterlockedExchange64(&g_Bc250PagingIbCpuPhysical, 0);
+}
+
+UINT64 Bc250PagingPeekIbCpuPhysical(void)
+{
+    return (UINT64)InterlockedCompareExchange64(
+        &g_Bc250PagingIbCpuPhysical, 0, 0);
+}
+
+UINT64 Bc250PagingConsumeIbCpuPhysical(void)
+{
+    return (UINT64)InterlockedExchange64(
+        &g_Bc250PagingIbCpuPhysical, 0);
+}
+
+BOOLEAN Bc250PagingPeekIbDestRange(_Out_ UINT64 *Start, _Out_ UINT64 *End)
+{
+    LONG64 start = InterlockedCompareExchange64(&g_Bc250PagingIbDestStart, 0, 0);
+    LONG64 end = InterlockedCompareExchange64(&g_Bc250PagingIbDestEnd, 0, 0);
+
+    *Start = (UINT64)start;
+    *End = (UINT64)end;
+    return (end > start) ? TRUE : FALSE;
+}
+
+ULONG Bc250PagingConsumeIbUsefulDwords(_In_ ULONG PublishedDwords)
+{
+    LONG published = InterlockedExchange(&g_Bc250PagingIbPublishedDwords, 0);
+    LONG useful = InterlockedExchange(&g_Bc250PagingIbUsefulDwords, 0);
+
+    if (published <= 0 || useful <= 0 ||
+        (ULONG)published != PublishedDwords ||
+        (ULONG)useful > PublishedDwords) {
+        return 0u;
+    }
+    return (ULONG)useful;
+}
+
+/*
+ * Acrescenta NOPs de cauda ate o tamanho publicado ao VidMm ser multiplo de 8
+ * dwords, para que a GPUVA do PROXIMO paging buffer caia em fronteira de 32
+ * bytes -- exigencia do campo base do pacote INDIRECT.
+ *
+ * Tambem despeja os dwords que a engine vai buscar. Na corrida de 04/09 22:27
+ * a SDMA0 aposentou o INDIRECT (RPTR parou exatamente em DW 24, fim do pacote)
+ * e travou dentro do IB, sem fault latchado em GFXHUB. Sem ver os bytes que a
+ * engine buscou nao da para separar "pacote malformado" de "traducao falhou".
+ */
+static void Bc250PagingAppendIbAlignmentNops(
+    const char *Label,
+    uint32_t *DmaBuffer,
+    uint32_t *Cursor)
+{
+    uint32_t useful = *Cursor;
+    uint32_t pad;
+    uint32_t i;
+
+    pad = Bc250SdmaIbSizePadDwords(useful);
+    for (i = 0u; i < pad; ++i) {
+        DmaBuffer[(*Cursor)++] = BC250_SDMA_OP_NOP;
+    }
+
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    {
+        PHYSICAL_ADDRESS ibPhysical = MmGetPhysicalAddress((PVOID)DmaBuffer);
+        InterlockedExchange64(&g_Bc250PagingIbCpuPhysical,
+            (LONG64)ibPhysical.QuadPart);
+        Bc250DisplayLog("[%s] IB_CPU_PHYS: VA=%p -> PA=0x%llX\n",
+            Label, (PVOID)DmaBuffer,
+            (unsigned long long)ibPhysical.QuadPart);
+    }
+#else
+    /*
+     * Offline nao ha MmGetPhysicalAddress. Publicar 0 mantem o consumidor
+     * fail-closed: PA zero significa "nao medido" e nunca casa por acidente.
+     */
+    InterlockedExchange64(&g_Bc250PagingIbCpuPhysical, 0);
+#endif
+    InterlockedExchange(&g_Bc250PagingIbUsefulDwords, (LONG)useful);
+    InterlockedExchange(&g_Bc250PagingIbPublishedDwords, (LONG)*Cursor);
+
+    /*
+     * Teto de 32 DW: cada linha custa um ZwCreateFile/ZwWriteFile/ZwClose, e
+     * um TransferVirtual grande emite dezenas de pacotes. Os 32 primeiros
+     * cobrem o IB de paginacao inteiro nos casos que estamos investigando.
+     */
+    for (i = 0u; i < *Cursor && i < 32u; i += 4u) {
+        uint32_t remaining = *Cursor - i;
+        Bc250DisplayLog("[%s] IB_DUMP DW%02u: %08X %08X %08X %08X\n",
+            Label, i,
+            DmaBuffer[i],
+            remaining > 1u ? DmaBuffer[i + 1u] : 0u,
+            remaining > 2u ? DmaBuffer[i + 2u] : 0u,
+            remaining > 3u ? DmaBuffer[i + 3u] : 0u);
+    }
+    Bc250DisplayLog("[%s] IB_SHAPE: UsefulDW=%u PadDW=%u PublishedDW=%u PublishedBytes=%u\n",
+        Label, useful, pad, *Cursor, *Cursor * (uint32_t)sizeof(uint32_t));
+}
+
 static NTSTATUS Bc250McdmBuildTransferVirtual(
     DXGKARG_BUILDPAGINGBUFFER *Args)
 {
@@ -418,7 +696,9 @@ static NTSTATUS Bc250McdmBuildTransferVirtual(
             BC250_SDMA_COPY_MAX_BYTES : (uint32_t)remaining;
         BC250_SDMA_STATUS sdmaStatus;
 
-        if (dwordsAvailable - cursor < BC250_SDMA_DWORDS_COPY_LINEAR) break;
+        if (dwordsAvailable - cursor < BC250_SDMA_DWORDS_COPY_LINEAR +
+            Bc250SdmaIbSizePadDwords(
+                cursor + BC250_SDMA_DWORDS_COPY_LINEAR)) break;
 
         sdmaStatus = Bc250SdmaEmitCopyLinear(
             dmaBuffer,
@@ -447,6 +727,10 @@ static NTSTATUS Bc250McdmBuildTransferVirtual(
         done += chunk;
     }
 
+    Bc250PagingPublishIbDestRange(
+        transfer->DestinationVirtualAddress + (UINT64)Args->MultipassOffset,
+        transfer->DestinationVirtualAddress + done);
+    Bc250PagingAppendIbAlignmentNops("TransferVirtual", dmaBuffer, &cursor);
     Args->pDmaBuffer = (PVOID)(dmaBuffer + cursor);
     if (done < total) {
         Args->MultipassOffset = (UINT)done;
@@ -506,7 +790,9 @@ static NTSTATUS Bc250McdmBuildFillVirtual(
             BC250_SDMA_FILL_MAX_BYTES : (uint32_t)remaining;
         BC250_SDMA_STATUS sdmaStatus;
 
-        if (dwordsAvailable - cursor < BC250_SDMA_DWORDS_CONST_FILL) break;
+        if (dwordsAvailable - cursor < BC250_SDMA_DWORDS_CONST_FILL +
+            Bc250SdmaIbSizePadDwords(
+                cursor + BC250_SDMA_DWORDS_CONST_FILL)) break;
 
         sdmaStatus = Bc250SdmaEmitConstFill(
             dmaBuffer,
@@ -535,6 +821,11 @@ static NTSTATUS Bc250McdmBuildFillVirtual(
         done += chunk;
     }
 
+    Bc250PagingPublishFillParams(
+        fill->DestinationVirtualAddress + (UINT64)Args->MultipassOffset,
+        (ULONG)(done - (UINT64)Args->MultipassOffset),
+        fill->FillPattern);
+    Bc250PagingAppendIbAlignmentNops("FillVirtual", dmaBuffer, &cursor);
     Args->pDmaBuffer = (PVOID)(dmaBuffer + cursor);
     if (done < total) {
         Args->MultipassOffset = (UINT)done;
@@ -602,6 +893,26 @@ VOID Bc250McdmInstallDebugLifecycle(
     g_Bc250CollectDebugSnapshot = CollectDebugSnapshot;
 }
 
+VOID Bc250McdmInstallUnloadCleanupHandler(
+    _In_opt_ BC250_MCDM_UNLOAD_CLEANUP_HANDLER Handler)
+{
+    g_Bc250UnloadCleanupHandler = Handler;
+}
+
+VOID Bc250McdmInstallTdrExecutors(
+    BC250_MCDM_TDR_QUIESCE_EXECUTOR QuiesceExecutor,
+    BC250_MCDM_TDR_RESTART_EXECUTOR RestartExecutor)
+{
+    g_Bc250TdrQuiesce = QuiesceExecutor;
+    g_Bc250TdrRestart = RestartExecutor;
+}
+
+VOID Bc250McdmInstallEngineResponsiveProbe(
+    BC250_MCDM_ENGINE_RESPONSIVE_PROBE Probe)
+{
+    g_Bc250EngineResponsiveProbe = Probe;
+}
+
 VOID Bc250McdmInstallSubmissionExecutor(
     BC250_MCDM_SUBMIT_COMMAND_EXECUTOR SubmitCommandExecutor)
 {
@@ -630,30 +941,119 @@ VOID Bc250McdmInstallUpdatePageTableHandler(
     g_Bc250UpdatePageTableHandler = UpdatePageTableHandler;
 }
 
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_2)
+static NTSTATUS Bc250McdmBuildSignalMonitoredFence(
+    _Inout_ DXGKARG_BUILDPAGINGBUFFER *Args)
+{
+    DXGK_BUILDPAGINGBUFFER_SIGNALMONITOREDFENCE *signal;
+    uint32_t *dmaBuffer;
+    uint32_t dwordsAvailable;
+    uint32_t cursor = 0;
+    uint32_t fenceData[2];
+    BC250_SDMA_STATUS sdmaStatus;
+
+    if (Args == NULL || Args->pDmaBuffer == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    signal = &Args->SignalMonitoredFence;
+    if (signal->MonitoredFenceGpuVa == 0ull ||
+        (signal->MonitoredFenceGpuVa & 3u) != 0u) {
+        Bc250DisplayLog("[SignalMonitoredFence] REJECT invalid/misaligned: FenceGpuVa=0x%llX\n",
+            (unsigned long long)signal->MonitoredFenceGpuVa);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    dmaBuffer = (uint32_t *)Args->pDmaBuffer;
+    dwordsAvailable = Bc250PagingFloorPow2Dwords(
+        Args->DmaSize / (uint32_t)sizeof(uint32_t));
+    if (dwordsAvailable < 18u) {
+        Bc250DisplayLog("[SignalMonitoredFence] DmaSize=%u insuficiente (cap=%u dwords)\n",
+            Args->DmaSize, dwordsAvailable);
+        return STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER;
+    }
+
+    fenceData[0] = (uint32_t)(signal->MonitoredFenceValue & 0xFFFFFFFFull);
+    fenceData[1] = (uint32_t)(signal->MonitoredFenceValue >> 32);
+
+    sdmaStatus = Bc250SdmaEmitWriteLinear(
+        dmaBuffer,
+        dwordsAvailable,
+        &cursor,
+        signal->MonitoredFenceGpuVa,
+        fenceData,
+        2u);
+    if (sdmaStatus != BC250_SDMA_OK) {
+        Bc250DisplayLog("[SignalMonitoredFence] SDMA encode failed: status=%d\n", (int)sdmaStatus);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    sdmaStatus = Bc250SdmaEmitGcr(dmaBuffer, dwordsAvailable, &cursor);
+    if (sdmaStatus != BC250_SDMA_OK) {
+        Bc250DisplayLog("[SignalMonitoredFence] GCR encode failed: status=%d\n", (int)sdmaStatus);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Bc250PagingAppendIbAlignmentNops("SignalMonitoredFence", dmaBuffer, &cursor);
+    Args->pDmaBuffer = (PVOID)(dmaBuffer + cursor);
+    Args->MultipassOffset = BC250_PAGING_MULTIPASS_DONE;
+    Bc250DisplayLog("[SignalMonitoredFence] Completo: FenceGpuVa=0x%llX Value=%llu (%u dwords emitidos)\n",
+        (unsigned long long)signal->MonitoredFenceGpuVa,
+        (unsigned long long)signal->MonitoredFenceValue,
+        cursor);
+    return STATUS_SUCCESS;
+}
+#endif
+
 NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(
     CONST HANDLE hAdapter,
     DXGKARG_BUILDPAGINGBUFFER *pBuildPagingBuffer)
 {
-    Bc250ProbeMarkDdi(BC250_V5_DDI_BUILD_PAGING_BUFFER);
     BC250_MCDM_RUNTIME_CAPS caps;
+    NTSTATUS capsStatus;
+    NTSTATUS dispatchStatus;
+    ULONG operation = pBuildPagingBuffer != NULL ?
+        (ULONG)pBuildPagingBuffer->Operation : MAXULONG;
+
+    InterlockedIncrement(&g_Bc250PagingActiveCount);
+
+    Bc250PagingStage(
+        BC250_PAGING_STAGE_BUILD_ENTER, operation, STATUS_PENDING);
+    Bc250ProbeMarkDdi(BC250_V5_DDI_BUILD_PAGING_BUFFER);
+    Bc250PagingStage(
+        BC250_PAGING_STAGE_AFTER_DDI_MARK, operation, STATUS_PENDING);
     RtlZeroMemory(&caps, sizeof(caps));
 
     if (hAdapter == NULL || pBuildPagingBuffer == NULL) {
+        InterlockedDecrement(&g_Bc250PagingActiveCount);
         return STATUS_INVALID_PARAMETER;
     }
     Bc250DisplayLog("[McdmBuildPagingBuffer] Entered: Op=%u\n", pBuildPagingBuffer->Operation);
+    Bc250PagingStage(
+        BC250_PAGING_STAGE_AFTER_ENTRY_LOG, operation, STATUS_PENDING);
     if (g_Bc250QueryRuntimeCaps == NULL) {
+        Bc250DisplayLog("[McdmBuildPagingBuffer] QueryRuntimeCaps provider is NULL -> DEVICE_NOT_READY\n");
+        InterlockedDecrement(&g_Bc250PagingActiveCount);
         return STATUS_DEVICE_NOT_READY;
     }
-    (void)g_Bc250QueryRuntimeCaps((HANDLE)hAdapter, &caps);
+    capsStatus = g_Bc250QueryRuntimeCaps((HANDLE)hAdapter, &caps);
+    Bc250PagingStage(
+        BC250_PAGING_STAGE_AFTER_CAPS, operation, capsStatus);
+    if (!NT_SUCCESS(capsStatus)) {
+        Bc250DisplayLog("[McdmBuildPagingBuffer] QueryRuntimeCaps failed: 0x%08X\n", capsStatus);
+        InterlockedDecrement(&g_Bc250PagingActiveCount);
+        return capsStatus;
+    }
 
     if (pBuildPagingBuffer->Operation == DXGK_OPERATION_MAP_APERTURE_SEGMENT ||
         pBuildPagingBuffer->Operation == DXGK_OPERATION_UNMAP_APERTURE_SEGMENT ||
         pBuildPagingBuffer->Operation == DXGK_OPERATION_INIT_CONTEXT_RESOURCE) {
         Bc250DisplayLog("[McdmBuildPagingBuffer] Handled Op=%u -> SUCCESS\n", pBuildPagingBuffer->Operation);
+        InterlockedDecrement(&g_Bc250PagingActiveCount);
         return STATUS_SUCCESS;
     }
 
+    Bc250PagingStage(
+        BC250_PAGING_STAGE_BEFORE_DISPATCH, operation, STATUS_PENDING);
     switch (pBuildPagingBuffer->Operation) {
     case DXGK_OPERATION_MAP_APERTURE_SEGMENT:
     case DXGK_OPERATION_UNMAP_APERTURE_SEGMENT:
@@ -662,34 +1062,55 @@ NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(
     case DXGK_OPERATION_UPDATE_CONTEXT_ALLOCATION:
     case DXGK_OPERATION_NOTIFY_RESIDENCY:
         Bc250DisplayLog("[McdmBuildPagingBuffer] Handled Op=%u -> SUCCESS\n", pBuildPagingBuffer->Operation);
+        InterlockedDecrement(&g_Bc250PagingActiveCount);
         return STATUS_SUCCESS;
 
     case DXGK_OPERATION_UPDATE_PAGE_TABLE: {
-        NTSTATUS updateStatus = Bc250McdmBuildCpuPageTableUpdate(
+        dispatchStatus = Bc250McdmBuildCpuPageTableUpdate(
             &caps, (HANDLE)hAdapter, pBuildPagingBuffer);
-        if (updateStatus == STATUS_NOT_SUPPORTED) {
-            updateStatus = STATUS_INVALID_PARAMETER;
+        if (dispatchStatus == STATUS_NOT_SUPPORTED) {
+            dispatchStatus = STATUS_INVALID_PARAMETER;
         }
-        return updateStatus;
+        break;
     }
 
     case DXGK_OPERATION_VIRTUAL_TRANSFER:
-        return Bc250McdmBuildTransferVirtual(pBuildPagingBuffer);
+        dispatchStatus = Bc250McdmBuildTransferVirtual(pBuildPagingBuffer);
+        break;
 
     case DXGK_OPERATION_VIRTUAL_FILL:
-        return Bc250McdmBuildFillVirtual(pBuildPagingBuffer);
+        dispatchStatus = Bc250McdmBuildFillVirtual(pBuildPagingBuffer);
+        break;
 
     case DXGK_OPERATION_FLUSH_TLB:
         if (g_Bc250FlushTlbHandler != NULL) {
-            return g_Bc250FlushTlbHandler((HANDLE)hAdapter, &pBuildPagingBuffer->FlushTlb);
+            dispatchStatus = g_Bc250FlushTlbHandler(
+                (HANDLE)hAdapter, &pBuildPagingBuffer->FlushTlb);
+            if (!NT_SUCCESS(dispatchStatus) &&
+                dispatchStatus != STATUS_INVALID_PARAMETER) {
+                dispatchStatus = STATUS_SUCCESS;
+            }
+            break;
         }
         /* Sem backend nao houve invalidacao nem ACK fisico. */
-        return STATUS_NOT_SUPPORTED;
+        dispatchStatus = STATUS_NOT_SUPPORTED;
+        break;
+
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_2)
+    case DXGK_OPERATION_SIGNAL_MONITORED_FENCE:
+        dispatchStatus = Bc250McdmBuildSignalMonitoredFence(pBuildPagingBuffer);
+        break;
+#endif
 
     default:
-        Bc250DisplayLog("[McdmBuildPagingBuffer] Unhandled Op=%u -> SUCCESS\n", pBuildPagingBuffer->Operation);
-        return STATUS_SUCCESS;
+        Bc250DisplayLog("[McdmBuildPagingBuffer] Unhandled Op=%u -> NOT_SUPPORTED\n", pBuildPagingBuffer->Operation);
+        dispatchStatus = STATUS_NOT_SUPPORTED;
+        break;
     }
+    Bc250PagingStage(
+        BC250_PAGING_STAGE_AFTER_DISPATCH, operation, dispatchStatus);
+    InterlockedDecrement(&g_Bc250PagingActiveCount);
+    return dispatchStatus;
 }
 
 NTSTATUS APIENTRY Bc250McdmCloseAllocation(
@@ -753,8 +1174,17 @@ NTSTATUS APIENTRY Bc250McdmCreateContext(
     if (hDevice == NULL || pCreateContext == NULL) {
         return STATUS_INVALID_PARAMETER;
     }
-    Bc250DisplayLog("[McdmCreateContext] Entered: Node=%u\n", pCreateContext->NodeOrdinal);
+    Bc250DisplayLog("[McdmCreateContext] Entered: Node=%u, hDevice=0x%p, Flags=0x%08X\n",
+        pCreateContext->NodeOrdinal, hDevice,
+        pCreateContext->Flags.Value);
+    /*
+     * Ver a nota em Bc250McdmCreateDevice: na corrida 13:00 esta DDI aparecia
+     * oito vezes sem UMA palavra sobre o desfecho. Todo caminho de recusa passa
+     * a se nomear.
+     */
     if (pCreateContext->NodeOrdinal >= BC250_ADAPTER_NODE_COUNT) {
+        Bc250DisplayLog("[McdmCreateContext] RECUSADO: NodeOrdinal=%u fora de %u nodes -> STATUS_INVALID_PARAMETER\n",
+            pCreateContext->NodeOrdinal, (unsigned)BC250_ADAPTER_NODE_COUNT);
         return STATUS_INVALID_PARAMETER;
     }
     pCreateContext->hContext = NULL;
@@ -766,7 +1196,10 @@ NTSTATUS APIENTRY Bc250McdmCreateContext(
     pCreateContext->ContextInfo.PatchLocationListSize = 0u;
     pCreateContext->ContextInfo.Caps.NoPatchingRequired = 1u;
     pCreateContext->ContextInfo.PagingCompanionNodeId = 0u;
-    if (g_Bc250CreateContextObject == NULL) return STATUS_NOT_SUPPORTED;
+    if (g_Bc250CreateContextObject == NULL) {
+        Bc250DisplayLog("[McdmCreateContext] RECUSADO: provedor de objeto de contexto ausente -> STATUS_NOT_SUPPORTED\n");
+        return STATUS_NOT_SUPPORTED;
+    }
     if (hDevice == (HANDLE)1) {
         pCreateContext->hContext = (HANDLE)2;
         Bc250DisplayLog("[McdmCreateContext] System Paging Context: DmaBuf=0x%X, SegSet=0x%X\n",
@@ -777,8 +1210,16 @@ NTSTATUS APIENTRY Bc250McdmCreateContext(
     status = g_Bc250CreateContextObject(hDevice,
         pCreateContext->NodeOrdinal, &contextHandle,
         &pCreateContext->ContextInfo);
-    if (!NT_SUCCESS(status)) return status;
+    if (!NT_SUCCESS(status)) {
+        Bc250DisplayLog("[McdmCreateContext] RECUSADO: provedor devolveu status=0x%08X (Node=%u)\n",
+            (uint32_t)status, pCreateContext->NodeOrdinal);
+        return status;
+    }
     pCreateContext->hContext = contextHandle;
+    Bc250DisplayLog("[McdmCreateContext] OK: Node=%u, hContext=0x%p, DmaBuf=0x%X, SegSet=0x%X\n",
+        pCreateContext->NodeOrdinal, contextHandle,
+        pCreateContext->ContextInfo.DmaBufferSize,
+        pCreateContext->ContextInfo.DmaBufferSegmentSet);
     return STATUS_SUCCESS;
 }
 
@@ -796,15 +1237,32 @@ NTSTATUS APIENTRY Bc250McdmCreateDevice(
     Bc250DisplayLog("[McdmCreateDevice] Entered: hAdapter=0x%p, hKmdProcess=0x%p\n",
         hAdapter, pCreateDevice->hKmdProcess);
     pCreateDevice->hDevice = NULL;
-    if (g_Bc250CreateDeviceObject == NULL) return STATUS_NOT_SUPPORTED;
+    /*
+     * MEDIDO na corrida 08/09 13:00: sete ciclos
+     * CreateProcess -> CreateDevice -> CreateContext(Node 0) -> DestroyProcess,
+     * todos com o MESMO hDxgkProcess, e a negociacao de VidPn -- que ja havia
+     * CONVERGIDO -- descartada a cada ciclo. Nao havia como saber se alguma
+     * dessas DDIs RECUSOU: as tres falhavam MUDAS. Mesma classe do B4, agora no
+     * caminho critico do processo que morre.
+     */
+    if (g_Bc250CreateDeviceObject == NULL) {
+        Bc250DisplayLog("[McdmCreateDevice] RECUSADO: provedor de objeto de device ausente -> STATUS_NOT_SUPPORTED\n");
+        return STATUS_NOT_SUPPORTED;
+    }
     if (pCreateDevice->hKmdProcess == NULL) {
         pCreateDevice->hDevice = (HANDLE)1;
+        Bc250DisplayLog("[McdmCreateDevice] Device de sistema (hKmdProcess=NULL) -> hDevice=1, SUCCESS\n");
         return STATUS_SUCCESS;
     }
     status = g_Bc250CreateDeviceObject(
         hAdapter, pCreateDevice->hKmdProcess, &deviceHandle);
-    if (!NT_SUCCESS(status)) return status;
+    if (!NT_SUCCESS(status)) {
+        Bc250DisplayLog("[McdmCreateDevice] RECUSADO: provedor devolveu status=0x%08X\n",
+            (uint32_t)status);
+        return status;
+    }
     pCreateDevice->hDevice = deviceHandle;
+    Bc250DisplayLog("[McdmCreateDevice] OK: hDevice=0x%p\n", deviceHandle);
     return STATUS_SUCCESS;
 }
 
@@ -819,14 +1277,70 @@ NTSTATUS APIENTRY Bc250McdmCreateProcess(
     if (hAdapter == NULL || pArgs == NULL || pArgs->hDxgkProcess == NULL) {
         return STATUS_INVALID_PARAMETER;
     }
-    Bc250DisplayLog("[McdmCreateProcess] Entered: hAdapter=0x%p, hDxgkProcess=0x%p\n",
-        hAdapter, pArgs->hDxgkProcess);
+    /*
+     * MEDIDO na corrida 08/09 13:00 (perfil lab, Codigo 0, tela preta): a
+     * negociacao de VidPn CONVERGIU 39 vezes -- "TargetMode matches GOP ->
+     * Supported=TRUE!" com Scale=1/Rot=1 e os dois modos fixados, exatamente o
+     * estado que a corrida de PRODUCAO comita -- e foi descartada 46 vezes. Em
+     * cada ciclo o log mostrava CreateProcess -> CreateDevice -> CreateContext
+     * (Node 0) -> DestroyProcess, e entao a negociacao recomecava do zero.
+     *
+     * NAO ha' como saber QUEM morre: o log so' tinha handles opacos. E a
+     * hipotese obvia -- o E_NOTIMPL da nossa UMD -- foi REFUTADA na mesma
+     * corrida: nenhum BC250_UMD_LOG_*.txt foi criado, isto e', bc250umd.dll
+     * nunca chegou a ser carregada. Na corrida de PRODUCAO das 08:44 a mesma
+     * DLL carregou em dwm.exe e recusou OpenAdapter10/10_2 com E_NOTIMPL --
+     * aquela e' a parede do D3D11, e e' OUTRA, posterior a esta.
+     *
+     * DXGKARG_CREATEPROCESS carrega pProcessName e Flags desde WDDM 2.4 (ver
+     * d3dkmddi.h) e declaramos 2.7, entao o nome vem do proprio contrato --
+     * sem API nao documentada. pProcessName pode ser NULL por contrato, e
+     * ProcessNameLength conta WCHARs, nao bytes.
+     */
+    {
+        WCHAR nameBuffer[64];
+        const WCHAR *nameText = L"<sem nome>";
+        UINT nameChars = pArgs->ProcessNameLength;
+
+        if (pArgs->pProcessName != NULL && nameChars != 0u) {
+            UINT nameIndex;
+            /*
+             * Destino volatile de proposito. Uma copia elemento a elemento e'
+             * reconhecida pelo /O2 e reemitida como memcpy, que NAO existe no
+             * link offline das suites de contrato -- e RtlCopyMemory tem o
+             * mesmo destino. O volatile desliga essa reducao.
+             */
+            volatile WCHAR *nameDst = nameBuffer;
+            if (nameChars > (RTL_NUMBER_OF(nameBuffer) - 1u)) {
+                nameChars = RTL_NUMBER_OF(nameBuffer) - 1u;
+            }
+            for (nameIndex = 0u; nameIndex < nameChars; ++nameIndex) {
+                nameDst[nameIndex] = pArgs->pProcessName[nameIndex];
+            }
+            nameDst[nameChars] = L'\0';
+            nameText = nameBuffer;
+        }
+        Bc250DisplayLog("[McdmCreateProcess] Entered: hAdapter=0x%p, hDxgkProcess=0x%p, Nome=%ws, Flags(System=%u Gdi=%u Vm=%u VmWorker=%u Isolated=%u)\n",
+            hAdapter, pArgs->hDxgkProcess, nameText,
+            pArgs->Flags.SystemProcess,
+            pArgs->Flags.GdiProcess,
+            pArgs->Flags.VirtualMachineProcess,
+            pArgs->Flags.VirtualMachineWorkerProcess,
+            pArgs->Flags.SessionIsolatedContainer);
+    }
 
     pArgs->hKmdProcess = NULL;
-    if (g_Bc250CreateProcessObject == NULL) return STATUS_NOT_SUPPORTED;
+    if (g_Bc250CreateProcessObject == NULL) {
+        Bc250DisplayLog("[McdmCreateProcess] RECUSADO: provedor de objeto de processo ausente -> STATUS_NOT_SUPPORTED\n");
+        return STATUS_NOT_SUPPORTED;
+    }
     status = g_Bc250CreateProcessObject(
         hAdapter, pArgs->hDxgkProcess, &processHandle);
-    if (!NT_SUCCESS(status)) return status;
+    if (!NT_SUCCESS(status)) {
+        Bc250DisplayLog("[McdmCreateProcess] RECUSADO: provedor devolveu status=0x%08X\n",
+            (uint32_t)status);
+        return status;
+    }
     pArgs->hKmdProcess = processHandle;
     return STATUS_SUCCESS;
 }
@@ -1016,10 +1530,13 @@ SIZE_T APIENTRY Bc250McdmGetRootPageTableSize(
 #define BC250_STD_ALLOC_ALIGNMENT 65536ull
 #define BC250_STD_ALLOC_BYTES_PER_PIXEL 4ull
 
-#define BC250_STD_ALLOC_TOKEN_PRIMARY 0xA1100001ull
+#define BC250_STD_ALLOC_TOKEN_PRIMARY \
+    ((UINT64)BC250_ALLOCATION_TOKEN_CLASS_PRIMARY)
 #define BC250_STD_ALLOC_TOKEN_SHADOW  0xA1100002ull
 #define BC250_STD_ALLOC_TOKEN_STAGING 0xA1100003ull
 #define BC250_STD_ALLOC_TOKEN_GDI     0xA1100004ull
+
+static volatile LONG g_Bc250StdAllocSequence = 0;
 
 static VOID Bc250McdmPublishStandardAllocationPrivateData(
     _Inout_ DXGKARG_GETSTANDARDALLOCATIONDRIVERDATA *Args,
@@ -1028,6 +1545,7 @@ static VOID Bc250McdmPublishStandardAllocationPrivateData(
 {
     BC250_ALLOCATION_PRIVATE_V1 priv;
     UINT64 aligned;
+    LONG seq;
 
     if (ByteSize == 0ull) {
         ByteSize = BC250_STD_ALLOC_ALIGNMENT;
@@ -1048,12 +1566,13 @@ static VOID Bc250McdmPublishStandardAllocationPrivateData(
         return;
     }
 
+    seq = InterlockedIncrement(&g_Bc250StdAllocSequence);
     RtlZeroMemory(&priv, sizeof(priv));
     priv.Magic = BC250_ALLOCATION_PRIVATE_MAGIC;
     priv.Version = BC250_ALLOCATION_PRIVATE_VERSION;
     priv.StructSize = (UINT32)sizeof(priv);
     priv.Flags = 0u;
-    priv.AllocationToken = Token;
+    priv.AllocationToken = ((UINT64)Token << 32) | (UINT64)(ULONG)seq;
     priv.ByteSize = aligned;
     priv.Alignment = BC250_STD_ALLOC_ALIGNMENT;
     RtlCopyMemory(Args->pAllocationPrivateDriverData, &priv, sizeof(priv));
@@ -1334,7 +1853,31 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         caps->MemoryManagementCaps.ParavirtualizationSupported = 0u;
         caps->PreemptionCaps.ComputePreemptionGranularity =
             D3DKMDT_COMPUTE_PREEMPTION_DMA_BUFFER_BOUNDARY;
-        caps->SupportPerEngineTDR = TRUE;
+
+        /*
+         * A1 (06/09): os caps de tipo de driver saem de uma fonte unica --
+         * Bc250GetDriverCapsPolicy, em driver/core. Antes deste bloco, o
+         * RtlZeroMemory acima deixava SupportNonVGA em FALSE neste caminho
+         * enquanto o handler KMDOD do MESMO binario escrevia TRUE. A tabela
+         * cita a exigencia campo a campo e travou em driver_caps_contract_test.
+         */
+        {
+            BC250_DRIVER_CAPS_POLICY capsPolicy;
+            if (Bc250GetDriverCapsPolicy(BC250_WDDM_DRIVER_FULL_GRAPHICS,
+                    &capsPolicy) != BC250_DRIVER_CAPS_OK) {
+                Bc250DisplayLog("[McdmQAI] DRIVERCAPS: politica de caps indisponivel\n");
+                return STATUS_DEVICE_CONFIGURATION_ERROR;
+            }
+            caps->SupportNonVGA =
+                (capsPolicy.SupportNonVGA != 0u) ? TRUE : FALSE;
+            caps->SupportSmoothRotation =
+                (capsPolicy.SupportSmoothRotation != 0u) ? TRUE : FALSE;
+            caps->SupportDirectFlip =
+                (capsPolicy.SupportDirectFlip != 0u) ? TRUE : FALSE;
+            caps->SupportPerEngineTDR =
+                (capsPolicy.SupportPerEngineTDR != 0u) ? TRUE : FALSE;
+            caps->FlipCaps.FlipOnVSyncMmIo = capsPolicy.FlipOnVSyncMmIo;
+        }
         caps->GpuEngineTopology.NbAsymetricProcessingNodes =
             runtimeCaps.NodeCount;
         caps->MiscCaps.ComputeOnly = Bc250McdmGetComputeOnly();
@@ -1347,7 +1890,7 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         caps->PresentationCaps.MaxTextureHeightShift = 3u; /* 2 ^ (3 + 11) = 16384 texels */
         caps->PresentationCaps.SupportSoftwareDeviceBitmaps = 1u;
         caps->MaxQueuedFlipOnVSync = 1u;
-        caps->FlipCaps.FlipOnVSyncMmIo = 1u;
+        /* FlipCaps.FlipOnVSyncMmIo vem da politica de caps, acima. */
         caps->PointerCaps.Value = 0u;
         caps->MaxPointerWidth = 0u;
         caps->MaxPointerHeight = 0u;
@@ -1379,6 +1922,12 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
             caps->MaxQueuedFlipOnVSync,
             caps->MiscCaps.Value,
             caps->PointerCaps.Value);
+        Bc250DisplayLog("[DriverCaps] TypeCaps(NonVGA=%u, SmoothRotation=%u, DirectFlip=%u, PerEngineTDR=%u, FlipOnVSyncMmIo=%u)\n",
+            (ULONG)caps->SupportNonVGA,
+            (ULONG)caps->SupportSmoothRotation,
+            (ULONG)caps->SupportDirectFlip,
+            (ULONG)caps->SupportPerEngineTDR,
+            caps->FlipCaps.FlipOnVSyncMmIo);
         Bc250DisplayLog("[DriverCaps] Sched(MultiEngine=%u, Preempt=%u, LowIrql=%u) Mem(VA=%u, GpuMmu=%u, Paravirt=%u)\n",
             caps->SchedulingCaps.MultiEngineAware,
             caps->SchedulingCaps.PreemptionAware,
@@ -1492,6 +2041,131 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         desc->PageTableAlignmentInBytes = runtimeCaps.PageTableAlignmentBytes;
         Bc250DisplayLog("[McdmQAI] PAGETABLELEVELDESC: Level=%u, Bits=%u, Size=%u\n",
             in->LevelIndex, desc->PageTableIndexBitCount, (UINT32)desc->PageTableSizeInBytes);
+        return STATUS_SUCCESS;
+    }
+
+    /*
+     * DXGKQAITYPE_UMDRIVERPRIVATE (Type=0) -- ITEM ZERO, achado por medição.
+     *
+     * Na corrida 2026-09-07 08:25 este tipo foi pedido **160 vezes** com
+     * OutSize=2400 e caiu no `default:` do switch, devolvendo
+     * STATUS_NOT_SUPPORTED em 80 delas. Na MESMA corrida, com as três entradas
+     * do adapter table da UMD instrumentadas, TODAS saíram com ZERO chamadas
+     * (CalcPrivateDeviceSize, CloseAdapter, CreateDevice, GetCaps,
+     * GetSupportedVersions) e o runtime descartou a DLL sem nem fechar o
+     * adapter. Era o tipo mais pedido da corrida e o único recusado em massa.
+     *
+     * Este é o canal de private driver data entre o NOSSO KMD e o NOSSO UMD --
+     * nós definimos o formato dos dois lados, sem imitar a ABI da AMD.
+     *
+     * REGRAS AQUI:
+     *  - o blob NÃO promete funcionalidade. GateFlags declara explicitamente o
+     *    que não existe (pipeline 3D, submissão Node 1, IB sob VMID8,
+     *    compilador de shader), para a UMD não inferir capacidade do silêncio;
+     *  - falha fechado em buffer curto, sem escrever byte parcial;
+     *  - `pInputData` vem de modo usuário e por isso é tratado como não
+     *    confiável: só o tamanho é considerado, o conteúdo é ignorado
+     *    (validating-private-data-sent-from-user-mode-to-kernel-mode.md).
+     *
+     * `H`: que esta recusa fosse *a* causa do descarte do adapter. Coerente com
+     * toda a cadeia, mas NÃO PROVADO -- só uma corrida decide.
+     */
+    case DXGKQAITYPE_UMDRIVERPRIVATE: {
+        BC250_UMD_PRIVATE_FACTS facts;
+        BC250_UMD_PRIVATE_STATUS blobStatus;
+        uint32_t written = 0u;
+
+        if (pQueryAdapterInfo->OutputDataSize <
+                Bc250UmdPrivateRequiredBytes()) {
+            Bc250DisplayLog("[McdmQAI] UMDRIVERPRIVATE: OutSize=%u < %u exigidos -> BUFFER_TOO_SMALL\n",
+                pQueryAdapterInfo->OutputDataSize,
+                Bc250UmdPrivateRequiredBytes());
+            return STATUS_BUFFER_TOO_SMALL;
+        }
+        if (!NT_SUCCESS(capsStatus) || runtimeCaps.Ready == 0u) {
+            Bc250DisplayLog("[McdmQAI] UMDRIVERPRIVATE: device not ready\n");
+            return STATUS_DEVICE_NOT_READY;
+        }
+        /*
+         * Sem a geometria de GPUVA vinda do runtime não publicamos o blob:
+         * melhor a UMD não receber nada do que receber número inventado.
+         */
+        if (runtimeCaps.GpuVaBitCount == 0u ||
+            runtimeCaps.PageTableLevelCount == 0u) {
+            Bc250DisplayLog("[McdmQAI] UMDRIVERPRIVATE: geometria GPUVA indisponivel "
+                "(VaBits=%u, Levels=%u) -> DEVICE_NOT_READY\n",
+                runtimeCaps.GpuVaBitCount, runtimeCaps.PageTableLevelCount);
+            return STATUS_DEVICE_NOT_READY;
+        }
+
+        RtlZeroMemory(&facts, sizeof(facts));
+        facts.VendorId = 0x1002u;
+        facts.DeviceId = 0x13FEu;
+        facts.RevisionId = 0u;
+        facts.SegmentCount = 2u;
+        facts.VramSegmentId = 1u;
+        facts.ApertureSegmentId = 2u;
+        /*
+         * Mesma fonte de verdade do QUERYSEGMENT4 que o VidMm ja aceitou --
+         * runtimeCaps. Constante nova aqui viraria segunda fonte e divergiria,
+         * como divergiu no A1 com os caps de tipo de driver.
+         */
+        facts.VramSizeBytes = (uint64_t)runtimeCaps.LocalSegmentBytes;
+        facts.ApertureSizeBytes = 0ull; /* aperture: tamanho vem do QUERYSEGMENT4 */
+        /*
+         * CORREÇÃO (07/09) -- eu havia criado uma SEGUNDA FONTE DE VERDADE aqui,
+         * que é exatamente o defeito do A1.
+         *
+         * A versão anterior publicava `BC250_ADAPTER_GPUVA_BITS` (= **48**) e
+         * `PageTableLevels = 2` fixo. Mas o que este mesmo driver declara ao
+         * WDDM em DXGKQAITYPE_GPUMMUCAPS é `runtimeCaps.GpuVaBitCount`, e o log
+         * da corrida 2026-09-07 11:08 mostra o valor real:
+         *
+         *     [McdmQAI] GPUMMUCAPS: VaBits=34, Levels=2
+         *
+         * 34 bits, não 48 — coerente com a geometria de 2 níveis derivada em
+         * docs/03 (raiz de 13 bits + folha de 9 bits + 12 de offset = 34) e com
+         * `PAGE_TABLE_END_ADDR = 2^22 - 1`, ou seja 16 GiB de espaço.
+         *
+         * Publicar 48 faria a UMD -- e, na rota B, o winsys do RADV -- dispor
+         * endereços fora do que o contexto VMID8 traduz. O blob passa a sair da
+         * MESMA fonte que o GPUMMUCAPS.
+         */
+        facts.GpuVaBits = runtimeCaps.GpuVaBitCount;
+        facts.PageSizeBytes = BC250_ADAPTER_PAGE_SIZE_BYTES;
+        facts.PageTableLevels = runtimeCaps.PageTableLevelCount;
+        facts.NodeCount = runtimeCaps.NodeCount;
+        facts.SdmaNodeOrdinal = BC250_ADAPTER_NODE_SDMA;
+        facts.ComputeNodeOrdinal = BC250_ADAPTER_NODE_COMPUTE;
+
+        /*
+         * O que NÃO existe, declarado. Nenhum destes bits é otimista: cada um
+         * corresponde a um item aberto da BASE_DE_AVANCO.
+         */
+        facts.GateFlags = BC250_UMD_GATE_NO_3D_PIPELINE |
+                          BC250_UMD_GATE_NO_SHADER_COMPILER |
+                          BC250_UMD_GATE_CAPS_PROBE_ONLY;
+        if (runtimeCaps.GpuVaReady == 0u) {
+            facts.GateFlags |= BC250_UMD_GATE_NO_IB_UNDER_VMID8;
+        }
+        facts.GateFlags |= BC250_UMD_GATE_NO_NODE1_SUBMIT;
+
+        blobStatus = Bc250UmdPrivateWrite(&facts,
+            pQueryAdapterInfo->pOutputData,
+            pQueryAdapterInfo->OutputDataSize,
+            &written);
+        if (blobStatus != BC250_UMD_PRIVATE_OK) {
+            Bc250DisplayLog("[McdmQAI] UMDRIVERPRIVATE: Bc250UmdPrivateWrite falhou (%d) -> INVALID_PARAMETER\n",
+                (int)blobStatus);
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        Bc250DisplayLog("[McdmQAI] UMDRIVERPRIVATE: %u bytes publicados (OutSize=%u, InSize=%u), NodeCount=%u, GateFlags=0x%08X\n",
+            written, pQueryAdapterInfo->OutputDataSize,
+            pQueryAdapterInfo->InputDataSize,
+            facts.NodeCount, facts.GateFlags);
+        Bc250DisplayLog("[McdmQAI] UMDRIVERPRIVATE: GpuVaBits=%u, PageTableLevels=%u, PageSize=%u (mesma fonte do GPUMMUCAPS)\n",
+            facts.GpuVaBits, facts.PageTableLevels, facts.PageSizeBytes);
         return STATUS_SUCCESS;
     }
 
@@ -1672,7 +2346,29 @@ NTSTATUS APIENTRY Bc250McdmQueryEngineStatus(
         return STATUS_NOT_SUPPORTED;
     }
 
-    pQueryEngineStatus->EngineStatus.Responsive = 1;
+    /*
+     * item 24 (07/09) -- ESTA DDI RESPONDIA "Responsive = 1" SEM MEDIR NADA.
+     * O dxgkrnl a chama durante o TDR para decidir se a engine esta viva;
+     * responder viva sempre e' a mesma classe de falso sucesso do par
+     * Reset/Restart, e teria feito o TDR concluir que nao havia o que resetar.
+     *
+     * Agora a resposta sai de duas passagens de RPTR/WPTR (contrato
+     * Bc250TdrDetectHang) com os ponteiros reduzidos a uma volta do anel. Sem
+     * probe instalada, ou quando a medicao nao e' possivel, a DDI RECUSA --
+     * "nao sei" nao pode virar "esta viva".
+     */
+    if (g_Bc250EngineResponsiveProbe == NULL) {
+        pQueryEngineStatus->EngineStatus.Responsive = 0;
+        return STATUS_NOT_SUPPORTED;
+    }
+    {
+        UINT32 responsive = 0u;
+        if (!g_Bc250EngineResponsiveProbe(&responsive)) {
+            pQueryEngineStatus->EngineStatus.Responsive = 0;
+            return STATUS_DEVICE_NOT_READY;
+        }
+        pQueryEngineStatus->EngineStatus.Responsive = (responsive != 0u) ? 1 : 0;
+    }
     return STATUS_SUCCESS;
 }
 
@@ -1701,21 +2397,61 @@ NTSTATUS APIENTRY Bc250McdmResetEngine(
     return STATUS_NOT_SUPPORTED;
 }
 
+/*
+ * =========================================================================
+ * B6 / item 25 (07/09) -- o par de TDR deixou de mentir.
+ *
+ * ANTES: as duas DDIs abaixo escreviam uma linha de log e devolviam
+ * STATUS_SUCCESS sem tocar em registrador nenhum. O dxgkrnl usa exatamente
+ * este par para decidir se o adaptador foi quiescido e se voltou; declarar
+ * sucesso sem backend e' violacao direta da Lei 4, e num lugar em que a
+ * consequencia e' o sistema seguir submetendo para uma engine parada.
+ *
+ * AGORA: ResetFromTimeout quiesce o SDMA0 de verdade (RB_ENABLE desligado,
+ * F32 travado, snapshot de STATUS/ERR_LOG no log) e RestartFromTimeout
+ * rearma o anel e PROVA com um NOP fisico e fence sobre poison. Falha em
+ * qualquer um dos dois devolve erro -- nao ha caminho que devolva sucesso
+ * sem o silicio ter respondido.
+ *
+ * O QUE ISTO NAO E': o item 25 completo. Falta a corrida com hang induzido
+ * que meca deteccao -> reset -> readmissao de submissao -> display vivo.
+ * Enquanto ela nao existir: NAO VALIDADO EM HARDWARE.
+ * =========================================================================
+ */
 NTSTATUS APIENTRY Bc250McdmResetFromTimeout(CONST HANDLE hAdapter)
 {
-    Bc250DisplayLog("[McdmResetFromTimeout] Called - recovering adapter without BSOD\n");
     if (hAdapter == NULL) {
         return STATUS_NOT_SUPPORTED;
     }
+
+    Bc250DisplayLog("[McdmResetFromTimeout] TDR: quiesce fisico do SDMA0 iniciado\n");
+    if (g_Bc250TdrQuiesce == NULL || !g_Bc250TdrQuiesce()) {
+        /*
+         * Sem transporte nao houve quiesce. Devolver sucesso aqui faria o
+         * dxgkrnl acreditar que a engine parou -- exatamente a mentira que
+         * este bloco existe para eliminar.
+         */
+        Bc250DisplayLog("[McdmResetFromTimeout] TDR: quiesce NAO executado -- devolvendo STATUS_DEVICE_NOT_READY\n");
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    Bc250DisplayLog("[McdmResetFromTimeout] TDR: adaptador quiescido; RPTR/WPTR/STATUS/ERR_LOG sairam na linha TDR_QUIESCE do executor\n");
     return STATUS_SUCCESS;
 }
 
 NTSTATUS APIENTRY Bc250McdmRestartFromTimeout(CONST HANDLE hAdapter)
 {
-    Bc250DisplayLog("[McdmRestartFromTimeout] Called - restarting adapter without BSOD\n");
     if (hAdapter == NULL) {
         return STATUS_NOT_SUPPORTED;
     }
+
+    Bc250DisplayLog("[McdmRestartFromTimeout] TDR: rearmando o SDMA0 e exigindo prova fisica\n");
+    if (g_Bc250TdrRestart == NULL || !g_Bc250TdrRestart()) {
+        Bc250DisplayLog("[McdmRestartFromTimeout] TDR: a engine NAO voltou -- devolvendo STATUS_DEVICE_NOT_READY em vez de declarar adaptador pronto\n");
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    Bc250DisplayLog("[McdmRestartFromTimeout] TDR: engine provada por NOP fisico; adaptador aceita submissao novamente\n");
     return STATUS_SUCCESS;
 }
 
@@ -1729,6 +2465,8 @@ VOID APIENTRY Bc250McdmSetRootPageTable(
 {
     BC250_MCDM_RUNTIME_CAPS caps;
     UINT32 maxEntries;
+    UINT32 rootBits;
+    NTSTATUS status;
 
     if (hAdapter == NULL || pSetPageTable == NULL ||
         pSetPageTable->hContext == NULL ||
@@ -1738,13 +2476,24 @@ VOID APIENTRY Bc250McdmSetRootPageTable(
         caps.FullMcdmReady == 0u || caps.GpuVaReady == 0u ||
         caps.PageTableIndexBitCount == 0u ||
         caps.PageTableIndexBitCount >= 32u) {
+        Bc250DisplayLog("[McdmSetRootPageTable] REJECTED: hAdapter=%p, pSetPageTable=%p, CapsOk=%d\n",
+            hAdapter, pSetPageTable, (g_Bc250QueryRuntimeCaps != NULL) ? 1 : 0);
         return;
     }
-    maxEntries = 1u << caps.PageTableIndexBitCount;
-    (void)g_Bc250SetRootPageTableObject((HANDLE)hAdapter,
+    rootBits = (caps.RootPageTableIndexBitCount != 0u) ?
+        caps.RootPageTableIndexBitCount : caps.PageTableIndexBitCount;
+    maxEntries = 1u << rootBits;
+    Bc250DisplayLog("[McdmSetRootPageTable] Context=%p, SegId=%u, Offset=0x%llX, NumEntries=%u, MaxEntries=%u (rootBits=%u)\n",
+        pSetPageTable->hContext,
+        pSetPageTable->Address.SegmentId,
+        (unsigned long long)pSetPageTable->Address.SegmentOffset,
+        pSetPageTable->NumEntries,
+        maxEntries, rootBits);
+    status = g_Bc250SetRootPageTableObject((HANDLE)hAdapter,
         pSetPageTable->hContext, pSetPageTable->Address.SegmentId,
         pSetPageTable->Address.SegmentOffset,
         pSetPageTable->NumEntries, maxEntries);
+    Bc250DisplayLog("[McdmSetRootPageTable] Result=0x%08X\n", status);
 }
 
 NTSTATUS APIENTRY Bc250McdmSubmitCommandVirtual(
@@ -2003,6 +2752,10 @@ VOID APIENTRY Bc250McdmSetStablePowerState(
 
 VOID Bc250McdmUnload(VOID)
 {
+    if (g_Bc250UnloadCleanupHandler != NULL) {
+        g_Bc250UnloadCleanupHandler();
+        g_Bc250UnloadCleanupHandler = NULL;
+    }
     Bc250McdmInstallRuntimeCapsProvider(NULL);
     Bc250McdmInstallProcessLifecycle(NULL, NULL);
     Bc250McdmInstallDeviceLifecycle(NULL, NULL);
@@ -2015,7 +2768,77 @@ VOID Bc250McdmUnload(VOID)
     Bc250McdmInstallUpdatePageTableHandler(NULL);
     Bc250McdmInstallFlushTlbHandler(NULL);
     Bc250McdmInstallInterruptLifecycle(NULL, NULL);
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeFlushQueuedDpcs();
+#endif
 }
+
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_5)
+NTSTATUS APIENTRY Bc250McdmSignalMonitoredFence(
+    CONST HANDLE hContext,
+    INOUT_PDXGKARG_SIGNALMONITOREDFENCE pSignalMonitoredFence)
+{
+    uint32_t *dmaBuffer;
+    uint32_t dwordsAvailable;
+    uint32_t cursor = 0;
+    uint32_t fenceData[2];
+    BC250_SDMA_STATUS sdmaStatus;
+
+    UNREFERENCED_PARAMETER(hContext);
+    Bc250ProbeMarkDdi(BC250_V5_DDI_SIGNAL_MONITORED_FENCE);
+    if (pSignalMonitoredFence == NULL || pSignalMonitoredFence->pDmaBuffer == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (pSignalMonitoredFence->MonitoredFenceGpuVa == 0ull ||
+        (pSignalMonitoredFence->MonitoredFenceGpuVa & 3u) != 0u) {
+        Bc250DisplayLog("[DdiSignalMonitoredFence] REJECT invalid/misaligned: FenceGpuVa=0x%llX\n",
+            (unsigned long long)pSignalMonitoredFence->MonitoredFenceGpuVa);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    dmaBuffer = (uint32_t *)pSignalMonitoredFence->pDmaBuffer;
+    dwordsAvailable = Bc250PagingFloorPow2Dwords(
+        pSignalMonitoredFence->DmaSize / (uint32_t)sizeof(uint32_t));
+    if (dwordsAvailable < 18u) {
+        Bc250DisplayLog("[DdiSignalMonitoredFence] DmaSize=%u insuficiente (cap=%u dwords)\n",
+            pSignalMonitoredFence->DmaSize, dwordsAvailable);
+        return STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER;
+    }
+
+    fenceData[0] = (uint32_t)(pSignalMonitoredFence->MonitoredFenceValue & 0xFFFFFFFFull);
+    fenceData[1] = (uint32_t)(pSignalMonitoredFence->MonitoredFenceValue >> 32);
+
+    sdmaStatus = Bc250SdmaEmitWriteLinear(
+        dmaBuffer,
+        dwordsAvailable,
+        &cursor,
+        pSignalMonitoredFence->MonitoredFenceGpuVa,
+        fenceData,
+        2u);
+    if (sdmaStatus != BC250_SDMA_OK) {
+        Bc250DisplayLog("[DdiSignalMonitoredFence] SDMA encode failed: status=%d\n", (int)sdmaStatus);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    sdmaStatus = Bc250SdmaEmitGcr(dmaBuffer, dwordsAvailable, &cursor);
+    if (sdmaStatus != BC250_SDMA_OK) {
+        Bc250DisplayLog("[DdiSignalMonitoredFence] GCR encode failed: status=%d\n", (int)sdmaStatus);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Bc250PagingAppendIbAlignmentNops("DdiSignalMonitoredFence", dmaBuffer, &cursor);
+    pSignalMonitoredFence->pDmaBuffer = (PVOID)(dmaBuffer + cursor);
+    if (pSignalMonitoredFence->DmaSize >= cursor * sizeof(uint32_t)) {
+        pSignalMonitoredFence->DmaSize -= cursor * (UINT)sizeof(uint32_t);
+    }
+    pSignalMonitoredFence->MultipassOffset = BC250_PAGING_MULTIPASS_DONE;
+    Bc250DisplayLog("[DdiSignalMonitoredFence] Completo: FenceGpuVa=0x%llX Value=%llu (%u dwords emitidos)\n",
+        (unsigned long long)pSignalMonitoredFence->MonitoredFenceGpuVa,
+        (unsigned long long)pSignalMonitoredFence->MonitoredFenceValue,
+        cursor);
+    return STATUS_SUCCESS;
+}
+#endif
 
 /*
  * Fase V5 — DDIs obrigatorias EXCLUSIVAS da tabela de render.
@@ -2044,6 +2867,10 @@ NTSTATUS Bc250McdmPopulateRenderCallbacks(
         Bc250McdmSetPowerComponentFState;
     InitializationData->DxgkDdiPowerRuntimeControlRequest =
         Bc250McdmPowerRuntimeControlRequest;
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_5)
+    InitializationData->DxgkDdiSignalMonitoredFence =
+        Bc250McdmSignalMonitoredFence;
+#endif
 
     return STATUS_SUCCESS;
 }

@@ -3,8 +3,8 @@ setlocal enabledelayedexpansion
 :: build.bat - compila bc250dbg.sys (driver de instrumentacao)
 ::
 :: Requisitos na maquina de desenvolvimento:
-::   - Visual Studio 2022 (Community/Professional/BuildTools) com toolset x64
-::   - WDK 10.0.22621 ou superior (26100 recomendado)
+::   - Visual Studio 2026 (Community/Professional/BuildTools) com toolset x64
+::   - SDK/WDK 10.0.28000.0
 ::
 :: Saida: output\bc250dbg.sys
 ::
@@ -18,28 +18,19 @@ if not exist "%ODIR%" mkdir "%ODIR%"
 if not exist "%OBJDIR%" mkdir "%OBJDIR%"
 
 :: --------------------------------------------------------- toolchain -----
-:: Se o compilador ja esta no PATH (EWDK via LaunchBuildEnv.cmd, ou um
-:: "Developer Command Prompt" ja aberto), nao ha o que procurar.
-set HAVE_CL=
-where cl.exe >nul 2>&1 && set HAVE_CL=1
-if defined HAVE_CL (
-  echo === toolchain: ja no ambiente ^(EWDK ou prompt de desenvolvedor^)
-  goto :find_wdk
-)
-
 set VCVARS=
 for %%D in (C D E F G) do (
   if not defined VCVARS (
     for %%E in (BuildTools Community Professional Enterprise) do (
       if not defined VCVARS (
-        if exist "%%D:\Program Files\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat"
-        if exist "%%D:\Program Files (x86)\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files (x86)\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat"
+        if exist "%%D:\Program Files\Microsoft Visual Studio\18\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files\Microsoft Visual Studio\18\%%E\VC\Auxiliary\Build\vcvars64.bat"
+        if exist "%%D:\Program Files\Microsoft Visual Studio\2026\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files\Microsoft Visual Studio\2026\%%E\VC\Auxiliary\Build\vcvars64.bat"
       )
     )
   )
 )
 if not defined VCVARS (
-  echo ERRO: vcvars64.bat do VS2022 nao encontrado.
+  echo ERRO: vcvars64.bat do VS2026 nao encontrado.
   exit /b 1
 )
 
@@ -68,23 +59,17 @@ if not defined WDK (
 )
 
 :: WDK 10.0.22621 e o minimo: usamos ExAllocatePool2 e MmMapIoSpaceEx.
-set WDKVER=
-for %%V in (10.0.26100.0 10.0.22621.0) do (
-  if not defined WDKVER (
-    if exist "%WDK%\Include\%%V\km\ntddk.h" set "WDKVER=%%V"
-  )
-)
-if not defined WDKVER (
-  echo ERRO: WDK 10.0.22621 ou superior nao encontrado.
+set WDKVER=10.0.28000.0
+if not exist "%WDK%\Include\%WDKVER%\km\ntddk.h" (
+  echo ERRO: WDK 10.0.28000.0 nao encontrado.
   echo        Instale o "Windows Driver Kit", nao apenas o SDK.
   exit /b 1
 )
 
 echo === WDK  : %WDK% ^(%WDKVER%^)
-if not defined HAVE_CL (
-  echo === VS   : %VCVARS%
-  call "%VCVARS%" >nul
-)
+echo === VS   : %VCVARS%
+call "%VCVARS%" >nul
+if errorlevel 1 exit /b 1
 
 :: ------------------------------------------------------------ compila ----
 set CFLAGS=/nologo /c /W4 /WX- /Od /Oi /Zi /kernel /GS- ^

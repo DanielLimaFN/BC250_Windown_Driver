@@ -41,6 +41,13 @@ if ($markerLines.Count -eq 1 -and $markerLines[0] -match '^oem\d+\.inf$') {
     $targetInf = $markerLines[0].ToLowerInvariant()
 }
 
+foreach ($dev in $devicesBefore) {
+    if ($dev.Service -ne 'BasicDisplay') {
+        Write-Host "Desabilitando dispositivo antes do rollback: $($dev.PNPDeviceID)"
+        & pnputil.exe /disable-device $dev.PNPDeviceID /force | Out-Null
+    }
+}
+
 if ($null -ne $targetInf) {
     Write-Host "Removendo pacote OEM: $targetInf"
     & pnputil.exe /delete-driver $targetInf /uninstall /force
@@ -64,6 +71,9 @@ if ($null -ne $targetInf) {
         Write-Host "Removendo $currentOem..."
         & pnputil /delete-driver $currentOem /uninstall /force | Out-Null
     }
+}
+foreach ($dev in $devicesBefore) {
+    & pnputil.exe /enable-device $dev.PNPDeviceID | Out-Null
 }
 
 & pnputil.exe /scan-devices | Out-Null
@@ -107,6 +117,10 @@ if (-not $restored) {
 
 if (Test-Path -LiteralPath $markerPath) {
     Remove-Item -LiteralPath $markerPath -Force -ErrorAction SilentlyContinue
+}
+
+if (Test-Path -LiteralPath 'HKLM:\SOFTWARE\BC250\Umd') {
+    Remove-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\BC250\Umd' -Name 'D3D11LabPromotion' -ErrorAction SilentlyContinue
 }
 
 if ($requiresCleanBoot) {

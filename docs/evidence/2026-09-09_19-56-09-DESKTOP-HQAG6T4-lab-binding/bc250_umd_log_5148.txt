@@ -1,0 +1,30 @@
+19:56:15.473 [pid=5148 bc250-umd-node1-tripod.exe] === bc250umd.dll CARREGADA ===
+19:56:15.474 [pid=5148 bc250-umd-node1-tripod.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+19:56:15.474 [pid=5148 bc250-umd-node1-tripod.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+19:56:15.474 [pid=5148 bc250-umd-node1-tripod.exe] NODE1_TRIPOD_AUTHORIZED: processo e token conferidos; single-shot armado
+19:56:15.474 [pid=5148 bc250-umd-node1-tripod.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+19:56:15.476 [pid=5148 bc250-umd-node1-tripod.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+19:56:15.476 [pid=5148 bc250-umd-node1-tripod.exe] NODE1_TRIPOD_AUTHORIZED: processo e token conferidos; single-shot armado
+19:56:15.477 [pid=5148 bc250-umd-node1-tripod.exe] NODE1_TRIPOD_AUTHORIZED: processo e token conferidos; single-shot armado
+19:56:15.486 [pid=5148 bc250-umd-node1-tripod.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+19:56:15.486 [pid=5148 bc250-umd-node1-tripod.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+19:56:15.487 [pid=5148 bc250-umd-node1-tripod.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=00000000005F9778 -> PREENCHENDO a struct dele (5 entradas)
+19:56:15.487 [pid=5148 bc250-umd-node1-tripod.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+19:56:15.487 [pid=5148 bc250-umd-node1-tripod.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 pInfo=NULL -> E_NOTIMPL (zerar seria declarar capacidade inexistente)
+19:56:15.487 [pid=5148 bc250-umd-node1-tripod.exe] GetSupportedVersions: sondagem de contagem -> 2
+19:56:15.488 [pid=5148 bc250-umd-node1-tripod.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+19:56:15.488 [pid=5148 bc250-umd-node1-tripod.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+19:56:15.489 [pid=5148 bc250-umd-node1-tripod.exe] CalcPrivateDeviceSize: Interface=0x000A0002, Version=0x0001177A -> 5568 bytes
+19:56:21.456 [pid=5148 bc250-umd-node1-tripod.exe] D3D10 CreateDevice: INTERFACE ACORDADA=0x000A0002, Version=0x0001177A, hRTDevice=0000000000602028, Flags=0x00000000
+19:56:21.457 [pid=5148 bc250-umd-node1-tripod.exe] Bc250UmdDeviceInit: device=0000000000610510 inicializado com sucesso (Interface=0x000A0002, Version=0x0001177A, Winsys=OK)
+19:56:21.457 [pid=5148 bc250-umd-node1-tripod.exe] NODE1_TRIPOD_AUTHORIZED: processo e token conferidos; single-shot armado
+19:56:21.473 [pid=5148 bc250-umd-node1-tripod.exe] CommandBufferInit: GpuVA=0x11000 Capacity=16384 dwords
+19:56:21.473 [pid=5148 bc250-umd-node1-tripod.exe] NODE1_SUBMISSION_READY: Context=0000000000604BC0 GpuVA=0x11000 -- NAO VALIDADO EM HARDWARE
+19:56:21.504 [pid=5148 bc250-umd-node1-tripod.exe] NODE1_PROOF_BUILD: Dst=0x21000 Values=5 Fence=0x10040/BC250F01 Dwords=17 -- OFFLINE
+19:56:21.506 [pid=5148 bc250-umd-node1-tripod.exe] CommandBufferFlush: Node=1 bytes=68 status=OK
+19:56:21.560 [pid=5148 bc250-umd-node1-tripod.exe] NODE1_TRIPOD: contrato completo por callbacks; prova fisica ainda exige RPTR/WPTR e evidencia arquivada -- NAO VALIDADO EM HARDWARE
+19:56:21.561 [pid=5148 bc250-umd-node1-tripod.exe] NODE1_TRIPOD_RESULT: hr=0x00000000 Dst=0x21000 FenceGpuVa=0x10040 FenceObs=0xBC250F01 Poison=1 Submitted=1 Fence=1 Data=1 Cleanup=1 Values=BC250C01,BC250C02,BC250C03,BC250C04,BC250C05 -- NAO VALIDADO EM HARDWARE
+19:56:21.561 [pid=5148 bc250-umd-node1-tripod.exe] Bc250UmdDeviceTeardown: device=0000000000610510 iniciando teardown
+19:56:21.584 [pid=5148 bc250-umd-node1-tripod.exe] CommandBufferTeardown: concluido
+19:56:21.587 [pid=5148 bc250-umd-node1-tripod.exe] Bc250UmdDeviceTeardown: device=0000000000610510 concluido
+19:56:21.589 [pid=5148 bc250-umd-node1-tripod.exe] CloseAdapter: adapter=00000000005FD1A0, Interface=0x000B000B -> S_OK

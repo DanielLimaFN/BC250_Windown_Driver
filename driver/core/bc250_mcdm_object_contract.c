@@ -316,7 +316,15 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmContextAcquireSubmissionView(
         processRec->State != (uint32_t)BC250_MCDM_OBJECT_STATE_LIVE) {
         return BC250_MCDM_OBJECT_OWNER_MISMATCH;
     }
-    if (processRec->RootPageTableAddress == 0u ||
+    /*
+     * Segment offset zero is a valid root in the local segment.  The physical
+     * address is LocalSegmentBase + 0, not address zero.  The 19:53 hardware
+     * run installed exactly that root and then could not acquire a submission
+     * view because this check treated the offset as an absence sentinel.
+     * Presence is carried explicitly by SetCount + SegmentId + Entries.
+     */
+    if (processRec->RootPageTableSetCount == 0u ||
+        processRec->RootPageTableSegmentId != 1u ||
         processRec->RootPageTableEntries == 0u) {
         return BC250_MCDM_OBJECT_NO_ROOT_PAGE_TABLE;
     }
@@ -507,13 +515,19 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectSetRootPageTable(
     BC250_MCDM_OBJECT_RECORD *process;
     BC250_MCDM_OBJECT_STATUS status;
 
-    if (MaxEntries == 0u || (SegmentId != 0u && SegmentId != 1u) ||
-        ((Address == 0u) != (NumEntries == 0u)) ||
-        ((Address == 0u) != (SegmentId == 0u)) ||
-        (Address != 0u && ((Address & 0xFFFull) != 0u ||
-         (Address & ~0x0000FFFFFFFFF000ull) != 0u)) ||
-        NumEntries > MaxEntries) {
+    if (MaxEntries == 0u || (SegmentId != 0u && SegmentId != 1u)) {
         return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+    }
+    if (SegmentId == 0u) {
+        if (NumEntries != 0u || Address != 0u) {
+            return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+        }
+    } else {
+        if (NumEntries == 0u || NumEntries > MaxEntries ||
+            (Address & 0xFFFull) != 0u ||
+            (Address & ~0x0000FFFFFFFFF000ull) != 0u) {
+            return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+        }
     }
     status = Bc250McdmObjectLookup(Registry, Context,
         BC250_MCDM_OBJECT_CONTEXT, NULL, &contextRecord);
@@ -532,6 +546,19 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectSetRootPageTable(
         process->RootPageTableSetCount = 1u;
     }
     ++process->PageTableEpoch;
+
+    {
+        BC250_MCDM_OBJECT_RECORD *ctx = Bc250McdmFindObject(Registry, Context);
+        if (ctx != NULL) {
+            ctx->RootPageTableAddress = Address;
+            ctx->RootPageTableSegmentId = SegmentId;
+            ctx->RootPageTableEntries = NumEntries;
+            ++ctx->RootPageTableSetCount;
+            if (ctx->RootPageTableSetCount == 0u) {
+                ctx->RootPageTableSetCount = 1u;
+            }
+        }
+    }
     return BC250_MCDM_OBJECT_OK;
 }
 

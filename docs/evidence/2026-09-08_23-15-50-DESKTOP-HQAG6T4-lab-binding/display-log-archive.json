@@ -1,0 +1,10 @@
+﻿{
+    "source":  "C:\\BC250_DISPLAY_LOG.txt",
+    "archived_as":  "bc250_display_log-full.txt",
+    "bytes":  3042708,
+    "sha256":  "7BB49A72583A574C84D18713D4A425257B28BAFF85ADECF575B21FA51EDD6BEE",
+    "bind_start_offset":  2928377,
+    "note":  "arquivo cumulativo: recortar deste bind a partir de bind_start_offset",
+    "archived_at":  "2026-09-08T23:16:11.6331698-03:00",
+    "hardware_validated":  false
+}

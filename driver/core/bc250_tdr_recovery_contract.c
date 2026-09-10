@@ -57,7 +57,9 @@ BC250_TDR_STATUS Bc250TdrBuildResetPlan(
                             BC250_TDR_ACTION_FAULT_CONTEXT |
                             BC250_TDR_ACTION_RESUME;
 
-    if (NodeIndex == BC250_ADAPTER_NODE_COMPUTE) {
+    if (NodeIndex == BC250_ADAPTER_NODE_SDMA) {
+        Plan->ActionsRequired |= BC250_TDR_ACTION_FULL_BLOCK_RESET;
+    } else if (NodeIndex == BC250_ADAPTER_NODE_COMPUTE) {
         Plan->ActionsRequired |= BC250_TDR_ACTION_DEQUEUE_HQD;
     }
 
@@ -67,6 +69,30 @@ BC250_TDR_STATUS Bc250TdrBuildResetPlan(
 
     (void)CurrentWptr;
 
+    return BC250_TDR_OK;
+}
+
+BC250_TDR_STATUS Bc250TdrValidateSdmaRestartReadback(
+    uint32_t Rptr,
+    uint32_t RptrHi,
+    uint32_t Wptr,
+    uint32_t WptrHi,
+    uint32_t RbCntl,
+    uint32_t RbEnableMask,
+    uint32_t F32Cntl,
+    uint32_t F32HaltMask,
+    uint32_t GrbmSoftReset,
+    uint32_t SdmaResetMask)
+{
+    if (RbEnableMask == 0u || F32HaltMask == 0u || SdmaResetMask == 0u) {
+        return BC250_TDR_BAD_ARGUMENT;
+    }
+    if (Rptr != 0u || RptrHi != 0u || Wptr != 0u || WptrHi != 0u ||
+        (RbCntl & RbEnableMask) == 0u ||
+        (F32Cntl & F32HaltMask) != 0u ||
+        (GrbmSoftReset & SdmaResetMask) != 0u) {
+        return BC250_TDR_RESTART_NOT_READY;
+    }
     return BC250_TDR_OK;
 }
 
@@ -98,6 +124,7 @@ const char *Bc250TdrStatusName(BC250_TDR_STATUS Status)
     case BC250_TDR_BAD_ARGUMENT: return "bad_argument";
     case BC250_TDR_INVALID_NODE: return "invalid_node";
     case BC250_TDR_NOT_HANGING: return "not_hanging";
+    case BC250_TDR_RESTART_NOT_READY: return "restart_not_ready";
     default: return "unknown";
     }
 }

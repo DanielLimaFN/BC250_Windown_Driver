@@ -1,0 +1,9 @@
+﻿Iniciando Rollback de Laboratorio...
+Desabilitando dispositivo antes do rollback: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+Removendo pacote OEM: oem34.inf
+Utilitßrio PnP da Microsoft
+
+Pacote de driver desinstalado.
+Pacote de drivers excluÝdo com Ûxito.
+Rollback de Laboratorio Concluido e verificado: BasicDisplay Codigo 0.
+BOOT FRIO obrigatorio antes do proximo binding: C:\BC250_REQUIRE_CLEAN_BOOT.json

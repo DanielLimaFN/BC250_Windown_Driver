@@ -1,0 +1,7 @@
+﻿{
+    "state":  "TIMEOUT_OBSERVED_BEFORE_TERMINATE",
+    "process_id":  4408,
+    "timeout_seconds":  20,
+    "captured_at":  "2026-09-06T19:53:29.8088597-03:00",
+    "hardware_validated":  false
+}

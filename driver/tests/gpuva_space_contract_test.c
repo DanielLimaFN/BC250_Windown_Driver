@@ -32,6 +32,14 @@ static int Bc250RunGpuvaSpaceContractTest(void)
     uint64_t resolvedOffset = 0ull;
 
     /* 1. Inicialização */
+    CHECK(Bc250GpuvaSpaceInitialize(&space, 0u) == BC250_GPUVA_OK);
+    CHECK(space.AddressBits == BC250_GPUVA_PT_VA_BITS);
+    CHECK(space.MaxAddress == (1ull << BC250_GPUVA_PT_VA_BITS));
+    CHECK(space.PageTableEpoch == 1u);
+
+    CHECK(Bc250GpuvaSpaceInitialize(&space, 65u) == BC250_GPUVA_OK);
+    CHECK(space.AddressBits == BC250_GPUVA_PT_VA_BITS);
+
     CHECK(Bc250GpuvaSpaceInitialize(&space, 48u) == BC250_GPUVA_OK);
     CHECK(space.AddressBits == 48u);
     CHECK(space.MaxAddress == 0x0001000000000000ull);

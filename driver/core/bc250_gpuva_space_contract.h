@@ -26,36 +26,55 @@ extern "C" {
 #define BC250_GPUVA_SPACE_MAX_RANGES 256u
 #define BC250_GPUVA_PAGE_BYTES 4096ull
 #define BC250_GPUVA_PAGE_MASK (BC250_GPUVA_PAGE_BYTES - 1ull)
-#define BC250_GPUVA_DEFAULT_BITS 48u
+/*
+ * TETO ARQUITETURAL, NAO O LIMITE TRADUZIVEL.
+ *
+ * BC250_GPUVA_ARCH_MAX_BITS e' o teto arquitetural de 48 bits aceito para
+ * testes sinteticos parametrizados. O padrao real do silicio e'
+ * BC250_GPUVA_PT_VA_BITS (34 bits, definido abaixo).
+ *
+ * NAO use nenhum dos dois como limite de traducao: o contexto VMID8 traduz
+ * 2^34, e um VA acima disso nao tem PTE alcancavel. Para isso existe
+ * BC250_GPUVA_TRANSLATABLE_LIMIT, abaixo.
+ */
+#define BC250_GPUVA_ARCH_MAX_BITS 48u
 #define BC250_GPUVA_MAX_LIMIT 0x0001000000000000ull /* 2^48 */
 
 /*
  * =========================================================================
  * Geometria da page table declarada ao dxgkrnl (modelo GpuMmu do WDDM)
  *
- * PROVENIENCIA (Lei 7): docs/03_CATALOGO_DE_REGISTRADORES.md, tabela de
- * campos de GCVM_CONTEXT0_CNTL, linha PAGE_TABLE_DEPTH -> valor 0.
- * Profundidade 0 no GCVM significa page table PLANA, de um unico nivel --
- * que e' exatamente o modelo que BC250_GCVM_PAGE_TABLE_PLAN implementa e
- * que o item 29 provou no silicio (PTE 0x10, traducao conferida).
+ * PROVENIENCIA (Lei 7): docs/03_CATALOGO_DE_REGISTRADORES.md, secao
+ * "Derivacao Matematica da Geometria (34 bits, 2 niveis)". Classificacao P1,
+ * derivada de gfxhub_v2_0_setup_vmid_config() com as mascaras de
+ * gc_10_1_0_sh_mask.h.
  *
- * A hierarquia multi-nivel do amdgpu (PDB2/PDB1/PDB0/PTB) NAO esta
- * implementada neste driver e nao pode ser declarada.
+ * A hierarquia em uso e' de DOIS niveis, e o GCVM e' programado de acordo:
+ *     PAGE_TABLE_DEPTH      = Levels - 1 = 1
+ *     PAGE_TABLE_BLOCK_SIZE = block_size - 9 = 0
+ *     GCVM_CONTEXT8_CNTL    = 0x00555403
+ *     PAGE_TABLE_END_ADDR   = 2^22 - 1 = 0x003FFFFF
+ * Os quatro estao travados por driver/tests/gcvm_context8_cntl_test.c e
+ * declarados em BC250_GCVM_CONTEXT8_CNTL_TARGET_VALUE.
  *
- * Consequencia aritmetica do modelo plano, com pagina de 4 KiB:
- *     VA coberta = 2 ^ (12 + INDEX_BITS)
- *     tabela     = 8 bytes por entrada * 2 ^ INDEX_BITS
+ * ------------------------------------------------------------------------
+ * HISTORICO -- o texto abaixo descrevia o desenho ANTERIOR e ficou FALSO.
+ * Nada foi apagado porque a proveniencia do que mudou tambem e' proveniencia,
+ * mas nada dele vale hoje:
  *
- * BC250_GPUVA_PT_INDEX_BITS = 22 cobre 16 GiB de VA com uma tabela de
- * 32 MiB por processo. Escolhido para casar com os 16 GiB de GDDR6 da placa:
- * 4 GiB (20 bits, 8 MiB) bastaria para desktop e para o primeiro triangulo,
- * mas nao para um jogo real, e o custo de refazer o ensaio depois e' maior
- * que os 24 MiB extras por processo.
+ *   "PAGE_TABLE_DEPTH -> valor 0. Profundidade 0 no GCVM significa page table
+ *    PLANA, de um unico nivel. A hierarquia multi-nivel do amdgpu NAO esta
+ *    implementada neste driver e nao pode ser declarada.
+ *    BC250_GPUVA_PT_INDEX_BITS = 22 cobre 16 GiB de VA com uma tabela de
+ *    32 MiB por processo. Implementar PAGE_TABLE_DEPTH > 0 e' trabalho novo,
+ *    nao troca de constante."
  *
- * Alem de 16 GiB o modelo plano fica caro (24 bits -> 128 MiB por processo);
- * ali o caminho passa a ser hierarquia multi-nivel, isto e', implementar
- * PAGE_TABLE_DEPTH > 0 no GCVM. Isso e' trabalho novo, nao troca de
- * constante.
+ * O que aconteceu: WDDM 2.0+ exige DXGK_MIN_PAGE_TABLE_LEVEL_COUNT = 2, o
+ * trabalho novo FOI feito, e BC250_GPUVA_PT_INDEX_BITS passou a ser os 9 bits
+ * da FOLHA -- nao os 22 do modelo plano. Ler o paragrafo historico como norma
+ * levaria alguem a programar depth 0 e a declarar 1 nivel ao dxgkrnl, que e'
+ * abaixo do minimo do contrato.
+ * ------------------------------------------------------------------------
  *
  * WDDM 2.0+ (d3dukmdt.h) exige DXGK_MIN_PAGE_TABLE_LEVEL_COUNT = 2.
  * Para 16 GiB de VA (34 bits) com paginas de 4 KiB (12 bits de offset):
@@ -73,6 +92,19 @@ extern "C" {
 #define BC250_GPUVA_PT_ALIGN_BYTES 4096u
 #define BC250_GPUVA_PT_VA_BITS (12u + BC250_GPUVA_PT_LEAF_INDEX_BITS + BC250_GPUVA_PT_ROOT_INDEX_BITS)
 #define BC250_GPUVA_PT_ROOT_MAX_ENTRIES (1u << BC250_GPUVA_PT_ROOT_INDEX_BITS)
+#define BC250_GPUVA_DEFAULT_BITS BC250_GPUVA_PT_VA_BITS
+
+/*
+ * O QUE O SILICIO REALMENTE TRADUZ: 2^34 = 16 GiB.
+ *
+ * Todo caminho que produz ou registra PTE deve recusar VA a partir daqui.
+ * Antes de 07/09 o journal usava BC250_GPUVA_MAX_LIMIT (2^48) como teto --
+ * um fail-OPEN: aceitava registrar uma pagina num VA que o contexto VMID8
+ * nao alcanca, e o sintoma disso e' indistinguivel do B1 (RPTR chega no
+ * WPTR sem efeito). Nao era alcancavel pelo alocador vigente, que e'
+ * inicializado com BC250_GPUVA_PT_VA_BITS, mas era uma porta aberta.
+ */
+#define BC250_GPUVA_TRANSLATABLE_LIMIT (1ull << BC250_GPUVA_PT_VA_BITS)
 
 typedef enum BC250_GPUVA_STATUS {
     BC250_GPUVA_OK = 0,

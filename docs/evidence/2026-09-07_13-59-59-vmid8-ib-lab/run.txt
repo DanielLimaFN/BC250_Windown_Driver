@@ -1,0 +1,588 @@
+﻿**********************
+Início da transcrição do Windows PowerShell
+Hora de início: 20260907135959
+Nome de Usuário: DESKTOP-HQAG6T4\Daniel
+Executar como Usuário: DESKTOP-HQAG6T4\Daniel
+Nome da Configuração: 
+Computador: DESKTOP-HQAG6T4 (Microsoft Windows NT 10.0.19045.0)
+Aplicativo Host: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -File tools\test-vmid8-ib.ps1 -Execute -IAcceptTheRisk -ObservableFaults -GlobalMmu
+ID do Processo: 1448
+PSVersion: 5.1.19041.2673
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.19041.2673
+BuildVersion: 10.0.19041.2673
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+
+=== VMID 8 / INDIRECT â€” ensaio de laboratorio ===
+
+[0] Armando o driver para escrita...
+    armamento agora: write
+
+[0] Saude do microcontrolador F32 (leitura pura).
+    Criterio medido neste projeto: firmware sadio cobre 0x0140..0x03E0;
+    firmware travado oscila entre 0x000E e 0x0010.
+    Microcontrolador F32 da SDMA0:
+      F32_CNTL       : 0x00000001   HALT=1
+      UCODE_CHECKSUM : 0x00000000
+      PC             : 0x028E 0x028E 0x028E 0x028E 0x028E 0x028E 0x028E 0x028E 0x028E 0x028E 0x028E 0x028E
+      faixa          : 0x028E .. 0x028E (amplitude 0x0000)
+      enderecos dist.: 1 de 24 amostras
+
+      ** F32 em HALT. Nada vai executar.
+
+[0] Inicializando o anel da SDMA0...
+    SDMA0 Ring inicializado com sucesso:
+      Local                : VRAM, offset 0xFF00000
+      Endereco de GPU      : 0xF40FF00000
+      Tamanho do anel      : 1024 dwords (4096 bytes)
+      RB_CNTL              : 0x80841015 (HABILITADO, RB_SIZE=10)
+    SDMA0_CNTL apos init: 0x000400C2 (MIDCMD=False)
+
+[0] CONTROLE POSITIVO: WRITE_LINEAR num scratch de VRAM.
+    Se isto falhar, o anel nao executa nada e o resto do ensaio
+    nao mede VMID 8 -- mede o anel quebrado.
+    WRITE_LINEAR: VRAM 0x0F040000, 4 dwords
+      RPTR 0x0 -> 0x44 (WPTR 0x44)  concluido
+      FENCE VRAM 0x0FF03000 : poison 0x43DAFFFE -> observado 0xBC250001, esperado 0xBC250001 [ALCANCADO]
+      STATUS_REG          : 0x46DEED57 -> 0x46DEED57
+      STATUS no kick      : 0x46DC7042
+      F32 PC              : 0x000B -> 0x001C -> 0x00CB
+      GFXOFF fisico       : 0[GFXOFF] -> 0[GFXOFF] -> 0[GFXOFF]
+      GFX_MISC raw        : 0x00000000 -> 0x00000000 -> 0x00000000
+      GRBM_STATUS         : 0x00003028 -> 0x00003028 -> 0x00003028
+      SDMA CLK_CTRL       : 0xFF0C0100 -> 0xFF0C0100 -> 0xFF0C0100
+      Fence emitida/kick  : 0xBC250001 / publicado
+      WPTR (reg)          : 0x00000000 -> 0x00000044
+      RPTR reg/writeback  : 0x00000044 / 0x00000034
+      WPTR shadow         : 0x00000044
+      Dados conferidos    : 4 dwords, 0 divergencias (conferido no kernel)
+      Conclusao do pacote : SIM (exige RPTR=WPTR, fence GPU e dado conferido)
+      leitura de volta pelo BAR0 (offset 0x0F040000):
+        0x0F040000 = 0x11111111  ok
+        0x0F040004 = 0x22222222  ok
+        0x0F040008 = 0x33333333  ok
+        0x0F04000C = 0x44444444  ok
+      Resultado completo  : VALIDADO NESTA OPERACAO
+    ** CONTROLE OK: o anel executa e a fence e gravada pela GPU.
+
+[1] Estado da GCVM (leitura pura) -- o VMID 0 esta em bypass?
+    Estado de traducao do GC (somente leitura):
+      L2_CNTL              : 0x00080602
+      L2_CNTL2             : 0x00000000
+      L2_CNTL3             : 0x80100007
+      L2_CNTL4             : 0x000000C1
+      L2_CNTL5             : 0x00003FE0
+      FAULT_CNTL           : 0x3FFFFFFC
+      FAULT_CNTL2          : 0x00020000
+      FAULT_STATUS         : 0x00801B00
+      FAULT_ADDR           : 0x0000000000000201
+      FAULT_DEFAULT_ADDR   : 0x0000000000000000
+      CONTEXT0_CNTL        : 0x007FFE80
+      CONTEXT1_CNTL        : 0x007FFE80
+      CTX0_PT_BASE         : 0x0000000000000000
+      CTX0_PT_START        : 0x0000000000000000
+      CTX0_PT_END          : 0x0000000000000000
+      MX_L1_TLB_CNTL       : 0x00000501
+      SYS_APERTURE_LOW     : 0x003D0000
+      SYS_APERTURE_HIGH    : 0x003D0800
+      SYS_APERTURE_DEFAULT : 0x0000000000000000
+      AGP_BASE             : 0x00000000
+      AGP_BOT              : 0x00000000
+      AGP_TOP              : 0x00000000
+      FB_LOCATION_BASE     : 0x0000F400
+      FB_LOCATION_TOP      : 0x0000F41F
+      FB_OFFSET            : 0x00000450
+      IDENTITY_APER_LOW    : 0x00000000
+      IDENTITY_APER_HIGH   : 0x00000000
+      INVALIDATE_ENG0_REQ  : 0x02F80000
+      INVALIDATE_ENG0_ACK  : 0x00000000
+      SEMAFORO retido      : nao (bit SEMAPHORE do ACK)
+        GCVM_INVALIDATE_ENG0_SEM nao e lido de proposito: ler esse
+        registrador ADQUIRE o semaforo. Use 'gcvm semrelease' para
+        liberar, se algum ensaio antigo tiver adquirido.
+
+      Nenhum bit e interpretado aqui. Use:
+        python tools\decode-gcvm.py <arquivo com esta saida>
+
+[1] Lendo a base fisica da VRAM (GCMC_VM_FB_OFFSET)...
+    FB_OFFSET = 0x00000450  ->  vram_base_offset = 0x450000000
+    root[1]  folha_ib[1]  folha_dest[2]
+
+--- VARIANTE PHYS: INDIRECT sob VMID 0, IB endereÃ§ado pelo MC fisico ---
+    IB   em MC 0xF40F020000
+    DEST em MC 0xF40F030000 (VRAM 0xF030000)
+    Decoy VRAM 0x202000 inicial: 0xFFF9F9F9 0xFFF9F9F9 0xFFF9F9F9 0xFFF9F9F9
+    HDP: flush de escrita da CPU + invalidacao da cache de leitura
+    IB em VRAM 0xF020000 -> destino 0xF40F030000 (PHYS): [READBACK CONFERIDO]
+      00000002 0F030000 000000F4 00000003 DEADBEE1 DEADBEE2 DEADBEE3 DEADBEE4
+    Destino VRAM 0xF030000 pre-envenenado: [READBACK CONFERIDO POISON=0x43DAFFFE]
+[4] Emitindo INDIRECT sob VMID 0 para 0xF40F020000 (PHYS)...
+    alinhamento: WPTR=DW17  pad=1 NOPs  INDIRECT termina em DW24 (mod 8 = 0)
+    marcador: WRITE_LINEAR 0xFEED0001 em MC 0xF40F050000 (poison antes)
+    fence:    FENCE 0xFEED0001 em MC 0xF40F060000 (pos-GCR, MTYPE_UC)
+    HDP: flush de escrita da CPU + invalidacao da cache de leitura
+    SDMA raw: 21 dwords
+      dw00 = 0x00000000
+      dw01 = 0x00000004
+      dw02 = 0x0F020000
+      dw03 = 0x000000F4
+      dw04 = 0x00000008
+      dw05 = 0x00000000
+      dw06 = 0x00000000
+      dw07 = 0x00000002
+      dw08 = 0x0F050000
+      dw09 = 0x000000F4
+      dw10 = 0x00000000
+      dw11 = 0xFEED0001
+      dw12 = 0x00000011
+      dw13 = 0x00000000
+      dw14 = 0xC3A10000
+      dw15 = 0x00000000
+      dw16 = 0x00000000
+      dw17 = 0x00030005
+      dw18 = 0x0F060000
+      dw19 = 0x000000F4
+      dw20 = 0xFEED0001
+      RPTR 0x34 -> 0x98   WPTR 0x98   STATUS 0x46DEED57   PC 0x00CB
+      RESULTADO: RPTR alcancou WPTR
+      ATENCAO: RPTR alcancar WPTR NAO prova execucao. A prova e a
+               fence gravada pela GPU e os dados no destino.
+    HDP: flush de escrita da CPU + invalidacao da cache de leitura
+    espera da fence: 16 ms (FENCE=0xFEED0001 -> ALCANCADA)
+[5] Resultado (PHYS):
+    STATUS1 = 0x000003FF  (engine OCIOSA)
+    STATUS2 = 0x00050CDC  ->  F32 PC = 0x0337  (faixa de firmware sadio)
+    IB_CNTL=0x00000101 (IB_ENABLE=1)  IB_BASE=0x000000F40F020000  IB_SIZE=0x0  IB_RPTR=0x20  IB_OFFSET=0x0
+    CONTEXT_STATUS=0x0000000D  SKIP_CNTL=0x00000000  IB_SUB_REMAIN=0x00000000 (0 dw restantes) -> a engine CARREGOU o descritor do IB
+    FAULT_STATUS  = 0x00801B00  FAULT_ADDR = 0x0000000201 (page VA 0x201000)
+      -> FAULT DETECTADO: VMID=8 RW=0 (READ) WALKER_ERROR=0 PERM_FAULT=0x0 MAP_ERR=1 CID=0xD
+    ponteiros: RPTR_writeback=0x88  RPTR_reg=0x98  WPTR_shadow=0x98  ->  writeback 4 dwords atras -- NAO e sinal de falha por si so
+    marcador pos-INDIRECT = 0xFEED0001 (esperado 0xFEED0001)  ->  GRAVOU: a engine passou pelo INDIRECT e continuou o anel
+    fence pos-GCR         = 0xFEED0001 (esperado 0xFEED0001)  ->  GRAVADA PELA GPU: lote e GCR concluidos
+    HDP: flush de escrita da CPU + invalidacao da cache de leitura
+    destino  = 0xDEADBEE1 0xDEADBEE2 0xDEADBEE3 0xDEADBEE4
+    ** BYTE PROOF (PHYS): todos os 4 dwords gravados no destino 0xF030000 com sucesso! **
+    decoy VRAM 0x202000 = 0xFFF9F9F9 0xFFF9F9F9 0xFFF9F9F9 0xFFF9F9F9 -> INTACTO (a GPU NAO escreveu cru)
+
+[2.5] Configurando estagios globais da MMU (GFXHUB)...
+      Tirando snapshot transacional dos 44 registradores GCVM...
+    Transacao GCVM (snapshot):
+      snapshot presente : sim
+      registradores     : 35
+        0x0A100        : 0x00080602
+        0x0A104        : 0x00000000
+        0x0A108        : 0x80100007
+        0x0A160        : 0x000000C1
+        0x0A184        : 0x00003FE0
+        0x0A200        : 0x007FFE80
+        0x0A204        : 0x007FFE80
+        0x0A3AC        : 0x00000000
+        0x0A3B0        : 0x00000000
+        0x0A42C        : 0x00000000
+        0x0A430        : 0x00000000
+        0x0A4AC        : 0x00000000
+        0x0A4B0        : 0x00000000
+        0x0A120        : 0x3FFFFFFC
+        0x0A124        : 0x00020000
+        0x0A13C        : 0x00000000
+        0x0A140        : 0x00000000
+        0x0A61C        : 0x00000501
+        0x0A614        : 0x003D0000
+        0x0A618        : 0x003D0800
+        0x0A5B0        : 0x00000000
+        0x0A5B4        : 0x00000000
+        0x0A148        : 0x00000000
+        0x0A150        : 0x00000000
+        0x0A610        : 0x00000000
+        0x0A60C        : 0x00000000
+        0x0A608        : 0x00000000
+        0x0A14C        : 0x00000000
+        0x0A154        : 0x00000000
+        0x0A158        : 0x00000000
+        0x0A15C        : 0x00000000
+        0x0A31C        : 0x00000000
+        0x0A320        : 0x00000000
+        0x0A3A4        : 0x00000000
+        0x0A3A8        : 0x00000000
+      RESULTADO         : ok
+      Aplicando estagio system (abertura e fault default)...
+    Programacao GCVM, estagio 'system':
+      FB_OFFSET         : 0x00000450  -> vram_base_offset 0x450000000
+      FB_LOCATION       : base 0x0000F400  top 0x0000F41F
+      pagina de falha   : offset 0x0F050000  PA 0x45F050000
+      escritas          : 10, 0 divergencias
+        0x0A610        : 0x00000000 -> 0x00000000  (queria 0x00000000)
+        0x0A60C        : 0x00000000 -> 0x00FFFFFF  (queria 0x00FFFFFF)
+        0x0A608        : 0x00000000 -> 0x00000000  (queria 0x00000000)
+        0x0A614        : 0x003D0000 -> 0x003D0000  (queria 0x003D0000)
+        0x0A618        : 0x003D0800 -> 0x003D07FF  (queria 0x003D07FF)
+        0x0A5B0        : 0x00000000 -> 0x0045F050  (queria 0x0045F050)
+        0x0A5B4        : 0x00000000 -> 0x00000000  (queria 0x00000000)
+        0x0A13C        : 0x00000000 -> 0x0045F050  (queria 0x0045F050)
+        0x0A140        : 0x00000000 -> 0x00000000  (queria 0x00000000)
+        0x0A124        : 0x00020000 -> 0x00060000  (queria 0x00060000)
+      RESULTADO         : ok, todas as escritas confirmadas por readback
+      Aplicando estagio identity...
+    Programacao GCVM, estagio 'identity':
+      FB_OFFSET         : 0x00000450  -> vram_base_offset 0x450000000
+      FB_LOCATION       : base 0x0000F400  top 0x0000F41F
+      escritas          : 6, 0 divergencias
+        0x0A148        : 0x00000000 -> 0xFFFFFFFF  (queria 0xFFFFFFFF)
+        0x0A14C        : 0x00000000 -> 0x0000000F  (queria 0x0000000F)
+        0x0A150        : 0x00000000 -> 0x00000000  (queria 0x00000000)
+        0x0A154        : 0x00000000 -> 0x00000000  (queria 0x00000000)
+        0x0A158        : 0x00000000 -> 0x00000000  (queria 0x00000000)
+        0x0A15C        : 0x00000000 -> 0x00000000  (queria 0x00000000)
+      RESULTADO         : ok, todas as escritas confirmadas por readback
+      Aplicando estagio invrange (engines 0 e 17)...
+    Programacao GCVM, estagio 'invrange':
+      FB_OFFSET         : 0x00000450  -> vram_base_offset 0x450000000
+      FB_LOCATION       : base 0x0000F400  top 0x0000F41F
+      escritas          : 4, 0 divergencias
+        0x0A31C        : 0x00000000 -> 0xFFFFFFFF  (queria 0xFFFFFFFF)
+        0x0A320        : 0x00000000 -> 0x0000001F  (queria 0x0000001F)
+        0x0A3A4        : 0x00000000 -> 0xFFFFFFFF  (queria 0xFFFFFFFF)
+        0x0A3A8        : 0x00000000 -> 0x0000001F  (queria 0x0000001F)
+      RESULTADO         : ok, todas as escritas confirmadas por readback
+      Aplicando estagio tlb (SYSTEM_ACCESS_MODE=3, ENABLE_ADVANCED_DRIVER_MODEL=1)...
+    Programacao GCVM, estagio 'tlb'  [PERIGOSO]:
+      FB_OFFSET         : 0x00000450  -> vram_base_offset 0x450000000
+      FB_LOCATION       : base 0x0000F400  top 0x0000F41F
+      escritas          : 1, 0 divergencias
+        0x0A61C        : 0x00000501 -> 0x00001D59  (queria 0x00001D59)
+      RESULTADO         : ok, todas as escritas confirmadas por readback
+      Aplicando estagio cache (L2 ligada, VMC_TAP_PDE/PTE_REQUEST_PHYSICAL=0)...
+    Programacao GCVM, estagio 'cache'  [PERIGOSO]:
+      FB_OFFSET         : 0x00000450  -> vram_base_offset 0x450000000
+      FB_LOCATION       : base 0x0000F400  top 0x0000F41F
+      escritas          : 5, 0 divergencias
+        0x0A100        : 0x00080602 -> 0x00080E01  (queria 0x00080E01)
+        0x0A104        : 0x00000000 -> 0x00000000  (queria 0x00000003)
+                           bits 0x00000003 fora da conferencia: sao gatilhos, o hardware os limpa depois de agir
+        0x0A108        : 0x80100007 -> 0x80130009  (queria 0x80130009)
+        0x0A160        : 0x000000C1 -> 0x00000001  (queria 0x00000001)
+        0x0A184        : 0x00003FE0 -> 0x00003FE0  (queria 0x00003FE0)
+      RESULTADO         : ok, todas as escritas confirmadas por readback
+
+--- VARIANTE EXEC: destino isolado 0x0F070000, 4 dwords unicos 0xBC25E001..4, PDE so VALID ---
+[2] Montando page tables (EXEC): PDE flags = 0x01
+    PDE  em VRAM 0xF000008 = 0x000000045F010001
+    PTE  IB   em VRAM 0xF010008 -> PA 0x45F020000  flags 0x71 (raw 0x000000045F020071)
+    PTE  DEST em VRAM 0xF010010 -> PA 0x45F070000 (raw 0x000000045F070061)
+    HDP: flush de escrita da CPU + invalidacao da cache de leitura
+    IB em VRAM 0xF020000 -> destino 0x202000 (EXEC): [READBACK CONFERIDO]
+      00000002 00202000 00000000 00000003 BC25E001 BC25E002 BC25E003 BC25E004
+    Destino VRAM 0xF070000 pre-envenenado: [READBACK CONFERIDO POISON=0x43DAFFFE]
+[3] Programando o VMID 8 e invalidando a TLB...
+    PT_BASE = 0x45F000001   CNTL = 0x007FFE03
+    readback: BASE_LO=0x5F000001 BASE_HI=0x00000004 CNTL=0x007FFE03 END_LO=0x003FFFFF -> CONFERE
+    Invalidacao de TLB do GFXHUB:
+      engine            : 17  (a da GART no upstream)
+      vmid / flush type : 8 / 0
+      REQ escrito       : 0x00F80100
+      REQ relido        : 0x00F80100  (leitura obrigatoria neste chip)
+      ACK               : 0x00000100 -> 0x00000100  (mascara 0x00000100)
+      espera            : 0 iteracoes de 1 us
+      FAULT_STATUS      : 0x00801B00
+      FAULT_ADDR        : 0x0000000000000201
+      RESULTADO         : ok, ACK confirmado pelo hardware
+      ** ACK confirma que a invalidacao foi ACEITA. Nao prova que a
+         traducao funciona: isso e a submissao do passo 5.
+[4] Emitindo INDIRECT sob VMID 8 para 0x201000 (EXEC)...
+    alinhamento: WPTR=DW38  pad=4 NOPs  INDIRECT termina em DW48 (mod 8 = 0)
+    marcador: WRITE_LINEAR 0xFEED0002 em MC 0xF40F050000 (poison antes)
+    fence:    FENCE 0xFEED0002 em MC 0xF40F060000 (pos-GCR, MTYPE_UC)
+    HDP: flush de escrita da CPU + invalidacao da cache de leitura
+    SDMA raw: 24 dwords
+      dw00 = 0x00000000
+      dw01 = 0x00000000
+      dw02 = 0x00000000
+      dw03 = 0x00000000
+      dw04 = 0x00080004
+      dw05 = 0x00201000
+      dw06 = 0x00000000
+      dw07 = 0x00000008
+      dw08 = 0x00000000
+      dw09 = 0x00000000
+      dw10 = 0x00000002
+      dw11 = 0x0F050000
+      dw12 = 0x000000F4
+      dw13 = 0x00000000
+      dw14 = 0xFEED0002
+      dw15 = 0x00000011
+      dw16 = 0x00000000
+      dw17 = 0xC3A10000
+      dw18 = 0x00000000
+      dw19 = 0x00000000
+      dw20 = 0x00030005
+      dw21 = 0x0F060000
+      dw22 = 0x000000F4
+      dw23 = 0xFEED0002
+      RPTR 0x88 -> 0xF8   WPTR 0xF8   STATUS 0x46DEED57   PC 0x00CC
+      RESULTADO: RPTR alcancou WPTR
+      ATENCAO: RPTR alcancar WPTR NAO prova execucao. A prova e a
+               fence gravada pela GPU e os dados no destino.
+    HDP: flush de escrita da CPU + invalidacao da cache de leitura
+    espera da fence: 11 ms (FENCE=0xFEED0002 -> ALCANCADA)
+[5] Resultado (EXEC):
+    STATUS1 = 0x000003FF  (engine OCIOSA)
+    STATUS2 = 0x0005070C  ->  F32 PC = 0x01C3  (faixa de firmware sadio)
+    IB_CNTL=0x00080101 (IB_ENABLE=1)  IB_BASE=0x0000000000201000  IB_SIZE=0x0  IB_RPTR=0x20  IB_OFFSET=0x0
+    CONTEXT_STATUS=0x0000000D  SKIP_CNTL=0x00000000  IB_SUB_REMAIN=0x00000000 (0 dw restantes) -> a engine CARREGOU o descritor do IB
+    FAULT_STATUS  = 0x00801B00  FAULT_ADDR = 0x0000000201 (page VA 0x201000)
+      -> FAULT DETECTADO: VMID=8 RW=0 (READ) WALKER_ERROR=0 PERM_FAULT=0x0 MAP_ERR=1 CID=0xD
+    ponteiros: RPTR_writeback=0xF8  RPTR_reg=0xF8  WPTR_shadow=0xF8  ->  writeback alcancou o WPTR
+    marcador pos-INDIRECT = 0xFEED0002 (esperado 0xFEED0002)  ->  GRAVOU: a engine passou pelo INDIRECT e continuou o anel
+    fence pos-GCR         = 0xFEED0002 (esperado 0xFEED0002)  ->  GRAVADA PELA GPU: lote e GCR concluidos
+    HDP: flush de escrita da CPU + invalidacao da cache de leitura
+    destino  = 0xBC25E001 0xBC25E002 0xBC25E003 0xBC25E004
+    ** BYTE PROOF (EXEC): todos os 4 dwords gravados no destino 0xF070000 com sucesso! **
+    decoy VRAM 0x202000 = 0xFFF9F9F9 0xFFF9F9F9 0xFFF9F9F9 0xFFF9F9F9 -> INTACTO (a GPU NAO escreveu cru)
+[6] Desligando o VMID 8...
+    Invalidacao de TLB do GFXHUB:
+      engine            : 17  (a da GART no upstream)
+      vmid / flush type : 8 / 0
+      REQ escrito       : 0x00F80100
+      REQ relido        : 0x00F80100  (leitura obrigatoria neste chip)
+      ACK               : 0x00000100 -> 0x00000100  (mascara 0x00000100)
+      espera            : 0 iteracoes de 1 us
+      FAULT_STATUS      : 0x00801B00
+      FAULT_ADDR        : 0x0000000000000201
+      RESULTADO         : ok, ACK confirmado pelo hardware
+      ** ACK confirma que a invalidacao foi ACEITA. Nao prova que a
+         traducao funciona: isso e a submissao do passo 5.
+
+--- VARIANTE NOEXEC: destino isolado 0x0F080000, 4 dwords unicos 0xBC25A001..4, PTE sem bit 4 (exe) ---
+[2] Montando page tables (NOEXEC): PDE flags = 0x01
+    PDE  em VRAM 0xF000008 = 0x000000045F010001
+    PTE  IB   em VRAM 0xF010008 -> PA 0x45F020000  flags 0x61 (raw 0x000000045F020061)
+    PTE  DEST em VRAM 0xF010010 -> PA 0x45F080000 (raw 0x000000045F080061)
+    HDP: flush de escrita da CPU + invalidacao da cache de leitura
+    IB em VRAM 0xF020000 -> destino 0x202000 (NOEXEC): [READBACK CONFERIDO]
+      00000002 00202000 00000000 00000003 BC25A001 BC25A002 BC25A003 BC25A004
+    Destino VRAM 0xF080000 pre-envenenado: [READBACK CONFERIDO POISON=0x43DAFFFE]
+[3] Programando o VMID 8 e invalidando a TLB...
+    PT_BASE = 0x45F000001   CNTL = 0x007FFE03
+    readback: BASE_LO=0x5F000001 BASE_HI=0x00000004 CNTL=0x007FFE03 END_LO=0x003FFFFF -> CONFERE
+    Invalidacao de TLB do GFXHUB:
+      engine            : 17  (a da GART no upstream)
+      vmid / flush type : 8 / 0
+      REQ escrito       : 0x00F80100
+      REQ relido        : 0x00F80100  (leitura obrigatoria neste chip)
+      ACK               : 0x00000100 -> 0x00000100  (mascara 0x00000100)
+      espera            : 0 iteracoes de 1 us
+      FAULT_STATUS      : 0x00801B00
+      FAULT_ADDR        : 0x0000000000000201
+      RESULTADO         : ok, ACK confirmado pelo hardware
+      ** ACK confirma que a invalidacao foi ACEITA. Nao prova que a
+         traducao funciona: isso e a submissao do passo 5.
+[4] Emitindo INDIRECT sob VMID 8 para 0x201000 (NOEXEC)...
+    alinhamento: WPTR=DW62  pad=4 NOPs  INDIRECT termina em DW72 (mod 8 = 0)
+    marcador: WRITE_LINEAR 0xFEED0003 em MC 0xF40F050000 (poison antes)
+    fence:    FENCE 0xFEED0003 em MC 0xF40F060000 (pos-GCR, MTYPE_UC)
+    HDP: flush de escrita da CPU + invalidacao da cache de leitura
+    SDMA raw: 24 dwords
+      dw00 = 0x00000000
+      dw01 = 0x00000000
+      dw02 = 0x00000000
+      dw03 = 0x00000000
+      dw04 = 0x00080004
+      dw05 = 0x00201000
+      dw06 = 0x00000000
+      dw07 = 0x00000008
+      dw08 = 0x00000000
+      dw09 = 0x00000000
+      dw10 = 0x00000002
+      dw11 = 0x0F050000
+      dw12 = 0x000000F4
+      dw13 = 0x00000000
+      dw14 = 0xFEED0003
+      dw15 = 0x00000011
+      dw16 = 0x00000000
+      dw17 = 0xC3A10000
+      dw18 = 0x00000000
+      dw19 = 0x00000000
+      dw20 = 0x00030005
+      dw21 = 0x0F060000
+      dw22 = 0x000000F4
+      dw23 = 0xFEED0003
+      RPTR 0xF8 -> 0x158   WPTR 0x158   STATUS 0x46DEED57   PC 0x00FE
+      RESULTADO: RPTR alcancou WPTR
+      ATENCAO: RPTR alcancar WPTR NAO prova execucao. A prova e a
+               fence gravada pela GPU e os dados no destino.
+    HDP: flush de escrita da CPU + invalidacao da cache de leitura
+    espera da fence: 14 ms (FENCE=0xFEED0003 -> ALCANCADA)
+[5] Resultado (NOEXEC):
+    STATUS1 = 0x000003FF  (engine OCIOSA)
+    STATUS2 = 0x000506DC  ->  F32 PC = 0x01B7  (faixa de firmware sadio)
+    IB_CNTL=0x00080101 (IB_ENABLE=1)  IB_BASE=0x0000000000201000  IB_SIZE=0x0  IB_RPTR=0x20  IB_OFFSET=0x0
+    CONTEXT_STATUS=0x0000000D  SKIP_CNTL=0x00000000  IB_SUB_REMAIN=0x00000000 (0 dw restantes) -> a engine CARREGOU o descritor do IB
+    FAULT_STATUS  = 0x00801B00  FAULT_ADDR = 0x0000000201 (page VA 0x201000)
+      -> FAULT DETECTADO: VMID=8 RW=0 (READ) WALKER_ERROR=0 PERM_FAULT=0x0 MAP_ERR=1 CID=0xD
+    ponteiros: RPTR_writeback=0x158  RPTR_reg=0x158  WPTR_shadow=0x158  ->  writeback alcancou o WPTR
+    marcador pos-INDIRECT = 0xFEED0003 (esperado 0xFEED0003)  ->  GRAVOU: a engine passou pelo INDIRECT e continuou o anel
+    fence pos-GCR         = 0xFEED0003 (esperado 0xFEED0003)  ->  GRAVADA PELA GPU: lote e GCR concluidos
+    HDP: flush de escrita da CPU + invalidacao da cache de leitura
+    destino  = 0xBC25A001 0xBC25A002 0xBC25A003 0xBC25A004
+    ** BYTE PROOF (NOEXEC): todos os 4 dwords gravados no destino 0xF080000 com sucesso! **
+    decoy VRAM 0x202000 = 0xFFF9F9F9 0xFFF9F9F9 0xFFF9F9F9 0xFFF9F9F9 -> INTACTO (a GPU NAO escreveu cru)
+[6] Desligando o VMID 8...
+    Invalidacao de TLB do GFXHUB:
+      engine            : 17  (a da GART no upstream)
+      vmid / flush type : 8 / 0
+      REQ escrito       : 0x00F80100
+      REQ relido        : 0x00F80100  (leitura obrigatoria neste chip)
+      ACK               : 0x00000100 -> 0x00000100  (mascara 0x00000100)
+      espera            : 0 iteracoes de 1 us
+      FAULT_STATUS      : 0x00801B00
+      FAULT_ADDR        : 0x0000000000000201
+      RESULTADO         : ok, ACK confirmado pelo hardware
+      ** ACK confirma que a invalidacao foi ACEITA. Nao prova que a
+         traducao funciona: isso e a submissao do passo 5.
+
+--- VARIANTE DIRTY: destino isolado 0x0F090000, 4 dwords 0xBC25D001..4, PDE 0x61 corrompido (prova causal) ---
+[2] Montando page tables (DIRTY): PDE flags = 0x61
+    PDE  em VRAM 0xF000008 = 0x000000045F010061
+    PTE  IB   em VRAM 0xF010008 -> PA 0x45F020000  flags 0x71 (raw 0x000000045F020071)
+    PTE  DEST em VRAM 0xF010010 -> PA 0x45F090000 (raw 0x000000045F090061)
+    HDP: flush de escrita da CPU + invalidacao da cache de leitura
+    IB em VRAM 0xF020000 -> destino 0x202000 (DIRTY): [READBACK CONFERIDO]
+      00000002 00202000 00000000 00000003 BC25D001 BC25D002 BC25D003 BC25D004
+    Destino VRAM 0xF090000 pre-envenenado: [READBACK CONFERIDO POISON=0x43DAFFFE]
+[3] Programando o VMID 8 e invalidando a TLB...
+    PT_BASE = 0x45F000001   CNTL = 0x007FFE03
+    readback: BASE_LO=0x5F000001 BASE_HI=0x00000004 CNTL=0x007FFE03 END_LO=0x003FFFFF -> CONFERE
+    Invalidacao de TLB do GFXHUB:
+      engine            : 17  (a da GART no upstream)
+      vmid / flush type : 8 / 0
+      REQ escrito       : 0x00F80100
+      REQ relido        : 0x00F80100  (leitura obrigatoria neste chip)
+      ACK               : 0x00000100 -> 0x00000100  (mascara 0x00000100)
+      espera            : 0 iteracoes de 1 us
+      FAULT_STATUS      : 0x00801B00
+      FAULT_ADDR        : 0x0000000000000201
+      RESULTADO         : ok, ACK confirmado pelo hardware
+      ** ACK confirma que a invalidacao foi ACEITA. Nao prova que a
+         traducao funciona: isso e a submissao do passo 5.
+[4] Emitindo INDIRECT sob VMID 8 para 0x201000 (DIRTY)...
+    alinhamento: WPTR=DW86  pad=4 NOPs  INDIRECT termina em DW96 (mod 8 = 0)
+    marcador: WRITE_LINEAR 0xFEED0004 em MC 0xF40F050000 (poison antes)
+    fence:    FENCE 0xFEED0004 em MC 0xF40F060000 (pos-GCR, MTYPE_UC)
+    HDP: flush de escrita da CPU + invalidacao da cache de leitura
+    SDMA raw: 24 dwords
+      dw00 = 0x00000000
+      dw01 = 0x00000000
+      dw02 = 0x00000000
+      dw03 = 0x00000000
+      dw04 = 0x00080004
+      dw05 = 0x00201000
+      dw06 = 0x00000000
+      dw07 = 0x00000008
+      dw08 = 0x00000000
+      dw09 = 0x00000000
+      dw10 = 0x00000002
+      dw11 = 0x0F050000
+      dw12 = 0x000000F4
+      dw13 = 0x00000000
+      dw14 = 0xFEED0004
+      dw15 = 0x00000011
+      dw16 = 0x00000000
+      dw17 = 0xC3A10000
+      dw18 = 0x00000000
+      dw19 = 0x00000000
+      dw20 = 0x00030005
+      dw21 = 0x0F060000
+      dw22 = 0x000000F4
+      dw23 = 0xFEED0004
+      RPTR 0x158 -> 0x180   WPTR 0x1B8   STATUS 0x46DE6756   PC 0x02AA
+      RESULTADO: *** RPTR NAO ALCANCOU WPTR ***
+      ATENCAO: RPTR alcancar WPTR NAO prova execucao. A prova e a
+               fence gravada pela GPU e os dados no destino.
+    HDP: flush de escrita da CPU + invalidacao da cache de leitura
+    espera da fence: 2029 ms (FENCE=0x43DAFFFE -> TIMEOUT)
+[5] Resultado (DIRTY):
+    STATUS1 = 0x000003FF  (engine OCIOSA)
+    STATUS2 = 0x0000050C  ->  F32 PC = 0x0143  (faixa de firmware sadio)
+    IB_CNTL=0x00080101 (IB_ENABLE=1)  IB_BASE=0x0000000000201000  IB_SIZE=0x8  IB_RPTR=0x0  IB_OFFSET=0x0
+    CONTEXT_STATUS=0x0000000D  SKIP_CNTL=0x00000000  IB_SUB_REMAIN=0x00000000 (0 dw restantes) -> a engine CARREGOU o descritor do IB
+    FAULT_STATUS  = 0x00801B01  FAULT_ADDR = 0x0000000201 (page VA 0x201000)
+      -> FAULT DETECTADO: VMID=8 RW=0 (READ) WALKER_ERROR=0 PERM_FAULT=0x0 MAP_ERR=1 CID=0xD
+    ponteiros: RPTR_writeback=0x180  RPTR_reg=0x180  WPTR_shadow=0x1B8  ->  writeback 14 dwords atras -- NAO e sinal de falha por si so
+    marcador pos-INDIRECT = 0x43DAFFFE (esperado 0xFEED0004)  ->  NAO GRAVOU: a engine PAROU no INDIRECT
+    fence pos-GCR         = 0x43DAFFFE (esperado 0xFEED0004)  ->  NAO GRAVADA: a GPU nao alcancou o fim do lote
+    HDP: flush de escrita da CPU + invalidacao da cache de leitura
+    destino  = 0x43DAFFFE 0x43DAFFFE 0x43DAFFFE 0x43DAFFFE
+    byte proof FALHOU: o poison continua ou dados divergiram, o IB DIRTY nao escreveu no destino 0xF090000.
+    decoy VRAM 0x202000 = 0xFFF9F9F9 0xFFF9F9F9 0xFFF9F9F9 0xFFF9F9F9 -> INTACTO (a GPU NAO escreveu cru)
+[6] Desligando o VMID 8...
+    Invalidacao de TLB do GFXHUB:
+      engine            : 17  (a da GART no upstream)
+      vmid / flush type : 8 / 0
+      REQ escrito       : 0x00F80100
+      REQ relido        : 0x00F80100  (leitura obrigatoria neste chip)
+      ACK               : 0x00000100 -> 0x00000100  (mascara 0x00000100)
+      espera            : 0 iteracoes de 1 us
+      FAULT_STATUS      : 0x00801B01
+      FAULT_ADDR        : 0x0000000000000201
+      RESULTADO         : ok, ACK confirmado pelo hardware
+      ** ACK confirma que a invalidacao foi ACEITA. Nao prova que a
+         traducao funciona: isso e a submissao do passo 5.
+
+[6.5] Restaurando estagios globais da MMU (GFXHUB) ao snapshot do POST...
+    Transacao GCVM (restore):
+      snapshot presente : sim
+      registradores     : 35
+      restaurados       : 35
+      divergencias      : 0
+      RESULTADO         : ok
+
+=== VEREDITO ===
+
+  variante | byte proof | marcador pos-INDIRECT
+  ---------+------------+----------------------
+  PHYS     | OK         | gravou (passou)
+  EXEC     | OK         | gravou (passou)
+  NOEXEC   | OK         | gravou (passou)
+  DIRTY    | falhou     | nao gravou (parou)
+
+  Marcador = WRITE_LINEAR emitido no anel logo apos o INDIRECT.
+  gravou -> a engine decodificou o INDIRECT e seguiu o anel; o que
+            falhou foi o CONTEUDO do IB.
+  parou  -> a engine nao passou do INDIRECT.
+
+  NAO use STATUS2 como CMD_OP: nesta placa ele e o PC do F32.
+  NAO use "RPTR alcancou WPTR" do sdma raw: dbg/hw.c:1672 cai para o
+  registrador MMIO quando o writeback nao alcanca. Vale o writeback.
+
+  Nada aqui prova o caminho do VidMm. Isso continua exigindo o driver
+  de producao. NAO VALIDADO EM HARDWARE: paginacao dirigida pelo VidMm.
+
+
+[7] PARSETEST (por ultimo: pode deixar o anel inconsistente).
+    A engine decodifica pacotes, ou so arrasta o RPTR ate o WPTR?
+    Teste de decodificacao de pacotes
+
+    1. NOP anunciando 8 dwords extras, enviando so o cabecalho...
+       RPTR 0x180 -> 0x180   WPTR 0x1BC   STATUS 0x46DE6756   PC 0x02A5
+
+      ** RPTR PAROU no pacote incompleto: a engine DECODIFICA.
+         Entao os pacotes sao mesmo executados, e o problema das
+         escritas esta na traducao de endereco (VM), nao na engine.
+
+    2. Completando os 8 dwords que faltam...
+       RPTR 0x180 -> 0x180   WPTR 0x1DC   continua parada
+
+[8] Devolvendo o anel...
+    Rollback SDMA0:
+      snapshot presente    : sim
+      registradores        : 24 restaurados, 0 divergencias
+      VRAM                  : 1029 dwords restaurados, 0 divergencias
+      RESULTADO             : estado anterior restaurado
+**********************
+Fim da transcrição do Windows PowerShell
+Hora de término: 20260907140005
+**********************

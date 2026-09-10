@@ -1,0 +1,270 @@
+0007: [DisplayInit] OTG VSync linked to BAR5 at 0xFE800000 (Offset 0x14030), InitialFrameCount=7709
+0015: [SdmaPresent] TRIPE_VEREDITO: TRIPE_PROVADO (TargetWPTR=68 RPTR_Wb=52 RPTR_Reg=68 Casou=REGISTRADOR FenceExp=00001001 FenceObs=00001001 Poison=43DAFFFE Mismatches=0 Polls=1)
+0017: [SdmaPresent] BootTripodValidated=1 (porta da cadeia de bring-up)
+0051: [DriverCaps] WDDMVersion=9984, MaxAllocListSlotId=32, PerEngineTDR=1, Nodes=2, HighestAddr=0x7FFFFFFFFFFFFFFF
+0054: [DriverCaps] TypeCaps(NonVGA=1, SmoothRotation=0, DirectFlip=0, PerEngineTDR=1, FlipOnVSyncMmIo=1)
+0093: [QueryDeviceDescriptor] ChildUid=1, Offset=0, Len=256
+0094: [QueryDeviceDescriptor] ChildUid=1, SyntheticEdid=0, EdidValid=1 -> STATUS_MONITOR_NO_MORE_DESCRIPTOR_DATA (forcing DxgkDdiRecommendMonitorModes)
+0095: [QueryDeviceDescriptor] ChildUid=1, Offset=0, Len=128
+0096: [QueryDeviceDescriptor] ChildUid=1, SyntheticEdid=0, EdidValid=1 -> STATUS_MONITOR_NO_MORE_DESCRIPTOR_DATA (forcing DxgkDdiRecommendMonitorModes)
+0097: [QueryDeviceDescriptor] ChildUid=1, Offset=0, Len=128
+0098: [QueryDeviceDescriptor] ChildUid=1, SyntheticEdid=0, EdidValid=1 -> STATUS_MONITOR_NO_MORE_DESCRIPTOR_DATA (forcing DxgkDdiRecommendMonitorModes)
+0100: [McdmQAI] DISPLAYID_DESCRIPTOR handled (none)
+0222: [SubmitVirtual Node0 SDMA] FenceId=1, DmaSize=64, DmaVA=0x22F000
+0223: [SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFE00B31F07540, Proc=FFFFE00B31F07390, hasRoot=1, targetPtPhys=0x450A8C000, instCtx=FFFFE00B31F07540, instRoot=0x450A8C000
+0224: [SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x22F000 Size=64 -> Segment=0 Offset=0x182A7D000 Epoch=0
+0225: [PT_WALK] RootMC=0x450A8C000 VramMcBase=0x450000000 LocalSegBase=0xA8C000 Janela=268435456 bytes
+0226: [PT_WALK IB] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+0227: [PT_WALK IB] L0 idx=47 VRAM+0xA8D178 PTE=0000000182A7D037 -> pageMC=0x182A7D000 flags=0x37 valid=1
+0228: [PT_WALK IB] RESOLVIDO: VA=0x22F000 -> 0x182A7D000 (root=MC, folha=MC)
+0229: [PT_WALK] IB_PA_MATCH: caminhada=0x182A7D000 cpu=0x182A7D000 -> CONFERE
+0230: [PT_WALK] DEST: faixa de escrita [0x240000, 0xCD0000)
+0231: [PT_WALK DEST] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+0232: [PT_WALK DEST] L0 idx=64 VRAM+0xA8D200 PTE=0000000450AAC061 -> pageMC=0x450AAC000 flags=0x61 valid=1
+0233: [PT_WALK DEST] RESOLVIDO: VA=0x240000 -> 0x450AAC000 (root=MC, folha=MC)
+0234: [PT_WALK DEST] L1 idx=3 VRAM+0xA8C018 PDE=0000000450A8F001 -> leafPA=0x450A8F000 flags=0x1 valid=1 reservado[5:3]=0x0
+0235: [PT_WALK DEST] L0 idx=392 VRAM+0xA8FC40 PTE=0000000450FF4061 -> pageMC=0x450FF4000 flags=0x61 valid=1
+0236: [PT_WALK DEST] RESOLVIDO: VA=0x788000 -> 0x450FF4000 (root=MC, folha=MC)
+0237: [PT_WALK DEST] L1 idx=6 VRAM+0xA8C030 PDE=0000000450A92001 -> leafPA=0x450A92000 flags=0x1 valid=1 reservado[5:3]=0x0
+0238: [PT_WALK DEST] L0 idx=207 VRAM+0xA92678 PTE=000000045153B061 -> pageMC=0x45153B000 flags=0x61 valid=1
+0239: [PT_WALK DEST] RESOLVIDO: VA=0xCCF000 -> 0x45153B000 (root=MC, folha=MC)
+0240: [SubmitVirtual Node0 SDMA] CAMINHO_ESCOLHIDO: INDIRECT (Fill=1/11075584 bytes DestPA=0x450AAC000 DmaBytes=64 IbResolve=1 PlanoAFallback=0)
+0241: [SubmitVirtual Node0 SDMA] IB_EFEITO_DECLARADO: DestVA=0x240000 PA=0x450AAC000 -> MC=0xF400AAC000 Size=11075584 Pattern=0x00000000 (o IB deve produzir isto; canaries plantados antes do disparo)
+0242: [SubmitVirtual Node0 SDMA] IB_ALIGN: StartDW=17 PadDW=1 IndirectEndDW=24 EndModulo8=0 TargetWPTR=132 IbSizeDW=15 PublishedDW=16
+0243: [SubmitVirtual Node0 SDMA] IB_TRIPE_VEREDITO #1: TRIPE_PROVADO (WPTR=132 RPTR_Reg=132 RPTR_Wb=132 Casou=WRITEBACK+REGISTRADOR Fence=00001002 Poison=43DAFFFE Canaries=5 Divergentes=0 PostGPU=[00000000 00000000 00000000 00000000 00000000] Esperado=00000000 Vmid=8 in 128 polls)
+0244: [SubmitVirtual Node0 SDMA] IB_TRIPE PROVADO NO SILICIO #1: a GPU buscou o DMA buffer sob VMID8 e o efeito declarado esta nos bytes do destino
+0245: [SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 64 bytes em VA=0x22F000; DMA_COMPLETED notificado para FenceId=1
+0261: [SubmitVirtual Node0 SDMA] FenceId=2, DmaSize=64, DmaVA=0x22F040
+0262: [SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFE00B31F07540, Proc=FFFFE00B31F07390, hasRoot=1, targetPtPhys=0x450A8C000, instCtx=FFFFE00B31F07540, instRoot=0x450A8C000
+0263: [SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x22F040 Size=64 -> Segment=0 Offset=0x182A7D040 Epoch=0
+0264: [PT_WALK] RootMC=0x450A8C000 VramMcBase=0x450000000 LocalSegBase=0xA8C000 Janela=268435456 bytes
+0265: [PT_WALK IB] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+0266: [PT_WALK IB] L0 idx=47 VRAM+0xA8D178 PTE=0000000182A7D037 -> pageMC=0x182A7D000 flags=0x37 valid=1
+0267: [PT_WALK IB] RESOLVIDO: VA=0x22F040 -> 0x182A7D040 (root=MC, folha=MC)
+0268: [PT_WALK] IB_PA_MATCH: caminhada=0x182A7D040 cpu=0x182A7D040 -> CONFERE
+0269: [PT_WALK] DEST: faixa de escrita [0x240000, 0xCD0000)
+0270: [PT_WALK DEST] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+0271: [PT_WALK DEST] L0 idx=64 VRAM+0xA8D200 PTE=000000045153C061 -> pageMC=0x45153C000 flags=0x61 valid=1
+0272: [PT_WALK DEST] RESOLVIDO: VA=0x240000 -> 0x45153C000 (root=MC, folha=MC)
+0273: [PT_WALK DEST] L1 idx=3 VRAM+0xA8C018 PDE=0000000450A8F001 -> leafPA=0x450A8F000 flags=0x1 valid=1 reservado[5:3]=0x0
+0274: [PT_WALK DEST] L0 idx=392 VRAM+0xA8FC40 PTE=0000000451A84061 -> pageMC=0x451A84000 flags=0x61 valid=1
+0275: [PT_WALK DEST] RESOLVIDO: VA=0x788000 -> 0x451A84000 (root=MC, folha=MC)
+0276: [PT_WALK DEST] L1 idx=6 VRAM+0xA8C030 PDE=0000000450A92001 -> leafPA=0x450A92000 flags=0x1 valid=1 reservado[5:3]=0x0
+0277: [PT_WALK DEST] L0 idx=207 VRAM+0xA92678 PTE=0000000451FCB061 -> pageMC=0x451FCB000 flags=0x61 valid=1
+0278: [PT_WALK DEST] RESOLVIDO: VA=0xCCF000 -> 0x451FCB000 (root=MC, folha=MC)
+0279: [SubmitVirtual Node0 SDMA] CAMINHO_ESCOLHIDO: INDIRECT (Fill=1/11075584 bytes DestPA=0x45153C000 DmaBytes=64 IbResolve=1 PlanoAFallback=0)
+0280: [SubmitVirtual Node0 SDMA] IB_EFEITO_DECLARADO: DestVA=0x240000 PA=0x45153C000 -> MC=0xF40153C000 Size=11075584 Pattern=0x00000000 (o IB deve produzir isto; canaries plantados antes do disparo)
+0281: [SubmitVirtual Node0 SDMA] IB_ALIGN: StartDW=33 PadDW=1 IndirectEndDW=40 EndModulo8=0 TargetWPTR=196 IbSizeDW=15 PublishedDW=16
+0282: [SubmitVirtual Node0 SDMA] IB_TRIPE_VEREDITO #2: TRIPE_PROVADO (WPTR=196 RPTR_Reg=196 RPTR_Wb=196 Casou=WRITEBACK+REGISTRADOR Fence=00001003 Poison=43DAFFFE Canaries=5 Divergentes=0 PostGPU=[00000000 00000000 00000000 00000000 00000000] Esperado=00000000 Vmid=8 in 129 polls)
+0283: [SubmitVirtual Node0 SDMA] IB_TRIPE PROVADO NO SILICIO #2: a GPU buscou o DMA buffer sob VMID8 e o efeito declarado esta nos bytes do destino
+0284: [SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 64 bytes em VA=0x22F040; DMA_COMPLETED notificado para FenceId=2
+0815: [SubmitVirtual Node0 SDMA] FenceId=3, DmaSize=4, DmaVA=0x20000
+0816: [SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFE00B31F076F0, Proc=FFFFE00B31F075D0, hasRoot=1, targetPtPhys=0x45FFBC000, instCtx=FFFFE00B31F076F0, instRoot=0x45FFBC000
+0834: [SubmitVirtual Node0 SDMA] IB_ALIGN: StartDW=127 PadDW=3 IndirectEndDW=136 EndModulo8=0 TargetWPTR=580 IbSizeDW=8 PublishedDW=8
+0836: [SubmitVirtual Node0 SDMA] IB_TRIPE_VEREDITO #4: TRIPE_PROVADO (WPTR=580 RPTR_Reg=580 RPTR_Wb=580 Casou=WRITEBACK+REGISTRADOR Fence=00001007 Poison=43DAFFFE Canaries=5 Divergentes=0 PostGPU=[00000000 00000000 00000000 00000000 00000000] Esperado=00000000 Vmid=8 in 3 polls)
+0838: [SubmitVirtual Node0 SDMA] IB_TRIPE PROVADO NO SILICIO #4: a GPU buscou o DMA buffer sob VMID8 e o efeito declarado esta nos bytes do destino
+0840: [SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 32 bytes em VA=0x22F080; DMA_COMPLETED notificado para FenceId=4
+0844: [SubmitVirtual Node0 SDMA] FenceId=5, DmaSize=4, DmaVA=0x10000
+0846: [SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFE00B31F076F0, Proc=FFFFE00B31F075D0, hasRoot=1, targetPtPhys=0x45FFBC000, instCtx=FFFFE00B31F07540, instRoot=0x450A8C000
+0851: [SubmitVirtual Node0 SDMA] FenceId=6, DmaSize=32, DmaVA=0x22F0A0
+0852: [SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFE00B31F07540, Proc=FFFFE00B31F07390, hasRoot=1, targetPtPhys=0x450A8C000, instCtx=FFFFE00B31F076F0, instRoot=0x45FFBC000
+0855: [SubmitVirtual Node0 SDMA] VMID8 CONTEXT SWITCH: Ctx FFFFE00B31F076F0 -> FFFFE00B31F07540 (Root=0x450A8C000, PT_BASE=0x450A8C000)
+0856: [SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x22F0A0 Size=32 -> Segment=0 Offset=0x182A7D0A0 Epoch=0
+0857: [PT_WALK] RootMC=0x450A8C000 VramMcBase=0x450000000 LocalSegBase=0xA8C000 Janela=268435456 bytes
+0858: [PT_WALK IB] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+0859: [PT_WALK IB] L0 idx=47 VRAM+0xA8D178 PTE=0000000182A7D037 -> pageMC=0x182A7D000 flags=0x37 valid=1
+0860: [PT_WALK IB] RESOLVIDO: VA=0x22F0A0 -> 0x182A7D0A0 (root=MC, folha=MC)
+0861: [PT_WALK] IB_PA_MATCH: caminhada=0x182A7D0A0 cpu=0x182A7D0A0 -> CONFERE
+0862: [PT_WALK] DEST: faixa de escrita [0x24F000, 0x250000)
+0863: [PT_WALK DEST] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+0864: [PT_WALK DEST] L0 idx=79 VRAM+0xA8D278 PTE=0000000451FDC061 -> pageMC=0x451FDC000 flags=0x61 valid=1
+0865: [PT_WALK DEST] RESOLVIDO: VA=0x24F000 -> 0x451FDC000 (root=MC, folha=MC)
+0866: [PT_WALK DEST] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+0867: [PT_WALK DEST] L0 idx=79 VRAM+0xA8D278 PTE=0000000451FDC061 -> pageMC=0x451FDC000 flags=0x61 valid=1
+0868: [PT_WALK DEST] RESOLVIDO: VA=0x24F000 -> 0x451FDC000 (root=MC, folha=MC)
+0869: [PT_WALK DEST] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+0870: [PT_WALK DEST] L0 idx=79 VRAM+0xA8D278 PTE=0000000451FDC061 -> pageMC=0x451FDC000 flags=0x61 valid=1
+0871: [PT_WALK DEST] RESOLVIDO: VA=0x24F000 -> 0x451FDC000 (root=MC, folha=MC)
+0872: [SubmitVirtual Node0 SDMA] CAMINHO_ESCOLHIDO: INDIRECT (Fill=1/4096 bytes DestPA=0x451FDC000 DmaBytes=32 IbResolve=1 PlanoAFallback=0)
+0873: [SubmitVirtual Node0 SDMA] IB_EFEITO_DECLARADO: DestVA=0x24F000 PA=0x451FDC000 -> MC=0xF401FDC000 Size=4096 Pattern=0x00000000 (o IB deve produzir isto; canaries plantados antes do disparo)
+0874: [SubmitVirtual Node0 SDMA] IB_ALIGN: StartDW=161 PadDW=1 IndirectEndDW=168 EndModulo8=0 TargetWPTR=708 IbSizeDW=8 PublishedDW=8
+0875: [SubmitVirtual Node0 SDMA] IB_TRIPE_VEREDITO #6: TRIPE_PROVADO (WPTR=708 RPTR_Reg=708 RPTR_Wb=708 Casou=WRITEBACK+REGISTRADOR Fence=00001009 Poison=43DAFFFE Canaries=5 Divergentes=0 PostGPU=[00000000 00000000 00000000 00000000 00000000] Esperado=00000000 Vmid=8 in 2 polls)
+0876: [SubmitVirtual Node0 SDMA] IB_TRIPE PROVADO NO SILICIO #6: a GPU buscou o DMA buffer sob VMID8 e o efeito declarado esta nos bytes do destino
+0877: [SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 32 bytes em VA=0x22F0A0; DMA_COMPLETED notificado para FenceId=6
+0880: [SetRootPageTable] Node1: raiz registrada; VMID9 instalado no submit
+0885: [SubmitVirtual Node1] GATE ABERTO: GpuvaMappingsOperational=1; publicando IB de 68 bytes em VA=0x11000 no anel persistente MEC (FenceId=1)
+0887: [SubmitVirtual Node1] PrepareComputeVmid: Root=0x45FFB0000 Sub=17 Ret=17 InFlight=0
+0893: [SubmitVirtual Node1] VMID9_BIND: Root=0x45FFB0000 Submitted=17 Retired=17 Status=0 Ready=1
+0895: [PT_WALK NODE1_IB] L1 idx=0 VRAM+0xFFB0000 PDE=000000045FFAF001 -> leafPA=0x45FFAF000 flags=0x1 valid=1 reservado[5:3]=0x0
+0897: [PT_WALK NODE1_IB] L0 idx=17 VRAM+0xFFAF088 PTE=0000000451FCC071 -> pageMC=0x451FCC000 flags=0x71 valid=1
+0899: [PT_WALK NODE1_IB] RESOLVIDO: VA=0x11000 -> 0x451FCC000 (root=MC, folha=MC)
+0901: [SubmitVirtual Node1] IB_CPU_PREVIEW: VA=0x11000 PA=0x451FCC000 Count=17 DW0=C0073700 DW1=00100500 DW2=00021000 DW3=00000000 DW4=BC250C01 DW5=BC250C02 DW6=BC250C03 DW7=BC250C04
+0903: [SubmitVirtual Node1] INICIANDO PUBLICACAO: DmaVA=0x11000 SizeDW=17 FenceId=1
+0914: [SubmitVirtual Node1] SUBMIT SUCESSO: AssignedFence=18 RingWptr=216 WptrMmio=216
+0915: [SubmitVirtual Node1] DESCRIPTOR: Raw=C0023F00,00011000,00000000,09800011
+0916: [SubmitVirtual Node1] FENCE COMMIT: Token=1 RingFence=18 committed=1 accepted=1 status=0x00000000
+0917: [SubmitVirtual Node1] PUBLICADO NO ANEL MEC: FenceId=1 AssignedFence=18 DmaVA=0x11000 DmaSize=68
+0919: [SubmitVirtual Node0 SDMA] FenceId=7, DmaSize=4, DmaVA=0x20000
+0920: [SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFE00B31F076F0, Proc=FFFFE00B31F075D0, hasRoot=1, targetPtPhys=0x45FFBC000, instCtx=FFFFE00B31F07540, instRoot=0x450A8C000
+0923: [SubmitVirtual Node0 SDMA] VMID8 CONTEXT SWITCH: Ctx FFFFE00B31F07540 -> FFFFE00B31F076F0 (Root=0x45FFBC000, PT_BASE=0x45FFBC000)
+0924: [SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x20000 Size=4 -> Segment=0 Offset=0x1A2DD1000 Epoch=0
+0925: [PT_WALK] RootMC=0x45FFBC000 VramMcBase=0x450000000 LocalSegBase=0xA8C000 Janela=268435456 bytes
+0926: [PT_WALK IB] L1 idx=0 VRAM+0xFFBC000 PDE=000000045FFBB001 -> leafPA=0x45FFBB000 flags=0x1 valid=1 reservado[5:3]=0x0
+0927: [PT_WALK IB] L0 idx=32 VRAM+0xFFBB100 PTE=00000001A2DD1037 -> pageMC=0x1A2DD1000 flags=0x37 valid=1
+0928: [PT_WALK IB] RESOLVIDO: VA=0x20000 -> 0x1A2DD1000 (root=MC, folha=MC)
+0929: [PT_WALK] IB_PA_MATCH: caminhada=0x1A2DD1000 cpu=0x0 -> DIVERGE
+0930: [PT_WALK] DEST: encoder nao publicou faixa de escrita
+0931: [SubmitVirtual Node0 SDMA] CAMINHO_ESCOLHIDO: INDIRECT (Fill=0/0 bytes DestPA=0x0 DmaBytes=4 IbResolve=1 PlanoAFallback=0)
+0932: [SubmitVirtual Node0 SDMA] IB_EFEITO_DECLARADO: AUSENTE (hasFill=0 destPA=0x0 bytes=0) -- perna de dados ficara NAO CONFERIDA
+0933: [SubmitVirtual Node0 SDMA] IB_ALIGN: StartDW=207 PadDW=3 IndirectEndDW=216 EndModulo8=0 TargetWPTR=900 IbSizeDW=1 PublishedDW=1
+0934: [SubmitVirtual Node0 SDMA] IB_ENGINE_2LEGS #7 (RPTR==WPTR + fence sobre poison; PERNA DE DADOS NAO CONFERIDA): WPTR=900 RPTR=900 Fence=0000100B Poison=43DAFFFE Size=4 Vmid=8 EfeitoDeclarado=0x0/0/0x00000000 in 2 polls
+0935: [SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 4 bytes em VA=0x20000; DMA_COMPLETED notificado para FenceId=7
+0959: [SubmitVirtual Node0 SDMA] FenceId=8, DmaSize=4, DmaVA=0x10000
+0961: [SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFE00B31F076F0, Proc=FFFFE00B31F075D0, hasRoot=1, targetPtPhys=0x45FFBC000, instCtx=FFFFE00B31F076F0, instRoot=0x45FFBC000
+0963: [SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x10000 Size=4 -> Segment=0 Offset=0x1484BF000 Epoch=0
+0965: [PT_WALK] RootMC=0x45FFBC000 VramMcBase=0x450000000 LocalSegBase=0xA8C000 Janela=268435456 bytes
+0967: [PT_WALK IB] L1 idx=0 VRAM+0xFFBC000 PDE=000000045FFBB001 -> leafPA=0x45FFBB000 flags=0x1 valid=1 reservado[5:3]=0x0
+0969: [PT_WALK IB] L0 idx=16 VRAM+0xFFBB080 PTE=00000001484BF037 -> pageMC=0x1484BF000 flags=0x37 valid=1
+0971: [PT_WALK IB] RESOLVIDO: VA=0x10000 -> 0x1484BF000 (root=MC, folha=MC)
+0973: [PT_WALK] IB_PA_MATCH: caminhada=0x1484BF000 cpu=0x0 -> DIVERGE
+0975: [PT_WALK] DEST: encoder nao publicou faixa de escrita
+0977: [SubmitVirtual Node0 SDMA] CAMINHO_ESCOLHIDO: INDIRECT (Fill=0/0 bytes DestPA=0x0 DmaBytes=4 IbResolve=1 PlanoAFallback=0)
+0979: [SubmitVirtual Node0 SDMA] IB_EFEITO_DECLARADO: AUSENTE (hasFill=0 destPA=0x0 bytes=0) -- perna de dados ficara NAO CONFERIDA
+0981: [SubmitVirtual Node0 SDMA] IB_ALIGN: StartDW=255 PadDW=3 IndirectEndDW=264 EndModulo8=0 TargetWPTR=1092 IbSizeDW=1 PublishedDW=1
+0983: [SubmitVirtual Node0 SDMA] IB_ENGINE_2LEGS #8 (RPTR==WPTR + fence sobre poison; PERNA DE DADOS NAO CONFERIDA): WPTR=1092 RPTR=1092 Fence=0000100D Poison=43DAFFFE Size=4 Vmid=8 EfeitoDeclarado=0x0/0/0x00000000 in 2 polls
+0985: [SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 4 bytes em VA=0x10000; DMA_COMPLETED notificado para FenceId=8
+1052: [McdmResetFromTimeout] TDR: quiesce fisico do SDMA0 iniciado
+1053: [SdmaPresent] TDR_QUIESCE: RB_ENABLE desligado e F32 travado (HwEstavaLigado=1 RPTR=1212 WPTR=1212 STATUS=46DEED57 STATUS1=000003FF [0x3FF=idle] ERR_LOG=0000000F RB_CNTL=80841015->80841014 F32_CNTL=00000000->00000001)
+1054: [TDR_MEC_SNAPSHOT] Active=00000001 RPTR=0 WPTR=216 Error=00000000 HqStatus=00008040 IbCtrl=00000000 FaultStatus=00000000 FaultAddr=00000000:00000000
+1055: [McdmResetFromTimeout] TDR: adaptador quiescido; RPTR/WPTR/STATUS/ERR_LOG sairam na linha TDR_QUIESCE do executor
+1056: [McdmRestartFromTimeout] TDR: rearmando o SDMA0 e exigindo prova fisica
+1057: [SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=40 RPTR=40 Fence=0000100F in 2 polls
+1058: [SdmaPresent] TDR_FULL_RESET E REPROGRAMACAO: READBACK PASS (GRBM=00000000/00800000/00000000 RPTR=0 WPTR=0 RB_CNTL=80841015 BASE=00000000:F40FF000 POLL=00403004 IB=00080101 F32=00000000 CNTL=000000C2)
+1059: [SdmaPresent] TDR_RESTART PROVADO: anel rearmado e NOP fisico com fence sobre poison concluido; HardwareEnabled=1
+1060: [McdmRestartFromTimeout] TDR: engine provada por NOP fisico; adaptador aceita submissao novamente
+1098: [SubmitVirtual Node0 SDMA] FenceId=9, DmaSize=64, DmaVA=0x21F000
+1099: [SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFE00B31F07540, Proc=FFFFE00B31F07390, hasRoot=1, targetPtPhys=0x450A8C000, instCtx=FFFFE00B31F07540, instRoot=0x450A8C000
+1100: [SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x21F000 Size=64 -> Segment=0 Offset=0x146A6D000 Epoch=0
+1101: [PT_WALK] RootMC=0x450A8C000 VramMcBase=0x450000000 LocalSegBase=0xA8C000 Janela=268435456 bytes
+1102: [PT_WALK IB] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+1103: [PT_WALK IB] L0 idx=31 VRAM+0xA8D0F8 PTE=0000000146A6D037 -> pageMC=0x146A6D000 flags=0x37 valid=1
+1104: [PT_WALK IB] RESOLVIDO: VA=0x21F000 -> 0x146A6D000 (root=MC, folha=MC)
+1105: [PT_WALK] IB_PA_MATCH: caminhada=0x146A6D000 cpu=0x146A6D000 -> CONFERE
+1106: [PT_WALK] DEST: faixa de escrita [0x240000, 0xCD0000)
+1107: [PT_WALK DEST] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+1108: [PT_WALK DEST] L0 idx=64 VRAM+0xA8D200 PTE=0000000450AAC061 -> pageMC=0x450AAC000 flags=0x61 valid=1
+1109: [PT_WALK DEST] RESOLVIDO: VA=0x240000 -> 0x450AAC000 (root=MC, folha=MC)
+1110: [PT_WALK DEST] L1 idx=3 VRAM+0xA8C018 PDE=0000000450A8F001 -> leafPA=0x450A8F000 flags=0x1 valid=1 reservado[5:3]=0x0
+1111: [PT_WALK DEST] L0 idx=392 VRAM+0xA8FC40 PTE=0000000450FF4061 -> pageMC=0x450FF4000 flags=0x61 valid=1
+1112: [PT_WALK DEST] RESOLVIDO: VA=0x788000 -> 0x450FF4000 (root=MC, folha=MC)
+1113: [PT_WALK DEST] L1 idx=6 VRAM+0xA8C030 PDE=0000000450A92001 -> leafPA=0x450A92000 flags=0x1 valid=1 reservado[5:3]=0x0
+1114: [PT_WALK DEST] L0 idx=207 VRAM+0xA92678 PTE=000000045153B061 -> pageMC=0x45153B000 flags=0x61 valid=1
+1115: [PT_WALK DEST] RESOLVIDO: VA=0xCCF000 -> 0x45153B000 (root=MC, folha=MC)
+1116: [SubmitVirtual Node0 SDMA] CAMINHO_ESCOLHIDO: INDIRECT (Fill=1/11075584 bytes DestPA=0x450AAC000 DmaBytes=64 IbResolve=1 PlanoAFallback=0)
+1117: [SubmitVirtual Node0 SDMA] IB_EFEITO_DECLARADO: DestVA=0x240000 PA=0x450AAC000 -> MC=0xF400AAC000 Size=11075584 Pattern=0x00000000 (o IB deve produzir isto; canaries plantados antes do disparo)
+1118: [SubmitVirtual Node0 SDMA] IB_ALIGN: StartDW=10 PadDW=0 IndirectEndDW=16 EndModulo8=0 TargetWPTR=100 IbSizeDW=15 PublishedDW=16
+1119: [SubmitVirtual Node0 SDMA] IB_TRIPE_VEREDITO #10: TRIPE_PROVADO (WPTR=100 RPTR_Reg=100 RPTR_Wb=100 Casou=WRITEBACK+REGISTRADOR Fence=00001010 Poison=43DAFFFE Canaries=5 Divergentes=0 PostGPU=[00000000 00000000 00000000 00000000 00000000] Esperado=00000000 Vmid=8 in 128 polls)
+1120: [SubmitVirtual Node0 SDMA] IB_TRIPE PROVADO NO SILICIO #10: a GPU buscou o DMA buffer sob VMID8 e o efeito declarado esta nos bytes do destino
+1121: [SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 64 bytes em VA=0x21F000; DMA_COMPLETED notificado para FenceId=9
+1137: [SubmitVirtual Node0 SDMA] FenceId=10, DmaSize=64, DmaVA=0x21F040
+1138: [SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFE00B31F07540, Proc=FFFFE00B31F07390, hasRoot=1, targetPtPhys=0x450A8C000, instCtx=FFFFE00B31F07540, instRoot=0x450A8C000
+1139: [SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x21F040 Size=64 -> Segment=0 Offset=0x146A6D040 Epoch=0
+1140: [PT_WALK] RootMC=0x450A8C000 VramMcBase=0x450000000 LocalSegBase=0xA8C000 Janela=268435456 bytes
+1141: [PT_WALK IB] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+1142: [PT_WALK IB] L0 idx=31 VRAM+0xA8D0F8 PTE=0000000146A6D037 -> pageMC=0x146A6D000 flags=0x37 valid=1
+1143: [PT_WALK IB] RESOLVIDO: VA=0x21F040 -> 0x146A6D040 (root=MC, folha=MC)
+1144: [PT_WALK] IB_PA_MATCH: caminhada=0x146A6D040 cpu=0x146A6D040 -> CONFERE
+1145: [PT_WALK] DEST: faixa de escrita [0x240000, 0xCD0000)
+1146: [PT_WALK DEST] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+1147: [PT_WALK DEST] L0 idx=64 VRAM+0xA8D200 PTE=000000045153C061 -> pageMC=0x45153C000 flags=0x61 valid=1
+1148: [PT_WALK DEST] RESOLVIDO: VA=0x240000 -> 0x45153C000 (root=MC, folha=MC)
+1149: [PT_WALK DEST] L1 idx=3 VRAM+0xA8C018 PDE=0000000450A8F001 -> leafPA=0x450A8F000 flags=0x1 valid=1 reservado[5:3]=0x0
+1150: [PT_WALK DEST] L0 idx=392 VRAM+0xA8FC40 PTE=0000000451A84061 -> pageMC=0x451A84000 flags=0x61 valid=1
+1151: [PT_WALK DEST] RESOLVIDO: VA=0x788000 -> 0x451A84000 (root=MC, folha=MC)
+1152: [PT_WALK DEST] L1 idx=6 VRAM+0xA8C030 PDE=0000000450A92001 -> leafPA=0x450A92000 flags=0x1 valid=1 reservado[5:3]=0x0
+1153: [PT_WALK DEST] L0 idx=207 VRAM+0xA92678 PTE=0000000451FCB061 -> pageMC=0x451FCB000 flags=0x61 valid=1
+1154: [PT_WALK DEST] RESOLVIDO: VA=0xCCF000 -> 0x451FCB000 (root=MC, folha=MC)
+1155: [SubmitVirtual Node0 SDMA] CAMINHO_ESCOLHIDO: INDIRECT (Fill=1/11075584 bytes DestPA=0x45153C000 DmaBytes=64 IbResolve=1 PlanoAFallback=0)
+1156: [SubmitVirtual Node0 SDMA] IB_EFEITO_DECLARADO: DestVA=0x240000 PA=0x45153C000 -> MC=0xF40153C000 Size=11075584 Pattern=0x00000000 (o IB deve produzir isto; canaries plantados antes do disparo)
+1157: [SubmitVirtual Node0 SDMA] IB_ALIGN: StartDW=25 PadDW=1 IndirectEndDW=32 EndModulo8=0 TargetWPTR=164 IbSizeDW=15 PublishedDW=16
+1158: [SubmitVirtual Node0 SDMA] IB_TRIPE_VEREDITO #11: TRIPE_PROVADO (WPTR=164 RPTR_Reg=164 RPTR_Wb=164 Casou=WRITEBACK+REGISTRADOR Fence=00001011 Poison=43DAFFFE Canaries=5 Divergentes=0 PostGPU=[00000000 00000000 00000000 00000000 00000000] Esperado=00000000 Vmid=8 in 128 polls)
+1159: [SubmitVirtual Node0 SDMA] IB_TRIPE PROVADO NO SILICIO #11: a GPU buscou o DMA buffer sob VMID8 e o efeito declarado esta nos bytes do destino
+1160: [SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 64 bytes em VA=0x21F040; DMA_COMPLETED notificado para FenceId=10
+1351: [SubmitVirtual Node0 SDMA] FenceId=11, DmaSize=64, DmaVA=0x21F080
+1352: [SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFE00B31F07540, Proc=FFFFE00B31F07390, hasRoot=1, targetPtPhys=0x450A8C000, instCtx=FFFFE00B31F07540, instRoot=0x450A8C000
+1353: [SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x21F080 Size=64 -> Segment=0 Offset=0x146A6D080 Epoch=0
+1354: [PT_WALK] RootMC=0x450A8C000 VramMcBase=0x450000000 LocalSegBase=0xA8C000 Janela=268435456 bytes
+1355: [PT_WALK IB] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+1356: [PT_WALK IB] L0 idx=31 VRAM+0xA8D0F8 PTE=0000000146A6D037 -> pageMC=0x146A6D000 flags=0x37 valid=1
+1357: [PT_WALK IB] RESOLVIDO: VA=0x21F080 -> 0x146A6D080 (root=MC, folha=MC)
+1358: [PT_WALK] IB_PA_MATCH: caminhada=0x146A6D080 cpu=0x146A6D080 -> CONFERE
+1359: [PT_WALK] DEST: faixa de escrita [0x240000, 0xCD0000)
+1360: [PT_WALK DEST] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+1361: [PT_WALK DEST] L0 idx=64 VRAM+0xA8D200 PTE=0000000450AAC061 -> pageMC=0x450AAC000 flags=0x61 valid=1
+1362: [PT_WALK DEST] RESOLVIDO: VA=0x240000 -> 0x450AAC000 (root=MC, folha=MC)
+1363: [PT_WALK DEST] L1 idx=3 VRAM+0xA8C018 PDE=0000000450A8F001 -> leafPA=0x450A8F000 flags=0x1 valid=1 reservado[5:3]=0x0
+1364: [PT_WALK DEST] L0 idx=392 VRAM+0xA8FC40 PTE=0000000450FF4061 -> pageMC=0x450FF4000 flags=0x61 valid=1
+1365: [PT_WALK DEST] RESOLVIDO: VA=0x788000 -> 0x450FF4000 (root=MC, folha=MC)
+1366: [PT_WALK DEST] L1 idx=6 VRAM+0xA8C030 PDE=0000000450A92001 -> leafPA=0x450A92000 flags=0x1 valid=1 reservado[5:3]=0x0
+1367: [PT_WALK DEST] L0 idx=207 VRAM+0xA92678 PTE=000000045153B061 -> pageMC=0x45153B000 flags=0x61 valid=1
+1368: [PT_WALK DEST] RESOLVIDO: VA=0xCCF000 -> 0x45153B000 (root=MC, folha=MC)
+1369: [SubmitVirtual Node0 SDMA] CAMINHO_ESCOLHIDO: INDIRECT (Fill=1/11075584 bytes DestPA=0x450AAC000 DmaBytes=64 IbResolve=1 PlanoAFallback=0)
+1370: [SubmitVirtual Node0 SDMA] IB_EFEITO_DECLARADO: DestVA=0x240000 PA=0x450AAC000 -> MC=0xF400AAC000 Size=11075584 Pattern=0x00000000 (o IB deve produzir isto; canaries plantados antes do disparo)
+1371: [SubmitVirtual Node0 SDMA] IB_ALIGN: StartDW=41 PadDW=1 IndirectEndDW=48 EndModulo8=0 TargetWPTR=228 IbSizeDW=15 PublishedDW=16
+1372: [SubmitVirtual Node0 SDMA] IB_TRIPE_VEREDITO #12: TRIPE_PROVADO (WPTR=228 RPTR_Reg=228 RPTR_Wb=228 Casou=WRITEBACK+REGISTRADOR Fence=00001012 Poison=43DAFFFE Canaries=5 Divergentes=0 PostGPU=[00000000 00000000 00000000 00000000 00000000] Esperado=00000000 Vmid=8 in 130 polls)
+1373: [SubmitVirtual Node0 SDMA] IB_TRIPE PROVADO NO SILICIO #12: a GPU buscou o DMA buffer sob VMID8 e o efeito declarado esta nos bytes do destino
+1374: [SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 64 bytes em VA=0x21F080; DMA_COMPLETED notificado para FenceId=11
+1390: [SubmitVirtual Node0 SDMA] FenceId=12, DmaSize=64, DmaVA=0x21F0C0
+1391: [SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFE00B31F07540, Proc=FFFFE00B31F07390, hasRoot=1, targetPtPhys=0x450A8C000, instCtx=FFFFE00B31F07540, instRoot=0x450A8C000
+1392: [SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x21F0C0 Size=64 -> Segment=0 Offset=0x146A6D0C0 Epoch=0
+1393: [PT_WALK] RootMC=0x450A8C000 VramMcBase=0x450000000 LocalSegBase=0xA8C000 Janela=268435456 bytes
+1394: [PT_WALK IB] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+1395: [PT_WALK IB] L0 idx=31 VRAM+0xA8D0F8 PTE=0000000146A6D037 -> pageMC=0x146A6D000 flags=0x37 valid=1
+1396: [PT_WALK IB] RESOLVIDO: VA=0x21F0C0 -> 0x146A6D0C0 (root=MC, folha=MC)
+1397: [PT_WALK] IB_PA_MATCH: caminhada=0x146A6D0C0 cpu=0x146A6D0C0 -> CONFERE
+1398: [PT_WALK] DEST: faixa de escrita [0x240000, 0xCD0000)
+1399: [PT_WALK DEST] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+1400: [PT_WALK DEST] L0 idx=64 VRAM+0xA8D200 PTE=000000045153C061 -> pageMC=0x45153C000 flags=0x61 valid=1
+1401: [PT_WALK DEST] RESOLVIDO: VA=0x240000 -> 0x45153C000 (root=MC, folha=MC)
+1402: [PT_WALK DEST] L1 idx=3 VRAM+0xA8C018 PDE=0000000450A8F001 -> leafPA=0x450A8F000 flags=0x1 valid=1 reservado[5:3]=0x0
+1403: [PT_WALK DEST] L0 idx=392 VRAM+0xA8FC40 PTE=0000000451A84061 -> pageMC=0x451A84000 flags=0x61 valid=1
+1404: [PT_WALK DEST] RESOLVIDO: VA=0x788000 -> 0x451A84000 (root=MC, folha=MC)
+1405: [PT_WALK DEST] L1 idx=6 VRAM+0xA8C030 PDE=0000000450A92001 -> leafPA=0x450A92000 flags=0x1 valid=1 reservado[5:3]=0x0
+1406: [PT_WALK DEST] L0 idx=207 VRAM+0xA92678 PTE=0000000451FCB061 -> pageMC=0x451FCB000 flags=0x61 valid=1
+1407: [PT_WALK DEST] RESOLVIDO: VA=0xCCF000 -> 0x451FCB000 (root=MC, folha=MC)
+1408: [SubmitVirtual Node0 SDMA] CAMINHO_ESCOLHIDO: INDIRECT (Fill=1/11075584 bytes DestPA=0x45153C000 DmaBytes=64 IbResolve=1 PlanoAFallback=0)
+1409: [SubmitVirtual Node0 SDMA] IB_EFEITO_DECLARADO: DestVA=0x240000 PA=0x45153C000 -> MC=0xF40153C000 Size=11075584 Pattern=0x00000000 (o IB deve produzir isto; canaries plantados antes do disparo)
+1410: [SubmitVirtual Node0 SDMA] IB_ALIGN: StartDW=57 PadDW=1 IndirectEndDW=64 EndModulo8=0 TargetWPTR=292 IbSizeDW=15 PublishedDW=16
+1411: [SubmitVirtual Node0 SDMA] IB_TRIPE_VEREDITO #13: TRIPE_PROVADO (WPTR=292 RPTR_Reg=292 RPTR_Wb=292 Casou=WRITEBACK+REGISTRADOR Fence=00001013 Poison=43DAFFFE Canaries=5 Divergentes=0 PostGPU=[00000000 00000000 00000000 00000000 00000000] Esperado=00000000 Vmid=8 in 127 polls)
+1412: [SubmitVirtual Node0 SDMA] IB_TRIPE PROVADO NO SILICIO #13: a GPU buscou o DMA buffer sob VMID8 e o efeito declarado esta nos bytes do destino
+1413: [SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 64 bytes em VA=0x21F0C0; DMA_COMPLETED notificado para FenceId=12
+2280: [StopDevice] Entered. Reason=2
+2281: [StopDevice] WDDM submissions: Accepted=13, NotExecuted=0, VMID8Status=0, InstalledCtx=FFFFE00B31F07540, Root=0x450A8C000
+2282: [StopDevice] REMOVE_DEVICE com pending=1 reserved=0: forÃ§ando reset do tracker para teardown limpo
+2283: [MEC_STOP_STATE] Engine=2 Vmid=9 Sub=18 Ret=17 Polls=3 PollFailures=11778 DpcRuns=11778 TimerInitialized=1 LastSubmit=00000000 CapturedFence=18 FenceMapped=1 FenceNow=0 MmioState=1
+2284: [MEC_STOP_QUEUE] ValidReads=0xFF Active=00000001 Error=00000000 HqStatus=40008040 WPTR=0 Vmid=00000000 IbControl=00000000 RPTR=0 PqControl=D030890D
+2285: [MEC_LAST_DESCRIPTOR] Raw=C0023F00,00011000,00000000,09800011 SubmitTime100ns=1293686998
+2286: [NODE1_IB_CPU_ARCHIVE] VA=0x11000 PA=0x451FCC000 RequestedBytes=68 CapturedDwords=17 (CPU observation, not GPU execution)
+2287: [NODE1_IB_CPU_WORD] DW=0 Value=C0073700
+2288: [NODE1_IB_CPU_WORD] DW=1 Value=00100500
+2289: [NODE1_IB_CPU_WORD] DW=2 Value=00021000
+2290: [NODE1_IB_CPU_WORD] DW=3 Value=00000000
+2291: [NODE1_IB_CPU_WORD] DW=4 Value=BC250C01
+2292: [NODE1_IB_CPU_WORD] DW=5 Value=BC250C02
+2293: [NODE1_IB_CPU_WORD] DW=6 Value=BC250C03
+2294: [NODE1_IB_CPU_WORD] DW=7 Value=BC250C04
+2295: [NODE1_IB_CPU_WORD] DW=8 Value=BC250C05
+2296: [NODE1_IB_CPU_WORD] DW=9 Value=C0064900
+2297: [NODE1_IB_CPU_WORD] DW=10 Value=06603514
+2298: [NODE1_IB_CPU_WORD] DW=11 Value=20000000
+2299: [NODE1_IB_CPU_WORD] DW=12 Value=00010040
+2300: [NODE1_IB_CPU_WORD] DW=13 Value=00000000
+2301: [NODE1_IB_CPU_WORD] DW=14 Value=BC250F01
+2302: [NODE1_IB_CPU_WORD] DW=15 Value=00000000
+2303: [NODE1_IB_CPU_WORD] DW=16 Value=00000000
+2304: [NODE1_STOP_GCVM_FAULT] STATUS=0x00000000 ADDR=0x00000000:00000000
+2305: [MEC_PENDING_ARCHIVE] Fence=18 Observed=0 RPTR=0 Writeback=0 ValidReads=0x3F Active=00000001 Error=00000000 HqStatus=00008040 WPTR=216 Vmid=00000000 IbControl=00000000
+2306: [MEC_IB_DESCRIPTOR_ARCHIVE] Raw=C0023F00,00011000,00000000,09800011
+2309: [StopDevice] VMID9 baseline restaurado com readback e ACK
+2310: [SdmaPresent] Teardown Complete. TripodValidated=1, Submitted=5, Completed=5, Fallbacks=0
+2315: [StopDevice] Global GFXHUB MMU restored to snapshot: Regs=26

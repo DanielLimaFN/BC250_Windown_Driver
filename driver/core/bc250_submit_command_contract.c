@@ -168,3 +168,52 @@ const char *Bc250SubmissionStatusName(BC250_SUBMISSION_STATUS Status)
     default: return "unknown";
     }
 }
+
+BC250_SUBMIT_EXEC_PATH Bc250SelectSubmitExecPath(
+    const BC250_SUBMIT_PATH_INPUT *Input)
+{
+    if (Input == NULL) {
+        return BC250_SUBMIT_PATH_REFUSED;
+    }
+
+    if (Input->PlanoAFallbackEnabled != 0u) {
+        /*
+         * Precedencia medida em producao, preservada byte a byte:
+         *   1. DIRECT FILL exige fill pendente + destino fisico resolvido +
+         *      tamanho nao nulo, e NAO exige que a GPUVA do IB resolva -- quem
+         *      escreve e' a engine lendo pacotes do anel.
+         *   2. SYNC NOP absorve os buffers de 4 bytes do DWM/VidSch.
+         *   3. INDIRECT so' sobra o que os dois primeiros nao pegaram.
+         */
+        if (Input->HasPendingFill != 0u &&
+            Input->DestPhysicalStart != 0ull &&
+            Input->FillBytes > 0u) {
+            return BC250_SUBMIT_PATH_RING_DIRECT_FILL;
+        }
+        if (Input->DmaBufferSizeBytes == 4u) {
+            return BC250_SUBMIT_PATH_RING_SYNC_NOP;
+        }
+    }
+
+    if (Input->IbGpuVaResolves != 0u) {
+        return BC250_SUBMIT_PATH_INDIRECT;
+    }
+
+    return BC250_SUBMIT_PATH_REFUSED;
+}
+
+uint32_t Bc250SubmitPathExecutesDmaBuffer(BC250_SUBMIT_EXEC_PATH Path)
+{
+    return (Path == BC250_SUBMIT_PATH_INDIRECT) ? 1u : 0u;
+}
+
+const char *Bc250SubmitPathName(BC250_SUBMIT_EXEC_PATH Path)
+{
+    switch (Path) {
+    case BC250_SUBMIT_PATH_INDIRECT:           return "INDIRECT";
+    case BC250_SUBMIT_PATH_RING_DIRECT_FILL:   return "PLANO_A_DIRECT_FILL";
+    case BC250_SUBMIT_PATH_RING_SYNC_NOP:      return "PLANO_A_SYNC_NOP";
+    case BC250_SUBMIT_PATH_REFUSED:            return "RECUSADO";
+    default:                                   return "DESCONHECIDO";
+    }
+}

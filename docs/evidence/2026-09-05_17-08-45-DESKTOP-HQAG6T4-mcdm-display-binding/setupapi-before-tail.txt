@@ -1,0 +1,1600 @@
+﻿     utl:                               Driver INF     - c_swcomponent.inf (C:\Windows\System32\DriverStore\FileRepository\c_swcomponent.inf_amd64_f378d70fa39d3577\c_swcomponent.inf)
+     utl:                               Class GUID     - {5c4c3332-344d-483c-8739-259e934c9cc8}
+     utl:                               Driver Version - 06/21/2006,10.0.19041.1
+     utl:                               Configuration  - SWC\Generic [SoftwareComponent]
+     utl:                               Driver Rank    - 00FF3000
+     utl:                               Signer Score   - Inbox (0D000003)
+     utl:                          Driver Node:
+     utl:                               Status         - Outranked
+     utl:                               Driver INF     - c_swdevice.inf (C:\Windows\System32\DriverStore\FileRepository\c_swdevice.inf_amd64_12050f4158021fcb\c_swdevice.inf)
+     utl:                               Class GUID     - {62f9c741-b25a-46ce-b54c-9bccce08b6f2}
+     utl:                               Driver Version - 06/21/2006,10.0.19041.1
+     utl:                               Configuration  - SWD\GenericRaw [SoftwareDevice]
+     utl:                               Driver Rank    - 00FF3001
+     utl:                               Signer Score   - Inbox (0D000003)
+     utl:                     {Select Drivers - exit(0x00000000} 19:12:44.911
+     dvs:                     Device does not need an update.
+!    dvs:                     No better matching drivers found for device 'SWD\DRIVERENUM\AMDFDANS&7&2c96df5f&0'.
+     dvs:                {Driver Setup Update Device - exit(0x00000000)} 19:12:44.911
+!    dvs:                No devices were updated.
+     dvs:           {Install Related Drivers: exit(0x00000000)} 19:12:44.912
+     dvs:      {Driver Setup Update Device - exit(0x00000000)} 19:12:44.912
+     dvs:      {Driver Setup Update Device: PCI\VEN_1002&DEV_1478&SUBSYS_00000000&REV_C7\4&209e2803&0&0008} 19:12:44.915
+     utl:           {Select Drivers - PCI\VEN_1002&DEV_1478&SUBSYS_00000000&REV_C7\4&209e2803&0&0008} 19:12:44.915
+     utl:                Driver Node:
+     utl:                     Status         - Selected | Installed
+     utl:                     Driver INF     - pci.inf (C:\Windows\System32\DriverStore\FileRepository\pci.inf_amd64_bd47cfa2f19fd5af\pci.inf)
+     utl:                     Class GUID     - {4d36e97d-e325-11ce-bfc1-08002be10318}
+     utl:                     Driver Version - 06/21/2006,10.0.19041.1949
+     utl:                     Configuration  - PCI\CC_0604&DT_5 [PCI_BRIDGE]
+     utl:                     Driver Rank    - 00FF2005
+     utl:                     Signer Score   - Inbox (0D000003)
+     utl:                Driver Extension Node:
+     utl:                     Status         - Selected | Installed
+     utl:                     Driver INF     - oem27.inf (C:\Windows\System32\DriverStore\FileRepository\amdpcibridgeextension.inf_amd64_0b177fcbac05a796\amdpcibridgeextension.inf)
+     utl:                     Class GUID     - {e2f84ce7-8efa-411c-aa69-97454ca4cb57}
+     utl:                     Extension ID   - {122e82d5-85d9-4053-8eaa-e3c2051f3276}
+     utl:                     Driver Version - 09/10/2025,25.20.0.0
+     utl:                     Configuration  - PCI\VEN_1002&DEV_1478 [DeviceExtension_UpstreamSwitch]
+     utl:                     Driver Rank    - 00FF0000
+     utl:                     Signer Score   - WHQL (0D000005)
+     utl:                Driver Node:
+     utl:                     Status         - Outranked | Installed
+     utl:                     Driver INF     - pci.inf (C:\Windows\System32\DriverStore\FileRepository\pci.inf_amd64_bd47cfa2f19fd5af\pci.inf)
+     utl:                     Class GUID     - {4d36e97d-e325-11ce-bfc1-08002be10318}
+     utl:                     Driver Version - 06/21/2006,10.0.19041.1949
+     utl:                     Configuration  - PCI\CC_0604 [PCI_BRIDGE]
+     utl:                     Driver Rank    - 00FF2006
+     utl:                     Signer Score   - Inbox (0D000003)
+     utl:           {Select Drivers - exit(0x00000000} 19:12:44.920
+     dvs:           Installing best driver (pci.inf) on device 'PCI\VEN_1002&DEV_1478&SUBSYS_00000000&REV_C7\4&209e2803&0&0008'.
+     ump:           {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_1478&SUBSYS_00000000&REV_C7\4&209E2803&0&0008}
+     dvi:                {Core Device Install} 19:12:44.924
+     dvi:                     {Configure Device - PCI\VEN_1002&DEV_1478&SUBSYS_00000000&REV_C7\4&209E2803&0&0008} 19:12:44.924
+     dvi:                          Device Status: 0x0180200a
+     dvi:                          Config Flags: 0x00000000
+     dvi:                          Parent Device: PCI\VEN_8086&DEV_460D&SUBSYS_00000000&REV_02\3&11583659&0&08
+     sto:                          {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\pci.inf_amd64_bd47cfa2f19fd5af\pci.inf}
+     sto:                               Source Filter  = PCI\CC_0604&DT_5
+     inf:                               Class GUID     = {4d36e97d-e325-11ce-bfc1-08002be10318}
+     inf:                               Class Options  = Configurable BootCritical
+     inf:                               {Configure Driver: PCI Express Upstream Switch Port}
+     inf:                                    Section Name = PCI_BRIDGE
+     inf:                                    {Add Service: pci}
+     inf:                                         Start Type    = 0
+     inf:                                         Service Type  = 1
+     inf:                                         Error Control = 3
+     inf:                                         Image Path    = System32\drivers\pci.sys
+     inf:                                         Display Name  = PCI Bus Driver
+     inf:                                         Group         = Boot Bus Extender
+     inf:                                         Updated service 'pci'.
+     inf:                                    {Add Service: exit(0x00000000)}
+     inf:                                    Hardware Id  = PCI\CC_0604&DT_5
+     inf:                                    {Configure Driver Configuration: PCI_BRIDGE}
+     inf:                                         Service Name  = pci
+     inf:                                         Config Flags  = 0x00000000
+     inf:                                    {Configure Driver Configuration: exit(0x00000000)}
+     inf:                               {Configure Driver: exit(0x00000000)}
+     flq:                               {FILE_QUEUE_COMMIT} 19:12:44.933
+     flq:                                    Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\pci.inf_amd64_bd47cfa2f19fd5af\pci.sys' to 'C:\Windows\System32\drivers\pci.sys'.
+     cpy:                                    Existing file 'C:\Windows\System32\drivers\pci.sys' remains unchanged.
+     flq:                               {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:44.935
+     sto:                          {Configure Driver Package: exit(0x00000000)}
+     sto:                          {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\amdpcibridgeextension.inf_amd64_0b177fcbac05a796\amdpcibridgeextension.inf}
+     sto:                               Source Filter  = PCI\VEN_1002&DEV_1478
+     inf:                               Class GUID     = {e2f84ce7-8efa-411c-aa69-97454ca4cb57}
+     inf:                               Class Options  = Configurable
+     inf:                               {Configure Driver: AMD PCI Bridge Device Extension}
+     inf:                                    Section Name = DeviceExtension_UpstreamSwitch
+     inf:                                    Hardware Id  = PCI\VEN_1002&DEV_1478
+     inf:                                    {Configure Driver Configuration: DeviceExtension_UpstreamSwitch}
+     inf:                                         No associated service.
+     inf:                                         Config Flags  = 0x00000000
+     inf:                                    {Configure Driver Configuration: exit(0x00000000)}
+     inf:                               {Configure Driver: exit(0x00000000)}
+     flq:                               {FILE_QUEUE_COMMIT} 19:12:44.939
+     flq:                               {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:44.939
+     sto:                          {Configure Driver Package: exit(0x00000000)}
+     dvi:                          Install Device: Configuring device. 19:12:44.940
+     dvi:                               Configuration: pci.inf:PCI\CC_0604&DT_5,PCI_BRIDGE
+     dvi:                               Configuration: oem27.inf:PCI\VEN_1002&DEV_1478,DeviceExtension_UpstreamSwitch
+     dvi:                          Install Device: Configuring device completed. 19:12:46.254
+     dvi:                          Device Status: 0x0180200a
+     dvi:                          Install Device: Removing device 'PCI\VEN_1002&DEV_1478&SUBSYS_00000000&REV_C7\4&209E2803&0&0008' and sub-tree. 19:12:46.254
+     dvi:                          Install Device: Removing device sub-tree completed. 19:12:47.231
+     dvi:                          Install Device: Restarting device. 19:12:47.232
+     dvi:                          Install Device: Restarting device completed. 19:12:47.709
+     dvi:                     {Configure Device - exit(0x00000000)} 19:12:47.709
+     dvi:                {Core Device Install - exit(0x00000000)} 19:12:47.709
+     ump:           {Plug and Play Service: Device Install exit(00000000)}
+     dvs:           {Install Related Drivers} 19:12:47.711
+     dvs:           {Install Related Drivers: exit(0x00000000)} 19:12:47.712
+     dvs:      {Driver Setup Update Device - exit(0x00000000)} 19:12:47.712
+     dvs:      {Driver Setup Update Device: PCI\VEN_1002&DEV_1479&SUBSYS_14791002&REV_00\5&18f8a07d&0&000008} 19:12:47.714
+     utl:           {Select Drivers - PCI\VEN_1002&DEV_1479&SUBSYS_14791002&REV_00\5&18f8a07d&0&000008} 19:12:47.715
+     utl:                Driver Node:
+     utl:                     Status         - Selected | Installed
+     utl:                     Driver INF     - pci.inf (C:\Windows\System32\DriverStore\FileRepository\pci.inf_amd64_bd47cfa2f19fd5af\pci.inf)
+     utl:                     Class GUID     - {4d36e97d-e325-11ce-bfc1-08002be10318}
+     utl:                     Driver Version - 06/21/2006,10.0.19041.1949
+     utl:                     Configuration  - PCI\CC_0604&DT_6 [PCI_BRIDGE]
+     utl:                     Driver Rank    - 00FF2007
+     utl:                     Signer Score   - Inbox (0D000003)
+     utl:                Driver Extension Node:
+     utl:                     Status         - Selected | Installed
+     utl:                     Driver INF     - oem27.inf (C:\Windows\System32\DriverStore\FileRepository\amdpcibridgeextension.inf_amd64_0b177fcbac05a796\amdpcibridgeextension.inf)
+     utl:                     Class GUID     - {e2f84ce7-8efa-411c-aa69-97454ca4cb57}
+     utl:                     Extension ID   - {122e82d5-85d9-4053-8eaa-e3c2051f3276}
+     utl:                     Driver Version - 09/10/2025,25.20.0.0
+     utl:                     Configuration  - PCI\VEN_1002&DEV_1479 [DeviceExtension_DownstreamSwitch]
+     utl:                     Driver Rank    - 00FF0000
+     utl:                     Signer Score   - WHQL (0D000005)
+     utl:                Driver Node:
+     utl:                     Status         - Outranked | Installed
+     utl:                     Driver INF     - pci.inf (C:\Windows\System32\DriverStore\FileRepository\pci.inf_amd64_bd47cfa2f19fd5af\pci.inf)
+     utl:                     Class GUID     - {4d36e97d-e325-11ce-bfc1-08002be10318}
+     utl:                     Driver Version - 06/21/2006,10.0.19041.1949
+     utl:                     Configuration  - PCI\CC_0604 [PCI_BRIDGE]
+     utl:                     Driver Rank    - 00FF2008
+     utl:                     Signer Score   - Inbox (0D000003)
+     utl:           {Select Drivers - exit(0x00000000} 19:12:47.718
+     dvs:           Installing best driver (pci.inf) on device 'PCI\VEN_1002&DEV_1479&SUBSYS_14791002&REV_00\5&18f8a07d&0&000008'.
+     ump:           {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_1479&SUBSYS_14791002&REV_00\5&18F8A07D&0&000008}
+     dvi:                {Core Device Install} 19:12:47.723
+     dvi:                     {Configure Device - PCI\VEN_1002&DEV_1479&SUBSYS_14791002&REV_00\5&18F8A07D&0&000008} 19:12:47.724
+     dvi:                          Device Status: 0x0180200a
+     dvi:                          Config Flags: 0x00000000
+     dvi:                          Parent Device: PCI\VEN_1002&DEV_1478&SUBSYS_00000000&REV_C7\4&209e2803&0&0008
+     sto:                          {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\pci.inf_amd64_bd47cfa2f19fd5af\pci.inf}
+     sto:                               Source Filter  = PCI\CC_0604&DT_6
+     inf:                               Class GUID     = {4d36e97d-e325-11ce-bfc1-08002be10318}
+     inf:                               Class Options  = Configurable BootCritical
+     inf:                               {Configure Driver: PCI Express Downstream Switch Port}
+     inf:                                    Section Name = PCI_BRIDGE
+     inf:                                    {Add Service: pci}
+     inf:                                         Start Type    = 0
+     inf:                                         Service Type  = 1
+     inf:                                         Error Control = 3
+     inf:                                         Image Path    = System32\drivers\pci.sys
+     inf:                                         Display Name  = PCI Bus Driver
+     inf:                                         Group         = Boot Bus Extender
+     inf:                                         Updated service 'pci'.
+     inf:                                    {Add Service: exit(0x00000000)}
+     inf:                                    Hardware Id  = PCI\CC_0604&DT_6
+     inf:                                    {Configure Driver Configuration: PCI_BRIDGE}
+     inf:                                         Service Name  = pci
+     inf:                                         Config Flags  = 0x00000000
+     inf:                                    {Configure Driver Configuration: exit(0x00000000)}
+     inf:                               {Configure Driver: exit(0x00000000)}
+     flq:                               {FILE_QUEUE_COMMIT} 19:12:47.733
+     flq:                                    Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\pci.inf_amd64_bd47cfa2f19fd5af\pci.sys' to 'C:\Windows\System32\drivers\pci.sys'.
+     cpy:                                    Existing file 'C:\Windows\System32\drivers\pci.sys' remains unchanged.
+     flq:                               {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:47.735
+     sto:                          {Configure Driver Package: exit(0x00000000)}
+     sto:                          {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\amdpcibridgeextension.inf_amd64_0b177fcbac05a796\amdpcibridgeextension.inf}
+     sto:                               Source Filter  = PCI\VEN_1002&DEV_1479
+     inf:                               Class GUID     = {e2f84ce7-8efa-411c-aa69-97454ca4cb57}
+     inf:                               Class Options  = Configurable
+     inf:                               {Configure Driver: AMD PCI Bridge Device Extension}
+     inf:                                    Section Name = DeviceExtension_DownstreamSwitch
+     inf:                                    Hardware Id  = PCI\VEN_1002&DEV_1479
+     inf:                                    {Configure Driver Configuration: DeviceExtension_DownstreamSwitch}
+     inf:                                         No associated service.
+     inf:                                         Config Flags  = 0x00000000
+     inf:                                    {Configure Driver Configuration: exit(0x00000000)}
+     inf:                               {Configure Driver: exit(0x00000000)}
+     flq:                               {FILE_QUEUE_COMMIT} 19:12:47.739
+     flq:                               {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:47.739
+     sto:                          {Configure Driver Package: exit(0x00000000)}
+     dvi:                          Install Device: Configuring device. 19:12:47.739
+     dvi:                               Configuration: pci.inf:PCI\CC_0604&DT_6,PCI_BRIDGE
+     dvi:                               Configuration: oem27.inf:PCI\VEN_1002&DEV_1479,DeviceExtension_DownstreamSwitch
+     dvi:                          Install Device: Configuring device completed. 19:12:49.003
+     dvi:                          Device Status: 0x0180200a
+     dvi:                          Install Device: Removing device 'PCI\VEN_1002&DEV_1479&SUBSYS_14791002&REV_00\5&18F8A07D&0&000008' and sub-tree. 19:12:49.004
+     dvi:                          Install Device: Removing device sub-tree completed. 19:12:49.842
+     dvi:                          Install Device: Restarting device. 19:12:49.842
+     dvi:                          Install Device: Restarting device completed. 19:12:50.274
+     dvi:                     {Configure Device - exit(0x00000000)} 19:12:50.274
+     dvi:                {Core Device Install - exit(0x00000000)} 19:12:50.275
+     ump:           {Plug and Play Service: Device Install exit(00000000)}
+     dvs:           {Install Related Drivers} 19:12:50.276
+     dvs:           {Install Related Drivers: exit(0x00000000)} 19:12:50.277
+     dvs:      {Driver Setup Update Device - exit(0x00000000)} 19:12:50.277
+     dvs:      {Driver Setup Update Device: ROOT\AMDLOG\0000} 19:12:50.281
+     utl:           {Select Drivers - ROOT\AMDLOG\0000} 19:12:50.281
+     utl:                Driver Node:
+     utl:                     Status         - Selected | Installed
+     utl:                     Driver INF     - oem23.inf (C:\Windows\System32\DriverStore\FileRepository\amdfendr.inf_amd64_bea53a1d416fbcfa\amdfendr.inf)
+     utl:                     Class GUID     - {4d36e97d-e325-11ce-bfc1-08002be10318}
+     utl:                     Driver Version - 02/06/2026,25.10.0.7
+     utl:                     Configuration  - ROOT\AMDLOG [AMDFENDR_INSTALL]
+     utl:                     Driver Rank    - 00FF0000
+     utl:                     Signer Score   - WHQL (0D000005)
+     utl:           {Select Drivers - exit(0x00000000} 19:12:50.283
+     dvs:           Installing best driver (oem23.inf) on device 'ROOT\AMDLOG\0000'.
+     ump:           {Plug and Play Service: Device Install for ROOT\AMDLOG\0000}
+     dvi:                {Core Device Install} 19:12:50.286
+     dvi:                     {Configure Device - ROOT\AMDLOG\0000} 19:12:50.287
+     dvi:                          Device Status: 0x0180200b
+     dvi:                          Config Flags: 0x00000000
+     dvi:                          Parent Device: HTREE\ROOT\0
+     sto:                          {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\amdfendr.inf_amd64_bea53a1d416fbcfa\amdfendr.inf}
+     sto:                               Source Filter  = ROOT\AMDLOG
+     inf:                               Class GUID     = {4d36e97d-e325-11ce-bfc1-08002be10318}
+     inf:                               Class Options  = Configurable BootCritical
+     dvi:                               {Configure Device: ROOT\AMDLOG\0000}
+     dvi:                                    Device Instance Id = ROOT\AMDLOG\0000
+     dvi:                                    Updating existing device instance.
+     dvi:                               {Configure Device: exit(0x00000000)}
+     inf:                               {Configure Driver: AMD Crash Defender}
+     inf:                                    Section Name = AMDFENDR_INSTALL
+     inf:                                    {Add Service: amdfendrmgr}
+     inf:                                         Start Type    = 3
+     inf:                                         Service Type  = 1
+     inf:                                         Error Control = 1
+     inf:                                         Image Path    = \SystemRoot\System32\DriverStore\FileRepository\amdfendr.inf_amd64_bea53a1d416fbcfa\amdfendrmgr.sys
+     inf:                                         Display Name  = AMD Crash Defender Manager Driver
+     inf:                                         Updated service 'amdfendrmgr'.
+     inf:                                    {Add Service: exit(0x00000000)}
+     inf:                                    {Add Service: amdfendr}
+     inf:                                         Start Type    = 3
+     inf:                                         Service Type  = 1
+     inf:                                         Error Control = 1
+     inf:                                         Image Path    = \SystemRoot\System32\DriverStore\FileRepository\amdfendr.inf_amd64_bea53a1d416fbcfa\amdfendr.sys
+     inf:                                         Display Name  = AMD Crash Defender Driver
+     inf:                                         Updated service 'amdfendr'.
+     inf:                                    {Add Service: exit(0x00000000)}
+     inf:                                    {Add Service: AMD Crash Defender Service}
+     inf:                                         Start Type    = 2
+     inf:                                         Service Type  = 16
+     inf:                                         Error Control = 1
+     inf:                                         Image Path    = %SystemRoot%\System32\DriverStore\FileRepository\amdfendr.inf_amd64_bea53a1d416fbcfa\amdfendrsr.exe
+     inf:                                         Group         = Event log
+     inf:                                         Updated service 'AMD Crash Defender Service'.
+     inf:                                    {Add Service: exit(0x00000000)}
+     inf:                                    Hardware Id  = ROOT\AMDLOG
+     inf:                                    {Configure Driver Configuration: AMDFENDR_INSTALL}
+     inf:                                         Service Name  = amdfendrmgr
+     inf:                                         Config Flags  = 0x00000000
+     inf:                                    {Configure Driver Configuration: exit(0x00000000)}
+     inf:                               {Configure Driver: exit(0x00000000)}
+     flq:                               {FILE_QUEUE_COMMIT} 19:12:50.299
+     flq:                               {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:50.299
+     inf:                               Restarted service 'AMD Crash Defender Service'.
+     sto:                          {Configure Driver Package: exit(0x00000000)}
+     dvi:                          Install Device: Configuring device. 19:12:50.307
+     dvi:                               Configuration: oem23.inf:ROOT\AMDLOG,AMDFENDR_INSTALL
+     dvi:                          Install Device: Configuring device completed. 19:12:51.587
+     dvi:                          Device Status: 0x0180200b
+     dvi:                          Install Device: Removing device 'ROOT\AMDLOG\0000' and sub-tree. 19:12:51.588
+     dvi:                          Install Device: Removing device sub-tree completed. 19:12:51.590
+     dvi:                          Install Device: Restarting device. 19:12:51.590
+     dvi:                          Install Device: Restarting device completed. 19:12:51.594
+     dvi:                     {Configure Device - exit(0x00000000)} 19:12:51.594
+     dvi:                {Core Device Install - exit(0x00000000)} 19:12:51.594
+     ump:           {Plug and Play Service: Device Install exit(00000000)}
+     dvs:           {Install Related Drivers} 19:12:51.596
+     dvs:           {Install Related Drivers: exit(0x00000000)} 19:12:51.596
+     dvs:      {Driver Setup Update Device - exit(0x00000000)} 19:12:51.597
+     dvs: {DrvSetupInstallDriver - exit(00000000)}
+<<<  Section end 2026/09/05 19:12:51.599
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (Hardware initiated) - ROOT\AMDXE\0000]
+>>>  Section start 2026/09/05 19:12:34.489
+     utl: {Select Drivers - ROOT\AMDXE\0000} 19:12:34.493
+     utl:      Driver Node:
+     utl:           Status         - Selected
+     utl:           Driver INF     - oem21.inf (C:\Windows\System32\DriverStore\FileRepository\amdxe.inf_amd64_f93f517114dadc45\amdxe.inf)
+     utl:           Class GUID     - {4d36e97d-e325-11ce-bfc1-08002be10318}
+     utl:           Driver Version - 09/23/2025,25.10.0.1
+     utl:           Configuration  - ROOT\AMDXE
+     utl:           Driver Rank    - 00FF0000
+     utl:           Signer Score   - WHQL (0D000005)
+     utl: {Select Drivers - exit(0x00000000} 19:12:34.560
+     dvi: {Core Device Install} 19:12:34.560
+     dvi:      {Configure Device - ROOT\AMDXE\0000} 19:12:34.561
+     dvi:           Device Status: 0x01802401 [0x12 - 0xc0000493]
+     dvi:           Config Flags: 0x00000020
+     dvi:           Parent Device: HTREE\ROOT\0
+     sto:           {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\amdxe.inf_amd64_f93f517114dadc45\amdxe.inf}
+     sto:                Source Filter  = ROOT\AMDXE
+     inf:                Class GUID     = {4d36e97d-e325-11ce-bfc1-08002be10318}
+     inf:                Class Options  = Configurable BootCritical
+     dvi:                {Configure Device: ROOT\AMDXE\0000}
+     dvi:                     Device Instance Id = ROOT\AMDXE\0000
+     dvi:                     Updating existing device instance.
+     dvi:                {Configure Device: exit(0x00000000)}
+     inf:                {Configure Driver: AMD Controller Emulation}
+     inf:                     Section Name = AMDXE.NT
+     inf:                     {Add Service: AMDXE}
+     inf:                          Start Type    = 3
+     inf:                          Service Type  = 1
+     inf:                          Error Control = 1
+     inf:                          Image Path    = \SystemRoot\System32\drivers\amdxe.sys
+     inf:                          Display Name  = AMD Controller Emulation
+     inf:                          Created new service 'AMDXE'.
+     inf:                     {Add Service: exit(0x00000000)}
+     inf:                     Hardware Id  = Root\AMDXE
+     inf:                     {Configure Driver Configuration: AMDXE.NT}
+     inf:                          Service Name  = AMDXE
+     inf:                          Config Flags  = 0x00000000
+     inf:                     {Configure Driver Configuration: exit(0x00000000)}
+     inf:                {Configure Driver: exit(0x00000000)}
+     flq:                {FILE_QUEUE_COMMIT} 19:12:34.569
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdxe.inf_amd64_f93f517114dadc45\amdxe.sys' to 'C:\Windows\System32\drivers\amdxe.sys'.
+     flq:                {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:34.570
+     dvi:                Existing files modified, may need to restart related services.
+     sto:           {Configure Driver Package: exit(0x00000bc3)}
+     dvi:           Restart required for any devices using this driver.
+     dvi:           Install Device: Configuring device. 19:12:34.571
+     dvi:                Configuration: oem21.inf:ROOT\AMDXE,*
+     dvi:           Install Device: Configuring device completed. 19:12:34.573
+     dvi:           Device Status: 0x01802001
+     dvi:           {Restarting Devices} 19:12:34.573
+     dvi:                Start: ROOT\AMDXE\0000
+     dvi:           {Restarting Devices exit} 19:12:34.588
+     dvi:      {Configure Device - exit(0x00000000)} 19:12:34.588
+     dvi: {Core Device Install - exit(0x00000000)} 19:12:34.589
+<<<  Section end 2026/09/05 19:12:34.590
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (Hardware initiated) - ROOT\AMDLOG\0000]
+>>>  Section start 2026/09/05 19:12:34.784
+     utl: {Select Drivers - ROOT\AMDLOG\0000} 19:12:34.787
+     utl:      Driver Node:
+     utl:           Status         - Selected
+     utl:           Driver INF     - oem23.inf (C:\Windows\System32\DriverStore\FileRepository\amdfendr.inf_amd64_bea53a1d416fbcfa\amdfendr.inf)
+     utl:           Class GUID     - {4d36e97d-e325-11ce-bfc1-08002be10318}
+     utl:           Driver Version - 02/06/2026,25.10.0.7
+     utl:           Configuration  - ROOT\AMDLOG
+     utl:           Driver Rank    - 00FF0000
+     utl:           Signer Score   - WHQL (0D000005)
+     utl: {Select Drivers - exit(0x00000000} 19:12:34.788
+     dvi: {Core Device Install} 19:12:34.789
+     dvi:      {Configure Device - ROOT\AMDLOG\0000} 19:12:34.789
+     dvi:           Device Status: 0x01802401 [0x12 - 0xc0000493]
+     dvi:           Config Flags: 0x00000020
+     dvi:           Parent Device: HTREE\ROOT\0
+     sto:           {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\amdfendr.inf_amd64_bea53a1d416fbcfa\amdfendr.inf}
+     sto:                Source Filter  = ROOT\AMDLOG
+     inf:                Class GUID     = {4d36e97d-e325-11ce-bfc1-08002be10318}
+     inf:                Class Options  = Configurable BootCritical
+     dvi:                {Configure Device: ROOT\AMDLOG\0000}
+     dvi:                     Device Instance Id = ROOT\AMDLOG\0000
+     dvi:                     Updating existing device instance.
+     dvi:                {Configure Device: exit(0x00000000)}
+     inf:                {Configure Driver: AMD Crash Defender}
+     inf:                     Section Name = AMDFENDR_INSTALL
+     inf:                     {Add Service: amdfendrmgr}
+     inf:                          Start Type    = 3
+     inf:                          Service Type  = 1
+     inf:                          Error Control = 1
+     inf:                          Image Path    = \SystemRoot\System32\DriverStore\FileRepository\amdfendr.inf_amd64_bea53a1d416fbcfa\amdfendrmgr.sys
+     inf:                          Display Name  = AMD Crash Defender Manager Driver
+     inf:                          Created new service 'amdfendrmgr'.
+     inf:                     {Add Service: exit(0x00000000)}
+     inf:                     {Add Service: amdfendr}
+     inf:                          Start Type    = 3
+     inf:                          Service Type  = 1
+     inf:                          Error Control = 1
+     inf:                          Image Path    = \SystemRoot\System32\DriverStore\FileRepository\amdfendr.inf_amd64_bea53a1d416fbcfa\amdfendr.sys
+     inf:                          Display Name  = AMD Crash Defender Driver
+     inf:                          Created new service 'amdfendr'.
+     inf:                     {Add Service: exit(0x00000000)}
+     inf:                     {Add Service: AMD Crash Defender Service}
+     inf:                          Start Type    = 2
+     inf:                          Service Type  = 16
+     inf:                          Error Control = 1
+     inf:                          Image Path    = %SystemRoot%\System32\DriverStore\FileRepository\amdfendr.inf_amd64_bea53a1d416fbcfa\amdfendrsr.exe
+     inf:                          Group         = Event log
+     inf:                          Created new service 'AMD Crash Defender Service'.
+     inf:                     {Add Service: exit(0x00000000)}
+     inf:                     Hardware Id  = ROOT\AMDLOG
+     inf:                     {Configure Driver Configuration: AMDFENDR_INSTALL}
+     inf:                          Service Name  = amdfendrmgr
+     inf:                          Config Flags  = 0x00000000
+     inf:                     {Configure Driver Configuration: exit(0x00000000)}
+     inf:                {Configure Driver: exit(0x00000000)}
+     flq:                {FILE_QUEUE_COMMIT} 19:12:34.800
+     flq:                {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:34.800
+     inf:                Started service 'AMD Crash Defender Service'.
+     sto:           {Configure Driver Package: exit(0x00000000)}
+     dvi:           Install Device: Configuring device. 19:12:34.821
+     dvi:                Configuration: oem23.inf:ROOT\AMDLOG,*
+     dvi:           Install Device: Configuring device completed. 19:12:34.823
+     dvi:           Device Status: 0x01802001
+     dvi:           Install Device: Starting device 'ROOT\AMDLOG\0000'. 19:12:34.824
+     dvi:           Install Device: Starting device completed. 19:12:34.831
+     dvi:      {Configure Device - exit(0x00000000)} 19:12:34.831
+     dvi: {Core Device Install - exit(0x00000000)} 19:12:34.831
+<<<  Section end 2026/09/05 19:12:34.833
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (Hardware initiated) - SWD\DRIVERENUM\AMDFDANS&7&2c96df5f&0]
+>>>  Section start 2026/09/05 19:12:38.353
+     utl: {Select Drivers - SWD\DRIVERENUM\AMDFDANS&7&2c96df5f&0} 19:12:38.356
+     utl:      Driver Node:
+     utl:           Status         - Selected
+     utl:           Driver INF     - oem22.inf (C:\Windows\System32\DriverStore\FileRepository\amdfdans.inf_amd64_ed467e604b9aac93\amdfdans.inf)
+     utl:           Class GUID     - {5c4c3332-344d-483c-8739-259e934c9cc8}
+     utl:           Driver Version - 03/04/2026,1.4.40.0
+     utl:           Configuration  - SWC\AMDFDANS-1.0.0
+     utl:           Driver Rank    - 00FF0000
+     utl:           Signer Score   - WHQL (0D000005)
+     utl:      Driver Node:
+     utl:           Status         - Outranked
+     utl:           Driver INF     - c_swcomponent.inf (C:\Windows\System32\DriverStore\FileRepository\c_swcomponent.inf_amd64_f378d70fa39d3577\c_swcomponent.inf)
+     utl:           Class GUID     - {5c4c3332-344d-483c-8739-259e934c9cc8}
+     utl:           Driver Version - 06/21/2006,10.0.19041.1
+     utl:           Configuration  - SWC\Generic [SoftwareComponent]
+     utl:           Driver Rank    - 00FF3000
+     utl:           Signer Score   - Inbox (0D000003)
+     utl:      Driver Node:
+     utl:           Status         - Outranked
+     utl:           Driver INF     - c_swdevice.inf (C:\Windows\System32\DriverStore\FileRepository\c_swdevice.inf_amd64_12050f4158021fcb\c_swdevice.inf)
+     utl:           Class GUID     - {62f9c741-b25a-46ce-b54c-9bccce08b6f2}
+     utl:           Driver Version - 06/21/2006,10.0.19041.1
+     utl:           Configuration  - SWD\GenericRaw [SoftwareDevice]
+     utl:           Driver Rank    - 00FF3001
+     utl:           Signer Score   - Inbox (0D000003)
+     utl: {Select Drivers - exit(0x00000000} 19:12:38.360
+     dvi: {Core Device Install} 19:12:38.360
+     dvi:      {Configure Device - SWD\DRIVERENUM\AMDFDANS&7&2c96df5f&0} 19:12:38.361
+     dvi:           Device Status: 0x0180200a
+     dvi:           Config Flags: 0x00000400
+     dvi:           Parent Device: PCI\VEN_1002&DEV_73FF&SUBSYS_23341458&REV_C7\6&150b64e6&0&00000008
+     sto:           {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\amdfdans.inf_amd64_ed467e604b9aac93\amdfdans.inf}
+     sto:                Source Filter  = SWC\AMDFDANS-1.0.0
+     inf:                Class GUID     = {5c4c3332-344d-483c-8739-259e934c9cc8}
+     inf:                Class Options  = Configurable
+     inf:                {Configure Driver: AMD-Dynamic Audio Noise Supression}
+     inf:                     Section Name = AMDFDANS.NT
+     inf:                     Hardware Id  = SWC\AMDFDANS-1.0.0
+     inf:                     {Configure Driver Configuration: AMDFDANS.NT}
+     inf:                          Service Name  = <none>
+     inf:                          Config Flags  = 0x00000000
+     inf:                     {Configure Driver Configuration: exit(0x00000000)}
+     inf:                {Configure Driver: exit(0x00000000)}
+     flq:                {FILE_QUEUE_COMMIT} 19:12:38.365
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdfdans.inf_amd64_ed467e604b9aac93\AMDNoiseSuppression.exe' to 'C:\Windows\System32\AMD\ANR\AMDNoiseSuppression.exe'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdfdans.inf_amd64_ed467e604b9aac93\anronnxlib.dll' to 'C:\Windows\System32\AMD\ANR\anronnxlib.dll'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdfdans.inf_amd64_ed467e604b9aac93\anrsvc.dll' to 'C:\Windows\System32\AMD\ANR\anrsvc.dll'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdfdans.inf_amd64_ed467e604b9aac93\Default.anrcfg' to 'C:\Windows\System32\AMD\ANR\Default.anrcfg'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdfdans.inf_amd64_ed467e604b9aac93\DirectML.dll' to 'C:\Windows\System32\AMD\ANR\DirectML.dll'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdfdans.inf_amd64_ed467e604b9aac93\onnxruntime.dll' to 'C:\Windows\System32\AMD\ANR\onnxruntime.dll'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdfdans.inf_amd64_ed467e604b9aac93\PMLN_model.onnx' to 'C:\Windows\System32\AMD\ANR\PMLN_model.onnx'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdfdans.inf_amd64_ed467e604b9aac93\STLN_model.onnx' to 'C:\Windows\System32\AMD\ANR\STLN_model.onnx'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdfdans.inf_amd64_ed467e604b9aac93\STLN_modelv2.onnx' to 'C:\Windows\System32\AMD\ANR\STLN_modelv2.onnx'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdfdans.inf_amd64_ed467e604b9aac93\ippANS.dll' to 'C:\Windows\System32\AMD\ANR\ippANS.dll'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdfdans.inf_amd64_ed467e604b9aac93\mdfaec.dll' to 'C:\Windows\System32\AMD\ANR\mdfaec.dll'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdfdans.inf_amd64_ed467e604b9aac93\ANR-bgproc-Lib.dll' to 'C:\Windows\System32\ANR-bgproc-Lib.dll'.
+     flq:                {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:38.374
+     dvi:                Existing files modified, may need to restart related services.
+     sto:           {Configure Driver Package: exit(0x00000bc3)}
+     dvi:           Restart required for any devices using this driver.
+     dvi:           Install Device: Configuring device. 19:12:38.375
+     dvi:                Configuration: oem22.inf:SWC\AMDFDANS-1.0.0,*
+     dvi:           Install Device: Configuring device completed. 19:12:38.376
+     dvi:           Device Status: 0x0180200a
+     dvi:           {Restarting Devices} 19:12:38.377
+     dvi:                Query-remove: SWD\DRIVERENUM\AMDFDANS&7&2C96DF5F&0
+     dvi:                Start: SWD\DRIVERENUM\AMDFDANS&7&2C96DF5F&0
+     dvi:                Restart verified: SWD\DRIVERENUM\AMDFDANS&7&2C96DF5F&0
+     dvi:           {Restarting Devices exit} 19:12:38.380
+     dvi:      {Configure Device - exit(0x00000000)} 19:12:38.380
+     dvi: {Core Device Install - exit(0x00000000)} 19:12:38.380
+<<<  Section end 2026/09/05 19:12:38.382
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (Hardware initiated) - SWD\DRIVERENUM\AMDOCL&7&2c96df5f&0]
+>>>  Section start 2026/09/05 19:12:38.409
+     utl: {Select Drivers - SWD\DRIVERENUM\AMDOCL&7&2c96df5f&0} 19:12:38.412
+     utl:      Driver Node:
+     utl:           Status         - Selected
+     utl:           Driver INF     - oem25.inf (C:\Windows\System32\DriverStore\FileRepository\amdocl.inf_amd64_564a246131a7b2c6\amdocl.inf)
+     utl:           Class GUID     - {5c4c3332-344d-483c-8739-259e934c9cc8}
+     utl:           Driver Version - 08/17/2026,32.0.21045.5002
+     utl:           Configuration  - SWC\AMDOCL-25.10
+     utl:           Driver Rank    - 00FF0000
+     utl:           Signer Score   - WHQL (0D000005)
+     utl:      Driver Node:
+     utl:           Status         - Outranked
+     utl:           Driver INF     - c_swcomponent.inf (C:\Windows\System32\DriverStore\FileRepository\c_swcomponent.inf_amd64_f378d70fa39d3577\c_swcomponent.inf)
+     utl:           Class GUID     - {5c4c3332-344d-483c-8739-259e934c9cc8}
+     utl:           Driver Version - 06/21/2006,10.0.19041.1
+     utl:           Configuration  - SWC\Generic [SoftwareComponent]
+     utl:           Driver Rank    - 00FF3000
+     utl:           Signer Score   - Inbox (0D000003)
+     utl:      Driver Node:
+     utl:           Status         - Outranked
+     utl:           Driver INF     - c_swdevice.inf (C:\Windows\System32\DriverStore\FileRepository\c_swdevice.inf_amd64_12050f4158021fcb\c_swdevice.inf)
+     utl:           Class GUID     - {62f9c741-b25a-46ce-b54c-9bccce08b6f2}
+     utl:           Driver Version - 06/21/2006,10.0.19041.1
+     utl:           Configuration  - SWD\GenericRaw [SoftwareDevice]
+     utl:           Driver Rank    - 00FF3001
+     utl:           Signer Score   - Inbox (0D000003)
+     utl: {Select Drivers - exit(0x00000000} 19:12:38.417
+     dvi: {Core Device Install} 19:12:38.417
+     dvi:      {Configure Device - SWD\DRIVERENUM\AMDOCL&7&2c96df5f&0} 19:12:38.418
+     dvi:           Device Status: 0x0180200a
+     dvi:           Config Flags: 0x00000400
+     dvi:           Parent Device: PCI\VEN_1002&DEV_73FF&SUBSYS_23341458&REV_C7\6&150b64e6&0&00000008
+     sto:           {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\amdocl.inf_amd64_564a246131a7b2c6\amdocl.inf}
+     sto:                Source Filter  = SWC\AMDOCL-25.10
+     inf:                Class GUID     = {5c4c3332-344d-483c-8739-259e934c9cc8}
+     inf:                Class Options  = Configurable
+     inf:                {Configure Driver: AMD-OpenCL User Mode Driver}
+     inf:                     Section Name = AMDOCLDriver.NT
+     inf:                     Hardware Id  = SWC\AMDOCL-25.10
+     inf:                     {Configure Driver Configuration: AMDOCLDriver.NT}
+     inf:                          Service Name  = <none>
+     inf:                          Driver has software pending install.
+     inf:                          Config Flags  = 0x00000000
+     inf:                     {Configure Driver Configuration: exit(0x00000000)}
+     inf:                {Configure Driver: exit(0x00000000)}
+     flq:                {FILE_QUEUE_COMMIT} 19:12:38.424
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdocl.inf_amd64_564a246131a7b2c6\AMD_OpenCL64.dll' to 'C:\Windows\System32\OpenCL.dll'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdocl.inf_amd64_564a246131a7b2c6\clinfo.exe' to 'C:\Windows\System32\clinfo.exe'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdocl.inf_amd64_564a246131a7b2c6\amdmmcl.dll' to 'C:\Windows\System32\amdmmcl.dll'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdocl.inf_amd64_564a246131a7b2c6\amdmmcl6.dll' to 'C:\Windows\System32\amdmmcl6.dll'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdocl.inf_amd64_564a246131a7b2c6\hiprt02000_amd.hipfb' to 'C:\Windows\System32\hiprt02000_amd.hipfb'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdocl.inf_amd64_564a246131a7b2c6\hiprt0200064.dll' to 'C:\Windows\System32\hiprt0200064.dll'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdocl.inf_amd64_564a246131a7b2c6\oro_compiled_kernels.hipfb' to 'C:\Windows\System32\oro_compiled_kernels.hipfb'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdocl.inf_amd64_564a246131a7b2c6\amdhip64_6.dll' to 'C:\Windows\System32\amdhip64_6.dll'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdocl.inf_amd64_564a246131a7b2c6\amd_comgr_2.dll' to 'C:\Windows\System32\amd_comgr_2.dll'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdocl.inf_amd64_564a246131a7b2c6\AMD_OpenCL32.dll' to 'C:\Windows\SysWOW64\OpenCL.dll'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdocl.inf_amd64_564a246131a7b2c6\amd_comgr32.dll' to 'C:\Windows\SysWOW64\amd_comgr32.dll'.
+     flq:                {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:38.437
+     dvi:                Existing files modified, may need to restart related services.
+     sto:           {Configure Driver Package: exit(0x00000bc3)}
+     dvi:           Restart required for any devices using this driver.
+     dvi:           Install Device: Configuring device. 19:12:38.438
+     dvi:                Configuration: oem25.inf:SWC\AMDOCL-25.10,*
+     dvi:           Install Device: Configuring device completed. 19:12:38.440
+     dvi:           Device Status: 0x0180200a
+     dvi:           {Restarting Devices} 19:12:38.440
+     dvi:                Query-remove: SWD\DRIVERENUM\AMDOCL&7&2C96DF5F&0
+     dvi:                Start: SWD\DRIVERENUM\AMDOCL&7&2C96DF5F&0
+     dvi:                Restart verified: SWD\DRIVERENUM\AMDOCL&7&2C96DF5F&0
+     dvi:           {Restarting Devices exit} 19:12:38.443
+     dvi:      {Configure Device - exit(0x00000000)} 19:12:38.443
+     dvi: {Core Device Install - exit(0x00000000)} 19:12:38.443
+<<<  Section end 2026/09/05 19:12:38.445
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (Hardware initiated) - SWD\DRIVERENUM\AMDWIN&7&2c96df5f&0]
+>>>  Section start 2026/09/05 19:12:38.471
+     utl: {Select Drivers - SWD\DRIVERENUM\AMDWIN&7&2c96df5f&0} 19:12:38.474
+     utl:      Driver Node:
+     utl:           Status         - Selected
+     utl:           Driver INF     - oem26.inf (C:\Windows\System32\DriverStore\FileRepository\amdwin-u0203303.inf_amd64_86d72c0f35eec1dd\amdwin-u0203303.inf)
+     utl:           Class GUID     - {5c4c3332-344d-483c-8739-259e934c9cc8}
+     utl:           Driver Version - 08/17/2026,32.0.21045.5002
+     utl:           Configuration  - SWC\AMDWIN-25.10
+     utl:           Driver Rank    - 00FF0000
+     utl:           Signer Score   - WHQL (0D000005)
+     utl:      Driver Node:
+     utl:           Status         - Outranked
+     utl:           Driver INF     - c_swcomponent.inf (C:\Windows\System32\DriverStore\FileRepository\c_swcomponent.inf_amd64_f378d70fa39d3577\c_swcomponent.inf)
+     utl:           Class GUID     - {5c4c3332-344d-483c-8739-259e934c9cc8}
+     utl:           Driver Version - 06/21/2006,10.0.19041.1
+     utl:           Configuration  - SWC\Generic [SoftwareComponent]
+     utl:           Driver Rank    - 00FF3000
+     utl:           Signer Score   - Inbox (0D000003)
+     utl:      Driver Node:
+     utl:           Status         - Outranked
+     utl:           Driver INF     - c_swdevice.inf (C:\Windows\System32\DriverStore\FileRepository\c_swdevice.inf_amd64_12050f4158021fcb\c_swdevice.inf)
+     utl:           Class GUID     - {62f9c741-b25a-46ce-b54c-9bccce08b6f2}
+     utl:           Driver Version - 06/21/2006,10.0.19041.1
+     utl:           Configuration  - SWD\GenericRaw [SoftwareDevice]
+     utl:           Driver Rank    - 00FF3001
+     utl:           Signer Score   - Inbox (0D000003)
+     utl: {Select Drivers - exit(0x00000000} 19:12:38.535
+     dvi: Waiting for previous device install to complete. 19:12:38.535
+     dvi: {Core Device Install} 19:12:38.651
+     dvi:      {Configure Device - SWD\DRIVERENUM\AMDWIN&7&2c96df5f&0} 19:12:38.652
+     dvi:           Device Status: 0x0180200a
+     dvi:           Config Flags: 0x00000400
+     dvi:           Parent Device: PCI\VEN_1002&DEV_73FF&SUBSYS_23341458&REV_C7\6&150b64e6&0&00000008
+     sto:           {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\amdwin-u0203303.inf_amd64_86d72c0f35eec1dd\amdwin-u0203303.inf}
+     sto:                Source Filter  = SWC\AMDWIN-25.10
+     inf:                Class GUID     = {5c4c3332-344d-483c-8739-259e934c9cc8}
+     inf:                Class Options  = Configurable
+     inf:                {Configure Driver: AMD-Windows Support Components}
+     inf:                     Section Name = AMDWINDriver.NT
+     inf:                     Hardware Id  = SWC\AMDWIN-25.10
+     inf:                     {Configure Driver Configuration: AMDWINDriver.NT}
+     inf:                          Service Name  = <none>
+     inf:                          Config Flags  = 0x00000000
+     inf:                     {Configure Driver Configuration: exit(0x00000000)}
+     inf:                {Configure Driver: exit(0x00000000)}
+     flq:                {FILE_QUEUE_COMMIT} 19:12:38.707
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdwin-u0203303.inf_amd64_86d72c0f35eec1dd\RapidFireServer64.dll' to 'C:\Windows\System32\RapidFireServer64.dll'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdwin-u0203303.inf_amd64_86d72c0f35eec1dd\dgtrayicon.exe' to 'C:\Windows\System32\dgtrayicon.exe'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdwin-u0203303.inf_amd64_86d72c0f35eec1dd\Rapidfire64.dll' to 'C:\Windows\System32\Rapidfire64.dll'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdwin-u0203303.inf_amd64_86d72c0f35eec1dd\amdlogum.exe' to 'C:\Windows\System32\amdlogum.exe'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdwin-u0203303.inf_amd64_86d72c0f35eec1dd\RapidFireServer.dll' to 'C:\Windows\SysWOW64\RapidFireServer.dll'.
+     flq:                     Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\amdwin-u0203303.inf_amd64_86d72c0f35eec1dd\Rapidfire.dll' to 'C:\Windows\SysWOW64\Rapidfire.dll'.
+     flq:                {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:38.712
+     dvi:                Existing files modified, may need to restart related services.
+     sto:           {Configure Driver Package: exit(0x00000bc3)}
+     dvi:           Restart required for any devices using this driver.
+     dvi:           Install Device: Configuring device. 19:12:38.714
+     dvi:                Configuration: oem26.inf:SWC\AMDWIN-25.10,*
+     dvi:           Install Device: Configuring device completed. 19:12:38.716
+     dvi:           Device Status: 0x0180200a
+     dvi:           {Restarting Devices} 19:12:38.716
+     dvi:                Query-remove: SWD\DRIVERENUM\AMDWIN&7&2C96DF5F&0
+     dvi:                Start: SWD\DRIVERENUM\AMDWIN&7&2C96DF5F&0
+     dvi:                Restart verified: SWD\DRIVERENUM\AMDWIN&7&2C96DF5F&0
+     dvi:           {Restarting Devices exit} 19:12:38.718
+     dvi:      {Configure Device - exit(0x00000000)} 19:12:38.719
+     dvi: {Core Device Install - exit(0x00000000)} 19:12:38.719
+<<<  Section end 2026/09/05 19:12:38.721
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (DiInstallDriver) - C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-AtihdWT6-WT64A-64bit-260818\AtihdWT6.INF]
+>>>  Section start 2026/09/05 19:12:51.722
+      cmd: C:\AMD\AMDSoftwareInstaller\amd-software-adrenalin-edition-26.8.1-minimalsetup-260818_64bit\Bin64\AMDSoftwareInstaller.exe  -AMDPrivacyView=0 -AMDChatbot=0 -AMDUAI=0 /DIMEINSTALLENABLED -AMDChipsetDriver=0 /RSXATHENAVISIBLE /CHIPSET -CLEANAFTERINSTALL /HIDEEULA /WHQL0 ChipsetInstallRet=installed!8.08.12.551!77MB!14/08/2026
+     ndv: Flags: 0x00000002
+     ndv: INF path: C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-AtihdWT6-WT64A-64bit-260818\AtihdWT6.INF
+     dvs: {DrvSetupInstallDriver - C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-AtihdWT6-WT64A-64bit-260818\AtihdWT6.INF}
+     dvs:      Flags: 0x00000001
+     dvs:      {Driver Setup Import Driver Package: C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-AtihdWT6-WT64A-64bit-260818\AtihdWT6.INF} 19:12:51.723
+     sto:           {Copy Driver Package: C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-AtihdWT6-WT64A-64bit-260818\AtihdWT6.INF} 19:12:51.734
+     sto:                Driver Package = C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-AtihdWT6-WT64A-64bit-260818\AtihdWT6.INF
+     sto:                Flags          = 0x00000007
+     sto:                Destination    = C:\Users\Daniel\AppData\Local\Temp\{c6989377-48b2-ba4f-a7c8-11cca0d088f8}
+     sto:                Copying driver package files to 'C:\Users\Daniel\AppData\Local\Temp\{c6989377-48b2-ba4f-a7c8-11cca0d088f8}'.
+!    inf:                Needed section [mssysfx.CopyFilesAndRegisterCapX] not found. Code = 1315, Line = 112
+     flq:                {FILE_QUEUE_COMMIT} 19:12:51.756
+     flq:                     Copying 'C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-AtihdWT6-WT64A-64bit-260818\AtihdWT6.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{c6989377-48b2-ba4f-a7c8-11cca0d088f8}\AtihdWT6.cat'.
+     flq:                     Copying 'C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-AtihdWT6-WT64A-64bit-260818\AtihdWT6.INF' to 'C:\Users\Daniel\AppData\Local\Temp\{c6989377-48b2-ba4f-a7c8-11cca0d088f8}\AtihdWT6.INF'.
+     flq:                     Copying 'C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-AtihdWT6-WT64A-64bit-260818\AtihdWT6.sys' to 'C:\Users\Daniel\AppData\Local\Temp\{c6989377-48b2-ba4f-a7c8-11cca0d088f8}\AtihdWT6.sys'.
+     flq:                {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:51.760
+     sto:           {Copy Driver Package: exit(0x00000000)} 19:12:51.760
+     ump:           Import flags: 0x00000000
+     pol:           {Driver package policy check} 19:12:51.763
+     pol:           {Driver package policy check - exit(0x00000000)} 19:12:51.764
+     sto:           {Stage Driver Package: C:\Users\Daniel\AppData\Local\Temp\{c6989377-48b2-ba4f-a7c8-11cca0d088f8}\AtihdWT6.INF} 19:12:51.764
+!    inf:                Needed section [mssysfx.CopyFilesAndRegisterCapX] not found. Code = 1315, Line = 112
+     inf:                {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{c6989377-48b2-ba4f-a7c8-11cca0d088f8}\AtihdWT6.INF} 19:12:51.782
+     inf:                     Driver package 'AtihdWT6.INF' is configurable.
+     inf:                {Query Configurability: exit(0x00000000)} 19:12:51.804
+     flq:                {FILE_QUEUE_COMMIT} 19:12:51.804
+     flq:                     Copying 'C:\Users\Daniel\AppData\Local\Temp\{c6989377-48b2-ba4f-a7c8-11cca0d088f8}\AtihdWT6.cat' to 'C:\Windows\System32\DriverStore\Temp\{41289644-a863-5e4e-b64a-781cb7a1e73c}\AtihdWT6.cat'.
+     flq:                     Copying 'C:\Users\Daniel\AppData\Local\Temp\{c6989377-48b2-ba4f-a7c8-11cca0d088f8}\AtihdWT6.INF' to 'C:\Windows\System32\DriverStore\Temp\{41289644-a863-5e4e-b64a-781cb7a1e73c}\AtihdWT6.INF'.
+     flq:                     Copying 'C:\Users\Daniel\AppData\Local\Temp\{c6989377-48b2-ba4f-a7c8-11cca0d088f8}\AtihdWT6.sys' to 'C:\Windows\System32\DriverStore\Temp\{41289644-a863-5e4e-b64a-781cb7a1e73c}\AtihdWT6.sys'.
+     flq:                {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:51.810
+     sto:                {DRIVERSTORE IMPORT VALIDATE} 19:12:51.814
+     sig:                     Driver package catalog is valid.
+     sig:                     {_VERIFY_FILE_SIGNATURE} 19:12:51.829
+     sig:                          Key      = AtihdWT6.INF
+     sig:                          FilePath = C:\Windows\System32\DriverStore\Temp\{41289644-a863-5e4e-b64a-781cb7a1e73c}\AtihdWT6.INF
+     sig:                          Catalog  = C:\Windows\System32\DriverStore\Temp\{41289644-a863-5e4e-b64a-781cb7a1e73c}\AtihdWT6.cat
+     sig:                          Success: File is signed in catalog.
+     sig:                     {_VERIFY_FILE_SIGNATURE exit(0x00000000)} 19:12:51.834
+     sto:                {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 19:12:51.839
+     sig:                Signer Score  = 0x0D000005 (WHQL)
+     sig:                Signer Name   = Microsoft Windows Hardware Compatibility Publisher
+     sig:                Submission ID = 30001810_13870921939381603_1152921505700109354
+     sto:                {Core Driver Package Import: atihdwt6.inf_amd64_76dcade1eff04982} 19:12:51.844
+     sto:                     {DRIVERSTORE IMPORT BEGIN} 19:12:51.844
+     sto:                     {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 19:12:51.844
+     cpy:                     {Copy Directory: C:\Windows\System32\DriverStore\Temp\{41289644-a863-5e4e-b64a-781cb7a1e73c}} 19:12:51.844
+     cpy:                          Target Path = C:\Windows\System32\DriverStore\FileRepository\atihdwt6.inf_amd64_76dcade1eff04982
+     cpy:                     {Copy Directory: exit(0x00000000)} 19:12:51.846
+     idb:                     {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\atihdwt6.inf_amd64_76dcade1eff04982\AtihdWT6.INF} 19:12:51.846
+     idb:                          Created driver package object 'atihdwt6.inf_amd64_76dcade1eff04982' in DRIVERS database node.
+     idb:                          Created driver INF file object 'oem28.inf' in DRIVERS database node.
+     idb:                          Registered driver package 'atihdwt6.inf_amd64_76dcade1eff04982' with 'oem28.inf'.
+     idb:                     {Register Driver Package: exit(0x00000000)} 19:12:51.851
+     idb:                     {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\atihdwt6.inf_amd64_76dcade1eff04982\AtihdWT6.INF} 19:12:51.851
+     idb:                          Activating driver package 'atihdwt6.inf_amd64_76dcade1eff04982'.
+     cpy:                          Published 'atihdwt6.inf_amd64_76dcade1eff04982\atihdwt6.inf' to 'oem28.inf'.
+     idb:                          Indexed 9 device IDs for 'atihdwt6.inf_amd64_76dcade1eff04982'.
+     sto:                          Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                          Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                     {Publish Driver Package: exit(0x00000000)} 19:12:51.870
+     sto:                     {DRIVERSTORE IMPORT END} 19:12:51.874
+     dvi:                          Flushed all driver package files to disk. Time = 0 ms
+     sig:                          Installed catalog 'AtihdWT6.cat' as 'oem28.cat'.
+     sto:                     {DRIVERSTORE IMPORT END: exit(0x00000000)} 19:12:51.882
+     sto:                {Core Driver Package Import: exit(0x00000000)} 19:12:51.883
+     sto:           {Stage Driver Package: exit(0x00000000)} 19:12:51.883
+     dvs:      {Driver Setup Import Driver Package - exit (0x00000000)} 19:12:51.956
+     dvs:      {Driver Setup Update Device: HDAUDIO\FUNC_01&VEN_1002&DEV_AA01&SUBSYS_00AA0100&REV_1007\5&103e1f89&0&0001} 19:12:51.960
+     dvs:           Marking non-present device 'HDAUDIO\FUNC_01&VEN_1002&DEV_AA01&SUBSYS_00AA0100&REV_1007\5&103E1F89&0&0001' for reinstall.
+     dvs:           {Install Related Drivers} 19:12:51.961
+     dvs:           {Install Related Drivers: exit(0x00000000)} 19:12:51.961
+     dvs:      {Driver Setup Update Device - exit(0x00000000)} 19:12:51.962
+     dvs:      {Driver Setup Update Device: HDAUDIO\FUNC_01&VEN_1002&DEV_AA01&SUBSYS_00AA0100&REV_1008\7&1e8bc9a2&0&0001} 19:12:51.963
+     utl:           {Select Drivers - HDAUDIO\FUNC_01&VEN_1002&DEV_AA01&SUBSYS_00AA0100&REV_1008\7&1e8bc9a2&0&0001} 19:12:51.963
+     utl:                Driver Node:
+     utl:                     Status         - Selected
+     utl:                     Driver INF     - oem28.inf (C:\Windows\System32\DriverStore\FileRepository\atihdwt6.inf_amd64_76dcade1eff04982\atihdwt6.inf)
+     utl:                     Class GUID     - {4d36e96c-e325-11ce-bfc1-08002be10318}
+     utl:                     Driver Version - 11/04/2025,10.0.1.42
+     utl:                     Configuration  - HDAUDIO\FUNC_01&VEN_1002&DEV_AA01&SUBSYS_00AA0100&REV_1008
+     utl:                     Driver Rank    - 00FF0000
+     utl:                     Signer Score   - WHQL (0D000005)
+     utl:                Driver Node:
+     utl:                     Status         - Outranked | Installed
+     utl:                     Driver INF     - hdaudio.inf (C:\Windows\System32\DriverStore\FileRepository\hdaudio.inf_amd64_fe5b23ea7991a359\hdaudio.inf)
+     utl:                     Class GUID     - {4d36e96c-e325-11ce-bfc1-08002be10318}
+     utl:                     Driver Version - 05/09/2020,10.0.19041.264
+     utl:                     Configuration  - HDAUDIO\FUNC_01 [HdAudModel]
+     utl:                     Driver Rank    - 00FF300C
+     utl:                     Signer Score   - Inbox (0D000003)
+     utl:           {Select Drivers - exit(0x00000000} 19:12:51.966
+     dvs:           Installing best driver (oem28.inf) on device 'HDAUDIO\FUNC_01&VEN_1002&DEV_AA01&SUBSYS_00AA0100&REV_1008\7&1e8bc9a2&0&0001'.
+     ump:           {Plug and Play Service: Device Install for HDAUDIO\FUNC_01&VEN_1002&DEV_AA01&SUBSYS_00AA0100&REV_1008\7&1E8BC9A2&0&0001}
+     dvi:                {Core Device Install} 19:12:51.970
+     dvi:                     {Configure Device - HDAUDIO\FUNC_01&VEN_1002&DEV_AA01&SUBSYS_00AA0100&REV_1008\7&1E8BC9A2&0&0001} 19:12:51.971
+     dvi:                          Device Status: 0x0180200a
+     dvi:                          Config Flags: 0x00000000
+     dvi:                          Parent Device: PCI\VEN_1002&DEV_AB28&SUBSYS_AB281002&REV_00\6&150b64e6&0&01000008
+     sto:                          {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\atihdwt6.inf_amd64_76dcade1eff04982\atihdwt6.inf}
+     sto:                               Source Filter  = HDAUDIO\FUNC_01&VEN_1002&DEV_AA01&SUBSYS_00AA0100&REV_1008
+     inf:                               Class GUID     = {4d36e96c-e325-11ce-bfc1-08002be10318}
+     inf:                               Class Options  = Configurable
+     inf:                               {Configure Driver: AMD High Definition Audio Device}
+     inf:                                    Section Name = HDAudioInstall_16299
+     inf:                                    {Add Service: AtiHDAudioService}
+     inf:                                         Start Type    = 3
+     inf:                                         Service Type  = 1
+     inf:                                         Error Control = 1
+     inf:                                         Image Path    = \SystemRoot\System32\DriverStore\FileRepository\atihdwt6.inf_amd64_76dcade1eff04982\AtihdWT6.sys
+     inf:                                         Display Name  = AMD Function Driver for HD Audio Service
+     inf:                                         Created new service 'AtiHDAudioService'.
+     inf:                                    {Add Service: exit(0x00000000)}
+     inf:                                    Hardware Id  = HDAUDIO\FUNC_01&VEN_1002&DEV_AA01&SUBSYS_00AA0100&REV_1008
+     inf:                                    {Configure Driver Configuration: HDAudioInstall_16299}
+     inf:                                         Service Name  = AtiHDAudioService
+     inf:                                         Included INFs = ks.inf
+     inf:                                                         wdmaudio.inf
+     inf:                                         Include Scope = Services
+     inf:                                         Config Flags  = 0x00000000
+     inf:                                    {Configure Driver Configuration: exit(0x00000000)}
+     inf:                               {Configure Driver: exit(0x00000000)}
+     flq:                               {FILE_QUEUE_COMMIT} 19:12:52.097
+     flq:                                    Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\wdmaudio.inf_amd64_cb639d1f182bc449\drmk.sys' to 'C:\Windows\System32\drivers\drmk.sys'.
+     cpy:                                    Existing file 'C:\Windows\System32\drivers\drmk.sys' remains unchanged.
+     flq:                                    Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\wdmaudio.inf_amd64_cb639d1f182bc449\portcls.sys' to 'C:\Windows\System32\drivers\portcls.sys'.
+     cpy:                                    Existing file 'C:\Windows\System32\drivers\portcls.sys' remains unchanged.
+     flq:                               {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:52.100
+     sto:                          {Configure Driver Package: exit(0x00000000)}
+     dvi:                          Install Device: Configuring device. 19:12:52.101
+     dvi:                               Configuration: oem28.inf:HDAUDIO\FUNC_01&VEN_1002&DEV_AA01&SUBSYS_00AA0100&REV_1008,*
+     dvi:                          Install Device: Configuring device completed. 19:12:52.196
+     dvi:                          Device Status: 0x0180200a
+     dvi:                          Install Device: Removing device 'HDAUDIO\FUNC_01&VEN_1002&DEV_AA01&SUBSYS_00AA0100&REV_1008\7&1E8BC9A2&0&0001' and sub-tree. 19:12:52.197
+     dvi:                          Install Device: Removing device sub-tree completed. 19:12:52.236
+     dvi:                          Install Device: Restarting device. 19:12:52.236
+     dvi:                          Install Device: Restarting device completed. 19:12:52.312
+     dvi:                     {Configure Device - exit(0x00000000)} 19:12:52.312
+     dvi:                {Core Device Install - exit(0x00000000)} 19:12:52.313
+     ump:           {Plug and Play Service: Device Install exit(00000000)}
+     dvs:           {Install Related Drivers} 19:12:52.315
+     dvs:           {Install Related Drivers: exit(0x00000000)} 19:12:52.316
+     dvs:      {Driver Setup Update Device - exit(0x00000000)} 19:12:52.316
+     dvs: {DrvSetupInstallDriver - exit(00000000)}
+<<<  Section end 2026/09/05 19:12:52.318
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Delete Device - SWD\MMDEVAPI\{0.0.0.00000000}.{080B9107-31ED-4B4F-9ABE-5785F517998B}]
+>>>  Section start 2026/09/05 19:12:52.204
+      cmd: C:\Windows\System32\svchost.exe -k LocalSystemNetworkRestricted -p -s AudioEndpointBuilder
+!    dvi: Access denied from Query and Remove
+<<<  Section end 2026/09/05 19:12:52.244
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (DiInstallDriver) - C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsafd-WT64A-64bit-260818\amdsafd.INF]
+>>>  Section start 2026/09/05 19:12:52.324
+      cmd: C:\AMD\AMDSoftwareInstaller\amd-software-adrenalin-edition-26.8.1-minimalsetup-260818_64bit\Bin64\AMDSoftwareInstaller.exe  -AMDPrivacyView=0 -AMDChatbot=0 -AMDUAI=0 /DIMEINSTALLENABLED -AMDChipsetDriver=0 /RSXATHENAVISIBLE /CHIPSET -CLEANAFTERINSTALL /HIDEEULA /WHQL0 ChipsetInstallRet=installed!8.08.12.551!77MB!14/08/2026
+     ndv: Flags: 0x00000002
+     ndv: INF path: C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsafd-WT64A-64bit-260818\amdsafd.INF
+     dvs: {DrvSetupInstallDriver - C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsafd-WT64A-64bit-260818\amdsafd.INF}
+     dvs:      Flags: 0x00000001
+     dvs:      {Driver Setup Import Driver Package: C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsafd-WT64A-64bit-260818\amdsafd.INF} 19:12:52.325
+     sto:           {Copy Driver Package: C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsafd-WT64A-64bit-260818\amdsafd.INF} 19:12:52.325
+     sto:                Driver Package = C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsafd-WT64A-64bit-260818\amdsafd.INF
+     sto:                Flags          = 0x00000007
+     sto:                Destination    = C:\Users\Daniel\AppData\Local\Temp\{b6264f93-1d71-ae45-82ff-8d85487b41ed}
+     sto:                Copying driver package files to 'C:\Users\Daniel\AppData\Local\Temp\{b6264f93-1d71-ae45-82ff-8d85487b41ed}'.
+     flq:                {FILE_QUEUE_COMMIT} 19:12:52.331
+     flq:                     Copying 'C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsafd-WT64A-64bit-260818\amdsafd.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{b6264f93-1d71-ae45-82ff-8d85487b41ed}\amdsafd.cat'.
+     flq:                     Copying 'C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsafd-WT64A-64bit-260818\amdsafd.INF' to 'C:\Users\Daniel\AppData\Local\Temp\{b6264f93-1d71-ae45-82ff-8d85487b41ed}\amdsafd.INF'.
+     flq:                     Copying 'C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsafd-WT64A-64bit-260818\amdsafd.sys' to 'C:\Users\Daniel\AppData\Local\Temp\{b6264f93-1d71-ae45-82ff-8d85487b41ed}\amdsafd.sys'.
+     flq:                {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:52.334
+     sto:           {Copy Driver Package: exit(0x00000000)} 19:12:52.334
+     ump:           Import flags: 0x00000000
+     pol:           {Driver package policy check} 19:12:52.338
+     pol:           {Driver package policy check - exit(0x00000000)} 19:12:52.338
+     sto:           {Stage Driver Package: C:\Users\Daniel\AppData\Local\Temp\{b6264f93-1d71-ae45-82ff-8d85487b41ed}\amdsafd.INF} 19:12:52.338
+     inf:                {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{b6264f93-1d71-ae45-82ff-8d85487b41ed}\amdsafd.INF} 19:12:52.344
+     inf:                     Driver package uses WDF.
+     inf:                     Driver package 'amdsafd.INF' is configurable.
+     inf:                {Query Configurability: exit(0x00000000)} 19:12:52.350
+     flq:                {FILE_QUEUE_COMMIT} 19:12:52.351
+     flq:                     Copying 'C:\Users\Daniel\AppData\Local\Temp\{b6264f93-1d71-ae45-82ff-8d85487b41ed}\amdsafd.cat' to 'C:\Windows\System32\DriverStore\Temp\{a4aa9486-4a0c-af42-9135-6e15ebb2ee67}\amdsafd.cat'.
+     flq:                     Copying 'C:\Users\Daniel\AppData\Local\Temp\{b6264f93-1d71-ae45-82ff-8d85487b41ed}\amdsafd.INF' to 'C:\Windows\System32\DriverStore\Temp\{a4aa9486-4a0c-af42-9135-6e15ebb2ee67}\amdsafd.INF'.
+     flq:                     Copying 'C:\Users\Daniel\AppData\Local\Temp\{b6264f93-1d71-ae45-82ff-8d85487b41ed}\amdsafd.sys' to 'C:\Windows\System32\DriverStore\Temp\{a4aa9486-4a0c-af42-9135-6e15ebb2ee67}\amdsafd.sys'.
+     flq:                {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:52.355
+     sto:                {DRIVERSTORE IMPORT VALIDATE} 19:12:52.356
+     sig:                     Driver package catalog is valid.
+     sig:                     {_VERIFY_FILE_SIGNATURE} 19:12:52.366
+     sig:                          Key      = amdsafd.INF
+     sig:                          FilePath = C:\Windows\System32\DriverStore\Temp\{a4aa9486-4a0c-af42-9135-6e15ebb2ee67}\amdsafd.INF
+     sig:                          Catalog  = C:\Windows\System32\DriverStore\Temp\{a4aa9486-4a0c-af42-9135-6e15ebb2ee67}\amdsafd.cat
+     sig:                          Success: File is signed in catalog.
+     sig:                     {_VERIFY_FILE_SIGNATURE exit(0x00000000)} 19:12:52.369
+     sto:                {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 19:12:52.370
+     sig:                Signer Score  = 0x0D000005 (WHQL)
+     sig:                Signer Name   = Microsoft Windows Hardware Compatibility Publisher
+     sig:                Submission ID = 30001810_13801575178253506_1152921505699781979
+     sto:                {Core Driver Package Import: amdsafd.inf_amd64_d4de13a10f2586d0} 19:12:52.372
+     sto:                     {DRIVERSTORE IMPORT BEGIN} 19:12:52.372
+     sto:                     {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 19:12:52.372
+     cpy:                     {Copy Directory: C:\Windows\System32\DriverStore\Temp\{a4aa9486-4a0c-af42-9135-6e15ebb2ee67}} 19:12:52.372
+     cpy:                          Target Path = C:\Windows\System32\DriverStore\FileRepository\amdsafd.inf_amd64_d4de13a10f2586d0
+     cpy:                     {Copy Directory: exit(0x00000000)} 19:12:52.373
+     idb:                     {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\amdsafd.inf_amd64_d4de13a10f2586d0\amdsafd.INF} 19:12:52.373
+     idb:                          Created driver package object 'amdsafd.inf_amd64_d4de13a10f2586d0' in DRIVERS database node.
+     idb:                          Created driver INF file object 'oem29.inf' in DRIVERS database node.
+     idb:                          Registered driver package 'amdsafd.inf_amd64_d4de13a10f2586d0' with 'oem29.inf'.
+     idb:                     {Register Driver Package: exit(0x00000000)} 19:12:52.375
+     idb:                     {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\amdsafd.inf_amd64_d4de13a10f2586d0\amdsafd.INF} 19:12:52.375
+     idb:                          Activating driver package 'amdsafd.inf_amd64_d4de13a10f2586d0'.
+     cpy:                          Published 'amdsafd.inf_amd64_d4de13a10f2586d0\amdsafd.inf' to 'oem29.inf'.
+     idb:                          Indexed 3 device IDs for 'amdsafd.inf_amd64_d4de13a10f2586d0'.
+     sto:                          Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                          Flushed driver database node 'SYSTEM'. Time = 16 ms
+     idb:                     {Publish Driver Package: exit(0x00000000)} 19:12:52.383
+     sto:                     {DRIVERSTORE IMPORT END} 19:12:52.383
+     dvi:                          Flushed all driver package files to disk. Time = 0 ms
+     sig:                          Installed catalog 'amdsafd.cat' as 'oem29.cat'.
+     sto:                     {DRIVERSTORE IMPORT END: exit(0x00000000)} 19:12:52.387
+     sto:                {Core Driver Package Import: exit(0x00000000)} 19:12:52.387
+     sto:           {Stage Driver Package: exit(0x00000000)} 19:12:52.388
+     dvs:      {Driver Setup Import Driver Package - exit (0x00000000)} 19:12:52.444
+     dvs:      {Driver Setup Update Device: ROOT\AMDSAFD&FUN_01&REV_01\0000} 19:12:52.448
+     utl:           {Select Drivers - ROOT\AMDSAFD&FUN_01&REV_01\0000} 19:12:52.448
+     utl:                Driver Node:
+     utl:                     Status         - Selected
+     utl:                     Driver INF     - oem29.inf (C:\Windows\System32\DriverStore\FileRepository\amdsafd.inf_amd64_d4de13a10f2586d0\amdsafd.inf)
+     utl:                     Class GUID     - {4d36e96c-e325-11ce-bfc1-08002be10318}
+     utl:                     Driver Version - 06/05/2024,1.0.0.14
+     utl:                     Configuration  - Root\AMDSAFD&FUN_01&REV_01
+     utl:                     Driver Rank    - 00FF0000
+     utl:                     Signer Score   - WHQL (0D000005)
+     utl:           {Select Drivers - exit(0x00000000} 19:12:52.449
+     dvs:           Installing best driver (oem29.inf) on device 'ROOT\AMDSAFD&FUN_01&REV_01\0000'.
+     ump:           {Plug and Play Service: Device Install for ROOT\AMDSAFD&FUN_01&REV_01\0000}
+     dvi:                {Core Device Install} 19:12:52.453
+     dvi:                     {Configure Device - ROOT\AMDSAFD&FUN_01&REV_01\0000} 19:12:52.454
+     dvi:                          Device Status: 0x01802001
+     dvi:                          Parent Device: HTREE\ROOT\0
+     sto:                          {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\amdsafd.inf_amd64_d4de13a10f2586d0\amdsafd.inf}
+     sto:                               Source Filter  = Root\AMDSAFD&FUN_01&REV_01
+     inf:                               Class GUID     = {4d36e96c-e325-11ce-bfc1-08002be10318}
+     inf:                               Class Options  = Configurable
+     inf:                               {Configure Driver: AMD Streaming Audio Device}
+     inf:                                    Section Name = AMDSAfdInstall
+     inf:                                    {Add Service: AMDSAFD}
+     inf:                                         Start Type    = 3
+     inf:                                         Service Type  = 1
+     inf:                                         Error Control = 1
+     inf:                                         Image Path    = \SystemRoot\System32\DriverStore\FileRepository\amdsafd.inf_amd64_d4de13a10f2586d0\amdsafd.sys
+     inf:                                         Display Name  = AMDSAFD
+     inf:                                         Created new service 'AMDSAFD'.
+     inf:                                    {Add Service: exit(0x00000000)}
+     inf:                                    Hardware Id  = Root\AMDSAFD&FUN_01&REV_01
+     inf:                                    {Configure Driver Configuration: AMDSAfdInstall}
+     inf:                                         Service Name  = AMDSAFD
+     inf:                                         Included INFs = ks.inf
+     inf:                                                         wdmaudio.inf
+     inf:                                         Include Scope = Services
+     inf:                                         Config Flags  = 0x00000000
+     inf:                                    {Configure Driver Configuration: exit(0x00000000)}
+     inf:                               {Configure Driver: exit(0x00000000)}
+     flq:                               {FILE_QUEUE_COMMIT} 19:12:52.495
+     flq:                                    Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\wdmaudio.inf_amd64_cb639d1f182bc449\drmk.sys' to 'C:\Windows\System32\drivers\drmk.sys'.
+     cpy:                                    Existing file 'C:\Windows\System32\drivers\drmk.sys' remains unchanged.
+     flq:                                    Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\wdmaudio.inf_amd64_cb639d1f182bc449\portcls.sys' to 'C:\Windows\System32\drivers\portcls.sys'.
+     cpy:                                    Existing file 'C:\Windows\System32\drivers\portcls.sys' remains unchanged.
+     flq:                                    Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\wdmaudio.inf_amd64_cb639d1f182bc449\MsApoFxProxy.dll' to 'C:\Windows\System32\MsApoFxProxy.dll'.
+     flq:                               {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:52.499
+     dvi:                               Existing files modified, may need to restart related services.
+     sto:                          {Configure Driver Package: exit(0x00000bc3)}
+     dvi:                          Restart required for any devices using this driver.
+     dvi:                          Install Device: Configuring device. 19:12:52.500
+     dvi:                               Configuration: oem29.inf:Root\AMDSAFD&FUN_01&REV_01,*
+     dvi:                          Install Device: Configuring device completed. 19:12:52.506
+     dvi:                          Device Status: 0x01802001
+     dvi:                          {Restarting Devices} 19:12:52.506
+     dvi:                               Start: ROOT\AMDSAFD&FUN_01&REV_01\0000
+     dvi:                          {Restarting Devices exit} 19:12:52.525
+     dvi:                     {Configure Device - exit(0x00000000)} 19:12:52.525
+     dvi:                {Core Device Install - exit(0x00000000)} 19:12:52.526
+     ump:           {Plug and Play Service: Device Install exit(00000000)}
+     dvs:           {Install Related Drivers} 19:12:52.528
+     dvs:           {Install Related Drivers: exit(0x00000000)} 19:12:52.529
+     dvs:      {Driver Setup Update Device - exit(0x00000000)} 19:12:52.529
+     dvs: {DrvSetupInstallDriver - exit(00000000)}
+<<<  Section end 2026/09/05 19:12:52.536
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (DiInstallDriver) - C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdwc-WT64A-64bit-260818\amdsdwc.INF]
+>>>  Section start 2026/09/05 19:12:52.536
+      cmd: C:\AMD\AMDSoftwareInstaller\amd-software-adrenalin-edition-26.8.1-minimalsetup-260818_64bit\Bin64\AMDSoftwareInstaller.exe  -AMDPrivacyView=0 -AMDChatbot=0 -AMDUAI=0 /DIMEINSTALLENABLED -AMDChipsetDriver=0 /RSXATHENAVISIBLE /CHIPSET -CLEANAFTERINSTALL /HIDEEULA /WHQL0 ChipsetInstallRet=installed!8.08.12.551!77MB!14/08/2026
+     ndv: Flags: 0x00000002
+     ndv: INF path: C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdwc-WT64A-64bit-260818\amdsdwc.INF
+     dvs: {DrvSetupInstallDriver - C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdwc-WT64A-64bit-260818\amdsdwc.INF}
+     dvs:      Flags: 0x00000001
+     dvs:      {Driver Setup Import Driver Package: C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdwc-WT64A-64bit-260818\amdsdwc.INF} 19:12:52.537
+     sto:           {Copy Driver Package: C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdwc-WT64A-64bit-260818\amdsdwc.INF} 19:12:52.538
+     sto:                Driver Package = C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdwc-WT64A-64bit-260818\amdsdwc.INF
+     sto:                Flags          = 0x00000007
+     sto:                Destination    = C:\Users\Daniel\AppData\Local\Temp\{ebcc3ce0-6c41-f74e-b15e-7fe77a1fd2b5}
+     sto:                Copying driver package files to 'C:\Users\Daniel\AppData\Local\Temp\{ebcc3ce0-6c41-f74e-b15e-7fe77a1fd2b5}'.
+     flq:                {FILE_QUEUE_COMMIT} 19:12:52.539
+     flq:                     Copying 'C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdwc-WT64A-64bit-260818\amdsdwc.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{ebcc3ce0-6c41-f74e-b15e-7fe77a1fd2b5}\amdsdwc.cat'.
+     flq:                     Copying 'C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdwc-WT64A-64bit-260818\amdsdwc.INF' to 'C:\Users\Daniel\AppData\Local\Temp\{ebcc3ce0-6c41-f74e-b15e-7fe77a1fd2b5}\amdsdwc.INF'.
+     flq:                     Copying 'C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdwc-WT64A-64bit-260818\amdsdwc.sys' to 'C:\Users\Daniel\AppData\Local\Temp\{ebcc3ce0-6c41-f74e-b15e-7fe77a1fd2b5}\amdsdwc.sys'.
+     flq:                {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:52.542
+     sto:           {Copy Driver Package: exit(0x00000000)} 19:12:52.542
+     ump:           Import flags: 0x00000000
+     pol:           {Driver package policy check} 19:12:52.545
+     pol:           {Driver package policy check - exit(0x00000000)} 19:12:52.546
+     sto:           {Stage Driver Package: C:\Users\Daniel\AppData\Local\Temp\{ebcc3ce0-6c41-f74e-b15e-7fe77a1fd2b5}\amdsdwc.INF} 19:12:52.546
+     inf:                {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{ebcc3ce0-6c41-f74e-b15e-7fe77a1fd2b5}\amdsdwc.INF} 19:12:52.547
+     inf:                     Driver package is fully isolated.
+     inf:                     Driver package uses WDF.
+     inf:                     Driver package 'amdsdwc.INF' is configurable.
+     inf:                {Query Configurability: exit(0x00000000)} 19:12:52.548
+     flq:                {FILE_QUEUE_COMMIT} 19:12:52.549
+     flq:                     Copying 'C:\Users\Daniel\AppData\Local\Temp\{ebcc3ce0-6c41-f74e-b15e-7fe77a1fd2b5}\amdsdwc.cat' to 'C:\Windows\System32\DriverStore\Temp\{a632844f-fb95-cb4a-add4-6efc34044a9f}\amdsdwc.cat'.
+     flq:                     Copying 'C:\Users\Daniel\AppData\Local\Temp\{ebcc3ce0-6c41-f74e-b15e-7fe77a1fd2b5}\amdsdwc.INF' to 'C:\Windows\System32\DriverStore\Temp\{a632844f-fb95-cb4a-add4-6efc34044a9f}\amdsdwc.INF'.
+     flq:                     Copying 'C:\Users\Daniel\AppData\Local\Temp\{ebcc3ce0-6c41-f74e-b15e-7fe77a1fd2b5}\amdsdwc.sys' to 'C:\Windows\System32\DriverStore\Temp\{a632844f-fb95-cb4a-add4-6efc34044a9f}\amdsdwc.sys'.
+     flq:                {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:52.553
+     sto:                {DRIVERSTORE IMPORT VALIDATE} 19:12:52.554
+     sig:                     Driver package catalog is valid.
+     sig:                     {_VERIFY_FILE_SIGNATURE} 19:12:52.564
+     sig:                          Key      = amdsdwc.INF
+     sig:                          FilePath = C:\Windows\System32\DriverStore\Temp\{a632844f-fb95-cb4a-add4-6efc34044a9f}\amdsdwc.INF
+     sig:                          Catalog  = C:\Windows\System32\DriverStore\Temp\{a632844f-fb95-cb4a-add4-6efc34044a9f}\amdsdwc.cat
+     sig:                          Success: File is signed in catalog.
+     sig:                     {_VERIFY_FILE_SIGNATURE exit(0x00000000)} 19:12:52.568
+     sto:                {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 19:12:52.570
+     sig:                Signer Score  = 0x0D000005 (WHQL)
+     sig:                Signer Name   = Microsoft Windows Hardware Compatibility Publisher
+     sig:                Submission ID = 30001810_14099352751692592_1152921505699781834
+     sto:                {Core Driver Package Import: amdsdwc.inf_amd64_006aed2d2637df73} 19:12:52.571
+     sto:                     {DRIVERSTORE IMPORT BEGIN} 19:12:52.571
+     sto:                     {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 19:12:52.572
+     cpy:                     {Copy Directory: C:\Windows\System32\DriverStore\Temp\{a632844f-fb95-cb4a-add4-6efc34044a9f}} 19:12:52.572
+     cpy:                          Target Path = C:\Windows\System32\DriverStore\FileRepository\amdsdwc.inf_amd64_006aed2d2637df73
+     cpy:                     {Copy Directory: exit(0x00000000)} 19:12:52.573
+     idb:                     {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\amdsdwc.inf_amd64_006aed2d2637df73\amdsdwc.INF} 19:12:52.573
+     idb:                          Created driver package object 'amdsdwc.inf_amd64_006aed2d2637df73' in SYSTEM database node.
+     idb:                          Created driver INF file object 'oem30.inf' in SYSTEM database node.
+     idb:                          Registered driver package 'amdsdwc.inf_amd64_006aed2d2637df73' with 'oem30.inf'.
+     idb:                     {Register Driver Package: exit(0x00000000)} 19:12:52.575
+     idb:                     {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\amdsdwc.inf_amd64_006aed2d2637df73\amdsdwc.INF} 19:12:52.575
+     idb:                          Activating driver package 'amdsdwc.inf_amd64_006aed2d2637df73'.
+     cpy:                          Published 'amdsdwc.inf_amd64_006aed2d2637df73\amdsdwc.inf' to 'oem30.inf'.
+     idb:                          Indexed 8 device IDs for 'amdsdwc.inf_amd64_006aed2d2637df73'.
+     sto:                          Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                     {Publish Driver Package: exit(0x00000000)} 19:12:52.579
+     sto:                     {DRIVERSTORE IMPORT END} 19:12:52.580
+     dvi:                          Flushed all driver package files to disk. Time = 0 ms
+     sig:                          Installed catalog 'amdsdwc.cat' as 'oem30.cat'.
+     sto:                     {DRIVERSTORE IMPORT END: exit(0x00000000)} 19:12:52.585
+     sto:                {Core Driver Package Import: exit(0x00000000)} 19:12:52.586
+     sto:           {Stage Driver Package: exit(0x00000000)} 19:12:52.586
+     dvs:      {Driver Setup Import Driver Package - exit (0x00000000)} 19:12:52.638
+!    dvs:      Unable to find any matching devices.
+     dvs: {DrvSetupInstallDriver - exit(00000000)}
+<<<  Section end 2026/09/05 19:12:52.646
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (DiInstallDriver) - C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdws-WT64A-64bit-260818\amdsdws.INF]
+>>>  Section start 2026/09/05 19:12:52.647
+      cmd: C:\AMD\AMDSoftwareInstaller\amd-software-adrenalin-edition-26.8.1-minimalsetup-260818_64bit\Bin64\AMDSoftwareInstaller.exe  -AMDPrivacyView=0 -AMDChatbot=0 -AMDUAI=0 /DIMEINSTALLENABLED -AMDChipsetDriver=0 /RSXATHENAVISIBLE /CHIPSET -CLEANAFTERINSTALL /HIDEEULA /WHQL0 ChipsetInstallRet=installed!8.08.12.551!77MB!14/08/2026
+     ndv: Flags: 0x00000002
+     ndv: INF path: C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdws-WT64A-64bit-260818\amdsdws.INF
+     dvs: {DrvSetupInstallDriver - C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdws-WT64A-64bit-260818\amdsdws.INF}
+     dvs:      Flags: 0x00000001
+     dvs:      {Driver Setup Import Driver Package: C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdws-WT64A-64bit-260818\amdsdws.INF} 19:12:52.647
+     sto:           {Copy Driver Package: C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdws-WT64A-64bit-260818\amdsdws.INF} 19:12:52.649
+     sto:                Driver Package = C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdws-WT64A-64bit-260818\amdsdws.INF
+     sto:                Flags          = 0x00000007
+     sto:                Destination    = C:\Users\Daniel\AppData\Local\Temp\{e0cc0543-069f-304a-8cb2-c05bdda5a19e}
+     sto:                Copying driver package files to 'C:\Users\Daniel\AppData\Local\Temp\{e0cc0543-069f-304a-8cb2-c05bdda5a19e}'.
+     flq:                {FILE_QUEUE_COMMIT} 19:12:52.653
+     flq:                     Copying 'C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdws-WT64A-64bit-260818\amdsdws.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{e0cc0543-069f-304a-8cb2-c05bdda5a19e}\amdsdws.cat'.
+     flq:                     Copying 'C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdws-WT64A-64bit-260818\amdsdws.INF' to 'C:\Users\Daniel\AppData\Local\Temp\{e0cc0543-069f-304a-8cb2-c05bdda5a19e}\amdsdws.INF'.
+     flq:                     Copying 'C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdws-WT64A-64bit-260818\amdsdws.sys' to 'C:\Users\Daniel\AppData\Local\Temp\{e0cc0543-069f-304a-8cb2-c05bdda5a19e}\amdsdws.sys'.
+     flq:                     Copying 'C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdws-WT64A-64bit-260818\AmdMvaOem.dll' to 'C:\Users\Daniel\AppData\Local\Temp\{e0cc0543-069f-304a-8cb2-c05bdda5a19e}\AmdMvaOem.dll'.
+     flq:                     Copying 'C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdws-WT64A-64bit-260818\.\amdsdwsext\amdsdwsext.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{e0cc0543-069f-304a-8cb2-c05bdda5a19e}\.\amdsdwsext\amdsdwsext.cat'.
+     flq:                     Copying 'C:\AMD\AMDSoftwareInstaller\AMD-Software-Adrenalin-Edition-26.8.1-amdsdws-WT64A-64bit-260818\.\amdsdwsext\amdsdwsext.inf' to 'C:\Users\Daniel\AppData\Local\Temp\{e0cc0543-069f-304a-8cb2-c05bdda5a19e}\.\amdsdwsext\amdsdwsext.inf'.
+     flq:                {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:52.660
+     sto:           {Copy Driver Package: exit(0x00000000)} 19:12:52.660
+     ump:           Import flags: 0x00000000
+     pol:           {Driver package policy check} 19:12:52.663
+     pol:           {Driver package policy check - exit(0x00000000)} 19:12:52.663
+     sto:           {Stage Driver Package: C:\Users\Daniel\AppData\Local\Temp\{e0cc0543-069f-304a-8cb2-c05bdda5a19e}\amdsdws.INF} 19:12:52.664
+     inf:                {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{e0cc0543-069f-304a-8cb2-c05bdda5a19e}\amdsdws.INF} 19:12:52.667
+     inf:                     Driver package is fully isolated.
+     inf:                     Driver package uses WDF.
+     inf:                     Driver package 'amdsdws.INF' is configurable.
+     inf:                {Query Configurability: exit(0x00000000)} 19:12:52.669
+     flq:                {FILE_QUEUE_COMMIT} 19:12:52.670
+     flq:                     Copying 'C:\Users\Daniel\AppData\Local\Temp\{e0cc0543-069f-304a-8cb2-c05bdda5a19e}\amdsdws.cat' to 'C:\Windows\System32\DriverStore\Temp\{187a9d5b-ae83-d449-adac-5f9dcda7bf54}\amdsdws.cat'.
+     flq:                     Copying 'C:\Users\Daniel\AppData\Local\Temp\{e0cc0543-069f-304a-8cb2-c05bdda5a19e}\amdsdws.INF' to 'C:\Windows\System32\DriverStore\Temp\{187a9d5b-ae83-d449-adac-5f9dcda7bf54}\amdsdws.INF'.
+     flq:                     Copying 'C:\Users\Daniel\AppData\Local\Temp\{e0cc0543-069f-304a-8cb2-c05bdda5a19e}\amdsdws.sys' to 'C:\Windows\System32\DriverStore\Temp\{187a9d5b-ae83-d449-adac-5f9dcda7bf54}\amdsdws.sys'.
+     flq:                     Copying 'C:\Users\Daniel\AppData\Local\Temp\{e0cc0543-069f-304a-8cb2-c05bdda5a19e}\AmdMvaOem.dll' to 'C:\Windows\System32\DriverStore\Temp\{187a9d5b-ae83-d449-adac-5f9dcda7bf54}\AmdMvaOem.dll'.
+     flq:                {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:52.677
+     sto:                {DRIVERSTORE IMPORT VALIDATE} 19:12:52.678
+     sig:                     Driver package catalog is valid.
+     sig:                     {_VERIFY_FILE_SIGNATURE} 19:12:52.688
+     sig:                          Key      = amdsdws.INF
+     sig:                          FilePath = C:\Windows\System32\DriverStore\Temp\{187a9d5b-ae83-d449-adac-5f9dcda7bf54}\amdsdws.INF
+     sig:                          Catalog  = C:\Windows\System32\DriverStore\Temp\{187a9d5b-ae83-d449-adac-5f9dcda7bf54}\amdsdws.cat
+     sig:                          Success: File is signed in catalog.
+     sig:                     {_VERIFY_FILE_SIGNATURE exit(0x00000000)} 19:12:52.692
+     sto:                {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 19:12:52.712
+     sig:                Signer Score  = 0x0D000005 (WHQL)
+     sig:                Signer Name   = Microsoft Windows Hardware Compatibility Publisher
+     sig:                Submission ID = 30001810_13765177671492567_1152921505699781914
+     sto:                {Core Driver Package Import: amdsdws.inf_amd64_d50b91c3a1cdc932} 19:12:52.713
+     sto:                     {DRIVERSTORE IMPORT BEGIN} 19:12:52.713
+     sto:                     {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 19:12:52.713
+     cpy:                     {Copy Directory: C:\Windows\System32\DriverStore\Temp\{187a9d5b-ae83-d449-adac-5f9dcda7bf54}} 19:12:52.714
+     cpy:                          Target Path = C:\Windows\System32\DriverStore\FileRepository\amdsdws.inf_amd64_d50b91c3a1cdc932
+     cpy:                     {Copy Directory: exit(0x00000000)} 19:12:52.715
+     idb:                     {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\amdsdws.inf_amd64_d50b91c3a1cdc932\amdsdws.INF} 19:12:52.715
+     idb:                          Created driver package object 'amdsdws.inf_amd64_d50b91c3a1cdc932' in DRIVERS database node.
+     idb:                          Created driver INF file object 'oem32.inf' in DRIVERS database node.
+     idb:                          Registered driver package 'amdsdws.inf_amd64_d50b91c3a1cdc932' with 'oem32.inf'.
+     idb:                     {Register Driver Package: exit(0x00000000)} 19:12:52.717
+     idb:                     {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\amdsdws.inf_amd64_d50b91c3a1cdc932\amdsdws.INF} 19:12:52.718
+     idb:                          Activating driver package 'amdsdws.inf_amd64_d50b91c3a1cdc932'.
+     cpy:                          Published 'amdsdws.inf_amd64_d50b91c3a1cdc932\amdsdws.inf' to 'oem32.inf'.
+     idb:                          Indexed 12 device IDs for 'amdsdws.inf_amd64_d50b91c3a1cdc932'.
+     sto:                          Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                          Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                     {Publish Driver Package: exit(0x00000000)} 19:12:52.725
+     sto:                     {DRIVERSTORE IMPORT END} 19:12:52.725
+     dvi:                          Flushed all driver package files to disk. Time = 16 ms
+     sig:                          Installed catalog 'amdsdws.cat' as 'oem32.cat'.
+     sto:                     {DRIVERSTORE IMPORT END: exit(0x00000000)} 19:12:52.733
+     sto:                     Importing CopyINF driver package '.\amdsdwsext\amdsdwsext.inf'.
+     inf:                     {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{e0cc0543-069f-304a-8cb2-c05bdda5a19e}\.\amdsdwsext\amdsdwsext.inf} 19:12:52.736
+     inf:                          Driver package 'amdsdwsext.inf' is configurable.
+     inf:                     {Query Configurability: exit(0x00000000)} 19:12:52.737
+     flq:                     {FILE_QUEUE_COMMIT} 19:12:52.738
+     flq:                          Copying 'C:\Users\Daniel\AppData\Local\Temp\{e0cc0543-069f-304a-8cb2-c05bdda5a19e}\.\amdsdwsext\amdsdwsext.cat' to 'C:\Windows\System32\DriverStore\Temp\{5d04896b-f2fe-1543-b105-3e3a03912cc1}\amdsdwsext.cat'.
+     flq:                          Copying 'C:\Users\Daniel\AppData\Local\Temp\{e0cc0543-069f-304a-8cb2-c05bdda5a19e}\.\amdsdwsext\amdsdwsext.inf' to 'C:\Windows\System32\DriverStore\Temp\{5d04896b-f2fe-1543-b105-3e3a03912cc1}\amdsdwsext.inf'.
+     flq:                     {FILE_QUEUE_COMMIT - exit(0x00000000)} 19:12:52.740
+     sto:                     {DRIVERSTORE IMPORT VALIDATE} 19:12:52.740
+     sig:                          Driver package catalog is valid.
+     sig:                          {_VERIFY_FILE_SIGNATURE} 19:12:52.741
+     sig:                               Key      = amdsdwsext.inf
+     sig:                               FilePath = C:\Windows\System32\DriverStore\Temp\{5d04896b-f2fe-1543-b105-3e3a03912cc1}\amdsdwsext.inf
+     sig:                               Catalog  = C:\Windows\System32\DriverStore\Temp\{5d04896b-f2fe-1543-b105-3e3a03912cc1}\amdsdwsext.cat
+     sig:                               Success: File is signed in catalog.
+     sig:                          {_VERIFY_FILE_SIGNATURE exit(0x00000000)} 19:12:52.744
+     sto:                     {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 19:12:52.744
+     sig:                     Signer Score  = 0x0D000005 (WHQL)
+     sig:                     Signer Name   = Microsoft Windows Hardware Compatibility Publisher
+     sig:                     Submission ID = 30001810_14054837437623401_1152921505699816501
+     sto:                     {Core Driver Package Import: amdsdwsext.inf_amd64_264ed63f1d8ac14c} 19:12:52.745
+     sto:                          {DRIVERSTORE IMPORT BEGIN} 19:12:52.745
+     sto:                          {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 19:12:52.745
+     cpy:                          {Copy Directory: C:\Windows\System32\DriverStore\Temp\{5d04896b-f2fe-1543-b105-3e3a03912cc1}} 19:12:52.745
+     cpy:                               Target Path = C:\Windows\System32\DriverStore\FileRepository\amdsdwsext.inf_amd64_264ed63f1d8ac14c
+     cpy:                          {Copy Directory: exit(0x00000000)} 19:12:52.746
+     idb:                          {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\amdsdwsext.inf_amd64_264ed63f1d8ac14c\amdsdwsext.inf} 19:12:52.746
+     idb:                               Created driver package object 'amdsdwsext.inf_amd64_264ed63f1d8ac14c' in SYSTEM database node.
+     idb:                               Created driver INF file object 'oem33.inf' in SYSTEM database node.
+     idb:                               Registered driver package 'amdsdwsext.inf_amd64_264ed63f1d8ac14c' with 'oem33.inf'.
+     idb:                          {Register Driver Package: exit(0x00000000)} 19:12:52.748
+     idb:                          {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\amdsdwsext.inf_amd64_264ed63f1d8ac14c\amdsdwsext.inf} 19:12:52.748
+     idb:                               Activating driver package 'amdsdwsext.inf_amd64_264ed63f1d8ac14c'.
+     cpy:                               Published 'amdsdwsext.inf_amd64_264ed63f1d8ac14c\amdsdwsext.inf' to 'oem33.inf'.
+     idb:                               Indexed 5 device IDs for 'amdsdwsext.inf_amd64_264ed63f1d8ac14c'.
+     sto:                               Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                          {Publish Driver Package: exit(0x00000000)} 19:12:52.751
+     sto:                          {DRIVERSTORE IMPORT END} 19:12:52.751
+     dvi:                               Flushed all driver package files to disk. Time = 0 ms
+     sig:                               Installed catalog 'amdsdwsext.cat' as 'oem33.cat'.
+     sto:                          {DRIVERSTORE IMPORT END: exit(0x00000000)} 19:12:52.754
+     sto:                     {Core Driver Package Import: exit(0x00000000)} 19:12:52.754
+     sto:                {Core Driver Package Import: exit(0x00000000)} 19:12:52.756
+     sto:           {Stage Driver Package: exit(0x00000000)} 19:12:52.757
+     dvs:      {Driver Setup Import Driver Package - exit (0x00000000)} 19:12:52.812
+!    dvs:      Unable to find any matching devices.
+     dvs: {DrvSetupInstallDriver - exit(00000000)}
+<<<  Section end 2026/09/05 19:12:52.825
+<<<  [Exit status: SUCCESS]
+
+
+[Boot Session: 2026/09/05 19:29:08.500]
+
+>>>  [Device Uninstall (Device Manager) - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041]
+>>>  Section start 2026/09/05 19:32:28.177
+      cmd: "C:\Windows\system32\mmc.exe" C:\Windows\system32\devmgmt.msc
+     dvi: {DIF_REMOVE} 19:32:28.177
+     dvi:      Default installer: Enter 19:32:28.177
+     dvi:           {Remove DEVICE}
+     dvi:                {Delete Device - DISPLAY\DEFAULT_MONITOR\5&41A81D0&10&UID0}
+     dvi:                {Delete Device - exit(0x00000000)}
+     dvi:           {Remove DEVICE exit (0x00000000)}
+     dvi:      Default installer: Exit
+     dvi: {DIF_REMOVE - exit(0x00000000)} 19:32:28.193
+     dvi: {DIF_REMOVE} 19:32:28.193
+     dvi:      Default installer: Enter 19:32:28.193
+     dvi:           {Remove DEVICE}
+     dvi:                {Delete Device - DISPLAY\DEFAULT_MONITOR\5&41A81D0&10&UID1}
+     dvi:                {Delete Device - exit(0x00000000)}
+     dvi:           {Remove DEVICE exit (0x00000000)}
+     dvi:      Default installer: Exit
+     dvi: {DIF_REMOVE - exit(0x00000000)} 19:32:28.193
+     dvi: {DIF_REMOVE} 19:32:28.193
+     dvi:      Default installer: Enter 19:32:28.208
+     dvi:           {Remove DEVICE}
+     dvi:                {Delete Device - DISPLAY\GSM5B98\5&41A81D0&10&UID0}
+     dvi:                {Delete Device - exit(0x00000000)}
+     dvi:           {Remove DEVICE exit (0x00000000)}
+     dvi:      Default installer: Exit
+     dvi: {DIF_REMOVE - exit(0x00000000)} 19:32:28.208
+     dvi: {DIF_REMOVE} 19:32:28.208
+     dvi:      Default installer: Enter 19:32:28.208
+     dvi:           {Remove DEVICE}
+     dvi:                {Delete Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:                {Delete Device - exit(0x00000000)}
+     dvi:           {Remove DEVICE exit (0x00000000)}
+     dvi:      Default installer: Exit
+     dvi: {DIF_REMOVE - exit(0x00000000)} 19:32:28.208
+     inf: {SetupUninstallOEMInf: oem12.inf}
+     inf:      Flags: 0x00000001
+     dvs:      {DrvSetupUninstallDriver - C:\Windows\INF\oem12.inf}
+     dvs:           Flags: 0x10000001
+     dvs:           {Driver Setup Delete Driver Package: oem12.inf} 19:32:28.333
+!    utl:                INF INF 'oem12.inf' still in use by device 'PCI\VEN_1002&DEV_73FF&SUBSYS_23341458&REV_C7\6&150b64e6&0&00000008'.
+!    utl:                Runtime isolated primary INF 'oem12.inf' is still in use by devices.
+     dvs:           {Driver Setup Delete Driver Package - exit (0xe000023d)} 19:32:28.333
+!!!  dvs:           Failed to uninstall driver packages. Error = 0xE000023D
+     dvs:      {DrvSetupUninstallDriver - exit(e000023d)}
+!!!  inf:      Failed to delete package from Driver Store
+!!!  inf:      Error uninstalling OEM INF 'C:\Windows\INF\oem12.inf'
+     inf: {SetupUninstallOEMInf exit (0xe000023d)}
+!!!  dmg: Uninstall of INF oem12.inf failed.
+<<<  Section end 2026/09/05 19:32:28.349
+<<<  [Exit status: FAILURE(0x00003b01)]
+
+
+[Boot Session: 2026/09/05 16:35:37.500]
+
+>>>  [Driver Install (DrvSetupInstallDriver) - C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf]
+>>>  Section start 2026/09/05 16:37:11.420
+      cmd: "C:\Windows\system32\pnputil.exe" /add-driver C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     dvs: Flags: 0x00000040
+     dvs: {Driver Setup Import Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf} 16:37:11.421
+     sto:      {Copy Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf} 16:37:11.426
+     sto:           Driver Package = C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     sto:           Flags          = 0x00000007
+     sto:           Destination    = C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}
+     sto:           Copying driver package files to 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}'.
+     flq:           {FILE_QUEUE_COMMIT} 16:37:11.430
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250umd.dll' to 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\bc250umd.dll'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\bc250mcdm.cat'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf' to 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\bc250mcdm.inf'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.sys' to 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\bc250mcdm.sys'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_ce.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\cyan_skillfish2_ce.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_me.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\cyan_skillfish2_me.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_mec.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\cyan_skillfish2_mec.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_rlc.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\cyan_skillfish2_rlc.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_pfp.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\cyan_skillfish2_pfp.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_sdma.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\cyan_skillfish2_sdma.bin'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 16:37:11.453
+     sto:      {Copy Driver Package: exit(0x00000000)} 16:37:11.453
+     ump:      Import flags: 0x00000000
+     pol:      {Driver package policy check} 16:37:11.465
+     pol:      {Driver package policy check - exit(0x00000000)} 16:37:11.465
+     sto:      {Stage Driver Package: C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\bc250mcdm.inf} 16:37:11.465
+     inf:           {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\bc250mcdm.inf} 16:37:11.468
+     inf:                Driver package 'bc250mcdm.inf' is configurable.
+     inf:           {Query Configurability: exit(0x00000000)} 16:37:11.471
+     flq:           {FILE_QUEUE_COMMIT} 16:37:11.472
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\bc250umd.dll' to 'C:\Windows\System32\DriverStore\Temp\{694cfb5f-5e91-e740-9ebb-56ec064f6460}\bc250umd.dll'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\bc250mcdm.cat' to 'C:\Windows\System32\DriverStore\Temp\{694cfb5f-5e91-e740-9ebb-56ec064f6460}\bc250mcdm.cat'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\bc250mcdm.inf' to 'C:\Windows\System32\DriverStore\Temp\{694cfb5f-5e91-e740-9ebb-56ec064f6460}\bc250mcdm.inf'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\bc250mcdm.sys' to 'C:\Windows\System32\DriverStore\Temp\{694cfb5f-5e91-e740-9ebb-56ec064f6460}\bc250mcdm.sys'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\cyan_skillfish2_ce.bin' to 'C:\Windows\System32\DriverStore\Temp\{694cfb5f-5e91-e740-9ebb-56ec064f6460}\cyan_skillfish2_ce.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\cyan_skillfish2_me.bin' to 'C:\Windows\System32\DriverStore\Temp\{694cfb5f-5e91-e740-9ebb-56ec064f6460}\cyan_skillfish2_me.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\cyan_skillfish2_mec.bin' to 'C:\Windows\System32\DriverStore\Temp\{694cfb5f-5e91-e740-9ebb-56ec064f6460}\cyan_skillfish2_mec.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\cyan_skillfish2_rlc.bin' to 'C:\Windows\System32\DriverStore\Temp\{694cfb5f-5e91-e740-9ebb-56ec064f6460}\cyan_skillfish2_rlc.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\cyan_skillfish2_pfp.bin' to 'C:\Windows\System32\DriverStore\Temp\{694cfb5f-5e91-e740-9ebb-56ec064f6460}\cyan_skillfish2_pfp.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{00c84569-8fa9-2441-be5e-928e349300c5}\cyan_skillfish2_sdma.bin' to 'C:\Windows\System32\DriverStore\Temp\{694cfb5f-5e91-e740-9ebb-56ec064f6460}\cyan_skillfish2_sdma.bin'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 16:37:11.502
+     sto:           {DRIVERSTORE IMPORT VALIDATE} 16:37:11.503
+     sig:                Driver package catalog is valid.
+     sig:                {_VERIFY_FILE_SIGNATURE} 16:37:11.519
+     sig:                     Key      = bc250mcdm.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{694cfb5f-5e91-e740-9ebb-56ec064f6460}\bc250mcdm.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{694cfb5f-5e91-e740-9ebb-56ec064f6460}\bc250mcdm.cat
+!    sig:                     Verifying file against specific (valid) catalog failed.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0x800b0109)} 16:37:11.522
+     sig:                {_VERIFY_FILE_SIGNATURE} 16:37:11.525
+     sig:                     Key      = bc250mcdm.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{694cfb5f-5e91-e740-9ebb-56ec064f6460}\bc250mcdm.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{694cfb5f-5e91-e740-9ebb-56ec064f6460}\bc250mcdm.cat
+     sig:                     Success: File is signed in Authenticode(tm) catalog.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0xe0000241)} 16:37:11.531
+     sto:           {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 16:37:11.539
+     sig:           Signer Score  = 0x0F000000 (Authenticode)
+     sig:           Signer Name   = BC250-WDDM Development Test
+     sto:           {Core Driver Package Import: bc250mcdm.inf_amd64_b4d72c88a09ebe49} 16:37:11.541
+     sto:                {DRIVERSTORE IMPORT BEGIN} 16:37:11.543
+     sto:                {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 16:37:11.543
+     cpy:                {Copy Directory: C:\Windows\System32\DriverStore\Temp\{694cfb5f-5e91-e740-9ebb-56ec064f6460}} 16:37:11.543
+     cpy:                     Target Path = C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_b4d72c88a09ebe49
+     cpy:                {Copy Directory: exit(0x00000000)} 16:37:11.548
+     idb:                {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_b4d72c88a09ebe49\bc250mcdm.inf} 16:37:11.549
+     idb:                     Created driver package object 'bc250mcdm.inf_amd64_b4d72c88a09ebe49' in DRIVERS database node.
+     idb:                     Created driver INF file object 'oem34.inf' in DRIVERS database node.
+     idb:                     Registered driver package 'bc250mcdm.inf_amd64_b4d72c88a09ebe49' with 'oem34.inf'.
+     idb:                {Register Driver Package: exit(0x00000000)} 16:37:11.552
+     idb:                {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_b4d72c88a09ebe49\bc250mcdm.inf} 16:37:11.552
+     idb:                     Activating driver package 'bc250mcdm.inf_amd64_b4d72c88a09ebe49'.
+     cpy:                     Published 'bc250mcdm.inf_amd64_b4d72c88a09ebe49\bc250mcdm.inf' to 'oem34.inf'.
+     idb:                     Indexed 3 device IDs for 'bc250mcdm.inf_amd64_b4d72c88a09ebe49'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                {Publish Driver Package: exit(0x00000000)} 16:37:11.562
+     sto:                {DRIVERSTORE IMPORT END} 16:37:11.565
+     dvi:                     Flushed all driver package files to disk. Time = 0 ms
+     sig:                     Installed catalog 'bc250mcdm.cat' as 'oem34.cat'.
+     sto:                {DRIVERSTORE IMPORT END: exit(0x00000000)} 16:37:11.629
+     sto:           {Core Driver Package Import: exit(0x00000000)} 16:37:11.629
+     sto:      {Stage Driver Package: exit(0x00000000)} 16:37:11.632
+     dvs: {Driver Setup Import Driver Package - exit (0x00000000)} 16:37:11.710
+<<<  Section end 2026/09/05 16:37:11.710
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Device Install (UpdateDriverForPlugAndPlayDevices) - PCI\VEN_1002&DEV_13FE]
+>>>  Section start 2026/09/05 16:37:28.606
+      cmd: "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File C:\Users\Daniel\Desktop\NamixWDDM\tools\bind-bc250mcdm-failclosed.ps1 -Execute -IAcceptBlackScreenRisk
+     ndv: INF path: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     ndv: Install flags: 0x00000001
+     ndv: {Update Device Driver - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     ndv:      Search options: 0x00000080
+     ndv:      Searching single INF 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf'
+     dvi:      {Build Driver List} 16:37:28.623
+     dvi:           Searching for hardware ID(s):
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:                pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:                pci\ven_1002&dev_13fe&cc_030000
+     dvi:                pci\ven_1002&dev_13fe&cc_0300
+     dvi:           Searching for compatible ID(s):
+     dvi:                pci\ven_1002&dev_13fe&rev_00
+     dvi:                pci\ven_1002&dev_13fe
+     dvi:                pci\ven_1002&cc_030000
+     dvi:                pci\ven_1002&cc_0300
+     dvi:                pci\ven_1002
+     dvi:                pci\cc_030000&dt_1
+     dvi:                pci\cc_030000
+     dvi:                pci\cc_0300&dt_1
+     dvi:                pci\cc_0300
+     dvi:           Created Driver Node:
+     dvi:                HardwareID   - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00
+     dvi:                InfName      - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf
+     dvi:                DevDesc      - AMD BC-250 Graphics (Cyan Skillfish 2)
+     dvi:                Section      - BC250Mcdm_Device.NT
+     dvi:                Rank         - 0x00fc0000
+     dvi:                Signer Score - Authenticode
+     dvi:                DrvDate      - 09/02/2026
+     dvi:                Version      - 3.81.0.0
+     dvi:           Created Driver Node:
+     dvi:                HardwareID   - PCI\VEN_1002&DEV_13FE
+     dvi:                InfName      - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf
+     dvi:                DevDesc      - AMD BC-250 Graphics (Cyan Skillfish 2)
+     dvi:                Section      - BC250Mcdm_Device.NT
+     dvi:                Rank         - 0x00fc2001
+     dvi:                Signer Score - Authenticode
+     dvi:                DrvDate      - 09/02/2026
+     dvi:                Version      - 3.81.0.0
+     dvi:      {Build Driver List - exit(0x00000000)} 16:37:28.638
+     dvi:      {DIF_SELECTBESTCOMPATDRV} 16:37:28.638
+     dvi:           Default installer: Enter 16:37:28.639
+     dvi:                {Select Best Driver}
+     dvi:                     Class GUID of device changed to: {4d36e968-e325-11ce-bfc1-08002be10318}.
+     dvi:                     Selected Driver:
+     dvi:                          Description - AMD BC-250 Graphics (Cyan Skillfish 2)
+     dvi:                          InfFile     - c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf
+     dvi:                          Section     - BC250Mcdm_Device
+     dvi:                {Select Best Driver - exit(0x00000000)}
+     dvi:           Default installer: Exit
+     dvi:      {DIF_SELECTBESTCOMPATDRV - exit(0x00000000)} 16:37:28.641
+     ndv:      Force Installing Driver:
+     ndv:           Inf Name       - bc250mcdm.inf
+     ndv:           Driver Date    - 09/02/2026
+     ndv:           Driver Version - 3.81.0.0
+     ndv:      Driver package 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_b4d72c88a09ebe49\bc250mcdm.inf' is already imported.
+     sto:      {Setup Import Driver Package: c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_active\bc250mcdm.inf} 16:37:28.645
+     sto:           Driver package already imported as 'oem34.inf'.
+     sto:      {Setup Import Driver Package - exit (0x00000000)} 16:37:28.647
+     dvi:      Searching for hardware ID(s):
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     dvi:           pci\ven_1002&dev_13fe&subsys_00001022
+     dvi:           pci\ven_1002&dev_13fe&cc_030000
+     dvi:           pci\ven_1002&dev_13fe&cc_0300
+     dvi:      Searching for compatible ID(s):
+     dvi:           pci\ven_1002&dev_13fe&rev_00
+     dvi:           pci\ven_1002&dev_13fe
+     dvi:           pci\ven_1002&cc_030000
+     dvi:           pci\ven_1002&cc_0300
+     dvi:           pci\ven_1002
+     dvi:           pci\cc_030000&dt_1
+     dvi:           pci\cc_030000
+     dvi:           pci\cc_0300&dt_1
+     dvi:           pci\cc_0300
+     dvi:      Class GUID of device changed to: {4d36e968-e325-11ce-bfc1-08002be10318}.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 16:37:28.669
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 16:37:28.752
+     dvi:                     Device Status: 0x0180200a
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_b4d72c88a09ebe49\bc250mcdm.inf}
+     sto:                          Source Filter  = pci\ven_1002&dev_13fe&subsys_00001022&rev_00
+     inf:                          Class GUID     = {4d36e968-e325-11ce-bfc1-08002be10318}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: AMD BC-250 Graphics (Cyan Skillfish 2)}
+     inf:                               Section Name = BC250Mcdm_Device.NT
+     inf:                               {Add Service: bc250mcdm}
+     inf:                                    Start Type    = 3
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 0
+     inf:                                    Image Path    = \SystemRoot\System32\drivers\bc250mcdm.sys
+     inf:                                    Created new service 'bc250mcdm'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00
+     inf:                               {Configure Driver Configuration: BC250Mcdm_Device.NT}
+     inf:                                    Service Name  = bc250mcdm
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 16:37:28.771
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_b4d72c88a09ebe49\bc250mcdm.sys' to 'C:\Windows\System32\drivers\bc250mcdm.sys'.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_b4d72c88a09ebe49\cyan_skillfish2_sdma.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin'.
+     cpy:                               Existing file 'C:\Windows\System32\drivers\cyan_skillfish2_sdma.bin' remains unchanged.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_b4d72c88a09ebe49\cyan_skillfish2_rlc.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin'.
+     cpy:                               Existing file 'C:\Windows\System32\drivers\cyan_skillfish2_rlc.bin' remains unchanged.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_b4d72c88a09ebe49\cyan_skillfish2_pfp.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin'.
+     cpy:                               Existing file 'C:\Windows\System32\drivers\cyan_skillfish2_pfp.bin' remains unchanged.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_b4d72c88a09ebe49\cyan_skillfish2_me.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin'.
+     cpy:                               Existing file 'C:\Windows\System32\drivers\cyan_skillfish2_me.bin' remains unchanged.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_b4d72c88a09ebe49\cyan_skillfish2_ce.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin'.
+     cpy:                               Existing file 'C:\Windows\System32\drivers\cyan_skillfish2_ce.bin' remains unchanged.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_b4d72c88a09ebe49\cyan_skillfish2_mec.bin' to 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin'.
+     cpy:                               Existing file 'C:\Windows\System32\drivers\cyan_skillfish2_mec.bin' remains unchanged.
+     flq:                               Hardlinking 'C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_b4d72c88a09ebe49\bc250umd.dll' to 'C:\Windows\System32\bc250umd.dll'.
+     cpy:                               Existing file 'C:\Windows\System32\bc250umd.dll' remains unchanged.
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 16:37:28.806
+     dvi:                          Existing files modified, may need to restart related services.
+     sto:                     {Configure Driver Package: exit(0x00000bc3)}
+     dvi:                     Restart required for any devices using this driver.
+     dvi:                     Install Device: Configuring device. 16:37:28.808
+     dvi:                          Configuration: oem34.inf:pci\ven_1002&dev_13fe&subsys_00001022&rev_00,BC250Mcdm_Device
+     dvi:                     Install Device: Configuring device completed. 16:37:28.811
+     dvi:                     Device Status: 0x0180200a
+     dvi:                     {Restarting Devices} 16:37:28.813
+     dvi:                          Query-remove: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                          Start: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                          Restart verified: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
+     dvi:                     {Restarting Devices exit} 16:37:29.044
+     dvi:                {Configure Device - exit(0x00000000)} 16:37:29.045
+     dvi:           {Core Device Install - exit(0x00000000)} 16:37:29.046
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     ndv: {Update Device Driver - exit(00000000)}
+     ndv: {Install Related Drivers} 16:37:29.049
+     ndv: {Install Related Drivers: exit(0x00000000)} 16:37:29.050
+<<<  Section end 2026/09/05 16:37:29.051
+<<<  [Exit status: SUCCESS]
+
+
+>>>  [Driver Uninstall (DrvSetupUninstallDriver) - oem34.inf]
+>>>  Section start 2026/09/05 16:39:29.809
+      cmd: "C:\Windows\system32\pnputil.exe" /delete-driver oem34.inf /uninstall /force
+     dvs: Flags: 0x00000000
+     dvs: {Driver Setup Update Device: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 16:39:29.823
+     utl:      {Select Drivers - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041} 16:39:29.826
+     utl:           Driver Node:
+     utl:                Status         - Selected
+     utl:                Driver INF     - display.inf (C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf)
+     utl:                Class GUID     - {4d36e968-e325-11ce-bfc1-08002be10318}
+     utl:                Driver Version - 06/21/2006,10.0.19041.868
+     utl:                Configuration  - PCI\CC_0300 [MSBDA]
+     utl:                Driver Rank    - 00FB2008
+     utl:                Signer Score   - Inbox (0D000003)
+     utl:      {Select Drivers - exit(0x00000000} 16:39:29.831
+     dvs:      Installing next best driver (display.inf) on device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19caf403&0&0041'.
+     ump:      {Plug and Play Service: Device Install for PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041}
+     dvi:           {Core Device Install} 16:39:29.842
+     dvi:                {Configure Device - PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041} 16:39:29.925
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                     Config Flags: 0x00000000
+     dvi:                     Parent Device: PCI\VEN_1022&DEV_13E5&SUBSYS_13E51022&REV_00\3&11583659&0&41
+     sto:                     {Configure Driver Package: C:\Windows\System32\DriverStore\FileRepository\display.inf_amd64_71aa85b0e2292a7a\display.inf}
+     sto:                          Source Filter  = PCI\CC_0300
+     inf:                          Class GUID     = {4d36e968-e325-11ce-bfc1-08002be10318}
+     inf:                          Class Options  = Configurable
+     inf:                          {Configure Driver: Microsoft Basic Display Adapter}
+     inf:                               Section Name = MSBDA
+     inf:                               {Add Service: BasicDisplay}
+     inf:                                    Start Type    = 1
+     inf:                                    Service Type  = 1
+     inf:                                    Error Control = 0
+     inf:                                    Image Path    = \SystemRoot\System32\DriverStore\FileRepository\basicdisplay.inf_amd64_fc93ae411c02f280\BasicDisplay.sys
+     inf:                                    Group         = Video
+     inf:                                    Updated service 'BasicDisplay'.
+     inf:                               {Add Service: exit(0x00000000)}
+     inf:                               Hardware Id  = PCI\CC_0300
+     inf:                               {Configure Driver Configuration: MSBDA}
+     inf:                                    Service Name  = BasicDisplay
+     inf:                                    Exclude IDs   = PCI\VEN_1414&DEV_5353
+     inf:                                    Included INFs = basicdisplay.inf
+     inf:                                    Config Flags  = 0x00000000
+     inf:                               {Configure Driver Configuration: exit(0x00000000)}
+     inf:                          {Configure Driver: exit(0x00000000)}
+     flq:                          {FILE_QUEUE_COMMIT} 16:39:29.941
+     flq:                          {FILE_QUEUE_COMMIT - exit(0x00000000)} 16:39:29.941
+     sto:                     {Configure Driver Package: exit(0x00000000)}
+     dvi:                     Install Device: Configuring device. 16:39:29.942
+     dvi:                          Configuration: display.inf:PCI\CC_0300,MSBDA
+     dvi:                     Install Device: Configuring device completed. 16:39:29.947
+     dvi:                     Device Status: 0x01802400 [0x2b - 0x00000000]
+!    dvi:                     Device restart was skipped (DONOTCALLCONFIGMG).
+     dvi:                {Configure Device - exit(0x00000000)} 16:39:29.949
+     dvi:                Device Status: 0x01802400 [0x2b - 0x00000000]
+     dvi:                Install Device: Starting device 'PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041'. 16:39:29.950
+     dvi:                Install Device: Starting device completed. 16:39:29.983
+     dvi:           {Core Device Install - exit(0x00000000)} 16:39:29.984
+     ump:      {Plug and Play Service: Device Install exit(00000000)}
+     dvs:      {Install Related Drivers} 16:39:29.987
+     dvs:      {Install Related Drivers: exit(0x00000000)} 16:39:29.989
+     dvs: {Driver Setup Update Device - exit(0x00000000)} 16:39:29.990
+     dvs: {Driver Setup Delete Driver Package: oem34.inf} 16:39:29.991
+     ump:      Delete flags: 0x00000002
+     pol:      {Driver package policy check} 16:39:30.033
+     pol:      {Driver package policy check - exit(0x00000000)} 16:39:30.033
+     sto:      {Unstage Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_b4d72c88a09ebe49\bc250mcdm.inf} 16:39:30.034
+     sto:           {Core Driver Package Delete: bc250mcdm.inf_amd64_b4d72c88a09ebe49} 16:39:30.035
+     sto:                {DRIVERSTORE DELETE BEGIN} 16:39:30.036
+     sto:                {DRIVERSTORE DELETE BEGIN: exit(0x00000000)} 16:39:30.037
+     sto:                {Unconfigure Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_b4d72c88a09ebe49\bc250mcdm.inf}
+     inf:                     Class GUID     = {4d36e968-e325-11ce-bfc1-08002be10318}
+     inf:                     Class Options  = Configurable
+     inf:                     {Unconfigure Driver: AMD BC-250 Graphics (Cyan Skillfish 2)}
+     inf:                          Section Name = BC250Mcdm_Device.NT
+     inf:                          {Add Service: bc250mcdm}
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Probe\SchemaVersion
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\WddmContractVersion
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Driver\ActiveMode
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\RenderNode
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\GpuMmuDeclare
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\EnableSyntheticEdid
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\RenderOnlyLab
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\SkipHwBringup
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\ShaderDispatch
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\CpSoftReset
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Vmid0PageTable
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\SdmaAutoCtxSw
+     inf:                               AddReg: HKLM\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\PersistentSubmission
+     inf:                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+[Boot Session: 2026/09/05 16:41:53.500]
+
+>>>  [Driver Install (DrvSetupInstallDriver) - C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf]
+>>>  Section start 2026/09/05 17:08:41.035
+      cmd: "C:\Windows\system32\pnputil.exe" /add-driver C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     dvs: Flags: 0x00000040
+     dvs: {Driver Setup Import Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf} 17:08:41.036
+     sto:      {Copy Driver Package: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf} 17:08:41.042
+     sto:           Driver Package = C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf
+     sto:           Flags          = 0x00000007
+     sto:           Destination    = C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}
+     sto:           Copying driver package files to 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}'.
+     flq:           {FILE_QUEUE_COMMIT} 17:08:41.046
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250umd.dll' to 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\bc250umd.dll'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.cat' to 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\bc250mcdm.cat'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.inf' to 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\bc250mcdm.inf'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\bc250mcdm.sys' to 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\bc250mcdm.sys'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_ce.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\cyan_skillfish2_ce.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_me.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\cyan_skillfish2_me.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_mec.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\cyan_skillfish2_mec.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_rlc.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\cyan_skillfish2_rlc.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_pfp.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\cyan_skillfish2_pfp.bin'.
+     flq:                Copying 'C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_active\cyan_skillfish2_sdma.bin' to 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\cyan_skillfish2_sdma.bin'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 17:08:41.069
+     sto:      {Copy Driver Package: exit(0x00000000)} 17:08:41.069
+     ump:      Import flags: 0x00000000
+     pol:      {Driver package policy check} 17:08:41.115
+     pol:      {Driver package policy check - exit(0x00000000)} 17:08:41.115
+     sto:      {Stage Driver Package: C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\bc250mcdm.inf} 17:08:41.115
+     inf:           {Query Configurability: C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\bc250mcdm.inf} 17:08:41.118
+     inf:                Driver package 'bc250mcdm.inf' is configurable.
+     inf:           {Query Configurability: exit(0x00000000)} 17:08:41.120
+     flq:           {FILE_QUEUE_COMMIT} 17:08:41.122
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\bc250umd.dll' to 'C:\Windows\System32\DriverStore\Temp\{a98ef069-c0cd-2542-afd3-1a4e8fd2bd94}\bc250umd.dll'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\bc250mcdm.cat' to 'C:\Windows\System32\DriverStore\Temp\{a98ef069-c0cd-2542-afd3-1a4e8fd2bd94}\bc250mcdm.cat'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\bc250mcdm.inf' to 'C:\Windows\System32\DriverStore\Temp\{a98ef069-c0cd-2542-afd3-1a4e8fd2bd94}\bc250mcdm.inf'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\bc250mcdm.sys' to 'C:\Windows\System32\DriverStore\Temp\{a98ef069-c0cd-2542-afd3-1a4e8fd2bd94}\bc250mcdm.sys'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\cyan_skillfish2_ce.bin' to 'C:\Windows\System32\DriverStore\Temp\{a98ef069-c0cd-2542-afd3-1a4e8fd2bd94}\cyan_skillfish2_ce.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\cyan_skillfish2_me.bin' to 'C:\Windows\System32\DriverStore\Temp\{a98ef069-c0cd-2542-afd3-1a4e8fd2bd94}\cyan_skillfish2_me.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\cyan_skillfish2_mec.bin' to 'C:\Windows\System32\DriverStore\Temp\{a98ef069-c0cd-2542-afd3-1a4e8fd2bd94}\cyan_skillfish2_mec.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\cyan_skillfish2_rlc.bin' to 'C:\Windows\System32\DriverStore\Temp\{a98ef069-c0cd-2542-afd3-1a4e8fd2bd94}\cyan_skillfish2_rlc.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\cyan_skillfish2_pfp.bin' to 'C:\Windows\System32\DriverStore\Temp\{a98ef069-c0cd-2542-afd3-1a4e8fd2bd94}\cyan_skillfish2_pfp.bin'.
+     flq:                Copying 'C:\Users\Daniel\AppData\Local\Temp\{f85d3a80-48f9-194b-8086-86d42a8db06b}\cyan_skillfish2_sdma.bin' to 'C:\Windows\System32\DriverStore\Temp\{a98ef069-c0cd-2542-afd3-1a4e8fd2bd94}\cyan_skillfish2_sdma.bin'.
+     flq:           {FILE_QUEUE_COMMIT - exit(0x00000000)} 17:08:41.151
+     sto:           {DRIVERSTORE IMPORT VALIDATE} 17:08:41.152
+     sig:                Driver package catalog is valid.
+     sig:                {_VERIFY_FILE_SIGNATURE} 17:08:41.167
+     sig:                     Key      = bc250mcdm.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{a98ef069-c0cd-2542-afd3-1a4e8fd2bd94}\bc250mcdm.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{a98ef069-c0cd-2542-afd3-1a4e8fd2bd94}\bc250mcdm.cat
+!    sig:                     Verifying file against specific (valid) catalog failed.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0x800b0109)} 17:08:41.170
+     sig:                {_VERIFY_FILE_SIGNATURE} 17:08:41.172
+     sig:                     Key      = bc250mcdm.inf
+     sig:                     FilePath = C:\Windows\System32\DriverStore\Temp\{a98ef069-c0cd-2542-afd3-1a4e8fd2bd94}\bc250mcdm.inf
+     sig:                     Catalog  = C:\Windows\System32\DriverStore\Temp\{a98ef069-c0cd-2542-afd3-1a4e8fd2bd94}\bc250mcdm.cat
+     sig:                     Success: File is signed in Authenticode(tm) catalog.
+     sig:                {_VERIFY_FILE_SIGNATURE exit(0xe0000241)} 17:08:41.178
+     sto:           {DRIVERSTORE IMPORT VALIDATE: exit(0x00000000)} 17:08:41.186
+     sig:           Signer Score  = 0x0F000000 (Authenticode)
+     sig:           Signer Name   = BC250-WDDM Development Test
+     sto:           {Core Driver Package Import: bc250mcdm.inf_amd64_04af8486d74ee958} 17:08:41.187
+     sto:                {DRIVERSTORE IMPORT BEGIN} 17:08:41.188
+     sto:                {DRIVERSTORE IMPORT BEGIN: exit(0x00000000)} 17:08:41.188
+     cpy:                {Copy Directory: C:\Windows\System32\DriverStore\Temp\{a98ef069-c0cd-2542-afd3-1a4e8fd2bd94}} 17:08:41.188
+     cpy:                     Target Path = C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_04af8486d74ee958
+     cpy:                {Copy Directory: exit(0x00000000)} 17:08:41.193
+     idb:                {Register Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_04af8486d74ee958\bc250mcdm.inf} 17:08:41.194
+     idb:                     Created driver package object 'bc250mcdm.inf_amd64_04af8486d74ee958' in DRIVERS database node.
+     idb:                     Created driver INF file object 'oem34.inf' in DRIVERS database node.
+     idb:                     Registered driver package 'bc250mcdm.inf_amd64_04af8486d74ee958' with 'oem34.inf'.
+     idb:                {Register Driver Package: exit(0x00000000)} 17:08:41.197
+     idb:                {Publish Driver Package: C:\Windows\System32\DriverStore\FileRepository\bc250mcdm.inf_amd64_04af8486d74ee958\bc250mcdm.inf} 17:08:41.197
+     idb:                     Activating driver package 'bc250mcdm.inf_amd64_04af8486d74ee958'.
+     cpy:                     Published 'bc250mcdm.inf_amd64_04af8486d74ee958\bc250mcdm.inf' to 'oem34.inf'.
+     idb:                     Indexed 3 device IDs for 'bc250mcdm.inf_amd64_04af8486d74ee958'.
+     sto:                     Flushed driver database node 'DRIVERS'. Time = 0 ms
+     sto:                     Flushed driver database node 'SYSTEM'. Time = 0 ms
+     idb:                {Publish Driver Package: exit(0x00000000)} 17:08:41.205
+     sto:                {DRIVERSTORE IMPORT END} 17:08:41.208
+     dvi:                     Flushed all driver package files to disk. Time = 0 ms
+     sig:                     Installed catalog 'bc250mcdm.cat' as 'oem34.cat'.
+     sto:                {DRIVERSTORE IMPORT END: exit(0x00000000)} 17:08:41.222
+     sto:           {Core Driver Package Import: exit(0x00000000)} 17:08:41.222
+     sto:      {Stage Driver Package: exit(0x00000000)} 17:08:41.224
+     dvs: {Driver Setup Import Driver Package - exit (0x00000000)} 17:08:41.299
+<<<  Section end 2026/09/05 17:08:41.299
+<<<  [Exit status: SUCCESS]
+

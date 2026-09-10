@@ -114,6 +114,12 @@ static int Bc250RunPagingContractTest(void)
     CHECK(flushPlan.ExpectedRangeHigh == 0x0000001Fu);
     CHECK(flushPlan.RequiresDummyRequestRead == 1u);
     CHECK(flushPlan.UsesSemaphore == 0u);
+    flushParams.Vmid = 9u;
+    CHECK(Bc250PagingBuildGfxhubTlbFlushPlan(
+        &flushParams, &flushPlan) == BC250_PAGING_OK);
+    CHECK(flushPlan.RequestValue == 0x00F80200u);
+    CHECK(flushPlan.AckMask == 0x00000200u);
+    flushParams.Vmid = 8u;
 
     CHECK(Bc250PagingBuildFlushTlb(
         &flushParams, g_pagingBuffer, TEST_PAGING_BUFFER_DWORDS, &cursor) ==

@@ -57,6 +57,7 @@ static int Bc250RunTdrRecoveryContractTest(void)
     CHECK((g_testPlan.ActionsRequired & BC250_TDR_ACTION_FAULT_CONTEXT) != 0);
     CHECK((g_testPlan.ActionsRequired & BC250_TDR_ACTION_RESUME) != 0);
     CHECK((g_testPlan.ActionsRequired & BC250_TDR_ACTION_DEQUEUE_HQD) == 0);
+    CHECK((g_testPlan.ActionsRequired & BC250_TDR_ACTION_FULL_BLOCK_RESET) != 0);
     CHECK(g_testPlan.RestoredRptr == 10u);
     CHECK(g_testPlan.RestoredWptr == 10u);
 
@@ -66,6 +67,7 @@ static int Bc250RunTdrRecoveryContractTest(void)
     CHECK(g_testPlan.NodeIndex == BC250_ADAPTER_NODE_COMPUTE);
     CHECK(g_testPlan.FaultedContextId == 99u);
     CHECK((g_testPlan.ActionsRequired & BC250_TDR_ACTION_DEQUEUE_HQD) != 0);
+    CHECK((g_testPlan.ActionsRequired & BC250_TDR_ACTION_FULL_BLOCK_RESET) == 0);
     CHECK(g_testPlan.RestoredRptr == 50u);
     CHECK(g_testPlan.RestoredWptr == 50u);
 
@@ -87,6 +89,27 @@ static int Bc250RunTdrRecoveryContractTest(void)
     CHECK(Bc250TdrBuildResetPlan(2u, 0, 0, 0, &g_testPlan) == BC250_TDR_INVALID_NODE);
     CHECK(Bc250TdrBuildResetPlan(0u, 0, 0, 0, NULL) == BC250_TDR_BAD_ARGUMENT);
     CHECK(Bc250TdrExecuteResetPlan(NULL, &g_testState) == BC250_TDR_BAD_ARGUMENT);
+
+    /* 6. Readback minimo antes da fence de prova do restart SDMA. */
+    CHECK(Bc250TdrValidateSdmaRestartReadback(
+        0u, 0u, 0u, 0u, 0x00001015u, 0x1u,
+        0u, 0x1u, 0u, 0x00800000u) == BC250_TDR_OK);
+
+    /* Valores medidos na falha 20:41: RPTR residual invalida o restart. */
+    CHECK(Bc250TdrValidateSdmaRestartReadback(
+        68u, 0u, 0u, 0u, 0x00001015u, 0x1u,
+        0u, 0x1u, 0u, 0x00800000u) == BC250_TDR_RESTART_NOT_READY);
+    CHECK(Bc250TdrValidateSdmaRestartReadback(
+        0u, 0u, 0u, 0u, 0x00001014u, 0x1u,
+        0u, 0x1u, 0u, 0x00800000u) == BC250_TDR_RESTART_NOT_READY);
+    CHECK(Bc250TdrValidateSdmaRestartReadback(
+        0u, 0u, 0u, 0u, 0x00001015u, 0x1u,
+        1u, 0x1u, 0u, 0x00800000u) == BC250_TDR_RESTART_NOT_READY);
+    CHECK(Bc250TdrValidateSdmaRestartReadback(
+        0u, 0u, 0u, 0u, 0x00001015u, 0x1u,
+        0u, 0x1u, 0x00800000u, 0x00800000u) == BC250_TDR_RESTART_NOT_READY);
+    CHECK(Bc250TdrValidateSdmaRestartReadback(
+        0u, 0u, 0u, 0u, 0u, 0u, 0u, 1u, 0u, 1u) == BC250_TDR_BAD_ARGUMENT);
 
     return 1;
 }

@@ -1,0 +1,25 @@
+15:18:42.378 [pid=788 bc250-umd-node1-tripod.exe] === bc250umd.dll CARREGADA ===
+15:18:42.379 [pid=788 bc250-umd-node1-tripod.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+15:18:42.379 [pid=788 bc250-umd-node1-tripod.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+15:18:42.379 [pid=788 bc250-umd-node1-tripod.exe] NODE1_TRIPOD_AUTHORIZED: processo e token conferidos; single-shot armado
+15:18:42.379 [pid=788 bc250-umd-node1-tripod.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+15:18:42.380 [pid=788 bc250-umd-node1-tripod.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+15:18:42.380 [pid=788 bc250-umd-node1-tripod.exe] NODE1_TRIPOD_AUTHORIZED: processo e token conferidos; single-shot armado
+15:18:42.380 [pid=788 bc250-umd-node1-tripod.exe] NODE1_TRIPOD_AUTHORIZED: processo e token conferidos; single-shot armado
+15:18:42.383 [pid=788 bc250-umd-node1-tripod.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+15:18:42.383 [pid=788 bc250-umd-node1-tripod.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+15:18:42.383 [pid=788 bc250-umd-node1-tripod.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000046B798 -> PREENCHENDO a struct dele (5 entradas)
+15:18:42.383 [pid=788 bc250-umd-node1-tripod.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+15:18:42.384 [pid=788 bc250-umd-node1-tripod.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 pInfo=NULL -> E_NOTIMPL (zerar seria declarar capacidade inexistente)
+15:18:42.384 [pid=788 bc250-umd-node1-tripod.exe] GetSupportedVersions: sondagem de contagem -> 2
+15:18:42.384 [pid=788 bc250-umd-node1-tripod.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+15:18:42.384 [pid=788 bc250-umd-node1-tripod.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+15:18:42.385 [pid=788 bc250-umd-node1-tripod.exe] CalcPrivateDeviceSize: Interface=0x000A0002, Version=0x0001177A -> 5568 bytes
+15:18:48.493 [pid=788 bc250-umd-node1-tripod.exe] D3D10 CreateDevice: INTERFACE ACORDADA=0x000A0002, Version=0x0001177A, hRTDevice=0000000000476DF8, Flags=0x00000000
+15:18:48.493 [pid=788 bc250-umd-node1-tripod.exe] Bc250UmdDeviceInit: device=00000000004836D0 inicializado com sucesso (Interface=0x000A0002, Version=0x0001177A, Winsys=OK)
+15:18:48.493 [pid=788 bc250-umd-node1-tripod.exe] NODE1_TRIPOD_AUTHORIZED: processo e token conferidos; single-shot armado
+15:18:48.507 [pid=788 bc250-umd-node1-tripod.exe] CommandBufferInit: MapAllocation falhou (CALLBACK_FAILED)
+15:18:48.508 [pid=788 bc250-umd-node1-tripod.exe] NODE1_TRIPOD_RESULT: start Node1 falhou hr=0x80004005 -- NAO VALIDADO EM HARDWARE
+15:18:48.508 [pid=788 bc250-umd-node1-tripod.exe] Bc250UmdDeviceTeardown: device=00000000004836D0 iniciando teardown
+15:18:48.509 [pid=788 bc250-umd-node1-tripod.exe] Bc250UmdDeviceTeardown: device=00000000004836D0 concluido
+15:18:48.510 [pid=788 bc250-umd-node1-tripod.exe] CloseAdapter: adapter=0000000000464DF0, Interface=0x000B000B -> S_OK

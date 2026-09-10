@@ -1,0 +1,9 @@
+﻿Copy-Item : O processo não pode acessar o arquivo 
+'C:\Windows\Temp\BC250_DWM_DUMPS_c9bdf12dd0674511a1feeafe33f2a94b\dwm.exe.10440.dmp' porque ele está sendo usado por 
+outro processo.
+No C:\Users\Daniel\Desktop\NamixWDDM\tools\restore-dwm-crash-capture.ps1:60 caractere:9
++         Copy-Item -LiteralPath $dump.FullName `
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [Copy-Item], IOException
+    + FullyQualifiedErrorId : System.IO.IOException,Microsoft.PowerShell.Commands.CopyItemCommand
+ 

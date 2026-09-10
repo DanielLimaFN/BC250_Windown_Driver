@@ -1,12 +1,12 @@
 ﻿**********************
 Início da transcrição do Windows PowerShell
-Hora de início: 20260902100458
+Hora de início: 20260908084430
 Nome de Usuário: DESKTOP-HQAG6T4\Daniel
 Executar como Usuário: DESKTOP-HQAG6T4\Daniel
 Nome da Configuração: 
 Computador: DESKTOP-HQAG6T4 (Microsoft Windows NT 10.0.19045.0)
 Aplicativo Host: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\Daniel\Desktop\NamixWDDM\tools\_bind_runner.ps1
-ID do Processo: 2236
+ID do Processo: 5228
 PSVersion: 5.1.19041.2673
 PSEdition: Desktop
 PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.19041.2673
@@ -17,52 +17,57 @@ PSRemotingProtocolVersion: 2.3
 SerializationVersion: 1.1.0.1
 **********************
 Transcrição iniciada, o arquivo de saída é C:\Users\Daniel\Desktop\NamixWDDM\tools\_elevated_bind_latest.log
-Boot posterior ao rollback confirmado; marcador de engine suja liberado.
-  Engine: chave de telemetria ausente (rollback anterior); guard nao avaliavel. A protecao efetiva e o marcador de boot limpo.
-=== BINDING DE LABORATORIO (BC-250 MCDM) SEM WATCHDOG ===
-  Dispositivo: PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00\4&19CAF403&0&0041
-  Servico atual: BasicDisplay
-  Pacote: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab\bc250mcdm.inf
-  Rollback automatico: DESABILITADO por decisao explicita.
-  Recuperacao manual: C:\BC250_RECOVERY.cmd
+=== INICIANDO FLUXO DE BINDING WDDM (BC-250 CANDIDATO P5) ===
 
-[1/4] Estagiando pacote de laboratorio via pnputil...
+Preflight OK: BC-250 em BasicDisplay Codigo 0.
+
+[1/2] Estagiando pacote WDDM ativo (output_active)...
+BC250 RECOVERY READINESS AUDIT
+  source SHA256:    789547DD42A0375A0BE88044E2BD7DE0E77F8F5454A0BAE05E36DD91F7BD1DB8
+  installed SHA256: 789547DD42A0375A0BE88044E2BD7DE0E77F8F5454A0BAE05E36DD91F7BD1DB8
+  bc250mcdm service present: False
+  bc250mcdm.sys present:     False
+  matching Driver Store INF:
+  mode: READ-ONLY; no recovery/install action executed
+BC250 RECOVERY READINESS AUDIT: PASS
+BC250 MCDM PACKAGE AUDIT
+  DriverVer: 09/08/2026,3.90.0.0
+  source SYS: 7171F66DB2EB945373736F67373F7E883893C3055E0D897972CF596913A5BEBE
+  signed SYS: 737332579FC306D83A054778062161BEBE4CE0F53A7B282C138B4475641C6406
+  catalog:    D9FB66B2DE9BC39A38B4F83DA3E962524C2132466DAA9A9DD941084EA90B7E46
+  SDMA FW:    15D0D3626DA7F2513F03B13BB7E02EEEECCAB276276AE27D0B6067B5F25E9E95
+  RLC FW:     20ACEFDB6128A36275F4382425A109A7C9927F6053EAB685BB51164FF1D18CFB
+  PFP FW:     50E56DC1913571FF589425D2B059BDDFC5E8A2B4BC22D3EB78CAC75D1E0479A1
+  ME FW:      D4ED4D968DE0D7720F7C8215D42FDAE727BF99CDF43CEE6F8F864DC2584B17E2
+  CE FW:      5946EFBF7E46CCFE7E9F965DA56C35B1187469D1C1A49C8A9EFF433EB3AB4723
+  signer:     8D14413F3B97AEF9D7F78A1CA8D9EA99A3FBAD3B
+  install/binding performed: NO
+  hardware validation: NO
+BC250 MCDM PACKAGE AUDIT: PASS (INTEGRITY ONLY)
+NAO VALIDADO EM HARDWARE
+BC250 MCDM PRE-BINDING AUDIT
+  device count: 1
+  device service/code: BasicDisplay / 0
+  services: {"bc250readonly":"Absent","bc250mcdm":"Absent","bc250dbg":"Absent","bc250v4":"Absent"}
+  driver files: {"bc250readonly.sys":false,"bc250mcdm.sys":false,"bc250dbg.sys":false,"bc250v4.sys":false}
+  matching OEM packages:
+  pending reboot:
+  package mode: PRODUCTION
+  mode: READ-ONLY
+BC250 MCDM PRE-BINDING AUDIT: PASS
+STAGE/BINDING NOT PERFORMED; NAO VALIDADO EM HARDWARE
+Preflight aprovado. O modo Execute usa somente pnputil /add-driver.
+Nenhum /install ou binding faz parte deste script.
 Utilitßrio PnP da Microsoft
 
 Adicionando o pacote de driver:  bc250mcdm.inf
 Pacote de drivers adicionado com Ûxito.
-Nome Publicado:         oem21.inf
+Nome Publicado:         oem34.inf
 
 Total de pacotes de driver:  1
 Pacotes de driver adicionados:  1
-  Pacote publicado como: oem21.inf
+Stage concluido sem binding: oem34.inf
+Recovery marker: C:\BC250_TEST_OEMINF.txt
+NAO VALIDADO EM HARDWARE
 
-[2/4] Watchdog omitido por aceite explicito; evidencia criada.
-  Politica pre-bind aplicada e verificada.
-  RenderNode=0; PersistentSubmission=1; GpuvaLabPromotion=0.
-
-[3/4] Vinculando driver ao hardware...
-  UpdateDriverForPlugAndPlayDevicesW: success=True win32=0 reboot=False
-
-[4/4] Verificando parametros efetivos pos-binding...
-  Politica pos-binding coincide com a politica pre-bind.
-  RenderNode=0; ShaderDispatch=1; PersistentSubmission=1; GPUVA=0.
-
-Estado do dispositivo:
-  Service: bc250mcdm
-  Status: OK
-  ConfigManagerErrorCode: 0
-  Hash instalado: 493AC7CEA3317FAB
-  Hash do pacote: 493AC7CEA3317FAB
-  Binario em System32\drivers ATUALIZADO com sucesso!
-  Telemetria capturada no bind: 973 valores.
-
-==========================================================================
-DRIVER DE LABORATORIO INSTALADO!
-Watchdog DESABILITADO; nao ha confirmacao temporizada a executar.
-Em caso de falha use: C:\BC250_RECOVERY.cmd
-==========================================================================
-**********************
-Fim da transcrição do Windows PowerShell
-Hora de término: 20260902100503
-**********************
+[2/2] Vinculando driver WDDM ativo com Watchdog fail-closed...

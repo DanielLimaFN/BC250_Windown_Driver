@@ -13,6 +13,32 @@ param(
     # DxgkInitializeDisplayOnlyDriver. Lido em DriverEntry, portanto so vale a
     # partir do proximo BOOT. Alto risco de tela preta.
     [switch]$EnableRenderNode,
+    # Arma GpuvaLabPromotion=1 na politica pre-bind. Sem ele
+    # GpuvaMappingsOperational fica 0 e SubmitCommandVirtual no node 1 devolve
+    # STATUS_NOT_SUPPORTED (bc250_active_miniport.c:6273), ou seja, nenhum
+    # trabalho Vulkan chega ao anel.
+    #
+    # O valor e lido uma unica vez, no StartDevice
+    # (bc250_active_miniport.c:3443). Por isso ele precisa estar na chave ANTES
+    # do install -- e o INF de laboratorio grava esta entrada com NOCLOBBER
+    # justamente para nao apagar o que a politica pre-bind escreveu.
+    [switch]$EnableGpuvaLabPromotion,
+    [switch]$IAcceptGpuvaLabPromotion,
+    # Dispara UMA corrida de RADV_WDDM_COMPUTE_TRIPOD logo apos o bind, ainda
+    # sob o watchdog armado.
+    #
+    # Nao e conveniencia: com o display vinculado a tela apaga, e o operador
+    # nao tem como lancar o runner numa segunda janela. Ou o bind o chama, ou o
+    # teste nao acontece.
+    [switch]$RunRadvComputeTripod,
+    # Executa UMA transacao B7 originada pela UMD logo apos o bind, sob o
+    # mesmo watchdog. E' separado do RADV para nao misturar duas experiencias
+    # fisicas no mesmo candidato.
+    [switch]$RunUmdNode1Tripod,
+    # Permite habilitar Plano A (fill direto no anel) para isolamento e protecao contra 0x119.
+    [switch]$EnableSdmaPlanoAFallback,
+    # Promove criacao do device D3D10/11 na UMD para composicao do DWM.
+    [switch]$EnableD3D11LabPromotion,
     [switch]$EnablePhysicalRenderOnly,
     # Permite o fluxo solicitado pelo operador sem rollback temporizado.
     # A recuperacao manual C:\BC250_RECOVERY.cmd continua obrigatoria.
@@ -41,6 +67,8 @@ $packageSys = Join-Path $packageDir 'bc250mcdm.sys'
 $packageCat = Join-Path $packageDir 'bc250mcdm.cat'
 $manifestPath = Join-Path $root 'driver\wdk\package\output_lab.manifest.json'
 $watchdogScript = Join-Path $root 'tools\watch-bc250mcdm-lab.ps1'
+$radvComputeTripod = Join-Path $root 'tools\test-radv-wddm-compute-tripod.ps1'
+$umdNode1Tripod = Join-Path $root 'tools\test-b7-umd-node1-tripod.ps1'
 # Gate proprio do laboratorio: o de producao exige SkipHwBringup=1 e por isso
 # rejeita este binding sempre, por construcao (doc 95 secao B3).
 $confirmScript = Join-Path $root 'tools\confirm-bc250mcdm-lab.ps1'
@@ -48,6 +76,7 @@ $markerPath = 'C:\BC250_TEST_OEMINF.txt'
 $cleanBootMarkerPath = 'C:\BC250_REQUIRE_CLEAN_BOOT.json'
 $bootFusePath = 'C:\BC250_BOOT_FUSE.dat'
 $recoveryPath = 'C:\BC250_RECOVERY.cmd'
+$displayLogPath = 'C:\BC250_DISPLAY_LOG.txt'
 $hardwareId = 'PCI\VEN_1002&DEV_13FE'
 
 # --------------------------------------------------------------------------
@@ -127,10 +156,81 @@ if (-not (Test-Path -LiteralPath $recoveryPath)) {
 if ($DisableWatchdog -and -not $IAcceptNoAutomaticRollback) {
     throw '-DisableWatchdog exige -IAcceptNoAutomaticRollback.'
 }
+if ($IAcceptGpuvaLabPromotion -and -not $EnableGpuvaLabPromotion) {
+    throw '-IAcceptGpuvaLabPromotion nao e valido sem -EnableGpuvaLabPromotion.'
+}
+if ($EnableGpuvaLabPromotion) {
+    if (-not $IAcceptGpuvaLabPromotion) {
+        throw ('-EnableGpuvaLabPromotion exige -IAcceptGpuvaLabPromotion: a promocao ' +
+               'abre o gate GPUVA para submissoes reais do dxgkrnl no node 1.')
+    }
+    # Abrir o gate sem no de render nem fila persistente nao teria a quem
+    # servir: nao existiria node 1 para submeter, e o unico efeito seria um
+    # boot com uma trava a menos e nenhuma medida a mais.
+    if (-not $EnableRenderNode -and -not $EnablePhysicalRenderOnly) {
+        throw '-EnableGpuvaLabPromotion exige -EnableRenderNode (ou -EnablePhysicalRenderOnly).'
+    }
+    if (-not $EnablePersistentSubmission) {
+        throw '-EnableGpuvaLabPromotion exige -EnablePersistentSubmission.'
+    }
+}
+if ($EnableD3D11LabPromotion) {
+    if (-not $EnableRenderNode -and -not $EnablePhysicalRenderOnly) {
+        throw '-EnableD3D11LabPromotion exige -EnableRenderNode (ou -EnablePhysicalRenderOnly).'
+    }
+}
+if ($RunRadvComputeTripod) {
+    # Cada exigencia aqui e um preflight do proprio runner, antecipado para o
+    # inicio do script. Descobrir a falta de uma delas depois do bind custaria
+    # a corrida inteira.
+    if (-not $EnableGpuvaLabPromotion) {
+        throw ('-RunRadvComputeTripod exige -EnableGpuvaLabPromotion: sem o gate ' +
+               'GPUVA aberto o submit no node 1 devolve STATUS_NOT_SUPPORTED.')
+    }
+    if ($DisableWatchdog) {
+        throw ('-RunRadvComputeTripod exige o watchdog: o runner recusa a corrida ' +
+               'sem um watch-bc250mcdm-lab.ps1 vivo e ARMED.')
+    }
+    if ($EnablePhysicalRenderOnly) {
+        throw ('-RunRadvComputeTripod nao vale no perfil physical render-only: ' +
+               'esse ciclo e fire-and-collect e termina em reboot.')
+    }
+    if ($WatchdogTimeoutSeconds -lt 90) {
+        throw 'RADV_WDDM_COMPUTE_TRIPOD exige WatchdogTimeoutSeconds entre 90 e 600.'
+    }
+    if (-not (Test-Path -LiteralPath $radvComputeTripod -PathType Leaf)) {
+        throw "Runner ausente: $radvComputeTripod"
+    }
+}
+if ($RunUmdNode1Tripod) {
+    if ($RunRadvComputeTripod) {
+        throw 'Escolha uma unica experiencia fisica: RADV ou B7_UMD_NODE1_TRIPOD.'
+    }
+    if (-not $EnableGpuvaLabPromotion -or -not $IAcceptGpuvaLabPromotion) {
+        throw ('-RunUmdNode1Tripod exige -EnableGpuvaLabPromotion e ' +
+               '-IAcceptGpuvaLabPromotion para o submit Node 1 atravessar o gate KMD.')
+    }
+    if (-not $EnableRenderNode -or -not $EnablePersistentSubmission) {
+        throw '-RunUmdNode1Tripod exige -EnableRenderNode e -EnablePersistentSubmission.'
+    }
+    if ($DisableWatchdog) {
+        throw '-RunUmdNode1Tripod exige o watchdog de rollback ativo.'
+    }
+    if ($EnablePhysicalRenderOnly) {
+        throw '-RunUmdNode1Tripod exige o perfil DISPLAY_RENDER_LAB.'
+    }
+    if ($WatchdogTimeoutSeconds -lt 90) {
+        throw 'B7_UMD_NODE1_TRIPOD exige WatchdogTimeoutSeconds entre 90 e 600.'
+    }
+    if (-not (Test-Path -LiteralPath $umdNode1Tripod -PathType Leaf)) {
+        throw "Runner ausente: $umdNode1Tripod"
+    }
+}
 
 $principal = New-Object Security.Principal.WindowsPrincipal(
     [Security.Principal.WindowsIdentity]::GetCurrent())
-if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+if ($Execute -and
+    -not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw 'Execute em PowerShell elevado (Administrador).'
 }
 
@@ -147,8 +247,22 @@ if (Test-Path -LiteralPath $cleanBootMarkerPath) {
             'Binding recusado: o rollback anterior exige BOOT FRIO com BasicDisplay ' +
             "antes de um novo ensaio. Marcador: $cleanBootMarkerPath")
     }
-    Remove-Item -LiteralPath $cleanBootMarkerPath -Force
-    Write-Host 'Boot posterior ao rollback confirmado; marcador de engine suja liberado.' -ForegroundColor Green
+    if ($Execute) {
+        Remove-Item -LiteralPath $cleanBootMarkerPath -Force
+        Write-Host 'Boot posterior ao rollback confirmado; marcador de engine suja liberado.' -ForegroundColor Green
+    } else {
+        Write-Host 'Boot posterior ao rollback confirmado; marcador sera removido somente no APPLY.' -ForegroundColor Green
+    }
+}
+
+$umdRegKey = 'HKLM:\SOFTWARE\BC250\Umd'
+if (Test-Path -LiteralPath $umdRegKey) {
+    $capsProbeValue = (Get-ItemProperty -LiteralPath $umdRegKey -Name 'D3D11CapsProbe' `
+        -ErrorAction SilentlyContinue).D3D11CapsProbe
+    if ($null -ne $capsProbeValue -and $capsProbeValue -ne 0) {
+        throw ('Binding bloqueado: D3D11CapsProbe = ' + $capsProbeValue + '. Desarme antes: ' +
+            'powershell -ExecutionPolicy Bypass -File tools\arm-d3d11-caps-probe.ps1 -Disarm')
+    }
 }
 
 $devices = @(Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPDeviceID -like "$hardwareId*" })
@@ -166,6 +280,7 @@ if ($manifest.BuildKind -ne 'MCDM_LAB_BRINGUP' -or [bool]$manifest.HardwareValid
     throw 'Contrato do manifesto de laboratorio invalido (kind/validacao/schema/bring-up).'
 }
 Assert-ArtifactHash $packageSys $manifest.PackageSysSha256 'SYS'
+Assert-ArtifactHash (Join-Path $packageDir 'bc250umd.dll') $manifest.PackageUmdSha256 'UMD'
 Assert-ArtifactHash $packageInf $manifest.PackageInfSha256 'INF'
 Assert-ArtifactHash $packageCat $manifest.PackageCatSha256 'CAT'
 Assert-ArtifactHash (Join-Path $packageDir 'cyan_skillfish2_sdma.bin') $manifest.SdmaFirmwareSha256 'SDMA firmware'
@@ -175,7 +290,7 @@ Assert-ArtifactHash (Join-Path $packageDir 'cyan_skillfish2_me.bin') $manifest.M
 Assert-ArtifactHash (Join-Path $packageDir 'cyan_skillfish2_ce.bin') $manifest.CeFirmwareSha256 'CE firmware'
 Assert-ArtifactHash (Join-Path $packageDir 'cyan_skillfish2_mec.bin') $manifest.MecFirmwareSha256 'MEC firmware'
 Assert-ArtifactHash $recoveryPath $manifest.RecoverySha256 'recuperacao'
-foreach ($signedArtifact in @($packageSys, $packageCat)) {
+foreach ($signedArtifact in @($packageSys, (Join-Path $packageDir 'bc250umd.dll'), $packageCat)) {
     $signature = Get-AuthenticodeSignature -LiteralPath $signedArtifact
     if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
         $signature.SignerCertificate.Thumbprint -ne $manifest.SignerThumbprint) {
@@ -186,7 +301,9 @@ foreach ($signedArtifact in @($packageSys, $packageCat)) {
 $infText = Get-Content -LiteralPath $packageInf -Raw
 $expectedInfValues = [ordered]@{
     'Parameters\Probe,SchemaVersion' = $expectedSchema
-    'Parameters,WddmContractVersion' = 27
+    # Vem do manifesto, nao de literal: o pacote e' quem decide o contrato, e
+    # fixar 27 aqui recusaria em silencio um pacote empacotado com 20.
+    'Parameters,WddmContractVersion' = [uint32]$manifest.WddmContractVersion
     'Parameters\Driver,ActiveMode' = 1
     'Parameters,RenderNode' = $(if ($EnableRenderNode) { 1 } elseif ($EnablePhysicalRenderOnly) { 1 } else { 0 })
     'Parameters,RenderOnlyLab' = $(if ($EnablePhysicalRenderOnly) { 1 } else { 0 })
@@ -198,6 +315,7 @@ $expectedInfValues = [ordered]@{
     'Parameters,PersistentSubmission' =
         $(if ($EnablePersistentSubmission) { 1 } else { 0 })
     'Parameters,GpuvaLabPromotion' = 0
+    'Parameters,SdmaPlanoAFallback' = 0
 }
 if ($EnablePhysicalRenderOnly -and
     (-not $EnableShaderDispatch -or -not $EnablePersistentSubmission)) {
@@ -207,12 +325,51 @@ if ($EnablePhysicalRenderOnly -and
 if ([bool]$manifest.RenderOnlyLab -ne [bool]$EnablePhysicalRenderOnly) {
     throw 'Perfil solicitado diverge do pacote: reempacote com -EnablePhysicalRenderOnly.'
 }
+# RenderNode e RenderOnlyLab sao eixos independentes: o par 1/0 e' DISPLAY_RENDER.
+# Conferir so' RenderOnlyLab deixava passar um pacote DISPLAY_LAB (RenderNode=0)
+# quando o operador pediu -EnableRenderNode; o desvio so' apareceria como
+# perfil DISPLAY_ONLY no boot, gastando a corrida.
+$expectedManifestRenderNode = ($EnableRenderNode -or $EnablePhysicalRenderOnly)
+if ([bool]$manifest.RenderNode -ne $expectedManifestRenderNode) {
+    throw ('No de render solicitado diverge do pacote: manifesto RenderNode=' +
+        "$([uint32][bool]$manifest.RenderNode), esperado $([uint32]$expectedManifestRenderNode). " +
+        'Reempacote com package-bc250mcdm-lab.ps1 -EnableRenderNode.')
+}
+$expectedProfileMode = $(if ($EnablePhysicalRenderOnly) {
+    'PHYSICAL_RENDER_ONLY'
+} elseif ($expectedManifestRenderNode) {
+    'DISPLAY_RENDER_LAB'
+} else {
+    'DISPLAY_LAB'
+})
+if ([string]$manifest.ProfileMode -ne $expectedProfileMode) {
+    throw ("ProfileMode do pacote diverge: '$($manifest.ProfileMode)', esperado " +
+        "'$expectedProfileMode'.")
+}
+# 20 -> DXGKDDI_INTERFACE_VERSION_WDDM2_0, 27 -> WDDM2_7
+# (bc250_active_miniport.c:7365). Qualquer outro valor faz o DriverEntry
+# devolver STATUS_DEVICE_CONFIGURATION_ERROR, e o bind morreria sem diagnostico.
+if (@(20, 27) -notcontains [uint32]$manifest.WddmContractVersion) {
+    throw ("Manifesto declara WddmContractVersion=$($manifest.WddmContractVersion); " +
+        'o DriverEntry so aceita 20 ou 27.')
+}
+Write-Host ("  Contrato WDDM declarado pelo pacote: {0}" -f $manifest.WddmContractVersion)
+# GpuvaLabPromotion e SdmaPlanoAFallback sao declarados no INF com NOCLOBBER (0x00010003):
+# sao defaults, nao mandatos, para que a politica pre-bind abaixo possa arma-los sem
+# ser apagada pelo AddReg do instalador.
+$infValueFlags = @{
+    'Parameters,GpuvaLabPromotion' = '0x00010003'
+    'Parameters,SdmaPlanoAFallback' = '0x00010003'
+}
 foreach ($entry in $expectedInfValues.GetEnumerator()) {
     $escapedName = [regex]::Escape($entry.Key)
+    $flag = $(if ($infValueFlags.ContainsKey($entry.Key)) {
+        $infValueFlags[$entry.Key]
+    } else { '0x00010001' })
     if ([regex]::Matches(
             $infText,
-            "(?m)^HKR,$escapedName,0x00010001,$($entry.Value)\s*$").Count -ne 1) {
-        throw "INF diverge do contrato solicitado: $($entry.Key)=$($entry.Value)."
+            "(?m)^HKR,$escapedName,$flag,$($entry.Value)\s*$").Count -ne 1) {
+        throw "INF diverge do contrato solicitado: $($entry.Key)=$($entry.Value) (flag $flag)."
     }
 }
 if ($EnableShaderDispatch -and -not [bool]$manifest.ShaderDispatchEnabled) {
@@ -223,6 +380,9 @@ if ($EnablePersistentSubmission -and -not [bool]$manifest.PersistentSubmissionEn
 }
 if ([bool]$manifest.GpuvaLabPromotionEnabled) {
     throw 'Pacote inseguro: GpuvaLabPromotion deve estar desabilitado no manifesto.'
+}
+if ([bool]$manifest.Node1TripodDefaultArmed -or [bool]$manifest.D3D10_11NativeReady) {
+    throw 'Pacote inseguro: acionador Node 1 e gate D3D devem estar fechados no manifesto.'
 }
 if ($EnableShaderDispatch -and
     (-not [bool]$manifest.CpSoftResetEnabled -or
@@ -250,6 +410,12 @@ if (Test-Path -LiteralPath $builtSys) {
             'Reempacote antes de vincular: tools\package-bc250mcdm-lab.ps1 ' +
             '(com as mesmas flags deste binding).')
     }
+}
+$builtUmd = Join-Path $root 'driver\umd\output\bc250umd.dll'
+if (-not (Test-Path -LiteralPath $builtUmd -PathType Leaf) -or
+    (Get-FileHash -LiteralPath $builtUmd -Algorithm SHA256).Hash -ne
+        [string]$manifest.SourceUmdSha256) {
+    throw 'O pacote nao corresponde ao build UMD atual; reempacote antes do bind.'
 }
 
 # --------------------------------------------------------------------------
@@ -291,7 +457,7 @@ if (Test-Path -LiteralPath $bootFusePath) {
     } catch [System.Management.Automation.RuntimeException] {
         throw
     } catch {
-        Write-Warning "Falha ao ler $bootFusePath: $($_.Exception.Message)"
+        Write-Warning "Falha ao ler ${bootFusePath}: $($_.Exception.Message)"
     }
 }
 $probeKey = 'HKLM:\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Probe'
@@ -321,8 +487,17 @@ if (Test-Path -LiteralPath $probeKey) {
     $engineState = if ($null -eq $rawEngine) { 0 } else { [int64]$rawEngine -band 0xFFFFFFFFL }
     $p1Ready = if ($null -eq $rawP1Ready) { 0 } else { [int64]$rawP1Ready -band 0xFFFFFFFFL }
     $p2Ready = if ($null -eq $rawP2Ready) { 0 } else { [int64]$rawP2Ready -band 0xFFFFFFFFL }
-    if ($hqdBefore -ne 0 -or $wptrLeft -ne 0 -or $engineState -ne 0 -or
-        $p1Ready -ne 0 -or $p2Ready -ne 0) {
+    # P1EngineState/P1SelfTestPhysicalReady/P2PhysicalReady registram o ultimo
+    # bring-up bem-sucedido. Eles sobrevivem enquanto o pacote/servico antigo
+    # ainda esta no DriverStore e, portanto, nao provam que a HQD continua
+    # fisicamente ativa depois de um boot frio. Trata-los como "engine suja"
+    # cria um impasse: o proprio ensaio que prova P1/P2 impede todo ensaio
+    # posterior, mesmo com BasicDisplay, fusivel CLEAN e WPTR zerado.
+    #
+    # Os dois campos abaixo sao os indicadores de residuo de fila. A protecao
+    # entre boots permanece fail-closed no BC250_BOOT_FUSE e no marcador
+    # BC250_REQUIRE_CLEAN_BOOT, verificados antes deste bloco.
+    if ($hqdBefore -ne 0 -or $wptrLeft -ne 0) {
         $msg = (
             "Engine suja: a fila de computacao ainda carrega estado da sessao anterior.`n" +
             "  HqdActiveBefore              = $hqdBefore`n" +
@@ -339,6 +514,77 @@ if (Test-Path -LiteralPath $probeKey) {
             throw $msg
         }
     }
+    if ($engineState -ne 0 -or $p1Ready -ne 0 -or $p2Ready -ne 0) {
+        Write-Host (
+            '  Probe historico preservado (nao e indicador de fila suja): ' +
+            "P1EngineState=$engineState, P1Ready=$p1Ready, P2Ready=$p2Ready.") `
+            -ForegroundColor DarkYellow
+    }
+}
+
+function Get-Bc250DisplayLogDelta([string]$Path, [long]$StartOffset) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return '' }
+    $stream = $null
+    try {
+        $stream = [System.IO.File]::Open(
+            $Path,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::ReadWrite)
+        # Truncation/replacement during the bind invalidates the baseline.  Do
+        # not search the old part of the file and manufacture a false gate.
+        if ($stream.Length -lt $StartOffset) { return '' }
+        [void]$stream.Seek($StartOffset, [System.IO.SeekOrigin]::Begin)
+        $remaining = [int64]($stream.Length - $StartOffset)
+        if ($remaining -le 0) { return '' }
+        $buffer = New-Object byte[] $remaining
+        $read = $stream.Read($buffer, 0, $buffer.Length)
+        return [System.Text.Encoding]::UTF8.GetString($buffer, 0, $read)
+    } finally {
+        if ($null -ne $stream) { $stream.Dispose() }
+    }
+}
+
+# O teste Vulkan precisa provar a identidade do ICD antes de APPLY. Em
+# 06/09 17:11 o processo elevado ignorou VK_DRIVER_FILES, carregou a copia
+# antiga de System32 e gastou uma corrida inteira no mesmo crash. O dry-run do
+# runner agora faz LoadLibraryEx pelo caminho absoluto e compara o modulo
+# carregado, sem criar instancia Vulkan nem tocar a GPU.
+if ($RunRadvComputeTripod) {
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $tripodPreflightOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -File $radvComputeTripod 2>&1 | ForEach-Object { [string]$_ }) -join "`r`n"
+        $tripodPreflightExit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousEap
+    }
+    Write-Host $tripodPreflightOutput
+    if ($tripodPreflightExit -ne 0 -or
+        $tripodPreflightOutput -notmatch 'DRY-RUN APROVADO') {
+        throw ('Binding recusado antes de APPLY: preflight do ' +
+            "RADV_WDDM_COMPUTE_TRIPOD falhou (exit=$tripodPreflightExit).")
+    }
+    Write-Host '  ICD explicito validado antes do binding.' -ForegroundColor Green
+}
+if ($RunUmdNode1Tripod) {
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $umdTripodPreflightOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -File $umdNode1Tripod 2>&1 | ForEach-Object { [string]$_ }) -join "`r`n"
+        $umdTripodPreflightExit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousEap
+    }
+    Write-Host $umdTripodPreflightOutput
+    if ($umdTripodPreflightExit -ne 0 -or
+        $umdTripodPreflightOutput -notmatch 'DRY-RUN PASS') {
+        throw ('Binding recusado antes de APPLY: preflight do ' +
+            "B7_UMD_NODE1_TRIPOD falhou (exit=$umdTripodPreflightExit).")
+    }
+    Write-Host '  UMD assinada e runner Node 1 validados antes do binding.' -ForegroundColor Green
 }
 
 $guardMode = if ($DisableWatchdog) { 'SEM WATCHDOG' } else { 'COM WATCHDOG' }
@@ -359,11 +605,28 @@ if (-not $Execute -or -not $IAcceptBlackScreenRisk) {
     # A dica precisa repetir -EnableShaderDispatch: sem ela o contrato do
     # INF exige ShaderDispatch=0 e o binding falha antes deste ponto.
     $shaderFlag = $(if ($EnableShaderDispatch) { ' -EnableShaderDispatch' } else { '' })
+    # Mesma razao do -EnableShaderDispatch: cada um destes participa do
+    # contrato de INF e de manifesto conferido acima. Omitir qualquer um na
+    # dica gera um comando que morre no preflight seguinte.
+    $persistentFlag = $(if ($EnablePersistentSubmission) { ' -EnablePersistentSubmission' } else { '' })
+    $renderNodeFlag = $(if ($EnableRenderNode) { ' -EnableRenderNode' } else { '' })
+    $renderOnlyFlag = $(if ($EnablePhysicalRenderOnly) { ' -EnablePhysicalRenderOnly' } else { '' })
+    $gpuvaFlag = $(if ($EnableGpuvaLabPromotion) {
+        ' -EnableGpuvaLabPromotion -IAcceptGpuvaLabPromotion'
+    } else { '' })
+    $planoAFlag = $(if ($EnableSdmaPlanoAFallback) { ' -EnableSdmaPlanoAFallback' } else { '' })
+    $d3d11PromotionFlag = $(if ($EnableD3D11LabPromotion) { ' -EnableD3D11LabPromotion' } else { '' })
+    $tripodFlag = $(if ($RunRadvComputeTripod) {
+        " -RunRadvComputeTripod -WatchdogTimeoutSeconds $WatchdogTimeoutSeconds"
+    } elseif ($RunUmdNode1Tripod) {
+        " -RunUmdNode1Tripod -WatchdogTimeoutSeconds $WatchdogTimeoutSeconds"
+    } else { '' })
     $watchdogFlag = $(if ($DisableWatchdog) {
         ' -DisableWatchdog -IAcceptNoAutomaticRollback'
     } else { '' })
     Write-Host ("powershell -ExecutionPolicy Bypass -File tools\bind-bc250mcdm-lab.ps1" +
-        " -Execute -IAcceptBlackScreenRisk" + $shaderFlag + $watchdogFlag)
+        " -Execute -IAcceptBlackScreenRisk" + $shaderFlag + $persistentFlag +
+        $renderNodeFlag + $renderOnlyFlag + $gpuvaFlag + $planoAFlag + $d3d11PromotionFlag + $tripodFlag + $watchdogFlag)
     exit 0
 }
 if ($EnablePhysicalRenderOnly -and -not $DisableWatchdog -and
@@ -432,6 +695,18 @@ if ($liveWatchdogs.Count -gt 0) {
 $stamp = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
 $evidenceDir = Join-Path $root "docs\evidence\$stamp-$($env:COMPUTERNAME)-lab-binding"
 New-Item -ItemType Directory -Path $evidenceDir -Force | Out-Null
+# B2: Limpeza de logs residuais da UMD em C:\Windows\Temp para isolar este bind.
+Get-ChildItem -LiteralPath 'C:\Windows\Temp' -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+$displayLogStartOffset = if (Test-Path -LiteralPath $displayLogPath -PathType Leaf) {
+    [int64](Get-Item -LiteralPath $displayLogPath).Length
+} else { [int64]0 }
+[ordered]@{
+    path = $displayLogPath
+    start_offset = $displayLogStartOffset
+    captured_at = (Get-Date).ToString('o')
+} | ConvertTo-Json | Set-Content -LiteralPath `
+    (Join-Path $evidenceDir 'display-log-baseline.json') -Encoding UTF8
 
 $watchdogToken = $null
 $watchdogProcess = $null
@@ -525,7 +800,8 @@ $requestedPolicy = [ordered]@{
     Vmid0PageTable = 0
     SdmaAutoCtxSw = $(if ($EnableShaderDispatch) { 0 } else { 1 })
     PersistentSubmission = $(if ($EnablePersistentSubmission) { 1 } else { 0 })
-    GpuvaLabPromotion = 0
+    GpuvaLabPromotion = $(if ($EnableGpuvaLabPromotion) { 1 } else { 0 })
+    SdmaPlanoAFallback = $(if ($EnableSdmaPlanoAFallback) { 1 } else { 0 })
     RenderNode = $(if ($EnableRenderNode) { 1 } elseif ($EnablePhysicalRenderOnly) { 1 } else { 0 })
     RenderOnlyLab = $(if ($EnablePhysicalRenderOnly) { 1 } else { 0 })
 }
@@ -555,8 +831,26 @@ foreach ($entry in $requestedPolicy.GetEnumerator()) {
 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath `
     (Join-Path $evidenceDir 'prebind-policy.json') -Encoding UTF8
 Write-Host "  Politica pre-bind aplicada e verificada." -ForegroundColor Green
-Write-Host ("  RenderNode={0}; PersistentSubmission={1}; GpuvaLabPromotion=0." -f
-    $requestedPolicy.RenderNode, $requestedPolicy.PersistentSubmission)
+Write-Host ("  RenderNode={0}; PersistentSubmission={1}; GpuvaLabPromotion={2}; SdmaPlanoAFallback={3}." -f
+    $requestedPolicy.RenderNode, $requestedPolicy.PersistentSubmission,
+    $requestedPolicy.GpuvaLabPromotion, $requestedPolicy.SdmaPlanoAFallback)
+
+# Armar ou limpar D3D11LabPromotion da UMD
+if ($EnableD3D11LabPromotion) {
+    if (-not (Test-Path -LiteralPath $umdRegKey)) {
+        New-Item -Path $umdRegKey -Force | Out-Null
+    }
+    Set-ItemProperty -LiteralPath $umdRegKey -Name 'D3D11LabPromotion' -Value 1 -Type DWord -Force
+    $readbackD3D11 = Get-ItemPropertyValue -LiteralPath $umdRegKey -Name 'D3D11LabPromotion' -ErrorAction Stop
+    if ([uint32]$readbackD3D11 -ne 1) {
+        throw 'Readback pre-bind falhou para D3D11LabPromotion.'
+    }
+    Write-Host '  D3D11LabPromotion=1 armado em HKLM:\SOFTWARE\BC250\Umd' -ForegroundColor Green
+} else {
+    if (Test-Path -LiteralPath $umdRegKey) {
+        Remove-ItemProperty -LiteralPath $umdRegKey -Name 'D3D11LabPromotion' -ErrorAction SilentlyContinue
+    }
+}
 
 # 4. Executar o binding via NewDev ou pnputil
 Write-Host "`n[3/4] Vinculando driver ao hardware..." -ForegroundColor Yellow
@@ -613,9 +907,14 @@ foreach ($entry in $requestedPolicy.GetEnumerator()) {
     }
 }
 Write-Host "  Politica pos-binding coincide com a politica pre-bind." -ForegroundColor Green
-Write-Host ("  RenderNode={0}; ShaderDispatch={1}; PersistentSubmission={2}; GPUVA=0." -f
+Write-Host ("  RenderNode={0}; ShaderDispatch={1}; PersistentSubmission={2}; GPUVA={3}." -f
     $requestedPolicy.RenderNode, $requestedPolicy.ShaderDispatch,
-    $requestedPolicy.PersistentSubmission)
+    $requestedPolicy.PersistentSubmission, $requestedPolicy.GpuvaLabPromotion)
+if ($requestedPolicy.GpuvaLabPromotion -eq 1) {
+    # O readback acima e' a prova de que o NOCLOBBER do INF funcionou: a
+    # promocao armada antes do install sobreviveu ao AddReg do instalador.
+    Write-Host '  GpuvaLabPromotion sobreviveu ao instalador (NOCLOBBER confirmado).' -ForegroundColor Green
+}
 
 # Verificar estado do dispositivo
 Start-Sleep -Seconds 3
@@ -666,6 +965,9 @@ if ($devAfter.Service -ne 'bc250mcdm') {
         $disarmOk = Disarm-Bc250SafeGuard 'BC250-SafeBindGuard' $evidenceDir
         Write-Host ("  Guardiao SYSTEM desarmado (limpeza_ok={0})." -f $disarmOk) -ForegroundColor Yellow
     }
+    if ($EnableD3D11LabPromotion -and (Test-Path -LiteralPath $umdRegKey)) {
+        Remove-ItemProperty -LiteralPath $umdRegKey -Name 'D3D11LabPromotion' -ErrorAction SilentlyContinue
+    }
     throw "Binding de laboratorio falhou (win32=$win32Error)."
 }
 
@@ -697,6 +999,155 @@ try {
 } catch {
     # Best-effort: a captura nunca pode derrubar o ensaio nem o watchdog.
     Write-Host ("  AVISO: falha ao capturar telemetria no bind: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+}
+
+# RADV_WDDM_COMPUTE_TRIPOD: uma unica corrida, aqui, com a telemetria do bind ja
+# arquivada e o watchdog ainda armado. Depois deste ponto a tela pode estar
+# apagada e nao existe operador para lancar nada.
+if ($RunRadvComputeTripod -or $RunUmdNode1Tripod) {
+    # Nao misturar duas experiencias caras. O RADV so pode comecar depois que
+    # ESTE bind (nao linhas antigas do log global) tiver chegado a primaria,
+    # CommitVidPn e SetVidPnSourceAddress. A corrida 20:34 tinha 97
+    # IsSupported e zero desses tres marcos; iniciar vkCreateDevice naquele
+    # estado apagou a fronteira entre a falha de display e a de compute.
+    $displayGateDeadline = (Get-Date).AddSeconds(15)
+    $displayDelta = ''
+    $displayPrimary = $false
+    $displayCommit = $false
+    $displayAddress = $false
+    do {
+        $displayDelta = Get-Bc250DisplayLogDelta $displayLogPath $displayLogStartOffset
+        $displayPrimary = $displayDelta -match '\[GetStdAllocData\] SharedPrimary:'
+        $displayCommit = $displayDelta -match '=== CommitVidPn Entered:'
+        $displayAddress = $displayDelta -match '=== SetVidPnSourceAddress '
+        if (-not ($displayPrimary -and $displayCommit -and $displayAddress)) {
+            Start-Sleep -Milliseconds 250
+        }
+    } until (($displayPrimary -and $displayCommit -and $displayAddress) -or
+        (Get-Date) -ge $displayGateDeadline)
+    $displayDelta | Set-Content -LiteralPath `
+        (Join-Path $evidenceDir 'display-log-this-bind.txt') -Encoding UTF8
+    $displayGatePassed = $displayPrimary -and $displayCommit -and $displayAddress
+    [ordered]@{
+        state = $(if ($displayGatePassed) { 'PASSED' } elseif ($RunUmdNode1Tripod) {
+            'UMD_NODE1_SKIPPED'
+        } else { 'RADV_SKIPPED' })
+        shared_primary = $displayPrimary
+        commit_vidpn = $displayCommit
+        set_vidpn_source_address = $displayAddress
+        start_offset = $displayLogStartOffset
+        checked_at = (Get-Date).ToString('o')
+        hardware_validated = $false
+    } | ConvertTo-Json | Set-Content -LiteralPath `
+        (Join-Path $evidenceDir 'compute-display-prerequisite-gate.json') -Encoding UTF8
+
+    if (-not $displayGatePassed) {
+        $experimentName = $(if ($RunUmdNode1Tripod) {
+            'B7_UMD_NODE1_TRIPOD'
+        } else { 'RADV_WDDM_COMPUTE_TRIPOD' })
+        Write-Warning ($experimentName + ' NAO EXECUTADO: o display deste bind ' +
+            "nao chegou a SharedPrimary=$displayPrimary, CommitVidPn=$displayCommit, " +
+            "SetVidPnSourceAddress=$displayAddress em 15 s. O watchdog permanece armado.")
+    } else {
+        Write-Host ''
+        if ($RunUmdNode1Tripod) {
+            Write-Host 'Display convergiu; executando UMA corrida B7_UMD_NODE1_TRIPOD sob watchdog...' -ForegroundColor Magenta
+            $previousEap = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try {
+                $tripodOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+                    -File $umdNode1Tripod -EvidenceDir $evidenceDir -Execute `
+                    -IAcceptOnePhysicalNode1Submission 2>&1 | Out-String)
+                $tripodExit = $LASTEXITCODE
+            } finally {
+                $ErrorActionPreference = $previousEap
+            }
+            $tripodOutput | Set-Content -LiteralPath `
+                (Join-Path $evidenceDir 'umd-node1-tripod-console.txt') -Encoding UTF8
+            Write-Host $tripodOutput
+            if ($tripodExit -ne 0) {
+                Write-Warning ('B7_UMD_NODE1_TRIPOD falhou (exit=' + $tripodExit +
+                    '). Nao repita este build; o watchdog permanece armado e a evidencia esta gravada.')
+            }
+        } else {
+        Write-Host 'Display convergiu; executando UMA corrida RADV_WDDM_COMPUTE_TRIPOD sob watchdog...' -ForegroundColor Magenta
+    # Mesma armadilha descrita em Invoke-Bc250NativeCmd, e que me pegou na
+    # corrida 06/09 11:53: no PowerShell 5.1, "& nativo ... 2>&1" com
+    # $ErrorActionPreference = 'Stop' transforma CADA linha de stderr em
+    # NativeCommandError TERMINANTE. O runner recusou a corrida (Codigo 43) e
+    # escreveu isso no stderr; o binder morreu aqui mesmo, antes de gravar o
+    # console do tripe, antes da telemetria final e antes da confirmacao
+    # visual. A recusa do runner e' um resultado esperado do gate -- nunca
+    # pode derrubar quem o chamou.
+        $previousEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $tripodOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+                -File $radvComputeTripod -EvidenceDir $evidenceDir -Execute 2>&1 |
+                Out-String)
+            $tripodExit = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $previousEap
+        }
+        $tripodOutput | Set-Content -LiteralPath `
+            (Join-Path $evidenceDir 'radv-compute-tripod-console.txt') -Encoding UTF8
+        Write-Host $tripodOutput
+        if ($tripodExit -ne 0) {
+            Write-Warning ('RADV_WDDM_COMPUTE_TRIPOD falhou (exit=' + $tripodExit +
+                '). Nao repita este build; o watchdog permanece armado e a evidencia esta gravada.')
+        }
+        }
+    }
+}
+
+# A6 (06/09) - ARQUIVAMENTO DO LOG INTEGRAL DO KMD.
+#
+# MOTIVO: a corrida 2026-09-06_20-34 fechou a pasta de evidencia SEM o log do
+# KMD. O binder de laboratorio nunca chamou capture-bc250mcdm-binding.ps1 (so o
+# binder de producao chama), e o log vive em C:\bc250_display_log.txt, que e'
+# CUMULATIVO e sobrescrito pelo bind seguinte. A unica copia dos numeros que
+# sustentam o handoff 172 teve de ser recuperada a mao as 21:08.
+#
+# O delta deste bind ja e' gravado em display-log-this-bind.txt, mas o delta
+# depende de o roteiro chegar aquele ponto. Este bloco arquiva o arquivo
+# INTEGRAL com SHA-256, para que a evidencia sobreviva mesmo se o ciclo morrer
+# antes -- e o offset de baseline permite recortar este bind depois.
+if (Test-Path -LiteralPath $displayLogPath -PathType Leaf) {
+    $fullLogDest = Join-Path $evidenceDir 'bc250_display_log-full.txt'
+    Copy-Item -LiteralPath $displayLogPath -Destination $fullLogDest -Force
+    [ordered]@{
+        source = $displayLogPath
+        archived_as = 'bc250_display_log-full.txt'
+        bytes = [int64](Get-Item -LiteralPath $fullLogDest).Length
+        sha256 = (Get-FileHash -LiteralPath $fullLogDest -Algorithm SHA256).Hash
+        bind_start_offset = $displayLogStartOffset
+        note = 'arquivo cumulativo: recortar deste bind a partir de bind_start_offset'
+        archived_at = (Get-Date).ToString('o')
+        hardware_validated = $false
+    } | ConvertTo-Json | Set-Content -LiteralPath `
+        (Join-Path $evidenceDir 'display-log-archive.json') -Encoding UTF8
+} else {
+    'C:\bc250_display_log.txt ausente no fim do bind.' |
+        Set-Content -LiteralPath (Join-Path $evidenceDir 'display-log-archive.json') -Encoding ASCII
+}
+
+# B2: Arquivamento dos logs da UMD pelo binder de lab
+$umdLogCollected = $false
+$umdAggregate = Join-Path $evidenceDir 'bc250_umd_log.txt'
+$umdLogs = @(Get-ChildItem -LiteralPath 'C:\Windows\Temp' `
+    -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue |
+    Sort-Object Name)
+foreach ($umdLog in $umdLogs) {
+    Copy-Item -LiteralPath $umdLog.FullName `
+        -Destination (Join-Path $evidenceDir $umdLog.Name.ToLowerInvariant()) -Force
+    ("===== {0} =====" -f $umdLog.Name),
+        (Get-Content -LiteralPath $umdLog.FullName -ErrorAction SilentlyContinue) |
+        Add-Content -LiteralPath $umdAggregate -Encoding UTF8
+    $umdLogCollected = $true
+}
+if (-not $umdLogCollected) {
+    'bc250umd.dll nunca escreveu: a DLL nao foi carregada por nenhum processo.' |
+        Set-Content -LiteralPath $umdAggregate -Encoding UTF8
 }
 
 # Registro duravel do que foi realmente instalado, gravado ANTES de qualquer

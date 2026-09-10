@@ -1,0 +1,8 @@
+22:20:20.266 [pid=9600 dxgiadaptercache.exe] === bc250umd.dll CARREGADA ===
+22:20:20.267 [pid=9600 dxgiadaptercache.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.267 [pid=9600 dxgiadaptercache.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.267 [pid=9600 dxgiadaptercache.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.267 [pid=9600 dxgiadaptercache.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.268 [pid=9600 dxgiadaptercache.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:20.271 [pid=9600 dxgiadaptercache.exe] === bc250umd.dll CARREGADA ===
+22:20:20.272 [pid=9600 dxgiadaptercache.exe] OpenAdapter12: D3D12 nao implementado nativamente -> E_NOTIMPL

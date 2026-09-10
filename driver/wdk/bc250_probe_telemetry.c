@@ -169,6 +169,8 @@ static PCWSTR Bc250ProbeFieldName(BC250_PROBE_FIELD Field)
         return L"SecondPreflightStage";
     case BC250_PROBE_SECOND_READONLY_GATE_PASSED:
         return L"SecondReadonlyGatePassed";
+    case BC250_PROBE_SECOND_PREFLIGHT_STATUS:
+        return L"SecondPreflightStatus";
     case BC250_PROBE_VRAM_PROBE_STATUS: return L"VramProbeStatus";
     case BC250_PROBE_VRAM_PROBE_OFFSET_LOW32:
         return L"VramProbeOffsetLow32";

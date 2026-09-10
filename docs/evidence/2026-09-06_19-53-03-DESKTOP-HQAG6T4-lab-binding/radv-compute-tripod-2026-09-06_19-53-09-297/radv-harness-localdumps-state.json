@@ -1,0 +1,21 @@
+﻿{
+    "state":  "RESTORED",
+    "token":  "a6003a20-586f-4ced-bfcc-e96749f3fcfd",
+    "image_name":  "bc250-radv-compute-gate.exe",
+    "registry_key":  "HKLM\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\LocalDumps\\bc250-radv-compute-gate.exe",
+    "dump_folder":  "C:\\Windows\\Temp\\BC250_RADV_DUMPS_a6003a20586f4cedbfcce96749f3fcfd",
+    "prior_key_existed":  true,
+    "snapshot_file":  "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\docs\\evidence\\2026-09-06_19-53-03-DESKTOP-HQAG6T4-lab-binding\\radv-compute-tripod-2026-09-06_19-53-09-297\\radv-harness-localdumps-before.reg",
+    "dump_count":  2,
+    "dump_type":  2,
+    "preparing_at":  "2026-09-06T19:53:09.5969718-03:00",
+    "hardware_validated":  false,
+    "armed_at":  "2026-09-06T19:53:09.7434723-03:00",
+    "registry_restored_at":  "2026-09-06T20:10:05.4923270-03:00",
+    "dump_files_collected":  0,
+    "pending_dump_files":  [
+
+                           ],
+    "dump_folder_cleanup_pending":  false,
+    "restored_at":  "2026-09-06T20:10:05.5174102-03:00"
+}

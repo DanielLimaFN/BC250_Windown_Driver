@@ -1,0 +1,3 @@
+﻿Copia integral do log vivo do KMD, feita pelo watchdog de lab ANTES do rollback.
+Linhas: 26011
+SHA-256: 7FF0BA4A936AF1F4FC327CA8757A29EBD8E2A335914F470DEF6F6F5944EF0C46

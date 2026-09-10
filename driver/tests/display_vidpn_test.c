@@ -702,6 +702,40 @@ static int Bc250RunDisplayVidPnTest(void)
     CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.RotationSupport.Identity == 1);
     CHECK(g_FakeVidPn.PathReleases == releaseBaseline + 1);
 
+    /* The DMM contract forbids changing support for the active scaling or
+     * rotation pivot.  The other (non-pivot) field must still be sanitized
+     * to keep the 0x113/0x1C protection. */
+    RtlZeroMemory(&g_FakeVidPn.Path.ContentTransformation.ScalingSupport,
+        sizeof(g_FakeVidPn.Path.ContentTransformation.ScalingSupport));
+    g_FakeVidPn.Path.ContentTransformation.ScalingSupport.Centered = 1;
+    RtlZeroMemory(&g_FakeVidPn.Path.ContentTransformation.RotationSupport,
+        sizeof(g_FakeVidPn.Path.ContentTransformation.RotationSupport));
+    g_FakeVidPn.Path.ContentTransformation.RotationSupport.Rotate90 = 1;
+    g_FakeVidPn.Path.ContentTransformation.RotationSupport.Offset90 = 1;
+
+    enumCofunc.EnumPivotType = D3DKMDT_EPT_SCALING;
+    enumCofunc.EnumPivot.VidPnSourceId = 0;
+    enumCofunc.EnumPivot.VidPnTargetId = 0;
+    CHECK(Bc250DxgkDdiEnumVidPnCofuncModality(NULL, &enumCofunc) == STATUS_SUCCESS);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.ScalingSupport.Centered == 1);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.ScalingSupport.Identity == 0);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.RotationSupport.Identity == 1);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.RotationSupport.Offset0 == 1);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.RotationSupport.Rotate90 == 0);
+
+    enumCofunc.EnumPivotType = D3DKMDT_EPT_ROTATION;
+    CHECK(Bc250DxgkDdiEnumVidPnCofuncModality(NULL, &enumCofunc) == STATUS_SUCCESS);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.RotationSupport.Rotate90 == 1);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.RotationSupport.Offset90 == 1);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.RotationSupport.Identity == 0);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.ScalingSupport.Identity == 1);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.ScalingSupport.Centered == 0);
+
+    RtlZeroMemory(&g_FakeVidPn.Path.ContentTransformation.ScalingSupport,
+        sizeof(g_FakeVidPn.Path.ContentTransformation.ScalingSupport));
+    RtlZeroMemory(&g_FakeVidPn.Path.ContentTransformation.RotationSupport,
+        sizeof(g_FakeVidPn.Path.ContentTransformation.RotationSupport));
+
     enumCofunc.EnumPivotType = D3DKMDT_EPT_VIDPNSOURCE;
     enumCofunc.EnumPivot.VidPnSourceId = 0;
     releaseBaseline = g_FakeVidPn.SourceSetReleases;

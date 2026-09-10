@@ -83,7 +83,7 @@ static int Bc250RunSdmaPacketBuilderTest(void)
         g_ring, TEST_RING_DWORDS, &cursor,
         0x0000000003000000ull, 0x5A5A5A5Au, 4096u) == BC250_SDMA_OK);
     CHECK(cursor == 5u);
-    CHECK(g_ring[0] == 0x0000020Bu); /* Opcode 11, Size 2 (DWORD) */
+    CHECK(g_ring[0] == 0x8000000Bu); /* Opcode 11, Size 2 (DWORD) in bits 30-31 */
     CHECK(g_ring[1] == 0x03000000u); /* Dst Low */
     CHECK(g_ring[2] == 0x00000000u); /* Dst High */
     CHECK(g_ring[3] == 0x5A5A5A5Au); /* Fill value */
@@ -161,6 +161,98 @@ static int Bc250RunSdmaPacketBuilderTest(void)
         g_ring, TEST_RING_DWORDS, &cursor, 0x1001ull /* misaligned */, 0xAAu, 4096u) == BC250_SDMA_MISALIGNED);
     CHECK(Bc250SdmaEmitFence(
         g_ring, TEST_RING_DWORDS, &cursor, 0x1002ull /* misaligned */, 0x1u) == BC250_SDMA_MISALIGNED);
+
+    /*
+     * 6b. LAYOUT BYTE A BYTE DO INDIRECT (07/09).
+     *
+     * O pre-pad ja estava travado abaixo, mas os SEIS dwords do pacote nao
+     * estavam -- e e' o conteudo deles que a engine consome. O doc 167 lista
+     * como pergunta aberta 6 exatamente "o formato do nosso INDIRECT esta
+     * correto para SDMA 5.0?". Este bloco congela a resposta que temos, para
+     * que o pacote nao possa mudar em silencio.
+     *
+     * Layout esperado de SDMA_PKT_INDIRECT (SDMA 5.0):
+     *   [0] header      = OP_INDIRECT | (vmid << 16)
+     *   [1] base_lo     = IbAddress[31:0] com os 5 bits baixos zerados
+     *   [2] base_hi     = IbAddress[63:32]
+     *   [3] ib_size     = tamanho em DWORDS
+     *   [4] csa_lo      = CsaAddress[31:0]
+     *   [5] csa_hi      = CsaAddress[63:32]
+     */
+    {
+        uint32_t base = 0u;
+        cursor = 0u;
+        for (i = 0u; i < 16u; ++i) {
+            g_ring[i] = 0xDEADBEEFu;
+        }
+        CHECK(Bc250SdmaEmitIndirect(g_ring, TEST_RING_DWORDS, &cursor,
+            0x0000000146602000ull, 8u, 0ull, 8u) == BC250_SDMA_OK);
+        CHECK(cursor == BC250_SDMA_DWORDS_INDIRECT);
+
+        CHECK(g_ring[base + 0u] == (BC250_SDMA_OP_INDIRECT | (8u << 16)));
+        CHECK(g_ring[base + 1u] == 0x46602000u);   /* alinhado a 32 B */
+        CHECK(g_ring[base + 2u] == 0x00000001u);
+        CHECK(g_ring[base + 3u] == 8u);            /* dwords, nao bytes */
+        CHECK(g_ring[base + 4u] == 0u);            /* CSA=0: ver nota abaixo */
+        CHECK(g_ring[base + 5u] == 0u);
+
+        /*
+         * CSA = 0 e' DELIBERADO, nao esquecimento. O upstream so' devolve um
+         * CSA nao nulo quando a preempcao no meio do comando esta habilitada
+         * (MCBP); com ela desligada -- que e' o nosso caso desde que
+         * F_CNTL_MIDCMD saiu do CNTL -- o endereco correto e' zero.
+         * Classificacao: H (recordado do upstream; nao ha copia local do
+         * amdgpu neste repositorio para conferir).
+         */
+
+        /* Os 5 bits baixos do base_lo sao sempre zerados pelo builder. */
+        cursor = 0u;
+        CHECK(Bc250SdmaEmitIndirect(g_ring, TEST_RING_DWORDS, &cursor,
+            0x0000000146602020ull, 8u, 0ull, 8u) == BC250_SDMA_OK);
+        CHECK(g_ring[1] == 0x46602020u);
+
+        /* VMID entra no bit 16, e 15 e' o maximo aceito. */
+        cursor = 0u;
+        CHECK(Bc250SdmaEmitIndirect(g_ring, TEST_RING_DWORDS, &cursor,
+            0x1000ull, 4u, 0ull, 15u) == BC250_SDMA_OK);
+        CHECK(g_ring[0] == (BC250_SDMA_OP_INDIRECT | (15u << 16)));
+
+        /* Recusas: VMID fora de faixa, tamanho zero, tamanho absurdo. */
+        cursor = 0u;
+        CHECK(Bc250SdmaEmitIndirect(g_ring, TEST_RING_DWORDS, &cursor,
+            0x1000ull, 4u, 0ull, 16u) == BC250_SDMA_BAD_ARGUMENT);
+        CHECK(Bc250SdmaEmitIndirect(g_ring, TEST_RING_DWORDS, &cursor,
+            0x1000ull, 0u, 0ull, 8u) == BC250_SDMA_BAD_ARGUMENT);
+        CHECK(Bc250SdmaEmitIndirect(g_ring, TEST_RING_DWORDS, &cursor,
+            0x1000ull, 0x100000u, 0ull, 8u) == BC250_SDMA_BAD_ARGUMENT);
+
+        /* IB desalinhada e CSA desalinhado falham fechado. */
+        CHECK(Bc250SdmaEmitIndirect(g_ring, TEST_RING_DWORDS, &cursor,
+            0x1001ull, 4u, 0ull, 8u) == BC250_SDMA_MISALIGNED);
+        CHECK(Bc250SdmaEmitIndirect(g_ring, TEST_RING_DWORDS, &cursor,
+            0x1000ull, 4u, 0x2001ull, 8u) == BC250_SDMA_MISALIGNED);
+    }
+
+    /* 7. SDMA 5.0: INDIRECT de 6 DW deve terminar em fronteira de 8 DW. */
+    CHECK(Bc250SdmaIndirectPrePadDwords(0u) == 2u);
+    CHECK(Bc250SdmaIndirectPrePadDwords(2u) == 0u);
+    CHECK(Bc250SdmaIndirectPrePadDwords(13u) == 5u);
+    CHECK(Bc250SdmaIndirectPrePadDwords(17u) == 1u);
+    for (i = 0u; i < 32u; ++i) {
+        uint32_t pad = Bc250SdmaIndirectPrePadDwords(i);
+        CHECK(pad < BC250_SDMA_IB_PACKET_ALIGNMENT_DWORDS);
+        CHECK(((i + pad + BC250_SDMA_DWORDS_INDIRECT) & 7u) == 0u);
+    }
+
+    /* 8. O tamanho publicado da propria IB tambem preserva o proximo VA. */
+    CHECK(Bc250SdmaIbSizePadDwords(15u) == 1u);
+    CHECK(Bc250SdmaIbSizePadDwords(16u) == 0u);
+    CHECK(Bc250SdmaIbSizePadDwords(21u) == 3u);
+    for (i = 0u; i < 32u; ++i) {
+        uint32_t pad = Bc250SdmaIbSizePadDwords(i);
+        CHECK(pad < BC250_SDMA_IB_PACKET_ALIGNMENT_DWORDS);
+        CHECK(((i + pad) & 7u) == 0u);
+    }
 
     return 1;
 }

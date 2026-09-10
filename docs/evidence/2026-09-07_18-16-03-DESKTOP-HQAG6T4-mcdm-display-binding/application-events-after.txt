@@ -1,0 +1,201 @@
+﻿
+
+TimeCreated      : 07/09/2026 18:16:34
+ProviderName     : Application Error
+Id               : 1000
+LevelDisplayName : Erro
+Message          : Nome do aplicativo com falha: dwm.exe, versão: 10.0.19041.746, carimbo de data/hora: 0x6be51595
+                   Nome do módulo com falha: KERNELBASE.dll, versão: 10.0.19041.2913, carimbo de data/hora: 0xa1c3e870
+                   Código de exceção: 0xe0464645
+                   Deslocamento da falha: 0x000000000012d862
+                   ID do processo com falha: 0x1168
+                   Hora de início do aplicativo com falha: 0x01dd3f0e24db679e
+                   Caminho do aplicativo com falha: C:\Windows\system32\dwm.exe
+                   Caminho do módulo com falha: C:\Windows\System32\KERNELBASE.dll
+                   ID do Relatório: 35cfb3e8-f0cc-43dc-a708-90a5f678e3bd
+                   Nome completo do pacote com falha: 
+                   ID do aplicativo relativo ao pacote com falha: 
+
+TimeCreated      : 07/09/2026 18:16:27
+ProviderName     : Dwminit
+Id               : 0
+LevelDisplayName : Aviso
+Message          : O processo do Gerenciador de Janelas da Área de Trabalho foi encerrado. (Código de saída de processo: 0xe0464645, Contagem de reinicialização: 3, ID do dispositivo de vídeo principal: AMD BC-250 Graphics (Cyan Skillfish 
+                   2))
+
+TimeCreated      : 07/09/2026 18:16:26
+ProviderName     : Windows Error Reporting
+Id               : 1001
+LevelDisplayName : Informações
+Message          : Falha no bucket 1376811129409705666, tipo 4
+                   Nome do Evento: APPCRASH
+                   Resposta: Não disponível
+                   ID do CAB: 0
+                   
+                   Assinatura do problema:
+                   P1: dwm.exe
+                   P2: 10.0.19041.746
+                   P3: 6be51595
+                   P4: KERNELBASE.dll
+                   P5: 10.0.19041.2913
+                   P6: a1c3e870
+                   P7: e0464645
+                   P8: 000000000012d862
+                   P9: 
+                   P10: 
+                   
+                   Arquivos anexados:
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER9756.tmp.dmp
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER97A5.tmp.WERInternalMetadata.xml
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER97B5.tmp.xml
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER97C7.tmp.csv
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER97D8.tmp.txt
+                   
+                   Esses arquivos talvez estejam disponíveis em:
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\ReportArchive\AppCrash_dwm.exe_784a9f3d7581a03356d4f6ff582fa17ff64ba4_c2f10bab_84c6f8a7-ee53-4f0c-9882-70ab2ce96c72
+                   
+                   Símbolo da análise: 
+                   Verificando novamente se há uma solução: 0
+                   ID do Relatório: 1dbb0943-95fa-45e6-b9bc-7e8466bbc849
+                   Status do Relatório: 268435456
+                   Bucket com hash: 3b8330d47c6496f7331b6a6d734516c2Guid do CAB: 0
+
+TimeCreated      : 07/09/2026 18:16:25
+ProviderName     : Application Error
+Id               : 1000
+LevelDisplayName : Erro
+Message          : Nome do aplicativo com falha: dwm.exe, versão: 10.0.19041.746, carimbo de data/hora: 0x6be51595
+                   Nome do módulo com falha: KERNELBASE.dll, versão: 10.0.19041.2913, carimbo de data/hora: 0xa1c3e870
+                   Código de exceção: 0xe0464645
+                   Deslocamento da falha: 0x000000000012d862
+                   ID do processo com falha: 0xb28
+                   Hora de início do aplicativo com falha: 0x01dd3f0e2341fc09
+                   Caminho do aplicativo com falha: C:\Windows\system32\dwm.exe
+                   Caminho do módulo com falha: C:\Windows\System32\KERNELBASE.dll
+                   ID do Relatório: 1dbb0943-95fa-45e6-b9bc-7e8466bbc849
+                   Nome completo do pacote com falha: 
+                   ID do aplicativo relativo ao pacote com falha: 
+
+TimeCreated      : 07/09/2026 18:16:24
+ProviderName     : Dwminit
+Id               : 0
+LevelDisplayName : Aviso
+Message          : O processo do Gerenciador de Janelas da Área de Trabalho foi encerrado. (Código de saída de processo: 0xe0464645, Contagem de reinicialização: 2, ID do dispositivo de vídeo principal: AMD BC-250 Graphics (Cyan Skillfish 
+                   2))
+
+TimeCreated      : 07/09/2026 18:16:17
+ProviderName     : Windows Error Reporting
+Id               : 1001
+LevelDisplayName : Informações
+Message          : Falha no bucket 1376811129409705666, tipo 4
+                   Nome do Evento: APPCRASH
+                   Resposta: Não disponível
+                   ID do CAB: 0
+                   
+                   Assinatura do problema:
+                   P1: dwm.exe
+                   P2: 10.0.19041.746
+                   P3: 6be51595
+                   P4: KERNELBASE.dll
+                   P5: 10.0.19041.2913
+                   P6: a1c3e870
+                   P7: e0464645
+                   P8: 000000000012d862
+                   P9: 
+                   P10: 
+                   
+                   Arquivos anexados:
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER720B.tmp.dmp
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER7269.tmp.WERInternalMetadata.xml
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER727A.tmp.xml
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER727A.tmp.csv
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER729A.tmp.txt
+                   
+                   Esses arquivos talvez estejam disponíveis em:
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\ReportArchive\AppCrash_dwm.exe_784a9f3d7581a03356d4f6ff582fa17ff64ba4_c2f10bab_1e3a7ab6-e0f3-4c28-9295-ac0a805d561b
+                   
+                   Símbolo da análise: 
+                   Verificando novamente se há uma solução: 0
+                   ID do Relatório: 5c5bf0bb-f20a-4ba4-a1fc-1c60802a8f76
+                   Status do Relatório: 268435456
+                   Bucket com hash: 3b8330d47c6496f7331b6a6d734516c2Guid do CAB: 0
+
+TimeCreated      : 07/09/2026 18:16:15
+ProviderName     : Application Error
+Id               : 1000
+LevelDisplayName : Erro
+Message          : Nome do aplicativo com falha: dwm.exe, versão: 10.0.19041.746, carimbo de data/hora: 0x6be51595
+                   Nome do módulo com falha: KERNELBASE.dll, versão: 10.0.19041.2913, carimbo de data/hora: 0xa1c3e870
+                   Código de exceção: 0xe0464645
+                   Deslocamento da falha: 0x000000000012d862
+                   ID do processo com falha: 0x1848
+                   Hora de início do aplicativo com falha: 0x01dd3f0e1d8f77d6
+                   Caminho do aplicativo com falha: C:\Windows\system32\dwm.exe
+                   Caminho do módulo com falha: C:\Windows\System32\KERNELBASE.dll
+                   ID do Relatório: 5c5bf0bb-f20a-4ba4-a1fc-1c60802a8f76
+                   Nome completo do pacote com falha: 
+                   ID do aplicativo relativo ao pacote com falha: 
+
+TimeCreated      : 07/09/2026 18:16:14
+ProviderName     : Dwminit
+Id               : 0
+LevelDisplayName : Aviso
+Message          : O processo do Gerenciador de Janelas da Área de Trabalho foi encerrado. (Código de saída de processo: 0xe0464645, Contagem de reinicialização: 1, ID do dispositivo de vídeo principal: AMD BC-250 Graphics (Cyan Skillfish 
+                   2))
+
+TimeCreated      : 07/09/2026 18:16:07
+ProviderName     : Windows Error Reporting
+Id               : 1001
+LevelDisplayName : Informações
+Message          : Falha no bucket 1376811129409705666, tipo 4
+                   Nome do Evento: APPCRASH
+                   Resposta: Não disponível
+                   ID do CAB: 0
+                   
+                   Assinatura do problema:
+                   P1: dwm.exe
+                   P2: 10.0.19041.746
+                   P3: 6be51595
+                   P4: KERNELBASE.dll
+                   P5: 10.0.19041.2913
+                   P6: a1c3e870
+                   P7: e0464645
+                   P8: 000000000012d862
+                   P9: 
+                   P10: 
+                   
+                   Arquivos anexados:
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER4C04.tmp.dmp
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER4C92.tmp.WERInternalMetadata.xml
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER4CA3.tmp.xml
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER4CB0.tmp.csv
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\Temp\WER4CC1.tmp.txt
+                   
+                   Esses arquivos talvez estejam disponíveis em:
+                   \\?\C:\ProgramData\Microsoft\Windows\WER\ReportArchive\AppCrash_dwm.exe_784a9f3d7581a03356d4f6ff582fa17ff64ba4_c2f10bab_a043a68e-c80b-45f8-9755-7147fd1e7032
+                   
+                   Símbolo da análise: 
+                   Verificando novamente se há uma solução: 0
+                   ID do Relatório: b0497df4-04ea-44b4-b923-c67f51cd2b21
+                   Status do Relatório: 268435456
+                   Bucket com hash: 3b8330d47c6496f7331b6a6d734516c2Guid do CAB: 0
+
+TimeCreated      : 07/09/2026 18:16:05
+ProviderName     : Application Error
+Id               : 1000
+LevelDisplayName : Erro
+Message          : Nome do aplicativo com falha: dwm.exe, versão: 10.0.19041.746, carimbo de data/hora: 0x6be51595
+                   Nome do módulo com falha: KERNELBASE.dll, versão: 10.0.19041.2913, carimbo de data/hora: 0xa1c3e870
+                   Código de exceção: 0xe0464645
+                   Deslocamento da falha: 0x000000000012d862
+                   ID do processo com falha: 0x4d4
+                   Hora de início do aplicativo com falha: 0x01dd3f09d7cc31ec
+                   Caminho do aplicativo com falha: C:\Windows\system32\dwm.exe
+                   Caminho do módulo com falha: C:\Windows\System32\KERNELBASE.dll
+                   ID do Relatório: b0497df4-04ea-44b4-b923-c67f51cd2b21
+                   Nome completo do pacote com falha: 
+                   ID do aplicativo relativo ao pacote com falha: 
+
+
+
+

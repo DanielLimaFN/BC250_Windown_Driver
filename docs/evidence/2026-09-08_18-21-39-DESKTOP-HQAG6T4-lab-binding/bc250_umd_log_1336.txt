@@ -1,0 +1,224 @@
+18:21:51.550 [pid=1336 dwm.exe] === bc250umd.dll CARREGADA ===
+18:21:51.550 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.551 [pid=1336 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:21:51.551 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.551 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.551 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.552 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.552 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.553 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.553 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.553 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.554 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.554 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.554 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.554 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.555 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.555 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.555 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.557 [pid=1336 dwm.exe] === bc250umd.dll CARREGADA ===
+18:21:51.557 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.558 [pid=1336 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:21:51.558 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.558 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.558 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.559 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.559 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.559 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.559 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.601 [pid=1336 dwm.exe] === bc250umd.dll CARREGADA ===
+18:21:51.602 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.602 [pid=1336 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:21:51.602 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.602 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.602 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.603 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.603 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.603 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.603 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.603 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.603 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.604 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.604 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.604 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.604 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.604 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.604 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.606 [pid=1336 dwm.exe] === bc250umd.dll CARREGADA ===
+18:21:51.606 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.606 [pid=1336 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:21:51.606 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.607 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.607 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.607 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.607 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.607 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.608 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.618 [pid=1336 dwm.exe] === bc250umd.dll CARREGADA ===
+18:21:51.618 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.618 [pid=1336 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:21:51.619 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.619 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.619 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.619 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.619 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.620 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.620 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.620 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.620 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.620 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.620 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.621 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.621 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.621 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.621 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.622 [pid=1336 dwm.exe] === bc250umd.dll CARREGADA ===
+18:21:51.623 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.623 [pid=1336 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:21:51.623 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.623 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.623 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.624 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.624 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.624 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.624 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.635 [pid=1336 dwm.exe] === bc250umd.dll CARREGADA ===
+18:21:51.635 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.635 [pid=1336 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:21:51.635 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.636 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.636 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.636 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.637 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.637 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.638 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.638 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.638 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.638 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.639 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.639 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.639 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.639 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.640 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.641 [pid=1336 dwm.exe] === bc250umd.dll CARREGADA ===
+18:21:51.642 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.642 [pid=1336 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:21:51.642 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.642 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.643 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.643 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.643 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.644 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.644 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.650 [pid=1336 dwm.exe] === bc250umd.dll CARREGADA ===
+18:21:51.651 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.651 [pid=1336 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:21:51.651 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.652 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.652 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.652 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.653 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.653 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.653 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.654 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.654 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.654 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.654 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.654 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.655 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.655 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.655 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.656 [pid=1336 dwm.exe] === bc250umd.dll CARREGADA ===
+18:21:51.657 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.657 [pid=1336 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:21:51.657 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.657 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.658 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.658 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.658 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.659 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.659 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.668 [pid=1336 dwm.exe] === bc250umd.dll CARREGADA ===
+18:21:51.668 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.668 [pid=1336 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:21:51.669 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.669 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.669 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.669 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.669 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.670 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.670 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.670 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.670 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.670 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.671 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.671 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.671 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.671 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.671 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.673 [pid=1336 dwm.exe] === bc250umd.dll CARREGADA ===
+18:21:51.674 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.674 [pid=1336 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:21:51.674 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.674 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.674 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.675 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.675 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.675 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.675 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.684 [pid=1336 dwm.exe] === bc250umd.dll CARREGADA ===
+18:21:51.684 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.684 [pid=1336 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:21:51.684 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.684 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.685 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.685 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.685 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.685 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.686 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.686 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.686 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.686 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.687 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.687 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.687 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.687 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.687 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.689 [pid=1336 dwm.exe] === bc250umd.dll CARREGADA ===
+18:21:51.689 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.689 [pid=1336 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:21:51.689 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.690 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.690 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.690 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.690 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.691 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.691 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.701 [pid=1336 dwm.exe] === bc250umd.dll CARREGADA ===
+18:21:51.702 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.702 [pid=1336 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:21:51.702 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.702 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.702 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.703 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.703 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.703 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.703 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.704 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.704 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.704 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.704 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.704 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.705 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.705 [pid=1336 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:21:51.705 [pid=1336 dwm.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:21:51.706 [pid=1336 dwm.exe] === bc250umd.dll CARREGADA ===
+18:21:51.707 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.707 [pid=1336 dwm.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:21:51.707 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.707 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.707 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.708 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:21:51.708 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:21:51.708 [pid=1336 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:21:51.708 [pid=1336 dwm.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL

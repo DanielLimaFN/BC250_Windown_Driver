@@ -1,5 +1,10 @@
 [CmdletBinding()]
-param()
+param(
+    [ValidatePattern('^\d+\.\d+\.\d+\.\d+$')]
+    [string]$PackageDriverVersion,
+    [switch]$ArmTdrInducedHang,
+    [switch]$IAcceptDeliberateHangAndPossibleBugCheck
+)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -22,6 +27,19 @@ $manifestAudit = Join-Path $root 'tools\audit-bc250-cp-manifest.py'
 $safetyAudit = Join-Path $root 'tools\audit-bc250mcdm-safety.py'
 $ddiAudit = Join-Path $root 'tools\audit-mcdm-ddi-matrix.py'
 
+if ($ArmTdrInducedHang -and -not $IAcceptDeliberateHangAndPossibleBugCheck) {
+    throw ('Pacote TDR armado exige -IAcceptDeliberateHangAndPossibleBugCheck. ' +
+        'Ele trava a SDMA0 de proposito na primeira submissao do Node 0 e pode ' +
+        'terminar em BugCheck/reboot.')
+}
+if (-not $ArmTdrInducedHang -and $IAcceptDeliberateHangAndPossibleBugCheck) {
+    throw '-IAcceptDeliberateHangAndPossibleBugCheck so e valido com -ArmTdrInducedHang.'
+}
+if ($ArmTdrInducedHang -and [string]::IsNullOrWhiteSpace($PackageDriverVersion)) {
+    throw ('Pacote TDR armado exige -PackageDriverVersion com uma versao nova. ' +
+        'Nao reutilize a identidade do pacote fail-closed desarmado.')
+}
+
 function Find-Tool([string]$Name, [string[]]$Candidates) {
     foreach ($candidate in $Candidates) {
         if (Test-Path -LiteralPath $candidate) { return $candidate }
@@ -35,6 +53,17 @@ if (-not (Test-Path -LiteralPath $sourceSys)) {
     throw "Imagem ausente: $sourceSys. Execute driver\wdk\build-contract.bat."
 }
 if (-not (Test-Path -LiteralPath $sourceInf)) { throw "INF ausente: $sourceInf" }
+$sourceInfTextForPreflight = Get-Content -LiteralPath $sourceInf -Raw
+if ($sourceInfTextForPreflight -notmatch
+    '(?m)^DriverVer=([^,]+),(\d+\.\d+\.\d+\.\d+)\s*$') {
+    throw 'Pacote bloqueado: DriverVer fonte ausente ou invalido.'
+}
+$sourceDriverVersionForPreflight = $Matches[2]
+if ($ArmTdrInducedHang -and
+    $PackageDriverVersion -eq $sourceDriverVersionForPreflight) {
+    throw ('Pacote TDR bloqueado: -PackageDriverVersion precisa diferir da ' +
+        'versao fonte fail-closed.')
+}
 if (-not (Test-Path -LiteralPath $sourceSdmaFirmware)) { throw "Firmware SDMA ausente: $sourceSdmaFirmware" }
 if (-not (Test-Path -LiteralPath $sourceRlcFirmware)) { throw "Firmware RLC ausente: $sourceRlcFirmware" }
 if (-not (Test-Path -LiteralPath $sourcePfpFirmware)) { throw "Firmware PFP ausente: $sourcePfpFirmware" }
@@ -107,13 +136,23 @@ if (Test-Path -LiteralPath $vswhere) {
 }
 $dumpbin = Find-Tool 'dumpbin.exe' $dumpbinCandidates
 $inf2cat = Find-Tool 'Inf2Cat.exe' @(
+    'C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x86\Inf2Cat.exe',
     'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x86\Inf2Cat.exe',
     'C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x86\Inf2Cat.exe'
 )
 $signtool = Find-Tool 'signtool.exe' @(
+    'C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\signtool.exe',
     'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe',
     'C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe'
 )
+$compilerPath = Find-Tool 'cl.exe' @(
+    'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64\cl.exe'
+)
+if ($inf2cat -notmatch '\\10\.0\.28000\.0\\' -or
+    $signtool -notmatch '\\10\.0\.28000\.0\\' -or
+    $compilerPath -notmatch '\\Microsoft Visual Studio\\18\\') {
+    throw 'Pacote bloqueado: toolchain efetiva nao e VS2026 + SDK/WDK 28000.'
+}
 
 $symbols = (& $dumpbin /symbols $driverObject 2>&1) -join "`n"
 if ($LASTEXITCODE -ne 0) { throw 'dumpbin falhou ao auditar o objeto de DriverEntry.' }
@@ -154,6 +193,32 @@ Copy-Item -LiteralPath $sourcePfpFirmware -Destination $packagePfpFirmware -Forc
 Copy-Item -LiteralPath $sourceMeFirmware -Destination $packageMeFirmware -Force
 Copy-Item -LiteralPath $sourceCeFirmware -Destination $packageCeFirmware -Force
 Copy-Item -LiteralPath $sourceMecFirmware -Destination $packageMecFirmware -Force
+
+# item 25: o pacote de uma unica corrida precisa nascer armado, porque o AddReg
+# cria a chave durante a instalacao e StartDevice le o valor no mesmo bind. A
+# fonte permanece fail-closed (0); somente o INF EMPACOTADO recebe 1, antes do
+# Inf2Cat, e o manifesto deriva o estado desse INF materializado.
+$packageInfText = Get-Content -LiteralPath $packageInf -Raw
+if (-not [string]::IsNullOrWhiteSpace($PackageDriverVersion)) {
+    if ($packageInfText -notmatch '(?m)^DriverVer=([^,]+),(\d+\.\d+\.\d+\.\d+)\s*$') {
+        throw 'Pacote bloqueado: DriverVer fonte ausente ou invalido.'
+    }
+    $driverDate = $Matches[1]
+    $packageInfText = [regex]::Replace(
+        $packageInfText,
+        '(?m)^DriverVer=[^,]+,\d+\.\d+\.\d+\.\d+\s*$',
+        "DriverVer=$driverDate,$PackageDriverVersion")
+}
+if ($ArmTdrInducedHang) {
+    if ($packageInfText -notmatch '(?m)^HKR,Parameters,TdrInduceHang,0x00010001,0\s*$') {
+        throw 'Pacote TDR bloqueado: a fonte nao esta explicitamente fail-closed em TdrInduceHang=0.'
+    }
+    $packageInfText = [regex]::Replace(
+        $packageInfText,
+        '(?m)^HKR,Parameters,TdrInduceHang,0x00010001,0\s*$',
+        'HKR,Parameters,TdrInduceHang,0x00010001,1')
+}
+[System.IO.File]::WriteAllText($packageInf, $packageInfText, [System.Text.UTF8Encoding]::new($false))
 if (Test-Path -LiteralPath $sourceUmd) {
     Copy-Item -LiteralPath $sourceUmd -Destination $packageUmd -Force
     & $signtool sign /sha1 $certificateThumbprint /fd SHA256 $packageUmd
@@ -183,15 +248,60 @@ foreach ($signedPath in @($packageSys, $packageCat)) {
     }
 }
 
-$driverVersionLine = Get-Content -LiteralPath $packageInf |
+$packageInfLines = Get-Content -LiteralPath $packageInf
+$driverVersionLine = $packageInfLines |
     Where-Object { $_ -match '^DriverVer=' } |
     Select-Object -First 1
+# A13: o manifesto NAO pode declarar por literal o que o INF grava no registro.
+# SdmaPlanoAFallback muda o comportamento do SubmitCommandVirtual, e hardcodar
+# aqui criaria a segunda fonte de verdade que ja mordeu este projeto na
+# geometria de GPUVA (faixa A11). Sai do INF empacotado, ou o pacote e recusado.
+$planoAFallbackLine = $packageInfLines |
+    Where-Object { $_ -match '^HKR,Parameters,SdmaPlanoAFallback,0x00010001,(\d+)$' } |
+    Select-Object -First 1
+if (-not $planoAFallbackLine) {
+    throw 'Pacote bloqueado: INF sem HKR,Parameters,SdmaPlanoAFallback -- o manifesto nao pode declarar o modo de submissao.'
+}
+$planoAFallbackLine -match '^HKR,Parameters,SdmaPlanoAFallback,0x00010001,(\d+)$' | Out-Null
+$planoAFallbackValue = [int]$Matches[1]
+# item 25: o manifesto tambem declara se o pacote arma hang de proposito. Sai do
+# INF empacotado pelo mesmo motivo do PLANO A -- nao pode haver segunda fonte de
+# verdade sobre o que o driver vai fazer no silicio.
+$induceHangLine = $packageInfLines |
+    Where-Object { $_ -match '^HKR,Parameters,TdrInduceHang,0x00010001,(\d+)$' } |
+    Select-Object -First 1
+if (-not $induceHangLine) {
+    throw 'Pacote bloqueado: INF sem HKR,Parameters,TdrInduceHang -- o manifesto nao pode declarar o ensaio de TDR.'
+}
+$induceHangLine -match '^HKR,Parameters,TdrInduceHang,0x00010001,(\d+)$' | Out-Null
+$induceHangValue = [int]$Matches[1]
 $manifest = [ordered]@{
     SchemaVersion = 1
-    BuildKind = 'MCDM_FAIL_CLOSED'
+    BuildKind = if ($induceHangValue -eq 1) { 'MCDM_TDR_INDUCED_HANG' } else { 'MCDM_FAIL_CLOSED' }
     BuiltAtUtc = [DateTime]::UtcNow.ToString('o')
     DriverVer = $driverVersionLine -replace '^DriverVer=', ''
     HardwareValidated = $false
+    ProfileMode = 'DISPLAY_RENDER_FAIL_CLOSED'
+    WddmContractVersion = 20
+    RenderNode = 1
+    RenderOnlyLab = 0
+    SkipHwBringup = 1
+    ShaderDispatchEnabled = $false
+    CpSoftResetEnabled = $false
+    Vmid0PageTableEnabled = $false
+    SdmaAutoCtxSwEnabled = $true
+    PersistentSubmissionEnabled = $true
+    GpuvaLabPromotionEnabled = $false
+    SdmaPlanoAFallback = $planoAFallbackValue
+    SdmaPlanoAFallbackEnabled = ($planoAFallbackValue -ne 0)
+    TdrInduceHang = $induceHangValue
+    TdrInduceHangArmed = ($induceHangValue -ne 0)
+    VisualStudio = '2026'
+    CompilerPath = $compilerPath
+    CompilerFileVersion = (Get-Item -LiteralPath $compilerPath).VersionInfo.FileVersion
+    WindowsKitVersion = '10.0.28000.0'
+    Inf2CatPath = $inf2cat
+    SignToolPath = $signtool
     SourceSysSha256 = (Get-FileHash -LiteralPath $sourceSys -Algorithm SHA256).Hash
     PackageSysSha256 = (Get-FileHash -LiteralPath $packageSys -Algorithm SHA256).Hash
     PackageInfSha256 = (Get-FileHash -LiteralPath $packageInf -Algorithm SHA256).Hash
@@ -208,6 +318,10 @@ $manifest = [ordered]@{
 }
 $manifest | ConvertTo-Json | Set-Content -LiteralPath $packageManifest -Encoding utf8
 
-Write-Host "Pacote MCDM fail-closed construido: $packageDir"
+Write-Host "Pacote MCDM construido: $packageDir"
 Write-Host "Manifesto de build: $packageManifest"
+if ($induceHangValue -eq 1) {
+    Write-Warning ('PACOTE TDR ARMADO: a primeira submissao do Node 0 trava a SDMA0 ' +
+        'de proposito; BugCheck/reboot e um desfecho possivel do ensaio.')
+}
 Write-Host "NAO VALIDADO EM HARDWARE; ativacao permanece bloqueada ate os gates runtime."

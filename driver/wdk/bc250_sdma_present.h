@@ -4,6 +4,8 @@
 #include <ntddk.h>
 #include <dispmprt.h>
 #include "../core/bc250_sdma_packet_builder.h"
+#include "../core/bc250_blt_proof_contract.h"
+#include "../core/bc250_tdr_recovery_contract.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,19 +34,21 @@ extern "C" {
  *   0x03FC4  HDP_MEM_COHERENCY_FLUSH_CNTL  (bloco HDP)
  *   0x03FCC  HDP_MISC_CNTL                 (bloco HDP)
  *   0x049EC.. registradores do SDMA0
+ *   0x08020  GRBM_SOFT_RESET
  *
  * A janela anterior comecava em 0x04000 com 4 KB, o que deixava os dois
  * registradores de HDP FORA do mapeamento -- por construcao, a sequencia de
  * coerencia provada em silicio (Bc250SdmaHdp, bc250_sdma_ring_work.c) nunca
  * podia ser executada por este modulo.  A janela agora comeca em 0x03000 e
- * cobre 8 KB (0x03000..0x04FFF).
+ * cobre 24 KB (0x03000..0x08FFF). O limite superior nao e' opcional: sem
+ * ele, o helper de MMIO rejeita 0x08020 e o pulso de reset vira no-op.
  *
  * Proveniencia dos offsets de HDP: dbg/hw.c:5661 (provado em silicio),
  * driver/wdk/bc250_sdma_ring_work.c:55-57 e
  * docs/03_CATALOGO_DE_REGISTRADORES.md.
  */
 #define BC250_SDMA0_MMIO_WINDOW_START     0x03000u
-#define BC250_SDMA0_MMIO_WINDOW_BYTES     0x02000u
+#define BC250_SDMA0_MMIO_WINDOW_BYTES     0x06000u  /* 24 KB (0x03000..0x08FFF): cobre HDP, SDMA0 e GRBM_SOFT_RESET (0x08020) */
 #define BC250_SDMA0_REG_BASE_OFFSET       0x04000u
 #define BC250_SDMA0_REG_HDP_INVALIDATE    0x03FC4u
 #define BC250_SDMA0_REG_HDP_MISC          0x03FCCu
@@ -63,6 +67,14 @@ extern "C" {
  * Fonte: docs/03_CATALOGO_DE_REGISTRADORES.md:466,493,541.
  */
 #define BC250_SDMA0_REG_STATUS1           0x04A18u
+/*
+ * Catalogo docs/03_CATALOGO_DE_REGISTRADORES.md, tabela de leitura P1.
+ * Somente leitura. SDMA0_STATUS2_REG NAO entra: o catalogo tem a mascara do
+ * campo CMD_OP (linha 542) mas nao o offset do registrador, e a Lei 7 proibe
+ * inferir endereco.
+ */
+#define BC250_SDMA0_REG_FREEZE            0x04A2Cu
+#define BC250_SDMA0_REG_STATUS3           0x04AB0u
 #define BC250_SDMA0_REG_F32_CNTL          0x04A28u
 #define BC250_SDMA0_REG_HDP_FLUSH         0x04A80u
 /*
@@ -73,6 +85,14 @@ extern "C" {
  * driver/wdk/bc250_sdma_ring_work.c:38-39.
  */
 #define BC250_SDMA0_REG_UTCL1_CNTL        0x04A70u
+#define BC250_SDMA0_UTCL1_CNTL_FORCE_INVALIDATION 0x00004000u
+#define BC250_SDMA0_REG_UTCL1_RD_STATUS   0x04A78u
+#define BC250_SDMA0_REG_UTCL1_WR_STATUS   0x04A7Cu
+#define BC250_SDMA0_REG_UTCL1_RD_XNACK0   0x04A8Cu
+#define BC250_SDMA0_REG_UTCL1_RD_XNACK1   0x04A90u
+#define BC250_SDMA0_REG_UTCL1_WR_XNACK0   0x04A94u
+#define BC250_SDMA0_REG_UTCL1_WR_XNACK1   0x04A98u
+#define BC250_SDMA0_REG_UTCL1_TIMEOUT     0x04A9Cu
 #define BC250_SDMA0_REG_UTCL1_PAGE        0x04AA0u
 #define BC250_SDMA0_REG_ERROR_LOG         0x04AC0u
 #define BC250_SDMA0_REG_RB_CNTL           0x04B80u
@@ -90,11 +110,48 @@ extern "C" {
 #define BC250_SDMA0_REG_WPTR_POLL_ADDR_HI 0x04C48u
 #define BC250_SDMA0_REG_WPTR_POLL_ADDR_LO 0x04C4Cu
 #define BC250_SDMA0_REG_MINOR_PTR         0x04C54u
+/*
+ * GRBM_SOFT_RESET (0x08020) no BAR5.
+ * Proveniência: docs/03_CATALOGO_DE_REGISTRADORES.md linha 543 e dbg/hw.c:799.
+ * Bit 23 (0x00800000) e SOFT_RESET_SDMA0 (validado em silicio em 2026-08-23).
+ */
+#define BC250_GRBM_REG_SOFT_RESET         0x08020u
+#define BC250_GRBM_SOFT_RESET_SDMA0       0x00800000u
+
+/*
+ * A10 (06/09) -- estado da TERCEIRA perna do tripe da Lei 2.
+ *
+ * O blt de apresentacao verifica duas pernas dentro de Bc250SdmaPresentBlt:
+ * RPTR == WPTR e a fence escrita pela GPU sobre poison. A terceira perna --
+ * conferencia dos dados -- e' feita FORA, em Bc250DisplayCompareSurfaceBytes,
+ * e somente em alguns Present. Enquanto ela nao passar com conteudo real, a
+ * linha de log NAO pode se chamar "TRIPE": seria afirmar tres pernas tendo
+ * duas. Este campo carrega o resultado da perna de dados para o log dizer a
+ * verdade.
+ */
+typedef enum BC250_BLT_DATA_PROOF_STATE {
+    /* Nunca conferido: o blt tem duas pernas provadas, nao tres. */
+    BC250_BLT_DATA_PROOF_NONE = 0,
+    /* Conferido byte a byte E com conteudo real (amostra nao-zerada). */
+    BC250_BLT_DATA_PROOF_OK = 1,
+    /* Divergencia de bytes: falha fechada. */
+    BC250_BLT_DATA_PROOF_MISMATCH = -1,
+    /*
+     * Copia fiel de um frame EM BRANCO. Zero contra zero nao prova caminho de
+     * pixel; nao e' PASS e nao e' FAIL -- e' inconclusivo.
+     */
+    BC250_BLT_DATA_PROOF_BLANK = 2
+} BC250_BLT_DATA_PROOF_STATE;
 
 typedef struct BC250_SDMA_PRESENT_CONTEXT {
     BOOLEAN Initialized;
     BOOLEAN HardwareEnabled;
     BOOLEAN TripodValidated;
+
+    /* A10: ver BC250_BLT_DATA_PROOF_STATE. */
+    volatile LONG BltDataProofState;
+    /* Quantos Present seguidos vieram em branco -- diagnostico de tela preta. */
+    volatile LONG BltBlankStreak;
 
     PHYSICAL_ADDRESS MmioBase;
     volatile UCHAR *MmioVirtual;
@@ -111,16 +168,27 @@ typedef struct BC250_SDMA_PRESENT_CONTEXT {
     uint64_t WorkGpuAddress;
 
     /* Estado de sincronização e fence */
+    KSPIN_LOCK RingLock;
     uint32_t CurrentCursor;
     volatile LONG NextFenceSequence;
     volatile LONG BltSubmittedCount;
     volatile LONG BltCompletedCount;
+    volatile LONG SubmissionsSubmittedCount;
+    volatile LONG SubmissionsCompletedCount;
     volatile LONG FallbackCpuCount;
 
     /* Métricas de prova do tripé */
     ULONG TripodPolls;
     uint32_t TripodFenceObserved;
     uint32_t TripodMismatches;
+    /*
+     * A13 (07/09): veredito das tres pernas e qual leitura de RPTR casou com o
+     * WPTR alvo. Guardados porque a corrida 16:19 declarou tripe com
+     * WPTR=68/RPTR=52 -- sem estes campos nao ha como auditar a decisao depois.
+     * Valores de BC250_TRIPOD_VERDICT / BC250_TRIPOD_RPTR_SOURCE.
+     */
+    uint32_t TripodVerdict;
+    uint32_t TripodRptrSource;
 
     /* Endereços de VRAM e GOP Scanout MC */
     uint64_t VramMcStart;
@@ -144,6 +212,98 @@ BOOLEAN Bc250SdmaPresentFill(
     _In_ uint64_t DestGpuAddress,
     _In_ ULONG ByteCount,
     _In_ uint32_t FillPattern);
+
+BOOLEAN Bc250SdmaPresentSyncNop(void);
+
+/*
+ * IbSizeDwords e o valor publicado no campo IB_SIZE do pacote INDIRECT, ou
+ * seja, quantos dwords a engine vai efetivamente buscar a partir de
+ * DmaBufferGpuVa. Ele pode ser MENOR que DmaBufferSize/4: o encoder de
+ * paginacao acrescenta NOPs de cauda com o unico proposito de alinhar a GPUVA
+ * do PROXIMO buffer publicado ao VidMm, e esses NOPs nao precisam ser
+ * buscados. Passar 0 faz o executor derivar DmaBufferSize/4.
+ */
+/*
+ * A14 (07/09): ExpectedEffect* declara o que o IB deve produzir, para que a
+ * perna 3 do tripe exista neste caminho. Na corrida 17:13 dez IBs sairam com o
+ * rotulo "IB_TRIPOD PASS" tendo apenas DUAS pernas conferidas.
+ *
+ * ExpectedEffectDestMc  -- endereco MC do destino que o IB deve escrever.
+ * ExpectedEffectBytes   -- quantos bytes o IB deve cobrir.
+ * ExpectedEffectPattern -- valor que o destino deve conter depois.
+ *
+ * Passar 0 em Bytes (ou destino fora da abertura mapeada) e' legitimo: o
+ * executor declara PERNA DE DADOS NAO CONFERIDA e nao usa a palavra TRIPE.
+ */
+BOOLEAN Bc250SdmaPresentExecuteIndirect(
+    _In_ uint64_t DmaBufferGpuVa,
+    _In_ ULONG DmaBufferSize,
+    _In_ uint32_t IbSizeDwords,
+    _In_ uint32_t Vmid,
+    _In_ uint64_t ExpectedEffectDestMc,
+    _In_ ULONG ExpectedEffectBytes,
+    _In_ uint32_t ExpectedEffectPattern);
+
+/*
+ * =========================================================================
+ * B6 / item 25 (07/09) -- quiesce e reinicio do SDMA0 para o TDR.
+ *
+ * MOTIVO: Bc250McdmResetFromTimeout e Bc250McdmRestartFromTimeout
+ * retornavam STATUS_SUCCESS sem tocar no silicio -- so' escreviam uma linha
+ * de log. Isso e' violacao direta da Lei 4 ("nunca retorne STATUS_SUCCESS em
+ * DDI sem backend funcional") num par de DDIs em que o dxgkrnl CONFIA para
+ * decidir se o adaptador voltou. E ficou urgente por causa do B3: com o
+ * default em somente INDIRECT, submissao que nao resolve devolve
+ * STATUS_IO_DEVICE_ERROR, e o caminho conhecido dai e' o BugCheck 0x119.
+ *
+ * Quiesce NAO desmapeia o BAR (Bc250SdmaPresentTeardown faz isso e serve para
+ * StopDevice): ele desliga o anel e trava o F32, preservando os mapeamentos
+ * para que o reinicio seja possivel dentro da mesma sessao de TDR.
+ * =========================================================================
+ */
+
+typedef struct BC250_SDMA_TDR_SNAPSHOT {
+    uint32_t RptrBefore;
+    uint32_t WptrBefore;
+    uint32_t StatusBefore;
+    uint32_t Status1Before;
+    uint32_t ErrorLogBefore;
+    uint32_t RbCntlBefore;
+    uint32_t F32CntlBefore;
+    uint32_t HardwareWasEnabled;
+} BC250_SDMA_TDR_SNAPSHOT;
+
+/*
+ * Desliga RB_ENABLE, trava o F32 e marca HardwareEnabled=FALSE, mantendo os
+ * mapeamentos. Devolve FALSE quando nao ha transporte para tocar -- e nesse
+ * caso NAO ha quiesce, e quem chama nao pode declarar sucesso.
+ */
+BOOLEAN Bc250SdmaPresentQuiesceForTdr(_Out_ BC250_SDMA_TDR_SNAPSHOT *Snapshot);
+
+/*
+ * Pulsa GRBM_SOFT_RESET.SDMA0, reconstrói integralmente a configuracao do
+ * anel, exige readback de reset desassertado/ponteiros zero/bases/controles e
+ * so' entao PROVA que a engine voltou submetendo um NOP com fence fisica sobre
+ * poison. HardwareEnabled so' volta a TRUE se readback e prova fecharem.
+ */
+BOOLEAN Bc250SdmaPresentRestartAfterTdr(void);
+
+/*
+ * item 24 (07/09): deteccao propria de travamento por DUAS passagens de
+ * RPTR/WPTR, com os ponteiros reduzidos a uma volta do anel. Serve ao
+ * DxgkDdiQueryEngineStatus, que antes respondia Responsive=1 sem medir nada.
+ * Devolve FALSE quando NAO foi possivel medir -- e nesse caso quem chama nao
+ * pode afirmar nem que esta viva nem que travou.
+ */
+BOOLEAN Bc250SdmaPresentProbeResponsive(_Out_ uint32_t *IsResponsive);
+
+/*
+ * item 25 (07/09): hang INDUZIDO -- POLL_REGMEM esperando um valor que nunca
+ * aparece. A engine para de verdade. Quem chama tem de devolver sucesso ao
+ * dxgkrnl SEM notificar completion, porque e' a fence pendente que faz o
+ * timeout de 2 s disparar o TDR. Armar e' decisao do dono do projeto.
+ */
+BOOLEAN Bc250SdmaPresentInduceHangForTdr(void);
 
 void Bc250SdmaPresentTeardown(void);
 

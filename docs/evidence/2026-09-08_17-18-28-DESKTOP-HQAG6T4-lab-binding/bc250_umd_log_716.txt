@@ -1,0 +1,30 @@
+17:18:34.389 [pid=716 bc250-umd-node1-tripod.exe] === bc250umd.dll CARREGADA ===
+17:18:34.389 [pid=716 bc250-umd-node1-tripod.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+17:18:34.389 [pid=716 bc250-umd-node1-tripod.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+17:18:34.390 [pid=716 bc250-umd-node1-tripod.exe] NODE1_TRIPOD_AUTHORIZED: processo e token conferidos; single-shot armado
+17:18:34.390 [pid=716 bc250-umd-node1-tripod.exe] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+17:18:34.390 [pid=716 bc250-umd-node1-tripod.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+17:18:34.390 [pid=716 bc250-umd-node1-tripod.exe] NODE1_TRIPOD_AUTHORIZED: processo e token conferidos; single-shot armado
+17:18:34.390 [pid=716 bc250-umd-node1-tripod.exe] NODE1_TRIPOD_AUTHORIZED: processo e token conferidos; single-shot armado
+17:18:34.393 [pid=716 bc250-umd-node1-tripod.exe] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=34, PageSize=4096, VramSegId=1 VramBytes=0xF531000, GateFlags=0x0000001B
+17:18:34.393 [pid=716 bc250-umd-node1-tripod.exe] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+17:18:34.393 [pid=716 bc250-umd-node1-tripod.exe] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=0000000000429AE8 -> PREENCHENDO a struct dele (5 entradas)
+17:18:34.393 [pid=716 bc250-umd-node1-tripod.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+17:18:34.393 [pid=716 bc250-umd-node1-tripod.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 pInfo=NULL -> E_NOTIMPL (zerar seria declarar capacidade inexistente)
+17:18:34.394 [pid=716 bc250-umd-node1-tripod.exe] GetSupportedVersions: sondagem de contagem -> 2
+17:18:34.394 [pid=716 bc250-umd-node1-tripod.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+17:18:34.394 [pid=716 bc250-umd-node1-tripod.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+17:18:34.395 [pid=716 bc250-umd-node1-tripod.exe] CalcPrivateDeviceSize: Interface=0x000A0002, Version=0x0001177A -> 5568 bytes
+17:18:40.663 [pid=716 bc250-umd-node1-tripod.exe] D3D10 CreateDevice: INTERFACE ACORDADA=0x000A0002, Version=0x0001177A, hRTDevice=0000000000437008, Flags=0x00000000
+17:18:40.663 [pid=716 bc250-umd-node1-tripod.exe] Bc250UmdDeviceInit: device=0000000000443A50 inicializado com sucesso (Interface=0x000A0002, Version=0x0001177A, Winsys=OK)
+17:18:40.664 [pid=716 bc250-umd-node1-tripod.exe] NODE1_TRIPOD_AUTHORIZED: processo e token conferidos; single-shot armado
+17:18:40.678 [pid=716 bc250-umd-node1-tripod.exe] CommandBufferInit: GpuVA=0x11000 Capacity=16384 dwords
+17:18:40.678 [pid=716 bc250-umd-node1-tripod.exe] NODE1_SUBMISSION_READY: Context=0000000000419570 GpuVA=0x11000 -- NAO VALIDADO EM HARDWARE
+17:18:40.688 [pid=716 bc250-umd-node1-tripod.exe] NODE1_PROOF_BUILD: Dst=0x21000 Values=5 Fence=0x10040/BC250F01 Dwords=17 -- OFFLINE
+17:18:40.689 [pid=716 bc250-umd-node1-tripod.exe] CommandBufferFlush: Node=1 bytes=68 status=OK
+17:18:40.724 [pid=716 bc250-umd-node1-tripod.exe] NODE1_TRIPOD: FAIL-CLOSED poison=1 submit=1 fence=0 data=0 cleanup=1 -- NAO VALIDADO EM HARDWARE
+17:18:40.725 [pid=716 bc250-umd-node1-tripod.exe] NODE1_TRIPOD_RESULT: hr=0x80004005 Dst=0x21000 FenceGpuVa=0x10040 FenceObs=0xFFFFFFFFFFFFFFFF Poison=1 Submitted=1 Fence=0 Data=0 Cleanup=1 Values=00000000,00000000,00000000,00000000,00000000 -- NAO VALIDADO EM HARDWARE
+17:18:40.725 [pid=716 bc250-umd-node1-tripod.exe] Bc250UmdDeviceTeardown: device=0000000000443A50 iniciando teardown
+17:18:40.744 [pid=716 bc250-umd-node1-tripod.exe] CommandBufferTeardown: concluido
+17:18:40.746 [pid=716 bc250-umd-node1-tripod.exe] Bc250UmdDeviceTeardown: device=0000000000443A50 concluido
+17:18:40.747 [pid=716 bc250-umd-node1-tripod.exe] CloseAdapter: adapter=0000000000430A40, Interface=0x000B000B -> S_OK

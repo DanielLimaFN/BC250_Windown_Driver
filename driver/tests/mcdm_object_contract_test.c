@@ -27,6 +27,7 @@ static int Bc250RunMcdmObjectContractTest(void)
     BC250_MCDM_HANDLE contextA = NULL, allocationA = NULL, openA = NULL;
     BC250_MCDM_HANDLE staleContext;
     BC250_MCDM_OBJECT_RECORD record;
+    BC250_CONTEXT_SUBMISSION_VIEW zeroRootView;
     uint32_t destroyed;
     uint32_t index;
 
@@ -66,6 +67,21 @@ static int Bc250RunMcdmObjectContractTest(void)
     CHECK(Bc250McdmObjectSetRootPageTable(&g_registry, contextA,
         1u, 0x0000000012345001ull, 512u, 512u) ==
         BC250_MCDM_OBJECT_BAD_ARGUMENT);
+    CHECK(Bc250McdmObjectSetRootPageTable(&g_registry, contextA,
+        1u, 0x0000000000000000ull, 512u, 512u) == BC250_MCDM_OBJECT_OK);
+    CHECK(Bc250McdmObjectLookup(&g_registry, processA,
+        BC250_MCDM_OBJECT_PROCESS, processA, &record) ==
+        BC250_MCDM_OBJECT_OK);
+    CHECK(record.RootPageTableSegmentId == 1u &&
+        record.RootPageTableAddress == 0x0000000000000000ull &&
+        record.RootPageTableEntries == 512u);
+    CHECK(Bc250McdmContextAcquireSubmissionView(&g_registry, contextA,
+        NULL, 0u, &zeroRootView) == BC250_MCDM_OBJECT_OK);
+    CHECK(zeroRootView.RootPageTableSegmentId == 1u &&
+        zeroRootView.RootPageTableAddress == 0u &&
+        zeroRootView.RootPageTableEntries == 512u);
+    CHECK(Bc250McdmContextReleaseSubmissionView(&g_registry, contextA) ==
+        BC250_MCDM_OBJECT_OK);
     CHECK(Bc250McdmObjectSetRootPageTable(&g_registry, contextA,
         0u, 0u, 0u, 512u) == BC250_MCDM_OBJECT_OK);
     CHECK(Bc250McdmObjectLookup(&g_registry, allocationA,

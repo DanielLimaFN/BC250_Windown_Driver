@@ -446,8 +446,8 @@ BC250_SDMA_RING_WORK_STATUS Bc250ActiveRunSdmaRingWork(
         !Bc250SdmaWrite(Context, R_CNTL,
             (Evidence->CntlApplied =
                 (Context->SdmaAutoCtxSw != 0u)
-                    ? (Evidence->CntlBefore | F_UTC_L1 | F_MIDCMD | F_AUTO_CTXSW)
-                    : ((Evidence->CntlBefore | F_UTC_L1 | F_MIDCMD) & ~F_AUTO_CTXSW))) ||
+                    ? ((Evidence->CntlBefore | F_UTC_L1 | F_AUTO_CTXSW) & ~F_MIDCMD)
+                    : ((Evidence->CntlBefore | F_UTC_L1) & ~(F_AUTO_CTXSW | F_MIDCMD)))) ||
         !Bc250SdmaRead(Context, R_UTCL1_CNTL, &value) ||
         !Bc250SdmaWrite(Context, R_UTCL1_CNTL,
             (value & ~(0x00000E00u | 0x0000003Eu)) |

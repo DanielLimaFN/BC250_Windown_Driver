@@ -1,0 +1,3 @@
+﻿radv: create_dx_physical_device vendor=0x1002 device=0x13fe desc='AMD BC-250 Graphics (Cyan Skillfish 2)'
+radv: create_dx_physical_device vendor=0x1414 device=0x008c desc='Microsoft Basic Render Driver'
+

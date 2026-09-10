@@ -6,6 +6,14 @@
 #define BC250_PTE_ADDR_MASK    0x0000FFFFFFFFF000ull
 #define BC250_PTE_PRT_BIT      (1ull << 54)
 
+/*
+ * Num PDE o campo de endereco e [47:6] e os bits [5:3] sao reservados.
+ * Ver o comentario de Bc250GcvmEncodePde em bc250_gcvm_contract.h.
+ */
+#define BC250_PDE_ADDR_MASK        0x0000FFFFFFFFFFC0ull
+#define BC250_PDE_RESERVED_MASK    0x0000000000000038ull
+#define BC250_PDE_ALLOWED_FLAGS     (BC250_PTE_VALID | BC250_PTE_SYSTEM | BC250_PTE_SNOOPED)
+
 BC250_GCVM_STATUS Bc250GcvmEncodePte(
     uint64_t PhysicalAddress,
     uint32_t Flags,
@@ -29,10 +37,63 @@ BC250_GCVM_STATUS Bc250GcvmEncodePte(
     if (Flags & BC250_PTE_TMZ)        pte |= (1ull << 3);
     if (Flags & BC250_PTE_READABLE)   pte |= (1ull << 5);
     if (Flags & BC250_PTE_WRITEABLE)  pte |= (1ull << 6);
-    if (Flags & BC250_PTE_EXECUTABLE) pte |= (1ull << 7);
+    if (Flags & BC250_PTE_EXECUTABLE) pte |= (1ull << 4);
     if (Flags & BC250_PTE_PRT)        pte |= BC250_PTE_PRT_BIT;
 
     *PteOut = pte;
+    return BC250_GCVM_OK;
+}
+
+BC250_GCVM_STATUS Bc250GcvmEncodePde(
+    uint64_t PhysicalAddress,
+    uint32_t Flags,
+    uint64_t *PdeOut)
+{
+    uint64_t pde;
+
+    if (PdeOut == NULL) return BC250_GCVM_BAD_ARGUMENT;
+    *PdeOut = 0;
+
+    /*
+     * Fail-closed contra o defeito de 05/09: qualquer flag fora de
+     * VALID/SYSTEM/SNOOPED colidiria com o campo de endereco ou com os bits
+     * reservados. READABLE (bit 5) e WRITEABLE (bit 6) sao exatamente esses.
+     */
+    if ((Flags & ~BC250_PDE_ALLOWED_FLAGS) != 0u) {
+        return BC250_GCVM_BAD_ARGUMENT;
+    }
+    if ((PhysicalAddress & ~BC250_PDE_ADDR_MASK) != 0) {
+        return BC250_GCVM_MISALIGNED;
+    }
+
+    pde = PhysicalAddress & BC250_PDE_ADDR_MASK;
+    if (Flags & BC250_PTE_VALID)   pde |= (1ull << 0);
+    if (Flags & BC250_PTE_SYSTEM)  pde |= (1ull << 1);
+    if (Flags & BC250_PTE_SNOOPED) pde |= (1ull << 2);
+
+    *PdeOut = pde;
+    return BC250_GCVM_OK;
+}
+
+BC250_GCVM_STATUS Bc250GcvmDecodePde(
+    uint64_t Pde,
+    uint64_t *PhysicalAddressOut,
+    uint32_t *FlagsOut,
+    uint32_t *ReservedViolationOut)
+{
+    uint32_t flags = 0;
+
+    if (PhysicalAddressOut == NULL || FlagsOut == NULL ||
+        ReservedViolationOut == NULL) {
+        return BC250_GCVM_BAD_ARGUMENT;
+    }
+
+    *PhysicalAddressOut = Pde & BC250_PDE_ADDR_MASK;
+    if (Pde & (1ull << 0)) flags |= BC250_PTE_VALID;
+    if (Pde & (1ull << 1)) flags |= BC250_PTE_SYSTEM;
+    if (Pde & (1ull << 2)) flags |= BC250_PTE_SNOOPED;
+    *FlagsOut = flags;
+    *ReservedViolationOut = (uint32_t)(Pde & BC250_PDE_RESERVED_MASK);
     return BC250_GCVM_OK;
 }
 
@@ -54,7 +115,7 @@ BC250_GCVM_STATUS Bc250GcvmDecodePte(
     if (Pte & (1ull << 3)) flags |= BC250_PTE_TMZ;
     if (Pte & (1ull << 5)) flags |= BC250_PTE_READABLE;
     if (Pte & (1ull << 6)) flags |= BC250_PTE_WRITEABLE;
-    if (Pte & (1ull << 7)) flags |= BC250_PTE_EXECUTABLE;
+    if (Pte & (1ull << 4)) flags |= BC250_PTE_EXECUTABLE;
     if (Pte & BC250_PTE_PRT_BIT) flags |= BC250_PTE_PRT;
 
     *FlagsOut = flags;

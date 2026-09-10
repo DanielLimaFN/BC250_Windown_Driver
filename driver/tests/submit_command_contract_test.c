@@ -17,7 +17,13 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
 #define CHECK(Expression) do { if (!(Expression)) return 0; } while (0)
 #else
 #include <stdio.h>
-#define CHECK(Expression) do { if (!(Expression)) return 1; } while (0)
+/*
+ * A13: era `return 1`, mas neste arquivo 1 significa SUCESSO (main devolve
+ * `run() ? 0 : 1`), logo um CHECK falho em modo usuario era lido como PASS. A
+ * suite compila com /DBC250_KERNEL_MODE, entao o defeito nunca mascarou uma
+ * corrida -- mas ficar de pe' e' convite a repetir a classe de erro.
+ */
+#define CHECK(Expression) do { if (!(Expression)) return 0; } while (0)
 #endif
 
 #define TEST_SUBMIT_RING_DWORDS 256u
@@ -25,6 +31,110 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
 static uint32_t g_testRing[TEST_SUBMIT_RING_DWORDS];
 static BC250_SUBMISSION_REQUEST g_testReq;
 static BC250_SUBMISSION_RESULT g_testResult;
+
+
+/*
+ * =====================================================================
+ * A13/B3 -- trava da precedencia de caminho do SubmitCommandVirtual Node 0.
+ * A precedencia dos PLANO A so' existe com PlanoAFallbackEnabled=1; o default
+ * do driver e' somente INDIRECT.
+ *
+ * Gabarito medido na corrida 2026-09-07 16:19: 14 submissoes, 2 DIRECT FILL
+ * + 12 SYNC NOP, ZERO INDIRECT -- e ainda assim 14 linhas "IB EXECUTADO".
+ * =====================================================================
+ */
+static int TestSubmitPathPrecedenceWithFallbackEnabled(void)
+{
+    BC250_SUBMIT_PATH_INPUT in;
+
+    /* As duas submissoes de fill da corrida 16:19, com o fallback LIGADO. */
+    memset(&in, 0, sizeof(in));
+    in.PlanoAFallbackEnabled = 1u;
+    in.HasPendingFill = 1u;
+    in.FillBytes = 11075584u;
+    in.DestPhysicalStart = 0xF400AB0000ull;
+    in.DmaBufferSizeBytes = 0x1000u;
+    in.IbGpuVaResolves = 1u;
+    CHECK(Bc250SelectSubmitExecPath(&in) == BC250_SUBMIT_PATH_RING_DIRECT_FILL);
+    /* DIRECT FILL nao exige que a GPUVA do IB resolva. */
+    in.IbGpuVaResolves = 0u;
+    CHECK(Bc250SelectSubmitExecPath(&in) == BC250_SUBMIT_PATH_RING_DIRECT_FILL);
+    /* Mas exige destino fisico resolvido e tamanho nao nulo. */
+    in.DestPhysicalStart = 0ull;
+    CHECK(Bc250SelectSubmitExecPath(&in) != BC250_SUBMIT_PATH_RING_DIRECT_FILL);
+    in.DestPhysicalStart = 0xF400AB0000ull;
+    in.FillBytes = 0u;
+    CHECK(Bc250SelectSubmitExecPath(&in) != BC250_SUBMIT_PATH_RING_DIRECT_FILL);
+
+    /* Os 12 buffers de 4 bytes do DWM/VidSch, com o fallback LIGADO. */
+    memset(&in, 0, sizeof(in));
+    in.PlanoAFallbackEnabled = 1u;
+    in.DmaBufferSizeBytes = 4u;
+    in.IbGpuVaResolves = 1u;
+    CHECK(Bc250SelectSubmitExecPath(&in) == BC250_SUBMIT_PATH_RING_SYNC_NOP);
+
+    /* Sem fill e sem 4 bytes: INDIRECT, se a GPUVA resolver. */
+    memset(&in, 0, sizeof(in));
+    in.PlanoAFallbackEnabled = 1u;
+    in.DmaBufferSizeBytes = 0x1000u;
+    in.IbGpuVaResolves = 1u;
+    CHECK(Bc250SelectSubmitExecPath(&in) == BC250_SUBMIT_PATH_INDIRECT);
+    in.IbGpuVaResolves = 0u;
+    CHECK(Bc250SelectSubmitExecPath(&in) == BC250_SUBMIT_PATH_REFUSED);
+
+    CHECK(Bc250SelectSubmitExecPath(NULL) == BC250_SUBMIT_PATH_REFUSED);
+    return 1;
+}
+
+static int TestDefaultSuppressesPlanoA(void)
+{
+    BC250_SUBMIT_PATH_INPUT in;
+
+    /*
+     * B3: o mesmo fill da corrida 16:19 com o campo em ZERO -- isto e', o
+     * DEFAULT do driver. Nao ha mais como cair no PLANO A sem pedir.
+     */
+    memset(&in, 0, sizeof(in));
+    in.HasPendingFill = 1u;
+    in.FillBytes = 11075584u;
+    in.DestPhysicalStart = 0xF400AB0000ull;
+    in.DmaBufferSizeBytes = 0x1000u;
+    in.IbGpuVaResolves = 1u;
+    CHECK(Bc250SelectSubmitExecPath(&in) == BC250_SUBMIT_PATH_INDIRECT);
+
+    /* E o mesmo sync de 4 bytes. */
+    memset(&in, 0, sizeof(in));
+    in.DmaBufferSizeBytes = 4u;
+    in.IbGpuVaResolves = 1u;
+    CHECK(Bc250SelectSubmitExecPath(&in) == BC250_SUBMIT_PATH_INDIRECT);
+
+    /*
+     * Com a precedencia desligada e a GPUVA sem resolver, o resultado tem de
+     * ser RECUSA -- nunca cair de volta no PLANO A. Fallback escondido e' o
+     * defeito que esta faixa existe para matar.
+     */
+    in.IbGpuVaResolves = 0u;
+    CHECK(Bc250SelectSubmitExecPath(&in) == BC250_SUBMIT_PATH_REFUSED);
+    return 1;
+}
+
+static int TestOnlyIndirectExecutesTheDmaBuffer(void)
+{
+    /*
+     * A regra que a corrida 16:19 violou 14 vezes: so' o INDIRECT autoriza a
+     * frase "IB EXECUTADO".
+     */
+    CHECK(Bc250SubmitPathExecutesDmaBuffer(BC250_SUBMIT_PATH_INDIRECT) == 1u);
+    CHECK(Bc250SubmitPathExecutesDmaBuffer(BC250_SUBMIT_PATH_RING_DIRECT_FILL) == 0u);
+    CHECK(Bc250SubmitPathExecutesDmaBuffer(BC250_SUBMIT_PATH_RING_SYNC_NOP) == 0u);
+    CHECK(Bc250SubmitPathExecutesDmaBuffer(BC250_SUBMIT_PATH_REFUSED) == 0u);
+
+    CHECK(Bc250SubmitPathName(BC250_SUBMIT_PATH_INDIRECT)[0] != '\0');
+    CHECK(Bc250SubmitPathName(BC250_SUBMIT_PATH_RING_DIRECT_FILL)[0] != '\0');
+    CHECK(Bc250SubmitPathName(BC250_SUBMIT_PATH_RING_SYNC_NOP)[0] != '\0');
+    CHECK(Bc250SubmitPathName(BC250_SUBMIT_PATH_REFUSED)[0] != '\0');
+    return 1;
+}
 
 static int Bc250RunSubmitCommandContractTest(void)
 {
@@ -108,6 +218,11 @@ static int Bc250RunSubmitCommandContractTest(void)
 
     /* Null Argument */
     CHECK(Bc250SubmitCommand(NULL, g_testRing, 256u, &cursor, &g_testResult) == BC250_SUBMISSION_BAD_ARGUMENT);
+
+    /* A13 -- precedencia de caminho e rotulo de execucao. */
+    CHECK(TestSubmitPathPrecedenceWithFallbackEnabled() == 1);
+    CHECK(TestDefaultSuppressesPlanoA() == 1);
+    CHECK(TestOnlyIndirectExecutesTheDmaBuffer() == 1);
 
     return 1;
 }

@@ -1,0 +1,37 @@
+BC250 DWM DUMP ANALYSIS - 2026-09-07 16:19 BRT
+
+Analyzer: CDB 10.0.28000.2526 x64, local symbols/exports only.
+No network symbol lookup was used.
+
+Dump 1: dwm-crash-01-dwm.exe.6404.dmp
+SHA256: 05C9D80E757BAFA7E7C3E9631EFE1E8082B3AE7E265F82C458835F4A1CA63D84
+Bytes: 202475478
+Debug time: 2026-09-07 16:19:30 -03:00
+Process uptime: 3 seconds
+ExceptionAddress: KERNELBASE!RaiseFailFastException+0x152
+ExceptionCode: e0464645
+ExceptionFlags: 1
+Parameter[0]: ffffffff887a0004 (HRESULT 0x887A0004 = DXGI_ERROR_UNSUPPORTED)
+Caller module: dwmcore.dll
+
+Dump 2: dwm-crash-02-dwm.exe.292.dmp
+SHA256: D7BBFAA3183A0D1C7C3C2625BE47114619AC1C447E3E3A1271F3F83328299B3A
+Bytes: 202981482
+Debug time: 2026-09-07 16:19:38 -03:00
+Process uptime: 8 seconds
+ExceptionAddress: KERNELBASE!RaiseFailFastException+0x152
+ExceptionCode: e0464645
+ExceptionFlags: 1
+Parameter[0]: ffffffff887a0004 (HRESULT 0x887A0004 = DXGI_ERROR_UNSUPPORTED)
+Caller module: dwmcore.dll
+
+Both dumps independently reproduce the same fail-fast and HRESULT. Export-only
+symbols do not name the internal dwmcore frames in this local analysis. The exact
+named chain was already obtained from the earlier symbolized dump and is recorded
+in docs/169_DWM_D3D11_ROOT_CAUSE_AND_NATIVE_WINSYS.md. The per-process UMD logs
+from this bind independently record OpenAdapter10/OpenAdapter10_2 returning
+E_NOTIMPL because BC250_D3D10_11_NATIVE_READY is zero.
+
+Verdict: the DWM cannot create its required D3D10/11 device. This proves the DWM
+fail-fast cause. It does not by itself prove that no additional display defect
+exists. Desktop pixels and games remain NAO VALIDADOS EM HARDWARE.

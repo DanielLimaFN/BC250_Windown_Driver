@@ -102,6 +102,49 @@ BC250_PRING_STATUS Bc250PersistentRingAvailableDwords(
     return BC250_PRING_OK;
 }
 
+BC250_PRING_STATUS Bc250PersistentRingReconcileDrainedCursor(
+    BC250_PERSISTENT_RING *Ring,
+    uint32_t PhysicalRptrRaw,
+    uint32_t PhysicalWptrRaw,
+    uint32_t *LogicalWptrBefore,
+    uint32_t *ReconciledCursor)
+{
+    uint32_t mask;
+    uint32_t physicalRptr;
+    uint32_t physicalWptr;
+
+    if (LogicalWptrBefore != NULL) *LogicalWptrBefore = 0u;
+    if (ReconciledCursor != NULL) *ReconciledCursor = 0u;
+    if (Ring == NULL || LogicalWptrBefore == NULL || ReconciledCursor == NULL) {
+        return BC250_PRING_BAD_ARGUMENT;
+    }
+    if (Ring->IsActive == 0u) {
+        return BC250_PRING_NOT_ACTIVE;
+    }
+    if (!Bc250PringIsPowerOfTwo(Ring->RingSizeDwords)) {
+        return BC250_PRING_INVALID_RING_SIZE;
+    }
+
+    *LogicalWptrBefore = Ring->WptrDwords;
+    mask = Ring->RingSizeDwords - 1u;
+    physicalRptr = PhysicalRptrRaw & mask;
+    physicalWptr = PhysicalWptrRaw & mask;
+
+    /* Nunca rebasingar por cima de uma fence que a GPU ainda deve produzir. */
+    if (Ring->LastSubmittedFence != Ring->LastRetiredFence) {
+        return BC250_PRING_CURSOR_BUSY;
+    }
+    /* RPTR != WPTR e' trabalho fisico, mesmo que a contabilidade diga vazio. */
+    if (physicalRptr != physicalWptr) {
+        return BC250_PRING_CURSOR_BUSY;
+    }
+
+    Ring->WptrDwords = physicalWptr;
+    Ring->RptrShadowDwords = physicalRptr;
+    *ReconciledCursor = physicalWptr;
+    return BC250_PRING_OK;
+}
+
 BC250_PRING_STATUS Bc250PersistentRingPlanSubmission(
     const BC250_PERSISTENT_RING *Ring,
     uint64_t IbGpuAddress,
@@ -359,6 +402,7 @@ const char *Bc250PersistentRingStatusName(BC250_PRING_STATUS Status)
     case BC250_PRING_RING_FULL: return "ring_full";
     case BC250_PRING_FENCE_REGRESSION: return "fence_regression";
     case BC250_PRING_EMIT_FAILED: return "emit_failed";
+    case BC250_PRING_CURSOR_BUSY: return "cursor_busy";
     default: return "unknown";
     }
 }

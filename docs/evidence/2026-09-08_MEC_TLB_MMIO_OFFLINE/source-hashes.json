@@ -1,0 +1,14 @@
+[
+  {
+    "Path": "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\driver\\wdk\\bc250_submission_engine.c",
+    "Hash": "D82EFC419605E001573D87DA4453748CD27A9A007F7594E916892B20D66A342C"
+  },
+  {
+    "Path": "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\driver\\wdk\\bc250_active_miniport.c",
+    "Hash": "6A10A205A2239F9ED3F434B72277C6037F92849BF4A5DF36EFDC08047FA67322"
+  },
+  {
+    "Path": "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\driver\\wdk\\bc250_submission_engine.h",
+    "Hash": "CBF5A17116F60BB65C4A9062DCA6616B18FE553804264A6F50781161218D7A67"
+  }
+]

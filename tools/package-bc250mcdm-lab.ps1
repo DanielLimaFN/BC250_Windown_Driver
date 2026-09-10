@@ -13,7 +13,34 @@ param(
     # Fase P1: sobe a fila de computacao persistente e liga o
     # DxgkDdiSubmitCommandVirtual real. Desligado por padrao.
     [switch]$EnablePersistentSubmission,
-    [switch]$EnablePhysicalRenderOnly
+    # Fase V5: grava RenderNode=1 com RenderOnlyLab=0, o par que o resolvedor
+    # de perfil do miniport (bc250_active_miniport.c:7124) traduz para
+    # DISPLAY_RENDER. E' o perfil que registra por DxgkInitialize e expoe o no
+    # de render, sem cair em RENDER_ONLY_LAB.
+    #
+    # Ate o 3.81 este switch nao existia e RenderNode so' subia junto com
+    # -EnablePhysicalRenderOnly, o que forcava RenderOnlyLab=1. O binder
+    # (bind-bc250mcdm-lab.ps1) sempre modelou os dois como independentes, entao
+    # pedir -EnableRenderNode la' esbarrava num pacote que nunca sabia
+    # produzi-lo. O acoplamento era politica do empacotador, nao limite do
+    # miniport.
+    [switch]$EnableRenderNode,
+    [switch]$EnablePhysicalRenderOnly,
+    # Versao de contrato WDDM declarada ao dxgkrnl. Lida como tunable no
+    # DriverEntry (bc250_active_miniport.c:7365): 20 registra
+    # DXGKDDI_INTERFACE_VERSION_WDDM2_0, 27 registra WDDM2_7. Nao exige rebuild
+    # do SYS -- e' so' o valor no INF.
+    #
+    # POR QUE VIROU PARAMETRO: a corrida 06/09 12:08 (contrato 27) parou antes
+    # de o SO pedir a alocacao padrao -- zero GetStandardAllocationDriverData,
+    # zero CreateAllocation, zero CommitVidPn, com o SO em laco de 99
+    # IsSupportedVidPn. A corrida 05/09 22:20 (contrato 20) convergiu em 18
+    # IsSupportedVidPn, criou 155 alocacoes e comitou. Sob 27 o SO tambem passou
+    # a consultar DXGKQAITYPE_GPUVERSION (27) e ADAPTERPERFDATA_CAPS (26), que
+    # o KMD ainda recusa -- e GPUVERSION e' obrigatoria em WDDM 2.7.
+    #
+    # Isolar essa variavel exige poder empacotar 20 sem mudar mais nada.
+    [ValidateSet(20, 27)][int]$WddmContractVersion = 27
 )
 
 $ErrorActionPreference = 'Stop'
@@ -22,6 +49,28 @@ if ($EnablePhysicalRenderOnly -and
     throw ('PHYSICAL_RENDER_ONLY exige -EnableShaderDispatch e ' +
            '-EnablePersistentSubmission; sem P1/P2 fisicos o runtime nao pode ser promovido.')
 }
+
+# Par (RenderNode, RenderOnlyLab) e o perfil que o miniport deriva dele:
+#
+#   0/0  DISPLAY_ONLY        -> ProfileMode DISPLAY_LAB
+#   1/0  DISPLAY_RENDER      -> ProfileMode DISPLAY_RENDER_LAB
+#   1/1  RENDER_ONLY_LAB     -> ProfileMode PHYSICAL_RENDER_ONLY
+#
+# O par 0/1 nao existe: o proprio driver o recusa com
+# STATUS_DEVICE_CONFIGURATION_ERROR, e por isso RenderOnlyLab so' sobe junto
+# com RenderNode.
+$renderNodeValue = $(if ($EnableRenderNode -or $EnablePhysicalRenderOnly) { 1 } else { 0 })
+$renderOnlyLabValue = $(if ($EnablePhysicalRenderOnly) { 1 } else { 0 })
+if ($renderOnlyLabValue -eq 1 -and $renderNodeValue -ne 1) {
+    throw 'Par invalido: RenderOnlyLab=1 exige RenderNode=1.'
+}
+$profileModeValue = $(if ($renderOnlyLabValue -eq 1) {
+    'PHYSICAL_RENDER_ONLY'
+} elseif ($renderNodeValue -eq 1) {
+    'DISPLAY_RENDER_LAB'
+} else {
+    'DISPLAY_LAB'
+})
 $root = Split-Path -Parent $PSScriptRoot
 $sourceSys = Join-Path $root 'driver\wdk\output_lab\bc250mcdm.sys'
 $sourcePdb = Join-Path $root 'driver\wdk\output_lab\bc250mcdm.pdb'
@@ -50,6 +99,9 @@ function Find-Tool([string]$Name, [string[]]$Candidates) {
 if (-not (Test-Path -LiteralPath $sourceSys)) {
     throw "Imagem de lab ausente: $sourceSys. Execute tools\build-bc250mcdm-lab-bringup.ps1 -Execute -IUnderstandThisEnablesDestructiveBringup"
 }
+if (-not (Test-Path -LiteralPath $sourceUmd -PathType Leaf)) {
+    throw "UMD auditada ausente: $sourceUmd. Execute driver\umd\build-umd.bat."
+}
 if (-not (Test-Path -LiteralPath $sourceInf)) { throw "INF ausente: $sourceInf" }
 if (-not (Test-Path -LiteralPath $sourceSdmaFirmware)) { throw "Firmware SDMA ausente: $sourceSdmaFirmware" }
 if (-not (Test-Path -LiteralPath $sourceRlcFirmware)) { throw "Firmware RLC ausente: $sourceRlcFirmware" }
@@ -63,13 +115,23 @@ if (-not (Test-Path -LiteralPath $recoveryRoot)) {
 }
 
 $inf2cat = Find-Tool 'Inf2Cat.exe' @(
+    'C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x86\Inf2Cat.exe',
     'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x86\Inf2Cat.exe',
     'C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x86\Inf2Cat.exe'
 )
 $signtool = Find-Tool 'signtool.exe' @(
+    'C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\signtool.exe',
     'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe',
     'C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe'
 )
+$compilerPath = Find-Tool 'cl.exe' @(
+    'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64\cl.exe'
+)
+if ($inf2cat -notmatch '\\10\.0\.28000\.0\\' -or
+    $signtool -notmatch '\\10\.0\.28000\.0\\' -or
+    $compilerPath -notmatch '\\Microsoft Visual Studio\\18\\') {
+    throw 'Pacote lab bloqueado: toolchain efetiva nao e VS2026 + SDK/WDK 28000.'
+}
 
 $certificate = Get-ChildItem Cert:\CurrentUser\My | Where-Object {
     $_.Thumbprint -eq $certificateThumbprint -and $_.HasPrivateKey
@@ -137,38 +199,74 @@ if (Test-Path -LiteralPath $sourcePdb) {
 # assercao logo abaixo. Ate o 3.74 eram dois literais independentes, e bastou
 # atualizar um deles para o empacotamento quebrar com "nao materializou
 # exatamente uma vez" — uma mensagem que descreve o sintoma, nao a causa.
-$labSchemaVersion = 134
+# 135: a faixa A16 acrescentou BC250_PROBE_SECOND_PREFLIGHT_STATUS ao fim do
+# enum de probes. O campo foi APENDADO, entao nenhum indice existente mudou e os
+# consumidores (que leem por NOME) continuam validos -- mas declarar 134 para um
+# conjunto de 135 campos e' duas fontes de verdade para a mesma coisa, e este
+# projeto ja pagou caro por isso.
+$labSchemaVersion = 135
 
 $infContent = Get-Content -LiteralPath $sourceInf
+$sourceDriverVerLine = $infContent | Where-Object { $_ -match '^DriverVer=' } |
+    Select-Object -First 1
+if ($sourceDriverVerLine -notmatch '^DriverVer=([^,]+),(\d+\.\d+\.\d+\.\d+)$') {
+    throw "DriverVer fonte invalido: $sourceDriverVerLine"
+}
+$sourceDriverDate = $Matches[1]
+$sourceDriverVersion = [version]$Matches[2]
+# O pacote lab precisa ranquear acima do ativo que compartilha o mesmo HWID.
+# O literal antigo 3.80.0.0 ficou abaixo do ativo 3.81.0.0 e permitia ao PnP
+# preferir o pacote errado. Derivar o build evita repetir a dessincronizacao.
+$labDriverVersion = [version]::new(
+    $sourceDriverVersion.Major,
+    $sourceDriverVersion.Minor,
+    ($sourceDriverVersion.Build + 1),
+    $sourceDriverVersion.Revision)
+$labDriverVerLine = 'DriverVer={0},{1}' -f $sourceDriverDate, $labDriverVersion
 $infContent = $infContent | ForEach-Object {
     if ($_ -match '^DriverVer=') {
-        'DriverVer=09/02/2026,3.80.0.0'
+        $labDriverVerLine
     } elseif ($_ -match '^HKR,Parameters\\Probe,SchemaVersion,0x00010001,\d+$') {
         'HKR,Parameters\Probe,SchemaVersion,0x00010001,{0}' -f $labSchemaVersion
-    } elseif ($_ -match 'HKR,Parameters,SkipHwBringup,0x00010001,1') {
+    } elseif ($_ -match 'HKR,Parameters,SkipHwBringup,0x00010001,\d+') {
         'HKR,Parameters,SkipHwBringup,0x00010001,0'
-    } elseif ($_ -match 'HKR,Parameters,ShaderDispatch,0x00010001,0') {
+    } elseif ($_ -match 'HKR,Parameters,ShaderDispatch,0x00010001,\d+') {
         'HKR,Parameters,ShaderDispatch,0x00010001,{0}' -f
             ($(if ($EnableShaderDispatch) { 1 } else { 0 }))
-    } elseif ($_ -match 'HKR,Parameters,CpSoftReset,0x00010001,0') {
+    } elseif ($_ -match 'HKR,Parameters,CpSoftReset,0x00010001,\d+') {
         'HKR,Parameters,CpSoftReset,0x00010001,{0}' -f
             ($(if ($EnableShaderDispatch) { 1 } else { 0 }))
-    } elseif ($_ -match 'HKR,Parameters,Vmid0PageTable,0x00010001,0') {
+    } elseif ($_ -match 'HKR,Parameters,Vmid0PageTable,0x00010001,\d+') {
         'HKR,Parameters,Vmid0PageTable,0x00010001,0'
-    } elseif ($_ -match 'HKR,Parameters,PersistentSubmission,0x00010001,0') {
+    } elseif ($_ -match 'HKR,Parameters,PersistentSubmission,0x00010001,\d+') {
         'HKR,Parameters,PersistentSubmission,0x00010001,{0}' -f
             ($(if ($EnablePersistentSubmission) { 1 } else { 0 }))
     } elseif ($_ -match 'HKR,Parameters,WddmContractVersion,0x00010001,\d+') {
-        'HKR,Parameters,WddmContractVersion,0x00010001,27'
+        'HKR,Parameters,WddmContractVersion,0x00010001,{0}' -f $WddmContractVersion
     } elseif ($_ -match 'HKR,Parameters,RenderNode,0x00010001,\d+') {
-        'HKR,Parameters,RenderNode,0x00010001,{0}' -f
-            ($(if ($EnablePhysicalRenderOnly) { 1 } else { 0 }))
+        'HKR,Parameters,RenderNode,0x00010001,{0}' -f $renderNodeValue
     } elseif ($_ -match 'HKR,Parameters,RenderOnlyLab,0x00010001,\d+') {
-        'HKR,Parameters,RenderOnlyLab,0x00010001,{0}' -f
-            ($(if ($EnablePhysicalRenderOnly) { 1 } else { 0 }))
-    } elseif ($_ -match 'HKR,Parameters,SdmaAutoCtxSw,0x00010001,1') {
+        'HKR,Parameters,RenderOnlyLab,0x00010001,{0}' -f $renderOnlyLabValue
+    } elseif ($_ -match 'HKR,Parameters,SdmaAutoCtxSw,0x00010001,\d+') {
         'HKR,Parameters,SdmaAutoCtxSw,0x00010001,{0}' -f
             ($(if ($EnableShaderDispatch) { 0 } else { 1 }))
+    } elseif ($_ -match 'HKR,Parameters,GpuvaLabPromotion,0x000100(01|03),\d+') {
+        # 0x00010003 = FLG_ADDREG_TYPE_DWORD | FLG_ADDREG_BINVALUETYPE |
+        # FLG_ADDREG_NOCLOBBER. Aqui o INF declara um DEFAULT, nao um mandato.
+        #
+        # Sem NOCLOBBER o AddReg do instalador reescreve a chave a cada
+        # install, e a promocao que o operador armou antes do bind era apagada
+        # em silencio no meio do proprio binding -- o valor e lido uma unica
+        # vez, no StartDevice (bc250_active_miniport.c:3443), e ja chegava
+        # zerado. Com NOCLOBBER o valor gravado pela politica pre-bind de
+        # bind-bc250mcdm-lab.ps1 sobrevive a instalacao, e o readback
+        # pos-binding que ja existe la prova que sobreviveu.
+        #
+        # O default continua 0: um pacote recem-instalado, sem ninguem ter
+        # armado nada, nao habilita a promocao.
+        'HKR,Parameters,GpuvaLabPromotion,0x00010003,0'
+    } elseif ($_ -match 'HKR,Parameters,SdmaPlanoAFallback,0x000100(01|03),\d+') {
+        'HKR,Parameters,SdmaPlanoAFallback,0x00010003,0'
     } else {
         $_
     }
@@ -177,26 +275,36 @@ $infContent | Set-Content -LiteralPath $packageInf -Encoding ascii
 
 $expectedInfValues = [ordered]@{
     'Parameters\Probe,SchemaVersion' = $labSchemaVersion
-    'Parameters,WddmContractVersion' = 27
+    'Parameters,WddmContractVersion' = $WddmContractVersion
     'Parameters\Driver,ActiveMode' = 1
-    'Parameters,RenderNode' = $(if ($EnablePhysicalRenderOnly) { 1 } else { 0 })
-    'Parameters,RenderOnlyLab' = $(if ($EnablePhysicalRenderOnly) { 1 } else { 0 })
+    'Parameters,RenderNode' = $renderNodeValue
+    'Parameters,RenderOnlyLab' = $renderOnlyLabValue
     'Parameters,SkipHwBringup' = 0
     'Parameters,ShaderDispatch' = $(if ($EnableShaderDispatch) { 1 } else { 0 })
     'Parameters,CpSoftReset' = $(if ($EnableShaderDispatch) { 1 } else { 0 })
     'Parameters,Vmid0PageTable' = 0
     'Parameters,PersistentSubmission' = $(if ($EnablePersistentSubmission) { 1 } else { 0 })
     'Parameters,GpuvaLabPromotion' = 0
+    'Parameters,SdmaPlanoAFallback' = 0
     'Parameters,SdmaAutoCtxSw' = $(if ($EnableShaderDispatch) { 0 } else { 1 })
+}
+# GpuvaLabPromotion e SdmaPlanoAFallback sao gravados como DEFAULT (NOCLOBBER);
+# todos os demais sao mandato do pacote e reescrevem a chave a cada install.
+$infValueFlags = @{
+    'Parameters,GpuvaLabPromotion' = '0x00010003'
+    'Parameters,SdmaPlanoAFallback' = '0x00010003'
 }
 $renderedInf = Get-Content -LiteralPath $packageInf -Raw
 foreach ($entry in $expectedInfValues.GetEnumerator()) {
     $escapedName = [regex]::Escape($entry.Key)
+    $flag = $(if ($infValueFlags.ContainsKey($entry.Key)) {
+        $infValueFlags[$entry.Key]
+    } else { '0x00010001' })
     $matches = [regex]::Matches(
         $renderedInf,
-        "(?m)^HKR,$escapedName,0x00010001,$($entry.Value)\s*$")
+        "(?m)^HKR,$escapedName,$flag,$($entry.Value)\s*$")
     if ($matches.Count -ne 1) {
-        throw "INF de laboratorio nao materializou exatamente uma vez: $($entry.Key)=$($entry.Value)."
+        throw "INF de laboratorio nao materializou exatamente uma vez: $($entry.Key)=$($entry.Value) (flag $flag)."
     }
 }
 
@@ -244,9 +352,10 @@ $manifest = [ordered]@{
     DriverVer = $driverVersionLine -replace '^DriverVer=', ''
     HardwareValidated = $false
     TelemetrySchemaVersion = $labSchemaVersion
-    RenderNode = $(if ($EnablePhysicalRenderOnly) { 1 } else { 0 })
-    RenderOnlyLab = $(if ($EnablePhysicalRenderOnly) { 1 } else { 0 })
-    ProfileMode = $(if ($EnablePhysicalRenderOnly) { 'PHYSICAL_RENDER_ONLY' } else { 'DISPLAY_LAB' })
+    RenderNode = $renderNodeValue
+    RenderOnlyLab = $renderOnlyLabValue
+    ProfileMode = $profileModeValue
+    WddmContractVersion = $WddmContractVersion
     SkipHwBringup = 0
     ShaderDispatchEnabled = [bool]$EnableShaderDispatch
     CpSoftResetEnabled = [bool]$EnableShaderDispatch
@@ -254,8 +363,18 @@ $manifest = [ordered]@{
     SdmaAutoCtxSwEnabled = -not [bool]$EnableShaderDispatch
     PersistentSubmissionEnabled = [bool]$EnablePersistentSubmission
     GpuvaLabPromotionEnabled = $false
+    Node1TripodDefaultArmed = $false
+    D3D10_11NativeReady = $false
+    VisualStudio = '2026'
+    CompilerPath = $compilerPath
+    CompilerFileVersion = (Get-Item -LiteralPath $compilerPath).VersionInfo.FileVersion
+    WindowsKitVersion = '10.0.28000.0'
+    Inf2CatPath = $inf2cat
+    SignToolPath = $signtool
     SourceSysSha256 = (Get-FileHash -LiteralPath $sourceSys -Algorithm SHA256).Hash
+    SourceUmdSha256 = (Get-FileHash -LiteralPath $sourceUmd -Algorithm SHA256).Hash
     PackageSysSha256 = (Get-FileHash -LiteralPath $packageSys -Algorithm SHA256).Hash
+    PackageUmdSha256 = (Get-FileHash -LiteralPath $packageUmd -Algorithm SHA256).Hash
     PackageInfSha256 = (Get-FileHash -LiteralPath $packageInf -Algorithm SHA256).Hash
     PackageCatSha256 = (Get-FileHash -LiteralPath $packageCat -Algorithm SHA256).Hash
     SdmaFirmwareSha256 = (Get-FileHash -LiteralPath $packageSdmaFirmware -Algorithm SHA256).Hash

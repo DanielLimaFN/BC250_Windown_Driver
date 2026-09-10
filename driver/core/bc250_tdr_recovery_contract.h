@@ -25,12 +25,14 @@ extern "C" {
 #define BC250_TDR_ACTION_DEQUEUE_HQD     0x00000004u
 #define BC250_TDR_ACTION_FAULT_CONTEXT   0x00000008u
 #define BC250_TDR_ACTION_RESUME          0x00000010u
+#define BC250_TDR_ACTION_FULL_BLOCK_RESET 0x00000020u
 
 typedef enum BC250_TDR_STATUS {
     BC250_TDR_OK = 0,
     BC250_TDR_BAD_ARGUMENT,
     BC250_TDR_INVALID_NODE,
-    BC250_TDR_NOT_HANGING
+    BC250_TDR_NOT_HANGING,
+    BC250_TDR_RESTART_NOT_READY
 } BC250_TDR_STATUS;
 
 typedef struct BC250_TDR_ENGINE_STATE {
@@ -69,6 +71,25 @@ BC250_TDR_STATUS Bc250TdrBuildResetPlan(
 BC250_TDR_STATUS Bc250TdrExecuteResetPlan(
     const BC250_TDR_RESET_PLAN *Plan,
     BC250_TDR_ENGINE_STATE *State);
+
+/*
+ * Gate puro para o readback minimo depois do reset completo da SDMA0.
+ * A corrida 07/09 20:41 mediu RPTR=68 depois de o restart publicar WPTR=40;
+ * o backend anterior nunca zerava RB_RPTR e apenas removia F32.HALT, portanto
+ * podia retomar o POLL_REGMEM que causou o hang. Nenhuma fence de prova deve
+ * ser submetida antes de este gate fechar.
+ */
+BC250_TDR_STATUS Bc250TdrValidateSdmaRestartReadback(
+    uint32_t Rptr,
+    uint32_t RptrHi,
+    uint32_t Wptr,
+    uint32_t WptrHi,
+    uint32_t RbCntl,
+    uint32_t RbEnableMask,
+    uint32_t F32Cntl,
+    uint32_t F32HaltMask,
+    uint32_t GrbmSoftReset,
+    uint32_t SdmaResetMask);
 
 const char *Bc250TdrStatusName(BC250_TDR_STATUS Status);
 

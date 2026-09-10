@@ -1,0 +1,34 @@
+18:46:44.522 [pid=8152 msedgewebview2.exe] === bc250umd.dll CARREGADA ===
+18:46:44.523 [pid=8152 msedgewebview2.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:46:44.523 [pid=8152 msedgewebview2.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:46:44.523 [pid=8152 msedgewebview2.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:46:44.523 [pid=8152 msedgewebview2.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:46:44.523 [pid=8152 msedgewebview2.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:46:44.524 [pid=8152 msedgewebview2.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:46:44.524 [pid=8152 msedgewebview2.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:46:44.524 [pid=8152 msedgewebview2.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:46:44.524 [pid=8152 msedgewebview2.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:46:44.525 [pid=8152 msedgewebview2.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:46:44.525 [pid=8152 msedgewebview2.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:46:44.525 [pid=8152 msedgewebview2.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:46:44.525 [pid=8152 msedgewebview2.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:46:44.525 [pid=8152 msedgewebview2.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:46:44.525 [pid=8152 msedgewebview2.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:46:44.526 [pid=8152 msedgewebview2.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:46:44.526 [pid=8152 msedgewebview2.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:46:44.526 [pid=8152 msedgewebview2.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+18:46:44.526 [pid=8152 msedgewebview2.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:46:44.526 [pid=8152 msedgewebview2.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+18:46:44.526 [pid=8152 msedgewebview2.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:46:44.527 [pid=8152 msedgewebview2.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+18:46:44.527 [pid=8152 msedgewebview2.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:46:44.527 [pid=8152 msedgewebview2.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+18:46:44.527 [pid=8152 msedgewebview2.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:46:44.543 [pid=8152 msedgewebview2.exe] === bc250umd.dll CARREGADA ===
+18:46:44.543 [pid=8152 msedgewebview2.exe] OpenAdapter12: D3D12 nao implementado nativamente -> E_NOTIMPL
+18:46:44.544 [pid=8152 msedgewebview2.exe] === bc250umd.dll CARREGADA ===
+18:46:44.544 [pid=8152 msedgewebview2.exe] OpenAdapter12: D3D12 nao implementado nativamente -> E_NOTIMPL
+18:46:44.545 [pid=8152 msedgewebview2.exe] === bc250umd.dll CARREGADA ===
+18:46:44.545 [pid=8152 msedgewebview2.exe] OpenAdapter12: D3D12 nao implementado nativamente -> E_NOTIMPL
+18:46:44.546 [pid=8152 msedgewebview2.exe] === bc250umd.dll CARREGADA ===
+18:46:44.547 [pid=8152 msedgewebview2.exe] OpenAdapter12: D3D12 nao implementado nativamente -> E_NOTIMPL

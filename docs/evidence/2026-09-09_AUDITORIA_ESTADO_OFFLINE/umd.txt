@@ -1,0 +1,8 @@
+UMD NODE1 SUBMISSION AUDIT: PASS
+  Draw sem backend: recusa explicita; zero progresso fabricado
+  Command buffer: token nao nulo + map + residency + Lock/Unlock upload
+  Submit: contexto confere NodeOrdinal; payload WRITE_DATA + RELEASE_MEM
+  Tripe: poison pre-submit + fence exata + readback byte a byte + teardown
+  Acionador: registro + executavel exato + token 128-bit; device segue fail-closed
+  Mutacoes sem upload/prova de dados: detectadas
+  Veredito fisico: NAO VALIDADO EM HARDWARE

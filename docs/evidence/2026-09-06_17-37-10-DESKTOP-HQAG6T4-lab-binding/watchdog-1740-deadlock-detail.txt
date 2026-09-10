@@ -1,0 +1,164 @@
+
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+
+   EnableRedirectToV8JsProvider : false
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.016 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 29
+
+Microsoft (R) Windows Debugger Version 10.0.26100.6584 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [C:\Users\Daniel\Desktop\NamixWDDM\docs\evidence\2026-09-06_17-37-10-DESKTOP-HQAG6T4-lab-binding\WATCHDOG-20260906-1740.dmp]
+Mini Kernel Dump File: Only registers and stack trace are available
+
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+OK                                             C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab
+Deferred                                       srv*C:\Symbols*https://msdl.microsoft.com/download/symbols
+Symbol search path is: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab;srv*C:\Symbols*https://msdl.microsoft.com/download/symbols
+Executable search path is: 
+Windows 10 Kernel Version 19045 MP (12 procs) Free x64
+Product: WinNt, suite: TerminalServer SingleUserTS
+Edition build lab: 19041.1.amd64fre.vb_release.191206-1406
+Kernel base = 0xfffff804`71000000 PsLoadedModuleList = 0xfffff804`71c2a2b0
+Debug session time: Sun Sep  6 17:40:41.837 2026 (UTC - 3:00)
+System Uptime: 0 days 0:24:57.323
+Loading Kernel Symbols
+...............................................................
+................................................................
+.....................................
+Loading User Symbols
+
+Loading unloaded module list
+.........
+For analysis of this file, run !analyze -v
+0: kd> cdb: Reading initial command '.reload /f bc250mcdm.sys; lmvm bc250mcdm; !thread; !locks; !stacks 2; x dxgkrnl!*Deadlock*; dt dxgkrnl!*Deadlock* ffffb584c26b0000; dq ffffb584c26b0000 L20; dq ffffb584c132a080 L20; q'
+Browse full module list
+start             end                 module name
+fffff804`a7960000 fffff804`a79c4000   bc250mcdm   (private pdb symbols)  c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_lab\bc250mcdm.pdb
+    Loaded symbol image file: bc250mcdm.sys
+    Mapped memory image file: c:\users\daniel\desktop\namixwddm\driver\wdk\package\output_lab\bc250mcdm.sys
+    Image path: \SystemRoot\System32\drivers\bc250mcdm.sys
+    Image name: bc250mcdm.sys
+    Browse all global symbols  functions  data
+    Image was built with /Brepro flag.
+    Timestamp:        592B8D1A (This is a reproducible build file hash, not a timestamp)
+    CheckSum:         000648D8
+    ImageSize:        00064000
+    Translations:     0000.04b0 0000.04e4 0409.04b0 0409.04e4
+    Information from resource tables:
+THREAD ffffb584bf0dd040  Cid 0004.0dd0  Teb: 0000000000000000 Win32Thread: 0000000000000000 RUNNING on processor 0
+Not impersonating
+GetUlongFromAddress: unable to read from fffff80471c1152c
+Owning Process            ffffb584b74b8040       Image:         System
+Attached Process          N/A            Image:         N/A
+fffff78000000000: Unable to get shared data
+Wait Start TickCount      95828        
+Context Switch Count      4041           IdealProcessor: 0             
+ReadMemory error: Cannot get nt!KeMaximumIncrement value.
+UserTime                  00:00:00.000
+KernelTime                00:00:00.000
+Win32 Start Address nt!ExpWorkerThread (0xfffff8047128e4c0)
+Stack Init ffffc5893b141c90 Current ffffc5893b140c80
+Base ffffc5893b142000 Limit ffffc5893b13c000 Call 0000000000000000
+Priority 13  BasePriority 13  IoPriority 2  PagePriority 5
+Child-SP          RetAddr               : Args to Child                                                           : Call Site
+ffffc589`3b1410c0 fffff804`71998dda     : ffffffff`ffffffff ffffc589`3b141160 00000000`00000000 00000000`00000000 : nt!IopLiveDumpEndMirroringCallback+0xb4
+ffffc589`3b141110 fffff804`719aeb03     : 00000000`00000000 00000000`00000000 ffffb584`c0f65550 ffffb584`c0f65550 : nt!MmDuplicateMemory+0x2be
+ffffc589`3b1411a0 fffff804`718990af     : ffffb584`c0f65550 ffffb584`c0f65550 00000000`00000000 00000000`00000000 : nt!IopLiveDumpCaptureMemoryPages+0x9f
+ffffc589`3b1412f0 fffff804`714ed067     : 00000000`00000000 ffffdc85`a40db310 00000000`00000000 7fffb584`c43992b0 : nt!IoCaptureLiveDump+0x3e7
+ffffc589`3b1414d0 fffff804`7186379e     : ffffb584`00000022 ffffffff`80002d88 00000000`00000000 ffffb584`c4399230 : nt!DbgkCaptureLiveKernelDump+0x2ef
+ffffc589`3b141560 fffff804`7140f4f8     : 00000000`00000025 ffffc589`3b1418b0 00000000`00000040 00000000`00000000 : nt!NtSystemDebugControl+0x97e5e
+ffffc589`3b141670 fffff804`71400880     : fffff804`87fb54af ffffb584`c1bccc00 fffff804`87fc213a ffffffff`80002504 : nt!KiSystemServiceCopyEnd+0x28 (TrapFrame @ ffffc589`3b1416e0)
+ffffc589`3b141878 fffff804`87fb54af     : ffffb584`c1bccc00 fffff804`87fc213a ffffffff`80002504 ffffb584`c1bcc950 : nt!KiServiceLinkage
+ffffc589`3b141880 fffff804`87fc0ebf     : ffffb584`c26b0000 ffffc589`3b141b60 ffffb584`b74aec60 ffffc589`3b141b60 : watchdog!WdpDbgCaptureKernelDump+0x73
+ffffc589`3b141900 fffff804`87fc0d7d     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`00000000 : watchdog!WdDbgReportRecreate+0xef
+ffffc589`3b141960 fffff804`87e20f8f     : ffffb584`bf0dd040 fffff804`7140b906 00000000`00000000 00000000`bf375010 : watchdog!WdDbgReportCreate+0x3d
+ffffc589`3b1419c0 fffff804`87e0e96e     : ffffb584`c26b0000 ffffc589`3b141b60 ffffb584`b74aec60 0000ffff`f80487e0 : dxgkrnl!DxgCreateLiveDumpWithWdLogs+0x3f
+ffffc589`3b141a10 fffff804`7128e5c5     : ffffb584`bf0dd040 fffff804`713358c0 ffffb584`b74aec60 ffffb584`00000000 : dxgkrnl!ProcessDeadlockThread+0x4e
+ffffc589`3b141b70 fffff804`713265f5     : ffffb584`bf0dd040 00000000`00000080 ffffb584`b74b8040 00000000`00000000 : nt!ExpWorkerThread+0x105
+ffffc589`3b141c10 fffff804`714048d8     : ffff9f00`48c4e180 ffffb584`bf0dd040 fffff804`713265a0 00000000`00000000 : nt!PspSystemThreadStartup+0x55
+ffffc589`3b141c60 00000000`00000000     : ffffc589`3b142000 ffffc589`3b13c000 00000000`00000000 00000000`00000000 : nt!KiStartSystemThread+0x28
+
+**** DUMP OF ALL RESOURCE OBJECTS ****
+ERROR: reading list head at 0xfffff80471c169b0
+0 total locks
+Proc.Thread  .Thread  Ticks   ThreadState Blocker
+Unable to read nt!PsIdleProcess.
+   4.------  NO ETHREAD DATA
+Unable to read _ETHREAD at b749b580
+
+Unable to read nt!_EPROCESS at ffffb584b76d8040
+
+Threads Processed: 0
+fffff804`87d624d0 dxgkrnl!DXGDEADLOCK_TRACKER::Cancel (void)
+fffff804`87d62370 dxgkrnl!DXGDEADLOCK_TRACKER::DXGDEADLOCK_TRACKER (void)
+fffff804`87cb2248 dxgkrnl!DXGDEADLOCK_TRACKER::DeadlockCounter = <no type information>
+fffff804`87e0e920 dxgkrnl!ProcessDeadlockThread (void __cdecl ProcessDeadlockThread(void *))
+fffff804`87c36170 dxgkrnl!DeadlockPulseDpc (void __cdecl DeadlockPulseDpc(struct _KDPC *,void *,void *,void *))
+fffff804`87c36470 dxgkrnl!DeadlockTimeOutDpc (void __cdecl DeadlockTimeOutDpc(struct _KDPC *,void *,void *,void *))
+Symbol dxgkrnl!*Deadlock* not found.
+ffffb584`c26b0000  ffffb584`bd0b2000 ffffb584`bc90a298
+ffffb584`c26b0010  ffffb584`bc90a000 00000000`00000091
+ffffb584`c26b0020  00000000`00000000 ffffffff`ffffffff
+ffffb584`c26b0030  00000001`00060000 ffffb584`c26b0038
+ffffb584`c26b0040  ffffb584`c26b0038 00000000`00000000
+ffffb584`c26b0050  00000000`00000000 0000001a`00000000
+ffffb584`c26b0060  00000000`ffffffff 00000000`00000011
+ffffb584`c26b0070  00000000`00000000 00000035`00000000
+ffffb584`c26b0080  00000000`ffffffff 00000000`00000000
+ffffb584`c26b0090  00000000`00000000 0000001e`00000000
+ffffb584`c26b00a0  00000000`00000000 ffffb584`c36e0590
+ffffb584`c26b00b0  00000000`00000001 00000000`00000000
+ffffb584`c26b00c0  00000000`00000000 01000000`00000001
+ffffb584`c26b00d0  00000000`00000000 ffffb584`c09a7030
+ffffb584`c26b00e0  ffffb584`b9922060 00000000`00000000
+ffffb584`c26b00f0  00000001`00060000 ffffb584`c26b00f8
+ffffb584`c132a080  00000000`00200006 ffffb584`c132a088
+ffffb584`c132a090  ffffb584`c132a088 00000000`00000000
+ffffb584`c132a0a0  00000000`0c9e7003 ffffc589`3c338c90
+ffffb584`c132a0b0  ffffc589`3c333000 ffffc589`3c339000
+ffffb584`c132a0c0  00000000`00000000 00000000`06ab98ee
+ffffb584`c132a0d0  00029d81`00000000 ffffc589`3c338310
+ffffb584`c132a0e0  ffffc589`3c338cc0 00000000`00000000
+ffffb584`c132a0f0  00004001`00010001 00080000`0003a0c0
+ffffb584`c132a100  00000000`000011e2 00000000`0014eaf8
+ffffb584`c132a110  ffffc589`3c338b00 ffffb584`c132a318
+ffffb584`c132a120  ffffb584`c132a318 ffffb584`c132a128
+ffffb584`c132a130  ffffb584`c132a128 ffffb584`bd0b4080
+ffffb584`c132a140  00000008`0c000000 00000000`00000100
+ffffb584`c132a150  ffffb584`c132a1c0 00000000`00000000
+ffffb584`c132a160  ffffb584`bdf3f118 00000000`00000000
+ffffb584`c132a170  00000000`0028d000 00000000`00000000
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Kernel.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Usb4Kd.natvis'

@@ -1,0 +1,45 @@
+18:16:06.593 [pid=2960 AMDRSSrcExt.exe] === bc250umd.dll CARREGADA ===
+18:16:06.594 [pid=2960 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+18:16:06.594 [pid=2960 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+18:16:06.594 [pid=2960 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+18:16:06.594 [pid=2960 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+18:16:06.594 [pid=2960 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+18:16:06.594 [pid=2960 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+18:16:06.594 [pid=2960 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+18:16:06.595 [pid=2960 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+18:16:06.595 [pid=2960 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+18:16:06.595 [pid=2960 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+18:16:06.595 [pid=2960 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+18:16:06.595 [pid=2960 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+18:16:06.633 [pid=2960 AMDRSSrcExt.exe] === bc250umd.dll CARREGADA ===
+18:16:06.633 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:16:06.633 [pid=2960 AMDRSSrcExt.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:16:06.633 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:16:06.633 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:16:06.634 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:16:06.634 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:16:06.634 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:16:06.635 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:16:06.635 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:16:06.635 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:16:06.635 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:16:06.635 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:16:06.635 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:16:06.636 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:16:06.636 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:16:06.636 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:16:06.636 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:16:06.636 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+18:16:06.636 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:16:06.637 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+18:16:06.637 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:16:06.637 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+18:16:06.637 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:16:06.637 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+18:16:06.637 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:16:06.637 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+18:16:06.638 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:16:06.638 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+18:16:06.638 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:16:06.638 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+18:16:06.638 [pid=2960 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL

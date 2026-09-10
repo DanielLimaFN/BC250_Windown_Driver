@@ -1,0 +1,2731 @@
+[FUSE] STARTDEVICE AUTORIZADO: Fusivel armado para ensaio (Boots=1)
+[EDID] Synthesized 128 bytes, Checksum=0x25 (sum=0x1FDB)
+[EDID 00-15] 00 FF FF FF FF FF FF 00 08 78 FE 13 01 00 00 00
+[EDID DTD1] PixelClock10kHz=17361, HActive=2560, HBlank=224, VActive=1080, VBlank=31
+[DisplayInit] Acquired GOP: 2560x1080, Pitch=10240, Phys=0xC0000000, DeviceHandle=0xFFFFB68CBAE6E030
+[DisplayInit] FrameBuffer mapping: Phys=0xC0000000, Size=268435456, Virt=FFFFA5F969200000
+[DisplayInit] OTG VSync linked to BAR5 at 0xFE800000 (Offset 0x14030), InitialFrameCount=255239
+[SdmaPresent] Bc250RunPspLoadFirmwareTransaction status=0, PhysReady=1
+[SdmaPresent] F32Status=0 (PhysReady=1)
+[SdmaPresent] RingWorkStatus=2 (FixedReservation=3, AllocationMode=0, RingMc=0x0, WorkMc=0x0)
+[SdmaPresent] PSP Load SDMA0 FW: Status=0, PhysicalReady=1, F32Status=0, RingWorkStatus=2 (WptrPub=0, RptrAfter=0, Fence=00000000, Mismatches=0)
+[SdmaPresent] Pre-Arm SDMA0: CLK=000C0100 STATUS=46DEE557 RBCNTL=80840000 RingGpu=0xF40FF00000 WorkGpu=0xF40FF01000
+[SdmaPresent] SDMA0 Reset: GRBM 0x00000000 -> 0x00000000, ERR_LOG 0x0000000F -> 0x0000000F, STATUS=0x46DEE557
+[SdmaPresent] Post-Kick SDMA0: WPTR_Reg=68, RPTR_Reg=0, STATUS=46DC7042 (TargetWPTR=68)
+[SdmaPresent] TRIPÉ NO SILÍCIO COMPROVADO (Item 63)! WPTR=68 RPTR=52 Fence=00001001 Dados=4/4 OK em 1 polls!
+[DisplayConfig] Synthetic EDID DISABLED (using DxgkDdiRecommendMonitorModes)
+[StartDevice] GpuMmuDeclare=1 (present=1)
+[StartDevice] Sources=1, Children=1, Profile=1, SyntheticEdid=0
+[StartDevice] Runtime MmioTransport map status: ok (State=1, Base=FFFF9601C6400000)
+[ChildRelations] Called. Size=56, ChildEnumEnabled=1
+[ChildRelations] Returned DP ChildUid=1
+[McdmQAI] Type=1, OutSize=576, CapsStatus=0x00000000
+[McdmQAI] DRIVERCAPS: ComputeOnly=0, AlignShift=2, TexWShift=3, TexHShift=3, OutSize=576
+[DriverCaps] WDDMVersion=8192, MaxAllocListSlotId=32, PerEngineTDR=1, Nodes=2, HighestAddr=0x7FFFFFFFFFFFFFFF
+[DriverCaps] PresentationCaps=0x1006C903 (NoScreenToScreenBlt=1, NoOverlapScreenBlt=1, CddDwmInterop=1, SwDeviceBitmaps=1)
+[DriverCaps] FlipCaps=0x00000002, MaxQueuedFlipOnVSync=1, MiscCaps=0x00000000, PointerCaps=0x00000000
+[DriverCaps] Sched(MultiEngine=1, Preempt=1, LowIrql=1) Mem(VA=1, GpuMmu=1, Paravirt=0)
+[McdmQAI] Type=16, OutSize=4, CapsStatus=0x00000000
+[McdmQAI] DISPLAY_DRIVERCAPS_EXTENSION handled (zeroed)
+[McdmQAI] Type=15, OutSize=20, CapsStatus=0x00000000
+[McdmQAI] PHYSICALADAPTERCAPS returned NOT_SUPPORTED (single physical adapter)
+[McdmQAI] Type=13, OutSize=24, CapsStatus=0x00000000
+[McdmQAI] GPUMMUCAPS: VaBits=34, Levels=2
+[McdmQAI] Type=14, OutSize=20, CapsStatus=0x00000000
+[McdmQAI] PAGETABLELEVELDESC: Level=0, Bits=9, Size=4096
+[McdmQAI] Type=14, OutSize=20, CapsStatus=0x00000000
+[McdmQAI] PAGETABLELEVELDESC: Level=1, Bits=13, Size=65536
+[GetNodeMetadata] Node=0, EngineType=6
+[GetNodeMetadata] Node=1, EngineType=1
+[McdmQAI] Type=11, OutSize=40, CapsStatus=0x00000000
+[McdmQAI] QUERYSEGMENT4: NbSegment queried -> 2
+[McdmQAI] Type=11, OutSize=40, CapsStatus=0x00000000
+[McdmQAI] QUERYSEGMENT4: 2 segments filled (VRAM=0xF570000, GART=512MB, PagingSeg=2)
+[McdmQAI] Type=10, OutSize=8, CapsStatus=0x00000000
+[McdmQAI] HISTORYBUFFERPRECISION handled (32-bit)
+[McdmCreateProcess] Entered: hAdapter=0xFFFFB68CBC843000, hDxgkProcess=0xFFFFB68CB5122C80
+[McdmCreateDevice] Entered: hAdapter=0xFFFFB68CBC843000, hKmdProcess=0xFFFFB68CBC847798
+[McdmCreateDevice] Entered: hAdapter=0xFFFFB68CBC843000, hKmdProcess=0xFFFFB68CBC847798
+[McdmCreateContext] Entered: Node=0
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x200000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C5D26000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0x0
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=17, PTPgSz=2, Seg=31, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x200000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x400000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C5D69000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A018C00
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=17, PTPgSz=2, Seg=6, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x400000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x600000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C5D7A000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A018800
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=17, PTPgSz=2, Seg=5, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x600000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x800000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C5B7E000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A018100
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=16, PTPgSz=2, Seg=8, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x800000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0xA00000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C63EB000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A018700
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=16, PTPgSz=2, Seg=30, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0xA00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0xC00000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C5B7F000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A018900
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=17, PTPgSz=2, Seg=8, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0xC00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0xE00000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C5C81000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A019000
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=18, PTPgSz=2, Seg=4, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0xE00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x1000000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C63EE000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A018F00
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=17, PTPgSz=2, Seg=24, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x1000000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x1200000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C63F0000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A019000
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=18, PTPgSz=2, Seg=6, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x1200000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x1400000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C64D0000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A018D00
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=17, PTPgSz=2, Seg=14, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x1400000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x1600000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C63F1000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A019200
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=18, PTPgSz=2, Seg=18, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x1600000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x1800000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C63F2000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A019000
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=18, PTPgSz=2, Seg=1, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x1800000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x1A00000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C64D3000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A019000
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=18, PTPgSz=2, Seg=3, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x1A00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x1C00000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C64E4000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A019000
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=18, PTPgSz=2, Seg=7, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x1C00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x1E00000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C64E6000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A018F00
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=17, PTPgSz=2, Seg=29, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x1E00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x2000000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C5D7D000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A019100
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=18, PTPgSz=2, Seg=10, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x2000000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x2200000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C5D7E000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A019100
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=18, PTPgSz=2, Seg=12, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x2200000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x2400000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C63FB000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A019100
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=18, PTPgSz=2, Seg=15, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x2400000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x2600000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C6530000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A018F00
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=17, PTPgSz=2, Seg=26, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x2600000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x2800000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C6531000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A019200
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=18, PTPgSz=2, Seg=22, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x2800000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x2A00000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C5AA8000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A018F00
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=17, PTPgSz=2, Seg=27, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x2A00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x2C00000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C6534000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A019300
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=18, PTPgSz=2, Seg=25, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x2C00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x2E00000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C6535000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A019300
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=18, PTPgSz=2, Seg=27, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x2E00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x3000000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C6536000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A018E00
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=17, PTPgSz=2, Seg=18, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x3000000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x3200000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C63FD000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A018D00
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=17, PTPgSz=2, Seg=15, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x3200000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x3400000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C6572000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A018E00
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=17, PTPgSz=2, Seg=20, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x3400000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x3600000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C63FE000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A018E00
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=17, PTPgSz=2, Seg=17, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x3600000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x3800000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C653F000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A019600
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=18, PTPgSz=2, Seg=17, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x3800000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x3A00000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C63FF000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A018E00
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=17, PTPgSz=2, Seg=21, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x3A00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x3C00000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C659A000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A019300
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x200
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=18, PTPgSz=2, Seg=30, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x3C00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x3F5C000, Num=164, Start=348, Mode=0, Repeat=1, CpuVa=0xFFFF9601C657E000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFE4805A019500
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=10, Addr=0x15C
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=18, PTPgSz=2, Seg=13, Addr=0xA4
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x3F5C000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x3E00000, Num=348, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C65D0000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=8, Addr=0xFFFFB68CB9C62DD0
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x15C
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=18, PTPgSz=2, Seg=13, Addr=0x15C
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x3E00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=1, FirstPteVA=0x0, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65D1000, Flags=0x00000002
+[UpdatePT Lvl=1 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=1 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1
+[UpdatePT Lvl=1 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x2
+[UpdatePT Lvl=1 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x3
+[ActiveUpdatePT] Lvl=1, FirstPteVA=0x0, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x200000, Num=1, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65D3000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x200000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x201000, Num=1, Start=1, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65D5000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x2
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x201000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x202000, Num=1, Start=2, Mode=0, Repeat=0, CpuVa=0xFFFF9601C659C000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x202000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x203000, Num=1, Start=3, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65E6000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x4
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x203000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x204000, Num=1, Start=4, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65E7000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x5
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x204000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x205000, Num=1, Start=5, Mode=0, Repeat=0, CpuVa=0xFFFF9601C659D000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x6
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x205000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x206000, Num=1, Start=6, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65E9000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x7
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x206000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x207000, Num=1, Start=7, Mode=0, Repeat=0, CpuVa=0xFFFF9601C659E000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x8
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x207000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x208000, Num=1, Start=8, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65EA000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x9
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x208000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x209000, Num=1, Start=9, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65FC000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xA
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x209000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x20A000, Num=1, Start=10, Mode=0, Repeat=0, CpuVa=0xFFFF9601C659F000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xB
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x20A000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x20B000, Num=1, Start=11, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65A0000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xC
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x20B000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x20C000, Num=1, Start=12, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65A2000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xD
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x20C000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x20D000, Num=1, Start=13, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65A3000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xE
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x20D000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x20E000, Num=1, Start=14, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65FE000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xF
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x20E000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x20F000, Num=1, Start=15, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65FF000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x10
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x20F000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x210000, Num=1, Start=16, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6600000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x11
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x210000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x211000, Num=1, Start=17, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65B5000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x12
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x211000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x212000, Num=1, Start=18, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6601000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x13
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x212000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x213000, Num=1, Start=19, Mode=0, Repeat=0, CpuVa=0xFFFF9601C657F000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x14
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x213000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x214000, Num=1, Start=20, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6603000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x15
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x214000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x215000, Num=1, Start=21, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6640000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x16
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x215000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x216000, Num=1, Start=22, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65B6000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x17
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x216000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x217000, Num=1, Start=23, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65B7000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x18
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x217000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x218000, Num=1, Start=24, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6615000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x19
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x218000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x219000, Num=1, Start=25, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6616000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1A
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x219000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x21A000, Num=1, Start=26, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6653000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1B
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x21A000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x21B000, Num=1, Start=27, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6617000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1C
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x21B000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x21C000, Num=1, Start=28, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6618000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1D
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x21C000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x21D000, Num=1, Start=29, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65B9000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1E
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x21D000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x21E000, Num=1, Start=30, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6619000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1F
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x21E000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x21F000, Num=16, Start=31, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6654000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x232101
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x22F702
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x232103
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x1E4F04
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x21F000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x22F000, Num=16, Start=47, Mode=0, Repeat=0, CpuVa=0xFFFF9601C65BA000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x22A111
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x22A112
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x22A113
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x22A114
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x22F000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmSetRootPageTable] Context=FFFFB68CBC847948, SegId=1, Offset=0x0, NumEntries=512, MaxEntries=8192 (rootBits=13)
+[ActiveSetRootPT] ENTER: Ctx=FFFFB68CBC847948, SegId=1, Addr=0x0, Num=512, Max=8192 (CtxMax=8192, Active=1, AbiReady=1)
+[SetRootPageTable] ROOT_MC: TopologyVramBase=0x0 (NAO usada)
+[SetRootPageTable] ROOT_MC: VramBase=0x450000000 + LocalSegBase=0xA90000 + Offset=0x0 -> PT=0x450A90000
+[FlushMappedGfxhubTlb] Transport State=1, Base=FFFF9601C6400000, Len=524288
+[FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+[SetRootPageTable] [Vmid8Install] readback OK: PT_BASE=450a90000 CNTL=0x00555403 (PhysReady=1, Flush=1)
+[McdmSetRootPageTable] Result=0x00000000
+[QueryDeviceDescriptor] ChildUid=1, Offset=0, Len=256
+[QueryDeviceDescriptor] ChildUid=1, SyntheticEdid=0, EdidValid=0 -> STATUS_MONITOR_NO_MORE_DESCRIPTOR_DATA (forcing DxgkDdiRecommendMonitorModes)
+[QueryDeviceDescriptor] ChildUid=1, Offset=0, Len=128
+[QueryDeviceDescriptor] ChildUid=1, SyntheticEdid=0, EdidValid=0 -> STATUS_MONITOR_NO_MORE_DESCRIPTOR_DATA (forcing DxgkDdiRecommendMonitorModes)
+[QueryDeviceDescriptor] ChildUid=1, Offset=0, Len=128
+[QueryDeviceDescriptor] ChildUid=1, SyntheticEdid=0, EdidValid=0 -> STATUS_MONITOR_NO_MORE_DESCRIPTOR_DATA (forcing DxgkDdiRecommendMonitorModes)
+=== DxgkDdiRecommendMonitorModes: TargetId=1, hSet=FFFFB68CB965FA60 ===
+[SignalInfo] Active=2560x1080, Total=2784x1111, VSync=5613/100 Hz, HSync=6236043/100 Hz, PixelRate=173611437
+=== DxgkDdiRecommendMonitorModes SUCCESS: Added 2560x1080 @ 5613/100 Hz to Target 1 ===
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #1): Supported=1, status=0x00000000 ===
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #2): Supported=1, status=0x00000000 ===
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #3): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=5, PivotSrc=4294967295, PivotTgt=4294967295) ===
+[CofuncSourceMode] Created & Assigned new SourceModeSet -> SUCCESS
+[SignalInfo] Active=2560x1080, Total=2784x1111, VSync=5613/100 Hz, HSync=6236043/100 Hz, PixelRate=173611437
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Target unpinned -> Supported=1
+=== IsSupportedVidPn (Call #4): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=1, PivotSrc=0, PivotTgt=4294967295) ===
+[CofuncTargetMode] ModeSet already populated -> SUCCESS
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #5): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=2, PivotSrc=4294967295, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #6): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=3, PivotSrc=0, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #7): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=4, PivotSrc=0, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[McdmCreateProcess] Entered: hAdapter=0xFFFFB68CBC843000, hDxgkProcess=0xFFFFB68CB60D83D0
+[McdmCreateDevice] Entered: hAdapter=0xFFFFB68CBC843000, hKmdProcess=0xFFFFB68CBC8479D8
+[McdmCreateContext] Entered: Node=0
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x0, Num=16, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C6780000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=10, Addr=0x15A010100
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x20
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=19, PTPgSz=2, Seg=0, Addr=0x10
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x0, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x20000, Num=480, Start=32, Mode=0, Repeat=1, CpuVa=0xFFFF9601C663A000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=10, Addr=0xFFFFB68CB9C62DD0
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x20
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=19, PTPgSz=2, Seg=0, Addr=0x1E0
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x20000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x10000, Num=16, Start=16, Mode=0, Repeat=0, CpuVa=0xFFFF9601C663B000, Flags=0x00000002
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x22E644
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x22E645
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x22EC46
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x22B347
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x10000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=1, FirstPteVA=0x0, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C663D000, Flags=0x00000002
+[UpdatePT Lvl=1 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xF56E
+[UpdatePT Lvl=1 Entry 1] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=1 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=1 Entry 3] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[ActiveUpdatePT] Lvl=1, FirstPteVA=0x0, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=12
+[ActiveFlushTlb] RootSeg=1, RootOff=0xF56F000, StartVA=0x10000, EndVA=0x20000, hProc=0xFFFFB68CBC8479D8, Pending=1, HierPending=0
+[FlushMappedGfxhubTlb] Transport State=1, Base=FFFF9601C6400000, Len=524288
+[FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+[ActiveFlushTlb] Journal commit GLOBAL after physical GFXHUB invalidation: Generation=2 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x20000, Num=16, Start=32, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6781000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x230C58
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x230C59
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x230C5A
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x230C5B
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x20000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=12
+[ActiveFlushTlb] RootSeg=1, RootOff=0xF56F000, StartVA=0x20000, EndVA=0x30000, hProc=0xFFFFB68CBC8479D8, Pending=1, HierPending=0
+[FlushMappedGfxhubTlb] Transport State=1, Base=FFFF9601C6400000, Len=524288
+[FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+[ActiveFlushTlb] Journal commit GLOBAL after physical GFXHUB invalidation: Generation=3 -> SUCCESS
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #8): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=5, PivotSrc=4294967295, PivotTgt=4294967295) ===
+[CofuncSourceMode] Created & Assigned new SourceModeSet -> SUCCESS
+[SignalInfo] Active=2560x1080, Total=2784x1111, VSync=5613/100 Hz, HSync=6236043/100 Hz, PixelRate=173611437
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Target unpinned -> Supported=1
+=== IsSupportedVidPn (Call #9): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=1, PivotSrc=0, PivotTgt=4294967295) ===
+[CofuncTargetMode] ModeSet already populated -> SUCCESS
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #10): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=2, PivotSrc=4294967295, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=254, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #11): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=3, PivotSrc=0, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #12): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=4, PivotSrc=0, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #13): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=5, PivotSrc=4294967295, PivotTgt=4294967295) ===
+[CofuncSourceMode] Created & Assigned new SourceModeSet -> SUCCESS
+[SignalInfo] Active=2560x1080, Total=2784x1111, VSync=5613/100 Hz, HSync=6236043/100 Hz, PixelRate=173611437
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Target unpinned -> Supported=1
+=== IsSupportedVidPn (Call #14): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=1, PivotSrc=0, PivotTgt=4294967295) ===
+[CofuncTargetMode] ModeSet already populated -> SUCCESS
+  EnumVidPnCofuncModality status=0x00000000
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=0
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== IsSupportedVidPn (Call #15): Supported=1, status=0x00000000 ===
+=== EnumVidPnCofuncModality (PivotType=2, PivotSrc=4294967295, PivotTgt=1) ===
+  EnumVidPnCofuncModality status=0x00000000
+[GetStdAllocData] Type=1, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] SharedPrimary: 2560x1080, Format=21, VidPnSourceId=0
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=1, pAllocPriv=FFFFE4805150D4D0, pResPriv=0000000000000000
+[GetStdAllocData] SharedPrimary: 2560x1080, Format=21, VidPnSourceId=0
+[GetStdAllocData] Filled: Token=0xA110000100000001, Size=11075584, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Primary Resource Allocation Identified: Handle=FFFFB68CBC847B88, Size=11075584
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000040001F40 -> openHandle=FFFFB68CBC847C18 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x240000, Num=448, Start=64, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6782000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x20
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x21
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x22
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x23
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x240000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x400000, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C663F000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1E0
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1E1
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1E2
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1E3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x400000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x600000, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6800000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x3E0
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x3E1
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x3E2
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x3E3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x600000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x800000, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6801000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x5E0
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x5E1
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x5E2
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x5E3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x800000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0xA00000, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6802000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x7E0
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x7E1
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x7E2
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x7E3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0xA00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0xC00000, Num=208, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6805000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x9E0
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x9E1
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x9E2
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x9E3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0xC00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=12
+[ActiveFlushTlb] RootSeg=1, RootOff=0x0, StartVA=0x240000, EndVA=0xCD0000, hProc=0xFFFFB68CBC847798, Pending=1, HierPending=0
+[FlushMappedGfxhubTlb] Transport State=1, Base=FFFF9601C6400000, Len=524288
+[FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+[ActiveFlushTlb] (Pending=1, CanCommit=0) Finished -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=9
+[FillVirtual] IB_CPU_PHYS: VA=FFFFF800A08D0000 -> PA=0x22A111000
+[FillVirtual] IB_DUMP DW00: 8000000B 00240000 00000000 00000000
+[FillVirtual] IB_DUMP DW04: 003FFFFF 8000000B 00640000 00000000
+[FillVirtual] IB_DUMP DW08: 00000000 003FFFFF 8000000B 00A40000
+[FillVirtual] IB_DUMP DW12: 00000000 00000000 0028FFFF 00000000
+[FillVirtual] IB_SHAPE: UsefulDW=15 PadDW=1 PublishedDW=16 PublishedBytes=64
+[FillVirtual] Completo: 11075584 bytes, pattern=0x00000000, em 16 dwords
+[McdmSubmitCommandVirtual] Node=0, FenceId=1, DmaSize=64
+[SubmitVirtual Node0 SDMA] FenceId=1, DmaSize=64, DmaVA=0x22F000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847948, Proc=FFFFB68CBC847798, hasRoot=1, targetPtPhys=0x450A90000, instCtx=FFFFB68CBC847948, instRoot=0x450A90000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=9 ObjStatus=0 VA=0x22F000 Size=64 -> Segment=0 Offset=0x0 Epoch=0
+[PT_WALK] RootMC=0x450A90000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=1 VRAM+0xA90008 PDE=0000000450A91001 -> leafPA=0x450A91000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK IB] L0 idx=47 VRAM+0xA91178 PTE=000000022A111077 -> pageMC=0x22A111000 flags=0x77 valid=1
+[PT_WALK IB] RESOLVIDO: VA=0x22F000 -> 0x22A111000 (root=MC, folha=MC)
+[PT_WALK] IB_PA_MATCH: caminhada=0x22A111000 cpu=0x22A111000 -> CONFERE
+[PT_WALK] DEST: faixa de escrita [0x240000, 0xCD0000)
+[PT_WALK DEST] L1 idx=1 VRAM+0xA90008 PDE=0000000450A91001 -> leafPA=0x450A91000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK DEST] L0 idx=64 VRAM+0xA91200 PTE=0000000450AB0061 -> pageMC=0x450AB0000 flags=0x61 valid=1
+[PT_WALK DEST] RESOLVIDO: VA=0x240000 -> 0x450AB0000 (root=MC, folha=MC)
+[PT_WALK DEST] L1 idx=3 VRAM+0xA90018 PDE=0000000450A93001 -> leafPA=0x450A93000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK DEST] L0 idx=392 VRAM+0xA93C40 PTE=0000000450FF8061 -> pageMC=0x450FF8000 flags=0x61 valid=1
+[PT_WALK DEST] RESOLVIDO: VA=0x788000 -> 0x450FF8000 (root=MC, folha=MC)
+[PT_WALK DEST] L1 idx=6 VRAM+0xA90030 PDE=0000000450A96001 -> leafPA=0x450A96000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK DEST] L0 idx=207 VRAM+0xA96678 PTE=000000045153F061 -> pageMC=0x45153F000 flags=0x61 valid=1
+[PT_WALK DEST] RESOLVIDO: VA=0xCCF000 -> 0x45153F000 (root=MC, folha=MC)
+[SubmitVirtual Node0 SDMA] PLANO A DIRECT FILL: DestVA=0x240000 PA=0x450AB0000 -> MC=0xF400AB0000 Size=11075584 Pattern=0x00000000 (substituindo INDIRECT)
+[SdmaPresent] PAGING_FILL TRIPÉ PROVADO NO SILÍCIO: Dest=0xF400AB0000 (Off=0xAB0000), Size=11075584, Pattern=0x00000000 in 109 polls
+[SdmaPresent]   [TRIPÉ 1/3 - RPTR] TargetWPTR=164, WPTR_Reg=164, RPTR_Reg=164, RPTR_Wb=148, STATUS=0x46DEED57 -> MATCH
+[SdmaPresent]   [TRIPÉ 2/3 - FENCE] Exp=0x00001002, Obs=0x00001002 (Poison 0x43DAFFFE substituido pela GPU) -> MATCH
+[SdmaPresent]   [TRIPÉ 3/3 - DADOS] 5 Canaries -> PostGPU=[0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000] -> MATCH TOTAL (GPU SOBRESCREVEU) (16 pts: NonZero=0, Hash=0x00000000)
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 64 bytes em VA=0x22F000; DMA_COMPLETED notificado para FenceId=1
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x30000, Num=464, Start=48, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6784000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x20
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x21
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x22
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x23
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x30000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x240000, Num=448, Start=64, Mode=0, Repeat=1, CpuVa=0xFFFF9601C6806000, Flags=0x00000001
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=37, PTPgSz=1, Seg=30, Addr=0xFFFFF80000000000
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=2, Addr=0x240
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=12, PTPgSz=0, Seg=0, Addr=0x1C0
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x240000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x400000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C6807000, Flags=0x00000001
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=37, PTPgSz=1, Seg=30, Addr=0xFFFFE4805AAC8BE0
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x400
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=14, PTPgSz=0, Seg=0, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x400000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x600000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C6808000, Flags=0x00000001
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=37, PTPgSz=1, Seg=30, Addr=0xFFFFE4805AAC8CD0
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x600
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=16, PTPgSz=0, Seg=0, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x600000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x800000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C680A000, Flags=0x00000001
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=37, PTPgSz=1, Seg=30, Addr=0xFFFFE4805AAC88B0
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x800
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=20, PTPgSz=0, Seg=0, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x800000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0xA00000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C680B000, Flags=0x00000001
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=37, PTPgSz=1, Seg=30, Addr=0xFFFFE4805AAC8100
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0xA00
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=22, PTPgSz=0, Seg=0, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0xA00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0xC00000, Num=208, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C67F2000, Flags=0x00000001
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=37, PTPgSz=1, Seg=30, Addr=0xFFFFE4805AAC87C0
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0xC00
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=36, PTPgSz=3, Seg=0, Addr=0xD0
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0xC00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=12
+[ActiveFlushTlb] RootSeg=1, RootOff=0x0, StartVA=0x240000, EndVA=0xCD0000, hProc=0xFFFFB68CBC847798, Pending=1, HierPending=0
+[FlushMappedGfxhubTlb] Transport State=1, Base=FFFF9601C6400000, Len=524288
+[FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+[ActiveFlushTlb] (Pending=1, CanCommit=0) Finished -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x200000, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C67F3000, Flags=0x00000002
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1F0
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1F1
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1F2
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1F3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x200000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x400000, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C680E000, Flags=0x00000002
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x3F0
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x3F1
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x3F2
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x3F3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x400000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x600000, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6810000, Flags=0x00000002
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x5F0
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x5F1
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x5F2
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x5F3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x600000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x800000, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6832000, Flags=0x00000002
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x7F0
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x7F1
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x7F2
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x7F3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x800000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0xAC0000, Num=320, Start=192, Mode=0, Repeat=1, CpuVa=0xFFFF9601C6833000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=10, Addr=0x15A010100
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=6, Addr=0xC0
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=1, PhysIdx=19, PTPgSz=2, Seg=25, Addr=0x140
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0xAC0000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0xA00000, Num=192, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6834000, Flags=0x00000002
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x9F0
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x9F1
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x9F2
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x9F3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0xA00000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=1, FirstPteVA=0x200000, Num=5, Start=1, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6664000, Flags=0x00000000
+[UpdatePT Lvl=1 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xF56D
+[UpdatePT Lvl=1 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xF56C
+[UpdatePT Lvl=1 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xF56B
+[UpdatePT Lvl=1 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xF56A
+[ActiveUpdatePT] Lvl=1, FirstPteVA=0x200000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=12
+[ActiveFlushTlb] RootSeg=1, RootOff=0xF56F000, StartVA=0x30000, EndVA=0xAC0000, hProc=0xFFFFB68CBC8479D8, Pending=1, HierPending=0
+[FlushMappedGfxhubTlb] Transport State=1, Base=FFFF9601C6400000, Len=524288
+[FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+[ActiveFlushTlb] Journal commit GLOBAL after physical GFXHUB invalidation: Generation=4 -> SUCCESS
+[GetStdAllocData] Type=2, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] ShadowSurface: 2560x1080, Pitch=10240
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=2, pAllocPriv=FFFFE4805150D690, pResPriv=0000000000000000
+[GetStdAllocData] ShadowSurface: 2560x1080, Pitch=10240
+[GetStdAllocData] Filled: Token=0xA110000200000002, Size=11075584, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Primary Resource Allocation Identified: Handle=FFFFB68CBC847CA8, Size=11075584
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000040001FC0 -> openHandle=FFFFB68CBC847D38 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x240000, Num=448, Start=64, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6785000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xAB0
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xAB1
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xAB2
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xAB3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x240000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x400000, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6836000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xC70
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xC71
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xC72
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xC73
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x400000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x600000, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6838000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xE70
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xE71
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xE72
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xE73
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x600000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x800000, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C67F7000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1070
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1071
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1072
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1073
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x800000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0xA00000, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C683C000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1270
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1271
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1272
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1273
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0xA00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0xC00000, Num=208, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C683D000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1470
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1471
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1472
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x1473
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0xC00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=12
+[ActiveFlushTlb] RootSeg=1, RootOff=0x0, StartVA=0x240000, EndVA=0xCD0000, hProc=0xFFFFB68CBC847798, Pending=1, HierPending=0
+[FlushMappedGfxhubTlb] Transport State=1, Base=FFFF9601C6400000, Len=524288
+[FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+[ActiveFlushTlb] (Pending=1, CanCommit=0) Finished -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=9
+[FillVirtual] IB_CPU_PHYS: VA=FFFFF800A08D0040 -> PA=0x22A111040
+[FillVirtual] IB_DUMP DW00: 8000000B 00240000 00000000 00000000
+[FillVirtual] IB_DUMP DW04: 003FFFFF 8000000B 00640000 00000000
+[FillVirtual] IB_DUMP DW08: 00000000 003FFFFF 8000000B 00A40000
+[FillVirtual] IB_DUMP DW12: 00000000 00000000 0028FFFF 00000000
+[FillVirtual] IB_SHAPE: UsefulDW=15 PadDW=1 PublishedDW=16 PublishedBytes=64
+[FillVirtual] Completo: 11075584 bytes, pattern=0x00000000, em 16 dwords
+[McdmSubmitCommandVirtual] Node=0, FenceId=2, DmaSize=64
+[SubmitVirtual Node0 SDMA] FenceId=2, DmaSize=64, DmaVA=0x22F040
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847948, Proc=FFFFB68CBC847798, hasRoot=1, targetPtPhys=0x450A90000, instCtx=FFFFB68CBC847948, instRoot=0x450A90000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=10 ObjStatus=0 VA=0x22F040 Size=64 -> Segment=0 Offset=0x0 Epoch=0
+[PT_WALK] RootMC=0x450A90000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=1 VRAM+0xA90008 PDE=0000000450A91001 -> leafPA=0x450A91000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK IB] L0 idx=47 VRAM+0xA91178 PTE=000000022A111077 -> pageMC=0x22A111000 flags=0x77 valid=1
+[PT_WALK IB] RESOLVIDO: VA=0x22F040 -> 0x22A111040 (root=MC, folha=MC)
+[PT_WALK] IB_PA_MATCH: caminhada=0x22A111040 cpu=0x22A111040 -> CONFERE
+[PT_WALK] DEST: faixa de escrita [0x240000, 0xCD0000)
+[PT_WALK DEST] L1 idx=1 VRAM+0xA90008 PDE=0000000450A91001 -> leafPA=0x450A91000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK DEST] L0 idx=64 VRAM+0xA91200 PTE=0000000451540061 -> pageMC=0x451540000 flags=0x61 valid=1
+[PT_WALK DEST] RESOLVIDO: VA=0x240000 -> 0x451540000 (root=MC, folha=MC)
+[PT_WALK DEST] L1 idx=3 VRAM+0xA90018 PDE=0000000450A93001 -> leafPA=0x450A93000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK DEST] L0 idx=392 VRAM+0xA93C40 PTE=0000000451A88061 -> pageMC=0x451A88000 flags=0x61 valid=1
+[PT_WALK DEST] RESOLVIDO: VA=0x788000 -> 0x451A88000 (root=MC, folha=MC)
+[PT_WALK DEST] L1 idx=6 VRAM+0xA90030 PDE=0000000450A96001 -> leafPA=0x450A96000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK DEST] L0 idx=207 VRAM+0xA96678 PTE=0000000451FCF061 -> pageMC=0x451FCF000 flags=0x61 valid=1
+[PT_WALK DEST] RESOLVIDO: VA=0xCCF000 -> 0x451FCF000 (root=MC, folha=MC)
+[SubmitVirtual Node0 SDMA] PLANO A DIRECT FILL: DestVA=0x240000 PA=0x451540000 -> MC=0xF401540000 Size=11075584 Pattern=0x00000000 (substituindo INDIRECT)
+[SdmaPresent] PAGING_FILL TRIPÉ PROVADO NO SILÍCIO: Dest=0xF401540000 (Off=0x1540000), Size=11075584, Pattern=0x00000000 in 109 polls
+[SdmaPresent]   [TRIPÉ 1/3 - RPTR] TargetWPTR=260, WPTR_Reg=260, RPTR_Reg=260, RPTR_Wb=244, STATUS=0x46DEED57 -> MATCH
+[SdmaPresent]   [TRIPÉ 2/3 - FENCE] Exp=0x00001003, Obs=0x00001003 (Poison 0x43DAFFFE substituido pela GPU) -> MATCH
+[SdmaPresent]   [TRIPÉ 3/3 - DADOS] 5 Canaries -> PostGPU=[0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000] -> MATCH TOTAL (GPU SOBRESCREVEU) (16 pts: NonZero=0, Hash=0x00000000)
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 64 bytes em VA=0x22F040; DMA_COMPLETED notificado para FenceId=2
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0xAC0000, Num=320, Start=192, Mode=0, Repeat=0, CpuVa=0xFFFF9601C6786000, Flags=0x00000000
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xAB0
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xAB1
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xAB2
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xAB3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0xAC0000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x240000, Num=448, Start=64, Mode=0, Repeat=1, CpuVa=0xFFFF9601C69A0000, Flags=0x00000001
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=37, PTPgSz=1, Seg=30, Addr=0xFFFFF80000000000
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=2, Addr=0x240
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=1, Seg=0, Addr=0x1C0
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x240000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x400000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C69A1000, Flags=0x00000001
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=37, PTPgSz=1, Seg=30, Addr=0xFFFFE4805AAC8BE0
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x400
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=2, PTPgSz=1, Seg=0, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x400000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x600000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C69A3000, Flags=0x00000001
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=37, PTPgSz=1, Seg=30, Addr=0xFFFFE4805AAC8CD0
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x600
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=6, PTPgSz=1, Seg=0, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x600000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x800000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C69A4000, Flags=0x00000001
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=37, PTPgSz=1, Seg=30, Addr=0xFFFFE4805AAC88B0
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x800
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=8, PTPgSz=1, Seg=0, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x800000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0xA00000, Num=512, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C69A6000, Flags=0x00000001
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=37, PTPgSz=1, Seg=30, Addr=0xFFFFE4805AAC8100
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0xA00
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=12, PTPgSz=1, Seg=0, Addr=0x200
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0xA00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0xC00000, Num=208, Start=0, Mode=0, Repeat=1, CpuVa=0xFFFF9601C69A7000, Flags=0x00000001
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=37, PTPgSz=1, Seg=30, Addr=0xFFFFE4805AAC87C0
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0xC00
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=14, PTPgSz=1, Seg=0, Addr=0xD0
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0xC00000, hProc=0xFFFFB68CBC847798, RootAddr=0x0, SegId=1
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=12
+[ActiveFlushTlb] RootSeg=1, RootOff=0x0, StartVA=0x240000, EndVA=0xCD0000, hProc=0xFFFFB68CBC847798, Pending=1, HierPending=0
+[FlushMappedGfxhubTlb] Transport State=1, Base=FFFF9601C6400000, Len=524288
+[FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+[ActiveFlushTlb] (Pending=1, CanCommit=0) Finished -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0xC00000, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C67FB000, Flags=0x00000002
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xBF0
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xBF1
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xBF2
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xBF3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0xC00000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0xE00000, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C69B9000, Flags=0x00000002
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xDF0
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xDF1
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xDF2
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xDF3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0xE00000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x1000000, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C69BA000, Flags=0x00000002
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xFF0
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xFF1
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xFF2
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xFF3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x1000000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x1200000, Num=512, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C69BD000, Flags=0x00000002
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x11F0
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x11F1
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x11F2
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x11F3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x1200000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x1550000, Num=176, Start=336, Mode=0, Repeat=1, CpuVa=0xFFFF9601C69BE000, Flags=0x00000003
+[UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[UpdatePT Lvl=0 Entry 1] V=0, Z=0, LP=1, PhysIdx=38, PTPgSz=1, Seg=10, Addr=0x15A010100
+[UpdatePT Lvl=0 Entry 2] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=10, Addr=0x150
+[UpdatePT Lvl=0 Entry 3] V=0, Z=0, LP=0, PhysIdx=20, PTPgSz=2, Seg=11, Addr=0xB0
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x1550000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=0, FirstPteVA=0x1400000, Num=336, Start=0, Mode=0, Repeat=0, CpuVa=0xFFFF9601C69D0000, Flags=0x00000002
+[UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x13F0
+[UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x13F1
+[UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x13F2
+[UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0x13F3
+[ActiveUpdatePT] Lvl=0, FirstPteVA=0x1400000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=11
+[UpdatePT] Lvl=1, FirstPteVA=0xC00000, Num=5, Start=6, Mode=0, Repeat=0, CpuVa=0xFFFF9601C69D1000, Flags=0x00000000
+[UpdatePT Lvl=1 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xF568
+[UpdatePT Lvl=1 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xF567
+[UpdatePT Lvl=1 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xF566
+[UpdatePT Lvl=1 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=1, Addr=0xF565
+[ActiveUpdatePT] Lvl=1, FirstPteVA=0xC00000, hProc=0xFFFFB68CBC8479D8, RootAddr=0x0, SegId=0
+[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[McdmBuildPagingBuffer] Entered: Op=12
+[ActiveFlushTlb] RootSeg=1, RootOff=0xF56F000, StartVA=0xAC0000, EndVA=0x1550000, hProc=0xFFFFB68CBC8479D8, Pending=1, HierPending=0
+[FlushMappedGfxhubTlb] Transport State=1, Base=FFFF9601C6400000, Len=524288
+[FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+[ActiveFlushTlb] Journal commit GLOBAL after physical GFXHUB invalidation: Generation=5 -> SUCCESS
+=== CommitVidPn Entered: AffectedSource=0, Started=1, Flags=0x00000000 (PowerOff=0, PowerTrans=0), hAlloc=FFFFB68CBC847B88 ===
+[VidPn] Path: Src=0, Tgt=1, Scale=1, Rot=1, ReqPinned=1
+[VidPn] Pinned SourceMode: 2560x1080, fmt=21, stride=10240
+[VidPn] Pinned TargetMode: 2560x1080, scanline=1
+[VidPn] TargetMode matches GOP -> Supported=TRUE!
+=== SetVidPnSourceAddress (SourceId=0, Segment=1, Addr=0xAB0000, hAlloc=FFFFB68CBC847B88, ContextCount=0, Flags=0x00000001) ===
+=== SetVidPnSourceVisibility (Visible=1) ===
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #16): Supported=1, status=0x00000000 ===
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1920x60, Type=6, Pitch=7680
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE4805150A810, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1920x60, Type=6, Pitch=7680
+[GetStdAllocData] Filled: Token=0xA110000400000003, Size=524288, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC847DC8, Size=524288
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000040002040 -> openHandle=FFFFB68CBC847E58 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1x1, Type=6, Pitch=4
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE4805150A810, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1x1, Type=6, Pitch=4
+[GetStdAllocData] Filled: Token=0xA110000400000004, Size=65536, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC847EE8, Size=65536
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=00000000400020C0 -> openHandle=FFFFB68CBC847F78 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1920x1080, Type=6, Pitch=7680
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE4805150A810, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1920x1080, Type=6, Pitch=7680
+[GetStdAllocData] Filled: Token=0xA110000400000005, Size=8323072, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC848008, Size=8323072
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000080 -> openHandle=FFFFB68CBC848098 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 233x20, Type=6, Pitch=932
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE4805150A810, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 233x20, Type=6, Pitch=932
+[GetStdAllocData] Filled: Token=0xA110000400000006, Size=65536, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC848128, Size=65536
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000040002140 -> openHandle=FFFFB68CBC8481B8 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1233x679, Type=6, Pitch=4932
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE4805150A810, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1233x679, Type=6, Pitch=4932
+[GetStdAllocData] Filled: Token=0xA110000400000007, Size=3407872, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC848248, Size=3407872
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=00000000400021C0 -> openHandle=FFFFB68CBC8482D8 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1x1, Type=6, Pitch=4
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE4805150A810, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1x1, Type=6, Pitch=4
+[GetStdAllocData] Filled: Token=0xA110000400000008, Size=65536, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC848368, Size=65536
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000040002240 -> openHandle=FFFFB68CBC8483F8 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2100x1020, Type=6, Pitch=8400
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE48051504AD0, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2100x1020, Type=6, Pitch=8400
+[GetStdAllocData] Filled: Token=0xA110000400000009, Size=8585216, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC848488, Size=8585216
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=00000000400022C0 -> openHandle=FFFFB68CBC848518 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1233x679, Type=6, Pitch=4932
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE48051504AD0, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1233x679, Type=6, Pitch=4932
+[GetStdAllocData] Filled: Token=0xA11000040000000A, Size=3407872, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC8485A8, Size=3407872
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000300 -> openHandle=FFFFB68CBC848638 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 873x655, Type=6, Pitch=3492
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE48051504AD0, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 873x655, Type=6, Pitch=3492
+[GetStdAllocData] Filled: Token=0xA11000040000000B, Size=2293760, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC8486C8, Size=2293760
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000380 -> openHandle=FFFFB68CBC848758 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #17): Supported=1, status=0x00000000 ===
+[VidPn] Path: Src=0, Tgt=1, Scale=254, Rot=254, ReqPinned=0
+[VidPn] Source unpinned -> Supported=1
+=== IsSupportedVidPn (Call #18): Supported=1, status=0x00000000 ===
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=608, CapsStatus=0x00000000
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2560x60, Type=6, Pitch=10240
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE48050695590, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2560x60, Type=6, Pitch=10240
+[GetStdAllocData] Filled: Token=0xA11000040000000C, Size=655360, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC8487E8, Size=655360
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000400 -> openHandle=FFFFB68CBC848878 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[GetStdAllocData] GdiSurface: 1400x680, Type=6, Pitch=5600
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[McdmQAI] Type=0 NOT SUPPORTED
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE480590DF2D0, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1400x680, Type=6, Pitch=5600
+[GetStdAllocData] Filled: Token=0xA11000040000000D, Size=3866624, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC848908, Size=3866624
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000480 -> openHandle=FFFFB68CBC848998 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[GetStdAllocData] GdiSurface: 2560x1080, Type=6, Pitch=10240
+[McdmQAI] Type=0 NOT SUPPORTED
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE4805A7459D0, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2560x1080, Type=6, Pitch=10240
+[GetStdAllocData] Filled: Token=0xA11000040000000E, Size=11075584, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Primary Resource Allocation Identified: Handle=FFFFB68CBC848A28, Size=11075584
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000040002340 -> openHandle=FFFFB68CBC848AB8 (status=0, nt=0x00000000)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2560x40, Type=6, Pitch=10240
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE4805068DD10, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2560x40, Type=6, Pitch=10240
+[GetStdAllocData] Filled: Token=0xA11000040000000F, Size=458752, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC848B48, Size=458752
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=00000000400023C0 -> openHandle=FFFFB68CBC848BD8 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[McdmQAI] Type=0, OutSize=2400, CapsStatus=0x00000000
+[McdmQAI] Type=0 NOT SUPPORTED
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[Present #1] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[Present #1] Blt=1, hCtx=FFFFB68CBC847AF8, DmaSize=65536, DmaVA=0x20000, NumSrc=0, NumDst=0, Flags=0x00000001
+[Present #1] Info0: hDev=0000000000000000, Seg=0, PhysAdapter=0, VA=0x0, Phys=0x0
+[Present #1] Info1: hDev=FFFFB68CBC847D38, Seg=0, PhysAdapter=0, VA=0xAC0000, Phys=0x0
+[Present #1] Info2: hDev=FFFFB68CBC847C18, Seg=0, PhysAdapter=0, VA=0x30000, Phys=0x0
+[Present #1] DstRect=(0,0)-(2560,1080), SrcRect=(0,0)-(2560,1080), SubRects=1
+[Present #1] SubRect[0]=(119,0)-(992,655), CenterPixel=0x00000000
+[Present #1] SrcPhysSample @ 0xAB0000: 00000000 00000000 00000000 00000000
+[Present #1] SrcVaOffsetSample @ 0xAC0000: 00000000 00000000 00000000 00000000
+[Present #1] ScanoutSample @ 0x0: 00000000 00000000 00000000 00000000
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[Present #1] Spread SCANOUT   @ 0x0: NonZero=0/256, Xor=00000000
+[Present #1] Spread PRIMARY   @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1, hAlloc=FFFFB68CBC847B88)
+[Present #1] Spread SLOT_SRC  @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #1] AVISO: Superficie de origem 0xAB0000 esta com todos os pixels em zero (NonZero=0/256)
+[Present #1] Spread SLOT_DST  @ 0x20000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #1] Spread SLOT_WORD @ 0xAC0000: NonZero=0/256, Xor=00000000 (union PhysicalAddress/VirtualAddress)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[Present #1] Scanout GOP preservado: origens contem apenas zeros (aguardando desktop real)
+[McdmSetRootPageTable] Context=FFFFB68CBC847AF8, SegId=1, Offset=0xF56F000, NumEntries=512, MaxEntries=8192 (rootBits=13)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ActiveSetRootPT] ENTER: Ctx=FFFFB68CBC847AF8, SegId=1, Addr=0xF56F000, Num=512, Max=8192 (CtxMax=8192, Active=1, AbiReady=1)
+[SetRootPageTable] ROOT_MC: TopologyVramBase=0x0 (NAO usada)
+[SetRootPageTable] ROOT_MC: VramBase=0x450000000 + LocalSegBase=0xA90000 + Offset=0xF56F000 -> PT=0x45FFFF000
+[FlushMappedGfxhubTlb] Transport State=1, Base=FFFF9601C6400000, Len=524288
+[FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+[SetRootPageTable] [Vmid8Install] readback OK: PT_BASE=45ffff000 CNTL=0x00555403 (PhysReady=1, Flush=1)
+[McdmSetRootPageTable] Result=0x00000000
+[McdmSubmitCommandVirtual] Node=0, FenceId=3, DmaSize=4
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[SubmitVirtual Node0 SDMA] FenceId=3, DmaSize=4, DmaVA=0x20000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x20000 Size=4 -> Segment=0 Offset=0x230C58000 Epoch=0
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK IB] L0 idx=32 VRAM+0xFFFE100 PTE=0000000230C58077 -> pageMC=0x230C58000 flags=0x77 valid=1
+[PT_WALK IB] RESOLVIDO: VA=0x20000 -> 0x230C58000 (root=MC, folha=MC)
+[PT_WALK] IB_PA_MATCH: caminhada=0x230C58000 cpu=0x0 -> DIVERGE
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x20000 (substituindo INDIRECT)
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=300 RPTR=300 Fence=00001004 in 2 polls
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x20000; DMA_COMPLETED notificado para FenceId=3
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[Present #2] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[Present #2] Blt=1, hCtx=FFFFB68CBC847AF8, DmaSize=65536, DmaVA=0x10000, NumSrc=0, NumDst=0, Flags=0x00000001
+[Present #2] Info0: hDev=0000000000000000, Seg=0, PhysAdapter=0, VA=0x0, Phys=0x0
+[Present #2] Info1: hDev=FFFFB68CBC847D38, Seg=0, PhysAdapter=0, VA=0xAC0000, Phys=0x0
+[Present #2] Info2: hDev=FFFFB68CBC847C18, Seg=0, PhysAdapter=0, VA=0x30000, Phys=0x0
+[Present #2] DstRect=(0,0)-(2560,1080), SrcRect=(0,0)-(2560,1080), SubRects=2
+[Present #2] SubRect[0]=(0,0)-(1,1), CenterPixel=0x00000000
+[Present #2] SrcPhysSample @ 0xAB0000: 00000000 00000000 00000000 00000000
+[Present #2] SrcVaOffsetSample @ 0xAC0000: 00000000 00000000 00000000 00000000
+[Present #2] ScanoutSample @ 0x0: 00000000 00000000 00000000 00000000
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[Present #2] Spread SCANOUT   @ 0x0: NonZero=0/256, Xor=00000000
+[Present #2] Spread PRIMARY   @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1, hAlloc=FFFFB68CBC847B88)
+[Present #2] Spread SLOT_SRC  @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[Present #2] AVISO: Superficie de origem 0xAB0000 esta com todos os pixels em zero (NonZero=0/256)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[Present #2] Spread SLOT_DST  @ 0x20000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #2] Spread SLOT_WORD @ 0xAC0000: NonZero=0/256, Xor=00000000 (union PhysicalAddress/VirtualAddress)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[Present #2] Scanout GOP preservado: origens contem apenas zeros (aguardando desktop real)
+[McdmSubmitCommandVirtual] Node=0, FenceId=4, DmaSize=4
+[SubmitVirtual Node0 SDMA] FenceId=4, DmaSize=4, DmaVA=0x10000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x10000 Size=4 -> Segment=0 Offset=0x22E644000 Epoch=0
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK IB] L0 idx=16 VRAM+0xFFFE080 PTE=000000022E644077 -> pageMC=0x22E644000 flags=0x77 valid=1
+[PT_WALK IB] RESOLVIDO: VA=0x10000 -> 0x22E644000 (root=MC, folha=MC)
+[PT_WALK] IB_PA_MATCH: caminhada=0x22E644000 cpu=0x0 -> DIVERGE
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x10000 (substituindo INDIRECT)
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=340 RPTR=340 Fence=00001005 in 2 polls
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x10000; DMA_COMPLETED notificado para FenceId=4
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[Present #3] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[Present #3] Blt=1, hCtx=FFFFB68CBC847AF8, DmaSize=65536, DmaVA=0x20000, NumSrc=0, NumDst=0, Flags=0x00000001
+[Present #3] Info0: hDev=0000000000000000, Seg=0, PhysAdapter=0, VA=0x0, Phys=0x0
+[Present #3] Info1: hDev=FFFFB68CBC847D38, Seg=0, PhysAdapter=0, VA=0xAC0000, Phys=0x0
+[Present #3] Info2: hDev=FFFFB68CBC847C18, Seg=0, PhysAdapter=0, VA=0x30000, Phys=0x0
+[Present #3] DstRect=(0,0)-(2560,1080), SrcRect=(0,0)-(2560,1080), SubRects=1
+[Present #3] SubRect[0]=(1280,532)-(1304,559), CenterPixel=0x00000000
+[Present #3] SrcPhysSample @ 0xAB0000: 00000000 00000000 00000000 00000000
+[Present #3] SrcVaOffsetSample @ 0xAC0000: 00000000 00000000 00000000 00000000
+[Present #3] ScanoutSample @ 0x0: 00000000 00000000 00000000 00000000
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[Present #3] Spread SCANOUT   @ 0x0: NonZero=0/256, Xor=00000000
+[Present #3] Spread PRIMARY   @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1, hAlloc=FFFFB68CBC847B88)
+[Present #3] Spread SLOT_SRC  @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #3] AVISO: Superficie de origem 0xAB0000 esta com todos os pixels em zero (NonZero=0/256)
+[Present #3] Spread SLOT_DST  @ 0x20000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #3] Spread SLOT_WORD @ 0xAC0000: NonZero=0/256, Xor=00000000 (union PhysicalAddress/VirtualAddress)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[Present #3] Scanout GOP preservado: origens contem apenas zeros (aguardando desktop real)
+[McdmSubmitCommandVirtual] Node=0, FenceId=5, DmaSize=4
+[SubmitVirtual Node0 SDMA] FenceId=5, DmaSize=4, DmaVA=0x20000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x20000 Size=4 -> Segment=0 Offset=0x230C58000 Epoch=0
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK IB] L0 idx=32 VRAM+0xFFFE100 PTE=0000000230C58077 -> pageMC=0x230C58000 flags=0x77 valid=1
+[PT_WALK IB] RESOLVIDO: VA=0x20000 -> 0x230C58000 (root=MC, folha=MC)
+[PT_WALK] IB_PA_MATCH: caminhada=0x230C58000 cpu=0x0 -> DIVERGE
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x20000 (substituindo INDIRECT)
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=380 RPTR=380 Fence=00001006 in 2 polls
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x20000; DMA_COMPLETED notificado para FenceId=5
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[Present #4] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[Present #4] Blt=1, hCtx=FFFFB68CBC847AF8, DmaSize=65536, DmaVA=0x10000, NumSrc=0, NumDst=0, Flags=0x00000001
+[Present #4] Info0: hDev=0000000000000000, Seg=0, PhysAdapter=0, VA=0x0, Phys=0x0
+[Present #4] Info1: hDev=FFFFB68CBC847D38, Seg=0, PhysAdapter=0, VA=0xAC0000, Phys=0x0
+[Present #4] Info2: hDev=FFFFB68CBC847C18, Seg=0, PhysAdapter=0, VA=0x30000, Phys=0x0
+[Present #4] DstRect=(0,0)-(2560,1080), SrcRect=(0,0)-(2560,1080), SubRects=1
+[Present #4] SubRect[0]=(1280,532)-(1304,559), CenterPixel=0x00000000
+[Present #4] SrcPhysSample @ 0xAB0000: 00000000 00000000 00000000 00000000
+[Present #4] SrcVaOffsetSample @ 0xAC0000: 00000000 00000000 00000000 00000000
+[Present #4] ScanoutSample @ 0x0: 00000000 00000000 00000000 00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[Present #4] Spread SCANOUT   @ 0x0: NonZero=0/256, Xor=00000000
+[Present #4] Spread PRIMARY   @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1, hAlloc=FFFFB68CBC847B88)
+[Present #4] Spread SLOT_SRC  @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #4] AVISO: Superficie de origem 0xAB0000 esta com todos os pixels em zero (NonZero=0/256)
+[Present #4] Spread SLOT_DST  @ 0x20000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #4] Spread SLOT_WORD @ 0xAC0000: NonZero=0/256, Xor=00000000 (union PhysicalAddress/VirtualAddress)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[Present #4] Scanout GOP preservado: origens contem apenas zeros (aguardando desktop real)
+[McdmSubmitCommandVirtual] Node=0, FenceId=6, DmaSize=4
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[SubmitVirtual Node0 SDMA] FenceId=6, DmaSize=4, DmaVA=0x10000
+[GetStdAllocData] GdiSurface: 2560x40, Type=6, Pitch=10240
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x10000 Size=4 -> Segment=0 Offset=0x22E644000 Epoch=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE48056C851D0, pResPriv=0000000000000000
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[GetStdAllocData] GdiSurface: 2560x40, Type=6, Pitch=10240
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[GetStdAllocData] Filled: Token=0xA110000400000010, Size=458752, Align=65536
+[PT_WALK IB] L0 idx=16 VRAM+0xFFFE080 PTE=000000022E644077 -> pageMC=0x22E644000 flags=0x77 valid=1
+[McdmCreateAllocation] NumAllocs=1
+[PT_WALK IB] RESOLVIDO: VA=0x10000 -> 0x22E644000 (root=MC, folha=MC)
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[PT_WALK] IB_PA_MATCH: caminhada=0x22E644000 cpu=0x0 -> DIVERGE
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x10000 (substituindo INDIRECT)
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=420 RPTR=420 Fence=00001007 in 2 polls
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x10000; DMA_COMPLETED notificado para FenceId=6
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC848C68, Size=458752
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000580 -> openHandle=FFFFB68CBC848CF8 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2560x1080, Type=6, Pitch=10240
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE48051505690, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2560x1080, Type=6, Pitch=10240
+[GetStdAllocData] Filled: Token=0xA110000400000011, Size=11075584, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Primary Resource Allocation Identified: Handle=FFFFB68CBC848D88, Size=11075584
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000500 -> openHandle=FFFFB68CBC848E18 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1x1, Type=6, Pitch=4
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE480515055D0, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1x1, Type=6, Pitch=4
+[GetStdAllocData] Filled: Token=0xA110000400000012, Size=65536, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC848EA8, Size=65536
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000040002440 -> openHandle=FFFFB68CBC848F38 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1400x680, Type=6, Pitch=5600
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE48051505690, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1400x680, Type=6, Pitch=5600
+[GetStdAllocData] Filled: Token=0xA110000400000013, Size=3866624, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC848FC8, Size=3866624
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=00000000400024C0 -> openHandle=FFFFB68CBC849058 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[Present #5] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[Present #5] Blt=1, hCtx=FFFFB68CBC847AF8, DmaSize=65536, DmaVA=0x20000, NumSrc=0, NumDst=0, Flags=0x00000001
+[Present #5] Info0: hDev=0000000000000000, Seg=0, PhysAdapter=0, VA=0x0, Phys=0x0
+[Present #5] Info1: hDev=FFFFB68CBC847D38, Seg=0, PhysAdapter=0, VA=0xAC0000, Phys=0x0
+[Present #5] Info2: hDev=FFFFB68CBC847C18, Seg=0, PhysAdapter=0, VA=0x30000, Phys=0x0
+[Present #5] DstRect=(0,0)-(2560,1080), SrcRect=(0,0)-(2560,1080), SubRects=1
+[Present #5] SubRect[0]=(119,0)-(992,655), CenterPixel=0x00000000
+[Present #5] SrcPhysSample @ 0xAB0000: 00000000 00000000 00000000 00000000
+[Present #5] SrcVaOffsetSample @ 0xAC0000: 00000000 00000000 00000000 00000000
+[Present #5] ScanoutSample @ 0x0: 00000000 00000000 00000000 00000000
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[Present #5] Spread SCANOUT   @ 0x0: NonZero=0/256, Xor=00000000
+[Present #5] Spread PRIMARY   @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1, hAlloc=FFFFB68CBC847B88)
+[Present #5] Spread SLOT_SRC  @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #5] AVISO: Superficie de origem 0xAB0000 esta com todos os pixels em zero (NonZero=0/256)
+[Present #5] Spread SLOT_DST  @ 0x20000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #5] Spread SLOT_WORD @ 0xAC0000: NonZero=0/256, Xor=00000000 (union PhysicalAddress/VirtualAddress)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[Present #5] Scanout GOP preservado: origens contem apenas zeros (aguardando desktop real)
+[McdmSubmitCommandVirtual] Node=0, FenceId=7, DmaSize=4
+[SubmitVirtual Node0 SDMA] FenceId=7, DmaSize=4, DmaVA=0x20000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x20000 Size=4 -> Segment=0 Offset=0x230C58000 Epoch=0
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK IB] L0 idx=32 VRAM+0xFFFE100 PTE=0000000230C58077 -> pageMC=0x230C58000 flags=0x77 valid=1
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[PT_WALK IB] RESOLVIDO: VA=0x20000 -> 0x230C58000 (root=MC, folha=MC)
+[PT_WALK] IB_PA_MATCH: caminhada=0x230C58000 cpu=0x0 -> DIVERGE
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x20000 (substituindo INDIRECT)
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=460 RPTR=460 Fence=00001008 in 2 polls
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x20000; DMA_COMPLETED notificado para FenceId=7
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[Present #6] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[Present #6] Blt=1, hCtx=FFFFB68CBC847AF8, DmaSize=65536, DmaVA=0x10000, NumSrc=0, NumDst=0, Flags=0x00000001
+[Present #6] Info0: hDev=0000000000000000, Seg=0, PhysAdapter=0, VA=0x0, Phys=0x0
+[Present #6] Info1: hDev=FFFFB68CBC847D38, Seg=0, PhysAdapter=0, VA=0xAC0000, Phys=0x0
+[Present #6] Info2: hDev=FFFFB68CBC847C18, Seg=0, PhysAdapter=0, VA=0x30000, Phys=0x0
+[Present #6] DstRect=(0,0)-(2560,1080), SrcRect=(0,0)-(2560,1080), SubRects=2
+[Present #6] SubRect[0]=(0,0)-(1,1), CenterPixel=0x00000000
+[Present #6] SrcPhysSample @ 0xAB0000: 00000000 00000000 00000000 00000000
+[Present #6] SrcVaOffsetSample @ 0xAC0000: 00000000 00000000 00000000 00000000
+[Present #6] ScanoutSample @ 0x0: 00000000 00000000 00000000 00000000
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[Present #6] Spread SCANOUT   @ 0x0: NonZero=0/256, Xor=00000000
+[Present #6] Spread PRIMARY   @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1, hAlloc=FFFFB68CBC847B88)
+[Present #6] Spread SLOT_SRC  @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #6] AVISO: Superficie de origem 0xAB0000 esta com todos os pixels em zero (NonZero=0/256)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[Present #6] Spread SLOT_DST  @ 0x20000: NonZero=0/256, Xor=00000000 (Seg=1)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[Present #6] Spread SLOT_WORD @ 0xAC0000: NonZero=0/256, Xor=00000000 (union PhysicalAddress/VirtualAddress)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[Present #6] Scanout GOP preservado: origens contem apenas zeros (aguardando desktop real)
+[McdmSubmitCommandVirtual] Node=0, FenceId=8, DmaSize=4
+[SubmitVirtual Node0 SDMA] FenceId=8, DmaSize=4, DmaVA=0x10000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x10000 Size=4 -> Segment=0 Offset=0x22E644000 Epoch=0
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK IB] L0 idx=16 VRAM+0xFFFE080 PTE=000000022E644077 -> pageMC=0x22E644000 flags=0x77 valid=1
+[PT_WALK IB] RESOLVIDO: VA=0x10000 -> 0x22E644000 (root=MC, folha=MC)
+[PT_WALK] IB_PA_MATCH: caminhada=0x22E644000 cpu=0x0 -> DIVERGE
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x10000 (substituindo INDIRECT)
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=500 RPTR=500 Fence=00001009 in 2 polls
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x10000; DMA_COMPLETED notificado para FenceId=8
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[Present #7] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[Present #7] Blt=1, hCtx=FFFFB68CBC847AF8, DmaSize=65536, DmaVA=0x20000, NumSrc=0, NumDst=0, Flags=0x00000001
+[Present #7] Info0: hDev=0000000000000000, Seg=0, PhysAdapter=0, VA=0x0, Phys=0x0
+[Present #7] Info1: hDev=FFFFB68CBC847D38, Seg=0, PhysAdapter=0, VA=0xAC0000, Phys=0x0
+[Present #7] Info2: hDev=FFFFB68CBC847C18, Seg=0, PhysAdapter=0, VA=0x30000, Phys=0x0
+[Present #7] DstRect=(0,0)-(2560,1080), SrcRect=(0,0)-(2560,1080), SubRects=1
+[Present #7] SubRect[0]=(1280,532)-(1304,559), CenterPixel=0x00000000
+[Present #7] SrcPhysSample @ 0xAB0000: 00000000 00000000 00000000 00000000
+[Present #7] SrcVaOffsetSample @ 0xAC0000: 00000000 00000000 00000000 00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[Present #7] ScanoutSample @ 0x0: 00000000 00000000 00000000 00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[Present #7] Spread SCANOUT   @ 0x0: NonZero=0/256, Xor=00000000
+[Present #7] Spread PRIMARY   @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1, hAlloc=FFFFB68CBC847B88)
+[Present #7] Spread SLOT_SRC  @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #7] AVISO: Superficie de origem 0xAB0000 esta com todos os pixels em zero (NonZero=0/256)
+[Present #7] Spread SLOT_DST  @ 0x20000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #7] Spread SLOT_WORD @ 0xAC0000: NonZero=0/256, Xor=00000000 (union PhysicalAddress/VirtualAddress)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[Present #7] Scanout GOP preservado: origens contem apenas zeros (aguardando desktop real)
+[McdmSubmitCommandVirtual] Node=0, FenceId=9, DmaSize=4
+[SubmitVirtual Node0 SDMA] FenceId=9, DmaSize=4, DmaVA=0x20000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x20000 Size=4 -> Segment=0 Offset=0x230C58000 Epoch=0
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK IB] L0 idx=32 VRAM+0xFFFE100 PTE=0000000230C58077 -> pageMC=0x230C58000 flags=0x77 valid=1
+[PT_WALK IB] RESOLVIDO: VA=0x20000 -> 0x230C58000 (root=MC, folha=MC)
+[PT_WALK] IB_PA_MATCH: caminhada=0x230C58000 cpu=0x0 -> DIVERGE
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x20000 (substituindo INDIRECT)
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=540 RPTR=540 Fence=0000100A in 2 polls
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x20000; DMA_COMPLETED notificado para FenceId=9
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[Present #8] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[Present #8] Blt=1, hCtx=FFFFB68CBC847AF8, DmaSize=65536, DmaVA=0x10000, NumSrc=0, NumDst=0, Flags=0x00000001
+[Present #8] Info0: hDev=0000000000000000, Seg=0, PhysAdapter=0, VA=0x0, Phys=0x0
+[Present #8] Info1: hDev=FFFFB68CBC847D38, Seg=0, PhysAdapter=0, VA=0xAC0000, Phys=0x0
+[Present #8] Info2: hDev=FFFFB68CBC847C18, Seg=0, PhysAdapter=0, VA=0x30000, Phys=0x0
+[Present #8] DstRect=(0,0)-(2560,1080), SrcRect=(0,0)-(2560,1080), SubRects=1
+[Present #8] SubRect[0]=(1280,532)-(1304,559), CenterPixel=0x00000000
+[Present #8] SrcPhysSample @ 0xAB0000: 00000000 00000000 00000000 00000000
+[Present #8] SrcVaOffsetSample @ 0xAC0000: 00000000 00000000 00000000 00000000
+[Present #8] ScanoutSample @ 0x0: 00000000 00000000 00000000 00000000
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[Present #8] Spread SCANOUT   @ 0x0: NonZero=0/256, Xor=00000000
+[Present #8] Spread PRIMARY   @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1, hAlloc=FFFFB68CBC847B88)
+[Present #8] Spread SLOT_SRC  @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #8] AVISO: Superficie de origem 0xAB0000 esta com todos os pixels em zero (NonZero=0/256)
+[Present #8] Spread SLOT_DST  @ 0x20000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #8] Spread SLOT_WORD @ 0xAC0000: NonZero=0/256, Xor=00000000 (union PhysicalAddress/VirtualAddress)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[Present #8] Scanout GOP preservado: origens contem apenas zeros (aguardando desktop real)
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[McdmSubmitCommandVirtual] Node=0, FenceId=10, DmaSize=4
+[GetStdAllocData] GdiSurface: 2560x40, Type=6, Pitch=10240
+[SubmitVirtual Node0 SDMA] FenceId=10, DmaSize=4, DmaVA=0x10000
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE48051414510, pResPriv=0000000000000000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x10000 Size=4 -> Segment=0 Offset=0x22E644000 Epoch=0
+[GetStdAllocData] GdiSurface: 2560x40, Type=6, Pitch=10240
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[GetStdAllocData] Filled: Token=0xA110000400000014, Size=458752, Align=65536
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[McdmCreateAllocation] NumAllocs=1
+[PT_WALK IB] L0 idx=16 VRAM+0xFFFE080 PTE=000000022E644077 -> pageMC=0x22E644000 flags=0x77 valid=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[PT_WALK IB] RESOLVIDO: VA=0x10000 -> 0x22E644000 (root=MC, folha=MC)
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[PT_WALK] IB_PA_MATCH: caminhada=0x22E644000 cpu=0x0 -> DIVERGE
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x10000 (substituindo INDIRECT)
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=580 RPTR=580 Fence=0000100B in 2 polls
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC8490E8, Size=458752
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x10000; DMA_COMPLETED notificado para FenceId=10
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000780 -> openHandle=FFFFB68CBC849178 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2560x1080, Type=6, Pitch=10240
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE48051414510, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2560x1080, Type=6, Pitch=10240
+[GetStdAllocData] Filled: Token=0xA110000400000015, Size=11075584, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Primary Resource Allocation Identified: Handle=FFFFB68CBC849208, Size=11075584
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000880 -> openHandle=FFFFB68CBC849298 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1x1, Type=6, Pitch=4
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE48051414510, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1x1, Type=6, Pitch=4
+[GetStdAllocData] Filled: Token=0xA110000400000016, Size=65536, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC849328, Size=65536
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000040 -> openHandle=FFFFB68CBC8493B8 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1400x680, Type=6, Pitch=5600
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE48051414510, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1400x680, Type=6, Pitch=5600
+[GetStdAllocData] Filled: Token=0xA110000400000017, Size=3866624, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC849448, Size=3866624
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000900 -> openHandle=FFFFB68CBC8494D8 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[Present #9] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[Present #9] Blt=1, hCtx=FFFFB68CBC847AF8, DmaSize=65536, DmaVA=0x20000, NumSrc=0, NumDst=0, Flags=0x00000001
+[Present #9] Info0: hDev=0000000000000000, Seg=0, PhysAdapter=0, VA=0x0, Phys=0x0
+[Present #9] Info1: hDev=FFFFB68CBC847D38, Seg=0, PhysAdapter=0, VA=0xAC0000, Phys=0x0
+[Present #9] Info2: hDev=FFFFB68CBC847C18, Seg=0, PhysAdapter=0, VA=0x30000, Phys=0x0
+[Present #9] DstRect=(0,0)-(2560,1080), SrcRect=(0,0)-(2560,1080), SubRects=1
+[Present #9] SubRect[0]=(119,0)-(992,655), CenterPixel=0x00000000
+[Present #9] SrcPhysSample @ 0xAB0000: 00000000 00000000 00000000 00000000
+[Present #9] SrcVaOffsetSample @ 0xAC0000: 00000000 00000000 00000000 00000000
+[Present #9] ScanoutSample @ 0x0: 00000000 00000000 00000000 00000000
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[Present #9] Spread SCANOUT   @ 0x0: NonZero=0/256, Xor=00000000
+[Present #9] Spread PRIMARY   @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1, hAlloc=FFFFB68CBC847B88)
+[Present #9] Spread SLOT_SRC  @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #9] AVISO: Superficie de origem 0xAB0000 esta com todos os pixels em zero (NonZero=0/256)
+[Present #9] Spread SLOT_DST  @ 0x20000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #9] Spread SLOT_WORD @ 0xAC0000: NonZero=0/256, Xor=00000000 (union PhysicalAddress/VirtualAddress)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[Present #9] Scanout GOP preservado: origens contem apenas zeros (aguardando desktop real)
+[McdmSubmitCommandVirtual] Node=0, FenceId=11, DmaSize=4
+[SubmitVirtual Node0 SDMA] FenceId=11, DmaSize=4, DmaVA=0x20000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x20000 Size=4 -> Segment=0 Offset=0x230C58000 Epoch=0
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[PT_WALK IB] L0 idx=32 VRAM+0xFFFE100 PTE=0000000230C58077 -> pageMC=0x230C58000 flags=0x77 valid=1
+[PT_WALK IB] RESOLVIDO: VA=0x20000 -> 0x230C58000 (root=MC, folha=MC)
+[PT_WALK] IB_PA_MATCH: caminhada=0x230C58000 cpu=0x0 -> DIVERGE
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x20000 (substituindo INDIRECT)
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=620 RPTR=620 Fence=0000100C in 2 polls
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x20000; DMA_COMPLETED notificado para FenceId=11
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[Present #10] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[Present #10] Blt=1, hCtx=FFFFB68CBC847AF8, DmaSize=65536, DmaVA=0x10000, NumSrc=0, NumDst=0, Flags=0x00000001
+[Present #10] Info0: hDev=0000000000000000, Seg=0, PhysAdapter=0, VA=0x0, Phys=0x0
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[Present #10] Info1: hDev=FFFFB68CBC847D38, Seg=0, PhysAdapter=0, VA=0xAC0000, Phys=0x0
+[Present #10] Info2: hDev=FFFFB68CBC847C18, Seg=0, PhysAdapter=0, VA=0x30000, Phys=0x0
+[Present #10] DstRect=(0,0)-(2560,1080), SrcRect=(0,0)-(2560,1080), SubRects=2
+[Present #10] SubRect[0]=(0,0)-(1,1), CenterPixel=0x00000000
+[Present #10] SrcPhysSample @ 0xAB0000: 00000000 00000000 00000000 00000000
+[Present #10] SrcVaOffsetSample @ 0xAC0000: 00000000 00000000 00000000 00000000
+[Present #10] ScanoutSample @ 0x0: 00000000 00000000 00000000 00000000
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[Present #10] Spread SCANOUT   @ 0x0: NonZero=0/256, Xor=00000000
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[Present #10] Spread PRIMARY   @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1, hAlloc=FFFFB68CBC847B88)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[Present #10] Spread SLOT_SRC  @ 0xAB0000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #10] AVISO: Superficie de origem 0xAB0000 esta com todos os pixels em zero (NonZero=0/256)
+[Present #10] Spread SLOT_DST  @ 0x20000: NonZero=0/256, Xor=00000000 (Seg=1)
+[Present #10] Spread SLOT_WORD @ 0xAC0000: NonZero=0/256, Xor=00000000 (union PhysicalAddress/VirtualAddress)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[Present #10] Scanout GOP preservado: origens contem apenas zeros (aguardando desktop real)
+[McdmSubmitCommandVirtual] Node=0, FenceId=12, DmaSize=4
+[SubmitVirtual Node0 SDMA] FenceId=12, DmaSize=4, DmaVA=0x10000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x10000 Size=4 -> Segment=0 Offset=0x22E644000 Epoch=0
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK IB] L0 idx=16 VRAM+0xFFFE080 PTE=000000022E644077 -> pageMC=0x22E644000 flags=0x77 valid=1
+[PT_WALK IB] RESOLVIDO: VA=0x10000 -> 0x22E644000 (root=MC, folha=MC)
+[PT_WALK] IB_PA_MATCH: caminhada=0x22E644000 cpu=0x0 -> DIVERGE
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x10000 (substituindo INDIRECT)
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=660 RPTR=660 Fence=0000100D in 2 polls
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x10000; DMA_COMPLETED notificado para FenceId=12
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[Present #11] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[McdmSubmitCommandVirtual] Node=0, FenceId=13, DmaSize=4
+[SubmitVirtual Node0 SDMA] FenceId=13, DmaSize=4, DmaVA=0x20000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x20000 Size=4 -> Segment=0 Offset=0x230C58000 Epoch=0
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[PT_WALK IB] L0 idx=32 VRAM+0xFFFE100 PTE=0000000230C58077 -> pageMC=0x230C58000 flags=0x77 valid=1
+[PT_WALK IB] RESOLVIDO: VA=0x20000 -> 0x230C58000 (root=MC, folha=MC)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[PT_WALK] IB_PA_MATCH: caminhada=0x230C58000 cpu=0x0 -> DIVERGE
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x20000 (substituindo INDIRECT)
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=700 RPTR=700 Fence=0000100E in 2 polls
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x20000; DMA_COMPLETED notificado para FenceId=13
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2560x40, Type=6, Pitch=10240
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE48051505E10, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2560x40, Type=6, Pitch=10240
+[GetStdAllocData] Filled: Token=0xA110000400000018, Size=458752, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC849568, Size=458752
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000800 -> openHandle=FFFFB68CBC8495F8 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2560x1080, Type=6, Pitch=10240
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE48051505ED0, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2560x1080, Type=6, Pitch=10240
+[GetStdAllocData] Filled: Token=0xA110000400000019, Size=11075584, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Primary Resource Allocation Identified: Handle=FFFFB68CBC849688, Size=11075584
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000680 -> openHandle=FFFFB68CBC849718 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[Present #12] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[McdmSubmitCommandVirtual] Node=0, FenceId=14, DmaSize=4
+[GetStdAllocData] GdiSurface: 1x1, Type=6, Pitch=4
+[SubmitVirtual Node0 SDMA] FenceId=14, DmaSize=4, DmaVA=0x10000
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE48051506010, pResPriv=0000000000000000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x10000 Size=4 -> Segment=0 Offset=0x22E644000 Epoch=0
+[GetStdAllocData] GdiSurface: 1x1, Type=6, Pitch=4
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[GetStdAllocData] Filled: Token=0xA11000040000001A, Size=65536, Align=65536
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[McdmCreateAllocation] NumAllocs=1
+[PT_WALK IB] L0 idx=16 VRAM+0xFFFE080 PTE=000000022E644077 -> pageMC=0x22E644000 flags=0x77 valid=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[PT_WALK IB] RESOLVIDO: VA=0x10000 -> 0x22E644000 (root=MC, folha=MC)
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[PT_WALK] IB_PA_MATCH: caminhada=0x22E644000 cpu=0x0 -> DIVERGE
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x10000 (substituindo INDIRECT)
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=740 RPTR=740 Fence=0000100F in 2 polls
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x10000; DMA_COMPLETED notificado para FenceId=14
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC8497A8, Size=65536
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000600 -> openHandle=FFFFB68CBC849838 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1400x680, Type=6, Pitch=5600
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE480514140D0, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1400x680, Type=6, Pitch=5600
+[GetStdAllocData] Filled: Token=0xA11000040000001B, Size=3866624, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC8498C8, Size=3866624
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000280 -> openHandle=FFFFB68CBC849958 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[Present #13] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[McdmSubmitCommandVirtual] Node=0, FenceId=15, DmaSize=4
+[SubmitVirtual Node0 SDMA] FenceId=15, DmaSize=4, DmaVA=0x20000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x20000 Size=4 -> Segment=0 Offset=0x230C58000 Epoch=0
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK IB] L0 idx=32 VRAM+0xFFFE100 PTE=0000000230C58077 -> pageMC=0x230C58000 flags=0x77 valid=1
+[PT_WALK IB] RESOLVIDO: VA=0x20000 -> 0x230C58000 (root=MC, folha=MC)
+[PT_WALK] IB_PA_MATCH: caminhada=0x230C58000 cpu=0x0 -> DIVERGE
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x20000 (substituindo INDIRECT)
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=780 RPTR=780 Fence=00001010 in 2 polls
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x20000; DMA_COMPLETED notificado para FenceId=15
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[Present #14] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[McdmSubmitCommandVirtual] Node=0, FenceId=16, DmaSize=4
+[SubmitVirtual Node0 SDMA] FenceId=16, DmaSize=4, DmaVA=0x10000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x10000 Size=4 -> Segment=0 Offset=0x22E644000 Epoch=0
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK IB] L0 idx=16 VRAM+0xFFFE080 PTE=000000022E644077 -> pageMC=0x22E644000 flags=0x77 valid=1
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[PT_WALK IB] RESOLVIDO: VA=0x10000 -> 0x22E644000 (root=MC, folha=MC)
+[PT_WALK] IB_PA_MATCH: caminhada=0x22E644000 cpu=0x0 -> DIVERGE
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x10000 (substituindo INDIRECT)
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=820 RPTR=820 Fence=00001011 in 2 polls
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x10000; DMA_COMPLETED notificado para FenceId=16
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[Present #15] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[McdmSubmitCommandVirtual] Node=0, FenceId=17, DmaSize=4
+[SubmitVirtual Node0 SDMA] FenceId=17, DmaSize=4, DmaVA=0x20000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x20000 Size=4 -> Segment=0 Offset=0x230C58000 Epoch=0
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[PT_WALK IB] L0 idx=32 VRAM+0xFFFE100 PTE=0000000230C58077 -> pageMC=0x230C58000 flags=0x77 valid=1
+[PT_WALK IB] RESOLVIDO: VA=0x20000 -> 0x230C58000 (root=MC, folha=MC)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[PT_WALK] IB_PA_MATCH: caminhada=0x230C58000 cpu=0x0 -> DIVERGE
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x20000 (substituindo INDIRECT)
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=860 RPTR=860 Fence=00001012 in 2 polls
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x20000; DMA_COMPLETED notificado para FenceId=17
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[Present #16] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[McdmSubmitCommandVirtual] Node=0, FenceId=18, DmaSize=4
+[SubmitVirtual Node0 SDMA] FenceId=18, DmaSize=4, DmaVA=0x10000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x10000 Size=4 -> Segment=0 Offset=0x22E644000 Epoch=0
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[PT_WALK IB] L0 idx=16 VRAM+0xFFFE080 PTE=000000022E644077 -> pageMC=0x22E644000 flags=0x77 valid=1
+[GetStdAllocData] GdiSurface: 2560x40, Type=6, Pitch=10240
+[PT_WALK IB] RESOLVIDO: VA=0x10000 -> 0x22E644000 (root=MC, folha=MC)
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[PT_WALK] IB_PA_MATCH: caminhada=0x22E644000 cpu=0x0 -> DIVERGE
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE480514199D0, pResPriv=0000000000000000
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[GetStdAllocData] GdiSurface: 2560x40, Type=6, Pitch=10240
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x10000 (substituindo INDIRECT)
+[GetStdAllocData] Filled: Token=0xA11000040000001C, Size=458752, Align=65536
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=900 RPTR=900 Fence=00001013 in 2 polls
+[McdmCreateAllocation] NumAllocs=1
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x10000; DMA_COMPLETED notificado para FenceId=18
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC8499E8, Size=458752
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000200 -> openHandle=FFFFB68CBC849A78 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2560x1080, Type=6, Pitch=10240
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE48051505990, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 2560x1080, Type=6, Pitch=10240
+[GetStdAllocData] Filled: Token=0xA11000040000001D, Size=11075584, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Primary Resource Allocation Identified: Handle=FFFFB68CBC849B08, Size=11075584
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000180 -> openHandle=FFFFB68CBC849B98 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1x1, Type=6, Pitch=4
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE48051505E50, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1x1, Type=6, Pitch=4
+[GetStdAllocData] Filled: Token=0xA11000040000001E, Size=65536, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC849C28, Size=65536
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000100 -> openHandle=FFFFB68CBC849CB8 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[GetStdAllocData] Type=4, pAllocPriv=0000000000000000, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1400x680, Type=6, Pitch=5600
+[GetStdAllocData] Size query -> AllocPrivDataSize=40, ResPrivDataSize=0
+[GetStdAllocData] Type=4, pAllocPriv=FFFFE48051506010, pResPriv=0000000000000000
+[GetStdAllocData] GdiSurface: 1400x680, Type=6, Pitch=5600
+[GetStdAllocData] Filled: Token=0xA11000040000001F, Size=3866624, Align=65536
+[McdmCreateAllocation] NumAllocs=1
+[CreateAllocation] ENTER: NumAllocations=1, Flags=0x00000001 (Resource=1), hResource=0000000000000000
+[CreateAllocation]   [0] Size=0, Alignment=0, Flags=0x00000000, PrivDataSize=40
+[CreateAllocation] Secondary Resource Allocation: Handle=FFFFB68CBC849D48, Size=3866624
+[McdmCreateAllocation] Result=0x00000000
+[ActiveOpenAlloc] ENTER: DevCtx=FFFFB68CBC847A68, NumAllocs=1
+[ActiveOpenAlloc] Alloc[0]: hAlloc=0000000080000700 -> openHandle=FFFFB68CBC849DD8 (status=0, nt=0x00000000)
+[ActiveOpenAlloc] LEAVE: result=0x00000000
+[McdmCloseAllocation] NumAllocs=1
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[Present #17] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[McdmSubmitCommandVirtual] Node=0, FenceId=19, DmaSize=4
+[SubmitVirtual Node0 SDMA] FenceId=19, DmaSize=4, DmaVA=0x20000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x20000 Size=4 -> Segment=0 Offset=0x230C58000 Epoch=0
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK IB] L0 idx=32 VRAM+0xFFFE100 PTE=0000000230C58077 -> pageMC=0x230C58000 flags=0x77 valid=1
+[PT_WALK IB] RESOLVIDO: VA=0x20000 -> 0x230C58000 (root=MC, folha=MC)
+[PT_WALK] IB_PA_MATCH: caminhada=0x230C58000 cpu=0x0 -> DIVERGE
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x20000 (substituindo INDIRECT)
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=940 RPTR=940 Fence=00001014 in 2 polls
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x20000; DMA_COMPLETED notificado para FenceId=19
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0xAC0000 -> Phys=0xAB0000 Seg=1
+[Present #18] Source=PRESENT_SLOT -> Physical VRAM 0xAB0000 (Seg=1); PresentSlot: resolved=1 Phys=0xAB0000 Seg=1
+[ResolveGpuVa] SUCCESS: Ctx=FFFFB68CBC847AF8 Proc=FFFFB68CBC8479D8 VA=0x30000 -> Phys=0x20000 Seg=1
+[McdmSubmitCommandVirtual] Node=0, FenceId=20, DmaSize=4
+[SubmitVirtual Node0 SDMA] FenceId=20, DmaSize=4, DmaVA=0x10000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=FFFFB68CBC847AF8, Proc=FFFFB68CBC8479D8, hasRoot=1, targetPtPhys=0x45FFFF000, instCtx=FFFFB68CBC847AF8, instRoot=0x45FFFF000
+[SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x10000 Size=4 -> Segment=0 Offset=0x22E644000 Epoch=0
+[PT_WALK] RootMC=0x45FFFF000 VramMcBase=0x450000000 LocalSegBase=0xA90000 Janela=268435456 bytes
+[PT_WALK IB] L1 idx=0 VRAM+0xFFFF000 PDE=000000045FFFE001 -> leafPA=0x45FFFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+[PT_WALK IB] L0 idx=16 VRAM+0xFFFE080 PTE=000000022E644077 -> pageMC=0x22E644000 flags=0x77 valid=1
+[PT_WALK IB] RESOLVIDO: VA=0x10000 -> 0x22E644000 (root=MC, folha=MC)
+[PT_WALK] IB_PA_MATCH: caminhada=0x22E644000 cpu=0x0 -> DIVERGE
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x10000 (substituindo INDIRECT)
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=980 RPTR=980 Fence=00001015 in 2 polls
+[SubmitVirtual Node0 SDMA] IB EXECUTADO: DMA buffer de 4 bytes em VA=0x10000; DMA_COMPLETED notificado para FenceId=20
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=1 (Type=3)

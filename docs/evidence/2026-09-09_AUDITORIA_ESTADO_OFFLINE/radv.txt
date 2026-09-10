@@ -1,0 +1,5 @@
+RADV WDDM SAFETY AUDIT: PASS
+  fabricated handles/GPUVA/fences: absent
+  WARP/software WSI advertisement: absent
+  WDDM callback failures: fail-closed
+  verdict: NAO VALIDADO EM HARDWARE

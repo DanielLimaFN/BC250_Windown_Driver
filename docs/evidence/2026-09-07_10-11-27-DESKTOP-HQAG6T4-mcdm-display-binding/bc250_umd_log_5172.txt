@@ -1,0 +1,50 @@
+10:11:30.503 [pid=5172 Explorer.EXE] === bc250umd.dll CARREGADA ===
+10:11:30.504 [pid=5172 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+10:11:30.504 [pid=5172 Explorer.EXE] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+10:11:30.505 [pid=5172 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+10:11:30.505 [pid=5172 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+10:11:30.509 [pid=5172 Explorer.EXE] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=48, PageSize=4096, VramSegId=1 VramBytes=0xF570000, GateFlags=0x0000001B
+10:11:30.510 [pid=5172 Explorer.EXE] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+10:11:30.510 [pid=5172 Explorer.EXE] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=0000000004B53DC8 -> PREENCHENDO a struct dele (5 entradas)
+10:11:30.511 [pid=5172 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+10:11:30.511 [pid=5172 Explorer.EXE] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 pInfo=NULL -> E_NOTIMPL (zerar seria declarar capacidade inexistente)
+10:11:30.511 [pid=5172 Explorer.EXE] GetSupportedVersions: sondagem de contagem -> 2
+10:11:30.511 [pid=5172 Explorer.EXE] GetSupportedVersions: declarado[0]=0x000A000100040000
+10:11:30.512 [pid=5172 Explorer.EXE] GetSupportedVersions: declarado[1]=0x000A000200010000
+10:11:30.513 [pid=5172 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+10:11:30.513 [pid=5172 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+10:11:30.513 [pid=5172 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+10:11:30.516 [pid=5172 Explorer.EXE] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=48, PageSize=4096, VramSegId=1 VramBytes=0xF570000, GateFlags=0x0000001B
+10:11:30.517 [pid=5172 Explorer.EXE] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+10:11:30.517 [pid=5172 Explorer.EXE] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=00000000071B0318 -> PREENCHENDO a struct dele (5 entradas)
+10:11:30.517 [pid=5172 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+10:11:30.518 [pid=5172 Explorer.EXE] GetSupportedVersions: sondagem de contagem -> 2
+10:11:30.518 [pid=5172 Explorer.EXE] GetSupportedVersions: declarado[0]=0x000A000100040000
+10:11:30.518 [pid=5172 Explorer.EXE] GetSupportedVersions: declarado[1]=0x000A000200010000
+10:11:30.519 [pid=5172 Explorer.EXE] CloseAdapter: adapter=0000000007141890, Interface=0x000B000B -> S_OK
+10:11:30.519 [pid=5172 Explorer.EXE] CloseAdapter: adapter=0000000007141770, Interface=0x000B000B -> S_OK
+10:11:30.531 [pid=5172 Explorer.EXE] === bc250umd.dll CARREGADA ===
+10:11:30.532 [pid=5172 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+10:11:30.532 [pid=5172 Explorer.EXE] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+10:11:30.532 [pid=5172 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+10:11:30.532 [pid=5172 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+10:11:30.534 [pid=5172 Explorer.EXE] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=48, PageSize=4096, VramSegId=1 VramBytes=0xF570000, GateFlags=0x0000001B
+10:11:30.535 [pid=5172 Explorer.EXE] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+10:11:30.535 [pid=5172 Explorer.EXE] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000AC33128 -> PREENCHENDO a struct dele (5 entradas)
+10:11:30.535 [pid=5172 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+10:11:30.535 [pid=5172 Explorer.EXE] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 pInfo=NULL -> E_NOTIMPL (zerar seria declarar capacidade inexistente)
+10:11:30.535 [pid=5172 Explorer.EXE] GetSupportedVersions: sondagem de contagem -> 2
+10:11:30.536 [pid=5172 Explorer.EXE] GetSupportedVersions: declarado[0]=0x000A000100040000
+10:11:30.536 [pid=5172 Explorer.EXE] GetSupportedVersions: declarado[1]=0x000A000200010000
+10:11:30.536 [pid=5172 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+10:11:30.536 [pid=5172 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+10:11:30.537 [pid=5172 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+10:11:30.540 [pid=5172 Explorer.EXE] UMDRIVERPRIVATE: blob OK -- v1, 104 bytes, Vendor=0x1002 Device=0x13FE, NodeCount=2 (SDMA=0, Compute=1), GpuVaBits=48, PageSize=4096, VramSegId=1 VramBytes=0xF570000, GateFlags=0x0000001B
+10:11:30.540 [pid=5172 Explorer.EXE] UMDRIVERPRIVATE: GateFlags declara CAPS_PROBE_ONLY -- CreateDevice falhara fechado por decisao, nao por defeito
+10:11:30.540 [pid=5172 Explorer.EXE] OpenAdapter10_2: runtime forneceu pAdapterFuncs_2=000000000EFA3778 -> PREENCHENDO a struct dele (5 entradas)
+10:11:30.540 [pid=5172 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)
+10:11:30.541 [pid=5172 Explorer.EXE] GetSupportedVersions: sondagem de contagem -> 2
+10:11:30.541 [pid=5172 Explorer.EXE] GetSupportedVersions: declarado[0]=0x000A000100040000
+10:11:30.541 [pid=5172 Explorer.EXE] GetSupportedVersions: declarado[1]=0x000A000200010000
+10:11:30.541 [pid=5172 Explorer.EXE] CloseAdapter: adapter=000000000FAA8B50, Interface=0x000B000B -> S_OK
+10:11:30.541 [pid=5172 Explorer.EXE] CloseAdapter: adapter=000000000FAA8BB0, Interface=0x000B000B -> S_OK

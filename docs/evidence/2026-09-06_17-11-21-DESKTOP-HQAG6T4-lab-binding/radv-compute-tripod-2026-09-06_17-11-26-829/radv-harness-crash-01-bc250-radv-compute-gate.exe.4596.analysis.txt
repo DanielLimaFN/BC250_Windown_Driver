@@ -1,0 +1,386 @@
+﻿
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+
+   EnableRedirectToV8JsProvider : false
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.016 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 29
+
+Microsoft (R) Windows Debugger Version 10.0.26100.6584 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [C:\Users\Daniel\Desktop\NamixWDDM\docs\evidence\2026-09-06_17-11-21-DESKTOP-HQAG6T4-lab-binding\radv-compute-tripod-2026-09-06_17-11-26-829\radv-harness-crash-01-bc250-radv-compute-gate.exe.4596.dmp]
+User Mini Dump File with Full Memory: Only application data is available
+
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+Deferred                                       srv*C:\Symbols*https://msdl.microsoft.com/download/symbols
+OK                                             C:\Users\Daniel\Desktop\bc250-win\bc250-win\mesa-radv-wddm\build\src\amd\vulkan
+Symbol search path is: srv*C:\Symbols*https://msdl.microsoft.com/download/symbols;C:\Users\Daniel\Desktop\bc250-win\bc250-win\mesa-radv-wddm\build\src\amd\vulkan
+Executable search path is: 
+Windows 10 Version 19045 MP (12 procs) Free x64
+Product: WinNt, suite: SingleUserTS
+Edition build lab: 19041.1.amd64fre.vb_release.191206-1406
+Debug session time: Sun Sep  6 17:11:28.000 2026 (UTC - 3:00)
+System Uptime: 0 days 0:03:19.179
+Process Uptime: 0 days 0:00:01.000
+.............................
+Loading unloaded module list
+.
+This dump file has an exception of interest stored in it.
+The stored exception information can be accessed via .ecxr.
+(11f4.404): Access violation - code c0000005 (first/second chance not available)
+For analysis of this file, run !analyze -v
+ntdll!NtWaitForMultipleObjects+0x14:
+00007ff9`cf0adbb4 c3              ret
+0:000> cdb: Reading initial command '.reload /f; !analyze -v; .ecxr; r; u @rip-40 L40; kP 25; lmvm vulkan_radeon; lmvm bc250_radv_compute_gate; ~*k; q'
+.*** WARNING: Unable to verify checksum for bc250-radv-compute-gate.exe
+.....
+
+Press ctrl-c (cdb, kd, ntsd) or ctrl-break (windbg) to abort symbol loads that take too long.
+Run !sym noisy before .reload to track down problems loading symbols.
+
+...................*** WARNING: Unable to verify checksum for bc250_vulkan.dll
+.*** WARNING: Unable to verify checksum for bc250_runtime.dll
+...
+Loading unloaded module list
+.
+
+************* Symbol Loading Error Summary **************
+Module name            Error
+bc250-radv-compute-gat The system cannot find the file specified
+vulkan-1               The system cannot find the file specified
+z-1                    The system cannot find the file specified
+bc250_vulkan           The system cannot find the file specified
+bc250_runtime          The system cannot find the file specified
+
+You can troubleshoot most symbol related issues by turning on symbol loading diagnostics (!sym noisy) and repeating the command that caused symbols to be loaded.
+You should also verify that your symbol search path (.sympath) is correct.
+*******************************************************************************
+*                                                                             *
+*                        Exception Analysis                                   *
+*                                                                             *
+*******************************************************************************
+
+
+KEY_VALUES_STRING: 1
+
+    Key  : AV.Fault
+    Value: Write
+
+    Key  : Analysis.CPU.mSec
+    Value: 967
+
+    Key  : Analysis.Elapsed.mSec
+    Value: 1671
+
+    Key  : Analysis.IO.Other.Mb
+    Value: 2
+
+    Key  : Analysis.IO.Read.Mb
+    Value: 0
+
+    Key  : Analysis.IO.Write.Mb
+    Value: 18
+
+    Key  : Analysis.Init.CPU.mSec
+    Value: 468
+
+    Key  : Analysis.Init.Elapsed.mSec
+    Value: 79870
+
+    Key  : Analysis.Memory.CommitPeak.Mb
+    Value: 142
+
+    Key  : Failure.Bucket
+    Value: INVALID_POINTER_WRITE_c0000005_vulkan_radeon.dll!radv_GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR
+
+    Key  : Failure.Hash
+    Value: {123e2a1a-16c9-da77-228f-b11aee1b589a}
+
+    Key  : Timeline.OS.Boot.DeltaSec
+    Value: 199
+
+    Key  : Timeline.Process.Start.DeltaSec
+    Value: 1
+
+    Key  : WER.OS.Branch
+    Value: vb_release
+
+    Key  : WER.OS.Version
+    Value: 10.0.19041.1
+
+
+FILE_IN_CAB:  radv-harness-crash-01-bc250-radv-compute-gate.exe.4596.dmp
+
+NTGLOBALFLAG:  0
+
+APPLICATION_VERIFIER_FLAGS:  0
+
+CONTEXT:  (.ecxr)
+rax=0000000000000002 rbx=0000000000000001 rcx=00000000005562e0
+rdx=0000000000555338 rsi=000000000014e7a0 rdi=0000000000000000
+rip=00007ff9585860a5 rsp=000000000014dfe0 rbp=000000000014e0e0
+ r8=000000000014e800  r9=000000000014e7a0 r10=00000000004f00c0
+r11=0000000000000001 r12=0000000000555328 r13=000000000014e940
+r14=000000000014e800 r15=00007ff9589e9ab0
+iopl=0         nv up ei pl nz na po nc
+cs=0033  ss=002b  ds=002b  es=002b  fs=0053  gs=002b             efl=00010206
+vulkan_radeon!radv_GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR+0x215:
+00007ff9`585860a5 498902          mov     qword ptr [r10],rax ds:00000000`004f00c0=0000000000000000
+Resetting default scope
+
+EXCEPTION_RECORD:  (.exr -1)
+ExceptionAddress: 00007ff9585860a5 (vulkan_radeon!radv_GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR+0x0000000000000215)
+   ExceptionCode: c0000005 (Access violation)
+  ExceptionFlags: 00000000
+NumberParameters: 2
+   Parameter[0]: 0000000000000001
+   Parameter[1]: 00000000004f00c0
+Attempt to write to address 00000000004f00c0
+
+PROCESS_NAME:  bc250-radv-compute-gate.exe
+
+WRITE_ADDRESS:  00000000004f00c0 
+
+ERROR_CODE: (NTSTATUS) 0xc0000005 - A instru  o no 0x%p referenciou a mem ria no 0x%p. A mem ria n o p de ser %s.
+
+EXCEPTION_CODE_STR:  c0000005
+
+EXCEPTION_PARAMETER1:  0000000000000001
+
+EXCEPTION_PARAMETER2:  00000000004f00c0
+
+STACK_TEXT:  
+00000000`0014dfe0 00007ff9`58544f29     : 00000000`00000000 00000000`005aaed0 00000000`00555280 00000000`00000000 : vulkan_radeon!radv_GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR+0x215
+00000000`0014e890 00007ff9`58544511     : 00000000`00551e60 00000000`00000000 00000000`00000000 00000000`005aaed0 : vulkan_radeon!radv_get_viewport_xform+0x229
+00000000`0014ea50 00007ff9`585ab80b     : 00000000`00555280 00000000`00551e60 00000000`00000000 00000000`00000000 : vulkan_radeon!radv_generate_graphics_pipeline_state+0xd01
+00000000`0014eae0 00007ff9`585aa505     : 00000000`00000000 00000000`005aaed0 00000000`00556280 00000000`00000000 : vulkan_radeon!vk_video_encode_h265_pps+0xdb
+00000000`0014eb30 00007ff9`585a9ad9     : 00000000`00555280 00000000`00000001 00000000`0014eee0 00000000`00000000 : vulkan_radeon!vk_video_encode_h264_sps+0x975
+00000000`0014eb70 00007ff9`585a2171     : 00000000`00555280 00000000`00000000 00000000`0014ed40 00000000`0014eee0 : vulkan_radeon!vk_video_encode_h264_pps+0xdc9
+00000000`0014ec40 00007ff9`66fb083a     : 00000000`00000001 00000000`0014f5c0 00000000`00000000 00000000`0052dba0 : vulkan_radeon!vk_common_DestroySamplerYcbcrConversion+0xab1
+00000000`0014f480 00007ff7`17bf1e04     : 00000000`0014f5c0 00000000`005ce790 00000000`00000000 00000000`00000000 : vulkan_1!vkResetEvent+0x5edda
+00000000`0014f4c0 00007ff7`17bf2340     : 00000000`00518580 00000000`00000000 00000000`00000000 00000000`00524e90 : bc250_radv_compute_gate+0x1e04
+00000000`0014fef0 00007ff9`ce477614     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`00000000 : bc250_radv_compute_gate+0x2340
+00000000`0014ff30 00007ff9`cf0626a1     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`00000000 : kernel32!BaseThreadInitThunk+0x14
+00000000`0014ff60 00000000`00000000     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`00000000 : ntdll!RtlUserThreadStart+0x21
+
+
+STACK_COMMAND:  ~0s; .ecxr ; kb
+
+SYMBOL_NAME:  vulkan_radeon!radv_GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR+215
+
+MODULE_NAME: vulkan_radeon
+
+IMAGE_NAME:  vulkan_radeon.dll
+
+FAILURE_BUCKET_ID:  INVALID_POINTER_WRITE_c0000005_vulkan_radeon.dll!radv_GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR
+
+OS_VERSION:  10.0.19041.1
+
+BUILDLAB_STR:  vb_release
+
+OSPLATFORM_TYPE:  x64
+
+OSNAME:  Windows 10
+
+FAILURE_ID_HASH:  {123e2a1a-16c9-da77-228f-b11aee1b589a}
+
+Followup:     MachineOwner
+---------
+
+rax=0000000000000002 rbx=0000000000000001 rcx=00000000005562e0
+rdx=0000000000555338 rsi=000000000014e7a0 rdi=0000000000000000
+rip=00007ff9585860a5 rsp=000000000014dfe0 rbp=000000000014e0e0
+ r8=000000000014e800  r9=000000000014e7a0 r10=00000000004f00c0
+r11=0000000000000001 r12=0000000000555328 r13=000000000014e940
+r14=000000000014e800 r15=00007ff9589e9ab0
+iopl=0         nv up ei pl nz na po nc
+cs=0033  ss=002b  ds=002b  es=002b  fs=0053  gs=002b             efl=00010206
+vulkan_radeon!radv_GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR+0x215:
+00007ff9`585860a5 498902          mov     qword ptr [r10],rax ds:00000000`004f00c0=0000000000000000
+Last set context:
+rax=0000000000000002 rbx=0000000000000001 rcx=00000000005562e0
+rdx=0000000000555338 rsi=000000000014e7a0 rdi=0000000000000000
+rip=00007ff9585860a5 rsp=000000000014dfe0 rbp=000000000014e0e0
+ r8=000000000014e800  r9=000000000014e7a0 r10=00000000004f00c0
+r11=0000000000000001 r12=0000000000555328 r13=000000000014e940
+r14=000000000014e800 r15=00007ff9589e9ab0
+iopl=0         nv up ei pl nz na po nc
+cs=0033  ss=002b  ds=002b  es=002b  fs=0053  gs=002b             efl=00010206
+vulkan_radeon!radv_GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR+0x215:
+00007ff9`585860a5 498902          mov     qword ptr [r10],rax ds:00000000`004f00c0=0000000000000000
+vulkan_radeon!radv_GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR+0x1d5:
+00007ff9`58586065 8b5c2434        mov     ebx,dword ptr [rsp+34h]
+00007ff9`58586069 4c8bf0          mov     r14,rax
+00007ff9`5858606c 4c8b65d8        mov     r12,qword ptr [rbp-28h]
+00007ff9`58586070 4c8d3d393a4600  lea     r15,[vulkan_radeon!wsi_device_entrypoints+0x1250 (00007ff9`589e9ab0)]
+00007ff9`58586077 4d8bc6          mov     r8,r14
+00007ff9`5858607a 4c8bce          mov     r9,rsi
+00007ff9`5858607d 498d542410      lea     rdx,[r12+10h]
+00007ff9`58586082 488b4af0        mov     rcx,qword ptr [rdx-10h]
+00007ff9`58586086 4c3939          cmp     qword ptr [rcx],r15
+00007ff9`58586089 480f45cf        cmovne  rcx,rdi
+00007ff9`5858608d 8b4110          mov     eax,dword ptr [rcx+10h]
+00007ff9`58586090 418901          mov     dword ptr [r9],eax
+00007ff9`58586093 488b02          mov     rax,qword ptr [rdx]
+00007ff9`58586096 498900          mov     qword ptr [r8],rax
+00007ff9`58586099 4c8b5120        mov     r10,qword ptr [rcx+20h]
+00007ff9`5858609d 4d85d2          test    r10,r10
+00007ff9`585860a0 7406            je      vulkan_radeon!radv_GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR+0x218 (00007ff9`585860a8)
+00007ff9`585860a2 488b02          mov     rax,qword ptr [rdx]
+00007ff9`585860a5 498902          mov     qword ptr [r10],rax
+00007ff9`585860a8 4983c104        add     r9,4
+00007ff9`585860ac 4983c008        add     r8,8
+00007ff9`585860b0 4883c218        add     rdx,18h
+00007ff9`585860b4 4883eb01        sub     rbx,1
+00007ff9`585860b8 75c8            jne     vulkan_radeon!radv_GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR+0x1f2 (00007ff9`58586082)
+00007ff9`585860ba 488b4c2460      mov     rcx,qword ptr [rsp+60h]
+00007ff9`585860bf 397908          cmp     dword ptr [rcx+8],edi
+00007ff9`585860c2 488d4108        lea     rax,[rcx+8]
+00007ff9`585860c6 7437            je      vulkan_radeon!radv_GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR+0x26f (00007ff9`585860ff)
+00007ff9`585860c8 c744243804000000 mov     dword ptr [rsp+38h],4
+00007ff9`585860d0 c744243c01000000 mov     dword ptr [rsp+3Ch],1
+00007ff9`585860d8 4889442440      mov     qword ptr [rsp+40h],rax
+00007ff9`585860dd 44895c2448      mov     dword ptr [rsp+48h],r11d
+00007ff9`585860e2 4889742450      mov     qword ptr [rsp+50h],rsi
+00007ff9`585860e7 4c89742458      mov     qword ptr [rsp+58h],r14
+00007ff9`585860ec e86f210500      call    vulkan_radeon!vk_physical_device_check_device_features+0x45f0 (00007ff9`585d8260)
+00007ff9`585860f1 488d4c2438      lea     rcx,[rsp+38h]
+00007ff9`585860f6 488b9018010000  mov     rdx,qword ptr [rax+118h]
+00007ff9`585860fd eb46            jmp     vulkan_radeon!radv_GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR+0x2b5 (00007ff9`58586145)
+00007ff9`585860ff 0f57c0          xorps   xmm0,xmm0
+00007ff9`58586102 44895c2470      mov     dword ptr [rsp+70h],r11d
+00007ff9`58586107 488d4104        lea     rax,[rcx+4]
+00007ff9`5858610b 4889742478      mov     qword ptr [rsp+78h],rsi
+00007ff9`58586110 48894588        mov     qword ptr [rbp-78h],rax
+00007ff9`58586114 33c0            xor     eax,eax
+00007ff9`58586116 488945c8        mov     qword ptr [rbp-38h],rax
+00007ff9`5858611a 897d80          mov     dword ptr [rbp-80h],edi
+00007ff9`5858611d c7458401000000  mov     dword ptr [rbp-7Ch],1
+00007ff9`58586124 4c897590        mov     qword ptr [rbp-70h],r14
+00007ff9`58586128 0f114598        movups  xmmword ptr [rbp-68h],xmm0
+00007ff9`5858612c 0f1145a8        movups  xmmword ptr [rbp-58h],xmm0
+00007ff9`58586130 0f1145b8        movups  xmmword ptr [rbp-48h],xmm0
+00007ff9`58586134 e827210500      call    vulkan_radeon!vk_physical_device_check_device_features+0x45f0 (00007ff9`585d8260)
+00007ff9`58586139 488d4c2470      lea     rcx,[rsp+70h]
+00007ff9`5858613e 488b9030010000  mov     rdx,qword ptr [rax+130h]
+00007ff9`58586145 ffd2            call    rdx
+00007ff9`58586147 4c8b7c2468      mov     r15,qword ptr [rsp+68h]
+00007ff9`5858614c 488d85c0060000  lea     rax,[rbp+6C0h]
+00007ff9`58586153 483bf0          cmp     rsi,rax
+00007ff9`58586156 7409            je      vulkan_radeon!radv_GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR+0x2d1 (00007ff9`58586161)
+00007ff9`58586158 488bce          mov     rcx,rsi
+00007ff9`5858615b ff1507c23d00    call    qword ptr [vulkan_radeon!_imp__callnewh (00007ff9`58962368)]
+00007ff9`58586161 488d8520070000  lea     rax,[rbp+720h]
+00007ff9`58586168 4c3bf0          cmp     r14,rax
+00007ff9`5858616b 7409            je      vulkan_radeon!radv_GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR+0x2e6 (00007ff9`58586176)
+Child-SP          RetAddr               Call Site
+00000000`0014dfe0 00007ff9`58544f29     vulkan_radeon!radv_GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR+0x215
+00000000`0014e890 00007ff9`58544511     vulkan_radeon!radv_get_viewport_xform+0x229
+00000000`0014ea50 00007ff9`585ab80b     vulkan_radeon!radv_generate_graphics_pipeline_state+0xd01
+00000000`0014eae0 00007ff9`585aa505     vulkan_radeon!vk_video_encode_h265_pps+0xdb
+00000000`0014eb30 00007ff9`585a9ad9     vulkan_radeon!vk_video_encode_h264_sps+0x975
+00000000`0014eb70 00007ff9`585a2171     vulkan_radeon!vk_video_encode_h264_pps+0xdc9
+00000000`0014ec40 00007ff9`66fb083a     vulkan_radeon!vk_common_DestroySamplerYcbcrConversion+0xab1
+00000000`0014f480 00007ff7`17bf1e04     vulkan_1!vkResetEvent+0x5edda
+00000000`0014f4c0 00007ff7`17bf2340     bc250_radv_compute_gate+0x1e04
+00000000`0014fef0 00007ff9`ce477614     bc250_radv_compute_gate+0x2340
+00000000`0014ff30 00007ff9`cf0626a1     kernel32!BaseThreadInitThunk+0x14
+00000000`0014ff60 00000000`00000000     ntdll!RtlUserThreadStart+0x21
+start             end                 module name
+00007ff9`58410000 00007ff9`59402000   vulkan_radeon   (private pdb symbols)  c:\users\daniel\desktop\bc250-win\bc250-win\mesa-radv-wddm\build\src\amd\vulkan\vulkan_radeon.pdb
+    Loaded symbol image file: vulkan_radeon.dll
+    Image path: C:\Windows\System32\vulkan_radeon.dll
+    Image name: vulkan_radeon.dll
+    Timestamp:        Fri Aug 21 16:45:16 2026 (6A88AACC)
+    CheckSum:         00FE0A85
+    ImageSize:        00FF2000
+    Translations:     0000.04b0 0000.04e4 0409.04b0 0409.04e4
+    Information from resource tables:
+start             end                 module name
+00007ff7`17bf0000 00007ff7`17bf9000   bc250_radv_compute_gate C (no symbols)           
+    Loaded symbol image file: bc250-radv-compute-gate.exe
+    Image path: C:\Users\Daniel\Desktop\NamixWDDM\driver\tests\output_radv_gate\bc250-radv-compute-gate.exe
+    Image name: bc250-radv-compute-gate.exe
+    Timestamp:        Sun Sep  6 10:06:56 2026 (6A9D6570)
+    CheckSum:         00000000
+    ImageSize:        00009000
+    Translations:     0000.04b0 0000.04e4 0409.04b0 0409.04e4
+    Information from resource tables:
+
+.  0  Id: 11f4.404 Suspend: 0 Teb: 00000000`00269000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000000`0014cb18 00007ff9`ccaa1b40     ntdll!NtWaitForMultipleObjects+0x14
+00000000`0014cb20 00007ff9`ccaa1a3e     KERNELBASE!WaitForMultipleObjectsEx+0xf0
+00000000`0014ce10 00007ff9`ce4d0eba     KERNELBASE!WaitForMultipleObjects+0xe
+00000000`0014ce50 00007ff9`ce4d08f6     kernel32!WerpReportFaultInternal+0x58a
+00000000`0014cf70 00007ff9`ccb7df49     kernel32!WerpReportFault+0xbe
+00000000`0014cfb0 00007ff9`cf0b54f0     KERNELBASE!UnhandledExceptionFilter+0x3d9
+00000000`0014d0d0 00007ff9`cf09c876     ntdll!RtlUserThreadStart$filt$0+0xa2
+00000000`0014d110 00007ff9`cf0b23df     ntdll!_C_specific_handler+0x96
+00000000`0014d180 00007ff9`cf0614a4     ntdll!RtlpExecuteHandlerForException+0xf
+00000000`0014d1b0 00007ff9`cf0b0f0e     ntdll!RtlDispatchException+0x244
+00000000`0014d8c0 00007ff9`585860a5     ntdll!KiUserExceptionDispatch+0x2e
+00000000`0014dfe0 00007ff9`58544f29     vulkan_radeon!radv_GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR+0x215
+00000000`0014e890 00007ff9`58544511     vulkan_radeon!radv_get_viewport_xform+0x229
+00000000`0014ea50 00007ff9`585ab80b     vulkan_radeon!radv_generate_graphics_pipeline_state+0xd01
+00000000`0014eae0 00007ff9`585aa505     vulkan_radeon!vk_video_encode_h265_pps+0xdb
+00000000`0014eb30 00007ff9`585a9ad9     vulkan_radeon!vk_video_encode_h264_sps+0x975
+00000000`0014eb70 00007ff9`585a2171     vulkan_radeon!vk_video_encode_h264_pps+0xdc9
+00000000`0014ec40 00007ff9`66fb083a     vulkan_radeon!vk_common_DestroySamplerYcbcrConversion+0xab1
+00000000`0014f480 00007ff7`17bf1e04     vulkan_1!vkResetEvent+0x5edda
+00000000`0014f4c0 00007ff7`17bf2340     bc250_radv_compute_gate+0x1e04
+00000000`0014fef0 00007ff9`ce477614     bc250_radv_compute_gate+0x2340
+00000000`0014ff30 00007ff9`cf0626a1     kernel32!BaseThreadInitThunk+0x14
+00000000`0014ff60 00000000`00000000     ntdll!RtlUserThreadStart+0x21
+
+   1  Id: 11f4.dcc Suspend: 1 Teb: 00000000`0026b000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000000`0070fc28 00007ff9`cf062e17     ntdll!NtWaitForWorkViaWorkerFactory+0x14
+00000000`0070fc30 00007ff9`ce477614     ntdll!TppWorkerThread+0x2f7
+00000000`0070ff30 00007ff9`cf0626a1     kernel32!BaseThreadInitThunk+0x14
+00000000`0070ff60 00000000`00000000     ntdll!RtlUserThreadStart+0x21
+
+   2  Id: 11f4.b00 Suspend: 1 Teb: 00000000`0026d000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000000`0080fc28 00007ff9`cf062e17     ntdll!NtWaitForWorkViaWorkerFactory+0x14
+00000000`0080fc30 00007ff9`ce477614     ntdll!TppWorkerThread+0x2f7
+00000000`0080ff30 00007ff9`cf0626a1     kernel32!BaseThreadInitThunk+0x14
+00000000`0080ff60 00000000`00000000     ntdll!RtlUserThreadStart+0x21
+
+   3  Id: 11f4.f70 Suspend: 1 Teb: 00000000`0026f000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000000`0090fc28 00007ff9`cf062e17     ntdll!NtWaitForWorkViaWorkerFactory+0x14
+00000000`0090fc30 00007ff9`ce477614     ntdll!TppWorkerThread+0x2f7
+00000000`0090ff30 00007ff9`cf0626a1     kernel32!BaseThreadInitThunk+0x14
+00000000`0090ff60 00000000`00000000     ntdll!RtlUserThreadStart+0x21
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'

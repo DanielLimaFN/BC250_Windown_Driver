@@ -1,0 +1,34 @@
+10:15:06.506 [pid=1364 Antigravity.exe] === bc250umd.dll CARREGADA ===
+10:15:06.506 [pid=1364 Antigravity.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+10:15:06.507 [pid=1364 Antigravity.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+10:15:06.507 [pid=1364 Antigravity.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+10:15:06.507 [pid=1364 Antigravity.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+10:15:06.507 [pid=1364 Antigravity.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+10:15:06.509 [pid=1364 Antigravity.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+10:15:06.509 [pid=1364 Antigravity.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+10:15:06.510 [pid=1364 Antigravity.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+10:15:06.510 [pid=1364 Antigravity.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+10:15:06.510 [pid=1364 Antigravity.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+10:15:06.510 [pid=1364 Antigravity.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+10:15:06.511 [pid=1364 Antigravity.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+10:15:06.511 [pid=1364 Antigravity.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+10:15:06.511 [pid=1364 Antigravity.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+10:15:06.512 [pid=1364 Antigravity.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+10:15:06.512 [pid=1364 Antigravity.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+10:15:06.512 [pid=1364 Antigravity.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+10:15:06.512 [pid=1364 Antigravity.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+10:15:06.512 [pid=1364 Antigravity.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+10:15:06.513 [pid=1364 Antigravity.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+10:15:06.513 [pid=1364 Antigravity.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+10:15:06.513 [pid=1364 Antigravity.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+10:15:06.513 [pid=1364 Antigravity.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+10:15:06.513 [pid=1364 Antigravity.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+10:15:06.513 [pid=1364 Antigravity.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+10:15:06.571 [pid=1364 Antigravity.exe] === bc250umd.dll CARREGADA ===
+10:15:06.572 [pid=1364 Antigravity.exe] OpenAdapter12: D3D12 nao implementado nativamente -> E_NOTIMPL
+10:15:06.574 [pid=1364 Antigravity.exe] === bc250umd.dll CARREGADA ===
+10:15:06.574 [pid=1364 Antigravity.exe] OpenAdapter12: D3D12 nao implementado nativamente -> E_NOTIMPL
+10:15:06.576 [pid=1364 Antigravity.exe] === bc250umd.dll CARREGADA ===
+10:15:06.576 [pid=1364 Antigravity.exe] OpenAdapter12: D3D12 nao implementado nativamente -> E_NOTIMPL
+10:15:06.578 [pid=1364 Antigravity.exe] === bc250umd.dll CARREGADA ===
+10:15:06.578 [pid=1364 Antigravity.exe] OpenAdapter12: D3D12 nao implementado nativamente -> E_NOTIMPL

@@ -11,7 +11,8 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
     return Destination;
 }
 
-#define CHECK(Expression) do { if (!(Expression)) return 0; } while (0)
+static unsigned long g_failureLine;
+#define CHECK(Expression) do { if (!(Expression)) { g_failureLine = __LINE__; return 0; } } while (0)
 #define BC250_TEST_MMIO_BYTES 0x00060000u
 
 static unsigned char g_mmio[BC250_TEST_MMIO_BYTES];
@@ -125,12 +126,41 @@ static int Bc250Prepare(
     SET_REG(BC250_HQD_MMIO_CC_GC_SHADER_ARRAY_CONFIG, 0xFFF80000u);
     SET_REG(BC250_HQD_MMIO_SPI_PG_STATIC_WGP_MASK, 0x0000FFFFu);
     SET_REG(BC250_HQD_MMIO_RLC_PG_ALWAYS_ON_WGP_MASK, 0x00000003u);
+    SET_REG(BC250_HQD_MMIO_RLC_PG_CNTL, 0x00000001u);
 #undef SET_REG
     return 1;
 }
 
 static int Bc250RunMmioTopologyTransportTest(void)
 {
+    static const uint32_t globalMmuOffsets[BC250_GCVM_GLOBAL_MMU_REG_COUNT] = {
+        BC250_REG_GCMC_VM_AGP_BASE,
+        BC250_REG_GCMC_VM_AGP_BOT,
+        BC250_REG_GCMC_VM_AGP_TOP,
+        BC250_REG_GCMC_VM_SYSTEM_APERTURE_LOW_ADDR,
+        BC250_REG_GCMC_VM_SYSTEM_APERTURE_HIGH_ADDR,
+        BC250_REG_GCMC_VM_SYSTEM_APERTURE_DEFAULT_ADDR_LSB,
+        BC250_REG_GCMC_VM_SYSTEM_APERTURE_DEFAULT_ADDR_MSB,
+        BC250_REG_GCVM_L2_PROT_FAULT_DEFAULT_ADDR_LO,
+        BC250_REG_GCVM_L2_PROT_FAULT_DEFAULT_ADDR_HI,
+        BC250_REG_GCVM_L2_PROTECTION_FAULT_CNTL2,
+        BC250_REG_GCVM_L2_CONTEXT1_IDENTITY_APERTURE_LOW_ADDR_LO,
+        BC250_REG_GCVM_L2_CONTEXT1_IDENTITY_APERTURE_LOW_ADDR_HI,
+        BC250_REG_GCVM_L2_CONTEXT1_IDENTITY_APERTURE_HIGH_ADDR_LO,
+        BC250_REG_GCVM_L2_CONTEXT1_IDENTITY_APERTURE_HIGH_ADDR_HI,
+        BC250_REG_GCVM_L2_CONTEXT_IDENTITY_PHYSICAL_OFFSET_LO,
+        BC250_REG_GCVM_L2_CONTEXT_IDENTITY_PHYSICAL_OFFSET_HI,
+        BC250_REG_GCVM_INVALIDATE_ENG0_ADDR_RANGE_LO,
+        BC250_REG_GCVM_INVALIDATE_ENG0_ADDR_RANGE_HI,
+        BC250_REG_GCVM_INVALIDATE_ENG17_ADDR_RANGE_LO,
+        BC250_REG_GCVM_INVALIDATE_ENG17_ADDR_RANGE_HI,
+        BC250_REG_GCMC_VM_MX_L1_TLB_CNTL,
+        BC250_REG_GCVM_L2_CNTL,
+        BC250_REG_GCVM_L2_CNTL2,
+        BC250_REG_GCVM_L2_CNTL3,
+        BC250_REG_GCVM_L2_CNTL4,
+        BC250_REG_GCVM_L2_CNTL5
+    };
     DXGKRNL_INTERFACE interfaceData;
     BC250_RESOLVED_BAR_RESOURCE bars[2];
     BC250_MMIO_TOPOLOGY_CONTEXT context;
@@ -139,6 +169,7 @@ static int Bc250RunMmioTopologyTransportTest(void)
     BC250_DISCOVERY_TMR_EVIDENCE tmrEvidence;
     BC250_PLATFORM_REGISTER_SNAPSHOT platformSnapshot;
     uint32_t value;
+    uint32_t index;
 
     CHECK(Bc250Prepare(&interfaceData, &bars[0], &context));
     CHECK(Bc250MmioTopologyMapReadonly(
@@ -233,6 +264,32 @@ static int Bc250RunMmioTopologyTransportTest(void)
         &context, BC250_HQD_MMIO_RLC_CP_SCHEDULERS, &value) == 1u);
     CHECK(value == 0xA0u);
     CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_GCVM_VMID8_CNTL, &value) == 1u);
+    CHECK(value == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_GCVM_VMID8_CNTL, 0x00555403u) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_GCVM_VMID8_CNTL, &value) == 1u);
+    CHECK(value == 0x00555403u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_GCVM_VMID8_CNTL, 0u) == 1u);
+    {
+        const uint32_t computeOffsets[] = {
+            BC250_GCVM_VMID9_CNTL, BC250_GCVM_VMID9_PT_BASE_LO,
+            BC250_GCVM_VMID9_PT_BASE_HI, BC250_GCVM_VMID9_PT_START_LO,
+            BC250_GCVM_VMID9_PT_START_HI, BC250_GCVM_VMID9_PT_END_LO,
+            BC250_GCVM_VMID9_PT_END_HI
+        };
+        uint32_t n;
+        for (n = 0u; n < 7u; ++n) {
+            CHECK(Bc250MmioTopologyWrite32(&context, computeOffsets[n], n + 1u));
+            CHECK(Bc250MmioTopologyRead32(&context, computeOffsets[n], &value));
+            CHECK(value == n + 1u);
+            CHECK(Bc250MmioTopologyWrite32(&context, computeOffsets[n], 0u));
+        }
+        CHECK(!Bc250MmioTopologyWrite32(&context, BC250_GCVM_VMID9_CNTL + 4u, 1u));
+    }
+    CHECK(Bc250MmioTopologyRead32(
         &context, BC250_HQD_MMIO_CC_GC_SHADER_ARRAY_CONFIG, &value) == 1u);
     CHECK(value == 0xFFF80000u);
     CHECK(Bc250MmioTopologyRead32(
@@ -253,7 +310,11 @@ static int Bc250RunMmioTopologyTransportTest(void)
     CHECK(Bc250MmioTopologyRead32(
         &context, BC250_HQD_MMIO_CP_CPC_STALLED_STAT1, &value) == 1u);
     CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_CP_CPF_STATUS, &value) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
         &context, BC250_HQD_MMIO_CP_CPF_BUSY_STAT, &value) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_CP_CPF_STALLED_STAT1, &value) == 1u);
     CHECK(Bc250MmioTopologyRead32(
         &context, BC250_HQD_MMIO_CP_MEC_ME1_HEADER_DUMP, &value) == 1u);
     CHECK(Bc250MmioTopologyRead32(
@@ -261,7 +322,21 @@ static int Bc250RunMmioTopologyTransportTest(void)
     CHECK(Bc250MmioTopologyRead32(
         &context, BC250_HQD_MMIO_CP_STALLED_STAT1, &value) == 1u);
     CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_CP_STALLED_STAT2, &value) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_CP_BUSY_STAT, &value) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
         &context, BC250_HQD_MMIO_CP_STAT, &value) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_CP_MEC1_INSTR_PNTR, &value) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_CP_MEC2_INSTR_PNTR, &value) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_IB_BASE_LO, &value) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_IB_BASE_HI, &value) == 1u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_IB_RPTR, &value) == 1u);
     CHECK(Bc250MmioTopologyWrite32(
         &context, BC250_HQD_MMIO_CP_CPC_STATUS, 0u) == 0u);
     CHECK(Bc250MmioTopologyWrite32(
@@ -269,7 +344,11 @@ static int Bc250RunMmioTopologyTransportTest(void)
     CHECK(Bc250MmioTopologyWrite32(
         &context, BC250_HQD_MMIO_CP_CPC_STALLED_STAT1, 0u) == 0u);
     CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_CP_CPF_STATUS, 0u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
         &context, BC250_HQD_MMIO_CP_CPF_BUSY_STAT, 0u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_CP_CPF_STALLED_STAT1, 0u) == 0u);
     CHECK(Bc250MmioTopologyWrite32(
         &context, BC250_HQD_MMIO_CP_MEC_ME1_HEADER_DUMP, 0u) == 0u);
     CHECK(Bc250MmioTopologyWrite32(
@@ -277,22 +356,60 @@ static int Bc250RunMmioTopologyTransportTest(void)
     CHECK(Bc250MmioTopologyWrite32(
         &context, BC250_HQD_MMIO_CP_STALLED_STAT1, 0u) == 0u);
     CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_CP_STALLED_STAT2, 0u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_CP_BUSY_STAT, 0u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
         &context, BC250_HQD_MMIO_CP_STAT, 0u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_CP_MEC2_INSTR_PNTR, 0u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_IB_BASE_LO, 0u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_IB_BASE_HI, 0u) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_IB_RPTR, 0u) == 0u);
 
-    /* Esses tres offsets nunca entram na allowlist de escrita. */
+    /* CC_GC_SHADER_ARRAY_CONFIG nunca entra na allowlist de escrita (preserva 24 CUs). */
     CHECK(Bc250MmioTopologyWrite32(
         &context, BC250_HQD_MMIO_CC_GC_SHADER_ARRAY_CONFIG, 0u) == 0u);
+    /* Politica WGP/power-gating pertence ao firmware: leitura sim, escrita nunca. */
     CHECK(Bc250MmioTopologyWrite32(
-        &context, BC250_HQD_MMIO_SPI_PG_STATIC_WGP_MASK, 0u) == 0u);
+        &context, BC250_HQD_MMIO_SPI_PG_STATIC_WGP_MASK, 0x0000001Fu) == 0u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_SPI_PG_STATIC_WGP_MASK, &value) == 1u);
+    CHECK(value == 0x0000FFFFu);
     CHECK(Bc250MmioTopologyWrite32(
-        &context, BC250_HQD_MMIO_RLC_PG_ALWAYS_ON_WGP_MASK, 0u) == 0u);
+        &context, BC250_HQD_MMIO_RLC_PG_ALWAYS_ON_WGP_MASK, 0x0000001Fu) == 0u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_RLC_PG_ALWAYS_ON_WGP_MASK, &value) == 1u);
+    CHECK(value == 0x00000003u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_RLC_PG_CNTL, 0u) == 0u);
+    CHECK(Bc250MmioTopologyRead32(
+        &context, BC250_HQD_MMIO_RLC_PG_CNTL, &value) == 1u);
+    CHECK(value == 1u);
+    /* SMUIO_GFX_MISC_CNTL aceita leitura */
+    CHECK(Bc250MmioTopologyRead32(
+        &context, 0x0005A314u, &value) == 1u);
+    for (index = 0; index < BC250_GCVM_GLOBAL_MMU_REG_COUNT; ++index) {
+        const uint32_t pattern = 0xBC250000u + index;
+        CHECK(Bc250MmioTopologyWrite32(
+            &context, globalMmuOffsets[index], pattern) == 1u);
+        CHECK(Bc250MmioTopologyRead32(
+            &context, globalMmuOffsets[index], &value) == 1u);
+        CHECK(value == pattern);
+    }
+    /* Um vizinho nao catalogado nao e aceito por proximidade. */
+    CHECK(Bc250MmioTopologyRead32(&context, 0x0000A188u, &value) == 0u);
+    CHECK(Bc250MmioTopologyWrite32(&context, 0x0000A188u, 1u) == 0u);
     CHECK(Bc250MmioTopologyRead32(&context, 0x0000DA60u, &value) == 0u);
     CHECK(Bc250MmioTopologyWrite32(&context, 0x0000DA60u, 1u) == 0u);
     CHECK(Bc250MmioTopologyRead32(&context, 0x0003F040u, &value) == 0u);
     CHECK(Bc250MmioTopologyWrite32(&context, 0x0003F040u, 1u) == 0u);
     CHECK(Bc250MmioTopologyRead32(&context, 0x000032D4u, &value) == 0u);
     CHECK(Bc250MmioTopologyWrite32(&context, 0x000032D4u, 1u) == 0u);
-    CHECK(context.ReadCount == 100u && context.WriteCount == 9u);
+    CHECK(context.ReadCount == 148u && context.WriteCount == 51u);
     CHECK(Bc250MmioTopologyUnmap(&context) == BC250_MMIO_TOPOLOGY_OK);
     CHECK(g_unmapCalls == 1u && context.State == BC250_MMIO_TOPOLOGY_EMPTY);
     CHECK(context.VirtualBase == NULL);
@@ -337,5 +454,5 @@ static int Bc250RunMmioTopologyTransportTest(void)
 
 void __stdcall mainCRTStartup(void)
 {
-    ExitProcess(Bc250RunMmioTopologyTransportTest() ? 0ul : 1ul);
+    ExitProcess(Bc250RunMmioTopologyTransportTest() ? 0ul : g_failureLine);
 }

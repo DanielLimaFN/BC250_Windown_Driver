@@ -1,0 +1,44 @@
+﻿Preflight aprovado: remover somente oem34.inf e restaurar BasicDisplay.
+  installed SYS SHA256: 62B4730D41A7715D636F2C035D223CB347CF79761A778A153DD2B8C46E4C2B2E
+  signer: 8D14413F3B97AEF9D7F78A1CA8D9EA99A3FBAD3B
+AVISO: A tela pode piscar ou apagar durante a troca de driver.
+AVISO: Fallback: Modo de Seguranca -> C:\BC250_RECOVERY.cmd -> reboot.
+Utilitßrio PnP da Microsoft
+
+Pacote de driver desinstalado.
+Pacote de drivers excluÝdo com Ûxito.
+
+
+Name  : target_inf
+Value : oem34.inf
+
+Name  : pnputil_exit
+Value : 0
+
+Name  : service_after
+Value : BasicDisplay
+
+Name  : problem_code_after
+Value : 0
+
+Name  : matching_mcdm_inf_after
+Value : 0
+
+Name  : recovery_readiness_exit
+Value : 0
+
+Name  : prebinding_exit
+Value : 0
+
+Name  : success
+Value : True
+
+Name  : hardware_acceleration_validated
+Value : False
+
+
+
+
+Evidencia: C:\Users\Daniel\Desktop\NamixWDDM\docs\evidence\2026-09-07_11-10-17-DESKTOP-HQAG6T4-mcdm-online-rollback
+BC250 ONLINE ROLLBACK: PASS
+NAO VALIDADO PARA ACELERACAO

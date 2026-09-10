@@ -14,6 +14,45 @@ static void Bc250MmioTopologyClearMapping(
     Context->WriteCount = 0;
 }
 
+/*
+ * Allowlist fechada dos 26 registradores transacionais da MMU global.
+ * Nao aceitar intervalos: um vizinho nao catalogado continua recusado.
+ */
+static uint32_t Bc250MmioTopologyGlobalMmuOffsetAllowed(uint32_t ByteOffset)
+{
+    switch (ByteOffset) {
+    case BC250_REG_GCMC_VM_AGP_BASE:
+    case BC250_REG_GCMC_VM_AGP_BOT:
+    case BC250_REG_GCMC_VM_AGP_TOP:
+    case BC250_REG_GCMC_VM_SYSTEM_APERTURE_LOW_ADDR:
+    case BC250_REG_GCMC_VM_SYSTEM_APERTURE_HIGH_ADDR:
+    case BC250_REG_GCMC_VM_SYSTEM_APERTURE_DEFAULT_ADDR_LSB:
+    case BC250_REG_GCMC_VM_SYSTEM_APERTURE_DEFAULT_ADDR_MSB:
+    case BC250_REG_GCVM_L2_PROT_FAULT_DEFAULT_ADDR_LO:
+    case BC250_REG_GCVM_L2_PROT_FAULT_DEFAULT_ADDR_HI:
+    case BC250_REG_GCVM_L2_PROTECTION_FAULT_CNTL2:
+    case BC250_REG_GCVM_L2_CONTEXT1_IDENTITY_APERTURE_LOW_ADDR_LO:
+    case BC250_REG_GCVM_L2_CONTEXT1_IDENTITY_APERTURE_LOW_ADDR_HI:
+    case BC250_REG_GCVM_L2_CONTEXT1_IDENTITY_APERTURE_HIGH_ADDR_LO:
+    case BC250_REG_GCVM_L2_CONTEXT1_IDENTITY_APERTURE_HIGH_ADDR_HI:
+    case BC250_REG_GCVM_L2_CONTEXT_IDENTITY_PHYSICAL_OFFSET_LO:
+    case BC250_REG_GCVM_L2_CONTEXT_IDENTITY_PHYSICAL_OFFSET_HI:
+    case BC250_REG_GCVM_INVALIDATE_ENG0_ADDR_RANGE_LO:
+    case BC250_REG_GCVM_INVALIDATE_ENG0_ADDR_RANGE_HI:
+    case BC250_REG_GCVM_INVALIDATE_ENG17_ADDR_RANGE_LO:
+    case BC250_REG_GCVM_INVALIDATE_ENG17_ADDR_RANGE_HI:
+    case BC250_REG_GCMC_VM_MX_L1_TLB_CNTL:
+    case BC250_REG_GCVM_L2_CNTL:
+    case BC250_REG_GCVM_L2_CNTL2:
+    case BC250_REG_GCVM_L2_CNTL3:
+    case BC250_REG_GCVM_L2_CNTL4:
+    case BC250_REG_GCVM_L2_CNTL5:
+        return 1u;
+    default:
+        return 0u;
+    }
+}
+
 BC250_MMIO_TOPOLOGY_STATUS Bc250MmioTopologyInitialize(
     BC250_MMIO_TOPOLOGY_CONTEXT *Context)
 {
@@ -103,7 +142,8 @@ BC250_MMIO_TOPOLOGY_STATUS Bc250MmioTopologyMapReadonly(
 
 static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
 {
-    return ByteOffset == BC250_RCC_CONFIG_MEMSIZE_BYTE_OFFSET ||
+    return Bc250MmioTopologyGlobalMmuOffsetAllowed(ByteOffset) ||
+        ByteOffset == BC250_RCC_CONFIG_MEMSIZE_BYTE_OFFSET ||
         ByteOffset == BC250_DRIVER_SCRATCH_0_BYTE_OFFSET ||
         ByteOffset == BC250_DRIVER_SCRATCH_1_BYTE_OFFSET ||
         ByteOffset == BC250_DRIVER_SCRATCH_2_BYTE_OFFSET ||
@@ -146,6 +186,7 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == 0xA318u ||
         ByteOffset == 0xA3A4u ||
         ByteOffset == 0xA3A8u ||
+        Bc250GcvmIsComputeRegister(ByteOffset) ||
         ByteOffset == BC250_GCVM_VMID8_CNTL ||
         ByteOffset == BC250_GCVM_VMID8_PT_BASE_LO ||
         ByteOffset == BC250_GCVM_VMID8_PT_BASE_HI ||
@@ -199,21 +240,29 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == 0x0000C170u || ByteOffset == 0x0000C174u ||
         ByteOffset == 0x0000C170u || ByteOffset == 0x0000C174u ||
         ByteOffset == 0x0000C2E0u || ByteOffset == 0x0000C20Cu || ByteOffset == 0x0000C210u ||
-        /* 3.34: diagnostico de stall do CP/CPC, SOMENTE leitura. */
+        /* 3.34/3.109: diagnostico de stall do CP/CPC/CPF, SOMENTE leitura. */
         ByteOffset == BC250_HQD_MMIO_CP_CPC_STATUS ||
         ByteOffset == BC250_HQD_MMIO_CP_CPC_BUSY_STAT ||
         ByteOffset == BC250_HQD_MMIO_CP_CPC_STALLED_STAT1 ||
+        ByteOffset == BC250_HQD_MMIO_CP_CPF_STATUS ||
         ByteOffset == BC250_HQD_MMIO_CP_CPF_BUSY_STAT ||
+        ByteOffset == BC250_HQD_MMIO_CP_CPF_STALLED_STAT1 ||
         ByteOffset == BC250_HQD_MMIO_CP_MEC_ME1_HEADER_DUMP ||
         ByteOffset == BC250_HQD_MMIO_CP_MEC_ME2_HEADER_DUMP ||
         ByteOffset == BC250_HQD_MMIO_CP_STALLED_STAT1 ||
+        ByteOffset == BC250_HQD_MMIO_CP_STALLED_STAT2 ||
+        ByteOffset == BC250_HQD_MMIO_CP_BUSY_STAT ||
         ByteOffset == BC250_HQD_MMIO_CP_STAT ||
+        ByteOffset == BC250_HQD_MMIO_CP_MEC1_INSTR_PNTR ||
+        ByteOffset == BC250_HQD_MMIO_CP_MEC2_INSTR_PNTR ||
         ByteOffset == 0x0000C3B4u ||
         ByteOffset == BC250_HQD_MMIO_RLC_CP_SCHEDULERS ||
         /* WGP topology/power policy: catalogued read-only preflight. */
         ByteOffset == BC250_HQD_MMIO_CC_GC_SHADER_ARRAY_CONFIG ||
         ByteOffset == BC250_HQD_MMIO_SPI_PG_STATIC_WGP_MASK ||
+        ByteOffset == BC250_HQD_MMIO_RLC_PG_CNTL ||
         ByteOffset == BC250_HQD_MMIO_RLC_PG_ALWAYS_ON_WGP_MASK ||
+        ByteOffset == BC250_HQD_MMIO_SMUIO_GFX_MISC_CNTL ||
         ByteOffset == BC250_HQD_MMIO_CPC_UTCL1_ERROR ||
         ByteOffset == BC250_HQD_MMIO_CP_ME1_PIPE0_INT_STATUS ||
         ByteOffset == BC250_HQD_MMIO_CP_ME2_PIPE1_INT_STATUS ||
@@ -264,7 +313,10 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == BC250_HQD_MMIO_WPTR_POLL_HI ||
         ByteOffset == BC250_HQD_MMIO_DOORBELL_CONTROL ||
         ByteOffset == BC250_HQD_MMIO_PQ_CONTROL ||
+        ByteOffset == BC250_HQD_MMIO_IB_BASE_LO ||
+        ByteOffset == BC250_HQD_MMIO_IB_BASE_HI ||
         ByteOffset == BC250_HQD_MMIO_IB_CONTROL ||
+        ByteOffset == BC250_HQD_MMIO_IB_RPTR ||
         ByteOffset == BC250_HQD_MMIO_DEQUEUE_REQUEST ||
         ByteOffset == BC250_HQD_MMIO_PQ_WPTR_LO ||
         ByteOffset == BC250_HQD_MMIO_PQ_WPTR_HI ||
@@ -275,9 +327,12 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
 
 static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
 {
-    return ByteOffset == 0xA2D0u ||
+    return Bc250MmioTopologyGlobalMmuOffsetAllowed(ByteOffset) ||
+        ByteOffset == 0xA2D0u ||
         ByteOffset == 0xA3A4u ||
         ByteOffset == 0xA3A8u ||
+        Bc250GcvmIsComputeRegister(ByteOffset) ||
+        ByteOffset == BC250_GCVM_VMID8_CNTL ||
         ByteOffset == BC250_GCVM_VMID8_PT_BASE_LO ||
         ByteOffset == BC250_GCVM_VMID8_PT_BASE_HI ||
         ByteOffset == BC250_GCVM_VMID8_PT_START_LO ||

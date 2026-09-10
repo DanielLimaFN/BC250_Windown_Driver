@@ -395,8 +395,30 @@ Esse valor foi calculado independentemente do driver antes da primeira execuçã
 justamente para que a medição possa confirmar ou desmentir a aritmética em vez de
 concordar com ela por construção.
 
-O driver **lê** `GCMC_VM_FB_OFFSET` do silício em cada construção; não usa
-constante. Se o registrador mudar entre plataformas, o PTE acompanha.
+⚠️ **CORREÇÃO (07/09) — esta afirmação estava FALSA e é normativa, então some com ela.**
+O texto anterior dizia: *"O driver lê `GCMC_VM_FB_OFFSET` do silício em cada construção; não
+usa constante. Se o registrador mudar entre plataformas, o PTE acompanha."*
+
+O que o código realmente faz, lido em `driver/wdk/bc250_active_miniport.c`:
+
+- o **leitor de topologia** de fato lê `GCMC_VM_FB_OFFSET` do silício e o expõe em
+  `Bootstrap.AddressSpace.VramBaseOffset`;
+- mas o valor usado nas PTEs e no ponteiro de root é a **constante**
+  `BC250_GCVM_VRAM_MC_BASE_FALLBACK = 0x450000000` — e isso é **deliberado**, com
+  justificativa no comentário: a base do leitor *"nunca fez um acesso funcionar"*, enquanto a
+  constante tem prova byte a byte. Ver também o registro da reversão de 05/09 01:29, quando
+  trocar esta base pela MC (`0xF400000000`) foi diagnosticado como erro de domínio — o walker
+  do GCVM opera em **PA**, anel e blts físicos operam em **MC**.
+
+Numericamente a constante é o `0x450 << 24` medido em 2026-08-23, então hoje os dois
+concordam. O risco é o silêncio se deixarem de concordar. **Fechado em 07/09:** o
+`SetRootPageTable` passou a comparar os dois e a emitir
+`ROOT_MC: DIVERGENCIA -- topologia leu 0x… do silicio, base em uso e 0x…` quando diferem;
+quando concordam, o log diz isso explicitamente. Nenhuma mudança de comportamento — o
+caminho com prova física continua o mesmo, só deixou de poder divergir em silêncio.
+
+Também removida no mesmo passo uma inicialização morta que repetia `0x450000000ull` à mão
+(quarta grafia do mesmo número) e era sobrescrita sem condição logo abaixo.
 
 ## HDP
 
@@ -475,6 +497,14 @@ unidade.
 | `SDMA0_UTCL1_RD_XNACK0/1` | `0x0043-0x0044` | `0x04A8C/90` | leitura recusada pela tradução |
 | `SDMA0_UTCL1_WR_XNACK0/1` | `0x0045-0x0046` | `0x04A94/98` | **escrita recusada pela tradução** |
 | `SDMA0_UTCL1_TIMEOUT` | `0x0047` | `0x04A9C` | timeout de tradução |
+| `SDMA0_GFX_IB_RPTR` | `0x008b` | `0x04BAC` | ponteiro de leitura DENTRO do IB |
+| `SDMA0_GFX_IB_OFFSET` | `0x008c` | `0x04BB0` | offset corrente dentro do IB |
+| `SDMA0_GFX_IB_BASE_LO` | `0x008d` | `0x04BB4` | base do IB carregada pelo `INDIRECT` |
+| `SDMA0_GFX_IB_BASE_HI` | `0x008e` | `0x04BB8` | base do IB, parte alta |
+| `SDMA0_GFX_IB_SIZE` | `0x008f` | `0x04BBC` | tamanho do IB carregado |
+| `SDMA0_GFX_SKIP_CNTL` | `0x0090` | `0x04BC0` | controle de descarte de pacotes |
+| `SDMA0_GFX_CONTEXT_STATUS` | `0x0091` | `0x04BC4` | `EXCEPTION`, `PREEMPTED`, `PREEMPT_DISABLE` |
+| `SDMA0_GFX_IB_SUB_REMAIN` | `0x00af` | `0x04C3C` | dwords restantes na execução do IB corrente |
 | `GCVM_L2_PROTECTION_FAULT_CNTL` | `0x15e8` | `0x0A120` | controle da falha de proteção |
 | `GCVM_L2_PROTECTION_FAULT_ADDR_LO32` | `0x15ed` | `0x0A134` | endereço da falha latchada |
 | `GCVM_L2_PROTECTION_FAULT_ADDR_HI32` | `0x15ee` | `0x0A138` | endereço da falha latchada |
@@ -543,6 +573,122 @@ O `sh_mask` autoritativo foi obtido:
 
 `mmGRBM_SOFT_RESET` fica em `dw 0x0da8` -> byte `0x08020` pela mesma aritmética
 dos demais registros GC.
+
+### Bloco `SDMA0_GFX_IB_*` — derivação cercada por âncoras, 2026-09-05
+
+Estes sete registros **não** foram extrapolados: eles ficam **entre dois offsets
+que já constavam deste catálogo e do módulo de laboratório**, e a aritmética
+fecha nos dois lados.
+
+| Âncora | `dw` | Byte BAR0 |
+|---|---|---|
+| `SDMA0_GFX_IB_CNTL` | `0x008a` | `0x04BA8` |
+| `SDMA0_GFX_DOORBELL` | `0x0092` | `0x04BC8` |
+
+`0x04BC8 - 0x04BA8 = 0x20` bytes = **8 dwords**, contra `0x92 - 0x8a` = **8**
+de índice. O bloco é consecutivo, e os sete registros entre eles caem em
+`0x04BAC`..`0x04BC4` pela mesma aritmética `0x4980 + dw*4` usada no resto do
+segmento 0 da SDMA0.
+
+#### Campos do bloco — decodificados em 2026-09-07, classe `P1`
+
+⚠️ **Estes campos ficaram sem interpretação por dois dias.**
+`docs/168_HANDOFF_2026-09-05_INDIRECT_SDMA.md`, seção 6 item 6, encerrou dizendo:
+*"a semântica de bits de `CONTEXT_STATUS` e `SKIP_CNTL` … não sei o que significa e não
+interpretei"*. A semântica estava no repositório desde sempre, em
+[`inc/linux_ref/gc_10_1_0_sh_mask.h`](../inc/linux_ref/gc_10_1_0_sh_mask.h) — a única cópia
+local de referência do upstream que temos. As linhas citadas abaixo são daquele arquivo.
+
+**`SDMA0_GFX_IB_CNTL`** (linhas 941–948):
+
+| Campo | Bits | Máscara |
+|---|---|---|
+| `IB_ENABLE` | 0 | `0x00000001` |
+| `IB_SWAP_ENABLE` | 4 | `0x00000010` |
+| `SWITCH_INSIDE_IB` | 8 | `0x00000100` |
+| `CMD_VMID` | 19:16 | `0x000F0000` |
+
+**`SDMA0_GFX_IB_RPTR` e `SDMA0_GFX_IB_OFFSET`** (linhas 950–954):
+
+| Campo | Bits | Máscara |
+|---|---|---|
+| `OFFSET` | 21:2 | `0x003FFFFC` |
+
+⚠️ **O campo começa no bit 2.** O valor cru é um offset em **bytes**; o campo conta
+**dwords**. Ler o cru como dwords dá quatro vezes o valor certo — e é exatamente esse o
+risco de ler `IB_RPTR = 0x20` sem decodificar: são **8 dwords**, não 32.
+
+**`SDMA0_GFX_IB_SIZE`** (962–963): `SIZE` em 19:0, `0x000FFFFF` — já em dwords, sem shift.
+**`SDMA0_GFX_SKIP_CNTL`** (965–966): `SKIP_COUNT` em 19:0, `0x000FFFFF` — o valor inteiro é
+a contagem. Os valores variáveis observados em 05/09 (`0x3CB3`, `0x3A`, `0x2A`, `0x1A`) são
+contagens de skip, não um bitmap.
+
+**`SDMA0_GFX_IB_SUB_REMAIN`** (`0x00af` -> byte `0x04C3C`, linhas 1013–1014): `REMAIN_DW` em 13:0,
+máscara `0x00003FFF` — contagem dinâmica de dwords pendentes de execução no sub-buffer do IB.
+O microcódigo F32 decrementa este registrador a cada dword consumido. Quando a engine trava dentro
+do IB, a leitura deste registrador indica exatamente quantas dwords restavam para concluir o IB.
+
+**`SDMA0_GFX_CONTEXT_STATUS`** (968–983):
+
+| Campo | Bits | Máscara |
+|---|---|---|
+| `SELECTED` | 0 | `0x00000001` |
+| `IDLE` | 2 | `0x00000004` |
+| `EXPIRED` | 3 | `0x00000008` |
+| `EXCEPTION` | 6:4 | `0x00000070` |
+| `CTXSW_ABLE` | 7 | `0x00000080` |
+| `CTXSW_READY` | 8 | `0x00000100` |
+| `PREEMPTED` | 9 | `0x00000200` |
+| `PREEMPT_DISABLE` | 10 | `0x00000400` |
+
+⚠️ Dois detalhes que enganam: **`EXCEPTION` é um campo de 3 bits**, não um flag; e **o bit 1
+não tem nome no header do upstream**. A união dos campos conhecidos é `0x000007FD`, e o
+decodificador reporta o resto em `BITS_SEM_NOME` em vez de fingir que entendeu o valor todo.
+
+#### O que a decodificação revelou nas medições de 05/09
+
+Aplicando as máscaras acima aos dois valores **medidos** (`docs/168` seção 5.3):
+
+| Variante | `CONTEXT_STATUS` | Decodificado |
+|---|---|---|
+| `PHYS` (VMID 0, MC físico) | `0x0D` | `SELECTED` + **`IDLE`** + `EXPIRED` |
+| `EXEC` (VMID 8, traduzido) | `0x09` | `SELECTED` + `EXPIRED`, **`IDLE = 0`** |
+
+| Variante | `IB_CNTL` | Decodificado |
+|---|---|---|
+| `PHYS` | `0x00000101` | `IB_ENABLE=1`, `SWITCH_INSIDE_IB=1`, `CMD_VMID=0` |
+| `EXEC` | `0x00080101` | `IB_ENABLE=1`, `SWITCH_INSIDE_IB=1`, `CMD_VMID=8` |
+
+**Os dois `CONTEXT_STATUS` diferem em exatamente um bit, e é o `IDLE`. Os dois `IB_CNTL`
+diferem em exatamente um campo, e é o `CMD_VMID`.** Medição `P0` (doc 168) somada a
+decodificação `P1` (header local) — não é hipótese.
+
+Ou seja: a engine tratou o pacote **igual** nas duas variantes, e a única diferença de
+desfecho é que **a variante traduzida não voltou a ficar ociosa**.
+
+🔶 **HIPÓTESE (`H`)** que isso sustenta: sob VMID 8 a engine consumiu o pacote do **anel**,
+latchou `IB_BASE` e `CMD_VMID`, e **parou dentro do IB** — não terminou, por isso `IDLE`
+continua 0. Aponta para *"travou buscando ou traduzindo o IB"*, não para *"não executou o
+pacote"*.
+
+⚠️ **O que isto NÃO resolve, e precisa ficar escrito:** a variante `PHYS` **foi a `IDLE`** —
+ou seja, **terminou** — e a prova de bytes dela **também falhou** (`docs/168` seção 5.2).
+Sem tradução envolvida, aquela falha não pode ser de GCVM. São **duas falhas diferentes**, e
+esta decodificação não decide nenhuma das duas.
+
+Travado por `driver/tests/sdma_queue_state_contract_test.c`, que confere as máscaras contra
+o header **e** reproduz os dois valores medidos. O contrato
+`driver/core/bc250_sdma_queue_state_contract.c` não escreve registrador nenhum, e o
+`SubmitCommandVirtual` do Node 0 passou a emitir `IB_QUEUE_RAW`, `IB_QUEUE_DECODED`,
+`IB_QUEUE_STATUS` e `IB_QUEUE_DISCRIMINANTE` **no caminho de timeout** — não no de sucesso,
+para não pôr oito leituras de MMIO no `Present` a 60 Hz.
+
+Classe **P1**. Ordem dos campos conforme `gc_10_1_0_offset.h`. **Somente
+leitura** — nenhum deles é escrito pelo driver: o microcódigo do F32 é que os
+carrega ao consumir o pacote `INDIRECT`. É exatamente por isso que eles servem
+de diagnóstico: se `IB_BASE`/`IB_SIZE` contiverem o que emitimos, a engine
+chegou a carregar o descritor; se ficarem zerados, ela nem decodificou o
+pacote.
 
 O reset é feito por leitura-modificação-escrita, mexendo apenas no bit da
 SDMA0: os outros bits do registrador incluem `SOFT_RESET_GFX`, e a máquina usa
@@ -803,8 +949,116 @@ um boot para descobrir.
 ### O que o passo 3 deliberadamente NÃO escreve
 
 `gfxhub_v2_0_setup_vmid_config`, que configura os contextos 1..15 e existe para
-VMs de usuário. Este laboratório submete por VMID 0. Escrever 15 contextos que
+VMs de usuário. Este laboratório submetia por VMID 0. Escrever 15 contextos que
 ninguém vai usar aumenta a superfície de escrita sem aumentar a prova.
+
+### Contextos de VMID de Usuário (1..15) e `GCVM_CONTEXT8_CNTL` — `gfxhub_v2_0_setup_vmid_config`
+
+Para submissões em espaço de processo e execução real de DMA buffer com GPUVA,
+o hardware exige um VMID com root page table instalada e habilitada. O contexto 8
+(`mmGCVM_CONTEXT8_CNTL`, byte offset `0x0A220`) é o contexto alocado ao driver para
+esta função.
+
+**Proveniência:**
+- Função upstream: `gfxhub_v2_0_setup_vmid_config()` em `drivers/gpu/drm/amd/amdgpu/gfxhub_v2_0.c`.
+- Definição de máscaras e shifts: `gc_10_1_0_sh_mask.h` (linhas 12666–12704).
+- Layout: os contextos 1 a 15 compartilham o mesmo layout exato de registradores.
+- Classificação: **P1** (derivado do upstream e compatível com o silício).
+
+#### VMID9 dedicado ao MEC — 08/09, P1, NÃO VALIDADO EM HARDWARE
+
+Fonte conferida: [gc_10_1_0_offset.h do Linux](https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h),
+símbolos `mmGCVM_CONTEXT9_*`, todos `BASE_IDX=0`. Fórmula byte:
+`(GC_BASE[0] + offset) * 4`, com `GC_BASE[0]=0x1260` já catalogado.
+
+| Registro | Offset upstream (dword) | Byte MMIO |
+|---|---:|---:|
+| CNTL | 0x1629 | 0xA224 |
+| PAGE_TABLE_BASE_ADDR_LO32 | 0x169D | 0xA3F4 |
+| PAGE_TABLE_BASE_ADDR_HI32 | 0x169E | 0xA3F8 |
+| PAGE_TABLE_START_ADDR_LO32 | 0x16BD | 0xA474 |
+| PAGE_TABLE_START_ADDR_HI32 | 0x16BE | 0xA478 |
+| PAGE_TABLE_END_ADDR_LO32 | 0x16DD | 0xA4F4 |
+| PAGE_TABLE_END_ADDR_HI32 | 0x16DE | 0xA4F8 |
+
+Campos de CNTL: `inc/linux_ref/gc_10_1_0_sh_mask.h`, seção
+`GCVM_CONTEXT9_CNTL`, bits 0..22. A transação preserva os bits externos a essa
+máscara, salva os sete registros, recusa contexto previamente habilitado,
+desabilita antes de reprogramar, confere readback e invalida VMID9 na engine17
+(`ACK=1<<9`, 0x200). Restaura a baseline com readback/ACK após falha ou teardown.
+Esta inclusão cataloga endereços P1; não declara execução no silício.
+
+#### Tabela de Campos de `GCVM_CONTEXT8_CNTL`
+
+| Campo | Shift | Largura | Máscara | POST (medido) | Alvo (P1) | Papel / Origem |
+|---|---:|---:|---:|---:|---:|---|
+| `ENABLE_CONTEXT` | 0 | 1 bit | `0x00000001` | 0 | **1** | Habilita tradução para o contexto (`gfxhub_v2_0.c:291`) |
+| `PAGE_TABLE_DEPTH` | 1 | 2 bits | `0x00000006` | 0 | **1** | Profundidade da hierarquia (1 = 2 níveis, ver derivação abaixo) |
+| `PAGE_TABLE_BLOCK_SIZE` | 3 | 4 bits | `0x00000078` | 0 | **0** | Tamanho de bloco da folha além de 9 bits (0 = 4 KiB folha) |
+| `RETRY_PERMISSION_OR_INVALID_PAGE_FAULT` | 7 | 1 bit | `0x00000080` | 1 | **0** | No-retry: suprime tempestade de fault em APU (`gfxhub_v2_0.c:313`) |
+| `RETRY_OTHER_FAULT` | 8 | 1 bit | `0x00000100` | 0 | **0** | Desabilitado no upstream |
+| `RANGE_PROTECTION_FAULT_ENABLE_INTERRUPT` | 9 | 1 bit | `0x00000200` | 1 | **0** | Interrupção não habilitada no setup padrão |
+| `RANGE_PROTECTION_FAULT_ENABLE_DEFAULT` | 10 | 1 bit | `0x00000400` | 1 | **1** | Redireciona para dummy page default (`gfxhub_v2_0.c:295`) |
+| `DUMMY_PAGE_PROTECTION_FAULT_ENABLE_INTERRUPT` | 11 | 1 bit | `0x00000800` | 1 | **0** | Interrupção não habilitada no setup padrão |
+| `DUMMY_PAGE_PROTECTION_FAULT_ENABLE_DEFAULT` | 12 | 1 bit | `0x00001000` | 1 | **1** | Redireciona para dummy page default (`gfxhub_v2_0.c:297`) |
+| `PDE0_PROTECTION_FAULT_ENABLE_INTERRUPT` | 13 | 1 bit | `0x00002000` | 1 | **0** | Interrupção não habilitada no setup padrão |
+| `PDE0_PROTECTION_FAULT_ENABLE_DEFAULT` | 14 | 1 bit | `0x00004000` | 1 | **1** | Redireciona para dummy page default (`gfxhub_v2_0.c:299`) |
+| `VALID_PROTECTION_FAULT_ENABLE_INTERRUPT` | 15 | 1 bit | `0x00008000` | 1 | **0** | Interrupção não habilitada no setup padrão |
+| `VALID_PROTECTION_FAULT_ENABLE_DEFAULT` | 16 | 1 bit | `0x00010000` | 1 | **1** | Redireciona para dummy page default (`gfxhub_v2_0.c:301`) |
+| `READ_PROTECTION_FAULT_ENABLE_INTERRUPT` | 17 | 1 bit | `0x00020000` | 1 | **0** | Interrupção não habilitada no setup padrão |
+| `READ_PROTECTION_FAULT_ENABLE_DEFAULT` | 18 | 1 bit | `0x00040000` | 1 | **1** | Redireciona para dummy page default (`gfxhub_v2_0.c:303`) |
+| `WRITE_PROTECTION_FAULT_ENABLE_INTERRUPT` | 19 | 1 bit | `0x00080000` | 1 | **0** | Interrupção não habilitada no setup padrão |
+| `WRITE_PROTECTION_FAULT_ENABLE_DEFAULT` | 20 | 1 bit | `0x00100000` | 1 | **1** | Redireciona para dummy page default (`gfxhub_v2_0.c:305`) |
+| `EXECUTE_PROTECTION_FAULT_ENABLE_INTERRUPT` | 21 | 1 bit | `0x00200000` | 1 | **0** | Interrupção não habilitada no setup padrão |
+| `EXECUTE_PROTECTION_FAULT_ENABLE_DEFAULT` | 22 | 1 bit | `0x00400000` | 1 | **1** | Redireciona para dummy page default (`gfxhub_v2_0.c:307`) |
+
+**Valor de POST medido no silício (baseline `gcvm dump`):** `0x007FFE80`
+(Todos os bits de default e interrupt ativados, context desabilitado, depth 0).
+
+**Valor alvo pretendido para `GCVM_CONTEXT8_CNTL`:**
+```text
+  0x00555400  (bits 10, 12, 14, 16, 18, 20, 22 de *_FAULT_ENABLE_DEFAULT)
+| 0x00000002  (PAGE_TABLE_DEPTH = 1)
+| 0x00000001  (ENABLE_CONTEXT = 1)
+= 0x00555403
+```
+
+#### Derivação Matemática da Geometria (34 bits, 2 níveis)
+
+O driver declara ao WDDM (`DXGKQAITYPE_PAGETABLELEVELDESC` e `GPUMMUCAPS`):
+- `VaBits = 34` (espaço virtual de 16 GiB = $2^{34}$ bytes);
+- `Levels = 2`;
+- Offset de página de 4 KiB: 12 bits (`bits [11:0]`);
+- Total de bits de índice de tabela: $34 - 12 = 22$ bits;
+- `Level 0` (Folha / PTB): 9 bits de índice $\rightarrow 2^9 = 512$ PTEs de 8 bytes = 4096 bytes (4 KiB), cobrindo $512 \times 4\text{ KiB} = 2\text{ MiB}$;
+- `Level 1` (Raiz / PDB): 13 bits de índice $\rightarrow 2^{13} = 8192$ PDEs de 8 bytes = 65536 bytes (64 KiB), cobrindo $8192 \times 2\text{ MiB} = 16\text{ GiB}$.
+
+1. **Conta de `PAGE_TABLE_DEPTH`:**
+   No hardware GCVM, a profundidade indica o número de níveis abaixo da raiz:
+   - `0`: 1 nível (tabela plana / GART, PTE direta sem PDE);
+   - `1`: 2 níveis (Raiz PDE0 $\rightarrow$ Folha PTE);
+   - `2`: 3 níveis (PDE1 $\rightarrow$ PDE0 $\rightarrow$ PTE);
+   - `3`: 4 níveis (PDE2 $\rightarrow$ PDE1 $\rightarrow$ PDE0 $\rightarrow$ PTE).
+   Como nossa hierarquia é de 2 níveis:
+   $$\text{PAGE\_TABLE\_DEPTH} = \text{Levels} - 1 = 2 - 1 = 1$$
+
+2. **Conta de `PAGE_TABLE_BLOCK_SIZE`:**
+   No upstream amdgpu (`gfxhub_v2_0_setup_vmid_config`):
+   $$\text{PAGE\_TABLE\_BLOCK\_SIZE} = \text{block\_size} - 9$$
+   O parâmetro `block_size` representa o $\log_2$ do número de entradas na tabela folha.
+   A folha base de 4 KiB possui 512 entradas ($2^9$), cobrindo exatamente 2 MiB.
+   Como nosso `Level 0` possui exatamente 9 bits de índice (`BC250_GPUVA_PT_LEAF_INDEX_BITS = 9`), temos:
+   $$\text{block\_size} = 9 \implies \text{PAGE\_TABLE\_BLOCK\_SIZE} = 9 - 9 = 0$$
+   Portanto, o campo `PAGE_TABLE_BLOCK_SIZE` deve ser programado com **`0`**.
+
+3. **Limites de Endereçamento do Contexto (`PT_START` e `PT_END`):**
+   - `mmGCVM_CONTEXT8_PAGE_TABLE_START_ADDR_LO32` (`0x0A46C`) = `0`
+   - `mmGCVM_CONTEXT8_PAGE_TABLE_START_ADDR_HI32` (`0x0A470`) = `0`
+   - `mmGCVM_CONTEXT8_PAGE_TABLE_END_ADDR_LO32` (`0x0A4EC`) = $\text{max\_pfn} - 1 = 2^{22} - 1 = \mathbf{0x003FFFFF}$
+   - `mmGCVM_CONTEXT8_PAGE_TABLE_END_ADDR_HI32` (`0x0A4F0`) = `0`
+   Classificação: **P1**.
+
+---
 
 ## Registradores do CP, para a frente que vem
 

@@ -1,0 +1,39 @@
+﻿{
+    "schema_version":  1,
+    "test":  "B7_UMD_NODE1_TRIPOD",
+    "executed_at":  "2026-09-09T17:48:03.3409393-03:00",
+    "harness_sha256":  "3367338261813811652370337BC2E74789CFA13119E472D976C9687089396F54",
+    "umd_sha256":  "2A25BE2C6D807917BDCA2D8A03BDDEA94FB3DD018B312EC1FDAF1AD5D460969B",
+    "package_manifest_sha256":  "EBC5D041B03A81DA5F69AC6B6D1ECE572CEC72A9DDF72A7E624E48AB62ED959C",
+    "harness_timeout_seconds":  30,
+    "before":  {
+                   "P1SubmitAccepted":  17,
+                   "P1SubmitRejectedNode":  0,
+                   "P1SubmitRejectedPlan":  0,
+                   "P1SubmitRejectedEmit":  0,
+                   "P1RetiredTotal":  17,
+                   "P1LastWptrMmioReadback":  204,
+                   "P1LastRptrMmio":  204
+               },
+    "after":  {
+                  "P1SubmitAccepted":  18,
+                  "P1SubmitRejectedNode":  0,
+                  "P1SubmitRejectedPlan":  0,
+                  "P1SubmitRejectedEmit":  0,
+                  "P1RetiredTotal":  17,
+                  "P1LastWptrMmioReadback":  12,
+                  "P1LastRptrMmio":  0
+              },
+    "checks":  {
+                   "harness_callback_legs":  false,
+                   "submit_accepted":  true,
+                   "retired":  false,
+                   "ring_drained":  false,
+                   "no_node_reject":  true,
+                   "no_plan_reject":  true,
+                   "no_emit_reject":  true,
+                   "authorization_disarmed":  true
+               },
+    "hardware_validated":  false,
+    "verdict":  "NAO VALIDADO EM HARDWARE"
+}

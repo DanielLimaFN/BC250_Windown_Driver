@@ -1,0 +1,5 @@
+﻿BC250 MCDM SAFETY AUDIT: PASS
+  synthetic ownership/reservations: absent
+  operational DDIs without hardware backing: fail-closed
+  bc250mcdm recovery identity: covered
+  verdict: NAO VALIDADO EM HARDWARE

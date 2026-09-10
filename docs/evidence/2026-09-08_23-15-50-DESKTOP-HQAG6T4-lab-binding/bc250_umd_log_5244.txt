@@ -1,0 +1,20 @@
+23:15:53.517 [pid=5244 Explorer.EXE] === bc250umd.dll CARREGADA ===
+23:15:53.517 [pid=5244 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+23:15:53.518 [pid=5244 Explorer.EXE] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+23:15:53.518 [pid=5244 Explorer.EXE] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+23:15:53.519 [pid=5244 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+23:15:53.519 [pid=5244 Explorer.EXE] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+23:15:53.520 [pid=5244 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+23:15:53.520 [pid=5244 Explorer.EXE] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+23:15:53.521 [pid=5244 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+23:15:53.521 [pid=5244 Explorer.EXE] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+23:15:53.546 [pid=5244 Explorer.EXE] === bc250umd.dll CARREGADA ===
+23:15:53.547 [pid=5244 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+23:15:53.547 [pid=5244 Explorer.EXE] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+23:15:53.547 [pid=5244 Explorer.EXE] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+23:15:53.548 [pid=5244 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+23:15:53.548 [pid=5244 Explorer.EXE] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+23:15:53.549 [pid=5244 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+23:15:53.549 [pid=5244 Explorer.EXE] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+23:15:53.549 [pid=5244 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+23:15:53.549 [pid=5244 Explorer.EXE] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL

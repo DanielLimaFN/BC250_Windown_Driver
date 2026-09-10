@@ -8,28 +8,24 @@ set SRCDIR=%~dp0
 set ODIR=%~dp0output
 if not exist "%ODIR%" mkdir "%ODIR%"
 
-:: Se o compilador ja esta no ambiente (EWDK, prompt de desenvolvedor), usa.
-set HAVE_CL=
-where cl.exe >nul 2>&1 && set HAVE_CL=1
-if defined HAVE_CL goto :compila
-
 set VCVARS=
 for %%D in (C D E F G) do (
   if not defined VCVARS (
     for %%E in (BuildTools Community Professional Enterprise) do (
       if not defined VCVARS (
-        if exist "%%D:\Program Files\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat"
-        if exist "%%D:\Program Files (x86)\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files (x86)\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat"
+        if exist "%%D:\Program Files\Microsoft Visual Studio\18\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files\Microsoft Visual Studio\18\%%E\VC\Auxiliary\Build\vcvars64.bat"
+        if exist "%%D:\Program Files\Microsoft Visual Studio\2026\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files\Microsoft Visual Studio\2026\%%E\VC\Auxiliary\Build\vcvars64.bat"
       )
     )
   )
 )
 if not defined VCVARS (
-  echo ERRO: vcvars64.bat do VS2022 nao encontrado.
+  echo ERRO: vcvars64.bat do VS2026 nao encontrado.
   exit /b 1
 )
 
 call "%VCVARS%" >nul
+if errorlevel 1 exit /b 1
 
 :compila
 echo [cc] bc250ctl.exe

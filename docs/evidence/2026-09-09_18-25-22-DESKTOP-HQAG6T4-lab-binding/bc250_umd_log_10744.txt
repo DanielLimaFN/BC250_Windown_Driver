@@ -1,0 +1,28 @@
+18:25:24.913 [pid=10744 dxgiadaptercache.exe] === bc250umd.dll CARREGADA ===
+18:25:24.914 [pid=10744 dxgiadaptercache.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:25:24.914 [pid=10744 dxgiadaptercache.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+18:25:24.914 [pid=10744 dxgiadaptercache.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:25:24.916 [pid=10744 dxgiadaptercache.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:25:24.916 [pid=10744 dxgiadaptercache.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:25:24.917 [pid=10744 dxgiadaptercache.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:25:24.917 [pid=10744 dxgiadaptercache.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:25:24.918 [pid=10744 dxgiadaptercache.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+18:25:24.918 [pid=10744 dxgiadaptercache.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:25:24.919 [pid=10744 dxgiadaptercache.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+18:25:24.919 [pid=10744 dxgiadaptercache.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+18:25:24.920 [pid=10744 dxgiadaptercache.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:25:24.920 [pid=10744 dxgiadaptercache.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:25:24.921 [pid=10744 dxgiadaptercache.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:25:24.922 [pid=10744 dxgiadaptercache.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:25:24.923 [pid=10744 dxgiadaptercache.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+18:25:24.923 [pid=10744 dxgiadaptercache.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:25:24.924 [pid=10744 dxgiadaptercache.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+18:25:24.962 [pid=10744 dxgiadaptercache.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:25:24.962 [pid=10744 dxgiadaptercache.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+18:25:24.963 [pid=10744 dxgiadaptercache.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:25:24.963 [pid=10744 dxgiadaptercache.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+18:25:24.964 [pid=10744 dxgiadaptercache.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:25:24.964 [pid=10744 dxgiadaptercache.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+18:25:24.965 [pid=10744 dxgiadaptercache.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+18:25:25.023 [pid=10744 dxgiadaptercache.exe] === bc250umd.dll CARREGADA ===
+18:25:25.059 [pid=10744 dxgiadaptercache.exe] OpenAdapter12: D3D12 nao implementado nativamente -> E_NOTIMPL

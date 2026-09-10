@@ -1,0 +1,76 @@
+﻿**********************
+Início da transcrição do Windows PowerShell
+Hora de início: 20260905094213
+Nome de Usuário: DESKTOP-HQAG6T4\Daniel
+Executar como Usuário: DESKTOP-HQAG6T4\Daniel
+Nome da Configuração: 
+Computador: DESKTOP-HQAG6T4 (Microsoft Windows NT 10.0.19045.0)
+Aplicativo Host: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -File tools\test-vmid8-ib.ps1 -Execute -IAcceptTheRisk
+ID do Processo: 5648
+PSVersion: 5.1.19041.2673
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.19041.2673
+BuildVersion: 10.0.19041.2673
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+
+=== VMID 8 / INDIRECT â€” ensaio de laboratorio ===
+
+[0] Armando o driver para escrita...
+    armamento agora: write
+[0] Carregando o firmware da SDMA0 por PSP...
+    Carregando 'firmware/cyan_skillfish2_sdma.bin' pelo PSP:
+      tipo         : 9
+      versao ucode : 0x34
+      payload      : 8384 dwords (33536 bytes) a partir do offset 0x100
+      fence        : TIMEOUT
+      ** O PSP nao consumiu o frame. Rode 'psp init' e confira
+         'psp status' (o anel precisa estar criado).
+[0] Inicializando o anel da SDMA0...
+    SDMA0 Ring inicializado com sucesso:
+      Local                : VRAM, offset 0xFF00000
+      Endereco de GPU      : 0xF40FF00000
+      Tamanho do anel      : 1024 dwords (4096 bytes)
+      RB_CNTL              : 0x80841015 (HABILITADO, RB_SIZE=10)
+
+[0] PARSETEST â€” a engine decodifica pacotes, ou so arrasta o RPTR?
+    Agora COM firmware carregado. Se ainda assim ela consumir um
+    pacote INCOMPLETO, entao "RPTR alcancou WPTR" nunca provou
+    execucao -- nem nas sete corridas de producao.
+    Teste de decodificacao de pacotes
+
+    1. NOP anunciando 8 dwords extras, enviando so o cabecalho...
+       RPTR 0x0 -> 0x8   WPTR 0x8   STATUS 0x46DEE056   PC 0x0181
+
+      ** A engine consumiu um pacote INCOMPLETO.
+         Ela nao esta decodificando: so arrasta o RPTR ate o
+         WPTR. Isso significa que 'RPTR alcancou WPTR' nunca
+         provou execucao ÔÇö nem para os NOPs. O microcodigo
+         roda (o PC se move), mas nao esta processando o anel.
+
+[1] Lendo a base fisica da VRAM (GCMC_VM_FB_OFFSET)...
+    FB_OFFSET = 0x00000450  ->  vram_base_offset = 0x450000000
+    root[1]  folha_ib[1]  folha_dest[2]
+
+--- VARIANTE EXEC: tudo correto: PDE so VALID, PTE do IB com o bit 4 (exe) ---
+[2] Montando page tables (EXEC): PDE flags = 0x01
+    PDE  em VRAM 0xF000008 = 0x000000045F010001
+    PTE  IB   em VRAM 0xF010008 -> PA 0x45F020000  flags 0x71
+    PTE  DEST em VRAM 0xF010010 -> PA 0x45F030000
+PS>TerminatingError(VramWrite): "Não é possível processar a transformação do argumento em parâmetro 'Value'. Não é possível converter o valor "-889275714" para o tipo "System.UInt32". Erro: "Valor era muito grande ou muito pequeno para UInt32.""
+>> TerminatingError(VramWrite): "Não é possível processar a transformação do argumento em parâmetro 'Value'. Não é possível converter o valor "-889275714" para o tipo "System.UInt32". Erro: "Valor era muito grande ou muito pequeno para UInt32.""
+>> TerminatingError(test-vmid8-ib.ps1): "Não é possível processar a transformação do argumento em parâmetro 'Value'. Não é possível converter o valor "-889275714" para o tipo "System.UInt32". Erro: "Valor era muito grande ou muito pequeno para UInt32.""
+Não é possível processar a transformação do argumento em parâmetro 'Value'. Não é possível converter o valor "-889275714" para o tipo "System.UInt32". Erro: "Valor era muito grande ou muito pequeno para UInt32."
+C:\Users\Daniel\Desktop\NamixWDDM\tools\test-vmid8-ib.ps1 : Não é possível processar a transformação do argumento em
+parâmetro 'Value'. Não é possível converter o valor "-889275714" para o tipo "System.UInt32". Erro: "Valor era muito
+grande ou muito pequeno para UInt32."
+    + CategoryInfo          : InvalidData: (:) [test-vmid8-ib.ps1], ParameterBindingArgumentTransformationException
+    + FullyQualifiedErrorId : ParameterArgumentTransformationError,test-vmid8-ib.ps1
+
+**********************
+Fim da transcrição do Windows PowerShell
+Hora de término: 20260905094214
+**********************

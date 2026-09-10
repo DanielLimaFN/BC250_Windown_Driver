@@ -1,0 +1,492 @@
+﻿===== BC250_UMD_LOG_10440.txt =====
+22:20:48.138 [pid=10440 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:48.138 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.139 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.139 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.139 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.139 [pid=10440 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:48.141 [pid=10440 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:48.142 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.142 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.142 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.142 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.143 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.143 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.143 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.143 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.205 [pid=10440 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:48.206 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.206 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.206 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.206 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.206 [pid=10440 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:48.207 [pid=10440 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:48.208 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.208 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.208 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.208 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.208 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.209 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.209 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.209 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.222 [pid=10440 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:48.222 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.222 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.222 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.222 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.223 [pid=10440 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:48.224 [pid=10440 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:48.225 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.225 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.225 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.225 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.226 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.226 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.226 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.226 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.238 [pid=10440 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:48.238 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.238 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.238 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.239 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.239 [pid=10440 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:48.241 [pid=10440 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:48.241 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.241 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.241 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.242 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.242 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.242 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.242 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.243 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.254 [pid=10440 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:48.254 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.254 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.255 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.255 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.255 [pid=10440 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:48.257 [pid=10440 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:48.257 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.257 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.259 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.259 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.259 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.259 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.260 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.260 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.273 [pid=10440 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:48.273 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.273 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.273 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.273 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.274 [pid=10440 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:48.275 [pid=10440 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:48.275 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.275 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.276 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.276 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.276 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.276 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.276 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.277 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.287 [pid=10440 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:48.288 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.288 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.289 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.289 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.289 [pid=10440 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:48.291 [pid=10440 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:48.291 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.291 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.291 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.291 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.292 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.292 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.292 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.292 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.522 [pid=10440 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:48.523 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.523 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.523 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.524 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.524 [pid=10440 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:48.527 [pid=10440 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:48.527 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.528 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.528 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.528 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.529 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:48.529 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:48.530 [pid=10440 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:48.530 [pid=10440 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+===== BC250_UMD_LOG_1204.txt =====
+22:20:20.344 [pid=1204 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:20.345 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.345 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.345 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.345 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.346 [pid=1204 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:20.347 [pid=1204 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:20.348 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.348 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.348 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.349 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.349 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.349 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.349 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.349 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.355 [pid=1204 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:20.355 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.355 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.355 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.356 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.356 [pid=1204 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:20.357 [pid=1204 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:20.357 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.358 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.358 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.358 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.358 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.358 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.359 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.359 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.371 [pid=1204 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:20.371 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.372 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.372 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.372 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.372 [pid=1204 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:20.374 [pid=1204 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:20.374 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.374 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.374 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.375 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.375 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.375 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.376 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.376 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.389 [pid=1204 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:20.389 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.389 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.390 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.390 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.390 [pid=1204 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:20.392 [pid=1204 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:20.392 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.393 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.393 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.393 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.394 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.394 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.394 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.394 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.405 [pid=1204 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:20.405 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.406 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.406 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.407 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.407 [pid=1204 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:20.409 [pid=1204 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:20.409 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.409 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.409 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.409 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.410 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.410 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.410 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.411 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.423 [pid=1204 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:20.423 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.423 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.423 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.423 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.424 [pid=1204 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:20.425 [pid=1204 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:20.426 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.426 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.426 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.426 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.427 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.427 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.427 [pid=1204 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.427 [pid=1204 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+===== BC250_UMD_LOG_1564.txt =====
+22:20:30.137 [pid=1564 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:30.137 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.138 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.138 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.138 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.139 [pid=1564 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:30.140 [pid=1564 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:30.141 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.141 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.141 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.142 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.142 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.143 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.143 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.143 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.206 [pid=1564 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:30.206 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.206 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.206 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.207 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.207 [pid=1564 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:30.208 [pid=1564 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:30.209 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.209 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.209 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.209 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.209 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.209 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.210 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.210 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.221 [pid=1564 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:30.221 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.221 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.221 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.222 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.222 [pid=1564 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:30.223 [pid=1564 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:30.223 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.224 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.224 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.224 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.224 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.224 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.225 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.225 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.238 [pid=1564 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:30.238 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.238 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.239 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.239 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.239 [pid=1564 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:30.241 [pid=1564 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:30.241 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.242 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.242 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.242 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.242 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.243 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.243 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.243 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.256 [pid=1564 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:30.256 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.256 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.256 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.257 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.257 [pid=1564 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:30.259 [pid=1564 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:30.259 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.259 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.259 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.260 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.260 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.261 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.261 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.261 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.272 [pid=1564 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:30.272 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.272 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.273 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.273 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.273 [pid=1564 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:30.275 [pid=1564 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:30.275 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.276 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.276 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.276 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.277 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.277 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.277 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.278 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.289 [pid=1564 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:30.289 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.289 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.289 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.290 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.290 [pid=1564 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:30.292 [pid=1564 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:30.292 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.292 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.292 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.292 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.293 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.293 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.293 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.293 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.305 [pid=1564 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:30.305 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.305 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.305 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.305 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.306 [pid=1564 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:30.307 [pid=1564 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:30.307 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.307 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.308 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.308 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.308 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:30.308 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:30.309 [pid=1564 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:30.309 [pid=1564 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+===== BC250_UMD_LOG_4980.txt =====
+22:20:20.273 [pid=4980 Explorer.EXE] === bc250umd.dll CARREGADA ===
+22:20:20.274 [pid=4980 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.275 [pid=4980 Explorer.EXE] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.275 [pid=4980 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.276 [pid=4980 Explorer.EXE] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.277 [pid=4980 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.277 [pid=4980 Explorer.EXE] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.278 [pid=4980 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.278 [pid=4980 Explorer.EXE] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.298 [pid=4980 Explorer.EXE] === bc250umd.dll CARREGADA ===
+22:20:20.299 [pid=4980 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.300 [pid=4980 Explorer.EXE] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.300 [pid=4980 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.300 [pid=4980 Explorer.EXE] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.301 [pid=4980 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.301 [pid=4980 Explorer.EXE] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.302 [pid=4980 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.302 [pid=4980 Explorer.EXE] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+===== BC250_UMD_LOG_7128.txt =====
+22:20:39.239 [pid=7128 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:39.239 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.240 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.240 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.240 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.240 [pid=7128 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:39.242 [pid=7128 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:39.243 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.243 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.244 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.244 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.244 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.244 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.245 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.245 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.305 [pid=7128 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:39.306 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.306 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.306 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.306 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.306 [pid=7128 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:39.308 [pid=7128 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:39.308 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.308 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.308 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.308 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.309 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.309 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.309 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.309 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.321 [pid=7128 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:39.321 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.321 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.321 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.322 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.322 [pid=7128 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:39.323 [pid=7128 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:39.324 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.324 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.324 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.324 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.325 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.325 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.325 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.325 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.339 [pid=7128 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:39.339 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.339 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.339 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.340 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.340 [pid=7128 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:39.341 [pid=7128 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:39.341 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.342 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.342 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.342 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.342 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.342 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.343 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.343 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.355 [pid=7128 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:39.355 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.355 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.356 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.356 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.356 [pid=7128 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:39.357 [pid=7128 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:39.358 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.358 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.358 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.358 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.358 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.359 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.359 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.359 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.371 [pid=7128 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:39.371 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.371 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.372 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.372 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.372 [pid=7128 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:39.373 [pid=7128 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:39.373 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.374 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.374 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.374 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.374 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.374 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.375 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.375 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.387 [pid=7128 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:39.387 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.387 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.388 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.388 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.388 [pid=7128 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:39.390 [pid=7128 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:39.390 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.390 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.390 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.390 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.391 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.391 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.391 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.391 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.505 [pid=7128 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:39.506 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.506 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.506 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.507 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.507 [pid=7128 dwm.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:39.510 [pid=7128 dwm.exe] === bc250umd.dll CARREGADA ===
+22:20:39.510 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.511 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.511 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.511 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.512 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:39.512 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:39.513 [pid=7128 dwm.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:39.513 [pid=7128 dwm.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+===== BC250_UMD_LOG_8916.txt =====
+22:20:20.273 [pid=8916 M365Copilot.exe] === bc250umd.dll CARREGADA ===
+22:20:20.275 [pid=8916 M365Copilot.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.275 [pid=8916 M365Copilot.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.276 [pid=8916 M365Copilot.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.276 [pid=8916 M365Copilot.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.278 [pid=8916 M365Copilot.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.279 [pid=8916 M365Copilot.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.279 [pid=8916 M365Copilot.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.279 [pid=8916 M365Copilot.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+===== BC250_UMD_LOG_9600.txt =====
+22:20:20.266 [pid=9600 dxgiadaptercache.exe] === bc250umd.dll CARREGADA ===
+22:20:20.267 [pid=9600 dxgiadaptercache.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+22:20:20.267 [pid=9600 dxgiadaptercache.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.267 [pid=9600 dxgiadaptercache.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+22:20:20.267 [pid=9600 dxgiadaptercache.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
+22:20:20.268 [pid=9600 dxgiadaptercache.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK
+22:20:20.271 [pid=9600 dxgiadaptercache.exe] === bc250umd.dll CARREGADA ===
+22:20:20.272 [pid=9600 dxgiadaptercache.exe] OpenAdapter12: D3D12 nao implementado nativamente -> E_NOTIMPL

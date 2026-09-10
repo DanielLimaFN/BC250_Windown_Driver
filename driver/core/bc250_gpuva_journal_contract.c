@@ -175,7 +175,13 @@ BC250_GPUVA_JOURNAL_STATUS Bc250GpuvaJournalStageLeafUpdate(
         return BC250_GPUVA_JOURNAL_BAD_ARGUMENT;
     }
     updateEnd = FirstGpuVa + ((uint64_t)EntryCount * BC250_GPUVA_PAGE_BYTES);
-    if (updateEnd > BC250_GPUVA_MAX_LIMIT) return BC250_GPUVA_JOURNAL_BAD_ARGUMENT;
+    /*
+     * Teto TRADUZIVEL, nao arquitetural. Ver BC250_GPUVA_TRANSLATABLE_LIMIT:
+     * aqui ficava BC250_GPUVA_MAX_LIMIT (2^48) e isso era fail-open.
+     */
+    if (updateEnd > BC250_GPUVA_TRANSLATABLE_LIMIT) {
+        return BC250_GPUVA_JOURNAL_BAD_ARGUMENT;
+    }
     if (Journal->Pending != 0u && Journal->Process != Process) {
         Bc250GpuvaJournalAbort(Journal);
     }

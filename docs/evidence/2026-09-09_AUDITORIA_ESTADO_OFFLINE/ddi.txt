@@ -1,0 +1,14 @@
+DIVIDA Bc250DxgkDdiCollectDbgInfo (DxgkDdiCollectDbgInfo)
+       driver/wdk/bc250_display_ddi.c:1491 - falso sucesso ACEITO temporariamente: 3.76: stub KMDOD restaurado para isolar o Gate 1.5.
+       Remover apos fechar o Gate 1.5, em candidato proprio.
+DIVIDA Bc250DxgkDdiSetDisplayPrivateDriverFormat (DxgkDdiSetDisplayPrivateDriverFormat)
+       driver/wdk/bc250_display_ddi.c:3152 - falso sucesso ACEITO temporariamente: 3.76: tabela KMDOD congelada na baseline para isolar o Gate 1.5.
+       Remover apos fechar o Gate 1.5, em candidato proprio.
+DIVIDA Bc250DxgkDdiSetPalette (DxgkDdiSetPalette)
+       driver/wdk/bc250_display_ddi.c:1459 - falso sucesso ACEITO temporariamente: 3.76: tabela KMDOD congelada na baseline para isolar o Gate 1.5.
+       Remover apos fechar o Gate 1.5, em candidato proprio.
+AVISO  Bc250DxgkDdiNotifySurpriseRemoval (DxgkDdiNotifySurpriseRemoval)
+       driver/wdk/bc250_display_ddi.c:1500 - ignora TODOS os argumentos, mas produz efeito; confirme que nenhum argumento deveria alterar a acao.
+
+Anunciados: 98 | Divida aceita: 3 | Avisos: 1 | Falhas: 0
+APROVADO: nenhuma DDI anunciada ignora tudo e declara sucesso.

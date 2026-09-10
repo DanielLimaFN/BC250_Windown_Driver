@@ -17,40 +17,36 @@ set ROOTDIR=%~dp0..\..
 set ODIR=%~dp0output
 if not exist "%ODIR%" mkdir "%ODIR%"
 
-set HAVE_CL=
-where cl.exe >nul 2>&1 && set HAVE_CL=1
-
 set VCVARS=
-if not defined HAVE_CL (
-  for %%D in (C D E F G) do (
-    for %%E in (BuildTools Community Professional Enterprise) do (
-      if not defined VCVARS (
-        if exist "%%D:\Program Files\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat"
-        if exist "%%D:\Program Files (x86)\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files (x86)\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat"
-      )
+for %%D in (C D E F G) do (
+  for %%E in (BuildTools Community Professional Enterprise) do (
+    if not defined VCVARS (
+      if exist "%%D:\Program Files\Microsoft Visual Studio\18\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files\Microsoft Visual Studio\18\%%E\VC\Auxiliary\Build\vcvars64.bat"
+      if exist "%%D:\Program Files\Microsoft Visual Studio\2026\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files\Microsoft Visual Studio\2026\%%E\VC\Auxiliary\Build\vcvars64.bat"
     )
   )
-  if not defined VCVARS (
-    echo ERRO: vcvars64.bat do VS2022 nao encontrado.
-    exit /b 1
-  )
-  call "!VCVARS!" >nul
 )
+if not defined VCVARS (
+  echo ERRO: vcvars64.bat do VS2026 nao encontrado.
+  exit /b 1
+)
+call "!VCVARS!" >nul
+if !ERRORLEVEL! NEQ 0 exit /b 1
 
 set WDK=C:\Program Files (x86)\Windows Kits\10
 if defined WindowsSdkDir set "WDK=%WindowsSdkDir:~0,-1%"
-set WDKVER=
-for %%V in (10.0.26100.0 10.0.22621.0) do (
-  if not defined WDKVER (
-    if exist "%WDK%\Include\%%V\km\ntddk.h" set "WDKVER=%%V"
-  )
-)
-if not defined WDKVER (
-  echo ERRO: WDK 10.0.22621 ou superior nao encontrado.
+set WDKVER=10.0.28000.0
+if not exist "%WDK%\Include\%WDKVER%\km\ntddk.h" (
+  echo ERRO: WDK %WDKVER% correspondente ao VS2026 nao encontrado.
   exit /b 1
 )
+echo [toolchain] VS2026 + SDK/WDK %WDKVER%
 
-set CFLAGS=/nologo /c /Brepro /W4 /WX /O2 /Oi /kernel /GS- /X ^
+rem A5 (06/09): /Oy- desliga frame pointer omission. Exigencia de WDDM 1.2+ em
+rem referencias/windows-driver-docs/.../display/debugging-tips-for-wddm-drivers.md, e
+rem pre-requisito da P3: sem frame pointer a call stack do MEMORY.DMP fica inutil, e o
+rem dump e a nossa unica via de diagnostico por nao haver segunda maquina.
+set CFLAGS=/nologo /c /Brepro /W4 /WX /O2 /Oy- /Oi /kernel /GS- /X ^
  /D_AMD64_ /DAMD64 /D_WIN64 /DBC250_KERNEL_MODE /DNTDDI_VERSION=0x0A00000C ^
  /DDXGKDDI_INTERFACE_VERSION=0xC004 ^
  /D_WIN32_WINNT=0x0A00 /DWINVER=0x0A00 ^
@@ -58,6 +54,20 @@ set CFLAGS=/nologo /c /Brepro /W4 /WX /O2 /Oi /kernel /GS- /X ^
  /I "%WDK%\Include\%WDKVER%\km" ^
  /I "%WDK%\Include\%WDKVER%\km\crt" ^
  /I "%WDK%\Include\%WDKVER%\shared"
+
+echo [cc] bc250_driver_caps_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_driver_caps_contract.obj" "%ROOTDIR%\driver\core\bc250_driver_caps_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [cc] bc250_umd_private_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_umd_private_contract.obj" "%ROOTDIR%\driver\core\bc250_umd_private_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [cc] bc250_blt_proof_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_blt_proof_contract.obj" "%ROOTDIR%\driver\core\bc250_blt_proof_contract.c"
+echo [cc] bc250_sdma_queue_state_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_sdma_queue_state_contract.obj" "%ROOTDIR%\driver\core\bc250_sdma_queue_state_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
 
 echo [cc] bc250_resource_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_resource_contract.obj" "%ROOTDIR%\driver\core\bc250_resource_contract.c"
@@ -155,6 +165,10 @@ echo [cc] bc250_gcvm_vmid8_transaction.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_gcvm_vmid8_transaction.obj" "%ROOTDIR%\driver\core\bc250_gcvm_vmid8_transaction.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
+echo [cc] bc250_gcvm_global_mmu.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gcvm_global_mmu.obj" "%ROOTDIR%\driver\core\bc250_gcvm_global_mmu.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
 echo [cc] bc250_psp_ring_transaction.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_psp_ring_transaction.obj" "%ROOTDIR%\driver\core\bc250_psp_ring_transaction.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -241,6 +255,10 @@ if %ERRORLEVEL% NEQ 0 exit /b 1
 
 echo [cc] bc250_allocation_abi_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_allocation_abi_contract.obj" "%ROOTDIR%\driver\core\bc250_allocation_abi_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [cc] bc250_dxbc_parser.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_dxbc_parser.obj" "%ROOTDIR%\driver\core\bc250_dxbc_parser.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
 echo [cc] bc250_gpuva_sdma_broker_contract.c
@@ -901,6 +919,40 @@ if %ERRORLEVEL% NEQ 0 (
   exit /b 1
 )
 
+echo [cc] gcvm_context8_cntl_test.c
+cl %CFLAGS% /Fo"%ODIR%\gcvm_context8_cntl_test.obj" "%ROOTDIR%\driver\tests\gcvm_context8_cntl_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] gcvm_context8_cntl_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gcvm_context8_cntl_test.exe" ^
+  "%ODIR%\bc250_gcvm_vmid8_transaction.obj" ^
+  "%ODIR%\gcvm_context8_cntl_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\gcvm_context8_cntl_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(gcvm_context8_cntl_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
+echo [cc] gcvm_global_mmu_test.c
+cl %CFLAGS% /Fo"%ODIR%\gcvm_global_mmu_test.obj" "%ROOTDIR%\driver\tests\gcvm_global_mmu_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] gcvm_global_mmu_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gcvm_global_mmu_test.exe" ^
+  "%ODIR%\bc250_gcvm_global_mmu.obj" ^
+  "%ODIR%\gcvm_global_mmu_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\gcvm_global_mmu_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(gcvm_global_mmu_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
 echo [cc] psp_ring_transaction_test.c
 cl %CFLAGS% /Fo"%ODIR%\psp_ring_transaction_test.obj" "%ROOTDIR%\driver\tests\psp_ring_transaction_test.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -1029,6 +1081,10 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_gpu_clock_contract.obj" ^
   "%ODIR%\bc250_power_contract.obj" ^
   "%ODIR%\bc250_mcdm_callbacks.obj" ^
+  "%ODIR%\bc250_driver_caps_contract.obj" ^
+  "%ODIR%\bc250_umd_private_contract.obj" ^
+  "%ODIR%\bc250_blt_proof_contract.obj" ^
+  "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
   "%ODIR%\mcdm_callbacks_test.obj" kernel32.lib
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
@@ -1223,6 +1279,23 @@ if %ERRORLEVEL% NEQ 0 exit /b 1
 "%ODIR%\allocation_abi_contract_test.exe"
 if %ERRORLEVEL% NEQ 0 (
   echo TESTE FALHOU ^(allocation_abi_contract_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
+echo [cc] dxbc_parser_test.c
+cl %CFLAGS% /Fo"%ODIR%\dxbc_parser_test.obj" "%ROOTDIR%\driver\tests\dxbc_parser_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] dxbc_parser_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\dxbc_parser_test.exe" ^
+  "%ODIR%\bc250_dxbc_parser.obj" ^
+  "%ODIR%\dxbc_parser_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\dxbc_parser_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(dxbc_parser_test^) - Linha/Codigo: %errorlevel%
   exit /b 1
 )
 
@@ -1468,6 +1541,10 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_power_contract.obj" ^
   "%ODIR%\bc250_isa_validator.obj" ^
   "%ODIR%\bc250_mcdm_callbacks.obj" ^
+  "%ODIR%\bc250_driver_caps_contract.obj" ^
+  "%ODIR%\bc250_umd_private_contract.obj" ^
+  "%ODIR%\bc250_blt_proof_contract.obj" ^
+  "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
   "%ODIR%\bc250_probe_telemetry.obj" ^
   "%ODIR%\bc250_readonly_miniport.obj" ^
   "%ODIR%\readonly_miniport_test.obj" kernel32.lib
@@ -1521,6 +1598,10 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\bc250_dxgk_readonly_ddi.obj" ^
   "%ODIR%\bc250_mcdm_callbacks.obj" ^
+  "%ODIR%\bc250_driver_caps_contract.obj" ^
+  "%ODIR%\bc250_umd_private_contract.obj" ^
+  "%ODIR%\bc250_blt_proof_contract.obj" ^
+  "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
   "%ODIR%\bc250_probe_telemetry_driver.obj" ^
   "%ODIR%\bc250_readonly_miniport_driver.obj" ^
   "%WDK%\Lib\%WDKVER%\km\x64\ntoskrnl.lib" ^
@@ -1581,10 +1662,15 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_power_contract.obj" ^
   "%ODIR%\bc250_isa_validator.obj" ^
   "%ODIR%\bc250_mcdm_callbacks.obj" ^
+  "%ODIR%\bc250_driver_caps_contract.obj" ^
+  "%ODIR%\bc250_umd_private_contract.obj" ^
+  "%ODIR%\bc250_blt_proof_contract.obj" ^
+  "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
   "%ODIR%\bc250_display_ddi.obj" ^
   "%ODIR%\bc250_probe_telemetry.obj" ^
   "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^
   "%ODIR%\bc250_gcvm_vmid8_transaction.obj" ^
+  "%ODIR%\bc250_gcvm_global_mmu.obj" ^
   "%ODIR%\bc250_psp_ring_transaction.obj" ^
   "%ODIR%\bc250_psp_load_fw_transaction.obj" ^
   "%ODIR%\bc250_sdma_f32_transaction.obj" ^
@@ -1603,6 +1689,79 @@ if %ERRORLEVEL% NEQ 0 (
   exit /b 1
 )
 
+echo [cc] umd_private_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\umd_private_contract_test.obj" "%ROOTDIR%\driver\tests\umd_private_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] umd_private_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\umd_private_contract_test.exe" ^
+  "%ODIR%\bc250_umd_private_contract.obj" ^
+  "%ODIR%\umd_private_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\umd_private_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(umd_private_contract_test^)
+  exit /b 1
+)
+
+echo [cc] sdma_queue_state_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\sdma_queue_state_contract_test.obj" "%ROOTDIR%\driver\tests\sdma_queue_state_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] sdma_queue_state_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\sdma_queue_state_contract_test.exe" ^
+  "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
+  "%ODIR%\sdma_queue_state_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\sdma_queue_state_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(sdma_queue_state_contract_test^)
+  exit /b 1
+)
+
+echo SDMA QUEUE STATE: OK ^(CONTEXT_STATUS/SKIP_CNTL/IB_CNTL decodificados contra gc_10_1_0_sh_mask.h + valores medidos em 05/09, offline^)
+
+echo [cc] blt_proof_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\blt_proof_contract_test.obj" "%ROOTDIR%\driver\tests\blt_proof_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] blt_proof_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\blt_proof_contract_test.exe" ^
+  "%ODIR%\bc250_blt_proof_contract.obj" ^
+  "%ODIR%\blt_proof_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\blt_proof_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(blt_proof_contract_test^)
+  exit /b 1
+)
+
+echo [cc] driver_caps_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\driver_caps_contract_test.obj" "%ROOTDIR%\driver\tests\driver_caps_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] driver_caps_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\driver_caps_contract_test.exe" ^
+  "%ODIR%\bc250_driver_caps_contract.obj" ^
+  "%ODIR%\bc250_umd_private_contract.obj" ^
+  "%ODIR%\bc250_blt_proof_contract.obj" ^
+  "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
+  "%ODIR%\driver_caps_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\driver_caps_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(driver_caps_contract_test^)
+  exit /b 1
+)
+
 echo [cc] display_vidpn_test.c
 cl %CFLAGS% /Fo"%ODIR%\display_vidpn_test.obj" "%ROOTDIR%\driver\tests\display_vidpn_test.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -1611,6 +1770,10 @@ echo [link] display_vidpn_test.exe
 link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   /OUT:"%ODIR%\display_vidpn_test.exe" ^
   "%ODIR%\bc250_display_ddi.obj" ^
+  "%ODIR%\bc250_driver_caps_contract.obj" ^
+  "%ODIR%\bc250_umd_private_contract.obj" ^
+  "%ODIR%\bc250_blt_proof_contract.obj" ^
+  "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
   "%ODIR%\bc250_sdma_present.obj" ^
   "%ODIR%\display_vidpn_test.obj" kernel32.lib
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -1639,6 +1802,10 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   /DEBUG /PDB:"%ODIR%\bc250mcdm.pdb" ^
   /OUT:"%ODIR%\bc250mcdm.sys" ^
   "%ODIR%\bc250_mcdm_object_contract.obj" ^
+  "%ODIR%\bc250_driver_caps_contract.obj" ^
+  "%ODIR%\bc250_umd_private_contract.obj" ^
+  "%ODIR%\bc250_blt_proof_contract.obj" ^
+  "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
   "%ODIR%\bc250_gpuva_space_contract.obj" ^
   "%ODIR%\bc250_gpuva_snapshot_contract.obj" ^
   "%ODIR%\bc250_gpuva_journal_contract.obj" ^
@@ -1690,6 +1857,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_gcvm_backing_transaction.obj" ^
   "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^
   "%ODIR%\bc250_gcvm_vmid8_transaction.obj" ^
+  "%ODIR%\bc250_gcvm_global_mmu.obj" ^
   "%ODIR%\bc250_psp_ring_transaction.obj" ^
   "%ODIR%\bc250_psp_load_fw_transaction.obj" ^
   "%ODIR%\bc250_sdma_f32_transaction.obj" ^
@@ -1783,7 +1951,7 @@ echo COMPUTE MQD CONTRACT: OK ^(GFX10 512B MQD + EOP buffer + HQD queue bounds, 
 echo CONTEXT DISPATCHER CONTRACT: OK ^(SDMA + Compute engine context dispatch + IB + EOP fences, offline^)
 echo INTERRUPT HANDLER CONTRACT: OK ^(Navi/GFX10 32B IV decode + byte RPTR/WPTR + provenance gate, offline^)
 echo PAGING/TLB CONTRACT: OK ^(GFXHUB ACK + owned VMID8 inert transaction validated in hardware^)
-echo ADAPTER INFO CONTRACT: OK ^(2 nodes: SDMA0 + Compute MEC + 48-bit GPUVA, offline^)
+echo ADAPTER INFO CONTRACT: OK ^(2 nodes: SDMA0 + Compute MEC + 34-bit GPUVA derivado, offline^)
 echo SEGMENT CONTRACT: OK ^(Segment 1 Local VRAM + Segment 2 GART Aperture, offline^)
 echo TDR RECOVERY CONTRACT: OK ^(Two-pass hang detection + Node 0/1 atomic reset + HQD dequeue, offline^)
 echo SUBMIT COMMAND CONTRACT: OK ^(DxgkDdiSubmitCommand + Indirect Buffers + Release Mem EOP, offline^)
@@ -1792,6 +1960,7 @@ echo PREEMPTION CONTRACT: OK ^(DxgkDdiPreemptCommand + HQD dequeue + SDMA preemp
 echo GPU CLOCK CONTRACT: OK ^(DxgkDdiCalibrateGpuClock + 100MHz timestamp counter + QPC sync, offline^)
 echo POWER MANAGEMENT CONTRACT: OK ^(DxgkDdiSetPowerState D0/D3 + SetStablePowerState + GFXOFF gating, offline^)
 echo ISA VALIDATOR ^& COMPUTE UMD: OK ^(Wave32/64 + SGPR/VGPR/LDS bounds + IT_DISPATCH_DIRECT, offline^)
+echo DXBC PARSER CONTRACT: OK ^(fail-closed SM4/SM5 parser + opcode stream iterator, offline^)
 echo OBSERVABLE COMPUTE DISPATCH: OK ^(shader state + complete dispatch + post-dispatch fence + strict verdict, offline^)
 echo OBSERVABLE GFX1010 SHADER: OK ^(allowlisted blob + SHA-256 provenance + negative mutation test, offline^)
 echo CONTRACT INTEGRATION AUDIT: OK ^(offline structures only; not hardware readiness^)

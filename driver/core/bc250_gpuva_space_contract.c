@@ -27,7 +27,9 @@ BC250_GPUVA_STATUS Bc250GpuvaSpaceInitialize(
     uint32_t AddressBits)
 {
     if (Space == NULL) return BC250_GPUVA_BAD_ARGUMENT;
-    if (AddressBits == 0u || AddressBits > BC250_GPUVA_DEFAULT_BITS) {
+    if (AddressBits == 0u) {
+        AddressBits = BC250_GPUVA_DEFAULT_BITS;
+    } else if (AddressBits > BC250_GPUVA_ARCH_MAX_BITS) {
         AddressBits = BC250_GPUVA_DEFAULT_BITS;
     }
     memset(Space, 0, sizeof(*Space));

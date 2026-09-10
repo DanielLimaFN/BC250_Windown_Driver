@@ -1,0 +1,11 @@
+﻿=== B7_UMD_NODE1_TRIPOD ===
+Harness: C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\output\bc250-umd-node1-tripod.exe
+UMD esperada: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab\bc250umd.dll
+Manifesto: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab.manifest.json
+Autorizacao: registro + executavel exato + token 128-bit; single-shot
+Teto: uma execucao fisica por build; abandono no primeiro preflight invalido
+Autorizacao gravada. Nenhum harness foi iniciado e a GPU nao foi tocada.
+B7 UMD Node 1 desarmado.
+Evidencia: C:\Users\Daniel\Desktop\NamixWDDM\docs\evidence\2026-09-09_15-19-03-DESKTOP-HQAG6T4-lab-binding\B7_UMD_NODE1_TRIPOD_2026-09-09_15-19-09-193\b7-umd-node1-tripod.json
+Veredito: NAO VALIDADO EM HARDWARE
+

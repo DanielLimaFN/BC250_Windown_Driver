@@ -1,0 +1,20 @@
+08:05:49.976 [pid=608 Explorer.EXE] === bc250umd.dll CARREGADA ===
+08:05:49.976 [pid=608 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:49.977 [pid=608 Explorer.EXE] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:05:49.977 [pid=608 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:49.978 [pid=608 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:49.978 [pid=608 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:49.979 [pid=608 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:49.980 [pid=608 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:49.980 [pid=608 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:49.980 [pid=608 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:49.999 [pid=608 Explorer.EXE] === bc250umd.dll CARREGADA ===
+08:05:50.000 [pid=608 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:50.000 [pid=608 Explorer.EXE] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+08:05:50.000 [pid=608 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:50.000 [pid=608 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:50.001 [pid=608 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:50.001 [pid=608 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+08:05:50.002 [pid=608 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011 fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)
+08:05:50.002 [pid=608 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+08:05:50.002 [pid=608 Explorer.EXE] OpenAdapter10_2: Interface=0x000B000B fora da allowlist do probe -> E_NOTIMPL (deixa o runtime descer a escada ate 0x000A0002)

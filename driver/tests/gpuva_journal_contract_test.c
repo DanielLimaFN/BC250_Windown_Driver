@@ -371,6 +371,56 @@ static int Bc250RunGpuvaJournalContractTest(void)
         CHECK(Bc250GpuvaJournalSetAnyPending(journalsMp, 4u) == 1u);
     }
 
+    /*
+     * TETO TRADUZIVEL (regressao de 07/09).
+     *
+     * O journal recusava VA a partir de 2^48 -- o teto ARQUITETURAL. Mas o
+     * contexto VMID8 traduz 2^34 (12 offset + 9 folha + 13 raiz, docs/03), e
+     * registrar uma pagina acima disso produz PTE que a GPU nao alcanca. O
+     * sintoma e' indistinguivel do B1: RPTR chega no WPTR e nada acontece.
+     *
+     * Nao era alcancavel pelo alocador vigente -- Bc250GpuvaSpaceInitialize e'
+     * chamado com BC250_GPUVA_PT_VA_BITS -- mas era fail-OPEN, e o custo de
+     * descobrir isso numa corrida seria uma corrida.
+     */
+    {
+        /*
+         * ATENCAO A ORDEM: StageLeafUpdate recebe
+         *   (Journal, Process, ExpectedRootPageTable, FirstGpuVa, Entries, N)
+         * -- a root vem ANTES do VA. Escrevi este bloco com os dois trocados na
+         * primeira tentativa e as tres recusas "passaram" testando 0x40000000.
+         */
+        static BC250_GPUVA_JOURNAL limitJournal;
+        BC250_MCDM_HANDLE procLimit = (BC250_MCDM_HANDLE)0x7000;
+        const uint64_t lastPage =
+            BC250_GPUVA_TRANSLATABLE_LIMIT - BC250_GPUVA_PAGE_BYTES;
+
+        CHECK(BC250_GPUVA_TRANSLATABLE_LIMIT == (1ull << 34));
+        CHECK(BC250_GPUVA_TRANSLATABLE_LIMIT < BC250_GPUVA_MAX_LIMIT);
+        CHECK(Bc250GpuvaJournalInitialize(&limitJournal) ==
+            BC250_GPUVA_JOURNAL_OK);
+
+        /* A ultima pagina traduzivel entra. */
+        CHECK(Bc250GpuvaJournalStageLeafUpdate(&limitJournal, procLimit,
+            0x40000000u, lastPage, entries, 1u) == BC250_GPUVA_JOURNAL_OK);
+        Bc250GpuvaJournalAbort(&limitJournal);
+
+        /* A primeira pagina fora dele nao. */
+        CHECK(Bc250GpuvaJournalStageLeafUpdate(&limitJournal, procLimit,
+            0x40000000u, BC250_GPUVA_TRANSLATABLE_LIMIT, entries, 1u) ==
+            BC250_GPUVA_JOURNAL_BAD_ARGUMENT);
+
+        /* E uma faixa que COMECA dentro e ATRAVESSA o limite tambem nao. */
+        CHECK(Bc250GpuvaJournalStageLeafUpdate(&limitJournal, procLimit,
+            0x40000000u, lastPage, entries, 2u) ==
+            BC250_GPUVA_JOURNAL_BAD_ARGUMENT);
+
+        /* O antigo teto arquitetural continua recusado, obviamente. */
+        CHECK(Bc250GpuvaJournalStageLeafUpdate(&limitJournal, procLimit,
+            0x40000000u, 0x0000080000000000ull, entries, 1u) ==
+            BC250_GPUVA_JOURNAL_BAD_ARGUMENT);
+    }
+
     return 0;
 }
 

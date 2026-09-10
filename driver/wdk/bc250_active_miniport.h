@@ -14,6 +14,7 @@
 #include "../core/bc250_runtime_inventory.h"
 #include "../core/bc250_gfxhub_tlb_transaction.h"
 #include "../core/bc250_gcvm_vmid8_transaction.h"
+#include "../core/bc250_gcvm_global_mmu.h"
 #include "../core/bc250_psp_ring_transaction.h"
 #include "../core/bc250_psp_load_fw_transaction.h"
 #include "../core/bc250_sdma_f32_transaction.h"
@@ -22,6 +23,7 @@
 #include "../core/bc250_gpuva_space_contract.h"
 #include "../core/bc250_gpuva_journal_contract.h"
 #include "../core/bc250_gpuva_sdma_broker_contract.h"
+#include "../core/bc250_submit_command_contract.h"
 #include "bc250_submission_engine.h"
 #include "bc250_boot_fuse.h"
 
@@ -272,10 +274,25 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     BC250_VRAM_PROBE_EVIDENCE VramProbeEvidence;
     BC250_TLB_TRANSACTION_STATUS TlbTransactionStatus;
     BC250_TLB_TRANSACTION_EVIDENCE TlbTransactionEvidence;
+    KSPIN_LOCK TlbLock;
     BC250_GCVM_BACKING_STATUS GcvmBackingStatus;
     BC250_GCVM_BACKING_EVIDENCE GcvmBackingEvidence;
     BC250_GCVM_VMID8_STATUS GcvmVmid8Status;
     BC250_GCVM_VMID8_EVIDENCE GcvmVmid8Evidence;
+    BC250_GCVM_VMID8_STATUS Vmid8InstallStatus;
+    BC250_GCVM_VMID8_INSTALL_EVIDENCE Vmid8InstallEvidence;
+    BC250_GCVM_GLOBAL_MMU_STATUS GlobalMmuStatus;
+    BC250_GCVM_GLOBAL_MMU_EVIDENCE GlobalMmuEvidence;
+    BOOLEAN GlobalMmuReady;
+    BOOLEAN GlobalMmuDummyAllocated;
+    BC250_VRAM_ALLOCATOR GlobalMmuAllocator;
+    BC250_VRAM_TOKEN GlobalMmuDummyToken;
+    uint64_t GlobalMmuDummyOffset;
+    /* Root atualmente instalada no VMID 8. SubmitCommandVirtual valida este
+     * vínculo antes de permitir que a SDMA interprete um IB com GPUVA. */
+    BC250_MCDM_HANDLE Vmid8InstalledContext;
+    uint64_t Vmid8InstalledRootPhysical;
+    BC250_GCVM_COMPUTE_BINDING ComputeVmidBinding;
     BC250_PSP_RING_STATUS PspRingStatus;
     BC250_PSP_RING_EVIDENCE PspRingEvidence;
     PVOID DeferredPspRingVirtual;
@@ -290,6 +307,33 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     uint32_t CpVmid0PageTable;
     uint32_t SdmaAutoCtxSw;
     uint32_t SdmaWakeOnExIdle;
+    /*
+     * B3 (07/09) -- SdmaPlanoAFallback=1 RESTAURA a precedencia dos dois
+     * caminhos PLANO A no SubmitCommandVirtual do Node 0. O default e' 0:
+     * somente INDIRECT, que e' o unico ramo que le o DMA buffer do dxgkrnl.
+     *
+     * MOTIVO: na corrida 16:19 os PLANO A absorveram 14 de 14 submissoes, o
+     * ramo INDIRECT nunca foi alcancado e a telemetria IB_QUEUE_* da faixa A12
+     * nao escreveu uma linha. Sem este tunable nao existe corrida capaz de
+     * medir o INDIRECT no perfil ativo.
+     *
+     * Default 0 = comportamento medido, preservado. Ligar e' decisao do dono do
+     * projeto, e Present==0 (valor ausente/ilegivel) NUNCA liga.
+     */
+    uint32_t SdmaPlanoAFallback;
+    uint32_t SdmaPlanoAFallbackPresent;
+    /*
+     * item 25 (07/09) -- TdrInduceHang arma UM hang de propósito no Node 0:
+     * um POLL_REGMEM que nunca satisfaz, submissao aceita e completion NAO
+     * notificado, para que o timeout de 2 s do dxgkrnl dispare o TDR e a
+     * cadeia deteccao -> reset -> readmissao -> display possa ser medida.
+     *
+     * Default 0. Dispara UMA VEZ por bind (TdrHangInduced viar 1), para que a
+     * corrida nao entre em laco de TDR.
+     */
+    uint32_t TdrInduceHang;
+    uint32_t TdrInduceHangPresent;
+    volatile LONG TdrHangInduced;
     uint32_t SdmaEarlyClkUngate;
     uint32_t ShaderDispatch;
     uint32_t TunableEnginePresent;
@@ -322,6 +366,16 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     BC250_SDMA_F32_EVIDENCE SdmaF32Evidence;
     BC250_SDMA_RING_WORK_STATUS SdmaRingWorkStatus;
     BC250_SDMA_RING_WORK_EVIDENCE SdmaRingWorkEvidence;
+    /*
+     * Prova fisica de que a SDMA0 executa: o tripe de boot de
+     * Bc250SdmaPresentInit (RPTR avancou, a GPU gravou a fence sobre o poison
+     * e os 4 dwords de destino conferem byte a byte). Vale 1 somente quando
+     * g_Bc250SdmaPresent.TripodValidated saiu TRUE.
+     *
+     * Substitui SdmaRingWorkStatus como porta da cadeia de bring-up. Ver o
+     * comentario em Bc250DxgkDdiStartDeviceActive.
+     */
+    uint32_t SdmaBootTripodValidated;
     PVOID DeferredPspLoadRing;
     PVOID DeferredPspLoadCommand;
     PVOID DeferredPspLoadFence;
@@ -384,6 +438,13 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     uint32_t PersistentSubmission;
     uint32_t TunablePersistentSubmissionPresent;
     BC250_SUBMISSION_ENGINE SubmissionEngine;
+    /* CPU observation of the first IB page, before the MEC is kicked.
+     * Bounded prefix, never a GPU-execution verdict. */
+    uint64_t Node1IbObservedVa;
+    uint64_t Node1IbObservedPhysical;
+    uint32_t Node1IbRequestedBytes;
+    uint32_t Node1IbObservedDwords;
+    uint32_t Node1IbCpuWords[32];
 
     /*
      * Fase V2 — retirada de fence para o dxgkrnl.
@@ -635,6 +696,8 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
 BC250_HQD_PROGRAM_STATUS Bc250ActiveRunInactiveHqdProgramTransaction(
     BC250_DXGK_ACTIVE_CONTEXT *Context,
     BC250_HQD_PROGRAM_EVIDENCE *Evidence);
+
+VOID Bc250ActiveDriverUnloadCleanup(VOID);
 
 #ifdef __cplusplus
 }

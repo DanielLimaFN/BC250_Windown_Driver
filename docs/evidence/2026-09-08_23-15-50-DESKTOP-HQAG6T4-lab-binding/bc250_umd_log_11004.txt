@@ -1,0 +1,45 @@
+23:15:54.145 [pid=11004 AMDRSSrcExt.exe] === bc250umd.dll CARREGADA ===
+23:15:54.145 [pid=11004 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:15:54.145 [pid=11004 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:15:54.146 [pid=11004 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:15:54.146 [pid=11004 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:15:54.146 [pid=11004 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:15:54.146 [pid=11004 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:15:54.146 [pid=11004 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:15:54.146 [pid=11004 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:15:54.147 [pid=11004 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:15:54.147 [pid=11004 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:15:54.147 [pid=11004 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:15:54.147 [pid=11004 AMDRSSrcExt.exe] OpenAdapter (D3D9 probe) -> E_NOTIMPL
+23:15:54.188 [pid=11004 AMDRSSrcExt.exe] === bc250umd.dll CARREGADA ===
+23:15:54.188 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+23:15:54.188 [pid=11004 AMDRSSrcExt.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+23:15:54.188 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+23:15:54.188 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+23:15:54.189 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+23:15:54.189 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+23:15:54.189 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+23:15:54.189 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+23:15:54.190 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+23:15:54.190 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+23:15:54.190 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+23:15:54.190 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+23:15:54.190 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+23:15:54.190 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+23:15:54.190 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+23:15:54.191 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+23:15:54.191 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+23:15:54.191 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+23:15:54.191 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+23:15:54.191 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+23:15:54.192 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+23:15:54.192 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+23:15:54.192 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+23:15:54.192 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+23:15:54.192 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+23:15:54.192 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+23:15:54.193 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+23:15:54.193 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+23:15:54.193 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+23:15:54.193 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+23:15:54.193 [pid=11004 AMDRSSrcExt.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL

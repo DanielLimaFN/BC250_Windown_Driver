@@ -1,0 +1,11 @@
+﻿
+
+TimeCreated      : 07/09/2026 21:49:12
+ProviderName     : Display
+Id               : 4101
+LevelDisplayName : Aviso
+Message          : O driver de vídeo bc250mcdm parou de responder e se recuperou com êxito.
+
+
+
+

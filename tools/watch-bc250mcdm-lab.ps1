@@ -57,6 +57,43 @@ do {
     Start-Sleep -Milliseconds 250
 } until ([datetime]::Now -ge $deadline)
 
+# B2 (08/09): arquivar o log VIVO do KMD e os logs da UMD antes do rollback.
+$liveKmdLog = 'C:\BC250_DISPLAY_LOG.txt'
+if (Test-Path -LiteralPath $liveKmdLog) {
+    try {
+        $liveCopy = Join-Path $EvidenceDir 'bc250_display_log_full_pre_rollback.txt'
+        Copy-Item -LiteralPath $liveKmdLog -Destination $liveCopy -Force
+        $liveHash = (Get-FileHash -LiteralPath $liveCopy -Algorithm SHA256).Hash
+        $liveLines = (Get-Content -LiteralPath $liveCopy | Measure-Object -Line).Lines
+        @(
+            'Copia integral do log vivo do KMD, feita pelo watchdog de lab ANTES do rollback.',
+            "Linhas: $liveLines",
+            "SHA-256: $liveHash"
+        ) | Set-Content -LiteralPath ($liveCopy -replace '\.txt$', '.SHA256.txt') -Encoding UTF8
+    } catch {
+        "falha ao arquivar $liveKmdLog : $($_.Exception.Message)" |
+            Set-Content -LiteralPath (Join-Path $EvidenceDir 'bc250_display_log_full_ERRO.txt') -Encoding UTF8
+    }
+}
+
+$umdLogCollected = $false
+$umdAggregate = Join-Path $EvidenceDir 'bc250_umd_log.txt'
+$umdLogs = @(Get-ChildItem -LiteralPath 'C:\Windows\Temp' `
+    -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue |
+    Sort-Object Name)
+foreach ($umdLog in $umdLogs) {
+    Copy-Item -LiteralPath $umdLog.FullName `
+        -Destination (Join-Path $EvidenceDir $umdLog.Name.ToLowerInvariant()) -Force
+    ("===== {0} =====" -f $umdLog.Name),
+        (Get-Content -LiteralPath $umdLog.FullName -ErrorAction SilentlyContinue) |
+        Add-Content -LiteralPath $umdAggregate -Encoding UTF8
+    $umdLogCollected = $true
+}
+if (-not $umdLogCollected) {
+    'bc250umd.dll nunca escreveu: a DLL nao foi carregada por nenhum processo.' |
+        Set-Content -LiteralPath $umdAggregate -Encoding UTF8
+}
+
 Write-WatchdogState 'ROLLBACK_STARTED' 'visual confirmation timeout expired'
 $rollbackOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $rollbackScript `
     -Execute -IAcceptDisplayInterruptionRisk 2>&1) -join "`n"

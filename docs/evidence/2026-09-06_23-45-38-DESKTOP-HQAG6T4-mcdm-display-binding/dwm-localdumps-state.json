@@ -1,0 +1,20 @@
+﻿{
+    "state":  "RESTORED",
+    "token":  "136736ee-6d59-49cb-9d79-0c980d3363a8",
+    "registry_key":  "HKLM\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\LocalDumps\\dwm.exe",
+    "dump_folder":  "C:\\Windows\\Temp\\BC250_DWM_DUMPS_136736ee6d5949cb9d790c980d3363a8",
+    "prior_key_existed":  false,
+    "snapshot_file":  null,
+    "dump_count":  2,
+    "dump_type":  2,
+    "preparing_at":  "2026-09-06T23:45:39.3318440-03:00",
+    "hardware_validated":  false,
+    "armed_at":  "2026-09-06T23:45:39.4823610-03:00",
+    "registry_restored_at":  "2026-09-06T23:46:17.8624638-03:00",
+    "dump_files_collected":  2,
+    "pending_dump_files":  [
+
+                           ],
+    "dump_folder_cleanup_pending":  false,
+    "restored_at":  "2026-09-06T23:46:18.1469156-03:00"
+}

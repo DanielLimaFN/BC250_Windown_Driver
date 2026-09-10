@@ -1,0 +1,111 @@
+[Version]
+Signature="$Windows NT$"
+Class=Display
+ClassGuid={4d36e968-e325-11ce-bfc1-08002be10318}
+Provider=%ProviderName%
+DriverVer=09/08/2026,3.94.4.0
+CatalogFile=bc250mcdm.cat
+PnpLockdown=1
+
+[DestinationDirs]
+DefaultDestDir=12
+BC250Mcdm.CopyFiles=12
+BC250Mcdm.DisplayCopyFiles=11
+
+[SourceDisksNames]
+1=%DiskName%,,,""
+
+[SourceDisksFiles]
+bc250mcdm.sys=1
+bc250umd.dll=1
+cyan_skillfish2_sdma.bin=1
+cyan_skillfish2_rlc.bin=1
+cyan_skillfish2_pfp.bin=1
+cyan_skillfish2_me.bin=1
+cyan_skillfish2_ce.bin=1
+cyan_skillfish2_mec.bin=1
+
+[Manufacturer]
+%ManufacturerName%=Standard,NTamd64.10.0
+
+[Standard.NTamd64.10.0]
+%DeviceName%=BC250Mcdm_Device, PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00
+%DeviceName%=BC250Mcdm_Device, PCI\VEN_1002&DEV_13FE
+
+[BC250Mcdm_Device.NT]
+CopyFiles=BC250Mcdm.CopyFiles, BC250Mcdm.DisplayCopyFiles
+AddReg=BC250Mcdm_SoftwareDeviceSettings
+FeatureScore=FC
+
+[BC250Mcdm_Device.NT.HW]
+AddReg=BC250Mcdm_HW_AddReg
+
+[BC250Mcdm_HW_AddReg]
+HKR,,Security,,"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;WD)"
+
+[BC250Mcdm_SoftwareDeviceSettings]
+HKR,,InstalledDisplayDrivers,0x00010000,"bc250umd"
+HKR,,UserModeDriverName,0x00010000,"bc250umd.dll","bc250umd.dll","bc250umd.dll","bc250umd.dll"
+HKR,,UserModeDriverNameWow,0x00010000,"bc250umd.dll","bc250umd.dll","bc250umd.dll","bc250umd.dll"
+HKR,,D3D10UMD,,"bc250umd.dll"
+HKR,,D3D11UMD,,"bc250umd.dll"
+HKR,,D3D12UMD,,"bc250umd.dll"
+
+[BC250Mcdm_Device.NT.Services]
+AddService=bc250mcdm,0x00000002,BC250Mcdm_Service_Inst
+
+[BC250Mcdm_Service_Inst]
+ServiceType=1
+StartType=3
+ErrorControl=0
+ServiceBinary=%12%\bc250mcdm.sys
+AddReg=BC250Mcdm.DriverReg
+
+[BC250Mcdm.DriverReg]
+HKR,Parameters\Probe,SchemaVersion,0x00010001,135
+HKR,Parameters,WddmContractVersion,0x00010001,27
+HKR,Parameters\Driver,ActiveMode,0x00010001,1
+HKR,Parameters,RenderNode,0x00010001,1
+HKR,Parameters,GpuMmuDeclare,0x00010001,1
+HKR,Parameters,EnableSyntheticEdid,0x00010001,0
+HKR,Parameters,RenderOnlyLab,0x00010001,0
+HKR,Parameters,SkipHwBringup,0x00010001,0
+HKR,Parameters,ShaderDispatch,0x00010001,1
+HKR,Parameters,CpSoftReset,0x00010001,1
+HKR,Parameters,Vmid0PageTable,0x00010001,0
+HKR,Parameters,SdmaAutoCtxSw,0x00010001,0
+HKR,Parameters,PersistentSubmission,0x00010001,1
+HKR,Parameters,GpuvaLabPromotion,0x00010003,0
+; B3 (07/09): o driver executa SOMENTE o caminho INDIRECT por default -- ele
+; le o DMA buffer que o dxgkrnl entrega, e em 17:43/18:16 produziu o tripe
+; completo sob VMID8 (5 canarios substituidos). SdmaPlanoAFallback=1 RESTAURA
+; a precedencia dos caminhos PLANO A, que reimplementam a operacao no anel e
+; NAO leem o DMA buffer; serve apenas para bisseccao. Alteracao por registro
+; so vale no proximo StartDevice; nao altera o bind corrente.
+HKR,Parameters,SdmaPlanoAFallback,0x00010001,0
+; item 25 (07/09): 1 arma UM hang de proposito no Node 0 (POLL_REGMEM que nunca
+; satisfaz) e NAO notifica completion, para que o timeout de 2 s do dxgkrnl dispare
+; o TDR e a cadeia deteccao -> reset -> readmissao -> display possa ser medida.
+; Consequencia possivel: BugCheck, se o TDR nao funcionar. Default 0, fail-closed.
+; A primeira corrida deve usar INF empacotado com 1; alterar o registro depois
+; do bind so vale no proximo StartDevice. Nao crie a chave de servico a mao.
+HKR,Parameters,TdrInduceHang,0x00010001,0
+
+[BC250Mcdm.CopyFiles]
+bc250mcdm.sys
+cyan_skillfish2_sdma.bin
+cyan_skillfish2_rlc.bin
+cyan_skillfish2_pfp.bin
+cyan_skillfish2_me.bin
+cyan_skillfish2_ce.bin
+cyan_skillfish2_mec.bin
+
+[BC250Mcdm.DisplayCopyFiles]
+bc250umd.dll
+
+[Strings]
+ProviderName="AMD BC-250 Driver Project"
+ManufacturerName="AMD BC-250 Graphics Project"
+DiskName="AMD BC-250 WDDM Graphics & Gaming Driver Installation Media"
+DeviceName="AMD BC-250 Graphics (Cyan Skillfish 2)"
+ServiceName="AMD BC-250 WDDM Graphics Driver"

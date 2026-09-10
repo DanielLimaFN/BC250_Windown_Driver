@@ -1,0 +1,19 @@
+BC250 MCDM SAFETY AUDIT: PASS
+  synthetic ownership/reservations: absent
+  GPUVA geometry (GPUMMUCAPS vs UMDRIVERPRIVATE): single source
+  operational DDIs without hardware backing: fail-closed
+  'IB EXECUTADO' restricted to the INDIRECT path: enforced
+  SDMA tripod leg 1 (RPTR==WPTR) inside the gate: enforced
+  INDIRECT data leg (canary proof): enforced
+  ring-wrap arithmetic on tripod leg 1: enforced
+  Node 1 submission refusal names its reason: enforced
+  TDR reset/restart pair backed by physical quiesce+proof: enforced
+  QueryEngineStatus answers from measurement: enforced
+  induced hang fail-closed and physical: enforced
+  induced hang package/start order: enforced
+  second readonly preflight sees an empty MMIO transport: enforced
+  process/device/context DDIs name their refusals: enforced
+  context ABI populated before ContextAbiReady: enforced
+  per-process GPUVA ranges released on process destroy: enforced
+  bc250mcdm recovery identity: covered
+  verdict: NAO VALIDADO EM HARDWARE

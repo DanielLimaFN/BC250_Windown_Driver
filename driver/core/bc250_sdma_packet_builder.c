@@ -96,7 +96,7 @@ BC250_SDMA_STATUS Bc250SdmaEmitConstFill(
     }
 
     header = (BC250_SDMA_OP_CONST_FILL & 0xFFu) |
-             ((BC250_SDMA_FILL_SIZE_DWORD & 0x3u) << 8);
+             ((BC250_SDMA_FILL_SIZE_DWORD & 0x3u) << 30);
     countField = (ByteCount - 1u) & 0x3FFFFFu;
 
     Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, header);
@@ -213,6 +213,18 @@ BC250_SDMA_STATUS Bc250SdmaEmitIndirect(
         (uint32_t)(CsaAddress >> 32));
 
     return BC250_SDMA_OK;
+}
+
+uint32_t Bc250SdmaIndirectPrePadDwords(uint32_t WptrDwords)
+{
+    return (2u - WptrDwords) &
+        (BC250_SDMA_IB_PACKET_ALIGNMENT_DWORDS - 1u);
+}
+
+uint32_t Bc250SdmaIbSizePadDwords(uint32_t IbSizeDwords)
+{
+    return (0u - IbSizeDwords) &
+        (BC250_SDMA_IB_PACKET_ALIGNMENT_DWORDS - 1u);
 }
 
 BC250_SDMA_STATUS Bc250SdmaEmitTrap(

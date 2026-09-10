@@ -1,0 +1,7 @@
+﻿
+Algorithm Hash                                                             Path                                        
+--------- ----                                                             ----                                        
+SHA256    B6C3CFAEE0673B99AC13701A100A593D4C6F33567671F167E5A90F0EE293C6A7 C:\Windows\MEMORY.DMP                       
+SHA256    45D8B7BE6118A307DB39B0E27B478BB6EBA286B05F71951438B84B0902FB0314 C:\Users\Daniel\Desktop\NamixWDDM\docs\ev...
+
+

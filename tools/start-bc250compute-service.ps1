@@ -44,6 +44,7 @@ if (Test-Path $srcSys) {
 
 # Assinar digitalmente o binario de kernel com o certificado de teste
 $signtoolPaths = @(
+    "C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\signtool.exe",
     "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe",
     "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe"
 )

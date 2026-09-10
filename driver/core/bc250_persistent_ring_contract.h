@@ -59,7 +59,8 @@ typedef enum BC250_PRING_STATUS {
     BC250_PRING_NOT_ACTIVE,
     BC250_PRING_RING_FULL,
     BC250_PRING_FENCE_REGRESSION,
-    BC250_PRING_EMIT_FAILED
+    BC250_PRING_EMIT_FAILED,
+    BC250_PRING_CURSOR_BUSY
 } BC250_PRING_STATUS;
 
 typedef enum BC250_PRING_COMPLETION_MODE {
@@ -118,6 +119,19 @@ BC250_PRING_STATUS Bc250PersistentRingInit(
 BC250_PRING_STATUS Bc250PersistentRingAvailableDwords(
     const BC250_PERSISTENT_RING *Ring,
     uint32_t *AvailableDwords);
+
+/*
+ * Reconcilia o dominio logico com cursores FISICOS medidos depois que a HQD
+ * foi ativada/reentrada. So e' legal com zero fence em voo e anel fisico
+ * drenado. Os ponteiros crus podem carregar bits de volta; a saida e'
+ * reduzida pela potencia de dois do anel. Nao escreve registrador nem fence.
+ */
+BC250_PRING_STATUS Bc250PersistentRingReconcileDrainedCursor(
+    BC250_PERSISTENT_RING *Ring,
+    uint32_t PhysicalRptrRaw,
+    uint32_t PhysicalWptrRaw,
+    uint32_t *LogicalWptrBefore,
+    uint32_t *ReconciledCursor);
 
 /*
  * Planeja o lote sem tocar no anel.  Nao muta Ring: o avanco so acontece em

@@ -49,6 +49,7 @@ void * __cdecl memcpy(void *Destination, const void *Source, size_t Length)
  */
 static __declspec(align(16)) unsigned char g_pool[524288];
 static int g_poolAllocated;
+static BC250_DXGK_ACTIVE_CONTEXT g_diagnosticContext;
 static __declspec(align(4096)) unsigned char g_contiguousPage[4096];
 static int g_contiguousAllocated;
 static DRIVER_INITIALIZATION_DATA g_initData20;
@@ -1061,6 +1062,67 @@ static int Bc250RunWddmFenceTrackerTest(void)
 }
 
 /*
+ * Regressao da corrida fisica 07/09 15:16: o allocator do bootstrap ainda
+ * estava zerado no primeiro RUNTIME_MISSING e a dummy devolvia NO_SPACE.
+ * Congela a geometria medida (16 GiB / BAR0 256 MiB / scanout 0xA8C000),
+ * inclusive a heranca da dummy pelo inventario do perfil de laboratorio.
+ */
+static int Bc250RunGlobalMmuDummyAllocatorTest(void)
+{
+    static BC250_VRAM_ALLOCATOR allocator;
+    BC250_VRAM_TOKEN scanoutToken;
+    BC250_VRAM_TOKEN dummyToken;
+    BC250_VRAM_REGION dummyRegion;
+    static BC250_RUNTIME_INVENTORY_INPUT input;
+    static BC250_RUNTIME_INVENTORY_REPORT report;
+
+    memset(&allocator, 0, sizeof(allocator));
+    memset(&input, 0, sizeof(input));
+    memset(&report, 0, sizeof(report));
+    CHECK(Bc250VramAllocatorInit(&allocator,
+        0x0000000400000000ull, 0x0000000010000000ull) == BC250_VRAM_OK);
+    CHECK(Bc250VramReserveFixed(&allocator, 0ull, 0x00A8C000ull,
+        0x1000ull, BC250_VRAM_ROLE_SCANOUT,
+        BC250_VRAM_ALLOC_CPU_VISIBLE | BC250_VRAM_REGION_PERSISTENT,
+        &scanoutToken) == BC250_VRAM_OK);
+    CHECK(Bc250VramAllocate(&allocator, 0x1000ull, 0x1000ull,
+        BC250_VRAM_ROLE_PAGE_TABLE,
+        BC250_VRAM_ALLOC_TOP_DOWN | BC250_VRAM_ALLOC_CPU_VISIBLE,
+        &dummyToken) == BC250_VRAM_OK);
+    CHECK(Bc250VramGetRegion(&allocator, dummyToken, &dummyRegion) ==
+        BC250_VRAM_OK);
+    CHECK(dummyRegion.Offset == 0x0FFFF000ull);
+    CHECK(dummyRegion.Offset >= 0x00A8C000ull);
+
+    input.EvidenceFlags = BC250_RUNTIME_EVIDENCE_COMPLETE;
+    input.HasScanout = 1u;
+    input.ScanoutReservation.Offset = 0ull;
+    input.ScanoutReservation.Length = 0x00A8C000ull;
+    input.ScanoutReservation.Alignment = 0x1000ull;
+    input.ScanoutReservation.Role = BC250_VRAM_ROLE_SCANOUT;
+    input.ScanoutReservation.Flags = BC250_VRAM_REGION_PERSISTENT;
+    input.PlatformCarveoutCount = 2u;
+    input.PlatformCarveouts[0].Offset = dummyRegion.Offset;
+    input.PlatformCarveouts[0].Length = dummyRegion.Length;
+    input.PlatformCarveouts[0].Alignment = dummyRegion.Alignment;
+    input.PlatformCarveouts[0].Role = BC250_VRAM_ROLE_PLATFORM_RESERVED;
+    input.PlatformCarveouts[0].Flags = BC250_VRAM_REGION_PERSISTENT |
+        BC250_VRAM_ALLOC_CPU_VISIBLE;
+    input.PlatformCarveouts[1].Offset = 0x10000000ull;
+    input.PlatformCarveouts[1].Length = 0x3F0000000ull;
+    input.PlatformCarveouts[1].Alignment = 0x1000ull;
+    input.PlatformCarveouts[1].Role = BC250_VRAM_ROLE_PLATFORM_RESERVED;
+    input.PlatformCarveouts[1].Flags = BC250_VRAM_REGION_PERSISTENT;
+    CHECK(Bc250BuildRuntimeVramInventory(&input,
+        0x0000000400000000ull, 0x0000000010000000ull, 1u, &report) ==
+        BC250_RUNTIME_INVENTORY_OK);
+    CHECK(report.ReservationCount == 3u);
+    CHECK(report.CpuVisibleFreeBytes ==
+        0x10000000ull - 0x00A8C000ull - 0x1000ull);
+    return 1;
+}
+
+/*
  * Gate 1.5 — os dois perfis produzem tabelas DISTINTAS e COERENTES.
  *
  * "Coerente" tem um significado preciso e verificavel aqui: um perfil ou
@@ -1069,6 +1131,107 @@ static int Bc250RunWddmFenceTrackerTest(void)
  * Este teste falha se alguem reintroduzir a poda seletiva que produziu o
  * defeito estatico do 3.74.
  */
+/*
+ * REPRODUCAO OFFLINE DA CORRIDA 08/09 12:36 (Codigo 43,
+ * RuntimeCapsStatus=0xC0000182).
+ *
+ * O ramo SEALED de Bc250ActiveQueryRuntimeCaps exige
+ * SecondPreflightStage == PREFLIGHT_READY. Ate a faixa A16 destravar o segundo
+ * preflight, esse ramo NUNCA tinha executado num bind real -- e na primeira vez
+ * que executou, recusou o adaptador.
+ *
+ * Numeros MEDIDOS na corrida, usados aqui sem arredondar:
+ *   janela de CPU ............ 268.435.456  (CpuVisibleMiB=256)
+ *   plano de firmware [0] .... 268.161.024  (StagingOffsetLow32 -> localEnd)
+ *   scanout .................. offset 0, len 11.059.200   (PostDisplayBytes)
+ *   dummy page da MMU ........ offset 268.431.360, len 4.096
+ *   carveout opaco ........... offset 268.435.456, len 268.435.456
+ *   soma das reservas ........ 279.498.752 = RuntimeInventoryReservedLow32
+ *
+ * A dummy page e' alocada TOP_DOWN, e o laco antigo tratava TODA reserva como
+ * prefixo a pular: localStart ia a 268.435.456, acima de localEnd, e o segmento
+ * colapsava. Agora prefixo empurra o inicio e reserva alta trunca o fim.
+ *
+ * O gate observavel e' DRIVERCAPS: com capsStatus em falha ele devolve
+ * STATUS_DEVICE_NOT_READY, que foi o c00000a3 registrado pelo fusivel.
+ */
+static int Bc250RunSealedSegmentReservationTest(void)
+{
+    DEVICE_OBJECT fakeDevice;
+    PVOID rawContext = NULL;
+    BC250_DXGK_ACTIVE_CONTEXT *ctx;
+    DXGKARG_QUERYADAPTERINFO qai;
+    DXGK_DRIVERCAPS capsOut;
+    unsigned char capsBuffer[1024];
+
+    memset(&fakeDevice, 0, sizeof(fakeDevice));
+    CHECK(Bc250DxgkDdiAddDeviceActive(&fakeDevice, &rawContext) ==
+        STATUS_SUCCESS);
+    CHECK(rawContext != NULL);
+    ctx = (BC250_DXGK_ACTIVE_CONTEXT *)rawContext;
+
+    /* Precondicoes exatas do ramo sealed. */
+    ctx->RuntimeInventoryStatus = BC250_RUNTIME_INVENTORY_OK;
+    ctx->VramProbeStatus = BC250_VRAM_PROBE_OK;
+    ctx->SecondPreflightStage = BC250_DXGK_STAGE_PREFLIGHT_READY;
+    ctx->Core.StartDevice.Preflight.FirmwareCount =
+        BC250_CP_BOOTSTRAP_FIRMWARE_COUNT;
+    ctx->Core.StartDevice.Preflight.FirmwarePlans[0].Binding.Offset =
+        268161024ull;
+
+    ctx->RuntimeInventoryReport.CpuVisibleBytes = 268435456ull;
+    ctx->RuntimeInventoryReport.ReservationCount = 3u;
+    memset(ctx->RuntimeInventoryReport.Reservations, 0,
+        sizeof(ctx->RuntimeInventoryReport.Reservations));
+    ctx->RuntimeInventoryReport.Reservations[0].Offset = 0ull;
+    ctx->RuntimeInventoryReport.Reservations[0].Length = 11059200ull;
+    ctx->RuntimeInventoryReport.Reservations[1].Offset = 268431360ull;
+    ctx->RuntimeInventoryReport.Reservations[1].Length = 4096ull;
+    ctx->RuntimeInventoryReport.Reservations[2].Offset = 268435456ull;
+    ctx->RuntimeInventoryReport.Reservations[2].Length = 268435456ull;
+
+    /* CpuPhysicalStart precisa de uma abertura de VRAM resolvida. */
+    ctx->Core.ResolvedBarCount = 1u;
+    ctx->Core.ResolvedBars[0].Index = BC250_PCI_VRAM_APERTURE_BAR_INDEX;
+    ctx->Core.ResolvedBars[0].Start = 0xC0000000ull;
+    ctx->Core.ResolvedBars[0].Length = 268435456ull;
+
+    memset(&qai, 0, sizeof(qai));
+    memset(capsBuffer, 0, sizeof(capsBuffer));
+    (void)capsOut;
+    qai.Type = DXGKQAITYPE_DRIVERCAPS;
+    qai.pOutputData = capsBuffer;
+    qai.OutputDataSize = (UINT)sizeof(capsBuffer);
+
+    /*
+     * Antes da correcao esta chamada devolvia STATUS_DEVICE_NOT_READY porque a
+     * dummy page, no TOPO da janela de CPU, era contada como prefixo.
+     */
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)ctx, &qai) !=
+        STATUS_DEVICE_NOT_READY);
+
+    /*
+     * Contraponto que impede a assercao acima de virar carimbo: uma reserva que
+     * de fato cobre TODA a faixa util continua tendo de recusar. Aqui o scanout
+     * cresce ate depois do plano de firmware, e nao ha' segmento possivel.
+     */
+    ctx->RuntimeInventoryReport.Reservations[0].Length = 268435456ull;
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)ctx, &qai) ==
+        STATUS_DEVICE_NOT_READY);
+
+    /*
+     * E a terceira forma: reserva alta ABAIXO do plano de firmware tem de
+     * truncar o fim, nao empurrar o inicio. Com o laco antigo isto tambem
+     * colapsava o segmento.
+     */
+    ctx->RuntimeInventoryReport.Reservations[0].Length = 11059200ull;
+    ctx->RuntimeInventoryReport.Reservations[1].Offset = 200000000ull;
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)ctx, &qai) !=
+        STATUS_DEVICE_NOT_READY);
+
+    return 1;
+}
+
 static int Bc250RunAdapterProfileTest(void)
 {
     BC250_ADAPTER_PROFILE profile;
@@ -1458,6 +1621,8 @@ static int Bc250RunActiveMiniportTest(void)
     memset(&fakeDeviceObject, 0, sizeof(fakeDeviceObject));
     g_poolAllocated = 0;
 
+    CHECK(Bc250RunGlobalMmuDummyAllocatorTest());
+
     /* 1. Test Active Initialization Data Structure */
     CHECK(Bc250BuildActiveInitializationData(&initData) == STATUS_SUCCESS);
     CHECK(initData.Version == BC250_DXGK_TARGET_INTERFACE_VERSION);
@@ -1510,6 +1675,9 @@ static int Bc250RunActiveMiniportTest(void)
     CHECK(initData.DxgkDdiFormatHistoryBuffer != NULL);
     CHECK(initData.DxgkDdiControlInterrupt3 == NULL);
     CHECK(initData.DxgkDdiRenderKm == Bc250McdmRenderKm);
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_5)
+    CHECK(initData.DxgkDdiSignalMonitoredFence == Bc250McdmSignalMonitoredFence);
+#endif
     CHECK(initData.DxgkDdiCancelCommand == Bc250McdmCancelCommand);
     CHECK(initData.DxgkDdiSetPowerComponentFState ==
         Bc250McdmSetPowerComponentFState);
@@ -1678,6 +1846,14 @@ static int Bc250RunActiveMiniportTest(void)
             STATUS_DEVICE_NOT_READY);
         activeCtx->RootPageTableMaxEntries = 512u;
         InterlockedExchange(&activeCtx->RootPageTableAbiReady, 1);
+        /*
+         * Hardware ausente: uma root nao pode ser publicada antes da MMU
+         * global. Este era exatamente o fail-open observado em 14:32.
+         */
+        CHECK(Bc250ActiveSetRootPageTableObject(activeCtx, contextHandle,
+            1u, 0x0000000000345000ull, 512u, 512u) ==
+            STATUS_DEVICE_NOT_READY);
+        activeCtx->GlobalMmuReady = TRUE;
         CHECK(Bc250ActiveSetRootPageTableObject(activeCtx, contextHandle,
             1u, 0x0000000000345000ull, 512u, 512u) == STATUS_SUCCESS);
         CHECK(Bc250McdmObjectLookup(&activeCtx->Objects, processHandle,
@@ -1957,6 +2133,12 @@ static int Bc250RunActiveMiniportTest(void)
             CHECK(Bc250WddmFenceTrackerCancel(
                 &activeCtx->SubmissionEngine.WddmFences, pendingToken));
         }
+        /*
+         * GlobalMmuReady foi armado acima somente para exercitar o contrato de
+         * objetos sem MMIO no fixture freestanding. Nao existe snapshot fisico
+         * para restaurar neste teste; nao o anuncie ao caminho de teardown.
+         */
+        activeCtx->GlobalMmuReady = FALSE;
         CHECK(Bc250DxgkDdiStopDeviceActive(activeCtx) == STATUS_SUCCESS);
         CHECK(activeCtx->Objects.LiveCount == 0u);
         memset(&createProcess, 0, sizeof(createProcess));
@@ -1969,6 +2151,24 @@ static int Bc250RunActiveMiniportTest(void)
     CHECK(Bc250DxgkDdiRemoveDeviceActive(deviceContext) == STATUS_SUCCESS);
     CHECK(g_poolAllocated == 0);
 
+    /* Test RemoveDevice with in-flight reservation / busy fence: must tear down cleanly without 0xD1 leak */
+    {
+        PVOID removeBusyContext = NULL;
+        BC250_DXGK_ACTIVE_CONTEXT *busyActiveCtx;
+        uint32_t busyToken = 0u;
+
+        CHECK(initData.DxgkDdiAddDevice(&fakeDeviceObject, &removeBusyContext) == STATUS_SUCCESS);
+        CHECK(removeBusyContext != NULL);
+        busyActiveCtx = (BC250_DXGK_ACTIVE_CONTEXT *)removeBusyContext;
+        InterlockedExchange(&busyActiveCtx->IsActive, 1);
+        CHECK(Bc250WddmFenceTrackerReserve(
+            &busyActiveCtx->SubmissionEngine.WddmFences,
+            0xCAFEu, 1u, 0u, &busyToken));
+        CHECK(Bc250DxgkDdiRemoveDeviceActive(removeBusyContext) == STATUS_SUCCESS);
+        CHECK(g_poolAllocated == 0);
+    }
+    Bc250ActiveDriverUnloadCleanup();
+
     /* Real host threads contend on the same lock order used by StopDevice. */
     CHECK(Bc250RunStopRaceTest(&initData, &fakeDeviceObject));
     /* 3.67: teardown com DxgkCbSynchronizeExecution falhando. */
@@ -1978,11 +2178,48 @@ static int Bc250RunActiveMiniportTest(void)
     /* 3.67: evidencia nao pode misturar boots. */
     if (!Bc250RunRenderTraceResetTest()) return 0;
 
+    /* Offline regression: a first poll can fault before 100 ms. Preserve
+     * its actual observation before the engine stops accepting polls. */
+    {
+        BC250_SUBMISSION_ENGINE *engine = &g_diagnosticContext.SubmissionEngine;
+        volatile uint32_t fenceWord = 17u;
+        uint32_t retiredNow = 99u;
+        memset(&g_diagnosticContext, 0, sizeof(g_diagnosticContext));
+        g_diagnosticContext.Signature = BC250_ACTIVE_SIGNATURE;
+        engine->Signature = BC250_SUBMISSION_ENGINE_SIGNATURE;
+        engine->State = BC250_SUBMISSION_ENGINE_ONLINE;
+        engine->ComputeRing.IsActive = 1u;
+        engine->ComputeRing.Vmid = BC250_GCVM_COMPUTE_VMID;
+        engine->ComputeRing.RingSizeDwords = BC250_SUBMISSION_RING_DWORDS;
+        engine->ComputeRing.LastSubmittedFence = 18ull;
+        engine->ComputeRing.LastRetiredFence = 17ull;
+        engine->ComputeFenceVirtual = &fenceWord;
+        engine->DiagnosticDescriptor[3] = 0x09800011u;
+        CHECK(Bc250SubmissionEnginePoll(&g_diagnosticContext, &retiredNow) == STATUS_SUCCESS);
+        CHECK(retiredNow == 0u);
+        CHECK(engine->DiagnosticPendingFence == 18ull);
+        CHECK(engine->DiagnosticObservedFence == 17u);
+        CHECK(engine->DiagnosticValidReads == 0u); /* no fake MMIO */
+        CHECK(engine->DiagnosticPendingDescriptor[3] == 0x09800011u);
+        engine->DiagnosticPendingFence = 0ull;
+        fenceWord = 0u;
+        CHECK(Bc250SubmissionEnginePoll(&g_diagnosticContext, &retiredNow) == STATUS_DEVICE_DATA_ERROR);
+        CHECK(engine->State == BC250_SUBMISSION_ENGINE_FAULTED);
+        CHECK(engine->DiagnosticPendingFence == 18ull);
+        CHECK(engine->DiagnosticObservedFence == 0u);
+        CHECK(engine->ComputeRing.LastRetiredFence == 17ull);
+        CHECK(Bc250SubmissionEnginePoll(&g_diagnosticContext, NULL) == STATUS_DEVICE_NOT_READY);
+        CHECK(engine->DiagnosticPendingFence == 18ull);
+    }
+
     /* Fase V2: correlacao fence do anel <-> fence do WDDM. */
     CHECK(Bc250RunWddmFenceTrackerTest());
 
     /* Gate 1.5: perfis display+render e render-only distintos e coerentes. */
     CHECK(Bc250RunAdapterProfileTest());
+
+    /* Ramo sealed de QueryRuntimeCaps: reserva no TOPO nao pode colapsar o segmento. */
+    CHECK(Bc250RunSealedSegmentReservationTest());
 
     /* Unload is idempotent and disconnects every active-only interface. */
     Bc250McdmUnload();

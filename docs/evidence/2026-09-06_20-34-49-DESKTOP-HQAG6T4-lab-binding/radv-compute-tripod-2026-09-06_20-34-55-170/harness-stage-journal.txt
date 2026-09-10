@@ -1,0 +1,16 @@
+1462187 pid=2616 process_start
+1462187 pid=2616 before LoadExplicitIcd
+1462187 pid=2616 after LoadExplicitIcd
+1462187 pid=2616 before vkCreateInstance(&instance_info, NULL, &instance)
+1462187 pid=2616 after vkCreateInstance(&instance_info, NULL, &instance)
+1462187 pid=2616 before vkEnumeratePhysicalDevices(instance, &count, NULL)
+1462234 pid=2616 after vkEnumeratePhysicalDevices(instance, &count, NULL)
+1462234 pid=2616 before vkEnumeratePhysicalDevices(instance, &count, devices)
+1462234 pid=2616 after vkEnumeratePhysicalDevices(instance, &count, devices)
+1462234 pid=2616 before vkGetPhysicalDeviceProperties
+1462234 pid=2616 after vkGetPhysicalDeviceProperties
+1462234 pid=2616 before vkGetPhysicalDeviceQueueFamilyProperties(count)
+1462234 pid=2616 after vkGetPhysicalDeviceQueueFamilyProperties(count)
+1462234 pid=2616 before vkGetPhysicalDeviceQueueFamilyProperties(data)
+1462234 pid=2616 after vkGetPhysicalDeviceQueueFamilyProperties(data)
+1462234 pid=2616 before vkCreateDevice(physical, &device_info, NULL, &device)

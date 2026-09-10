@@ -1,0 +1,6 @@
+Copia integral de C:\BC250_DISPLAY_LOG.txt feita APOS o rollback do watchdog.
+MOTIVO: o coletor arquiva o log no fim do bind e perde tudo o que o KMD escreve
+depois -- na corrida 17:43 as linhas do BugCheck ficaram somente aqui.
+Linhas nesta copia: 2708
+Linhas no bc250_display_log.txt arquivado: 1965
+SHA-256: 479B251D78E69F7D62BD374D1A4D1BC3C4C373AA3A205C8630D16BA2030BE7A1
