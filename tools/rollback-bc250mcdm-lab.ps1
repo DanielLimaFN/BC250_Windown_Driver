@@ -20,6 +20,15 @@ if (-not (Test-Path -LiteralPath 'C:\BC250_RECOVERY.cmd')) {
     throw 'C:\BC250_RECOVERY.cmd ausente.'
 }
 
+if (-not $Execute) {
+    Write-Host "ROLLBACK LAB DRY-RUN: passe -Execute e -IAcceptDisplayInterruptionRisk para executar as acoes PnP." -ForegroundColor Yellow
+    return
+}
+
+if (-not $IAcceptDisplayInterruptionRisk) {
+    throw 'Rollback exige -IAcceptDisplayInterruptionRisk confirmando explicitamente o risco de interrupcao de video.'
+}
+
 $principal = New-Object Security.Principal.WindowsPrincipal(
     [Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -44,7 +53,10 @@ if ($markerLines.Count -eq 1 -and $markerLines[0] -match '^oem\d+\.inf$') {
 foreach ($dev in $devicesBefore) {
     if ($dev.Service -ne 'BasicDisplay') {
         Write-Host "Desabilitando dispositivo antes do rollback: $($dev.PNPDeviceID)"
-        & pnputil.exe /disable-device $dev.PNPDeviceID /force | Out-Null
+        & pnputil.exe /disable-device "$($dev.PNPDeviceID)"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Falha ao desabilitar dispositivo $($dev.PNPDeviceID) (codigo de saida $LASTEXITCODE). Abortando rollback antes de delete-driver para prevenir BugCheck 0x119 por remocao surpresa."
+        }
     }
 }
 

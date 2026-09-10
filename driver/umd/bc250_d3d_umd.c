@@ -203,6 +203,8 @@ HRESULT Bc250UmdDeviceInit(
     return S_OK;
 }
 
+static void Bc250UmdBltTeardown(BC250_UMD_DEVICE *device);
+
 VOID Bc250UmdDeviceTeardown(
     _Inout_ BC250_UMD_DEVICE* pDevice)
 {
@@ -211,6 +213,8 @@ VOID Bc250UmdDeviceTeardown(
     }
 
     Bc250UmdTrace("Bc250UmdDeviceTeardown: device=%p iniciando teardown", (void*)pDevice);
+
+    Bc250UmdBltTeardown(pDevice);
 
     if (pDevice->Node0CmdBuffer.Initialized) {
         Bc250UmdCommandBufferTeardown(pDevice, &pDevice->Node0CmdBuffer);
@@ -684,6 +688,7 @@ VOID APIENTRY Bc250Umd10CreateResource(
     res->MiscFlags = pCreate->MiscFlags;
     res->MipLevels = pCreate->MipLevels;
     res->ArraySize = pCreate->ArraySize;
+    res->SampleCount = pCreate->SampleDesc.Count;
     res->hRTResource = hRTResource;
 
     totalSize = Bc250CalculateResourceByteSize(pCreate, &width, &height, &depth, &rowPitch, &slicePitch);
@@ -2853,7 +2858,8 @@ HRESULT APIENTRY Bc250DxgiPresent(DXGI_DDI_ARG_PRESENT* pPresentData)
         (int)pPresentData->FlipInterval);
 
     if (device->pDXGICallbacks == NULL || device->pDXGICallbacks->pfnPresentCb == NULL) {
-        return S_OK;
+        Bc250UmdTrace("DXGI Present: pDXGICallbacks ou pfnPresentCb ausente -> E_FAIL");
+        return E_FAIL;
     }
 
     memset(&presentCb, 0, sizeof(presentCb));
@@ -2917,9 +2923,14 @@ HRESULT APIENTRY Bc250DxgiQueryResourceResidency(DXGI_DDI_ARG_QUERYRESOURCERESID
     }
 
     for (i = 0; i < pResidencyData->Resources; ++i) {
-        pResidencyData->pStatus[i] = DXGI_DDI_RESIDENCY_FULLY_RESIDENT;
+        BC250_UMD_RESOURCE* res = (BC250_UMD_RESOURCE*)pResidencyData->pResources[i];
+        if (res != NULL && res->Created && res->Allocation.KernelAllocation != 0 && res->Allocation.Resident) {
+            pResidencyData->pStatus[i] = DXGI_DDI_RESIDENCY_FULLY_RESIDENT;
+        } else {
+            pResidencyData->pStatus[i] = DXGI_DDI_RESIDENCY_EVICTED_TO_DISK;
+        }
     }
-    Bc250UmdTrace("DXGI QueryResourceResidency: Resources=%Iu -> FULLY_RESIDENT", pResidencyData->Resources);
+    Bc250UmdTrace("DXGI QueryResourceResidency: Resources=%Iu", pResidencyData->Resources);
     return S_OK;
 }
 
@@ -2931,6 +2942,9 @@ HRESULT APIENTRY Bc250DxgiRotateResourceIdentities(DXGI_DDI_ARG_ROTATE_RESOURCE_
     Bc250UmdTrace("DXGI RotateResourceIdentities: Resources=%u", pRotateData->Resources);
     return S_OK;
 }
+
+/* SDMA implementation shares private device helpers in this translation unit. */
+#include "bc250_umd_blt.inl"
 
 HRESULT APIENTRY Bc250DxgiBlt(DXGI_DDI_ARG_BLT* pBltData)
 {
@@ -2951,15 +2965,12 @@ HRESULT APIENTRY Bc250DxgiBlt(DXGI_DDI_ARG_BLT* pBltData)
         pBltData->DstLeft, pBltData->DstTop, pBltData->DstRight, pBltData->DstBottom,
         pBltData->Flags.Value, (int)pBltData->Rotate);
 
-    if (device != NULL && dst != NULL && src != NULL) {
-        D3D10DDI_HDEVICE hDev;
-        D3D10DDI_HRESOURCE hDst, hSrc;
-        hDev.pDrvPrivate = device;
-        hDst.pDrvPrivate = dst;
-        hSrc.pDrvPrivate = src;
-        Bc250Umd10ResourceCopy(hDev, hDst, hSrc);
+    if (device == NULL || dst == NULL || src == NULL || !dst->Created || !src->Created) {
+        Bc250UmdTrace("DXGI Blt: parametros invalidos ou recursos nao criados -> E_INVALIDARG");
+        return E_INVALIDARG;
     }
-    return S_OK;
+
+    return Bc250UmdBltGpu(device, dst, src, pBltData);
 }
 
 VOID Bc250UmdPopulateDxgiBaseFuncs(_Out_ DXGI_DDI_BASE_FUNCTIONS* pFuncs)
@@ -3380,10 +3391,12 @@ HRESULT APIENTRY Bc250Umd10GetCaps(
     /*
      * D3D11DDICAPS_3DPIPELINESUPPORT (Type 130):
      * O runtime consulta os niveis de pipeline 3D suportados.
-     * Declaramos suporte aos niveis 10_0 e 10_1, correspondentes
-     * a tabela D3D10_1DDI_DEVICEFUNCS com todas as 105 entradas implementadas.
+     * So pode retornar S_OK com 10_0/10_1 quando o backend nativo de draw
+     * e compilador de shaders estiver realmente implementado (BC250_D3D10_11_NATIVE_READY).
+     * Sem backend, retornar E_NOTIMPL fail-closed honesto.
      */
     if ((UINT)pCapsData->Type == 130u) {
+#if BC250_D3D10_11_NATIVE_READY
         if (pCapsData->DataSize >= sizeof(D3D11DDI_3DPIPELINESUPPORT_CAPS)) {
             D3D11DDI_3DPIPELINESUPPORT_CAPS* pCaps = (D3D11DDI_3DPIPELINESUPPORT_CAPS*)pCapsData->pData;
             pCaps->Caps = D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_10_0) |
@@ -3396,6 +3409,11 @@ HRESULT APIENTRY Bc250Umd10GetCaps(
                 pCapsData->DataSize, (UINT)sizeof(D3D11DDI_3DPIPELINESUPPORT_CAPS));
             return E_INVALIDARG;
         }
+#else
+        Bc250UmdTrace("GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=%u -> E_NOTIMPL (backend nativo 3D ausente, fail-closed honesto)",
+            pCapsData->DataSize);
+        return E_NOTIMPL;
+#endif
     }
 
     if (!Bc250UmdCapsZeroIsTruthful((UINT)pCapsData->Type)) {

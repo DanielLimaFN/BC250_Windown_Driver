@@ -196,6 +196,7 @@ $report = [ordered]@{
     umd_sha256 = $expectedHash
     package_manifest_sha256 = (Get-FileHash $PackageManifest -Algorithm SHA256).Hash
     harness_timeout_seconds = $TimeoutSeconds
+    harness_exit_code = $exitCode
     before = $before
     after = $after
     checks = $checks

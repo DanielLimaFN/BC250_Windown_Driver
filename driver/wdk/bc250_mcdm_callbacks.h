@@ -3,6 +3,8 @@
 
 #include <ntddk.h>
 #include <dispmprt.h>
+#include "../core/bc250_paging_proof_contract.h"
+BOOLEAN Bc250PagingTakeProof(UINT64 Physical, ULONG Bytes, BC250_PAGING_PROOF *Proof);
 
 DXGKDDI_BUILDPAGINGBUFFER Bc250McdmBuildPagingBuffer;
 DXGKDDI_CALIBRATEGPUCLOCK Bc250McdmCalibrateGpuClock;
@@ -199,10 +201,10 @@ VOID Bc250McdmInstallAllocationLifecycle(
  * transporte. Executor de restart: rearma e PROVA por fence fisica.
  */
 /*
- * item 24: probe de responsividade. Devolve FALSE quando nao foi possivel
- * medir; nesse caso a DDI recusa em vez de afirmar engine viva.
+ * item 24: probe de responsividade por no (SDMA=0, MEC=1). Devolve FALSE
+ * quando nao foi possivel medir; nesse caso a DDI recusa em vez de afirmar engine viva.
  */
-typedef BOOLEAN (*BC250_MCDM_ENGINE_RESPONSIVE_PROBE)(UINT32 *IsResponsive);
+typedef BOOLEAN (*BC250_MCDM_ENGINE_RESPONSIVE_PROBE)(UINT32 NodeOrdinal, UINT32 *IsResponsive);
 
 typedef BOOLEAN (*BC250_MCDM_TDR_QUIESCE_EXECUTOR)(VOID);
 typedef BOOLEAN (*BC250_MCDM_TDR_RESTART_EXECUTOR)(VOID);

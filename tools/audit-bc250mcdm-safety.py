@@ -2465,6 +2465,12 @@ def main() -> int:
             "lab rollback BasicDisplay verification", errors)
     require(lab_rollback, "$devices[0].ConfigManagerErrorCode -eq 0",
             "lab rollback Code 0 verification", errors)
+    require(lab_rollback, "if (-not $Execute)",
+            "lab rollback Execute parameter gate", errors)
+    require(lab_rollback, "if (-not $IAcceptDisplayInterruptionRisk)",
+            "lab rollback risk confirmation gate", errors)
+    forbid(lab_rollback, "/disable-device $dev.PNPDeviceID /force",
+           "unsupported /force on pnputil /disable-device", errors)
     require(lab_rollback, "throw \"Rollback incompleto:",
             "lab rollback fail-closed result", errors)
     require(lab_rollback, "C:\\BC250_REQUIRE_CLEAN_BOOT.json",

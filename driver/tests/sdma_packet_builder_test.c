@@ -1,4 +1,5 @@
 #include "../core/bc250_sdma_packet_builder.h"
+#include "../core/bc250_paging_proof_contract.h"
 
 #include <string.h>
 
@@ -254,6 +255,18 @@ static int Bc250RunSdmaPacketBuilderTest(void)
         CHECK(((i + pad) & 7u) == 0u);
     }
 
+    {
+        uint32_t words[8] = {0x8000000bu, 0x23f000u, 0u, 0u, 4095u, 0u, 0u, 0u};
+        BC250_PAGING_PROOF proof;
+        CHECK(Bc250PagingDecodeProof(words, 8u, 0x1ce865cc0ull, &proof));
+        CHECK(Bc250PagingProofMatches(&proof, 0x1ce865cc0ull, 32u));
+        /* Measured #99: another 32-byte IB in the SAME page must never borrow poison. */
+        CHECK(!Bc250PagingProofMatches(&proof, 0x1ce865c80ull, 32u));
+        CHECK(!Bc250PagingProofMatches(&proof, 0x1ce865cc0ull, 64u));
+        CHECK(!Bc250PagingDecodeProof(words, 4u, 0x1ce865cc0ull, &proof));
+        words[0] = 1u;
+        CHECK(!Bc250PagingDecodeProof(words, 8u, 0x1ce865cc0ull, &proof));
+    }
     return 1;
 }
 

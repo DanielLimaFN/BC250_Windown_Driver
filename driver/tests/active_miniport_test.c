@@ -47,7 +47,7 @@ void * __cdecl memcpy(void *Destination, const void *Source, size_t Length)
  * persistente (estado de teardown do HQD + duas evidencias completas), o que
  * o levou acima de 32 KiB.  O pool do fixture acompanha.
  */
-static __declspec(align(16)) unsigned char g_pool[524288];
+static __declspec(align(16)) unsigned char g_pool[2097152];
 static int g_poolAllocated;
 static BC250_DXGK_ACTIVE_CONTEXT g_diagnosticContext;
 static __declspec(align(4096)) unsigned char g_contiguousPage[4096];
@@ -248,6 +248,13 @@ BOOLEAN (*__imp_KeCancelTimer)(PKTIMER) =
     Bc250TestCancelTimer;
 VOID (*__imp_KeFlushQueuedDpcs)(VOID) =
     Bc250TestFlushQueuedDpcs;
+
+static VOID Bc250TestStallExecutionProcessor(ULONG Microseconds)
+{
+    UNREFERENCED_PARAMETER(Microseconds);
+}
+VOID (*__imp_KeStallExecutionProcessor)(ULONG) =
+    Bc250TestStallExecutionProcessor;
 
 static unsigned long g_failureLine;
 #define CHECK(Expression) do { \
@@ -2111,8 +2118,7 @@ static int Bc250RunActiveMiniportTest(void)
             memset(&capacityProcess, 0, sizeof(capacityProcess));
             capacityProcess.hDxgkProcess =
                 (HANDLE)(ULONG_PTR)(0x10000u + allocationIndex);
-            if (allocationIndex <
-                    BC250_MCDM_MAX_OBJECTS - capacityStartSlot) {
+            if (activeCtx->Objects.LiveCount < BC250_MCDM_MAX_OBJECTS) {
                 CHECK(initData.DxgkDdiCreateProcess(activeCtx,
                     &capacityProcess) == STATUS_SUCCESS);
             } else {
@@ -2122,6 +2128,7 @@ static int Bc250RunActiveMiniportTest(void)
             }
         }
         CHECK(activeCtx->Objects.NextSlot == BC250_MCDM_MAX_OBJECTS);
+        CHECK(activeCtx->Objects.LiveCount == BC250_MCDM_MAX_OBJECTS);
         /* Stop deve falhar ocupado sem desligar o adaptador se houver reserva. */
         {
             uint32_t pendingToken = 0u;

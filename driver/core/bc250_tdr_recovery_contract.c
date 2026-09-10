@@ -96,6 +96,25 @@ BC250_TDR_STATUS Bc250TdrValidateSdmaRestartReadback(
     return BC250_TDR_OK;
 }
 
+BC250_TDR_STATUS Bc250TdrValidateMecRestartReadback(
+    uint32_t HqdActive,
+    uint32_t HqdRptr,
+    uint32_t HqdWptr,
+    uint32_t DequeueRequest,
+    uint32_t HqdError,
+    uint32_t CpStalled)
+{
+    if ((HqdActive & 1u) != 0u ||
+        (DequeueRequest & 1u) != 0u ||
+        HqdError != 0u ||
+        CpStalled != 0u ||
+        HqdRptr != 0u ||
+        HqdWptr != 0u) {
+        return BC250_TDR_RESTART_NOT_READY;
+    }
+    return BC250_TDR_OK;
+}
+
 BC250_TDR_STATUS Bc250TdrExecuteResetPlan(
     const BC250_TDR_RESET_PLAN *Plan,
     BC250_TDR_ENGINE_STATE *State)

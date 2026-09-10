@@ -3080,6 +3080,25 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                 if (Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport, BC250_HQD_MMIO_PQ_CONTROL, &pqControl)) hqdValid |= (1u << 10);
                 if (Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport, BC250_HQD_MMIO_DEQUEUE_REQUEST, &dequeueReq)) hqdValid |= (1u << 11);
 
+                if ((hqdActive & 1u) != 0u) {
+                    uint32_t poll;
+                    (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                        BC250_HQD_MMIO_DEQUEUE_REQUEST, 1u);
+                    for (poll = 0u; poll < 2000u; ++poll) {
+                        if (Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                                BC250_HQD_MMIO_ACTIVE, &hqdActive) && (hqdActive & 1u) == 0u) {
+                            break;
+                        }
+                        KeStallExecutionProcessor(5u);
+                    }
+                    (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                        BC250_HQD_MMIO_DEQUEUE_REQUEST, 0u);
+                    (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                        BC250_HQD_MMIO_ACTIVE, 0u);
+                    Bc250DisplayLog("[TDR_MEC_QUIESCE] HQD dequeue drain: Polls=%u ActiveAfter=%u\n",
+                        poll, hqdActive & 1u);
+                }
+
                 (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
                     BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
                 (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
@@ -3118,12 +3137,145 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
 
 static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
 {
-    return Bc250SdmaPresentRestartAfterTdr();
+    BOOLEAN sdmaRestart = Bc250SdmaPresentRestartAfterTdr();
+    BOOLEAN mecRestart = TRUE;
+    uint32_t dirIdx;
+
+    KeEnterCriticalRegion();
+    ExAcquirePushLockShared(&g_Bc250AdapterDirectoryLock);
+    for (dirIdx = 0u; dirIdx < BC250_ACTIVE_MAX_ADAPTERS; ++dirIdx) {
+        BC250_DXGK_ACTIVE_CONTEXT *activeCtx = g_Bc250AdapterDirectory[dirIdx];
+        if (activeCtx != NULL && activeCtx->Signature == BC250_ACTIVE_SIGNATURE &&
+            activeCtx->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED &&
+            activeCtx->SubmissionEngine.State == BC250_SUBMISSION_ENGINE_ONLINE) {
+            uint32_t active = 0u, rptr = 0u, wptr = 0u, err = 0u, deq = 0u, stall = 0u;
+            BC250_TDR_STATUS mecStatus;
+
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GRBM_GFX_CNTL_BYTE_OFFSET, activeCtx->SubmissionEngine.SelectedSelector);
+
+            /* Zera os registradores de ponteiro e dequeue */
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_HQD_MMIO_DEQUEUE_REQUEST, 0u);
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_HQD_MMIO_ACTIVE, 0u);
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_HQD_MMIO_PQ_RPTR, 0u);
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_HQD_MMIO_PQ_WPTR_LO, 0u);
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_HQD_MMIO_PQ_WPTR_HI, 0u);
+
+            if (activeCtx->SubmissionEngine.ComputeWptrShadowVirtual != NULL) {
+                activeCtx->SubmissionEngine.ComputeWptrShadowVirtual[0] = 0u;
+                activeCtx->SubmissionEngine.ComputeWptrShadowVirtual[1] = 0u;
+            }
+
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport, BC250_HQD_MMIO_ACTIVE, &active);
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport, BC250_HQD_MMIO_PQ_RPTR, &rptr);
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport, BC250_HQD_MMIO_PQ_WPTR_LO, &wptr);
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport, BC250_HQD_MMIO_DEQUEUE_REQUEST, &deq);
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport, BC250_HQD_MMIO_HQD_ERROR, &err);
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport, BC250_HQD_MMIO_CP_STALLED_STAT1, &stall);
+
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GRBM_GFX_CNTL_BYTE_OFFSET, activeCtx->SubmissionEngine.OriginalSelector);
+
+            mecStatus = Bc250TdrValidateMecRestartReadback(active, rptr, wptr, deq, err, stall);
+            if (mecStatus != BC250_TDR_OK) {
+                Bc250DisplayLog("[TDR_MEC_RESTART] Readback INVALIDO: status=%s Active=%u RPTR=%u WPTR=%u Deq=%u Error=0x%X Stall=0x%X\n",
+                    Bc250TdrStatusName(mecStatus), active, rptr, wptr, deq, err, stall);
+                mecRestart = FALSE;
+            } else {
+                Bc250DisplayLog("[TDR_MEC_RESTART] MEC queue rearmada e comprovada no silicio\n");
+            }
+            break;
+        }
+    }
+    ExReleasePushLockShared(&g_Bc250AdapterDirectoryLock);
+    KeLeaveCriticalRegion();
+
+    return (sdmaRestart && mecRestart) ? TRUE : FALSE;
 }
 
-static BOOLEAN Bc250ActiveEngineResponsiveProbe(UINT32 *IsResponsive)
+static BOOLEAN Bc250ActiveMecProbeResponsive(_Out_ UINT32 *IsResponsive)
 {
-    return Bc250SdmaPresentProbeResponsive(IsResponsive);
+    uint32_t dirIdx;
+    BOOLEAN measured = FALSE;
+
+    if (IsResponsive == NULL) return FALSE;
+    *IsResponsive = 0u;
+
+    KeEnterCriticalRegion();
+    ExAcquirePushLockShared(&g_Bc250AdapterDirectoryLock);
+    for (dirIdx = 0u; dirIdx < BC250_ACTIVE_MAX_ADAPTERS; ++dirIdx) {
+        BC250_DXGK_ACTIVE_CONTEXT *activeCtx = g_Bc250AdapterDirectory[dirIdx];
+        if (activeCtx != NULL && activeCtx->Signature == BC250_ACTIVE_SIGNATURE &&
+            activeCtx->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED &&
+            activeCtx->SubmissionEngine.State == BC250_SUBMISSION_ENGINE_ONLINE) {
+            uint32_t active = 0u, rptr1 = 0u, wptr1 = 0u, rptr2 = 0u, wptr2 = 0u;
+            uint32_t isHung = 0u;
+            BC250_TDR_STATUS tdrStatus;
+
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GRBM_GFX_CNTL_BYTE_OFFSET, activeCtx->SubmissionEngine.SelectedSelector);
+
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport, BC250_HQD_MMIO_ACTIVE, &active);
+            if ((active & 1u) == 0u) {
+                /* Fila ociosa (idle) -> responsiva por definicao */
+                (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                    BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+                (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                    BC250_GRBM_GFX_CNTL_BYTE_OFFSET, activeCtx->SubmissionEngine.OriginalSelector);
+                *IsResponsive = 1u;
+                measured = TRUE;
+                break;
+            }
+
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport, BC250_HQD_MMIO_PQ_RPTR, &rptr1);
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport, BC250_HQD_MMIO_PQ_WPTR_LO, &wptr1);
+
+            KeStallExecutionProcessor(50u);
+
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport, BC250_HQD_MMIO_PQ_RPTR, &rptr2);
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport, BC250_HQD_MMIO_PQ_WPTR_LO, &wptr2);
+
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GRBM_GFX_CNTL_BYTE_OFFSET, activeCtx->SubmissionEngine.OriginalSelector);
+
+            tdrStatus = Bc250TdrDetectHang(1u, rptr1, wptr1, rptr2, wptr2, &isHung);
+            if (tdrStatus == BC250_TDR_OK) {
+                *IsResponsive = (isHung == 0u) ? 1u : 0u;
+                measured = TRUE;
+                Bc250DisplayLog("[TDR_MEC_PROBE] Responsive=%u (RPTR %u->%u WPTR %u->%u)\n",
+                    *IsResponsive, rptr1, rptr2, wptr1, wptr2);
+            }
+            break;
+        }
+    }
+    ExReleasePushLockShared(&g_Bc250AdapterDirectoryLock);
+    KeLeaveCriticalRegion();
+
+    return measured;
+}
+
+static BOOLEAN Bc250ActiveEngineResponsiveProbe(UINT32 NodeOrdinal, UINT32 *IsResponsive)
+{
+    if (NodeOrdinal == 0u) {
+        return Bc250SdmaPresentProbeResponsive(IsResponsive);
+    } else if (NodeOrdinal == 1u) {
+        return Bc250ActiveMecProbeResponsive(IsResponsive);
+    }
+    if (IsResponsive != NULL) *IsResponsive = 0u;
+    return FALSE;
 }
 
 static NTSTATUS Bc250ActiveCollectDebugLifecycle(
@@ -6931,6 +7083,7 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
         uint64_t ibBackingOffset = 0ull;
         uint32_t ibBackingSegment = 0u;
         uint32_t ibUsefulDwords = 0u;
+        BC250_PAGING_PROOF pagingProof = {0};
         BOOLEAN synchronized = FALSE;
         BOOLEAN ibExecuted = FALSE;
         BOOLEAN ibWalkOk = FALSE;
@@ -7122,33 +7275,11 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
                  * traducao nao prova que a GPU busca a NOSSA pagina.
                  */
                 if (ibWalkOk) {
-                    UINT64 cpuPhysical = Bc250PagingConsumeIbCpuPhysical();
-
-                    if (cpuPhysical != 0ull) {
-                        BOOLEAN exactMatch = (cpuPhysical == resolved);
-                        BOOLEAN spanMatch = (cpuPhysical == resolved + pSubmitCommand->DmaBufferSize) ||
-                                            (resolved == cpuPhysical + pSubmitCommand->DmaBufferSize) ||
-                                            (cpuPhysical >= resolved && cpuPhysical <= resolved + pSubmitCommand->DmaBufferSize) ||
-                                            (resolved >= cpuPhysical && resolved <= cpuPhysical + pSubmitCommand->DmaBufferSize);
-                        BOOLEAN pageMatch = ((cpuPhysical & ~0xFFFull) == (resolved & ~0xFFFull));
-
-                        const char *matchDesc = exactMatch ? "CONFERE (EXATO)" :
-                                                spanMatch  ? "CONFERE (SPAN/OFFSET)" :
-                                                pageMatch  ? "CONFERE (MESMA_PAGINA)" : "DIVERGE";
-
-                        Bc250DisplayLog("[PT_WALK] IB_PA_MATCH: caminhada=0x%llX cpu=0x%llX DmaSize=%u -> %s\n",
-                            (unsigned long long)resolved,
-                            (unsigned long long)cpuPhysical,
-                            pSubmitCommand->DmaBufferSize,
-                            matchDesc);
-
-                        if (!pageMatch) {
-                            ibWalkOk = FALSE;
-                        }
-                    } else {
-                        Bc250DisplayLog("[PT_WALK] IB_PA_MATCH: caminhada=0x%llX cpu=0x0 -> NAO_MEDIDO (non-paging ou offline)\n",
-                            (unsigned long long)resolved);
-                    }
+                    BOOLEAN proofMatched = pSubmitCommand->Flags.Paging && Bc250PagingTakeProof(resolved,
+                        pSubmitCommand->DmaBufferSize, &pagingProof);
+                    Bc250DisplayLog("[PT_WALK] IB_PROOF_BIND: PA=0x%llX Bytes=%u ExactMetadata=%u (miss: no poison)\n",
+                        (unsigned long long)resolved, pSubmitCommand->DmaBufferSize,
+                        proofMatched ? 1u : 0u);
                 }
 
                 /*
@@ -7171,10 +7302,10 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
                  * 0x2A90000. Nenhuma delas precisava do IB traduzido.
                  */
                 {
-                    UINT64 destStart = 0ull;
-                    UINT64 destEnd = 0ull;
+                    UINT64 destStart = pagingProof.Destination;
+                    UINT64 destEnd = destStart + pagingProof.Bytes;
 
-                    if (!Bc250PagingPeekIbDestRange(&destStart, &destEnd)) {
+                    if (pagingProof.Bytes == 0u) {
                         Bc250DisplayLog("[PT_WALK] DEST: encoder nao publicou faixa de escrita\n");
                     } else {
                         uint64_t probes[3];
@@ -7204,13 +7335,12 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
             }
 
             {
-                UINT64 fillDestVa = 0ull;
-                ULONG fillBytes = 0u;
-                ULONG fillPattern = 0u;
-                BOOLEAN hasFill = Bc250PagingPeekFillParams(&fillDestVa, &fillBytes, &fillPattern);
+                UINT64 fillDestVa = pagingProof.Destination;
+                ULONG fillBytes = pagingProof.Bytes;
+                ULONG fillPattern = pagingProof.Pattern;
+                BOOLEAN hasFill = (pagingProof.Bytes != 0u);
 
-                ibUsefulDwords = Bc250PagingConsumeIbUsefulDwords(
-                    pSubmitCommand->DmaBufferSize / (uint32_t)sizeof(uint32_t));
+                ibUsefulDwords = pSubmitCommand->DmaBufferSize / (uint32_t)sizeof(uint32_t);
 
                 /*
                  * DIRECT FILL primeiro, e SEM exigir ibWalkOk: quem escreve e a

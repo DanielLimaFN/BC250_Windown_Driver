@@ -1,24 +1,35 @@
 # BASE DE AVANÇO — AMD BC-250 → WDDM com jogos no Windows
 
 **Documento base do projeto.** Toda decisão de o-que-fazer-agora sai daqui.
-**Passagem de bastão consolidada em 09/09:** [docs/229 — Nó 1 Compute e Tripé UMD Fechados no Silício](docs/229_HANDOFF_2026-09-09_NODE1_COMPUTE_FECHADO_NO_SILICIO.md).
+**Passagem de bastão e auditorias de 09/09:** [docs/229 — Nó 1 PM4/MEC no Silício](docs/229_HANDOFF_2026-09-09_NODE1_COMPUTE_FECHADO_NO_SILICIO.md) · [docs/230 — Auditoria Offline do Estado WDDM](docs/230_AUDITORIA_ESTADO_WDDM_2026-09-09.md) · [docs/231 — Conferência da Corrida 21:20:13](docs/231_CONFERENCIA_CORRIDA_21-20_2026-09-09.md).
 **Checklist operacional consolidado:**
 [`docs/189_CHECKLIST_ATE_JOGOS_BC250.md`](docs/189_CHECKLIST_ATE_JOGOS_BC250.md).
-**Data-base:** 2026-09-09 · **Última corrida:** laboratório 3.119.1.0, 19:56:09. FRENTE 1 (NÓ 1 / COMPUTE MEC / UMD) FECHADA 100% NO SILÍCIO: o anel MEC drenou (RPTR=12/WPTR=12), a GPU gravou a fence monitorada 3156545281 e todos os 5 canários de dados (BC250C01..BC250C05) foram conferidos na VRAM. Barreira restante é a Frente 2 (D3D10/11 UMD para o DWM).
+**Data-base:** 2026-09-09 · **Última corrida física:** laboratório 3.122.1.0, 21:20:13 (recorte delimitado: 17 CommitVidPn, 2 SetVidPnSourceAddress, 102 INDIRECTs, 0 Blt, rollback bem-sucedido às 21:23:17 restaurando BasicDisplay Código 0). Candidato atual pós-auditoria offline: 3.122.1.0 com correções de segurança no rollback (gates -Execute/-IAcceptDisplayInterruptionRisk, remoção de /force inválido no Win10), expansão de objetos do KMD para 4096 com reciclagem de slots mortos (eliminando 0xC000009A), e fail-closed honesto na UMD (Type 130 E_NOTIMPL enquanto NATIVE_READY=0, honestidade DXGI). Barreira restante: backend gráfico real (rasterizador/PM4 Draw/compilador para DWM).
 
-> **09/09 19:56:09 (P0) — Corrida 3.119.1.0 (HISTÓRICO: FRENTE 1 FECHADA NO SILÍCIO):**
-> O harness `B7_UMD_NODE1_TRIPOD` submeteu IB de compute sob VMID 9 pelo WDDM Winsys nativo da UMD.
-> O Command Processor (MEC2/CPF) buscou o anel sem stalls de RCIU (`CpcStalled=0`), executou o shader,
-> drenou completamente o anel (`RPTR==WPTR==12`), sinalizou a fence monitorada (`3156545281` / `0xBC250F01`)
-> e gravou na VRAM os 5 canários de dados: `Values=BC250C01,BC250C02,BC250C03,BC250C04,BC250C05` (`hr=0x00000000`).
-> O tripé do Nó 1 está **100% VALIDADO EM HARDWARE**.
-> No Nó 0 (SDMA), 33 submissoes foram aceitas, e a corrida anterior das 19:48 eliminou o 0x119 no fill de 11 MB da primária (`TRIPE_PROVADO` com 5 canários em 128 polls).
+> **09/09 21:20:13 (P0) — Corrida 3.122.1.0 (Auditoria e Conferência do Recorte — docs/230 e 231):**
+> Ensaio físico do pacote lab 3.122.1.0 auditado com recorte estrito (`start_offset=6776778`, 668.635 bytes a partir da linha 94574).
+> A mineração delimitada registrou: 17 menções a `CommitVidPn` (9 entradas e 8 mensagens de transição para VidPn vazio); 2 `SetVidPnSourceAddress` configurando o scanout; 8 chamadas do OS de `[ControlInterrupt] VSYNC Enable=0/1` (não confundir com interrupções físicas de VBlank); 6 linhas de Present (todas referindo-se ao mesmo `Present #2`, com zero blits SDMA); `Present #2` foi rejeitado por contrato de fonte (`REJECT source contract: status=9 (ALLOC_NOT_RESIDENT), SlotSeg=0`); 102 execuções explícitas de `IB EXECUTADO (INDIRECT)` no recorte, das quais 47 fecharam `TRIPE_PROVADO`.
+> **Contraprovas e achados críticos da corrida:**
+> 1. Submissão #99 falhou na perna de dados: `IB_TRIPE_VEREDITO #99: DADOS_DIVERGEM` (cinco canários retiveram poison `DEADAFFE...` no destino `0x450ABC000`, necessitando rastreamento de alocação/GPUVA).
+> 2. Exaustão de tabela de objetos no KMD: 56 linhas `[McdmCreateAllocation] Result=0xC000009A` e 8 recusas `CreateDevice/CreateProcess` pelo limite estático de 1024 slots sem reciclagem (corrigido offline: limite 4096 + reciclagem de slots mortos).
+> 3. UMD: chamadas `DrawIndexed` rejeitadas com `E_NOTIMPL` por ausência de rasterizador/PM4 Draw.
+> Às 21:23:17, o watchdog executou rollback gracioso sem TDR ou bugcheck nesta janela, restaurando `BasicDisplay` em Código 0. **Desktop acelerado e jogos: NÃO VALIDADO EM HARDWARE.**
+> [Auditoria 230](docs/230_AUDITORIA_ESTADO_WDDM_2026-09-09.md) · [Conferência 231](docs/231_CONFERENCIA_CORRIDA_21-20_2026-09-09.md).
+>
+> **09/09 20:56:55 (P0) — Corrida 3.121.1.0 (BugCheck 0x119 no dxgmms2 e Cursor de Paginação):**
+> O ensaio físico sofreu BugCheck 0x119 (`Arg1=2, Arg2=0xC0000185`) no `dxgmms2` durante operação de paginação do VidMm.
+> **Causa raiz:** o dxgkrnl gerou um IB de paginação com salto inicial de cursor de 32 bytes além da base física da alocação. A verificação `IB_PA_MATCH` comparava estritamente `AllocBase` com `IbPhysicalAddress`, ignorando o offset interno do cursor, gerando um falso mismatch. A tentativa de fallback leu endereço desatualizado/lixo, corrompendo a paginação e derrubando o VidMm.
+> **Correção offline:** implementado `Bc250PagingConsumeIbCpuPhysical` para consumir paginação via CPU física direta quando aplicável, com ajuste de offset de cursor na validação de `IB_PA_MATCH`.
+>
+> **09/09 19:56:09 (P0) — Corrida 3.119.1.0 (Nó 1 PM4 e Tripé UMD Fechados no Silício):**
+> O harness `B7_UMD_NODE1_TRIPOD` submeteu IB sob VMID 9 pelo WDDM Winsys nativo da UMD.
+> O Command Processor (MEC2/CPF) buscou o anel sem stalls de RCIU (`CpcStalled=0`), drenou completamente o anel (`RPTR==WPTR==12`), sinalizou a fence monitorada (`3156545281` / `0xBC250F01`) e gravou na VRAM os 5 canários de dados: `Values=BC250C01,BC250C02,BC250C03,BC250C04,BC250C05` (`hr=0x00000000`).
+> **Ressalva de escopo auditada (doc 230):** o IB continha comandos PM4 `WRITE_DATA` e `RELEASE_MEM`; **não houve dispatch de shader** (`DISPATCH_DIRECT`) nem compilação de código de shader pela rota UMD/WDDM. Comandos PM4 e efeito em memória pelo Nó 1 estão **VALIDADOS EM HARDWARE**; shader compilado/dispatch na UMD permanece **NÃO VALIDADO EM HARDWARE**.
+> No Nó 0 (SDMA), 33 submissões foram aceitas, e a corrida anterior das 19:48 eliminou o 0x119 no fill de 11 MB da primária (`TRIPE_PROVADO` com 5 canários em 128 polls).
 > A tela permaneceu preta porque o DWM exige backend D3D10/11 na UMD (que ainda retorna `E_NOTIMPL`).
-> 74 s após o fim do teste, o watchdog de confirmação visual expirou e executou rollback forçado via `pnputil /uninstall /force`,
-> o que gerou BugCheck 0x119 no `dxgmms2` por remoção surpresa do driver com VSYNC ativo.
-> O fusível anti-boot-loop funcionou perfeitamente no reboot (`State=2 TRIPPED`), impedindo boot loop.
-> **Tripé do Nó 1 VALIDADO EM HARDWARE; Frente 1 CONCLUÍDA; Próximo bloqueador: Frente 2 (D3D10/11 UMD).**
-> [Handoff 229](docs/229_HANDOFF_2026-09-09_NODE1_COMPUTE_FECHADO_NO_SILICIO.md).
+> 74 s após o fim do teste, o watchdog de confirmação visual expirou e executou rollback forçado via `pnputil /uninstall /force`, gerando BugCheck 0x119 no `dxgmms2` por remoção surpresa do driver com VSYNC ativo. O fusível anti-boot-loop funcionou perfeitamente no reboot (`State=2 TRIPPED`), impedindo boot loop.
+> **Tripé do Nó 1 (PM4 WRITE_DATA/RELEASE_MEM) VALIDADO EM HARDWARE; Próximo bloqueador: Frente 2 (D3D10/11 UMD com rasterizador real).**
+> [Handoff 229](docs/229_HANDOFF_2026-09-09_NODE1_COMPUTE_FECHADO_NO_SILICIO.md) · [Auditoria 230](docs/230_AUDITORIA_ESTADO_WDDM_2026-09-09.md).
 
 > **09/09 18:25:22 (P0) — Corrida 3.117.1.0:** o silício registrou grande avanço microarquitetural:
 > `WPTR` avançou de 0 para 12, doorbell kick funcionou (`QUEUE_IDLE: 1 -> 0`), e o Command Processor
@@ -474,6 +485,40 @@ já produziram resultado, em 06/09:
 **Legenda de estado:** ✅ validado no silício · 🧪 provado só offline · 🟡 parcial ·
 ⛔ bloqueado · ⬜ não iniciado · 🧹 dívida a remover · ❌ reprovado/encerrado
 **`#`** = numeração histórica do checklist, preservada para rastreabilidade.
+
+---
+
+## 📋 Diretrizes Universais de Auditoria, Mineração de Prova e Higiene Operacional (09/09/2026)
+
+> Normas mandatórias derivadas da auditoria offline e conferência das corridas de 09/09 ([docs/230](docs/230_AUDITORIA_ESTADO_WDDM_2026-09-09.md) e [docs/231](docs/231_CONFERENCIA_CORRIDA_21-20_2026-09-09.md)), obrigatórias para qualquer agente ou humano operando neste repositório.
+
+1. **Fatiamento Obrigatório de Log Acumulado (`display-log-baseline.json` e `start_offset`):**
+   - O arquivo `C:\BC250_DISPLAY_LOG.txt` é estritamente acumulativo (append-only) e cresce a cada bind (ultrapassando 7 MB em 09/09).
+   - É terminantemente **PROIBIDO** minerar ou contar ocorrências no log integral para avaliar o resultado de uma corrida específica.
+   - Toda análise deve ler `display-log-baseline.json`, extrair `start_offset` e fatiar o arquivo a partir desse marco em bytes (ou utilizar ferramentas automatizadas que respeitem o baseline).
+   - Distinguir rigorosamente: linhas de log emitidas ≠ chamadas de DDI recebidas ≠ submissões aceitas ≠ operações fisicamente concluídas no silício. O último `FenceId` não afere contagem de submissões consecutivas comprovadas.
+
+2. **Semântica Estrita de Telemetria de Interrupções:**
+   - Ocorrências de `[ControlInterrupt] VSYNC Enable=0/1` são chamadas do sistema operacional solicitando habilitar ou desabilitar o VSync. Elas **NÃO** representam pulsos físicos de VBlank recebidos ou tratados pelo controlador OTG.
+   - Contagens de interrupções físicas devem ser derivadas exclusivamente de medições de VBlank registradas pelo hardware ou pelo DPC real de VSync.
+
+3. **Escopo Real de Prova do Nó 1 (Compute MEC):**
+   - O teste de harness `B7_UMD_NODE1_TRIPOD` provou submissão PM4 com `WRITE_DATA` e `RELEASE_MEM` sob VMID 9 e atualização de memória física.
+   - Isso **NÃO** demonstra dispatch de shader gráfico ou de compute (`DISPATCH_DIRECT`), nem prova existência de compilador DXBC/SPIR-V funcional pela rota UMD/WDDM.
+   - É expressamente proibido registrar a expressão "executou o shader" sem prova de dispatch real no silício.
+   - A cerca monitorada de usuário (`0xBC250F01`) é distinta da cerca interna de retirement do scheduler (`18`); conclusão de fence do usuário não prova retirement pelo scheduler.
+
+4. **Higiene e Segurança de Scripts de Rollback e Ferramentas:**
+   - Scripts de rollback (`tools/rollback-bc250mcdm-lab.ps1`) devem exigir explicitamente `-Execute` e `-IAcceptDisplayInterruptionRisk` para efetuar alterações de estado de hardware ou PnP. Chamadas sem parâmetros devem operar exclusivamente em modo de visualização (dry-run).
+   - É proibido utilizar switches inexistentes no sistema operacional alvo (ex.: `pnputil /disable-device /force` só existe no Windows 11 22H2+; a máquina alvo é Windows 10 Pro 22H2 build 19045).
+   - O código de saída (`$LASTEXITCODE` / `$?`) do `pnputil` e demais comandos deve ser verificado após cada invocação.
+
+5. **Honestidade e Princípio Fail-Closed na UMD Gráfica:**
+   - É proibido retornar falso sucesso (`S_OK`) para DDIs DXGI ou D3D10/11 cujas operações não sejam efetivamente executadas pela GPU (ex.: `Present` sem callback, `Blt` sem hardware blt).
+   - O Type 130 (`3DPIPELINESUPPORT`) na UMD deve retornar `E_NOTIMPL` fail-closed enquanto `BC250_D3D10_11_NATIVE_READY == 0`. Anunciar níveis D3D10/11 sem backend rasterizador e sem shader dispatch viola a Lei 4 e causa falhas com fail-fast no DWM.
+
+6. **Reciclagem e Gestão Limpa de Recursos do KMD:**
+   - Tabelas de objetos internos (Contexts, Allocations, Processes) devem implementar limites adequados (4096) e reciclagem de slots mortos (`State == DEAD`, `ChildCount == 0`, `InFlightSubmissions == 0`) para impedir exaustão determinística (`STATUS_INSUFFICIENT_RESOURCES` / `0xC000009A`) durante alta rotatividade de processos (ex.: DWM respawn).
 
 ---
 
@@ -1232,7 +1277,7 @@ enquanto detém o display**. Ligá-lo é decisão do dono do projeto, não passo
 | B4 | **Submissão no Node 1 (compute) originada pelo `dxgkrnl`.** ✅ **DOIS BLOQUEIOS REMOVIDOS OFFLINE EM 07/09:** a recusa era **muda** (`STATUS_NOT_SUPPORTED` sem log, por isso "zero submits" não distinguia recusa nossa de ausência de submissão) e o gate **não podia abrir** no pacote de produção — `GpuvaLabPromotion` era lido só no `#else` de bring-up. Agora a recusa publica o `BlockMask` decodificado e o tunable é lido em produção, com default 0. O caminho após o gate já existe completo (snapshot fixado, cobertura sem gaps, reserva de fence, anel MEC) | É o que o `vkCreateDevice`/`vkQueueSubmit` exige. Hoje o KMD recebe 2 contextos Node 1 e **zero** submits | 0 submits Node 1; gate legível | Submissão do scheduler aposentada fisicamente no Node 1, com tripé |
 | B5 | **Residency (`MakeResident` / `Evict`)** — item 39 | O modelo WDDM 2.0 põe a residência sob responsabilidade do UMD; RADV vai exercer isso | não iniciado | Accounting conferido, sem leak, sob carga |
 | B6 | **TDR — item 25.** Gate de saída da P6, não negociável. ✅ **BACKEND DAS DUAS DDIs FEITO OFFLINE EM 07/09:** `ResetFromTimeout` faz quiesce físico e `RestartFromTimeout` rearma **com prova de fence**; antes as duas devolviam `STATUS_SUCCESS` sem tocar no silício, e o teste exigia isso. Falta a corrida com hang induzido, e ela é o item | Sem TDR, cada bug de shader é reboot. `timeout-detection-and-recovery.md`: timeout default de 2 s, `0x117`/`0x141`/`0x142` | não iniciado | Hang induzido → detectado → engine resetada → adaptador volta a aceitar submissão → **display sobrevive** |
-| B7 | **P7 completa: UMD/Vulkan/RADV.** Em 08/09, offline, a UMD ganhou transação Node 1 completa e acionador físico default-off: destino residente, cinco poisons pré-submit, command buffer por `Lock/Unlock`, `WRITE_DATA` + `RELEASE_MEM`, fence exata, readback byte a byte e teardown. A autorização exige registro + nome exato do harness + token 128-bit no ambiente, é single-shot e sempre termina o device D3D com `E_NOTIMPL`; DWM não pode disparar. O runner exige UMD instalada com o hash assinado do manifesto, watchdog da mesma instância, prazo restante, Código 0 e telemetria KMD; o filho tem timeout de 30 s. `Draw*` rejeita e o gate D3D segue 0. O candidato lab 3.90.1 foi construído, assinado e auditado com `Node1TripodDefaultArmed=false` e `D3D10_11NativeReady=false`; o binder chama o ensaio automaticamente e proíbe misturá-lo com RADV. Não foi instalado. O preflight atual está bloqueado corretamente por `CLEAN_BOOT_REQUIRED` do rollback no boot corrente. | É a maior fase do projeto em linhas de código, e só começa depois de B1–B6 | transação + acionador + coletor + candidato + bind protegido integrados offline; **NÃO VALIDADO EM HARDWARE** | Após boot frio e dry-run elevado, por decisão do dono instalar/bindar e executar no máximo uma vez `B7_UMD_NODE1_TRIPOD`: RPTR/WPTR, fence sobre poison e cinco canários byte a byte em `docs/evidence/<data>_B7_UMD_NODE1_TRIPOD/`. `vulkaninfo` listar a placa **não** é prova |
+| B7 | **P7 completa: UMD/Vulkan/RADV.** Em 08/09, offline, a UMD ganhou transação Node 1 completa e acionador físico default-off: destino residente, cinco poisons pré-submit, command buffer por `Lock/Unlock`, `WRITE_DATA` + `RELEASE_MEM`, fence exata, readback byte a byte e teardown. Em 09/09 19:56:09, o harness `B7_UMD_NODE1_TRIPOD` executou no silício: `RPTR==WPTR==12`, fence monitorada `0xBC250F01` e cinco canários gravados via PM4 sob VMID 9. **Ressalva auditada (doc 230):** comprovou comandos PM4 e efeito em memória, mas **não houve dispatch de shader** (`DISPATCH_DIRECT`) nem compilação de código de shader pela rota UMD/WDDM. A UMD gráfica e o RADV seguem sem pipeline de render implementado. | É a maior fase do projeto em linhas de código, e só começa depois de B1–B6 | PM4 WRITE_DATA/RELEASE_MEM sob VMID9 **VALIDADO NO SILÍCIO**; pipeline de shader/Draw e Vulkan/RADV **NÃO VALIDADO EM HARDWARE** | Backend de tradução DXBC→SPIR-V→ACO funcional + winsys WDDM emitindo PM4 de render com sucesso |
 
 ### Ordem, e por que essa
 

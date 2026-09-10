@@ -3,7 +3,7 @@ Signature="$Windows NT$"
 Class=Display
 ClassGuid={4d36e968-e325-11ce-bfc1-08002be10318}
 Provider=%ProviderName%
-DriverVer=09/08/2026,3.90.0.0
+DriverVer=09/09/2026,3.122.0.0
 CatalogFile=bc250mcdm.cat
 PnpLockdown=1
 
@@ -82,7 +82,7 @@ HKR,Parameters,GpuvaLabPromotion,0x00010001,0
 ; a precedencia dos caminhos PLANO A, que reimplementam a operacao no anel e
 ; NAO leem o DMA buffer; serve apenas para bisseccao. Alteracao por registro
 ; so vale no proximo StartDevice; nao altera o bind corrente.
-HKR,Parameters,SdmaPlanoAFallback,0x00010001,0
+HKR,Parameters,SdmaPlanoAFallback,0x00010003,0
 ; item 25 (07/09): 1 arma UM hang de proposito no Node 0 (POLL_REGMEM que nunca
 ; satisfaz) e NAO notifica completion, para que o timeout de 2 s do dxgkrnl dispare
 ; o TDR e a cadeia deteccao -> reset -> readmissao -> display possa ser medida.

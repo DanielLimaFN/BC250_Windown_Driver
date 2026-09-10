@@ -477,6 +477,33 @@ static uint32_t Bc250PagingFloorPow2Dwords(uint32_t Dwords)
  * na menor divergencia, devolve 0 para o executor derivar do tamanho. E
  * destrutiva: uma segunda submissao sem novo encode nao reaproveita o valor.
  */
+/* Keyed by exact physical IB start and published length. A cache miss loses
+ * diagnostics only; never borrow another queued buffer's destination. */
+#define BC250_PAGING_PROOF_SLOTS 256u
+static BC250_PAGING_PROOF g_Bc250PagingProofs[BC250_PAGING_PROOF_SLOTS];
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+static KSPIN_LOCK g_Bc250PagingProofLock;
+#endif
+BOOLEAN Bc250PagingTakeProof(UINT64 Physical, ULONG Bytes, BC250_PAGING_PROOF *Proof)
+{
+    uint32_t slot = (uint32_t)((Physical >> 5) % BC250_PAGING_PROOF_SLOTS);
+    BOOLEAN match;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KIRQL irql;
+    KeAcquireSpinLock(&g_Bc250PagingProofLock, &irql);
+#endif
+    match = Bc250PagingProofMatches(&g_Bc250PagingProofs[slot], Physical, Bytes) ? TRUE : FALSE;
+    RtlZeroMemory(Proof, sizeof(*Proof));
+    if (match) {
+        *Proof = g_Bc250PagingProofs[slot];
+        RtlZeroMemory(&g_Bc250PagingProofs[slot], sizeof(*Proof));
+    }
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeReleaseSpinLock(&g_Bc250PagingProofLock, irql);
+#endif
+    return match;
+}
+
 static volatile LONG g_Bc250PagingIbUsefulDwords = 0;
 static volatile LONG g_Bc250PagingIbPublishedDwords = 0;
 
@@ -609,6 +636,14 @@ static void Bc250PagingAppendIbAlignmentNops(
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
     {
         PHYSICAL_ADDRESS ibPhysical = MmGetPhysicalAddress((PVOID)DmaBuffer);
+        BC250_PAGING_PROOF proof;
+        uint32_t slot = (uint32_t)(((UINT64)ibPhysical.QuadPart >> 5) % BC250_PAGING_PROOF_SLOTS);
+        KIRQL proofIrql;
+        RtlZeroMemory(&proof, sizeof(proof));
+        (void)Bc250PagingDecodeProof(DmaBuffer, *Cursor, (UINT64)ibPhysical.QuadPart, &proof);
+        KeAcquireSpinLock(&g_Bc250PagingProofLock, &proofIrql);
+        g_Bc250PagingProofs[slot] = proof;
+        KeReleaseSpinLock(&g_Bc250PagingProofLock, proofIrql);
         InterlockedExchange64(&g_Bc250PagingIbCpuPhysical,
             (LONG64)ibPhysical.QuadPart);
         Bc250DisplayLog("[%s] IB_CPU_PHYS: VA=%p -> PA=0x%llX\n",
@@ -2363,7 +2398,7 @@ NTSTATUS APIENTRY Bc250McdmQueryEngineStatus(
     }
     {
         UINT32 responsive = 0u;
-        if (!g_Bc250EngineResponsiveProbe(&responsive)) {
+        if (!g_Bc250EngineResponsiveProbe(pQueryEngineStatus->NodeOrdinal, &responsive)) {
             pQueryEngineStatus->EngineStatus.Responsive = 0;
             return STATUS_DEVICE_NOT_READY;
         }
@@ -2944,6 +2979,11 @@ NTSTATUS APIENTRY Bc250McdmPowerRuntimeControlRequest(
 NTSTATUS Bc250McdmPopulateRequiredCallbacks(
     DRIVER_INITIALIZATION_DATA *InitializationData)
 {
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeInitializeSpinLock(&g_Bc250PagingProofLock);
+#endif
+    RtlZeroMemory(g_Bc250PagingProofs, sizeof(g_Bc250PagingProofs));
+
     if (InitializationData == NULL) return STATUS_INVALID_PARAMETER;
     InitializationData->DxgkDdiBuildPagingBuffer =
         Bc250McdmBuildPagingBuffer;

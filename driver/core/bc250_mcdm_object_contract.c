@@ -9,18 +9,45 @@ static uint32_t Bc250McdmNextGeneration(BC250_MCDM_OBJECT_REGISTRY *Registry)
     return Registry->NextGeneration;
 }
 
+static inline BC250_MCDM_HANDLE Bc250McdmMakeHandle(uint32_t Slot, uint32_t Generation)
+{
+#if defined(_WIN64) || defined(__x86_64__) || defined(_M_X64)
+    return (BC250_MCDM_HANDLE)(((uintptr_t)Generation << 32) | (uintptr_t)(Slot + 1u));
+#else
+    return (BC250_MCDM_HANDLE)(((uintptr_t)(Generation & 0xFFFFu) << 16) | (uintptr_t)((Slot + 1u) & 0xFFFFu));
+#endif
+}
+
 static BC250_MCDM_OBJECT_RECORD *Bc250McdmFindObject(
     BC250_MCDM_OBJECT_REGISTRY *Registry,
     BC250_MCDM_HANDLE Handle)
 {
-    uint32_t index;
+    uint32_t slot;
+    uint32_t gen;
+    BC250_MCDM_OBJECT_RECORD *record;
 
     if (Registry == NULL || Handle == NULL) return NULL;
-    for (index = 0u; index < Registry->NextSlot; ++index) {
-        if (Handle == (BC250_MCDM_HANDLE)&Registry->Objects[index]) {
-            return &Registry->Objects[index];
+
+#if defined(_WIN64) || defined(__x86_64__) || defined(_M_X64)
+    slot = (uint32_t)((uintptr_t)Handle & 0xFFFFFFFFu);
+    gen = (uint32_t)((uintptr_t)Handle >> 32);
+#else
+    slot = (uint32_t)((uintptr_t)Handle & 0xFFFFu);
+    gen = (uint32_t)((uintptr_t)Handle >> 16);
+#endif
+
+    if (slot > 0u && slot <= Registry->NextSlot) {
+        record = &Registry->Objects[slot - 1u];
+        if (record->Signature == BC250_MCDM_OBJECT_LIVE_SIGNATURE ||
+            record->Signature == BC250_MCDM_OBJECT_DEAD_SIGNATURE) {
+#if defined(_WIN64) || defined(__x86_64__) || defined(_M_X64)
+            if (record->Generation == gen) return record;
+#else
+            if ((record->Generation & 0xFFFFu) == (gen & 0xFFFFu)) return record;
+#endif
         }
     }
+
     return NULL;
 }
 
@@ -28,14 +55,32 @@ static const BC250_MCDM_OBJECT_RECORD *Bc250McdmFindObjectConst(
     const BC250_MCDM_OBJECT_REGISTRY *Registry,
     BC250_MCDM_HANDLE Handle)
 {
-    uint32_t index;
+    uint32_t slot;
+    uint32_t gen;
+    const BC250_MCDM_OBJECT_RECORD *record;
 
     if (Registry == NULL || Handle == NULL) return NULL;
-    for (index = 0u; index < Registry->NextSlot; ++index) {
-        if (Handle == (BC250_MCDM_HANDLE)&Registry->Objects[index]) {
-            return &Registry->Objects[index];
+
+#if defined(_WIN64) || defined(__x86_64__) || defined(_M_X64)
+    slot = (uint32_t)((uintptr_t)Handle & 0xFFFFFFFFu);
+    gen = (uint32_t)((uintptr_t)Handle >> 32);
+#else
+    slot = (uint32_t)((uintptr_t)Handle & 0xFFFFu);
+    gen = (uint32_t)((uintptr_t)Handle >> 16);
+#endif
+
+    if (slot > 0u && slot <= Registry->NextSlot) {
+        record = &Registry->Objects[slot - 1u];
+        if (record->Signature == BC250_MCDM_OBJECT_LIVE_SIGNATURE ||
+            record->Signature == BC250_MCDM_OBJECT_DEAD_SIGNATURE) {
+#if defined(_WIN64) || defined(__x86_64__) || defined(_M_X64)
+            if (record->Generation == gen) return record;
+#else
+            if ((record->Generation & 0xFFFFu) == (gen & 0xFFFFu)) return record;
+#endif
         }
     }
+
     return NULL;
 }
 
@@ -109,10 +154,26 @@ static BC250_MCDM_OBJECT_STATUS Bc250McdmAllocateRecord(
     if (Registry->Teardown != 0u) {
         return BC250_MCDM_OBJECT_IN_TEARDOWN;
     }
-    if (Registry->NextSlot >= BC250_MCDM_MAX_OBJECTS) {
-        return BC250_MCDM_OBJECT_NO_SPACE;
+    uint32_t slotIndex = 0u;
+    if (Registry->NextSlot < BC250_MCDM_MAX_OBJECTS) {
+        slotIndex = Registry->NextSlot++;
+        record = &Registry->Objects[slotIndex];
+    } else {
+        uint32_t i;
+        record = NULL;
+        for (i = 0u; i < Registry->NextSlot; ++i) {
+            if (Registry->Objects[i].State == (uint32_t)BC250_MCDM_OBJECT_STATE_DEAD &&
+                Registry->Objects[i].ChildCount == 0u &&
+                Registry->Objects[i].InFlightSubmissions == 0) {
+                record = &Registry->Objects[i];
+                slotIndex = i;
+                break;
+            }
+        }
+        if (record == NULL) {
+            return BC250_MCDM_OBJECT_NO_SPACE;
+        }
     }
-    record = &Registry->Objects[Registry->NextSlot++];
 
     memset(record, 0, sizeof(*record));
     record->Signature = BC250_MCDM_OBJECT_LIVE_SIGNATURE;
@@ -123,7 +184,7 @@ static BC250_MCDM_OBJECT_STATUS Bc250McdmAllocateRecord(
     record->OwnerProcess = OwnerProcess;
     record->Parent = Parent;
     ++Registry->LiveCount;
-    *Handle = (BC250_MCDM_HANDLE)record;
+    *Handle = Bc250McdmMakeHandle(slotIndex, record->Generation);
     return BC250_MCDM_OBJECT_OK;
 }
 
@@ -496,7 +557,7 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectFindAllocationByToken(
         if (record->Signature == BC250_MCDM_OBJECT_LIVE_SIGNATURE &&
             record->Type == BC250_MCDM_OBJECT_ALLOCATION &&
             record->AllocationToken == AllocationToken) {
-            *Handle = (BC250_MCDM_HANDLE)record;
+            *Handle = Bc250McdmMakeHandle(index, record->Generation);
             return BC250_MCDM_OBJECT_OK;
         }
     }

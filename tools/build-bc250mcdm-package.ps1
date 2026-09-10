@@ -257,12 +257,12 @@ $driverVersionLine = $packageInfLines |
 # aqui criaria a segunda fonte de verdade que ja mordeu este projeto na
 # geometria de GPUVA (faixa A11). Sai do INF empacotado, ou o pacote e recusado.
 $planoAFallbackLine = $packageInfLines |
-    Where-Object { $_ -match '^HKR,Parameters,SdmaPlanoAFallback,0x00010001,(\d+)$' } |
+    Where-Object { $_ -match '^HKR,Parameters,SdmaPlanoAFallback,0x000100(?:01|03),(\d+)$' } |
     Select-Object -First 1
 if (-not $planoAFallbackLine) {
     throw 'Pacote bloqueado: INF sem HKR,Parameters,SdmaPlanoAFallback -- o manifesto nao pode declarar o modo de submissao.'
 }
-$planoAFallbackLine -match '^HKR,Parameters,SdmaPlanoAFallback,0x00010001,(\d+)$' | Out-Null
+$planoAFallbackLine -match '^HKR,Parameters,SdmaPlanoAFallback,0x000100(?:01|03),(\d+)$' | Out-Null
 $planoAFallbackValue = [int]$Matches[1]
 # item 25: o manifesto tambem declara se o pacote arma hang de proposito. Sai do
 # INF empacotado pelo mesmo motivo do PLANO A -- nao pode haver segunda fonte de

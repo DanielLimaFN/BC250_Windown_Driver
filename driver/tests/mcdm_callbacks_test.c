@@ -188,21 +188,24 @@ static VOID Bc250TestDpcHandler(
     g_dpcExecutionCount++;
 }
 
-static BOOLEAN TestProbeAlive(UINT32 *IsResponsive)
+static BOOLEAN TestProbeHung(UINT32 NodeOrdinal, UINT32 *IsResponsive)
 {
-    *IsResponsive = 1u;
-    return TRUE;
-}
-
-static BOOLEAN TestProbeHung(UINT32 *IsResponsive)
-{
+    (void)NodeOrdinal;
     *IsResponsive = 0u;
     return TRUE;
 }
 
-/* Nao conseguiu medir: "nao sei" nao pode virar "esta viva". */
-static BOOLEAN TestProbeCannotMeasure(UINT32 *IsResponsive)
+static BOOLEAN TestProbeAlive(UINT32 NodeOrdinal, UINT32 *IsResponsive)
 {
+    (void)NodeOrdinal;
+    *IsResponsive = 1u;
+    return TRUE;
+}
+
+/* Nao conseguiu medir: "nao sei" nao pode virar "esta viva". */
+static BOOLEAN TestProbeCannotMeasure(UINT32 NodeOrdinal, UINT32 *IsResponsive)
+{
+    (void)NodeOrdinal;
     *IsResponsive = 1u;   /* mesmo escrevendo 1, a DDI tem de zerar */
     return FALSE;
 }
@@ -889,6 +892,9 @@ static int Bc250RunMcdmCallbacksTest(void)
     CHECK(g_engineStatus.EngineStatus.Responsive == 0);
 
     Bc250McdmInstallEngineResponsiveProbe(TestProbeAlive);
+    CHECK(Bc250McdmQueryEngineStatus((HANDLE)0x250, &g_engineStatus) == STATUS_SUCCESS);
+    CHECK(g_engineStatus.EngineStatus.Responsive == 1);
+    g_engineStatus.NodeOrdinal = 1u;
     CHECK(Bc250McdmQueryEngineStatus((HANDLE)0x250, &g_engineStatus) == STATUS_SUCCESS);
     CHECK(g_engineStatus.EngineStatus.Responsive == 1);
 

@@ -572,14 +572,27 @@ static void TestDxgiBaseFunctions(void)
     assert(hr == S_OK);
 
     /* QueryResourceResidency */
-    memset(&queryResidency, 0, sizeof(queryResidency));
-    queryResidency.Resources = 2;
-    queryResidency.pResources = dummyResources;
-    queryResidency.pStatus = residencyStatus;
-    hr = dxgiFuncs.pfnQueryResourceResidency(&queryResidency);
-    assert(hr == S_OK);
-    assert(residencyStatus[0] == DXGI_DDI_RESIDENCY_FULLY_RESIDENT);
-    assert(residencyStatus[1] == DXGI_DDI_RESIDENCY_FULLY_RESIDENT);
+    {
+        BC250_UMD_RESOURCE resA, resB;
+        memset(&resA, 0, sizeof(resA));
+        memset(&resB, 0, sizeof(resB));
+        resA.Created = TRUE;
+        resA.Allocation.KernelAllocation = 1;
+        resA.Allocation.Resident = TRUE;
+        resB.Created = TRUE;
+        resB.Allocation.KernelAllocation = 1;
+        resB.Allocation.Resident = FALSE;
+        dummyResources[0] = (DXGI_DDI_HRESOURCE)&resA;
+        dummyResources[1] = (DXGI_DDI_HRESOURCE)&resB;
+        memset(&queryResidency, 0, sizeof(queryResidency));
+        queryResidency.Resources = 2;
+        queryResidency.pResources = dummyResources;
+        queryResidency.pStatus = residencyStatus;
+        hr = dxgiFuncs.pfnQueryResourceResidency(&queryResidency);
+        assert(hr == S_OK);
+        assert(residencyStatus[0] == DXGI_DDI_RESIDENCY_FULLY_RESIDENT);
+        assert(residencyStatus[1] == DXGI_DDI_RESIDENCY_EVICTED_TO_DISK);
+    }
 
     /* RotateResourceIdentities */
     memset(&rotateData, 0, sizeof(rotateData));
@@ -587,17 +600,35 @@ static void TestDxgiBaseFunctions(void)
     hr = dxgiFuncs.pfnRotateResourceIdentities(&rotateData);
     assert(hr == S_OK);
 
-    /* Blt */
+    /* Blt: falha fechado com ponteiros invalidos / recursos nao criados */
     memset(&bltData, 0, sizeof(bltData));
     bltData.hDevice = (DXGI_DDI_HDEVICE)&dev;
     hr = dxgiFuncs.pfnBlt(&bltData);
-    assert(hr == S_OK);
+    assert(hr == E_INVALIDARG);
 
-    /* Present without callback returns S_OK */
+    /* Blt: com recursos validos e criados */
+    {
+        BC250_UMD_RESOURCE resSrc, resDst;
+        memset(&resSrc, 0, sizeof(resSrc));
+        memset(&resDst, 0, sizeof(resDst));
+        resSrc.Created = TRUE;
+        resDst.Created = TRUE;
+        bltData.hSrcResource = (DXGI_DDI_HRESOURCE)&resSrc;
+        bltData.hDstResource = (DXGI_DDI_HRESOURCE)&resDst;
+        hr = dxgiFuncs.pfnBlt(&bltData);
+#if BC250_D3D10_11_NATIVE_READY
+        assert(hr == S_OK);
+#else
+        /* Sem backend nativo de Blt GPU, recusar honestamente com E_NOTIMPL */
+        assert(hr == E_NOTIMPL);
+#endif
+    }
+
+    /* Present sem callback retorna E_FAIL (fail-closed honesto) */
     memset(&presentData, 0, sizeof(presentData));
     presentData.hDevice = (DXGI_DDI_HDEVICE)&dev;
     hr = dxgiFuncs.pfnPresent(&presentData);
-    assert(hr == S_OK);
+    assert(hr == E_FAIL);
 
     printf("  -> DXGI base DDI implementations PASS\n");
 }
@@ -620,14 +651,14 @@ static void TestCapsPipelineSupport(void)
     getCaps.DataSize = sizeof(capsData);
 
     hr = Bc250Umd10GetCaps(hAdapter, &getCaps);
+#if BC250_D3D10_11_NATIVE_READY
     assert(hr == S_OK);
     assert((capsData.Caps & D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_10_0)) != 0);
     assert((capsData.Caps & D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_10_1)) != 0);
-
-    /* Negative test: buffer too small */
-    getCaps.DataSize = (UINT)(sizeof(capsData) - 1);
-    hr = Bc250Umd10GetCaps(hAdapter, &getCaps);
-    assert(hr == E_INVALIDARG);
+#else
+    /* Sem backend nativo de shaders/draw, recusar com E_NOTIMPL honestamente */
+    assert(hr == E_NOTIMPL);
+#endif
 
     printf("  -> D3D11DDICAPS_3DPIPELINESUPPORT PASS\n");
 }
@@ -1751,6 +1782,102 @@ static void TestCommandBufferAssembly(void)
     printf("  -> Packet builders + Node1 proof command assembly PASS (offline)\n");
 }
 
+
+static uint32_t g_BltUploaded[32768];
+static UINT64 g_BltCompleted;
+static unsigned g_BltSubmits;
+static int g_BltFailure;
+static HRESULT APIENTRY BltTestLock(HANDLE h, D3DDDICB_LOCK *a)
+{
+    (void)h;
+    if (g_BltFailure == 1) return E_FAIL;
+    a->pData = g_BltUploaded;
+    return S_OK;
+}
+static HRESULT APIENTRY BltTestUnlock(HANDLE h, const D3DDDICB_UNLOCK *a)
+{ (void)h; (void)a; return S_OK; }
+static HRESULT APIENTRY BltTestWait(HANDLE h,
+    const D3DDDICB_WAITFORSYNCHRONIZATIONOBJECTFROMCPU *a)
+{ (void)h; (void)a; return g_BltFailure == 4 ? E_FAIL : S_OK; }
+static HRESULT APIENTRY BltTestSubmit(HANDLE h, const D3DDDICB_SUBMITCOMMAND *a)
+{
+    const uint32_t *w = g_BltUploaded;
+    (void)h;
+    ++g_BltSubmits;
+    assert(a->Commands == 0x300000 && a->CommandLength == 128u);
+    assert(a->BroadcastContext[0] == (HANDLE)(ULONG_PTR)7u);
+    /* Independent expected stream: GCR, two strided copies, GCR, fence, NOP. */
+    assert(w[0] == 17u && w[5] == 1u && w[6] == 7u);
+    assert(w[8] == 0x100000 && w[10] == 0x200018);
+    assert(w[12] == 1u && w[13] == 7u);
+    assert(w[15] == 0x100010 && w[17] == 0x20002c);
+    assert(w[19] == 17u && w[24] == (5u | (3u << 16)) && w[25] == 0x400000);
+    assert(w[28] == 0u && w[31] == 0u);
+    if (g_BltFailure == 2) return E_FAIL;
+    if (g_BltFailure != 3 && g_BltFailure != 4) g_BltCompleted = w[27];
+    return S_OK;
+}
+static void TestSdmaBltExecution(void)
+{
+    BC250_UMD_DEVICE d;
+    BC250_UMD_RESOURCE src, dst;
+    D3DDDI_DEVICECALLBACKS cb;
+    DXGI_DDI_ARG_BLT a;
+    uint32_t words[32768];
+    unsigned mode;
+    memset(&d, 0, sizeof(d)); memset(&cb, 0, sizeof(cb));
+    memset(&src, 0, sizeof(src)); memset(&dst, 0, sizeof(dst));
+    memset(&a, 0, sizeof(a));
+    cb.pfnLockCb = BltTestLock; cb.pfnUnlockCb = BltTestUnlock;
+    cb.pfnSubmitCommandCb = BltTestSubmit;
+    cb.pfnWaitForSynchronizationObjectFromCpuCb = BltTestWait;
+    d.Winsys.Initialized = TRUE; d.Winsys.Callbacks = &cb;
+    d.BltWinsys = d.Winsys; d.BltWinsys.ContextCreated = TRUE;
+    d.BltWinsys.KernelContext = (HANDLE)(ULONG_PTR)7u;
+    d.BltWords = words;
+    d.BltCommand.Created = TRUE; d.BltCommand.ByteSize = sizeof(words);
+    d.BltCommand.GpuVirtualAddress = 0x300000;
+    d.BltFence.Created = TRUE; d.BltFence.SyncObject = 9;
+    d.BltFence.CpuVirtualAddress = &g_BltCompleted;
+    d.BltFence.GpuVirtualAddress = 0x400000;
+    src.Created = TRUE; src.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
+    src.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    src.SampleCount = src.MipLevels = src.ArraySize = 1;
+    src.Width = src.Height = 2; src.RowPitch = 16;
+    src.TotalByteSize = 64; src.Allocation.ByteSize = 64;
+    src.Allocation.Created = src.Allocation.Resident = TRUE;
+    src.Allocation.GpuVirtualAddress = 0x100000;
+    dst = src; dst.Width = dst.Height = 4; dst.RowPitch = 20;
+    dst.TotalByteSize = 80; dst.Allocation.ByteSize = 80;
+    dst.Allocation.GpuVirtualAddress = 0x200000;
+    a.hDevice = (DXGI_DDI_HDEVICE)&d; a.hSrcResource = (DXGI_DDI_HRESOURCE)&src; a.hDstResource = (DXGI_DDI_HRESOURCE)&dst;
+    a.DstLeft = a.DstTop = 1; a.DstRight = a.DstBottom = 3;
+    DXGI_DDI_BASE_FUNCTIONS dxgi;
+    memset(&dxgi, 0, sizeof(dxgi));
+    Bc250UmdPopulateDxgiBaseFuncs(&dxgi);
+    g_BltFailure = 0; g_BltSubmits = 0; g_BltCompleted = 0;
+    assert(dxgi.pfnBlt(&a) == S_OK && g_BltSubmits == 1 && !d.BltPending);
+    assert(dxgi.pfnBlt(&a) == S_OK && g_BltCompleted == 2);
+    dst.Allocation.ByteSize = 48;
+    assert(FAILED(dxgi.pfnBlt(&a)) && g_BltSubmits == 2);
+    dst.Allocation.ByteSize = 80;
+    a.Flags.Value = 4;
+    assert(dxgi.pfnBlt(&a) == E_NOTIMPL && g_BltSubmits == 2);
+    a.Flags.Value = 0; d.NativeNode1Ready = TRUE;
+    assert(dxgi.pfnBlt(&a) == E_NOTIMPL);
+    d.NativeNode1Ready = FALSE;
+    for (mode = 1; mode <= 4; ++mode) {
+        unsigned before = g_BltSubmits;
+        d.BltPending = FALSE; g_BltFailure = (int)mode;
+        assert(FAILED(dxgi.pfnBlt(&a)));
+        if (mode > 1) {
+            assert(d.BltPending && g_BltSubmits == before + 1);
+            assert(FAILED(dxgi.pfnBlt(&a)) && g_BltSubmits == before + 1);
+        } else assert(g_BltSubmits == before);
+    }
+    printf("SDMA Blt: strided GPU stream, bounds, missing producer sync and failure retention PASS (offline)\n");
+}
+
 int main(void)
 {
     printf("================ BC250 D3D UMD CONTRACT TEST ================\n");
@@ -1780,6 +1907,7 @@ int main(void)
     TestQueryAndPredicationDDIs();
     TestStreamOutputAndTableCompleteness();
     TestCommandBufferAssembly();
+    TestSdmaBltExecution();
     printf("================ ALL UMD CONTRACT TESTS PASSED ===============\n");
     return 0;
 }

@@ -71,6 +71,7 @@ typedef struct _BC250_UMD_RESOURCE {
     UINT Width;
     UINT Height;
     UINT Depth;
+    UINT SampleCount;
     UINT RowPitch;
     UINT SlicePitch;
     UINT TotalByteSize;
@@ -316,6 +317,12 @@ typedef struct _BC250_UMD_DEVICE {
     CONST DXGI_DDI_BASE_CALLBACKS* pDXGICallbacks;
     BC250_WINSYS_CONTEXT Winsys;
     BOOL WinsysInitialized;
+    BC250_WINSYS_CONTEXT BltWinsys;
+    BC250_WINSYS_ALLOCATION BltCommand;
+    BC250_WINSYS_MONITORED_FENCE BltFence;
+    uint32_t *BltWords;
+    uint32_t BltSequence;
+    BOOL BltPending;
     BC250_UMD_COMMAND_BUFFER Node0CmdBuffer;
     BC250_UMD_COMMAND_BUFFER Node1CmdBuffer;
     BC250_UMD_PIPELINE_STATE PipelineState;

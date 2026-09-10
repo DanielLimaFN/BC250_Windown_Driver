@@ -91,6 +91,19 @@ BC250_TDR_STATUS Bc250TdrValidateSdmaRestartReadback(
     uint32_t GrbmSoftReset,
     uint32_t SdmaResetMask);
 
+/*
+ * Gate puro para o readback pos-quiesce/restart da fila MEC (Compute Node 1).
+ * Exige fila drenada (ACTIVE=0), sem requisicao de dequeue pendente,
+ * sem erro latchado em HQD_ERROR e sem stall no pipeline do CP.
+ */
+BC250_TDR_STATUS Bc250TdrValidateMecRestartReadback(
+    uint32_t HqdActive,
+    uint32_t HqdRptr,
+    uint32_t HqdWptr,
+    uint32_t DequeueRequest,
+    uint32_t HqdError,
+    uint32_t CpStalled);
+
 const char *Bc250TdrStatusName(BC250_TDR_STATUS Status);
 
 #ifdef __cplusplus
