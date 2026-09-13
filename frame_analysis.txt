@@ -1,0 +1,91 @@
+﻿
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+   EnableRedirectToChakraJsProvider : false
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.016 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 30
+
+Microsoft (R) Windows Debugger Version 10.0.28000.2526 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [C:\Windows\MEMORY.DMP]
+Kernel Bitmap Dump File: Kernel address space is available, User address space may not be available.
+
+Symbol search path is: srv*
+Executable search path is: 
+Windows 10 Kernel Version 19041 MP (12 procs) Free x64
+Product: WinNt, suite: TerminalServer SingleUserTS
+Edition build lab: 19041.1.amd64fre.vb_release.191206-1406
+Kernel base = 0xfffff801`7b200000 PsLoadedModuleList = 0xfffff801`7be2a2b0
+Debug session time: Thu Sep 10 10:23:38.997 2026 (UTC - 3:00)
+System Uptime: 0 days 0:18:56.520
+Loading Kernel Symbols
+...............................................................
+...Page 404d25 not present in the dump file. Type ".hh dbgerr004" for details
+.............................................................
+.....................................
+Loading User Symbols
+
+Loading unloaded module list
+...........
+For analysis of this file, run !analyze -v
+10: kd> cdb: Reading initial command '.frame 2; dv /t /v; .frame 3; dv /t /v; .frame 4; dv /t /v; .frame 5; dv /t /v; kP; q'
+02 ffffc80d`0801c7b0 fffff801`956baf62     dxgmms2!VIDMM_GLOBAL::UpdatePageTable+0xdf2
+Unable to enumerate locals, Win32 error 0n87
+Private symbols (symbols.pri) are required for locals.
+Type ".hh dbgerr005" for details.
+03 ffffc80d`0801ca40 fffff801`956bd7fd     dxgmms2!VIDMM_PAGE_TABLE::UpdatePageTable+0x13a
+04 ffffc80d`0801cb00 fffff801`956bb8ed     dxgmms2!VIDMM_PAGE_TABLE::CommitVirtualAddressRange+0x1e5
+05 ffffc80d`0801cba0 fffff801`956babaa     dxgmms2!VIDMM_PAGE_DIRECTORY::CommitVirtualAddressRange+0x77d
+ # Child-SP          RetAddr               Call Site
+00 ffffc80d`0801c768 fffff801`927b3ad0     nt!KeBugCheckEx
+01 ffffc80d`0801c770 fffff801`956bd392     watchdog!WdLogEvent5_WdCriticalError+0xe0
+02 ffffc80d`0801c7b0 fffff801`956baf62     dxgmms2!VIDMM_GLOBAL::UpdatePageTable+0xdf2
+03 ffffc80d`0801ca40 fffff801`956bd7fd     dxgmms2!VIDMM_PAGE_TABLE::UpdatePageTable+0x13a
+04 ffffc80d`0801cb00 fffff801`956bb8ed     dxgmms2!VIDMM_PAGE_TABLE::CommitVirtualAddressRange+0x1e5
+05 ffffc80d`0801cba0 fffff801`956babaa     dxgmms2!VIDMM_PAGE_DIRECTORY::CommitVirtualAddressRange+0x77d
+06 ffffc80d`0801cd10 fffff801`956bf247     dxgmms2!CVirtualAddressAllocator::CommitVirtualAddressRange+0x2f6
+07 ffffc80d`0801ce90 fffff801`956c9153     dxgmms2!VIDMM_PAGING_PROCESS::MapScratchAreaVaRange+0x163
+08 ffffc80d`0801cf10 fffff801`956c8f7b     dxgmms2!VIDMM_GLOBAL::MemoryTransferUsingGpuVaWorker+0x1ab
+09 ffffc80d`0801d1a0 fffff801`956c8df0     dxgmms2!VIDMM_GLOBAL::MemoryTransferInternal+0x12b
+0a ffffc80d`0801d3a0 fffff801`956c8c99     dxgmms2!VIDMM_GLOBAL::MemoryTransfer+0x88
+0b ffffc80d`0801d410 fffff801`956c8a99     dxgmms2!VIDMM_MEMORY_SEGMENT::TransferMemoryFast+0x1cd
+0c ffffc80d`0801d4b0 fffff801`956adde0     dxgmms2!VIDMM_MEMORY_SEGMENT::TransferMemory+0x6d
+0d ffffc80d`0801d500 fffff801`956ada3d     dxgmms2!VIDMM_MEMORY_SEGMENT::TransferToSegment+0x230
+0e ffffc80d`0801d680 fffff801`956b8020     dxgmms2!VIDMM_MEMORY_SEGMENT::CommitResource+0x5d
+0f ffffc80d`0801d6c0 fffff801`956b6445     dxgmms2!VIDMM_GLOBAL::PageInOneAllocation+0x1d0
+10 ffffc80d`0801d7e0 fffff801`956cc68e     dxgmms2!VIDMM_GLOBAL::ProcessDeferredCommand+0xe25
+11 ffffc80d`0801da00 fffff801`956d6839     dxgmms2!VIDMM_WORKER_THREAD::Run+0xe5e
+12 ffffc80d`0801dbe0 fffff801`7b5265f5     dxgmms2!VidMmWorkerThreadProc+0x9
+13 ffffc80d`0801dc10 fffff801`7b6048d8     nt!PspSystemThreadStartup+0x55
+14 ffffc80d`0801dc60 00000000`00000000     nt!KiStartSystemThread+0x28
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Kernel.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Usb4Kd.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'

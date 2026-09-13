@@ -19,6 +19,130 @@ def forbid(text: str, needle: str, label: str, errors: list[str]) -> None:
         errors.append(f"forbidden {label}: {needle}")
 
 
+def strip_c_comments(text: str) -> str:
+    """Remove comentarios C sem alterar o comprimento util do codigo.
+
+    Existe porque gate que varre o corpo de uma funcao atras de uma construcao
+    proibida reprova o comentario que EXPLICA por que a construcao foi removida.
+    Ja aconteceu com o gate do B3. Strings literais sao preservadas para que
+    require()/forbid() sobre strings de log continuem funcionando.
+    """
+    out = []
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == '"' or ch == "'":
+            quote = ch
+            out.append(ch)
+            i += 1
+            while i < n:
+                out.append(text[i])
+                if text[i] == "\\":
+                    if i + 1 < n:
+                        out.append(text[i + 1])
+                        i += 2
+                        continue
+                elif text[i] == quote:
+                    i += 1
+                    break
+                i += 1
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "*":
+            end = text.find("*/", i + 2)
+            block = text[i:end + 2] if end >= 0 else text[i:]
+            # Preserva as quebras de linha para nao deslocar diagnosticos.
+            out.append("\n" * block.count("\n"))
+            i = (end + 2) if end >= 0 else n
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "/":
+            end = text.find("\n", i)
+            i = end if end >= 0 else n
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def production_only_line_numbers(text: str) -> set:
+    """Linhas que existem SO' na imagem de PRODUCAO.
+
+    Sao as que ficam dentro de "#if !defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)"
+    e ANTES do #else correspondente. A imagem de LABORATORIO -- a que roda todos
+    os ensaios -- define a macro, entao nada dessa faixa e' compilado nela.
+
+    Existe porque essa classe de defeito ja custou QUATRO investigacoes:
+      A13  tunable de submissao lido so' num ramo;
+      B4   GpuvaLabPromotion idem;
+      doc 202  ContextAbi populado so' num ramo (contexto com DmaBuf=0x0);
+      C3.9 Node1JournalGatePerProcess lido so' na producao -- o tunable nunca
+           seria lido justamente na imagem que precisa dele.
+    """
+    marker = "#if !defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)"
+    out = set()
+    stack = []          # (kind, in_production_branch)
+    for idx, raw in enumerate(text.split("\n")):
+        line = raw.strip()
+        if line.startswith("#if"):
+            stack.append(["prod" if line == marker else "other", True])
+            continue
+        if line.startswith("#else") and stack:
+            stack[-1][1] = False
+            continue
+        if line.startswith("#endif"):
+            if stack:
+                stack.pop()
+            continue
+        if any(k == "prod" and branch for k, branch in stack):
+            out.add(idx)
+    return out
+
+
+def require_outside_production_only(text: str, needle: str, label: str,
+                                    errors: list[str]) -> None:
+    """O trecho tem de existir em pelo menos uma linha visivel ao LABORATORIO."""
+    prod_only = production_only_line_numbers(text)
+    hits = [i for i, l in enumerate(text.split("\n")) if needle in l]
+    if not hits:
+        errors.append(f"missing {label}: {needle}")
+        return
+    if all(i in prod_only for i in hits):
+        errors.append(
+            f"{label} existe SO' dentro de "
+            "#if !defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP): a imagem de "
+            "laboratorio -- a que roda os ensaios -- nao compila essa faixa "
+            f"({needle})")
+
+def strip_ps_comments(text: str) -> str:
+    """Remove comentarios PowerShell, preservando a contagem de linhas.
+
+    Mesmo motivo de strip_c_comments: um portao que varre o corpo de um script
+    atras de uma construcao proibida reprova o COMENTARIO que explica por que a
+    construcao foi removida. Ja aconteceu com o gate do B3, com o da C3.1 e de
+    novo com o da C3.10.
+
+    Trata blocos <# ... #> e comentarios de linha '#'. Nao tenta entender aspas
+    com '#' dentro: para os portoes deste arquivo, remover a mais e' seguro --
+    o efeito e' exigir que a construcao proibida esteja em CODIGO de verdade.
+    """
+    out = []
+    i = 0
+    n = len(text)
+    while i < n:
+        if text.startswith("<#", i):
+            end = text.find("#>", i + 2)
+            block = text[i:end + 2] if end >= 0 else text[i:]
+            out.append("\n" * block.count("\n"))
+            i = (end + 2) if end >= 0 else n
+            continue
+        if text[i] == "#":
+            end = text.find("\n", i)
+            i = end if end >= 0 else n
+            continue
+        out.append(text[i])
+        i += 1
+    return "".join(out)
+
 def audit_compute_vmid_isolation(errors: list[str]) -> None:
     active = (ROOT / "driver/wdk/bc250_active_miniport.c").read_text(encoding="utf-8")
     engine = (ROOT / "driver/wdk/bc250_submission_engine.c").read_text(encoding="utf-8")
@@ -173,6 +297,93 @@ def audit_submit_dispatch_level_safety(errors: list[str]) -> None:
                 errors.append(f"{name} executa em DISPATCH_LEVEL mas contem {forbidden} (BugCheck 0xD1)")
 
 
+def audit_sdma_submission_is_asynchronous(errors: list[str]) -> None:
+    active = (ROOT / "driver/wdk/bc250_active_miniport.c").read_text(encoding="utf-8")
+    submit_body = function_body(active, "static NTSTATUS Bc250ActiveSubmitCommandVirtualBody")
+    retire_notify = function_body(active, "static VOID Bc250ActiveSdmaRetireAndNotify")
+    dpc_routine = function_body(active, "static VOID Bc250ActiveSdmaRetirementDpcRoutine")
+
+    if not submit_body:
+        errors.append("Bc250ActiveSubmitCommandVirtualBody nao localizado para auditar submissao assincrona SDMA")
+        return
+
+    # Proibir espera sincrona / stall no caminho de submissao (causa do BugCheck 0x133 DPC_WATCHDOG_VIOLATION)
+    clean_submit = re.sub(r"/\*.*?\*/", "", submit_body, flags=re.S)
+    clean_submit = re.sub(r"//.*$", "", clean_submit, flags=re.M)
+    for forbidden in ("KeStallExecutionProcessor", "KeDelayExecutionThread", "KeWaitForSingleObject", "YieldProcessor"):
+        if forbidden in clean_submit:
+            errors.append(f"SubmitCommandVirtualBody contem {forbidden} (espera sincrona em DISPATCH_LEVEL proibida; risco de 0x133)")
+
+    if re.search(r"while\s*\(\s*g_Bc250SdmaPresent\.InFlightCount", clean_submit):
+        errors.append("SubmitCommandVirtualBody contem laco de espera ativa em InFlightCount (proibido em DISPATCH_LEVEL; risco de 0x133/0x10E)")
+
+    # Proibir chamadas sincronas antigas de submissao direta dentro do corpo de submit
+    for forbidden_sync in ("Bc250SdmaPresentExecuteIndirect", "Bc250SdmaPresentExecuteFill", "Bc250SdmaPresentExecuteSyncNop"):
+        if forbidden_sync in clean_submit:
+            errors.append(f"SubmitCommandVirtualBody chama rotina sincrona legada {forbidden_sync} em vez de despacho assincrono")
+
+    # Exigir despacho assincrono e controle de fila em voo
+    require(submit_body, "KeInsertQueueDpc(&context->SdmaRetirementDpc, NULL, NULL);",
+            "SDMA asynchronous DPC queue insertion", errors)
+    require(submit_body, "if (g_Bc250SdmaPresent.InFlightCount >= BC250_SDMA_IN_FLIGHT_CAPACITY)",
+            "SDMA multi-slot in-flight capacity check before submit", errors)
+    require(submit_body, "Bc250ActiveSdmaRetireAndNotify(context, FALSE);",
+            "SDMA opportunistic retirement polling with FromDpc=FALSE to prevent recursive 0x133 deadlock", errors)
+    require(submit_body, "Bc250SdmaPresentSubmitIndirectAsync(",
+            "SDMA async indirect submission", errors)
+    require(submit_body, "Bc250SdmaPresentSubmitFillAsync(",
+            "SDMA async fill submission", errors)
+    require(submit_body, "Bc250SdmaPresentSubmitSyncNopAsync(",
+            "SDMA async sync nop submission", errors)
+
+    # Exigir rotina de retirement assincrono com verificacao fisica do tripe e notificacao DPC
+    if not retire_notify:
+        errors.append("Bc250ActiveSdmaRetireAndNotify nao localizado")
+    else:
+        require(retire_notify, "Bc250SdmaPresentPollRetirement(&result)",
+                "SDMA poll retirement in retire-and-notify routine", errors)
+        require(retire_notify, "BC250_ACTIVE_FENCE_SYNC_NOTIFY_SDMA",
+                "SDMA fence sync notify action", errors)
+        require(retire_notify, "Context->Core.DxgkInterface.DxgkCbSynchronizeExecution",
+                "DxgkCbSynchronizeExecution invocation on SDMA retirement", errors)
+        require(retire_notify, "if (FromDpc)",
+                "DxgkCbNotifyDpc guarded by FromDpc check to prevent 0x133 deadlock", errors)
+        require(retire_notify, "Context->Core.DxgkInterface.DxgkCbNotifyDpc(",
+                "DxgkCbNotifyDpc invocation on SDMA retirement when FromDpc is TRUE", errors)
+        require(retire_notify, "IB EXECUTADO (INDIRECT)",
+                "canonical IB EXECUTADO (INDIRECT) logging on async retirement", errors)
+        require(retire_notify, "PLANO A CONCLUIDO",
+                "canonical PLANO A CONCLUIDO logging on async retirement", errors)
+        require(retire_notify, "BUSY_YIELD",
+                "busy-yield observable telemetry on contention", errors)
+        require(retire_notify, "KeInsertQueueDpc(&Context->SdmaRetirementDpc, NULL, NULL);",
+                "deferred DPC notification queue insertion to prevent 0x133 deadlock", errors)
+        forbid(retire_notify, "if (FromDpc) {\n            KeInsertQueueDpc",
+               "re-entrant DPC loop in busy-yield (0x133 trigger)", errors)
+        require(retire_notify, "if (g_Bc250SdmaPresent.InFlightCount > 0u)",
+                "unconditional liveness backstop rearming timer if work remains", errors)
+
+    # DPC routine
+    if not dpc_routine:
+        errors.append("Bc250ActiveSdmaRetirementDpcRoutine nao localizado")
+    else:
+        require(dpc_routine, "Bc250ActiveSdmaRetireAndNotify(context, TRUE);",
+                "retirement and notification inside SDMA DPC routine with FromDpc=TRUE", errors)
+        require(dpc_routine, "++context->SdmaRetirementDpcRuns;",
+                "SDMA DPC telemetry run counter", errors)
+
+    # Lifecycle cleanup
+    remove_body = function_body(active, "NTSTATUS APIENTRY Bc250DxgkDdiRemoveDeviceActive")
+    stop_body = function_body(active, "static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason")
+    cleanup_body = function_body(active, "VOID Bc250ActiveDriverUnloadCleanup")
+    if remove_body:
+        require(remove_body, "Bc250ActiveSdmaRetirementTimerStop(context);", "SDMA timer stop on remove", errors)
+    if stop_body:
+        require(stop_body, "Bc250ActiveSdmaRetirementTimerStop(context);", "SDMA timer stop on stop device", errors)
+    if cleanup_body:
+        require(cleanup_body, "Bc250ActiveSdmaRetirementTimerStop(active);", "SDMA timer stop on driver unload", errors)
+
+
 def audit_device_removal_and_unload_safety(errors: list[str]) -> None:
     active = (ROOT / "driver/wdk/bc250_active_miniport.c").read_text(encoding="utf-8")
     callbacks = (ROOT / "driver/wdk/bc250_mcdm_callbacks.c").read_text(encoding="utf-8")
@@ -301,6 +512,876 @@ def audit_tlb_invalidation_safety(errors: list[str]) -> None:
     else:
         require(submit_body, "io.Flush = Bc250ActiveFlushVmid8Only;",
                 "isolated VMID8 flush in SubmitCommandVirtualBody context switch", errors)
+
+
+
+def audit_primary_allocation_is_declared_to_the_kernel(errors: list[str]) -> None:
+    """Corrida 13/09 16:28:27 -- A PRIMARIA DO dwm.exe NUNCA CHEGOU AO KERNEL COMO PRIMARIA.
+
+    MEDIDO, P0: todo `[CreateAllocation] ENTER` originado da UMD trouxe
+    `Resource=0` e caiu em "Non-resource allocation". O unico
+    "Primary token confirmed" da corrida inteira veio da alocacao padrao do
+    dxgkrnl no bind. Em paralelo o dwm.exe emitiu 90 `DXGI Present` com
+    `Flags=0x2` (FLIP) e entrou em laco de device-lost a ~1 Hz, e
+    Bc250DxgkDdiPresent nao foi chamada UMA vez.
+
+    CAUSA, por leitura de codigo: Bc250WinsysAllocate zerava D3DDDICB_ALLOCATE e
+    nunca atribuia `hResource` (d3dumddi.h:3457), `Flags.Primary` nem
+    `VidPnSourceId` (d3dukmdt.h:554 e :549). O dxgkrnl so' liga
+    `DXGKARG_CREATEALLOCATION.Flags.Resource` quando a UMD passa `hResource`, e o
+    ramo do KMD que marca primaria esta atras desse bit -- era INALCANCAVEL.
+
+    Este portao trava os quatro lados da correcao:
+      1. a UMD passa hResource, Flags.Primary e VidPnSourceId;
+      2. primariedade tem FONTE UNICA (classe do token) e divergencia com o
+         vinculo falha fechado -- sem isso voltariamos a ter duas verdades;
+      3. a desalocacao e' SIMETRICA (criada com recurso, devolvida com recurso),
+         senao o objeto de recurso do kernel fica orfao;
+      4. o KMD nao deixa uma primaria de UMD SOBRESCREVER a primaria de display
+         do GOP, que e' a que o CommitVidPn usa.
+    """
+    winsys_path = ROOT / "driver" / "umd" / "bc250_wddm_winsys.c"
+    umd_path = ROOT / "driver" / "umd" / "bc250_d3d_umd.c"
+    active_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+    for path in (winsys_path, umd_path, active_path):
+        if not path.exists():
+            errors.append(f"fonte ausente para auditar a primaria: {path.name}")
+            return
+
+    winsys = winsys_path.read_text(encoding="utf-8", errors="replace")
+    umd = umd_path.read_text(encoding="utf-8", errors="replace")
+    active = active_path.read_text(encoding="utf-8", errors="replace")
+
+    body = function_body(winsys, "BC250_WINSYS_STATUS Bc250WinsysAllocateForResource")
+    if not body:
+        errors.append("Bc250WinsysAllocateForResource nao localizado")
+    else:
+        require(body, "args.hResource = Binding->RuntimeResource;",
+                "hResource propagado ao pfnAllocateCb", errors)
+        require(body, "info.Flags.Primary = 1u;",
+                "Flags.Primary declarado na alocacao primaria", errors)
+        require(body, "info.VidPnSourceId =",
+                "VidPnSourceId declarado na alocacao primaria", errors)
+        # Fail-closed: primaria sem handle de recurso nao pode ser criada.
+        require(body, "bindPrimary && Binding->RuntimeResource == NULL",
+                "recusa de primaria sem hRTResource", errors)
+        # Fonte unica: o vinculo nao pode discordar da classe do token.
+        require(body, "bindPrimary != tokenPrimary",
+                "recusa de divergencia entre token e vinculo de primariedade", errors)
+
+    dealloc = function_body(winsys, "BC250_WINSYS_STATUS Bc250WinsysDeallocate")
+    if not dealloc:
+        errors.append("Bc250WinsysDeallocate nao localizado")
+    else:
+        require(dealloc, "args2.hResource = Allocation->RuntimeResource;",
+                "desalocacao simetrica por recurso (Deallocate2)", errors)
+        require(dealloc, "args.hResource = Allocation->RuntimeResource;",
+                "desalocacao simetrica por recurso (Deallocate)", errors)
+
+    create_res = function_body(umd, "VOID APIENTRY Bc250Umd10CreateResource")
+    if not create_res:
+        errors.append("Bc250Umd10CreateResource nao localizado")
+    else:
+        require(create_res, "Bc250WinsysAllocateForResource(",
+                "CreateResource usando o caminho com vinculo de recurso", errors)
+        require(create_res, "binding.RuntimeResource = (HANDLE)hRTResource.handle;",
+                "hRTResource da DDI propagado ao vinculo", errors)
+        require(create_res, "binding.Primary = isPrimary;",
+                "primariedade do vinculo derivada da mesma decisao do token", errors)
+        # A chamada antiga, sem vinculo, nao pode voltar a este sitio.
+        forbid(create_res, "Bc250WinsysAllocate(&device->Winsys",
+               "CreateResource voltando a alocar sem vinculo de recurso", errors)
+
+    # Lado do KMD: a primaria de display nao pode ser trocada por backbuffer.
+    if "g_Bc250DisplayState.hPrimaryAllocation == NULL" not in active:
+        errors.append("primaria de display do KMD sem guarda contra sobrescrita "
+                      "por primaria de UMD")
+    require(active, "Primary token confirmed (DISPLAY)",
+            "primaria de display nomeada no log do KMD", errors)
+    require(active, "Primary token confirmed (UMD",
+            "primaria de UMD nomeada e contada, nunca silenciada", errors)
+
+
+def audit_dxgi_present_chain_honest(errors: list[str]) -> None:
+    """F0.3 (13/09) -- AS DDIs DA CADEIA DE APRESENTACAO NAO PODEM DECLARAR SUCESSO SEM BACKEND.
+
+    Duas auditorias externas independentes acharam o mesmo defeito, e a leitura de
+    codigo confirmou:
+
+      Bc250DxgiSetDisplayMode           -> `log; return S_OK;`  e `pfnSetDisplayModeCb`
+                                           (d3dumddi.h:4533) NAO aparece em lugar nenhum
+                                           de driver/umd.
+      Bc250DxgiRotateResourceIdentities -> `log; return S_OK;` sem rotacionar nada.
+
+    O DWM chama SetDisplayMode para dizer QUAL primaria deve ser varrida. Sem
+    repassar ao kernel, ele segue com a primaria do boot -- medido na corrida
+    18:03:43: UM unico SetVidPnSourceAddress (0xAAC000, hAlloc=0x08) e 96/96
+    Present com hr=0x80004005.
+
+    E o pior: `bc250_d3d_umd_test.c` EXIGIA o S_OK das duas, e congelava
+    DXGI_DDI_RESIDENCY_EVICTED_TO_DISK. Sexta, setima e oitava ocorrencias da
+    classe "o gate congelava a mentira" neste projeto.
+
+    Este portao tem DUAS metades, e a segunda e' a que importa mais:
+      1. o CODIGO nao pode declarar sucesso sem backend;
+      2. o TESTE nao pode voltar a exigir esse sucesso -- meta-portao
+         anti-recongelamento. Sem (2), a proxima IA reverte o teste e o defeito
+         volta em silencio, que e' exatamente como ele nasceu.
+    """
+    umd_path = ROOT / "driver" / "umd" / "bc250_d3d_umd.c"
+    test_path = ROOT / "driver" / "tests" / "bc250_d3d_umd_test.c"
+    for path in (umd_path, test_path):
+        if not path.exists():
+            errors.append(f"fonte ausente para auditar a cadeia DXGI: {path.name}")
+            return
+
+    umd = umd_path.read_text(encoding="utf-8", errors="replace")
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+
+    # --- metade 1: o codigo fala e nao mente ---
+    setmode = function_body(umd, "HRESULT APIENTRY Bc250DxgiSetDisplayMode")
+    if not setmode:
+        errors.append("Bc250DxgiSetDisplayMode nao localizado")
+    else:
+        require(setmode, "DXGI SetDisplayMode ENTER",
+                "entrada de SetDisplayMode registrada", errors)
+        # Enquanto o callback nao existir, a DDI tem de recusar com motivo nomeado.
+        # Quando o item 2.3 aterrissar, `pfnSetDisplayModeCb` satisfaz a exigencia
+        # e a recusa deixa de ser obrigatoria.
+        if ("pfnSetDisplayModeCb" not in setmode and
+                "SetDisplayMode RECUSADO" not in setmode):
+            errors.append("Bc250DxgiSetDisplayMode nao chama pfnSetDisplayModeCb nem "
+                          "recusa com motivo nomeado -- sucesso sem backend (Lei 4)")
+
+    rotate = function_body(umd, "HRESULT APIENTRY Bc250DxgiRotateResourceIdentities")
+    if not rotate:
+        errors.append("Bc250DxgiRotateResourceIdentities nao localizado")
+    else:
+        require(rotate, "DXGI RotateResourceIdentities ENTER",
+                "entrada de RotateResourceIdentities registrada", errors)
+        # F2.4: a rotacao real chegou, entao ela e' EXIGIDA -- nao alternativa a
+        # uma recusa.
+        #
+        # A primeira versao deste portao aceitava "rotaciona OU recusa". Era
+        # fraco: o corpo mantem recusas legitimas (pResources NULL, cadeia
+        # invalida), e o OR deixava a mutacao que apagava a rotacao passar. A
+        # mutacao 25 provou isso, e o portao foi reescrito. Falha nao-atribuivel
+        # e' portao fraco.
+        require(rotate, "dst->Allocation = src->Allocation;",
+                "rotacao move o backing entre os recursos", errors)
+        require(rotate, "dst->pCpuShadow = src->pCpuShadow;",
+                "rotacao move o shadow de CPU junto com o backing", errors)
+        # Fail-closed atomico: validar a cadeia inteira antes de mover.
+        require(rotate, "rotacao ABORTADA sem mover nada",
+                "rotacao valida a cadeia antes de mover (atomicidade)", errors)
+
+    # --- metade 2: o teste nao pode voltar a exigir a mentira ---
+    for needle, label in (
+        ("hr = dxgiFuncs.pfnSetDisplayMode(&setDisplayMode);\n    assert(hr == S_OK);",
+         "o teste voltou a exigir S_OK de SetDisplayMode sem backend"),
+        ("assert(residencyStatus[1] == DXGI_DDI_RESIDENCY_EVICTED_TO_DISK);",
+         "o teste voltou a congelar EVICTED_TO_DISK na residencia"),
+    ):
+        if needle in test:
+            errors.append(label)
+
+    # E tem de continuar EXIGINDO o comportamento honesto, senao vira decorativa.
+    require(test, "assert(residencyStatus[1] != DXGI_DDI_RESIDENCY_FULLY_RESIDENT);",
+            "o teste exige que nao-residente nao seja reportado como residente", errors)
+    # F2.3/F2.4: os contrapontos que impedem "recusa sempre" de passar por
+    # correcao. Sem eles, uma DDI que recusasse tudo satisfaria os portoes.
+    require(test, "assert(g_SetDisplayModeCalls == 1);",
+            "o teste exige que SetDisplayMode chame o kernel no caso valido", errors)
+    require(test, "assert(g_SetDisplayModeLastPrimary == 0xA110u);",
+            "o teste exige o handle de primaria exato no callback", errors)
+    require(test, "dxgiFuncs.pfnRotateResourceIdentities(&rotateData) == S_OK",
+            "o teste exige rotacao bem-sucedida no caso valido", errors)
+
+    # --- F1.3: o pPrimaryDesc tem de ser LIDO, nao so' testado contra NULL ---
+    #
+    # Duas auditorias convergiram: `DriverFlags` e `NO_SCANOUT` tinham zero
+    # ocorrencias em driver/umd, e o struct so' aparecia num `!= NULL`. O campo
+    # Flags de entrada distingue back buffer (OPTIONAL) de front/proxy, e e' a
+    # base da decisao do item 2.2. Sem ler, a proxima corrida nao mede nada.
+    create_res = function_body(umd, "VOID APIENTRY Bc250Umd10CreateResource")
+    if not create_res:
+        errors.append("Bc250Umd10CreateResource nao localizado")
+    else:
+        require(create_res, "PRIMARY_DESC recebido:",
+                "pPrimaryDesc reportado na criacao de recurso", errors)
+        require(create_res, "DXGI_DDI_PRIMARY_OPTIONAL",
+                "distincao back buffer x front/proxy lida do contrato", errors)
+
+
+def audit_describe_allocation_is_not_mute(errors: list[str]) -> None:
+    """F1.1 (13/09) -- A DDI CANDIDATA A CAUSA DO E_FAIL ERA COMPLETAMENTE MUDA.
+
+    `Bc250McdmDescribeAllocation` devolve STATUS_NOT_SUPPORTED para toda alocacao
+    (confirmado por leitura) e nao emitia UMA linha de log. Uma auditoria externa
+    apontou esta DDI como o portao que bloqueia o Present -- o dxgkrnl a chamaria
+    para conferir a geometria da superficie antes de agendar. O DEFEITO esta
+    confirmado; o MECANISMO veio de uma desmontagem nao reproduzida aqui, e e' H.
+
+    Enquanto a DDI for muda, "zero [DescribeAlloc] no log" nao distingue "o
+    dxgkrnl nunca chamou" de "recusamos calados" -- a ambiguidade que a Lei 4
+    proibe. Este portao exige que ela fale, com contador PROPRIO (a DDI pode ser
+    chamada por quadro; o teto global nao alcanca esta classe -- licao das
+    classes 9 e 12 do amostrador).
+    """
+    path = ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c"
+    if not path.exists():
+        errors.append("bc250_mcdm_callbacks.c ausente para auditar DescribeAllocation")
+        return
+
+    body = function_body(
+        path.read_text(encoding="utf-8", errors="replace"),
+        "NTSTATUS APIENTRY Bc250McdmDescribeAllocation")
+    if not body:
+        errors.append("Bc250McdmDescribeAllocation nao localizado")
+        return
+
+    require(body, "[DescribeAlloc] ENTER #",
+            "entrada de DescribeAllocation registrada", errors)
+    require(body, "s_DescribeOrdinal",
+            "DescribeAllocation com contador de amostragem proprio", errors)
+    # Toda saida tem de falar: a de argumento invalido e a recusa deliberada.
+    if body.count("[DescribeAlloc] RECUSADO") < 2:
+        errors.append("DescribeAllocation tem saida muda -- toda recusa precisa nomear a causa")
+
+    # F2.1: a DDI tem de CONSULTAR o executor, nao recusar por conta propria.
+    # Recusar sempre era o defeito original; um corpo que ignore o backend e
+    # devolva NOT_SUPPORTED direto reintroduz exatamente ele.
+    require(body, "status = g_Bc250DescribeAllocationObject(hAdapter, pDescribeAllocation);",
+            "DescribeAllocation consulta o executor instalado", errors)
+    require(body, "[DescribeAlloc] LEAVE #",
+            "DescribeAllocation registra a geometria devolvida", errors)
+
+    # E o executor tem de existir, com fail-closed quando a geometria nao foi
+    # declarada -- nunca uma descricao inventada.
+    active_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+    if not active_path.exists():
+        errors.append("bc250_active_miniport.c ausente para auditar o executor de descricao")
+        return
+    active = active_path.read_text(encoding="utf-8", errors="replace")
+    executor = function_body(
+        active, "static NTSTATUS Bc250ActiveDescribeAllocationLifecycle")
+    if not executor:
+        errors.append("Bc250ActiveDescribeAllocationLifecycle nao localizado")
+    else:
+        require(executor, "Bc250McdmObjectGetAllocationGeometry(",
+                "executor le' a geometria do registro de objetos", errors)
+        require(executor, "BC250_MCDM_OBJECT_NO_GEOMETRY",
+                "executor recusa quando a geometria nunca foi declarada", errors)
+    require(active, "Bc250McdmInstallDescribeAllocation(Bc250ActiveDescribeAllocationLifecycle)",
+            "executor de descricao instalado", errors)
+
+
+def audit_present_path_is_not_mute(errors: list[str]) -> None:
+    """Corrida 13/09 16:28:27 -- O CAMINHO DE PRESENT ERA MUDO DOS DOIS LADOS.
+
+    Na UMD, Bc250DxgiPresent fazia `return callbacks->pfnPresentCb(...)` direto:
+    o hr de 90 chamadas -- o numero que decidia a corrida -- nunca foi gravado.
+    No KMD, Bc250DxgkDdiPresent tinha tres saidas mudas (hContext NULL, pPresent
+    NULL e FrameBufferVirtual NULL), entao "zero linhas de Present" nao separava
+    "o dxgkrnl nunca chamou" de "recusamos calados". E' a mesma ambiguidade que a
+    Lei 4 proibe e que ja foi corrigida em Bc250McdmSignalMonitoredFence e no
+    handler de composicao.
+
+    Terceiro achado da mesma corrida: [McdmQAI], [McdmCreateDevice] e
+    [McdmCreateContext] dividiam UM contador de amostragem. A rajada de QAI no
+    bind esgota as 16 primeiras ocorrencias da classe, e por isso as 90 criacoes
+    de device do dwm.exe nao deixaram UMA linha. Contadores independentes agora.
+    """
+    umd_path = ROOT / "driver" / "umd" / "bc250_d3d_umd.c"
+    display_path = ROOT / "driver" / "wdk" / "bc250_display_ddi.c"
+    for path in (umd_path, display_path):
+        if not path.exists():
+            errors.append(f"fonte ausente para auditar o Present: {path.name}")
+            return
+
+    umd = umd_path.read_text(encoding="utf-8", errors="replace")
+    display = display_path.read_text(encoding="utf-8", errors="replace")
+
+    present = function_body(umd, "HRESULT APIENTRY Bc250DxgiPresent")
+    if not present:
+        errors.append("Bc250DxgiPresent nao localizado")
+    else:
+        require(present, "DXGI Present LEAVE cb: hr=",
+                "hr do pfnPresentCb registrado", errors)
+        # O retorno direto era o defeito: sem variavel nao ha o que logar.
+        forbid(present, "return device->pDXGICallbacks->pfnPresentCb(",
+               "Bc250DxgiPresent voltando a devolver o callback sem registrar o hr",
+               errors)
+
+        # Corrida 17:18:35: 84/84 pfnPresentCb -> E_FAIL sincrono com a primaria
+        # ja correta. Os unicos contextos pelos quais o dxgkrnl apresentou estao
+        # no Node 0; todos os nossos estavam no Node 1. O Present passou a usar
+        # um contexto DEDICADO de apresentacao.
+        require(present, "presentCb.hContext = device->Winsys.PresentContext;",
+                "Present usando o contexto de apresentacao", errors)
+        forbid(present, "presentCb.hContext = device->Winsys.KernelContext;",
+               "Present voltando ao contexto de trabalho", errors)
+        # Fallback silencioso para o contexto de trabalho tornaria o ensaio
+        # inconclusivo: "E_FAIL de novo" deixaria de significar "falhou pelo
+        # Node 0". A ausencia do contexto tem de RECUSAR com motivo nomeado.
+        require(present, "DXGI Present RECUSADO: contexto de apresentacao ausente",
+                "recusa nomeada quando o contexto de apresentacao falta", errors)
+
+    winsys_path = ROOT / "driver" / "umd" / "bc250_wddm_winsys.c"
+    if not winsys_path.exists():
+        errors.append("bc250_wddm_winsys.c ausente para auditar o contexto de apresentacao")
+    else:
+        winsys = winsys_path.read_text(encoding="utf-8", errors="replace")
+        create_present = function_body(
+            winsys, "BC250_WINSYS_STATUS Bc250WinsysCreatePresentContext")
+        if not create_present:
+            errors.append("Bc250WinsysCreatePresentContext nao localizado")
+        else:
+            # Nao pode reaproveitar nem sobrescrever o contexto de trabalho.
+            forbid(create_present, "Context->KernelContext =",
+                   "criacao do contexto de apresentacao escrevendo no de trabalho",
+                   errors)
+            require(create_present, "Context->PresentContext = args.hContext;",
+                    "contexto de apresentacao guardado em campo proprio", errors)
+        destroy_present = function_body(
+            winsys, "BC250_WINSYS_STATUS Bc250WinsysDestroyPresentContext")
+        if not destroy_present:
+            errors.append("Bc250WinsysDestroyPresentContext nao localizado")
+        else:
+            require(destroy_present, "args.hContext = Context->PresentContext;",
+                    "contexto de apresentacao destruido pelo proprio handle", errors)
+
+        # O teardown do device tem de destruir os DOIS: o dwm.exe fez 61
+        # CreateDevice/DestroyDevice numa corrida de ~3 min.
+        teardown = function_body(umd, "VOID Bc250UmdDeviceTeardown")
+        if not teardown:
+            errors.append("Bc250UmdDeviceTeardown nao localizado")
+        else:
+            require(teardown, "Bc250WinsysDestroyPresentContext(&pDevice->Winsys)",
+                    "contexto de apresentacao destruido no teardown do device",
+                    errors)
+
+    ddi = function_body(display, "NTSTATUS APIENTRY Bc250DxgkDdiPresent")
+    if not ddi:
+        errors.append("Bc250DxgkDdiPresent nao localizado")
+    else:
+        require(ddi, "[DdiPresent] ENTER #",
+                "entrada incondicional em Bc250DxgkDdiPresent", errors)
+        require(ddi, "RECUSADO: hContext NULL",
+                "saida por hContext NULL nomeia a causa", errors)
+        require(ddi, "RECUSADO: pPresent NULL",
+                "saida por pPresent NULL nomeia a causa", errors)
+        require(ddi, "RECUSADO: FrameBufferVirtual NULL",
+                "scanout nao mapeado nomeia a causa", errors)
+
+    # Amostragem: as tres tags precisam de contadores PROPRIOS.
+    sampler = function_body(display, "static BOOLEAN Bc250ShouldEmitVerboseLog")
+    if not sampler:
+        errors.append("Bc250ShouldEmitVerboseLog nao localizado")
+    else:
+        shared = ('Bc250LogTextStartsWith(Text, "[McdmQAI]") ||\n'
+                  '               Bc250LogTextStartsWith(Text, "[McdmCreateDevice]")')
+        if shared in sampler:
+            errors.append("[McdmQAI] voltou a dividir contador de amostragem com "
+                          "[McdmCreateDevice]/[McdmCreateContext]")
+        # Classe 9 tinha a MESMA falha, medida na corrida 17:18:35: as quatro
+        # tags somaram 45 linhas contra o orcamento de 16 primeiras, e por isso
+        # "Primary token confirmed (UMD" nao saiu nenhuma vez mesmo com a
+        # primaria de UMD funcionando. A ausencia era artefato do logger.
+        shared9 = ('Bc250LogTextStartsWith(Text, "[ActiveOpenAlloc]") ||\n'
+                   '               Bc250LogTextStartsWith(Text, "[CreateAllocation]")')
+        if shared9 in sampler:
+            errors.append("[ActiveOpenAlloc] voltou a dividir contador de amostragem "
+                          "com [CreateAllocation] e as demais tags de alocacao")
+        for tag, cid in (("[McdmQAI]", "12u"),
+                         ("[McdmCreateDevice]", "13u"),
+                         ("[McdmCreateContext]", "14u"),
+                         ("[ActiveOpenAlloc]", "9u"),
+                         ("[CreateAllocation]", "15u"),
+                         ("[McdmCreateAllocation]", "16u"),
+                         ("[McdmCloseAllocation]", "17u")):
+            fragment = (f'Bc250LogTextStartsWith(Text, "{tag}")) {{\n'
+                        f'        classId = {cid};')
+            if fragment not in sampler:
+                errors.append(f"{tag} sem contador de amostragem proprio (classe {cid})")
+
+
+def audit_umd_trace_reaches_the_evidence_file(errors: list[str]) -> None:
+    """Corrida 13/09 05:50 -- o ponto de bloqueio era invisivel POR CONSTRUCAO.
+
+    BC250_WINSYS_LOG escrevia apenas em OutputDebugStringA e stderr. O dwm.exe
+    nao tem stderr, entao NENHUMA linha da winsys chegou ao log arquivado. A
+    corrida mediu que o compositor congela entre o blt de tela cheia e a
+    submissao seguinte -- e nao qual callback bloqueia, porque justamente esse
+    trecho so' tem chamadas de winsys. Pior: o criterio de aceitacao daquela
+    corrida foi escrito sobre linhas que a instrumentacao nao podia produzir.
+
+    Este portao trava:
+      1. a winsys escreve pelo sink de arquivo, nao so' em stderr;
+      2. Bc250UmdTrace usa o MESMO sink -- uma fonte de formato, um arquivo por
+         processo -- em vez de manter a segunda copia da escrita que existia;
+      3. Bc250WinsysSubmitGpuVa continua instrumentada: era a unica funcao da
+         winsys sem trace, e pfnSubmitCommandCb bloqueia com a fila cheia.
+    """
+    winsys_path = ROOT / "driver" / "umd" / "bc250_wddm_winsys.c"
+    umd_path = ROOT / "driver" / "umd" / "bc250_d3d_umd.c"
+    if not winsys_path.exists() or not umd_path.exists():
+        errors.append("fontes da UMD ausentes para auditar o sink de trace")
+        return
+
+    winsys = winsys_path.read_text(encoding="utf-8", errors="replace")
+    umd = umd_path.read_text(encoding="utf-8", errors="replace")
+
+    require(winsys, "void Bc250WinsysTraceRaw(",
+            "sink de arquivo da winsys", errors)
+    require(winsys, "Bc250WinsysTraceRaw(_log_buf)",
+            "BC250_WINSYS_LOG roteado para o sink de arquivo", errors)
+    require(winsys, "SubmitGpuVa ENTER",
+            "trace de entrada em Bc250WinsysSubmitGpuVa", errors)
+    require(winsys, "SubmitGpuVa LEAVE",
+            "trace de saida em Bc250WinsysSubmitGpuVa", errors)
+
+    require(umd, "Bc250WinsysTraceRaw(message)",
+            "Bc250UmdTrace delegando ao sink unico", errors)
+
+    # Escrever no arquivo nao basta: o binder tem de ARQUIVAR o arquivo no fim
+    # da janela fisica. A coleta original roda logo apos o bind e arquiva um
+    # snapshot de poucos segundos -- nas corridas de 13/09 08:12, 11:25 e 11:32
+    # o log do dwm.exe terminou antes do momento decisivo (na 11:32, exatamente
+    # no "BltViaKmd ENTER", perdendo o "LEAVE" com o hr do escape). Tres
+    # criterios ficaram sem resposta por isso.
+    binder_path = ROOT / "tools" / "bind-bc250mcdm-lab.ps1"
+    if not binder_path.exists():
+        errors.append("binder de laboratorio ausente para auditar a coleta final")
+        return
+    binder = binder_path.read_text(encoding="utf-8", errors="replace")
+    require(binder, "bc250_umd_log-FINAL.txt",
+            "coleta FINAL dos logs da UMD no fim da janela fisica", errors)
+    require(binder, "Coleta FINAL da UMD",
+            "coleta FINAL da UMD reportada ao operador", errors)
+
+    # A segunda copia da escrita em arquivo nao pode voltar a existir na UMD:
+    # duas instrumentacoes divergentes foi exatamente o defeito.
+    trace_start = umd.find("static void Bc250UmdTrace(")
+    if trace_start < 0:
+        errors.append("Bc250UmdTrace nao encontrada em bc250_d3d_umd.c")
+        return
+    trace_end = umd.find(chr(10) + "}", trace_start)
+    body = umd[trace_start:trace_end if trace_end > 0 else trace_start + 4000]
+    for banned in ("CreateFileA", "WriteFile", "BC250_UMD_LOG_"):
+        if banned in body:
+            errors.append(
+                f"Bc250UmdTrace voltou a escrever o arquivo por conta propria "
+                f"({banned}): o sink tem de ser unico, senao as duas "
+                f"instrumentacoes divergem de novo")
+
+
+
+def audit_composition_never_submits_a_context(errors: list[str]) -> None:
+    """Corrida 13/09 08:12 -- o discriminante, medido:
+
+    O KMD executou 958 IBs. 953 eram buffers de paginacao do proprio dxgkrnl e
+    NAO produziram um unico TDR. Os outros 5 eram submissoes de CONTEXTO da UMD
+    no Node 0, que e' o no de paginacao (PagingNodeIndex=0), e CADA UMA foi
+    seguida de um TDR -- sempre com a engine OCIOSA e o anel DRENADO
+    (RPTR==WPTR, STATUS1=0x3FF). Cinco TDRs, BugCheck 0x116.
+
+    Tres correcoes anteriores no caminho do blt -- sinal de fence pelo contrato,
+    sink unico de trace, anel de slots de command buffer -- nao mudaram isso,
+    porque todas tratavam o passageiro e nao o veiculo.
+
+    O caminho de blt do KMD (Bc250SdmaPresentBlt) fez 584 blts consecutivos sem
+    TDR em 12/09 13:01: nao cria pacote de contexto e nao passa pelo
+    escalonador. A composicao passou a usar esse caminho, via escape.
+
+    Este portao trava as quatro pontas:
+      1. a UMD alcanca o KMD por pfnEscapeCb com o opcode do contrato;
+      2. a composicao NAO submete contexto -- nenhum SubmitGpuVa no caminho do
+         blt, e nenhuma criacao de contexto/fence/command buffer para isso;
+      3. o KMD implementa e despacha o opcode;
+      4. o teste continua EXIGINDO zero submissoes de contexto, em vez de
+         exigir o caminho antigo. A classe "o gate congelava a mentira" ja
+         apareceu cinco vezes neste projeto.
+    """
+    blt_path = ROOT / "driver" / "umd" / "bc250_umd_blt.inl"
+    kmd_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+    test_path = ROOT / "driver" / "tests" / "bc250_d3d_umd_test.c"
+    contract_path = ROOT / "driver" / "core" / "bc250_escape_contract.h"
+    packet_h_path = ROOT / "driver" / "core" / "bc250_sdma_packet_builder.h"
+    packet_c_path = ROOT / "driver" / "core" / "bc250_sdma_packet_builder.c"
+    present_path = ROOT / "driver" / "wdk" / "bc250_sdma_present.c"
+    for p in (blt_path, kmd_path, test_path, contract_path,
+              packet_h_path, packet_c_path, present_path):
+        if not p.exists():
+            errors.append(f"fonte ausente para auditar a composicao: {p.name}")
+            return
+
+    blt_code = strip_c_comments(blt_path.read_text(encoding="utf-8", errors="replace"))
+    kmd = kmd_path.read_text(encoding="utf-8", errors="replace")
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+    contract = contract_path.read_text(encoding="utf-8", errors="replace")
+    packet_h = packet_h_path.read_text(encoding="utf-8", errors="replace")
+    packet_c = packet_c_path.read_text(encoding="utf-8", errors="replace")
+    present = present_path.read_text(encoding="utf-8", errors="replace")
+
+    require(contract, "BC250_ESCAPE_OP_COMPOSITE_BLT",
+            "opcode de composicao no contrato de escape", errors)
+    require(blt_code, "pfnEscapeCb",
+            "composicao alcancando o KMD por escape", errors)
+    require(blt_code, "BC250_ESCAPE_OP_COMPOSITE_BLT",
+            "opcode de composicao usado pela UMD", errors)
+    require(blt_code, "payload.SourcePitch = src->RowPitch",
+            "pitch da origem preservado no escape", errors)
+    require(blt_code, "payload.DestPitch = dst->RowPitch",
+            "pitch do destino preservado no escape", errors)
+    forbid(blt_code, "retangulo exige copia por scanline",
+           "recusa do retangulo 1:1 medido em hardware", errors)
+
+    # O caminho que matou quatro corridas nao pode voltar ao blt.
+    for banned in ("Bc250WinsysSubmitGpuVa",
+                   "Bc250WinsysCreateVirtualContext",
+                   "Bc250WinsysCreateMonitoredFence",
+                   "Bc250WinsysWaitForFenceFromCpu"):
+        forbid(blt_code, banned,
+               "submissao de contexto no caminho do blt (causa dos cinco TDRs)",
+               errors)
+
+    require(kmd, "Bc250ActiveEscapeCompositeBlt",
+            "handler de composicao no KMD", errors)
+    require(kmd, "Bc250SdmaPresentBlt(srcMc, dstMc",
+            "composicao executada pelo caminho de blt provado do KMD", errors)
+    require(kmd, "Bc250SdmaPresentBltRect(srcMc, esc->SourcePitch",
+            "composicao retangular despachada ao SDMA", errors)
+    require(kmd, "COMPOSITE_DATA_PROOF SAMPLED_PASS:",
+            "prova amostrada de dados da composicao", errors)
+    require(kmd, "COMPOSITE_DATA_PROOF INCONCLUSIVO_ZERO",
+            "zero contra zero nao promovido a prova", errors)
+    require(kmd, "COMPOSITE_DATA_PROOF FAIL",
+            "divergencia de dados nomeada", errors)
+    require(kmd, "Bc250ClassifyBltProof(",
+            "classificador honesto compartilhado na composicao", errors)
+    require(kmd, "Bc250BltProofRequiresFailClosed(proofVerdict)",
+            "divergencia da composicao falha fechada", errors)
+    source_snapshot = kmd.find("sourceBefore[proofIndex] = *sample")
+    blt_call = kmd.find("Bc250SdmaPresentBlt(srcMc, dstMc")
+    destination_snapshot = kmd.find("destinationAfter[proofIndex] = *sample")
+    if not (0 <= source_snapshot < blt_call < destination_snapshot):
+        errors.append("prova da composicao nao preserva ordem origem -> SDMA -> destino")
+    require(kmd, "sampleY[proofIndex] * esc->SourcePitch",
+            "amostra da origem usa coordenada e pitch proprios", errors)
+    require(kmd, "(esc->DestY + sampleY[proofIndex]) * esc->DestPitch",
+            "amostra do destino usa coordenada e pitch proprios", errors)
+
+    # COPY_LINEAR_SUB_WIND: posicoes dos campos sao P1 no header upstream;
+    # a semantica menos-um e H e so hardware pode promove-la.
+    require(packet_h, "BC250_SDMA_SUBOP_COPY_LINEAR_SUB_WIND 4",
+            "SUBOP 4 do COPY_LINEAR_SUB_WIND", errors)
+    require(packet_h, "navi10_sdma_pkt_open.h",
+            "proveniencia upstream do pacote retangular", errors)
+    require(packet_h, "HIPOTESE (H)",
+            "semantica do pacote retangular rotulada honestamente", errors)
+    require(packet_h, "NAO VALIDADA EM HARDWARE",
+            "pacote retangular sem promocao indevida de prova", errors)
+    require(packet_c, "(srcPitchElements - 1u) << 13",
+            "pitch da origem codificado no campo correto", errors)
+    require(packet_c, "(dstPitchElements - 1u) << 13",
+            "pitch do destino codificado no campo correto", errors)
+    require(packet_c, "((Width - 1u) & 0x3FFFu)",
+            "largura retangular codificada", errors)
+    require(present, "Bc250SdmaEmitCopyLinearSubWindow32(",
+            "emissao do pacote retangular no caminho fisico", errors)
+    require(present, "BLT_RECT_ENGINE_2LEGS",
+            "telemetria honesta de duas pernas no pacote novo", errors)
+
+    require(test, "assert(g_BltSubmits == 0u);",
+            "invariante de que a composicao nao submete contexto", errors)
+
+    # Corrida 13/09 11:32: o DWM chamou o escape UMA vez e o log do KMD nao teve
+    # NENHUMA linha COMPOSITE_BLT, porque as duas saidas de recusa eram MUDAS.
+    # Era impossivel distinguir "nao chegou ao handler" de "recusamos calados"
+    # -- a ambiguidade que a Lei 4 proibe, reintroduzida por mim no codigo novo.
+    require(kmd, "COMPOSITE_BLT ENTER",
+            "entrada do handler de composicao falando sempre", errors)
+    require(kmd, "ABI divergente entre UMD e KMD",
+            "recusa por tamanho de payload nomeando a causa", errors)
+    require(kmd, "payload ausente ou menor que 4 bytes",
+            "recusa de payload invalido no dispatch de escape", errors)
+
+    # Corrida 13/09 11:55: a UMD chamou pfnEscapeCb e o handler de composicao
+    # nunca viu a chamada. Sem log na ENTRADA da DDI era impossivel separar "o
+    # dxgkrnl nunca nos chamou" de "chamou com payload que nao reconhecemos".
+    callbacks = (ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c").read_text(
+        encoding="utf-8", errors="replace")
+    require(callbacks, "[McdmEscape] ENTER",
+            "entrada da DDI de escape falando antes do despacho", errors)
+    require(callbacks, "nenhum handler instalado",
+            "ausencia de handler de escape nomeada em vez de muda", errors)
+
+    # Corridas 13/09 12:09 (HardwareAccess=1) e 12:21 (HardwareAccess=0)
+    # produziram a MESMA assinatura: ENTER sem LEAVE e nenhuma chegada ao KMD.
+    # Logo a causalidade atribuida a flag foi refutada. O defeito comum era o
+    # primeiro argumento: PFND3DDDI_ESCAPECB exige hAdapter, mas a UMD passava
+    # hDevice. Como o handler acessa o SDMA, HardwareAccess volta a ser exigido
+    # pelo contrato do WDK. A combinacao ainda NAO FOI VALIDADA EM HARDWARE.
+    require(blt_code, "args.Flags.HardwareAccess = 1u",
+            "HardwareAccess no escape que dirige o SDMA", errors)
+    require(blt_code, "d->pAdapter->hRTAdapter.handle, &args",
+            "pfnEscapeCb chamado com o handle runtime do adapter", errors)
+    forbid(blt_code, "pfnEscapeCb(d->Winsys.RuntimeDevice",
+           "hDevice usado como primeiro argumento de PFND3DDDI_ESCAPECB",
+           errors)
+    require(test, "assert(h == g_BltExpectedAdapter);",
+            "teste distingue hAdapter do hDevice no callback", errors)
+    require(test, "assert(a->hDevice == g_BltExpectedDevice);",
+            "teste preserva hDevice dentro de D3DDDICB_ESCAPE", errors)
+    require(test, "assert(a->Flags.HardwareAccess == 1u);",
+            "teste exige HardwareAccess no escape que dirige o SDMA", errors)
+
+def audit_safe_bind_deadline_is_fail_closed(errors: list[str]) -> None:
+    """C3.17: o prazo do rollback sobrevive a travamento e reboot.
+
+    MEDIDO em 13/09: o guardiao chegou ao timeout, mas bloqueou em uma consulta
+    PnP antes de publicar ROLLBACK_STARTED. Um reboot reiniciou o cronometro
+    relativo e a recuperacao automatica nao aconteceu. Este portao exige um
+    segundo disparador por instante absoluto, exclusao mutua e caminho critico
+    sem WMI/eventos entre a transicao e BC250_RECOVERY.cmd.
+    """
+    watcher_path = ROOT / "tools" / "watch-bc250mcdm-safe-bind.ps1"
+    binder_path = ROOT / "tools" / "bind-bc250mcdm-lab.ps1"
+    confirmer_path = ROOT / "tools" / "confirm-bc250mcdm-safe-bind.ps1"
+    if not watcher_path.exists() or not binder_path.exists() or not confirmer_path.exists():
+        errors.append("harness safe-bind incompleto para auditar prazo fail-closed")
+        return
+
+    watcher = watcher_path.read_text(encoding="utf-8", errors="replace")
+    binder = binder_path.read_text(encoding="utf-8", errors="replace")
+    confirmer = confirmer_path.read_text(encoding="utf-8", errors="replace")
+    for needle, description in (
+        ("deadline_utc_ticks", "prazo UTC absoluto no guardiao"),
+        ("DeadlineEnforcer", "modo independente que impoe o prazo"),
+        ("Global\\BC250SafeBindRecovery", "rollback com dono unico"),
+        ("AbandonedMutexException", "mutex abandonado ainda transfere a posse"),
+        ("-OperationTimeoutSec 2", "consultas CIM limitadas"),
+    ):
+        require(watcher, needle, description, errors)
+    require(binder, "BC250-SafeBindDeadline",
+            "segunda tarefa agendada do safe-bind", errors)
+    require(binder, "deadline_utc_ticks = [long]$deadlineUtc.Ticks",
+            "binder materializa o prazo absoluto", errors)
+    require(confirmer, "restam menos de 70 s",
+            "confirmacao nao atravessa o prazo do rollback", errors)
+    forbid(watcher, "(Get-Date).AddSeconds([int]$config.timeout_seconds)",
+           "prazo relativo reiniciado apos reboot", errors)
+
+    rollback = watcher.find("Write-State 'ROLLBACK_STARTED'")
+    recovery = watcher.find("& cmd.exe /d /c", rollback)
+    if rollback < 0 or recovery <= rollback:
+        errors.append("safe-bind nao publica ROLLBACK_STARTED antes da recovery")
+    else:
+        critical = watcher[rollback:recovery]
+        if "Get-CimInstance" in critical or "Get-WinEvent" in critical:
+            errors.append("safe-bind consulta WMI/eventos depois do prazo e antes da recovery")
+
+
+def audit_lost_log_tail_is_recovered(errors: list[str]) -> None:
+    """C2: nenhuma corrida pode ficar sem o trecho decisivo do log.
+
+    MEDIDO em 10/09: o binder copia C:\\BC250_DISPLAY_LOG.txt integral para a
+    pasta de evidencia no FIM do roteiro. Quando a maquina sofre BugCheck antes
+    disso, o watchdog nao roda e a pasta fica TRUNCADA sem que nada indique.
+    Seis pastas do mesmo dia estavam truncadas; a da corrida do marco (11:21)
+    perdeu 438.038 bytes contendo o FenceId=770, a linha IB_TRIPOD TIMEOUT e o
+    FENCE_VISIBILIDADE que provou a causa-raiz do BugCheck 0x119 -- e a
+    auditoria daquela corrida foi feita sem a evidencia decisiva, chegando a
+    conclusao oposta. Duas pastas (10:03 e 10:23) nao tinham arquivo nenhum.
+
+    O log cumulativo sobrevive a reboot, entao o dado nunca esteve perdido de
+    verdade: estava sem ser coletado. Este portao exige que o resgate exista,
+    que o binder o chame ANTES de comecar o bind (o baseline novo delimita o
+    fim do trecho anterior) e que o resgate seja SOMENTE LEITURA sobre o log.
+    """
+    recovery_path = ROOT / "tools" / "recover-bc250mcdm-lost-tail.ps1"
+    binder_path = ROOT / "tools" / "bind-bc250mcdm-lab.ps1"
+    if not recovery_path.exists():
+        errors.append("recover-bc250mcdm-lost-tail.ps1 ausente: trecho perdido de corrida nao seria resgatado")
+        return
+    if not binder_path.exists():
+        errors.append("bind-bc250mcdm-lab.ps1 ausente para auditar resgate de trecho")
+        return
+
+    recovery = recovery_path.read_text(encoding="utf-8", errors="replace")
+    binder = binder_path.read_text(encoding="utf-8", errors="replace")
+
+    require(recovery, "bc250_display_log-tail-recovered.txt",
+            "nome do artefato de trecho resgatado", errors)
+    require(recovery, "display-log-tail-recovered.json",
+            "proveniencia do trecho resgatado", errors)
+    require(recovery, "Get-FileHash",
+            "SHA-256 do trecho resgatado", errors)
+    require(recovery, "bounded_by_next_bind",
+            "declaracao de que o fim do trecho e' delimitado ou nao", errors)
+    require(recovery, "[System.IO.FileAccess]::Read",
+            "abertura do log vivo em somente leitura", errors)
+
+    # Somente leitura sobre o LOG VIVO: escrever ou apagar destruiria a fonte.
+    #
+    # C3.10 (12/09) -- PORTAO TORNADO PRECISO. A versao anterior proibia a string
+    # "[System.IO.FileAccess]::Write" em QUALQUER lugar do arquivo, sem
+    # distinguir a fonte do destino. O resgate precisa abrir o ARQUIVO DE
+    # DESTINO para escrita; com a proibicao cega, a unica saida seria driblar o
+    # portao com outra API -- o que e' pior do que o portao existir.
+    #
+    # A intencao permanece intacta e agora e' verificada onde importa: nenhuma
+    # abertura ou comando de escrita pode ter $DisplayLogPath como alvo.
+    for needle in ("Remove-Item -LiteralPath $DisplayLogPath",
+                   "Set-Content -LiteralPath $DisplayLogPath",
+                   "Clear-Content -LiteralPath $DisplayLogPath",
+                   "Add-Content -LiteralPath $DisplayLogPath",
+                   "Out-File -LiteralPath $DisplayLogPath"):
+        forbid(recovery, needle, "escrita no log cumulativo pelo resgate", errors)
+
+    # A abertura do log vivo continua obrigatoriamente em Read.
+    require(recovery,
+            "[System.IO.File]::Open($DisplayLogPath, [System.IO.FileMode]::Open,",
+            "abertura do log vivo por Open(...FileMode::Open...)", errors)
+    open_at = recovery.find("[System.IO.File]::Open($DisplayLogPath")
+    if open_at < 0:
+        errors.append("abertura do log vivo nao encontrada no resgate")
+    else:
+        window = recovery[open_at:open_at + 260]
+        if "[System.IO.FileAccess]::Read" not in window:
+            errors.append(
+                "log vivo aberto sem FileAccess::Read no resgate")
+        for bad in ("[System.IO.FileAccess]::Write",
+                    "[System.IO.FileAccess]::ReadWrite",
+                    "[System.IO.FileMode]::Create",
+                    "[System.IO.FileMode]::Append",
+                    "[System.IO.FileMode]::Truncate"):
+            if bad in window:
+                errors.append(
+                    f"log vivo aberto com modo de escrita no resgate ({bad})")
+
+    # E o destino NAO pode ser o proprio log vivo.
+    if "[System.IO.File]::Open($DisplayLogPath, [System.IO.FileMode]::Create" in recovery:
+        errors.append("resgate recria o log vivo em vez de apenas le-lo")
+
+    # C3.10: fatiamento de array sobre o trecho inteiro nao pode voltar.
+    # $buffer[0..($read - 1)] sobre 201 MB travou o bind em 12/09 16:02 e o
+    # operador teve de dar Ctrl+C.
+    # Sobre o CODIGO, sem comentarios: o comentario que explica a remocao cita
+    # a construcao proibida, e uma versao anterior deste portao reprovou o
+    # proprio comentario.
+    forbid(strip_ps_comments(recovery), "$buffer[0..",
+           "fatiamento de array do PowerShell sobre o trecho inteiro "
+           "(travou o bind na corrida 16:02)", errors)
+    # Forma EXATA: exigir so' a presenca de "$blockSize" passava com a variavel
+    # renomeada na atribuicao, porque o nome sobrevivia nos usos seguintes.
+    require(recovery, "$blockSize = 1MB",
+            "tamanho de bloco fixo na copia do trecho", errors)
+    require(recovery, "$dest.Write($buffer, 0, $chunk)",
+            "escrita do trecho bloco a bloco, sem materializar o todo", errors)
+
+    # O binder tem de chamar o resgate, e antes do bind.
+    require(binder, "recover-bc250mcdm-lost-tail.ps1",
+            "chamada do resgate de trecho pelo binder", errors)
+    recovery_call = binder.find("$tailRecovery = Join-Path")
+    baseline_write = binder.find("'display-log-baseline.json') -Encoding UTF8")
+    archive_write = binder.find("'display-log-archive.json') -Encoding UTF8")
+    if recovery_call < 0:
+        errors.append("binder nao define $tailRecovery: resgate de trecho nao esta ligado")
+    elif baseline_write < 0 or recovery_call < baseline_write:
+        errors.append(
+            "resgate de trecho chamado antes do baseline deste bind: sem a "
+            "start_offset nova o fim do trecho anterior fica indelimitado")
+    elif archive_write >= 0 and recovery_call > archive_write:
+        errors.append(
+            "resgate de trecho chamado depois do arquivamento final: precisa "
+            "rodar no inicio do bind, senao a corrida anterior segue truncada")
+
+
+def audit_draw_has_no_cpu_fallback(errors: list[str]) -> None:
+    """C1: Draw/DrawIndexed nao podem ser atendidos por copia de CPU.
+
+    DEFEITO ENCONTRADO POR LEITURA DE CODIGO em 10/09, no candidato 3.126.1.0 e
+    ainda nao commitado: Bc250UmdCompositeDraw atendia pfnDraw e pfnDrawIndexed
+    com um laco de memcpy entre os shadows de CPU de origem e destino, marcava
+    o draw como atendido ANTES de tentar qualquer caminho de GPU e devolvia
+    sucesso silencioso -- a linha honesta "DrawIndexed: RECUSADO" desaparecia.
+
+    Isso e' fallback de software disfarcado de renderizacao (Lei 4) e teria
+    consequencia direta na proxima corrida: qualquer desktop que aparecesse na
+    tela ficaria INFALSIFICAVEL, porque nao haveria como distinguir composicao
+    por GPU de memcpy. O teste de contrato AINDA EXIGIA esse memcpy, congelando
+    a mentira -- terceira ocorrencia dessa classe (A15 obrigava a comparacao
+    crua de RPTR; mcdm_callbacks_test exigia STATUS_SUCCESS sem executor).
+
+    Este portao trava as tres pontas: nao existe copia de CPU na funcao de
+    substituicao, a decisao sai da politica pura, e o teste continua PROIBINDO
+    o memcpy em vez de exigi-lo.
+    """
+    umd_path = ROOT / "driver" / "umd" / "bc250_d3d_umd.c"
+    test_path = ROOT / "driver" / "tests" / "bc250_d3d_umd_test.c"
+    if not umd_path.exists() or not test_path.exists():
+        errors.append("fontes da UMD nao encontradas para auditar fallback de draw")
+        return
+
+    umd = umd_path.read_text(encoding="utf-8", errors="replace")
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+
+    # O nome antigo nao pode voltar: ele designava a funcao que continha o fake.
+    forbid(umd, "Bc250UmdCompositeDraw",
+           "nome da funcao que continha o fallback de CPU no draw", errors)
+    require(umd, "static BOOL Bc250UmdSubstituteDrawWithBlt(",
+            "funcao unica de substituicao de draw", errors)
+    require(umd, "Bc250UmdDrawBltSubstitutionIsLawful(",
+            "decisao de substituicao pela politica pura", errors)
+
+    # Recorte exato da funcao de substituicao: nenhuma copia por CPU dentro dela.
+    start = umd.find("static BOOL Bc250UmdSubstituteDrawWithBlt(")
+    if start < 0:
+        errors.append("nao foi possivel recortar Bc250UmdSubstituteDrawWithBlt")
+        return
+    end = umd.find("\nVOID APIENTRY Bc250Umd10Draw(", start)
+    if end < 0:
+        errors.append("nao foi possivel delimitar o fim da substituicao de draw")
+        return
+    body = umd[start:end]
+
+    for needle in ("memcpy(", "RtlCopyMemory(", "CopyMemory(", "memmove("):
+        forbid(body, needle,
+               "copia por CPU dentro da substituicao de draw", errors)
+    # Upload por CPU tambem nao: seria o mesmo fake com outro nome.
+    forbid(body, "Bc250WinsysUploadAllocation(",
+           "upload por CPU dentro da substituicao de draw", errors)
+    require(body, "Bc250UmdBltGpu(",
+            "unico produtor de pixel na substituicao: blt de GPU", errors)
+    require(body, "SubstitutedDrawCount++",
+            "contagem separada de draws substituidos", errors)
+
+    # A substituicao nunca pode ser confundida com rasterizacao no log.
+    require(body, "NAO e' rasterizacao",
+            "log declarando que substituicao nao e' rasterizacao", errors)
+
+    # O default de fabrica e' recusar: o tunable nao pode nascer ligado.
+    inf_path = ROOT / "driver" / "wdk" / "package" / "bc250mcdm.inf"
+    if inf_path.exists():
+        inf = inf_path.read_text(encoding="utf-8", errors="replace")
+        for line in inf.splitlines():
+            if "D3D11DrawBltSubstitution" in line and not line.strip().startswith(";"):
+                if "0x00010001,1" in line.replace(" ", ""):
+                    errors.append(
+                        "INF fonte arma D3D11DrawBltSubstitution=1: "
+                        "o default de fabrica tem de ser 0")
+
+    # E o teste tem de DETECTAR o memcpy, nao exigi-lo.
+    forbid(test, "TestCompositeDrawAndUniqueTokens",
+           "teste que exigia o memcpy no draw", errors)
+    require(test, "static void TestDrawBltSubstitutionFailsClosed(void)",
+            "teste do fail-closed da substituicao de draw", errors)
+    require(test, "assert(dev.SubstitutedDrawCount == 0u);",
+            "assercao de que nenhum draw foi substituido sem winsys", errors)
+    require(test, "assert(((const uint8_t*)resDst.pCpuShadow)[i] == 0x00);",
+            "deteccao de regressao do memcpy no destino", errors)
 
 
 def audit_probe_field_names(errors: list[str]) -> None:
@@ -748,6 +1829,48 @@ def audit_node1_gate_telemetry(errors: list[str]) -> None:
             "recusa de Node 1 voltou a ser muda (STATUS_NOT_SUPPORTED sem log)")
 
 
+def audit_node1_physical_gpuva_gate(errors: list[str]) -> None:
+    """C3.17: snapshot logico nao pode ser a autoridade do submit Node 1.
+
+    Medido em 12/09 19:27: o primeiro IB do RADV executou, mas a fence manteve
+    um dos dois slots fixado ate o drain. A publicacao seguinte encontrou
+    BUSY nas 16 tentativas e fechou GpuvaMappingsOperational, embora a page
+    table fisica estivesse valida. Mais tarde o espelho tambem atingiu
+    NO_SPACE. Fixar o snapshot nao protege a PTE: UpdatePageTable grava a PTE
+    fisica antes de tentar publicar o espelho.
+
+    No perfil explicitamente armado, a autoridade passa a ser a caminhada de
+    todas as paginas na root do proprio contexto. O snapshot fica somente como
+    diagnostico e deve ser liberado antes da reserva/publicacao da fence.
+    """
+    active_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+    if not active_path.exists():
+        errors.append("bc250_active_miniport.c ausente para auditar gate fisico Node 1")
+        return
+    text = strip_c_comments(active_path.read_text(encoding="utf-8", errors="replace"))
+
+    require(text, "physicalGpuvaAdmission =",
+            "admissao fisica explicita do Node 1", errors)
+    require(text, "context->GpuvaLabPromotionPresent == 1u",
+            "gate fisico restrito ao perfil explicitamente armado", errors)
+    require(text, 'Bc250ActiveValidateGpuVaRange("NODE1_IB",',
+            "caminhada integral da page table do IB Node 1", errors)
+    require(text, "contextView.RootPageTableAddress",
+            "root da caminhada derivada do contexto submetido", errors)
+    require(text, "GATE FISICO PASS:",
+            "veredito positivo observavel do gate fisico", errors)
+    require(text, "gate fisico integral falhou",
+            "falha fechada e observavel do gate fisico", errors)
+    require(text, "SNAPSHOT_DIAGNOSTICO",
+            "snapshot rebaixado explicitamente a diagnostico", errors)
+    require(text, "reserveSync.GpuvaPinValid = FALSE;",
+            "fence nao retém snapshot logico sem utilidade para o hardware", errors)
+    require(text, "sync->ReserveAccepted && sync->GpuvaPinValid &&",
+            "anexo de pin condicionado em vez de automatico", errors)
+    forbid(text, "gpuvaReader.Space = NULL;",
+           "transferencia da referencia do snapshot para a fence", errors)
+
+
 
 def audit_tdr_pair_has_backend(errors: list[str]) -> None:
     """B6 / item 25: o par de TDR nao pode devolver sucesso sem silicio.
@@ -1189,6 +2312,557 @@ def audit_induced_hang_package_order(errors: list[str]) -> None:
             "script proibe chave manual", errors)
 
 
+def audit_marco3_closes_its_own_transaction(errors: list[str]) -> None:
+    """Marco 3 must preserve partial proof and always restore BasicDisplay."""
+    launcher = (ROOT / "tools/EXECUTAR_MARCO3.cmd").read_text(encoding="utf-8")
+    runner = (ROOT / "tools/test-radv-wddm-present-tripod.ps1").read_text(
+        encoding="utf-8")
+
+    bind_call = launcher.find("bind-bc250mcdm-lab.ps1")
+    recovery_call = launcher.find("BC250_RECOVERY.cmd")
+    marker_write = launcher.find("CLEAN_BOOT_REQUIRED")
+    if bind_call < 0 or recovery_call <= bind_call:
+        errors.append("Marco 3 does not run recovery after its physical bind")
+    if marker_write <= recovery_call:
+        errors.append("Marco 3 does not publish the clean-boot marker after recovery")
+    require(launcher, 'if not "%RECOVERY_EXIT%"=="0"',
+            "fail-closed Marco 3 recovery result gate", errors)
+
+    checks = runner.split("$checks = [ordered]@{", 1)[-1]
+    forbid(checks,
+           "render_byte_proof = (-not $timedOut -and $exitCode -eq 0",
+           "render proof erased by a later process failure", errors)
+    forbid(checks,
+           "wddm_present_called = (-not $timedOut -and $exitCode -eq 0",
+           "present proof erased by a later process failure", errors)
+    require(checks, "dwm_wer_events = $dwmWerCount",
+            "separate WER and DWM crash diagnostics", errors)
+
+
+def audit_present_is_gpu_attributable(errors: list[str]) -> None:
+    """C3: nenhum pixel do present pode nascer da CPU sem reprovar a corrida.
+
+    DEFEITO MEDIDO NA CORRIDA 11/09 22:46, a que fechou o "Marco 2". O log do
+    KMD daquele bind tem DUAS linhas PRESENT_BLT e nenhuma delas e' de GPU:
+
+        PRESENT_BLT: 2560x1080 (11059200 bytes), GpuVa=0x200020000, ...
+        PRESENT_BLT: Host Kernel Blt CONCLUIDO COM SUCESSO! 11059200 bytes ...
+
+    Zero "SDMA HW BLT CONCLUIDO". Os 11 MB foram para o scanout por
+    RtlCopyMemory. Mesmo assim o veredito saiu "10/10 PASS" com
+    sdma_blt_executed=True, porque o check casava com a string 'PRESENT_BLT'
+    -- e ate' com 'BYTE_PROOF INCONCLUSIVO'. E o contador autoritativo do
+    driver arquivou "Fallbacks=0", porque FallbackCpuCount so' conta recusa de
+    Bc250SdmaPresentBlt e e' CEGO a copia que o escape realmente faz.
+
+    Quarta ocorrencia da classe "o gate carimbava o falso sucesso": A15 obrigava
+    a comparacao crua de RPTR, mcdm_callbacks_test exigia STATUS_SUCCESS sem
+    executor de TDR, bc250_d3d_umd_test.c exigia o memcpy no Draw.
+
+    Este portao trava as quatro pontas:
+      1. o veredito do runner nao pode voltar a aceitar 'PRESENT_BLT' como prova
+         de SDMA, e precisa ter o check que reprova pixel de CPU;
+      2. o caminho de copia por CPU do escape precisa se declarar como tal e
+         contabilizar em HostCpuCopyCount;
+      3. a "Garantia de Scanout GOP" -- a copia por CPU que rodava DEPOIS de um
+         SDMA bem-sucedido, no mesmo endereco, tornando o quadro 1 nao
+         atribuivel a GPU -- nao pode voltar a existir;
+      4. o contador tem de aparecer no teardown, senao a evidencia nao carrega
+         o numero.
+    """
+    runner_path = ROOT / "tools" / "test-radv-wddm-present-tripod.ps1"
+    active_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+    present_path = ROOT / "driver" / "wdk" / "bc250_sdma_present.c"
+    present_header = ROOT / "driver" / "wdk" / "bc250_sdma_present.h"
+    for path in (runner_path, active_path, present_path, present_header):
+        if not path.exists():
+            errors.append(f"fonte ausente para auditar atribuicao do present: {path}")
+            return
+
+    runner = runner_path.read_text(encoding="utf-8", errors="replace")
+    active = active_path.read_text(encoding="utf-8", errors="replace")
+    present = present_path.read_text(encoding="utf-8", errors="replace")
+    header = present_header.read_text(encoding="utf-8", errors="replace")
+
+    # 1. Veredito do runner.
+    require(runner, "sdma_blt_executed = ($displayLogDelta -match 'SDMA HW BLT CONCLUIDO COM SUCESSO')",
+            "sdma_blt_executed derivado SO' da string do ramo de GPU", errors)
+    require(runner, "no_host_copy_fallback",
+            "check que reprova a corrida com pixel produzido por CPU", errors)
+
+    # A linha do check nao pode citar as strings frouxas que produziram o falso
+    # PASS. Recorte exato: so' a atribuicao de sdma_blt_executed.
+    marker = "sdma_blt_executed ="
+    start = runner.find(marker)
+    if start < 0:
+        errors.append("nao foi possivel recortar a atribuicao de sdma_blt_executed")
+    else:
+        line_end = runner.find("\n", start)
+        assignment = runner[start:line_end if line_end > 0 else len(runner)]
+        for loose in ("'PRESENT_BLT'", "BYTE_PROOF INCONCLUSIVO", "Bc250Escape",
+                      "Spread SCANOUT", "TILE_PROBE"):
+            if loose in assignment:
+                errors.append(
+                    f"sdma_blt_executed voltou a aceitar prova frouxa ({loose}); "
+                    "foi assim que a corrida 11/09 22:46 saiu 10/10 PASS com "
+                    "present feito por RtlCopyMemory")
+
+    # 2. O ramo de copia por CPU do escape declara-se e conta.
+    require(active, "PRESENT_BLT: COPIA POR CPU",
+            "ramo de copia por CPU do escape declarado honestamente", errors)
+    require(active, "InterlockedIncrement(&g_Bc250SdmaPresent.HostCpuCopyCount)",
+            "copia por CPU do escape contabilizada", errors)
+    forbid(active, "Host Kernel Blt CONCLUIDO COM SUCESSO",
+           "rotulo antigo que anunciava copia por CPU como sucesso", errors)
+
+    # 3. A garantia por CPU depois de SDMA bem-sucedido nao pode voltar.
+    forbid(active, "Garantia de Scanout GOP",
+           "copia por CPU sobre destino que o SDMA ja escreveu "
+           "(torna o quadro nao atribuivel a GPU)", errors)
+
+    # Invariante sem janela de linhas: entre o log de SDMA bem-sucedido e o
+    # return daquele ramo nao pode existir copia de memoria alguma.
+    #
+    # ARMADILHA JA VIVIDA (o gate do B3 reprovou por citar o nome banido dentro
+    # de um comentario): a varredura roda sobre o codigo COM OS COMENTARIOS
+    # REMOVIDOS, senao o proprio comentario que explica a remocao do memcpy
+    # reprova o arquivo.
+    # O corte tem de ser feito sobre o arquivo JA sem comentarios: fatiar antes
+    # de remover comeca a leitura no meio de um literal de string e dessincroniza
+    # o parser de aspas.
+    active_code = strip_c_comments(active)
+    success = active_code.find("SDMA HW BLT CONCLUIDO COM SUCESSO")
+    if success < 0:
+        errors.append("ramo de sucesso do SDMA no escape nao encontrado")
+    else:
+        tail = active_code[success:]
+        stop = tail.find("return STATUS_SUCCESS;")
+        window = tail[:stop] if stop > 0 else tail
+        for copier in ("RtlCopyMemory", "memcpy", "RtlMoveMemory"):
+            if copier in window:
+                errors.append(
+                    f"{copier} entre o sucesso do SDMA e o retorno do escape: "
+                    "o pixel deixa de ser atribuivel a GPU")
+
+    # 4. Contador visivel na evidencia.
+    require(header, "HostCpuCopyCount",
+            "campo de contagem de copia por CPU no estado do present", errors)
+    require(present, "HostCpuCopies=%ld",
+            "contagem de copia por CPU publicada no teardown", errors)
+
+
+def audit_present_source_uses_segment_base(errors: list[str]) -> None:
+    """C3.4: a origem do present tem de sair da fonte unica de conversao MC.
+
+    DEFEITO MEDIDO NA CORRIDA 12/09 12:29, e visivel na tela.
+
+    Bc250ActiveResolveDisplayGpuVa devolve um OFFSET DE SEGMENTO -- o campo de
+    saida de Bc250GpuvaSpaceResolveAddress chama-se literalmente
+    BackingSegmentOffset. O segmento 1 nao comeca no byte zero da VRAM: comeca
+    em LocalSegmentBaseOffset (0xA8C000 = 11.059.200, logo apos a reserva de
+    scanout). O caminho de present somava SO' VramMcStart:
+
+        srcGpu = g_Bc250SdmaPresent.VramMcStart + physAddr;
+
+    Resultado: o SDMA lia 11.059.200 bytes ANTES da imagem. O blt concluia com
+    fence e RPTR==WPTR -- a engine executou de verdade -- mas sobre a regiao
+    errada. Na tela deu preto com uma faixa cinza embaixo. O tripe inteiro
+    passava, porque nenhuma das tres pernas confere de ONDE se leu.
+
+    O comentario de BC250_MCDM_RUNTIME_CAPS.VramMcBase ja dizia que o campo era
+    "a unica fonte da base, usada tanto pelo codificador de entradas quanto pela
+    instalacao da root, para que as duas nao possam mais sair de fase". O
+    present era um TERCEIRO consumidor, e saiu de fase.
+
+    Este portao exige que a conversao passe por Bc250SegmentOffsetToMc e proibe
+    o padrao cru que produziu o defeito.
+    """
+    active_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+    contract_c = ROOT / "driver" / "core" / "bc250_segment_address_contract.c"
+    test_path = ROOT / "driver" / "tests" / "segment_address_contract_test.c"
+    for path in (active_path, contract_c, test_path):
+        if not path.exists():
+            errors.append(f"fonte ausente para auditar origem do present: {path}")
+            return
+
+    active = strip_c_comments(
+        active_path.read_text(encoding="utf-8", errors="replace"))
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+
+    require(active, "mcStatus = Bc250SegmentOffsetToMc(",
+            "conversao de offset de segmento pela fonte unica, governando o ramo",
+            errors)
+
+    # O padrao cru nao pode voltar em sitio nenhum do miniport.
+    for bad in ("VramMcStart + physAddr",
+                "VramMcStart + segmentOffset",
+                "VramMcStart + offset"):
+        if bad in active:
+            errors.append(
+                f"conversao crua de volta no present ({bad}): falta "
+                "LocalSegmentBaseOffset -- foi o defeito visivel da corrida 12:29")
+
+    # Recorte do ramo que resolve a GPUVA de origem: entre a chamada ao
+    # resolvedor e o disparo do blt, a atribuicao de srcGpu tem de vir do
+    # helper, nao de uma soma local.
+    start = active.find("Bc250ActiveResolveDisplayGpuVa(targetHandle")
+    stop = active.find("Bc250SdmaPresentBlt(srcGpu")
+    if start < 0 or stop <= start:
+        errors.append("nao foi possivel recortar o ramo de origem do present")
+    else:
+        window = active[start:stop]
+        if "Bc250SegmentOffsetToMc(" not in window:
+            errors.append(
+                "o ramo que resolve a GPUVA de origem nao chama "
+                "Bc250SegmentOffsetToMc antes do blt")
+        if "g_Bc250SdmaPresent.VramMcStart +" in window:
+            errors.append(
+                "soma crua com VramMcStart dentro do ramo de origem do present")
+
+        # ARMADILHA DO DOMINIO, medida na corrida 12/09 12:51.
+        #
+        # Existem DUAS bases de VRAM e elas nao sao intercambiaveis:
+        #   caps.VramMcBase                = 0x450000000   (GCVM: PTE, root, VMID)
+        #   g_Bc250SdmaPresent.VramMcStart = 0xF400000000  (anel de present SDMA)
+        #
+        # A primeira versao da correcao usou a base da GCVM na ORIGEM enquanto o
+        # DESTINO seguia derivado de VramMcStart. Dominios diferentes: o blt deu
+        # timeout com a fence no poison em 8 de 8 tentativas e o present caiu na
+        # copia por CPU -- que na tela parecia sucesso, porque a copia por CPU le
+        # os pixels certos. So' o contador HostCpuCopies denunciou.
+        #
+        # Origem e destino do blt PRECISAM partir da mesma base.
+        if "srcCaps.VramMcBase" in window or "caps.VramMcBase" in window:
+            errors.append(
+                "origem do present derivada de caps.VramMcBase (dominio da GCVM) "
+                "enquanto o destino usa g_Bc250SdmaPresent.VramMcStart: foi o "
+                "timeout de 8/8 da corrida 12:51")
+        if "g_Bc250SdmaPresent.VramMcStart," not in window:
+            errors.append(
+                "origem do present nao parte de g_Bc250SdmaPresent.VramMcStart, "
+                "a mesma base do destino")
+
+    # O teste tem de carregar os numeros medidos, senao vira carimbo.
+    for needle in ("0x000000F401560000ull", "0x000000F401FEC000ull",
+                   "0x0000000000A8C000ull", "0x0000000451FEC000ull"):
+        require(test, needle,
+                f"numero medido da corrida 12:29 no teste ({needle})", errors)
+
+    # ------------------------------------------------------------------
+    # C3.6 (12/09) -- O SEGUNDO CAMINHO DE PRESENT.
+    #
+    # A C3.4 corrigiu a conversao no caminho de ESCAPE e este portao so' cobria
+    # aquele. DxgkDdiPresent tinha o MESMO defeito, intocado: usava o offset de
+    # segmento direto como indice de g_Bc250DisplayState.FrameBufferVirtual.
+    # Resultado medido na corrida 13:11: amostrou 11.059.200 bytes antes da
+    # superficie, leu zeros, reprovou um quadro correto e a reacao derrubou a
+    # maquina com 0x119.
+    #
+    # Cobrir um caminho e deixar o outro foi o proprio defeito. O portao passa a
+    # exigir os DOIS.
+    # ------------------------------------------------------------------
+    display_path = ROOT / "driver" / "wdk" / "bc250_display_ddi.c"
+    present_c = ROOT / "driver" / "wdk" / "bc250_sdma_present.c"
+    if not display_path.exists() or not present_c.exists():
+        errors.append("fontes do caminho de display ausentes")
+        return
+    display = strip_c_comments(
+        display_path.read_text(encoding="utf-8", errors="replace"))
+    present_src = present_c.read_text(encoding="utf-8", errors="replace")
+
+    # Forma EXATA da condicao, nao so' a presenca do nome. Uma versao anterior
+    # deste portao exigia apenas a string "Bc250SdmaPresentSegmentOffsetToVram(",
+    # e a mutacao "if (0 && Bc250SdmaPresentSegmentOffsetToVram(...)" passava --
+    # portao que nao pega a propria mutacao nao e' portao.
+    require(display, "if (Bc250SdmaPresentSegmentOffsetToVram(presentSegmentId,",
+            "conversao de offset de segmento governando o ramo do DxgkDdiPresent",
+            errors)
+    require(display, "srcPhysical = srcVramOffset;",
+            "origem do present vinda da conversao, nao do offset cru", errors)
+    require(present_src, "Bc250SegmentOffsetToVramOffset(",
+            "vista de offset de VRAM derivada da fonte unica", errors)
+    # Guarda de geometria: forma exata, pelo mesmo motivo.
+    require(present_src,
+            "if (InterlockedCompareExchange(&g_Bc250SdmaPresent.SegmentGeometryReady, 1, 1) != 1) {",
+            "recusa de conversao sem geometria publicada", errors)
+
+    # A atribuicao crua do offset de segmento nao pode voltar.
+    forbid(display, "srcPhysical = presentPhysical;",
+           "offset de segmento usado direto como offset de VRAM no "
+           "DxgkDdiPresent (defeito medido na corrida 13:11)", errors)
+
+    # Fonte unica de verdade: a geometria tem UM escritor.
+    writers = display.count("g_Bc250SdmaPresent.LocalSegmentBaseOffset =")
+    writers += display.count("g_Bc250SdmaPresent.LocalSegmentBytes =")
+    if writers:
+        errors.append(
+            "geometria do segmento escrita fora de "
+            "Bc250SdmaPresentSetSegmentGeometry")
+
+
+def audit_node1_journal_gate_granularity(errors: list[str]) -> None:
+    """C3.9: o bloqueio por journal do Node 1 e' fail-closed e mensuravel.
+
+    MEDIDO NA CORRIDA 12/09 13:29. Com D3D11LabPromotion armado, o dwm.exe
+    sobreviveu 3 min 13 s -- primeira vez, contra 7 crashes em 18 s sem ele. Mas
+    o gate do Node 1 usava Bc250GpuvaJournalSetAnyPending, que pergunta "ALGUM
+    slot do adaptador esta pendente?". Com o DWM paginando sem parar, essa
+    resposta nunca foi zero: BlockMask=0x1 (JOURNAL), submissao de compute do
+    RADV RECUSADA, shader nao executou e o byte proof leu poison 0x43DAFFFE.
+    Compute e desktop nao coexistiam por GRANULARIDADE do gate, nao por limite
+    do hardware.
+
+    Este portao exige tres coisas:
+      1. a vista por processo existe e e' usada na decisao;
+      2. ela e' FAIL-CLOSED -- so' vale com o tunable presente E em 1 E com
+         processo conhecido, senao a condicao global continua valendo;
+      3. a telemetria que nomeia os slots pendentes existe, porque "JOURNAL=1"
+         sozinho nao distingue pendencia propria da do dwm.exe -- foi essa
+         ambiguidade que fez a corrida 13:29 precisar de mineracao manual.
+    """
+    active_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+    journal_c = ROOT / "driver" / "core" / "bc250_gpuva_journal_contract.c"
+    test_path = ROOT / "driver" / "tests" / "gpuva_journal_contract_test.c"
+    for path in (active_path, journal_c, test_path):
+        if not path.exists():
+            errors.append(f"fonte ausente para auditar o gate do journal: {path}")
+            return
+
+    active = strip_c_comments(
+        active_path.read_text(encoding="utf-8", errors="replace"))
+    journal = journal_c.read_text(encoding="utf-8", errors="replace")
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+
+    # 1. A vista por processo existe e decide.
+    require(journal, "Bc250GpuvaJournalSetAnyPendingForProcess(",
+            "vista por processo da pendencia de journal", errors)
+    require(active, "Bc250GpuvaJournalSetAnyPendingForProcess(",
+            "gate consultando a pendencia do processo que submete", errors)
+
+    # 2. Fail-closed: forma EXATA da guarda tripla.
+    require(active,
+            "if (active->Node1JournalGatePerProcessPresent == 1u &&",
+            "tunable exigido presente antes de relaxar o bloqueio", errors)
+    require(active, "active->Node1JournalGatePerProcess == 1u &&",
+            "tunable exigido em 1 antes de relaxar o bloqueio", errors)
+    require(active, "Process != NULL) {",
+            "processo conhecido exigido antes de relaxar o bloqueio", errors)
+    # O caminho global nao pode desaparecer: ele e' o default.
+    require(active, "} else if (Bc250GpuvaJournalSetAnyPending(active->GpuvaJournals,",
+            "condicao global preservada como default do gate", errors)
+
+    # 3. Telemetria que nomeia os slots.
+    require(journal, "Bc250GpuvaJournalSetDescribePending(",
+            "telemetria de slots pendentes do journal", errors)
+    require(active, "JOURNAL_PENDENTE: SlotMask=0x%08X Count=%u",
+            "log que nomeia quem segura o journal na recusa", errors)
+
+    # O teste tem de provar a DISTINCAO, senao a correcao pode virar no-op.
+    require(test, "Bc250GpuvaJournalSetAnyPendingForProcess(set, 3u, procA) == 0u",
+            "teste provando que a pendencia de outro processo nao bloqueia",
+            errors)
+    require(test, "Bc250GpuvaJournalSetAnyPending(set, 3u) == 1u",
+            "teste provando que a pergunta global ainda responde 1", errors)
+
+    # C3.9: a leitura do tunable tem de ser visivel a imagem de LABORATORIO.
+    # A primeira versao ficou dentro do ramo de producao e o tunable nunca seria
+    # lido no perfil que roda os ensaios -- pego por conferencia de string no SYS
+    # assinado, nao por teste. O portao abaixo fecha a classe inteira.
+    active_raw = active_path.read_text(encoding="utf-8", errors="replace")
+    require_outside_production_only(
+        active_raw,
+        "context->Node1JournalGatePerProcess = Bc250ActiveReadTunableChecked(",
+        "leitura de Node1JournalGatePerProcess", errors)
+
+
+def audit_snapshot_publish_retries(errors: list[str]) -> None:
+    """C3.8: o publicador do snapshot retenta, e BUSY nao se confunde com erro.
+
+    MEDIDO NA CORRIDA 12/09 16:09. Bc250GpuvaSnapshotAcquire (o LEITOR) sempre
+    tentou 16 vezes antes de devolver BUSY. Bc250GpuvaSnapshotPublishBatch (o
+    PUBLICADOR) fazia UMA tentativa de CAS e desistia.
+
+    Com o dwm.exe vivo, cada Present resolve uma GPUVA e mantem contagem de
+    leitor num slot; quando esse slot vira o inativo, a publicacao seguinte
+    exige contagem ZERO e falhava de imediato. Dai:
+      journal PUBLISH_FAILED (status 7)
+        -> ActiveFlushTlb devolve STATUS_IO_DEVICE_ERROR
+        -> GpuvaMappingsOperational so' reabre no ramo "journalStatus == OK",
+           entao a admissao do Node 1 NUNCA voltava
+        -> STATUS_GRAPHICS_GPU_EXCEPTION_ON_DEVICE no 3o submit.
+
+    Este portao trava:
+      1. o laco de retentativa existe e usa a MESMA constante do lado leitor;
+      2. o diagnostico separa BUSY de erro real de faixa -- o log antigo
+         colapsava os dois em "status 7";
+      3. o KMD publica esse diagnostico na linha de falha, senao a proxima
+         corrida volta a nao saber a causa;
+      4. o teste prova a DISTINCAO com leitor preso, e nao apenas o caminho
+         feliz -- sem isso a correcao poderia ser um no-op.
+    """
+    snap_c = ROOT / "driver" / "core" / "bc250_gpuva_snapshot_contract.c"
+    snap_h = ROOT / "driver" / "core" / "bc250_gpuva_snapshot_contract.h"
+    active_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+    test_path = ROOT / "driver" / "tests" / "gpuva_snapshot_contract_test.c"
+    for path in (snap_c, snap_h, active_path, test_path):
+        if not path.exists():
+            errors.append(f"fonte ausente para auditar publicacao de snapshot: {path}")
+            return
+
+    snap = strip_c_comments(snap_c.read_text(encoding="utf-8", errors="replace"))
+    header = snap_h.read_text(encoding="utf-8", errors="replace")
+    active = strip_c_comments(
+        active_path.read_text(encoding="utf-8", errors="replace"))
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+
+    # 1. Laco de retentativa, com a constante compartilhada.
+    require(header, "#define BC250_GPUVA_SNAPSHOT_PUBLISH_ATTEMPTS",
+            "constante de tentativas da publicacao", errors)
+    require(snap, "for (attempt = 0u; attempt < BC250_GPUVA_SNAPSHOT_PUBLISH_ATTEMPTS; ++attempt) {",
+            "laco de retentativa do publicador", errors)
+
+    # A desistencia numa unica tentativa nao pode voltar.
+    if "0L) != 0L) {" in snap and "for (attempt" not in snap:
+        errors.append("publicador voltou a desistir na primeira tentativa")
+
+    # 2. Diagnostico separando BUSY de erro real.
+    for field in ("LastPublishAttempts", "LastPublishBusyCount", "LastPublishStatus"):
+        require(header, field, f"campo de diagnostico da publicacao ({field})", errors)
+    require(snap, "_InterlockedExchange(&Store->LastPublishStatus, (long)BC250_GPUVA_BUSY);",
+            "BUSY registrado como causa distinta", errors)
+    require(snap, "_InterlockedExchange(&Store->LastPublishStatus, (long)status);",
+            "erro real de faixa registrado como causa distinta", errors)
+
+    # 3. O KMD publica o diagnostico na linha de falha.
+    require(active, "PublishStatus=%ld Attempts=%ld Busy=%ld",
+            "diagnostico da publicacao no log de falha do flush", errors)
+
+    # 4. O teste prova a distincao com leitor preso.
+    require(test, "c38Store.ReaderState[c38Inactive] = 1L;",
+            "teste com leitor preso no slot inativo", errors)
+    require(test, "== BC250_GPUVA_BUSY",
+            "teste exigindo BUSY sob contencao", errors)
+    require(test, "c38Store.LastPublishBusyCount ==",
+            "teste provando que o publicador retentou", errors)
+
+    # ------------------------------------------------------------------
+    # C3.12 (12/09) -- CAS NAO E' LEITURA.
+    #
+    # A integracao da telemetria de ocupacao amostrava o slot ativo com
+    # InterlockedCompareExchange(&GpuvaSnapshots.ActiveSlot, 0, 0). No x86 isso
+    # compila para "lock cmpxchg", que executa uma ESCRITA TRAVADA mesmo quando
+    # nao troca valor -- sobre um campo cujo dono e' outra thread (o publicador
+    # do snapshot). Resultado: active_miniport_test reprovou de forma
+    # DETERMINISTICA na linha 632 (StopDeviceActive deixando de devolver
+    # STATUS_SUCCESS), inclusive com build limpo.
+    #
+    # A bisseccao levou quatro builds e passou por duas hipoteses erradas
+    # (string de formato longa; leitura de Slots[1]). O discriminante final foi
+    # trocar a amostragem por leitura volatil pura -- e o teste voltou a passar.
+    #
+    # ActiveSlot e' "volatile long": ler basta. Este portao impede que a
+    # telemetria volte a usar read-modify-write para amostrar o campo.
+    # ------------------------------------------------------------------
+    forbid(active,
+           "InterlockedCompareExchange(\n                &active->GpuvaSnapshots.ActiveSlot, 0, 0)",
+           "CAS usado como leitura de ActiveSlot na telemetria "
+           "(lock cmpxchg escreve; reprovou active_miniport_test)", errors)
+    require(active, "LONG occSlot = active->GpuvaSnapshots.ActiveSlot;",
+            "amostragem do slot ativo por leitura volatil pura", errors)
+    require(active, "Bc250GpuvaSpaceDescribeOccupancy(",
+            "telemetria de ocupacao integrada ao caminho de falha do flush",
+            errors)
+    require(active, "OCUPACAO slot=%ld st=%u Cap=%u Mapped=%u Teardown=%u Reusable=%u",
+            "log que separa capacidade esgotada de slots presos em TEARDOWN",
+            errors)
+
+
+def audit_gpuva_snapshot_capacity(errors: list[str]) -> None:
+    """C3.14-C3.16: capacidade pelo estado final, nao pelo historico bruto.
+
+    A corrida 17:45 mediu ate 252 faixas ativas. O journal aceita ate 256
+    runs por commit. Scratch parte vazio e representa o estado final, portanto
+    o antigo teto 256 era capacidade insuficiente, nao overhead transitorio do
+    rebuild. O teste de contrato reproduz 252 + 256 e deve permanecer ligado ao
+    teto real, para que reduzir a constante nao vire uma regressao silenciosa.
+    """
+    space_h = ROOT / "driver" / "core" / "bc250_gpuva_space_contract.h"
+    journal_h = ROOT / "driver" / "core" / "bc250_gpuva_journal_contract.h"
+    journal_c = ROOT / "driver" / "core" / "bc250_gpuva_journal_contract.c"
+    snapshot_test_path = ROOT / "driver" / "tests" / "gpuva_snapshot_contract_test.c"
+    journal_test_path = ROOT / "driver" / "tests" / "gpuva_journal_contract_test.c"
+    active_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+    for path in (space_h, journal_h, journal_c, snapshot_test_path, journal_test_path,
+                 active_path):
+        if not path.exists():
+            errors.append(f"fonte ausente para auditar capacidade GPUVA: {path}")
+            return
+
+    header = strip_c_comments(space_h.read_text(encoding="utf-8", errors="replace"))
+    journal_header = strip_c_comments(
+        journal_h.read_text(encoding="utf-8", errors="replace"))
+    journal_source = strip_c_comments(
+        journal_c.read_text(encoding="utf-8", errors="replace"))
+    test = strip_c_comments(
+        snapshot_test_path.read_text(encoding="utf-8", errors="replace"))
+    journal_test = strip_c_comments(
+        journal_test_path.read_text(encoding="utf-8", errors="replace"))
+    active = strip_c_comments(
+        active_path.read_text(encoding="utf-8", errors="replace"))
+    match = re.search(
+        r"#define\s+BC250_GPUVA_SPACE_MAX_RANGES\s+(\d+)u", header)
+    if match is None:
+        errors.append("teto BC250_GPUVA_SPACE_MAX_RANGES ausente ou nao numerico")
+    elif int(match.group(1)) < 1024:
+        errors.append(
+            "capacidade GPUVA abaixo do envelope C3.14: "
+            f"{match.group(1)} < 1024")
+
+    require(test, "C314_EXISTING_RANGES = 252, C314_BATCH_RANGES = 461",
+            "replay do pico ativo mais o update esparso medido", errors)
+    require(test, "C314_EXISTING_RANGES + C314_BATCH_RANGES",
+            "teste ligando a capacidade ao total final", errors)
+    require(test, "c314Occupancy.Mapped ==",
+            "teste conferindo todas as faixas publicadas", errors)
+    require(test, "c314Store.ActiveSlot == 1L",
+            "teste conferindo publicacao atomica do slot", errors)
+
+    # C3.15: o teto anterior ao snapshot tambem precisa comportar o envelope.
+    # A corrida 18:21 mediu updates esparsos de 333, 443 e 461 entradas. O
+    # miniport os quebrava em chunks de 256, mas o journal acumula todos os
+    # runs ate o flush; logo o segundo chunk ainda estourava o teto antigo.
+    journal_match = re.search(
+        r"#define\s+BC250_GPUVA_JOURNAL_MAX_CHANGES\s+(\d+)u",
+        journal_header)
+    if journal_match is None:
+        errors.append("teto BC250_GPUVA_JOURNAL_MAX_CHANGES ausente ou nao numerico")
+    elif int(journal_match.group(1)) < 1024:
+        errors.append(
+            "capacidade do journal abaixo do envelope C3.15: "
+            f"{journal_match.group(1)} < 1024")
+    require(journal_test, "C315_SPARSE_RUNS = 461",
+            "replay do update esparso medido na corrida 18:21", errors)
+    require(journal_test, "c315Journal.ChangeCount == C315_SPARSE_RUNS",
+            "teste conferindo os 461 runs no mesmo journal", errors)
+    require(journal_test, "c315Occupancy.Mapped == C315_SPARSE_RUNS",
+            "teste conferindo publicacao integral dos 461 runs", errors)
+    require(active, "transacao parcial ABORTADA",
+            "overflow do journal aborta prefixo parcial", errors)
+    require(active, "Bc250GpuvaJournalAbort(leafJournal);",
+            "abort fisico do prefixo parcial do journal", errors)
+    # C3.16: 1024 tambem estourou (239 vezes) na corrida 18:45. A solucao nao
+    # e outro aumento arbitrario: o journal deve substituir intervalos antigos
+    # e guardar somente o delta final nao sobreposto.
+    require(journal_source, "Bc250GpuvaJournalOverlayChange(",
+            "journal aplica updates por sobreposicao de estado final", errors)
+    require(journal_test, "i < 17471u",
+            "replay do pico historico medido na corrida 18:45", errors)
+    require(journal_test, "overlayJournal.ChangeCount == 1u",
+            "17.471 reescritas da mesma VA ocupam um unico estado final", errors)
+    require(journal_test, "overlayJournal.ChangeCount == 3u",
+            "sobreposicao parcial preserva as duas pontas", errors)
+
+
 def main() -> int:
     active_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
     engine_path = ROOT / "driver" / "wdk" / "bc250_submission_engine.c"
@@ -1203,6 +2877,8 @@ def main() -> int:
     lab_bind_path = ROOT / "tools" / "bind-bc250mcdm-lab.ps1"
     lab_package_path = ROOT / "tools" / "package-bc250mcdm-lab.ps1"
     lab_watchdog_path = ROOT / "tools" / "watch-bc250mcdm-lab.ps1"
+    safe_guard_assert_path = (ROOT / "tools" /
+                              "assert-bc250-safe-bind-guard.ps1")
     lab_rollback_path = ROOT / "tools" / "rollback-bc250mcdm-lab.ps1"
     render_prepare_path = ROOT / "tools" / "prepare-bc250mcdm-rendernode.ps1"
     render_inspect_path = ROOT / "tools" / "inspect-bc250mcdm-rendernode.ps1"
@@ -1264,6 +2940,7 @@ def main() -> int:
     lab_bind = lab_bind_path.read_text(encoding="utf-8")
     lab_package = lab_package_path.read_text(encoding="utf-8")
     lab_watchdog = lab_watchdog_path.read_text(encoding="utf-8")
+    safe_guard_assert = safe_guard_assert_path.read_text(encoding="utf-8")
     lab_rollback = lab_rollback_path.read_text(encoding="utf-8")
     render_prepare = render_prepare_path.read_text(encoding="utf-8")
     render_inspect = render_inspect_path.read_text(encoding="utf-8")
@@ -1299,6 +2976,24 @@ def main() -> int:
     umd_node1_tripod = umd_node1_tripod_path.read_text(encoding="utf-8")
     radv_gate = radv_gate_path.read_text(encoding="utf-8")
     errors: list[str] = []
+
+    # C3.16: a submissao #8896 da corrida 18:45 tinha 750 paginas, mas o gate
+    # conferia apenas primeira/meio/ultima. Cobertura e log agora sao integrais
+    # no gate e amostrados somente na telemetria de sucesso.
+    require(active, 'Bc250ActiveValidateGpuVaRange("IB"',
+            "IB validado pagina a pagina antes da SDMA", errors)
+    require(active, 'Bc250ActiveValidateGpuVaRange("SRC"',
+            "origem validada pagina a pagina antes da SDMA", errors)
+    require(active, 'Bc250ActiveValidateGpuVaRange("DEST"',
+            "destino validado pagina a pagina antes da SDMA", errors)
+    forbid(active, "uint64_t probes[3]",
+           "gate de traducao nao pode voltar a amostrar tres paginas", errors)
+    require(display, "BC250_VERBOSE_LOG_PERIOD      1024L",
+            "log de alto volume amostrado", errors)
+    require(display, "LOG_SAMPLING_SUMMARY",
+            "contagens suprimidas preservadas no teardown", errors)
+    require(display, 'Bc250LogTextContains(Text, "FAULT")',
+            "falhas permanecem fora da amostragem", errors)
 
     # A MMU global usa exatamente 26 offsets catalogados. O bind de 15:49
     # falhou antes do MMIO porque 0xA610 nao estava na allowlist do transporte.
@@ -1410,8 +3105,31 @@ def main() -> int:
     forbid(present_body, 'BYTE_PROOF PASS: Source=',
            "unconditional BYTE_PROOF PASS label (certifies black-vs-black)",
            errors)
-    require(present_body, "g_Bc250SdmaPresent.HardwareEnabled = FALSE;",
-            "SDMA disable after byte proof mismatch", errors)
+    # C3.7 (12/09) -- PORTAO INVERTIDO. Ele EXIGIA o desligamento global do SDMA
+    # apos um byte proof reprovado, e portanto OBRIGAVA o defeito a existir.
+    #
+    # Medido na corrida 13:11: um byte proof reprovado punha
+    # g_Bc250SdmaPresent.HardwareEnabled = FALSE, e a partir dali TODA submissao
+    # WDDM caia em "SubmitIndirectAsync recusado: HwEnabled=0" -> "IB NAO
+    # EXECUTADO; completion NAO notificado" -> BugCheck 0x119 Arg1=2
+    # Arg2=0xC0000185, sete linhas de log depois. E a reprovacao era FALSA: o
+    # byte proof lia o endereco errado por falta de LocalSegmentBaseOffset.
+    #
+    # QUINTA ocorrencia da classe "o gate obrigava o defeito a existir": A15
+    # (comparacao crua de RPTR), mcdm_callbacks_test (STATUS_SUCCESS sem executor
+    # de TDR), bc250_d3d_umd_test.c (memcpy no Draw), sdma_blt_executed (C3.1).
+    #
+    # Falhar fechado continua obrigatorio -- o present reprovado nao declara
+    # sucesso. O que fica PROIBIDO e' condenar o motor de submissao do adaptador
+    # inteiro por causa de um quadro. Quem desabilita a engine e' o caminho de
+    # TDR, que tem quiesce e restart com prova.
+    forbid(present_body, "g_Bc250SdmaPresent.HardwareEnabled = FALSE;",
+           "desligamento global do SDMA no caminho de byte proof "
+           "(caminho medido do BugCheck 0x119 na corrida 13:11)", errors)
+    require(present_body, "present reprovado (engine PRESERVADA)",
+            "byte proof reprovado sem condenar a engine", errors)
+    require(present_body, "sdmaDone = FALSE;",
+            "present reprovado continua falhando fechado", errors)
     forbid(present_body, "else if (fromPrimary)",
            "unresolved Present fallback to SharedPrimary", errors)
 
@@ -2004,7 +3722,13 @@ def main() -> int:
     # A UMD de producao nunca pode esconder ausencia de render nativo com WARP.
     forbid(umd, "d3d10warp.dll", "WARP software rasterizer delegation", errors)
     forbid(umd, "Bc250EnsureWarp", "WARP loader in production UMD", errors)
-    require(umd, "BC250_UMD_LOG_%lu.txt",
+    # O arquivo por processo continua obrigatorio, mas a escrita mudou de lugar
+    # em 13/09: agora ha UM sink (Bc250WinsysTraceRaw) compartilhado pela UMD e
+    # pela winsys. Antes eram duas instrumentacoes, e a da winsys so' ia para
+    # stderr -- que o dwm.exe nao tem, o que cegou a corrida das 05:50.
+    winsys_src = (ROOT / "driver" / "umd" / "bc250_wddm_winsys.c").read_text(
+        encoding="utf-8", errors="replace")
+    require(winsys_src, "BC250_UMD_LOG_%lu.txt",
             "per-process UMD trace file", errors)
     require(umd_header, "#define BC250_D3D10_11_NATIVE_READY 0",
             "D3D10/11 production readiness gate", errors)
@@ -2115,7 +3839,7 @@ def main() -> int:
             "lab bind archives the UMD Node 1 runner console", errors)
     require(umd_node1_tripod, "PackageUmdSha256",
             "UMD Node 1 runner is bound to the signed package UMD", errors)
-    require(umd_node1_tripod, "watchdogRemaining -lt ($TimeoutSeconds + 10)",
+    require(umd_node1_tripod, "-RequiredRemainingSeconds ($TimeoutSeconds + 10)",
             "UMD Node 1 run fits inside the rollback deadline", errors)
     require(umd_node1_tripod, "watchdog.instance_id",
             "UMD Node 1 watchdog belongs to the exact device", errors)
@@ -2137,14 +3861,20 @@ def main() -> int:
             "RADV tripod requires the GPUVA promotion armed", errors)
     require(radv_tripod, "gpuva_gate_operational",
             "GPUVA gate member of RADV tripod", errors)
-    require(radv_tripod, "watch-bc250mcdm-lab\\.ps1",
-            "RADV tripod watches the lab rollback watchdog", errors)
-    require(radv_tripod, "watchdogState.state -ne 'ARMED'",
-            "RADV physical gate requires armed watchdog", errors)
-    require(radv_tripod, "processo exato do watchdog nao esta vivo",
-            "RADV physical gate verifies live watchdog process", errors)
-    require(radv_tripod, "$watchdogRemaining -lt ($TimeoutSeconds + 10)",
+    require(radv_tripod, "assert-bc250-safe-bind-guard.ps1",
+            "RADV tripod audits the persistent SYSTEM guard", errors)
+    require(radv_tripod, "-RequiredRemainingSeconds ($TimeoutSeconds + 10)",
             "RADV run fits inside rollback deadline", errors)
+    require(safe_guard_assert, "Get-ScheduledTask -TaskName $taskName",
+            "guard audit verifies the scheduled task", errors)
+    require(safe_guard_assert, "watch-bc250mcdm-safe-bind\\.ps1",
+            "guard audit verifies the exact live SYSTEM process", errors)
+    require(safe_guard_assert, "state.state -ne 'OBSERVING'",
+            "guard audit requires OBSERVING state", errors)
+    require(lab_bind, "New-ScheduledTaskPrincipal -UserId SYSTEM",
+            "all lab binds arm the watchdog as SYSTEM", errors)
+    forbid(lab_bind, "Start-Process -FilePath powershell.exe -ArgumentList $watchdogArguments",
+           "lab bind must not regress to a killable child watchdog", errors)
     require(radv_tripod, "installedSysHash -ne [string]$manifest.PackageSysSha256",
             "RADV physical gate verifies installed SYS", errors)
     require(radv_tripod, "EXPLICIT_DIRECT_LOAD_NO_VULKAN_LOADER",
@@ -2461,6 +4191,29 @@ def main() -> int:
             "lab watchdog rollback transition", errors)
     require(lab_watchdog, "-Execute -IAcceptDisplayInterruptionRisk",
             "lab watchdog bounded rollback invocation", errors)
+    rollback_started_index = lab_watchdog.find(
+        "Write-WatchdogState 'ROLLBACK_STARTED'")
+    bounded_capture_index = lab_watchdog.find(
+        "bc250_display_log_tail_post_rollback.txt")
+    """
+    if (rollback_started_index < 0 or bounded_capture_index < 0 or \
+            rollback_started_index > bounded_capture_index:
+    """
+    if (rollback_started_index < 0 or bounded_capture_index < 0 or
+            rollback_started_index > bounded_capture_index):
+        errors.append("lab watchdog coleta evidencia antes de iniciar rollback")
+    require(lab_watchdog, "recovery_completed_before_capture = $true",
+            "lab watchdog declara recovery antes da coleta", errors)
+    require(lab_watchdog, "$maxTailBytes = 64MB",
+            "lab watchdog limita a cauda do log", errors)
+    forbid(lab_watchdog, "Measure-Object -Line",
+           "varredura integral do log antes/depois do rollback", errors)
+    forbid(lab_watchdog, "bc250_display_log_full_pre_rollback.txt",
+           "copia integral pre-rollback que travou a corrida 18:21", errors)
+    require(lab_bind, "archived_as = 'display-log-this-bind.txt'",
+            "binder arquiva somente o delta delimitado do bind", errors)
+    forbid(lab_bind, "archived_as = 'bc250_display_log-full.txt'",
+           "binder copiando novamente o log cumulativo integral", errors)
     require(lab_rollback, "$devices[0].Service -eq 'BasicDisplay'",
             "lab rollback BasicDisplay verification", errors)
     require(lab_rollback, "$devices[0].ConfigManagerErrorCode -eq 0",
@@ -2661,6 +4414,7 @@ def main() -> int:
     audit_process_gpuva_teardown(errors)
     audit_ring_wrap_arithmetic(errors)
     audit_node1_gate_telemetry(errors)
+    audit_node1_physical_gpuva_gate(errors)
     audit_tdr_pair_has_backend(errors)
     audit_engine_status_measures(errors)
     audit_induced_hang_is_fail_closed(errors)
@@ -2673,11 +4427,27 @@ def main() -> int:
     audit_mec_cursor_reconciliation(errors)
     audit_mec_vmid_retarget(errors)
     audit_submit_dispatch_level_safety(errors)
+    audit_sdma_submission_is_asynchronous(errors)
     audit_device_removal_and_unload_safety(errors)
     audit_tlb_invalidation_safety(errors)
     audit_mec_shared_mmio_lifetime(errors)
 
+    audit_draw_has_no_cpu_fallback(errors)
+    audit_safe_bind_deadline_is_fail_closed(errors)
+    audit_lost_log_tail_is_recovered(errors)
     audit_probe_field_names(errors)
+    audit_marco3_closes_its_own_transaction(errors)
+    audit_present_is_gpu_attributable(errors)
+    audit_present_source_uses_segment_base(errors)
+    audit_node1_journal_gate_granularity(errors)
+    audit_snapshot_publish_retries(errors)
+    audit_gpuva_snapshot_capacity(errors)
+    audit_umd_trace_reaches_the_evidence_file(errors)
+    audit_composition_never_submits_a_context(errors)
+    audit_primary_allocation_is_declared_to_the_kernel(errors)
+    audit_present_path_is_not_mute(errors)
+    audit_dxgi_present_chain_honest(errors)
+    audit_describe_allocation_is_not_mute(errors)
 
     if errors:
         print("BC250 MCDM SAFETY AUDIT: FAILED")
@@ -2694,11 +4464,18 @@ def main() -> int:
     print("  INDIRECT data leg (canary proof): enforced")
     print("  ring-wrap arithmetic on tripod leg 1: enforced")
     print("  Node 1 submission refusal names its reason: enforced")
+    print("  Node 1 admission uses full physical page-table walk; snapshot is diagnostic: enforced")
     print("  TDR reset/restart pair backed by physical quiesce+proof: enforced")
     print("  QueryEngineStatus answers from measurement: enforced")
     print("  induced hang fail-closed and physical: enforced")
     print("  induced hang package/start order: enforced")
     print("  second readonly preflight sees an empty MMIO transport: enforced")
+    print("  UMD/winsys trace reaches the archived evidence file: enforced")
+    print("  primary allocation declared to the kernel (hResource+Primary+VidPnSourceId): enforced")
+    print("  Present path speaks on both sides; device/context sampling unshared: enforced")
+    print("  DXGI presentation chain refuses instead of faking success; test cannot re-freeze it: enforced")
+    print("  DescribeAllocation speaks on entry and on every refusal: enforced")
+    print("  DWM composition runs on the KMD blt path, never a context submit: enforced")
     print("  process/device/context DDIs name their refusals: enforced")
     print("  context ABI populated before ContextAbiReady: enforced")
     print("  24-CU firmware WGP/power policy is read-only: enforced")
@@ -2706,7 +4483,10 @@ def main() -> int:
     print("  per-process GPUVA ranges released on process destroy: enforced")
     print("  bc250mcdm recovery identity: covered")
     print("  submit path at DISPATCH_LEVEL pushlock-free: enforced")
+    print("  SDMA submission asynchronous and non-blocking (0x133 eliminated): enforced")
     print("  GFXHUB TLB serialization with spinlock: enforced")
+    print("  Marco 3 partial proof + unconditional recovery: enforced")
+    print("  GPUVA journal stores final interval overlay, not raw update history: enforced")
     print("  verdict: NAO VALIDADO EM HARDWARE")
     return 0
 

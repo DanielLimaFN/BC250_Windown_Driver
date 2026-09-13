@@ -4,6 +4,7 @@
 #include "bc250_mmio_topology_transport.h"
 #include "bc250_probe_telemetry.h"
 #include "bc250_observable_shader.h"
+#include "bc250_sdma_present.h"
 
 /*
  * Fase P1 — implementacao do motor de submissao persistente.
@@ -258,7 +259,9 @@ NTSTATUS Bc250SubmissionEngineOnline(
     RtlZeroMemory(&region, sizeof(region));
     vramStatus = Bc250VramAllocate(allocator,
         BC250_SUBMISSION_BLOCK_BYTES, 65536u,
-        BC250_VRAM_ROLE_MQD, BC250_VRAM_ALLOC_CPU_VISIBLE, &engine->Token);
+        BC250_VRAM_ROLE_MQD,
+        BC250_VRAM_ALLOC_TOP_DOWN | BC250_VRAM_ALLOC_CPU_VISIBLE,
+        &engine->Token);
     if (vramStatus != BC250_VRAM_OK) {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -458,6 +461,11 @@ NTSTATUS Bc250SubmissionEngineOnline(
     if (engine->RingFenceBaselineWritten == 0u) {
         /* Sem baseline confiavel nao ha como aposentar submissao nenhuma. */
         BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE teardown;
+        RtlZeroMemory(&teardown, sizeof(teardown));
+        teardown.SelectedSelector = engine->SelectedSelector != 0u ?
+            engine->SelectedSelector : 0x00000008u;
+        teardown.OriginalSelector = engine->OriginalSelector;
+        teardown.ActiveConfirmed = 1u;
 
         (void)Bc250ComputeDeactivatePersistentHqd(
             &interfaceData, &engine->Buffers, &teardown, &engine->HqdState);
@@ -480,6 +488,11 @@ NTSTATUS Bc250SubmissionEngineOnline(
         (uint32_t)BC250_PRING_COMPLETION_POLL);
     if (ringStatus != BC250_PRING_OK) {
         BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE teardown;
+        RtlZeroMemory(&teardown, sizeof(teardown));
+        teardown.SelectedSelector = engine->SelectedSelector != 0u ?
+            engine->SelectedSelector : 0x00000008u;
+        teardown.OriginalSelector = engine->OriginalSelector;
+        teardown.ActiveConfirmed = 1u;
 
         (void)Bc250ComputeDeactivatePersistentHqd(
             &interfaceData, &engine->Buffers, &teardown, &engine->HqdState);
@@ -1482,6 +1495,14 @@ NTSTATUS Bc250SubmissionEnginePoll(
     KeAcquireSpinLock(&engine->Lock, &irql);
     ++engine->PollCalls;
 
+    /*
+     * Dreno e coerencia HDP (PCIe) antes de ler a fence e o cursor de VRAM.
+     * Sem o dreno de HDP, leituras de CPU sobre PCIe BAR 0 podem retornar
+     * valores desatualizados (stale) cacheados na FIFO PCIe, ocasionando
+     * falsos timeouts no motor MEC.
+     */
+    Bc250SdmaPresentFlushHdp();
+
     /* Leitura pura: nada aqui escreve fence ou cursor. */
     if (engine->ComputeFenceVirtual != NULL) {
         observedFence = engine->ComputeFenceVirtual[0];
@@ -1495,10 +1516,24 @@ NTSTATUS Bc250SubmissionEnginePoll(
         BC250_GRBM_GFX_CNTL_BYTE_OFFSET, engine->SelectedSelector);
     (void)Bc250SubmissionRead32(engine, Context,
         BC250_HQD_MMIO_PQ_RPTR, &rptrMmio);
+
+    pendingFence = engine->ComputeRing.LastSubmittedFence;
+    if (engine->ComputeRing.Vmid == BC250_GCVM_COMPUTE_VMID &&
+        pendingFence > engine->ComputeRing.LastRetiredFence &&
+        observedFence != (uint32_t)pendingFence) {
+        /* Re-drena HDP e tenta releitura caso a escrita da GPU estivesse transitando na FIFO */
+        Bc250SdmaPresentFlushHdp();
+        if (engine->ComputeFenceVirtual != NULL) {
+            observedFence = engine->ComputeFenceVirtual[0];
+        }
+        if (engine->ComputeRptrReportVirtual != NULL) {
+            rptrReport = engine->ComputeRptrReportVirtual[0];
+        }
+    }
+
     /* Capture the first pending observation before Retire can fault the
      * engine. The 3.105 time gate could miss failures before 100 ms.
      * This is not a hang verdict. Failed register reads stay distinguishable. */
-    pendingFence = engine->ComputeRing.LastSubmittedFence;
     if (engine->ComputeRing.Vmid == BC250_GCVM_COMPUTE_VMID &&
         pendingFence > engine->ComputeRing.LastRetiredFence &&
         observedFence != (uint32_t)pendingFence &&
@@ -1536,11 +1571,13 @@ NTSTATUS Bc250SubmissionEnginePoll(
         rptrReport & (BC250_SUBMISSION_RING_DWORDS - 1u),
         &retired);
 
-    Bc250DisplayLog("[SubmissionPoll] State=%d ObservedFence=%u RptrReport=%u RptrMmio=%u Sub=%llu Ret=%llu RingStatus=%u Retired=%u\n",
-        (int)engine->State, observedFence, rptrReport, rptrMmio,
-        (unsigned long long)engine->ComputeRing.LastSubmittedFence,
-        (unsigned long long)engine->ComputeRing.LastRetiredFence,
-        (uint32_t)ringStatus, retired);
+    if (retired > 0u || ringStatus != BC250_PRING_OK || engine->State != BC250_SUBMISSION_ENGINE_ONLINE) {
+        Bc250DisplayLog("[SubmissionPoll] State=%d ObservedFence=%u RptrReport=%u RptrMmio=%u Sub=%llu Ret=%llu RingStatus=%u Retired=%u\n",
+            (int)engine->State, observedFence, rptrReport, rptrMmio,
+            (unsigned long long)engine->ComputeRing.LastSubmittedFence,
+            (unsigned long long)engine->ComputeRing.LastRetiredFence,
+            (uint32_t)ringStatus, retired);
+    }
 
     if (ringStatus == BC250_PRING_FENCE_REGRESSION) {
         /*
@@ -2182,6 +2219,12 @@ NTSTATUS Bc250SubmissionEngineOffline(
         interfaceData.Write32 = Bc250MmioTopologyWrite32;
         interfaceData.Barrier = Bc250SubmissionBarrier;
         interfaceData.Context = &Context->Core.MmioTransport;
+
+        RtlZeroMemory(&engine->TeardownEvidence, sizeof(engine->TeardownEvidence));
+        engine->TeardownEvidence.SelectedSelector = engine->SelectedSelector != 0u ?
+            engine->SelectedSelector : 0x00000008u;
+        engine->TeardownEvidence.OriginalSelector = engine->OriginalSelector;
+        engine->TeardownEvidence.ActiveConfirmed = 1u;
 
         hqdStatus = Bc250ComputeDeactivatePersistentHqd(
             &interfaceData, &engine->Buffers, &engine->TeardownEvidence,

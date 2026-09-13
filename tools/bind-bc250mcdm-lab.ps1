@@ -31,14 +31,30 @@ param(
     # nao tem como lancar o runner numa segunda janela. Ou o bind o chama, ou o
     # teste nao acontece.
     [switch]$RunRadvComputeTripod,
+    # Dispara UMA corrida de RADV_WDDM_PRESENT_TRIPOD (Marco 2) logo apos o bind
+    [switch]$RunRadvPresentTripod,
     # Executa UMA transacao B7 originada pela UMD logo apos o bind, sob o
     # mesmo watchdog. E' separado do RADV para nao misturar duas experiencias
     # fisicas no mesmo candidato.
     [switch]$RunUmdNode1Tripod,
     # Permite habilitar Plano A (fill direto no anel) para isolamento e protecao contra 0x119.
     [switch]$EnableSdmaPlanoAFallback,
+    # C3.9 (12/09): troca o bloqueio GLOBAL do journal no gate do Node 1 pela
+    # pendencia do PROCESSO QUE SUBMETE.
+    #
+    # POR QUE: na corrida 13:29, com D3D11LabPromotion armado, o dwm.exe viveu
+    # 3 min 13 s -- primeira vez -- mas pagina sem parar, o journal nunca drenou,
+    # o gate ficou em BlockMask=0x1 (JOURNAL) e o compute do RADV foi RECUSADO.
+    # Compute e desktop nao coexistiam por GRANULARIDADE do gate.
+    #
+    # RELAXAMENTO NAO VALIDADO EM HARDWARE: o argumento a favor e' que as raizes
+    # de page table sao por processo; o argumento nao e' prova. Default desligado.
+    [switch]$EnableNode1JournalGatePerProcess,
     # Promove criacao do device D3D10/11 na UMD para composicao do DWM.
     [switch]$EnableD3D11LabPromotion,
+    [switch]$EnableD3D11DrawBltSubstitution,
+    [switch]$EnableD3D11ShaderTranslator,
+    [string]$D3D11ShaderTranslatorDllPath,
     [switch]$EnablePhysicalRenderOnly,
     # Permite o fluxo solicitado pelo operador sem rollback temporizado.
     # A recuperacao manual C:\BC250_RECOVERY.cmd continua obrigatoria.
@@ -66,12 +82,12 @@ $packageInf = Join-Path $packageDir 'bc250mcdm.inf'
 $packageSys = Join-Path $packageDir 'bc250mcdm.sys'
 $packageCat = Join-Path $packageDir 'bc250mcdm.cat'
 $manifestPath = Join-Path $root 'driver\wdk\package\output_lab.manifest.json'
-$watchdogScript = Join-Path $root 'tools\watch-bc250mcdm-lab.ps1'
 $radvComputeTripod = Join-Path $root 'tools\test-radv-wddm-compute-tripod.ps1'
+$radvPresentTripod = Join-Path $root 'tools\test-radv-wddm-present-tripod.ps1'
 $umdNode1Tripod = Join-Path $root 'tools\test-b7-umd-node1-tripod.ps1'
 # Gate proprio do laboratorio: o de producao exige SkipHwBringup=1 e por isso
 # rejeita este binding sempre, por construcao (doc 95 secao B3).
-$confirmScript = Join-Path $root 'tools\confirm-bc250mcdm-lab.ps1'
+$safeConfirmScript = Join-Path $root 'tools\confirm-bc250mcdm-safe-bind.ps1'
 $markerPath = 'C:\BC250_TEST_OEMINF.txt'
 $cleanBootMarkerPath = 'C:\BC250_REQUIRE_CLEAN_BOOT.json'
 $bootFusePath = 'C:\BC250_BOOT_FUSE.dat'
@@ -82,11 +98,10 @@ $hardwareId = 'PCI\VEN_1002&DEV_13FE'
 # --------------------------------------------------------------------------
 # A4 — desarmar e arquivar o guardiao SYSTEM.
 #
-# Ate o 3.79 o unico desarme neste script era Stop-Process sobre
-# $watchdogProcess. Com -EnablePhysicalRenderOnly esse processo NAO EXISTE: o
-# guardiao roda como tarefa agendada SYSTEM. Um bind que falhava deixava a
-# tarefa AtStartup armada sobre um estado ja' quebrado, e ela disparava
-# rollback no boot seguinte.
+# Ate o 3.79 o unico desarme neste script era Stop-Process sobre o watchdog
+# filho. C3.16 promoveu TODAS as corridas para a tarefa SYSTEM persistente.
+# Um bind que falha nao pode deixar essa tarefa AtStartup armada sobre um
+# estado ja' quebrado.
 #
 # Sempre desregistra ANTES de remover o diretorio: na ordem inversa a tarefa
 # fica apontando para um script inexistente.
@@ -94,8 +109,10 @@ $hardwareId = 'PCI\VEN_1002&DEV_13FE'
 function Disarm-Bc250SafeGuard([string]$TaskName, [string]$EvidenceDir) {
     $guardDir = 'C:\BC250_SAFE_GUARD'
     try {
-        Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+        foreach ($name in @($TaskName, 'BC250-SafeBindDeadline')) {
+            Stop-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+            Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
+        }
     } catch { }
     try {
         if ($EvidenceDir -and (Test-Path -LiteralPath $EvidenceDir)) {
@@ -173,11 +190,24 @@ if ($EnableGpuvaLabPromotion) {
     if (-not $EnablePersistentSubmission) {
         throw '-EnableGpuvaLabPromotion exige -EnablePersistentSubmission.'
     }
+    if (-not $EnableShaderDispatch) {
+        throw '-EnablePersistentSubmission exige -EnableShaderDispatch (receita F8b com CpSoftReset=1 para carga do PFP).'
+    }
 }
 if ($EnableD3D11LabPromotion) {
     if (-not $EnableRenderNode -and -not $EnablePhysicalRenderOnly) {
         throw '-EnableD3D11LabPromotion exige -EnableRenderNode (ou -EnablePhysicalRenderOnly).'
     }
+
+# C1: substituir Draw por copia 1:1 no SDMA nao e' rasterizacao. Exige a
+# promocao D3D11 (sem device D3D11 nenhum Draw chega) e aceite explicito, para
+# que ninguem leia pixel na tela como prova de pipeline 3D.
+if ($EnableD3D11DrawBltSubstitution -and -not $EnableD3D11LabPromotion) {
+    throw '-EnableD3D11DrawBltSubstitution exige -EnableD3D11LabPromotion.'
+}
+if ($EnableD3D11ShaderTranslator -and -not $EnableD3D11LabPromotion) {
+    throw '-EnableD3D11ShaderTranslator exige -EnableD3D11LabPromotion.'
+}
 }
 if ($RunRadvComputeTripod) {
     # Cada exigencia aqui e um preflight do proprio runner, antecipado para o
@@ -189,7 +219,7 @@ if ($RunRadvComputeTripod) {
     }
     if ($DisableWatchdog) {
         throw ('-RunRadvComputeTripod exige o watchdog: o runner recusa a corrida ' +
-               'sem um watch-bc250mcdm-lab.ps1 vivo e ARMED.')
+               'sem o guardiao SYSTEM em OBSERVING.')
     }
     if ($EnablePhysicalRenderOnly) {
         throw ('-RunRadvComputeTripod nao vale no perfil physical render-only: ' +
@@ -202,8 +232,31 @@ if ($RunRadvComputeTripod) {
         throw "Runner ausente: $radvComputeTripod"
     }
 }
+if ($RunRadvPresentTripod) {
+    if ($RunRadvComputeTripod -or $RunUmdNode1Tripod) {
+        throw 'Escolha uma unica experiencia fisica: Compute, Present ou B7_UMD_NODE1_TRIPOD.'
+    }
+    if (-not $EnableGpuvaLabPromotion) {
+        throw ('-RunRadvPresentTripod exige -EnableGpuvaLabPromotion: sem o gate ' +
+               'GPUVA aberto o submit no node 1 devolve STATUS_NOT_SUPPORTED.')
+    }
+    if ($DisableWatchdog) {
+        throw ('-RunRadvPresentTripod exige o watchdog: o runner recusa a corrida ' +
+               'sem o guardiao SYSTEM em OBSERVING.')
+    }
+    if ($EnablePhysicalRenderOnly) {
+        throw ('-RunRadvPresentTripod nao vale no perfil physical render-only: ' +
+               'esse ciclo e fire-and-collect e termina em reboot.')
+    }
+    if ($WatchdogTimeoutSeconds -lt 90) {
+        throw 'RADV_WDDM_PRESENT_TRIPOD exige WatchdogTimeoutSeconds entre 90 e 600.'
+    }
+    if (-not (Test-Path -LiteralPath $radvPresentTripod -PathType Leaf)) {
+        throw "Runner ausente: $radvPresentTripod"
+    }
+}
 if ($RunUmdNode1Tripod) {
-    if ($RunRadvComputeTripod) {
+    if ($RunRadvComputeTripod -or $RunRadvPresentTripod) {
         throw 'Escolha uma unica experiencia fisica: RADV ou B7_UMD_NODE1_TRIPOD.'
     }
     if (-not $EnableGpuvaLabPromotion -or -not $IAcceptGpuvaLabPromotion) {
@@ -568,6 +621,24 @@ if ($RunRadvComputeTripod) {
     }
     Write-Host '  ICD explicito validado antes do binding.' -ForegroundColor Green
 }
+if ($RunRadvPresentTripod) {
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $tripodPreflightOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -File $radvPresentTripod 2>&1 | ForEach-Object { [string]$_ }) -join "`r`n"
+        $tripodPreflightExit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousEap
+    }
+    Write-Host $tripodPreflightOutput
+    if ($tripodPreflightExit -ne 0 -or
+        $tripodPreflightOutput -notmatch 'Modo inspect/dry-run: preflights passaram') {
+        throw ('Binding recusado antes de APPLY: preflight do ' +
+            "RADV_WDDM_PRESENT_TRIPOD falhou (exit=$tripodPreflightExit).")
+    }
+    Write-Host '  ICD explicito e runner de apresentacao validados antes do binding.' -ForegroundColor Green
+}
 if ($RunUmdNode1Tripod) {
     $previousEap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
@@ -616,26 +687,30 @@ if (-not $Execute -or -not $IAcceptBlackScreenRisk) {
     } else { '' })
     $planoAFlag = $(if ($EnableSdmaPlanoAFallback) { ' -EnableSdmaPlanoAFallback' } else { '' })
     $d3d11PromotionFlag = $(if ($EnableD3D11LabPromotion) { ' -EnableD3D11LabPromotion' } else { '' })
-    $tripodFlag = $(if ($RunRadvComputeTripod) {
+    # C3.9: sem isto o dry-run sugeria um comando que PERDIA o flag, e a corrida
+    # rodaria com o gate global sem ninguem perceber.
+    $journalGateFlag = $(if ($EnableNode1JournalGatePerProcess) { ' -EnableNode1JournalGatePerProcess' } else { '' })
+    $tripodFlag = $(if ($RunRadvPresentTripod) {
+        " -RunRadvPresentTripod -WatchdogTimeoutSeconds $WatchdogTimeoutSeconds"
+    } elseif ($RunRadvComputeTripod) {
         " -RunRadvComputeTripod -WatchdogTimeoutSeconds $WatchdogTimeoutSeconds"
     } elseif ($RunUmdNode1Tripod) {
         " -RunUmdNode1Tripod -WatchdogTimeoutSeconds $WatchdogTimeoutSeconds"
     } else { '' })
     $watchdogFlag = $(if ($DisableWatchdog) {
         ' -DisableWatchdog -IAcceptNoAutomaticRollback'
-    } else { '' })
+    } else { ' -IAcceptAutomaticRecoveryReboot' })
     Write-Host ("powershell -ExecutionPolicy Bypass -File tools\bind-bc250mcdm-lab.ps1" +
         " -Execute -IAcceptBlackScreenRisk" + $shaderFlag + $persistentFlag +
-        $renderNodeFlag + $renderOnlyFlag + $gpuvaFlag + $planoAFlag + $d3d11PromotionFlag + $tripodFlag + $watchdogFlag)
+        $renderNodeFlag + $renderOnlyFlag + $gpuvaFlag + $planoAFlag + $d3d11PromotionFlag +
+        $journalGateFlag + $tripodFlag + $watchdogFlag)
     exit 0
 }
-if ($EnablePhysicalRenderOnly -and -not $DisableWatchdog -and
-    -not $IAcceptAutomaticRecoveryReboot) {
-    throw 'Physical render-only exige -IAcceptAutomaticRecoveryReboot.'
+if (-not $DisableWatchdog -and -not $IAcceptAutomaticRecoveryReboot) {
+    throw 'O watchdog SYSTEM exige -IAcceptAutomaticRecoveryReboot.'
 }
-if ($EnablePhysicalRenderOnly -and -not $DisableWatchdog -and
-    $WatchdogTimeoutSeconds -lt 120) {
-    throw 'Physical render-only exige WatchdogTimeoutSeconds entre 120 e 600.'
+if (-not $DisableWatchdog -and $WatchdogTimeoutSeconds -lt 120) {
+    throw 'O watchdog SYSTEM exige WatchdogTimeoutSeconds entre 120 e 600.'
 }
 # A janela do binder tem de caber com folga dentro da do guardiao. Se as duas
 # expirarem juntas, binder e guardiao disparam a MESMA recovery em paralelo:
@@ -654,6 +729,17 @@ if (Test-Path -LiteralPath $markerPath) {
         & pnputil.exe /delete-driver $oldOem /uninstall /force 2>&1 | Out-Null
     }
     Remove-Item -LiteralPath $markerPath -Force -ErrorAction SilentlyContinue
+}
+
+# 1.1 Pre-copia direta do binario para System32\drivers enquanto o servico esta parado
+$preDriverInstalledPath = Join-Path $env:SystemRoot 'System32\drivers\bc250mcdm.sys'
+$prePkgSysPath = Join-Path $packageDir 'bc250mcdm.sys'
+if (Test-Path -LiteralPath $prePkgSysPath) {
+    try {
+        Copy-Item -LiteralPath $prePkgSysPath -Destination $preDriverInstalledPath -Force -ErrorAction SilentlyContinue
+    } catch {
+        # Se falhar (ex: falta de permissao), o PnP / NewDev efetuara a copia
+    }
 }
 
 # 2. Stage do pacote de laboratorio
@@ -691,6 +777,11 @@ if ($liveWatchdogs.Count -gt 0) {
     Write-Host ("  Stop-Process -Id {0} -Force" -f $liveWatchdogs[0].ProcessId) -ForegroundColor Yellow
     throw 'Binding abortado: watchdog concorrente ativo.'
 }
+$liveSafeGuard = Get-ScheduledTask -TaskName 'BC250-SafeBindGuard' `
+    -ErrorAction SilentlyContinue
+if ($null -ne $liveSafeGuard -and [string]$liveSafeGuard.State -eq 'Running') {
+    throw 'Binding abortado: guardiao SYSTEM de outra corrida ainda esta ativo.'
+}
 
 $stamp = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
 $evidenceDir = Join-Path $root "docs\evidence\$stamp-$($env:COMPUTERNAME)-lab-binding"
@@ -708,82 +799,96 @@ $displayLogStartOffset = if (Test-Path -LiteralPath $displayLogPath -PathType Le
 } | ConvertTo-Json | Set-Content -LiteralPath `
     (Join-Path $evidenceDir 'display-log-baseline.json') -Encoding UTF8
 
+# C2: antes de qualquer coisa deste bind, resgata do log cumulativo o trecho que
+# corridas anteriores perderam. MEDIDO em 10/09: seis pastas de evidencia do
+# mesmo dia estavam truncadas, e a da corrida do marco (11:21) perdeu 438.038
+# bytes que continham o FenceId=770 e a prova de visibilidade do HDP -- a
+# auditoria daquela corrida foi feita sem a evidencia decisiva. O baseline deste
+# bind, ja gravado acima, delimita o fim exato do trecho da corrida anterior.
+$tailRecovery = Join-Path $PSScriptRoot 'recover-bc250mcdm-lost-tail.ps1'
+if (Test-Path -LiteralPath $tailRecovery -PathType Leaf) {
+    try {
+        & powershell.exe -ExecutionPolicy Bypass -NoProfile -File $tailRecovery 2>&1 |
+            Tee-Object -FilePath (Join-Path $evidenceDir 'tail-recovery-console.txt') |
+            ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+    } catch {
+        Write-Host "  AVISO: recuperacao de trecho falhou: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "  AVISO: recover-bc250mcdm-lost-tail.ps1 ausente; trechos perdidos NAO serao resgatados." -ForegroundColor Yellow
+}
+
 $watchdogToken = $null
-$watchdogProcess = $null
 if ($DisableWatchdog) {
     Write-Host "`n[2/4] Watchdog omitido por aceite explicito; evidencia criada." -ForegroundColor Yellow
 } else {
     Write-Host "`n[2/4] Armando Watchdog de Rollback ($WatchdogTimeoutSeconds s)..." -ForegroundColor Yellow
     $watchdogToken = [guid]::NewGuid().ToString('D')
-    if ($EnablePhysicalRenderOnly) {
-        $taskName = 'BC250-SafeBindGuard'
-        $guardDir = 'C:\BC250_SAFE_GUARD'
-        $guardScript = Join-Path $guardDir 'watch-bc250mcdm-safe-bind.ps1'
-        $configPath = Join-Path $guardDir 'armed.json'
-        New-Item -ItemType Directory -Path $guardDir -Force | Out-Null
-        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'watch-bc250mcdm-safe-bind.ps1') `
-            -Destination $guardScript -Force
-        $guardConfig = [ordered]@{
-            schema_version = 1; task_name = $taskName; token = $watchdogToken
-            instance_id = [string]$device.PNPDeviceID
-            timeout_seconds = $WatchdogTimeoutSeconds; evidence_dir = $evidenceDir
-            recovery_path = $recoveryPath
-            recovery_sha256 = (Get-FileHash $recoveryPath -Algorithm SHA256).Hash
-            expected_sys_sha256 = [string]$manifest.PackageSysSha256
-            expected_inf_sha256 = [string]$manifest.PackageInfSha256
-            expected_driver_version = [string]$manifest.DriverVer
-            armed_boot_ticks = [long](Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks
-            automatic_recovery_reboot = $true; hardware_validated = $false
-        }
-        $guardConfig | ConvertTo-Json -Depth 5 | Set-Content $configPath -Encoding UTF8
-        $guardConfig | ConvertTo-Json -Depth 5 | Set-Content `
-            (Join-Path $evidenceDir 'safe-bind-watchdog-config.json') -Encoding UTF8
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-        $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument `
-            "-NoProfile -ExecutionPolicy Bypass -File `"$guardScript`" -ConfigPath `"$configPath`" -Execute"
-        $trigger = New-ScheduledTaskTrigger -AtStartup
-        $taskPrincipal = New-ScheduledTaskPrincipal -UserId SYSTEM -LogonType ServiceAccount -RunLevel Highest
-        $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 15) `
-            -MultipleInstances IgnoreNew -StartWhenAvailable
-        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
-            -Principal $taskPrincipal -Settings $settings -Force | Out-Null
-        Start-ScheduledTask -TaskName $taskName
-        # Espera por deadline em vez de um unico Start-Sleep 1: sob carga, a
-        # tarefa SYSTEM pode levar mais de um segundo para gravar o primeiro
-        # estado, e o binder abortava um guardiao perfeitamente saudavel.
-        $guardState = Join-Path $evidenceDir 'safe-bind-watchdog-state.json'
-        $guardDeadline = (Get-Date).AddSeconds(10)
-        $guardObserving = $false
-        do {
-            Start-Sleep -Milliseconds 250
-            if (Test-Path $guardState) {
-                try {
-                    $guardObserving =
-                        ((Get-Content $guardState -Raw | ConvertFrom-Json).state -eq 'OBSERVING')
-                } catch { $guardObserving = $false }
-            }
-        } until ($guardObserving -or (Get-Date) -ge $guardDeadline)
-        if (-not $guardObserving) {
-            # Desregistrar antes de abortar: uma tarefa AtStartup orfa
-            # dispararia rollback no proximo boot, sobre um bind que nem
-            # chegou a acontecer.
-            Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-            throw 'Watchdog SYSTEM nao entrou em OBSERVING.'
-        }
-        Write-Host "  Watchdog SYSTEM ativo; reboot automatico autorizado." -ForegroundColor Green
-    } else {
-        $watchdogArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$watchdogScript`" " +
-            "-EvidenceDir `"$evidenceDir`" -InstanceId `"$($device.PNPDeviceID)`" " +
-            "-TargetInf `"$publishedName`" -Token `"$watchdogToken`" " +
-            "-TimeoutSeconds $WatchdogTimeoutSeconds -Execute"
-        $watchdogProcess = Start-Process -FilePath powershell.exe -ArgumentList $watchdogArguments `
-            -WindowStyle Hidden -PassThru
-        Start-Sleep -Milliseconds 500
-        if ($watchdogProcess.HasExited) {
-            throw "Watchdog falhou ao inicializar (exit=$($watchdogProcess.ExitCode))."
-        }
-        Write-Host "  Watchdog ativo (PID: $($watchdogProcess.Id))" -ForegroundColor Green
+    # C3.16: toda corrida destrutiva usa o guardiao SYSTEM persistente. O
+    # PowerShell filho usado antes desapareceu durante as duas travadas de
+    # 12/09 e deixou watchdog-state.json eternamente em ARMED.
+    $taskName = 'BC250-SafeBindGuard'
+    $deadlineTaskName = 'BC250-SafeBindDeadline'
+    $guardDir = 'C:\BC250_SAFE_GUARD'
+    $guardScript = Join-Path $guardDir 'watch-bc250mcdm-safe-bind.ps1'
+    $configPath = Join-Path $guardDir 'armed.json'
+    New-Item -ItemType Directory -Path $guardDir -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'watch-bc250mcdm-safe-bind.ps1') `
+        -Destination $guardScript -Force
+    $armedAtUtc = [datetime]::UtcNow
+    $deadlineUtc = $armedAtUtc.AddSeconds($WatchdogTimeoutSeconds)
+    $guardConfig = [ordered]@{
+        schema_version = 1; task_name = $taskName
+        deadline_task_name = $deadlineTaskName; token = $watchdogToken
+        instance_id = [string]$device.PNPDeviceID
+        timeout_seconds = $WatchdogTimeoutSeconds; evidence_dir = $evidenceDir
+        recovery_path = $recoveryPath
+        recovery_sha256 = (Get-FileHash $recoveryPath -Algorithm SHA256).Hash
+        expected_sys_sha256 = [string]$manifest.PackageSysSha256
+        expected_inf_sha256 = [string]$manifest.PackageInfSha256
+        expected_driver_version = [string]$manifest.DriverVer
+        armed_boot_ticks = [long](Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks
+        armed_at_utc_ticks = [long]$armedAtUtc.Ticks
+        deadline_utc_ticks = [long]$deadlineUtc.Ticks
+        automatic_recovery_reboot = $true; hardware_validated = $false
     }
+    $guardConfig | ConvertTo-Json -Depth 5 | Set-Content $configPath -Encoding UTF8
+    $guardConfig | ConvertTo-Json -Depth 5 | Set-Content `
+        (Join-Path $evidenceDir 'safe-bind-watchdog-config.json') -Encoding UTF8
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $deadlineTaskName -Confirm:$false -ErrorAction SilentlyContinue
+    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument `
+        "-NoProfile -ExecutionPolicy Bypass -File `"$guardScript`" -ConfigPath `"$configPath`" -Execute"
+    $trigger = New-ScheduledTaskTrigger -AtStartup
+    $taskPrincipal = New-ScheduledTaskPrincipal -UserId SYSTEM -LogonType ServiceAccount -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 15) `
+        -MultipleInstances IgnoreNew -StartWhenAvailable
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
+        -Principal $taskPrincipal -Settings $settings -Force | Out-Null
+    $deadlineAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument `
+        "-NoProfile -ExecutionPolicy Bypass -File `"$guardScript`" -ConfigPath `"$configPath`" -Execute -DeadlineEnforcer"
+    $deadlineTrigger = New-ScheduledTaskTrigger -Once -At $deadlineUtc.ToLocalTime()
+    Register-ScheduledTask -TaskName $deadlineTaskName -Action $deadlineAction `
+        -Trigger $deadlineTrigger -Principal $taskPrincipal -Settings $settings -Force | Out-Null
+    Start-ScheduledTask -TaskName $taskName
+    $guardState = Join-Path $evidenceDir 'safe-bind-watchdog-state.json'
+    $guardDeadline = (Get-Date).AddSeconds(10)
+    $guardObserving = $false
+    do {
+        Start-Sleep -Milliseconds 250
+        if (Test-Path $guardState) {
+            try {
+                $guardObserving =
+                    ((Get-Content $guardState -Raw | ConvertFrom-Json).state -eq 'OBSERVING')
+            } catch { $guardObserving = $false }
+        }
+    } until ($guardObserving -or (Get-Date) -ge $guardDeadline)
+    if (-not $guardObserving) {
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+        Unregister-ScheduledTask -TaskName $deadlineTaskName -Confirm:$false -ErrorAction SilentlyContinue
+        throw 'Watchdog SYSTEM nao entrou em OBSERVING.'
+    }
+    Write-Host "  Watchdog SYSTEM ativo; reboot automatico autorizado." -ForegroundColor Green
 }
 
 # DriverEntry e StartDevice leem estes valores durante o proprio binding. A
@@ -802,6 +907,10 @@ $requestedPolicy = [ordered]@{
     PersistentSubmission = $(if ($EnablePersistentSubmission) { 1 } else { 0 })
     GpuvaLabPromotion = $(if ($EnableGpuvaLabPromotion) { 1 } else { 0 })
     SdmaPlanoAFallback = $(if ($EnableSdmaPlanoAFallback) { 1 } else { 0 })
+    # C3.9: entra na politica pre-bind porque a chave de servico so' nasce aqui,
+    # e o KMD le o valor UMA VEZ no StartDevice. O INF declara o campo com
+    # NOCLOBBER justamente para nao apagar o que esta politica escreveu.
+    Node1JournalGatePerProcess = $(if ($EnableNode1JournalGatePerProcess) { 1 } else { 0 })
     RenderNode = $(if ($EnableRenderNode) { 1 } elseif ($EnablePhysicalRenderOnly) { 1 } else { 0 })
     RenderOnlyLab = $(if ($EnablePhysicalRenderOnly) { 1 } else { 0 })
 }
@@ -831,9 +940,13 @@ foreach ($entry in $requestedPolicy.GetEnumerator()) {
 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath `
     (Join-Path $evidenceDir 'prebind-policy.json') -Encoding UTF8
 Write-Host "  Politica pre-bind aplicada e verificada." -ForegroundColor Green
-Write-Host ("  RenderNode={0}; PersistentSubmission={1}; GpuvaLabPromotion={2}; SdmaPlanoAFallback={3}." -f
+Write-Host ("  RenderNode={0}; PersistentSubmission={1}; GpuvaLabPromotion={2}; SdmaPlanoAFallback={3}; Node1JournalGatePerProcess={4}." -f
     $requestedPolicy.RenderNode, $requestedPolicy.PersistentSubmission,
-    $requestedPolicy.GpuvaLabPromotion, $requestedPolicy.SdmaPlanoAFallback)
+    $requestedPolicy.GpuvaLabPromotion, $requestedPolicy.SdmaPlanoAFallback,
+    $requestedPolicy.Node1JournalGatePerProcess)
+if ($EnableNode1JournalGatePerProcess) {
+    Write-Host "  AVISO: Node1JournalGatePerProcess=1 -- relaxamento do gate do Node 1, NAO VALIDADO EM HARDWARE." -ForegroundColor Yellow
+}
 
 # Armar ou limpar D3D11LabPromotion da UMD
 if ($EnableD3D11LabPromotion) {
@@ -849,6 +962,51 @@ if ($EnableD3D11LabPromotion) {
 } else {
     if (Test-Path -LiteralPath $umdRegKey) {
         Remove-ItemProperty -LiteralPath $umdRegKey -Name 'D3D11LabPromotion' -ErrorAction SilentlyContinue
+    }
+}
+
+# C1: armar ou limpar D3D11DrawBltSubstitution da UMD (fail-closed por default)
+if ($EnableD3D11DrawBltSubstitution) {
+    if (-not (Test-Path -LiteralPath $umdRegKey)) {
+        New-Item -Path $umdRegKey -Force | Out-Null
+    }
+    Set-ItemProperty -LiteralPath $umdRegKey -Name 'D3D11DrawBltSubstitution' -Value 1 -Type DWord -Force
+    $readbackSubst = Get-ItemPropertyValue -LiteralPath $umdRegKey -Name 'D3D11DrawBltSubstitution' -ErrorAction Stop
+    if ([uint32]$readbackSubst -ne 1) {
+        throw 'Readback pre-bind falhou para D3D11DrawBltSubstitution.'
+    }
+    Write-Host '  D3D11DrawBltSubstitution=1 armado -- Draw sera SUBSTITUIDO por copia 1:1 no SDMA.' -ForegroundColor Yellow
+    Write-Host '  ATENCAO: substituicao NAO e rasterizacao; pixel na tela nao prova pipeline 3D.' -ForegroundColor Yellow
+} else {
+    if (Test-Path -LiteralPath $umdRegKey) {
+        Remove-ItemProperty -LiteralPath $umdRegKey -Name 'D3D11DrawBltSubstitution' -ErrorAction SilentlyContinue
+    }
+}
+
+# C3: armar ou limpar D3D11ShaderTranslator da UMD
+if ($EnableD3D11ShaderTranslator) {
+    if (-not (Test-Path -LiteralPath $umdRegKey)) {
+        New-Item -Path $umdRegKey -Force | Out-Null
+    }
+    $resolvedTranslatorDll = $D3D11ShaderTranslatorDllPath
+    if ([string]::IsNullOrWhiteSpace($resolvedTranslatorDll)) {
+        if (Test-Path -LiteralPath 'C:\BC250_LIB\libvkd3d-shader-1.dll' -PathType Leaf) {
+            $resolvedTranslatorDll = 'C:\BC250_LIB\libvkd3d-shader-1.dll'
+        } else {
+            $foundDll = Get-ChildItem -Path $env:TEMP -Filter "libvkd3d-shader-1.dll" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+            if ($foundDll) { $resolvedTranslatorDll = $foundDll }
+        }
+    }
+    if (-not $resolvedTranslatorDll -or -not (Test-Path -LiteralPath $resolvedTranslatorDll -PathType Leaf)) {
+        throw "libvkd3d-shader-1.dll nao encontrada para D3D11ShaderTranslator. Especifique -D3D11ShaderTranslatorDllPath."
+    }
+    Set-ItemProperty -LiteralPath $umdRegKey -Name 'D3D11ShaderTranslator' -Value 1 -Type DWord -Force
+    Set-ItemProperty -LiteralPath $umdRegKey -Name 'D3D11ShaderTranslatorPath' -Value $resolvedTranslatorDll -Type String -Force
+    Write-Host "  D3D11ShaderTranslator=1 armado ($resolvedTranslatorDll)" -ForegroundColor Yellow
+} else {
+    if (Test-Path -LiteralPath $umdRegKey) {
+        Remove-ItemProperty -LiteralPath $umdRegKey -Name 'D3D11ShaderTranslator' -ErrorAction SilentlyContinue
+        Remove-ItemProperty -LiteralPath $umdRegKey -Name 'D3D11ShaderTranslatorPath' -ErrorAction SilentlyContinue
     }
 }
 
@@ -935,7 +1093,12 @@ if (Test-Path $driverInstalledPath) {
         Write-Host "  Binario em System32\drivers ATUALIZADO com sucesso!" -ForegroundColor Green
     } else {
         Write-Host "  AVISO: Binario no System32 nao atualizou automaticamente; copiando..." -ForegroundColor Yellow
-        Copy-Item -LiteralPath $pkgSysPath -Destination $driverInstalledPath -Force
+        try {
+            Copy-Item -LiteralPath $pkgSysPath -Destination $driverInstalledPath -Force -ErrorAction Stop
+            Write-Host "  Binario copiado com sucesso para System32\drivers!" -ForegroundColor Green
+        } catch {
+            Write-Warning "Falha ao copiar para System32 (servico em execucao pelo kernel): $_"
+        }
     }
 }
 
@@ -954,19 +1117,17 @@ if ($devAfter.Service -ne 'bc250mcdm') {
     if (-not $DisableWatchdog) {
         Write-Host 'Desarmando o watchdog desta tentativa para nao empilhar rollbacks.' -ForegroundColor Yellow
     }
-    if ($null -ne $watchdogProcess -and -not $watchdogProcess.HasExited) {
-        Stop-Process -Id $watchdogProcess.Id -Force -ErrorAction SilentlyContinue
-    }
-    # No perfil physical render-only o guardiao nao e' um processo filho e sim
-    # uma tarefa SYSTEM: o Stop-Process acima nao o alcanca. Sem este desarme,
-    # o bind falho deixava a tarefa AtStartup viva e ela executava rollback no
-    # proximo boot, sobre um sistema que ja' estava intacto.
-    if ($EnablePhysicalRenderOnly -and -not $DisableWatchdog) {
+    # C3.16: todas as corridas usam a tarefa SYSTEM. Um bind que falhou antes
+    # de tocar no dispositivo nao pode deixar uma recovery orfa no boot.
+    if (-not $DisableWatchdog) {
         $disarmOk = Disarm-Bc250SafeGuard 'BC250-SafeBindGuard' $evidenceDir
         Write-Host ("  Guardiao SYSTEM desarmado (limpeza_ok={0})." -f $disarmOk) -ForegroundColor Yellow
     }
-    if ($EnableD3D11LabPromotion -and (Test-Path -LiteralPath $umdRegKey)) {
+    if (Test-Path -LiteralPath $umdRegKey) {
         Remove-ItemProperty -LiteralPath $umdRegKey -Name 'D3D11LabPromotion' -ErrorAction SilentlyContinue
+        Remove-ItemProperty -LiteralPath $umdRegKey -Name 'D3D11DrawBltSubstitution' -ErrorAction SilentlyContinue
+        Remove-ItemProperty -LiteralPath $umdRegKey -Name 'D3D11ShaderTranslator' -ErrorAction SilentlyContinue
+        Remove-ItemProperty -LiteralPath $umdRegKey -Name 'D3D11ShaderTranslatorPath' -ErrorAction SilentlyContinue
     }
     throw "Binding de laboratorio falhou (win32=$win32Error)."
 }
@@ -1004,7 +1165,7 @@ try {
 # RADV_WDDM_COMPUTE_TRIPOD: uma unica corrida, aqui, com a telemetria do bind ja
 # arquivada e o watchdog ainda armado. Depois deste ponto a tela pode estar
 # apagada e nao existe operador para lancar nada.
-if ($RunRadvComputeTripod -or $RunUmdNode1Tripod) {
+if ($RunRadvComputeTripod -or $RunRadvPresentTripod -or $RunUmdNode1Tripod) {
     # Nao misturar duas experiencias caras. O RADV so pode comecar depois que
     # ESTE bind (nao linhas antigas do log global) tiver chegado a primaria,
     # CommitVidPn e SetVidPnSourceAddress. A corrida 20:34 tinha 97
@@ -1031,6 +1192,8 @@ if ($RunRadvComputeTripod -or $RunUmdNode1Tripod) {
     [ordered]@{
         state = $(if ($displayGatePassed) { 'PASSED' } elseif ($RunUmdNode1Tripod) {
             'UMD_NODE1_SKIPPED'
+        } elseif ($RunRadvPresentTripod) {
+            'RADV_PRESENT_SKIPPED'
         } else { 'RADV_SKIPPED' })
         shared_primary = $displayPrimary
         commit_vidpn = $displayCommit
@@ -1044,13 +1207,34 @@ if ($RunRadvComputeTripod -or $RunUmdNode1Tripod) {
     if (-not $displayGatePassed) {
         $experimentName = $(if ($RunUmdNode1Tripod) {
             'B7_UMD_NODE1_TRIPOD'
+        } elseif ($RunRadvPresentTripod) {
+            'RADV_WDDM_PRESENT_TRIPOD'
         } else { 'RADV_WDDM_COMPUTE_TRIPOD' })
         Write-Warning ($experimentName + ' NAO EXECUTADO: o display deste bind ' +
             "nao chegou a SharedPrimary=$displayPrimary, CommitVidPn=$displayCommit, " +
             "SetVidPnSourceAddress=$displayAddress em 15 s. O watchdog permanece armado.")
     } else {
         Write-Host ''
-        if ($RunUmdNode1Tripod) {
+        if ($RunRadvPresentTripod) {
+            Write-Host 'Display convergiu; executando UMA corrida RADV_WDDM_PRESENT_TRIPOD sob watchdog...' -ForegroundColor Magenta
+            $previousEap = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try {
+                $tripodOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+                    -File $radvPresentTripod -EvidenceDir $evidenceDir -Execute 2>&1 |
+                    Out-String)
+                $tripodExit = $LASTEXITCODE
+            } finally {
+                $ErrorActionPreference = $previousEap
+            }
+            $tripodOutput | Set-Content -LiteralPath `
+                (Join-Path $evidenceDir 'radv-present-tripod-console.txt') -Encoding UTF8
+            Write-Host $tripodOutput
+            if ($tripodExit -ne 0) {
+                Write-Warning ('RADV_WDDM_PRESENT_TRIPOD falhou (exit=' + $tripodExit +
+                    '). Nao repita este build; o watchdog permanece armado e a evidencia esta gravada.')
+            }
+        } elseif ($RunUmdNode1Tripod) {
             Write-Host 'Display convergiu; executando UMA corrida B7_UMD_NODE1_TRIPOD sob watchdog...' -ForegroundColor Magenta
             $previousEap = $ErrorActionPreference
             $ErrorActionPreference = 'Continue'
@@ -1100,34 +1284,25 @@ if ($RunRadvComputeTripod -or $RunUmdNode1Tripod) {
     }
 }
 
-# A6 (06/09) - ARQUIVAMENTO DO LOG INTEGRAL DO KMD.
-#
-# MOTIVO: a corrida 2026-09-06_20-34 fechou a pasta de evidencia SEM o log do
-# KMD. O binder de laboratorio nunca chamou capture-bc250mcdm-binding.ps1 (so o
-# binder de producao chama), e o log vive em C:\bc250_display_log.txt, que e'
-# CUMULATIVO e sobrescrito pelo bind seguinte. A unica copia dos numeros que
-# sustentam o handoff 172 teve de ser recuperada a mao as 21:08.
-#
-# O delta deste bind ja e' gravado em display-log-this-bind.txt, mas o delta
-# depende de o roteiro chegar aquele ponto. Este bloco arquiva o arquivo
-# INTEGRAL com SHA-256, para que a evidencia sobreviva mesmo se o ciclo morrer
-# antes -- e o offset de baseline permite recortar este bind depois.
-if (Test-Path -LiteralPath $displayLogPath -PathType Leaf) {
-    $fullLogDest = Join-Path $evidenceDir 'bc250_display_log-full.txt'
-    Copy-Item -LiteralPath $displayLogPath -Destination $fullLogDest -Force
+# C3.15 (12/09): o log e' cumulativo e passou de 1 GB na corrida 18:21.
+# Copia-lo integralmente a cada bind acrescentava I/O sem preservar informacao
+# nova; o delta deste bind ja foi materializado acima. O watchdog agora coleta
+# a cauda pos-rollback separadamente, limitada a 64 MB.
+$deltaLogDest = Join-Path $evidenceDir 'display-log-this-bind.txt'
+if (Test-Path -LiteralPath $deltaLogDest -PathType Leaf) {
     [ordered]@{
         source = $displayLogPath
-        archived_as = 'bc250_display_log-full.txt'
-        bytes = [int64](Get-Item -LiteralPath $fullLogDest).Length
-        sha256 = (Get-FileHash -LiteralPath $fullLogDest -Algorithm SHA256).Hash
+        archived_as = 'display-log-this-bind.txt'
+        bytes = [int64](Get-Item -LiteralPath $deltaLogDest).Length
+        sha256 = (Get-FileHash -LiteralPath $deltaLogDest -Algorithm SHA256).Hash
         bind_start_offset = $displayLogStartOffset
-        note = 'arquivo cumulativo: recortar deste bind a partir de bind_start_offset'
+        note = 'delta delimitado deste bind; log cumulativo integral nao e copiado'
         archived_at = (Get-Date).ToString('o')
         hardware_validated = $false
     } | ConvertTo-Json | Set-Content -LiteralPath `
         (Join-Path $evidenceDir 'display-log-archive.json') -Encoding UTF8
 } else {
-    'C:\bc250_display_log.txt ausente no fim do bind.' |
+    'display-log-this-bind.txt ausente no fim do bind.' |
         Set-Content -LiteralPath (Join-Path $evidenceDir 'display-log-archive.json') -Encoding ASCII
 }
 
@@ -1232,6 +1407,39 @@ if ($EnablePhysicalRenderOnly) {
         Write-Host ("  AVISO: falha ao capturar telemetria final: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
     }
 
+    # (b2) COLETA FINAL DOS LOGS DA UMD.
+    #
+    # A coleta da linha ~1300 acontece LOGO APOS o bind, e por isso arquiva um
+    # SNAPSHOT de poucos segundos. Nas corridas de 13/09 08:12, 11:25 e 11:32 o
+    # log do dwm.exe terminou antes do momento que importava -- na 11:32 ele
+    # parou exatamente no "BltViaKmd ENTER", e a linha "LEAVE" com o hr do
+    # escape, que responderia a corrida inteira, foi descartada porque o DWM
+    # seguiu vivo por mais 30 s. Tres criterios ficaram sem resposta por isso.
+    #
+    # Aqui a janela fisica ja terminou, entao este e' o estado final real. Os
+    # arquivos vao com sufixo -FINAL para NAO sobrescrever o snapshot: os dois
+    # juntos mostram o que mudou durante a janela.
+    try {
+        $umdFinalAggregate = Join-Path $evidenceDir 'bc250_umd_log-FINAL.txt'
+        $umdFinal = @(Get-ChildItem -LiteralPath 'C:\Windows\Temp' `
+            -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue |
+            Sort-Object Name)
+        foreach ($log in $umdFinal) {
+            $dest = Join-Path $evidenceDir ($log.BaseName.ToLowerInvariant() + '-FINAL.txt')
+            Copy-Item -LiteralPath $log.FullName -Destination $dest -Force
+            ("===== {0} =====" -f $log.Name),
+                (Get-Content -LiteralPath $log.FullName -ErrorAction SilentlyContinue) |
+                Add-Content -LiteralPath $umdFinalAggregate -Encoding UTF8
+        }
+        Write-Host ("  Coleta FINAL da UMD: {0} arquivo(s)." -f $umdFinal.Count) -ForegroundColor Yellow
+        if ($umdFinal.Count -eq 0) {
+            'Nenhum BC250_UMD_LOG_*.txt em C:\Windows\Temp no fim da janela fisica.' |
+                Set-Content -LiteralPath $umdFinalAggregate -Encoding UTF8
+        }
+    } catch {
+        Write-Host ("  AVISO: coleta FINAL da UMD falhou: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+    }
+
     # (c) Assumir o controle antes de mexer no pacote, para nao disputar a
     #     mesma recovery com o guardiao.
     if (-not $DisableWatchdog) {
@@ -1279,15 +1487,75 @@ if ($EnablePhysicalRenderOnly) {
     exit 0
 }
 
+# ==========================================================================
+# COLETA FINAL NO CAMINHO COMUM.
+#
+# O binder sai LOGO APOS o bind, e por isso a coleta da linha ~1300 arquiva um
+# SNAPSHOT de poucos segundos -- tudo o que importa acontece depois. Nas
+# corridas de 13/09 08:12, 11:25, 11:32 e 11:55 o log do dwm.exe terminou antes
+# do momento decisivo; na 11:32 e na 11:55 ele parou exatamente no
+# "BltViaKmd ENTER", perdendo o "LEAVE" com o hr do pfnEscapeCb -- o unico dado
+# que nomeia por que o dxgkrnl recusa o escape. QUATRO criterios perdidos pela
+# mesma causa.
+#
+# A primeira tentativa de corrigir isto foi inserida dentro do ramo
+# `if ($EnablePhysicalRenderOnly)`, que este perfil NAO executa. Por isso agora
+# fica no caminho comum, e a janela termina com folga ANTES do watchdog.
+# ==========================================================================
+if (-not $DisableWatchdog) {
+    # Reserva 90 s para confirmacao visual (60 s) e margem de teardown.
+    $collectDelay = [Math]::Max(30, $WatchdogTimeoutSeconds - 90)
+    Write-Host ''
+    Write-Host ("=== JANELA DE OBSERVACAO: {0}s antes da coleta FINAL ===" -f $collectDelay) -ForegroundColor Magenta
+    Write-Host '  (o watchdog SYSTEM continua armado e e a rede de seguranca)'
+    Start-Sleep -Seconds $collectDelay
+
+    try {
+        $umdFinalAggregate = Join-Path $evidenceDir 'bc250_umd_log-FINAL.txt'
+        $umdFinal = @(Get-ChildItem -LiteralPath 'C:\Windows\Temp' `
+            -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue |
+            Sort-Object Name)
+        foreach ($log in $umdFinal) {
+            $dest = Join-Path $evidenceDir ($log.BaseName.ToLowerInvariant() + '-FINAL.txt')
+            Copy-Item -LiteralPath $log.FullName -Destination $dest -Force
+            ("===== {0} =====" -f $log.Name),
+                (Get-Content -LiteralPath $log.FullName -ErrorAction SilentlyContinue) |
+                Add-Content -LiteralPath $umdFinalAggregate -Encoding UTF8
+        }
+        if ($umdFinal.Count -eq 0) {
+            'Nenhum BC250_UMD_LOG_*.txt em C:\Windows\Temp no fim da janela.' |
+                Set-Content -LiteralPath $umdFinalAggregate -Encoding UTF8
+        }
+        Write-Host ("  Coleta FINAL da UMD: {0} arquivo(s)." -f $umdFinal.Count) -ForegroundColor Yellow
+    } catch {
+        Write-Host ("  AVISO: coleta FINAL da UMD falhou: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+    }
+
+    # Cauda do log do KMD no fim da janela, pelo offset do baseline. Sem isto o
+    # arquivamento depende do watchdog, que morre junto em caso de BugCheck.
+    try {
+        if (Test-Path -LiteralPath $displayLogPath -PathType Leaf) {
+            $fs = [System.IO.File]::Open($displayLogPath, 'Open', 'Read', 'ReadWrite')
+            try {
+                $null = $fs.Seek($displayLogStartOffset, 'Begin')
+                $out = [System.IO.File]::Create((Join-Path $evidenceDir 'display-log-this-bind-FINAL.txt'))
+                try { $fs.CopyTo($out) } finally { $out.Dispose() }
+            } finally { $fs.Dispose() }
+            Write-Host '  Cauda FINAL do log do KMD arquivada.' -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host ("  AVISO: cauda FINAL do KMD falhou: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+    }
+}
+
 Write-Host "`n==========================================================================" -ForegroundColor Green
 Write-Host "DRIVER DE LABORATORIO INSTALADO!" -ForegroundColor Green
 if ($DisableWatchdog) {
     Write-Host 'Watchdog DESABILITADO; nao ha confirmacao temporizada a executar.' -ForegroundColor Yellow
     Write-Host "Em caso de falha use: $recoveryPath" -ForegroundColor Yellow
 } else {
-    Write-Host "O Watchdog continua armado por $WatchdogTimeoutSeconds segundos." -ForegroundColor Yellow
+    Write-Host "O Watchdog SYSTEM continua armado por $WatchdogTimeoutSeconds segundos." -ForegroundColor Yellow
     Write-Host "Se o video estiver visivel, confirme para desarmar o rollback:" -ForegroundColor Yellow
-    Write-Host "powershell -NoProfile -ExecutionPolicy Bypass -File `"$confirmScript`" -EvidenceDir `"$evidenceDir`" -InstanceId `"$($device.PNPDeviceID)`" -Token `"$watchdogToken`" -IConfirmDisplayIsVisible"
+    Write-Host "powershell -NoProfile -ExecutionPolicy Bypass -File `"$safeConfirmScript`" -ConfigPath `"C:\BC250_SAFE_GUARD\armed.json`" -Token `"$watchdogToken`" -IConfirmDisplayIsVisible"
 }
 Write-Host "==========================================================================" -ForegroundColor Green
-

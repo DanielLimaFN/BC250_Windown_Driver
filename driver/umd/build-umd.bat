@@ -50,6 +50,14 @@ echo [DXBC PARSER CC] bc250_dxbc_parser.c
 cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\core" /I "%ROOTDIR%\driver\wdk" /I "%ROOTDIR%\inc" /Fo"%ODIR%\bc250_dxbc_parser.obj" /c "%ROOTDIR%\driver\core\bc250_dxbc_parser.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
+echo [DXBC-SPIRV BRIDGE CC] bc250_dxbc_spirv_bridge.c
+cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\core" /Fo"%ODIR%\bc250_dxbc_spirv_bridge.obj" /c "%ROOTDIR%\driver\core\bc250_dxbc_spirv_bridge.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [VKD3D-SHADER ADAPTER CC] bc250_vkd3d_shader_adapter.c
+cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\core" /Fo"%ODIR%\bc250_vkd3d_shader_adapter.obj" /c "%ROOTDIR%\driver\umd\bc250_vkd3d_shader_adapter.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
 echo [PM4 PACKET BUILDER CC] bc250_pm4_packet_builder.c
 cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\core" /I "%ROOTDIR%\driver\wdk" /I "%ROOTDIR%\inc" /Fo"%ODIR%\bc250_pm4_packet_builder.obj" /c "%ROOTDIR%\driver\core\bc250_pm4_packet_builder.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -68,7 +76,7 @@ if errorlevel 1 exit /b 1
 
 echo [D3D UMD LINK] bc250umd.dll
 rem advapi32.lib: P7_D3D11_CAPS_PROBE le HKLM para saber se foi armado.
-link /nologo /DLL /DEF:"%ROOTDIR%\driver\umd\bc250umd.def" /OUT:"%ODIR%\bc250umd.dll" /IMPLIB:"%ODIR%\bc250umd.lib" "%ODIR%\bc250_d3d_umd.obj" "%ODIR%\bc250_dxbc_parser.obj" "%ODIR%\bc250_pm4_packet_builder.obj" "%ODIR%\bc250_sdma_packet_builder.obj" "%ODIR%\bc250_umd_caps_probe.obj" "%ODIR%\bc250_umd_private_contract.obj" "%ODIR%\bc250_allocation_abi_contract.obj" "%ODIR%\bc250_wddm_winsys.obj" kernel32.lib advapi32.lib
+link /nologo /DLL /DEF:"%ROOTDIR%\driver\umd\bc250umd.def" /OUT:"%ODIR%\bc250umd.dll" /IMPLIB:"%ODIR%\bc250umd.lib" "%ODIR%\bc250_d3d_umd.obj" "%ODIR%\bc250_dxbc_parser.obj" "%ODIR%\bc250_dxbc_spirv_bridge.obj" "%ODIR%\bc250_vkd3d_shader_adapter.obj" "%ODIR%\bc250_pm4_packet_builder.obj" "%ODIR%\bc250_sdma_packet_builder.obj" "%ODIR%\bc250_umd_caps_probe.obj" "%ODIR%\bc250_umd_private_contract.obj" "%ODIR%\bc250_allocation_abi_contract.obj" "%ODIR%\bc250_wddm_winsys.obj" kernel32.lib advapi32.lib
 if errorlevel 1 exit /b 1
 
 echo [WDDM WINSYS TEST CC] bc250_wddm_winsys_test.c
@@ -88,6 +96,30 @@ rem Linka o OBJETO, nao a import lib: as funcoes de decisao do
 rem P7_D3D11_CAPS_PROBE sao internas e NAO devem ser exportadas pela DLL de
 rem producao so' para o teste alcanca-las.
 link /nologo /OUT:"%ODIR%\bc250_d3d_umd_test.exe" "%ODIR%\bc250_d3d_umd_test.obj" "%ODIR%\bc250_dxbc_parser.obj" "%ODIR%\bc250_pm4_packet_builder.obj" "%ODIR%\bc250_sdma_packet_builder.obj" "%ODIR%\bc250_umd_caps_probe.obj" "%ODIR%\bc250_umd_private_contract.obj" "%ODIR%\bc250_allocation_abi_contract.obj" "%ODIR%\bc250_wddm_winsys.obj" "%ODIR%\bc250umd.lib" kernel32.lib advapi32.lib
+if errorlevel 1 exit /b 1
+
+echo [VKD3D SHADER ADAPTER TEST CC] vkd3d_shader_adapter_test.c
+cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\core" /Fo"%ODIR%\vkd3d_shader_adapter_test.obj" /c "%ROOTDIR%\driver\tests\vkd3d_shader_adapter_test.c"
+if errorlevel 1 exit /b 1
+
+echo [VKD3D MOCK PROVIDER CC] vkd3d_shader_mock_provider.c
+cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\core" /Fo"%ODIR%\vkd3d_shader_mock_provider.obj" /c "%ROOTDIR%\driver\tests\vkd3d_shader_mock_provider.c"
+if errorlevel 1 exit /b 1
+
+echo [VKD3D MOCK PROVIDER LINK] bc250_vkd3d_mock.dll
+link /nologo /DLL /OUT:"%ODIR%\bc250_vkd3d_mock.dll" "%ODIR%\vkd3d_shader_mock_provider.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+echo [VKD3D SHADER ADAPTER TEST LINK] vkd3d_shader_adapter_test.exe
+link /nologo /OUT:"%ODIR%\vkd3d_shader_adapter_test.exe" "%ODIR%\vkd3d_shader_adapter_test.obj" "%ODIR%\bc250_vkd3d_shader_adapter.obj" "%ODIR%\bc250_dxbc_spirv_bridge.obj" "%ODIR%\bc250_dxbc_parser.obj" kernel32.lib
+if errorlevel 1 exit /b 1
+
+echo [VKD3D REAL SMOKE CC] vkd3d_shader_real_smoke.c
+cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\core" /Fo"%ODIR%\vkd3d_shader_real_smoke.obj" /c "%ROOTDIR%\driver\tests\vkd3d_shader_real_smoke.c"
+if errorlevel 1 exit /b 1
+
+echo [VKD3D REAL SMOKE LINK] vkd3d_shader_real_smoke.exe
+link /nologo /OUT:"%ODIR%\vkd3d_shader_real_smoke.exe" "%ODIR%\vkd3d_shader_real_smoke.obj" "%ODIR%\bc250_vkd3d_shader_adapter.obj" "%ODIR%\bc250_dxbc_spirv_bridge.obj" "%ODIR%\bc250_dxbc_parser.obj" kernel32.lib
 if errorlevel 1 exit /b 1
 
 echo [NODE1 SUBMIT TEST CC] umd_node1_submit_contract_test.c
@@ -164,6 +196,11 @@ if not "!ERRORLEVEL!"=="0" exit /b 1
 echo.
 echo === EXECUTANDO TESTE DE CONTRATO D3D UMD ===
 "%ODIR%\bc250_d3d_umd_test.exe"
+if not "!ERRORLEVEL!"=="0" exit /b 1
+
+echo.
+echo === EXECUTANDO TESTE DO ADAPTADOR VKD3D-SHADER ===
+"%ODIR%\vkd3d_shader_adapter_test.exe"
 if not "!ERRORLEVEL!"=="0" exit /b 1
 
 echo.

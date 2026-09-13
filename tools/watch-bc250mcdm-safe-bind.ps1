@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$ConfigPath,
-    [switch]$Execute
+    [switch]$Execute,
+    [switch]$DeadlineEnforcer
 )
 
 $ErrorActionPreference = 'Stop'
@@ -47,7 +48,8 @@ if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
 }
 $config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 foreach ($name in @('schema_version','task_name','token','instance_id','timeout_seconds',
-        'evidence_dir','recovery_path','recovery_sha256','armed_boot_ticks',
+        'deadline_task_name','evidence_dir','recovery_path','recovery_sha256',
+        'armed_boot_ticks','armed_at_utc_ticks','deadline_utc_ticks',
         'automatic_recovery_reboot')) {
     if ($null -eq $config.PSObject.Properties[$name]) {
         throw "Safe-bind watchdog recusado: campo ausente: $name"
@@ -57,6 +59,14 @@ if ([uint32]$config.schema_version -ne 1 -or
     [string]$config.instance_id -notmatch '(?i)^PCI\\VEN_1002&DEV_13FE(?:&|\\)' -or
     [int]$config.timeout_seconds -lt 120 -or [int]$config.timeout_seconds -gt 600) {
     throw 'Safe-bind watchdog recusado: contrato invalido.'
+}
+$armedAtUtc = [datetime]::new([long]$config.armed_at_utc_ticks, [DateTimeKind]::Utc)
+$absoluteDeadlineUtc = [datetime]::new(
+    [long]$config.deadline_utc_ticks, [DateTimeKind]::Utc)
+if ($absoluteDeadlineUtc -le $armedAtUtc -or
+    [math]::Abs(($absoluteDeadlineUtc - $armedAtUtc).TotalSeconds -
+        [double]$config.timeout_seconds) -gt 2.0) {
+    throw 'Safe-bind watchdog recusado: prazo absoluto incoerente.'
 }
 $parsedToken = [guid]::Empty
 if (-not [guid]::TryParseExact([string]$config.token, 'D', [ref]$parsedToken)) {
@@ -82,6 +92,7 @@ $script:attemptNumber = 1
 $script:recoveryExitCode = $null
 $script:shutdownExitCode = $null
 $script:lastSamples = @()
+$script:currentBootTicks = [long]$config.armed_boot_ticks
 
 function Write-State([string]$State, [string]$Detail, [int]$ExitCode = 0) {
     $record = [ordered]@{
@@ -90,7 +101,7 @@ function Write-State([string]$State, [string]$Detail, [int]$ExitCode = 0) {
         attempt_number = $script:attemptNumber
         detail = $Detail
         timestamp = (Get-Date).ToString('o')
-        boot_ticks = [long](Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks
+        boot_ticks = $script:currentBootTicks
         exit_code = $ExitCode
         hardware_validated = $false
     }
@@ -116,8 +127,16 @@ function Write-State([string]$State, [string]$Detail, [int]$ExitCode = 0) {
 function Get-Bc250PnpVerdict {
     $samples = @()
     for ($i = 1; $i -le 5; $i++) {
-        $devices = @(Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue |
-            Where-Object { $_.PNPDeviceID -eq [string]$config.instance_id })
+        $sampleError = $null
+        try {
+            $devices = @(Get-CimInstance Win32_PnPEntity -OperationTimeoutSec 2 `
+                -ErrorAction Stop | Where-Object {
+                    $_.PNPDeviceID -eq [string]$config.instance_id
+                })
+        } catch {
+            $devices = @()
+            $sampleError = $_.Exception.Message
+        }
         # device_count, e nao "count": num [ordered]@{} o nome count colide
         # com a propriedade Count do proprio dicionario. Medido no PS 5.1
         # desta maquina, o adaptador prioriza a chave e devolve o valor certo
@@ -129,6 +148,7 @@ function Get-Bc250PnpVerdict {
             device_count = $devices.Count
             service = $(if ($devices.Count -eq 1) { [string]$devices[0].Service } else { $null })
             code = $(if ($devices.Count -eq 1) { [uint32]$devices[0].ConfigManagerErrorCode } else { $null })
+            error = $sampleError
         }
         if ($i -lt 5) { Start-Sleep -Seconds 1 }
     }
@@ -180,6 +200,8 @@ function Complete-Bc250SafeBind([string]$FinalState, [string]$Detail, [int]$Exit
     Write-State $FinalState $Detail $ExitCode
     Unregister-ScheduledTask -TaskName ([string]$config.task_name) `
         -Confirm:$false -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName ([string]$config.deadline_task_name) `
+        -Confirm:$false -ErrorAction SilentlyContinue
     $cleanupOk = Invoke-Bc250SafeGuardCleanup
     Write-AtomicJson $finalPath ([ordered]@{
         final_state = $FinalState
@@ -187,7 +209,7 @@ function Complete-Bc250SafeBind([string]$FinalState, [string]$Detail, [int]$Exit
         detail = $Detail
         attempt_number = $script:attemptNumber
         timestamp = (Get-Date).ToString('o')
-        boot_ticks = [long](Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks
+        boot_ticks = $script:currentBootTicks
         armed_boot_ticks = [long]$config.armed_boot_ticks
         recovery_exit_code = $script:recoveryExitCode
         shutdown_exit_code = $script:shutdownExitCode
@@ -215,7 +237,9 @@ if (-not (Test-Path -LiteralPath ([string]$config.recovery_path) -PathType Leaf)
     Write-State 'BLOCKED' 'recovery ausente ou alterada' 12
     exit 12
 }
-$currentBootTicks = [long](Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks
+$currentBootTicks = [long](Get-CimInstance Win32_OperatingSystem `
+    -OperationTimeoutSec 2 -ErrorAction Stop).LastBootUpTime.ToUniversalTime().Ticks
+$script:currentBootTicks = $currentBootTicks
 $retryAfterBoot = $false
 if (Test-Path -LiteralPath $attemptPath) {
     $previousAttempt = Get-Content -LiteralPath $attemptPath -Raw | ConvertFrom-Json
@@ -228,88 +252,98 @@ if (Test-Path -LiteralPath $attemptPath) {
     $retryAfterBoot = $true
 }
 
-Write-State 'OBSERVING' $(if ($retryAfterBoot) {
-    'boot posterior ao rollback incompleto; verificacao imediata'
-} else {
-    'guardiao ativo antes do bind; aguardando confirmacao explicita'
-})
-$deadline = $(if ($retryAfterBoot) { Get-Date } else {
-    (Get-Date).AddSeconds([int]$config.timeout_seconds)
-})
-do {
-    if (Test-Path -LiteralPath $confirmationPath -PathType Leaf) {
-        try {
-            $confirmation = Get-Content -LiteralPath $confirmationPath -Raw | ConvertFrom-Json
-            $currentBoot = [long](Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks
-            if ([string]$confirmation.token -eq [string]$config.token -and
-                [string]$confirmation.instance_id -eq [string]$config.instance_id -and
-                [long]$confirmation.boot_ticks -eq $currentBoot -and
-                [bool]$confirmation.display_visible) {
-                Complete-Bc250SafeBind 'DISARMED' `
-                    'confirmacao visual e estado PnP estavel aceitos'
-                exit 0
-            }
-        } catch { }
-    }
-    Start-Sleep -Milliseconds 250
-} until ((Get-Date) -ge $deadline)
-
-$verdict = Get-Bc250PnpVerdict
-if ($verdict.healthy) {
-    if ($retryAfterBoot) {
-        # Este boot veio DEPOIS de uma recovery que nao fechou online. A
-        # imagem voltou por causa do reboot que este guardiao pediu.
-        Complete-Bc250SafeBind 'POST_REBOOT_VERIFIED' `
-            'BasicDisplay Codigo 0 confirmado em 5 amostras apos o reboot da recovery'
+if (-not $DeadlineEnforcer) {
+    Write-State 'OBSERVING' $(if ($retryAfterBoot) {
+        'boot posterior ao rollback incompleto; prazo absoluto preservado'
     } else {
-        # Nunca houve rollback: o dispositivo simplesmente nunca quebrou.
-        Complete-Bc250SafeBind 'NO_ROLLBACK_REQUIRED' `
-            'BasicDisplay Codigo 0 confirmado em 5 amostras no timeout; nenhum rollback foi necessario'
-    }
-    exit 0
+        'guardiao ativo antes do bind; aguardando confirmacao explicita'
+    })
+    do {
+        if (Test-Path -LiteralPath $confirmationPath -PathType Leaf) {
+            try {
+                $confirmation = Get-Content -LiteralPath $confirmationPath -Raw | ConvertFrom-Json
+                if ([string]$confirmation.token -eq [string]$config.token -and
+                    [string]$confirmation.instance_id -eq [string]$config.instance_id -and
+                    [long]$confirmation.boot_ticks -eq $currentBootTicks -and
+                    [bool]$confirmation.display_visible) {
+                    Complete-Bc250SafeBind 'DISARMED' `
+                        'confirmacao visual e estado PnP estavel aceitos'
+                    exit 0
+                }
+            } catch { }
+        }
+        Start-Sleep -Milliseconds 250
+    } until ([datetime]::UtcNow -ge $absoluteDeadlineUtc)
+} elseif ([datetime]::UtcNow -lt $absoluteDeadlineUtc) {
+    # A tarefa de prazo pode ser disparada adiantada por ajuste de relogio.
+    # Nunca recupera antes do instante absoluto declarado.
+    do { Start-Sleep -Milliseconds 250 } until (
+        [datetime]::UtcNow -ge $absoluteDeadlineUtc)
 }
-if ($retryAfterBoot) {
-    # Fica no journal mesmo que o state.json seja sobrescrito adiante.
-    Write-State 'POST_REBOOT_FAILED' `
-        'apos o reboot da recovery o dispositivo continua fora de BasicDisplay/Codigo 0'
+
+# Duas tarefas independentes chegam aqui. Uma trava global torna o rollback
+# single-owner; a outra sai sem tocar no dispositivo.
+$recoveryMutex = New-Object Threading.Mutex($false, 'Global\BC250SafeBindRecovery')
+$ownsRecovery = $false
+try {
+    $ownsRecovery = $recoveryMutex.WaitOne(0)
+} catch [Threading.AbandonedMutexException] {
+    # Se o processo morreu/rebootou segurando o mutex, WaitOne transfere a
+    # posse ao chamador E lanca esta excecao. Tratar como "nao adquiriu"
+    # repetiria exatamente a falha que este segundo boot precisa recuperar.
+    $ownsRecovery = $true
+} catch {
+    $ownsRecovery = $false
+}
+if (-not $ownsRecovery) { exit 0 }
+if (Test-Path -LiteralPath $finalPath -PathType Leaf) {
+    $recoveryMutex.ReleaseMutex(); $recoveryMutex.Dispose(); exit 0
+}
+
+# Fecha a corrida entre a ultima sondagem do observador e a aquisicao do
+# mutex. Depois do prazo esta leitura e' SOMENTE de arquivo: nenhuma chamada
+# a WMI/PnP pode impedir a recovery. O confirmador ja validou Codigo 0, hash,
+# boot e 60 s de estabilidade antes de publicar este registro atomico.
+if (Test-Path -LiteralPath $confirmationPath -PathType Leaf) {
+    try {
+        $confirmation = Get-Content -LiteralPath $confirmationPath -Raw | ConvertFrom-Json
+        if ([string]$confirmation.token -eq [string]$config.token -and
+            [string]$confirmation.instance_id -eq [string]$config.instance_id -and
+            [long]$confirmation.boot_ticks -eq $currentBootTicks -and
+            [bool]$confirmation.display_visible) {
+            Complete-Bc250SafeBind 'DISARMED' `
+                'confirmacao atomica aceita na barreira final antes do rollback'
+            $recoveryMutex.ReleaseMutex(); $recoveryMutex.Dispose()
+            exit 0
+        }
+    } catch { }
+}
+
+# AUSENCIA DE CONFIRMACAO EXIGE ROLLBACK, independentemente do estado PnP.
+# A corrida 12:50 travou na consulta WMI que existia aqui, antes desta linha.
+# Segurança vem antes de diagnóstico: nenhuma consulta WMI/evento antecede o
+# recovery depois do prazo.
+try {
+    Write-State 'ROLLBACK_STARTED' `
+        'prazo absoluto expirou sem confirmacao; recovery iniciada sem preconsulta WMI'
+} catch {
+    # Evidencia e' importante, mas indisponibilidade do disco nao tem direito
+    # de impedir a acao de seguranca. A recovery continua fail-closed.
 }
 
 # SNAPSHOT antes do rollback: preserva a causa mesmo quando a tela esta preta
 # e o operador nao consegue executar o inspetor manualmente.
-$devices = @(Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue |
-    Where-Object { $_.PNPDeviceID -eq [string]$config.instance_id })
-$devices | Select-Object PNPDeviceID,Service,Status,ConfigManagerErrorCode |
-    ConvertTo-Json -Depth 4 | Set-Content -LiteralPath `
-    (Join-Path ([string]$config.evidence_dir) 'safe-bind-pnp-before-rollback.json') -Encoding UTF8
-$probeKey = 'HKLM:\SYSTEM\CurrentControlSet\Services\bc250mcdm\Parameters\Probe'
-if (Test-Path -LiteralPath $probeKey) {
-    $probe = Get-ItemProperty -LiteralPath $probeKey -ErrorAction SilentlyContinue
-    if ($null -ne $probe) {
-        $probe | Select-Object * -ExcludeProperty PSPath,PSParentPath,PSChildName,PSDrive,PSProvider |
-            ConvertTo-Json -Depth 6 | Set-Content -LiteralPath `
-            (Join-Path ([string]$config.evidence_dir) 'safe-bind-probe-before-rollback.json') -Encoding UTF8
-    }
-}
-$bootTime = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
-$events = @(Get-WinEvent -FilterHashtable @{ LogName='System'; StartTime=$bootTime } `
-    -ErrorAction SilentlyContinue | Where-Object {
-        $_.ProviderName -match 'Display|Kernel-PnP|DriverFrameworks|WHEA|BugCheck|dxgkrnl' -or
-        $_.Message -match 'bc250|13FE|display driver|video'
-    } | Select-Object TimeCreated,Id,LevelDisplayName,ProviderName,Message)
-$events | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath `
-    (Join-Path ([string]$config.evidence_dir) 'safe-bind-events-before-rollback.json') -Encoding UTF8
-
-Write-AtomicJson $attemptPath ([ordered]@{
-    attempted_at = (Get-Date).ToString('o')
-    attempt_number = $script:attemptNumber
-    boot_ticks = $currentBootTicks
-    observed_service = $(if ($devices.Count -eq 1) { [string]$devices[0].Service } else { '<count-ne-1>' })
-    observed_code = $(if ($devices.Count -eq 1) { [uint32]$devices[0].ConfigManagerErrorCode } else { $null })
-    pnp_samples = $script:lastSamples
-    reason = 'ausencia de confirmacao explicita; qualquer Codigo, inclusive 39/43, exige rollback'
-})
-Write-State 'ROLLBACK_STARTED' 'timeout sem confirmacao; executando recovery autorizada'
-
+try {
+    Write-AtomicJson $attemptPath ([ordered]@{
+        attempted_at = (Get-Date).ToString('o')
+        attempt_number = $script:attemptNumber
+        boot_ticks = $currentBootTicks
+        observed_service = '<nao consultado antes da recovery>'
+        observed_code = $null
+        pnp_samples = @()
+        reason = 'ausencia de confirmacao explicita; qualquer Codigo, inclusive 39/43, exige rollback'
+    })
+} catch { }
 # --------------------------------------------------------------------------
 # Execucao blindada da recovery.
 #
@@ -347,6 +381,7 @@ if ($exitCode -eq 0) {
     if ($afterVerdict.healthy) {
         Complete-Bc250SafeBind 'RECOVERY_OK_ONLINE' `
             'recovery fechou sem reboot e BasicDisplay Codigo 0 foi confirmado em 5 amostras'
+        $recoveryMutex.ReleaseMutex(); $recoveryMutex.Dispose()
         exit 0
     }
     Write-State 'ROLLED_BACK' `
@@ -377,4 +412,5 @@ if ([bool]$config.automatic_recovery_reboot -and $script:attemptNumber -eq 1) {
 }
 
 Write-State 'ROLLBACK_FAILED' 'recovery falhou apos dois boots; execute C:\BC250_RECOVERY.cmd' $exitCode
+$recoveryMutex.ReleaseMutex(); $recoveryMutex.Dispose()
 exit $exitCode

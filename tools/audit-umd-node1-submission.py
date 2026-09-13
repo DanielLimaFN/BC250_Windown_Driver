@@ -180,7 +180,8 @@ def main() -> int:
     failures = evaluate(umd, winsys, header, policy, harness)
 
     # Mutation proof: removing the real upload must make the same gate fail.
-    mutated = umd.replace("Bc250WinsysUploadAllocation(", "Bc250WinsysUpload_REMOVED(", 1)
+    cmd_flush = body(umd, "Bc250UmdCommandBufferFlush")
+    mutated = umd.replace(cmd_flush, cmd_flush.replace("Bc250WinsysUploadAllocation(", "Bc250WinsysUpload_REMOVED(", 1), 1)
     mutation_failures = evaluate(mutated, winsys, header, policy, harness)
     if not any("CommandBufferFlush sem Bc250WinsysUploadAllocation" in item
                for item in mutation_failures):

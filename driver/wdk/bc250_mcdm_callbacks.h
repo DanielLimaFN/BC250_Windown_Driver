@@ -170,6 +170,24 @@ typedef NTSTATUS (*BC250_MCDM_COLLECT_DEBUG_SNAPSHOT)(
     _In_ HANDLE AdapterContext,
     _In_ const DXGKARG_COLLECTDBGINFO *CollectDebugInfo);
 
+/*
+ * F2.1 (13/09) -- BACKEND DA DESCRICAO DE ALOCACAO.
+ *
+ * `Bc250McdmDescribeAllocation` devolvia STATUS_NOT_SUPPORTED para TODA
+ * alocacao, porque o KMD nao tinha onde consultar a geometria. Agora a UMD a
+ * declara na ABI de alocacao e o registro de objetos a guarda; este executor e'
+ * quem faz a consulta, no mesmo padrao dos outros ciclos de vida.
+ *
+ * Ponteiro ausente = DDI falha fechada, por construcao. Nao ha caminho em que a
+ * DDI invente uma geometria.
+ */
+typedef NTSTATUS (*BC250_MCDM_DESCRIBE_ALLOCATION_OBJECT)(
+    _In_ HANDLE AdapterContext,
+    _Inout_ DXGKARG_DESCRIBEALLOCATION *DescribeAllocation);
+
+VOID Bc250McdmInstallDescribeAllocation(
+    _In_opt_ BC250_MCDM_DESCRIBE_ALLOCATION_OBJECT DescribeAllocationObject);
+
 VOID Bc250McdmInstallProcessLifecycle(
     _In_opt_ BC250_MCDM_CREATE_PROCESS_OBJECT CreateProcessObject,
     _In_opt_ BC250_MCDM_DESTROY_PROCESS_OBJECT DestroyProcessObject);
@@ -268,6 +286,13 @@ typedef NTSTATUS (*BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER)(
 
 VOID Bc250McdmInstallUpdatePageTableHandler(
     _In_opt_ BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER UpdatePageTableHandler);
+
+typedef NTSTATUS (*BC250_MCDM_ESCAPE_HANDLER)(
+    _In_ HANDLE AdapterContext,
+    _In_ CONST DXGKARG_ESCAPE *pEscape);
+
+VOID Bc250McdmInstallEscapeHandler(
+    _In_opt_ BC250_MCDM_ESCAPE_HANDLER EscapeHandler);
 
 NTSTATUS Bc250McdmEncodeVidMmPte(
     _In_ CONST BC250_MCDM_RUNTIME_CAPS *Caps,

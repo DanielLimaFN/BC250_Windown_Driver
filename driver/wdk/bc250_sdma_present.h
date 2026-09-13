@@ -23,8 +23,14 @@ extern "C" {
 #define BC250_SDMA_PRESENT_DEST_OFFSET    0x100u
 #define BC250_SDMA_PRESENT_WPTR_OFFSET    0x400u
 #define BC250_SDMA_PRESENT_FENCE_OFFSET   0x800u
+#define BC250_SDMA_PRESENT_ASYNC_FENCE_OFFSET 0x880u
 #define BC250_SDMA_PRESENT_FENCE_POISON   0x43DAFFFEu
 #define BC250_SDMA_PRESENT_FENCE_INIT     0x1000u
+
+static inline uint32_t Bc250SdmaAsyncSlotFenceOffset(uint32_t SlotIndex)
+{
+    return BC250_SDMA_PRESENT_ASYNC_FENCE_OFFSET + (SlotIndex * (uint32_t)sizeof(uint32_t));
+}
 
 /*
  * Offsets de registradores relativos à base de BAR5.
@@ -143,6 +149,46 @@ typedef enum BC250_BLT_DATA_PROOF_STATE {
     BC250_BLT_DATA_PROOF_BLANK = 2
 } BC250_BLT_DATA_PROOF_STATE;
 
+typedef struct BC250_SDMA_IN_FLIGHT_SUBMISSION {
+    BOOLEAN Active;
+    BOOLEAN TimeoutLogged;
+    uint64_t SubmissionFenceId;
+    uint32_t HardwareFence;
+    uint32_t TargetWptrBytes;
+    uint32_t StartCursor;
+    uint32_t PadDwords;
+    uint32_t IndirectEndDwords;
+    uint32_t IbSizeDwords;
+    ULONG DmaBufferSize;
+    uint64_t DmaBufferVirtualAddress;
+    uint32_t Vmid;
+    uint32_t ExecPath;
+    uint64_t ExpectedEffectDestMc;
+    ULONG ExpectedEffectBytes;
+    uint32_t ExpectedEffectPattern;
+    BC250_DATA_PROOF_PLAN DataPlan;
+    LARGE_INTEGER SubmitTime;
+} BC250_SDMA_IN_FLIGHT_SUBMISSION;
+
+typedef struct BC250_SDMA_RETIREMENT_RESULT {
+    uint64_t SubmissionFenceId;
+    BOOLEAN Completed;
+    BOOLEAN TripodPassed;
+    BOOLEAN Timeout;
+    uint32_t HardwareFence;
+    uint32_t RptrRegWrapped;
+    uint32_t RptrWbWrapped;
+    uint32_t TargetWptrWrapped;
+    BC250_TRIPOD_VERDICT Verdict;
+    BC250_TRIPOD_RPTR_SOURCE RptrSource;
+    uint32_t DataMismatches;
+    uint32_t CanaryCount;
+    uint32_t PostGPU[BC250_DATA_PROOF_CANARY_COUNT];
+    uint32_t ExecPath;
+    ULONG DmaBufferSize;
+    uint64_t DmaBufferVirtualAddress;
+} BC250_SDMA_RETIREMENT_RESULT;
+
 typedef struct BC250_SDMA_PRESENT_CONTEXT {
     BOOLEAN Initialized;
     BOOLEAN HardwareEnabled;
@@ -176,6 +222,53 @@ typedef struct BC250_SDMA_PRESENT_CONTEXT {
     volatile LONG SubmissionsSubmittedCount;
     volatile LONG SubmissionsCompletedCount;
     volatile LONG FallbackCpuCount;
+    /*
+     * C3 (12/09): FallbackCpuCount conta SOMENTE recusa/timeout de
+     * Bc250SdmaPresentBlt -- ou seja, "o caminho de GPU nao foi tomado". Ele e'
+     * CEGO para a copia por CPU que o caminho de escape (PRESENT_BLT) realmente
+     * executa, e foi por isso que a corrida 11/09 22:46 arquivou "Fallbacks=0"
+     * enquanto os 11.059.200 bytes tinham sido copiados por RtlCopyMemory. Este
+     * contador registra a copia EFETIVAMENTE FEITA pela CPU. Qualquer quadro
+     * contado aqui NAO e' atribuivel a GPU (Lei 4).
+     */
+    volatile LONG HostCpuCopyCount;
+
+    /*
+     * C3 (12/09) -- observabilidade do caminho de escape.
+     *
+     * Nas cinco corridas de Marco 3 que falharam em 12/09 o KMD nao tem como
+     * dizer qual foi o ULTIMO present que ele viu: o log do escape e' amostrado
+     * (1a linha e a cada 60), entao ate' 59 chamadas ficam invisiveis antes da
+     * ruptura. EscapeEnteredCount fecha essa lacuna sem inflar o log.
+     *
+     * As duracoes existem porque a medicao de 10:42 deu 26 FPS (~38 ms por
+     * quadro) para copiar 11.059.200 bytes -- ~290 MB/s, ordens de grandeza
+     * abaixo do que GDDR6 entrega. Ou o blt sincrono de Bc250SdmaPresentBlt e'
+     * o gargalo, ou nao e'; sem medir, e' chute. Microssegundos, do laco de
+     * poll inteiro, nao do pacote.
+     */
+    volatile LONG EscapeEnteredCount;
+    volatile LONG EscapeBltMaxMicroseconds;
+    volatile LONG64 EscapeBltTotalMicroseconds;
+
+    /*
+     * C3.6 (12/09) -- geometria do segmento 1, espelhada aqui para que os DOIS
+     * caminhos de present possam converter offset de segmento sem inventar
+     * aritmetica propria.
+     *
+     * ESCRITOR UNICO: Bc250SdmaPresentSetSegmentGeometry, chamada pelo miniport
+     * quando BC250_MCDM_RUNTIME_CAPS fica pronta. Ninguem mais escreve. A
+     * conversao continua saindo de Bc250SegmentOffsetTo{VramOffset,Mc} -- estes
+     * campos sao só o transporte do dado ate' o caminho de display, que nao tem
+     * o contexto do adaptador em maos.
+     *
+     * SegmentGeometryReady=0 significa "ainda nao sei", e converter nesse estado
+     * e' PROIBIDO: foi exatamente supor offset cru que produziu o BugCheck 0x119
+     * da corrida 13:11.
+     */
+    uint64_t LocalSegmentBaseOffset;
+    uint64_t LocalSegmentBytes;
+    volatile LONG SegmentGeometryReady;
 
     /* Métricas de prova do tripé */
     ULONG TripodPolls;
@@ -193,9 +286,37 @@ typedef struct BC250_SDMA_PRESENT_CONTEXT {
     /* Endereços de VRAM e GOP Scanout MC */
     uint64_t VramMcStart;
     uint64_t ScanoutGpuAddress;
+
+#define BC250_SDMA_IN_FLIGHT_CAPACITY 32u
+
+    /* Submissão assíncrona do Nó 0 (elimina 0x133 e 0x119 por backpressure) */
+    BC250_SDMA_IN_FLIGHT_SUBMISSION InFlightQueue[BC250_SDMA_IN_FLIGHT_CAPACITY];
+    uint32_t InFlightHead;
+    uint32_t InFlightTail;
+    uint32_t InFlightCount;
 } BC250_SDMA_PRESENT_CONTEXT;
 
 extern BC250_SDMA_PRESENT_CONTEXT g_Bc250SdmaPresent;
+
+/*
+ * C3.6: publica a geometria do segmento 1. Escritor unico do par
+ * LocalSegmentBaseOffset/LocalSegmentBytes. Chamar com valores zerados e' no-op,
+ * para que caps ainda nao resolvidas nao apaguem uma geometria ja valida.
+ */
+VOID Bc250SdmaPresentSetSegmentGeometry(
+    _In_ uint64_t LocalSegmentBaseOffset,
+    _In_ uint64_t LocalSegmentBytes);
+
+/*
+ * C3.6: converte offset de segmento em offset CRU de VRAM, pronto para indexar
+ * g_Bc250DisplayState.FrameBufferVirtual. Devolve FALSE -- e o caminho deve
+ * falhar fechado -- quando a geometria nao esta publicada ou a faixa nao cabe.
+ */
+BOOLEAN Bc250SdmaPresentSegmentOffsetToVram(
+    _In_ UINT32 SegmentId,
+    _In_ UINT64 SegmentOffset,
+    _In_ UINT64 SizeBytes,
+    _Out_ UINT64 *VramOffset);
 
 NTSTATUS Bc250SdmaPresentInit(
     _In_ PHYSICAL_ADDRESS MmioBar5Physical,
@@ -208,12 +329,57 @@ BOOLEAN Bc250SdmaPresentBlt(
     _In_ uint64_t DestGpuAddress,
     _In_ ULONG ByteCount);
 
+/* COPY_LINEAR_SUB_WIND: layout P1, semantica de contagens H, nao validada. */
+BOOLEAN Bc250SdmaPresentBltRect(
+    _In_ uint64_t SourceGpuAddress,
+    _In_ ULONG SourcePitchBytes,
+    _In_ uint64_t DestGpuAddress,
+    _In_ ULONG DestPitchBytes,
+    _In_ ULONG DestX,
+    _In_ ULONG DestY,
+    _In_ ULONG Width,
+    _In_ ULONG Height);
+
 BOOLEAN Bc250SdmaPresentFill(
     _In_ uint64_t DestGpuAddress,
     _In_ ULONG ByteCount,
     _In_ uint32_t FillPattern);
 
 BOOLEAN Bc250SdmaPresentSyncNop(void);
+
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+VOID Bc250SdmaPresentFlushHdp(void);
+#else
+static __inline VOID Bc250SdmaPresentFlushHdp(void) { }
+#endif
+
+BOOLEAN Bc250SdmaPresentSubmitIndirectAsync(
+    _In_ uint64_t DmaBufferGpuVa,
+    _In_ ULONG DmaBufferSize,
+    _In_ uint32_t IbSizeDwords,
+    _In_ uint32_t Vmid,
+    _In_ uint64_t ExpectedEffectDestMc,
+    _In_ ULONG ExpectedEffectBytes,
+    _In_ uint32_t ExpectedEffectPattern,
+    _In_ uint64_t SubmissionFenceId,
+    _In_ uint32_t ExecPath,
+    _Out_ uint32_t *OutAssignedHardwareFence);
+
+BOOLEAN Bc250SdmaPresentSubmitFillAsync(
+    _In_ uint64_t DestGpuAddress,
+    _In_ ULONG ByteCount,
+    _In_ uint32_t FillPattern,
+    _In_ uint64_t SubmissionFenceId,
+    _In_ uint64_t DmaBufferGpuVa,
+    _Out_ uint32_t *OutAssignedHardwareFence);
+
+BOOLEAN Bc250SdmaPresentSubmitSyncNopAsync(
+    _In_ uint64_t SubmissionFenceId,
+    _In_ uint64_t DmaBufferGpuVa,
+    _Out_ uint32_t *OutAssignedHardwareFence);
+
+BOOLEAN Bc250SdmaPresentPollRetirement(
+    _Out_ BC250_SDMA_RETIREMENT_RESULT *Result);
 
 /*
  * IbSizeDwords e o valor publicado no campo IB_SIZE do pacote INDIRECT, ou

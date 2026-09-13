@@ -11,10 +11,11 @@ paths = [
     "driver/wdk/bc250_active_miniport.c",
     "driver/core/bc250_gcvm_vmid8_transaction.c",
     "driver/wdk/bc250_mmio_topology_transport.c",
+    "driver/wdk/bc250_submission_engine.c",
 ]
 original = {name: (ROOT / name).read_text(encoding="utf-8") for name in paths}
 mutations = [
-    (paths[0], "ComputeRing.Vmid = BC250_GCVM_COMPUTE_VMID;", "ComputeRing.Vmid = 8u;"),
+    (paths[3], "engine->ComputeRing.Vmid = TargetVmid;", "engine->ComputeRing.Vmid = 8u;"),
     (paths[1], "return Submitted == Retired;", "return Submitted >= Retired;"),
     (paths[0], "io.Flush = Bc250ActiveFlushComputeTlb;", "io.Flush = Bc250ActiveFlushMappedGfxhubTlb;"),
     (paths[2], "Bc250GcvmIsComputeRegister(ByteOffset) ||", ""),

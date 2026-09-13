@@ -6,6 +6,8 @@
 
 typedef struct TEST_STATE {
     UINT CreateContext;
+    UINT CreateWorkContext;
+    UINT CreatePresentContext;
     UINT CreatePagingQueue;
     UINT Allocate;
     UINT Map;
@@ -29,9 +31,23 @@ static HRESULT APIENTRY TestCreateContext(
     HANDLE Device, D3DDDICB_CREATECONTEXTVIRTUAL* Args)
 {
     assert(Device == (HANDLE)(ULONG_PTR)0xD00Du);
-    assert(Args != NULL && Args->NodeOrdinal == BC250_WINSYS_NODE_COMPUTE);
+    assert(Args != NULL);
+    /*
+     * 13/09: Bc250UmdStartNode1Submission passou a criar DOIS contextos -- o de
+     * trabalho no Node 1 e o de apresentacao no Node 0 (ver a proveniencia em
+     * bc250_wddm_winsys.h). Handles distintos por no, para que nenhum teste
+     * possa confundi-los.
+     */
+    assert(Args->NodeOrdinal == BC250_WINSYS_NODE_COMPUTE ||
+           Args->NodeOrdinal == BC250_WINSYS_NODE_SDMA);
+    if (Args->NodeOrdinal == BC250_WINSYS_NODE_COMPUTE) {
+        g_State.CreateWorkContext++;
+        Args->hContext = (HANDLE)(ULONG_PTR)0xC001u;
+    } else {
+        g_State.CreatePresentContext++;
+        Args->hContext = (HANDLE)(ULONG_PTR)0xC000u;
+    }
     g_State.CreateContext++;
-    Args->hContext = (HANDLE)(ULONG_PTR)0xC001u;
     return S_OK;
 }
 
@@ -39,7 +55,9 @@ static HRESULT APIENTRY TestDestroyContext(
     HANDLE Device, const D3DDDICB_DESTROYCONTEXT* Args)
 {
     assert(Device == (HANDLE)(ULONG_PTR)0xD00Du);
-    assert(Args != NULL && Args->hContext == (HANDLE)(ULONG_PTR)0xC001u);
+    assert(Args != NULL);
+    assert(Args->hContext == (HANDLE)(ULONG_PTR)0xC001u ||
+           Args->hContext == (HANDLE)(ULONG_PTR)0xC000u);
     g_State.DestroyContext++;
     return S_OK;
 }
@@ -229,11 +247,19 @@ int main(void)
     assert(g_State.Submit == 1u && g_State.Lock == 1u && g_State.Unlock == 1u);
 
     Bc250UmdDeviceTeardown(&device);
-    assert(g_State.CreateContext == 1u && g_State.DestroyContext == 1u);
+    /*
+     * 13/09: DOIS contextos -- trabalho no Node 1, apresentacao no Node 0 -- e os
+     * DOIS destruidos no teardown. Na corrida 17:18:35 o dwm.exe fez 61
+     * CreateDevice/DestroyDevice em ~3 min; contexto nao destruido vaza uma vez
+     * por ciclo.
+     */
+    assert(g_State.CreateWorkContext == 1u);
+    assert(g_State.CreatePresentContext == 1u);
+    assert(g_State.CreateContext == 2u && g_State.DestroyContext == 2u);
     assert(g_State.CreatePagingQueue == 1u && g_State.DestroyPagingQueue == 1u);
     assert(g_State.Allocate == 1u && g_State.Deallocate == 1u);
     assert(g_State.Map == 1u && g_State.MakeResident == 1u);
-    assert(g_State.Evict == 1u && g_State.FreeGpuVa == 1u);
+    assert(g_State.Evict == 0u && g_State.FreeGpuVa == 1u);
 
     puts("UMD NODE1 SUBMIT CONTRACT: PASS (17 DWORDs uploaded and routed; offline)");
     puts("HARDWARE VERDICT: NAO VALIDADO EM HARDWARE");

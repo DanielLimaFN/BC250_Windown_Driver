@@ -73,6 +73,156 @@ static int Bc250RunGpuvaSnapshotContractTest(void)
     CHECK(newReader.Space->LiveCount == 1u);
     Bc250GpuvaSnapshotRelease(&store, &newReader);
     CHECK(store.ReaderState[0] == 0L && store.ReaderState[1] == 0L);
+
+    /*
+     * C3.8 (12/09) -- ASSIMETRIA ENTRE LEITOR E PUBLICADOR.
+     *
+     * MEDIDO na corrida 16:09: com o dwm.exe vivo, cada Present resolve uma
+     * GPUVA e mantem contagem de leitor num slot. Quando esse slot vira o
+     * inativo, a publicacao seguinte exige contagem ZERO. O leitor sempre
+     * tentou 16 vezes; o publicador fazia UMA e desistia. Resultado: journal
+     * PUBLISH_FAILED -> ActiveFlushTlb -> STATUS_IO_DEVICE_ERROR -> a admissao
+     * do Node 1 nunca reabria -> STATUS_GRAPHICS_GPU_EXCEPTION_ON_DEVICE.
+     *
+     * Este bloco trava tres coisas:
+     *   1. leitor preso no slot INATIVO faz a publicacao devolver BUSY, e o
+     *      diagnostico separa BUSY de erro real (antes sairia o mesmo numero);
+     *   2. o publicador REALMENTE retenta -- Attempts > 1 prova isso, e e' o
+     *      que distingue a correcao de um no-op;
+     *   3. liberado o leitor, a publicacao volta a funcionar na 1a tentativa.
+     */
+    {
+        static BC250_GPUVA_SNAPSHOT_STORE c38Store;
+        static BC250_GPUVA_SPACE c38Scratch;
+        BC250_GPUVA_RANGE_RECORD c38Range;
+        uint32_t c38MapRange = 1u;
+        uint32_t c38Generation = 0u;
+        long c38Inactive;
+
+        CHECK(Bc250GpuvaSnapshotStoreInitialize(&c38Store, 34u) == BC250_GPUVA_OK);
+        CHECK(Bc250GpuvaSpaceInitialize(&c38Scratch, 34u) == BC250_GPUVA_OK);
+
+        memset(&c38Range, 0, sizeof(c38Range));
+        c38Range.State = BC250_GPUVA_RANGE_MAPPED;
+        c38Range.BaseGpuVa = 0x10000ull;
+        c38Range.Size = 0x1000ull;
+        c38Range.EndGpuVa = 0x11000ull;
+        c38Range.OwnerProcess = (BC250_MCDM_HANDLE)0x4242;
+        c38Range.BackingSegmentId = 1u;
+        c38Range.BackingSegmentOffset = 0x2000ull;
+        c38Range.Permissions = BC250_PTE_READABLE;
+        c38Range.IsResident = 1u;
+
+        /* Sem contencao: publica de primeira. */
+        CHECK(Bc250GpuvaSnapshotPublishBatch(&c38Store, &c38Scratch, &c38Range,
+            &c38MapRange, 1u, &c38Generation) == BC250_GPUVA_OK);
+        CHECK(c38Store.LastPublishStatus == (long)BC250_GPUVA_OK);
+        CHECK(c38Store.LastPublishBusyCount == 0L);
+        CHECK(c38Store.LastPublishAttempts == 1L);
+
+        /*
+         * Simula o leitor preso no slot INATIVO -- exatamente o estado que o
+         * dwm.exe produz ao segurar o slot que acabou de sair de ativo.
+         */
+        c38Inactive = 1L - c38Store.ActiveSlot;
+        c38Store.ReaderState[c38Inactive] = 1L;
+
+        CHECK(Bc250GpuvaSnapshotPublishBatch(&c38Store, &c38Scratch, &c38Range,
+            &c38MapRange, 1u, &c38Generation) == BC250_GPUVA_BUSY);
+        CHECK(c38Store.LastPublishStatus == (long)BC250_GPUVA_BUSY);
+        /* O PONTO: o publicador retentou, nao desistiu na primeira. */
+        CHECK(c38Store.LastPublishBusyCount ==
+            (long)BC250_GPUVA_SNAPSHOT_PUBLISH_ATTEMPTS);
+        CHECK(c38Store.LastPublishAttempts ==
+            (long)BC250_GPUVA_SNAPSHOT_PUBLISH_ATTEMPTS);
+        /* E BUSY nao pode ser confundido com sucesso nem com erro de faixa. */
+        CHECK(c38Store.LastPublishStatus != (long)BC250_GPUVA_OK);
+
+        /* Leitor sai: volta a publicar, e o diagnostico zera o BUSY. */
+        c38Store.ReaderState[c38Inactive] = 0L;
+        CHECK(Bc250GpuvaSnapshotPublishBatch(&c38Store, &c38Scratch, &c38Range,
+            &c38MapRange, 1u, &c38Generation) == BC250_GPUVA_OK);
+        CHECK(c38Store.LastPublishBusyCount == 0L);
+        CHECK(c38Store.LastPublishAttempts == 1L);
+        CHECK(c38Store.LastPublishStatus == (long)BC250_GPUVA_OK);
+    }
+
+    /*
+     * C3.14 (12/09) -- REPLAY DO ENVELOPE MEDIDO NA CORRIDA 17:45.
+     *
+     * O log integral chegou a Mapped=252 com o teto antigo de 256. A corrida
+     * seguinte (18:21) revelou um update esparso real de 461 runs. O diagnostico anterior dizia que o
+     * NO_SPACE era apenas do rebuild no Scratch, mas Scratch parte vazio e
+     * contem exatamente o estado final: um replace in-place nao faria 713
+     * faixas caberem em 256 slots. Este caso falha com o teto antigo e prova
+     * que a publicacao inteira continua atomica ao ampliar a capacidade.
+     */
+    {
+        enum { C314_EXISTING_RANGES = 252, C314_BATCH_RANGES = 461 };
+        static BC250_GPUVA_SNAPSHOT_STORE c314Store;
+        static BC250_GPUVA_SPACE c314Scratch;
+        static BC250_GPUVA_RANGE_RECORD c314Ranges[C314_BATCH_RANGES];
+        static uint32_t c314MapRanges[C314_BATCH_RANGES];
+        BC250_GPUVA_RANGE_RECORD c314Range;
+        BC250_GPUVA_SNAPSHOT_READER c314Reader;
+        BC250_GPUVA_SPACE_OCCUPANCY c314Occupancy;
+        uint64_t c314RangeId;
+        uint32_t c314Generation = 0u;
+        uint32_t c314Index;
+
+        CHECK(BC250_GPUVA_SPACE_MAX_RANGES >=
+            C314_EXISTING_RANGES + C314_BATCH_RANGES);
+        CHECK(Bc250GpuvaSnapshotStoreInitialize(&c314Store, 34u) ==
+            BC250_GPUVA_OK);
+        CHECK(Bc250GpuvaSpaceInitialize(&c314Scratch, 34u) == BC250_GPUVA_OK);
+
+        memset(&c314Range, 0, sizeof(c314Range));
+        c314Range.OwnerProcess = (BC250_MCDM_HANDLE)0xC314;
+        c314Range.Size = BC250_GPUVA_PAGE_BYTES;
+        c314Range.BackingSegmentId = 1u;
+        c314Range.Permissions = BC250_PTE_READABLE | BC250_PTE_WRITEABLE;
+        for (c314Index = 0u; c314Index < C314_EXISTING_RANGES; ++c314Index) {
+            c314Range.BaseGpuVa = 0x10000000ull +
+                ((uint64_t)c314Index * 2ull * BC250_GPUVA_PAGE_BYTES);
+            c314Range.BackingSegmentOffset =
+                (uint64_t)c314Index * BC250_GPUVA_PAGE_BYTES;
+            CHECK(Bc250GpuvaSpaceInsertRange(&c314Store.Slots[0], &c314Range,
+                &c314RangeId) == BC250_GPUVA_OK);
+        }
+
+        memset(c314Ranges, 0, sizeof(c314Ranges));
+        for (c314Index = 0u; c314Index < C314_BATCH_RANGES; ++c314Index) {
+            c314Ranges[c314Index].OwnerProcess =
+                (BC250_MCDM_HANDLE)0xC314;
+            c314Ranges[c314Index].BaseGpuVa = 0x20000000ull +
+                ((uint64_t)c314Index * 2ull * BC250_GPUVA_PAGE_BYTES);
+            c314Ranges[c314Index].Size = BC250_GPUVA_PAGE_BYTES;
+            c314Ranges[c314Index].BackingSegmentId = 0u;
+            c314Ranges[c314Index].BackingSegmentOffset =
+                (uint64_t)c314Index * 3ull * BC250_GPUVA_PAGE_BYTES;
+            c314Ranges[c314Index].Permissions = BC250_PTE_READABLE;
+            c314MapRanges[c314Index] = 1u;
+        }
+
+        CHECK(Bc250GpuvaSnapshotPublishBatch(&c314Store, &c314Scratch,
+            c314Ranges, c314MapRanges, C314_BATCH_RANGES,
+            &c314Generation) == BC250_GPUVA_OK);
+        CHECK(c314Generation == 2u);
+        CHECK(c314Store.ActiveSlot == 1L);
+        CHECK(Bc250GpuvaSnapshotAcquire(&c314Store, &c314Reader) ==
+            BC250_GPUVA_OK);
+        CHECK(Bc250GpuvaSpaceDescribeOccupancy(c314Reader.Space,
+            &c314Occupancy) == BC250_GPUVA_OK);
+        CHECK(c314Occupancy.Mapped ==
+            C314_EXISTING_RANGES + C314_BATCH_RANGES);
+        CHECK(c314Occupancy.LiveCount == c314Occupancy.Mapped);
+        CHECK(Bc250GpuvaSpaceValidateRangeCoverage(c314Reader.Space,
+            (BC250_MCDM_HANDLE)0xC314, NULL,
+            c314Ranges[C314_BATCH_RANGES - 1u].BaseGpuVa,
+            BC250_GPUVA_PAGE_BYTES, BC250_PTE_READABLE,
+            c314Reader.Space->PageTableEpoch) == BC250_GPUVA_OK);
+        Bc250GpuvaSnapshotRelease(&c314Store, &c314Reader);
+    }
     return 0;
 }
 

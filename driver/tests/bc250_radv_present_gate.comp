@@ -1,0 +1,93 @@
+#version 450
+
+/*
+ * BC-250 RADV WDDM Presentation Gate Shader
+ * Target: AMD BC-250 APU (1002:13FE, Cyan Skillfish 2 / GFX1013)
+ * Resolution: 2560 x 1080 (Native UEFI GOP mode)
+ * Format: BGRA8_UNORM (32 bits per pixel, 10240 bytes pitch)
+ */
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(std430, binding = 0) buffer Framebuffer {
+    uint pixels[];
+} fb;
+
+layout(push_constant) uniform PushConstants {
+    uint frame_index;
+    uint total_frames;
+} pc;
+
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= 2560u || y >= 1080u) {
+        return;
+    }
+
+    uint pixelIndex = y * 2560u + x;
+    uint color = 0xFF000000u; // Alpha = 0xFF, Default Black
+
+    // 1. Central Signature Badge (x: 1130..1430, y: 440..640)
+    if (x >= 1130u && x <= 1430u && y >= 440u && y <= 640u) {
+        // Border: 4 pixels black
+        if (x <= 1134u || x >= 1426u || y <= 444u || y >= 636u) {
+            color = 0xFF000000u; // Black border
+        } else if (x <= 1138u || x >= 1422u || y <= 448u || y >= 632u) {
+            color = 0xFFFFFFFFu; // White inner border
+        } else {
+            // Inner Badge Color: BC250 Signature Gold (R=255, G=188, B=0 -> BGRA: B=0, G=188, R=255)
+            // Little-endian BGRA8: (A=0xFF << 24) | (R=0xFF << 16) | (G=0xBC << 8) | (B=0x25)
+            if (pc.frame_index == 0u) {
+                color = 0xFFBC2501u;
+            } else {
+                // Pulsating metallic golden glow during continuous playback
+                uint pulse = (pc.frame_index * 4u) % 120u;
+                uint wave = (pulse < 60u) ? pulse : (120u - pulse); // 0..60
+                uint g_comp = 0xBCu + (wave / 3u); // 188..208
+                uint b_comp = 0x01u + (wave / 2u); // 1..31
+                color = 0xFF000000u | (0xFFu << 16u) | (g_comp << 8u) | b_comp;
+            }
+        }
+    }
+    // 2. Top 75% of screen (y < 810): 7 SMPTE Color Bars
+    else if (y < 810u) {
+        uint barWidth = 2560u / 7u; // ~365 pixels per bar
+        uint shifted_x = x;
+
+        // Smooth horizontal scrolling when animating (6 pixels per frame @ 60 FPS = 360 px/s)
+        if (pc.frame_index > 0u) {
+            uint shift = (pc.frame_index * 6u) % 2560u;
+            shifted_x = (x + 2560u - shift) % 2560u;
+        }
+
+        uint barIndex = shifted_x / barWidth;
+        if (barIndex > 6u) barIndex = 6u;
+
+        // Colors in Little-Endian BGRA8:
+        // Byte 0: Blue, Byte 1: Green, Byte 2: Red, Byte 3: Alpha (0xFF)
+        switch (barIndex) {
+            case 0u: color = 0xFFFFFFFFu; break; // White   (B=FF, G=FF, R=FF)
+            case 1u: color = 0xFF00FFFFu; break; // Yellow  (B=00, G=FF, R=FF)
+            case 2u: color = 0xFFFFFF00u; break; // Cyan    (B=FF, G=FF, R=00)
+            case 3u: color = 0xFF00FF00u; break; // Green   (B=00, G=FF, R=00)
+            case 4u: color = 0xFFFF00FFu; break; // Magenta (B=FF, G=00, R=FF)
+            case 5u: color = 0xFF0000FFu; break; // Red     (B=00, G=00, R=FF)
+            case 6u: color = 0xFFFF0000u; break; // Blue    (B=FF, G=00, R=00)
+        }
+    }
+    // 3. Bottom 25% of screen (y >= 810): Grayscale Linear Ramp
+    else {
+        uint ramp_x = x;
+        if (pc.frame_index > 0u) {
+            uint shift_ramp = (pc.frame_index * 12u) % 2560u;
+            ramp_x = (x + shift_ramp) % 2560u;
+        }
+        uint intensity = (ramp_x * 255u) / 2560u;
+        color = 0xFF000000u | (intensity << 16u) | (intensity << 8u) | intensity;
+    }
+
+    fb.pixels[pixelIndex] = color;
+}

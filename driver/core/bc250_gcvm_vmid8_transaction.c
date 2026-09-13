@@ -213,13 +213,25 @@ uint32_t Bc250GcvmBuildVmidCntl(
             BC250_GCVM_CONTEXT_CNTL_PAGE_TABLE_BLOCK_SIZE_MASK);
 }
 
-BC250_GCVM_VMID8_STATUS Bc250GcvmVmid8Install(
+static const uint32_t g_Bc250Vmid7Registers[6] = {
+    BC250_GCVM_VMID7_PT_BASE_LO,
+    BC250_GCVM_VMID7_PT_BASE_HI,
+    BC250_GCVM_VMID7_PT_START_LO,
+    BC250_GCVM_VMID7_PT_START_HI,
+    BC250_GCVM_VMID7_PT_END_LO,
+    BC250_GCVM_VMID7_PT_END_HI
+};
+
+BC250_GCVM_VMID8_STATUS Bc250GcvmInstallVmid(
+    uint32_t Vmid,
     uint64_t PageTablePhysical,
     const BC250_GCVM_VMID8_INTERFACE *Interface,
     BC250_GCVM_VMID8_INSTALL_EVIDENCE *Evidence)
 {
     uint32_t programmed[6], value, i;
     uint32_t cntl;
+    const uint32_t *regs;
+    uint32_t cntlReg;
 
     if (Evidence != NULL) memset(Evidence, 0, sizeof(*Evidence));
     if (Interface == NULL || Evidence == NULL || Interface->Read32 == NULL ||
@@ -230,15 +242,17 @@ BC250_GCVM_VMID8_STATUS Bc250GcvmVmid8Install(
         return BC250_GCVM_VMID8_BAD_ARGUMENT;
     }
 
+    if (Vmid == BC250_GCVM_VMID8) {
+        regs = g_Bc250Vmid8Registers;
+        cntlReg = BC250_GCVM_VMID8_CNTL;
+    } else if (Vmid == BC250_GCVM_USER_VMID) {
+        regs = g_Bc250Vmid7Registers;
+        cntlReg = BC250_GCVM_VMID7_CNTL;
+    } else {
+        return BC250_GCVM_VMID8_BAD_ARGUMENT;
+    }
+
     Evidence->PageTablePhysical = PageTablePhysical;
-    /*
-     * O ponteiro de root carrega o bit VALID. No upstream,
-     * amdgpu_gmc_pd_addr() faz, para Vega10 e superiores (inclui GC 10.1):
-     *     pd_addr = amdgpu_gmc_vram_mc2pa(adev, ...);
-     *     pd_addr |= AMDGPU_PTE_VALID;
-     * e esse valor e que vai para GCVM_CONTEXT*_PAGE_TABLE_BASE_ADDR_LO32.
-     * O readback continua conferindo exatamente o que escrevemos.
-     */
     programmed[0] = (uint32_t)((PageTablePhysical | BC250_PTE_VALID) & 0xFFFFFFFFull);
     programmed[1] = (uint32_t)(PageTablePhysical >> 32);
     programmed[2] = BC250_GCVM_CONTEXT8_PT_START_VALUE;
@@ -249,9 +263,9 @@ BC250_GCVM_VMID8_STATUS Bc250GcvmVmid8Install(
     /* 1. Escrever registradores de endereco da tabela */
     for (i = 0u; i < 6u; ++i) {
         if (!Interface->Write32(Interface->Context,
-                g_Bc250Vmid8Registers[i], programmed[i])) {
+                regs[i], programmed[i])) {
             Evidence->FailureStep = 1u;
-            Evidence->FailureRegister = g_Bc250Vmid8Registers[i];
+            Evidence->FailureRegister = regs[i];
             Evidence->FailureValue = programmed[i];
             return BC250_GCVM_VMID8_WRITE_FAILED;
         }
@@ -260,9 +274,9 @@ BC250_GCVM_VMID8_STATUS Bc250GcvmVmid8Install(
     /* 2. Readback check dos 6 registradores */
     for (i = 0u; i < 6u; ++i) {
         if (!Interface->Read32(Interface->Context,
-                g_Bc250Vmid8Registers[i], &value) || value != programmed[i]) {
+                regs[i], &value) || value != programmed[i]) {
             Evidence->FailureStep = 2u;
-            Evidence->FailureRegister = g_Bc250Vmid8Registers[i];
+            Evidence->FailureRegister = regs[i];
             Evidence->FailureValue = value;
             return BC250_GCVM_VMID8_READBACK_FAILED;
         }
@@ -274,35 +288,43 @@ BC250_GCVM_VMID8_STATUS Bc250GcvmVmid8Install(
     Evidence->EndLowProgrammed = programmed[4];
     Evidence->EndHighProgrammed = programmed[5];
 
-    /* 3. Programar e conferir CNTL com geometria 34-bit / 2-level (0x00555403) */
-    cntl = BC250_GCVM_CONTEXT8_CNTL_TARGET_VALUE;
-    if (!Interface->Write32(Interface->Context, BC250_GCVM_VMID8_CNTL, cntl)) {
+    /* 3. Programar e conferir CNTL com geometria 34-bit / 2-level e observabilidade de faults (0x007FFE03) */
+    cntl = BC250_GCVM_CONTEXT8_CNTL_FAULT_OBSERVABLE_VALUE;
+    if (!Interface->Write32(Interface->Context, cntlReg, cntl)) {
         Evidence->FailureStep = 3u;
-        Evidence->FailureRegister = BC250_GCVM_VMID8_CNTL;
+        Evidence->FailureRegister = cntlReg;
         Evidence->FailureValue = cntl;
         return BC250_GCVM_VMID8_WRITE_FAILED;
     }
-    if (!Interface->Read32(Interface->Context, BC250_GCVM_VMID8_CNTL, &value) ||
+    if (!Interface->Read32(Interface->Context, cntlReg, &value) ||
         value != cntl) {
         Evidence->FailureStep = 4u;
-        Evidence->FailureRegister = BC250_GCVM_VMID8_CNTL;
+        Evidence->FailureRegister = cntlReg;
         Evidence->FailureValue = value;
-        (void)Interface->Write32(Interface->Context, BC250_GCVM_VMID8_CNTL, 0u);
+        (void)Interface->Write32(Interface->Context, cntlReg, 0u);
         return BC250_GCVM_VMID8_READBACK_FAILED;
     }
     Evidence->ContextControlProgrammed = cntl;
     Evidence->ProgramReadbackPassed = 1u;
 
-    /* 4. Invalidacao de TLB na engine 17 para VMID 8 */
+    /* 4. Invalidacao de TLB na engine para o VMID */
     if (!Interface->Flush(Interface->Context)) {
         Evidence->FailureStep = 5u;
-        (void)Interface->Write32(Interface->Context, BC250_GCVM_VMID8_CNTL, 0u);
+        (void)Interface->Write32(Interface->Context, cntlReg, 0u);
         return BC250_GCVM_VMID8_TLB_FAILED;
     }
     Evidence->TlbFlushPassed = 1u;
     Evidence->PhysicalReady = 1u;
 
     return BC250_GCVM_VMID8_OK;
+}
+
+BC250_GCVM_VMID8_STATUS Bc250GcvmVmid8Install(
+    uint64_t PageTablePhysical,
+    const BC250_GCVM_VMID8_INTERFACE *Interface,
+    BC250_GCVM_VMID8_INSTALL_EVIDENCE *Evidence)
+{
+    return Bc250GcvmInstallVmid(BC250_GCVM_VMID8, PageTablePhysical, Interface, Evidence);
 }
 
 BC250_GCVM_VMID8_STATUS Bc250GcvmVmid8Uninstall(

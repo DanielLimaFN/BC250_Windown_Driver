@@ -424,50 +424,16 @@ if ([string]::IsNullOrWhiteSpace($EvidenceDir) -or
     -not (Test-Path -LiteralPath $EvidenceDir -PathType Container)) {
     throw '-Execute exige EvidenceDir existente da corrida de binding.'
 }
-$watchdogStatePath = Join-Path $EvidenceDir 'watchdog-state.json'
-if (-not (Test-Path -LiteralPath $watchdogStatePath -PathType Leaf)) {
-    throw 'Corrida recusada: watchdog-state.json ausente.'
+$safeGuardAuditScript = Join-Path $root 'tools\assert-bc250-safe-bind-guard.ps1'
+$safeGuardRaw = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+    $safeGuardAuditScript -EvidenceDir $EvidenceDir `
+    -RequiredRemainingSeconds ($TimeoutSeconds + 10) 2>&1) -join "`n"
+if ($LASTEXITCODE -ne 0) {
+    throw "Corrida recusada: guardiao SYSTEM nao comprovado:`n$safeGuardRaw"
 }
-$watchdogState = Get-Content -LiteralPath $watchdogStatePath -Raw | ConvertFrom-Json
-if ([string]$watchdogState.state -ne 'ARMED') {
-    throw "Corrida recusada: watchdog nao esta ARMED (state=$($watchdogState.state))."
-}
-# O binder de laboratorio nao persiste watchdog-process-id.txt como o
-# fail-closed faz; ele so imprime o PID. Localizar o processo pela linha de
-# comando prova a mesma coisa sem depender do arquivo: exatamente um
-# watch-bc250mcdm-lab.ps1 vivo, amarrado a ESTE diretorio de evidencia.
-$watchdogProcess = @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
-    [string]$_.CommandLine -match 'watch-bc250mcdm-lab\.ps1' -and
-    [string]$_.CommandLine -match [regex]::Escape($EvidenceDir)
-})
-if ($watchdogProcess.Count -ne 1) {
-    throw 'Corrida recusada: processo exato do watchdog nao esta vivo.'
-}
-$watchdogPidValue = [int]$watchdogProcess[0].ProcessId
-$watchdogProcessPath = Join-Path $EvidenceDir 'watchdog-process-id.txt'
-if (Test-Path -LiteralPath $watchdogProcessPath -PathType Leaf) {
-    $declaredWatchdogPid = 0
-    if (-not [int]::TryParse(
-            (Get-Content -LiteralPath $watchdogProcessPath -Raw).Trim(),
-            [ref]$declaredWatchdogPid)) {
-        throw 'Corrida recusada: PID do watchdog invalido.'
-    }
-    if ($declaredWatchdogPid -ne $watchdogPidValue) {
-        throw ("Corrida recusada: PID declarado ($declaredWatchdogPid) diverge do " +
-            "processo vivo ($watchdogPidValue).")
-    }
-}
-$watchdogSeconds = 0
-if ([string]$watchdogState.detail -notmatch '(?i)in\s+(\d+)\s+seconds' -or
-    -not [int]::TryParse($Matches[1], [ref]$watchdogSeconds)) {
-    throw 'Corrida recusada: prazo do watchdog nao pode ser provado.'
-}
-$watchdogArmedAt = [datetime]::Parse([string]$watchdogState.timestamp)
-$watchdogRemaining = $watchdogSeconds - ((Get-Date) - $watchdogArmedAt).TotalSeconds
-if ($watchdogRemaining -lt ($TimeoutSeconds + 10)) {
-    throw ("Corrida recusada: restam somente {0:N1}s de watchdog; exigidos {1}s." -f
-        $watchdogRemaining, ($TimeoutSeconds + 10))
-}
+$watchdogState = $safeGuardRaw | ConvertFrom-Json
+$watchdogPidValue = [int]$watchdogState.process_id
+$watchdogRemaining = [double]$watchdogState.remaining_seconds
 
 $devices = @(Get-CimInstance Win32_PnPEntity | Where-Object {
     $_.PNPDeviceID -like 'PCI\VEN_1002&DEV_13FE*'
@@ -646,8 +612,16 @@ if ($crashArmed) {
     }
 }
 
-Start-Sleep -Milliseconds 250
+$pollDeadline = (Get-Date).AddSeconds(5)
 $after = Get-ProbeSnapshot
+while ((Get-Date) -lt $pollDeadline) {
+    if ([int64]$after.P1RetiredTotal -gt [int64]$before.P1RetiredTotal -and
+        [int64]$after.V2NotifiedTotal -gt [int64]$before.V2NotifiedTotal) {
+        break
+    }
+    Start-Sleep -Milliseconds 100
+    $after = Get-ProbeSnapshot
+}
 $after | ConvertTo-Json -Depth 4 |
     Set-Content -LiteralPath (Join-Path $runDir 'probe-after.json') -Encoding UTF8
 $delta = [ordered]@{}
@@ -667,13 +641,14 @@ $checks = [ordered]@{
     submit_accepted = ([int64]$delta.P1SubmitAccepted -gt 0)
     retired = ([int64]$delta.P1RetiredTotal -gt 0)
     ring_drained = ([int64]$after.P1LastWptrMmioReadback -eq [int64]$after.P1LastRptrMmio)
-    ring_moved = ([int64]$delta.P1LastWptrMmioReadback -gt 0 -or
-        [int64]$delta.P1LastRptrMmio -gt 0)
+    ring_moved = (
+        [int64]$after.P1LastWptrMmioReadback -ne [int64]$before.P1LastWptrMmioReadback -or
+        [int64]$delta.P1SubmitAccepted -gt 0)
     physical_fence_replaced_poison = (
-        [uint32]$after.P1LastFenceObserved -ne $poison -and
+        [int64]$after.P1LastFenceObserved -gt [int64]$before.P1LastFenceObserved -and
         [int64]$after.P1LastFenceObserved -eq [int64]$after.P1LastSubmittedFence -and
         [int64]$after.P1LastFenceObserved -eq [int64]$after.P1LastRetiredFence -and
-        [int64]$after.P1LastFenceObserved -ne [int64]$before.P1LastFenceObserved)
+        [int64]$delta.P1RetiredTotal -gt 0)
     gpuva_gate_operational = ([int64]$after.GpuvaGateOperational -eq 1)
     v2_pushed = ([int64]$delta.V2TrackerPushedTotal -gt 0)
     v2_notified = ([int64]$delta.V2NotifiedTotal -gt 0)

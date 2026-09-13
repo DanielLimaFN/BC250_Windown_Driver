@@ -421,6 +421,204 @@ static int Bc250RunGpuvaJournalContractTest(void)
             BC250_GPUVA_JOURNAL_BAD_ARGUMENT);
     }
 
+
+    /*
+     * C3.9 (12/09) -- VISTA POR PROCESSO DO JOURNAL.
+     *
+     * Medido na corrida 13:29: com o dwm.exe vivo 3 min 13 s, a pergunta global
+     * "algum slot esta pendente?" nunca deu zero, o gate do Node 1 fechou em
+     * BlockMask=0x1 e a submissao de compute do RADV foi RECUSADA -- o shader
+     * nao rodou e o byte proof leu poison. Compute e desktop nao coexistiam por
+     * GRANULARIDADE do gate.
+     *
+     * Este bloco trava a distincao: a pergunta GLOBAL continua respondendo 1
+     * quando OUTRO processo esta pendente, e a pergunta POR PROCESSO responde 0.
+     * Se as duas passarem a concordar, a correcao virou no-op e este teste
+     * reprova.
+     */
+    {
+        /*
+         * static: cada BC250_GPUVA_JOURNAL carrega Changes[MAX_CHANGES], e tres
+         * deles na pilha estouram o frame -- a suite linka sem CRT e o
+         * resultado e' LNK2019 em __chkstk, nao um erro de logica.
+         */
+        static BC250_GPUVA_JOURNAL set[3];
+        BC250_MCDM_HANDLE procA = (BC250_MCDM_HANDLE)0x1111;
+        BC250_MCDM_HANDLE procB = (BC250_MCDM_HANDLE)0x2222;
+        BC250_GPUVA_JOURNAL_PTE pte;
+        uint32_t mask = 0xFFFFFFFFu;
+        uint32_t count = 0xFFFFFFFFu;
+        uint32_t i;
+
+        for (i = 0u; i < 3u; ++i) {
+            CHECK(Bc250GpuvaJournalInitialize(&set[i]) == BC250_GPUVA_JOURNAL_OK);
+        }
+
+        /* Nada pendente: as duas perguntas respondem 0. */
+        CHECK(Bc250GpuvaJournalSetAnyPending(set, 3u) == 0u);
+        CHECK(Bc250GpuvaJournalSetAnyPendingForProcess(set, 3u, procA) == 0u);
+        CHECK(Bc250GpuvaJournalSetDescribePending(set, 3u, &mask, &count) == 0u);
+        CHECK(mask == 0u && count == 0u);
+
+        /* procB (o "dwm.exe" deste teste) fica pendente no slot 1. */
+        memset(&pte, 0, sizeof(pte));
+        pte.Valid = 1u;
+        pte.Permissions = BC250_PTE_READABLE;
+        pte.SegmentId = 1u;
+        pte.SegmentOffset = 0x1000ull;
+        CHECK(Bc250GpuvaJournalStageLeafUpdate(&set[1], procB, 0x40000000u,
+            0x2000ull, &pte, 1u) == BC250_GPUVA_JOURNAL_OK);
+        CHECK(set[1].Pending != 0u);
+
+        /* ESTE E' O PONTO: global diz 1, por-processo de procA diz 0. */
+        CHECK(Bc250GpuvaJournalSetAnyPending(set, 3u) == 1u);
+        CHECK(Bc250GpuvaJournalSetAnyPendingForProcess(set, 3u, procA) == 0u);
+        CHECK(Bc250GpuvaJournalSetAnyPendingForProcess(set, 3u, procB) == 1u);
+
+        /* A telemetria nomeia o slot, que e' o que faltava no log. */
+        CHECK(Bc250GpuvaJournalSetDescribePending(set, 3u, &mask, &count) == 1u);
+        CHECK(mask == (1u << 1));
+        CHECK(count == 1u);
+
+        /* procA pendente tambem: agora as duas respondem 1 para procA. */
+        CHECK(Bc250GpuvaJournalStageLeafUpdate(&set[0], procA, 0x40000000u,
+            0x3000ull, &pte, 1u) == BC250_GPUVA_JOURNAL_OK);
+        CHECK(Bc250GpuvaJournalSetAnyPendingForProcess(set, 3u, procA) == 1u);
+        CHECK(Bc250GpuvaJournalSetDescribePending(set, 3u, &mask, &count) == 1u);
+        CHECK(mask == ((1u << 0) | (1u << 1)));
+        CHECK(count == 2u);
+
+        /* Handle nulo nao pode virar curinga. */
+        CHECK(Bc250GpuvaJournalSetAnyPendingForProcess(set, 3u, NULL) == 0u);
+        CHECK(Bc250GpuvaJournalSetAnyPendingForProcess(NULL, 3u, procA) == 0u);
+
+        Bc250GpuvaJournalAbort(&set[0]);
+        Bc250GpuvaJournalAbort(&set[1]);
+        CHECK(Bc250GpuvaJournalSetAnyPending(set, 3u) == 0u);
+    }
+
+    /*
+     * C3.15 (12/09) -- REPLAY DA CORRIDA 18:21.
+     *
+     * O dxgkrnl entregou Num=461 com backing fisico esparso. O miniport
+     * estagia em chunks de 256, mas ambos pertencem ao mesmo journal ate o
+     * FlushTlb. Com MAX_CHANGES=256, o segundo chunk devolvia NO_SPACE e o
+     * prefixo do primeiro chunk permanecia publicavel. Aqui as 461 paginas
+     * sao deliberadamente disjuntas e precisam sobreviver como 461 runs.
+     */
+    {
+        enum { C315_SPARSE_RUNS = 461, C315_FIRST_CHUNK = 256 };
+        static BC250_GPUVA_JOURNAL c315Journal;
+        static BC250_GPUVA_SNAPSHOT_STORE c315Store;
+        static BC250_GPUVA_SPACE c315Scratch;
+        static BC250_GPUVA_JOURNAL_PTE c315Entries[C315_SPARSE_RUNS];
+        BC250_GPUVA_SNAPSHOT_READER c315View;
+        BC250_GPUVA_SPACE_OCCUPANCY c315Occupancy;
+        BC250_MCDM_HANDLE c315Process = (BC250_MCDM_HANDLE)(size_t)0xC315;
+        uint32_t c315Generation = 0u;
+        uint32_t i;
+
+        CHECK(BC250_GPUVA_JOURNAL_MAX_CHANGES >= 1024u);
+        CHECK(Bc250GpuvaJournalInitialize(&c315Journal) == BC250_GPUVA_JOURNAL_OK);
+        CHECK(Bc250GpuvaSnapshotStoreInitialize(&c315Store, 34u) == BC250_GPUVA_OK);
+        memset(&c315Scratch, 0, sizeof(c315Scratch));
+        for (i = 0u; i < C315_SPARSE_RUNS; ++i) {
+            c315Entries[i].Valid = 1u;
+            c315Entries[i].Permissions = BC250_PTE_READABLE | BC250_PTE_WRITEABLE;
+            c315Entries[i].SegmentId = 1u;
+            c315Entries[i].SegmentOffset = 0x2000000ull +
+                ((uint64_t)i * 2ull * BC250_GPUVA_PAGE_BYTES);
+            c315Entries[i].Allocation =
+                (BC250_MCDM_HANDLE)(size_t)0xC3150001u;
+        }
+        CHECK(Bc250GpuvaJournalStageLeafUpdate(&c315Journal, c315Process,
+            0xC3150000ull, 0x70000000ull, c315Entries,
+            C315_FIRST_CHUNK) == BC250_GPUVA_JOURNAL_OK);
+        CHECK(Bc250GpuvaJournalStageLeafUpdate(&c315Journal, c315Process,
+            0xC3150000ull,
+            0x70000000ull +
+                ((uint64_t)C315_FIRST_CHUNK * BC250_GPUVA_PAGE_BYTES),
+            &c315Entries[C315_FIRST_CHUNK],
+            C315_SPARSE_RUNS - C315_FIRST_CHUNK) == BC250_GPUVA_JOURNAL_OK);
+        CHECK(c315Journal.ChangeCount == C315_SPARSE_RUNS);
+        CHECK(Bc250GpuvaJournalCommitFlush(&c315Journal, &c315Store,
+            &c315Scratch, c315Process, 0xC3150000ull, 0ull, 0ull,
+            &c315Generation) == BC250_GPUVA_JOURNAL_OK);
+        CHECK(Bc250GpuvaSnapshotAcquire(&c315Store, &c315View) == BC250_GPUVA_OK);
+        CHECK(Bc250GpuvaSpaceDescribeOccupancy(c315View.Space,
+            &c315Occupancy) == BC250_GPUVA_OK);
+        CHECK(c315Occupancy.Mapped == C315_SPARSE_RUNS);
+        Bc250GpuvaSnapshotRelease(&c315Store, &c315View);
+    }
+
+    /*
+     * C3.16 (12/09) -- REPLAY DO PADRAO DA CORRIDA 18:45.
+     *
+     * Entre flushes apareceram ate 17.471 entradas historicas, embora o
+     * snapshot final tivesse no maximo 876 ranges. Reescrever a mesma VA nao
+     * pode consumir outro slot: o journal representa o ultimo estado.
+     */
+    {
+        static BC250_GPUVA_JOURNAL overlayJournal;
+        BC250_GPUVA_JOURNAL_PTE overlayPte;
+        BC250_MCDM_HANDLE overlayProcess =
+            (BC250_MCDM_HANDLE)(size_t)0xC316;
+        uint32_t i;
+
+        CHECK(Bc250GpuvaJournalInitialize(&overlayJournal) ==
+            BC250_GPUVA_JOURNAL_OK);
+        memset(&overlayPte, 0, sizeof(overlayPte));
+        overlayPte.Valid = 1u;
+        overlayPte.Permissions = BC250_PTE_READABLE | BC250_PTE_WRITEABLE;
+        overlayPte.SegmentId = 1u;
+        overlayPte.Allocation = (BC250_MCDM_HANDLE)(size_t)0xC3160001u;
+        for (i = 0u; i < 17471u; ++i) {
+            overlayPte.SegmentOffset = 0x3000000ull +
+                ((uint64_t)i * BC250_GPUVA_PAGE_BYTES);
+            CHECK(Bc250GpuvaJournalStageLeafUpdate(&overlayJournal,
+                overlayProcess, 0xC3160000ull, 0x71000000ull,
+                &overlayPte, 1u) == BC250_GPUVA_JOURNAL_OK);
+            CHECK(overlayJournal.ChangeCount == 1u);
+        }
+        CHECK(overlayJournal.Changes[0].BackingSegmentOffset ==
+            overlayPte.SegmentOffset);
+
+        /* Substituir o meio de um range preserva as duas pontas. */
+        Bc250GpuvaJournalAbort(&overlayJournal);
+        overlayPte.SegmentOffset = 0x4000000ull;
+        {
+            BC250_GPUVA_JOURNAL_PTE four[4];
+            BC250_GPUVA_JOURNAL_PTE middle[2];
+            for (i = 0u; i < 4u; ++i) {
+                four[i] = overlayPte;
+                four[i].SegmentOffset +=
+                    (uint64_t)i * BC250_GPUVA_PAGE_BYTES;
+            }
+            CHECK(Bc250GpuvaJournalStageLeafUpdate(&overlayJournal,
+                overlayProcess, 0xC3160000ull, 0x72000000ull,
+                four, 4u) == BC250_GPUVA_JOURNAL_OK);
+            middle[0] = overlayPte;
+            middle[0].Allocation =
+                (BC250_MCDM_HANDLE)(size_t)0xC3160002u;
+            middle[0].SegmentOffset = 0x5000000ull;
+            middle[1] = middle[0];
+            middle[1].SegmentOffset += BC250_GPUVA_PAGE_BYTES;
+            CHECK(Bc250GpuvaJournalStageLeafUpdate(&overlayJournal,
+                overlayProcess, 0xC3160000ull, 0x72001000ull,
+                middle, 2u) == BC250_GPUVA_JOURNAL_OK);
+            CHECK(overlayJournal.ChangeCount == 3u);
+            CHECK(overlayJournal.Changes[0].BaseGpuVa == 0x72000000ull);
+            CHECK(overlayJournal.Changes[0].Size == BC250_GPUVA_PAGE_BYTES);
+            CHECK(overlayJournal.Changes[1].BaseGpuVa == 0x72001000ull);
+            CHECK(overlayJournal.Changes[1].Size ==
+                2u * BC250_GPUVA_PAGE_BYTES);
+            CHECK(overlayJournal.Changes[2].BaseGpuVa == 0x72003000ull);
+            CHECK(overlayJournal.Changes[2].Size == BC250_GPUVA_PAGE_BYTES);
+            CHECK(overlayJournal.Changes[2].BackingSegmentOffset ==
+                0x4003000ull);
+        }
+    }
+
     return 0;
 }
 

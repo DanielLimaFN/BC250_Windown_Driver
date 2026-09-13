@@ -25,13 +25,107 @@ extern "C" {
 #define BC250_D3D11_CAPS_PROBE_REG_KEY  "SOFTWARE\\BC250\\Umd"
 #define BC250_D3D11_CAPS_PROBE_REG_NAME "D3D11CapsProbe"
 #define BC250_D3D11_LAB_PROMOTION_REG_NAME "D3D11LabPromotion"
+
+/*
+ * F2.2 (13/09) -- OPT-OUT DO MODELO FLIP, ARMAVEL SEM REBUILD.
+ *
+ * `DXGI_DDI_PRIMARY_DRIVER_FLAG_NO_SCANOUT` (dxgiddi.h:218) e' o mecanismo
+ * DOCUMENTADO para a UMD dizer ao runtime que apresenta por COPIA, e nao por
+ * flip. Isso importa porque este driver NAO PODE fazer flip: o scanout e' o
+ * framebuffer fixo herdado do UEFI GOP e escrita em registrador de DCN esta
+ * proibida no escopo atual. Aceitar a cadeia de flip calados e' cap sem backend.
+ *
+ * DESARMADO POR PADRAO, e o motivo e' de metodo, nao de risco: armado, o DXGI
+ * muda o caminho inteiro para Blt e nao seria possivel saber se as correcoes do
+ * caminho de Flip (DescribeAllocation, SetDisplayMode) resolveram alguma coisa.
+ * Uma corrida mede o Flip corrigido; se o E_FAIL persistir, esta chave e' armada
+ * pelo registro e a segunda corrida mede o opt-out -- sem recompilar nada.
+ */
+#define BC250_D3D11_NO_SCANOUT_OPTOUT_REG_NAME "D3D11NoScanoutOptOut"
+#define BC250_D3D11_DRAW_BLT_SUBST_REG_NAME "D3D11DrawBltSubstitution"
 #define BC250_NODE1_TRIPOD_REG_ARMED     "Node1TripodArmed"
 #define BC250_NODE1_TRIPOD_REG_TOKEN     "Node1TripodToken"
 #define BC250_NODE1_TRIPOD_ENV_TOKEN     "BC250_UMD_NODE1_TRIPOD_TOKEN"
 #define BC250_NODE1_TRIPOD_HARNESS_EXE   "bc250-umd-node1-tripod.exe"
 #define BC250_NODE1_TRIPOD_TOKEN_CHARS   32u
 
+/*
+ * C3 (12/09) -- tradutor DXBC->SPIR-V, FECHADO POR DEFAULT.
+ *
+ * Exige DUAS coisas, e as duas sao decisao explicita do dono do projeto:
+ *   D3D11ShaderTranslator     (REG_DWORD) tem de existir e valer 1;
+ *   D3D11ShaderTranslatorPath (REG_SZ)    caminho ABSOLUTO da DLL.
+ *
+ * O motivo de nao haver caminho default: a unica implementacao ensaiada e'
+ * libvkd3d-shader-1.dll construida com MinGW, que arrasta libgcc_s_seh-1.dll e
+ * libwinpthread-1.dll. A bc250umd.dll carrega em TODO processo D3D, incluindo o
+ * dwm.exe -- injetar tres DLLs MinGW no compositor do Windows e' decisao de
+ * risco, nao efeito colateral de um default. Sem as duas chaves o tradutor nao
+ * e' sequer procurado e nenhuma DLL externa e' carregada.
+ */
+#define BC250_D3D11_SHADER_TRANSLATOR_REG_NAME      "D3D11ShaderTranslator"
+#define BC250_D3D11_SHADER_TRANSLATOR_PATH_REG_NAME "D3D11ShaderTranslatorPath"
+
 BOOL Bc250UmdD3D11LabPromotionEnabled(void);
+BOOL Bc250UmdDrawBltSubstitutionArmed(void);
+
+/* F2.2: opt-out do modelo Flip. Ver o bloco do define acima. */
+BOOL Bc250UmdNoScanoutOptOutArmed(void);
+
+/*
+ * O driver DECLARA ter pipeline 3D? Fonte unica das duas respostas que
+ * dependiam disso: pfnCreateDevice devolver device, e GetCaps Type=130
+ * (D3D11DDICAPS_3DPIPELINESUPPORT) publicar niveis.
+ *
+ *   NativeReady=0, LabPromotion=0 -> FALSE (E_NOTIMPL, default de fabrica)
+ *   NativeReady=0, LabPromotion=1 -> TRUE  (promocao de laboratorio)
+ *   NativeReady=1, qualquer       -> TRUE  (producao)
+ *
+ * Extraida em 10/09 porque a decisao vivia inline no CreateDevice lendo o
+ * registro, e por isso o teste de contrato offline dependia do estado da
+ * MAQUINA: com D3D11LabPromotion=1 deixado armado por um bind anterior, a
+ * suite reprovava sem nenhuma mudanca de codigo. Politica pura aqui, leitura
+ * de registro no chamador.
+ */
+BOOL Bc250Umd3DPipelineIsDeclared(BOOL NativeReady, BOOL LabPromotionArmed);
+
+/*
+ * C1 (10/09) -- um Draw pode ser SUBSTITUIDO por copia 1:1 de superficie?
+ *
+ * DEFEITO MEDIDO POR LEITURA DE CODIGO, e da MESMA classe da v1 do probe:
+ * Bc250UmdCompositeDraw atendia pfnDraw/pfnDrawIndexed com um memcpy de CPU
+ * entre os shadows de origem e destino, marcava handled=TRUE ANTES de tentar
+ * qualquer caminho de GPU e devolvia sucesso silencioso. Isso e' fallback de
+ * software disfarcado de renderizacao -- proibicao nominal da Lei 4 -- e
+ * tornava INFALSIFICAVEL qualquer desktop que aparecesse na tela: nao haveria
+ * como distinguir composicao por GPU de memcpy. O teste de contrato ainda
+ * EXIGIA esse memcpy, congelando a mentira (mesma armadilha da A15 e do
+ * mcdm_callbacks_test).
+ *
+ * O memcpy foi REMOVIDO. Sobra a substituicao por blt 1:1 no SDMA, que ao
+ * menos e' trabalho de GPU -- mas continua sendo SUBSTITUICAO, nao
+ * rasterizacao: shader, vertex buffer, index buffer, topologia e blend sao
+ * ignorados. Nao sabemos, sem compilador, se o PS ligado e' um passe
+ * identidade; afirmar equivalencia seria H apresentada como P0. Por isso:
+ *
+ *   - default de fabrica DESARMADO (E_NOTIMPL honesto, como antes da C1);
+ *   - quando armado, so' e' licito na janela onde a substituicao e' plausivel:
+ *     origem e destino residentes, dimensoes compativeis com copia 1:1, mesmo formato
+ *     e viewport cobrindo o retangulo de copia (blend e' ignorado pelo SDMA);
+ *   - o log declara SUBSTITUIDO, e a contagem e' separada de DrawCount.
+ *
+ * TRUE  -> a substituicao e' licita nesta configuracao
+ * FALSE -> recusar fechado
+ */
+BOOL Bc250UmdDrawBltSubstitutionIsLawful(
+    BOOL SubstitutionArmed,
+    BOOL WinsysReady,
+    BOOL SourceResident,
+    BOOL DestResident,
+    BOOL SameDimensions,
+    BOOL SameFormat,
+    BOOL ViewportCoversFullSurface,
+    BOOL BlendEnabled);
 
 /*
  * OpenAdapter deve publicar a tabela de adapter?

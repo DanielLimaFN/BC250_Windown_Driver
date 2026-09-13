@@ -550,17 +550,195 @@ NTSYSAPI NTSTATUS NTAPI ZwFlushBuffersFile(
 #endif
 
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
+#define BC250_PAGING_LOG_RING_SIZE (128u * 1024u)
+static char g_Bc250PagingLogRing[BC250_PAGING_LOG_RING_SIZE];
+static ULONG g_Bc250PagingLogHead = 0u;
+static ULONG g_Bc250PagingLogTail = 0u;
+static KSPIN_LOCK g_Bc250PagingLogLock;
+static volatile LONG g_Bc250PagingLogLockInitOnce = 0;
+
+/*
+ * C3.16 (12/09) -- AMOSTRAGEM DO LOG DE ALTO VOLUME.
+ *
+ * A corrida 18:45 produziu 1.179.761 linhas / 100 MB em cerca de cinco
+ * minutos enquanto a tela parecia congelada. O KMD continuou vivo (8.895
+ * submits aposentados e 38.090 flushes publicados), portanto o proprio log
+ * fazia parte do experimento: cada linha normal ainda passava por DbgPrintEx
+ * e, em PASSIVE_LEVEL, por abrir/escrever/flushar/fechar o arquivo.
+ *
+ * Preservamos integralmente falhas e vereditos. Apenas as classes repetitivas
+ * de sucesso sao emitidas nas primeiras 16 ocorrencias e depois a cada 1024.
+ * Os contadores atomicos continuam exatos mesmo quando a linha e suprimida.
+ */
+/*
+ * I3 (13/09) -- A CLASSE 12 ESTAVA CEGANDO O CICLO DE VIDA DE DEVICE E CONTEXTO.
+ *
+ * [McdmQAI], [McdmCreateDevice] e [McdmCreateContext] compartilhavam UM contador.
+ * O [McdmQAI] sai em rajada no bind (17 linhas medidas na corrida 16:28:27) e
+ * consome sozinho as 16 primeiras ocorrencias da classe; dali em diante so' passa
+ * 1 em 1024. Resultado medido: o dwm.exe criou e destruiu 90 devices na corrida e
+ * o log do KMD nao registrou NENHUM [McdmCreateDevice] nem [McdmCreateContext].
+ *
+ * As tres classes agora tem contadores independentes (12, 13 e 14). E' a MESMA
+ * classe de defeito do teto de escape corrigido em 13/09 11:32: teto global que
+ * nao alcanca -- aqui, teto compartilhado que outra tag esgota.
+ *
+ * CORRIDA 17:18:35 -- A MESMA FALHA ESTAVA NA CLASSE 9 E EU NAO A TINHA VISTO.
+ * `[CreateAllocation]`, `[ActiveOpenAlloc]`, `[McdmCreateAllocation]` e
+ * `[McdmCloseAllocation]` dividiam um contador: 45 linhas da classe contra o
+ * orcamento de 16 primeiras. Por isso "Primary token confirmed (UMD" nao saiu
+ * NENHUMA vez mesmo com a primaria de UMD funcionando -- na mesma corrida o
+ * SetVidPnSourceAddress foi para hAlloc=0xA8, alocacao criada pela UMD, o que
+ * o dxgkrnl so' faz com uma primaria aceita. A ausencia era artefato do logger,
+ * nao medicao, e custou a conclusividade do criterio.
+ *
+ * Cada tag da classe 9 passa a ter contador proprio (9, 15, 16 e 17).
+ */
+#define BC250_VERBOSE_LOG_CLASS_COUNT 18u
+#define BC250_VERBOSE_LOG_FIRST       16L
+#define BC250_VERBOSE_LOG_PERIOD      1024L
+static volatile LONG g_Bc250VerboseLogOrdinal[BC250_VERBOSE_LOG_CLASS_COUNT];
+
+static BOOLEAN Bc250LogTextStartsWith(
+    _In_ const char *Text,
+    _In_ const char *Prefix)
+{
+    while (*Prefix != '\0') {
+        if (*Text++ != *Prefix++) return FALSE;
+    }
+    return TRUE;
+}
+
+static BOOLEAN Bc250LogTextContains(
+    _In_ const char *Text,
+    _In_ const char *Needle)
+{
+    const char *candidate;
+    if (*Needle == '\0') return TRUE;
+    for (candidate = Text; *candidate != '\0'; ++candidate) {
+        const char *left = candidate;
+        const char *right = Needle;
+        while (*left != '\0' && *right != '\0' && *left == *right) {
+            ++left;
+            ++right;
+        }
+        if (*right == '\0') return TRUE;
+    }
+    return FALSE;
+}
+
+static BOOLEAN Bc250ShouldEmitVerboseLog(
+    _In_ const char *Text,
+    _Out_ ULONG *ClassId,
+    _Out_ LONG *Ordinal)
+{
+    ULONG classId = 0u;
+    LONG ordinal;
+
+    *ClassId = 0u;
+    *Ordinal = 0L;
+
+    /* Falha, recusa e discriminante nunca sao amostrados. */
+    if (Bc250LogTextContains(Text, "NO_SPACE") ||
+        Bc250LogTextContains(Text, "FAIL") ||
+        Bc250LogTextContains(Text, "FALHA") ||
+        Bc250LogTextContains(Text, "RECUSA") ||
+        Bc250LogTextContains(Text, "TIMEOUT") ||
+        Bc250LogTextContains(Text, "FAULT") ||
+        Bc250LogTextContains(Text, "DIVERGENCIA") ||
+        Bc250LogTextContains(Text, "OCUPACAO") ||
+        Bc250LogTextContains(Text, "REJECT") ||
+        Bc250LogTextContains(Text, "ERROR") ||
+        Bc250LogTextContains(Text, "FAILED") ||
+        Bc250LogTextContains(Text, "PASS") ||
+        Bc250LogTextContains(Text, "PROVADO") ||
+        Bc250LogTextContains(Text, "VEREDITO") ||
+        /*
+         * CTX_PROBE e CONTEXT SWITCH saem da amostragem (13/09): sao as
+         * linhas que dizem se a root do VMID do contexto foi instalada
+         * antes da submissao, e na corrida 08:12 sobraram 3 CTX_PROBE em
+         * ~958 submissoes -- justamente o dado que faltava. Sao raras por
+         * natureza (uma por troca de contexto), nao um diluvio.
+         */
+        Bc250LogTextContains(Text, "CTX_PROBE") ||
+        Bc250LogTextContains(Text, "CONTEXT SWITCH") ||
+        Bc250LogTextContains(Text, "IB EXECUTADO") ||
+        Bc250LogTextContains(Text, "IB_ENGINE_2LEGS") ||
+        Bc250LogTextContains(Text, "TDR_") ||
+        Bc250LogTextContains(Text, "DEVICE_REMOVED")) {
+        return TRUE;
+    }
+
+    if (Bc250LogTextStartsWith(Text, "[McdmBuildPagingBuffer]")) {
+        classId = 1u;
+    } else if (Bc250LogTextStartsWith(Text, "[UpdatePT] ") ||
+               Bc250LogTextStartsWith(Text, "[UpdatePT Lvl=")) {
+        classId = 2u;
+    } else if (Bc250LogTextStartsWith(Text, "[ActiveUpdatePT] ")) {
+        classId = 3u;
+    } else if (Bc250LogTextStartsWith(Text, "[ActiveFlushTlb]")) {
+        classId = 4u;
+    } else if (Bc250LogTextStartsWith(Text, "[FlushMappedGfxhubTlb] ")) {
+        classId = 5u;
+    } else if (Bc250LogTextStartsWith(Text, "[PT_WALK ") ||
+               Bc250LogTextStartsWith(Text, "[PT_RANGE ") ||
+               Bc250LogTextStartsWith(Text, "[PT_READ] ")) {
+        classId = 6u;
+    } else if (Bc250LogTextStartsWith(Text, "[SubmitVirtual Node0 SDMA]")) {
+        classId = 7u;
+    } else if (Bc250LogTextStartsWith(Text, "[TransferVirtual]") ||
+               Bc250LogTextStartsWith(Text, "[FillVirtual]")) {
+        classId = 8u;
+    } else if (Bc250LogTextStartsWith(Text, "[ActiveOpenAlloc]")) {
+        classId = 9u;
+    } else if (Bc250LogTextStartsWith(Text, "[CreateAllocation]")) {
+        classId = 15u;
+    } else if (Bc250LogTextStartsWith(Text, "[McdmCreateAllocation]")) {
+        classId = 16u;
+    } else if (Bc250LogTextStartsWith(Text, "[McdmCloseAllocation]")) {
+        classId = 17u;
+    } else if (Bc250LogTextStartsWith(Text, "[SdmaRetire]")) {
+        classId = 10u;
+    } else if (Bc250LogTextStartsWith(Text, "[McdmSubmitCommandVirtual]")) {
+        classId = 11u;
+    } else if (Bc250LogTextStartsWith(Text, "[McdmQAI]")) {
+        classId = 12u;
+    } else if (Bc250LogTextStartsWith(Text, "[McdmCreateDevice]")) {
+        classId = 13u;
+    } else if (Bc250LogTextStartsWith(Text, "[McdmCreateContext]")) {
+        classId = 14u;
+    } else {
+        return TRUE;
+    }
+
+    ordinal = InterlockedIncrement(&g_Bc250VerboseLogOrdinal[classId]);
+    *ClassId = classId;
+    *Ordinal = ordinal;
+    return ordinal <= BC250_VERBOSE_LOG_FIRST ||
+        (ordinal % BC250_VERBOSE_LOG_PERIOD) == 0L;
+}
+
 void Bc250DisplayLog(const char *Format, ...)
 {
     char buffer[512];
     va_list args;
     int len;
+    ULONG sampleClass = 0u;
+    LONG sampleOrdinal = 0L;
+
+    if (InterlockedCompareExchange(&g_Bc250PagingLogLockInitOnce, 1, 0) == 0) {
+        KeInitializeSpinLock(&g_Bc250PagingLogLock);
+    }
 
     va_start(args, Format);
     len = _vsnprintf(buffer, sizeof(buffer) - 1, Format, args);
     va_end(args);
     if (len <= 0) return;
     buffer[len] = '\0';
+
+    if (!Bc250ShouldEmitVerboseLog(buffer, &sampleClass, &sampleOrdinal)) {
+        return;
+    }
 
     DbgPrintEx(DPFLTR_IHVVIDEO_ID, DPFLTR_ERROR_LEVEL, "[BC250] %s", buffer);
 
@@ -569,9 +747,27 @@ void Bc250DisplayLog(const char *Format, ...)
      * rodam em PASSIVE_LEVEL na paging thread do sistema, mas NUNCA podem realizar
      * I/O sincrono de arquivo em disco. Fazer ZwCreateFile/ZwFlushBuffersFile na
      * paging thread causa deadlock circular imediato com NTFS/Cache Manager/Storport.
-     * Quando g_Bc250PagingActiveCount > 0, o DbgPrintEx acima permanece ativo para
-     * debuggers e ETW, mas o I/O em disco e' suprimido com seguranca.
+     * Quando g_Bc250PagingActiveCount > 0 ou IRQL > PASSIVE_LEVEL, armazenamos as
+     * mensagens no buffer circular em memoria RAM (zero disco, zero deadlock).
+     * Quando g_Bc250PagingActiveCount == 0 em PASSIVE_LEVEL, o buffer e' descarregado
+     * em lote para C:\BC250_DISPLAY_LOG.txt.
      */
+    if (KeGetCurrentIrql() > PASSIVE_LEVEL ||
+        InterlockedCompareExchange(&g_Bc250PagingActiveCount, 0, 0) > 0) {
+        KIRQL irql;
+        KeAcquireSpinLock(&g_Bc250PagingLogLock, &irql);
+        for (int i = 0; i < len; ++i) {
+            ULONG next = (g_Bc250PagingLogHead + 1u) % BC250_PAGING_LOG_RING_SIZE;
+            if (next == g_Bc250PagingLogTail) {
+                g_Bc250PagingLogTail = (g_Bc250PagingLogTail + 1u) % BC250_PAGING_LOG_RING_SIZE;
+            }
+            g_Bc250PagingLogRing[g_Bc250PagingLogHead] = buffer[i];
+            g_Bc250PagingLogHead = next;
+        }
+        KeReleaseSpinLock(&g_Bc250PagingLogLock, irql);
+        return;
+    }
+
     if (KeGetCurrentIrql() == PASSIVE_LEVEL &&
         InterlockedCompareExchange(&g_Bc250PagingActiveCount, 0, 0) == 0) {
         UNICODE_STRING logFileName = RTL_CONSTANT_STRING(L"\\DosDevices\\C:\\BC250_DISPLAY_LOG.txt");
@@ -581,11 +777,47 @@ void Bc250DisplayLog(const char *Format, ...)
 
         InitializeObjectAttributes(&objAttr, &logFileName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
         if (NT_SUCCESS(ZwCreateFile(&fileHandle, FILE_APPEND_DATA | SYNCHRONIZE, &objAttr, &ioStatus, NULL, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_OPEN_IF, FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0))) {
+            /* Drena logs acumulados em memoria antes do buffer corrente */
+            char drainBuf[4096];
+            ULONG drainLen = 0u;
+            do {
+                KIRQL irql;
+                drainLen = 0u;
+                KeAcquireSpinLock(&g_Bc250PagingLogLock, &irql);
+                while (g_Bc250PagingLogTail != g_Bc250PagingLogHead && drainLen < sizeof(drainBuf)) {
+                    drainBuf[drainLen++] = g_Bc250PagingLogRing[g_Bc250PagingLogTail];
+                    g_Bc250PagingLogTail = (g_Bc250PagingLogTail + 1u) % BC250_PAGING_LOG_RING_SIZE;
+                }
+                KeReleaseSpinLock(&g_Bc250PagingLogLock, irql);
+                if (drainLen > 0u) {
+                    (void)ZwWriteFile(fileHandle, NULL, NULL, NULL, &ioStatus, drainBuf, drainLen, NULL, NULL);
+                }
+            } while (drainLen == sizeof(drainBuf));
+
             (void)ZwWriteFile(fileHandle, NULL, NULL, NULL, &ioStatus, buffer, (ULONG)len, NULL, NULL);
             (void)ZwFlushBuffersFile(fileHandle, &ioStatus);
             ZwClose(fileHandle);
         }
     }
+}
+
+void Bc250DisplayLogSamplingSummary(void)
+{
+    Bc250DisplayLog("[LOG_SAMPLING_SUMMARY] BuildPaging=%ld UpdatePT=%ld ActiveUpdatePT=%ld Flush=%ld FlushMapped=%ld PtWalk=%ld SubmitNode0=%ld PagingOps=%ld Alloc=%ld Retire=%ld SubmitDdi=%ld MiscDdi=%ld First=%ld Period=%ld\n",
+        g_Bc250VerboseLogOrdinal[1],
+        g_Bc250VerboseLogOrdinal[2],
+        g_Bc250VerboseLogOrdinal[3],
+        g_Bc250VerboseLogOrdinal[4],
+        g_Bc250VerboseLogOrdinal[5],
+        g_Bc250VerboseLogOrdinal[6],
+        g_Bc250VerboseLogOrdinal[7],
+        g_Bc250VerboseLogOrdinal[8],
+        g_Bc250VerboseLogOrdinal[9],
+        g_Bc250VerboseLogOrdinal[10],
+        g_Bc250VerboseLogOrdinal[11],
+        g_Bc250VerboseLogOrdinal[12],
+        BC250_VERBOSE_LOG_FIRST,
+        BC250_VERBOSE_LOG_PERIOD);
 }
 #endif
 
@@ -2457,8 +2689,49 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
     LONG count;
     NTSTATUS presentStatus = STATUS_NOT_SUPPORTED;
 
-    if (hContext == NULL) return STATUS_NOT_SUPPORTED;
-    if (pPresent == NULL) return STATUS_INVALID_PARAMETER;
+    /*
+     * I2 (13/09) -- ESTA DDI TINHA TRES SAIDAS MUDAS, E POR ISSO "ZERO LINHAS DE
+     * PRESENT" ERA AMBIGUO POR CONSTRUCAO.
+     *
+     * Na corrida 16:28:27 nao houve UMA linha [Present #N] em 5,4 MB de log,
+     * enquanto o dwm.exe emitia 90 Present pela UMD. Com as guardas mudas nao dava
+     * para separar tres hipoteses: (a) o dxgkrnl nunca chamou, (b) chamou com
+     * hContext NULL e devolvemos NOT_SUPPORTED calados, (c) chamou mas
+     * FrameBufferVirtual era NULL e o corpo inteiro foi pulado sem log.
+     *
+     * A entrada agora e' INCONDICIONAL e anterior a qualquer guarda, entao a
+     * ausencia da linha passa a ser conclusiva: significa que a DDI nao foi
+     * chamada. Amostrada por contador PROPRIO (8 primeiras + 1 em 256) para nao
+     * afogar o log a 60 Hz -- o teto global nao alcanca esta classe.
+     */
+    {
+        static volatile LONG s_PresentEnterOrdinal = 0;
+        LONG enterOrdinal = InterlockedIncrement(&s_PresentEnterOrdinal);
+        if (enterOrdinal <= 8L || (enterOrdinal % 256L) == 0L) {
+            Bc250DisplayLog("[DdiPresent] ENTER #%ld: hContext=%p pPresent=%p FrameBufferVirtual=%p\n",
+                enterOrdinal, hContext, (PVOID)pPresent,
+                g_Bc250DisplayState.FrameBufferVirtual);
+        }
+    }
+
+    if (hContext == NULL) {
+        Bc250DisplayLog("[DdiPresent] RECUSADO: hContext NULL -> STATUS_NOT_SUPPORTED\n");
+        return STATUS_NOT_SUPPORTED;
+    }
+    if (pPresent == NULL) {
+        Bc250DisplayLog("[DdiPresent] RECUSADO: pPresent NULL -> STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (g_Bc250DisplayState.FrameBufferVirtual == NULL) {
+        Bc250DisplayLog("[DdiPresent] RECUSADO: FrameBufferVirtual NULL -- scanout do GOP nao mapeado, "
+            "o corpo de apresentacao inteiro seria pulado sem log\n");
+    }
+
+    /*
+     * Liveness do SDMA a 60 Hz: drena submissoes de paginacao/transferencia concluidas
+     * no silicio para garantir que o dxgkrnl e o scheduler recebam os ACKs sem retardo.
+     */
+    Bc250ActiveSdmaRetirePendingOnAllAdapters(FALSE);
 
     count = InterlockedIncrement(&s_PresentCount);
 
@@ -2506,16 +2779,55 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
         presentResolved = Bc250DisplayResolvePresentSource(
             hContext, pPresent, &presentPhysical, &presentSegmentId);
         if (presentResolved && presentSegmentId == 1u) {
-            srcPhysical = presentPhysical;
-            srcSegmentId = presentSegmentId;
-            vaResolved = TRUE;
+            /*
+             * C3.6 (12/09) -- DEFEITO CORRIGIDO, medido na corrida 13:11.
+             *
+             * Bc250DisplayResolvePresentSource devolve um OFFSET DE SEGMENTO, e
+             * este caminho o usava DIRETO como indice de
+             * g_Bc250DisplayState.FrameBufferVirtual -- que e' um mapeamento de
+             * CPU comecando no byte ZERO da VRAM. O segmento 1 comeca em
+             * LocalSegmentBaseOffset (0xA8C000), entao toda amostragem e o byte
+             * proof liam 11.059.200 bytes antes da superficie real.
+             *
+             * Consequencia medida: `SrcPhysSample @ 0x15D0000` leu zeros, o
+             * BYTE_PROOF reprovou um quadro CORRETO, o driver desligou o SDMA e
+             * a submissao seguinte virou completion nao notificado -> BugCheck
+             * 0x119 Arg1=2 Arg2=0xC0000185.
+             *
+             * E' o MESMO defeito que a C3.4 corrigiu no caminho de escape. Dois
+             * caminhos, uma aritmetica: agora os dois saem de
+             * Bc250SdmaPresentSegmentOffsetToVram. Falha fechada: sem geometria
+             * publicada ou faixa fora do segmento, a origem e' RECUSADA em vez
+             * de virar um endereco inventado.
+             */
+            UINT64 srcVramOffset = 0ull;
+            if (Bc250SdmaPresentSegmentOffsetToVram(presentSegmentId,
+                    presentPhysical, (UINT64)scanoutBytes, &srcVramOffset)) {
+                srcPhysical = srcVramOffset;
+                srcSegmentId = presentSegmentId;
+                vaResolved = TRUE;
+            } else {
+                Bc250DisplayLog("[Present #%d] RECUSA conversao de segmento: SegOff=0x%llX Seg=%u Bytes=%u "
+                    "(geometria publicada=%d SegBase=0x%llX SegBytes=0x%llX)\n",
+                    count, (unsigned long long)presentPhysical, presentSegmentId,
+                    scanoutBytes,
+                    (int)g_Bc250SdmaPresent.SegmentGeometryReady,
+                    (unsigned long long)g_Bc250SdmaPresent.LocalSegmentBaseOffset,
+                    (unsigned long long)g_Bc250SdmaPresent.LocalSegmentBytes);
+            }
         }
 
         if (vaResolved) {
-            Bc250DisplayLog("[Present #%d] Source=%s -> Physical VRAM 0x%llX (Seg=%u); PresentSlot: resolved=%u Phys=0x%llX Seg=%u\n",
-                count, (srcPhysical == presentPhysical && presentResolved) ? "PRESENT_SLOT" : "PRIMARY",
-                srcPhysical, srcSegmentId,
-                presentResolved ? 1u : 0u, presentPhysical, presentSegmentId);
+            /*
+             * C3.6: o log passa a mostrar os TRES numeros -- offset de segmento,
+             * base do segmento e offset de VRAM resultante. Antes so' saia um
+             * "Physical VRAM 0x%llX" que na verdade era offset de segmento, e foi
+             * essa ambiguidade que escondeu o defeito por varias corridas.
+             */
+            Bc250DisplayLog("[Present #%d] Source=PRESENT_SLOT SegOff=0x%llX Seg=%u SegBase=0x%llX -> VramOff=0x%llX (resolved=%u)\n",
+                count, presentPhysical, presentSegmentId,
+                (unsigned long long)g_Bc250SdmaPresent.LocalSegmentBaseOffset,
+                srcPhysical, presentResolved ? 1u : 0u);
         } else {
             Bc250DisplayLog("[Present #%d] REJECT source contract: Blt=%u, PrimaryValid=%u, PrimarySeg=%u, SlotHAlloc=%p, SlotSeg=%u, SlotWord=0x%llX\n",
                 count, isBlt ? 1u : 0u,
@@ -2529,31 +2841,79 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
             srcPhysical = 0ull;
         }
 
+        /*
+         * Amostragem de sub-retangulo (cursor / apresentacao parcial):
+         * Calculada em todo quadro para que o gate de supressao de tela preta
+         * saiba se ha conteudo valido mesmo quando os 256 pontos esparsos forem zero.
+         *
+         * Robustez (multi-retangulo e multi-ponto):
+         * 1. Varre ate 32 sub-retangulos (SubRectCnt), nao apenas o primeiro.
+         *    DWM rotineiramente entrega SubRectCnt > 1 no movimento de cursor (rect 0 =
+         *    area anterior apagada com zeros; rect 1 = nova posicao com o cursor).
+         * 2. Amostra multiplos pontos por sub-retangulo (centro e 4 vertices/bordas),
+         *    pois cursores transparentes ou com centro vazado podem ter amostra
+         *    central zero e pixels nao-nulos no restante do sub-retangulo.
+         */
+        ULONG subRectCenterSample = 0u;
+        UINT activeSubRectIndex = 0u;
+        if (pPresent->SubRectCnt > 0 && pPresent->pDstSubRects != NULL && srcPhysical != 0 &&
+            g_Bc250DisplayState.FrameBufferVirtual != NULL &&
+            g_Bc250DisplayState.CurrentMode.Pitch >= 4u) {
+            UINT maxSubRects = (pPresent->SubRectCnt > 32u) ? 32u : pPresent->SubRectCnt;
+            for (UINT r = 0u; r < maxSubRects; ++r) {
+                CONST RECT* rc = &pPresent->pDstSubRects[r];
+                if (rc->left < 0 || rc->top < 0 || rc->right <= rc->left || rc->bottom <= rc->top) {
+                    continue;
+                }
+                if ((ULONG)rc->right > g_Bc250DisplayState.CurrentMode.Width ||
+                    (ULONG)rc->bottom > g_Bc250DisplayState.CurrentMode.Height) {
+                    continue;
+                }
+
+                LONG midX = (rc->left + rc->right) / 2;
+                LONG midY = (rc->top + rc->bottom) / 2;
+                LONG probePoints[5][2] = {
+                    { midX, midY },
+                    { rc->left, rc->top },
+                    { rc->right - 1, rc->top },
+                    { rc->left, rc->bottom - 1 },
+                    { rc->right - 1, rc->bottom - 1 }
+                };
+
+                for (int p = 0; p < 5; ++p) {
+                    LONG px = probePoints[p][0];
+                    LONG py = probePoints[p][1];
+                    if (px >= 0 && py >= 0 &&
+                        (ULONG)px < g_Bc250DisplayState.CurrentMode.Width &&
+                        (ULONG)py < g_Bc250DisplayState.CurrentMode.Height) {
+                        ULONG sampleByteOffset = (ULONG)py * g_Bc250DisplayState.CurrentMode.Pitch + (ULONG)px * 4u;
+                        if ((srcPhysical + sampleByteOffset + 4u) <= g_Bc250DisplayState.FrameBufferSize) {
+                            ULONG pixelVal = *(CONST ULONG *)((CONST UCHAR *)g_Bc250DisplayState.FrameBufferVirtual + srcPhysical + sampleByteOffset);
+                            if (pixelVal != 0u) {
+                                subRectCenterSample = pixelVal;
+                                activeSubRectIndex = r;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (subRectCenterSample != 0u) {
+                    break;
+                }
+            }
+        }
+
         /* Amostragem e telemetria extensiva solicitada */
         if (count <= 10 || (count % 60) == 0) {
             CONST ULONG *dstDwords = (CONST ULONG *)g_Bc250DisplayState.FrameBufferVirtual;
             CONST ULONG *primDwords = NULL;
             CONST ULONG *vaDwords = NULL;
-            ULONG subRectCenterSample = 0;
 
             if (srcPhysical != 0 && (srcPhysical + 16) <= g_Bc250DisplayState.FrameBufferSize) {
                 primDwords = (CONST ULONG *)((CONST UCHAR *)g_Bc250DisplayState.FrameBufferVirtual + srcPhysical);
             }
             if (srcVa != 0 && (srcVa + 16) <= g_Bc250DisplayState.FrameBufferSize) {
                 vaDwords = (CONST ULONG *)((CONST UCHAR *)g_Bc250DisplayState.FrameBufferVirtual + srcVa);
-            }
-
-            if (pPresent->SubRectCnt > 0 && pPresent->pDstSubRects != NULL && srcPhysical != 0) {
-                LONG midX = (pPresent->pDstSubRects[0].left + pPresent->pDstSubRects[0].right) / 2;
-                LONG midY = (pPresent->pDstSubRects[0].top + pPresent->pDstSubRects[0].bottom) / 2;
-                if (midX >= 0 && midY >= 0 &&
-                    (ULONG)midX < g_Bc250DisplayState.CurrentMode.Width &&
-                    (ULONG)midY < g_Bc250DisplayState.CurrentMode.Height) {
-                    ULONG sampleByteOffset = (ULONG)midY * g_Bc250DisplayState.CurrentMode.Pitch + (ULONG)midX * 4u;
-                    if ((srcPhysical + sampleByteOffset + 4) <= g_Bc250DisplayState.FrameBufferSize) {
-                        subRectCenterSample = *(CONST ULONG *)((CONST UCHAR *)g_Bc250DisplayState.FrameBufferVirtual + srcPhysical + sampleByteOffset);
-                    }
-                }
             }
 
             Bc250DisplayLog("[Present #%d] Blt=%d, hCtx=%p, DmaSize=%u, DmaVA=0x%llX, NumSrc=%u, NumDst=%u, Flags=0x%08X\n",
@@ -2580,10 +2940,11 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                 pPresent->SubRectCnt);
 
             if (pPresent->SubRectCnt > 0 && pPresent->pDstSubRects != NULL) {
-                Bc250DisplayLog("[Present #%d] SubRect[0]=(%d,%d)-(%d,%d), CenterPixel=0x%08X\n",
+                Bc250DisplayLog("[Present #%d] SubRect[%u]=(%d,%d)-(%d,%d), CenterPixel=0x%08X\n",
                     count,
-                    pPresent->pDstSubRects[0].left, pPresent->pDstSubRects[0].top,
-                    pPresent->pDstSubRects[0].right, pPresent->pDstSubRects[0].bottom,
+                    activeSubRectIndex,
+                    pPresent->pDstSubRects[activeSubRectIndex].left, pPresent->pDstSubRects[activeSubRectIndex].top,
+                    pPresent->pDstSubRects[activeSubRectIndex].right, pPresent->pDstSubRects[activeSubRectIndex].bottom,
                     subRectCenterSample);
             }
 
@@ -2642,10 +3003,6 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                     Bc250DisplaySampleSurface(dstPhysical, scanoutBytes, 256u, &nz, &hx)) {
                     Bc250DisplayLog("[Present #%d] Spread SLOT_DST  @ 0x%llX: NonZero=%u/256, Xor=%08X (Seg=%u)\n",
                         count, dstPhysical, nz, hx, dstSegmentId);
-                    if (nz > 0) {
-                        Bc250DisplayLog("[Present #%d] *** DESKTOP REAL DETECTADO EM SLOT_DST *** NonZero=%u/256, Hash=0x%08X (Phys=0x%llX)\n",
-                            count, nz, hx, dstPhysical);
-                    }
                 }
                 if (srcVa != 0 &&
                     Bc250DisplaySampleSurface(srcVa, scanoutBytes, 256u, &nz, &hx)) {
@@ -2671,21 +3028,13 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
             BOOLEAN srcOk = Bc250DisplaySampleSurface(srcPhysical, scanoutBytes, 256u, &srcNz, &srcHx);
             UINT64 effectiveSrcPhys = srcPhysical;
 
-            /* Se Slot 1 estiver zerado, verificar se Slot 2 (Destination/SharedPrimary) contem o desktop */
-            if (srcOk && srcNz == 0u) {
-                UINT64 dstPhysical = 0;
-                UINT32 dstSegmentId = 0;
-                if (Bc250DisplayResolvePresentDestination(hContext, pPresent, &dstPhysical, &dstSegmentId) &&
-                    dstSegmentId == 1u && dstPhysical > 0ull) {
-                    ULONG dstNz = 0u, dstHx = 0u;
-                    if (Bc250DisplaySampleSurface(dstPhysical, scanoutBytes, 256u, &dstNz, &dstHx) && dstNz > 0u) {
-                        effectiveSrcPhys = dstPhysical;
-                        srcNz = dstNz;
-                        srcHx = dstHx;
-                        Bc250DisplayLog("[Present #%d] REDIRECIONAMENTO DE ORIGEM: Slot 1 zerado, usando Slot 2 (0x%llX) com %u/256 pixels ativos!\n",
-                            count, dstPhysical, dstNz);
-                    }
-                }
+            static int s_TileProbeCount = 0;
+            if (s_TileProbeCount < 3 && srcNz >= 64u && g_Bc250DisplayState.FrameBufferVirtual != NULL && effectiveSrcPhys != 0 &&
+                effectiveSrcPhys + 10248u <= g_Bc250DisplayState.FrameBufferSize) {
+                volatile uint32_t *p = (volatile uint32_t *)((char *)g_Bc250DisplayState.FrameBufferVirtual + effectiveSrcPhys);
+                Bc250DisplayLog("[Present #%d TILE_PROBE (Content NonZero=%u/256)] Off=0: %08X %08X %08X %08X | Off+64: %08X %08X | Off+10240: %08X %08X\n",
+                    count, srcNz, p[0], p[1], p[2], p[3], p[16], p[17], p[2560], p[2561]);
+                s_TileProbeCount++;
             }
 
             if (effectiveSrcPhys != 0 && scanoutBytes > 0 &&
@@ -2695,83 +3044,122 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                 uint64_t srcGpu = g_Bc250SdmaPresent.VramMcStart + effectiveSrcPhys;
                 uint64_t dstScanoutGpu = g_Bc250SdmaPresent.ScanoutGpuAddress;
 
-                if (g_Bc250SdmaPresent.HardwareEnabled && dstScanoutGpu != 0 && srcGpu != dstScanoutGpu) {
-                    sdmaDone = Bc250SdmaPresentBlt(srcGpu, dstScanoutGpu, scanoutBytes);
-                }
+                /*
+                 * SEGURANCA FAIL-CLOSED CONTRA TELA PRETA (Lei 6):
+                 * Se a superficie de origem contem 100% de zeros (ex: logo apos PAGING_FILL
+                 * ou antes de o DWM compor o primeiro quadro real), NAO podemos copiar zeros
+                 * para o scanout do UEFI GOP. Copiar zeros apaga a imagem da tela e gera tela
+                 * preta permanente. Mantemos o scanout GOP intacto e completamos a submissao
+                 * com sucesso para que o escalonador do Windows continue operando sem TDR.
+                 *
+                 * Se o sub-retangulo do cursor/apresentacao parcial contem dados nao-nulos
+                 * (subRectCenterSample != 0u), a superficie contem dados validos na regiao
+                 * dirty e o Blt NAO deve ser suprimido. Suprimimos apenas se
+                 * (srcOk && srcNz == 0u && subRectCenterSample == 0u).
+                 */
+                if (srcOk && srcNz == 0u && subRectCenterSample == 0u) {
+                    LONG streak = InterlockedIncrement(&g_Bc250SdmaPresent.BltBlankStreak);
+                    InterlockedExchange(&s_PresentByteProofState, 0);
+                    InterlockedExchange(
+                        &g_Bc250SdmaPresent.BltDataProofState,
+                        BC250_BLT_DATA_PROOF_BLANK);
+                    if (count <= 10 || (count % 60) == 0) {
+                        Bc250DisplayLog("[Present #%d] Blt preservado (origem 0x%llX 100%% zerada, NonZero=0/256, SubRect=0x%08X): GOP scanout mantido intacto, BlankStreak=%ld\n",
+                            count, effectiveSrcPhys, subRectCenterSample, streak);
+                    }
+                    presentStatus = STATUS_SUCCESS;
+                } else {
+                    if (srcNz == 0u && subRectCenterSample != 0u && (count <= 10 || (count % 60) == 0)) {
+                        Bc250DisplayLog("[Present #%d] Blt acionado por sub-retangulo parcial nao-nulo (NonZero=0/256, SubRect=0x%08X @ 0x%llX)\n",
+                            count, subRectCenterSample, effectiveSrcPhys);
+                    }
+                    if (g_Bc250SdmaPresent.HardwareEnabled && dstScanoutGpu != 0 && srcGpu != dstScanoutGpu) {
+                        sdmaDone = Bc250SdmaPresentBlt(srcGpu, dstScanoutGpu, scanoutBytes);
+                    }
 
-                if (sdmaDone &&
-                    (count == 1 || count == 5 || count == 10 || count == 25 || count == 45)) {
-                    UINT64 mismatchOffset = ~(UINT64)0;
-                    ULONG postNz = 0u, postHx = 0u;
-                    BOOLEAN bytesMatch = Bc250DisplayCompareSurfaceBytes(
-                        effectiveSrcPhys, 0ull, scanoutBytes, &mismatchOffset);
-                    BC250_BLT_PROOF_VERDICT proofVerdict;
+                    if (sdmaDone &&
+                        (count == 1 || count == 5 || count == 10 || count == 25 || count == 45)) {
+                        UINT64 mismatchOffset = ~(UINT64)0;
+                        ULONG postNz = 0u, postHx = 0u;
+                        BOOLEAN bytesMatch = Bc250DisplayCompareSurfaceBytes(
+                            effectiveSrcPhys, 0ull, scanoutBytes, &mismatchOffset);
+                        BC250_BLT_PROOF_VERDICT proofVerdict;
 
-                    if (bytesMatch) {
-                        (void)Bc250DisplaySampleSurface(0ull, scanoutBytes, 256u, &postNz, &postHx);
+                        if (bytesMatch) {
+                            (void)Bc250DisplaySampleSurface(0ull, scanoutBytes, 256u, &postNz, &postHx);
+                        }
+                        /*
+                         * A9/A10: a classificacao vem de driver/core, e o teste
+                         * blt_proof_contract_test trava a semantica. O driver nao
+                         * decide sozinho o que e' PASS.
+                         */
+                        proofVerdict = Bc250ClassifyBltProof(
+                            bytesMatch ? 1u : 0u, (uint32_t)postNz,
+                            bytesMatch ? 256u : 0u);
+
+                        if (!Bc250BltProofRequiresFailClosed(proofVerdict)) {
+                            if (!Bc250BltProofAllowsTripodClaim(proofVerdict)) {
+                                LONG streak = InterlockedIncrement(
+                                    &g_Bc250SdmaPresent.BltBlankStreak);
+                                InterlockedExchange(&s_PresentByteProofState, 0);
+                                InterlockedExchange(
+                                    &g_Bc250SdmaPresent.BltDataProofState,
+                                    BC250_BLT_DATA_PROOF_BLANK);
+                                Bc250DisplayLog("[Present #%d] BYTE_PROOF INCONCLUSIVO (FRAME EM BRANCO): Source=0x%llX Dest=0x0 Bytes=%u copiados fielmente, mas PostScanout NonZero=0/256 Hash=0x%08X. Zero contra zero NAO prova caminho de pixel. BlankStreak=%ld\n",
+                                    count, effectiveSrcPhys, scanoutBytes, postHx, streak);
+                            } else {
+                                InterlockedExchange(&s_PresentByteProofState, 2);
+                                InterlockedExchange(&g_Bc250SdmaPresent.BltBlankStreak, 0);
+                                InterlockedExchange(
+                                    &g_Bc250SdmaPresent.BltDataProofState,
+                                    BC250_BLT_DATA_PROOF_OK);
+                                Bc250DisplayLog("[Present #%d] BYTE_PROOF PASS (dados conferidos, frame com conteudo): Source=0x%llX Dest=0x0 Bytes=%u (PostScanout: NonZero=%u/256, Hash=0x%08X)\n",
+                                    count, effectiveSrcPhys, scanoutBytes, postNz, postHx);
+                            }
+                        } else {
+                            InterlockedExchange(&s_PresentByteProofState, -1);
+                            InterlockedExchange(
+                                &g_Bc250SdmaPresent.BltDataProofState,
+                                BC250_BLT_DATA_PROOF_MISMATCH);
+                            sdmaDone = FALSE;
+                            /*
+                             * C3.7 (12/09) -- A REACAO DEIXOU DE SER PIOR QUE A FALHA.
+                             *
+                             * Aqui havia `g_Bc250SdmaPresent.HardwareEnabled = FALSE`.
+                             * Medido na corrida 13:11: um byte proof reprovado
+                             * desligava o SDMA GLOBALMENTE, e a partir dai TODA
+                             * submissao WDDM caia em `SubmitIndirectAsync recusado:
+                             * HwEnabled=0` -> `IB NAO EXECUTADO; completion NAO
+                             * notificado` -> o VidMm derrubou a maquina com
+                             * BugCheck 0x119 Arg1=2 Arg2=0xC0000185, sete linhas de
+                             * log depois.
+                             *
+                             * E a reprovacao era FALSA: o byte proof lia o endereco
+                             * errado por falta de LocalSegmentBaseOffset (C3.6).
+                             *
+                             * Falhar fechado continua certo -- este present NAO
+                             * declara sucesso e `sdmaDone` fica FALSE. O que nao pode
+                             * e' um quadro reprovado condenar o motor de submissao do
+                             * adaptador inteiro. Quem desabilita a engine e' o
+                             * caminho de TDR, que tem quiesce e restart com prova.
+                             */
+                            Bc250DisplayLog("[Present #%d] BYTE_PROOF FAIL: Source=0x%llX Dest=0x0 Bytes=%u FirstMismatch=0x%llX; present reprovado (engine PRESERVADA)\n",
+                                count, effectiveSrcPhys, scanoutBytes, mismatchOffset);
+                        }
+                    }
+
+                    if (count <= 10 || (count % 60) == 0) {
+                        Bc250DisplayLog("[Present #%d] Blt %u bytes (src 0x%llX -> scanout 0x0): SDMA=%s\n",
+                            count, scanoutBytes, effectiveSrcPhys, sdmaDone ? "YES" : "FAILED_CLOSED");
                     }
                     /*
-                     * A9/A10: a classificacao vem de driver/core, e o teste
-                     * blt_proof_contract_test trava a semantica. O driver nao
-                     * decide sozinho o que e' PASS.
+                     * SEGURANCA CONTRA BUGCHECK 0x10E NO DWM (Lei 6):
+                     * Retornar STATUS_IO_DEVICE_ERROR em DxgkDdiPresent no caminho do DWM
+                     * faz o dxgkrnl disparar BugCheck 0x10E Arg1=4 (falha em caminho obrigatorio).
+                     * Mantemos STATUS_SUCCESS com o frame anterior para que o escalonador continue sem panic.
                      */
-                    proofVerdict = Bc250ClassifyBltProof(
-                        bytesMatch ? 1u : 0u, (uint32_t)postNz,
-                        bytesMatch ? 256u : 0u);
-
-                    if (!Bc250BltProofRequiresFailClosed(proofVerdict)) {
-                        if (!Bc250BltProofAllowsTripodClaim(proofVerdict)) {
-                            /*
-                             * A9 (06/09) -- ESTA linha dizia PASS.
-                             *
-                             * MEDIDO na corrida 2026-09-06 22:42: 63 de 63
-                             * amostras com NonZero=0/256 e ainda assim PASS. A
-                             * comparacao passava porque origem e destino eram
-                             * ambos zero -- ou seja, ela declarava sucesso
-                             * exatamente no caso em que a tela estava apagada.
-                             * Rotulo de falso sucesso, proibido pela Lei 4.
-                             *
-                             * Copia fiel de um frame em branco e' INCONCLUSIVA:
-                             * nao prova caminho de pixel, e tambem nao e' falha
-                             * (o DWM pode legitimamente apresentar preto). Nao
-                             * desligamos o SDMA -- apenas nos recusamos a
-                             * certificar, e contamos a sequencia de frames em
-                             * branco, que e' o sintoma da tela preta.
-                             */
-                            LONG streak = InterlockedIncrement(
-                                &g_Bc250SdmaPresent.BltBlankStreak);
-                            InterlockedExchange(&s_PresentByteProofState, 0);
-                            InterlockedExchange(
-                                &g_Bc250SdmaPresent.BltDataProofState,
-                                BC250_BLT_DATA_PROOF_BLANK);
-                            Bc250DisplayLog("[Present #%d] BYTE_PROOF INCONCLUSIVO (FRAME EM BRANCO): Source=0x%llX Dest=0x0 Bytes=%u copiados fielmente, mas PostScanout NonZero=0/256 Hash=0x%08X. Zero contra zero NAO prova caminho de pixel. BlankStreak=%ld\n",
-                                count, effectiveSrcPhys, scanoutBytes, postHx, streak);
-                        } else {
-                            InterlockedExchange(&s_PresentByteProofState, 2);
-                            InterlockedExchange(&g_Bc250SdmaPresent.BltBlankStreak, 0);
-                            InterlockedExchange(
-                                &g_Bc250SdmaPresent.BltDataProofState,
-                                BC250_BLT_DATA_PROOF_OK);
-                            Bc250DisplayLog("[Present #%d] BYTE_PROOF PASS (dados conferidos, frame com conteudo): Source=0x%llX Dest=0x0 Bytes=%u (PostScanout: NonZero=%u/256, Hash=0x%08X)\n",
-                                count, effectiveSrcPhys, scanoutBytes, postNz, postHx);
-                        }
-                    } else {
-                        InterlockedExchange(&s_PresentByteProofState, -1);
-                        InterlockedExchange(
-                            &g_Bc250SdmaPresent.BltDataProofState,
-                            BC250_BLT_DATA_PROOF_MISMATCH);
-                        g_Bc250SdmaPresent.HardwareEnabled = FALSE;
-                        sdmaDone = FALSE;
-                        Bc250DisplayLog("[Present #%d] BYTE_PROOF FAIL: Source=0x%llX Dest=0x0 Bytes=%u FirstMismatch=0x%llX; SDMA disabled\n",
-                            count, effectiveSrcPhys, scanoutBytes, mismatchOffset);
-                    }
+                    presentStatus = STATUS_SUCCESS;
                 }
-
-                if (count <= 10 || (count % 60) == 0) {
-                    Bc250DisplayLog("[Present #%d] Blt %u bytes (src 0x%llX -> scanout 0x0): SDMA=%s\n",
-                        count, scanoutBytes, effectiveSrcPhys, sdmaDone ? "YES" : "FAILED_CLOSED");
-                }
-                presentStatus = sdmaDone ? STATUS_SUCCESS : STATUS_IO_DEVICE_ERROR;
             } else if (vaResolved) {
                 Bc250DisplayLog("[Present #%d] REJECT source bounds: Phys=0x%llX, Bytes=%u, Aperture=%u\n",
                     count, effectiveSrcPhys, scanoutBytes, g_Bc250DisplayState.FrameBufferSize);
@@ -2790,6 +3178,8 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
         *dma = 0u; /* SDMA NOP */
         pPresent->pDmaBuffer = (PVOID)(dma + 1);
     }
+
+    Bc250ActiveSdmaRetirePendingOnAllAdapters(FALSE);
 
     return presentStatus;
 }
@@ -3013,11 +3403,12 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresentDisplayOnly(
     }
 
     if (presentCount == 1 || (presentCount % 60) == 0) {
-        Bc250DisplayLog("[PresentDisplayOnly #%d] SDMA Blt Status: Completed=%ld, Submitted=%ld, Fallbacks=%ld\n",
+        Bc250DisplayLog("[PresentDisplayOnly #%d] SDMA Blt Status: Completed=%ld, Submitted=%ld, Fallbacks=%ld, HostCpuCopies=%ld\n",
             presentCount,
             g_Bc250SdmaPresent.BltCompletedCount,
             g_Bc250SdmaPresent.BltSubmittedCount,
-            g_Bc250SdmaPresent.FallbackCpuCount);
+            g_Bc250SdmaPresent.FallbackCpuCount,
+            g_Bc250SdmaPresent.HostCpuCopyCount);
     }
 
     KeMemoryBarrier();

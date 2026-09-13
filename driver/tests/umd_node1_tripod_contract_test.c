@@ -28,8 +28,16 @@ static HRESULT APIENTRY TestCreateContext(
     HANDLE Device, D3DDDICB_CREATECONTEXTVIRTUAL* Args)
 {
     UNREFERENCED_PARAMETER(Device);
-    assert(Args->NodeOrdinal == BC250_WINSYS_NODE_COMPUTE);
-    Args->hContext = (HANDLE)(ULONG_PTR)0xC001u;
+    /*
+     * 13/09: alem do contexto de trabalho no Node 1, a UMD passou a criar um
+     * contexto de APRESENTACAO no Node 0 (proveniencia em bc250_wddm_winsys.h).
+     * Handles distintos por no.
+     */
+    assert(Args->NodeOrdinal == BC250_WINSYS_NODE_COMPUTE ||
+           Args->NodeOrdinal == BC250_WINSYS_NODE_SDMA);
+    Args->hContext = (Args->NodeOrdinal == BC250_WINSYS_NODE_SDMA)
+        ? (HANDLE)(ULONG_PTR)0xC000u
+        : (HANDLE)(ULONG_PTR)0xC001u;
     return S_OK;
 }
 
@@ -37,7 +45,8 @@ static HRESULT APIENTRY TestDestroyContext(
     HANDLE Device, const D3DDDICB_DESTROYCONTEXT* Args)
 {
     UNREFERENCED_PARAMETER(Device);
-    assert(Args->hContext == (HANDLE)(ULONG_PTR)0xC001u);
+    assert(Args->hContext == (HANDLE)(ULONG_PTR)0xC001u ||
+           Args->hContext == (HANDLE)(ULONG_PTR)0xC000u);
     return S_OK;
 }
 

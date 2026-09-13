@@ -92,7 +92,7 @@ BC250_DXBC_STATUS Bc250DxbcParse(
     if (Container->ShaderChunk != NULL) {
         const uint32_t *shaderWords;
         uint32_t versionToken;
-        uint32_t tokenCount;
+        uint32_t programTokenCount;
         uint32_t typeField;
 
         if (Container->ShaderChunk->DataSize < 8u) {
@@ -101,10 +101,11 @@ BC250_DXBC_STATUS Bc250DxbcParse(
 
         shaderWords = (const uint32_t *)Container->ShaderChunk->Data;
         versionToken = shaderWords[0];
-        tokenCount = shaderWords[1];
+        programTokenCount = shaderWords[1];
 
-        /* tokenCount indicates the number of DWORDs in the opcode stream */
-        if (tokenCount * sizeof(uint32_t) > Container->ShaderChunk->DataSize - 8u) {
+        /* DXBC length includes the version and length DWORDs themselves. */
+        if (programTokenCount < 2u ||
+            programTokenCount > Container->ShaderChunk->DataSize / sizeof(uint32_t)) {
             return BC250_DXBC_INVALID_SHADER_HEADER;
         }
 
@@ -122,7 +123,7 @@ BC250_DXBC_STATUS Bc250DxbcParse(
         default: Container->ShaderType = BC250_DXBC_SHADER_UNKNOWN; break;
         }
 
-        Container->OpcodeTokenCount = tokenCount;
+        Container->OpcodeTokenCount = programTokenCount - 2u;
         Container->OpcodeTokens = shaderWords + 2;
     }
 

@@ -1,0 +1,353 @@
+﻿
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+   EnableRedirectToChakraJsProvider : false
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.000 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 30
+
+Microsoft (R) Windows Debugger Version 10.0.28000.2526 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [C:\Windows\MEMORY.DMP]
+Kernel Bitmap Dump File: Kernel address space is available, User address space may not be available.
+
+Symbol search path is: srv*
+Executable search path is: 
+Windows 10 Kernel Version 19041 MP (12 procs) Free x64
+Product: WinNt, suite: TerminalServer SingleUserTS
+Edition build lab: 19041.1.amd64fre.vb_release.191206-1406
+Kernel base = 0xfffff801`7b200000 PsLoadedModuleList = 0xfffff801`7be2a2b0
+Debug session time: Thu Sep 10 10:23:38.997 2026 (UTC - 3:00)
+System Uptime: 0 days 0:18:56.520
+Loading Kernel Symbols
+...............................................................
+...Page 404d25 not present in the dump file. Type ".hh dbgerr004" for details
+.............................................................
+.....................................
+Loading User Symbols
+
+Loading unloaded module list
+...........
+For analysis of this file, run !analyze -v
+10: kd> cdb: Reading initial command '!analyze -v; q'
+Loading Kernel Symbols
+...............................................................
+...Page 404d25 not present in the dump file. Type ".hh dbgerr004" for details
+.............................................................
+.....................................
+Loading User Symbols
+
+Loading unloaded module list
+...........
+*******************************************************************************
+*                                                                             *
+*                        Bugcheck Analysis                                    *
+*                                                                             *
+*******************************************************************************
+
+VIDEO_MEMORY_MANAGEMENT_INTERNAL (10e)
+The video memory manager encountered a condition that it can't recover from. By crashing,
+the video memory manager is attempting to get enough information into the minidump such that
+somebody can pinpoint what lead to this condition.
+Arguments:
+Arg1: 000000000000000b, Driver returned an invalid error code from BuildPagingBuffer.
+Arg2: ffffc80d0801c860
+Arg3: ffffffffc000000d
+Arg4: ffffb58d15c5a000
+
+Debugging Details:
+------------------
+
+Page 404d25 not present in the dump file. Type ".hh dbgerr004" for details
+*** WARNING: Check Image - Checksum mismatch - Dump: 0x1c919, File: 0x1cf27 - C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\sym\BasicDisplay.sys\9AD4156516000\BasicDisplay.sys
+
+KEY_VALUES_STRING: 1
+
+    Key  : Analysis.CPU.mSec
+    Value: 2453
+
+    Key  : Analysis.Elapsed.mSec
+    Value: 6672
+
+    Key  : Analysis.IO.Other.Mb
+    Value: 0
+
+    Key  : Analysis.IO.Read.Mb
+    Value: 1
+
+    Key  : Analysis.IO.Write.Mb
+    Value: 1
+
+    Key  : Analysis.Init.CPU.mSec
+    Value: 390
+
+    Key  : Analysis.Init.Elapsed.mSec
+    Value: 641
+
+    Key  : Analysis.Memory.CommitPeak.Mb
+    Value: 86
+
+    Key  : Analysis.Version.DbgEng
+    Value: 10.0.28000.2526
+
+    Key  : Analysis.Version.Description
+    Value: 10.2506.23.01 amd64fre
+
+    Key  : Analysis.Version.Ext
+    Value: 1.2506.23.1
+
+    Key  : Bugcheck.Code.KiBugCheckData
+    Value: 0x10e
+
+    Key  : Bugcheck.Code.LegacyAPI
+    Value: 0x10e
+
+    Key  : Bugcheck.Code.TargetModel
+    Value: 0x10e
+
+    Key  : Failure.Bucket
+    Value: 0x10e_b_IMAGE_dxgmms2.sys
+
+    Key  : Failure.Hash
+    Value: {4fd03b24-f44f-cfa9-5549-3a5623f2c263}
+
+    Key  : Hypervisor.Enlightenments.Value
+    Value: 0
+
+    Key  : Hypervisor.Enlightenments.ValueHex
+    Value: 0x0
+
+    Key  : Hypervisor.Flags.AnyHypervisorPresent
+    Value: 0
+
+    Key  : Hypervisor.Flags.ApicEnlightened
+    Value: 0
+
+    Key  : Hypervisor.Flags.ApicVirtualizationAvailable
+    Value: 1
+
+    Key  : Hypervisor.Flags.AsyncMemoryHint
+    Value: 0
+
+    Key  : Hypervisor.Flags.CoreSchedulerRequested
+    Value: 0
+
+    Key  : Hypervisor.Flags.CpuManager
+    Value: 0
+
+    Key  : Hypervisor.Flags.DeprecateAutoEoi
+    Value: 0
+
+    Key  : Hypervisor.Flags.DynamicCpuDisabled
+    Value: 0
+
+    Key  : Hypervisor.Flags.Epf
+    Value: 0
+
+    Key  : Hypervisor.Flags.ExtendedProcessorMasks
+    Value: 0
+
+    Key  : Hypervisor.Flags.HardwareMbecAvailable
+    Value: 1
+
+    Key  : Hypervisor.Flags.MaxBankNumber
+    Value: 0
+
+    Key  : Hypervisor.Flags.MemoryZeroingControl
+    Value: 0
+
+    Key  : Hypervisor.Flags.NoExtendedRangeFlush
+    Value: 0
+
+    Key  : Hypervisor.Flags.NoNonArchCoreSharing
+    Value: 0
+
+    Key  : Hypervisor.Flags.Phase0InitDone
+    Value: 0
+
+    Key  : Hypervisor.Flags.PowerSchedulerQos
+    Value: 0
+
+    Key  : Hypervisor.Flags.RootScheduler
+    Value: 0
+
+    Key  : Hypervisor.Flags.SynicAvailable
+    Value: 0
+
+    Key  : Hypervisor.Flags.UseQpcBias
+    Value: 0
+
+    Key  : Hypervisor.Flags.Value
+    Value: 16908288
+
+    Key  : Hypervisor.Flags.ValueHex
+    Value: 0x1020000
+
+    Key  : Hypervisor.Flags.VpAssistPage
+    Value: 0
+
+    Key  : Hypervisor.Flags.VsmAvailable
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.AccessStats
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.CrashdumpEnlightened
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.CreateVirtualProcessor
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.DisableHyperthreading
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.HostTimelineSync
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.HypervisorDebuggingEnabled
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.IsHyperV
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.LivedumpEnlightened
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.MapDeviceInterrupt
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.MceEnlightened
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.Nested
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.StartLogicalProcessor
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.Value
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.ValueHex
+    Value: 0x0
+
+    Key  : SecureKernel.HalpHvciEnabled
+    Value: 0
+
+    Key  : WER.OS.Branch
+    Value: vb_release
+
+    Key  : WER.OS.Version
+    Value: 10.0.19041.1
+
+    Key  : WER.System.BIOSRevision
+    Value: 5.13.0.0
+
+
+BUGCHECK_CODE:  10e
+
+BUGCHECK_P1: b
+
+BUGCHECK_P2: ffffc80d0801c860
+
+BUGCHECK_P3: ffffffffc000000d
+
+BUGCHECK_P4: ffffb58d15c5a000
+
+FILE_IN_CAB:  MEMORY.DMP
+
+FAULTING_THREAD:  ffffb58d136df040
+
+BLACKBOXBSD: 1 (!blackboxbsd)
+
+
+BLACKBOXNTFS: 1 (!blackboxntfs)
+
+
+BLACKBOXPNP: 1 (!blackboxpnp)
+
+
+BLACKBOXWINLOGON: 1 (!blackboxwinlogon)
+
+
+PROCESS_NAME:  System
+
+STACK_TEXT:  
+ffffc80d`0801c768 fffff801`927b3ad0     : 00000000`0000010e 00000000`0000000b ffffc80d`0801c860 ffffffff`c000000d : nt!KeBugCheckEx
+ffffc80d`0801c770 fffff801`956bd392     : 00000000`00000000 ffffb58d`168d3000 00000000`00000000 ffffc80d`0801c7e8 : watchdog!WdLogEvent5_WdCriticalError+0xe0
+ffffc80d`0801c7b0 fffff801`956baf62     : 00000000`00000000 fffff801`00000000 ffffe003`0d589b30 00000000`00000000 : dxgmms2!VIDMM_GLOBAL::UpdatePageTable+0xdf2
+ffffc80d`0801ca40 fffff801`956bd7fd     : 00000000`00000000 00000000`00000000 00000000`0000023f ffffc80d`0801cde0 : dxgmms2!VIDMM_PAGE_TABLE::UpdatePageTable+0x13a
+ffffc80d`0801cb00 fffff801`956bb8ed     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`00000000 : dxgmms2!VIDMM_PAGE_TABLE::CommitVirtualAddressRange+0x1e5
+ffffc80d`0801cba0 fffff801`956babaa     : 00000000`00000003 ffffe003`1c726450 00000000`00000100 00000000`00000000 : dxgmms2!VIDMM_PAGE_DIRECTORY::CommitVirtualAddressRange+0x77d
+ffffc80d`0801cd10 fffff801`956bf247     : 00000000`00000001 ffffe003`0d589b30 00000000`00000000 7fffffff`00000003 : dxgmms2!CVirtualAddressAllocator::CommitVirtualAddressRange+0x2f6
+ffffc80d`0801ce90 fffff801`956c9153     : ffffb58d`14e3c000 ffffc80d`0801d010 ffffb58d`168d3000 00000000`00287000 : dxgmms2!VIDMM_PAGING_PROCESS::MapScratchAreaVaRange+0x163
+ffffc80d`0801cf10 fffff801`956c8f7b     : ffffe003`0d589b30 00000000`00000003 fffff801`00000000 ffffb58d`168d3000 : dxgmms2!VIDMM_GLOBAL::MemoryTransferUsingGpuVaWorker+0x1ab
+ffffc80d`0801d1a0 fffff801`956c8df0     : ffffe003`14032310 00000000`00000000 ffffe003`0d589b30 00000000`00000000 : dxgmms2!VIDMM_GLOBAL::MemoryTransferInternal+0x12b
+ffffc80d`0801d3a0 fffff801`956c8c99     : ffffe003`0d589b30 00000000`00000001 ffffb58d`0f2a9280 ffffc80d`0801d4a9 : dxgmms2!VIDMM_GLOBAL::MemoryTransfer+0x88
+ffffc80d`0801d410 fffff801`956c8a99     : 00000000`00000000 00000000`01695000 ffffb58d`0f2a9280 00000000`00000000 : dxgmms2!VIDMM_MEMORY_SEGMENT::TransferMemoryFast+0x1cd
+ffffc80d`0801d4b0 fffff801`956adde0     : 00000000`00000000 ffffe003`0d589b30 00000000`00000000 ffffe003`0d589b30 : dxgmms2!VIDMM_MEMORY_SEGMENT::TransferMemory+0x6d
+ffffc80d`0801d500 fffff801`956ada3d     : ffffb58d`18523a10 fffff801`956c5b85 ffffb58d`168d3000 ffffe003`0d589b30 : dxgmms2!VIDMM_MEMORY_SEGMENT::TransferToSegment+0x230
+ffffc80d`0801d680 fffff801`956b8020     : ffffe003`0d589b30 ffffe003`0d589b30 00000000`00000000 ffffb58d`18523a10 : dxgmms2!VIDMM_MEMORY_SEGMENT::CommitResource+0x5d
+ffffc80d`0801d6c0 fffff801`956b6445     : 00000000`00000000 00000000`00000000 005c0073`00650063 ffffe003`0d589b30 : dxgmms2!VIDMM_GLOBAL::PageInOneAllocation+0x1d0
+ffffc80d`0801d7e0 fffff801`956cc68e     : 00000000`00000000 00000000`00989680 ffffe003`11d9dcf0 00000000`00000001 : dxgmms2!VIDMM_GLOBAL::ProcessDeferredCommand+0xe25
+ffffc80d`0801da00 fffff801`956d6839     : ffffe003`11d9dc20 ffffb58d`09eb1001 00000000`00000300 ffffa300`d1a8e300 : dxgmms2!VIDMM_WORKER_THREAD::Run+0xe5e
+ffffc80d`0801dbe0 fffff801`7b5265f5     : ffffb58d`136df040 fffff801`956d6830 ffffe003`11d9dc20 00000000`00989600 : dxgmms2!VidMmWorkerThreadProc+0x9
+ffffc80d`0801dc10 fffff801`7b6048d8     : ffffa300`d1a83180 ffffb58d`136df040 fffff801`7b5265a0 00000000`00000000 : nt!PspSystemThreadStartup+0x55
+ffffc80d`0801dc60 00000000`00000000     : ffffc80d`0801e000 ffffc80d`08018000 00000000`00000000 00000000`00000000 : nt!KiStartSystemThread+0x28
+
+
+SYMBOL_NAME:  dxgmms2!VIDMM_GLOBAL::UpdatePageTable+df2
+
+MODULE_NAME: dxgmms2
+
+IMAGE_NAME:  dxgmms2.sys
+
+IMAGE_VERSION:  10.0.19041.2913
+
+STACK_COMMAND: .process /r /p 0xffffb58d09eb1040; .thread 0xffffb58d136df040 ; kb
+
+FAILURE_BUCKET_ID:  0x10e_b_IMAGE_dxgmms2.sys
+
+OS_VERSION:  10.0.19041.1
+
+BUILDLAB_STR:  vb_release
+
+OSPLATFORM_TYPE:  x64
+
+OSNAME:  Windows 10
+
+FAILURE_ID_HASH:  {4fd03b24-f44f-cfa9-5549-3a5623f2c263}
+
+Followup:     MachineOwner
+---------
+
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Kernel.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Usb4Kd.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'

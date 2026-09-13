@@ -86,28 +86,15 @@ $principal = [Security.Principal.WindowsPrincipal]::new($identity)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw '-Execute exige PowerShell elevado.'
 }
-$watchdogPath = Join-Path $EvidenceDir 'watchdog-state.json'
-if (-not (Test-Path -LiteralPath $watchdogPath -PathType Leaf)) {
-    throw 'watchdog-state.json ausente.'
+$safeGuardAuditScript = Join-Path $root 'tools\assert-bc250-safe-bind-guard.ps1'
+$safeGuardRaw = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+    $safeGuardAuditScript -EvidenceDir $EvidenceDir `
+    -RequiredRemainingSeconds ($TimeoutSeconds + 10) 2>&1) -join "`n"
+if ($LASTEXITCODE -ne 0) {
+    throw "Guardiao SYSTEM nao comprovado:`n$safeGuardRaw"
 }
-$watchdog = Get-Content -LiteralPath $watchdogPath -Raw | ConvertFrom-Json
-if ([string]$watchdog.state -ne 'ARMED') { throw 'Watchdog nao esta ARMED.' }
-$watchdogProcess = @(Get-CimInstance Win32_Process | Where-Object {
-    [string]$_.CommandLine -match 'watch-bc250mcdm-lab\.ps1' -and
-    [string]$_.CommandLine -match [regex]::Escape($EvidenceDir)
-})
-if ($watchdogProcess.Count -ne 1) { throw 'Processo exato do watchdog nao esta vivo.' }
-$watchdogSeconds = 0
-if ([string]$watchdog.detail -notmatch '(?i)in\s+(\d+)\s+seconds' -or
-    -not [int]::TryParse($Matches[1], [ref]$watchdogSeconds)) {
-    throw 'Prazo do watchdog nao pode ser provado.'
-}
-$watchdogArmedAt = [datetime]::Parse([string]$watchdog.timestamp)
-$watchdogRemaining = $watchdogSeconds - ((Get-Date) - $watchdogArmedAt).TotalSeconds
-if ($watchdogRemaining -lt ($TimeoutSeconds + 10)) {
-    throw ("Restam somente {0:N1}s de watchdog; exigidos {1}s." -f
-        $watchdogRemaining, ($TimeoutSeconds + 10))
-}
+$watchdog = $safeGuardRaw | ConvertFrom-Json
+$watchdogRemaining = [double]$watchdog.remaining_seconds
 $device = @(Get-CimInstance Win32_PnPEntity | Where-Object {
     $_.PNPDeviceID -like 'PCI\VEN_1002&DEV_13FE*'
 })

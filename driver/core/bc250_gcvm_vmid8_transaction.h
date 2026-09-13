@@ -16,6 +16,14 @@ typedef UINT32 uint32_t;
 extern "C" {
 #endif
 
+#define BC250_GCVM_USER_VMID 7u
+#define BC250_GCVM_VMID7_CNTL        0x0000A21Cu
+#define BC250_GCVM_VMID7_PT_BASE_LO  0x0000A3E4u
+#define BC250_GCVM_VMID7_PT_BASE_HI  0x0000A3E8u
+#define BC250_GCVM_VMID7_PT_START_LO 0x0000A464u
+#define BC250_GCVM_VMID7_PT_START_HI 0x0000A468u
+#define BC250_GCVM_VMID7_PT_END_LO   0x0000A4E4u
+#define BC250_GCVM_VMID7_PT_END_HI   0x0000A4E8u
 #define BC250_GCVM_VMID8 8u
 /* P1: docs/03, GC_BASE[0]=0x1260, gc_10_1_0_offset.h, BASE_IDX=0. */
 #define BC250_GCVM_COMPUTE_VMID 9u
@@ -181,6 +189,14 @@ typedef struct BC250_GCVM_COMPUTE_BINDING {
     uint64_t Root;
 } BC250_GCVM_COMPUTE_BINDING;
 
+static __inline uint32_t Bc250GcvmIsUserRegister(uint32_t Offset)
+{
+    return Offset == BC250_GCVM_VMID7_CNTL ||
+        Offset == BC250_GCVM_VMID7_PT_BASE_LO || Offset == BC250_GCVM_VMID7_PT_BASE_HI ||
+        Offset == BC250_GCVM_VMID7_PT_START_LO || Offset == BC250_GCVM_VMID7_PT_START_HI ||
+        Offset == BC250_GCVM_VMID7_PT_END_LO || Offset == BC250_GCVM_VMID7_PT_END_HI;
+}
+
 static __inline uint32_t Bc250GcvmIsComputeRegister(uint32_t Offset)
 {
     return Offset == BC250_GCVM_VMID9_CNTL ||
@@ -204,6 +220,12 @@ BC250_GCVM_VMID8_STATUS Bc250RunGcvmVmid8InertTransaction(
     uint64_t PageTablePhysical,
     const BC250_GCVM_VMID8_INTERFACE *Interface,
     BC250_GCVM_VMID8_EVIDENCE *Evidence);
+
+BC250_GCVM_VMID8_STATUS Bc250GcvmInstallVmid(
+    uint32_t Vmid,
+    uint64_t PageTablePhysical,
+    const BC250_GCVM_VMID8_INTERFACE *Interface,
+    BC250_GCVM_VMID8_INSTALL_EVIDENCE *Evidence);
 
 BC250_GCVM_VMID8_STATUS Bc250GcvmVmid8Install(
     uint64_t PageTablePhysical,

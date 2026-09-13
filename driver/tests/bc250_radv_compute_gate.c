@@ -307,11 +307,21 @@ int main(int argc, char **argv)
     GateStage("before vkGetPhysicalDeviceQueueFamilyProperties(data)");
     vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, families);
     GateStage("after vkGetPhysicalDeviceQueueFamilyProperties(data)");
+    uint32_t dedicated_compute = UINT32_MAX;
+    uint32_t any_compute = UINT32_MAX;
     for (index = 0; index < count; ++index) {
         if ((families[index].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0u) {
-            queue_family = index;
-            break;
+            if (any_compute == UINT32_MAX) any_compute = index;
+            if ((families[index].queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0u) {
+                dedicated_compute = index;
+                break;
+            }
         }
+    }
+    queue_family = (dedicated_compute != UINT32_MAX) ? dedicated_compute : any_compute;
+    if (queue_family != UINT32_MAX) {
+        printf("queue_family_index=%u queue_flags=0x%08X (dedicated_compute=%u any_compute=%u)\n",
+               queue_family, families[queue_family].queueFlags, dedicated_compute, any_compute);
     }
     free(families);
     if (queue_family == UINT32_MAX) goto cleanup;
@@ -389,7 +399,18 @@ int main(int argc, char **argv)
     VK_CHECK(vkAllocateMemory(device, &memory_info, NULL, &memory));
     VK_CHECK(vkBindBufferMemory(device, buffer, memory, 0));
     VK_CHECK(vkMapMemory(device, memory, 0, 4096, 0, &mapped));
+    memset(mapped, 0, 4096);
+    if (*(volatile uint32_t *)mapped != 0u) {
+        fprintf(stderr, "buffer zero precheck failed: observed=0x%08X\n",
+                *(volatile uint32_t *)mapped);
+        goto cleanup;
+    }
     *(volatile uint32_t *)mapped = BC250_POISON;
+    if (*(volatile uint32_t *)mapped != BC250_POISON) {
+        fprintf(stderr, "buffer poison precheck failed: observed=0x%08X expected=0x%08X\n",
+                *(volatile uint32_t *)mapped, BC250_POISON);
+        goto cleanup;
+    }
 
     VkDescriptorSetLayoutBinding binding = {0};
     VkDescriptorSetLayoutCreateInfo descriptor_layout_info =

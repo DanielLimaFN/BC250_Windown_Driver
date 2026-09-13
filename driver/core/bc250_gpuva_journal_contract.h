@@ -4,7 +4,18 @@
 #include "bc250_gpuva_snapshot_contract.h"
 
 #define BC250_GPUVA_JOURNAL_SIGNATURE 0x4A415647u /* "GVAJ" */
-#define BC250_GPUVA_JOURNAL_MAX_CHANGES 256u
+/*
+ * C3.15 elevou o envelope depois de medir 461 runs. A corrida 18:45 refutou
+ * a premissa de que bastava dimensionar pelo maior UpdatePT: houve 239
+ * NO_SPACE com 1024, enquanto o snapshot final atingiu somente 876 ranges.
+ *
+ * C3.16 mantem o mesmo envelope do snapshot, mas o journal agora faz overlay:
+ * updates mais novos substituem intervalos antigos antes do commit. Assim a
+ * capacidade mede o ESTADO FINAL ainda publicavel, nao o historico bruto de
+ * chamadas do VidMm. Se o estado final exceder 1024, a transacao inteira e'
+ * abortada; nenhum prefixo pode ficar pronto para publicacao.
+ */
+#define BC250_GPUVA_JOURNAL_MAX_CHANGES 1024u
 
 typedef enum BC250_GPUVA_JOURNAL_STATUS {
     BC250_GPUVA_JOURNAL_OK = 0,
@@ -37,6 +48,41 @@ typedef struct BC250_GPUVA_JOURNAL {
     BC250_GPUVA_RANGE_RECORD Changes[BC250_GPUVA_JOURNAL_MAX_CHANGES];
     uint32_t MapChanges[BC250_GPUVA_JOURNAL_MAX_CHANGES];
 } BC250_GPUVA_JOURNAL;
+
+/*
+ * C3.9 (12/09) -- VISTA POR PROCESSO DO JOURNAL.
+ *
+ * Bc250GpuvaJournalSetAnyPending responde "algum slot do adaptador esta
+ * pendente?". O portao do Node 1 usava essa resposta global, e por isso
+ * fechava sempre que QUALQUER processo estivesse paginando.
+ *
+ * Medido na corrida 12/09 13:29: com o dwm.exe vivo por 3 min 13 s (o que so'
+ * acontece com D3D11LabPromotion armado), o journal nunca drena, o gate ficou
+ * em BlockMask=0x1 (JOURNAL) e a submissao de compute do RADV foi RECUSADA --
+ * o shader nao escreveu e o byte proof leu poison 0x43DAFFFE. Ou seja: compute
+ * e desktop nao coexistiam por causa da GRANULARIDADE do gate, nao por causa
+ * do hardware.
+ *
+ * Cada slot ja carrega o Process dono. A vista por processo apenas usa um dado
+ * que sempre esteve la'.
+ */
+
+/* Pendencia restrita ao processo indicado. Process==NULL responde 0. */
+uint32_t Bc250GpuvaJournalSetAnyPendingForProcess(
+    const BC250_GPUVA_JOURNAL *Journals,
+    uint32_t JournalCount,
+    BC250_MCDM_HANDLE Process);
+
+/*
+ * Telemetria: mascara de bits dos slots pendentes (bit i = slot i) e contagem.
+ * Existe para que a proxima corrida diga QUEM segura o journal, em vez de so'
+ * dizer que alguem segura. Nao decide nada.
+ */
+uint32_t Bc250GpuvaJournalSetDescribePending(
+    const BC250_GPUVA_JOURNAL *Journals,
+    uint32_t JournalCount,
+    uint32_t *PendingSlotMask,
+    uint32_t *PendingCount);
 
 BC250_GPUVA_JOURNAL_STATUS Bc250GpuvaJournalInitialize(
     BC250_GPUVA_JOURNAL *Journal);

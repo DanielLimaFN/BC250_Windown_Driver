@@ -249,6 +249,16 @@ BOOLEAN (*__imp_KeCancelTimer)(PKTIMER) =
 VOID (*__imp_KeFlushQueuedDpcs)(VOID) =
     Bc250TestFlushQueuedDpcs;
 
+static BOOLEAN Bc250TestInsertQueueDpc(PKDPC Dpc, PVOID SystemArgument1, PVOID SystemArgument2)
+{
+    UNREFERENCED_PARAMETER(Dpc);
+    UNREFERENCED_PARAMETER(SystemArgument1);
+    UNREFERENCED_PARAMETER(SystemArgument2);
+    return TRUE;
+}
+BOOLEAN (*__imp_KeInsertQueueDpc)(PKDPC, PVOID, PVOID) =
+    Bc250TestInsertQueueDpc;
+
 static VOID Bc250TestStallExecutionProcessor(ULONG Microseconds)
 {
     UNREFERENCED_PARAMETER(Microseconds);
@@ -1921,7 +1931,107 @@ static int Bc250RunActiveMiniportTest(void)
             allocationInfo[0].SupportedReadSegmentSet == 1u &&
             allocationInfo[0].SupportedWriteSegmentSet == 1u &&
             allocationInfo[0].PreferredSegment.SegmentId0 == 1u &&
-            allocationInfo[0].FlagsWddm2.CpuVisible == 1u);
+            allocationInfo[0].FlagsWddm2.CpuVisible == 0u);
+
+        /* Verify primary allocation gets CpuVisible = 1u and AccessedPhysically = 1u */
+        {
+            DXGKARG_CREATEALLOCATION createPrimary;
+            DXGK_ALLOCATIONINFO primaryInfo;
+            BC250_ALLOCATION_PRIVATE_V1 primaryPrivate;
+            memset(&createPrimary, 0, sizeof(createPrimary));
+            memset(&primaryInfo, 0, sizeof(primaryInfo));
+            memset(&primaryPrivate, 0, sizeof(primaryPrivate));
+            primaryPrivate.Magic = BC250_ALLOCATION_PRIVATE_MAGIC;
+            primaryPrivate.Version = BC250_ALLOCATION_PRIVATE_VERSION;
+            primaryPrivate.StructSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
+            primaryPrivate.AllocationToken =
+                ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_PRIMARY << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x99u;
+            primaryPrivate.ByteSize = 65536u;
+            primaryPrivate.Alignment = 4096u;
+            primaryInfo.pPrivateDriverData = &primaryPrivate;
+            primaryInfo.PrivateDriverDataSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
+            createPrimary.NumAllocations = 1u;
+            createPrimary.pAllocationInfo = &primaryInfo;
+            createPrimary.Flags.Resource = 1u;
+            CHECK(initData.DxgkDdiCreateAllocation(activeCtx, &createPrimary) == STATUS_SUCCESS);
+            CHECK(primaryInfo.FlagsWddm2.CpuVisible == 1u);
+            CHECK(primaryInfo.FlagsWddm2.AccessedPhysically == 1u);
+        }
+
+        /* Verify staging allocation gets CpuVisible = 1u and AccessedPhysically = 0u */
+        {
+            DXGKARG_CREATEALLOCATION createStaging;
+            DXGK_ALLOCATIONINFO stagingInfo;
+            BC250_ALLOCATION_PRIVATE_V1 stagingPrivate;
+            memset(&createStaging, 0, sizeof(createStaging));
+            memset(&stagingInfo, 0, sizeof(stagingInfo));
+            memset(&stagingPrivate, 0, sizeof(stagingPrivate));
+            stagingPrivate.Magic = BC250_ALLOCATION_PRIVATE_MAGIC;
+            stagingPrivate.Version = BC250_ALLOCATION_PRIVATE_VERSION;
+            stagingPrivate.StructSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
+            stagingPrivate.AllocationToken =
+                ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_STAGING << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x9Au;
+            stagingPrivate.ByteSize = 65536u;
+            stagingPrivate.Alignment = 4096u;
+            stagingInfo.pPrivateDriverData = &stagingPrivate;
+            stagingInfo.PrivateDriverDataSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
+            createStaging.NumAllocations = 1u;
+            createStaging.pAllocationInfo = &stagingInfo;
+            createStaging.Flags.Resource = 1u;
+            CHECK(initData.DxgkDdiCreateAllocation(activeCtx, &createStaging) == STATUS_SUCCESS);
+            CHECK(stagingInfo.FlagsWddm2.CpuVisible == 1u);
+            CHECK(stagingInfo.FlagsWddm2.AccessedPhysically == 0u);
+        }
+
+        /* Verify flag-based CPU visible allocation gets CpuVisible = 1u */
+        {
+            DXGKARG_CREATEALLOCATION createFlagVis;
+            DXGK_ALLOCATIONINFO flagVisInfo;
+            BC250_ALLOCATION_PRIVATE_V1 flagVisPrivate;
+            memset(&createFlagVis, 0, sizeof(createFlagVis));
+            memset(&flagVisInfo, 0, sizeof(flagVisInfo));
+            memset(&flagVisPrivate, 0, sizeof(flagVisPrivate));
+            flagVisPrivate.Magic = BC250_ALLOCATION_PRIVATE_MAGIC;
+            flagVisPrivate.Version = BC250_ALLOCATION_PRIVATE_VERSION;
+            flagVisPrivate.StructSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
+            flagVisPrivate.Flags = BC250_ALLOCATION_FLAG_CPU_VISIBLE;
+            flagVisPrivate.AllocationToken = 0xB550u;
+            flagVisPrivate.ByteSize = 65536u;
+            flagVisPrivate.Alignment = 4096u;
+            flagVisInfo.pPrivateDriverData = &flagVisPrivate;
+            flagVisInfo.PrivateDriverDataSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
+            createFlagVis.NumAllocations = 1u;
+            createFlagVis.pAllocationInfo = &flagVisInfo;
+            createFlagVis.Flags.Resource = 1u;
+            CHECK(initData.DxgkDdiCreateAllocation(activeCtx, &createFlagVis) == STATUS_SUCCESS);
+            CHECK(flagVisInfo.FlagsWddm2.CpuVisible == 1u);
+            CHECK(flagVisInfo.FlagsWddm2.AccessedPhysically == 0u);
+        }
+
+        /* Verify command buffer allocation gets CpuVisible = 1u */
+        {
+            DXGKARG_CREATEALLOCATION createCmd;
+            DXGK_ALLOCATIONINFO cmdInfo;
+            BC250_ALLOCATION_PRIVATE_V1 cmdPrivate;
+            memset(&createCmd, 0, sizeof(createCmd));
+            memset(&cmdInfo, 0, sizeof(cmdInfo));
+            memset(&cmdPrivate, 0, sizeof(cmdPrivate));
+            cmdPrivate.Magic = BC250_ALLOCATION_PRIVATE_MAGIC;
+            cmdPrivate.Version = BC250_ALLOCATION_PRIVATE_VERSION;
+            cmdPrivate.StructSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
+            cmdPrivate.AllocationToken =
+                ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_COMMAND << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x9Cu;
+            cmdPrivate.ByteSize = 65536u;
+            cmdPrivate.Alignment = 4096u;
+            cmdInfo.pPrivateDriverData = &cmdPrivate;
+            cmdInfo.PrivateDriverDataSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
+            createCmd.NumAllocations = 1u;
+            createCmd.pAllocationInfo = &cmdInfo;
+            createCmd.Flags.Resource = 1u;
+            CHECK(initData.DxgkDdiCreateAllocation(activeCtx, &createCmd) == STATUS_SUCCESS);
+            CHECK(cmdInfo.FlagsWddm2.CpuVisible == 1u);
+            CHECK(cmdInfo.FlagsWddm2.AccessedPhysically == 0u);
+        }
 
         memset(openInfo, 0, sizeof(openInfo));
         memset(&openAllocation, 0, sizeof(openAllocation));

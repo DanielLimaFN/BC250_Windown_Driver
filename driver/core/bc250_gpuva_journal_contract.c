@@ -24,25 +24,143 @@ static uint32_t Bc250GpuvaJournalEntriesAreContiguous(
     return 1u;
 }
 
-/* Mesma pergunta, entre um range ja' estagiado e a proxima PTE. */
-static uint32_t Bc250GpuvaJournalEntryExtendsChange(
-    const BC250_GPUVA_RANGE_RECORD *Change,
-    uint32_t ChangeIsMap,
-    uint64_t EntryGpuVa,
-    const BC250_GPUVA_JOURNAL_PTE *Entry)
+static uint32_t Bc250GpuvaJournalChangesAreContiguous(
+    const BC250_GPUVA_RANGE_RECORD *Previous,
+    uint32_t PreviousIsMap,
+    const BC250_GPUVA_RANGE_RECORD *Current,
+    uint32_t CurrentIsMap)
 {
-    uint32_t entryIsMap = Entry->Valid != 0u ? 1u : 0u;
-    if (Change->BaseGpuVa + Change->Size != EntryGpuVa) return 0u;
-    if ((ChangeIsMap != 0u) != (entryIsMap != 0u)) return 0u;
-    if (Change->Permissions != Entry->Permissions) return 0u;
-    if (Change->Allocation != Entry->Allocation) return 0u;
-    if (Change->OpenAllocation != Entry->OpenAllocation) return 0u;
-    if (entryIsMap == 0u) return 1u;
-    if (Change->BackingSegmentId != Entry->SegmentId) return 0u;
-    if (Change->BackingSegmentOffset + Change->Size != Entry->SegmentOffset) {
-        return 0u;
-    }
+    if (Previous->BaseGpuVa + Previous->Size != Current->BaseGpuVa) return 0u;
+    if ((PreviousIsMap != 0u) != (CurrentIsMap != 0u)) return 0u;
+    if (Previous->OwnerProcess != Current->OwnerProcess) return 0u;
+    if (Previous->Permissions != Current->Permissions) return 0u;
+    if (Previous->Allocation != Current->Allocation) return 0u;
+    if (Previous->OpenAllocation != Current->OpenAllocation) return 0u;
+    if (CurrentIsMap == 0u) return 1u;
+    if (Previous->BackingSegmentId != Current->BackingSegmentId) return 0u;
+    if (Previous->BackingSegmentOffset + Previous->Size !=
+        Current->BackingSegmentOffset) return 0u;
     return 1u;
+}
+
+static void Bc250GpuvaJournalRemoveChange(
+    BC250_GPUVA_JOURNAL *Journal,
+    uint32_t Index)
+{
+    uint32_t i;
+    for (i = Index + 1u; i < Journal->ChangeCount; ++i) {
+        Journal->Changes[i - 1u] = Journal->Changes[i];
+        Journal->MapChanges[i - 1u] = Journal->MapChanges[i];
+    }
+    --Journal->ChangeCount;
+}
+
+/*
+ * Aplica um range novo sobre o estado pendente. Os Changes ficam como
+ * intervalos finais nao sobrepostos. Isto evita que milhares de reescritas
+ * das mesmas PTEs consumam um slot novo por evento historico.
+ */
+static BC250_GPUVA_JOURNAL_STATUS Bc250GpuvaJournalOverlayChange(
+    BC250_GPUVA_JOURNAL *Journal,
+    const BC250_GPUVA_RANGE_RECORD *Incoming,
+    uint32_t IncomingIsMap)
+{
+    uint64_t incomingStart = Incoming->BaseGpuVa;
+    uint64_t incomingEnd = Incoming->BaseGpuVa + Incoming->Size;
+    uint32_t projected = Journal->ChangeCount + 1u;
+    uint32_t i;
+
+    /* Primeiro prova que o estado FINAL cabe; nenhuma mutacao parcial. */
+    for (i = 0u; i < Journal->ChangeCount; ++i) {
+        const BC250_GPUVA_RANGE_RECORD *old = &Journal->Changes[i];
+        uint64_t oldStart = old->BaseGpuVa;
+        uint64_t oldEnd = old->BaseGpuVa + old->Size;
+        if (oldEnd <= incomingStart || oldStart >= incomingEnd) continue;
+        if (oldStart >= incomingStart && oldEnd <= incomingEnd) {
+            --projected; /* o novo range cobre este por inteiro */
+        } else if (oldStart < incomingStart && oldEnd > incomingEnd) {
+            ++projected; /* o antigo vira duas pontas */
+        }
+    }
+    if (projected > BC250_GPUVA_JOURNAL_MAX_CHANGES) {
+        return BC250_GPUVA_JOURNAL_NO_SPACE;
+    }
+
+    /* Libera primeiro os slots totalmente cobertos para os splits seguintes. */
+    for (i = 0u; i < Journal->ChangeCount; ) {
+        BC250_GPUVA_RANGE_RECORD *old = &Journal->Changes[i];
+        uint64_t oldStart = old->BaseGpuVa;
+        uint64_t oldEnd = old->BaseGpuVa + old->Size;
+        if (oldStart >= incomingStart && oldEnd <= incomingEnd) {
+            Bc250GpuvaJournalRemoveChange(Journal, i);
+            continue;
+        }
+        ++i;
+    }
+
+    for (i = 0u; i < Journal->ChangeCount; ++i) {
+        BC250_GPUVA_RANGE_RECORD *old = &Journal->Changes[i];
+        uint64_t oldStart = old->BaseGpuVa;
+        uint64_t oldEnd = old->BaseGpuVa + old->Size;
+        if (oldEnd <= incomingStart || oldStart >= incomingEnd) continue;
+
+        if (oldStart < incomingStart && oldEnd > incomingEnd) {
+            BC250_GPUVA_RANGE_RECORD right = *old;
+            uint32_t oldIsMap = Journal->MapChanges[i];
+            uint32_t j;
+            right.BaseGpuVa = incomingEnd;
+            right.Size = oldEnd - incomingEnd;
+            if (oldIsMap != 0u) {
+                right.BackingSegmentOffset += incomingEnd - oldStart;
+            }
+            old->Size = incomingStart - oldStart;
+            for (j = Journal->ChangeCount; j > i + 1u; --j) {
+                Journal->Changes[j] = Journal->Changes[j - 1u];
+                Journal->MapChanges[j] = Journal->MapChanges[j - 1u];
+            }
+            Journal->Changes[i + 1u] = right;
+            Journal->MapChanges[i + 1u] = oldIsMap;
+            ++Journal->ChangeCount;
+        } else if (oldStart < incomingStart) {
+            old->Size = incomingStart - oldStart;
+        } else {
+            uint64_t consumed = incomingEnd - oldStart;
+            old->BaseGpuVa = incomingEnd;
+            old->Size = oldEnd - incomingEnd;
+            if (Journal->MapChanges[i] != 0u) {
+                old->BackingSegmentOffset += consumed;
+            }
+        }
+    }
+
+    /* A lista ja e' ordenada; insere o novo range na posicao definitiva. */
+    {
+        uint32_t insert = 0u;
+        uint32_t j;
+        while (insert < Journal->ChangeCount &&
+               Journal->Changes[insert].BaseGpuVa < incomingStart) {
+            ++insert;
+        }
+        for (j = Journal->ChangeCount; j > insert; --j) {
+            Journal->Changes[j] = Journal->Changes[j - 1u];
+            Journal->MapChanges[j] = Journal->MapChanges[j - 1u];
+        }
+        Journal->Changes[insert] = *Incoming;
+        Journal->MapChanges[insert] = IncomingIsMap;
+        ++Journal->ChangeCount;
+    }
+    /* Funde vizinhos equivalentes. MAX=1024 e custo linear por run. */
+    for (i = 1u; i < Journal->ChangeCount; ) {
+        if (Bc250GpuvaJournalChangesAreContiguous(
+                &Journal->Changes[i - 1u], Journal->MapChanges[i - 1u],
+                &Journal->Changes[i], Journal->MapChanges[i])) {
+            Journal->Changes[i - 1u].Size += Journal->Changes[i].Size;
+            Bc250GpuvaJournalRemoveChange(Journal, i);
+            continue;
+        }
+        ++i;
+    }
+    return BC250_GPUVA_JOURNAL_OK;
 }
 
 BC250_GPUVA_JOURNAL_STATUS Bc250GpuvaJournalInitialize(
@@ -78,6 +196,50 @@ uint32_t Bc250GpuvaJournalSetAnyPending(
         }
     }
     return 0u;
+}
+
+uint32_t Bc250GpuvaJournalSetAnyPendingForProcess(
+    const BC250_GPUVA_JOURNAL *Journals,
+    uint32_t JournalCount,
+    BC250_MCDM_HANDLE Process)
+{
+    uint32_t i;
+    if (Journals == NULL || Process == NULL) return 0u;
+    for (i = 0u; i < JournalCount; ++i) {
+        if (Journals[i].Signature == BC250_GPUVA_JOURNAL_SIGNATURE &&
+            Journals[i].Pending != 0u &&
+            Journals[i].Process == Process) {
+            return 1u;
+        }
+    }
+    return 0u;
+}
+
+uint32_t Bc250GpuvaJournalSetDescribePending(
+    const BC250_GPUVA_JOURNAL *Journals,
+    uint32_t JournalCount,
+    uint32_t *PendingSlotMask,
+    uint32_t *PendingCount)
+{
+    uint32_t i;
+    uint32_t mask = 0u;
+    uint32_t count = 0u;
+
+    if (PendingSlotMask != NULL) *PendingSlotMask = 0u;
+    if (PendingCount != NULL) *PendingCount = 0u;
+    if (Journals == NULL) return 0u;
+
+    for (i = 0u; i < JournalCount; ++i) {
+        if (Journals[i].Signature == BC250_GPUVA_JOURNAL_SIGNATURE &&
+            Journals[i].Pending != 0u) {
+            if (i < 32u) mask |= (1u << i);
+            ++count;
+        }
+    }
+
+    if (PendingSlotMask != NULL) *PendingSlotMask = mask;
+    if (PendingCount != NULL) *PendingCount = count;
+    return (count != 0u) ? 1u : 0u;
 }
 
 BC250_GPUVA_JOURNAL *Bc250GpuvaJournalSetSelect(
@@ -199,42 +361,6 @@ BC250_GPUVA_JOURNAL_STATUS Bc250GpuvaJournalStageLeafUpdate(
             return BC250_GPUVA_JOURNAL_BAD_ARGUMENT;
         }
     }
-    /*
-     * Contagem de RUNS, nao de paginas.
-     *
-     * Antes, cada PTE virava um BC250_GPUVA_RANGE_RECORD proprio, e a
-     * capacidade era conferida em paginas. Isso torna o journal inutil sob
-     * WDDM real: a primary allocation de 2560x1080x4 sao 2700 paginas contra
-     * um teto de 256, e o CommitFlush publica esses mesmos registros em
-     * BC250_GPUVA_SPACE, que tambem tem 256 ranges. Um primary sozinho
-     * estourava os dois.
-     *
-     * Paginas contiguas em VA, com as mesmas permissoes, o mesmo segmento, a
-     * mesma allocation e offset de segmento consecutivo descrevem UM range.
-     * Uma allocation fisicamente contigua colapsa para 1 registro, que e'
-     * exatamente o que o BC250_GPUVA_RANGE_RECORD (BaseGpuVa + Size) sempre
-     * modelou.
-     */
-    {
-        uint32_t runsNeeded = 0u;
-        uint32_t mergesWithTail =
-            (Journal->Pending != 0u && Journal->ChangeCount != 0u &&
-             Bc250GpuvaJournalEntryExtendsChange(
-                 &Journal->Changes[Journal->ChangeCount - 1u],
-                 Journal->MapChanges[Journal->ChangeCount - 1u],
-                 FirstGpuVa, &Entries[0])) ? 1u : 0u;
-        for (index = 0u; index < EntryCount; ++index) {
-            if (index == 0u) {
-                if (mergesWithTail == 0u) ++runsNeeded;
-            } else if (!Bc250GpuvaJournalEntriesAreContiguous(
-                           &Entries[index - 1u], &Entries[index])) {
-                ++runsNeeded;
-            }
-        }
-        if (runsNeeded > BC250_GPUVA_JOURNAL_MAX_CHANGES - Journal->ChangeCount) {
-            return BC250_GPUVA_JOURNAL_NO_SPACE;
-        }
-    }
     if (Journal->Pending == 0u) {
         Journal->Process = Process;
         Journal->ExpectedRootPageTable = ExpectedRootPageTable;
@@ -245,34 +371,43 @@ BC250_GPUVA_JOURNAL_STATUS Bc250GpuvaJournalStageLeafUpdate(
         if (FirstGpuVa < Journal->MinimumGpuVa) Journal->MinimumGpuVa = FirstGpuVa;
         if (updateEnd > Journal->MaximumGpuVa) Journal->MaximumGpuVa = updateEnd;
     }
-    for (index = 0u; index < EntryCount; ++index) {
+    /*
+     * C3.16: primeiro colapsa cada sequencia contigua em um run; depois aplica
+     * esse run por SOBREPOSICAO ao estado pendente. O journal passa a guardar
+     * o delta FINAL, nao o historico de todas as reescritas recebidas antes do
+     * FlushTlb. A corrida 18:45 acumulou ate 17.471 entradas historicas, mas o
+     * snapshot final nunca passou de 876 ranges.
+     */
+    for (index = 0u; index < EntryCount; ) {
         const BC250_GPUVA_JOURNAL_PTE *entry = &Entries[index];
-        uint64_t entryVa =
-            FirstGpuVa + ((uint64_t)index * BC250_GPUVA_PAGE_BYTES);
-        BC250_GPUVA_RANGE_RECORD *change;
-
-        if (Journal->ChangeCount != 0u &&
-            Bc250GpuvaJournalEntryExtendsChange(
-                &Journal->Changes[Journal->ChangeCount - 1u],
-                Journal->MapChanges[Journal->ChangeCount - 1u],
-                entryVa, entry)) {
-            Journal->Changes[Journal->ChangeCount - 1u].Size +=
-                BC250_GPUVA_PAGE_BYTES;
-            continue;
+        BC250_GPUVA_RANGE_RECORD incoming;
+        BC250_GPUVA_JOURNAL_STATUS overlayStatus;
+        uint32_t runPages = 1u;
+        while (index + runPages < EntryCount &&
+               Bc250GpuvaJournalEntriesAreContiguous(
+                   &Entries[index + runPages - 1u],
+                   &Entries[index + runPages])) {
+            ++runPages;
         }
 
-        change = &Journal->Changes[Journal->ChangeCount];
-        memset(change, 0, sizeof(*change));
-        change->BaseGpuVa = entryVa;
-        change->Size = BC250_GPUVA_PAGE_BYTES;
-        change->OwnerProcess = Process;
-        change->Allocation = entry->Allocation;
-        change->OpenAllocation = entry->OpenAllocation;
-        change->BackingSegmentId = entry->SegmentId;
-        change->BackingSegmentOffset = entry->SegmentOffset;
-        change->Permissions = entry->Permissions;
-        Journal->MapChanges[Journal->ChangeCount] = entry->Valid != 0u ? 1u : 0u;
-        ++Journal->ChangeCount;
+        memset(&incoming, 0, sizeof(incoming));
+        incoming.BaseGpuVa = FirstGpuVa +
+            ((uint64_t)index * BC250_GPUVA_PAGE_BYTES);
+        incoming.Size = (uint64_t)runPages * BC250_GPUVA_PAGE_BYTES;
+        incoming.OwnerProcess = Process;
+        incoming.Allocation = entry->Allocation;
+        incoming.OpenAllocation = entry->OpenAllocation;
+        incoming.BackingSegmentId = entry->SegmentId;
+        incoming.BackingSegmentOffset = entry->SegmentOffset;
+        incoming.Permissions = entry->Permissions;
+        overlayStatus = Bc250GpuvaJournalOverlayChange(Journal, &incoming,
+            entry->Valid != 0u ? 1u : 0u);
+        if (overlayStatus != BC250_GPUVA_JOURNAL_OK) {
+            /* Nunca deixe um prefixo parcial apto a publicar. */
+            Bc250GpuvaJournalAbort(Journal);
+            return overlayStatus;
+        }
+        index += runPages;
     }
     return BC250_GPUVA_JOURNAL_OK;
 }

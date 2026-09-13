@@ -103,6 +103,7 @@ $evidenceDir = Join-Path $root "docs\evidence\$stamp-$($env:COMPUTERNAME)-render
 New-Item -ItemType Directory -Path $evidenceDir | Out-Null
 $token = [guid]::NewGuid().ToString('D')
 $taskName = 'BC250-SafeBindGuard'
+$deadlineTaskName = 'BC250-SafeBindDeadline'
 $guardDir = 'C:\BC250_SAFE_GUARD'
 $guardScript = Join-Path $guardDir 'watch-bc250mcdm-safe-bind.ps1'
 $configPath = Join-Path $guardDir 'armed.json'
@@ -111,9 +112,12 @@ New-Item -ItemType Directory -Path $guardDir -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'watch-bc250mcdm-safe-bind.ps1') `
     -Destination $guardScript -Force
 
+$armedAtUtc = [datetime]::UtcNow
+$deadlineUtc = $armedAtUtc.AddSeconds($WatchdogTimeoutSeconds)
 $guardConfig = [ordered]@{
     schema_version = 1
     task_name = $taskName
+    deadline_task_name = $deadlineTaskName
     token = $token
     instance_id = [string]$device.PNPDeviceID
     timeout_seconds = $WatchdogTimeoutSeconds
@@ -125,7 +129,8 @@ $guardConfig = [ordered]@{
     expected_driver_version = [string]$manifest.DriverVer
     candidate_id = [string]$manifest.CandidateId
     armed_boot_ticks = [long](Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks
-    armed_at = (Get-Date).ToString('o')
+    armed_at_utc_ticks = [long]$armedAtUtc.Ticks
+    deadline_utc_ticks = [long]$deadlineUtc.Ticks
     hardware_validated = $false
     automatic_recovery_reboot = $true
 }
@@ -134,6 +139,7 @@ $guardConfig | ConvertTo-Json -Depth 5 | Set-Content `
     -LiteralPath (Join-Path $evidenceDir 'safe-bind-watchdog-config.json') -Encoding UTF8
 
 Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName $deadlineTaskName -Confirm:$false -ErrorAction SilentlyContinue
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument `
     "-NoProfile -ExecutionPolicy Bypass -File `"$guardScript`" -ConfigPath `"$configPath`" -Execute"
 $trigger = New-ScheduledTaskTrigger -AtStartup
@@ -142,6 +148,11 @@ $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minu
     -MultipleInstances IgnoreNew -StartWhenAvailable
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
     -Principal $principalTask -Settings $settings -Force | Out-Null
+$deadlineAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument `
+    "-NoProfile -ExecutionPolicy Bypass -File `"$guardScript`" -ConfigPath `"$configPath`" -Execute -DeadlineEnforcer"
+$deadlineTrigger = New-ScheduledTaskTrigger -Once -At $deadlineUtc.ToLocalTime()
+Register-ScheduledTask -TaskName $deadlineTaskName -Action $deadlineAction `
+    -Trigger $deadlineTrigger -Principal $principalTask -Settings $settings -Force | Out-Null
 Start-ScheduledTask -TaskName $taskName
 $guardDeadline = (Get-Date).AddSeconds(10)
 do {
@@ -154,6 +165,7 @@ do {
     (Get-Date) -ge $guardDeadline)
 if ($null -eq $guardState -or [string]$guardState.state -ne 'OBSERVING') {
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $deadlineTaskName -Confirm:$false -ErrorAction SilentlyContinue
     throw 'Recusado: watchdog SYSTEM nao entrou em OBSERVING antes do bind.'
 }
 

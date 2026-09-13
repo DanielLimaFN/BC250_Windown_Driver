@@ -30,13 +30,13 @@ Se você a atualizar, cada número deve ter evidência em `docs/evidence/`.
 
 ```text
 ================================== STATUS DO DRIVER BC-250 ==================================
-Base Geral Pre-WDDM (Lab)        ██████████████████▋░  93%   Estavel e Isolado
-SDMA (DMA Engine & Robustez)     ████████████████████  98%   B1 FECHADO: IB WDDM real sob VMID8 com TRIPE completo (5 canarios); wrap do anel causou 0x119
-GCVM & Traducao de Memoria       ███████████████████░  95%   MMU global 26 regs, GPUVA de IB resolvida no silicio, Generation=54; Node1 nao provado
+Base Geral Pre-WDDM (Lab)        ███████████████████░  94%   Estavel; 3 corridas em 12/09 sem BugCheck, fusivel CLEAN em todas
+SDMA (DMA Engine & Robustez)     ████████████████████  99%   PRESENT 100% GPU (12/09 13:01): 584 blts, Fallbacks=0, HostCpuCopies=0, 1,37 ms/blt
+GCVM & Traducao de Memoria       ███████████████████░  96%   Conversao segmento->MC em fonte unica e VALIDADA (SegBase=0xA8C000); ABERTO: GFXHUB_FAULT 00841B40 no IB de 11 MB
 RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
-Telemetria & Observabilidade     ██████████████████░░  90%   B2 FECHADO: logs da UMD coletados no lab; dwm.exe E_NOTIMPL provado no silicio (P0)
-Compute & Async Queues (MEC/MQD) ██████████████████░░  90%   P1 17/17 e P2 16/16 provados; 1º submit Node1 no silicio (WPTR 204->216); tripe Node1 falhou (disputa VMID8)
-Miniport WDDM Display+Render     ███████████████▋░░░░  78%   08/09: lab tambem comita -- CommitVidPn + SetVidPnSourceAddress + 60 GetStdAlloc + 367 VSYNC; duas paredes viraram UMA (D3D10/11); tela preta
+Telemetria & Observabilidade     ███████████████████▍  97%   C3 pagou na 1a tentativa: HostCpuCopies e no_host_copy_fallback pegaram present por CPU que parecia vitoria
+Compute & Async Queues (MEC/MQD) ██████████████████▋░  93%   RADV compute e present validados; 584 quadros consecutivos, Sub==Ret em todas as corridas
+Miniport WDDM Display+Render     █████████████████▌░░  88%   Quadro Vulkan chega ao monitor POR GPU; ABERTO: DEVICE_REMOVED 0,46 s apos o 7o crash do dwm.exe
 =============================================================================================
 Veredito Global: a corrida de 06/09 20:34 validou a correcao da root SegmentId=1, Offset=0.
 Os IBs de paginacao 0x22F000/20 tiveram snapshot Status=0 e caminhada CPU/PT coincidente.
@@ -572,6 +572,747 @@ build-umd EXIT=0, 17 portoes de seguranca PASS.
 PACOTE LAB 3.94.2.0 assinado e auditado (SYS 8CA949DC, UMD 35FBD781, CAT 5FB2E86E).
 NADA DA FAIXA B7.1 FOI VALIDADO EM HARDWARE.
 Handoff: docs/205_HANDOFF_2026-09-08_15-18_B2_PROVADO_E_MAPALLOCATION_PENDING.md
+=============================================================================================
+CORRIDA 10/09 11:22 (P0, lab 3.126.1.0) e AUDITORIA de 10/09 que corrigiu o enquadramento dela.
+NOTA DE MANUTENCAO: esta barra estava parada em 08/09; as corridas de 09 e 10/09 entraram na
+BASE_DE_AVANCO.md e nao aqui. O detalhe completo delas esta lá; aqui fica o que manda no veredito.
+PROVADO NO SILICIO (P0): (1) a PAREDE UNICA DO D3D11 CAIU -- dwm.exe (pid 1204), Explorer.EXE
+(5220) e dxgiadaptercache.exe (1964) carregaram a bc250umd.dll e receberam "OpenAdapter10_2:
+Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)"; (2) OpenAllocation fechou --
+41/41 e 29/29 em status 0 nos binds 11:10 e 11:21, contra 5.745 falhas em 7.154 chamadas no bind
+09:34; (3) 769 submissoes INDIRECT consecutivas com 12 voltas completas do anel SDMA; (4) a causa
+raiz do BugCheck 0x119 no FenceId=770 e' VISIBILIDADE DE HDP, nao execucao -- RPTR=50244 =
+12*4096+1092 no writeback E no registrador, STATUS1=000003FF (engine OCIOSA), RPTR_SAMPLES plano
+por 200.000 polls, e FENCE_VISIBILIDADE antes_hdp=43DAFFFE depois_hdp=00001304 esperado=00001304.
+A fence apareceu NO FLUSH. O flush ativo no laco de poll (bc250_sdma_present.c) ataca a causa
+certa e teria saido no primeiro poll -- NAO VALIDADO EM HARDWARE.
+RETIRADO DO VEREDITO POR NAO SE SUSTENTAR: o "Marco Historico: desktop real D3D11 exibido no
+monitor" NAO ACONTECEU nesta corrida. As linhas Present #1 DESKTOP REAL DETECTADO e BYTE_PROOF
+PASS citadas estao no offset 8.161.041 do log cumulativo, dentro da janela do bind das 09:34
+(7.659.265..14.831.198); o bind das 11:22 (start_offset 15.009.172) teve 10 Presents, ZERO
+deteccao de desktop, ZERO BYTE_PROOF e ZERO SDMA=YES. Tres binds foram fundidos num so' marco.
+E o detector dispara com NonZero=1/256 -- 255 dos 256 dwords amostrados sao ZERO, e SCANOUT,
+PRIMARY e SLOT_WORD amostraram 0/256: frame preto com um dword nao-nulo. No bind das 11:10, com
+OpenAlloc 100% OK, foram 194 Presents e 10 blts, TODOS BYTE_PROOF INCONCLUSIVO (FRAME EM BRANCO),
+BlankStreak=4. E nenhum pixel veio do D3D11: o log da UMD do DWM nao tem UMA linha de Present,
+Flush ou blt; tem 1 "DrawIndexed: RECUSADO" e termina 2 s depois do load dentro de 4.159
+CheckMultisampleQualityLevels. A imagem distorcida vista pelo operador e' atribuivel a transicao
+de adaptador/BasicDisplay -- o MESMO engano ja cometido e corrigido em 07/09 18:16. O stride skew
+7680->10240 e' H, nao medicao.
+DIVIDA DISTINTA E ABERTA, que o flush de HDP NAO cobre: nos dois timeouts de 09/09 o RPTR congelou
+EXATAMENTE em IndirectEndDW (1056=264dw; 1568=392dw), o flush NAO revelou a fence (depois_hdp=
+43DAFFFE em 31 de 31 ocorrencias do corpo inteiro) e um deles trouxe GFXHUB_FAULT_SNAPSHOT
+STATUS=00841B40 ADDR=0x82C -- fault de traducao REAL. Os dois eram o IB pesado Fill=1/11.075.584.
+O caminho TIMEOUT -> STATUS_IO_DEVICE_ERROR -> 0x119 continua vivo para essa classe.
+FAIXA C1, OFFLINE -- o fallback de CPU no Draw foi REMOVIDO. Achado por leitura de codigo no
+candidato 3.126.1.0 ainda nao commitado: Bc250UmdCompositeDraw atendia pfnDraw e pfnDrawIndexed
+com um laco de memcpy entre os shadows de CPU, marcava handled=TRUE ANTES de tentar qualquer
+caminho de GPU e devolvia sucesso silencioso -- a linha honesta "DrawIndexed: RECUSADO" desaparecia
+e shader, VB, IB, topologia, blend e escala de viewport eram ignorados. E' fallback de software
+disfarcado de renderizacao (Lei 4) e tornaria INFALSIFICAVEL qualquer desktop na proxima corrida.
+AGRAVANTE: o bc250_d3d_umd_test.c EXIGIA esse memcpy, congelando a mentira -- TERCEIRA ocorrencia
+da classe (A15 obrigava a comparacao crua de RPTR; mcdm_callbacks_test exigia STATUS_SUCCESS sem
+executor de TDR). Agora: memcpy removido, Bc250UmdSubstituteDrawWithBlt em fonte unica com
+Bc250UmdBltGpu como UNICO produtor de pixel, elegibilidade por politica pura
+Bc250UmdDrawBltSubstitutionIsLawful (tunable armado + winsys + residencia + mesmas dimensoes +
+mesmo formato + viewport na origem cobrindo tudo + SEM blend, contando alpha-to-coverage e write
+mask parcial), fechada por DEFAULT pelo tunable D3D11DrawBltSubstitution, log declarando "Draw
+SUBSTITUIDO por copia 1:1 no SDMA -- NAO e' rasterizacao" e SubstitutedDrawCount contado SEPARADO
+de DrawCount. Substituicao por blt NAO e' rasterizacao: sem compilador nao se sabe se o PS ligado
+e' passe identidade, e afirmar equivalencia seria H apresentada como P0.
+ACHADO COLATERAL DA C1: a suite OFFLINE dependia do estado da MAQUINA. CreateDevice e
+GetCaps(Type=130) decidiam inline lendo HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion, que ficou em 1
+depois do bind das 11:21 -- com ela armada o bc250_d3d_umd_test.c reprovava em duas assercoes SEM
+NENHUMA MUDANCA DE CODIGO, o que REFUTA o "42/42 PASS" reportado. Extraida
+Bc250Umd3DPipelineIsDeclared como fonte unica das duas respostas; a suite testa a tabela pura nos
+quatro casos e assere o DDI por COERENCIA com o ambiente medido.
+FAIXA C2, OFFLINE -- a evidencia das corridas estava sendo PERDIDA. C:\BC250_DISPLAY_LOG.txt e'
+cumulativo e sobrevive a reboot, mas o binder o copia no FIM do roteiro; com BugCheck o watchdog
+nao roda e a pasta fica truncada SEM QUE NADA INDIQUE. Medido em 10/09: SEIS pastas truncadas --
+09:06 (123.676 bytes), 09:34 (6.934.920), 10:03 (65.987, sem arquivo), 10:23 (89.001, sem
+arquivo), 11:10 (177.974) e 11:21 (438.038, contendo o FenceId=770 e a prova de HDP). A primeira
+passada desta auditoria concluiu que a hipotese de HDP estava REFUTADA por analisar so' a pasta
+truncada; a prova estava em disco o tempo todo. Novo tools/recover-bc250mcdm-lost-tail.ps1 resgata
+o trecho com SHA-256 e proveniencia, delimitando o fim pelo start_offset do bind SEGUINTE quando
+existe e DECLARANDO no json quando nao existe; o binder passou a chama-lo ANTES de cada bind,
+depois de gravar o baseline novo. Ja executado: 6/6 pastas recuperadas.
+Testes: build-umd EXIT=0 com "C1 politica 9/9, Draw fail-closed sem memcpy e tokens unicos PASS",
+build-contract EXIT=0, quatro auditorias PASS, dois portoes novos (audit_draw_has_no_cpu_fallback
+e audit_lost_log_tail_is_recovered) e SEIS mutacoes verificadas.
+NADA DE C1/C2 FOI VALIDADO EM HARDWARE. Fusivel em TRIPPED (State=2, Boots=3): -Reset e boot frio
+antes de qualquer bind. Desarmar D3D11LabPromotion se nao for objetivo da corrida.
+A PROXIMA CORRIDA NAO DEVE PRODUZIR DESKTOP: com o Draw recusado honestamente e a substituicao
+desarmada, TELA PRETA e' o resultado esperado e correto; qualquer imagem que aparecer deve ser
+atribuida ao rollback/BasicDisplay ate prova em contrario.
+Auditoria: docs/234_AUDITORIA_2026-09-10_C1_DRAW_SEM_CPU_E_C2_EVIDENCIA_PERDIDA.md
+=============================================================================================
+CORRIDA 10/09 12:16 (P0, lab 3.127.1.0) -- FLUSH DE HDP VALIDADO NO SILICIO, e BugCheck 0x133.
+O criterio escrito ANTES da corrida foi CUMPRIDO: 1819 submissoes INDIRECT (1805 Fill=0/0 e 14
+Fill=1/4096), FenceId ate 5335, 84 voltas do anel, ZERO IB_TRIPOD TIMEOUT, ZERO IB NAO EXECUTADO,
+ZERO 0x119. Distribuicao de polls (n=1977): min 2, p50 3, p90 49, p99 180, MAX 181 -- contra
+MAX 164.167 e morte no FenceId 770 na corrida das 11:22. A linha FENCE_VISIBILIDADE nao aparece
+nenhuma vez, porque ela so' sai no caminho de timeout e nao houve timeout. A cauda ilimitada
+acabou.
+C1 VALIDADA EM HARDWARE: "DRAW_BLT_SUBSTITUTION: desarmado" e "DrawIndexed: RECUSADO --
+compilador/shader-state/draw PM4 ausente (Rejected=1)" no dwm.exe (pid 1220); dwm, Explorer.EXE
+(5304) e dxgiadaptercache.exe (10104) receberam S_OK (BC250 Native). TELA PRETA era o resultado
+ESPERADO E CORRETO -- Draw recusado honestamente, zero memcpy, zero sucesso silencioso.
+C2 VALIDADA EM HARDWARE: o arquivamento truncou em 15.725.444 e o resgate recuperou 3.492.427
+bytes (sha256 896A6811...), que contem a corrida INTEIRA. Sem a C2 esta analise nao existiria.
+PAREDE NOVA -- 0x133 DPC_WATCHDOG_VIOLATION (0x0, 0x501, 0x500, 0xfffff805220fb320) as 12:19:07,
+MEMORY.DMP de 827.376.956 bytes. Arg2=0x501 contra Arg3=0x500: tempo excessivo em DISPATCH_LEVEL.
+O log termina LOGO APOS uma submissao bem-sucedida (IB EXECUTADO ... FenceId=5335), sem timeout e
+sem recusa -- NAO e' o caminho do 0x119.
+HIPOTESE (H): DxgkDdiSubmitCommandVirtual e' chamada em DISPATCH_LEVEL e o laco de poll de
+bc250_sdma_present.c:1226 roda DENTRO do KeAcquireSpinLock da linha 1129, soltando so' nas
+1302/1408 -- 1819 submissoes, ate 181 polls de MMIO cada, em ~137 s. A A15 declarou esta divida
+por escrito ("o laco do tripe pode gastar ~1 s segurando spinlock em DISPATCH_LEVEL"). NUANCE que
+manda na leitura: os casos de 100-181 polls NAO sao visibilidade -- o flush ja dispara no
+casamento de RPTR; sao espera REAL da engine. O flush matou a cauda INFINITA; sobrou o fato de
+esperarmos de forma SINCRONA.
+PROXIMO PASSO, SEM CUSTO DE CORRIDA: atribuir o 0x133 pelo stack do dump (comando em docs/235
+secao 2.2). Somente depois implementar a conclusao ASSINCRONA. NAO baixar o teto de polls: teto
+menor devolve STATUS_IO_DEVICE_ERROR, que e' o caminho conhecido do 0x119 -- trocaria um BugCheck
+por outro.
+NAO EXERCITADO: o IB de fill de 11.075.584 bytes nao apareceu nesta corrida, entao o
+GFXHUB_FAULT STATUS=00841B40 ADDR=0x82C segue SEM TESTE e o flush de HDP NAO cobre essa classe.
+ESTADO DA MAQUINA: BC-250 em CODIGO 43 (CM_PROB_FAILED_POST_START) com o 3.127.1.0 preso, fusivel
+TRIPPED (Boots=2, LastStatus=0xC0000001) e SEM rollback (o BugCheck matou o watchdog).
+tools\BC250_RECOVERY.cmd elevado, inspect-boot-fuse.ps1 -Reset e BOOT FRIO antes de novo bind.
+ATENCAO AO EMPACOTAR: 3.127.1.0 JA FOI INSTALADO; suba o DriverVer fonte antes de gerar outro
+candidato, senao dois artefatos diferentes carregam o mesmo DriverVer (erro do 3.92.1.0).
+Handoff para a proxima IA: docs/235_HANDOFF_2026-09-10_12-16_FLUSH_HDP_VALIDADO_E_0x133.md
+=============================================================================================
+12/09 -- TRES CORRIDAS. A CAUSA RAIZ DA TELA PRETA FECHOU, E DUAS DELAS FORAM GASTAS EM
+DEFEITO DE HOST (o segundo, meu, empilhando duas mudancas num candidato).
+CORRECAO DE REGISTRO QUE MANDA NO VEREDITO: o present do "Marco 2" de 11/09 22:46 foi feito
+por RtlCopyMemory da CPU -- zero linhas de SDMA no log daquele bind. O veredito saiu 10/10
+PASS porque sdma_blt_executed casava com a string PRESENT_BLT, e o contador FallbackCpuCount
+era CEGO a copia que o escape realmente fazia. QUARTA ocorrencia de "o gate carimbava o falso
+sucesso" (A15, mcdm_callbacks_test, C1).
+12:29 (P0, 3.149.1.0) -- primeira corrida com present 100% GPU. Com a copia por CPU removida,
+o defeito que ela mascarava apareceu na tela: preto com faixa cinza. CAUSA RAIZ, por leitura
+de codigo: Bc250GpuvaSpaceResolveAddress devolve BackingSegmentOffset, e o segmento 1 comeca
+em LocalSegmentBaseOffset=0xA8C000, nao no byte zero. O present somava so' VramMcStart e lia
+11.059.200 bytes ANTES da imagem. O tripe inteiro passava -- nenhuma das tres pernas confere
+de ONDE se leu.
+12:51 (P0, 3.150.1.0) -- a correcao trocou tambem a BASE por engano (caps.VramMcBase=0x450000000
+no lugar de VramMcStart=0xF400000000). Origem e destino em dominios diferentes: blt em timeout
+com fence no poison, 8 de 8, e present caindo na copia por CPU. O operador viu as barras
+animando e relatou sucesso -- e o portao no_host_copy_fallback REPROVOU a corrida. Sem ele,
+teria virado o terceiro marco falso pela mesma causa.
+13:01 (P0, 3.151.1.0) -- PRESENT 100% POR GPU VALIDADO NO SILICIO. SegOff=0x1560000
+SegBase=0xA8C000 SrcMc=0xF401FEC000 DstMc=0xF400000000; Submitted=584 Completed=584
+Fallbacks=0 HostCpuCopies=0; BltMax=2171 us, media 1,37 ms. A "Garantia de Scanout GOP" por
+CPU foi REMOVIDA na C3.1 e o ramo de CPU nao executou nenhuma vez, logo o UNICO escritor do
+scanout foi o SDMA. Cadeia fechada: shader Vulkan no MEC -> VRAM -> byte proof 8/8 -> SDMA ->
+scanout do GOP -> monitor. 584 quadros consecutivos (recorde anterior 473), a ~26 FPS contra
+~1,25 FPS da copia por CPU.
+PAREDE REMANESCENTE, identica nas tres: ruptura com status_device_removed, tdr_events=0,
+Sub==Ret==Notified e ZERO StopDevice durante a corrida. O RADV leu ExecutionState=4 =
+D3DDDI_DEVICEEXECUTION_STOPPED (P1, d3dumddi.h:3655) -- nao HUNG, nao DMAFAULT -- com "all
+fences satisfied". A engine NAO travou: o device foi parado administrativamente. Correlacao
+(H, nao P0): 7 crashes do dwm.exe + 8 WER em cada corrida, e a falha 0,46 s (13:01) e 0,5 s
+(12:29) depois do SETIMO e ultimo. O que encerra a corrida parece ser o orcamento de crashes
+do DWM, nao a contagem de quadros.
+PROXIMA CORRIDA, falsificavel e sem rebuild: armar D3D11LabPromotion para o DWM receber device
+e parar de fail-fastar, com D3D11DrawBltSubstitution DESARMADO (Draw segue RECUSADO, sem pixel
+falso). Precedente que sustenta: em 10/09 12:16, com essa mesma combinacao, o dwm.exe gerou
+546 KB de log e nenhum crash naquela pasta. 600/600 -> hipotese confirmada; parada em ~580 ->
+REFUTADA.
+DIVIDAS DECLARADAS: os 26 FPS NAO sao do blt (1,37 ms de 38 ms = 3,6%) -- a hipotese de que a
+espera sincrona explicava o FPS esta REFUTADA por medicao; o custo esta no Vulkan. A divida do
+laco em DISPATCH_LEVEL (A15) segue existindo, mas nao e' gargalo de FPS.
+PACOTE 3.151.1.0 assinado e auditado: SYS 0D3E83AC..., UMD DD4DFED4... (inalterada desde o
+3.149.1.0). Fusivel CLEAN, marcador de boot frio ARMADO: boot frio antes de qualquer bind.
+=============================================================================================
+13/09, OFFLINE e sem corrida -- o 0x116 da corrida 12/09 22:57 NAO foi hang de engine, e o
+diagnostico do doc 260 estava errado nos tres pontos que mandavam no roteiro.
+EVIDENCIA QUE NAO EXISTIA: a pasta da corrida tinha "display-log-this-bind.txt ausente no fim
+do bind" (o BugCheck matou o watchdog). A cauda foi resgatada do log cumulativo pelo offset do
+baseline e arquivada: display-log-this-bind-RECUPERADO.txt, 1.308.135 bytes, sha256 5E938F84...
+Mais docs/evidence/dump-0x116-2026-09-12.txt, do MEMORY.DMP. Sem os dois, nada disto existiria.
+P0 DO DUMP: a pilha e' VidSchiWorkerThread -> VidSchiCheckHwProgress -> VidSchiReportHwHang ->
+TdrIsRecoveryRequired -> TdrBugcheckOnTimeout. ZERO quadros nossos. Arg3=0, ou seja NENHUMA
+operacao nossa falhou. O "Failure.Exception.IP = Bc250McdmCollectDbgInfo" e' o owner tag que o
+dxgkrnl publica em Arg2 para nomear o adaptador -- nao e' endereco de falha e nao houve excecao.
+P0 DO LOG RECUPERADO: 1357 IBs executados, ZERO IB_TRIPOD TIMEOUT e CINCO TDR_QUIESCE -- em
+todos os cinco RPTR==WPTR e STATUS1=000003FF (idle), e TDR_RESTART PROVADO 5 de 5. A engine
+NUNCA travou e a nossa recuperacao funcionou nas cinco. O 0x116 e' o Windows estourando o
+TdrLimitCount e desistindo do sexto, nao o driver falhando em recuperar.
+ARMADILHA DO LOG, ERRO MEU APANHADO ANTES DE VIRAR VEREDITO: cheguei a concluir que a
+aposentadoria parava no FenceId=15, porque so' ha 16 linhas [SdmaRetire] para 1357 IBs. FALSO --
+[SdmaRetire] e' classe AMOSTRADA (bc250_display_ddi.c:574, FIRST=16 PERIOD=1024) e "IB EXECUTADO"
+esta na lista de excecao. A assimetria era do logger. A aposentadoria rodou o tempo todo.
+CAUSA RAIZ: a fence monitorada do blt era sinalizada FORA DE BANDA. Bc250UmdBltGpu montava um
+SDMA_OP_FENCE sobre a VA da fence e o D3DDDICB_SUBMITCOMMAND saia sem objeto de sincronizacao.
+O valor chegava a memoria; o dxgkrnl nunca ficava sabendo. Isso explica a intermitencia exata:
+Bc250WinsysWaitForFenceFromCpu tem atalho que devolve OK se a fence ja chegou ao alvo -- o 1o
+blt ganha a corrida contra a GPU e passa (foi o Substituidos=1); o 2o (janela 590x800, 800
+pacotes de scanline) nao ganha, cai no pfnWaitForSynchronizationObjectFromCpuCb de verdade e
+bloqueia PARA SEMPRE. O VidSch ve contexto sem progresso e reporta hang com a engine ociosa.
+Casa com o log da UMD parando as 22:57:36.223 no ResourceUnmap anterior ao 2o draw: o trace
+"Draw SUBSTITUIDO" so' sai DEPOIS de Bc250UmdBltGpu retornar. Segundo defeito no mesmo sitio:
+Bc250SdmaEmitFence e' de 32 bits e a fence do WDDM e' de 64 (Bc250SdmaEmitFence64 esta ao lado).
+CORRECAO DO 260: "tornar o Blt assincrono" nao tem o que fazer -- a submissao do Node 0 JA E'
+assincrona desde antes dessa corrida (1974 marcadores (async), fila multi-slot, aposentadoria
+por DPC/timer, e o portao audit_sdma_submission_is_asynchronous ja existia e passa).
+FAIXA APLICADA (offline): Bc250WinsysSignalMonitoredFenceFromGpu nova sobre
+pfnSignalSynchronizationObjectFromGpuCb, fail-closed em callback ausente, valor 0, fence nao
+criada e contexto nao criado; o pacote de fence proprio SAIU do stream do blt (que caiu de 128
+para 96 bytes) e o GCR ficou; quem materializa a escrita agora e' Bc250McdmBuildSignalMonitoredFence,
+que JA EXISTIA no KMD, JA usa Fence64 e NUNCA tinha sido exercitado por este caminho.
+Testes: TestSignalMonitoredFenceFromGpu novo no winsys, stub BltTestSignalGpu e invariante
+g_BltSignals == g_BltSubmitsOk no teste do blt, mais modo de falha 5. build-umd EXIT=0,
+build-contract EXIT=0, quatro auditorias PASS, portao novo audit_blt_fence_is_signalled_by_contract.
+TRES MUTACOES VERIFICADAS: remover o sinal reprova a suite; reintroduzir Bc250SdmaEmitFence
+reprova o portao; e fazer o teste voltar a exigir 128 bytes TAMBEM reprova -- esta terceira
+existe porque "o gate congelava a mentira" ja apareceu quatro vezes (A15, mcdm_callbacks_test,
+C1, sdma_blt_executed). O PRIMEIRO invariante que escrevi estava errado e a suite me pegou:
+submit que FALHA nao deve sinalizar, e o curto-circuito do || e' proposital.
+DIVIDAS DECLARADAS E NAO TOCADAS: (1) Bc250UmdBltGpu continua bloqueando dentro da DDI de Draw
+-- com o sinal correto isso vira custo de FPS, nao mais correcao; (2) 800 pacotes de scanline
+por janela, e COPY_LINEAR_SUB_WINDOW NAO tem procedencia local (Lei 7: inc/linux_ref/ so' tem
+gc_10_1_0_sh_mask.h) -- nao inventar o encoding; (3) Journal NO_SPACE 8x mais um ActiveFlushTlb
+-> STATUS_IO_DEVICE_ERROR, que comecam DEPOIS do 1o TDR e portanto nao sao a origem (doc 252);
+(4) o BltCommand e' uma unica alocacao sobrescrita a cada blt, hoje segura SO' porque o wait e'
+sincrono -- tornar o Draw nao-bloqueante exige anel de slots ANTES, ou a GPU le buffer reescrito.
+CRITERIO DA PROXIMA CORRIDA, ESCRITO ANTES: confirmada -> o ciclo do DWM passa do 2o draw,
+Substituidos cresce alem de 1 e a corrida termina com no maximo 1 TDR_QUIESCE; refutada -> voltam
+os 5 TDR_QUIESCE com RPTR==WPTR e STATUS1=0x3FF, e o proximo suspeito passa a ser o contexto de
+RENDER do DWM, nao o do blt. Procurar "[SignalMonitoredFence] Completo: FenceGpuVa=... Value=..."
+no log: se NAO aparecer, o sinal nao chegou ao KMD e o defeito e' anterior, na winsys.
+NADA DESTA FAIXA FOI VALIDADO EM HARDWARE. Nao foi empacotado candidato: o DriverVer fonte
+precisa subir antes, porque o ultimo candidato lab foi 3.161.1.0. EMPACOTADO EM 13/09 e NAO INSTALADO:
+PACOTE LAB 3.162.1.0, BuildKind=MCDM_LAB_BRINGUP, perfil DISPLAY_RENDER_LAB (RenderNode=1,
+RenderOnlyLab=0), contrato WDDM 2.7, modo P1 PERSISTENT SUBMISSION, schema 135.
+SYS fonte 97A48176..., SYS assinado 59F3D925..., UMD 6C7C70EB..., INF 9085671C...,
+CAT A7243D41... Lab package audit PASS. A UMD assinada FOI CONFERIDA por string: as duas
+linhas SignalMonitoredFenceFromGpu ENTER/LEAVE estao no binario, entao o empacotador nao
+copiou a DLL anterior -- armadilha conhecida, o empacotador nao compila, so' copia.
+Handoff: docs/261_HANDOFF_2026-09-13_0x116_E_A_FENCE_FORA_DE_BANDA.md
+=============================================================================================
+CORRIDA 13/09 05:50 (P0, lab 3.162.1.0) -- a correcao da fence NAO impediu o 0x116, e o
+criterio que EU escrevi era irrespondivel pela instrumentacao existente.
+Cauda resgatada e arquivada (o watchdog morreu de novo): display-log-this-bind-RECUPERADO.txt,
+1.510.070 bytes, sha256 EE96AB8B... Dump novo: docs/evidence/dump-0x116-2026-09-13.txt, com
+pilha IDENTICA a de 12/09 -- VidSchiWorkerThread -> VidSchiCheckHwProgress -> ReportHwHang ->
+TdrIsRecoveryRequired -> TdrBugcheckOnTimeout, Arg3=0, Arg4=0xd, zero quadros nossos.
+MEU CRITERIO ESTAVA MAL ESPECIFICADO. Escrevi "se [SignalMonitoredFence] nao aparecer, o sinal
+nao chegou ao KMD". Nao apareceu, e Op=16 (DXGK_OPERATION_SIGNAL_MONITORED_FENCE) tambem nao --
+mas isso NAO prova falha: o 1o blt devolveu S_OK com Substituidos=1, e isso exige
+*BltFence.CpuVirtualAddress == BltSequence. Alguem escreveu a fence. O dxgkrnl honrou o sinal
+por outro caminho, sem nos pedir para montar pacote. O criterio nao discriminava nada.
+PIOR: BC250_WINSYS_LOG escrevia SO' em OutputDebugStringA e stderr, e o dwm.exe nao tem stderr.
+NENHUMA linha da winsys chegou ao log arquivado, em nenhuma corrida. Eu escrevi um criterio
+sobre linhas que a instrumentacao nao podia produzir.
+ACHADO NOVO QUE INVERTE O SUSPEITO (P0): os DOIS blts executam corretamente na GPU, com
+RPTR==WPTR e fence sobre poison -- 6 de 30.304 bytes (tela cheia 2560x1080, 1080 copias) e 5 de
+22.464 (janela 590x800, 800 copias), todos Vmid=7. E os CINCO TDRs disparam SEMPRE logo apos o
+blt de TELA CHEIA (FenceId 45, 428, 760, 993, 1372); NENHUM apos o de janela. O 260 e eu
+culpavamos o 2o draw com blend; a medicao diz que o congelamento e' DEPOIS do blt de tela cheia
+completar e ANTES da submissao seguinte -- intervalo que so' contem WaitPaging(src),
+WaitPaging(dst) e o pfnLockCb do UploadAllocation. Correcao de registro: eu disse "10
+TDR_QUIESCE"; sao CINCO -- o grep contou duas linhas por evento.
+FAIXA APLICADA (offline): sink de trace passou a ser UNICO. Bc250WinsysTraceRaw nova em
+bc250_wddm_winsys.c carimba hora/pid/imagem e anexa em C:\Windows\Temp\BC250_UMD_LOG_<pid>.txt;
+BC250_WINSYS_LOG passou a escreve-lo (stderr fica para as suites offline) e Bc250UmdTrace
+DELEGA a ele, eliminando a segunda copia da escrita em arquivo que existia na UMD.
+Bc250WinsysSubmitGpuVa ganhou ENTER/LEAVE -- era a UNICA funcao da winsys sem trace, e
+pfnSubmitCommandCb bloqueia com a fila do contexto cheia.
+Testes: build-umd EXIT=0, build-contract EXIT=0, quatro auditorias PASS, portao novo
+audit_umd_trace_reaches_the_evidence_file. TRES MUTACOES VERIFICADAS: tirar o roteamento do
+sink reprova; renomear SubmitGpuVa ENTER reprova; e Bc250UmdTrace voltar a chamar CreateFileA
+por conta propria reprova. O portao antigo que exigia BC250_UMD_LOG_%lu.txt em bc250_d3d_umd.c
+foi reapontado para a fonte unica.
+PACOTE LAB 3.163.1.0 assinado, auditado e NAO INSTALADO: SYS fonte C1229885..., SYS assinado
+55D2F2E9..., UMD BCAB3634..., INF 04288201..., CAT EE6BC8F3..., perfil DISPLAY_RENDER_LAB,
+WDDM 2.7, P1 PERSISTENT SUBMISSION, schema 135. Lab package audit PASS. A UMD assinada FOI
+CONFERIDA por string: SubmitGpuVa ENTER/LEAVE, WDDM_WINSYS (29x), BC250_UMD_LOG_ e
+SignalMonitoredFenceFromGpu ENTER estao no binario.
+CRITERIO DA PROXIMA CORRIDA, ESCRITO ANTES e agora RESPONDIVEL: o log do dwm.exe passa a conter
+linhas [WDDM_WINSYS]. A ULTIMA linha antes do congelamento NOMEIA o callback que bloqueou --
+WaitPaging, Upload/Lock ou SubmitGpuVa. Se a ultima for um ENTER sem LEAVE, o bloqueio e'
+naquele callback e a correcao deixa de ser hipotese. Se as linhas [WDDM_WINSYS] NAO aparecerem,
+o sink falhou e o defeito e' da instrumentacao, nao do driver.
+ESTA FAIXA E' SO' INSTRUMENTACAO: nao altera nenhum caminho de GPU e NAO deve corrigir o 0x116.
+Esperar TDR e BugCheck de novo -- o que muda e' que desta vez o log diz ONDE.
+NADA DESTA FAIXA FOI VALIDADO EM HARDWARE.
+=============================================================================================
+CORRIDA 13/09 06:08 (P0, lab 3.163.1.0) -- A INSTRUMENTACAO PAGOU E O PONTO DE BLOQUEIO TEM NOME.
+Cauda resgatada: display-log-this-bind-RECUPERADO.txt, 1.067.888 bytes, sha256 EBEDED30...
+Dump: docs/evidence/dump-0x116-2026-09-13.txt, pilha IDENTICA as anteriores (VidSchiWorkerThread
+-> VidSchiCheckHwProgress -> ReportHwHang -> TdrIsRecoveryRequired -> TdrBugcheckOnTimeout,
+Arg3=0, Arg4=0xd, zero quadros nossos). 244 linhas [WDDM_WINSYS] no dwm.exe -- o sink unico
+funcionou na primeira tentativa.
+O SINAL DE FENCE PELO CONTRATO ESTA VALIDADO EM HARDWARE para a 1a submissao (P0): o 1o blt fez
+SubmitGpuVa 30304 -> LEAVE hr=0, SignalMonitoredFenceFromGpu Value=1 -> LEAVE hr=0,
+WaitForFenceFromCpu Target=1 Current=0 -> LEAVE hr=0 Current=1, tudo em 2 ms. A fence avancou
+0->1 PELO CAMINHO DO CONTRATO. A correcao da manha nao era errada; era insuficiente.
+PONTO DE BLOQUEIO, COM NOME (P0): o 2o blt fez SubmitGpuVa 22464 -> LEAVE hr=0,
+SignalMonitoredFenceFromGpu Value=2 -> LEAVE hr=0, e entao
+"WaitForFenceFromCpu ENTER: TargetFence=2 CurrentFence=1" SEM LEAVE. O KMD registrou
+IB EXECUTADO do IB de 22464 com RPTR==WPTR e fence sobre poison: a GPU FEZ o trabalho; a fence
+monitorada simplesmente nao avancou de 1 para 2. Op=16 (SIGNAL_MONITORED_FENCE) nunca foi
+pedido e nao houve Unhandled Op.
+DUAS CORRECOES DE REGISTRO MINHAS: (1) eu afirmei que TODOS os TDRs seguiam o blt de TELA CHEIA
+e usei isso para inverter o suspeito -- ERRADO; nesta corrida 4 dos 5 seguem o blt de JANELA. O
+invariante real e' banal: o TDR segue o ULTIMO blt, qualquer que seja. (2) eu disse "10
+TDR_QUIESCE"; sao CINCO -- o grep contava duas linhas por evento.
+CORRECAO DE VERDADE (offline), atacando a causa e nao o sintoma -- a espera por draw SAIU:
+(A) ANEL DE SLOTS. Havia UMA alocacao de command buffer reescrita a cada blt, e por isso a DDI
+de Draw PRECISAVA esperar a fence da propria submissao antes de retornar -- era isso que
+congelava a thread de composicao do DWM e fazia o VidSch reportar hang com a engine OCIOSA.
+Agora sao BC250_BLT_SLOT_COUNT=4 command buffers, um por slot, e a unica espera que sobrou e' a
+de RECICLAGEM: pela submissao que usou AQUELE slot 4 blts atras, que na pratica ja terminou. No
+regime normal ninguem bloqueia.
+(B) HONESTIDADE DO TRACE: S_OK agora significa SUBMETIDO, nao concluido. A linha virou
+"Draw SUBSTITUIDO por copia 1:1 SUBMETIDA ao SDMA -- NAO e' rasterizacao e NAO e' prova de
+conclusao". A prova de execucao continua sendo a do KMD (IB EXECUTADO, RPTR==WPTR, fence sobre
+poison), nao a da UMD.
+(C) DUAS FALHAS MUDAS na DDI Bc250McdmSignalMonitoredFence, achadas por leitura: o retorno
+STATUS_INVALID_PARAMETER com pDmaBuffer==NULL nao logava NADA -- era impossivel distinguir "o
+dxgkrnl nunca chamou" de "nos recusamos calados", exatamente a ambiguidade que a Lei 4 proibe e
+que audit_process_lifecycle_ddis_speak ja trava em outras DDIs. Agora a entrada SEMPRE fala,
+com FenceGpuVa, Value, DmaSize, pDma e KernelSubmissionType.
+(D) BUG REAL DE CAPACIDADE nas DUAS variantes do sinal: Bc250PagingFloorPow2Dwords arredondava
+a capacidade do buffer LINEAR para baixo ate potencia de dois -- 20 dwords viravam 16 e a DDI
+recusava com INSUFFICIENT_DMA_BUFFER um buffer que cabia de sobra. Agora exigimos o tamanho
+REAL e declaramos aos emissores uma janela fixa de 32 dwords que cabe dentro do verificado.
+Testes: o laco generico de modos de falha foi reescrito em casos EXPLICITOS, porque o modo 3
+(fence que nao avanca) deixou de ser falha e virou a PROVA de que a DDI nao espera a propria
+submissao -- 4 blts consecutivos passam com a fence congelada. Mais o invariante do anel
+(4 submissoes, 4 GPUVAs distintas, zero esperas) e o contraponto (com a fence congelada, a
+5a volta PRECISA esperar). build-umd EXIT=0, build-contract EXIT=0, quatro auditorias PASS,
+portao novo audit_blt_draw_does_not_block_on_its_own_fence. DUAS MUTACOES VERIFICADAS:
+reintroduzir a espera pela propria fence reprova o portao; e o teste deixar de exigir
+"g_BltWaits == 0" TAMBEM reprova -- esta segunda existe porque "o gate congelava a mentira" ja
+apareceu cinco vezes (A15, mcdm_callbacks_test, C1, sdma_blt_executed, teste do blt com 128
+bytes). Tres assercoes minhas estavam erradas e a suite me pegou nas tres.
+PACOTE LAB 3.164.1.0 assinado, auditado e NAO INSTALADO: SYS fonte C571C731..., SYS assinado
+2468E0A4..., UMD 9A0B61D0..., INF 2D2014A9..., CAT A406BD6A..., perfil DISPLAY_RENDER_LAB,
+WDDM 2.7, P1 PERSISTENT SUBMISSION, schema 135. Lab package audit PASS. Binarios CONFERIDOS por
+string: "SUBMETIDA ao SDMA" e "SubmitGpuVa ENTER" na UMD; "[DdiSignalMonitoredFence] ENTER" e
+"RECUSADO: pDmaBuffer NULL" no SYS.
+CRITERIO DA PROXIMA CORRIDA, ESCRITO ANTES: confirmada -> nao existe mais "WaitForFenceFromCpu
+ENTER" sem LEAVE no log do dwm.exe, Substituidos cresce muito alem de 1, e a corrida termina
+com no maximo 1 TDR_QUIESCE. Refutada -> voltam os cinco TDR com a engine ociosa, e entao o
+bloqueio nao era o unico caminho pelo qual o dxgkrnl perde o progresso.
+INFORMACAO NOVA EM QUALQUER DESFECHO: se o dxgkrnl chamar a DDI de sinal, a linha
+"[DdiSignalMonitoredFence] ENTER" aparece e diz COM QUE ARGUMENTOS; se ele nunca chamar, a
+ausencia passa a ser conclusiva porque toda saida da DDI agora fala.
+NADA DESTA FAIXA FOI VALIDADO EM HARDWARE.
+=============================================================================================
+CORRIDA 13/09 08:12 (P0, lab 3.164.1.0) -- O ANEL DE SLOTS NAO IMPEDIU O 0x116, e a corrida
+entregou o DISCRIMINANTE que reposiciona o problema inteiro.
+Cauda resgatada: display-log-this-bind-RECUPERADO.txt, 963.360 bytes, sha256 59EFAFFE...
+Quarto dump seguido com pilha IDENTICA (docs/evidence/dump-0x116-2026-09-13c.txt): Arg3=0,
+Arg4=0xd, zero quadros nossos. !analyze -v esgotou o que tinha a dar -- parar de gasta-lo.
+O DISCRIMINANTE (P0): o KMD executou 958 IBs. 953 eram buffers de PAGINACAO do proprio dxgkrnl
+(Op=2/8/11/12) e nao produziram UM TDR. Os outros 5 eram submissoes de CONTEXTO da UMD no
+Node 0 -- que e' o no de PAGINACAO (PagingNodeIndex=0, bc250_display_ddi.c:1571) -- e CADA UMA
+foi seguida de um TDR, sempre com RPTR==WPTR e STATUS1=0x3FF (engine ociosa, anel drenado).
+Cinco blts, cinco TDRs, 1 para 1. E as submissoes de UMD no Node 1 (RADV, 600 quadros de
+12/09) NUNCA deram um TDR. Nao e' o blt: e' que NENHUMA submissao de contexto e' aceita como
+progresso pelo escalonador.
+DUAS HIPOTESES MINHAS MORTAS NA MESMA CORRIDA: (1) "nao notificamos conclusao de contexto" --
+FALSO, a linha IB EXECUTADO sai de dentro de Bc250ActiveSdmaRetireAndNotify, entao os blts SAO
+aposentados e entram em lote com DMA_COMPLETED; (2) a marca d'agua por no descartando
+notificacoes -- REFUTADA por medicao: 958 FenceIds estritamente crescentes, zero retrocessos.
+Zero GFXHUB_FAULT e FaultStatus=0 nos cinco TDRs: nao ha falha de traducao.
+CORRECAO DE REGISTRO: na corrida anterior eu disse que todos os TDRs seguiam o blt de TELA
+CHEIA; aqui 4 dos 5 seguem o de JANELA. O invariante e' banal -- o TDR segue o ULTIMO blt.
+DEFEITO DE COLETA, MEU: os bc250_umd_log_*.txt da pasta de evidencia sao SNAPSHOTS de ~5 s
+depois do bind. O do dwm.exe termina no meio de um CreateResource, antes de qualquer draw; os
+logs do fim da corrida ficaram em C:\Windows\Temp e sumiram. O criterio que escrevi para a
+08:12 ficou SEM RESPOSTA por isso. A licao da C2 nao tinha sido estendida aos logs da UMD.
+FAIXA APLICADA (offline) -- a composicao SAIU do no de paginacao:
+(A) Novo opcode BC250_ESCAPE_OP_COMPOSITE_BLT no contrato de escape. A UMD alcanca o KMD por
+pfnEscapeCb e o KMD executa com Bc250SdmaPresentBlt -- o mesmo caminho que fez 584 blts
+consecutivos sem UM TDR em 12/09 13:01, que nao cria pacote de contexto e nao passa pelo
+escalonador. Origem E destino sao resolvidos por Bc250SegmentOffsetToMc (a aritmetica da C3.4),
+com recusa para faixa que nao couber no segmento e para sobreposicao.
+(B) A UMD nao cria mais contexto, paging queue, command buffer nem fence para o blt. Paging
+queue, contexto virtual, anel de slots e Bc250UmdBltInit/Teardown foram REMOVIDOS -- nao ficou
+dead code; esta no git.
+(C) ESCOPO DECLARADO E ESTREITO: so' copia LINEAR (pitch igual nos dois lados, retangulo
+cobrindo linhas inteiras a partir da origem). E' o draw de tela cheia do DWM. O anel do KMD tem
+4096 bytes e nao comporta copia por scanline; retangulo de JANELA e' RECUSADO com log honesto,
+nunca aproximado. Isso significa que janelas NAO serao compostas nesta corrida.
+(D) Bug real no guard do contrato de escape: ele escolhia kernel-mode por NTDDI_VERSION, que a
+UMD tambem define, e incluir <ntdef.h> depois de <windows.h> redefinia _PROCESSOR_NUMBER,
+_GROUP_AFFINITY e _FLOAT128. Corrigido para _KERNEL_MODE.
+(E) O (a) que vinha de graca: CTX_PROBE e CONTEXT SWITCH sairam da amostragem. Na 08:12
+sobraram 3 CTX_PROBE em ~958 submissoes, e eram exatamente as linhas que diriam se a root do
+VMID do contexto foi instalada. Sao raras por natureza, nao um diluvio.
+Testes: bc250_d3d_umd_test reescrito em torno do invariante NEGATIVO -- a composicao nao pode
+gerar NENHUMA submissao de contexto (g_BltSubmits == 0) --, mais recusa por pitch diferente,
+por retangulo deslocado, por pfnEscapeCb ausente, e propagacao de falha do KMD.
+build-umd EXIT=0, build-contract EXIT=0, quatro auditorias PASS, portao novo
+audit_composition_never_submits_a_context substituindo os dois portoes do caminho antigo.
+DUAS MUTACOES VERIFICADAS: reintroduzir Bc250WinsysSubmitGpuVa no blt reprova; e o teste deixar
+de exigir zero submissao TAMBEM reprova.
+ARMADILHA REGISTRADA: minha funcao nova de resolucao continha o mesmo anchor textual que
+audit_present_source_uses_segment_base usa para delimitar a janela do ramo de present, e isso
+ampliou a janela ate englobar a soma crua legitima do caminho de endereco fisico. O portao
+reprovou corretamente; renomeei o local em vez de afrouxar o portao.
+PACOTE LAB 3.165.1.0 assinado, auditado e NAO INSTALADO: SYS fonte 010C076D..., SYS assinado
+DF38D09E..., UMD 2F1F8E2B..., INF E9FCA938..., CAT DAED531F..., perfil DISPLAY_RENDER_LAB,
+WDDM 2.7, P1 PERSISTENT SUBMISSION, schema 135. Lab package audit PASS. Binarios CONFERIDOS por
+string: "BltViaKmd ENTER" e a recusa de scanline na UMD; "COMPOSITE_BLT OK", a recusa de
+resolucao e "CTX_PROBE" no SYS.
+CRITERIO DA PROXIMA CORRIDA, ESCRITO ANTES: confirmada -> aparecem linhas
+"[Bc250Escape] COMPOSITE_BLT OK" e a corrida termina com NO MAXIMO 1 TDR_QUIESCE, contra os
+cinco de todas as corridas anteriores. Refutada -> voltam os cinco TDR mesmo sem UMA submissao
+de contexto, e entao o no de paginacao nao era o discriminante e o suspeito passa a ser o
+proprio ciclo de vida do contexto do DWM, nao a submissao.
+NAO ESPERAR DESKTOP: janelas sao RECUSADAS por escopo declarado, e o Draw real continua sem
+backend. Tela preta segue sendo o resultado correto; o que esta em teste e' o TDR, nao o pixel.
+NADA DESTA FAIXA FOI VALIDADO EM HARDWARE.
+=============================================================================================
+CORRIDAS 13/09 11:25 e 11:32 (P0, lab 3.165.1.0) -- DUAS CORRIDAS SEGUIDAS SEM TDR E SEM
+BUGCHECK, as primeiras de toda a sequencia. Contra CINCO TDRs e 0x116 em todas as anteriores.
+Confirmado pelo Event Log: o ultimo MEMORY.DMP e' das 08:14, da corrida anterior.
+11:25 -- 2741 IBs, ZERO TDR. O DWM morreu quatro chamadas de DDI antes do primeiro Draw, entao
+o escape nao rodou e o criterio ficou sem resposta.
+11:32 -- 3283 IBs, ZERO TDR, e o caminho novo FOI ALCANCADO: "BltViaKmd ENTER: 2560x1080
+pitch=10240" no dwm.exe. Primeira vez que o DWM chega ao Draw pelo caminho do KMD.
+ACHADO QUE REFUTA A MINHA PROPRIA HIPOTESE: a desamostragem do CTX_PROBE (2741 e 3283 linhas,
+contra 3 na corrida 08:12) mostrou 37 submissoes de CONTEXTO em VMID 7 com ZERO TDR, mais
+"VMID7 CONTEXT SWITCH" com root valida (0x45FDFF000). Na 08:12 havia 22 submissoes em VMID 7 e
+so' 5 eram nossos blts -- as outras 17 nunca deram TDR e eu nao tinha visto porque a amostragem
+escondia. "Submissao de contexto no no de paginacao causa TDR" esta REFUTADO: era algo
+especifico do NOSSO blt, nao da classe inteira. Isso elimina um espaco grande de suspeitos.
+O CRITERIO NAO FECHOU, POR DEFEITO MEU, E SAO DOIS:
+(1) O log do KMD teve ZERO linhas COMPOSITE_BLT -- nem OK, nem RECUSADO. As duas saidas de
+recusa do handler que eu escrevi ontem eram MUDAS (payload menor que 4 bytes no dispatch, e
+tamanho menor que o contrato no composite). Impossivel distinguir "nao chegou ao handler" de
+"recusamos calados" -- a mesma ambiguidade que a Lei 4 proibe e que eu havia corrigido de manha
+em Bc250McdmSignalMonitoredFence, reintroduzida por mim no codigo novo.
+(2) O log do dwm.exe termina no "BltViaKmd ENTER" as 11:32:33.465, mas o primeiro crash do DWM
+foi as 11:33:03 -- TRINTA SEGUNDOS depois. O log nao terminou no escape: ele e' um SNAPSHOT
+tirado pelo coletor ~6 s apos o bind. A linha "BltViaKmd LEAVE", com o hr do pfnEscapeCb, que
+responderia a corrida inteira, existiu e foi descartada. TERCEIRA corrida seguida perdida pela
+mesma causa (08:12, 11:25, 11:32), depois de eu ter identificado o defeito e nao o corrigido.
+Dado colateral: 3.282 escapes de TERCEIROS com opcode 0x2 chegaram ao nosso handler na 11:32 --
+nenhum nosso (o DWM chamou BltViaKmd UMA vez). O log 1-em-1 que eu pus na recusa afogou o
+arquivo, e "RECUSA" esta na lista que escapa da amostragem global.
+FAIXA APLICADA (offline): (A) entrada do handler de composicao SEMPRE fala, com DataSize
+recebido e esperado, e a recusa por tamanho nomeia a causa ("ABI divergente entre UMD e KMD");
+(B) a recusa de payload invalido no dispatch deixou de ser muda; (C) a recusa de opcode
+desconhecido ganhou teto por contador PROPRIO (8 primeiras + 1 em 1024), porque o teto global
+nao a alcanca; (D) o binder passou a coletar os logs da UMD TAMBEM no fim da janela fisica, em
+arquivos -FINAL que NAO sobrescrevem o snapshot -- os dois juntos mostram o que mudou.
+Testes: build-umd EXIT=0, build-contract EXIT=0, quatro auditorias PASS, portoes novos dentro
+de audit_composition_never_submits_a_context e audit_umd_trace_reaches_the_evidence_file. DUAS
+MUTACOES VERIFICADAS: a recusa por tamanho voltar a ser muda reprova; e o binder voltar a
+coletar so' no inicio TAMBEM reprova.
+PACOTE LAB 3.166.1.0 assinado, auditado e NAO INSTALADO: SYS fonte DB2B794A..., SYS assinado
+CFF5EBC7..., UMD 128C1FFC..., INF 38A95E60..., CAT 54668C1B..., perfil DISPLAY_RENDER_LAB,
+WDDM 2.7, P1 PERSISTENT SUBMISSION, schema 135. Lab package audit PASS. Binarios CONFERIDOS por
+string: "COMPOSITE_BLT ENTER", "ABI divergente entre UMD e KMD" e "payload ausente ou menor que
+4 bytes" no SYS; "BltViaKmd ENTER" na UMD; bc250_umd_log-FINAL.txt no binder.
+CRITERIO DA PROXIMA CORRIDA, ESCRITO ANTES e agora RESPONDIVEL PELO LOG DO KMD, que sobrevive:
+a linha "[Bc250Escape] COMPOSITE_BLT ENTER" aparece com DataSize -- se DataSize divergir do
+esperado, a ABI entre UMD e KMD esta quebrada e a linha diz os dois numeros; se aparecer
+"COMPOSITE_BLT OK", a composicao executou no caminho provado do KMD; se NAO aparecer NENHUMA
+das duas, o escape nao chega ao handler e o defeito e' do dxgkrnl recusando a chamada, nao
+nosso. Os tres desfechos sao distinguiveis, o que nao era verdade nas tres corridas anteriores.
+ESTA FAIXA E' CORRECAO DE DEFEITO, NAO EXPERIMENTO: as duas saidas mudas eram violacao da Lei 4
+introduzida por mim, e a coleta em snapshot custou tres criterios.
+NADA DESTA FAIXA FOI VALIDADO EM HARDWARE.
+=============================================================================================
+CORRIDA 13/09 11:55 (P0, lab 3.166.1.0) -- TERCEIRA CORRIDA SEGUIDA SEM TDR E SEM BUGCHECK
+(3645 IBs, zero TDR_QUIESCE), e o criterio FECHOU no terceiro desfecho.
+Cauda resgatada: display-log-this-bind-RECUPERADO.txt, 3.878.073 bytes.
+O SYS novo estava rodando, PROVADO pelo proprio teto que ele introduziu: o flood de escapes de
+terceiros caiu de 3.282 linhas (11:32) para 11 (8 primeiras + periodicas), com "ocorrencia #".
+CRITERIO, RESPONDIDO: COMPOSITE_BLT ENTER = 0, OK = 0, RECUSADO = 0, "payload ausente" = 0.
+A linha ENTER agora e' INCONDICIONAL no topo do handler, logo a ausencia e' conclusiva: o
+NOSSO escape NAO chega ao handler, enquanto escapes de TERCEIROS chegam normalmente. Pelo
+criterio escrito antes da corrida, isso significa que o dxgkrnl recusa a chamada antes de nos
+alcancar -- nao e' recusa nossa. O dwm.exe chamou BltViaKmd ENTER as 11:55:38.052.
+DEFEITO MEU, QUARTA VEZ NA MESMA CLASSE: a coleta -FINAL que eu havia adicionado caiu dentro
+de `if ($EnablePhysicalRenderOnly)`, ramo que este perfil NAO executa. Nao ha arquivos -FINAL
+na pasta e a linha "BltViaKmd LEAVE", com o hr do pfnEscapeCb -- o unico dado que nomeia a
+recusa --, perdeu-se de novo. Os logs em C:\Windows\Temp ja haviam sido apagados.
+FAIXA APLICADA (offline), tres frentes:
+(A) CORRECAO DE CONTRATO, nao instrumentacao: o escape passou a declarar
+args.Flags.HardwareAccess = 1. O handler do KMD dirige o anel SDMA0; sem essa flag o dxgkrnl
+nao serializa o escape contra o dispositivo. E' candidato direto a causa da recusa.
+(B) ENTRADA DA DDI DE ESCAPE FALA, antes de qualquer despacho: [McdmEscape] ENTER imprime
+DataSize, o primeiro dword (o opcode do contrato), hDevice, hContext e Flags, mais se o handler
+esta instalado. Sem isso era impossivel separar "o dxgkrnl nunca nos chamou" de "chamou com um
+payload que nao reconhecemos". Teto por contador proprio (8 primeiras + 1 em 512), e qualquer
+dword com a assinatura 0xBC25xxxx escapa do teto -- o nosso NUNCA e' amostrado fora.
+A ausencia de handler instalado tambem deixou de ser muda.
+(C) COLETA FINAL NO CAMINHO COMUM do binder, agora fora do ramo morto: janela de
+WatchdogTimeoutSeconds-60 s (piso 30) e entao copia dos BC250_UMD_LOG_*.txt para arquivos
+-FINAL que NAO sobrescrevem o snapshot, mais a cauda do log do KMD pelo offset do baseline. O
+watchdog continua sendo a rede de seguranca.
+(D) LOG MAXIMO na UMD: BltViaKmd ENTER agora imprime Opcode, sizeof do payload, hDevice,
+hContext e Flags; o LEAVE imprime hr e ResultCode. Se o KMD imprimir um DataSize diferente do
+sizeof da UMD, a ABI esta divergente e os DOIS numeros estarao no log.
+Testes: build-umd EXIT=0, build-contract EXIT=0, quatro auditorias PASS. TRES MUTACOES
+VERIFICADAS: tirar HardwareAccess reprova; a entrada da DDI de escape voltar a ser muda
+reprova; e o binder perder a coleta FINAL TAMBEM reprova.
+PACOTE LAB 3.167.1.0 assinado, auditado e NAO INSTALADO: SYS fonte 772045D5..., SYS assinado
+BC64C7A7..., UMD F832A457..., INF FCBF218E..., CAT D60E37C1..., perfil DISPLAY_RENDER_LAB,
+WDDM 2.7, P1 PERSISTENT SUBMISSION, schema 135. Lab package audit PASS. Binarios CONFERIDOS por
+string: "[McdmEscape] ENTER #%u", "nenhum handler instalado" e "COMPOSITE_BLT ENTER" no SYS;
+"BltViaKmd ENTER", "hDevice=%p hContext=%p Flags" e "dxgkrnl ou o KMD recusaram" na UMD.
+CRITERIO DA PROXIMA CORRIDA, ESCRITO ANTES -- tres desfechos, todos distinguiveis e todos
+respondidos por logs que agora SOBREVIVEM:
+  1. "[McdmEscape] ENTER" com Dword0=0xBC250002 -> o escape chega ao KMD; a linha seguinte
+     (COMPOSITE_BLT ENTER/OK/RECUSADO) diz o que fizemos com ele.
+  2. "BltViaKmd LEAVE: hr=..." com hr != 0 e NENHUM [McdmEscape] com 0xBC250002 -> o dxgkrnl
+     recusou; o hr nomeia o motivo, e HardwareAccess deixa de ser hipotese num sentido ou no
+     outro.
+  3. Nenhuma das duas -> a coleta FINAL falhou de novo e o defeito e' do binder, nao do driver.
+NADA DESTA FAIXA FOI VALIDADO EM HARDWARE.
+=============================================================================================
+CORRIDA 13/09 12:09 (P0, lab 3.167.1.0) -- QUARTA CORRIDA SEGUIDA SEM TDR E SEM BUGCHECK
+(3414 IBs, zero TDR_QUIESCE), A COLETA FINAL FUNCIONOU, e a flag que EU adicionei nesta faixa
+foi a causa do bloqueio.
+A COLETA ESTA RESOLVIDA: o binder gravou 12 arquivos bc250_umd_log_*-FINAL.txt e
+display-log-this-bind-FINAL.txt (3.644.356 bytes) ao fim da janela de 120 s, no caminho comum.
+Cinco corridas seguidas haviam perdido o dado decisivo; esta nao perdeu. A tentativa anterior
+tinha caido dentro de `if ($EnablePhysicalRenderOnly)`, ramo que este perfil nao executa.
+CORRECAO DE UM VEREDITO MEU, PELA EVIDENCIA NOVA: eu havia concluido, olhando so' o lado do
+KMD, que "o dxgkrnl RECUSA o nosso escape". FALSO. O log da UMD mostra SETE "BltViaKmd ENTER"
+-- um por instancia do DWM -- e ZERO "LEAVE". O pfnEscapeCb NAO RETORNA. Nao e' recusa, e'
+BLOQUEIO.
+CAUSA, MEDIDA: Flags=0x00000001 nas sete chamadas -- o HardwareAccess que eu armei nesta faixa
+apresentando-o a voce como "exigencia de contrato, nao enfeite". HardwareAccess=1 faz o dxgkrnl
+SERIALIZAR o escape contra o dispositivo, esperando a GPU quiescer antes de despachar. Isso e'
+chamado de dentro da DDI de Draw do DWM, com o dispositivo ocupado: deadlock por construcao. O
+handler do KMD dirige o anel de present dele, protegido pelo NOSSO spinlock, e nao precisa da
+serializacao do dxgkrnl.
+O CONTRASTE ESTA NOS PROPRIOS DADOS: os 14 [McdmEscape] ENTER da corrida sao todos de
+TERCEIROS, com Dword0=0x00000002, DataSize=388/492 e Flags=0x00000000 -- e atravessam. O unico
+escape com HardwareAccess era o nosso, e foi o unico que travou. Zero escapes com
+Dword0=0xBC250002 chegaram ao KMD, e essa ausencia e' conclusiva porque o teto do log ISENTA
+qualquer dword com assinatura 0xBC25xxxx.
+DADO COLATERAL QUE VALE: bloquear dentro de um escape NAO dispara TDR -- sete threads de DWM
+travadas e zero TDR_QUIESCE. Bloquear numa fence monitorada dispara. Sao caminhos diferentes no
+escalonador, e isso estreita o modelo.
+CONFIRMADO PELO LOG DA UMD: Opcode=0xBC250002 e sizeof=48 nas sete chamadas -- a ABI do lado da
+UMD esta correta, e o DataSize que o KMD veria seria 48.
+FAIXA APLICADA (offline): args.Flags.Value = 0u. Nao e' "tentar o outro valor" -- a
+serializacao de dispositivo nao nos serve e cria o deadlock. hDevice fica COMO ESTA de
+proposito, para mudar UMA variavel: se o escape ainda falhar, o hr do LEAVE nomeia o motivo, e
+o hDevice nao-nulo (que difere dos 14 que atravessam) vira o proximo suspeito ja identificado.
+O PORTAO FOI INVERTIDO: audit_composition_never_submits_a_context EXIGIA HardwareAccess porque
+eu o havia declarado contrato; agora o PROIBE, com a medicao no comentario, e exige
+args.Flags.Value = 0u. Mutacao verificada: rearmar a flag reprova nos dois sentidos.
+build-umd EXIT=0, build-contract EXIT=0, quatro auditorias PASS.
+PACOTE LAB 3.168.1.0 assinado, auditado e NAO INSTALADO: SYS assinado 80374141..., UMD
+FCB3B552..., INF D4382AAE..., CAT FD042E32..., perfil DISPLAY_RENDER_LAB, WDDM 2.7,
+P1 PERSISTENT SUBMISSION. Lab package audit PASS. ARMADILHA REGISTRADA: a primeira passada do
+empacotador falhou com IOException em Copy-Item e deixou o pacote INCONSISTENTE -- a auditoria
+reprovou com seis hashes divergentes. Repetir o empacotador resolveu. NUNCA aceitar pacote sem
+a auditoria PASS logo depois.
+CRITERIO DA PROXIMA CORRIDA, ESCRITO ANTES: a linha "BltViaKmd LEAVE: hr=..." PRECISA aparecer
+-- a coleta FINAL ja provou que consegue captura-la. Entao:
+  1. LEAVE com hr=0 e "[Bc250Escape] COMPOSITE_BLT OK" no KMD -> a composicao executa pelo
+     caminho provado do KMD.
+  2. LEAVE com hr != 0 e nenhum [McdmEscape] com 0xBC250002 -> o dxgkrnl recusa, e o hr nomeia
+     o motivo; hDevice passa a ser o suspeito nomeado.
+  3. LEAVE ausente de novo -> o bloqueio nao era o HardwareAccess, e a hipotese cai.
+NAO ESPERAR DESKTOP: janelas seguem RECUSADAS por escopo declarado e o Draw real continua sem
+backend. Tela preta e' o resultado correto.
+NADA DESTA FAIXA FOI VALIDADO EM HARDWARE.
+=============================================================================================
+AUDITORIA DA CORRIDA 13/09 16:28:27 (pacote 3.172.0.0) -- O DIAGNOSTICO DO docs/265 NAO SE
+SUSTENTA NA PROPRIA EVIDENCIA DELE, E A PAREDE E' OUTRA. Tudo abaixo e' OFFLINE, zero corridas.
+O QUE A CORRIDA REALMENTE PROVOU (P0, e vale): 0x10E eliminado, zero BugCheck, zero TDR, 3.757
+IBs indiretos, rollback online limpo (RECOVERY_OK_ONLINE). Isso e' ESTABILIDADE.
+O QUE ELA NAO PROVOU, contra o que o 265 afirmou:
+(1) ZERO chamadas a Bc250DxgkDdiPresent na corrida inteira -- nao ha UMA linha [Present #N] em
+5,4 MB de log. A ausencia e' CONCLUSIVA: [Present #...] nao cai em classe de amostragem
+(bc250_display_ddi.c, ramo "else return TRUE"), FrameBufferVirtual e' nao-NULL
+([DisplayInit] Virt=FFFFBAF97B800000) e o ramo de recusa contem REJECT, isento de amostragem.
+O caminho de transferencia para o scanout GOP e' CODIGO MORTO nesta corrida. O 265 propoe
+consertar codigo que nunca rodou.
+(2) NAO HA QUADRO COMPOSTO. 1787 de 1787 COMPOSITE_BLT terminam em Prova=ZERO_INCONCLUSIVO,
+precedidos por "COMPOSITE_DATA_PROOF INCONCLUSIVO_ZERO: zero contra zero NAO prova pixel". Os
+5.165 escapes moveram ZEROS entre buffers. Contar operacao como progresso e' a QUINTA ocorrencia
+da classe "o gate carimbava o falso sucesso" (A15, mcdm_callbacks_test, C1, sdma_blt_executed).
+(3) NENHUM destino foi o scanout: os sete DstMc distintos (0xF40208C000, 0xF400B8C000, ...) sao
+backbuffers do DWM; o scanout e' 0xF400000000.
+(4) O dwm.exe esta em LACO DE DEVICE-LOST, 90 vezes: Present -> destroi todo recurso ->
+DestroyDevice -> CloseAdapter -> recarrega a DLL -> CreateDevice, a ~1 Hz. O Present FALHA. E e'
+Flags=0x00000002 = FLIP (dxgiddi.h:71), nao Blt.
+(5) NAO HA RASTERIZACAO, e o proprio log declara: "SHADER_TRANSLATOR: TokenStream -> SPIR-V ...
+Traducao NAO e' pipeline: descriptors, render target, anel grafico e Draw seguem ausentes."
+CAUSA RAIZ DO PRESENT FALHAR (H de alta confianca -- codigo e log concordam; NAO e' P0 porque o
+hr do pfnPresentCb nunca foi registrado): a UMD e o KMD discordam do NOSSO PROPRIO contrato de
+alocacao. Bc250WinsysAllocate zerava D3DDDICB_ALLOCATE e NUNCA atribuia hResource
+(d3dumddi.h:3457), Flags.Primary nem VidPnSourceId (d3dukmdt.h:554 e :549). O dxgkrnl so' liga
+DXGKARG_CREATEALLOCATION.Flags.Resource quando a UMD passa hResource, e o ramo do KMD que marca
+primaria (bc250_active_miniport.c) esta atras justamente desse bit -- logo era INALCANCAVEL para
+toda alocacao nossa. A primariedade existia SO' no nosso token privado, que o KMD nem consultava.
+Confirmado no log: todo [CreateAllocation] ENTER de origem UMD traz Resource=0 ->
+"Non-resource allocation"; ha UM unico "Primary token confirmed" na corrida e e' o Resource=1 do
+bind (handle 0000000800000008, o mesmo do CommitVidPn/SetVidPnSourceAddress 0xAAC000).
+FAIXA APLICADA (offline), quatro frentes:
+(A) VINCULO DE RECURSO. Bc250WinsysAllocateForResource nova com BC250_WINSYS_RESOURCE_BINDING
+(RuntimeResource/VidPnSourceId/Primary); Bc250Umd10CreateResource passa hRTResource.handle.
+FONTE UNICA de primariedade: a classe do token manda, e vinculo que DISCORDE dela falha fechado
+-- sem isso voltariamos a ter duas verdades, que e' a classe de defeito que a faixa corrige.
+Primaria SEM hRTResource e' RECUSADA antes do callback: suceder calado ali produziria de novo
+uma "primaria" que o kernel nunca veria como tal. Desalocacao ficou SIMETRICA (criada com
+recurso, devolvida com recurso, d3dumddi.h:4068), senao o objeto de recurso do kernel fica orfao.
+(B) I1 -- Bc250DxgiPresent registra o hr do pfnPresentCb. Era `return callback(...)` direto: o
+numero que decidia a corrida nunca foi gravado.
+(C) I2 -- Bc250DxgkDdiPresent tinha TRES saidas mudas (hContext NULL, pPresent NULL,
+FrameBufferVirtual NULL). Entrada agora e' INCONDICIONAL e anterior a toda guarda, com contador
+proprio (8 primeiras + 1 em 256); a ausencia da linha passa a ser conclusiva.
+(D) I3 -- [McdmQAI], [McdmCreateDevice] e [McdmCreateContext] dividiam UM contador de amostragem.
+A rajada de QAI no bind (17 linhas medidas) esgota as 16 primeiras da classe, e por isso as 90
+criacoes de device do dwm.exe nao deixaram UMA linha. Contadores independentes (12, 13, 14).
+(E) No KMD, a primaria de UMD NAO pode mais sobrescrever g_Bc250DisplayState.hPrimaryAllocation
+-- ate esta faixa o ramo era inalcancavel e o unico escritor era a primaria do GOP; agora as do
+dwm.exe tambem chegam la. Preenche so' se vazio; as demais sao contadas e nomeadas.
+EFEITO COLATERAL DECLARADO: com Flags.Resource passando a 1 para recursos de render, o ramo
+`else if (Flags.Resource == 0u && info->FlagsWddm2.CpuVisible)` deixa de aplicar-se a eles, e
+CpuVisible fica FALSE -- o que REFORCA a correcao do 0x10E em vez de afrouxa-la. ResourceMap usa
+shadow de CPU (calloc), nao pfnLockCb, entao nao ha regressao de mapeamento.
+Testes: bloco de primaria do bc250_wddm_winsys_test reescrito em torno dos tres campos exigidos
+um a um, mais tres casos de fail-closed e um CONTRAPONTO (command buffer/scratch sem recurso
+continuam funcionando -- sem ele a correcao viraria peneira). build-umd EXIT=0, build-contract
+EXIT=0, tres auditorias PASS, dois portoes novos
+(audit_primary_allocation_is_declared_to_the_kernel e audit_present_path_is_not_mute).
+NOVE MUTACOES VERIFICADAS: tirar hResource reprova; zerar Flags.Primary reprova; desalocacao
+assimetrica reprova; afrouxar a recusa de primaria sem recurso reprova; reverter a divisao de
+amostragem reprova; remutar o DdiPresent reprova; voltar ao return direto no Present reprova;
+CreateResource sem vinculo reprova; e o KMD sobrescrever a primaria de display reprova.
+ARMADILHA REGISTRADA: a primeira passada da mutacao 4 reprovou pelo assert ERRADO -- a allowlist
+de token do stub disparava antes do meu invariante. Falha nao-atribuivel e' portao fraco; o stub
+foi corrigido para que quem reprove seja "AllocateCalls nao mudou", que nomeia a causa.
+ESTA FAIXA NAO ACENDE A TELA, E ISSO E' ESPERADO. Ela remove a parede de APRESENTACAO. A parede
+de RASTERIZACAO (sem pipeline grafico, sem descriptors, sem render target, sem Draw PM4) continua
+inteira, e enquanto ela existir nenhum pixel e' produzido por ninguem. TELA PRETA segue sendo o
+resultado CORRETO; qualquer imagem deve ser atribuida ao rollback/BasicDisplay ate prova em
+contrario.
+CRITERIO DA PROXIMA CORRIDA, ESCRITO ANTES -- tres desfechos, todos distinguiveis:
+  1. "[CreateAllocation] Primary token confirmed (UMD #1)" aparece E "[DdiPresent] ENTER #1"
+     aparece -> a cadeia de apresentacao fechou; o laco de device-lost do dwm.exe tem de parar
+     e "DXGI Present LEAVE cb: hr=0x00000000" confirma pelo lado da UMD.
+  2. "DXGI Present LEAVE cb: hr=" com hr != 0 e nenhum [DdiPresent] ENTER -> o dxgkrnl ainda
+     recusa, e AGORA o hr nomeia o motivo; a hipotese da primaria cai e o proximo suspeito passa
+     a ser o no do contexto (Winsys.KernelContext e' de COMPUTE, node 1).
+  3. Nenhuma das duas -> a coleta falhou; defeito de binder, nao de driver.
+INFORMACAO NOVA EM QUALQUER DESFECHO, o que nao era verdade na corrida 16:28.
+PACOTE LAB 3.173.1.0 assinado, auditado e NAO INSTALADO. BuildKind=MCDM_LAB_BRINGUP, perfil
+DISPLAY_RENDER_LAB (RenderNode=1, RenderOnlyLab=0), contrato WDDM 2.7, modo P1 PERSISTENT
+SUBMISSION, schema 135. SYS fonte 529B645B..., SYS assinado 8D07EBB4..., UMD assinada AEB6A452...,
+INF AE3E88EB..., CAT 9480733D... Lab package audit PASS.
+Os binarios foram CONFERIDOS POR STRING (o empacotador nao compila, so' copia): no SYS assinado
+estao "[DdiPresent] ENTER #", "RECUSADO: FrameBufferVirtual NULL" e "Primary token confirmed (UMD";
+na UMD assinada estao "DXGI Present ENTER cb:", "DXGI Present LEAVE cb: hr=", "Allocate ENTER:
+Token=" e "primaria sem hRTResource".
+CORRECAO DE REGISTRO: o docs/265 chama a corrida 16:28:27 de "pacote 3.172.0.0". E' FALSO -- o
+INF daquele output_lab diz DriverVer=3.170.1.0 e o SYS instalado era 59E08349..., o mesmo que
+tools/_last_lab_binding.json registra. O DriverVer fonte foi para 3.173.0.0 (candidato 3.173.1.0)
+para nao haver duvida de identidade.
+ESTADO DA MAQUINA NA HORA DO EMPACOTAMENTO: BasicDisplay em Codigo 0, fusivel INEXISTENTE (proximo
+boot assume CLEAN) e SEM marcador C:\BC250_REQUIRE_CLEAN_BOOT.json. Ainda assim o BOOT FRIO E'
+OBRIGATORIO: o rollback de 16:28 foi ONLINE, sem reboot, entao o estado de engine da corrida
+anterior continua vivo e nao cai com desbind.
+=============================================================================================
+CORRIDA 13/09 17:18:35 (P0, lab 3.173.1.0) -- A FAIXA DA PRIMARIA FUNCIONOU, A HIPOTESE NAO
+FECHOU, E O LOG PASSOU A RESPONDER. Desfecho 2 do criterio escrito antes da corrida.
+ESTABILIDADE, sem regressao: zero TDR_QUIESCE, zero BugCheck, zero IB_TRIPOD TIMEOUT, zero
+DEVICE_REMOVED, zero StopDevice, zero GFXHUB_FAULT. Rollback online limpo (RECOVERY_OK_ONLINE,
+BasicDisplay Codigo 0 em 5 amostras).
+O QUE A CORRECAO (1) CONSEGUIU, P0: (a) CreateAllocation de origem UMD passou de Resource=0
+("Non-resource allocation") para 7/7 Resource=1; (b) na UMD, SrcPrimary=1 SrcDeclaredPrimary=1
+SrcRTResource=0000000006010000; (c) SetVidPnSourceAddress saiu de 0xAAC000/hAlloc=0x08 (primaria
+do GOP do boot) para Addr=0x4B5C000/hAlloc=0xA8, uma alocacao criada pela UMD -- o dxgkrnl so'
+aponta o source address para alocacao que ele aceita como primaria; (d) Bc250DxgkDdiPresent foi
+ALCANCADA pela PRIMEIRA VEZ na historia do projeto: 6 ENTER, contra zero em todas as corridas
+anteriores. Os 6 fecharam ate o silicio -- origem resolvida (SegOff=0x4B60000 -> VramOff=
+0x55EC000), blt de 11.059.200 bytes, SDMA=YES, DMA buffer de 4 bytes submetido e executado
+(IB EXECUTADO ... FenceId=833).
+TELA PRETA PELO MOTIVO PREVISTO: 6 de 6 com "AVISO: Superficie de origem esta com todos os
+pixels em zero (NonZero=0/256)" e BYTE_PROOF INCONCLUSIVO (FRAME EM BRANCO). A parede de
+rasterizacao segue inteira; nao havia pixel para apresentar.
+A HIPOTESE DA PRIMARIA ESTA REFUTADA COMO CAUSA SUFICIENTE, P0: 84 de 84 pfnPresentCb
+devolveram hr=0x80004005 (E_FAIL) no MESMO milissegundo da chamada -- rejeicao sincrona de
+validacao, nao falha de submissao -- com a primaria ja corretamente declarada. O laco de
+device-lost do dwm.exe continua: 61 CreateDevice/DestroyDevice. O I1 pagou: o numero existe.
+CORRECAO DO MEU PROPRIO RACIOCINIO: eu escrevera que o proximo suspeito seria "o no do contexto
+(COMPUTE, node 1)". ERRADO como formulado -- o GetNodeMetadata da propria corrida diz Node 0 =
+EngineType 6 (COPY) e Node 1 = EngineType 1 (3D). Node 1 NAO e' um no de compute para o
+dxgkrnl. O que SOBREVIVE e' mais estreito e e' medicao, decodificando DXGK_CREATECONTEXTFLAGS
+(d3dkmddi.h:1518, P1): os dois unicos contextos pelos quais o dxgkrnl apresentou estao no
+Node 0 -- Ctx 0x04 Flags=0x05 (SystemContext+VirtualAddressing) e Ctx 0x07 Flags=0x06
+(GdiContext+VirtualAddressing), que fez os 6 --, enquanto TODO contexto da nossa UMD e' Node 1
+Flags=0x04 (VirtualAddressing apenas) e NUNCA apresentou. NAO NOMEIO a causa do E_FAIL:
+0x80004005 e' generico e a corrida nao o determinou. E' H.
+PONTO CEGO MEU, DECLARADO: "Primary token confirmed (UMD" saiu 0 vezes e isso NAO e'
+conclusivo. A classe 9 do amostrador ([CreateAllocation] + [ActiveOpenAlloc] +
+[McdmCreateAllocation] + [McdmCloseAllocation]) somou 45 linhas contra o orcamento de 16
+primeiras. E' o MESMO defeito de contador compartilhado que eu corrigi na classe 12 e nao
+corrigi na classe 9 -- meu proprio I3 foi incompleto, e o buraco caiu em cima da medicao que eu
+queria.
+FAIXA APLICADA (offline), duas frentes:
+(A) I3 COMPLETADO -- as quatro tags da classe 9 ganharam contadores proprios (9, 15, 16 e 17).
+A ausencia de "Primary token confirmed (UMD" passa a ser conclusiva.
+(B) CONTEXTO DE APRESENTACAO DEDICADO. Bc250WinsysCreatePresentContext/DestroyPresentContext
+novas; o Present passa a ir por Winsys.PresentContext, criado no Node 0, enquanto o contexto de
+trabalho continua no Node 1. SystemContext/GdiContext sao decididos no kernel e nao estao em
+D3DDDI_CREATECONTEXTFLAGS (d3dukmdt.h:791), entao NodeOrdinal e' a unica variavel sob nosso
+controle -- e o ensaio move exatamente essa uma. SEM FALLBACK para o contexto de trabalho: a
+ausencia do contexto de apresentacao RECUSA com motivo nomeado, porque cair de volta
+reproduziria o estado ja medido falhando 84/84 e misturaria as duas variaveis. O teardown
+destroi os DOIS -- o dwm.exe fez 61 ciclos de device em ~3 min e contexto nao destruido vaza um
+por ciclo.
+Testes: bloco novo de coexistencia no bc250_wddm_winsys_test (handles distintos por no, contexto
+de trabalho intocado, idempotencia fail-closed, destruicao pelo proprio handle), stubs de
+umd_node1_submit_contract_test e umd_node1_tripod_contract_test atualizados para os dois
+contextos com invariante "2 criados, 2 destruidos". build-umd EXIT=0, build-contract EXIT=0,
+tres auditorias PASS, portoes estendidos em audit_present_path_is_not_mute.
+SEIS MUTACOES VERIFICADAS (10..15): reverter a divisao da classe 9 reprova; o Present voltar ao
+contexto de trabalho reprova; remover a recusa nomeada reprova; a criacao do contexto de
+apresentacao escrever no de trabalho reprova; o teardown perder a destruicao reprova; e o STUB
+devolver o mesmo handle para os dois nos TAMBEM reprova -- esta ultima existe porque "o gate
+congelava a mentira" ja apareceu cinco vezes no projeto.
+ARMADILHA REGISTRADA: a primeira versao do teste criava o contexto de apresentacao em
+TestLifecycle e o destruia em TestResidencyAndPrimaryClass -- funcoes diferentes. A suite pegou.
+Tres assercoes de contagem que congelavam "1 contexto" tiveram de virar "2 criados, 2
+destruidos", e um stub que exigia o handle 0xC001 constante passou a comparar com a FONTE
+(context.KernelContext), para continuar valendo se o no do contexto de trabalho mudar.
+PACOTE LAB 3.174.1.0 assinado, auditado e NAO INSTALADO. BuildKind=MCDM_LAB_BRINGUP, perfil
+DISPLAY_RENDER_LAB (RenderNode=1, RenderOnlyLab=0), WDDM 2.7, P1 PERSISTENT SUBMISSION,
+schema 135. SYS fonte 638D83F2..., SYS assinado 957A3873..., UMD assinada 90F90E2A...,
+INF B64F0320..., CAT 8F34DF19... Lab package audit PASS. Binarios CONFERIDOS POR STRING (o
+empacotador nao compila, so' copia): no SYS "[DdiPresent] ENTER #", "Primary token confirmed
+(UMD", "[McdmCloseAllocation]" e "[ActiveOpenAlloc]"; na UMD "CreatePresentContext ENTER",
+"DestroyPresentContext ENTER", "PRESENT_CONTEXT: Node=", "PresentNode=" e "DXGI Present
+RECUSADO: contexto de apresentacao ausente".
+CRITERIO DA PROXIMA CORRIDA, ESCRITO ANTES -- quatro desfechos, todos distinguiveis:
+  1. "DXGI Present LEAVE cb: hr=0x00000000" aparece -> o no do contexto ERA a causa; o laco de
+     device-lost do dwm.exe tem de parar e [DdiPresent] ENTER cresce muito alem de 6.
+  2. "DXGI Present LEAVE cb: hr=0x80004005" com "PresentNode=0" na linha ENTER -> apresentamos
+     pelo Node 0 e ainda assim falhou. O contexto MORRE como suspeito, e o proximo passa a ser
+     a forma da cadeia de flip (hDstAllocation=0, buffers do swapchain criados um a um, sem
+     registro de cadeia).
+  3. "DXGI Present RECUSADO: contexto de apresentacao ausente" -> a criacao no Node 0 falhou; a
+     linha "PRESENT_CONTEXT: criacao FALHOU" diz o status e o ensaio nao chegou a acontecer.
+  4. "Primary token confirmed (UMD #N)" aparece -> fecha, por medicao direta, o que a corrida
+     17:18 so' pode sustentar por indicio (o SetVidPnSourceAddress ter ido para hAlloc de UMD).
+NAO ESPERAR DESKTOP: a parede de rasterizacao continua inteira e nenhum pixel e' produzido por
+ninguem. TELA PRETA segue sendo o resultado CORRETO; qualquer imagem deve ser atribuida ao
+rollback/BasicDisplay ate prova em contrario.
+ESTADO DA MAQUINA NO EMPACOTAMENTO: BasicDisplay Codigo 0, fusivel INEXISTENTE (proximo boot
+assume CLEAN), sem marcador C:\BC250_REQUIRE_CLEAN_BOOT.json. BOOT FRIO CONTINUA OBRIGATORIO: o
+rollback de 17:18 foi ONLINE, sem reboot, entao o estado de engine da corrida anterior segue
+vivo e nao cai com desbind.
+NADA DESTA FAIXA FOI VALIDADO EM HARDWARE.
+NADA DESTA FAIXA FOI VALIDADO EM HARDWARE.
+=============================================================================================
 ```
 
 > ℹ️ **O adaptador WDDM alcançou Código 0 em 02/09/2026** (itens 97 e 102 fechados com prova

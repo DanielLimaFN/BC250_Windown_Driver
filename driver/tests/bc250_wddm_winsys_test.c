@@ -23,7 +23,20 @@ typedef struct TEST_STATE {
     UINT CreateSyncCalls;
     UINT DestroySyncCalls;
     UINT SignalSyncCalls;
+    UINT SignalSyncGpuCalls;
     HRESULT ForcedResult;
+    /*
+     * 13/09 -- vinculo de recurso. Sem estes campos o teste nao podia distinguir
+     * "a UMD passou hResource" de "a UMD nao passou", que e' exatamente o defeito
+     * medido na corrida 16:28:27.
+     */
+    HANDLE LastAllocateHResource;
+    UINT LastAllocatePrimary;
+    UINT LastAllocateVidPnSourceId;
+    HANDLE LastDeallocateHResource;
+    UINT LastDeallocateNumAllocations;
+    HANDLE LastDestroyedContext;
+    HANDLE LastSignalContext;
 } TEST_STATE;
 
 static TEST_STATE g_State;
@@ -40,7 +53,15 @@ static HRESULT APIENTRY TestCreateContext(
     g_State.CreateContextCalls++;
     g_State.LastCreatedNode = Args->NodeOrdinal;
     if (FAILED(g_State.ForcedResult)) return g_State.ForcedResult;
-    Args->hContext = (HANDLE)(ULONG_PTR)0xC001u;
+    /*
+     * Handles DISTINTOS por no. O contexto de trabalho (Node 1) e o de
+     * apresentacao (Node 0) sao objetos de kernel diferentes, e um stub que
+     * devolvesse o mesmo handle para os dois deixaria passar justamente o
+     * defeito que esta faixa investiga: apresentar pelo contexto errado.
+     */
+    Args->hContext = (Args->NodeOrdinal == BC250_WINSYS_NODE_SDMA)
+        ? (HANDLE)(ULONG_PTR)0xC000u
+        : (HANDLE)(ULONG_PTR)0xC001u;
     return S_OK;
 }
 
@@ -49,7 +70,10 @@ static HRESULT APIENTRY TestDestroyContext(
     const D3DDDICB_DESTROYCONTEXT *Args)
 {
     assert(Device == (HANDLE)(ULONG_PTR)0xD00Du);
-    assert(Args != NULL && Args->hContext == (HANDLE)(ULONG_PTR)0xC001u);
+    assert(Args != NULL);
+    assert(Args->hContext == (HANDLE)(ULONG_PTR)0xC001u ||
+           Args->hContext == (HANDLE)(ULONG_PTR)0xC000u);
+    g_State.LastDestroyedContext = Args->hContext;
     g_State.DestroyContextCalls++;
     if (FAILED(g_State.ForcedResult)) return g_State.ForcedResult;
     return S_OK;
@@ -69,16 +93,33 @@ static HRESULT APIENTRY TestAllocate(HANDLE Device, D3DDDICB_ALLOCATE *Args)
     assert(privateData->Magic == BC250_ALLOCATION_PRIVATE_MAGIC);
     assert(privateData->Version == BC250_ALLOCATION_PRIVATE_VERSION);
     assert(privateData->StructSize == sizeof(*privateData));
+    /*
+     * 0x43 e' o token dos casos que DEVEM ser recusados ANTES do callback. Ele
+     * entra na allowlist de proposito: se a recusa for afrouxada, quem tem de
+     * reprovar e' o invariante "AllocateCalls nao mudou", nomeando a causa --
+     * e nao este assert do stub disparando primeiro por acidente.
+     */
     assert(privateData->AllocationToken == 0x1234u ||
            privateData->AllocationToken ==
                (((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_PRIMARY <<
-                   BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x42u));
+                   BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x42u) ||
+           privateData->AllocationToken ==
+               (((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_PRIMARY <<
+                   BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x43u));
     assert(privateData->ByteSize == 0x4000u);
     assert(privateData->Alignment == 0x1000u);
     g_State.AllocateCalls++;
+    g_State.LastAllocateHResource = Args->hResource;
+    g_State.LastAllocatePrimary = info->Flags.Primary;
+    g_State.LastAllocateVidPnSourceId = (UINT)info->VidPnSourceId;
     if (FAILED(g_State.ForcedResult)) return g_State.ForcedResult;
     info->hAllocation = 0xA110u;
     info->GpuVirtualAddress = 0u;
+    /*
+     * O dxgkrnl so' devolve hKMResource quando a criacao e' baseada em recurso.
+     * Espelhar isso aqui mantem o stub fiel ao contrato.
+     */
+    Args->hKMResource = (Args->hResource != NULL) ? 0x4B4Du : 0u;
     return S_OK;
 }
 
@@ -233,13 +274,57 @@ static HRESULT APIENTRY TestSignalSync(
     return S_OK;
 }
 
+static UINT64 g_SignalledGpuFenceValue;
+
+/*
+ * Sinal da fence monitorada PELO CONTRATO. Este stub e' o portao da regressao
+ * da corrida 12/09 22:57 (0x116): antes da correcao ninguem chamava este
+ * caminho, o dxgkrnl nunca sabia do sinal e o wait da CPU nunca era satisfeito.
+ */
+static HRESULT APIENTRY TestSignalSyncGpu(
+    HANDLE Device,
+    const D3DDDICB_SIGNALSYNCHRONIZATIONOBJECTFROMGPU *Args)
+{
+    assert(Device == (HANDLE)(ULONG_PTR)0xD00Du);
+    assert(Args != NULL && Args->ObjectCount == 1u);
+    /*
+     * O handle deixou de ser constante: desde 13/09 o stub devolve handles
+     * DISTINTOS por no (0xC000 no Node 0, 0xC001 no Node 1), porque o contexto
+     * de apresentacao e o de trabalho coexistem. Quem verifica QUAL contexto
+     * sinalizou e' o teste, comparando com context.KernelContext -- aqui basta
+     * exigir que seja um contexto valido, sem congelar o handle de um no.
+     */
+    assert(Args->hContext == (HANDLE)(ULONG_PTR)0xC001u ||
+           Args->hContext == (HANDLE)(ULONG_PTR)0xC000u);
+    assert(Args->ObjectHandleArray != NULL &&
+        Args->ObjectHandleArray[0] == (D3DKMT_HANDLE)0x5001u);
+    assert(Args->MonitoredFenceValueArray != NULL);
+    g_State.LastSignalContext = Args->hContext;
+    g_State.SignalSyncGpuCalls++;
+    if (FAILED(g_State.ForcedResult)) return g_State.ForcedResult;
+    g_SignalledGpuFenceValue = Args->MonitoredFenceValueArray[0];
+    return S_OK;
+}
+
 static HRESULT APIENTRY TestDeallocate2(
     HANDLE Device,
     const D3DDDICB_DEALLOCATE2 *Args)
 {
     assert(Device == (HANDLE)(ULONG_PTR)0xD00Du);
-    assert(Args != NULL && Args->NumAllocations == 1u);
-    assert(Args->HandleList != NULL && Args->HandleList[0] == 0xA110u);
+    assert(Args != NULL);
+    /*
+     * d3dumddi.h:4068 -- NumAllocations/HandleList sao IGNORADOS quando
+     * hResource != NULL. O stub aceita as duas formas e registra qual chegou,
+     * para o teste poder exigir SIMETRIA com a criacao.
+     */
+    if (Args->hResource != NULL) {
+        assert(Args->NumAllocations == 0u);
+    } else {
+        assert(Args->NumAllocations == 1u);
+        assert(Args->HandleList != NULL && Args->HandleList[0] == 0xA110u);
+    }
+    g_State.LastDeallocateHResource = Args->hResource;
+    g_State.LastDeallocateNumAllocations = Args->NumAllocations;
     g_State.DeallocateCalls++;
     if (FAILED(g_State.ForcedResult)) return g_State.ForcedResult;
     return S_OK;
@@ -307,6 +392,7 @@ static D3DDDI_DEVICECALLBACKS TestCallbacks(void)
     callbacks.pfnCreateSynchronizationObject2Cb = TestCreateSync;
     callbacks.pfnDestroySynchronizationObjectCb = TestDestroySync;
     callbacks.pfnSignalSynchronizationObjectFromCpuCb = TestSignalSync;
+    callbacks.pfnSignalSynchronizationObjectFromGpuCb = TestSignalSyncGpu;
     return callbacks;
 }
 
@@ -329,6 +415,36 @@ static void TestLifecycle(void)
         BC250_WINSYS_NODE_COMPUTE) == BC250_WINSYS_OK);
     assert(context.KernelContext == (HANDLE)(ULONG_PTR)0xC001u);
     assert(g_State.LastCreatedNode == BC250_WINSYS_NODE_COMPUTE);
+
+    /*
+     * CONTEXTO DE APRESENTACAO -- COEXISTE com o de trabalho, nao o substitui.
+     *
+     * Corrida 17:18:35: os dois unicos contextos pelos quais o dxgkrnl
+     * apresentou estavam no Node 0; todo contexto nosso estava no Node 1 e
+     * nunca apresentou. Este bloco trava que o de apresentacao nasce no no
+     * pedido, que os DOIS handles sao distintos e que o de trabalho sobrevive
+     * intacto -- se um sobrescrevesse o outro, o Present iria de novo pelo
+     * contexto errado sem que nada reprovasse.
+     */
+    {
+        UINT contextsBefore = g_State.CreateContextCalls;
+        assert(Bc250WinsysCreatePresentContext(&context,
+            BC250_WINSYS_NODE_SDMA) == BC250_WINSYS_OK);
+        assert(g_State.CreateContextCalls == contextsBefore + 1u);
+        assert(g_State.LastCreatedNode == BC250_WINSYS_NODE_SDMA);
+        assert(context.PresentContextCreated);
+        assert(context.PresentNodeOrdinal == BC250_WINSYS_NODE_SDMA);
+        assert(context.PresentContext == (HANDLE)(ULONG_PTR)0xC000u);
+        /* O contexto de trabalho NAO pode ter sido tocado. */
+        assert(context.KernelContext == (HANDLE)(ULONG_PTR)0xC001u);
+        assert(context.NodeOrdinal == BC250_WINSYS_NODE_COMPUTE);
+        assert(context.ContextCreated);
+        /* Idempotencia fail-closed: segunda criacao e' conflito, nao vazamento. */
+        assert(Bc250WinsysCreatePresentContext(&context,
+            BC250_WINSYS_NODE_SDMA) == BC250_WINSYS_STATE_CONFLICT);
+        assert(g_State.CreateContextCalls == contextsBefore + 1u);
+    }
+
     assert(Bc250WinsysCreatePagingQueue(&context) == BC250_WINSYS_OK);
     assert(Bc250WinsysAllocate(&context, 0x1234u, 0x4000u, 0x1000u,
         &allocation) == BC250_WINSYS_OK);
@@ -355,14 +471,33 @@ static void TestLifecycle(void)
     assert(Bc250WinsysDeallocate(&context, &allocation) == BC250_WINSYS_OK);
     assert(context.ActiveGpuVaMappings == 0u);
     assert(Bc250WinsysDestroyVirtualContext(&context) == BC250_WINSYS_OK);
+
+    /*
+     * O contexto de apresentacao TEM de ser destruido pelo SEU PROPRIO handle,
+     * e destruir o de trabalho nao pode leva-lo junto. Na corrida 17:18:35 o
+     * dwm.exe fez 61 CreateDevice/DestroyDevice em ~3 min; um contexto de kernel
+     * nao destruido vaza uma vez por ciclo.
+     */
+    assert(context.PresentContextCreated);
+    assert(context.PresentContext == (HANDLE)(ULONG_PTR)0xC000u);
+    assert(Bc250WinsysDestroyPresentContext(&context) == BC250_WINSYS_OK);
+    assert(g_State.LastDestroyedContext == (HANDLE)(ULONG_PTR)0xC000u);
+    assert(!context.PresentContextCreated);
+    assert(context.PresentContext == NULL);
+    /* Segunda destruicao e' no-op, nao erro nem chamada duplicada. */
+    assert(Bc250WinsysDestroyPresentContext(&context) == BC250_WINSYS_OK);
+    assert(g_State.DestroyContextCalls == 2u);
+
     assert(Bc250WinsysDestroyPagingQueue(&context) == BC250_WINSYS_OK);
-    assert(g_State.CreateContextCalls == 1u);
+    /* Dois contextos: um de trabalho no Node 1, um de apresentacao no Node 0. */
+    assert(g_State.CreateContextCalls == 2u);
     assert(g_State.AllocateCalls == 1u);
     assert(g_State.SubmitCalls == 1u);
     assert(g_State.LockCalls == 1u);
     assert(g_State.UnlockCalls == 1u);
     assert(g_State.DeallocateCalls == 1u);
-    assert(g_State.DestroyContextCalls == 1u);
+    /* Dois contextos criados, dois destruidos: nenhum vaza. */
+    assert(g_State.DestroyContextCalls == 2u);
     assert(g_State.CreatePagingQueueCalls == 1u);
     assert(g_State.MapCalls == 1u);
     assert(g_State.WaitCalls == 1u);
@@ -459,23 +594,110 @@ static void TestResidencyAndPrimaryClass(void)
     assert(!allocation.Resident);
     assert(g_State.EvictCalls == 1u);
 
-    /* Make resident again and then deallocate -> should auto-evict */
+    /* Make resident again and then deallocate -> no explicit evict (atomic in pfnDeallocate) */
     assert(Bc250WinsysMakeResident(&context, &allocation) == BC250_WINSYS_OK);
     assert(allocation.Resident);
     assert(g_State.MakeResidentCalls == 2u);
 
     assert(Bc250WinsysDeallocate(&context, &allocation) == BC250_WINSYS_OK);
     assert(!allocation.Resident);
-    assert(g_State.EvictCalls == 2u);
+    assert(g_State.EvictCalls == 1u);
 
-    /* Test primary allocation */
+    /*
+     * PRIMARIA COM VINCULO DE RECURSO (13/09).
+     *
+     * O invariante que este bloco trava e' o defeito medido na corrida 16:28:27:
+     * a UMD alocava a primaria do dwm.exe SEM hResource e SEM Flags.Primary, o
+     * dxgkrnl nao ligava Flags.Resource, e o KMD registrava
+     * "[CreateAllocation] Non-resource allocation" para toda superficie. Sem os
+     * tres campos abaixo nao existe primaria do ponto de vista do kernel, e um
+     * Present com FLIP nao tem como ser honrado.
+     */
     {
         uint64_t primaryToken =
             ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_PRIMARY <<
                 BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x42u;
-        assert(Bc250WinsysAllocate(&context, primaryToken, 0x4000u, 0x1000u, &primaryAllocation) == BC250_WINSYS_OK);
+        BC250_WINSYS_RESOURCE_BINDING binding;
+        HANDLE rtResource = (HANDLE)(ULONG_PTR)0xB1D0u;
+
+        memset(&binding, 0, sizeof(binding));
+        binding.RuntimeResource = rtResource;
+        binding.Primary = TRUE;
+        binding.VidPnSourceId = 0u;
+
+        assert(Bc250WinsysAllocateForResource(&context, primaryToken, 0x4000u,
+            0x1000u, &binding, &primaryAllocation) == BC250_WINSYS_OK);
         assert(Bc250WinsysAllocationIsPrimary(&primaryAllocation));
+        /* Os tres campos que faltavam, exigidos um a um. */
+        assert(g_State.LastAllocateHResource == rtResource);
+        assert(g_State.LastAllocatePrimary == 1u);
+        assert(g_State.LastAllocateVidPnSourceId == 0u);
+        assert(primaryAllocation.DeclaredPrimary);
+        assert(primaryAllocation.RuntimeResource == rtResource);
+        assert(primaryAllocation.KernelResource == 0x4B4Du);
+
+        /* Simetria: criada com recurso, devolvida com recurso. */
         assert(Bc250WinsysDeallocate(&context, &primaryAllocation) == BC250_WINSYS_OK);
+        assert(g_State.LastDeallocateHResource == rtResource);
+        assert(g_State.LastDeallocateNumAllocations == 0u);
+    }
+
+    /*
+     * FAIL-CLOSED, tres formas. Nenhuma delas pode virar uma "primaria" que o
+     * kernel jamais vera como primaria -- suceder calado aqui e' o que produziu
+     * 90 Present recusados e o laco de device-lost do dwm.exe.
+     */
+    {
+        uint64_t primaryToken =
+            ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_PRIMARY <<
+                BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x43u;
+        BC250_WINSYS_RESOURCE_BINDING binding;
+        BC250_WINSYS_ALLOCATION rejected;
+        UINT callsBefore = g_State.AllocateCalls;
+
+        memset(&rejected, 0, sizeof(rejected));
+
+        /* (a) token PRIMARY sem vinculo nenhum -> o caminho antigo, agora proibido. */
+        assert(Bc250WinsysAllocate(&context, primaryToken, 0x4000u, 0x1000u,
+            &rejected) == BC250_WINSYS_BAD_ARGUMENT);
+
+        /* (b) primaria declarada sem hRTResource -> Flags.Resource ficaria 0. */
+        memset(&binding, 0, sizeof(binding));
+        binding.Primary = TRUE;
+        binding.RuntimeResource = NULL;
+        assert(Bc250WinsysAllocateForResource(&context, primaryToken, 0x4000u,
+            0x1000u, &binding, &rejected) == BC250_WINSYS_BAD_ARGUMENT);
+
+        /* (c) vinculo discordando do token -> duas fontes de verdade. */
+        memset(&binding, 0, sizeof(binding));
+        binding.Primary = FALSE;
+        binding.RuntimeResource = (HANDLE)(ULONG_PTR)0xB1D1u;
+        assert(Bc250WinsysAllocateForResource(&context, primaryToken, 0x4000u,
+            0x1000u, &binding, &rejected) == BC250_WINSYS_BAD_ARGUMENT);
+
+        /* Recusa e' ANTES do callback: o kernel nao pode ter sido tocado. */
+        assert(g_State.AllocateCalls == callsBefore);
+        assert(!rejected.Created);
+    }
+
+    /*
+     * CONTRAPONTO -- o caso legitimo sem recurso continua funcionando. Command
+     * buffer, staging de prova e scratch nunca sao apresentados e nao devem
+     * carregar hResource; se este bloco reprovar, a correcao virou peneira.
+     */
+    {
+        BC250_WINSYS_ALLOCATION plain;
+        memset(&plain, 0, sizeof(plain));
+        assert(Bc250WinsysAllocate(&context, 0x1234u, 0x4000u, 0x1000u,
+            &plain) == BC250_WINSYS_OK);
+        assert(g_State.LastAllocateHResource == NULL);
+        assert(g_State.LastAllocatePrimary == 0u);
+        assert(!plain.DeclaredPrimary);
+        assert(plain.RuntimeResource == NULL);
+        assert(plain.KernelResource == 0u);
+        assert(Bc250WinsysDeallocate(&context, &plain) == BC250_WINSYS_OK);
+        assert(g_State.LastDeallocateHResource == NULL);
+        assert(g_State.LastDeallocateNumAllocations == 1u);
     }
 
     assert(Bc250WinsysDestroyPagingQueue(&context) == BC250_WINSYS_OK);
@@ -583,6 +805,79 @@ static void TestPagingPendingStatus(void)
     assert(Bc250WinsysDestroyPagingQueue(&context) == BC250_WINSYS_OK);
 }
 
+static void TestSignalMonitoredFenceFromGpu(void)
+{
+    D3DDDI_DEVICECALLBACKS callbacks = TestCallbacks();
+    D3DDDI_DEVICECALLBACKS noSignal = TestCallbacks();
+    BC250_WINSYS_CONTEXT context;
+    BC250_WINSYS_CONTEXT bare;
+    BC250_WINSYS_MONITORED_FENCE fence;
+    BC250_WINSYS_MONITORED_FENCE unborn;
+
+    memset(&g_State, 0, sizeof(g_State));
+    memset(&context, 0, sizeof(context));
+    memset(&bare, 0, sizeof(bare));
+    memset(&fence, 0, sizeof(fence));
+    memset(&unborn, 0, sizeof(unborn));
+    g_MonitoredFence = 0u;
+    g_SignalledGpuFenceValue = 0u;
+
+    assert(Bc250WinsysInitialize(&context,
+        (HANDLE)(ULONG_PTR)0xD00Du, &callbacks) == BC250_WINSYS_OK);
+    assert(Bc250WinsysCreateVirtualContext(&context, 0u) == BC250_WINSYS_OK);
+    assert(Bc250WinsysCreateMonitoredFence(&context, 0u, &fence) == BC250_WINSYS_OK);
+
+    /* 1) Callback ausente falha FECHADO -- nunca silenciosamente OK. */
+    noSignal.pfnSignalSynchronizationObjectFromGpuCb = NULL;
+    assert(Bc250WinsysInitialize(&bare,
+        (HANDLE)(ULONG_PTR)0xD00Du, &noSignal) == BC250_WINSYS_OK);
+    assert(Bc250WinsysCreateVirtualContext(&bare, 0u) == BC250_WINSYS_OK);
+    assert(Bc250WinsysSignalMonitoredFenceFromGpu(&bare, &fence, 1u) ==
+        BC250_WINSYS_MISSING_CALLBACK);
+    assert(g_State.SignalSyncGpuCalls == 0u);
+    assert(Bc250WinsysDestroyVirtualContext(&bare) == BC250_WINSYS_OK);
+
+    /* 2) Argumentos invalidos sao recusados ANTES de tocar no runtime. */
+    assert(Bc250WinsysSignalMonitoredFenceFromGpu(NULL, &fence, 1u) ==
+        BC250_WINSYS_BAD_ARGUMENT);
+    assert(Bc250WinsysSignalMonitoredFenceFromGpu(&context, NULL, 1u) ==
+        BC250_WINSYS_BAD_ARGUMENT);
+    assert(Bc250WinsysSignalMonitoredFenceFromGpu(&context, &unborn, 1u) ==
+        BC250_WINSYS_BAD_ARGUMENT);
+    /* Valor 0 nunca avanca uma fence monitorada: recusa em vez de no-op mudo. */
+    assert(Bc250WinsysSignalMonitoredFenceFromGpu(&context, &fence, 0u) ==
+        BC250_WINSYS_BAD_ARGUMENT);
+    assert(g_State.SignalSyncGpuCalls == 0u);
+
+    /* 3) Caminho feliz: o runtime recebe contexto, objeto e valor exatos. */
+    assert(Bc250WinsysSignalMonitoredFenceFromGpu(&context, &fence, 42u) ==
+        BC250_WINSYS_OK);
+    assert(g_State.SignalSyncGpuCalls == 1u);
+    assert(g_SignalledGpuFenceValue == 42u);
+    /*
+     * O sinal sai pelo contexto de TRABALHO, nunca pelo de apresentacao. A
+     * assercao antiga congelava o handle 0xC001; agora ela compara com a fonte,
+     * entao continua valendo se o no do contexto de trabalho mudar.
+     */
+    assert(g_State.LastSignalContext == context.KernelContext);
+
+    /* 4) Falha do runtime propaga; nao vira sucesso. */
+    g_State.ForcedResult = E_FAIL;
+    assert(Bc250WinsysSignalMonitoredFenceFromGpu(&context, &fence, 43u) ==
+        BC250_WINSYS_CALLBACK_FAILED);
+    assert(g_State.SignalSyncGpuCalls == 2u);
+    assert(g_SignalledGpuFenceValue == 42u);
+    g_State.ForcedResult = S_OK;
+
+    /* 5) Sem contexto criado nao ha a quem enfileirar o sinal. */
+    assert(Bc250WinsysDestroyVirtualContext(&context) == BC250_WINSYS_OK);
+    assert(Bc250WinsysSignalMonitoredFenceFromGpu(&context, &fence, 44u) ==
+        BC250_WINSYS_BAD_ARGUMENT);
+    assert(g_State.SignalSyncGpuCalls == 2u);
+
+    assert(Bc250WinsysDestroyMonitoredFence(&context, &fence) == BC250_WINSYS_OK);
+}
+
 int main(void)
 {
     printf("=== BC250 WDDM WINSYS CONTRACT TEST ===\n");
@@ -590,6 +885,7 @@ int main(void)
     TestResidencyAndPrimaryClass();
     TestMonitoredFenceLifecycle();
     TestPagingPendingStatus();
+    TestSignalMonitoredFenceFromGpu();
     TestFailClosed();
     printf("WDDM WINSYS CONTRACT: PASS (callbacks offline; hardware not touched)\n");
     return 0;

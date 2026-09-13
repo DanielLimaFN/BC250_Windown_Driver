@@ -186,6 +186,7 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == 0xA318u ||
         ByteOffset == 0xA3A4u ||
         ByteOffset == 0xA3A8u ||
+        Bc250GcvmIsUserRegister(ByteOffset) ||
         Bc250GcvmIsComputeRegister(ByteOffset) ||
         ByteOffset == BC250_GCVM_VMID8_CNTL ||
         ByteOffset == BC250_GCVM_VMID8_PT_BASE_LO ||
@@ -331,6 +332,7 @@ static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == 0xA2D0u ||
         ByteOffset == 0xA3A4u ||
         ByteOffset == 0xA3A8u ||
+        Bc250GcvmIsUserRegister(ByteOffset) ||
         Bc250GcvmIsComputeRegister(ByteOffset) ||
         ByteOffset == BC250_GCVM_VMID8_CNTL ||
         ByteOffset == BC250_GCVM_VMID8_PT_BASE_LO ||

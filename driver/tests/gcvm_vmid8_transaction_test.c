@@ -106,12 +106,12 @@ static int Run(void)
     CHECK(instEv.StartHighProgrammed == 0x00000000u);
     CHECK(instEv.EndLowProgrammed == 0x003FFFFFu);
     CHECK(instEv.EndHighProgrammed == 0x00000000u);
-    CHECK(instEv.ContextControlProgrammed == 0x00555403u);
+    CHECK(instEv.ContextControlProgrammed == BC250_GCVM_CONTEXT8_CNTL_FAULT_OBSERVABLE_VALUE);
     CHECK(instEv.ProgramReadbackPassed == 1u);
     CHECK(instEv.TlbFlushPassed == 1u);
     CHECK(instEv.PhysicalReady == 1u);
     CHECK(f->FlushCalls == 1u);
-    CHECK(f->Registers[BC250_GCVM_VMID8_CNTL / 4u] == 0x00555403u);
+    CHECK(f->Registers[BC250_GCVM_VMID8_CNTL / 4u] == BC250_GCVM_CONTEXT8_CNTL_FAULT_OBSERVABLE_VALUE);
     CHECK(f->Registers[BC250_GCVM_VMID8_PT_BASE_LO / 4u] == (0x45FF1000u | 0x1u));
     CHECK(f->Registers[BC250_GCVM_VMID8_PT_BASE_HI / 4u] == 0x000000F4u);
     CHECK(f->Registers[BC250_GCVM_VMID8_PT_START_LO / 4u] == 0x00000000u);
@@ -143,7 +143,7 @@ static int Run(void)
 
     /* 7. Bc250GcvmVmid8Uninstall - Sucesso */
     CHECK(Bc250GcvmVmid8Install(0x000000F445FF1000ull, &io, &instEv) == BC250_GCVM_VMID8_OK);
-    CHECK(f->Registers[BC250_GCVM_VMID8_CNTL / 4u] == 0x00555403u);
+    CHECK(f->Registers[BC250_GCVM_VMID8_CNTL / 4u] == BC250_GCVM_CONTEXT8_CNTL_FAULT_OBSERVABLE_VALUE);
     f->FlushCalls = 0u;
     CHECK(Bc250GcvmVmid8Uninstall(&io, &instEv) == BC250_GCVM_VMID8_OK);
     CHECK(f->Registers[BC250_GCVM_VMID8_CNTL / 4u] == 0u);
@@ -193,9 +193,29 @@ static int Run(void)
     CHECK(f->WriteCalls == i);
     f->FlushResult = 1u;
     CHECK(Bc250GcvmComputeRestore(&io, &binding) == BC250_GCVM_VMID8_OK);
-    f->Registers[BC250_GCVM_VMID9_CNTL / 4u] = 1u;
-    CHECK(Bc250GcvmComputeInstall(0x45FFB0000ull, 18ull, 18ull, &io, &binding) == BC250_GCVM_VMID8_CONTEXT_ENABLED);
     CHECK(!binding.SnapshotValid);
+
+    /* VMID7 (User/DWM) validation: exact catalog addresses, register checker,
+     * separate installation from VMID8/9. */
+    CHECK(BC250_GCVM_VMID7_CNTL == (0x1260u + 0x1627u) * 4u);
+    CHECK(BC250_GCVM_VMID7_PT_BASE_LO == (0x1260u + 0x1699u) * 4u);
+    CHECK(BC250_GCVM_VMID7_PT_END_HI == (0x1260u + 0x16DAu) * 4u);
+    CHECK(Bc250GcvmIsUserRegister(BC250_GCVM_VMID7_PT_START_HI));
+    CHECK(!Bc250GcvmIsUserRegister(BC250_GCVM_VMID8_CNTL));
+    CHECK(!Bc250GcvmIsUserRegister(BC250_GCVM_VMID9_CNTL));
+    CHECK(!Bc250GcvmIsUserRegister(BC250_GCVM_VMID7_CNTL + 4u));
+    f->Registers[BC250_GCVM_VMID7_CNTL / 4u] = 0u;
+    f->FlushCalls = 0u;
+    CHECK(Bc250GcvmInstallVmid(BC250_GCVM_USER_VMID, 0x000000F445FF2000ull, &io, &instEv) == BC250_GCVM_VMID8_OK);
+    CHECK(instEv.PageTablePhysical == 0x000000F445FF2000ull);
+    CHECK(instEv.ContextControlProgrammed == BC250_GCVM_CONTEXT8_CNTL_FAULT_OBSERVABLE_VALUE);
+    CHECK(f->Registers[BC250_GCVM_VMID7_CNTL / 4u] == BC250_GCVM_CONTEXT8_CNTL_FAULT_OBSERVABLE_VALUE);
+    CHECK(f->Registers[BC250_GCVM_VMID7_PT_BASE_LO / 4u] == (0x45FF2000u | 0x1u));
+    CHECK(f->Registers[BC250_GCVM_VMID7_PT_BASE_HI / 4u] == 0x000000F4u);
+    CHECK(f->Registers[BC250_GCVM_VMID7_PT_START_LO / 4u] == 0x00000000u);
+    CHECK(f->Registers[BC250_GCVM_VMID7_PT_START_HI / 4u] == 0x00000000u);
+    CHECK(f->Registers[BC250_GCVM_VMID7_PT_END_LO / 4u] == 0x003FFFFFu);
+    CHECK(f->Registers[BC250_GCVM_VMID7_PT_END_HI / 4u] == 0x00000000u);
     return 1;
 }
 

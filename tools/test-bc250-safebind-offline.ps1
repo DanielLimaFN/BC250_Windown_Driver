@@ -65,9 +65,12 @@ $evidence = Join-Path $work 'evidence'
 New-Item -ItemType Directory -Path $evidence -Force | Out-Null
 
 function New-GuardConfig([hashtable]$Override) {
+    $armedAtUtc = [datetime]::UtcNow
+    $deadlineUtc = $armedAtUtc.AddSeconds(240)
     $c = [ordered]@{
         schema_version = 1
         task_name = 'BC250-SafeBindGuard-OFFLINE-TEST'
+        deadline_task_name = 'BC250-SafeBindDeadline-OFFLINE-TEST'
         token = [guid]::NewGuid().ToString('D')
         instance_id = $instanceId
         timeout_seconds = 240
@@ -75,6 +78,8 @@ function New-GuardConfig([hashtable]$Override) {
         recovery_path = $recovery
         recovery_sha256 = (Get-FileHash $recovery -Algorithm SHA256).Hash
         armed_boot_ticks = 1
+        armed_at_utc_ticks = [long]$armedAtUtc.Ticks
+        deadline_utc_ticks = [long]$deadlineUtc.Ticks
         automatic_recovery_reboot = $true
         hardware_validated = $false
     }
@@ -97,6 +102,9 @@ foreach ($case in @(
         @{ nome = 'campo automatic_recovery_reboot ausente'; ov = @{ automatic_recovery_reboot = $null } },
         @{ nome = 'campo recovery_sha256 ausente';           ov = @{ recovery_sha256 = $null } },
         @{ nome = 'campo armed_boot_ticks ausente';          ov = @{ armed_boot_ticks = $null } },
+        @{ nome = 'campo deadline_task_name ausente';        ov = @{ deadline_task_name = $null } },
+        @{ nome = 'campo deadline_utc_ticks ausente';        ov = @{ deadline_utc_ticks = $null } },
+        @{ nome = 'prazo absoluto incoerente';               ov = @{ deadline_utc_ticks = 1 } },
         @{ nome = 'schema_version diferente de 1';           ov = @{ schema_version = 2 } },
         @{ nome = 'instance_id de outro dispositivo';        ov = @{ instance_id = 'PCI\VEN_10DE&DEV_1234\1' } },
         @{ nome = 'timeout abaixo do minimo';                ov = @{ timeout_seconds = 30 } },
@@ -167,6 +175,33 @@ if ($cmdLines.Count -ne 1) {
     else { Bad "timeout devolveu $sadExit (esperado 1)" }
     if ($sampleCount -ge 3) { Ok 'cada amostra foi registrada individualmente' }
     else { Bad "apenas $sampleCount amostras registradas em 5 s" }
+}
+
+Write-Host '=== 6. Prazo absoluto e ordem fail-closed ===' -ForegroundColor Cyan
+$watchText = Get-Content -LiteralPath $guard -Raw
+$rollbackIndex = $watchText.IndexOf("Write-State 'ROLLBACK_STARTED'")
+$recoveryIndex = $watchText.IndexOf('& cmd.exe /d /c', $rollbackIndex)
+if ($rollbackIndex -ge 0 -and $recoveryIndex -gt $rollbackIndex) {
+    Ok 'ROLLBACK_STARTED e publicado antes da recovery'
+    $criticalWindow = $watchText.Substring(
+        $rollbackIndex, $recoveryIndex - $rollbackIndex)
+    if ($criticalWindow -notmatch 'Get-CimInstance|Get-WinEvent') {
+        Ok 'nenhuma consulta WMI/evento bloqueia a recovery depois do prazo'
+    } else {
+        Bad 'consulta WMI/evento encontrada antes da recovery depois do prazo'
+    }
+} else {
+    Bad 'nao localizou a ordem ROLLBACK_STARTED -> recovery'
+}
+$labBindText = Get-Content -LiteralPath `
+    (Join-Path $root 'tools\bind-bc250mcdm-lab.ps1') -Raw
+foreach ($needle in @('BC250-SafeBindDeadline','-DeadlineEnforcer',
+        'deadline_utc_ticks','Global\BC250SafeBindRecovery')) {
+    $haystack = if ($needle -eq 'Global\BC250SafeBindRecovery') {
+        $watchText
+    } else { $labBindText }
+    if ($haystack.Contains($needle)) { Ok "contrato presente: $needle" }
+    else { Bad "contrato ausente: $needle" }
 }
 
 Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue

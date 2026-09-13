@@ -1,11 +1,959 @@
 # BASE DE AVANÇO — AMD BC-250 → WDDM com jogos no Windows
 
 **Documento base do projeto.** Toda decisão de o-que-fazer-agora sai daqui.
-**Passagem de bastão e auditorias de 09/09:** [docs/229 — Nó 1 PM4/MEC no Silício](docs/229_HANDOFF_2026-09-09_NODE1_COMPUTE_FECHADO_NO_SILICIO.md) · [docs/230 — Auditoria Offline do Estado WDDM](docs/230_AUDITORIA_ESTADO_WDDM_2026-09-09.md) · [docs/231 — Conferência da Corrida 21:20:13](docs/231_CONFERENCIA_CORRIDA_21-20_2026-09-09.md).
+**Passagem de bastão atual:** [docs/267 — Corrida 17:18: a primária fechou, o Present não](docs/267_CORRIDA_2026-09-13_17-18_PRIMARIA_OK_E_O_CONTEXTO_DE_APRESENTACAO.md).
+
+> **13/09 17:18:35 (P0, lab 3.173.1.0) — `Bc250DxgkDdiPresent` FOI ALCANÇADA PELA PRIMEIRA VEZ.**
+> Seis chamadas, contra zero em toda a história do projeto. A correção do vínculo de recurso
+> funcionou: `CreateAllocation` de origem UMD passou a `Resource=1` (7/7), a UMD reporta
+> `SrcDeclaredPrimary=1` com `hRTResource` não-nulo, e o `SetVidPnSourceAddress` saiu de
+> `0xAAC000`/`hAlloc=0x08` (primária do GOP) para `0x4B5C000`/**`hAlloc=0xA8`**, uma alocação
+> criada pela UMD. Os seis fecharam até o silício (blt de 11.059.200 bytes, `SDMA=YES`).
+> Estabilidade: zero TDR, zero BugCheck, rollback online limpo.
+>
+> **E a hipótese da primária está REFUTADA como causa suficiente:** 84 de 84 `pfnPresentCb`
+> devolveram `hr=0x80004005` (E_FAIL) **no mesmo milissegundo** — rejeição síncrona de validação
+> — com a primária já correta. O laço de device-lost do `dwm.exe` continua (61 ciclos).
+>
+> **Correção de registro:** eu havia apontado "o nó do contexto (COMPUTE, node 1)" como próximo
+> suspeito. Errado — o `GetNodeMetadata` da corrida diz Node 1 = **3D** e Node 0 = **COPY**. O que
+> sobrevive é mais estreito: os dois únicos contextos pelos quais o `dxgkrnl` apresentou estão no
+> **Node 0** (`SystemContext`/`GdiContext` + `VirtualAddressing`), e todos os nossos estão no
+> Node 1. A causa do E_FAIL **não está nomeada** — `0x80004005` é genérico.
+>
+> Faixa aplicada offline: contexto de apresentação dedicado no Node 0 (sem fallback, recusa
+> nomeada) e o I3 **completado** — a classe 9 do amostrador tinha o mesmo defeito de contador
+> compartilhado, e por isso `Primary token confirmed (UMD` não saiu nenhuma vez. Seis mutações
+> verificadas. Candidato **3.174.1.0**. **NÃO VALIDADO EM HARDWARE.**
+
+> ⛔ **CORREÇÃO DE REGISTRO — LEIA ANTES DO PARÁGRAFO SEGUINTE.** O [docs/265](docs/265_PASSAGEM_DE_BASTAO_2026-09-13_16-33.md)
+> atribui a tela preta a "milhares de quadros compostos pelo DWM que ainda não foram transferidos
+> para o scanout". **Isso está REFUTADO pela evidência da própria corrida**, em três medições (P0):
+> (1) **zero** chamadas a `Bc250DxgkDdiPresent` — não há uma linha `[Present #N]` em 5,4 MB de log,
+> e a ausência é conclusiva porque essa classe não é amostrada; o caminho de scanout é **código
+> morto** nessa corrida. (2) **1787 de 1787** `COMPOSITE_BLT` terminam em `Prova=ZERO_INCONCLUSIVO`,
+> com a linha literal `zero contra zero NAO prova pixel` — **não existe quadro composto**, os 5.165
+> escapes moveram zeros. (3) o `dwm.exe` está em **laço de device-lost, 90 vezes**: `Present` →
+> destrói tudo → `DestroyDevice` → `CreateDevice`, a ~1 Hz. O `Present` falha, e é `Flip` (`0x2`),
+> não `Blt`.
+>
+> **Causa raiz (H alta, código + log concordam):** a UMD nunca passava `hResource`,
+> `Flags.Primary` nem `VidPnSourceId` no `pfnAllocateCb`, então `Flags.Resource` chegava sempre 0 ao
+> KMD e o ramo que marca primária era **inalcançável**. Corrigido offline, com dois portões novos e
+> **nove mutações verificadas**. Detalhe e critério da próxima corrida em
+> [docs/266](docs/266_AUDITORIA_2026-09-13_A_PAREDE_E_A_PRIMARIA_NAO_O_SCANOUT.md).
+> **NÃO VALIDADO EM HARDWARE.**
+**Estado mais recente, que substitui a linha Data-base abaixo:** corrida física **3.172.0.0**, 16:28:27. O BugCheck 0x10E (`VIDMM_RECYCLE_MULTIRANGE::Rotate`) foi completamente eliminado pela remoção de `CpuVisible=1` indiscriminado. O hardware permaneceu 100% estável: **3.757 submissões indiretas de paginação no Node 0 (SDMA)** sob VMID 8 com `TRIPE_PROVADO`, **5.165 escapes de composição via SDMA**, **1.740 cópias retangulares**, zero timeouts, zero TDR, zero reboots. O watchdog de 180s realizou rollback limpo online (`RECOVERY_OK_ONLINE`) restaurando BasicDisplay em Código 0. A tela física permaneceu preta porque os quadros compostos pelo DWM no backbuffer offscreen ainda não foram transferidos para a primária/scanout do monitor conectada ao GOP. Detalhes em [docs/265](docs/265_PASSAGEM_DE_BASTAO_2026-09-13_16-33.md).
+**Passagens anteriores:** [docs/264 — Corrida 13:38](docs/264_PASSAGEM_DE_BASTAO_2026-09-13_13-38.md) · [docs/263 — Corrida 12:50](docs/263_HANDOFF_2026-09-13_WATCHDOG_ABSOLUTO_E_BLT_RETANGULAR.md).
+**Passagem de bastão e auditorias recentes:** [docs/262 — Corrida 12:21 e correção do handle de adapter no escape de composição](docs/262_HANDOFF_2026-09-13_12-21_ESCAPE_HANDLE_ADAPTER.md) · [docs/258 — Corrida 21:22: Marco 3 Sustentado — 600/600 quadros Vulkan no silício, 0 TDR, DWM contido](docs/258_HANDOFF_2026-09-12_21-22_MARCO3_600_QUADROS_SUSTENTADO.md) · [docs/257 — Corrida 21:10: C3.18 validado no silício — 368 submits, 367 blts, 0 TDR, animação completa](docs/257_HANDOFF_2026-09-12_21-10_C3_18_368_QUADROS_VALIDADOS.md) · [docs/256 — Handoff 20:52: HQD e necessidade de reboot frio](docs/256_HANDOFF_2026-09-12_20-52_C3_18_HQD_REBOOT_NECESSARIO.md) · [docs/255 — Tentativa 19:58 recusada por HQD residual](docs/255_HANDOFF_2026-09-12_19-58_HQD_RESIDUAL_DESKTOP_BASIC.md) · [docs/254 — Corrida 19:27, watchdog validado e gate físico Node 1](docs/254_HANDOFF_2026-09-12_19-27_WATCHDOG_E_GATE_FISICO_NODE1.md) · [docs/253 — Reavaliação da corrida 18:45 e C3.16](docs/253_HANDOFF_2026-09-12_18-45_REAVALIACAO_FREEZE.md) · [docs/252 — Corrida 18:21, padrão no monitor, teto do journal e watchdog bloqueado](docs/252_HANDOFF_2026-09-12_18-21_JOURNAL_NO_SPACE_E_WATCHDOG.md) · [docs/251 — Candidato C3.14 de capacidade GPUVA](docs/251_HANDOFF_2026-09-12_C3_14_GPUVA_CAPACITY_CANDIDATE.md) · [docs/250 — Handoff: NO_SPACE no rebuild transacional e DMA PAGE FAULT](docs/250_HANDOFF_2026-09-12_GPUVA_NO_SPACE_E_DMA_PAGE_FAULT.md) · [docs/241 — Handoff: RADV WDDM Compute Tripod PASSOU NO SILÍCIO (15/15 Verificações)](docs/241_HANDOFF_2026-09-11_RADV_COMPUTE_TRIPOD_PASSOU_NO_SILICIO.md) · [docs/235 — Handoff: flush de HDP validado e a parede 0x133](docs/235_HANDOFF_2026-09-10_12-16_FLUSH_HDP_VALIDADO_E_0x133.md) · [docs/234 — Auditoria de 10/09: C1 (Draw sem CPU) e C2 (evidência perdida)](docs/234_AUDITORIA_2026-09-10_C1_DRAW_SEM_SRV_E_C2_EVIDENCIA_PERDIDA.md) · [docs/233 — Handoff da corrida 11:22 (**enquadramento corrigido por docs/234**)](docs/233_HANDOFF_2026-09-10_DWM_DESKTOP_PROVADO_E_CORRECAO_HDP.md) · [docs/229 — Nó 1 PM4/MEC no Silício](docs/229_HANDOFF_2026-09-09_NODE1_COMPUTE_FECHADO_NO_SILICIO.md) · [docs/230 — Auditoria Offline](docs/230_AUDITORIA_ESTADO_WDDM_2026-09-09.md).
 **Checklist operacional consolidado:**
 [`docs/189_CHECKLIST_ATE_JOGOS_BC250.md`](docs/189_CHECKLIST_ATE_JOGOS_BC250.md).
-**Data-base:** 2026-09-09 · **Última corrida física:** laboratório 3.122.1.0, 21:20:13 (recorte delimitado: 17 CommitVidPn, 2 SetVidPnSourceAddress, 102 INDIRECTs, 0 Blt, rollback bem-sucedido às 21:23:17 restaurando BasicDisplay Código 0). Candidato atual pós-auditoria offline: 3.122.1.0 com correções de segurança no rollback (gates -Execute/-IAcceptDisplayInterruptionRisk, remoção de /force inválido no Win10), expansão de objetos do KMD para 4096 com reciclagem de slots mortos (eliminando 0xC000009A), e fail-closed honesto na UMD (Type 130 E_NOTIMPL enquanto NATIVE_READY=0, honestidade DXGI). Barreira restante: backend gráfico real (rasterizador/PM4 Draw/compilador para DWM).
+**Data-base:** 2026-09-13 · **Última corrida física:** laboratório **3.169.1.0**, 12:50:08 — o escape fechou 60 vezes UMD -> dxgkrnl -> KMD -> SDMA, com 60 `COMPOSITE_BLT OK`, aproximadamente 9.149 IBs Node 0 e zero timeout/TDR/BugCheck. A parede seguinte foi medida: cópia 1:1 de 1280x1040/pitch 5120 para destino 2560x1080/pitch 10240, recusada pelo contrato linear. A tela permaneceu preta e três amostras do Present estavam zeradas. O watchdog antigo não iniciou o rollback no prazo; a recuperação manual restaurou BasicDisplay Código 0. O candidato **3.170.1.0** implementa prazo absoluto independente, prova de dados por coordenadas e `COPY_LINEAR_SUB_WIND`; está compilado, testado, assinado e auditado, mas **NÃO VALIDADO EM HARDWARE**. Ver [docs/263](docs/263_HANDOFF_2026-09-13_WATCHDOG_ABSOLUTO_E_BLT_RETANGULAR.md). O último marco sustentado visual continua sendo a corrida 3.161.1.0 de [docs/258](docs/258_HANDOFF_2026-09-12_21-22_MARCO3_600_QUADROS_SUSTENTADO.md).
+**Correção de registro (12/09, faixa C3):** o present do "Marco 2" de 11/09 22:46 foi feito por **cópia da CPU**, não por SDMA — ver a correção de enquadramento naquele bloco. A apresentação por GPU **existe e está medida**, mas nas corridas de 12/09. **O `0xC00002B6` do Marco 3 não sai deste driver** (`STATUS_DEVICE_REMOVED` não existe em nenhuma linha): o `dxgkrnl` recusou antes de nos alcançar, e a causa segue **ABERTA**.
 
+> **CORREÇÃO C3.14 (12/09, OFFLINE):** o par `Mapped=183 Reusable=73` acima está
+> transcrito ao contrário; a evidência integral contém `Mapped=73 Reusable=183`
+> e picos de `Mapped=252`. E `Scratch` começa vazio, logo não guarda faixas
+> antigas e novas simultaneamente: seu conteúdo é o estado final. Um replace
+> in-place não faria 508 faixas caberem em 256 slots. O teto de snapshot foi
+> elevado de 256 para **1024**, com replay offline de **252 existentes + 256
+> mudanças = 508 MAPPED**, build completo `EXIT=0` e portão de auditoria
+> provado por mutação (redução para 256 foi recusada). A reação do
+> `ActiveFlushTlb` ao erro não mudou. **NÃO VALIDADO EM HARDWARE.**
+
+> **12/09 17:45 (P0) — A CADEIA FECHOU ATÉ O FIM: `NO_SPACE` NO REBUILD TRANSACIONAL →
+> PAGE TABLE NÃO PUBLICADA → **DMA PAGE FAULT**.** Candidato 3.156.1.0, SYS `4153F9A1…`.
+> Evidência: `docs/evidence/2026-09-12_17-45-46-DESKTOP-HQAG6T4-lab-binding/`.
+> **Handoff completo: [docs/250](docs/250_HANDOFF_2026-09-12_GPUVA_NO_SPACE_E_DMA_PAGE_FAULT.md).**
+>
+> A telemetria da C3.12 pagou na primeira tentativa e **refutou as duas hipóteses**:
+>
+> ```
+> OCUPACAO slot=0 st=0 Cap=256 Mapped=183 Teardown=0 Reusable=73 Live=183
+> ... (PublishStatus=3 Attempts=1 Busy=0)   x7
+> [RADV_WDDM2] check_device_status: NON-ACTIVE ExecutionState=7
+> vkWaitForFences failed on frame 3: -4
+> ```
+>
+> **`Teardown=0`** → não é vazamento. **`Reusable=73`** → o espaço vivo **não** está cheio.
+> E mesmo assim `NO_SPACE` sete vezes.
+>
+> **MECANISMO, por leitura de código:** `Bc250GpuvaSpaceReplaceRangeTransactional`
+> ([bc250_gpuva_space_contract.c:289](driver/core/bc250_gpuva_space_contract.c:289))
+> **reconstrói o espaço inteiro no `Scratch`** — insere todas as faixas `MAPPED` uma a uma
+> **mais os fragmentos** dos recortes. Com `Mapped=183` de 256 e fragmentação, a reconstrução
+> estoura. **O `NO_SPACE` é do `Scratch`, não do espaço vivo.**
+>
+> **E a consequência é pior que uma submissão recusada:** com a publicação falhando,
+> `ActiveFlushTlb` devolve `STATUS_IO_DEVICE_ERROR` **sem publicar a page table**. A GPU então
+> acessa uma VA cuja tradução nunca foi comitada →
+> `D3DKMT_DEVICEEXECUTION_ERROR_DMAPAGEFAULT` (`ExecutionState=7`, P1,
+> `d3dkmthk.h:4451`) → `STATUS_GRAPHICS_GPU_EXCEPTION_ON_DEVICE` → `DEVICE_LOST`.
+> Deixar a tradução inconsistente é a mesma classe da C3.7: **a reação é pior que a falha**.
+>
+> **C3.13 armada:** `CrashOnCtrlScroll=1` nos dois drivers de teclado, `CrashDumpEnabled=2`,
+> `AlwaysKeepMemoryDump=1`. Num travamento, **Ctrl DIREITO + Scroll Lock ×2** força
+> `BugCheck 0xE2` e grava o dump. O travamento duro ocorreu **duas vezes** hoje e segue **sem
+> atribuição** — reset pelo botão não deixa dump.
+>
+> **NADA DESTE BLOCO FOI VALIDADO COMO CONSERTO: a causa está medida, o conserto não existe.**
+
+> **12/09 16:31 (P0) — A CAUSA RAIZ REAL É `BC250_GPUVA_NO_SPACE`, E ELA REFUTA A HIPÓTESE
+> DA C3.8. TRAVAMENTO DURO SEM ATRIBUIÇÃO.** Candidato 3.155.1.0, SYS `9C2CFE52…`.
+> Evidência: `docs/evidence/2026-09-12_16-31-28-DESKTOP-HQAG6T4-lab-binding/`.
+>
+> ⛔ **CORREÇÃO DE REGISTRO — LEIA ANTES DO BLOCO DA C3.8 ABAIXO.** Aquele bloco atribui a
+> parede a uma **assimetria de contenção entre leitor e publicador** do snapshot de GPUVA.
+> **Isso está REFUTADO por medição**, e foi a própria instrumentação da C3.8 que derrubou a
+> hipótese dela:
+>
+> ```
+> Journal status=0x00000007 ... (PublishStatus=3 Attempts=1 Busy=0)
+> ```
+>
+> **`Busy=0`, `Attempts=1`** — o publicador pegou o lock na **primeira** tentativa, todas as
+> vezes. Nunca houve contenção. A retentativa de 16 vezes que a C3.8 adicionou **nunca chegou a
+> ser usada**; ela não fez mal, mas não era o conserto.
+>
+> **`PublishStatus=3` = `BC250_GPUVA_NO_SPACE`** ([bc250_gpuva_space_contract.c:97](driver/core/bc250_gpuva_space_contract.c:97),
+> `freeSlot < 0`). A falha vem de **dentro** de `Bc250GpuvaSpaceReplaceRangeTransactional`:
+> **exaustão dos 256 slots de `BC250_GPUVA_SPACE_MAX_RANGES`.**
+>
+> Encaixa em tudo que já se sabia — **só acontece com o `dwm.exe` vivo**, porque só ele cria
+> esse volume de faixas. **Não é contenção, é capacidade.** A cadeia até o
+> `STATUS_GRAPHICS_GPU_EXCEPTION_ON_DEVICE` permanece a mesma; só a causa na ponta mudou.
+>
+> **PERGUNTA AINDA ABERTA, e ela decide o conserto:** `Bc250GpuvaSpaceInsertRange` só
+> reaproveita slots em `FREE` ou `UNMAPPED` — **`TEARDOWN` nunca é reciclado**. Então
+> `NO_SPACE` pode ser (a) 256 faixas legitimamente em uso, ou (b) slots presos em `TEARDOWN`,
+> isto é, **vazamento**. Aumentar o limite conserta (a) e **mascara** (b).
+>
+> **C3.12 (offline):** `Bc250GpuvaSpaceDescribeOccupancy` conta os slots por estado e expõe
+> `Reusable = Free + Unmapped`, espelhando **exatamente** o critério do alocador. Coberta por
+> teste, incluindo o caso que separa as duas causas (espaço inteiro em `TEARDOWN`:
+> `Reusable=0`, `Mapped=0`). O log de falha passou a publicar
+> `PublishStatus/Attempts/Busy/Cap`.
+>
+> ✅ **A MEDIÇÃO FOI INTEGRADA, E A REGRESSÃO QUE A BLOQUEAVA FOI EXPLICADA.**
+>
+> A primeira tentativa de integração reprovava `active_miniport_test` (linha 632,
+> `StopDeviceActive` deixando de devolver `STATUS_SUCCESS`), de forma determinística e
+> inclusive com build limpo. **A causa era minha:** eu amostrava o slot ativo com
+>
+> ```c
+> LONG occSlot = InterlockedCompareExchange(&active->GpuvaSnapshots.ActiveSlot, 0, 0);
+> ```
+>
+> **CAS não é leitura.** No x86 isso compila para `lock cmpxchg`, que executa uma **escrita
+> travada** mesmo quando não troca valor — sobre um campo cujo dono é outra thread (o
+> publicador do snapshot). `ActiveSlot` é `volatile long`; **ler basta**. Trocada por leitura
+> pura, o teste voltou a passar e a telemetria ficou integrada.
+>
+> ⚠️ **Registro honesto do processo:** levou quatro builds e passei por **duas hipóteses
+> erradas** antes — string de formato longa e leitura de `Slots[1]`. Pior: numa das passagens
+> eu li `build EXIT=1` como "o teste falhou" quando na verdade era a **auditoria** reprovando
+> uma edição temporária minha no próprio teste, e cheguei a declarar no documento que não
+> conseguiria explicar o mecanismo. Conseguia; faltava bissectar direito. O discriminante final
+> foi trocar a amostragem por leitura volátil.
+>
+> Portão novo contra a classe: `InterlockedCompareExchange` sobre `ActiveSlot` na telemetria
+> fica **proibido**, e a leitura pura é **exigida** (mutação 28 verificada).
+>
+> **TRAVAMENTO DURO, SEM ATRIBUIÇÃO.** A máquina congelou e exigiu reset físico. **Não houve
+> BugCheck** — `MEMORY.DMP` continua sendo o das 13:12. Fusível **TRIPPED** (Boots=3), Código
+> 43 após o reboot. O log termina no meio de um `PT_WALK DEST`, consistente com congelamento.
+> O harness já havia saído aos 1315 ms; a queda veio nos ~178 s restantes, com o device em
+> estado de exceção e o DWM vivo. **Não atribuo à C3.8:** `Busy=0` prova que o laço de
+> retentativa saiu na primeira iteração sempre, então não gastou tempo. **Sem dump, não há
+> como nomear a causa, e não vou inventá-la.**
+>
+> **O que se manteve bom:** `render_byte_proof: True`, `sdma_blt_success_logged: 1`,
+> `host_cpu_copy_logged: 0`, `dwm_crash_events: 0`. A imagem no monitor continua sendo pixel de
+> GPU com zero cópia de CPU. O harness chegou ao `SubmitCommand #10` contra #3 antes — mas com
+> `Busy=0` **isso não é atribuível à retentativa**; pode ser variação.
+>
+> **Volume de log, medido:** toda corrida com `D3D11LabPromotion` armado gera ~200 MB
+> (209 MB em 13:29, 207 MB em 16:09, 200 MB em 16:31), contra 0,5–7 MB sem ele. São ~2,37
+> milhões de linhas em ~193 s, e `Bc250DisplayLog` abre/escreve/`flush`/fecha por linha:
+> **~12.268 ciclos de `ZwCreateFile`+`ZwFlushBuffersFile`+`ZwClose` por segundo** no caminho de
+> paginação. Seis tags (`UpdatePT`, `FlushMappedGfxhubTlb`, `PT_WALK`, `ActiveUpdatePT`,
+> `ActiveFlushTlb`, `McdmBuildPagingBuffer`) são **80,3%** disso e nenhuma carrega veredito.
+> Amostrá-las é a faixa **C3.11**, ainda não feita.
+>
+> **C3.10:** o resgate de trecho perdido travava o bind. `$buffer[0..($read-1)]` sobre 201 MB
+> constrói um array de objetos do PowerShell elemento a elemento; até 12/09 os trechos tinham
+> 1–5 MB e ninguém notou. Trocado por cópia em blocos: o mesmo trecho passou de travar
+> indefinidamente para **1,2 s**. O portão que exigia somente-leitura sobre o log vivo foi
+> tornado **preciso** (antes proibia `FileAccess::Write` em qualquer lugar, sem distinguir
+> origem de destino) e ganhou `strip_ps_comments`.
+>
+> **Mutações 21–23 e 24–27 verificadas.** ⚠️ A mutação 25 ficou **aplicada no repositório**
+> porque a restauração falhou por lock de arquivo e eu não conferia o restauro; corrigido à mão,
+> e o harness passou a retentar a escrita e a **verificar** que o arquivo voltou.
+>
+> **C3.13 — DUMP EM TRAVAMENTO.** Dump só nasce de BugCheck; num congelamento o sistema não
+> BugCheca sozinho, e foi por isso que 16:31 não deixou dump — segunda vez no dia em que um
+> travamento nos deixou cegos. `tools/arm-crash-dump-on-hang.ps1` arma
+> `CrashOnCtrlScroll=1` nos dois drivers de teclado (`i8042prt` e `kbdhid`),
+> `CrashDumpEnabled=2` (kernel) e `AlwaysKeepMemoryDump=1`. Com isso, **Ctrl DIREITO +
+> Scroll Lock duas vezes** durante um congelamento força `BugCheck 0xE2` e grava o dump.
+> Exige PowerShell **elevado** e **reboot** — o driver do teclado lê o valor só no start.
+> Estado medido antes: `CrashOnCtrlScroll` **ausente** nos dois, `AlwaysKeepMemoryDump`
+> ausente (o Windows podia apagar o dump por espaço). O script é inspeção por default e só
+> muda algo com `-Arm`; mudança de configuração de sistema é execução do dono do projeto.
+>
+> **NADA DA C3.12/C3.13 FOI VALIDADO EM HARDWARE.**
+
+> **12/09 16:09 (P0) — COMPUTE E DESKTOP COEXISTIRAM PELA PRIMEIRA VEZ, COM PIXEL DE GPU NA
+> TELA. A C3.9 ESTÁ VALIDADA NO SILÍCIO.** Candidato 3.154.1.0, SYS `FF44035E…`, com
+> `-EnableD3D11LabPromotion -EnableNode1JournalGatePerProcess`.
+> Evidência: `docs/evidence/2026-09-12_16-09-53-DESKTOP-HQAG6T4-lab-binding/`.
+>
+> **A C3.9 fez exatamente o que foi projetada para fazer, e está medido:**
+>
+> ```
+> RECUSA: ... BlockMask=0x00000000 (JOURNAL=0 ...)
+> JOURNAL_PENDENTE: SlotMask=0x00000006 Count=2 GatePerProcess=1 (present=1)
+> ```
+>
+> **Dois slots de outro processo pendentes e `JOURNAL=0`.** O bloqueio global deixou de
+> existir. Consequência, tudo na mesma corrida e pela primeira vez junto:
+>
+> | | |
+> |---|---|
+> | `dwm_crash_events` / `dwm_wer_events` | **0 / 0** — DWM vivo |
+> | Gate do Node 1 | **abriu com o DWM vivo** (`SUBMIT SUCESSO: AssignedFence=18`) |
+> | `render_byte_proof` | **True** — shader Vulkan executou |
+> | `sdma_blt_success_logged` / `host_cpu_copy_logged` | **1 / 0** |
+> | `tdr_events` / `status_device_removed` | 0 / False |
+>
+> Confirmação visual humana: barras SMPTE com o badge central no monitor físico, **escritas
+> por SDMA, zero cópia de CPU**. **Não houve animação** porque o swapchain morreu no 3º quadro
+> — o único quadro apresentado ficou parado no scanout até o rollback do watchdog. Isso é
+> consistente, não é falha adicional.
+>
+> **A parede: `STATUS_GRAPHICS_GPU_EXCEPTION_ON_DEVICE`** (`0xC01E0200`, P1,
+> `ntstatus.h:17580`) no `SubmitCommand #3` — *"GPU exception is detected on the given device.
+> The device is not able to be scheduled."*
+>
+> **CAUSA RAIZ, fechada por leitura de código e consistente com "só acontece com o DWM vivo":
+> uma ASSIMETRIA entre leitor e publicador do snapshot de GPUVA.**
+>
+> - `Bc250GpuvaSnapshotAcquire` (**leitor**) sempre tentou **16 vezes** antes de devolver `BUSY`.
+> - `Bc250GpuvaSnapshotPublishBatch` (**publicador**) fazia **UMA** tentativa de CAS e desistia.
+>
+> Cada `Present` do DWM resolve uma GPUVA e mantém contagem de leitor num slot. Quando esse
+> slot vira o inativo, a publicação seguinte exige contagem **zero** e falhava de imediato:
+>
+> ```
+> journal PUBLISH_FAILED (status 7)
+>   -> ActiveFlushTlb devolve STATUS_IO_DEVICE_ERROR
+>   -> GpuvaMappingsOperational só reabre dentro do ramo "journalStatus == OK"
+>      (bc250_active_miniport.c:8699), então a admissão do Node 1 NUNCA voltava
+>   -> STATUS_GRAPHICS_GPU_EXCEPTION_ON_DEVICE no 3º submit
+> ```
+>
+> Isso também explica o estado que parecia impossível no log: `BlockMask=0x0` com
+> `Eligible=0`. O `BlockMask` estava limpo, mas a admissão não reabria porque o commit do
+> journal falhava antes de chegar à reavaliação.
+>
+> ⛔ **CAUSA RAIZ DESTE BLOCO REFUTADA EM 16:31.** A hipótese abaixo — contenção entre leitor e publicador — está errada: a corrida seguinte mediu `Attempts=1 Busy=0`, ou seja, o publicador nunca foi bloqueado. A causa real é `BC250_GPUVA_NO_SPACE` (exaustão dos 256 slots). Ver o bloco de 16:31. A retentativa não fez mal e a instrumentação dela foi o que permitiu a refutação, mas não era o conserto.
+>
+> **C3.8 (offline):** o publicador passou a retentar `BC250_GPUVA_SNAPSHOT_PUBLISH_ATTEMPTS`
+> (16) vezes — a **mesma constante** do lado leitor. Retentar é estritamente mais forte que
+> desistir: mesma semântica, mais chances, e a contenção é transitória (dura um resolve).
+> E o diagnóstico passou a **separar** `BUSY` de erro real de faixa (`LastPublishStatus`,
+> `LastPublishAttempts`, `LastPublishBusyCount`), publicados no log do KMD — antes os dois
+> saíam como "status 7" e não havia como dizer se retentar resolveria.
+>
+> ⚠️ **Uma variável por candidato:** o retorno continua `STATUS_IO_DEVICE_ERROR` quando as 16
+> tentativas se esgotam. A pergunta desta corrida é **só** se retentar limpa a contenção. Se
+> não limpar, o próximo passo é deixar de tratar contenção transitória como erro de
+> dispositivo — com dado, não por palpite.
+>
+> **Mutações 24–27 verificadas** (retentativa removida, `BUSY` deixando de ser causa distinta,
+> KMD parando de publicar o diagnóstico, teste virando caminho feliz). ⚠️ A mutação 25 ficou
+> **aplicada no repositório** porque a restauração falhou por lock de arquivo e eu não conferia
+> o restauro; corrigido à mão e o harness de mutação passou a retentar a escrita e a **conferir**
+> que o arquivo voltou.
+>
+> **PACOTE 3.155.1.0 assinado, auditado e NÃO INSTALADO:** SYS `9C2CFE52…`.
+> **A C3.8 NÃO FOI VALIDADA EM HARDWARE.**
+
+> **12/09 13:29 (P0) — O DWM SOBREVIVEU 3 min 13 s PELA PRIMEIRA VEZ, E A PAREDE NOVA É DE
+> DESENHO: O GATE DO NODE 1 EXIGE JOURNAL GLOBALMENTE QUIESCENTE.** Candidato 3.152.1.0.
+> Evidência: `docs/evidence/2026-09-12_13-29-38-DESKTOP-HQAG6T4-lab-binding/`.
+>
+> **Premissa da hipótese do DWM CONFIRMADA (P0):** com `D3D11LabPromotion` armado,
+> `dwm.exe` (pid 11736) viveu de 13:29:56 a 13:33:09 — **3 min 13 s**, 36,6 MB de log,
+> `dwm_crash_events: 0` e `dwm_wer_events: 0`. Contra **7 crashes em 18 s** sem o tunable.
+> Ele criou device 366 vezes, recusou **120 Draws honestamente** (`RECUSADO`, sem pixel falso)
+> e fez 2 Presents. **Zero BugCheck**, fusível **CLEAN**, rollback limpo, `CM_PROB_NONE`.
+> As correções C3.6/C3.7 seguraram: o `0x119` da corrida 13:11 não voltou, e
+> `SEGMENT_GEOMETRY publicada: SegBase=0xA8C000 SegBytes=0xF374000` saiu no silício.
+>
+> **Mas a hipótese em si continua SEM TESTE.** O harness morreu em **1,2 s**, antes do
+> swapchain: byte proof leu o poison `0x43DAFFFE` em 8/8 zonas — o shader não executou.
+> Causa, dita pelo próprio KMD:
+>
+> ```
+> [SubmitVirtual Node1] RECUSA: GpuvaMappingsOperational=0 -- Eligible=0
+>                       BlockMask=0x00000001 (JOURNAL=1 ...)
+> ```
+>
+> **PAREDE DE DESENHO:** o gate usava `Bc250GpuvaJournalSetAnyPending`, que pergunta *"algum
+> slot do adaptador está pendente?"*. Com o DWM paginando sem parar, essa resposta **nunca** é
+> zero. Nas corridas anteriores o gate abria só porque o DWM estava **morto**. Ou seja:
+> **compute e desktop não coexistiam por GRANULARIDADE do gate, não por limite do hardware.**
+> É a primeira parede do projeto que é de desenho, e não defeito.
+>
+> **C3.9, offline — medir e corrigir na mesma corrida:**
+>   - **medir:** `Bc250GpuvaJournalSetDescribePending` e a linha
+>     `JOURNAL_PENDENTE: SlotMask=0x%08X Count=%u` nomeiam **quais** slots seguram o journal.
+>     `JOURNAL=1` sozinho não distinguia pendência própria da do `dwm.exe`;
+>   - **corrigir:** `Bc250GpuvaJournalSetAnyPendingForProcess` usa o `Journal.Process` que cada
+>     slot **já carregava**. Atrás do tunable `Node1JournalGatePerProcess`, **default 0**
+>     (fail-closed, NOCLOBBER no INF), armável por `tools/arm-node1-journal-gate-per-process.ps1`.
+>     Guarda tripla: tunable presente **e** em 1 **e** processo conhecido; caso contrário a
+>     condição global continua valendo.
+>
+> ⚠️ **RELAXAMENTO DECLARADO, NÃO VALIDADO EM HARDWARE.** O argumento a favor é que as raízes de
+> page table são por processo; **o argumento não é prova**. Por isso é fail-closed por default.
+>
+> ⚠️ **QUARTA OCORRÊNCIA DA CLASSE DO `#if`, pega por conferência de string no SYS assinado e
+> não por teste:** a primeira versão da leitura do tunable ficou dentro de
+> `#if !defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)` — ou seja, **só na imagem de
+> produção**, enquanto os ensaios rodam a de **laboratório**. O tunable nunca seria lido
+> justamente na imagem que precisa dele. Antecedentes: A13 (tunable de submissão), B4
+> (`GpuvaLabPromotion`, que até hoje é lido em **dois** sítios por causa disso) e ContextAbi
+> (doc 202). Fechado por portão permanente `require_outside_production_only`, que rastreia
+> aninhamento de pré-processador e foi **conferido contra verdade conhecida** (acha o
+> `GpuvaLabPromotion` de produção dentro, e o de laboratório fora).
+>
+> **Mutações: 20 verificadas ao longo da faixa C3.** Nesta etapa, 16–20 mais a 19 pelo teste.
+> E **três das minhas primeiras versões de portão eram peneira** — `if (0 && Funcao(...))`
+> sobrevivia porque eu exigia só a presença do nome. Endurecidos para a forma exata da condição.
+>
+> **PACOTE 3.154.1.0 assinado, auditado e NÃO INSTALADO:** SYS `FF44035E…`.
+> Marcas conferidas no binário assinado, incluindo o nome do valor de registro em UTF-16.
+
+> **12/09 13:11 (P0) — BugCheck `0x119` POR CADEIA NOSSA, E O MESMO DEFEITO DE ENDEREÇO NUM
+> SEGUNDO CAMINHO.** Candidato 3.149.1.0 com `D3D11LabPromotion` armado.
+> Evidência: `docs/evidence/2026-09-12_13-11-18-DESKTOP-HQAG6T4-lab-binding/`.
+>
+> Relato do operador: tela preta, depois **imagem distorcida**, depois **tela azul**.
+> `BugcheckCode 281` = **`0x119`**, `Arg1=0x2`, `Arg2=0xC0000185` (`STATUS_IO_DEVICE_ERROR`).
+> Fusível **TRIPPED** (Boots=5) — ele fez o trabalho: recusou o StartDevice após o reboot, e
+> **não houve loop de boot**.
+>
+> **A cadeia, linha por linha do log resgatado:**
+>
+> ```
+> 84786  IB EXECUTADO (INDIRECT) ... FenceId=631          <- normal ate' aqui
+> 84788  [Present #1] BYTE_PROOF FAIL: Source=0x15D0000 Dest=0x0
+>                     FirstMismatch=0x10C004; SDMA disabled
+> 84789  [Present #1] Blt ... SDMA=FAILED_CLOSED
+> 84826  SubmitIndirectAsync recusado: Init=1 HwEnabled=0 TripodValidated=1
+> 84828  IB NAO EXECUTADO #1: FenceId=632; completion NAO notificado
+>        -> BugCheck 0x119 Arg1=2 Arg2=0xC0000185
+> ```
+>
+> **Dois defeitos nossos, encadeados:**
+> 1. **O mesmo defeito de endereço da C3.4, num caminho que eu não tinha tocado.**
+>    `DxgkDdiPresent` usava o offset de segmento **direto** como índice de
+>    `FrameBufferVirtual`, sem `LocalSegmentBaseOffset`. Amostrou 11.059.200 bytes antes da
+>    superfície e leu zeros (`SrcPhysSample @ 0x15D0000: 00000000 …`). **O byte proof reprovou
+>    um quadro CORRETO.** O portão da C3.4 cobria só o escape — cobrir um caminho e deixar o
+>    outro foi o próprio defeito. **Quinta divergência de fonte única** (A1, A11, ContextAbi,
+>    C3.4, esta).
+> 2. **A reação era pior que a falha.** Um byte proof reprovado punha
+>    `HardwareEnabled = FALSE` **globalmente**, e daí toda submissão WDDM virava completion não
+>    notificado — caminho conhecido do `0x119`.
+>
+> ⚠️ **E havia um portão que EXIGIA o defeito #2:** `require(..., "g_Bc250SdmaPresent.HardwareEnabled = FALSE;")`.
+> Remover a linha **reprovava o build**. **Quinta ocorrência da classe "o gate obrigava o defeito
+> a existir"**: A15 (comparação crua de RPTR), `mcdm_callbacks_test` (TDR), `bc250_d3d_umd_test.c`
+> (memcpy no Draw), `sdma_blt_executed` (C3.1). Portão invertido: agora **proíbe** o desligamento
+> global e **exige** `present reprovado (engine PRESERVADA)` mais `sdmaDone = FALSE`.
+>
+> **Correções C3.6 e C3.7 (offline):** a fonte única ganhou a vista de offset de VRAM
+> (`Bc250SegmentOffsetToVramOffset`), com as mesmas guardas de faixa; a geometria do segmento
+> passou a ter **escritor único** dentro de `Bc250ActiveQueryRuntimeCaps`; sem geometria
+> publicada a conversão é **recusada**, não chutada; e o log passou a mostrar os três números
+> (`SegOff`, `SegBase`, `VramOff`) em vez de um "Physical VRAM" ambíguo que escondeu o defeito
+> por várias corridas.
+>
+> **C2 pagou de novo:** o arquivamento truncou e **5,85 MB de 7,2 MB** teriam sido perdidos.
+> O resgate do log vivo com SHA-256 é o que tornou esta análise possível.
+>
+> **Dívida aberta, não investigada:** 32 ocorrências de
+> `[ActiveFlushTlb] Journal status=0x00000007 (PUBLISH_FAILED) -> STATUS_IO_DEVICE_ERROR` no
+> caminho de paginação. Não foram a causa próxima do BugCheck, mas 32 `IO_DEVICE_ERROR`
+> devolvidos ao `dxgkrnl` não é estado saudável.
+
+> **12/09 13:01 (P0) — PRESENT 100% POR GPU NO SILÍCIO, COM IMAGEM CORRETA NO MONITOR.
+> A CAUSA RAIZ DA TELA PRETA ESTÁ FECHADA.** Candidato 3.151.1.0, SYS assinado `0D3E83AC…`.
+> Evidência: `docs/evidence/2026-09-12_13-01-05-DESKTOP-HQAG6T4-lab-binding/`.
+>
+> **O critério escrito ANTES da corrida bateu inteiro:**
+>
+> ```
+> PRESENT_BLT: GpuVa 0x200020000 resolvido -> SegOff=0x1560000 Seg=1
+>              SegBase=0xA8C000 SrcMc=0xF401FEC000 DstMc=0xF400000000
+> Teardown Complete. TripodValidated=1, Submitted=584, Completed=584,
+>                    Fallbacks=0, HostCpuCopies=0
+> Escape Archive. EscapeEntered=584, BltMax=2171 us, BltTotal=802518 us
+> ```
+>
+> `SrcMc` e `DstMc` no **mesmo domínio** (`0xF4…`), `SegBase=0xA8C000` presente, `Fallbacks=0`,
+> `HostCpuCopies=0`, `sdma_blt_failed_logged=0`, `host_cpu_copy_logged=0`,
+> `no_host_copy_fallback: True`.
+>
+> **Por que isto é prova e não impressão:** a "Garantia de Scanout GOP" por CPU foi **removida**
+> na C3.1 e o ramo de cópia por CPU **não executou nenhuma vez**. Logo o **único** escritor do
+> scanout nesta corrida foi o SDMA. O operador viu as barras coloridas animando, ~20× mais rápido
+> que na corrida 12:51 (26 FPS × ~1,25 FPS da cópia por CPU). **Os pixels no monitor vieram da
+> GPU.**
+>
+> **Cadeia fechada, ponta a ponta:** shader Vulkan (Mesa RADV + ACO) executa no MEC → escreve o
+> framebuffer 2560×1080 na VRAM → byte proof 8/8 na origem → SDMA copia 11.059.200 bytes para o
+> scanout do UEFI GOP por `D3DKMTEscape` → monitor físico exibe. **584 quadros consecutivos**,
+> contra o recorde anterior de 473. Custo do blt: **1,37 ms** de média, máximo 2,17 ms.
+>
+> **A causa raiz de 12:29 está CONFIRMADA E CORRIGIDA:** faltava `LocalSegmentBaseOffset` na
+> conversão de offset de segmento para MC, e a origem do blt ficava 11.059.200 bytes adiantada.
+> Agora sai da fonte única `Bc250SegmentOffsetToMc`, com a mesma base do destino.
+>
+> **O QUE NÃO MUDOU — a parede continua exatamente onde estava:** ruptura no quadro 584 de 600,
+> `status_device_removed: True`, `failure_mode: PRESENT_ESCAPE`, `tdr_events: 0`. E de novo
+> **7 crashes do `dwm.exe` + 8 WER**, com o último às 13:01:34,583 e a falha às 13:01:35,047 —
+> **0,46 s depois**. Terceira corrida seguida com a mesma assinatura (12:29 deu 0,5 s). A
+> hipótese de que o orçamento de crashes do DWM é o que encerra a corrida **continua de pé e
+> continua sendo H**.
+>
+> **Próxima corrida, e é a do doc 247:** armar `D3D11LabPromotion` para o DWM receber um device
+> e parar de fail-fastar, mantendo `D3D11DrawBltSubstitution` desarmado (Draw segue `RECUSADO`
+> honestamente, sem pixel falso). DWM sobrevive e a swapchain chega a 600/600 → hipótese
+> confirmada. Device para de novo por volta do quadro ~580 → **refutada**, e a causa é outra.
+
+> **12/09 12:51 (P0) — A CORREÇÃO DE 12:29 TROCOU A BASE POR ENGANO; O BLT DEU TIMEOUT 8/8 E
+> O PRESENT CAIU NA CÓPIA POR CPU. O PORTÃO DA C3.1 PEGOU.** Candidato 3.150.1.0, SYS `7661E546…`.
+> Evidência: `docs/evidence/2026-09-12_12-51-19-DESKTOP-HQAG6T4-lab-binding/`.
+>
+> **Relato visual do operador:** *"aparentemente funcionou, mostrou as barras coloridas, onde elas
+> ficaram se movimentando"*. **A imagem era real e estava correta — e não veio da GPU.**
+> `host_cpu_copy_logged: 8`, `sdma_blt_success_logged: 0`, `no_host_copy_fallback: False`,
+> veredito **FAIL**. Sem o contador `HostCpuCopies` e o check `no_host_copy_fallback` criados na
+> C3.1 horas antes, esta corrida teria virado mais um marco falso — pela terceira vez neste
+> projeto a cópia por CPU desenhou uma tela que parecia vitória.
+>
+> **O defeito, e é de quem escreveu a correção:** a C3.4 precisava de **uma** mudança
+> (somar `LocalSegmentBaseOffset`). Fez **duas** — trocou também a base, de
+> `g_Bc250SdmaPresent.VramMcStart` para `caps.VramMcBase`. São **domínios de endereço distintos**:
+>
+> | Base | Valor | Domínio |
+> |---|---|---|
+> | `caps.VramMcBase` | `0x450000000` | GCVM — PTE, root, VMID8/9 |
+> | `g_Bc250SdmaPresent.VramMcStart` | `0xF400000000` | anel de present do SDMA |
+>
+> Origem foi para `0x451FEC000`, destino continuou em `0xF400000000`. Medido:
+> `Blt Timeout #1: TargetWPTR=1276, WPTR_Reg=1276, RPTR_Reg=1156, FenceObs=43DAFFFE` — fence no
+> poison, 8 de 8. É **exatamente a lei de "uma variável por candidato"** violada por quem a citou.
+>
+> **Correção (C3.5, offline):** a origem volta a partir de `g_Bc250SdmaPresent.VramMcStart` —
+> a mesma base do destino — mantendo `LocalSegmentBaseOffset` e `LocalSegmentBytes` das caps, que
+> são offsets dentro da VRAM e independem do domínio. O log passa a imprimir `SrcMc` e `DstMc`
+> **lado a lado**, para que a próxima divergência de domínio seja visível sem mineração.
+> Teste ganhou o bloco 2b com os números das duas corridas (`0xF401560000` de 12:29,
+> `0x451FEC000` de 12:51, `0xF401FEC000` correto) e o portão passou a **reprovar** origem
+> derivada de `caps.VramMcBase`. **Mutação 10 verificada** — e a primeira tentativa de mutação
+> falhou em escrever o arquivo, então o PASS que ela produziu foi **descartado** em vez de
+> contado: mutação que não se aplica não prova portão.
+>
+> **O que NÃO ficou provado:** que somar `LocalSegmentBaseOffset` resolve a tela preta. O blt
+> nunca chegou a executar nesta corrida. A causa raiz de 12:29 segue **bem fundamentada e NÃO
+> VALIDADA EM HARDWARE**.
+>
+> **Nota de custo:** duas corridas gastas em defeito de host, não de silício — junta-se a
+> 17:43 (comparação crua de RPTR), à ordem do registro no ensaio de TDR e à 11:48.
+>
+> **PACOTE 3.151.1.0 assinado, auditado e NÃO INSTALADO:** SYS assinado `0D3E83AC…`,
+> UMD `DD4DFED4…` (inalterada desde o 3.149.1.0 — variável única contra as duas corridas).
+
+> **12/09 12:29 (P0) — CORRIDA LIMPA, E A CAUSA RAIZ DA TELA PRETA FOI ENCONTRADA:
+> A ORIGEM DO PRESENT ESTAVA 11.059.200 BYTES ADIANTADA.** Candidato 3.149.1.0,
+> SYS assinado `DE9BEFC8…`. Evidência:
+> `docs/evidence/2026-09-12_12-29-01-DESKTOP-HQAG6T4-lab-binding/`.
+>
+> **Primeira corrida do projeto com present 100% por GPU, e isso é o que a tornou útil:**
+> `Teardown Complete. TripodValidated=1, Submitted=473, Completed=473, Fallbacks=0, HostCpuCopies=0`
+> mais `no_host_copy_fallback: True` e `host_cpu_copy_logged: 0`. Com a cópia por CPU removida
+> na C3.1, o defeito que ela mascarava ficou visível na primeira tentativa.
+>
+> **Relato visual do operador (P0):** tela **preta**, com uma **pequena faixa cinza embaixo,
+> alguns pixels coloridos e o resto cinza**. A imagem só voltou no rollback. Isso **não** é o
+> padrão SMPTE — é VRAM alheia.
+>
+> **CAUSA RAIZ, fechada por leitura de código (P1) e confirmada por aritmética:**
+> `Bc250ActiveResolveDisplayGpuVa` devolve um **offset de segmento** — o parâmetro de saída de
+> `Bc250GpuvaSpaceResolveAddress` chama-se literalmente `BackingSegmentOffset`. O segmento 1
+> **não começa no byte zero da VRAM**: começa em `LocalSegmentBaseOffset` = `0xA8C000` =
+> 11.059.200 bytes, logo após a reserva de scanout. O caminho de present fazia
+>
+> ```
+> srcGpu = g_Bc250SdmaPresent.VramMcStart + physAddr;   /* LocalSegmentBaseOffset AUSENTE */
+> ```
+>
+> enquanto **todo o resto do driver** (codificador de PTE, instalação da root, VMID9) faz
+> `VramMcBase + LocalSegmentBaseOffset + offset`. Medido na corrida:
+> `SrcMc=0xF401560000`; correto seria `0xF401FEC000`. **Delta exatamente `0xA8C000`.**
+>
+> O SDMA lia 11 MB **antes** da imagem — região majoritariamente zerada, com restos não nulos.
+> Preto com faixa cinza. E **o tripé inteiro passava**: `RPTR==WPTR`, fence física sobre poison
+> e byte proof 8/8 — porque **nenhuma das três pernas confere de ONDE se leu**. A engine
+> executou perfeitamente sobre o endereço errado.
+>
+> ⚠️ **Por que o "Marco 2" parecia funcionar:** o caminho de CPU usava `esc->pUserPixelBuffer`,
+> o ponteiro de usuário para os pixels reais, e **não passava por esta aritmética**. A cópia por
+> CPU escondia o defeito do caminho de GPU. Remover a cópia foi o que o expôs.
+>
+> ⚠️ **Quarta divergência de fonte única do projeto** — A1 (caps de driver), A11 (geometria de
+> GPUVA), ContextAbi (doc 202) e agora a conversão de endereço. O comentário de
+> `BC250_MCDM_RUNTIME_CAPS.VramMcBase` já declarava ser "a única fonte da base, usada tanto pelo
+> codificador de entradas quanto pela instalação da root, para que as duas não possam mais sair
+> de fase". O present era um **terceiro consumidor**, e saiu de fase.
+>
+> **Correção (C3.4, offline):** `driver/core/bc250_segment_address_contract.{h,c}` passa a ser a
+> fonte única da conversão, com faixa conferida e **falha fechada** — origem que não couber no
+> segmento agora é **RECUSADA** em vez de virar blt de lixo indistinguível de sucesso.
+> Teste `segment_address_contract_test` trava os números medidos sem arredondar
+> (`0xF401560000` → `0xF401FEC000`, delta `0xA8C000`), com caso negativo para a recusa não virar
+> peneira. Portão novo `audit_present_source_uses_segment_base`.
+>
+> **Duas hipóteses minhas refutadas por medição nesta corrida:**
+> 1. *"O blt síncrono explica os 26 FPS."* **Não.** `BltTotal=651181 us / 473 = 1,38 ms` por blt,
+>    `BltMax=3061 us`, num quadro de ~38 ms — **3,6%**. O custo está no Vulkan, não no present.
+> 2. *"A fence do MEC fica presa."* **Não.** `Sub==Ret==473`, `V2FencesInFlight=0`.
+>
+> **O `DEVICE_LOST` ganhou nome, e não é hang nosso:** o RADV registrou
+> `check_device_status: NON-ACTIVE ExecutionState=4` = `D3DDDI_DEVICEEXECUTION_STOPPED`
+> (P1, `d3dumddi.h:3655`) — **não** `HUNG` (3), **não** `RESET` (2), **não** `ERROR_DMAFAULT` (6) —
+> e ainda anotou `dev_status=-4 but all fences satisfied`. Com `tdr_events=0`, zero `StopDevice`
+> durante a corrida (o único é o watchdog de 180 s, e a falha foi aos 18 s) e `Sub==Ret`, **a
+> nossa engine não travou: o device foi parado administrativamente.**
+>
+> **Correlação forte com o DWM (H, não P0):** 7 fail-fasts do `dwm.exe` a cada ~2,5 s, entre
+> 12:29:08,9 e 12:29:27,8 — e o device para **0,5 s depois do sétimo e último**. A corrida das
+> 11:04 teve **exatamente** os mesmos 7 crashes + 8 WER, duração parecida (16,3 s × 18,3 s) e
+> contagem de quadros bem diferente (373 × 474). Ou seja: **o que encerra a corrida é o orçamento
+> de crashes do DWM, não o número de quadros.** Falsificável na próxima corrida.
+>
+> **PACOTE 3.150.1.0 assinado, auditado e NÃO INSTALADO:** SYS fonte `8B325DDE…`, assinado
+> `7661E546…`, UMD `DD4DFED4…`, INF `06B43C21…`, CAT `F8734B0D…`.
+> **A CORREÇÃO DA ORIGEM DO PRESENT NÃO FOI VALIDADA EM HARDWARE.**
+
+> **12/09 (OFFLINE, faixa C3) — O PRESENT DO "MARCO 2" TINHA SIDO FEITO PELA CPU; O GATE
+> CARIMBAVA; E A HIPÓTESE DA FENCE MEC PRESA ESTÁ REFUTADA.** Zero binds, zero hardware.
+>
+> **C3.1 — Quarta ocorrência da classe "o teste congelava a mentira".**
+> Na corrida 11/09 22:46, a que fechou o Marco 2 com `10/10 PASS` e confirmação visual humana,
+> o `display-log-delta.txt` tem **duas** linhas `PRESENT_BLT` e nenhuma é de GPU: a segunda é
+> `Host Kernel Blt CONCLUIDO COM SUCESSO! 11059200 bytes copiados para o scanout`. **Zero**
+> `SDMA HW BLT CONCLUIDO`. Os 11.059.200 bytes foram para o scanout por `RtlCopyMemory`.
+> Passou por **dois** defeitos independentes:
+>   1. `sdma_blt_executed` no runner casava com a string `PRESENT_BLT`, e também com
+>      `BYTE_PROOF INCONCLUSIVO`, `Spread SCANOUT` e `TILE_PROBE`;
+>   2. `FallbackCpuCount` — o contador que arquivou `Fallbacks=0` — só conta recusa/timeout de
+>      `Bc250SdmaPresentBlt` e era **cego** à cópia que o escape efetivamente fazia.
+>
+> **Corrigido, tudo offline:**
+>   - a "Garantia de Scanout GOP Quadro 1" **foi removida**: ela reescrevia por CPU o mesmo
+>     endereço físico que o SDMA acabara de escrever (`DstMc == VramMcStart + (FrameBufferPhysical
+>     − VramBar0)`, medido em `0xF400000000`), o que não acrescenta pixel e torna o quadro
+>     **não atribuível à GPU**. Mesmo precedente da C1, que removeu o memcpy do Draw;
+>   - o ramo de cópia por CPU passou a se declarar (`PRESENT_BLT: COPIA POR CPU #N -- NAO e'
+>     aceleracao por GPU`) e a contar em `HostCpuCopyCount`, publicado no teardown;
+>   - `sdma_blt_executed` agora exige `SDMA HW BLT CONCLUIDO COM SUCESSO` e nada mais;
+>   - check novo `no_host_copy_fallback` **reprova** a corrida com pixel produzido por CPU;
+>   - `desktop_detected_in_kmd` deixou de casar com a string `Bc250Escape`, que era trivialmente
+>     verdadeira sempre que o escape fosse chamado;
+>   - portão novo `audit_present_is_gpu_attributable` trava as quatro pontas, inclusive um
+>     invariante **sem janela de linhas**: entre o log de SDMA bem-sucedido e o `return` do
+>     escape não pode existir cópia de memória nenhuma.
+>
+> ⚠️ **Armadilha registrada:** a primeira versão desse portão reprovou o **meu próprio
+> comentário**, que cita `RtlCopyMemory` ao explicar a remoção — exatamente o que já aconteceu
+> com o gate do B3. A varredura passou a rodar sobre o código **sem comentários**
+> (`strip_c_comments`), e fatiar antes de remover comentários também estava errado: começava a
+> leitura no meio de um literal e dessincronizava o parser de aspas.
+>
+> **C3.2 — A hipótese "a fence do MEC não aposenta" está REFUTADA nas oito corridas de 12/09.**
+> Eu próprio havia proposto essa leitura a partir de `MEC_PENDING_ARCHIVE Fence=463 Observed=462`.
+> Está errada por duas razões medidas:
+>   1. `MEC_PENDING_ARCHIVE` é **snapshot da primeira observação pendente**, guardado por
+>      `engine->DiagnosticPendingFence != pendingFence` — não é estado terminal, e não prova que
+>      a fence nunca aposentou;
+>   2. o `probe_delta` das oito corridas fecha **100%** em todas elas.
+>
+> | Corrida (12/09) | Veredito | Sub | Ret | V2 notif | InFlight | Rompeu em |
+> |---|---|---:|---:|---:|---:|---|
+> | 05:33:50 | PASS | 1 | 1 | 1 | 0 | — (1 quadro) |
+> | 07:43:39 | PASS | 1 | 1 | 1 | 0 | — (1 quadro) |
+> | 08:09:26 | FAIL | 13 | 13 | 13 | 0 | `vkWaitForFences` frame 13 |
+> | 08:51:20 | FAIL | 41 | 41 | 41 | 0 | `vkWaitForFences` frame 40 |
+> | 09:21:57 | FAIL | 44 | 44 | 44 | 0 | Escape `0xC00002B6` frame 43 |
+> | 10:10:16 | FAIL | 64 | 64 | 64 | 0 | `vkWaitForFences` frame 64 |
+> | 10:42:25 | FAIL | 447 | 447 | 447 | 0 | Escape `0xC00002B6` frame 447 |
+> | 11:04:22 | FAIL | 373 | 373 | 373 | 0 | Escape `0xC00002B6` frame 373 |
+>
+> **Nenhuma submissão ficou presa em corrida nenhuma.** Some-se a isso, na janela de 11:04,
+> **zero** eventos de System — sem `4101`, sem `117`, sem `141`: **não houve TDR**. Só 7
+> `Application Error` e 8 WER do `dwm.exe`.
+>
+> **E o `0xC00002B6` não pode ter saído de nós (P1, por leitura de código):** `STATUS_DEVICE_REMOVED`
+> não aparece em **nenhuma linha** do driver, e `Bc250ActiveEscapeHandler` só devolve
+> `STATUS_SUCCESS`, `STATUS_INVALID_PARAMETER`, `STATUS_NOT_SUPPORTED` e
+> `STATUS_INVALID_USER_BUFFER`. Logo **o `dxgkrnl` recusou a chamada antes de nos alcançar**:
+> o device já estava removido. **A causa disso continua ABERTA e não é atribuível com a evidência
+> existente.** Não inventar causa.
+>
+> **O que faltava para atribuir, e foi adicionado offline:**
+>   - `EscapeEnteredCount` — contagem **não amostrada** dos escapes que o KMD recebeu. O log é
+>     1-em-60, então até 59 chamadas ficavam invisíveis antes da ruptura; agora dá para dizer se
+>     o último present chegou ou não ao KMD, comparando com `first_failed_frame`;
+>   - duração do blt (`Blt=N us`, mais `BltMax`/`BltTotal` no teardown). A corrida 10:42 mediu
+>     **26 FPS** (~38 ms/quadro) para copiar 11 MB — ~290 MB/s, ordens de grandeza abaixo de
+>     GDDR6. Ou a espera **síncrona** de `Bc250SdmaPresentBlt` explica o quadro (dívida declarada
+>     desde a A15 e causa do `0x133` de 10/09), ou não explica. **Os dois desfechos informam**;
+>   - o veredito passou a extrair `first_failed_frame`, `failure_mode` e `tdr_events`, além das
+>     contagens de blt por GPU × cópia por CPU e da linha de teardown. As rupturas em 13, 40, 43,
+>     64, 373 e 447 só eram visíveis lendo `stderr` à mão.
+>
+> **C3.3 — Ponte DXBC → SPIR-V ligada às DDIs de shader, fechada por default.**
+> `BC250_UMD_SHADER` passou a carregar o módulo SPIR-V com **ownership explícito**, e
+> `Bc250Umd10DestroyShader` é obrigado a chamar `Bc250DxbcReleaseSpirv` **antes** do `memset` —
+> zerar primeiro perderia o ponteiro e vazaria o módulo dentro do processo hospedeiro, que no
+> caso do desktop é o `dwm.exe`. O tradutor exige **duas** chaves
+> (`D3D11ShaderTranslator=1` **e** `D3D11ShaderTranslatorPath` com caminho absoluto); sem as
+> duas, nenhuma DLL externa é sequer procurada. Não há caminho default de propósito: a única
+> implementação ensaiada é `libvkd3d-shader-1.dll` de MinGW, que arrasta `libgcc_s_seh-1.dll` e
+> `libwinpthread-1.dll`, e injetar três DLLs MinGW no compositor do Windows é **decisão do dono
+> do projeto**, não efeito colateral de um default.
+> `BC250_D3D10_11_NATIVE_READY` **continua `0`** e nenhum cap novo foi aberto.
+>
+> **Gates:** `build-umd` EXIT=0 com `SPIR-V fail-closed sem container, coerencia com o ambiente,
+> zero vazamento e zero double-free PASS`; `build-contract` EXIT=0; quatro auditorias PASS;
+> **seis mutações verificadas** — reintroduzir o memcpy pós-SDMA, afrouxar `sdma_blt_executed`,
+> remover `no_host_copy_fallback`, tirar a contagem da cópia por CPU, restaurar o rótulo
+> desonesto, e remover o release do SPIR-V (esta última reprovou a suíte em
+> `s_SpirvOwnershipFrees == 1`).
+>
+> ⚠️ O teste de SPIR-V assere por **coerência com o ambiente**, não por carimbo: exigir
+> `SpirvValid == FALSE` repetiria o defeito achado na C1, em que a suíte offline reprovava
+> sozinha porque `D3D11LabPromotion` ficara armada por um bind anterior.
+>
+> **NADA DA FAIXA C3 FOI VALIDADO EM HARDWARE.**
+
+> **12/09 (OFFLINE) — DXBC → SPIR-V PASSOU COM TRADUTOR REAL:** `libvkd3d-shader-1.dll`
+> x64 1.17, oriunda do pacote Fedora 44 e identificada por SHA-256, foi carregada pela
+> fronteira MSVC. Shaders mínimos produzidos pelo `fxc` SDK 28000 passaram: VS 4.0
+> `624 → 1480` bytes e PS 4.0 `452 → 396` bytes, com SPIR-V e estágio validados.
+> O primeiro ensaio revelou que nosso parser interpretava incorretamente o comprimento
+> `SHDR/SHEX`; código, caminho direto da UMD e fixtures foram corrigidos para a semântica
+> real (comprimento inclui os dois DWORDs do cabeçalho). `build-umd`, `build-contract`,
+> smoke real e auditoria PASS. DLLs externas ficaram somente em `%LOCALAPPDATA%\Temp` e
+> não entram no pacote. **NÃO VALIDADO EM HARDWARE.** Handoff: `docs/249_HANDOFF_2026-09-12_VKD3D_SHADER_REAL_PASS.md`.
+
+> **12/09 (OFFLINE) — fundação DXBC → SPIR-V criada:** o Mesa/RADV local não possui frontend
+> DXBC; o `vkd3d-shader` oficial possui a transformação DXBC TPF → SPIR-V binário. Foi criada
+> uma fronteira interna desacoplada da ABI externa que valida DXBC, saída SPIR-V 1.0–1.6,
+> limites e ownership, com teste dedicado. O adaptador dinâmico MSVC para `vkd3d-shader`
+> também existe: exige caminho absoluto, busca restrita, exports completas e deixa estado
+> zerado em toda falha. A ABI mínima agora tem fonte única com asserts x64, e uma DLL mock
+> prova de ponta a ponta carregamento, exports, compilação, cópia, validação e liberação.
+> Isso valida nossa fronteira, **não substitui um tradutor real**. Nenhuma DDI o chama e
+> `BC250_D3D10_11_NATIVE_READY` segue `0`. `build-contract`, `build-umd` e auditorias
+> PASS. **NÃO VALIDADO EM HARDWARE.** Handoff: `docs/248_HANDOFF_2026-09-12_DXBC_SPIRV_BRIDGE.md`.
+
+> **12/09 11:04:22 (P0) — Marco 3: GPU continuou sob tela preta; DWM caiu; recovery endurecida offline:**
+> O operador viu um quadro e depois preto, mas a telemetria prova continuidade: 373 submits Node 1
+> aceitos/aposentados, SDMA `Submitted=372 Completed=372 Fallbacks=0`, parada com `Sub=Ret=390`,
+> `RPTR=WPTR=4680` e zero fault GCVM. A ruptura ocorreu no frame 373 com `STATUS_DEVICE_REMOVED`.
+> Na mesma janela houve 7 crashes `Application Error` do `dwm.exe` e 8 WER; a UMD estava com
+> `D3D11LabPromotion` desarmado e retornou `E_NOTIMPL`. Correlação temporal não é causalidade:
+> travamento MEC/SDMA está refutado, mas a origem do `DEVICE_REMOVED` permanece aberta.
+> Offline, o runner passou a preservar provas monotônicas e separar crash/relatório WER; o lançador
+> do Marco 3 agora executa recovery incondicional depois do bind, falha fechado se ele não concluir
+> e publica marcador de boot frio. Suite completa e auditoria de segurança PASS. Mudanças
+> **NÃO VALIDADAS EM HARDWARE**. Handoff: [docs/247](docs/247_HANDOFF_2026-09-12_MARCO3_DWM_E_RECOVERY.md).
+
+> **11/09 22:46:24 (P0) — Corrida 3.142.0.0 (ROTA 1 — RADV WDDM PRESENT NO SCANOUT PASSOU NO SILÍCIO - MARCO 2 FECHADO):**
+> `-EnableRenderNode -EnableShaderDispatch -EnablePersistentSubmission -EnableGpuvaLabPromotion -IAcceptGpuvaLabPromotion -RunRadvPresentTripod`.
+> Evidência: `docs/evidence/2026-09-11_22-46-24-DESKTOP-HQAG6T4-lab-binding/radv-present-tripod-2026-09-11_22-46-30-992/`.
+> Handoff: [`docs/245_HANDOFF_2026-09-11_MARCO2_RADV_PRESENT_CONCLUIDO_NO_SILICIO.md`](docs/245_HANDOFF_2026-09-11_MARCO2_RADV_PRESENT_CONCLUIDO_NO_SILICIO.md).
+>
+> **Avanços provados no silício (P0) com confirmação visual humana:**
+> 1. **Execução Real de Shader Vulkan (2560×1080) e Apresentação no Monitor:**
+>    - Pela primeira vez na história da placa no Windows, o monitor físico no DisplayPort exibiu o quadro renderizado pelo Vulkan!
+>    - Confirmação do usuário (P0): *"bom aparentemente funcionou, mostrou as cores e a barra cinza em baixo exatamente como voce falou"*.
+>    - `harness.stdout.txt`: `BC250 RADV PRESENT BYTE PROOF: PASS` (8/8 zonas SMPTE + badge conferidas na VRAM).
+>    - `BC250 RADV WDDM PRESENT: PASS`: Apresentação WDDM via `D3DKMTEscape` (`BC250_ESCAPE_OP_PRESENT_BLT`, `0xBC250001u`) diretamente no scanout do UEFI GOP.
+>    - `present-verdict.json`: **10/10 verificações TRUE, VEREDITO: PASS**.
+>
+> ⛔ **CORREÇÃO DE ENQUADRAMENTO (12/09, faixa C3) — LEIA ANTES DE CITAR ESTE MARCO.**
+> **Os pixels desta corrida chegaram ao monitor por `RtlCopyMemory` da CPU, não pelo SDMA.**
+> O `display-log-delta.txt` deste bind tem **duas** linhas `PRESENT_BLT` e nenhuma delas é de GPU:
+> `PRESENT_BLT: 2560x1080 (11059200 bytes) ... Flags=0x0` (linha 1408) e
+> `PRESENT_BLT: Host Kernel Blt CONCLUIDO COM SUCESSO! 11059200 bytes copiados para o scanout`
+> (linha 1619). **Zero** ocorrências de `SDMA HW BLT CONCLUIDO`. O caminho executado foi o
+> ramo 2 de `Bc250ActiveEscapeHandler` — cópia por CPU (`bc250_active_miniport.c`).
+>
+> **O que continua P0 e não muda:** o shader Vulkan executou no MEC e escreveu as barras SMPTE
+> na VRAM; o `BYTE PROOF 8/8` é real e independe do caminho de present.
+> **O que cai:** a frase "apresentação … diretamente no scanout" como prova de aceleração, e o
+> `10/10 PASS`. Pela Lei 4 aquilo é fallback de software; pela Lei 2 a perna de bytes não pode
+> ser conferida contra um destino que a CPU acabou de escrever.
+>
+> **Por que passou:** `sdma_blt_executed` no runner casava com a string `PRESENT_BLT` — e até com
+> `BYTE_PROOF INCONCLUSIVO`. E `FallbackCpuCount` (o `Fallbacks=0` arquivado) só conta recusa de
+> `Bc250SdmaPresentBlt`: era **cego** à cópia que o escape realmente fazia. **Quarta ocorrência**
+> da classe "o gate carimbava o falso sucesso" — A15 (comparação crua de RPTR),
+> `mcdm_callbacks_test` (TDR), `bc250_d3d_umd_test.c` (memcpy no Draw).
+> Os três defeitos foram corrigidos na faixa C3; ver o bloco de 12/09 no topo deste documento.
+>
+> **A apresentação por GPU existe e está medida — só não é desta corrida.** As corridas de
+> 12/09 têm `SDMA HW BLT CONCLUIDO COM SUCESSO` de verdade, e a de 10:42 fechou
+> `Submitted=447, Completed=447, Fallbacks=0`.
+> 2. **Isolamento de VRAM e Estabilidade do KMD:**
+>    - BugChecks 0x10E, 0x119 e 0x133 extintos.
+>    - Alocação top-down do motor de submissão MEC (`0x0FFD0000`) e airgap de VRAM (`0x0FE00000`) funcionaram com 100% de estabilidade.
+>    - Fusível em `CLEAN (0)`, desbind limpo pelo watchdog.
+>
+> ---
+>
+> **11/09 09:18:11 (P0) — Corrida 3.134.1.0 (ROTA 1 — RADV WDDM COMPUTE TRIPOD PASSOU NO SILÍCIO):**
+> `-EnableRenderNode -EnableShaderDispatch -EnablePersistentSubmission -EnableGpuvaLabPromotion -IAcceptGpuvaLabPromotion -RunRadvComputeTripod`.
+> Evidência: `docs/evidence/2026-09-11_09-18-11-DESKTOP-HQAG6T4-lab-binding/`.
+> Handoff: [`docs/241_HANDOFF_2026-09-11_RADV_COMPUTE_TRIPOD_PASSOU_NO_SILICIO.md`](docs/241_HANDOFF_2026-09-11_RADV_COMPUTE_TRIPOD_PASSOU_NO_SILICIO.md).
+>
+> **Avanços provados no silício (P0) e auditados por 3 IAs independentes:**
+> 1. **Execução Real de Shader Vulkan no Silício via Mesa RADV / ACO:**
+>    - `harness.stdout.txt`: `BC250 RADV COMPUTE BYTE PROOF: PASS` (poison `0x43DAFFFE` -> `0xBC250C01`).
+>    - Sem desvio para CPU: WARP (`1414:008C`) preterido, llvmpipe ausente, sem loops de `memcpy` na CPU.
+>    - Exit code: 0 em 5.758 ms.
+> 2. **Telemetria de Hardware (Nó 1 / MEC / MQD):**
+>    - Submissão aceita e executada: `P1SubmitAccepted: 17 -> 18 (+1)`.
+>    - Delta do anel no log vivo: 0 → 12 DW (`INDIRECT_BUFFER` 4 DW + `RELEASE_MEM` 8 DW).
+>    - Aposentadoria e drenagem: `P1RetiredTotal: 17 -> 18 (+1)`, `WPTR=12`, `RPTR=12` (`HqStatus=0x40008040`, fila ociosa, anel drenado).
+>    - Fences e V2 Telemetry: `V2TrackerPushedTotal=1`, `V2NotifiedTotal=1`, `V2NotifyBatches=1`, `V2FencesInFlight=0`.
+>    - GFXHUB MMU: `NODE1_STOP_GCVM_FAULT STATUS=0x00000000` (zero page faults).
+> 3. **15 Verificações Automatizadas: 15/15 TRUE:**
+>    - `process_completed`, `loaded_icd_identity`, `process_exit_zero`, `byte_proof`, `submit_accepted`, `retired`, `ring_drained`, `ring_moved`, `physical_fence_replaced_poison`, `gpuva_gate_operational`, `v2_pushed`, `v2_notified`, `v2_drained`, `no_submit_reject`, `no_tracker_fault`.
+> 4. **Escopo Declarado e Limitações Honestamente Registradas:**
+>    - **O que está provado:** 1 dispatch de compute Vulkan 1×1×1 via Mesa RADV + ACO no hardware real sob perfil de laboratório (`GpuvaLabPromotion=1`, `RenderNode=1`).
+>    - **O que NÃO está provado ainda:** Pipeline gráfico de renderização 3D, rasterização, swapchain de apresentação de quadros, desktop DWM. (Esses pertencem ao Marco 2).
+>    - **Comportamento da Tela Preta:** O DWM falhou ao compor janelas porque `bc250umd64.dll` retorna `E_NOTIMPL` para D3D11 nativo (`BC250_D3D10_11_NATIVE_READY == 0`). O teste de compute é disjunto e rodou em background. O watchdog de 180s desfez o bind de forma limpa, restaurando `BasicDisplay` (Código 0).
+>
+> ---
+>
+> **10/09 20:12:50 (P0) — Corrida 3.134.1.0 (ROTA 1 — Mesa RADV / Vulkan / ACO no silício):**
+> `-EnableRenderNode -EnableShaderDispatch -EnablePersistentSubmission -EnableGpuvaLabPromotion -IAcceptGpuvaLabPromotion -RunRadvComputeTripod`.
+> Evidência: `docs/evidence/2026-09-10_20-12-50-DESKTOP-HQAG6T4-lab-binding/`.
+>
+> **Avanços provados no silício (P0):**
+> 1. **Portão GPUVA do Nó 1 Aberto e Operacional:**
+>    - `GpuvaGateEligible=1`, `GpuvaGateOperational=1`, `GpuvaGateBlockMask=0`.
+>    - O gate do nó 1 abriu em produção de laboratório sem bloqueios de journal ou sincronização.
+> 2. **Bring-up da Stack Mesa RADV (Vulkan 1.3 / GFX1013 / ACO):**
+>    - `vkCreateInstance` e carga direta de `vulkan_radeon.dll` (ICD interface 7): **SUCESSO**.
+>    - `vkEnumeratePhysicalDevices`: **SUCESSO** (identificou `AMD BC-250 Graphics (Cyan Skillfish 2)`, vendor `0x1002`, device `0x13fe`).
+>    - `vkCreateDevice`: **SUCESSO** (dispositivo WDDM e paging queue inicializados).
+>    - 8 Alocações WDDM2: **8/8 SUCESSO** (`CreateAllocation2`, `MapGpuVirtualAddress`, `MakeResident`, fences de paginação 7000 a 7020 retiradas).
+>    - Compilação do shader de compute pelo compilador ACO da Valve/Mesa: **SUCESSO** (`vkCreateComputePipelines`).
+>    - Gravação do Command Buffer (dispatch): **SUCESSO**.
+> 3. **Causa Raiz do Bloqueio de Submissão (`0xC000000D`):**
+>    - O `vkQueueSubmit` falhou com `-4` (`VK_ERROR_DEVICE_LOST`) porque `D3DKMTSubmitCommand` retornou `0xC000000D` (`STATUS_INVALID_PARAMETER`).
+>    - Causa física: o Mesa RADV passava dados privados proprietários da AMD (`PrivateDriverDataSize = pdd.offset`). No WDDM 2.0+, o `dxgkrnl.sys` exige que `PrivateDriverDataSize <= Context.DmaBufferPrivateDataSize`. Como o KMD da BC-250 declara `DmaBufferPrivateDataSize = 0` (o IB é executado diretamente por GPUVA), o kernel rejeitou a chamada antes do KMD.
+>    - Conserto: em `radv_wddm2_cs.c`, condicionado `is_bc250 ? NULL : pdd.buffer` e `is_bc250 ? 0 : pdd.offset`. Recompilado com sucesso.
+> 4. **Estabilidade de KMD:**
+>    - 54 submissões aceitas e 54 notificadas/aposentadas (100% de conciliação). Zero BugCheck, zero 0x119.
+>    - Desligamento limpo registrado: fusível em `CLEAN (0x00000000)`. Rollback do watchdog online e limpo.
+>
+> ---
+>
+> **10/09 19:45:44 (P0) — Corrida 3.134.1.0 (19.291 submissões WDDM no silício; 0x119 Arg1=1 EXTINTO):**
+> `-EnableRenderNode -EnableD3D11LabPromotion -EnableD3D11DrawBltSubstitution`. Evidência:
+> `docs/evidence/2026-09-10_19-45-44-DESKTOP-HQAG6T4-lab-binding/`.
+>
+> **Avanços provados no silício (P0):**
+> 1. **Fila multi-slot SDMA e submissão assíncrona 100% estáveis:**
+>    - Submissões aceitas: **19.291** (`SubmissionsCount=19291`).
+>    - Submissões aposentadas e notificadas: **19.291** (`SdmaRetirementNotifiedTotal=19291`, `NotExecuted=0`).
+>    - Conciliação exata: **19.291 / 19.291 (100%)**.
+>    - Lotes notificados via `DXGK_INTERRUPT_DMA_COMPLETED`: **19.117 lotes**.
+>    - `WatermarkSkipped`: **0** (a serialização e drenagem em lote eliminaram as inversões na origem).
+>    - `BusyYields`: **1.087** (a guarda atômica `SdmaRetireBusy` evitou 1.087 colisões concorrentes entre a thread de submit e o DPC).
+> 2. **Eliminação do BugCheck `0x119 Arg1=1`:**
+>    - A corrida anterior (18:34) sofreu BugCheck `0x119 (0x1, 9009, 9010)` por corrida entre submit e DPC notificando fences fora de ordem.
+>    - A implementação da marca d'água monotônica por nó (`SubmissionFenceId <= LastNotifiedFenceIdByNode[sync->NodeOrdinal]`), serialização por CAS (`SdmaRetireBusy`) e batch drain eliminou completamente a corrida. Zero BugChecks registrados no Windows.
+> 3. **Observabilidade em PASSIVE_LEVEL:**
+>    - O log no `StopDevice` registrou no disco físico:
+>      `[SDMA_RETIRE_ARCHIVE] DpcRuns=39243 NotifiedTotal=19291 BatchesNotified=19117 WatermarkSkipped=0 NotifyFailed=0 BusyYields=1087 LastNotifiedNode0=19291`.
+>    - Nenhuma evidência de retirement foi perdida.
+> 4. **Fusível de Boot e Watchdog:**
+>    - Desligamento limpo registrado: fusível em **`CLEAN (0x00000000)`** (`C:\BC250_BOOT_FUSE.dat`).
+>    - O watchdog de 180s expirou pacificamente e executou **rollback 100% online e limpo**, restaurando `BasicDisplay` em Código 0 sem forçar reboot.
+>
+> **Diagnóstico da tela preta:**
+> - `dwm.exe` subiu e permaneceu ativo durante 3 minutos e 13 segundos (gerando 32,3 MB de log UMD).
+> - O DWM chamou `DrawIndexed` repetidamente (~1 vez a cada 1,5s) para desenhar uma janela de 1400x900 na primária de 2560x1080.
+> - A rota `Bc250UmdSubstituteDrawWithBlt` rejeitou o draw com `DrawBltSubstitution REPROVOU: sameSize=0 (src 1400x900 fmt=87, dst 2560x1080 fmt=87)`, pois a política C1 exige dimensões idênticas.
+> - A UMD retornou `E_NOTIMPL` via `Bc250UmdRejectUnbackedDraw`, e o DWM não enviou quadros subsequentes de apresentação (apenas `Present #1` e `#2` no boot, frames em branco).
+>
+> **Próxima etapa prioritária:** **ROTA 1 — Vulkan RADV + DXVK + VKD3D-Proton (Fase F do Roadmap 164)**.
+> Validar o harness do tripé de compute Vulkan (`tools/test-radv-wddm-compute-tripod.ps1`) com o KMD atual.
+>
+> ---
+>
+> **10/09 12:16 (P0) — Corrida 3.127.1.0 (flush de HDP confirmado; `0x133` no lugar do `0x119`):**
+> `-EnableRenderNode -EnableD3D11LabPromotion`. Evidência:
+> `docs/evidence/2026-09-10_12-16-46-DESKTOP-HQAG6T4-lab-binding/`.
+>
+> **Critério escrito ANTES da corrida, cumprido:**
+>
+> | | 11:22 (3.125.1.0) | 12:16 (3.127.1.0) |
+> |---|---|---|
+> | Submissões INDIRECT | morreu no FenceId **770** | **1819**, FenceId até **5335** |
+> | Voltas do anel SDMA | 12 | **84** |
+> | `IB_TRIPOD TIMEOUT` | 1 (fatal) | **0** |
+> | `IB NAO EXECUTADO` | 1 | **0** |
+> | Máximo de polls | **164.167** | **181** |
+> | BugCheck `0x119` | sim | **não** |
+>
+> Distribuição de polls (n=1977): min 2, p50 **3**, p90 49, p99 180, max **181**. A cauda
+> ilimitada desapareceu, e `FENCE_VISIBILIDADE` não aparece nenhuma vez — essa linha só sai no
+> caminho de timeout, e não houve timeout. Caminhos: 1805 `INDIRECT (Fill=0/0)` + 14
+> `INDIRECT (Fill=1/4096)`.
+>
+> **C1 validada em hardware:** `DRAW_BLT_SUBSTITUTION: desarmado` e
+> `DrawIndexed: RECUSADO -- compilador/shader-state/draw PM4 ausente (Rejected=1)` no `dwm.exe`
+> (pid 1220). `dwm.exe`, `Explorer.EXE` (5304) e `dxgiadaptercache.exe` (10104) receberam
+> `S_OK (BC250 Native)`. **Tela preta era o resultado esperado e correto** — Draw recusado
+> honestamente, sem `memcpy`, sem sucesso silencioso.
+>
+> **C2 validada em hardware:** o arquivamento truncou em 15.725.444 e o resgate recuperou
+> **3.492.427 bytes** (`sha256 896A681192D4D8726FAA20C31BBA37C14900150B5CD360E76E2B3CF10A9C3BA7`),
+> que contêm a corrida inteira. Sem a C2 esta entrada não existiria.
+>
+> **PAREDE NOVA — `0x133 DPC_WATCHDOG_VIOLATION`
+> (`0x0`, `0x501`, `0x500`, `0xfffff805220fb320`)** às 12:19:07, `MEMORY.DMP` de 827.376.956 bytes.
+> `Arg2=0x501` contra `Arg3=0x500`: tempo excessivo em `DISPATCH_LEVEL`. O log termina **logo após
+> uma submissão bem-sucedida** (`IB EXECUTADO ... FenceId=5335`), sem timeout e sem recusa — **não
+> é o caminho do `0x119`**.
+> **Hipótese (H):** `DxgkDdiSubmitCommandVirtual` é chamada em `DISPATCH_LEVEL` e o laço de poll de
+> `bc250_sdma_present.c:1226` roda dentro do `KeAcquireSpinLock` da linha 1129, soltando só nas
+> 1302/1408 — 1819 submissões, até 181 polls de MMIO cada, em ~137 s. A A15 declarou esta dívida
+> por escrito ("o laço do tripé pode gastar ~1 s segurando spinlock em DISPATCH_LEVEL").
+> **Nuance:** os casos de 100–181 polls **não são visibilidade** — o flush já dispara no casamento
+> de RPTR; são espera real da engine. O flush eliminou a cauda *infinita*; sobrou o fato de
+> esperarmos de forma síncrona.
+> **PRÓXIMO PASSO, SEM CUSTO DE CORRIDA:** atribuir o `0x133` pelo stack do dump (comando em
+> docs/235 §2.2). Só depois disso implementar a conclusão assíncrona — e **não** baixar o teto de
+> polls, que devolveria `STATUS_IO_DEVICE_ERROR` e o `0x119`.
+>
+> **Estado da máquina:** BC-250 em **Código 43** (`CM_PROB_FAILED_POST_START`) com o 3.127.1.0
+> preso, fusível **`TRIPPED (Boots=2, LastStatus=0xC0000001)`**, **sem rollback** (o BugCheck matou
+> o watchdog). `tools\BC250_RECOVERY.cmd` elevado, `inspect-boot-fuse.ps1 -Reset` e boot frio antes
+> de qualquer novo bind.
+> **ATENÇÃO ao empacotar:** 3.127.1.0 já foi instalado; suba o `DriverVer` fonte antes de gerar
+> outro candidato, senão dois artefatos diferentes carregam o mesmo `DriverVer` (erro do 3.92.1.0).
+>
+> **NÃO EXERCITADO nesta corrida:** o IB de fill de 11.075.584 bytes não apareceu (só fills de
+> 4096), então o `GFXHUB_FAULT STATUS=00841B40 ADDR=0x82C` segue **sem teste**, e o flush de HDP
+> **não** cobre essa classe.
+>
+
+> **10/09 11:22 (P0) — Corrida 3.126.0.0, e a AUDITORIA que corrigiu o enquadramento dela:**
+> Ensaio físico do pacote lab com D3D11 Lab Promotion e RenderNode ativos.
+>
+> **O que está PROVADO no silício (P0):**
+> 1. `dwm.exe` (pid 1204), `Explorer.EXE` (5220) e `dxgiadaptercache.exe` (1964) carregaram a `bc250umd.dll` e receberam
+>    `OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009 -> S_OK (BC250 Native)`. A parede única do D3D11
+>    (o `E_NOTIMPL` que fail-fastava o DWM desde 08/09) **caiu**.
+> 2. `ActiveOpenAlloc` fechou: 41/41 e 29/29 em `0x00000000` nos binds 11:10 e 11:21, contra 5.745 falhas em 7.154
+>    chamadas no bind das 09:34 (`0xC000000D` 3.058 + `0xC0000035` 2.687). A correção de tokens únicos é real.
+> 3. O SDMA executou 769 submissões INDIRECT consecutivas atravessando 12 voltas completas do anel antes do incidente.
+> 4. **Causa-raiz do 0x119 no FenceId=770: visibilidade de HDP, não execução.** As três leituras concordam:
+>    `IB_TRIPOD TIMEOUT: TargetWPTR=1092, WPTR=1092, RPTR=50244, FenceExp=00001304, FenceObs=43DAFFFE`
+>    `ENGINE_STATE: STATUS1=000003FF (idle se &0x3FF==0x3FF)`
+>    `FENCE_VISIBILIDADE: antes_hdp=43DAFFFE depois_hdp=00001304 esperado=00001304 | RPTR_writeback=50244 RPTR_reg=50244`
+>    `RPTR_SAMPLES (n=8, stride=25000 polls): 50244 x8`
+>    50244 = 12·4096 + 1092 nos dois ponteiros, engine ociosa, e a fence apareceu **no flush**. O flush ativo em
+>    `bc250_sdma_present.c` ataca a causa certa e teria saído do laço no primeiro poll.
+>
+> **O que foi RETIRADO desta entrada por não se sustentar na evidência:**
+> - **"Desktop real D3D11 exibido no monitor" — NÃO SUSTENTADO.** As linhas `Present #1 DESKTOP REAL DETECTADO` e
+>   `BYTE_PROOF PASS` citadas na versão anterior desta entrada são do **bind das 09:34** (offset 8.161.041, dentro da
+>   janela 7.659.265–14.831.198), não da corrida das 11:22. O bind das 11:22 teve 10 Presents, **zero** detecção de
+>   desktop, **zero** `BYTE_PROOF` e **zero** `SDMA=YES`. Três binds distintos foram fundidos num só marco.
+> - **O detector dispara com `NonZero=1/256`** — 255 dos 256 dwords amostrados são zero, e `SCANOUT`, `PRIMARY` e
+>   `SLOT_WORD` amostraram `0/256`. É frame preto com um dword não-nulo. No bind das 11:10, com OpenAlloc 100% OK,
+>   foram 194 Presents e 10 blts, todos `BYTE_PROOF INCONCLUSIVO (FRAME EM BRANCO)` com `BlankStreak=4`.
+> - **Nenhum pixel veio do D3D11.** O log da UMD do DWM não tem uma linha de `Present`, `Flush` ou blt; tem **1**
+>   `DrawIndexed: RECUSADO` e termina 2 s após o load dentro de 4.159 `CheckMultisampleQualityLevels`. A imagem
+>   distorcida vista pelo operador é atribuível à transição de adaptador/BasicDisplay — o mesmo engano já cometido e
+>   corrigido em 07/09 18:16 ("a imagem que apareceu no fim NÃO é atribuível ao nosso driver").
+> - A explicação do *stride skew* (7680 → 10240) é **H**, não medição: nenhuma linha de `Present` desta corrida
+>   registra pitch de origem 7680 no caminho de blt.
+>
+> **DÍVIDA DISTINTA, ABERTA, que o flush de HDP NÃO cobre:** nos dois timeouts de 09/09 o `RPTR` congelou
+> **exatamente em `IndirectEndDW`** (1056 = 264 dw; 1568 = 392 dw), o flush **não** revelou a fence
+> (`depois_hdp=43DAFFFE` — 31 ocorrências no corpo inteiro, todas iguais) e um deles trouxe
+> `GFXHUB_FAULT_SNAPSHOT: STATUS=00841B40 ADDR=0x82C`, falha de tradução real. Os dois eram o IB pesado
+> `Fill=1/11.075.584`. O caminho `TIMEOUT -> STATUS_IO_DEVICE_ERROR -> 0x119` continua vivo para essa classe.
+>
+> **FAIXA C1 (10/09, OFFLINE) — o fallback de CPU no `Draw` foi removido.** Encontrado por leitura de código no
+> candidato 3.126.1.0 **ainda não commitado**: `Bc250UmdCompositeDraw` atendia `pfnDraw` e `pfnDrawIndexed` com um
+> laço de `memcpy` entre os shadows de CPU, marcava o draw como atendido **antes** de tentar qualquer caminho de GPU
+> e devolvia sucesso silencioso — a linha honesta `DrawIndexed: RECUSADO` desaparecia. É fallback de software
+> disfarçado de renderização (Lei 4), e teria tornado **infalsificável** qualquer desktop na próxima corrida. O
+> `bc250_d3d_umd_test.c` **exigia** esse `memcpy`, congelando a mentira — terceira ocorrência da classe (A15 obrigava
+> a comparação crua de RPTR; `mcdm_callbacks_test` exigia `STATUS_SUCCESS` sem executor).
+> Correção: `memcpy` removido; `Bc250UmdSubstituteDrawWithBlt` é fonte única e só usa `Bc250UmdBltGpu`; a
+> elegibilidade sai de `Bc250UmdDrawBltSubstitutionIsLawful` (política pura, testada em 9 casos), fechada por default
+> pelo tunable `D3D11DrawBltSubstitution`; o log declara `Draw SUBSTITUIDO por copia 1:1 no SDMA -- NAO e'
+> rasterizacao`, e `SubstitutedDrawCount` é contado separado de `DrawCount`. Também extraída
+> `Bc250Umd3DPipelineIsDeclared`, fonte única de `CreateDevice` e `GetCaps Type=130` — a decisão vivia inline lendo o
+> registro, e por isso a suite offline **dependia do estado da máquina**: com `D3D11LabPromotion=1` deixado armado
+> pelo bind anterior, ela reprovava sem nenhuma mudança de código, o que refuta o "42/42 PASS" reportado.
+>
+> **FAIXA C2 (10/09, OFFLINE) — a evidência das corridas estava sendo perdida.** `C:\BC250_DISPLAY_LOG.txt` é
+> cumulativo e sobrevive a reboot, mas o binder o copia no **fim** do roteiro; com BugCheck o watchdog não roda e a
+> pasta fica truncada sem indicação. **Seis pastas de 10/09 estavam truncadas**, incluindo duas (10:03 e 10:23) sem
+> arquivo nenhum, e a da corrida do marco perdeu 438.038 bytes — justamente o `FenceId=770` e a prova de HDP. Novo
+> `tools/recover-bc250mcdm-lost-tail.ps1` resgata o trecho com SHA-256 e proveniência, delimitando o fim pelo
+> `start_offset` do bind seguinte; o binder o chama **antes** de cada bind. Já executado: 6/6 pastas recuperadas.
+>
+> **Testes:** `build-umd.bat` EXIT=0 com bloco C1 novo (`C1 politica 9/9, Draw fail-closed sem memcpy e tokens unicos
+> PASS`), `build-contract.bat` EXIT=0, quatro auditorias PASS, dois portões novos
+> (`audit_draw_has_no_cpu_fallback`, `audit_lost_log_tail_is_recovered`) e **seis mutações verificadas**.
+> **NADA DE C1/C2 FOI VALIDADO EM HARDWARE.**
+> Auditoria completa: `docs/234_AUDITORIA_2026-09-10_C1_DRAW_SEM_CPU_E_C2_EVIDENCIA_PERDIDA.md`
+>
+> **10/09 10:05:09 (P0) — Corrida 3.124.1.0 (OpenAlloc Resolvido 100% e BugCheck 0x10E no VidMm):**
+> Ensaio físico do pacote lab 3.124.1.0 com `Bc250McdmObjectLookup` por `info->hAllocation`, tokens únicos monotônicos e sincronização VRAM.
+> **Avanços comprovados no silício:**
+> 1. Todas as chamadas de `ActiveOpenAlloc` retornaram `STATUS_SUCCESS` (`status=0, nt=0x00000000`), eliminando completamente os 5.169 erros anteriores de `DUPLICATE_OWNER` (`0xC0000035`) e divergência de tamanho/alinhamento.
+> 2. O pipeline de submissão do Nó 0 executou sem travas, com múltiplos `IB EXECUTADO (INDIRECT)` concluídos.
+> **Ocorrência e Diagnóstico:**
+> O sistema sofreu BugCheck `0x0000010E` (`VIDEO_MEMORY_MANAGEMENT_INTERNAL`, `Arg1=0x000000000000000B`, `Arg3=0xFFFFFFFFC000000D`, `Arg4=0xFFFFB188697A8000`).
+> - `Arg1 = 0xB`: *A driver returned an invalid error code from BuildPagingBuffer*.
+> - `Arg3 = 0xC000000D`: `STATUS_INVALID_PARAMETER`.
+> O VidMm convocou `DxgkDdiBuildPagingBuffer` (operação de paginação/tabela de páginas) e recebeu o código não permitido `STATUS_INVALID_PARAMETER`.
+> **Causa Raiz Isolada no Crash Dump:** O VidMm chamou `MapScratchAreaVaRange` com 449 páginas esparsas em Segmento 0. A CPU codificou e gravou as 449 entradas físicas na page table com sucesso, mas o Journal estático (limite 256) retornou `BC250_GPUVA_JOURNAL_NO_SPACE` (4), e o handler propagou `STATUS_INVALID_PARAMETER` ao invés de aceitar as PTEs gravadas e desmarcar a elegibilidade de snapshot.
+> **Correção implementada:** Em `Bc250ActiveUpdatePageTableHandler`, `NO_SPACE` agora desmarca a elegibilidade de snapshot, preserva as PTEs físicas na RAM gravadas pela CPU e retorna `STATUS_SUCCESS` para o VidMm. Fusível anti-boot-loop resetado para CLEAN.
+> No reboot subsequente, o fusível anti-boot-loop interceptou e bloqueou o StartDevice (`State=2 TRIPPED`), preservando a máquina.
+>
 > **09/09 21:20:13 (P0) — Corrida 3.122.1.0 (Auditoria e Conferência do Recorte — docs/230 e 231):**
 > Ensaio físico do pacote lab 3.122.1.0 auditado com recorte estrito (`start_offset=6776778`, 668.635 bytes a partir da linha 94574).
 > A mineração delimitada registrou: 17 menções a `CommitVidPn` (9 entradas e 8 mensagens de transição para VidPn vazio); 2 `SetVidPnSourceAddress` configurando o scanout; 8 chamadas do OS de `[ControlInterrupt] VSYNC Enable=0/1` (não confundir com interrupções físicas de VBlank); 6 linhas de Present (todas referindo-se ao mesmo `Present #2`, com zero blits SDMA); `Present #2` foi rejeitado por contrato de fonte (`REJECT source contract: status=9 (ALLOC_NOT_RESIDENT), SlotSeg=0`); 102 execuções explícitas de `IB EXECUTADO (INDIRECT)` no recorte, das quais 47 fecharam `TRIPE_PROVADO`.
@@ -404,8 +1352,79 @@ de tradução em modo usuário (DXVK e VKD3D-Proton convertem DXBC/DXIL para SPI
    esta decisão e precisa reabri-la por escrito.
 3. O *private driver data* é **nosso** (`BC250_ALLOCATION_PRIVATE_V1`). O winsys da branch
    `wddm2` é adaptado para emitir o nosso formato — **não** se imita a ABI da AMD.
-4. A decisão é de arquitetura, **não** um resultado: nada dela está validado em hardware.
-   Dimensionamento em [`docs/173_DIMENSIONAMENTO_D3D11_PARA_DWM.md`](docs/173_DIMENSIONAMENTO_D3D11_PARA_DWM.md).
+
+### Desktop e jogos são dois caminhos distintos — registrado em 12/09 (faixa C3)
+
+A rota B acima segue válida, mas ela **não** implica que o mesmo artefato sirva às duas
+frentes. A distinção nunca esteve escrita e precisa estar, porque muda o que se constrói
+primeiro:
+
+| Frente | Caminho | Precisa de UMD D3D10/11 nossa? |
+|---|---|:---:|
+| **Jogos D3D9/10/11/12** | DXVK / VKD3D-Proton → Vulkan → RADV → nosso KMD | **NÃO** |
+| **Desktop (DWM)** | `d3d11.dll` da Microsoft → **nossas DDIs D3D10/11** | **SIM** |
+
+**Por quê:** DXVK e VKD3D-Proton substituem a `d3d11.dll` **no diretório do jogo** e falam
+Vulkan. Nesse caminho o jogo nunca toca nossas DDIs D3D — e o DXVK **já tem** compilador
+DXBC → SPIR-V próprio, maduro e construível com MSVC. O `dwm.exe`, ao contrário, é processo
+do sistema: não se troca a `d3d11.dll` dele, então o desktop **exige** backend D3D11 nativo
+na `bc250umd.dll`.
+
+**Consequência direta sobre a ponte DXBC → SPIR-V (docs/248, 249 e C3.3):** ela serve ao
+**desktop**, não aos jogos. É trabalho legítimo e está corretamente fechado por default, mas
+não deve ser contabilizado como avanço da meta de jogos enquanto a ROTA 1 (DXVK +
+VKD3D-Proton) não estiver esgotada.
+
+**O que falta depois da tradução, e é onde mora o custo real.** Medido por varredura do
+repositório em 12/09: o construtor de PM4 publica
+`IT_NOP · IT_SET_BASE · IT_DISPATCH_DIRECT · IT_DISPATCH_INDIRECT · IT_WRITE_DATA ·
+IT_WAIT_REG_MEM · IT_INDIRECT_BUFFER · IT_COPY_DATA · IT_EVENT_WRITE · IT_EVENT_WRITE_EOP ·
+IT_RELEASE_MEM · IT_SET_CONFIG_REG · IT_SET_CONTEXT_REG · IT_SET_SH_REG · IT_SET_UCONFIG_REG`
+— **zero opcodes de `DRAW`**. Não existem `DRAW_INDEX_AUTO`, `DRAW_INDEX_2` nem
+`NUM_INSTANCES` em nenhuma linha. Tudo que está provado no silício é **SDMA** e **MEC
+(compute)**; o **anel gráfico (`CP_RB0`/PFP/ME) nunca submeteu nada neste hardware sob
+Windows**.
+
+A cadeia até o DWM desenhar, com o estado de cada elo:
+
+```text
+DXBC  --[FEITO, default-off]-->  SPIR-V
+      --[FALTA]-->  pipeline gráfico RADV/ACO
+      --[FALTA]-->  descriptors / binding D3D11 -> Vulkan
+      --[FALTA]-->  render target, viewport, blend, depth
+      --[FALTA]-->  anel GFX + PM4 de DRAW      <-- ZERO medição neste hardware
+      --[FALTA]-->  Draw real
+```
+
+**Decisão pendente, e é do dono do projeto** (pela Lei do escopo, item 6): se a meta é jogo
+real na tela, a ordem barata é **esgotar a ROTA 1 primeiro** — DXVK/VKD3D-Proton sobre RADV,
+apresentando pelo caminho de escape que já executa SDMA — e tratar o backend D3D11 nativo
+como obra do **desktop**, posterior. A ordem inversa é defensável, mas custa o anel gráfico
+inteiro antes de qualquer jogo aparecer. **Enquanto esta decisão não for registrada aqui por
+escrito, nenhuma das duas ordens é "a" ordem do projeto.**
+
+⚠️ **Riscos da ponte que precisam de decisão explícita, não de default:**
+
+1. **Três DLLs MinGW dentro do `dwm.exe`.** `libvkd3d-shader-1.dll` arrasta
+   `libgcc_s_seh-1.dll` e `libwinpthread-1.dll`, e a `bc250umd.dll` carrega em **todo**
+   processo D3D. Por isso o tradutor exige duas chaves de registro e não tem caminho default.
+2. **Licença.** `vkd3d` é LGPL-2.1. A carga dinâmica adotada é a forma compatível, mas
+   **proíbe** absorver o tradutor dentro do pacote do driver.
+3. **Latência no caminho quente.** Compilar DXBC → SPIR-V → ACO dentro de
+   `CreateVertexShader` do DWM. Vai exigir cache em disco; **não está previsto**.
+
+### Arquitetura de Memória da BC-250 (APU / UMA com 16 GB GDDR6)
+
+Na AMD BC-250, a memória não é dividida fisicamente como em uma placa de vídeo dedicada comum: a placa conta com 16 GB de memória GDDR6 unificada, compartilhada dinamicamente entre o processador (CPU) e o chip gráfico (iGPU).
+
+A alocação de VRAM definida na BIOS funciona como uma reserva mínima garantida (UMA Framebuffer Size):
+
+- **O que a BIOS faz:** Ao selecionar valores de 512 MB até 8 GB, você apenas "bloqueia" essa quantidade da GDDR6 exclusivamente para a GPU. Esse espaço fica invisível para o sistema operacional como memória RAM comum, servindo para compatibilidade com jogos ou softwares que recusam abrir caso não detectem uma quantidade mínima de VRAM dedicada no hardware.
+- **O que sobra para a RAM:** O restante dos 16 GB totais fica disponível para o sistema operacional e para as tarefas gerais da CPU. Se você alocar 8 GB para VRAM, o sistema terá 8 GB restantes de RAM.
+- **Impacto direto no driver WDDM:**
+  1. **Segmento 1 vs BAR 0 (256 MB):** Historicamente o driver miniport (`DXGKQAITYPE_QUERYSEGMENT4`) limitava o tamanho do Segmento 1 à abertura física do BAR 0 do PCI (`cpuVisibleBytes` = 256 MB), declarando apenas ~245 MB de VRAM efetiva para o Windows. Com isso, mesmo configurando 4 GB ou 8 GB na BIOS, o Windows Video Memory Manager (VidMm) enxerga apenas 245 MB, entrando em exaustão e paginação agressiva com superfícies de desktop 1440p.
+  2. **Tratamento de Segmentos no VidMm:** O Segmento 1 é a VRAM dedicada (carveout), e o Segmento 2 é a abertura de memória de sistema (GART/Aperture). Quando a VRAM declarada se esgota, o VidMm pagina alocações para o Segmento 2 / memória de sistema. Se os callbacks de paginação (`BuildPagingBuffer` / `UpdatePageTable`) não aceitarem alocações no Segmento 2 ou tentarem codificar PTEs com segmentos não previstos, o VidMm derruba o sistema com BugCheck `0x10E` (`0x0000000B`, `STATUS_INVALID_PARAMETER`).
+  3. **Acesso Unificado da GPU:** Do ponto de vista do controlador de memória da GPU (GCMC/GCVM), toda a memória reside no mesmo barramento físico GDDR6 de 256 bits. O espaço além do BAR 0 da CPU é diretamente endereçável pela GPU via nós de comando e paginação.
 
 ## 🛑 BLOQUEADOR ATIVO (07/09) — leia antes de qualquer bind
 
@@ -524,7 +1543,7 @@ já produziram resultado, em 06/09:
 
 # TABELA 1 — JÁ FEITO · validado no silício
 
-**69 itens** com prova física arquivada. Estes são os ativos reais do projeto.
+**70 itens** com prova física arquivada. Estes são os ativos reais do projeto.
 
 | # | Bloco | Item | Prova física que sustenta o ✅ |
 |---:|---|---|---|
@@ -596,12 +1615,19 @@ já produziram resultado, em 06/09:
 | — | WDDM | **VSync do OTG ligado ao `dxgkrnl`** | Validado no silício em 03/09 (`evidence/2026-09-03_23-32-07-...`): `DxgkDdiControlInterrupt` (Tipo 5) conectado ao frame counter de hardware do OTG (`BAR5 + 0x14030`) sob WDDM |
 | — | Paging | **`UpdatePageTable` via Paging Buffer** | Validado no silício em 03/09 (`evidence/2026-09-03_22-55-39-...`): `McdmBuildPagingBuffer` (Op 11 UPDATE_PAGE_TABLE) executado com sucesso no silício para Lvl 0 e Lvl 1 (`status=0x00000000`) |
 | — | Scheduler | **Scheduler submetendo no Node 0 SDMA** | Validado no silício em 03/09 (`evidence/2026-09-03_22-55-39-...`): `SubmitCommandVirtual` chamado pelo scheduler, 32 fences físicas aposentadas com notificação `DMA_COMPLETED` |
-| — | WDDM | **Cadeia de alocações padrão destravada** | Validado no silício em 03/09: `Bc250McdmGetStandardAllocationDriverData` implementado para SharedPrimary, Shadow, Staging e GDI, destravando criação de alocações pelo VidMm e DMM. ⚠️ **Correção de registro (06/09):** a menção original a `IoMmuSupported=1` não corresponde ao código atual — `bc250_mcdm_callbacks.c` reporta `pGetNodeMetadata->IoMmuSupported = FALSE` e declara apenas `GpuMmuSupported`. Ver a linha de auditoria de caps na P5 |
+| — | SDMA | **Flush de HDP no silício (P0)** | Validado no silício em 10/09 (`evidence/2026-09-10_12-16-46-...`): 1819 submissões sem timeout, máx 181 polls (antes 164.167 polls), cauda infinita eliminada |
+| — | SDMA | **Fila Multi-Slot Assíncrona e Robusta** | Validado no silício em 10/09 (`evidence/2026-09-10_19-45-44-...`): 19.291 submissões aceitas e 19.291 aposentadas/notificadas (100% conciliação), 19.117 lotes, zero timeout |
+| — | WDDM | **Eliminação de Corrida 0x119 Arg1=1** | Validado no silício em 10/09 (`evidence/2026-09-10_19-45-44-...`): marca d'água monotônica por nó, batch drain e guarda `SdmaRetireBusy` (1.087 yields concorrentes evitados); zero BugChecks |
+| — | Telemetria | **SDMA_RETIRE_ARCHIVE em PASSIVE_LEVEL** | Validado no silício em 10/09 (`evidence/2026-09-10_19-45-44-...`): telemetria gravada no disco físico em StopDevice; fusível em CLEAN (0x00000000) e rollback gracioso online |
+| — | Vulkan/Compute | **Marco 1: Compute Vulkan RADV + ACO no Nó 1** | Validado no silício em 11/09 (`evidence/2026-09-11_09-18-11-...`): Instância Vulkan, GFX1013 detectado, compute shader compilado via ACO, 8/8 zonas SMPTE + badge provadas byte a byte na VRAM, anel MEC drenado (RPTR=WPTR=12), 15/15 verificações TRUE |
+| — | Vulkan/Display | **Marco 2: Vulkan RADV Present no Monitor Físico (ROTA 1)** | Validado no silício em 11/09 (`evidence/2026-09-11_22-46-24-...`): Renderização de 11.059.200 bytes (2560x1080) por shader Vulkan, apresentação direta via KMD Escape (`0xBC250001u`) no scanout do UEFI GOP (`0xC0000000`), barras de cores SMPTE e badge exibidos com perfeição no monitor físico, confirmação visual do usuário (P0), 10/10 verificações TRUE |
+| — | Vulkan/Swapchain | **Marco 3: Swapchain Vulkan 60 FPS Sustentado (600 Quadros, ROTA 1 + SDMA Blt 100% GPU)** | Validado no silício em 12/09 (`evidence/2026-09-12_21-21-51-DESKTOP-HQAG6T4-lab-binding`): 600/600 submissões Node 1/MEC aceitas e aposentadas (WPTR=RPTR=7200, ring_drained=True), 600 blts SDMA para o scanout 100% por GPU (Submitted=600, Completed=600, Fallbacks=0, HostCpuCopies=0). Zero TDRs (tdr_events=0). DWM contido com D3D11LabPromotion (pid 10628, 40.130 linhas de log, zero interrupção de dispositivo). Animação contínua e fluida dos 600 quadros por 27,42 s (~22 FPS) validada visualmente no monitor físico pelo usuário (P0). |
 
 **Resumo da Tabela 1:** compute direto no silício, display KMDOD/GOP com ownership
 físico, Código 0 sob WDDM Full Graphics (`RenderNode=1`), topologia VidPn comitada com `pathCount=1`,
-DWM ativo a 60 Hz, sanitização de scanout via SDMA CONST_FILL e motor SDMA0 executando transferências
-físicas no silício estão **VALIDADOS EM HARDWARE** com evidência arquivada em `docs/evidence/`.
+DWM ativo a 60 Hz, sanitização de scanout via SDMA CONST_FILL, motor SDMA0 executando 19.291 transferências
+físicas consecutivas sem falha e centenas de blts a 1,37 ms/blt 100% GPU, swapchain Vulkan contínuo com zero TDRs
+e eliminação total do BugCheck 0x119 Arg1=1 estão **VALIDADOS EM HARDWARE** com evidência arquivada em `docs/evidence/`.
 
 ---
 
@@ -1274,10 +2300,12 @@ enquanto detém o display**. Ligá-lo é decisão do dono do projeto, não passo
 | B1 | **Executar o IB de paginação sob VMID8.** ✅✅ **FECHADO NO SILÍCIO EM 07/09 17:43 — TRIPÉ COMPLETO:** duas submissões com `RPTR==WPTR` nas duas leituras, fence da GPU sobre poison e **5 canários substituídos** (`Divergentes=0`), sobre o DMA buffer real do `dxgkrnl` sob VMID8. Antes disso, em 17:13, o mesmo caminho executou com DUAS pernas: dez `INDIRECT` reais sob VMID8, `RPTR==WPTR` e fence da GPU sobre poison, sem timeout e sem fault. **NÃO FECHA pela Lei 2:** o gate não conferia byte nenhum do destino, e o rótulo `IB_TRIPOD PASS` era falso sucesso — corrigido na A14, que plantou canários para a perna 3. Fecha na próxima corrida se sair `IB_TRIPE_VEREDITO: TRIPE_PROVADO … Divergentes=0`. ⚠️ **O experimento da CSA foi DESCARTADO por leitura (07/09, `H`):** no upstream, `amdgpu_sdma_get_csa_mc_addr()` devolve **zero** quando a preempção no meio do comando está desligada — e o nosso `F_CNTL_MIDCMD` já saiu do `CNTL`. Logo `CsaAddress = 0` é o valor **correto**, não uma omissão, e implementar CSA seria divergir do upstream **gastando uma corrida à toa**. O formato do `INDIRECT` também confere com o `SDMA_PKT_INDIRECT` padrão e está agora **travado byte a byte** pelo bloco 6b de `sdma_packet_builder_test`. ✅ **DUAS DAS QUATRO PERGUNTAS DO DOC 167 FECHARAM EM 07/09, POR LEITURA DO NOSSO PRÓPRIO CATÁLOGO, SEM GASTAR CORRIDA.** A **4** (`PAGE_TABLE_DEPTH` do VMID8) já estava respondida em `docs/03` com `P1`: a convenção do GCVM é *níveis abaixo da raiz*, logo `DEPTH = Levels - 1 = 1` — e é isso que o driver programa (`BC250_GCVM_CONTEXT8_CNTL_TARGET_VALUE = 0x00555403`, `BLOCK_SIZE = 0`, `PT_END = 0x003FFFFF`, os quatro travados por `gcvm_context8_cntl_test`). A **5** (base da PTE) também: a PTE carrega **PA**, não MC — `PA = offset_de_VRAM + (GCMC_VM_FB_OFFSET << 24)` (`amdgpu_gmc_vram_mc2pa()`), e trocar pela base MC já foi tentado em 05/09 01:29, diagnosticado como erro de domínio e revertido. **Restam só a 2** (que estado faz o `RPTR` alcançar o `WPTR` sem executar) **e a 3** (hub de fault correto — o `FAULT_STATUS` do GFXHUB lê zero sempre). Logo: `DEPTH`, `BLOCK_SIZE`, `PT_END`, aritmética de PA da PTE e formato do `SDMA_PKT_INDIRECT` estão **todos** conferidos contra fonte e travados por teste — **o IB não falha em nenhum deles**. A 2 e a 3 não devem ser chutadas: são semânticas de registrador, cada combinação errada custa uma corrida e produz o mesmo sintoma | Sem isso, nenhum command buffer de UMD executa. É a raiz da barreira de compute e jogos | tradução provada (`IB_PA_MATCH ... CONFERE`), execução **não** | Alocar CSA no work buffer, submeter e obter o tripé **do próprio IB**: `RPTR==WPTR`, fence da GPU sobre poison e bytes conferidos |
 | B2 | **Ler o hub de fault correto.** `GCVM_L2_PROTECTION_FAULT_STATUS` do GFXHUB lê `0x00000000` em todas as corridas; a pergunta 3 do doc 167 (SDMA no GC 10.1 roteia por GFXHUB ou MMHUB?) continua **aberta** | Sem fault legível, a parada do IB é silenciosa e o diagnóstico é cego | não iniciado | Provocar fault deliberado e ler o status latchado no hub certo |
 | B3 | **Aposentar os caminhos `PLANO A`** depois que B1 fechar. ✅ **FEITO OFFLINE EM 07/09, depois do B1 fechar:** o default do Node 0 passou a ser **somente `INDIRECT`**, e os `PLANO A` ficaram atrás de `SdmaPlanoAFallback` (default 0, fail-closed, apenas bissecção). Falta a corrida que mede esse default. Passo anterior (A13): os `PLANO A` deixaram de se anunciar como `IB EXECUTADO` — a frase agora é exclusiva do ramo `INDIRECT` e eles declaram que a operação foi reimplementada no anel e que a GPU não leu o DMA buffer; e o tunable `SdmaIndirectOnly` (default 0, fail-closed) desliga a precedência deles para que o `INDIRECT` possa ser medido. Aposentar de fato continua condicionado ao B1. **NÃO VALIDADO EM HARDWARE** | Enquanto existirem, um `INDIRECT` que falha fica **escondido** por uma reimplementação que funciona — é fallback disfarçado de sucesso | ativos e em uso | `SubmitCommandVirtual` executando o DMA buffer real, com os `PLANO A` atrás de tunable default desligado |
-| B4 | **Submissão no Node 1 (compute) originada pelo `dxgkrnl`.** ✅ **DOIS BLOQUEIOS REMOVIDOS OFFLINE EM 07/09:** a recusa era **muda** (`STATUS_NOT_SUPPORTED` sem log, por isso "zero submits" não distinguia recusa nossa de ausência de submissão) e o gate **não podia abrir** no pacote de produção — `GpuvaLabPromotion` era lido só no `#else` de bring-up. Agora a recusa publica o `BlockMask` decodificado e o tunable é lido em produção, com default 0. O caminho após o gate já existe completo (snapshot fixado, cobertura sem gaps, reserva de fence, anel MEC) | É o que o `vkCreateDevice`/`vkQueueSubmit` exige. Hoje o KMD recebe 2 contextos Node 1 e **zero** submits | 0 submits Node 1; gate legível | Submissão do scheduler aposentada fisicamente no Node 1, com tripé |
+| B4 | **Submissão no Node 1 (compute) originada pelo `dxgkrnl`.** ✅✅ **1ª SUBMISSÃO DE COMPUTE WDDM EXECUTADA NO SILÍCIO EM 10/09 21:45:48:** `D3DKMTSubmitCommand` do Mesa RADV retornou `STATUS_SUCCESS`. O KMD Node 1 capturou 24 dwords de PM4 do IB (`VA=0x200044000 PA=0x452060000`), despachou para a fila MEC persistente (`WPTR=12 Fence=18`), e o motor MEC da GPU **consumiu o anel** (`RPTR=12 Writeback=12`). A busca do IB pelo CP gerou `EXECUTE_PROTECTION_FAULT (0x8)` no GCVM L2 (`STATUS=0x00900880 ADDR=0x00200044`) porque a PTE estava sem o bit `BC250_PTE_EXECUTABLE` (`flags=0x21`). Corrigido no Mesa RADV (`.Execute = 1` em `MapGpuVirtualAddress` e `MAP_PROTECT`), compilado com sucesso (`vulkan_radeon.dll` SHA256: `1B43EEB9...`) | É o que o `vkCreateDevice`/`vkQueueSubmit` exige. | Submissão física consumida pelo MEC; parada por falta de bit de execução diagnosticada e corrigida | Próxima corrida física com PTE executável (`flags=0x31`) para concluir o tripé compute |
 | B5 | **Residency (`MakeResident` / `Evict`)** — item 39 | O modelo WDDM 2.0 põe a residência sob responsabilidade do UMD; RADV vai exercer isso | não iniciado | Accounting conferido, sem leak, sob carga |
 | B6 | **TDR — item 25.** Gate de saída da P6, não negociável. ✅ **BACKEND DAS DUAS DDIs FEITO OFFLINE EM 07/09:** `ResetFromTimeout` faz quiesce físico e `RestartFromTimeout` rearma **com prova de fence**; antes as duas devolviam `STATUS_SUCCESS` sem tocar no silício, e o teste exigia isso. Falta a corrida com hang induzido, e ela é o item | Sem TDR, cada bug de shader é reboot. `timeout-detection-and-recovery.md`: timeout default de 2 s, `0x117`/`0x141`/`0x142` | não iniciado | Hang induzido → detectado → engine resetada → adaptador volta a aceitar submissão → **display sobrevive** |
 | B7 | **P7 completa: UMD/Vulkan/RADV.** Em 08/09, offline, a UMD ganhou transação Node 1 completa e acionador físico default-off: destino residente, cinco poisons pré-submit, command buffer por `Lock/Unlock`, `WRITE_DATA` + `RELEASE_MEM`, fence exata, readback byte a byte e teardown. Em 09/09 19:56:09, o harness `B7_UMD_NODE1_TRIPOD` executou no silício: `RPTR==WPTR==12`, fence monitorada `0xBC250F01` e cinco canários gravados via PM4 sob VMID 9. **Ressalva auditada (doc 230):** comprovou comandos PM4 e efeito em memória, mas **não houve dispatch de shader** (`DISPATCH_DIRECT`) nem compilação de código de shader pela rota UMD/WDDM. A UMD gráfica e o RADV seguem sem pipeline de render implementado. | É a maior fase do projeto em linhas de código, e só começa depois de B1–B6 | PM4 WRITE_DATA/RELEASE_MEM sob VMID9 **VALIDADO NO SILÍCIO**; pipeline de shader/Draw e Vulkan/RADV **NÃO VALIDADO EM HARDWARE** | Backend de tradução DXBC→SPIR-V→ACO funcional + winsys WDDM emitindo PM4 de render com sucesso |
+| B8 | **Marco 3 — swapchain contínuo sem perder o device.** Oito corridas em 12/09: duas PASS de 1 quadro e seis rupturas nos quadros 13, 40, 43, 64, 373 e 447 de 600. Em **todas**, `SubmitAccepted == RetiredTotal == V2NotifiedTotal` e `V2FencesInFlight=0` — nada preso. Na janela de 11:04 houve **zero** eventos de System (`4101`/`117`/`141`): **não houve TDR**. `STATUS_DEVICE_REMOVED` **não existe em nenhuma linha do driver** e `Bc250ActiveEscapeHandler` não pode devolvê-lo, logo o `dxgkrnl` recusou antes de nos alcançar (P1, leitura de código). **Causa ABERTA — não inventar.** Instrumentação adicionada offline na C3: `EscapeEnteredCount` não amostrado, duração do blt, `first_failed_frame`, `failure_mode` e `tdr_events` no veredito | Sem swapchain estável não há onde um pipeline gráfico aparecer, e qualquer backend D3D11 seria construído sobre um caminho que não sustenta imagem | 447/600 quadros é o recorde; **26 FPS** (~38 ms/quadro) para 11 MB, ~290 MB/s — instrumentado, **não explicado** | `EscapeEntered` alcançando o último quadro **e** 600/600 com `Fallbacks=0`, `HostCpuCopies=0` e `tdr_events=0` |
+| B9 | **Anel gráfico (`CP_RB0`/PFP/ME) e PM4 de `DRAW`.** Varredura do repositório em 12/09: o construtor PM4 tem `DISPATCH_DIRECT`/`DISPATCH_INDIRECT` e **zero** opcodes de `DRAW` — `DRAW_INDEX_AUTO`, `DRAW_INDEX_2` e `NUM_INSTANCES` não existem em nenhuma linha. Todo o silício provado é **SDMA** e **MEC (compute)** | É o elo que o desktop D3D11 exige e que nenhuma medição deste projeto tocou. Traduzir DXBC para SPIR-V não o substitui | **não iniciado**, e é provavelmente maior que tudo que foi feito em compute | Um `DRAW` submetido pelo anel gráfico com o tripé completo: `RPTR==WPTR`, fence física sobre poison e bytes do render target conferidos |
 
 ### Ordem, e por que essa
 

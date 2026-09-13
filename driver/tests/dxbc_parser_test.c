@@ -99,7 +99,7 @@ static int BuildValidDxbcContainer(uint8_t *Buffer, uint32_t BufferSize, uint32_
 
     shaderData = (uint32_t *)(Buffer + offsetShdr + 8u);
     shaderData[0] = (0u << 16u) | (4u << 4u) | 1u; /* Pixel Shader, Major 4, Minor 1 */
-    shaderData[1] = 14u; /* 14 opcode DWORD tokens */
+    shaderData[1] = 16u; /* total program length: 2 header + 14 opcode DWORDs */
 
     /*
      * Instruction stream (14 DWORDs total):

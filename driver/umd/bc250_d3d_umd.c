@@ -1,8 +1,10 @@
 #include "bc250_d3d_umd.h"
 #include "bc250_umd_caps_probe.h"
+#include "bc250_vkd3d_shader_adapter.h"
 #include "../core/bc250_umd_private_contract.h"
 #include "../core/bc250_pm4_packet_builder.h"
 #include "../core/bc250_sdma_packet_builder.h"
+#include "../core/bc250_escape_contract.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
@@ -25,16 +27,8 @@
 static void Bc250UmdTrace(_Printf_format_string_ const char *Format, ...)
 {
     char message[512];
-    char line[768];
-    char imagePath[MAX_PATH];
-    char logPath[MAX_PATH];
-    const char *imageName = "?";
     va_list args;
     int messageLength;
-    int lineLength;
-    HANDLE file;
-    DWORD written = 0;
-    SYSTEMTIME now;
 
     va_start(args, Format);
     messageLength = _vsnprintf_s(message, sizeof(message), _TRUNCATE, Format, args);
@@ -43,41 +37,16 @@ static void Bc250UmdTrace(_Printf_format_string_ const char *Format, ...)
         return;
     }
 
-    if (GetModuleFileNameA(NULL, imagePath, (DWORD)sizeof(imagePath)) != 0) {
-        const char *slash = strrchr(imagePath, '\\');
-        imageName = (slash != NULL) ? (slash + 1) : imagePath;
-    }
-
-    GetLocalTime(&now);
-    lineLength = _snprintf_s(line, sizeof(line), _TRUNCATE,
-        "%02u:%02u:%02u.%03u [pid=%lu %s] %s\r\n",
-        now.wHour, now.wMinute, now.wSecond, now.wMilliseconds,
-        GetCurrentProcessId(), imageName, message);
-    if (lineLength < 0) {
-        return;
-    }
-
-    OutputDebugStringA(line);
-
     /*
-     * Um arquivo por processo evita que dxgiadaptercache.exe (SYSTEM) crie o
-     * arquivo compartilhado com uma ACL que depois impeça dwm.exe (DWM-*) de
-     * anexar. A identidade do processo continua também dentro de cada linha.
+     * A formatacao e a escrita ficam em Bc250WinsysTraceRaw, FONTE UNICA
+     * compartilhada com BC250_WINSYS_LOG. Antes da corrida 13/09 05:50 havia
+     * duas instrumentacoes separadas: esta escrevia em arquivo, a da winsys
+     * so' em stderr -- que o dwm.exe nao tem. O resultado foi uma corrida cujo
+     * ponto de bloqueio era invisivel por construcao. Um arquivo por processo
+     * evita que dxgiadaptercache.exe (SYSTEM) crie o arquivo com uma ACL que
+     * depois impeca dwm.exe (DWM-*) de anexar.
      */
-    if (_snprintf_s(logPath, sizeof(logPath), _TRUNCATE,
-            "C:\\Windows\\Temp\\BC250_UMD_LOG_%lu.txt",
-            GetCurrentProcessId()) < 0) {
-        return;
-    }
-    file = CreateFileA(logPath,
-        FILE_APPEND_DATA,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (file == INVALID_HANDLE_VALUE) {
-        return;
-    }
-    (void)WriteFile(file, line, (DWORD)lineLength, &written, NULL);
-    (void)CloseHandle(file);
+    Bc250WinsysTraceRaw(message);
 }
 
 /* Tokens de command buffer sao unicos por processo e nunca usam a classe
@@ -107,6 +76,28 @@ static uint64_t Bc250UmdNextProofToken(void)
         sequence = (ULONG)InterlockedIncrement(&g_Bc250UmdProofTokenSequence);
     }
     return ((uint64_t)0x50524600u << 32) |
+        ((uint64_t)(GetCurrentProcessId() & 0xFFFFu) << 16) |
+        (uint64_t)(sequence & 0xFFFFu);
+}
+
+static volatile LONG g_Bc250UmdResourceTokenSequence = 0;
+
+static uint64_t Bc250UmdNextResourceToken(BOOL isPrimary, BOOL isStaging)
+{
+    ULONG sequence = (ULONG)InterlockedIncrement(&g_Bc250UmdResourceTokenSequence);
+    if (sequence == 0u) {
+        sequence = (ULONG)InterlockedIncrement(&g_Bc250UmdResourceTokenSequence);
+    }
+    if (isPrimary) {
+        return ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_PRIMARY << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) |
+            (uint64_t)(sequence & 0xFFFFFFFFu);
+    }
+    if (isStaging) {
+        return ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_STAGING << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) |
+            ((uint64_t)(GetCurrentProcessId() & 0xFFFFu) << 16) |
+            (uint64_t)(sequence & 0xFFFFu);
+    }
+    return ((uint64_t)0x52455300u << 32) |
         ((uint64_t)(GetCurrentProcessId() & 0xFFFFu) << 16) |
         (uint64_t)(sequence & 0xFFFFu);
 }
@@ -203,7 +194,8 @@ HRESULT Bc250UmdDeviceInit(
     return S_OK;
 }
 
-static void Bc250UmdBltTeardown(BC250_UMD_DEVICE *device);
+/* SDMA GPU Blt implementation */
+#include "bc250_umd_blt.inl"
 
 VOID Bc250UmdDeviceTeardown(
     _Inout_ BC250_UMD_DEVICE* pDevice)
@@ -214,7 +206,11 @@ VOID Bc250UmdDeviceTeardown(
 
     Bc250UmdTrace("Bc250UmdDeviceTeardown: device=%p iniciando teardown", (void*)pDevice);
 
-    Bc250UmdBltTeardown(pDevice);
+    /*
+     * Nao ha mais teardown de blt: a composicao passou a ser executada pelo
+     * KMD via escape (13/09) e a UMD nao cria contexto, paging queue, command
+     * buffer nem fence para isso.
+     */
 
     if (pDevice->Node0CmdBuffer.Initialized) {
         Bc250UmdCommandBufferTeardown(pDevice, &pDevice->Node0CmdBuffer);
@@ -229,6 +225,14 @@ VOID Bc250UmdDeviceTeardown(
         }
         if (pDevice->Winsys.ContextCreated) {
             (VOID)Bc250WinsysDestroyVirtualContext(&pDevice->Winsys);
+        }
+        /*
+         * O contexto de apresentacao e' um objeto de kernel proprio: se nao for
+         * destruido aqui, vaza a cada ciclo do laco de device-lost do dwm.exe --
+         * que na corrida 17:18:35 fez 61 CreateDevice/DestroyDevice em ~3 min.
+         */
+        if (pDevice->Winsys.PresentContextCreated) {
+            (VOID)Bc250WinsysDestroyPresentContext(&pDevice->Winsys);
         }
         pDevice->WinsysInitialized = FALSE;
     }
@@ -325,11 +329,154 @@ SIZE_T APIENTRY Bc250Umd10CalcPrivateShaderSize(
     return sizeof(BC250_UMD_SHADER);
 }
 
+/*
+ * =========================================================================
+ * C3 (12/09) -- tradutor DXBC -> SPIR-V, FECHADO POR DEFAULT.
+ *
+ * Resolucao unica por processo. Sem AS DUAS chaves de registro (flag em 1 e
+ * caminho absoluto da DLL) nada e' carregado: Bc250Vkd3dShaderAdapterOpen nao e'
+ * chamado e nenhuma DLL externa entra no processo. Isso importa porque a
+ * bc250umd.dll carrega dentro do dwm.exe.
+ *
+ * Falhar aqui NUNCA pode derrubar a criacao do shader: o SPIR-V e' um adorno
+ * default-off, e o driver segue exatamente como antes quando ele nao existe.
+ * =========================================================================
+ */
+static BC250_VKD3D_SHADER_ADAPTER s_Bc250ShaderTranslatorAdapter;
+static BC250_DXBC_SPIRV_TRANSLATOR s_Bc250ShaderTranslator;
+static LONG s_Bc250ShaderTranslatorState = -1; /* -1 nao resolvido, 0 off, 1 on */
+
+static BOOL Bc250UmdShaderTranslatorReadPath(_Out_writes_(Chars) wchar_t* Path, DWORD Chars)
+{
+    HKEY key = NULL;
+    DWORD flag = 0;
+    DWORD size = (DWORD)sizeof(flag);
+    DWORD type = 0;
+    BOOL armed = FALSE;
+
+    Path[0] = L'\0';
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, BC250_D3D11_CAPS_PROBE_REG_KEY, 0,
+            KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) {
+        return FALSE;
+    }
+    if (RegQueryValueExA(key, BC250_D3D11_SHADER_TRANSLATOR_REG_NAME, NULL, &type,
+            (LPBYTE)&flag, &size) == ERROR_SUCCESS &&
+        type == REG_DWORD && flag == 1u) {
+        char ansiPath[MAX_PATH];
+        DWORD pathBytes = (DWORD)sizeof(ansiPath);
+        DWORD pathType = 0;
+        if (RegQueryValueExA(key, BC250_D3D11_SHADER_TRANSLATOR_PATH_REG_NAME, NULL,
+                &pathType, (LPBYTE)ansiPath, &pathBytes) == ERROR_SUCCESS &&
+            pathType == REG_SZ && pathBytes > 1u) {
+            ansiPath[sizeof(ansiPath) - 1] = '\0';
+            if (MultiByteToWideChar(CP_ACP, 0, ansiPath, -1, Path, (int)Chars) > 0) {
+                Path[Chars - 1u] = L'\0';
+                armed = (Path[0] != L'\0');
+            }
+        }
+    }
+    RegCloseKey(key);
+    return armed;
+}
+
+static CONST BC250_DXBC_SPIRV_TRANSLATOR* Bc250UmdShaderTranslator(void)
+{
+    LONG cached = InterlockedCompareExchange(&s_Bc250ShaderTranslatorState, -1, -1);
+    wchar_t path[MAX_PATH];
+
+    if (cached == 1) return &s_Bc250ShaderTranslator;
+    if (cached == 0) return NULL;
+
+    if (!Bc250UmdShaderTranslatorReadPath(path, (DWORD)(sizeof(path) / sizeof(path[0])))) {
+        InterlockedExchange(&s_Bc250ShaderTranslatorState, 0);
+        Bc250UmdTrace("SHADER_TRANSLATOR: desarmado (HKLM\\%s\\%s + %s)",
+            BC250_D3D11_CAPS_PROBE_REG_KEY,
+            BC250_D3D11_SHADER_TRANSLATOR_REG_NAME,
+            BC250_D3D11_SHADER_TRANSLATOR_PATH_REG_NAME);
+        return NULL;
+    }
+    if (!Bc250Vkd3dShaderAdapterOpen(path, &s_Bc250ShaderTranslatorAdapter)) {
+        const wchar_t *fallbackPath = L"C:\\BC250_LIB\\libvkd3d-shader-1.dll";
+        if (_wcsicmp(path, fallbackPath) != 0 &&
+            Bc250Vkd3dShaderAdapterOpen(fallbackPath, &s_Bc250ShaderTranslatorAdapter)) {
+            Bc250UmdTrace("SHADER_TRANSLATOR: carregado via fallback publico '%ls'", fallbackPath);
+        }
+    }
+    if (!s_Bc250ShaderTranslatorAdapter.Module ||
+        !Bc250Vkd3dShaderAdapterGetTranslator(&s_Bc250ShaderTranslatorAdapter,
+                                              &s_Bc250ShaderTranslator)) {
+        DWORD lastErr = GetLastError();
+        Bc250Vkd3dShaderAdapterClose(&s_Bc250ShaderTranslatorAdapter);
+        InterlockedExchange(&s_Bc250ShaderTranslatorState, 0);
+        Bc250UmdTrace("SHADER_TRANSLATOR: ARMADO porem a DLL '%ls' nao abriu (err=%lu) -- fail-closed",
+            path, lastErr);
+        return NULL;
+    }
+    InterlockedExchange(&s_Bc250ShaderTranslatorState, 1);
+    Bc250UmdTrace("SHADER_TRANSLATOR: ARMADO (%s %u.%u)",
+        s_Bc250ShaderTranslatorAdapter.VersionText,
+        s_Bc250ShaderTranslatorAdapter.VersionMajor,
+        s_Bc250ShaderTranslatorAdapter.VersionMinor);
+    return &s_Bc250ShaderTranslator;
+}
+
+/*
+ * Traduz, se e somente se o tradutor estiver armado. O resultado e' registrado
+ * com ownership no proprio shader; falha nao e' fatal e nao muda o desfecho da
+ * criacao. Traduzir NAO significa poder desenhar.
+ */
+static VOID Bc250UmdAttachSpirvModule(
+    BC250_UMD_SHADER* pShader,
+    CONST UINT* pShaderCode,
+    CONST D3D10DDIARG_STAGE_IO_SIGNATURES* pSignatures)
+{
+    CONST BC250_DXBC_SPIRV_TRANSLATOR* translator;
+    BC250_DXBC_SPIRV_STATUS status;
+
+    if (pShader == NULL || pShaderCode == NULL) return;
+    translator = Bc250UmdShaderTranslator();
+    if (translator == NULL) return;
+
+    if (pShaderCode[0] == BC250_DXBC_MAGIC_DXBC) {
+        const BC250_DXBC_RAW_HEADER* rawHdr = (const BC250_DXBC_RAW_HEADER*)pShaderCode;
+        status = Bc250DxbcTranslateToSpirv(pShaderCode, rawHdr->TotalSize,
+                                           translator, &pShader->Spirv);
+        if (status != BC250_DXBC_SPIRV_OK) {
+            Bc250UmdTrace("SHADER_TRANSLATOR: traducao DXBC falhou (status=%d) -- shader segue sem SPIR-V",
+                (int)status);
+            return;
+        }
+    } else {
+        BC250_DXBC_STAGE_SIGNATURES stageSignatures;
+        memset(&stageSignatures, 0, sizeof(stageSignatures));
+        if (pSignatures != NULL) {
+            stageSignatures.InputSignatures = (const BC250_DXBC_SIGNATURE_ENTRY*)pSignatures->pInputSignature;
+            stageSignatures.NumInputSignatures = pSignatures->NumInputSignatureEntries;
+            stageSignatures.OutputSignatures = (const BC250_DXBC_SIGNATURE_ENTRY*)pSignatures->pOutputSignature;
+            stageSignatures.NumOutputSignatures = pSignatures->NumOutputSignatureEntries;
+        }
+        status = Bc250DxbcTranslateTokenStreamToSpirv(
+            pShaderCode, &stageSignatures, translator, &pShader->Spirv);
+        if (status != BC250_DXBC_SPIRV_OK) {
+            Bc250UmdTrace("SHADER_TRANSLATOR: traducao TokenStream falhou (status=%d, tokens=%u) -- shader segue sem SPIR-V",
+                (int)status, pShaderCode[1]);
+            return;
+        }
+    }
+
+    pShader->SpirvValid = TRUE;
+    Bc250UmdTrace("SHADER_TRANSLATOR: %s -> SPIR-V %u bytes (estagio=%d). "
+        "Traducao NAO e' pipeline: descriptors, render target, anel grafico e Draw seguem ausentes.",
+        (pShaderCode[0] == BC250_DXBC_MAGIC_DXBC) ? "DXBC" : "TokenStream",
+        pShader->Spirv.SizeBytes, (int)pShader->Spirv.Stage);
+}
+
 static BOOL Bc250UmdInitShaderInternal(
     BC250_UMD_SHADER* pShader,
     BC250_DXBC_SHADER_TYPE ExpectedType,
     CONST UINT* pShaderCode,
-    D3D10DDI_HRTSHADER hRTShader)
+    D3D10DDI_HRTSHADER hRTShader,
+    CONST D3D10DDIARG_STAGE_IO_SIGNATURES* pSignatures)
 {
     BC250_DXBC_STATUS status;
 
@@ -358,11 +505,15 @@ static BOOL Bc250UmdInitShaderInternal(
         UINT versionToken = pShaderCode[0];
         pShader->MajorVersion = (versionToken >> 4u) & 0xFu;
         pShader->MinorVersion = versionToken & 0xFu;
-        pShader->OpcodeTokenCount = pShaderCode[1];
+        if (pShaderCode[1] < 2u) return FALSE;
+        pShader->OpcodeTokenCount = pShaderCode[1] - 2u;
         pShader->pCodeTokens = pShaderCode + 2u;
-        pShader->TotalSizeBytes = (pShaderCode[1] + 2u) * (UINT)sizeof(UINT);
+        pShader->TotalSizeBytes = pShaderCode[1] * (UINT)sizeof(UINT);
         pShader->IsParsed = TRUE;
     }
+
+    /* C3: anexa o SPIR-V se -- e somente se -- o tradutor estiver armado. */
+    Bc250UmdAttachSpirvModule(pShader, pShaderCode, pSignatures);
 
     return TRUE;
 }
@@ -377,7 +528,6 @@ VOID APIENTRY Bc250Umd10CreateVertexShader(
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     BC250_UMD_SHADER* shader = (BC250_UMD_SHADER*)hShader.pDrvPrivate;
     UNREFERENCED_PARAMETER(device);
-    UNREFERENCED_PARAMETER(pSignatures);
 
     if (shader == NULL || pShaderCode == NULL) {
         Bc250UmdTrace("CreateVertexShader: argumento invalido (shader=%p, code=%p)",
@@ -385,7 +535,7 @@ VOID APIENTRY Bc250Umd10CreateVertexShader(
         return;
     }
 
-    if (!Bc250UmdInitShaderInternal(shader, BC250_DXBC_SHADER_VERTEX, pShaderCode, hRTShader)) {
+    if (!Bc250UmdInitShaderInternal(shader, BC250_DXBC_SHADER_VERTEX, pShaderCode, hRTShader, pSignatures)) {
         Bc250UmdTrace("CreateVertexShader: falha na inicializacao");
         return;
     }
@@ -405,7 +555,6 @@ VOID APIENTRY Bc250Umd10CreatePixelShader(
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     BC250_UMD_SHADER* shader = (BC250_UMD_SHADER*)hShader.pDrvPrivate;
     UNREFERENCED_PARAMETER(device);
-    UNREFERENCED_PARAMETER(pSignatures);
 
     if (shader == NULL || pShaderCode == NULL) {
         Bc250UmdTrace("CreatePixelShader: argumento invalido (shader=%p, code=%p)",
@@ -413,7 +562,7 @@ VOID APIENTRY Bc250Umd10CreatePixelShader(
         return;
     }
 
-    if (!Bc250UmdInitShaderInternal(shader, BC250_DXBC_SHADER_PIXEL, pShaderCode, hRTShader)) {
+    if (!Bc250UmdInitShaderInternal(shader, BC250_DXBC_SHADER_PIXEL, pShaderCode, hRTShader, pSignatures)) {
         Bc250UmdTrace("CreatePixelShader: falha na inicializacao");
         return;
     }
@@ -433,7 +582,6 @@ VOID APIENTRY Bc250Umd10CreateGeometryShader(
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     BC250_UMD_SHADER* shader = (BC250_UMD_SHADER*)hShader.pDrvPrivate;
     UNREFERENCED_PARAMETER(device);
-    UNREFERENCED_PARAMETER(pSignatures);
 
     if (shader == NULL || pShaderCode == NULL) {
         Bc250UmdTrace("CreateGeometryShader: argumento invalido (shader=%p, code=%p)",
@@ -441,7 +589,7 @@ VOID APIENTRY Bc250Umd10CreateGeometryShader(
         return;
     }
 
-    if (!Bc250UmdInitShaderInternal(shader, BC250_DXBC_SHADER_GEOMETRY, pShaderCode, hRTShader)) {
+    if (!Bc250UmdInitShaderInternal(shader, BC250_DXBC_SHADER_GEOMETRY, pShaderCode, hRTShader, pSignatures)) {
         Bc250UmdTrace("CreateGeometryShader: falha na inicializacao");
         return;
     }
@@ -472,14 +620,13 @@ VOID APIENTRY Bc250Umd10CreateGeometryShaderWithStreamOutput(
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     BC250_UMD_SHADER* shader = (BC250_UMD_SHADER*)hShader.pDrvPrivate;
     UNREFERENCED_PARAMETER(device);
-    UNREFERENCED_PARAMETER(pSignatures);
 
     if (shader == NULL || pCreate == NULL || pCreate->pShaderCode == NULL) {
         Bc250UmdTrace("CreateGeometryShaderWithSO: argumento invalido");
         return;
     }
 
-    if (!Bc250UmdInitShaderInternal(shader, BC250_DXBC_SHADER_GEOMETRY, pCreate->pShaderCode, hRTShader)) {
+    if (!Bc250UmdInitShaderInternal(shader, BC250_DXBC_SHADER_GEOMETRY, pCreate->pShaderCode, hRTShader, pSignatures)) {
         Bc250UmdTrace("CreateGeometryShaderWithSO: falha na inicializacao");
         return;
     }
@@ -499,6 +646,17 @@ VOID APIENTRY Bc250Umd10DestroyShader(
 
     Bc250UmdTrace("DestroyShader: shader=%p", (void*)shader);
     if (shader != NULL) {
+        /*
+         * C3: o modulo SPIR-V tem ownership neste objeto. Liberar ANTES do
+         * memset e' obrigatorio -- zerar a estrutura primeiro perderia o
+         * ponteiro e vazaria o modulo dentro do processo hospedeiro, que no
+         * caso do desktop e' o dwm.exe. Bc250DxbcReleaseSpirv zera o modulo e
+         * e' idempotente.
+         */
+        if (shader->SpirvValid) {
+            Bc250DxbcReleaseSpirv(&shader->Spirv);
+            shader->SpirvValid = FALSE;
+        }
         memset(shader, 0, sizeof(*shader));
     }
 }
@@ -506,6 +664,48 @@ VOID APIENTRY Bc250Umd10DestroyShader(
 /* =========================================================================
  * D3D10 Resource DDIs
  * ========================================================================= */
+
+/*
+ * F2.1 (13/09) -- TRADUCAO DXGI -> D3DDDIFORMAT, NA UMD DE PROPOSITO.
+ *
+ * `DxgkDdiDescribeAllocation` devolve `D3DDDIFORMAT`, nao `DXGI_FORMAT`. Quem
+ * conhece a semantica DXGI e' a UMD; o KMD apenas carrega o numero recebido pela
+ * ABI de alocacao. Manter a traducao aqui evita que o kernel ganhe uma segunda
+ * tabela de formatos, que divergiria com o tempo.
+ *
+ * Zero significa "nao sei traduzir" -- e a ABI recusa geometria com Format=0, de
+ * modo que uma superficie de formato desconhecido nasce SEM geometria e e'
+ * honestamente recusada em DescribeAllocation, em vez de descrita errado.
+ *
+ * Os valores de D3DDDIFMT vem de d3dukmdt.h. So' os formatos de scanout e de
+ * superficie de composicao estao mapeados: e' o conjunto que o dwm.exe usa
+ * (medido: Fmt=87 = DXGI_FORMAT_B8G8R8A8_UNORM) e o que o GOP herdado declara
+ * (fmt=21 = D3DDDIFMT_A8R8G8B8).
+ */
+static UINT Bc250DxgiFormatToD3dddiFormat(DXGI_FORMAT Format)
+{
+    switch (Format) {
+    case DXGI_FORMAT_B8G8R8A8_UNORM:
+    case DXGI_FORMAT_B8G8R8A8_TYPELESS:
+    case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+        return 21u; /* D3DDDIFMT_A8R8G8B8 */
+    case DXGI_FORMAT_B8G8R8X8_UNORM:
+    case DXGI_FORMAT_B8G8R8X8_TYPELESS:
+    case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB:
+        return 22u; /* D3DDDIFMT_X8R8G8B8 */
+    case DXGI_FORMAT_R8G8B8A8_UNORM:
+    case DXGI_FORMAT_R8G8B8A8_TYPELESS:
+    case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+        return 28u; /* D3DDDIFMT_A8B8G8R8 */
+    case DXGI_FORMAT_R10G10B10A2_UNORM:
+    case DXGI_FORMAT_R10G10B10A2_TYPELESS:
+        return 35u; /* D3DDDIFMT_A2B10G10R10 */
+    case DXGI_FORMAT_B5G6R5_UNORM:
+        return 23u; /* D3DDDIFMT_R5G6B5 */
+    default:
+        return 0u;  /* desconhecido -- ver o bloco acima */
+    }
+}
 
 static UINT Bc250DxgiFormatBytesPerPixel(DXGI_FORMAT Format)
 {
@@ -669,7 +869,7 @@ VOID APIENTRY Bc250Umd10CreateResource(
     BC250_UMD_RESOURCE* res = (BC250_UMD_RESOURCE*)hResource.pDrvPrivate;
     UINT width, height, depth, rowPitch, slicePitch, totalSize;
     uint64_t alignment = 4096u;
-    uint64_t token = 0xA110u;
+    uint64_t token;
     BOOL isPrimary = FALSE;
     BC250_WINSYS_STATUS wsStatus;
 
@@ -699,16 +899,119 @@ VOID APIENTRY Bc250Umd10CreateResource(
     res->SlicePitch = slicePitch;
     res->TotalByteSize = totalSize;
 
+    /*
+     * F1.3 (13/09) -- O `pPrimaryDesc` NUNCA FOI LIDO, SO' TESTADO CONTRA NULL.
+     *
+     * Duas auditorias externas convergiram nisto, e a leitura confirma:
+     * `DriverFlags` e `NO_SCANOUT` tinham ZERO ocorrencias em driver/umd. O
+     * struct (dxgiddi.h:220) carrega `Flags` de ENTRADA -- em que
+     * DXGI_DDI_PRIMARY_OPTIONAL (0x1) distingue back buffer de front/proxy -- e
+     * `DriverFlags` de SAIDA, onde DXGI_DDI_PRIMARY_DRIVER_FLAG_NO_SCANOUT (0x1)
+     * e' o mecanismo DOCUMENTADO para o driver dizer ao runtime que apresenta por
+     * COPIA, e nao por flip.
+     *
+     * Isso importa porque nos NAO PODEMOS fazer flip: o scanout e' o framebuffer
+     * fixo herdado do UEFI GOP e escrita em registrador de DCN esta proibida no
+     * escopo atual. Aceitar a cadeia de flip calados e' declarar um cap sem
+     * backend -- exatamente o que a Lei 4 proibe.
+     *
+     * ESTA FAIXA E' SO' LEITURA E LOG: `DriverFlags` ainda NAO e' escrito, para
+     * que a proxima corrida meca o que o runtime NOS ENTREGA antes de mudarmos
+     * qualquer coisa. Escrever NO_SCANOUT e' o item 2.2 do plano.
+     */
+    if (pCreate->pPrimaryDesc != NULL) {
+        /*
+         * F2.2 -- OPT-OUT DO FLIP, SO' EM BACK BUFFER.
+         *
+         * `DXGI_DDI_PRIMARY_OPTIONAL` (dxgiddi.h:199) marca o back buffer; a
+         * primaria de fato (front/proxy) chega SEM ele. Declarar NO_SCANOUT no
+         * back buffer e' o mecanismo documentado para o runtime apresentar por
+         * copia; declara-lo na front seria dizer que nem a primaria e' varrivel,
+         * o que nao e' verdade -- o scanout do GOP existe e funciona.
+         */
+        if (Bc250UmdNoScanoutOptOutArmed() &&
+            (pCreate->pPrimaryDesc->Flags & DXGI_DDI_PRIMARY_OPTIONAL) != 0u) {
+            pCreate->pPrimaryDesc->DriverFlags |=
+                DXGI_DDI_PRIMARY_DRIVER_FLAG_NO_SCANOUT;
+            Bc250UmdTrace("PRIMARY_DESC: NO_SCANOUT declarado no back buffer "
+                "(DriverFlags=0x%08X) -- este driver apresenta por COPIA, nao por "
+                "flip; o scanout e' o framebuffer fixo do GOP",
+                pCreate->pPrimaryDesc->DriverFlags);
+        }
+
+        Bc250UmdTrace("PRIMARY_DESC recebido: Flags=0x%08X (OPTIONAL=%d NONPREROTATED=%d "
+            "STEREO=%d INDIRECT=%d) VidPnSourceId=%u DriverFlags_in=0x%08X "
+            "Mode=%ux%u Fmt=%u",
+            pCreate->pPrimaryDesc->Flags,
+            (pCreate->pPrimaryDesc->Flags & DXGI_DDI_PRIMARY_OPTIONAL) ? 1 : 0,
+            (pCreate->pPrimaryDesc->Flags & DXGI_DDI_PRIMARY_NONPREROTATED) ? 1 : 0,
+            (pCreate->pPrimaryDesc->Flags & DXGI_DDI_PRIMARY_STEREO) ? 1 : 0,
+            (pCreate->pPrimaryDesc->Flags & DXGI_DDI_PRIMARY_INDIRECT) ? 1 : 0,
+            (unsigned)pCreate->pPrimaryDesc->VidPnSourceId,
+            pCreate->pPrimaryDesc->DriverFlags,
+            pCreate->pPrimaryDesc->ModeDesc.Width,
+            pCreate->pPrimaryDesc->ModeDesc.Height,
+            (unsigned)pCreate->pPrimaryDesc->ModeDesc.Format);
+    }
+
     if ((pCreate->BindFlags & D3D10_DDI_BIND_PRESENT) != 0u || pCreate->pPrimaryDesc != NULL) {
         isPrimary = TRUE;
-        token = ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_PRIMARY << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 1u;
         alignment = 65536u;
+        totalSize = (UINT)(((uint64_t)totalSize + (alignment - 1u)) & ~(alignment - 1u));
+        res->TotalByteSize = totalSize;
     }
+    BOOL isStaging = (pCreate->Usage == D3D10_DDI_USAGE_STAGING ||
+                      pCreate->Usage == D3D10_DDI_USAGE_DYNAMIC ||
+                      (pCreate->MapFlags & (D3D10_DDI_MAP_READ | D3D10_DDI_MAP_WRITE)) != 0u);
+    token = Bc250UmdNextResourceToken(isPrimary, isStaging);
     res->IsPrimary = isPrimary;
+    res->Allocation.Token = token;
 
     /* If winsys is initialized, allocate physical/virtual VRAM */
     if (device != NULL && device->WinsysInitialized) {
-        wsStatus = Bc250WinsysAllocate(&device->Winsys, token, totalSize, alignment, &res->Allocation);
+        /*
+         * 13/09 -- O VINCULO DE RECURSO PASSOU A EXISTIR. Ver o bloco de
+         * proveniencia em bc250_wddm_winsys.h: ate a corrida 16:28:27 esta
+         * chamada nao levava hRTResource, e por isso TODA superficie do dwm.exe
+         * chegava ao KMD como "Non-resource allocation" e jamais como primaria.
+         * O handle do runtime e' o mesmo que a DDI acabou de receber.
+         */
+        BC250_WINSYS_RESOURCE_BINDING binding;
+        UINT d3dddiFormat = Bc250DxgiFormatToD3dddiFormat(res->Format);
+
+        memset(&binding, 0, sizeof(binding));
+        binding.RuntimeResource = (HANDLE)hRTResource.handle;
+        binding.Primary = isPrimary;
+        binding.VidPnSourceId = 0u;
+
+        /*
+         * F2.1/F2.5 -- a geometria viaja ate o KMD pela ABI de alocacao, e e' o
+         * que permite responder DescribeAllocation e preencher
+         * DXGK_ALLOCATIONINFO.Pitch. Fonte unica: os mesmos numeros ja
+         * calculados por Bc250CalculateResourceByteSize.
+         *
+         * So' declaramos geometria para superficies 2D com formato que sabemos
+         * traduzir. Buffer (Dim=1), formato desconhecido ou altura/pitch zerados
+         * nascem SEM geometria -- e DescribeAllocation os recusa honestamente em
+         * vez de inventar uma descricao.
+         */
+        if (d3dddiFormat != 0u && res->Width != 0u && res->Height != 0u &&
+            res->RowPitch != 0u &&
+            (uint64_t)res->RowPitch * (uint64_t)res->Height <= (uint64_t)totalSize) {
+            binding.HasGeometry = TRUE;
+            binding.Geometry.Width = res->Width;
+            binding.Geometry.Height = res->Height;
+            binding.Geometry.Pitch = res->RowPitch;
+            binding.Geometry.Format = d3dddiFormat;
+        } else {
+            Bc250UmdTrace("CreateResource: SEM geometria declarada "
+                "(%ux%u pitch=%u dxgiFmt=%u -> d3dddiFmt=%u size=%u). "
+                "DescribeAllocation vai RECUSAR esta alocacao em vez de descreve-la.",
+                res->Width, res->Height, res->RowPitch,
+                (unsigned)res->Format, d3dddiFormat, totalSize);
+        }
+        wsStatus = Bc250WinsysAllocateForResource(&device->Winsys, token,
+            totalSize, alignment, &binding, &res->Allocation);
         if (wsStatus == BC250_WINSYS_OK) {
             (void)Bc250WinsysMapAllocation(&device->Winsys, &res->Allocation, FALSE);
             (void)Bc250WinsysMakeResident(&device->Winsys, &res->Allocation);
@@ -810,8 +1113,13 @@ VOID APIENTRY Bc250Umd10ResourceUnmap(
 {
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     BC250_UMD_RESOURCE* res = (BC250_UMD_RESOURCE*)hResource.pDrvPrivate;
-    UNREFERENCED_PARAMETER(device);
     UNREFERENCED_PARAMETER(Subresource);
+
+    if (device != NULL && device->WinsysInitialized && res != NULL &&
+        res->Allocation.Created && res->pCpuShadow != NULL && res->TotalByteSize > 0u) {
+        (void)Bc250WinsysUploadAllocation(&device->Winsys, &res->Allocation,
+            res->pCpuShadow, res->TotalByteSize);
+    }
 
     Bc250UmdTrace("ResourceUnmap: res=%p Sub=%u", (void*)res, Subresource);
 }
@@ -1203,7 +1511,13 @@ VOID APIENTRY Bc250Umd10SetViewports(
     }
 
     device->PipelineState.NumViewports = count;
-    Bc250UmdTrace("SetViewports: NumViewports=%u ClearViewports=%u", count, ClearViewports);
+    if (count > 0 && pViewports != NULL) {
+        Bc250UmdTrace("SetViewports: NumViewports=%u [%.1f,%.1f..%.1f,%.1f]", count,
+            pViewports[0].TopLeftX, pViewports[0].TopLeftY,
+            pViewports[0].Width, pViewports[0].Height);
+    } else {
+        Bc250UmdTrace("SetViewports: NumViewports=%u ClearViewports=%u", count, ClearViewports);
+    }
 }
 
 VOID APIENTRY Bc250Umd10SetScissorRects(
@@ -1236,7 +1550,12 @@ VOID APIENTRY Bc250Umd10SetScissorRects(
     }
 
     device->PipelineState.NumScissorRects = count;
-    Bc250UmdTrace("SetScissorRects: NumRects=%u ClearRects=%u", count, ClearRects);
+    if (count > 0 && pRects != NULL) {
+        Bc250UmdTrace("SetScissorRects: NumRects=%u [%d,%d..%d,%d]", count,
+            pRects[0].left, pRects[0].top, pRects[0].right, pRects[0].bottom);
+    } else {
+        Bc250UmdTrace("SetScissorRects: NumRects=%u ClearRects=%u", count, ClearRects);
+    }
 }
 
 /* D3D10 Input Assembly & Pipeline Binding DDIs */
@@ -1398,6 +1717,10 @@ VOID APIENTRY Bc250Umd10DefaultConstantBufferUpdateSubresourceUP(
             copyBytes = res->TotalByteSize;
         }
         memcpy(res->pCpuShadow, pSysMemBuffer, copyBytes);
+        if (device != NULL && device->WinsysInitialized && res->Allocation.Created) {
+            (void)Bc250WinsysUploadAllocation(&device->Winsys, &res->Allocation,
+                res->pCpuShadow, res->TotalByteSize);
+        }
     }
 
     Bc250UmdTrace("DefaultConstantBufferUpdateSubresourceUP: res=%p bytes=%u",
@@ -1415,7 +1738,6 @@ VOID APIENTRY Bc250Umd10ResourceUpdateSubresourceUP(
 {
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     BC250_UMD_RESOURCE* res = (BC250_UMD_RESOURCE*)hDstResource.pDrvPrivate;
-    UNREFERENCED_PARAMETER(device);
     UNREFERENCED_PARAMETER(DstSubresource);
     UNREFERENCED_PARAMETER(DepthPitch);
 
@@ -1443,6 +1765,10 @@ VOID APIENTRY Bc250Umd10ResourceUpdateSubresourceUP(
                 memcpy(dst + (size_t)y * res->RowPitch, src + (size_t)y * RowPitch, lineBytes);
             }
         }
+        if (device != NULL && device->WinsysInitialized && res->Allocation.Created) {
+            (void)Bc250WinsysUploadAllocation(&device->Winsys, &res->Allocation,
+                res->pCpuShadow, res->TotalByteSize);
+        }
     }
 
     Bc250UmdTrace("ResourceUpdateSubresourceUP: res=%p pitch=%u", (void*)res, RowPitch);
@@ -1456,9 +1782,28 @@ VOID APIENTRY Bc250Umd10ResourceCopy(
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     BC250_UMD_RESOURCE* dst = (BC250_UMD_RESOURCE*)hDstResource.pDrvPrivate;
     BC250_UMD_RESOURCE* src = (BC250_UMD_RESOURCE*)hSrcResource.pDrvPrivate;
-    UNREFERENCED_PARAMETER(device);
 
     if (dst == NULL || src == NULL) return;
+
+    /* Pipeline Blt GPU Real via SDMA quando recursos possuem alocacao em VRAM residente */
+    if (device != NULL && dst->Allocation.Created && src->Allocation.Created &&
+        dst->Allocation.Resident && src->Allocation.Resident &&
+        dst->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D &&
+        src->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D &&
+        dst->Width == src->Width && dst->Height == src->Height &&
+        dst->Format == src->Format) {
+        DXGI_DDI_ARG_BLT bltArgs;
+        memset(&bltArgs, 0, sizeof(bltArgs));
+        bltArgs.hDevice = (DXGI_DDI_HDEVICE)device;
+        bltArgs.hDstResource = (DXGI_DDI_HRESOURCE)dst;
+        bltArgs.hSrcResource = (DXGI_DDI_HRESOURCE)src;
+        bltArgs.DstLeft = 0;
+        bltArgs.DstTop = 0;
+        bltArgs.DstRight = dst->Width;
+        bltArgs.DstBottom = dst->Height;
+        bltArgs.Rotate = DXGI_DDI_MODE_ROTATION_IDENTITY;
+        (void)Bc250UmdBltGpu(device, dst, src, &bltArgs);
+    }
 
     if (dst->pCpuShadow == NULL && dst->TotalByteSize > 0u) {
         dst->pCpuShadow = calloc(1, dst->TotalByteSize);
@@ -1467,6 +1812,10 @@ VOID APIENTRY Bc250Umd10ResourceCopy(
     if (dst->pCpuShadow != NULL && src->pCpuShadow != NULL) {
         UINT copySize = (dst->TotalByteSize < src->TotalByteSize) ? dst->TotalByteSize : src->TotalByteSize;
         memcpy(dst->pCpuShadow, src->pCpuShadow, copySize);
+        if (device != NULL && device->WinsysInitialized && dst->Allocation.Created) {
+            (void)Bc250WinsysUploadAllocation(&device->Winsys, &dst->Allocation,
+                dst->pCpuShadow, dst->TotalByteSize);
+        }
     }
 
     Bc250UmdTrace("ResourceCopy: dst=%p src=%p", (void*)dst, (void*)src);
@@ -1486,7 +1835,6 @@ VOID APIENTRY Bc250Umd10ResourceCopyRegion(
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     BC250_UMD_RESOURCE* dst = (BC250_UMD_RESOURCE*)hDstResource.pDrvPrivate;
     BC250_UMD_RESOURCE* src = (BC250_UMD_RESOURCE*)hSrcResource.pDrvPrivate;
-    UNREFERENCED_PARAMETER(device);
     UNREFERENCED_PARAMETER(DstSubresource);
     UNREFERENCED_PARAMETER(DstZ);
     UNREFERENCED_PARAMETER(SrcSubresource);
@@ -1513,6 +1861,10 @@ VOID APIENTRY Bc250Umd10ResourceCopyRegion(
             for (UINT y = 0; y < boxHeight; ++y) {
                 memcpy(dstPtr + (size_t)y * dst->RowPitch, srcPtr + (size_t)y * src->RowPitch, lineBytes);
             }
+        }
+        if (device != NULL && device->WinsysInitialized && dst->Allocation.Created) {
+            (void)Bc250WinsysUploadAllocation(&device->Winsys, &dst->Allocation,
+                dst->pCpuShadow, dst->TotalByteSize);
         }
     }
 
@@ -1544,12 +1896,227 @@ static VOID Bc250UmdRejectUnbackedDraw(
 {
     if (Device == NULL) return;
     Device->RejectedDrawCount++;
+    if (Bc250UmdDrawBltSubstitutionArmed()) {
+        Bc250UmdTrace("%s: OMITIDO SOB REGIME EXPERIMENTAL DE SUBSTITUICAO -- "
+            "draw sem backend de rasterizacao ignorado sem SetErrorCb "
+            "(Rejected=%llu; NAO e rasterizacao 3D nativa)",
+            Operation, Device->RejectedDrawCount);
+        return;
+    }
     Bc250UmdTrace("%s: RECUSADO -- compilador/shader-state/draw PM4 ausente "
         "(Rejected=%llu)", Operation, Device->RejectedDrawCount);
     if (Device->pUMCallbacks != NULL &&
         Device->pUMCallbacks->pfnSetErrorCb != NULL) {
         Device->pUMCallbacks->pfnSetErrorCb(Device->hRTCoreLayer, E_NOTIMPL);
     }
+}
+
+/*
+ * C1 -- SUBSTITUICAO de Draw por blt 1:1 no SDMA. NAO e' rasterizacao.
+ *
+ * A versao anterior desta funcao compunha com memcpy de CPU entre os shadows e
+ * declarava o draw atendido. Isso era fallback de software disfarcado de GPU
+ * (Lei 4) e tornava infalsificavel qualquer pixel que aparecesse na tela. O
+ * memcpy foi removido; o que sobra e' trabalho de GPU, fechado por default, e
+ * a politica de elegibilidade vive em fonte unica testavel
+ * (Bc250UmdDrawBltSubstitutionIsLawful).
+ */
+static BOOL Bc250UmdSubstituteDrawWithBlt(BC250_UMD_DEVICE* device)
+{
+    BC250_UMD_RTV* rtv;
+    BC250_UMD_SRV* srv = NULL;
+    BC250_UMD_RESOURCE* dst = NULL;
+    BC250_UMD_RESOURCE* src = NULL;
+    BC250_UMD_BLEND_STATE* blend;
+    BOOL blendEnabled;
+    DXGI_DDI_ARG_BLT bltArgs;
+    HRESULT hrBlt;
+
+    if (device == NULL) return FALSE;
+    if (device->PipelineState.NumBoundRTVs == 0 || device->PipelineState.BoundRTVs[0].pDrvPrivate == NULL) {
+        return FALSE;
+    }
+
+    rtv = (BC250_UMD_RTV*)device->PipelineState.BoundRTVs[0].pDrvPrivate;
+    if (rtv == NULL || rtv->pResource == NULL) return FALSE;
+
+    dst = rtv->pResource;
+    if (dst->ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D || dst->Width == 0 || dst->Height == 0) return FALSE;
+
+    /*
+     * Varre todos os slots de SRVs do Pixel Shader a procura da textura de origem.
+     * O DWM pode vincular o SRV no slot 0 ou superior.
+     */
+    for (UINT s = 0; s < D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT; ++s) {
+        if (device->PipelineState.PsShaderResources[s].pDrvPrivate != NULL) {
+            BC250_UMD_SRV* cand = (BC250_UMD_SRV*)device->PipelineState.PsShaderResources[s].pDrvPrivate;
+            if (cand != NULL && cand->pResource != NULL &&
+                cand->pResource != dst &&
+                cand->pResource->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D &&
+                cand->pResource->Width > 0 && cand->pResource->Height > 0) {
+                srv = cand;
+                src = cand->pResource;
+                break;
+            }
+        }
+    }
+
+    if (src == NULL) {
+        if (Bc250UmdDrawBltSubstitutionArmed()) {
+            Bc250UmdTrace("DrawBltSubstitution REPROVOU: nenhum SRV de Texture2D valido nos slots PS (RTV dst=%p %ux%u)",
+                (void*)dst, dst->Width, dst->Height);
+        }
+        return FALSE;
+    }
+
+    INT dstLeft = 0;
+    INT dstTop = 0;
+    INT dstRight = (INT)dst->Width;
+    INT dstBottom = (INT)dst->Height;
+    BOOL validGeometry = FALSE;
+    BOOL viewportValid = FALSE;
+
+    /*
+     * Tres caminhos de geometria 1:1 licitos:
+     * 1) ScissorRects declarado com dimensao exata do src (posicionamento de janela).
+     * 2) Viewport declarada com dimensao exata do src.
+     * 3) src com as mesmas dimensoes do dst (papel de parede / full-screen).
+     */
+    if (device->PipelineState.NumScissorRects > 0 &&
+        device->PipelineState.ScissorRects[0].right > device->PipelineState.ScissorRects[0].left &&
+        device->PipelineState.ScissorRects[0].bottom > device->PipelineState.ScissorRects[0].top) {
+        const D3D10_DDI_RECT* sc = &device->PipelineState.ScissorRects[0];
+        INT scW = sc->right - sc->left;
+        INT scH = sc->bottom - sc->top;
+        if (scW == (INT)src->Width && scH == (INT)src->Height &&
+            sc->left >= 0 && sc->top >= 0 &&
+            sc->right <= (INT)dst->Width && sc->bottom <= (INT)dst->Height) {
+            dstLeft = sc->left;
+            dstTop = sc->top;
+            dstRight = sc->right;
+            dstBottom = sc->bottom;
+            viewportValid = TRUE;
+        }
+    }
+
+    if (!viewportValid && device->PipelineState.NumViewports > 0) {
+        const D3D10_DDI_VIEWPORT* vp = &device->PipelineState.Viewports[0];
+        INT vpLeft = (INT)vp->TopLeftX;
+        INT vpTop = (INT)vp->TopLeftY;
+        INT vpRight = vpLeft + (INT)vp->Width;
+        INT vpBottom = vpTop + (INT)vp->Height;
+
+        if (vp->TopLeftX >= 0.0f && vp->TopLeftY >= 0.0f &&
+            (UINT)vp->Width == src->Width && (UINT)vp->Height == src->Height &&
+            vpRight <= (INT)dst->Width && vpBottom <= (INT)dst->Height) {
+            dstLeft = vpLeft;
+            dstTop = vpTop;
+            dstRight = vpRight;
+            dstBottom = vpBottom;
+            viewportValid = TRUE;
+        }
+    }
+
+    /*
+     * 3) src cabe no dst (ex: src==dst em 2560x1080 full-screen, ou desktop 1920x1080
+     *    em transicao de modo para monitor ultrawide 2560x1080): copia 1:1 posicionada
+     *    em (0,0) ate os limites exatos do src.
+     */
+    if (!viewportValid && src->Width <= dst->Width && src->Height <= dst->Height) {
+        dstLeft = 0;
+        dstTop = 0;
+        dstRight = (INT)src->Width;
+        dstBottom = (INT)src->Height;
+        viewportValid = TRUE;
+    }
+
+    if (dstLeft >= 0 && dstTop >= 0 &&
+        dstRight <= (INT)dst->Width && dstBottom <= (INT)dst->Height &&
+        dstRight > dstLeft && dstBottom > dstTop &&
+        (UINT)(dstRight - dstLeft) == src->Width &&
+        (UINT)(dstBottom - dstTop) == src->Height) {
+        validGeometry = TRUE;
+    }
+
+    /*
+     * "Blend" aqui significa: o output merger NAO e' escrita direta do pixel
+     * de origem. Alpha-to-coverage, blend em qualquer RT ativo e write mask
+     * parcial todos fazem o draw produzir resultado diferente de uma copia.
+     */
+    blendEnabled = FALSE;
+    blend = (BC250_UMD_BLEND_STATE*)device->PipelineState.BoundBlendState.pDrvPrivate;
+    if (blend != NULL && blend->Created) {
+        UINT rt;
+        UINT rtCount = blend->Desc.IndependentBlendEnable
+            ? (UINT)D3D10_DDI_SIMULTANEOUS_RENDER_TARGET_COUNT
+            : 1u;
+        if (blend->Desc.AlphaToCoverageEnable) {
+            blendEnabled = TRUE;
+        }
+        for (rt = 0; rt < rtCount; ++rt) {
+            if (blend->Desc.RenderTarget[rt].BlendEnable) {
+                blendEnabled = TRUE;
+            }
+        }
+        if (blend->Desc.RenderTarget[0].RenderTargetWriteMask !=
+            (UINT8)D3D10_DDI_COLOR_WRITE_ENABLE_ALL) {
+            blendEnabled = TRUE;
+        }
+    }
+
+    if (!Bc250UmdDrawBltSubstitutionIsLawful(
+            Bc250UmdDrawBltSubstitutionArmed(),
+            device->WinsysInitialized,
+            (dst->Allocation.Created && src->Allocation.Created &&
+             src->Allocation.Resident) ? TRUE : FALSE,
+            dst->Allocation.Resident ? TRUE : FALSE,
+            validGeometry,
+            (dst->Format == src->Format) ? TRUE : FALSE,
+            viewportValid,
+            blendEnabled)) {
+        if (Bc250UmdDrawBltSubstitutionArmed()) {
+            Bc250UmdTrace("DrawBltSubstitution REPROVOU: armed=1 wsInit=%d srcAlloc=%d dstAlloc=%d srcRes=%d dstRes=%d geom=%d sameFmt=%d vpValid=%d blend=%d (src %ux%u fmt=%u, dst %ux%u fmt=%u at [%d,%d..%d,%d])",
+                device->WinsysInitialized, src->Allocation.Created, dst->Allocation.Created,
+                src->Allocation.Resident, dst->Allocation.Resident,
+                validGeometry,
+                (dst->Format == src->Format), viewportValid, blendEnabled,
+                src->Width, src->Height, src->Format, dst->Width, dst->Height, dst->Format,
+                dstLeft, dstTop, dstRight, dstBottom);
+        }
+        return FALSE;
+    }
+
+    memset(&bltArgs, 0, sizeof(bltArgs));
+    bltArgs.hDevice = (DXGI_DDI_HDEVICE)device;
+    bltArgs.hDstResource = (DXGI_DDI_HRESOURCE)dst;
+    bltArgs.hSrcResource = (DXGI_DDI_HRESOURCE)src;
+    bltArgs.DstLeft = dstLeft;
+    bltArgs.DstTop = dstTop;
+    bltArgs.DstRight = dstRight;
+    bltArgs.DstBottom = dstBottom;
+    bltArgs.Rotate = DXGI_DDI_MODE_ROTATION_IDENTITY;
+    hrBlt = Bc250UmdBltGpu(device, dst, src, &bltArgs);
+    if (FAILED(hrBlt)) {
+        if (Bc250UmdDrawBltSubstitutionArmed()) {
+            Bc250UmdTrace("DrawBltSubstitution BltGpu falhou: hr=0x%08X src=%p dst=%p [%d,%d..%d,%d]",
+                (unsigned)hrBlt, (void*)src, (void*)dst, dstLeft, dstTop, dstRight, dstBottom);
+        }
+        return FALSE;
+    }
+
+    device->SubstitutedDrawCount++;
+    /*
+     * SUBMETIDO, nao concluido: desde o anel de slots (13/09) a DDI nao espera
+     * mais a fence do proprio blt. Afirmar conclusao aqui seria falso sucesso
+     * -- a prova de execucao no silicio e' a do KMD (IB EXECUTADO, RPTR==WPTR,
+     * fence sobre poison), nao esta linha.
+     */
+    Bc250UmdTrace("Draw SUBSTITUIDO por copia 1:1 SUBMETIDA ao SDMA -- NAO e' rasterizacao "
+        "e NAO e' prova de conclusao "
+        "(shader/VB/IB/topologia ignorados): src=%p dst=%p %ux%u at [%d,%d] (Substituidos=%llu)",
+        (void*)src, (void*)dst, dst->Width, dst->Height, dstLeft, dstTop,
+        device->SubstitutedDrawCount);
+    return TRUE;
 }
 
 VOID APIENTRY Bc250Umd10Draw(
@@ -1561,6 +2128,7 @@ VOID APIENTRY Bc250Umd10Draw(
     if (device == NULL) return;
     UNREFERENCED_PARAMETER(VertexCount);
     UNREFERENCED_PARAMETER(StartVertexLocation);
+    if (Bc250UmdSubstituteDrawWithBlt(device)) return;
     Bc250UmdRejectUnbackedDraw(device, "Draw");
 }
 
@@ -1575,6 +2143,7 @@ VOID APIENTRY Bc250Umd10DrawIndexed(
     UNREFERENCED_PARAMETER(IndexCount);
     UNREFERENCED_PARAMETER(StartIndexLocation);
     UNREFERENCED_PARAMETER(BaseVertexLocation);
+    if (Bc250UmdSubstituteDrawWithBlt(device)) return;
     Bc250UmdRejectUnbackedDraw(device, "DrawIndexed");
 }
 
@@ -1592,6 +2161,7 @@ VOID APIENTRY Bc250Umd10DrawInstanced(
     if (device == NULL) return;
     UNREFERENCED_PARAMETER(VertexCountPerInstance);
     UNREFERENCED_PARAMETER(InstanceCount);
+    if (Bc250UmdSubstituteDrawWithBlt(device)) return;
     Bc250UmdRejectUnbackedDraw(device, "DrawInstanced");
 }
 
@@ -1611,6 +2181,7 @@ VOID APIENTRY Bc250Umd10DrawIndexedInstanced(
     if (device == NULL) return;
     UNREFERENCED_PARAMETER(IndexCountPerInstance);
     UNREFERENCED_PARAMETER(InstanceCount);
+    if (Bc250UmdSubstituteDrawWithBlt(device)) return;
     Bc250UmdRejectUnbackedDraw(device, "DrawIndexedInstanced");
 }
 
@@ -1838,6 +2409,35 @@ HRESULT Bc250UmdStartNode1Submission(
         (VOID)Bc250WinsysDestroyVirtualContext(&pDevice->Winsys);
         (VOID)Bc250WinsysDestroyPagingQueue(&pDevice->Winsys);
         return hr;
+    }
+
+    /*
+     * CONTEXTO DE APRESENTACAO NO NO DE PAGINACAO (13/09, corrida 17:18:35).
+     *
+     * Ver a proveniencia completa em bc250_wddm_winsys.h. Em resumo: 84/84
+     * pfnPresentCb devolveram E_FAIL com a primaria ja correta, e os unicos
+     * contextos que o dxgkrnl usou para apresentar naquela corrida estao no
+     * Node 0, enquanto todos os nossos estao no Node 1.
+     *
+     * Falha aqui NAO derruba o device: compute continua valendo sem
+     * apresentacao. Mas o Present passa a RECUSAR com motivo nomeado, em vez de
+     * cair de volta no contexto de trabalho -- cair de volta reproduziria o
+     * estado que ja sabemos falhar e misturaria as duas variaveis, tornando o
+     * proximo ensaio inconclusivo.
+     */
+    wsStatus = Bc250WinsysCreatePresentContext(&pDevice->Winsys,
+        BC250_WINSYS_NODE_SDMA);
+    if (wsStatus != BC250_WINSYS_OK) {
+        Bc250UmdTrace("PRESENT_CONTEXT: criacao FALHOU no Node %u (status=%d %s) -- "
+            "o Present vai RECUSAR com motivo nomeado; compute segue valido",
+            BC250_WINSYS_NODE_SDMA, (int)wsStatus,
+            Bc250WinsysStatusName(wsStatus));
+    } else {
+        Bc250UmdTrace("PRESENT_CONTEXT: Node=%u hContext=%p (contexto de trabalho "
+            "segue no Node %u) -- NAO VALIDADO EM HARDWARE",
+            pDevice->Winsys.PresentNodeOrdinal,
+            pDevice->Winsys.PresentContext,
+            BC250_WINSYS_NODE_COMPUTE);
     }
 
     pDevice->NativeNode1Ready = TRUE;
@@ -2346,7 +2946,9 @@ VOID APIENTRY Bc250Umd10PsSetShaderResources(
     for (UINT i = 0; i < NumViews && (Offset + i) < D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT; ++i) {
         device->PipelineState.PsShaderResources[Offset + i] = phViews ? phViews[i] : (D3D10DDI_HSHADERRESOURCEVIEW){NULL};
     }
-    Bc250UmdTrace("PsSetShaderResources: Offset=%u Count=%u", Offset, NumViews);
+    Bc250UmdTrace("PsSetShaderResources: Offset=%u Count=%u srv0=%p srv1=%p", Offset, NumViews,
+        (NumViews > 0 && phViews) ? phViews[0].pDrvPrivate : NULL,
+        (NumViews > 1 && phViews) ? phViews[1].pDrvPrivate : NULL);
 }
 
 VOID APIENTRY Bc250Umd10GsSetShaderResources(
@@ -2862,9 +3464,27 @@ HRESULT APIENTRY Bc250DxgiPresent(DXGI_DDI_ARG_PRESENT* pPresentData)
         return E_FAIL;
     }
 
+    /*
+     * O Present vai pelo CONTEXTO DE APRESENTACAO (Node 0), nao pelo de trabalho
+     * (Node 1). Proveniencia completa em bc250_wddm_winsys.h.
+     *
+     * RECUSA NOMEADA em vez de cair de volta no contexto de trabalho: o fallback
+     * reproduziria o estado que a corrida 17:18:35 ja mediu falhando 84/84, e
+     * misturaria as duas variaveis. Recusando, "E_FAIL de novo" significa sem
+     * ambiguidade "apresentamos pelo Node 0 e ainda assim falhou".
+     */
+    if (!device->Winsys.PresentContextCreated ||
+        device->Winsys.PresentContext == NULL) {
+        Bc250UmdTrace("DXGI Present RECUSADO: contexto de apresentacao ausente "
+            "(PresentContextCreated=%d). NAO ha fallback para o contexto de "
+            "trabalho por decisao -- ver bc250_wddm_winsys.h",
+            (int)device->Winsys.PresentContextCreated);
+        return E_FAIL;
+    }
+
     memset(&presentCb, 0, sizeof(presentCb));
     presentCb.pDXGIContext = pPresentData->pDXGIContext;
-    presentCb.hContext = device->Winsys.KernelContext;
+    presentCb.hContext = device->Winsys.PresentContext;
 
     if (srcRes != NULL && srcRes->Created) {
         presentCb.hSrcAllocation = srcRes->Allocation.KernelAllocation;
@@ -2874,7 +3494,47 @@ HRESULT APIENTRY Bc250DxgiPresent(DXGI_DDI_ARG_PRESENT* pPresentData)
         presentCb.hDstAllocation = dstRes->Allocation.KernelAllocation;
     }
 
-    return device->pDXGICallbacks->pfnPresentCb(device->hRTDevice.handle, &presentCb);
+    /*
+     * I1 (13/09) -- O RETORNO DESTA CHAMADA NUNCA FOI REGISTRADO, E ERA O NUMERO
+     * QUE DECIDIA A CORRIDA.
+     *
+     * Na corrida 16:28:27 o dwm.exe chamou Present 90 vezes e entrou em laco de
+     * device-lost a ~1 Hz (Present -> destroi tudo -> DestroyDevice -> CloseAdapter
+     * -> recarrega a DLL -> CreateDevice). Bc250DxgkDdiPresent nao apareceu UMA vez
+     * no log do KMD. Com `return callback(...)` direto era impossivel distinguir
+     * "o pfnPresentCb falhou" de "ele passou e o dxgkrnl nao nos chamou" -- a mesma
+     * ambiguidade que a Lei 4 proibe.
+     *
+     * Agora a linha LEAVE carrega o hr, as duas alocacoes de kernel, o contexto e
+     * as flags. Os dois desfechos informam.
+     */
+    {
+        HRESULT presentHr;
+        BOOL srcIsPrimary = (srcRes != NULL) &&
+            Bc250WinsysAllocationIsPrimary(&srcRes->Allocation);
+
+        Bc250UmdTrace("DXGI Present ENTER cb: hContext=%p PresentNode=%u WorkNode=%u "
+            "hSrcAlloc=0x%x hDstAlloc=0x%x "
+            "SrcPrimary=%d SrcDeclaredPrimary=%d SrcRTResource=%p Flags=0x%08X",
+            (void*)presentCb.hContext,
+            device->Winsys.PresentNodeOrdinal,
+            device->Winsys.NodeOrdinal,
+            (unsigned)presentCb.hSrcAllocation,
+            (unsigned)presentCb.hDstAllocation,
+            (int)srcIsPrimary,
+            (srcRes != NULL) ? (int)srcRes->Allocation.DeclaredPrimary : -1,
+            (srcRes != NULL) ? (void*)srcRes->Allocation.RuntimeResource : NULL,
+            pPresentData->Flags.Value);
+
+        presentHr = device->pDXGICallbacks->pfnPresentCb(
+            device->hRTDevice.handle, &presentCb);
+
+        Bc250UmdTrace("DXGI Present LEAVE cb: hr=0x%08X (hr!=0 significa que o "
+            "dxgkrnl RECUSOU a apresentacao antes de chamar DxgkDdiPresent; "
+            "compare com [Present #] no log do KMD)",
+            (unsigned)presentHr);
+        return presentHr;
+    }
 }
 
 HRESULT APIENTRY Bc250DxgiGetGammaCaps(DXGI_DDI_ARG_GET_GAMMA_CONTROL_CAPS* pGammaData)
@@ -2891,14 +3551,93 @@ HRESULT APIENTRY Bc250DxgiGetGammaCaps(DXGI_DDI_ARG_GET_GAMMA_CONTROL_CAPS* pGam
     return S_OK;
 }
 
+/*
+ * F0.2 (13/09) -- ESTA DDI DECLARAVA SUCESSO SEM BACKEND. VIOLACAO DIRETA DA LEI 4.
+ *
+ * Ate esta faixa o corpo era `log; return S_OK;`, e `pfnSetDisplayModeCb`
+ * (d3dumddi.h:4533) nao aparecia em NENHUM lugar da UMD -- grep sobre driver/umd
+ * devolvia zero. O DWM chama SetDisplayMode para dizer ao kernel QUAL primaria
+ * deve ser varrida; como nunca repassavamos, o kernel seguia com a primaria do
+ * boot. Medido na corrida 18:03:43: UM unico SetVidPnSourceAddress, o do GOP
+ * (Addr=0xAAC000, hAlloc=0x08), e 96/96 Present com hr=0x80004005.
+ *
+ * AGRAVANTE, e e' o motivo de esta correcao vir ANTES das outras: o
+ * bc250_d3d_umd_test EXIGIA o S_OK (`assert(hr == S_OK)` sobre um struct zerado).
+ * O teste congelava a mentira e reprovaria qualquer tentativa de conserto. E' a
+ * SEXTA ocorrencia da classe no projeto -- ver a lista em PLANO_PRESENT_E_FAIL.md.
+ *
+ * ESTADO ATUAL, DELIBERADO: recusa nomeada. O backend real (a chamada a
+ * pfnSetDisplayModeCb com o hAllocation do recurso) e' o item 2.3 do plano e
+ * ainda NAO existe. Falhar visivel e' melhor que suceder por reimplementacao --
+ * mesmo precedente da faixa B3.
+ */
 HRESULT APIENTRY Bc250DxgiSetDisplayMode(DXGI_DDI_ARG_SETDISPLAYMODE* pDisplayModeData)
 {
+    BC250_UMD_DEVICE* device;
+    BC250_UMD_RESOURCE* res;
+
     if (pDisplayModeData == NULL) {
         return E_INVALIDARG;
     }
-    Bc250UmdTrace("DXGI SetDisplayMode: hResource=%p SubResourceIndex=%u",
-        (void*)pDisplayModeData->hResource, pDisplayModeData->SubResourceIndex);
-    return S_OK;
+
+    device = (BC250_UMD_DEVICE*)pDisplayModeData->hDevice;
+    res = (BC250_UMD_RESOURCE*)pDisplayModeData->hResource;
+
+    Bc250UmdTrace("DXGI SetDisplayMode ENTER: hDevice=%p hResource=%p SubResourceIndex=%u "
+        "hAlloc=0x%x Primary=%d",
+        (void*)device, (void*)res, pDisplayModeData->SubResourceIndex,
+        (res != NULL) ? (unsigned)res->Allocation.KernelAllocation : 0u,
+        (res != NULL) ? (int)res->Allocation.DeclaredPrimary : -1);
+
+    /*
+     * F2.3 -- o backend real. Fail-closed em cada pre-condicao, e NENHUMA delas
+     * devolve sucesso: o ponto desta DDI e' informar ao kernel qual alocacao
+     * passa a ser varrida, e nao ha' como faze-lo "parcialmente".
+     */
+    if (device == NULL || device->pKTCallbacks == NULL ||
+        device->pKTCallbacks->pfnSetDisplayModeCb == NULL) {
+        Bc250UmdTrace("DXGI SetDisplayMode RECUSADO: pfnSetDisplayModeCb ausente "
+            "(device=%p callbacks=%p)", (void*)device,
+            (device != NULL) ? (const void*)device->pKTCallbacks : NULL);
+        return E_FAIL;
+    }
+    if (res == NULL || !res->Created ||
+        res->Allocation.KernelAllocation == 0u) {
+        Bc250UmdTrace("DXGI SetDisplayMode RECUSADO: recurso sem alocacao de kernel "
+            "(res=%p Created=%d hAlloc=0x%x)",
+            (void*)res, (res != NULL) ? (int)res->Created : -1,
+            (res != NULL) ? (unsigned)res->Allocation.KernelAllocation : 0u);
+        return E_FAIL;
+    }
+    /*
+     * Recusar superficie NAO-PRIMARIA e' deliberado. O kernel so' pode varrer o
+     * que ele aceitou como primaria; pedir scanout de outra coisa seria um
+     * sucesso que o silicio nao honraria.
+     */
+    if (!res->Allocation.DeclaredPrimary) {
+        Bc250UmdTrace("DXGI SetDisplayMode RECUSADO: recurso nao e' primaria declarada "
+            "(hAlloc=0x%x Token=0x%llX)",
+            (unsigned)res->Allocation.KernelAllocation,
+            (unsigned long long)res->Allocation.Token);
+        return E_FAIL;
+    }
+
+    {
+        D3DDDICB_SETDISPLAYMODE args;
+        HRESULT hr;
+
+        memset(&args, 0, sizeof(args));
+        args.hPrimaryAllocation = res->Allocation.KernelAllocation;
+
+        hr = device->pKTCallbacks->pfnSetDisplayModeCb(
+            device->hRTDevice.handle, &args);
+
+        Bc250UmdTrace("DXGI SetDisplayMode LEAVE cb: hr=0x%08X hPrimaryAllocation=0x%x "
+            "PrivateDriverFormatAttribute=%u",
+            (unsigned)hr, (unsigned)args.hPrimaryAllocation,
+            args.PrivateDriverFormatAttribute);
+        return hr;
+    }
 }
 
 HRESULT APIENTRY Bc250DxgiSetResourcePriority(DXGI_DDI_ARG_SETRESOURCEPRIORITY* pPriorityData)
@@ -2934,17 +3673,106 @@ HRESULT APIENTRY Bc250DxgiQueryResourceResidency(DXGI_DDI_ARG_QUERYRESOURCERESID
     return S_OK;
 }
 
+/*
+ * F0.2 (13/09) -- MESMA CLASSE DA SetDisplayMode: S_OK sem backend (Lei 4).
+ *
+ * O corpo era `log; return S_OK;` e nao rotacionava identidade nenhuma. No modelo
+ * Flip o runtime chama esta DDI para girar front/back entre os recursos do array
+ * (dxgiddi.h:97). Declarar sucesso sem girar significa dizer ao runtime que o
+ * mapeamento recurso->backing mudou quando nada mudou.
+ *
+ * Hoje isto NAO e' a causa do E_FAIL -- a recusa do Present vem antes --, mas
+ * seria o proximo travamento garantido assim que o Present passasse.
+ *
+ * O bc250_d3d_umd_test tambem EXIGIA o S_OK aqui (setima ocorrencia da classe).
+ *
+ * ESTADO ATUAL, DELIBERADO: recusa nomeada. A rotacao real e' o item 2.4 do
+ * plano.
+ */
 HRESULT APIENTRY Bc250DxgiRotateResourceIdentities(DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITIES* pRotateData)
 {
     if (pRotateData == NULL) {
         return E_INVALIDARG;
     }
-    Bc250UmdTrace("DXGI RotateResourceIdentities: Resources=%u", pRotateData->Resources);
-    return S_OK;
-}
 
-/* SDMA implementation shares private device helpers in this translation unit. */
-#include "bc250_umd_blt.inl"
+    Bc250UmdTrace("DXGI RotateResourceIdentities ENTER: hDevice=%p Resources=%u pResources=%p",
+        (void*)pRotateData->hDevice, pRotateData->Resources,
+        (const void*)pRotateData->pResources);
+
+    if (pRotateData->Resources == 0u) {
+        /* Rotacionar zero recursos e' no-op legitimo, nao mentira. */
+        Bc250UmdTrace("DXGI RotateResourceIdentities LEAVE: Resources=0, no-op legitimo -> S_OK");
+        return S_OK;
+    }
+
+    /*
+     * F2.4 -- a rotacao real.
+     *
+     * Semantica do contrato (dxgiddi.h:100): "Array of Resources to rotate
+     * identities; 0 <= 1, 1 <= 2, etc." -- o recurso i assume a identidade do
+     * recurso i+1, e o ultimo assume a do primeiro.
+     *
+     * O que E' a identidade aqui: o BACKING. `Allocation` carrega o handle de
+     * kernel, a GPUVA, o token, o hRTResource de origem e o estado de residencia;
+     * `pCpuShadow` e' a copia de CPU associada aquele backing. Formato e
+     * dimensoes NAO rotacionam -- numa cadeia de swap eles sao iguais por
+     * construcao, e rotaciona-los mascararia uma cadeia heterogenea em vez de
+     * denuncia-la.
+     *
+     * `Allocation.RuntimeResource` viaja JUNTO com o backing de proposito: a
+     * desalocacao e' simetrica por recurso, e se o handle ficasse para tras a
+     * alocacao seria devolvida com o hResource errado depois da primeira volta.
+     */
+    if (pRotateData->pResources == NULL) {
+        Bc250UmdTrace("DXGI RotateResourceIdentities RECUSADO: Resources=%u com "
+            "pResources NULL", pRotateData->Resources);
+        return E_INVALIDARG;
+    }
+
+    {
+        UINT i;
+        BC250_UMD_RESOURCE* first;
+        BC250_WINSYS_ALLOCATION savedAllocation;
+        void* savedShadow;
+
+        /* Toda a cadeia tem de ser valida ANTES de mover qualquer coisa. */
+        for (i = 0; i < pRotateData->Resources; ++i) {
+            BC250_UMD_RESOURCE* r = (BC250_UMD_RESOURCE*)pRotateData->pResources[i];
+            if (r == NULL || !r->Created) {
+                Bc250UmdTrace("DXGI RotateResourceIdentities RECUSADO: recurso[%u]=%p "
+                    "invalido ou nao criado -- rotacao ABORTADA sem mover nada",
+                    i, (void*)r);
+                return E_INVALIDARG;
+            }
+        }
+
+        first = (BC250_UMD_RESOURCE*)pRotateData->pResources[0];
+        savedAllocation = first->Allocation;
+        savedShadow = first->pCpuShadow;
+
+        for (i = 0; i + 1u < pRotateData->Resources; ++i) {
+            BC250_UMD_RESOURCE* dst = (BC250_UMD_RESOURCE*)pRotateData->pResources[i];
+            BC250_UMD_RESOURCE* src = (BC250_UMD_RESOURCE*)pRotateData->pResources[i + 1u];
+            dst->Allocation = src->Allocation;
+            dst->pCpuShadow = src->pCpuShadow;
+        }
+
+        {
+            BC250_UMD_RESOURCE* last =
+                (BC250_UMD_RESOURCE*)pRotateData->pResources[pRotateData->Resources - 1u];
+            last->Allocation = savedAllocation;
+            last->pCpuShadow = savedShadow;
+        }
+
+        Bc250UmdTrace("DXGI RotateResourceIdentities LEAVE: %u recursos rotacionados; "
+            "res[0] agora tem hAlloc=0x%x GpuVa=0x%llX (antes 0x%x)",
+            pRotateData->Resources,
+            (unsigned)first->Allocation.KernelAllocation,
+            (unsigned long long)first->Allocation.GpuVirtualAddress,
+            (unsigned)savedAllocation.KernelAllocation);
+        return S_OK;
+    }
+}
 
 HRESULT APIENTRY Bc250DxgiBlt(DXGI_DDI_ARG_BLT* pBltData)
 {
@@ -3054,7 +3882,9 @@ HRESULT APIENTRY Bc250Umd10CreateDevice(
     }
 
     /* Production gate: without native 3D pipeline on silicon or lab promotion, fail-closed without false capability advertisement */
-    if (!BC250_D3D10_11_NATIVE_READY && !Bc250UmdD3D11LabPromotionEnabled()) {
+    if (!Bc250Umd3DPipelineIsDeclared(
+            BC250_D3D10_11_NATIVE_READY ? TRUE : FALSE,
+            Bc250UmdD3D11LabPromotionEnabled())) {
         Bc250UmdTrace("D3D10 CreateDevice: BC250_D3D10_11_NATIVE_READY=0 -> E_NOTIMPL "
             "(fail-closed: sem pipeline 3D no silicio)");
         Bc250UmdDeviceTeardown(device);
@@ -3259,6 +4089,75 @@ BOOL Bc250UmdD3D11LabPromotionEnabled(void)
     return (resolved != 0) ? TRUE : FALSE;
 }
 
+/*
+ * F2.2 -- ver a proveniencia completa em bc250_umd_caps_probe.h.
+ * Desarmado por padrao DE PROPOSITO: armado, o DXGI troca o caminho inteiro para
+ * Blt e a corrida deixaria de medir se as correcoes do caminho de Flip pagaram.
+ */
+BOOL Bc250UmdNoScanoutOptOutArmed(void)
+{
+    static LONG s_state = -1; /* -1 = nao lido, 0 = off, 1 = on */
+    LONG cached = InterlockedCompareExchange(&s_state, -1, -1);
+    HKEY key = NULL;
+    DWORD value = 0;
+    DWORD size = (DWORD)sizeof(value);
+    DWORD type = 0;
+    LONG resolved = 0;
+
+    if (cached >= 0) {
+        return (cached != 0) ? TRUE : FALSE;
+    }
+
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, BC250_D3D11_CAPS_PROBE_REG_KEY, 0,
+            KEY_QUERY_VALUE, &key) == ERROR_SUCCESS) {
+        if (RegQueryValueExA(key, BC250_D3D11_NO_SCANOUT_OPTOUT_REG_NAME, NULL, &type,
+                (LPBYTE)&value, &size) == ERROR_SUCCESS &&
+            type == REG_DWORD && value != 0) {
+            resolved = 1;
+        }
+        RegCloseKey(key);
+    }
+
+    InterlockedExchange(&s_state, resolved);
+    Bc250UmdTrace("D3D11_NO_SCANOUT_OPTOUT: %s (HKLM\\%s\\%s) -- armado faz o DXGI "
+        "pedir Blt em vez de Flip",
+        resolved ? "ARMADO" : "desarmado",
+        BC250_D3D11_CAPS_PROBE_REG_KEY, BC250_D3D11_NO_SCANOUT_OPTOUT_REG_NAME);
+    return (resolved != 0) ? TRUE : FALSE;
+}
+
+BOOL Bc250UmdDrawBltSubstitutionArmed(void)
+{
+    static LONG s_state = -1; /* -1 = nao lido, 0 = off, 1 = on */
+    LONG cached = InterlockedCompareExchange(&s_state, -1, -1);
+    HKEY key = NULL;
+    DWORD value = 0;
+    DWORD size = (DWORD)sizeof(value);
+    DWORD type = 0;
+    LONG resolved = 0;
+
+    if (cached >= 0) {
+        return (cached != 0) ? TRUE : FALSE;
+    }
+
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, BC250_D3D11_CAPS_PROBE_REG_KEY, 0,
+            KEY_QUERY_VALUE, &key) == ERROR_SUCCESS) {
+        if (RegQueryValueExA(key, BC250_D3D11_DRAW_BLT_SUBST_REG_NAME, NULL, &type,
+                (LPBYTE)&value, &size) == ERROR_SUCCESS &&
+            type == REG_DWORD && value != 0) {
+            resolved = 1;
+        }
+        RegCloseKey(key);
+    }
+
+    InterlockedExchange(&s_state, resolved);
+    Bc250UmdTrace("DRAW_BLT_SUBSTITUTION: %s (HKLM\\%s\\%s) -- armado NAO significa "
+        "rasterizacao; e' copia 1:1 declarada",
+        resolved ? "ARMADO" : "desarmado",
+        BC250_D3D11_CAPS_PROBE_REG_KEY, BC250_D3D11_DRAW_BLT_SUBST_REG_NAME);
+    return (resolved != 0) ? TRUE : FALSE;
+}
+
 BOOL Bc250UmdNode1TripodAuthorized(void)
 {
     HKEY key = NULL;
@@ -3391,29 +4290,31 @@ HRESULT APIENTRY Bc250Umd10GetCaps(
     /*
      * D3D11DDICAPS_3DPIPELINESUPPORT (Type 130):
      * O runtime consulta os niveis de pipeline 3D suportados.
-     * So pode retornar S_OK com 10_0/10_1 quando o backend nativo de draw
-     * e compilador de shaders estiver realmente implementado (BC250_D3D10_11_NATIVE_READY).
-     * Sem backend, retornar E_NOTIMPL fail-closed honesto.
+     * Retorna S_OK com 10_0/10_1 quando promovido em laboratorio (D3D11LabPromotion)
+     * ou quando o compilador nativo estiver implementado (BC250_D3D10_11_NATIVE_READY).
+     * Sem backend e sem promocao, retorna E_NOTIMPL fail-closed honesto.
      */
     if ((UINT)pCapsData->Type == 130u) {
-#if BC250_D3D10_11_NATIVE_READY
-        if (pCapsData->DataSize >= sizeof(D3D11DDI_3DPIPELINESUPPORT_CAPS)) {
-            D3D11DDI_3DPIPELINESUPPORT_CAPS* pCaps = (D3D11DDI_3DPIPELINESUPPORT_CAPS*)pCapsData->pData;
-            pCaps->Caps = D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_10_0) |
-                          D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_10_1);
-            Bc250UmdTrace("GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=%u -> Level 10_0 e 10_1 (Caps=0x%08X)",
-                pCapsData->DataSize, pCaps->Caps);
-            return S_OK;
+        if (Bc250Umd3DPipelineIsDeclared(
+                BC250_D3D10_11_NATIVE_READY ? TRUE : FALSE,
+                Bc250UmdD3D11LabPromotionEnabled())) {
+            if (pCapsData->DataSize >= sizeof(D3D11DDI_3DPIPELINESUPPORT_CAPS)) {
+                D3D11DDI_3DPIPELINESUPPORT_CAPS* pCaps = (D3D11DDI_3DPIPELINESUPPORT_CAPS*)pCapsData->pData;
+                pCaps->Caps = D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_10_0) |
+                              D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_10_1);
+                Bc250UmdTrace("GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=%u -> Level 10_0 e 10_1 (Caps=0x%08X)",
+                    pCapsData->DataSize, pCaps->Caps);
+                return S_OK;
+            } else {
+                Bc250UmdTrace("GetCaps: Type=130 DataSize=%u < %u -> E_INVALIDARG",
+                    pCapsData->DataSize, (UINT)sizeof(D3D11DDI_3DPIPELINESUPPORT_CAPS));
+                return E_INVALIDARG;
+            }
         } else {
-            Bc250UmdTrace("GetCaps: Type=130 DataSize=%u < %u -> E_INVALIDARG",
-                pCapsData->DataSize, (UINT)sizeof(D3D11DDI_3DPIPELINESUPPORT_CAPS));
-            return E_INVALIDARG;
+            Bc250UmdTrace("GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=%u -> E_NOTIMPL (backend nativo 3D ausente e lab promotion desarmada, fail-closed honesto)",
+                pCapsData->DataSize);
+            return E_NOTIMPL;
         }
-#else
-        Bc250UmdTrace("GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=%u -> E_NOTIMPL (backend nativo 3D ausente, fail-closed honesto)",
-            pCapsData->DataSize);
-        return E_NOTIMPL;
-#endif
     }
 
     if (!Bc250UmdCapsZeroIsTruthful((UINT)pCapsData->Type)) {

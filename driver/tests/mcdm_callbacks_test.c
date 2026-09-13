@@ -597,7 +597,7 @@ static int Bc250RunMcdmCallbacksTest(void)
         g_paging.DmaSize = sizeof(g_pagingDmaBuffer);
         g_paging.TransferVirtual.SourceVirtualAddress = 0x200000ull;
         g_paging.TransferVirtual.DestinationVirtualAddress = 0x400000ull;
-        g_paging.TransferVirtual.TransferSizeInBytes = 9437184ull;
+        g_paging.TransferVirtual.TransferSizeInBytes = 786432ull;
         CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
             STATUS_SUCCESS);
         CHECK((UINT32 *)g_paging.pDmaBuffer == g_pagingDmaBuffer + 24u);
@@ -611,7 +611,7 @@ static int Bc250RunMcdmCallbacksTest(void)
             UINT64 destEnd = 0ull;
             CHECK(Bc250PagingPeekIbDestRange(&destStart, &destEnd));
             CHECK(destStart == 0x400000ull);
-            CHECK(destEnd == 0x400000ull + 9437184ull);
+            CHECK(destEnd == 0x400000ull + 786432ull);
         }
         CHECK(Bc250PagingConsumeIbUsefulDwords(24u) == 21u);
 
@@ -629,22 +629,19 @@ static int Bc250RunMcdmCallbacksTest(void)
         CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
             STATUS_SUCCESS);
         CHECK((UINT32 *)g_paging.pDmaBuffer == g_pagingDmaBuffer + 16u);
-        /* Packet 0: WRITE_LINEAR header (OP=2, SUBOP=0) */
-        CHECK((g_pagingDmaBuffer[0] & 0xFFu) == BC250_SDMA_OP_WRITE);
-        CHECK(((g_pagingDmaBuffer[0] >> 8) & 0xFFu) == BC250_SDMA_SUBOP_WRITE_LINEAR);
+        /* Packet 0: FENCE64 header (OP=5, MTYPE_UC=3, WRITE64=1) -> 0x80030005 */
+        CHECK(g_pagingDmaBuffer[0] == 0x80030005u);
         /* Packet 0: DstAddress = 0x20001000 */
         CHECK(g_pagingDmaBuffer[1] == 0x20001000u);
         CHECK(g_pagingDmaBuffer[2] == 0u);
-        /* Packet 0: DwordCount - 1 = 1 (2 dwords) */
-        CHECK(g_pagingDmaBuffer[3] == 1u);
         /* Packet 0: Low 32 bits = 0x89ABCDEF */
-        CHECK(g_pagingDmaBuffer[4] == 0x89ABCDEFu);
+        CHECK(g_pagingDmaBuffer[3] == 0x89ABCDEFu);
         /* Packet 0: High 32 bits = 0x01234567 */
-        CHECK(g_pagingDmaBuffer[5] == 0x01234567u);
+        CHECK(g_pagingDmaBuffer[4] == 0x01234567u);
         /* Packet 1: GCR REQ (OP=17) */
-        CHECK((g_pagingDmaBuffer[6] & 0xFFu) == BC250_SDMA_OP_GCR_REQ);
-        /* Cauda: 5 NOPs de alinhamento */
-        CHECK(g_pagingDmaBuffer[11] == BC250_SDMA_OP_NOP);
+        CHECK((g_pagingDmaBuffer[5] & 0xFFu) == BC250_SDMA_OP_GCR_REQ);
+        /* Cauda: 6 NOPs de alinhamento */
+        CHECK(g_pagingDmaBuffer[10] == BC250_SDMA_OP_NOP);
         CHECK(g_pagingDmaBuffer[15] == BC250_SDMA_OP_NOP);
 
         /* Casos de erro: endereco desalinhado e buffer insuficiente */
@@ -668,8 +665,11 @@ static int Bc250RunMcdmCallbacksTest(void)
             ddiSignal.MonitoredFenceValue = 0xFEDCBA9876543210ull;
             CHECK(Bc250McdmSignalMonitoredFence((HANDLE)0x250, &ddiSignal) ==
                 STATUS_SUCCESS);
-            CHECK(g_pagingDmaBuffer[4] == 0x76543210u);
-            CHECK(g_pagingDmaBuffer[5] == 0xFEDCBA98u);
+            CHECK(g_pagingDmaBuffer[0] == 0x80030005u);
+            CHECK(g_pagingDmaBuffer[1] == 0x20002000u);
+            CHECK(g_pagingDmaBuffer[2] == 0u);
+            CHECK(g_pagingDmaBuffer[3] == 0x76543210u);
+            CHECK(g_pagingDmaBuffer[4] == 0xFEDCBA98u);
             CHECK(ddiSignal.DmaSize == sizeof(g_pagingDmaBuffer) - (16u * sizeof(UINT32)));
         }
 #endif

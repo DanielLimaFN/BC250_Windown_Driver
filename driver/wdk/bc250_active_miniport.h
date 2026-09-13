@@ -292,6 +292,11 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
      * vínculo antes de permitir que a SDMA interprete um IB com GPUVA. */
     BC250_MCDM_HANDLE Vmid8InstalledContext;
     uint64_t Vmid8InstalledRootPhysical;
+    /* Root atualmente instalada no VMID 7 (processo de usuario/DWM). */
+    BC250_GCVM_VMID8_STATUS UserVmidInstallStatus;
+    BC250_GCVM_VMID8_INSTALL_EVIDENCE UserVmidInstallEvidence;
+    BC250_MCDM_HANDLE UserVmidInstalledContext;
+    uint64_t UserVmidInstalledRootPhysical;
     BC250_GCVM_COMPUTE_BINDING ComputeVmidBinding;
     BC250_PSP_RING_STATUS PspRingStatus;
     BC250_PSP_RING_EVIDENCE PspRingEvidence;
@@ -410,6 +415,28 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     volatile LONG GpuvaActivationEligible;
     uint32_t GpuvaLabPromotion;
     uint32_t GpuvaLabPromotionPresent;
+
+    /*
+     * C3.9 (12/09) -- granularidade do bloqueio por journal no gate do Node 1.
+     *
+     * MEDIDO na corrida 13:29: com o dwm.exe vivo 3 min 13 s (so' acontece com
+     * D3D11LabPromotion armado), Bc250GpuvaJournalSetAnyPending -- que responde
+     * "ALGUM slot do adaptador esta pendente?" -- nunca ficou zero, o gate
+     * fechou em BlockMask=0x1 (JOURNAL) e a submissao de compute do RADV foi
+     * RECUSADA. O shader nao rodou e o byte proof leu poison 0x43DAFFFE.
+     * Compute e desktop nao coexistiam por GRANULARIDADE do gate.
+     *
+     * Node1JournalGatePerProcess=1 troca a condicao global pela pendencia do
+     * PROCESSO QUE SUBMETE -- dado que cada slot ja carrega em Journal.Process.
+     * Default 0 (fail-closed): sem armar, o comportamento e' exatamente o de
+     * antes, e a telemetria abaixo mede quem segura o journal.
+     */
+    uint32_t Node1JournalGatePerProcess;
+    uint32_t Node1JournalGatePerProcessPresent;
+
+    /* Telemetria pura do journal: nao decide nada, so' nomeia quem esta pendente. */
+    uint32_t GpuvaJournalPendingSlotMask;
+    uint32_t GpuvaJournalPendingCount;
     /*
      * Declara ao dxgkrnl o modelo de memoria GpuMmu (GpuVaReady/PagingReady
      * nos runtime caps). Separado de GpuvaLabPromotion, que governa se a
@@ -469,6 +496,22 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     uint32_t InterruptsSeen;
 
     /*
+     * Submissao e aposentadoria assincrona do No 0 (SDMA) -- elimina BugCheck 0x133.
+     */
+    KTIMER SdmaRetirementTimer;
+    KDPC SdmaRetirementDpc;
+    volatile LONG SdmaRetirementTimerInitialized;
+    volatile LONG SdmaRetirementTimerRunning;
+    uint32_t SdmaRetirementDpcRuns;
+    uint32_t SdmaRetirementNotifiedTotal;
+    uint32_t SdmaRetirementNotifyFailedTotal;
+    uint32_t SdmaRetirementBusyYields;
+    volatile LONG SdmaRetireBusy;
+    uint32_t SdmaRetirementBatchesNotifiedTotal;
+    uint32_t SdmaRetirementFencesSkippedWatermark;
+    volatile LONG SdmaDpcNotifyPending;
+
+    /*
      * Ciclo de vida explicito (candidato 3.67).
      *
      * IsActive sozinho nao descreve o intervalo em que o adaptador ja esta
@@ -519,6 +562,12 @@ void Bc250ActiveRetirementTimerStart(
     _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
 
 void Bc250ActiveRetirementTimerStop(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
+
+void Bc250ActiveSdmaRetirementTimerStart(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
+
+void Bc250ActiveSdmaRetirementTimerStop(
     _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
 
 /* Portao testavel usado por SubmitCommandVirtual e pela corrida Stop/Submit. */
@@ -698,6 +747,10 @@ BC250_HQD_PROGRAM_STATUS Bc250ActiveRunInactiveHqdProgramTransaction(
     BC250_HQD_PROGRAM_EVIDENCE *Evidence);
 
 VOID Bc250ActiveDriverUnloadCleanup(VOID);
+
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+VOID Bc250ActiveSdmaRetirePendingOnAllAdapters(_In_ BOOLEAN FromDpc);
+#endif
 
 #ifdef __cplusplus
 }

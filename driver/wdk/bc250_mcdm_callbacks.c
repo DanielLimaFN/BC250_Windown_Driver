@@ -1,6 +1,7 @@
 #include "bc250_mcdm_callbacks.h"
 #include "bc250_driver_caps_contract.h"
 #include "bc250_probe_telemetry.h"
+#include "bc250_display_ddi.h"
 #include "../core/bc250_adapter_info_contract.h"
 #include "../core/bc250_segment_contract.h"
 #include "../core/bc250_umd_private_contract.h"
@@ -44,6 +45,7 @@ static BC250_MCDM_CREATE_CONTEXT_OBJECT g_Bc250CreateContextObject;
 static BC250_MCDM_DESTROY_CONTEXT_OBJECT g_Bc250DestroyContextObject;
 static BC250_MCDM_SET_ROOT_PAGE_TABLE_OBJECT g_Bc250SetRootPageTableObject;
 static BC250_MCDM_CREATE_ALLOCATION_OBJECTS g_Bc250CreateAllocationObjects;
+static BC250_MCDM_DESCRIBE_ALLOCATION_OBJECT g_Bc250DescribeAllocationObject;
 static BC250_MCDM_DESTROY_ALLOCATION_OBJECTS g_Bc250DestroyAllocationObjects;
 static BC250_MCDM_OPEN_ALLOCATION_OBJECTS g_Bc250OpenAllocationObjects;
 static BC250_MCDM_CLOSE_ALLOCATION_OBJECTS g_Bc250CloseAllocationObjects;
@@ -110,8 +112,8 @@ static VOID Bc250PagingStage(
     KeMemoryBarrier();
     InterlockedExchange(&slot->Sequence, sequence);
 }
-#include "bc250_display_ddi.h"
 static BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER g_Bc250UpdatePageTableHandler;
+static BC250_MCDM_ESCAPE_HANDLER g_Bc250EscapeHandler;
 static volatile LONG g_Bc250WddmContractVersion =
     (LONG)DXGKDDI_WDDMv2_7;
 
@@ -208,17 +210,15 @@ NTSTATUS Bc250McdmEncodeVidMmPteWithLevel(
         }
         physicalAddress = Caps->VramMcBase +
             Caps->LocalSegmentBaseOffset + pageOffsetInSegment;
-        /*
-         * PDE leva SOMENTE o bit VALID. Nao existem READABLE/WRITEABLE num
-         * PDE do Navi 10: o bit 6 e o LSB do campo de endereco [47:6] e o bit
-         * 5 e reservado. Gravar 0x61 aqui deslocava a tabela folha em 64
-         * bytes -- ver Bc250GcvmEncodePde. Permissao e assunto da folha.
-         */
         flags = BC250_PTE_VALID;
+        /*
+         * PDE leva SOMENTE os bits permitidos (VALID / SYSTEM / SNOOPED).
+         * Permissao e assunto da folha.
+         */
     } else {
         /*
          * Nivel 0: Entrada Folha (PTE).
-         * Suporta Segmento 1 (VRAM Local) e Segmento 0 (Memoria do Sistema / RAM do Host).
+         * Suporta Segmento 1 (VRAM Local), Segmento 0 (Memoria do Sistema) e Segmento 2 (Abertura GART).
          */
         if (Source->LargePage != 0u ||
             Source->PageTablePageSize != DXGK_PTE_PAGE_TABLE_PAGE_4KB) {
@@ -248,8 +248,8 @@ NTSTATUS Bc250McdmEncodeVidMmPteWithLevel(
             }
             physicalAddress = Caps->VramMcBase +
                 Caps->LocalSegmentBaseOffset + pageOffsetInSegment;
-        } else if (Source->Segment == 0u) {
-            /* Memoria do Sistema (Segmento 0 = System Memory) */
+        } else if (Source->Segment == 0u || Source->Segment == 2u) {
+            /* Memoria do Sistema (Segmento 0 = System Memory, Segmento 2 = Aperture / GART) */
             physicalAddress = pageOffsetInSegment;
             flags |= BC250_PTE_SYSTEM | BC250_PTE_SNOOPED;
         } else {
@@ -453,6 +453,13 @@ static NTSTATUS Bc250McdmBuildCpuPageTableUpdate(
  * a essa capacidade (paramos antes de cada pacote), a mascara vira no-op e as
  * escritas ficam lineares, que e a semantica correta de um paging buffer.
  */
+/*
+ * Janela declarada aos emissores de pacote ao montar o sinal de fence
+ * monitorada. Potencia de dois (exigencia do mascaramento de cursor) e
+ * suficiente para Fence64 + GCR + NOPs de alinhamento.
+ */
+#define BC250_SIGNAL_FENCE_SCRATCH_DWORDS 32u
+
 static uint32_t Bc250PagingFloorPow2Dwords(uint32_t Dwords)
 {
     uint32_t capacity = 1u;
@@ -535,6 +542,8 @@ static volatile LONG g_Bc250PagingFillValid = 0;
 
 static void Bc250PagingPublishIbDestRange(UINT64 Start, UINT64 End)
 {
+    InterlockedExchange(&g_Bc250PagingFillValid, 0);
+    InterlockedExchange(&g_Bc250PagingFillPattern, 0);
     InterlockedExchange64(&g_Bc250PagingIbDestStart, (LONG64)Start);
     InterlockedExchange64(&g_Bc250PagingIbDestEnd, (LONG64)End);
 }
@@ -678,6 +687,8 @@ static void Bc250PagingAppendIbAlignmentNops(
         Label, useful, pad, *Cursor, *Cursor * (uint32_t)sizeof(uint32_t));
 }
 
+#define BC250_SDMA_TRANSFER_MAX_BYTES (256u * 1024u) /* 256 KiB para fluxo estavel via PCIe/GFXHUB */
+
 static NTSTATUS Bc250McdmBuildTransferVirtual(
     DXGKARG_BUILDPAGINGBUFFER *Args)
 {
@@ -727,8 +738,8 @@ static NTSTATUS Bc250McdmBuildTransferVirtual(
 
     while (done < total) {
         UINT64 remaining = total - done;
-        uint32_t chunk = remaining > (UINT64)BC250_SDMA_COPY_MAX_BYTES ?
-            BC250_SDMA_COPY_MAX_BYTES : (uint32_t)remaining;
+        uint32_t chunk = remaining > (UINT64)BC250_SDMA_TRANSFER_MAX_BYTES ?
+            BC250_SDMA_TRANSFER_MAX_BYTES : (uint32_t)remaining;
         BC250_SDMA_STATUS sdmaStatus;
 
         if (dwordsAvailable - cursor < BC250_SDMA_DWORDS_COPY_LINEAR +
@@ -922,6 +933,12 @@ VOID Bc250McdmInstallAllocationLifecycle(
     g_Bc250CloseAllocationObjects = CloseAllocationObjects;
 }
 
+VOID Bc250McdmInstallDescribeAllocation(
+    BC250_MCDM_DESCRIBE_ALLOCATION_OBJECT DescribeAllocationObject)
+{
+    g_Bc250DescribeAllocationObject = DescribeAllocationObject;
+}
+
 VOID Bc250McdmInstallDebugLifecycle(
     BC250_MCDM_COLLECT_DEBUG_SNAPSHOT CollectDebugSnapshot)
 {
@@ -976,6 +993,12 @@ VOID Bc250McdmInstallUpdatePageTableHandler(
     g_Bc250UpdatePageTableHandler = UpdatePageTableHandler;
 }
 
+VOID Bc250McdmInstallEscapeHandler(
+    _In_opt_ BC250_MCDM_ESCAPE_HANDLER EscapeHandler)
+{
+    g_Bc250EscapeHandler = EscapeHandler;
+}
+
 #if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_2)
 static NTSTATUS Bc250McdmBuildSignalMonitoredFence(
     _Inout_ DXGKARG_BUILDPAGINGBUFFER *Args)
@@ -984,7 +1007,6 @@ static NTSTATUS Bc250McdmBuildSignalMonitoredFence(
     uint32_t *dmaBuffer;
     uint32_t dwordsAvailable;
     uint32_t cursor = 0;
-    uint32_t fenceData[2];
     BC250_SDMA_STATUS sdmaStatus;
 
     if (Args == NULL || Args->pDmaBuffer == NULL) {
@@ -999,24 +1021,23 @@ static NTSTATUS Bc250McdmBuildSignalMonitoredFence(
     }
 
     dmaBuffer = (uint32_t *)Args->pDmaBuffer;
-    dwordsAvailable = Bc250PagingFloorPow2Dwords(
-        Args->DmaSize / (uint32_t)sizeof(uint32_t));
-    if (dwordsAvailable < 18u) {
-        Bc250DisplayLog("[SignalMonitoredFence] DmaSize=%u insuficiente (cap=%u dwords)\n",
-            Args->DmaSize, dwordsAvailable);
+    /* Mesma correcao do irmao em Bc250McdmSignalMonitoredFence: o buffer e'
+     * LINEAR, e arredonda-lo para baixo ate potencia de dois recusava buffers
+     * que cabiam. Ver o comentario completo la. */
+    dwordsAvailable = Args->DmaSize / (uint32_t)sizeof(uint32_t);
+    if (dwordsAvailable < BC250_SIGNAL_FENCE_SCRATCH_DWORDS) {
+        Bc250DisplayLog("[SignalMonitoredFence] DmaSize=%u insuficiente (disponivel=%u dwords, exigido=%u)\n",
+            Args->DmaSize, dwordsAvailable, BC250_SIGNAL_FENCE_SCRATCH_DWORDS);
         return STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER;
     }
+    dwordsAvailable = BC250_SIGNAL_FENCE_SCRATCH_DWORDS;
 
-    fenceData[0] = (uint32_t)(signal->MonitoredFenceValue & 0xFFFFFFFFull);
-    fenceData[1] = (uint32_t)(signal->MonitoredFenceValue >> 32);
-
-    sdmaStatus = Bc250SdmaEmitWriteLinear(
+    sdmaStatus = Bc250SdmaEmitFence64(
         dmaBuffer,
         dwordsAvailable,
         &cursor,
         signal->MonitoredFenceGpuVa,
-        fenceData,
-        2u);
+        signal->MonitoredFenceValue);
     if (sdmaStatus != BC250_SDMA_OK) {
         Bc250DisplayLog("[SignalMonitoredFence] SDMA encode failed: status=%d\n", (int)sdmaStatus);
         return STATUS_INVALID_PARAMETER;
@@ -1103,9 +1124,6 @@ NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(
     case DXGK_OPERATION_UPDATE_PAGE_TABLE: {
         dispatchStatus = Bc250McdmBuildCpuPageTableUpdate(
             &caps, (HANDLE)hAdapter, pBuildPagingBuffer);
-        if (dispatchStatus == STATUS_NOT_SUPPORTED) {
-            dispatchStatus = STATUS_INVALID_PARAMETER;
-        }
         break;
     }
 
@@ -1380,16 +1398,92 @@ NTSTATUS APIENTRY Bc250McdmCreateProcess(
     return STATUS_SUCCESS;
 }
 
+/*
+ * F1.1 (13/09) -- ESTA DDI ERA COMPLETAMENTE MUDA, E E' CANDIDATA A CAUSA DO E_FAIL.
+ *
+ * Uma auditoria externa apontou DxgkDdiDescribeAllocation como o portao que
+ * bloqueia o Present: o dxgkrnl a chamaria para conferir a geometria da superficie
+ * de origem antes de agendar qualquer coisa, e a nossa recusa
+ * (STATUS_NOT_SUPPORTED, 0xC00000BB) abortaria a rotina, virando E_FAIL generico
+ * no lado do runtime.
+ *
+ * O DEFEITO ESTA CONFIRMADO por leitura -- devolvemos NOT_SUPPORTED para toda
+ * alocacao. O MECANISMO acima NAO esta: ele veio de uma desmontagem do dxgkrnl que
+ * nao foi reproduzida nesta maquina. E' H, nao P0.
+ *
+ * E ate esta faixa era IMPOSSIVEL discriminar, porque a DDI nao emitia uma linha.
+ * "Zero [DescribeAlloc] no log" nao distinguia "o dxgkrnl nunca chamou" de
+ * "recusamos calados" -- a mesma ambiguidade que a Lei 4 proibe e que ja foi
+ * corrigida em Bc250McdmSignalMonitoredFence, no handler de composicao e em
+ * Bc250DxgkDdiPresent.
+ *
+ * ESTA FAIXA E' SO' INSTRUMENTACAO: o retorno continua NOT_SUPPORTED de proposito.
+ * Implementar a descricao e' o item 2.1 de PLANO_PRESENT_E_FAIL.md, e mantendo o
+ * comportamento aqui a proxima corrida diz se a DDI e' CHAMADA -- que e' a
+ * pergunta que decide se o candidato vive ou morre.
+ *
+ * Contador PROPRIO (8 primeiras + 1 em 256): a DDI pode ser chamada por quadro, e
+ * o teto global nao alcanca esta classe. Licao das classes 9 e 12.
+ */
 NTSTATUS APIENTRY Bc250McdmDescribeAllocation(
     CONST HANDLE hAdapter,
     DXGKARG_DESCRIBEALLOCATION *pDescribeAllocation)
 {
+    static volatile LONG s_DescribeOrdinal = 0;
+    LONG ordinal;
+    BOOLEAN speak;
+    NTSTATUS status;
+
     Bc250ProbeMarkDdi(BC250_V5_DDI_DESCRIBE_ALLOCATION);
     UNREFERENCED_PARAMETER(hAdapter);
+
+    /*
+     * Um unico teto para as DUAS linhas. A de recusa contem "RECUSADO", que e'
+     * isento da amostragem por classe, entao sem este teto ela sairia a CADA
+     * chamada -- e esta DDI pode ser chamada por quadro e por alocacao. A
+     * ausencia continua conclusiva: se a DDI for chamada ao menos uma vez,
+     * ordinal==1 e as linhas saem.
+     */
+    ordinal = InterlockedIncrement(&s_DescribeOrdinal);
+    speak = (ordinal <= 8L || (ordinal % 256L) == 0L) ? TRUE : FALSE;
+
+    if (speak) {
+        Bc250DisplayLog("[DescribeAlloc] ENTER #%ld: hAdapter=%p pArg=%p hAllocation=%p\n",
+            ordinal, hAdapter, (PVOID)pDescribeAllocation,
+            (pDescribeAllocation != NULL) ? pDescribeAllocation->hAllocation : NULL);
+    }
+
     if (pDescribeAllocation == NULL) {
+        Bc250DisplayLog("[DescribeAlloc] RECUSADO #%ld: pDescribeAllocation NULL -> STATUS_INVALID_PARAMETER\n",
+            ordinal);
         return STATUS_INVALID_PARAMETER;
     }
-    return STATUS_NOT_SUPPORTED;
+
+    if (g_Bc250DescribeAllocationObject == NULL) {
+        Bc250DisplayLog("[DescribeAlloc] RECUSADO #%ld: executor nao instalado -> STATUS_NOT_SUPPORTED\n",
+            ordinal);
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    status = g_Bc250DescribeAllocationObject(hAdapter, pDescribeAllocation);
+    if (speak) {
+        if (NT_SUCCESS(status)) {
+            Bc250DisplayLog("[DescribeAlloc] LEAVE #%ld: hAllocation=%p -> %ux%u Format=%u "
+                "Refresh=%u/%u Rotation=%u status=0x%08X\n",
+                ordinal, pDescribeAllocation->hAllocation,
+                pDescribeAllocation->Width, pDescribeAllocation->Height,
+                (UINT)pDescribeAllocation->Format,
+                pDescribeAllocation->RefreshRate.Numerator,
+                pDescribeAllocation->RefreshRate.Denominator,
+                (UINT)pDescribeAllocation->Rotation,
+                (UINT)status);
+        } else {
+            Bc250DisplayLog("[DescribeAlloc] RECUSADO #%ld: hAllocation=%p status=0x%08X "
+                "(geometria nao declarada para esta alocacao)\n",
+                ordinal, pDescribeAllocation->hAllocation, (UINT)status);
+        }
+    }
+    return status;
 }
 
 NTSTATUS APIENTRY Bc250McdmDestroyAllocation(
@@ -1567,9 +1661,12 @@ SIZE_T APIENTRY Bc250McdmGetRootPageTableSize(
 
 #define BC250_STD_ALLOC_TOKEN_PRIMARY \
     ((UINT64)BC250_ALLOCATION_TOKEN_CLASS_PRIMARY)
-#define BC250_STD_ALLOC_TOKEN_SHADOW  0xA1100002ull
-#define BC250_STD_ALLOC_TOKEN_STAGING 0xA1100003ull
-#define BC250_STD_ALLOC_TOKEN_GDI     0xA1100004ull
+#define BC250_STD_ALLOC_TOKEN_SHADOW \
+    ((UINT64)BC250_ALLOCATION_TOKEN_CLASS_SHADOW)
+#define BC250_STD_ALLOC_TOKEN_STAGING \
+    ((UINT64)BC250_ALLOCATION_TOKEN_CLASS_STAGING)
+#define BC250_STD_ALLOC_TOKEN_GDI \
+    ((UINT64)BC250_ALLOCATION_TOKEN_CLASS_GDI)
 
 static volatile LONG g_Bc250StdAllocSequence = 0;
 
@@ -2252,8 +2349,8 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
                 ((BYTE *)out->pSegmentDescriptor + out->SegmentDescriptorStride);
             RtlZeroMemory(gart, sizeof(*gart));
             gart->BaseAddress.QuadPart = 0x100000000ull; /* 4GB base GPU logica */
-            gart->Size = 512ull * 1024 * 1024;           /* 512 MB GART aperture */
-            gart->CommitLimit = 512ull * 1024 * 1024;
+            gart->Size = 2048ull * 1024 * 1024;          /* 2048 MB GART aperture (modelo UMA GDDR6) */
+            gart->CommitLimit = 2048ull * 1024 * 1024;
             gart->Flags.Aperture = 1u;
             gart->Flags.NonLocalBudgetGroup = 1u;
         }
@@ -2261,7 +2358,7 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         out->PagingBufferSegmentId = 2u;
         out->PagingBufferSize = 0x10000u;
         out->PagingBufferPrivateDataSize = 0u;
-        Bc250DisplayLog("[McdmQAI] QUERYSEGMENT4: 2 segments filled (VRAM=0x%llX, GART=512MB, PagingSeg=2)\n",
+        Bc250DisplayLog("[McdmQAI] QUERYSEGMENT4: 2 segments filled (VRAM=0x%llX, GART=2048MB, PagingSeg=2)\n",
             (unsigned long long)segment->Size);
         return STATUS_SUCCESS;
 #else
@@ -2710,8 +2807,43 @@ NTSTATUS APIENTRY Bc250McdmEscape(
     CONST DXGKARG_ESCAPE *pEscape)
 {
     Bc250ProbeMarkDdi(BC250_V5_DDI_ESCAPE);
+    /*
+     * ENTRADA DA DDI FALA -- antes de qualquer despacho.
+     *
+     * Corrida 13/09 11:55: a UMD chamou pfnEscapeCb (BltViaKmd ENTER no log do
+     * dwm.exe) e o handler de composicao nunca viu a chamada. Sem log AQUI era
+     * impossivel separar "o dxgkrnl nunca nos chamou" de "nos chamou com um
+     * payload que nao reconhecemos". Esta linha imprime o primeiro dword, que
+     * e' o opcode do contrato, e o tamanho -- os dois discriminantes.
+     *
+     * Teto por contador proprio: escapes de TERCEIROS sao a maioria absoluta
+     * (3.282 numa unica corrida) e um log 1-em-1 afogaria o arquivo.
+     */
+    {
+        static uint32_t s_EscapeEntryCount = 0;
+        uint32_t firstDword = 0u;
+        ++s_EscapeEntryCount;
+        if (pEscape != NULL && pEscape->pPrivateDriverData != NULL &&
+            pEscape->PrivateDriverDataSize >= sizeof(uint32_t)) {
+            firstDword = *(uint32_t *)pEscape->pPrivateDriverData;
+        }
+        if (s_EscapeEntryCount <= 8u || (s_EscapeEntryCount % 512u) == 0u ||
+            (firstDword & 0xFFFF0000u) == 0xBC250000u) {
+            Bc250DisplayLog("[McdmEscape] ENTER #%u: DataSize=%u Dword0=0x%08X hDevice=%p hContext=%p Flags=0x%08X handler=%s\n",
+                s_EscapeEntryCount,
+                (pEscape != NULL) ? (uint32_t)pEscape->PrivateDriverDataSize : 0u,
+                firstDword,
+                (pEscape != NULL) ? pEscape->hDevice : NULL,
+                (pEscape != NULL) ? pEscape->hContext : NULL,
+                (pEscape != NULL) ? (uint32_t)pEscape->Flags.Value : 0u,
+                (g_Bc250EscapeHandler != NULL) ? "instalado" : "AUSENTE");
+        }
+    }
+    if (g_Bc250EscapeHandler != NULL) {
+        return g_Bc250EscapeHandler(hAdapter, pEscape);
+    }
+    Bc250DisplayLog("[McdmEscape] RECUSADO: nenhum handler instalado -> NOT_SUPPORTED\n");
     UNREFERENCED_PARAMETER(hAdapter);
-    UNREFERENCED_PARAMETER(pEscape);
     return STATUS_NOT_SUPPORTED;
 }
 
@@ -2816,12 +2948,32 @@ NTSTATUS APIENTRY Bc250McdmSignalMonitoredFence(
     uint32_t *dmaBuffer;
     uint32_t dwordsAvailable;
     uint32_t cursor = 0;
-    uint32_t fenceData[2];
     BC250_SDMA_STATUS sdmaStatus;
 
     UNREFERENCED_PARAMETER(hContext);
     Bc250ProbeMarkDdi(BC250_V5_DDI_SIGNAL_MONITORED_FENCE);
-    if (pSignalMonitoredFence == NULL || pSignalMonitoredFence->pDmaBuffer == NULL) {
+    /*
+     * ENTRADA SEMPRE FALA.
+     *
+     * Ate 13/09 esta DDI tinha DUAS saidas MUDAS. Nas corridas 12/09 22:57,
+     * 13/09 05:50 e 06:08 o log nao tinha UMA linha [DdiSignalMonitoredFence],
+     * e por isso era impossivel distinguir "o dxgkrnl nunca chamou" de "nos
+     * recusamos calados" -- exatamente a ambiguidade que a Lei 4 proibe e que
+     * o portao audit_process_lifecycle_ddis_speak ja trava em outras DDIs.
+     * A fence do blt parava no valor 1 e o DWM congelava esperando o 2.
+     */
+    if (pSignalMonitoredFence == NULL) {
+        Bc250DisplayLog("[DdiSignalMonitoredFence] RECUSADO: argumento NULL\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    Bc250DisplayLog("[DdiSignalMonitoredFence] ENTER: FenceGpuVa=0x%llX Value=%llu DmaSize=%u pDma=%s KernelSubmissionType=%u\n",
+        (unsigned long long)pSignalMonitoredFence->MonitoredFenceGpuVa,
+        (unsigned long long)pSignalMonitoredFence->MonitoredFenceValue,
+        pSignalMonitoredFence->DmaSize,
+        (pSignalMonitoredFence->pDmaBuffer != NULL) ? "ok" : "NULL",
+        (unsigned)pSignalMonitoredFence->KernelSubmissionType);
+    if (pSignalMonitoredFence->pDmaBuffer == NULL) {
+        Bc250DisplayLog("[DdiSignalMonitoredFence] RECUSADO: pDmaBuffer NULL\n");
         return STATUS_INVALID_PARAMETER;
     }
     if (pSignalMonitoredFence->MonitoredFenceGpuVa == 0ull ||
@@ -2832,24 +2984,31 @@ NTSTATUS APIENTRY Bc250McdmSignalMonitoredFence(
     }
 
     dmaBuffer = (uint32_t *)pSignalMonitoredFence->pDmaBuffer;
-    dwordsAvailable = Bc250PagingFloorPow2Dwords(
-        pSignalMonitoredFence->DmaSize / (uint32_t)sizeof(uint32_t));
-    if (dwordsAvailable < 18u) {
-        Bc250DisplayLog("[DdiSignalMonitoredFence] DmaSize=%u insuficiente (cap=%u dwords)\n",
-            pSignalMonitoredFence->DmaSize, dwordsAvailable);
+    /*
+     * A capacidade NAO e' mais arredondada para baixo ate potencia de dois.
+     * Bc250PagingFloorPow2Dwords existe porque os emissores de pacote validam
+     * o TAMANHO DO ANEL como potencia de dois -- mas este buffer e' LINEAR, e
+     * o arredondamento chegava a descartar metade dele: 20 dwords viravam 16 e
+     * a DDI recusava com INSUFFICIENT_DMA_BUFFER um buffer que cabia de sobra.
+     * Agora exigimos o tamanho REAL necessario e declaramos aos emissores uma
+     * janela fixa de potencia de dois que cabe DENTRO do que foi verificado --
+     * o mascaramento do cursor nunca escreve fora dela.
+     */
+    dwordsAvailable = pSignalMonitoredFence->DmaSize / (uint32_t)sizeof(uint32_t);
+    if (dwordsAvailable < BC250_SIGNAL_FENCE_SCRATCH_DWORDS) {
+        Bc250DisplayLog("[DdiSignalMonitoredFence] DmaSize=%u insuficiente (disponivel=%u dwords, exigido=%u)\n",
+            pSignalMonitoredFence->DmaSize, dwordsAvailable,
+            BC250_SIGNAL_FENCE_SCRATCH_DWORDS);
         return STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER;
     }
+    dwordsAvailable = BC250_SIGNAL_FENCE_SCRATCH_DWORDS;
 
-    fenceData[0] = (uint32_t)(pSignalMonitoredFence->MonitoredFenceValue & 0xFFFFFFFFull);
-    fenceData[1] = (uint32_t)(pSignalMonitoredFence->MonitoredFenceValue >> 32);
-
-    sdmaStatus = Bc250SdmaEmitWriteLinear(
+    sdmaStatus = Bc250SdmaEmitFence64(
         dmaBuffer,
         dwordsAvailable,
         &cursor,
         pSignalMonitoredFence->MonitoredFenceGpuVa,
-        fenceData,
-        2u);
+        pSignalMonitoredFence->MonitoredFenceValue);
     if (sdmaStatus != BC250_SDMA_OK) {
         Bc250DisplayLog("[DdiSignalMonitoredFence] SDMA encode failed: status=%d\n", (int)sdmaStatus);
         return STATUS_INVALID_PARAMETER;

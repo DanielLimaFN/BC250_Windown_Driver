@@ -234,10 +234,23 @@ extern volatile LONG g_Bc250PagingActiveCount;
 
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
 void Bc250DisplayLog(const char *Format, ...);
+void Bc250DisplayLogSamplingSummary(void);
 #else
 static __inline void Bc250DisplayLog(const char *Format, ...)
 {
     UNREFERENCED_PARAMETER(Format);
+}
+static __inline void Bc250DisplayLogSamplingSummary(void)
+{
+}
+#endif
+
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+VOID Bc250ActiveSdmaRetirePendingOnAllAdapters(_In_ BOOLEAN FromDpc);
+#else
+static __inline VOID Bc250ActiveSdmaRetirePendingOnAllAdapters(BOOLEAN FromDpc)
+{
+    UNREFERENCED_PARAMETER(FromDpc);
 }
 #endif
 

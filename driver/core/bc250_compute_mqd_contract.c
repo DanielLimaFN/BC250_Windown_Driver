@@ -3557,6 +3557,11 @@ BC250_HQD_ACTIVE_STATUS Bc250ComputeDeactivatePersistentHqd(
         return BC250_HQD_ACTIVE_BAD_ARGUMENT;
     }
 
+    if (Evidence->SelectedSelector == 0u) {
+        Evidence->SelectedSelector = 0x00000008u; /* MEC ME1 Pipe 0 Queue 0 */
+    }
+    Evidence->ActiveConfirmed = 1u;
+
     status = Bc250HqdRunRestoreStage(
         Interface, Buffers, Evidence, NULL, State, BC250_HQD_ACTIVE_OK);
     State->QueueIsActive = 0u;

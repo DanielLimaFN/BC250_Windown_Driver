@@ -8,6 +8,9 @@
 #include "../core/bc250_allocation_abi_contract.h"
 #include "../core/bc250_mcdm_debug_contract.h"
 #include "../core/bc250_firmware_staging.h"
+#include "../core/bc250_sdma_queue_state_contract.h"
+#include "../core/bc250_escape_contract.h"
+#include "../core/bc250_segment_address_contract.h"
 
 DRIVER_INITIALIZATION_DATA g_Bc250ActiveInitializationData;
 
@@ -43,6 +46,7 @@ static uint32_t Bc250ActiveVmidWrite32(
 static uint32_t Bc250ActiveFlushMappedGfxhubTlb(void *Context);
 static uint32_t Bc250ActiveFlushComputeTlb(void *Context);
 static uint32_t Bc250ActiveFlushVmid8Only(void *Context);
+static uint32_t Bc250ActiveFlushUserVmidOnly(void *Context);
 static NTSTATUS Bc250ActiveEnsureGlobalMmu(
     BC250_DXGK_ACTIVE_CONTEXT *Context,
     const char *Origin);
@@ -339,7 +343,9 @@ BC250_HQD_PROGRAM_STATUS Bc250ActiveRunInactiveHqdProgramTransaction(
 
     vramStatus = Bc250VramAllocate(
         allocator, totalBytes, 256u,
-        BC250_VRAM_ROLE_MQD, BC250_VRAM_ALLOC_CPU_VISIBLE, &token);
+        BC250_VRAM_ROLE_MQD,
+        BC250_VRAM_ALLOC_TOP_DOWN | BC250_VRAM_ALLOC_CPU_VISIBLE,
+        &token);
     if (vramStatus != BC250_VRAM_OK) {
         return BC250_HQD_PROGRAM_PREFLIGHT_FAILED;
     }
@@ -495,7 +501,9 @@ static BC250_HQD_ACTIVE_STATUS Bc250ActiveRunActiveHqdSubmissionTransaction(
 
     vramStatus = Bc250VramAllocate(
         allocator, totalBytes, 65536u,
-        BC250_VRAM_ROLE_MQD, BC250_VRAM_ALLOC_CPU_VISIBLE, &token);
+        BC250_VRAM_ROLE_MQD,
+        BC250_VRAM_ALLOC_TOP_DOWN | BC250_VRAM_ALLOC_CPU_VISIBLE,
+        &token);
     if (vramStatus != BC250_VRAM_OK) {
         return BC250_HQD_ACTIVE_PREFLIGHT_FAILED;
     }
@@ -1295,13 +1303,27 @@ static NTSTATUS Bc250ActiveQueryRuntimeCaps(
         return STATUS_DEVICE_CONFIGURATION_ERROR;
     }
     /*
-     * A dummy page global e' uma reserva real do alocador, nao pode aparecer
-     * dentro do segmento entregue ao VidMm. Como a reserva e' top-down,
-     * truncar o fim preserva um segmento contiguo e sem buracos.
+     * Isolamento rigoroso de estruturas internas do driver no topo da VRAM:
+     * O topo da abertura de CPU e' reservado para o SDMA ring (0x0FF00000),
+     * motor de submissao persistente MEC (top-down) e dummy page da MMU.
+     * Capping localEnd em 0x0FE00000 (254 MB) garante um airgap fisico absoluto:
+     * VidMm NUNCA recebera memoria onde vivem os aneis e writebacks da GPU.
      */
+    if (localEnd > 0x0FE00000ull) {
+        localEnd = 0x0FE00000ull;
+    }
     if (context->GlobalMmuDummyAllocated != FALSE &&
         context->GlobalMmuDummyOffset < localEnd) {
         localEnd = context->GlobalMmuDummyOffset;
+    }
+    if (context->SubmissionEngine.TokenValid != 0u) {
+        BC250_VRAM_REGION engReg;
+        if (Bc250VramGetRegion(&context->Core.StartDevice.Owned.Bootstrap.Allocator,
+                               context->SubmissionEngine.Token, &engReg) == BC250_VRAM_OK) {
+            if (engReg.Offset < localEnd) {
+                localEnd = engReg.Offset;
+            }
+        }
     }
     if (localStart >= localEnd) {
         RtlZeroMemory(Caps, sizeof(*Caps));
@@ -1309,6 +1331,17 @@ static NTSTATUS Bc250ActiveQueryRuntimeCaps(
     }
     Caps->LocalSegmentBaseOffset = localStart;
     Caps->LocalSegmentBytes = localEnd - localStart;
+    /*
+     * C3.6: ponto UNICO de publicacao da geometria do segmento para o caminho de
+     * display. Fica aqui, e nao num sitio de chamada, porque assim toda resolucao
+     * bem-sucedida de caps atualiza os dois consumidores de uma vez -- e' a
+     * lição das quatro divergencias de fonte unica (A1, A11, ContextAbi, C3.4).
+     * DxgkDdiPresent nao tem o contexto do adaptador em maos e precisa deste dado
+     * para converter offset de segmento; sem ele supunha offset cru, o que
+     * produziu o BugCheck 0x119 da corrida 13:11.
+     */
+    Bc250SdmaPresentSetSegmentGeometry(Caps->LocalSegmentBaseOffset,
+                                       Caps->LocalSegmentBytes);
     /*
      * Deliberadamente NAO usamos
      * Bootstrap.AddressSpace.VramBaseOffset aqui. Ver o comentario de
@@ -2265,6 +2298,11 @@ NTSTATUS Bc250ActiveDestroyContextObject(
                 result = Bc250ObjectStatusToNtStatus(status);
             }
             ExReleasePushLockExclusive(&context->ObjectLock);
+            {
+                uint32_t retiredNow = 0u;
+                (void)Bc250SubmissionEnginePoll(context, &retiredNow);
+                Bc250SubmissionEngineRecordTelemetry(context);
+            }
             break;
         }
         ExReleasePushLockExclusive(&context->ObjectLock);
@@ -2585,6 +2623,93 @@ NTSTATUS Bc250ActiveValidateGpuvaSdmaLeasePair(
         STATUS_INVALID_PARAMETER;
 }
 
+/*
+ * F2.1 (13/09) -- EXECUTOR DA DESCRICAO DE ALOCACAO.
+ *
+ * Responde `DxgkDdiDescribeAllocation` a partir da geometria que a UMD declarou
+ * na criacao e que o registro de objetos guardou. Sem geometria declarada,
+ * RECUSA -- nao ha caminho em que uma descricao seja inventada.
+ *
+ * `RefreshRate` sai do modo vigente, que e' onde ele realmente vive: e' uma
+ * propriedade do scanout, nao da superficie. Quando nao ha modo publicado, sai
+ * 0/1 -- "desconhecido" declarado, e nao um numero plausivel escolhido por nos.
+ *
+ * `Rotation` e' IDENTITY porque o driver declara SupportSmoothRotation=0 e nao
+ * ha caminho rotacionado; declarar outra coisa seria cap sem backend.
+ */
+static NTSTATUS Bc250ActiveDescribeAllocationLifecycle(
+    HANDLE AdapterContext,
+    DXGKARG_DESCRIBEALLOCATION *DescribeAllocation)
+{
+    uint32_t directoryIndex;
+    NTSTATUS result = STATUS_INVALID_HANDLE;
+
+    if (DescribeAllocation == NULL || DescribeAllocation->hAllocation == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    KeEnterCriticalRegion();
+    ExAcquirePushLockShared(&g_Bc250AdapterDirectoryLock);
+    for (directoryIndex = 0u;
+         directoryIndex < BC250_ACTIVE_MAX_ADAPTERS;
+         ++directoryIndex) {
+        BC250_DXGK_ACTIVE_CONTEXT *context =
+            g_Bc250AdapterDirectory[directoryIndex];
+        uint32_t width = 0u;
+        uint32_t height = 0u;
+        uint32_t pitch = 0u;
+        uint32_t format = 0u;
+        BC250_MCDM_OBJECT_STATUS status;
+
+        if (context != (BC250_DXGK_ACTIVE_CONTEXT *)AdapterContext) continue;
+
+        ExAcquirePushLockShared(&context->ObjectLock);
+        status = Bc250McdmObjectGetAllocationGeometry(&context->Objects,
+            (BC250_MCDM_HANDLE)DescribeAllocation->hAllocation,
+            &width, &height, &pitch, &format);
+        ExReleasePushLockShared(&context->ObjectLock);
+
+        if (status != BC250_MCDM_OBJECT_OK) {
+            result = (status == BC250_MCDM_OBJECT_NO_GEOMETRY) ?
+                STATUS_NOT_SUPPORTED : Bc250ObjectStatusToNtStatus(status);
+            break;
+        }
+
+        DescribeAllocation->Width = width;
+        DescribeAllocation->Height = height;
+        DescribeAllocation->Format = (D3DDDIFORMAT)format;
+        DescribeAllocation->MultisampleMethod.NumSamples = 1;
+        DescribeAllocation->MultisampleMethod.NumQualityLevels = 0;
+        DescribeAllocation->Rotation = D3DDDI_ROTATION_IDENTITY;
+        DescribeAllocation->PrivateDriverFormatAttribute = 0u;
+        DescribeAllocation->Flags.Value = 0u;
+        if (g_Bc250DisplayState.CurrentMode.RefreshRateNumerator != 0u &&
+            g_Bc250DisplayState.CurrentMode.RefreshRateDenominator != 0u) {
+            DescribeAllocation->RefreshRate.Numerator =
+                g_Bc250DisplayState.CurrentMode.RefreshRateNumerator;
+            DescribeAllocation->RefreshRate.Denominator =
+                g_Bc250DisplayState.CurrentMode.RefreshRateDenominator;
+        } else {
+            DescribeAllocation->RefreshRate.Numerator = 0u;
+            DescribeAllocation->RefreshRate.Denominator = 1u;
+        }
+        /*
+         * Pitch nao cabe em DXGKARG_DESCRIBEALLOCATION (d3dkmddi.h:4221); ele e'
+         * publicado em DXGK_ALLOCATIONINFO.Pitch na criacao. Fica registrado
+         * aqui para quem vier procurar, e para que a divergencia entre os dois
+         * caminhos seja visivel no log.
+         */
+        Bc250DisplayLog("[DescribeAlloc] geometria do registro: hAlloc=%p %ux%u "
+            "pitch=%u fmt=%u\n",
+            DescribeAllocation->hAllocation, width, height, pitch, format);
+        result = STATUS_SUCCESS;
+        break;
+    }
+    ExReleasePushLockShared(&g_Bc250AdapterDirectoryLock);
+    KeLeaveCriticalRegion();
+    return result;
+}
+
 static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
     HANDLE AdapterContext,
     DXGKARG_CREATEALLOCATION *CreateAllocation)
@@ -2670,6 +2795,7 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                 BC250_MCDM_OBJECT_STATUS status;
                 DXGK_ALLOCATIONINFO *info =
                     &CreateAllocation->pAllocationInfo[index];
+                RtlZeroMemory(&request, sizeof(request));
                 if (info->pPrivateDriverData != NULL && info->PrivateDriverDataSize != 0u) {
                     (void)Bc250AllocationAbiParse(info->pPrivateDriverData,
                         info->PrivateDriverDataSize, &request);
@@ -2678,6 +2804,13 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                     LONG fbSeq = InterlockedIncrement(&g_Bc250FallbackAllocSeq);
                     request.AllocationToken = 0xA110000000000000ull | (UINT64)(ULONG)fbSeq;
                     request.ByteSize = info->Size != 0u ? (uint64_t)info->Size : 4096ull;
+                    request.Alignment = info->Alignment != 0u ? (uint64_t)info->Alignment : 4096ull;
+                    request.Flags = 0u;
+                }
+                if (request.ByteSize == 0u && info->Size != 0u) {
+                    request.ByteSize = (uint64_t)info->Size;
+                }
+                if (request.Alignment == 0u) {
                     request.Alignment = info->Alignment != 0u ? (uint64_t)info->Alignment : 4096ull;
                 }
                 status = Bc250McdmObjectCreateAdapterAllocation(
@@ -2697,29 +2830,115 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                 }
                 result = Bc250ObjectStatusToNtStatus(status);
                 if (!NT_SUCCESS(result)) break;
+
+                /*
+                 * F2.1 -- a geometria entra no registro de objetos AQUI, e e' o
+                 * unico lugar. DxgkDdiDescribeAllocation le' dali por quadro.
+                 * Falha no registro NAO derruba a criacao: a alocacao continua
+                 * valida para uso geral; o que ela perde e' a capacidade de ser
+                 * DESCRITA, e a DDI recusa honestamente nesse caso.
+                 */
+                if (Bc250AllocationHasGeometry(&request)) {
+                    BC250_MCDM_OBJECT_STATUS geoStatus =
+                        Bc250McdmObjectSetAllocationGeometry(&context->Objects,
+                            handle,
+                            request.Geometry.Width,
+                            request.Geometry.Height,
+                            request.Geometry.Pitch,
+                            request.Geometry.Format);
+                    if (geoStatus != BC250_MCDM_OBJECT_OK) {
+                        Bc250DisplayLog("[CreateAllocation] FALHA ao registrar geometria: "
+                            "Handle=%p %ux%u pitch=%u fmt=%u status=%d -- "
+                            "DescribeAllocation vai RECUSAR esta alocacao\n",
+                            handle, request.Geometry.Width, request.Geometry.Height,
+                            request.Geometry.Pitch, request.Geometry.Format,
+                            (int)geoStatus);
+                    }
+                }
+
                 info->Size = (SIZE_T)request.ByteSize;
                 info->PitchAlignedSize = (SIZE_T)request.ByteSize;
                 info->Alignment = (UINT)request.Alignment;
                 info->PreferredSegment.Value = 0u;
                 info->PreferredSegment.SegmentId0 = 1u;
+
+                /*
+                 * F2.5 (13/09) -- ITEM CANCELADO. DOIS ACHADOS EXTERNOS FALSOS.
+                 *
+                 * Duas auditorias externas pediram, cada uma, um campo que NAO
+                 * EXISTE no contrato:
+                 *
+                 *   "DXGK_ALLOCATIONINFO.Pitch nunca e' preenchido"
+                 *      -> a struct (d3dkmddi.h:3993) nao tem membro `Pitch`.
+                 *         Tem `PitchAlignedSize`, que este codigo JA escreve.
+                 *         A observacao de que nao havia `->Pitch =` no arquivo
+                 *         estava certa; a conclusao, nao.
+                 *
+                 *   "DXGK_ALLOCATIONINFO.Flags.Primary nunca e' escrito"
+                 *      -> `DXGK_ALLOCATIONINFOFLAGS` (d3dkmddi.h:3875) nao tem
+                 *         bit `Primary`. Zero ocorrencias no header inteiro.
+                 *
+                 * As duas tentativas de implementacao falharam na compilacao com
+                 * C2039, e e' por isso que achado externo nao entra sem
+                 * verificacao. A primariedade continua vivendo onde de fato vive:
+                 * no token privado e em `Flags.Resource` do lado do dxgkrnl.
+                 */
                 info->SupportedReadSegmentSet =
                     context->AllocationSegmentSet;
                 info->SupportedWriteSegmentSet =
                     context->AllocationSegmentSet;
                 info->EvictionSegmentSet = 0u;
+                BOOLEAN cpuVisible = FALSE;
+                if (Bc250AllocationIsPrimary(&request) ||
+                    Bc250AllocationRequiresCpuAccess(&request)) {
+                    cpuVisible = TRUE;
+                } else if (CreateAllocation->Flags.Resource == 0u &&
+                           (info->FlagsWddm2.CpuVisible != 0u || info->Flags.CpuVisible != 0u)) {
+                    cpuVisible = TRUE;
+                }
                 info->PhysicalAdapterIndex = 0u;
                 info->FlagsWddm2.Value = 0u;
-                info->FlagsWddm2.CpuVisible = 1u;
+                info->FlagsWddm2.CpuVisible = cpuVisible ? 1u : 0u;
                 if (CreateAllocation->Flags.Resource != 0u &&
                     Bc250AllocationIsPrimary(&request)) {
                     info->FlagsWddm2.AccessedPhysically = 1u;
-                    g_Bc250DisplayState.hPrimaryAllocation = (HANDLE)handle;
-                    Bc250DisplayLog("[CreateAllocation] Primary token confirmed: Handle=%p, Size=%llu\n",
-                        handle, request.ByteSize);
+                    /*
+                     * 13/09 -- NAO CLOBBER. Ate esta faixa este ramo era
+                     * inalcancavel para alocacao de UMD (Flags.Resource era
+                     * sempre 0, medido na corrida 16:28:27), entao o unico
+                     * escritor aqui era a alocacao padrao do dxgkrnl no bind --
+                     * a primaria do GOP, que o CommitVidPn usa. Agora que a UMD
+                     * passa hRTResource, as primarias do dwm.exe TAMBEM chegam
+                     * aqui, e sobrescrever este campo trocaria a primaria do
+                     * display por um backbuffer de composicao.
+                     *
+                     * O campo so' e' preenchido enquanto estiver vazio; as
+                     * demais sao contadas e nomeadas, nunca silenciadas.
+                     */
+                    if (g_Bc250DisplayState.hPrimaryAllocation == NULL) {
+                        g_Bc250DisplayState.hPrimaryAllocation = (HANDLE)handle;
+                        Bc250DisplayLog("[CreateAllocation] Primary token confirmed (DISPLAY): Handle=%p, Size=%llu (CpuVisible=%u)\n",
+                            handle, request.ByteSize, info->FlagsWddm2.CpuVisible);
+                    } else {
+                        static volatile LONG g_Bc250UmdPrimarySeq = 0;
+                        LONG primarySeq = InterlockedIncrement(&g_Bc250UmdPrimarySeq);
+                        if (primarySeq <= 8L || (primarySeq % 256L) == 0L) {
+                            Bc250DisplayLog("[CreateAllocation] Primary token confirmed (UMD #%ld): Handle=%p, Token=0x%llX, Size=%llu, CpuVisible=%u "
+                                "-- primaria de display ja definida (%p), NAO substituida\n",
+                                primarySeq, handle,
+                                (unsigned long long)request.AllocationToken,
+                                request.ByteSize, info->FlagsWddm2.CpuVisible,
+                                g_Bc250DisplayState.hPrimaryAllocation);
+                        }
+                    }
                 } else if (CreateAllocation->Flags.Resource != 0u) {
-                    Bc250DisplayLog("[CreateAllocation] Render resource, not display primary: Handle=%p, Token=0x%llX, Size=%llu\n",
+                    Bc250DisplayLog("[CreateAllocation] Render resource, not display primary: Handle=%p, Token=0x%llX, Size=%llu, CpuVisible=%u\n",
                         handle, (unsigned long long)request.AllocationToken,
-                        request.ByteSize);
+                        request.ByteSize, info->FlagsWddm2.CpuVisible);
+                } else {
+                    Bc250DisplayLog("[CreateAllocation] Non-resource allocation: Handle=%p, Token=0x%llX, Size=%llu, CpuVisible=%u\n",
+                        handle, (unsigned long long)request.AllocationToken,
+                        request.ByteSize, info->FlagsWddm2.CpuVisible);
                 }
                 info->hAllocation = handle;
                 ++created;
@@ -2890,29 +3109,45 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
                 BC250_MCDM_HANDLE allocation = NULL, openHandle = NULL;
                 DXGK_OPENALLOCATIONINFO *info =
                     &OpenAllocation->pOpenAllocation[index];
-                if (info->pPrivateDriverData != NULL && info->PrivateDriverDataSize != 0u) {
-                    (void)Bc250AllocationAbiParse(info->pPrivateDriverData,
-                        info->PrivateDriverDataSize, &request);
-                    objectStatus = Bc250McdmObjectFindAllocationByToken(
-                        &context->Objects, request.AllocationToken, &allocation);
+                BC250_MCDM_OBJECT_RECORD allocationRecord;
+                BOOLEAN hasRecord = FALSE;
+                RtlZeroMemory(&allocationRecord, sizeof(allocationRecord));
+                if (info->hAllocation != 0) {
+                    allocation = (BC250_MCDM_HANDLE)(ULONG_PTR)info->hAllocation;
+                    objectStatus = Bc250McdmObjectLookup(&context->Objects,
+                        allocation, BC250_MCDM_OBJECT_ALLOCATION, NULL, &allocationRecord);
                     if (objectStatus == BC250_MCDM_OBJECT_OK) {
-                        BC250_MCDM_OBJECT_RECORD allocationRecord;
-                        objectStatus = Bc250McdmObjectLookup(&context->Objects,
-                            allocation, BC250_MCDM_OBJECT_ALLOCATION, NULL,
-                            &allocationRecord);
-                        if (objectStatus == BC250_MCDM_OBJECT_OK &&
+                        hasRecord = TRUE;
+                    }
+                }
+                if (!hasRecord && info->pPrivateDriverData != NULL && info->PrivateDriverDataSize != 0u) {
+                    if (Bc250AllocationAbiParse(info->pPrivateDriverData,
+                            info->PrivateDriverDataSize, &request) == BC250_ALLOCATION_ABI_OK) {
+                        objectStatus = Bc250McdmObjectFindAllocationByToken(
+                            &context->Objects, request.AllocationToken, &allocation);
+                        if (objectStatus == BC250_MCDM_OBJECT_OK) {
+                            objectStatus = Bc250McdmObjectLookup(&context->Objects,
+                                allocation, BC250_MCDM_OBJECT_ALLOCATION, NULL,
+                                &allocationRecord);
+                            if (objectStatus == BC250_MCDM_OBJECT_OK) {
+                                hasRecord = TRUE;
+                            }
+                        }
+                    }
+                }
+                if (hasRecord && info->pPrivateDriverData != NULL && info->PrivateDriverDataSize != 0u) {
+                    if (Bc250AllocationAbiParse(info->pPrivateDriverData,
+                            info->PrivateDriverDataSize, &request) == BC250_ALLOCATION_ABI_OK) {
+                        if (request.ByteSize != 0u &&
                             (allocationRecord.AllocationBytes != request.ByteSize ||
-                             allocationRecord.AllocationAlignment !=
-                                request.Alignment)) {
-                            Bc250DisplayLog("[ActiveOpenAlloc] Size/Alignment mismatch at index %u\n", index);
+                             allocationRecord.AllocationAlignment != request.Alignment)) {
+                            Bc250DisplayLog("[ActiveOpenAlloc] Size/Alignment mismatch at index %u: rec=%llu/%llu req=%llu/%llu\n",
+                                index, allocationRecord.AllocationBytes, allocationRecord.AllocationAlignment,
+                                request.ByteSize, request.Alignment);
                             result = STATUS_INVALID_PARAMETER;
                             break;
                         }
                     }
-                } else {
-                    allocation = (BC250_MCDM_HANDLE)(ULONG_PTR)info->hAllocation;
-                    objectStatus = Bc250McdmObjectLookup(&context->Objects,
-                        allocation, BC250_MCDM_OBJECT_ALLOCATION, NULL, NULL);
                 }
                 if (objectStatus == BC250_MCDM_OBJECT_OK) {
                     objectStatus = Bc250McdmObjectOpenAllocation(
@@ -3145,6 +3380,9 @@ static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
     ExAcquirePushLockShared(&g_Bc250AdapterDirectoryLock);
     for (dirIdx = 0u; dirIdx < BC250_ACTIVE_MAX_ADAPTERS; ++dirIdx) {
         BC250_DXGK_ACTIVE_CONTEXT *activeCtx = g_Bc250AdapterDirectory[dirIdx];
+        if (activeCtx != NULL && activeCtx->Signature == BC250_ACTIVE_SIGNATURE) {
+            InterlockedExchange(&activeCtx->SdmaRetireBusy, 0);
+        }
         if (activeCtx != NULL && activeCtx->Signature == BC250_ACTIVE_SIGNATURE &&
             activeCtx->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED &&
             activeCtx->SubmissionEngine.State == BC250_SUBMISSION_ENGINE_ONLINE) {
@@ -3972,6 +4210,34 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
         }
 #endif
 
+        /*
+         * C3.9 -- LIDO FORA DO #if DE PROPOSITO.
+         *
+         * A primeira versao desta leitura ficou dentro de
+         * "#if !defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)", ou
+         * seja, SO' na imagem de PRODUCAO -- e o perfil que roda os ensaios
+         * e o de LABORATORIO. O tunable nunca seria lido justamente na
+         * imagem que precisa dele. QUARTA ocorrencia da classe "campo escrito
+         * em um so' ramo do #if": A13 (tunable de submissao), B4
+         * (GpuvaLabPromotion) e ContextAbi (doc 202).
+         *
+         * Pego por conferencia de string no SYS assinado, nao por teste.
+         */
+            {
+                /*
+                 * C3.9b: granularidade do bloqueio por journal. Default 0
+                 * (fail-closed) mantem o comportamento medido ate' aqui.
+                 */
+                ULONG perProcessPresent = 0u;
+                context->Node1JournalGatePerProcess = Bc250ActiveReadTunableChecked(
+                    L"Node1JournalGatePerProcess", 0u, &perProcessPresent);
+                context->Node1JournalGatePerProcessPresent = perProcessPresent;
+                Bc250DisplayLog("[StartDevice] Node1JournalGatePerProcess=%u (present=%u) -- 0 = bloqueio GLOBAL do journal (default, "
+                    "comportamento da corrida 13:29); 1 = bloqueia so' se o PROCESSO QUE SUBMETE estiver pendente\n",
+                    context->Node1JournalGatePerProcess,
+                    context->Node1JournalGatePerProcessPresent);
+            }
+
 #if !defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)
         /*
          * Production display image: StartDevice ends after inheriting the GOP
@@ -4127,6 +4393,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
 
     InterlockedExchange(&context->IsActive, 0);
     Bc250ActiveRetirementTimerStop(context);
+    Bc250ActiveSdmaRetirementTimerStop(context);
 
     InterlockedExchange(&context->ContextAbiReady, 0);
     InterlockedExchange(&context->AllocationAbiReady, 0);
@@ -4213,6 +4480,16 @@ Bc250PhysicalRenderBringup:
                 }
                 if (NumberOfVideoPresentSources != NULL) *NumberOfVideoPresentSources = 1;
                 if (NumberOfChildren != NULL) *NumberOfChildren = 1;
+                if (context->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_EMPTY) {
+                    BC250_MMIO_TOPOLOGY_STATUS mmioMapStatus = Bc250MmioTopologyMapReadonly(
+                        &context->Core.MmioTransport, &context->Core.DxgkInterface,
+                        context->Core.ResolvedBars, context->Core.ResolvedBarCount,
+                        BC250_PCI_MMIO_BAR_INDEX);
+                    Bc250DisplayLog("[StartDevice] Runtime MmioTransport map status: %s (State=%u, Base=%p)\n",
+                        Bc250MmioTopologyStatusName(mmioMapStatus),
+                        context->Core.MmioTransport.State,
+                        context->Core.MmioTransport.VirtualBase);
+                }
                 InterlockedExchange(&context->IsActive, 1);
                 Bc250ActiveArmLifecycle(context);
                 /*
@@ -5175,6 +5452,10 @@ Bc250PhysicalRenderBringup:
                                         STATUS_DEVICE_CONFIGURATION_ERROR;
                                 }
                                 Bc250SubmissionEngineRecordTelemetry(context);
+                            } else {
+                                Bc250DisplayLog("[StartDevice] PfpDirectLoad falhou: status=%u, PhysicalReady=%u\n",
+                                    context->PfpDirectLoadStatus,
+                                    context->PfpDirectLoadEvidence.PhysicalReady);
                             }
                         }
                     }
@@ -5649,6 +5930,16 @@ Bc250PhysicalRenderBringup:
                                 *NumberOfVideoPresentSources = 1;
                             if (NumberOfChildren != NULL) *NumberOfChildren = 1;
                         }
+                        if (context->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_EMPTY) {
+                            BC250_MMIO_TOPOLOGY_STATUS mmioMapStatus = Bc250MmioTopologyMapReadonly(
+                                &context->Core.MmioTransport, &context->Core.DxgkInterface,
+                                context->Core.ResolvedBars, context->Core.ResolvedBarCount,
+                                BC250_PCI_MMIO_BAR_INDEX);
+                            Bc250DisplayLog("[StartDevice] Runtime MmioTransport map status: %s (State=%u, Base=%p)\n",
+                                Bc250MmioTopologyStatusName(mmioMapStatus),
+                                context->Core.MmioTransport.State,
+                                context->Core.MmioTransport.VirtualBase);
+                        }
                         InterlockedExchange(&context->IsActive, 1);
                         Bc250ActiveArmLifecycle(context);
                         /*
@@ -5672,6 +5963,7 @@ Bc250PhysicalRenderBringup:
 
     InterlockedExchange(&context->IsActive, 0);
     Bc250ActiveRetirementTimerStop(context);
+    Bc250ActiveSdmaRetirementTimerStop(context);
     InterlockedExchange(&context->ContextAbiReady, 0);
     InterlockedExchange(&context->AllocationAbiReady, 0);
     InterlockedExchange(&context->RootPageTableAbiReady, 0);
@@ -5771,6 +6063,15 @@ static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason(
         (uint32_t)context->Vmid8InstallStatus,
         context->Vmid8InstalledContext,
         (unsigned long long)context->Vmid8InstalledRootPhysical);
+    Bc250DisplayLog("[SDMA_RETIRE_ARCHIVE] DpcRuns=%u NotifiedTotal=%u BatchesNotified=%u WatermarkSkipped=%u NotifyFailed=%u BusyYields=%u LastNotifiedNode0=%u\n",
+        context->SdmaRetirementDpcRuns,
+        context->SdmaRetirementNotifiedTotal,
+        context->SdmaRetirementBatchesNotifiedTotal,
+        context->SdmaRetirementFencesSkippedWatermark,
+        context->SdmaRetirementNotifyFailedTotal,
+        context->SdmaRetirementBusyYields,
+        context->SubmissionEngine.WddmFences.LastNotifiedFenceIdByNode[0]);
+    Bc250DisplayLogSamplingSummary();
 
     /*
      * Quiescencia antes da fotografia. Nao desligar polling/engine enquanto
@@ -5830,7 +6131,10 @@ static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason(
     }
     InterlockedExchange(&context->IsActive, 0);
     Bc250ActiveRetirementTimerStop(context);
+    Bc250ActiveSdmaRetirementTimerStop(context);
+    InterlockedExchange(&context->SdmaRetireBusy, 0);
     Bc250SubmissionEngineArchiveDiagnostics(context);
+    Bc250SubmissionEngineRecordTelemetry(context);
     Bc250DisplayLog("[NODE1_IB_CPU_ARCHIVE] VA=0x%llX PA=0x%llX RequestedBytes=%u CapturedDwords=%u (CPU observation, not GPU execution)\n",
         (unsigned long long)context->Node1IbObservedVa,
         (unsigned long long)context->Node1IbObservedPhysical,
@@ -5885,6 +6189,22 @@ static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason(
             return STATUS_DEVICE_NOT_READY;
         }
         Bc250DisplayLog("[StopDevice] VMID9 baseline restaurado com readback e ACK\n");
+    }
+    {
+        BC250_GCVM_VMID8_INTERFACE vmid8Io;
+        BC250_GCVM_VMID8_INSTALL_EVIDENCE cleanEv;
+        RtlZeroMemory(&vmid8Io, sizeof(vmid8Io));
+        vmid8Io.Read32 = Bc250ActiveVmidRead32;
+        vmid8Io.Write32 = Bc250ActiveVmidWrite32;
+        vmid8Io.Flush = Bc250ActiveFlushVmid8Only;
+        vmid8Io.Context = context;
+        vmid8Io.Identity = BC250_GCVM_VMID8_IDENTITY;
+        RtlZeroMemory(&cleanEv, sizeof(cleanEv));
+        (void)Bc250GcvmVmid8Uninstall(&vmid8Io, &cleanEv);
+        context->Vmid8InstalledContext = NULL;
+        context->Vmid8InstalledRootPhysical = 0ull;
+        context->Vmid8InstallStatus = BC250_GCVM_VMID8_OK;
+        Bc250DisplayLog("[StopDevice] VMID8 uninstalled e TLB invalidada\n");
     }
     KeEnterCriticalRegion();
     ExAcquirePushLockExclusive(&context->ObjectLock);
@@ -6027,6 +6347,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiRemoveDeviceActive(
          */
     }
     Bc250ActiveRetirementTimerStop(context);
+    Bc250ActiveSdmaRetirementTimerStop(context);
     Bc250DisplayTeardown();
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
     KeFlushQueuedDpcs();
@@ -6058,6 +6379,7 @@ VOID Bc250ActiveDriverUnloadCleanup(VOID)
         BC250_DXGK_ACTIVE_CONTEXT *active = g_Bc250AdapterDirectory[index];
         if (active != NULL && active->Signature == BC250_ACTIVE_SIGNATURE) {
             Bc250ActiveRetirementTimerStop(active);
+            Bc250ActiveSdmaRetirementTimerStop(active);
             InterlockedExchange(&active->IsActive, 0);
             g_Bc250AdapterDirectory[index] = NULL;
         }
@@ -6066,6 +6388,7 @@ VOID Bc250ActiveDriverUnloadCleanup(VOID)
     KeLeaveCriticalRegion();
 
     Bc250DisplayTeardown();
+    Bc250McdmInstallEscapeHandler(NULL);
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
     KeFlushQueuedDpcs();
 #endif
@@ -6103,6 +6426,7 @@ typedef struct BC250_ACTIVE_FENCE_SYNC {
     BOOLEAN CommitAccepted;
     uint32_t GpuvaSlot;
     uint32_t GpuvaGeneration;
+    BOOLEAN GpuvaPinValid;
 
     /* DRAIN */
     uint64_t RetiredRingFence;
@@ -6137,7 +6461,7 @@ static BOOLEAN Bc250ActiveSynchronizedFenceCallback(
             sync->NodeOrdinal,
             sync->EngineOrdinal,
             &sync->ReservationToken);
-        if (sync->ReserveAccepted &&
+        if (sync->ReserveAccepted && sync->GpuvaPinValid &&
             !Bc250WddmFenceTrackerAttachGpuvaPin(
                 &context->SubmissionEngine.WddmFences,
                 sync->ReservationToken, sync->GpuvaSlot,
@@ -6177,6 +6501,20 @@ static BOOLEAN Bc250ActiveSynchronizedFenceCallback(
     if (sync->Operation == BC250_ACTIVE_FENCE_SYNC_NOTIFY_SDMA) {
         if (context->Core.DxgkInterface.DxgkCbNotifyInterrupt != NULL &&
             context->Core.DxgkInterface.DeviceHandle != NULL) {
+            if (sync->NodeOrdinal <= BC250_SUBMISSION_NODE_COMPUTE) {
+                if (sync->SubmissionFenceId <= context->SubmissionEngine.WddmFences.LastNotifiedFenceIdByNode[sync->NodeOrdinal]) {
+                    /*
+                     * Marca d'agua monotonica estrita por no (Q1):
+                     * A fence ja foi alcancada ou superada por notificacao anterior.
+                     * No WDDM, reportar fence decrescente ou repetida e' violacao fatal
+                     * de contrato (BugCheck 0x119 Arg1=1). Descarta silenciosamente com
+                     * Notified=1 para o chamador saber que o lote foi consumido.
+                     */
+                    ++context->SdmaRetirementFencesSkippedWatermark;
+                    sync->Notified = 1u;
+                    return TRUE;
+                }
+            }
             RtlZeroMemory(&data, sizeof(data));
             data.InterruptType = DXGK_INTERRUPT_DMA_COMPLETED;
             data.DmaCompleted.SubmissionFenceId = sync->SubmissionFenceId;
@@ -6191,6 +6529,7 @@ static BOOLEAN Bc250ActiveSynchronizedFenceCallback(
             context->SubmissionEngine.WddmFences.LastNotifiedFenceId =
                 sync->SubmissionFenceId;
             sync->Notified = 1u;
+            InterlockedExchange(&context->SdmaDpcNotifyPending, 1);
             return TRUE;
         }
         return FALSE;
@@ -6343,6 +6682,7 @@ static NTSTATUS Bc250ActiveQuiesceAndSnapshotTracker(
 
     /* 2. Primeira parada do timer (ja inclui KeFlushQueuedDpcs). */
     Bc250ActiveRetirementTimerStop(Context);
+    Bc250ActiveSdmaRetirementTimerStop(Context);
 
     /*
      * 3. Espera as submissoes que passaram pelo portao antes do fechamento
@@ -6368,6 +6708,7 @@ static NTSTATUS Bc250ActiveQuiesceAndSnapshotTracker(
      * parada e' a barreira que torna a corrida inofensiva.
      */
     Bc250ActiveRetirementTimerStop(Context);
+    Bc250ActiveSdmaRetirementTimerStop(Context);
     Bc250ProbeRecord(BC250_PROBE_V5_STOP_TIMER_DRAINED, 1u);
     /* Um DPC pode ter sido enfileirado durante a espera acima. */
     Bc250ActiveStopFlushDpcs();
@@ -6537,6 +6878,248 @@ void Bc250ActiveRetirementTimerStop(
     }
     InterlockedExchange(&Context->RetirementTimerRunning, 0);
     KeCancelTimer(&Context->RetirementTimer);
+    KeFlushQueuedDpcs();
+}
+
+static VOID Bc250ActiveSdmaRetirementEnsureScheduled(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE) {
+        return;
+    }
+    if (InterlockedCompareExchange(&Context->IsActive, 1, 1) != 1) {
+        return;
+    }
+    if (g_Bc250SdmaPresent.InFlightCount > 0u) {
+        if (InterlockedExchange(&Context->SdmaRetirementTimerRunning, 1) == 0) {
+            LARGE_INTEGER due;
+            due.QuadPart = -10000LL; /* 1 ms */
+            KeSetTimerEx(&Context->SdmaRetirementTimer, due, 0, &Context->SdmaRetirementDpc);
+        }
+    }
+}
+
+static VOID Bc250ActiveSdmaRetireAndNotify(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context,
+    _In_ BOOLEAN FromDpc)
+{
+    BC250_SDMA_RETIREMENT_RESULT result;
+    BOOLEAN polled;
+    BC250_ACTIVE_FENCE_SYNC sync;
+    BOOLEAN notified = FALSE;
+    NTSTATUS status;
+    uint32_t highestSubmissionFenceId = 0u;
+    uint32_t batchCount = 0u;
+
+    if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE) {
+        return;
+    }
+    if (InterlockedCompareExchange(&Context->IsActive, 1, 1) != 1) {
+        return;
+    }
+    if (Context->Core.DxgkInterface.DxgkCbSynchronizeExecution == NULL ||
+        Context->Core.DxgkInterface.DeviceHandle == NULL) {
+        return;
+    }
+
+    /*
+     * Guarda atomica de serializacao (Q3):
+     * Impede que a thread de submit e a DPC executem a rotina de retirement
+     * em paralelo em nucleos diferentes, eliminando colisoes e reentrancias.
+     *
+     * INVARIANTE DE LIVENESS ANTI-0x133:
+     * O loser da guarda NUNCA re-enfileira DPC imediatamente se veio de DPC.
+     * Re-enfileirar KeInsertQueueDpc dentro de uma DPC em execucao causa loop
+     * infinito de DPC em DISPATCH_LEVEL sem retorno a PASSIVE_LEVEL, estourando
+     * o limite de ticks do DPC watchdog (BugCheck 0x133 Arg1=1).
+     * O liveness e' garantido exclusivamente pelo timer de 1 ms via
+     * Bc250ActiveSdmaRetirementEnsureScheduled, que desacopla temporalmente e
+     * permite a CPU baixar o IRQL para PASSIVE_LEVEL entre as tentativas.
+     */
+    if (InterlockedCompareExchange(&Context->SdmaRetireBusy, 1, 0) != 0) {
+        ++Context->SdmaRetirementBusyYields;
+        Bc250DisplayLog("[SdmaRetire] BUSY_YIELD #%u: reagendando via timer (FromDpc=%u InFlight=%u)\n",
+            Context->SdmaRetirementBusyYields, FromDpc ? 1u : 0u,
+            g_Bc250SdmaPresent.InFlightCount);
+        Bc250ActiveSdmaRetirementEnsureScheduled(Context);
+        return;
+    }
+
+    BOOLEAN notifiedAny = FALSE;
+
+    while ((polled = Bc250SdmaPresentPollRetirement(&result)) != FALSE) {
+        if (result.Completed) {
+            uint32_t fenceId = (uint32_t)result.SubmissionFenceId;
+            if (fenceId > highestSubmissionFenceId) {
+                highestSubmissionFenceId = fenceId;
+            }
+            batchCount++;
+
+            BC250_SUBMIT_EXEC_PATH execPath = (BC250_SUBMIT_EXEC_PATH)result.ExecPath;
+            if (Bc250SubmitPathExecutesDmaBuffer(execPath) != 0u) {
+                Bc250DisplayLog("[SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de %u bytes em VA=0x%llX; FenceId=%llu (batch #%u)\n",
+                    result.DmaBufferSize,
+                    (unsigned long long)result.DmaBufferVirtualAddress,
+                    (unsigned long long)result.SubmissionFenceId,
+                    batchCount);
+            } else {
+                Bc250DisplayLog("[SubmitVirtual Node0 SDMA] PLANO A CONCLUIDO (%s): operacao REIMPLEMENTADA no anel; o DMA buffer de %u bytes em VA=0x%llX NAO foi lido pela GPU. FenceId=%llu (batch #%u)\n",
+                    Bc250SubmitPathName(execPath),
+                    result.DmaBufferSize,
+                    (unsigned long long)result.DmaBufferVirtualAddress,
+                    (unsigned long long)result.SubmissionFenceId,
+                    batchCount);
+            }
+            if (!result.TripodPassed) {
+                Bc250DisplayLog("[SdmaRetire] Submissao #%llu concluida, mas telemetria do tripe NAO casou (canaries intactos ou RPTR avancado)\n",
+                    (unsigned long long)result.SubmissionFenceId);
+            }
+        } else if (result.Timeout) {
+            Bc250DisplayLog("[SdmaRetire] Submissao #%llu TIMEOUT no silicio!\n",
+                (unsigned long long)result.SubmissionFenceId);
+            Bc250ActiveSdmaRetirementEnsureScheduled(Context);
+            break;
+        } else {
+            Bc250ActiveSdmaRetirementEnsureScheduled(Context);
+            break;
+        }
+    }
+
+    /*
+     * Notificacao canonica em batch (Q2):
+     * No WDDM, reportar DMA_COMPLETED com a fence N sinaliza que todos os
+     * pacotes ate N naquele no completaram. Notificamos uma unica vez com a maior
+     * fence do lote apos consumir todos os slots concluidos da FIFO.
+     */
+    if (highestSubmissionFenceId > 0u) {
+        RtlZeroMemory(&sync, sizeof(sync));
+        sync.Context = Context;
+        sync.Operation = BC250_ACTIVE_FENCE_SYNC_NOTIFY_SDMA;
+        sync.SubmissionFenceId = highestSubmissionFenceId;
+        sync.NodeOrdinal = 0; /* Node 0 SDMA */
+        sync.EngineOrdinal = 0;
+
+        status = Context->Core.DxgkInterface.DxgkCbSynchronizeExecution(
+            Context->Core.DxgkInterface.DeviceHandle,
+            Bc250ActiveSynchronizedFenceCallback,
+            &sync,
+            0,
+            &notified);
+        if (NT_SUCCESS(status) && notified && sync.Notified != 0u) {
+            Context->SdmaRetirementNotifiedTotal += batchCount;
+            Context->SdmaRetirementBatchesNotifiedTotal++;
+            notifiedAny = TRUE;
+            InterlockedExchange(&Context->SdmaDpcNotifyPending, 1);
+            Bc250DisplayLog("[SdmaRetire] LOTE CONCLUIDO: %u submissoes aposentadas; DMA_COMPLETED notificado com a maior FenceId=%u\n",
+                batchCount, highestSubmissionFenceId);
+        } else {
+            Context->SdmaRetirementNotifyFailedTotal += batchCount;
+            Bc250DisplayLog("[SdmaRetire] FALHA NA NOTIFICACAO DO LOTE: MaiorFenceId=%u (%u submissoes) status=0x%08X notified=%u syncNotified=%u\n",
+                highestSubmissionFenceId, batchCount, status, notified ? 1 : 0, sync.Notified);
+        }
+    }
+
+    if (FromDpc) {
+        if (InterlockedExchange(&Context->SdmaDpcNotifyPending, 0) != 0) {
+            if (Context->Core.DxgkInterface.DxgkCbNotifyDpc != NULL) {
+                Context->Core.DxgkInterface.DxgkCbNotifyDpc(
+                    Context->Core.DxgkInterface.DeviceHandle);
+            }
+        }
+    } else {
+        /*
+         * Em SubmitCommandVirtual (FromDpc == FALSE), o scheduler (VidSch)
+         * ja esta na pilha segurando seus locks internos. Chamar DxgkCbNotifyDpc
+         * aqui causa reentrancia recursiva no spinlock em fila (BugCheck 0x133).
+         * Agendamos o DPC para que ele notifique o scheduler logo apos sair.
+         */
+        if (InterlockedCompareExchange(&Context->SdmaDpcNotifyPending, 0, 0) != 0) {
+            KeInsertQueueDpc(&Context->SdmaRetirementDpc, NULL, NULL);
+        }
+    }
+
+    InterlockedExchange(&Context->SdmaRetireBusy, 0);
+    if (g_Bc250SdmaPresent.InFlightCount > 0u) {
+        Bc250ActiveSdmaRetirementEnsureScheduled(Context);
+    }
+}
+
+static VOID Bc250ActiveSdmaRetirementDpcRoutine(
+    _In_ PKDPC Dpc,
+    _In_opt_ PVOID DeferredContext,
+    _In_opt_ PVOID SystemArgument1,
+    _In_opt_ PVOID SystemArgument2)
+{
+    BC250_DXGK_ACTIVE_CONTEXT *context =
+        (BC250_DXGK_ACTIVE_CONTEXT *)DeferredContext;
+    UNREFERENCED_PARAMETER(Dpc);
+    UNREFERENCED_PARAMETER(SystemArgument1);
+    UNREFERENCED_PARAMETER(SystemArgument2);
+
+    if (context == NULL || context->Signature != BC250_ACTIVE_SIGNATURE) {
+        return;
+    }
+    InterlockedExchange(&context->SdmaRetirementTimerRunning, 0);
+    ++context->SdmaRetirementDpcRuns;
+    Bc250ActiveSdmaRetireAndNotify(context, TRUE);
+    if (InterlockedExchange(&context->SdmaDpcNotifyPending, 0) != 0) {
+        if (context->Core.DxgkInterface.DxgkCbNotifyDpc != NULL) {
+            context->Core.DxgkInterface.DxgkCbNotifyDpc(
+                context->Core.DxgkInterface.DeviceHandle);
+        }
+    }
+    Bc250ActiveSdmaRetirementEnsureScheduled(context);
+}
+
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+VOID Bc250ActiveSdmaRetirePendingOnAllAdapters(
+    _In_ BOOLEAN FromDpc)
+{
+    uint32_t index;
+    for (index = 0u; index < BC250_ACTIVE_MAX_ADAPTERS; ++index) {
+        BC250_DXGK_ACTIVE_CONTEXT *context = g_Bc250AdapterDirectory[index];
+        if (context != NULL &&
+            context->Signature == BC250_ACTIVE_SIGNATURE &&
+            InterlockedCompareExchange(&context->IsActive, 1, 1) == 1) {
+            Bc250ActiveSdmaRetireAndNotify(context, FromDpc);
+        }
+    }
+}
+#endif
+
+void Bc250ActiveSdmaRetirementTimerStart(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    LARGE_INTEGER due;
+
+    if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE) {
+        return;
+    }
+    if (InterlockedCompareExchange(
+            &Context->SdmaRetirementTimerInitialized, 1, 0) == 0) {
+        KeInitializeTimer(&Context->SdmaRetirementTimer);
+        KeInitializeDpc(&Context->SdmaRetirementDpc,
+            Bc250ActiveSdmaRetirementDpcRoutine, Context);
+    }
+    if (InterlockedCompareExchange(
+            &Context->SdmaRetirementTimerRunning, 1, 0) != 0) {
+        return;
+    }
+
+    due.QuadPart = -10000LL; /* 1 ms */
+    KeSetTimerEx(&Context->SdmaRetirementTimer, due, 0, &Context->SdmaRetirementDpc);
+}
+
+void Bc250ActiveSdmaRetirementTimerStop(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    if (Context == NULL ||
+        InterlockedCompareExchange(
+            &Context->SdmaRetirementTimerInitialized, 1, 1) != 1) {
+        return;
+    }
+    InterlockedExchange(&Context->SdmaRetirementTimerRunning, 0);
+    KeCancelTimer(&Context->SdmaRetirementTimer);
     KeFlushQueuedDpcs();
 }
 
@@ -6792,6 +7375,133 @@ static BOOLEAN Bc250ActiveWalkGpuVa(
     return TRUE;
 }
 
+/*
+ * C3.16 (12/09) -- caminhada silenciosa e cobertura INTEGRAL.
+ *
+ * O gate anterior conferia somente primeira/meio/ultima pagina. A corrida
+ * 18:45 terminou com um TransferVirtual de 3.072.000 bytes: os tres probes
+ * passaram, o submit #8896 foi publicado e nunca apareceu a fence. Uma faixa
+ * de 750 paginas nao pode ser declarada segura por tres amostras.
+ *
+ * A page table e a fonte fisica que a GPU vai ler. Percorremos cada pagina,
+ * conferindo validade e permissao antes de tocar o SDMA. O caminho normal e'
+ * silencioso; numa falha, o walker verboso e' chamado apenas para a pagina
+ * exata que reprovou.
+ */
+static BOOLEAN Bc250ActiveWalkGpuVaQuiet(
+    _In_ uint64_t GpuVa,
+    _In_ uint64_t RootMcAddress,
+    _In_ uint64_t VramMcBase,
+    _In_ uint32_t RequiredPermissions,
+    _Out_ uint64_t *ResolvedPhysical)
+{
+    uint64_t rootIndex;
+    uint64_t leafIndex;
+    uint64_t pdeVramOffset;
+    uint64_t pteVramOffset;
+    uint64_t pde = 0ull;
+    uint64_t pte = 0ull;
+    uint64_t leafMc = 0ull;
+    uint64_t pageMc = 0ull;
+    uint32_t pdeFlags = 0u;
+    uint32_t pteFlags = 0u;
+    uint32_t pdeReserved = 0u;
+
+    if (ResolvedPhysical == NULL) return FALSE;
+    *ResolvedPhysical = 0ull;
+    if (GpuVa >= BC250_GPUVA_TRANSLATABLE_LIMIT) return FALSE;
+
+    rootIndex = (GpuVa >> (12u + BC250_GPUVA_PT_LEAF_INDEX_BITS)) &
+        ((1ull << BC250_GPUVA_PT_ROOT_INDEX_BITS) - 1ull);
+    leafIndex = (GpuVa >> 12u) &
+        ((1ull << BC250_GPUVA_PT_LEAF_INDEX_BITS) - 1ull);
+
+    if (!Bc250ActiveMcToVramOffset(
+            RootMcAddress + rootIndex * BC250_ACTIVE_PT_ENTRY_BYTES,
+            VramMcBase, &pdeVramOffset) ||
+        !Bc250ActiveReadVramU64(pdeVramOffset, &pde)) {
+        return FALSE;
+    }
+    (void)Bc250GcvmDecodePde(pde, &leafMc, &pdeFlags, &pdeReserved);
+    if ((pdeFlags & BC250_PTE_VALID) == 0u || pdeReserved != 0u) {
+        return FALSE;
+    }
+
+    if (!Bc250ActiveMcToVramOffset(
+            leafMc + leafIndex * BC250_ACTIVE_PT_ENTRY_BYTES,
+            VramMcBase, &pteVramOffset) ||
+        !Bc250ActiveReadVramU64(pteVramOffset, &pte)) {
+        return FALSE;
+    }
+    (void)Bc250GcvmDecodePte(pte, &pageMc, &pteFlags);
+    if ((pteFlags & BC250_PTE_VALID) == 0u ||
+        (pteFlags & RequiredPermissions) != RequiredPermissions) {
+        return FALSE;
+    }
+
+    *ResolvedPhysical = pageMc + (GpuVa & BC250_GPUVA_PAGE_MASK);
+    return TRUE;
+}
+
+static BOOLEAN Bc250ActiveValidateGpuVaRange(
+    _In_ const char *Label,
+    _In_ uint64_t BaseGpuVa,
+    _In_ uint64_t ByteCount,
+    _In_ uint64_t RootMcAddress,
+    _In_ uint64_t VramMcBase,
+    _In_ uint32_t RequiredPermissions,
+    _Out_opt_ uint64_t *FirstResolvedPhysical)
+{
+    uint64_t endGpuVa;
+    uint64_t pageGpuVa;
+    uint64_t lastPageGpuVa;
+    uint64_t resolved = 0ull;
+    uint64_t pages = 0ull;
+
+    if (FirstResolvedPhysical != NULL) *FirstResolvedPhysical = 0ull;
+    if (ByteCount == 0ull || BaseGpuVa > (uint64_t)~0ull - ByteCount) {
+        Bc250DisplayLog("[PT_RANGE %s] RECUSA: intervalo invalido VA=0x%llX Bytes=%llu\n",
+            Label, (unsigned long long)BaseGpuVa,
+            (unsigned long long)ByteCount);
+        return FALSE;
+    }
+    endGpuVa = BaseGpuVa + ByteCount;
+    if (endGpuVa > BC250_GPUVA_TRANSLATABLE_LIMIT) {
+        Bc250DisplayLog("[PT_RANGE %s] RECUSA: fim 0x%llX excede limite traduzivel 0x%llX\n",
+            Label, (unsigned long long)endGpuVa,
+            (unsigned long long)BC250_GPUVA_TRANSLATABLE_LIMIT);
+        return FALSE;
+    }
+
+    pageGpuVa = BaseGpuVa & ~BC250_GPUVA_PAGE_MASK;
+    lastPageGpuVa = (endGpuVa - 1ull) & ~BC250_GPUVA_PAGE_MASK;
+    for (;;) {
+        if (!Bc250ActiveWalkGpuVaQuiet(pageGpuVa, RootMcAddress,
+                VramMcBase, RequiredPermissions, &resolved)) {
+            uint64_t verboseResolved = 0ull;
+            (void)Bc250ActiveWalkGpuVa(Label, pageGpuVa, RootMcAddress,
+                VramMcBase, &verboseResolved);
+            Bc250DisplayLog("[PT_RANGE %s] FALHA: pagina=%llu VA=0x%llX Perm=0x%X; SDMA NAO SERA TOCADO\n",
+                Label, (unsigned long long)pages,
+                (unsigned long long)pageGpuVa, RequiredPermissions);
+            return FALSE;
+        }
+        if (pages == 0ull && FirstResolvedPhysical != NULL) {
+            *FirstResolvedPhysical = resolved +
+                (BaseGpuVa & BC250_GPUVA_PAGE_MASK);
+        }
+        ++pages;
+        if (pageGpuVa == lastPageGpuVa) break;
+        pageGpuVa += BC250_GPUVA_PAGE_BYTES;
+    }
+
+    Bc250DisplayLog("[PT_RANGE %s] PASS: VA=[0x%llX,0x%llX) Pages=%llu Perm=0x%X\n",
+        Label, (unsigned long long)BaseGpuVa,
+        (unsigned long long)endGpuVa,
+        (unsigned long long)pages, RequiredPermissions);
+    return TRUE;
+}
+
 /* Root installation and MEC publication (called at DISPATCH_LEVEL). Synchronized via SubmissionEngine.Lock. */
 static NTSTATUS Bc250ActivePrepareComputeVmid(
     BC250_DXGK_ACTIVE_CONTEXT *Context,
@@ -7029,6 +7739,7 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
     uint64_t assignedFence = 0ull;
     uint32_t ibSizeDwords;
     NTSTATUS submitStatus;
+    BOOLEAN physicalGpuvaAdmission;
 
     RtlZeroMemory(&gpuvaReader, sizeof(gpuvaReader));
 
@@ -7075,7 +7786,6 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
      * sucesso silencioso sem backend.
      */
     if (pSubmitCommand->NodeOrdinal == BC250_SUBMISSION_NODE_SDMA) {
-        BC250_ACTIVE_FENCE_SYNC sync;
         BC250_MCDM_OBJECT_RECORD submitContextRecord;
         BC250_GPUVA_SNAPSHOT_READER ibReader;
         BC250_MCDM_OBJECT_STATUS ibObjectStatus;
@@ -7084,7 +7794,6 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
         uint32_t ibBackingSegment = 0u;
         uint32_t ibUsefulDwords = 0u;
         BC250_PAGING_PROOF pagingProof = {0};
-        BOOLEAN synchronized = FALSE;
         BOOLEAN ibExecuted = FALSE;
         BOOLEAN ibWalkOk = FALSE;
         BC250_SUBMIT_PATH_INPUT pathInput;
@@ -7092,7 +7801,7 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
         uint64_t destPhysStart = 0ull;
         uint64_t vramMcBase = 0ull;
         BC250_MCDM_RUNTIME_CAPS walkCaps;
-        NTSTATUS syncStatus;
+        uint32_t assignedHwFence = 0u;
 
         RtlZeroMemory(&submitContextRecord, sizeof(submitContextRecord));
         RtlZeroMemory(&ibReader, sizeof(ibReader));
@@ -7176,18 +7885,96 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
             hasRootPt = TRUE;
         }
 
-        Bc250DisplayLog("[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=%p, Proc=%p, hasRoot=%d, targetPtPhys=0x%llX, instCtx=%p, instRoot=0x%llX\n",
+        BOOLEAN isPaging = (pSubmitCommand->Flags.Paging != 0);
+        uint32_t targetVmid = isPaging ? BC250_GCVM_VMID8 : BC250_GCVM_USER_VMID;
+        BC250_MCDM_HANDLE *pInstalledCtx = isPaging ?
+            &context->Vmid8InstalledContext : &context->UserVmidInstalledContext;
+        uint64_t *pInstalledRoot = isPaging ?
+            &context->Vmid8InstalledRootPhysical : &context->UserVmidInstalledRootPhysical;
+        BC250_GCVM_VMID8_STATUS *pInstallStatus = isPaging ?
+            &context->Vmid8InstallStatus : &context->UserVmidInstallStatus;
+        BC250_GCVM_VMID8_INSTALL_EVIDENCE *pInstallEvidence = isPaging ?
+            &context->Vmid8InstallEvidence : &context->UserVmidInstallEvidence;
+
+        Bc250DisplayLog("[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=%p, Proc=%p, hasRoot=%d, targetPtPhys=0x%llX, Vmid=%u, instCtx=%p, instRoot=0x%llX\n",
             pSubmitCommand->hContext, submitContextRecord.OwnerProcess,
-            hasRootPt, (unsigned long long)targetPtPhys,
-            context->Vmid8InstalledContext,
-            (unsigned long long)context->Vmid8InstalledRootPhysical);
+            hasRootPt, (unsigned long long)targetPtPhys, targetVmid,
+            *pInstalledCtx,
+            (unsigned long long)*pInstalledRoot);
 
         if (hasRootPt && targetPtPhys != 0ull &&
             context->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED &&
             walkCaps.Ready != 0u) {
-            if (context->Vmid8InstalledContext != (BC250_MCDM_HANDLE)pSubmitCommand->hContext ||
-                context->Vmid8InstalledRootPhysical != targetPtPhys ||
-                context->Vmid8InstallStatus != BC250_GCVM_VMID8_OK) {
+            if (*pInstalledCtx != (BC250_MCDM_HANDLE)pSubmitCommand->hContext ||
+                *pInstalledRoot != targetPtPhys ||
+                *pInstallStatus != BC250_GCVM_VMID8_OK) {
+
+                /*
+                 * INVARIANTE DE ISOLAMENTO DE VMID:
+                 * Se houver submissões em voo no anel SDMA, tentamos aposentar oportunisticamente.
+                 * Contexto de paginação (VMID 8) e contexto de usuário/DWM (VMID 7) usam
+                 * registradores e identificadores de VMID distintos, de modo que um NUNCA
+                 * sobrescreve o outro.
+                 */
+                if (g_Bc250SdmaPresent.InFlightCount > 0u) {
+                    Bc250ActiveSdmaRetireAndNotify(context, FALSE);
+                }
+
+                if (g_Bc250SdmaPresent.InFlightCount > 0u) {
+                    /*
+                     * Submissão anterior ainda em voo no momento da comutação.
+                     * Registramos telemetria de diagnóstico completa de registradores SDMA.
+                     */
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+                    uint32_t rptrReg = 0u;
+                    uint32_t wptrReg = 0u;
+                    uint32_t statusReg = 0u;
+                    uint32_t status1Reg = 0u;
+                    uint32_t errReg = 0u;
+                    uint32_t ibCntl = 0u;
+                    uint32_t ibRptr = 0u;
+                    uint32_t ibOffset = 0u;
+                    uint32_t ibBaseLo = 0u;
+                    uint32_t ibBaseHi = 0u;
+                    uint32_t ibSize = 0u;
+                    uint32_t ctxStatus = 0u;
+                    uint32_t ibSubRemain = 0u;
+                    uint32_t headSlot = g_Bc250SdmaPresent.InFlightHead;
+                    uint32_t slotFenceOffset = Bc250SdmaAsyncSlotFenceOffset(headSlot);
+                    uint32_t fenceObs = (g_Bc250SdmaPresent.Work != NULL) ?
+                        g_Bc250SdmaPresent.Work[slotFenceOffset / 4u] : 0u;
+                    uint32_t fenceExp = g_Bc250SdmaPresent.InFlightQueue[headSlot].HardwareFence;
+
+                    (void)Bc250ActiveVmidRead32(context, BC250_SDMA0_REG_RB_RPTR, &rptrReg);
+                    (void)Bc250ActiveVmidRead32(context, BC250_SDMA0_REG_RB_WPTR, &wptrReg);
+                    (void)Bc250ActiveVmidRead32(context, BC250_SDMA0_REG_STATUS, &statusReg);
+                    (void)Bc250ActiveVmidRead32(context, BC250_SDMA0_REG_STATUS1, &status1Reg);
+                    (void)Bc250ActiveVmidRead32(context, BC250_SDMA0_REG_ERROR_LOG, &errReg);
+                    (void)Bc250ActiveVmidRead32(context, BC250_SDMA0_GFX_IB_CNTL_OFFSET, &ibCntl);
+                    (void)Bc250ActiveVmidRead32(context, BC250_SDMA0_GFX_IB_RPTR_OFFSET, &ibRptr);
+                    (void)Bc250ActiveVmidRead32(context, BC250_SDMA0_GFX_IB_OFFSET_OFFSET, &ibOffset);
+                    (void)Bc250ActiveVmidRead32(context, BC250_SDMA0_GFX_IB_BASE_LO_OFFSET, &ibBaseLo);
+                    (void)Bc250ActiveVmidRead32(context, BC250_SDMA0_GFX_IB_BASE_HI_OFFSET, &ibBaseHi);
+                    (void)Bc250ActiveVmidRead32(context, BC250_SDMA0_GFX_IB_SIZE_OFFSET, &ibSize);
+                    (void)Bc250ActiveVmidRead32(context, BC250_SDMA0_GFX_CONTEXT_STATUS_OFFSET, &ctxStatus);
+                    (void)Bc250ActiveVmidRead32(context, BC250_SDMA0_GFX_IB_SUB_REMAIN_OFFSET, &ibSubRemain);
+
+                    Bc250DisplayLog("[SubmitVirtual Node0 SDMA] AVISO CONTEXT SWITCH COM IN_FLIGHT: InFlight=%u Slot=%u WPTR=%u RPTR=%u STATUS=%08X (Idle=%u InsideIb=%u) STATUS1=%08X (CeIdle=%u) ERR_LOG=%08X FenceExp=%08X FenceObs=%08X IB_CNTL=%08X IB_RPTR=%u IB_OFFSET=%u IB_BASE=0x%08X%08X IB_SIZE=%u CTX_STATUS=%08X SUB_REMAIN=%u (Ctx %p -> %p Vmid=%u)\n",
+                        g_Bc250SdmaPresent.InFlightCount,
+                        headSlot, wptrReg, rptrReg, statusReg,
+                        (statusReg & 1u), ((statusReg & (1u << 9)) != 0u) ? 1u : 0u,
+                        status1Reg, ((status1Reg & 0x3FFu) == 0x3FFu) ? 1u : 0u,
+                        errReg, fenceExp, fenceObs, ibCntl,
+                        ibRptr, ibOffset, ibBaseHi, ibBaseLo, ibSize, ctxStatus, ibSubRemain,
+                        *pInstalledCtx, pSubmitCommand->hContext, targetVmid);
+#else
+                    Bc250DisplayLog("[SubmitVirtual Node0 SDMA] AVISO CONTEXT SWITCH COM IN_FLIGHT: InFlight=%u (Ctx %p -> %p Vmid=%u)\n",
+                        g_Bc250SdmaPresent.InFlightCount,
+                        *pInstalledCtx, pSubmitCommand->hContext, targetVmid);
+#endif
+                    Bc250ActiveSdmaRetirementEnsureScheduled(context);
+                }
+
                 BC250_GCVM_VMID8_INTERFACE io;
                 BC250_GCVM_VMID8_STATUS vStatus;
 
@@ -7196,31 +7983,35 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
                 io.Context = context;
                 io.Read32 = Bc250ActiveVmidRead32;
                 io.Write32 = Bc250ActiveVmidWrite32;
-                io.Flush = Bc250ActiveFlushVmid8Only;
-
-                RtlZeroMemory(&context->Vmid8InstallEvidence, sizeof(context->Vmid8InstallEvidence));
-                vStatus = Bc250GcvmVmid8Install(targetPtPhys, &io, &context->Vmid8InstallEvidence);
-                context->Vmid8InstallStatus = vStatus;
-                if (vStatus == BC250_GCVM_VMID8_OK) {
-                    HANDLE prevCtx = (HANDLE)context->Vmid8InstalledContext;
-                    context->Vmid8InstalledContext = (BC250_MCDM_HANDLE)pSubmitCommand->hContext;
-                    context->Vmid8InstalledRootPhysical = targetPtPhys;
-                    Bc250DisplayLog("[SubmitVirtual Node0 SDMA] VMID8 CONTEXT SWITCH: Ctx %p -> %p (Root=0x%llX, PT_BASE=0x%llX)\n",
-                        prevCtx, pSubmitCommand->hContext,
-                        (unsigned long long)targetPtPhys,
-                        (unsigned long long)context->Vmid8InstallEvidence.PageTablePhysical);
+                if (isPaging) {
+                    io.Flush = Bc250ActiveFlushVmid8Only;
                 } else {
-                    Bc250DisplayLog("[SubmitVirtual Node0 SDMA] VMID8 CONTEXT SWITCH FALHOU: Ctx=%p, Root=0x%llX, Status=%u\n",
-                        pSubmitCommand->hContext, (unsigned long long)targetPtPhys, (uint32_t)vStatus);
+                    io.Flush = Bc250ActiveFlushUserVmidOnly;
+                }
+
+                RtlZeroMemory(pInstallEvidence, sizeof(*pInstallEvidence));
+                vStatus = Bc250GcvmInstallVmid(targetVmid, targetPtPhys, &io, pInstallEvidence);
+                *pInstallStatus = vStatus;
+                if (vStatus == BC250_GCVM_VMID8_OK) {
+                    HANDLE prevCtx = (HANDLE)*pInstalledCtx;
+                    *pInstalledCtx = (BC250_MCDM_HANDLE)pSubmitCommand->hContext;
+                    *pInstalledRoot = targetPtPhys;
+                    Bc250DisplayLog("[SubmitVirtual Node0 SDMA] VMID%u CONTEXT SWITCH: Ctx %p -> %p (Root=0x%llX, PT_BASE=0x%llX)\n",
+                        targetVmid, prevCtx, pSubmitCommand->hContext,
+                        (unsigned long long)targetPtPhys,
+                        (unsigned long long)pInstallEvidence->PageTablePhysical);
+                } else {
+                    Bc250DisplayLog("[SubmitVirtual Node0 SDMA] VMID%u CONTEXT SWITCH FALHOU: Ctx=%p, Root=0x%llX, Status=%u\n",
+                        targetVmid, pSubmitCommand->hContext, (unsigned long long)targetPtPhys, (uint32_t)vStatus);
                 }
             }
         }
 
-        if (context->Vmid8InstallStatus == BC250_GCVM_VMID8_OK &&
-            context->Vmid8InstallEvidence.PhysicalReady != 0u &&
-            context->Vmid8InstalledContext ==
+        if (*pInstallStatus == BC250_GCVM_VMID8_OK &&
+            pInstallEvidence->PhysicalReady != 0u &&
+            *pInstalledCtx ==
                 (BC250_MCDM_HANDLE)pSubmitCommand->hContext &&
-            context->Vmid8InstalledRootPhysical != 0ull) {
+            *pInstalledRoot != 0ull) {
             /*
              * Fotografia logica da mesma GPUVA que o hardware vai buscar.
              * Nao substitui a caminhada fisica da page table, mas separa
@@ -7258,15 +8049,16 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
                 uint64_t resolved = 0ull;
 
                 Bc250DisplayLog("[PT_WALK] RootMC=0x%llX VramMcBase=0x%llX LocalSegBase=0x%llX Janela=%u bytes\n",
-                    (unsigned long long)context->Vmid8InstalledRootPhysical,
+                    (unsigned long long)*pInstalledRoot,
                     (unsigned long long)vramMcBase,
                     (unsigned long long)walkCaps.LocalSegmentBaseOffset,
                     g_Bc250DisplayState.FrameBufferSize);
 
-                ibWalkOk = Bc250ActiveWalkGpuVa("IB",
+                ibWalkOk = Bc250ActiveValidateGpuVaRange("IB",
                     (uint64_t)pSubmitCommand->DmaBufferVirtualAddress,
-                    context->Vmid8InstalledRootPhysical,
-                    vramMcBase, &resolved);
+                    (uint64_t)pSubmitCommand->DmaBufferSize,
+                    *pInstalledRoot,
+                    vramMcBase, BC250_PTE_READABLE, &resolved);
 
                 /*
                  * O PA que a caminhada resolveu tem de ser o PA onde a CPU
@@ -7283,23 +8075,10 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
                 }
 
                 /*
-                 * Validar o IB nao basta. Na corrida de 05/09 01:12 a GPUVA do
-                 * IB resolveu, a engine buscou o pacote e parou em RPTR=96 --
-                 * dentro do IB -- com o UTCL1_DELTA acordando do lado de
-                 * ESCRITA. Quem escreve sao os CONST_FILL, e o destino deles
-                 * nunca tinha sido caminhado. Conferimos primeira, do meio e
-                 * ultima pagina da faixa publicada pelo encoder.
-                 */
-                /*
-                 * A caminhada do DESTINO NAO depende da caminhada do IB.
-                 *
-                 * O caminho DIRECT FILL nao faz a GPU ler o DMA buffer: nos
-                 * lemos os pacotes e emitimos no anel. Logo ele precisa apenas
-                 * que o DESTINO resolva. Aninhar isto dentro de ibWalkOk fez o
-                 * destino nunca ser caminhado quando a GPUVA do IB falhava --
-                 * e foi o que recusou 8 das 9 submissoes na corrida de 05/09
-                 * 14:19, com VAs 0x20000, 0x10000, 0xAB0000, 0x1560000 e
-                 * 0x2A90000. Nenhuma delas precisava do IB traduzido.
+                 * Validar o IB nao basta. Se for COPY_LINEAR, caminhamos TODAS
+                 * as paginas da origem e do destino. Se for CONST_FILL,
+                 * caminhamos TODAS as paginas do destino. Tres probes eram uma
+                 * amostra, nao um gate de seguranca para faixas grandes.
                  */
                 {
                     UINT64 destStart = pagingProof.Destination;
@@ -7308,27 +8087,27 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
                     if (pagingProof.Bytes == 0u) {
                         Bc250DisplayLog("[PT_WALK] DEST: encoder nao publicou faixa de escrita\n");
                     } else {
-                        uint64_t probes[3];
-                        uint32_t p;
+                        if (pagingProof.Opcode == BC250_PAGING_PROOF_OP_COPY) {
+                            UINT64 srcStart = pagingProof.Source;
+                            UINT64 srcEnd = srcStart + pagingProof.Bytes;
+                            Bc250DisplayLog("[PT_WALK] SRC: faixa de leitura [0x%llX, 0x%llX)\n",
+                                (unsigned long long)srcStart,
+                                (unsigned long long)srcEnd);
+                            if (!Bc250ActiveValidateGpuVaRange("SRC", srcStart,
+                                    pagingProof.Bytes, *pInstalledRoot,
+                                    vramMcBase, BC250_PTE_READABLE, NULL)) {
+                                ibWalkOk = FALSE;
+                            }
+                        }
 
                         Bc250DisplayLog("[PT_WALK] DEST: faixa de escrita [0x%llX, 0x%llX)\n",
                             (unsigned long long)destStart,
                             (unsigned long long)destEnd);
-                        probes[0] = destStart;
-                        probes[1] = destStart + ((destEnd - destStart) / 2ull);
-                        probes[2] = destEnd - 1ull;
-                        for (p = 0u; p < 3u; ++p) {
-                            uint64_t destResolved = 0ull;
-                            if (!Bc250ActiveWalkGpuVa("DEST",
-                                    probes[p] & ~0xFFFull,
-                                    context->Vmid8InstalledRootPhysical,
-                                    vramMcBase, &destResolved)) {
-                                ibWalkOk = FALSE;
-                                Bc250DisplayLog("[PT_WALK] DEST: pagina 0x%llX NAO resolve\n",
-                                    (unsigned long long)(probes[p] & ~0xFFFull));
-                            } else if (p == 0u) {
-                                destPhysStart = destResolved + (probes[0] & 0xFFFull);
-                            }
+                        if (!Bc250ActiveValidateGpuVaRange("DEST", destStart,
+                                pagingProof.Bytes, *pInstalledRoot,
+                                vramMcBase, BC250_PTE_WRITEABLE,
+                                &destPhysStart)) {
+                            ibWalkOk = FALSE;
                         }
                     }
                 }
@@ -7338,7 +8117,7 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
                 UINT64 fillDestVa = pagingProof.Destination;
                 ULONG fillBytes = pagingProof.Bytes;
                 ULONG fillPattern = pagingProof.Pattern;
-                BOOLEAN hasFill = (pagingProof.Bytes != 0u);
+                BOOLEAN hasFill = (pagingProof.Opcode == BC250_PAGING_PROOF_OP_FILL && pagingProof.Bytes != 0u);
 
                 ibUsefulDwords = pSubmitCommand->DmaBufferSize / (uint32_t)sizeof(uint32_t);
 
@@ -7377,6 +8156,15 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
                     pathInput.IbGpuVaResolves,
                     pathInput.PlanoAFallbackEnabled);
 
+                Bc250ActiveSdmaRetirementTimerStart(context);
+
+                Bc250ActiveSdmaRetireAndNotify(context, FALSE);
+
+                if (g_Bc250SdmaPresent.InFlightCount >= BC250_SDMA_IN_FLIGHT_CAPACITY) {
+                    Bc250DisplayLog("[SubmitVirtual Node0 SDMA] AVISO: InFlightQueue cheia (%u submissoes em voo)\n",
+                        g_Bc250SdmaPresent.InFlightCount);
+                }
+
                 if (execPath == BC250_SUBMIT_PATH_RING_DIRECT_FILL) {
                     uint64_t sdmaMcBase = (g_Bc250SdmaPresent.VramMcStart != 0ull) ?
                         g_Bc250SdmaPresent.VramMcStart : BC250_SDMA_VRAM_MC_BASE;
@@ -7390,32 +8178,23 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
                         (unsigned long long)destPhysStart,
                         (unsigned long long)destMcAddress,
                         fillBytes, fillPattern);
-                    ibExecuted = Bc250SdmaPresentFill(destMcAddress, fillBytes, fillPattern);
+                    ibExecuted = Bc250SdmaPresentSubmitFillAsync(
+                        destMcAddress,
+                        fillBytes,
+                        fillPattern,
+                        pSubmitCommand->SubmissionFenceId,
+                        (uint64_t)pSubmitCommand->DmaBufferVirtualAddress,
+                        &assignedHwFence);
                     Bc250PagingClearFillParams();
                 } else if (execPath == BC250_SUBMIT_PATH_RING_SYNC_NOP) {
-                    /*
-                     * Buffers de 4 bytes sao comandos de sincronizacao/NOP do DWM ou VidSch.
-                     * Executamos diretamente no anel com NOP fisico, GCR flush e fence na VRAM
-                     * (Tripé no silício), garantindo conclusao deterministica no silicio.
-                     */
                     Bc250DisplayLog("[SubmitVirtual Node0 SDMA] PLANO A SYNC NOP: DmaVA=0x%llX (substituindo INDIRECT)\n",
                         (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress);
-                    ibExecuted = Bc250SdmaPresentSyncNop();
+                    ibExecuted = Bc250SdmaPresentSubmitSyncNopAsync(
+                        pSubmitCommand->SubmissionFenceId,
+                        (uint64_t)pSubmitCommand->DmaBufferVirtualAddress,
+                        &assignedHwFence);
                 } else if (execPath == BC250_SUBMIT_PATH_INDIRECT) {
-                    /*
-                     * Caminho INDIRECT: aqui sim a GPU busca o DMA buffer pela
-                     * GPUVA, entao a caminhada do IB e pre-requisito.
-                     */
                     uint32_t alignedDwords = ibUsefulDwords;
-                    /*
-                     * A14: o EFEITO DECLARADO do IB, para que a perna 3 do
-                     * tripe exista. Os dois vem do MESMO encoder que montou
-                     * este DMA buffer -- Bc250PagingPeekIbDestRange deu a faixa
-                     * de escrita que caminhamos, e PeekFillParams da o padrao.
-                     * Sem destino resolvido nao ha o que conferir, e o executor
-                     * declara PERNA DE DADOS NAO CONFERIDA em vez de dizer
-                     * TRIPE.
-                     */
                     uint64_t effectDestMc = 0ull;
                     ULONG effectBytes = 0u;
                     uint32_t effectPattern = 0u;
@@ -7446,37 +8225,35 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
                             (unsigned long long)destPhysStart,
                             fillBytes);
                     }
-                    ibExecuted = Bc250SdmaPresentExecuteIndirect(
+                    ibExecuted = Bc250SdmaPresentSubmitIndirectAsync(
                         (uint64_t)pSubmitCommand->DmaBufferVirtualAddress,
                         pSubmitCommand->DmaBufferSize,
                         alignedDwords,
-                        BC250_GCVM_VMID8,
+                        targetVmid,
                         effectDestMc,
                         effectBytes,
-                        effectPattern);
+                        effectPattern,
+                        pSubmitCommand->SubmissionFenceId,
+                        (uint32_t)execPath,
+                        &assignedHwFence);
                     if (ibExecuted && effectBytes > 0u) {
-                        /*
-                         * Consumido: sob IndirectOnly quem realiza o fill e' o
-                         * proprio IB. Deixar os parametros pendentes fazia o
-                         * mesmo efeito ser reatribuido a submissoes seguintes --
-                         * foi o que imprimiu Fill=1/11075584 identico nas 14
-                         * linhas CAMINHO_ESCOLHIDO da corrida 17:13.
-                         */
                         Bc250PagingClearFillParams();
                     }
                 } else {
-                    Bc250DisplayLog("[SubmitVirtual Node0 SDMA] RECUSA (%s): sem caminho aplicavel -- a GPUVA do IB (0x%llX) nao resolve sob VMID8; silicio nao tocado\n",
+                    Bc250DisplayLog("[SubmitVirtual Node0 SDMA] RECUSA (%s): sem caminho aplicavel -- a GPUVA do IB (0x%llX) nao resolve sob VMID%u; silicio nao tocado\n",
                         Bc250SubmitPathName(execPath),
-                        (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress);
+                        (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress,
+                        targetVmid);
                 }
             }
         } else {
-            Bc250DisplayLog("[SubmitVirtual Node0 SDMA] REJECT VMID8 binding: SubmitCtx=%p InstalledCtx=%p Status=%u PhysReady=%u Root=0x%llX\n",
+            Bc250DisplayLog("[SubmitVirtual Node0 SDMA] REJECT VMID%u binding: SubmitCtx=%p InstalledCtx=%p Status=%u PhysReady=%u Root=0x%llX\n",
+                targetVmid,
                 pSubmitCommand->hContext,
-                context->Vmid8InstalledContext,
-                (uint32_t)context->Vmid8InstallStatus,
-                context->Vmid8InstallEvidence.PhysicalReady,
-                (unsigned long long)context->Vmid8InstalledRootPhysical);
+                *pInstalledCtx,
+                (uint32_t)*pInstallStatus,
+                pInstallEvidence->PhysicalReady,
+                (unsigned long long)*pInstalledRoot);
         }
         if (!ibExecuted) {
             uint32_t faultStatus = 0u;
@@ -7524,57 +8301,60 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
             return STATUS_IO_DEVICE_ERROR;
         }
 
-        RtlZeroMemory(&sync, sizeof(sync));
-        sync.Context = context;
-        sync.Operation = BC250_ACTIVE_FENCE_SYNC_NOTIFY_SDMA;
-        sync.SubmissionFenceId = (uint32_t)pSubmitCommand->SubmissionFenceId;
-        sync.NodeOrdinal = pSubmitCommand->NodeOrdinal;
-        sync.EngineOrdinal = pSubmitCommand->EngineOrdinal;
+        /*
+         * Despacho assincrono: agenda DPC de retirement do SDMA. O hardware
+         * processa em paralelo sem prender a CPU em DISPATCH_LEVEL.
+         */
+        KeInsertQueueDpc(&context->SdmaRetirementDpc, NULL, NULL);
 
-        syncStatus = context->Core.DxgkInterface.DxgkCbSynchronizeExecution(
-            context->Core.DxgkInterface.DeviceHandle,
-            Bc250ActiveSynchronizedFenceCallback,
-            &sync,
-            0,
-            &synchronized);
-
-        if (!NT_SUCCESS(syncStatus) || !synchronized || sync.Notified == 0u) {
-            Bc250DisplayLog("[SubmitVirtual Node0 SDMA] SynchronizeExecution failed: status=0x%08X, sync=%d, notif=%u\n",
-                syncStatus, synchronized ? 1 : 0, sync.Notified);
-            return STATUS_DEVICE_NOT_READY;
+        /*
+         * Retirement oportunista de baixissima latencia (sem stall / sem YieldProcessor):
+         * Se a submissao completou imediatamente, aposenta e notifica de forma nao-bloqueante.
+         */
+        if (g_Bc250SdmaPresent.InFlightCount > 0u && g_Bc250SdmaPresent.Work != NULL) {
+            uint32_t headSlot = g_Bc250SdmaPresent.InFlightHead;
+            uint32_t headHwFence = g_Bc250SdmaPresent.InFlightQueue[headSlot].HardwareFence;
+            uint32_t slotFenceOffset = Bc250SdmaAsyncSlotFenceOffset(headSlot);
+            if (g_Bc250SdmaPresent.Work[slotFenceOffset / 4u] == headHwFence) {
+                Bc250ActiveSdmaRetireAndNotify(context, FALSE);
+            }
         }
 
-        if (context->Core.DxgkInterface.DxgkCbNotifyDpc != NULL) {
-            context->Core.DxgkInterface.DxgkCbNotifyDpc(
-                context->Core.DxgkInterface.DeviceHandle);
-        }
+        Bc250ActiveSdmaRetirementEnsureScheduled(context);
 
         InterlockedIncrement((volatile LONG *)&context->SubmissionsCount);
-        /*
-         * A13 (07/09) -- CORRECAO DE FALSO SUCESSO. A frase de execucao de IB
-         * saia nos TRES ramos. Na corrida 16:19 ela apareceu 14 vezes, e as 14
-         * foram PLANO A (2 fill + 12 sync nop): a GPU nao leu nenhum DMA
-         * buffer. Agora somente o ramo INDIRECT tem direito a ela; os PLANO A
-         * dizem o que sao.
-         */
-        if (Bc250SubmitPathExecutesDmaBuffer(execPath) != 0u) {
-            Bc250DisplayLog("[SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de %u bytes em VA=0x%llX; DMA_COMPLETED notificado para FenceId=%llu\n",
-                pSubmitCommand->DmaBufferSize,
-                (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress,
-                (unsigned long long)pSubmitCommand->SubmissionFenceId);
-        } else {
-            Bc250DisplayLog("[SubmitVirtual Node0 SDMA] PLANO A CONCLUIDO (%s): operacao REIMPLEMENTADA no anel; o DMA buffer de %u bytes em VA=0x%llX NAO foi lido pela GPU. Isto NAO e execucao de IB. DMA_COMPLETED notificado para FenceId=%llu\n",
-                Bc250SubmitPathName(execPath),
-                pSubmitCommand->DmaBufferSize,
-                (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress,
-                (unsigned long long)pSubmitCommand->SubmissionFenceId);
-        }
+
+        Bc250DisplayLog("[SubmitVirtual Node0 SDMA] SUBMISSAO DESPACHADA (ASYNC %s): HwFence=%u FenceId=%llu DmaBytes=%u; DPC agendado\n",
+            Bc250SubmitPathName(execPath),
+            assignedHwFence,
+            (unsigned long long)pSubmitCommand->SubmissionFenceId,
+            pSubmitCommand->DmaBufferSize);
+
         return STATUS_SUCCESS;
     }
 
-    /* O gate só é aberto por critério explícito após validação integrada. */
+    /*
+     * C3.17 (12/09) -- a page table fisica e' a fonte de verdade do submit.
+     *
+     * A corrida 19:27 mediu o primeiro IB do RADV executando no MEC e, antes
+     * do segundo, o publicador do espelho logico encontrou o slot inativo
+     * ainda fixado pela fence anterior (PublishStatus=BUSY, Attempts=16,
+     * Busy=16). Depois a mesma corrida mediu sete NO_SPACE com 853--879
+     * intervalos vivos. Portanto nem esperar mais nem aumentar novamente o
+     * array torna esse espelho uma condicao de correcao do hardware.
+     *
+     * O modo de laboratorio continua explicitamente armado por
+     * GpuvaLabPromotion. Nele, a admissao final acontece abaixo caminhando
+     * TODAS as paginas do IB na root do proprio contexto, imediatamente antes
+     * de publicar o descriptor. Fora do laboratorio, o gate antigo permanece
+     * fail-closed.
+     */
+    physicalGpuvaAdmission =
+        (context->GpuvaLabPromotionPresent == 1u &&
+         context->GpuvaLabPromotion == 1u) ? TRUE : FALSE;
     if (InterlockedCompareExchange(
-            &context->GpuvaMappingsOperational, 1, 1) != 1) {
+            &context->GpuvaMappingsOperational, 1, 1) != 1 &&
+        !physicalGpuvaAdmission) {
         /*
          * B4 (07/09) -- ESTA RECUSA ERA MUDA. Toda submissao de Node 1 saia
          * daqui com STATUS_NOT_SUPPORTED e ZERO linhas no log; nas corridas o
@@ -7603,7 +8383,26 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
             context->GpuvaLabPromotionPresent,
             (unsigned long long)pSubmitCommand->SubmissionFenceId,
             pSubmitCommand->DmaBufferSize);
+        /*
+         * C3.9a: quem segura o journal. "JOURNAL=1" sozinho nao distinguia
+         * pendencia propria de pendencia do dwm.exe -- e na corrida 13:29 era
+         * do dwm.exe, que ficou vivo 3 min 13 s e nunca deixou o journal drenar.
+         */
+        Bc250DisplayLog("[SubmitVirtual Node%u] JOURNAL_PENDENTE: SlotMask=0x%08X Count=%u GatePerProcess=%u (present=%u)\n",
+            (uint32_t)pSubmitCommand->NodeOrdinal,
+            context->GpuvaJournalPendingSlotMask,
+            context->GpuvaJournalPendingCount,
+            context->Node1JournalGatePerProcess,
+            context->Node1JournalGatePerProcessPresent);
         return STATUS_NOT_SUPPORTED;
+    }
+
+    if (InterlockedCompareExchange(
+            &context->GpuvaMappingsOperational, 1, 1) != 1) {
+        Bc250DisplayLog("[SubmitVirtual Node%u] SNAPSHOT LOGICO INDISPONIVEL: seguindo para gate fisico integral da page table (LabPromotion=%u/%u)\n",
+            (uint32_t)pSubmitCommand->NodeOrdinal,
+            context->GpuvaLabPromotionPresent,
+            context->GpuvaLabPromotion);
     }
 
     Bc250DisplayLog("[SubmitVirtual Node%u] GATE ABERTO: GpuvaMappingsOperational=1; publicando IB de %u bytes em VA=0x%llX no anel persistente MEC (FenceId=%llu)\n",
@@ -7630,48 +8429,71 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
         return Bc250ObjectStatusToNtStatus(objStatus);
     }
 
-    /* 3. Fixar o snapshot publicado durante toda a publicacao do IB. */
+    /*
+     * 3. O snapshot logico e' somente diagnostico. Ele nao protege a page
+     * table fisica: UpdatePageTable grava as PTEs antes de tentar publica-lo.
+     * Segura-lo ate a fence retirar bloqueava o publicador sem acrescentar
+     * qualquer garantia ao silicio. A leitura, quando disponivel, termina aqui.
+     */
     vaStatus = Bc250GpuvaSnapshotAcquire(
         &context->GpuvaSnapshots, &gpuvaReader);
-    if (vaStatus != BC250_GPUVA_OK) {
-        Bc250DisplayLog("[SubmitVirtual Node%u] RECUSA: Bc250GpuvaSnapshotAcquire falhou (vaStatus=%u)\n",
-            (uint32_t)pSubmitCommand->NodeOrdinal, (uint32_t)vaStatus);
-        Bc250McdmContextReleaseSubmissionView(&context->Objects,
-            (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
-        return vaStatus == BC250_GPUVA_BUSY ?
-            STATUS_GRAPHICS_ALLOCATION_BUSY : STATUS_DEVICE_NOT_READY;
-    }
-
-    /* 4. Validar cobertura integral sem gaps no mesmo snapshot imutavel. */
-    vaStatus = Bc250GpuvaSpaceValidateRangeCoverage(
-        gpuvaReader.Space,
-        contextView.OwnerProcess,
-        contextView.ContextHandle,
-        (uint64_t)pSubmitCommand->DmaBufferVirtualAddress,
-        (uint64_t)pSubmitCommand->DmaBufferSize,
-        BC250_PTE_READABLE,
-        gpuvaReader.Space->PageTableEpoch);
-    if (vaStatus != BC250_GPUVA_OK) {
-        Bc250DisplayLog("[SubmitVirtual Node%u] RECUSA: Bc250GpuvaSpaceValidateRangeCoverage falhou (vaStatus=%u VA=0x%llX Size=%u)\n",
+    if (vaStatus == BC250_GPUVA_OK) {
+        vaStatus = Bc250GpuvaSpaceValidateRangeCoverage(
+            gpuvaReader.Space,
+            contextView.OwnerProcess,
+            contextView.ContextHandle,
+            (uint64_t)pSubmitCommand->DmaBufferVirtualAddress,
+            (uint64_t)pSubmitCommand->DmaBufferSize,
+            BC250_PTE_READABLE,
+            gpuvaReader.Space->PageTableEpoch);
+        Bc250DisplayLog("[SubmitVirtual Node%u] SNAPSHOT_DIAGNOSTICO: vaStatus=%u VA=0x%llX Size=%u Generation=%u\n",
             (uint32_t)pSubmitCommand->NodeOrdinal, (uint32_t)vaStatus,
             (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress,
-            pSubmitCommand->DmaBufferSize);
+            pSubmitCommand->DmaBufferSize,
+            gpuvaReader.PublicationGeneration);
         Bc250GpuvaSnapshotRelease(&context->GpuvaSnapshots, &gpuvaReader);
-        Bc250McdmContextReleaseSubmissionView(&context->Objects,
-            (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
-        if (vaStatus == BC250_GPUVA_PERMISSION_DENIED) {
-            return STATUS_ACCESS_VIOLATION;
-        } else if (vaStatus == BC250_GPUVA_RANGE_OVERFLOW ||
-                   vaStatus == BC250_GPUVA_OUT_OF_BOUNDS) {
-            return STATUS_INTEGER_OVERFLOW;
-        } else if (vaStatus == BC250_GPUVA_MISALIGNED) {
-            return STATUS_DATATYPE_MISALIGNMENT;
-        } else if (vaStatus == BC250_GPUVA_IN_TEARDOWN ||
-                   vaStatus == BC250_GPUVA_NOT_RESIDENT ||
-                   vaStatus == BC250_GPUVA_STALE_EPOCH) {
+    } else {
+        Bc250DisplayLog("[SubmitVirtual Node%u] SNAPSHOT_DIAGNOSTICO INDISPONIVEL: vaStatus=%u; decisao pertence ao gate fisico\n",
+            (uint32_t)pSubmitCommand->NodeOrdinal, (uint32_t)vaStatus);
+    }
+
+    /* 4. Gate autoritativo: validar TODAS as paginas na root deste contexto. */
+    {
+        BC250_MCDM_RUNTIME_CAPS physicalCaps;
+        uint64_t physicalRoot = 0ull;
+        uint64_t firstPhysical = 0ull;
+
+        RtlZeroMemory(&physicalCaps, sizeof(physicalCaps));
+        submitStatus = Bc250ActiveQueryRuntimeCaps(context, &physicalCaps);
+        if (NT_SUCCESS(submitStatus) && physicalCaps.Ready != 0u &&
+            contextView.RootPageTableSegmentId == 1u &&
+            contextView.RootPageTableEntries > 0u) {
+            physicalRoot = physicalCaps.VramMcBase +
+                physicalCaps.LocalSegmentBaseOffset +
+                contextView.RootPageTableAddress;
+        }
+        if (physicalRoot == 0ull ||
+            !Bc250ActiveValidateGpuVaRange("NODE1_IB",
+                (uint64_t)pSubmitCommand->DmaBufferVirtualAddress,
+                (uint64_t)pSubmitCommand->DmaBufferSize,
+                physicalRoot, physicalCaps.VramMcBase,
+                BC250_PTE_READABLE, &firstPhysical)) {
+            Bc250DisplayLog("[SubmitVirtual Node%u] RECUSA: gate fisico integral falhou Root=0x%llX VA=0x%llX Size=%u; silicio nao tocado\n",
+                (uint32_t)pSubmitCommand->NodeOrdinal,
+                (unsigned long long)physicalRoot,
+                (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress,
+                pSubmitCommand->DmaBufferSize);
+            Bc250McdmContextReleaseSubmissionView(&context->Objects,
+                (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
             return STATUS_DEVICE_NOT_READY;
         }
-        return STATUS_INVALID_PARAMETER;
+        Bc250DisplayLog("[SubmitVirtual Node%u] GATE FISICO PASS: Root=0x%llX VA=[0x%llX,0x%llX) FirstPA=0x%llX\n",
+            (uint32_t)pSubmitCommand->NodeOrdinal,
+            (unsigned long long)physicalRoot,
+            (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress,
+            (unsigned long long)((uint64_t)pSubmitCommand->DmaBufferVirtualAddress +
+                pSubmitCommand->DmaBufferSize),
+            (unsigned long long)firstPhysical);
     }
 
     /* 5. Reservar slot no rastreador de fences WDDM antes de tocar no anel */
@@ -7691,8 +8513,7 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
     reserveSync.SubmissionFenceId = pSubmitCommand->SubmissionFenceId;
     reserveSync.NodeOrdinal = pSubmitCommand->NodeOrdinal;
     reserveSync.EngineOrdinal = pSubmitCommand->EngineOrdinal;
-    reserveSync.GpuvaSlot = gpuvaReader.Slot;
-    reserveSync.GpuvaGeneration = gpuvaReader.PublicationGeneration;
+    reserveSync.GpuvaPinValid = FALSE;
 
     submitStatus = context->Core.DxgkInterface.DxgkCbSynchronizeExecution(
         context->Core.DxgkInterface.DeviceHandle,
@@ -7875,9 +8696,7 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
                 (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
             return STATUS_DEVICE_DATA_ERROR;
         }
-        /* A referência passa a pertencer à entrada da fence até o drain. */
-        gpuvaReader.Space = NULL;
-        gpuvaReader.Acquired = 0u;
+        /* O snapshot diagnostico ja foi liberado antes do gate fisico. */
     }
 
     /* 8. Iniciar retirada e liberar as duas referencias imutaveis. */
@@ -7899,6 +8718,7 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
         (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress,
         pSubmitCommand->DmaBufferSize);
     InterlockedIncrement((volatile LONG *)&context->SubmissionsCount);
+    Bc250SubmissionEngineRecordTelemetry(context);
     return STATUS_SUCCESS;
 }
 
@@ -8009,16 +8829,50 @@ NTSTATUS Bc250ActiveCurrentFenceProvider(
 
 /* Calcula prontidão do candidato, mas não autoriza produção. ObjectLock held. */
 static LONG Bc250ActiveEvaluateGpuvaActivationEligibility(
-    BC250_DXGK_ACTIVE_CONTEXT *active)
+    BC250_DXGK_ACTIVE_CONTEXT *active,
+    BC250_MCDM_HANDLE Process)
 {
     LONG slot;
     const BC250_GPUVA_SPACE *space = NULL;
     uint32_t blocked = 0u;
 
     if (active == NULL) return 0;
-    if (Bc250GpuvaJournalSetAnyPending(active->GpuvaJournals,
-            BC250_ACTIVE_GPUVA_JOURNAL_SLOTS) != 0u)
+    /*
+     * C3.9a: telemetria pura -- QUAIS slots estao pendentes, e quantos. Antes o
+     * log dizia apenas "JOURNAL=1", o que nao distinguia "o meu processo esta
+     * paginando" de "o dwm.exe esta paginando". Nao decide nada.
+     */
+    (void)Bc250GpuvaJournalSetDescribePending(active->GpuvaJournals,
+        BC250_ACTIVE_GPUVA_JOURNAL_SLOTS,
+        &active->GpuvaJournalPendingSlotMask,
+        &active->GpuvaJournalPendingCount);
+    /*
+     * C3.9b: granularidade do bloqueio.
+     *
+     * Default (tunable em 0): condicao GLOBAL -- qualquer slot pendente fecha o
+     * gate. E' o comportamento medido na corrida 13:29, em que o dwm.exe vivo
+     * manteve o journal ocupado por 3 min 13 s e o compute do RADV nunca pode
+     * submeter.
+     *
+     * Armado (tunable em 1) e com processo conhecido: bloqueia apenas se o
+     * PROCESSO QUE ESTA FLUSHANDO tiver pendencia propria. Cada slot ja carrega
+     * Journal.Process, entao a vista por processo nao inventa dado nenhum.
+     *
+     * RELAXAMENTO DECLARADO, NAO VALIDADO EM HARDWARE: se a pendencia de OUTRO
+     * processo puder afetar a traducao deste, esta troca e' insegura. O
+     * argumento a favor e' que as raizes de page table sao por processo; o
+     * argumento nao e' prova. Por isso e' fail-closed por default.
+     */
+    if (active->Node1JournalGatePerProcessPresent == 1u &&
+        active->Node1JournalGatePerProcess == 1u &&
+        Process != NULL) {
+        if (Bc250GpuvaJournalSetAnyPendingForProcess(active->GpuvaJournals,
+                BC250_ACTIVE_GPUVA_JOURNAL_SLOTS, Process) != 0u)
+            blocked |= BC250_GPUVA_GATE_BLOCK_JOURNAL_PENDING;
+    } else if (Bc250GpuvaJournalSetAnyPending(active->GpuvaJournals,
+            BC250_ACTIVE_GPUVA_JOURNAL_SLOTS) != 0u) {
         blocked |= BC250_GPUVA_GATE_BLOCK_JOURNAL_PENDING;
+    }
     if (active->GpuvaHierarchyPending != 0u)
         blocked |= BC250_GPUVA_GATE_BLOCK_HIERARCHY_PENDING;
     if (InterlockedCompareExchange(&active->IsActive, 1, 1) != 1)
@@ -8186,7 +9040,8 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
         active->GpuvaHierarchyRootPageTable = 0u;
         active->GpuvaHierarchyHighestLevel = 0u;
         InterlockedExchange(&active->GpuvaActivationEligible,
-            Bc250ActiveEvaluateGpuvaActivationEligibility(active));
+            Bc250ActiveEvaluateGpuvaActivationEligibility(active,
+                (BC250_MCDM_HANDLE)pFlushTlb->hProcess));
         if (active->GpuvaLabPromotionPresent == 1u &&
             active->GpuvaLabPromotion == 1u &&
             InterlockedCompareExchange(
@@ -8199,7 +9054,8 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
         }
     } else {
         InterlockedExchange(&active->GpuvaActivationEligible,
-            Bc250ActiveEvaluateGpuvaActivationEligibility(active));
+            Bc250ActiveEvaluateGpuvaActivationEligibility(active,
+                (BC250_MCDM_HANDLE)pFlushTlb->hProcess));
     }
     telemetryEligible = (ULONG)InterlockedCompareExchange(
         &active->GpuvaActivationEligible, 0, 0);
@@ -8218,8 +9074,55 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
         Bc250ActiveRecordGpuvaGateTelemetry(telemetryEligible,
             telemetryOperational, telemetryBlocked, telemetryGeneration,
             telemetryEpoch, telemetryLiveCount);
-        Bc250DisplayLog("[ActiveFlushTlb] Journal status=0x%08X after HW GFXHUB flush -> STATUS_IO_DEVICE_ERROR\n",
-            journalStatus);
+        /*
+         * C3.8 (12/09): "Journal status=7" colapsava DUAS causas -- contencao
+         * transitoria com o leitor do snapshot (BUSY) e erro real de
+         * substituicao de faixa. Sem separar, nao havia como dizer se retentar
+         * resolve. Os tres campos abaixo vem do Store e nomeiam a causa.
+         */
+        /*
+         * C3.12 (12/09): ocupacao por estado no momento da falha.
+         *
+         * PublishStatus=3 e BC250_GPUVA_NO_SPACE -- a publicacao falha por
+         * exaustao do teto antigo de 256 slots, medido na
+         * corrida 16:31 com Attempts=1 Busy=0 (o publicador nunca foi
+         * bloqueado; a hipotese de contencao da C3.8 esta REFUTADA).
+         *
+         * O numero sozinho nao diz se sao 256 faixas legitimamente em uso ou
+         * slots presos em TEARDOWN e nunca reciclados -- Bc250GpuvaSpaceInsertRange
+         * so reaproveita FREE e UNMAPPED. Reusable espelha esse criterio: se
+         * vier 0 com Teardown alto, o defeito e reciclagem, nao tamanho, e
+         * aumentar o limite apenas mascararia.
+         *
+         * Leitura pura sobre o slot ativo, fora do pushlock (liberado acima).
+         */
+        {
+            BC250_GPUVA_SPACE_OCCUPANCY occupancy = { 0, 0, 0, 0, 0, 0, 0 };
+            /*
+             * C3.12: leitura PURA. A versao anterior amostrava com
+             * InterlockedCompareExchange(&ActiveSlot, 0, 0), que no x86 executa
+             * "lock cmpxchg" e portanto uma ESCRITA TRAVADA mesmo sem trocar
+             * valor. Telemetria nao pode usar read-modify-write sobre um campo
+             * cujo dono e outra thread. O campo e volatile long; ler basta.
+             */
+            LONG occSlot = active->GpuvaSnapshots.ActiveSlot;
+            BC250_GPUVA_STATUS occStatus = BC250_GPUVA_BAD_ARGUMENT;
+            occupancy.Capacity = BC250_GPUVA_SPACE_MAX_RANGES;
+            if (occSlot >= 0 && occSlot <= 1) {
+                occStatus = Bc250GpuvaSpaceDescribeOccupancy(
+                    &active->GpuvaSnapshots.Slots[occSlot], &occupancy);
+            }
+            Bc250DisplayLog("[ActiveFlushTlb] Journal status=0x%08X after HW GFXHUB flush -> STATUS_IO_DEVICE_ERROR "
+                "(PublishStatus=%ld Attempts=%ld Busy=%ld)\n",
+                journalStatus,
+                active->GpuvaSnapshots.LastPublishStatus,
+                active->GpuvaSnapshots.LastPublishAttempts,
+                active->GpuvaSnapshots.LastPublishBusyCount);
+            Bc250DisplayLog("[ActiveFlushTlb] OCUPACAO slot=%ld st=%u Cap=%u Mapped=%u Teardown=%u Reusable=%u Live=%u\n",
+                occSlot, (uint32_t)occStatus,
+                occupancy.Capacity, occupancy.Mapped,
+                occupancy.Teardown, occupancy.Reusable, occupancy.LiveCount);
+        }
         return STATUS_IO_DEVICE_ERROR;
     }
     /* GpuvaMappingsOperational permanece zero até o ensaio integrado. */
@@ -8242,8 +9145,7 @@ static BOOLEAN Bc250ActiveResolveDisplayGpuVa(
 
     if (PhysicalAddress != NULL) *PhysicalAddress = 0ull;
     if (SegmentId != NULL) *SegmentId = 0u;
-    if (ContextHandle == NULL || GpuVa == 0ull ||
-        PhysicalAddress == NULL || SegmentId == NULL) {
+    if (GpuVa == 0ull || PhysicalAddress == NULL || SegmentId == NULL) {
         return FALSE;
     }
 
@@ -8255,21 +9157,29 @@ static BOOLEAN Bc250ActiveResolveDisplayGpuVa(
         BC250_MCDM_OBJECT_STATUS objectStatus;
         BC250_GPUVA_SNAPSHOT_READER reader;
         BC250_GPUVA_STATUS resolveStatus;
+        BC250_MCDM_HANDLE ownerProcess = NULL;
 
         if (active == NULL || active->Signature != BC250_ACTIVE_SIGNATURE ||
             InterlockedCompareExchange(&active->IsActive, 1, 1) != 1) {
             continue;
         }
 
-        ExAcquirePushLockExclusive(&active->ObjectLock);
-        objectStatus = Bc250McdmObjectLookup(&active->Objects,
-            (BC250_MCDM_HANDLE)ContextHandle, BC250_MCDM_OBJECT_CONTEXT,
-            NULL, &contextRecord);
-        ExReleasePushLockExclusive(&active->ObjectLock);
-        if (objectStatus != BC250_MCDM_OBJECT_OK) {
-            Bc250DisplayLog("[ResolveGpuVa] Ctx=%p lookup failed: status=%u\n",
-                ContextHandle, (UINT32)objectStatus);
-            continue;
+        if (ContextHandle != NULL) {
+            ExAcquirePushLockExclusive(&active->ObjectLock);
+            objectStatus = Bc250McdmObjectLookup(&active->Objects,
+                (BC250_MCDM_HANDLE)ContextHandle, BC250_MCDM_OBJECT_NONE,
+                NULL, &contextRecord);
+            ExReleasePushLockExclusive(&active->ObjectLock);
+            if (objectStatus == BC250_MCDM_OBJECT_OK) {
+                if (contextRecord.Type == (uint32_t)BC250_MCDM_OBJECT_PROCESS) {
+                    ownerProcess = (BC250_MCDM_HANDLE)ContextHandle;
+                } else {
+                    ownerProcess = contextRecord.OwnerProcess;
+                }
+            } else {
+                Bc250DisplayLog("[ResolveGpuVa] Handle=%p lookup status=%u\n",
+                    ContextHandle, (UINT32)objectStatus);
+            }
         }
 
         RtlZeroMemory(&reader, sizeof(reader));
@@ -8280,19 +9190,48 @@ static BOOLEAN Bc250ActiveResolveDisplayGpuVa(
                 (UINT32)resolveStatus);
             break;
         }
-        resolveStatus = Bc250GpuvaSpaceResolveAddress(reader.Space,
-            contextRecord.OwnerProcess, GpuVa, BC250_PTE_READABLE,
-            SegmentId, PhysicalAddress);
-        Bc250GpuvaSnapshotRelease(&active->GpuvaSnapshots, &reader);
-        if (resolveStatus == BC250_GPUVA_OK) {
-            resolved = TRUE;
-            Bc250DisplayLog("[ResolveGpuVa] SUCCESS: Ctx=%p Proc=%p VA=0x%llX -> Phys=0x%llX Seg=%u\n",
-                ContextHandle, contextRecord.OwnerProcess, GpuVa, *PhysicalAddress, *SegmentId);
-        } else {
-            Bc250DisplayLog("[ResolveGpuVa] SpaceResolveAddress failed: status=%u (Proc=%p VA=0x%llX)\n",
-                (UINT32)resolveStatus, contextRecord.OwnerProcess, GpuVa);
+
+        if (ownerProcess != NULL) {
+            resolveStatus = Bc250GpuvaSpaceResolveAddress(reader.Space,
+                ownerProcess, GpuVa, BC250_PTE_READABLE,
+                SegmentId, PhysicalAddress);
+            if (resolveStatus == BC250_GPUVA_OK) {
+                resolved = TRUE;
+                Bc250DisplayLog("[ResolveGpuVa] SUCCESS: Hdl=%p Proc=%p VA=0x%llX -> Phys=0x%llX Seg=%u\n",
+                    ContextHandle, ownerProcess, GpuVa, *PhysicalAddress, *SegmentId);
+            } else {
+                Bc250DisplayLog("[ResolveGpuVa] SpaceResolveAddress failed: status=%u (Proc=%p VA=0x%llX)\n",
+                    (UINT32)resolveStatus, ownerProcess, GpuVa);
+            }
         }
-        break;
+
+        /* Varredura direta no snapshot de GPUVA se nao resolveu via OwnerProcess estrito */
+        if (!resolved && reader.Space != NULL && reader.Space->Teardown == 0u) {
+            uint32_t i;
+            for (i = 0u; i < reader.Space->SortedCount; ++i) {
+                const BC250_GPUVA_RANGE_RECORD *record =
+                    &reader.Space->Ranges[reader.Space->SortedIndices[i]];
+                if (record->BaseGpuVa > GpuVa) break;
+                if (GpuVa >= record->EndGpuVa) continue;
+                if (record->State == BC250_GPUVA_RANGE_MAPPED &&
+                    record->IsResident != 0u &&
+                    record->TeardownState == 0u) {
+                    uint64_t withinRange = GpuVa - record->BaseGpuVa;
+                    *SegmentId = record->BackingSegmentId;
+                    *PhysicalAddress = record->BackingSegmentOffset + withinRange;
+                    resolved = TRUE;
+                    Bc250DisplayLog("[ResolveGpuVa] RANGE_SCAN SUCCESS: VA=0x%llX -> Phys=0x%llX Seg=%u (Proc=%p Base=0x%llX End=0x%llX)\n",
+                        GpuVa, *PhysicalAddress, *SegmentId, record->OwnerProcess,
+                        record->BaseGpuVa, record->EndGpuVa);
+                    break;
+                }
+            }
+        }
+
+        Bc250GpuvaSnapshotRelease(&active->GpuvaSnapshots, &reader);
+        if (resolved) {
+            break;
+        }
     }
     ExReleasePushLockExclusive(&g_Bc250AdapterDirectoryLock);
     KeLeaveCriticalRegion();
@@ -8330,7 +9269,7 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
     UINT64 rootKey;
 
     if (active == NULL || Caps == NULL || update == NULL ||
-        active->Signature != BC250_ACTIVE_SIGNATURE || update->hProcess == NULL ||
+        active->Signature != BC250_ACTIVE_SIGNATURE ||
         update->PageTableLevel >= Caps->PageTableLevelCount ||
         (update->PageTableLevel == 0u &&
          (update->NumPageTableEntries == 0u ||
@@ -8346,116 +9285,113 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
     ExAcquirePushLockExclusive(&active->ObjectLock);
     entries = active->GpuvaJournalStaging;
 
-    if (InterlockedCompareExchange(&active->GpuvaJournalReady, 1, 1) != 1 ||
+    if (update->hProcess == NULL ||
+        InterlockedCompareExchange(&active->GpuvaJournalReady, 1, 1) != 1 ||
         Bc250McdmObjectLookup(&active->Objects,
             (BC250_MCDM_HANDLE)update->hProcess, BC250_MCDM_OBJECT_PROCESS,
             (BC250_MCDM_HANDLE)update->hProcess, &processRecord) !=
                 BC250_MCDM_OBJECT_OK) {
-        ExReleasePushLockExclusive(&active->ObjectLock);
-        KeLeaveCriticalRegion();
-        Bc250DisplayLog("[ActiveUpdatePT] Lookup process 0x%p failed -> DEVICE_NOT_READY\n", update->hProcess);
-        return STATUS_DEVICE_NOT_READY;
-    }
-    Bc250DisplayLog("[ActiveUpdatePT] Lvl=%u, FirstPteVA=0x%llX, hProc=0x%p, RootAddr=0x%llX, SegId=%u\n",
-        update->PageTableLevel, (unsigned long long)update->FirstPteVirtualAddress,
-        update->hProcess,
-        (unsigned long long)processRecord.RootPageTableAddress,
-        processRecord.RootPageTableSegmentId);
-    rootKey = processRecord.RootPageTableSetCount != 0u ?
-        Bc250ActiveGpuvaRootKey(processRecord.RootPageTableSegmentId,
-            processRecord.RootPageTableAddress) : 0ull;
-    if (active->GpuvaHierarchyPending != 0u &&
-        rootKey != 0u &&
-        (active->GpuvaHierarchyProcess !=
-            (BC250_MCDM_HANDLE)update->hProcess ||
-         active->GpuvaHierarchyRootPageTable !=
-            rootKey)) {
-        Bc250DisplayLog("[ActiveUpdatePT] Hierarchy process switch (oldProc=0x%p, newProc=0x%p) -> Resetting hierarchy\n",
-            active->GpuvaHierarchyProcess, update->hProcess);
-        active->GpuvaHierarchyPending = 0u;
-        active->GpuvaHierarchyProcess = NULL;
-        active->GpuvaHierarchyRootPageTable = 0u;
-        active->GpuvaHierarchyHighestLevel = 0u;
-    }
-    if (update->PageTableLevel == 0u) {
-        leafJournal = Bc250GpuvaJournalSetSelect(active->GpuvaJournals,
-            BC250_ACTIVE_GPUVA_JOURNAL_SLOTS,
-            (BC250_MCDM_HANDLE)update->hProcess,
-            rootKey, 1u, &evictionKind);
-        if (leafJournal == NULL) {
-            ExReleasePushLockExclusive(&active->ObjectLock);
-            KeLeaveCriticalRegion();
-            Bc250DisplayLog("[ActiveUpdatePT] Sem slot de journal para o processo 0x%p -> DEVICE_NOT_READY\n",
-                update->hProcess);
-            return STATUS_DEVICE_NOT_READY;
-        }
-        if (evictionKind != BC250_GPUVA_JOURNAL_EVICT_NONE) {
-            /* Descarte explicito: nunca silencioso. */
-            Bc250DisplayLog("[ActiveUpdatePT] Journal slot reciclado (kind=%u) para o processo 0x%p\n",
-                evictionKind, update->hProcess);
-        }
         /*
-         * O buffer de staging tem BC250_GPUVA_JOURNAL_MAX_CHANGES entradas,
-         * mas o dxgkrnl pede lotes muito maiores: a primary allocation de
-         * 2560x1080x4 sozinha sao 2700 PTEs. Antes isso era recusado com
-         * NOT_SUPPORTED, o que mataria a primeira alocacao real. Agora o lote
-         * e' processado em pedacos do tamanho do staging; o journal acumula e
-         * coalesce entre chamadas, entao o particionamento e' transparente
-         * para a transacao.
+         * Para o processo de paginacao do sistema ou processos sem registro no objeto,
+         * o tracking de journal e' ignorado, mas as PTEs continuam sendo gravadas
+         * no destino fisico em RAM/VRAM para a GPU.
          */
+        leafJournal = NULL;
+        rootKey = 0ull;
         journalStatus = BC250_GPUVA_JOURNAL_OK;
-        for (chunkStart = 0u;
-             chunkStart < update->NumPageTableEntries &&
-                 journalStatus == BC250_GPUVA_JOURNAL_OK;
-             chunkStart += chunkCount) {
-            chunkCount = update->NumPageTableEntries - chunkStart;
-            if (chunkCount > BC250_GPUVA_JOURNAL_MAX_CHANGES) {
-                chunkCount = BC250_GPUVA_JOURNAL_MAX_CHANGES;
-            }
-            RtlZeroMemory(entries, sizeof(*entries) * chunkCount);
-            for (index = 0u; index < chunkCount; ++index) {
-                const DXGK_PTE *pte = (update->Flags.Repeat != 0u) ?
-                    &update->pPageTableEntries[0] :
-                    &update->pPageTableEntries[chunkStart + index];
-                entries[index].Valid = pte->Valid != 0u ? 1u : 0u;
-                entries[index].Permissions = pte->Valid == 0u ? 0u : BC250_PTE_READABLE;
-                if (pte->Valid != 0u && pte->ReadOnly == 0u)
-                    entries[index].Permissions |= BC250_PTE_WRITEABLE;
-                if (pte->Valid != 0u && pte->NoExecute == 0u)
-                    entries[index].Permissions |= BC250_PTE_EXECUTABLE;
-                entries[index].SegmentId = (uint32_t)pte->Segment;
-                entries[index].SegmentOffset = pte->PageAddress << 12;
-                entries[index].Allocation = (BC250_MCDM_HANDLE)update->hAllocation;
-
-            }
-            journalStatus = Bc250GpuvaJournalStageLeafUpdate(leafJournal,
-                (BC250_MCDM_HANDLE)update->hProcess,
-                rootKey,
-                update->FirstPteVirtualAddress +
-                    ((UINT64)chunkStart * BC250_GPUVA_PAGE_BYTES),
-                entries, chunkCount);
-        }
     } else {
-        if (rootKey != 0u) {
-            /*
-             * So a transacao DO MESMO processo com root divergente e' descartada;
-             * o journal de outro processo nao e mais tocado aqui.
-             */
-            (void)Bc250GpuvaJournalSetSelect(active->GpuvaJournals,
+        Bc250DisplayLog("[ActiveUpdatePT] Lvl=%u, FirstPteVA=0x%llX, hProc=0x%p, RootAddr=0x%llX, SegId=%u\n",
+            update->PageTableLevel, (unsigned long long)update->FirstPteVirtualAddress,
+            update->hProcess,
+            (unsigned long long)processRecord.RootPageTableAddress,
+            processRecord.RootPageTableSegmentId);
+        rootKey = processRecord.RootPageTableSetCount != 0u ?
+            Bc250ActiveGpuvaRootKey(processRecord.RootPageTableSegmentId,
+                processRecord.RootPageTableAddress) : 0ull;
+        if (active->GpuvaHierarchyPending != 0u &&
+            rootKey != 0u &&
+            (active->GpuvaHierarchyProcess !=
+                (BC250_MCDM_HANDLE)update->hProcess ||
+             active->GpuvaHierarchyRootPageTable !=
+                rootKey)) {
+            Bc250DisplayLog("[ActiveUpdatePT] Hierarchy process switch (oldProc=0x%p, newProc=0x%p) -> Resetting hierarchy\n",
+                active->GpuvaHierarchyProcess, update->hProcess);
+            active->GpuvaHierarchyPending = 0u;
+            active->GpuvaHierarchyProcess = NULL;
+            active->GpuvaHierarchyRootPageTable = 0u;
+            active->GpuvaHierarchyHighestLevel = 0u;
+        }
+        if (update->PageTableLevel == 0u) {
+            leafJournal = Bc250GpuvaJournalSetSelect(active->GpuvaJournals,
                 BC250_ACTIVE_GPUVA_JOURNAL_SLOTS,
                 (BC250_MCDM_HANDLE)update->hProcess,
-                rootKey, 0u, NULL);
+                rootKey, 1u, &evictionKind);
+            if (leafJournal == NULL) {
+                Bc250DisplayLog("[ActiveUpdatePT] Sem slot de journal para o processo 0x%p\n",
+                    update->hProcess);
+            }
+            if (evictionKind != BC250_GPUVA_JOURNAL_EVICT_NONE) {
+                /* Descarte explicito: nunca silencioso. */
+                Bc250DisplayLog("[ActiveUpdatePT] Journal slot reciclado (kind=%u) para o processo 0x%p\n",
+                    evictionKind, update->hProcess);
+            }
+            if (leafJournal != NULL) {
+                journalStatus = BC250_GPUVA_JOURNAL_OK;
+                for (chunkStart = 0u;
+                     chunkStart < update->NumPageTableEntries &&
+                         journalStatus == BC250_GPUVA_JOURNAL_OK;
+                     chunkStart += chunkCount) {
+                    chunkCount = update->NumPageTableEntries - chunkStart;
+                    if (chunkCount > BC250_GPUVA_JOURNAL_MAX_CHANGES) {
+                        chunkCount = BC250_GPUVA_JOURNAL_MAX_CHANGES;
+                    }
+                    RtlZeroMemory(entries, sizeof(*entries) * chunkCount);
+                    for (index = 0u; index < chunkCount; ++index) {
+                        const DXGK_PTE *pte = (update->Flags.Repeat != 0u) ?
+                            &update->pPageTableEntries[0] :
+                            &update->pPageTableEntries[chunkStart + index];
+                        entries[index].Valid = pte->Valid != 0u ? 1u : 0u;
+                        entries[index].Permissions = pte->Valid == 0u ? 0u : BC250_PTE_READABLE;
+                        if (pte->Valid != 0u && pte->ReadOnly == 0u)
+                            entries[index].Permissions |= BC250_PTE_WRITEABLE;
+                        if (pte->Valid != 0u && pte->NoExecute == 0u)
+                            entries[index].Permissions |= BC250_PTE_EXECUTABLE;
+                        entries[index].SegmentId = (uint32_t)pte->Segment;
+                        entries[index].SegmentOffset = pte->PageAddress << 12;
+                        entries[index].Allocation = (BC250_MCDM_HANDLE)update->hAllocation;
+                    }
+                    journalStatus = Bc250GpuvaJournalStageLeafUpdate(leafJournal,
+                        (BC250_MCDM_HANDLE)update->hProcess,
+                        rootKey,
+                        update->FirstPteVirtualAddress +
+                            ((UINT64)chunkStart * BC250_GPUVA_PAGE_BYTES),
+                        entries, chunkCount);
+                }
+            } else {
+                journalStatus = BC250_GPUVA_JOURNAL_OK;
+            }
+        } else {
+            if (rootKey != 0u) {
+                /*
+                 * So a transacao DO MESMO processo com root divergente e' descartada;
+                 * o journal de outro processo nao e mais tocado aqui.
+                 */
+                (void)Bc250GpuvaJournalSetSelect(active->GpuvaJournals,
+                    BC250_ACTIVE_GPUVA_JOURNAL_SLOTS,
+                    (BC250_MCDM_HANDLE)update->hProcess,
+                    rootKey, 0u, NULL);
+            }
+            if (rootKey != 0u) {
+                active->GpuvaHierarchyPending = 1u;
+                active->GpuvaHierarchyProcess =
+                    (BC250_MCDM_HANDLE)update->hProcess;
+                active->GpuvaHierarchyRootPageTable =
+                    rootKey;
+                if (update->PageTableLevel > active->GpuvaHierarchyHighestLevel)
+                    active->GpuvaHierarchyHighestLevel = update->PageTableLevel;
+            }
+            journalStatus = BC250_GPUVA_JOURNAL_OK;
         }
-        if (rootKey != 0u) {
-            active->GpuvaHierarchyPending = 1u;
-            active->GpuvaHierarchyProcess =
-                (BC250_MCDM_HANDLE)update->hProcess;
-            active->GpuvaHierarchyRootPageTable =
-                rootKey;
-            if (update->PageTableLevel > active->GpuvaHierarchyHighestLevel)
-                active->GpuvaHierarchyHighestLevel = update->PageTableLevel;
-        }
-        journalStatus = BC250_GPUVA_JOURNAL_OK;
     }
     /*
      * The physical PTEs MUST ALWAYS be encoded and written to the page table destination!
@@ -8492,10 +9428,33 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
             (int)journalStatus);
         return STATUS_DEVICE_BUSY;
     }
+    if (journalStatus == BC250_GPUVA_JOURNAL_NO_SPACE) {
+        /*
+         * Paginas esparsas de sistema (Segmento 0 / scratch area de paginacao)
+         * podem exceder o teto de faixas do journal. As PTEs ja foram gravadas
+         * no destino fisico da page table pela CPU. Para evitar BugCheck 0x10E
+         * no dxgmms2, desmarcamos a elegibilidade de snapshot e retornamos SUCCESS.
+         */
+        /*
+         * C3.15: nao preserve um prefixo parcial. Na corrida 18:21, o segundo
+         * chunk de um update esparso excedeu o journal antigo; o primeiro
+         * chunk permaneceu Pending e o FlushTlb seguinte o publicou como se a
+         * transacao estivesse inteira. Isso criou uma vista de software que
+         * nao correspondia as PTEs fisicas ja escritas.
+         */
+        if (leafJournal != NULL) Bc250GpuvaJournalAbort(leafJournal);
+        Bc250DisplayLog("[ActiveUpdatePT] Journal NO_SPACE (num=%u) -> transacao parcial ABORTADA; Hardware PTEs written -> SUCCESS\n",
+            update->NumPageTableEntries);
+        InterlockedExchange(&active->GpuvaMappingsOperational, 0);
+        InterlockedExchange(&active->GpuvaActivationEligible, 0);
+        return STATUS_SUCCESS;
+    }
     if (journalStatus != BC250_GPUVA_JOURNAL_OK) {
-        Bc250DisplayLog("[ActiveUpdatePT] Finished: journalStatus=%d -> STATUS_INVALID_PARAMETER\n",
+        Bc250DisplayLog("[ActiveUpdatePT] Journal status=%d -> Hardware PTEs written -> SUCCESS\n",
             (int)journalStatus);
-        return STATUS_INVALID_PARAMETER;
+        InterlockedExchange(&active->GpuvaMappingsOperational, 0);
+        InterlockedExchange(&active->GpuvaActivationEligible, 0);
+        return STATUS_SUCCESS;
     }
     Bc250DisplayLog("[ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS\n");
     return STATUS_SUCCESS;
@@ -8628,6 +9587,575 @@ NTSTATUS Bc250ActiveResolveAdapterProfile(
     return STATUS_SUCCESS;
 }
 
+/*
+ * Resolve uma GPUVA de escape para endereco MC, pela MESMA aritmetica que o
+ * codificador de PTE e a instalacao da root usam (C3.4). Faixa que nao couber
+ * no segmento e' RECUSADA -- aproximar viraria blt de lixo indistinguivel de
+ * sucesso, defeito ja cometido e corrigido em 12/09.
+ */
+static BOOLEAN Bc250ActiveEscapeResolveGpuVaToMc(
+    _In_ HANDLE hAdapter,
+    _In_ CONST DXGKARG_ESCAPE *pEscape,
+    _In_ UINT64 GpuVa,
+    _In_ UINT32 ByteCount,
+    _Out_ UINT64 *McAddress)
+{
+    UINT64 segmentOffset = 0;
+    UINT32 segId = 0;
+    HANDLE resolveHandle;
+    BC250_MCDM_RUNTIME_CAPS caps;
+
+    *McAddress = 0ull;
+    if (GpuVa == 0ull || ByteCount == 0u) {
+        return FALSE;
+    }
+    resolveHandle = (pEscape->hContext != NULL) ? pEscape->hContext : pEscape->hDevice;
+    if (!Bc250ActiveResolveDisplayGpuVa(resolveHandle, GpuVa, &segmentOffset, &segId) &&
+        !(pEscape->hDevice != NULL &&
+          Bc250ActiveResolveDisplayGpuVa(pEscape->hDevice, GpuVa, &segmentOffset, &segId)) &&
+        !Bc250ActiveResolveDisplayGpuVa(NULL, GpuVa, &segmentOffset, &segId)) {
+        return FALSE;
+    }
+    if (!NT_SUCCESS(Bc250ActiveQueryRuntimeCaps(hAdapter, &caps))) {
+        return FALSE;
+    }
+    return Bc250SegmentOffsetToMc(
+        g_Bc250SdmaPresent.VramMcStart,
+        caps.LocalSegmentBaseOffset,
+        caps.LocalSegmentBytes,
+        segId,
+        segmentOffset,
+        ByteCount,
+        McAddress) == BC250_SEGMENT_ADDRESS_OK;
+}
+
+/*
+ * COMPOSITE_BLT -- composicao do DWM executada pelo caminho de blt do KMD.
+ *
+ * Medicao de 13/09 08:12 que motiva este caminho: 953 buffers de paginacao
+ * executaram sem UM TDR; as 5 submissoes de CONTEXTO da UMD no Node 0 (o no de
+ * paginacao) produziram 5 TDRs, sempre com a engine OCIOSA e o anel DRENADO.
+ * Bc250SdmaPresentBlt, ao contrario, fez 584 blts consecutivos sem TDR em
+ * 12/09 13:01 -- ele nao cria pacote de contexto e nao passa pelo escalonador.
+ */
+static NTSTATUS Bc250ActiveEscapeCompositeBlt(
+    _In_ HANDLE hAdapter,
+    _In_ CONST DXGKARG_ESCAPE *pEscape)
+{
+    BC250_ESCAPE_COMPOSITE_BLT *esc;
+    UINT64 srcMc = 0ull;
+    UINT64 dstMc = 0ull;
+    BC250_DATA_PROOF_PLAN srcProofPlan;
+    BC250_DATA_PROOF_PLAN dstProofPlan;
+    UINT32 sourceBefore[BC250_DATA_PROOF_CANARY_COUNT] = { 0u };
+    UINT32 destinationAfter[BC250_DATA_PROOF_CANARY_COUNT] = { 0u };
+    UINT32 proofIndex;
+    UINT32 sourceNonZero = 0u;
+    UINT32 proofMismatches = 0u;
+    UINT32 sampleX[BC250_DATA_PROOF_CANARY_COUNT];
+    UINT32 sampleY[BC250_DATA_PROOF_CANARY_COUNT];
+    UINT64 srcSpan = 0ull;
+    UINT64 dstSpan = 0ull;
+    UINT64 pixelBytes = 0ull;
+    BOOLEAN proofUsable = FALSE;
+    BOOLEAN sdmaDone = FALSE;
+    BC250_BLT_PROOF_VERDICT proofVerdict = BC250_BLT_PROOF_INDETERMINATE;
+
+    /*
+     * ENTRADA SEMPRE FALA.
+     *
+     * Corrida 13/09 11:32: o DWM chamou o escape UMA vez (BltViaKmd ENTER) e o
+     * log do KMD nao teve NENHUMA linha COMPOSITE_BLT -- nem OK, nem RECUSADO.
+     * Era impossivel distinguir "nao chegou ao handler" de "recusamos calados",
+     * porque esta saida e a do dispatch eram MUDAS. Mesma classe de defeito que
+     * eu corrigi de manha em Bc250McdmSignalMonitoredFence e reintroduzi aqui.
+     */
+    Bc250DisplayLog("[Bc250Escape] COMPOSITE_BLT ENTER: DataSize=%u (esperado=%u)\n",
+        (uint32_t)pEscape->PrivateDriverDataSize,
+        (uint32_t)sizeof(BC250_ESCAPE_COMPOSITE_BLT));
+    if (pEscape->PrivateDriverDataSize < sizeof(BC250_ESCAPE_COMPOSITE_BLT)) {
+        Bc250DisplayLog("[Bc250Escape] COMPOSITE_BLT RECUSADO: DataSize=%u menor que o contrato (%u) -- ABI divergente entre UMD e KMD\n",
+            (uint32_t)pEscape->PrivateDriverDataSize,
+            (uint32_t)sizeof(BC250_ESCAPE_COMPOSITE_BLT));
+        return STATUS_INVALID_PARAMETER;
+    }
+    esc = (BC250_ESCAPE_COMPOSITE_BLT *)pEscape->pPrivateDriverData;
+
+    pixelBytes = (UINT64)esc->Width * 4ull;
+    if (esc->Flags != 0u || esc->Width == 0u || esc->Height == 0u ||
+        esc->Width > 0x4000u || esc->Height > 0x4000u ||
+        pixelBytes > esc->SourcePitch ||
+        pixelBytes + (UINT64)esc->DestX * 4ull > esc->DestPitch ||
+        esc->DestY > 0x3FFFu ||
+        (esc->SourcePitch & 3u) != 0u || (esc->DestPitch & 3u) != 0u ||
+        esc->SourceGpuVa == 0ull || esc->DestGpuVa == 0ull ||
+        (esc->SourceGpuVa & 3ull) != 0ull || (esc->DestGpuVa & 3ull) != 0ull) {
+        esc->ResultCode = BC250_PRESENT_BLT_STATUS_INVALID;
+        Bc250DisplayLog("[Bc250Escape] COMPOSITE_BLT RECUSADO (argumentos): %ux%u srcPitch=%u dstPitch=%u DstXY=%u,%u SrcVa=0x%llX DstVa=0x%llX\n",
+            esc->Width, esc->Height, esc->SourcePitch, esc->DestPitch,
+            esc->DestX, esc->DestY, (unsigned long long)esc->SourceGpuVa,
+            (unsigned long long)esc->DestGpuVa);
+        return STATUS_INVALID_PARAMETER;
+    }
+    srcSpan = (UINT64)(esc->Height - 1u) * esc->SourcePitch + pixelBytes;
+    dstSpan = (UINT64)(esc->DestY + esc->Height - 1u) * esc->DestPitch +
+        (UINT64)esc->DestX * 4ull + pixelBytes;
+    if (srcSpan == 0ull || dstSpan == 0ull ||
+        srcSpan > (64ull * 1024ull * 1024ull) ||
+        dstSpan > (64ull * 1024ull * 1024ull)) {
+        esc->ResultCode = BC250_PRESENT_BLT_STATUS_INVALID;
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (!g_Bc250SdmaPresent.HardwareEnabled) {
+        esc->ResultCode = BC250_PRESENT_BLT_STATUS_UNSUPPORTED;
+        Bc250DisplayLog("[Bc250Escape] COMPOSITE_BLT RECUSADO: SDMA nao habilitada\n");
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    if (!Bc250ActiveEscapeResolveGpuVaToMc(hAdapter, pEscape, esc->SourceGpuVa,
+            (UINT32)srcSpan, &srcMc) ||
+        !Bc250ActiveEscapeResolveGpuVaToMc(hAdapter, pEscape, esc->DestGpuVa,
+            (UINT32)dstSpan, &dstMc)) {
+        esc->ResultCode = BC250_PRESENT_BLT_STATUS_INVALID;
+        Bc250DisplayLog("[Bc250Escape] COMPOSITE_BLT RECUSADO (resolucao): SrcVa=0x%llX->0x%llX DstVa=0x%llX->0x%llX Bytes=%u\n",
+            (unsigned long long)esc->SourceGpuVa, (unsigned long long)srcMc,
+            (unsigned long long)esc->DestGpuVa, (unsigned long long)dstMc,
+            (unsigned)srcSpan);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /* Faixas inteiras de backing nao podem se sobrepor. */
+    if ((srcMc < dstMc + dstSpan) && (dstMc < srcMc + srcSpan)) {
+        esc->ResultCode = BC250_PRESENT_BLT_STATUS_INVALID;
+        Bc250DisplayLog("[Bc250Escape] COMPOSITE_BLT RECUSADO (sobreposicao): SrcMc=0x%llX DstMc=0x%llX Bytes=%u\n",
+            (unsigned long long)srcMc, (unsigned long long)dstMc,
+            (unsigned)(pixelBytes * esc->Height));
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /*
+     * C3.18: snapshot NAO DESTRUTIVO da origem antes do SDMA. A corrida de
+     * 13/09 12:50 provou 60 fences/RPTRs, mas as tres amostras posteriores do
+     * Present viram somente zero. Para separar "copiamos preto corretamente"
+     * de "a copia nao produziu dados", guardamos cinco dwords distribuidos da
+     * origem e os comparamos com o destino DEPOIS da fence. Nao plantamos
+     * canaries: este e' conteudo real do DWM e altera-lo corromperia o frame.
+     */
+    (void)Bc250PlanDataProofCanaries(srcMc, (UINT32)srcSpan, 0u,
+        g_Bc250SdmaPresent.VramMcStart,
+        (UINT64)g_Bc250DisplayState.FrameBufferSize,
+        (g_Bc250DisplayState.FrameBufferVirtual != NULL) ? 1u : 0u,
+        &srcProofPlan);
+    (void)Bc250PlanDataProofCanaries(dstMc, (UINT32)dstSpan, 0u,
+        g_Bc250SdmaPresent.VramMcStart,
+        (UINT64)g_Bc250DisplayState.FrameBufferSize,
+        (g_Bc250DisplayState.FrameBufferVirtual != NULL) ? 1u : 0u,
+        &dstProofPlan);
+    proofUsable = (srcProofPlan.Usable != 0u && dstProofPlan.Usable != 0u &&
+        srcProofPlan.CanaryCount == BC250_DATA_PROOF_CANARY_COUNT &&
+        dstProofPlan.CanaryCount == BC250_DATA_PROOF_CANARY_COUNT);
+    if (proofUsable) {
+        sampleX[0] = 0u;                 sampleY[0] = 0u;
+        sampleX[1] = esc->Width / 2u;    sampleY[1] = 0u;
+        sampleX[2] = 0u;                 sampleY[2] = esc->Height / 2u;
+        sampleX[3] = esc->Width / 2u;    sampleY[3] = esc->Height / 2u;
+        sampleX[4] = esc->Width - 1u;    sampleY[4] = esc->Height - 1u;
+        for (proofIndex = 0u; proofIndex < BC250_DATA_PROOF_CANARY_COUNT;
+             ++proofIndex) {
+            volatile CONST UINT32 *sample = (volatile CONST UINT32 *)
+                ((CONST UCHAR *)g_Bc250DisplayState.FrameBufferVirtual +
+                 srcProofPlan.VramOffset +
+                 (UINT64)sampleY[proofIndex] * esc->SourcePitch +
+                 (UINT64)sampleX[proofIndex] * 4ull);
+            sourceBefore[proofIndex] = *sample;
+            if (sourceBefore[proofIndex] != 0u) sourceNonZero++;
+        }
+        KeMemoryBarrier();
+    }
+
+    if (esc->SourcePitch == esc->DestPitch && esc->DestX == 0u &&
+        esc->DestY == 0u && pixelBytes == esc->SourcePitch) {
+        sdmaDone = Bc250SdmaPresentBlt(srcMc, dstMc,
+            (ULONG)((UINT64)esc->Height * esc->SourcePitch));
+    } else {
+        sdmaDone = Bc250SdmaPresentBltRect(srcMc, esc->SourcePitch,
+            dstMc, esc->DestPitch, esc->DestX, esc->DestY,
+            esc->Width, esc->Height);
+    }
+    if (!sdmaDone) {
+        esc->ResultCode = BC250_PRESENT_BLT_STATUS_FAILED;
+        Bc250DisplayLog("[Bc250Escape] COMPOSITE_BLT FALHOU no silicio: SrcMc=0x%llX DstMc=0x%llX Bytes=%u\n",
+            (unsigned long long)srcMc, (unsigned long long)dstMc,
+            (unsigned)(pixelBytes * esc->Height));
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    if (proofUsable) {
+        KeMemoryBarrier();
+        for (proofIndex = 0u; proofIndex < BC250_DATA_PROOF_CANARY_COUNT;
+             ++proofIndex) {
+            volatile CONST UINT32 *sample = (volatile CONST UINT32 *)
+                ((CONST UCHAR *)g_Bc250DisplayState.FrameBufferVirtual +
+                 dstProofPlan.VramOffset +
+                 (UINT64)(esc->DestY + sampleY[proofIndex]) * esc->DestPitch +
+                 (UINT64)(esc->DestX + sampleX[proofIndex]) * 4ull);
+            destinationAfter[proofIndex] = *sample;
+            if (destinationAfter[proofIndex] != sourceBefore[proofIndex]) {
+                proofMismatches++;
+            }
+        }
+        proofVerdict = Bc250ClassifyBltProof(
+            (proofMismatches == 0u) ? 1u : 0u,
+            sourceNonZero,
+            BC250_DATA_PROOF_CANARY_COUNT);
+        if (Bc250BltProofRequiresFailClosed(proofVerdict) != 0u) {
+            esc->ResultCode = BC250_PRESENT_BLT_STATUS_FAILED;
+            Bc250DisplayLog("[Bc250Escape] COMPOSITE_DATA_PROOF FAIL: Mismatch=%u/%u SrcPre=[%08X %08X %08X %08X %08X] DstPost=[%08X %08X %08X %08X %08X]; engine preservada\n",
+                proofMismatches, BC250_DATA_PROOF_CANARY_COUNT,
+                sourceBefore[0], sourceBefore[1], sourceBefore[2],
+                sourceBefore[3], sourceBefore[4], destinationAfter[0],
+                destinationAfter[1], destinationAfter[2],
+                destinationAfter[3], destinationAfter[4]);
+            return STATUS_UNSUCCESSFUL;
+        }
+        if (proofVerdict == BC250_BLT_PROOF_BLANK) {
+            Bc250DisplayLog("[Bc250Escape] COMPOSITE_DATA_PROOF INCONCLUSIVO_ZERO: Match=%u/%u; zero contra zero NAO prova pixel\n",
+                BC250_DATA_PROOF_CANARY_COUNT, BC250_DATA_PROOF_CANARY_COUNT);
+        } else {
+            Bc250DisplayLog("[Bc250Escape] COMPOSITE_DATA_PROOF SAMPLED_PASS: Match=%u/%u SourceNonZero=%u/%u DstIsScanout=%u\n",
+                BC250_DATA_PROOF_CANARY_COUNT, BC250_DATA_PROOF_CANARY_COUNT,
+                sourceNonZero, BC250_DATA_PROOF_CANARY_COUNT,
+                (dstMc == g_Bc250SdmaPresent.ScanoutGpuAddress) ? 1u : 0u);
+        }
+    } else {
+        Bc250DisplayLog("[Bc250Escape] COMPOSITE_DATA_PROOF INDISPONIVEL: SrcMc=0x%llX DstMc=0x%llX Bytes=%u Apertura=%u\n",
+            (unsigned long long)srcMc, (unsigned long long)dstMc,
+            (unsigned)(pixelBytes * esc->Height),
+            g_Bc250DisplayState.FrameBufferSize);
+    }
+
+    esc->ResultCode = BC250_PRESENT_BLT_STATUS_SUCCESS;
+    Bc250DisplayLog("[Bc250Escape] COMPOSITE_BLT OK RECT 1:1: %ux%u srcPitch=%u dstPitch=%u DstXY=%u,%u SrcMc=0x%llX DstMc=0x%llX Bytes=%u Prova=%s\n",
+        esc->Width, esc->Height, esc->SourcePitch, esc->DestPitch,
+        esc->DestX, esc->DestY,
+        (unsigned long long)srcMc, (unsigned long long)dstMc,
+        (unsigned)(pixelBytes * esc->Height),
+        proofUsable ? ((sourceNonZero != 0u) ? "DADOS_AMOSTRADOS" : "ZERO_INCONCLUSIVO") :
+            "SOMENTE_ENGINE");
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS Bc250ActiveEscapeHandler(
+    _In_ HANDLE hAdapter,
+    _In_ CONST DXGKARG_ESCAPE *pEscape)
+{
+    static uint32_t s_PresentBltCount = 0;
+    BC250_ESCAPE_PRESENT_BLT *esc;
+    UINT64 srcGpu = 0;
+    BOOLEAN sdmaDone = FALSE;
+    BOOLEAN shouldLog = FALSE;
+
+    if (pEscape == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    /*
+     * O opcode e' lido ANTES de exigir o tamanho de um payload especifico:
+     * cada operacao tem a sua estrutura, e exigir o tamanho da maior recusaria
+     * a menor por engano.
+     */
+    if (pEscape->pPrivateDriverData == NULL ||
+        pEscape->PrivateDriverDataSize < sizeof(UINT32)) {
+        /*
+         * Amostrado de proposito: escapes de TERCEIROS chegam aos milhares
+         * (3.282 na corrida 11:32) e um log 1-em-1 aqui afogaria o arquivo.
+         * O que nao pode e' ser MUDO -- era, e por isso a corrida 11:32 nao
+         * soube dizer se o nosso escape havia chegado.
+         */
+        Bc250DisplayLog("[Bc250Escape] RECUSADO: payload ausente ou menor que 4 bytes (pData=%s, DataSize=%u)\n",
+            (pEscape->pPrivateDriverData != NULL) ? "ok" : "NULL",
+            (uint32_t)pEscape->PrivateDriverDataSize);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (*(UINT32 *)pEscape->pPrivateDriverData == BC250_ESCAPE_OP_COMPOSITE_BLT) {
+        return Bc250ActiveEscapeCompositeBlt(hAdapter, pEscape);
+    }
+
+    if (pEscape->PrivateDriverDataSize < sizeof(BC250_ESCAPE_PRESENT_BLT)) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    esc = (BC250_ESCAPE_PRESENT_BLT *)pEscape->pPrivateDriverData;
+
+    if (esc->Opcode != BC250_ESCAPE_OP_PRESENT_BLT) {
+        /*
+         * Escapes de TERCEIROS sao a maioria absoluta: 3.282 na corrida 11:32,
+         * todos com opcode 0x2 e nenhum nosso. Esta linha nao pode ser muda
+         * (foi o que cegou aquela corrida) nem pode afogar o arquivo, entao e'
+         * limitada por contador proprio -- "RECUSA" esta na lista que escapa da
+         * amostragem global, logo o teto tem de ser local.
+         */
+        static uint32_t s_UnknownOpcodeCount = 0;
+        ++s_UnknownOpcodeCount;
+        if (s_UnknownOpcodeCount <= 8u || (s_UnknownOpcodeCount % 1024u) == 0u) {
+            Bc250DisplayLog("[Bc250Escape] RECUSADO: opcode 0x%X desconhecido (ocorrencia #%u, DataSize=%u)\n",
+                esc->Opcode, s_UnknownOpcodeCount,
+                (uint32_t)pEscape->PrivateDriverDataSize);
+        }
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    if (esc->SizeBytes == 0 || esc->SizeBytes > (64u * 1024u * 1024u)) {
+        esc->ResultCode = BC250_PRESENT_BLT_STATUS_INVALID;
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    s_PresentBltCount++;
+    shouldLog = (s_PresentBltCount == 1u || (s_PresentBltCount % 60u) == 0u);
+    /*
+     * C3: contador nao amostrado. O log e' 1-em-60; este numero e' 1-em-1 e
+     * sobrevive no teardown, entao a proxima corrida consegue dizer qual foi o
+     * ultimo present que o KMD REALMENTE recebeu antes do 0xC00002B6 -- que,
+     * por leitura de codigo, nao pode sair daqui: STATUS_DEVICE_REMOVED nao
+     * existe em nenhuma linha deste driver, logo o dxgkrnl recusou a chamada
+     * antes de nos alcancar.
+     */
+    InterlockedIncrement(&g_Bc250SdmaPresent.EscapeEnteredCount);
+
+    if (shouldLog) {
+        Bc250DisplayLog("[Bc250Escape] PRESENT_BLT: %ux%u (%u bytes), GpuVa=0x%llX, SrcPhys=0x%llX, pUser=%p, Flags=0x%X\n",
+            esc->Width, esc->Height, esc->SizeBytes,
+            (unsigned long long)esc->SourceGpuVa,
+            (unsigned long long)esc->SourcePhysAddress,
+            esc->pUserPixelBuffer, esc->Flags);
+    }
+
+    /* 1. Tentar caminho primario acelerado por hardware GPU: SDMA Blt */
+    if ((esc->Flags & BC250_PRESENT_BLT_FLAG_HOST_COPY) == 0 &&
+        g_Bc250SdmaPresent.HardwareEnabled &&
+        g_Bc250SdmaPresent.ScanoutGpuAddress != 0) {
+
+        /* Se endereco fisico foi fornecido diretamente */
+        if (esc->SourcePhysAddress != 0) {
+            srcGpu = g_Bc250SdmaPresent.VramMcStart + esc->SourcePhysAddress;
+        }
+        /*
+         * Se GPUVA foi fornecido, resolver para endereco MC na VRAM.
+         *
+         * C3.4 (12/09) -- DEFEITO DE ARITMETICA CORRIGIDO, medido na corrida
+         * 12:29. Bc250ActiveResolveDisplayGpuVa devolve um OFFSET DE SEGMENTO
+         * (BackingSegmentOffset + deslocamento na faixa), nao um offset cru de
+         * VRAM: o campo de saida de Bc250GpuvaSpaceResolveAddress chama-se
+         * BackingSegmentOffset. O segmento 1 comeca em LocalSegmentBaseOffset
+         * (0xA8C000 = 11.059.200 bytes, logo apos a reserva de scanout), e este
+         * sitio somava apenas VramMcStart -- lia 11.059.200 bytes ANTES da
+         * imagem. O blt concluia com fence e RPTR==WPTR, porque a engine de
+         * fato executou, mas copiava VRAM alheia: majoritariamente zerada, com
+         * restos nao nulos. Na tela: preto com faixa cinza embaixo.
+         *
+         * A conversao agora sai de Bc250SegmentOffsetToMc, a mesma aritmetica
+         * que o codificador de PTE e a instalacao da root ja usavam. Origem que
+         * nao couber no segmento passa a ser RECUSADA -- antes virava blt de
+         * lixo indistinguivel de sucesso.
+         */
+        else if (esc->SourceGpuVa != 0) {
+            UINT64 segmentOffset = 0;
+            UINT32 segId = 0;
+            HANDLE targetHandle = (pEscape->hContext != NULL) ? pEscape->hContext : pEscape->hDevice;
+            if (Bc250ActiveResolveDisplayGpuVa(targetHandle, esc->SourceGpuVa, &segmentOffset, &segId) ||
+                (pEscape->hDevice != NULL && Bc250ActiveResolveDisplayGpuVa(pEscape->hDevice, esc->SourceGpuVa, &segmentOffset, &segId)) ||
+                Bc250ActiveResolveDisplayGpuVa(NULL, esc->SourceGpuVa, &segmentOffset, &segId)) {
+                BC250_MCDM_RUNTIME_CAPS srcCaps;
+                UINT64 srcMc = 0;
+                BC250_SEGMENT_ADDRESS_STATUS mcStatus = BC250_SEGMENT_ADDRESS_BAD_ARGUMENT;
+                NTSTATUS capsStatus =
+                    Bc250ActiveQueryRuntimeCaps(hAdapter, &srcCaps);
+
+                if (NT_SUCCESS(capsStatus)) {
+                    /*
+                     * DOMINIO DE ENDERECO -- armadilha medida na corrida 12:51.
+                     *
+                     * Existem DUAS bases de VRAM neste driver, e elas NAO sao
+                     * intercambiaveis:
+                     *
+                     *   caps.VramMcBase            = 0x450000000  dominio da GCVM
+                     *                                (PTE, root, VMID8/9)
+                     *   g_Bc250SdmaPresent.VramMcStart = 0xF400000000  dominio em
+                     *                                que o anel de present do
+                     *                                SDMA enderecca
+                     *
+                     * A correcao de 12:29 acertou o termo que faltava
+                     * (LocalSegmentBaseOffset) mas trocou a base por engano,
+                     * pondo a ORIGEM em 0x451FEC000 enquanto o DESTINO seguia em
+                     * 0xF400000000. Origem e destino em dominios diferentes: o
+                     * blt deu timeout com a fence no poison (43DAFFFE) em 8 de 8
+                     * tentativas, e o present caiu na copia por CPU.
+                     *
+                     * A base tem de ser a MESMA do destino -- que e' derivado de
+                     * g_Bc250SdmaPresent.VramMcStart. LocalSegmentBaseOffset e
+                     * LocalSegmentBytes sao offsets dentro da VRAM e independem
+                     * do dominio, entao continuam vindo das caps.
+                     */
+                    mcStatus = Bc250SegmentOffsetToMc(
+                        g_Bc250SdmaPresent.VramMcStart,
+                        srcCaps.LocalSegmentBaseOffset,
+                        srcCaps.LocalSegmentBytes,
+                        segId,
+                        segmentOffset,
+                        esc->SizeBytes,
+                        &srcMc);
+                }
+
+                if (mcStatus == BC250_SEGMENT_ADDRESS_OK) {
+                    srcGpu = srcMc;
+                    if (shouldLog) {
+                        /*
+                         * DstMc sai no mesmo log de proposito: origem e destino
+                         * PRECISAM compartilhar o dominio, e em 12:51 nao
+                         * compartilhavam. Com os dois lado a lado, a proxima
+                         * divergencia e' visivel sem mineracao.
+                         */
+                        Bc250DisplayLog("[Bc250Escape] PRESENT_BLT: GpuVa 0x%llX resolvido -> SegOff=0x%llX Seg=%u SegBase=0x%llX SrcMc=0x%llX DstMc=0x%llX\n",
+                            (unsigned long long)esc->SourceGpuVa,
+                            (unsigned long long)segmentOffset,
+                            segId,
+                            (unsigned long long)srcCaps.LocalSegmentBaseOffset,
+                            (unsigned long long)srcGpu,
+                            (unsigned long long)g_Bc250SdmaPresent.ScanoutGpuAddress);
+                    }
+                } else {
+                    if (shouldLog) {
+                        Bc250DisplayLog("[Bc250Escape] AVISO: GpuVa 0x%llX RECUSADO na conversao MC (capsStatus=0x%08X mcStatus=%u Seg=%u SegOff=0x%llX Bytes=%u)\n",
+                            (unsigned long long)esc->SourceGpuVa,
+                            (uint32_t)capsStatus, (uint32_t)mcStatus, segId,
+                            (unsigned long long)segmentOffset, esc->SizeBytes);
+                    }
+                }
+            } else {
+                if (shouldLog) {
+                    Bc250DisplayLog("[Bc250Escape] AVISO: Falha ao resolver GpuVa 0x%llX via GPUVA Space\n",
+                        (unsigned long long)esc->SourceGpuVa);
+                }
+            }
+        }
+
+        if (srcGpu != 0 && srcGpu != g_Bc250SdmaPresent.ScanoutGpuAddress) {
+            LARGE_INTEGER bltFreq;
+            LARGE_INTEGER bltStart;
+            LARGE_INTEGER bltEnd;
+            LONG bltMicroseconds = 0;
+
+            bltStart = KeQueryPerformanceCounter(&bltFreq);
+            sdmaDone = Bc250SdmaPresentBlt(srcGpu, g_Bc250SdmaPresent.ScanoutGpuAddress, esc->SizeBytes);
+            bltEnd = KeQueryPerformanceCounter(NULL);
+            if (bltFreq.QuadPart > 0) {
+                LONGLONG ticks = bltEnd.QuadPart - bltStart.QuadPart;
+                if (ticks < 0) ticks = 0;
+                bltMicroseconds = (LONG)((ticks * 1000000LL) / bltFreq.QuadPart);
+            }
+            /*
+             * C3: acumula custo do blt. A corrida 12/09 10:42 mediu 26 FPS
+             * (~38 ms/quadro) para 11.059.200 bytes. Se o blt sozinho explicar
+             * o quadro, o gargalo e' a espera SINCRONA de Bc250SdmaPresentBlt
+             * (divida declarada desde a A15 e causa do 0x133 de 10/09); se nao
+             * explicar, o custo esta fora do KMD. Os dois desfechos informam.
+             */
+            InterlockedExchangeAdd64(&g_Bc250SdmaPresent.EscapeBltTotalMicroseconds,
+                                     (LONG64)bltMicroseconds);
+            {
+                LONG previousMax;
+                do {
+                    previousMax = g_Bc250SdmaPresent.EscapeBltMaxMicroseconds;
+                    if (bltMicroseconds <= previousMax) break;
+                } while (InterlockedCompareExchange(
+                             &g_Bc250SdmaPresent.EscapeBltMaxMicroseconds,
+                             bltMicroseconds, previousMax) != previousMax);
+            }
+            if (sdmaDone) {
+                if (shouldLog) {
+                    Bc250DisplayLog("[Bc250Escape] PRESENT_BLT: SDMA HW BLT CONCLUIDO COM SUCESSO! SrcMc=0x%llX DstMc=0x%llX Bytes=%u Escape=#%ld Blt=%ld us\n",
+                        (unsigned long long)srcGpu,
+                        (unsigned long long)g_Bc250SdmaPresent.ScanoutGpuAddress,
+                        esc->SizeBytes,
+                        g_Bc250SdmaPresent.EscapeEnteredCount,
+                        bltMicroseconds);
+                }
+                esc->ResultCode = BC250_PRESENT_BLT_STATUS_SUCCESS;
+
+                /*
+                 * C3 (12/09) -- A "GARANTIA DE SCANOUT GOP QUADRO 1" FOI REMOVIDA.
+                 *
+                 * Ela copiava, POR CPU (RtlCopyMemory de 11.059.200 bytes), o mesmo
+                 * conteudo que o SDMA acabara de escrever no MESMO endereco fisico
+                 * (DstMc == VramMcStart + (FrameBufferPhysical - VramBar0), medido em
+                 * 0xF400000000 na corrida 12/09 11:04). Escrever por cima com a CPU nao
+                 * adiciona pixel nenhum: torna o quadro 1 NAO ATRIBUIVEL a GPU, porque
+                 * qualquer imagem no monitor passa a ter duas causas possiveis. Foi
+                 * exatamente assim que a corrida 11/09 22:46 -- a que fechou o "Marco 2"
+                 * -- entregou a tela: ZERO linhas "SDMA HW BLT CONCLUIDO" e uma unica
+                 * copia por CPU. Pela Lei 4 isso e' fallback de software, e pela Lei 2 a
+                 * perna de bytes do tripe nao pode ser conferida contra um destino que a
+                 * CPU escreveu.
+                 *
+                 * Mesmo precedente da faixa C1, que removeu o memcpy do Draw.
+                 *
+                 * Se o byte proof por CPU ler zero apos um SDMA bem-sucedido, a resposta
+                 * correta e' invalidar o HDP antes da leitura (classe ja diagnosticada em
+                 * 10/09), NAO reescrever o destino pela CPU.
+                 */
+                return STATUS_SUCCESS;
+            } else {
+                Bc250DisplayLog("[Bc250Escape] PRESENT_BLT: SDMA HW BLT falhou/incompleto, acionando fallback seguro\n");
+            }
+        }
+    }
+
+    /*
+     * 2. Caminho de copia POR CPU.
+     *
+     * C3 (12/09): este ramo nao e' aceleracao e nao pode se anunciar como se
+     * fosse. Ele existe para que o ensaio nao morra, e cada quadro que passa por
+     * aqui e' contabilizado em HostCpuCopyCount -- FallbackCpuCount e' CEGO a ele,
+     * porque so' conta recusa/timeout de Bc250SdmaPresentBlt, e foi essa cegueira
+     * que deixou a corrida 11/09 22:46 arquivar "Fallbacks=0" com o present inteiro
+     * feito por RtlCopyMemory. O veredito do runner reprova a corrida que cair aqui.
+     */
+    if (esc->pUserPixelBuffer != NULL &&
+        g_Bc250DisplayState.FrameBufferVirtual != NULL &&
+        esc->SizeBytes <= g_Bc250DisplayState.FrameBufferSize) {
+
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+        __try {
+            LONG hostCopies;
+            ProbeForRead(esc->pUserPixelBuffer, esc->SizeBytes, sizeof(ULONG));
+            RtlCopyMemory(g_Bc250DisplayState.FrameBufferVirtual, esc->pUserPixelBuffer, esc->SizeBytes);
+            KeMemoryBarrier();
+            hostCopies = InterlockedIncrement(&g_Bc250SdmaPresent.HostCpuCopyCount);
+            Bc250DisplayLog("[Bc250Escape] PRESENT_BLT: COPIA POR CPU #%ld -- NAO e' aceleracao por GPU (%u bytes por RtlCopyMemory)\n",
+                hostCopies, esc->SizeBytes);
+            esc->ResultCode = BC250_PRESENT_BLT_STATUS_SUCCESS;
+            return STATUS_SUCCESS;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            ULONG exc = GetExceptionCode();
+            Bc250DisplayLog("[Bc250Escape] PRESENT_BLT: Excecao 0x%08X ao ler buffer do usuario %p\n",
+                exc, esc->pUserPixelBuffer);
+            esc->ResultCode = BC250_PRESENT_BLT_STATUS_FAILED;
+            return STATUS_INVALID_USER_BUFFER;
+        }
+#else
+        memcpy(g_Bc250DisplayState.FrameBufferVirtual, esc->pUserPixelBuffer, esc->SizeBytes);
+        InterlockedIncrement(&g_Bc250SdmaPresent.HostCpuCopyCount);
+        esc->ResultCode = BC250_PRESENT_BLT_STATUS_SUCCESS;
+        return STATUS_SUCCESS;
+#endif
+    }
+
+    esc->ResultCode = BC250_PRESENT_BLT_STATUS_FAILED;
+    return STATUS_UNSUCCESSFUL;
+}
+
 NTSTATUS Bc250BuildActiveInitializationData(
     DRIVER_INITIALIZATION_DATA *InitializationData)
 {
@@ -8712,6 +10240,7 @@ NTSTATUS Bc250BuildActiveInitializationDataForProfile(
         Bc250ActiveDestroyAllocationLifecycle,
         Bc250ActiveOpenAllocationLifecycle,
         Bc250ActiveCloseAllocationLifecycle);
+    Bc250McdmInstallDescribeAllocation(Bc250ActiveDescribeAllocationLifecycle);
     Bc250McdmInstallDebugLifecycle(Bc250ActiveCollectDebugLifecycle);
     Bc250McdmInstallTdrExecutors(
         Bc250ActiveTdrQuiesceLifecycle,
@@ -8724,6 +10253,7 @@ NTSTATUS Bc250BuildActiveInitializationDataForProfile(
     Bc250McdmInstallFlushTlbHandler(Bc250ActiveFlushTlbHandler);
     Bc250McdmInstallUnloadCleanupHandler(Bc250ActiveDriverUnloadCleanup);
     Bc250DisplayInstallGpuVaResolver(Bc250ActiveResolveDisplayGpuVa);
+    Bc250McdmInstallEscapeHandler(Bc250ActiveEscapeHandler);
     (void)Bc250McdmPopulateRequiredCallbacks(InitializationData);
     /*
      * DxgkInitialize valida a tabela completa de display+render antes de
@@ -9074,6 +10604,11 @@ static uint32_t Bc250ActiveFlushVmid8Only(void *Context)
     return Bc250ActiveFlushVmidTlb(Context, BC250_GCVM_VMID8);
 }
 
+static uint32_t Bc250ActiveFlushUserVmidOnly(void *Context)
+{
+    return Bc250ActiveFlushVmidTlb(Context, BC250_GCVM_USER_VMID);
+}
+
 static uint32_t Bc250ActiveFlushComputeTlb(void *Context)
 {
     return Bc250ActiveFlushVmidTlb(Context, BC250_GCVM_COMPUTE_VMID);
@@ -9085,8 +10620,9 @@ static uint32_t Bc250ActiveFlushMappedGfxhubTlb(void *Context)
         (BC250_DXGK_ACTIVE_CONTEXT *)Context;
     uint32_t gfxhubOk;
 
-    /* VidMm updates may affect a process used by either node. */
+    /* VidMm updates may affect paging (VMID 8), user process (VMID 7), or compute (VMID 9). */
     gfxhubOk = Bc250ActiveFlushVmidTlb(Context, BC250_GCVM_VMID8) &&
+        Bc250ActiveFlushVmidTlb(Context, BC250_GCVM_USER_VMID) &&
         Bc250ActiveFlushComputeTlb(Context);
 
     /*
@@ -9130,6 +10666,15 @@ static uint32_t Bc250ActiveExecuteGcvmBacking(
     interfaceData.Flush = Bc250ActiveFlushMappedGfxhubTlb;
     interfaceData.Context = active;
     interfaceData.Identity = BC250_GCVM_VMID8_IDENTITY;
+    {
+        uint32_t cntlBefore = 0u;
+        if (interfaceData.Read32(interfaceData.Context, BC250_GCVM_VMID8_CNTL, &cntlBefore) &&
+            (cntlBefore & BC250_GCVM_ENABLE_CONTEXT) != 0u) {
+            BC250_GCVM_VMID8_INSTALL_EVIDENCE cleanEv;
+            RtlZeroMemory(&cleanEv, sizeof(cleanEv));
+            (void)Bc250GcvmVmid8Uninstall(&interfaceData, &cleanEv);
+        }
+    }
     active->GcvmVmid8Status = Bc250RunGcvmVmid8InertTransaction(
         PageTablePhysical, &interfaceData, &active->GcvmVmid8Evidence);
 

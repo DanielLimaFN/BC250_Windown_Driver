@@ -3,9 +3,38 @@
 #include <assert.h>
 #include <string.h>
 #include "bc250_d3d_umd.h"
+#include "../core/bc250_escape_contract.h"
 
 static UINT g_SetErrorCalls;
 static HRESULT g_LastUmdError;
+
+/*
+ * Leitura LOCAL do tunable, de proposito.
+ *
+ * Os leitores de registro moram em bc250_d3d_umd.c e NAO sao exportados pela
+ * DLL -- a suite linka a import lib e nao deve ganhar exportacoes so' para se
+ * enxergar (comentario do link em build-umd.bat). O teste le a mesma chave por
+ * conta propria para poder DECLARAR o ambiente em que rodou.
+ */
+static BOOL TestReadUmdTunable(const char* Name)
+{
+    HKEY key = NULL;
+    DWORD value = 0;
+    DWORD size = (DWORD)sizeof(value);
+    DWORD type = 0;
+    BOOL armed = FALSE;
+
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, BC250_D3D11_CAPS_PROBE_REG_KEY, 0,
+            KEY_QUERY_VALUE, &key) == ERROR_SUCCESS) {
+        if (RegQueryValueExA(key, Name, NULL, &type, (LPBYTE)&value, &size)
+                == ERROR_SUCCESS &&
+            type == REG_DWORD && value != 0) {
+            armed = TRUE;
+        }
+        RegCloseKey(key);
+    }
+    return armed;
+}
 
 static VOID APIENTRY TestSetError(
     D3D10DDI_HRTCORELAYER CoreLayer,
@@ -411,16 +440,42 @@ static void TestDeviceCreateFailClosedWithoutPipeline(void)
     createData.hDrvDevice.pDrvPrivate = &device;
 
     /*
-     * Execution test: when BC250_D3D10_11_NATIVE_READY is 0,
-     * Bc250Umd10CreateDevice initializes the device, checks readiness,
-     * performs clean teardown, and strictly returns E_NOTIMPL.
-     * Zero false capability advertisement!
+     * Tabela pura do gate, exaustiva -- independe de maquina.
+     */
+    assert(Bc250Umd3DPipelineIsDeclared(FALSE, FALSE) == FALSE);
+    assert(Bc250Umd3DPipelineIsDeclared(FALSE, TRUE) == TRUE);
+    assert(Bc250Umd3DPipelineIsDeclared(TRUE, FALSE) == TRUE);
+    assert(Bc250Umd3DPipelineIsDeclared(TRUE, TRUE) == TRUE);
+
+    /*
+     * Execution test CONDICIONADO AO AMBIENTE, e o motivo esta medido:
+     * Bc250Umd10CreateDevice le HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion, e
+     * um bind de laboratorio anterior deixa essa chave em 1. Antes desta
+     * correcao a suite reprovava por estado da MAQUINA, sem mudanca de codigo
+     * -- e o "42/42 PASS" de 10/09 nao podia ter sido obtido nesta maquina no
+     * estado em que ela esta. Agora a assercao e' de COERENCIA: o DDI tem de
+     * seguir a politica pura para o ambiente medido, e a tabela acima cobre
+     * os quatro casos, entao nada aqui pode ficar vacuo.
      */
     {
+        BOOL promotionArmed = TestReadUmdTunable(BC250_D3D11_LAB_PROMOTION_REG_NAME);
+        BOOL permitted = Bc250Umd3DPipelineIsDeclared(
+            BC250_D3D10_11_NATIVE_READY ? TRUE : FALSE, promotionArmed);
         HRESULT hr = Bc250Umd10CreateDevice(hAdapter, &createData);
-        assert(hr == E_NOTIMPL);
-        assert(device.DeviceActive == FALSE);
-        assert(device.WinsysInitialized == FALSE);
+
+        if (!permitted) {
+            assert(hr == E_NOTIMPL);
+            assert(device.DeviceActive == FALSE);
+            assert(device.WinsysInitialized == FALSE);
+        } else {
+            /* Promovido: NAO exigimos sucesso -- sem KMD nesta maquina o
+             * caminho falha por winsys, e isso e' aceitavel. O que NAO pode
+             * acontecer e' o gate recusar por motivo errado. */
+            printf("  -> AVISO: D3D11LabPromotion=%d nesta maquina; gate de "
+                   "CreateDevice avaliado por coerencia (hr=0x%08X)\n",
+                   (int)promotionArmed, (unsigned)hr);
+            assert(device.DeviceActive == FALSE || SUCCEEDED(hr));
+        }
     }
 
     printf("  -> Bc250Umd10CreateDevice fail-closed gate PASS\n");
@@ -517,6 +572,25 @@ static void TestDeviceTablePopulation(void)
     printf("  -> D3D10.1, D3D11 & DXGI device functions table population PASS\n");
 }
 
+/*
+ * F2.3 -- stub do callback de scanout. Registra QUANTAS vezes o kernel foi
+ * chamado e COM QUE handle: sem os dois numeros o teste nao distingue "a DDI
+ * chamou o kernel" de "a DDI devolveu S_OK por conta propria".
+ */
+static UINT g_SetDisplayModeCalls;
+static D3DKMT_HANDLE g_SetDisplayModeLastPrimary;
+
+static HRESULT APIENTRY TestSetDisplayModeCb(
+    HANDLE hDevice,
+    D3DDDICB_SETDISPLAYMODE *pArgs)
+{
+    (void)hDevice;
+    assert(pArgs != NULL);
+    ++g_SetDisplayModeCalls;
+    g_SetDisplayModeLastPrimary = pArgs->hPrimaryAllocation;
+    return S_OK;
+}
+
 static void TestDxgiBaseFunctions(void)
 {
     DXGI_DDI_BASE_FUNCTIONS dxgiFuncs;
@@ -531,12 +605,21 @@ static void TestDxgiBaseFunctions(void)
     DXGI_DDI_ARG_BLT bltData;
     DXGI_DDI_ARG_PRESENT presentData;
     BC250_UMD_DEVICE dev;
+    D3DDDI_DEVICECALLBACKS dxgiTestCallbacks;
     HRESULT hr;
 
     printf("[TEST] Testing DXGI base DDI implementations...\n");
 
     memset(&dev, 0, sizeof(dev));
     dev.DeviceActive = TRUE;
+    /*
+     * F2.3: a DDI passou a depender de pfnSetDisplayModeCb. Sem o stub, o
+     * contraponto "primaria valida chama o kernel" nao poderia existir e a
+     * correcao seria indistinguivel de "recusa sempre".
+     */
+    memset(&dxgiTestCallbacks, 0, sizeof(dxgiTestCallbacks));
+    dxgiTestCallbacks.pfnSetDisplayModeCb = TestSetDisplayModeCb;
+    dev.pKTCallbacks = &dxgiTestCallbacks;
 
     memset(&dxgiFuncs, 0, sizeof(dxgiFuncs));
     Bc250UmdPopulateDxgiBaseFuncs(&dxgiFuncs);
@@ -559,11 +642,62 @@ static void TestDxgiBaseFunctions(void)
     assert(gammaData.ScaleAndOffsetSupported == FALSE);
     assert(gammaData.NumGammaControlPoints == 0);
 
-    /* SetDisplayMode */
+    /*
+     * F0.1 (13/09) -- ESTE BLOCO CONGELAVA A MENTIRA.
+     *
+     * Ate esta faixa a assercao era `assert(hr == S_OK)` sobre um struct ZERADO.
+     * Ou seja: o teste EXIGIA que a DDI declarasse sucesso sem backend nenhum, e
+     * reprovaria qualquer tentativa de conserto. Sexta ocorrencia da classe no
+     * projeto (as anteriores: comparacao crua de RPTR na A15, STATUS_SUCCESS sem
+     * executor de TDR, memcpy de CPU no Draw, sdma_blt_executed cego a copia por
+     * CPU, teste do blt exigindo 128 bytes).
+     *
+     * O invariante correto e' o OPOSTO: enquanto `pfnSetDisplayModeCb` nao for
+     * chamada, a DDI TEM de recusar. Quando o item 2.3 do plano aterrissar, esta
+     * assercao muda para exigir a chamada ao callback -- nunca para voltar a
+     * aceitar S_OK sem backend.
+     */
     memset(&setDisplayMode, 0, sizeof(setDisplayMode));
     setDisplayMode.SubResourceIndex = 0;
     hr = dxgiFuncs.pfnSetDisplayMode(&setDisplayMode);
-    assert(hr == S_OK);
+    /*
+     * F2.3: o backend chegou. Com struct zerado nao ha device, nem recurso, nem
+     * alocacao de kernel -- a DDI tem de RECUSAR. O invariante que importa
+     * continua sendo o mesmo da F0: sem backend efetivo, NUNCA S_OK.
+     */
+    assert(hr != S_OK);
+    assert(hr == E_FAIL);
+
+    /*
+     * Contraponto: recurso valido, primaria declarada e callback presente ->
+     * a DDI PRECISA chamar pfnSetDisplayModeCb com o handle de kernel exato.
+     * Sem este bloco, "recusa sempre" passaria como se fosse correcao.
+     */
+    {
+        BC250_UMD_RESOURCE primaryRes;
+        memset(&primaryRes, 0, sizeof(primaryRes));
+        primaryRes.Created = TRUE;
+        primaryRes.Allocation.Created = TRUE;
+        primaryRes.Allocation.KernelAllocation = 0xA110u;
+        primaryRes.Allocation.DeclaredPrimary = TRUE;
+
+        memset(&setDisplayMode, 0, sizeof(setDisplayMode));
+        setDisplayMode.hDevice = (DXGI_DDI_HDEVICE)&dev;
+        setDisplayMode.hResource = (DXGI_DDI_HRESOURCE)&primaryRes;
+        g_SetDisplayModeCalls = 0;
+        g_SetDisplayModeLastPrimary = 0;
+        hr = dxgiFuncs.pfnSetDisplayMode(&setDisplayMode);
+        assert(hr == S_OK);
+        assert(g_SetDisplayModeCalls == 1);
+        assert(g_SetDisplayModeLastPrimary == 0xA110u);
+
+        /* Nao-primaria continua RECUSADA: o kernel so' varre o que aceitou. */
+        primaryRes.Allocation.DeclaredPrimary = FALSE;
+        g_SetDisplayModeCalls = 0;
+        hr = dxgiFuncs.pfnSetDisplayMode(&setDisplayMode);
+        assert(hr == E_FAIL);
+        assert(g_SetDisplayModeCalls == 0);
+    }
 
     /* SetResourcePriority */
     memset(&setPriority, 0, sizeof(setPriority));
@@ -591,14 +725,102 @@ static void TestDxgiBaseFunctions(void)
         hr = dxgiFuncs.pfnQueryResourceResidency(&queryResidency);
         assert(hr == S_OK);
         assert(residencyStatus[0] == DXGI_DDI_RESIDENCY_FULLY_RESIDENT);
-        assert(residencyStatus[1] == DXGI_DDI_RESIDENCY_EVICTED_TO_DISK);
+        /*
+         * F0.1 -- OITAVA ocorrencia da classe, e com uma nuance que corrige uma
+         * das auditorias externas.
+         *
+         * A assercao era `== DXGI_DDI_RESIDENCY_EVICTED_TO_DISK`, congelando um
+         * valor que afirma ao runtime que existe conteudo paginado em DISCO --
+         * algo que este driver nunca produz (nao ha caminho de offer/reclaim).
+         *
+         * Uma das auditorias propos trocar por DXGI_DDI_RESIDENCY_NOT_RESIDENT.
+         * ESSE VALOR NAO EXISTE: o enum tem exatamente tres membros
+         * (dxgiddi.h:41) -- FULLY_RESIDENT, RESIDENT_IN_SHARED_MEMORY e
+         * EVICTED_TO_DISK. A proposta nao compilaria.
+         *
+         * O invariante que SOBREVIVE, e que nao congela escolha nenhuma: uma
+         * alocacao nao-residente NAO pode ser reportada como totalmente
+         * residente. Qual dos dois valores restantes e' o menos falso e' decisao
+         * do item 3.3 do plano, com justificativa escrita.
+         */
+        assert(residencyStatus[1] != DXGI_DDI_RESIDENCY_FULLY_RESIDENT);
     }
 
-    /* RotateResourceIdentities */
+    /*
+     * F0.1 -- setima ocorrencia da mesma classe. Ver o comentario do
+     * SetDisplayMode acima.
+     *
+     * Rotacionar ZERO recursos continua sendo S_OK: e' no-op legitimo, nao
+     * mentira. Rotacionar 2 sem implementar a troca TEM de recusar. O
+     * contraponto existe para a correcao nao virar peneira -- se a DDI passar a
+     * recusar tudo indiscriminadamente, este caso reprova.
+     */
     memset(&rotateData, 0, sizeof(rotateData));
-    rotateData.Resources = 2;
+    rotateData.Resources = 0;
     hr = dxgiFuncs.pfnRotateResourceIdentities(&rotateData);
     assert(hr == S_OK);
+
+    /*
+     * F2.4: a rotacao real. Semantica do contrato (dxgiddi.h:100): o recurso i
+     * assume a identidade do i+1, e o ultimo assume a do primeiro.
+     *
+     * O invariante forte e' que o BACKING gira e NENHUM handle se perde -- o
+     * conjunto de alocacoes antes e depois tem de ser o mesmo, so' que
+     * deslocado. Um teste que olhasse apenas res[0] deixaria passar uma rotacao
+     * que duplicasse um backing e perdesse outro.
+     */
+    {
+        BC250_UMD_RESOURCE chain[3];
+        DXGI_DDI_HRESOURCE chainHandles[3];
+        UINT c;
+
+        for (c = 0; c < 3; ++c) {
+            memset(&chain[c], 0, sizeof(chain[c]));
+            chain[c].Created = TRUE;
+            chain[c].Allocation.Created = TRUE;
+            chain[c].Allocation.KernelAllocation = (D3DKMT_HANDLE)(0xA000u + c);
+            chain[c].Allocation.GpuVirtualAddress = 0x100000ull * (c + 1u);
+            chainHandles[c] = (DXGI_DDI_HRESOURCE)&chain[c];
+        }
+
+        memset(&rotateData, 0, sizeof(rotateData));
+        rotateData.Resources = 3;
+        rotateData.pResources = chainHandles;
+        hr = dxgiFuncs.pfnRotateResourceIdentities(&rotateData);
+        assert(hr == S_OK);
+        /* 0 <= 1, 1 <= 2, 2 <= 0 */
+        assert(chain[0].Allocation.KernelAllocation == (D3DKMT_HANDLE)0xA001u);
+        assert(chain[1].Allocation.KernelAllocation == (D3DKMT_HANDLE)0xA002u);
+        assert(chain[2].Allocation.KernelAllocation == (D3DKMT_HANDLE)0xA000u);
+        /* A GPUVA viaja junto com o backing, nao fica para tras. */
+        assert(chain[0].Allocation.GpuVirtualAddress == 0x200000ull);
+        assert(chain[2].Allocation.GpuVirtualAddress == 0x100000ull);
+
+        /* Tres voltas restauram a identidade original: nada se perdeu. */
+        assert(dxgiFuncs.pfnRotateResourceIdentities(&rotateData) == S_OK);
+        assert(dxgiFuncs.pfnRotateResourceIdentities(&rotateData) == S_OK);
+        for (c = 0; c < 3; ++c) {
+            assert(chain[c].Allocation.KernelAllocation == (D3DKMT_HANDLE)(0xA000u + c));
+        }
+
+        /*
+         * Fail-closed ATOMICO: um recurso invalido no meio da cadeia aborta
+         * ANTES de mover qualquer coisa. Rotacao parcial deixaria a cadeia com
+         * backings duplicados, que e' pior que a recusa.
+         */
+        chain[1].Created = FALSE;
+        assert(dxgiFuncs.pfnRotateResourceIdentities(&rotateData) == E_INVALIDARG);
+        for (c = 0; c < 3; ++c) {
+            assert(chain[c].Allocation.KernelAllocation == (D3DKMT_HANDLE)(0xA000u + c));
+        }
+        chain[1].Created = TRUE;
+
+        /* Resources > 0 com pResources NULL recusa. */
+        memset(&rotateData, 0, sizeof(rotateData));
+        rotateData.Resources = 2;
+        rotateData.pResources = NULL;
+        assert(dxgiFuncs.pfnRotateResourceIdentities(&rotateData) == E_INVALIDARG);
+    }
 
     /* Blt: falha fechado com ponteiros invalidos / recursos nao criados */
     memset(&bltData, 0, sizeof(bltData));
@@ -651,14 +873,21 @@ static void TestCapsPipelineSupport(void)
     getCaps.DataSize = sizeof(capsData);
 
     hr = Bc250Umd10GetCaps(hAdapter, &getCaps);
-#if BC250_D3D10_11_NATIVE_READY
-    assert(hr == S_OK);
-    assert((capsData.Caps & D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_10_0)) != 0);
-    assert((capsData.Caps & D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_10_1)) != 0);
-#else
-    /* Sem backend nativo de shaders/draw, recusar com E_NOTIMPL honestamente */
-    assert(hr == E_NOTIMPL);
-#endif
+    /*
+     * Type=130 sai da MESMA politica do CreateDevice (Bc250Umd3DPipelineIsDeclared),
+     * que le D3D11LabPromotion do registro. O #if sozinho nao bastava: com a
+     * chave armada por um bind anterior a suite reprovava por estado da maquina.
+     */
+    if (Bc250Umd3DPipelineIsDeclared(
+            BC250_D3D10_11_NATIVE_READY ? TRUE : FALSE,
+            TestReadUmdTunable(BC250_D3D11_LAB_PROMOTION_REG_NAME))) {
+        assert(hr == S_OK);
+        assert((capsData.Caps & D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_10_0)) != 0);
+        assert((capsData.Caps & D3D11DDI_ENCODE_3DPIPELINESUPPORT_CAP(D3D11DDI_3DPIPELINELEVEL_10_1)) != 0);
+    } else {
+        /* Sem backend nativo de shaders/draw, recusar com E_NOTIMPL honestamente */
+        assert(hr == E_NOTIMPL);
+    }
 
     printf("  -> D3D11DDICAPS_3DPIPELINESUPPORT PASS\n");
 }
@@ -714,7 +943,7 @@ static void TestShaderDDIs(void)
 
     shaderData = (uint32_t *)(buffer + 44);
     shaderData[0] = (0u << 16u) | (4u << 4u) | 0u; /* Pixel Shader SM 4.0 */
-    shaderData[1] = 5u; /* 5 opcode tokens */
+    shaderData[1] = 7u; /* total program length: 2 header + 5 opcode tokens */
     shaderData[2] = (3u << 24u) | 54u; /* MOV */
     shaderData[3] = 0x100012u;
     shaderData[4] = 0x200046u;
@@ -762,7 +991,7 @@ static void TestShaderDDIs(void)
     {
         UINT directStream[7];
         directStream[0] = (1u << 16u) | (5u << 4u) | 0u; /* VS SM 5.0 */
-        directStream[1] = 5u;
+        directStream[1] = 7u;
         directStream[2] = (3u << 24u) | 54u;
         directStream[3] = 0x100012u;
         directStream[4] = 0x200046u;
@@ -781,6 +1010,36 @@ static void TestShaderDDIs(void)
         assert(shader.IsParsed == TRUE);
 
         deviceFuncs10_1.pfnDestroyShader(hDev, hShader);
+
+        /* Test Direct token stream with signatures */
+        {
+            D3D10DDIARG_STAGE_IO_SIGNATURES sigs;
+            D3D10DDIARG_SIGNATURE_ENTRY inEntry;
+            D3D10DDIARG_SIGNATURE_ENTRY outEntry;
+
+            memset(&sigs, 0, sizeof(sigs));
+            inEntry.SystemValue = D3D10_SB_NAME_VERTEX_ID;
+            inEntry.Register = 0;
+            inEntry.Mask = 1;
+            sigs.pInputSignature = &inEntry;
+            sigs.NumInputSignatureEntries = 1;
+
+            outEntry.SystemValue = D3D10_SB_NAME_POSITION;
+            outEntry.Register = 0;
+            outEntry.Mask = 0xFu;
+            sigs.pOutputSignature = &outEntry;
+            sigs.NumOutputSignatureEntries = 1;
+
+            memset(&shader, 0xFF, sizeof(shader));
+            deviceFuncs10_1.pfnCreateVertexShader(hDev, directStream, hShader, hRTShader, &sigs);
+            assert(shader.Type == BC250_DXBC_SHADER_VERTEX);
+            assert(shader.MajorVersion == 5u);
+            assert(shader.MinorVersion == 0u);
+            assert(shader.OpcodeTokenCount == 5u);
+            assert(shader.IsParsed == TRUE);
+
+            deviceFuncs10_1.pfnDestroyShader(hDev, hShader);
+        }
     }
 
     printf("  -> D3D10 Shader DDIs PASS\n");
@@ -1268,8 +1527,13 @@ static void TestDrawAndPipelineBindingDDIs(void)
     deviceFuncs10_1.pfnDrawAuto(hDev);
     assert(dev.PipelineState.DrawCount == 0);
     assert(dev.RejectedDrawCount == 5u);
-    assert(g_SetErrorCalls == 5u);
-    assert(g_LastUmdError == E_NOTIMPL);
+    if (TestReadUmdTunable(BC250_D3D11_DRAW_BLT_SUBST_REG_NAME)) {
+        /* Sob regime experimental de substituicao armado, SetErrorCb e omitido */
+        assert(g_SetErrorCalls == 0u);
+    } else {
+        assert(g_SetErrorCalls == 5u);
+        assert(g_LastUmdError == E_NOTIMPL);
+    }
 
     /* Hazards */
     deviceFuncs10_1.pfnResourceReadAfterWriteHazard(hDev, hResSrc);
@@ -1281,6 +1545,188 @@ static void TestDrawAndPipelineBindingDDIs(void)
     deviceFuncs10_1.pfnDestroyResource(hDev, hResCB);
 
     printf("  -> D3D10 IA/Copy PASS; Draw fail-closed sem backend PM4 PASS\n");
+}
+
+/*
+ * C1 -- trava da SUBSTITUICAO de Draw por blt 1:1.
+ *
+ * A versao anterior deste bloco EXIGIA a mentira: chamava pfnDrawIndexed e
+ * afirmava que o shadow do destino recebia 0x5A por memcpy de CPU, e que o
+ * draw NAO era recusado. Congelava um fallback de software disfarcado de
+ * renderizacao -- mesma armadilha do gate da A15 e do mcdm_callbacks_test.
+ *
+ * Agora a assercao e' a inversa e serve de deteccao de regressao: com o
+ * tunable desarmado (default de fabrica), o draw RECUSA com E_NOTIMPL e o
+ * shadow do destino fica INTOCADO. Se alguem reintroduzir o memcpy, este
+ * bloco reprova.
+ */
+static void TestDrawBltSubstitutionFailsClosed(void)
+{
+    D3D10_1DDI_DEVICEFUNCS deviceFuncs10_1;
+    D3D10DDI_CORELAYER_DEVICECALLBACKS umCallbacks;
+    D3D10DDI_HDEVICE hDev;
+    BC250_UMD_DEVICE dev;
+    BC250_UMD_RESOURCE resSrc, resDst;
+    BC250_UMD_SRV srv;
+    BC250_UMD_RTV rtv;
+    D3D10DDIARG_CREATERESOURCE createDesc;
+    D3D10DDI_MIPINFO mip;
+    D3D10DDI_HRESOURCE hResSrc;
+    D3D10DDI_HRESOURCE hResDst;
+    UINT64 initialRejected;
+    UINT initialSetError;
+    UINT i;
+
+    printf("[TEST] C1 DRAW_BLT_SUBSTITUTION: politica e fail-closed...\n");
+
+    /*
+     * Tabela pura. A configuracao completa (todos os fatos presentes) e' licita;
+     * cada fato obrigatorio retirado tem de recusar sozinho, senao a reducao
+     * vira peneira.
+     */
+    assert(Bc250UmdDrawBltSubstitutionIsLawful(
+        TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, FALSE) == TRUE);
+
+    /* Default de fabrica: desarmado recusa mesmo com tudo elegivel. */
+    assert(Bc250UmdDrawBltSubstitutionIsLawful(
+        FALSE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, FALSE) == FALSE);
+    /* Sem winsys nao existe caminho de GPU -- nunca cair para CPU. */
+    assert(Bc250UmdDrawBltSubstitutionIsLawful(
+        TRUE, FALSE, TRUE, TRUE, TRUE, TRUE, TRUE, FALSE) == FALSE);
+    /* Origem nao residente. */
+    assert(Bc250UmdDrawBltSubstitutionIsLawful(
+        TRUE, TRUE, FALSE, TRUE, TRUE, TRUE, TRUE, FALSE) == FALSE);
+    /* Destino nao residente. */
+    assert(Bc250UmdDrawBltSubstitutionIsLawful(
+        TRUE, TRUE, TRUE, FALSE, TRUE, TRUE, TRUE, FALSE) == FALSE);
+    /* Dimensoes diferentes: copia 1:1 nao reproduz escala. */
+    assert(Bc250UmdDrawBltSubstitutionIsLawful(
+        TRUE, TRUE, TRUE, TRUE, FALSE, TRUE, TRUE, FALSE) == FALSE);
+    /* Formato diferente: copia nao converte. */
+    assert(Bc250UmdDrawBltSubstitutionIsLawful(
+        TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, TRUE, FALSE) == FALSE);
+    /* Viewport parcial ou desconhecida. */
+    assert(Bc250UmdDrawBltSubstitutionIsLawful(
+        TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, FALSE) == FALSE);
+    /* Blend ligado: aceito sob substituicao declarada (blend e' ignorado pelo SDMA,
+     * conforme arm-d3d11-draw-blt-substitution.ps1). */
+    assert(Bc250UmdDrawBltSubstitutionIsLawful(
+        TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE) == TRUE);
+
+    memset(&deviceFuncs10_1, 0, sizeof(deviceFuncs10_1));
+    Bc250UmdPopulateDeviceFuncs10_1(&deviceFuncs10_1);
+
+    memset(&dev, 0, sizeof(dev));
+    memset(&umCallbacks, 0, sizeof(umCallbacks));
+    umCallbacks.pfnSetErrorCb = TestSetError;
+    dev.pUMCallbacks = &umCallbacks;
+    dev.hRTCoreLayer.handle = (void*)0xC0DEu;
+    dev.WinsysInitialized = FALSE;
+    hDev.pDrvPrivate = &dev;
+
+    memset(&mip, 0, sizeof(mip));
+    mip.TexelWidth = 64;
+    mip.TexelHeight = 64;
+    mip.TexelDepth = 1;
+    mip.PhysicalWidth = 64;
+    mip.PhysicalHeight = 64;
+    mip.PhysicalDepth = 1;
+
+    memset(&createDesc, 0, sizeof(createDesc));
+    createDesc.pMipInfoList = &mip;
+    createDesc.MipLevels = 1;
+    createDesc.ArraySize = 1;
+    createDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    createDesc.SampleDesc.Count = 1;
+    createDesc.SampleDesc.Quality = 0;
+    createDesc.Usage = D3D10_DDI_USAGE_DEFAULT;
+    createDesc.BindFlags = D3D10_DDI_BIND_SHADER_RESOURCE;
+    createDesc.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
+
+    hResSrc.pDrvPrivate = &resSrc;
+    hResDst.pDrvPrivate = &resDst;
+
+    deviceFuncs10_1.pfnCreateResource(hDev, &createDesc, hResSrc, (D3D10DDI_HRTRESOURCE){NULL});
+    createDesc.BindFlags = D3D10_DDI_BIND_RENDER_TARGET;
+    deviceFuncs10_1.pfnCreateResource(hDev, &createDesc, hResDst, (D3D10DDI_HRTRESOURCE){NULL});
+
+    /* Tokens de alocacao continuam unicos (correcao do OpenAlloc). */
+    assert(resSrc.Allocation.Token != 0);
+    assert(resDst.Allocation.Token != 0);
+    assert(resSrc.Allocation.Token != resDst.Allocation.Token);
+
+    resSrc.pCpuShadow = calloc(1, resSrc.TotalByteSize);
+    resDst.pCpuShadow = calloc(1, resDst.TotalByteSize);
+    assert(resSrc.pCpuShadow != NULL && resDst.pCpuShadow != NULL);
+    memset(resSrc.pCpuShadow, 0x5A, resSrc.TotalByteSize);
+    memset(resDst.pCpuShadow, 0x00, resDst.TotalByteSize);
+
+    /* Pipeline plenamente elegivel EXCETO pelo tunable e pelo winsys. */
+    memset(&rtv, 0, sizeof(rtv));
+    rtv.pResource = &resDst;
+    rtv.Created = TRUE;
+    dev.PipelineState.NumBoundRTVs = 1;
+    dev.PipelineState.BoundRTVs[0].pDrvPrivate = &rtv;
+
+    memset(&srv, 0, sizeof(srv));
+    srv.pResource = &resSrc;
+    srv.Created = TRUE;
+    dev.PipelineState.PsShaderResources[0].pDrvPrivate = &srv;
+
+    dev.PipelineState.NumViewports = 1;
+    dev.PipelineState.Viewports[0].TopLeftX = 0.0f;
+    dev.PipelineState.Viewports[0].TopLeftY = 0.0f;
+    dev.PipelineState.Viewports[0].Width = 64.0f;
+    dev.PipelineState.Viewports[0].Height = 64.0f;
+
+    /*
+     * A expectativa abaixo NAO depende do estado da maquina: dev.WinsysInitialized
+     * e' FALSE neste harness, e sem winsys a politica recusa qualquer que seja o
+     * tunable. Travado aqui para que ninguem precise adivinhar isso depois.
+     */
+    assert(Bc250UmdDrawBltSubstitutionIsLawful(
+        TestReadUmdTunable(BC250_D3D11_DRAW_BLT_SUBST_REG_NAME),
+        FALSE, TRUE, TRUE, TRUE, TRUE, TRUE, FALSE) == FALSE);
+
+    initialRejected = dev.RejectedDrawCount;
+    initialSetError = g_SetErrorCalls;
+
+    deviceFuncs10_1.pfnDrawIndexed(hDev, 6, 0, 0);
+
+    /* RECUSA honesta: contador de recusa sobe. */
+    assert(dev.RejectedDrawCount == initialRejected + 1u);
+    if (TestReadUmdTunable(BC250_D3D11_DRAW_BLT_SUBST_REG_NAME)) {
+        /*
+         * Sob regime experimental de substituicao armado,
+         * a UMD omite SetErrorCb(E_NOTIMPL) para manter viva a apresentacao.
+         */
+        assert(g_SetErrorCalls == initialSetError);
+    } else {
+        /* Modo padrao fail-closed: E_NOTIMPL vai ao runtime. */
+        assert(g_SetErrorCalls == initialSetError + 1u);
+        assert(g_LastUmdError == E_NOTIMPL);
+    }
+    /* Nenhum draw pode ter sido contado como substituido. */
+    assert(dev.SubstitutedDrawCount == 0u);
+    /*
+     * DETECCAO DE REGRESSAO DO MEMCPY: o destino tem de continuar zerado. Se
+     * o fallback de CPU voltar, algum byte virara 0x5A e este laco reprova.
+     */
+    for (i = 0; i < resDst.TotalByteSize; ++i) {
+        assert(((const uint8_t*)resDst.pCpuShadow)[i] == 0x00);
+    }
+
+    /* Draw nao-indexado segue a mesma regra. */
+    deviceFuncs10_1.pfnDraw(hDev, 3, 0);
+    assert(dev.RejectedDrawCount == initialRejected + 2u);
+    assert(dev.SubstitutedDrawCount == 0u);
+
+    deviceFuncs10_1.pfnDestroyResource(hDev, hResSrc);
+    deviceFuncs10_1.pfnDestroyResource(hDev, hResDst);
+    free(resSrc.pCpuShadow);
+    free(resDst.pCpuShadow);
+
+    printf("  -> C1 politica 9/9, Draw fail-closed sem memcpy e tokens unicos PASS\n");
 }
 
 static void TestStateObjectDDIs(void)
@@ -1783,99 +2229,321 @@ static void TestCommandBufferAssembly(void)
 }
 
 
-static uint32_t g_BltUploaded[32768];
-static UINT64 g_BltCompleted;
 static unsigned g_BltSubmits;
-static int g_BltFailure;
-static HRESULT APIENTRY BltTestLock(HANDLE h, D3DDDICB_LOCK *a)
-{
-    (void)h;
-    if (g_BltFailure == 1) return E_FAIL;
-    a->pData = g_BltUploaded;
-    return S_OK;
-}
-static HRESULT APIENTRY BltTestUnlock(HANDLE h, const D3DDDICB_UNLOCK *a)
-{ (void)h; (void)a; return S_OK; }
-static HRESULT APIENTRY BltTestWait(HANDLE h,
-    const D3DDDICB_WAITFORSYNCHRONIZATIONOBJECTFROMCPU *a)
-{ (void)h; (void)a; return g_BltFailure == 4 ? E_FAIL : S_OK; }
 static HRESULT APIENTRY BltTestSubmit(HANDLE h, const D3DDDICB_SUBMITCOMMAND *a)
+{ (void)h; (void)a; ++g_BltSubmits; return S_OK; }
+
+/*
+ * Composicao pelo KMD (13/09) -- o blt do DWM NAO submete contexto.
+ *
+ * Medicao da corrida 13/09 08:12 que motivou esta troca: o KMD executou 958
+ * IBs. 953 eram buffers de paginacao do dxgkrnl e nao produziram UM TDR. Os
+ * outros 5 eram submissoes de CONTEXTO desta UMD no Node 0 -- o no de
+ * paginacao (PagingNodeIndex=0) -- e CADA UMA foi seguida de um TDR, com a
+ * engine OCIOSA e o anel DRENADO. Cinco TDRs, BugCheck 0x116. Tres correcoes
+ * anteriores no caminho do blt (sinal de fence pelo contrato, sink unico de
+ * trace, anel de slots) nao mudaram isso, porque tratavam o passageiro.
+ *
+ * O caminho de blt do KMD fez 584 blts consecutivos sem TDR em 12/09 13:01:
+ * nao cria pacote de contexto e nao passa pelo escalonador.
+ *
+ * O INVARIANTE CENTRAL desta suite e' negativo: a composicao nao pode gerar
+ * NENHUMA submissao de contexto (g_BltSubmits == 0). Se alguem reintroduzir o
+ * caminho antigo, este teste reprova.
+ */
+static unsigned g_BltEscapes;
+static BC250_ESCAPE_COMPOSITE_BLT g_BltLastEscape;
+static HRESULT g_BltEscapeHr;
+static UINT32 g_BltEscapeResult;
+static HANDLE g_BltExpectedAdapter;
+static HANDLE g_BltExpectedDevice;
+
+static HRESULT APIENTRY BltTestEscape(HANDLE h, const D3DDDICB_ESCAPE *a)
 {
-    const uint32_t *w = g_BltUploaded;
-    (void)h;
-    ++g_BltSubmits;
-    assert(a->Commands == 0x300000 && a->CommandLength == 128u);
-    assert(a->BroadcastContext[0] == (HANDLE)(ULONG_PTR)7u);
-    /* Independent expected stream: GCR, two strided copies, GCR, fence, NOP. */
-    assert(w[0] == 17u && w[5] == 1u && w[6] == 7u);
-    assert(w[8] == 0x100000 && w[10] == 0x200018);
-    assert(w[12] == 1u && w[13] == 7u);
-    assert(w[15] == 0x100010 && w[17] == 0x20002c);
-    assert(w[19] == 17u && w[24] == (5u | (3u << 16)) && w[25] == 0x400000);
-    assert(w[28] == 0u && w[31] == 0u);
-    if (g_BltFailure == 2) return E_FAIL;
-    if (g_BltFailure != 3 && g_BltFailure != 4) g_BltCompleted = w[27];
+    BC250_ESCAPE_COMPOSITE_BLT *p;
+    ++g_BltEscapes;
+    assert(h == g_BltExpectedAdapter);
+    assert(a != NULL && a->pPrivateDriverData != NULL);
+    assert(a->hDevice == g_BltExpectedDevice);
+    assert(a->hContext == NULL);
+    assert(a->Flags.HardwareAccess == 1u);
+    assert(a->PrivateDriverDataSize == sizeof(BC250_ESCAPE_COMPOSITE_BLT));
+    p = (BC250_ESCAPE_COMPOSITE_BLT *)a->pPrivateDriverData;
+    assert(p->Opcode == BC250_ESCAPE_OP_COMPOSITE_BLT);
+    g_BltLastEscape = *p;
+    if (FAILED(g_BltEscapeHr)) return g_BltEscapeHr;
+    p->ResultCode = g_BltEscapeResult;
     return S_OK;
 }
+
 static void TestSdmaBltExecution(void)
 {
     BC250_UMD_DEVICE d;
+    BC250_UMD_ADAPTER adapter;
     BC250_UMD_RESOURCE src, dst;
     D3DDDI_DEVICECALLBACKS cb;
     DXGI_DDI_ARG_BLT a;
-    uint32_t words[32768];
-    unsigned mode;
-    memset(&d, 0, sizeof(d)); memset(&cb, 0, sizeof(cb));
+    DXGI_DDI_BASE_FUNCTIONS dxgi;
+
+    memset(&d, 0, sizeof(d)); memset(&adapter, 0, sizeof(adapter));
+    memset(&cb, 0, sizeof(cb));
     memset(&src, 0, sizeof(src)); memset(&dst, 0, sizeof(dst));
     memset(&a, 0, sizeof(a));
-    cb.pfnLockCb = BltTestLock; cb.pfnUnlockCb = BltTestUnlock;
+    cb.pfnEscapeCb = BltTestEscape;
     cb.pfnSubmitCommandCb = BltTestSubmit;
-    cb.pfnWaitForSynchronizationObjectFromCpuCb = BltTestWait;
     d.Winsys.Initialized = TRUE; d.Winsys.Callbacks = &cb;
-    d.BltWinsys = d.Winsys; d.BltWinsys.ContextCreated = TRUE;
-    d.BltWinsys.KernelContext = (HANDLE)(ULONG_PTR)7u;
-    d.BltWords = words;
-    d.BltCommand.Created = TRUE; d.BltCommand.ByteSize = sizeof(words);
-    d.BltCommand.GpuVirtualAddress = 0x300000;
-    d.BltFence.Created = TRUE; d.BltFence.SyncObject = 9;
-    d.BltFence.CpuVirtualAddress = &g_BltCompleted;
-    d.BltFence.GpuVirtualAddress = 0x400000;
+    d.Winsys.RuntimeDevice = (HANDLE)(ULONG_PTR)0xD00Du;
+    d.WinsysInitialized = TRUE;
+    adapter.hRTAdapter.handle = (HANDLE)(ULONG_PTR)0xA00Au;
+    d.pAdapter = &adapter;
+    g_BltExpectedAdapter = adapter.hRTAdapter.handle;
+    g_BltExpectedDevice = d.Winsys.RuntimeDevice;
+
+    /* Geometria ELEGIVEL: pitch igual, retangulo cobrindo linhas inteiras. */
     src.Created = TRUE; src.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
     src.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     src.SampleCount = src.MipLevels = src.ArraySize = 1;
-    src.Width = src.Height = 2; src.RowPitch = 16;
+    src.Width = 4; src.Height = 4; src.RowPitch = 16;
     src.TotalByteSize = 64; src.Allocation.ByteSize = 64;
     src.Allocation.Created = src.Allocation.Resident = TRUE;
     src.Allocation.GpuVirtualAddress = 0x100000;
-    dst = src; dst.Width = dst.Height = 4; dst.RowPitch = 20;
-    dst.TotalByteSize = 80; dst.Allocation.ByteSize = 80;
+    dst = src;
     dst.Allocation.GpuVirtualAddress = 0x200000;
-    a.hDevice = (DXGI_DDI_HDEVICE)&d; a.hSrcResource = (DXGI_DDI_HRESOURCE)&src; a.hDstResource = (DXGI_DDI_HRESOURCE)&dst;
-    a.DstLeft = a.DstTop = 1; a.DstRight = a.DstBottom = 3;
-    DXGI_DDI_BASE_FUNCTIONS dxgi;
+    a.hDevice = (DXGI_DDI_HDEVICE)&d;
+    a.hSrcResource = (DXGI_DDI_HRESOURCE)&src;
+    a.hDstResource = (DXGI_DDI_HRESOURCE)&dst;
+    a.DstLeft = 0; a.DstTop = 0; a.DstRight = 4; a.DstBottom = 4;
+
     memset(&dxgi, 0, sizeof(dxgi));
     Bc250UmdPopulateDxgiBaseFuncs(&dxgi);
-    g_BltFailure = 0; g_BltSubmits = 0; g_BltCompleted = 0;
-    assert(dxgi.pfnBlt(&a) == S_OK && g_BltSubmits == 1 && !d.BltPending);
-    assert(dxgi.pfnBlt(&a) == S_OK && g_BltCompleted == 2);
-    dst.Allocation.ByteSize = 48;
-    assert(FAILED(dxgi.pfnBlt(&a)) && g_BltSubmits == 2);
-    dst.Allocation.ByteSize = 80;
-    a.Flags.Value = 4;
-    assert(dxgi.pfnBlt(&a) == E_NOTIMPL && g_BltSubmits == 2);
-    a.Flags.Value = 0; d.NativeNode1Ready = TRUE;
-    assert(dxgi.pfnBlt(&a) == E_NOTIMPL);
-    d.NativeNode1Ready = FALSE;
-    for (mode = 1; mode <= 4; ++mode) {
-        unsigned before = g_BltSubmits;
-        d.BltPending = FALSE; g_BltFailure = (int)mode;
-        assert(FAILED(dxgi.pfnBlt(&a)));
-        if (mode > 1) {
-            assert(d.BltPending && g_BltSubmits == before + 1);
-            assert(FAILED(dxgi.pfnBlt(&a)) && g_BltSubmits == before + 1);
-        } else assert(g_BltSubmits == before);
+
+    g_BltEscapes = 0; g_BltSubmits = 0;
+    g_BltEscapeHr = S_OK; g_BltEscapeResult = BC250_PRESENT_BLT_STATUS_SUCCESS;
+
+    /* 1) Caminho feliz: escape chamado UMA vez, com os bytes exatos. */
+    assert(dxgi.pfnBlt(&a) == S_OK);
+    assert(g_BltEscapes == 1u);
+    assert(g_BltLastEscape.SourceGpuVa == 0x100000);
+    assert(g_BltLastEscape.DestGpuVa == 0x200000);
+    assert(g_BltLastEscape.SourcePitch == 16u);
+    assert(g_BltLastEscape.DestPitch == 16u);
+    assert(g_BltLastEscape.DestX == 0u && g_BltLastEscape.DestY == 0u);
+    /* O INVARIANTE: zero submissoes de contexto. */
+    assert(g_BltSubmits == 0u);
+
+    /* 2) O KMD recusar tem de virar falha, nunca sucesso silencioso. */
+    g_BltEscapeResult = BC250_PRESENT_BLT_STATUS_INVALID;
+    assert(FAILED(dxgi.pfnBlt(&a)));
+    assert(g_BltEscapes == 2u && g_BltSubmits == 0u);
+    g_BltEscapeResult = BC250_PRESENT_BLT_STATUS_SUCCESS;
+
+    /* 3) Falha do proprio callback propaga. */
+    g_BltEscapeHr = E_FAIL;
+    assert(FAILED(dxgi.pfnBlt(&a)));
+    assert(g_BltEscapes == 3u && g_BltSubmits == 0u);
+    g_BltEscapeHr = S_OK;
+
+    /* 4) Pitch diferente usa o escape retangular; nunca contexto/CPU. */
+    {
+        unsigned before = g_BltEscapes;
+        dst.RowPitch = 20; dst.Width = 5; dst.TotalByteSize = 100;
+        dst.Allocation.ByteSize = 100;
+        a.DstRight = 4;
+        assert(dxgi.pfnBlt(&a) == S_OK);
+        assert(g_BltEscapes == before + 1u && g_BltSubmits == 0u);
+        assert(g_BltLastEscape.SourcePitch == 16u);
+        assert(g_BltLastEscape.DestPitch == 20u);
+        dst.RowPitch = 16; dst.Width = 4; dst.TotalByteSize = 64;
+        dst.Allocation.ByteSize = 64;
     }
-    printf("SDMA Blt: strided GPU stream, bounds, missing producer sync and failure retention PASS (offline)\n");
+
+    /* 5) Retangulo deslocado conserva DstXY no contrato do KMD. */
+    {
+        unsigned before = g_BltEscapes;
+        src.Width = 2; src.Height = 2;
+        a.DstLeft = 1; a.DstTop = 1; a.DstRight = 3; a.DstBottom = 3;
+        assert(dxgi.pfnBlt(&a) == S_OK);
+        assert(g_BltEscapes == before + 1u && g_BltSubmits == 0u);
+        assert(g_BltLastEscape.DestX == 1u && g_BltLastEscape.DestY == 1u);
+        src.Width = 4; src.Height = 4;
+        a.DstLeft = 0; a.DstTop = 0; a.DstRight = 4; a.DstBottom = 4;
+    }
+
+    /* 6) Sem pfnEscapeCb o blt falha FECHADO -- nunca cai em contexto. */
+    {
+        D3DDDI_DEVICECALLBACKS noEscape = cb;
+        unsigned before = g_BltEscapes;
+        noEscape.pfnEscapeCb = NULL;
+        d.Winsys.Callbacks = &noEscape;
+        assert(dxgi.pfnBlt(&a) == E_NOTIMPL);
+        assert(g_BltEscapes == before && g_BltSubmits == 0u);
+        d.Winsys.Callbacks = &cb;
+    }
+
+    /* 7) Formato/limites continuam recusados antes de qualquer escape. */
+    {
+        unsigned before = g_BltEscapes;
+        dst.MiscFlags = 0x80000000u;
+        assert(dxgi.pfnBlt(&a) == E_NOTIMPL);
+        dst.MiscFlags = 0;
+        src.Allocation.Resident = FALSE;
+        assert(FAILED(dxgi.pfnBlt(&a)));
+        src.Allocation.Resident = TRUE;
+        assert(g_BltEscapes == before && g_BltSubmits == 0u);
+    }
+
+    /* 8) Sem hAdapter runtime o blt falha FECHADO antes do callback. */
+    {
+        unsigned before = g_BltEscapes;
+        adapter.hRTAdapter.handle = NULL;
+        assert(dxgi.pfnBlt(&a) == E_NOTIMPL);
+        assert(g_BltEscapes == before && g_BltSubmits == 0u);
+        adapter.hRTAdapter.handle = g_BltExpectedAdapter;
+    }
+
+    /* 9) Sem o objeto adapter o blt tambem falha FECHADO. */
+    {
+        unsigned before = g_BltEscapes;
+        d.pAdapter = NULL;
+        assert(dxgi.pfnBlt(&a) == E_NOTIMPL);
+        assert(g_BltEscapes == before && g_BltSubmits == 0u);
+        d.pAdapter = &adapter;
+    }
+
+    assert(g_BltSubmits == 0u);
+    printf("SDMA Blt: composicao retangular 1:1 pelo KMD via escape, zero submissao de contexto PASS (offline)\n");
+}
+
+/*
+ * C3 (12/09) -- ownership do modulo SPIR-V por shader.
+ *
+ * O que este bloco trava, e por que:
+ *
+ *  1. FAIL-CLOSED: token stream direto (sem container DXBC) NUNCA pode produzir
+ *     SPIR-V. Isso e' independente da maquina -- nao consulta registro nem
+ *     carrega DLL -- e por isso pode ser assercao dura.
+ *
+ *  2. COERENCIA COM O AMBIENTE: para container DXBC, SpirvValid depende das
+ *     duas chaves de registro. A suite NAO pode exigir FALSE: seria repetir o
+ *     defeito achado na C1, em que o teste offline reprovava sozinho porque
+ *     D3D11LabPromotion ficara armada por um bind anterior. Entao a assercao e'
+ *     de COERENCIA: valido implica modulo bem formado.
+ *
+ *  3. SEM VAZAMENTO: DestroyShader e' obrigado a devolver o modulo ao dono
+ *     ANTES de zerar a estrutura. Sem isso cada shader do DWM vaza o SPIR-V
+ *     dentro do compositor. Testado com tradutor de mentira, que conta Frees.
+ */
+static int s_SpirvOwnershipFrees;
+
+static void SpirvOwnershipFree(void *Context, const void *Spirv)
+{
+    (void)Context; (void)Spirv;
+    s_SpirvOwnershipFrees++;
+}
+
+static void TestShaderSpirvOwnership(void)
+{
+    D3D10_1DDI_DEVICEFUNCS deviceFuncs10_1;
+    D3D10DDI_HDEVICE hDev;
+    BC250_UMD_DEVICE dev;
+    BC250_UMD_SHADER shader;
+    D3D10DDI_HSHADER hShader;
+    D3D10DDI_HRTSHADER hRTShader;
+    uint8_t buffer[128];
+    BC250_DXBC_RAW_HEADER *hdr;
+    uint32_t *offsets;
+    BC250_DXBC_RAW_CHUNK_HEADER *chk;
+    uint32_t *shaderData;
+    static uint32_t spirvWords[5];
+
+    printf("[TEST] Testing SPIR-V module ownership per shader...\n");
+
+    memset(&deviceFuncs10_1, 0, sizeof(deviceFuncs10_1));
+    Bc250UmdPopulateDeviceFuncs10_1(&deviceFuncs10_1);
+    memset(&dev, 0, sizeof(dev));
+    dev.DeviceActive = TRUE;
+    hDev.pDrvPrivate = &dev;
+    hShader.pDrvPrivate = &shader;
+    hRTShader.handle = (void*)0x53504952;
+
+    /* 1. Token stream direto: fail-closed incondicional. */
+    {
+        UINT directStream[7];
+        directStream[0] = (1u << 16u) | (5u << 4u) | 0u;
+        directStream[1] = 7u;
+        directStream[2] = (3u << 24u) | 54u;
+        directStream[3] = 0x100012u;
+        directStream[4] = 0x200046u;
+        directStream[5] = (1u << 24u) | 62u;
+        directStream[6] = 0u;
+        memset(&shader, 0xFF, sizeof(shader));
+        deviceFuncs10_1.pfnCreateVertexShader(hDev, directStream, hShader, hRTShader, NULL);
+        assert(shader.IsParsed == TRUE);
+        assert(shader.SpirvValid == FALSE);
+        assert(shader.Spirv.Words == NULL);
+        deviceFuncs10_1.pfnDestroyShader(hDev, hShader);
+    }
+
+    /* 2. Container DXBC: coerencia, nao carimbo. */
+    memset(buffer, 0, sizeof(buffer));
+    hdr = (BC250_DXBC_RAW_HEADER *)buffer;
+    hdr->Magic = BC250_DXBC_MAGIC_DXBC;
+    hdr->Version = 1;
+    hdr->TotalSize = 80;
+    hdr->ChunkCount = 1;
+    offsets = (uint32_t *)(buffer + 32);
+    offsets[0] = 36;
+    chk = (BC250_DXBC_RAW_CHUNK_HEADER *)(buffer + 36);
+    chk->FourCC = BC250_DXBC_FOURCC_SHDR;
+    chk->ChunkSize = 36;
+    shaderData = (uint32_t *)(buffer + 44);
+    shaderData[0] = (1u << 16u) | (4u << 4u) | 0u;
+    shaderData[1] = 7u;
+    shaderData[2] = (3u << 24u) | 54u;
+    shaderData[3] = 0x100012u;
+    shaderData[4] = 0x200046u;
+    shaderData[5] = (1u << 24u) | 62u;
+    shaderData[6] = 0u;
+
+    memset(&shader, 0xFF, sizeof(shader));
+    deviceFuncs10_1.pfnCreateVertexShader(hDev, (const UINT*)buffer, hShader, hRTShader, NULL);
+    assert(shader.IsParsed == TRUE);
+    if (shader.SpirvValid) {
+        /* Tradutor armado nesta maquina: o modulo tem de ser bem formado. */
+        assert(shader.Spirv.Words != NULL);
+        assert(shader.Spirv.SizeBytes >= 20u);
+        assert((shader.Spirv.SizeBytes & 3u) == 0u);
+        assert(shader.Spirv.Words[0] == BC250_SPIRV_MAGIC);
+        assert(shader.Spirv.Owner.Free != NULL);
+    } else {
+        assert(shader.Spirv.Words == NULL);
+        assert(shader.Spirv.SizeBytes == 0u);
+    }
+    deviceFuncs10_1.pfnDestroyShader(hDev, hShader);
+    assert(shader.SpirvValid == FALSE);
+    assert(shader.Spirv.Words == NULL);
+
+    /* 3. Invariante de vazamento, com tradutor de mentira. */
+    s_SpirvOwnershipFrees = 0;
+    memset(&shader, 0, sizeof(shader));
+    memset(spirvWords, 0, sizeof(spirvWords));
+    spirvWords[0] = BC250_SPIRV_MAGIC;
+    shader.SpirvValid = TRUE;
+    shader.Spirv.Words = spirvWords;
+    shader.Spirv.SizeBytes = (uint32_t)sizeof(spirvWords);
+    shader.Spirv.Owner.Context = NULL;
+    shader.Spirv.Owner.Free = SpirvOwnershipFree;
+    deviceFuncs10_1.pfnDestroyShader(hDev, hShader);
+    assert(s_SpirvOwnershipFrees == 1);
+    assert(shader.SpirvValid == FALSE);
+    assert(shader.Spirv.Words == NULL);
+
+    /* Destruir de novo nao pode liberar duas vezes. */
+    deviceFuncs10_1.pfnDestroyShader(hDev, hShader);
+    assert(s_SpirvOwnershipFrees == 1);
+
+    printf("  -> SPIR-V fail-closed sem container, coerencia com o ambiente, "
+           "zero vazamento e zero double-free PASS\n");
 }
 
 int main(void)
@@ -1899,9 +2567,11 @@ int main(void)
     TestDxgiBaseFunctions();
     TestCapsPipelineSupport();
     TestShaderDDIs();
+    TestShaderSpirvOwnership();
     TestResourceDDIs();
     TestViewAndOutputMergerDDIs();
     TestDrawAndPipelineBindingDDIs();
+    TestDrawBltSubstitutionFailsClosed();
     TestStateObjectDDIs();
     TestShaderResourceViewAndElementLayoutDDIs();
     TestQueryAndPredicationDDIs();

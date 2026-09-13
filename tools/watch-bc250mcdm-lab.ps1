@@ -57,22 +57,80 @@ do {
     Start-Sleep -Milliseconds 250
 } until ([datetime]::Now -ge $deadline)
 
-# B2 (08/09): arquivar o log VIVO do KMD e os logs da UMD antes do rollback.
+# C3.15 (12/09): RECOVERY PRIMEIRO, EVIDENCIA DEPOIS.
+#
+# Na corrida 18:21 o log cumulativo cresceu para mais de 1 GB. O watchdog
+# expirou, mas tentou copiar, calcular hash e contar todas as linhas ANTES do
+# rollback. A copia pre-rollback existe; o estado nunca avancou de ARMED e o
+# driver permaneceu vinculado ate o reset manual. Nenhuma coleta best-effort
+# pode preceder a unica acao de seguranca do processo.
+Write-WatchdogState 'ROLLBACK_STARTED' 'visual confirmation timeout expired'
+$rollbackOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $rollbackScript `
+    -Execute -IAcceptDisplayInterruptionRisk 2>&1) -join "`n"
+$rollbackExit = $LASTEXITCODE
+$rollbackOutput | Set-Content -LiteralPath (Join-Path $EvidenceDir 'watchdog-rollback.txt') -Encoding UTF8
+
+if ($rollbackExit -ne 0) {
+    Write-WatchdogState 'ROLLBACK_FAILED' 'online rollback failed; safe-mode recovery required' $rollbackExit
+    exit $rollbackExit
+}
+Write-WatchdogState 'ROLLED_BACK' 'BasicDisplay restoration completed'
+
+# O rollback encerrou o produtor. Arquive apenas a cauda delimitada do log;
+# nunca volte a copiar/varrer o arquivo cumulativo inteiro no caminho critico.
 $liveKmdLog = 'C:\BC250_DISPLAY_LOG.txt'
 if (Test-Path -LiteralPath $liveKmdLog) {
     try {
-        $liveCopy = Join-Path $EvidenceDir 'bc250_display_log_full_pre_rollback.txt'
-        Copy-Item -LiteralPath $liveKmdLog -Destination $liveCopy -Force
-        $liveHash = (Get-FileHash -LiteralPath $liveCopy -Algorithm SHA256).Hash
-        $liveLines = (Get-Content -LiteralPath $liveCopy | Measure-Object -Line).Lines
-        @(
-            'Copia integral do log vivo do KMD, feita pelo watchdog de lab ANTES do rollback.',
-            "Linhas: $liveLines",
-            "SHA-256: $liveHash"
-        ) | Set-Content -LiteralPath ($liveCopy -replace '\.txt$', '.SHA256.txt') -Encoding UTF8
+        $maxTailBytes = 64MB
+        $sourceStream = [System.IO.File]::Open($liveKmdLog,
+            [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete)
+        try {
+            $sourceLength = $sourceStream.Length
+            $startOffset = [Math]::Max(0L, $sourceLength - [int64]$maxTailBytes)
+            $baselinePath = Join-Path $EvidenceDir 'display-log-baseline.json'
+            if (Test-Path -LiteralPath $baselinePath) {
+                $baseline = Get-Content -LiteralPath $baselinePath -Raw | ConvertFrom-Json
+                $candidateOffset = [int64]$baseline.start_offset
+                if ($candidateOffset -ge 0 -and $candidateOffset -le $sourceLength -and
+                    ($sourceLength - $candidateOffset) -le $maxTailBytes) {
+                    $startOffset = $candidateOffset
+                }
+            }
+            $tailPath = Join-Path $EvidenceDir 'bc250_display_log_tail_post_rollback.txt'
+            $targetStream = [System.IO.File]::Open($tailPath,
+                [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write,
+                [System.IO.FileShare]::Read)
+            try {
+                [void]$sourceStream.Seek($startOffset, [System.IO.SeekOrigin]::Begin)
+                $remaining = $sourceLength - $startOffset
+                $buffer = New-Object byte[] (1MB)
+                while ($remaining -gt 0) {
+                    $wanted = [int][Math]::Min([int64]$buffer.Length, $remaining)
+                    $read = $sourceStream.Read($buffer, 0, $wanted)
+                    if ($read -le 0) { break }
+                    $targetStream.Write($buffer, 0, $read)
+                    $remaining -= $read
+                }
+            } finally {
+                $targetStream.Dispose()
+            }
+        } finally {
+            $sourceStream.Dispose()
+        }
+        [ordered]@{
+            source = $liveKmdLog
+            source_length = $sourceLength
+            copied_from = $startOffset
+            copied_bytes = $sourceLength - $startOffset
+            truncated = ($startOffset -gt 0)
+            sha256 = (Get-FileHash -LiteralPath $tailPath -Algorithm SHA256).Hash
+            recovery_completed_before_capture = $true
+        } | ConvertTo-Json | Set-Content -LiteralPath `
+            (Join-Path $EvidenceDir 'bc250_display_log_tail_post_rollback.json') -Encoding UTF8
     } catch {
-        "falha ao arquivar $liveKmdLog : $($_.Exception.Message)" |
-            Set-Content -LiteralPath (Join-Path $EvidenceDir 'bc250_display_log_full_ERRO.txt') -Encoding UTF8
+        "falha ao arquivar cauda de $liveKmdLog : $($_.Exception.Message)" |
+            Set-Content -LiteralPath (Join-Path $EvidenceDir 'bc250_display_log_tail_ERRO.txt') -Encoding UTF8
     }
 }
 
@@ -93,16 +151,4 @@ if (-not $umdLogCollected) {
     'bc250umd.dll nunca escreveu: a DLL nao foi carregada por nenhum processo.' |
         Set-Content -LiteralPath $umdAggregate -Encoding UTF8
 }
-
-Write-WatchdogState 'ROLLBACK_STARTED' 'visual confirmation timeout expired'
-$rollbackOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $rollbackScript `
-    -Execute -IAcceptDisplayInterruptionRisk 2>&1) -join "`n"
-$rollbackExit = $LASTEXITCODE
-$rollbackOutput | Set-Content -LiteralPath (Join-Path $EvidenceDir 'watchdog-rollback.txt') -Encoding UTF8
-
-if ($rollbackExit -ne 0) {
-    Write-WatchdogState 'ROLLBACK_FAILED' 'online rollback failed; safe-mode recovery required' $rollbackExit
-    exit $rollbackExit
-}
-Write-WatchdogState 'ROLLED_BACK' 'BasicDisplay restoration completed'
 exit 0

@@ -3,13 +3,79 @@
 #include <stdio.h>
 #include <string.h>
 
+/*
+ * Sink unico de trace da UMD.
+ *
+ * Corrida 13/09 05:50: o log arquivado nao tinha UMA linha da winsys, porque
+ * BC250_WINSYS_LOG so' escrevia em OutputDebugStringA e stderr -- e o dwm.exe
+ * nao tem stderr. Sabiamos que o compositor congelava entre o blt de tela
+ * cheia e a submissao seguinte, e nao qual callback bloqueava. Um criterio de
+ * corrida foi escrito sobre linhas que a instrumentacao nunca poderia produzir.
+ *
+ * Este sink e' o MESMO usado por Bc250UmdTrace (bc250_d3d_umd.c), para que
+ * exista uma unica fonte de formato e um unico arquivo por processo. Fica em
+ * C:\Windows\Temp porque a raiz de C: nao e' gravavel pela conta virtual do
+ * dwm.exe; sobrevive a tela preta e ao reboot.
+ */
+void Bc250WinsysTraceRaw(const char *Message)
+{
+    char line[768];
+    char imagePath[MAX_PATH];
+    char logPath[MAX_PATH];
+    const char *imageName = "?";
+    int lineLength;
+    HANDLE file;
+    DWORD written = 0;
+    SYSTEMTIME now;
+
+    if (Message == NULL) {
+        return;
+    }
+    if (GetModuleFileNameA(NULL, imagePath, (DWORD)sizeof(imagePath)) != 0) {
+        const char *slash = strrchr(imagePath, '\\');
+        imageName = (slash != NULL) ? (slash + 1) : imagePath;
+    }
+
+    GetLocalTime(&now);
+    lineLength = _snprintf_s(line, sizeof(line), _TRUNCATE,
+        "%02u:%02u:%02u.%03u [pid=%lu %s] %s\r\n",
+        now.wHour, now.wMinute, now.wSecond, now.wMilliseconds,
+        GetCurrentProcessId(), imageName, Message);
+    if (lineLength < 0) {
+        return;
+    }
+
+    OutputDebugStringA(line);
+
+    if (_snprintf_s(logPath, sizeof(logPath), _TRUNCATE,
+            "C:\\Windows\\Temp\\BC250_UMD_LOG_%lu.txt",
+            GetCurrentProcessId()) < 0) {
+        return;
+    }
+    file = CreateFileA(logPath,
+        FILE_APPEND_DATA,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE) {
+        return;
+    }
+    (void)WriteFile(file, line, (DWORD)lineLength, &written, NULL);
+    (void)CloseHandle(file);
+}
+
+/*
+ * O prefixo [WDDM_WINSYS] permanece para que as linhas da winsys continuem
+ * separaveis das da UMD dentro do mesmo arquivo. stderr fica para as suites
+ * offline, que rodam em console.
+ */
 #define BC250_WINSYS_LOG(fmt, ...) do { \
     char _log_buf[256]; \
     int _len = _snprintf_s(_log_buf, sizeof(_log_buf), _TRUNCATE, \
-        "[WDDM_WINSYS pid=%lu] " fmt "\n", GetCurrentProcessId(), ##__VA_ARGS__); \
+        "[WDDM_WINSYS] " fmt, ##__VA_ARGS__); \
     if (_len > 0) { \
-        OutputDebugStringA(_log_buf); \
-        fprintf(stderr, "%s", _log_buf); \
+        Bc250WinsysTraceRaw(_log_buf); \
+        fprintf(stderr, "[WDDM_WINSYS pid=%lu] %s\n", \
+            GetCurrentProcessId(), _log_buf); \
         fflush(stderr); \
     } \
 } while (0)
@@ -99,6 +165,73 @@ BC250_WINSYS_STATUS Bc250WinsysDestroyVirtualContext(
     return BC250_WINSYS_OK;
 }
 
+BC250_WINSYS_STATUS Bc250WinsysCreatePresentContext(
+    BC250_WINSYS_CONTEXT *Context,
+    UINT NodeOrdinal)
+{
+    D3DDDICB_CREATECONTEXTVIRTUAL args;
+    HRESULT hr;
+
+    if (Context == NULL || !Context->Initialized ||
+        NodeOrdinal > BC250_WINSYS_NODE_COMPUTE) {
+        return BC250_WINSYS_BAD_ARGUMENT;
+    }
+    if (Context->PresentContextCreated) return BC250_WINSYS_STATE_CONFLICT;
+    if (Context->Callbacks->pfnCreateContextVirtualCb == NULL ||
+        Context->Callbacks->pfnDestroyContextCb == NULL) {
+        return BC250_WINSYS_MISSING_CALLBACK;
+    }
+
+    memset(&args, 0, sizeof(args));
+    args.NodeOrdinal = NodeOrdinal;
+    BC250_WINSYS_LOG("CreatePresentContext ENTER: Node=%u", NodeOrdinal);
+    hr = Context->Callbacks->pfnCreateContextVirtualCb(
+        Context->RuntimeDevice, &args);
+    BC250_WINSYS_LOG("CreatePresentContext LEAVE: hr=0x%08X hContext=%p Node=%u",
+        (unsigned)hr, (void*)args.hContext, NodeOrdinal);
+    if (FAILED(hr)) return Bc250WinsysRememberFailure(Context, hr);
+    if (args.hContext == NULL) {
+        Context->LastCallbackHr = E_UNEXPECTED;
+        return BC250_WINSYS_BAD_CALLBACK_OUTPUT;
+    }
+
+    Context->PresentContext = args.hContext;
+    Context->PresentNodeOrdinal = NodeOrdinal;
+    Context->PresentContextCreated = TRUE;
+    Context->LastCallbackHr = S_OK;
+    return BC250_WINSYS_OK;
+}
+
+BC250_WINSYS_STATUS Bc250WinsysDestroyPresentContext(
+    BC250_WINSYS_CONTEXT *Context)
+{
+    D3DDDICB_DESTROYCONTEXT args;
+    HRESULT hr;
+
+    if (Context == NULL || !Context->Initialized) {
+        return BC250_WINSYS_BAD_ARGUMENT;
+    }
+    if (!Context->PresentContextCreated) return BC250_WINSYS_OK;
+    if (Context->Callbacks->pfnDestroyContextCb == NULL) {
+        return BC250_WINSYS_MISSING_CALLBACK;
+    }
+
+    memset(&args, 0, sizeof(args));
+    args.hContext = Context->PresentContext;
+    BC250_WINSYS_LOG("DestroyPresentContext ENTER: hContext=%p",
+        (void*)Context->PresentContext);
+    hr = Context->Callbacks->pfnDestroyContextCb(
+        Context->RuntimeDevice, &args);
+    BC250_WINSYS_LOG("DestroyPresentContext LEAVE: hr=0x%08X", (unsigned)hr);
+    if (FAILED(hr)) return Bc250WinsysRememberFailure(Context, hr);
+
+    Context->PresentContext = NULL;
+    Context->PresentNodeOrdinal = 0u;
+    Context->PresentContextCreated = FALSE;
+    Context->LastCallbackHr = S_OK;
+    return BC250_WINSYS_OK;
+}
+
 BC250_WINSYS_STATUS Bc250WinsysCreatePagingQueue(
     BC250_WINSYS_CONTEXT *Context)
 {
@@ -173,10 +306,24 @@ BC250_WINSYS_STATUS Bc250WinsysAllocate(
     uint64_t Alignment,
     BC250_WINSYS_ALLOCATION *Allocation)
 {
+    return Bc250WinsysAllocateForResource(Context, Token, ByteSize, Alignment,
+        NULL, Allocation);
+}
+
+BC250_WINSYS_STATUS Bc250WinsysAllocateForResource(
+    BC250_WINSYS_CONTEXT *Context,
+    uint64_t Token,
+    uint64_t ByteSize,
+    uint64_t Alignment,
+    const BC250_WINSYS_RESOURCE_BINDING *Binding,
+    BC250_WINSYS_ALLOCATION *Allocation)
+{
     BC250_ALLOCATION_PRIVATE_V1 privateData;
     D3DDDI_ALLOCATIONINFO2 info;
     D3DDDICB_ALLOCATE args;
     HRESULT hr;
+    BOOL bindPrimary = FALSE;
+    BOOL tokenPrimary;
 
     if (Context == NULL || !Context->Initialized || Allocation == NULL ||
         Token == 0u || ByteSize == 0u ||
@@ -184,6 +331,42 @@ BC250_WINSYS_STATUS Bc250WinsysAllocate(
         Alignment > BC250_ALLOCATION_MAX_ALIGNMENT ||
         (Alignment & (Alignment - 1u)) != 0u ||
         (ByteSize & (Alignment - 1u)) != 0u) {
+        return BC250_WINSYS_BAD_ARGUMENT;
+    }
+
+    /*
+     * FONTE UNICA DE "ISTO E' PRIMARIA": a classe do token. O vinculo de recurso
+     * nao pode DISCORDAR dela -- se discordasse, voltariamos a ter duas fontes de
+     * verdade sobre primariedade, que e' exatamente a classe de defeito que esta
+     * faixa corrige. Divergencia falha FECHADO.
+     */
+    tokenPrimary = (BC250_ALLOCATION_TOKEN_CLASS(Token) ==
+                    BC250_ALLOCATION_TOKEN_CLASS_PRIMARY) ? TRUE : FALSE;
+    if (Binding != NULL) {
+        bindPrimary = Binding->Primary ? TRUE : FALSE;
+        if (bindPrimary != tokenPrimary) {
+            BC250_WINSYS_LOG("Allocate RECUSADO: divergencia de primariedade "
+                "(token=%d binding=%d Token=0x%llX) -- duas fontes de verdade",
+                (int)tokenPrimary, (int)bindPrimary,
+                (unsigned long long)Token);
+            return BC250_WINSYS_BAD_ARGUMENT;
+        }
+        /*
+         * Primaria SEM handle de recurso do runtime e' o defeito medido em
+         * 16:28:27: o dxgkrnl nao liga Flags.Resource, o KMD classifica como
+         * nao-primaria e o FLIP do dwm.exe nao tem como ser honrado. Recusar e'
+         * melhor que alocar uma "primaria" que o kernel nunca vera como tal.
+         */
+        if (bindPrimary && Binding->RuntimeResource == NULL) {
+            BC250_WINSYS_LOG("Allocate RECUSADO: primaria sem hRTResource -- o "
+                "dxgkrnl nao ligaria Flags.Resource e o KMD a trataria como "
+                "nao-primaria (Token=0x%llX)", (unsigned long long)Token);
+            return BC250_WINSYS_BAD_ARGUMENT;
+        }
+    } else if (tokenPrimary) {
+        BC250_WINSYS_LOG("Allocate RECUSADO: token PRIMARY sem vinculo de recurso "
+            "(Token=0x%llX) -- use Bc250WinsysAllocateForResource",
+            (unsigned long long)Token);
         return BC250_WINSYS_BAD_ARGUMENT;
     }
     if (Allocation->Created) return BC250_WINSYS_STATE_CONFLICT;
@@ -194,7 +377,33 @@ BC250_WINSYS_STATUS Bc250WinsysAllocate(
     }
 
     BC250_ALLOCATION_ABI_STATUS abiStatus;
-    abiStatus = Bc250AllocationAbiFormat(Token, ByteSize, Alignment, 0u, &privateData);
+    uint32_t flags = 0u;
+    uint32_t tokenClass = BC250_ALLOCATION_TOKEN_CLASS(Token);
+    if (tokenClass == BC250_ALLOCATION_TOKEN_CLASS_STAGING ||
+        tokenClass == BC250_ALLOCATION_TOKEN_CLASS_CPU_VISIBLE ||
+        tokenClass == BC250_ALLOCATION_TOKEN_CLASS_COMMAND ||
+        tokenClass == BC250_ALLOCATION_TOKEN_CLASS_PROOF) {
+        flags |= BC250_ALLOCATION_FLAG_CPU_VISIBLE;
+    }
+    const BC250_ALLOCATION_GEOMETRY *geometry = NULL;
+    if (Binding != NULL && Binding->HasGeometry) {
+        geometry = &Binding->Geometry;
+    }
+    abiStatus = Bc250AllocationAbiFormat(Token, ByteSize, Alignment, flags,
+        geometry, &privateData);
+    if (abiStatus == BC250_ALLOCATION_ABI_BAD_GEOMETRY) {
+        /*
+         * Geometria incoerente e' RECUSADA aqui, antes do callback. Deixar
+         * passar produziria uma alocacao cuja descricao ao dxgkrnl seria falsa
+         * -- e o sintoma apareceria como imagem torta, nao como erro.
+         */
+        BC250_WINSYS_LOG("Allocate RECUSADO: geometria incoerente "
+            "(%ux%u pitch=%u fmt=%u contra ByteSize=%llu)",
+            Binding->Geometry.Width, Binding->Geometry.Height,
+            Binding->Geometry.Pitch, Binding->Geometry.Format,
+            (unsigned long long)ByteSize);
+        return BC250_WINSYS_BAD_ARGUMENT;
+    }
     if (abiStatus != BC250_ALLOCATION_ABI_OK ||
         privateData.Magic != BC250_ALLOCATION_PRIVATE_MAGIC) {
         return BC250_WINSYS_BAD_ARGUMENT;
@@ -203,15 +412,31 @@ BC250_WINSYS_STATUS Bc250WinsysAllocate(
     memset(&info, 0, sizeof(info));
     info.pPrivateDriverData = &privateData;
     info.PrivateDriverDataSize = (UINT)sizeof(privateData);
+    if (bindPrimary) {
+        /*
+         * d3dukmdt.h:554 e :549. Sem estes dois campos o kernel nao tem como
+         * saber que a superficie e' candidata a scanout, por mais que o nosso
+         * token privado diga que e'.
+         */
+        info.Flags.Primary = 1u;
+        info.VidPnSourceId = (D3DDDI_VIDEO_PRESENT_SOURCE_ID)Binding->VidPnSourceId;
+    }
 
     memset(&args, 0, sizeof(args));
     args.NumAllocations = 1u;
     args.pAllocationInfo2 = &info;
-    BC250_WINSYS_LOG("Allocate ENTER: Token=0x%llX Size=%llu Align=%llu",
-        (unsigned long long)Token, (unsigned long long)ByteSize, (unsigned long long)Alignment);
+    if (Binding != NULL) {
+        /* d3dumddi.h:3457 -- e' isto que faz o dxgkrnl ligar Flags.Resource. */
+        args.hResource = Binding->RuntimeResource;
+    }
+    BC250_WINSYS_LOG("Allocate ENTER: Token=0x%llX Size=%llu Align=%llu "
+        "hRTResource=%p Primary=%d VidPnSourceId=%u",
+        (unsigned long long)Token, (unsigned long long)ByteSize,
+        (unsigned long long)Alignment, (void*)args.hResource,
+        (int)bindPrimary, (unsigned)info.VidPnSourceId);
     hr = Context->Callbacks->pfnAllocateCb(Context->RuntimeDevice, &args);
-    BC250_WINSYS_LOG("Allocate LEAVE: hr=0x%08X hAlloc=0x%x",
-        (unsigned)hr, (unsigned)info.hAllocation);
+    BC250_WINSYS_LOG("Allocate LEAVE: hr=0x%08X hAlloc=0x%x hKMResource=0x%x",
+        (unsigned)hr, (unsigned)info.hAllocation, (unsigned)args.hKMResource);
     if (FAILED(hr)) return Bc250WinsysRememberFailure(Context, hr);
     if (info.hAllocation == 0u) {
         Context->LastCallbackHr = E_UNEXPECTED;
@@ -224,6 +449,9 @@ BC250_WINSYS_STATUS Bc250WinsysAllocate(
     Allocation->Token = Token;
     Allocation->ByteSize = ByteSize;
     Allocation->Alignment = Alignment;
+    Allocation->RuntimeResource = (Binding != NULL) ? Binding->RuntimeResource : NULL;
+    Allocation->KernelResource = args.hKMResource;
+    Allocation->DeclaredPrimary = bindPrimary;
     Allocation->Created = TRUE;
     Context->LastCallbackHr = S_OK;
     return BC250_WINSYS_OK;
@@ -240,14 +468,13 @@ BC250_WINSYS_STATUS Bc250WinsysDeallocate(
     }
     if (!Allocation->Created) return BC250_WINSYS_OK;
 
-    if (Allocation->Resident) {
-        if (Context->Callbacks->pfnEvictCb != NULL) {
-            BC250_WINSYS_STATUS evictStatus = Bc250WinsysEvict(Context, Allocation);
-            if (evictStatus != BC250_WINSYS_OK) return evictStatus;
-        } else {
-            Allocation->Resident = FALSE;
-        }
-    }
+    /*
+     * No WDDM 2.0+, pfnDeallocate2Cb / pfnDeallocateCb realiza a eviccao
+     * atomica e o desregistro seguro no kernel. Evitar a chamada explicita a
+     * pfnEvictCb imediatamente antes da desalocacao para nao introduzir corridas
+     * no gerenciador de memoria do kernel (dxgmms2 / VIDMM_RECYCLE_HEAP_MGR).
+     */
+    Allocation->Resident = FALSE;
 
     if (Allocation->OwnsGpuVaMapping) {
         D3DDDICB_FREEGPUVIRTUALADDRESS freeArgs;
@@ -269,18 +496,32 @@ BC250_WINSYS_STATUS Bc250WinsysDeallocate(
         Context->ActiveGpuVaMappings--;
     }
 
+    /*
+     * SIMETRIA COM A CRIACAO (13/09): alocacao criada com hResource TEM de ser
+     * devolvida com hResource. d3dumddi.h:3472 -- "NumAllocations: ignored if
+     * hResource != NULL" --, ou seja o runtime libera o recurso inteiro. Passar
+     * so' a lista de handles deixaria o objeto de recurso do kernel orfao.
+     */
     if (Context->Callbacks->pfnDeallocate2Cb != NULL) {
         D3DDDICB_DEALLOCATE2 args2;
         memset(&args2, 0, sizeof(args2));
-        args2.NumAllocations = 1u;
-        args2.HandleList = &Allocation->KernelAllocation;
+        if (Allocation->RuntimeResource != NULL) {
+            args2.hResource = Allocation->RuntimeResource;
+        } else {
+            args2.NumAllocations = 1u;
+            args2.HandleList = &Allocation->KernelAllocation;
+        }
         hr = Context->Callbacks->pfnDeallocate2Cb(
             Context->RuntimeDevice, &args2);
     } else if (Context->Callbacks->pfnDeallocateCb != NULL) {
         D3DDDICB_DEALLOCATE args;
         memset(&args, 0, sizeof(args));
-        args.NumAllocations = 1u;
-        args.HandleList = &Allocation->KernelAllocation;
+        if (Allocation->RuntimeResource != NULL) {
+            args.hResource = Allocation->RuntimeResource;
+        } else {
+            args.NumAllocations = 1u;
+            args.HandleList = &Allocation->KernelAllocation;
+        }
         hr = Context->Callbacks->pfnDeallocateCb(Context->RuntimeDevice, &args);
     } else {
         return BC250_WINSYS_MISSING_CALLBACK;
@@ -417,8 +658,18 @@ BC250_WINSYS_STATUS Bc250WinsysSubmitGpuVa(
     args.CommandLength = CommandLength;
     args.BroadcastContextCount = 1u;
     args.BroadcastContext[0] = Context->KernelContext;
+    /*
+     * ENTER/LEAVE aqui porque pfnSubmitCommandCb BLOQUEIA quando a fila do
+     * contexto esta cheia, e esta era a unica funcao da winsys sem trace.
+     * Na corrida 13/09 05:50 o compositor congelou entre o blt de tela cheia
+     * e a submissao seguinte, e nao havia como saber se foi aqui.
+     */
+    BC250_WINSYS_LOG("SubmitGpuVa ENTER: hCtx=0x%p Gpuva=0x%llX Bytes=%u Node=%u",
+        Context->KernelContext, (unsigned long long)CommandGpuVa,
+        CommandLength, Context->NodeOrdinal);
     hr = Context->Callbacks->pfnSubmitCommandCb(
         Context->RuntimeDevice, &args);
+    BC250_WINSYS_LOG("SubmitGpuVa LEAVE: hr=0x%08X Bytes=%u", (unsigned)hr, CommandLength);
     if (FAILED(hr)) return Bc250WinsysRememberFailure(Context, hr);
     Context->LastCallbackHr = S_OK;
     return BC250_WINSYS_OK;
@@ -743,6 +994,59 @@ BC250_WINSYS_STATUS Bc250WinsysSignalFenceFromCpu(
         (unsigned)Fence->SyncObject, (unsigned long long)FenceValue);
     hr = Context->Callbacks->pfnSignalSynchronizationObjectFromCpuCb(Context->RuntimeDevice, &args);
     BC250_WINSYS_LOG("SignalFenceFromCpu LEAVE: hr=0x%08X", (unsigned)hr);
+
+    if (FAILED(hr)) return Bc250WinsysRememberFailure(Context, hr);
+
+    Context->LastCallbackHr = S_OK;
+    return BC250_WINSYS_OK;
+}
+
+/*
+ * Sinalizacao de fence monitorada PELO CONTRATO WDDM.
+ *
+ * Corrida 12/09 22:57 (BugCheck 0x116, 5 TDRs): o blt da UMD escrevia o valor
+ * da fence monitorada com um pacote SDMA montado por ela mesma, e o
+ * D3DDDICB_SUBMITCOMMAND saia sem qualquer objeto de sincronizacao. O dxgkrnl
+ * nunca ficava sabendo do sinal, entao pfnWaitForSynchronizationObjectFromCpuCb
+ * nunca era satisfeito e o VidSch declarava hang com a engine OCIOSA e DRENADA
+ * (RPTR==WPTR, STATUS1=0x3FF em todos os 5 quiesces).
+ *
+ * O caminho correto e' este: o runtime enfileira o sinal no MESMO contexto,
+ * depois do comando, e o KMD materializa a escrita em
+ * Bc250McdmBuildSignalMonitoredFence -- que ja emite Bc250SdmaEmitFence64,
+ * largura correta para a fence de 64 bits do WDDM.
+ *
+ * Ordenacao: o dxgkrnl serializa os pacotes do contexto, logo o sinal so'
+ * executa depois do command buffer submetido imediatamente antes.
+ */
+BC250_WINSYS_STATUS Bc250WinsysSignalMonitoredFenceFromGpu(
+    BC250_WINSYS_CONTEXT *Context,
+    const BC250_WINSYS_MONITORED_FENCE *Fence,
+    UINT64 FenceValue)
+{
+    D3DDDICB_SIGNALSYNCHRONIZATIONOBJECTFROMGPU args;
+    HRESULT hr;
+
+    if (Context == NULL || !Context->Initialized || !Context->ContextCreated ||
+        Fence == NULL || !Fence->Created || FenceValue == 0ull) {
+        return BC250_WINSYS_BAD_ARGUMENT;
+    }
+    if (Context->Callbacks->pfnSignalSynchronizationObjectFromGpuCb == NULL) {
+        return BC250_WINSYS_MISSING_CALLBACK;
+    }
+
+    memset(&args, 0, sizeof(args));
+    args.hContext = Context->KernelContext;
+    args.ObjectCount = 1u;
+    args.ObjectHandleArray = &Fence->SyncObject;
+    args.MonitoredFenceValueArray = &FenceValue;
+
+    BC250_WINSYS_LOG("SignalMonitoredFenceFromGpu ENTER: hCtx=0x%x hSync=0x%x Value=%llu",
+        (unsigned)(ULONG_PTR)Context->KernelContext, (unsigned)Fence->SyncObject,
+        (unsigned long long)FenceValue);
+    hr = Context->Callbacks->pfnSignalSynchronizationObjectFromGpuCb(
+        Context->RuntimeDevice, &args);
+    BC250_WINSYS_LOG("SignalMonitoredFenceFromGpu LEAVE: hr=0x%08X", (unsigned)hr);
 
     if (FAILED(hr)) return Bc250WinsysRememberFailure(Context, hr);
 

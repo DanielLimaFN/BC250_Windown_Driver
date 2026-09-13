@@ -104,10 +104,22 @@ BC250_TDR_STATUS Bc250TdrValidateMecRestartReadback(
     uint32_t HqdError,
     uint32_t CpStalled)
 {
+    /*
+     * CP_STALLED_STAT1 (0x8674 / gc_10_1_0_sh_mask.h:6428-6429):
+     * Bits 10 e 11 (0x00000C00) correspondem a:
+     *   bit 10: ME_HAS_ACTIVE_CE_BUFFER_FLAG
+     *   bit 11: ME_HAS_ACTIVE_DE_BUFFER_FLAG
+     * Na arquitetura GFX10/Navi, estas duas bandeiras indicam que as maquinas
+     * de estado CE e DE estao inicializadas e ativas em repouso. Elas NAO sao
+     * condicoes de stall. Stalls reais do pipeline estao nos demais bits
+     * (ex: bits 0..4, 12..15 e 23..29).
+     */
+    uint32_t actualStalls = CpStalled & ~0x00000C00u;
+
     if ((HqdActive & 1u) != 0u ||
         (DequeueRequest & 1u) != 0u ||
         HqdError != 0u ||
-        CpStalled != 0u ||
+        actualStalls != 0u ||
         HqdRptr != 0u ||
         HqdWptr != 0u) {
         return BC250_TDR_RESTART_NOT_READY;

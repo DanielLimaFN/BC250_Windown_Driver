@@ -113,14 +113,18 @@ static int Bc250RunTdrRecoveryContractTest(void)
 
     /* 7. Readback minimo antes do restart do compute MEC (Node 1). */
     CHECK(Bc250TdrValidateMecRestartReadback(0u, 0u, 0u, 0u, 0u, 0u) == BC250_TDR_OK);
+    /* Bandeiras benignas do CP (CE/DE active buffer flags 0xC00): valido */
+    CHECK(Bc250TdrValidateMecRestartReadback(0u, 0u, 0u, 0u, 0u, 0x0C00u) == BC250_TDR_OK);
     /* Fila ainda ativa: restart invalido */
     CHECK(Bc250TdrValidateMecRestartReadback(1u, 0u, 0u, 0u, 0u, 0u) == BC250_TDR_RESTART_NOT_READY);
     /* Dequeue request pendente: restart invalido */
     CHECK(Bc250TdrValidateMecRestartReadback(0u, 0u, 0u, 1u, 0u, 0u) == BC250_TDR_RESTART_NOT_READY);
     /* Erro residual no HQD: restart invalido */
     CHECK(Bc250TdrValidateMecRestartReadback(0u, 0u, 0u, 0u, 0x10u, 0u) == BC250_TDR_RESTART_NOT_READY);
-    /* Pipeline do CP stalled: restart invalido */
+    /* Pipeline do CP stalled (ex: bit 0 RBIU_TO_DMA_NOT_RDY_TO_RCV): restart invalido */
     CHECK(Bc250TdrValidateMecRestartReadback(0u, 0u, 0u, 0u, 0u, 1u) == BC250_TDR_RESTART_NOT_READY);
+    /* Pipeline do CP stalled combinando flag benigno e stall real: restart invalido */
+    CHECK(Bc250TdrValidateMecRestartReadback(0u, 0u, 0u, 0u, 0u, 0x0C01u) == BC250_TDR_RESTART_NOT_READY);
     /* Ponteiros nao zerados: restart invalido */
     CHECK(Bc250TdrValidateMecRestartReadback(0u, 4u, 0u, 0u, 0u, 0u) == BC250_TDR_RESTART_NOT_READY);
     CHECK(Bc250TdrValidateMecRestartReadback(0u, 0u, 4u, 0u, 0u, 0u) == BC250_TDR_RESTART_NOT_READY);

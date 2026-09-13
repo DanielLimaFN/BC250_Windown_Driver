@@ -10,6 +10,8 @@ tmp/
 *.exp
 *.sys
 *.cer
+referencias/*
+docs/evidence/*
 
 # Studio build & dependencies
 studio/output/

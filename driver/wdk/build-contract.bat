@@ -69,6 +69,10 @@ echo [cc] bc250_sdma_queue_state_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_sdma_queue_state_contract.obj" "%ROOTDIR%\driver\core\bc250_sdma_queue_state_contract.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
+echo [cc] bc250_segment_address_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_segment_address_contract.obj" "%ROOTDIR%\driver\core\bc250_segment_address_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
 echo [cc] bc250_resource_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_resource_contract.obj" "%ROOTDIR%\driver\core\bc250_resource_contract.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -259,6 +263,10 @@ if %ERRORLEVEL% NEQ 0 exit /b 1
 
 echo [cc] bc250_dxbc_parser.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_dxbc_parser.obj" "%ROOTDIR%\driver\core\bc250_dxbc_parser.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [cc] bc250_dxbc_spirv_bridge.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_dxbc_spirv_bridge.obj" "%ROOTDIR%\driver\core\bc250_dxbc_spirv_bridge.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
 echo [cc] bc250_gpuva_sdma_broker_contract.c
@@ -1085,6 +1093,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_umd_private_contract.obj" ^
   "%ODIR%\bc250_blt_proof_contract.obj" ^
   "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
+  "%ODIR%\bc250_segment_address_contract.obj" ^
   "%ODIR%\mcdm_callbacks_test.obj" kernel32.lib
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
@@ -1296,6 +1305,35 @@ if %ERRORLEVEL% NEQ 0 exit /b 1
 "%ODIR%\dxbc_parser_test.exe"
 if %ERRORLEVEL% NEQ 0 (
   echo TESTE FALHOU ^(dxbc_parser_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
+echo [cc] segment_address_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\segment_address_contract_test.obj" "%ROOTDIR%\driver\tests\segment_address_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] segment_address_contract_test.exe
+link /nologo /OUT:"%ODIR%\segment_address_contract_test.exe" ^
+  "%ODIR%\segment_address_contract_test.obj" ^
+  "%ODIR%\bc250_segment_address_contract.obj"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [run] segment_address_contract_test.exe
+"%ODIR%\segment_address_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [cc] dxbc_spirv_bridge_test.c
+cl %CFLAGS% /Fo"%ODIR%\dxbc_spirv_bridge_test.obj" "%ROOTDIR%\driver\tests\dxbc_spirv_bridge_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+echo [link] dxbc_spirv_bridge_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\dxbc_spirv_bridge_test.exe" ^
+  "%ODIR%\bc250_dxbc_parser.obj" "%ODIR%\bc250_dxbc_spirv_bridge.obj" ^
+  "%ODIR%\dxbc_spirv_bridge_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+"%ODIR%\dxbc_spirv_bridge_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(dxbc_spirv_bridge_test^) - Linha/Codigo: %errorlevel%
   exit /b 1
 )
 
@@ -1545,6 +1583,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_umd_private_contract.obj" ^
   "%ODIR%\bc250_blt_proof_contract.obj" ^
   "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
+  "%ODIR%\bc250_segment_address_contract.obj" ^
   "%ODIR%\bc250_probe_telemetry.obj" ^
   "%ODIR%\bc250_readonly_miniport.obj" ^
   "%ODIR%\readonly_miniport_test.obj" kernel32.lib
@@ -1602,6 +1641,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_umd_private_contract.obj" ^
   "%ODIR%\bc250_blt_proof_contract.obj" ^
   "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
+  "%ODIR%\bc250_segment_address_contract.obj" ^
   "%ODIR%\bc250_probe_telemetry_driver.obj" ^
   "%ODIR%\bc250_readonly_miniport_driver.obj" ^
   "%WDK%\Lib\%WDKVER%\km\x64\ntoskrnl.lib" ^
@@ -1666,6 +1706,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_umd_private_contract.obj" ^
   "%ODIR%\bc250_blt_proof_contract.obj" ^
   "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
+  "%ODIR%\bc250_segment_address_contract.obj" ^
   "%ODIR%\bc250_display_ddi.obj" ^
   "%ODIR%\bc250_probe_telemetry.obj" ^
   "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^
@@ -1714,6 +1755,7 @@ echo [link] sdma_queue_state_contract_test.exe
 link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   /OUT:"%ODIR%\sdma_queue_state_contract_test.exe" ^
   "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
+  "%ODIR%\bc250_segment_address_contract.obj" ^
   "%ODIR%\sdma_queue_state_contract_test.obj" kernel32.lib
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
@@ -1753,6 +1795,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_umd_private_contract.obj" ^
   "%ODIR%\bc250_blt_proof_contract.obj" ^
   "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
+  "%ODIR%\bc250_segment_address_contract.obj" ^
   "%ODIR%\driver_caps_contract_test.obj" kernel32.lib
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
@@ -1774,6 +1817,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_umd_private_contract.obj" ^
   "%ODIR%\bc250_blt_proof_contract.obj" ^
   "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
+  "%ODIR%\bc250_segment_address_contract.obj" ^
   "%ODIR%\bc250_sdma_present.obj" ^
   "%ODIR%\display_vidpn_test.obj" kernel32.lib
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -1806,6 +1850,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_umd_private_contract.obj" ^
   "%ODIR%\bc250_blt_proof_contract.obj" ^
   "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
+  "%ODIR%\bc250_segment_address_contract.obj" ^
   "%ODIR%\bc250_gpuva_space_contract.obj" ^
   "%ODIR%\bc250_gpuva_snapshot_contract.obj" ^
   "%ODIR%\bc250_gpuva_journal_contract.obj" ^

@@ -234,6 +234,66 @@ static int Bc250RunGpuvaSpaceContractTest(void)
         r2.BaseGpuVa, r2.Size, BC250_PTE_EXECUTABLE,
         replaceSpace.PageTableEpoch) == BC250_GPUVA_OK);
 
+
+    /*
+     * C3.12 (12/09) -- OCUPACAO POR ESTADO.
+     *
+     * MEDIDO na corrida 16:31: PublishStatus=3 (BC250_GPUVA_NO_SPACE) com
+     * Attempts=1 Busy=0 -- o publicador pegou o lock de primeira e a falha veio
+     * de DENTRO, por exaustao do teto antigo de 256 slots. Isso REFUTOU a hipotese da C3.8
+     * (contencao leitor/publicador).
+     *
+     * O que NO_SPACE sozinho nao diz: 256 faixas legitimamente em uso, ou slots
+     * presos em TEARDOWN e nunca reciclados? Bc250GpuvaSpaceInsertRange so'
+     * reaproveita FREE e UNMAPPED, entao TEARDOWN acumula. Reusable espelha
+     * EXATAMENTE esse criterio -- se Reusable==0 com Teardown>0, e' vazamento,
+     * nao capacidade, e o conserto e' outro.
+     */
+    {
+        static BC250_GPUVA_SPACE occSpace;
+        BC250_GPUVA_SPACE_OCCUPANCY occ;
+
+        CHECK(Bc250GpuvaSpaceInitialize(&occSpace, 34u) == BC250_GPUVA_OK);
+        CHECK(Bc250GpuvaSpaceDescribeOccupancy(&occSpace, &occ) == BC250_GPUVA_OK);
+        CHECK(occ.Capacity == BC250_GPUVA_SPACE_MAX_RANGES);
+        CHECK(occ.Free == BC250_GPUVA_SPACE_MAX_RANGES);
+        CHECK(occ.Mapped == 0u && occ.Teardown == 0u && occ.Unmapped == 0u);
+        CHECK(occ.Reusable == BC250_GPUVA_SPACE_MAX_RANGES);
+
+        /* Um slot de cada estado nao-livre: as contagens tem de seguir. */
+        occSpace.Ranges[0].State = BC250_GPUVA_RANGE_MAPPED;
+        occSpace.Ranges[1].State = BC250_GPUVA_RANGE_UNMAPPED;
+        occSpace.Ranges[2].State = BC250_GPUVA_RANGE_TEARDOWN;
+        CHECK(Bc250GpuvaSpaceDescribeOccupancy(&occSpace, &occ) == BC250_GPUVA_OK);
+        CHECK(occ.Mapped == 1u);
+        CHECK(occ.Unmapped == 1u);
+        CHECK(occ.Teardown == 1u);
+        CHECK(occ.Free == BC250_GPUVA_SPACE_MAX_RANGES - 3u);
+        /* Reusable = Free + Unmapped, e NAO inclui Teardown. */
+        CHECK(occ.Reusable == occ.Free + occ.Unmapped);
+        CHECK(occ.Reusable == BC250_GPUVA_SPACE_MAX_RANGES - 2u);
+
+        /*
+         * O CASO QUE DISTINGUE AS DUAS CAUSAS: espaco inteiro em TEARDOWN.
+         * Capacidade "cheia", nada reaproveitavel, e ZERO faixas em uso.
+         * Se a corrida mostrar isto, o defeito e' reciclagem, nao tamanho.
+         */
+        {
+            uint32_t k;
+            for (k = 0u; k < BC250_GPUVA_SPACE_MAX_RANGES; ++k) {
+                occSpace.Ranges[k].State = BC250_GPUVA_RANGE_TEARDOWN;
+            }
+            CHECK(Bc250GpuvaSpaceDescribeOccupancy(&occSpace, &occ) == BC250_GPUVA_OK);
+            CHECK(occ.Teardown == BC250_GPUVA_SPACE_MAX_RANGES);
+            CHECK(occ.Reusable == 0u);
+            CHECK(occ.Mapped == 0u);
+        }
+
+        /* Argumentos degenerados falham fechado e zeram a saida. */
+        CHECK(Bc250GpuvaSpaceDescribeOccupancy(NULL, &occ) == BC250_GPUVA_BAD_ARGUMENT);
+        CHECK(occ.Mapped == 0u && occ.Teardown == 0u && occ.Reusable == 0u);
+        CHECK(Bc250GpuvaSpaceDescribeOccupancy(&occSpace, NULL) == BC250_GPUVA_BAD_ARGUMENT);
+    }
     return 0;
 }
 

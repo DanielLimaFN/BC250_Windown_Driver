@@ -43,6 +43,7 @@ extern "C" {
 #include "bc250_wddm_winsys.h"
 #include "../core/bc250_umd_private_contract.h"
 #include "../core/bc250_dxbc_parser.h"
+#include "../core/bc250_dxbc_spirv_bridge.h"
 #include <dxgiddi.h>
 
 /* Shader object representation */
@@ -56,6 +57,20 @@ typedef struct _BC250_UMD_SHADER {
     BC250_DXBC_CONTAINER Container;
     CONST UINT *pCodeTokens;
     D3D10DDI_HRTSHADER hRTShader;
+    /*
+     * C3 (12/09): modulo SPIR-V traduzido, com ownership EXPLICITO por shader.
+     * SpirvValid so' vai a TRUE depois que Bc250DxbcTranslateToSpirv devolve OK,
+     * e Bc250Umd10DestroyShader e' obrigado a chamar Bc250DxbcReleaseSpirv antes
+     * de zerar a estrutura -- senao cada shader do DWM vaza o modulo dentro do
+     * compositor. Fechado por default: sem tradutor armado, SpirvValid e' FALSE
+     * e nada muda no comportamento do driver.
+     *
+     * Ter o SPIR-V NAO autoriza anunciar pipeline D3D: faltam descriptors,
+     * pipeline grafico, render target e Draw -- e o anel grafico (PM4 de DRAW)
+     * nao existe em nenhuma linha deste repositorio.
+     */
+    BOOL SpirvValid;
+    BC250_DXBC_SPIRV_MODULE Spirv;
 } BC250_UMD_SHADER;
 
 /* Resource object representation */
@@ -204,6 +219,13 @@ typedef struct _BC250_UMD_COMMAND_BUFFER {
     BOOL Initialized;
 } BC250_UMD_COMMAND_BUFFER;
 
+/*
+ * Slots do anel de command buffer do blt. Quatro basta para o DWM: ele emite
+ * poucos draws por quadro, e a espera de reciclagem so' alcanca trabalho
+ * submetido quatro blts atras -- na pratica ja concluido.
+ */
+/* (o anel de slots do blt saiu em 13/09 junto com a submissao de contexto) */
+
 #define BC250_UMD_NODE1_PROOF_VALUE_COUNT 5u
 #define BC250_UMD_NODE1_PROOF_POISON_BASE 0x43DAFFF0u
 #define BC250_UMD_NODE1_PROOF_FENCE_POISON 0x43DAFFFEull
@@ -317,16 +339,22 @@ typedef struct _BC250_UMD_DEVICE {
     CONST DXGI_DDI_BASE_CALLBACKS* pDXGICallbacks;
     BC250_WINSYS_CONTEXT Winsys;
     BOOL WinsysInitialized;
-    BC250_WINSYS_CONTEXT BltWinsys;
-    BC250_WINSYS_ALLOCATION BltCommand;
-    BC250_WINSYS_MONITORED_FENCE BltFence;
-    uint32_t *BltWords;
+    /*
+     * A composicao e' executada PELO KMD via escape desde 13/09. A UMD nao
+     * cria contexto, paging queue, command buffer nem fence para o blt --
+     * submissao de contexto no no de paginacao produziu TDR em 5 de 5
+     * tentativas na corrida 08:12. Resta o contador de sequencia.
+     */
     uint32_t BltSequence;
     BOOL BltPending;
     BC250_UMD_COMMAND_BUFFER Node0CmdBuffer;
     BC250_UMD_COMMAND_BUFFER Node1CmdBuffer;
     BC250_UMD_PIPELINE_STATE PipelineState;
     UINT64 RejectedDrawCount;
+    /* Draws atendidos por SUBSTITUICAO (blt 1:1 no SDMA), nunca por
+     * rasterizacao. Contagem separada de proposito: misturar com DrawCount
+     * tornaria a prova de pixel infalsificavel. Ver C1 em caps_probe.h. */
+    UINT64 SubstitutedDrawCount;
     BOOL NativeNode1Ready;
     BOOL DeviceActive;
 } BC250_UMD_DEVICE;

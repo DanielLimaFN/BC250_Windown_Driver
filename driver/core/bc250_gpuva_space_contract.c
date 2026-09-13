@@ -22,6 +22,44 @@ static void Bc250GpuvaCopySpace(
     }
 }
 
+BC250_GPUVA_STATUS Bc250GpuvaSpaceDescribeOccupancy(
+    const BC250_GPUVA_SPACE *Space,
+    BC250_GPUVA_SPACE_OCCUPANCY *Occupancy)
+{
+    uint32_t i;
+
+    if (Occupancy == NULL) return BC250_GPUVA_BAD_ARGUMENT;
+    Occupancy->Capacity = BC250_GPUVA_SPACE_MAX_RANGES;
+    Occupancy->Free = 0u;
+    Occupancy->Mapped = 0u;
+    Occupancy->Unmapped = 0u;
+    Occupancy->Teardown = 0u;
+    Occupancy->Reusable = 0u;
+    Occupancy->LiveCount = 0u;
+
+    if (Space == NULL || Space->Signature != BC250_GPUVA_SPACE_SIGNATURE) {
+        return BC250_GPUVA_BAD_ARGUMENT;
+    }
+
+    Occupancy->LiveCount = Space->LiveCount;
+    for (i = 0u; i < BC250_GPUVA_SPACE_MAX_RANGES; ++i) {
+        switch (Space->Ranges[i].State) {
+        case BC250_GPUVA_RANGE_FREE:     ++Occupancy->Free; break;
+        case BC250_GPUVA_RANGE_MAPPED:   ++Occupancy->Mapped; break;
+        case BC250_GPUVA_RANGE_UNMAPPED: ++Occupancy->Unmapped; break;
+        case BC250_GPUVA_RANGE_TEARDOWN: ++Occupancy->Teardown; break;
+        default: break;
+        }
+    }
+    /*
+     * Reusable espelha EXATAMENTE o criterio de Bc250GpuvaSpaceInsertRange:
+     * so' FREE e UNMAPPED sao reaproveitados. Se Reusable==0 e Teardown>0, a
+     * exaustao e' vazamento, nao capacidade -- e o conserto e' outro.
+     */
+    Occupancy->Reusable = Occupancy->Free + Occupancy->Unmapped;
+    return BC250_GPUVA_OK;
+}
+
 BC250_GPUVA_STATUS Bc250GpuvaSpaceInitialize(
     BC250_GPUVA_SPACE *Space,
     uint32_t AddressBits)

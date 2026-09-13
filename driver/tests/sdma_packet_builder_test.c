@@ -48,6 +48,37 @@ static int Bc250RunSdmaPacketBuilderTest(void)
     CHECK(g_ring[5] == 0x02000000u); /* Dst Low */
     CHECK(g_ring[6] == 0x00000000u); /* Dst High */
 
+    /* 1b. Caso medido no DWM em 13/09: 1280x1040, pitches 5120 -> 10240. */
+    cursor = 0u;
+    memset(g_ring, 0, sizeof(g_ring));
+    CHECK(Bc250SdmaEmitCopyLinearSubWindow32(g_ring, TEST_RING_DWORDS, &cursor,
+        0x000000F401610000ull, 5120u,
+        0x000000F4000F0000ull, 10240u,
+        0u, 0u, 1280u, 1040u) == BC250_SDMA_OK);
+    CHECK(cursor == BC250_SDMA_DWORDS_COPY_LINEAR_SUB_WIND);
+    CHECK(g_ring[0] == 0x40000401u); /* OP=1, SUBOP=4, elementsize=DWORD */
+    CHECK(g_ring[1] == 0x01610000u && g_ring[2] == 0x000000F4u);
+    CHECK(g_ring[3] == 0u);
+    CHECK(g_ring[4] == ((1280u - 1u) << 13));
+    CHECK(g_ring[5] == (1280u * 1040u) - 1u);
+    CHECK(g_ring[6] == 0x000F0000u && g_ring[7] == 0x000000F4u);
+    CHECK(g_ring[8] == 0u);
+    CHECK(g_ring[9] == ((2560u - 1u) << 13));
+    CHECK(g_ring[10] == (2560u * 1040u) - 1u);
+    CHECK(g_ring[11] == ((1280u - 1u) | ((1040u - 1u) << 16)));
+    CHECK(g_ring[12] == 0u);
+    cursor = 0u;
+    CHECK(Bc250SdmaEmitCopyLinearSubWindow32(g_ring, TEST_RING_DWORDS, &cursor,
+        0x1000ull, 5119u, 0x2000ull, 10240u, 0u, 0u, 1280u, 1040u) ==
+        BC250_SDMA_MISALIGNED);
+
+    /* Restaura o preambulo linear usado pelos testes encadeados abaixo. */
+    cursor = 0u;
+    memset(g_ring, 0, sizeof(g_ring));
+    CHECK(Bc250SdmaEmitCopyLinear(g_ring, TEST_RING_DWORDS, &cursor,
+        0x0000000001000000ull, 0x0000000002000000ull, 4096u) ==
+        BC250_SDMA_OK);
+
     /* 2. Test FENCE emission */
     CHECK(Bc250SdmaEmitFence(
         g_ring, TEST_RING_DWORDS, &cursor,
@@ -64,6 +95,26 @@ static int Bc250RunSdmaPacketBuilderTest(void)
     CHECK(g_ring[12] == 0u);
     CHECK(g_ring[13] == 0xC3A10000u);
     CHECK(g_ring[14] == 0u && g_ring[15] == 0u);
+
+    /* Test FENCE64 emission (SDMA 5.0 monitored fence: WRITE64 + MTYPE_UC) */
+    {
+        uint32_t f64Cursor = 0;
+        uint32_t f64Ring[16] = {0};
+        CHECK(Bc250SdmaEmitFence64(
+            f64Ring, 16u, &f64Cursor,
+            0x0000000450001000ull, 0x12345678AABBCCDDull) == BC250_SDMA_OK);
+        CHECK(f64Cursor == 5u);
+        CHECK(f64Ring[0] == 0x80030005u); /* Opcode 5, MTYPE UC, WRITE64 */
+        CHECK(f64Ring[1] == 0x50001000u); /* Fence Low */
+        CHECK(f64Ring[2] == 0x00000004u); /* Fence High */
+        CHECK(f64Ring[3] == 0xAABBCCDDu); /* Value Low */
+        CHECK(f64Ring[4] == 0x12345678u); /* Value High */
+
+        /* Misalignment check */
+        CHECK(Bc250SdmaEmitFence64(
+            f64Ring, 16u, &f64Cursor,
+            0x0000000450001001ull, 0x12345678AABBCCDDull) == BC250_SDMA_MISALIGNED);
+    }
 
     cursor = 0u;
     memset(g_ring, 0, sizeof(g_ring));
@@ -266,6 +317,34 @@ static int Bc250RunSdmaPacketBuilderTest(void)
         CHECK(!Bc250PagingDecodeProof(words, 4u, 0x1ce865cc0ull, &proof));
         words[0] = 1u;
         CHECK(!Bc250PagingDecodeProof(words, 8u, 0x1ce865cc0ull, &proof));
+    }
+
+    /* Test COPY_LINEAR proof decoding */
+    {
+        uint32_t copyWords[8] = {
+            0x00000001u,            /* Opcode 1, Subop 0 */
+            4095u,                  /* ByteCount - 1 (4096 bytes) */
+            0u,                     /* Endian */
+            0x01000000u, 0u,        /* Src VA: 0x0000000001000000 */
+            0x02000000u, 0u,        /* Dst VA: 0x0000000002000000 */
+            0u                      /* Padding NOP */
+        };
+        BC250_PAGING_PROOF proof;
+        CHECK(Bc250PagingDecodeProof(copyWords, 8u, 0x1ce865cc0ull, &proof));
+        CHECK(proof.Opcode == BC250_PAGING_PROOF_OP_COPY);
+        CHECK(proof.Source == 0x01000000ull);
+        CHECK(proof.Destination == 0x02000000ull);
+        CHECK(proof.Bytes == 4096u);
+        CHECK(Bc250PagingProofMatches(&proof, 0x1ce865cc0ull, 32u));
+
+        /* Misaligned source address should fail decode */
+        copyWords[3] = 0x01000001u;
+        CHECK(!Bc250PagingDecodeProof(copyWords, 8u, 0x1ce865cc0ull, &proof));
+        copyWords[3] = 0x01000000u;
+
+        /* Misaligned byte count should fail decode */
+        copyWords[1] = 4094u; /* 4095 bytes */
+        CHECK(!Bc250PagingDecodeProof(copyWords, 8u, 0x1ce865cc0ull, &proof));
     }
     return 1;
 }

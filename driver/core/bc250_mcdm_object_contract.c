@@ -564,6 +564,90 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectFindAllocationByToken(
     return BC250_MCDM_OBJECT_INVALID_HANDLE;
 }
 
+/*
+ * F2.1 (13/09) -- GEOMETRIA DA SUPERFICIE PARA DxgkDdiDescribeAllocation.
+ *
+ * Ate a F2 a DDI devolvia STATUS_NOT_SUPPORTED para toda alocacao, porque o KMD
+ * simplesmente nao sabia a geometria: a ABI de alocacao carregava apenas token,
+ * tamanho e alinhamento. Agora a UMD declara Width/Height/Pitch/Format na
+ * criacao e o registro guarda o que foi declarado.
+ *
+ * As duas funcoes falham FECHADO. Em particular, `Get` devolve erro -- e nao uma
+ * geometria zerada -- quando a alocacao nunca declarou uma: o chamador precisa
+ * ser obrigado a distinguir "nao sei" de "e' 0x0", que e' exatamente o tipo de
+ * confusao que a Lei 4 proibe.
+ */
+BC250_MCDM_OBJECT_STATUS Bc250McdmObjectSetAllocationGeometry(
+    BC250_MCDM_OBJECT_REGISTRY *Registry,
+    BC250_MCDM_HANDLE Allocation,
+    uint32_t Width,
+    uint32_t Height,
+    uint32_t Pitch,
+    uint32_t Format)
+{
+    BC250_MCDM_OBJECT_RECORD *record;
+    BC250_MCDM_OBJECT_RECORD probe;
+    BC250_MCDM_OBJECT_STATUS status;
+
+    if (Width == 0u || Height == 0u || Pitch == 0u || Format == 0u) {
+        return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+    }
+    if ((uint64_t)Pitch < (uint64_t)Width) {
+        return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+    }
+    status = Bc250McdmObjectLookup(Registry, Allocation,
+        BC250_MCDM_OBJECT_ALLOCATION, NULL, &probe);
+    if (status != BC250_MCDM_OBJECT_OK) return status;
+    /* A geometria tem de caber no que foi realmente alocado. */
+    if ((uint64_t)Pitch * (uint64_t)Height > probe.AllocationBytes) {
+        return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+    }
+    record = Bc250McdmFindObject(Registry, Allocation);
+    if (record == NULL ||
+        record->Signature != BC250_MCDM_OBJECT_LIVE_SIGNATURE ||
+        record->Type != BC250_MCDM_OBJECT_ALLOCATION) {
+        return BC250_MCDM_OBJECT_BAD_REGISTRY;
+    }
+    record->AllocationWidth = Width;
+    record->AllocationHeight = Height;
+    record->AllocationPitch = Pitch;
+    record->AllocationFormat = Format;
+    record->AllocationGeometryValid = 1u;
+    return BC250_MCDM_OBJECT_OK;
+}
+
+BC250_MCDM_OBJECT_STATUS Bc250McdmObjectGetAllocationGeometry(
+    const BC250_MCDM_OBJECT_REGISTRY *Registry,
+    BC250_MCDM_HANDLE Allocation,
+    uint32_t *Width,
+    uint32_t *Height,
+    uint32_t *Pitch,
+    uint32_t *Format)
+{
+    BC250_MCDM_OBJECT_RECORD record;
+    BC250_MCDM_OBJECT_STATUS status;
+
+    if (Width != NULL) *Width = 0u;
+    if (Height != NULL) *Height = 0u;
+    if (Pitch != NULL) *Pitch = 0u;
+    if (Format != NULL) *Format = 0u;
+    if (Width == NULL || Height == NULL || Pitch == NULL || Format == NULL) {
+        return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+    }
+    status = Bc250McdmObjectLookup(Registry, Allocation,
+        BC250_MCDM_OBJECT_ALLOCATION, NULL, &record);
+    if (status != BC250_MCDM_OBJECT_OK) return status;
+    if (record.AllocationGeometryValid == 0u) {
+        /* Nunca declarada. NAO devolver zeros como se fossem medida. */
+        return BC250_MCDM_OBJECT_NO_GEOMETRY;
+    }
+    *Width = record.AllocationWidth;
+    *Height = record.AllocationHeight;
+    *Pitch = record.AllocationPitch;
+    *Format = record.AllocationFormat;
+    return BC250_MCDM_OBJECT_OK;
+}
+
 BC250_MCDM_OBJECT_STATUS Bc250McdmObjectSetRootPageTable(
     BC250_MCDM_OBJECT_REGISTRY *Registry,
     BC250_MCDM_HANDLE Context,

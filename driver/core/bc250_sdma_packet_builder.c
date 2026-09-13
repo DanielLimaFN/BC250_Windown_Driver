@@ -74,6 +74,79 @@ BC250_SDMA_STATUS Bc250SdmaEmitCopyLinear(
     return BC250_SDMA_OK;
 }
 
+BC250_SDMA_STATUS Bc250SdmaEmitCopyLinearSubWindow32(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint64_t SrcAddress,
+    uint32_t SrcPitchBytes,
+    uint64_t DstAddress,
+    uint32_t DstPitchBytes,
+    uint32_t DstX,
+    uint32_t DstY,
+    uint32_t Width,
+    uint32_t Height)
+{
+    uint32_t srcPitchElements;
+    uint32_t dstPitchElements;
+    uint64_t srcSliceElements;
+    uint64_t dstSliceElements;
+
+    if (RingBuffer == NULL || CursorDwords == NULL ||
+        !Bc250IsPowerOfTwo32(RingDwords)) {
+        return BC250_SDMA_BAD_ARGUMENT;
+    }
+    if ((SrcAddress & 3ull) != 0ull || (DstAddress & 3ull) != 0ull ||
+        (SrcPitchBytes & 3u) != 0u || (DstPitchBytes & 3u) != 0u) {
+        return BC250_SDMA_MISALIGNED;
+    }
+    if (Width == 0u || Height == 0u || Width > 0x4000u ||
+        Height > 0x4000u || DstX > 0x3FFFu || DstY > 0x3FFFu) {
+        return BC250_SDMA_PAYLOAD_TOO_LARGE;
+    }
+    srcPitchElements = SrcPitchBytes / 4u;
+    dstPitchElements = DstPitchBytes / 4u;
+    if (srcPitchElements < Width || dstPitchElements < Width ||
+        DstX > dstPitchElements - Width ||
+        srcPitchElements > 0x80000u || dstPitchElements > 0x80000u) {
+        return BC250_SDMA_OUT_OF_BOUNDS;
+    }
+    srcSliceElements = (uint64_t)srcPitchElements * Height;
+    dstSliceElements = (uint64_t)dstPitchElements * (DstY + Height);
+    if (srcSliceElements == 0ull || srcSliceElements > 0x10000000ull ||
+        dstSliceElements == 0ull || dstSliceElements > 0x10000000ull) {
+        return BC250_SDMA_PAYLOAD_TOO_LARGE;
+    }
+
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        (BC250_SDMA_OP_COPY & 0xFFu) |
+        ((BC250_SDMA_SUBOP_COPY_LINEAR_SUB_WIND & 0xFFu) << 8) |
+        (BC250_SDMA_FILL_SIZE_DWORD << 29));
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        (uint32_t)SrcAddress);
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        (uint32_t)(SrcAddress >> 32));
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, 0u); /* src x/y */
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        (srcPitchElements - 1u) << 13); /* src z=0 */
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        (uint32_t)(srcSliceElements - 1ull));
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        (uint32_t)DstAddress);
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        (uint32_t)(DstAddress >> 32));
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        (DstX & 0x3FFFu) | ((DstY & 0x3FFFu) << 16));
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        (dstPitchElements - 1u) << 13); /* dst z=0 */
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        (uint32_t)(dstSliceElements - 1ull));
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        ((Width - 1u) & 0x3FFFu) | (((Height - 1u) & 0x3FFFu) << 16));
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, 0u); /* rect z/endian */
+    return BC250_SDMA_OK;
+}
+
 BC250_SDMA_STATUS Bc250SdmaEmitConstFill(
     uint32_t *RingBuffer,
     uint32_t RingDwords,
@@ -157,6 +230,41 @@ BC250_SDMA_STATUS Bc250SdmaEmitFence(
     Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(FenceAddress & 0xFFFFFFFFull));
     Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(FenceAddress >> 32));
     Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, FenceSequence);
+
+    return BC250_SDMA_OK;
+}
+
+BC250_SDMA_STATUS Bc250SdmaEmitFence64(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint64_t FenceAddress,
+    uint64_t FenceValue)
+{
+    uint32_t header;
+
+    if (RingBuffer == NULL || CursorDwords == NULL || !Bc250IsPowerOfTwo32(RingDwords)) {
+        return BC250_SDMA_BAD_ARGUMENT;
+    }
+    if ((FenceAddress & 3u) != 0) {
+        return BC250_SDMA_MISALIGNED;
+    }
+
+    /*
+     * SDMA 5.0 (Navi/GFX10) 64-bit Fence Packet:
+     * DW0: opcode 5, MTYPE_UC (bits 18:16 = 3), WRITE64 (bit 31 = 1) -> 0x80030005
+     * DW1: FenceAddress[31:0]
+     * DW2: FenceAddress[63:32]
+     * DW3: FenceValue[31:0]
+     * DW4: FenceValue[63:32]
+     */
+    header = (BC250_SDMA_OP_FENCE & 0xFFu) | (3u << 16) | (1u << 31);
+
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, header);
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(FenceAddress & 0xFFFFFFFFull));
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(FenceAddress >> 32));
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(FenceValue & 0xFFFFFFFFull));
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, (uint32_t)(FenceValue >> 32));
 
     return BC250_SDMA_OK;
 }

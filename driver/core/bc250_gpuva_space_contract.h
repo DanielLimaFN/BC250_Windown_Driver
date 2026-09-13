@@ -23,7 +23,22 @@ extern "C" {
 #endif
 
 #define BC250_GPUVA_SPACE_SIGNATURE 0x53415647u /* "GVAS" */
-#define BC250_GPUVA_SPACE_MAX_RANGES 256u
+/*
+ * C3.14 (12/09) -- CAPACIDADE DO SNAPSHOT.
+ *
+ * A evidencia integral da corrida 17:45 refuta o diagnostico inicial de que
+ * havia apenas um estouro temporario no Scratch. Scratch comeca vazio e recebe
+ * exatamente o estado final MAPPED; portanto, NO_SPACE ali significa que o
+ * estado final nao cabe no teto antigo. O log mediu ate 252 faixas ativas, e
+ * uma publicacao pode acrescentar ate 256 runs do journal. O teto 1024 cobre
+ * esse envelope observado com margem para os dois fragmentos de fronteira de
+ * cada replace. Custo estatico: ~110 KiB por BC250_GPUVA_SPACE; existem dois
+ * slots publicados mais um Scratch no contexto ativo (~324 KiB ao todo).
+ *
+ * Isto nao e' prova no silicio. O teste de snapshot reproduz 252 + 256 runs e
+ * impede que o teto volte a 256 silenciosamente.
+ */
+#define BC250_GPUVA_SPACE_MAX_RANGES 1024u
 #define BC250_GPUVA_PAGE_BYTES 4096ull
 #define BC250_GPUVA_PAGE_MASK (BC250_GPUVA_PAGE_BYTES - 1ull)
 /*
@@ -165,6 +180,38 @@ typedef struct BC250_GPUVA_SPACE {
     uint32_t SortedIndices[BC250_GPUVA_SPACE_MAX_RANGES];
     BC250_GPUVA_RANGE_RECORD Ranges[BC250_GPUVA_SPACE_MAX_RANGES];
 } BC250_GPUVA_SPACE;
+
+/*
+ * C3.12 (12/09) -- OCUPACAO DO ESPACO POR ESTADO.
+ *
+ * MEDIDO na corrida 16:31: Bc250GpuvaSnapshotPublishBatch falhou com
+ * PublishStatus=3 (BC250_GPUVA_NO_SPACE) e Attempts=1 Busy=0 -- ou seja, o
+ * publicador pegou o lock de primeira e a falha veio de DENTRO, por exaustao
+ * de slots. Isso REFUTOU a hipotese da C3.8 (contencao leitor/publicador),
+ * que a propria instrumentacao da C3.8 permitiu derrubar.
+ *
+ * O que o numero sozinho NAO diz: se as 256 faixas estao legitimamente em uso
+ * (capacidade insuficiente para um dwm.exe vivo) ou se slots pararam de ser
+ * reciclados (vazamento). A busca por slot livre em Bc250GpuvaSpaceInsertRange
+ * so' reaproveita FREE e UNMAPPED -- TEARDOWN NAO e' reaproveitado. Contar por
+ * estado separa as duas causas, e a resposta muda completamente o conserto:
+ * aumentar o limite, ou reciclar o que ficou preso.
+ *
+ * Aritmetica pura sobre a estrutura. Sem hardware, sem lock, testavel offline.
+ */
+typedef struct BC250_GPUVA_SPACE_OCCUPANCY {
+    uint32_t Capacity;   /* BC250_GPUVA_SPACE_MAX_RANGES */
+    uint32_t Free;       /* reaproveitavel */
+    uint32_t Mapped;     /* em uso de verdade */
+    uint32_t Unmapped;   /* reaproveitavel */
+    uint32_t Teardown;   /* NAO reaproveitavel -- candidato a vazamento */
+    uint32_t Reusable;   /* Free + Unmapped */
+    uint32_t LiveCount;  /* o que a estrutura declara */
+} BC250_GPUVA_SPACE_OCCUPANCY;
+
+BC250_GPUVA_STATUS Bc250GpuvaSpaceDescribeOccupancy(
+    const BC250_GPUVA_SPACE *Space,
+    BC250_GPUVA_SPACE_OCCUPANCY *Occupancy);
 
 BC250_GPUVA_STATUS Bc250GpuvaSpaceInitialize(
     BC250_GPUVA_SPACE *Space,

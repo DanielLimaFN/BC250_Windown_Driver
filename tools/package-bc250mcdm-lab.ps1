@@ -44,6 +44,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if ($EnablePersistentSubmission -and -not $EnableShaderDispatch) {
+    throw ('-EnablePersistentSubmission exige -EnableShaderDispatch; ' +
+           'sem a receita F8b (CpSoftReset=1) a carga do PFP assenta no laco 0x218..0x21B.')
+}
 if ($EnablePhysicalRenderOnly -and
     (-not $EnableShaderDispatch -or -not $EnablePersistentSubmission)) {
     throw ('PHYSICAL_RENDER_ONLY exige -EnableShaderDispatch e ' +
@@ -267,6 +271,11 @@ $infContent = $infContent | ForEach-Object {
         'HKR,Parameters,GpuvaLabPromotion,0x00010003,0'
     } elseif ($_ -match 'HKR,Parameters,SdmaPlanoAFallback,0x000100(01|03),\d+') {
         'HKR,Parameters,SdmaPlanoAFallback,0x00010003,0'
+    } elseif ($_ -match 'HKR,Parameters,Node1JournalGatePerProcess,0x000100(01|03),\d+') {
+        # C3.9: DEFAULT, nao mandato. NOCLOBBER para que o operador possa armar
+        # antes do bind sem que o AddReg do install apague em silencio -- foi
+        # essa classe de defeito que custou a corrida do ensaio de TDR (doc 186).
+        'HKR,Parameters,Node1JournalGatePerProcess,0x00010003,0'
     } else {
         $_
     }
@@ -286,6 +295,7 @@ $expectedInfValues = [ordered]@{
     'Parameters,PersistentSubmission' = $(if ($EnablePersistentSubmission) { 1 } else { 0 })
     'Parameters,GpuvaLabPromotion' = 0
     'Parameters,SdmaPlanoAFallback' = 0
+    'Parameters,Node1JournalGatePerProcess' = 0
     'Parameters,SdmaAutoCtxSw' = $(if ($EnableShaderDispatch) { 0 } else { 1 })
 }
 # GpuvaLabPromotion e SdmaPlanoAFallback sao gravados como DEFAULT (NOCLOBBER);
@@ -293,6 +303,7 @@ $expectedInfValues = [ordered]@{
 $infValueFlags = @{
     'Parameters,GpuvaLabPromotion' = '0x00010003'
     'Parameters,SdmaPlanoAFallback' = '0x00010003'
+    'Parameters,Node1JournalGatePerProcess' = '0x00010003'
 }
 $renderedInf = Get-Content -LiteralPath $packageInf -Raw
 foreach ($entry in $expectedInfValues.GetEnumerator()) {

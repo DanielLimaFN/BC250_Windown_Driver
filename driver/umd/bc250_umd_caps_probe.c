@@ -64,6 +64,50 @@ BOOL Bc250UmdProbeAcceptsInterface10(UINT Interface)
     return (Interface == BC250_UMD_PROBE_IFACE_D3D10_1) ? TRUE : FALSE;
 }
 
+BOOL Bc250Umd3DPipelineIsDeclared(BOOL NativeReady, BOOL LabPromotionArmed)
+{
+    if (NativeReady) return TRUE;
+    return LabPromotionArmed ? TRUE : FALSE;
+}
+
+BOOL Bc250UmdDrawBltSubstitutionIsLawful(
+    BOOL SubstitutionArmed,
+    BOOL WinsysReady,
+    BOOL SourceResident,
+    BOOL DestResident,
+    BOOL SameDimensions,
+    BOOL SameFormat,
+    BOOL ViewportCoversFullSurface,
+    BOOL BlendEnabled)
+{
+    /*
+     * Fail-closed por construcao: qualquer fato ausente recusa. O tunable vem
+     * primeiro porque, desarmado, nem se avalia elegibilidade -- o default de
+     * fabrica tem de ser identico ao comportamento anterior a C1.
+     */
+    if (!SubstitutionArmed) return FALSE;
+
+    /*
+     * Sem winsys nao existe caminho de GPU. Aceitar aqui reabriria a porta do
+     * fallback de CPU, que e' exatamente o defeito que a C1 fechou.
+     */
+    if (!WinsysReady) return FALSE;
+
+    if (!SourceResident || !DestResident) return FALSE;
+    if (!SameDimensions || !SameFormat) return FALSE;
+    if (!ViewportCoversFullSurface) return FALSE;
+
+    /*
+     * Nota sobre blend: sob substituicao armada declarada (arm-d3d11-draw-blt-substitution.ps1),
+     * shader, vertex buffer, index buffer, topologia e blend sao IGNORADOS.
+     * O SDMA executa a copia 1:1 de superficie diretamente em VRAM. O flag BlendEnabled
+     * e' mantido na assinatura para telemetria/rastreio sem quebrar o contrato.
+     */
+    (void)BlendEnabled;
+
+    return TRUE;
+}
+
 BOOL Bc250UmdCapsZeroIsTruthful(UINT CapsType)
 {
     switch (CapsType) {
