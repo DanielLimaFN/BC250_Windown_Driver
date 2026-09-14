@@ -37,6 +37,10 @@ extern "C" {
  * porque zero contra zero nao demonstra caminho de pixel.
  */
 
+/* F3.2: content sampling is deliberately NOT an input to execution success.
+ * SameSurface is a genuine no-copy operation, not suppression of a new frame. */
+uint32_t Bc250PresentCopySucceeded(uint32_t CopyCompleted, uint32_t SameSurface);
+
 typedef enum BC250_BLT_PROOF_VERDICT {
     /* Comparacao nao pode ser feita (argumento invalido, mapeamento ausente). */
     BC250_BLT_PROOF_INDETERMINATE = 0,

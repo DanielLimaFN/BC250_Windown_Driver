@@ -213,6 +213,173 @@ Esses registros configuram estado de dispatch; eles não substituem firmware, MQ
 | `CP_PQ_WPTR_POLL_CNTL1` | `0x1E24` idx0 | `0x0C210` | P1/P2 | `QUEUE_MASK[31:0]`, um bit por fila (`gc_10_1_0_sh_mask.h`). Base `+0x1260` dw confirmada por `0x1E23→0xC20C`, `0x1E2D→0xC234` e `0x1E55→0xC2D4`. Escrito por `kgd_gfx_v9_hqd_load` antes de `INIT_FETCHER`/`ACTIVE`. Candidato 3.30. |
 | `CP_PQ_STATUS` | `0x1E58` idx0 | `0x0C2E0` | P1/P2 | `DOORBELL_ENABLE` é bit 1; Linux sweep observou `0x2`. `0x7960` fica em quarentena. |
 
+### `gc_10_1_0_offset.h` vendorizado em 14/09 — e **provado contra o silício**
+
+`inc/linux_ref/gc_10_1_0_offset.h` (AMD, 2019; 5.264 offsets) foi aceito por
+`tools/import-gc-offset-header.py`, que **não o instala por confiança**: ele exige que o header
+reproduza, pela regra de cálculo do topo deste documento, nove endereços que esta placa já
+confirmou. As nove passaram:
+
+```
+mmCP_ME_CNTL           0x0F56 idx0 -> 0x086D8     mmCP_RB0_CNTL   0x1DE1 idx0 -> 0x0C104
+mmCP_RB0_BASE          0x1DE0 idx0 -> 0x0C100     mmCP_RB0_RPTR   0x0F60 idx0 -> 0x08700
+mmCP_RB0_WPTR          0x1DF4 idx0 -> 0x0C150     mmCP_MEC_CNTL   0x0E2D idx0 -> 0x08234
+mmCP_RB_WPTR_POLL_CNTL 0x0F62 idx0 -> 0x08708
+mmCB_COLOR0_BASE       0x0318 idx1 -> 0x28C60     mmPA_SC_WINDOW_SCISSOR_TL 0x0081 idx1 -> 0x28204
+```
+
+As duas últimas **confirmam de forma independente** o bloco `GFX10 3D` que a etapa B.0 havia
+derivado só por ordem no `sh_mask.h`. `PA_SC_VPORT_SCISSOR_0_TL/BR` também bateram
+(`0x28250`/`0x28254`).
+
+**Com isto, todo endereço abaixo sobe de `H` para `P1`.** A regra de cálculo deste catálogo
+deixa de ser a única fonte: há header autoritativo local.
+
+#### Bloco desbloqueado — partida do anel gráfico
+
+| Registro | mmREG | BASE_IDX | BAR5 byte | Classe |
+|---|---:|---:|---:|---:|
+| `CP_RB0_ACTIVE` | `0x1F40` | 0 | `0x0C680` | P1 |
+| `CP_MAX_CONTEXT` | `0x1E4E` | 0 | `0x0C2B8` | P1 |
+| `CP_RB_VMID` | `0x1DF1` | 0 | `0x0C144` | P1 |
+| `CP_RB_WPTR_DELAY` | `0x0F61` | 0 | `0x08704` | P1 |
+| `CP_PFP_IC_OP_CNTL` | `0x5843` | **1** | `0x3E10C` | P1 |
+| `CP_ME_IC_OP_CNTL` | `0x5847` | **1** | `0x3E11C` | P1 |
+| `CP_CE_IC_OP_CNTL` | `0x584B` | **1** | `0x3E12C` | P1 |
+| `CP_CPC_IC_OP_CNTL` | `0x584F` | **1** | `0x3E13C` | P1 |
+
+#### Bloco desbloqueado — programa de shader (B.2)
+
+| Registro | mmREG | BASE_IDX | BAR5 byte | Classe |
+|---|---:|---:|---:|---:|
+| `SPI_SHADER_PGM_LO_PS` | `0x19A8` | 0 | `0x0B020` | P1 |
+| `SPI_SHADER_PGM_HI_PS` | `0x19A9` | 0 | `0x0B024` | P1 |
+| `SPI_SHADER_PGM_RSRC1_PS` | `0x19AA` | 0 | `0x0B028` | P1 |
+| `SPI_SHADER_PGM_RSRC2_PS` | `0x19AB` | 0 | `0x0B02C` | P1 |
+| `SPI_SHADER_USER_DATA_PS_0` | `0x19AC` | 0 | `0x0B030` | P1 |
+| `SPI_SHADER_PGM_LO_VS` | `0x19E8` | 0 | `0x0B120` | P1 |
+| `SPI_SHADER_PGM_HI_VS` | `0x19E9` | 0 | `0x0B124` | P1 |
+| `SPI_SHADER_PGM_RSRC1_VS` | `0x19EA` | 0 | `0x0B128` | P1 |
+| `SPI_SHADER_PGM_RSRC2_VS` | `0x19EB` | 0 | `0x0B12C` | P1 |
+| `SPI_SHADER_USER_DATA_VS_0` | `0x19EC` | 0 | `0x0B130` | P1 |
+
+#### Bloco desbloqueado — geometria e viewport (B.3)
+
+| Registro | mmREG | BASE_IDX | BAR5 byte | Classe |
+|---|---:|---:|---:|---:|
+| `VGT_NUM_INSTANCES` | `0x224D` | 1 | `0x30934` | P1 |
+| `VGT_PRIMITIVE_TYPE` | `0x2242` | 1 | `0x30908` | P1 |
+| `PA_CL_VTE_CNTL` | `0x0206` | 1 | `0x28818` | P1 |
+| `PA_CL_CLIP_CNTL` | `0x0204` | 1 | `0x28810` | P1 |
+| `PA_SC_VPORT_SCISSOR_0_TL` | `0x0094` | 1 | `0x28250` | P1 |
+| `PA_SC_VPORT_SCISSOR_0_BR` | `0x0095` | 1 | `0x28254` | P1 |
+
+### ⛔ Seis endereços do protótipo estão ERRADOS — medido contra o header
+
+Comparação automática de todas as 43 escritas nomeadas (`/* R_* */`) de
+`driver/wdk/bc250_compute_service.c` contra o header: **23 conferem, 6 divergem**, 8 usam nome
+abreviado que não existe no upstream (não é erro, é apelido local).
+
+| Registro | Protótipo escreve | Endereço real | Erro |
+|---|---:|---:|---|
+| `CP_PFP_IC_OP_CNTL` | `0x0C4D0` | `0x3E10C` | usou `BASE_IDX 0`; é **1** |
+| `CP_ME_IC_OP_CNTL` | `0x0C4D4` | `0x3E11C` | idem |
+| `CP_CE_IC_OP_CNTL` | `0x0C4D8` | `0x3E12C` | idem |
+| `CP_CPC_IC_OP_CNTL` | `0x0C4DC` | `0x3E13C` | idem |
+| `VGT_NUM_INSTANCES` | `0x28A60` | `0x30934` | registrador diferente |
+| `PA_SC_LINE_STIPPLE_STATE` | `0x28A64` | `0x30A04` | registrador diferente |
+
+**Isto acrescenta uma terceira razão** para não reaproveitar aquele protótipo, além das duas já
+registradas (`RB_EXE=0` no `CP_RB0_CNTL` e o valor de poll herdado do SDMA): ele também escreve
+em quatro registradores de invalidação de icache que **não são** os que pensa estar escrevendo.
+
+Os seis endereços ficam **proibidos**, travados por `audit_gfx_ring_contract_is_honest`.
+
+### Estado do anel gráfico no boot — **MEDIDO EM 14/09 11:43, classe P0**
+
+Primeira leitura do anel gráfico na história do projeto, pelo preflight somente-leitura
+(`Reads=7`, `Writes=0` no contador do contrato **e** no do transporte MMIO, que é fonte
+independente).
+
+| Registro | BAR5 | Lido | Decodificado |
+|---|---:|---:|---|
+| `CP_RB0_CNTL` | `0x0C104` | `0x00A00000` | `RB_BUFSZ=0` `RB_BLKSZ=0` **`RB_EXE=0`** `MIN_AVAILSZ=2` `MIN_IB_AVAILSZ=2` |
+| `CP_RB0_BASE` | `0x0C100` | `0xFEDCBAEF` | padrão de lixo — anel nunca configurado |
+| `CP_RB0_BASE_HI` | `0x0C2C4` | `0x00000000` | — |
+| `CP_RB0_RPTR` | `0x08700` | `0x00000000` | — |
+| `CP_RB0_WPTR` | `0x0C150` | `0x00000000` | — |
+| `CP_RB_WPTR_POLL_CNTL` | `0x08708` | `0x00400000` | `POLL_FREQUENCY=0` `IDLE_POLL_COUNT=64` |
+| `CP_ME_CNTL` | `0x086D8` | `0x15000000` | **`CE_HALT=1` `PFP_HALT=1` `ME_HALT=1`** |
+
+**O anel gráfico está frio.** Sem tamanho, sem execução, ponteiros zerados, base com lixo, e as
+três micro-engines paradas. A placa faz boot com o framebuffer do GOP e **nunca liga o motor
+gráfico**.
+
+`CP_ME_CNTL = 0x15000000` confere bit a bit com os campos de `gc_10_1_0_sh_mask.h` (P1):
+`CE_HALT[24]` + `PFP_HALT[26]` + `ME_HALT[28]` = `0x01000000 + 0x04000000 + 0x10000000`.
+
+#### ⚠️ Correção de registro: `0x50000709` **não** é o estado de boot
+
+A tabela `CP ring GFX` acima registra `CP_RB0_CNTL` observado `0x50000709` e `CP_RB0_BASE`
+observado `0xF40FE000` **"em V3"**. A medição de 14/09 mostra que esses valores foram lidos
+**depois** de o anel ter sido configurado por alguém — não são o que o firmware entrega.
+
+Consequência prática: **não usar `0x50000709` como ponto de partida.** Ele continua válido como
+referência de um anel *configurado* e como verificação da aritmética (`RB_BLKSZ = RB_BUFSZ − 2`
+reproduz o par `(9,7)`), mas o bring-up tem de construir o anel **do zero** e **desalt** as
+micro-engines.
+
+Isto está travado em código: a constante foi renomeada de `..._OBSERVED_POST` para
+`..._CONFIGURED_REFERENCE`, o valor de boot virou `BC250_GFX_RING_CNTL_MEASURED_BOOT`, e um
+portão proíbe a redefinição do nome antigo.
+
+#### O que isto acrescenta à B.1
+
+`CP_ME_CNTL` sai de "snapshot" e vira **alvo de escrita** — e ele **está catalogado** (`0x086D8`,
+o exemplo da regra de cálculo no topo deste documento). A parada de procedência do `APPLY`
+continua no `CP_RB0_ACTIVE`, que segue sem fonte.
+
+### `CP_RB0_CNTL` decodificado — e um defeito no único protótipo existente (B.1)
+
+Campos de `inc/linux_ref/gc_10_1_0_sh_mask.h`, classe **P1**:
+`RB_BUFSZ[5:0]` · `RB_BLKSZ[13:8]` · `BUF_SWAP[17:16]` · `MIN_AVAILSZ[21:20]` ·
+`MIN_IB_AVAILSZ[23:22]` · `CACHE_POLICY[25:24]` · `RB_VOLATILE[26]` · `RB_NO_UPDATE[27]` ·
+`RB_EXE[28]` · `CE_HQD_NEQ_RB_HQD[30]` · `RB_RPTR_WR_ENA[31]`.
+
+| Valor | Origem | `RB_BUFSZ` | `RB_BLKSZ` | `RB_EXE` | `CE_HQD_NEQ` | Outros |
+|---|---|---:|---:|---:|---:|---|
+| `0x50000709` | **medido nesta placa** (P0, tabela acima) | 9 | 7 | **1** | 1 | zero |
+| `0x00A00709` | `bc250_compute_service.c` (protótipo de laboratório) | 9 | 7 | **0** | 0 | `MIN_AVAILSZ=2`, `MIN_IB_AVAILSZ=2` |
+
+**Os dois diferem no bit que decide se o anel executa.** Os campos de tamanho são idênticos,
+o que torna a divergência invisível a olho nu — por isso ela virou asserção em
+`driver/tests/gfx_ring_contract_test.c` e portão em `audit_gfx_ring_contract_is_honest`.
+
+**Relação derivada:** `RB_BLKSZ = RB_BUFSZ − 2`, e `RB_BUFSZ = log2(RingBytes / 8) − 1`.
+A **origem** da fórmula é classe **H** (upstream `gfx_v10_0_cp_gfx_resume`, sem cópia local),
+mas ela **reproduz exatamente** o par `(9, 7)` do valor medido — corroboração por medição
+própria, não inferência solta. Pela fórmula, o anel do POST tem **8192 bytes**.
+
+### Valor de poll herdado do SDMA — proibido também em `CP_RB_WPTR_POLL_CNTL`
+
+A tabela acima já proíbe `0x00403004` em `CP_PQ_WPTR_POLL_CNTL`, por ser o `SdmaRingPollCntl`.
+O protótipo `bc250_compute_service.c` escreve **esse mesmo valor** em `CP_RB_WPTR_POLL_CNTL`
+(BAR5 `0x08708`), registrador sobre o qual esta tabela diz *"tentativas usaram `0x00400100`;
+bits precisam do header mask"*. É a mesma classe de defeito — valor de uma engine carregado
+para outra — e agora falha fechada por `Bc250GfxRingPollCntlIsBorrowed`.
+
+### Registradores que o protótipo toca e que **não estão catalogados**
+
+Ficam declarados aqui como **pendência da B.1**, não como endereços utilizáveis. Pela Lei 7,
+nenhum deles pode ser escrito pelo caminho de produção antes de entrar na tabela com fonte:
+
+`CP_RB0_ACTIVE` (`0x0C680`) · `CP_MAX_CONTEXT` (`0x0C2B8`) · `CP_RB_VMID` (`0x0C144`) ·
+`CP_RB_WPTR_DELAY` (`0x08704`) · `CP_PFP_IC_OP_CNTL` (`0x0C4D0`) · `CP_ME_IC_OP_CNTL`
+(`0x0C4D4`) · `CP_CE_IC_OP_CNTL` (`0x0C4D8`) · `CP_CPC_IC_OP_CNTL` (`0x0C4DC`) ·
+`GRBM_GFX_INDEX` (`0x30800`) · `RLC_CNTL` (`0x3B000`).
+
+**NADA DESTE BLOCO FOI VALIDADO EM HARDWARE.**
+
 ## MEC / HQD / MQD de compute (GC10.1)
 
 Derivação autoritativa local: `gc_10_1_0_offset.h`, todos com `BASE_IDX=0`.
@@ -264,6 +431,98 @@ este ASIC: não correspondem ao mapa GC10.1 derivado pelo SOC15.
 | `CP_MEC_ME2_HEADER_DUMP` | `0x0E2F` idx0 | `0x0823C` | P1/P2 | FIFO de cabecalhos PM4 do ME2, motor ativo observado no candidato 3.34. No 3.36 e drenado antes de `ACTIVE` e novamente apos o polling para separar resíduo de conteúdo produzido no ciclo; ME1 permanece como controle. **Somente leitura**; escrita proibida pelo transporte e por teste dedicado. |
 | `CP_STALLED_STAT1` | `0x0F3D` idx0 | `0x08674` | P1/P2 | Stall do CP graficos. **Somente leitura**. |
 | `CP_STAT` | `0x0F40` idx0 | `0x08680` | P1/P2 | Estado agregado do CP. **Somente leitura**. |
+## GFX10 3D — bloco de contexto (Parede B / F5.2)
+
+> **Estado de uso:** estes endereços são emitidos por `driver/core/bc250_pm4_packet_builder.c`
+> **somente** sob o tunable `D3D11ExperimentalPm4Draw`, que é **fail-closed e desarmado por
+> padrão**. Nenhuma corrida os exercitou. **NÃO VALIDADO EM HARDWARE.**
+
+### Regra de conversão, e a coincidência que a corrobora
+
+Registradores de contexto GFX10 usam `BASE_IDX = 1`. Pela regra de cálculo no topo deste
+documento, `segment_base_dw[1] = 0xA000`, logo:
+
+```text
+endereco_dw  = 0xA000 + mmREG
+BAR5_byte    = endereco_dw * 4
+PM4_reg_off  = endereco_dw - 0xA000 = mmREG      (campo do pacote SET_CONTEXT_REG, IT=0x69)
+```
+
+**Corroboração independente (P1):** `0xA000 * 4 = 0x28000`, que é exatamente a base de
+registrador de contexto usada pelo PM4 (`reg_offset = (byte - 0x28000) / 4`). A regra de
+segmento deste catálogo e a convenção do pacote chegam ao mesmo número por caminhos
+diferentes. O emissor subtrai `BC250_PM4_CONTEXT_REG_BASE` antes de montar o pacote
+(`bc250_pm4_packet_builder.c:232`) — conferido.
+
+### Registradores
+
+| Registro | mmREG | dw (`0xA000+`) | BAR5 byte | Classe | Nota |
+|---|---:|---:|---:|---:|---|
+| `PA_SC_WINDOW_SCISSOR_TL` | `0x0081` | `0xA081` | `0x28204` | P1 | `TL_X[14:0]`, `TL_Y[30:16]`, `WINDOW_OFFSET_DISABLE[31]` |
+| `PA_SC_WINDOW_SCISSOR_BR` | `0x0082` | `0xA082` | `0x28208` | P1 | `BR_X[14:0]`, `BR_Y[30:16]` |
+| `CB_TARGET_MASK` | `0x008E` | `0xA08E` | `0x28238` | P1 | declarado, ainda não emitido |
+| `PA_SC_VPORT_SCISSOR_0_TL` | `0x0094` | `0xA094` | `0x28250` | P1 | declarado, ainda não emitido |
+| `PA_SC_VPORT_SCISSOR_0_BR` | `0x0095` | `0xA095` | `0x28254` | P1 | declarado, ainda não emitido |
+| `CB_COLOR0_BASE` | `0x0318` | `0xA318` | `0x28C60` | P1 | GPUVA do render target `>> 8`; exige base alinhada a 256 B |
+| `CB_COLOR0_PITCH` | `0x0319` | `0xA319` | `0x28C64` | P1 | `TILE_MAX[10:0]`, `FMASK_TILE_MAX[30:20]` |
+| `CB_COLOR0_SLICE` | `0x031A` | `0xA31A` | `0x28C68` | P1 | `TILE_MAX[21:0]` |
+| `CB_COLOR0_VIEW` | `0x031B` | `0xA31B` | `0x28C6C` | P1 | emitido com zeros |
+| `CB_COLOR0_INFO` | `0x031C` | `0xA31C` | `0x28C70` | P1 | ver tabela de campos abaixo |
+| `CB_COLOR0_ATTRIB` | `0x031D` | `0xA31D` | `0x28C74` | P1 | declarado, ainda não emitido |
+
+Todos cabem no BAR5 medido (`0x00080000`).
+
+### O que sustenta a classe P1, e o que não sustenta
+
+**Corroborado por cópia local de `inc/linux_ref/gc_10_1_0_sh_mask.h`:**
+
+1. **Existência** — cada registro acima tem bloco de máscaras no header local.
+2. **Ordem relativa** — a sequência no header confere com os `mmREG` consecutivos:
+   `CB_COLOR0_BASE` (l. 25714) → `PITCH` (25717) → `SLICE` (25722) → `VIEW` (25725) →
+   `INFO` (25732) → `ATTRIB` (25771), batendo com `0x318`…`0x31D`; e
+   `PA_SC_WINDOW_SCISSOR_TL` (22058) → `BR` (22065) → `CB_TARGET_MASK` (22133) →
+   `PA_SC_VPORT_SCISSOR_0_TL` (22185) → `BR` (22192), batendo com `0x081`, `0x082`,
+   `0x08E`, `0x094`, `0x095`.
+3. **Layout de campos** — shifts e máscaras conferidos um a um (abaixo).
+
+**NÃO corroborado localmente:** os valores **absolutos** de `mmREG` vêm de
+`gc_10_1_0_offset.h`, que este repositório **cita como fonte mas não vendoriza** — a mesma
+limitação já aceita nos blocos `CP ring GFX` e `MEC/HQD/MQD` acima. A ordem e a existência
+travam a derivação; a âncora absoluta ainda não tem segunda fonte local.
+
+### Campos de `CB_COLOR0_INFO` — conferidos contra o header local
+
+| Campo | Shift | Máscara | Emissor |
+|---|---:|---:|---|
+| `FORMAT` | `0x2` | `0x0000007C` (5 bits) | `(FormatIndex & 0x1F) << 2` ✅ |
+| `COMP_SWAP` | `0xB` | `0x00001800` (2 bits) | `(CompSwap & 0x3) << 11` ✅ |
+| `BLEND_BYPASS` | `0x10` | `0x00010000` | `1u << 16` ✅ |
+
+O empacotamento em `bc250_pm4_packet_builder.c` respeita as três larguras.
+
+### Dívidas declaradas deste bloco
+
+1. **`FormatIndex = 0x16` para `COLOR_8_8_8_8` é classe `H`, não `P1`.** O enum de formato do
+   CB não está no header local; só a largura do campo está. O valor não foi verificado por
+   nenhuma fonte deste repositório e **não pode** ser citado como derivado.
+2. **`CB_COLOR0_PITCH` é escrito sem máscara** (`regs[1]`), enquanto `CB_COLOR0_SLICE` é
+   mascarado com `0x003FFFFF`. Para 2560 px o valor é 319 e cabe nos 11 bits de `TILE_MAX`,
+   mas um pitch suficientemente largo transborda para `FMASK_TILE_MAX[30:20]`. Assimetria a
+   corrigir.
+3. **`gc_10_1_0_offset.h` não está vendorizado.** Trazer a cópia fecha a âncora absoluta
+   deste bloco **e** eleva a segunda fonte dos blocos `CP ring GFX` e `MEC/HQD/MQD`, que hoje
+   dependem da mesma citação sem cópia.
+4. **Nenhum destes endereços foi lido nem escrito no silício.** A classe P1 descreve a
+   derivação, não o efeito.
+
+### O que este bloco NÃO cobre
+
+Render target e scissor não são pipeline. Continuam **ausentes** do catálogo e do código:
+programa de shader (`SPI_SHADER_PGM_*`, `USER_DATA`), configuração de geometria (`VGT_*`),
+transformação de viewport (`PA_CL_VTE_CNTL`), depth (`DB_*`) e os descritores. Enquanto
+faltarem, um `DRAW_INDEX_AUTO` não produz pixel — e o anel que executaria esses pacotes
+(`CP ring GFX`, catalogado acima) **não está inicializado**: o Node 1 é servido por MEC.
+
 ## Golden/context usados nas tentativas
 
 | Registro | BAR5 byte | Classe | Nota |

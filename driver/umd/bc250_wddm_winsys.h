@@ -92,6 +92,8 @@ typedef struct BC250_WINSYS_ALLOCATION {
     BOOL Created;
     BOOL OwnsGpuVaMapping;
     BOOL Resident;
+    BOOL ResidencyRequestInvalid; /* callback accepted without a usable fence */
+    BOOL ResidencyPending; /* request accepted; paging fence not yet completed */
 } BC250_WINSYS_ALLOCATION;
 
 typedef struct BC250_WINSYS_MONITORED_FENCE {

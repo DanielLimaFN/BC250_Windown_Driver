@@ -29,6 +29,7 @@ extern "C" {
 #define BC250_PM4_IT_SET_BASE            0x11u
 #define BC250_PM4_IT_DISPATCH_DIRECT     0x15u
 #define BC250_PM4_IT_DISPATCH_INDIRECT   0x16u
+#define BC250_PM4_IT_DRAW_INDEX_AUTO     0x2Du
 #define BC250_PM4_IT_WRITE_DATA          0x37u
 #define BC250_PM4_IT_WAIT_REG_MEM        0x3Cu
 #define BC250_PM4_IT_INDIRECT_BUFFER     0x3Fu
@@ -85,6 +86,24 @@ extern "C" {
 #define BC250_PM4_EVENT_CS_PARTIAL_FLUSH     0x40u
 #define BC250_PM4_EVENT_EOP                  0x46u
 
+#define BC250_PM4_DI_PT_POINTLIST     0x01u
+#define BC250_PM4_DI_PT_LINELIST      0x02u
+#define BC250_PM4_DI_PT_TRIANGLELIST  0x04u
+#define BC250_PM4_DI_PT_RECTLIST      0x11u
+
+/* GFX10 Context Registers for 3D Draw / Rasterization (Parede B) */
+#define BC250_PM4_REG_PA_SC_WINDOW_SCISSOR_TL (BC250_PM4_CONTEXT_REG_BASE + 0x0081u)
+#define BC250_PM4_REG_PA_SC_WINDOW_SCISSOR_BR (BC250_PM4_CONTEXT_REG_BASE + 0x0082u)
+#define BC250_PM4_REG_CB_TARGET_MASK          (BC250_PM4_CONTEXT_REG_BASE + 0x008Eu)
+#define BC250_PM4_REG_PA_SC_VPORT_SCISSOR_0_TL (BC250_PM4_CONTEXT_REG_BASE + 0x0094u)
+#define BC250_PM4_REG_PA_SC_VPORT_SCISSOR_0_BR (BC250_PM4_CONTEXT_REG_BASE + 0x0095u)
+#define BC250_PM4_REG_CB_COLOR0_BASE          (BC250_PM4_CONTEXT_REG_BASE + 0x0318u)
+#define BC250_PM4_REG_CB_COLOR0_PITCH         (BC250_PM4_CONTEXT_REG_BASE + 0x0319u)
+#define BC250_PM4_REG_CB_COLOR0_SLICE         (BC250_PM4_CONTEXT_REG_BASE + 0x031Au)
+#define BC250_PM4_REG_CB_COLOR0_VIEW          (BC250_PM4_CONTEXT_REG_BASE + 0x031Bu)
+#define BC250_PM4_REG_CB_COLOR0_INFO          (BC250_PM4_CONTEXT_REG_BASE + 0x031Cu)
+#define BC250_PM4_REG_CB_COLOR0_ATTRIB        (BC250_PM4_CONTEXT_REG_BASE + 0x031Du)
+
 typedef enum BC250_PM4_STATUS {
     BC250_PM4_OK = 0,
     BC250_PM4_BAD_ARGUMENT,
@@ -93,6 +112,33 @@ typedef enum BC250_PM4_STATUS {
     BC250_PM4_PAYLOAD_TOO_LARGE,
     BC250_PM4_OUT_OF_BOUNDS
 } BC250_PM4_STATUS;
+
+BC250_PM4_STATUS Bc250Pm4EmitDrawIndexAuto(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t IndexCount,
+    uint32_t DrawInitiator);
+
+BC250_PM4_STATUS Bc250Pm4EmitColorTarget0(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint64_t BaseGpuVa,
+    uint32_t Width,
+    uint32_t Height,
+    uint32_t PitchBytes,
+    uint32_t FormatIndex,
+    uint32_t CompSwap);
+
+BC250_PM4_STATUS Bc250Pm4EmitWindowScissor(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t Left,
+    uint32_t Top,
+    uint32_t Right,
+    uint32_t Bottom);
 
 BC250_PM4_STATUS Bc250Pm4EmitNop(
     uint32_t *RingBuffer,

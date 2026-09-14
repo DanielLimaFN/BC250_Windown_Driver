@@ -474,8 +474,7 @@ BC250_WINSYS_STATUS Bc250WinsysDeallocate(
      * pfnEvictCb imediatamente antes da desalocacao para nao introduzir corridas
      * no gerenciador de memoria do kernel (dxgmms2 / VIDMM_RECYCLE_HEAP_MGR).
      */
-    Allocation->Resident = FALSE;
-
+    /* Preserve residency state if cleanup fails; retry must not add a reference. */
     if (Allocation->OwnsGpuVaMapping) {
         D3DDDICB_FREEGPUVIRTUALADDRESS freeArgs;
         BC250_WINSYS_STATUS waitStatus;
@@ -812,6 +811,7 @@ BC250_WINSYS_STATUS Bc250WinsysMakeResident(
 {
     D3DDDI_MAKERESIDENT args;
     HRESULT hr;
+    BC250_WINSYS_STATUS waitStatus;
 
     if (Context == NULL || !Context->Initialized || Allocation == NULL ||
         !Allocation->Created) {
@@ -820,6 +820,7 @@ BC250_WINSYS_STATUS Bc250WinsysMakeResident(
     if (Allocation->Resident) {
         return BC250_WINSYS_OK;
     }
+    if (Allocation->ResidencyPending) goto complete_residency;
     if (!Context->PagingQueueCreated || Context->Callbacks->pfnMakeResidentCb == NULL) {
         return BC250_WINSYS_MISSING_CALLBACK;
     }
@@ -840,10 +841,25 @@ BC250_WINSYS_STATUS Bc250WinsysMakeResident(
         return Bc250WinsysRememberFailure(Context, hr);
     }
 
-    Allocation->Resident = TRUE;
-    if (args.PagingFenceValue != 0ull) {
+    /* F3.3: E_PENDING accepts a residency reference; it does not complete it.
+     * Keep a pending flag across wait failures to avoid adding a second
+     * reference on retry. The existing API now returns OK only after the
+     * paging fence, preserving callers which immediately consume Resident. */
+    if (args.PagingFenceValue > Allocation->PagingFenceValue)
         Allocation->PagingFenceValue = args.PagingFenceValue;
+    Allocation->ResidencyPending = TRUE;
+    if (hr == E_PENDING && args.PagingFenceValue == 0u) {
+        Allocation->ResidencyRequestInvalid = TRUE;
+        Context->LastCallbackHr = E_UNEXPECTED;
+        return BC250_WINSYS_BAD_CALLBACK_OUTPUT;
     }
+complete_residency:
+    if (Allocation->ResidencyRequestInvalid)
+        return BC250_WINSYS_BAD_CALLBACK_OUTPUT;
+    waitStatus = Bc250WinsysWaitPaging(Context, Allocation);
+    if (waitStatus != BC250_WINSYS_OK) return waitStatus;
+    Allocation->ResidencyPending = FALSE;
+    Allocation->Resident = TRUE;
     Context->LastCallbackHr = S_OK;
     return BC250_WINSYS_OK;
 }
@@ -859,7 +875,7 @@ BC250_WINSYS_STATUS Bc250WinsysEvict(
         !Allocation->Created) {
         return BC250_WINSYS_BAD_ARGUMENT;
     }
-    if (!Allocation->Resident) {
+    if (!Allocation->Resident && !Allocation->ResidencyPending) {
         return BC250_WINSYS_OK;
     }
     if (Context->Callbacks->pfnEvictCb == NULL) {
@@ -878,6 +894,8 @@ BC250_WINSYS_STATUS Bc250WinsysEvict(
     if (FAILED(hr)) return Bc250WinsysRememberFailure(Context, hr);
 
     Allocation->Resident = FALSE;
+    Allocation->ResidencyPending = FALSE;
+    Allocation->ResidencyRequestInvalid = FALSE;
     Context->LastCallbackHr = S_OK;
     return BC250_WINSYS_OK;
 }

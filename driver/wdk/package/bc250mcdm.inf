@@ -3,7 +3,7 @@ Signature="$Windows NT$"
 Class=Display
 ClassGuid={4d36e968-e325-11ce-bfc1-08002be10318}
 Provider=%ProviderName%
-DriverVer=09/13/2026,3.174.0.0
+DriverVer=09/14/2026,3.181.0.0
 CatalogFile=bc250mcdm.cat
 PnpLockdown=1
 
@@ -96,6 +96,25 @@ HKR,Parameters,SdmaPlanoAFallback,0x00010003,0
 ; A primeira corrida deve usar INF empacotado com 1; alterar o registro depois
 ; do bind so vale no proximo StartDevice. Nao crie a chave de servico a mao.
 HKR,Parameters,TdrInduceHang,0x00010001,0
+; B.1 (14/09): 1 fotografa o anel grafico CP_RB0 -- CNTL, BASE, RPTR, WPTR,
+; POLL_CNTL e ME_CNTL -- durante o bring-up de laboratorio. E' SOMENTE LEITURA:
+; o contrato nao escreve registrador algum, e o transporte MMIO confirma por
+; contador proprio (se registrar UMA escrita, a medicao e' descartada). Nao
+; altera o veredito do StartDevice em desfecho nenhum. O anel grafico e' a
+; unica engine desta placa sem medicao, e ele e' pre-requisito da Parede B.
+; O probe fisico so' existe na imagem de laboratorio; na de producao a linha
+; [GfxRing] PREFLIGHT ARMADO mas AUSENTE diz isso em voz alta. Alteracao por
+; registro so vale no proximo StartDevice. Default 0, fail-closed.
+HKR,Parameters,GfxRingPreflight,0x00010001,0
+; B.1 (14/09): ensaio ESCALONADO do anel grafico, so' na imagem de laboratorio.
+; 0 = nenhum ensaio (default). 1 = configura CP_RB0 (BASE/CNTL/ponteiros) e
+; confere por readback, com as micro-engines ainda HALTED -- nenhum pacote pode
+; ser buscado. 2 = acrescenta o desalt de CE/PFP/ME e a partida via
+; CP_RB0_ACTIVE, cada um provado por readback. O ROLLBACK e' sempre executado e
+; tambem conferido: o StartDevice termina com a placa como a encontrou, e o
+; veredito do bind nao muda em desfecho algum. Alteracao por registro so' vale
+; no proximo StartDevice. Fail-closed.
+HKR,Parameters,GfxRingBringup,0x00010001,0
 
 [BC250Mcdm.CopyFiles]
 bc250mcdm.sys

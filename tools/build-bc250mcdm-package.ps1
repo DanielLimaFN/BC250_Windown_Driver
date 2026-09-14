@@ -275,6 +275,26 @@ if (-not $induceHangLine) {
 }
 $induceHangLine -match '^HKR,Parameters,TdrInduceHang,0x00010001,(\d+)$' | Out-Null
 $induceHangValue = [int]$Matches[1]
+# B.1: o manifesto tambem declara se o pacote pede a MEDICAO do anel grafico.
+# Mesmo motivo do PLANO A e do ensaio de TDR -- nao pode haver segunda fonte de
+# verdade sobre o que o driver fara no silicio. A medicao e' somente leitura,
+# mas o operador tem direito de saber, pelo manifesto, o que esta armado.
+$gfxRingLine = $packageInfLines |
+    Where-Object { $_ -match '^HKR,Parameters,GfxRingPreflight,0x00010001,(\d+)$' } |
+    Select-Object -First 1
+if (-not $gfxRingLine) {
+    throw 'Pacote bloqueado: INF sem HKR,Parameters,GfxRingPreflight -- o manifesto nao pode declarar a medicao do anel grafico.'
+}
+$gfxRingLine -match '^HKR,Parameters,GfxRingPreflight,0x00010001,(\d+)$' | Out-Null
+$gfxRingValue = [int]$Matches[1]
+$gfxBringupLine = $packageInfLines |
+    Where-Object { $_ -match '^HKR,Parameters,GfxRingBringup,0x00010001,(\d+)$' } |
+    Select-Object -First 1
+if (-not $gfxBringupLine) {
+    throw 'Pacote bloqueado: INF sem HKR,Parameters,GfxRingBringup -- o manifesto nao pode declarar o ensaio do anel grafico.'
+}
+$gfxBringupLine -match '^HKR,Parameters,GfxRingBringup,0x00010001,(\d+)$' | Out-Null
+$gfxBringupValue = [int]$Matches[1]
 $manifest = [ordered]@{
     SchemaVersion = 1
     BuildKind = if ($induceHangValue -eq 1) { 'MCDM_TDR_INDUCED_HANG' } else { 'MCDM_FAIL_CLOSED' }
@@ -296,6 +316,10 @@ $manifest = [ordered]@{
     SdmaPlanoAFallbackEnabled = ($planoAFallbackValue -ne 0)
     TdrInduceHang = $induceHangValue
     TdrInduceHangArmed = ($induceHangValue -ne 0)
+    GfxRingPreflight = $gfxRingValue
+    GfxRingPreflightArmed = ($gfxRingValue -ne 0)
+    GfxRingBringup = $gfxBringupValue
+    GfxRingBringupArmed = ($gfxBringupValue -ne 0)
     VisualStudio = '2026'
     CompilerPath = $compilerPath
     CompilerFileVersion = (Get-Item -LiteralPath $compilerPath).VersionInfo.FileVersion

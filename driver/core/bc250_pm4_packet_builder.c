@@ -15,6 +15,120 @@ static void Bc250Pm4WriteDword(
     (*Cursor)++;
 }
 
+BC250_PM4_STATUS Bc250Pm4EmitDrawIndexAuto(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t IndexCount,
+    uint32_t DrawInitiator)
+{
+    uint32_t header;
+
+    if (RingBuffer == NULL || CursorDwords == NULL || !Bc250IsPowerOfTwo32(RingDwords)) {
+        return BC250_PM4_BAD_ARGUMENT;
+    }
+    if (IndexCount == 0u) {
+        return BC250_PM4_BAD_ARGUMENT;
+    }
+
+    header = BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_DRAW_INDEX_AUTO, 2u);
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, header);
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, IndexCount);
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, DrawInitiator);
+
+    return BC250_PM4_OK;
+}
+
+BC250_PM4_STATUS Bc250Pm4EmitColorTarget0(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint64_t BaseGpuVa,
+    uint32_t Width,
+    uint32_t Height,
+    uint32_t PitchBytes,
+    uint32_t FormatIndex,
+    uint32_t CompSwap)
+{
+    uint32_t regs[6];
+    uint32_t bpp = 4u;
+    uint32_t pitchPixels;
+    uint32_t pitchTiles;
+    uint32_t sliceTiles;
+
+    if (RingBuffer == NULL || CursorDwords == NULL || !Bc250IsPowerOfTwo32(RingDwords)) {
+        return BC250_PM4_BAD_ARGUMENT;
+    }
+    if (BaseGpuVa == 0u || Width == 0u || Height == 0u || PitchBytes == 0u) {
+        return BC250_PM4_BAD_ARGUMENT;
+    }
+    /* Base address must be 256-byte aligned for GFX10 CB */
+    if ((BaseGpuVa & 0xFFull) != 0u) {
+        return BC250_PM4_MISALIGNED;
+    }
+
+    pitchPixels = PitchBytes / bpp;
+    if (pitchPixels == 0u) pitchPixels = Width;
+    pitchTiles = (pitchPixels + 7u) / 8u;
+    if (pitchTiles > 0u) pitchTiles -= 1u;
+    sliceTiles = ((pitchPixels + 7u) / 8u) * ((Height + 7u) / 8u);
+    if (sliceTiles > 0u) sliceTiles -= 1u;
+
+    /*
+     * FAIL-CLOSED DE LARGURA DE CAMPO (docs/03, bloco "GFX10 3D").
+     * CB_COLOR0_PITCH.TILE_MAX ocupa [10:0] e CB_COLOR0_SLICE.TILE_MAX ocupa [21:0]
+     * (gc_10_1_0_sh_mask.h). Mascarar silenciosamente um valor que nao cabe produz
+     * um render target com geometria ERRADA e aceita pelo hardware -- exatamente a
+     * classe de falso sucesso que a Lei 4 proibe. Aqui a divergencia RECUSA.
+     */
+    if (pitchTiles > 0x7FFu || sliceTiles > 0x3FFFFFu) {
+        return BC250_PM4_BAD_ARGUMENT;
+    }
+
+    /* CB_COLOR0_BASE: GPUVA >> 8 */
+    regs[0] = (uint32_t)(BaseGpuVa >> 8);
+    /* CB_COLOR0_PITCH: TILE_MAX[10:0] = (pitchPixels / 8) - 1 */
+    regs[1] = pitchTiles;
+    /* CB_COLOR0_SLICE: TILE_MAX[21:0] */
+    regs[2] = sliceTiles;
+    /* CB_COLOR0_VIEW: slice start (0) and slice max (0) */
+    regs[3] = 0u;
+    /* CB_COLOR0_INFO: Format, NumberType=UNORM (0), CompSwap, BlendBypass=1 */
+    regs[4] = ((FormatIndex & 0x1Fu) << 2) | ((CompSwap & 0x3u) << 11) | (1u << 16);
+    /* CB_COLOR0_ATTRIB: TileMode=linear/general (0) */
+    regs[5] = 0u;
+
+    return Bc250Pm4EmitSetContextReg(RingBuffer, RingDwords, CursorDwords,
+        BC250_PM4_REG_CB_COLOR0_BASE, regs, 6u);
+}
+
+BC250_PM4_STATUS Bc250Pm4EmitWindowScissor(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t Left,
+    uint32_t Top,
+    uint32_t Right,
+    uint32_t Bottom)
+{
+    uint32_t scissorRegs[2];
+
+    if (RingBuffer == NULL || CursorDwords == NULL || !Bc250IsPowerOfTwo32(RingDwords)) {
+        return BC250_PM4_BAD_ARGUMENT;
+    }
+    if (Right < Left || Bottom < Top) {
+        return BC250_PM4_BAD_ARGUMENT;
+    }
+
+    /* PA_SC_WINDOW_SCISSOR_TL: TL_X in [14:0], TL_Y in [30:16], OffsetDisable bit 31 */
+    scissorRegs[0] = (Left & 0x7FFFu) | ((Top & 0x7FFFu) << 16) | 0x80000000u;
+    /* PA_SC_WINDOW_SCISSOR_BR: BR_X in [14:0], BR_Y in [30:16] */
+    scissorRegs[1] = (Right & 0x7FFFu) | ((Bottom & 0x7FFFu) << 16);
+
+    return Bc250Pm4EmitSetContextReg(RingBuffer, RingDwords, CursorDwords,
+        BC250_PM4_REG_PA_SC_WINDOW_SCISSOR_TL, scissorRegs, 2u);
+}
+
 BC250_PM4_STATUS Bc250Pm4EmitNop(
     uint32_t *RingBuffer,
     uint32_t RingDwords,

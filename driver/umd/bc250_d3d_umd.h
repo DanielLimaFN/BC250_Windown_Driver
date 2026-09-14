@@ -8,6 +8,12 @@
 #include <d3d12umddi.h>
 #pragma warning(pop)
 
+/* d3d9.h MAKE_D3DSTATUS(2165/2166), also required by the DXGI DDI. */
+#ifndef S_NOT_RESIDENT
+#define S_NOT_RESIDENT ((HRESULT)0x08760875L)
+#define S_RESIDENT_IN_SHARED_MEMORY ((HRESULT)0x08760876L)
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -355,6 +361,9 @@ typedef struct _BC250_UMD_DEVICE {
      * rasterizacao. Contagem separada de proposito: misturar com DrawCount
      * tornaria a prova de pixel infalsificavel. Ver C1 em caps_probe.h. */
     UINT64 SubstitutedDrawCount;
+    /* Draws atendidos por emissao real PM4 no Node 1 (Parede B).
+     * Contagem separada de SubstitutedDrawCount e RejectedDrawCount. */
+    UINT64 NativePm4DrawCount;
     BOOL NativeNode1Ready;
     BOOL DeviceActive;
 } BC250_UMD_DEVICE;
@@ -922,10 +931,19 @@ HRESULT Bc250UmdRunNode1ProofTransaction(
     _Inout_ BC250_UMD_DEVICE* pDevice,
     _Out_ BC250_UMD_NODE1_PROOF_RESULT* pResult);
 
+/* Real PM4 3D draw submission on Node 1 (Parede B).
+ * Builds CB_COLOR0, Scissor, IT_DRAW_INDEX_AUTO and flushes command buffer. */
+BOOL Bc250UmdEmitPm4Draw(
+    _Inout_ BC250_UMD_DEVICE* pDevice,
+    UINT IndexCount,
+    UINT StartIndexLocation,
+    INT BaseVertexLocation,
+    BOOL Indexed);
+
 /* Device DDI table population helpers */
 VOID Bc250UmdPopulateDeviceFuncs10_1(_Out_ D3D10_1DDI_DEVICEFUNCS* pFuncs);
 VOID Bc250UmdPopulateDeviceFuncs11(_Out_ D3D11DDI_DEVICEFUNCS* pFuncs);
-VOID Bc250UmdPopulateDxgiBaseFuncs(_Out_ DXGI_DDI_BASE_FUNCTIONS* pFuncs);
+VOID Bc250UmdPopulateDxgiBaseFuncs(_Out_ DXGI1_6_1_DDI_BASE_FUNCTIONS* pFuncs);
 
 HRESULT APIENTRY Bc250Umd10GetCaps(
     D3D10DDI_HADAPTER hAdapter,
@@ -936,7 +954,7 @@ HRESULT APIENTRY Bc250Umd10GetSupportedVersions(
     _Inout_ UINT32* puEntries,
     _Out_writes_opt_(*puEntries) UINT64* pSupportedDDIInterfaceVersions);
 
-/* DXGI Base DDI entry points */
+/* DXGI Base DDI entry points (DXGI 1.0 - 1.6) */
 HRESULT APIENTRY Bc250DxgiPresent(DXGI_DDI_ARG_PRESENT* pPresentData);
 HRESULT APIENTRY Bc250DxgiGetGammaCaps(DXGI_DDI_ARG_GET_GAMMA_CONTROL_CAPS* pGammaData);
 HRESULT APIENTRY Bc250DxgiSetDisplayMode(DXGI_DDI_ARG_SETDISPLAYMODE* pDisplayModeData);
@@ -944,6 +962,19 @@ HRESULT APIENTRY Bc250DxgiSetResourcePriority(DXGI_DDI_ARG_SETRESOURCEPRIORITY* 
 HRESULT APIENTRY Bc250DxgiQueryResourceResidency(DXGI_DDI_ARG_QUERYRESOURCERESIDENCY* pResidencyData);
 HRESULT APIENTRY Bc250DxgiRotateResourceIdentities(DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITIES* pRotateData);
 HRESULT APIENTRY Bc250DxgiBlt(DXGI_DDI_ARG_BLT* pBltData);
+HRESULT APIENTRY Bc250DxgiResolveSharedResource(DXGI_DDI_ARG_RESOLVESHAREDRESOURCE* pResolveData);
+HRESULT APIENTRY Bc250DxgiBlt1(DXGI_DDI_ARG_BLT1* pBlt1Data);
+HRESULT APIENTRY Bc250DxgiOfferResources1(DXGI_DDI_ARG_OFFERRESOURCES1* pOfferData);
+HRESULT APIENTRY Bc250DxgiReclaimResources(DXGI_DDI_ARG_RECLAIMRESOURCES* pReclaimData);
+HRESULT APIENTRY Bc250DxgiGetMultiplaneOverlayCaps(DXGI_DDI_ARG_GETMULTIPLANEOVERLAYCAPS* pCapsData);
+HRESULT APIENTRY Bc250DxgiGetMultiplaneOverlayGroupCaps(DXGI_DDI_ARG_GETMULTIPLANEOVERLAYGROUPCAPS* pGroupCapsData);
+HRESULT APIENTRY Bc250DxgiPresentMultiplaneOverlay(DXGI_DDI_ARG_PRESENTMULTIPLANEOVERLAY* pPresentMpoData);
+HRESULT APIENTRY Bc250DxgiPresent1(DXGI1_6_1_DDI_ARG_PRESENT* pPresent1Data);
+HRESULT APIENTRY Bc250DxgiCheckPresentDurationSupport(DXGI_DDI_ARG_CHECKPRESENTDURATIONSUPPORT* pDurationData);
+HRESULT APIENTRY Bc250DxgiTrimResidencySet(DXGI_DDI_ARG_TRIMRESIDENCYSET* pTrimData);
+HRESULT APIENTRY Bc250DxgiCheckMultiplaneOverlayColorSpaceSupport(DXGI_DDI_ARG_CHECKMULTIPLANEOVERLAYCOLORSPACESUPPORT* pColorSpaceData);
+HRESULT APIENTRY Bc250DxgiPresentMultiplaneOverlay1(DXGI1_6_1_DDI_ARG_PRESENTMULTIPLANEOVERLAY* pPresentMpo1Data);
+HRESULT APIENTRY Bc250DxgiReclaimResources1(DXGI_DDI_ARG_RECLAIMRESOURCES1* pReclaimData);
 
 /* D3D10 / D3D10_2 Adapter Caps */
 HRESULT APIENTRY Bc250Umd10GetCaps(

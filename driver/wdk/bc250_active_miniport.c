@@ -222,6 +222,233 @@ static BC250_HQD_SELECTOR_STATUS Bc250ActiveProbeMecHqdSelected(
     return status;
 }
 
+/*
+ * B.1 -- MEDICAO SOMENTE-LEITURA DO ANEL GRAFICO (CP_RB0).
+ *
+ * Este projeto nunca mediu o anel grafico. O que existe e' o valor de
+ * CP_RB0_CNTL observado uma vez e anotado no catalogo; tudo o mais e'
+ * suposicao. Aqui ele vira fotografia: o que o POST/GOP deixou em
+ * CNTL, BASE, RPTR, WPTR, POLL_CNTL e ME_CNTL.
+ *
+ * DUAS SALVAGUARDAS, e as duas importam:
+ *
+ * 1. O contrato promete nao escrever, e o TRANSPORTE confirma. Comparamos os
+ *    contadores do transporte (fonte independente) com os da evidencia. Se o
+ *    transporte registrar UMA escrita, a medicao e' descartada -- a promessa
+ *    de "somente leitura" nao pode depender so' de quem faz a promessa.
+ *    Mesmo padrao ja usado em Bc250ActiveProbeMecHqdSelected.
+ *
+ * 2. Plan == NULL: medicao pura. Sem plano nao ha CntlPlanned, e o APPLY
+ *    recusa por construcao. Medir nao pode escorregar para escrever.
+ *
+ * NAO altera o veredito do StartDevice em desfecho algum.
+ */
+static BC250_GFX_RING_TXN_STATUS Bc250ActiveProbeGfxRingReadonly(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_GFX_RING_TXN_EVIDENCE *Evidence)
+{
+    BC250_GFX_RING_INTERFACE interfaceData;
+    BC250_MMIO_TOPOLOGY_STATUS mmioStatus;
+    BC250_GFX_RING_TXN_STATUS status;
+    uint32_t reads;
+    uint32_t writes;
+
+    if (Context == NULL || Evidence == NULL)
+        return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+    RtlZeroMemory(Evidence, sizeof(*Evidence));
+
+    mmioStatus = Bc250MmioTopologyMapReadonly(
+        &Context->Core.MmioTransport, &Context->Core.DxgkInterface,
+        Context->Core.ResolvedBars, Context->Core.ResolvedBarCount,
+        BC250_PCI_MMIO_BAR_INDEX);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK) {
+        Bc250DisplayLog("[GfxRing] PREFLIGHT nao executou: mapa do transporte falhou (%s)\n",
+            Bc250MmioTopologyStatusName(mmioStatus));
+        return BC250_GFX_RING_TXN_PREFLIGHT_FAILED;
+    }
+
+    RtlZeroMemory(&interfaceData, sizeof(interfaceData));
+    interfaceData.Read32 = Bc250MmioTopologyRead32;
+    interfaceData.Write32 = Bc250MmioTopologyWrite32;
+    interfaceData.Stall = NULL;
+    interfaceData.Context = &Context->Core.MmioTransport;
+    interfaceData.Identity = BC250_GFX_RING_TXN_IDENTITY;
+
+    status = Bc250GfxRingTxnPreflight(&interfaceData, NULL, Evidence);
+
+    reads = Context->Core.MmioTransport.ReadCount;
+    writes = Context->Core.MmioTransport.WriteCount;
+    Context->GfxRingPreflightTransportWrites = writes;
+
+    mmioStatus = Bc250MmioTopologyUnmap(&Context->Core.MmioTransport);
+    if (mmioStatus != BC250_MMIO_TOPOLOGY_OK) {
+        Bc250DisplayLog("[GfxRing] PREFLIGHT: unmap do transporte falhou (%s) -- medicao DESCARTADA\n",
+            Bc250MmioTopologyStatusName(mmioStatus));
+        return BC250_GFX_RING_TXN_PREFLIGHT_FAILED;
+    }
+    if (writes != 0u || reads != Evidence->Reads) {
+        Bc250DisplayLog("[GfxRing] PREFLIGHT DESCARTADO: transporte contou Reads=%u Writes=%u contra Evidencia Reads=%u Writes=%u -- somente leitura NAO comprovada\n",
+            reads, writes, Evidence->Reads, Evidence->Writes);
+        Evidence->SnapshotTaken = 0u;
+        return BC250_GFX_RING_TXN_PREFLIGHT_FAILED;
+    }
+    return status;
+}
+
+/*
+ * B.1 -- ENSAIO DO ANEL GRAFICO (CP_RB0), sob a Lei 5.
+ *
+ * ESCALONADO DE PROPOSITO, porque a corrida e' o recurso escasso e a Lei 9
+ * manda mover uma variavel por vez:
+ *
+ *   Level 1  configura o anel (BASE/CNTL/ponteiros) e confere por READBACK.
+ *            Nao liga nada. As micro-engines continuam HALTED, entao nenhum
+ *            pacote pode ser buscado -- e' escrita em registrador de uma
+ *            engine desligada, com rollback provado.
+ *
+ *   Level 2  acrescenta desalt de CE/PFP/ME e a partida (CP_RB0_ACTIVE),
+ *            cada um provado por readback. Exige firmware carregado, e por
+ *            isso roda depois do PFP direct load.
+ *
+ * O ROLLBACK E' SEMPRE EXECUTADO. Este e' um ensaio de medicao, nao a criacao
+ * de um anel permanente: o StartDevice termina com a placa no estado em que a
+ * encontrou, e o proprio rollback e' conferido por readback.
+ *
+ * NAO altera o veredito do StartDevice em desfecho algum.
+ */
+static BC250_GFX_RING_TXN_STATUS Bc250ActiveRunGfxRingBringup(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    uint32_t Level,
+    BC250_GFX_RING_TXN_EVIDENCE *Evidence)
+{
+    BC250_VRAM_ALLOCATOR *allocator;
+    const BC250_VRAM_ADDRESS_SPACE *addressSpace;
+    BC250_VRAM_TOKEN token;
+    BC250_VRAM_REGION region;
+    BC250_VRAM_STATUS vramStatus;
+    BC250_GFX_RING_INTERFACE interfaceData;
+    BC250_GFX_RING_PLAN plan;
+    BC250_MMIO_TOPOLOGY_STATUS mmioStatus;
+    BC250_GFX_RING_TXN_STATUS status;
+    BC250_GFX_RING_TXN_STATUS rollbackStatus;
+    const uint64_t ringBytes = 8192ull;
+    /* anel + dword de writeback de RPTR + dword de shadow de WPTR, com folga
+     * de alinhamento para os dois ficarem fora do anel */
+    const uint64_t totalBytes = ringBytes + 0x1000ull;
+    uint64_t ringMc;
+    uint32_t mappedByUs;
+
+    if (Context == NULL || Evidence == NULL || Level == 0u) {
+        return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+    }
+    RtlZeroMemory(Evidence, sizeof(*Evidence));
+    RtlZeroMemory(&plan, sizeof(plan));
+
+    allocator = &Context->Core.StartDevice.Owned.Bootstrap.Allocator;
+    addressSpace = &Context->Core.TopologyEvidence.AddressSpace;
+    if (addressSpace->TotalBytes == 0u || addressSpace->VramMcStart == 0u) {
+        Bc250DisplayLog("[GfxRing] BRINGUP nao executou: janela de VRAM indisponivel\n");
+        return BC250_GFX_RING_TXN_PREFLIGHT_FAILED;
+    }
+
+    vramStatus = Bc250VramAllocate(allocator, totalBytes, 65536ull,
+        BC250_VRAM_ROLE_RING, BC250_VRAM_ALLOC_TOP_DOWN, &token);
+    if (vramStatus != BC250_VRAM_OK) {
+        Bc250DisplayLog("[GfxRing] BRINGUP nao executou: VRAM negada (%s)\n",
+            Bc250VramStatusName(vramStatus));
+        return BC250_GFX_RING_TXN_PREFLIGHT_FAILED;
+    }
+    if (Bc250VramGetRegion(allocator, token, &region) != BC250_VRAM_OK) {
+        (void)Bc250VramRelease(allocator, token);
+        return BC250_GFX_RING_TXN_PREFLIGHT_FAILED;
+    }
+
+    ringMc = addressSpace->VramMcStart + region.Offset;
+    plan.VramWindowBase = addressSpace->VramMcStart;
+    plan.VramWindowBytes = addressSpace->TotalBytes;
+    plan.RingGpuVa = ringMc;
+    plan.RingBytes = (uint32_t)ringBytes;
+    /* writeback e shadow DEPOIS do anel, sem sobreposicao -- o contrato recusa
+     * se encostarem, e essa recusa tem teste proprio */
+    plan.RptrWritebackGpuVa = ringMc + ringBytes;
+    plan.WptrPollGpuVa = ringMc + ringBytes + 0x10ull;
+    plan.RbExe = 1u;
+    plan.CeHqdNeqRbHqd = 1u;
+    if (Level >= 2u) {
+        plan.UnhaltMicroEngines = 1u;
+        plan.MicroEngineFirmwareLoaded = 1u;
+    }
+
+    Bc250DisplayLog("[GfxRing] BRINGUP level=%u: RingMc=0x%llX Bytes=%llu RptrWb=0x%llX WptrShadow=0x%llX\n",
+        Level, (unsigned long long)plan.RingGpuVa, (unsigned long long)ringBytes,
+        (unsigned long long)plan.RptrWritebackGpuVa,
+        (unsigned long long)plan.WptrPollGpuVa);
+
+    /*
+     * ESTADO DO TRANSPORTE -- corrigido pela corrida 14/09 13:18.
+     *
+     * Aquela corrida perdeu o ensaio com "mapa do transporte falhou
+     * (wrong_state)": com -EnableShaderDispatch o caminho do PFP deixa
+     * Core.MmioTransport MAPEADO, e Bc250MmioTopologyMapReadonly recusa
+     * transporte nao-vazio. No nivel 1, sem aquele caminho, o transporte
+     * estava livre e o ensaio rodou -- por isso o defeito so' apareceu aqui.
+     *
+     * E' a classe A16, que ja custou a corrida de 08/09 11:48.
+     *
+     * A correcao NAO e' desmapear o mapeamento alheio: quem mapeou pode ainda
+     * precisar dele. Reusamos o que existe e desmapeamos SOMENTE o que nos
+     * mesmos mapearmos.
+     */
+    mappedByUs = 0u;
+    if (Context->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED) {
+        Bc250DisplayLog("[GfxRing] BRINGUP: transporte JA MAPEADO por estagio anterior -- reusando, sem desmapear no fim\n");
+    } else {
+        mmioStatus = Bc250MmioTopologyMapReadonly(
+            &Context->Core.MmioTransport, &Context->Core.DxgkInterface,
+            Context->Core.ResolvedBars, Context->Core.ResolvedBarCount,
+            BC250_PCI_MMIO_BAR_INDEX);
+        if (mmioStatus != BC250_MMIO_TOPOLOGY_OK) {
+            (void)Bc250VramRelease(allocator, token);
+            Bc250DisplayLog("[GfxRing] BRINGUP nao executou: mapa do transporte falhou (%s)\n",
+                Bc250MmioTopologyStatusName(mmioStatus));
+            return BC250_GFX_RING_TXN_PREFLIGHT_FAILED;
+        }
+        mappedByUs = 1u;
+    }
+
+    RtlZeroMemory(&interfaceData, sizeof(interfaceData));
+    interfaceData.Read32 = Bc250MmioTopologyRead32;
+    interfaceData.Write32 = Bc250MmioTopologyWrite32;
+    interfaceData.Stall = Bc250ActiveTlbStall;
+    interfaceData.Context = &Context->Core.MmioTransport;
+    interfaceData.Identity = BC250_GFX_RING_TXN_IDENTITY;
+
+    status = Bc250GfxRingTxnPreflight(&interfaceData, &plan, Evidence);
+    if (status == BC250_GFX_RING_TXN_OK) {
+        status = Bc250GfxRingTxnApply(&interfaceData, &plan, Evidence);
+    }
+
+    /*
+     * ROLLBACK SEMPRE, inclusive quando o APPLY falhou no meio: e' justamente
+     * o caso em que a placa pode ter ficado parcialmente escrita.
+     */
+    rollbackStatus = Bc250GfxRingTxnRollback(&interfaceData, Evidence);
+
+    /* Desmapeia SOMENTE se fomos nos que mapeamos -- ver o bloco de estado
+     * acima. Desmapear o mapeamento alheio quebraria o estagio que o criou. */
+    if (mappedByUs == 1u) {
+        (void)Bc250MmioTopologyUnmap(&Context->Core.MmioTransport);
+    }
+    (void)Bc250VramRelease(allocator, token);
+
+    if (rollbackStatus != BC250_GFX_RING_TXN_OK) {
+        Bc250DisplayLog("[GfxRing] BRINGUP: ROLLBACK FALHOU (%s) -- a placa NAO voltou ao estado inicial\n",
+            Bc250GfxRingTxnStatusName(rollbackStatus));
+        return rollbackStatus;
+    }
+    return status;
+}
+
 static BC250_HQD_BANK_PROBE_STATUS Bc250ActiveProbeMecHqdBankIsolation(
     BC250_DXGK_ACTIVE_CONTEXT *Context,
     BC250_HQD_BANK_PROBE_EVIDENCE *Evidence)
@@ -4156,6 +4383,71 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
             }
         }
 
+        {
+            /*
+             * B.1 -- TUNABLE DO PREFLIGHT DO ANEL GRAFICO, EM FONTE UNICA.
+             *
+             * DELIBERADAMENTE FORA DO #if, e este comentario existe para que
+             * ninguem o mova para dentro. E' a QUARTA vez que a classe aparece
+             * neste projeto: A13 (tunable de submissao), B4 (GpuvaLabPromotion)
+             * e ContextAbi ficaram num ramo de
+             * BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP e eram invisiveis no
+             * outro -- cada uma custou uma corrida. A PRIMEIRA VERSAO DESTE
+             * BLOCO REPETIU O ERRO: leitura no ramo de producao, uso no ramo
+             * de laboratorio, resultado sempre 0 e medicao que nunca rodaria.
+             *
+             * Fail-closed: valor ausente ou ilegivel mantem a medicao
+             * DESLIGADA. A medicao nao escreve registrador algum e nao altera
+             * o veredito do StartDevice em desfecho nenhum.
+             */
+            ULONG gfxRingPresent = 0u;
+#if defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)
+            const ULONG gfxRingCompiled = 1u;
+#else
+            const ULONG gfxRingCompiled = 0u;
+#endif
+            context->GfxRingPreflightArmed = Bc250ActiveReadTunableChecked(
+                L"GfxRingPreflight", 0u, &gfxRingPresent);
+            context->GfxRingPreflightPresent = gfxRingPresent;
+            /*
+             * "compiled" evita a ambiguidade que este projeto ja pagou caro:
+             * tunable armado com o codigo ausente da imagem produz silencio
+             * indistinguivel de recusa. Na imagem de producao o probe fisico
+             * nao existe por desenho, e a linha diz isso.
+             */
+            Bc250DisplayLog("[StartDevice] GfxRingPreflight=%u (present=%u compiled=%u) -- 0 = sem medicao do anel grafico (default); 1 fotografa CP_RB0 SEM escrever\n",
+                context->GfxRingPreflightArmed, context->GfxRingPreflightPresent,
+                gfxRingCompiled);
+            if (context->GfxRingPreflightArmed == 1u && gfxRingCompiled == 0u) {
+                Bc250DisplayLog("[GfxRing] PREFLIGHT ARMADO mas AUSENTE desta imagem: o probe fisico so' existe no build de laboratorio. Nenhuma medicao sera feita.\n");
+            }
+
+            /*
+             * B.1 -- ENSAIO DO ANEL GRAFICO, escalonado. Mesma regra do
+             * tunable acima: lido FORA do #if, para que as duas imagens o
+             * enxerguem (A13/B4/ContextAbi custaram uma corrida cada).
+             *
+             * 0 = nada (default). 1 = configura e confere por readback.
+             * 2 = acrescenta desalt das micro-engines e a partida do anel.
+             * O rollback e' SEMPRE executado: o ensaio mede, nao deixa anel
+             * montado, e o StartDevice termina com a placa como a encontrou.
+             */
+            {
+                ULONG gfxBringupPresent = 0u;
+                context->GfxRingBringupLevel = Bc250ActiveReadTunableChecked(
+                    L"GfxRingBringup", 0u, &gfxBringupPresent);
+                context->GfxRingBringupPresent = gfxBringupPresent;
+                if (context->GfxRingBringupLevel > 2u) {
+                    Bc250DisplayLog("[GfxRing] BRINGUP RECUSADO: level=%u fora da faixa 0..2 -- tratado como 0\n",
+                        context->GfxRingBringupLevel);
+                    context->GfxRingBringupLevel = 0u;
+                }
+                Bc250DisplayLog("[StartDevice] GfxRingBringup=%u (present=%u compiled=%u) -- 0 = nenhum ensaio (default); 1 configura e confere; 2 acrescenta desalt e partida\n",
+                    context->GfxRingBringupLevel, context->GfxRingBringupPresent,
+                    gfxRingCompiled);
+            }
+        }
+
 #if defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)
         /*
          * REGRESSAO MEDIDA NA CORRIDA 08/09 11:48 (Codigo 43, 0xC00000BB).
@@ -4684,6 +4976,86 @@ Bc250PhysicalRenderBringup:
                     }
                     Bc250ProbeRecord(BC250_PROBE_MEC_HQD_SELECTOR_STATUS,
                         (ULONG)context->MecHqdSelectorStatus);
+                    /*
+                     * B.1 -- fotografia do anel grafico. Ponto escolhido de
+                     * proposito: o probe acima acabou de fazer map/unmap, logo
+                     * o transporte esta VAZIO aqui. A16 custou uma corrida
+                     * justamente por deixar o transporte mapeado.
+                     */
+                    if (context->GfxRingPreflightArmed == 1u &&
+                        context->GfxRingPreflightPresent == 1u) {
+                        context->GfxRingPreflightStatus =
+                            Bc250ActiveProbeGfxRingReadonly(
+                                context, &context->GfxRingPreflightEvidence);
+                        if (context->GfxRingPreflightStatus == BC250_GFX_RING_TXN_OK &&
+                            context->GfxRingPreflightEvidence.SnapshotTaken == 1u) {
+                            Bc250DisplayLog("[GfxRing] PREFLIGHT OK: Reads=%u Writes=%u (transporte Writes=%u)\n",
+                                context->GfxRingPreflightEvidence.Reads,
+                                context->GfxRingPreflightEvidence.Writes,
+                                context->GfxRingPreflightTransportWrites);
+                            Bc250DisplayLog("[GfxRing] CP_RB0 COMO ENCONTRADO: CNTL=%08X BASE=%08X BASE_HI=%08X RPTR=%08X WPTR=%08X POLL_CNTL=%08X ME_CNTL=%08X\n",
+                                context->GfxRingPreflightEvidence.CntlBefore,
+                                context->GfxRingPreflightEvidence.BaseBefore,
+                                context->GfxRingPreflightEvidence.BaseHiBefore,
+                                context->GfxRingPreflightEvidence.RptrBefore,
+                                context->GfxRingPreflightEvidence.WptrBefore,
+                                context->GfxRingPreflightEvidence.PollCntlBefore,
+                                context->GfxRingPreflightEvidence.MeCntlBefore);
+                            Bc250DisplayLog("[GfxRing] CNTL DECODIFICADO: RB_BUFSZ=%u RB_BLKSZ=%u RB_EXE=%u CE_HQD_NEQ=%u CACHE_POLICY=%u RB_NO_UPDATE=%u RB_RPTR_WR_ENA=%u BUF_SWAP=%u MIN_AVAILSZ=%u MIN_IB_AVAILSZ=%u RB_VOLATILE=%u\n",
+                                context->GfxRingPreflightEvidence.FieldsBefore.RbBufsz,
+                                context->GfxRingPreflightEvidence.FieldsBefore.RbBlksz,
+                                context->GfxRingPreflightEvidence.FieldsBefore.RbExe,
+                                context->GfxRingPreflightEvidence.FieldsBefore.CeHqdNeqRbHqd,
+                                context->GfxRingPreflightEvidence.FieldsBefore.CachePolicy,
+                                context->GfxRingPreflightEvidence.FieldsBefore.RbNoUpdate,
+                                context->GfxRingPreflightEvidence.FieldsBefore.RbRptrWrEna,
+                                context->GfxRingPreflightEvidence.FieldsBefore.BufSwap,
+                                context->GfxRingPreflightEvidence.FieldsBefore.MinAvailsz,
+                                context->GfxRingPreflightEvidence.FieldsBefore.MinIbAvailsz,
+                                context->GfxRingPreflightEvidence.FieldsBefore.RbVolatile);
+                            /*
+                             * O catalogo registra CP_RB0_CNTL=0x50000709 lido
+                             * uma vez. Dizer se a leitura de AGORA confere e'
+                             * informacao nos dois desfechos, e a divergencia
+                             * NAO e' erro: significa que o estado do anel
+                             * depende do caminho de boot, o que precisamos
+                             * saber antes de escrever qualquer coisa nele.
+                             */
+                            /*
+                             * MEDIDO em 14/09 11:43: as tres micro-engines
+                             * graficas vem HALTED do boot (CP_ME_CNTL=15000000).
+                             * Um anel configurado com elas paradas aceita toda
+                             * a escrita, confere no readback e NAO executa
+                             * pacote nenhum -- o falso sucesso que a Lei 4
+                             * proibe. Por isso a linha existe e e' explicita.
+                             */
+                            Bc250DisplayLog("[GfxRing] MICRO-ENGINES: CE_HALT=%u PFP_HALT=%u ME_HALT=%u -> %s\n",
+                                context->GfxRingPreflightEvidence.MeCntlFields.CeHalt,
+                                context->GfxRingPreflightEvidence.MeCntlFields.PfpHalt,
+                                context->GfxRingPreflightEvidence.MeCntlFields.MeHalt,
+                                (context->GfxRingPreflightEvidence.MicroEnginesHalted != 0u)
+                                    ? "PARADAS -- anel configurado NAO executaria"
+                                    : "liberadas");
+                            Bc250DisplayLog("[GfxRing] CONTRA A REFERENCIA: lido=%08X boot_medido=%08X ref_configurado=%08X -> %s\n",
+                                context->GfxRingPreflightEvidence.CntlBefore,
+                                BC250_GFX_RING_CNTL_MEASURED_BOOT,
+                                BC250_GFX_RING_CNTL_CONFIGURED_REFERENCE,
+                                (context->GfxRingPreflightEvidence.CntlBefore ==
+                                    BC250_GFX_RING_CNTL_MEASURED_BOOT) ? "IGUAL AO BOOT MEDIDO"
+                                : (context->GfxRingPreflightEvidence.CntlBefore ==
+                                    BC250_GFX_RING_CNTL_CONFIGURED_REFERENCE) ? "ANEL JA CONFIGURADO"
+                                : "ESTADO NOVO -- nem boot nem referencia");
+                        } else {
+                            Bc250DisplayLog("[GfxRing] PREFLIGHT RECUSADO: status=%s (%u), SnapshotTaken=%u -- nenhuma medicao do anel grafico nesta corrida\n",
+                                Bc250GfxRingTxnStatusName(context->GfxRingPreflightStatus),
+                                (ULONG)context->GfxRingPreflightStatus,
+                                context->GfxRingPreflightEvidence.SnapshotTaken);
+                        }
+                    } else {
+                        Bc250DisplayLog("[GfxRing] PREFLIGHT DESARMADO (armed=%u present=%u) -- anel grafico NAO medido nesta corrida\n",
+                            context->GfxRingPreflightArmed,
+                            context->GfxRingPreflightPresent);
+                    }
                     Bc250ProbeRecord(BC250_PROBE_MEC_HQD_ORIGINAL_SELECTOR,
                         context->MecHqdSelectorEvidence.OriginalSelector);
                     Bc250ProbeRecord(BC250_PROBE_MEC_HQD_APPLIED_SELECTOR,
@@ -5579,6 +5951,51 @@ Bc250PhysicalRenderBringup:
                         context->RlcLoadEvidence.PhysicalReady);
                     Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_STATUS,
                         (ULONG)context->PfpDirectLoadStatus);
+
+                    /*
+                     * B.1 -- ENSAIO DO ANEL GRAFICO. Ponto escolhido: DEPOIS
+                     * do PFP direct load, porque o level 2 desalta as
+                     * micro-engines e desaltar sem ucode e' solta-las sobre
+                     * memoria de instrucao nao inicializada.
+                     *
+                     * O nivel 2 exige que a carga de firmware tenha dado
+                     * certo. Sem isso o ensaio cai para o nivel 1, que nao
+                     * liga nada -- degradar e' melhor que desaltar as cegas.
+                     */
+                    if (context->GfxRingBringupLevel > 0u &&
+                        context->GfxRingBringupPresent == 1u) {
+                        uint32_t level = context->GfxRingBringupLevel;
+                        if (level >= 2u &&
+                            context->PfpDirectLoadEvidence.PhysicalReady == 0u) {
+                            Bc250DisplayLog("[GfxRing] BRINGUP rebaixado de 2 para 1: PfpDirectLoad PhysicalReady=0, firmware NAO confirmado\n");
+                            level = 1u;
+                        }
+                        context->GfxRingBringupStatus =
+                            Bc250ActiveRunGfxRingBringup(
+                                context, level, &context->GfxRingBringupEvidence);
+                        {
+                            const BC250_GFX_RING_TXN_EVIDENCE *ev =
+                                &context->GfxRingBringupEvidence;
+                            Bc250DisplayLog("[GfxRing] BRINGUP veredito: %s (level=%u) Reads=%u Writes=%u\n",
+                                Bc250GfxRingTxnStatusName(context->GfxRingBringupStatus),
+                                level, ev->Reads, ev->Writes);
+                            Bc250DisplayLog("[GfxRing] BRINGUP antes: CNTL=%08X BASE=%08X ME_CNTL=%08X | planejado: CNTL=%08X\n",
+                                ev->CntlBefore, ev->BaseBefore, ev->MeCntlBefore,
+                                ev->CntlPlanned);
+                            Bc250DisplayLog("[GfxRing] BRINGUP readback: CNTL=%08X BASE=%08X ConfigOk=%u | desalt tentado=%u ok=%u ME_CNTL=%08X\n",
+                                ev->CntlReadback, ev->BaseReadback,
+                                ev->ApplyReadbackPassed, ev->UnhaltAttempted,
+                                ev->UnhaltPassed, ev->MeCntlAfter);
+                            Bc250DisplayLog("[GfxRing] BRINGUP partida: tentada=%u ok=%u ACTIVE_readback=%08X | rollback tentado=%u ok=%u\n",
+                                ev->RingActivateAttempted, ev->RingActivatePassed,
+                                ev->RingActivateReadback, ev->RollbackAttempted,
+                                ev->RollbackPassed);
+                        }
+                    } else if (context->GfxRingBringupLevel > 0u) {
+                        Bc250DisplayLog("[GfxRing] BRINGUP DESARMADO: level=%u mas present=%u -- valor ausente no registro\n",
+                            context->GfxRingBringupLevel,
+                            context->GfxRingBringupPresent);
+                    }
                     Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_MC_LOW,
                         (ULONG)context->PfpDirectLoadEvidence.FirmwareMcAddress);
                     Bc250ProbeRecord(BC250_PROBE_PFP_DIRECT_MC_HIGH,

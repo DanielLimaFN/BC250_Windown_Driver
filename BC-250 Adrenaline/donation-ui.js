@@ -1,0 +1,25 @@
+/* Payment display only: never infers receipt or initiates a transfer. */
+(function(){
+ const {config,copyValue}=window.Donations;
+ let selectedCoin=config.crypto.find(c=>c.enabled&&c.network).id;
+ const $=s=>document.querySelector(s);
+ const escape=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ function field(label,value,id){return '<label class="payment-address"><span>'+label+'</span><textarea id="'+id+'" readonly rows="2" spellcheck="false">'+escape(value)+'</textarea></label>';}
+ function pix(){return '<div class="transfer-layout"><div class="qr-container"><img src="'+config.pix.qr+'" width="168" height="168" alt="QR Code Pix para apoiar Daniel de Lima Francisco"><span>Escaneie pelo app do banco</span></div><div class="transfer-details"><span class="pill green">Pix · valor livre</span><h3>Escolha o valor do seu café.</h3><p>Destinatário</p><strong>'+config.pix.recipient+'</strong><p class="key-kind">'+config.pix.keyType+'</p><button class="primary" data-copy-kind="pix-code">Copiar Pix Copia e Cola</button><button data-copy-kind="pix-key">Copiar chave Pix</button></div></div>'+field('Pix Copia e Cola',config.pix.payload,'pix-code-field')+'<p class="transfer-note">Confira o destinatário no banco antes de confirmar. O valor é escolhido no momento do pagamento.</p>';}
+ function crypto(){
+ const coins=config.crypto.filter(c=>c.enabled&&c.network);const coin=coins.find(c=>c.id===selectedCoin)||coins[0];selectedCoin=coin.id;
+ return '<div class="coin-selector" role="group" aria-label="Criptomoeda">'+coins.map(c=>'<button data-coin="'+c.id+'" aria-pressed="'+(c.id===selectedCoin)+'"><span class="coin-symbol '+c.id+'">'+(c.id==='btc'?'₿':'◎')+'</span>'+c.name+' <small>'+c.symbol+'</small></button>').join('')+'</div><div class="transfer-layout"><div class="qr-container"><img src="'+coin.qr+'" width="168" height="168" alt="Endereço de depósito de '+coin.name+' na rede '+coin.network+'"><span>Escaneie pela sua carteira</span></div><div class="transfer-details"><span class="pill blue">'+coin.symbol+' · rede '+coin.network+'</span><h3>Apoie com '+coin.name+'.</h3><p>Endereço de depósito informado pelo desenvolvedor.</p><div class="network-notice">Envie somente <strong>'+coin.symbol+'</strong> pela rede <strong>'+coin.network+'</strong>.</div><button class="primary" data-copy-kind="crypto" data-copy-id="'+coin.id+'">Copiar endereço '+coin.symbol+'</button></div></div>'+field('Endereço público · '+coin.network,coin.address,'crypto-address-field')+'<p class="transfer-note">O valor é escolhido na sua carteira. O aplicativo não acompanha a confirmação da transferência.</p>';
+ }
+ function card(){return '<div class="kofi-header"><div><strong>Cartão pelo Ko-fi</strong><p>O pagamento acontece no painel do Ko-fi.</p></div><button class="primary" data-open-kofi>Abrir no navegador ↗</button></div><p class="transfer-note">Se o painel não carregar ou o banco pedir uma confirmação, use o navegador.</p><iframe id="kofiframe" src="'+escape(config.kofi.embed)+'" title="Ko-fi — apoiar bc250windv" sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox" referrerpolicy="strict-origin-when-cross-origin"></iframe>';}
+ function render(method){$('#donation-dialog').dataset.paymentMethod=method;$('#payment-panel').innerHTML=method==='pix'?pix():method==='crypto'?crypto():card();$('#payment-status').textContent='';}
+ async function copy(kind,id,button){const value=copyValue(kind,id);if(!value)return;
+ try{let result=true;if(window.desktop?.copyDonation)result=await window.desktop.copyDonation(kind,id);else await navigator.clipboard.writeText(value);if(!result)throw new Error('Clipboard unavailable');$('#payment-status').textContent=kind==='pix-code'?'Pix Copia e Cola copiado.':kind==='pix-key'?'Chave Pix copiada.':'Endereço copiado.';}
+ catch{$('#payment-status').textContent='Não foi possível copiar automaticamente. Selecione e copie o texto abaixo.';const target=$(kind==='crypto'?'#crypto-address-field':'#pix-code-field');if(target){if(kind==='pix-key')target.value=value;target.focus();target.select();}}
+ }
+ document.addEventListener('click',async event=>{
+ const coinButton=event.target.closest('[data-coin]');if(coinButton){if(!config.crypto.some(c=>c.id===coinButton.dataset.coin&&c.enabled&&c.network))return;selectedCoin=coinButton.dataset.coin;render('crypto');$('[data-coin="'+selectedCoin+'"]').focus();return;}
+ const copyButton=event.target.closest('[data-copy-kind]');if(copyButton){await copy(copyButton.dataset.copyKind,copyButton.dataset.copyId,copyButton);return;}
+ if(event.target.closest('[data-open-kofi]')){if(window.desktop?.openKoFi){const ok=await window.desktop.openKoFi();$('#payment-status').textContent=ok?'Ko-fi aberto no navegador.':'Não foi possível abrir o navegador. Acesse ko-fi.com/bc250windv.';}else{const tab=window.open(config.kofi.url,'_blank','noopener,noreferrer');$('#payment-status').textContent='Acesse o Ko-fi na nova aba do navegador.';}}
+ });
+ window.DonationUI={render,clear:()=>{$('#payment-panel').replaceChildren();$('#payment-status').textContent='';}};
+})();

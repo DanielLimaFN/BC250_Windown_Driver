@@ -39,6 +39,17 @@ param(
     [switch]$RunUmdNode1Tripod,
     # Permite habilitar Plano A (fill direto no anel) para isolamento e protecao contra 0x119.
     [switch]$EnableSdmaPlanoAFallback,
+    # B.1 (14/09): FOTOGRAFA o anel grafico CP_RB0 durante o bring-up. SOMENTE
+    # LEITURA -- o contrato nao escreve registrador algum e o transporte MMIO
+    # confirma por contador proprio; se houver UMA escrita a medicao e
+    # descartada. Nao altera o veredito do StartDevice. O anel grafico e' a
+    # unica engine desta placa sem medicao, e e' pre-requisito da Parede B.
+    [switch]$EnableGfxRingPreflight,
+    # B.1 (14/09): ensaio ESCALONADO do anel grafico. 1 configura CP_RB0 e
+    # confere por readback, com as micro-engines ainda HALTED. 2 acrescenta o
+    # desalt e a partida. O rollback e' sempre executado e conferido, entao o
+    # StartDevice termina com a placa como a encontrou.
+    [ValidateRange(0,2)][int]$GfxRingBringupLevel = 0,
     # C3.9 (12/09): troca o bloqueio GLOBAL do journal no gate do Node 1 pela
     # pendencia do PROCESSO QUE SUBMETE.
     #
@@ -72,7 +83,8 @@ param(
     # Agora o proprio binder espera esta janela, tira o retrato, faz o
     # rollback e reinicia. O fim e' o mesmo; a diferenca e' que passa a ser
     # o contrato, e nao um acidente.
-    [ValidateRange(30,240)][int]$PhysicalWindowSeconds = 60
+    [ValidateRange(30,240)][int]$PhysicalWindowSeconds = 60,
+    [switch]$RestartExplorer
 )
 
 $ErrorActionPreference = 'Stop'
@@ -198,16 +210,12 @@ if ($EnableD3D11LabPromotion) {
     if (-not $EnableRenderNode -and -not $EnablePhysicalRenderOnly) {
         throw '-EnableD3D11LabPromotion exige -EnableRenderNode (ou -EnablePhysicalRenderOnly).'
     }
-
-# C1: substituir Draw por copia 1:1 no SDMA nao e' rasterizacao. Exige a
-# promocao D3D11 (sem device D3D11 nenhum Draw chega) e aceite explicito, para
-# que ninguem leia pixel na tela como prova de pipeline 3D.
+}
 if ($EnableD3D11DrawBltSubstitution -and -not $EnableD3D11LabPromotion) {
     throw '-EnableD3D11DrawBltSubstitution exige -EnableD3D11LabPromotion.'
 }
 if ($EnableD3D11ShaderTranslator -and -not $EnableD3D11LabPromotion) {
     throw '-EnableD3D11ShaderTranslator exige -EnableD3D11LabPromotion.'
-}
 }
 if ($RunRadvComputeTripod) {
     # Cada exigencia aqui e um preflight do proprio runner, antecipado para o
@@ -687,6 +695,7 @@ if (-not $Execute -or -not $IAcceptBlackScreenRisk) {
     } else { '' })
     $planoAFlag = $(if ($EnableSdmaPlanoAFallback) { ' -EnableSdmaPlanoAFallback' } else { '' })
     $d3d11PromotionFlag = $(if ($EnableD3D11LabPromotion) { ' -EnableD3D11LabPromotion' } else { '' })
+    $d3d11SubstFlag = $(if ($EnableD3D11DrawBltSubstitution) { ' -EnableD3D11DrawBltSubstitution' } else { '' })
     # C3.9: sem isto o dry-run sugeria um comando que PERDIA o flag, e a corrida
     # rodaria com o gate global sem ninguem perceber.
     $journalGateFlag = $(if ($EnableNode1JournalGatePerProcess) { ' -EnableNode1JournalGatePerProcess' } else { '' })
@@ -697,13 +706,24 @@ if (-not $Execute -or -not $IAcceptBlackScreenRisk) {
     } elseif ($RunUmdNode1Tripod) {
         " -RunUmdNode1Tripod -WatchdogTimeoutSeconds $WatchdogTimeoutSeconds"
     } else { '' })
+    # 14/09: a corrida 11:27 foi GASTA porque a dica perdia este flag. O
+    # operador rodou exatamente o comando sugerido, e o log saiu
+    # "GfxRingPreflight=0 (present=1 compiled=1)" -- toda a cadeia funcionando,
+    # menos o interruptor. E' a MESMA armadilha que o comentario do C3.9,
+    # quinze linhas acima, ja descrevia por escrito.
+    $gfxRingFlag = $(if ($EnableGfxRingPreflight) { ' -EnableGfxRingPreflight' } else { '' })
+    $gfxBringupFlag = $(if ($GfxRingBringupLevel -gt 0) { " -GfxRingBringupLevel $GfxRingBringupLevel" } else { '' })
+    # Achado na mesma auditoria: este tambem faltava, desde antes da B.1.
+    $shaderTranslatorFlag = $(if ($EnableD3D11ShaderTranslator) { ' -EnableD3D11ShaderTranslator' } else { '' })
+    $restartExplorerFlag = $(if ($RestartExplorer) { ' -RestartExplorer' } else { '' })
     $watchdogFlag = $(if ($DisableWatchdog) {
         ' -DisableWatchdog -IAcceptNoAutomaticRollback'
     } else { ' -IAcceptAutomaticRecoveryReboot' })
     Write-Host ("powershell -ExecutionPolicy Bypass -File tools\bind-bc250mcdm-lab.ps1" +
         " -Execute -IAcceptBlackScreenRisk" + $shaderFlag + $persistentFlag +
         $renderNodeFlag + $renderOnlyFlag + $gpuvaFlag + $planoAFlag + $d3d11PromotionFlag +
-        $journalGateFlag + $tripodFlag + $watchdogFlag)
+        $d3d11SubstFlag + $shaderTranslatorFlag + $gfxRingFlag + $gfxBringupFlag +
+        $journalGateFlag + $tripodFlag + $restartExplorerFlag + $watchdogFlag)
     exit 0
 }
 if (-not $DisableWatchdog -and -not $IAcceptAutomaticRecoveryReboot) {
@@ -907,6 +927,11 @@ $requestedPolicy = [ordered]@{
     PersistentSubmission = $(if ($EnablePersistentSubmission) { 1 } else { 0 })
     GpuvaLabPromotion = $(if ($EnableGpuvaLabPromotion) { 1 } else { 0 })
     SdmaPlanoAFallback = $(if ($EnableSdmaPlanoAFallback) { 1 } else { 0 })
+    # B.1: entra na politica pre-bind pelo mesmo motivo do C3.9 -- o KMD le o
+    # valor UMA VEZ no StartDevice, e o INF declara o campo com NOCLOBBER
+    # justamente para nao apagar o que esta politica escreveu.
+    GfxRingPreflight = $(if ($EnableGfxRingPreflight) { 1 } else { 0 })
+    GfxRingBringup = $GfxRingBringupLevel
     # C3.9: entra na politica pre-bind porque a chave de servico so' nasce aqui,
     # e o KMD le o valor UMA VEZ no StartDevice. O INF declara o campo com
     # NOCLOBBER justamente para nao apagar o que esta politica escreveu.
@@ -946,6 +971,28 @@ Write-Host ("  RenderNode={0}; PersistentSubmission={1}; GpuvaLabPromotion={2}; 
     $requestedPolicy.Node1JournalGatePerProcess)
 if ($EnableNode1JournalGatePerProcess) {
     Write-Host "  AVISO: Node1JournalGatePerProcess=1 -- relaxamento do gate do Node 1, NAO VALIDADO EM HARDWARE." -ForegroundColor Yellow
+}
+if ($GfxRingBringupLevel -gt 0) {
+    Write-Host ("  GfxRingBringup={0} -- ENSAIO DO ANEL GRAFICO: o driver vai ESCREVER em CP_RB0." -f $GfxRingBringupLevel) -ForegroundColor Cyan
+    if ($GfxRingBringupLevel -ge 2) {
+        Write-Host "    Level 2: desalta CE/PFP/ME e LIGA o anel. Risco maior que o level 1." -ForegroundColor Yellow
+    } else {
+        Write-Host "    Level 1: apenas configura e confere; as micro-engines seguem HALTED." -ForegroundColor Cyan
+    }
+    Write-Host "    O ROLLBACK e' sempre executado e conferido por readback."
+    Write-Host "    Procure: [GfxRing] BRINGUP veredito / readback / partida / rollback"
+    Write-Host "    NAO VALIDADO EM HARDWARE." -ForegroundColor Yellow
+}
+if ($EnableGfxRingPreflight) {
+    Write-Host "  GfxRingPreflight=1 -- o anel grafico CP_RB0 sera FOTOGRAFADO (somente leitura)." -ForegroundColor Cyan
+    Write-Host "    Procure no log, nesta ordem:" -ForegroundColor Cyan
+    Write-Host "      [StartDevice] GfxRingPreflight=1 (present=1 compiled=1)"
+    Write-Host "      [GfxRing] PREFLIGHT OK: Reads=7 Writes=0 (transporte Writes=0)"
+    Write-Host "      [GfxRing] CP_RB0 COMO ENCONTRADO: ..."
+    Write-Host "      [GfxRing] CONTRA O CATALOGO: ... -> CONFERE|DIVERGE"
+    Write-Host "    Writes diferente de 0 em qualquer dos dois contadores e DEFEITO NOSSO, nao medicao." -ForegroundColor Yellow
+    Write-Host "    compiled=0 significa imagem de producao: o probe fisico nao existe nela." -ForegroundColor Yellow
+    Write-Host "    NAO VALIDADO EM HARDWARE." -ForegroundColor Yellow
 }
 
 # Armar ou limpar D3D11LabPromotion da UMD
@@ -1508,6 +1555,12 @@ if (-not $DisableWatchdog) {
     Write-Host ''
     Write-Host ("=== JANELA DE OBSERVACAO: {0}s antes da coleta FINAL ===" -f $collectDelay) -ForegroundColor Magenta
     Write-Host '  (o watchdog SYSTEM continua armado e e a rede de seguranca)'
+
+    if ($RestartExplorer) {
+        Write-Host '  Reiniciando explorer.exe para forcar enumeracao e criacao de recursos DXGI...' -ForegroundColor Yellow
+        Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+    }
+
     Start-Sleep -Seconds $collectDelay
 
     try {

@@ -18,6 +18,7 @@
 #include "../core/bc250_psp_ring_transaction.h"
 #include "../core/bc250_psp_load_fw_transaction.h"
 #include "../core/bc250_sdma_f32_transaction.h"
+#include "../core/bc250_gfx_ring_transaction.h"
 #include "../core/bc250_vram_allocator.h"
 #include "../core/bc250_mcdm_object_contract.h"
 #include "../core/bc250_gpuva_space_contract.h"
@@ -358,6 +359,18 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     uint32_t HqdPreflightReadCount;
     BC250_HQD_SELECTOR_STATUS MecHqdSelectorStatus;
     BC250_HQD_SELECTOR_EVIDENCE MecHqdSelectorEvidence;
+    /* B.1 -- medicao somente-leitura do anel grafico. Fail-closed: sem o
+     * tunable GfxRingPreflight em 1, nada disto e' exercitado. */
+    uint32_t GfxRingPreflightArmed;
+    uint32_t GfxRingPreflightPresent;
+    BC250_GFX_RING_TXN_STATUS GfxRingPreflightStatus;
+    BC250_GFX_RING_TXN_EVIDENCE GfxRingPreflightEvidence;
+    uint32_t GfxRingPreflightTransportWrites;
+    /* B.1 -- ensaio escalonado do anel grafico. 0 = nada (default). */
+    uint32_t GfxRingBringupLevel;
+    uint32_t GfxRingBringupPresent;
+    BC250_GFX_RING_TXN_STATUS GfxRingBringupStatus;
+    BC250_GFX_RING_TXN_EVIDENCE GfxRingBringupEvidence;
     BC250_HQD_BANK_PROBE_STATUS MecHqdBankProbeStatus;
     BC250_HQD_BANK_PROBE_EVIDENCE MecHqdBankProbeEvidence;
     BC250_HQD_PROGRAM_STATUS HqdProgramStatus;

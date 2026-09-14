@@ -232,3 +232,8 @@ uint32_t Bc250TripodWrapRingPointer(uint32_t Value, uint32_t RingBytes)
     }
     return Value % RingBytes;
 }
+
+uint32_t Bc250PresentCopySucceeded(uint32_t CopyCompleted, uint32_t SameSurface)
+{
+    return (CopyCompleted != 0u || SameSurface != 0u) ? 1u : 0u;
+}

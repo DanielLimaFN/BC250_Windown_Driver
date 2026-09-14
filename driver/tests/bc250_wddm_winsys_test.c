@@ -25,6 +25,8 @@ typedef struct TEST_STATE {
     UINT SignalSyncCalls;
     UINT SignalSyncGpuCalls;
     HRESULT ForcedResult;
+    HRESULT WaitResult;
+    BC250_WINSYS_ALLOCATION *PendingAllocation;
     /*
      * 13/09 -- vinculo de recurso. Sem estes campos o teste nao podia distinguir
      * "a UMD passou hResource" de "a UMD nao passou", que e' exatamente o defeito
@@ -194,7 +196,13 @@ static HRESULT APIENTRY TestWaitPaging(
     assert(Args->ObjectHandleArray[0] == 0x9002u ||
            Args->ObjectHandleArray[0] == (D3DKMT_HANDLE)0x5001u);
     g_State.WaitCalls++;
-    if (FAILED(g_State.ForcedResult)) return g_State.ForcedResult;
+    if (g_State.PendingAllocation != NULL) {
+        assert(!g_State.PendingAllocation->Resident);
+        assert(g_State.PendingAllocation->ResidencyPending);
+    }
+    if (FAILED(g_State.WaitResult)) return g_State.WaitResult;
+    if (FAILED(g_State.ForcedResult) && g_State.ForcedResult != E_PENDING)
+        return g_State.ForcedResult;
     if (Args->ObjectHandleArray[0] == 0x9002u) {
         assert(Args->FenceValueArray[0] == 7u || Args->FenceValueArray[0] == 8u);
         g_PagingFence = Args->FenceValueArray[0];
@@ -788,17 +796,24 @@ static void TestPagingPendingStatus(void)
     assert(g_State.WaitCalls == 1u);
     assert(g_PagingFence == 7u);
 
-    /* Test 4: MakeResident returns E_PENDING (0x8000000A) */
-    g_State.ForcedResult = (HRESULT)0x8000000AL;
+    /* F3.3: request accepted, but a failed wait must not publish Resident.
+     * The callback observes Resident=FALSE while the fence is still pending. */
+    g_State.ForcedResult = E_PENDING;
+    g_State.WaitResult = E_FAIL;
+    g_State.PendingAllocation = &allocation;
+    assert(Bc250WinsysMakeResident(&context, &allocation) != BC250_WINSYS_OK);
+    assert(!allocation.Resident);
+    assert(allocation.ResidencyPending);
+    assert(allocation.PagingFenceValue == 8u);
+    assert(g_State.MakeResidentCalls == 1u);
+    g_State.WaitResult = S_OK;
     assert(Bc250WinsysMakeResident(&context, &allocation) == BC250_WINSYS_OK);
     assert(allocation.Resident);
-    assert(allocation.PagingFenceValue == 8u);
-
-    /* Test 5: WaitPaging must wait on updated PagingFenceValue 8 */
-    g_State.ForcedResult = S_OK;
-    assert(Bc250WinsysWaitPaging(&context, &allocation) == BC250_WINSYS_OK);
-    assert(g_State.WaitCalls == 2u);
+    assert(!allocation.ResidencyPending);
+    assert(g_State.MakeResidentCalls == 1u); /* retry waits, never adds a reference */
     assert(g_PagingFence == 8u);
+    g_State.PendingAllocation = NULL;
+    g_State.ForcedResult = S_OK;
 
     /* Cleanup */
     assert(Bc250WinsysDeallocate(&context, &allocation) == BC250_WINSYS_OK);

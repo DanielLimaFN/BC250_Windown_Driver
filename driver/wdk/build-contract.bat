@@ -141,6 +141,14 @@ echo [cc] bc250_pm4_packet_builder.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_pm4_packet_builder.obj" "%ROOTDIR%\driver\core\bc250_pm4_packet_builder.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
+echo [cc] bc250_gfx_ring_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gfx_ring_contract.obj" "%ROOTDIR%\driver\core\bc250_gfx_ring_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [cc] bc250_gfx_ring_transaction.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gfx_ring_transaction.obj" "%ROOTDIR%\driver\core\bc250_gfx_ring_transaction.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
 echo [cc] bc250_golden_settings_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_golden_settings_contract.obj" "%ROOTDIR%\driver\core\bc250_golden_settings_contract.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -760,6 +768,26 @@ if %ERRORLEVEL% NEQ 0 (
   echo TESTE FALHOU ^(pm4_packet_builder_test^) - Linha/Codigo: %errorlevel%
   exit /b 1
 )
+
+echo [cc] gfx_ring_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\gfx_ring_contract_test.obj" "%ROOTDIR%\driver\tests\gfx_ring_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] gfx_ring_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gfx_ring_contract_test.exe" ^
+  "%ODIR%\bc250_gfx_ring_contract.obj" ^
+  "%ODIR%\bc250_gfx_ring_transaction.obj" ^
+  "%ODIR%\bc250_blt_proof_contract.obj" ^
+  "%ODIR%\gfx_ring_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\gfx_ring_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(gfx_ring_contract_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+echo GFX RING CONTRACT: OK ^(boot medido 00A00000 com as 3 micro-engines halted, CNTL de referencia por aritmetica, RB_EXE fail-closed, tripe com volta, transacao Lei 5^)
 
 echo [cc] golden_settings_contract_test.c
 cl %CFLAGS% /Fo"%ODIR%\golden_settings_contract_test.obj" "%ROOTDIR%\driver\tests\golden_settings_contract_test.c"
@@ -1911,6 +1939,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_persistent_ring_contract.obj" ^
   "%ODIR%\bc250_submission_engine_driver.obj" ^
   "%ODIR%\bc250_active_miniport_driver.obj" ^
+  "%ODIR%\bc250_gfx_ring_contract.obj" ^
+  "%ODIR%\bc250_gfx_ring_transaction.obj" ^
   "%ODIR%\bc250_boot_fuse_driver.obj" ^
   "%ODIR%\bc250_sdma_present_driver.obj" ^
   "%WDK%\Lib\%WDKVER%\km\x64\ntoskrnl.lib" ^

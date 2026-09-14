@@ -602,6 +602,761 @@ def audit_primary_allocation_is_declared_to_the_kernel(errors: list[str]) -> Non
             "primaria de UMD nomeada e contada, nunca silenciada", errors)
 
 
+def audit_primary_is_not_overbroad(errors: list[str]) -> None:
+    """F5.0/F5.0b -- A DERIVACAO DE PRIMARIEDADE NAO PODE SER LARGA NEM CONGELAR MENTIRA.
+
+    Regressao de 13/09 22:17 (R9, R10): Explorer.EXE falhou 142 alocacoes com E_INVALIDARG
+    porque BIND_PRESENT era considerado Primary=1 mesmo sem pPrimaryDesc e com
+    geometria 1024x832 != 2560x1080 do VidPn ativo.
+
+    Este portao assegura:
+      1. BIND_PRESENT sozinho nunca implica primaria (proibe a derivacao ampla);
+      2. Primaria exige estritamente pPrimaryDesc != NULL e resolucao compativel;
+      3. Divergencia emite recusa nomeada;
+      4. O teste de contrato exige expressamente que o caso dwm.exe seja primaria
+         e o caso Explorer.EXE NAO seja primaria (meta-portao anti-regressao).
+    """
+    umd_path = ROOT / "driver" / "umd" / "bc250_d3d_umd.c"
+    test_path = ROOT / "driver" / "tests" / "bc250_d3d_umd_test.c"
+    if not umd_path.exists() or not test_path.exists():
+        errors.append("fontes ausentes para auditar a derivacao de primariedade")
+        return
+
+    umd = umd_path.read_text(encoding="utf-8", errors="replace")
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+
+    # 1. Proibir a derivacao larga antiga no UMD
+    forbid(umd, "(pCreate->BindFlags & D3D10_DDI_BIND_PRESENT) != 0u || pCreate->pPrimaryDesc != NULL",
+           "derivacao de primariedade excessivamente larga", errors)
+    forbid(umd, "isPrimary = (pCreate->BindFlags & D3D10_DDI_BIND_PRESENT)",
+           "BIND_PRESENT implicando primariedade", errors)
+
+    # 2. Exigir verificacao estrita de resolucao e recusa nomeada
+    create_res = function_body(umd, "VOID APIENTRY Bc250Umd10CreateResource")
+    if not create_res:
+        errors.append("Bc250Umd10CreateResource nao localizado")
+    else:
+        require(create_res, "res->Width == pCreate->pPrimaryDesc->ModeDesc.Width",
+                "checagem de largura da primaria", errors)
+        require(create_res, "res->Height == pCreate->pPrimaryDesc->ModeDesc.Height",
+                "checagem de altura da primaria", errors)
+        require(create_res, "PRIMARY_DESC INCOMPATIVEL RECUSADO",
+                "recusa nomeada de primaria incompativel", errors)
+        require(create_res, "PRIMARY_DESC VALIDO",
+                "confirmacao nomeada de primaria compativel", errors)
+
+    # 3. Meta-portao no teste: exige a verificacao de ambos os casos
+    # strip_c_comments remove tanto /* ... */ quanto // ... para que assercoes
+    # comentadas ou neutralizadas sejam rejeitadas como codigo ausente.
+    test_clean = strip_c_comments(test)
+    test_func = function_body(test_clean, "static void TestF5PrimaryDerivation")
+    if not test_func:
+        errors.append("funcao TestF5PrimaryDerivation ausente no teste de contrato")
+    else:
+        require(test_func, "assert(resDwm.IsPrimary);",
+                "teste de contrato exige que caso dwm.exe seja primaria", errors)
+        require(test_func, "assert(!resExplorer.IsPrimary);",
+                "teste de contrato exige que caso Explorer.EXE nao seja primaria", errors)
+        forbid(test_func, "assert(1)",
+               "neutralizacao de assert no teste de primariedade", errors)
+        forbid(test_func, "assert(0)",
+               "neutralizacao de assert no teste de primariedade", errors)
+        forbid(test_func, "if (0)",
+               "bypass de assert no teste de primariedade", errors)
+
+
+def audit_dxgi_1_6_table_complete(errors: list[str]) -> None:
+    """F5.1 -- TABELA DXGI 1.6 COMPLETA (22 SLOTS, 176 BYTES) COM FAIL-CLOSED HONESTO.
+
+    Assegura que a UMD implementa e preenche a tabela DXGI 1.6 completa:
+      1. Bc250UmdPopulateDxgiBaseFuncs recebe DXGI1_6_1_DDI_BASE_FUNCTIONS*;
+      2. Todos os 22 slots da struct DXGI 1.6 sao explicitamente populados;
+      3. pfnPresent1 e pfnBlt1 estao implementados;
+      4. Caps de MPO declaram MaxPlanes=1 e NumCapabilityGroups=0 (sem falso hardware MPO);
+      5. CreateDevice conecta pDXGIDDIBaseFunctions6_1;
+      6. Testes unitarios cobrem a integridade da tabela estendida.
+    """
+    umd_path = ROOT / "driver" / "umd" / "bc250_d3d_umd.c"
+    test_path = ROOT / "driver" / "tests" / "bc250_d3d_umd_test.c"
+    if not umd_path.exists() or not test_path.exists():
+        errors.append("fontes ausentes para auditar tabela DXGI 1.6")
+        return
+
+    umd = umd_path.read_text(encoding="utf-8", errors="replace")
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+
+    umd_clean = strip_c_comments(umd)
+    pop_func = function_body(umd_clean, "VOID Bc250UmdPopulateDxgiBaseFuncs")
+    if not pop_func:
+        errors.append("Bc250UmdPopulateDxgiBaseFuncs nao localizado")
+    else:
+        require(pop_func, "pFuncs->pfnPresent = Bc250DxgiPresent;",
+                "slot pfnPresent na tabela DXGI", errors)
+        require(pop_func, "pFuncs->pfnPresent1 = Bc250DxgiPresent1;",
+                "slot pfnPresent1 na tabela DXGI 1.6", errors)
+        require(pop_func, "pFuncs->pfnBlt1 = Bc250DxgiBlt1;",
+                "slot pfnBlt1 na tabela DXGI 1.6", errors)
+        require(pop_func, "pFuncs->pfnGetMultiplaneOverlayCaps = Bc250DxgiGetMultiplaneOverlayCaps;",
+                "slot pfnGetMultiplaneOverlayCaps na tabela DXGI 1.6", errors)
+        require(pop_func, "pFuncs->pfnReclaimResources1 = Bc250DxgiReclaimResources1;",
+                "slot pfnReclaimResources1 na tabela DXGI 1.6", errors)
+
+    mpo_func = function_body(umd_clean, "HRESULT APIENTRY Bc250DxgiGetMultiplaneOverlayCaps")
+    if not mpo_func:
+        errors.append("Bc250DxgiGetMultiplaneOverlayCaps nao localizado")
+    else:
+        require(mpo_func, "MaxPlanes = 1",
+                "declaracao honesta de 1 plano maximo (sem MPO de hardware)", errors)
+        require(mpo_func, "NumCapabilityGroups = 0",
+                "declaracao honesta de zero grupos MPO", errors)
+
+    create_dev = function_body(umd_clean, "HRESULT APIENTRY Bc250Umd10CreateDevice")
+    if not create_dev:
+        errors.append("Bc250Umd10CreateDevice nao localizado")
+    else:
+        require(create_dev, "pDXGIDDIBaseFunctions6_1",
+                "wiring de pDXGIDDIBaseFunctions6_1 no CreateDevice", errors)
+
+    test_clean = strip_c_comments(test)
+    require(test_clean, "assert(dxgiFuncs.pfnPresent1 != NULL);",
+            "teste de contrato assegurando presenca de pfnPresent1", errors)
+    require(test_clean, "assert(dxgiFuncs.pfnBlt1 != NULL);",
+            "teste de contrato assegurando presenca de pfnBlt1", errors)
+
+
+def audit_f5_2_pm4_draw_pipeline(errors: list[str]) -> None:
+    """F5.2 -- PAREDE B: PIPELINE GRAFICO PM4 3D REAL NO NODE 1.
+
+    Assegura que a UMD emite pacotes PM4 nativos para Draw:
+      1. Bc250Pm4EmitColorTarget0, Bc250Pm4EmitWindowScissor e Bc250Pm4EmitDrawIndexAuto no core PM4;
+      2. Bc250UmdEmitPm4Draw constroi contexto de render target e submete ao Node 1;
+      3. Base GPUVA do RT exige alinhamento de 256 bytes (GFX10 CB);
+      4. Telemetria dedicada: NativePm4DrawCount incrementado separadamente;
+      5. DDIs pfnDraw, pfnDrawIndexed, etc. chamam Bc250UmdEmitPm4Draw antes de qualquer fallback;
+      6. Teste de contrato TestDrawPm4EmissionOnNode1 verifica a emissao e rejeicao de desalinhamento.
+    """
+    pm4_path = ROOT / "driver" / "core" / "bc250_pm4_packet_builder.c"
+    umd_path = ROOT / "driver" / "umd" / "bc250_d3d_umd.c"
+    probe_path = ROOT / "driver" / "umd" / "bc250_umd_caps_probe.h"
+    test_path = ROOT / "driver" / "tests" / "bc250_d3d_umd_test.c"
+
+    if not pm4_path.exists() or not umd_path.exists() or not test_path.exists() or not probe_path.exists():
+        errors.append("fontes ausentes para auditar pipeline 3D PM4 (F5.2)")
+        return
+
+    pm4 = pm4_path.read_text(encoding="utf-8", errors="replace")
+    umd = umd_path.read_text(encoding="utf-8", errors="replace")
+    probe = probe_path.read_text(encoding="utf-8", errors="replace")
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+
+    require(probe, 'BC250_D3D11_EXPERIMENTAL_PM4_DRAW_REG_NAME "D3D11ExperimentalPm4Draw"',
+            "definicao de tunable D3D11ExperimentalPm4Draw em bc250_umd_caps_probe.h", errors)
+    require(probe, "BOOL Bc250UmdExperimentalPm4DrawArmed(void);",
+            "declaracao de Bc250UmdExperimentalPm4DrawArmed", errors)
+
+    require(pm4, "Bc250Pm4EmitColorTarget0(", "emissao PM4 de ColorTarget0", errors)
+    require(pm4, "Bc250Pm4EmitWindowScissor(", "emissao PM4 de WindowScissor", errors)
+    require(pm4, "Bc250Pm4EmitDrawIndexAuto(", "emissao PM4 de DrawIndexAuto", errors)
+
+    umd_clean = strip_c_comments(umd)
+    emit_draw = function_body(umd_clean, "BOOL Bc250UmdEmitPm4Draw")
+    if not emit_draw:
+        errors.append("Bc250UmdEmitPm4Draw nao localizado")
+    else:
+        require(emit_draw, "Bc250UmdExperimentalPm4DrawArmed()",
+                "trava de tunable experimental para PM4 draw", errors)
+        require(emit_draw, "dst->Allocation.GpuVirtualAddress & 0xFFull",
+                "exigencia de alinhamento de 256 bytes para CB", errors)
+        require(emit_draw, "Bc250Pm4EmitColorTarget0(",
+                "emissao de CB_COLOR0 dentro do draw nativo", errors)
+        require(emit_draw, "Bc250Pm4EmitWindowScissor(",
+                "emissao de Scissor dentro do draw nativo", errors)
+        require(emit_draw, "Bc250Pm4EmitDrawIndexAuto(",
+                "emissao de DRAW_INDEX_AUTO dentro do draw nativo", errors)
+        require(emit_draw, "pDevice->NativePm4DrawCount++",
+                "telemetria isolada de draws nativos PM4", errors)
+        require(emit_draw, "Bc250UmdCommandBufferFlush(pDevice, cmd, BC250_WINSYS_NODE_COMPUTE)",
+                "flush do command buffer para o Node 1 de compute/grafico", errors)
+
+    require(umd_clean, "if (Bc250UmdEmitPm4Draw(device, VertexCount, StartVertexLocation, 0, FALSE)) return;",
+            "chamada de draw nativo em Bc250Umd10Draw", errors)
+    require(umd_clean, "if (Bc250UmdEmitPm4Draw(device, IndexCount, StartIndexLocation, BaseVertexLocation, TRUE)) return;",
+            "chamada de draw nativo em Bc250Umd10DrawIndexed", errors)
+
+    test_clean = strip_c_comments(test)
+    test_func = function_body(test_clean, "static void TestDrawPm4EmissionOnNode1(void)")
+    if not test_func:
+        errors.append("TestDrawPm4EmissionOnNode1 nao localizado")
+    else:
+        require(test_func, "assert(dev.NativePm4DrawCount == 0u);",
+                "teste verifica rejeicao fail-closed com tunable desarmado", errors)
+        require(test_func, "assert(dev.NativePm4DrawCount == 1u);",
+                "teste verifica incremento de NativePm4DrawCount", errors)
+        require(test_func, "assert(dev.SubstitutedDrawCount == 0u);",
+                "teste assegura zero substituicao por blt quando draw e nativo", errors)
+        require(test_func, "0x10000004ull",
+                "teste negativo de desalinhamento de base GPUVA", errors)
+
+
+def audit_offline_check_is_not_inverted(errors: list[str]) -> None:
+    """O RAMO OFFLINE DAS SUITES NAO PODE TRANSFORMAR FALHA EM SUCESSO.
+
+    MEDIDO EM 14/09, quebrando Bc250Pm4EmitColorTarget0 de proposito:
+
+        suite OFFLINE  -> EXIT=0   (passou, com o codigo quebrado)
+        suite KERNEL   -> EXIT=1   (reprovou, correto)
+
+    Causa: `main` faz `return Run() ? 0 : 1` -- sucesso e' valor TRUTHY -- e o
+    CHECK do ramo #else devolvia 1 na falha. Vinte e tres suites estavam
+    assim. O build usa o ramo kernel, entao nenhuma prova do projeto estava
+    comprometida; mas qualquer compilacao offline via tudo passar, que e' a
+    classe "o gate congela a mentira" na propria infraestrutura de prova.
+
+    Regra: se o main e' `Run() ? 0 : 1`, o CHECK offline devolve 0 na falha.
+    """
+    tests_dir = ROOT / "driver" / "tests"
+    if not tests_dir.is_dir():
+        errors.append("driver/tests ausente")
+        return
+    bad_pattern = "#define CHECK(Expression) do { if (!(Expression)) return 1; } while (0)"
+    ternary = re.compile(r"return\s+\w+\(\)\s*\?\s*0\s*:\s*1;")
+    for path in sorted(tests_dir.glob("*.c")):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if bad_pattern not in text:
+            continue
+        if ternary.search(text):
+            errors.append(
+                f"{path.name}: CHECK do ramo offline devolve 1 na falha, mas main() "
+                "usa `Run() ? 0 : 1` -- falha vira SUCESSO no build offline")
+
+
+def audit_gfx_ring_contract_is_honest(errors: list[str]) -> None:
+    """B.1 -- O ANEL GRAFICO NAO PODE NASCER MENTINDO.
+
+    Tres defeitos ja custaram corrida neste projeto e todos os tres estao ao
+    alcance deste modulo novo:
+
+      1. Campo mascarado em silencio produz geometria errada ACEITA pelo
+         hardware (Bc250Pm4EmitColorTarget0, corrigido na etapa do catalogo).
+      2. Comparacao CRUA de RPTR ignora a volta do anel -- A15, BugCheck 0x119
+         na corrida 17:43 (RPTR=4612, alvo=516, anel=4096).
+      3. Anel configurado com RB_EXE=0 aceita todas as escritas, devolve
+         sucesso e nunca consome pacote. E' o estado do unico prototipo
+         existente (bc250_compute_service.c escreve CP_RB0_CNTL=0x00A00709).
+
+    O portao exige que o contrato recuse os tres, e o meta-portao exige que o
+    TESTE continue cobrando cada um -- sem isso a correcao e' revertida em
+    silencio, que e' como as oito ocorrencias anteriores nasceram.
+    """
+    src_path = ROOT / "driver" / "core" / "bc250_gfx_ring_contract.c"
+    hdr_path = ROOT / "driver" / "core" / "bc250_gfx_ring_contract.h"
+    test_path = ROOT / "driver" / "tests" / "gfx_ring_contract_test.c"
+    for path in (src_path, hdr_path, test_path):
+        if not path.exists():
+            errors.append(f"fonte ausente para auditar o anel grafico: {path.name}")
+            return
+
+    src = src_path.read_text(encoding="utf-8", errors="replace")
+    hdr = hdr_path.read_text(encoding="utf-8", errors="replace")
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+
+    # 1. RB_EXE fail-closed: plano nao executavel e' RECUSADO por nome.
+    validate = function_body(src, "BC250_GFX_RING_STATUS Bc250GfxRingValidatePlan")
+    if not validate:
+        errors.append("Bc250GfxRingValidatePlan nao localizado")
+    else:
+        require(validate, "return BC250_GFX_RING_NOT_EXECUTABLE;",
+                "recusa nomeada de anel com RB_EXE=0", errors)
+        require(validate, "return BC250_GFX_RING_FIELD_OVERFLOW;",
+                "recusa nomeada de campo fora da largura", errors)
+        require(validate, "return BC250_GFX_RING_OVERLAP;",
+                "recusa nomeada de sobreposicao entre anel, writeback e shadow", errors)
+        require(validate, "return BC250_GFX_RING_OUT_OF_WINDOW;",
+                "recusa nomeada de regiao fora da janela de VRAM", errors)
+        # Desaltar micro-engine sem ucode e' solta-la sobre memoria de instrucao
+        # nao inicializada. A recusa tem de estar no CODIGO, nao so' no teste --
+        # a primeira versao deste portao gateava so' o teste e a mutacao passou.
+        require(validate, "return BC250_GFX_RING_FIRMWARE_NOT_LOADED;",
+                "recusa nomeada de desalt sem firmware declarado", errors)
+        # Exigir a MENSAGEM nao basta: trocar a condicao por if (0) deixa o
+        # return vivo no ramo morto e o portao passa. Medido ao verificar a
+        # mutacao M32. A condicao e' que tem de existir.
+        require(validate,
+                "Plan->UnhaltMicroEngines == 1u && Plan->MicroEngineFirmwareLoaded != 1u",
+                "condicao do pre-requisito de firmware ausente -- a mensagem sozinha "
+                "sobrevive dentro de um ramo morto", errors)
+
+    # 2. O CNTL nao pode ser montado sem passar pela validacao.
+    compute = function_body(src, "BC250_GFX_RING_STATUS Bc250GfxRingComputeCntl")
+    if not compute:
+        errors.append("Bc250GfxRingComputeCntl nao localizado")
+    else:
+        require(compute, "Bc250GfxRingValidatePlan(Plan)",
+                "montagem de CP_RB0_CNTL sem validar o plano antes", errors)
+        # Mascarar o proprio campo em vez de recusar e' o defeito do item 1.
+        forbid(compute, "& GFX_RB_BUFSZ_MAX",
+               "mascaramento silencioso de RB_BUFSZ na montagem", errors)
+        forbid(compute, "& GFX_RB_BLKSZ_MAX",
+               "mascaramento silencioso de RB_BLKSZ na montagem", errors)
+
+    # 3. A perna 1 usa a FONTE UNICA da A15, nunca aritmetica repetida.
+    tripod = function_body(src, "BC250_TRIPOD_VERDICT Bc250GfxRingClassifyTripod")
+    if not tripod:
+        errors.append("Bc250GfxRingClassifyTripod nao localizado")
+    else:
+        require(tripod, "Bc250TripodWrapRingPointer(",
+                "reducao por volta do anel fora da fonte unica da A15", errors)
+        forbid(tripod, "% RingBytes",
+               "aritmetica de volta reimplementada em vez de usar o helper", errors)
+
+    # 4. O valor de poll do SDMA tem de ser detectavel, nao copiado.
+    require(hdr, "BC250_GFX_RING_POLL_CNTL_SDMA_BORROWED 0x00403004u",
+            "deteccao do valor de poll importado do SDMA", errors)
+
+    # 5. META-PORTAO no teste. strip_c_comments + escopo por funcao para que
+    #    assercao comentada ou neutralizada conte como ausente.
+    test_clean = strip_c_comments(test)
+    test_func = function_body(test_clean, "static int Bc250RunGfxRingContractTest")
+    if not test_func:
+        errors.append("funcao Bc250RunGfxRingContractTest ausente no teste do anel")
+    else:
+        require(test_func, "cntl == BC250_GFX_RING_CNTL_CONFIGURED_REFERENCE",
+                "teste exige que o CNTL calculado reproduza o POST medido", errors)
+        require(test_func, "Bc250GfxRingCntlRefusesNonExecutable(0x00A00709u) == 1u",
+                "teste exige deteccao do CP_RB0_CNTL nao executavel do prototipo", errors)
+        require(test_func, "== BC250_GFX_RING_NOT_EXECUTABLE",
+                "teste exige recusa de plano com RB_EXE=0", errors)
+        require(test_func, "4612u",
+                "teste exige o caso de volta do anel medido na corrida 17:43", errors)
+        require(test_func, "== BC250_GFX_RING_OK",
+                "teste exige o contraponto de plano valido", errors)
+        forbid(test_func, "assert(1)",
+               "neutralizacao de assercao no teste do anel grafico", errors)
+        forbid(test_func, "if (0)",
+               "bypass de assercao no teste do anel grafico", errors)
+
+    # =====================================================================
+    # 6. TRANSACAO FISICA (Lei 5). O contrato acima e' aritmetica; aqui e'
+    #    silicio, e cada estagio tem uma regra que ja foi violada no projeto.
+    # =====================================================================
+    txn_path = ROOT / "driver" / "core" / "bc250_gfx_ring_transaction.c"
+    if not txn_path.exists():
+        errors.append("bc250_gfx_ring_transaction.c ausente")
+        return
+    txn = txn_path.read_text(encoding="utf-8", errors="replace")
+
+    preflight = function_body(txn, "BC250_GFX_RING_TXN_STATUS Bc250GfxRingTxnPreflight")
+    if not preflight:
+        errors.append("Bc250GfxRingTxnPreflight nao localizado")
+    else:
+        # O preflight so' e' seguro de rodar numa corrida porque nao escreve.
+        forbid(preflight, "Bc250GfxTxnWrite(",
+               "escrita no estagio de PREFLIGHT, que precisa ser so-leitura", errors)
+        require(preflight, "Evidence->SnapshotTaken = 1u;",
+                "snapshot marcado ao fim do preflight", errors)
+
+    apply_body = function_body(txn, "BC250_GFX_RING_TXN_STATUS Bc250GfxRingTxnApply")
+    if not apply_body:
+        errors.append("Bc250GfxRingTxnApply nao localizado")
+    else:
+        require(apply_body, "Evidence->SnapshotTaken != 1u",
+                "APPLY sem exigir snapshot -- aplicar sem rota de volta viola a Lei 5", errors)
+        require(apply_body, "Bc250GfxRingPollCntlIsBorrowed(",
+                "APPLY sem barrar o valor de poll herdado do SDMA", errors)
+        require(apply_body, "return BC250_GFX_RING_TXN_READBACK_MISMATCH;",
+                "APPLY sem conferir a escrita por readback", errors)
+        # O desalt so' pode acontecer DEPOIS do readback do anel: soltar CE/PFP/ME
+        # com CP_RB0_BASE ainda em lixo (o boot entrega 0xFEDCBAEF) seria apontar
+        # a engine para endereco invalido.
+        require(apply_body, "Plan->UnhaltMicroEngines == 1u",
+                "APPLY desalta sem o plano pedir", errors)
+        require(apply_body, "Bc250GfxRingMicroEnginesAreHalted(Evidence->MeCntlAfter) != 0u",
+                "APPLY aceita desalt sem provar que o HALT saiu -- readback igual ao "
+                "escrito nao e' prova de que a engine soltou", errors)
+        forbid(apply_body, "0x15000000u",
+               "literal de CP_ME_CNTL no APPLY -- o desalt tem de usar a formula da "
+               "Lei 6 e preservar os bits que nao sao HALT", errors)
+
+        # A partida do anel so' pode ser declarada pelo READBACK. Escrever 1 em
+        # CP_RB0_ACTIVE e seguir em frente declararia pronto o que talvez nao
+        # tenha ligado -- sucesso sem backend (Lei 4).
+        require(apply_body, "return BC250_GFX_RING_TXN_NOT_STARTABLE;",
+                "APPLY sem recusa quando o anel nao fica ATIVO no readback", errors)
+        require(apply_body, "(Evidence->RingActivateReadback & 1u) == 0u",
+                "APPLY declara partida sem conferir CP_RB0_ACTIVE por readback", errors)
+        # Quatro enderecos que o prototipo usa achando que sao os *_IC_OP_CNTL.
+        # Medidos contra gc_10_1_0_offset.h: os reais estao em BASE_IDX 1.
+        for wrong in ("0x0000C4D0u", "0x0000C4D4u", "0x0000C4D8u", "0x0000C4DCu",
+                      "0x00028A60u", "0x00028A64u"):
+            forbid(apply_body, wrong,
+                   f"endereco {wrong} e' o que o prototipo usa e esta ERRADO "
+                   "(docs/03, bloco das seis divergencias)", errors)
+
+    rollback = function_body(txn, "BC250_GFX_RING_TXN_STATUS Bc250GfxRingTxnRollback")
+    if not rollback:
+        errors.append("Bc250GfxRingTxnRollback nao localizado")
+    else:
+        require(rollback, "Evidence->SnapshotTaken != 1u",
+                "ROLLBACK sem exigir snapshot", errors)
+        require(rollback, "readback != Evidence->CntlBefore",
+                "ROLLBACK sem conferir a restauracao por readback", errors)
+        require(rollback, "Evidence->UnhaltAttempted == 1u",
+                "ROLLBACK sem re-HALT das micro-engines -- deixa-las soltas sobre "
+                "uma configuracao sendo revertida e' o pior estado possivel", errors)
+        # Ordem inversa do APPLY: desativa o anel ANTES de re-HALT e de
+        # restaurar registrador. Reverter com o anel ATIVO e' o pior estado.
+        require(rollback, "Evidence->RingActivateAttempted == 1u",
+                "ROLLBACK sem desativar o anel antes de reverter a configuracao", errors)
+
+    txn_func = function_body(test_clean, "static int Bc250RunGfxRingTransactionTest")
+    if not txn_func:
+        errors.append("funcao Bc250RunGfxRingTransactionTest ausente no teste")
+    else:
+        require(txn_func, "ev.Writes == 0u",
+                "teste exige que o PREFLIGHT nao escreva nada", errors)
+        # Ancora de ocorrencia UNICA. "ev.Writes == 0u" aparece em tres casos
+        # legitimos, entao apagar o do preflight sozinho passava despercebido.
+        require(txn_func, "ev.Reads == 7u",
+                "teste exige a contagem exata de leituras do PREFLIGHT", errors)
+        require(txn_func, "BC250_GFX_RING_TXN_READBACK_MISMATCH",
+                "teste exige cobertura de readback mentiroso", errors)
+        require(txn_func, "BC250_GFX_RING_TXN_ROLLBACK_FAILED",
+                "teste exige cobertura de rollback que nao cola", errors)
+        require(txn_func, "BC250_GFX_RING_TXN_POLL_CNTL_BORROWED",
+                "teste exige cobertura do valor de poll herdado do SDMA", errors)
+        require(txn_func, "BC250_GFX_RING_TXN_NOT_STARTABLE",
+                "teste exige a parada de proveniencia", errors)
+        # O cenario de escrita descartada so' discrimina se o valor planejado
+        # DIFERIR do que a placa ja tem. A primeira versao deste teste caiu
+        # exatamente nisso: plano e POST coincidiam e a assercao nao testava nada.
+        require(txn_func, "ev.CntlBefore != ev.CntlPlanned",
+                "teste exige que o cenario de escrita descartada seja discriminante", errors)
+        require(txn_func, "ev.MicroEnginesHalted == 1u",
+                "teste exige que o preflight decodifique o estado das micro-engines", errors)
+        require(txn_func, "ev.UnhaltPassed == 1u",
+                "teste sem o caso positivo de desalt", errors)
+        require(txn_func, "ev.UnhaltAttempted == 0u",
+                "teste sem o CONTRAPONTO: sem pedido, CP_ME_CNTL nao pode ser tocado -- "
+                "sem ele o APPLY poderia desaltar sempre e os positivos passariam", errors)
+
+    # -----------------------------------------------------------------
+    # O ESTADO DE BOOT MEDIDO NAO PODE SER APAGADO NEM RENOMEADO DE VOLTA.
+    #
+    # A corrida 14/09 11:43 mediu o anel pela primeira vez e REFUTOU a minha
+    # premissa: o boot entrega CP_RB0_CNTL=0x00A00000 (RB_BUFSZ=0, RB_EXE=0) e
+    # CP_ME_CNTL=0x15000000 (CE/PFP/ME halted). A constante chamava-se
+    # OBSERVED_POST e nao era o POST -- mentira embutida no nome.
+    # -----------------------------------------------------------------
+    require(hdr, "BC250_GFX_RING_CNTL_MEASURED_BOOT 0x00A00000u",
+            "constante do CP_RB0_CNTL medido no boot", errors)
+    require(hdr, "BC250_GFX_RING_ME_CNTL_MEASURED_BOOT 0x15000000u",
+            "constante do CP_ME_CNTL medido no boot", errors)
+    # Proibe a DEFINICAO, nao a mencao: a nota historica que explica por que o
+    # nome mudou e' justamente o que impede a confusao de voltar.
+    forbid(hdr, "#define BC250_GFX_RING_CNTL_OBSERVED_POST",
+           "nome refutado pela medicao 14/09 -- 0x50000709 nao e' o estado de boot", errors)
+    require(test_func, "fields.RbExe == 0u",
+            "teste sem a assercao de que o boot entrega RB_EXE=0", errors)
+    require(test_func, "meFields.AllHalted == 1u",
+            "teste sem a assercao de que o boot entrega as tres micro-engines halted", errors)
+    # -----------------------------------------------------------------
+    # A SUITE OFFLINE NAO PODE DEPENDER DO ESTADO DA MAQUINA.
+    #
+    # MEDIDO EM 14/09: TestF5PmDrawEmissionOnNode1 APAGAVA a variavel de
+    # ambiente para exercitar o fail-closed, e com isso a decisao caia em
+    # HKLM. O bind das 11:43 mexeu no registro e a suite passou a reprovar SEM
+    # NENHUMA MUDANCA DE CODIGO. E' a segunda ocorrencia da classe: a faixa C1
+    # ja tinha encontrado a mesma dependencia em outro ponto (docs/234).
+    #
+    # Regra: quem testa DECLARA o valor; apagar deixa o registro decidir.
+    # -----------------------------------------------------------------
+    umd_src = (ROOT / "driver" / "umd" / "bc250_d3d_umd.c").read_text(
+        encoding="utf-8", errors="replace")
+    armed_fn = function_body(umd_src, "BOOL Bc250UmdExperimentalPm4DrawArmed")
+    if not armed_fn:
+        errors.append("Bc250UmdExperimentalPm4DrawArmed nao localizado")
+    else:
+        require(armed_fn, "return (envBuf[0] == '1') ? TRUE : FALSE;",
+                "variavel de ambiente nao e' autoritativa para DESARMAR -- a suite "
+                "offline volta a depender de HKLM", errors)
+    d3d_test = (ROOT / "driver" / "tests" / "bc250_d3d_umd_test.c").read_text(
+        encoding="utf-8", errors="replace")
+    forbid(d3d_test,
+           "SetEnvironmentVariableA(BC250_D3D11_EXPERIMENTAL_PM4_DRAW_ENV_NAME, NULL)",
+           "teste apaga a variavel de ambiente em vez de declarar o valor -- "
+           "a decisao cai no registro da maquina", errors)
+    require(d3d_test,
+            'SetEnvironmentVariableA(BC250_D3D11_EXPERIMENTAL_PM4_DRAW_ENV_NAME, "0")',
+            "teste sem a declaracao explicita do caso desarmado", errors)
+
+    require(test_func, "== BC250_GFX_RING_FIRMWARE_NOT_LOADED",
+            "teste sem a recusa de desalt sem firmware declarado", errors)
+    require(test_func, "Bc250GfxRingMicroEnginesAreHalted(0u) == 0u",
+            "teste sem o contraponto de micro-engines liberadas -- a funcao podia "
+            "devolver sempre 1 e todos os positivos passariam", errors)
+
+    # =====================================================================
+    # 7. O TUNABLE TEM DE SER LIDO NOS DOIS RAMOS DO #if.
+    #
+    # QUARTA ocorrencia da classe neste projeto: A13 (tunable de submissao),
+    # B4 (GpuvaLabPromotion) e ContextAbi ficaram num ramo de
+    # BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP e eram invisiveis no outro --
+    # cada uma custou uma corrida. A primeira versao do bloco do anel grafico
+    # repetiu o erro: leitura no ramo de producao, uso no ramo de laboratorio,
+    # tunable sempre 0 e medicao que nunca rodaria.
+    #
+    # O portao acompanha o aninhamento de #if/#else/#endif que mencionam a
+    # macro e exige que a leitura esteja FORA de qualquer um deles.
+    # =====================================================================
+    mini_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+    inf_path = ROOT / "driver" / "wdk" / "package" / "bc250mcdm.inf"
+    if not mini_path.exists() or not inf_path.exists():
+        errors.append("fontes ausentes para auditar o tunable do anel grafico")
+        return
+
+    mini = mini_path.read_text(encoding="utf-8", errors="replace")
+    macro = "BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP"
+    depth = 0
+    inside_macro_depth = None
+    found = False
+    for line in mini.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#if"):
+            depth += 1
+            if macro in stripped and inside_macro_depth is None:
+                inside_macro_depth = depth
+        elif stripped.startswith("#endif"):
+            if inside_macro_depth is not None and depth == inside_macro_depth:
+                inside_macro_depth = None
+            depth = max(0, depth - 1)
+        elif stripped.startswith("#else") or stripped.startswith("#elif"):
+            pass
+        elif 'L"GfxRingPreflight"' in line:
+            found = True
+            if inside_macro_depth is not None:
+                errors.append(
+                    "tunable GfxRingPreflight lido DENTRO de um bloco de "
+                    + macro
+                    + " -- a imagem que nao define a macro nunca o le (A13/B4/ContextAbi)")
+    if not found:
+        errors.append('leitura do tunable L"GfxRingPreflight" ausente do miniport')
+
+    # A chave so nasce pelo AddReg do INF; sem a linha, armar pelo registro nao
+    # tem onde escrever. Licao da ordem do ensaio de TDR (07/09).
+    inf = inf_path.read_text(encoding="utf-8", errors="replace")
+    require(inf, "HKR,Parameters,GfxRingPreflight,0x00010001,0",
+            "declaracao fail-closed de GfxRingPreflight no INF fonte", errors)
+
+    # A medicao nao pode alterar o veredito do StartDevice.
+    probe = function_body(mini, "static BC250_GFX_RING_TXN_STATUS Bc250ActiveProbeGfxRingReadonly")
+    if not probe:
+        errors.append("Bc250ActiveProbeGfxRingReadonly nao localizado")
+    else:
+        require(probe, "Bc250GfxRingTxnPreflight(&interfaceData, NULL, Evidence)",
+                "probe do anel grafico sem o modo de medicao pura (Plan == NULL)", errors)
+        require(probe, "writes != 0u",
+                "probe sem conferir o contador de escritas do proprio transporte", errors)
+        forbid(probe, "Bc250GfxRingTxnApply(",
+               "APPLY no caminho de medicao -- o probe tem de ser somente leitura", errors)
+
+    # =====================================================================
+    # 8. O TUNABLE TEM DE ATRAVESSAR O PIPELINE INTEIRO.
+    #
+    # Tres corridas deste projeto foram perdidas por defeito de HOST, nao de
+    # silicio. Um tunable que existe no codigo mas nao chega ao pacote, ou que
+    # o AddReg apaga durante o install, produz exatamente isso: a corrida roda,
+    # a medicao nao acontece e ninguem sabe por que. Cada elo abaixo ja falhou
+    # uma vez neste repositorio.
+    # =====================================================================
+    pkg_path = ROOT / "tools" / "build-bc250mcdm-package.ps1"
+    lab_path = ROOT / "tools" / "package-bc250mcdm-lab.ps1"
+    bind_path = ROOT / "tools" / "bind-bc250mcdm-lab.ps1"
+    arm_path = ROOT / "tools" / "arm-gfx-ring-preflight.ps1"
+    for path in (pkg_path, lab_path, bind_path, arm_path):
+        if not path.exists():
+            errors.append(f"ferramenta ausente no pipeline do anel grafico: {path.name}")
+            return
+
+    pkg = pkg_path.read_text(encoding="utf-8", errors="replace")
+    lab = lab_path.read_text(encoding="utf-8", errors="replace")
+    bind = bind_path.read_text(encoding="utf-8", errors="replace")
+
+    # O manifesto DERIVA do INF; declarar por literal criaria a segunda fonte de
+    # verdade que ja mordeu este projeto na geometria de GPUVA (faixa A11).
+    require(pkg, "Pacote bloqueado: INF sem HKR,Parameters,GfxRingPreflight",
+            "empacotador sem recusa quando o INF nao declara GfxRingPreflight", errors)
+    require(pkg, "GfxRingPreflight = $gfxRingValue",
+            "manifesto sem o valor de GfxRingPreflight derivado do INF", errors)
+
+    # NOCLOBBER: o KMD le o valor UMA vez no StartDevice, e um AddReg mandatorio
+    # apagaria em silencio o que o operador armou antes do bind. Foi essa classe
+    # de defeito que custou a corrida do ensaio de TDR (doc 186).
+    require(lab, "'HKR,Parameters,GfxRingPreflight,0x00010003,0'",
+            "INF de laboratorio sem GfxRingPreflight NOCLOBBER -- o install apagaria "
+            "o valor armado antes do bind (doc 186)", errors)
+    require(lab, "'Parameters,GfxRingPreflight' = '0x00010003'",
+            "empacotador de laboratorio sem a flag NOCLOBBER de GfxRingPreflight", errors)
+    # O manifesto de LABORATORIO e' gerado por um bloco proprio -- a primeira
+    # versao deste portao auditou so' o empacotador de producao, e o campo saiu
+    # VAZIO no manifesto do candidato. Medido no pacote 3.178.1.0.
+    require(lab, "GfxRingPreflight = $gfxRingPreflightValue",
+            "manifesto de laboratorio sem o valor de GfxRingPreflight", errors)
+    require(lab, "Pacote de laboratorio bloqueado: INF empacotado sem HKR,Parameters,GfxRingPreflight",
+            "empacotador de laboratorio sem recusa quando o INF empacotado nao declara o campo", errors)
+
+    # A politica pre-bind e' o unico momento em que a chave existe e o
+    # StartDevice ainda nao rodou.
+    require(bind, "GfxRingPreflight = $(if ($EnableGfxRingPreflight) { 1 } else { 0 })",
+            "binder sem GfxRingPreflight na politica pre-bind", errors)
+    require(bind, "[switch]$EnableGfxRingPreflight",
+            "binder sem o switch -EnableGfxRingPreflight", errors)
+
+    # -----------------------------------------------------------------
+    # O ENSAIO DO ANEL (GfxRingBringup) ESCREVE EM REGISTRADOR. O pipeline
+    # inteiro tem de carrega-lo, pelos mesmos motivos do preflight -- e com
+    # uma exigencia a mais: o rollback SEMPRE roda, porque o ensaio mede e nao
+    # deixa anel montado.
+    # -----------------------------------------------------------------
+    require(inf, "HKR,Parameters,GfxRingBringup,0x00010001,0",
+            "declaracao fail-closed de GfxRingBringup no INF fonte", errors)
+    require(pkg, "Pacote bloqueado: INF sem HKR,Parameters,GfxRingBringup",
+            "empacotador sem recusa quando o INF nao declara GfxRingBringup", errors)
+    require(lab, "'HKR,Parameters,GfxRingBringup,0x00010003,0'",
+            "INF de laboratorio sem GfxRingBringup NOCLOBBER", errors)
+    require(bind, "GfxRingBringup = $GfxRingBringupLevel",
+            "binder sem GfxRingBringup na politica pre-bind", errors)
+    require(bind, "$gfxBringupFlag",
+            "binder sem o flag do ensaio na dica do dry-run -- o operador rodaria "
+            "um comando que perde o nivel (precedente C3.9 e corrida 14/09 11:27)", errors)
+
+    bringup = function_body(mini, "static BC250_GFX_RING_TXN_STATUS Bc250ActiveRunGfxRingBringup")
+    if not bringup:
+        errors.append("Bc250ActiveRunGfxRingBringup nao localizado")
+    else:
+        require(bringup, "rollbackStatus = Bc250GfxRingTxnRollback",
+                "ensaio do anel sem rollback -- ele mede, nao deixa anel montado", errors)
+        require(bringup, "Bc250VramRelease(allocator, token)",
+                "ensaio do anel sem devolver a VRAM", errors)
+        require(bringup, "Bc250MmioTopologyUnmap(&Context->Core.MmioTransport)",
+                "ensaio do anel sem desmapear o transporte", errors)
+        require(bringup, "Level >= 2u",
+                "ensaio sem separar os niveis -- level 1 nao pode desaltar nem ligar", errors)
+        # Corrida 14/09 13:18 perdeu o ensaio com wrong_state: o caminho do PFP
+        # deixa o transporte MAPEADO e o mapeamento recusa estado nao-vazio.
+        # Classe A16, que ja custou a corrida de 08/09 11:48.
+        require(bringup, "Context->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED",
+                "ensaio nao checa se o transporte ja esta mapeado (A16)", errors)
+        require(bringup, "if (mappedByUs == 1u)",
+                "ensaio desmapearia o transporte alheio -- so' pode desmapear o que "
+                "ele proprio mapeou", errors)
+
+    # -----------------------------------------------------------------
+    # TODO switch -Enable* TEM de aparecer na DICA do dry-run.
+    #
+    # O operador roda o comando que o dry-run imprime. Um flag que existe no
+    # param() mas nao na dica produz uma corrida que parece correta e nao
+    # exercita nada. JA ACONTECEU DUAS VEZES: na faixa C3.9
+    # (Node1JournalGatePerProcess, registrado em comentario no proprio
+    # arquivo) e na corrida 14/09 11:27, que foi GASTA com
+    # "GfxRingPreflight=0 (present=1 compiled=1)".
+    #
+    # A auditoria da mesma passada achou EnableD3D11ShaderTranslator com o
+    # mesmo defeito, latente desde antes da B.1.
+    # -----------------------------------------------------------------
+    import re as _re
+    declared = set(_re.findall(r"\[switch\]\$(Enable[A-Za-z0-9]+)", bind))
+    hinted = set(_re.findall(r"Flag = \$\(if \(\$(Enable[A-Za-z0-9]+)\)", bind))
+    missing = sorted(declared - hinted)
+    for name in missing:
+        errors.append(
+            f"switch -{name} existe no binder mas NAO entra na dica do dry-run -- "
+            "o operador rodaria um comando que perde o flag (precedente C3.9 e "
+            "corrida 14/09 11:27)")
+
+    # =====================================================================
+    # 9. SUITE DE MUTACAO NAO PODE MEXER NO RELOGIO DOS FONTES.
+    #
+    # MEDIDO EM 14/09: as suites gravam o fonte mutado e restauram o conteudo,
+    # mas nao o mtime. package-bc250mcdm-lab.ps1 tem guarda de obsolescencia
+    # POR DATA, entao rodar a suite depois de construir a imagem de laboratorio
+    # invalidava o pacote sem uma linha de codigo ter mudado -- e exigia um
+    # rebuild que so' o dono do projeto pode autorizar (flag destrutiva).
+    #
+    # A guarda por data esta CERTA e nao deve ser afrouxada. Quem estava errado
+    # era a suite. tools/_mutation_mtime.py restaura os carimbos.
+    # =====================================================================
+    helper = ROOT / "tools" / "_mutation_mtime.py"
+    if not helper.exists():
+        errors.append("tools/_mutation_mtime.py ausente -- suites de mutacao "
+                      "invalidariam o pacote de laboratorio pela data")
+    else:
+        for suite in sorted((ROOT / "tools").glob("test-*.py")):
+            text = suite.read_text(encoding="utf-8", errors="replace")
+            if "write_text" not in text:
+                continue
+            touches_driver = ('ROOT / "driver"' in text) or ("ROOT / 'driver'" in text)
+            if touches_driver and "preserve_mtimes" not in text:
+                errors.append(
+                    f"{suite.name} reescreve fontes sob driver/ sem preserve_mtimes -- "
+                    "invalida a guarda de obsolescencia do pacote de laboratorio")
+
+
+def audit_f3_pixel_and_residency_truth(errors: list[str]) -> None:
+    """F3: execution is independent of color; residency comes from the OS.
+
+    F0's blanket ban on EVICTED_TO_DISK assertions was itself incorrect:
+    DXGI_DDI_ARG_QUERYRESOURCERESIDENCY defines it as nonresident. Test the
+    callback + aggregate HRESULT instead of choosing an enum by its name.
+    """
+    def read(name):
+        return (ROOT / name).read_text(encoding="utf-8", errors="replace")
+    umd = read("driver/umd/bc250_d3d_umd.c")
+    winsys = read("driver/umd/bc250_wddm_winsys.c")
+    display = read("driver/wdk/bc250_display_ddi.c")
+    test = read("driver/tests/bc250_d3d_umd_test.c")
+    wtest = read("driver/tests/bc250_wddm_winsys_test.c")
+    proof = read("driver/core/bc250_blt_proof_contract.c")
+    ptest = read("driver/tests/blt_proof_contract_test.c")
+    clear = function_body(umd, "VOID APIENTRY Bc250Umd10ClearRenderTargetView")
+    require(clear, "ClearRenderTargetView RECUSADO", "F3 clear names missing GPU fill", errors)
+    require(clear, "pfnSetErrorCb(device->hRTCoreLayer, E_NOTIMPL)", "F3 clear reports error to runtime", errors)
+    forbid(clear, "pCpuShadow", "F3 clear writes or allocates a CPU shadow", errors)
+    q = function_body(umd, "HRESULT APIENTRY Bc250DxgiQueryResourceResidency")
+    require(q, "pfnQueryResidencyCb(device->hRTDevice.handle, &args)", "F3 residency queries OS", errors)
+    forbid(q, "Allocation.Resident", "F3 residency inferred from local cache", errors)
+    require(q, "result = S_NOT_RESIDENT;", "F3 nonresident aggregate status", errors)
+    require(q, "return E_UNEXPECTED;", "F3 unknown residency rejected", errors)
+    create = function_body(umd, "VOID APIENTRY Bc250Umd10CreateResource")
+    for name in ("MapAllocation", "MakeResident", "WaitPaging"):
+        require(create, "wsStatus = Bc250Winsys" + name, "F3 creation checks " + name, errors)
+        forbid(create, "(void)Bc250Winsys" + name, "F3 creation discards " + name, errors)
+    require(create, "BC250_WINSYS_STATUS cleanup = Bc250WinsysDeallocate", "F3 creation rolls back", errors)
+    require(create, "CreateResource RECUSADO", "F3 creation reports failure", errors)
+    resident = function_body(winsys, "BC250_WINSYS_STATUS Bc250WinsysMakeResident")
+    require(resident, "if (Allocation->ResidencyPending) goto complete_residency;", "F3 pending retry avoids second request", errors)
+    require(resident, "waitStatus = Bc250WinsysWaitPaging(Context, Allocation);", "F3 residency waits for paging", errors)
+    require(resident, "if (waitStatus != BC250_WINSYS_OK) return waitStatus;", "F3 wait failure propagated", errors)
+    if resident.find("Allocation->Resident = TRUE;") < resident.find("waitStatus = Bc250WinsysWaitPaging"):
+        errors.append("F3 resident published before paging completion")
+    present = function_body(display, "NTSTATUS APIENTRY Bc250DxgkDdiPresent")
+    forbid(present, "Blt preservado", "F3 black frame suppressed", errors)
+    forbid(present, "if (srcOk && srcNz == 0u", "F3 content controls presentation", errors)
+    require(present, "presentStatus = Bc250PresentCopySucceeded(sdmaDone,", "F3 Present status depends on actual copy", errors)
+    require(present, "STATUS_SUCCESS : STATUS_GRAPHICS_GPU_EXCEPTION_ON_DEVICE;", "F3 failed copy is not success", errors)
+    require(proof, "return (CopyCompleted != 0u || SameSurface != 0u) ? 1u : 0u;", "F3 copy outcome contract", errors)
+    # Meta-gates: pin behavioral counterexamples, not old CPU pixel expectations.
+    require(test, "assert(g_SetErrorCalls == before + 1u && g_LastUmdError == E_NOTIMPL);", "F3 test requires Clear refusal", errors)
+    require(test, "assert(((unsigned char*)resColor.pCpuShadow)[0] == 0x5A);", "F3 test preserves Map shadow", errors)
+    require(test, "assert(g_QueryCalls == 2u);", "F3 test requires OS query", errors)
+    require(test, "assert(hr == S_NOT_RESIDENT);", "F3 test requires nonresident HRESULT", errors)
+    require(test, "assert(!res.Created);", "F3 test rejects partial creation", errors)
+    require(test, "assert(g_CreateDeallocs == (stage == 1u ? 0u : 1u));", "F3 test requires creation cleanup", errors)
+    pending = function_body(wtest, "static void TestPagingPendingStatus")
+    require(pending, "assert(!allocation.Resident);", "F3 test forbids resident on failed wait", errors)
+    require(pending, "assert(g_State.MakeResidentCalls == 1u); /* retry waits", "F3 test checks retry reference", errors)
+    require(ptest, "CHECK(Bc250PresentCopySucceeded(0u, 0u) == 0u);", "F3 test forbids failed copy success", errors)
+
+
 def audit_dxgi_present_chain_honest(errors: list[str]) -> None:
     """F0.3 (13/09) -- AS DDIs DA CADEIA DE APRESENTACAO NAO PODEM DECLARAR SUCESSO SEM BACKEND.
 
@@ -679,8 +1434,6 @@ def audit_dxgi_present_chain_honest(errors: list[str]) -> None:
     for needle, label in (
         ("hr = dxgiFuncs.pfnSetDisplayMode(&setDisplayMode);\n    assert(hr == S_OK);",
          "o teste voltou a exigir S_OK de SetDisplayMode sem backend"),
-        ("assert(residencyStatus[1] == DXGI_DDI_RESIDENCY_EVICTED_TO_DISK);",
-         "o teste voltou a congelar EVICTED_TO_DISK na residencia"),
     ):
         if needle in test:
             errors.append(label)
@@ -4445,9 +5198,15 @@ def main() -> int:
     audit_umd_trace_reaches_the_evidence_file(errors)
     audit_composition_never_submits_a_context(errors)
     audit_primary_allocation_is_declared_to_the_kernel(errors)
+    audit_primary_is_not_overbroad(errors)
+    audit_dxgi_1_6_table_complete(errors)
+    audit_f5_2_pm4_draw_pipeline(errors)
     audit_present_path_is_not_mute(errors)
     audit_dxgi_present_chain_honest(errors)
+    audit_f3_pixel_and_residency_truth(errors)
     audit_describe_allocation_is_not_mute(errors)
+    audit_gfx_ring_contract_is_honest(errors)
+    audit_offline_check_is_not_inverted(errors)
 
     if errors:
         print("BC250 MCDM SAFETY AUDIT: FAILED")
@@ -4459,6 +5218,8 @@ def main() -> int:
     print("  synthetic ownership/reservations: absent")
     print("  GPUVA geometry (GPUMMUCAPS vs UMDRIVERPRIVATE): single source")
     print("  operational DDIs without hardware backing: fail-closed")
+    print("  DXGI 1.6 table complete (22 slots, MaxPlanes=1, fail-closed): enforced")
+    print("  Parede B (PM4 3D draw on Node 1, CB alignment, separate telemetry): enforced")
     print("  'IB EXECUTADO' restricted to the INDIRECT path: enforced")
     print("  SDMA tripod leg 1 (RPTR==WPTR) inside the gate: enforced")
     print("  INDIRECT data leg (canary proof): enforced")
@@ -4472,9 +5233,11 @@ def main() -> int:
     print("  second readonly preflight sees an empty MMIO transport: enforced")
     print("  UMD/winsys trace reaches the archived evidence file: enforced")
     print("  primary allocation declared to the kernel (hResource+Primary+VidPnSourceId): enforced")
+    print("  primary derivation narrowed (dwm.exe primary, Explorer.EXE non-primary): enforced")
     print("  Present path speaks on both sides; device/context sampling unshared: enforced")
     print("  DXGI presentation chain refuses instead of faking success; test cannot re-freeze it: enforced")
     print("  DescribeAllocation speaks on entry and on every refusal: enforced")
+    print("  pixel and residency truth (no CPU clear, no suppressed black blt, OS residency): enforced")
     print("  DWM composition runs on the KMD blt path, never a context submit: enforced")
     print("  process/device/context DDIs name their refusals: enforced")
     print("  context ABI populated before ContextAbiReady: enforced")

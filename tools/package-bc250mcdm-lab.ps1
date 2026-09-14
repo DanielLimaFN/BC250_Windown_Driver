@@ -271,6 +271,15 @@ $infContent = $infContent | ForEach-Object {
         'HKR,Parameters,GpuvaLabPromotion,0x00010003,0'
     } elseif ($_ -match 'HKR,Parameters,SdmaPlanoAFallback,0x000100(01|03),\d+') {
         'HKR,Parameters,SdmaPlanoAFallback,0x00010003,0'
+    } elseif ($_ -match 'HKR,Parameters,GfxRingBringup,0x000100(01|03),\d+') {
+        # NOCLOBBER pela mesma razao do preflight: lido UMA vez no StartDevice.
+        'HKR,Parameters,GfxRingBringup,0x00010003,0'
+    } elseif ($_ -match 'HKR,Parameters,GfxRingPreflight,0x000100(01|03),\d+') {
+        # B.1: DEFAULT, nao mandato. NOCLOBBER pela MESMA razao que custou a
+        # corrida do ensaio de TDR (doc 186): o valor e lido UMA vez, no
+        # StartDevice, e um AddReg mandatorio apagaria em silencio o que o
+        # operador armou antes do bind. Pacote recem-instalado nao mede nada.
+        'HKR,Parameters,GfxRingPreflight,0x00010003,0'
     } elseif ($_ -match 'HKR,Parameters,Node1JournalGatePerProcess,0x000100(01|03),\d+') {
         # C3.9: DEFAULT, nao mandato. NOCLOBBER para que o operador possa armar
         # antes do bind sem que o AddReg do install apague em silencio -- foi
@@ -295,6 +304,8 @@ $expectedInfValues = [ordered]@{
     'Parameters,PersistentSubmission' = $(if ($EnablePersistentSubmission) { 1 } else { 0 })
     'Parameters,GpuvaLabPromotion' = 0
     'Parameters,SdmaPlanoAFallback' = 0
+    'Parameters,GfxRingPreflight' = 0
+    'Parameters,GfxRingBringup' = 0
     'Parameters,Node1JournalGatePerProcess' = 0
     'Parameters,SdmaAutoCtxSw' = $(if ($EnableShaderDispatch) { 0 } else { 1 })
 }
@@ -303,6 +314,8 @@ $expectedInfValues = [ordered]@{
 $infValueFlags = @{
     'Parameters,GpuvaLabPromotion' = '0x00010003'
     'Parameters,SdmaPlanoAFallback' = '0x00010003'
+    'Parameters,GfxRingPreflight' = '0x00010003'
+    'Parameters,GfxRingBringup' = '0x00010003'
     'Parameters,Node1JournalGatePerProcess' = '0x00010003'
 }
 $renderedInf = Get-Content -LiteralPath $packageInf -Raw
@@ -353,6 +366,27 @@ $driverVersionLine = Get-Content -LiteralPath $packageInf |
     Where-Object { $_ -match '^DriverVer=' } |
     Select-Object -First 1
 
+# B.1: o valor sai do INF JA EMPACOTADO, nao do INF fonte -- o empacotador
+# reescreve a linha para NOCLOBBER, e o manifesto tem de descrever o artefato
+# que sera instalado, nao o que estava na arvore.
+$gfxRingPreflightLine = Get-Content -LiteralPath $packageInf |
+    Where-Object { $_ -match '^HKR,Parameters,GfxRingPreflight,0x000100(?:01|03),(\d+)$' } |
+    Select-Object -First 1
+if (-not $gfxRingPreflightLine) {
+    throw 'Pacote de laboratorio bloqueado: INF empacotado sem HKR,Parameters,GfxRingPreflight -- o manifesto nao pode declarar a medicao do anel grafico.'
+}
+$gfxRingPreflightLine -match '^HKR,Parameters,GfxRingPreflight,0x000100(?:01|03),(\d+)$' | Out-Null
+$gfxRingPreflightValue = [int]$Matches[1]
+
+$gfxRingBringupLine = Get-Content -LiteralPath $packageInf |
+    Where-Object { $_ -match '^HKR,Parameters,GfxRingBringup,0x000100(?:01|03),(\d+)$' } |
+    Select-Object -First 1
+if (-not $gfxRingBringupLine) {
+    throw 'Pacote de laboratorio bloqueado: INF empacotado sem HKR,Parameters,GfxRingBringup.'
+}
+$gfxRingBringupLine -match '^HKR,Parameters,GfxRingBringup,0x000100(?:01|03),(\d+)$' | Out-Null
+$gfxRingBringupValue = [int]$Matches[1]
+
 $manifest = [ordered]@{
     SchemaVersion = 1
     BuildKind = 'MCDM_LAB_BRINGUP'
@@ -374,6 +408,14 @@ $manifest = [ordered]@{
     SdmaAutoCtxSwEnabled = -not [bool]$EnableShaderDispatch
     PersistentSubmissionEnabled = [bool]$EnablePersistentSubmission
     GpuvaLabPromotionEnabled = $false
+    # B.1: DERIVADO do INF empacotado, nunca literal. Declarar por literal aqui
+    # criaria a segunda fonte de verdade que ja mordeu este projeto na faixa
+    # A11 (geometria de GPUVA). O operador tem direito de saber pelo manifesto
+    # o que o pacote pede ao silicio -- mesmo sendo somente leitura.
+    GfxRingPreflight = $gfxRingPreflightValue
+    GfxRingPreflightArmed = ($gfxRingPreflightValue -ne 0)
+    GfxRingBringup = $gfxRingBringupValue
+    GfxRingBringupArmed = ($gfxRingBringupValue -ne 0)
     Node1TripodDefaultArmed = $false
     D3D10_11NativeReady = $false
     VisualStudio = '2026'

@@ -609,6 +609,22 @@ static int Bc250RunDisplayVidPnTest(void)
     CHECK(!Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
         &resolvedPhysical, &resolvedSegment));
 
+    /* Modelo Flip (WDDM 2.0+): resolve com Flags.Flip==1 e Flags.Blt==0 */
+    presentArg.Flags.Blt = 0u;
+    presentArg.Flags.Flip = 1u;
+    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].SegmentId = 1u;
+    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].PhysicalAddress.QuadPart = 0xAD0000ll;
+    CHECK(Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
+        &resolvedPhysical, &resolvedSegment));
+    CHECK(resolvedPhysical == 0xAD0000ull && resolvedSegment == 1u);
+    /* Falha fechada: se nem Blt nem Flip forem solicitados, rejeita */
+    presentArg.Flags.Flip = 0u;
+    CHECK(!Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
+        &resolvedPhysical, &resolvedSegment));
+    presentArg.Flags.Blt = 1u;
+    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].SegmentId = 0u;
+    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].PhysicalAddress.QuadPart = 0ll;
+
     /* O tracker paralelo pode ser consultado para diagnostico, mas nao tem
      * autoridade para liberar Present antes do commit do journal/FlushTlb. */
     Bc250DisplayRecordGpuVaMapping((HANDLE)0x9980, 0xAC0000ull, 0xC10000ull, 11075584ull, 1u);

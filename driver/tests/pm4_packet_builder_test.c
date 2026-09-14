@@ -17,7 +17,11 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
 #define CHECK(Expression) do { if (!(Expression)) return 0; } while (0)
 #else
 #include <stdio.h>
-#define CHECK(Expression) do { if (!(Expression)) return 1; } while (0)
+/* Falha devolve 0 porque main() faz `return Run() ? 0 : 1`: devolver 1
+ * aqui fazia a falha virar SUCESSO no build offline. Medido em 14/09
+ * quebrando o emissor de proposito -- suite offline saiu EXIT=0 e a
+ * kernel EXIT=1. Travado por audit_offline_check_is_not_inverted. */
+#define CHECK(Expression) do { if (!(Expression)) return 0; } while (0)
 #endif
 
 #define TEST_PM4_RING_DWORDS 128u
@@ -61,6 +65,69 @@ static int Bc250RunPm4PacketBuilderTest(void)
     CHECK(g_pm4Ring[3] == 0x00000800u); /* Dst High */
     CHECK(g_pm4Ring[4] == 0xDEADBEEFu);
     CHECK(g_pm4Ring[5] == 0xCAFEBABEu);
+
+    /* 2b. Test DRAW_INDEX_AUTO emission */
+    cursor = 0;
+    memset(g_pm4Ring, 0, sizeof(g_pm4Ring));
+    CHECK(Bc250Pm4EmitDrawIndexAuto(
+        g_pm4Ring, TEST_PM4_RING_DWORDS, &cursor,
+        3u, BC250_PM4_DI_PT_TRIANGLELIST) == BC250_PM4_OK);
+    CHECK(cursor == 3u);
+    CHECK(g_pm4Ring[0] == 0xC0012D00u); /* Type 3, Count 1 (2 dwords payload), Op 0x2D */
+    CHECK(g_pm4Ring[1] == 3u);          /* IndexCount = 3 */
+    CHECK(g_pm4Ring[2] == BC250_PM4_DI_PT_TRIANGLELIST);
+
+    /* 2c. Test COLOR_TARGET_0 emission */
+    cursor = 0;
+    memset(g_pm4Ring, 0, sizeof(g_pm4Ring));
+    CHECK(Bc250Pm4EmitColorTarget0(
+        g_pm4Ring, TEST_PM4_RING_DWORDS, &cursor,
+        0x0000000010000000ull, 1920u, 1080u, 7680u, 0x16u, 1u) == BC250_PM4_OK);
+    CHECK(cursor == 8u);
+    CHECK(g_pm4Ring[0] == 0xC0066900u); /* Type 3, Count 6 (7 dwords payload: regOffset + 6 values), Op 0x69 */
+    CHECK(g_pm4Ring[1] == 0x318u);       /* Reg Offset relative to 0xA000 */
+    CHECK(g_pm4Ring[2] == (uint32_t)(0x0000000010000000ull >> 8)); /* CB_COLOR0_BASE */
+    CHECK(g_pm4Ring[6] == (((0x16u & 0x1Fu) << 2) | (1u << 11) | (1u << 16))); /* CB_COLOR0_INFO */
+    /* Test misalignment rejection */
+    CHECK(Bc250Pm4EmitColorTarget0(
+        g_pm4Ring, TEST_PM4_RING_DWORDS, &cursor,
+        0x0000000010000004ull, 1920u, 1080u, 7680u, 0x16u, 1u) == BC250_PM4_MISALIGNED);
+
+    /*
+     * FAIL-CLOSED DE LARGURA DE CAMPO (docs/03, bloco "GFX10 3D").
+     * CB_COLOR0_PITCH.TILE_MAX e' [10:0] e CB_COLOR0_SLICE.TILE_MAX e' [21:0].
+     * Antes desta faixa o emissor MASCARAVA em silencio, produzindo um render
+     * target com geometria errada que o hardware aceitaria -- falso sucesso.
+     * O CONTRAPONTO no limite exato existe para a recusa nao virar peneira.
+     */
+    cursor = 0;
+    /* Contraponto: pitch de 16384 px cai EXATAMENTE em TILE_MAX = 2047 -> aceito */
+    CHECK(Bc250Pm4EmitColorTarget0(
+        g_pm4Ring, TEST_PM4_RING_DWORDS, &cursor,
+        0x0000000010000000ull, 16384u, 8u, 65536u, 0x16u, 1u) == BC250_PM4_OK);
+    CHECK(g_pm4Ring[3] == 0x7FFu); /* CB_COLOR0_PITCH.TILE_MAX no teto, sem truncar */
+    /* Um tile alem do teto de PITCH -> RECUSA, nunca mascara */
+    cursor = 0;
+    CHECK(Bc250Pm4EmitColorTarget0(
+        g_pm4Ring, TEST_PM4_RING_DWORDS, &cursor,
+        0x0000000010000000ull, 16392u, 8u, 65568u, 0x16u, 1u) == BC250_PM4_BAD_ARGUMENT);
+    /* Altura que estoura SLICE.TILE_MAX com PITCH ainda dentro -> RECUSA isolada */
+    cursor = 0;
+    CHECK(Bc250Pm4EmitColorTarget0(
+        g_pm4Ring, TEST_PM4_RING_DWORDS, &cursor,
+        0x0000000010000000ull, 16384u, 16392u, 65536u, 0x16u, 1u) == BC250_PM4_BAD_ARGUMENT);
+
+    /* 2d. Test WINDOW_SCISSOR emission */
+    cursor = 0;
+    memset(g_pm4Ring, 0, sizeof(g_pm4Ring));
+    CHECK(Bc250Pm4EmitWindowScissor(
+        g_pm4Ring, TEST_PM4_RING_DWORDS, &cursor,
+        0u, 0u, 1920u, 1080u) == BC250_PM4_OK);
+    CHECK(cursor == 4u);
+    CHECK(g_pm4Ring[0] == 0xC0026900u); /* Type 3, Count 2 (3 dwords payload: regOffset + 2 values), Op 0x69 */
+    CHECK(g_pm4Ring[1] == 0x81u);        /* Reg Offset relative to 0xA000 */
+    CHECK(g_pm4Ring[2] == 0x80000000u);  /* TL: (0,0) with OffsetDisable bit 31 */
+    CHECK(g_pm4Ring[3] == (1920u | (1080u << 16))); /* BR: (1920, 1080) */
 
     /* 3. Test SET_SH_REG emission */
     cursor = 0;

@@ -367,7 +367,7 @@ static BOOLEAN Bc250DisplayResolveAllocationSlot(
         {
             if (g_Bc250DisplayGpuVaResolver != NULL &&
                 g_Bc250DisplayGpuVaResolver(Context, (UINT64)AllocInfo->AllocationVirtualAddress, PhysicalAddress, SegmentId)) {
-                if (*SegmentId == 1u && *PhysicalAddress > 0ull) {
+                if (*SegmentId == 1u) {
                     return TRUE;
                 }
             }
@@ -386,7 +386,8 @@ BOOLEAN Bc250DisplayResolvePresentSource(
     if (PhysicalAddress != NULL) *PhysicalAddress = 0ull;
     if (SegmentId != NULL) *SegmentId = 0u;
     if (Context == NULL || Present == NULL || Present->pAllocationInfo == NULL ||
-        PhysicalAddress == NULL || SegmentId == NULL || Present->Flags.Blt == 0u) {
+        PhysicalAddress == NULL || SegmentId == NULL ||
+        (Present->Flags.Blt == 0u && Present->Flags.Flip == 0u)) {
         return FALSE;
     }
 
@@ -404,7 +405,8 @@ BOOLEAN Bc250DisplayResolvePresentDestination(
     if (PhysicalAddress != NULL) *PhysicalAddress = 0ull;
     if (SegmentId != NULL) *SegmentId = 0u;
     if (Context == NULL || Present == NULL || Present->pAllocationInfo == NULL ||
-        PhysicalAddress == NULL || SegmentId == NULL || Present->Flags.Blt == 0u) {
+        PhysicalAddress == NULL || SegmentId == NULL ||
+        (Present->Flags.Blt == 0u && Present->Flags.Flip == 0u)) {
         return FALSE;
     }
 
@@ -2444,6 +2446,205 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddress(
     return STATUS_SUCCESS;
 }
 
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM1_3)
+NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay(
+    IN_CONST_HANDLE hAdapter,
+    IN_CONST_PDXGKARG_SETVIDPNSOURCEADDRESSWITHMULTIPLANEOVERLAY pSetVidPnSourceAddressWithMultiPlaneOverlay)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId != 0) {
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount == 0) {
+        Bc250DisplayLog("=== SetVidPnSourceAddressWithMultiPlaneOverlay (PlaneCount=0, MPO disabled, SourceId=%u) ===\n",
+            pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId);
+        return STATUS_SUCCESS;
+    }
+
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->pPlanes != NULL) {
+        CONST DXGK_MULTIPLANE_OVERLAY_PLANE *pPlane0 = &pSetVidPnSourceAddressWithMultiPlaneOverlay->pPlanes[0];
+        if (pPlane0->AllocationSegment != 0) {
+            g_Bc250DisplayState.PrimaryAddress = pPlane0->AllocationAddress;
+            g_Bc250DisplayState.PrimarySegment = pPlane0->AllocationSegment;
+            g_Bc250DisplayState.hPrimarySourceAllocation = pPlane0->hAllocation;
+            g_Bc250DisplayState.PrimaryAddressValid = TRUE;
+            Bc250DisplayLog("=== SetVidPnSourceAddressWithMultiPlaneOverlay (SourceId=%u, Seg=%u, Addr=0x%I64X, hAlloc=%p, PlaneCount=%u) ===\n",
+                pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId,
+                pPlane0->AllocationSegment,
+                pPlane0->AllocationAddress.QuadPart,
+                pPlane0->hAllocation,
+                pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount);
+        }
+    }
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS APIENTRY Bc250DxgkDdiCheckMultiPlaneOverlaySupport(
+    IN_CONST_HANDLE hAdapter,
+    IN_OUT_PDXGKARG_CHECKMULTIPLANEOVERLAYSUPPORT pCheckMultiPlaneOverlaySupport)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pCheckMultiPlaneOverlaySupport == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    pCheckMultiPlaneOverlaySupport->ReturnInfo.Value = 0;
+    if (pCheckMultiPlaneOverlaySupport->PlaneCount <= 1u) {
+        pCheckMultiPlaneOverlaySupport->Supported = TRUE;
+    } else {
+        pCheckMultiPlaneOverlaySupport->Supported = FALSE;
+    }
+    Bc250DisplayLog("=== CheckMultiPlaneOverlaySupport (Planes=%u, Supported=%d) ===\n",
+        pCheckMultiPlaneOverlaySupport->PlaneCount,
+        (int)pCheckMultiPlaneOverlaySupport->Supported);
+    return STATUS_SUCCESS;
+}
+#endif
+
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_0)
+NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay2(
+    IN_CONST_HANDLE hAdapter,
+    IN_CONST_PDXGKARG_SETVIDPNSOURCEADDRESSWITHMULTIPLANEOVERLAY2 pSetVidPnSourceAddressWithMultiPlaneOverlay)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId != 0) {
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount == 0) {
+        Bc250DisplayLog("=== SetVidPnSourceAddressWithMultiPlaneOverlay2 (PlaneCount=0, MPO disabled, SourceId=%u) ===\n",
+            pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId);
+        return STATUS_SUCCESS;
+    }
+
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->pPlanes != NULL) {
+        CONST DXGK_MULTIPLANE_OVERLAY_PLANE2 *pPlane0 = &pSetVidPnSourceAddressWithMultiPlaneOverlay->pPlanes[0];
+        if (pPlane0->AllocationSegment != 0) {
+            g_Bc250DisplayState.PrimaryAddress = pPlane0->AllocationAddress;
+            g_Bc250DisplayState.PrimarySegment = pPlane0->AllocationSegment;
+            g_Bc250DisplayState.hPrimarySourceAllocation = pPlane0->hAllocation;
+            g_Bc250DisplayState.PrimaryAddressValid = TRUE;
+            Bc250DisplayLog("=== SetVidPnSourceAddressWithMultiPlaneOverlay2 (SourceId=%u, Seg=%u, Addr=0x%I64X, hAlloc=%p, PlaneCount=%u) ===\n",
+                pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId,
+                pPlane0->AllocationSegment,
+                pPlane0->AllocationAddress.QuadPart,
+                pPlane0->hAllocation,
+                pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount);
+        }
+    }
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS APIENTRY Bc250DxgkDdiCheckMultiPlaneOverlaySupport2(
+    IN_CONST_HANDLE hAdapter,
+    IN_OUT_PDXGKARG_CHECKMULTIPLANEOVERLAYSUPPORT2 pCheckMultiPlaneOverlaySupport)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pCheckMultiPlaneOverlaySupport == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    pCheckMultiPlaneOverlaySupport->ReturnInfo.Value = 0;
+    if (pCheckMultiPlaneOverlaySupport->PlaneCount <= 1u) {
+        pCheckMultiPlaneOverlaySupport->Supported = TRUE;
+    } else {
+        pCheckMultiPlaneOverlaySupport->Supported = FALSE;
+    }
+    Bc250DisplayLog("=== CheckMultiPlaneOverlaySupport2 (Planes=%u, Supported=%d) ===\n",
+        pCheckMultiPlaneOverlaySupport->PlaneCount,
+        (int)pCheckMultiPlaneOverlaySupport->Supported);
+    return STATUS_SUCCESS;
+}
+#endif
+
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_1)
+NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay3(
+    IN_CONST_HANDLE hAdapter,
+    IN_OUT_PDXGKARG_SETVIDPNSOURCEADDRESSWITHMULTIPLANEOVERLAY3 pSetVidPnSourceAddressWithMultiPlaneOverlay)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId != 0) {
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    pSetVidPnSourceAddressWithMultiPlaneOverlay->OutputFlags.PrePresentNeeded = 0;
+
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount == 0) {
+        Bc250DisplayLog("=== SetVidPnSourceAddressWithMultiPlaneOverlay3 (PlaneCount=0, MPO disabled, SourceId=%u) ===\n",
+            pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId);
+        return STATUS_SUCCESS;
+    }
+
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->ppPlanes != NULL &&
+        pSetVidPnSourceAddressWithMultiPlaneOverlay->ppPlanes[0] != NULL) {
+        DXGK_MULTIPLANE_OVERLAY_PLANE3 *pPlane0 = pSetVidPnSourceAddressWithMultiPlaneOverlay->ppPlanes[0];
+        pPlane0->OutputFlags.Value = 0;
+        if (pPlane0->ContextCount > 0 && pPlane0->ppContextData != NULL && pPlane0->ppContextData[0] != NULL) {
+            DXGK_PRIMARYCONTEXTDATA *pCtx = pPlane0->ppContextData[0];
+            if (pCtx->SegmentId != 0) {
+                g_Bc250DisplayState.PrimaryAddress = pCtx->SegmentAddress;
+                g_Bc250DisplayState.PrimarySegment = (UINT)pCtx->SegmentId;
+                g_Bc250DisplayState.hPrimarySourceAllocation = pCtx->hAllocation;
+                g_Bc250DisplayState.PrimaryAddressValid = TRUE;
+                Bc250DisplayLog("=== SetVidPnSourceAddressWithMultiPlaneOverlay3 (SourceId=%u, Seg=%u, Addr=0x%I64X, hAlloc=%p, PlaneCount=%u) ===\n",
+                    pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId,
+                    (UINT)pCtx->SegmentId,
+                    pCtx->SegmentAddress.QuadPart,
+                    pCtx->hAllocation,
+                    pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount);
+            }
+        }
+    }
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS APIENTRY Bc250DxgkDdiCheckMultiPlaneOverlaySupport3(
+    IN_CONST_HANDLE hAdapter,
+    IN_OUT_PDXGKARG_CHECKMULTIPLANEOVERLAYSUPPORT3 pCheckMultiPlaneOverlaySupport)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pCheckMultiPlaneOverlaySupport == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    pCheckMultiPlaneOverlaySupport->ReturnInfo.Value = 0;
+    if (pCheckMultiPlaneOverlaySupport->PlaneCount <= 1u) {
+        pCheckMultiPlaneOverlaySupport->Supported = TRUE;
+    } else {
+        pCheckMultiPlaneOverlaySupport->Supported = FALSE;
+    }
+    Bc250DisplayLog("=== CheckMultiPlaneOverlaySupport3 (Planes=%u, Supported=%d) ===\n",
+        pCheckMultiPlaneOverlaySupport->PlaneCount,
+        (int)pCheckMultiPlaneOverlaySupport->Supported);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS APIENTRY Bc250DxgkDdiPostMultiPlaneOverlayPresent(
+    IN_CONST_HANDLE hAdapter,
+    IN_CONST_PDXGKARG_POSTMULTIPLANEOVERLAYPRESENT pPostPresent)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pPostPresent == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    Bc250DisplayLog("=== PostMultiPlaneOverlayPresent (TargetId=%u, Layer=%u, PresentId=%I64u) ===\n",
+        pPostPresent->VidPnTargetId,
+        pPostPresent->LayerIndex,
+        pPostPresent->PresentID);
+    return STATUS_SUCCESS;
+}
+#endif
+
 NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceVisibility(
     CONST HANDLE hAdapter,
     CONST DXGKARG_SETVIDPNSOURCEVISIBILITY *pSetVidPnSourceVisibility)
@@ -2748,6 +2949,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
         ULONG scanoutBytes = g_Bc250DisplayState.CurrentMode.Pitch *
                              g_Bc250DisplayState.CurrentMode.Height;
         BOOLEAN isBlt = (pPresent->Flags.Blt != 0);
+        BOOLEAN isFlip = (pPresent->Flags.Flip != 0);
 
         if (pPresent->pAllocationInfo != NULL) {
             srcVa = (uint64_t)
@@ -2760,15 +2962,17 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
          * Ordem de autoridade (corrida 09:04 mostrou por que):
          *
         /*
-         * Resolucao da superficie de origem para Blt:
+         * Resolucao da superficie de origem para Blt e Flip:
          * 1. pAllocationInfo[DXGK_PRESENT_SOURCE_INDEX] com PhysicalAddress/SegmentId
          *    (Slot 1 / DWM sob WDDM 2.0+).  E' onde o Windows realmente compoe
          *    a imagem da tela (ex: GPUVA 0xAC0000 -> VRAM 0xC10000).
          *    Possui autoridade PRIMEIRA quando resolvida com sucesso.
          *
-         * O Primary de SetVidPnSourceAddress fica apenas em telemetria. A corrida
-         * 12:23 provou que copiar esse buffer pode exibir dados que nao sao o
-         * desktop; sem Slot 1 resolvido pelo snapshot, Present falha fechado.
+         * 2. Em apresentacoes de Flip (Flags.Flip != 0), caso o Slot 1 nao resolva
+         *    mas SetVidPnSourceAddress tenha comutado uma primaria valida no Segmento 1,
+         *    o buffer da primaria e' a origem autoritativa da exibicao.
+         *
+         * Sem Slot 1 resolvido nem primaria autoritativa, Present falha fechado.
          */
         UINT32 srcSegmentId = 0;
         BOOLEAN vaResolved = FALSE;
@@ -2817,6 +3021,30 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
             }
         }
 
+        /*
+         * Fallback autoritativo para Flip: caso o Slot 1 nao tenha resolvido pelo
+         * snapshot de GPUVA, mas a comutacao do scanout pelo SetVidPnSourceAddress
+         * tenha publicado uma primaria valida no Segmento 1.
+         */
+        if (!vaResolved && isFlip && g_Bc250DisplayState.PrimaryAddressValid &&
+            g_Bc250DisplayState.PrimarySegment == 1u) {
+            UINT64 primaryOffset = 0ull;
+            UINT32 primarySeg = 0u;
+            if (Bc250DisplayResolvePrimarySource(&primaryOffset, &primarySeg)) {
+                UINT64 srcVramOffset = 0ull;
+                if (Bc250SdmaPresentSegmentOffsetToVram(primarySeg,
+                        primaryOffset, (UINT64)scanoutBytes, &srcVramOffset)) {
+                    srcPhysical = srcVramOffset;
+                    srcSegmentId = primarySeg;
+                    vaResolved = TRUE;
+                    Bc250DisplayLog("[Present #%d] Source=PRIMARY_FALLBACK SegOff=0x%llX Seg=%u SegBase=0x%llX -> VramOff=0x%llX\n",
+                        count, (unsigned long long)primaryOffset, primarySeg,
+                        (unsigned long long)g_Bc250SdmaPresent.LocalSegmentBaseOffset,
+                        (unsigned long long)srcPhysical);
+                }
+            }
+        }
+
         if (vaResolved) {
             /*
              * C3.6: o log passa a mostrar os TRES numeros -- offset de segmento,
@@ -2824,13 +3052,13 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
              * "Physical VRAM 0x%llX" que na verdade era offset de segmento, e foi
              * essa ambiguidade que escondeu o defeito por varias corridas.
              */
-            Bc250DisplayLog("[Present #%d] Source=PRESENT_SLOT SegOff=0x%llX Seg=%u SegBase=0x%llX -> VramOff=0x%llX (resolved=%u)\n",
+            Bc250DisplayLog("[Present #%d] Source=PRESENT_SLOT SegOff=0x%llX Seg=%u SegBase=0x%llX -> VramOff=0x%llX (resolved=%u, Flip=%u, Blt=%u)\n",
                 count, presentPhysical, presentSegmentId,
                 (unsigned long long)g_Bc250SdmaPresent.LocalSegmentBaseOffset,
-                srcPhysical, presentResolved ? 1u : 0u);
+                srcPhysical, presentResolved ? 1u : 0u, isFlip ? 1u : 0u, isBlt ? 1u : 0u);
         } else {
-            Bc250DisplayLog("[Present #%d] REJECT source contract: Blt=%u, PrimaryValid=%u, PrimarySeg=%u, SlotHAlloc=%p, SlotSeg=%u, SlotWord=0x%llX\n",
-                count, isBlt ? 1u : 0u,
+            Bc250DisplayLog("[Present #%d] REJECT source contract: Blt=%u, Flip=%u, PrimaryValid=%u, PrimarySeg=%u, SlotHAlloc=%p, SlotSeg=%u, SlotWord=0x%llX\n",
+                count, isBlt ? 1u : 0u, isFlip ? 1u : 0u,
                 g_Bc250DisplayState.PrimaryAddressValid ? 1u : 0u,
                 g_Bc250DisplayState.PrimarySegment,
                 pPresent->pAllocationInfo != NULL ?
@@ -3016,16 +3244,12 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
          * Execucao do Blt para o scanout do UEFI GOP (offset 0):
          * Se temos a superficie primaria fisica (srcPhysical), copiamos para o scanout.
          *
-         * SEGURANCA FAIL-CLOSED CONTRA TELA PRETA (Lei 6):
-         * Se a superficie de origem contem 100% de zeros (ex: logo apos PAGING_FILL
-         * ou antes de o DWM compor o primeiro quadro real), NAO podemos copiar zeros
-         * para o scanout do UEFI GOP. Copiar zeros apaga a imagem da tela e gera tela
-         * preta permanente. Mantemos o scanout GOP intacto e completamos a submissao
-         * com sucesso para que o escalonador do Windows continue operando sem TDR.
+         * F3.2: sample only for diagnostics. Black is a valid frame and must
+         * replace the previous frame through the same GPU copy path.
          */
         {
             ULONG srcNz = 0u, srcHx = 0u;
-            BOOLEAN srcOk = Bc250DisplaySampleSurface(srcPhysical, scanoutBytes, 256u, &srcNz, &srcHx);
+            (void)Bc250DisplaySampleSurface(srcPhysical, scanoutBytes, 256u, &srcNz, &srcHx);
             UINT64 effectiveSrcPhys = srcPhysical;
 
             static int s_TileProbeCount = 0;
@@ -3044,31 +3268,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                 uint64_t srcGpu = g_Bc250SdmaPresent.VramMcStart + effectiveSrcPhys;
                 uint64_t dstScanoutGpu = g_Bc250SdmaPresent.ScanoutGpuAddress;
 
-                /*
-                 * SEGURANCA FAIL-CLOSED CONTRA TELA PRETA (Lei 6):
-                 * Se a superficie de origem contem 100% de zeros (ex: logo apos PAGING_FILL
-                 * ou antes de o DWM compor o primeiro quadro real), NAO podemos copiar zeros
-                 * para o scanout do UEFI GOP. Copiar zeros apaga a imagem da tela e gera tela
-                 * preta permanente. Mantemos o scanout GOP intacto e completamos a submissao
-                 * com sucesso para que o escalonador do Windows continue operando sem TDR.
-                 *
-                 * Se o sub-retangulo do cursor/apresentacao parcial contem dados nao-nulos
-                 * (subRectCenterSample != 0u), a superficie contem dados validos na regiao
-                 * dirty e o Blt NAO deve ser suprimido. Suprimimos apenas se
-                 * (srcOk && srcNz == 0u && subRectCenterSample == 0u).
-                 */
-                if (srcOk && srcNz == 0u && subRectCenterSample == 0u) {
-                    LONG streak = InterlockedIncrement(&g_Bc250SdmaPresent.BltBlankStreak);
-                    InterlockedExchange(&s_PresentByteProofState, 0);
-                    InterlockedExchange(
-                        &g_Bc250SdmaPresent.BltDataProofState,
-                        BC250_BLT_DATA_PROOF_BLANK);
-                    if (count <= 10 || (count % 60) == 0) {
-                        Bc250DisplayLog("[Present #%d] Blt preservado (origem 0x%llX 100%% zerada, NonZero=0/256, SubRect=0x%08X): GOP scanout mantido intacto, BlankStreak=%ld\n",
-                            count, effectiveSrcPhys, subRectCenterSample, streak);
-                    }
-                    presentStatus = STATUS_SUCCESS;
-                } else {
+                /* F3.2: black is valid content. Sampling is evidence only,
+                 * never permission to suppress a requested GPU copy. */
+                {
                     if (srcNz == 0u && subRectCenterSample != 0u && (count <= 10 || (count % 60) == 0)) {
                         Bc250DisplayLog("[Present #%d] Blt acionado por sub-retangulo parcial nao-nulo (NonZero=0/256, SubRect=0x%08X @ 0x%llX)\n",
                             count, subRectCenterSample, effectiveSrcPhys);
@@ -3152,13 +3354,20 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                         Bc250DisplayLog("[Present #%d] Blt %u bytes (src 0x%llX -> scanout 0x0): SDMA=%s\n",
                             count, scanoutBytes, effectiveSrcPhys, sdmaDone ? "YES" : "FAILED_CLOSED");
                     }
-                    /*
-                     * SEGURANCA CONTRA BUGCHECK 0x10E NO DWM (Lei 6):
-                     * Retornar STATUS_IO_DEVICE_ERROR em DxgkDdiPresent no caminho do DWM
-                     * faz o dxgkrnl disparar BugCheck 0x10E Arg1=4 (falha em caminho obrigatorio).
-                     * Mantemos STATUS_SUCCESS com o frame anterior para que o escalonador continue sem panic.
-                     */
-                    presentStatus = STATUS_SUCCESS;
+                    /* F3.2: the old unconditional SUCCESS concealed failed DMA.
+                     * Do NOT return the historical STATUS_IO_DEVICE_ERROR (0x10E).
+                     * WDK DXGKDDI_PRESENT documents GPU_EXCEPTION_ON_DEVICE for
+                     * DMA errors, placing this context in the lost state. This
+                     * failure route is NOT VALIDATED ON HARDWARE; no guarantee
+                     * against BugCheck is inferred from the documented status.
+                     * No NOP/completion is generated for a failed transfer. */
+                    presentStatus = Bc250PresentCopySucceeded(sdmaDone,
+                        dstScanoutGpu != 0 && srcGpu == dstScanoutGpu) ?
+                        STATUS_SUCCESS : STATUS_GRAPHICS_GPU_EXCEPTION_ON_DEVICE;
+                    if (!NT_SUCCESS(presentStatus)) {
+                        Bc250DisplayLog("[Present #%d] RECUSADO: copia GPU nao concluida; status=0x%08X, sem NOP de sucesso\n",
+                            count, (ULONG)presentStatus);
+                    }
                 }
             } else if (vaResolved) {
                 Bc250DisplayLog("[Present #%d] REJECT source bounds: Phys=0x%llX, Bytes=%u, Aperture=%u\n",
@@ -3681,6 +3890,19 @@ NTSTATUS Bc250DisplayPopulateCallbacks(
     InitializationData->DxgkDdiEnumVidPnCofuncModality = Bc250DxgkDdiEnumVidPnCofuncModality;
     InitializationData->DxgkDdiSetVidPnSourceAddress = Bc250DxgkDdiSetVidPnSourceAddress;
     InitializationData->DxgkDdiSetVidPnSourceVisibility = Bc250DxgkDdiSetVidPnSourceVisibility;
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM1_3)
+    InitializationData->DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay = Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay;
+    InitializationData->DxgkDdiCheckMultiPlaneOverlaySupport = Bc250DxgkDdiCheckMultiPlaneOverlaySupport;
+#endif
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_0)
+    InitializationData->DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay2 = Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay2;
+    InitializationData->DxgkDdiCheckMultiPlaneOverlaySupport2 = Bc250DxgkDdiCheckMultiPlaneOverlaySupport2;
+#endif
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_1)
+    InitializationData->DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay3 = Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay3;
+    InitializationData->DxgkDdiCheckMultiPlaneOverlaySupport3 = Bc250DxgkDdiCheckMultiPlaneOverlaySupport3;
+    InitializationData->DxgkDdiPostMultiPlaneOverlayPresent = Bc250DxgkDdiPostMultiPlaneOverlayPresent;
+#endif
     InitializationData->DxgkDdiCommitVidPn = Bc250DxgkDdiCommitVidPn;
     InitializationData->DxgkDdiUpdateActiveVidPnPresentPath = Bc250DxgkDdiUpdateActiveVidPnPresentPath;
     InitializationData->DxgkDdiRecommendMonitorModes = Bc250DxgkDdiRecommendMonitorModes;

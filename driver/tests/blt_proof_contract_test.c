@@ -433,6 +433,11 @@ void __stdcall mainCRTStartup(void)
 #else
 int main(void)
 {
+    /* F3.2: black/content have the same execution contract. */
+    CHECK(Bc250PresentCopySucceeded(0u, 0u) == 0u);
+    CHECK(Bc250PresentCopySucceeded(1u, 0u) == 1u);
+    CHECK(Bc250PresentCopySucceeded(0u, 1u) == 1u);
+
     int failed = Bc250RunBltProofContractTest();
     if (failed == 0) {
         printf("blt_proof_contract_test: PASS\n");

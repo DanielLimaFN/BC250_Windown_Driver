@@ -523,7 +523,7 @@ static void TestDeviceTablePopulation(void)
 {
     D3D10_1DDI_DEVICEFUNCS deviceFuncs10_1;
     D3D11DDI_DEVICEFUNCS deviceFuncs11;
-    DXGI_DDI_BASE_FUNCTIONS dxgiFuncs;
+    DXGI1_6_1_DDI_BASE_FUNCTIONS dxgiFuncs;
 
     printf("[TEST] Testing D3D10.1, D3D11 & DXGI device functions table population...\n");
 
@@ -562,12 +562,27 @@ static void TestDeviceTablePopulation(void)
     memset(&dxgiFuncs, 0xFF, sizeof(dxgiFuncs));
     Bc250UmdPopulateDxgiBaseFuncs(&dxgiFuncs);
     assert(dxgiFuncs.pfnPresent != NULL);
-    assert(dxgiFuncs.pfnBlt != NULL);
     assert(dxgiFuncs.pfnGetGammaCaps != NULL);
     assert(dxgiFuncs.pfnSetDisplayMode != NULL);
     assert(dxgiFuncs.pfnSetResourcePriority != NULL);
     assert(dxgiFuncs.pfnQueryResourceResidency != NULL);
     assert(dxgiFuncs.pfnRotateResourceIdentities != NULL);
+    assert(dxgiFuncs.pfnBlt != NULL);
+    assert(dxgiFuncs.pfnResolveSharedResource != NULL);
+    assert(dxgiFuncs.pfnBlt1 != NULL);
+    assert(dxgiFuncs.pfnOfferResources1 != NULL);
+    assert(dxgiFuncs.pfnReclaimResources != NULL);
+    assert(dxgiFuncs.pfnGetMultiplaneOverlayCaps != NULL);
+    assert(dxgiFuncs.pfnGetMultiplaneOverlayGroupCaps != NULL);
+    assert(dxgiFuncs.pfnReserved1 == NULL);
+    assert(dxgiFuncs.pfnPresentMultiplaneOverlay != NULL);
+    assert(dxgiFuncs.pfnReserved2 == NULL);
+    assert(dxgiFuncs.pfnPresent1 != NULL);
+    assert(dxgiFuncs.pfnCheckPresentDurationSupport != NULL);
+    assert(dxgiFuncs.pfnTrimResidencySet != NULL);
+    assert(dxgiFuncs.pfnCheckMultiplaneOverlayColorSpaceSupport != NULL);
+    assert(dxgiFuncs.pfnPresentMultiplaneOverlay1 != NULL);
+    assert(dxgiFuncs.pfnReclaimResources1 != NULL);
 
     printf("  -> D3D10.1, D3D11 & DXGI device functions table population PASS\n");
 }
@@ -591,9 +606,22 @@ static HRESULT APIENTRY TestSetDisplayModeCb(
     return S_OK;
 }
 
+static D3DDDI_RESIDENCYSTATUS g_QueryStatuses[2];
+static HRESULT g_QueryHr;
+static UINT g_QueryCalls;
+static HRESULT APIENTRY TestQueryResidencyCb(HANDLE Device, const D3DDDICB_QUERYRESIDENCY *Args)
+{
+    assert(Device == (HANDLE)0xD00Du);
+    assert(Args->NumAllocations == 1u && Args->hResource == NULL);
+    assert(Args->HandleList[0] == 1u || Args->HandleList[0] == 2u);
+    ++g_QueryCalls;
+    *Args->pResidencyStatus = g_QueryStatuses[Args->HandleList[0] - 1u];
+    return g_QueryHr;
+}
+
 static void TestDxgiBaseFunctions(void)
 {
-    DXGI_DDI_BASE_FUNCTIONS dxgiFuncs;
+    DXGI1_6_1_DDI_BASE_FUNCTIONS dxgiFuncs;
     DXGI_DDI_ARG_GET_GAMMA_CONTROL_CAPS gammaCaps;
     DXGI_GAMMA_CONTROL_CAPABILITIES gammaData;
     DXGI_DDI_ARG_SETDISPLAYMODE setDisplayMode;
@@ -619,6 +647,8 @@ static void TestDxgiBaseFunctions(void)
      */
     memset(&dxgiTestCallbacks, 0, sizeof(dxgiTestCallbacks));
     dxgiTestCallbacks.pfnSetDisplayModeCb = TestSetDisplayModeCb;
+    dxgiTestCallbacks.pfnQueryResidencyCb = TestQueryResidencyCb;
+    dev.hRTDevice.handle = (HANDLE)0xD00Du;
     dev.pKTCallbacks = &dxgiTestCallbacks;
 
     memset(&dxgiFuncs, 0, sizeof(dxgiFuncs));
@@ -705,45 +735,44 @@ static void TestDxgiBaseFunctions(void)
     hr = dxgiFuncs.pfnSetResourcePriority(&setPriority);
     assert(hr == S_OK);
 
-    /* QueryResourceResidency */
+    /* F3.3 QueryResourceResidency: the OS, not the local cache, is authority. */
     {
         BC250_UMD_RESOURCE resA, resB;
-        memset(&resA, 0, sizeof(resA));
-        memset(&resB, 0, sizeof(resB));
-        resA.Created = TRUE;
+        memset(&resA, 0, sizeof(resA)); memset(&resB, 0, sizeof(resB));
+        resA.Created = resB.Created = TRUE;
         resA.Allocation.KernelAllocation = 1;
-        resA.Allocation.Resident = TRUE;
-        resB.Created = TRUE;
-        resB.Allocation.KernelAllocation = 1;
-        resB.Allocation.Resident = FALSE;
+        resB.Allocation.KernelAllocation = 2;
+        resA.Allocation.Resident = FALSE; /* deliberately contradict the OS */
+        resB.Allocation.Resident = TRUE;
         dummyResources[0] = (DXGI_DDI_HRESOURCE)&resA;
         dummyResources[1] = (DXGI_DDI_HRESOURCE)&resB;
         memset(&queryResidency, 0, sizeof(queryResidency));
+        queryResidency.hDevice = (DXGI_DDI_HDEVICE)&dev;
         queryResidency.Resources = 2;
         queryResidency.pResources = dummyResources;
         queryResidency.pStatus = residencyStatus;
+        g_QueryCalls = 0; g_QueryHr = S_OK;
+        g_QueryStatuses[0] = D3DDDI_RESIDENCYSTATUS_RESIDENTINGPUMEMORY;
+        g_QueryStatuses[1] = D3DDDI_RESIDENCYSTATUS_NOTRESIDENT;
         hr = dxgiFuncs.pfnQueryResourceResidency(&queryResidency);
-        assert(hr == S_OK);
+        assert(hr == S_NOT_RESIDENT);
+        assert(g_QueryCalls == 2u);
         assert(residencyStatus[0] == DXGI_DDI_RESIDENCY_FULLY_RESIDENT);
-        /*
-         * F0.1 -- OITAVA ocorrencia da classe, e com uma nuance que corrige uma
-         * das auditorias externas.
-         *
-         * A assercao era `== DXGI_DDI_RESIDENCY_EVICTED_TO_DISK`, congelando um
-         * valor que afirma ao runtime que existe conteudo paginado em DISCO --
-         * algo que este driver nunca produz (nao ha caminho de offer/reclaim).
-         *
-         * Uma das auditorias propos trocar por DXGI_DDI_RESIDENCY_NOT_RESIDENT.
-         * ESSE VALOR NAO EXISTE: o enum tem exatamente tres membros
-         * (dxgiddi.h:41) -- FULLY_RESIDENT, RESIDENT_IN_SHARED_MEMORY e
-         * EVICTED_TO_DISK. A proposta nao compilaria.
-         *
-         * O invariante que SOBREVIVE, e que nao congela escolha nenhuma: uma
-         * alocacao nao-residente NAO pode ser reportada como totalmente
-         * residente. Qual dos dois valores restantes e' o menos falso e' decisao
-         * do item 3.3 do plano, com justificativa escrita.
-         */
         assert(residencyStatus[1] != DXGI_DDI_RESIDENCY_FULLY_RESIDENT);
+        assert(residencyStatus[1] == DXGI_DDI_RESIDENCY_EVICTED_TO_DISK);
+        g_QueryStatuses[0] = D3DDDI_RESIDENCYSTATUS_RESIDENTINSHAREDMEMORY;
+        assert(dxgiFuncs.pfnQueryResourceResidency(&queryResidency) == S_NOT_RESIDENT);
+        g_QueryStatuses[1] = D3DDDI_RESIDENCYSTATUS_RESIDENTINGPUMEMORY;
+        assert(dxgiFuncs.pfnQueryResourceResidency(&queryResidency) == S_RESIDENT_IN_SHARED_MEMORY);
+        assert(residencyStatus[0] == DXGI_DDI_RESIDENCY_RESIDENT_IN_SHARED_MEMORY);
+        g_QueryStatuses[0] = D3DDDI_RESIDENCYSTATUS_RESIDENTINGPUMEMORY;
+        assert(dxgiFuncs.pfnQueryResourceResidency(&queryResidency) == S_OK);
+        g_QueryHr = E_FAIL;
+        assert(dxgiFuncs.pfnQueryResourceResidency(&queryResidency) == E_FAIL);
+        g_QueryHr = S_OK; g_QueryStatuses[0] = (D3DDDI_RESIDENCYSTATUS)99;
+        assert(dxgiFuncs.pfnQueryResourceResidency(&queryResidency) == E_UNEXPECTED);
+        dxgiTestCallbacks.pfnQueryResidencyCb = NULL;
+        assert(dxgiFuncs.pfnQueryResourceResidency(&queryResidency) == E_NOTIMPL);
     }
 
     /*
@@ -851,6 +880,106 @@ static void TestDxgiBaseFunctions(void)
     presentData.hDevice = (DXGI_DDI_HDEVICE)&dev;
     hr = dxgiFuncs.pfnPresent(&presentData);
     assert(hr == E_FAIL);
+
+    /* DXGI 1.6 extended DDI tests */
+    {
+        DXGI_DDI_ARG_RESOLVESHAREDRESOURCE resolveData;
+        DXGI_DDI_ARG_BLT1 blt1Data;
+        DXGI_DDI_ARG_OFFERRESOURCES1 offerData;
+        DXGI_DDI_ARG_RECLAIMRESOURCES reclaimData;
+        DXGI_DDI_ARG_RECLAIMRESOURCES1 reclaim1Data;
+        DXGI_DDI_ARG_GETMULTIPLANEOVERLAYCAPS mpoCaps;
+        DXGI_DDI_ARG_GETMULTIPLANEOVERLAYGROUPCAPS mpoGroup;
+        DXGI_DDI_ARG_PRESENTMULTIPLANEOVERLAY presentMpo;
+        DXGI1_6_1_DDI_ARG_PRESENTMULTIPLANEOVERLAY presentMpo1;
+        DXGI_DDI_ARG_CHECKPRESENTDURATIONSUPPORT durationData;
+        DXGI_DDI_ARG_TRIMRESIDENCYSET trimData;
+        DXGI_DDI_ARG_CHECKMULTIPLANEOVERLAYCOLORSPACESUPPORT csData;
+        DXGI1_6_1_DDI_ARG_PRESENT present1Data;
+        BOOL discarded = TRUE;
+        D3DDDI_RECLAIM_RESULT reclaimResult = D3DDDI_RECLAIM_RESULT_DISCARDED;
+        DXGI_DDI_HRESOURCE dummyRes = (DXGI_DDI_HRESOURCE)0x1234;
+
+        /* ResolveSharedResource: NULL -> E_INVALIDARG, valid -> DXGI_DDI_ERR_UNSUPPORTED */
+        assert(dxgiFuncs.pfnResolveSharedResource(NULL) == E_INVALIDARG);
+        memset(&resolveData, 0, sizeof(resolveData));
+        assert(dxgiFuncs.pfnResolveSharedResource(&resolveData) == DXGI_DDI_ERR_UNSUPPORTED);
+
+        /* Blt1: NULL -> E_INVALIDARG, unsupported rotation -> DXGI_DDI_ERR_UNSUPPORTED */
+        assert(dxgiFuncs.pfnBlt1(NULL) == E_INVALIDARG);
+        memset(&blt1Data, 0, sizeof(blt1Data));
+        blt1Data.Rotate = DXGI_DDI_MODE_ROTATION_ROTATE90;
+        assert(dxgiFuncs.pfnBlt1(&blt1Data) == DXGI_DDI_ERR_UNSUPPORTED);
+
+        /* OfferResources1: NULL -> E_INVALIDARG, valid -> S_OK */
+        assert(dxgiFuncs.pfnOfferResources1(NULL) == E_INVALIDARG);
+        memset(&offerData, 0, sizeof(offerData));
+        offerData.Resources = 1;
+        offerData.pResources = &dummyRes;
+        assert(dxgiFuncs.pfnOfferResources1(&offerData) == S_OK);
+
+        /* ReclaimResources: NULL -> E_INVALIDARG, valid -> S_OK */
+        assert(dxgiFuncs.pfnReclaimResources(NULL) == E_INVALIDARG);
+        memset(&reclaimData, 0, sizeof(reclaimData));
+        reclaimData.Resources = 1;
+        reclaimData.pResources = &dummyRes;
+        reclaimData.pDiscarded = &discarded;
+        assert(dxgiFuncs.pfnReclaimResources(&reclaimData) == S_OK);
+        assert(discarded == FALSE);
+
+        /* ReclaimResources1: NULL -> E_INVALIDARG, valid -> S_OK */
+        assert(dxgiFuncs.pfnReclaimResources1(NULL) == E_INVALIDARG);
+        memset(&reclaim1Data, 0, sizeof(reclaim1Data));
+        reclaim1Data.Resources = 1;
+        reclaim1Data.pResources = &dummyRes;
+        reclaim1Data.pResults = &reclaimResult;
+        assert(dxgiFuncs.pfnReclaimResources1(&reclaim1Data) == S_OK);
+        assert(reclaimResult == D3DDDI_RECLAIM_RESULT_OK);
+
+        /* GetMultiplaneOverlayCaps: NULL -> E_INVALIDARG, valid -> MaxPlanes=1, NumCapabilityGroups=0 */
+        assert(dxgiFuncs.pfnGetMultiplaneOverlayCaps(NULL) == E_INVALIDARG);
+        memset(&mpoCaps, 0, sizeof(mpoCaps));
+        assert(dxgiFuncs.pfnGetMultiplaneOverlayCaps(&mpoCaps) == S_OK);
+        assert(mpoCaps.MultiplaneOverlayCaps.MaxPlanes == 1);
+        assert(mpoCaps.MultiplaneOverlayCaps.NumCapabilityGroups == 0);
+
+        /* GetMultiplaneOverlayGroupCaps: NULL -> E_INVALIDARG, valid -> DXGI_DDI_ERR_UNSUPPORTED */
+        assert(dxgiFuncs.pfnGetMultiplaneOverlayGroupCaps(NULL) == E_INVALIDARG);
+        memset(&mpoGroup, 0, sizeof(mpoGroup));
+        assert(dxgiFuncs.pfnGetMultiplaneOverlayGroupCaps(&mpoGroup) == DXGI_DDI_ERR_UNSUPPORTED);
+
+        /* PresentMultiplaneOverlay: NULL -> E_INVALIDARG, valid -> DXGI_DDI_ERR_UNSUPPORTED */
+        assert(dxgiFuncs.pfnPresentMultiplaneOverlay(NULL) == E_INVALIDARG);
+        memset(&presentMpo, 0, sizeof(presentMpo));
+        assert(dxgiFuncs.pfnPresentMultiplaneOverlay(&presentMpo) == DXGI_DDI_ERR_UNSUPPORTED);
+
+        /* PresentMultiplaneOverlay1: NULL -> E_INVALIDARG, valid -> DXGI_DDI_ERR_UNSUPPORTED */
+        assert(dxgiFuncs.pfnPresentMultiplaneOverlay1(NULL) == E_INVALIDARG);
+        memset(&presentMpo1, 0, sizeof(presentMpo1));
+        assert(dxgiFuncs.pfnPresentMultiplaneOverlay1(&presentMpo1) == DXGI_DDI_ERR_UNSUPPORTED);
+
+        /* CheckPresentDurationSupport: NULL -> E_INVALIDARG, valid -> DXGI_DDI_ERR_UNSUPPORTED */
+        assert(dxgiFuncs.pfnCheckPresentDurationSupport(NULL) == E_INVALIDARG);
+        memset(&durationData, 0, sizeof(durationData));
+        assert(dxgiFuncs.pfnCheckPresentDurationSupport(&durationData) == DXGI_DDI_ERR_UNSUPPORTED);
+
+        /* TrimResidencySet: NULL -> E_INVALIDARG, valid -> S_OK */
+        assert(dxgiFuncs.pfnTrimResidencySet(NULL) == E_INVALIDARG);
+        memset(&trimData, 0, sizeof(trimData));
+        assert(dxgiFuncs.pfnTrimResidencySet(&trimData) == S_OK);
+
+        /* CheckMultiplaneOverlayColorSpaceSupport: NULL -> E_INVALIDARG, valid -> S_OK, Supported=FALSE */
+        assert(dxgiFuncs.pfnCheckMultiplaneOverlayColorSpaceSupport(NULL) == E_INVALIDARG);
+        memset(&csData, 0, sizeof(csData));
+        assert(dxgiFuncs.pfnCheckMultiplaneOverlayColorSpaceSupport(&csData) == S_OK);
+        assert(csData.Supported == FALSE);
+
+        /* Present1: NULL -> E_INVALIDARG, valid sem callback -> E_FAIL */
+        assert(dxgiFuncs.pfnPresent1(NULL) == E_INVALIDARG);
+        memset(&present1Data, 0, sizeof(present1Data));
+        present1Data.hDevice = (DXGI_DDI_HDEVICE)&dev;
+        assert(dxgiFuncs.pfnPresent1(&present1Data) == E_FAIL);
+    }
 
     printf("  -> DXGI base DDI implementations PASS\n");
 }
@@ -1112,7 +1241,7 @@ static void TestResourceDDIs(void)
     deviceFuncs10_1.pfnCreateResource(hDev, &createArg, hRes, hRTRes);
 
     assert(res.Created == TRUE);
-    assert(res.IsPrimary == TRUE);
+    assert(res.IsPrimary == FALSE);
     assert(res.ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D);
     assert(res.Format == DXGI_FORMAT_B8G8R8A8_UNORM);
     assert(res.Width == 1920);
@@ -1301,17 +1430,33 @@ static void TestViewAndOutputMergerDDIs(void)
     assert(dev.PipelineState.BoundRTVs[0].pDrvPrivate == &rtv);
     assert(dev.PipelineState.BoundDSV.pDrvPrivate == &dsv);
 
-    /* 6. ClearRenderTargetView */
-    deviceFuncs10_1.pfnClearRenderTargetView(hDev, hRTV, clearColorRed);
-    assert(resColor.pCpuShadow != NULL);
+    /* F3.1: no GPU fill exists. Refusal must reach the runtime even under
+     * lab promotion; an existing Map shadow is not a render target backend. */
     {
-        uint32_t* pPixels = (uint32_t*)resColor.pCpuShadow;
-        /* Red in B8G8R8A8 is 0xFFFF0000 (Alpha=0xFF, Red=0xFF, Green=0x00, Blue=0x00) */
-        assert(pPixels[0] == 0xFFFF0000);
-        assert(pPixels[960] == 0xFFFF0000);
-        assert(pPixels[1919] == 0xFFFF0000);
-        /* Check bottom-right pixel */
-        assert(pPixels[(1079 * (resColor.RowPitch / 4)) + 1919] == 0xFFFF0000);
+        D3D10DDI_CORELAYER_DEVICECALLBACKS cb;
+        UINT before = g_SetErrorCalls;
+        memset(&cb, 0, sizeof(cb)); cb.pfnSetErrorCb = TestSetError;
+        dev.pUMCallbacks = &cb; dev.hRTCoreLayer.handle = (void*)0xC0DEu;
+        assert(resColor.pCpuShadow == NULL);
+        deviceFuncs10_1.pfnClearRenderTargetView(hDev, hRTV, clearColorRed);
+        if (TestReadUmdTunable(BC250_D3D11_DRAW_BLT_SUBST_REG_NAME)) {
+            assert(g_SetErrorCalls == before);
+        } else {
+            assert(g_SetErrorCalls == before + 1u && g_LastUmdError == E_NOTIMPL);
+        }
+        assert(resColor.pCpuShadow == NULL);
+        resColor.pCpuShadow = malloc(resColor.TotalByteSize);
+        assert(resColor.pCpuShadow != NULL);
+        memset(resColor.pCpuShadow, 0x5A, resColor.TotalByteSize);
+        deviceFuncs10_1.pfnClearRenderTargetView(hDev, hRTV, clearColorRed);
+        if (TestReadUmdTunable(BC250_D3D11_DRAW_BLT_SUBST_REG_NAME)) {
+            assert(g_SetErrorCalls == before);
+        } else {
+            assert(g_SetErrorCalls == before + 2u);
+        }
+        assert(((unsigned char*)resColor.pCpuShadow)[0] == 0x5A);
+        assert(((unsigned char*)resColor.pCpuShadow)[resColor.TotalByteSize - 1u] == 0x5A);
+        dev.pUMCallbacks = NULL;
     }
 
     /* 7. ClearDepthStencilView */
@@ -1727,6 +1872,185 @@ static void TestDrawBltSubstitutionFailsClosed(void)
     free(resDst.pCpuShadow);
 
     printf("  -> C1 politica 9/9, Draw fail-closed sem memcpy e tokens unicos PASS\n");
+}
+
+static unsigned g_Node1DrawSubmits;
+static unsigned g_Node1DrawLocks;
+static uint32_t g_Node1DrawBuffer[256];
+
+static HRESULT APIENTRY Node1DrawTestLock(HANDLE h, D3DDDICB_LOCK *a)
+{
+    (void)h;
+    if (a != NULL) {
+        a->pData = g_Node1DrawBuffer;
+    }
+    ++g_Node1DrawLocks;
+    return S_OK;
+}
+
+static HRESULT APIENTRY Node1DrawTestUnlock(HANDLE h, const D3DDDICB_UNLOCK *a)
+{
+    (void)h; (void)a;
+    return S_OK;
+}
+
+static HRESULT APIENTRY Node1DrawTestSubmit(HANDLE h, const D3DDDICB_SUBMITCOMMAND *a)
+{
+    (void)h;
+    if (a != NULL) {
+        assert(a->Commands == 0x220000ull);
+        assert(a->CommandLength == 15u * sizeof(uint32_t));
+    }
+    ++g_Node1DrawSubmits;
+    return S_OK;
+}
+
+static void TestDrawPm4EmissionOnNode1(void)
+{
+    D3D10_1DDI_DEVICEFUNCS deviceFuncs10_1;
+    D3D10DDI_CORELAYER_DEVICECALLBACKS umCallbacks;
+    D3DDDI_DEVICECALLBACKS ktCallbacks;
+    D3D10DDI_HDEVICE hDev;
+    BC250_UMD_DEVICE dev;
+    BC250_UMD_RESOURCE resDst;
+    BC250_UMD_RTV rtv;
+    uint32_t cmdMemory[256];
+    UINT initialSetError;
+
+    printf("[TEST] F5.2 PM4 3D Draw Emission on Node 1 (Parede B)...\n");
+
+    memset(&dev, 0, sizeof(dev));
+    memset(&deviceFuncs10_1, 0, sizeof(deviceFuncs10_1));
+    memset(&umCallbacks, 0, sizeof(umCallbacks));
+    memset(&ktCallbacks, 0, sizeof(ktCallbacks));
+    memset(cmdMemory, 0, sizeof(cmdMemory));
+    memset(g_Node1DrawBuffer, 0, sizeof(g_Node1DrawBuffer));
+
+    Bc250UmdPopulateDeviceFuncs10_1(&deviceFuncs10_1);
+
+    umCallbacks.pfnSetErrorCb = TestSetError;
+    dev.pUMCallbacks = &umCallbacks;
+    /*
+     * TestSetError EXIGE hRTCoreLayer == 0xC0DE, e este bloco nao o definia.
+     * Passava so' porque o passo 0 nunca chegava a recusar: a decisao do
+     * tunable caia no registro da maquina, que estava armado. Com a suite
+     * hermetica o passo 0 recusa de verdade, chama pfnSetErrorCb e o handle
+     * ausente aparece. Os dois defeitos estavam no mesmo bloco.
+     */
+    dev.hRTCoreLayer.handle = (void*)0xC0DEu;
+    hDev.pDrvPrivate = &dev;
+
+    ktCallbacks.pfnLockCb = Node1DrawTestLock;
+    ktCallbacks.pfnUnlockCb = Node1DrawTestUnlock;
+    ktCallbacks.pfnSubmitCommandCb = Node1DrawTestSubmit;
+
+    dev.Winsys.Initialized = TRUE;
+    dev.Winsys.Callbacks = &ktCallbacks;
+    dev.Winsys.RuntimeDevice = (HANDLE)(ULONG_PTR)0xD00Du;
+    dev.Winsys.ContextCreated = TRUE;
+    dev.Winsys.KernelContext = (HANDLE)(ULONG_PTR)0xC001u;
+    dev.Winsys.NodeOrdinal = BC250_WINSYS_NODE_COMPUTE;
+    dev.WinsysInitialized = TRUE;
+    dev.NativeNode1Ready = TRUE;
+
+    dev.Node1CmdBuffer.Initialized = TRUE;
+    dev.Node1CmdBuffer.pCpuVa = cmdMemory;
+    dev.Node1CmdBuffer.CapacityDwords = 256;
+    dev.Node1CmdBuffer.CursorDwords = 0;
+    dev.Node1CmdBuffer.Allocation.Created = TRUE;
+    dev.Node1CmdBuffer.Allocation.ByteSize = sizeof(cmdMemory);
+    dev.Node1CmdBuffer.Allocation.KernelAllocation = 0xA200u;
+    dev.Node1CmdBuffer.Allocation.GpuVirtualAddress = 0x220000ull;
+    dev.Node1CmdBuffer.Allocation.Resident = TRUE;
+
+    /* Setup destination resource and RTV with 256-byte aligned base GPUVA */
+    memset(&resDst, 0, sizeof(resDst));
+    resDst.Width = 1920;
+    resDst.Height = 1080;
+    resDst.RowPitch = 1920 * 4;
+    resDst.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    resDst.Allocation.Created = TRUE;
+    resDst.Allocation.Resident = TRUE;
+    resDst.Allocation.GpuVirtualAddress = 0x10000000ull; /* 256-byte aligned */
+
+    memset(&rtv, 0, sizeof(rtv));
+    rtv.Created = TRUE;
+    rtv.pResource = &resDst;
+
+    dev.PipelineState.NumBoundRTVs = 1;
+    dev.PipelineState.BoundRTVs[0].pDrvPrivate = &rtv;
+    dev.PipelineState.Topology = D3D10_DDI_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+
+    initialSetError = g_SetErrorCalls;
+    g_Node1DrawSubmits = 0;
+    g_Node1DrawLocks = 0;
+
+    /*
+     * 0. Default fail-closed: sem o tunable armado, draw DEVE ser recusado.
+     *
+     * DECLARA "0" em vez de APAGAR a variavel. Apagando, a decisao caia no
+     * registro da MAQUINA e a suite offline deixava de ser hermetica -- o
+     * bind de 14/09 11:43 mexeu em HKLM e este teste passou a reprovar sem
+     * nenhuma mudanca de codigo. Mesma classe que a faixa C1 ja encontrara
+     * em outro ponto (docs/234).
+     */
+    SetEnvironmentVariableA(BC250_D3D11_EXPERIMENTAL_PM4_DRAW_ENV_NAME, "0");
+    deviceFuncs10_1.pfnDraw(hDev, 3, 0);
+    assert(dev.NativePm4DrawCount == 0u);
+    assert(dev.RejectedDrawCount == 1u);
+    assert(g_Node1DrawSubmits == 0u);
+
+    /* Arm experimental tunable explicitly for PM4 packet construction test */
+    SetEnvironmentVariableA(BC250_D3D11_EXPERIMENTAL_PM4_DRAW_ENV_NAME, "1");
+
+    /* 1. Emit Draw (VertexCount = 3) */
+    deviceFuncs10_1.pfnDraw(hDev, 3, 0);
+
+    assert(dev.NativePm4DrawCount == 1u);
+    assert(dev.RejectedDrawCount == 1u);
+    assert(dev.SubstitutedDrawCount == 0u);
+    assert(dev.PipelineState.DrawCount == 1u);
+    assert(dev.PipelineState.TotalIndexCount == 3u);
+    /*
+     * O passo 0 recusou honestamente e chamou pfnSetErrorCb UMA vez; o passo 1
+     * nao pode chamar mais nenhuma. Comparar com initialSetError puro era
+     * errado e apagava a diferenca entre "nao recusou" e "recusou calado" --
+     * justamente a distincao que a Lei 4 exige que o driver preserve.
+     */
+    assert(g_SetErrorCalls == initialSetError + 1u);
+    assert(g_Node1DrawSubmits == 1u);
+    assert(g_Node1DrawLocks == 1u);
+
+    /* 2. Emit DrawIndexed (IndexCount = 6) */
+    deviceFuncs10_1.pfnDrawIndexed(hDev, 6, 0, 0);
+
+    assert(dev.NativePm4DrawCount == 2u);
+    assert(dev.RejectedDrawCount == 1u);
+    assert(dev.SubstitutedDrawCount == 0u);
+    assert(dev.PipelineState.DrawCount == 2u);
+    assert(dev.PipelineState.TotalIndexCount == 9u);
+    /* Continua valendo a unica recusa do passo 0 -- nenhuma nova. */
+    assert(g_SetErrorCalls == initialSetError + 1u);
+    assert(g_Node1DrawSubmits == 2u);
+    assert(g_Node1DrawLocks == 2u);
+
+    /* 3. Negative test: Misaligned destination base GPUVA fails closed */
+    resDst.Allocation.GpuVirtualAddress = 0x10000004ull; /* not 256-byte aligned */
+    deviceFuncs10_1.pfnDraw(hDev, 3, 0);
+
+    /* NativePm4DrawCount must NOT increment; draw must be rejected */
+    assert(dev.NativePm4DrawCount == 2u);
+    assert(dev.RejectedDrawCount == 2u);
+    assert(g_Node1DrawSubmits == 2u);
+
+    /*
+     * Desarma declarando "0", nao apagando: apagar devolveria a decisao ao
+     * registro da maquina para qualquer teste que rode depois deste, que e'
+     * a dependencia que esta faixa acabou de remover.
+     */
+    SetEnvironmentVariableA(BC250_D3D11_EXPERIMENTAL_PM4_DRAW_ENV_NAME, "0");
+
+    printf("  -> F5.2 PM4 3D Draw Emission PASS (Fail-Closed Default + Experimental Mode Tested)\n");
 }
 
 static void TestStateObjectDDIs(void)
@@ -2283,7 +2607,7 @@ static void TestSdmaBltExecution(void)
     BC250_UMD_RESOURCE src, dst;
     D3DDDI_DEVICECALLBACKS cb;
     DXGI_DDI_ARG_BLT a;
-    DXGI_DDI_BASE_FUNCTIONS dxgi;
+    DXGI1_6_1_DDI_BASE_FUNCTIONS dxgi;
 
     memset(&d, 0, sizeof(d)); memset(&adapter, 0, sizeof(adapter));
     memset(&cb, 0, sizeof(cb));
@@ -2408,6 +2732,22 @@ static void TestSdmaBltExecution(void)
         assert(dxgi.pfnBlt(&a) == E_NOTIMPL);
         assert(g_BltEscapes == before && g_BltSubmits == 0u);
         d.pAdapter = &adapter;
+    }
+
+    /* 10) DXGI 1.6 Blt1 repassa para o escape com rotacao identity */
+    {
+        DXGI_DDI_ARG_BLT1 a1;
+        unsigned before = g_BltEscapes;
+        memset(&a1, 0, sizeof(a1));
+        a1.hDevice = a.hDevice;
+        a1.hSrcResource = a.hSrcResource;
+        a1.hDstResource = a.hDstResource;
+        a1.DstLeft = a.DstLeft; a1.DstTop = a.DstTop;
+        a1.DstRight = a.DstRight; a1.DstBottom = a.DstBottom;
+        a1.Rotate = DXGI_DDI_MODE_ROTATION_IDENTITY;
+        assert(dxgi.pfnBlt1(&a1) == S_OK);
+        assert(g_BltEscapes == before + 1u);
+        assert(g_BltSubmits == 0u);
     }
 
     assert(g_BltSubmits == 0u);
@@ -2546,9 +2886,203 @@ static void TestShaderSpirvOwnership(void)
            "zero vazamento e zero double-free PASS\n");
 }
 
+/* F3.3 fault injection at each resource-creation callback. */
+static UINT g_CreateFailAt, g_CreateDeallocs, g_CreateMaps, g_CreateResidents;
+static HRESULT APIENTRY F3Allocate(HANDLE h, D3DDDICB_ALLOCATE *a)
+{
+    (void)h;
+    if (g_CreateFailAt == 1u) return E_OUTOFMEMORY;
+    a->pAllocationInfo2[0].hAllocation = 0xA110u;
+    return S_OK;
+}
+static HRESULT APIENTRY F3Map(HANDLE h, D3DDDI_MAPGPUVIRTUALADDRESS *a)
+{
+    (void)h; ++g_CreateMaps;
+    if (g_CreateFailAt == 2u) return E_OUTOFMEMORY;
+    a->VirtualAddress = 0x200000u; a->PagingFenceValue = 7u;
+    return S_OK;
+}
+static HRESULT APIENTRY F3Resident(HANDLE h, D3DDDI_MAKERESIDENT *a)
+{
+    (void)h; ++g_CreateResidents;
+    if (g_CreateFailAt == 3u) return E_OUTOFMEMORY;
+    a->PagingFenceValue = 8u;
+    return E_PENDING;
+}
+static HRESULT APIENTRY F3Wait(HANDLE h, const D3DDDICB_WAITFORSYNCHRONIZATIONOBJECTFROMCPU *a)
+{
+    (void)h; (void)a;
+    return S_OK;
+}
+static HRESULT APIENTRY F3FreeVa(HANDLE h, const D3DDDICB_FREEGPUVIRTUALADDRESS *a)
+{ (void)h; (void)a; return S_OK; }
+static HRESULT APIENTRY F3Deallocate(HANDLE h, const D3DDDICB_DEALLOCATE *a)
+{ (void)h; (void)a; ++g_CreateDeallocs; return S_OK; }
+static void TestF3CreateResourceTransaction(void)
+{
+    UINT stage;
+    for (stage = 0u; stage <= 3u; ++stage) {
+        BC250_UMD_DEVICE dev;
+        BC250_UMD_RESOURCE res;
+        D3DDDI_DEVICECALLBACKS cb;
+        D3D10DDI_CORELAYER_DEVICECALLBACKS errors;
+        D3D10_1DDI_DEVICEFUNCS funcs;
+        D3D10DDIARG_CREATERESOURCE create;
+        D3D10DDI_MIPINFO mip;
+        D3D10DDI_HDEVICE hd;
+        D3D10DDI_HRESOURCE hr;
+        D3D10DDI_HRTRESOURCE rt;
+        memset(&dev, 0, sizeof(dev)); memset(&res, 0, sizeof(res));
+        memset(&cb, 0, sizeof(cb)); memset(&errors, 0, sizeof(errors));
+        memset(&create, 0, sizeof(create)); memset(&mip, 0, sizeof(mip));
+        cb.pfnAllocateCb = F3Allocate; cb.pfnDeallocateCb = F3Deallocate;
+        cb.pfnMapGpuVirtualAddressCb = F3Map; cb.pfnFreeGpuVirtualAddressCb = F3FreeVa;
+        cb.pfnMakeResidentCb = F3Resident; cb.pfnWaitForSynchronizationObjectFromCpuCb = F3Wait;
+        errors.pfnSetErrorCb = TestSetError;
+        dev.pUMCallbacks = &errors; dev.hRTCoreLayer.handle = (void*)0xC0DEu;
+        dev.WinsysInitialized = TRUE; dev.Winsys.Initialized = TRUE;
+        dev.Winsys.Callbacks = &cb; dev.Winsys.PagingQueueCreated = TRUE;
+        hd.pDrvPrivate = &dev; hr.pDrvPrivate = &res; rt.handle = (void*)0xABu;
+        mip.PhysicalWidth = mip.TexelWidth = 64;
+        mip.PhysicalHeight = mip.TexelHeight = 64;
+        mip.PhysicalDepth = mip.TexelDepth = 1;
+        create.pMipInfoList = &mip; create.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
+        create.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        create.ArraySize = create.MipLevels = create.SampleDesc.Count = 1;
+        Bc250UmdPopulateDeviceFuncs10_1(&funcs);
+        g_CreateFailAt = stage; g_CreateDeallocs = g_CreateMaps = g_CreateResidents = 0;
+        g_SetErrorCalls = 0;
+        funcs.pfnCreateResource(hd, &create, hr, rt);
+        if (stage != 0u) {
+            assert(!res.Created);
+            assert(!res.Allocation.Created);
+            assert(g_SetErrorCalls == 1u && g_LastUmdError == E_OUTOFMEMORY);
+            assert(g_CreateDeallocs == (stage == 1u ? 0u : 1u));
+            assert(g_CreateResidents == (stage == 3u ? 1u : 0u));
+        } else {
+            assert(res.Created && res.Allocation.Resident);
+            assert(!res.Allocation.ResidencyPending);
+            assert(g_SetErrorCalls == 0u);
+            funcs.pfnDestroyResource(hd, hr);
+            assert(g_CreateDeallocs == 1u);
+        }
+    }
+}
+
+static void TestF5PrimaryDerivation(void)
+{
+    BC250_UMD_DEVICE dev;
+    D3D10DDI_HDEVICE hDev;
+    BC250_UMD_RESOURCE resExplorer;
+    BC250_UMD_RESOURCE resDwm;
+    BC250_UMD_RESOURCE resIncompat;
+    D3D10DDI_HRESOURCE hRes;
+    D3D10DDI_HRTRESOURCE hRTRes;
+    D3D10_1DDI_DEVICEFUNCS deviceFuncs10_1;
+    D3D10DDIARG_CREATERESOURCE createArg;
+    D3D10DDI_MIPINFO mipInfo;
+    DXGI_DDI_PRIMARY_DESC primaryDesc;
+
+    printf("[TEST] Testing F5.0 Primary Derivation (dwm.exe vs Explorer.EXE)...\n");
+
+    memset(&deviceFuncs10_1, 0, sizeof(deviceFuncs10_1));
+    Bc250UmdPopulateDeviceFuncs10_1(&deviceFuncs10_1);
+
+    memset(&dev, 0, sizeof(dev));
+    dev.DeviceActive = TRUE;
+    hDev.pDrvPrivate = &dev;
+    hRTRes.handle = (void*)0x524553;
+
+    /* Caso 1: Explorer.EXE -- 1024x832 com BIND_PRESENT e pPrimaryDesc == NULL */
+    memset(&createArg, 0, sizeof(createArg));
+    memset(&mipInfo, 0, sizeof(mipInfo));
+    mipInfo.PhysicalWidth = 1024;
+    mipInfo.PhysicalHeight = 832;
+    mipInfo.PhysicalDepth = 1;
+    mipInfo.TexelWidth = 1024;
+    mipInfo.TexelHeight = 832;
+    mipInfo.TexelDepth = 1;
+    createArg.pMipInfoList = &mipInfo;
+    createArg.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
+    createArg.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    createArg.Usage = D3D10_DDI_USAGE_DEFAULT;
+    createArg.BindFlags = D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_PRESENT;
+    createArg.MipLevels = 1;
+    createArg.ArraySize = 1;
+    createArg.pPrimaryDesc = NULL;
+
+    memset(&resExplorer, 0xFF, sizeof(resExplorer));
+    hRes.pDrvPrivate = &resExplorer;
+    deviceFuncs10_1.pfnCreateResource(hDev, &createArg, hRes, hRTRes);
+    assert(resExplorer.Created == TRUE);
+    assert(!resExplorer.IsPrimary);
+    deviceFuncs10_1.pfnDestroyResource(hDev, hRes);
+
+    /* Caso 2: dwm.exe -- 2560x1080 com pPrimaryDesc compativel (2560x1080) */
+    memset(&createArg, 0, sizeof(createArg));
+    memset(&mipInfo, 0, sizeof(mipInfo));
+    mipInfo.PhysicalWidth = 2560;
+    mipInfo.PhysicalHeight = 1080;
+    mipInfo.PhysicalDepth = 1;
+    mipInfo.TexelWidth = 2560;
+    mipInfo.TexelHeight = 1080;
+    mipInfo.TexelDepth = 1;
+    createArg.pMipInfoList = &mipInfo;
+    createArg.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
+    createArg.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    createArg.Usage = D3D10_DDI_USAGE_DEFAULT;
+    createArg.BindFlags = D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_PRESENT;
+    createArg.MipLevels = 1;
+    createArg.ArraySize = 1;
+
+    memset(&primaryDesc, 0, sizeof(primaryDesc));
+    primaryDesc.Flags = 0;
+    primaryDesc.VidPnSourceId = 0;
+    primaryDesc.ModeDesc.Width = 2560;
+    primaryDesc.ModeDesc.Height = 1080;
+    primaryDesc.ModeDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    createArg.pPrimaryDesc = &primaryDesc;
+
+    memset(&resDwm, 0xFF, sizeof(resDwm));
+    hRes.pDrvPrivate = &resDwm;
+    deviceFuncs10_1.pfnCreateResource(hDev, &createArg, hRes, hRTRes);
+    assert(resDwm.Created == TRUE);
+    assert(resDwm.IsPrimary);
+    deviceFuncs10_1.pfnDestroyResource(hDev, hRes);
+
+    /* Caso 3: Incompativel -- textura 1024x832 com pPrimaryDesc de modo 2560x1080 */
+    memset(&createArg, 0, sizeof(createArg));
+    memset(&mipInfo, 0, sizeof(mipInfo));
+    mipInfo.PhysicalWidth = 1024;
+    mipInfo.PhysicalHeight = 832;
+    mipInfo.PhysicalDepth = 1;
+    mipInfo.TexelWidth = 1024;
+    mipInfo.TexelHeight = 832;
+    mipInfo.TexelDepth = 1;
+    createArg.pMipInfoList = &mipInfo;
+    createArg.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
+    createArg.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    createArg.Usage = D3D10_DDI_USAGE_DEFAULT;
+    createArg.BindFlags = D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_PRESENT;
+    createArg.MipLevels = 1;
+    createArg.ArraySize = 1;
+    createArg.pPrimaryDesc = &primaryDesc; /* primaryDesc ainda tem 2560x1080 */
+
+    memset(&resIncompat, 0xFF, sizeof(resIncompat));
+    hRes.pDrvPrivate = &resIncompat;
+    deviceFuncs10_1.pfnCreateResource(hDev, &createArg, hRes, hRTRes);
+    assert(resIncompat.Created == TRUE);
+    assert(!resIncompat.IsPrimary);
+    deviceFuncs10_1.pfnDestroyResource(hDev, hRes);
+
+    printf("  -> F5.0 Primary Derivation PASS\n");
+}
+
 int main(void)
 {
     printf("================ BC250 D3D UMD CONTRACT TEST ================\n");
+    TestF5PrimaryDerivation();
+    TestF3CreateResourceTransaction();
     TestCapsProbeDecisionTable();
     TestNode1TripodAuthorization();
     TestProbeInterfaceAllowlist();
@@ -2572,6 +3106,7 @@ int main(void)
     TestViewAndOutputMergerDDIs();
     TestDrawAndPipelineBindingDDIs();
     TestDrawBltSubstitutionFailsClosed();
+    TestDrawPm4EmissionOnNode1();
     TestStateObjectDDIs();
     TestShaderResourceViewAndElementLayoutDDIs();
     TestQueryAndPredicationDDIs();

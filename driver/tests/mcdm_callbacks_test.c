@@ -19,7 +19,11 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
 #define CHECK(Expression) do { if (!(Expression)) { ExitProcess((unsigned long)__LINE__); return 0; } } while (0)
 #else
 #include <stdio.h>
-#define CHECK(Expression) do { if (!(Expression)) return 1; } while (0)
+/* Falha devolve 0 porque main() faz `return Run() ? 0 : 1`: devolver 1
+ * aqui fazia a falha virar SUCESSO no build offline. Medido em 14/09
+ * quebrando o emissor de proposito -- suite offline saiu EXIT=0 e a
+ * kernel EXIT=1. Travado por audit_offline_check_is_not_inverted. */
+#define CHECK(Expression) do { if (!(Expression)) return 0; } while (0)
 #endif
 
 void Bc250ProbeRecord(int Field, unsigned long Value)

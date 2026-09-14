@@ -73,6 +73,24 @@ BOOL Bc250UmdDrawBltSubstitutionArmed(void);
 BOOL Bc250UmdNoScanoutOptOutArmed(void);
 
 /*
+ * F5.2 (14/09) -- Emissao experimental de PM4 para Draw 3D (GFX10).
+ *
+ * DESARMADO POR PADRAO (fail-closed, default 0).
+ *
+ * Motivo: pacotes graficos 3D (CB_COLOR0, Scissor, DRAW_INDEX_AUTO) emitidos
+ * sem anel grafico dedicado (ME/PFP), sem shaders compilados (DXBC->SPIR-V->ACO)
+ * e sem geometria de entrada vinculada (vertex buffer / layout) NAO produzem pixel.
+ * Aceitar o Draw silenciosamente viola a Lei 4 (sucesso sem backend).
+ * O default de fabrica DEVE recusar honestamente com Bc250UmdRejectUnbackedDraw ("RECUSADO").
+ * Este tunable permite habilitar a emissao experimental apenas para ensaios controlados
+ * ou testes sem vazar para a producao.
+ */
+#define BC250_D3D11_EXPERIMENTAL_PM4_DRAW_REG_NAME "D3D11ExperimentalPm4Draw"
+#define BC250_D3D11_EXPERIMENTAL_PM4_DRAW_ENV_NAME "BC250_EXPERIMENTAL_PM4_DRAW"
+
+BOOL Bc250UmdExperimentalPm4DrawArmed(void);
+
+/*
  * O driver DECLARA ter pipeline 3D? Fonte unica das duas respostas que
  * dependiam disso: pfnCreateDevice devolver device, e GetCaps Type=130
  * (D3D11DDICAPS_3DPIPELINESUPPORT) publicar niveis.
