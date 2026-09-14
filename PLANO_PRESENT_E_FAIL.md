@@ -539,6 +539,113 @@ abaixo já falhou uma vez aqui, e agora cada um tem portão e mutação:
 
 **Mutações: 28/28 detectadas.** Os quatro scripts passam no parser do PowerShell.
 
+##### B.1 — 🎯 **FECHADA NO SILÍCIO** (corrida 14/09 13:54, candidato 3.181.1.0)
+
+A correção A16 pegou, e a **nossa** transação percorreu o ciclo inteiro da Lei 5 com cada
+etapa provada por readback:
+
+```
+[GfxRing] BRINGUP: transporte JA MAPEADO por estagio anterior -- reusando, sem desmapear no fim
+[GfxRing] BRINGUP veredito: OK (level=2) Reads=15 Writes=20
+[GfxRing] BRINGUP antes:    CNTL=00A00000 BASE=FEDCBAEF ME_CNTL=15000000 | planejado: CNTL=50000709
+[GfxRing] BRINGUP readback: CNTL=50000709 BASE=F40FFB00 ConfigOk=1 | desalt ok=1 ME_CNTL=00000000
+[GfxRing] BRINGUP partida:  tentada=1 ok=1 ACTIVE_readback=00000001 | rollback ok=1
+```
+
+| Etapa | Antes | Depois |
+|---|---|---|
+| Configuração | `CNTL=00A00000` `BASE=FEDCBAEF` | `CNTL=50000709` `BASE=F40FFB00` ✅ |
+| Desalt | `ME_CNTL=15000000` (três HALT) | `ME_CNTL=00000000` ✅ |
+| Partida | `ACTIVE=0` | `ACTIVE_readback=00000001` ✅ |
+| Rollback | — | restaurado e conferido ✅ |
+
+E o tripé do PFP **reproduziu**: `Status=0`, `RPTR==WPTR==31`, fence `0x43DAFFFE → 0xBC250123`
+sobre poison, `Mismatches=0`. Zero TDR, `DEVICE_REMOVED`, `GFXHUB_FAULT`, `GPU_EXCEPTION` e
+zero BugCheck.
+
+**Custo real da B.1: 4 corridas, 3 delas perdidas em defeito de host** — dica do dry-run sem o
+flag, perfil sem `CpSoftReset`, transporte já mapeado. Nenhuma foi de silício. As três viraram
+portão.
+
+---
+
+#### B.2 — programa de shader gráfico: decomposição e estado
+
+| Sub-etapa | O quê | Estado |
+|---|---|---|
+| **B.2.0** | Catálogo dos registradores de estado de shader | 🎯 **concluída offline** |
+| **B.2.1** | Contrato puro `SPI_SHADER_PGM_*` + testes + portão | 🎯 **concluída offline** |
+| **B.2.2** | Blobs de ISA (VS e PS) com manifesto, SHA-256 e procedência de compilador | ⬜ |
+| **B.2.3** | Staging: alocar VRAM, subir os blobs, provar byte a byte | ⬜ |
+| **B.2.4** | Corrida: emitir `SET_SH_REG` no anel gráfico e medir | ⬜ |
+
+##### B.2.0 — catálogo (concluída offline)
+
+16 registradores novos promovidos a **P1** em `docs/03`, com `BAR5_byte` **calculado por
+script** — o erro de hex `0xF52A000` de 08/09 nasceu de conta manual:
+`SPI_SHADER_PGM_RSRC3_PS/VS`, `RSRC4_VS`, `VGT_SHADER_STAGES_EN`, `SPI_VS_OUT_CONFIG`,
+`SPI_SHADER_{POS,Z,COL}_FORMAT`, `SPI_PS_INPUT_{ENA,ADDR}`, `SPI_PS_INPUT_CNTL_0`,
+`SPI_PS_IN_CONTROL`, `CB_SHADER_MASK`, `PA_SU_SC_MODE_CNTL`, `PA_SC_AA_CONFIG`,
+`VGT_DRAW_PAYLOAD_CNTL`.
+
+**Conferência colateral que valeu a pena:** as 11 definições de registrador de contexto já
+existentes em `bc250_pm4_packet_builder.h` foram cruzadas uma a uma contra o header —
+**11/11 conferem**. Não houve repetição do achado dos 6 endereços errados do protótipo.
+
+##### B.2.1 — contrato puro (concluída offline)
+
+`driver/core/bc250_gfx_shader_contract.{c,h}` — codifica `SPI_SHADER_PGM_LO/HI/RSRC1/RSRC2`,
+valida o plano e devolve os quatro registradores. Não toca MMIO, não aloca.
+
+**A decisão de projeto que importa: a regra incerta ficou fora do caminho crítico.**
+
+A granularidade de alocação de VGPR/SGPR — quantos registradores cada unidade do campo
+representa — **não está no `sh_mask.h`**. O header dá a *posição* do campo, não a *escala*. Ela
+é classe **H**.
+
+Em vez de assumi-la, o valor que vai ao silício é o do **manifesto do compilador**, e a regra H
+apenas **confere**, falhando fechado na divergência. Assim a regra é *falsificável* em vez de
+assumida: se o compilador discordar, o build reprova, e quem está errado sou eu — não o
+silício.
+
+**Âncora de realidade, e ela tem dentes:** `bc250_observable_shader.c` carrega um manifesto de
+compilador real (AMD clang/LLVM ROCm 7.2.1, `--offload-arch=gfx1010`) cujo shader **já executou
+no silício**. `COMPUTE_PGM_RSRC1` e `SPI_SHADER_PGM_RSRC1_{PS,VS}` têm `VGPRS` em `[5:0]` e
+`SGPRS` em `[9:6]` — mesmas posições, mesma ISA. A suíte exige que a regra reproduza os campos
+que o compilador emitiu. **Mutar `blocks - 1` para `blocks` derruba a suíte** (verificado:
+`build-contract` EXIT=1).
+
+> ⚠️ **Ressalva declarada:** com `NumVgprs=2` e `NumSgprs=2`, qualquer granularidade ≥ 2 produz
+> campo 0. A âncora **confirma mas não discrimina** a escala. Ela é fraca de propósito e está
+> anotada como fraca no próprio teste; quem a ler como prova da granularidade está lendo
+> errado.
+
+**Outras três armadilhas fechadas no contrato:**
+
+1. **Divisão do endereço** — `LO` recebe `addr[39:8]`, `HI` recebe `addr[47:40]`. Derivado de
+   `SPI_SHADER_PGM_HI_*__MEM_BASE_MASK` ter 8 bits: endereço cru endereçaria só 40 dos 48 bits
+   de VA. A mesma divisão **já executou no silício** no caminho de compute
+   (`bc250_compute_dispatch_contract.c:77`). Endereço não alinhado a 256 é **recusado**, não
+   truncado.
+2. **`MEM_ORDERED` fica em bit diferente por estágio** — 25 no PS, 27 no VS. O bit 25 cai
+   **dentro** de `VGPR_COMP_CNT` do VS. `VGPR_COMP_CNT` no PS é recusado, não ignorado.
+3. **Fonte única de `S_ENDPGM`** — a checagem de ISA delega a `Bc250ValidateComputeShaderIsa`.
+   Constante duplicada em dois módulos já custou A13, B4 e ContextAbi: três corridas.
+
+**Verificação:** `build-contract` EXIT=0, `build-umd` inalterado, três auditorias PASS, portão
+novo `audit_gfx_shader_contract_is_honest`, e **15 mutações verificadas**
+(`tools/test-b2-gfx-shader-mutations.py`).
+
+> **Armadilha registrada:** a primeira versão da mutação M11 substituía a linha do `RSRC2` e
+> por isso reprovava pelo invariante **errado** — falha não-atribuível é portão fraco. Refeita
+> para não tocar em nenhuma linha-âncora. É a segunda vez que cometo essa classe (a primeira
+> foi a mutação 4 da faixa da primária, em 13/09).
+
+**NADA DA B.2 FOI VALIDADO EM HARDWARE.** B.2.1 é contrato puro: não escreve registrador, não
+muda nenhum caminho de GPU, e não deve alterar desfecho de corrida alguma.
+
+---
+
 ##### 🎯 O ANEL GRÁFICO EXECUTA — tripé completo (corrida 14/09 13:18)
 
 A pergunta central da Parede B — *"o motor 3D liga?"* — está respondida: **liga e executa**.

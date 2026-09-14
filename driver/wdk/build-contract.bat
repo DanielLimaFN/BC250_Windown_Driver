@@ -149,6 +149,10 @@ echo [cc] bc250_gfx_ring_transaction.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_gfx_ring_transaction.obj" "%ROOTDIR%\driver\core\bc250_gfx_ring_transaction.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
+echo [cc] bc250_gfx_shader_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gfx_shader_contract.obj" "%ROOTDIR%\driver\core\bc250_gfx_shader_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
 echo [cc] bc250_golden_settings_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_golden_settings_contract.obj" "%ROOTDIR%\driver\core\bc250_golden_settings_contract.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -788,6 +792,26 @@ if %ERRORLEVEL% NEQ 0 (
   exit /b 1
 )
 echo GFX RING CONTRACT: OK ^(boot medido 00A00000 com as 3 micro-engines halted, CNTL de referencia por aritmetica, RB_EXE fail-closed, tripe com volta, transacao Lei 5^)
+
+echo [cc] gfx_shader_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\gfx_shader_contract_test.obj" "%ROOTDIR%\driver\tests\gfx_shader_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] gfx_shader_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gfx_shader_contract_test.exe" ^
+  "%ODIR%\bc250_gfx_shader_contract.obj" ^
+  "%ODIR%\bc250_isa_validator.obj" ^
+  "%ODIR%\bc250_observable_shader.obj" ^
+  "%ODIR%\gfx_shader_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\gfx_shader_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(gfx_shader_contract_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+echo GFX SHADER CONTRACT: OK ^(granularidade conferida contra manifesto de compilador real, divisao 8/40 do endereco, RSRC do manifesto com campos derivados conferidos, MEM_ORDERED por estagio^)
 
 echo [cc] golden_settings_contract_test.c
 cl %CFLAGS% /Fo"%ODIR%\golden_settings_contract_test.obj" "%ROOTDIR%\driver\tests\golden_settings_contract_test.c"

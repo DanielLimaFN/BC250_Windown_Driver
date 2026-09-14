@@ -263,6 +263,44 @@ deixa de ser a única fonte: há header autoritativo local.
 | `SPI_SHADER_PGM_RSRC2_VS` | `0x19EB` | 0 | `0x0B12C` | P1 |
 | `SPI_SHADER_USER_DATA_VS_0` | `0x19EC` | 0 | `0x0B130` | P1 |
 
+
+#### Bloco desbloqueado — estado de shader gráfico (B.2)
+
+Extraídos do mesmo `gc_10_1_0_offset.h` vendorizado, pela mesma regra
+`BAR5_byte = (base_dw[BASE_IDX] + mmREG) * 4` com `base_dw[0]=0x1260` e
+`base_dw[1]=0xA000`. Endereços **calculados por script**, não à mão — o erro de
+hex `0xF52A000` de 08/09 nasceu de conta manual. Classe **P1**.
+
+| Registro | mmREG | BASE_IDX | BAR5 byte | Classe |
+|---|---:|---:|---:|---:|
+| `SPI_SHADER_PGM_RSRC3_PS` | `0x19A7` | 0 | `0x0B01C` | P1 |
+| `SPI_SHADER_PGM_RSRC3_VS` | `0x19E6` | 0 | `0x0B118` | P1 |
+| `SPI_SHADER_PGM_RSRC4_VS` | `0x19E1` | 0 | `0x0B104` | P1 |
+| `VGT_SHADER_STAGES_EN` | `0x02D5` | 1 | `0x28B54` | P1 |
+| `SPI_VS_OUT_CONFIG` | `0x01B1` | 1 | `0x286C4` | P1 |
+| `SPI_SHADER_POS_FORMAT` | `0x01C3` | 1 | `0x2870C` | P1 |
+| `SPI_SHADER_Z_FORMAT` | `0x01C4` | 1 | `0x28710` | P1 |
+| `SPI_SHADER_COL_FORMAT` | `0x01C5` | 1 | `0x28714` | P1 |
+| `SPI_PS_INPUT_ENA` | `0x01B3` | 1 | `0x286CC` | P1 |
+| `SPI_PS_INPUT_ADDR` | `0x01B4` | 1 | `0x286D0` | P1 |
+| `SPI_PS_INPUT_CNTL_0` | `0x0191` | 1 | `0x28644` | P1 |
+| `SPI_PS_IN_CONTROL` | `0x01B6` | 1 | `0x286D8` | P1 |
+| `CB_SHADER_MASK` | `0x008F` | 1 | `0x2823C` | P1 |
+| `PA_SU_SC_MODE_CNTL` | `0x0205` | 1 | `0x28814` | P1 |
+| `PA_SC_AA_CONFIG` | `0x02F8` | 1 | `0x28BE0` | P1 |
+| `VGT_DRAW_PAYLOAD_CNTL` | `0x02A6` | 1 | `0x28A98` | P1 |
+
+> ⚠️ `SPI_SHADER_PGM_RSRC1_*` tem `MEM_ORDERED` em **bits diferentes** por estágio:
+> bit 25 no PS (`0x02000000`) e bit 27 no VS (`0x08000000`). O bit 25 cai **dentro**
+> de `VGPR_COMP_CNT` do VS (`0x03000000`), então uma fórmula única para os dois
+> estágios escreve um campo achando que escreve outro. Travado por
+> `audit_gfx_shader_contract_is_honest`.
+
+> ⚠️ A **granularidade** de alocação de VGPR/SGPR **não está** no `sh_mask.h` — o
+> header dá a posição do campo, não a escala. Ela é classe **H** e por isso não
+> está no caminho crítico: o valor publicado é o do manifesto do compilador, e a
+> regra apenas **confere**, falhando fechado na divergência
+> (`driver/core/bc250_gfx_shader_contract.c`).
 #### Bloco desbloqueado — geometria e viewport (B.3)
 
 | Registro | mmREG | BASE_IDX | BAR5 byte | Classe |

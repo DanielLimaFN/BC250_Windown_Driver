@@ -830,6 +830,123 @@ def audit_offline_check_is_not_inverted(errors: list[str]) -> None:
                 "usa `Run() ? 0 : 1` -- falha vira SUCESSO no build offline")
 
 
+
+def audit_gfx_shader_contract_is_honest(errors: list[str]) -> None:
+    """B.2 -- O PROGRAMA DE SHADER NAO PODE SER PUBLICADO POR ADIVINHACAO.
+
+    Este modulo aponta a SPI para codigo na VRAM. Os quatro modos de errar
+    aqui ja tem precedente neste projeto, e nenhum deles produz mensagem de
+    erro no silicio -- produzem wave lendo registrador alheio, ou engine
+    grafica travada com BugCheck 0x116/0x119:
+
+      1. A granularidade de VGPR/SGPR NAO esta no sh_mask.h -- e' regra H.
+         Se ela virar caminho critico sem conferencia, publicamos uma
+         alocacao que o codigo compilado nao respeita. O contrato exige que
+         o valor do MANIFESTO seja o publicado e que a regra apenas CONFIRA,
+         falhando fechado na divergencia.
+      2. Endereco cru em vez de >>8/>>40 perde os 8 bits baixos em silencio
+         e enderecaria so' 40 dos 48 bits de VA.
+      3. MEM_ORDERED fica no bit 25 no PS e no 27 no VS. O bit 25 cai DENTRO
+         de VGPR_COMP_CNT do VS: generalizar os dois estagios numa formula
+         escreve um campo achando que escreve outro.
+      4. Segunda definicao de S_ENDPGM. Campo/constante duplicado em dois
+         modulos ja custou A13, B4 e ContextAbi -- tres corridas.
+
+    O meta-portao exige que o TESTE continue cobrando cada ponto: em cinco
+    ocasioes neste projeto o gate carimbou o falso sucesso porque o teste
+    foi afrouxado junto com o codigo (A15, mcdm_callbacks_test, C1,
+    sdma_blt_executed, teste do blt com 128 bytes).
+    """
+    src_path = ROOT / "driver" / "core" / "bc250_gfx_shader_contract.c"
+    hdr_path = ROOT / "driver" / "core" / "bc250_gfx_shader_contract.h"
+    test_path = ROOT / "driver" / "tests" / "gfx_shader_contract_test.c"
+    for path in (src_path, hdr_path, test_path):
+        if not path.exists():
+            errors.append(f"fonte ausente para auditar o shader grafico: {path.name}")
+            return
+
+    src = src_path.read_text(encoding="utf-8", errors="replace")
+    hdr = hdr_path.read_text(encoding="utf-8", errors="replace")
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+    src_code = strip_c_comments(src)
+
+    compute = function_body(
+        src, "BC250_GFX_SHADER_STATUS Bc250GfxShaderComputeRegs")
+    if not compute:
+        errors.append("Bc250GfxShaderComputeRegs nao localizado")
+    else:
+        compute_code = strip_c_comments(compute)
+
+        # 1. O manifesto e' o publicado; a regra H so' confere.
+        require(compute_code, "Regs->Rsrc1 = Plan->Rsrc1Manifest;",
+                "RSRC1 publicado vem do manifesto do compilador", errors)
+        require(compute_code, "Regs->Rsrc2 = Plan->Rsrc2Manifest;",
+                "RSRC2 publicado vem do manifesto do compilador", errors)
+        require(compute_code, "return BC250_GFX_SHADER_MANIFEST_MISMATCH;",
+                "recusa nomeada quando a regra H discorda do compilador", errors)
+        # Falha fechada de verdade: nada publicavel pode sobrar na saida.
+        for field in ("Regs->PgmLo = 0u;", "Regs->PgmHi = 0u;",
+                      "Regs->Rsrc1 = 0u;", "Regs->Rsrc2 = 0u;"):
+            require(compute_code, field,
+                    "zeragem da saida no caminho de MANIFEST_MISMATCH", errors)
+
+        # 2. Divisao do endereco. O gate exige os DOIS deslocamentos: so' o
+        #    >>8 passaria com HI cru, e so' o >>40 passaria com LO cru.
+        require(compute_code, "(uint32_t)(Plan->GpuAddress >> 8)",
+                "PgmLo recebe addr[39:8]", errors)
+        require(compute_code, "(uint32_t)(Plan->GpuAddress >> 40)",
+                "PgmHi recebe addr[47:40]", errors)
+        require(compute_code, "return BC250_GFX_SHADER_MISALIGNED;",
+                "recusa nomeada de endereco nao alinhado a 256", errors)
+        require(compute_code, "return BC250_GFX_SHADER_ADDRESS_OUT_OF_RANGE;",
+                "recusa nomeada de endereco acima de 48 bits", errors)
+
+        # 3. VGPR_COMP_CNT nao pode ser aceito no PS -- la aquele bit e' outro.
+        require(compute_code, "BC250_GFX_SHADER_STAGE_PS",
+                "guarda de estagio no tratamento de VGPR_COMP_CNT", errors)
+
+        # Lei 6 -- substituicao de campo, nunca OR cru sobre o manifesto.
+        require(compute_code, "& ~BC250_GFX_RSRC1_VGPRS_MASK",
+                "Lei 6 na substituicao de VGPRS", errors)
+        require(compute_code, "& ~BC250_GFX_RSRC1_SGPRS_MASK",
+                "Lei 6 na substituicao de SGPRS", errors)
+        require(compute_code, "& ~BC250_GFX_RSRC2_USER_SGPR_MASK",
+                "Lei 6 na substituicao de USER_SGPR", errors)
+
+    # 3b. Os dois MEM_ORDERED tem de continuar sendo constantes DISTINTAS.
+    require(hdr, "#define BC250_GFX_RSRC1_PS_MEM_ORDERED_MASK   0x02000000u",
+            "MEM_ORDERED do PS no bit 25", errors)
+    require(hdr, "#define BC250_GFX_RSRC1_VS_MEM_ORDERED_MASK   0x08000000u",
+            "MEM_ORDERED do VS no bit 27", errors)
+
+    # 4. Fonte unica de S_ENDPGM -- a checagem de ISA delega ao validador.
+    forbid(strip_c_comments(hdr), "BC250_GFX_OPCODE_S_ENDPGM",
+           "segunda definicao de S_ENDPGM fora de bc250_isa_validator.h", errors)
+    forbid(src_code, "0xBF810000",
+           "S_ENDPGM literal no contrato de shader grafico", errors)
+    require(src_code, "Bc250ValidateComputeShaderIsa(",
+            "delegacao da regra de ISA a fonte unica", errors)
+
+    # O bit de SHADER_TYPE=COMPUTE nunca pode entrar no caminho grafico:
+    # SET_SH_REG com ele ligado enderecaria os registradores da MEC.
+    forbid(src_code, "SHADER_TYPE_COMPUTE",
+           "SHADER_TYPE=COMPUTE no caminho de shader GRAFICO", errors)
+
+    # META-PORTAO: o teste tem de continuar cobrando os mesmos pontos.
+    require(test, "Bc250GetObservableShaderManifest()",
+            "ancora da regra H contra manifesto de compilador REAL", errors)
+    require(test, "BC250_GFX_SHADER_MANIFEST_MISMATCH",
+            "teste da recusa por divergencia com o manifesto", errors)
+    require(test, "CHECK(regs.PgmHi != 0u);",
+            "teste com endereco alto -- sem ele LO cru passaria", errors)
+    require(test, "BC250_GFX_RSRC1_PS_MEM_ORDERED_MASK &",
+            "teste da sobreposicao entre MEM_ORDERED do PS e VGPR_COMP_CNT", errors)
+    # Contraponto: sem ele a conferencia de manifesto vira peneira que
+    # rejeita ate a escolha legitima do compilador.
+    require(test, "CHECK(Bc250GfxShaderComputeRegs(&plan, &regs) == BC250_GFX_SHADER_OK);",
+            "contraponto -- campo de politica do compilador passa intacto", errors)
+
+
 def audit_gfx_ring_contract_is_honest(errors: list[str]) -> None:
     """B.1 -- O ANEL GRAFICO NAO PODE NASCER MENTINDO.
 
@@ -5206,6 +5323,7 @@ def main() -> int:
     audit_f3_pixel_and_residency_truth(errors)
     audit_describe_allocation_is_not_mute(errors)
     audit_gfx_ring_contract_is_honest(errors)
+    audit_gfx_shader_contract_is_honest(errors)
     audit_offline_check_is_not_inverted(errors)
 
     if errors:
