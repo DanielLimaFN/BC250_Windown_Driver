@@ -2,7 +2,7 @@
 
 > **Governança de engenharia do repositório BC250-WinDv**
 > *Target: AMD BC-250 (`1002:13FE`, GC 10.1.3 / Cyan Skillfish 2) | Windows 10 22H2 x64*
-> **Última revisão: 2026-09-07**
+> **Última revisão: 2026-09-16**
 
 ---
 
@@ -23,10 +23,26 @@ da prioridade P9; leitura é permitida.
 
 ---
 
-## 🛑 1. Barra de status obrigatória
+## Diretriz vigente — qualidade e relato de corridas (16/09/2026)
 
-Inicie toda proposta e análise com a barra abaixo. **Ela reflete medição, não desejo.**
-Se você a atualizar, cada número deve ter evidência em `docs/evidence/`.
+Esta decisão do proprietário prevalece sobre orientações históricas conflitantes abaixo. Cumprir [DIRETRIZ_QUALIDADE_UMD_DX11_E_MARCOS_GRAPHICS.md](DIRETRIZ_QUALIDADE_UMD_DX11_E_MARCOS_GRAPHICS.md).
+
+- **Qualidade antes de velocidade:** WDDM display+render, desktop acelerado e aplicações/jogos não modificados. Não reduzir a meta a demos, render-only ou fallback de software.
+- **Refazer Marcos 3 e 4:** tela colorida e cubo com vkCreateGraphicsPipelines, vertex/fragment shaders e vkCmdDraw, engine física identificada e pixels conferidos. Preservar compute/SDMA como prova desse escopo; conferir hashes antes de atribuir fontes atuais a binários históricos.
+- **UMD D3D11 traduzida para Vulkan:** DDIs reais, recursos compartilhados, sincronização, residência, apresentação Windows e recuperação. DXVK local por aplicativo não fecha a entrega. Não anunciar GRAPHICS apenas removendo uma trava.
+- **DCN básico integra o produto final em P9**, respeitando P5 e a governança de escrita; não é pré-requisito do primeiro desktop no GOP.
+- **Está revogada a barra “STATUS DO DRIVER BC-250” antes de cada mensagem**, proposta, plano ou análise. Blocos antigos abaixo são histórico, não modelo de resposta nem status atual.
+- **Após cada corrida física analisada, informar obrigatoriamente ao Daniel:**
+  1. **Houve avanço?** Sim, não ou inconclusivo, comparando com a corrida anterior pertinente. Diferenciar avanço funcional de aprendizado de diagnóstico.
+  2. **Sucessos:** o que passou, métricas e evidência.
+  3. **Falhas:** erros, timeouts, pixels incorretos, device-lost, TDR, BugCheck e problemas observados; se nenhum foi observado, limitar a afirmação ao escopo medido.
+  4. **Veredito:** sucesso, parcial, falha ou inconclusivo frente ao critério definido antes do ensaio. Código 0 e Exit 0 isolados não fecham o teste.
+  5. **Recuperação e pendências:** driver ativo ao final, resultado do rollback, o que continua NÃO VALIDADO EM HARDWARE e próximo passo justificado.
+- Identificar data/hora, candidato e pasta de evidência. Se faltarem logs ou medições, declarar a lacuna, sem inventar métricas. Desktop restaurado pelo BasicDisplay é recuperação, não sucesso do nosso DWM.
+- Arquivar provas e atualizar BASE_DE_AVANCO.md quando houver conclusão nova. Alteração offline não é corrida. Não repetir percentuais históricos como medida de prontidão do produto.
+
+### Registro histórico — não reproduzir automaticamente
+
 
 ```text
 ================================== STATUS DO DRIVER BC-250 ==================================
@@ -1489,5 +1505,5 @@ powershell -ExecutionPolicy Bypass -File tools\test-gcvm-translate.ps1 -Execute 
 ## 🔄 6. Manutenção destes arquivos
 
 `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` e `.cursorrules` compartilham o mesmo núcleo
-normativo. **Ao mudar uma lei ou a barra de status, atualize os quatro.** Divergência entre
+normativo. **Ao mudar uma lei ou a regra de relato de corridas, atualize os quatro.** Divergência entre
 eles já produziu, no passado, agentes declarando sucesso inexistente.

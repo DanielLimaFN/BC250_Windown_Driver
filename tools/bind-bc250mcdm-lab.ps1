@@ -33,10 +33,25 @@ param(
     [switch]$RunRadvComputeTripod,
     # Dispara UMA corrida de RADV_WDDM_PRESENT_TRIPOD (Marco 2) logo apos o bind
     [switch]$RunRadvPresentTripod,
+    # Dispara UMA corrida de VULKAN_WSI_CUBE (Marco 4) logo apos o bind
+    [switch]$RunVulkanCube,
+    [int]$VulkanCubeFrames = 3600,
+    # Dispara UMA corrida de DXVK_D3D11 (Marco 5) logo apos o bind
+    [switch]$RunDxvkD3D11,
+    [int]$DxvkFrames = 1800,
     # Executa UMA transacao B7 originada pela UMD logo apos o bind, sob o
     # mesmo watchdog. E' separado do RADV para nao misturar duas experiencias
     # fisicas no mesmo candidato.
     [switch]$RunUmdNode1Tripod,
+    # Dispara UMA corrida de MARCO3_GRAPHICS_DRAW (vkCmdDraw + SMPTE Color Bars)
+    [switch]$RunMarco3Graphics,
+    [int]$Marco3Frames = 600,
+    # Dispara UMA corrida de MARCO4_GRAPHICS_CUBE (vkCmdDraw + 3D Depth Cube)
+    [switch]$RunMarco4Cube,
+    [int]$Marco4Frames = 600,
+    # Dispara UMA corrida de D3D11_NATIVE_CONFORMANCE (bc250umd.dll -> Vulkan Bridge)
+    [switch]$RunD3D11Native,
+    [int]$D3D11Frames = 600,
     # Permite habilitar Plano A (fill direto no anel) para isolamento e protecao contra 0x119.
     [switch]$EnableSdmaPlanoAFallback,
     # B.1 (14/09): FOTOGRAFA o anel grafico CP_RB0 durante o bring-up. SOMENTE
@@ -47,9 +62,18 @@ param(
     [switch]$EnableGfxRingPreflight,
     # B.1 (14/09): ensaio ESCALONADO do anel grafico. 1 configura CP_RB0 e
     # confere por readback, com as micro-engines ainda HALTED. 2 acrescenta o
-    # desalt e a partida. O rollback e' sempre executado e conferido, entao o
+    # desalt e a partida. 3 acrescenta submissao de SH_REG (shaders VS+PS).
+    # 4 acrescenta isolamento de estado PM4 3D (Shaders, ColorTarget, Viewport, PrimAssembler) e Fence (SkipDraw=1).
+    # 5 acrescenta pipeline 3D completo com Draw Initiator (DRAW_INDEX_AUTO) e Fence.
+    # O rollback e' sempre executado e conferido, entao o
     # StartDevice termina com a placa como a encontrou.
-    [ValidateRange(0,2)][int]$GfxRingBringupLevel = 0,
+    [ValidateRange(0,5)][int]$GfxRingBringupLevel = 0,
+    # Sub-etapas de isolamento progressivo PM4 3D para Level 4:
+    # 1: Sub-etapa 4.1 -- Shaders (Bloco 1) + ColorTarget 0 (Bloco 2) + TargetMask (Bloco 3) + Fence (Bloco 7)
+    # 2: Sub-etapa 4.2 -- + Viewport & Scissor (Bloco 4) + Fence (Bloco 7)
+    # 3: Sub-etapa 4.3 -- + Primitive Assembler (Bloco 5) + Fence (Bloco 7) (SkipDraw=1)
+    # 4: Sub-etapa 4.4 -- + Draw Initiator (Bloco 6: DRAW_INDEX_AUTO) + Fence (Bloco 7)
+    [ValidateRange(0,4)][int]$GfxRingStage = 1,
     # C3.9 (12/09): troca o bloqueio GLOBAL do journal no gate do Node 1 pela
     # pendencia do PROCESSO QUE SUBMETE.
     #
@@ -96,7 +120,12 @@ $packageCat = Join-Path $packageDir 'bc250mcdm.cat'
 $manifestPath = Join-Path $root 'driver\wdk\package\output_lab.manifest.json'
 $radvComputeTripod = Join-Path $root 'tools\test-radv-wddm-compute-tripod.ps1'
 $radvPresentTripod = Join-Path $root 'tools\test-radv-wddm-present-tripod.ps1'
+$vulkanCube = Join-Path $root 'tools\test-vulkan-wsi-cube.ps1'
+$dxvkRunner = Join-Path $root 'tools\test-dxvk-d3d11.ps1'
 $umdNode1Tripod = Join-Path $root 'tools\test-b7-umd-node1-tripod.ps1'
+$marco3Runner = Join-Path $root 'tools\test-marco3-graphics-draw.ps1'
+$marco4Runner = Join-Path $root 'tools\test-marco4-graphics-cube.ps1'
+$d3d11Runner = Join-Path $root 'tools\test-d3d11-native-conformance.ps1'
 # Gate proprio do laboratorio: o de producao exige SkipHwBringup=1 e por isso
 # rejeita este binding sempre, por construcao (doc 95 secao B3).
 $safeConfirmScript = Join-Path $root 'tools\confirm-bc250mcdm-safe-bind.ps1'
@@ -217,10 +246,20 @@ if ($EnableD3D11DrawBltSubstitution -and -not $EnableD3D11LabPromotion) {
 if ($EnableD3D11ShaderTranslator -and -not $EnableD3D11LabPromotion) {
     throw '-EnableD3D11ShaderTranslator exige -EnableD3D11LabPromotion.'
 }
+$activeRunners = @()
+if ($RunRadvComputeTripod) { $activeRunners += 'Compute' }
+if ($RunRadvPresentTripod) { $activeRunners += 'Present' }
+if ($RunVulkanCube) { $activeRunners += 'VulkanCube' }
+if ($RunDxvkD3D11) { $activeRunners += 'DXVK' }
+if ($RunUmdNode1Tripod) { $activeRunners += 'B7_UMD_NODE1_TRIPOD' }
+if ($RunMarco3Graphics) { $activeRunners += 'Marco3Graphics' }
+if ($RunMarco4Cube) { $activeRunners += 'Marco4Cube' }
+if ($RunD3D11Native) { $activeRunners += 'D3D11Native' }
+if ($activeRunners.Count -gt 1) {
+    throw ("Escolha uma unica experiencia fisica. Informados: " + ($activeRunners -join ', '))
+}
+
 if ($RunRadvComputeTripod) {
-    # Cada exigencia aqui e um preflight do proprio runner, antecipado para o
-    # inicio do script. Descobrir a falta de uma delas depois do bind custaria
-    # a corrida inteira.
     if (-not $EnableGpuvaLabPromotion) {
         throw ('-RunRadvComputeTripod exige -EnableGpuvaLabPromotion: sem o gate ' +
                'GPUVA aberto o submit no node 1 devolve STATUS_NOT_SUPPORTED.')
@@ -241,9 +280,6 @@ if ($RunRadvComputeTripod) {
     }
 }
 if ($RunRadvPresentTripod) {
-    if ($RunRadvComputeTripod -or $RunUmdNode1Tripod) {
-        throw 'Escolha uma unica experiencia fisica: Compute, Present ou B7_UMD_NODE1_TRIPOD.'
-    }
     if (-not $EnableGpuvaLabPromotion) {
         throw ('-RunRadvPresentTripod exige -EnableGpuvaLabPromotion: sem o gate ' +
                'GPUVA aberto o submit no node 1 devolve STATUS_NOT_SUPPORTED.')
@@ -263,8 +299,48 @@ if ($RunRadvPresentTripod) {
         throw "Runner ausente: $radvPresentTripod"
     }
 }
+if ($RunVulkanCube) {
+    if (-not $EnableGpuvaLabPromotion) {
+        throw ('-RunVulkanCube exige -EnableGpuvaLabPromotion: sem o gate ' +
+               'GPUVA aberto o submit no node 1 devolve STATUS_NOT_SUPPORTED.')
+    }
+    if ($DisableWatchdog) {
+        throw ('-RunVulkanCube exige o watchdog: o runner recusa a corrida ' +
+               'sem o guardiao SYSTEM em OBSERVING.')
+    }
+    if ($EnablePhysicalRenderOnly) {
+        throw ('-RunVulkanCube nao vale no perfil physical render-only: ' +
+               'esse ciclo e fire-and-collect e termina em reboot.')
+    }
+    if ($WatchdogTimeoutSeconds -lt 90) {
+        throw 'VULKAN_WSI_CUBE exige WatchdogTimeoutSeconds entre 90 e 600.'
+    }
+    if (-not (Test-Path -LiteralPath $vulkanCube -PathType Leaf)) {
+        throw "Runner ausente: $vulkanCube"
+    }
+}
+if ($RunDxvkD3D11) {
+    if (-not $EnableGpuvaLabPromotion) {
+        throw ('-RunDxvkD3D11 exige -EnableGpuvaLabPromotion: sem o gate ' +
+               'GPUVA aberto o submit no node 1 devolve STATUS_NOT_SUPPORTED.')
+    }
+    if ($DisableWatchdog) {
+        throw ('-RunDxvkD3D11 exige o watchdog: o runner recusa a corrida ' +
+               'sem o guardiao SYSTEM em OBSERVING.')
+    }
+    if ($EnablePhysicalRenderOnly) {
+        throw ('-RunDxvkD3D11 nao vale no perfil physical render-only: ' +
+               'esse ciclo e fire-and-collect e termina em reboot.')
+    }
+    if ($WatchdogTimeoutSeconds -lt 90) {
+        throw 'DXVK_D3D11 exige WatchdogTimeoutSeconds entre 90 e 600.'
+    }
+    if (-not (Test-Path -LiteralPath $dxvkRunner -PathType Leaf)) {
+        throw "Runner ausente: $dxvkRunner"
+    }
+}
 if ($RunUmdNode1Tripod) {
-    if ($RunRadvComputeTripod -or $RunRadvPresentTripod) {
+    if ($RunRadvComputeTripod -or $RunRadvPresentTripod -or $RunVulkanCube -or $RunDxvkD3D11 -or $RunMarco3Graphics -or $RunMarco4Cube -or $RunD3D11Native) {
         throw 'Escolha uma unica experiencia fisica: RADV ou B7_UMD_NODE1_TRIPOD.'
     }
     if (-not $EnableGpuvaLabPromotion -or -not $IAcceptGpuvaLabPromotion) {
@@ -285,6 +361,69 @@ if ($RunUmdNode1Tripod) {
     }
     if (-not (Test-Path -LiteralPath $umdNode1Tripod -PathType Leaf)) {
         throw "Runner ausente: $umdNode1Tripod"
+    }
+}
+if ($RunMarco3Graphics) {
+    if (-not $EnableGpuvaLabPromotion) {
+        throw ('-RunMarco3Graphics exige -EnableGpuvaLabPromotion: sem o gate ' +
+               'GPUVA aberto o submit no node 1 devolve STATUS_NOT_SUPPORTED.')
+    }
+    if ($DisableWatchdog) {
+        throw ('-RunMarco3Graphics exige o watchdog: o runner recusa a corrida ' +
+               'sem o guardiao SYSTEM em OBSERVING.')
+    }
+    if ($EnablePhysicalRenderOnly) {
+        throw ('-RunMarco3Graphics nao vale no perfil physical render-only: ' +
+               'esse ciclo e fire-and-collect e termina em reboot.')
+    }
+    if ($WatchdogTimeoutSeconds -lt 90) {
+        throw 'MARCO3_GRAPHICS_DRAW exige WatchdogTimeoutSeconds entre 90 e 600.'
+    }
+    if (-not (Test-Path -LiteralPath $marco3Runner -PathType Leaf)) {
+        throw "Runner ausente: $marco3Runner"
+    }
+}
+if ($RunMarco4Cube) {
+    if (-not $EnableGpuvaLabPromotion) {
+        throw ('-RunMarco4Cube exige -EnableGpuvaLabPromotion: sem o gate ' +
+               'GPUVA aberto o submit no node 1 devolve STATUS_NOT_SUPPORTED.')
+    }
+    if ($DisableWatchdog) {
+        throw ('-RunMarco4Cube exige o watchdog: o runner recusa a corrida ' +
+               'sem o guardiao SYSTEM em OBSERVING.')
+    }
+    if ($EnablePhysicalRenderOnly) {
+        throw ('-RunMarco4Cube nao vale no perfil physical render-only: ' +
+               'esse ciclo e fire-and-collect e termina em reboot.')
+    }
+    if ($WatchdogTimeoutSeconds -lt 90) {
+        throw 'MARCO4_GRAPHICS_CUBE exige WatchdogTimeoutSeconds entre 90 e 600.'
+    }
+    if (-not (Test-Path -LiteralPath $marco4Runner -PathType Leaf)) {
+        throw "Runner ausente: $marco4Runner"
+    }
+}
+if ($RunD3D11Native) {
+    if (-not $EnableGpuvaLabPromotion) {
+        throw ('-RunD3D11Native exige -EnableGpuvaLabPromotion: sem o gate ' +
+               'GPUVA aberto o submit no node 1 devolve STATUS_NOT_SUPPORTED.')
+    }
+    if (-not $EnableD3D11LabPromotion) {
+        throw ('-RunD3D11Native exige -EnableD3D11LabPromotion para criacao de device nativo.')
+    }
+    if ($DisableWatchdog) {
+        throw ('-RunD3D11Native exige o watchdog: o runner recusa a corrida ' +
+               'sem o guardiao SYSTEM em OBSERVING.')
+    }
+    if ($EnablePhysicalRenderOnly) {
+        throw ('-RunD3D11Native nao vale no perfil physical render-only: ' +
+               'esse ciclo e fire-and-collect e termina em reboot.')
+    }
+    if ($WatchdogTimeoutSeconds -lt 90) {
+        throw 'D3D11_NATIVE_CONFORMANCE exige WatchdogTimeoutSeconds entre 90 e 600.'
+    }
+    if (-not (Test-Path -LiteralPath $d3d11Runner -PathType Leaf)) {
+        throw "Runner ausente: $d3d11Runner"
     }
 }
 
@@ -647,6 +786,42 @@ if ($RunRadvPresentTripod) {
     }
     Write-Host '  ICD explicito e runner de apresentacao validados antes do binding.' -ForegroundColor Green
 }
+if ($RunVulkanCube) {
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $cubePreflightOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -File $vulkanCube 2>&1 | ForEach-Object { [string]$_ }) -join "`r`n"
+        $cubePreflightExit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousEap
+    }
+    Write-Host $cubePreflightOutput
+    if ($cubePreflightExit -ne 0 -or
+        $cubePreflightOutput -notmatch 'Modo inspect/dry-run: preflights passaram') {
+        throw ('Binding recusado antes de APPLY: preflight do ' +
+            "VULKAN_WSI_CUBE falhou (exit=$cubePreflightExit).")
+    }
+    Write-Host '  ICD explicito e runner VulkanCube validados antes do binding.' -ForegroundColor Green
+}
+if ($RunDxvkD3D11) {
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $dxvkPreflightOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -File $dxvkRunner 2>&1 | ForEach-Object { [string]$_ }) -join "`r`n"
+        $dxvkPreflightExit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousEap
+    }
+    Write-Host $dxvkPreflightOutput
+    if ($dxvkPreflightExit -ne 0 -or
+        $dxvkPreflightOutput -notmatch 'Modo inspect/dry-run: preflights passaram') {
+        throw ('Binding recusado antes de APPLY: preflight do ' +
+            "DXVK_D3D11 falhou (exit=$dxvkPreflightExit).")
+    }
+    Write-Host '  ICD explicito e runner DXVK_D3D11 validados antes do binding.' -ForegroundColor Green
+}
 if ($RunUmdNode1Tripod) {
     $previousEap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
@@ -664,6 +839,60 @@ if ($RunUmdNode1Tripod) {
             "B7_UMD_NODE1_TRIPOD falhou (exit=$umdTripodPreflightExit).")
     }
     Write-Host '  UMD assinada e runner Node 1 validados antes do binding.' -ForegroundColor Green
+}
+if ($RunMarco3Graphics) {
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $m3PreflightOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -File $marco3Runner 2>&1 | ForEach-Object { [string]$_ }) -join "`r`n"
+        $m3PreflightExit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousEap
+    }
+    Write-Host $m3PreflightOutput
+    if ($m3PreflightExit -ne 0 -or
+        $m3PreflightOutput -notmatch 'Modo inspect/dry-run: preflights passaram') {
+        throw ('Binding recusado antes de APPLY: preflight do ' +
+            "MARCO3_GRAPHICS_DRAW falhou (exit=$m3PreflightExit).")
+    }
+    Write-Host '  ICD explicito e runner Marco 3 Graphics Draw validados antes do binding.' -ForegroundColor Green
+}
+if ($RunMarco4Cube) {
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $m4PreflightOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -File $marco4Runner 2>&1 | ForEach-Object { [string]$_ }) -join "`r`n"
+        $m4PreflightExit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousEap
+    }
+    Write-Host $m4PreflightOutput
+    if ($m4PreflightExit -ne 0 -or
+        $m4PreflightOutput -notmatch 'Modo inspect/dry-run: preflights passaram') {
+        throw ('Binding recusado antes de APPLY: preflight do ' +
+            "MARCO4_GRAPHICS_CUBE falhou (exit=$m4PreflightExit).")
+    }
+    Write-Host '  ICD explicito e runner Marco 4 Graphics Cube validados antes do binding.' -ForegroundColor Green
+}
+if ($RunD3D11Native) {
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $d3dPreflightOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -File $d3d11Runner 2>&1 | ForEach-Object { [string]$_ }) -join "`r`n"
+        $d3dPreflightExit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousEap
+    }
+    Write-Host $d3dPreflightOutput
+    if ($d3dPreflightExit -ne 0 -or
+        $d3dPreflightOutput -notmatch 'MODO SIMULACAO/PREFLIGHT') {
+        throw ('Binding recusado antes de APPLY: preflight do ' +
+            "D3D11_NATIVE_CONFORMANCE falhou (exit=$d3dPreflightExit).")
+    }
+    Write-Host '  Runner D3D11 Native Conformance validado antes do binding.' -ForegroundColor Green
 }
 
 $guardMode = if ($DisableWatchdog) { 'SEM WATCHDOG' } else { 'COM WATCHDOG' }
@@ -701,10 +930,20 @@ if (-not $Execute -or -not $IAcceptBlackScreenRisk) {
     $journalGateFlag = $(if ($EnableNode1JournalGatePerProcess) { ' -EnableNode1JournalGatePerProcess' } else { '' })
     $tripodFlag = $(if ($RunRadvPresentTripod) {
         " -RunRadvPresentTripod -WatchdogTimeoutSeconds $WatchdogTimeoutSeconds"
+    } elseif ($RunVulkanCube) {
+        " -RunVulkanCube -WatchdogTimeoutSeconds $WatchdogTimeoutSeconds"
+    } elseif ($RunDxvkD3D11) {
+        " -RunDxvkD3D11 -WatchdogTimeoutSeconds $WatchdogTimeoutSeconds"
     } elseif ($RunRadvComputeTripod) {
         " -RunRadvComputeTripod -WatchdogTimeoutSeconds $WatchdogTimeoutSeconds"
     } elseif ($RunUmdNode1Tripod) {
         " -RunUmdNode1Tripod -WatchdogTimeoutSeconds $WatchdogTimeoutSeconds"
+    } elseif ($RunMarco3Graphics) {
+        " -RunMarco3Graphics -WatchdogTimeoutSeconds $WatchdogTimeoutSeconds"
+    } elseif ($RunMarco4Cube) {
+        " -RunMarco4Cube -WatchdogTimeoutSeconds $WatchdogTimeoutSeconds"
+    } elseif ($RunD3D11Native) {
+        " -RunD3D11Native -WatchdogTimeoutSeconds $WatchdogTimeoutSeconds"
     } else { '' })
     # 14/09: a corrida 11:27 foi GASTA porque a dica perdia este flag. O
     # operador rodou exatamente o comando sugerido, e o log saiu
@@ -713,6 +952,7 @@ if (-not $Execute -or -not $IAcceptBlackScreenRisk) {
     # quinze linhas acima, ja descrevia por escrito.
     $gfxRingFlag = $(if ($EnableGfxRingPreflight) { ' -EnableGfxRingPreflight' } else { '' })
     $gfxBringupFlag = $(if ($GfxRingBringupLevel -gt 0) { " -GfxRingBringupLevel $GfxRingBringupLevel" } else { '' })
+    $gfxStageFlag = $(if ($GfxRingBringupLevel -ge 4 -and $GfxRingStage -gt 0) { " -GfxRingStage $GfxRingStage" } else { '' })
     # Achado na mesma auditoria: este tambem faltava, desde antes da B.1.
     $shaderTranslatorFlag = $(if ($EnableD3D11ShaderTranslator) { ' -EnableD3D11ShaderTranslator' } else { '' })
     $restartExplorerFlag = $(if ($RestartExplorer) { ' -RestartExplorer' } else { '' })
@@ -722,7 +962,7 @@ if (-not $Execute -or -not $IAcceptBlackScreenRisk) {
     Write-Host ("powershell -ExecutionPolicy Bypass -File tools\bind-bc250mcdm-lab.ps1" +
         " -Execute -IAcceptBlackScreenRisk" + $shaderFlag + $persistentFlag +
         $renderNodeFlag + $renderOnlyFlag + $gpuvaFlag + $planoAFlag + $d3d11PromotionFlag +
-        $d3d11SubstFlag + $shaderTranslatorFlag + $gfxRingFlag + $gfxBringupFlag +
+        $d3d11SubstFlag + $shaderTranslatorFlag + $gfxRingFlag + $gfxBringupFlag + $gfxStageFlag +
         $journalGateFlag + $tripodFlag + $restartExplorerFlag + $watchdogFlag)
     exit 0
 }
@@ -932,6 +1172,7 @@ $requestedPolicy = [ordered]@{
     # justamente para nao apagar o que esta politica escreveu.
     GfxRingPreflight = $(if ($EnableGfxRingPreflight) { 1 } else { 0 })
     GfxRingBringup = $GfxRingBringupLevel
+    GfxRingStage = $GfxRingStage
     # C3.9: entra na politica pre-bind porque a chave de servico so' nasce aqui,
     # e o KMD le o valor UMA VEZ no StartDevice. O INF declara o campo com
     # NOCLOBBER justamente para nao apagar o que esta politica escreveu.
@@ -974,7 +1215,20 @@ if ($EnableNode1JournalGatePerProcess) {
 }
 if ($GfxRingBringupLevel -gt 0) {
     Write-Host ("  GfxRingBringup={0} -- ENSAIO DO ANEL GRAFICO: o driver vai ESCREVER em CP_RB0." -f $GfxRingBringupLevel) -ForegroundColor Cyan
-    if ($GfxRingBringupLevel -ge 2) {
+    if ($GfxRingBringupLevel -ge 5) {
+        Write-Host "    Level 5: pipeline 3D completo com Draw Initiator (DRAW_INDEX_AUTO) e Fence. Risco maximo." -ForegroundColor Yellow
+    } elseif ($GfxRingBringupLevel -ge 4) {
+        $stageDesc = switch ($GfxRingStage) {
+            1 { "Sub-etapa 4.1: Shaders (Bloco 1) + ColorTarget 0 (Bloco 2) + TargetMask (Bloco 3) + Fence (Bloco 7)" }
+            2 { "Sub-etapa 4.2: + Viewport & Scissor (Bloco 4) + Fence (Bloco 7)" }
+            3 { "Sub-etapa 4.3: + Primitive Assembler (Bloco 5) + Fence (Bloco 7) (SkipDraw=1)" }
+            4 { "Sub-etapa 4.4: + Draw Initiator (Bloco 6: DRAW_INDEX_AUTO) + Fence (Bloco 7)" }
+            default { "Sub-etapa 4.1: Shaders + ColorTarget 0 + TargetMask + Fence" }
+        }
+        Write-Host ("    Level 4: isolamento progressivo PM4 3D -- Stage {0} ({1}). Risco alto." -f $GfxRingStage, $stageDesc) -ForegroundColor Yellow
+    } elseif ($GfxRingBringupLevel -ge 3) {
+        Write-Host "    Level 3: submissao de SH_REG (shaders VS+PS) no anel grafico. Risco alto." -ForegroundColor Yellow
+    } elseif ($GfxRingBringupLevel -ge 2) {
         Write-Host "    Level 2: desalta CE/PFP/ME e LIGA o anel. Risco maior que o level 1." -ForegroundColor Yellow
     } else {
         Write-Host "    Level 1: apenas configura e confere; as micro-engines seguem HALTED." -ForegroundColor Cyan
@@ -1212,7 +1466,7 @@ try {
 # RADV_WDDM_COMPUTE_TRIPOD: uma unica corrida, aqui, com a telemetria do bind ja
 # arquivada e o watchdog ainda armado. Depois deste ponto a tela pode estar
 # apagada e nao existe operador para lancar nada.
-if ($RunRadvComputeTripod -or $RunRadvPresentTripod -or $RunUmdNode1Tripod) {
+if ($RunRadvComputeTripod -or $RunRadvPresentTripod -or $RunVulkanCube -or $RunDxvkD3D11 -or $RunUmdNode1Tripod -or $RunMarco3Graphics -or $RunMarco4Cube -or $RunD3D11Native) {
     # Nao misturar duas experiencias caras. O RADV so pode comecar depois que
     # ESTE bind (nao linhas antigas do log global) tiver chegado a primaria,
     # CommitVidPn e SetVidPnSourceAddress. A corrida 20:34 tinha 97
@@ -1239,8 +1493,18 @@ if ($RunRadvComputeTripod -or $RunRadvPresentTripod -or $RunUmdNode1Tripod) {
     [ordered]@{
         state = $(if ($displayGatePassed) { 'PASSED' } elseif ($RunUmdNode1Tripod) {
             'UMD_NODE1_SKIPPED'
+        } elseif ($RunMarco3Graphics) {
+            'MARCO3_GRAPHICS_SKIPPED'
+        } elseif ($RunMarco4Cube) {
+            'MARCO4_CUBE_SKIPPED'
+        } elseif ($RunD3D11Native) {
+            'D3D11_NATIVE_SKIPPED'
         } elseif ($RunRadvPresentTripod) {
             'RADV_PRESENT_SKIPPED'
+        } elseif ($RunVulkanCube) {
+            'VULKAN_CUBE_SKIPPED'
+        } elseif ($RunDxvkD3D11) {
+            'DXVK_D3D11_SKIPPED'
         } else { 'RADV_SKIPPED' })
         shared_primary = $displayPrimary
         commit_vidpn = $displayCommit
@@ -1254,8 +1518,18 @@ if ($RunRadvComputeTripod -or $RunRadvPresentTripod -or $RunUmdNode1Tripod) {
     if (-not $displayGatePassed) {
         $experimentName = $(if ($RunUmdNode1Tripod) {
             'B7_UMD_NODE1_TRIPOD'
+        } elseif ($RunMarco3Graphics) {
+            'MARCO3_GRAPHICS_DRAW'
+        } elseif ($RunMarco4Cube) {
+            'MARCO4_GRAPHICS_CUBE'
+        } elseif ($RunD3D11Native) {
+            'D3D11_NATIVE_CONFORMANCE'
         } elseif ($RunRadvPresentTripod) {
             'RADV_WDDM_PRESENT_TRIPOD'
+        } elseif ($RunVulkanCube) {
+            'VULKAN_WSI_CUBE'
+        } elseif ($RunDxvkD3D11) {
+            'DXVK_D3D11'
         } else { 'RADV_WDDM_COMPUTE_TRIPOD' })
         Write-Warning ($experimentName + ' NAO EXECUTADO: o display deste bind ' +
             "nao chegou a SharedPrimary=$displayPrimary, CommitVidPn=$displayCommit, " +
@@ -1281,6 +1555,48 @@ if ($RunRadvComputeTripod -or $RunRadvPresentTripod -or $RunUmdNode1Tripod) {
                 Write-Warning ('RADV_WDDM_PRESENT_TRIPOD falhou (exit=' + $tripodExit +
                     '). Nao repita este build; o watchdog permanece armado e a evidencia esta gravada.')
             }
+        } elseif ($RunVulkanCube) {
+            Write-Host 'Display convergiu; executando UMA corrida VULKAN_WSI_CUBE sob watchdog...' -ForegroundColor Magenta
+            $previousEap = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try {
+                $cubeTimeout = [math]::Min(180, [math]::Max(30, $WatchdogTimeoutSeconds - 90))
+                $cubeOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+                    -File $vulkanCube -EvidenceDir $evidenceDir -Execute `
+                    -Frames $VulkanCubeFrames -TimeoutSeconds $cubeTimeout 2>&1 |
+                    Out-String)
+                $cubeExit = $LASTEXITCODE
+            } finally {
+                $ErrorActionPreference = $previousEap
+            }
+            $cubeOutput | Set-Content -LiteralPath `
+                (Join-Path $evidenceDir 'vulkan-cube-console.txt') -Encoding UTF8
+            Write-Host $cubeOutput
+            if ($cubeExit -ne 0) {
+                Write-Warning ('VULKAN_WSI_CUBE falhou (exit=' + $cubeExit +
+                    '). Nao repita este build; o watchdog permanece armado e a evidencia esta gravada.')
+            }
+        } elseif ($RunDxvkD3D11) {
+            Write-Host 'Display convergiu; executando UMA corrida DXVK_D3D11 sob watchdog...' -ForegroundColor Magenta
+            $previousEap = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try {
+                $dxvkTimeout = [math]::Min(180, [math]::Max(30, $WatchdogTimeoutSeconds - 90))
+                $dxvkOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+                    -File $dxvkRunner -EvidenceDir $evidenceDir -Execute `
+                    -Frames $DxvkFrames -TimeoutSeconds $dxvkTimeout 2>&1 |
+                    Out-String)
+                $dxvkExit = $LASTEXITCODE
+            } finally {
+                $ErrorActionPreference = $previousEap
+            }
+            $dxvkOutput | Set-Content -LiteralPath `
+                (Join-Path $evidenceDir 'dxvk-d3d11-console.txt') -Encoding UTF8
+            Write-Host $dxvkOutput
+            if ($dxvkExit -ne 0) {
+                Write-Warning ('DXVK_D3D11 falhou (exit=' + $dxvkExit +
+                    '). Nao repita este build; o watchdog permanece armado e a evidencia esta gravada.')
+            }
         } elseif ($RunUmdNode1Tripod) {
             Write-Host 'Display convergiu; executando UMA corrida B7_UMD_NODE1_TRIPOD sob watchdog...' -ForegroundColor Magenta
             $previousEap = $ErrorActionPreference
@@ -1298,6 +1614,69 @@ if ($RunRadvComputeTripod -or $RunRadvPresentTripod -or $RunUmdNode1Tripod) {
             Write-Host $tripodOutput
             if ($tripodExit -ne 0) {
                 Write-Warning ('B7_UMD_NODE1_TRIPOD falhou (exit=' + $tripodExit +
+                    '). Nao repita este build; o watchdog permanece armado e a evidencia esta gravada.')
+            }
+        } elseif ($RunMarco3Graphics) {
+            Write-Host 'Display convergiu; executando UMA corrida MARCO3_GRAPHICS_DRAW sob watchdog...' -ForegroundColor Magenta
+            $previousEap = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try {
+                $runnerTimeout = [math]::Min(180, [math]::Max(30, $WatchdogTimeoutSeconds - 90))
+                $m3Output = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+                    -File $marco3Runner -EvidenceDir $evidenceDir -Execute `
+                    -Frames $Marco3Frames -TimeoutSeconds $runnerTimeout 2>&1 |
+                    Out-String)
+                $m3Exit = $LASTEXITCODE
+            } finally {
+                $ErrorActionPreference = $previousEap
+            }
+            $m3Output | Set-Content -LiteralPath `
+                (Join-Path $evidenceDir 'marco3-graphics-console.txt') -Encoding UTF8
+            Write-Host $m3Output
+            if ($m3Exit -ne 0) {
+                Write-Warning ('MARCO3_GRAPHICS_DRAW falhou (exit=' + $m3Exit +
+                    '). Nao repita este build; o watchdog permanece armado e a evidencia esta gravada.')
+            }
+        } elseif ($RunMarco4Cube) {
+            Write-Host 'Display convergiu; executando UMA corrida MARCO4_GRAPHICS_CUBE sob watchdog...' -ForegroundColor Magenta
+            $previousEap = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try {
+                $runnerTimeout = [math]::Min(180, [math]::Max(30, $WatchdogTimeoutSeconds - 90))
+                $m4Output = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+                    -File $marco4Runner -EvidenceDir $evidenceDir -Execute `
+                    -Frames $Marco4Frames -TimeoutSeconds $runnerTimeout 2>&1 |
+                    Out-String)
+                $m4Exit = $LASTEXITCODE
+            } finally {
+                $ErrorActionPreference = $previousEap
+            }
+            $m4Output | Set-Content -LiteralPath `
+                (Join-Path $evidenceDir 'marco4-graphics-cube-console.txt') -Encoding UTF8
+            Write-Host $m4Output
+            if ($m4Exit -ne 0) {
+                Write-Warning ('MARCO4_GRAPHICS_CUBE falhou (exit=' + $m4Exit +
+                    '). Nao repita este build; o watchdog permanece armado e a evidencia esta gravada.')
+            }
+        } elseif ($RunD3D11Native) {
+            Write-Host 'Display convergiu; executando UMA corrida D3D11_NATIVE_CONFORMANCE sob watchdog...' -ForegroundColor Magenta
+            $previousEap = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try {
+                $runnerTimeout = [math]::Min(180, [math]::Max(30, $WatchdogTimeoutSeconds - 90))
+                $d3dOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
+                    -File $d3d11Runner -EvidenceDir $evidenceDir -Execute `
+                    -Frames $D3D11Frames -TimeoutSeconds $runnerTimeout 2>&1 |
+                    Out-String)
+                $d3dExit = $LASTEXITCODE
+            } finally {
+                $ErrorActionPreference = $previousEap
+            }
+            $d3dOutput | Set-Content -LiteralPath `
+                (Join-Path $evidenceDir 'd3d11-native-conformance-console.txt') -Encoding UTF8
+            Write-Host $d3dOutput
+            if ($d3dExit -ne 0) {
+                Write-Warning ('D3D11_NATIVE_CONFORMANCE falhou (exit=' + $d3dExit +
                     '). Nao repita este build; o watchdog permanece armado e a evidencia esta gravada.')
             }
         } else {
@@ -1351,6 +1730,26 @@ if (Test-Path -LiteralPath $deltaLogDest -PathType Leaf) {
 } else {
     'display-log-this-bind.txt ausente no fim do bind.' |
         Set-Content -LiteralPath (Join-Path $evidenceDir 'display-log-archive.json') -Encoding ASCII
+}
+
+if ($GfxRingBringupLevel -gt 0 -and (Test-Path -LiteralPath $deltaLogDest -PathType Leaf)) {
+    Write-Host ''
+    Write-Host '=== TELEMETRIA DO ANEL GRAFICO FISICO (GfxRing CP_RB0) ===' -ForegroundColor Magenta
+    $gfxLines = Select-String -Path $deltaLogDest -Pattern '\[GfxRing\]' -SimpleMatch
+    if ($gfxLines) {
+        foreach ($m in $gfxLines) {
+            $t = $m.Line.Trim()
+            if ($t -match 'veredito|TRIPE|PASS|SUCESSO|Telemetria|Submit3DDraw') {
+                Write-Host "  $t" -ForegroundColor Green
+            } elseif ($t -match 'FALHOU|RECUSADO|AVISO|MISMATCH|TIMEOUT') {
+                Write-Host "  $t" -ForegroundColor Red
+            } else {
+                Write-Host "  $t" -ForegroundColor Cyan
+            }
+        }
+    } else {
+        Write-Host '  Nenhuma linha [GfxRing] encontrada no delta deste bind.' -ForegroundColor Yellow
+    }
 }
 
 # B2: Arquivamento dos logs da UMD pelo binder de lab
@@ -1550,18 +1949,23 @@ if ($EnablePhysicalRenderOnly) {
 # fica no caminho comum, e a janela termina com folga ANTES do watchdog.
 # ==========================================================================
 if (-not $DisableWatchdog) {
-    # Reserva 90 s para confirmacao visual (60 s) e margem de teardown.
-    $collectDelay = [Math]::Max(30, $WatchdogTimeoutSeconds - 90)
-    Write-Host ''
-    Write-Host ("=== JANELA DE OBSERVACAO: {0}s antes da coleta FINAL ===" -f $collectDelay) -ForegroundColor Magenta
-    Write-Host '  (o watchdog SYSTEM continua armado e e a rede de seguranca)'
+    if (-not $RunVulkanCube -and -not $RunDxvkD3D11 -and -not $RunRadvPresentTripod -and -not $RunRadvComputeTripod -and -not $RunUmdNode1Tripod -and -not $RunMarco3Graphics -and -not $RunMarco4Cube -and -not $RunD3D11Native) {
+        # Reserva 90 s para confirmacao visual (60 s) e margem de teardown.
+        $collectDelay = [Math]::Max(30, $WatchdogTimeoutSeconds - 90)
+        Write-Host ''
+        Write-Host ("=== JANELA DE OBSERVACAO: {0}s antes da coleta FINAL ===" -f $collectDelay) -ForegroundColor Magenta
+        Write-Host '  (o watchdog SYSTEM continua armado e e a rede de seguranca)'
 
-    if ($RestartExplorer) {
-        Write-Host '  Reiniciando explorer.exe para forcar enumeracao e criacao de recursos DXGI...' -ForegroundColor Yellow
-        Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+        if ($RestartExplorer) {
+            Write-Host '  Reiniciando explorer.exe para forcar enumeracao e criacao de recursos DXGI...' -ForegroundColor Yellow
+            Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+        }
+
+        Start-Sleep -Seconds $collectDelay
+    } else {
+        # Para ensaios de harness/VulkanCube, a execucao ja ocorreu; pausa breve para flush de telemetria.
+        Start-Sleep -Seconds 3
     }
-
-    Start-Sleep -Seconds $collectDelay
 
     try {
         $umdFinalAggregate = Join-Path $evidenceDir 'bc250_umd_log-FINAL.txt'

@@ -81,12 +81,31 @@ static PHYSICAL_ADDRESS Bc250TestGetPhysicalAddress(PVOID BaseAddress)
     address.QuadPart = BaseAddress == g_contiguousPage ? 0x12345000ll : 0ll;
     return address;
 }
+static PVOID Bc250TestMapIoSpace(
+    PHYSICAL_ADDRESS PhysicalAddress,
+    SIZE_T NumberOfBytes,
+    MEMORY_CACHING_TYPE CacheType)
+{
+    UNREFERENCED_PARAMETER(PhysicalAddress);
+    UNREFERENCED_PARAMETER(NumberOfBytes);
+    UNREFERENCED_PARAMETER(CacheType);
+    return g_contiguousPage;
+}
+static VOID Bc250TestUnmapIoSpace(PVOID BaseAddress, SIZE_T NumberOfBytes)
+{
+    UNREFERENCED_PARAMETER(BaseAddress);
+    UNREFERENCED_PARAMETER(NumberOfBytes);
+}
 PVOID (*__imp_MmAllocateContiguousMemorySpecifyCache)(
     SIZE_T, PHYSICAL_ADDRESS, PHYSICAL_ADDRESS, PHYSICAL_ADDRESS,
     MEMORY_CACHING_TYPE) = Bc250TestAllocateContiguous;
 VOID (*__imp_MmFreeContiguousMemory)(PVOID) = Bc250TestFreeContiguous;
 PHYSICAL_ADDRESS (*__imp_MmGetPhysicalAddress)(PVOID) =
     Bc250TestGetPhysicalAddress;
+PVOID (*__imp_MmMapIoSpace)(PHYSICAL_ADDRESS, SIZE_T, MEMORY_CACHING_TYPE) =
+    Bc250TestMapIoSpace;
+VOID (*__imp_MmUnmapIoSpace)(PVOID, SIZE_T) =
+    Bc250TestUnmapIoSpace;
 
 static PVOID Bc250TestAllocatePool2(
     POOL_FLAGS Flags,

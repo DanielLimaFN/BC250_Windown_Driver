@@ -56,13 +56,15 @@ typedef UINT32 uint32_t;
 
 #define BC250_ALLOCATION_PRIVATE_MAGIC 0x31414342u /* "BCA1" */
 /*
- * Versao 2 (F2, 13/09): o blob passou a carregar BC250_ALLOCATION_GEOMETRY.
- * A UMD e o KMD sao empacotados juntos e o parse exige Version E StructSize
- * exatos, entao nao ha janela de blob antigo chegando a um KMD novo -- uma
- * divergencia falha fechado em BC250_ALLOCATION_ABI_BAD_VERSION, com o tamanho
- * nos dois lados no log.
+ * Versao 1: 40 bytes legados (sem geometria DXGI, usado pelo Mesa RADV).
+ * Versao 2 (F2, 13/09): 56 bytes carregando BC250_ALLOCATION_GEOMETRY (UMD D3D11).
+ * O parse aceita ambas as versoes, garantindo retrocompatibilidade total.
  */
-#define BC250_ALLOCATION_PRIVATE_VERSION 2u
+#define BC250_ALLOCATION_PRIVATE_VERSION_1 1u
+#define BC250_ALLOCATION_PRIVATE_VERSION_2 2u
+#define BC250_ALLOCATION_PRIVATE_VERSION   2u
+#define BC250_ALLOCATION_V1_SIZE           40u
+#define BC250_ALLOCATION_V2_SIZE           56u
 #define BC250_ALLOCATION_MIN_ALIGNMENT 4096u
 #define BC250_ALLOCATION_MAX_ALIGNMENT (2u * 1024u * 1024u)
 

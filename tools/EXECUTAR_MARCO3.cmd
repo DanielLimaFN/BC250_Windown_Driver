@@ -27,8 +27,16 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 echo.
-echo 2. Iniciando vinculacao WDDM de laboratorio com ensaio do Marco 3 (60 FPS)...
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bind-bc250mcdm-lab.ps1" -Execute -IAcceptBlackScreenRisk -EnableRenderNode -EnableShaderDispatch -EnablePersistentSubmission -EnableGpuvaLabPromotion -IAcceptGpuvaLabPromotion -EnableNode1JournalGatePerProcess -EnableD3D11LabPromotion -RunRadvPresentTripod -WatchdogTimeoutSeconds 180 -IAcceptAutomaticRecoveryReboot
+echo 1b. Atualizando vulkan_radeon.dll em System32 para o build com WSI nativo...
+copy /Y "C:\Users\Daniel\Desktop\bc250-win\bc250-win\mesa-radv-wddm\build\src\amd\vulkan\vulkan_radeon.dll" "%SystemRoot%\System32\vulkan_radeon.dll" >nul
+if %ERRORLEVEL% neq 0 (
+    echo [AVISO] Nao foi possivel atualizar vulkan_radeon.dll em System32.
+) else (
+    echo [OK] vulkan_radeon.dll atualizada com sucesso em System32.
+)
+echo.
+echo 2. Iniciando vinculacao WDDM de laboratorio com ensaio do Marco 3 (vkCmdDraw + Color Bars)...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bind-bc250mcdm-lab.ps1" -Execute -IAcceptBlackScreenRisk -EnableRenderNode -EnableShaderDispatch -EnablePersistentSubmission -EnableGpuvaLabPromotion -IAcceptGpuvaLabPromotion -EnableNode1JournalGatePerProcess -EnableD3D11LabPromotion -RunMarco3Graphics -Marco3Frames 600 -WatchdogTimeoutSeconds 180 -IAcceptAutomaticRecoveryReboot
 set "BIND_EXIT=%ERRORLEVEL%"
 echo.
 echo 3. Executando rollback incondicional do ensaio automatizado...

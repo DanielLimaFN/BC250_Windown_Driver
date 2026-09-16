@@ -25,7 +25,7 @@ if(!['system','light','dark'].includes(preferences.theme))preferences.theme='sys
 if(![700,1000,2000].includes(preferences.interval))preferences.interval=1000;
 if(!Telemetry.scenarios[preferences.scenario])preferences.scenario='balanced';
 for(const key of ['monitor','nvme'])if(typeof preferences[key]!=='string')preferences[key]=defaults[key];
-let page='overview',paused=false,selectedComponent='cpu',timer=null,current=null,installTimer=null,installPercent=0,paymentMethod='pix',donationReturn=null,toastTimer;
+let page='overview',paused=false,selectedComponent='cpu',timer=null,current=null,installTimer=null,installPercent=0,paymentMethod='card',donationReturn=null,toastTimer;
 let session=new Telemetry.Session();
 const titles={overview:['Visão geral','Um olhar completo sobre a sua placa.'],sensors:['Sensores','Todas as leituras da placa, em um só lugar.'],performance:['Desempenho','Explore o comportamento da sua BC-250.'],driver:['Driver','Gerencie a experiência de instalação da sua placa.'],system:['Sistema','Conheça o hardware por trás da experiência.'],settings:['Configurações','Deixe o Adrenaline do seu jeito.']};
 function save(){try{localStorage.setItem('bc250-adrenaline-v1',JSON.stringify(preferences));}catch{toast('Não foi possível salvar as preferências. Elas valem apenas nesta sessão.');}}
@@ -33,7 +33,7 @@ function toast(message){clearTimeout(toastTimer);$('#toast').textContent=message
 const media=matchMedia('(prefers-color-scheme: dark)');
 function applyTheme(){const theme=preferences.theme==='system'?(media.matches?'dark':'light'):preferences.theme;document.documentElement.dataset.theme=theme;window.desktop?.setTheme(theme);}
 media.addEventListener('change',applyTheme);
-function format(v,unit='',digits){if(!Telemetry.isValid(v))return '—';const precision=digits??(['MHz','RPM'].includes(unit)?0:unit==='V'?3:1);return new Intl.NumberFormat('pt-BR',{maximumFractionDigits:precision}).format(v)+(unit?' '+unit:'');}
+function format(v,unit='',digits){if(!Telemetry.isValid(v))return '-';const precision=digits??(['MHz','RPM'].includes(unit)?0:unit==='V'?3:1);return new Intl.NumberFormat('pt-BR',{maximumFractionDigits:precision}).format(v)+(unit?' '+unit:'');}
 function escapeHtml(value){return String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function navigate(next,focus=false){
   if(!titles[next])return;page=next;
@@ -116,19 +116,25 @@ function chart(container,paths,colors,unit,max){
 function renderTelemetry(){
  if(!current)return;
  const sw=current.software;
- $('#sample-status').innerHTML='<span class="live-dot"></span>'+(paused?'Simulação pausada':current.memory.valid?'Simulação ao vivo':'Sensores indisponíveis');
- $('#sample-status .live-dot').style.background=paused?'#8b8b8b':current.memory.valid?'var(--green)':'#b67b20';
- $('#last-update').textContent=(paused?'Pausado · última amostra ':'Amostra simulada · ')+new Date(current.timestamp).toLocaleTimeString('pt-BR');
+ if(current.source==='hardware_real'){
+  $('#sample-status').innerHTML='<span class="live-dot"></span>'+(paused?'Telemetria pausada':'Telemetria Real (Windows)');
+  $('#sample-status .live-dot').style.background=paused?'#8b8b8b':'var(--green)';
+  $('#last-update').textContent=(paused?'Pausado · última leitura ':'Leitura de hardware · ')+new Date(current.timestamp).toLocaleTimeString('pt-BR');
+ } else {
+  $('#sample-status').innerHTML='<span class="live-dot"></span>'+(paused?'Simulação pausada':current.memory.valid?'Simulação ao vivo':'Sensores indisponíveis');
+  $('#sample-status .live-dot').style.background=paused?'#8b8b8b':current.memory.valid?'var(--green)':'#b67b20';
+  $('#last-update').textContent=(paused?'Pausado · última amostra ':'Amostra simulada · ')+new Date(current.timestamp).toLocaleTimeString('pt-BR');
+ }
  $$('[data-reading]').forEach(el=>{const field=Telemetry.fields.find(f=>f.id===el.dataset.reading);el.textContent=format(Telemetry.read(current,field.path),field.unit);});
  if(page==='overview'){
   metrics.forEach(([id,label,ic,unit])=>{const field=Telemetry.fields.find(f=>f.id===id),card=$('#metric-'+id),v=Telemetry.read(current,field.path);card.querySelector('.metric-value>span').textContent=format(v);
-   const detail={gpu_temp_c:format(sw.gpu_sclk_mhz,'MHz')+' · Clock gráfico',cpu_temp_c:format(sw.cpu_freq_mhz,'MHz')+' · Clock médio',total_power:'CPU + GPU · potência de saída',memory_used:'de 16 GB · memória compartilhada'};
-   card.querySelector('.metric-sub').textContent=v===null?'Sensor indisponível':detail[id];
+   const detail={gpu_temp_c:(sw.gpu_sclk_mhz!==null?format(sw.gpu_sclk_mhz,'MHz'):'-')+' · Clock gráfico',cpu_temp_c:(sw.cpu_freq_mhz!==null?format(sw.cpu_freq_mhz,'MHz'):'-')+' · Clock médio',total_power:'CPU + GPU · potência de saída',memory_used:'de 15,7 GB · memória compartilhada'};
+   card.querySelector('.metric-sub').textContent=v===null?'Sem leitura física (-)':detail[id];
    const values=session.history.map(s=>Telemetry.read(s,field.path)),good=values.filter(Telemetry.isValid),min=good.length?Math.min(...good)-3:0,max=good.length?Math.max(...good)+3:100;
    card.querySelector('.sparkline path').setAttribute('d',linePath(values,250,30,min,max,3));
   });
   renderBoard();chart('#temp-chart',['software.cpu_temp_c','software.gpu_temp_c'],['#8853cf','#0078d4'],'°C',120);
-  const rows=[['fan','Ventoinha',format(current.cooling.fan_rpm,'RPM')+' · '+format(current.cooling.fan_pwm_pct,'%')],['memory','Memória · média',format(current.memory.average_c,'°C')],['temp','Memória · hotspot',format(current.memory.hotspot_c,'°C')+(current.memory.valid?' · Chip '+(current.memory.hotspot_chip+1):'')],['disk','NVMe',format(sw.nvme_temp_c,'°C')]];
+  const rows=[['fan','Ventoinha',(current.cooling.fan_rpm!==null?format(current.cooling.fan_rpm,'RPM')+' · '+format(current.cooling.fan_pwm_pct,'%'):'-')],['memory','Memória · média',format(current.memory.average_c,'°C')],['temp','Memória · hotspot',format(current.memory.hotspot_c,'°C')+(current.memory.valid?' · Chip '+(current.memory.hotspot_chip+1):'')],['disk','NVMe',format(sw.nvme_temp_c,'°C')]];
   $('#cooling-summary').innerHTML=rows.map(([ic,label,v])=>'<div class="summary-row"><i>'+icon(ic)+'</i><span>'+label+'</span><strong>'+v+'</strong></div>').join('');
  }
  if(page==='sensors')renderSensors();
@@ -137,10 +143,67 @@ function renderTelemetry(){
 function renderSensors(){
  const search=$('#sensor-search').value.toLocaleLowerCase('pt-BR');
  const fields=Telemetry.fields.filter(f=>f.label.toLocaleLowerCase('pt-BR').includes(search));
- $('#sensor-rows').innerHTML=fields.map(f=>{const value=Telemetry.read(current,f.path),ext=session.extrema[f.id];return '<tr><td>'+f.label+'</td><td>'+format(value,f.unit)+'</td><td>'+format(ext?.min,f.unit)+'</td><td>'+format(ext?.max,f.unit)+'</td><td><span class="pill">'+(value===null?'Indisponível':'Simulado')+'</span></td></tr>';}).join('');
+ $('#sensor-rows').innerHTML=fields.map(f=>{
+  const value=Telemetry.read(current,f.path),ext=session.extrema[f.id];
+  const isReal=(f.id==='cpu_load'||f.id==='cpu_freq_mhz'||f.id==='memory_used')&&value!==null;
+  const orig=(current.source==='hardware_real')?(isReal?'Real (Windows)':'-'):(value===null?'Indisponível':'Simulado');
+  return '<tr><td>'+f.label+'</td><td>'+format(value,f.unit)+'</td><td>'+format(ext?.min,f.unit)+'</td><td>'+format(ext?.max,f.unit)+'</td><td><span class="pill '+(isReal?'green':'')+'">'+orig+'</span></td></tr>';
+ }).join('');
  $('#no-sensors').hidden=fields.length>0;
 }
-function tick(){if(paused||!preferences.installed)return;current=session.next(preferences.scenario,Date.now());renderTelemetry();}
+async function tick(){
+ if(paused||!preferences.installed)return;
+ if(window.desktop?.getSystemTelemetry){
+  try{
+   const sys=await window.desktop.getSystemTelemetry();
+   if(sys){
+    const now=Date.now();
+    current={
+     source:'hardware_real',
+     schema_version:1,
+     timestamp:now,
+     scenario:'hardware',
+     hardware:{
+      cpu:{valid:false,vin:null,vout:null,iout:null,pout:null,temp:null},
+      gpu:{valid:false,vin:null,vout:null,iout:null,pout:null,temp:null},
+      total_power:null,total_power_valid:false
+     },
+     software:{
+      cpu_temp_c:sys.cpuTempC??null,
+      gpu_temp_c:null,
+      cpu_freq_mhz:sys.avgFreqMhz??null,
+      gpu_sclk_mhz:null,
+      gpu_ppt_w:null,
+      nvme_temp_c:null,
+      nct_t14_c:null,
+      nct_t15_c:null,
+      cpu_load:sys.cpuUsagePct??null,
+      gpu_load:null,
+      memory_used:sys.usedMemGb??null
+     },
+     cooling:{fan_rpm:null,fan_pwm_pct:null},
+     memory:{
+      valid:false,status:'unavailable',error:'Sem leitura física',age_ms:null,
+      chips_c:Array(8).fill(null),average_c:null,hotspot_c:null,hotspot_chip:null,
+      saturated:false,saturated_chips:[],raw:Array(8).fill(null)
+     }
+    };
+    session.history.push(current);
+    if(session.history.length>60)session.history.shift();
+    for(const field of Telemetry.fields){
+     const v=Telemetry.read(current,field.path);
+     if(!Telemetry.isValid(v))continue;
+     const prev=session.extrema[field.id];
+     session.extrema[field.id]={min:prev?Math.min(prev.min,v):v,max:prev?Math.max(prev.max,v):v};
+    }
+    renderTelemetry();
+    return;
+   }
+  }catch(err){}
+ }
+ current=session.next(preferences.scenario,Date.now());
+ renderTelemetry();
+}
 function startTimer(){clearInterval(timer);timer=setInterval(tick,preferences.interval);}
 function setPaused(value){paused=value;$('#pause-button').innerHTML='<i>'+icon(paused?'play':'pause')+'</i><span>'+(paused?'Continuar':'Pausar')+'</span>';$('#pause-button').title=paused?'Continuar telemetria simulada':'Pausar telemetria simulada';if(!paused)tick();else renderTelemetry();}
 function resetInstallUI(){
@@ -197,11 +260,161 @@ $('#finish-install').addEventListener('click',()=>navigate('overview',true));
 $('#pause-button').addEventListener('click',()=>setPaused(!paused));
 $('#sensor-search').addEventListener('input',()=>{if(current)renderSensors();});
 $('#donation-dialog').addEventListener('cancel',e=>{e.preventDefault();closeDonation();});
-$('.payment-tabs').addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const methods=['pix','card','crypto'];let index=methods.indexOf(paymentMethod);index=e.key==='Home'?0:e.key==='End'?2:(index+(e.key==='ArrowRight'?1:2))%3;paymentMethod=methods[index];renderPayment();$('[data-method="'+paymentMethod+'"]').focus();});
+$('.payment-tabs').addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const methods=['card','crypto','pix'];let index=methods.indexOf(paymentMethod);index=e.key==='Home'?0:e.key==='End'?2:(index+(e.key==='ArrowRight'?1:2))%3;paymentMethod=methods[index];renderPayment();$('[data-method="'+paymentMethod+'"]').focus();});
 $('#theme-select').value=preferences.theme;$('#theme-select').addEventListener('change',e=>{preferences.theme=e.target.value;save();applyTheme();});
 $('#interval-select').value=preferences.interval;$('#interval-select').addEventListener('change',e=>{preferences.interval=Number(e.target.value);save();startTimer();renderBoard();});
 $('#scenario-select').addEventListener('change',e=>setScenario(e.target.value));
 for(const key of ['monitor','nvme']){const input=$('#'+key+'-input');input.value=preferences[key];input.addEventListener('input',()=>{preferences[key]=input.value;save();updateDeviceNames();});}
 $$('.nav-item').forEach(el=>{el.title=el.textContent.trim();el.setAttribute('aria-label',el.textContent.trim());});
-applyTheme();paintIcons();boardSetup();setupMetrics();navigate('overview');tick();startTimer();
+async function initDriverStatus(){
+  if(window.desktop?.checkDriverInstalled){
+    try {
+      const res = await window.desktop.checkDriverInstalled();
+      if(res && res.installed){
+        preferences.installed = true;
+        if(!preferences.installedAt) preferences.installedAt = new Date().toISOString();
+        save();
+        const statePill = $('.device-state .pill');
+        if(statePill){
+          statePill.textContent = 'Driver ativo · ' + (res.service || 'WDDM');
+          statePill.className = 'pill green';
+        }
+      } else if(res && !res.installed){
+        preferences.installed = false;
+        save();
+      }
+    } catch(err) {
+      console.warn('Erro ao verificar driver:', err);
+    }
+  }
+  navigate('overview');
+}
+
+async function initCpuOverclockUI(){
+  const slider = $('#cpu-freq-slider');
+  const display = $('#cpu-slider-display');
+  const badge = $('#cpu-oc-badge');
+  const targetVal = $('#perf-cpu-target');
+  const feedback = $('#cpu-oc-feedback');
+  const btnApply = $('#btn-apply-cpu-oc');
+  const btnReset = $('#btn-reset-cpu-oc');
+
+  if(!slider) return;
+
+  const updateDisplay = (freq) => {
+    const ghz = (freq / 1000).toFixed(1);
+    display.textContent = `${format(freq, 'MHz')} (${ghz} GHz)`;
+  };
+
+  slider.addEventListener('input', () => {
+    updateDisplay(Number(slider.value));
+  });
+
+  if(window.desktop?.getCpuOverclock){
+    try {
+      const res = await window.desktop.getCpuOverclock();
+      if(res && res.FrequencyMhz){
+        const f = Math.max(3000, Math.min(4200, res.FrequencyMhz));
+        slider.value = f;
+        updateDisplay(f);
+        if(badge) badge.textContent = `${format(f, 'MHz')} ativo`;
+        if(targetVal) targetVal.textContent = format(f, 'MHz');
+      }
+    } catch(err){}
+  }
+
+  if(btnApply){
+    btnApply.addEventListener('click', async () => {
+      const freq = Number(slider.value);
+      btnApply.disabled = true;
+      if(feedback) feedback.textContent = 'Enviando comando SMU Q3 0x8F (' + format(freq, 'MHz') + ') para o silício…';
+
+      const resBox = $('#cpu-oc-response-box');
+      const resBadge = $('#cpu-res-badge');
+      const resStatus = $('#cpu-res-status');
+      const resDiag = $('#cpu-res-diagnostic');
+      const resRaw = $('#cpu-res-raw');
+      const resRawBox = $('#cpu-res-raw-container');
+
+      if (resBox) resBox.hidden = false;
+      if (resBadge) { resBadge.textContent = 'Processando…'; resBadge.className = 'pill blue'; }
+      if (resStatus) resStatus.textContent = 'Aguardando retorno do hardware…';
+
+      try {
+        let res = null;
+        if(window.desktop?.applyCpuOverclock){
+          res = await window.desktop.applyCpuOverclock(freq);
+        }
+        if(badge) badge.textContent = `${format(freq, 'MHz')} configurado`;
+        if(targetVal) targetVal.textContent = format(freq, 'MHz');
+        if (res) {
+          if (res.HardwareSuccess) {
+            if (resBadge) { resBadge.textContent = 'Silício OK (0x01)'; resBadge.className = 'pill green'; }
+            if (resStatus) resStatus.textContent = res.CpuResponse || 'OK: Comando de boost aceito pela CPU';
+            if (resDiag) resDiag.textContent = `A CPU Zen 2 BC-250 confirmou a recepção da mensagem SMU 0x8F e definiu a frequência de boost para ${format(freq, 'MHz')}.`;
+            if (feedback) feedback.textContent = `Frequência de ${format(freq, 'MHz')} aplicada no silício com sucesso!`;
+            toast(`Overclock aplicado no silício: ${format(freq, 'MHz')}`);
+          } else {
+            if (resBadge) { resBadge.textContent = 'KMD Offline'; resBadge.className = 'pill amber'; }
+            if (resStatus) resStatus.textContent = res.CpuResponse || 'KMD Offline (GLE 2)';
+            if (resDiag) resDiag.textContent = `O comando não pôde ser gravado diretamente nos registradores SMN/SMU da APU porque o driver KMD está offline (Adaptador em BasicDisplay). A frequência de ${format(freq, 'MHz')} foi salva no registro do Windows para aplicação no próximo bind do driver.`;
+            if (feedback) feedback.textContent = res.CpuResponse || 'KMD offline. Registro configurado.';
+            toast(`Frequência de ${format(freq, 'MHz')} salva no registro.`);
+          }
+          if (res.RawOutput && resRaw && resRawBox) {
+            resRaw.textContent = res.RawOutput;
+            resRawBox.hidden = false;
+          }
+        }
+      } catch(err) {
+        if (resBadge) { resBadge.textContent = 'Erro'; resBadge.className = 'pill red'; }
+        if (resStatus) resStatus.textContent = err.message;
+        if (feedback) feedback.textContent = `Erro ao aplicar overclock: ${err.message}`;
+        toast('Erro ao aplicar overclock');
+      } finally {
+        btnApply.disabled = false;
+      }
+    });
+  }
+
+  if(btnReset){
+    btnReset.addEventListener('click', async () => {
+      slider.value = 3500;
+      updateDisplay(3500);
+      btnReset.disabled = true;
+      try {
+        if(window.desktop?.applyCpuOverclock){
+          await window.desktop.applyCpuOverclock(3500);
+        }
+        if(badge) badge.textContent = '3.500 MHz ativo (Padrão)';
+        if(targetVal) targetVal.textContent = '3.500 MHz';
+        if(feedback) feedback.textContent = 'Frequência padrão restaurada (3.5 GHz).';
+        toast('Frequência da CPU restaurada para 3.5 GHz');
+      } catch(err){
+        if(feedback) feedback.textContent = 'Erro ao restaurar frequência padrão.';
+      } finally {
+        btnReset.disabled = false;
+      }
+    });
+  }
+}
+
+async function initSystemTelemetry(){
+  if(window.desktop?.getSystemTelemetry){
+    try {
+      const info = await window.desktop.getSystemTelemetry();
+      if(info){
+        const cores = info.cpuCores || 6;
+        const threads = info.cpuThreads || 12;
+        const model = info.cpuModel || 'AMD BC-250';
+        const txt = `${cores} núcleos · ${threads} threads · ${model}`;
+        if($('#cpu-topology-info')) $('#cpu-topology-info').textContent = txt;
+        if($('#system-cpu-spec')) $('#system-cpu-spec').textContent = txt;
+      }
+    } catch(err){}
+  }
+}
+
+applyTheme();paintIcons();boardSetup();setupMetrics();initCpuOverclockUI();initSystemTelemetry();initDriverStatus();tick();startTimer();
 window.addEventListener('beforeunload',()=>{clearInterval(timer);clearInterval(installTimer);});
+

@@ -1,7 +1,88 @@
 # BASE DE AVANÇO — AMD BC-250 → WDDM com jogos no Windows
 
 **Documento base do projeto.** Toda decisão de o-que-fazer-agora sai daqui.
-**Passagem de bastão atual:** [docs/267 — Corrida 17:18: a primária fechou, o Present não](docs/267_CORRIDA_2026-09-13_17-18_PRIMARIA_OK_E_O_CONTEXTO_DE_APRESENTACAO.md).
+
+## Diretriz do proprietário — 16/09/2026
+
+**Qualidade, correção e estabilidade antes de velocidade.** Cumprir a [diretriz de UMD D3D11 e marcos gráficos](DIRETRIZ_QUALIDADE_UMD_DX11_E_MARCOS_GRAPHICS.md), que prevalece sobre conclusões históricas conflitantes abaixo.
+
+| Entrega exigida | Critério de conclusão | Estado desta revisão |
+|---|---|---|
+| Recriar tela colorida do Marco 3 | MARCO3_GRAPHICS_DRAW: pipeline gráfico e vkCmdDraw; 600 quadros, prova física e pixels conferidos | Implementado e compilado (MSVC /W4 /WX, SPIR-V, preflights Exit 0); NÃO VALIDADO EM HARDWARE |
+| Recriar cubo do Marco 4 | MARCO4_GRAPHICS_VKCUBE: vkCmdDraw, geometria, textura e profundidade; prova física e pixels conferidos | Implementado e compilado (MSVC /W4 /WX, SPIR-V, preflights Exit 0); NÃO VALIDADO EM HARDWARE |
+| UMD D3D11 traduzida para Vulkan | DDIs reais e aplicação não modificada; desktop por 60 min, robustez por 8 h e TDR com display sobrevivendo | Fase 2 concluída offline: Vulkan Bridge, PSO Cache e DDI routing integrados em bc250umd.dll; build /W4 /WX e contratos Exit 0; harness bc250-d3d11-conformance.exe pronto; NÃO VALIDADO EM HARDWARE |
+| Apresentação integrada ao desktop | Janela, resize, minimizar/restaurar, Alt+Tab e dois processos sem sobrescrever o desktop por escape direto | Pendente; NÃO VALIDADO EM HARDWARE |
+| DCN básico de produto | P9 após pré-requisitos: modos, sincronização e recuperação do monitor/link comprovados | Planejado; NÃO VALIDADO EM HARDWARE |
+
+Preservar provas compute/SDMA no seu escopo. Não equiparar imagem 3D produzida por compute a pipeline gráfico geral; conferir proveniência dos binários. Não anunciar GRAPHICS apenas removendo uma trava. DXVK local por jogo não entrega UMD transparente. Nenhuma corrida foi feita nesta revisão documental.
+
+**Após cada corrida analisada, relatar obrigatoriamente:** data/hora, candidato e evidência; **se houve avanço**, distinguindo avanço funcional de diagnóstico; **sucessos**, **falhas**, **veredito** (sucesso, parcial, falha ou inconclusivo frente ao critério do ensaio), **recuperação**, pendências e próximo passo. Se faltarem logs, declarar a lacuna. Desktop retornando pelo BasicDisplay é recuperação, não prova de aceleração pelo nosso driver.
+
+**A obrigação de enviar a barra “STATUS DO DRIVER BC-250” antes de cada mensagem está revogada.** Os registros antigos são histórico, não modelo de resposta nem medida atual de prontidão.
+
+> **Plano de produto solicitado pelo proprietário (16/09/2026, análise documental):** [desktop acelerado, Direct3D transparente e DCN básico em P9](docs/281_PLANO_PRODUTO_DESKTOP_E_JOGOS_TRANSPARENTES.md). Os 600 quadros do Marco 4 não fecham desktop DWM nem jogos arbitrários. A fonte atual do Cube.cpp usa pipeline compute e vkCmdDispatch; sua proveniência exata em relação ao binário da corrida precisa ser conferida. Não usar esse teste como prova de vkCmdDraw/pipeline gráfico geral. Expor uma fila GRAPHICS requer backend comprovado, não apenas mudar uma flag. Nenhum novo item foi validado em hardware nesta revisão.
+**Passagem de bastão atual:** [docs/283 — HANDOFF: BACKEND GRÁFICO REAL (CP_RB0 / PFP / ME) NO KMD E RECUPERAÇÃO TDR](docs/283_HANDOFF_CP_RB0_BACKEND_GRAFICO_PERSISTENTE.md), [docs/282 — HANDOFF FASE 2: UMD D3D11 TRADUZIDA PARA VULKAN](docs/282_HANDOFF_FASE2_UMD_D3D11_TRADUZIDA_PARA_VULKAN.md), [docs/281 — PLANO DE PRODUTO](docs/281_PLANO_PRODUTO_DESKTOP_E_JOGOS_TRANSPARENTES.md) e [docs/280 — MARCO 4](docs/280_MARCO4_VULKAN_WSI_CUBE_CONCLUIDO_NO_SILICIO.md).
+
+> **16/09 13:34:40 (P0, lab 3.181.1.0) — BRINGUP DO ANEL GRÁFICO REAL CP_RB0 VALIDADO NO SILÍCIO (ACTIVE=1) E INICIALIZAÇÃO D3D11 DA UMD NO DWM; TELA PRETA POR MOTOR PERSISTENTE OFFLINE.**
+> Ensaio físico da Rota Direta (`tools/EXECUTAR_ROTA_DIRETA_GFXRING.cmd`, Nível 2) com `D3D11LabPromotion` armado na UMD e KMD com fallbacks de VRAM.
+> **Evidência arquivada:** `docs/evidence/2026-09-16_13-34-40-DESKTOP-HQAG6T4-lab-binding/`.
+> - **Houve avanço?** SIM, AVANÇO HISTÓRICO FUNCIONAL E DE DIAGNÓSTICO.
+> - **Sucessos:**
+>   1. **Partida física do anel gráfico CP_RB0 comprovada (Nível 2, Item B9):** `[GfxRing] BRINGUP veredito: OK (level=2) Reads=15 Writes=20`. Base física configurada em VRAM real (`0xF40FFB00`), `CNTL=0x50000709`, micro-engines PFP e ME desaltadas (`ME_CNTL=00000000`), partida confirmada com `ACTIVE_readback=00000001` e rollback limpo do teste (`RollbackPassed=1`).
+>   2. **UMD D3D11 / Vulkan Bridge operando no DWM e Explorer:** Com `D3D11LabPromotion=1`, `dwm.exe` e `Explorer.EXE` criaram dispositivos D3D11 nativos via RADV (`vkCreateDevice`, `GraphicsQueue`, shaders VS/PS compilados) e o DWM executou 23 draws indexados nativos (`Bc250UmdExecuteVkDraw: DRAW EXECUTADO NATIVO EM VULKAN, VkDraws=23, Verts=6, Indexed=1`).
+>   3. **Roteamento WDDM estrito e fail-closed:** O DWM despachou submissões 3D para o Node 1 (`[SubmitVirtual Node1 GFX] ENTER: FenceId=1..40 DmaSize=96`). Zero encaminhamento para o MEC, eliminando o BugCheck 0x116 da corrida anterior.
+>   4. **Tripé SDMA de Boot (Item 63):** Comprovado em 1 poll (`WPTR=68 RPTR=68 Fence=00001001`, 4/4 OK).
+> - **Falhas:**
+>   1. **Tela preta física:** O motor persistente `Bc250ActiveGfxEngineOnline` falhou no StartDevice (`status=PREFLIGHT_FAILED (3)`), deixando `GfxEngine.State=0` (offline). A investigação comprovou que `Context->Core.MmioTransport` estava no estado `EMPTY` (desmapeado pelo término da transação anterior do HQD), e a função não garantiu seu mapeamento antes do preflight de registradores.
+>   2. **Submissões recusadas:** Com a engine offline, as submissões no Node 1 foram recusadas por segurança (`RECUSA FAIL-CLOSED: GfxEngine offline (State=0)`). O Mesa RADV retornou `VK_ERROR_DEVICE_LOST` (`res=-4`) no flush, impedindo a apresentação dos quadros no scanout.
+> - **Veredito:** PARCIAL COM GRANDE AVANÇO. Hardware CP_RB0 comprovado ativo e UMD funcional; persistência do motor para entrega de quadros pendente de correção de transporte MMIO.
+> - **Recuperação e Pendências:** Watchdog expirou após 180 s sem confirmação visual e restaurou `BasicDisplay` em Código 0 online sem reboot (`RECOVERY_OK_ONLINE`, 5/5 amostras OK). Fusível `C:\BC250_BOOT_FUSE.dat` limpo. Execução sustentada de IBs sob VMID 8 com anel persistente online permanece NÃO VALIDADA EM HARDWARE.
+> - **Ação Corretiva Offline Concluída (16/09 14:30):**
+>   1. Em `Bc250ActiveGfxEngineOnline` (`bc250_active_miniport.c`), inserido mapeamento preventivo de `Core.MmioTransport` caso esteja vazio (`BC250_MMIO_TOPOLOGY_EMPTY`).
+>   2. Ponto de ativação de `Bc250ActiveGfxEngineOnline` movido para o final do `StartDeviceActive` (após a confirmação do mapeamento de runtime MMIO e após a finalização dos testes pontuais de bringup), eliminando o conflito de rollback.
+>   3. Ferramenta `tools/EXECUTAR_ROTA_DIRETA_GFXRING.cmd` atualizada com opção padrão `[0] Modo Produção Direto` (`-GfxRingBringupLevel 0`).
+>   4. Pacote reconstruído, auditado e assinado com sucesso: `bc250mcdm.sys` SHA-256 `B5EED49F75F6FE4DA887D4BC7CF92521F535D908BD19D82F3C353160CEB5CE0A`. Pronto para novo ensaio físico após boot frio.
+>
+> ---
+>
+> **16/09 09:26:14 (P0, lab 3.181.1.0) — TRANSIÇÃO PARA BACKEND GRÁFICO REAL (CP_RB0): BUGCHECK 0x116 POR SUBMISSÃO 3D NO MEC E CAUSA RAIZ IDENTIFICADA.**
+> Ensaio físico com UMD D3D11 compilando shaders e emitindo pacotes 3D via Mesa RADV winsys (`vkQueueSubmit`).
+> **Evidência arquivada:** `docs/evidence/2026-09-16_09-26-14-DESKTOP-HQAG6T4-lab-binding/` e [docs/283](docs/283_HANDOFF_CP_RB0_BACKEND_GRAFICO_PERSISTENTE.md).
+> - **Houve avanço?** Inconclusivo funcionalmente / Avanço no diagnóstico. Zero pixels 3D comprovados.
+> - **Sucessos:** Exceção `0xC0000094` superada nos casos testados (layouts multi-slot DWM slots 0..4); 238 submissões de paginação SDMA concluídas com tripé no Node 0 sob VMID 8 (`Submitted=238, Retired=238, Divergentes=0`); 1 Blt SDMA de 640×640 executado em 697 µs (`Fence=000010F0`).
+> - **Falhas:** Zero pixels 3D; BugCheck `0x116` (`VIDEO_TDR_ERROR`). O KMD declarava Node 1 como `DXGK_ENGINE_TYPE_3D`, mas `SubmitCommandVirtual` despachava comandos para a fila assíncrona do MEC (`0xF40FFA0000`). O microcode do MEC travou em `TC_UTCL1_ERROR 0x00080000` (`CpStalled1 0x00000C00`) com falha de proteção GCVM `FaultStatus=0x00900B32` (`ADDR=0x0F40FFA0`) sob VMID 9.
+> - **Veredito:** FALHA frente ao critério de desktop acelerado / D3D11. Demonstrou que o hardware 3D exige o anel gráfico real acionado por PFP/ME.
+> - **Recuperação e Decisão:** O fusível anti-boot-loop funcionou no reboot (`C:\BC250_BOOT_FUSE.dat` em `State=2 TRIPPED`), restaurando Código 43 / `BasicDisplay`. **Encerramento formal de emulação de gráficos por compute.** Implementado no KMD o motor gráfico real persistente `CP_RB0` sob VMID 8, roteamento exclusivo sem fallback para MEC, recuperação TDR com soft-reset `GRBM_SOFT_RESET` e aposentadoria de fences desacoplada (`Bc250WddmFenceTrackerDrainEx`). Suítes offline passaram (`build-contract.bat` Exit 0). A execução do novo caminho gráfico permanece **NÃO VALIDADA EM HARDWARE**.
+>
+> ---
+>
+> **15/09 23:40:16 (P0, lab 3.174.1.0) — MARCO 5: DIRECT3D 11 VIA DXVK NO SILÍCIO — PRIMEIRA TENTATIVA E CAUSA RAIZ DIAGNOSTICADA.**
+> Harness `D3D11Triangle.exe` nativo executado sob DXVK 2.4.1 (`d3d11.dll`, `dxgi.dll`).
+> A inicialização do DXVK teve êxito: detectou o hardware físico `AMD BC-250 Graphics (Cyan Skillfish 2)`
+> (`0x13fe`), driver `radv 26.1.99` e 16 GB GDDR6 (`evidence/2026-09-15_23-39-59-DESKTOP-HQAG6T4-lab-binding/`).
+>
+> **Ponto exato de parada (P0 medido):** o DXVK abortou em `d3d11.stderr.txt:211`:
+> `std::vector::operator[]: Assertion '__n < this->size()' failed.`
+> **Causa raiz:** em `src/amd/vulkan/radv_physical_device.c:142`, a função `radv_graphics_queue_enabled`
+> continha trava explícita forçando `return false;` para a BC-250 (`0x13fe`), expondo apenas a fila
+> de Compute (`VK_QUEUE_COMPUTE_BIT`). O DXVK, como tradutor de Direct3D 11, busca obrigatoriamente
+> uma fila com a flag gráfica `VK_QUEUE_GRAPHICS_BIT`. Sem encontrá-la, tentou acessar índice inválido.
+> O watchdog executou rollback online incondicional e restaurou `BasicDisplay` em Código 0.
+> **Ação corretiva imediata:** habilitar `radv_graphics_queue_enabled` no Mesa RADV, recompilar
+> `vulkan_radeon.dll` e reexecutar o ensaio do Marco 5.
+>
+> ---
+>
+> **15/09 22:49:48 (P0) — MARCO 4 CONCLUÍDO NO SILÍCIO: VULKAN WSI NATIVO COM VKCUBE (3D TEXTURIZADO).**
+> Pela primeira vez na história da APU AMD BC-250 no Windows 10 x64, uma aplicação 3D Vulkan completa
+> com texturização, shaders e swapchain WSI nativa (`VK_KHR_swapchain` / `VK_KHR_win32_surface`)
+> renderizou e apresentou no monitor DisplayPort conectado diretamente à placa, sem WARP e sem cópia por CPU.
+> **Evidência arquivada:** `docs/evidence/2026-09-15_22-46-42-DESKTOP-HQAG6T4-lab-binding/` e [docs/280](docs/280_MARCO4_VULKAN_WSI_CUBE_CONCLUIDO_NO_SILICIO.md).
+> - **Processo:** `VulkanCube.exe` concluiu 600 quadros com `Exit 0`.
+> - **Motor Node 1 (MEC/ACO):** 1.201 submits aceitos e aposentados (`WPTR=RPTR=14412`, zero falhas GCVM).
+> - **Motor Node 0 (SDMA HW Blt):** 600 quadros apresentados no Scanout GOP (2560×1080 em VRAM física real `0xF400000000`).
+>   Latência média de ~1,35 ms por quadro (~740 FPS teóricos). `HostCpuCopies = 0`, `tdr_events = 0`, zero BugChecks.
+> - **Confirmação visual humana (P0):** o cubo tridimensional texturizado girou suavemente no monitor físico. Rollback online restaurou `BasicDisplay` (Código 0) após a conclusão. Promovido à Tabela 1.
 
 > **13/09 17:18:35 (P0, lab 3.173.1.0) — `Bc250DxgkDdiPresent` FOI ALCANÇADA PELA PRIMEIRA VEZ.**
 > Seis chamadas, contra zero em toda a história do projeto. A correção do vínculo de recurso
@@ -1622,6 +1703,7 @@ já produziram resultado, em 06/09:
 | — | Vulkan/Compute | **Marco 1: Compute Vulkan RADV + ACO no Nó 1** | Validado no silício em 11/09 (`evidence/2026-09-11_09-18-11-...`): Instância Vulkan, GFX1013 detectado, compute shader compilado via ACO, 8/8 zonas SMPTE + badge provadas byte a byte na VRAM, anel MEC drenado (RPTR=WPTR=12), 15/15 verificações TRUE |
 | — | Vulkan/Display | **Marco 2: Vulkan RADV Present no Monitor Físico (ROTA 1)** | Validado no silício em 11/09 (`evidence/2026-09-11_22-46-24-...`): Renderização de 11.059.200 bytes (2560x1080) por shader Vulkan, apresentação direta via KMD Escape (`0xBC250001u`) no scanout do UEFI GOP (`0xC0000000`), barras de cores SMPTE e badge exibidos com perfeição no monitor físico, confirmação visual do usuário (P0), 10/10 verificações TRUE |
 | — | Vulkan/Swapchain | **Marco 3: Swapchain Vulkan 60 FPS Sustentado (600 Quadros, ROTA 1 + SDMA Blt 100% GPU)** | Validado no silício em 12/09 (`evidence/2026-09-12_21-21-51-DESKTOP-HQAG6T4-lab-binding`): 600/600 submissões Node 1/MEC aceitas e aposentadas (WPTR=RPTR=7200, ring_drained=True), 600 blts SDMA para o scanout 100% por GPU (Submitted=600, Completed=600, Fallbacks=0, HostCpuCopies=0). Zero TDRs (tdr_events=0). DWM contido com D3D11LabPromotion (pid 10628, 40.130 linhas de log, zero interrupção de dispositivo). Animação contínua e fluida dos 600 quadros por 27,42 s (~22 FPS) validada visualmente no monitor físico pelo usuário (P0). |
+| — | Vulkan/WSI | **Marco 4: Vulkan WSI Nativo com Cubo Texturizado 3D (600 Quadros, VK_KHR_swapchain / VK_KHR_win32_surface + SDMA HW Blt)** | Validado no silício em 15/09 (`evidence/2026-09-15_22-46-42-DESKTOP-HQAG6T4-lab-binding/` e `docs/280`): `VulkanCube.exe` executando swapchain nativa completa, 600 quadros, 1.201 submits Node 1 aceitos e aposentados (`P1SubmitAccepted=1201, P1RetiredTotal=1201`), ring drenado (`WPTR=RPTR=14412`), zero falhas GCVM, 600 blts SDMA no scanout GOP 2560x1080 com latência de 1,35 ms/quadro, zero cópias por CPU (`HostCpuCopies=0`), zero TDR, zero BugCheck. Confirmação visual humana (P0). |
 
 **Resumo da Tabela 1:** compute direto no silício, display KMDOD/GOP com ownership
 físico, Código 0 sob WDDM Full Graphics (`RenderNode=1`), topologia VidPn comitada com `pathCount=1`,
@@ -1928,7 +2010,8 @@ sem tela.
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
 | **—** | **Causa-raiz do VidPN vazio resolvida** | ✅ | **FECHADO NO SILÍCIO (03/09, corridas 21:18 a 23:32):** Implementação de `Bc250McdmGetStandardAllocationDriverData` para SharedPrimary/Shadow/Staging/GDI e a declaração do modelo de memória (`GpuMmuSupported`; **não** `IoMmuSupported`, ver correção de registro na Tabela 1) destravou a criação de alocações pelo VidMm, gerou `hAlloc` real e eliminou a topologia vazia (`pathCount=1`). Promovido à Tabela 1. |
-| 104 | Nodes / engines WDDM | 🟡 | Node 0 SDMA e Node 1 Compute expostos e consumidos pelo scheduler. |
+| 104 | Nodes / engines WDDM | 🟡 | Node 0 SDMA, Node 1 3D Graphics (anel CP_RB0) e Node 2 Compute expostos ao scheduler. Roteamento exclusivo implementado e testado offline; **NÃO VALIDADO EM HARDWARE**. |
+| **B9** | **Backend Gráfico Real (`CP_RB0` / PFP / ME) sob VMID 8** | 🟡 | Anel persistente `CP_RB0` (64 KiB) e fence aux (4 KiB) mapeados em VRAM; submissão indireta de buffers UMD; fail-closed sem fallback para MEC; TDR quiesce/restart com `GRBM_SOFT_RESET`. Contratos offline PASS (`build-contract.bat` Exit 0); **NÃO VALIDADO EM HARDWARE**. |
 | 111 | Harness D3DKMT | ⬜ | Cadeia completa até `Submit` sem erro |
 | 105 | `CreateDevice` | 🟡 | DWM e processos do sistema criando device context com sucesso sob `RenderNode=1`. |
 | 106 | `CreateContext` / Virtual | 🟡 | Contextos de paging e present ativos e operacionais. |
@@ -1961,7 +2044,7 @@ sem tela.
 | 56 | Concorrência | ⬜ | Multithread/process, locks e teardown sem corrupção |
 | 24 | Reset de engine | 🟡 | Reset WDDM por node **preservando o display** |
 | **25** | **TDR** | ⬜ | **Gate de saída da P6.** Hang induzido detectado, engine resetada, adaptador volta a aceitar submissão, display sobrevive |
-| 116 | `ResetFromTimeout` / `RestartFromTimeout` | ⬜ | Quiesce completo e recuperação sem perder o display |
+| 116 | `ResetFromTimeout` / `RestartFromTimeout` | 🟡 | Quiesce e restart do `CP_RB0` com soft-reset GRBM (CP, GFX, CPF, CPG) e validação de readback implementados offline; **NÃO VALIDADO EM HARDWARE**. |
 | 117 | `CollectDbgInfo` | 🟡 | Dump útil produzido durante TDR real |
 | 118 | Power callbacks | 🟡 | F-states reais, ou não anunciar o recurso |
 

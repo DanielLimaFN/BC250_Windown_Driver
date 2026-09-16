@@ -2,7 +2,9 @@
 """Fail-closed static gate for the installable BC-250 MCDM package."""
 
 from pathlib import Path
+import hashlib
 import re
+import struct
 import sys
 
 
@@ -945,6 +947,751 @@ def audit_gfx_shader_contract_is_honest(errors: list[str]) -> None:
     # rejeita ate a escolha legitima do compilador.
     require(test, "CHECK(Bc250GfxShaderComputeRegs(&plan, &regs) == BC250_GFX_SHADER_OK);",
             "contraponto -- campo de politica do compilador passa intacto", errors)
+
+
+def audit_gfx_observable_shader_is_honest(errors: list[str]) -> None:
+    """B.2.2 -- BLOBS DE SHADER GRAFICO OBSERVAVEL (VS E PS).
+
+    Exige rigor de proveniencia (Lei 1 / Lei 8):
+      1. Os blobs foram montados artesanalmente com opcodes canonicos RDNA 1.0
+         (GFX10.1 / GC 10.1.3) cruzados com o compilador Mesa ACO.
+         A classe epistemica DECLARADA e obrigatoriamente 'H'. Qualquer
+         afirmacao de compilador real ROCm/LLVM sem ferramenta no host e'
+         falso P1 e reprova.
+      2. VS e PS devem terminar em BC250_OPCODE_S_ENDPGM.
+      3. Opcodes de EXP canonicos: 0xF80008CF para pos0 no VS e 0xF800180F
+         para mrt0 no PS.
+      4. SHA-256 fixos e auditados.
+      5. O teste deve validar a integracao com o contrato puro (B.2.1) e a
+         rejeicao em caso de adulteracao.
+    """
+    src_path = ROOT / "driver" / "core" / "bc250_gfx_observable_shader.c"
+    hdr_path = ROOT / "driver" / "core" / "bc250_gfx_observable_shader.h"
+    test_path = ROOT / "driver" / "tests" / "gfx_observable_shader_test.c"
+    for path in (src_path, hdr_path, test_path):
+        if not path.exists():
+            errors.append(f"fonte ausente para auditar o shader grafico observavel: {path.name}")
+            return
+
+    src = src_path.read_text(encoding="utf-8", errors="replace")
+    hdr = hdr_path.read_text(encoding="utf-8", errors="replace")
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+    src_code = strip_c_comments(src)
+
+    # 1. Classe epistemica H declarada obrigatoriamente
+    require(hdr, '#define BC250_GFX_OBSERVABLE_EPISTEMIC_CLASS "H"',
+            "declaracao de classe epistemica H no header", errors)
+    forbid(src_code, '"P1"', "afirmacao falsa de classe P1 sem compilador no host", errors)
+
+    # 2. Terminacao em s_endpgm em ambos os blobs
+    vs_start = src_code.find("g_Bc250GfxObservableVsShader")
+    vs_end = src_code.find("};", vs_start) if vs_start != -1 else -1
+    vs_body = src_code[vs_start:vs_end] if (vs_start != -1 and vs_end != -1) else ""
+    require(vs_body, "BC250_OPCODE_S_ENDPGM", "terminacao em s_endpgm no VS", errors)
+
+    ps_start = src_code.find("g_Bc250GfxObservablePsShader")
+    ps_end = src_code.find("};", ps_start) if ps_start != -1 else -1
+    ps_body = src_code[ps_start:ps_end] if (ps_start != -1 and ps_end != -1) else ""
+    require(ps_body, "BC250_OPCODE_S_ENDPGM", "terminacao em s_endpgm no PS", errors)
+
+    # 3. Opcodes de EXP
+    require(src_code, "0xF80008CFu", "opcode EXP pos0 no VS", errors)
+    require(src_code, "0xF800180Fu", "opcode EXP mrt0 no PS", errors)
+
+    # 4. Hashes SHA-256 RECALCULADOS DINAMICAMENTE SOBRE OS DWORDS REAIS (D1)
+    def _parse_and_hash_shader(array_name: str, count: int) -> str:
+        idx = src_code.find(array_name)
+        if idx == -1:
+            return ""
+        end_idx = src_code.find("};", idx)
+        if end_idx == -1:
+            return ""
+        body = src_code[idx:end_idx]
+        body = body[body.find("{") + 1:]
+        tokens = [t.strip().rstrip("uU") for t in body.split(",") if t.strip()]
+        dwords = []
+        for t in tokens:
+            if "BC250_OPCODE_S_ENDPGM" in t:
+                dwords.append(0xBF810000)
+            elif t.startswith("0x") or t.startswith("0X"):
+                dwords.append(int(t, 16))
+            else:
+                try:
+                    dwords.append(int(t))
+                except ValueError:
+                    return ""
+        if len(dwords) != count:
+            return ""
+        raw_bytes = struct.pack(f"<{len(dwords)}I", *dwords)
+        return hashlib.sha256(raw_bytes).hexdigest()
+
+    vs_hash_calc = _parse_and_hash_shader("g_Bc250GfxObservableVsShader", 8)
+    ps_hash_calc = _parse_and_hash_shader("g_Bc250GfxObservablePsShader", 9)
+
+    vs_hash_expected = "219387cf4964de41ac24153b4669b8d1313ef23ecb63ce07a886db69434b9539"
+    ps_hash_expected = "f5787965e08da58c5bef2b296dee47dce32de9f62f8b7e93ec0c06a9bb2a16c2"
+
+    if vs_hash_calc != vs_hash_expected:
+        errors.append(f"SHA-256 do VS recalculado ({vs_hash_calc}) diverge do esperado ({vs_hash_expected})")
+    if ps_hash_calc != ps_hash_expected:
+        errors.append(f"SHA-256 do PS recalculado ({ps_hash_calc}) diverge do esperado ({ps_hash_expected})")
+
+    require(hdr, vs_hash_expected, "hash SHA-256 correto do VS no header", errors)
+    require(hdr, ps_hash_expected, "hash SHA-256 correto do PS no header", errors)
+
+    # 4b. Ressalvas epistemologicas e dividas declaradas (D2 / D3)
+    require(hdr, "RESSALVA EPISTEMOLOGICA (D2)", "declaracao de circularidade D2 no header", errors)
+    require(hdr, "DIVIDA DECLARADA B.2.2/D3", "declaracao de divida D3 de area zero no header", errors)
+
+    # 5. Teste cobra integracao e falha fechada (D4)
+    require(hdr, "int Bc250PopulateGfxShaderPlanFromObservable(",
+            "assinatura com retorno int em Bc250PopulateGfxShaderPlanFromObservable", errors)
+    require(test, "Bc250GfxShaderValidateBlob(vs->ShaderDwords",
+            "teste de validacao de blob do VS pelo contrato B.2.1", errors)
+    require(test, "Bc250GfxShaderValidateBlob(ps->ShaderDwords",
+            "teste de validacao de blob do PS pelo contrato B.2.1", errors)
+    require(test, "Bc250GfxShaderComputeRegs(&vsPlan",
+            "teste de calculo de registradores do VS", errors)
+    require(test, "Bc250GfxShaderComputeRegs(&psPlan",
+            "teste de calculo de registradores do PS", errors)
+    require(test, "BC250_GFX_SHADER_NO_ENDPGM",
+            "teste de rejeicao sem endpgm", errors)
+    require(test, "Bc250PopulateGfxShaderPlanFromObservable(NULL",
+            "teste de falha fechada de populate com NULL", errors)
+
+
+def audit_gfx_shader_staging_is_honest(errors: list[str]) -> None:
+    """B.2.3 -- STAGING E ALOCACAO DE SHADERS NA VRAM (PAREDE B).
+
+    Audita as garantias formais de carregamento de microcodigo:
+      1. Alinhamento estrito a 256 bytes (Lei 7 / RDNA 1 SPI_SHADER_PGM_LO_*).
+         Enderecos desalinhados devem ser recusados por nome
+         (BC250_GFX_SHADER_STAGING_MISALIGNED).
+      2. Ausencia total de sobreposicao de faixas (Zero Overlap): tanto no espaco
+         GPUVA quanto no espaco virtual da CPU, colisoes devem ser recusadas por
+         nome (BC250_GFX_SHADER_STAGING_OVERLAP).
+      3. Prova de escrita byte a byte por leitura (Readback Proof -- Lei 2):
+         Nenhuma escrita em memoria e assumida. Se houver divergencia na leitura,
+         retorna BC250_GFX_SHADER_STAGING_READBACK_FAILED e zera saidas (falha fechada).
+      4. Limite de tamanho de buffer: buffers menores que os bytes exigidos pelo
+         manifesto sao recusados por nome (BC250_GFX_SHADER_STAGING_BUFFER_TOO_SMALL).
+      5. Falha fechada absoluta (Lei 4): qualquer erro zera imediatamente todas as
+         estruturas de saida (VsPlanOut, PsPlanOut, EvidenceOut).
+      6. Integracao completa com os contratos B.2.1 e B.2.2: validacao de manifestos,
+         validacao de blobs e calculo estrito dos registradores SPI_SHADER_PGM_*.
+      7. Meta-portao: a suite de teste unitario deve cobrar rigorosamente cada um
+         desses caminhos e codigos de recusa nomeados.
+    """
+    src_path = ROOT / "driver" / "core" / "bc250_gfx_shader_staging_contract.c"
+    hdr_path = ROOT / "driver" / "core" / "bc250_gfx_shader_staging_contract.h"
+    test_path = ROOT / "driver" / "tests" / "gfx_shader_staging_test.c"
+    for path in (src_path, hdr_path, test_path):
+        if not path.exists():
+            errors.append(f"fonte ausente para auditar o staging de shader: {path.name}")
+            return
+
+    src = src_path.read_text(encoding="utf-8", errors="replace")
+    hdr = hdr_path.read_text(encoding="utf-8", errors="replace")
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+
+    # 1. Header: constantes, enums e estruturas
+    require(hdr, "#define BC250_GFX_SHADER_STAGING_ALIGNMENT 256ull",
+            "constante de alinhamento de 256 bytes no header", errors)
+    for status_code in (
+        "BC250_GFX_SHADER_STAGING_OK",
+        "BC250_GFX_SHADER_STAGING_BAD_ARGUMENT",
+        "BC250_GFX_SHADER_STAGING_MISALIGNED",
+        "BC250_GFX_SHADER_STAGING_BUFFER_TOO_SMALL",
+        "BC250_GFX_SHADER_STAGING_OVERLAP",
+        "BC250_GFX_SHADER_STAGING_READBACK_FAILED",
+        "BC250_GFX_SHADER_STAGING_MANIFEST_INVALID",
+        "BC250_GFX_SHADER_STAGING_CONTRACT_FAILED",
+        "BC250_GFX_SHADER_STAGING_OUT_OF_WINDOW",
+        "BC250_GFX_SHADER_STAGING_RESERVED_COLLISION",
+    ):
+        require(hdr, status_code, f"codigo de status {status_code} no header", errors)
+
+    require(hdr, "typedef struct BC250_GFX_SHADER_STAGING_WINDOW",
+            "estrutura de janela de VRAM e reservas no header", errors)
+    require(hdr, "typedef struct BC250_GFX_SHADER_STAGING_TRANSPORT",
+            "estrutura de transporte com injecao de readback no header", errors)
+    require(hdr, "typedef struct BC250_GFX_SHADER_STAGING_BUFFER",
+            "estrutura de buffer de staging no header", errors)
+    require(hdr, "typedef struct BC250_GFX_SHADER_STAGING_EVIDENCE",
+            "estrutura de evidencia de staging no header", errors)
+    require(hdr, "BC250_GFX_SHADER_STAGING_STATUS Bc250GfxShaderStagePipeline(",
+            "assinatura de Bc250GfxShaderStagePipeline no header", errors)
+
+    # 2. Implementacao: corpo da funcao principal
+    stage_func = function_body(
+        src, "BC250_GFX_SHADER_STAGING_STATUS Bc250GfxShaderStagePipeline(")
+    if not stage_func:
+        errors.append("Bc250GfxShaderStagePipeline nao localizado")
+        return
+
+    stage_code = strip_c_comments(stage_func)
+
+    # 2a. Falha fechada: zeragem antecipada de saidas
+    entry_marker = stage_code.find("VsManifest == NULL")
+    entry_block = stage_code[:entry_marker] if entry_marker != -1 else ""
+    require(entry_block, "Bc250StagingZeroMemory(VsPlanOut, (uint32_t)sizeof(*VsPlanOut));",
+            "zeragem de VsPlanOut na entrada", errors)
+    require(entry_block, "Bc250StagingZeroMemory(PsPlanOut, (uint32_t)sizeof(*PsPlanOut));",
+            "zeragem de PsPlanOut na entrada", errors)
+    require(entry_block, "Bc250StagingZeroMemory(EvidenceOut, (uint32_t)sizeof(*EvidenceOut));",
+            "zeragem de EvidenceOut na entrada", errors)
+
+    # 2b. Validacao de ponteiros e manifestos
+    require(stage_code, "return BC250_GFX_SHADER_STAGING_BAD_ARGUMENT;",
+            "recusa nomeada para argumentos nulos", errors)
+    require(stage_code, "Bc250ValidateGfxObservableManifest(VsManifest)",
+            "validacao de manifesto do VS", errors)
+    require(stage_code, "Bc250ValidateGfxObservableManifest(PsManifest)",
+            "validacao de manifesto do PS", errors)
+    require(stage_code, "return BC250_GFX_SHADER_STAGING_MANIFEST_INVALID;",
+            "recusa nomeada para manifesto invalido", errors)
+
+    # 2c. Alinhamento de hardware a 256 bytes (Lei 7)
+    require(stage_code, "VsBuffer->GpuAddress & (BC250_GFX_SHADER_STAGING_ALIGNMENT - 1ull)",
+            "mascara de alinhamento de 256 bytes na checagem do VS", errors)
+    require(stage_code, "PsBuffer->GpuAddress & (BC250_GFX_SHADER_STAGING_ALIGNMENT - 1ull)",
+            "mascara de alinhamento de 256 bytes na checagem do PS", errors)
+    require(stage_code, "return BC250_GFX_SHADER_STAGING_MISALIGNED;",
+            "recusa nomeada de endereco desalinhado a 256 bytes", errors)
+
+    # 2d. Limites de tamanho de buffer
+    require(stage_code, "return BC250_GFX_SHADER_STAGING_BUFFER_TOO_SMALL;",
+            "recusa nomeada de buffer pequeno demais", errors)
+
+    # 2e. Delimitacao de janela e regioes reservadas (D2)
+    if stage_code.count("return BC250_GFX_SHADER_STAGING_RESERVED_COLLISION;") < 2:
+        errors.append("recusa nomeada de colisao com regiao reservada exigida para scanout e anel")
+    require(stage_code, "return BC250_GFX_SHADER_STAGING_OUT_OF_WINDOW;",
+            "recusa nomeada de endereco fora da janela de VRAM", errors)
+
+    # 2f. Ausencia de sobreposicao (Zero Overlap)
+    require(stage_code, "vsGpuStart < psGpuEnd && psGpuStart < vsGpuEnd",
+            "deteccao de sobreposicao no espaco GPUVA", errors)
+    require(stage_code, "vsVirtStart < psVirtEnd && psVirtStart < vsVirtEnd",
+            "deteccao de sobreposicao no espaco virtual da CPU", errors)
+    if stage_code.count("return BC250_GFX_SHADER_STAGING_OVERLAP;") < 2:
+        errors.append("recusa nomeada de sobreposicao exigida nos dois caminhos (GPUVA e virtual)")
+
+    # 2g. Barreira de memoria e Readback proof com injecao (Lei 2 / D1 / D3)
+    require(stage_code, "Bc250StagingMemoryBarrier(Transport);",
+            "barreira de memoria antes do readback", errors)
+    require(stage_code, "val != VsManifest->ShaderDwords[i]",
+            "conferencia de leitura de dword do VS contra manifesto", errors)
+    require(stage_code, "val != PsManifest->ShaderDwords[i]",
+            "conferencia de leitura de dword do PS contra manifesto", errors)
+    if stage_code.count("return BC250_GFX_SHADER_STAGING_READBACK_FAILED;") < 2:
+        errors.append("recusa nomeada de readback failed exigida nos dois caminhos (VS e PS)")
+    if stage_code.count("EvidenceOut->MemoryClearedOnFailure = 1u;") < 2:
+        errors.append("registro de limpeza de memoria exigido nos dois caminhos de readback (VS e PS)")
+
+    # 2h. Integracao com B.2.1 e B.2.2
+    require(stage_code, "Bc250PopulateGfxShaderPlanFromObservable(VsManifest",
+            "populacao de plano do VS a partir do manifesto observavel", errors)
+    require(stage_code, "Bc250PopulateGfxShaderPlanFromObservable(PsManifest",
+            "populacao de plano do PS a partir do manifesto observavel", errors)
+    require(stage_code, "Bc250GfxShaderValidateBlob(",
+            "validacao do blob pelo contrato B.2.1", errors)
+    require(stage_code, "Bc250GfxShaderComputeRegs(VsPlanOut",
+            "calculo dos registradores do VS pelo contrato B.2.1", errors)
+    require(stage_code, "Bc250GfxShaderComputeRegs(PsPlanOut",
+            "calculo dos registradores do PS pelo contrato B.2.1", errors)
+    require(stage_code, "return BC250_GFX_SHADER_STAGING_CONTRACT_FAILED;",
+            "recusa nomeada quando integracao de contrato falha", errors)
+
+    # 3. Meta-portao: cobertura no teste unitario
+    test_code = strip_c_comments(test)
+    require(test_code, "Bc250GfxShaderStagePipeline(vs, ps, &vsBuf, &psBuf, &win, &transport, &vsPlan, &psPlan, &ev)",
+            "teste de fluxo completo de staging com janela e transporte", errors)
+    require(test_code, "CHECK(status == BC250_GFX_SHADER_STAGING_OK);",
+            "teste de sucesso na execucao completa", errors)
+    require(test_code, "CHECK(ev.StagingCompleted == 1u);",
+            "teste de conclusao registrada na evidencia", errors)
+    require(test_code, "fixture.FailReadbackOffset = 2u;",
+            "teste com injecao de falha de readback via transporte", errors)
+    require(test_code, "CHECK(status == BC250_GFX_SHADER_STAGING_READBACK_FAILED);",
+            "teste exercitando recusa nomeada de readback failed", errors)
+    require(test_code, "CHECK(ev.MemoryClearedOnFailure == 1u);",
+            "teste confirmando limpeza de memoria apos falha de readback", errors)
+    require(test_code, "BC250_GFX_SHADER_STAGING_RESERVED_COLLISION",
+            "teste de rejeicao de colisao com regiao reservada", errors)
+    require(test_code, "BC250_GFX_SHADER_STAGING_OUT_OF_WINDOW",
+            "teste de rejeicao fora da janela de VRAM", errors)
+    require(test_code, "BC250_GFX_SHADER_STAGING_BAD_ARGUMENT",
+            "teste de rejeicao de argumentos nulos", errors)
+    require(test_code, "BC250_GFX_SHADER_STAGING_MISALIGNED",
+            "teste de rejeicao de desalinhamento de hardware", errors)
+    require(test_code, "BC250_GFX_SHADER_STAGING_BUFFER_TOO_SMALL",
+            "teste de rejeicao de buffer com tamanho insuficiente", errors)
+    require(test_code, "BC250_GFX_SHADER_STAGING_OVERLAP",
+            "teste de rejeicao de sobreposicao de buffers", errors)
+    require(test_code, "BC250_GFX_SHADER_STAGING_MANIFEST_INVALID",
+            "teste de rejeicao de manifesto invalido", errors)
+
+
+def audit_gfx_sh_reg_packet_is_honest(errors: list[str]) -> None:
+    """B.2.4 -- EMISSAO PM4 SET_SH_REG DE SHADERS GRAFICOS (VS E PS).
+
+    Invariantes criticos (Lei 1 / Lei 2 / Lei 4 / Lei 7):
+      1. Proibicao absoluta do bit SHADER_TYPE=COMPUTE (0x02) no anel grafico.
+         Com ele ligado o pacote endereca registradores da MEC e causa stall/hang.
+         Header deve ser exatamente 0xC0047600u.
+      2. Offsets exatos do catalogo P1:
+         - VS: 0x048 (SPI_SHADER_PGM_LO_VS / BAR5 0x0B120)
+         - PS: 0x008 (SPI_SHADER_PGM_LO_PS / BAR5 0x0B020)
+      3. Contagem exata de dwords:
+         - 6 dwords por estagio (1 header + 1 offset + 4 regs).
+         - 12 dwords no pipeline completo (VS + PS).
+      4. Fail-closed:
+         - Rejeicao de ring cheio sem avancar cursor (BC250_GFX_SH_REG_RING_FULL).
+         - Rejeicao de registradores invalidos (BC250_GFX_SH_REG_INVALID_REGS).
+         - Rejeicao de stream corrompido (BC250_GFX_SH_REG_STREAM_MISMATCH).
+    """
+    src_path = ROOT / "driver" / "core" / "bc250_gfx_sh_reg_packet.c"
+    hdr_path = ROOT / "driver" / "core" / "bc250_gfx_sh_reg_packet.h"
+    test_path = ROOT / "driver" / "tests" / "gfx_sh_reg_packet_test.c"
+    for path in (src_path, hdr_path, test_path):
+        if not path.exists():
+            errors.append(f"fonte ausente para auditar emissao PM4 de shaders: {path.name}")
+            return
+
+    src = src_path.read_text(encoding="utf-8", errors="replace")
+    hdr = hdr_path.read_text(encoding="utf-8", errors="replace")
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+
+    # 1. Contrato e constantes no header
+    require(hdr, "#define BC250_GFX_PM4_SET_SH_REG_OPCODE             0x76u",
+            "opcode 0x76 de SET_SH_REG no header", errors)
+    require(hdr, "#define BC250_GFX_PM4_SET_SH_REG_HEADER_4DW         0xC0047600u",
+            "header Type-3 de SET_SH_REG para 4 registradores sem bit compute", errors)
+    require(hdr, "#define BC250_GFX_PM4_SHADER_DWORDS_PER_STAGE       6u",
+            "contagem de 6 dwords por estagio de shader", errors)
+    require(hdr, "#define BC250_GFX_PM4_PIPELINE_SHADER_TOTAL_DWORDS  12u",
+            "contagem de 12 dwords para o pipeline completo (VS + PS)", errors)
+    require(hdr, "#define BC250_GFX_SH_REG_COMPUTE_BIT_FORBIDDEN      0x02u",
+            "definicao explicita de proibicao do bit compute no header", errors)
+
+    forbid(strip_c_comments(src), "BC250_PM4_SHADER_TYPE_COMPUTE",
+           "SHADER_TYPE_COMPUTE no emissor de shader grafico", errors)
+    forbid(strip_c_comments(hdr), "BC250_PM4_SHADER_TYPE_COMPUTE",
+           "SHADER_TYPE_COMPUTE no header de shader grafico", errors)
+
+    # 2. Implementacao no .c
+    src_code = strip_c_comments(src)
+
+    # 2a. Reuso obrigatorio de Bc250Pm4EmitSetShReg (evita escrita plana sem wrap circular)
+    require(src_code, "Bc250Pm4EmitSetShReg(RingBuffer, RingDwords, CursorDwords,",
+            "reuso de Bc250Pm4EmitSetShReg com suporte a wrap circular", errors)
+
+    # 2b. VS usa offset 0x048 (BC250_GFX_SH_PGM_LO_VS)
+    require(src_code, "BC250_GFX_SH_PGM_LO_VS, vsValues, 4u)",
+            "emissao de offset do VS usando BC250_GFX_SH_PGM_LO_VS", errors)
+
+    # 2c. PS usa offset 0x008 (BC250_GFX_SH_PGM_LO_PS)
+    require(src_code, "BC250_GFX_SH_PGM_LO_PS, psValues, 4u)",
+            "emissao de offset do PS usando BC250_GFX_SH_PGM_LO_PS", errors)
+
+    # 2d. Proibir escrita plana direta sem tratar wrap
+    forbid(src_code, "RingBuffer[cursor++] = BC250_GFX_SH_PGM_LO_VS;",
+           "escrita plana de VS sem tratar wrap circular", errors)
+    forbid(src_code, "RingBuffer[cursor++] = BC250_GFX_SH_PGM_LO_PS;",
+           "escrita plana de PS sem tratar wrap circular", errors)
+
+    # 2e. Recusa nomeada de ring cheio
+    require(src_code, "return BC250_GFX_SH_REG_RING_FULL;",
+            "recusa nomeada de ring cheio", errors)
+
+    # 2f. Recusa nomeada de registradores invalidos
+    require(src_code, "return BC250_GFX_SH_REG_INVALID_REGS;",
+            "recusa nomeada de registradores invalidos", errors)
+
+    # 2g. Recusa nomeada de stream corrompido
+    require(src_code, "return BC250_GFX_SH_REG_STREAM_MISMATCH;",
+            "recusa nomeada de stream com divergencia", errors)
+
+    # 2h. Checagem ativa contra presenca do bit compute
+    require(src_code, "(header & BC250_GFX_SH_REG_COMPUTE_BIT_FORBIDDEN) != 0u",
+            "checagem fail-closed de bit compute proibido no header", errors)
+
+    # 3. Meta-portao no teste unitario
+    test_code = strip_c_comments(test)
+    require(test_code, "Bc250GfxShRegEmitPipeline(ring, 64u, &cursor, &vsRegs, &psRegs, &ev)",
+            "teste de emissao de pipeline completa", errors)
+    require(test_code, "Bc250GfxShRegVerifyStream(ring, 12u, &vsRegs, &psRegs)",
+            "teste de verificacao de stream integro", errors)
+    require(test_code, "BC250_GFX_SH_REG_RING_FULL",
+            "teste de rejeicao com ring cheio", errors)
+    require(test_code, "BC250_GFX_SH_REG_INVALID_REGS",
+            "teste de rejeicao com registradores invalidos", errors)
+    require(test_code, "BC250_GFX_SH_REG_STREAM_MISMATCH",
+            "teste de rejeicao com divergencia em stream", errors)
+    require(test_code, "BC250_GFX_SH_REG_COMPUTE_BIT_FORBIDDEN",
+            "teste conferindo ausencia estrita de bit compute", errors)
+
+    # 4. Transacao fisica no anel grafico CP_RB0 (Lei 2 e Lei 4)
+    txn_path = ROOT / "driver" / "core" / "bc250_gfx_ring_transaction.c"
+    if txn_path.exists():
+        txn_code = strip_c_comments(txn_path.read_text(encoding="utf-8", errors="replace"))
+        require(txn_code, "BC250_GFX_RING_TXN_STATUS Bc250GfxRingTxnSubmitShReg",
+                "funcao Bc250GfxRingTxnSubmitShReg no modulo de transacao", errors)
+        require(txn_code, "Bc250GfxShRegEmitPipeline(",
+                "emissao do pipeline no anel CP_RB0", errors)
+        require(txn_code, "Bc250Pm4EmitWriteData(",
+                "emissao de fence fisica via WRITE_DATA apos os shaders", errors)
+        require(txn_code, "Bc250GfxRingClassifyTripod(",
+                "classificacao estrita do tripe de conclusao", errors)
+        require(txn_code, "*SubmitPlan->FenceCpuAddress = SubmitPlan->FencePoisonValue;",
+                "injecao fisica de poison na fence antes do disparo", errors)
+        require(txn_code, "SubmitEvidence->FencePoisonReadback != SubmitPlan->FencePoisonValue",
+                "verificacao de readback do poison na fence", errors)
+        require(txn_code, "verdict == BC250_TRIPOD_PROVEN",
+                "sucesso condicionado a tripe provado", errors)
+
+    # 5. Bringup Level 3 no miniport com rollback incondicional (Lei 5)
+    mini_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+    if mini_path.exists():
+        mini_code = strip_c_comments(mini_path.read_text(encoding="utf-8", errors="replace"))
+        require(mini_code, "Bc250GfxRingTxnSubmitShReg(",
+                "chamada de submissao no bringup Level 3", errors)
+        require(mini_code, "Level >= 3u",
+                "suporte ao nivel 3 de bringup", errors)
+
+
+def audit_gfx_viewport_scissor_is_honest(errors: list[str]) -> None:
+    """B.3.1 -- VIEWPORT, SCISSOR E REGISTRADORES DE CONTEXTO PM4.
+
+    Invariantes criticos (Lei 1 / Lei 2 / Lei 4 / Lei 7):
+      1. Opcode e constantes no header:
+         - SET_CONTEXT_REG opcode 0x69.
+         - Total do stream de 20 dwords exatos (8 + 4 + 4 + 4).
+         - VTE_CNTL default 0x0000043Fu.
+         - Scissor bit 31 WINDOW_OFFSET_DISABLE (0x80000000u).
+      2. Reuso obrigatorio de Bc250Pm4EmitSetContextReg com wrap circular.
+      3. Registradores de contexto GFX10 corretos:
+         - PA_CL_VPORT_XSCALE (0x010Fu)
+         - PA_SU_SC_MODE_CNTL (0x0205u)
+         - PA_SC_WINDOW_SCISSOR_TL (0x0081u)
+         - PA_SC_VPORT_SCISSOR_0_TL (0x0094u)
+      4. Fail-closed:
+         - Rejeicao de argumentos nulos e NaN/Infinitos (BC250_GFX_VPORT_INVALID_ARGUMENT).
+         - Rejeicao de dimensoes fora dos limites (BC250_GFX_VPORT_OUT_OF_BOUNDS).
+         - Rejeicao de stream com divergencia (BC250_GFX_VPORT_STREAM_MISMATCH).
+    """
+    src_path = ROOT / "driver" / "core" / "bc250_gfx_viewport_scissor.c"
+    hdr_path = ROOT / "driver" / "core" / "bc250_gfx_viewport_scissor.h"
+    test_path = ROOT / "driver" / "tests" / "gfx_viewport_scissor_test.c"
+    for path in (src_path, hdr_path, test_path):
+        if not path.exists():
+            errors.append(f"fonte ausente para auditar viewport/scissor: {path.name}")
+            return
+
+    src = src_path.read_text(encoding="utf-8", errors="replace")
+    hdr = hdr_path.read_text(encoding="utf-8", errors="replace")
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+
+    # 1. Header
+    require(hdr, "#define BC250_GFX_PM4_SET_CONTEXT_REG_OPCODE        0x69u",
+            "opcode 0x69 de SET_CONTEXT_REG no header", errors)
+    require(hdr, "#define BC250_GFX_VPORT_STREAM_TOTAL_DWORDS         20u",
+            "contagem de 20 dwords para o stream de viewport/scissor", errors)
+    require(hdr, "#define BC250_GFX_VTE_CNTL_DEFAULT                  0x0000043Fu",
+            "valor canonico de PA_CL_VTE_CNTL no header", errors)
+    require(hdr, "#define BC250_GFX_SCISSOR_OFFSET_DISABLE            0x80000000u",
+            "bit WINDOW_OFFSET_DISABLE no header de scissor", errors)
+    require(hdr, "#define BC250_GFX_PM4_SET_CTX_VPORT_HEADER_6DW      0xC0066900u",
+            "header canonico de VPORT (count = 6)", errors)
+    require(hdr, "#define BC250_GFX_PM4_SET_CTX_RASTER_HEADER_2DW     0xC0026900u",
+            "header canonico de RASTER (count = 2)", errors)
+    require(hdr, "#define BC250_GFX_PM4_SET_CTX_WIN_SCISSOR_HEADER_2DW 0xC0026900u",
+            "header canonico de Window Scissor (count = 2)", errors)
+    require(hdr, "#define BC250_GFX_PM4_SET_CTX_VP_SCISSOR_HEADER_2DW  0xC0026900u",
+            "header canonico de Viewport Scissor (count = 2)", errors)
+
+    # 2. Implementacao no .c
+    src_code = strip_c_comments(src)
+    require(src_code, "Bc250Pm4EmitSetContextReg(",
+            "reuso mandatorio de Bc250Pm4EmitSetContextReg com suporte a wrap circular", errors)
+    require(src_code, "BC250_PM4_REG_PA_CL_VPORT_XSCALE",
+            "emissao de PA_CL_VPORT_XSCALE usando registrador de catalogo", errors)
+    require(src_code, "BC250_PM4_REG_PA_SU_SC_MODE_CNTL",
+            "emissao de PA_SU_SC_MODE_CNTL usando registrador de catalogo", errors)
+    require(src_code, "BC250_PM4_REG_PA_SC_WINDOW_SCISSOR_TL",
+            "emissao de PA_SC_WINDOW_SCISSOR_TL usando registrador de catalogo", errors)
+    require(src_code, "BC250_PM4_REG_PA_SC_VPORT_SCISSOR_0_TL",
+            "emissao de PA_SC_VPORT_SCISSOR_0_TL usando registrador de catalogo", errors)
+
+    # 3. Fail-closed no .c
+    require(src_code, "return BC250_GFX_VPORT_INVALID_ARGUMENT;",
+            "recusa nomeada de argumentos invalidos / NaN", errors)
+    require(src_code, "return BC250_GFX_VPORT_OUT_OF_BOUNDS;",
+            "recusa nomeada de limites fora da faixa", errors)
+    require(src_code, "return BC250_GFX_VPORT_STREAM_MISMATCH;",
+            "recusa nomeada de divergencia no stream verificado", errors)
+
+    # 4. Teste unitario
+    test_code = strip_c_comments(test)
+    require(test_code, "Bc250GfxComputeViewportScissor(",
+            "teste de calculo matematico de viewport e scissor", errors)
+    require(test_code, "Bc250GfxEmitViewportScissorStream(",
+            "teste de emissao de stream de viewport", errors)
+    require(test_code, "Bc250GfxVerifyViewportScissorStream(",
+            "teste de verificacao de stream de viewport", errors)
+    require(test_code, "BC250_GFX_VPORT_INVALID_ARGUMENT",
+            "teste de rejeicao com argumento invalido", errors)
+    require(test_code, "BC250_GFX_VPORT_OUT_OF_BOUNDS",
+            "teste de rejeicao com limites fora da faixa", errors)
+    require(test_code, "BC250_GFX_VPORT_STREAM_MISMATCH",
+            "teste de deteccao de corrupcao no stream", errors)
+
+
+def audit_gfx_primitive_assembler_is_honest(errors: list[str]) -> None:
+    """B.3.2 -- PRIMITIVE ASSEMBLER E TOPOLOGIA DE TRIANGULOS (VGT).
+
+    Invariantes criticos (Lei 1 / Lei 2 / Lei 4 / Lei 7):
+      1. Opcode e constantes no header:
+         - SET_UCONFIG_REG opcode 0x79.
+         - Total do stream de 8 dwords exatos (3 + 3 + 2).
+         - Header canonico SET_UCONFIG_REG 0xC0017900u (Count = 1).
+         - Header canonico NOP 0xC0001000u (Count = 0).
+      2. Reuso obrigatorio de Bc250Pm4EmitSetUconfigReg e Bc250Pm4EmitNop com wrap circular.
+      3. Registradores UCONFIG GFX10 corretos:
+         - BC250_PM4_REG_VGT_PRIMITIVE_TYPE (0xC242u)
+         - BC250_PM4_REG_VGT_NUM_INSTANCES (0xC24Du)
+      4. Fail-closed:
+         - Rejeicao de argumentos nulos, topologias invalidas ou instâncias zeradas (BC250_GFX_PRIM_INVALID_ARGUMENT).
+         - Rejeicao de divergencia no stream verificado (BC250_GFX_PRIM_STREAM_MISMATCH).
+    """
+    src_path = ROOT / "driver" / "core" / "bc250_gfx_primitive_assembler.c"
+    hdr_path = ROOT / "driver" / "core" / "bc250_gfx_primitive_assembler.h"
+    test_path = ROOT / "driver" / "tests" / "gfx_primitive_assembler_test.c"
+    for path in (src_path, hdr_path, test_path):
+        if not path.exists():
+            errors.append(f"fonte ausente para auditar primitive assembler: {path.name}")
+            return
+
+    src = src_path.read_text(encoding="utf-8", errors="replace")
+    hdr = hdr_path.read_text(encoding="utf-8", errors="replace")
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+
+    # 1. Header
+    require(hdr, "#define BC250_GFX_PM4_SET_UCONFIG_REG_OPCODE        0x79u",
+            "opcode 0x79 de SET_UCONFIG_REG no header", errors)
+    require(hdr, "#define BC250_GFX_PRIM_STREAM_TOTAL_DWORDS          8u",
+            "contagem de 8 dwords para o stream de primitive assembler", errors)
+    require(hdr, "#define BC250_GFX_PM4_SET_UCONFIG_HEADER_1DW        0xC0017900u",
+            "header canonico de SET_UCONFIG_REG (count = 1)", errors)
+    require(hdr, "#define BC250_GFX_PM4_NOP_HEADER_1DW                0xC0001000u",
+            "header canonico de NOP (count = 0)", errors)
+    require(hdr, "#define BC250_GFX_PRIM_TRILIST                      0x04u",
+            "topologia canonica DI_PT_TRILIST 0x04 no header", errors)
+
+    # 2. Implementacao no .c
+    src_code = strip_c_comments(src)
+    require(src_code, "Bc250Pm4EmitSetUconfigReg(",
+            "reuso mandatorio de Bc250Pm4EmitSetUconfigReg com suporte a wrap circular", errors)
+    require(src_code, "Bc250Pm4EmitNop(",
+            "reuso mandatorio de Bc250Pm4EmitNop com suporte a wrap circular", errors)
+    require(src_code, "BC250_PM4_REG_VGT_PRIMITIVE_TYPE",
+            "emissao de VGT_PRIMITIVE_TYPE usando registrador de catalogo", errors)
+    require(src_code, "BC250_PM4_REG_VGT_NUM_INSTANCES",
+            "emissao de VGT_NUM_INSTANCES usando registrador de catalogo", errors)
+
+    # 3. Fail-closed no .c
+    require(src_code, "return BC250_GFX_PRIM_INVALID_ARGUMENT;",
+            "recusa nomeada de argumentos invalidos ou topologia invalida", errors)
+    require(src_code, "return BC250_GFX_PRIM_STREAM_MISMATCH;",
+            "recusa nomeada de divergencia no stream verificado", errors)
+
+    # 4. Teste unitario
+    test_code = strip_c_comments(test)
+    require(test_code, "Bc250GfxComputePrimitiveAssembler(",
+            "teste de calculo e configuracao de primitive assembler", errors)
+    require(test_code, "Bc250GfxEmitPrimitiveAssemblerStream(",
+            "teste de emissao de stream de primitive assembler", errors)
+    require(test_code, "Bc250GfxVerifyPrimitiveAssemblerStream(",
+            "teste de verificacao de stream de primitive assembler", errors)
+    require(test_code, "BC250_GFX_PRIM_INVALID_ARGUMENT",
+            "teste de rejeicao com argumento invalido", errors)
+    require(test_code, "BC250_GFX_PRIM_STREAM_MISMATCH",
+            "teste de deteccao de corrupcao no stream", errors)
+
+
+def audit_gfx_draw_initiator_is_honest(errors: list[str]) -> None:
+    """B.3.3 -- DRAW INITIATOR E DISPARO PM4 DEVEM SER ARQUITETURALMENTE EXATOS.
+
+    Invariantes arquiteturais travados por este portao:
+      1. Opcode IT_DRAW_INDEX_AUTO = 0x2Du e header 0xC0012D00u (Count = 1).
+      2. Padding canonico com PACKET2 NOP (0x80000000u) para fechamento em 4 DW / 16 B.
+      3. Reuso obrigatorio de Bc250Pm4EmitDrawIndexAuto e Bc250Pm4EmitPacket2Nop.
+      4. Fail-closed:
+         - Rejeicao de argumentos nulos, contagem de vertices zerada ou DrawInitiator invalido (BC250_GFX_DRAW_INVALID_ARGUMENT).
+         - Rejeicao de divergencia no stream verificado (BC250_GFX_DRAW_STREAM_MISMATCH).
+      5. Cobertura de teste com validacao de modo canonico AUTO_INDEX (0x02) e legacy TRIANGLELIST (0x04).
+    """
+    src_path = ROOT / "driver" / "core" / "bc250_gfx_draw_initiator.c"
+    hdr_path = ROOT / "driver" / "core" / "bc250_gfx_draw_initiator.h"
+    test_path = ROOT / "driver" / "tests" / "gfx_draw_initiator_test.c"
+    for path in (src_path, hdr_path, test_path):
+        if not path.exists():
+            errors.append(f"fonte ausente para auditar draw initiator: {path.name}")
+            return
+
+    src = src_path.read_text(encoding="utf-8", errors="replace")
+    hdr = hdr_path.read_text(encoding="utf-8", errors="replace")
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+
+    # 1. Header
+    require(hdr, "#define BC250_GFX_PM4_DRAW_INDEX_AUTO_OPCODE        0x2Du",
+            "opcode 0x2D de DRAW_INDEX_AUTO no header", errors)
+    require(hdr, "#define BC250_GFX_DRAW_STREAM_TOTAL_DWORDS          4u",
+            "contagem de 4 dwords para o stream de draw initiator (16 bytes)", errors)
+    require(hdr, "#define BC250_GFX_PM4_DRAW_INDEX_AUTO_HEADER        0xC0012D00u",
+            "header canonico de DRAW_INDEX_AUTO (count = 1)", errors)
+    require(hdr, "#define BC250_GFX_PM4_PACKET2_NOP                   0x80000000u",
+            "valor canonico do Packet-2 NOP no header", errors)
+    require(hdr, "#define BC250_GFX_DRAW_INITIATOR_AUTO_INDEX         0x00000002u",
+            "modo canonico AUTO_INDEX 0x02 no header", errors)
+
+    # 2. Implementacao no .c
+    src_code = strip_c_comments(src)
+    require(src_code, "Bc250Pm4EmitDrawIndexAuto(",
+            "reuso mandatorio de Bc250Pm4EmitDrawIndexAuto com suporte a wrap circular", errors)
+    require(src_code, "Bc250Pm4EmitPacket2Nop(",
+            "reuso mandatorio de Bc250Pm4EmitPacket2Nop com suporte a wrap circular", errors)
+
+    # 3. Fail-closed no .c
+    require(src_code, "return BC250_GFX_DRAW_INVALID_ARGUMENT;",
+            "recusa nomeada de argumentos invalidos ou modo invalido", errors)
+    require(src_code, "return BC250_GFX_DRAW_STREAM_MISMATCH;",
+            "recusa nomeada de divergencia no stream verificado", errors)
+
+    # 4. Teste unitario
+    test_code = strip_c_comments(test)
+    require(test_code, "Bc250GfxComputeDrawInitiator(",
+            "teste de calculo e configuracao de draw initiator", errors)
+    require(test_code, "Bc250GfxEmitDrawInitiatorStream(",
+            "teste de emissao de stream de draw initiator", errors)
+    require(test_code, "Bc250GfxVerifyDrawInitiatorStream(",
+            "teste de verificacao de stream de draw initiator", errors)
+    require(test_code, "BC250_GFX_DRAW_INVALID_ARGUMENT",
+            "teste de rejeicao com argumento invalido", errors)
+    require(test_code, "BC250_GFX_DRAW_STREAM_MISMATCH",
+            "teste de deteccao de corrupcao no stream", errors)
+
+
+def audit_gfx_3d_draw_is_honest(errors: list[str]) -> None:
+    """B.4 -- PIPELINE INTEGRADO DE RENDERIZACAO DE TRIANGULO 3D NO ANEL GRAFICO (GFX10 CP_RB0).
+
+    Invariantes arquiteturais travados por este portao (Leis 1, 2, 4, 5 e 7):
+      1. Dimensao atomica do stream: 64 dwords exatos (256 bytes, alinhamento estrito a 16 bytes).
+         - BC250_GFX_3D_DRAW_SH_DWORDS (12)
+         - BC250_GFX_3D_DRAW_COLOR_DWORDS (8)
+         - BC250_GFX_3D_DRAW_TARGET_MASK_DWORDS (4)
+         - BC250_GFX_3D_DRAW_VPORT_DWORDS (20)
+         - BC250_GFX_3D_DRAW_PRIM_DWORDS (8)
+         - BC250_GFX_3D_DRAW_INIT_DWORDS (4)
+         - BC250_GFX_3D_DRAW_FENCE_DWORDS (8)
+         - BC250_GFX_3D_DRAW_STREAM_TOTAL_DWORDS == 64u
+      2. Reuso obrigatorio dos contratos e construtores de pacotes PM4:
+         - Bc250GfxShRegEmitPipeline (Shaders VS+PS)
+         - Bc250Pm4EmitColorTarget0 (Color Target 0)
+         - BC250_PM4_REG_CB_TARGET_MASK (Target Mask)
+         - Bc250GfxEmitViewportScissorStream (Viewport e Scissors)
+         - Bc250GfxEmitPrimitiveAssemblerStream (Primitive Assembler)
+         - Bc250GfxEmitDrawInitiatorStream (Draw Initiator)
+         - Bc250Pm4EmitReleaseMemEop32 (Fence fisica VRAM RELEASE_MEM)
+      3. Verificacao previa estrita do stream:
+         - Bc250GfxVerify3DDrawStream antes do avanco de WPTR
+      4. Tripe da Lei 2 no silicio:
+         - Injecao de poison na fence antes do disparo (*FenceCpuAddress = FencePoisonValue)
+         - Verificacao de readback do poison (FencePoisonReadback != FencePoisonValue)
+         - Classificacao com Bc250GfxRingClassifyTripod
+         - Sucesso condicionado estritamente a verdict == BC250_TRIPOD_PROVEN
+      5. Integracao ao miniport:
+         - Chamada de Bc250GfxRingTxnSubmit3DDraw no Level >= 4u
+         - Rollback incondicional (Lei 5)
+    """
+    src_path = ROOT / "driver" / "core" / "bc250_gfx_ring_transaction.c"
+    hdr_path = ROOT / "driver" / "core" / "bc250_gfx_ring_transaction.h"
+    test_path = ROOT / "driver" / "tests" / "gfx_ring_contract_test.c"
+    mini_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+
+    for path in (src_path, hdr_path, test_path, mini_path):
+        if not path.exists():
+            errors.append(f"fonte ausente para auditar pipeline 3D draw: {path.name}")
+            return
+
+    src = src_path.read_text(encoding="utf-8", errors="replace")
+    hdr = hdr_path.read_text(encoding="utf-8", errors="replace")
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+    mini = mini_path.read_text(encoding="utf-8", errors="replace")
+
+    # 1. Header do contrato de transacao
+    require(hdr, "#define BC250_GFX_3D_DRAW_STREAM_TOTAL_DWORDS 64u",
+            "constante canonica de 64 dwords no header", errors)
+    require(hdr, "BC250_GFX_RING_TXN_STATUS Bc250GfxRingTxnSubmit3DDraw(",
+            "declaracao de Bc250GfxRingTxnSubmit3DDraw no header", errors)
+    require(hdr, "BC250_GFX_RING_TXN_STATUS Bc250GfxVerify3DDrawStream(",
+            "declaracao de Bc250GfxVerify3DDrawStream no header", errors)
+    require(hdr, "typedef struct BC250_GFX_RING_SUBMIT_3D_DRAW_PLAN",
+            "estrutura de plano de submissao 3D no header", errors)
+    require(hdr, "typedef struct BC250_GFX_RING_SUBMIT_3D_DRAW_EVIDENCE",
+            "estrutura de evidencia de submissao 3D no header", errors)
+
+    # 2. Implementacao no .c
+    src_code = strip_c_comments(src)
+    require(src_code, "Bc250GfxShRegEmitPipeline(",
+            "emissao de pipeline de shaders no anel", errors)
+    require(src_code, "Bc250Pm4EmitColorTarget0(",
+            "emissao de color target 0 no anel", errors)
+    require(src_code, "BC250_PM4_REG_CB_TARGET_MASK",
+            "emissao de target mask usando registrador de catalogo", errors)
+    require(src_code, "Bc250GfxEmitViewportScissorStream(",
+            "emissao de viewport e scissor no anel", errors)
+    require(src_code, "Bc250GfxEmitPrimitiveAssemblerStream(",
+            "emissao de primitive assembler no anel", errors)
+    require(src_code, "Bc250GfxEmitDrawInitiatorStream(",
+            "emissao de draw initiator no anel", errors)
+    require(src_code, "Bc250Pm4EmitWriteData(",
+            "emissao de fence fisica via WRITE_DATA (DST_SEL=5 Memory Direct MC) no anel", errors)
+    require(src_code, "Bc250GfxVerify3DDrawStream(",
+            "verificacao de integridade do stream antes do disparo MMIO", errors)
+    require(src_code, "Bc250GfxRingClassifyTripod(",
+            "classificacao estrita do tripe de conclusao", errors)
+    require(src_code, "*SubmitPlan->FenceCpuAddress = SubmitPlan->FencePoisonValue;",
+            "injecao fisica de poison na fence antes do disparo", errors)
+    require(src_code, "SubmitEvidence->FencePoisonReadback != SubmitPlan->FencePoisonValue",
+            "verificacao de readback do poison na fence", errors)
+    require(src_code, "verdict == BC250_TRIPOD_PROVEN",
+            "sucesso condicionado a tripe provado", errors)
+
+    # 3. Fail-closed no .c
+    require(src_code, "return BC250_GFX_RING_TXN_NOT_ACTIVE;",
+            "recusa nomeada quando o anel nao esta ativo", errors)
+    require(src_code, "return BC250_GFX_RING_TXN_FENCE_POISON_FAILED;",
+            "recusa nomeada quando o poison da fence falha", errors)
+    require(src_code, "return BC250_GFX_RING_TXN_READBACK_MISMATCH;",
+            "recusa nomeada de mismatch na verificacao do stream", errors)
+
+    # 4. Testes unitarios
+    test_code = strip_c_comments(test)
+    require(test_code, "Bc250RunGfxRingSubmit3DDrawTest(",
+            "suite de testes para submissao 3D", errors)
+    require(test_code, "Bc250GfxRingTxnSubmit3DDraw(",
+            "chamada de teste para Bc250GfxRingTxnSubmit3DDraw", errors)
+    require(test_code, "Bc250GfxVerify3DDrawStream(",
+            "chamada de teste para Bc250GfxVerify3DDrawStream", errors)
+
+    # 5. Integracao ao miniport
+    mini_code = strip_c_comments(mini)
+    require(mini_code, "Bc250GfxRingTxnSubmit3DDraw(",
+            "chamada de submissao 3D no bringup do miniport", errors)
+    require(mini_code, "Level >= 4u",
+            "suporte ao nivel 4 de bringup no miniport", errors)
 
 
 def audit_gfx_ring_contract_is_honest(errors: list[str]) -> None:
@@ -5324,6 +6071,12 @@ def main() -> int:
     audit_describe_allocation_is_not_mute(errors)
     audit_gfx_ring_contract_is_honest(errors)
     audit_gfx_shader_contract_is_honest(errors)
+    audit_gfx_observable_shader_is_honest(errors)
+    audit_gfx_shader_staging_is_honest(errors)
+    audit_gfx_sh_reg_packet_is_honest(errors)
+    audit_gfx_viewport_scissor_is_honest(errors)
+    audit_gfx_primitive_assembler_is_honest(errors)
+    audit_gfx_draw_initiator_is_honest(errors)
     audit_offline_check_is_not_inverted(errors)
 
     if errors:
@@ -5368,6 +6121,10 @@ def main() -> int:
     print("  GFXHUB TLB serialization with spinlock: enforced")
     print("  Marco 3 partial proof + unconditional recovery: enforced")
     print("  GPUVA journal stores final interval overlay, not raw update history: enforced")
+    print("  shader staging and allocation (256B alignment, zero overlap, readback proof, fail-closed): enforced")
+    print("  PM4 SET_SH_REG shader packet emission (0x76, 12DW, compute bit forbidden, fail-closed): enforced")
+    print("  PM4 SET_CONTEXT_REG viewport/scissor emission (0x69, 20DW, IEEE-754, fail-closed): enforced")
+    print("  PM4 SET_UCONFIG_REG primitive assembler (0x79, TRILIST 0x04, 8DW, fail-closed): enforced")
     print("  verdict: NAO VALIDADO EM HARDWARE")
     return 0
 

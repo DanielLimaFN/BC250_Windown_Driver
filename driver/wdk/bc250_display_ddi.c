@@ -3216,21 +3216,25 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                         g_Bc250DisplayState.hPrimarySourceAllocation);
                 }
                 if (presentResolved &&
-                    Bc250DisplaySampleSurface(presentPhysical, scanoutBytes, 256u, &nz, &hx)) {
-                    Bc250DisplayLog("[Present #%d] Spread SLOT_SRC  @ 0x%llX: NonZero=%u/256, Xor=%08X (Seg=%u)\n",
-                        count, presentPhysical, nz, hx, presentSegmentId);
+                    Bc250DisplaySampleSurface(srcPhysical, scanoutBytes, 256u, &nz, &hx)) {
+                    Bc250DisplayLog("[Present #%d] Spread SLOT_SRC  @ 0x%llX (SegOff=0x%llX, Seg=%u): NonZero=%u/256, Xor=%08X\n",
+                        count, srcPhysical, presentPhysical, presentSegmentId, nz, hx);
                     if (nz > 0) {
                         Bc250DisplayLog("[Present #%d] *** DESKTOP REAL DETECTADO NA SUPERFICIE *** NonZero=%u/256, Hash=0x%08X (Phys=0x%llX)\n",
-                            count, nz, hx, presentPhysical);
+                            count, nz, hx, srcPhysical);
                     } else {
                         Bc250DisplayLog("[Present #%d] AVISO: Superficie de origem 0x%llX esta com todos os pixels em zero (NonZero=0/256)\n",
-                            count, presentPhysical);
+                            count, srcPhysical);
                     }
                 }
-                if (dstResolved &&
-                    Bc250DisplaySampleSurface(dstPhysical, scanoutBytes, 256u, &nz, &hx)) {
-                    Bc250DisplayLog("[Present #%d] Spread SLOT_DST  @ 0x%llX: NonZero=%u/256, Xor=%08X (Seg=%u)\n",
-                        count, dstPhysical, nz, hx, dstSegmentId);
+                if (dstResolved) {
+                    UINT64 dstVramOffset = 0ull;
+                    if (Bc250SdmaPresentSegmentOffsetToVram(dstSegmentId, dstPhysical, (UINT64)scanoutBytes, &dstVramOffset)) {
+                        if (Bc250DisplaySampleSurface(dstVramOffset, scanoutBytes, 256u, &nz, &hx)) {
+                            Bc250DisplayLog("[Present #%d] Spread SLOT_DST  @ 0x%llX (SegOff=0x%llX Seg=%u): NonZero=%u/256, Xor=%08X\n",
+                                count, dstVramOffset, dstPhysical, dstSegmentId, nz, hx);
+                        }
+                    }
                 }
                 if (srcVa != 0 &&
                     Bc250DisplaySampleSurface(srcVa, scanoutBytes, 256u, &nz, &hx)) {
@@ -3251,6 +3255,11 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
             ULONG srcNz = 0u, srcHx = 0u;
             (void)Bc250DisplaySampleSurface(srcPhysical, scanoutBytes, 256u, &srcNz, &srcHx);
             UINT64 effectiveSrcPhys = srcPhysical;
+
+            if (effectiveSrcPhys != 0ull && (count <= 10 || (count % 60) == 0)) {
+                Bc250DisplayLog("[Present #%d] ROTEAMENTO AO SCANOUT: VramOff=0x%llX (NonZero=%u/256 Hash=0x%08X)\n",
+                    count, effectiveSrcPhys, srcNz, srcHx);
+            }
 
             static int s_TileProbeCount = 0;
             if (s_TileProbeCount < 3 && srcNz >= 64u && g_Bc250DisplayState.FrameBufferVirtual != NULL && effectiveSrcPhys != 0 &&
@@ -3502,25 +3511,13 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresentDisplayOnly(
 
     if (InterlockedExchange(
             &g_Bc250DisplayState.ForceFullPresent, 0) != 0) {
-        BOOLEAN sdmaFullDone = FALSE;
-#if defined(BC250_ENABLE_DXGK_REGISTRATION)
-        PHYSICAL_ADDRESS srcPhys = MmGetPhysicalAddress((PVOID)pPresentDisplayOnly->pSource);
-        if (srcPhys.QuadPart != 0 && g_Bc250SdmaPresent.HardwareEnabled) {
-            sdmaFullDone = Bc250SdmaPresentBlt(
-                (uint64_t)srcPhys.QuadPart,
-                g_Bc250SdmaPresent.ScanoutGpuAddress,
-                height * destinationPitch);
-        }
-#endif
-        if (!sdmaFullDone) {
-            LONG y;
-            for (y = 0; y < (LONG)height; ++y) {
-                PUCHAR dst = frameBuffer + ((SIZE_T)y * destinationPitch);
-                CONST UCHAR *src =
-                    (CONST UCHAR *)pPresentDisplayOnly->pSource +
-                    ((SIZE_T)y * pPresentDisplayOnly->Pitch);
-                RtlCopyMemory(dst, src, (SIZE_T)width * 4u);
-            }
+        LONG y;
+        for (y = 0; y < (LONG)height; ++y) {
+            PUCHAR dst = frameBuffer + ((SIZE_T)y * destinationPitch);
+            CONST UCHAR *src =
+                (CONST UCHAR *)pPresentDisplayOnly->pSource +
+                ((SIZE_T)y * pPresentDisplayOnly->Pitch);
+            RtlCopyMemory(dst, src, (SIZE_T)width * 4u);
         }
         KeMemoryBarrier();
         Bc250ReleasePresentAccess();
@@ -3570,44 +3567,16 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresentDisplayOnly(
                     ((SIZE_T)y * pPresentDisplayOnly->Pitch) +
                     ((SIZE_T)clipped.left * 4u);
                 ULONG rowBytes = (ULONG)(clipped.right - clipped.left) * 4u;
-                BOOLEAN sdmaRowDone = FALSE;
-#if defined(BC250_ENABLE_DXGK_REGISTRATION)
-                PHYSICAL_ADDRESS rowPhys = MmGetPhysicalAddress((PVOID)src);
-                if (rowPhys.QuadPart != 0 && g_Bc250SdmaPresent.HardwareEnabled) {
-                    uint64_t dstGpu = g_Bc250SdmaPresent.ScanoutGpuAddress +
-                        ((SIZE_T)y * destinationPitch) +
-                        ((SIZE_T)clipped.left * 4u);
-                    sdmaRowDone = Bc250SdmaPresentBlt(
-                        (uint64_t)rowPhys.QuadPart,
-                        dstGpu,
-                        rowBytes);
-                }
-#endif
-                if (!sdmaRowDone) {
-                    RtlCopyMemory(
-                        dst, src, (SIZE_T)rowBytes);
-                }
+                RtlCopyMemory(dst, src, (SIZE_T)rowBytes);
             }
         }
     } else if (pPresentDisplayOnly->NumMoves == 0) {
-        BOOLEAN sdmaDone = FALSE;
-#if defined(BC250_ENABLE_DXGK_REGISTRATION)
-        PHYSICAL_ADDRESS srcPhys = MmGetPhysicalAddress((PVOID)pPresentDisplayOnly->pSource);
-        if (srcPhys.QuadPart != 0 && g_Bc250SdmaPresent.HardwareEnabled) {
-            sdmaDone = Bc250SdmaPresentBlt(
-                (uint64_t)srcPhys.QuadPart,
-                g_Bc250SdmaPresent.ScanoutGpuAddress,
-                height * destinationPitch);
-        }
-#endif
-        if (!sdmaDone) {
-            LONG y;
-            for (y = 0; y < (LONG)height; y++) {
-                PUCHAR dst = frameBuffer + ((SIZE_T)y * destinationPitch);
-                CONST UCHAR *src = (CONST UCHAR *)pPresentDisplayOnly->pSource +
-                    ((SIZE_T)y * pPresentDisplayOnly->Pitch);
-                RtlCopyMemory(dst, src, (SIZE_T)width * 4u);
-            }
+        LONG y;
+        for (y = 0; y < (LONG)height; y++) {
+            PUCHAR dst = frameBuffer + ((SIZE_T)y * destinationPitch);
+            CONST UCHAR *src = (CONST UCHAR *)pPresentDisplayOnly->pSource +
+                ((SIZE_T)y * pPresentDisplayOnly->Pitch);
+            RtlCopyMemory(dst, src, (SIZE_T)width * 4u);
         }
     }
 

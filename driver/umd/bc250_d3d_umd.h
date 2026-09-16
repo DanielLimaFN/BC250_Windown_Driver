@@ -51,6 +51,9 @@ extern "C" {
 #include "../core/bc250_dxbc_parser.h"
 #include "../core/bc250_dxbc_spirv_bridge.h"
 #include <dxgiddi.h>
+#include "bc250_umd_vulkan_bridge.h"
+#include "bc250_umd_resource_vk.h"
+#include "bc250_umd_pipeline_cache.h"
 
 /* Shader object representation */
 typedef struct _BC250_UMD_SHADER {
@@ -77,6 +80,11 @@ typedef struct _BC250_UMD_SHADER {
      */
     BOOL SpirvValid;
     BC250_DXBC_SPIRV_MODULE Spirv;
+    VkShaderModule VkModule;
+    BOOL VkModuleCreated;
+    uint32_t NumBindings;
+    VkDescriptorSetLayoutBinding Bindings[16];
+    VkDescriptorSetLayout DescriptorSetLayout;
 } BC250_UMD_SHADER;
 
 /* Resource object representation */
@@ -102,6 +110,13 @@ typedef struct _BC250_UMD_RESOURCE {
     D3D10DDI_HRTRESOURCE hRTResource;
     D3D10DDI_HKMRESOURCE hKMResource;
     void *pCpuShadow;
+    /* Vulkan objects */
+    VkBuffer VkBuf;
+    VkImage VkImg;
+    VkDeviceMemory VkMem;
+    VkDeviceSize VkMemSize;
+    VkImageLayout VkLayout;
+    BOOL VkResourceCreated;
 } BC250_UMD_RESOURCE;
 
 /* Maximum simultaneous render targets and viewports */
@@ -144,6 +159,11 @@ typedef struct _BC250_UMD_RTV {
     UINT FirstArraySlice;
     UINT ArraySize;
     BOOL Created;
+    /* Vulkan objects */
+    VkImageView VkView;
+    VkRenderPass VkPass;
+    VkFramebuffer VkFb;
+    BOOL VkRtvCreated;
 } BC250_UMD_RTV;
 
 /* Depth Stencil View representation */
@@ -157,6 +177,9 @@ typedef struct _BC250_UMD_DSV {
     UINT FirstArraySlice;
     UINT ArraySize;
     BOOL Created;
+    /* Vulkan objects */
+    VkImageView VkView;
+    BOOL VkDsvCreated;
 } BC250_UMD_DSV;
 
 /* Blend state object representation */
@@ -366,6 +389,16 @@ typedef struct _BC250_UMD_DEVICE {
     UINT64 NativePm4DrawCount;
     BOOL NativeNode1Ready;
     BOOL DeviceActive;
+
+    /* Vulkan Graphics Translation Backend */
+    BC250_UMD_VK_BRIDGE VkBridge;
+    BOOL VkBridgeInitialized;
+    BC250_UMD_PIPELINE_CACHE PipelineCache;
+    BOOL PipelineCacheInitialized;
+    BOOL InRenderPass;
+    VkRenderPass ActiveRenderPass;
+    VkFramebuffer ActiveFramebuffer;
+    UINT64 NativeVkDrawCount;
 } BC250_UMD_DEVICE;
 
 /* Device foundation lifecycle helpers */

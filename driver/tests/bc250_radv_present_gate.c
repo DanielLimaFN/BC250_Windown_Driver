@@ -45,6 +45,23 @@ static HMODULE g_icd_module;
 static PFN_vk_icdGetInstanceProcAddr g_icd_get_instance_proc_addr;
 static PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr;
 static PFN_radv_bc250_present_scanout g_radv_bc250_present_scanout;
+static PFN_vkCmdPipelineBarrier vkCmdPipelineBarrier;
+
+static void EmitFramebufferBarrier(VkCommandBuffer cb)
+{
+    if (vkCmdPipelineBarrier != NULL) {
+        VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+        mb.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        mb.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_HOST_READ_BIT | VK_ACCESS_MEMORY_READ_BIT;
+        vkCmdPipelineBarrier(cb,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            0,
+            1, &mb,
+            0, NULL,
+            0, NULL);
+    }
+}
 
 static void GateStage(const char *stage)
 {
@@ -302,9 +319,9 @@ int main(int argc, char **argv)
     VkPhysicalDevice *devices = NULL;
     VkPhysicalDeviceMemoryProperties memory_properties;
     VkMemoryRequirements memory_requirements;
-    int total_frames = 600;
+    int total_frames = 1800;
     int target_fps = 60;
-    int hold_seconds = 2;
+    int hold_seconds = 5;
 
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
@@ -445,6 +462,7 @@ int main(int argc, char **argv)
     LOAD_DEVICE(vkCmdBindDescriptorSets);
     LOAD_DEVICE(vkCmdPushConstants);
     LOAD_DEVICE(vkCmdDispatch);
+    LOAD_DEVICE(vkCmdPipelineBarrier);
     LOAD_DEVICE(vkCreateFence);
     LOAD_DEVICE(vkDestroyFence);
     LOAD_DEVICE(vkResetFences);
@@ -608,6 +626,7 @@ int main(int argc, char **argv)
         VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &pc0);
     /* 2560/16 = 160, ceil(1080/16) = 68 */
     vkCmdDispatch(command_buffer, 160, 68, 1);
+    EmitFramebufferBarrier(command_buffer);
     GateStage("after command_recording");
     VK_CHECK(vkEndCommandBuffer(command_buffer));
 
@@ -700,6 +719,7 @@ int main(int argc, char **argv)
             vkCmdPushConstants(command_buffer, pipeline_layout,
                 VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &pcf);
             vkCmdDispatch(command_buffer, 160, 68, 1);
+            EmitFramebufferBarrier(command_buffer);
             VK_CHECK(vkEndCommandBuffer(command_buffer));
 
             /* C. Submit to Compute Queue */

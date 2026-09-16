@@ -1,4 +1,4 @@
-﻿#include "bc250_gfx_ring_contract.h"
+#include "bc250_gfx_ring_contract.h"
 
 /* Larguras vindas de gc_10_1_0_sh_mask.h (classe P1). */
 #define GFX_RB_BUFSZ_SHIFT      0u

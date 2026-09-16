@@ -127,6 +127,29 @@ BC250_TDR_STATUS Bc250TdrValidateMecRestartReadback(
     return BC250_TDR_OK;
 }
 
+BC250_TDR_STATUS Bc250TdrValidateGfxRestartReadback(
+    uint32_t CpRb0Active,
+    uint32_t CpRb0Rptr,
+    uint32_t CpRb0Wptr,
+    uint32_t CpMeCntl,
+    uint32_t GrbmSoftReset)
+{
+    /*
+     * Validacoes estritas pos-restart do anel grafico CP_RB0:
+     * 1. Anel deve estar ativo no readback (bit 0 = 1).
+     * 2. Ponteiros RPTR e WPTR devem estar sincronizados (RPTR == WPTR).
+     * 3. Micro-engines CE, PFP, ME devem estar desaltadas (bits 0, 1 e 2 de CP_ME_CNTL zerados).
+     * 4. Soft-reset de CP e GFX devem estar desarmados em GRBM_SOFT_RESET (bits 0 e 16 zerados).
+     */
+    if ((CpRb0Active & 1u) == 0u ||
+        CpRb0Rptr != CpRb0Wptr ||
+        (CpMeCntl & 0x00000007u) != 0u ||
+        (GrbmSoftReset & 0x00010001u) != 0u) {
+        return BC250_TDR_RESTART_NOT_READY;
+    }
+    return BC250_TDR_OK;
+}
+
 BC250_TDR_STATUS Bc250TdrExecuteResetPlan(
     const BC250_TDR_RESET_PLAN *Plan,
     BC250_TDR_ENGINE_STATE *State)

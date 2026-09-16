@@ -77,6 +77,14 @@ static int Bc250RunPm4PacketBuilderTest(void)
     CHECK(g_pm4Ring[1] == 3u);          /* IndexCount = 3 */
     CHECK(g_pm4Ring[2] == BC250_PM4_DI_PT_TRIANGLELIST);
 
+    /* 2b-2. Test PACKET2 NOP emission */
+    cursor = 0;
+    memset(g_pm4Ring, 0, sizeof(g_pm4Ring));
+    CHECK(Bc250Pm4EmitPacket2Nop(
+        g_pm4Ring, TEST_PM4_RING_DWORDS, &cursor) == BC250_PM4_OK);
+    CHECK(cursor == 1u);
+    CHECK(g_pm4Ring[0] == BC250_PM4_PACKET2_NOP);
+
     /* 2c. Test COLOR_TARGET_0 emission */
     cursor = 0;
     memset(g_pm4Ring, 0, sizeof(g_pm4Ring));

@@ -2135,9 +2135,10 @@ BOOLEAN Bc250WddmFenceTrackerPush(
 }
 
 _Check_return_
-uint32_t Bc250WddmFenceTrackerDrain(
+uint32_t Bc250WddmFenceTrackerDrainEx(
     _Inout_ BC250_WDDM_FENCE_TRACKER *Tracker,
-    _In_ uint64_t RetiredRingFence,
+    _In_ uint64_t RetiredMecFence,
+    _In_ uint64_t RetiredGfxFence,
     _Out_writes_to_(Max, return) BC250_WDDM_FENCE_ENTRY *Out,
     _In_ uint32_t Max)
 {
@@ -2153,8 +2154,9 @@ uint32_t Bc250WddmFenceTrackerDrain(
 
     while (produced < Max && Tracker->Count > 0u) {
         BC250_WDDM_FENCE_ENTRY *entry = &Tracker->Entries[Tracker->Head];
+        uint64_t retired = (entry->NodeOrdinal == 1u) ? RetiredGfxFence : RetiredMecFence;
 
-        if (entry->RingFence > RetiredRingFence) {
+        if (entry->RingFence > retired) {
             break;
         }
         Out[produced] = *entry;
@@ -2170,6 +2172,15 @@ uint32_t Bc250WddmFenceTrackerDrain(
     }
     Bc250FenceLockRelease(&Tracker->Lock, irql);
     return produced;
+}
+
+uint32_t Bc250WddmFenceTrackerDrain(
+    _Inout_ BC250_WDDM_FENCE_TRACKER *Tracker,
+    _In_ uint64_t RetiredRingFence,
+    _Out_writes_to_(Max, return) BC250_WDDM_FENCE_ENTRY *Out,
+    _In_ uint32_t Max)
+{
+    return Bc250WddmFenceTrackerDrainEx(Tracker, RetiredRingFence, RetiredRingFence, Out, Max);
 }
 
 _Check_return_

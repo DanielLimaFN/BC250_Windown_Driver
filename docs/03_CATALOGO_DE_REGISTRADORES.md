@@ -303,14 +303,15 @@ hex `0xF52A000` de 08/09 nasceu de conta manual. Classe **P1**.
 > (`driver/core/bc250_gfx_shader_contract.c`).
 #### Bloco desbloqueado — geometria e viewport (B.3)
 
-| Registro | mmREG | BASE_IDX | BAR5 byte | Classe |
-|---|---:|---:|---:|---:|
-| `VGT_NUM_INSTANCES` | `0x224D` | 1 | `0x30934` | P1 |
-| `VGT_PRIMITIVE_TYPE` | `0x2242` | 1 | `0x30908` | P1 |
-| `PA_CL_VTE_CNTL` | `0x0206` | 1 | `0x28818` | P1 |
-| `PA_CL_CLIP_CNTL` | `0x0204` | 1 | `0x28810` | P1 |
-| `PA_SC_VPORT_SCISSOR_0_TL` | `0x0094` | 1 | `0x28250` | P1 |
-| `PA_SC_VPORT_SCISSOR_0_BR` | `0x0095` | 1 | `0x28254` | P1 |
+| Registro | mmREG | BASE_IDX | BAR5 byte | PM4 Offset | Classe |
+|---|---:|---:|---:|---:|---:|
+| `VGT_NUM_INSTANCES` | `0x224D` | 1 | `0x30934` | UCONFIG `0x024D` | P1 |
+| `VGT_PRIMITIVE_TYPE` | `0x2242` | 1 | `0x30908` | UCONFIG `0x0242` | P1 |
+| `VGT_DRAW_INITIATOR` | `0x01FC` | 1 | `0x287F0` | CONTEXT `0x01FC` / `DRAW_INDEX_AUTO` (`0x2D`) | P1 |
+| `PA_CL_VTE_CNTL` | `0x0206` | 1 | `0x28818` | CONTEXT `0x0206` | P1 |
+| `PA_CL_CLIP_CNTL` | `0x0204` | 1 | `0x28810` | CONTEXT `0x0204` | P1 |
+| `PA_SC_VPORT_SCISSOR_0_TL` | `0x0094` | 1 | `0x28250` | CONTEXT `0x0094` | P1 |
+| `PA_SC_VPORT_SCISSOR_0_BR` | `0x0095` | 1 | `0x28254` | CONTEXT `0x0095` | P1 |
 
 ### ⛔ Seis endereços do protótipo estão ERRADOS — medido contra o header
 
@@ -499,8 +500,16 @@ diferentes. O emissor subtrai `BC250_PM4_CONTEXT_REG_BASE` antes de montar o pac
 | `PA_SC_WINDOW_SCISSOR_TL` | `0x0081` | `0xA081` | `0x28204` | P1 | `TL_X[14:0]`, `TL_Y[30:16]`, `WINDOW_OFFSET_DISABLE[31]` |
 | `PA_SC_WINDOW_SCISSOR_BR` | `0x0082` | `0xA082` | `0x28208` | P1 | `BR_X[14:0]`, `BR_Y[30:16]` |
 | `CB_TARGET_MASK` | `0x008E` | `0xA08E` | `0x28238` | P1 | declarado, ainda não emitido |
-| `PA_SC_VPORT_SCISSOR_0_TL` | `0x0094` | `0xA094` | `0x28250` | P1 | declarado, ainda não emitido |
-| `PA_SC_VPORT_SCISSOR_0_BR` | `0x0095` | `0xA095` | `0x28254` | P1 | declarado, ainda não emitido |
+| `PA_SC_VPORT_SCISSOR_0_TL` | `0x0094` | `0xA094` | `0x28250` | P1 | `TL_X[14:0]`, `TL_Y[30:16]`, `WINDOW_OFFSET_DISABLE[31]` |
+| `PA_SC_VPORT_SCISSOR_0_BR` | `0x0095` | `0xA095` | `0x28254` | P1 | `BR_X[14:0]`, `BR_Y[30:16]` |
+| `PA_CL_VPORT_XSCALE` | `0x010F` | `0xA10F` | `0x2843C` | P1 | float 32-bit: W / 2.0f |
+| `PA_CL_VPORT_XOFFSET` | `0x0110` | `0xA110` | `0x28440` | P1 | float 32-bit: X0 + W / 2.0f |
+| `PA_CL_VPORT_YSCALE` | `0x0111` | `0xA111` | `0x28444` | P1 | float 32-bit: -H / 2.0f (DirectX Y-down) |
+| `PA_CL_VPORT_YOFFSET` | `0x0112` | `0xA112` | `0x28448` | P1 | float 32-bit: Y0 + H / 2.0f |
+| `PA_CL_VPORT_ZSCALE` | `0x0113` | `0xA113` | `0x2844C` | P1 | float 32-bit: MaxDepth - MinDepth |
+| `PA_CL_VPORT_ZOFFSET` | `0x0114` | `0xA114` | `0x28450` | P1 | float 32-bit: MinDepth |
+| `PA_SU_SC_MODE_CNTL` | `0x0205` | `0xA205` | `0x28814` | P1 | modo de face, culling e offset de poligono |
+| `PA_CL_VTE_CNTL` | `0x0206` | `0xA206` | `0x28818` | P1 | habilitacao de transformacao de Viewport e formatos de vertice |
 | `CB_COLOR0_BASE` | `0x0318` | `0xA318` | `0x28C60` | P1 | GPUVA do render target `>> 8`; exige base alinhada a 256 B |
 | `CB_COLOR0_PITCH` | `0x0319` | `0xA319` | `0x28C64` | P1 | `TILE_MAX[10:0]`, `FMASK_TILE_MAX[30:20]` |
 | `CB_COLOR0_SLICE` | `0x031A` | `0xA31A` | `0x28C68` | P1 | `TILE_MAX[21:0]` |

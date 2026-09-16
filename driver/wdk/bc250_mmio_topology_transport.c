@@ -291,6 +291,8 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == 0x0003E138u || ByteOffset == 0x0003E13Cu ||
         ByteOffset == 0x00008008u || ByteOffset == 0x00008010u ||
         ByteOffset == 0x00008020u ||
+        ByteOffset == 0x00008680u || ByteOffset == 0x00008694u ||
+        ByteOffset == 0x00008698u ||
         ByteOffset == BC250_GRBM_GFX_CNTL_BYTE_OFFSET ||
         ByteOffset == BC250_HQD_MMIO_MQD_BASE_LO ||
         ByteOffset == BC250_HQD_MMIO_MQD_BASE_HI ||

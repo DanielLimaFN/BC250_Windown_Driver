@@ -7,6 +7,8 @@ const root=path.resolve(__dirname,'..'),output=path.join(root,'artifacts');fs.mk
  try{
  await new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(new Error('Server timeout')),10000);server.stdout.once('data',()=>{clearTimeout(t);resolve();});server.once('error',reject);});
  browser=await chromium.launch({channel:'msedge',headless:true});const context=await browser.newContext({viewport:{width:1440,height:1100},colorScheme:'light',reducedMotion:'reduce'});
+ await context.route('https://**buymeacoffee.com/**',route=>route.fulfill({contentType:'text/html',body:'<html><body><h2>Painel externo de teste</h2></body></html>'}));
+ await context.route('https://cdnjs.buymeacoffee.com/**',route=>route.fulfill({contentType:'application/javascript',body:'/* mock */'}));
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:4174');await page.waitForSelector('#install-button',{state:'visible'});
  assert.equal(await page.locator('#thermal-board svg').count(),1);await page.screenshot({path:path.join(output,'01-instalacao.png'),fullPage:true});
@@ -14,10 +16,10 @@ const root=path.resolve(__dirname,'..'),output=path.join(root,'artifacts');fs.mk
  await page.locator('[data-action=go-install]').click();await page.locator('#install-button').click();await page.waitForTimeout(700);await page.locator('#cancel-install').click();assert.equal(await page.locator('#install-button').isVisible(),true);
  await page.locator('#install-button').click();await page.waitForSelector('#donation-dialog[open]',{timeout:15000});assert.match(await page.locator('#install-title').innerText(),/concluída/);
  await page.screenshot({path:path.join(output,'02-doacao.png'),fullPage:false});
- await page.locator('[data-method=card]').click();assert.match(await page.locator('#payment-panel').innerText(),/checkout seguro/);
- await page.locator('[data-method=crypto]').click();assert.match(await page.locator('#payment-panel').innerText(),/endereço/);
- await page.locator('[data-method=pix]').click();await page.locator('[data-amount="50"]').click();assert.match(await page.locator('#donate-submit').innerText(),/50/);
- await page.locator('#donate-submit').click();assert.match(await page.locator('#payment-panel').innerText(),/Nenhum pagamento/);await page.locator('#donate-submit').click();
+ await page.locator('[data-method=card]').click();assert.match(await page.locator('#payment-panel').innerText(),/Buy Me a Coffee/i);
+ await page.locator('[data-method=crypto]').click();assert.match(await page.locator('#payment-panel').innerText(),/endereço/i);
+ await page.locator('[data-method=pix]').click();assert.match(await page.locator('#payment-panel').innerText(),/Pix Copia e Cola/i);
+ await page.locator('.skip-donation').click();
  assert.equal(await page.locator('[data-view=overview]').isVisible(),true);await page.waitForTimeout(2100);await page.screenshot({path:path.join(output,'03-dashboard-claro.png'),fullPage:true});
  await page.reload();assert.equal(await page.locator('#install-view').isVisible(),false);assert.equal(await page.locator('#donation-dialog').isVisible(),false);
  await page.locator('[data-component=ram-3]').click();assert.equal(await page.locator('#component-name').innerText(),'Memória 3 · GDDR6');const oldColor=await page.locator('#thermal-board #cpu').getAttribute('fill');
@@ -29,7 +31,7 @@ const root=path.resolve(__dirname,'..'),output=path.join(root,'artifacts');fs.mk
  await page.locator('[data-page=sensors]').click();assert.equal(await page.locator('#sensor-rows tr').count(),34);await page.locator('#sensor-search').fill('VRM');assert.equal(await page.locator('#sensor-rows tr').count(),11);
  const downloadPromise=page.waitForEvent('download');await page.locator('[data-action=export]').click();const download=await downloadPromise;const exported=JSON.parse(fs.readFileSync(await download.path(),'utf8'));assert.equal(exported.source,'mock');assert.equal(exported.memory.chips_c.length,8);
  await page.locator('#sensor-search').fill('xyz-no-sensor');assert.equal(await page.locator('#no-sensors').isVisible(),true);
- await page.locator('.nav-item[data-page=settings]').click();await page.locator('#scenario-select').selectOption('unavailable');await page.locator('[data-page=overview]').click();assert.equal(await page.locator('#metric-gpu_temp_c .metric-value>span').innerText(),'—');assert.equal(await page.locator('#thermal-board #ram-1').getAttribute('fill'),'#73818a');
+ await page.locator('.nav-item[data-page=settings]').click();await page.locator('#scenario-select').selectOption('unavailable');await page.locator('[data-page=overview]').click();assert.equal(await page.locator('#metric-gpu_temp_c .metric-value>span').innerText(),'-');assert.equal(await page.locator('#thermal-board #ram-1').getAttribute('fill'),'#73818a');
  await page.locator('[data-page=driver]').click();await page.locator('[data-action=reset]').first().click();await page.locator('[data-action=cancel-reset]').click();assert.equal(await page.locator('[data-view=driver]').isVisible(),true);
  await page.locator('[data-action=reset]').first().click();await page.locator('[data-action=confirm-reset]').click();assert.equal(await page.locator('#install-button').isVisible(),true);
  await page.locator('[data-page=sensors]').click();await page.locator('[data-action=skip-install]').click();assert.equal(await page.locator('[data-view=overview]').isVisible(),true);

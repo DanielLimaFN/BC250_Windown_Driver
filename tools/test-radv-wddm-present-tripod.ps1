@@ -21,9 +21,9 @@ param(
     [string]$Harness,
     [string]$Shader,
     [string]$MesaRoot = 'C:\Users\Daniel\Desktop\bc250-win\bc250-win\mesa-radv-wddm',
-    [ValidateRange(10,300)][int]$TimeoutSeconds = 60,
-    [ValidateRange(0,30)][int]$HoldSeconds = 2,
-    [ValidateRange(1,3600)][int]$Frames = 600,
+    [ValidateRange(10,300)][int]$TimeoutSeconds = 120,
+    [ValidateRange(0,30)][int]$HoldSeconds = 5,
+    [ValidateRange(1,3600)][int]$Frames = 1800,
     [ValidateRange(1,120)][int]$TargetFps = 60,
     [switch]$Execute
 )

@@ -66,6 +66,10 @@ echo [SDMA PACKET BUILDER CC] bc250_sdma_packet_builder.c
 cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\core" /I "%ROOTDIR%\driver\wdk" /I "%ROOTDIR%\inc" /Fo"%ODIR%\bc250_sdma_packet_builder.obj" /c "%ROOTDIR%\driver\core\bc250_sdma_packet_builder.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
+echo [VULKAN BRIDGE CC] bc250_umd_vulkan_bridge.c
+cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\inc" /Fo"%ODIR%\bc250_umd_vulkan_bridge.obj" /c "%ROOTDIR%\driver\umd\bc250_umd_vulkan_bridge.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
 echo [D3D UMD CC] bc250_d3d_umd.c
 cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\core" /I "%ROOTDIR%\driver\wdk" /I "%ROOTDIR%\inc" /Fo"%ODIR%\bc250_d3d_umd.obj" /c "%ROOTDIR%\driver\umd\bc250_d3d_umd.c"
 if errorlevel 1 exit /b 1
@@ -76,7 +80,7 @@ if errorlevel 1 exit /b 1
 
 echo [D3D UMD LINK] bc250umd.dll
 rem advapi32.lib: P7_D3D11_CAPS_PROBE le HKLM para saber se foi armado.
-link /nologo /DLL /DEF:"%ROOTDIR%\driver\umd\bc250umd.def" /OUT:"%ODIR%\bc250umd.dll" /IMPLIB:"%ODIR%\bc250umd.lib" "%ODIR%\bc250_d3d_umd.obj" "%ODIR%\bc250_dxbc_parser.obj" "%ODIR%\bc250_dxbc_spirv_bridge.obj" "%ODIR%\bc250_vkd3d_shader_adapter.obj" "%ODIR%\bc250_pm4_packet_builder.obj" "%ODIR%\bc250_sdma_packet_builder.obj" "%ODIR%\bc250_umd_caps_probe.obj" "%ODIR%\bc250_umd_private_contract.obj" "%ODIR%\bc250_allocation_abi_contract.obj" "%ODIR%\bc250_wddm_winsys.obj" kernel32.lib advapi32.lib
+link /nologo /DLL /DEF:"%ROOTDIR%\driver\umd\bc250umd.def" /OUT:"%ODIR%\bc250umd.dll" /IMPLIB:"%ODIR%\bc250umd.lib" "%ODIR%\bc250_d3d_umd.obj" "%ODIR%\bc250_umd_vulkan_bridge.obj" "%ODIR%\bc250_dxbc_parser.obj" "%ODIR%\bc250_dxbc_spirv_bridge.obj" "%ODIR%\bc250_vkd3d_shader_adapter.obj" "%ODIR%\bc250_pm4_packet_builder.obj" "%ODIR%\bc250_sdma_packet_builder.obj" "%ODIR%\bc250_umd_caps_probe.obj" "%ODIR%\bc250_umd_private_contract.obj" "%ODIR%\bc250_allocation_abi_contract.obj" "%ODIR%\bc250_wddm_winsys.obj" kernel32.lib advapi32.lib
 if errorlevel 1 exit /b 1
 
 echo [WDDM WINSYS TEST CC] bc250_wddm_winsys_test.c
@@ -95,7 +99,7 @@ echo [D3D UMD TEST LINK] bc250_d3d_umd_test.exe
 rem Linka o OBJETO, nao a import lib: as funcoes de decisao do
 rem P7_D3D11_CAPS_PROBE sao internas e NAO devem ser exportadas pela DLL de
 rem producao so' para o teste alcanca-las.
-link /nologo /OUT:"%ODIR%\bc250_d3d_umd_test.exe" "%ODIR%\bc250_d3d_umd_test.obj" "%ODIR%\bc250_dxbc_parser.obj" "%ODIR%\bc250_pm4_packet_builder.obj" "%ODIR%\bc250_sdma_packet_builder.obj" "%ODIR%\bc250_umd_caps_probe.obj" "%ODIR%\bc250_umd_private_contract.obj" "%ODIR%\bc250_allocation_abi_contract.obj" "%ODIR%\bc250_wddm_winsys.obj" "%ODIR%\bc250umd.lib" kernel32.lib advapi32.lib
+link /nologo /OUT:"%ODIR%\bc250_d3d_umd_test.exe" "%ODIR%\bc250_d3d_umd_test.obj" "%ODIR%\bc250_umd_vulkan_bridge.obj" "%ODIR%\bc250_dxbc_parser.obj" "%ODIR%\bc250_pm4_packet_builder.obj" "%ODIR%\bc250_sdma_packet_builder.obj" "%ODIR%\bc250_umd_caps_probe.obj" "%ODIR%\bc250_umd_private_contract.obj" "%ODIR%\bc250_allocation_abi_contract.obj" "%ODIR%\bc250_wddm_winsys.obj" "%ODIR%\bc250umd.lib" kernel32.lib advapi32.lib
 if errorlevel 1 exit /b 1
 
 echo [VKD3D SHADER ADAPTER TEST CC] vkd3d_shader_adapter_test.c

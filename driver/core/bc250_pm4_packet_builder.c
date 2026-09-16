@@ -155,6 +155,19 @@ BC250_PM4_STATUS Bc250Pm4EmitNop(
     return BC250_PM4_OK;
 }
 
+BC250_PM4_STATUS Bc250Pm4EmitPacket2Nop(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords)
+{
+    if (RingBuffer == NULL || CursorDwords == NULL || !Bc250IsPowerOfTwo32(RingDwords)) {
+        return BC250_PM4_BAD_ARGUMENT;
+    }
+
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, BC250_PM4_PACKET2_NOP);
+    return BC250_PM4_OK;
+}
+
 BC250_PM4_STATUS Bc250Pm4EmitWriteData(
     uint32_t *RingBuffer,
     uint32_t RingDwords,

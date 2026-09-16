@@ -5,6 +5,7 @@
 
 #ifdef BC250_KERNEL_MODE
 __declspec(dllimport) void __stdcall ExitProcess(unsigned long ExitCode);
+int _fltused = 0x9875;
 
 #pragma function(memset)
 void * __cdecl memset(void *Destination, int Value, size_t Length)
@@ -15,14 +16,10 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
     return Destination;
 }
 
-#define CHECK(Expression) do { if (!(Expression)) return 0; } while (0)
+#define CHECK(Expression) do { if (!(Expression)) ExitProcess((unsigned long)__LINE__); } while (0)
 #else
 #include <stdio.h>
-/* Falha devolve 0 porque main() faz `return Run() ? 0 : 1`: devolver 1
- * aqui fazia a falha virar SUCESSO no build offline. Medido em 14/09
- * quebrando o emissor de proposito -- suite offline saiu EXIT=0 e a
- * kernel EXIT=1. Travado por audit_offline_check_is_not_inverted. */
-#define CHECK(Expression) do { if (!(Expression)) return 0; } while (0)
+#define CHECK(Expression) do { if (!(Expression)) return __LINE__; } while (0)
 #endif
 
 /* Janela de VRAM ficticia mas coerente com a geometria real do segmento 1. */
@@ -326,7 +323,7 @@ static int Bc250RunGfxRingContractTest(void)
  * MMIO FALSO -- a transacao inteira e' exercitada sem placa.
  * ===================================================================== */
 
-#define FAKE_REG_SLOTS 24u
+#define FAKE_REG_SLOTS 48u
 
 typedef struct FAKE_REG {
     uint32_t Offset;
@@ -339,6 +336,10 @@ static uint32_t g_fakeReadFailOffset;   /* leitura deste offset falha; 0 = nenhu
 static uint32_t g_fakeWriteFailOffset;  /* escrita deste offset falha */
 static uint32_t g_fakeIgnoreWriteAt;    /* escrita aceita mas descartada (readback mentiroso) */
 static uint32_t g_fakeStalls;
+static uint32_t g_fakeAutoRetireGpu;
+static uint32_t *g_fakeFenceAddress;
+static uint32_t g_fakeFenceRetireValue;
+static uint32_t *g_fakeRptrWbAddress;
 
 static void FakeReset(void)
 {
@@ -352,6 +353,10 @@ static void FakeReset(void)
     g_fakeWriteFailOffset = 0u;
     g_fakeIgnoreWriteAt = 0u;
     g_fakeStalls = 0u;
+    g_fakeAutoRetireGpu = 0u;
+    g_fakeFenceAddress = NULL;
+    g_fakeFenceRetireValue = 0u;
+    g_fakeRptrWbAddress = NULL;
 }
 
 static FAKE_REG *FakeSlot(uint32_t Offset)
@@ -396,6 +401,20 @@ static uint32_t FakeWrite32(void *Context, uint32_t Offset, uint32_t Value)
      * mentiroso aparece de verdade, e o teste precisa cobrir esse caso. */
     if (g_fakeIgnoreWriteAt != 0u && Offset == g_fakeIgnoreWriteAt) return 1u;
     slot->Value = Value;
+
+    if (g_fakeAutoRetireGpu && Offset == BC250_GFX_REG_CP_RB0_WPTR) {
+        FAKE_REG *rptrSlot = FakeSlot(BC250_GFX_REG_CP_RB0_RPTR);
+        if (rptrSlot != NULL) {
+            rptrSlot->Value = Value;
+        }
+        if (g_fakeRptrWbAddress != NULL) {
+            *g_fakeRptrWbAddress = Value;
+        }
+        if (g_fakeFenceAddress != NULL) {
+            *g_fakeFenceAddress = g_fakeFenceRetireValue;
+        }
+    }
+
     return 1u;
 }
 
@@ -713,17 +732,512 @@ static int Bc250RunGfxRingTransactionTest(void)
     return 1;
 }
 
+static int Bc250RunGfxRingSubmitShRegTest(void)
+{
+    BC250_GFX_RING_INTERFACE iface;
+    BC250_GFX_RING_PLAN plan;
+    BC250_GFX_RING_TXN_EVIDENCE ev;
+    BC250_GFX_RING_SUBMIT_SH_REG_PLAN subPlan;
+    BC250_GFX_RING_SUBMIT_SH_REG_EVIDENCE subEv;
+    BC250_GFX_SHADER_REGS vsRegs;
+    BC250_GFX_SHADER_REGS psRegs;
+    uint32_t ringMem[64];
+    uint32_t fenceMem = 0u;
+    uint32_t rptrWbMem = 0u;
+    uint32_t wptrPollMem = 0u;
+    uint32_t i;
+
+    for (i = 0; i < 64u; ++i) ringMem[i] = 0xCCCCCCCCu;
+    FakeIface(&iface);
+
+    vsRegs.PgmLo = 0x0000A8C0u;
+    vsRegs.PgmHi = 0u;
+    vsRegs.Rsrc1 = 0x00AF0000u;
+    vsRegs.Rsrc2 = 0u;
+
+    psRegs.PgmLo = 0x0000A8C2u;
+    psRegs.PgmHi = 0u;
+    psRegs.Rsrc1 = 0x02AF0000u;
+    psRegs.Rsrc2 = 0u;
+
+    memset(&subPlan, 0, sizeof(subPlan));
+    subPlan.RingCpuAddress = ringMem;
+    subPlan.RingDwords = 64u;
+    subPlan.WptrPollCpuAddress = &wptrPollMem;
+    subPlan.RptrWbCpuAddress = &rptrWbMem;
+    subPlan.FenceCpuAddress = &fenceMem;
+    subPlan.FenceGpuVa = TEST_WINDOW_BASE + 0x30000ull;
+    subPlan.FencePoisonValue = 0x43DAFFFEu;
+    subPlan.FenceExpectedValue = 0x0000B240u;
+    subPlan.VsRegs = &vsRegs;
+    subPlan.PsRegs = &psRegs;
+    subPlan.MaxPollIterations = 10u;
+    subPlan.StallMicroseconds = 0u;
+
+    /* 1. Recusa de submissao quando o anel nao esta ativo (Apply nao rodou) */
+    memset(&ev, 0, sizeof(ev));
+    CHECK(Bc250GfxRingTxnSubmitShReg(&iface, &plan, &ev, &subPlan, &subEv) ==
+          BC250_GFX_RING_TXN_NOT_ACTIVE);
+
+    /* 2. Ciclo completo feliz: Preflight -> Apply -> SubmitShReg (Tripod PROVEN) -> Rollback (Lei 5) */
+    FakeReset();
+    FakePowerOnState();
+    Bc250GfxRingFillGoodPlan(&plan);
+    plan.UnhaltMicroEngines = 1u;
+    plan.MicroEngineFirmwareLoaded = 1u;
+    CHECK(Bc250GfxRingTxnPreflight(&iface, &plan, &ev) == BC250_GFX_RING_TXN_OK);
+    CHECK(Bc250GfxRingTxnApply(&iface, &plan, &ev) == BC250_GFX_RING_TXN_OK);
+    CHECK(ev.RingActivatePassed == 1u);
+
+    /* Configura mock GPU para executar quando WPTR avancar */
+    g_fakeAutoRetireGpu = 1u;
+    g_fakeFenceAddress = &fenceMem;
+    g_fakeFenceRetireValue = 0x0000B240u;
+    g_fakeRptrWbAddress = &rptrWbMem;
+
+    CHECK(Bc250GfxRingTxnSubmitShReg(&iface, &plan, &ev, &subPlan, &subEv) ==
+          BC250_GFX_RING_TXN_OK);
+    CHECK(subEv.SubmitCompleted == 1u);
+    CHECK(subEv.TripodVerdict == BC250_TRIPOD_PROVEN);
+    CHECK(subEv.FencePoisonPlanted == 0x43DAFFFEu);
+    CHECK(subEv.FencePoisonReadback == 0x43DAFFFEu);
+    CHECK(subEv.FenceObserved == 0x0000B240u);
+    CHECK(subEv.EmittedDwords == 20u); /* 12 dw shader + 5 dw fence + 3 dw NOP */
+    CHECK(wptrPollMem == 20u);
+    CHECK(ringMem[12] == 0xC0033700u); /* PACKET3 WRITE_DATA count 3 */
+    CHECK(ringMem[13] == 0x00100500u); /* WR_CONFIRM=1, DST_SEL=5 Memory Direct MC */
+    CHECK(ringMem[16] == 0x0000B240u); /* FenceExpectedValue */
+    CHECK(ringMem[17] == 0x80000000u); /* PACKET2 NOP */
+    CHECK(ringMem[18] == 0x80000000u); /* PACKET2 NOP */
+    CHECK(ringMem[19] == 0x80000000u); /* PACKET2 NOP */
+
+    /* Rollback incondicional apos a submissao restaura o estado de boot (Lei 5) */
+    CHECK(Bc250GfxRingTxnRollback(&iface, &ev) == BC250_GFX_RING_TXN_OK);
+    CHECK(ev.RollbackPassed == 1u);
+
+    /* 3. Caso Negativo: Timeout quando a GPU nao avanca RPTR nem grava fence */
+    FakeReset();
+    FakePowerOnState();
+    CHECK(Bc250GfxRingTxnPreflight(&iface, &plan, &ev) == BC250_GFX_RING_TXN_OK);
+    CHECK(Bc250GfxRingTxnApply(&iface, &plan, &ev) == BC250_GFX_RING_TXN_OK);
+    g_fakeAutoRetireGpu = 0u; /* GPU congelada: nao consome pacote */
+
+    CHECK(Bc250GfxRingTxnSubmitShReg(&iface, &plan, &ev, &subPlan, &subEv) ==
+          BC250_GFX_RING_TXN_SUBMIT_TIMEOUT);
+    CHECK(subEv.SubmitCompleted == 0u);
+    CHECK(subEv.TripodVerdict == BC250_TRIPOD_RPTR_NOT_RETIRED);
+    CHECK(subEv.FenceObserved == 0x43DAFFFEu); /* poison segue intacto */
+
+    /* Rollback restaura o estado limpo mesmo apos timeout */
+    CHECK(Bc250GfxRingTxnRollback(&iface, &ev) == BC250_GFX_RING_TXN_OK);
+
+    return 1;
+}
+
+static int Bc250RunGfxRingSubmit3DDrawTest(void)
+{
+    BC250_GFX_RING_INTERFACE iface;
+    BC250_GFX_RING_PLAN plan;
+    BC250_GFX_RING_TXN_EVIDENCE ev;
+    BC250_GFX_RING_SUBMIT_3D_DRAW_PLAN subPlan;
+    BC250_GFX_RING_SUBMIT_3D_DRAW_EVIDENCE subEv;
+    BC250_GFX_SHADER_REGS vsRegs, psRegs;
+    static uint32_t ringMem[256];
+    uint32_t wptrPollMem = 0u;
+    uint32_t rptrWbMem = 0u;
+    uint32_t fenceMem = 0u;
+    uint32_t i;
+
+    memset(&iface, 0, sizeof(iface));
+    iface.Read32 = FakeRead32;
+    iface.Write32 = FakeWrite32;
+    iface.Context = NULL;
+    iface.Identity = BC250_GFX_RING_TXN_IDENTITY;
+
+    memset(ringMem, 0, sizeof(ringMem));
+    memset(&vsRegs, 0, sizeof(vsRegs));
+    memset(&psRegs, 0, sizeof(psRegs));
+    vsRegs.PgmLo = 0x00010000u;
+    vsRegs.PgmHi = 0x00000000u;
+    vsRegs.Rsrc1 = 0x00AF0000u;
+    vsRegs.Rsrc2 = 0u;
+
+    psRegs.PgmLo = 0x00020000u;
+    psRegs.PgmHi = 0x00000000u;
+    psRegs.Rsrc1 = 0x02AF0000u;
+    psRegs.Rsrc2 = 0u;
+
+    memset(&subPlan, 0, sizeof(subPlan));
+    subPlan.RingCpuAddress = ringMem;
+    subPlan.RingDwords = 256u;
+    subPlan.WptrPollCpuAddress = &wptrPollMem;
+    subPlan.RptrWbCpuAddress = &rptrWbMem;
+    subPlan.FenceCpuAddress = &fenceMem;
+    subPlan.FenceGpuVa = TEST_WINDOW_BASE + 0x30000ull;
+    subPlan.FencePoisonValue = 0x43DAFFFEu;
+    subPlan.FenceExpectedValue = 0x0000B400u;
+    subPlan.VsRegs = &vsRegs;
+    subPlan.PsRegs = &psRegs;
+    subPlan.ColorTargetBaseGpuVa = TEST_WINDOW_BASE + 0x40000ull;
+    subPlan.ColorTargetWidth = 256u;
+    subPlan.ColorTargetHeight = 256u;
+    subPlan.ColorTargetPitchBytes = 1024u;
+    subPlan.ColorTargetFormatIndex = 8u;
+    subPlan.ColorTargetCompSwap = 1u;
+    subPlan.Viewport.X = 0.0f;
+    subPlan.Viewport.Y = 0.0f;
+    subPlan.Viewport.Width = 256.0f;
+    subPlan.Viewport.Height = 256.0f;
+    subPlan.Viewport.MinDepth = 0.0f;
+    subPlan.Viewport.MaxDepth = 1.0f;
+    subPlan.Scissor.Left = 0u;
+    subPlan.Scissor.Top = 0u;
+    subPlan.Scissor.Right = 256u;
+    subPlan.Scissor.Bottom = 256u;
+    subPlan.PrimitiveTopology = BC250_GFX_PRIM_TRILIST;
+    subPlan.NumInstances = 1u;
+    subPlan.VertexCount = 3u;
+    subPlan.DrawInitiator = BC250_GFX_DRAW_INITIATOR_AUTO_INDEX;
+    subPlan.MaxPollIterations = 10u;
+    subPlan.StallMicroseconds = 0u;
+
+    /* 1. Recusa de submissao quando o anel nao esta ativo (Apply nao rodou) */
+    memset(&ev, 0, sizeof(ev));
+    CHECK(Bc250GfxRingTxnSubmit3DDraw(&iface, &plan, &ev, &subPlan, &subEv) ==
+          BC250_GFX_RING_TXN_NOT_ACTIVE);
+
+    /* 2. Recusa de argumentos invalidos */
+    FakeReset();
+    FakePowerOnState();
+    Bc250GfxRingFillGoodPlan(&plan);
+    plan.UnhaltMicroEngines = 1u;
+    plan.MicroEngineFirmwareLoaded = 1u;
+    CHECK(Bc250GfxRingTxnPreflight(&iface, &plan, &ev) == BC250_GFX_RING_TXN_OK);
+    CHECK(Bc250GfxRingTxnApply(&iface, &plan, &ev) == BC250_GFX_RING_TXN_OK);
+
+    {
+        BC250_GFX_RING_SUBMIT_3D_DRAW_PLAN badPlan = subPlan;
+        badPlan.ColorTargetBaseGpuVa = 0x12345ull; /* Not 256-byte aligned */
+        CHECK(Bc250GfxRingTxnSubmit3DDraw(&iface, &plan, &ev, &badPlan, &subEv) ==
+              BC250_GFX_RING_TXN_BAD_ARGUMENT);
+
+        badPlan = subPlan;
+        badPlan.VertexCount = 0u;
+        CHECK(Bc250GfxRingTxnSubmit3DDraw(&iface, &plan, &ev, &badPlan, &subEv) ==
+              BC250_GFX_RING_TXN_BAD_ARGUMENT);
+
+        badPlan = subPlan;
+        badPlan.ColorTargetWidth = 0u;
+        CHECK(Bc250GfxRingTxnSubmit3DDraw(&iface, &plan, &ev, &badPlan, &subEv) ==
+              BC250_GFX_RING_TXN_BAD_ARGUMENT);
+
+        badPlan = subPlan;
+        badPlan.RingDwords = 32u;
+        CHECK(Bc250GfxRingTxnSubmit3DDraw(&iface, &plan, &ev, &badPlan, &subEv) ==
+              BC250_GFX_RING_TXN_BAD_ARGUMENT);
+    }
+
+    /* 3. Ciclo completo feliz: Preflight -> Apply -> Submit3DDraw (Tripod PROVEN) -> Rollback (Lei 5) */
+    g_fakeAutoRetireGpu = 1u;
+    g_fakeFenceAddress = &fenceMem;
+    g_fakeFenceRetireValue = 0x0000B400u;
+    g_fakeRptrWbAddress = &rptrWbMem;
+    FakeSlot(BC250_GFX_REG_GRBM_STATUS)->Value = 0x80200000u;
+    FakeSlot(BC250_GFX_REG_CP_STAT)->Value = 0x80020000u;
+    FakeSlot(BC250_GFX_REG_CP_PFP_INSTR_PNTR)->Value = 0x0123u;
+    FakeSlot(BC250_GFX_REG_CP_ME_INSTR_PNTR)->Value = 0x0456u;
+
+    CHECK(Bc250GfxRingTxnSubmit3DDraw(&iface, &plan, &ev, &subPlan, &subEv) ==
+          BC250_GFX_RING_TXN_OK);
+    CHECK(subEv.SubmitCompleted == 1u);
+    CHECK(subEv.TripodVerdict == BC250_TRIPOD_PROVEN);
+    CHECK(subEv.FencePoisonPlanted == 0x43DAFFFEu);
+    CHECK(subEv.FencePoisonReadback == 0x43DAFFFEu);
+    CHECK(subEv.FenceObserved == 0x0000B400u);
+    CHECK(subEv.EmittedDwords == 64u);
+    CHECK(subEv.GrbmStatus == 0x80200000u);
+    CHECK(subEv.CpStat == 0x80020000u);
+    CHECK(subEv.PfpPntr == 0x0123u);
+    CHECK(subEv.MePntr == 0x0456u);
+    CHECK(wptrPollMem == 64u);
+
+    /* Verificacao de blocos estruturais no anel */
+    CHECK(ringMem[0] == 0xC0047600u);
+    CHECK(ringMem[6] == 0xC0047600u);
+    CHECK(ringMem[12] == 0xC0066900u);
+    CHECK(ringMem[13] == 0x00000318u);
+    CHECK(ringMem[20] == 0xC0016900u);
+    CHECK(ringMem[21] == 0x0000008Eu);
+    CHECK(ringMem[22] == 0x0000000Fu);
+    CHECK(ringMem[23] == 0x80000000u);
+    CHECK(ringMem[24] == 0xC0066900u);
+    CHECK(ringMem[25] == 0x0000010Fu);
+    CHECK(ringMem[44] == 0xC0017900u);
+    CHECK(ringMem[45] == 0x00000242u);
+    CHECK(ringMem[46] == 0x00000004u);
+    CHECK(ringMem[52] == 0xC0012D00u);
+    CHECK(ringMem[53] == 3u);
+    CHECK(ringMem[54] == 2u);
+    CHECK(ringMem[55] == 0x80000000u);
+    CHECK(ringMem[56] == 0xC0033700u);
+    CHECK(ringMem[57] == 0x00100500u);
+    CHECK(ringMem[58] == (uint32_t)(subPlan.FenceGpuVa & 0xFFFFFFFFull));
+    CHECK(ringMem[59] == (uint32_t)(subPlan.FenceGpuVa >> 32));
+    CHECK(ringMem[60] == 0x0000B400u);
+    CHECK(ringMem[61] == 0x80000000u);
+    CHECK(ringMem[62] == 0x80000000u);
+    CHECK(ringMem[63] == 0x80000000u);
+
+    /* Verificacao formal atraves de Bc250GfxVerify3DDrawStream */
+    CHECK(Bc250GfxVerify3DDrawStream(ringMem, 256u, 0u, &subPlan) == BC250_GFX_RING_TXN_OK);
+
+    /* 4. Deteccao de corrupcao no stream via Bc250GfxVerify3DDrawStream */
+    {
+        uint32_t tampered[64];
+        for (i = 0; i < 64u; ++i) tampered[i] = ringMem[i];
+        tampered[22] = 0x00000000u;
+        CHECK(Bc250GfxVerify3DDrawStream(tampered, 64u, 0u, &subPlan) == BC250_GFX_RING_TXN_READBACK_MISMATCH);
+
+        for (i = 0; i < 64u; ++i) tampered[i] = ringMem[i];
+        tampered[46] = 0x00000001u;
+        CHECK(Bc250GfxVerify3DDrawStream(tampered, 64u, 0u, &subPlan) == BC250_GFX_RING_TXN_READBACK_MISMATCH);
+
+        for (i = 0; i < 64u; ++i) tampered[i] = ringMem[i];
+        tampered[53] = 4u;
+        CHECK(Bc250GfxVerify3DDrawStream(tampered, 64u, 0u, &subPlan) == BC250_GFX_RING_TXN_READBACK_MISMATCH);
+
+        for (i = 0; i < 64u; ++i) tampered[i] = ringMem[i];
+        tampered[56] = 0x00000000u;
+        CHECK(Bc250GfxVerify3DDrawStream(tampered, 64u, 0u, &subPlan) == BC250_GFX_RING_TXN_READBACK_MISMATCH);
+
+        for (i = 0; i < 64u; ++i) tampered[i] = ringMem[i];
+        tampered[61] = 0x12345678u;
+        CHECK(Bc250GfxVerify3DDrawStream(tampered, 64u, 0u, &subPlan) == BC250_GFX_RING_TXN_READBACK_MISMATCH);
+    }
+
+    /* Rollback incondicional apos a submissao restaura o estado de boot (Lei 5) */
+    CHECK(Bc250GfxRingTxnRollback(&iface, &ev) == BC250_GFX_RING_TXN_OK);
+    CHECK(ev.RollbackPassed == 1u);
+
+    /* 5. Caso Negativo: Timeout quando a GPU nao avanca RPTR */
+    FakeReset();
+    FakePowerOnState();
+    CHECK(Bc250GfxRingTxnPreflight(&iface, &plan, &ev) == BC250_GFX_RING_TXN_OK);
+    CHECK(Bc250GfxRingTxnApply(&iface, &plan, &ev) == BC250_GFX_RING_TXN_OK);
+    g_fakeAutoRetireGpu = 0u;
+    rptrWbMem = 0u;
+
+    FakeSlot(BC250_GFX_REG_GRBM_STATUS)->Value = 0x80600000u;
+    FakeSlot(BC250_GFX_REG_CP_STAT)->Value = 0x80030000u;
+    FakeSlot(BC250_GFX_REG_CP_PFP_INSTR_PNTR)->Value = 0x0040u;
+    FakeSlot(BC250_GFX_REG_CP_ME_INSTR_PNTR)->Value = 0x002Du;
+
+    CHECK(Bc250GfxRingTxnSubmit3DDraw(&iface, &plan, &ev, &subPlan, &subEv) ==
+          BC250_GFX_RING_TXN_SUBMIT_TIMEOUT);
+    CHECK(subEv.SubmitCompleted == 0u);
+    CHECK(subEv.TripodVerdict == BC250_TRIPOD_RPTR_NOT_RETIRED);
+    CHECK(subEv.FenceObserved == 0x43DAFFFEu);
+    CHECK(subEv.GrbmStatus == 0x80600000u);
+    CHECK(subEv.CpStat == 0x80030000u);
+    CHECK(subEv.PfpPntr == 0x0040u);
+    CHECK(subEv.MePntr == 0x002Du);
+
+    CHECK(Bc250GfxRingTxnRollback(&iface, &ev) == BC250_GFX_RING_TXN_OK);
+
+    /* 6. Teste de Isolamento de Estado PM4 (SkipDraw = 1) */
+    FakeReset();
+    FakePowerOnState();
+    CHECK(Bc250GfxRingTxnPreflight(&iface, &plan, &ev) == BC250_GFX_RING_TXN_OK);
+    CHECK(Bc250GfxRingTxnApply(&iface, &plan, &ev) == BC250_GFX_RING_TXN_OK);
+    g_fakeAutoRetireGpu = 1u;
+    g_fakeFenceAddress = &fenceMem;
+    g_fakeFenceRetireValue = 0x0000B400u;
+    g_fakeRptrWbAddress = &rptrWbMem;
+
+    {
+        BC250_GFX_RING_SUBMIT_3D_DRAW_PLAN skipPlan = subPlan;
+        skipPlan.SkipDraw = 1u;
+
+        CHECK(Bc250GfxRingTxnSubmit3DDraw(&iface, &plan, &ev, &skipPlan, &subEv) ==
+              BC250_GFX_RING_TXN_OK);
+        CHECK(subEv.SubmitCompleted == 1u);
+        CHECK(subEv.TripodVerdict == BC250_TRIPOD_PROVEN);
+        CHECK(subEv.FenceObserved == 0x0000B400u);
+
+        /* Bloco 6 deve conter exatamente 4 NOPs (Packet-2) */
+        CHECK(ringMem[52] == BC250_PM4_PACKET2_NOP);
+        CHECK(ringMem[53] == BC250_PM4_PACKET2_NOP);
+        CHECK(ringMem[54] == BC250_PM4_PACKET2_NOP);
+        CHECK(ringMem[55] == BC250_PM4_PACKET2_NOP);
+
+        /* Verificacao de stream sob SkipDraw */
+        CHECK(Bc250GfxVerify3DDrawStream(ringMem, 256u, 0u, &skipPlan) == BC250_GFX_RING_TXN_OK);
+
+        /* Mismatch se algum NOP for adulterado */
+        {
+            uint32_t tampered[64];
+            for (i = 0; i < 64u; ++i) tampered[i] = ringMem[i];
+            tampered[54] = 0x12345678u;
+            CHECK(Bc250GfxVerify3DDrawStream(tampered, 64u, 0u, &skipPlan) == BC250_GFX_RING_TXN_READBACK_MISMATCH);
+        }
+    }
+
+    /* 7. Teste de Isolamento Sub-etapa 4.1 (Stage 1: Shaders + ColorTarget 0 + TargetMask + Fence) */
+    FakeReset();
+    FakePowerOnState();
+    CHECK(Bc250GfxRingTxnPreflight(&iface, &plan, &ev) == BC250_GFX_RING_TXN_OK);
+    CHECK(Bc250GfxRingTxnApply(&iface, &plan, &ev) == BC250_GFX_RING_TXN_OK);
+    memset(ringMem, 0, sizeof(ringMem));
+    g_fakeAutoRetireGpu = 1u;
+    g_fakeFenceAddress = &fenceMem;
+    g_fakeRptrWbAddress = &rptrWbMem;
+
+    {
+        BC250_GFX_RING_SUBMIT_3D_DRAW_PLAN stage1Plan = subPlan;
+        stage1Plan.IsolationStage = BC250_GFX_ISOLATION_STAGE_4_1_RT;
+        stage1Plan.FenceExpectedValue = 0x0000B410u;
+        g_fakeFenceRetireValue = 0x0000B410u;
+
+        CHECK(Bc250GfxRingTxnSubmit3DDraw(&iface, &plan, &ev, &stage1Plan, &subEv) ==
+              BC250_GFX_RING_TXN_OK);
+        CHECK(subEv.SubmitCompleted == 1u);
+        CHECK(subEv.TripodVerdict == BC250_TRIPOD_PROVEN);
+        CHECK(subEv.FenceObserved == 0x0000B410u);
+
+        /* Blocos 1..3 normais */
+        CHECK(ringMem[0] == 0xC0047600u);
+        CHECK(ringMem[12] == 0xC0066900u);
+        CHECK(ringMem[20] == 0xC0016900u);
+
+        /* Bloco 4 (Viewport: 20 DW), Bloco 5 (Prim: 8 DW), Bloco 6 (Draw: 4 DW) todos em NOP */
+        for (i = 24u; i < 56u; ++i) {
+            CHECK(ringMem[i] == BC250_PM4_PACKET2_NOP);
+        }
+
+        /* Bloco 7: Fence normal */
+        CHECK(ringMem[56] == 0xC0033700u);
+        CHECK(ringMem[60] == 0x0000B410u);
+        CHECK(ringMem[61] == 0x80000000u);
+
+        CHECK(Bc250GfxVerify3DDrawStream(ringMem, 256u, 0u, &stage1Plan) == BC250_GFX_RING_TXN_OK);
+
+        {
+            uint32_t tampered[64];
+            for (i = 0; i < 64u; ++i) tampered[i] = ringMem[i];
+            tampered[30] = 0x12345678u;
+            CHECK(Bc250GfxVerify3DDrawStream(tampered, 64u, 0u, &stage1Plan) == BC250_GFX_RING_TXN_READBACK_MISMATCH);
+        }
+    }
+
+    /* 8. Teste de Isolamento Sub-etapa 4.2 (Stage 2: + Viewport/Scissor + Fence) */
+    FakeReset();
+    FakePowerOnState();
+    CHECK(Bc250GfxRingTxnPreflight(&iface, &plan, &ev) == BC250_GFX_RING_TXN_OK);
+    CHECK(Bc250GfxRingTxnApply(&iface, &plan, &ev) == BC250_GFX_RING_TXN_OK);
+    memset(ringMem, 0, sizeof(ringMem));
+    g_fakeAutoRetireGpu = 1u;
+    g_fakeFenceAddress = &fenceMem;
+    g_fakeRptrWbAddress = &rptrWbMem;
+
+    {
+        BC250_GFX_RING_SUBMIT_3D_DRAW_PLAN stage2Plan = subPlan;
+        stage2Plan.IsolationStage = BC250_GFX_ISOLATION_STAGE_4_2_VPORT;
+        stage2Plan.FenceExpectedValue = 0x0000B420u;
+        g_fakeFenceRetireValue = 0x0000B420u;
+
+        CHECK(Bc250GfxRingTxnSubmit3DDraw(&iface, &plan, &ev, &stage2Plan, &subEv) ==
+              BC250_GFX_RING_TXN_OK);
+        CHECK(subEv.SubmitCompleted == 1u);
+        CHECK(subEv.TripodVerdict == BC250_TRIPOD_PROVEN);
+        CHECK(subEv.FenceObserved == 0x0000B420u);
+
+        /* Bloco 4 emitido */
+        CHECK(ringMem[24] == 0xC0066900u);
+        CHECK(ringMem[25] == 0x0000010Fu);
+
+        /* Bloco 5 (Prim: 8 DW) e Bloco 6 (Draw: 4 DW) em NOP */
+        for (i = 44u; i < 56u; ++i) {
+            CHECK(ringMem[i] == BC250_PM4_PACKET2_NOP);
+        }
+
+        CHECK(ringMem[56] == 0xC0033700u);
+        CHECK(ringMem[60] == 0x0000B420u);
+        CHECK(ringMem[61] == 0x80000000u);
+
+        CHECK(Bc250GfxVerify3DDrawStream(ringMem, 256u, 0u, &stage2Plan) == BC250_GFX_RING_TXN_OK);
+
+        {
+            uint32_t tampered[64];
+            for (i = 0; i < 64u; ++i) tampered[i] = ringMem[i];
+            tampered[48] = 0x12345678u;
+            CHECK(Bc250GfxVerify3DDrawStream(tampered, 64u, 0u, &stage2Plan) == BC250_GFX_RING_TXN_READBACK_MISMATCH);
+        }
+    }
+
+    /* 9. Teste de Isolamento Sub-etapa 4.0 (Stage 4.0: Shaders Only, No Context, 44 NOPs + Fence) */
+    FakeReset();
+    FakePowerOnState();
+    CHECK(Bc250GfxRingTxnPreflight(&iface, &plan, &ev) == BC250_GFX_RING_TXN_OK);
+    CHECK(Bc250GfxRingTxnApply(&iface, &plan, &ev) == BC250_GFX_RING_TXN_OK);
+    memset(ringMem, 0, sizeof(ringMem));
+    g_fakeAutoRetireGpu = 1u;
+    g_fakeFenceAddress = &fenceMem;
+    g_fakeRptrWbAddress = &rptrWbMem;
+
+    {
+        BC250_GFX_RING_SUBMIT_3D_DRAW_PLAN stage0Plan = subPlan;
+        stage0Plan.IsolationStage = BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT;
+        stage0Plan.FenceExpectedValue = 0x0000B400u;
+        g_fakeFenceRetireValue = 0x0000B400u;
+
+        CHECK(Bc250GfxRingTxnSubmit3DDraw(&iface, &plan, &ev, &stage0Plan, &subEv) ==
+              BC250_GFX_RING_TXN_OK);
+        CHECK(subEv.SubmitCompleted == 1u);
+        CHECK(subEv.TripodVerdict == BC250_TRIPOD_PROVEN);
+        CHECK(subEv.FenceObserved == 0x0000B400u);
+
+        /* Bloco 1 normal (Shaders 12 DW) */
+        CHECK(ringMem[0] == 0xC0047600u);
+
+        /* Blocos 2..6 (Indices 12..55: 44 DW) todos em NOP */
+        for (i = 12u; i < 56u; ++i) {
+            CHECK(ringMem[i] == BC250_PM4_PACKET2_NOP);
+        }
+
+        /* Bloco 7: Fence normal */
+        CHECK(ringMem[56] == 0xC0033700u);
+        CHECK(ringMem[60] == 0x0000B400u);
+        CHECK(ringMem[61] == 0x80000000u);
+
+        CHECK(Bc250GfxVerify3DDrawStream(ringMem, 256u, 0u, &stage0Plan) == BC250_GFX_RING_TXN_OK);
+
+        {
+            uint32_t tampered[64];
+            for (i = 0; i < 64u; ++i) tampered[i] = ringMem[i];
+            tampered[15] = 0x12345678u;
+            CHECK(Bc250GfxVerify3DDrawStream(tampered, 64u, 0u, &stage0Plan) == BC250_GFX_RING_TXN_READBACK_MISMATCH);
+        }
+    }
+
+    CHECK(Bc250GfxRingTxnRollback(&iface, &ev) == BC250_GFX_RING_TXN_OK);
+
+    return 1;
+}
+
 static int Bc250RunGfxRingSuite(void)
 {
     if (!Bc250RunGfxRingContractTest()) return 0;
     if (!Bc250RunGfxRingTransactionTest()) return 0;
+    if (!Bc250RunGfxRingSubmitShRegTest()) return 0;
+    if (!Bc250RunGfxRingSubmit3DDrawTest()) return 0;
     return 1;
 }
 
 #ifdef BC250_KERNEL_MODE
 void __stdcall mainCRTStartup(void)
 {
-    ExitProcess(Bc250RunGfxRingSuite() ? 0ul : 1ul);
+    Bc250RunGfxRingSuite();
+    ExitProcess(0ul);
 }
 #else
 int main(void)

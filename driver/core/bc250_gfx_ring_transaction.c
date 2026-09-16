@@ -1,5 +1,10 @@
 #include "bc250_gfx_ring_transaction.h"
 
+static int Bc250IsPowerOfTwo32(uint32_t Value)
+{
+    return Value != 0u && (Value & (Value - 1u)) == 0u;
+}
+
 static uint32_t Bc250GfxTxnInterfaceUsable(const BC250_GFX_RING_INTERFACE *Interface)
 {
     if (Interface == NULL) {
@@ -21,7 +26,7 @@ static uint32_t Bc250GfxTxnRead(
     uint32_t *Value)
 {
     uint32_t ok = Interface->Read32(Interface->Context, ByteOffset, Value);
-    if (ok) {
+    if (ok && Evidence != NULL) {
         Evidence->Reads++;
     }
     return ok;
@@ -34,7 +39,7 @@ static uint32_t Bc250GfxTxnWrite(
     uint32_t Value)
 {
     uint32_t ok = Interface->Write32(Interface->Context, ByteOffset, Value);
-    if (ok) {
+    if (ok && Evidence != NULL) {
         Evidence->Writes++;
     }
     return ok;
@@ -347,6 +352,692 @@ BC250_GFX_RING_TXN_STATUS Bc250GfxRingTxnRollback(
     return BC250_GFX_RING_TXN_OK;
 }
 
+BC250_GFX_RING_TXN_STATUS Bc250GfxRingTxnSubmitShReg(
+    const BC250_GFX_RING_INTERFACE *Interface,
+    const BC250_GFX_RING_PLAN *RingPlan,
+    const BC250_GFX_RING_TXN_EVIDENCE *ApplyEvidence,
+    const BC250_GFX_RING_SUBMIT_SH_REG_PLAN *SubmitPlan,
+    BC250_GFX_RING_SUBMIT_SH_REG_EVIDENCE *SubmitEvidence)
+{
+    unsigned char *raw;
+    uint32_t index;
+    uint32_t initialWptr = 0u;
+    uint32_t cursor;
+    BC250_GFX_SH_REG_EMISSION_EVIDENCE shEv;
+    BC250_GFX_SH_REG_STATUS shStatus;
+    BC250_PM4_STATUS pm4Status;
+    uint32_t maxPolls;
+    uint32_t stallUs;
+    uint32_t ringBytes;
+    uint32_t targetWptrBytes;
+    uint32_t iter;
+    BC250_TRIPOD_VERDICT verdict = BC250_TRIPOD_INDETERMINATE;
+    BC250_TRIPOD_RPTR_SOURCE rptrSource = BC250_TRIPOD_RPTR_SOURCE_NONE;
+
+    if (SubmitEvidence != NULL) {
+        raw = (unsigned char *)SubmitEvidence;
+        for (index = 0u; index < (uint32_t)sizeof(*SubmitEvidence); ++index) {
+            raw[index] = 0u;
+        }
+    }
+
+    if (!Bc250GfxTxnInterfaceUsable(Interface) || RingPlan == NULL ||
+        ApplyEvidence == NULL || SubmitPlan == NULL || SubmitEvidence == NULL) {
+        return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+    }
+
+    /*
+     * Submeter sem anel ativo e conferido e' disparar sobre pipeline desligado (Lei 4).
+     * Exige que ApplyEvidence tenha completado com RB0_ACTIVE=1.
+     */
+    if (ApplyEvidence->RingActivatePassed != 1u || ApplyEvidence->ApplyReadbackPassed != 1u) {
+        return BC250_GFX_RING_TXN_NOT_ACTIVE;
+    }
+
+    if (SubmitPlan->RingCpuAddress == NULL || SubmitPlan->FenceCpuAddress == NULL ||
+        SubmitPlan->VsRegs == NULL || SubmitPlan->PsRegs == NULL ||
+        SubmitPlan->RingDwords < BC250_GFX_PM4_SUBMIT_MIN_DWORDS ||
+        (SubmitPlan->RingDwords & (SubmitPlan->RingDwords - 1u)) != 0u) {
+        return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+    }
+
+    /* 1. Injeta poison na fence com readback proof antes de qualquer gravacao no anel (Lei 2). */
+    *SubmitPlan->FenceCpuAddress = SubmitPlan->FencePoisonValue;
+    SubmitEvidence->FencePoisonPlanted = SubmitPlan->FencePoisonValue;
+    SubmitEvidence->FencePoisonReadback = *SubmitPlan->FenceCpuAddress;
+    if (SubmitEvidence->FencePoisonReadback != SubmitPlan->FencePoisonValue) {
+        return BC250_GFX_RING_TXN_FENCE_POISON_FAILED;
+    }
+
+    /* 2. Le WPTR inicial do registrador de hardware. */
+    if (!Bc250GfxTxnRead(Interface, NULL, BC250_GFX_REG_CP_RB0_WPTR, &initialWptr)) {
+        return BC250_GFX_RING_TXN_PREFLIGHT_FAILED;
+    }
+    SubmitEvidence->InitialWptrDwords = initialWptr;
+    cursor = initialWptr;
+
+    /* 3. Emite os 12 dwords de pipeline de shaders (VS + PS) reusando Bc250Pm4EmitSetShReg. */
+    shStatus = Bc250GfxShRegEmitPipeline(SubmitPlan->RingCpuAddress,
+                                         SubmitPlan->RingDwords,
+                                         &cursor,
+                                         SubmitPlan->VsRegs,
+                                         SubmitPlan->PsRegs,
+                                         &shEv);
+    if (shStatus != BC250_GFX_SH_REG_OK) {
+        return BC250_GFX_RING_TXN_WRITE_FAILED;
+    }
+
+    /* 4. Emite fence fisica na VRAM sobre o poison via WRITE_DATA (DST_SEL=5 Memory Direct MC).
+     * Sob VMID 0 no anel grafico CP_RB0 sem GCVM page tables, WRITE_DATA e' a forma
+     * comprovada no silicio (bc250_pfp_direct_load) para gravacao direta de fence em VRAM MC. */
+    {
+        uint32_t wdControl = BC250_PM4_WD_CONFIRM | BC250_PM4_WD_DST_MEM; /* 0x00100500u */
+        pm4Status = Bc250Pm4EmitWriteData(SubmitPlan->RingCpuAddress,
+                                          SubmitPlan->RingDwords,
+                                          &cursor,
+                                          wdControl,
+                                          SubmitPlan->FenceGpuVa,
+                                          &SubmitPlan->FenceExpectedValue,
+                                          1u);
+        if (pm4Status != BC250_PM4_OK) {
+            return BC250_GFX_RING_TXN_WRITE_FAILED;
+        }
+
+        /* Pad de 3 NOPs (PACKET2) para manter alinhamento de 4 dwords (12 dw shader + 5 dw fence + 3 dw NOP = 20 dwords) */
+        SubmitPlan->RingCpuAddress[cursor & (SubmitPlan->RingDwords - 1u)] = BC250_PM4_PACKET2_NOP;
+        cursor++;
+        SubmitPlan->RingCpuAddress[cursor & (SubmitPlan->RingDwords - 1u)] = BC250_PM4_PACKET2_NOP;
+        cursor++;
+        SubmitPlan->RingCpuAddress[cursor & (SubmitPlan->RingDwords - 1u)] = BC250_PM4_PACKET2_NOP;
+        cursor++;
+    }
+
+    SubmitEvidence->TargetWptrDwords = cursor;
+    SubmitEvidence->EmittedDwords = cursor - initialWptr;
+
+    /* 5. Atualiza shadow de WPTR em memoria (se configurado). */
+    if (SubmitPlan->WptrPollCpuAddress != NULL) {
+        *SubmitPlan->WptrPollCpuAddress = cursor;
+    }
+
+    /* 6. Dispara o anel avancando CP_RB0_WPTR no silicio. */
+    if (!Bc250GfxTxnWrite(Interface, NULL, BC250_GFX_REG_CP_RB0_WPTR, cursor) ||
+        !Bc250GfxTxnWrite(Interface, NULL, BC250_GFX_REG_CP_RB0_WPTR_HI, 0u)) {
+        return BC250_GFX_RING_TXN_WRITE_FAILED;
+    }
+
+    /* 7. Laco de amostragem e classificacao do tripe da Lei 2. */
+    maxPolls = (SubmitPlan->MaxPollIterations > 0u) ? SubmitPlan->MaxPollIterations : 1000u;
+    stallUs = (SubmitPlan->StallMicroseconds > 0u) ? SubmitPlan->StallMicroseconds : 10u;
+    ringBytes = SubmitPlan->RingDwords * (uint32_t)sizeof(uint32_t);
+    targetWptrBytes = cursor * (uint32_t)sizeof(uint32_t);
+
+    for (iter = 0u; iter < maxPolls; ++iter) {
+        uint32_t rptrMmio = 0u;
+        uint32_t rptrWb = 0u;
+        uint32_t fenceObs;
+
+        /* Dreno e coerencia HDP (PCIe) para que a leitura de CPU sobre VRAM
+         * enxergue os dados gravados pelo motor CP da GPU na VRAM (Lei 2) */
+        (void)Bc250GfxTxnWrite(Interface, NULL, BC250_GFX_REG_HDP_MEM_COHERENCY_FLUSH_CNTL, 1u);
+
+        fenceObs = *(volatile const uint32_t *)SubmitPlan->FenceCpuAddress;
+
+        if (!Bc250GfxTxnRead(Interface, NULL, BC250_GFX_REG_CP_RB0_RPTR, &rptrMmio)) {
+            return BC250_GFX_RING_TXN_READBACK_MISMATCH;
+        }
+
+        if (SubmitPlan->RptrWbCpuAddress != NULL) {
+            rptrWb = *(volatile const uint32_t *)SubmitPlan->RptrWbCpuAddress;
+        }
+
+        SubmitEvidence->RptrObservedMmio = rptrMmio;
+        SubmitEvidence->RptrObservedWb = rptrWb;
+        SubmitEvidence->FenceObserved = fenceObs;
+
+        /* Perna 1 usa Bc250GfxRingClassifyTripod com reducao de volta A15. */
+        verdict = Bc250GfxRingClassifyTripod(
+            ringBytes,
+            targetWptrBytes,
+            rptrWb * (uint32_t)sizeof(uint32_t),
+            rptrMmio * (uint32_t)sizeof(uint32_t),
+            SubmitPlan->FenceExpectedValue,
+            fenceObs,
+            0u,
+            &rptrSource);
+
+        SubmitEvidence->TripodVerdict = verdict;
+        SubmitEvidence->RptrSource = rptrSource;
+
+        if (verdict == BC250_TRIPOD_PROVEN) {
+            SubmitEvidence->PollsCompleted = iter + 1u;
+            SubmitEvidence->SubmitCompleted = 1u;
+            return BC250_GFX_RING_TXN_OK;
+        }
+
+        if (Interface->Stall != NULL && stallUs > 0u) {
+            Interface->Stall(Interface->Context, stallUs);
+        }
+    }
+
+    SubmitEvidence->PollsCompleted = maxPolls;
+    SubmitEvidence->SubmitCompleted = 0u;
+    return BC250_GFX_RING_TXN_SUBMIT_TIMEOUT;
+}
+
+BC250_GFX_RING_TXN_STATUS Bc250GfxVerify3DDrawStream(
+    const uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t CursorDwords,
+    const BC250_GFX_RING_SUBMIT_3D_DRAW_PLAN *SubmitPlan)
+{
+    BC250_GFX_VIEWPORT_SCISSOR_PACKET vpPacket;
+    BC250_GFX_PRIMITIVE_PACKET primPacket;
+    BC250_GFX_DRAW_PACKET drawPacket;
+    uint32_t bpp = 4u;
+    uint32_t pitchPixels;
+    uint32_t pitchTiles;
+    uint32_t sliceTiles;
+    uint32_t colorInfo;
+    uint32_t mask;
+
+    uint32_t stage;
+
+    if (RingBuffer == NULL || SubmitPlan == NULL || !Bc250IsPowerOfTwo32(RingDwords)) {
+        return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+    }
+    if (SubmitPlan->VsRegs == NULL || SubmitPlan->PsRegs == NULL) {
+        return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+    }
+
+    if (SubmitPlan->IsolationStage == BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT) {
+        stage = BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT;
+    } else if (SubmitPlan->IsolationStage != 0u) {
+        stage = SubmitPlan->IsolationStage;
+    } else if (SubmitPlan->SkipDraw != 0u) {
+        stage = 3u;
+    } else {
+        stage = 4u;
+    }
+    if (stage > 5u) {
+        return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+    }
+
+    mask = RingDwords - 1u;
+
+    /* 1. Shaders (12 DW) */
+    if (RingBuffer[(CursorDwords + 0u) & mask] != 0xC0047600u ||
+        RingBuffer[(CursorDwords + 1u) & mask] != 0x00000048u ||
+        RingBuffer[(CursorDwords + 2u) & mask] != SubmitPlan->VsRegs->PgmLo ||
+        RingBuffer[(CursorDwords + 3u) & mask] != SubmitPlan->VsRegs->PgmHi ||
+        RingBuffer[(CursorDwords + 4u) & mask] != SubmitPlan->VsRegs->Rsrc1 ||
+        RingBuffer[(CursorDwords + 5u) & mask] != SubmitPlan->VsRegs->Rsrc2 ||
+        RingBuffer[(CursorDwords + 6u) & mask] != 0xC0047600u ||
+        RingBuffer[(CursorDwords + 7u) & mask] != 0x00000008u ||
+        RingBuffer[(CursorDwords + 8u) & mask] != SubmitPlan->PsRegs->PgmLo ||
+        RingBuffer[(CursorDwords + 9u) & mask] != SubmitPlan->PsRegs->PgmHi ||
+        RingBuffer[(CursorDwords + 10u) & mask] != SubmitPlan->PsRegs->Rsrc1 ||
+        RingBuffer[(CursorDwords + 11u) & mask] != SubmitPlan->PsRegs->Rsrc2) {
+        return BC250_GFX_RING_TXN_READBACK_MISMATCH;
+    }
+
+    /* 2. Color Target 0 (8 DW) */
+    if (stage >= 1u && stage != BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT) {
+        pitchPixels = SubmitPlan->ColorTargetPitchBytes / bpp;
+        if (pitchPixels == 0u) pitchPixels = SubmitPlan->ColorTargetWidth;
+        pitchTiles = (pitchPixels + 7u) / 8u;
+        if (pitchTiles > 0u) pitchTiles -= 1u;
+        sliceTiles = ((pitchPixels + 7u) / 8u) * ((SubmitPlan->ColorTargetHeight + 7u) / 8u);
+        if (sliceTiles > 0u) sliceTiles -= 1u;
+        colorInfo = ((SubmitPlan->ColorTargetFormatIndex & 0x1Fu) << 2) |
+                    ((SubmitPlan->ColorTargetCompSwap & 0x3u) << 11) | (1u << 16);
+
+        if (RingBuffer[(CursorDwords + 12u) & mask] != 0xC0066900u ||
+            RingBuffer[(CursorDwords + 13u) & mask] != 0x00000318u ||
+            RingBuffer[(CursorDwords + 14u) & mask] != (uint32_t)(SubmitPlan->ColorTargetBaseGpuVa >> 8) ||
+            RingBuffer[(CursorDwords + 15u) & mask] != pitchTiles ||
+            RingBuffer[(CursorDwords + 16u) & mask] != sliceTiles ||
+            RingBuffer[(CursorDwords + 17u) & mask] != 0u ||
+            RingBuffer[(CursorDwords + 18u) & mask] != colorInfo ||
+            RingBuffer[(CursorDwords + 19u) & mask] != 0u) {
+            return BC250_GFX_RING_TXN_READBACK_MISMATCH;
+        }
+    } else {
+        uint32_t nIdx;
+        for (nIdx = 0u; nIdx < BC250_GFX_3D_DRAW_COLOR_DWORDS; ++nIdx) {
+            if (RingBuffer[(CursorDwords + 12u + nIdx) & mask] != BC250_PM4_PACKET2_NOP) {
+                return BC250_GFX_RING_TXN_READBACK_MISMATCH;
+            }
+        }
+    }
+
+    /* 3. Target Mask (4 DW) */
+    if (stage >= 1u && stage != BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT) {
+        if (RingBuffer[(CursorDwords + 20u) & mask] != 0xC0016900u ||
+            RingBuffer[(CursorDwords + 21u) & mask] != 0x0000008Eu ||
+            RingBuffer[(CursorDwords + 22u) & mask] != 0x0000000Fu ||
+            RingBuffer[(CursorDwords + 23u) & mask] != 0x80000000u) {
+            return BC250_GFX_RING_TXN_READBACK_MISMATCH;
+        }
+    } else {
+        uint32_t nIdx;
+        for (nIdx = 0u; nIdx < BC250_GFX_3D_DRAW_TARGET_MASK_DWORDS; ++nIdx) {
+            if (RingBuffer[(CursorDwords + 20u + nIdx) & mask] != BC250_PM4_PACKET2_NOP) {
+                return BC250_GFX_RING_TXN_READBACK_MISMATCH;
+            }
+        }
+    }
+
+    /* 4. Viewport & Scissor (20 DW) */
+    if (stage >= 2u && stage != BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT) {
+        if (Bc250GfxComputeViewportScissor(&SubmitPlan->Viewport, &SubmitPlan->Scissor, &vpPacket) != BC250_GFX_VPORT_OK) {
+            return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+        }
+        if (Bc250GfxVerifyViewportScissorStream(RingBuffer, RingDwords, CursorDwords + 44u, &vpPacket) != BC250_GFX_VPORT_OK) {
+            return BC250_GFX_RING_TXN_READBACK_MISMATCH;
+        }
+    } else {
+        uint32_t nIdx;
+        for (nIdx = 0u; nIdx < BC250_GFX_3D_DRAW_VPORT_DWORDS; ++nIdx) {
+            if (RingBuffer[(CursorDwords + 24u + nIdx) & mask] != BC250_PM4_PACKET2_NOP) {
+                return BC250_GFX_RING_TXN_READBACK_MISMATCH;
+            }
+        }
+    }
+
+    /* 5. Primitive Assembler (8 DW) */
+    if (stage >= 3u && stage != BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT) {
+        if (Bc250GfxComputePrimitiveAssembler(SubmitPlan->PrimitiveTopology, SubmitPlan->NumInstances, &primPacket) != BC250_GFX_PRIM_OK) {
+            return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+        }
+        if (Bc250GfxVerifyPrimitiveAssemblerStream(RingBuffer, RingDwords, CursorDwords + 52u, &primPacket) != BC250_GFX_PRIM_OK) {
+            return BC250_GFX_RING_TXN_READBACK_MISMATCH;
+        }
+    } else {
+        uint32_t nIdx;
+        for (nIdx = 0u; nIdx < BC250_GFX_3D_DRAW_PRIM_DWORDS; ++nIdx) {
+            if (RingBuffer[(CursorDwords + 44u + nIdx) & mask] != BC250_PM4_PACKET2_NOP) {
+                return BC250_GFX_RING_TXN_READBACK_MISMATCH;
+            }
+        }
+    }
+
+    /* 6. Draw Initiator (4 DW) ou 4 NOPs (SkipDraw / Stage < 4 / Stage == 5) */
+    if (stage >= 4u && stage != BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT) {
+        if (Bc250GfxComputeDrawInitiator(SubmitPlan->VertexCount, SubmitPlan->DrawInitiator, &drawPacket) != BC250_GFX_DRAW_OK) {
+            return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+        }
+        if (Bc250GfxVerifyDrawInitiatorStream(RingBuffer, RingDwords, CursorDwords + 56u, &drawPacket) != BC250_GFX_DRAW_OK) {
+            return BC250_GFX_RING_TXN_READBACK_MISMATCH;
+        }
+    } else {
+        uint32_t nIdx;
+        for (nIdx = 0u; nIdx < BC250_GFX_3D_DRAW_INIT_DWORDS; ++nIdx) {
+            if (RingBuffer[(CursorDwords + 52u + nIdx) & mask] != BC250_PM4_PACKET2_NOP) {
+                return BC250_GFX_RING_TXN_READBACK_MISMATCH;
+            }
+        }
+    }
+
+    /* 7. Physical Fence WRITE_DATA (DST_SEL=5 Memory Direct MC) + 3 NOPs (8 DW) */
+    if (RingBuffer[(CursorDwords + 56u) & mask] != 0xC0033700u ||
+        RingBuffer[(CursorDwords + 57u) & mask] != 0x00100500u ||
+        RingBuffer[(CursorDwords + 58u) & mask] != (uint32_t)(SubmitPlan->FenceGpuVa & 0xFFFFFFFFull) ||
+        RingBuffer[(CursorDwords + 59u) & mask] != (uint32_t)(SubmitPlan->FenceGpuVa >> 32) ||
+        RingBuffer[(CursorDwords + 60u) & mask] != SubmitPlan->FenceExpectedValue ||
+        RingBuffer[(CursorDwords + 61u) & mask] != BC250_PM4_PACKET2_NOP ||
+        RingBuffer[(CursorDwords + 62u) & mask] != BC250_PM4_PACKET2_NOP ||
+        RingBuffer[(CursorDwords + 63u) & mask] != BC250_PM4_PACKET2_NOP) {
+        return BC250_GFX_RING_TXN_READBACK_MISMATCH;
+    }
+
+    return BC250_GFX_RING_TXN_OK;
+}
+
+BC250_GFX_RING_TXN_STATUS Bc250GfxRingTxnSubmit3DDraw(
+    const BC250_GFX_RING_INTERFACE *Interface,
+    const BC250_GFX_RING_PLAN *RingPlan,
+    const BC250_GFX_RING_TXN_EVIDENCE *ApplyEvidence,
+    const BC250_GFX_RING_SUBMIT_3D_DRAW_PLAN *SubmitPlan,
+    BC250_GFX_RING_SUBMIT_3D_DRAW_EVIDENCE *SubmitEvidence)
+{
+    unsigned char *raw;
+    uint32_t index;
+    uint32_t initialWptr = 0u;
+    uint32_t cursor;
+    BC250_GFX_SH_REG_EMISSION_EVIDENCE shEv;
+    BC250_GFX_SH_REG_STATUS shStatus;
+    BC250_PM4_STATUS pm4Status;
+    BC250_GFX_VIEWPORT_SCISSOR_PACKET vpPacket;
+    BC250_GFX_VPORT_STATUS vpStatus;
+    BC250_GFX_PRIMITIVE_PACKET primPacket;
+    BC250_GFX_PRIM_STATUS primStatus;
+    BC250_GFX_DRAW_PACKET drawPacket;
+    BC250_GFX_DRAW_STATUS drawStatus;
+    BC250_GFX_RING_TXN_STATUS verifyStatus;
+    uint32_t maxPolls;
+    uint32_t stallUs;
+    uint32_t ringBytes;
+    uint32_t targetWptrBytes;
+    uint32_t iter;
+    uint32_t stage = 0u;
+    BC250_TRIPOD_VERDICT verdict = BC250_TRIPOD_INDETERMINATE;
+    BC250_TRIPOD_RPTR_SOURCE rptrSource = BC250_TRIPOD_RPTR_SOURCE_NONE;
+
+    if (SubmitEvidence != NULL) {
+        raw = (unsigned char *)SubmitEvidence;
+        for (index = 0u; index < (uint32_t)sizeof(*SubmitEvidence); ++index) {
+            raw[index] = 0u;
+        }
+    }
+
+    if (!Bc250GfxTxnInterfaceUsable(Interface) || RingPlan == NULL ||
+        ApplyEvidence == NULL || SubmitPlan == NULL || SubmitEvidence == NULL) {
+        return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+    }
+
+    if (ApplyEvidence->RingActivatePassed != 1u || ApplyEvidence->ApplyReadbackPassed != 1u) {
+        return BC250_GFX_RING_TXN_NOT_ACTIVE;
+    }
+
+    if (SubmitPlan->RingCpuAddress == NULL || SubmitPlan->FenceCpuAddress == NULL ||
+        SubmitPlan->VsRegs == NULL || SubmitPlan->PsRegs == NULL ||
+        SubmitPlan->RingDwords < BC250_GFX_3D_DRAW_STREAM_TOTAL_DWORDS ||
+        !Bc250IsPowerOfTwo32(SubmitPlan->RingDwords)) {
+        return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+    }
+
+    if (SubmitPlan->ColorTargetBaseGpuVa == 0u || (SubmitPlan->ColorTargetBaseGpuVa & 0xFFull) != 0u) {
+        return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+    }
+
+    if (SubmitPlan->ColorTargetWidth == 0u || SubmitPlan->ColorTargetHeight == 0u ||
+        SubmitPlan->ColorTargetPitchBytes == 0u) {
+        return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+    }
+
+    if (SubmitPlan->VertexCount == 0u) {
+        return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+    }
+
+    if (SubmitPlan->IsolationStage == BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT) {
+        stage = BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT;
+    } else if (SubmitPlan->IsolationStage != 0u) {
+        stage = SubmitPlan->IsolationStage;
+    } else if (SubmitPlan->SkipDraw != 0u) {
+        stage = 3u;
+    } else {
+        stage = 4u;
+    }
+    if (stage > 5u) {
+        return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+    }
+
+    /* Valida parametros do pipeline antes de qualquer alteracao no anel (Lei 4) */
+    vpStatus = Bc250GfxComputeViewportScissor(&SubmitPlan->Viewport, &SubmitPlan->Scissor, &vpPacket);
+    if (vpStatus != BC250_GFX_VPORT_OK) {
+        return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+    }
+
+    primStatus = Bc250GfxComputePrimitiveAssembler(SubmitPlan->PrimitiveTopology, SubmitPlan->NumInstances, &primPacket);
+    if (primStatus != BC250_GFX_PRIM_OK) {
+        return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+    }
+
+    drawStatus = Bc250GfxComputeDrawInitiator(SubmitPlan->VertexCount, SubmitPlan->DrawInitiator, &drawPacket);
+    if (drawStatus != BC250_GFX_DRAW_OK) {
+        return BC250_GFX_RING_TXN_BAD_ARGUMENT;
+    }
+
+    /* 0. Limpa a memoria de writeback de RPTR e shadow de WPTR para impedir falso positivo residual (Lei 2) */
+    if (SubmitPlan->RptrWbCpuAddress != NULL) {
+        *(volatile uint32_t *)SubmitPlan->RptrWbCpuAddress = 0u;
+    }
+    if (SubmitPlan->WptrPollCpuAddress != NULL) {
+        *SubmitPlan->WptrPollCpuAddress = 0u;
+    }
+
+    /* 1. Injeta poison na fence com readback proof antes de qualquer escrita no anel (Lei 2) */
+    *SubmitPlan->FenceCpuAddress = SubmitPlan->FencePoisonValue;
+    SubmitEvidence->FencePoisonPlanted = SubmitPlan->FencePoisonValue;
+    SubmitEvidence->FencePoisonReadback = *SubmitPlan->FenceCpuAddress;
+    if (SubmitEvidence->FencePoisonReadback != SubmitPlan->FencePoisonValue) {
+        return BC250_GFX_RING_TXN_FENCE_POISON_FAILED;
+    }
+
+    /* 2. Le WPTR inicial do registrador de hardware */
+    if (!Bc250GfxTxnRead(Interface, NULL, BC250_GFX_REG_CP_RB0_WPTR, &initialWptr)) {
+        return BC250_GFX_RING_TXN_PREFLIGHT_FAILED;
+    }
+    SubmitEvidence->InitialWptrDwords = initialWptr;
+    cursor = initialWptr;
+
+    /* 3. Bloco 1: Shaders VS + PS (12 DW) */
+    shStatus = Bc250GfxShRegEmitPipeline(SubmitPlan->RingCpuAddress,
+                                         SubmitPlan->RingDwords,
+                                         &cursor,
+                                         SubmitPlan->VsRegs,
+                                         SubmitPlan->PsRegs,
+                                         &shEv);
+    if (shStatus != BC250_GFX_SH_REG_OK) {
+        return BC250_GFX_RING_TXN_WRITE_FAILED;
+    }
+
+    /* 4. Bloco 2: Color Target 0 (8 DW) */
+    if (stage >= 1u && stage != BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT) {
+        pm4Status = Bc250Pm4EmitColorTarget0(SubmitPlan->RingCpuAddress,
+                                             SubmitPlan->RingDwords,
+                                             &cursor,
+                                             SubmitPlan->ColorTargetBaseGpuVa,
+                                             SubmitPlan->ColorTargetWidth,
+                                             SubmitPlan->ColorTargetHeight,
+                                             SubmitPlan->ColorTargetPitchBytes,
+                                             SubmitPlan->ColorTargetFormatIndex,
+                                             SubmitPlan->ColorTargetCompSwap);
+        if (pm4Status != BC250_PM4_OK) {
+            return BC250_GFX_RING_TXN_WRITE_FAILED;
+        }
+    } else {
+        uint32_t nIdx;
+        for (nIdx = 0u; nIdx < BC250_GFX_3D_DRAW_COLOR_DWORDS; ++nIdx) {
+            SubmitPlan->RingCpuAddress[cursor & (SubmitPlan->RingDwords - 1u)] = BC250_PM4_PACKET2_NOP;
+            cursor++;
+        }
+    }
+
+    /* 5. Bloco 3: Target Mask (4 DW: SET_CONTEXT_REG 0x008E + NOP) */
+    if (stage >= 1u && stage != BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT) {
+        uint32_t targetMaskVal = 0x0000000Fu; /* Habilita RT0 RGBA */
+        pm4Status = Bc250Pm4EmitSetContextReg(SubmitPlan->RingCpuAddress,
+                                              SubmitPlan->RingDwords,
+                                              &cursor,
+                                              BC250_PM4_REG_CB_TARGET_MASK,
+                                              &targetMaskVal,
+                                              1u);
+        if (pm4Status != BC250_PM4_OK) {
+            return BC250_GFX_RING_TXN_WRITE_FAILED;
+        }
+        pm4Status = Bc250Pm4EmitPacket2Nop(SubmitPlan->RingCpuAddress,
+                                           SubmitPlan->RingDwords,
+                                           &cursor);
+        if (pm4Status != BC250_PM4_OK) {
+            return BC250_GFX_RING_TXN_WRITE_FAILED;
+        }
+    } else {
+        uint32_t nIdx;
+        for (nIdx = 0u; nIdx < BC250_GFX_3D_DRAW_TARGET_MASK_DWORDS; ++nIdx) {
+            SubmitPlan->RingCpuAddress[cursor & (SubmitPlan->RingDwords - 1u)] = BC250_PM4_PACKET2_NOP;
+            cursor++;
+        }
+    }
+
+    /* 6. Bloco 4: Viewport & Scissor (20 DW) */
+    if (stage >= 2u && stage != BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT) {
+        vpStatus = Bc250GfxEmitViewportScissorStream(SubmitPlan->RingCpuAddress,
+                                                     SubmitPlan->RingDwords,
+                                                     &cursor,
+                                                     &vpPacket);
+        if (vpStatus != BC250_GFX_VPORT_OK) {
+            return BC250_GFX_RING_TXN_WRITE_FAILED;
+        }
+    } else {
+        uint32_t nIdx;
+        for (nIdx = 0u; nIdx < BC250_GFX_3D_DRAW_VPORT_DWORDS; ++nIdx) {
+            SubmitPlan->RingCpuAddress[cursor & (SubmitPlan->RingDwords - 1u)] = BC250_PM4_PACKET2_NOP;
+            cursor++;
+        }
+    }
+
+    /* 7. Bloco 5: Primitive Assembler (8 DW) */
+    if (stage >= 3u && stage != BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT) {
+        primStatus = Bc250GfxEmitPrimitiveAssemblerStream(SubmitPlan->RingCpuAddress,
+                                                          SubmitPlan->RingDwords,
+                                                          &cursor,
+                                                          &primPacket);
+        if (primStatus != BC250_GFX_PRIM_OK) {
+            return BC250_GFX_RING_TXN_WRITE_FAILED;
+        }
+    } else {
+        uint32_t nIdx;
+        for (nIdx = 0u; nIdx < BC250_GFX_3D_DRAW_PRIM_DWORDS; ++nIdx) {
+            SubmitPlan->RingCpuAddress[cursor & (SubmitPlan->RingDwords - 1u)] = BC250_PM4_PACKET2_NOP;
+            cursor++;
+        }
+    }
+
+    /* 8. Bloco 6: Draw Initiator (4 DW) ou 4 NOPs se SkipDraw / Stage < 4 / Stage == 5 */
+    if (stage >= 4u && stage != BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT) {
+        drawStatus = Bc250GfxEmitDrawInitiatorStream(SubmitPlan->RingCpuAddress,
+                                                    SubmitPlan->RingDwords,
+                                                    &cursor,
+                                                    &drawPacket);
+        if (drawStatus != BC250_GFX_DRAW_OK) {
+            return BC250_GFX_RING_TXN_WRITE_FAILED;
+        }
+    } else {
+        uint32_t nIdx;
+        for (nIdx = 0u; nIdx < BC250_GFX_3D_DRAW_INIT_DWORDS; ++nIdx) {
+            SubmitPlan->RingCpuAddress[cursor & (SubmitPlan->RingDwords - 1u)] = BC250_PM4_PACKET2_NOP;
+            cursor++;
+        }
+    }
+
+    /* 9. Bloco 7: Fence fisica WRITE_DATA (DST_SEL=5 Memory Direct MC) sobre poison em VRAM (8 DW) */
+    {
+        uint32_t wdControl = BC250_PM4_WD_CONFIRM | BC250_PM4_WD_DST_MEM; /* 0x00100500u */
+        pm4Status = Bc250Pm4EmitWriteData(SubmitPlan->RingCpuAddress,
+                                          SubmitPlan->RingDwords,
+                                          &cursor,
+                                          wdControl,
+                                          SubmitPlan->FenceGpuVa,
+                                          &SubmitPlan->FenceExpectedValue,
+                                          1u);
+        if (pm4Status != BC250_PM4_OK) {
+            return BC250_GFX_RING_TXN_WRITE_FAILED;
+        }
+
+        SubmitPlan->RingCpuAddress[cursor & (SubmitPlan->RingDwords - 1u)] = BC250_PM4_PACKET2_NOP;
+        cursor++;
+        SubmitPlan->RingCpuAddress[cursor & (SubmitPlan->RingDwords - 1u)] = BC250_PM4_PACKET2_NOP;
+        cursor++;
+        SubmitPlan->RingCpuAddress[cursor & (SubmitPlan->RingDwords - 1u)] = BC250_PM4_PACKET2_NOP;
+        cursor++;
+    }
+
+    if ((cursor - initialWptr) != BC250_GFX_3D_DRAW_STREAM_TOTAL_DWORDS) {
+        return BC250_GFX_RING_TXN_WRITE_FAILED;
+    }
+
+    SubmitEvidence->TargetWptrDwords = cursor;
+    SubmitEvidence->EmittedDwords = cursor - initialWptr;
+
+    /* 10. Verificacao estrita do stream emitido antes de disparar o CP no silicio */
+    verifyStatus = Bc250GfxVerify3DDrawStream(SubmitPlan->RingCpuAddress,
+                                             SubmitPlan->RingDwords,
+                                             initialWptr,
+                                             SubmitPlan);
+    if (verifyStatus != BC250_GFX_RING_TXN_OK) {
+        return verifyStatus;
+    }
+
+    /* 11. Atualiza shadow de WPTR em memoria (se configurado) */
+    if (SubmitPlan->WptrPollCpuAddress != NULL) {
+        *SubmitPlan->WptrPollCpuAddress = cursor;
+    }
+
+    /* 12. Dispara o anel avancando CP_RB0_WPTR no hardware */
+    if (!Bc250GfxTxnWrite(Interface, NULL, BC250_GFX_REG_CP_RB0_WPTR, cursor) ||
+        !Bc250GfxTxnWrite(Interface, NULL, BC250_GFX_REG_CP_RB0_WPTR_HI, 0u)) {
+        return BC250_GFX_RING_TXN_WRITE_FAILED;
+    }
+
+    /* 13. Laco de polling e afericao do tripe da Lei 2 */
+    maxPolls = (SubmitPlan->MaxPollIterations > 0u) ? SubmitPlan->MaxPollIterations : 2000u;
+    stallUs = (SubmitPlan->StallMicroseconds > 0u) ? SubmitPlan->StallMicroseconds : 10u;
+    ringBytes = SubmitPlan->RingDwords * (uint32_t)sizeof(uint32_t);
+    targetWptrBytes = cursor * (uint32_t)sizeof(uint32_t);
+
+    for (iter = 0u; iter < maxPolls; ++iter) {
+        uint32_t rptrMmio = 0u;
+        uint32_t rptrWb = 0u;
+        uint32_t fenceObs;
+
+        /* Dreno e coerencia HDP (PCIe) para que a leitura de CPU sobre VRAM
+         * enxergue os dados gravados pelo motor CP da GPU na VRAM (Lei 2) */
+        (void)Bc250GfxTxnWrite(Interface, NULL, BC250_GFX_REG_HDP_MEM_COHERENCY_FLUSH_CNTL, 1u);
+
+        fenceObs = *(volatile const uint32_t *)SubmitPlan->FenceCpuAddress;
+
+        if (!Bc250GfxTxnRead(Interface, NULL, BC250_GFX_REG_CP_RB0_RPTR, &rptrMmio)) {
+            return BC250_GFX_RING_TXN_READBACK_MISMATCH;
+        }
+
+        if (SubmitPlan->RptrWbCpuAddress != NULL) {
+            rptrWb = *(volatile const uint32_t *)SubmitPlan->RptrWbCpuAddress;
+        }
+
+        SubmitEvidence->RptrObservedMmio = rptrMmio;
+        SubmitEvidence->RptrObservedWb = rptrWb;
+        SubmitEvidence->FenceObserved = fenceObs;
+
+        verdict = Bc250GfxRingClassifyTripod(
+            ringBytes,
+            targetWptrBytes,
+            rptrWb * (uint32_t)sizeof(uint32_t),
+            rptrMmio * (uint32_t)sizeof(uint32_t),
+            SubmitPlan->FenceExpectedValue,
+            fenceObs,
+            0u,
+            &rptrSource);
+
+        SubmitEvidence->TripodVerdict = verdict;
+        SubmitEvidence->RptrSource = rptrSource;
+
+        if (verdict == BC250_TRIPOD_PROVEN) {
+            SubmitEvidence->PollsCompleted = iter + 1u;
+            SubmitEvidence->SubmitCompleted = 1u;
+            (void)Bc250GfxTxnRead(Interface, NULL, BC250_GFX_REG_GRBM_STATUS, &SubmitEvidence->GrbmStatus);
+            (void)Bc250GfxTxnRead(Interface, NULL, BC250_GFX_REG_CP_STAT, &SubmitEvidence->CpStat);
+            (void)Bc250GfxTxnRead(Interface, NULL, BC250_GFX_REG_CP_PFP_INSTR_PNTR, &SubmitEvidence->PfpPntr);
+            (void)Bc250GfxTxnRead(Interface, NULL, BC250_GFX_REG_CP_ME_INSTR_PNTR, &SubmitEvidence->MePntr);
+            return BC250_GFX_RING_TXN_OK;
+        }
+
+        if (Interface->Stall != NULL && stallUs > 0u) {
+            Interface->Stall(Interface->Context, stallUs);
+        }
+    }
+
+    (void)Bc250GfxTxnRead(Interface, NULL, BC250_GFX_REG_GRBM_STATUS, &SubmitEvidence->GrbmStatus);
+    (void)Bc250GfxTxnRead(Interface, NULL, BC250_GFX_REG_CP_STAT, &SubmitEvidence->CpStat);
+    (void)Bc250GfxTxnRead(Interface, NULL, BC250_GFX_REG_CP_PFP_INSTR_PNTR, &SubmitEvidence->PfpPntr);
+    (void)Bc250GfxTxnRead(Interface, NULL, BC250_GFX_REG_CP_ME_INSTR_PNTR, &SubmitEvidence->MePntr);
+
+    SubmitEvidence->PollsCompleted = maxPolls;
+    SubmitEvidence->SubmitCompleted = 0u;
+    return BC250_GFX_RING_TXN_SUBMIT_TIMEOUT;
+}
+
 const char *Bc250GfxRingTxnStatusName(BC250_GFX_RING_TXN_STATUS Status)
 {
     switch (Status) {
@@ -359,6 +1050,10 @@ const char *Bc250GfxRingTxnStatusName(BC250_GFX_RING_TXN_STATUS Status)
     case BC250_GFX_RING_TXN_NOT_STARTABLE:      return "NOT_STARTABLE";
     case BC250_GFX_RING_TXN_ROLLBACK_FAILED:    return "ROLLBACK_FAILED";
     case BC250_GFX_RING_TXN_POLL_CNTL_BORROWED: return "POLL_CNTL_BORROWED";
+    case BC250_GFX_RING_TXN_NOT_ACTIVE:         return "NOT_ACTIVE";
+    case BC250_GFX_RING_TXN_FENCE_POISON_FAILED: return "FENCE_POISON_FAILED";
+    case BC250_GFX_RING_TXN_SUBMIT_TIMEOUT:     return "SUBMIT_TIMEOUT";
+    case BC250_GFX_RING_TXN_TRIPOD_FAILED:      return "TRIPOD_FAILED";
     default:                                    return "DESCONHECIDO";
     }
 }

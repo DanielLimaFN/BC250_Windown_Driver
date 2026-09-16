@@ -121,7 +121,9 @@ static inline uint32_t Bc250SdmaAsyncSlotFenceOffset(uint32_t SlotIndex)
  * Proveniência: docs/03_CATALOGO_DE_REGISTRADORES.md linha 543 e dbg/hw.c:799.
  * Bit 23 (0x00800000) e SOFT_RESET_SDMA0 (validado em silicio em 2026-08-23).
  */
+#ifndef BC250_GRBM_REG_SOFT_RESET
 #define BC250_GRBM_REG_SOFT_RESET         0x08020u
+#endif
 #define BC250_GRBM_SOFT_RESET_SDMA0       0x00800000u
 
 /*
@@ -286,6 +288,13 @@ typedef struct BC250_SDMA_PRESENT_CONTEXT {
     /* Endereços de VRAM e GOP Scanout MC */
     uint64_t VramMcStart;
     uint64_t ScanoutGpuAddress;
+
+    /*
+     * Último offset de segmento apresentado via Escape (PRESENT_BLT / Vulkan scanout).
+     * Permite a Bc250DxgkDdiPresent apresentar a imagem real destilada quando a swapchain
+     * do dxgkrnl vier vazia, eliminando a alternância com tela preta.
+     */
+    volatile UINT64 LastEscapeSegmentOffset;
 
 #define BC250_SDMA_IN_FLIGHT_CAPACITY 32u
 

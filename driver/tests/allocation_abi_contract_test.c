@@ -13,8 +13,8 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
 #pragma function(memcpy)
 void * __cdecl memcpy(void *Destination, const void *Source, size_t Length)
 {
-    unsigned char *d = (unsigned char *)Destination;
-    const unsigned char *s = (const unsigned char *)Source;
+    volatile unsigned char *d = (volatile unsigned char *)Destination;
+    const volatile unsigned char *s = (const volatile unsigned char *)Source;
     size_t i;
     for (i = 0; i < Length; ++i) d[i] = s[i];
     return Destination;
@@ -264,6 +264,44 @@ static int TestAbiParseAllErrorCodes(void)
     test.ByteSize = 65537ull; /* not multiple of alignment */
     CHECK(Bc250AllocationAbiParse(&test, sizeof(test), &output) ==
         BC250_ALLOCATION_ABI_BAD_ALIGNMENT);
+
+    /* V1 (40 bytes legados do Mesa RADV) */
+    {
+        struct {
+            uint32_t Magic;
+            uint32_t Version;
+            uint32_t StructSize;
+            uint32_t Flags;
+            uint64_t AllocationToken;
+            uint64_t ByteSize;
+            uint64_t Alignment;
+        } v1;
+        v1.Magic = BC250_ALLOCATION_PRIVATE_MAGIC;
+        v1.Version = 1u;
+        v1.StructSize = 40u;
+        v1.Flags = 0u;
+        v1.AllocationToken = 0xCAFEull;
+        v1.ByteSize = 65536ull;
+        v1.Alignment = 4096ull;
+
+        CHECK(Bc250AllocationAbiParse(&v1, (uint32_t)sizeof(v1), &output) ==
+            BC250_ALLOCATION_ABI_OK);
+        CHECK(output.AllocationToken == 0xCAFEull);
+        CHECK(output.ByteSize == 65536ull);
+        CHECK(output.Alignment == 4096ull);
+        CHECK(!Bc250AllocationHasGeometry(&output));
+
+        /* Caso negativo V1: versao errada */
+        v1.Version = 2u;
+        CHECK(Bc250AllocationAbiParse(&v1, (uint32_t)sizeof(v1), &output) ==
+            BC250_ALLOCATION_ABI_BAD_VERSION);
+        v1.Version = 1u;
+
+        /* Caso negativo V1: StructSize errado */
+        v1.StructSize = 48u;
+        CHECK(Bc250AllocationAbiParse(&v1, (uint32_t)sizeof(v1), &output) ==
+            BC250_ALLOCATION_ABI_BAD_VERSION);
+    }
 
     return 1;
 }

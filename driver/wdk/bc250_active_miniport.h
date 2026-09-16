@@ -256,6 +256,48 @@ typedef struct BC250_PFP_DIRECT_LOAD_EVIDENCE {
 
 #define BC250_ACTIVE_GPUVA_JOURNAL_SLOTS 4u
 
+/* Motor grafico persistente (CP_RB0 / PFP / ME) no Node 1 (3D Graphics) */
+typedef struct BC250_GFX_ENGINE {
+    volatile LONG State; /* 0 = OFFLINE, 1 = ONLINE, 2 = FAULTED */
+    KSPIN_LOCK Lock;
+
+    /* Recursos de VRAM e mapeamento de anel */
+    BC250_VRAM_TOKEN VramToken;
+    uint64_t VramTotalBytes;
+    uint64_t RingGpuVa;
+    uint32_t RingDwords;
+    uint32_t *RingCpuVirtual;
+
+    uint64_t RptrWbGpuVa;
+    volatile uint32_t *RptrWbCpuVirtual;
+
+    uint64_t WptrPollGpuVa;
+    volatile uint32_t *WptrPollCpuVirtual;
+
+    uint64_t FenceGpuVa;
+    volatile uint32_t *FenceCpuVirtual;
+
+    /* Cursores de hardware e fences */
+    uint32_t WptrDwords;
+    uint32_t LastRptrMmio;
+    uint32_t LastRptrWb;
+    uint64_t LastSubmittedFence;
+    uint64_t LastRetiredFence;
+
+    /* Telemetria e metricas */
+    uint32_t SubmitCalls;
+    uint32_t SubmitAccepted;
+    uint32_t SubmitRejected;
+    uint32_t PollCalls;
+    uint32_t RetiredCount;
+    uint32_t TdrResets;
+    uint32_t LastSubmitSizeDwords;
+    uint64_t LastSubmitVa;
+
+    BC250_GFX_RING_PLAN Plan;
+    BC250_GFX_RING_TXN_EVIDENCE Evidence;
+} BC250_GFX_ENGINE;
+
 typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     uint32_t Signature;
     PDEVICE_OBJECT PhysicalDeviceObject;
@@ -369,8 +411,12 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     /* B.1 -- ensaio escalonado do anel grafico. 0 = nada (default). */
     uint32_t GfxRingBringupLevel;
     uint32_t GfxRingBringupPresent;
+    uint32_t GfxRingIsolationStage;
+    uint32_t GfxRingStagePresent;
     BC250_GFX_RING_TXN_STATUS GfxRingBringupStatus;
     BC250_GFX_RING_TXN_EVIDENCE GfxRingBringupEvidence;
+    BC250_GFX_RING_SUBMIT_SH_REG_EVIDENCE GfxRingSubmitEvidence;
+    BC250_GFX_RING_SUBMIT_3D_DRAW_EVIDENCE GfxRing3DDrawEvidence;
     BC250_HQD_BANK_PROBE_STATUS MecHqdBankProbeStatus;
     BC250_HQD_BANK_PROBE_EVIDENCE MecHqdBankProbeEvidence;
     BC250_HQD_PROGRAM_STATUS HqdProgramStatus;
@@ -478,6 +524,8 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     uint32_t PersistentSubmission;
     uint32_t TunablePersistentSubmissionPresent;
     BC250_SUBMISSION_ENGINE SubmissionEngine;
+    /* Motor grafico persistente (CP_RB0 / PFP / ME) no Node 1 (3D Graphics) */
+    BC250_GFX_ENGINE GfxEngine;
     /* CPU observation of the first IB page, before the MEC is kicked.
      * Bounded prefix, never a GPU-execution verdict. */
     uint64_t Node1IbObservedVa;

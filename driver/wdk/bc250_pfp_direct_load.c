@@ -1332,10 +1332,12 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
         READ_REGISTER_ULONG((volatile ULONG *)&pDest[0]);
 
     (void)Bc250PfpWrite(Context, R_CP_RB0_ACTIVE, 0u);
-    (void)Bc250PfpWrite(Context, R_CP_ME_CNTL, Evidence->CpMeCntlBefore);
-    (void)Bc250PfpWrite(Context, R_CP_MEC_CNTL, origCpMecCntl);
-    KeMemoryBarrier();
-    KeStallExecutionProcessor(50u);
+    if (Context->GfxRingBringupLevel == 0u) {
+        (void)Bc250PfpWrite(Context, R_CP_ME_CNTL, Evidence->CpMeCntlBefore);
+        (void)Bc250PfpWrite(Context, R_CP_MEC_CNTL, origCpMecCntl);
+        KeMemoryBarrier();
+        KeStallExecutionProcessor(50u);
+    }
 
     (void)Bc250PfpRead(Context, R_FAULT_STATUS,
         &Evidence->FaultStatusAfter);
@@ -1399,11 +1401,13 @@ Restore:
         (void)Bc250PfpWrite(Context, R_GRBM_GFX_CNTL, 0u);
         (void)Bc250PfpWrite(Context, R_CP_MAX_CONTEXT, origCpMaxContext);
         (void)Bc250PfpWrite(Context, R_CP_SCRATCH_REG0, origScratchReg0);
-        /* Restaurando com os engines em HALT: invalidar basta, primar nao. */
-        (void)Bc250PfpIcacheOpAll(Context,
-            BC250_IC_OP_INVALIDATE_CACHE, BC250_IC_OP_INVALIDATE_CACHE_COMPLETE);
-        (void)Bc250PfpWrite(Context, R_CP_MEC_CNTL, origCpMecCntl);
-        (void)Bc250PfpWrite(Context, R_CP_ME_CNTL, Evidence->CpMeCntlBefore);
+        if (Context->GfxRingBringupLevel == 0u || status != BC250_PFP_DIRECT_LOAD_OK) {
+            /* Restaurando com os engines em HALT: invalidar basta, primar nao. */
+            (void)Bc250PfpIcacheOpAll(Context,
+                BC250_IC_OP_INVALIDATE_CACHE, BC250_IC_OP_INVALIDATE_CACHE_COMPLETE);
+            (void)Bc250PfpWrite(Context, R_CP_MEC_CNTL, origCpMecCntl);
+            (void)Bc250PfpWrite(Context, R_CP_ME_CNTL, Evidence->CpMeCntlBefore);
+        }
         (void)Bc250PfpWrite(Context, R_RLC_CNTL, Evidence->RlcCntlBefore);
         (void)Bc250PfpWrite(Context, R_GCVM_CONTEXT0_CNTL, origCtx0Cntl);
         (void)Bc250PfpWrite(Context, R_GCVM_CONTEXT0_PT_END_LO, origCtx0PtEndLo);
@@ -1419,11 +1423,16 @@ Restore:
         (void)Bc250PfpWrite(Context, invalidateReq, 0x00F80001u);
         KeStallExecutionProcessor(50u);
         (void)Bc250PfpRead(Context, R_CP_RB0_ACTIVE, &Evidence->Rb0ActiveAfter);
-        if (Bc250PfpRead(Context, R_CP_ME_CNTL, &Evidence->CpMeCntlAfter) &&
-            Evidence->CpMeCntlAfter == Evidence->CpMeCntlBefore &&
-            Bc250PfpRead(Context, R_RLC_CNTL, &value) &&
-            value == Evidence->RlcCntlBefore)
-            Evidence->RegisterRestorePassed = 1u;
+        {
+            uint32_t expectedMe = (Context->GfxRingBringupLevel > 0u && status == BC250_PFP_DIRECT_LOAD_OK)
+                ? Evidence->CpMeCntlApplied
+                : Evidence->CpMeCntlBefore;
+            if (Bc250PfpRead(Context, R_CP_ME_CNTL, &Evidence->CpMeCntlAfter) &&
+                Evidence->CpMeCntlAfter == expectedMe &&
+                Bc250PfpRead(Context, R_RLC_CNTL, &value) &&
+                value == Evidence->RlcCntlBefore)
+                Evidence->RegisterRestorePassed = 1u;
+        }
     } else if (registersTouched == 0u && snapshotValid != 0u) {
         Evidence->RegisterRestorePassed = 1u;
         Evidence->CpMeCntlAfter = Evidence->CpMeCntlBefore;

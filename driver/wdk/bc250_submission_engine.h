@@ -580,6 +580,14 @@ uint32_t Bc250WddmFenceTrackerDrain(
     _Out_writes_to_(Max, return) BC250_WDDM_FENCE_ENTRY *Out,
     _In_ uint32_t Max);
 
+_Check_return_
+uint32_t Bc250WddmFenceTrackerDrainEx(
+    _Inout_ BC250_WDDM_FENCE_TRACKER *Tracker,
+    _In_ uint64_t RetiredMecFence,
+    _In_ uint64_t RetiredGfxFence,
+    _Out_writes_to_(Max, return) BC250_WDDM_FENCE_ENTRY *Out,
+    _In_ uint32_t Max);
+
 /* Consulta somente o namespace WDDM já notificado, nunca a fence do ring. */
 _Check_return_
 BOOLEAN Bc250WddmFenceTrackerQueryCurrent(

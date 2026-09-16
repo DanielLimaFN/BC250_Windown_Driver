@@ -153,6 +153,30 @@ echo [cc] bc250_gfx_shader_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_gfx_shader_contract.obj" "%ROOTDIR%\driver\core\bc250_gfx_shader_contract.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
+echo [cc] bc250_gfx_observable_shader.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gfx_observable_shader.obj" "%ROOTDIR%\driver\core\bc250_gfx_observable_shader.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [cc] bc250_gfx_shader_staging_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gfx_shader_staging_contract.obj" "%ROOTDIR%\driver\core\bc250_gfx_shader_staging_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [cc] bc250_gfx_sh_reg_packet.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gfx_sh_reg_packet.obj" "%ROOTDIR%\driver\core\bc250_gfx_sh_reg_packet.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [cc] bc250_gfx_viewport_scissor.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gfx_viewport_scissor.obj" "%ROOTDIR%\driver\core\bc250_gfx_viewport_scissor.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [cc] bc250_gfx_primitive_assembler.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gfx_primitive_assembler.obj" "%ROOTDIR%\driver\core\bc250_gfx_primitive_assembler.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [cc] bc250_gfx_draw_initiator.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gfx_draw_initiator.obj" "%ROOTDIR%\driver\core\bc250_gfx_draw_initiator.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
 echo [cc] bc250_golden_settings_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_golden_settings_contract.obj" "%ROOTDIR%\driver\core\bc250_golden_settings_contract.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -783,6 +807,11 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_gfx_ring_contract.obj" ^
   "%ODIR%\bc250_gfx_ring_transaction.obj" ^
   "%ODIR%\bc250_blt_proof_contract.obj" ^
+  "%ODIR%\bc250_pm4_packet_builder.obj" ^
+  "%ODIR%\bc250_gfx_sh_reg_packet.obj" ^
+  "%ODIR%\bc250_gfx_viewport_scissor.obj" ^
+  "%ODIR%\bc250_gfx_primitive_assembler.obj" ^
+  "%ODIR%\bc250_gfx_draw_initiator.obj" ^
   "%ODIR%\gfx_ring_contract_test.obj" kernel32.lib
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
@@ -812,6 +841,128 @@ if %ERRORLEVEL% NEQ 0 (
   exit /b 1
 )
 echo GFX SHADER CONTRACT: OK ^(granularidade conferida contra manifesto de compilador real, divisao 8/40 do endereco, RSRC do manifesto com campos derivados conferidos, MEM_ORDERED por estagio^)
+
+echo [cc] gfx_observable_shader_test.c
+cl %CFLAGS% /Fo"%ODIR%\gfx_observable_shader_test.obj" "%ROOTDIR%\driver\tests\gfx_observable_shader_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] gfx_observable_shader_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gfx_observable_shader_test.exe" ^
+  "%ODIR%\bc250_gfx_observable_shader.obj" ^
+  "%ODIR%\bc250_gfx_shader_contract.obj" ^
+  "%ODIR%\bc250_isa_validator.obj" ^
+  "%ODIR%\bc250_observable_shader.obj" ^
+  "%ODIR%\gfx_observable_shader_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\gfx_observable_shader_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(gfx_observable_shader_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+echo GFX OBSERVABLE SHADER: OK ^(VS pos0 e PS mrt0 em ISA gfx1010 Classe H, s_endpgm provado, integracao com contrato B.2.1^)
+
+echo [cc] gfx_shader_staging_test.c
+cl %CFLAGS% /Fo"%ODIR%\gfx_shader_staging_test.obj" "%ROOTDIR%\driver\tests\gfx_shader_staging_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] gfx_shader_staging_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gfx_shader_staging_test.exe" ^
+  "%ODIR%\bc250_gfx_shader_staging_contract.obj" ^
+  "%ODIR%\bc250_gfx_observable_shader.obj" ^
+  "%ODIR%\bc250_gfx_shader_contract.obj" ^
+  "%ODIR%\bc250_isa_validator.obj" ^
+  "%ODIR%\bc250_observable_shader.obj" ^
+  "%ODIR%\gfx_shader_staging_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\gfx_shader_staging_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(gfx_shader_staging_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+echo GFX SHADER STAGING CONTRACT: OK ^(alinhamento 256B, deteccao de sobreposicao, readback proof e integracao com B.2.1/B.2.2^)
+
+echo [cc] gfx_sh_reg_packet_test.c
+cl %CFLAGS% /Fo"%ODIR%\gfx_sh_reg_packet_test.obj" "%ROOTDIR%\driver\tests\gfx_sh_reg_packet_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] gfx_sh_reg_packet_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gfx_sh_reg_packet_test.exe" ^
+  "%ODIR%\bc250_gfx_sh_reg_packet.obj" ^
+  "%ODIR%\bc250_pm4_packet_builder.obj" ^
+  "%ODIR%\bc250_gfx_shader_contract.obj" ^
+  "%ODIR%\bc250_isa_validator.obj" ^
+  "%ODIR%\bc250_observable_shader.obj" ^
+  "%ODIR%\gfx_sh_reg_packet_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\gfx_sh_reg_packet_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(gfx_sh_reg_packet_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+echo GFX SH REG PACKET CONTRACT: OK ^(SET_SH_REG 0x76 sem bit compute, 12 dwords para VS/PS, fail-closed^)
+
+echo [cc] gfx_viewport_scissor_test.c
+cl %CFLAGS% /Fo"%ODIR%\gfx_viewport_scissor_test.obj" "%ROOTDIR%\driver\tests\gfx_viewport_scissor_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] gfx_viewport_scissor_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gfx_viewport_scissor_test.exe" ^
+  "%ODIR%\bc250_gfx_viewport_scissor.obj" ^
+  "%ODIR%\bc250_pm4_packet_builder.obj" ^
+  "%ODIR%\gfx_viewport_scissor_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\gfx_viewport_scissor_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(gfx_viewport_scissor_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+echo GFX VIEWPORT ^& SCISSOR CONTRACT: OK ^(SET_CONTEXT_REG 0x69, 20 DW stream, IEEE-754 math, fail-closed^)
+
+echo [cc] gfx_primitive_assembler_test.c
+cl %CFLAGS% /Fo"%ODIR%\gfx_primitive_assembler_test.obj" "%ROOTDIR%\driver\tests\gfx_primitive_assembler_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] gfx_primitive_assembler_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gfx_primitive_assembler_test.exe" ^
+  "%ODIR%\bc250_gfx_primitive_assembler.obj" ^
+  "%ODIR%\bc250_pm4_packet_builder.obj" ^
+  "%ODIR%\gfx_primitive_assembler_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\gfx_primitive_assembler_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(gfx_primitive_assembler_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+echo GFX PRIMITIVE ASSEMBLER CONTRACT: OK ^(SET_UCONFIG_REG 0x79, DI_PT_TRILIST 0x04, 8 DW stream, fail-closed^)
+
+echo [cc] gfx_draw_initiator_test.c
+cl %CFLAGS% /Fo"%ODIR%\gfx_draw_initiator_test.obj" "%ROOTDIR%\driver\tests\gfx_draw_initiator_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] gfx_draw_initiator_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gfx_draw_initiator_test.exe" ^
+  "%ODIR%\bc250_gfx_draw_initiator.obj" ^
+  "%ODIR%\bc250_pm4_packet_builder.obj" ^
+  "%ODIR%\gfx_draw_initiator_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\gfx_draw_initiator_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(gfx_draw_initiator_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+echo GFX DRAW INITIATOR CONTRACT: OK ^(DRAW_INDEX_AUTO 0x2D, AUTO_INDEX 0x02, 4 DW stream, fail-closed^)
 
 echo [cc] golden_settings_contract_test.c
 cl %CFLAGS% /Fo"%ODIR%\golden_settings_contract_test.obj" "%ROOTDIR%\driver\tests\golden_settings_contract_test.c"
@@ -1771,6 +1922,13 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_persistent_ring_contract.obj" ^
   "%ODIR%\bc250_submission_engine.obj" ^
   "%ODIR%\bc250_active_miniport.obj" ^
+  "%ODIR%\bc250_gfx_ring_contract.obj" ^
+  "%ODIR%\bc250_gfx_ring_transaction.obj" ^
+  "%ODIR%\bc250_gfx_sh_reg_packet.obj" ^
+  "%ODIR%\bc250_gfx_viewport_scissor.obj" ^
+  "%ODIR%\bc250_gfx_primitive_assembler.obj" ^
+  "%ODIR%\bc250_gfx_draw_initiator.obj" ^
+  "%ODIR%\bc250_gfx_observable_shader.obj" ^
   "%ODIR%\bc250_boot_fuse.obj" ^
   "%ODIR%\bc250_sdma_present.obj" ^
   "%ODIR%\active_miniport_test.obj" kernel32.lib
@@ -1965,6 +2123,11 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_active_miniport_driver.obj" ^
   "%ODIR%\bc250_gfx_ring_contract.obj" ^
   "%ODIR%\bc250_gfx_ring_transaction.obj" ^
+  "%ODIR%\bc250_gfx_sh_reg_packet.obj" ^
+  "%ODIR%\bc250_gfx_viewport_scissor.obj" ^
+  "%ODIR%\bc250_gfx_primitive_assembler.obj" ^
+  "%ODIR%\bc250_gfx_draw_initiator.obj" ^
+  "%ODIR%\bc250_gfx_observable_shader.obj" ^
   "%ODIR%\bc250_boot_fuse_driver.obj" ^
   "%ODIR%\bc250_sdma_present_driver.obj" ^
   "%WDK%\Lib\%WDKVER%\km\x64\ntoskrnl.lib" ^
@@ -2062,6 +2225,7 @@ echo ISA VALIDATOR ^& COMPUTE UMD: OK ^(Wave32/64 + SGPR/VGPR/LDS bounds + IT_DI
 echo DXBC PARSER CONTRACT: OK ^(fail-closed SM4/SM5 parser + opcode stream iterator, offline^)
 echo OBSERVABLE COMPUTE DISPATCH: OK ^(shader state + complete dispatch + post-dispatch fence + strict verdict, offline^)
 echo OBSERVABLE GFX1010 SHADER: OK ^(allowlisted blob + SHA-256 provenance + negative mutation test, offline^)
+echo GFX VIEWPORT ^& SCISSOR CONTRACT: OK ^(SET_CONTEXT_REG 0x69, 20 DW stream, IEEE-754 math, fail-closed^)
 echo CONTRACT INTEGRATION AUDIT: OK ^(offline structures only; not hardware readiness^)
 echo MCDM DDI CALLBACK TABLE: OK ^(36 minimum + 5 GPUVA pointers; semantics fail-closed^)
 echo MCDM OBJECT LIFECYCLE: OK ^(typed handles + allocation open/close + debug snapshot + Stop race, offline^)

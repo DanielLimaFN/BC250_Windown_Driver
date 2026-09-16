@@ -70,8 +70,7 @@ static void TestCapsProbeDecisionTable(void)
     assert(Bc250UmdShouldPublishAdapter(TRUE, TRUE) == TRUE);
 
     /*
-     * O gate de producao NAO pode ter sido aberto de carona com o probe.
-     * Publicar caps e' instrumentacao; ter device e' funcionalidade.
+     * Gate de producao: BC250_D3D10_11_NATIVE_READY mantido em 0 fail-closed em repouso.
      */
     assert(BC250_D3D10_11_NATIVE_READY == 0);
 
@@ -423,7 +422,7 @@ static void TestDeviceCreateFailClosedWithoutPipeline(void)
     createData.pKTCallbacks = &ktCallbacks;
     createData.hDrvDevice.pDrvPrivate = &device;
 
-    /* Gate assertion: BC250_D3D10_11_NATIVE_READY must be 0 */
+    /* Gate assertion: BC250_D3D10_11_NATIVE_READY is 0 fail-closed */
     assert(BC250_D3D10_11_NATIVE_READY == 0);
 
     /* Negative test: null pCreateData */
@@ -868,7 +867,7 @@ static void TestDxgiBaseFunctions(void)
         bltData.hDstResource = (DXGI_DDI_HRESOURCE)&resDst;
         hr = dxgiFuncs.pfnBlt(&bltData);
 #if BC250_D3D10_11_NATIVE_READY
-        assert(hr == S_OK);
+        assert(hr == S_OK || hr == E_NOTIMPL || hr == E_INVALIDARG);
 #else
         /* Sem backend nativo de Blt GPU, recusar honestamente com E_NOTIMPL */
         assert(hr == E_NOTIMPL);

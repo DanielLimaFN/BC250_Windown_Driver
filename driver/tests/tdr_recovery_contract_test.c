@@ -133,6 +133,22 @@ static int Bc250RunTdrRecoveryContractTest(void)
     CHECK(Bc250TdrValidateMecRestartReadback(0u, 4u, 0u, 0u, 0u, 0u) == BC250_TDR_RESTART_NOT_READY);
     CHECK(Bc250TdrValidateMecRestartReadback(0u, 0u, 4u, 0u, 0u, 0u) == BC250_TDR_RESTART_NOT_READY);
 
+    /* 8. Readback minimo antes do restart do anel grafico CP_RB0 (Node 1 GFX). */
+    /* Estado nominal: RB0_ACTIVE=1, RPTR==WPTR==0, MeCntl unhalted (bits 0..2=0), SoftReset=0 */
+    CHECK(Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 0u, 0u) == BC250_TDR_OK);
+    CHECK(Bc250TdrValidateGfxRestartReadback(1u, 16u, 16u, 0u, 0u) == BC250_TDR_OK);
+    /* Anel inativo: restart invalido */
+    CHECK(Bc250TdrValidateGfxRestartReadback(0u, 0u, 0u, 0u, 0u) == BC250_TDR_RESTART_NOT_READY);
+    /* Ponteiros dessincronizados (RPTR != WPTR): restart invalido */
+    CHECK(Bc250TdrValidateGfxRestartReadback(1u, 0u, 16u, 0u, 0u) == BC250_TDR_RESTART_NOT_READY);
+    CHECK(Bc250TdrValidateGfxRestartReadback(1u, 16u, 0u, 0u, 0u) == BC250_TDR_RESTART_NOT_READY);
+    /* Micro-engines ainda halted (bits 0..2 de CP_ME_CNTL): restart invalido */
+    CHECK(Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 1u, 0u) == BC250_TDR_RESTART_NOT_READY);
+    CHECK(Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 7u, 0u) == BC250_TDR_RESTART_NOT_READY);
+    /* Soft reset preso em GRBM_SOFT_RESET (bit 0 CP ou bit 16 GFX): restart invalido */
+    CHECK(Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 0u, 0x00000001u) == BC250_TDR_RESTART_NOT_READY);
+    CHECK(Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 0u, 0x00010000u) == BC250_TDR_RESTART_NOT_READY);
+
     return 1;
 }
 

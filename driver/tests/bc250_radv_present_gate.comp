@@ -1,10 +1,14 @@
 #version 450
 
 /*
- * BC-250 RADV WDDM Presentation Gate Shader
+ * BC-250 RADV WDDM Presentation Gate Shader - Multi-Act Tech Demo
  * Target: AMD BC-250 APU (1002:13FE, Cyan Skillfish 2 / GFX1013)
  * Resolution: 2560 x 1080 (Native UEFI GOP mode)
  * Format: BGRA8_UNORM (32 bits per pixel, 10240 bytes pitch)
+ *
+ * Act 0: Bouncing Logo (DVD style screen saver over clean static SMPTE bars)
+ * Act 1: Seamless Carousel (Subpixel continuous horizontal scrolling)
+ * Act 2: Volumetric Neon Wave (Soft glowing light wave across static bars)
  */
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
@@ -18,6 +22,32 @@ layout(push_constant) uniform PushConstants {
     uint total_frames;
 } pc;
 
+uint get_smpte_color(uint barIndex)
+{
+    switch (barIndex) {
+        case 0u: return 0xFFFFFFFFu; // White   (B=FF, G=FF, R=FF)
+        case 1u: return 0xFF00FFFFu; // Yellow  (B=00, G=FF, R=FF)
+        case 2u: return 0xFFFFFF00u; // Cyan    (B=FF, G=FF, R=00)
+        case 3u: return 0xFF00FF00u; // Green   (B=00, G=FF, R=00)
+        case 4u: return 0xFFFF00FFu; // Magenta (B=FF, G=00, R=FF)
+        case 5u: return 0xFF0000FFu; // Red     (B=00, G=00, R=FF)
+        case 6u: return 0xFFFF0000u; // Blue    (B=FF, G=00, R=00)
+        default: return 0xFF000000u;
+    }
+}
+
+uint get_badge_gold(uint frame)
+{
+    if (frame == 0u) {
+        return 0xFFBC2501u;
+    }
+    uint pulse = (frame * 4u) % 120u;
+    uint wave = (pulse < 60u) ? pulse : (120u - pulse); // 0..60
+    uint g_comp = 0xBCu + (wave / 3u); // 188..208
+    uint b_comp = 0x01u + (wave / 2u); // 1..31
+    return 0xFF000000u | (0xFFu << 16u) | (g_comp << 8u) | b_comp;
+}
+
 void main()
 {
     uint x = gl_GlobalInvocationID.x;
@@ -28,65 +58,130 @@ void main()
     }
 
     uint pixelIndex = y * 2560u + x;
-    uint color = 0xFF000000u; // Alpha = 0xFF, Default Black
+    uint color = 0xFF000000u; // Default Black
 
-    // 1. Central Signature Badge (x: 1130..1430, y: 440..640)
-    if (x >= 1130u && x <= 1430u && y >= 440u && y <= 640u) {
-        // Border: 4 pixels black
-        if (x <= 1134u || x >= 1426u || y <= 444u || y >= 636u) {
-            color = 0xFF000000u; // Black border
-        } else if (x <= 1138u || x >= 1422u || y <= 448u || y >= 632u) {
-            color = 0xFFFFFFFFu; // White inner border
-        } else {
-            // Inner Badge Color: BC250 Signature Gold (R=255, G=188, B=0 -> BGRA: B=0, G=188, R=255)
-            // Little-endian BGRA8: (A=0xFF << 24) | (R=0xFF << 16) | (G=0xBC << 8) | (B=0x25)
-            if (pc.frame_index == 0u) {
-                color = 0xFFBC2501u;
+    // =========================================================================
+    // FRAME 0: CALIBRATION PATTERN (Byte Proof 8/8 zones exact contract)
+    // =========================================================================
+    if (pc.frame_index == 0u) {
+        if (x >= 1130u && x <= 1430u && y >= 440u && y <= 640u) {
+            if (x <= 1134u || x >= 1426u || y <= 444u || y >= 636u) {
+                color = 0xFF000000u; // Black border
+            } else if (x <= 1138u || x >= 1422u || y <= 448u || y >= 632u) {
+                color = 0xFFFFFFFFu; // White inner border
             } else {
-                // Pulsating metallic golden glow during continuous playback
-                uint pulse = (pc.frame_index * 4u) % 120u;
-                uint wave = (pulse < 60u) ? pulse : (120u - pulse); // 0..60
-                uint g_comp = 0xBCu + (wave / 3u); // 188..208
-                uint b_comp = 0x01u + (wave / 2u); // 1..31
-                color = 0xFF000000u | (0xFFu << 16u) | (g_comp << 8u) | b_comp;
+                color = 0xFFBC2501u; // BC250 Gold core
             }
+        } else if (y < 810u) {
+            uint barWidth = 2560u / 7u; // ~365 pixels
+            uint barIndex = x / barWidth;
+            if (barIndex > 6u) barIndex = 6u;
+            color = get_smpte_color(barIndex);
+        } else {
+            uint intensity = (x * 255u) / 2560u;
+            color = 0xFF000000u | (intensity << 16u) | (intensity << 8u) | intensity;
+        }
+
+        fb.pixels[pixelIndex] = color;
+        return;
+    }
+
+    // =========================================================================
+    // MULTI-ACT CONTINUOUS TECH DEMO (pc.frame_index > 0u)
+    // =========================================================================
+    uint total = max(pc.total_frames, 1u);
+    uint phase_len = max(total / 3u, 1u);
+    uint phase = min((pc.frame_index - 1u) / phase_len, 2u);
+    uint local_frame = (pc.frame_index - 1u) % phase_len;
+
+    // --- ACT 0: BOUNCING LOGO (DVD Screensaver over clean static SMPTE bars) ---
+    if (phase == 0u) {
+        // Badge dimension: 300x200
+        // Travel range: X [0..2260], Y [0..880]
+        uint period_x = 2260u * 2u; // 4520
+        uint period_y = 880u * 2u;  // 1760
+        uint step_x = (local_frame * 8u) % period_x;
+        uint bx = (step_x <= 2260u) ? step_x : (period_x - step_x);
+        uint step_y = (local_frame * 5u) % period_y;
+        uint by = (step_y <= 880u) ? step_y : (period_y - step_y);
+
+        if (x >= bx && x < (bx + 300u) && y >= by && y < (by + 200u)) {
+            uint rel_x = x - bx;
+            uint rel_y = y - by;
+            if (rel_x < 4u || rel_x >= 296u || rel_y < 4u || rel_y >= 196u) {
+                color = 0xFF000000u; // Black border
+            } else if (rel_x < 8u || rel_x >= 292u || rel_y < 8u || rel_y >= 192u) {
+                color = 0xFFFFFFFFu; // White inner border
+            } else {
+                color = get_badge_gold(local_frame);
+            }
+        } else if (y < 810u) {
+            uint barIndex = (x * 7u) / 2560u;
+            if (barIndex > 6u) barIndex = 6u;
+            color = get_smpte_color(barIndex);
+        } else {
+            uint intensity = (x * 255u) / 2560u;
+            color = 0xFF000000u | (intensity << 16u) | (intensity << 8u) | intensity;
         }
     }
-    // 2. Top 75% of screen (y < 810): 7 SMPTE Color Bars
-    else if (y < 810u) {
-        uint barWidth = 2560u / 7u; // ~365 pixels per bar
-        uint shifted_x = x;
-
-        // Smooth horizontal scrolling when animating (6 pixels per frame @ 60 FPS = 360 px/s)
-        if (pc.frame_index > 0u) {
-            uint shift = (pc.frame_index * 6u) % 2560u;
-            shifted_x = (x + 2560u - shift) % 2560u;
-        }
-
-        uint barIndex = shifted_x / barWidth;
-        if (barIndex > 6u) barIndex = 6u;
-
-        // Colors in Little-Endian BGRA8:
-        // Byte 0: Blue, Byte 1: Green, Byte 2: Red, Byte 3: Alpha (0xFF)
-        switch (barIndex) {
-            case 0u: color = 0xFFFFFFFFu; break; // White   (B=FF, G=FF, R=FF)
-            case 1u: color = 0xFF00FFFFu; break; // Yellow  (B=00, G=FF, R=FF)
-            case 2u: color = 0xFFFFFF00u; break; // Cyan    (B=FF, G=FF, R=00)
-            case 3u: color = 0xFF00FF00u; break; // Green   (B=00, G=FF, R=00)
-            case 4u: color = 0xFFFF00FFu; break; // Magenta (B=FF, G=00, R=FF)
-            case 5u: color = 0xFF0000FFu; break; // Red     (B=00, G=00, R=FF)
-            case 6u: color = 0xFFFF0000u; break; // Blue    (B=FF, G=00, R=00)
+    // --- ACT 1: SEAMLESS CAROUSEL (Smooth continuous subpixel scrolling) ---
+    else if (phase == 1u) {
+        // Centered Badge
+        if (x >= 1130u && x <= 1430u && y >= 440u && y <= 640u) {
+            if (x <= 1134u || x >= 1426u || y <= 444u || y >= 636u) {
+                color = 0xFF000000u;
+            } else if (x <= 1138u || x >= 1422u || y <= 448u || y >= 632u) {
+                color = 0xFFFFFFFFu;
+            } else {
+                color = get_badge_gold(local_frame);
+            }
+        } else if (y < 810u) {
+            float scroll_px = float((local_frame * 8u) % 2560u);
+            float u = fract((float(x) + (2560.0 - scroll_px)) / 2560.0);
+            uint barIndex = uint(u * 7.0);
+            if (barIndex > 6u) barIndex = 6u;
+            color = get_smpte_color(barIndex);
+        } else {
+            float scroll_px = float((local_frame * 8u) % 2560u);
+            float u = fract((float(x) + (2560.0 - scroll_px)) / 2560.0);
+            uint intensity = uint(u * 255.0);
+            color = 0xFF000000u | (intensity << 16u) | (intensity << 8u) | intensity;
         }
     }
-    // 3. Bottom 25% of screen (y >= 810): Grayscale Linear Ramp
+    // --- ACT 2: VOLUMETRIC NEON WAVE (Soft glowing light wave over static bars) ---
     else {
-        uint ramp_x = x;
-        if (pc.frame_index > 0u) {
-            uint shift_ramp = (pc.frame_index * 12u) % 2560u;
-            ramp_x = (x + shift_ramp) % 2560u;
+        // Centered Badge
+        if (x >= 1130u && x <= 1430u && y >= 440u && y <= 640u) {
+            if (x <= 1134u || x >= 1426u || y <= 444u || y >= 636u) {
+                color = 0xFF000000u;
+            } else if (x <= 1138u || x >= 1422u || y <= 448u || y >= 632u) {
+                color = 0xFFFFFFFFu;
+            } else {
+                color = get_badge_gold(local_frame);
+            }
+        } else if (y < 810u) {
+            uint barIndex = (x * 7u) / 2560u;
+            if (barIndex > 6u) barIndex = 6u;
+            color = get_smpte_color(barIndex);
+        } else {
+            uint intensity = (x * 255u) / 2560u;
+            color = 0xFF000000u | (intensity << 16u) | (intensity << 8u) | intensity;
         }
-        uint intensity = (ramp_x * 255u) / 2560u;
-        color = 0xFF000000u | (intensity << 16u) | (intensity << 8u) | intensity;
+
+        // Soft volumetric luminance sweep
+        float wave_center = float((local_frame * 12u) % 2560u);
+        float dist = abs(float(x) - wave_center);
+        dist = min(dist, 2560.0 - dist); // wrap around edges
+        if (dist < 220.0) {
+            float glow = 0.5 + 0.5 * cos(dist * 3.14159265 / 220.0); // 0.0 .. 1.0 smooth bell
+            uint r = (color >> 16) & 0xFFu;
+            uint g = (color >> 8) & 0xFFu;
+            uint b = color & 0xFFu;
+            r = min(255u, r + uint(float(255u - r) * 0.7 * glow));
+            g = min(255u, g + uint(float(255u - g) * 0.7 * glow));
+            b = min(255u, b + uint(float(255u - b) * 0.7 * glow));
+            color = 0xFF000000u | (r << 16) | (g << 8) | b;
+        }
     }
 
     fb.pixels[pixelIndex] = color;

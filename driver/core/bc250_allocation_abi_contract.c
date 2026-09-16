@@ -104,16 +104,25 @@ BC250_ALLOCATION_ABI_STATUS Bc250AllocationAbiParse(
     if (PrivateData == NULL || Request == NULL) {
         return BC250_ALLOCATION_ABI_BAD_ARGUMENT;
     }
-    if (PrivateDataSize != sizeof(candidate)) {
+    if (PrivateDataSize != sizeof(candidate) && PrivateDataSize != BC250_ALLOCATION_V1_SIZE) {
         return BC250_ALLOCATION_ABI_BAD_SIZE;
     }
-    memcpy(&candidate, PrivateData, sizeof(candidate));
+    memset(&candidate, 0, sizeof(candidate));
+    if (PrivateDataSize == BC250_ALLOCATION_V1_SIZE) {
+        memcpy(&candidate, PrivateData, BC250_ALLOCATION_V1_SIZE);
+        if (candidate.Version != BC250_ALLOCATION_PRIVATE_VERSION_1 ||
+            candidate.StructSize != BC250_ALLOCATION_V1_SIZE) {
+            return BC250_ALLOCATION_ABI_BAD_VERSION;
+        }
+    } else {
+        memcpy(&candidate, PrivateData, sizeof(candidate));
+        if (candidate.Version != BC250_ALLOCATION_PRIVATE_VERSION_2 ||
+            candidate.StructSize != sizeof(candidate)) {
+            return BC250_ALLOCATION_ABI_BAD_VERSION;
+        }
+    }
     if (candidate.Magic != BC250_ALLOCATION_PRIVATE_MAGIC) {
         return BC250_ALLOCATION_ABI_BAD_MAGIC;
-    }
-    if (candidate.Version != BC250_ALLOCATION_PRIVATE_VERSION ||
-        candidate.StructSize != sizeof(candidate)) {
-        return BC250_ALLOCATION_ABI_BAD_VERSION;
     }
     if ((candidate.Flags & ~BC250_ALLOCATION_SUPPORTED_FLAGS) != 0u ||
         candidate.AllocationToken == 0u ||

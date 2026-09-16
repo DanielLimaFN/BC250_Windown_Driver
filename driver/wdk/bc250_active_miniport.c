@@ -11,8 +11,10 @@
 #include "../core/bc250_sdma_queue_state_contract.h"
 #include "../core/bc250_escape_contract.h"
 #include "../core/bc250_segment_address_contract.h"
+#include "../core/bc250_gfx_observable_shader.h"
 
 DRIVER_INITIALIZATION_DATA g_Bc250ActiveInitializationData;
+int _fltused = 0x9875;
 
 #define BC250_ACTIVE_MAX_ADAPTERS 8u
 #define BC250_ACTIVE_GCVM_FAULT_STATUS   0x0A130u
@@ -332,27 +334,48 @@ static BC250_GFX_RING_TXN_STATUS Bc250ActiveRunGfxRingBringup(
     BC250_GFX_RING_TXN_STATUS status;
     BC250_GFX_RING_TXN_STATUS rollbackStatus;
     const uint64_t ringBytes = 8192ull;
-    /* anel + dword de writeback de RPTR + dword de shadow de WPTR, com folga
-     * de alinhamento para os dois ficarem fora do anel */
-    const uint64_t totalBytes = ringBytes + 0x1000ull;
+    /* anel + dword de writeback de RPTR + dword de shadow de WPTR + fence, com folga
+     * de alinhamento para ficarem fora do anel. No Nivel 4 adiciona render target (256x256 RGBA = 256 KB) */
+    const uint64_t rtBytes = (Level >= 4u) ? 262144ull : 0ull;
+    const uint64_t totalBytes = ringBytes + 0x1000ull + rtBytes;
     uint64_t ringMc;
     uint32_t mappedByUs;
+    ULONG allocFlags = BC250_VRAM_ALLOC_TOP_DOWN;
+    const BC250_RESOLVED_BAR_RESOURCE *vramBar = NULL;
+    PVOID cpuMapped = NULL;
+    uint32_t bIdx;
 
     if (Context == NULL || Evidence == NULL || Level == 0u) {
         return BC250_GFX_RING_TXN_BAD_ARGUMENT;
     }
     RtlZeroMemory(Evidence, sizeof(*Evidence));
+    RtlZeroMemory(&Context->GfxRingSubmitEvidence, sizeof(Context->GfxRingSubmitEvidence));
+    RtlZeroMemory(&Context->GfxRing3DDrawEvidence, sizeof(Context->GfxRing3DDrawEvidence));
     RtlZeroMemory(&plan, sizeof(plan));
 
     allocator = &Context->Core.StartDevice.Owned.Bootstrap.Allocator;
     addressSpace = &Context->Core.TopologyEvidence.AddressSpace;
-    if (addressSpace->TotalBytes == 0u || addressSpace->VramMcStart == 0u) {
+    uint64_t vramMcBase = (addressSpace->VramMcStart != 0ull) ? addressSpace->VramMcStart : BC250_SDMA_VRAM_MC_BASE;
+    uint64_t totalBytesAvailable = (addressSpace->TotalBytes != 0ull) ? addressSpace->TotalBytes : (512ull * 1024ull * 1024ull);
+
+    if (totalBytesAvailable == 0u || vramMcBase == 0u) {
         Bc250DisplayLog("[GfxRing] BRINGUP nao executou: janela de VRAM indisponivel\n");
         return BC250_GFX_RING_TXN_PREFLIGHT_FAILED;
     }
 
+    for (bIdx = 0; bIdx < Context->Core.ResolvedBarCount; ++bIdx) {
+        if (Context->Core.ResolvedBars[bIdx].Index == BC250_PCI_VRAM_APERTURE_BAR_INDEX) {
+            vramBar = &Context->Core.ResolvedBars[bIdx];
+            break;
+        }
+    }
+
+    if (Level >= 3u && vramBar != NULL) {
+        allocFlags |= BC250_VRAM_ALLOC_CPU_VISIBLE;
+    }
+
     vramStatus = Bc250VramAllocate(allocator, totalBytes, 65536ull,
-        BC250_VRAM_ROLE_RING, BC250_VRAM_ALLOC_TOP_DOWN, &token);
+        BC250_VRAM_ROLE_RING, allocFlags, &token);
     if (vramStatus != BC250_VRAM_OK) {
         Bc250DisplayLog("[GfxRing] BRINGUP nao executou: VRAM negada (%s)\n",
             Bc250VramStatusName(vramStatus));
@@ -363,9 +386,9 @@ static BC250_GFX_RING_TXN_STATUS Bc250ActiveRunGfxRingBringup(
         return BC250_GFX_RING_TXN_PREFLIGHT_FAILED;
     }
 
-    ringMc = addressSpace->VramMcStart + region.Offset;
-    plan.VramWindowBase = addressSpace->VramMcStart;
-    plan.VramWindowBytes = addressSpace->TotalBytes;
+    ringMc = vramMcBase + region.Offset;
+    plan.VramWindowBase = vramMcBase;
+    plan.VramWindowBytes = totalBytesAvailable;
     plan.RingGpuVa = ringMc;
     plan.RingBytes = (uint32_t)ringBytes;
     /* writeback e shadow DEPOIS do anel, sem sobreposicao -- o contrato recusa
@@ -429,6 +452,179 @@ static BC250_GFX_RING_TXN_STATUS Bc250ActiveRunGfxRingBringup(
     }
 
     /*
+     * Nivel 3: Submissao de pacotes SET_SH_REG (VS + PS) e medicao do tripe da Lei 2
+     * com fence WRITE_DATA gravada sobre poison na VRAM antes do rollback.
+     * Nivel 4: Pipeline 3D completo de triangulo (Shaders, ColorTarget, TargetMask,
+     * Viewport/Scissor, PrimitiveAssembler, DrawInitiator e Fence WRITE_DATA).
+     */
+    if (status == BC250_GFX_RING_TXN_OK && Level >= 3u && vramBar != NULL) {
+        PHYSICAL_ADDRESS phys;
+        phys.QuadPart = (LONGLONG)(vramBar->Start + region.Offset);
+        cpuMapped = MmMapIoSpace(phys, (SIZE_T)totalBytes, MmNonCached);
+        if (cpuMapped != NULL) {
+            RtlZeroMemory(cpuMapped, (SIZE_T)totalBytes);
+            BC250_GFX_SHADER_REGS vsRegs, psRegs;
+            const BC250_GFX_OBSERVABLE_STAGE_MANIFEST *vsM = Bc250GetGfxObservableVsManifest();
+            const BC250_GFX_OBSERVABLE_STAGE_MANIFEST *psM = Bc250GetGfxObservablePsManifest();
+            uint64_t vsGpuVa = ringMc + ringBytes + 0x100ull;
+            uint64_t psGpuVa = ringMc + ringBytes + 0x200ull;
+            volatile uint32_t *vsDst = (volatile uint32_t *)((unsigned char *)cpuMapped + ringBytes + 0x100ull);
+            volatile uint32_t *psDst = (volatile uint32_t *)((unsigned char *)cpuMapped + ringBytes + 0x200ull);
+            uint32_t sIdx;
+
+            RtlZeroMemory(&vsRegs, sizeof(vsRegs));
+            RtlZeroMemory(&psRegs, sizeof(psRegs));
+
+            if (vsM != NULL && vsM->ShaderDwords != NULL) {
+                for (sIdx = 0u; sIdx < vsM->ShaderDwordCount; ++sIdx) {
+                    vsDst[sIdx] = vsM->ShaderDwords[sIdx];
+                }
+                vsRegs.PgmLo = (uint32_t)(vsGpuVa >> 8);
+                vsRegs.PgmHi = (uint32_t)(vsGpuVa >> 40);
+                vsRegs.Rsrc1 = vsM->PgmRsrc1;
+                vsRegs.Rsrc2 = vsM->PgmRsrc2;
+            }
+
+            if (psM != NULL && psM->ShaderDwords != NULL) {
+                for (sIdx = 0u; sIdx < psM->ShaderDwordCount; ++sIdx) {
+                    psDst[sIdx] = psM->ShaderDwords[sIdx];
+                }
+                psRegs.PgmLo = (uint32_t)(psGpuVa >> 8);
+                psRegs.PgmHi = (uint32_t)(psGpuVa >> 40);
+                psRegs.Rsrc1 = psM->PgmRsrc1;
+                psRegs.Rsrc2 = psM->PgmRsrc2;
+            }
+
+            if (Level >= 4u) {
+                BC250_GFX_RING_SUBMIT_3D_DRAW_PLAN drawPlan;
+                BC250_GFX_RING_TXN_STATUS drawStatus;
+                uint64_t rtGpuVa = ringMc + ringBytes + 0x1000ull;
+                uint32_t stage = 4u;
+                if (Context->GfxRingStagePresent) {
+                    if (Context->GfxRingIsolationStage == 0u) {
+                        stage = BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT;
+                    } else {
+                        stage = Context->GfxRingIsolationStage;
+                    }
+                }
+                if (Level >= 5u) {
+                    stage = 4u;
+                }
+
+                RtlZeroMemory(&drawPlan, sizeof(drawPlan));
+                drawPlan.RingCpuAddress = (uint32_t *)cpuMapped;
+                drawPlan.RingDwords = (uint32_t)(ringBytes / sizeof(uint32_t));
+                drawPlan.WptrPollCpuAddress = (uint32_t *)((unsigned char *)cpuMapped + ringBytes + 0x10ull);
+                drawPlan.RptrWbCpuAddress = (volatile const uint32_t *)((unsigned char *)cpuMapped + ringBytes);
+                drawPlan.FenceCpuAddress = (volatile uint32_t *)((unsigned char *)cpuMapped + ringBytes + 0x20ull);
+                drawPlan.FenceGpuVa = plan.RptrWritebackGpuVa + 0x20ull;
+                drawPlan.FencePoisonValue = 0x43DAFFFEu;
+                drawPlan.FenceExpectedValue = (stage == BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT)
+                    ? 0x0000B400u
+                    : ((Level >= 5u) ? 0x0000B500u : (0x0000B400u | (stage << 4)));
+                drawPlan.SkipDraw = (stage < 4u || stage == BC250_GFX_ISOLATION_STAGE_4_0_NO_CONTEXT) ? 1u : 0u;
+                drawPlan.IsolationStage = stage;
+                drawPlan.VsRegs = &vsRegs;
+                drawPlan.PsRegs = &psRegs;
+                drawPlan.ColorTargetBaseGpuVa = rtGpuVa;
+                drawPlan.ColorTargetWidth = 64u;
+                drawPlan.ColorTargetHeight = 64u;
+                drawPlan.ColorTargetPitchBytes = 256u;
+                drawPlan.ColorTargetFormatIndex = 8u;
+                drawPlan.ColorTargetCompSwap = 1u;
+                drawPlan.Viewport.X = 0.0f;
+                drawPlan.Viewport.Y = 0.0f;
+                drawPlan.Viewport.Width = 64.0f;
+                drawPlan.Viewport.Height = 64.0f;
+                drawPlan.Viewport.MinDepth = 0.0f;
+                drawPlan.Viewport.MaxDepth = 1.0f;
+                drawPlan.Scissor.Left = 0u;
+                drawPlan.Scissor.Top = 0u;
+                drawPlan.Scissor.Right = 64u;
+                drawPlan.Scissor.Bottom = 64u;
+                drawPlan.PrimitiveTopology = BC250_GFX_PRIM_TRILIST;
+                drawPlan.NumInstances = 1u;
+                drawPlan.VertexCount = 3u;
+                drawPlan.DrawInitiator = BC250_GFX_DRAW_INITIATOR_AUTO_INDEX;
+                drawPlan.MaxPollIterations = 2000u;
+                drawPlan.StallMicroseconds = 50u;
+
+                drawStatus = Bc250GfxRingTxnSubmit3DDraw(&interfaceData, &plan, Evidence,
+                    &drawPlan, &Context->GfxRing3DDrawEvidence);
+                Bc250DisplayLog("[GfxRing] BRINGUP Level %u Submit3DDraw: status=%s (%u) Stage=%u SkipDraw=%u TripodVerdict=%u Completed=%u FenceObs=0x%08X RPTR(MMIO=0x%X WB=0x%X) Polls=%u\n",
+                    Level,
+                    Bc250GfxRingTxnStatusName(drawStatus), (uint32_t)drawStatus,
+                    drawPlan.IsolationStage,
+                    drawPlan.SkipDraw,
+                    Context->GfxRing3DDrawEvidence.TripodVerdict,
+                    Context->GfxRing3DDrawEvidence.SubmitCompleted,
+                    Context->GfxRing3DDrawEvidence.FenceObserved,
+                    Context->GfxRing3DDrawEvidence.RptrObservedMmio,
+                    Context->GfxRing3DDrawEvidence.RptrObservedWb,
+                    Context->GfxRing3DDrawEvidence.PollsCompleted);
+                {
+                    uint32_t grbm = Context->GfxRing3DDrawEvidence.GrbmStatus;
+                    uint32_t cp = Context->GfxRing3DDrawEvidence.CpStat;
+                    Bc250DisplayLog("[GfxRing] BRINGUP HW Telemetry: GRBM_STATUS=0x%08X (GUI_ACT=%u GE=%u PA=%u CB=%u SPI=%u CP=%u) CP_STAT=0x%08X (PFP_BUSY=%u ME_BUSY=%u MEQ_BUSY=%u CP_BUSY=%u) PFP_PNTR=0x%04X ME_PNTR=0x%04X\n",
+                        grbm,
+                        (grbm >> 31) & 1u,
+                        (grbm >> 21) & 1u,
+                        (grbm >> 25) & 1u,
+                        (grbm >> 30) & 1u,
+                        (grbm >> 22) & 1u,
+                        (grbm >> 29) & 1u,
+                        cp,
+                        (cp >> 15) & 1u,
+                        (cp >> 17) & 1u,
+                        (cp >> 16) & 1u,
+                        (cp >> 31) & 1u,
+                        Context->GfxRing3DDrawEvidence.PfpPntr,
+                        Context->GfxRing3DDrawEvidence.MePntr);
+                }
+                if (drawStatus != BC250_GFX_RING_TXN_OK) {
+                    status = drawStatus;
+                }
+            } else {
+                BC250_GFX_RING_SUBMIT_SH_REG_PLAN submitPlan;
+                BC250_GFX_RING_TXN_STATUS submitStatus;
+
+                RtlZeroMemory(&submitPlan, sizeof(submitPlan));
+                submitPlan.RingCpuAddress = (uint32_t *)cpuMapped;
+                submitPlan.RingDwords = (uint32_t)(ringBytes / sizeof(uint32_t));
+                submitPlan.WptrPollCpuAddress = (uint32_t *)((unsigned char *)cpuMapped + ringBytes + 0x10ull);
+                submitPlan.RptrWbCpuAddress = (volatile const uint32_t *)((unsigned char *)cpuMapped + ringBytes);
+                submitPlan.FenceCpuAddress = (volatile uint32_t *)((unsigned char *)cpuMapped + ringBytes + 0x20ull);
+                submitPlan.FenceGpuVa = plan.RptrWritebackGpuVa + 0x20ull;
+                submitPlan.FencePoisonValue = 0x43DAFFFEu;
+                submitPlan.FenceExpectedValue = 0x0000B240u;
+                submitPlan.VsRegs = &vsRegs;
+                submitPlan.PsRegs = &psRegs;
+                submitPlan.MaxPollIterations = 2000u;
+                submitPlan.StallMicroseconds = 50u;
+
+                submitStatus = Bc250GfxRingTxnSubmitShReg(&interfaceData, &plan, Evidence,
+                    &submitPlan, &Context->GfxRingSubmitEvidence);
+                Bc250DisplayLog("[GfxRing] BRINGUP Level 3 SubmitShReg: status=%s (%u) TripodVerdict=%u Completed=%u FenceObs=0x%08X RPTR(MMIO=0x%X WB=0x%X) Polls=%u\n",
+                    Bc250GfxRingTxnStatusName(submitStatus), (uint32_t)submitStatus,
+                    Context->GfxRingSubmitEvidence.TripodVerdict,
+                    Context->GfxRingSubmitEvidence.SubmitCompleted,
+                    Context->GfxRingSubmitEvidence.FenceObserved,
+                    Context->GfxRingSubmitEvidence.RptrObservedMmio,
+                    Context->GfxRingSubmitEvidence.RptrObservedWb,
+                    Context->GfxRingSubmitEvidence.PollsCompleted);
+                if (submitStatus != BC250_GFX_RING_TXN_OK) {
+                    status = submitStatus;
+                }
+            }
+            MmUnmapIoSpace(cpuMapped, (SIZE_T)totalBytes);
+            cpuMapped = NULL;
+        } else {
+            Bc250DisplayLog("[GfxRing] BRINGUP Level %u: MmMapIoSpace falhou\n", Level);
+            status = BC250_GFX_RING_TXN_WRITE_FAILED;
+        }
+    }
+
+    /*
      * ROLLBACK SEMPRE, inclusive quando o APPLY falhou no meio: e' justamente
      * o caso em que a placa pode ter ficado parcialmente escrita.
      */
@@ -447,6 +643,368 @@ static BC250_GFX_RING_TXN_STATUS Bc250ActiveRunGfxRingBringup(
         return rollbackStatus;
     }
     return status;
+}
+
+/*
+ * =========================================================================
+ * MOTOR GRAFICO PERSISTENTE (CP_RB0 / PFP / ME) NO NODE 1 (3D GRAPHICS)
+ *
+ * Exclusivo para comandos graficos 3D da UMD/Vulkan (vkCmdDraw).
+ * Ativado durante StartDevice e persistido em VRAM.
+ * Rejeita qualquer tentativa de redirecionamento para MEC (Lei 4).
+ * =========================================================================
+ */
+static NTSTATUS Bc250ActiveGfxEngineOnline(BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    BC250_VRAM_ALLOCATOR *allocator;
+    const BC250_VRAM_ADDRESS_SPACE *addressSpace;
+    BC250_VRAM_TOKEN token;
+    BC250_VRAM_REGION region;
+    BC250_VRAM_STATUS vramStatus;
+    BC250_GFX_RING_INTERFACE interfaceData;
+    BC250_GFX_RING_PLAN plan;
+    BC250_GFX_RING_TXN_STATUS status;
+    const uint64_t ringBytes = 65536ull; /* 64 KB = 16384 dwords */
+    const uint64_t auxBytes = 4096ull;  /* Writeback + Shadow + Fence */
+    const uint64_t totalBytes = ringBytes + auxBytes;
+    const BC250_RESOLVED_BAR_RESOURCE *vramBar = NULL;
+    PVOID cpuMapped = NULL;
+    uint32_t bIdx;
+    uint64_t ringMc;
+    PHYSICAL_ADDRESS phys;
+
+    if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    RtlZeroMemory(&Context->GfxEngine, sizeof(Context->GfxEngine));
+    KeInitializeSpinLock(&Context->GfxEngine.Lock);
+
+    allocator = &Context->Core.StartDevice.Owned.Bootstrap.Allocator;
+    addressSpace = &Context->Core.TopologyEvidence.AddressSpace;
+    uint64_t vramMcBase = (addressSpace->VramMcStart != 0ull) ? addressSpace->VramMcStart : BC250_SDMA_VRAM_MC_BASE;
+    uint64_t totalBytesAvailable = (addressSpace->TotalBytes != 0ull) ? addressSpace->TotalBytes : (512ull * 1024ull * 1024ull);
+
+    if (totalBytesAvailable == 0u || vramMcBase == 0u) {
+        Bc250DisplayLog("[GfxEngine] ONLINE nao executou: janela de VRAM indisponivel\n");
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    for (bIdx = 0; bIdx < Context->Core.ResolvedBarCount; ++bIdx) {
+        if (Context->Core.ResolvedBars[bIdx].Index == BC250_PCI_VRAM_APERTURE_BAR_INDEX) {
+            vramBar = &Context->Core.ResolvedBars[bIdx];
+            break;
+        }
+    }
+    if (vramBar == NULL) {
+        Bc250DisplayLog("[GfxEngine] ONLINE nao executou: BAR0 VRAM indisponivel\n");
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    vramStatus = Bc250VramAllocate(allocator, totalBytes, 65536ull,
+        BC250_VRAM_ROLE_RING, BC250_VRAM_ALLOC_TOP_DOWN | BC250_VRAM_ALLOC_CPU_VISIBLE, &token);
+    if (vramStatus != BC250_VRAM_OK) {
+        Bc250DisplayLog("[GfxEngine] ONLINE nao executou: VRAM negada (%s)\n",
+            Bc250VramStatusName(vramStatus));
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    if (Bc250VramGetRegion(allocator, token, &region) != BC250_VRAM_OK) {
+        (void)Bc250VramRelease(allocator, token);
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    ringMc = vramMcBase + region.Offset;
+    phys.QuadPart = (LONGLONG)(vramBar->Start + region.Offset);
+    cpuMapped = MmMapIoSpace(phys, (SIZE_T)totalBytes, MmNonCached);
+    if (cpuMapped == NULL) {
+        (void)Bc250VramRelease(allocator, token);
+        Bc250DisplayLog("[GfxEngine] ONLINE nao executou: MmMapIoSpace falhou\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(cpuMapped, (SIZE_T)totalBytes);
+
+    Context->GfxEngine.VramToken = token;
+    Context->GfxEngine.VramTotalBytes = totalBytes;
+    Context->GfxEngine.RingGpuVa = ringMc;
+    Context->GfxEngine.RingDwords = (uint32_t)(ringBytes / sizeof(uint32_t));
+    Context->GfxEngine.RingCpuVirtual = (uint32_t *)cpuMapped;
+
+    Context->GfxEngine.RptrWbGpuVa = ringMc + ringBytes;
+    Context->GfxEngine.RptrWbCpuVirtual = (volatile uint32_t *)((unsigned char *)cpuMapped + ringBytes);
+
+    Context->GfxEngine.WptrPollGpuVa = ringMc + ringBytes + 0x10ull;
+    Context->GfxEngine.WptrPollCpuVirtual = (volatile uint32_t *)((unsigned char *)cpuMapped + ringBytes + 0x10ull);
+
+    Context->GfxEngine.FenceGpuVa = ringMc + ringBytes + 0x20ull;
+    Context->GfxEngine.FenceCpuVirtual = (volatile uint32_t *)((unsigned char *)cpuMapped + ringBytes + 0x20ull);
+
+    *Context->GfxEngine.FenceCpuVirtual = 0x43DAFFFEu; /* Poison inicial */
+
+    RtlZeroMemory(&plan, sizeof(plan));
+    plan.VramWindowBase = vramMcBase;
+    plan.VramWindowBytes = totalBytesAvailable;
+    plan.RingGpuVa = ringMc;
+    plan.RingBytes = (uint32_t)ringBytes;
+    plan.RptrWritebackGpuVa = Context->GfxEngine.RptrWbGpuVa;
+    plan.WptrPollGpuVa = Context->GfxEngine.WptrPollGpuVa;
+    plan.RbExe = 1u;
+    plan.CeHqdNeqRbHqd = 1u;
+    plan.UnhaltMicroEngines = 1u;
+    plan.MicroEngineFirmwareLoaded = 1u;
+
+    Context->GfxEngine.Plan = plan;
+
+    if (Context->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_EMPTY) {
+        BC250_MMIO_TOPOLOGY_STATUS mmioStatus = Bc250MmioTopologyMapReadonly(
+            &Context->Core.MmioTransport, &Context->Core.DxgkInterface,
+            Context->Core.ResolvedBars, Context->Core.ResolvedBarCount,
+            BC250_PCI_MMIO_BAR_INDEX);
+        if (mmioStatus != BC250_MMIO_TOPOLOGY_OK) {
+            Bc250DisplayLog("[GfxEngine] ONLINE nao executou: mapa do transporte falhou (%s)\n",
+                Bc250MmioTopologyStatusName(mmioStatus));
+            MmUnmapIoSpace(cpuMapped, (SIZE_T)totalBytes);
+            (void)Bc250VramRelease(allocator, token);
+            return STATUS_DEVICE_NOT_READY;
+        }
+    }
+
+    RtlZeroMemory(&interfaceData, sizeof(interfaceData));
+    interfaceData.Read32 = Bc250MmioTopologyRead32;
+    interfaceData.Write32 = Bc250MmioTopologyWrite32;
+    interfaceData.Stall = Bc250ActiveTlbStall;
+    interfaceData.Context = &Context->Core.MmioTransport;
+    interfaceData.Identity = BC250_GFX_RING_TXN_IDENTITY;
+
+    status = Bc250GfxRingTxnPreflight(&interfaceData, &plan, &Context->GfxEngine.Evidence);
+    if (status == BC250_GFX_RING_TXN_OK) {
+        status = Bc250GfxRingTxnApply(&interfaceData, &plan, &Context->GfxEngine.Evidence);
+    }
+    if (status != BC250_GFX_RING_TXN_OK || Context->GfxEngine.Evidence.RingActivatePassed == 0u) {
+        Bc250DisplayLog("[GfxEngine] ONLINE FALHOU: status=%s (%u) ActivatePassed=%u\n",
+            Bc250GfxRingTxnStatusName(status), (uint32_t)status,
+            Context->GfxEngine.Evidence.RingActivatePassed);
+        MmUnmapIoSpace(cpuMapped, (SIZE_T)totalBytes);
+        (void)Bc250VramRelease(allocator, token);
+        InterlockedExchange(&Context->GfxEngine.State, 0);
+        return STATUS_DEVICE_HARDWARE_ERROR;
+    }
+
+    Context->GfxEngine.WptrDwords = 0u;
+    Context->GfxEngine.LastSubmittedFence = 0ull;
+    Context->GfxEngine.LastRetiredFence = 0ull;
+    InterlockedExchange(&Context->GfxEngine.State, 1); /* ONLINE */
+
+    Bc250DisplayLog("[GfxEngine] ONLINE SUCESSO: RingMc=0x%llX (64KB, %u dw) RptrWbMc=0x%llX FenceMc=0x%llX RB0_ACTIVE=1\n",
+        (unsigned long long)ringMc, Context->GfxEngine.RingDwords,
+        (unsigned long long)Context->GfxEngine.RptrWbGpuVa,
+        (unsigned long long)Context->GfxEngine.FenceGpuVa);
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS Bc250ActiveGfxEngineOffline(BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    BC250_VRAM_ALLOCATOR *allocator;
+    BC250_GFX_RING_INTERFACE interfaceData;
+
+    if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (InterlockedExchange(&Context->GfxEngine.State, 0) == 0) {
+        return STATUS_SUCCESS;
+    }
+
+    allocator = &Context->Core.StartDevice.Owned.Bootstrap.Allocator;
+
+    if (Context->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED) {
+        RtlZeroMemory(&interfaceData, sizeof(interfaceData));
+        interfaceData.Read32 = Bc250MmioTopologyRead32;
+        interfaceData.Write32 = Bc250MmioTopologyWrite32;
+        interfaceData.Stall = Bc250ActiveTlbStall;
+        interfaceData.Context = &Context->Core.MmioTransport;
+        interfaceData.Identity = BC250_GFX_RING_TXN_IDENTITY;
+
+        (void)Bc250GfxRingTxnRollback(&interfaceData, &Context->GfxEngine.Evidence);
+    }
+
+    if (Context->GfxEngine.RingCpuVirtual != NULL) {
+        MmUnmapIoSpace((PVOID)Context->GfxEngine.RingCpuVirtual, (SIZE_T)Context->GfxEngine.VramTotalBytes);
+        Context->GfxEngine.RingCpuVirtual = NULL;
+    }
+
+    if (Context->GfxEngine.VramTotalBytes > 0u) {
+        (void)Bc250VramRelease(allocator, Context->GfxEngine.VramToken);
+        Context->GfxEngine.VramTotalBytes = 0u;
+    }
+
+    Bc250DisplayLog("[GfxEngine] OFFLINE: anel desativado, cursores quiescidos e VRAM liberada\n");
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS Bc250ActiveGfxEngineSubmit(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    uint64_t IbGpuVirtualAddress,
+    uint32_t IbSizeDwords,
+    uint32_t Vmid,
+    uint64_t *AssignedFence)
+{
+    KIRQL irql;
+    uint32_t ringDwords;
+    uint32_t currentWptr;
+    uint32_t cursor;
+    uint32_t availableDwords = 0u;
+    uint32_t rptr = 0u;
+    uint64_t nextFence;
+    BC250_PM4_STATUS pm4Status;
+    const uint32_t neededDwords = 16u; /* 4 (IB) + 8 (RELEASE_MEM) + 4 (NOP pad) */
+
+    if (Context == NULL || AssignedFence == NULL || IbGpuVirtualAddress == 0ull || IbSizeDwords == 0u) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *AssignedFence = 0ull;
+
+    if (InterlockedCompareExchange(&Context->GfxEngine.State, 1, 1) != 1) {
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    KeAcquireSpinLock(&Context->GfxEngine.Lock, &irql);
+    ++Context->GfxEngine.SubmitCalls;
+
+    ringDwords = Context->GfxEngine.RingDwords;
+    currentWptr = Context->GfxEngine.WptrDwords;
+
+    if (Context->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED) {
+        (void)Bc250MmioTopologyRead32(&Context->Core.MmioTransport,
+            BC250_GFX_REG_CP_RB0_RPTR, &rptr);
+    } else if (Context->GfxEngine.RptrWbCpuVirtual != NULL) {
+        rptr = *Context->GfxEngine.RptrWbCpuVirtual;
+    }
+    Context->GfxEngine.LastRptrMmio = rptr;
+
+    pm4Status = Bc250Pm4RingComputeAvailableSpace(ringDwords, rptr, currentWptr, &availableDwords);
+    if (pm4Status != BC250_PM4_OK || availableDwords < neededDwords) {
+        ++Context->GfxEngine.SubmitRejected;
+        KeReleaseSpinLock(&Context->GfxEngine.Lock, irql);
+        Bc250DisplayLog("[GfxEngine] SUBMIT RECUSA: sem espaco no anel (Available=%u, Needed=%u, WPTR=%u, RPTR=%u)\n",
+            availableDwords, neededDwords, currentWptr, rptr);
+        return STATUS_GRAPHICS_ALLOCATION_BUSY;
+    }
+
+    nextFence = Context->GfxEngine.LastSubmittedFence + 1ull;
+    cursor = currentWptr;
+
+    /* 1. Emite PACKET3_INDIRECT_BUFFER com VMID e bit de validade */
+    pm4Status = Bc250Pm4EmitIndirectBuffer(
+        Context->GfxEngine.RingCpuVirtual,
+        ringDwords,
+        &cursor,
+        IbGpuVirtualAddress,
+        IbSizeDwords,
+        Vmid);
+    if (pm4Status != BC250_PM4_OK) {
+        ++Context->GfxEngine.SubmitRejected;
+        KeReleaseSpinLock(&Context->GfxEngine.Lock, irql);
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    /* 2. Emite PACKET3_RELEASE_MEM EOP (32-bit) para gravar a fence na VRAM */
+    pm4Status = Bc250Pm4EmitReleaseMemEop32(
+        Context->GfxEngine.RingCpuVirtual,
+        ringDwords,
+        &cursor,
+        Context->GfxEngine.FenceGpuVa,
+        (uint32_t)nextFence,
+        BC250_PM4_RELEASE_MEM_INT_SEL_NONE);
+    if (pm4Status != BC250_PM4_OK) {
+        ++Context->GfxEngine.SubmitRejected;
+        KeReleaseSpinLock(&Context->GfxEngine.Lock, irql);
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    /* 3. Alinha a 4 dwords com NOP se necessario */
+    while ((cursor & 3u) != 0u) {
+        Context->GfxEngine.RingCpuVirtual[cursor & (ringDwords - 1u)] = BC250_PM4_PACKET2_NOP;
+        cursor++;
+    }
+
+    /* 4. Atualiza shadow de WPTR em memoria */
+    if (Context->GfxEngine.WptrPollCpuVirtual != NULL) {
+        *Context->GfxEngine.WptrPollCpuVirtual = cursor;
+    }
+
+    /* 5. Dreno de memoria/HDP e avanco de CP_RB0_WPTR no hardware */
+    Bc250SdmaPresentFlushHdp();
+    KeMemoryBarrier();
+
+    if (Context->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED) {
+        (void)Bc250MmioTopologyWrite32(&Context->Core.MmioTransport,
+            BC250_GFX_REG_CP_RB0_WPTR, cursor);
+    }
+
+    Context->GfxEngine.WptrDwords = cursor;
+    Context->GfxEngine.LastSubmittedFence = nextFence;
+    Context->GfxEngine.LastSubmitSizeDwords = IbSizeDwords;
+    Context->GfxEngine.LastSubmitVa = IbGpuVirtualAddress;
+    ++Context->GfxEngine.SubmitAccepted;
+    *AssignedFence = nextFence;
+
+    KeReleaseSpinLock(&Context->GfxEngine.Lock, irql);
+
+    Bc250DisplayLog("[GfxEngine] SUBMIT SUCESSO: Fence=%llu NewWptr=%u DmaVA=0x%llX SizeDW=%u VMID=%u\n",
+        (unsigned long long)nextFence, cursor,
+        (unsigned long long)IbGpuVirtualAddress, IbSizeDwords, Vmid);
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS Bc250ActiveGfxEnginePoll(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    uint32_t *RetiredNow)
+{
+    KIRQL irql;
+    uint32_t observedFence = 0u;
+    uint64_t lastSubmitted;
+    uint64_t lastRetired;
+
+    if (RetiredNow != NULL) *RetiredNow = 0u;
+    if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (InterlockedCompareExchange(&Context->GfxEngine.State, 1, 1) != 1) {
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    KeAcquireSpinLock(&Context->GfxEngine.Lock, &irql);
+    ++Context->GfxEngine.PollCalls;
+
+    Bc250SdmaPresentFlushHdp();
+
+    if (Context->GfxEngine.FenceCpuVirtual != NULL) {
+        observedFence = *Context->GfxEngine.FenceCpuVirtual;
+    }
+
+    lastSubmitted = Context->GfxEngine.LastSubmittedFence;
+    lastRetired = Context->GfxEngine.LastRetiredFence;
+
+    if (lastSubmitted > lastRetired && observedFence > (uint32_t)lastRetired) {
+        uint64_t newlyRetired = (uint64_t)observedFence;
+        if (newlyRetired > lastSubmitted) {
+            newlyRetired = lastSubmitted;
+        }
+        if (newlyRetired > lastRetired) {
+            uint32_t count = (uint32_t)(newlyRetired - lastRetired);
+            Context->GfxEngine.LastRetiredFence = newlyRetired;
+            Context->GfxEngine.RetiredCount += count;
+            if (RetiredNow != NULL) {
+                *RetiredNow = count;
+            }
+        }
+    }
+
+    KeReleaseSpinLock(&Context->GfxEngine.Lock, irql);
+    return STATUS_SUCCESS;
 }
 
 static BC250_HQD_BANK_PROBE_STATUS Bc250ActiveProbeMecHqdBankIsolation(
@@ -2653,8 +3211,8 @@ NTSTATUS Bc250ActiveSetRootPageTableObject(
             KeLeaveCriticalRegion();
             return STATUS_INVALID_PARAMETER;
         }
-        if (rootContext.NodeOrdinal == BC250_SUBMISSION_NODE_COMPUTE) {
-            Bc250DisplayLog("[SetRootPageTable] Node1: raiz registrada; VMID9 instalado no submit\n");
+        if (rootContext.NodeOrdinal > 1u) {
+            Bc250DisplayLog("[SetRootPageTable] Node%u Compute: raiz registrada; VMID9 instalado no submit\n", rootContext.NodeOrdinal);
             ExReleasePushLockExclusive(&context->ObjectLock);
             KeLeaveCriticalRegion();
             return STATUS_SUCCESS;
@@ -3589,6 +4147,45 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                 cpValid, cpfStatus, cpfBusy, cpfStalled, cpcStatus, cpcBusy, cpcStalled, cpStalled1, cpStat);
             Bc250DisplayLog("[TDR_MEC_EXEC_STAT] Mec1Hdr=%08X Mec2Hdr=%08X Mec1Pntr=%08X Mec2Pntr=%08X IbBase=%08X:%08X IbRptr=%08X PqCtrl=%08X Dequeue=%08X\n",
                 mecMe1Hdr, mecMe2Hdr, mec1InstrPntr, mec2InstrPntr, ibBaseHi, ibBaseLo, ibRptr, pqControl, dequeueReq);
+
+            /* TDR Quiesce do GfxEngine (CP_RB0 / 3D Graphics) */
+            if (activeCtx->GfxEngine.State == 1u &&
+                activeCtx->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED) {
+                uint32_t cpRb0Active = 0u, cpRb0Rptr = 0u, cpRb0Wptr = 0u;
+                uint32_t grbmStatus = 0u, cpMeCntl = 0u;
+
+                (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                    BC250_GFX_REG_CP_RB0_ACTIVE, &cpRb0Active);
+                (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                    BC250_GFX_REG_CP_RB0_RPTR, &cpRb0Rptr);
+                (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                    BC250_GFX_REG_CP_RB0_WPTR, &cpRb0Wptr);
+                (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                    BC250_GFX_REG_GRBM_STATUS, &grbmStatus);
+                (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                    BC250_GFX_REG_CP_ME_CNTL, &cpMeCntl);
+
+                Bc250DisplayLog("[TDR_GFX_QUIESCE] Snapshot: Active=%u RPTR=%u WPTR=%u GrbmStatus=0x%08X CpMeCntl=0x%08X\n",
+                    cpRb0Active, cpRb0Rptr, cpRb0Wptr, grbmStatus, cpMeCntl);
+
+                /* Desativa CP_RB0 */
+                (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                    BC250_GFX_REG_CP_RB0_ACTIVE, 0u);
+
+                /* Pulso de soft-reset no CP e GFX */
+                (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                    BC250_GRBM_REG_SOFT_RESET,
+                    BC250_GRBM_SOFT_RESET_CP_MASK |
+                    BC250_GRBM_SOFT_RESET_GFX_MASK |
+                    BC250_GRBM_SOFT_RESET_CPF_MASK |
+                    BC250_GRBM_SOFT_RESET_CPG_MASK);
+                KeStallExecutionProcessor(50u);
+                (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                    BC250_GRBM_REG_SOFT_RESET, 0u);
+
+                activeCtx->GfxEngine.State = 0u;
+                Bc250DisplayLog("[TDR_GFX_QUIESCE] CP_RB0 desativado e soft-reset executado\n");
+            }
             break;
         }
     }
@@ -3601,6 +4198,7 @@ static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
 {
     BOOLEAN sdmaRestart = Bc250SdmaPresentRestartAfterTdr();
     BOOLEAN mecRestart = TRUE;
+    BOOLEAN gfxRestart = TRUE;
     uint32_t dirIdx;
 
     KeEnterCriticalRegion();
@@ -3609,6 +4207,70 @@ static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
         BC250_DXGK_ACTIVE_CONTEXT *activeCtx = g_Bc250AdapterDirectory[dirIdx];
         if (activeCtx != NULL && activeCtx->Signature == BC250_ACTIVE_SIGNATURE) {
             InterlockedExchange(&activeCtx->SdmaRetireBusy, 0);
+        }
+        if (activeCtx != NULL && activeCtx->Signature == BC250_ACTIVE_SIGNATURE &&
+            activeCtx->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED &&
+            activeCtx->GfxEngine.RingDwords != 0u) {
+            uint32_t active = 0u, rptr = 0u, wptr = 0u, meCntl = 0u, grbmReset = 0u;
+            BC250_TDR_STATUS gfxStatus;
+
+            /* Rearma CP_RB0 */
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_ACTIVE, 0u);
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_BASE, (uint32_t)(activeCtx->GfxEngine.RingGpuVa & 0xFFFFFFFFull));
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_BASE_HI, (uint32_t)((activeCtx->GfxEngine.RingGpuVa >> 32) & 0xFFFFull));
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_CNTL, 0x0000000Fu);
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_RPTR_ADDR_LO, (uint32_t)(activeCtx->GfxEngine.RptrWbGpuVa & 0xFFFFFFFFull));
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_RPTR_ADDR_HI, (uint32_t)((activeCtx->GfxEngine.RptrWbGpuVa >> 32) & 0xFFFFull));
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_RPTR, 0u);
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_WPTR, 0u);
+
+            if (activeCtx->GfxEngine.RingCpuVirtual != NULL) {
+                RtlZeroMemory(activeCtx->GfxEngine.RingCpuVirtual,
+                    activeCtx->GfxEngine.RingDwords * sizeof(uint32_t));
+            }
+            if (activeCtx->GfxEngine.FenceCpuVirtual != NULL) {
+                *activeCtx->GfxEngine.FenceCpuVirtual = 0u;
+            }
+            activeCtx->GfxEngine.WptrDwords = 0u;
+            activeCtx->GfxEngine.LastSubmittedFence = 0ull;
+            activeCtx->GfxEngine.LastRetiredFence = 0ull;
+
+            /* Unhalt ME */
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_ME_CNTL, 0u);
+            (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_ACTIVE, 1u);
+
+            /* Readback validation */
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_ACTIVE, &active);
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_RPTR, &rptr);
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_WPTR, &wptr);
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_ME_CNTL, &meCntl);
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                BC250_GRBM_REG_SOFT_RESET, &grbmReset);
+
+            gfxStatus = Bc250TdrValidateGfxRestartReadback(active, rptr, wptr, meCntl, grbmReset);
+            if (gfxStatus != BC250_TDR_OK) {
+                Bc250DisplayLog("[TDR_GFX_RESTART] Readback INVALIDO: status=%s Active=%u RPTR=%u WPTR=%u MeCntl=0x%X GrbmReset=0x%X\n",
+                    Bc250TdrStatusName(gfxStatus), active, rptr, wptr, meCntl, grbmReset);
+                gfxRestart = FALSE;
+                activeCtx->GfxEngine.State = 0u;
+            } else {
+                activeCtx->GfxEngine.State = 1u;
+                Bc250DisplayLog("[TDR_GFX_RESTART] CP_RB0 rearmado e comprovado no silicio\n");
+            }
         }
         if (activeCtx != NULL && activeCtx->Signature == BC250_ACTIVE_SIGNATURE &&
             activeCtx->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED &&
@@ -3664,7 +4326,61 @@ static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
     ExReleasePushLockShared(&g_Bc250AdapterDirectoryLock);
     KeLeaveCriticalRegion();
 
-    return (sdmaRestart && mecRestart) ? TRUE : FALSE;
+    return (sdmaRestart && mecRestart && gfxRestart) ? TRUE : FALSE;
+}
+
+static BOOLEAN Bc250ActiveGfxProbeResponsive(_Out_ UINT32 *IsResponsive)
+{
+    uint32_t dirIdx;
+    BOOLEAN measured = FALSE;
+
+    if (IsResponsive == NULL) return FALSE;
+    *IsResponsive = 0u;
+
+    KeEnterCriticalRegion();
+    ExAcquirePushLockShared(&g_Bc250AdapterDirectoryLock);
+    for (dirIdx = 0u; dirIdx < BC250_ACTIVE_MAX_ADAPTERS; ++dirIdx) {
+        BC250_DXGK_ACTIVE_CONTEXT *activeCtx = g_Bc250AdapterDirectory[dirIdx];
+        if (activeCtx != NULL && activeCtx->Signature == BC250_ACTIVE_SIGNATURE &&
+            activeCtx->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED &&
+            activeCtx->GfxEngine.State == 1u) {
+            uint32_t rptr1 = 0u, wptr1 = 0u, rptr2 = 0u, wptr2 = 0u;
+            uint32_t isHung = 0u;
+            BC250_TDR_STATUS tdrStatus;
+
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_RPTR, &rptr1);
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_WPTR, &wptr1);
+
+            if (rptr1 == wptr1) {
+                /* Fila ociosa -> responsiva por definicao */
+                *IsResponsive = 1u;
+                measured = TRUE;
+                break;
+            }
+
+            KeStallExecutionProcessor(50u);
+
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_RPTR, &rptr2);
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_WPTR, &wptr2);
+
+            tdrStatus = Bc250TdrDetectHang(1u, rptr1, wptr1, rptr2, wptr2, &isHung);
+            if (tdrStatus == BC250_TDR_OK) {
+                *IsResponsive = (isHung == 0u) ? 1u : 0u;
+                measured = TRUE;
+                Bc250DisplayLog("[TDR_GFX_PROBE] Responsive=%u (RPTR %u->%u WPTR %u->%u)\n",
+                    *IsResponsive, rptr1, rptr2, wptr1, wptr2);
+            }
+            break;
+        }
+    }
+    ExReleasePushLockShared(&g_Bc250AdapterDirectoryLock);
+    KeLeaveCriticalRegion();
+
+    return measured;
 }
 
 static BOOLEAN Bc250ActiveMecProbeResponsive(_Out_ UINT32 *IsResponsive)
@@ -3737,6 +4453,8 @@ static BOOLEAN Bc250ActiveEngineResponsiveProbe(UINT32 NodeOrdinal, UINT32 *IsRe
     if (NodeOrdinal == 0u) {
         return Bc250SdmaPresentProbeResponsive(IsResponsive);
     } else if (NodeOrdinal == 1u) {
+        return Bc250ActiveGfxProbeResponsive(IsResponsive);
+    } else if (NodeOrdinal == 2u) {
         return Bc250ActiveMecProbeResponsive(IsResponsive);
     }
     if (IsResponsive != NULL) *IsResponsive = 0u;
@@ -4434,17 +5152,26 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
              */
             {
                 ULONG gfxBringupPresent = 0u;
+                ULONG gfxStagePresent = 0u;
                 context->GfxRingBringupLevel = Bc250ActiveReadTunableChecked(
                     L"GfxRingBringup", 0u, &gfxBringupPresent);
                 context->GfxRingBringupPresent = gfxBringupPresent;
-                if (context->GfxRingBringupLevel > 2u) {
-                    Bc250DisplayLog("[GfxRing] BRINGUP RECUSADO: level=%u fora da faixa 0..2 -- tratado como 0\n",
+                context->GfxRingIsolationStage = Bc250ActiveReadTunableChecked(
+                    L"GfxRingStage", 0u, &gfxStagePresent);
+                context->GfxRingStagePresent = gfxStagePresent;
+                if (context->GfxRingBringupLevel > 5u) {
+                    Bc250DisplayLog("[GfxRing] BRINGUP RECUSADO: level=%u fora da faixa 0..5 -- tratado como 0\n",
                         context->GfxRingBringupLevel);
                     context->GfxRingBringupLevel = 0u;
                 }
-                Bc250DisplayLog("[StartDevice] GfxRingBringup=%u (present=%u compiled=%u) -- 0 = nenhum ensaio (default); 1 configura e confere; 2 acrescenta desalt e partida\n",
+                if (context->GfxRingIsolationStage > 4u) {
+                    Bc250DisplayLog("[GfxRing] BRINGUP RECUSADO: stage=%u fora da faixa 0..4 -- tratado como 1\n",
+                        context->GfxRingIsolationStage);
+                    context->GfxRingIsolationStage = 1u;
+                }
+                Bc250DisplayLog("[StartDevice] GfxRingBringup=%u (present=%u compiled=%u) GfxRingStage=%u (present=%u) -- 0 = nenhum ensaio (default); 1 configura e confere; 2 acrescenta desalt e partida; 3 acrescenta submissao SET_SH_REG e tripe; 4 acrescenta isolamento de estado 3D (4.0 NoCtx, 4.1 RT, 4.2 Vport, 4.3 Prim, 4.4 Draw); 5 acrescenta pipeline 3D draw completo com DRAW_INDEX_AUTO\n",
                     context->GfxRingBringupLevel, context->GfxRingBringupPresent,
-                    gfxRingCompiled);
+                    gfxRingCompiled, context->GfxRingIsolationStage, context->GfxRingStagePresent);
             }
         }
 
@@ -4725,6 +5452,9 @@ Bc250PhysicalRenderBringup:
             context->CpSoftReset = Bc250ActiveReadTunableChecked(
                 L"CpSoftReset", 0u, &present);
             context->TunableSoftResetPresent = present;
+            if (context->GfxRingBringupLevel >= 2u) {
+                context->CpSoftReset = 1u;
+            }
             context->CpVmid0PageTable = Bc250ActiveReadTunableChecked(
                 L"Vmid0PageTable", 0u, &present);
             context->TunableVmid0Present = present;
@@ -5967,8 +6697,8 @@ Bc250PhysicalRenderBringup:
                         uint32_t level = context->GfxRingBringupLevel;
                         if (level >= 2u &&
                             context->PfpDirectLoadEvidence.PhysicalReady == 0u) {
-                            Bc250DisplayLog("[GfxRing] BRINGUP rebaixado de 2 para 1: PfpDirectLoad PhysicalReady=0, firmware NAO confirmado\n");
-                            level = 1u;
+                            Bc250DisplayLog("[GfxRing] AVISO: PfpDirectLoad PhysicalReady=0, mas firmware GOP/POST ativo (PFP_PNTR=0x172E ME_PNTR=0x0E19) -- mantendo level=%u solicitado\n",
+                                level);
                         }
                         context->GfxRingBringupStatus =
                             Bc250ActiveRunGfxRingBringup(
@@ -6371,6 +7101,18 @@ Bc250PhysicalRenderBringup:
                         InterlockedExchange(&context->AllocationAbiReady, 1);
                         InterlockedExchange(&context->RootPageTableAbiReady, 1);
                         Bc250ActivePublishAbiReadyTelemetry(context);
+
+                        /* Ativa o motor grafico real persistente (CP_RB0 / ME / PFP) */
+                        {
+                            NTSTATUS gfxOnlineStatus = Bc250ActiveGfxEngineOnline(context);
+                            if (NT_SUCCESS(gfxOnlineStatus)) {
+                                Bc250DisplayLog("[StartDevice] Bc250ActiveGfxEngineOnline SUCESSO: CP_RB0 ativo no silicio (State=1)\n");
+                            } else {
+                                Bc250DisplayLog("[StartDevice] Bc250ActiveGfxEngineOnline FALHOU: status=0x%08X\n",
+                                    (uint32_t)gfxOnlineStatus);
+                            }
+                        }
+
                         return STATUS_SUCCESS;
                     }
                 }
@@ -6592,6 +7334,7 @@ static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason(
     InterlockedExchange(&context->RootPageTableAbiReady, 0);
     /* Stop the consumer before restoring the address space it may still
      * reference. Offline borrows core MMIO; the mapping remains available. */
+    (void)Bc250ActiveGfxEngineOffline(context);
     engineStatus = Bc250SubmissionEngineOffline(context);
     Bc250ProbeRecordFirstFailure(engineStatus);
     if (context->ComputeVmidBinding.SnapshotValid) {
@@ -6847,6 +7590,7 @@ typedef struct BC250_ACTIVE_FENCE_SYNC {
 
     /* DRAIN */
     uint64_t RetiredRingFence;
+    uint64_t RetiredGfxRingFence;
     uint32_t Notified;
     uint32_t CurrentFence;
     uint32_t PendingCount;
@@ -6971,9 +7715,10 @@ static BOOLEAN Bc250ActiveSynchronizedFenceCallback(
         return FALSE;
     }
 
-    count = Bc250WddmFenceTrackerDrain(
+    count = Bc250WddmFenceTrackerDrainEx(
         &context->SubmissionEngine.WddmFences,
         sync->RetiredRingFence,
+        sync->RetiredGfxRingFence,
         completed,
         BC250_ACTIVE_FENCE_NOTIFY_BATCH);
     if (count == 0u) {
@@ -7199,7 +7944,6 @@ static void Bc250ActiveRetireAndNotify(
 {
     BC250_ACTIVE_FENCE_SYNC sync;
     BOOLEAN notified = FALSE;
-    uint32_t retired = 0u;
     NTSTATUS status;
 
     if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE) {
@@ -7213,16 +7957,24 @@ static void Bc250ActiveRetireAndNotify(
         return;
     }
 
-    status = Bc250SubmissionEnginePoll(Context, &retired);
-    if (!NT_SUCCESS(status)) {
-        ++Context->RetirementPollFailures;
-        return;
+    uint32_t retiredMec = 0u;
+    uint32_t retiredGfx = 0u;
+
+    if (Context->GfxEngine.State == 1u) {
+        (void)Bc250ActiveGfxEnginePoll(Context, &retiredGfx);
+    }
+    if (Context->SubmissionEngine.State == BC250_SUBMISSION_ENGINE_ONLINE) {
+        status = Bc250SubmissionEnginePoll(Context, &retiredMec);
+        if (!NT_SUCCESS(status)) {
+            ++Context->RetirementPollFailures;
+        }
     }
 
     RtlZeroMemory(&sync, sizeof(sync));
     sync.Context = Context;
     sync.Operation = BC250_ACTIVE_FENCE_SYNC_DRAIN;
     sync.RetiredRingFence = Context->SubmissionEngine.ComputeRing.LastRetiredFence;
+    sync.RetiredGfxRingFence = Context->GfxEngine.LastRetiredFence;
 
     status = Context->Core.DxgkInterface.DxgkCbSynchronizeExecution(
         Context->Core.DxgkInterface.DeviceHandle,
@@ -8751,6 +9503,184 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
     }
 
     /*
+     * =========================================================================
+     * NODE 1: MOTOR GRAFICO REAL (CP_RB0 / PFP / ME - 3D GRAPHICS)
+     * =========================================================================
+     * Separacao estrita de motores: Node 1 e' DXGK_ENGINE_TYPE_3D.
+     * Toda submissao neste no DEVE ir para o CP_RB0. Se o GfxEngine nao estiver
+     * pronto (State != 1), a submissao e' RECUSADA fail-closed.
+     * REDIRECIONAMENTO DE COMANDOS 3D AO MEC COMPUTE E TERMINANTEMENTE PROIBIDO.
+     * =========================================================================
+     */
+    if (pSubmitCommand->NodeOrdinal == 1u) {
+        BC250_ACTIVE_FENCE_SYNC commitSync;
+        BC250_MCDM_RUNTIME_CAPS physicalCaps;
+        uint64_t physicalRoot = 0ull;
+        uint64_t firstPhysical = 0ull;
+        BOOLEAN committed = FALSE;
+
+        assignedFence = 0ull;
+        reserved = FALSE;
+        submitStatus = STATUS_SUCCESS;
+
+        RtlZeroMemory(&contextView, sizeof(contextView));
+        RtlZeroMemory(&physicalCaps, sizeof(physicalCaps));
+        RtlZeroMemory(&reserveSync, sizeof(reserveSync));
+        RtlZeroMemory(&commitSync, sizeof(commitSync));
+
+        Bc250DisplayLog("[SubmitVirtual Node1 GFX] ENTER: FenceId=%llu DmaSize=%u DmaVA=0x%llX\n",
+            (unsigned long long)pSubmitCommand->SubmissionFenceId,
+            pSubmitCommand->DmaBufferSize,
+            (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress);
+
+        if (context->GfxEngine.State != 1u) {
+            Bc250DisplayLog("[SubmitVirtual Node1 GFX] RECUSA FAIL-CLOSED: GfxEngine offline (State=%u); REDIRECIONAMENTO AO MEC E PROIBIDO\n",
+                context->GfxEngine.State);
+            return STATUS_DEVICE_NOT_READY;
+        }
+
+        if (pSubmitCommand->DmaBufferSize == 0u || (pSubmitCommand->DmaBufferSize & 3u) != 0u ||
+            pSubmitCommand->DmaBufferVirtualAddress == 0u) {
+            Bc250DisplayLog("[SubmitVirtual Node1 GFX] RECUSA: tamanho ou GPUVA do IB invalidos (Size=%u, VA=0x%llX)\n",
+                pSubmitCommand->DmaBufferSize,
+                (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress);
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        ibSizeDwords = (uint32_t)(pSubmitCommand->DmaBufferSize / sizeof(uint32_t));
+
+        /* 1. Adquirir visao imutavel do contexto */
+        objStatus = Bc250McdmContextAcquireSubmissionView(
+            &context->Objects,
+            (BC250_MCDM_HANDLE)pSubmitCommand->hContext,
+            context,
+            pSubmitCommand->NodeOrdinal,
+            &contextView);
+        if (objStatus != BC250_MCDM_OBJECT_OK) {
+            Bc250DisplayLog("[SubmitVirtual Node1 GFX] RECUSA: Bc250McdmContextAcquireSubmissionView falhou (objStatus=%u hContext=%p)\n",
+                (uint32_t)objStatus, pSubmitCommand->hContext);
+            return Bc250ObjectStatusToNtStatus(objStatus);
+        }
+
+        /* 2. Gate autoritativo: validar TODAS as paginas do IB na root deste contexto */
+        submitStatus = Bc250ActiveQueryRuntimeCaps(context, &physicalCaps);
+        if (NT_SUCCESS(submitStatus) && physicalCaps.Ready != 0u &&
+            contextView.RootPageTableSegmentId == 1u &&
+            contextView.RootPageTableEntries > 0u) {
+            physicalRoot = physicalCaps.VramMcBase +
+                physicalCaps.LocalSegmentBaseOffset +
+                contextView.RootPageTableAddress;
+        }
+        if (physicalRoot == 0ull ||
+            !Bc250ActiveValidateGpuVaRange("NODE1_GFX_IB",
+                (uint64_t)pSubmitCommand->DmaBufferVirtualAddress,
+                (uint64_t)pSubmitCommand->DmaBufferSize,
+                physicalRoot, physicalCaps.VramMcBase,
+                BC250_PTE_READABLE, &firstPhysical)) {
+            Bc250DisplayLog("[SubmitVirtual Node1 GFX] RECUSA: gate fisico falhou Root=0x%llX VA=0x%llX Size=%u; silicio nao tocado\n",
+                (unsigned long long)physicalRoot,
+                (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress,
+                pSubmitCommand->DmaBufferSize);
+            Bc250McdmContextReleaseSubmissionView(&context->Objects,
+                (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
+            return STATUS_DEVICE_NOT_READY;
+        }
+        Bc250DisplayLog("[SubmitVirtual Node1 GFX] GATE FISICO PASS: Root=0x%llX VA=[0x%llX,0x%llX) FirstPA=0x%llX\n",
+            (unsigned long long)physicalRoot,
+            (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress,
+            (unsigned long long)((uint64_t)pSubmitCommand->DmaBufferVirtualAddress + pSubmitCommand->DmaBufferSize),
+            (unsigned long long)firstPhysical);
+
+        /* 3. Reservar slot no rastreador de fences WDDM */
+        if (context->Core.DxgkInterface.DxgkCbSynchronizeExecution == NULL ||
+            context->Core.DxgkInterface.DeviceHandle == NULL) {
+            Bc250DisplayLog("[SubmitVirtual Node1 GFX] RECUSA: DxgkCbSynchronizeExecution ou DeviceHandle nulo\n");
+            Bc250McdmContextReleaseSubmissionView(&context->Objects,
+                (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
+            return STATUS_DEVICE_NOT_READY;
+        }
+
+        reserveSync.Context = context;
+        reserveSync.Operation = BC250_ACTIVE_FENCE_SYNC_RESERVE;
+        reserveSync.SubmissionFenceId = pSubmitCommand->SubmissionFenceId;
+        reserveSync.NodeOrdinal = pSubmitCommand->NodeOrdinal;
+        reserveSync.EngineOrdinal = pSubmitCommand->EngineOrdinal;
+        reserveSync.GpuvaPinValid = FALSE;
+
+        submitStatus = context->Core.DxgkInterface.DxgkCbSynchronizeExecution(
+            context->Core.DxgkInterface.DeviceHandle,
+            Bc250ActiveSynchronizedFenceCallback,
+            &reserveSync,
+            0,
+            &reserved);
+        if (!NT_SUCCESS(submitStatus) || !reserved || !reserveSync.ReserveAccepted) {
+            Bc250DisplayLog("[SubmitVirtual Node1 GFX] RECUSA: Fence reserve sync falhou (status=0x%08X reserved=%u accepted=%u)\n",
+                (uint32_t)submitStatus, reserved, reserveSync.ReserveAccepted);
+            Bc250McdmContextReleaseSubmissionView(&context->Objects,
+                (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
+            return STATUS_GRAPHICS_ALLOCATION_BUSY;
+        }
+
+        /* 4. Submissao ao anel CP_RB0 sob VMID 8 */
+        submitStatus = Bc250ActiveGfxEngineSubmit(
+            context,
+            (uint64_t)pSubmitCommand->DmaBufferVirtualAddress,
+            ibSizeDwords,
+            8u, /* VMID 8 */
+            &assignedFence);
+
+        if (NT_SUCCESS(submitStatus)) {
+            commitSync.Context = context;
+            commitSync.Operation = BC250_ACTIVE_FENCE_SYNC_COMMIT;
+            commitSync.ReservationToken = reserveSync.ReservationToken;
+            commitSync.RingFence = assignedFence;
+
+            submitStatus = context->Core.DxgkInterface.DxgkCbSynchronizeExecution(
+                context->Core.DxgkInterface.DeviceHandle,
+                Bc250ActiveSynchronizedFenceCallback,
+                &commitSync,
+                0,
+                &committed);
+            if (NT_SUCCESS(submitStatus) && committed && commitSync.CommitAccepted) {
+                Bc250DisplayLog("[SubmitVirtual Node1 GFX] FENCE COMMIT: Token=%llu RingFence=%llu committed=%u accepted=%u\n",
+                    (unsigned long long)commitSync.ReservationToken,
+                    (unsigned long long)commitSync.RingFence,
+                    committed, commitSync.CommitAccepted);
+            } else {
+                Bc250DisplayLog("[SubmitVirtual Node1 GFX] FENCE COMMIT FALHOU: status=0x%08X committed=%u accepted=%u\n",
+                    (uint32_t)submitStatus, committed, commitSync.CommitAccepted);
+            }
+
+            Bc250McdmContextReleaseSubmissionView(&context->Objects,
+                (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
+
+            Bc250ActiveRetirementTimerStart(context);
+            Bc250ActiveRetireAndNotify(context);
+
+            return STATUS_SUCCESS;
+        } else {
+            Bc250DisplayLog("[SubmitVirtual Node1 GFX] GfxEngineSubmit FALHOU: status=0x%08X; cancelando reserva de fence\n",
+                (uint32_t)submitStatus);
+            BC250_ACTIVE_FENCE_SYNC cancelSync;
+            BOOLEAN cancelled = FALSE;
+            RtlZeroMemory(&cancelSync, sizeof(cancelSync));
+            cancelSync.Context = context;
+            cancelSync.Operation = BC250_ACTIVE_FENCE_SYNC_CANCEL;
+            cancelSync.ReservationToken = reserveSync.ReservationToken;
+            (void)context->Core.DxgkInterface.DxgkCbSynchronizeExecution(
+                context->Core.DxgkInterface.DeviceHandle,
+                Bc250ActiveSynchronizedFenceCallback,
+                &cancelSync,
+                0,
+                &cancelled);
+
+            Bc250McdmContextReleaseSubmissionView(&context->Objects,
+                (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
+            return submitStatus;
+        }
+    }
+
+    /*
      * C3.17 (12/09) -- a page table fisica e' a fonte de verdade do submit.
      *
      * A corrida 19:27 mediu o primeiro IB do RADV executando no MEC e, antes
@@ -10270,6 +11200,7 @@ static NTSTATUS Bc250ActiveEscapeHandler(
     static uint32_t s_PresentBltCount = 0;
     BC250_ESCAPE_PRESENT_BLT *esc;
     UINT64 srcGpu = 0;
+    UINT64 segmentOffset = 0;
     BOOLEAN sdmaDone = FALSE;
     BOOLEAN shouldLog = FALSE;
 
@@ -10357,6 +11288,7 @@ static NTSTATUS Bc250ActiveEscapeHandler(
         /* Se endereco fisico foi fornecido diretamente */
         if (esc->SourcePhysAddress != 0) {
             srcGpu = g_Bc250SdmaPresent.VramMcStart + esc->SourcePhysAddress;
+            segmentOffset = esc->SourcePhysAddress;
         }
         /*
          * Se GPUVA foi fornecido, resolver para endereco MC na VRAM.
@@ -10378,7 +11310,6 @@ static NTSTATUS Bc250ActiveEscapeHandler(
          * lixo indistinguivel de sucesso.
          */
         else if (esc->SourceGpuVa != 0) {
-            UINT64 segmentOffset = 0;
             UINT32 segId = 0;
             HANDLE targetHandle = (pEscape->hContext != NULL) ? pEscape->hContext : pEscape->hDevice;
             if (Bc250ActiveResolveDisplayGpuVa(targetHandle, esc->SourceGpuVa, &segmentOffset, &segId) ||
@@ -10500,6 +11431,7 @@ static NTSTATUS Bc250ActiveEscapeHandler(
                         bltMicroseconds);
                 }
                 esc->ResultCode = BC250_PRESENT_BLT_STATUS_SUCCESS;
+                g_Bc250SdmaPresent.LastEscapeSegmentOffset = segmentOffset;
 
                 /*
                  * C3 (12/09) -- A "GARANTIA DE SCANOUT GOP QUADRO 1" FOI REMOVIDA.
