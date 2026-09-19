@@ -101,6 +101,15 @@ BOOL Bc250UmdVkCreateResource(
 
         pRes->VkMemSize = memReqs.size;
         pRes->VkResourceCreated = TRUE;
+        if (pCreate->pInitialDataUP != NULL && pCreate->pInitialDataUP->pSysMem != NULL) {
+            SIZE_T uploadBytes = (pRes->Width > 0 && pRes->Width < (UINT)size) ? (SIZE_T)pRes->Width : (SIZE_T)size;
+            (void)Bc250UmdVkUploadBufferData(pDevice, pRes, pCreate->pInitialDataUP->pSysMem, uploadBytes);
+            Bc250VkResTrace("[VK_RES] Buffer InitialDataUP carregado via Vulkan (%llu bytes)", (unsigned long long)uploadBytes);
+        } else if (pRes->pCpuShadow != NULL) {
+            SIZE_T uploadBytes = (pRes->Width > 0 && pRes->Width < (UINT)size) ? (SIZE_T)pRes->Width : (SIZE_T)size;
+            (void)Bc250UmdVkUploadBufferData(pDevice, pRes, pRes->pCpuShadow, uploadBytes);
+            Bc250VkResTrace("[VK_RES] Buffer Shadow carregado via Vulkan (%llu bytes)", (unsigned long long)uploadBytes);
+        }
         Bc250VkResTrace("[VK_RES] SUCESSO: Buffer criado (buf=%p, mem=%p, size=%llu)",
             (void*)pRes->VkBuf, (void*)pRes->VkMem, size);
         return TRUE;
@@ -269,11 +278,19 @@ BOOL Bc250UmdVkCreateRtv(
     viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
     viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
     viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+    uint32_t resLayers = (pRes->ArraySize > 0) ? pRes->ArraySize : 1;
+    uint32_t baseLayer = pRtv->FirstArraySlice;
+    uint32_t layerCount = (pRtv->ArraySize > 0 && pRtv->ArraySize != (UINT)-1) ? pRtv->ArraySize : 1;
+    if (baseLayer >= resLayers) baseLayer = 0;
+    if (baseLayer + layerCount > resLayers) {
+        layerCount = (resLayers > baseLayer) ? (resLayers - baseLayer) : 1;
+    }
+
     viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     viewInfo.subresourceRange.baseMipLevel = pRtv->MipSlice;
     viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.baseArrayLayer = pRtv->FirstArraySlice;
-    viewInfo.subresourceRange.layerCount = (pRtv->ArraySize > 0) ? pRtv->ArraySize : 1;
+    viewInfo.subresourceRange.baseArrayLayer = baseLayer;
+    viewInfo.subresourceRange.layerCount = layerCount;
 
     res = pBridge->vk.vkCreateImageView(pBridge->Device, &viewInfo, NULL, &pRtv->VkView);
     if (res != VK_SUCCESS) {
@@ -285,7 +302,7 @@ BOOL Bc250UmdVkCreateRtv(
     memset(&attachment, 0, sizeof(attachment));
     attachment.format = vkFormat;
     attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -301,17 +318,44 @@ BOOL Bc250UmdVkCreateRtv(
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorRef;
 
+    VkSubpassDependency dependency;
+    memset(&dependency, 0, sizeof(dependency));
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
+    dependency.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
     memset(&rpInfo, 0, sizeof(rpInfo));
     rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     rpInfo.attachmentCount = 1;
     rpInfo.pAttachments = &attachment;
     rpInfo.subpassCount = 1;
     rpInfo.pSubpasses = &subpass;
+    rpInfo.dependencyCount = 1;
+    rpInfo.pDependencies = &dependency;
 
     res = pBridge->vk.vkCreateRenderPass(pBridge->Device, &rpInfo, NULL, &pRtv->VkPass);
     if (res != VK_SUCCESS) {
-        Bc250VkResTrace("[VK_RES] ERRO: vkCreateRenderPass (RTV) falhou: res=%d", res);
+        Bc250VkResTrace("[VK_RES] ERRO: vkCreateRenderPass (RTV Clear) falhou: res=%d", res);
         pBridge->vk.vkDestroyImageView(pBridge->Device, pRtv->VkView, NULL);
+        pRtv->VkView = VK_NULL_HANDLE;
+        return FALSE;
+    }
+
+    /* 2b. Create RenderPass with LOAD (para Draw subsequente preservando conteudo) */
+    attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    attachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    attachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    res = pBridge->vk.vkCreateRenderPass(pBridge->Device, &rpInfo, NULL, &pRtv->VkPassLoad);
+    if (res != VK_SUCCESS || pRtv->VkPassLoad == VK_NULL_HANDLE) {
+        Bc250VkResTrace("[VK_RES] ERRO: vkCreateRenderPass (RTV Load) falhou: res=%d (D1.3 fail-closed)", res);
+        pBridge->vk.vkDestroyRenderPass(pBridge->Device, pRtv->VkPass, NULL);
+        pBridge->vk.vkDestroyImageView(pBridge->Device, pRtv->VkView, NULL);
+        pRtv->VkPass = VK_NULL_HANDLE;
+        pRtv->VkPassLoad = VK_NULL_HANDLE;
         pRtv->VkView = VK_NULL_HANDLE;
         return FALSE;
     }
@@ -329,6 +373,10 @@ BOOL Bc250UmdVkCreateRtv(
     res = pBridge->vk.vkCreateFramebuffer(pBridge->Device, &fbInfo, NULL, &pRtv->VkFb);
     if (res != VK_SUCCESS) {
         Bc250VkResTrace("[VK_RES] ERRO: vkCreateFramebuffer (RTV) falhou: res=%d", res);
+        if (pRtv->VkPassLoad != VK_NULL_HANDLE) {
+            pBridge->vk.vkDestroyRenderPass(pBridge->Device, pRtv->VkPassLoad, NULL);
+            pRtv->VkPassLoad = VK_NULL_HANDLE;
+        }
         pBridge->vk.vkDestroyRenderPass(pBridge->Device, pRtv->VkPass, NULL);
         pBridge->vk.vkDestroyImageView(pBridge->Device, pRtv->VkView, NULL);
         pRtv->VkPass = VK_NULL_HANDLE;
@@ -337,8 +385,8 @@ BOOL Bc250UmdVkCreateRtv(
     }
 
     pRtv->VkRtvCreated = TRUE;
-    Bc250VkResTrace("[VK_RES] SUCESSO: RTV criado (view=%p, pass=%p, fb=%p)",
-        (void*)pRtv->VkView, (void*)pRtv->VkPass, (void*)pRtv->VkFb);
+    Bc250VkResTrace("[VK_RES] SUCESSO: RTV criado (view=%p, passClear=%p, passLoad=%p, fb=%p)",
+        (void*)pRtv->VkView, (void*)pRtv->VkPass, (void*)pRtv->VkPassLoad, (void*)pRtv->VkFb);
     return TRUE;
 }
 
@@ -350,12 +398,16 @@ VOID Bc250UmdVkDestroyRtv(
     if (pDevice == NULL || pRtv == NULL || !pDevice->VkBridgeInitialized) return;
     pBridge = &pDevice->VkBridge;
 
-    Bc250VkResTrace("[VK_RES] Bc250UmdVkDestroyRtv: view=%p, pass=%p, fb=%p",
-        (void*)pRtv->VkView, (void*)pRtv->VkPass, (void*)pRtv->VkFb);
+    Bc250VkResTrace("[VK_RES] Bc250UmdVkDestroyRtv: view=%p, passClear=%p, passLoad=%p, fb=%p",
+        (void*)pRtv->VkView, (void*)pRtv->VkPass, (void*)pRtv->VkPassLoad, (void*)pRtv->VkFb);
 
     if (pRtv->VkFb != VK_NULL_HANDLE) {
         pBridge->vk.vkDestroyFramebuffer(pBridge->Device, pRtv->VkFb, NULL);
         pRtv->VkFb = VK_NULL_HANDLE;
+    }
+    if (pRtv->VkPassLoad != VK_NULL_HANDLE) {
+        pBridge->vk.vkDestroyRenderPass(pBridge->Device, pRtv->VkPassLoad, NULL);
+        pRtv->VkPassLoad = VK_NULL_HANDLE;
     }
     if (pRtv->VkPass != VK_NULL_HANDLE) {
         pBridge->vk.vkDestroyRenderPass(pBridge->Device, pRtv->VkPass, NULL);
@@ -401,11 +453,19 @@ BOOL Bc250UmdVkCreateDsv(
     viewInfo.image = pRes->VkImg;
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
     viewInfo.format = vkFormat;
+    uint32_t resLayers = (pRes->ArraySize > 0) ? pRes->ArraySize : 1;
+    uint32_t baseLayer = pDsv->FirstArraySlice;
+    uint32_t layerCount = (pDsv->ArraySize > 0 && pDsv->ArraySize != (UINT)-1) ? pDsv->ArraySize : 1;
+    if (baseLayer >= resLayers) baseLayer = 0;
+    if (baseLayer + layerCount > resLayers) {
+        layerCount = (resLayers > baseLayer) ? (resLayers - baseLayer) : 1;
+    }
+
     viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
     viewInfo.subresourceRange.baseMipLevel = pDsv->MipSlice;
     viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.baseArrayLayer = pDsv->FirstArraySlice;
-    viewInfo.subresourceRange.layerCount = (pDsv->ArraySize > 0) ? pDsv->ArraySize : 1;
+    viewInfo.subresourceRange.baseArrayLayer = baseLayer;
+    viewInfo.subresourceRange.layerCount = layerCount;
 
     res = pBridge->vk.vkCreateImageView(pBridge->Device, &viewInfo, NULL, &pDsv->VkView);
     if (res != VK_SUCCESS) {
@@ -453,6 +513,15 @@ BOOL Bc250UmdVkUploadBufferData(
     res = pBridge->vk.vkMapMemory(pBridge->Device, pRes->VkMem, 0, ByteSize, 0, &mapped);
     if (res == VK_SUCCESS && mapped != NULL) {
         memcpy(mapped, pData, ByteSize);
+        if (pBridge->vk.vkFlushMappedMemoryRanges != NULL) {
+            VkMappedMemoryRange range;
+            memset(&range, 0, sizeof(range));
+            range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+            range.memory = pRes->VkMem;
+            range.offset = 0;
+            range.size = VK_WHOLE_SIZE;
+            pBridge->vk.vkFlushMappedMemoryRanges(pBridge->Device, 1, &range);
+        }
         pBridge->vk.vkUnmapMemory(pBridge->Device, pRes->VkMem);
         Bc250VkResTrace("[VK_RES] UploadBufferData SUCESSO: %zu bytes copiados para VkMem=%p (res=%p)",
             ByteSize, (void*)pRes->VkMem, (void*)pRes);

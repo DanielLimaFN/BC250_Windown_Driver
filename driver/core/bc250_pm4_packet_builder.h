@@ -255,6 +255,23 @@ BC250_PM4_STATUS Bc250Pm4RingAdvanceWptr(
 
 const char *Bc250Pm4StatusName(BC250_PM4_STATUS Status);
 
+/*
+ * DECODIFICACAO DE UM HEADER PM4 LIDO DO SILICIO -- fonte unica.
+ *
+ * Existe por causa da corrida 2026-09-19 09:06:34: o anel grafico parou com
+ * o CP ocupado e nao havia como dizer EM QUE PACOTE. CP_ME_HEADER_DUMP e
+ * CP_PFP_HEADER_DUMP guardam o ultimo header que cada micro-engine decodificou,
+ * e sem um nome eles sairiam como hexadecimal solto -- que foi exatamente o
+ * problema que a decodificacao de CP_STALLED_STAT1 ja teve neste projeto.
+ *
+ * Type3 (bits 31:30 == 3): opcode em 15:8, count em 29:16 (payload = count+1).
+ * Qualquer opcode fora da tabela sai como "desconhecido": nao se inventa nome.
+ */
+uint32_t Bc250Pm4HeaderType(uint32_t Header);
+uint32_t Bc250Pm4HeaderType3Opcode(uint32_t Header);
+uint32_t Bc250Pm4HeaderType3CountDwords(uint32_t Header);
+const char *Bc250Pm4Type3OpcodeName(uint32_t Opcode);
+
 #ifdef __cplusplus
 }
 #endif

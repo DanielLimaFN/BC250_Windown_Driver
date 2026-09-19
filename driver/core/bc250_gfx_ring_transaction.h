@@ -88,6 +88,51 @@ extern "C" {
 #define BC250_GFX_REG_CP_ME_INSTR_PNTR       0x00008698u
 
 /*
+ * =========================================================================
+ * 19/09 -- DIAGNOSTICO DO PONTO DE PARADA DO CP GRAFICO. SOMENTE LEITURA.
+ * =========================================================================
+ * Por que estes offsets entram agora: a corrida 2026-09-19 09:06:34 parou o
+ * anel grafico com GRBM_STATUS=0xA2613028 (GUI_ACTIVE, CP_BUSY, GE_BUSY,
+ * SPI_BUSY, PA_BUSY, CB_CLEAN=1, DB_CLEAN=1) e o quiesce nao tinha como
+ * dizer EM QUE PACOTE o ME parou nem se havia onda viva. O handoff daquela
+ * corrida listou tres causas possiveis; nenhuma era decidivel pelos
+ * registradores que liamos.
+ *
+ * Proveniencia (Lei 7): inc/linux_ref/gc_10_1_0_offset.h, convertido pela
+ * regra de docs/03 -- BAR5 = (SEG[BASE_IDX] + mmREG) * 4, com
+ * SEG[0]=0x1260 e SEG[1]=0xA000, a mesma tabela de
+ * tools/import-gc-offset-header.py. As tres ancoras do importador
+ * (mmCP_ME_CNTL->0x086D8, mmGRBM_STATUS->0x08010, mmCP_RB0_ACTIVE->0x0C680)
+ * reproduzem, entao a conversao esta conferida nesta placa.
+ *
+ *   mmCP_ME_HEADER_DUMP    0x0F41 idx0 -> 0x08684   ultimo header PM4 do ME
+ *   mmCP_PFP_HEADER_DUMP   0x0F42 idx0 -> 0x08688   ultimo header PM4 do PFP
+ *   mmGRBM_STATUS_SE0      0x0DA5 idx0 -> 0x08014   busy por shader engine
+ *   mmGRBM_STATUS_SE1      0x0DA6 idx0 -> 0x08018
+ *   mmSQ_DEBUG_STS_GLOBAL  0x10A9 idx0 -> 0x08C24   ondas em voo (WAVE_LEVEL)
+ *   mmCP_IB1_BASE_LO       0x20CC idx1 -> 0x30330   IB que o CP esta lendo
+ *   mmCP_IB1_BASE_HI       0x20CD idx1 -> 0x30334
+ *   mmCP_IB1_BUFSZ         0x20CE idx1 -> 0x30338   quanto do IB resta
+ *
+ * GRBM_STATUS2 (0x08008) e CP_BUSY_STAT (0x0867C) ja existiam na allowlist
+ * de leitura; entram aqui so' para o quiesce poder nomea-los.
+ *
+ * NENHUM destes e' escrito em lugar nenhum, e o portao
+ * audit_gfx_stall_probe_is_read_only existe para manter assim.
+ * NAO VALIDADO EM HARDWARE.
+ */
+#define BC250_GFX_REG_GRBM_STATUS2           0x00008008u
+#define BC250_GFX_REG_GRBM_STATUS_SE0        0x00008014u
+#define BC250_GFX_REG_GRBM_STATUS_SE1        0x00008018u
+#define BC250_GFX_REG_CP_BUSY_STAT           0x0000867Cu
+#define BC250_GFX_REG_CP_ME_HEADER_DUMP      0x00008684u
+#define BC250_GFX_REG_CP_PFP_HEADER_DUMP     0x00008688u
+#define BC250_GFX_REG_SQ_DEBUG_STS_GLOBAL    0x00008C24u
+#define BC250_GFX_REG_CP_IB1_BASE_LO         0x00030330u
+#define BC250_GFX_REG_CP_IB1_BASE_HI         0x00030334u
+#define BC250_GFX_REG_CP_IB1_BUFSZ           0x00030338u
+
+/*
  * ENDERECOS PROIBIDOS -- o prototipo escreve nestes achando que sao os
  * *_IC_OP_CNTL. Medido contra o header: os reais estao em BASE_IDX 1
  * (0x3E10C/0x3E11C/0x3E12C/0x3E13C). As constantes existem para o portao
@@ -182,6 +227,27 @@ typedef struct BC250_GFX_RING_TXN_EVIDENCE {
     uint32_t RingActivateAttempted;
     uint32_t RingActivateReadback;
     uint32_t RingActivatePassed;
+
+    /*
+     * D0.4 -- CP_RB_WPTR_POLL_CNTL (0x08708), o canal que nunca foi escrito.
+     *
+     * Ate 18/09 este registrador era apenas LIDO no preflight (PollCntlBefore)
+     * e submetido a Bc250GfxRingPollCntlIsBorrowed. A corrida 14:20:07 mostrou
+     * por que isso importa: com a doorbell escrita 0 pelo APPLY e o MMIO de
+     * CP_RB0_WPTR nao retendo o valor, nenhum canal de publicacao de WPTR
+     * estava operante.
+     *
+     * AVISO QUE TEM DE VIAJAR COM O CAMPO: pelo header upstream este registrador
+     * NAO TEM BIT DE ENABLE -- so' POLL_FREQUENCY[15:0] e IDLE_POLL_COUNT[31:16]
+     * (gc_10_1_0_sh_mask.h). Programa-lo CONFIGURA a cadencia do poll; nao
+     * "liga" o mecanismo. Ausencia de efeito na proxima corrida NAO refuta o
+     * canal de doorbell, que e' o mecanismo provado nesta placa no lado do
+     * compute.
+     */
+    uint32_t PollCntlPlanned;
+    uint32_t PollCntlReadback;
+    uint32_t PollCntlApplyAttempted;
+    uint32_t PollCntlApplyPassed;
 
     /* ROLLBACK. */
     uint32_t RollbackAttempted;
@@ -373,6 +439,139 @@ BC250_GFX_RING_TXN_STATUS Bc250GfxVerify3DDrawStream(
     const BC250_GFX_RING_SUBMIT_3D_DRAW_PLAN *SubmitPlan);
 
 const char *Bc250GfxRingTxnStatusName(BC250_GFX_RING_TXN_STATUS Status);
+
+/*
+ * =========================================================================
+ * SONDA DE ONDA -- 19/09, depois da Corrida 35. LEITURA INDIRETA VIA SQ.
+ * =========================================================================
+ * A Corrida 35 mediu o que faltava e fechou o Desfecho 1 do docs/289:
+ *   [TDR_GFX_WAVES] SQ_DEBUG_STS_GLOBAL=0x00030031 Busy=1
+ *                   WaveLevelSA0=3 WaveLevelSA1=3
+ * Seis ondas em voo que NAO retiram, com CB_CLEAN=1 nos dois shader engines
+ * e CP_BUSY_STAT sem SemPolling, sem EopDoneBusy e sem CoherCntNeqZero.
+ *
+ * O contador diz QUANTAS ondas estao presas. Ele nao diz ONDE. Quem diz e' o
+ * PC da onda, e o PC so' se alcanca pelo caminho INDIRETO do SQ:
+ *
+ *   1. GRBM_GFX_INDEX seleciona SE / SA / instancia (broadcast DESLIGADO)
+ *   2. SQ_IND_INDEX recebe (ixSQ_WAVE_* << 16) | WAVE_ID
+ *   3. SQ_IND_DATA devolve o registrador daquela onda
+ *
+ * Proveniencia (Lei 7), inc/linux_ref/gc_10_1_0_offset.h pela regra de docs/03
+ * (BAR5 = (SEG[BASE_IDX] + mmREG) * 4, SEG[0]=0x1260, SEG[1]=0xA000):
+ *   mmSQ_IND_INDEX    0x1118 idx0 -> 0x08DE0
+ *   mmSQ_IND_DATA     0x1119 idx0 -> 0x08DE4
+ *   mmGRBM_GFX_INDEX  0x2200 idx1 -> 0x30800   (ja em uso pelo caminho MEC)
+ * Campos de SQ_IND_INDEX, gc_10_1_0_sh_mask.h:8112-8115:
+ *   WAVE_ID 0x0000001F | WORKITEM_ID 0x000007E0 | AUTO_INCR 0x00000800
+ *   INDEX   0xFFFF0000
+ * Campos de GRBM_GFX_INDEX, mesmo header:27820-27825.
+ *
+ * ---------------------------------------------------------------------
+ * POR QUE ESTA SONDA E' A UNICA COISA DESTA FAIXA QUE ESCREVE REGISTRADOR
+ * ---------------------------------------------------------------------
+ * Ela NAO e' somente leitura: selecionar onda exige escrever GRBM_GFX_INDEX e
+ * SQ_IND_INDEX. Isso a separa da sonda de parada do CP (que le e pronto) e
+ * traz dois riscos reais, tratados por construcao:
+ *
+ *   (a) GRBM_GFX_INDEX deixado fora de broadcast redireciona TODO acesso
+ *       posterior a um unico SE -- inclusive o soft-reset que vem logo
+ *       depois no quiesce. A transacao restaura broadcast SEMPRE, com
+ *       readback, e declara em campo proprio se a restauracao falhou.
+ *   (b) laco longo em DISPATCH_LEVEL foi a causa do 0x133 em 10/09 12:16.
+ *       Por isso o orcamento de leituras e' FIXO e pequeno, conferido pelo
+ *       contrato antes de qualquer escrita, e a varredura para assim que
+ *       encontra ondas suficientes.
+ *
+ * Fail-closed em tres camadas: tunable GfxWaveProbe (default 0), exigencia de
+ * que o SQ tenha reportado onda em voo, e orcamento que o plano nao pode
+ * exceder. NAO VALIDADO EM HARDWARE.
+ */
+#define BC250_GFX_REG_SQ_IND_INDEX           0x00008DE0u
+#define BC250_GFX_REG_SQ_IND_DATA            0x00008DE4u
+#define BC250_GFX_REG_GRBM_GFX_INDEX         0x00030800u
+
+/* Broadcast em SE, SA e instancia -- o estado normal do seletor. */
+#define BC250_GRBM_GFX_INDEX_BROADCAST_ALL   0xE0000000u
+
+/* Enderecos indiretos ixSQ_WAVE_*, gc_10_1_0_offset.h:11188-11199. */
+#define BC250_IX_SQ_WAVE_STATUS              0x0102u
+#define BC250_IX_SQ_WAVE_TRAPSTS             0x0103u
+#define BC250_IX_SQ_WAVE_IB_STS              0x0107u
+#define BC250_IX_SQ_WAVE_PC_LO               0x0108u
+#define BC250_IX_SQ_WAVE_PC_HI               0x0109u
+#define BC250_IX_SQ_WAVE_INST_DW0            0x010Au
+
+/* Tetos do orcamento. Numeros pequenos de proposito: ver risco (b) acima. */
+#define BC250_WAVE_PROBE_MAX_READS           192u
+#define BC250_WAVE_PROBE_MAX_REPORTED        4u
+#define BC250_WAVE_PROBE_MAX_SLOTS           32u
+
+typedef struct BC250_WAVE_PROBE_SLOT {
+    uint32_t SeIndex;
+    uint32_t SaIndex;
+    uint32_t InstanceIndex;
+    uint32_t WaveId;
+} BC250_WAVE_PROBE_SLOT;
+
+typedef struct BC250_WAVE_PROBE_PLAN {
+    /* Ordem de visita. O chamador monta; o contrato nao inventa topologia. */
+    BC250_WAVE_PROBE_SLOT Slots[BC250_WAVE_PROBE_MAX_SLOTS];
+    uint32_t SlotCount;
+    /* Quantas ondas o SQ disse estar em voo. Zero => a sonda nao roda. */
+    uint32_t WavesInFlight;
+    /* Teto de leituras de SQ_IND_DATA nesta passagem. */
+    uint32_t ReadBudget;
+} BC250_WAVE_PROBE_PLAN;
+
+typedef struct BC250_WAVE_PROBE_FOUND {
+    uint32_t SeIndex;
+    uint32_t SaIndex;
+    uint32_t InstanceIndex;
+    uint32_t WaveId;
+    uint32_t Status;
+    uint32_t PcLo;
+    uint32_t PcHi;
+    uint32_t IbSts;
+    uint32_t InstDw0;
+    uint32_t TrapSts;
+} BC250_WAVE_PROBE_FOUND;
+
+typedef struct BC250_WAVE_PROBE_EVIDENCE {
+    uint32_t SlotsVisited;
+    uint32_t ReadsIssued;
+    uint32_t WavesFound;
+    BC250_WAVE_PROBE_FOUND Found[BC250_WAVE_PROBE_MAX_REPORTED];
+    /* 1 = GRBM_GFX_INDEX voltou a broadcast e o readback confirmou. */
+    uint32_t SelectorRestored;
+    uint32_t SelectorReadback;
+    /* 1 = alguma leitura de SQ_IND_DATA foi recusada pelo transporte. */
+    uint32_t ReadRefused;
+} BC250_WAVE_PROBE_EVIDENCE;
+
+typedef enum BC250_WAVE_PROBE_STATUS {
+    BC250_WAVE_PROBE_OK = 0,
+    BC250_WAVE_PROBE_BAD_ARGUMENT,
+    /* WavesInFlight == 0: nao ha onda para inspecionar, e nao se escreve nada. */
+    BC250_WAVE_PROBE_NO_WAVES,
+    /* Plano excede o orcamento ou declara mais slots do que o teto. */
+    BC250_WAVE_PROBE_PLAN_REJECTED,
+    /* Escrita de seletor falhou: aborta ANTES de ler qualquer coisa. */
+    BC250_WAVE_PROBE_SELECT_FAILED,
+    /* Varredura terminou, mas o broadcast NAO voltou -- o pior desfecho. */
+    BC250_WAVE_PROBE_SELECTOR_STUCK
+} BC250_WAVE_PROBE_STATUS;
+
+uint32_t Bc250WaveProbeEncodeIndIndex(uint32_t IxAddress, uint32_t WaveId);
+uint32_t Bc250WaveProbeEncodeGfxIndex(
+    uint32_t SeIndex, uint32_t SaIndex, uint32_t InstanceIndex);
+uint32_t Bc250WaveProbeStatusIsValid(uint32_t WaveStatus);
+BC250_WAVE_PROBE_STATUS Bc250WaveProbeValidatePlan(const BC250_WAVE_PROBE_PLAN *Plan);
+BC250_WAVE_PROBE_STATUS Bc250WaveProbeRun(
+    const BC250_GFX_RING_INTERFACE *Interface,
+    const BC250_WAVE_PROBE_PLAN *Plan,
+    BC250_WAVE_PROBE_EVIDENCE *Evidence);
+const char *Bc250WaveProbeStatusName(BC250_WAVE_PROBE_STATUS Status);
 
 #ifdef __cplusplus
 }

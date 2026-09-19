@@ -1,4 +1,0 @@
-SE A TELA ESTIVER PRETA:
-1. Inicie o Windows em Modo de Seguranca com Prompt de Comando.
-2. Execute C:\BC250_RECOVERY.cmd
-3. Reinicie o Windows.

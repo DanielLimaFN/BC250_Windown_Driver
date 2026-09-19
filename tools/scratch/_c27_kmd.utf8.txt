@@ -1,0 +1,184 @@
+﻿=== 452.369 bytes, 3999 linhas ===
+
+############ CRITERIO 1: A ESCRITA DO WPTR CHEGA AO REGISTRADOR? ############
+
+--- WPTR_READBACK PASS   [WPTR_READBACK PASS] ---
+    TOTAL: 0
+
+--- WPTR_READBACK_DIVERGENTE   [WPTR_READBACK_DIVERGENTE] ---
+    TOTAL: 4
+    L2506: [GfxEngine] SUBMIT RECUSA: WPTR_READBACK_DIVERGENTE -- escrevemos 12 e o registrador devolveu 0. O hardware NAO aceitou o ponteiro; esta e' a assinatura medida em 2026-09-18 13:12 (snapshot do TDR com WPTR=0 apos escrever 12)
+    L2897: [GfxEngine] SUBMIT RECUSA: WPTR_READBACK_DIVERGENTE -- escrevemos 12 e o registrador devolveu 0. O hardware NAO aceitou o ponteiro; esta e' a assinatura medida em 2026-09-18 13:12 (snapshot do TDR com WPTR=0 apos escrever 12)
+    L3073: [GfxEngine] SUBMIT RECUSA: WPTR_READBACK_DIVERGENTE -- escrevemos 12 e o registrador devolveu 0. O hardware NAO aceitou o ponteiro; esta e' a assinatura medida em 2026-09-18 13:12 (snapshot do TDR com WPTR=0 apos escrever 12)
+    L3240: [GfxEngine] SUBMIT RECUSA: WPTR_READBACK_DIVERGENTE -- escrevemos 12 e o registrador devolveu 0. O hardware NAO aceitou o ponteiro; esta e' a assinatura medida em 2026-09-18 13:12 (snapshot do TDR com WPTR=0 apos escrever 12)
+
+--- WPTR_READBACK INDETERMINADO   [WPTR_READBACK INDETERMINADO] ---
+    TOTAL: 0
+
+--- WPTR_ESCRITA_RECUSADA   [WPTR_ESCRITA_RECUSADA] ---
+    TOTAL: 0
+
+--- WPTR_NAO_PUBLICADO   [WPTR_NAO_PUBLICADO] ---
+    TOTAL: 0
+
+############ CRITERIO 2: STALL_BASELINE vs TDR ############
+
+--- STALL_BASELINE   [STALL_BASELINE] ---
+    TOTAL: 1
+    L266: [GfxEngine] STALL_BASELINE (antes de qualquer submissao): CpStalled1=0x00000C00[lido=1] CpStalled2=0x00000000[lido=1] GrbmStatus=0xA0003028[lido=1]
+
+--- TDR_GFX_STALL   [TDR_GFX_STALL] ---
+    TOTAL: 0
+
+--- TDR_GFX_QUIESCE Snapshot   [TDR_GFX_QUIESCE\] Snapshot] ---
+    TOTAL: 0
+
+############ CRITERIO 3: CLASSE DO IB (CHAIN vs IB2) ############
+
+--- GfxIbInspect dados   [\[GfxIbInspect\] VA=] ---
+    TOTAL: 4
+    L2503: [GfxIbInspect] VA=0x200554000 DeclaradoDW=840 VarridoDW=840 Pacotes=215 Type3=1 IB3F=1 Saltos(CHAIN=1)=0 ChamadasIB2(CHAIN=0)=1 DW0=C0023F00 DW1=00014000 DW2=00000002 DW3=000000B0
+    L2894: [GfxIbInspect] VA=0x204FD0000 DeclaradoDW=1656 VarridoDW=1656 Pacotes=367 Type3=1 IB3F=1 Saltos(CHAIN=1)=0 ChamadasIB2(CHAIN=0)=1 DW0=C0023F00 DW1=00014000 DW2=00000002 DW3=000000B0
+    L3070: [GfxIbInspect] VA=0x200B60000 DeclaradoDW=664 VarridoDW=664 Pacotes=167 Type3=1 IB3F=1 Saltos(CHAIN=1)=0 ChamadasIB2(CHAIN=0)=1 DW0=C0023F00 DW1=00014000 DW2=00000002 DW3=000000B0
+    L3237: [GfxIbInspect] VA=0x200850000 DeclaradoDW=440 VarridoDW=440 Pacotes=119 Type3=1 IB3F=1 Saltos(CHAIN=1)=0 ChamadasIB2(CHAIN=0)=1 DW0=C0023F00 DW1=00014000 DW2=00000002 DW3=000000B0
+
+--- GfxIbInspect VEREDITO   [\[GfxIbInspect\] VEREDITO] ---
+    TOTAL: 4
+    L2504: [GfxIbInspect] VEREDITO: IB_LINEAR_CONFIRMADO -- 840 DW varridos, ZERO saltos com CHAIN=1. 1 chamada(s) IB2 com CHAIN=0 foram encontradas e NAO desqualificam: o CP executa o alvo e retorna. Isto descreve a MEMORIA apontada ao CP; NAO prova busca nem execucao pela GPU, e nao prova dispatch de shader
+    L2895: [GfxIbInspect] VEREDITO: IB_LINEAR_CONFIRMADO -- 1656 DW varridos, ZERO saltos com CHAIN=1. 1 chamada(s) IB2 com CHAIN=0 foram encontradas e NAO desqualificam: o CP executa o alvo e retorna. Isto descreve a MEMORIA apontada ao CP; NAO prova busca nem execucao pela GPU, e nao prova dispatch de shader
+    L3071: [GfxIbInspect] VEREDITO: IB_LINEAR_CONFIRMADO -- 664 DW varridos, ZERO saltos com CHAIN=1. 1 chamada(s) IB2 com CHAIN=0 foram encontradas e NAO desqualificam: o CP executa o alvo e retorna. Isto descreve a MEMORIA apontada ao CP; NAO prova busca nem execucao pela GPU, e nao prova dispatch de shader
+    L3238: [GfxIbInspect] VEREDITO: IB_LINEAR_CONFIRMADO -- 440 DW varridos, ZERO saltos com CHAIN=1. 1 chamada(s) IB2 com CHAIN=0 foram encontradas e NAO desqualificam: o CP executa o alvo e retorna. Isto descreve a MEMORIA apontada ao CP; NAO prova busca nem execucao pela GPU, e nao prova dispatch de shader
+
+--- IB_SIZE_MUDOU   [IB_SIZE_MUDOU] ---
+    TOTAL: 4
+    L2502: [SubmitVirtual Node1 GFX] IB_SIZE_MUDOU: 0 DW (0 bytes) -> 840 DW (3360 bytes); 24 DW = somente preambulo da RADV
+    L2893: [SubmitVirtual Node1 GFX] IB_SIZE_MUDOU: 0 DW (0 bytes) -> 1656 DW (6624 bytes); 24 DW = somente preambulo da RADV
+    L3069: [SubmitVirtual Node1 GFX] IB_SIZE_MUDOU: 0 DW (0 bytes) -> 664 DW (2656 bytes); 24 DW = somente preambulo da RADV
+    L3236: [SubmitVirtual Node1 GFX] IB_SIZE_MUDOU: 0 DW (0 bytes) -> 440 DW (1760 bytes); 24 DW = somente preambulo da RADV
+
+############ TRIPE E SUBMISSOES ############
+
+--- GFX_TRIPE_VEREDITO   [GFX_TRIPE_VEREDITO] ---
+    TOTAL: 0
+
+--- GFX_TRIPE AVISO   [GFX_TRIPE AVISO] ---
+    TOTAL: 0
+
+--- SubmitVirtual Node1 GFX ENTER   [SubmitVirtual Node1 GFX\] ENTER] ---
+    TOTAL: 4
+    L2499: [SubmitVirtual Node1 GFX] ENTER: FenceId=1 DmaSize=3360 DmaVA=0x200554000
+    L2890: [SubmitVirtual Node1 GFX] ENTER: FenceId=2 DmaSize=6624 DmaVA=0x204FD0000
+    L3066: [SubmitVirtual Node1 GFX] ENTER: FenceId=3 DmaSize=2656 DmaVA=0x200B60000
+    L3233: [SubmitVirtual Node1 GFX] ENTER: FenceId=4 DmaSize=1760 DmaVA=0x200850000
+
+--- GfxEngine SUBMIT SUCESSO   [GfxEngine\] SUBMIT SUCESSO] ---
+    TOTAL: 0
+
+--- GfxEngine SUBMIT RECUSA   [GfxEngine\] SUBMIT RECUSA] ---
+    TOTAL: 4
+    L2506: [GfxEngine] SUBMIT RECUSA: WPTR_READBACK_DIVERGENTE -- escrevemos 12 e o registrador devolveu 0. O hardware NAO aceitou o ponteiro; esta e' a assinatura medida em 2026-09-18 13:12 (snapshot do TDR com WPTR=0 apos escrever 12)
+    L2897: [GfxEngine] SUBMIT RECUSA: WPTR_READBACK_DIVERGENTE -- escrevemos 12 e o registrador devolveu 0. O hardware NAO aceitou o ponteiro; esta e' a assinatura medida em 2026-09-18 13:12 (snapshot do TDR com WPTR=0 apos escrever 12)
+    L3073: [GfxEngine] SUBMIT RECUSA: WPTR_READBACK_DIVERGENTE -- escrevemos 12 e o registrador devolveu 0. O hardware NAO aceitou o ponteiro; esta e' a assinatura medida em 2026-09-18 13:12 (snapshot do TDR com WPTR=0 apos escrever 12)
+    L3240: [GfxEngine] SUBMIT RECUSA: WPTR_READBACK_DIVERGENTE -- escrevemos 12 e o registrador devolveu 0. O hardware NAO aceitou o ponteiro; esta e' a assinatura medida em 2026-09-18 13:12 (snapshot do TDR com WPTR=0 apos escrever 12)
+
+--- FENCE COMMIT   [FENCE COMMIT] ---
+    TOTAL: 0
+
+--- GfxEngine ONLINE   [GfxEngine\] ONLINE] ---
+    TOTAL: 1
+    L265: [GfxEngine] ONLINE SUCESSO: RingMc=0xF40FF70000 (64KB, 16384 dw) RptrWbMc=0xF40FF80000 FenceMc=0xF40FF80020 RB0_ACTIVE=1
+
+############ FALHAS ############
+
+--- TDR   [ResetFromTimeout|RestartFromTimeout|TDR_QUIESCE|TDR_RESTART] ---
+    TOTAL: 0
+
+--- BugCheck/DEVICE_REMOVED/StopDevice   [BugCheck|DEVICE_REMOVED|StopDevice] ---
+    TOTAL: 0
+
+--- GFXHUB FAULT   [GFXHUB_FAULT|FaultStatus=0x[1-9A-F]] ---
+    TOTAL: 0
+
+--- RECUSA/RECUSADO   [RECUSA|RECUSADO] ---
+    TOTAL: 18
+    L518: [DescribeAlloc] RECUSADO #1: hAllocation=0000000800000008 status=0xC00000BB (geometria nao declarada para esta alocacao)
+    L573: [DescribeAlloc] RECUSADO #2: hAllocation=0000000800000008 status=0xC00000BB (geometria nao declarada para esta alocacao)
+    L575: [DescribeAlloc] RECUSADO #3: hAllocation=0000000800000008 status=0xC00000BB (geometria nao declarada para esta alocacao)
+    L662: [Bc250Escape] RECUSADO: opcode 0x2 desconhecido (ocorrencia #1, DataSize=388)
+    L663: [Bc250Escape] RECUSADO: opcode 0x2 desconhecido (ocorrencia #2, DataSize=388)
+    L672: [Bc250Escape] RECUSADO: opcode 0x2 desconhecido (ocorrencia #3, DataSize=388)
+    L673: [Bc250Escape] RECUSADO: opcode 0x2 desconhecido (ocorrencia #4, DataSize=388)
+    L676: [Bc250Escape] RECUSADO: opcode 0x2 desconhecido (ocorrencia #5, DataSize=388)
+    L677: [Bc250Escape] RECUSADO: opcode 0x2 desconhecido (ocorrencia #6, DataSize=388)
+    L681: [Bc250Escape] RECUSADO: opcode 0x2 desconhecido (ocorrencia #7, DataSize=388)
+    L682: [Bc250Escape] RECUSADO: opcode 0x2 desconhecido (ocorrencia #8, DataSize=388)
+    L1002: [Bc250Escape] RECUSADO: opcode 0x2 desconhecido (ocorrencia #1024, DataSize=388)
+    ...
+    L3073: [GfxEngine] SUBMIT RECUSA: WPTR_READBACK_DIVERGENTE -- escrevemos 12 e o registrador devolveu 0. O hardware NAO aceitou o ponteiro; esta e' a assinatura medida em 2026-09-18 13:12 (snapshot do TDR com WPTR=0 apos escrever 12)
+    L3240: [GfxEngine] SUBMIT RECUSA: WPTR_READBACK_DIVERGENTE -- escrevemos 12 e o registrador devolveu 0. O hardware NAO aceitou o ponteiro; esta e' a assinatura medida em 2026-09-18 13:12 (snapshot do TDR com WPTR=0 apos escrever 12)
+
+--- UTCL1   [UTCL1] ---
+    TOTAL: 0
+
+############ PIXEL ############
+
+--- DdiPresent ENTER   [DdiPresent\] ENTER] ---
+    TOTAL: 8
+    L2914: [DdiPresent] ENTER #1: hContext=0000006800000068 pPresent=FFFFE80791B1E360 FrameBufferVirtual=FFFFE57DAAE00000
+    L2955: [DdiPresent] ENTER #2: hContext=0000006800000068 pPresent=FFFFE80791B1E360 FrameBufferVirtual=FFFFE57DAAE00000
+    L3102: [DdiPresent] ENTER #3: hContext=0000007B0000007B pPresent=FFFFE807954F4360 FrameBufferVirtual=FFFFE57DAAE00000
+    L3397: [DdiPresent] ENTER #4: hContext=0000007B0000007B pPresent=FFFFE807954F4360 FrameBufferVirtual=FFFFE57DAAE00000
+    L3810: [DdiPresent] ENTER #5: hContext=0000000700000007 pPresent=FFFFE8079535D140 FrameBufferVirtual=FFFFE57DAAE00000
+    L3827: [DdiPresent] ENTER #6: hContext=0000000700000007 pPresent=FFFFE8079535D140 FrameBufferVirtual=FFFFE57DAAE00000
+    ...
+    L3848: [DdiPresent] ENTER #7: hContext=0000000700000007 pPresent=FFFFE8079535D140 FrameBufferVirtual=FFFFE57DAAE00000
+    L3872: [DdiPresent] ENTER #8: hContext=0000000700000007 pPresent=FFFFE8079535D140 FrameBufferVirtual=FFFFE57DAAE00000
+
+--- BYTE_PROOF   [BYTE_PROOF] ---
+    TOTAL: 0
+
+--- NonZero   [NonZero=] ---
+    TOTAL: 40
+    L2909: [Bc250Escape] PRESENT_BLT AVISO: Amostras CPU em zero (NonZero=0/5). Prosseguindo com SDMA HW BLT (Lei F3.2)
+    L2910: [Bc250Escape] PRESENT_BLT: SDMA HW BLT CONCLUIDO COM SUCESSO! SrcMc=0xF408C0C000 DstMc=0xF400000000 Bytes=11059200 Escape=#1 Blt=1349 us NonZero=0/5
+    L2925: [Present #1] Spread SCANOUT   @ 0x0: NonZero=0/256, Xor=00000000
+    L2926: [Present #1] Spread PRIMARY   @ 0xAAC000: NonZero=0/256, Xor=00000000 (Seg=1, hAlloc=000001C5000001C5)
+    L2927: [Present #1] Spread SLOT_SRC  @ 0x153C000 (SegOff=0xAB0000, Seg=1): NonZero=0/256, Xor=00000000
+    L2928: [Present #1] AVISO: Superficie de origem 0x153C000 esta com todos os pixels em zero (NonZero=0/256)
+    L2929: [Present #1] ROTEAMENTO AO SCANOUT: VramOff=0x153C000 (NonZero=0/256 Hash=0x00000000, Dim=2560x1080)
+    L2930: [Present #1] SCANOUT ESCAPE ATIVO: DWM em branco suprimido, scanout mantido para aplicacao (EscapeNonZero=1 EscapeTotal=1 InitPreserve=1)
+    ...
+    L3885: [Present #8] Spread PRIMARY   @ 0x969C000: NonZero=0/256, Xor=00000000 (Seg=1, hAlloc=0000030700000307)
+    L3886: [Present #8] Spread SLOT_WORD @ 0xAC0000: NonZero=0/256, Xor=00000000 (union PhysicalAddress/VirtualAddress)
+
+############ CAUDA (onde parou) ############
+    [FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+    [ActiveFlushTlb] RootSeg=1, RootOff=0xF33C000, StartVA=0x1003C7000, EndVA=0x1003C8000, hProc=0x0000002400000024, Pending=1, HierPending=0
+    [DestroyProcess] GPUVA: faixas do processo 0000002400000024 invalidadas (Epoch=1 LiveCount=0)
+    [McdmCreateProcess] Entered: hAdapter=0xFFFF8B8DE6010000, hDxgkProcess=0xFFFF8B8DF02E9170, Nome=<sem nome>, Flags(System=0 Gdi=0 Vm=0 VmWorker=0 Isolated=0)
+    [SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=0000000400000004, Proc=0000000100000001, hasRoot=1, targetPtPhys=0x450A8C000, Vmid=8, instCtx=0000000400000004, instRoot=0x450A8C000
+    [PT_WALK] RootMC=0x450A8C000 VramMcBase=0x450000000 LocalSegBase=0xA8C000 Janela=268435456 bytes
+    [PT_RANGE IB] PASS: VA=[0x233180,0x2331A0) Pages=1 Perm=0x20
+    [PT_WALK] IB_PROOF_BIND: PA=0x30E79B180 Bytes=32 ExactMetadata=1 (miss: no poison)
+    [PT_WALK] DEST: faixa de escrita [0x23F000, 0x253000)
+    [PT_RANGE DEST] PASS: VA=[0x23F000,0x253000) Pages=20 Perm=0x40
+    [SubmitVirtual Node0 SDMA] IB_TRIPE_VEREDITO #312: TRIPE_PROVADO (WPTR=1412 RPTR_Reg=1412 RPTR_Wb=1412 Casou=WRITEBACK+REGISTRADOR Fence=00001147 Poison=43DAFFFE Canaries=5 Divergentes=0 PostGPU=[00000000 00000000 00000000 00000000 00000000] Esperado=00000000 Vmid=8 (async))
+    [SubmitVirtual Node0 SDMA] IB_TRIPE PROVADO NO SILICIO #312: a GPU buscou o DMA buffer sob VMID8 e o efeito declarado esta nos bytes do destino (async)
+    [SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 32 bytes em VA=0x233180; FenceId=312 (batch #1)
+    [SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=0000000400000004, Proc=0000000100000001, hasRoot=1, targetPtPhys=0x450A8C000, Vmid=8, instCtx=0000000400000004, instRoot=0x450A8C000
+    [PT_WALK] RootMC=0x450A8C000 VramMcBase=0x450000000 LocalSegBase=0xA8C000 Janela=268435456 bytes
+    [PT_RANGE IB] PASS: VA=[0x2331A0,0x2331C0) Pages=1 Perm=0x20
+    [PT_WALK] IB_PROOF_BIND: PA=0x30E79B1A0 Bytes=32 ExactMetadata=1 (miss: no poison)
+    [PT_WALK] DEST: faixa de escrita [0x253000, 0x254000)
+    [PT_RANGE DEST] PASS: VA=[0x253000,0x254000) Pages=1 Perm=0x40
+    [SubmitVirtual Node0 SDMA] IB_TRIPE_VEREDITO #313: TRIPE_PROVADO (WPTR=1476 RPTR_Reg=1476 RPTR_Wb=1476 Casou=WRITEBACK+REGISTRADOR Fence=00001148 Poison=43DAFFFE Canaries=5 Divergentes=0 PostGPU=[00000000 00000000 00000000 00000000 00000000] Esperado=00000000 Vmid=8 (async))
+    [SubmitVirtual Node0 SDMA] IB_TRIPE PROVADO NO SILICIO #313: a GPU buscou o DMA buffer sob VMID8 e o efeito declarado esta nos bytes do destino (async)
+    [SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 32 bytes em VA=0x2331A0; FenceId=313 (batch #1)
+    [SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=0000000400000004, Proc=0000000100000001, hasRoot=1, targetPtPhys=0x450A8C000, Vmid=8, instCtx=0000000400000004, instRoot=0x450A8C000
+    [PT_WALK] RootMC=0x450A8C000 VramMcBase=0x450000000 LocalSegBase=0xA8C000 Janela=268435456 bytes
+    [PT_RANGE IB] PASS: VA=[0x2331C0,0x2331E0) Pages=1 Perm=0x20
+    [PT_WALK] IB_PROOF_BIND: PA=0x30E79B1C0 Bytes=32 ExactMetadata=1 (miss: no poison)
+    [PT_WALK] SRC: faixa de leitura [0x23F000, 0x253000)
+    [PT_RANGE SRC] PASS: VA=[0x23F000,0x253000) Pages=20 Perm=0x20
+    [PT_WALK] DEST: faixa de escrita [0x254000, 0x268000)
+    [PT_RANGE DEST] PASS: VA=[0x254000,0x268000) Pages=20 Perm=0x40

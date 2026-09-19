@@ -1,8 +1,0 @@
-﻿
-NOME_DO_SERVIÇO: bc250readonly 
-        TIPO               : 1  KERNEL_DRIVER  
-        ESTADO              : 1  STOPPED 
-        CÓDIGO_DE_SAÍDA_DO_WIN32    : 1077  (0x435)
-        CÓDIGO_DE_SAÍDA_DO_SERVIÇO  : 0  (0x0)
-        PONTO_DE_VERIFICAÇÃO         : 0x0
-        AGUARDAR_DICA          : 0x0

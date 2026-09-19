@@ -3,7 +3,7 @@ Signature="$Windows NT$"
 Class=Display
 ClassGuid={4d36e968-e325-11ce-bfc1-08002be10318}
 Provider=%ProviderName%
-DriverVer=09/09/2026,3.122.0.0
+DriverVer=09/19/2026,3.192.0.0
 CatalogFile=bc250mcdm.cat
 PnpLockdown=1
 
@@ -76,6 +76,12 @@ HKR,Parameters,Vmid0PageTable,0x00010001,0
 HKR,Parameters,SdmaAutoCtxSw,0x00010001,1
 HKR,Parameters,PersistentSubmission,0x00010001,1
 HKR,Parameters,GpuvaLabPromotion,0x00010001,0
+; C3.9 (12/09): granularidade do bloqueio por journal no gate do Node 1.
+; 0 = qualquer slot pendente fecha o gate (default, comportamento medido
+;     na corrida 13:29, em que o dwm.exe vivo impediu o compute do RADV).
+; 1 = fecha apenas se o PROCESSO QUE SUBMETE tiver pendencia propria.
+; NOCLOBBER para que o valor armado ANTES do bind sobreviva ao install.
+HKR,Parameters,Node1JournalGatePerProcess,0x00010003,0
 ; B3 (07/09): o driver executa SOMENTE o caminho INDIRECT por default -- ele
 ; le o DMA buffer que o dxgkrnl entrega, e em 17:43/18:16 produziu o tripe
 ; completo sob VMID8 (5 canarios substituidos). SdmaPlanoAFallback=1 RESTAURA
@@ -90,6 +96,25 @@ HKR,Parameters,SdmaPlanoAFallback,0x00010003,0
 ; A primeira corrida deve usar INF empacotado com 1; alterar o registro depois
 ; do bind so vale no proximo StartDevice. Nao crie a chave de servico a mao.
 HKR,Parameters,TdrInduceHang,0x00010001,0
+; B.1 (14/09): 1 fotografa o anel grafico CP_RB0 -- CNTL, BASE, RPTR, WPTR,
+; POLL_CNTL e ME_CNTL -- durante o bring-up de laboratorio. E' SOMENTE LEITURA:
+; o contrato nao escreve registrador algum, e o transporte MMIO confirma por
+; contador proprio (se registrar UMA escrita, a medicao e' descartada). Nao
+; altera o veredito do StartDevice em desfecho nenhum. O anel grafico e' a
+; unica engine desta placa sem medicao, e ele e' pre-requisito da Parede B.
+; O probe fisico so' existe na imagem de laboratorio; na de producao a linha
+; [GfxRing] PREFLIGHT ARMADO mas AUSENTE diz isso em voz alta. Alteracao por
+; registro so vale no proximo StartDevice. Default 0, fail-closed.
+HKR,Parameters,GfxRingPreflight,0x00010001,0
+; B.1 (14/09): ensaio ESCALONADO do anel grafico, so' na imagem de laboratorio.
+; 0 = nenhum ensaio (default). 1 = configura CP_RB0 (BASE/CNTL/ponteiros) e
+; confere por readback, com as micro-engines ainda HALTED -- nenhum pacote pode
+; ser buscado. 2 = acrescenta o desalt de CE/PFP/ME e a partida via
+; CP_RB0_ACTIVE, cada um provado por readback. O ROLLBACK e' sempre executado e
+; tambem conferido: o StartDevice termina com a placa como a encontrou, e o
+; veredito do bind nao muda em desfecho algum. Alteracao por registro so' vale
+; no proximo StartDevice. Fail-closed.
+HKR,Parameters,GfxRingBringup,0x00010001,0
 
 [BC250Mcdm.CopyFiles]
 bc250mcdm.sys

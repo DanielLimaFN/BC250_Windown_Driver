@@ -126,6 +126,7 @@ typedef struct BC250_WDDM_FENCE_TRACKER {
     uint32_t OverflowCount;   /* submissoes perdidas por FIFO cheio */
     uint32_t OutOfOrderCount; /* fence do anel fora de ordem: corrupcao */
     uint64_t LastPushedRingFence;
+    uint64_t LastPushedRingFenceByNode[2];
     uint32_t LastNotifiedFenceId;
     uint32_t LastNotifiedFenceIdByNode[2];
 

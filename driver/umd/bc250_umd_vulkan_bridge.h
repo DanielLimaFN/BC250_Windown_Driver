@@ -92,10 +92,15 @@ typedef struct _BC250_VK_DISPATCH {
     PFN_vkQueueSubmit vkQueueSubmit;
     PFN_vkWaitForFences vkWaitForFences;
     PFN_vkDeviceWaitIdle vkDeviceWaitIdle;
+    PFN_vkInvalidateMappedMemoryRanges vkInvalidateMappedMemoryRanges;
+    PFN_vkFlushMappedMemoryRanges vkFlushMappedMemoryRanges;
 } BC250_VK_DISPATCH;
 
 typedef VkResult (VKAPI_PTR *PFN_radv_bc250_present_scanout)(
     VkDevice device, VkQueue queue, VkDeviceMemory memory, uint32_t width, uint32_t height);
+
+typedef uint64_t (VKAPI_PTR *PFN_radv_bc250_get_memory_gpu_va)(
+    VkDeviceMemory memory);
 
 /* UMD Vulkan Translation Bridge State */
 typedef struct _BC250_UMD_VK_BRIDGE {
@@ -122,6 +127,7 @@ typedef struct _BC250_UMD_VK_BRIDGE {
     BOOL LinearPresentCreated;
 
     PFN_radv_bc250_present_scanout pfnPresentScanout;
+    PFN_radv_bc250_get_memory_gpu_va pfnGetMemoryGpuVa;
     BC250_VK_DISPATCH vk;
 } BC250_UMD_VK_BRIDGE;
 
@@ -139,6 +145,7 @@ VkResult Bc250UmdVkFlushCommands(_Inout_ BC250_UMD_VK_BRIDGE *pBridge);
 
 VkFormat Bc250UmdVkFormatFromDxgi(uint32_t dxgiFormat);
 BOOL Bc250UmdVkEnsureLinearPresentBuf(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, uint32_t width, uint32_t height);
+uint32_t Bc250UmdVkInspectLinearPresentBuf(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, uint32_t width, uint32_t height);
 
 #endif /* BC250_UMD_VULKAN_BRIDGE_H */
 

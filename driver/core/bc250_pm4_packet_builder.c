@@ -489,3 +489,54 @@ const char *Bc250Pm4StatusName(BC250_PM4_STATUS Status)
     default: return "unknown";
     }
 }
+
+uint32_t Bc250Pm4HeaderType(uint32_t Header)
+{
+    return (Header >> 30) & 0x3u;
+}
+
+uint32_t Bc250Pm4HeaderType3Opcode(uint32_t Header)
+{
+    return (Header >> 8) & 0xFFu;
+}
+
+uint32_t Bc250Pm4HeaderType3CountDwords(uint32_t Header)
+{
+    /* O campo COUNT e' "dwords de payload menos 1". */
+    return ((Header >> 16) & 0x3FFFu) + 1u;
+}
+
+const char *Bc250Pm4Type3OpcodeName(uint32_t Opcode)
+{
+    switch (Opcode) {
+    case BC250_PM4_IT_NOP:                return "NOP";
+    case BC250_PM4_IT_SET_BASE:           return "SET_BASE";
+    case BC250_PM4_IT_DISPATCH_DIRECT:    return "DISPATCH_DIRECT";
+    case BC250_PM4_IT_DISPATCH_INDIRECT:  return "DISPATCH_INDIRECT";
+    case BC250_PM4_IT_DRAW_INDEX_AUTO:    return "DRAW_INDEX_AUTO";
+    case BC250_PM4_IT_WRITE_DATA:         return "WRITE_DATA";
+    case BC250_PM4_IT_WAIT_REG_MEM:       return "WAIT_REG_MEM";
+    case BC250_PM4_IT_INDIRECT_BUFFER:    return "INDIRECT_BUFFER";
+    case BC250_PM4_IT_COPY_DATA:          return "COPY_DATA";
+    case BC250_PM4_IT_EVENT_WRITE:        return "EVENT_WRITE";
+    case BC250_PM4_IT_EVENT_WRITE_EOP:    return "EVENT_WRITE_EOP";
+    case BC250_PM4_IT_RELEASE_MEM:        return "RELEASE_MEM";
+    case BC250_PM4_IT_SET_CONFIG_REG:     return "SET_CONFIG_REG";
+    case BC250_PM4_IT_SET_CONTEXT_REG:    return "SET_CONTEXT_REG";
+    case BC250_PM4_IT_SET_SH_REG:         return "SET_SH_REG";
+    case BC250_PM4_IT_SET_UCONFIG_REG:    return "SET_UCONFIG_REG";
+    /*
+     * Os quatro abaixo nao sao emitidos por nos, mas SAO emitidos pelo RADV e
+     * aparecem no IB que o CP estava executando quando parou; sem eles o
+     * header do ME sairia "desconhecido" justamente no caso interessante.
+     * Proveniencia dos numeros: PACKET3_* do PM4 do GFX10 citado em
+     * driver/core/bc250_pm4_packet_builder.h para os que ja usamos; estes
+     * quatro entram pela MESMA tabela e nao alteram comportamento nenhum.
+     */
+    case 0x12u:                           return "CLEAR_STATE";
+    case 0x28u:                           return "CONTEXT_CONTROL";
+    case 0x2Fu:                           return "NUM_INSTANCES";
+    case 0x4Au:                           return "PREAMBLE_CNTL";
+    default:                              return "desconhecido";
+    }
+}

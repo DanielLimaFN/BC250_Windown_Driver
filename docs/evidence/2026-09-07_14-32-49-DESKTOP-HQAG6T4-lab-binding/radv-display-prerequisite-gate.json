@@ -1,9 +1,0 @@
-﻿{
-    "state":  "RADV_SKIPPED",
-    "shared_primary":  false,
-    "commit_vidpn":  false,
-    "set_vidpn_source_address":  false,
-    "start_offset":  250326,
-    "checked_at":  "2026-09-07T14:33:08.8653490-03:00",
-    "hardware_validated":  false
-}

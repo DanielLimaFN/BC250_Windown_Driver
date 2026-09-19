@@ -1,5 +1,0 @@
-21:56:33.060 [pid=7472 dxgiadaptercache.exe] === bc250umd.dll CARREGADA ===
-21:56:33.060 [pid=7472 dxgiadaptercache.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
-21:56:33.065 [pid=7472 dxgiadaptercache.exe] OpenAdapter10_2: Delegado para d3d10warp.dll (D3D11) -> hr=0x00000000
-21:56:33.071 [pid=7472 dxgiadaptercache.exe] === bc250umd.dll CARREGADA ===
-21:56:33.071 [pid=7472 dxgiadaptercache.exe] OpenAdapter12 -> S_OK

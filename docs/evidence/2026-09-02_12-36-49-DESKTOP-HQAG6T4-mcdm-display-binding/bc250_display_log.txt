@@ -1,4 +1,0 @@
-[DisplayInit] Acquired GOP: 2560x1080, Pitch=10240, Phys=0xC0000000
-[StartDevice] Sources=1, Children=1, Profile=1
-[ChildRelations] Called. Size=56, ChildEnumEnabled=1
-[ChildRelations] Returned DP ChildUid=1

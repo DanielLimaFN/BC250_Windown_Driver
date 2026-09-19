@@ -162,6 +162,7 @@ typedef struct _BC250_UMD_RTV {
     /* Vulkan objects */
     VkImageView VkView;
     VkRenderPass VkPass;
+    VkRenderPass VkPassLoad;
     VkFramebuffer VkFb;
     BOOL VkRtvCreated;
 } BC250_UMD_RTV;

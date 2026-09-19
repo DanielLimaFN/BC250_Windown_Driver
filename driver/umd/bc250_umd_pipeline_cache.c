@@ -132,8 +132,6 @@ BOOL Bc250UmdPipelineCacheInit(
     BC250_UMD_VK_BRIDGE* pBridge;
     VkShaderModuleCreateInfo vsInfo;
     VkShaderModuleCreateInfo psInfo;
-    VkDescriptorSetLayoutBinding defaultPsBinding;
-    VkDescriptorSetLayoutCreateInfo dsInfo;
     VkResult res;
 
     if (pCache == NULL || pDevice == NULL) {
@@ -172,25 +170,8 @@ BOOL Bc250UmdPipelineCacheInit(
         pCache->DefaultPsModule = VK_NULL_HANDLE;
     }
 
-    /* Create default descriptor set layout (binding 0: combined image sampler) */
-    memset(&defaultPsBinding, 0, sizeof(defaultPsBinding));
-    defaultPsBinding.binding = 0;
-    defaultPsBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    defaultPsBinding.descriptorCount = 1;
-    defaultPsBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    memset(&dsInfo, 0, sizeof(dsInfo));
-    dsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    dsInfo.bindingCount = 1;
-    dsInfo.pBindings = &defaultPsBinding;
-
-    res = pBridge->vk.vkCreateDescriptorSetLayout(pBridge->Device, &dsInfo, NULL, &pCache->DefaultDescriptorSetLayout);
-    if (res != VK_SUCCESS) {
-        Bc250PsoTrace("[VK_PSO] ERRO: falha ao criar DefaultDescriptorSetLayout: res=%d", res);
-        pCache->DefaultDescriptorSetLayout = VK_NULL_HANDLE;
-    } else {
-        Bc250PsoTrace("[VK_PSO] DefaultDescriptorSetLayout criado com sucesso: layout=%p", (void*)pCache->DefaultDescriptorSetLayout);
-    }
+    /* Default fallback shaders do not require descriptor set layouts */
+    pCache->DefaultDescriptorSetLayout = VK_NULL_HANDLE;
 
     pCache->DefaultShadersCreated = (pCache->DefaultVsModule != VK_NULL_HANDLE &&
                                      pCache->DefaultPsModule != VK_NULL_HANDLE);
@@ -538,6 +519,12 @@ BOOL Bc250UmdPipelineCacheGetOrCreate(
         } else {
             dsLayout = pCache->DefaultDescriptorSetLayout;
         }
+    }
+
+    if (combinedCount > 0 && dsLayout == VK_NULL_HANDLE) {
+        Bc250PsoTrace("[VK_PSO] ERRO CRITICO (D1.3): Shaders requerem descritores (count=%u) mas VkDescriptorSetLayout e nulo -> recusando criacao",
+            combinedCount);
+        return FALSE;
     }
 
     memset(&pcRange, 0, sizeof(pcRange));

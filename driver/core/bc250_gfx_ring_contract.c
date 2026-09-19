@@ -305,6 +305,55 @@ uint32_t Bc250GfxRingPollCntlIsBorrowed(uint32_t PollCntl)
     return (PollCntl == BC250_GFX_RING_POLL_CNTL_SDMA_BORROWED) ? 1u : 0u;
 }
 
+/*
+ * Campos de CP_RB_WPTR_POLL_CNTL (gc_10_1_0_sh_mask.h, classe P1):
+ *   POLL_FREQUENCY__SHIFT   0x0    MASK 0x0000FFFF
+ *   IDLE_POLL_COUNT__SHIFT  0x10   MASK 0xFFFF0000
+ * Sao os DOIS unicos campos. Nao ha enable, nao ha status.
+ */
+#define GFX_POLL_FREQUENCY_SHIFT   0u
+#define GFX_IDLE_POLL_COUNT_SHIFT  16u
+#define GFX_POLL_FIELD_MAX         0xFFFFu
+
+BC250_GFX_RING_STATUS Bc250GfxRingComputePollCntl(
+    const BC250_GFX_RING_PLAN *Plan,
+    uint32_t *Cntl)
+{
+    uint32_t value;
+
+    if (Cntl == NULL) {
+        return BC250_GFX_RING_BAD_ARGUMENT;
+    }
+    *Cntl = 0u;
+
+    if (Plan == NULL || Plan->ProgramPollCntl == 0u) {
+        /* O plano nao pediu. Nao e' defeito -- e' o default fail-closed. */
+        return BC250_GFX_RING_BAD_ARGUMENT;
+    }
+
+    if (Plan->PollFrequency > GFX_POLL_FIELD_MAX ||
+        Plan->IdlePollCount > GFX_POLL_FIELD_MAX) {
+        return BC250_GFX_RING_FIELD_OVERFLOW;
+    }
+
+    value = (Plan->PollFrequency << GFX_POLL_FREQUENCY_SHIFT) |
+            (Plan->IdlePollCount << GFX_IDLE_POLL_COUNT_SHIFT);
+
+    /*
+     * O valor do SDMA e' barrado aqui tambem, nao so' no snapshot. O unico
+     * prototipo do repositorio (bc250_compute_service.c) carregava 0x00403004
+     * para ESTE registrador, e docs/03 ja o proibia no irmao
+     * CP_PQ_WPTR_POLL_CNTL. Barrar na montagem impede que um plano futuro o
+     * reintroduza por composicao de campos.
+     */
+    if (Bc250GfxRingPollCntlIsBorrowed(value) != 0u) {
+        return BC250_GFX_RING_POLL_CNTL_BORROWED;
+    }
+
+    *Cntl = value;
+    return BC250_GFX_RING_OK;
+}
+
 BC250_TRIPOD_VERDICT Bc250GfxRingClassifyTripod(
     uint32_t RingBytes,
     uint32_t TargetWptrBytes,

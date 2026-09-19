@@ -65,6 +65,12 @@ if %ERRORLEVEL% NEQ 0 exit /b 1
 
 echo [cc] bc250_blt_proof_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_blt_proof_contract.obj" "%ROOTDIR%\driver\core\bc250_blt_proof_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [cc] bc250_gfx_ib_inspect_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_gfx_ib_inspect_contract.obj" "%ROOTDIR%\driver\core\bc250_gfx_ib_inspect_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
 echo [cc] bc250_sdma_queue_state_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_sdma_queue_state_contract.obj" "%ROOTDIR%\driver\core\bc250_sdma_queue_state_contract.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -1908,6 +1914,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_driver_caps_contract.obj" ^
   "%ODIR%\bc250_umd_private_contract.obj" ^
   "%ODIR%\bc250_blt_proof_contract.obj" ^
+  "%ODIR%\bc250_gfx_ib_inspect_contract.obj" ^
   "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
   "%ODIR%\bc250_segment_address_contract.obj" ^
   "%ODIR%\bc250_display_ddi.obj" ^
@@ -1994,6 +2001,23 @@ if %ERRORLEVEL% NEQ 0 (
   exit /b 1
 )
 
+echo [cc] gfx_ib_inspect_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\gfx_ib_inspect_contract_test.obj" "%ROOTDIR%\driver\tests\gfx_ib_inspect_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] gfx_ib_inspect_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\gfx_ib_inspect_contract_test.exe" ^
+  "%ODIR%\bc250_gfx_ib_inspect_contract.obj" ^
+  "%ODIR%\gfx_ib_inspect_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\gfx_ib_inspect_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(gfx_ib_inspect_contract_test^)
+  exit /b 1
+)
+
 echo [cc] driver_caps_contract_test.c
 cl %CFLAGS% /Fo"%ODIR%\driver_caps_contract_test.obj" "%ROOTDIR%\driver\tests\driver_caps_contract_test.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -2059,6 +2083,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_driver_caps_contract.obj" ^
   "%ODIR%\bc250_umd_private_contract.obj" ^
   "%ODIR%\bc250_blt_proof_contract.obj" ^
+  "%ODIR%\bc250_gfx_ib_inspect_contract.obj" ^
   "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
   "%ODIR%\bc250_segment_address_contract.obj" ^
   "%ODIR%\bc250_gpuva_space_contract.obj" ^

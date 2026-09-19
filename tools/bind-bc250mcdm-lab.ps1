@@ -1467,12 +1467,13 @@ try {
 # arquivada e o watchdog ainda armado. Depois deste ponto a tela pode estar
 # apagada e nao existe operador para lancar nada.
 if ($RunRadvComputeTripod -or $RunRadvPresentTripod -or $RunVulkanCube -or $RunDxvkD3D11 -or $RunUmdNode1Tripod -or $RunMarco3Graphics -or $RunMarco4Cube -or $RunD3D11Native) {
-    # Nao misturar duas experiencias caras. O RADV so pode comecar depois que
-    # ESTE bind (nao linhas antigas do log global) tiver chegado a primaria,
-    # CommitVidPn e SetVidPnSourceAddress. A corrida 20:34 tinha 97
-    # IsSupported e zero desses tres marcos; iniciar vkCreateDevice naquele
-    # estado apagou a fronteira entre a falha de display e a de compute.
-    $displayGateDeadline = (Get-Date).AddSeconds(15)
+    # Nao misturar duas experiencias caras. O RADV/UMD so pode comecar depois que
+    # ESTE bind (nao linhas antigas do log global) tiver chegado aos marcos necessarios.
+    # Para o ensaio D3D11 nativo, a aplicacao cria sua propria janela e SwapChain via DXGI,
+    # necessitando que o VidPn esteja comitado e o SourceAddress definido para o scanout do GOP.
+    # O timeout de 45 s garante convergencia com folga mesmo sob carga do DWM.
+    $displayGateTimeout = if ($RunD3D11Native -or $RunMarco3Graphics -or $RunMarco4Cube) { 45 } else { 30 }
+    $displayGateDeadline = (Get-Date).AddSeconds($displayGateTimeout)
     $displayDelta = ''
     $displayPrimary = $false
     $displayCommit = $false
@@ -1482,14 +1483,22 @@ if ($RunRadvComputeTripod -or $RunRadvPresentTripod -or $RunVulkanCube -or $RunD
         $displayPrimary = $displayDelta -match '\[GetStdAllocData\] SharedPrimary:'
         $displayCommit = $displayDelta -match '=== CommitVidPn Entered:'
         $displayAddress = $displayDelta -match '=== SetVidPnSourceAddress '
-        if (-not ($displayPrimary -and $displayCommit -and $displayAddress)) {
+        $gateSatisfied = if ($RunD3D11Native) {
+            ($displayCommit -and $displayAddress)
+        } else {
+            ($displayPrimary -and $displayCommit -and $displayAddress)
+        }
+        if (-not $gateSatisfied) {
             Start-Sleep -Milliseconds 250
         }
-    } until (($displayPrimary -and $displayCommit -and $displayAddress) -or
-        (Get-Date) -ge $displayGateDeadline)
+    } until ($gateSatisfied -or (Get-Date) -ge $displayGateDeadline)
     $displayDelta | Set-Content -LiteralPath `
         (Join-Path $evidenceDir 'display-log-this-bind.txt') -Encoding UTF8
-    $displayGatePassed = $displayPrimary -and $displayCommit -and $displayAddress
+    $displayGatePassed = if ($RunD3D11Native) {
+        ($displayCommit -and $displayAddress)
+    } else {
+        ($displayPrimary -and $displayCommit -and $displayAddress)
+    }
     [ordered]@{
         state = $(if ($displayGatePassed) { 'PASSED' } elseif ($RunUmdNode1Tripod) {
             'UMD_NODE1_SKIPPED'
@@ -1532,8 +1541,8 @@ if ($RunRadvComputeTripod -or $RunRadvPresentTripod -or $RunVulkanCube -or $RunD
             'DXVK_D3D11'
         } else { 'RADV_WDDM_COMPUTE_TRIPOD' })
         Write-Warning ($experimentName + ' NAO EXECUTADO: o display deste bind ' +
-            "nao chegou a SharedPrimary=$displayPrimary, CommitVidPn=$displayCommit, " +
-            "SetVidPnSourceAddress=$displayAddress em 15 s. O watchdog permanece armado.")
+            "nao chegou aos requisitos (SharedPrimary=$displayPrimary, CommitVidPn=$displayCommit, " +
+            "SetVidPnSourceAddress=$displayAddress) em $displayGateTimeout s. O watchdog permanece armado.")
     } else {
         Write-Host ''
         if ($RunRadvPresentTripod) {
@@ -1663,7 +1672,7 @@ if ($RunRadvComputeTripod -or $RunRadvPresentTripod -or $RunVulkanCube -or $RunD
             $previousEap = $ErrorActionPreference
             $ErrorActionPreference = 'Continue'
             try {
-                $runnerTimeout = [math]::Min(180, [math]::Max(30, $WatchdogTimeoutSeconds - 90))
+                $runnerTimeout = [math]::Min(180, [math]::Max(60, $WatchdogTimeoutSeconds - 60))
                 $d3dOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
                     -File $d3d11Runner -EvidenceDir $evidenceDir -Execute `
                     -Frames $D3D11Frames -TimeoutSeconds $runnerTimeout 2>&1 |
@@ -1783,7 +1792,50 @@ if (-not $umdLogCollected) {
     instance_id = $device.PNPDeviceID
     published_inf = $publishedName
     package_sys_sha256 = (Get-FileHash -LiteralPath $pkgSysPath -Algorithm SHA256).Hash
-} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'tools\_last_lab_binding.json') -Encoding UTF8
+    # ======================================================================
+    # PROVENIENCIA DOS COMPONENTES FORA DO PACOTE ASSINADO.
+    #
+    # A vulkan_radeon.dll (RADV) e as DLLs de apoio vivem em C:\BC250_LIB, nao
+    # no pacote assinado -- logo package_sys_sha256 NAO as identifica. Na
+    # corrida 2026-09-18 10:20 o unico componente que mudou entre candidatos foi
+    # exatamente a RADV, e a pasta de evidencia nao registrava qual DLL havia
+    # sido carregada: R4 ("o binario testado e o binario novo?") ficava sem
+    # resposta para a peca que estava em teste.
+    #
+    # Ausencia e' declarada, nao omitida: DLL que nao existe entra como null com
+    # motivo, para que o log nunca sugira que a medicao foi feita.
+    # ======================================================================
+    external_libs = @(
+        foreach ($libName in @('vulkan_radeon.dll', 'libvkd3d-shader-1.dll')) {
+            $libPath = Join-Path 'C:\BC250_LIB' $libName
+            if (Test-Path -LiteralPath $libPath) {
+                $fi = Get-Item -LiteralPath $libPath
+                [ordered]@{
+                    name = $libName
+                    path = $libPath
+                    bytes = $fi.Length
+                    modified_utc = $fi.LastWriteTimeUtc.ToString('o')
+                    sha256 = (Get-FileHash -LiteralPath $libPath -Algorithm SHA256).Hash
+                }
+            } else {
+                [ordered]@{
+                    name = $libName
+                    path = $libPath
+                    bytes = $null
+                    modified_utc = $null
+                    sha256 = $null
+                    absent_reason = 'arquivo ausente no momento do bind'
+                }
+            }
+        }
+    )
+} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'tools\_last_lab_binding.json') -Encoding UTF8
+
+# A pasta de evidencia e' o que sobrevive e e' arquivado com SHA-256; tools/ e'
+# estado de trabalho e e' sobrescrito pelo bind seguinte. Sem esta copia, a
+# proveniencia da RADV se perderia exatamente na corrida que a testa.
+Copy-Item -LiteralPath (Join-Path $root 'tools\_last_lab_binding.json') `
+          -Destination (Join-Path $evidenceDir 'binding-provenance.json') -Force -ErrorAction SilentlyContinue
 
 # ==========================================================================
 # A3 — ciclo FIRE-AND-COLLECT do perfil physical render-only.
@@ -1990,15 +2042,74 @@ if (-not $DisableWatchdog) {
 
     # Cauda do log do KMD no fim da janela, pelo offset do baseline. Sem isto o
     # arquivamento depende do watchdog, que morre junto em caso de BugCheck.
+    #
+    # -----------------------------------------------------------------------
+    # DUAS PASSAGENS, E O TRUNCAMENTO E DECLARADO. Corrigido em 19/09.
+    #
+    # MEDIDO na Corrida 36 (12:11:58): esta copia arquivou 210.851 bytes de uma
+    # cauda que tinha 219.325. Os 8.474 bytes que faltaram continham o BLOCO
+    # INTEIRO DO TDR -- [TDR_GFX_QUIESCE], [TDR_GFX_WAVES], [TDR_GFX_WAVEPC] --
+    # isto e, exatamente a medicao que a corrida existia para produzir. A pasta
+    # de evidencia nao dizia que estava incompleta; parecia inteira.
+    #
+    # O codigo nunca esteve errado: ele copia do baseline ate o EOF do momento.
+    # O defeito e TEMPORAL -- o KMD continua escrevendo depois da copia. Por
+    # isso agora sao duas passagens com um respiro entre elas, e o json registra
+    # os dois tamanhos. Se a segunda ainda crescer, o arquivo diz que cresceu,
+    # em vez de o leitor descobrir dias depois que analisou meia corrida.
+    # -----------------------------------------------------------------------
+    $finalTailPath = Join-Path $evidenceDir 'display-log-this-bind-FINAL.txt'
+    $tailPass1 = -1
+    $tailPass2 = -1
     try {
         if (Test-Path -LiteralPath $displayLogPath -PathType Leaf) {
             $fs = [System.IO.File]::Open($displayLogPath, 'Open', 'Read', 'ReadWrite')
             try {
                 $null = $fs.Seek($displayLogStartOffset, 'Begin')
-                $out = [System.IO.File]::Create((Join-Path $evidenceDir 'display-log-this-bind-FINAL.txt'))
+                $out = [System.IO.File]::Create($finalTailPath)
                 try { $fs.CopyTo($out) } finally { $out.Dispose() }
             } finally { $fs.Dispose() }
-            Write-Host '  Cauda FINAL do log do KMD arquivada.' -ForegroundColor Yellow
+            $tailPass1 = (Get-Item -LiteralPath $finalTailPath).Length
+
+            # Respiro curto e SEGUNDA passagem. O KMD escreve o bloco do TDR
+            # depois do timeout de 2 s do dxgkrnl, que costuma cair justamente
+            # na borda desta coleta.
+            Start-Sleep -Seconds 8
+            $fs2 = [System.IO.File]::Open($displayLogPath, 'Open', 'Read', 'ReadWrite')
+            try {
+                $null = $fs2.Seek($displayLogStartOffset, 'Begin')
+                $out2 = [System.IO.File]::Create($finalTailPath)
+                try { $fs2.CopyTo($out2) } finally { $out2.Dispose() }
+            } finally { $fs2.Dispose() }
+            $tailPass2 = (Get-Item -LiteralPath $finalTailPath).Length
+
+            $liveLen = (Get-Item -LiteralPath $displayLogPath).Length
+            $expected = $liveLen - $displayLogStartOffset
+            $complete = ($tailPass2 -ge $expected)
+            [pscustomobject]@{
+                source              = $displayLogPath
+                bind_start_offset   = $displayLogStartOffset
+                bytes_pass1         = $tailPass1
+                bytes_pass2         = $tailPass2
+                grew_between_passes = ($tailPass2 - $tailPass1)
+                live_log_length     = $liveLen
+                expected_tail_bytes = $expected
+                complete_at_capture = $complete
+                note                = 'duas passagens; se complete_at_capture for false a pasta esta INCOMPLETA e o resgate pelo offset do baseline e obrigatorio'
+                hardware_validated  = $false
+            } | ConvertTo-Json | Set-Content -LiteralPath `
+                (Join-Path $evidenceDir 'display-log-final-archive.json') -Encoding UTF8
+
+            if ($tailPass2 -gt $tailPass1) {
+                Write-Host ("  Cauda FINAL do KMD: 1a passagem {0} bytes, 2a passagem {1} (+{2}). O log seguiu crescendo." -f `
+                    $tailPass1, $tailPass2, ($tailPass2 - $tailPass1)) -ForegroundColor Yellow
+            } else {
+                Write-Host ("  Cauda FINAL do log do KMD arquivada ({0} bytes)." -f $tailPass2) -ForegroundColor Yellow
+            }
+            if (-not $complete) {
+                Write-Host ("  AVISO: cauda arquivada ({0}) menor que o esperado ({1}). PASTA INCOMPLETA -- use tools\recover-bc250mcdm-lost-tail.ps1." -f `
+                    $tailPass2, $expected) -ForegroundColor Red
+            }
         }
     } catch {
         Write-Host ("  AVISO: cauda FINAL do KMD falhou: {0}" -f $_.Exception.Message) -ForegroundColor Yellow

@@ -1,3 +1,0 @@
-﻿A operação foi concluída com êxito.
-System.Management.Automation.RemoteException
-DWM LOCALDUMPS RESTORED: dumps=1

@@ -156,6 +156,26 @@ typedef struct BC250_GFX_RING_PLAN {
     uint32_t RbRptrWrEna;       /* [31] */
 
     /*
+     * D0.4 -- CADENCIA DE POLL DE WPTR (CP_RB_WPTR_POLL_CNTL, BAR5 0x08708).
+     *
+     * Campos, classe P1 (gc_10_1_0_sh_mask.h):
+     *   POLL_FREQUENCY[15:0]   IDLE_POLL_COUNT[31:16]
+     *
+     * NAO EXISTE BIT DE ENABLE NESTE REGISTRADOR. Escrever aqui configura a
+     * cadencia com que o CP consulta o shadow apontado por
+     * CP_RB_WPTR_POLL_ADDR_LO/HI; nao liga nem desliga o mecanismo. Quem
+     * chamar tem de declarar isso no log, senao a proxima corrida vai ler
+     * "programei e nada mudou" como refutacao do canal errado.
+     *
+     * ProgramPollCntl = 0 (default do RtlZeroMemory) NAO escreve nada: o
+     * registrador continua como a placa o deixou, que e' o comportamento de
+     * todos os candidatos ate 18/09. Fail-closed por construcao.
+     */
+    uint32_t ProgramPollCntl;
+    uint32_t PollFrequency;     /* [15:0] */
+    uint32_t IdlePollCount;     /* [31:16] */
+
+    /*
      * DESALT DAS MICRO-ENGINES -- exigido pela medicao de 14/09.
      *
      * O boot desta placa entrega CP_ME_CNTL=0x15000000, isto e', CE, PFP e ME
@@ -278,6 +298,29 @@ uint32_t Bc250GfxRingCntlRefusesNonExecutable(uint32_t Cntl);
 
 /* TRUE quando o valor e' o poll do SDMA carregado para um registrador do CP. */
 uint32_t Bc250GfxRingPollCntlIsBorrowed(uint32_t PollCntl);
+
+/*
+ * D0.4 -- monta CP_RB_WPTR_POLL_CNTL a partir dos campos declarados no plano.
+ *
+ * Recusa, por ordem:
+ *   BC250_GFX_RING_BAD_ARGUMENT      Cntl nulo, ou o plano nao pediu a escrita
+ *                                    (ProgramPollCntl == 0). Nao escrever e' o
+ *                                    default e nao e' erro do chamador -- mas
+ *                                    tambem nao produz valor, entao quem
+ *                                    chamou nao pode confundir "nao pedi" com
+ *                                    "pedi e deu zero".
+ *   BC250_GFX_RING_FIELD_OVERFLOW    POLL_FREQUENCY ou IDLE_POLL_COUNT nao
+ *                                    cabem em 16 bits.
+ *   BC250_GFX_RING_POLL_CNTL_BORROWED  o valor montado coincide com o poll do
+ *                                    SDMA (0x00403004). docs/03 proibe esse
+ *                                    valor no registrador irmao e o unico
+ *                                    prototipo do repositorio o carregava.
+ *
+ * NAO existe bit de enable neste registrador (ver BC250_GFX_RING_PLAN).
+ */
+BC250_GFX_RING_STATUS Bc250GfxRingComputePollCntl(
+    const BC250_GFX_RING_PLAN *Plan,
+    uint32_t *Cntl);
 
 /*
  * Perna 1 do tripe (Lei 2) no anel grafico.

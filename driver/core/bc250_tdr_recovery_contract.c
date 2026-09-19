@@ -138,12 +138,41 @@ BC250_TDR_STATUS Bc250TdrValidateGfxRestartReadback(
      * Validacoes estritas pos-restart do anel grafico CP_RB0:
      * 1. Anel deve estar ativo no readback (bit 0 = 1).
      * 2. Ponteiros RPTR e WPTR devem estar sincronizados (RPTR == WPTR).
-     * 3. Micro-engines CE, PFP, ME devem estar desaltadas (bits 0, 1 e 2 de CP_ME_CNTL zerados).
+     * 3. Micro-engines CE, PFP e ME devem estar DESALTADAS.
      * 4. Soft-reset de CP e GFX devem estar desarmados em GRBM_SOFT_RESET (bits 0 e 16 zerados).
+     *
+     * -------------------------------------------------------------------
+     * CORRECAO 19/09 -- ESTE PORTAO NAO PODIA REPROVAR O QUE DIZIA REPROVAR.
+     * -------------------------------------------------------------------
+     * Ate esta data o item 3 mascarava 0x00000007 e o comentario afirmava
+     * que os halts de CE/PFP/ME eram "bits 0, 1 e 2". Isso e' FALSO contra o
+     * header local (Lei 7, inc/linux_ref/gc_10_1_0_sh_mask.h:6661-6665):
+     *
+     *   CP_ME_CNTL__CE_HALT_MASK   0x01000000  (bit 24)
+     *   CP_ME_CNTL__PFP_HALT_MASK  0x04000000  (bit 26)
+     *   CP_ME_CNTL__ME_HALT_MASK   0x10000000  (bit 28)
+     *
+     * Os bits 0..2 nao nomeiam campo nenhum naquele header. O portao
+     * mascarava bits inexistentes e deixava passar o estado exato da falha.
+     *
+     * MEDIDO na corrida 2026-09-19 09:06:34 (P0, cauda recuperada do log
+     * cumulativo, sha256 de383cbe...bac06417): apos o primeiro TDR, as tres
+     * submissoes graficas seguintes tiveram [TDR_GFX_QUIESCE] com
+     * CpMeCntl=0x15000000 -- exatamente CE_HALT|PFP_HALT|ME_HALT -- e RPTR
+     * travado em 0. O CP estava com as tres micro-engines PARADAS e, ainda
+     * assim, o restart anterior havia impresso "CP_RB0 rearmado e comprovado
+     * no silicio". 0x15000000 & 0x00000007 == 0: o PASS era aritmeticamente
+     * inevitavel, nao uma medicao.
+     *
+     * Com a mascara correta aquele readback REPROVA, e as submissoes 2..4 da
+     * corrida 34 param de ser confundidas com stall da Drawing Engine: elas
+     * nao mediram a DE, mediram o nosso proprio reset.
      */
+    const uint32_t meHaltMask = 0x01000000u | 0x04000000u | 0x10000000u;
+
     if ((CpRb0Active & 1u) == 0u ||
         CpRb0Rptr != CpRb0Wptr ||
-        (CpMeCntl & 0x00000007u) != 0u ||
+        (CpMeCntl & meHaltMask) != 0u ||
         (GrbmSoftReset & 0x00010001u) != 0u) {
         return BC250_TDR_RESTART_NOT_READY;
     }

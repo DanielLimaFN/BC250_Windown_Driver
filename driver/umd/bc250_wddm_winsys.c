@@ -22,10 +22,12 @@ void Bc250WinsysTraceRaw(const char *Message)
     char line[768];
     char imagePath[MAX_PATH];
     char logPath[MAX_PATH];
+    char tempPath[MAX_PATH];
     const char *imageName = "?";
     int lineLength;
     HANDLE file;
     DWORD written = 0;
+    DWORD tempLen;
     SYSTEMTIME now;
 
     if (Message == NULL) {
@@ -47,20 +49,42 @@ void Bc250WinsysTraceRaw(const char *Message)
 
     OutputDebugStringA(line);
 
+    /* Emissao sincrona para stderr (capturada pelo harness de teste e console) */
+    fputs(line, stderr);
+    fflush(stderr);
+
+    /* Escrita no diretorio Temp do usuario (%TEMP%) com garantia de flush */
+    tempLen = GetTempPathA(MAX_PATH, tempPath);
+    if (tempLen > 0 && tempLen < MAX_PATH) {
+        if (_snprintf_s(logPath, sizeof(logPath), _TRUNCATE,
+                "%sBC250_UMD_LOG_%lu.txt", tempPath,
+                GetCurrentProcessId()) >= 0) {
+            file = CreateFileA(logPath,
+                FILE_APPEND_DATA,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH, NULL);
+            if (file != INVALID_HANDLE_VALUE) {
+                (void)WriteFile(file, line, (DWORD)lineLength, &written, NULL);
+                FlushFileBuffers(file);
+                (void)CloseHandle(file);
+            }
+        }
+    }
+
+    /* Escrita no diretorio compartilhado do sistema para DWM e auditoria */
     if (_snprintf_s(logPath, sizeof(logPath), _TRUNCATE,
             "C:\\Windows\\Temp\\BC250_UMD_LOG_%lu.txt",
-            GetCurrentProcessId()) < 0) {
-        return;
+            GetCurrentProcessId()) >= 0) {
+        file = CreateFileA(logPath,
+            FILE_APPEND_DATA,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH, NULL);
+        if (file != INVALID_HANDLE_VALUE) {
+            (void)WriteFile(file, line, (DWORD)lineLength, &written, NULL);
+            FlushFileBuffers(file);
+            (void)CloseHandle(file);
+        }
     }
-    file = CreateFileA(logPath,
-        FILE_APPEND_DATA,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (file == INVALID_HANDLE_VALUE) {
-        return;
-    }
-    (void)WriteFile(file, line, (DWORD)lineLength, &written, NULL);
-    (void)CloseHandle(file);
 }
 
 /*
@@ -74,9 +98,6 @@ void Bc250WinsysTraceRaw(const char *Message)
         "[WDDM_WINSYS] " fmt, ##__VA_ARGS__); \
     if (_len > 0) { \
         Bc250WinsysTraceRaw(_log_buf); \
-        fprintf(stderr, "[WDDM_WINSYS pid=%lu] %s\n", \
-            GetCurrentProcessId(), _log_buf); \
-        fflush(stderr); \
     } \
 } while (0)
 

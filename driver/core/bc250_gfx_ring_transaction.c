@@ -175,6 +175,65 @@ BC250_GFX_RING_TXN_STATUS Bc250GfxRingTxnApply(
         Interface->Stall(Interface->Context, 50u);
     }
 
+    /*
+     * D0.4 -- CADENCIA DE POLL DE WPTR, depois do endereco e antes de ligar.
+     *
+     * O endereco do shadow (CP_RB_WPTR_POLL_ADDR_LO/HI) ja foi escrito acima e
+     * sempre foi escrito. O que NUNCA foi escrito e' a cadencia. Na corrida
+     * 2026-09-18 14:20:07 o resultado disso ficou visivel: doorbell em 0,
+     * cadencia de poll como a placa deixou, e o unico canal restante -- a
+     * escrita MMIO de CP_RB0_WPTR -- nao retendo o valor (4 de 4 submissoes
+     * com WPTR_READBACK_DIVERGENTE).
+     *
+     * O plano MANDA: sem ProgramPollCntl nada e' escrito e o registrador fica
+     * exatamente como estava, que e' o comportamento de todos os candidatos
+     * anteriores. Pedido invalido (campo largo demais, ou o valor do SDMA) NAO
+     * degrada para "escreve o que der": aborta a transacao, e o rollback tem o
+     * PollCntlBefore do snapshot para voltar.
+     *
+     * ESTE REGISTRADOR NAO TEM BIT DE ENABLE (gc_10_1_0_sh_mask.h: so'
+     * POLL_FREQUENCY[15:0] e IDLE_POLL_COUNT[31:16]). Programa-lo nao liga o
+     * mecanismo -- e essa limitacao esta declarada no header do plano para que
+     * um resultado nulo na proxima corrida nao seja lido como refutacao do
+     * canal de doorbell, que e' o mecanismo provado nesta placa no compute.
+     */
+    if (Plan->ProgramPollCntl != 0u) {
+        uint32_t pollPlanned = 0u;
+        const BC250_GFX_RING_STATUS pollStatus =
+            Bc250GfxRingComputePollCntl(Plan, &pollPlanned);
+
+        Evidence->PollCntlApplyAttempted = 1u;
+        if (pollStatus != BC250_GFX_RING_OK) {
+            return (pollStatus == BC250_GFX_RING_POLL_CNTL_BORROWED)
+                ? BC250_GFX_RING_TXN_POLL_CNTL_BORROWED
+                : BC250_GFX_RING_TXN_PLAN_REJECTED;
+        }
+        Evidence->PollCntlPlanned = pollPlanned;
+
+        if (!Bc250GfxTxnWrite(Interface, Evidence,
+                BC250_GFX_REG_CP_RB_WPTR_POLL_CNTL, pollPlanned)) {
+            return BC250_GFX_RING_TXN_WRITE_FAILED;
+        }
+        if (Interface->Stall != NULL) {
+            Interface->Stall(Interface->Context, 50u);
+        }
+        if (!Bc250GfxTxnRead(Interface, Evidence,
+                BC250_GFX_REG_CP_RB_WPTR_POLL_CNTL, &Evidence->PollCntlReadback)) {
+            return BC250_GFX_RING_TXN_READBACK_MISMATCH;
+        }
+        /*
+         * Escrita sem conferencia nao e' prova (Lei 4). Readback divergente
+         * aqui e' informacao boa: significa que este registrador tambem nao
+         * retem, e nesse caso o canal de poll esta descartado junto com o MMIO
+         * -- sobra a doorbell. Por isso a transacao ABORTA em vez de seguir:
+         * seguir declararia configurado o que nao esta.
+         */
+        if (Evidence->PollCntlReadback != pollPlanned) {
+            return BC250_GFX_RING_TXN_READBACK_MISMATCH;
+        }
+        Evidence->PollCntlApplyPassed = 1u;
+    }
+
     /* READBACK -- escrita sem conferencia nao e' prova. */
     if (!Bc250GfxTxnRead(Interface, Evidence, BC250_GFX_REG_CP_RB0_CNTL, &readback)) {
         return BC250_GFX_RING_TXN_READBACK_MISMATCH;
@@ -323,6 +382,27 @@ BC250_GFX_RING_TXN_STATUS Bc250GfxRingTxnRollback(
             return BC250_GFX_RING_TXN_ROLLBACK_FAILED;
         }
         if (readback != Evidence->MeCntlBefore) {
+            return BC250_GFX_RING_TXN_ROLLBACK_FAILED;
+        }
+    }
+
+    /*
+     * D0.4 -- o poll cntl volta ao valor do snapshot, e volta ANTES dos
+     * registradores do anel porque foi escrito DEPOIS deles no APPLY (ordem
+     * inversa, Lei 6). So' tenta se o APPLY tentou: restaurar um registrador
+     * que nunca tocamos escreveria o snapshot sobre um valor que pode ter
+     * mudado por outro caminho.
+     */
+    if (Evidence->PollCntlApplyAttempted == 1u) {
+        if (!Bc250GfxTxnWrite(Interface, Evidence,
+                BC250_GFX_REG_CP_RB_WPTR_POLL_CNTL, Evidence->PollCntlBefore)) {
+            return BC250_GFX_RING_TXN_ROLLBACK_FAILED;
+        }
+        if (!Bc250GfxTxnRead(Interface, Evidence,
+                BC250_GFX_REG_CP_RB_WPTR_POLL_CNTL, &readback)) {
+            return BC250_GFX_RING_TXN_ROLLBACK_FAILED;
+        }
+        if (readback != Evidence->PollCntlBefore) {
             return BC250_GFX_RING_TXN_ROLLBACK_FAILED;
         }
     }
@@ -1055,5 +1135,218 @@ const char *Bc250GfxRingTxnStatusName(BC250_GFX_RING_TXN_STATUS Status)
     case BC250_GFX_RING_TXN_SUBMIT_TIMEOUT:     return "SUBMIT_TIMEOUT";
     case BC250_GFX_RING_TXN_TRIPOD_FAILED:      return "TRIPOD_FAILED";
     default:                                    return "DESCONHECIDO";
+    }
+}
+
+
+/*
+ * =========================================================================
+ * SONDA DE ONDA. Ver o bloco longo em bc250_gfx_ring_transaction.h.
+ * =========================================================================
+ * Toda a aritmetica e a ordem de operacoes vivem aqui, atras da interface de
+ * ponteiros de funcao, para que a suite offline exercite a sequencia INTEIRA
+ * -- inclusive a restauracao do seletor -- contra um MMIO falso, sem placa.
+ */
+
+uint32_t Bc250WaveProbeEncodeIndIndex(uint32_t IxAddress, uint32_t WaveId)
+{
+    /* SQ_IND_INDEX: INDEX em 31:16, WAVE_ID em 4:0. WORKITEM_ID e AUTO_INCR
+     * ficam ZERADOS -- nao varremos work-items e nao queremos o ponteiro
+     * andando sozinho entre leituras. */
+    return ((IxAddress & 0xFFFFu) << 16) | (WaveId & 0x1Fu);
+}
+
+uint32_t Bc250WaveProbeEncodeGfxIndex(
+    uint32_t SeIndex, uint32_t SaIndex, uint32_t InstanceIndex)
+{
+    /*
+     * GRBM_GFX_INDEX com os TRES bits de broadcast em ZERO -- e' isso que
+     * torna a selecao efetiva. Deixar qualquer um ligado faz a escrita valer
+     * para todos e a leitura devolver um agregado sem sentido.
+     * INSTANCE_INDEX 7:0 | SA_INDEX 15:8 | SE_INDEX 23:16
+     */
+    return ((SeIndex & 0xFFu) << 16) |
+           ((SaIndex & 0xFFu) << 8) |
+           (InstanceIndex & 0xFFu);
+}
+
+uint32_t Bc250WaveProbeStatusIsValid(uint32_t WaveStatus)
+{
+    /*
+     * Um slot vazio devolve 0 e um barramento mudo tambem devolve 0. Nao ha
+     * como separar os dois por esta leitura, entao "onda encontrada" exige
+     * status NAO-ZERO e o log diz que zero e' INDISTINGUIVEL de slot vazio.
+     * Nao se conta slot vazio como onda.
+     */
+    return (WaveStatus != 0u && WaveStatus != 0xFFFFFFFFu) ? 1u : 0u;
+}
+
+BC250_WAVE_PROBE_STATUS Bc250WaveProbeValidatePlan(const BC250_WAVE_PROBE_PLAN *Plan)
+{
+    if (Plan == NULL) {
+        return BC250_WAVE_PROBE_BAD_ARGUMENT;
+    }
+    if (Plan->WavesInFlight == 0u) {
+        /* Sem onda em voo a sonda nao escreve NADA. Fail-closed. */
+        return BC250_WAVE_PROBE_NO_WAVES;
+    }
+    if (Plan->SlotCount == 0u || Plan->SlotCount > BC250_WAVE_PROBE_MAX_SLOTS) {
+        return BC250_WAVE_PROBE_PLAN_REJECTED;
+    }
+    if (Plan->ReadBudget == 0u || Plan->ReadBudget > BC250_WAVE_PROBE_MAX_READS) {
+        return BC250_WAVE_PROBE_PLAN_REJECTED;
+    }
+    /*
+     * Cada slot custa ate 6 leituras (STATUS, PC_LO, PC_HI, IB_STS, INST_DW0,
+     * TRAPSTS). Plano que nao cabe no proprio orcamento e' rejeitado ANTES de
+     * tocar no silicio -- e' a guarda contra o laco longo em DISPATCH_LEVEL
+     * que produziu o 0x133 em 10/09 12:16.
+     */
+    if (Plan->SlotCount > Plan->ReadBudget) {
+        return BC250_WAVE_PROBE_PLAN_REJECTED;
+    }
+    return BC250_WAVE_PROBE_OK;
+}
+
+static uint32_t Bc250WaveProbeReadIndirect(
+    const BC250_GFX_RING_INTERFACE *Interface,
+    uint32_t IxAddress,
+    uint32_t WaveId,
+    uint32_t *Value,
+    BC250_WAVE_PROBE_EVIDENCE *Evidence)
+{
+    uint32_t raw = 0u;
+
+    *Value = 0u;
+    if (Interface->Write32(Interface->Context, BC250_GFX_REG_SQ_IND_INDEX,
+                           Bc250WaveProbeEncodeIndIndex(IxAddress, WaveId)) == 0u) {
+        Evidence->ReadRefused = 1u;
+        return 0u;
+    }
+    if (Interface->Read32(Interface->Context, BC250_GFX_REG_SQ_IND_DATA, &raw) == 0u) {
+        Evidence->ReadRefused = 1u;
+        return 0u;
+    }
+    Evidence->ReadsIssued++;
+    *Value = raw;
+    return 1u;
+}
+
+BC250_WAVE_PROBE_STATUS Bc250WaveProbeRun(
+    const BC250_GFX_RING_INTERFACE *Interface,
+    const BC250_WAVE_PROBE_PLAN *Plan,
+    BC250_WAVE_PROBE_EVIDENCE *Evidence)
+{
+    BC250_WAVE_PROBE_STATUS planStatus;
+    BC250_WAVE_PROBE_STATUS result = BC250_WAVE_PROBE_OK;
+    uint32_t i;
+
+    if (Interface == NULL || Interface->Read32 == NULL ||
+        Interface->Write32 == NULL || Evidence == NULL) {
+        return BC250_WAVE_PROBE_BAD_ARGUMENT;
+    }
+
+    Evidence->SlotsVisited = 0u;
+    Evidence->ReadsIssued = 0u;
+    Evidence->WavesFound = 0u;
+    Evidence->SelectorRestored = 0u;
+    Evidence->SelectorReadback = 0u;
+    Evidence->ReadRefused = 0u;
+    for (i = 0u; i < BC250_WAVE_PROBE_MAX_REPORTED; ++i) {
+        Evidence->Found[i].SeIndex = 0u;
+        Evidence->Found[i].SaIndex = 0u;
+        Evidence->Found[i].InstanceIndex = 0u;
+        Evidence->Found[i].WaveId = 0u;
+        Evidence->Found[i].Status = 0u;
+        Evidence->Found[i].PcLo = 0u;
+        Evidence->Found[i].PcHi = 0u;
+        Evidence->Found[i].IbSts = 0u;
+        Evidence->Found[i].InstDw0 = 0u;
+        Evidence->Found[i].TrapSts = 0u;
+    }
+
+    planStatus = Bc250WaveProbeValidatePlan(Plan);
+    if (planStatus != BC250_WAVE_PROBE_OK) {
+        /* Nenhuma escrita aconteceu: o seletor nunca saiu de broadcast. */
+        return planStatus;
+    }
+
+    for (i = 0u; i < Plan->SlotCount; ++i) {
+        const BC250_WAVE_PROBE_SLOT *slot = &Plan->Slots[i];
+        uint32_t waveStatus = 0u;
+
+        if (Evidence->ReadsIssued >= Plan->ReadBudget) {
+            break;
+        }
+        if (Evidence->WavesFound >= BC250_WAVE_PROBE_MAX_REPORTED) {
+            break;
+        }
+
+        if (Interface->Write32(Interface->Context, BC250_GFX_REG_GRBM_GFX_INDEX,
+                Bc250WaveProbeEncodeGfxIndex(slot->SeIndex, slot->SaIndex,
+                                             slot->InstanceIndex)) == 0u) {
+            result = BC250_WAVE_PROBE_SELECT_FAILED;
+            break;
+        }
+        Evidence->SlotsVisited++;
+
+        if (Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_STATUS,
+                                       slot->WaveId, &waveStatus, Evidence) == 0u) {
+            continue;
+        }
+        if (Bc250WaveProbeStatusIsValid(waveStatus) == 0u) {
+            continue;
+        }
+
+        {
+            BC250_WAVE_PROBE_FOUND *found = &Evidence->Found[Evidence->WavesFound];
+            found->SeIndex = slot->SeIndex;
+            found->SaIndex = slot->SaIndex;
+            found->InstanceIndex = slot->InstanceIndex;
+            found->WaveId = slot->WaveId;
+            found->Status = waveStatus;
+            (void)Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_PC_LO,
+                                             slot->WaveId, &found->PcLo, Evidence);
+            (void)Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_PC_HI,
+                                             slot->WaveId, &found->PcHi, Evidence);
+            (void)Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_IB_STS,
+                                             slot->WaveId, &found->IbSts, Evidence);
+            (void)Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_INST_DW0,
+                                             slot->WaveId, &found->InstDw0, Evidence);
+            (void)Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_TRAPSTS,
+                                             slot->WaveId, &found->TrapSts, Evidence);
+            Evidence->WavesFound++;
+        }
+    }
+
+    /*
+     * RESTAURACAO DO SELETOR -- incondicional, inclusive quando a varredura
+     * abortou. Sair daqui fora de broadcast redireciona TODO acesso posterior
+     * a um unico SE, e o proximo acesso e' o soft-reset do quiesce.
+     */
+    if (Interface->Write32(Interface->Context, BC250_GFX_REG_GRBM_GFX_INDEX,
+                           BC250_GRBM_GFX_INDEX_BROADCAST_ALL) != 0u &&
+        Interface->Read32(Interface->Context, BC250_GFX_REG_GRBM_GFX_INDEX,
+                          &Evidence->SelectorReadback) != 0u &&
+        Evidence->SelectorReadback == BC250_GRBM_GFX_INDEX_BROADCAST_ALL) {
+        Evidence->SelectorRestored = 1u;
+    } else {
+        Evidence->SelectorRestored = 0u;
+        return BC250_WAVE_PROBE_SELECTOR_STUCK;
+    }
+
+    return result;
+}
+
+const char *Bc250WaveProbeStatusName(BC250_WAVE_PROBE_STATUS Status)
+{
+    switch (Status) {
+    case BC250_WAVE_PROBE_OK: return "ok";
+    case BC250_WAVE_PROBE_BAD_ARGUMENT: return "bad_argument";
+    case BC250_WAVE_PROBE_NO_WAVES: return "no_waves";
+    case BC250_WAVE_PROBE_PLAN_REJECTED: return "plan_rejected";
+    case BC250_WAVE_PROBE_SELECT_FAILED: return "select_failed";
+    case BC250_WAVE_PROBE_SELECTOR_STUCK: return "selector_stuck";
+    default: return "unknown";
     }
 }

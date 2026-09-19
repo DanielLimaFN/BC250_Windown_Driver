@@ -40,10 +40,32 @@ param(
     # o KMD ainda recusa -- e GPUVERSION e' obrigatoria em WDDM 2.7.
     #
     # Isolar essa variavel exige poder empacotar 20 sem mudar mais nada.
-    [ValidateSet(20, 27)][int]$WddmContractVersion = 27
+    [ValidateSet(20, 27)][int]$WddmContractVersion = 27,
+    # ARMA a sonda indireta de onda (GfxWaveProbe=1) no INF do candidato.
+    #
+    # Existe porque o KMD le o tunable UMA vez, no StartDevice: escrever no
+    # registro depois do bind so vale no proximo start. Essa ordem custou uma
+    # corrida inteira no ensaio de TDR de 07/09 (doc 186), e a licao foi
+    # materializar o valor no INF EMPACOTADO, nunca a mao.
+    #
+    # Diferente de todo o resto desta faixa, a sonda ESCREVE registrador:
+    # GRBM_GFX_INDEX fora de broadcast e SQ_IND_INDEX, ambos seletores. Se a
+    # restauracao do broadcast falhar, o soft-reset que o quiesce dispara logo
+    # em seguida pode atingir UM UNICO shader engine. Por isso armar exige
+    # aceite explicito, no mesmo padrao de -ArmTdrInducedHang.
+    [switch]$ArmGfxWaveProbe,
+    [switch]$IAcceptSelectorWritesDuringTdr
 )
 
 $ErrorActionPreference = 'Stop'
+if ($ArmGfxWaveProbe -and -not $IAcceptSelectorWritesDuringTdr) {
+    throw ('Armar GfxWaveProbe exige -IAcceptSelectorWritesDuringTdr. A sonda escreve ' +
+           'GRBM_GFX_INDEX e SQ_IND_INDEX durante o quiesce do TDR; se o broadcast nao ' +
+           'voltar, o soft-reset seguinte pode atingir um unico shader engine.')
+}
+if (-not $ArmGfxWaveProbe -and $IAcceptSelectorWritesDuringTdr) {
+    throw '-IAcceptSelectorWritesDuringTdr so e valido com -ArmGfxWaveProbe.'
+}
 if ($EnablePersistentSubmission -and -not $EnableShaderDispatch) {
     throw ('-EnablePersistentSubmission exige -EnableShaderDispatch; ' +
            'sem a receita F8b (CpSoftReset=1) a carga do PFP assenta no laco 0x218..0x21B.')
@@ -280,6 +302,10 @@ $infContent = $infContent | ForEach-Object {
         # StartDevice, e um AddReg mandatorio apagaria em silencio o que o
         # operador armou antes do bind. Pacote recem-instalado nao mede nada.
         'HKR,Parameters,GfxRingPreflight,0x00010003,0'
+    } elseif ($_ -match 'HKR,Parameters,GfxWaveProbe,0x000100(01|03),\d+') {
+        # Mandato do pacote, NAO default: o valor tem de chegar decidido ao
+        # StartDevice. Fail-closed -- sem -ArmGfxWaveProbe sai 0.
+        'HKR,Parameters,GfxWaveProbe,0x00010001,{0}' -f $(if ($ArmGfxWaveProbe) { 1 } else { 0 })
     } elseif ($_ -match 'HKR,Parameters,Node1JournalGatePerProcess,0x000100(01|03),\d+') {
         # C3.9: DEFAULT, nao mandato. NOCLOBBER para que o operador possa armar
         # antes do bind sem que o AddReg do install apague em silencio -- foi
@@ -307,6 +333,7 @@ $expectedInfValues = [ordered]@{
     'Parameters,GfxRingPreflight' = 0
     'Parameters,GfxRingBringup' = 0
     'Parameters,Node1JournalGatePerProcess' = 0
+    'Parameters,GfxWaveProbe' = $(if ($ArmGfxWaveProbe) { 1 } else { 0 })
     'Parameters,SdmaAutoCtxSw' = $(if ($EnableShaderDispatch) { 0 } else { 1 })
 }
 # GpuvaLabPromotion e SdmaPlanoAFallback sao gravados como DEFAULT (NOCLOBBER);
@@ -387,6 +414,23 @@ if (-not $gfxRingBringupLine) {
 $gfxRingBringupLine -match '^HKR,Parameters,GfxRingBringup,0x000100(?:01|03),(\d+)$' | Out-Null
 $gfxRingBringupValue = [int]$Matches[1]
 
+# O manifesto DERIVA do INF empacotado, nunca do switch: se os dois divergirem,
+# quem manda e o arquivo que vai para a maquina. Mesma regra do SdmaPlanoAFallback.
+$gfxWaveProbeLine = Get-Content -LiteralPath $packageInf |
+    Where-Object { $_ -match '^HKR,Parameters,GfxWaveProbe,0x000100(?:01|03),(\d+)$' } |
+    Select-Object -First 1
+if (-not $gfxWaveProbeLine) {
+    throw 'Pacote de laboratorio bloqueado: INF empacotado sem HKR,Parameters,GfxWaveProbe -- o manifesto nao pode declarar o estado da sonda de onda.'
+}
+$gfxWaveProbeLine -match '^HKR,Parameters,GfxWaveProbe,0x000100(?:01|03),(\d+)$' | Out-Null
+$gfxWaveProbeValue = [int]$Matches[1]
+if ($ArmGfxWaveProbe -and $gfxWaveProbeValue -ne 1) {
+    throw 'Pacote de laboratorio bloqueado: -ArmGfxWaveProbe pedido mas o INF empacotado saiu com GfxWaveProbe=0.'
+}
+if (-not $ArmGfxWaveProbe -and $gfxWaveProbeValue -ne 0) {
+    throw 'Pacote de laboratorio bloqueado: GfxWaveProbe saiu armado sem -ArmGfxWaveProbe.'
+}
+
 $manifest = [ordered]@{
     SchemaVersion = 1
     BuildKind = 'MCDM_LAB_BRINGUP'
@@ -415,6 +459,8 @@ $manifest = [ordered]@{
     GfxRingPreflight = $gfxRingPreflightValue
     GfxRingPreflightArmed = ($gfxRingPreflightValue -ne 0)
     GfxRingBringup = $gfxRingBringupValue
+    GfxWaveProbe = $gfxWaveProbeValue
+    GfxWaveProbeArmed = ($gfxWaveProbeValue -ne 0)
     GfxRingBringupArmed = ($gfxRingBringupValue -ne 0)
     Node1TripodDefaultArmed = $false
     D3D10_11NativeReady = $false

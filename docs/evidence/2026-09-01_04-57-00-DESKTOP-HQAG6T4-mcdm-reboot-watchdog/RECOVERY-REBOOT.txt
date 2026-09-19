@@ -1,7 +1,0 @@
-﻿SE A TELA POS-REBOOT ESTIVER VISIVEL, execute como Administrador:
-powershell -NoProfile -ExecutionPolicy Bypass -File "C:\BC250_REBOOT_GUARD\confirm-bc250mcdm-reboot.ps1" -ConfigPath "C:\BC250_REBOOT_GUARD\armed.json" -IConfirmDisplayIsVisible
-
-SE A TELA FICAR PRETA:
-1. Aguarde pelo menos 600 segundos para o rollback online automatico.
-2. Se nao recuperar, inicie em Modo de Seguranca com Prompt de Comando.
-3. Execute C:\BC250_RECOVERY.cmd e reinicie.

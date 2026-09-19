@@ -1,0 +1,35 @@
+﻿=== R4 NO SYS ASSINADO (Fases 1, 2 e 3) ===
+--- bc250mcdm.sys  546.592 bytes  18/09/2026 14:11:02
+    SHA256 E7E7A3B2D11C9B679543DE577C34C3F9A486B6B3A4ABF810D927B271A4FC7FA0
+    WPTR_READBACK PASS                       PRESENTE
+    WPTR_READBACK_DIVERGENTE                 PRESENTE
+    WPTR_ESCRITA_RECUSADA                    PRESENTE
+    WPTR_NAO_PUBLICADO                       PRESENTE
+    INDETERMINADO_SLOT_ZERADO_SEM_POISON     PRESENTE
+    TRANSPORTE_MMIO_NAO_MAPEADO              PRESENTE
+    READ32_RECUSOU_OFFSET_OU_LIMITE          PRESENTE
+    STALL_BASELINE                           PRESENTE
+    TDR_GFX_STALL                            PRESENTE
+    ME_HAS_ACTIVE_CE_BUFFER_FLAG             PRESENTE
+    GFX_CNTX_NOT_AVAIL_TO_ME                 PRESENTE
+    ChamadasIB2                              PRESENTE
+    UTCL1 FORCE_INVALIDATION nao aplicado    PRESENTE
+    GFX_TRIPE_VEREDITO                       PRESENTE
+    GfxIbInspect                             PRESENTE
+    >>> todas presentes
+
+=== R4 NA UMD ASSINADA ===
+--- bc250umd.dll  143.648 bytes  18/09/2026 14:11:02
+    SHA256 473EE3E8A311CB5EF753ED0CDEC583856132392655FF0001DCCA846FEA1CBF28
+    NAO MAPEAVEL PELA CPU                    PRESENTE
+    Perna 3 do tripe fica sem medicao        PRESENTE
+    DRAW EXECUTADO NATIVO EM VULKAN          PRESENTE
+    >>> todas presentes
+
+=== ESTADO DA MAQUINA PARA A CORRIDA ===
+  Unknown | Problem=CM_PROB_PHANTOM | AMD Radeon RX 6600
+  OK | Problem=CM_PROB_NONE | Adaptador de Vídeo Básico da Microsoft
+  BC250_BOOT_FUSE.json: INEXISTENTE
+  BC250_REQUIRE_CLEAN_BOOT.json: {     "state":  "CLEAN_BOOT_REQUIRED",     "rollback_boot_ticks":  639253446475000000,     "rollback_completed_at":  "2026-09-18T13:13:15.0514847-03:00",     "restored_service":  "BasicDisplay",     "restored_code":  0,     "hardware_validated":  false } 
+  vulkan_radeon.dll: 19D62EC2248151C3389BA2E09AB1621696EB415A51E6D54A10F5690C4443EA25
+  processos claude ativos: 0

@@ -1,5 +1,0 @@
-[WDDM_WINSYS pid=788] Allocate ENTER: Token=0x434D440003140001 Size=65536 Align=4096
-[WDDM_WINSYS pid=788] Allocate LEAVE: hr=0x00000000 hAlloc=0x40000180
-[WDDM_WINSYS pid=788] MapAllocation ENTER: hAlloc=0x40000180 Min=0x10000 Max=0x3FFFFFFFF Pages=16 Exec=1
-[WDDM_WINSYS pid=788] MapAllocation LEAVE: hr=0x8000000A VA=0x11000 PagingFence=7001
-tripod UMD nao fechou; log=C:\Windows\Temp\BC250_UMD_LOG_788.txt CreateDevice=0x80004001

@@ -1120,6 +1120,38 @@ VOID APIENTRY Bc250Umd10CreateResource(
         res->Created = TRUE;
     }
 
+    /* Consumo obrigatorio de InitialDataUP (pInitialDataUP) quando fornecido pelo runtime D3D */
+    if (pCreate->pInitialDataUP != NULL && pCreate->pInitialDataUP->pSysMem != NULL &&
+        res->TotalByteSize > 0u) {
+        if (res->pCpuShadow == NULL) {
+            res->pCpuShadow = calloc(1, res->TotalByteSize);
+        }
+        if (res->pCpuShadow != NULL) {
+            if (res->ResourceDimension == D3D10DDIRESOURCE_BUFFER) {
+                UINT copyBytes = (res->Width > 0 && res->Width < res->TotalByteSize) ? res->Width : res->TotalByteSize;
+                memcpy(res->pCpuShadow, pCreate->pInitialDataUP->pSysMem, copyBytes);
+            } else if (res->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D && res->Height > 0u) {
+                UINT pitch = (pCreate->pInitialDataUP->SysMemPitch > 0 && pCreate->pInitialDataUP->SysMemPitch < res->RowPitch)
+                             ? pCreate->pInitialDataUP->SysMemPitch : res->RowPitch;
+                for (UINT y = 0; y < res->Height; ++y) {
+                    memcpy((BYTE*)res->pCpuShadow + (size_t)y * res->RowPitch,
+                           (CONST BYTE*)pCreate->pInitialDataUP->pSysMem + (size_t)y * pCreate->pInitialDataUP->SysMemPitch,
+                           pitch);
+                }
+            } else {
+                memcpy(res->pCpuShadow, pCreate->pInitialDataUP->pSysMem, res->TotalByteSize);
+            }
+            if (device != NULL && device->WinsysInitialized && res->Allocation.Created) {
+                (void)Bc250WinsysUploadAllocation(&device->Winsys, &res->Allocation,
+                    res->pCpuShadow, res->TotalByteSize);
+            }
+            {
+                UINT copyBytesReported = (res->ResourceDimension == D3D10DDIRESOURCE_BUFFER && res->Width > 0 && res->Width < res->TotalByteSize) ? res->Width : res->TotalByteSize;
+                Bc250UmdTrace("CreateResource: pInitialDataUP consumido (%u bytes copiados para pCpuShadow)", copyBytesReported);
+            }
+        }
+    }
+
     if (device != NULL && device->VkBridgeInitialized) {
         (void)Bc250UmdVkCreateResource(device, res, pCreate);
     }
@@ -1540,61 +1572,48 @@ VOID APIENTRY Bc250Umd10ClearRenderTargetView(
         rtv != NULL && rtv->VkRtvCreated && rtv->VkPass != VK_NULL_HANDLE && rtv->VkFb != VK_NULL_HANDLE) {
         VkCommandBuffer cmd = Bc250UmdVkGetCommandBuffer(&device->VkBridge);
         if (cmd != VK_NULL_HANDLE) {
-            if (!device->InRenderPass || device->ActiveFramebuffer != rtv->VkFb) {
-                if (device->InRenderPass) {
-                    device->VkBridge.vk.vkCmdEndRenderPass(cmd);
-                    device->InRenderPass = FALSE;
-                }
-
-                VkRenderPassBeginInfo rpBegin;
-                memset(&rpBegin, 0, sizeof(rpBegin));
-                rpBegin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-                rpBegin.renderPass = rtv->VkPass;
-                rpBegin.framebuffer = rtv->VkFb;
-                rpBegin.renderArea.offset.x = 0;
-                rpBegin.renderArea.offset.y = 0;
-                rpBegin.renderArea.extent.width = (rtv->pResource != NULL && rtv->pResource->Width > 0) ? rtv->pResource->Width : 1;
-                rpBegin.renderArea.extent.height = (rtv->pResource != NULL && rtv->pResource->Height > 0) ? rtv->pResource->Height : 1;
-
-                device->VkBridge.vk.vkCmdBeginRenderPass(cmd, &rpBegin, VK_SUBPASS_CONTENTS_INLINE);
-                device->InRenderPass = TRUE;
-                device->ActiveRenderPass = rtv->VkPass;
-                device->ActiveFramebuffer = rtv->VkFb;
+            VkClearValue clearVal;
+            memset(&clearVal, 0, sizeof(clearVal));
+            if (pColorRGBA != NULL) {
+                clearVal.color.float32[0] = pColorRGBA[0];
+                clearVal.color.float32[1] = pColorRGBA[1];
+                clearVal.color.float32[2] = pColorRGBA[2];
+                clearVal.color.float32[3] = pColorRGBA[3];
+            } else {
+                clearVal.color.float32[0] = 0.0f;
+                clearVal.color.float32[1] = 0.0f;
+                clearVal.color.float32[2] = 0.0f;
+                clearVal.color.float32[3] = 1.0f;
             }
 
-            if (device->VkBridge.vk.vkCmdClearAttachments != NULL) {
-                VkClearAttachment clearAttachment;
-                memset(&clearAttachment, 0, sizeof(clearAttachment));
-                clearAttachment.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-                clearAttachment.colorAttachment = 0;
-                if (pColorRGBA != NULL) {
-                    clearAttachment.clearValue.color.float32[0] = pColorRGBA[0];
-                    clearAttachment.clearValue.color.float32[1] = pColorRGBA[1];
-                    clearAttachment.clearValue.color.float32[2] = pColorRGBA[2];
-                    clearAttachment.clearValue.color.float32[3] = pColorRGBA[3];
-                } else {
-                    clearAttachment.clearValue.color.float32[0] = 0.0f;
-                    clearAttachment.clearValue.color.float32[1] = 0.0f;
-                    clearAttachment.clearValue.color.float32[2] = 0.0f;
-                    clearAttachment.clearValue.color.float32[3] = 1.0f;
-                }
-
-                VkClearRect clearRect;
-                memset(&clearRect, 0, sizeof(clearRect));
-                clearRect.rect.offset.x = 0;
-                clearRect.rect.offset.y = 0;
-                clearRect.rect.extent.width = (rtv->pResource != NULL && rtv->pResource->Width > 0) ? rtv->pResource->Width : 1;
-                clearRect.rect.extent.height = (rtv->pResource != NULL && rtv->pResource->Height > 0) ? rtv->pResource->Height : 1;
-                clearRect.baseArrayLayer = 0;
-                clearRect.layerCount = 1;
-
-                device->VkBridge.vk.vkCmdClearAttachments(cmd, 1, &clearAttachment, 1, &clearRect);
-                Bc250UmdTrace("ClearRenderTargetView: EXECUTADO VULKAN (rtv=%p res=%p %ux%u RGBA=[%.2f,%.2f,%.2f,%.2f])",
-                    (void*)rtv, (void*)rtv->pResource, clearRect.rect.extent.width, clearRect.rect.extent.height,
-                    clearAttachment.clearValue.color.float32[0], clearAttachment.clearValue.color.float32[1],
-                    clearAttachment.clearValue.color.float32[2], clearAttachment.clearValue.color.float32[3]);
-                return;
+            /* Reiniciar RenderPass com clearValue explícito para acionar fast-clear nativo (loadOp=CLEAR) */
+            if (device->InRenderPass) {
+                device->VkBridge.vk.vkCmdEndRenderPass(cmd);
+                device->InRenderPass = FALSE;
             }
+
+            VkRenderPassBeginInfo rpBegin;
+            memset(&rpBegin, 0, sizeof(rpBegin));
+            rpBegin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            rpBegin.renderPass = rtv->VkPass;
+            rpBegin.framebuffer = rtv->VkFb;
+            rpBegin.renderArea.offset.x = 0;
+            rpBegin.renderArea.offset.y = 0;
+            rpBegin.renderArea.extent.width = (rtv->pResource != NULL && rtv->pResource->Width > 0) ? rtv->pResource->Width : 1;
+            rpBegin.renderArea.extent.height = (rtv->pResource != NULL && rtv->pResource->Height > 0) ? rtv->pResource->Height : 1;
+            rpBegin.clearValueCount = 1;
+            rpBegin.pClearValues = &clearVal;
+
+            device->VkBridge.vk.vkCmdBeginRenderPass(cmd, &rpBegin, VK_SUBPASS_CONTENTS_INLINE);
+            device->InRenderPass = TRUE;
+            device->ActiveRenderPass = rtv->VkPass;
+            device->ActiveFramebuffer = rtv->VkFb;
+
+            Bc250UmdTrace("ClearRenderTargetView: EXECUTADO VULKAN FAST-CLEAR (rtv=%p res=%p %ux%u RGBA=[%.2f,%.2f,%.2f,%.2f])",
+                (void*)rtv, (void*)rtv->pResource, rpBegin.renderArea.extent.width, rpBegin.renderArea.extent.height,
+                clearVal.color.float32[0], clearVal.color.float32[1],
+                clearVal.color.float32[2], clearVal.color.float32[3]);
+            return;
         }
     }
 
@@ -1911,7 +1930,7 @@ VOID APIENTRY Bc250Umd10ResourceUpdateSubresourceUP(
 
     if (res->pCpuShadow != NULL) {
         if (pDstBox == NULL) {
-            UINT copyBytes = res->TotalByteSize;
+            UINT copyBytes = (res->Width > 0 && res->Width < res->TotalByteSize) ? res->Width : res->TotalByteSize;
             memcpy(res->pCpuShadow, pSysMemBuffer, copyBytes);
         } else {
             UINT boxWidth = (pDstBox->right > pDstBox->left) ? (pDstBox->right - pDstBox->left) : 0;
@@ -1933,13 +1952,142 @@ VOID APIENTRY Bc250Umd10ResourceUpdateSubresourceUP(
         }
         if (device != NULL && device->VkBridgeInitialized && res->VkResourceCreated &&
             res->VkMem != VK_NULL_HANDLE && res->ResourceDimension == D3D10DDIRESOURCE_BUFFER) {
-            (void)Bc250UmdVkUploadBufferData(device, res, res->pCpuShadow, res->TotalByteSize);
+            UINT uploadBytes = (res->Width > 0 && res->Width < res->TotalByteSize) ? res->Width : res->TotalByteSize;
+            (void)Bc250UmdVkUploadBufferData(device, res, res->pCpuShadow, uploadBytes);
             Bc250UmdTrace("ResourceUpdateSubresourceUP: buffer sincronizado com VkBuffer (%u bytes)",
-                res->TotalByteSize);
+                uploadBytes);
         }
     }
 
     Bc250UmdTrace("ResourceUpdateSubresourceUP: res=%p pitch=%u", (void*)res, RowPitch);
+}
+
+static BOOL Bc250UmdVkCopyImageInternal(
+    _Inout_ BC250_UMD_DEVICE* device,
+    _Inout_ BC250_UMD_RESOURCE* dst,
+    UINT dstX,
+    UINT dstY,
+    _In_ BC250_UMD_RESOURCE* src,
+    _In_opt_ CONST D3D10_DDI_BOX* pSrcBox)
+{
+    if (device == NULL || !device->VkBridge.DeviceActive ||
+        dst == NULL || src == NULL ||
+        dst->VkImg == VK_NULL_HANDLE || src->VkImg == VK_NULL_HANDLE ||
+        device->VkBridge.vk.vkCmdCopyImage == NULL ||
+        device->VkBridge.vk.vkCmdPipelineBarrier == NULL) {
+        return FALSE;
+    }
+
+    VkCommandBuffer cmdBuf = Bc250UmdVkGetCommandBuffer(&device->VkBridge);
+    if (cmdBuf == VK_NULL_HANDLE) {
+        return FALSE;
+    }
+
+    /* 1. Barreira de transicao de layout:
+     *    src: COLOR_ATTACHMENT_OPTIMAL -> TRANSFER_SRC_OPTIMAL
+     *    dst: COLOR_ATTACHMENT_OPTIMAL -> TRANSFER_DST_OPTIMAL
+     */
+    VkImageMemoryBarrier barriers[2];
+    memset(barriers, 0, sizeof(barriers));
+
+    /* Source barrier */
+    barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barriers[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    barriers[0].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barriers[0].oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barriers[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barriers[0].image = src->VkImg;
+    barriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barriers[0].subresourceRange.baseMipLevel = 0;
+    barriers[0].subresourceRange.levelCount = 1;
+    barriers[0].subresourceRange.baseArrayLayer = 0;
+    barriers[0].subresourceRange.layerCount = 1;
+
+    /* Destination barrier */
+    barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barriers[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    barriers[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barriers[1].oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barriers[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barriers[1].image = dst->VkImg;
+    barriers[1].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barriers[1].subresourceRange.baseMipLevel = 0;
+    barriers[1].subresourceRange.levelCount = 1;
+    barriers[1].subresourceRange.baseArrayLayer = 0;
+    barriers[1].subresourceRange.layerCount = 1;
+
+    device->VkBridge.vk.vkCmdPipelineBarrier(cmdBuf,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0, 0, NULL, 0, NULL, 2, barriers);
+
+    /* 2. Regiao de copia */
+    VkImageCopy region;
+    memset(&region, 0, sizeof(region));
+    region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.srcSubresource.mipLevel = 0;
+    region.srcSubresource.baseArrayLayer = 0;
+    region.srcSubresource.layerCount = 1;
+
+    region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.dstSubresource.mipLevel = 0;
+    region.dstSubresource.baseArrayLayer = 0;
+    region.dstSubresource.layerCount = 1;
+
+    if (pSrcBox != NULL) {
+        region.srcOffset.x = (int32_t)pSrcBox->left;
+        region.srcOffset.y = (int32_t)pSrcBox->top;
+        region.srcOffset.z = (int32_t)pSrcBox->front;
+        region.dstOffset.x = (int32_t)dstX;
+        region.dstOffset.y = (int32_t)dstY;
+        region.dstOffset.z = 0;
+        region.extent.width = (pSrcBox->right > pSrcBox->left) ? (pSrcBox->right - pSrcBox->left) : src->Width;
+        region.extent.height = (pSrcBox->bottom > pSrcBox->top) ? (pSrcBox->bottom - pSrcBox->top) : src->Height;
+        region.extent.depth = (pSrcBox->back > pSrcBox->front) ? (pSrcBox->back - pSrcBox->front) : 1;
+    } else {
+        region.srcOffset.x = 0;
+        region.srcOffset.y = 0;
+        region.srcOffset.z = 0;
+        region.dstOffset.x = (int32_t)dstX;
+        region.dstOffset.y = (int32_t)dstY;
+        region.dstOffset.z = 0;
+        region.extent.width = (dst->Width < src->Width) ? dst->Width : src->Width;
+        region.extent.height = (dst->Height < src->Height) ? dst->Height : src->Height;
+        region.extent.depth = 1;
+    }
+
+    device->VkBridge.vk.vkCmdCopyImage(cmdBuf,
+        src->VkImg, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        dst->VkImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        1, &region);
+
+    /* 3. Barreira de retorno para COLOR_ATTACHMENT_OPTIMAL */
+    barriers[0].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barriers[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barriers[0].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barriers[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barriers[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    barriers[1].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barriers[1].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    device->VkBridge.vk.vkCmdPipelineBarrier(cmdBuf,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+        0, 0, NULL, 0, NULL, 2, barriers);
+
+    /* Flusha os comandos de copia imediatamente para garantir consistencia de composicao */
+    (void)Bc250UmdVkFlushCommands(&device->VkBridge);
+
+    Bc250UmdTrace("[VK_BRIDGE] ResourceCopyImage Vk: src=%p dst=%p Extent=%ux%u DstXY=(%u,%u)",
+        (void*)src, (void*)dst, region.extent.width, region.extent.height, dstX, dstY);
+
+    return TRUE;
 }
 
 VOID APIENTRY Bc250Umd10ResourceCopy(
@@ -1952,6 +2100,12 @@ VOID APIENTRY Bc250Umd10ResourceCopy(
     BC250_UMD_RESOURCE* src = (BC250_UMD_RESOURCE*)hSrcResource.pDrvPrivate;
 
     if (dst == NULL || src == NULL) return;
+
+    /* Sincronizacao de imagens Vulkan para composicao DWM / texturas GPU */
+    if (device != NULL && device->VkBridgeInitialized &&
+        dst->VkImg != VK_NULL_HANDLE && src->VkImg != VK_NULL_HANDLE) {
+        (void)Bc250UmdVkCopyImageInternal(device, dst, 0, 0, src, NULL);
+    }
 
     /* Pipeline Blt GPU Real via SDMA quando recursos possuem alocacao em VRAM residente */
     if (device != NULL && dst->Allocation.Created && src->Allocation.Created &&
@@ -2008,6 +2162,12 @@ VOID APIENTRY Bc250Umd10ResourceCopyRegion(
     UNREFERENCED_PARAMETER(SrcSubresource);
 
     if (dst == NULL || src == NULL) return;
+
+    /* Sincronizacao de sub-regioes de imagem Vulkan para composicao DWM */
+    if (device != NULL && device->VkBridgeInitialized &&
+        dst->VkImg != VK_NULL_HANDLE && src->VkImg != VK_NULL_HANDLE) {
+        (void)Bc250UmdVkCopyImageInternal(device, dst, DstX, DstY, src, pSrcBox);
+    }
 
     if (dst->pCpuShadow == NULL && dst->TotalByteSize > 0u) {
         dst->pCpuShadow = calloc(1, dst->TotalByteSize);
@@ -2457,22 +2617,29 @@ static BOOL Bc250UmdExecuteVkDraw(
 
     if (!pDevice->InRenderPass || pDevice->ActiveFramebuffer != rtv->VkFb) {
         VkRenderPassBeginInfo rpBegin;
+        VkClearValue clearVal;
+        VkRenderPass passToUse = (rtv->VkPassLoad != VK_NULL_HANDLE) ? rtv->VkPassLoad : rtv->VkPass;
+
         if (pDevice->InRenderPass) {
             pDevice->VkBridge.vk.vkCmdEndRenderPass(cmd);
             pDevice->InRenderPass = FALSE;
         }
+        memset(&clearVal, 0, sizeof(clearVal));
+
         memset(&rpBegin, 0, sizeof(rpBegin));
         rpBegin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        rpBegin.renderPass = rtv->VkPass;
+        rpBegin.renderPass = passToUse;
         rpBegin.framebuffer = rtv->VkFb;
         rpBegin.renderArea.offset.x = 0;
         rpBegin.renderArea.offset.y = 0;
         rpBegin.renderArea.extent.width = (rtv->pResource != NULL && rtv->pResource->Width > 0) ? rtv->pResource->Width : 1;
         rpBegin.renderArea.extent.height = (rtv->pResource != NULL && rtv->pResource->Height > 0) ? rtv->pResource->Height : 1;
+        rpBegin.clearValueCount = 1;
+        rpBegin.pClearValues = &clearVal;
 
         pDevice->VkBridge.vk.vkCmdBeginRenderPass(cmd, &rpBegin, VK_SUBPASS_CONTENTS_INLINE);
         pDevice->InRenderPass = TRUE;
-        pDevice->ActiveRenderPass = rtv->VkPass;
+        pDevice->ActiveRenderPass = passToUse;
         pDevice->ActiveFramebuffer = rtv->VkFb;
     }
 
@@ -2521,7 +2688,8 @@ static BOOL Bc250UmdExecuteVkDraw(
             BC250_UMD_RESOURCE* vb = (BC250_UMD_RESOURCE*)pDevice->PipelineState.VertexBuffers[slot].pDrvPrivate;
             if (vb != NULL && vb->VkBuf != VK_NULL_HANDLE) {
                 if (vb->pCpuShadow != NULL && vb->TotalByteSize > 0u && vb->VkMem != VK_NULL_HANDLE) {
-                    (void)Bc250UmdVkUploadBufferData(pDevice, vb, vb->pCpuShadow, vb->TotalByteSize);
+                    UINT uploadBytes = (vb->Width > 0 && vb->Width < vb->TotalByteSize) ? vb->Width : vb->TotalByteSize;
+                    (void)Bc250UmdVkUploadBufferData(pDevice, vb, vb->pCpuShadow, uploadBytes);
                 }
                 VkDeviceSize offset = pDevice->PipelineState.VertexOffsets[slot];
                 pDevice->VkBridge.vk.vkCmdBindVertexBuffers(cmd, slot, 1, &vb->VkBuf, &offset);
@@ -2540,7 +2708,8 @@ static BOOL Bc250UmdExecuteVkDraw(
             BC250_UMD_RESOURCE* ib = (BC250_UMD_RESOURCE*)pDevice->PipelineState.IndexBuffer.pDrvPrivate;
             if (ib != NULL && ib->VkBuf != VK_NULL_HANDLE) {
                 if (ib->pCpuShadow != NULL && ib->TotalByteSize > 0u && ib->VkMem != VK_NULL_HANDLE) {
-                    (void)Bc250UmdVkUploadBufferData(pDevice, ib, ib->pCpuShadow, ib->TotalByteSize);
+                    UINT uploadBytes = (ib->Width > 0 && ib->Width < ib->TotalByteSize) ? ib->Width : ib->TotalByteSize;
+                    (void)Bc250UmdVkUploadBufferData(pDevice, ib, ib->pCpuShadow, uploadBytes);
                 }
                 VkIndexType idxType = (pDevice->PipelineState.IndexFormat == DXGI_FORMAT_R16_UINT) ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
                 pDevice->VkBridge.vk.vkCmdBindIndexBuffer(cmd, ib->VkBuf, pDevice->PipelineState.IndexOffset, idxType);
@@ -2570,7 +2739,6 @@ VOID APIENTRY Bc250Umd10Draw(
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     if (device == NULL) return;
     if (Bc250UmdExecuteVkDraw(device, VertexCount, StartVertexLocation, 1, 0, FALSE, 0)) return;
-    if (Bc250UmdEmitPm4Draw(device, VertexCount, StartVertexLocation, 0, FALSE)) return;
     if (Bc250UmdSubstituteDrawWithBlt(device)) return;
     Bc250UmdRejectUnbackedDraw(device, "Draw");
 }
@@ -2584,7 +2752,6 @@ VOID APIENTRY Bc250Umd10DrawIndexed(
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     if (device == NULL) return;
     if (Bc250UmdExecuteVkDraw(device, IndexCount, StartIndexLocation, 1, 0, TRUE, BaseVertexLocation)) return;
-    if (Bc250UmdEmitPm4Draw(device, IndexCount, StartIndexLocation, BaseVertexLocation, TRUE)) return;
     if (Bc250UmdSubstituteDrawWithBlt(device)) return;
     Bc250UmdRejectUnbackedDraw(device, "DrawIndexed");
 }
@@ -2600,7 +2767,6 @@ VOID APIENTRY Bc250Umd10DrawInstanced(
 
     if (device == NULL) return;
     if (Bc250UmdExecuteVkDraw(device, VertexCountPerInstance, StartVertexLocation, InstanceCount, StartInstanceLocation, FALSE, 0)) return;
-    if (Bc250UmdEmitPm4Draw(device, VertexCountPerInstance * (InstanceCount ? InstanceCount : 1u), StartVertexLocation, 0, FALSE)) return;
     if (Bc250UmdSubstituteDrawWithBlt(device)) return;
     Bc250UmdRejectUnbackedDraw(device, "DrawInstanced");
 }
@@ -2617,7 +2783,6 @@ VOID APIENTRY Bc250Umd10DrawIndexedInstanced(
 
     if (device == NULL) return;
     if (Bc250UmdExecuteVkDraw(device, IndexCountPerInstance, StartIndexLocation, InstanceCount, StartInstanceLocation, TRUE, BaseVertexLocation)) return;
-    if (Bc250UmdEmitPm4Draw(device, IndexCountPerInstance * (InstanceCount ? InstanceCount : 1u), StartIndexLocation, BaseVertexLocation, TRUE)) return;
     if (Bc250UmdSubstituteDrawWithBlt(device)) return;
     Bc250UmdRejectUnbackedDraw(device, "DrawIndexedInstanced");
 }
@@ -2763,6 +2928,8 @@ HRESULT Bc250UmdCommandBufferFlush(
 }
 
 /* Real PM4 3D draw submission on Node 1 (Parede B).
+ * Tool for KMD/UMD bringup and diagnostic validation of Node 1 GFX ring (CP_RB0).
+ * Excluded from production D3D10/11 Draw DDIs (D1.1).
  * Builds CB_COLOR0, Scissor, IT_DRAW_INDEX_AUTO and flushes command buffer. */
 BOOL Bc250UmdEmitPm4Draw(
     _Inout_ BC250_UMD_DEVICE* pDevice,
@@ -4068,21 +4235,165 @@ VOID Bc250UmdPopulateDeviceFuncs11(_Out_ D3D11DDI_DEVICEFUNCS* pFuncs)
  * DXGI Base DDIs
  * ========================================================================= */
 
-static VOID Bc250UmdPresentVulkanDetileAndScanout(
+static HRESULT Bc250UmdBridgeLinearToWddm(
+    _Inout_ BC250_UMD_DEVICE *d,
+    uint64_t srcGpuVa,
+    _In_ BC250_UMD_RESOURCE *dstRes)
+{
+    BC250_ESCAPE_COMPOSITE_BLT payload;
+    D3DDDICB_ESCAPE args;
+    HRESULT hr;
+    UINT pitch;
+
+    if (d == NULL || dstRes == NULL || srcGpuVa == 0 ||
+        dstRes->Allocation.GpuVirtualAddress == 0) {
+        Bc250UmdTrace("BRIDGE VULKAN->WDDM RECUSADO: argumentos invalidos (srcVa=0x%llX dstVa=0x%llX)",
+            (unsigned long long)srcGpuVa,
+            dstRes ? (unsigned long long)dstRes->Allocation.GpuVirtualAddress : 0ULL);
+        return E_INVALIDARG;
+    }
+    if (!d->WinsysInitialized || d->pAdapter == NULL ||
+        d->pAdapter->hRTAdapter.handle == NULL ||
+        d->Winsys.Callbacks == NULL ||
+        d->Winsys.Callbacks->pfnEscapeCb == NULL) {
+        Bc250UmdTrace("BRIDGE VULKAN->WDDM RECUSADO: contrato de escape ausente");
+        return E_NOTIMPL;
+    }
+
+    pitch = dstRes->RowPitch ? dstRes->RowPitch : (dstRes->Width * 4);
+
+    memset(&payload, 0, sizeof(payload));
+    payload.Opcode = BC250_ESCAPE_OP_COMPOSITE_BLT;
+    payload.SourceGpuVa = srcGpuVa;
+    payload.DestGpuVa = dstRes->Allocation.GpuVirtualAddress;
+    payload.Width = dstRes->Width;
+    payload.Height = dstRes->Height;
+    payload.SourcePitch = dstRes->Width * 4;
+    payload.DestPitch = pitch;
+    payload.DestX = 0;
+    payload.DestY = 0;
+
+    memset(&args, 0, sizeof(args));
+    args.hDevice = d->Winsys.RuntimeDevice;
+    args.hContext = NULL;
+    args.pPrivateDriverData = &payload;
+    args.PrivateDriverDataSize = (UINT)sizeof(payload);
+    args.Flags.HardwareAccess = 1u;
+
+    Bc250UmdTrace("BRIDGE VULKAN->WDDM ENTER: %ux%u SrcVa=0x%llX DstVa=0x%llX Pitch=%u/%u",
+        dstRes->Width, dstRes->Height,
+        (unsigned long long)payload.SourceGpuVa,
+        (unsigned long long)payload.DestGpuVa,
+        payload.SourcePitch, payload.DestPitch);
+
+    hr = d->Winsys.Callbacks->pfnEscapeCb(
+        d->pAdapter->hRTAdapter.handle, &args);
+
+    Bc250UmdTrace("BRIDGE VULKAN->WDDM LEAVE: hr=0x%08X ResultCode=0x%08X",
+        (unsigned)hr, payload.ResultCode);
+
+    if (FAILED(hr)) return hr;
+    if (payload.ResultCode != BC250_PRESENT_BLT_STATUS_SUCCESS) return E_FAIL;
+    return S_OK;
+}
+
+static HRESULT Bc250UmdPresentBltToScanout(
+    _Inout_ BC250_UMD_DEVICE *d,
+    _In_ BC250_UMD_RESOURCE *res)
+{
+    BC250_ESCAPE_PRESENT_BLT payload;
+    D3DDDICB_ESCAPE args;
+    HRESULT hr;
+
+    if (d == NULL || res == NULL || res->Allocation.GpuVirtualAddress == 0) {
+        return E_INVALIDARG;
+    }
+    if (!d->WinsysInitialized || d->pAdapter == NULL ||
+        d->pAdapter->hRTAdapter.handle == NULL ||
+        d->Winsys.Callbacks == NULL ||
+        d->Winsys.Callbacks->pfnEscapeCb == NULL) {
+        return E_NOTIMPL;
+    }
+
+    memset(&payload, 0, sizeof(payload));
+    payload.Opcode = BC250_ESCAPE_OP_PRESENT_BLT;
+    payload.Width = res->Width;
+    payload.Height = res->Height;
+    payload.Pitch = res->RowPitch ? res->RowPitch : (res->Width * 4);
+    payload.SizeBytes = res->TotalByteSize;
+    payload.SourceGpuVa = res->Allocation.GpuVirtualAddress;
+
+    memset(&args, 0, sizeof(args));
+    args.hDevice = d->Winsys.RuntimeDevice;
+    args.hContext = NULL;
+    args.pPrivateDriverData = &payload;
+    args.PrivateDriverDataSize = (UINT)sizeof(payload);
+    args.Flags.HardwareAccess = 1u;
+
+    hr = d->Winsys.Callbacks->pfnEscapeCb(
+        d->pAdapter->hRTAdapter.handle, &args);
+
+    Bc250UmdTrace("PRESENT_BLT (WDDM ALLOC -> SCANOUT): hr=0x%08X Result=0x%08X (GpuVa=0x%llX %ux%u)",
+        (unsigned)hr, payload.ResultCode,
+        (unsigned long long)payload.SourceGpuVa,
+        payload.Width, payload.Height);
+
+    if (FAILED(hr)) return hr;
+    return (payload.ResultCode == BC250_PRESENT_BLT_STATUS_SUCCESS) ? S_OK : E_FAIL;
+}
+
+static BOOL Bc250UmdPresentVulkanDetileAndScanout(
     _Inout_ BC250_UMD_DEVICE* device,
     _In_opt_ BC250_UMD_RESOURCE* srcRes)
 {
-    if (device == NULL || !device->VkBridgeInitialized || !device->VkBridge.DeviceActive) {
-        return;
+    BOOL vkRendered = FALSE;
+
+    if (device == NULL || srcRes == NULL) {
+        return FALSE;
     }
 
-    if (device->InRenderPass) {
-        device->VkBridge.vk.vkCmdEndRenderPass(device->VkBridge.CommandBuffer);
-        device->InRenderPass = FALSE;
+    /*
+     * Verifica se houve renderizacao real na Vulkan Bridge:
+     * Quer seja via Draw nativo (NativeVkDrawCount > 0) ou Fast-Clear (InRenderPass ativo).
+     */
+    if (device->VkBridgeInitialized && device->VkBridge.DeviceActive) {
+        if (device->InRenderPass) {
+            device->VkBridge.vk.vkCmdEndRenderPass(device->VkBridge.CommandBuffer);
+            device->InRenderPass = FALSE;
+            vkRendered = TRUE;
+        } else if (device->NativeVkDrawCount > 0) {
+            vkRendered = TRUE;
+        }
     }
 
-    if (srcRes != NULL && srcRes->VkResourceCreated && srcRes->VkImg != VK_NULL_HANDLE &&
-        srcRes->Width > 0 && srcRes->Height > 0) {
+    /*
+     * D1.2: Deteccao de divergencia entre renderizador e apresentador.
+     * Se ambos os backends renderizaram, ou se o render ocorreu em PM4 enquanto
+     * a Vulkan Bridge tambem declara render, recusa honestamente com motivo nomeado.
+     */
+    if (device->NativePm4DrawCount > 0 && (device->NativeVkDrawCount > 0 || vkRendered)) {
+        Bc250UmdTrace("DXGI Present RECUSADO: [PRESENT RECUSADO: DIVERGENCIA_BACKEND_DRAW_VS_PRESENT] "
+            "(NativeVkDrawCount=%llu, NativePm4DrawCount=%llu, InRenderPass=%d) - render e apresentacao divergem",
+            device->NativeVkDrawCount, device->NativePm4DrawCount, (int)device->InRenderPass);
+        return FALSE;
+    }
+
+    /*
+     * D1.2: Se nenhum render foi detectado neste quadro, recusa nomeada para nao destilar zeros calado.
+     */
+    if (!vkRendered && device->NativePm4DrawCount == 0) {
+        Bc250UmdTrace("DXGI Present RECUSADO: [PRESENT RECUSADO: NENHUM_RENDER_DETECTADO] "
+            "Nenhum render detectado neste quadro (VkRendered=0, NativePm4DrawCount=0, NativeVkDrawCount=%llu)",
+            device->NativeVkDrawCount);
+        return FALSE;
+    }
+
+    /*
+     * Rota 1: Renderizacao Vulkan ocorreu sobre srcRes->VkImg.
+     * Executa destiling e apresentacao da imagem Vulkan ao scanout e alocacao WDDM.
+     */
+    if (vkRendered && srcRes->VkResourceCreated &&
+        srcRes->VkImg != VK_NULL_HANDLE && srcRes->Width > 0 && srcRes->Height > 0) {
 
         BOOL hasLinear = Bc250UmdVkEnsureLinearPresentBuf(&device->VkBridge, srcRes->Width, srcRes->Height);
         if (hasLinear && device->VkBridge.LinearPresentCreated && device->VkBridge.LinearPresentBuf != VK_NULL_HANDLE) {
@@ -4131,53 +4442,106 @@ static VOID Bc250UmdPresentVulkanDetileAndScanout(
                 /* 3. Barreira de Buffer e restaura layout da imagem para renderizacao subsequente */
                 VkBufferMemoryBarrier bmb = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
                 bmb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-                bmb.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+                bmb.dstAccessMask = VK_ACCESS_HOST_READ_BIT | VK_ACCESS_MEMORY_READ_BIT;
                 bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                 bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                 bmb.buffer = device->VkBridge.LinearPresentBuf;
                 bmb.offset = 0;
                 bmb.size = (VkDeviceSize)srcRes->Width * srcRes->Height * 4;
 
+                device->VkBridge.vk.vkCmdPipelineBarrier(cmdBuf,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                    0, 0, NULL, 1, &bmb, 0, NULL);
+
+                /* 3b. Restaura layout da imagem de origem para COLOR_ATTACHMENT_OPTIMAL para quadros subsequentes */
                 imb.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
                 imb.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
                 imb.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
                 imb.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
                 device->VkBridge.vk.vkCmdPipelineBarrier(cmdBuf,
                     VK_PIPELINE_STAGE_TRANSFER_BIT,
-                    VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                    0, 0, NULL, 1, &bmb, 1, &imb);
+                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    0, 0, NULL, 0, NULL, 1, &imb);
             }
 
             /* 4. Envia comandos ao hardware e aguarda conclusao */
             VkResult vkFlushRes = Bc250UmdVkFlushCommands(&device->VkBridge);
             Bc250UmdTrace("DXGI Present: Vulkan Destile CommandBuffer flushed: res=%d", vkFlushRes);
 
-            /* 5. Aciona scanout fisico passando a memoria linear destilada */
-            if (device->VkBridge.pfnPresentScanout != NULL) {
+            if (device->VkBridge.vk.vkDeviceWaitIdle != NULL) {
+                device->VkBridge.vk.vkDeviceWaitIdle(device->VkBridge.Device);
+            }
+
+            /* 5. Inspecao de telemetria dos primeiros pixels e centro do buffer linear */
+            uint32_t nonZeroSamples = Bc250UmdVkInspectLinearPresentBuf(&device->VkBridge, srcRes->Width, srcRes->Height);
+
+            /* 6. Ponte Vulkan -> WDDM: copia imagem linear para a alocacao WDDM oficial (srcRes->Allocation) */
+            uint64_t linearGpuVa = 0;
+            if (device->VkBridge.pfnGetMemoryGpuVa != NULL &&
+                device->VkBridge.LinearPresentMem != VK_NULL_HANDLE) {
+                linearGpuVa = device->VkBridge.pfnGetMemoryGpuVa(device->VkBridge.LinearPresentMem);
+            }
+
+            if (linearGpuVa != 0 && srcRes->Allocation.GpuVirtualAddress != 0) {
+                HRESULT bridgeHr = Bc250UmdBridgeLinearToWddm(device, linearGpuVa, srcRes);
+                Bc250UmdTrace("DXGI Present: Bc250UmdBridgeLinearToWddm res=0x%08X (LinearVa=0x%llX -> DstVa=0x%llX %ux%u)",
+                    (unsigned)bridgeHr, (unsigned long long)linearGpuVa,
+                    (unsigned long long)srcRes->Allocation.GpuVirtualAddress,
+                    srcRes->Width, srcRes->Height);
+            }
+
+            /* 7. Apresentacao simultanea ao scanout fisico da BC-250 (0xC0000000) */
+            if (device->VkBridge.pfnPresentScanout != NULL &&
+                device->VkBridge.LinearPresentMem != VK_NULL_HANDLE) {
                 VkResult vkPresRes = device->VkBridge.pfnPresentScanout(
                     device->VkBridge.Device, device->VkBridge.GraphicsQueue,
                     device->VkBridge.LinearPresentMem, srcRes->Width, srcRes->Height);
-                Bc250UmdTrace("DXGI Present: radv_bc250_present_scanout (DESTILED LINEAR) res=%d (%ux%u)",
-                    vkPresRes, srcRes->Width, srcRes->Height);
+                Bc250UmdTrace("DXGI Present: radv_bc250_present_scanout (DIRECT SCANOUT) res=%d (%ux%u, NonZero=%u/5)",
+                    vkPresRes, srcRes->Width, srcRes->Height, nonZeroSamples);
             }
+            return TRUE;
         } else {
             /* Contingencia caso linear buffer nao esteja disponivel */
             VkResult vkFlushRes = Bc250UmdVkFlushCommands(&device->VkBridge);
             Bc250UmdTrace("DXGI Present: Vulkan CommandBuffer flushed: res=%d", vkFlushRes);
 
+            if (device->VkBridge.vk.vkDeviceWaitIdle != NULL) {
+                device->VkBridge.vk.vkDeviceWaitIdle(device->VkBridge.Device);
+            }
+
+            if (srcRes->Allocation.GpuVirtualAddress != 0 &&
+                device->VkBridge.pfnGetMemoryGpuVa != NULL &&
+                srcRes->VkMem != VK_NULL_HANDLE) {
+                uint64_t rawGpuVa = device->VkBridge.pfnGetMemoryGpuVa(srcRes->VkMem);
+                if (rawGpuVa != 0) {
+                    HRESULT bridgeHr = Bc250UmdBridgeLinearToWddm(device, rawGpuVa, srcRes);
+                    Bc250UmdTrace("DXGI Present: Bc250UmdBridgeLinearToWddm (RAW) res=0x%08X", (unsigned)bridgeHr);
+                }
+            }
             if (device->VkBridge.pfnPresentScanout != NULL && srcRes->VkMem != VK_NULL_HANDLE) {
                 VkResult vkPresRes = device->VkBridge.pfnPresentScanout(
                     device->VkBridge.Device, device->VkBridge.GraphicsQueue,
                     srcRes->VkMem, srcRes->Width, srcRes->Height);
-                Bc250UmdTrace("DXGI Present: radv_bc250_present_scanout (RAW MEM FALLBACK) res=%d (%ux%u)",
+                Bc250UmdTrace("DXGI Present: radv_bc250_present_scanout (RAW MEM DIRECT SCANOUT) res=%d (%ux%u)",
                     vkPresRes, srcRes->Width, srcRes->Height);
             }
+            return TRUE;
         }
-    } else {
-        /* Contingencia caso sem srcRes */
-        VkResult vkFlushRes = Bc250UmdVkFlushCommands(&device->VkBridge);
-        Bc250UmdTrace("DXGI Present: Vulkan CommandBuffer flushed (sem srcRes): res=%d", vkFlushRes);
+    }
+    /*
+     * Rota 2: Renderizacao PM4 nativa ocorreu diretamente na alocacao WDDM (CP_RB0 Node 1 GFX).
+     * NUNCA sobrescrever com zeros da Vulkan Bridge. Apresenta srcRes->Allocation diretamente ao scanout.
+     */
+    else if (device->NativePm4DrawCount > 0 && srcRes->Allocation.GpuVirtualAddress != 0) {
+        Bc250UmdTrace("DXGI Present: PM4 DRAW DETECTADO (NativePm4DrawCount=%llu) -> apresentando alocacao WDDM diretamente ao scanout",
+            device->NativePm4DrawCount);
+        return SUCCEEDED(Bc250UmdPresentBltToScanout(device, srcRes));
+    }
+    else {
+        Bc250UmdTrace("DXGI Present RECUSADO: [PRESENT RECUSADO: CONDICAO_SCANOUT_INVALIDA] (VkRendered=%d, Pm4Draws=%llu)",
+            (int)vkRendered, device->NativePm4DrawCount);
+        return FALSE;
     }
 }
 
@@ -4205,7 +4569,10 @@ HRESULT APIENTRY Bc250DxgiPresent(DXGI_DDI_ARG_PRESENT* pPresentData)
         pPresentData->Flags.Value,
         (int)pPresentData->FlipInterval);
 
-    Bc250UmdPresentVulkanDetileAndScanout(device, srcRes);
+    if (!Bc250UmdPresentVulkanDetileAndScanout(device, srcRes)) {
+        Bc250UmdTrace("DXGI Present RECUSADO: preparacao de scanout falhou ou divergiu -> E_FAIL");
+        return E_FAIL;
+    }
 
     if (device->pDXGICallbacks == NULL || device->pDXGICallbacks->pfnPresentCb == NULL) {
         Bc250UmdTrace("DXGI Present: pDXGICallbacks ou pfnPresentCb ausente -> E_FAIL");
@@ -4314,7 +4681,10 @@ HRESULT APIENTRY Bc250DxgiPresent1(DXGI1_6_1_DDI_ARG_PRESENT* pPresentData)
         (int)pPresentData->FlipInterval,
         pPresentData->DirtyRects);
 
-    Bc250UmdPresentVulkanDetileAndScanout(device, srcRes);
+    if (!Bc250UmdPresentVulkanDetileAndScanout(device, srcRes)) {
+        Bc250UmdTrace("DXGI Present1 RECUSADO: preparacao de scanout falhou ou divergiu -> E_FAIL");
+        return E_FAIL;
+    }
 
     if (device->pDXGICallbacks == NULL || device->pDXGICallbacks->pfnPresentCb == NULL) {
         Bc250UmdTrace("DXGI Present1: pDXGICallbacks ou pfnPresentCb ausente -> E_FAIL");

@@ -1,9 +1,0 @@
-22:20:20.273 [pid=8916 M365Copilot.exe] === bc250umd.dll CARREGADA ===
-22:20:20.275 [pid=8916 M365Copilot.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
-22:20:20.275 [pid=8916 M365Copilot.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
-22:20:20.276 [pid=8916 M365Copilot.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
-22:20:20.276 [pid=8916 M365Copilot.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
-22:20:20.278 [pid=8916 M365Copilot.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
-22:20:20.279 [pid=8916 M365Copilot.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL
-22:20:20.279 [pid=8916 M365Copilot.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
-22:20:20.279 [pid=8916 M365Copilot.exe] OpenAdapter10_2: D3D11 nao implementado nativamente -> E_NOTIMPL

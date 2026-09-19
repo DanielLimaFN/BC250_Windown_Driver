@@ -1,0 +1,33 @@
+﻿=== EMPACOTAMENTO LAB (assinado) ===
+PACK EXIT = 0
+  + CategoryInfo          : NotSpecified: ('vswhere.exe' n...comando interno:String) [], RemoteException
+  + FullyQualifiedErrorId : NativeCommandError
+--- cauda do empacotamento ---
+  'vswhere.exe' não é reconhecido como um comando interno
+  ou externo, um programa operável ou um arquivo em lotes.
+  [cc-lab] bc250_active_miniport.c (bring-up ATIVO)
+  bc250_active_miniport.c
+  [link-lab] bc250mcdm.sys (laboratorio)
+  
+  === VERIFICACAO ===
+    laboratorio : E062D85CD8227965  544768 bytes
+    producao    : 6A3B8B48D5641630  515584 bytes
+    bring-up compilado: CONFIRMADO no binario
+  
+  IMAGEM DE LABORATORIO PRONTA: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\output_lab\bc250mcdm.sys
+  
+  Esta imagem NAO passa pelo pacote assinado de producao e NAO deve ser
+  instalada pela cadeia auditada. Instalar exige decisao explicita.
+  NAO VALIDADO EM HARDWARE
+
+=== MANIFESTO DO PACOTE ===
+  DriverVer            09/18/2026,3.183.1.0
+  BuildKind            MCDM_LAB_BRINGUP
+  ProfileMode          DISPLAY_RENDER_LAB
+  SourceSysSha256      E6FD20FDC0C18A65DFF9F2B79878F60CD78A7954B11DE71EE1976B7FBEE53E11
+  PackageSysSha256     A083ACCA6FB8290EC9EFC7E93D64D57D1030C1AC07DE823EE53F87258D5DEC89
+  SourceUmdSha256      D80317A9E0F1022DD158D005F533538FA763D3FFD03AB41003B75307067AF4D7
+  PackageUmdSha256     6AA377BBC42350146A7D0FDF28B938D64A63A7E22A00E63176D1B500A9938CF9
+  PackageInfSha256     2F5AB965F5081ABA4C2EC91B482E1084CBB2DF753D97A7A0BAC85102061A9E42
+  PackageCatSha256     9549401BEF64F1CE9D9F78DFA5E84E322F65792EEF5BBBF585D69E6D613A5AEE
+  Verdict              NAO VALIDADO EM HARDWARE

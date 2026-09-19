@@ -1,6 +1,6 @@
 # Roadmap 164 — WDDM com jogos na BC-250, **sem** implementar DCN no caminho crítico
 
-> **Escopo de produto atualizado em 16/09/2026:** ver [plano de desktop e jogos transparentes](281_PLANO_PRODUTO_DESKTOP_E_JOGOS_TRANSPARENTES.md). A meta inclui desktop D3D11 acelerado, aplicações não modificadas e integração Direct3D ao driver. DCN básico em P9 integra a conclusão desse produto, embora não seja pré-requisito do primeiro desktop em modo GOP. As menções históricas abaixo a DCN totalmente opcional valem para a demonstração em modo fixo, não para esse escopo ampliado. Os marcos antigos abaixo não representam o status atual; consultar BASE_DE_AVANCO.md e o plano.
+> **Escopo de produto atualizado em 17/09/2026:** ver [plano de desktop e jogos transparentes](281_PLANO_PRODUTO_DESKTOP_E_JOGOS_TRANSPARENTES.md) e [handoff doc 284](284_HANDOFF_2026-09-17_15-12_D3D11_NATIVO_GFX_RB0_E_ISOLAMENTO_SCANOUT.md). A meta inclui desktop D3D11 acelerado, aplicações não modificadas e integração Direct3D ao driver. DCN básico em P9 integra a conclusão desse produto, embora não seja pré-requisito do primeiro desktop em modo GOP. As menções históricas abaixo a DCN totalmente opcional valem para a demonstração em modo fixo, não para esse escopo ampliado. Os marcos antigos abaixo não representam o status atual; consultar BASE_DE_AVANCO.md e o plano.
 
 **Data-base:** 2026-09-02 · **Revisão 2** (substitui a revisão 1, que colocava DCN como pré-requisito)
 **Meta:** BC-250 rodando jogos no Windows (D3D12/Vulkan) com as 24 CUs e 16 GB GDDR6, com

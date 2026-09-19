@@ -1,3 +1,0 @@
-[toolchain] VS2026 + SDK/WDK 10.0.28000.0
-gcvm_mutation.c
-MUTATION_EXIT=161

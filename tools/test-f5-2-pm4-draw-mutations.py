@@ -111,15 +111,15 @@ def main() -> int:
          probe_orig,
          "telemetria isolada de draws nativos PM4"),
 
-        ("M6: omit Bc250UmdEmitPm4Draw in Bc250Umd10Draw",
+        ("M6: reintroduce Bc250UmdEmitPm4Draw in Bc250Umd10Draw (D1.1)",
          pm4_orig,
          umd_orig.replace(
-             "if (Bc250UmdEmitPm4Draw(device, VertexCount, StartVertexLocation, 0, FALSE)) return;",
-             "// if (Bc250UmdEmitPm4Draw(device, VertexCount, StartVertexLocation, 0, FALSE)) return;"
+             "if (Bc250UmdExecuteVkDraw(device, VertexCount, StartVertexLocation, 1, 0, FALSE, 0)) return;",
+             "if (Bc250UmdExecuteVkDraw(device, VertexCount, StartVertexLocation, 1, 0, FALSE, 0)) return;\n    if (Bc250UmdEmitPm4Draw(device, VertexCount, StartVertexLocation, 0, FALSE)) return;"
          ),
          test_orig,
          probe_orig,
-         "chamada de draw nativo em Bc250Umd10Draw"),
+         "D1.1: Bc250UmdEmitPm4Draw proibido no caminho de render (Bc250Umd10Draw)"),
 
         ("M7: delete assert(dev.NativePm4DrawCount == 1u) in contract test",
          pm4_orig,
@@ -155,6 +155,16 @@ def main() -> int:
          test_orig,
          probe_orig.replace('BC250_D3D11_EXPERIMENTAL_PM4_DRAW_REG_NAME "D3D11ExperimentalPm4Draw"', '// omit'),
          "definicao de tunable D3D11ExperimentalPm4Draw em bc250_umd_caps_probe.h"),
+
+        ("M12: omit backend divergence check in Bc250UmdPresentVulkanDetileAndScanout (D1.2)",
+         pm4_orig,
+         umd_orig.replace(
+             "device->NativePm4DrawCount > 0 && (device->NativeVkDrawCount > 0 || vkRendered)",
+             "/* omitted */ 0"
+         ),
+         test_orig,
+         probe_orig,
+         "D1.2: deteccao de divergencia entre renderizador e apresentador"),
     ]
 
     passed = 0

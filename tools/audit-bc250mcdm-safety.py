@@ -21,6 +21,19 @@ def forbid(text: str, needle: str, label: str, errors: list[str]) -> None:
         errors.append(f"forbidden {label}: {needle}")
 
 
+def require_token(text: str, token: str, label: str, errors: list[str]) -> None:
+    """require() com fronteira de palavra.
+
+    Existe porque require() casa SUBSTRING, e o nome certo e quase sempre
+    PREFIXO do nome errado. Tres mutacoes ja passaram por esse buraco em 19/09:
+    GfxIbDumpDir -> GfxIbDumpDirOutro (M14), BROADCAST_ALL -> BROADCAST_ALL_REMOVIDO
+    (M8) e complete_at_capture -> complete_at_capture_removido (M18). Renomear um
+    campo e a forma mais comum de remove-lo na pratica, e o portao tem de notar.
+    """
+    if not re.search(r"(?<![A-Za-z0-9_])" + re.escape(token) + r"(?![A-Za-z0-9_])", text):
+        errors.append(f"missing {label}: {token}")
+
+
 def strip_c_comments(text: str) -> str:
     """Remove comentarios C sem alterar o comprimento util do codigo.
 
@@ -279,6 +292,312 @@ def audit_mec_vmid_retarget(errors: list[str]) -> None:
                   "PUBLISH_BEFORE_COHERENCY", "PUBLISH_AFTER_COHERENCY",
                   "PUBLISH_AFTER_MMIO_WPTR", "PUBLISH_AFTER_DOORBELL"):
         require(active + engine, stage, f"RCIU stage {stage}", errors)
+
+
+def audit_gfx_ring_tripod_and_ib_inspection(errors: list[str]) -> None:
+    """
+    Trava as tres correcoes da faixa do anel grafico (2026-09-18), todas
+    nascidas da mesma medicao: na corrida 10:20 as 87 submissoes do Node 1 GFX
+    sairam com SizeDW=24 (so o preambulo da RADV), a fence do anel avancou em
+    87/87 e NENHUMA telemetria detectou o problema.
+
+    1. PERNA 2 DO TRIPE -- exclusao explicita do poison antes de aposentar.
+       O poison e' 0x43DAFFFE, um numero GRANDE: sem exclui-lo, a comparacao
+       `observedFence > lastRetired` e' verdadeira mesmo que a GPU nunca tenha
+       escrito, e o poison se disfarca de fence concluida. Esta e' a setima
+       ocorrencia potencial da classe "o portao carimbava o falso sucesso".
+
+    2. PERNA 1 DO TRIPE -- veredito de convergencia de ponteiros do anel, com
+       reducao de uma volta (Bc250TripodWrapRingPointer). Comparacao CRUA de
+       RPTR e' proibida desde a faixa A15: com RPTR=4612, alvo 516 e anel 4096
+       ela leria trabalho pendente num anel drenado.
+
+    3. INSPECAO DO IB -- o KMD tem de inspecionar o stream PM4 que aponta ao CP
+       e usar FONTE UNICA para o veredito. E' o unico jeito de distinguir
+       "concatenacao linear aplicada" de "voltou ao encadeamento".
+    """
+    active = (ROOT / "driver/wdk/bc250_active_miniport.c").read_text(encoding="utf-8")
+    contract_c = (ROOT / "driver/core/bc250_gfx_ib_inspect_contract.c").read_text(encoding="utf-8")
+    test_c = (ROOT / "driver/tests/gfx_ib_inspect_contract_test.c").read_text(encoding="utf-8")
+    build = (ROOT / "driver/wdk/build-contract.bat").read_text(encoding="utf-8")
+
+    poll = function_body(active, "static NTSTATUS Bc250ActiveGfxEnginePoll")
+    if not poll:
+        errors.append("Bc250ActiveGfxEnginePoll nao localizado para auditar o tripe do anel grafico")
+        return
+
+    clean_poll = re.sub(r"/\*.*?\*/", "", poll, flags=re.S)
+    clean_poll = re.sub(r"//.*$", "", clean_poll, flags=re.M)
+
+    # (1) O poison precisa ser NOMEADO e EXCLUIDO antes da aposentadoria.
+    if "BC250_GFX_FENCE_POISON" not in clean_poll:
+        errors.append(
+            "Bc250ActiveGfxEnginePoll nao referencia BC250_GFX_FENCE_POISON: sem excluir o poison "
+            "a comparacao de fence aposenta submissoes que a GPU nunca concluiu (falso sucesso)")
+    if not re.search(r"fenceIsPoison\s*=", clean_poll):
+        errors.append("Bc250ActiveGfxEnginePoll nao calcula fenceIsPoison antes de aposentar")
+    if not re.search(r"if\s*\(\s*!\s*fenceIsPoison\s*&&", clean_poll):
+        errors.append(
+            "a aposentadoria do anel grafico nao esta guardada por !fenceIsPoison: "
+            "o poison 0x43DAFFFE passa a comparacao `observedFence > lastRetired`")
+
+    # O valor literal nao pode reaparecer solto no poll -- fonte unica pelo macro.
+    if "0x43DAFFFE" in clean_poll:
+        errors.append(
+            "Bc250ActiveGfxEnginePoll usa o literal 0x43DAFFFE em vez de BC250_GFX_FENCE_POISON "
+            "(duas fontes de verdade para o poison)")
+
+    # (2) Perna 1 com reducao de volta; comparacao crua e' proibida (A15).
+    require(poll, "GFX_TRIPE_VEREDITO",
+            "veredito de tripe do anel grafico emitido pelo poll", errors)
+    if "Bc250TripodWrapRingPointer" not in clean_poll:
+        errors.append(
+            "o veredito do anel grafico nao reduz os ponteiros por Bc250TripodWrapRingPointer: "
+            "comparacao crua de RPTR e' proibida desde a faixa A15")
+    # O veredito precisa admitir INDETERMINADO -- "nao sei" nao pode virar "convergiu".
+    if "INDETERMINADO" not in poll:
+        errors.append(
+            "o veredito do anel grafico nao tem estado INDETERMINADO: leitura ausente "
+            "nao pode ser reportada como convergencia")
+
+    # (3) Inspecao do IB ligada ao caminho de submissao do anel grafico.
+    submit_gfx = active
+    for needed in ("Bc250ActiveGfxInspectSubmittedIb(",
+                   "Bc250ActiveGfxLogIbInspection(",
+                   "IB_SIZE_MUDOU"):
+        if needed not in submit_gfx:
+            errors.append(
+                f"caminho de submissao do anel grafico nao contem {needed}: sem isso a corrida "
+                "nao distingue IB linear de IB encadeado")
+
+    # O veredito textual precisa sair de FONTE UNICA no contrato, nao ser
+    # remontado no log (foi assim que 'BYTE_PROOF PASS' e 'IB_TRIPOD PASS'
+    # passaram a significar coisas diferentes do que o nome dizia).
+    if "Bc250GfxIbInspectVerdictName(" not in active:
+        errors.append(
+            "o log da inspecao de IB nao usa Bc250GfxIbInspectVerdictName: o veredito tem de "
+            "sair de fonte unica, senao log e suite podem discordar")
+    for verdict in ("IB_LINEAR_CONFIRMADO", "IB_AINDA_ENCADEADO", "INDETERMINADO"):
+        if verdict not in contract_c:
+            errors.append(f"contrato de inspecao de IB nao define o veredito {verdict}")
+
+    # O leitor do KMD NAO pode mapear memoria: roda em DISPATCH_LEVEL.
+    reader = function_body(active, "static int Bc250ActiveGfxIbReadDword")
+    if not reader:
+        errors.append("Bc250ActiveGfxIbReadDword nao localizado")
+    else:
+        clean_reader = re.sub(r"/\*.*?\*/", "", reader, flags=re.S)
+        for forbidden in ("MmMapIoSpace", "MmMapIoSpaceEx", "MmUnmapIoSpace",
+                          "ExAllocatePool", "KeWaitForSingleObject"):
+            if forbidden in clean_reader:
+                errors.append(
+                    f"Bc250ActiveGfxIbReadDword contem {forbidden}: o leitor roda em "
+                    "DISPATCH_LEVEL e so pode usar a janela de VRAM ja mapeada")
+
+    # (4) ScanComplete tem de exigir que o orcamento nao truncou o stream.
+    if "budget == Inspection->RequestedDwords" not in contract_c:
+        errors.append(
+            "ScanComplete nao exige budget == RequestedDwords: um IB maior que o orcamento "
+            "de varredura sairia como 'completo' e o veredito de linearidade seria falso")
+
+    # (5) A suite tem de manter os casos NEGATIVOS. Portao que nao reprova nada
+    # e' carimbo -- este projeto registra seis ocorrencias dessa classe.
+    if "0xC0023F00" not in test_c:
+        errors.append(
+            "gfx_ib_inspect_contract_test nao trava o cabecalho medido 0xC0023F00: "
+            "sem o caso medido a suite nao reproduz a corrida 10:20")
+    negativas = test_c.count('!StrEq(Bc250GfxIbInspectVerdictName')
+    if negativas < 3:
+        errors.append(
+            f"gfx_ib_inspect_contract_test tem apenas {negativas} assercoes negativas de "
+            "'nao pode sair linear' (minimo 3): sem elas o classificador pode virar carimbo")
+
+    # (6) O build tem de compilar E EXECUTAR a suite.
+    if "bc250_gfx_ib_inspect_contract.obj" not in build:
+        errors.append("build-contract.bat nao compila bc250_gfx_ib_inspect_contract.c")
+    if "gfx_ib_inspect_contract_test.exe" not in build:
+        errors.append("build-contract.bat nao linka gfx_ib_inspect_contract_test.exe")
+    if "TESTE FALHOU ^(gfx_ib_inspect_contract_test^)" not in build:
+        errors.append(
+            "build-contract.bat nao ABORTA quando gfx_ib_inspect_contract_test falha: "
+            "teste que nao para o build nao e' portao")
+
+    # (7) R4 para o componente que NAO esta no pacote assinado.
+    # A vulkan_radeon.dll vive em C:\BC250_LIB e foi o unico binario que mudou
+    # entre os candidatos de 2026-09-18. Sem o hash dela na evidencia, a pergunta
+    # "o binario testado e' o binario novo?" fica sem resposta exatamente para a
+    # peca em teste.
+    lab_bind = (ROOT / "tools/bind-bc250mcdm-lab.ps1").read_text(encoding="utf-8")
+    if "external_libs" not in lab_bind:
+        errors.append(
+            "bind-bc250mcdm-lab.ps1 nao registra external_libs: a vulkan_radeon.dll esta fora do "
+            "pacote assinado e package_sys_sha256 nao a identifica (R4 sem resposta)")
+    if "vulkan_radeon.dll" not in lab_bind:
+        errors.append("bind-bc250mcdm-lab.ps1 nao coleta o hash de vulkan_radeon.dll")
+    if "binding-provenance.json" not in lab_bind:
+        errors.append(
+            "bind-bc250mcdm-lab.ps1 nao copia a proveniencia para a pasta de evidencia: "
+            "tools/ e' sobrescrito pelo bind seguinte e o dado se perde")
+    if "absent_reason" not in lab_bind:
+        errors.append(
+            "bind-bc250mcdm-lab.ps1 omite DLL ausente em vez de declarar o motivo: "
+            "ausencia silenciosa sugere medicao que nao houve")
+
+    # ==================================================================
+    # (8) FAIXA DE 2026-09-18 TARDE -- as tres correcoes que a corrida 13:12
+    # obrigou. Cada uma nasceu de um falso sucesso ou de uma leitura errada.
+    # ==================================================================
+
+    # 8a. A comparacao de dominio trocado. Read32/Write32 devolvem uint32_t com
+    # 1=sucesso, e BC250_MMIO_TOPOLOGY_OK vale ZERO: compara-los inverte o
+    # resultado e foi o que produziu 41 de 41 Perna1=INDETERMINADO[lido=0].
+    if re.search(r"Topology(Read|Write)32\([^;]*==\s*BC250_MMIO_TOPOLOGY_OK", active, flags=re.S):
+        errors.append(
+            "Bc250MmioTopologyRead32/Write32 comparado com BC250_MMIO_TOPOLOGY_OK: dominios trocados. "
+            "Essas funcoes devolvem 1=sucesso/0=falha e o enum OK vale 0, logo a comparacao inverte "
+            "o resultado (corrida 2026-09-18 13:12: 41/41 vereditos com [lido=0] apesar da leitura funcionar)")
+
+    # 8b. A publicacao do WPTR no silicio nao pode mais ser muda nem opcional.
+    submit_body_gfx = function_body(active, "static NTSTATUS Bc250ActiveGfxEngineSubmit")
+    if not submit_body_gfx:
+        errors.append("Bc250ActiveGfxEngineSubmit nao localizado para auditar a publicacao do WPTR")
+    else:
+        clean_gfx = re.sub(r"/\*.*?\*/", "", submit_body_gfx, flags=re.S)
+        if re.search(r"\(void\)\s*Bc250MmioTopologyWrite32\([^;]*CP_RB0_WPTR", clean_gfx, flags=re.S):
+            errors.append(
+                "a escrita de CP_RB0_WPTR volta a descartar o retorno com (void): submissao passaria a "
+                "reportar SUBMIT SUCESSO sem o hardware ter recebido o ponteiro (Lei 4)")
+        for needed, why in (
+            ("WPTR_NAO_PUBLICADO", "recusa nomeada quando o transporte MMIO nao esta mapeado"),
+            ("WPTR_ESCRITA_RECUSADA", "recusa nomeada quando Write32 devolve 0"),
+            ("WPTR_READBACK", "readback do registrador apos a escrita"),
+            ("WPTR_READBACK_DIVERGENTE", "recusa quando o registrador nao guarda o valor escrito"),
+        ):
+            if needed not in submit_body_gfx:
+                errors.append(
+                    f"Bc250ActiveGfxEngineSubmit nao contem {needed} ({why}); sem isso a assinatura "
+                    "medida em 13:12 (snapshot do TDR com WPTR=0 apos escrever 12) volta a passar como sucesso")
+
+    # 8c. Perna 2 tem tres estados. Fence zero NAO e' escrita da GPU -- as fences
+    # comecam em 1, e o slot fica zerado pelo restart do TDR sem replantar poison.
+    if "INDETERMINADO_SLOT_ZERADO_SEM_POISON" not in poll:
+        errors.append(
+            "Bc250ActiveGfxEnginePoll nao classifica Fence==0 como INDETERMINADO_SLOT_ZERADO_SEM_POISON: "
+            "35 de 41 vereditos da corrida 13:12 sairam FENCE_ESCRITA_PELA_GPU com Fence=0x00000000")
+
+    # 8d. Salto (CHAIN=1) e chamada IB2 (CHAIN=0) nao sao a mesma coisa. Trata-los
+    # como iguais fez o veredito acusar regressao onde a RADV provava o contrario.
+    if "BC250_GFX_IB_CTRL_CHAIN_MASK" not in contract_c:
+        errors.append(
+            "o classificador de IB nao consulta o bit CHAIN: opcode 0x3F com CHAIN=0 e' chamada IB2 "
+            "(o CP retorna) e nao pode ser contado como salto de encadeamento")
+    if "ChainJumps" not in contract_c or "Ib2Calls" not in contract_c:
+        errors.append("o classificador de IB nao separa ChainJumps de Ib2Calls")
+    if re.search(r"return\s*\(\s*Inspection->IndirectBufferPackets\s*==\s*0u\s*\)", contract_c):
+        errors.append(
+            "o veredito de linearidade voltou a depender de IndirectBufferPackets em vez de ChainJumps: "
+            "isso reintroduz o falso IB_AINDA_ENCADEADO da corrida 13:12")
+    if "0x000000B0" not in test_c:
+        errors.append(
+            "gfx_ib_inspect_contract_test nao trava o controle medido 0x000000B0 (IB2 com CHAIN=0): "
+            "sem esse caso a confusao entre salto e chamada aninhada pode voltar")
+
+    # 8e. Os nomes de bit tem de vir do registrador CERTO. ME_WAIT_ON_AVAIL_BUFFER
+    # e GFX_CNTX_NOT_AVAIL_TO_ME pertencem ao CP_STALLED_STAT2
+    # (gc_10_1_0_sh_mask.h:6466-6467), NAO ao STAT1, cujos bits 10/11 sao
+    # ME_HAS_ACTIVE_CE/DE_BUFFER_FLAG (6428-6429). Confundir os dois sustentou uma
+    # causa-raiz inteira que a propria medicao refutava (STAT2 lido = 0x00000000).
+    stall_block = ""
+    idx = active.find("[TDR_GFX_STALL]")
+    if idx >= 0:
+        stall_block = active[max(0, idx - 4000):idx + 4000]
+    if not stall_block:
+        errors.append(
+            "o snapshot do TDR grafico nao emite [TDR_GFX_STALL]: CP_STALLED_STAT1/STAT2 ficam sem "
+            "decodificacao nomeada e a pergunta do contexto grafico segue sem resposta")
+    else:
+        if "BC250_HQD_MMIO_CP_STALLED_STAT2" not in stall_block:
+            errors.append(
+                "o snapshot do TDR grafico le CP_STALLED_STAT1 mas nao o STAT2, que e' onde "
+                "ME_WAIT_ON_AVAIL_BUFFER e GFX_CNTX_NOT_AVAIL_TO_ME realmente moram")
+        if re.search(r"STAT1[^\n]*GFX_CNTX_NOT_AVAIL_TO_ME", stall_block):
+            errors.append(
+                "GFX_CNTX_NOT_AVAIL_TO_ME atribuido ao CP_STALLED_STAT1: esse campo pertence ao STAT2 "
+                "(gc_10_1_0_sh_mask.h:6467). Ler nome de um registrador contra valor de outro e' "
+                "exatamente o erro que esta faixa corrige")
+    if "STALL_BASELINE" not in active:
+        errors.append(
+            "o ONLINE do anel grafico nao registra STALL_BASELINE: sem a linha de base tirada ANTES "
+            "de qualquer submissao, um valor de repouso (0x00000C00 desde o bind) volta a ser lido "
+            "como consequencia do nosso IB")
+
+    # 8f. A UMD nao pode rebaixar o memory type do buffer de inspecao em silencio.
+    vk_bridge = (ROOT / "driver/umd/bc250_umd_vulkan_bridge.c").read_text(encoding="utf-8")
+    if "NAO MAPEAVEL PELA CPU" not in vk_bridge:
+        errors.append(
+            "bc250_umd_vulkan_bridge.c nao declara o rebaixamento do memory type do LinearPresentBuf: "
+            "a corrida 13:12 perdeu a Perna 3 com 128 erros -5 sem que nada dissesse que a alocacao "
+            "caiu para memoria nao mapeavel")
+
+
+def audit_phase_d0_refusal_tripod_and_wptr_veto(errors: list[str]) -> None:
+    """Fase D0: recusa do submit emite tripe de recusa e readback divergente permanece veto.
+
+    1. GFX_TRIPE_VEREDITO_RECUSA precisa ser emitido no caminho de recusa do
+       SubmitVirtual do Node 1 (Bc250ActiveGfxLogRefusalMeasurement) para que
+       toda submissao recusada produza medicao de silicio (RPTR, WPTR, Fence, Poison)
+       em vez de apenas falhar em silencio.
+    2. WPTR_READBACK_DIVERGENTE precisa permanecer um veto (fail-closed,
+       retornando erro e incrementando SubmitRejected) enquanto a doorbell
+       estiver desligada no apply (DoorbellDesligadaNoApply == 1).
+    """
+    active_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+    if not active_path.exists():
+        errors.append(f"fonte ausente para auditar Fase D0: {active_path}")
+        return
+
+    active = active_path.read_text(encoding="utf-8", errors="replace")
+
+    # 1. Tripe de recusa emitido no caminho de recusa do SubmitVirtual Node 1.
+    submit_body = function_body(active, "static NTSTATUS Bc250ActiveSubmitCommandVirtualBody")
+    if not submit_body:
+        errors.append("Bc250ActiveSubmitCommandVirtualBody nao localizado para auditar recusa da Fase D0")
+        return
+
+    clean_submit = strip_c_comments(submit_body)
+    require(clean_submit, "Bc250ActiveGfxLogRefusalMeasurement(context,",
+            "chamada de medicao de recusa no SubmitVirtual Node 1", errors)
+
+    refusal_meas = function_body(active, "static void Bc250ActiveGfxLogRefusalMeasurement")
+    if not refusal_meas:
+        errors.append("Bc250ActiveGfxLogRefusalMeasurement nao localizado")
+        return
+
+    require(refusal_meas, "GFX_TRIPE_VEREDITO_RECUSA",
+            "emissao de GFX_TRIPE_VEREDITO_RECUSA no helper de medicao", errors)
+
+    # 2. WPTR_READBACK_DIVERGENTE permanece veto em Bc250ActiveGfxEngineSubmit.
+    gfx_submit = function_body(active, "static NTSTATUS Bc250ActiveGfxEngineSubmit")
+    if not gfx_submit:
+        errors.append("Bc250ActiveGfxEngineSubmit nao localizado para auditar veto de WPTR")
+        return
+
+    clean_gfx_submit = strip_c_comments(gfx_submit)
+    divergent_marker = "wptrReadback != cursor"
+    start_divergent = clean_gfx_submit.find(divergent_marker)
+    if start_divergent < 0:
+        errors.append(f"bloco de divergencia '{divergent_marker}' nao localizado em Bc250ActiveGfxEngineSubmit")
+    else:
+        end_divergent = clean_gfx_submit.find("} else {", start_divergent)
+        divergent_block = clean_gfx_submit[start_divergent:end_divergent if end_divergent > 0 else len(clean_gfx_submit)]
+        require(divergent_block, 'LastRefusalReason = "WPTR_READBACK_DIVERGENTE";',
+                "motivo WPTR_READBACK_DIVERGENTE registrado", errors)
+        require(divergent_block, "DoorbellDesligadaNoApply=1",
+                "declaracao de DoorbellDesligadaNoApply no inventario de canais", errors)
+        require(divergent_block, "return STATUS_DEVICE_NOT_READY;",
+                "retorno fail-closed no veto de WPTR divergente", errors)
+        forbid(divergent_block, "return STATUS_SUCCESS;",
+               "falso sucesso em WPTR divergente", errors)
 
 
 def audit_submit_dispatch_level_safety(errors: list[str]) -> None:
@@ -780,10 +1099,31 @@ def audit_f5_2_pm4_draw_pipeline(errors: list[str]) -> None:
         require(emit_draw, "Bc250UmdCommandBufferFlush(pDevice, cmd, BC250_WINSYS_NODE_COMPUTE)",
                 "flush do command buffer para o Node 1 de compute/grafico", errors)
 
-    require(umd_clean, "if (Bc250UmdEmitPm4Draw(device, VertexCount, StartVertexLocation, 0, FALSE)) return;",
-            "chamada de draw nativo em Bc250Umd10Draw", errors)
-    require(umd_clean, "if (Bc250UmdEmitPm4Draw(device, IndexCount, StartIndexLocation, BaseVertexLocation, TRUE)) return;",
-            "chamada de draw nativo em Bc250Umd10DrawIndexed", errors)
+    draw_func = function_body(umd_clean, "VOID APIENTRY Bc250Umd10Draw(")
+    draw_idx_func = function_body(umd_clean, "VOID APIENTRY Bc250Umd10DrawIndexed(")
+    draw_inst_func = function_body(umd_clean, "VOID APIENTRY Bc250Umd10DrawInstanced(")
+    draw_idx_inst_func = function_body(umd_clean, "VOID APIENTRY Bc250Umd10DrawIndexedInstanced(")
+
+    if not draw_func or not draw_idx_func or not draw_inst_func or not draw_idx_inst_func:
+        errors.append("funcoes de draw nao localizadas na UMD")
+    else:
+        for fname, fbody in [("Bc250Umd10Draw", draw_func),
+                             ("Bc250Umd10DrawIndexed", draw_idx_func),
+                             ("Bc250Umd10DrawInstanced", draw_inst_func),
+                             ("Bc250Umd10DrawIndexedInstanced", draw_idx_inst_func)]:
+            forbid(fbody, "Bc250UmdEmitPm4Draw",
+                   f"D1.1: Bc250UmdEmitPm4Draw proibido no caminho de render ({fname})", errors)
+            require(fbody, "Bc250UmdExecuteVkDraw",
+                    f"D1.1: Bc250UmdExecuteVkDraw obrigatorio ({fname})", errors)
+
+    present_detile = function_body(umd_clean, "static BOOL Bc250UmdPresentVulkanDetileAndScanout(")
+    if not present_detile:
+        errors.append("Bc250UmdPresentVulkanDetileAndScanout nao localizado")
+    else:
+        require(present_detile, "device->NativePm4DrawCount > 0 && (device->NativeVkDrawCount > 0 || vkRendered)",
+                "D1.2: deteccao de divergencia entre renderizador e apresentador", errors)
+        require(present_detile, "[PRESENT RECUSADO: DIVERGENCIA_BACKEND_DRAW_VS_PRESENT]",
+                "D1.2: recusa nomeada para divergencia de backend no Present", errors)
 
     test_clean = strip_c_comments(test)
     test_func = function_body(test_clean, "static void TestDrawPm4EmissionOnNode1(void)")
@@ -2798,6 +3138,543 @@ def audit_safe_bind_deadline_is_fail_closed(errors: list[str]) -> None:
         critical = watcher[rollback:recovery]
         if "Get-CimInstance" in critical or "Get-WinEvent" in critical:
             errors.append("safe-bind consulta WMI/eventos depois do prazo e antes da recovery")
+
+
+def audit_gfx_restart_checks_the_real_halt_bits(errors: list[str]) -> None:
+    """O portao do restart do CP_RB0 tem de olhar os bits de halt que existem.
+
+    MEDIDO na corrida 2026-09-19 09:06:34 (P0). Depois do primeiro TDR do anel
+    grafico, as tres submissoes seguintes sairam com
+    [TDR_GFX_QUIESCE] ... CpMeCntl=0x15000000 e RPTR travado em 0 -- isto e,
+    CE_HALT|PFP_HALT|ME_HALT ligados, o CP inteiro parado. Mesmo assim o
+    restart anterior havia impresso "CP_RB0 rearmado e comprovado no silicio",
+    porque Bc250TdrValidateGfxRestartReadback mascarava 0x00000007 e o
+    comentario afirmava que os halts eram "bits 0, 1 e 2".
+
+    Pelo header local (Lei 7, inc/linux_ref/gc_10_1_0_sh_mask.h):
+      CP_ME_CNTL__CE_HALT_MASK  0x01000000
+      CP_ME_CNTL__PFP_HALT_MASK 0x04000000
+      CP_ME_CNTL__ME_HALT_MASK  0x10000000
+    Os bits 0..2 nao nomeiam campo nenhum. 0x15000000 & 0x7 == 0: o PASS era
+    aritmeticamente inevitavel, e por isso tres corridas inteiras trataram o
+    proprio reset como se fosse stall da Drawing Engine.
+
+    Oitava ocorrencia da classe "o gate carimbava o falso sucesso" no projeto
+    (A15, mcdm_callbacks_test, C1, sdma_blt_executed, teste do blt com 128
+    bytes, entre outras). O portao cobre o PRODUTO e o TESTE, porque naquele
+    caso o teste tambem exigia a mascara errada.
+    """
+    contract_path = ROOT / "driver" / "core" / "bc250_tdr_recovery_contract.c"
+    test_path = ROOT / "driver" / "tests" / "tdr_recovery_contract_test.c"
+    if not contract_path.exists():
+        errors.append("bc250_tdr_recovery_contract.c ausente: restart do CP_RB0 sem portao")
+        return
+    if not test_path.exists():
+        errors.append("tdr_recovery_contract_test.c ausente: restart do CP_RB0 sem teste")
+        return
+
+    contract = contract_path.read_text(encoding="utf-8", errors="replace")
+    code = strip_c_comments(contract)
+
+    start = code.find("Bc250TdrValidateGfxRestartReadback(")
+    if start < 0:
+        errors.append("Bc250TdrValidateGfxRestartReadback ausente do contrato de TDR")
+        return
+    end = code.find("BC250_TDR_STATUS Bc250TdrExecuteResetPlan", start)
+    if end < 0:
+        end = len(code)
+    body = code[start:end]
+
+    for mask in ("0x01000000u", "0x04000000u", "0x10000000u"):
+        if mask not in body:
+            errors.append(
+                "restart do CP_RB0 nao confere o halt " + mask +
+                " de CP_ME_CNTL: um restart com a micro-engine parada passaria")
+
+    if "0x00000007u" in body:
+        errors.append(
+            "restart do CP_RB0 voltou a mascarar 0x00000007 em CP_ME_CNTL: "
+            "esses bits nao nomeiam campo no header e a mascara nao reprova halt")
+
+    # O TESTE tambem nao pode voltar a congelar a mentira.
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+    require(test, "Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 0x15000000u, 0u) == BC250_TDR_RESTART_NOT_READY",
+            "caso do teste com o CpMeCntl MEDIDO na corrida 19/09 (0x15000000)", errors)
+    for frozen in ("Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 7u, 0u)",
+                   "Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 1u, 0u)"):
+        if frozen in test:
+            errors.append(
+                "tdr_recovery_contract_test voltou a exigir reprovacao por bits 0..2 de "
+                "CP_ME_CNTL (" + frozen + "): o teste estaria congelando a mascara errada")
+
+
+def audit_gfx_stall_probe_is_read_only(errors: list[str]) -> None:
+    """A sonda do stall do CP grafico e diagnostico, nunca escrita.
+
+    Os offsets abaixo entraram em 19/09 para responder, na proxima corrida,
+    onde o CP_RB0 para -- CP_ME_HEADER_DUMP e CP_PFP_HEADER_DUMP nomeiam o
+    pacote PM4, CP_IB1_BASE/BUFSZ localizam o ponto dentro do IB,
+    SQ_DEBUG_STS_GLOBAL diz se ha onda viva, GRBM_STATUS_SE0/SE1 e
+    CP_BUSY_STAT separam as esperas. Nenhum deles tem efeito util se for
+    ESCRITO, e escrever em registrador de diagnostico do CP durante um TDR e
+    risco puro. Este portao exige que estejam na allowlist de LEITURA e
+    proibe que qualquer um apareca numa chamada de escrita.
+    """
+    header_path = ROOT / "driver" / "core" / "bc250_gfx_ring_transaction.h"
+    transport_path = ROOT / "driver" / "wdk" / "bc250_mmio_topology_transport.c"
+    miniport_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+    for path in (header_path, transport_path, miniport_path):
+        if not path.exists():
+            errors.append(path.name + " ausente: sonda de stall do CP sem portao")
+            return
+
+    header = header_path.read_text(encoding="utf-8", errors="replace")
+    transport = transport_path.read_text(encoding="utf-8", errors="replace")
+    miniport = miniport_path.read_text(encoding="utf-8", errors="replace")
+
+    probes = {
+        "BC250_GFX_REG_CP_ME_HEADER_DUMP": "0x00008684u",
+        "BC250_GFX_REG_CP_PFP_HEADER_DUMP": "0x00008688u",
+        "BC250_GFX_REG_GRBM_STATUS_SE0": "0x00008014u",
+        "BC250_GFX_REG_GRBM_STATUS_SE1": "0x00008018u",
+        "BC250_GFX_REG_SQ_DEBUG_STS_GLOBAL": "0x00008C24u",
+        "BC250_GFX_REG_CP_IB1_BASE_LO": "0x00030330u",
+        "BC250_GFX_REG_CP_IB1_BASE_HI": "0x00030334u",
+        "BC250_GFX_REG_CP_IB1_BUFSZ": "0x00030338u",
+    }
+
+    for name, offset in probes.items():
+        require(header, "#define " + name, "offset de diagnostico " + name, errors)
+        if offset not in transport:
+            errors.append(
+                "offset " + offset + " (" + name + ") fora da allowlist de LEITURA: "
+                "a sonda devolveria zero e o log diria INDETERMINADO para sempre")
+        if "Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,\n                        " + name in miniport:
+            errors.append("sonda de diagnostico " + name + " usada em ESCRITA")
+
+    code = strip_c_comments(miniport)
+    for name in probes:
+        idx = 0
+        while True:
+            idx = code.find(name, idx)
+            if idx < 0:
+                break
+            window = code[max(0, idx - 200):idx]
+            if "Bc250MmioTopologyWrite32" in window and "Bc250MmioTopologyRead32" not in window[window.rfind("Bc250MmioTopologyWrite32"):]:
+                errors.append("sonda de diagnostico " + name + " alcancada por caminho de escrita")
+            idx += len(name)
+
+    # As linhas de log tem de existir, senao a sonda le e nao conta a ninguem.
+    for line in ("[TDR_GFX_PACKET]", "[TDR_GFX_WAVES]", "[TDR_GFX_SE]", "[TDR_GFX_CPWAIT]"):
+        require(miniport, line, "linha de log da sonda de stall do CP " + line, errors)
+    # E a ausencia de leitura tem de ser NOMEADA, nao virar zero silencioso.
+    require(miniport, "ME_HEADER_DUMP INDETERMINADO",
+            "recusa nomeada quando o Read32 do header do ME falha", errors)
+    require(miniport, "SQ_DEBUG_STS_GLOBAL INDETERMINADO",
+            "recusa nomeada quando o Read32 do SQ falha", errors)
+
+
+def audit_conformance_harness_checks_present(errors: list[str]) -> None:
+    """O harness D3D11 nao pode declarar quadro que o runtime recusou.
+
+    MEDIDO na corrida 2026-09-19 09:06:34 (P0): o dispositivo foi removido as
+    09:07:19 -- d3d11_native_conformance.log registra vkWaitForFences res=-4 e,
+    a partir dali, 51 ciclos com "Lock2 failed: status=0xC00002B6" e
+    "UploadBufferData ERRO: vkMapMemory falhou" -- e o harness imprimiu 52
+    quadros "RENDERING_OK" com FPS subindo de 0.4 a 11.2. Houve UM draw real.
+    A causa era simples: o HRESULT de Present() era descartado e a string de
+    status saia incondicionalmente.
+
+    A rampa de FPS tambem enganava, e nao por acaso: media cumulativa de um
+    quadro de ~2,5 s seguido de ~51 no-ops produz exatamente aquela curva. Por
+    isso o portao exige os DOIS numeros no relatorio.
+    """
+    path = ROOT / "driver" / "tests" / "d3d11_native_conformance_test.cpp"
+    if not path.exists():
+        errors.append("d3d11_native_conformance_test.cpp ausente")
+        return
+    text = path.read_text(encoding="utf-8", errors="replace")
+    code = strip_c_comments(text)
+
+    require(code, "hr = pSwapChain->Present(",
+            "captura do HRESULT de Present", errors)
+    require(code, "GetDeviceRemovedReason()",
+            "leitura do motivo de remocao do dispositivo", errors)
+    require(code, "PRESENT_FALHOU",
+            "status honesto quando o Present falha", errors)
+    require(code, "return presentFailed ? 2 : 0;",
+            "exit code nao-zero quando o Present falhou", errors)
+    require(code, "FPS janela",
+            "FPS instantaneo ao lado da media cumulativa", errors)
+
+    if "RENDERING_OK" in code:
+        errors.append(
+            "harness voltou a imprimir RENDERING_OK: essa string foi impressa 52 vezes "
+            "na corrida 19/09 com o dispositivo removido desde o quadro 2")
+
+    # ------------------------------------------------------------------
+    # O RUNNER tambem nao pode declarar sucesso sem prova de quadro.
+    #
+    # MEDIDO na Corrida 35 (19/09 10:51): o harness nao imprimiu NENHUMA linha
+    # de quadro, nao houve timeout, e o runner anunciou "EXIT CODE: 0". Exit 0
+    # sem prova de quadro nao e sucesso -- e ausencia de medicao, e ler os dois
+    # como a mesma coisa foi o que permitiu ao docs/288 publicar "52 quadros".
+    # ------------------------------------------------------------------
+    runner = ROOT / "tools" / "test-d3d11-native-conformance.ps1"
+    if not runner.exists():
+        errors.append("test-d3d11-native-conformance.ps1 ausente: runner do D3D11 sem portao")
+    else:
+        rtext = runner.read_text(encoding="utf-8", errors="replace")
+        require(rtext, "SEM MEDICAO",
+                "veredito proprio quando nao ha linha de quadro nenhuma", errors)
+        require(rtext, "PRESENT_OK",
+                "contagem de quadros com Present aceito no runner", errors)
+        require(rtext, "PRESENT_FALHOU",
+                "contagem de Presents falhos no runner", errors)
+        if "if ($exitCode -eq 0) { $exitCode = 3 }" not in rtext:
+            errors.append(
+                "runner nao converte exit 0 SEM prova de quadro em falha: "
+                "uma corrida que nao mediu nada voltaria a sair como sucesso")
+        # E o despejo de IB tem de alcancar processos que nao sao filhos do
+        # runner -- foi por isso que a Corrida 35 arquivou gfx-ib-dump vazio.
+        # PORTAO REFEITO POR MUTACAO (M14). Exigir a substring "GfxIbDumpDir"
+        # passava com o valor renomeado para "GfxIbDumpDirOutro", porque o
+        # nome antigo continua sendo prefixo do novo. O par nome-exato dos
+        # DOIS lados (runner e RADV) e' o que precisa casar -- se um mudar
+        # sozinho, o despejo volta a nao alcancar o dwm.exe em silencio.
+        require(rtext, "-Name 'GfxIbDumpDir'",
+                "runner arma o despejo por registro com o nome exato", errors)
+        patch = ROOT / "external" / "radv-wddm" / "bc250-radv-wddm.patch"
+        if patch.exists():
+            ptext = patch.read_text(encoding="utf-8", errors="replace")
+            if '"GfxIbDumpDir"' not in ptext:
+                errors.append(
+                    "o delta do RADV nao le a chave GfxIbDumpDir: o runner armaria um "
+                    "registro que ninguem consulta, e o despejo voltaria a sair vazio")
+
+    # O laco nao pode seguir depois de um Present que falhou.
+    loop_start = code.find("while (frameCount < maxFrames)")
+    if loop_start < 0:
+        errors.append("laco de render do harness nao encontrado")
+        return
+    loop = code[loop_start:code.find("printf(\"===", loop_start)]
+    if "presentFailed = 1;" not in loop or "break;" not in loop:
+        errors.append(
+            "laco de render do harness nao aborta no primeiro Present que falha: "
+            "os quadros seguintes seriam no-ops contados como sucesso")
+
+
+def audit_radv_fork_delta_is_mirrored(errors: list[str]) -> None:
+    """O driver Vulkan da placa tem de ter copia e proveniencia neste repositorio.
+
+    MEDIDO em 19/09/2026: o `vulkan_radeon.dll` que a BC-250 carrega nao e
+    construido aqui -- sai de uma arvore Mesa externa. Ate aquele dia nada neste
+    repositorio registrava onde ela estava, de que commit partia nem o que tinhamos
+    mudado nela, e as consequencias foram concretas:
+
+      - tools/audit-radv-wddm-safety.py exige --mesa-root e NUNCA tinha rodado;
+      - uma auditoria declarou a arvore inexistente e classificou a correcao de
+        GCVM de 34 bits como nao auditavel -- conclusao falsa, publicada;
+      - o delta inteiro existia em UM diretorio sem copia de seguranca.
+
+    Este portao nao verifica a arvore externa (ela pode nao existir na maquina que
+    roda a auditoria). Ele exige que o ESPELHO e a PROVENIENCIA existam aqui, que a
+    proveniencia declare os tres identificadores que amarram a cadeia
+    (commit base -> patch -> DLL), e que a ferramenta de sincronia exista e saiba
+    CONFERIR, nao so copiar. Uma copia que ninguem consegue conferir e uma copia
+    que apodrece em silencio.
+    """
+    mirror = ROOT / "external" / "radv-wddm" / "bc250-radv-wddm.patch"
+    prov = ROOT / "external" / "radv-wddm" / "PROVENANCE.md"
+    tool = ROOT / "tools" / "sync-radv-fork-delta.py"
+
+    if not mirror.exists():
+        errors.append(
+            "external/radv-wddm/bc250-radv-wddm.patch ausente: o driver Vulkan da placa "
+            "nao tem copia neste repositorio")
+        return
+    if mirror.stat().st_size == 0:
+        errors.append("espelho do delta RADV esta vazio")
+        return
+    if not prov.exists():
+        errors.append("external/radv-wddm/PROVENANCE.md ausente: espelho sem proveniencia")
+        return
+    if not tool.exists():
+        errors.append("tools/sync-radv-fork-delta.py ausente: espelho sem forma de conferir")
+        return
+
+    provenance = prov.read_text(encoding="utf-8", errors="replace")
+    for field in ("Commit base:", "SHA-256 do patch:", "SHA-256 do DLL:"):
+        require(provenance, field, "campo de proveniencia do fork RADV " + field, errors)
+    require(provenance, "audit-radv-wddm-safety.py",
+            "instrucao de como auditar o RADV com --mesa-root", errors)
+
+    # O patch tem de ser um diff de verdade, nao um arquivo-placebo.
+    patch = mirror.read_text(encoding="utf-8", errors="replace")
+    require(patch, "diff --git", "conteudo de diff no espelho do delta RADV", errors)
+    for expected in ("src/amd/vulkan/winsys/wddm2/radv_wddm2_bo.h",
+                     "src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.c",
+                     "src/vulkan/runtime/vk_wddm2_monitored_fence.c"):
+        if expected not in patch:
+            errors.append(
+                "espelho do delta RADV nao contem " + expected +
+                ": o nucleo do fork ficou de fora da copia")
+
+    # A ferramenta tem de conferir, nao apenas regenerar.
+    code = tool.read_text(encoding="utf-8", errors="replace")
+    for needle in ("def do_verify", "NAO foi construido desta arvore",
+                   "DIVERGE do espelho", "saiu do commit base declarado"):
+        require(code, needle,
+                "verificacao da sincronia do fork RADV: " + needle, errors)
+
+    # A divida do fail-open fica DECLARADA ate cair. Se alguem remover a declaracao
+    # sem remover o fail-open, o projeto perde o rastro dela.
+    require(provenance, "all fences satisfied",
+            "declaracao da divida do fail-open de fence no delta RADV", errors)
+
+
+def audit_wave_probe_restores_the_selector(errors: list[str]) -> None:
+    """A sonda de onda escreve seletores; ela TEM de devolver o broadcast.
+
+    Contexto (Corrida 35, 19/09, P0): o quiesce mediu
+    `SQ_DEBUG_STS_GLOBAL=0x00030031 WaveLevelSA0=3 WaveLevelSA1=3` -- seis ondas
+    em voo que nao retiram -- e nao tinha como dizer ONDE. A sonda de onda le o
+    PC pelo caminho indireto do SQ, e para isso precisa ESCREVER dois seletores:
+    GRBM_GFX_INDEX (com os tres bits de broadcast DESLIGADOS) e SQ_IND_INDEX.
+
+    O perigo nao e' a leitura, e' o seletor. GRBM_GFX_INDEX deixado fora de
+    broadcast redireciona TODO acesso posterior a um unico shader engine --
+    inclusive o soft-reset que o quiesce dispara logo em seguida. Este portao
+    exige que a restauracao exista, que ela seja conferida por readback, que a
+    falha tenha status PROPRIO (nao um sucesso silencioso) e que a sonda seja
+    fail-closed em tres camadas: tunable, ondas>0 e orcamento de leituras.
+    """
+    contract = ROOT / "driver" / "core" / "bc250_gfx_ring_transaction.c"
+    header = ROOT / "driver" / "core" / "bc250_gfx_ring_transaction.h"
+    miniport = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+    inf = ROOT / "driver" / "wdk" / "package" / "bc250mcdm.inf"
+    test = ROOT / "driver" / "tests" / "gfx_ring_contract_test.c"
+    for path in (contract, header, miniport, inf, test):
+        if not path.exists():
+            errors.append(path.name + " ausente: sonda de onda sem portao")
+            return
+
+    impl = contract.read_text(encoding="utf-8", errors="replace")
+    hdr = header.read_text(encoding="utf-8", errors="replace")
+    mini = miniport.read_text(encoding="utf-8", errors="replace")
+    inf_text = inf.read_text(encoding="utf-8", errors="replace")
+    test_text = test.read_text(encoding="utf-8", errors="replace")
+
+    # 1. A restauracao tem de existir, ser conferida e ter status proprio.
+    # PORTAO REFEITO POR MUTACAO (M8). A versao anterior exigia apenas a
+    # PRESENCA da constante de broadcast no arquivo -- e ela tambem aparece no
+    # comentario e no encode, entao remover a ESCRITA de restauracao passava
+    # batido. O invariante correto e' sobre a escrita, nao sobre o simbolo:
+    # a ultima escrita em GRBM_GFX_INDEX dentro de Bc250WaveProbeRun tem de
+    # ser a que devolve o broadcast.
+    run_body = strip_c_comments(impl)
+    run_start = run_body.find("BC250_WAVE_PROBE_STATUS Bc250WaveProbeRun(")
+    if run_start < 0:
+        errors.append("Bc250WaveProbeRun ausente do contrato do anel grafico")
+        return
+    run_end = run_body.find("const char *Bc250WaveProbeStatusName", run_start)
+    if run_end < 0:
+        run_end = len(run_body)
+    body = run_body[run_start:run_end]
+
+    # O alvo e a ULTIMA ESCRITA, e ela precisa ser localizada como escrita.
+    #
+    # Duas versoes anteriores deste portao falharam contra a mutacao M8, e as
+    # duas pelo mesmo tipo de descuido:
+    #   1a: exigia so a PRESENCA da constante no arquivo -- ela tambem aparece
+    #       no comentario e no encode;
+    #   2a: procurava a ultima ocorrencia de BC250_GFX_REG_GRBM_GFX_INDEX, que
+    #       e o READBACK, nao a escrita -- e a janela do readback contem a
+    #       comparacao com o broadcast, entao passava com a escrita mutilada.
+    # Agora a busca e por chamadas de Write32 sobre aquele registrador, e o
+    # casamento e por fronteira de palavra (o nome certo e PREFIXO de qualquer
+    # renomeacao, o mesmo buraco que a M14 explorou no runner).
+    escritas = [m.start() for m in re.finditer(
+        r"Write32\(\s*Interface->Context,\s*BC250_GFX_REG_GRBM_GFX_INDEX\s*,", body)]
+    if not escritas:
+        errors.append("Bc250WaveProbeRun nao escreve GRBM_GFX_INDEX: a sonda nao seleciona nada")
+    else:
+        janela = body[escritas[-1]:escritas[-1] + 200]
+        if not re.search(r"\bBC250_GRBM_GFX_INDEX_BROADCAST_ALL\b", janela):
+            errors.append(
+                "a ULTIMA escrita de GRBM_GFX_INDEX em Bc250WaveProbeRun nao devolve o "
+                "broadcast: sair do quiesce com o seletor preso faz o soft-reset seguinte "
+                "atingir um unico shader engine")
+    require(impl, "BC250_WAVE_PROBE_SELECTOR_STUCK",
+            "status proprio para seletor que nao voltou", errors)
+    require(impl, "Evidence->SelectorReadback",
+            "readback do seletor restaurado", errors)
+    require(hdr, "#define BC250_GRBM_GFX_INDEX_BROADCAST_ALL   0xE0000000u",
+            "valor de broadcast dos tres campos de GRBM_GFX_INDEX", errors)
+
+    code = strip_c_comments(impl)
+    # A codificacao do seletor NAO pode ligar bit de broadcast: com broadcast
+    # ligado a selecao nao vale e a leitura devolve um agregado sem sentido.
+    enc = code[code.find("Bc250WaveProbeEncodeGfxIndex"):]
+    enc = enc[:enc.find("uint32_t Bc250WaveProbeStatusIsValid")]
+    if "0xE0000000" in enc or "0x80000000" in enc:
+        errors.append(
+            "Bc250WaveProbeEncodeGfxIndex liga bit de broadcast: a selecao de "
+            "SE/SA/instancia deixaria de valer e a leitura viraria agregado")
+
+    # 2. Fail-closed em tres camadas.
+    require(code, "BC250_WAVE_PROBE_NO_WAVES",
+            "recusa quando o SQ nao reportou onda em voo", errors)
+    require(code, "BC250_WAVE_PROBE_PLAN_REJECTED",
+            "recusa de plano acima do orcamento de leituras", errors)
+    mini_code = strip_c_comments(mini)
+    for needle in ("GfxWaveProbePresent != 1u", "GfxWaveProbe != 1u"):
+        require(mini_code, needle,
+                "guarda do tunable da sonda de onda: " + needle, errors)
+    require(inf_text, "HKR,Parameters,GfxWaveProbe,0x00010001,0",
+            "GfxWaveProbe declarado no INF com default 0 (fail-closed)", errors)
+
+    # 3. O caminho desarmado NAO pode ser mudo, e nao pode escrever nada.
+    require(mini, "[TDR_GFX_WAVEPC] DESARMADO",
+            "linha que nomeia a sonda desarmada", errors)
+    require(mini, "[TDR_GFX_WAVEPC] ALERTA",
+            "alerta quando o seletor nao volta a broadcast", errors)
+    # Zero onda encontrada NAO pode ser lido como "nao ha onda": STATUS zero e
+    # indistinguivel de slot vazio, e dizer o contrario seria falso negativo.
+    require(mini, "INDISTINGUIVEL de slot vazio",
+            "ressalva de que zero ondas achadas nao refuta o contador do SQ", errors)
+
+    # 4. O teste nao pode perder o caso do seletor preso, que e o pior desfecho.
+    require(test_text, "BC250_WAVE_PROBE_SELECTOR_STUCK",
+            "caso de teste do seletor preso", errors)
+    require(test_text, "sq.GfxIndexWrites == 0u",
+            "caso de teste que prova que a sonda desarmada nao escreve nada", errors)
+
+
+def audit_lab_tunables_are_read_in_the_common_path(errors: list[str]) -> None:
+    """Tunable lido dentro do #if de producao nao existe na imagem de laboratorio.
+
+    MEDIDO na Corrida 36 (19/09 12:11:58, P0): o INF empacotado trazia
+    `GfxWaveProbe=1`, o manifesto derivava disso, e o quiesce imprimiu
+    `[TDR_GFX_WAVEPC] DESARMADO: GfxWaveProbe=0 present=0`. O `present=0` e o
+    discriminante -- o valor nao foi lido como zero, NUNCA foi consultado.
+
+    A leitura estava depois de
+    `#if !defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)`, que e
+    exatamente o simbolo que a imagem de LABORATORIO define: compilada para
+    fora da imagem que roda. Uma corrida inteira foi gasta por isso.
+
+    QUARTA ocorrencia da classe no projeto -- A13 (tunable de submissao), B4
+    (GpuvaLabPromotion), ContextAbi, e agora esta. Por isso o portao nao trata
+    apenas o caso novo: ele exige que TODO tunable desta lista seja lido ANTES
+    do #if, que e o unico ponto que as duas imagens executam.
+    """
+    path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+    if not path.exists():
+        errors.append("bc250_active_miniport.c ausente: leitura de tunables sem portao")
+        return
+    text = path.read_text(encoding="utf-8", errors="replace")
+
+    marker = "#if !defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)"
+    # ANCORADO EM INICIO DE LINHA. O mesmo texto aparece DENTRO de um
+    # comentario mais acima no arquivo (o registro da correcao do B4), e um
+    # find() cru acharia aquela posicao -- antes de todos os tunables --,
+    # fazendo o portao reprovar leituras que estao no lugar certo.
+    directive = re.search(r"^[ 	]*" + re.escape(marker), text, re.M)
+    prod_if = directive.start() if directive else -1
+    if prod_if < 0:
+        errors.append(
+            "nao foi possivel localizar o #if de imagem de producao: o portao dos "
+            "tunables de laboratorio nao pode se verificar e falha fechado")
+        return
+
+    # Tunables que PRECISAM valer na imagem de laboratorio.
+    for tunable in ("GfxWaveProbe", "GfxRingPreflight", "Node1JournalGatePerProcess"):
+        needle = 'L"' + tunable + '"'
+        pos = text.find(needle)
+        if pos < 0:
+            errors.append("tunable " + tunable + " nao e lido em lugar nenhum")
+            continue
+        if pos > prod_if:
+            errors.append(
+                "tunable " + tunable + " e lido DEPOIS de " + marker + ": na imagem de "
+                "laboratorio essa leitura nao existe, e o valor chega como present=0 "
+                "mesmo com o INF trazendo 1")
+
+
+def audit_ib_dump_covers_every_submission_path(errors: list[str]) -> None:
+    """O despejo de IB nao pode viver so no ramo de concatenacao.
+
+    MEDIDO nas Corridas 35 e 36: `gfx-ib-dump/` saiu VAZIO nas duas. Na 36 nao
+    foi por falta da chave -- o runner criou `GfxIbDumpDir` apontando para a
+    pasta certa e o RADV nunca chegou a resolve-la. A chamada estava dentro do
+    ramo `if (cs_total > 1)` (concatenacao), e a submissao que travou o CP nao
+    passou por ele.
+
+    O portao le o espelho do fork (external/radv-wddm), porque a arvore Mesa
+    vive fora deste repositorio -- e e por isso que o espelho existe.
+    """
+    patch = ROOT / "external" / "radv-wddm" / "bc250-radv-wddm.patch"
+    if not patch.exists():
+        errors.append("espelho do delta RADV ausente: despejo de IB sem portao")
+        return
+    text = patch.read_text(encoding="utf-8", errors="replace")
+
+    if "bc250_dump_ib(" not in text:
+        errors.append("o delta do RADV nao contem a funcao de despejo de IB")
+        return
+
+    # A chamada tem de estar fora do ramo de concatenacao. O marcador e a linha
+    # de log do submit, que e comum aos dois caminhos.
+    if "BC-250 submit: cs_total" not in text:
+        errors.append("marcador de submissao comum ausente do delta do RADV")
+        return
+    submit_pos = text.find("BC-250 submit: cs_total")
+    call_positions = [i for i in range(len(text)) if text.startswith("bc250_dump_ib(", i)]
+    # A definicao tambem casa; interessa se ALGUMA chamada vem depois do
+    # marcador comum, isto e, fora do ramo de concatenacao.
+    if not any(pos > submit_pos for pos in call_positions):
+        errors.append(
+            "toda chamada de bc250_dump_ib fica ANTES do log de submissao comum: o "
+            "despejo voltaria a cobrir so o ramo de concatenacao, e foi assim que "
+            "duas corridas seguidas arquivaram gfx-ib-dump vazio")
+
+
+def audit_kmd_tail_archive_declares_truncation(errors: list[str]) -> None:
+    """Pasta de evidencia incompleta tem de DIZER que esta incompleta.
+
+    MEDIDO na Corrida 36: a cauda arquivada tinha 210.851 bytes de 219.325
+    reais. Os 8.474 que faltaram continham o bloco INTEIRO do TDR -- a unica
+    medicao que a corrida existia para produzir -- e nada na pasta indicava
+    que ela estava truncada. O codigo de copia nunca esteve errado; o defeito
+    e temporal, porque o KMD escreve depois da copia.
+    """
+    binder = ROOT / "tools" / "bind-bc250mcdm-lab.ps1"
+    if not binder.exists():
+        errors.append("bind-bc250mcdm-lab.ps1 ausente: arquivamento do KMD sem portao")
+        return
+    text = binder.read_text(encoding="utf-8", errors="replace")
+
+    require(text, "display-log-final-archive.json",
+            "proveniencia do arquivamento final da cauda do KMD", errors)
+    # A ATRIBUICAO do campo, nao a mencao dele. A mutacao M18 renomeou o campo
+    # e o portao continuou passando porque a palavra sobrevivia dentro da string
+    # de "note" logo abaixo -- mencionar um campo nao e o mesmo que publica-lo.
+    if not re.search(r"(?<![A-Za-z0-9_])complete_at_capture\s*=", text):
+        errors.append(
+            "o json do arquivamento nao ATRIBUI complete_at_capture: a pasta voltaria "
+            "a nao dizer que esta truncada, que foi como o bloco do TDR da Corrida 36 "
+            "sumiu sem deixar rastro")
+    require_token(text, "bytes_pass1", "tamanho da primeira passagem de arquivamento", errors)
+    require_token(text, "bytes_pass2", "tamanho da segunda passagem de arquivamento", errors)
+    require(text, "PASTA INCOMPLETA",
+            "aviso alto quando a cauda arquivada esta truncada", errors)
+    # Duas passagens de verdade: uma unica copia sempre corre o risco de pegar
+    # o log no meio da escrita do bloco de TDR.
+    if text.count("$fs.CopyTo($out)") + text.count("$fs2.CopyTo($out2)") < 2:
+        errors.append(
+            "arquivamento da cauda do KMD voltou a ter UMA passagem: o bloco do TDR "
+            "e escrito na borda da coleta e some sem deixar rastro")
 
 
 def audit_lost_log_tail_is_recovered(errors: list[str]) -> None:
@@ -6045,6 +6922,8 @@ def main() -> int:
     audit_mec_vmid_retarget(errors)
     audit_submit_dispatch_level_safety(errors)
     audit_sdma_submission_is_asynchronous(errors)
+    audit_gfx_ring_tripod_and_ib_inspection(errors)
+    audit_phase_d0_refusal_tripod_and_wptr_veto(errors)
     audit_device_removal_and_unload_safety(errors)
     audit_tlb_invalidation_safety(errors)
     audit_mec_shared_mmio_lifetime(errors)
@@ -6052,6 +6931,14 @@ def main() -> int:
     audit_draw_has_no_cpu_fallback(errors)
     audit_safe_bind_deadline_is_fail_closed(errors)
     audit_lost_log_tail_is_recovered(errors)
+    audit_gfx_restart_checks_the_real_halt_bits(errors)
+    audit_gfx_stall_probe_is_read_only(errors)
+    audit_conformance_harness_checks_present(errors)
+    audit_radv_fork_delta_is_mirrored(errors)
+    audit_wave_probe_restores_the_selector(errors)
+    audit_lab_tunables_are_read_in_the_common_path(errors)
+    audit_ib_dump_covers_every_submission_path(errors)
+    audit_kmd_tail_archive_declares_truncation(errors)
     audit_probe_field_names(errors)
     audit_marco3_closes_its_own_transaction(errors)
     audit_present_is_gpu_attributable(errors)
@@ -6118,6 +7005,15 @@ def main() -> int:
     print("  bc250mcdm recovery identity: covered")
     print("  submit path at DISPATCH_LEVEL pushlock-free: enforced")
     print("  SDMA submission asynchronous and non-blocking (0x133 eliminated): enforced")
+    print("  GFX ring tripod (poison excluded, wrapped RPTR, INDETERMINADO allowed) + PM4 IB inspection with single-source verdict: enforced")
+    print("  GFX restart readback checks the REAL CP_ME_CNTL halt bits (CE/PFP/ME 0x15000000): enforced")
+    print("  GFX stall probe (ME/PFP header dump, IB1, SQ waves, SE busy) is read-only and speaks INDETERMINADO: enforced")
+    print("  D3D11 conformance harness checks Present/GetDeviceRemovedReason and aborts; runner refuses exit 0 without frame evidence: enforced")
+    print("  RADV fork delta mirrored in-repo with provenance (base commit -> patch -> DLL): enforced")
+    print("  GFX wave probe writes only selectors, restores broadcast with readback, fail-closed: enforced")
+    print("  lab tunables read before the production #if (GfxWaveProbe present=0 defect): enforced")
+    print("  IB dump covers every submission path, not just the concat branch: enforced")
+    print("  KMD tail archived in two passes and truncation is declared: enforced")
     print("  GFXHUB TLB serialization with spinlock: enforced")
     print("  Marco 3 partial proof + unconditional recovery: enforced")
     print("  GPUVA journal stores final interval overlay, not raw update history: enforced")
@@ -6125,6 +7021,7 @@ def main() -> int:
     print("  PM4 SET_SH_REG shader packet emission (0x76, 12DW, compute bit forbidden, fail-closed): enforced")
     print("  PM4 SET_CONTEXT_REG viewport/scissor emission (0x69, 20DW, IEEE-754, fail-closed): enforced")
     print("  PM4 SET_UCONFIG_REG primitive assembler (0x79, TRILIST 0x04, 8DW, fail-closed): enforced")
+    print("  Phase D0 GFX refusal tripod and WPTR divergence veto: enforced")
     print("  verdict: NAO VALIDADO EM HARDWARE")
     return 0
 

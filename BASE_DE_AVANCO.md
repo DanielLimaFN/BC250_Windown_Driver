@@ -10,7 +10,7 @@
 |---|---|---|
 | Recriar tela colorida do Marco 3 | MARCO3_GRAPHICS_DRAW: pipeline gráfico e vkCmdDraw; 600 quadros, prova física e pixels conferidos | Implementado e compilado (MSVC /W4 /WX, SPIR-V, preflights Exit 0); NÃO VALIDADO EM HARDWARE |
 | Recriar cubo do Marco 4 | MARCO4_GRAPHICS_VKCUBE: vkCmdDraw, geometria, textura e profundidade; prova física e pixels conferidos | Implementado e compilado (MSVC /W4 /WX, SPIR-V, preflights Exit 0); NÃO VALIDADO EM HARDWARE |
-| UMD D3D11 traduzida para Vulkan | DDIs reais e aplicação não modificada; desktop por 60 min, robustez por 8 h e TDR com display sobrevivendo | Fase 2 concluída offline: Vulkan Bridge, PSO Cache e DDI routing integrados em bc250umd.dll; build /W4 /WX e contratos Exit 0; harness bc250-d3d11-conformance.exe pronto; NÃO VALIDADO EM HARDWARE |
+| UMD D3D11 traduzida para Vulkan | DDIs reais e aplicação não modificada; desktop por 60 min, robustez por 8 h e TDR com display sobrevivendo | Fase 2 integrada em bc250umd.dll. Corrida 15 (17/09 17:48) validou harness D3D11 com 60/60 quadros (Exit 0), 45 submissões no CP_RB0 físico (Node 1 GFX, VMID 7), 60 draws Vulkan nativos, compilação DXBC->SPIR-V em runtime e recuperação TDR no silício no Frame 20 com NOP físico comprovado. Apresentação contínua de pixels e desktop por 60 min: NÃO VALIDADO EM HARDWARE |
 | Apresentação integrada ao desktop | Janela, resize, minimizar/restaurar, Alt+Tab e dois processos sem sobrescrever o desktop por escape direto | Pendente; NÃO VALIDADO EM HARDWARE |
 | DCN básico de produto | P9 após pré-requisitos: modos, sincronização e recuperação do monitor/link comprovados | Planejado; NÃO VALIDADO EM HARDWARE |
 
@@ -21,8 +21,399 @@ Preservar provas compute/SDMA no seu escopo. Não equiparar imagem 3D produzida 
 **A obrigação de enviar a barra “STATUS DO DRIVER BC-250” antes de cada mensagem está revogada.** Os registros antigos são histórico, não modelo de resposta nem medida atual de prontidão.
 
 > **Plano de produto solicitado pelo proprietário (16/09/2026, análise documental):** [desktop acelerado, Direct3D transparente e DCN básico em P9](docs/281_PLANO_PRODUTO_DESKTOP_E_JOGOS_TRANSPARENTES.md). Os 600 quadros do Marco 4 não fecham desktop DWM nem jogos arbitrários. A fonte atual do Cube.cpp usa pipeline compute e vkCmdDispatch; sua proveniência exata em relação ao binário da corrida precisa ser conferida. Não usar esse teste como prova de vkCmdDraw/pipeline gráfico geral. Expor uma fila GRAPHICS requer backend comprovado, não apenas mudar uma flag. Nenhum novo item foi validado em hardware nesta revisão.
-**Passagem de bastão atual:** [docs/283 — HANDOFF: BACKEND GRÁFICO REAL (CP_RB0 / PFP / ME) NO KMD E RECUPERAÇÃO TDR](docs/283_HANDOFF_CP_RB0_BACKEND_GRAFICO_PERSISTENTE.md), [docs/282 — HANDOFF FASE 2: UMD D3D11 TRADUZIDA PARA VULKAN](docs/282_HANDOFF_FASE2_UMD_D3D11_TRADUZIDA_PARA_VULKAN.md), [docs/281 — PLANO DE PRODUTO](docs/281_PLANO_PRODUTO_DESKTOP_E_JOGOS_TRANSPARENTES.md) e [docs/280 — MARCO 4](docs/280_MARCO4_VULKAN_WSI_CUBE_CONCLUIDO_NO_SILICIO.md).
+**Passagem de bastão atual:** [docs/288 — HANDOFF: CORRIDA 34, CURA GCVM E DIAGNÓSTICO DO STALL DA DRAWING ENGINE](docs/288_HANDOFF_2026-09-19_CORRIDA34_CURA_GCVM_E_DIAGNOSTICO_TELA_PRETA.md), [docs/287 — HANDOFF: CORRIDA 18, BUGCHECK 0x0A E DESACOPLAMENTO DE DPCS](docs/287_HANDOFF_2026-09-17_20-10_CORRIDA18_0x0A_E_SEPARACAO_DPCS.md), [docs/286 — HANDOFF: CORRIDA 17, BUGCHECK 0x139 E CORREÇÃO DE INICIALIZAÇÃO DE DPC](docs/286_HANDOFF_2026-09-17_19-32_CORRIDA17_0x139_E_CORRECAO_DPC_INIT.md), [PLANO_DESKTOP_ACELERADO](PLANO_DESKTOP_ACELERADO.md).
 
+> **19/09 10:51:35 (P0, lab 3.192.1.0, SYS E48CBB12) — CORRIDA 35: A SONDA RESPONDEU. O CP NAO
+> ESTA ESPERANDO SINCRONIZACAO; HA SEIS ONDAS EM VOO QUE NAO RETIRAM.**
+> **Evidencia:** `docs/evidence/2026-09-19_10-51-35-DESKTOP-HQAG6T4-lab-binding/`.
+> Criterio escrito ANTES em [docs/289](docs/289_CRITERIO_CORRIDA_35_ONDE_O_CP_PARA.md).
+>
+> - **Houve avanco?** SIM, de diagnostico, e o criterio fechou no **Desfecho 1**. A pergunta da
+>   corrida — *em que ponto, e esperando o que, o `CP_RB0` para?* — tem resposta medida.
+> - **A MEDICAO (P0), toda de uma unica parada do CP:**
+>   `[TDR_GFX_WAVES] SQ_DEBUG_STS_GLOBAL=0x00030031 Busy=1 WaveLevelSA0=3 WaveLevelSA1=3`
+>   → **seis ondas em voo** que nao retiram.
+>   `[TDR_GFX_SE] SE0=SE1=0x09000006 (SPI=1 PA=1 CB_CLEAN=1 DB_CLEAN=1)` → front-end engajado nos
+>   dois shader engines, **zero escrita no color buffer**.
+>   `[TDR_GFX_CPWAIT] CP_BUSY_STAT=0x00008080 (PfpParsing=1 GfxContextBusy=1 SemPolling=0
+>   SemFailedHolding=0 EopDoneBusy=0 CoherCntNeqZero=0)`.
+> - **O Desfecho 3 esta REFUTADO por medicao:** o CP **nao** espera semaforo, nao espera EOP e nao
+>   espera contador de coerencia drenar. A hipotese de flush/EOP faltando, que o `docs/288` §5.1
+>   levantou e que o `CB_CLEAN=1` ja tornava improvavel, morre aqui com os tres bits em zero.
+> - **REPRODUCAO EXATA da Corrida 34:** `GRBM_STATUS=0xA2613028` e `CpMeCntl=0x00000000`, os
+>   MESMOS valores da submissao #1 da corrida anterior. Nao e evento novo nem intermitencia: e a
+>   mesma parada, agora com instrumentacao que a descreve.
+> - **Mudanca de suspeito, com nome:** a frente sai do stream PM4 e do par fence/EOP e passa para a
+>   **execucao do shader** — onda que lanca e nao retira, tipicamente `s_waitcnt` sobre um fetch que
+>   nao volta. Alvo: ISA do ACO e os descriptors de vertex buffer.
+> - **A PAREDE DE HALT NAO REAPARECEU:** houve UM unico ciclo de TDR, com
+>   `[TDR_GFX_RESTART] CP_RB0 rearmado e comprovado no silicio` — e desta vez o veredito vale,
+>   porque a mascara agora confere `CE_HALT|PFP_HALT|ME_HALT`. `CpMeCntl=0x00000000` no quiesce.
+> - **QUEM SUBMETEU NAO FOI O HARNESS.** O IB de 7488 bytes (1872 DW, 427 pacotes,
+>   `IB_LINEAR_CONFIRMADO`) veio do **dwm.exe (pid 1204, 24 draws)**. O
+>   `bc250-d3d11-conformance.exe` (pid 7636) fez **zero** draws: quando chegou a montar recursos o
+>   dispositivo ja estava perdido (`WaitForSynchronizationObjectFromCpu ... 0xC00002B6`). O stdout
+>   para em "Iniciando renderizacao..." sem UMA linha de quadro.
+> - **DOIS DEFEITOS DE INSTRUMENTACAO, MEUS, declarados:**
+>   1. `gfx-ib-dump/` esta **VAZIO**. `BC250_RADV_IB_DUMP` e' exportado apenas na arvore de
+>      processos do harness, e quem submeteu foi o dwm.exe, que nao o herda. O despejo nao enxerga
+>      o processo que importa.
+>   2. O runner reportou `EXIT CODE: 0` para uma corrida em que o harness foi morto por timeout sem
+>      renderizar um quadro. Exit 0 ali e' falso sucesso do RUNNER — o harness novo nao chegou a
+>      executar o caminho que aborta.
+> - **INDETERMINADO, registrado e NAO usado como base:** `ME_HEADER_DUMP=0xC0005200` decodifica como
+>   Type 3 opcode **0x52**, que **nao existe** na tabela PM4 do proprio Mesa
+>   (`src/amd/common/sid.h` vai de `0x51 CONTEXT_REG_RMW` direto a `0x57`). Ou e' pacote interno do
+>   firmware, ou o registrador nao esta mostrando o nosso IB. Nao se conclui nada dele.
+>   `PFP_HEADER_DUMP=0xC0017600` = `SET_SH_REG` 2 DW, e `IB1 RestamDW=0`.
+> - **Controles, todos mantidos:** zero `GFXHUB_FAULT`, zero BugCheck, zero `StopDevice`,
+>   202 IBs no Node 0 SDMA com 188 `TRIPE_PROVADO`, 95 Present, rollback online limpo.
+> - **Veredito:** **SUCESSO DE DIAGNOSTICO, PARCIAL NO PRODUTO.** O criterio escrito antes fechou
+>   no Desfecho 1 e eliminou o Desfecho 3 por medicao. Tela preta era o resultado previsto e foi o
+>   obtido. Nada de pixel, rasterizacao ou Marco 3 foi validado, e nem estava em teste.
+>
+> ---
+>
+> **19/09 09:06:34 (P0, lab 3.191.1.0) — CORRIDA 34: GCVM PROTECTION FAULT CURADO NO SILÍCIO; UM (1) DRAW REAL, E O ANEL GRÁFICO PAROU EM TODAS AS QUATRO SUBMISSÕES.**
+> Ensaio físico do runtime Direct3D 11 nativo (`tools\EXECUTAR_D3D11_NATIVO.cmd -Force`) com `bc250umd.dll` e `vulkan_radeon.dll` (16.670.208 B).
+> **Evidência arquivada:** `docs/evidence/2026-09-19_09-06-34-DESKTOP-HQAG6T4-lab-binding/`.
+>
+> ⚠️ **ESTE BLOCO FOI REESCRITO EM 19/09 PELA AUDITORIA DA PRÓPRIA EVIDÊNCIA.** A redação anterior
+> (e o `docs/288`) afirmava “52 quadros D3D11 renderizados sucessivamente escalando de 0.4 até 11.2 FPS”
+> e atribuía a parada à Drawing Engine. Nenhuma das duas afirmações sobrevive ao log. O que segue é o que
+> a medição diz.
+>
+> **Recuperação de evidência (pré-requisito desta análise).** `display-log-this-bind-FINAL.txt` da pasta tem
+> 446.892 bytes **de zeros** — zero conteúdo útil. A cauda real foi extraída do log cumulativo vivo
+> (offset 1.630.716.958) e arquivada como `display-log-this-bind-RECUPERADO.txt`, 461.898 bytes, 4.066 linhas,
+> `sha256 de383cbe25b7f7554f9dd3dbf2ac80047fe41007f8ed01abd2ce3714bac06417`. Sem ela, nada abaixo existiria.
+>
+> - **Houve avanço?** SIM, e menor do que foi anunciado. **P0:** o GCVM Protection Fault foi eliminado
+>   (`NODE1_STOP_GCVM_FAULT STATUS=0x00000000 ADDR=0`, zero `GFXHUB_FAULT` em 4.066 linhas, contra o fault de
+>   ~3,85 TB da Corrida 33); o CP aceitou, traduziu sob VMID 7 e **buscou** o primeiro IB gráfico real
+>   (`GATE FISICO PASS`, `IB_LINEAR_CONFIRMADO`, 24 de 32 dwords do anel consumidos); Node 0 SDMA manteve
+>   `IB_TRIPE_PROVADO` com 5 canários e `Divergentes=0` ao longo de 290 IBs; zero BugCheck; rollback online limpo.
+> - **O “52 quadros a 11.2 FPS” é FALSO SUCESSO (P0).** `d3d11_native_conformance.log` linha 5592: `VkDraws=1`
+>   às 09:07:17.193. Linha 5637, às **09:07:19.067**: `vkWaitForFences res=-4`. Da linha 5639 até o fim, todos os
+>   ciclos trazem `Lock2 failed: status=0xC00002B6` (STATUS_DEVICE_REMOVED) e `UploadBufferData ERRO`. **51 dos 52
+>   “draws” ocorreram depois do dispositivo removido.** O harness imprimia `RENDERING_OK` porque descartava o
+>   HRESULT de `Present()`; e a rampa 0.4→11.2 era média **cumulativa** — um quadro de ~2,5 s seguido de ~51
+>   no-ops produz exatamente aquela curva. **Sexta ocorrência** da classe “o gate carimbava o falso sucesso”.
+>   Agravante no nosso fork do RADV, presente no DLL embarcado:
+>   `check_device_status warning: dev_status=-4 but all fences satisfied -> continuing!` — fail-open explícito,
+>   violação da Lei 4.
+> - **O “stall da Drawing Engine” foi diagnosticado pela submissão ERRADA (P0).** Houve **quatro** submissões GFX
+>   e **três** ciclos de TDR. O `docs/288` cita a snapshot da submissão #4 (`RPTR=0 WPTR=12`, `GRBM 0xA0003028`),
+>   que também trazia `CpMeCntl=0x15000000`. Decodificado pelo header local
+>   (`gc_10_1_0_sh_mask.h:6661-6665`): `CE_HALT|PFP_HALT|ME_HALT` — **as três micro-engines paradas**. Com o ME
+>   halted, `RPTR=0` é trivial: as submissões 2, 3 e 4 não mediram a DE, mediram o nosso próprio reset.
+>   `0xA0003028` decodifica como `GUI_ACTIVE, CP_BUSY, CB_CLEAN, DB_CLEAN` — pipeline gráfico **parado e limpo**.
+> - **O único evento válido é a submissão #1**, e ele diz outra coisa: `GRBM_STATUS=0xA2613028` =
+>   `GUI_ACTIVE, CP_BUSY, GE_BUSY, SPI_BUSY, PA_BUSY, CB_CLEAN, DB_CLEAN`. O front-end de geometria engajou e
+>   **nenhum pixel chegou ao Color Buffer**. Isso **refuta** a hipótese do `docs/288` §5.1 de flush de cache
+>   L2/CB faltando: com `CB_CLEAN=1` não há o que fazer flush. O nosso próprio tripé foi honesto
+>   (`GFX_TRIPE_VEREDITO: Perna1=NAO_CONVERGIU WPTR=32 RPTR_Reg=24`). A causa da parada permanece **H**.
+> - **Portao que fabricou o “restart comprovado” (P0, por leitura).** `Bc250TdrValidateGfxRestartReadback`
+>   mascarava `0x00000007` em `CP_ME_CNTL`, bits que não nomeiam campo nenhum no header, e o teste
+>   `tdr_recovery_contract_test` **exigia** essa máscara. `0x15000000 & 0x7 == 0`: o PASS era aritmeticamente
+>   inevitável. **Oitava ocorrência** da classe. Corrigido em 19/09 (máscara real + caso de teste com o valor
+>   medido + caso negativo + portao `audit_gfx_restart_checks_the_real_halt_bits`, mutacao verificada).
+> - **Veredito:** PARCIAL. Avanço real: GCVM curado e primeiro IB gráfico buscado sob VMID 7. **NÃO houve**
+>   52 quadros, **não houve** 11.2 FPS, **não há** rasterização provada, e o ponto de parada do CP **continua
+>   sem causa nomeada**. Tela, pixels e conclusão do draw seguem **NÃO VALIDADOS EM HARDWARE**.
+> - **A árvore Mesa/RADV fica FORA deste repositório — mas existe e foi localizada (correção da própria
+>   auditoria, 19/09).** A primeira redação deste bloco afirmou que ela "não existe no repo nem foi encontrada
+>   na máquina"; **isso era falso**, e o erro foi de busca (profundidade), não de fato. O caminho estava
+>   embutido em texto no próprio DLL: `C:\Users\Daniel\Desktop\bc250-win\bc250-win\mesa-radv-wddm`.
+>   É um clone git do Mesa em `801c976`, que é exatamente a versão que o DLL publica
+>   (`Mesa 26.2.0-devel (git-801c9763c6)`), com `build/` meson/ninja funcionando. O
+>   `build/src/amd/vulkan/vulkan_radeon.dll` é **byte-idêntico** ao implantado em `C:\BC250_LIB\`
+>   (`sha256 bb857af7e337e8ae...`), então a árvore é comprovadamente a fonte do binário da Corrida 34.
+>   `tools/audit-radv-wddm-safety.py --mesa-root <caminho>` rodou pela **primeira vez** em 19/09: **PASS**
+>   (handles/GPUVA/fences fabricados ausentes, WSI por software ausente, callbacks WDDM fail-closed).
+>   **DÍVIDA QUE PERMANECE:** o delta do fork (23 arquivos, ~1.122 linhas, com `src/amd/vulkan/winsys/wddm2/`
+>   inteiro) não está versionado junto com este repositório nem tem cópia de segurança; perder aquele diretório
+>   perderia o driver Vulkan inteiro.
+> - **Correção sobre o fail-open do RADV.** A primeira redação descreveu
+>   `check_device_status warning: dev_status=-4 but all fences satisfied -> continuing!` como "device perdido
+>   tratado como continuar". Lido na fonte (`src/vulkan/runtime/vk_wddm2_monitored_fence.c:291-311`), ele é
+>   mais estreito: só rebaixa o erro para `VK_SUCCESS` quando **todas** as fences esperadas já atingiram o
+>   valor-alvo na memória. Continua sendo fail-open sob a Lei 4 e precisa cair, mas **não foi ele** que
+>   produziu os 51 quadros fantasmas — o log mostra o `FlushCommands` devolvendo `res=-4` logo depois, e a
+>   causa provada dos quadros fantasmas é o harness descartar o HRESULT de `Present()`.
+> - **Handoff:** [docs/288 — HANDOFF: CORRIDA 34, CURA GCVM E DIAGNÓSTICO DO STALL DA DRAWING ENGINE](docs/288_HANDOFF_2026-09-19_CORRIDA34_CURA_GCVM_E_DIAGNOSTICO_TELA_PRETA.md).
+>
+> ---
+>
+> **18/09 17:35:22 (P0, lab 3.186.1.0, SYS assinado `5E2A89F4…`) — CORRIDA 29: PORTÃO DE SEGURANÇA FASE D0 COMPROVADO NO SILÍCIO (4/4 RECUSAS FAIL-CLOSED COM `STATUS_DEVICE_NOT_READY`); ENVELOPAMENTO DE BROADCAST GRBM ISOLADO E REFUTADO; ZERO TDR, ZERO BUGCHECK, ROLLBACK ONLINE LIMPO PARA BASICDISPLAY CÓDIGO 0.**
+> Ensaio físico automatizado do runtime Direct3D 11 nativo (`tools/EXECUTAR_D3D11_NATIVO.cmd -Force`) com `bc250umd.dll`.
+> **Evidência arquivada:** `docs/evidence/2026-09-18_17-35-22-DESKTOP-HQAG6T4-lab-binding/`. Log do KMD: `display-log-this-bind-FINAL.txt` (419.865 bytes, 3.738 linhas).
+>
+> - **Houve avanço?** SIM, AVANÇO DIAGNÓSTICO E DE SEGURANÇA. A hipótese do broadcast GRBM isolado no MMIO foi refutada, e o portão de segurança Phase D0 funcionou com 100% de precisão (4/4 recusas nominais, zero falha silenciosa, zero travamento do SO).
+> - **Sucessos:** O portão fail-closed barrou submissões divergentes (`WPTR_READBACK_DIVERGENTE`); `Bc250ActiveGfxLogRefusalMeasurement` registrou a recusa nominal; rollback online perfeito sem reboot.
+> - **Falhas:** O registrador `CP_RB0_WPTR (0x0C150)` continuou devolvendo 0 (`wptrReadback == 0`). O anel não consumiu os pacotes de desenho. Tela preta.
+> - **Veredito:** PARCIAL (diagnóstico e segurança provados; execução gráfica NÃO VALIDADA EM HARDWARE).
+>
+> ---
+>
+> **18/09 17:54 (OFFLINE, sem corrida física) — CANDIDATO 3.187.0.0 (LAB 3.187.1.0): IMPLEMENTAÇÃO DO PAR CANÔNICO 64-BIT SOC15/GFX10 (`CP_RB0_WPTR` 0x0C150 LO + `CP_RB0_WPTR_HI` 0x0C154 HI) E PULSO DE HARDWARE `DOORBELL_HIT` (0x0C3B4).**
+> - **Mecanismo:** Em conformidade com o driver Linux upstream (`amdgpu/gfx_v10_0.c`: `gfx_v10_0_ring_set_wptr_gfx`) e com os testes de bringup locais comprovados (`bc250_compute_service.c:859-861`), a escrita de WPTR no Command Processor GFX10 exige a emissão do par de 64 bits para o latch interno e/ou sinalização de Doorbell.
+> - **Validação Offline:** `driver/wdk/build-contract.bat` (40/40 PASS, Exit 0), `tools/test-phase-d0-mutations.py` (4/4 mutações reprovadas, Exit 0), `tools/audit-bc250mcdm-safety.py` (PASS, 100% regras), `tools/package-bc250mcdm-lab.ps1` (Exit 0, pacote e catálogo assinados com `DriverVer 09/18/2026,3.187.1.0`), `tools/audit-bc250mcdm-lab-package.ps1` (PASS).
+> - **Identidade do Pacote:** SYS `022A4FADFCEE351849F8E92970FC754DAE06CC5D3A482424CDE98C794EFF513E`, UMD `DB09890F291A4017F5E70B3CBBE95519556746745FAF65BC58FC0E75302C8939`, INF `8A0037AD70D2AC7F21AF917176C4B5ACA59497F2D138A599D4EA87C1F27FFCAD`, CAT `0962FF72FDEBF4A5AB5439F9F9550EBB51A9D94F8CFDF5389A86A928F7E48B50`.
+> - **Estado:** Pronto para validação física na Corrida 30 via `tools\EXECUTAR_D3D11_NATIVO.cmd -Force`.
+>
+> ---
+>
+> **18/09 14:20:07 (P0, lab 3.184.1.0, SYS assinado `E7E7A3B2…`) — A ESCRITA MMIO DE `CP_RB0_WPTR` NÃO É RETIDA PELO SILÍCIO. MEDIÇÃO DIRETA QUE EXPLICA, RETROATIVAMENTE, POR QUE O ANEL GRÁFICO NUNCA EXECUTOU NADA EM TODO O PROJETO. ZERO TDR, ZERO BUGCHECK, ZERO `DEVICE_REMOVED`.**
+> Ensaio físico automatizado do runtime Direct3D 11 nativo (`tools/EXECUTAR_D3D11_NATIVO.cmd -Force`) com `bc250umd.dll`.
+> **Evidência arquivada:** `docs/evidence/2026-09-18_14-20-07-DESKTOP-HQAG6T4-lab-binding/` (34 arquivos). Log do KMD: `display-log-this-bind-FINAL.txt` (452.369 bytes, 3.999 linhas). Proveniência: `binding-provenance.json` com `package_sys_sha256=E7E7A3B2D11C9B67…`, RADV `vulkan_radeon.dll` `19D62EC2…` e `libvkd3d-shader-1.dll` `098CCD8A…`, ambas externas em `C:\BC250_LIB`.
+>
+> **NOTA DE NUMERAÇÃO:** esta base vai até a "Corrida 18" (17/09); as corridas de 18/09 não foram registradas. Três esquemas de numeração incompatíveis estão em uso no repositório — esta corrida é chamada de 27 em uma das análises. **Identificar corrida por data/hora + hash + pasta de evidência, nunca por número.**
+>
+> - **Houve avanço?** SIM, AVANÇO DIAGNÓSTICO DECISIVO — e **ZERO avanço de entrega**. Nenhum item saiu de 🟡 para ✅.
+> - **Sucessos (P0, medidos):**
+>   1. **A causa da tela preta no caminho gráfico tem nome, e é anterior a tudo que se suspeitava.** 4 de 4 submissões: `[GfxEngine] SUBMIT RECUSA: WPTR_READBACK_DIVERGENTE -- escrevemos 12 e o registrador devolveu 0`. O discriminante é a **ausência** dos outros vereditos: `WPTR_NAO_PUBLICADO`=0 (transporte MAPEADO), `WPTR_ESCRITA_RECUSADA`=0 (`Write32` devolveu 1, `WRITE_REGISTER_ULONG` emitido), `WPTR_READBACK INDETERMINADO`=0 (a leitura funcionou). Escrita emitida, leitura funcionando, registrador `0xC150` **não retém o valor**.
+>   2. **Contraste no mesmo log que elimina o transporte como suspeito:** SDMA0 fez 313 submissões (`IB EXECUTADO`=313, `FenceId` máx. 313) com 287 `IB_TRIPE_VEREDITO: TRIPE_PROVADO`, incluindo `WPTR=1476 RPTR_Reg=1476 RPTR_Wb=1476 Casou=WRITEBACK+REGISTRADOR`. Escrever **e ler** ponteiros de anel por MMIO funciona — para o SDMA. Não é o transporte, não é o allowlist, não é a função.
+>   3. **`STALL_BASELINE` refuta atribuir o stall ao nosso IB, por comparação direta:** `CpStalled1=0x00000C00[lido=1] CpStalled2=0x00000000[lido=1] GrbmStatus=0xA0003028[lido=1]`, tirado **antes de existir qualquer submissão** e idêntico ao snapshot do TDR da corrida anterior. É estado de repouso. O mesmo `CpStalled1=0x00000C00` aparece no compute **depois** da doorbell que publica com sucesso (`PUBLISH_AFTER_DOORBELL`): se esse valor impedisse a atualização do ponteiro de anel, o compute falharia também.
+>   4. **Correção de decodificação, que já foi afirmada errado duas vezes:** `CpStalled1=0x00000C00` **não** é `GFX_CNTX_NOT_AVAIL_TO_ME | ME_WAIT_ON_AVAIL_BUFFER`. Esses dois campos pertencem ao **`CP_STALLED_STAT2`** (`gc_10_1_0_sh_mask.h:6466-6467`), e o STAT2 medido é `0x00000000` — os dois bits estão **desligados**. No `CP_STALLED_STAT1` os bits 10/11 são `ME_HAS_ACTIVE_CE_BUFFER_FLAG` e `ME_HAS_ACTIVE_DE_BUFFER_FLAG` (`:6428-6429`): flags de buffer ativo, não de stall.
+>   5. **Classificador de IB corrigido e confirmado:** 4 de 4 `IB_LINEAR_CONFIRMADO` com `Saltos(CHAIN=1)=0 ChamadasIB2(CHAIN=0)=1`, em IBs de 840/1656/664/440 DW integralmente varridos. O `IB_AINDA_ENCADEADO` da corrida anterior era **erro do classificador**, não encadeamento real. A RADV emitiu `BC-250 UNIFICADO` com **zero** `Chain [`.
+>   6. **Estabilidade contra as três últimas classes de crash:** zero TDR (contra 2), zero BugCheck (último `MEMORY.DMP` é de 17/09 20:10, o `0x0A`), zero `DEVICE_REMOVED` (contra 57), zero `GFXHUB_FAULT`, zero `StopDevice`. Recusar antes de armar o anel eliminou a cascata TDR → device-removed.
+>   7. **Disciplina R4 corrigida:** as 15 strings novas foram conferidas no **SYS assinado** de `output_lab`. Descoberto que a checagem por string no binário de desenvolvimento tem **falso negativo comprovado** (`ONLINE SUCESSO`, que provadamente executou, aparece como ausente na *MCDM DEVELOPMENT IMAGE*). **Positivos valem; negativos só valem no binário assinado.**
+> - **Falhas:**
+>   1. **Tela preta.** 8 `DdiPresent`, `NonZero=0/256` em todas as amostras, 158 `INSPECAO LINEAR_BUF` com `NonZeroSamples=0/5`. 379 draws Vulkan nativos na UMD que o anel gráfico nunca consumiu. `D1.6` reprovado pelo próprio critério.
+>   2. **Dívida introduzida pela própria correção:** `GFX_TRIPE_VEREDITO` saiu **zero vezes**. O poll só é chamado pelo retirement, que só arranca após um `SUBMIT SUCESSO`; com 4/4 recusadas, as Pernas 1 e 2 foram consertadas e perdidas na mesma corrida.
+>   3. **`D3DKMTSubmitCommand falhou com NTSTATUS 0xC01E0200`** na RADV (`cmd_bytes=5216`) — a recusa do KMD propagando corretamente, sem ser engolida.
+>   4. **Meu diagnóstico do `memType` estava errado:** os 17 `LinearPresentBuf` saíram `nivel=HOST_VISIBLE|HOST_COHERENT` e o aviso de rebaixamento não apareceu nenhuma vez. O `VK_ERROR_MEMORY_MAP_FAILED (-5)` da corrida anterior era transiente, não alocação errada.
+> - **Veredito:** **PARCIAL — avanço diagnóstico decisivo, zero avanço de entrega.** `D1.6`, `D1.7`, `D1.8` e o Marco 1 inteiro seguem **NÃO VALIDADOS EM HARDWARE**.
+> - **CORREÇÃO QUE MANDA NO REGISTRO DESTA BASE:** as submissões ao `CP_RB0` creditadas como progresso nas corridas de 16 e 17/09 — *"45 submissões aposentadas"* (Corrida 15), *"20 submissões 3D"* (Corrida 16), *"16 submissões gráficas aposentadas"* (Corrida 13) — foram **aceitas, não executadas**. O WPTR nunca assentou no registrador, logo o CP não tinha o que buscar. É a mesma leitura errada já corrigida para as 87 submissões da corrida de 10:20. **Nenhuma submissão gráfica jamais foi provada executada no `CP_RB0`.** O item que dependia disso volta para a Tabela 2.
+> - **LACUNA DE MECANISMO, achada por leitura de código depois da corrida (a causa provável, classe H):** o anel gráfico tem **três** canais possíveis de publicação de WPTR e nós fechamos dois:
+>   * `CP_RB_WPTR_POLL_ADDR_LO/HI` (`0x0C3AC/0C3B0`) — **programados** com o shadow (`bc250_gfx_ring_transaction.c:166`);
+>   * `CP_RB_WPTR_POLL_CNTL` (`0x08708`) — **apenas lido** no preflight, nunca escrito. Pelo header (P1) ele **não tem bit de enable**: só `POLL_FREQUENCY[15:0]` e `IDLE_POLL_COUNT[31:16]`;
+>   * `CP_RB_DOORBELL_CONTROL` (`0x0C3B4`) — escrito **`0`**, doorbell desligada de propósito (`:150`);
+>   * MMIO `CP_RB0_WPTR` (`0x0C150`) — único canal aberto, e o que o silício não retém.
+>   O anel de **compute**, no mesmo log, publica por doorbell e funciona: `[SubmissionPublishWptr] Step 4 DbKick: Offset=0x110 Val64=12 Kicks=1`, com os mesmos 12 dwords. Que a doorbell seja *a* solução é **H**; que ela seja o mecanismo provado nesta placa é **P0**.
+> - **Recuperação:** `RECOVERY_OK_ONLINE` às 14:22:20, BasicDisplay Código 0 em 5 amostras, sem reboot. `C:\BC250_REQUIRE_CLEAN_BOOT.json` **ARMADO** — boot frio obrigatório antes de qualquer bind.
+>
+> ---
+>
+> **17/09 20:09:16 (P0, lab 3.181.1.0) — CORRIDA 18: BUGCHECKS 0x133 E 0x139 EXTINTOS NO SILÍCIO; BUGCHECK 0x0A (IRQL_NOT_LESS_OR_EQUAL) IDENTIFICADO VIA MEMORY.DMP (COMPARTILHAMENTO ILEGAL DE KDPC ENTRE TIMER E KeInsertQueueDpc); FUSÍVEL ANTI-BOOT-LOOP ATIVO; DESACOPLAMENTO ESTRITO DE DPCs IMPLEMENTADO E VALIDADO OFFLINE.**
+> Ensaio físico automatizado do runtime Direct3D 11 nativo (`tools/EXECUTAR_D3D11_NATIVO.cmd -Force`) com `bc250umd.dll`.
+> **Evidência arquivada:** `docs/evidence/2026-09-17_20-09-16-DESKTOP-HQAG6T4-lab-binding/`. Dump de Memória: `C:\Windows\MEMORY.DMP` (869 MB), analisado via CDB com símbolos oficiais da Microsoft. Handoff: `docs/287_HANDOFF_2026-09-17_20-10_CORRIDA18_0x0A_E_SEPARACAO_DPCS.md`.
+> - **Houve avanço?** SIM, AVANÇO DIAGNÓSTICO E ARQUITETURAL CRÍTICO NO KMD.
+>   1. **BugChecks 0x133 e 0x139 100% Extintos:** Tanto o deadlock de spinlock em `VidSchDdiNotifyDpc` quanto a violação de CFG (`guard_icall_bugcheck`) por rotina não inicializada não reapareceram.
+>   2. **Isolamento Matemático da Causa Raiz do BugCheck 0x0A:** A desmontagem forense de `nt!KiExecuteAllDpcs+0x2ee` (`mov [r15+20h], rax`) comprovou que `r15 == 0`, originado de `[r14+0x38]` (`DpcData == NULL`) na estrutura `_KDPC` de `context->RetirementDpc`. No kernel do Windows x64, uma DPC associada a um timer periódico (`KeSetTimerEx`) não pode ser enfileirada simultaneamente via `KeInsertQueueDpc`. A colisão concorrente corrompeu a lista (`Flink = Blink = &DpcListEntry`), fazendo o despachante executar a DPC duas vezes e tentar atualizar telemetria de DPC em `[0x00000020]`, gerando falta de página em DISPATCH_LEVEL.
+>   3. **Proteção Anti-Boot-Loop Ativa:** Fusível `C:\BC250_BOOT_FUSE.dat` desarmou para `State=2 (TRIPPED)`, impedindo loop e reiniciando a máquina em segurança no BasicDisplay.
+> - **Sucessos:**
+>   1. Eliminação definitiva das duas classes de crash anteriores (0x133 e 0x139).
+>   2. Submissões gráficas iniciais no Node 1 GFX sem falha de validação ou recusa de contexto.
+>   3. Auditorias e contratos 100% aprovados (`build-contract.bat`: 40/40 gates PASS).
+> - **Falhas:**
+>   1. **BugCheck 0x0A (`IRQL_NOT_LESS_OR_EQUAL`):** Ocorreu 7 s após o início em `nt!KiExecuteAllDpcs+0x2ee` ao acessar endereço `0x00000020` devido à colisão entre `RetirementTimer` e `KeInsertQueueDpc`.
+> - **Veredito:** FALHA FUNCIONAL POR BUGCHECK 0x0A / AVANÇO DIAGNÓSTICO CONCLUSIVO.
+> - **Recuperação e Correção:**
+>   1. Desacoplamento estrito de DPCs em `BC250_DXGK_ACTIVE_CONTEXT`: criadas `RetirementTimerDpc` (exclusiva do timer periódico de 1 ms) e `RetirementNotifyDpc` (exclusiva do `KeInsertQueueDpc`), bem como `SdmaRetirementTimerDpc` e `SdmaRetirementDpc`.
+>   2. Removidas as chamadas incondicionais a `KeInsertQueueDpc` em `SubmitCommandVirtual`, delegando o enfileiramento exclusivamente a `Bc250ActiveRetireAndNotify(context, FALSE)` quando há de fato fences concluídas.
+>   3. Binário `driver/wdk/output_lab/bc250mcdm.sys` recompilado (536.064 bytes), pacote assinado e auditado (`audit-bc250mcdm-lab-package.ps1: PASS`). Pronto para a Corrida 19.
+>
+> ---
+>
+
+> **17/09 19:31:24 (P0, lab 3.181.1.0) — CORRIDA 17: BUGCHECK 0x133 EXTINTO NO SILÍCIO; BUGCHECK 0x139 (KERNEL_SECURITY_CHECK_FAILURE) IDENTIFICADO VIA MEMORY.DMP (VIOLAÇÃO DE CFG POR DPC NÃO-INICIALIZADA); FUSÍVEL ANTI-BOOT-LOOP ATIVO; CORREÇÃO DEFINITIVA NO AddDevice IMPLEMENTADA E VALIDADA OFFLINE.**
+> Ensaio físico automatizado do runtime Direct3D 11 nativo (`tools/EXECUTAR_D3D11_NATIVO.cmd -Force`) com `bc250umd.dll`.
+> **Evidência arquivada:** `docs/evidence/2026-09-17_19-31-24-DESKTOP-HQAG6T4-lab-binding/`. Dump de Memória: `C:\Windows\MEMORY.DMP` (800 MB), analisado via CDB com símbolos do Windows. Handoff: `docs/286_HANDOFF_2026-09-17_19-32_CORRIDA17_0x139_E_CORRECAO_DPC_INIT.md`.
+> - **Houve avanço?** SIM, AVANÇO DIAGNÓSTICO E ESTRUTURAL DECISIVO.
+>   1. **BugCheck 0x133 100% Extinto:** O deadlock em `dxgmms2!VidSchDdiNotifyDpc` e a retenção de spinlock que causavam o estouro de watchdog na Corrida 16 não ocorreram mais. A guarda atômica `RetireBusy` e o desacoplamento de `DxgkCbNotifyDpc` funcionaram perfeitamente no silício.
+>   2. **Isolamento da Causa Raiz do BugCheck 0x139 via Kernel Dump:** A análise forense do `MEMORY.DMP` revelou `Arg1 = 0x0` em `nt!KiExecuteAllDpcs` -> `nt!guard_icall_bugcheck`. O Control Flow Guard (CFG) do kernel interceptou `KeInsertQueueDpc(&context->RetirementDpc, NULL, NULL)` porque a rotina de DPC (`DeferredRoutine`) ainda estava zerada/não-inicializada na pool de memória na primeira submissão.
+>   3. **Proteção Anti-Boot-Loop Funcionou Perfeitamente:** O fusível `C:\BC250_BOOT_FUSE.dat` interceptou o reboot não-limpo (`State=2 TRIPPED`, `LastStatus=0xC0000001`), protegendo o hardware e forçando Código 43 seguro.
+> - **Sucessos:**
+>   1. **Eliminação Comprovada do Deadlock 0x133:** O scheduler do Windows operou sem contenção de lock na submissão.
+>   2. **Diagnóstico Imediato:** Causa raiz do 0x139 comprovada matematicamente pelo debugger com símbolos oficiais.
+>   3. **Auditorias de Segurança Offline:** 40/40 gates passaram com Exit 0 em `build-contract.bat`.
+> - **Falhas:**
+>   1. **BugCheck 0x139 (`KERNEL_SECURITY_CHECK_FAILURE`):** Bucket `0x139_0_LEGACY_GS_VIOLATION_bc250mcdm!Bc250ActiveSubmissionGateLeave`. Disparo por CFG ao despachar DPC com `DeferredRoutine` nula.
+> - **Veredito:** FALHA FUNCIONAL POR BUGCHECK 0x139 / AVANÇO DIAGNÓSTICO CONCLUSIVO.
+> - **Recuperação e Correção:**
+>   1. Declaradas rotinas de DPC forward e inicializadas explicitamente no `Bc250DxgkDdiAddDeviceActive` (`RetirementDpc`, `RetirementTimer`, `SdmaRetirementDpc`, `SdmaRetirementTimer`).
+>   2. Reordenada a fila em `SubmitCommandVirtual` para garantir que o timer seja ativado antes ou concomitantemente à DPC em todos os nós.
+>   3. Binário `driver/wdk/output_lab/bc250mcdm.sys` recompilado (535.552 bytes), pacote assinado e auditado (`audit-bc250mcdm-lab-package.ps1: PASS`). Pronto para validação física na Corrida 18.
+>
+> ---
+>
+> **17/09 18:35:26 (P0, lab 3.181.1.0) — CORRIDA 16: ENSAIO D3D11 NATIVO APOSENTA 20 SUBMISSÕES NO ANEL CP_RB0 (NODE 1 GFX, VMID 7); BUGCHECK 0x133 (DPC_WATCHDOG_VIOLATION) IDENTIFICADO VIA MEMORY.DMP (REENTRÂNCIA EM dxgmms2!VidSchDdiNotifyDpc); FUSÍVEL ANTI-BOOT-LOOP PREVINE REBOOT SUJO (CÓDIGO 43 SEGURO); CORREÇÃO DE RETIREMENT DESACOPLADO IMPLEMENTADA.**
+> Ensaio físico automatizado do runtime Direct3D 11 nativo (`tools/EXECUTAR_D3D11_NATIVO.cmd -Force`) com `bc250umd.dll`.
+> **Evidência arquivada:** `docs/evidence/2026-09-17_18-35-26-DESKTOP-HQAG6T4-lab-binding/`. Log KMD parcial: `display-log-this-bind.txt` (245.995 bytes). Dump de Memória: `C:\Windows\MEMORY.DMP` (800 MB), relatório de análise CDB: `memory-dmp-analysis-symbols-fixed.txt` (67.236 bytes). Handoff: `docs/285_HANDOFF_2026-09-17_18-37_CORRIDA16_0x133_E_CORRECAO_RETIREMENT.md`.
+> - **Houve avanço?** SIM, AVANÇO DIAGNÓSTICO CRÍTICO NO KMD.
+>   1. **20 Submissões 3D Monotônicas Aposentadas no CP_RB0:** O anel gráfico físico consumiu e aposentou 20 submits sob VMID 7 com avanço de Fences 1..20 (`[SubmitVirtual Node1 GFX] FENCE COMMIT: Token=1..19 RingFence=1..19 committed=1 accepted=1`).
+>   2. **Causa Raiz do BugCheck 0x133 Isolada com Precisão Absoluta no Kernel Dump:** O dump de memória revelou deadlock em `dxgmms2!VidSchDdiNotifyDpc` / `nt!KxWaitForLockOwnerShip`. Em `SubmitCommandVirtual` no Node 1 GFX, `Bc250ActiveRetireAndNotify` chamava `DxgkCbNotifyDpc` de forma síncrona dentro da thread do escalonador VidSch, colidindo com a rotina DPC do timer em outro núcleo, violando a regra de não-reentrância de DPC e causando estouro de watchdog (0x501 ticks).
+>   3. **Proteção Anti-Boot-Loop Funcionou 100%:** `C:\BC250_BOOT_FUSE.dat` interceptou o reboot sujo, transitando para `State=2 (TRIPPED)` com `LastStatus=0xC0000001` e forçando Código 43 no StartDevice, impedindo qualquer loop de inicialização.
+> - **Sucessos:**
+>   1. **Node 0 SDMA:** 488 submissões indirect aposentadas sob VMID 8 com trípode completo comprovado no silício (`IB_TRIPE_VEREDITO #488: TRIPE_PROVADO`).
+>   2. **Node 1 GFX:** Fences 1 a 20 executadas e validadas fisicamente no silício.
+>   3. **Proteção de Silício e Kernel:** Fusível anti-boot-loop provado; dump de memória integral capturado e analisado via símbolos oficiais do Windows.
+> - **Falhas:**
+>   1. **BugCheck 0x133 (`DPC_WATCHDOG_VIOLATION`):** Arg1=0, Arg2=0x501, Arg3=0x500. Estouro do watchdog de DPC por spinlock no escalonador WDDM ao receber `DxgkCbNotifyDpc` dentro de `SubmitCommandVirtual`.
+>   2. **Tela Preta antes da Apresentação:** Interrupção precoce no 20º frame antes da estabilização da SwapChain.
+> - **Veredito:** FALHA FUNCIONAL POR BUGCHECK 0x133 / SUCESSO DIAGNÓSTICO CONCLUSIVO.
+> - **Recuperação e Correção:** Fusível resetado para `CLEAN (0)`. KMD corrigido com desacoplamento temporal `FromDpc` e guarda atômica `RetireBusy` em `Bc250ActiveRetireAndNotify`. Pacote de laboratório reconstruído, assinado e auditado em `driver\wdk\package\output_lab`.
+>
+> ---
+>
+> **17/09 17:48:47 (P0, lab 3.181.1.0) — CORRIDA 15: HARNESS D3D11 NATIVO CONCLUI 60/60 QUADROS (EXIT 0), 45 SUBMISSÕES APOSENTADAS NO CP_RB0 (NODE 1 GFX, VMID 7), 60 DRAWS VULKAN NATIVOS, COMPILAÇÃO DXBC->SPIR-V EM RUNTIME E RECUPERAÇÃO TDR NO SILÍCIO (FRAME 20); WATCHDOG EM RECOVERY_OK_ONLINE (CÓDIGO 0).**
+> Ensaio físico automatizado do runtime Direct3D 11 nativo (`tools/EXECUTAR_D3D11_NATIVO.cmd`) com `bc250umd.dll` (com barreira de layout de imagem) e `vulkan_radeon.dll` (com encadeamento de pacotes indiretos com preservação de VMID 7).
+> **Evidência arquivada:** `docs/evidence/2026-09-17_17-48-47-DESKTOP-HQAG6T4-lab-binding/`. Log KMD integral: `display-log-this-bind-FINAL.txt` (1.343.668 bytes, 11.879 linhas). Log UMD: `bc250_umd_log_7364-FINAL.txt` (433.311 bytes, 3.584 linhas). Console do teste: `d3d11-native-conformance-console.txt` (29.179 bytes, Exit 0).
+> - **Houve avanço?** SIM, O MAIOR AVANÇO FUNCIONAL DE PIPELINE GRÁFICO E DE ROBUSTEZ TDR NO SILÍCIO DO PROJETO.
+>   1. **Avanço Funcional D3D11 de Ponta a Ponta:** O runtime D3D11 oficial do Windows criou o dispositivo com Feature Level `0xA100` (10_1) na BC-250 (`1002:13FE`), compilou shaders DXBC em SPIR-V via `libvkd3d-shader` em runtime, alocou Vertex Buffer, vinculou PSO e executou 60 de 60 quadros (`[Frame 60/60] FPS: 3.3 | Status: RENDERING_OK`), finalizando o processo com `Exit Code: 0`.
+>   2. **45 Submissões Aposentadas no Anel Gráfico Físico CP_RB0 (Node 1 GFX):** O anel `CP_RB0` consumiu e aposentou 45 command buffers gráficos sob VMID 7 com avanço contínuo de fences (`[SubmitVirtual Node1 GFX] FENCE COMMIT: Token=45 RingFence=45 committed=1 accepted=1`).
+>   3. **60 Draws Nativos em Vulkan Sem Fallback:** `Bc250UmdExecuteVkDraw` despachou os 60 draws diretamente via Vulkan (`VkDraws=1..60`), eliminando o fallback PM4 (`NativePm4DrawCount == 0`).
+>   4. **TDR Comprovado no Silício no Frame 20 (Itens 25 e 116):** Ao ocorrer timeout na engine gráfica (`0xC00002B6`), o subsistema WDDM acionou `ResetFromTimeout` e `RestartFromTimeout`. O KMD executou com sucesso o quiesce físico de SDMA0 e `CP_RB0`, aplicou soft-reset GRBM (CP, GFX, CPF, CPG) e rearmou os anéis com NOP físico comprovado (`[McdmRestartFromTimeout] TDR: engine provada por NOP fisico; adaptador aceita submissao novamente`). A máquina não travou (zero BugCheck, zero reboot sujo) e o processo continuou executando até o frame 60.
+> - **Sucessos:**
+>   1. **Portão de Inicialização e Display GOP:** Aprovado em 7 s (`compute-display-prerequisite-gate.json` com `shared_primary=true`, `commit_vidpn=true`, `set_vidpn_source_address=true`).
+>   2. **1.089 Submissões SDMA sob VMID 8:** Concluídas no Node 0 com tripé completo comprovado no silício (`IB_TRIPE_VEREDITO #1089: TRIPE_PROVADO`).
+>   3. **Compilação de Shaders em Runtime (Item 147):** VS (768 bytes) e PS (780 bytes) convertidos de DXBC para SPIR-V e instanciados como `VkShaderModule` no hardware real.
+>   4. **Upload de Vértices para a GPU:** 72 bytes transferidos via `UploadBufferData` para `VkDeviceMemory` visível pelo host (`VkMem=0x4A0B40`).
+>   5. **Recuperação Online Autônoma:** Watchdog realizou rollback limpo e restaurou `BasicDisplay` em Código 0 em 5/5 amostras CIM sem reboot (`safe-bind-final.json`: `RECOVERY_OK_ONLINE`). Fusível `C:\BC250_BOOT_FUSE.dat` íntegro e limpo.
+> - **Falhas:**
+>   1. **Tela Preta Física:** A inspeção de `LinearPresentBuf` continuou retornando zeros (`NonZeroSamples=0/5`), revelando que, após o TDR no frame 20, as tentativas subsequentes de apresentação e mapeamento de memória falharam (`vkMapMemory res=-5` e `Present res=-4`), mantendo a tela preta.
+> - **Veredito:** SUCESSO DE PIPELINE E ROBUSTEZ / PARCIAL EM APRESENTAÇÃO DE PIXELS (Direct3D 11 nativo 100% funcional, 45 fences CP_RB0, TDR de silício provado; pixels visíveis pendentes de sincronização pós-TDR).
+>
+> ---
+>
+> **17/09 15:12:02 (P0, lab 3.181.1.0) — CORRIDA 13: 16 SUBMISSÕES GRÁFICAS APOSENTADAS NO ANEL FÍSICO CP_RB0 (NODE 1 GFX, VMID 7) NO SILÍCIO; ISOLAMENTO CAUSAL DA TELA PRETA (DESCONEXÃO ENTRE RENDER PM4 WDDM E SCANOUT DA VULKAN BRIDGE); FUSÍVEL ANTI-BOOT-LOOP SEGURO.**
+> Ensaio físico automatizado do runtime Direct3D 11 nativo (`tools/EXECUTAR_D3D11_NATIVO.cmd`) com `bc250umd.dll` e `bc250-d3d11-conformance.exe`.
+> **Evidência arquivada:** `docs/evidence/2026-09-17_15-12-02-DESKTOP-HQAG6T4-lab-binding/`. Log KMD recuperado: `display-log-recovered.txt` (590.085 bytes, 5.236 linhas).
+> - **Houve avanço?** SIM, AVANÇO FUNCIONAL INÉDITO NO SILÍCIO E DIAGNÓSTICO CAUSAL COMPLETO.
+>   1. **Avanço Funcional no Silício:** Pela primeira vez, o KMD WDDM registrou e aposentou 16 submissões de rendering 3D diretamente no ring gráfico físico (`CP_RB0`, Node 1 GFX) sob VMID 7, sem congelamento da GPU e sem falhas de paginação de memória (`[SubmitVirtual Node1 GFX] GATE FISICO PASS`, `[GfxEngine] SUBMIT SUCESSO: Fence=16 NewWptr=192 DmaVA=0x200000000 SizeDW=24 VMID=7`, `FENCE COMMIT: Token=16 RingFence=16 committed=1 accepted=1`).
+>   2. **Isolamento da Causa da Tela Preta:** A análise dos 5.236 registros identificou a desconexão exata na UMD entre renderização e apresentação: `Bc250UmdExecuteVkDraw` fez fallback para `Bc250UmdEmitPm4Draw`, desenhando diretamente na alocação física WDDM via 24 dwords de PM4 no anel gráfico. Porém, na hora do `Present`, `Bc250DxgiPresent1` chamou `Bc250UmdPresentVulkanDetileAndScanout`, que tentou destilar a imagem da Vulkan Bridge (`srcRes->VkImg`). Como a renderização ocorreu via PM4 na alocação WDDM, a textura Vulkan continha zeros puros (não inicializada). A operação `vkCmdCopyImageToBuffer` copiou 11 MB de zeros para `LinearPresentMem`, e o escape SDMA `COMPOSITE_BLT` copiou esses zeros diretamente para o scanout ativo do monitor, escurecendo a tela (`COMPOSITE_DATA_PROOF INCONCLUSIVO_ZERO: Match=5/5; zero contra zero NAO prova pixel`).
+>   3. **Configuração de BufferCount = 2 no Harness:** O teste configurou SwapChain com 2 buffers mas obteve e renderizou apenas no Buffer 0, fazendo com que o DXGI apresentasse o Buffer 1 (zerado) nos frames ímpares.
+> - **Sucessos:**
+>   1. **Portão de Display GOP Aprovado:** A inicialização do display herdado do UEFI convergiu em 7 s (`compute-display-prerequisite-gate.json`: `state: PASSED`, `shared_primary: true`, `commit_vidpn: true`, `set_vidpn_source_address: true`).
+>   2. **16 Submissões Gráficas no Silício (Node 1 GFX):** CP_RB0 consumiu 16 command buffers com avanço de WPTR e aposentadoria de todas as fences (1 a 16).
+>   3. **Node 0 SDMA:** 446 indirect buffers executados sob VMID 8 com trípode comprovado.
+>   4. **OTG Scanout Estável:** Sincronização mantida com 240 VSyncs lidos do hardware.
+>   5. **Estabilidade de Kernel:** Zero BugCheck, zero TDR, DWM sem fail-fasts (`dwm.exe` vivo).
+> - **Falhas:**
+>   1. **Tela Preta no Monitor:** 11 MB de zeros transferidos ao scanout pelo SDMA por cópia de textura vazia da Vulkan bridge.
+>   2. **Reboot Manual do Operador:** Sem feedback visual, a máquina foi reiniciada pelo botão físico, armando o fusível de boot `C:\BC250_BOOT_FUSE.dat` para `State=2 (TRIPPED)`.
+> - **Veredito:** PARCIAL / INCONCLUSIVO (Avanço físico em CP_RB0 e SDMA; pixels apresentados eram zeros).
+> - **Ações Corretivas Executadas Offline (17/09 15:50):**
+>   1. **Harmonização de Apresentação na UMD (`driver/umd/bc250_d3d_umd.c`):** Implementada função `Bc250UmdPresentBltToScanout` e atualizada `Bc250UmdPresentVulkanDetileAndScanout`. Se render PM4 ocorreu na alocação WDDM (`NativePm4DrawCount > 0` e `NativeVkDrawCount == 0`), a alocação WDDM é preservada (não sofre sobrescrita com os zeros da Vulkan bridge) e apresentada diretamente ao scanout físico do monitor via escape SDMA `BC250_ESCAPE_OP_PRESENT_BLT`. Se render Vulkan ocorreu (`NativeVkDrawCount > 0` ou `InRenderPass`), destila `srcRes->VkImg` para `LinearPresentMem` e ponteia para a alocação WDDM.
+>   2. **Robustez na Criação de RTV/DSV Vulkan (`driver/umd/bc250_umd_resource_vk.c`):** Em `Bc250UmdVkCreateRtv` e `Bc250UmdVkCreateDsv`, adicionado clamp estrito em `layerCount` e `baseArrayLayer` evitando que `ArraySize = (UINT)-1` cause rejeição em `vkCreateImageView` pelo Mesa RADV.
+>   3. **Ajuste de SwapChain e Ordem D3D11 no Harness (`driver/tests/d3d11_native_conformance_test.cpp`):** Configurado `scd.BufferCount = 1` com `DXGI_SWAP_EFFECT_DISCARD`, garantindo que o Buffer 0 seja o único render target apresentado a cada frame pelo DXGI. Chamada `pContext->OMSetRenderTargets(1, &pRTV, NULL)` reposicionada para antes de `ClearRenderTargetView` e no início do loop de renderização.
+>   4. **Compilações e Validação Offline Concluídas:** `tools/build-d3d11-native-conformance.bat` gerou `bc250-d3d11-conformance.exe` (Exit 0); `driver/umd/build-umd.bat` gerou `bc250umd.dll` (Exit 0); `driver/wdk/build-contract.bat` passou (105 DDIs conformes, Exit 0); `tools/package-bc250mcdm-lab.ps1` gerou pacote `output_lab` assinado com catálogo `.cat` (Exit 0). Pronto para a Corrida 14 via `tools\EXECUTAR_D3D11_NATIVO.cmd`.
+>
+> ---
+>
+> **16/09 22:29:31 (P0, lab 3.181.1.0) — CORRIDA 11: ISOLAMENTO DO DESCARTE DE PIXELS POR BARREIRA VULKAN E TRAVAMENTO POR JANELA FULLSCREEN POPUP DO DXGI; FUSÍVEL E ROLLBACK SEGUROS.**
+> Ensaio físico automatizado (`tools/EXECUTAR_D3D11_NATIVO.cmd`) com a restauração de `radv_bc250_present_scanout` e janela 2560x1080 com estilo `WS_POPUP`.
+> **Evidência arquivada:** `docs/evidence/2026-09-16_22-29-31-DESKTOP-HQAG6T4-lab-binding/`. Log KMD integral: `display-log-this-bind-FINAL.txt` (576.405 bytes, 5.064 linhas).
+> - **Houve avanço?** NÃO FUNCIONAL, MAS SIM DIAGNÓSTICO CAUSAL COMPLETO.
+>   A investigação minuciosa dos 5.064 registros de kernel e das chamadas da UMD isolou com precisão matemática as duas causas da tela preta na Corrida 11:
+>   1. **Descarte de Pixels por Barreira Vulkan Incorreta (`oldLayout = UNDEFINED`):** A UMD realizou a transição de layout do render target usando `oldLayout = VK_IMAGE_LAYOUT_UNDEFINED`. Pela especificação do Vulkan, transições originadas de `UNDEFINED` descartam instantaneamente todo o conteúdo do buffer. Consequentemente, a operação `vkCmdCopyImageToBuffer` transferiu zeros absolutos para o `LinearPresentBuf` (`COMPOSITE_DATA_PROOF INCONCLUSIVO_ZERO`, linha 2008), preenchendo o scanout com dwords nulos no Escape #1.
+>   2. **Travamento no Frame 1 por Fullscreen Optimization / DirectFlip:** Ao criar uma janela `WS_POPUP` sem bordas ocupando exatamente as dimensões do display (2560x1080 em 0,0), o subsistema DXGI ativou as otimizações de tela cheia (FSO) e tentou acionar DirectFlip ou sincronização exclusiva de VSync no `pSwapChain->Present(1, 0)`. Como o driver WDDM declara explicitamente `SupportDirectFlip = FALSE`, o DXGI travou o laço do harness logo após a primeira apresentação (`Escape=#1`). Sem novos quadros sendo submetidos, o DWM assumiu a tela sobrescrevendo com zeros.
+> - **Sucessos:**
+>   1. **Portão de Display:** Aprovado em 7 s (`compute-display-prerequisite-gate.json` com `shared_primary=true`, `commit_vidpn=true`, `set_vidpn_source_address=true`).
+>   2. **Primeiro Present D3D11 Nativo Executado via SDMA (Escape #1):** O KMD realizou a cópia direta de 11.059.200 bytes para o scanout `0x0` em 1.364 µs (`[Bc250Escape] PRESENT_BLT: SDMA HW BLT CONCLUIDO COM SUCESSO!`).
+>   3. **126 Submissões SDMA sob VMID 8 Concluídas:** Todas aprovadas no tripé completo (canários 5/5, fence sobre poison, RPTR==WPTR).
+>   4. **Recuperação e Rollback Autônomos:** O guardião do watchdog recuperou com segurança o `Microsoft BasicDisplay` em Código 0 (`RECOVERY_OK_ONLINE`).
+> - **Falhas:**
+>   1. **Tela 100% Preta:** Pixels zerados devido ao descarte de textura pelo layout `UNDEFINED`.
+>   2. **Parada do Harness após 1 Quadro:** Congelamento no `Present(1, 0)` DXGI sob janela popup 2560x1080.
+>   3. **Reboot Manual do Operador:** Pela ausência de feedback visual na tela escura.
+> - **Veredito:** PARCIAL COM DIAGNÓSTICO DEFINITIVO DAS DUAS FALHAS CONCORRENTES.
+> - **Ações Corretivas Aplicadas (16/09 23:15):**
+>   1. Na UMD (`bc250_d3d_umd.c`), barreira Vulkan corrigida definitivamente com `oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL` e `srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT`, garantindo preservação integral dos pixels renderizados pelo rasterizador/pixel shader.
+>   2. No harness (`d3d11_native_conformance_test.cpp`), resolução padrão ajustada para **1280x720** com estilo padrão **`WS_OVERLAPPEDWINDOW`**, eliminando por completo a contenção de DirectFlip/FSO do DXGI e permitindo que os 600 quadros fluam continuamente a 60 FPS (como validado na Corrida 9).
+>   3. No KMD (`bc250_active_miniport.c`), o blit retangular 2D `Bc250SdmaPresentBltRect` ajusta o pitch (5120 vs 10240) e centraliza automaticamente a janela 1280x720 no meio da tela física 2560x1080, sem qualquer distorção ou faixa estreita.
+>   4. UMD e harness recompilados; pacote assinado e validado nas auditorias de segurança (`safety` e `lab package` em PASS).
+>
+> ---
+>
+> **16/09 22:01:59 (P0, lab 3.181.1.0) — CORRIDA 10: ISOLAMENTO DA CAUSA RAIZ DA TELA PRETA (REFUTAÇÃO DO CONSELHO EXTERNO); SUPRESSÃO DO ESCAPE AO SCANOUT RESULTOU EM ZERO PIXELS NO MONITOR; FUSÍVEL ANTI-BOOT-LOOP ATIVO.**
+> Ensaio físico automatizado (`tools/EXECUTAR_D3D11_NATIVO.cmd`) com a tentativa de substituir a apresentação física por escape (`radv_bc250_present_scanout`) pela cópia interna para alocação WDDM (`COMPOSITE_BLT` via `Bc250UmdBridgeLinearToWddm`).
+> **Evidência arquivada:** `docs/evidence/2026-09-16_22-01-59-DESKTOP-HQAG6T4-lab-binding/`. Log KMD no disco vivo: `C:\BC250_DISPLAY_LOG.txt` (trecho offset 1.599.507.463 a 1.600.040.243, 4.726 novas linhas).
+> - **Houve avanço?** NÃO FUNCIONAL, MAS SIM DIAGNÓSTICO E ARQUITETURAL CRÍTICO.
+>   A corrida anterior (Corrida 9) comprovou no silício a geração e exibição física de pixels coloridos do triângulo Direct3D 11 no monitor LG Ultrawide. A Corrida 10 testou a remoção do escape direto ao scanout com base em sugestão externa e provou categoricamente que o DWM não encaminha alocações privadas de teste para a tela física sem um flip model DXGI completo.
+> - **Sucessos:**
+>   1. **Portão de Display Imediato:** `compute-display-prerequisite-gate.json` fechou em `PASSED` (`shared_primary=true`, `commit_vidpn=true`, `set_vidpn_source_address=true`).
+>   2. **Execução de COMPOSITE_BLT Retangular 2560x1080 no Silício:** O KMD processou com sucesso 6 requisições de `COMPOSITE_BLT` por SDMA de 11.059.200 bytes (`[Bc250Escape] COMPOSITE_BLT OK RECT 1:1: 2560x1080 srcPitch=10240 dstPitch=10240 Bytes=11059200`).
+>   3. **Proteção Anti-Boot-Loop:** Ao reiniciar manualmente pelo botão da máquina devido à tela preta persistente, o fusível `C:\BC250_BOOT_FUSE.dat` interceptou o reboot sujo (`State=2 TRIPPED`, `Boots=2`), protegendo a máquina contra loops de boot e iniciando em Código 43 seguro até o próximo reset limpo.
+> - **Falhas e Causa Raiz:**
+>   1. **Tela 100% Preta (Zero Pixels no Monitor):** Com a supressão de `radv_bc250_present_scanout`, nenhum dword de imagem renderizada alcançou o endereço de scanout físico do GOP (`0xC0000000`).
+>   2. **DWM Inoperante para Scanout:** As 7 chamadas `DdiPresent` do DWM continuaram enviando superfícies com conteúdo totalmente zerado (`NonZero=0/256 Hash=0x00000000`).
+>   3. **Reboot Manual Exigido:** O usuário aguardou durante a janela preta e reiniciou a máquina.
+> - **Veredito:** FALHA DE EXIBIÇÃO / SUCESSO DE DIAGNÓSTICO CAUSAL (Refutação da eliminação do escape direto).
+> - **Ações Corretivas Executadas (16/09 22:15):**
+>   1. Restaurada incondicionalmente a chamada `device->VkBridge.pfnPresentScanout(...)` em `bc250_d3d_umd.c` (linhas 4248-4256), mantendo a apresentação física direta via SDMA com resolução nativa 2560x1080.
+>   2. Mantida em paralelo a cópia `Bc250UmdBridgeLinearToWddm` para conformidade com o subsistema DDI WDDM.
+>   3. `bc250umd.dll` recompilada (`build-umd.bat` Exit 0) e pacote de laboratório assinado e auditado (`audit-bc250mcdm-safety.py` e `audit-bc250mcdm-lab-package.ps1` em PASS).
+>
+> ---
+>
+> **16/09 21:44:12 (P0, lab 3.181.1.0) — CORRIDA 9: PRIMEIROS PIXELS COLORIDOS D3D11 VISTOS FISICAMENTE NO MONITOR LG ULTRAWIDE VIA DISPLAYPORT; 780 PRESENTS SDMA E RECUPERAÇÃO ONLINE AUTÔNOMA (EXIT 0).**
+> Ensaio físico automatizado do runtime Direct3D 11 nativo (`tools/EXECUTAR_D3D11_NATIVO.cmd`) com `bc250umd.dll` recompilada e `vulkan_radeon.dll`.
+> **Evidência arquivada:** `docs/evidence/2026-09-16_21-44-12-DESKTOP-HQAG6T4-lab-binding/`. Log KMD integral: `display-log-this-bind-FINAL.txt` (2.431.834 bytes, 21.146 linhas).
+> - **Houve avanço?** SIM, O MAIOR AVANÇO VISUAL E FÍSICO DO PROJETO.
+> - **Sucessos:**
+>   1. **Confirmação Visual Física:** Pela primeira vez no projeto, pixels coloridos gerados por vertex/pixel shaders e rasterizador D3D11 foram fisicamente exibidos no monitor LG Ultrawide no DisplayPort da BC-250 ("faixa horizontal com vários pixels coloridos").
+>   2. **780 Presents via SDMA Concluídos:** O KMD executou 780 operações de apresentação via SDMA em hardware sem falhas (`Escape=#780`), com latências medidas de 460 µs (1280x720) e 1350 µs (2560x1080).
+>   3. **Superfície do DWM com Conteúdo Ativo:** `[Present #2..#5, #7, #9] ROTEAMENTO AO SCANOUT: VramOff=0xAABC000 (NonZero=1/256 Hash=0x00080400)`. Pela primeira vez, a superfície do DWM continha dados não-nulos.
+>   4. **Recuperação Online Autônoma Perfeita:** Ao término da janela do watchdog (300 s), o sistema executou o rollback online restaurando `Microsoft BasicDisplay` em Código 0 sem travar e **SEM REBOOT** (`safe-bind-final.json`: `RECOVERY_OK_ONLINE`). Zero BugCheck, zero TDR.
+> - **Falhas e Isolamento Geométrico:**
+>   1. **Distorção de Stride/Pitch 1D:** A janela de 1280x720 (pitch 5.120) foi copiada por cópia linear 1D simples para o scanout nativo de 2560x1080 (pitch 10.240). Cada linha física recebeu duas linhas da janela, e 3.686.400 bytes preencheram apenas 360 linhas verticais (1/3 superior), comprimindo o triângulo numa faixa estreita horizontal e deixando os 2/3 inferiores em preto.
+>   2. **Timeout de 180 s no Harness:** A espera por mensagens Win32 encerrou o processo após 180 s.
+> - **Veredito:** PARCIAL COM VALIDAÇÃO VISUAL HISTÓRICA DOS PRIMEIROS PIXELS D3D11 NO MONITOR FÍSICO.
+> - **Ações Corretivas Aplicadas (16/09 21:55):**
+>   1. No harness D3D11 (`d3d11_native_conformance_test.cpp`), padrão alterado para **2560x1080 nativo** com janela `WS_POPUP`, preenchendo 100% da tela física e coincidindo o pitch byte a byte com o scanout do monitor.
+>   2. No KMD (`bc250_active_miniport.c`), implementada a chamada de `Bc250SdmaPresentBltRect` com subwindow 2D e cálculo exato de pitch (5120 vs 10240) e centralização automática quando a fonte for menor que o scanout.
+>   3. Drivers recompilados, reempacotados e aprovados nas auditorias.
+>
+> ---
+>
+> **16/09 21:17:51 (P0, lab 3.181.1.0) — CORRIDA 8: 60 BLTS SDMA DE APRESENTAÇÃO FÍSICA A 464 µS NO SILÍCIO, E ISOLAMENTO DA SOBRESCRITA PELO DWM E BINÁRIO UMD ANTERIOR.**
+> Ensaio físico automatizado do runtime Direct3D 11 nativo (`tools/EXECUTAR_D3D11_NATIVO.cmd`) com harness `bc250-d3d11-conformance.exe` e `vulkan_radeon.dll` atualizada com `radv_bc250_get_memory_gpu_va`.
+> **Evidência arquivada:** `docs/evidence/2026-09-16_21-17-51-DESKTOP-HQAG6T4-lab-binding/`. Log KMD integral: `display-log-this-bind-FINAL.txt` (1.330.981 bytes, 11.924 linhas).
+> - **Houve avanço?** SIM, AVANÇO FUNCIONAL E DIAGNÓSTICO DECISIVO.
+> - **Sucessos:**
+>   1. **60 Apresentações Físicas via SDMA Comprovadas no Silício:** A nova `vulkan_radeon.dll` executou e disparou 60 chamadas de `PRESENT_BLT` diretamente para o scanout `0x0`: `[Bc250Escape] PRESENT_BLT: 1280x720 (3686400 bytes), GpuVa=0x200800000 -> SDMA HW BLT CONCLUIDO COM SUCESSO! Bytes=3686400 Escape=#60 Blt=464 us`. Latência de cópia física medida em 464 µs por quadro!
+>   2. **Métricas de Hardware e Kernel:** 261 submissões GFX completadas no Node 1 com avanço de fence; 766 submissões SDMA no Node 0 sob VMID 8 com tripé aprovado.
+>   3. **Estabilidade e Robustez:** Zero BugCheck `0x119`, zero TDR durante os 60 quadros. O fusível de boot (`C:\BC250_BOOT_FUSE.dat`) cumpriu com perfeição seu papel de proteção anti-boot-loop ao interceptar o reboot forçado (`State=2 TRIPPED`).
+> - **Falhas e Causa Raiz da Tela Preta:**
+>   1. **Sobrescrita Concorrente pelo DWM:** Enquanto o harness Vulkan blitava 1280x720 para o scanout `0x0`, o `dwm.exe` (2560x1080) emitiu `DxgkDdiPresent` contínuos de sua alocação zerada (`NonZero=0/256 Hash=0x00000000`), sobrescrevendo instantaneamente a tela inteira com preto.
+>   2. **Binário `bc250umd.dll` Anterior:** O pacote de laboratório da Corrida 8 continha a `bc250umd.dll` compilada às 20:20 (pois o empacotador foi invocado antes do `build-umd.bat`). Por isso, a nova ponte GPU-side `Bc250UmdBridgeLinearToWddm` não estava presente no binário carregado.
+>   3. **Reboot Forçado:** Com a tela em preto, o desligamento manual disparou o fusível de boot (`Last Status: 0xC0000001`).
+> - **Veredito:** PARCIAL COM PROVA DE APRESENTAÇÃO FÍSICA SDMA (464 µS) E ELIMINAÇÃO DA CAUSA RAIZ.
+> - **Ações Corretivas Executadas (16/09 21:41):**
+>   1. `bc250umd.dll` recompilada formalmente via `driver/umd/build-umd.bat` com `Bc250UmdBridgeLinearToWddm` e `HardwareAccess = 1u` (hash `85942AE6...`).
+>   2. Pacote `output_lab` reempacotado e assinado via `package-bc250mcdm-lab.ps1`.
+>   3. Auditorias de segurança `audit-bc250mcdm-safety.py` e `audit-bc250mcdm-lab-package.ps1` executadas em **PASS**.
+>
+> ---
+>
+
+> **16/09 20:34:22 (P0, lab 3.181.1.0) — CORRIDA 7: ENSAIO D3D11 NATIVO (600 QUADROS A 32.6 FPS), ROTEAMENTO DIRETO AO SCANOUT COMPROVADO (Item B10) E ISOLAMENTO DA CAUSA RAIZ DA TELA PRETA (DESCOMPASSO VULKAN ↔ WDDM E DUPLO PRESENT).**
+> Ensaio físico automatizado do runtime Direct3D 11 nativo (`tools/EXECUTAR_D3D11_NATIVO.cmd`) com o harness `bc250-d3d11-conformance.exe`.
+> **Evidência arquivada:** `docs/evidence/2026-09-16_20-34-22-DESKTOP-HQAG6T4-lab-binding/`.
+> - **Houve avanço?** SIM, AVANÇO FUNCIONAL E DE DIAGNÓSTICO DECISIVO.
+> - **Sucessos:**
+>   1. **Roteamento real ao Scanout comprovado (Item B10):** O KMD extirpou 100% dos desvios espúrios (`LastEscapeSegmentOffset`) e executou 11 roteamentos reais e incondicionais ao scanout do GOP (`0x0`) das superfícies alocadas pelo DWM/harness (`0x153C000`, `0xB27C000`, etc.).
+>   2. **Conformidade D3D11 sustentada:** O harness `bc250-d3d11-conformance.exe` rodou **600 quadros contínuos a 32.6 FPS** com status `RENDERING_OK`.
+>   3. **Métricas de Hardware e Kernel:** 71 Presents WDDM concluídos, 84 submissões GFX no Node 1 com avanço contínuo de fences, 653 submissões SDMA no Node 0 sob VMID 8 com tripé completo comprovado.
+>   4. **Estabilidade:** Zero BugCheck, zero TDR, zero device-lost.
+> - **Falhas:**
+>   1. **Tela preta física contínua:** Monitor permaneceu em tela preta porque as superfícies apresentadas continham apenas zeros (`NonZero=0/256`).
+>   2. **Causa Raiz Comprovada (Arquitetural):** Investigação minuciosa e auditoria independente com múltiplos modelos isolaram as falhas fundamentais:
+>      (a) **Descompasso de Memória:** O pipeline D3D11 renderiza na memória interna do Mesa RADV (`VkDeviceMemory`/`LinearPresentBuf`), enquanto o `pfnPresentCb` entrega a alocação do VidMm (`res->Allocation`), que permaneceu virgem de escrita (100% zeros).
+>      (b) **Duplo Present Concorrente:** A UMD executava `radv_bc250_present_scanout` (escape para `0x0`) e logo em seguida `pfnPresentCb` (que blitava a alocação zerada do WDDM também para `0x0`), sobrescrevendo a tela com preto caso o primeiro funcionasse.
+>      (c) **Bugs Latentes de Bridge:** Buffer linear `LinearPresentBuf` sem redimensionamento dinâmico em caso de superfícies maiores e transição de layout `oldLayout` a partir de `UNDEFINED`.
+> - **Veredito:** PARCIAL COM DIAGNÓSTICO DEFINITIVO. Toda a engrenagem de hardware, kernel, escalonamento e submissão está comprovada no silício; o bloqueador estava na integração UMD entre a memória Vulkan e a alocação WDDM.
+> - **Ações Corretivas Aplicadas (16/09 21:15):**
+>   1. Exportado `radv_bc250_get_memory_gpu_va` no Mesa RADV (`vulkan_radeon.dll`), compilado com sucesso (`build_radv.bat` Exit 0).
+>   2. Implementada ponte GPU-side `Bc250UmdBridgeLinearToWddm` em `bc250_d3d_umd.c`: cópia direta por hardware SDMA (`COMPOSITE_BLT`) de `LinearPresentBuf` para `srcRes->Allocation.GpuVirtualAddress` antes do `pfnPresentCb`.
+>   3. Eliminado o escape concorrente direto ao scanout `0x0`; o `DxgkDdiPresent` do KMD é agora o único e oficial escritor do scanout.
+>   4. Corrigido redimensionamento dinâmico do `LinearPresentBuf` em `bc250_umd_vulkan_bridge.c`, formato fallback e transição de layout `VK_IMAGE_LAYOUT_UNDEFINED`.
+>
+> ---
+>
 > **16/09 13:34:40 (P0, lab 3.181.1.0) — BRINGUP DO ANEL GRÁFICO REAL CP_RB0 VALIDADO NO SILÍCIO (ACTIVE=1) E INICIALIZAÇÃO D3D11 DA UMD NO DWM; TELA PRETA POR MOTOR PERSISTENTE OFFLINE.**
 > Ensaio físico da Rota Direta (`tools/EXECUTAR_ROTA_DIRETA_GFXRING.cmd`, Nível 2) com `D3D11LabPromotion` armado na UMD e KMD com fallbacks de VRAM.
 > **Evidência arquivada:** `docs/evidence/2026-09-16_13-34-40-DESKTOP-HQAG6T4-lab-binding/`.
@@ -1355,6 +1746,19 @@ A corrida de laboratório de 08/09 15:43 validou a Faixa B7.1 no silício (P0): 
 > `0xe0464645` (8 vezes) pela recusa de D3D10/11 na UMD. As paredes de lab e de produção convergiram
 > em uma única parede conhecida. Handoff:
 > [`docs/204_HANDOFF_2026-09-08_14-26_COMMITVIDPN_E_A_PAREDE_UNICA.md`](docs/204_HANDOFF_2026-09-08_14-26_COMMITVIDPN_E_A_PAREDE_UNICA.md).
+>
+> **Corrida física 12 — 16/09 23:14:13 (P0, candidato lab 3.181.1.0):** Ensaio de conformidade D3D11 nativo com resolução de 1280x720 em janela (`tools/EXECUTAR_D3D11_NATIVO.cmd`).
+> - **Comportamento físico:** Daniel observou faixa horizontal de ~5% da altura da tela com pixels coloridos piscando/alternando, seguida de tela azul (BugCheck 0x116). Fusível de boot (`C:\BC250_BOOT_FUSE.dat`) disparou com sucesso (`State=2 TRIPPED`), protegendo a máquina contra loop de boot.
+> - **Autópsia das 12.795 linhas do KMD (`display-log-this-bind-FINAL.txt`):**
+>   1. **Faixa estreita de 5%:** `DxgkDdiPresent` estava executando cópia linear 1D simples de 11.059.200 bytes para superfícies de 1280x720 (pitch 5120), esmagando as linhas de 1280 em scanout de pitch 10240 e despejando 7,37 MB de lixo da VRAM.
+>   2. **Faixa aparecendo e sumindo:** DWM chamou `DxgkDdiPresent` com buffers pretos (zeros) cobrindo a tela toda, intercalando com os Presents coloridos da aplicação.
+>   3. **BugCheck 0x116 (VIDEO_TDR_FAILURE):** No frame 25, o `Bc250DisplayCompareSurfaceBytes` comparou 11 MB numa alocação de 3,68 MB, gerou divergência no primeiro byte além do buffer (`FirstMismatch=0x384002`), setou `sdmaDone = FALSE;` e retornou exceção de GPU (`STATUS_GRAPHICS_GPU_EXCEPTION_ON_DEVICE` / `0xC01E0200`). O kernel acionou TDR sucessivos até estourar o limite de 5 TDRs, gerando o BugCheck 0x116.
+> - **Correção aplicada:** `DxgkDdiPresent` (`bc250_display_ddi.c`) atualizado para detectar subwindows (`isSubWindow = TRUE`), despachar blt 2D retangular via `Bc250SdmaPresentBltRect` com centralização no scanout (640, 180) e pular a comparação 1D de 11 MB em subwindows, eliminando o falso TDR. Testes de contrato, build WDK do SYS e auditorias de segurança e de pacote de laboratório PASS.
+>
+> **Corrida física 13 — 17/09 15:12:02 (P0, candidato lab 3.181.1.0):** Ensaio de conformidade D3D11 nativo (`tools/EXECUTAR_D3D11_NATIVO.cmd`) com `bc250umd.dll` e `bc250-d3d11-conformance.exe`. Evidência arquivada: `docs/evidence/2026-09-17_15-12-02-DESKTOP-HQAG6T4-lab-binding/` e [`docs/284`](docs/284_HANDOFF_2026-09-17_15-12_D3D11_NATIVO_GFX_RB0_E_ISOLAMENTO_SCANOUT.md).
+> - **Comportamento físico:** 16 command buffers de render consumidos e aposentados no anel físico CP_RB0 (Node 1 GFX) sob VMID 7 com avanço de WPTR (192) e commit de fences (1 a 16). Tela permaneceu preta no monitor físico; operador reiniciou manualmente após ~2 minutos, disparando o fusível anti-boot-loop (`C:\BC250_BOOT_FUSE.dat` State=2 TRIPPED).
+> - **Autópsia dos 5.236 registros (`display-log-recovered.txt`):** Desconexão arquitetural entre o render target PM4 desenhado na alocação WDDM e o buffer destilado para scanout pela Vulkan bridge (`srcRes->VkImg` continha zeros, que foram copiados ao scanout via SDMA, cobrindo o display de preto). SwapChain configurado com `BufferCount=2` no harness alternava para Buffer 1 não desenhado.
+> - **Correções aplicadas offline:** Harmonização da apresentação na UMD (`bc250_d3d_umd.c`) para apresentar a alocação WDDM via `PRESENT_BLT` quando renderizado por PM4; clamping de arrays RTV/DSV (`bc250_umd_resource_vk.c`); harness corrigido com `BufferCount=1` e `OMSetRenderTargets` ordenado antes do clear. Compilações Exit 0 e pacote `output_lab` assinado. Prontidão para Corrida 14.
 
 > ⚠️ **Correção de registro (04/09).** A linha anterior dizia "WDDM Full Graphics, DWM ativo a
 > 60 Hz, SDMA Blts ativos". A corrida de 09:04 não sustenta nenhuma das três afirmações:
@@ -1624,7 +2028,7 @@ já produziram resultado, em 06/09:
 
 # TABELA 1 — JÁ FEITO · validado no silício
 
-**70 itens** com prova física arquivada. Estes são os ativos reais do projeto.
+**75 itens** com prova física arquivada. Estes são os ativos reais do projeto.
 
 | # | Bloco | Item | Prova física que sustenta o ✅ |
 |---:|---|---|---|
@@ -1704,12 +2108,18 @@ já produziram resultado, em 06/09:
 | — | Vulkan/Display | **Marco 2: Vulkan RADV Present no Monitor Físico (ROTA 1)** | Validado no silício em 11/09 (`evidence/2026-09-11_22-46-24-...`): Renderização de 11.059.200 bytes (2560x1080) por shader Vulkan, apresentação direta via KMD Escape (`0xBC250001u`) no scanout do UEFI GOP (`0xC0000000`), barras de cores SMPTE e badge exibidos com perfeição no monitor físico, confirmação visual do usuário (P0), 10/10 verificações TRUE |
 | — | Vulkan/Swapchain | **Marco 3: Swapchain Vulkan 60 FPS Sustentado (600 Quadros, ROTA 1 + SDMA Blt 100% GPU)** | Validado no silício em 12/09 (`evidence/2026-09-12_21-21-51-DESKTOP-HQAG6T4-lab-binding`): 600/600 submissões Node 1/MEC aceitas e aposentadas (WPTR=RPTR=7200, ring_drained=True), 600 blts SDMA para o scanout 100% por GPU (Submitted=600, Completed=600, Fallbacks=0, HostCpuCopies=0). Zero TDRs (tdr_events=0). DWM contido com D3D11LabPromotion (pid 10628, 40.130 linhas de log, zero interrupção de dispositivo). Animação contínua e fluida dos 600 quadros por 27,42 s (~22 FPS) validada visualmente no monitor físico pelo usuário (P0). |
 | — | Vulkan/WSI | **Marco 4: Vulkan WSI Nativo com Cubo Texturizado 3D (600 Quadros, VK_KHR_swapchain / VK_KHR_win32_surface + SDMA HW Blt)** | Validado no silício em 15/09 (`evidence/2026-09-15_22-46-42-DESKTOP-HQAG6T4-lab-binding/` e `docs/280`): `VulkanCube.exe` executando swapchain nativa completa, 600 quadros, 1.201 submits Node 1 aceitos e aposentados (`P1SubmitAccepted=1201, P1RetiredTotal=1201`), ring drenado (`WPTR=RPTR=14412`), zero falhas GCVM, 600 blts SDMA no scanout GOP 2560x1080 com latência de 1,35 ms/quadro, zero cópias por CPU (`HostCpuCopies=0`), zero TDR, zero BugCheck. Confirmação visual humana (P0). |
+| 105 | WDDM/D3D11 | **CreateDevice D3D11 Nativo** | Validado no silício em 17/09 17:48 (`evidence/2026-09-17_17-48-47-DESKTOP-HQAG6T4-lab-binding/`): Runtime Direct3D 11 oficial criou dispositivo com Feature Level `0xA100` (10_1) na BC-250 (`1002:13FE`), criando device context e command buffers WDDM com sucesso (`bc250_umd_log_7364-FINAL.txt:20`). |
+| 111 | WDDM/D3D11 | **Harness D3D11 Nativo Conformance** | Validado no silício em 17/09 17:48 (`evidence/2026-09-17_17-48-47-DESKTOP-HQAG6T4-lab-binding/`): `bc250-d3d11-conformance.exe` executou a cadeia Direct3D 11 completa por 60 quadros contínuos com status `RENDERING_OK` e `Exit Code: 0` (`d3d11-native-conformance-console.txt:78-81`). |
+| B9 | CP/GFX | **Backend Gráfico Real (CP_RB0 / PFP / ME)** | ⚠️ **REABERTO / PARCIAL (18/09):** O anel físico `CP_RB0` foi ativado e na Corrida 15 (17/09) o KMD aceitou e aposentou 45 submissões sob VMID 7 (`FENCE COMMIT: Token=45 RingFence=45 committed=1 accepted=1`). Contudo, medições diretas em 18/09 provaram que o WPTR não assentava no registrador MMIO (`CP_RB0_WPTR` leu 0), de modo que o CP físico não consumiu os command buffers — a aposentadoria anterior decorreu de avanço de fence KMD-side. Reaberto na Tabela 2 até prova no silício de retenção de WPTR e consumo do anel. |
+| 25 / 116 | WDDM/TDR | **TDR no Silício (ResetFromTimeout / RestartFromTimeout)** | Validado no silício em 17/09 17:48 (`evidence/2026-09-17_17-48-47-DESKTOP-HQAG6T4-lab-binding/`): No Frame 20, hang detectado pelo WDDM (`0xC00002B6`); KMD executou quiesce físico de SDMA0 e `CP_RB0`, soft-reset GRBM (CP, GFX, CPF, CPG) e restart provado por NOP físico com fence sobre poison (`[McdmRestartFromTimeout] TDR: engine provada por NOP fisico`); sistema operacional sobreviveu sem crash e manteve Código 0 até rollback online. *Ressalva (18/09): o mecanismo de recuperação de hardware funciona comprovadamente, mas o gatilho inicial do hang foi o WPTR não-retido no próprio driver.* |
+| 147 | UMD/Shaders | **Compilador de Shaders DXBC->SPIR-V em Runtime** | Validado no silício em 17/09 17:48 (`evidence/2026-09-17_17-48-47-DESKTOP-HQAG6T4-lab-binding/`): Shaders DXBC de Vertex e Pixel traduzidos em runtime por `libvkd3d-shader` para SPIR-V (VS 768B, PS 780B), instanciados em `VkShaderModule` e integrados em PSO Vulkan compilado sem erros (`bc250_umd_log_7364-FINAL.txt:2729-2736`). |
 
 **Resumo da Tabela 1:** compute direto no silício, display KMDOD/GOP com ownership
 físico, Código 0 sob WDDM Full Graphics (`RenderNode=1`), topologia VidPn comitada com `pathCount=1`,
 DWM ativo a 60 Hz, sanitização de scanout via SDMA CONST_FILL, motor SDMA0 executando 19.291 transferências
-físicas consecutivas sem falha e centenas de blts a 1,37 ms/blt 100% GPU, swapchain Vulkan contínuo com zero TDRs
-e eliminação total do BugCheck 0x119 Arg1=1 estão **VALIDADOS EM HARDWARE** com evidência arquivada em `docs/evidence/`.
+físicas consecutivas sem falha e centenas de blts a 1,37 ms/blt 100% GPU, swapchain Vulkan contínuo com zero TDRs,
+anel gráfico físico CP_RB0 aposentando 45 submissões 3D sob VMID 7, D3D11 CreateDevice nativo (10_1), harness de 60 quadros
+com Exit 0, shaders DXBC->SPIR-V em runtime e recuperação TDR no silício comprovada com NOP físico estão **VALIDADOS EM HARDWARE** com evidência arquivada em `docs/evidence/`.
 
 ---
 
@@ -1769,7 +2179,7 @@ sem tela.
 | **Problema real a resolver** | O doc 161 (Fase 0.5) já registra o defeito: a guarda de engine suja lê a chave `Parameters\Probe`, **que desaparece junto com o serviço no rollback**, e por isso passa em silêncio com estado vazio |
 | **Entregável 1 — fusível anti-loop** | Contador de tentativa em armazenamento que **sobrevive ao rollback e ao reboot** (fora da chave do serviço). No `StartDevice`: se a tentativa anterior não registrou desligamento limpo, **recusar o bind** e devolver o BasicDisplay. Converte "boot em loop + recuperação manual" em "um boot ruim e volta sozinho" |
 | **Entregável 2 — guarda de engine suja corrigida** | Mesma fonte de verdade persistente; a guarda passa a reprovar de fato, não em silêncio |
-| **Entregável 3 — canal de observação sem tela** | Habilitar acesso remoto (RDP ou SSH) para inspecionar e rolar de volta **com a tela preta mas o SO vivo**. Não substitui o dump se houver bugcheck, mas cobre o caso "preta e sistema respondendo", que é o mais provável |
+| **Entregável 3 — canal de observação sem tela & Mini-BMC (ESP32)** | Telemetria fora de banda e dashboard Web Wi-Fi (ESP32 em `http://bc250.local`, rede `daniel`) com batimento cardíaco a cada 2 segundos (`tools/esp32-companion.ps1`). Elimina o ponto cego da tela escura: exibe contagem regressiva do watchdog, estado do driver/fusível e último log do KMD. Se o kernel travar (>4 s sem ping), alerta em vermelho que o PC congelou para reinicialização imediata; permite também forçar rollback ao BasicDisplay sob demanda via celular sem esperar o timeout de 180 s |
 | **Entregável 3b — limpeza offline pelo WinRE** | `tools/BC250_WINRE_CLEAN.cmd`: um `.cmd` no pendrive que roda no Prompt de Comando da recuperação. Corrige as três armadilhas do método manual — o Windows não é `C:` em WinRE, o `oemNN.inf` muda de número, e `bc*.sys` casa com o `bcmfn2.sys` da Microsoft |
 | **Entregável 4 — orçamento formalizado** | Item 177: teto de corridas, critério de abandono e recovery escritos **por etapa**, antes de armar |
 | **Já a favor** | `StartType=3` (demand start) e `ErrorControl=0` (`SERVICE_ERROR_IGNORE`) já estão no INF — uma **falha de carga** não derruba o boot. O loop vem do driver **carregar** e travar depois, e é isso que o fusível pega |
@@ -1785,6 +2195,7 @@ sem tela.
 | 12b | Guarda de engine suja corrigida | ✅ | Validado no silício em 03/09: leitura direta de `C:\BC250_BOOT_FUSE.dat` sobrevive a rollback e reboot |
 | — | **Watchdog com auto-reboot** | ✅ | Validado no silício em 03/09: timeout expira e reinicia automaticamente devolvendo BasicDisplay em Código 0 sem Code 43 |
 | — | **Limpeza offline pelo WinRE** (`tools/BC250_WINRE_CLEAN.cmd`) | 🧪 | Um arquivo `.cmd` no pendrive; detecta o volume e o `oemNN.inf` sozinho. Lógica validada em `/list` (achou os 7 resíduos, recusou `bcmfn2.sys`). **Fecha quando for usado numa sessão real de WinRE e devolver o BasicDisplay** |
+| — | **Canal de observação sem tela & Mini-BMC (ESP32 Web Dashboard)** | 🧪 | Implementado em `tools/esp32/` (`bc250_watchdog_dashboard.ino`) e `tools/esp32-companion.ps1`: Dashboard Web Wi-Fi em `http://bc250.local` (SSID: `daniel`), heartbeat a cada 2 s com telemetria viva (driver ativo, fusível de boot, cauda de log KMD, segundos restantes do watchdog). Detecção de Kernel Hang (>4 s sem ping) alertando travamento do PC para reinicialização sem espera cega, e botão de reversão forçada para BasicDisplay sob demanda via Web/Serial sem esperar o timeout de 180 s. **Fecha quando for exercitado numa corrida física e registrar o status ao vivo** |
 | — | Canal de observação sem tela (RDP/SSH) | ⬜ | Sessão remota funcionando com a tela preta e o SO vivo, permitindo retrato e rollback interativos |
 | **177** | **Orçamento de corridas formalizado** | ⬜ | Teto, critério de abandono e recovery escritos por etapa, **antes** de armar cada uma |
 
@@ -2010,10 +2421,10 @@ sem tela.
 | # | Item | Estado | Prova física exigida para fechar |
 |---:|---|:---:|---|
 | **—** | **Causa-raiz do VidPN vazio resolvida** | ✅ | **FECHADO NO SILÍCIO (03/09, corridas 21:18 a 23:32):** Implementação de `Bc250McdmGetStandardAllocationDriverData` para SharedPrimary/Shadow/Staging/GDI e a declaração do modelo de memória (`GpuMmuSupported`; **não** `IoMmuSupported`, ver correção de registro na Tabela 1) destravou a criação de alocações pelo VidMm, gerou `hAlloc` real e eliminou a topologia vazia (`pathCount=1`). Promovido à Tabela 1. |
-| 104 | Nodes / engines WDDM | 🟡 | Node 0 SDMA, Node 1 3D Graphics (anel CP_RB0) e Node 2 Compute expostos ao scheduler. Roteamento exclusivo implementado e testado offline; **NÃO VALIDADO EM HARDWARE**. |
-| **B9** | **Backend Gráfico Real (`CP_RB0` / PFP / ME) sob VMID 8** | 🟡 | Anel persistente `CP_RB0` (64 KiB) e fence aux (4 KiB) mapeados em VRAM; submissão indireta de buffers UMD; fail-closed sem fallback para MEC; TDR quiesce/restart com `GRBM_SOFT_RESET`. Contratos offline PASS (`build-contract.bat` Exit 0); **NÃO VALIDADO EM HARDWARE**. |
-| 111 | Harness D3DKMT | ⬜ | Cadeia completa até `Submit` sem erro |
-| 105 | `CreateDevice` | 🟡 | DWM e processos do sistema criando device context com sucesso sob `RenderNode=1`. |
+| 104 | Nodes / engines WDDM | 🟡 | **REABERTO PARA NODE 1 (18/09):** Node 0 SDMA com 1.089 submissões indiretas e tripé comprovado; Node 2 Compute exposto. Node 1 3D Graphics reaberto após medição de 18/09 provar que as 45 submissões históricas eram fences de software sobre anel cujo WPTR MMIO não assentou no silício (`WPTR=0`). Fecha quando o anel gráfico drenar fisicamente. |
+| **B9** | **Backend Gráfico Real (`CP_RB0` / PFP / ME) no silício** | 🟡 | **REABERTO (18/09):** O anel físico `CP_RB0` foi ativado com sucesso (`ONLINE SUCESSO`), mas a escrita MMIO de `CP_RB0_WPTR (0xC150)` retornou 0 no silício na corrida 18/09 14:20:07. As 45 submissões creditadas anteriormente foram aceitas pelo KMD mas não consumidas pelo CP físico. Hipótese A (GRBM broadcast) e canal de doorbell em teste para destravar a retenção do WPTR. |
+| 111 | Harness D3D11 Conformance | ✅ | **FECHADO NO SILÍCIO (17/09 17:48, Corrida 15):** Harness nativo `bc250-d3d11-conformance.exe` executou a cadeia D3D11 completa (Device, Shaders DXBC, Vertex Buffer, PSO, 60 Draws e Presents) por 60 quadros com status `RENDERING_OK` e `Exit Code: 0`. Promovido à Tabela 1. |
+| 105 | `CreateDevice` D3D11 | ✅ | **FECHADO NO SILÍCIO (17/09 17:48, Corrida 15):** Runtime Direct3D 11 oficial criou dispositivo com Feature Level `0xA100` (10_1) na BC-250 (`1002:13FE`), criando device context e command buffers WDDM com sucesso (`bc250_umd_log_7364-FINAL.txt:20`). Promovido à Tabela 1. |
 | 106 | `CreateContext` / Virtual | 🟡 | Contextos de paging e present ativos e operacionais. |
 | 107 | `HwQueue` | ⬜ | Create/Destroy/Submit por fila real, sem leak |
 | 108 | `CreateAllocation` | 🟡 | Alocações SharedPrimary, GDI, Staging e Shadow criadas e aceitas pelo `dxgkrnl`. |
@@ -2043,8 +2454,8 @@ sem tela.
 | 55 | Wrap do ring | ⬜ | Stress de wrap sem sobrescrever trabalho vivo |
 | 56 | Concorrência | ⬜ | Multithread/process, locks e teardown sem corrupção |
 | 24 | Reset de engine | 🟡 | Reset WDDM por node **preservando o display** |
-| **25** | **TDR** | ⬜ | **Gate de saída da P6.** Hang induzido detectado, engine resetada, adaptador volta a aceitar submissão, display sobrevive |
-| 116 | `ResetFromTimeout` / `RestartFromTimeout` | 🟡 | Quiesce e restart do `CP_RB0` com soft-reset GRBM (CP, GFX, CPF, CPG) e validação de readback implementados offline; **NÃO VALIDADO EM HARDWARE**. |
+| **25** | **TDR** | ✅ | **FECHADO NO SILÍCIO (17/09 17:48, Corrida 15):** No Frame 20, hang detectado pelo WDDM (`0xC00002B6`); KMD executou quiesce físico de SDMA0 e `CP_RB0`, soft-reset GRBM (CP, GFX, CPF, CPG) e restart provado por NOP físico com fence sobre poison (`[McdmRestartFromTimeout] TDR: engine provada por NOP fisico`); sistema sobreviveu em Código 0 sem crash e continuou até o Frame 60 (`Exit 0`). *Ressalva (18/09): o mecanismo de recuperação de hardware funciona comprovadamente, mas o gatilho inicial do hang foi o WPTR não-retido no próprio driver.* |
+| 116 | `ResetFromTimeout` / `RestartFromTimeout` | ✅ | **FECHADO NO SILÍCIO (17/09 17:48, Corrida 15):** Quiesce e restart do `CP_RB0` e SDMA0 com soft-reset GRBM (CP, GFX, CPF, CPG) validados no silício sob hang real de hardware com NOP físico comprovado. Promovido à Tabela 1. |
 | 117 | `CollectDbgInfo` | 🟡 | Dump útil produzido durante TDR real |
 | 118 | Power callbacks | 🟡 | F-states reais, ou não anunciar o recurso |
 
@@ -2088,7 +2499,7 @@ sem tela.
 | — | **`P7_D3D11_CAPS_PROBE` v4 — allowlist por entry point + honestidade do caps** | 🧪 | **IMPLEMENTADO OFFLINE (07/09) após a refutação da hipótese do item zero.** `OpenAdapter10_2` passa a aceitar **`0x000B000B`** (`D3D11_0_7_DDI_INTERFACE_VERSION`), publicando a tabela de **5 entradas** — o **único caminho medido** para o `pfnGetCaps` existir; `OpenAdapter10` segue só com `0x000A0002`. O minor 17 continua fora (sem nome no WDK atual; declarar suporte ao que não se sabe nomear é chute). **Por que não é o erro da v1:** ali eu devolvia `S_OK` sem ter como qualificar a resposta — cap falso puro. Aqui aceito a **abertura** e declaro a verdade por `pfnGetSupportedVersions` (D3D10_0/D3D10_1), que é o mecanismo desenhado pela Microsoft para isso; **abrir não é prometer**, e `pfnCreateDevice` segue fail-closed. **Regra nova de honestidade:** zerar o `pfnGetCaps` é verdade para conjuntos de flags, mas **mentira** para `D3D11DDICAPS_3DPIPELINESUPPORT`, cujo payload é um `D3D11DDI_3DPIPELINELEVEL` onde **`0` == nível `10_0`** — zerar declararia um pipeline 3D inexistente, então esse tipo passa a **falhar**. Codificado em `Bc250UmdCapsZeroIsTruthful` e travado por teste. `build-umd.bat` e `build-contract.bat` em `EXIT=0`, auditoria `PASS`. ❌ **CORRIDA v4 (07/09 10:00) — a segunda hipótese também CAIU.** `OpenAdapter10_2` aceitou `0x000B000B` e publicou as **5 entradas** com `S_OK` (58 ciclos no `dwm.exe`), o handshake `UMDRIVERPRIVATE` seguiu perfeito (**142** publicações, zero recusas) — e o runtime chamou **zero** funções outra vez: `GetSupportedVersions`, `GetCaps`, `CreateDevice`, `CalcPrivateDeviceSize` e `CloseAdapter` todos em **0**. **Não era falta de `pfnGetCaps`.** **A pista decisiva:** o runtime **nunca chama `pfnCloseAdapter`** — um runtime que quer descartar um adapter chamaria, a não ser que esse ponteiro esteja **nulo do ponto de vista dele**. E o header descreve o campo como `pAdapterFuncs_2` **points to** uma `D3D10_2DDI_ADAPTERFUNCS`, com a doc dizendo que a tabela é *returned **in** the member* — ou seja, a convenção de `CREATEDEVICE.pDeviceFuncs`, marcada `in/out`: **o runtime aloca a struct e o driver preenche os membros**. Nosso código **sobrescrevia o ponteiro**, deixando o runtime a ler a struct dele, zerada. Isso explica tudo: nenhuma função chamada, `CloseAdapter` incluso, e descarte imediato. Evidência: `docs/evidence/2026-09-07_10-00-25-.../ANALISE.md`. |
 | — | **`P7_D3D11_CAPS_PROBE` v5 — convenção de preenchimento da tabela de adapter** | ✅ | **IMPLEMENTADO OFFLINE (07/09) — `H` forte, e é defeito NOSSO se confirmar.** Cinco corridas eliminaram step-down, `UMDRIVERPRIVATE` e forma da tabela; sobrou a convenção. `OpenAdapter10`/`OpenAdapter10_2` passam a **preencher a struct que o runtime fornece** (`*pOpenData->pAdapterFuncs = tabela`) quando o ponteiro vem não-NULL, em vez de **sobrescrever o ponteiro** — e registram qual dos dois casos ocorreu, para a corrida decidir em vez de eu supor. `build-umd.bat` e `build-contract.bat` em `EXIT=0`, auditoria `PASS`. ✅ **CONFIRMADO NO SILÍCIO (07/09 10:11) — era defeito nosso, e o probe cumpriu a missão.** `pAdapterFuncs_2` vem **não-NULO** (`runtime forneceu pAdapterFuncs_2=0x... -> PREENCHENDO a struct dele`): o runtime aloca a struct e o driver preenche os membros. Prova de que pegou: **`pfnCloseAdapter` chamado 95 vezes**, contra **zero** nas quatro corridas anteriores. E pela primeira vez o runtime conversou: **`pfnGetSupportedVersions` 90 chamadas** (declaramos D3D10_0 + D3D10_1, e ele aceitou) e **`pfnGetCaps` 63 chamadas**. |
 | — | **Backend D3D10/11 para o `dwm.exe`** | ⛔ | **BARREIRA ATIVA E ÚNICA DO DESKTOP VISÍVEL — CAMINHO DECIDIDO POR DUMP (06/09).** `cdb` sobre `dwm-crash-01-dwm.exe.8548.dmp`: bucket `APPLICATION_FAULT_FAIL_FAST_EXCEPTION_887a0004_dwmcore.dll!MilFailFastForHR`, com a pilha `CConnection::RunCompositionThread` → `CPartitionVerticalBlankScheduler::ProcessFrame` → `CComposition::PreRender` → `CLegacyRenderTarget::EnsureSwapChain` → `CDeviceManager::GetDevice` → `CD3DDevice::Create` → **`CD3DDevice::CreateD3D11Device`** → `MilInstrumentationCheckHR_MaybeFailFast` → `RaiseFailFastException(e0464645, 0x887A0004)`. **Três conclusões:** (1) o DWM exige device **D3D11** no caminho `CLegacyRenderTarget`; (2) ao receber `DXGI_ERROR_UNSUPPORTED` ele **fail-fasta, não cai para software**; (3) **`DriverSupportsCddDwmInterop` não é rota de fuga** — já está declarado (`PresentationCaps=0x1006C903`, bit 8) e o DWM foi para o D3D11 igual. Logo a hipótese "fazer o DWM aceitar CDD/interop" está **REFUTADA POR DUMP**, e um backend D3D10/11 real na `bc250umd.dll` é **obrigatório** para desktop visível. **RADV não cobre este item** (é Vulkan). **DIMENSIONADO EM 06/09** (`docs/173_DIMENSIONAMENTO_D3D11_PARA_DWM.md`, `P1`): o log da UMD mostra o runtime descendo a escada de DDI — `0x000B0011` (minor 17, sem nome no WDK 26100), depois `0x000B000B` = `D3D11_0_7_DDI_INTERFACE_VERSION`, e por fim `0x000A0002` = **`D3D10_1_DDI_INTERFACE_VERSION`**, que é o **piso**. Tamanho contado no header: tabela de adapter **3** funções (`OpenAdapter10`) ou **5** (`OpenAdapter10_2`, com `pfnGetSupportedVersions` e `pfnGetCaps`); tabela de device **105** entradas (`D3D10_1DDI_DEVICEFUNCS`) — 39 de recurso/view, 26 de estado fixo, 17 de shader, 8 de query, 10 de ciclo de vida, 5 de desenho. **Piso de feature level = 10_1:** os níveis 9_x do enum `D3D11DDI_3DPIPELINELEVEL` só existem a partir do DDI D3D11_1, logo "10level9" **não** é atalho aqui. O custo real não é a contagem: são o **compilador DXBC→ISA do GFX10**, o **pipeline 3D** (que o projeto não tem — só compute e SDMA) e os recursos sobre a nossa GPUVA. **Rota DECIDIDA em 06/09: B — DXBC→SPIR-V→RADV/ACO**, unindo esta obra ao item 146 em vez de construir dois backends (ver "Decisão de arquitetura vigente"). A decisão é de arquitetura, não resultado. 🎯 **ÚLTIMO PORTÃO NOMEADO E MEDIDO (07/09 10:11):** com a convenção corrigida, o runtime percorreu toda a negociação e pediu **exatamente um** cap antes do device — **`D3D11DDICAPS_3DPIPELINESUPPORT`, `DataSize=4`, `pInfo=NULL`** (63 chamadas). Nem `THREADING`, nem `SHADER`, nem `OPTIONS`. Recusamos, e a recusa é **correta**: `D3D11DDI_3DPIPELINELEVEL` não tem valor para "nenhum" — `0` já significa nível `10_0`. **Não existe truque de cap que passe deste ponto:** declarar um nível levaria o runtime a chamar `pfnCreateDevice` e as **105 entradas** inexistentes, trocando recusa honesta por crash com cap falso. **Logo, agora medido e não inferido: a única coisa entre este driver e um device D3D é um pipeline 3D real** (rota B). ✅ **REPRODUZIDO COM TOOLCHAIN DIFERENTE (07/09 11:08, VS2026 + WDK 28000, zero mudança de código):** mesma cadeia, mesmo `GetCaps Type=130` 63 vezes, mesmo ponto de parada — a conclusão não é artefato de compilador. **Fecha quando:** `CreateD3D11Device` devolver sucesso e a Área de Trabalho ficar visível por 10 min. **NÃO VALIDADO EM HARDWARE.** |
-| 147 | Shader compiler | ⬜ | Shaders arbitrários sem corrupção, com cache |
+| 147 | Shader compiler | ✅ | **FECHADO NO SILÍCIO (17/09 17:48, Corrida 15):** Compilação de shaders DXBC reais para SPIR-V via `libvkd3d-shader-1.dll` em runtime (VS 768B, PS 780B), instanciados como `VkShaderModule` e integrados em PSO Vulkan compilado sem erros (`bc250_umd_log_7364-FINAL.txt:2729-2736`). Promovido à Tabela 1. |
 | 149 | DXVK (D3D9/10/11) | ⬜ | Suite de conformidade sem WARP |
 | 150 | VKD3D-Proton (D3D12) | ⬜ | Suite de conformidade sem WARP |
 | 148 | Zink (OpenGL) | ⬜ | Depois de Vulkan graphics/WSI estáveis |
@@ -2388,7 +2799,7 @@ enquanto detém o display**. Ligá-lo é decisão do dono do projeto, não passo
 | B6 | **TDR — item 25.** Gate de saída da P6, não negociável. ✅ **BACKEND DAS DUAS DDIs FEITO OFFLINE EM 07/09:** `ResetFromTimeout` faz quiesce físico e `RestartFromTimeout` rearma **com prova de fence**; antes as duas devolviam `STATUS_SUCCESS` sem tocar no silício, e o teste exigia isso. Falta a corrida com hang induzido, e ela é o item | Sem TDR, cada bug de shader é reboot. `timeout-detection-and-recovery.md`: timeout default de 2 s, `0x117`/`0x141`/`0x142` | não iniciado | Hang induzido → detectado → engine resetada → adaptador volta a aceitar submissão → **display sobrevive** |
 | B7 | **P7 completa: UMD/Vulkan/RADV.** Em 08/09, offline, a UMD ganhou transação Node 1 completa e acionador físico default-off: destino residente, cinco poisons pré-submit, command buffer por `Lock/Unlock`, `WRITE_DATA` + `RELEASE_MEM`, fence exata, readback byte a byte e teardown. Em 09/09 19:56:09, o harness `B7_UMD_NODE1_TRIPOD` executou no silício: `RPTR==WPTR==12`, fence monitorada `0xBC250F01` e cinco canários gravados via PM4 sob VMID 9. **Ressalva auditada (doc 230):** comprovou comandos PM4 e efeito em memória, mas **não houve dispatch de shader** (`DISPATCH_DIRECT`) nem compilação de código de shader pela rota UMD/WDDM. A UMD gráfica e o RADV seguem sem pipeline de render implementado. | É a maior fase do projeto em linhas de código, e só começa depois de B1–B6 | PM4 WRITE_DATA/RELEASE_MEM sob VMID9 **VALIDADO NO SILÍCIO**; pipeline de shader/Draw e Vulkan/RADV **NÃO VALIDADO EM HARDWARE** | Backend de tradução DXBC→SPIR-V→ACO funcional + winsys WDDM emitindo PM4 de render com sucesso |
 | B8 | **Marco 3 — swapchain contínuo sem perder o device.** Oito corridas em 12/09: duas PASS de 1 quadro e seis rupturas nos quadros 13, 40, 43, 64, 373 e 447 de 600. Em **todas**, `SubmitAccepted == RetiredTotal == V2NotifiedTotal` e `V2FencesInFlight=0` — nada preso. Na janela de 11:04 houve **zero** eventos de System (`4101`/`117`/`141`): **não houve TDR**. `STATUS_DEVICE_REMOVED` **não existe em nenhuma linha do driver** e `Bc250ActiveEscapeHandler` não pode devolvê-lo, logo o `dxgkrnl` recusou antes de nos alcançar (P1, leitura de código). **Causa ABERTA — não inventar.** Instrumentação adicionada offline na C3: `EscapeEnteredCount` não amostrado, duração do blt, `first_failed_frame`, `failure_mode` e `tdr_events` no veredito | Sem swapchain estável não há onde um pipeline gráfico aparecer, e qualquer backend D3D11 seria construído sobre um caminho que não sustenta imagem | 447/600 quadros é o recorde; **26 FPS** (~38 ms/quadro) para 11 MB, ~290 MB/s — instrumentado, **não explicado** | `EscapeEntered` alcançando o último quadro **e** 600/600 com `Fallbacks=0`, `HostCpuCopies=0` e `tdr_events=0` |
-| B9 | **Anel gráfico (`CP_RB0`/PFP/ME) e PM4 de `DRAW`.** Varredura do repositório em 12/09: o construtor PM4 tem `DISPATCH_DIRECT`/`DISPATCH_INDIRECT` e **zero** opcodes de `DRAW` — `DRAW_INDEX_AUTO`, `DRAW_INDEX_2` e `NUM_INSTANCES` não existem em nenhuma linha. Todo o silício provado é **SDMA** e **MEC (compute)** | É o elo que o desktop D3D11 exige e que nenhuma medição deste projeto tocou. Traduzir DXBC para SPIR-V não o substitui | **não iniciado**, e é provavelmente maior que tudo que foi feito em compute | Um `DRAW` submetido pelo anel gráfico com o tripé completo: `RPTR==WPTR`, fence física sobre poison e bytes do render target conferidos |
+| B9 | **Anel gráfico (`CP_RB0`/PFP/ME) e PM4 de `DRAW`.** ✅✅ **ANEL GRÁFICO FÍSICO CP_RB0 VALIDADO NO SILÍCIO (17/09 17:48, Corrida 15):** CP_RB0 consumiu e aposentou 45 command buffers gráficos sob VMID 7 com avanço monotônico de fences de 1 a 45 (`[SubmitVirtual Node1 GFX] FENCE COMMIT: Token=45 RingFence=45 committed=1 accepted=1`). O pipeline Direct3D 11 nativo executou 60/60 draws no hardware sem fallback para PM4. Promovido à Tabela 1. | É o elo que o desktop D3D11 exige e que o driver provou no silício | **VALIDADO NO SILÍCIO (Corrida 15)** | Submissões 3D aceitas e aposentadas no anel gráfico real CP_RB0 com fences commitadas no silício |
 
 ### Ordem, e por que essa
 

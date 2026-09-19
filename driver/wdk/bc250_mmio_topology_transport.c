@@ -291,6 +291,20 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == 0x0003E138u || ByteOffset == 0x0003E13Cu ||
         ByteOffset == 0x00008008u || ByteOffset == 0x00008010u ||
         ByteOffset == 0x00008020u ||
+        /*
+         * 19/09: sonda do ponto de parada do CP grafico, SOMENTE LEITURA.
+         * Offsets derivados de inc/linux_ref/gc_10_1_0_offset.h pela regra de
+         * docs/03; a justificativa completa esta em
+         * driver/core/bc250_gfx_ring_transaction.h. Nenhum deles esta na
+         * allowlist de ESCRITA, e isso e' deliberado.
+         */
+        ByteOffset == 0x00008014u || ByteOffset == 0x00008018u ||
+        ByteOffset == 0x00008684u || ByteOffset == 0x00008688u ||
+        ByteOffset == 0x00008C24u ||
+        /* SQ_IND_DATA: janela de leitura indireta da sonda de onda (19/09). */
+        ByteOffset == 0x00008DE4u ||
+        ByteOffset == 0x00030330u || ByteOffset == 0x00030334u ||
+        ByteOffset == 0x00030338u ||
         ByteOffset == 0x00008680u || ByteOffset == 0x00008694u ||
         ByteOffset == 0x00008698u ||
         ByteOffset == BC250_GRBM_GFX_CNTL_BYTE_OFFSET ||
@@ -433,7 +447,14 @@ static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == BC250_HQD_MMIO_PQ_WPTR_HI ||
         ByteOffset == 0x00030100u ||
         ByteOffset == 0x000086A0u ||
-        ByteOffset == 0x0000A4B0u || ByteOffset == 0x00030800u;
+        ByteOffset == 0x0000A4B0u || ByteOffset == 0x00030800u ||
+        /*
+         * SQ_IND_INDEX -- UNICA escrita nova de 19/09, e ela e um SELETOR:
+         * nao altera estado de engine, so escolhe qual registrador de onda o
+         * SQ_IND_DATA devolve. A sonda que a usa restaura GRBM_GFX_INDEX para
+         * broadcast com readback e devolve SELECTOR_STUCK se nao conseguir.
+         */
+        ByteOffset == 0x00008DE0u;
 }
 
 uint32_t Bc250MmioTopologyRead32(

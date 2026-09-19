@@ -1,0 +1,51 @@
+﻿=== PACKAGE LAB ASSINADO (perfil DISPLAY_RENDER_LAB, contrato 27) ===
+PACKAGE EXIT = 0
+  (sem falhas)
+--- cauda ---
+  Errors:
+  None
+  
+  Warnings:
+  None
+  
+  Catalog generation complete.
+  C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab\bc250mcdm.cat
+  Done Adding Additional Store
+  Successfully signed: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab\bc250mcdm.cat
+  
+  Pacote MCDM de LABORATORIO construido: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab
+  Manifesto de build: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab.manifest.json
+  NAO VALIDADO EM HARDWARE; imagem de laboratorio com bring-up ativo.
+
+=== AUDITORIA DE PACOTE ===
+  audit-package-readiness.py EXIT = 0
+      OK: Descritor INF 'Class=ComputeAccelerator' verificado
+      OK: Descritor INF 'PCI\VEN_1002&DEV_13FE' verificado
+      OK: Descritor INF 'bc250readonly.sys' verificado
+    [AUDIT] Veredito de Seguranca do Pacote:
+      - Zero mutacao acidental de hardware
+      - Todas as chamadas de inicializacao operam em modo fail-closed
+      - Veredito: NAO VALIDADO EM HARDWARE
+    AUDITORIA DE PRONTIDAO GLOBAL: SUCESSO
+
+=== AUDITORIA DE SEGURANCA ===
+  EXIT = 0
+    BC250 MCDM SAFETY AUDIT: PASS
+
+=== MANIFESTO NOVO ===
+  DriverVer                    09/18/2026,3.184.1.0
+  BuildKind                    MCDM_LAB_BRINGUP
+  ProfileMode                  DISPLAY_RENDER_LAB
+  WddmContractVersion          27
+  RenderNode                   1
+  RenderOnlyLab                0
+  ShaderDispatchEnabled        True
+  PersistentSubmissionEnabled  True
+  TelemetrySchemaVersion       135
+  SourceSysSha256              E062D85CD82279657AEC77A48287ED380EAA52FC09AE2C14628039B6539A4319
+  PackageSysSha256             E7E7A3B2D11C9B679543DE577C34C3F9A486B6B3A4ABF810D927B271A4FC7FA0
+  SourceUmdSha256              076415C6E2AE6D4069D5DDC8AA3D1BCFFD657C56AE350B5F063003EF080767CF
+  PackageUmdSha256             473EE3E8A311CB5EF753ED0CDEC583856132392655FF0001DCCA846FEA1CBF28
+  PackageInfSha256             9D1611ED1F902D79621EFC123BC7EF84BBB3F9701A7E5299E5C527FB03CA6A26
+  PackageCatSha256             F09D0BD45C1C24A62C9008491805C23C65A478F58FBA66AE48E3AA5EE386D627
+  Verdict                      NAO VALIDADO EM HARDWARE

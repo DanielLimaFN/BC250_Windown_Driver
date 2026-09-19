@@ -1832,6 +1832,8 @@ void Bc250WddmFenceTrackerReset(
     Tracker->OverflowCount = 0u;
     Tracker->OutOfOrderCount = 0u;
     Tracker->LastPushedRingFence = 0ull;
+    Tracker->LastPushedRingFenceByNode[0] = 0ull;
+    Tracker->LastPushedRingFenceByNode[1] = 0ull;
     Tracker->LastNotifiedFenceId = 0u;
     Tracker->LastNotifiedFenceIdByNode[0] = 0u;
     Tracker->LastNotifiedFenceIdByNode[1] = 0u;
@@ -2067,7 +2069,9 @@ static BOOLEAN Bc250WddmFenceTrackerCommitUnlocked(
                 if (Tracker->ReservedCount > 0u) --Tracker->ReservedCount;
                 return FALSE;
             }
-            if (Tracker->PushedTotal != 0u && RingFence <= Tracker->LastPushedRingFence) {
+            uint32_t nodeIdx = (res->NodeOrdinal < 2u) ? res->NodeOrdinal : 0u;
+            if (Tracker->LastPushedRingFenceByNode[nodeIdx] != 0ull &&
+                RingFence <= Tracker->LastPushedRingFenceByNode[nodeIdx]) {
                 ++Tracker->OutOfOrderCount;
                 res->Active = 0u;
                 if (Tracker->ReservedCount > 0u) --Tracker->ReservedCount;
@@ -2091,6 +2095,7 @@ static BOOLEAN Bc250WddmFenceTrackerCommitUnlocked(
             ++Tracker->Count;
             ++Tracker->PushedTotal;
             Tracker->LastPushedRingFence = RingFence;
+            Tracker->LastPushedRingFenceByNode[nodeIdx] = RingFence;
             return TRUE;
         }
     }

@@ -27,10 +27,13 @@ fora da prioridade P9. Leitura é permitida.
 ### Onde estamos, de verdade
 O adaptador WDDM **alcançou Código 0 em 02/09/2026** com `DRIVERCAPS`, `QUERYSEGMENT4`,
 Paging Context e VidPn ativos no silício por 121 s (itens 97 e 102 fechados com evidência
-arquivada). O compute direto e o display KMDOD/GOP também estão provados no silício.
-A corrida de produção de 07/09 16:19 chegou a Código 0, MMU global ativa, CommitVidPn e
-12 Present, mas a primária ficou zerada e o DWM fail-fastou com `0x887A0004` porque a UMD
-não tem backend D3D10/11. O próximo bloqueador é o IB WDDM real, seguido do backend D3D.
+arquivada). O compute direto, display KMDOD/GOP e SDMA0 com tripé completo estão provados no silício.
+O anel gráfico físico `CP_RB0` (Node 1 GFX) foi ativado e na Corrida 13 (17/09 15:12) consumiu
+e aposentou 16 submissões 3D no silício sob VMID 7 com avanço de fences (Fences 1..16). A tela preta
+na apresentação foi isolada na UMD (desconexão entre render PM4 WDDM e cópia de textura vazia da bridge
+para o scanout). As correções na UMD (harmonização de apresentação PM4 vs Vulkan), no harness D3D11
+(`BufferCount = 1`, ordem do `OMSetRenderTargets`) e RTV clamping foram implementadas, compiladas e
+empacotadas offline em `output_lab`, prontas para validação física na Corrida 14.
 
 ---
 

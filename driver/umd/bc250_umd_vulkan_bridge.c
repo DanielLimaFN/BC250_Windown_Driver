@@ -298,6 +298,8 @@ static BOOL Bc250UmdVkBridgeInitInternal(_Out_ BC250_UMD_VK_BRIDGE *pBridge)
     LOAD_VK_DEV(vkBindImageMemory);
     LOAD_VK_DEV(vkMapMemory);
     LOAD_VK_DEV(vkUnmapMemory);
+    LOAD_VK_DEV(vkInvalidateMappedMemoryRanges);
+    LOAD_VK_DEV(vkFlushMappedMemoryRanges);
     LOAD_VK_DEV(vkCreateRenderPass);
     LOAD_VK_DEV(vkDestroyRenderPass);
     LOAD_VK_DEV(vkCreateFramebuffer);
@@ -384,6 +386,13 @@ static BOOL Bc250UmdVkBridgeInitInternal(_Out_ BC250_UMD_VK_BRIDGE *pBridge)
         pBridge->pfnPresentScanout ? "PRESENTE" : "AUSENTE",
         (void*)pBridge->pfnPresentScanout);
 
+    /* Checar presenca de radv_bc250_get_memory_gpu_va exportado pelo ICD */
+    pBridge->pfnGetMemoryGpuVa = (PFN_radv_bc250_get_memory_gpu_va)(void*)
+        GetProcAddress(pBridge->hIcdModule, "radv_bc250_get_memory_gpu_va");
+    Bc250VkTrace("[VK_BRIDGE] radv_bc250_get_memory_gpu_va: %s (%p)",
+        pBridge->pfnGetMemoryGpuVa ? "PRESENTE" : "AUSENTE",
+        (void*)pBridge->pfnGetMemoryGpuVa);
+
     pBridge->Initialized = TRUE;
     pBridge->DeviceActive = TRUE;
     pBridge->RecordingActive = FALSE;
@@ -438,6 +447,7 @@ VOID Bc250UmdVkBridgeShutdown(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
     }
 
     pBridge->pfnPresentScanout = NULL;
+    pBridge->pfnGetMemoryGpuVa = NULL;
     pBridge->Initialized = FALSE;
     pBridge->DeviceActive = FALSE;
     pBridge->RecordingActive = FALSE;
@@ -632,7 +642,7 @@ VkFormat Bc250UmdVkFormatFromDxgi(uint32_t dxgiFormat)
     case 91: /* DXGI_FORMAT_B8G8R8X8_UNORM_SRGB */
         return VK_FORMAT_B8G8R8A8_UNORM;
     default:
-        return VK_FORMAT_R32G32B32A32_SFLOAT;
+        return VK_FORMAT_B8G8R8A8_UNORM;
     }
 }
 
@@ -644,16 +654,29 @@ BOOL Bc250UmdVkEnsureLinearPresentBuf(
     if (pBridge == NULL || !pBridge->DeviceActive || pBridge->Device == VK_NULL_HANDLE) {
         return FALSE;
     }
-    if (pBridge->LinearPresentCreated && pBridge->LinearPresentBuf != VK_NULL_HANDLE) {
-        return TRUE;
-    }
 
     VkDeviceSize requiredSize = (VkDeviceSize)width * height * 4;
     if (requiredSize == 0) requiredSize = (VkDeviceSize)2560 * 1080 * 4;
 
+    if (pBridge->LinearPresentCreated && pBridge->LinearPresentBuf != VK_NULL_HANDLE) {
+        if (pBridge->LinearPresentSize >= requiredSize) {
+            return TRUE;
+        }
+        Bc250VkTrace("[VK_BRIDGE] Redimensionando LinearPresentBuf: atual=%llu, necessario=%llu",
+            (unsigned long long)pBridge->LinearPresentSize, (unsigned long long)requiredSize);
+        if (pBridge->vk.vkDeviceWaitIdle != NULL) {
+            pBridge->vk.vkDeviceWaitIdle(pBridge->Device);
+        }
+        pBridge->vk.vkDestroyBuffer(pBridge->Device, pBridge->LinearPresentBuf, NULL);
+        pBridge->LinearPresentBuf = VK_NULL_HANDLE;
+        pBridge->vk.vkFreeMemory(pBridge->Device, pBridge->LinearPresentMem, NULL);
+        pBridge->LinearPresentMem = VK_NULL_HANDLE;
+        pBridge->LinearPresentCreated = FALSE;
+    }
+
     VkBufferCreateInfo linearBufInfo = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     linearBufInfo.size = requiredSize;
-    linearBufInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    linearBufInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     linearBufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     VkResult res = pBridge->vk.vkCreateBuffer(pBridge->Device, &linearBufInfo, NULL, &pBridge->LinearPresentBuf);
@@ -664,9 +687,43 @@ BOOL Bc250UmdVkEnsureLinearPresentBuf(
 
     VkMemoryRequirements memReqs = {0};
     pBridge->vk.vkGetBufferMemoryRequirements(pBridge->Device, pBridge->LinearPresentBuf, &memReqs);
-    uint32_t memType = Bc250UmdVkFindMemoryType(pBridge, memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    /*
+     * ESCOLHA DE MEMORIA -- e por que o rebaixamento nao pode mais ser silencioso.
+     *
+     * Medido na corrida 2026-09-18 13:12: o buffer saiu com memType=2 e a
+     * inspecao de pixel falhou 128 vezes com "vkMapMemory retornou -5"
+     * (VK_ERROR_MEMORY_MAP_FAILED). A mensagem culpava o mapeamento, mas a causa
+     * estava AQUI: a primeira opcao (HOST_VISIBLE|HOST_COHERENT) nao foi
+     * atendida e a cadeia caiu para DEVICE_LOCAL, que nao e' mapeavel pela CPU.
+     * O resultado pratico foi perder a Perna 3 do tripe -- a unica que confere
+     * bytes -- sem que nada no log dissesse que a decisao de alocacao tinha sido
+     * rebaixada.
+     *
+     * A cadeia de fallback CONTINUA, de proposito: recusar a alocacao mataria o
+     * caminho de apresentacao inteiro, o que e' pior do que apresentar sem poder
+     * inspecionar. O que muda e' que o nivel escolhido passa a ser declarado, e
+     * a perda de inspecionabilidade e' anunciada no momento em que acontece.
+     */
+    uint32_t memType = Bc250UmdVkFindMemoryType(
+        pBridge, memReqs.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    const char *memTier = "HOST_VISIBLE|HOST_COHERENT";
+    BOOL memHostVisible = TRUE;
+    if (memType == UINT32_MAX) {
+        memType = Bc250UmdVkFindMemoryType(pBridge, memReqs.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+        memTier = "HOST_VISIBLE (sem HOST_COHERENT)";
+    }
+    if (memType == UINT32_MAX) {
+        memType = Bc250UmdVkFindMemoryType(pBridge, memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        memTier = "DEVICE_LOCAL -- NAO MAPEAVEL PELA CPU";
+        memHostVisible = FALSE;
+    }
     if (memType == UINT32_MAX) {
         memType = Bc250UmdVkFindMemoryType(pBridge, memReqs.memoryTypeBits, 0);
+        memTier = "QUALQUER TIPO -- inspecionabilidade DESCONHECIDA";
+        memHostVisible = FALSE;
     }
 
     VkMemoryAllocateInfo memAlloc = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
@@ -693,8 +750,61 @@ BOOL Bc250UmdVkEnsureLinearPresentBuf(
 
     pBridge->LinearPresentSize = memReqs.size;
     pBridge->LinearPresentCreated = TRUE;
-    Bc250VkTrace("[VK_BRIDGE] LinearPresentBuf LAZY criado com sucesso (%llu bytes, mem=%p)",
-        (unsigned long long)memReqs.size, (void*)pBridge->LinearPresentMem);
+    Bc250VkTrace("[VK_BRIDGE] LinearPresentBuf LAZY criado com sucesso (%llu bytes, mem=%p, memType=%u, nivel=%s)",
+        (unsigned long long)memReqs.size, (void*)pBridge->LinearPresentMem,
+        memAlloc.memoryTypeIndex, memTier);
+    if (!memHostVisible) {
+        Bc250VkTrace("[VK_BRIDGE] AVISO LinearPresentBuf: memoria NAO e' host-visible (nivel=%s). "
+                     "A INSPECAO LINEAR_BUF vai falhar com VK_ERROR_MEMORY_MAP_FAILED (-5) por DECISAO DE ALOCACAO, "
+                     "nao por defeito de mapeamento. A Perna 3 do tripe fica sem medicao nesta sessao.",
+            memTier);
+    }
     return TRUE;
 }
+
+uint32_t Bc250UmdVkInspectLinearPresentBuf(
+    _Inout_ BC250_UMD_VK_BRIDGE *pBridge,
+    uint32_t width,
+    uint32_t height)
+{
+    uint32_t nonZeroSamples = 0;
+    if (pBridge == NULL || !pBridge->DeviceActive || pBridge->LinearPresentMem == VK_NULL_HANDLE ||
+        pBridge->vk.vkMapMemory == NULL || pBridge->vk.vkUnmapMemory == NULL) {
+        return 0;
+    }
+
+    void *mapped = NULL;
+    VkDeviceSize checkSize = (VkDeviceSize)width * height * 4;
+    if (checkSize == 0 || checkSize > pBridge->LinearPresentSize) checkSize = pBridge->LinearPresentSize;
+
+    VkResult res = pBridge->vk.vkMapMemory(pBridge->Device, pBridge->LinearPresentMem, 0, VK_WHOLE_SIZE, 0, &mapped);
+    if (res == VK_SUCCESS && mapped != NULL) {
+        if (pBridge->vk.vkInvalidateMappedMemoryRanges != NULL) {
+            VkMappedMemoryRange range;
+            memset(&range, 0, sizeof(range));
+            range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+            range.memory = pBridge->LinearPresentMem;
+            range.offset = 0;
+            range.size = VK_WHOLE_SIZE;
+            pBridge->vk.vkInvalidateMappedMemoryRanges(pBridge->Device, 1, &range);
+        }
+        const uint32_t *pWords = (const uint32_t *)mapped;
+        uint32_t centerIdx = (height > 0 && width > 0) ? ((height / 2) * width + (width / 2)) : 0;
+        uint32_t s0 = pWords[0];
+        uint32_t s1 = (checkSize >= 8) ? pWords[1] : 0;
+        uint32_t s2 = (checkSize >= 12) ? pWords[2] : 0;
+        uint32_t s3 = (checkSize >= 16) ? pWords[3] : 0;
+        uint32_t sc = (centerIdx < (checkSize / 4)) ? pWords[centerIdx] : 0;
+        nonZeroSamples = (s0 != 0) + (s1 != 0) + (s2 != 0) + (s3 != 0) + (sc != 0);
+
+        Bc250VkTrace("[VK_BRIDGE] INSPECAO LINEAR_BUF: Px0..3=[0x%08X 0x%08X 0x%08X 0x%08X] Center(%u,%u)=0x%08X NonZeroSamples=%u/5",
+            s0, s1, s2, s3, width / 2, height / 2, sc, nonZeroSamples);
+
+        pBridge->vk.vkUnmapMemory(pBridge->Device, pBridge->LinearPresentMem);
+    } else {
+        Bc250VkTrace("[VK_BRIDGE] INSPECAO LINEAR_BUF: vkMapMemory retornou %d (memoria nao host-visible ou ocupada)", res);
+    }
+    return nonZeroSamples;
+}
+
 

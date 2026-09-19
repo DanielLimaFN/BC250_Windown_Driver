@@ -274,6 +274,22 @@ typedef struct BC250_GFX_ENGINE {
     uint64_t WptrPollGpuVa;
     volatile uint32_t *WptrPollCpuVirtual;
 
+    /*
+     * D0.2 -- MOTIVO DA ULTIMA RECUSA, registrado barato.
+     *
+     * Duas escritas de campo, nada mais. Existe porque a primeira versao da
+     * medicao de recusa emitia o veredito de DENTRO do submit, com a reserva de
+     * fence do WDDM ainda de pe -- e isso alargou a janela em que o StopDevice
+     * observa reservedCount != 0, reprovando deterministicamente o Caso 5 de
+     * active_miniport_test (exit 651). Atribuicao confirmada por build de
+     * isolamento.
+     *
+     * O ponteiro e' um literal de string estatico do proprio driver, nunca
+     * memoria de terceiros, e por isso guardar o ponteiro e' seguro.
+     */
+    const char *LastRefusalReason;
+    uint32_t LastRefusalCursor;
+
     uint64_t FenceGpuVa;
     volatile uint32_t *FenceCpuVirtual;
 
@@ -381,6 +397,15 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
      */
     uint32_t TdrInduceHang;
     uint32_t TdrInduceHangPresent;
+    /*
+     * GfxWaveProbe -- 19/09, depois da Corrida 35. Default 0, fail-closed.
+     * Arma a inspecao indireta de onda no quiesce do TDR. E a UNICA parte da
+     * faixa que escreve registrador (GRBM_GFX_INDEX e SQ_IND_INDEX, ambos
+     * seletores), por isso nao entra ligada por conta propria: armar e decisao
+     * do dono do projeto, como em TdrInduceHang.
+     */
+    uint32_t GfxWaveProbe;
+    uint32_t GfxWaveProbePresent;
     volatile LONG TdrHangInduced;
     uint32_t SdmaEarlyClkUngate;
     uint32_t ShaderDispatch;
@@ -545,7 +570,8 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
      * Trocar por interrupcao real e' item posterior deste roadmap.
      */
     KTIMER RetirementTimer;
-    KDPC RetirementDpc;
+    KDPC RetirementTimerDpc;
+    KDPC RetirementNotifyDpc;
     volatile LONG RetirementTimerInitialized;
     volatile LONG RetirementTimerRunning;
     uint32_t RetirementDpcRuns;
@@ -555,11 +581,14 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     uint32_t RetirementPushFailures;
     uint32_t RetirementBackpressure;
     uint32_t InterruptsSeen;
+    volatile LONG RetireBusy;
+    volatile LONG DpcNotifyPending;
 
     /*
      * Submissao e aposentadoria assincrona do No 0 (SDMA) -- elimina BugCheck 0x133.
      */
     KTIMER SdmaRetirementTimer;
+    KDPC SdmaRetirementTimerDpc;
     KDPC SdmaRetirementDpc;
     volatile LONG SdmaRetirementTimerInitialized;
     volatile LONG SdmaRetirementTimerRunning;

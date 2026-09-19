@@ -1,8 +1,0 @@
-﻿{
-    "attempted_at":  "2026-09-01T21:57:09.9529210-03:00",
-    "attempt_number":  1,
-    "boot_ticks":  639239064205000000,
-    "observed_service":  "bc250mcdm",
-    "observed_code":  43,
-    "reason":  "ausencia de confirmacao explicita; qualquer Codigo, inclusive 39/43, exige rollback"
-}

@@ -1,7 +1,0 @@
-﻿
-Algorithm Hash                                                             Path                    
---------- ----                                                             ----                    
-SHA256    F45B3751A27651DC1DA002EE0587668628A15025A4EDB88B505B4F3D2BAB3764 C:\Windows\MEMORY.DMP   
-SHA256    6A817E725399CED96465F10CD674FD7BBFC7D76F7B26162FACCEEF10F2557956 C:\BC250_DISPLAY_LOG.txt
-
-

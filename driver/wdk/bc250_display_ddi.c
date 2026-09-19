@@ -2443,6 +2443,17 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddress(
         pSetVidPnSourceAddress->ContextCount,
         *(CONST ULONG *)&pSetVidPnSourceAddress->Flags);
 
+    if (pSetVidPnSourceAddress->PrimarySegment == 1 && g_Bc250SdmaPresent.HardwareEnabled && g_Bc250SdmaPresent.ScanoutGpuAddress != 0) {
+        uint64_t srcGpu = g_Bc250SdmaPresent.VramMcStart + pSetVidPnSourceAddress->PrimaryAddress.QuadPart;
+        ULONG bytesToCopy = g_Bc250DisplayState.CurrentMode.Pitch * g_Bc250DisplayState.CurrentMode.Height;
+        if (bytesToCopy == 0 || bytesToCopy > g_Bc250DisplayState.FrameBufferSize) {
+            bytesToCopy = g_Bc250DisplayState.FrameBufferSize;
+        }
+        if (srcGpu != g_Bc250SdmaPresent.ScanoutGpuAddress && bytesToCopy > 0) {
+            (void)Bc250SdmaPresentBlt(srcGpu, g_Bc250SdmaPresent.ScanoutGpuAddress, bytesToCopy);
+        }
+    }
+
     return STATUS_SUCCESS;
 }
 
@@ -2478,6 +2489,16 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay(
                 pPlane0->AllocationAddress.QuadPart,
                 pPlane0->hAllocation,
                 pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount);
+            if (pPlane0->AllocationSegment == 1 && g_Bc250SdmaPresent.HardwareEnabled && g_Bc250SdmaPresent.ScanoutGpuAddress != 0) {
+                uint64_t srcGpu = g_Bc250SdmaPresent.VramMcStart + pPlane0->AllocationAddress.QuadPart;
+                ULONG bytesToCopy = g_Bc250DisplayState.CurrentMode.Pitch * g_Bc250DisplayState.CurrentMode.Height;
+                if (bytesToCopy == 0 || bytesToCopy > g_Bc250DisplayState.FrameBufferSize) {
+                    bytesToCopy = g_Bc250DisplayState.FrameBufferSize;
+                }
+                if (srcGpu != g_Bc250SdmaPresent.ScanoutGpuAddress && bytesToCopy > 0) {
+                    (void)Bc250SdmaPresentBlt(srcGpu, g_Bc250SdmaPresent.ScanoutGpuAddress, bytesToCopy);
+                }
+            }
         }
     }
 
@@ -2493,14 +2514,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiCheckMultiPlaneOverlaySupport(
         return STATUS_INVALID_PARAMETER;
     }
     pCheckMultiPlaneOverlaySupport->ReturnInfo.Value = 0;
-    if (pCheckMultiPlaneOverlaySupport->PlaneCount <= 1u) {
-        pCheckMultiPlaneOverlaySupport->Supported = TRUE;
-    } else {
-        pCheckMultiPlaneOverlaySupport->Supported = FALSE;
-    }
-    Bc250DisplayLog("=== CheckMultiPlaneOverlaySupport (Planes=%u, Supported=%d) ===\n",
-        pCheckMultiPlaneOverlaySupport->PlaneCount,
-        (int)pCheckMultiPlaneOverlaySupport->Supported);
+    pCheckMultiPlaneOverlaySupport->Supported = FALSE;
+    Bc250DisplayLog("=== CheckMultiPlaneOverlaySupport (Planes=%u, Supported=0 [DISABLED]) ===\n",
+        pCheckMultiPlaneOverlaySupport->PlaneCount);
     return STATUS_SUCCESS;
 }
 #endif
@@ -2552,14 +2568,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiCheckMultiPlaneOverlaySupport2(
         return STATUS_INVALID_PARAMETER;
     }
     pCheckMultiPlaneOverlaySupport->ReturnInfo.Value = 0;
-    if (pCheckMultiPlaneOverlaySupport->PlaneCount <= 1u) {
-        pCheckMultiPlaneOverlaySupport->Supported = TRUE;
-    } else {
-        pCheckMultiPlaneOverlaySupport->Supported = FALSE;
-    }
-    Bc250DisplayLog("=== CheckMultiPlaneOverlaySupport2 (Planes=%u, Supported=%d) ===\n",
-        pCheckMultiPlaneOverlaySupport->PlaneCount,
-        (int)pCheckMultiPlaneOverlaySupport->Supported);
+    pCheckMultiPlaneOverlaySupport->Supported = FALSE;
+    Bc250DisplayLog("=== CheckMultiPlaneOverlaySupport2 (Planes=%u, Supported=0 [DISABLED]) ===\n",
+        pCheckMultiPlaneOverlaySupport->PlaneCount);
     return STATUS_SUCCESS;
 }
 #endif
@@ -2602,6 +2613,16 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay3(
                     pCtx->SegmentAddress.QuadPart,
                     pCtx->hAllocation,
                     pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount);
+                if (pCtx->SegmentId == 1 && g_Bc250SdmaPresent.HardwareEnabled && g_Bc250SdmaPresent.ScanoutGpuAddress != 0) {
+                    uint64_t srcGpu = g_Bc250SdmaPresent.VramMcStart + pCtx->SegmentAddress.QuadPart;
+                    ULONG bytesToCopy = g_Bc250DisplayState.CurrentMode.Pitch * g_Bc250DisplayState.CurrentMode.Height;
+                    if (bytesToCopy == 0 || bytesToCopy > g_Bc250DisplayState.FrameBufferSize) {
+                        bytesToCopy = g_Bc250DisplayState.FrameBufferSize;
+                    }
+                    if (srcGpu != g_Bc250SdmaPresent.ScanoutGpuAddress && bytesToCopy > 0) {
+                        (void)Bc250SdmaPresentBlt(srcGpu, g_Bc250SdmaPresent.ScanoutGpuAddress, bytesToCopy);
+                    }
+                }
             }
         }
     }
@@ -2618,14 +2639,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiCheckMultiPlaneOverlaySupport3(
         return STATUS_INVALID_PARAMETER;
     }
     pCheckMultiPlaneOverlaySupport->ReturnInfo.Value = 0;
-    if (pCheckMultiPlaneOverlaySupport->PlaneCount <= 1u) {
-        pCheckMultiPlaneOverlaySupport->Supported = TRUE;
-    } else {
-        pCheckMultiPlaneOverlaySupport->Supported = FALSE;
-    }
-    Bc250DisplayLog("=== CheckMultiPlaneOverlaySupport3 (Planes=%u, Supported=%d) ===\n",
-        pCheckMultiPlaneOverlaySupport->PlaneCount,
-        (int)pCheckMultiPlaneOverlaySupport->Supported);
+    pCheckMultiPlaneOverlaySupport->Supported = FALSE;
+    Bc250DisplayLog("=== CheckMultiPlaneOverlaySupport3 (Planes=%u, Supported=0 [DISABLED]) ===\n",
+        pCheckMultiPlaneOverlaySupport->PlaneCount);
     return STATUS_SUCCESS;
 }
 
@@ -3252,13 +3268,28 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
          * replace the previous frame through the same GPU copy path.
          */
         {
+            BOOLEAN isSubWindow = FALSE;
+            ULONG presentW = g_Bc250DisplayState.CurrentMode.Width;
+            ULONG presentH = g_Bc250DisplayState.CurrentMode.Height;
+            LONG rectW = pPresent->SrcRect.right - pPresent->SrcRect.left;
+            LONG rectH = pPresent->SrcRect.bottom - pPresent->SrcRect.top;
+
+            if (rectW > 0 && rectH > 0 &&
+                ((ULONG)rectW < presentW || (ULONG)rectH < presentH)) {
+                isSubWindow = TRUE;
+                presentW = (ULONG)rectW;
+                presentH = (ULONG)rectH;
+            }
+
+            ULONG requiredSrcBytes = isSubWindow ? (presentW * presentH * 4u) : scanoutBytes;
             ULONG srcNz = 0u, srcHx = 0u;
-            (void)Bc250DisplaySampleSurface(srcPhysical, scanoutBytes, 256u, &srcNz, &srcHx);
+            (void)Bc250DisplaySampleSurface(srcPhysical, requiredSrcBytes, 256u, &srcNz, &srcHx);
             UINT64 effectiveSrcPhys = srcPhysical;
 
             if (effectiveSrcPhys != 0ull && (count <= 10 || (count % 60) == 0)) {
-                Bc250DisplayLog("[Present #%d] ROTEAMENTO AO SCANOUT: VramOff=0x%llX (NonZero=%u/256 Hash=0x%08X)\n",
-                    count, effectiveSrcPhys, srcNz, srcHx);
+                Bc250DisplayLog("[Present #%d] ROTEAMENTO AO SCANOUT: VramOff=0x%llX (NonZero=%u/256 Hash=0x%08X, Dim=%ux%u%s)\n",
+                    count, effectiveSrcPhys, srcNz, srcHx, presentW, presentH,
+                    isSubWindow ? " SUBWINDOW" : "");
             }
 
             static int s_TileProbeCount = 0;
@@ -3270,9 +3301,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                 s_TileProbeCount++;
             }
 
-            if (effectiveSrcPhys != 0 && scanoutBytes > 0 &&
+            if (effectiveSrcPhys != 0 && requiredSrcBytes > 0 &&
                 effectiveSrcPhys <= g_Bc250DisplayState.FrameBufferSize &&
-                scanoutBytes <= g_Bc250DisplayState.FrameBufferSize - effectiveSrcPhys) {
+                requiredSrcBytes <= g_Bc250DisplayState.FrameBufferSize - effectiveSrcPhys) {
                 BOOLEAN sdmaDone = FALSE;
                 uint64_t srcGpu = g_Bc250SdmaPresent.VramMcStart + effectiveSrcPhys;
                 uint64_t dstScanoutGpu = g_Bc250SdmaPresent.ScanoutGpuAddress;
@@ -3284,84 +3315,122 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                         Bc250DisplayLog("[Present #%d] Blt acionado por sub-retangulo parcial nao-nulo (NonZero=0/256, SubRect=0x%08X @ 0x%llX)\n",
                             count, subRectCenterSample, effectiveSrcPhys);
                     }
-                    if (g_Bc250SdmaPresent.HardwareEnabled && dstScanoutGpu != 0 && srcGpu != dstScanoutGpu) {
-                        sdmaDone = Bc250SdmaPresentBlt(srcGpu, dstScanoutGpu, scanoutBytes);
+                    BOOLEAN skipBlankUnderEscape = (srcNz == 0u && subRectCenterSample == 0u &&
+                        (g_Bc250SdmaPresent.EscapeNonZeroBltCount > 0 || g_Bc250SdmaPresent.EscapeEnteredCount > 0 || count <= 5));
+                    if (skipBlankUnderEscape) {
+                        sdmaDone = TRUE;
+                        if (count <= 10 || (count % 60) == 0) {
+                            Bc250DisplayLog("[Present #%d] SCANOUT ESCAPE ATIVO: DWM em branco suprimido, scanout mantido para aplicacao (EscapeNonZero=%ld EscapeTotal=%ld InitPreserve=%d)\n",
+                                count, (long)g_Bc250SdmaPresent.EscapeNonZeroBltCount, (long)g_Bc250SdmaPresent.EscapeEnteredCount, (count <= 5));
+                        }
+                    } else if (g_Bc250SdmaPresent.HardwareEnabled && dstScanoutGpu != 0 && srcGpu != dstScanoutGpu) {
+                        if (isSubWindow) {
+                            ULONG srcPitch = presentW * 4u;
+                            ULONG dstPitch = g_Bc250DisplayState.CurrentMode.Pitch;
+                            ULONG dstX = (g_Bc250DisplayState.CurrentMode.Width > presentW) ?
+                                         ((g_Bc250DisplayState.CurrentMode.Width - presentW) / 2u) : 0u;
+                            ULONG dstY = (g_Bc250DisplayState.CurrentMode.Height > presentH) ?
+                                         ((g_Bc250DisplayState.CurrentMode.Height - presentH) / 2u) : 0u;
+                            sdmaDone = Bc250SdmaPresentBltRect(
+                                srcGpu, srcPitch,
+                                dstScanoutGpu, dstPitch,
+                                dstX, dstY,
+                                presentW, presentH);
+                        } else {
+                            sdmaDone = Bc250SdmaPresentBlt(srcGpu, dstScanoutGpu, scanoutBytes);
+                        }
                     }
 
-                    if (sdmaDone &&
+                    if (sdmaDone && !skipBlankUnderEscape &&
                         (count == 1 || count == 5 || count == 10 || count == 25 || count == 45)) {
-                        UINT64 mismatchOffset = ~(UINT64)0;
-                        ULONG postNz = 0u, postHx = 0u;
-                        BOOLEAN bytesMatch = Bc250DisplayCompareSurfaceBytes(
-                            effectiveSrcPhys, 0ull, scanoutBytes, &mismatchOffset);
-                        BC250_BLT_PROOF_VERDICT proofVerdict;
-
-                        if (bytesMatch) {
-                            (void)Bc250DisplaySampleSurface(0ull, scanoutBytes, 256u, &postNz, &postHx);
-                        }
-                        /*
-                         * A9/A10: a classificacao vem de driver/core, e o teste
-                         * blt_proof_contract_test trava a semantica. O driver nao
-                         * decide sozinho o que e' PASS.
-                         */
-                        proofVerdict = Bc250ClassifyBltProof(
-                            bytesMatch ? 1u : 0u, (uint32_t)postNz,
-                            bytesMatch ? 256u : 0u);
-
-                        if (!Bc250BltProofRequiresFailClosed(proofVerdict)) {
-                            if (!Bc250BltProofAllowsTripodClaim(proofVerdict)) {
-                                LONG streak = InterlockedIncrement(
-                                    &g_Bc250SdmaPresent.BltBlankStreak);
-                                InterlockedExchange(&s_PresentByteProofState, 0);
-                                InterlockedExchange(
-                                    &g_Bc250SdmaPresent.BltDataProofState,
-                                    BC250_BLT_DATA_PROOF_BLANK);
-                                Bc250DisplayLog("[Present #%d] BYTE_PROOF INCONCLUSIVO (FRAME EM BRANCO): Source=0x%llX Dest=0x0 Bytes=%u copiados fielmente, mas PostScanout NonZero=0/256 Hash=0x%08X. Zero contra zero NAO prova caminho de pixel. BlankStreak=%ld\n",
-                                    count, effectiveSrcPhys, scanoutBytes, postHx, streak);
-                            } else {
-                                InterlockedExchange(&s_PresentByteProofState, 2);
-                                InterlockedExchange(&g_Bc250SdmaPresent.BltBlankStreak, 0);
-                                InterlockedExchange(
-                                    &g_Bc250SdmaPresent.BltDataProofState,
-                                    BC250_BLT_DATA_PROOF_OK);
-                                Bc250DisplayLog("[Present #%d] BYTE_PROOF PASS (dados conferidos, frame com conteudo): Source=0x%llX Dest=0x0 Bytes=%u (PostScanout: NonZero=%u/256, Hash=0x%08X)\n",
-                                    count, effectiveSrcPhys, scanoutBytes, postNz, postHx);
-                            }
+                        if (isSubWindow) {
+                            Bc250DisplayLog("[Present #%d] BYTE_PROOF SKIPPED (SUBWINDOW %ux%u no scanout %ux%u): Blt 2D retangular conferido via engine\n",
+                                count, presentW, presentH,
+                                g_Bc250DisplayState.CurrentMode.Width,
+                                g_Bc250DisplayState.CurrentMode.Height);
                         } else {
-                            InterlockedExchange(&s_PresentByteProofState, -1);
-                            InterlockedExchange(
-                                &g_Bc250SdmaPresent.BltDataProofState,
-                                BC250_BLT_DATA_PROOF_MISMATCH);
-                            sdmaDone = FALSE;
+                            UINT64 mismatchOffset = ~(UINT64)0;
+                            ULONG postNz = 0u, postHx = 0u;
+                            BOOLEAN bytesMatch = Bc250DisplayCompareSurfaceBytes(
+                                effectiveSrcPhys, 0ull, scanoutBytes, &mismatchOffset);
+                            BC250_BLT_PROOF_VERDICT proofVerdict;
+
+                            if (bytesMatch) {
+                                (void)Bc250DisplaySampleSurface(0ull, scanoutBytes, 256u, &postNz, &postHx);
+                            }
                             /*
-                             * C3.7 (12/09) -- A REACAO DEIXOU DE SER PIOR QUE A FALHA.
-                             *
-                             * Aqui havia `g_Bc250SdmaPresent.HardwareEnabled = FALSE`.
-                             * Medido na corrida 13:11: um byte proof reprovado
-                             * desligava o SDMA GLOBALMENTE, e a partir dai TODA
-                             * submissao WDDM caia em `SubmitIndirectAsync recusado:
-                             * HwEnabled=0` -> `IB NAO EXECUTADO; completion NAO
-                             * notificado` -> o VidMm derrubou a maquina com
-                             * BugCheck 0x119 Arg1=2 Arg2=0xC0000185, sete linhas de
-                             * log depois.
-                             *
-                             * E a reprovacao era FALSA: o byte proof lia o endereco
-                             * errado por falta de LocalSegmentBaseOffset (C3.6).
-                             *
-                             * Falhar fechado continua certo -- este present NAO
-                             * declara sucesso e `sdmaDone` fica FALSE. O que nao pode
-                             * e' um quadro reprovado condenar o motor de submissao do
-                             * adaptador inteiro. Quem desabilita a engine e' o
-                             * caminho de TDR, que tem quiesce e restart com prova.
+                             * A9/A10: a classificacao vem de driver/core, e o teste
+                             * blt_proof_contract_test trava a semantica. O driver nao
+                             * decide sozinho o que e' PASS.
                              */
-                            Bc250DisplayLog("[Present #%d] BYTE_PROOF FAIL: Source=0x%llX Dest=0x0 Bytes=%u FirstMismatch=0x%llX; present reprovado (engine PRESERVADA)\n",
-                                count, effectiveSrcPhys, scanoutBytes, mismatchOffset);
+                            proofVerdict = Bc250ClassifyBltProof(
+                                bytesMatch ? 1u : 0u, (uint32_t)postNz,
+                                bytesMatch ? 256u : 0u);
+
+                            if (!Bc250BltProofRequiresFailClosed(proofVerdict)) {
+                                if (!Bc250BltProofAllowsTripodClaim(proofVerdict)) {
+                                    LONG streak = InterlockedIncrement(
+                                        &g_Bc250SdmaPresent.BltBlankStreak);
+                                    InterlockedExchange(&s_PresentByteProofState, 0);
+                                    InterlockedExchange(
+                                        &g_Bc250SdmaPresent.BltDataProofState,
+                                        BC250_BLT_DATA_PROOF_BLANK);
+                                    Bc250DisplayLog("[Present #%d] BYTE_PROOF INCONCLUSIVO (FRAME EM BRANCO): Source=0x%llX Dest=0x0 Bytes=%u copiados fielmente, mas PostScanout NonZero=0/256 Hash=0x%08X. Zero contra zero NAO prova caminho de pixel. BlankStreak=%ld\n",
+                                        count, effectiveSrcPhys, scanoutBytes, postHx, streak);
+                                } else {
+                                    InterlockedExchange(&s_PresentByteProofState, 2);
+                                    InterlockedExchange(&g_Bc250SdmaPresent.BltBlankStreak, 0);
+                                    InterlockedExchange(
+                                        &g_Bc250SdmaPresent.BltDataProofState,
+                                        BC250_BLT_DATA_PROOF_OK);
+                                    Bc250DisplayLog("[Present #%d] BYTE_PROOF PASS (dados conferidos, frame com conteudo): Source=0x%llX Dest=0x0 Bytes=%u (PostScanout: NonZero=%u/256, Hash=0x%08X)\n",
+                                        count, effectiveSrcPhys, scanoutBytes, postNz, postHx);
+                                }
+                            } else {
+                                InterlockedExchange(&s_PresentByteProofState, -1);
+                                InterlockedExchange(
+                                    &g_Bc250SdmaPresent.BltDataProofState,
+                                    BC250_BLT_DATA_PROOF_MISMATCH);
+                                sdmaDone = FALSE;
+                                /*
+                                 * C3.7 (12/09) -- A REACAO DEIXOU DE SER PIOR QUE A FALHA.
+                                 *
+                                 * Aqui havia `g_Bc250SdmaPresent.HardwareEnabled = FALSE`.
+                                 * Medido na corrida 13:11: um byte proof reprovado
+                                 * desligava o SDMA GLOBALMENTE, e a partir dai TODA
+                                 * submissao WDDM caia em `SubmitIndirectAsync recusado:
+                                 * HwEnabled=0` -> `IB NAO EXECUTADO; completion NAO
+                                 * notificado` -> o VidMm derrubou a maquina com
+                                 * BugCheck 0x119 Arg1=2 Arg2=0xC0000185, sete linhas de
+                                 * log depois.
+                                 *
+                                 * E a reprovacao era FALSA: o byte proof lia o endereco
+                                 * errado por falta de LocalSegmentBaseOffset (C3.6).
+                                 *
+                                 * Falhar fechado continua certo -- este present NAO
+                                 * declara sucesso e `sdmaDone` fica FALSE. O que nao pode
+                                 * e' um quadro reprovado condenar o motor de submissao do
+                                 * adaptador inteiro. Quem desabilita a engine e' o
+                                 * caminho de TDR, que tem quiesce e restart com prova.
+                                 */
+                                Bc250DisplayLog("[Present #%d] BYTE_PROOF FAIL: Source=0x%llX Dest=0x0 Bytes=%u FirstMismatch=0x%llX; present reprovado (engine PRESERVADA)\n",
+                                    count, effectiveSrcPhys, scanoutBytes, mismatchOffset);
+                            }
                         }
                     }
 
                     if (count <= 10 || (count % 60) == 0) {
-                        Bc250DisplayLog("[Present #%d] Blt %u bytes (src 0x%llX -> scanout 0x0): SDMA=%s\n",
-                            count, scanoutBytes, effectiveSrcPhys, sdmaDone ? "YES" : "FAILED_CLOSED");
+                        if (isSubWindow) {
+                            Bc250DisplayLog("[Present #%d] Blt 2D %ux%u srcPitch=%u (src 0x%llX -> scanout 0x0 DstXY=%u,%u): SDMA=%s\n",
+                                count, presentW, presentH, presentW * 4u,
+                                effectiveSrcPhys,
+                                (g_Bc250DisplayState.CurrentMode.Width > presentW) ? ((g_Bc250DisplayState.CurrentMode.Width - presentW) / 2u) : 0u,
+                                (g_Bc250DisplayState.CurrentMode.Height > presentH) ? ((g_Bc250DisplayState.CurrentMode.Height - presentH) / 2u) : 0u,
+                                sdmaDone ? "YES" : "FAILED_CLOSED");
+                        } else {
+                            Bc250DisplayLog("[Present #%d] Blt %u bytes (src 0x%llX -> scanout 0x0): SDMA=%s\n",
+                                count, scanoutBytes, effectiveSrcPhys, sdmaDone ? "YES" : "FAILED_CLOSED");
+                        }
                     }
                     /* F3.2: the old unconditional SUCCESS concealed failed DMA.
                      * Do NOT return the historical STATUS_IO_DEVICE_ERROR (0x10E).
@@ -3380,7 +3449,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                 }
             } else if (vaResolved) {
                 Bc250DisplayLog("[Present #%d] REJECT source bounds: Phys=0x%llX, Bytes=%u, Aperture=%u\n",
-                    count, effectiveSrcPhys, scanoutBytes, g_Bc250DisplayState.FrameBufferSize);
+                    count, effectiveSrcPhys, requiredSrcBytes, g_Bc250DisplayState.FrameBufferSize);
                 presentStatus = STATUS_INVALID_PARAMETER;
             }
         }

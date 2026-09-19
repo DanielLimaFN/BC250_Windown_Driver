@@ -1,9 +1,0 @@
-22:42:11.832 [pid=10880 M365Copilot.exe] === bc250umd.dll CARREGADA ===
-22:42:11.833 [pid=10880 M365Copilot.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
-22:42:11.834 [pid=10880 M365Copilot.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
-22:42:11.834 [pid=10880 M365Copilot.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
-22:42:11.835 [pid=10880 M365Copilot.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
-22:42:11.837 [pid=10880 M365Copilot.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
-22:42:11.837 [pid=10880 M365Copilot.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
-22:42:11.838 [pid=10880 M365Copilot.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
-22:42:11.838 [pid=10880 M365Copilot.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL

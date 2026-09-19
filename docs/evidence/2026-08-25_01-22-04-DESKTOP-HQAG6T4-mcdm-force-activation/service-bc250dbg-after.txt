@@ -1,4 +1,0 @@
-﻿[SC] EnumQueryServicesStatus:OpenService FALHA 1060:
-
-O serviço especificado não existe como serviço instalado.
-

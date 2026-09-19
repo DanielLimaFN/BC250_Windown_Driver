@@ -1224,12 +1224,210 @@ static int Bc250RunGfxRingSubmit3DDrawTest(void)
     return 1;
 }
 
+
+/*
+ * =========================================================================
+ * SONDA DE ONDA -- suite offline, contra um SQ falso.
+ * =========================================================================
+ * Esta suite existe porque a sonda de onda e' a UNICA parte da faixa de 19/09
+ * que ESCREVE registrador, e a escrita em questao (GRBM_GFX_INDEX fora de
+ * broadcast) redireciona todo acesso posterior a um unico shader engine --
+ * inclusive o soft-reset que o quiesce dispara logo depois. Por isso o caso
+ * do seletor preso vem antes de qualquer caso feliz.
+ */
+
+#define WAVE_FAKE_MAX 64u
+
+typedef struct WaveFakeSq {
+    uint32_t GfxIndex;          /* ultimo valor escrito em GRBM_GFX_INDEX */
+    uint32_t IndIndex;          /* ultimo valor escrito em SQ_IND_INDEX */
+    uint32_t GfxIndexWrites;
+    uint32_t RefuseSelectorRestore;  /* 1 = recusa a volta a broadcast */
+    uint32_t RefuseIndData;          /* 1 = recusa leitura de SQ_IND_DATA */
+    uint32_t LiveSlotMask;      /* bit i = slot i tem onda viva */
+    uint32_t SlotCursor;        /* quantas leituras de STATUS ja aconteceram */
+    uint32_t IndDataReads;
+} WaveFakeSq;
+
+static uint32_t WaveFakeRead32(void *Context, uint32_t Offset, uint32_t *Value)
+{
+    WaveFakeSq *sq = (WaveFakeSq *)Context;
+    if (Value == NULL) return 0u;
+    *Value = 0u;
+    if (Offset == BC250_GFX_REG_GRBM_GFX_INDEX) {
+        *Value = sq->GfxIndex;
+        return 1u;
+    }
+    if (Offset == BC250_GFX_REG_SQ_IND_DATA) {
+        uint32_t ix = (sq->IndIndex >> 16) & 0xFFFFu;
+        if (sq->RefuseIndData != 0u) return 0u;
+        sq->IndDataReads++;
+        if (ix == BC250_IX_SQ_WAVE_STATUS) {
+            uint32_t live = (sq->LiveSlotMask >> (sq->SlotCursor & 31u)) & 1u;
+            sq->SlotCursor++;
+            *Value = live ? 0x00001234u : 0u;   /* 0 = slot vazio */
+            return 1u;
+        }
+        if (ix == BC250_IX_SQ_WAVE_PC_LO)   { *Value = 0x0000A100u; return 1u; }
+        if (ix == BC250_IX_SQ_WAVE_PC_HI)   { *Value = 0x00000002u; return 1u; }
+        if (ix == BC250_IX_SQ_WAVE_IB_STS)  { *Value = 0x00000041u; return 1u; }
+        if (ix == BC250_IX_SQ_WAVE_INST_DW0){ *Value = 0xBF8C0F70u; return 1u; }
+        if (ix == BC250_IX_SQ_WAVE_TRAPSTS) { *Value = 0u; return 1u; }
+        return 1u;
+    }
+    return 0u;
+}
+
+static uint32_t WaveFakeWrite32(void *Context, uint32_t Offset, uint32_t Value)
+{
+    WaveFakeSq *sq = (WaveFakeSq *)Context;
+    if (Offset == BC250_GFX_REG_GRBM_GFX_INDEX) {
+        if (sq->RefuseSelectorRestore != 0u &&
+            Value == BC250_GRBM_GFX_INDEX_BROADCAST_ALL) {
+            return 0u;
+        }
+        sq->GfxIndex = Value;
+        sq->GfxIndexWrites++;
+        return 1u;
+    }
+    if (Offset == BC250_GFX_REG_SQ_IND_INDEX) {
+        sq->IndIndex = Value;
+        return 1u;
+    }
+    return 0u;
+}
+
+static void WaveFakeIface(BC250_GFX_RING_INTERFACE *Iface, WaveFakeSq *Sq)
+{
+    Iface->Read32 = WaveFakeRead32;
+    Iface->Write32 = WaveFakeWrite32;
+    Iface->Stall = NULL;
+    Iface->Context = Sq;
+    Iface->Identity = BC250_GFX_RING_TXN_IDENTITY;
+}
+
+static void WavePlanFill(BC250_WAVE_PROBE_PLAN *Plan, uint32_t slots)
+{
+    uint32_t i;
+    Plan->SlotCount = slots;
+    Plan->WavesInFlight = 6u;   /* o numero MEDIDO na Corrida 35 */
+    Plan->ReadBudget = BC250_WAVE_PROBE_MAX_READS;
+    for (i = 0u; i < slots; ++i) {
+        Plan->Slots[i].SeIndex = i & 1u;
+        Plan->Slots[i].SaIndex = (i >> 1) & 1u;
+        Plan->Slots[i].InstanceIndex = i;
+        Plan->Slots[i].WaveId = i & 0x1Fu;
+    }
+}
+
+static int Bc250RunWaveProbeTest(void)
+{
+    BC250_GFX_RING_INTERFACE iface;
+    BC250_WAVE_PROBE_PLAN plan;
+    BC250_WAVE_PROBE_EVIDENCE ev;
+    WaveFakeSq sq;
+
+    /* [TEST] SONDA DE ONDA: codificacao dos seletores... */
+    /* SQ_IND_INDEX: INDEX em 31:16, WAVE_ID em 4:0, resto ZERO. */
+    CHECK(Bc250WaveProbeEncodeIndIndex(BC250_IX_SQ_WAVE_PC_LO, 3u) == 0x01080003u);
+    CHECK(Bc250WaveProbeEncodeIndIndex(BC250_IX_SQ_WAVE_STATUS, 31u) == 0x0102001Fu);
+    /* WAVE_ID satura em 5 bits: 32 nao pode virar bit de WORKITEM_ID. */
+    CHECK(Bc250WaveProbeEncodeIndIndex(BC250_IX_SQ_WAVE_STATUS, 32u) == 0x01020000u);
+    /* GRBM_GFX_INDEX: os TRES bits de broadcast tem de sair ZERADOS, senao a
+     * selecao nao vale e a leitura devolve agregado. */
+    CHECK(Bc250WaveProbeEncodeGfxIndex(1u, 1u, 5u) == 0x00010105u);
+    CHECK((Bc250WaveProbeEncodeGfxIndex(1u, 1u, 5u) & 0xE0000000u) == 0u);
+
+    /* [TEST] SONDA DE ONDA: status zero NAO conta como onda... */
+    CHECK(Bc250WaveProbeStatusIsValid(0u) == 0u);
+    CHECK(Bc250WaveProbeStatusIsValid(0xFFFFFFFFu) == 0u);
+    CHECK(Bc250WaveProbeStatusIsValid(0x1234u) == 1u);
+
+    /* [TEST] SONDA DE ONDA: sem onda em voo NAO escreve nada... */
+    memset(&sq, 0, sizeof(sq));
+    WaveFakeIface(&iface, &sq);
+    memset(&plan, 0, sizeof(plan));
+    WavePlanFill(&plan, 4u);
+    plan.WavesInFlight = 0u;
+    CHECK(Bc250WaveProbeRun(&iface, &plan, &ev) == BC250_WAVE_PROBE_NO_WAVES);
+    CHECK(sq.GfxIndexWrites == 0u);   /* o seletor NUNCA saiu de broadcast */
+
+    /* [TEST] SONDA DE ONDA: plano acima do orcamento e recusado... */
+    memset(&sq, 0, sizeof(sq));
+    WaveFakeIface(&iface, &sq);
+    WavePlanFill(&plan, 8u);
+    plan.ReadBudget = 4u;             /* 8 slots nao cabem em 4 leituras */
+    CHECK(Bc250WaveProbeRun(&iface, &plan, &ev) == BC250_WAVE_PROBE_PLAN_REJECTED);
+    CHECK(sq.GfxIndexWrites == 0u);
+    WavePlanFill(&plan, 8u);
+    plan.ReadBudget = BC250_WAVE_PROBE_MAX_READS + 1u;
+    CHECK(Bc250WaveProbeRun(&iface, &plan, &ev) == BC250_WAVE_PROBE_PLAN_REJECTED);
+
+    /* [TEST] SONDA DE ONDA: varredura encontra a onda e le PC e IB_STS... */
+    memset(&sq, 0, sizeof(sq));
+    sq.LiveSlotMask = 0x2u;           /* segundo slot tem onda */
+    WaveFakeIface(&iface, &sq);
+    WavePlanFill(&plan, 8u);
+    CHECK(Bc250WaveProbeRun(&iface, &plan, &ev) == BC250_WAVE_PROBE_OK);
+    CHECK(ev.WavesFound == 1u);
+    CHECK(ev.Found[0].Status == 0x00001234u);
+    CHECK(ev.Found[0].PcHi == 0x00000002u);
+    CHECK(ev.Found[0].PcLo == 0x0000A100u);
+    CHECK(ev.Found[0].InstDw0 == 0xBF8C0F70u);
+    CHECK(ev.SelectorRestored == 1u);
+    CHECK(sq.GfxIndex == BC250_GRBM_GFX_INDEX_BROADCAST_ALL);
+
+    /* [TEST] SONDA DE ONDA: o seletor volta a broadcast MESMO sem achar onda... */
+    memset(&sq, 0, sizeof(sq));
+    sq.LiveSlotMask = 0u;             /* nenhum slot vivo */
+    WaveFakeIface(&iface, &sq);
+    WavePlanFill(&plan, 8u);
+    CHECK(Bc250WaveProbeRun(&iface, &plan, &ev) == BC250_WAVE_PROBE_OK);
+    CHECK(ev.WavesFound == 0u);
+    CHECK(ev.SelectorRestored == 1u);
+    CHECK(sq.GfxIndex == BC250_GRBM_GFX_INDEX_BROADCAST_ALL);
+
+    /* [TEST] SONDA DE ONDA: seletor preso e o PIOR desfecho e tem de ser dito... */
+    memset(&sq, 0, sizeof(sq));
+    sq.LiveSlotMask = 0x1u;
+    sq.RefuseSelectorRestore = 1u;
+    WaveFakeIface(&iface, &sq);
+    WavePlanFill(&plan, 4u);
+    CHECK(Bc250WaveProbeRun(&iface, &plan, &ev) == BC250_WAVE_PROBE_SELECTOR_STUCK);
+    CHECK(ev.SelectorRestored == 0u);
+    CHECK(sq.GfxIndex != BC250_GRBM_GFX_INDEX_BROADCAST_ALL);
+
+    /* [TEST] SONDA DE ONDA: leitura recusada vira INDETERMINADO, nao zero... */
+    memset(&sq, 0, sizeof(sq));
+    sq.RefuseIndData = 1u;
+    WaveFakeIface(&iface, &sq);
+    WavePlanFill(&plan, 4u);
+    CHECK(Bc250WaveProbeRun(&iface, &plan, &ev) == BC250_WAVE_PROBE_OK);
+    CHECK(ev.ReadRefused == 1u);
+    CHECK(ev.WavesFound == 0u);
+    CHECK(ev.SelectorRestored == 1u);
+
+    /* [TEST] SONDA DE ONDA: teto de ondas reportadas e respeitado... */
+    memset(&sq, 0, sizeof(sq));
+    sq.LiveSlotMask = 0xFFFFFFFFu;    /* todo slot tem onda */
+    WaveFakeIface(&iface, &sq);
+    WavePlanFill(&plan, BC250_WAVE_PROBE_MAX_SLOTS);
+    CHECK(Bc250WaveProbeRun(&iface, &plan, &ev) == BC250_WAVE_PROBE_OK);
+    CHECK(ev.WavesFound == BC250_WAVE_PROBE_MAX_REPORTED);
+    CHECK(ev.ReadsIssued <= plan.ReadBudget + 6u);
+    CHECK(ev.SelectorRestored == 1u);
+
+    /* SONDA DE ONDA: OK (SQ falso, selecao indireta, restauracao de broadcast) */
+    return 1;
+}
+
 static int Bc250RunGfxRingSuite(void)
 {
     if (!Bc250RunGfxRingContractTest()) return 0;
     if (!Bc250RunGfxRingTransactionTest()) return 0;
     if (!Bc250RunGfxRingSubmitShRegTest()) return 0;
     if (!Bc250RunGfxRingSubmit3DDrawTest()) return 0;
+    if (!Bc250RunWaveProbeTest()) return 0;
     return 1;
 }
 

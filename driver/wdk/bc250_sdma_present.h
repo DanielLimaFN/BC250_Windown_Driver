@@ -250,6 +250,7 @@ typedef struct BC250_SDMA_PRESENT_CONTEXT {
      * poll inteiro, nao do pacote.
      */
     volatile LONG EscapeEnteredCount;
+    volatile LONG EscapeNonZeroBltCount;
     volatile LONG EscapeBltMaxMicroseconds;
     volatile LONG64 EscapeBltTotalMicroseconds;
 

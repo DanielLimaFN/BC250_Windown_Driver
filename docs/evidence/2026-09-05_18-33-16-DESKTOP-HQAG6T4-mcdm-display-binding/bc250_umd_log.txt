@@ -1,4 +1,0 @@
-18:33:18.741 [pid=8860 dxgiadaptercache.exe] === bc250umd.dll CARREGADA ===
-18:33:18.741 [pid=8860 dxgiadaptercache.exe] OpenAdapter10_2: Interface=0x000B0011 (D3D11) -> E_NOTIMPL (fallback WARP)
-18:33:18.741 [pid=8860 dxgiadaptercache.exe] OpenAdapter10_2: Interface=0x000B000B (D3D11) -> E_NOTIMPL (fallback WARP)
-18:33:18.741 [pid=8860 dxgiadaptercache.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000 -> S_OK

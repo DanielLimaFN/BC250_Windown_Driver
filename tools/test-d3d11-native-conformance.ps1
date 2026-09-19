@@ -19,6 +19,9 @@ param(
     [string]$Harness,
     [ValidateRange(10,300)][int]$TimeoutSeconds = 120,
     [ValidateRange(1,3600)][int]$Frames = 600,
+    [int]$Width = 1280,
+    [int]$Height = 720,
+    [int]$Vsync = 0,
     [switch]$Headless,
     [switch]$Execute
 )
@@ -88,63 +91,141 @@ if (-not (Test-Path -LiteralPath 'C:\BC250_LIB\vulkan_radeon.dll')) {
 
 Write-Host "`n[EXECUCAO NO SILICIO] Disparando bc250-d3d11-conformance.exe..." -ForegroundColor Cyan
 
-$argsList = @("--frames", "$Frames")
+# ---------------------------------------------------------------------------
+# DESPEJO DO IB GRAFICO -- 19/09/2026.
+#
+# Na Corrida 34 o CP_RB0 parou dentro de um IB de 1008 DW e nao guardamos UM
+# dword dele; o diagnostico publicado saiu com tres hipoteses e nenhuma medicao
+# que as separasse. O RADV agora despeja o stream quando BC250_RADV_IB_DUMP
+# aponta um diretorio (fail-closed: sem a variavel, nada e' aberto).
+#
+# O destino e' a PASTA DE EVIDENCIA, nao %TEMP%. Essa escolha e' a licao da C2,
+# que custou tres criterios de corrida: o que nao cai na pasta de evidencia
+# desaparece quando a maquina reinicia, e o despejo so' serve se sobreviver.
+# ---------------------------------------------------------------------------
+$ibDumpDir = Join-Path $EvidenceDir 'gfx-ib-dump'
+if (-not (Test-Path -LiteralPath $ibDumpDir)) {
+    New-Item -ItemType Directory -Path $ibDumpDir -Force | Out-Null
+}
+$env:BC250_RADV_IB_DUMP = $ibDumpDir
+# MEDIDO na Corrida 35: a variavel de ambiente NAO alcanca o dwm.exe, e foi o
+# dwm.exe que submeteu o IB que travou o CP. O despejo saiu vazio por isso.
+# A chave de registro alcanca TODO processo que carrega o vulkan_radeon.dll.
+try {
+    New-Item -Path 'HKLM:\SOFTWARE\BC250\Umd' -Force -ErrorAction Stop | Out-Null
+    Set-ItemProperty -Path 'HKLM:\SOFTWARE\BC250\Umd' -Name 'GfxIbDumpDir' `
+        -Value $ibDumpDir -Type String -ErrorAction Stop
+    Write-Host "  -> GfxIbDumpDir (HKLM) e BC250_RADV_IB_DUMP = $ibDumpDir" -ForegroundColor Cyan
+} catch {
+    Write-Warning ("Nao foi possivel armar HKLM GfxIbDumpDir: " + $_.Exception.Message +
+                   " -- o despejo so valera para o harness, nao para o dwm.exe")
+}
+
+$argsList = @("--frames", "$Frames", "--width", "$Width", "--height", "$Height", "--vsync", "$Vsync")
 if ($Headless) {
     $argsList += "--headless"
 }
 
-$pinfo = New-Object System.Diagnostics.ProcessStartInfo
-$pinfo.FileName = $Harness
-$pinfo.Arguments = ($argsList -join ' ')
-$pinfo.RedirectStandardOutput = $true
-$pinfo.RedirectStandardError = $true
-$pinfo.UseShellExecute = $false
-$pinfo.CreateNoWindow = $false
+$stdoutFile = Join-Path $EvidenceDir 'conformance-stdout.tmp'
+$stderrFile = Join-Path $EvidenceDir 'conformance-stderr.tmp'
+$timedOut = $false
+$exitCode = -1
+$stdout = ''
+$stderr = ''
 
-$proc = New-Object System.Diagnostics.Process
-$proc.StartInfo = $pinfo
+$proc = Start-Process -FilePath $Harness -ArgumentList ($argsList -join ' ') `
+    -WorkingDirectory ([System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($Harness))) `
+    -NoNewWindow -PassThru `
+    -RedirectStandardOutput $stdoutFile `
+    -RedirectStandardError $stderrFile
 
-$stdoutBuilder = New-Object System.Text.StringBuilder
-$stderrBuilder = New-Object System.Text.StringBuilder
-
-$stdoutHandler = {
-    if (-not [string]::IsNullOrEmpty($EventArgs.Data)) {
-        Write-Host $EventArgs.Data
-        [void]$stdoutBuilder.AppendLine($EventArgs.Data)
-    }
-}
-$stderrHandler = {
-    if (-not [string]::IsNullOrEmpty($EventArgs.Data)) {
-        Write-Host $EventArgs.Data -ForegroundColor Red
-        [void]$stderrBuilder.AppendLine($EventArgs.Data)
-    }
+if ($null -eq $proc) {
+    throw "Start-Process de $Harness falhou."
 }
 
-Register-ObjectEvent -InputObject $proc -EventName 'OutputDataReceived' -Action $stdoutHandler | Out-Null
-Register-ObjectEvent -InputObject $proc -EventName 'ErrorDataReceived' -Action $stderrHandler | Out-Null
+$finished = $proc.WaitForExit($TimeoutSeconds * 1000)
+if (-not $finished) {
+    $timedOut = $true
+    try { $proc.Kill() } catch { }
+} else {
+    $proc.Refresh()
+    $exitCode = [int]$proc.ExitCode
+}
 
-[void]$proc.Start()
-$proc.BeginOutputReadLine()
-$proc.BeginErrorReadLine()
+if (Test-Path -LiteralPath $stdoutFile) {
+    $stdout = Get-Content -LiteralPath $stdoutFile -Raw -ErrorAction SilentlyContinue
+    if ($stdout) { Write-Host $stdout }
+}
+if (Test-Path -LiteralPath $stderrFile) {
+    $stderr = Get-Content -LiteralPath $stderrFile -Raw -ErrorAction SilentlyContinue
+    if ($stderr) { Write-Host $stderr -ForegroundColor Red }
+}
 
-$exited = $proc.WaitForExit($TimeoutSeconds * 1000)
+$fullLog = "STDOUT:`r`n" + $stdout + "`r`nSTDERR:`r`n" + $stderr
+Set-Content -LiteralPath $evidenceLog -Value $fullLog -Encoding UTF8
 
-if (-not $exited) {
-    $proc.Kill()
+if ($timedOut) {
     Write-Host "`n[TIMEOUT] Teste excedeu $TimeoutSeconds segundos e foi cancelado." -ForegroundColor Red
     $exitCode = -1
-} else {
-    $exitCode = $proc.ExitCode
 }
 
-$fullLog = "STDOUT:`r`n" + $stdoutBuilder.ToString() + "`r`nSTDERR:`r`n" + $stderrBuilder.ToString()
-Set-Content -LiteralPath $evidenceLog -Value $fullLog -Encoding UTF8
+# Verificacao de evidencia fisica de rasterizacao no log da UMD
+$pixelVerdict = $false
+$candidateSources = @()
+$candidateSources += @(Get-ChildItem -LiteralPath 'C:\Windows\Temp' -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue)
+if ($env:TEMP -and (Test-Path -LiteralPath $env:TEMP)) {
+    $candidateSources += @(Get-ChildItem -LiteralPath $env:TEMP -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue)
+}
+if (Test-Path -LiteralPath $stderrFile) {
+    $candidateSources += Get-Item -LiteralPath $stderrFile
+}
+foreach ($src in $candidateSources) {
+    $lines = Get-Content -LiteralPath $src.FullName -ErrorAction SilentlyContinue | Select-String -Pattern 'INSPECAO LINEAR_BUF'
+    if ($lines) {
+        foreach ($l in $lines) {
+            Write-Host ("  " + $l.Line.Trim()) -ForegroundColor Magenta
+            if ($l.Line -match 'NonZeroSamples=([1-5])/5') {
+                $pixelVerdict = $true
+            }
+        }
+    }
+}
 
 Write-Host "`n===================================================================" -ForegroundColor Cyan
 Write-Host " RESULTADO DO TESTE D3D11 NATIVO (EXIT CODE: $exitCode)" -ForegroundColor Cyan
 Write-Host "===================================================================" -ForegroundColor Cyan
+# ---------------------------------------------------------------------------
+# PROVA DE QUADRO -- 19/09, depois da Corrida 35.
+#
+# Naquela corrida o harness NAO imprimiu uma unica linha de quadro (nem
+# PRESENT_OK nem PRESENT_FALHOU), nao houve timeout, e ainda assim o runner
+# anunciou "EXIT CODE: 0". Exit code 0 sem prova de quadro nao e sucesso: e
+# ausencia de medicao. O mecanismo daquele 0 permanece INDETERMINADO, e este
+# bloco nao depende de descobri-lo -- ele exige a evidencia positiva.
+# ---------------------------------------------------------------------------
+$frameEvidence = 0
+$frameFailure = 0
+if (Test-Path -LiteralPath $stdoutFile) {
+    $stdoutText = Get-Content -LiteralPath $stdoutFile -Raw -ErrorAction SilentlyContinue
+    if ($stdoutText) {
+        $frameEvidence = ([regex]::Matches($stdoutText, 'PRESENT_OK')).Count
+        $frameFailure = ([regex]::Matches($stdoutText, 'PRESENT_FALHOU')).Count
+    }
+}
+if ($frameEvidence -eq 0 -and $frameFailure -eq 0) {
+    Write-Host ("`n[SEM MEDICAO] O harness nao imprimiu NENHUMA linha de quadro " +
+                "(PRESENT_OK/PRESENT_FALHOU). Exit code reportado: $exitCode. " +
+                "Esta corrida nao mediu apresentacao -- nao a conte como sucesso.") -ForegroundColor Red
+    if ($exitCode -eq 0) { $exitCode = 3 }
+}
+
 if ($exitCode -eq 0) {
-    Write-Host " VEREDITO: SUCESSO - D3D11 Nativo validado com sucesso!" -ForegroundColor Green
+    Write-Host " Quadros com Present aceito: $frameEvidence | Presents falhos: $frameFailure" -ForegroundColor Cyan
+    if ($pixelVerdict) {
+        Write-Host " VEREDITO: SUCESSO COMPROVADO - D3D11 Nativo com rasterizacao fisica de pixels confirmada!" -ForegroundColor Green
+    } else {
+        Write-Host " VEREDITO: PARCIAL - Processo finalizou com Exit 0, mas inspecao de pixels pendente de confirmacao." -ForegroundColor Yellow
+    }
 } else {
     Write-Host " VEREDITO: FALHA - Exit code $exitCode. Consulte log em $evidenceLog" -ForegroundColor Red
 }

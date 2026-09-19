@@ -134,7 +134,7 @@ static int Bc250RunTdrRecoveryContractTest(void)
     CHECK(Bc250TdrValidateMecRestartReadback(0u, 0u, 4u, 0u, 0u, 0u) == BC250_TDR_RESTART_NOT_READY);
 
     /* 8. Readback minimo antes do restart do anel grafico CP_RB0 (Node 1 GFX). */
-    /* Estado nominal: RB0_ACTIVE=1, RPTR==WPTR==0, MeCntl unhalted (bits 0..2=0), SoftReset=0 */
+    /* Estado nominal: RB0_ACTIVE=1, RPTR==WPTR, CP_ME_CNTL sem halt, SoftReset=0 */
     CHECK(Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 0u, 0u) == BC250_TDR_OK);
     CHECK(Bc250TdrValidateGfxRestartReadback(1u, 16u, 16u, 0u, 0u) == BC250_TDR_OK);
     /* Anel inativo: restart invalido */
@@ -142,9 +142,31 @@ static int Bc250RunTdrRecoveryContractTest(void)
     /* Ponteiros dessincronizados (RPTR != WPTR): restart invalido */
     CHECK(Bc250TdrValidateGfxRestartReadback(1u, 0u, 16u, 0u, 0u) == BC250_TDR_RESTART_NOT_READY);
     CHECK(Bc250TdrValidateGfxRestartReadback(1u, 16u, 0u, 0u, 0u) == BC250_TDR_RESTART_NOT_READY);
-    /* Micro-engines ainda halted (bits 0..2 de CP_ME_CNTL): restart invalido */
-    CHECK(Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 1u, 0u) == BC250_TDR_RESTART_NOT_READY);
-    CHECK(Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 7u, 0u) == BC250_TDR_RESTART_NOT_READY);
+
+    /*
+     * MICRO-ENGINES HALTED -- os bits reais, com o numero MEDIDO.
+     *
+     * Ate 19/09 este bloco exigia reprovacao com MeCntl=1 e MeCntl=7, isto e'
+     * os bits 0..2, que NAO nomeiam campo nenhum em gc_10_1_0_sh_mask.h. O
+     * teste congelava a mentira do produto: com a mascara errada o valor
+     * 0x15000000 (CE_HALT|PFP_HALT|ME_HALT), que a corrida 19/09 09:06 leu
+     * TRES vezes em [TDR_GFX_QUIESCE], passava como restart valido. Oitava
+     * ocorrencia desta classe no projeto -- por isso o caso de 0x15000000 vem
+     * primeiro e com o numero literal da corrida, nao uma constante generica.
+     */
+    CHECK(Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 0x15000000u, 0u) == BC250_TDR_RESTART_NOT_READY);
+    /* Cada halt isolado tambem reprova: CE (bit 24), PFP (bit 26), ME (bit 28). */
+    CHECK(Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 0x01000000u, 0u) == BC250_TDR_RESTART_NOT_READY);
+    CHECK(Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 0x04000000u, 0u) == BC250_TDR_RESTART_NOT_READY);
+    CHECK(Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 0x10000000u, 0u) == BC250_TDR_RESTART_NOT_READY);
+    /*
+     * CASO NEGATIVO, para a correcao nao virar peneira: os bits *_STEP e
+     * *_INVALIDATE_ICACHE nao sao halt e NAO podem reprovar sozinhos.
+     *   CE_STEP 0x02000000, PFP_STEP 0x08000000, ME_STEP 0x20000000,
+     *   CE/PFP/ME_INVALIDATE_ICACHE 0x10/0x40/0x100.
+     * Se alguem "consertar" a mascara para 0xFFFFFFFF, este CHECK reprova.
+     */
+    CHECK(Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 0x2A000150u, 0u) == BC250_TDR_OK);
     /* Soft reset preso em GRBM_SOFT_RESET (bit 0 CP ou bit 16 GFX): restart invalido */
     CHECK(Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 0u, 0x00000001u) == BC250_TDR_RESTART_NOT_READY);
     CHECK(Bc250TdrValidateGfxRestartReadback(1u, 0u, 0u, 0u, 0x00010000u) == BC250_TDR_RESTART_NOT_READY);

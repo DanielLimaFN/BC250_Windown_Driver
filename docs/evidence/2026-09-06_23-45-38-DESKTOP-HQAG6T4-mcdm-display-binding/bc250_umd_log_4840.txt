@@ -1,8 +1,0 @@
-23:45:40.855 [pid=4840 Explorer.EXE] === bc250umd.dll CARREGADA ===
-23:45:40.856 [pid=4840 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
-23:45:40.856 [pid=4840 Explorer.EXE] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
-23:45:40.857 [pid=4840 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000 -> S_OK (BC250 Native)
-23:45:40.881 [pid=4840 Explorer.EXE] === bc250umd.dll CARREGADA ===
-23:45:40.882 [pid=4840 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
-23:45:40.882 [pid=4840 Explorer.EXE] CAPS_PROBE: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
-23:45:40.882 [pid=4840 Explorer.EXE] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000 -> S_OK (BC250 Native)

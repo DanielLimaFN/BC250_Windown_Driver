@@ -1985,71 +1985,138 @@ static void TestDrawPm4EmissionOnNode1(void)
     g_Node1DrawLocks = 0;
 
     /*
-     * 0. Default fail-closed: sem o tunable armado, draw DEVE ser recusado.
+     * 0. Default fail-closed: sem o tunable armado, draw PM4 direto DEVE ser recusado.
      *
      * DECLARA "0" em vez de APAGAR a variavel. Apagando, a decisao caia no
-     * registro da MAQUINA e a suite offline deixava de ser hermetica -- o
-     * bind de 14/09 11:43 mexeu em HKLM e este teste passou a reprovar sem
-     * nenhuma mudanca de codigo. Mesma classe que a faixa C1 ja encontrara
-     * em outro ponto (docs/234).
+     * registro da MAQUINA e a suite offline deixava de ser hermetica.
      */
     SetEnvironmentVariableA(BC250_D3D11_EXPERIMENTAL_PM4_DRAW_ENV_NAME, "0");
-    deviceFuncs10_1.pfnDraw(hDev, 3, 0);
+    assert(!Bc250UmdEmitPm4Draw(&dev, 3, 0, 0, FALSE));
     assert(dev.NativePm4DrawCount == 0u);
-    assert(dev.RejectedDrawCount == 1u);
     assert(g_Node1DrawSubmits == 0u);
 
     /* Arm experimental tunable explicitly for PM4 packet construction test */
     SetEnvironmentVariableA(BC250_D3D11_EXPERIMENTAL_PM4_DRAW_ENV_NAME, "1");
 
-    /* 1. Emit Draw (VertexCount = 3) */
-    deviceFuncs10_1.pfnDraw(hDev, 3, 0);
+    /* 1. Emit Draw via ferramenta de bring-up PM4 (VertexCount = 3) */
+    assert(Bc250UmdEmitPm4Draw(&dev, 3, 0, 0, FALSE));
 
     assert(dev.NativePm4DrawCount == 1u);
-    assert(dev.RejectedDrawCount == 1u);
     assert(dev.SubstitutedDrawCount == 0u);
     assert(dev.PipelineState.DrawCount == 1u);
     assert(dev.PipelineState.TotalIndexCount == 3u);
-    /*
-     * O passo 0 recusou honestamente e chamou pfnSetErrorCb UMA vez; o passo 1
-     * nao pode chamar mais nenhuma. Comparar com initialSetError puro era
-     * errado e apagava a diferenca entre "nao recusou" e "recusou calado" --
-     * justamente a distincao que a Lei 4 exige que o driver preserve.
-     */
-    assert(g_SetErrorCalls == initialSetError + 1u);
     assert(g_Node1DrawSubmits == 1u);
     assert(g_Node1DrawLocks == 1u);
 
-    /* 2. Emit DrawIndexed (IndexCount = 6) */
-    deviceFuncs10_1.pfnDrawIndexed(hDev, 6, 0, 0);
+    /* 2. Emit DrawIndexed via ferramenta de bring-up PM4 (IndexCount = 6) */
+    assert(Bc250UmdEmitPm4Draw(&dev, 6, 0, 0, TRUE));
 
     assert(dev.NativePm4DrawCount == 2u);
-    assert(dev.RejectedDrawCount == 1u);
     assert(dev.SubstitutedDrawCount == 0u);
     assert(dev.PipelineState.DrawCount == 2u);
     assert(dev.PipelineState.TotalIndexCount == 9u);
-    /* Continua valendo a unica recusa do passo 0 -- nenhuma nova. */
-    assert(g_SetErrorCalls == initialSetError + 1u);
     assert(g_Node1DrawSubmits == 2u);
     assert(g_Node1DrawLocks == 2u);
 
     /* 3. Negative test: Misaligned destination base GPUVA fails closed */
     resDst.Allocation.GpuVirtualAddress = 0x10000004ull; /* not 256-byte aligned */
-    deviceFuncs10_1.pfnDraw(hDev, 3, 0);
+    assert(!Bc250UmdEmitPm4Draw(&dev, 3, 0, 0, FALSE));
 
     /* NativePm4DrawCount must NOT increment; draw must be rejected */
     assert(dev.NativePm4DrawCount == 2u);
-    assert(dev.RejectedDrawCount == 2u);
     assert(g_Node1DrawSubmits == 2u);
+
+    /* 4. D1.1: Prove that D3D10/11 pfnDraw does NOT call PM4 anymore */
+    resDst.Allocation.GpuVirtualAddress = 0x10000000ull; /* restore aligned */
+    deviceFuncs10_1.pfnDraw(hDev, 3, 0);
+    /* NativePm4DrawCount must NOT increment because PM4 was removed from D3D10/11 Draw (D1.1) */
+    assert(dev.NativePm4DrawCount == 2u);
+    assert(dev.RejectedDrawCount == 1u);
+    assert(g_SetErrorCalls == initialSetError + 1u);
 
     /*
      * Desarma declarando "0", nao apagando: apagar devolveria a decisao ao
-     * registro da maquina para qualquer teste que rode depois deste, que e'
-     * a dependencia que esta faixa acabou de remover.
+     * registro da maquina para qualquer teste que rode depois deste.
      */
     SetEnvironmentVariableA(BC250_D3D11_EXPERIMENTAL_PM4_DRAW_ENV_NAME, "0");
 
     printf("  -> F5.2 PM4 3D Draw Emission PASS (Fail-Closed Default + Experimental Mode Tested)\n");
+}
+
+static void TestD1PhaseVulkanAndInitialDataIntegrity(void)
+{
+    BC250_UMD_DEVICE dev;
+    BC250_UMD_RESOURCE res;
+    D3D10_1DDI_DEVICEFUNCS deviceFuncs10_1;
+    D3D10DDI_HDEVICE hDev;
+    D3D10DDI_HRESOURCE hRes;
+    D3D10DDI_HRTRESOURCE hRTRes;
+    D3D10DDIARG_CREATERESOURCE createArg;
+    D3D10DDI_MIPINFO mipInfo;
+    D3D10_DDIARG_SUBRESOURCE_UP initData;
+    DXGI_DDI_ARG_PRESENT presentData;
+    DXGI1_6_1_DDI_BASE_FUNCTIONS dxgiFuncs;
+    uint32_t canaryData[4] = { 0xDEADBEEFu, 0xCAFEBABEu, 0x12345678u, 0x9ABCDEF0u };
+
+    printf("[TEST] D1 Phase: Vulkan Draw/Present backend integrity and InitialDataUP...\n");
+
+    memset(&dev, 0, sizeof(dev));
+    dev.DeviceActive = TRUE;
+    hDev.pDrvPrivate = &dev;
+    hRes.pDrvPrivate = &res;
+    hRTRes.handle = (void*)0x524553;
+
+    Bc250UmdPopulateDeviceFuncs10_1(&deviceFuncs10_1);
+    Bc250UmdPopulateDxgiBaseFuncs(&dxgiFuncs);
+
+    memset(&presentData, 0, sizeof(presentData));
+    presentData.hDevice = (DXGI_DDI_HDEVICE)&dev;
+    presentData.hSurfaceToPresent = (DXGI_DDI_HRESOURCE)&res;
+
+    /* 1. D1.2: Present refuses with named divergence when both backends report draws */
+    memset(&res, 0, sizeof(res));
+    res.Created = TRUE;
+    res.Width = 1920;
+    res.Height = 1080;
+    dev.NativePm4DrawCount = 10;
+    dev.NativeVkDrawCount = 5;
+    assert(dxgiFuncs.pfnPresent(&presentData) == E_FAIL);
+
+    /* 2. D1.2: Present refuses when no render occurred (prevents silent black screen blt) */
+    dev.NativePm4DrawCount = 0;
+    dev.NativeVkDrawCount = 0;
+    dev.InRenderPass = FALSE;
+    assert(dxgiFuncs.pfnPresent(&presentData) == E_FAIL);
+
+    /* 3. D1.4: pInitialDataUP consumed and uploaded to CPU shadow & buffer */
+    memset(&createArg, 0, sizeof(createArg));
+    memset(&mipInfo, 0, sizeof(mipInfo));
+    mipInfo.PhysicalWidth = sizeof(canaryData);
+    mipInfo.TexelWidth = sizeof(canaryData);
+    createArg.pMipInfoList = &mipInfo;
+    createArg.ResourceDimension = D3D10DDIRESOURCE_BUFFER;
+    createArg.Format = DXGI_FORMAT_UNKNOWN;
+    createArg.BindFlags = D3D10_DDI_BIND_VERTEX_BUFFER;
+    createArg.MipLevels = 1;
+    createArg.ArraySize = 1;
+
+    memset(&initData, 0, sizeof(initData));
+    initData.pSysMem = canaryData;
+    initData.SysMemPitch = sizeof(canaryData);
+    initData.SysMemSlicePitch = sizeof(canaryData);
+    createArg.pInitialDataUP = &initData;
+
+    memset(&res, 0, sizeof(res));
+    deviceFuncs10_1.pfnCreateResource(hDev, &createArg, hRes, hRTRes);
+    assert(res.Created == TRUE);
+    assert(res.pCpuShadow != NULL);
+    assert(memcmp(res.pCpuShadow, canaryData, sizeof(canaryData)) == 0);
+
+    deviceFuncs10_1.pfnDestroyResource(hDev, hRes);
+    assert(res.Created == FALSE);
+    assert(res.pCpuShadow == NULL);
+
+    printf("  -> D1 Phase Vulkan/Present & InitialDataUP PASS\n");
 }
 
 static void TestStateObjectDDIs(void)
@@ -3106,6 +3173,7 @@ int main(void)
     TestDrawAndPipelineBindingDDIs();
     TestDrawBltSubstitutionFailsClosed();
     TestDrawPm4EmissionOnNode1();
+    TestD1PhaseVulkanAndInitialDataIntegrity();
     TestStateObjectDDIs();
     TestShaderResourceViewAndElementLayoutDDIs();
     TestQueryAndPredicationDDIs();

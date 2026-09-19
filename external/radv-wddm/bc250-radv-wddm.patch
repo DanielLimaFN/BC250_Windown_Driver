@@ -1,0 +1,2331 @@
+diff --git a/meson.build b/meson.build
+index ec2dbb7..e3a4818 100644
+--- a/meson.build
++++ b/meson.build
+@@ -1272,7 +1272,7 @@ if cc.get_argument_syntax() == 'msvc'
+     '/wd5105',  # macro expansion producing 'defined' has undefined behavior (winbase.h, need Windows SDK upgrade)
+     '/we4020',  # Error when passing the wrong number of parameters
+     '/we4024',  # Error when passing different type of parameter
+-    '/we4189',  # 'identifier' : local variable is initialized but not referenced
++    '/wd4189',  # 'identifier' : local variable is initialized but not referenced
+     '/Zc:__cplusplus', #Set __cplusplus macro to match the /std:c++<version> on the command line
+     '/Zc:enumTypes', # Enables C++ conforming enum underlying type and enumerator type deduction
+     '/Zc:preprocessor', # Use the standards-conforming preprocessor
+diff --git a/src/amd/common/ac_gpu_info.c b/src/amd/common/ac_gpu_info.c
+index 9803169..513180e 100644
+--- a/src/amd/common/ac_gpu_info.c
++++ b/src/amd/common/ac_gpu_info.c
+@@ -447,10 +447,15 @@ ac_fill_hw_ip_info(struct radeon_info *info, const struct drm_amdgpu_info_device
+        */
+       info->ip[ip_type].num_queues = 1;
+    } else if (ip_info->available_rings) {
+-      /* GFX1013 is known to have broken compute queue */
++      /* Upstream Linux amdgpu marked GFX1013 compute queue as broken due to older
++       * kernel/firmware rings, but on Windows WDDM (bc250mcdm.sys), Node 1 is the
++       * dedicated MEC compute engine and is physically validated.
++       */
++#if !defined(_WIN32)
+       if (ip_type == AMD_IP_COMPUTE && device_info->family == FAMILY_NV &&
+           ASICREV_IS(device_info->external_rev, GFX1013))
+          return false;
++#endif
+ 
+       info->ip[ip_type].num_queues = util_bitcount(ip_info->available_rings);
+    } else {
+diff --git a/src/amd/common/ac_linux_drm.h b/src/amd/common/ac_linux_drm.h
+index 34f44b8..a89a588 100644
+--- a/src/amd/common/ac_linux_drm.h
++++ b/src/amd/common/ac_linux_drm.h
+@@ -13,6 +13,27 @@
+ #include "drm-uapi/amdgpu_drm.h"
+ #include "amdgpu.h"
+ #else
++#ifndef FAMILY_UNKNOWN
++#define FAMILY_UNKNOWN 0
++#define FAMILY_SI  110
++#define FAMILY_CI  120
++#define FAMILY_KV  125
++#define FAMILY_VI  130
++#define FAMILY_CZ  135
++#define FAMILY_AI  141
++#define FAMILY_RV  142
++#define FAMILY_NV  143
++#define FAMILY_VGH 144
++#define FAMILY_RMB 145
++#define FAMILY_RPL 149
++#define FAMILY_MDN 150
++#define FAMILY_NV3 151
++#define FAMILY_PHX 152
++#define FAMILY_STX 153
++#define FAMILY_GFX1170 154
++#define FAMILY_NV4 155
++#endif
++
+ #define DRM_CAP_ADDFB2_MODIFIERS 0x10
+ #define DRM_CAP_SYNCOBJ 0x13
+ #define DRM_CAP_SYNCOBJ_TIMELINE 0x14
+diff --git a/src/amd/vulkan/radv_device.c b/src/amd/vulkan/radv_device.c
+index f5bc8d0..17904ae 100644
+--- a/src/amd/vulkan/radv_device.c
++++ b/src/amd/vulkan/radv_device.c
+@@ -907,6 +907,14 @@ radv_device_init_cache_key(struct radv_device *device)
+ static void
+ radv_create_gfx_preamble(struct radv_device *device)
+ {
++   struct radv_physical_device *pdev = radv_device_physical(device);
++   if (pdev && pdev->info.pci_id == 0x13fe) {
++      /* On BC-250, do not allocate an indirect BO for gfx_init to ensure 100% linear IB without nested IB2 */
++      device->gfx_init = NULL;
++      device->gfx_init_size_dw = 0;
++      return;
++   }
++
+    struct radv_cmd_stream *cs;
+    VkResult result;
+ 
+@@ -1417,7 +1425,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
+          goto fail;
+    }
+ 
+-   if (pdev->info.has_graphics && !(instance->debug_flags & RADV_DEBUG_NO_IB_CHAINING))
++   if (radv_graphics_queue_enabled(pdev) && !(instance->debug_flags & RADV_DEBUG_NO_IB_CHAINING))
+       radv_create_gfx_preamble(device);
+ 
+    if (device->vk.enabled_features.performanceCounterQueryPools) {
+diff --git a/src/amd/vulkan/radv_physical_device.c b/src/amd/vulkan/radv_physical_device.c
+index b89f9b8..4e9de30 100644
+--- a/src/amd/vulkan/radv_physical_device.c
++++ b/src/amd/vulkan/radv_physical_device.c
+@@ -132,7 +132,7 @@ radv_compute_queue_enabled(const struct radv_physical_device *pdev)
+           (!(instance->debug_flags & RADV_DEBUG_NO_COMPUTE_QUEUE) || !pdev->info.has_graphics);
+ }
+ 
+-static bool
++bool
+ radv_graphics_queue_enabled(const struct radv_physical_device *pdev)
+ {
+    return pdev->info.ip[AMD_IP_GFX].num_queues > 0;
+@@ -2535,8 +2535,12 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
+ 
+    const char *name = ac_get_family_name(pdev->info.family);
+    snprintf(pdev->name, sizeof(pdev->name), "AMD RADV %s%s", name, radv_get_compiler_string(pdev));
+-   snprintf(pdev->marketing_name, sizeof(pdev->name), "%s (RADV %s%s)", pdev->info.marketing_name, name,
+-            radv_get_compiler_string(pdev));
++   if (pdev->info.pci_id == 0x13fe) {
++      snprintf(pdev->marketing_name, sizeof(pdev->name), "AMD BC-250 Graphics");
++   } else {
++      snprintf(pdev->marketing_name, sizeof(pdev->name), "%s (RADV %s%s)", pdev->info.marketing_name, name,
++               radv_get_compiler_string(pdev));
++   }
+ 
+    if (pdev->info.gfx_level >= GFX12)
+       vk_warn_non_conformant_implementation("radv");
+@@ -2757,6 +2761,8 @@ create_dx_physical_device(struct vk_instance *vk_instance,
+                           void *unk_adapter,
+                           struct vk_physical_device **out)
+ {
++   fprintf(stderr, "radv: create_dx_physical_device vendor=0x%04x device=0x%04x desc='%s'\n",
++           adapter->vendor_id, adapter->device_id, adapter->description);
+    if (adapter->vendor_id != ATI_VENDOR_ID)
+       return VK_ERROR_INCOMPATIBLE_DRIVER;
+ 
+diff --git a/src/amd/vulkan/radv_physical_device.h b/src/amd/vulkan/radv_physical_device.h
+index fa2fef4..fafa27e 100644
+--- a/src/amd/vulkan/radv_physical_device.h
++++ b/src/amd/vulkan/radv_physical_device.h
+@@ -304,6 +304,8 @@ bool radv_transfer_queue_enabled(const struct radv_physical_device *pdev);
+ 
+ bool radv_compute_queue_enabled(const struct radv_physical_device *pdev);
+ 
++bool radv_graphics_queue_enabled(const struct radv_physical_device *pdev);
++
+ bool radv_spm_trace_enabled(const struct radv_physical_device *pdev);
+ 
+ static inline uint32_t
+diff --git a/src/amd/vulkan/radv_queue.c b/src/amd/vulkan/radv_queue.c
+index 1824002..383bbcb 100644
+--- a/src/amd/vulkan/radv_queue.c
++++ b/src/amd/vulkan/radv_queue.c
+@@ -685,11 +685,22 @@ radv_emit_graphics(struct radv_device *device, struct radv_cmd_stream *cs)
+       return;
+ 
+    if (!device->uses_shadow_regs) {
++      if (pdev->info.pci_id == 0x13fe) {
++         /* PACKET3_PREAMBLE_CNTL: BEGIN_CLEAR_STATE (Opcode 0x4A, count=0 -> 2 dw) */
++         ac_pm4_cmd_add(pm4, PKT3(0x4A, 0, 0));
++         ac_pm4_cmd_add(pm4, 0);
++      }
++
+       ac_pm4_cmd_add(pm4, PKT3(PKT3_CONTEXT_CONTROL, 1, 0));
+       ac_pm4_cmd_add(pm4, S_281_UPDATE_LOAD_ENABLES(1));
+       ac_pm4_cmd_add(pm4, S_282_UPDATE_SHADOW_ENABLES(1));
+ 
+       if (has_clear_state) {
++         if (pdev->info.pci_id == 0x13fe) {
++            /* PACKET3_PREAMBLE_CNTL: END_CLEAR_STATE (Opcode 0x4A, count=0 -> 2 dw) */
++            ac_pm4_cmd_add(pm4, PKT3(0x4A, 0, 0));
++            ac_pm4_cmd_add(pm4, 1);
++         }
+          ac_pm4_cmd_add(pm4, PKT3(PKT3_CLEAR_STATE, 0, 0));
+          ac_pm4_cmd_add(pm4, 0);
+       }
+@@ -839,7 +850,8 @@ radv_emit_graphics(struct radv_device *device, struct radv_cmd_stream *cs)
+ static void
+ radv_init_graphics_state(struct radv_cmd_stream *cs, struct radv_device *device)
+ {
+-   if (device->gfx_init) {
++   struct radv_physical_device *pdev = radv_device_physical(device);
++   if (device->gfx_init && (!pdev || pdev->info.pci_id != 0x13fe)) {
+       struct radeon_winsys *ws = device->ws;
+ 
+       ws->cs_execute_ib(cs->b, device->gfx_init, 0, device->gfx_init_size_dw & 0xffff, false);
+diff --git a/src/amd/vulkan/winsys/common/radv_winsys_cs.h b/src/amd/vulkan/winsys/common/radv_winsys_cs.h
+index 7a5fa70..cd0c26f 100644
+--- a/src/amd/vulkan/winsys/common/radv_winsys_cs.h
++++ b/src/amd/vulkan/winsys/common/radv_winsys_cs.h
+@@ -60,13 +60,27 @@ radv_winsys_cs_destroy(struct radv_winsys_cs *cs)
+ {
+    _mesa_hash_table_destroy(cs->annotations, radv_winsys_cs_free_annotation);
+ 
+-   if (cs->ib_buffer)
+-      cs->ws->buffer_destroy(cs->ws, cs->ib_buffer);
++   if (cs->ib_buffer) {
++      struct radeon_winsys_bo *bo = cs->ib_buffer;
++      cs->ib_buffer = NULL;
++      for (unsigned i = 0; i < cs->num_ib_buffers; ++i) {
++         if (cs->ib_buffers[i].bo == bo)
++            cs->ib_buffers[i].bo = NULL;
++      }
++      cs->ws->buffer_destroy(cs->ws, bo);
++   }
+ 
+-   for (unsigned i = 0; i < cs->num_ib_buffers; ++i)
+-      cs->ws->buffer_destroy(cs->ws, cs->ib_buffers[i].bo);
++   for (unsigned i = 0; i < cs->num_ib_buffers; ++i) {
++      if (cs->ib_buffers[i].bo) {
++         struct radeon_winsys_bo *bo = cs->ib_buffers[i].bo;
++         cs->ib_buffers[i].bo = NULL;
++         cs->ws->buffer_destroy(cs->ws, bo);
++      }
++   }
+ 
+    free(cs->ib_buffers);
++   cs->ib_buffers = NULL;
++   cs->num_ib_buffers = 0;
+ }
+ 
+ static enum radeon_bo_domain
+@@ -372,7 +386,11 @@ radv_winsys_cs_grow(struct ac_cmdbuf *_cs, size_t min_size)
+       cs->base.buf[cs->base.cdw - 4] = PKT3(PKT3_INDIRECT_BUFFER, 2, 0);
+       cs->base.buf[cs->base.cdw - 3] = cs->ib_buffer->va;
+       cs->base.buf[cs->base.cdw - 2] = cs->ib_buffer->va >> 32;
+-      cs->base.buf[cs->base.cdw - 1] = S_3F3_CHAIN(1) | S_3F3_VALID(1);
++      if (cs->hw_ip == AMD_IP_GFX) {
++         cs->base.buf[cs->base.cdw - 1] = S_3F3_CHAIN(1) | (1u << 22) | (7u << 24);
++      } else {
++         cs->base.buf[cs->base.cdw - 1] = S_3F3_CHAIN(1) | S_3F3_VALID(1) | (1u << 30) | (7u << 24);
++      }
+ 
+       cs->ib_size_ptr = cs->base.buf + cs->base.cdw - 1;
+    }
+@@ -457,7 +475,17 @@ radv_winsys_cs_chain(struct ac_cmdbuf *cs, struct ac_cmdbuf *next_cs, bool pre_e
+    cs->buf[cs->cdw - 4] = PKT3(PKT3_INDIRECT_BUFFER, 2, 0);
+    cs->buf[cs->cdw - 3] = next_acs->chain_ib_va;
+    cs->buf[cs->cdw - 2] = next_acs->chain_ib_va >> 32;
+-   cs->buf[cs->cdw - 1] = S_3F3_CHAIN(1) | S_3F3_VALID(1) | S_3F3_PRE_ENA(pre_ena) | next_acs->chain_ib_size;
++   {
++      uint32_t ctrl = S_3F3_CHAIN(1) | (next_acs->chain_ib_size & 0xFFFFF);
++      if (acs->hw_ip == AMD_IP_GFX) {
++         /* PFP (Graphics): Bit 21 = PRE_ENA, Bit 22 = INHERIT_VMID, Bit 23 = 0 (RESERVED), Bits 24..27 = VMID 7 */
++         ctrl |= S_3F3_PRE_ENA(pre_ena) | (1u << 22) | (7u << 24);
++      } else {
++         /* MEC (Compute): Bit 23 = VALID, Bits 24..27 = VMID 7, Bit 30 = INHERIT_VMID */
++         ctrl |= S_3F3_VALID(1) | (1u << 30) | (7u << 24);
++      }
++      cs->buf[cs->cdw - 1] = ctrl;
++   }
+ 
+    return true;
+ }
+@@ -493,6 +521,13 @@ radv_winsys_cs_emit_secondary_ib2(struct radv_winsys_cs *parent, struct radv_win
+ 
+       /* Not setting the CHAIN bit will launch an IB2. */
+       ac_emit_cp_indirect_buffer(&parent->base, va, size, 0, false);
++      if (parent->hw_ip == AMD_IP_GFX) {
++         /* PFP (Graphics): Bit 22 = INHERIT_VMID, Bits 24..27 = VMID 7 */
++         parent->base.buf[parent->base.cdw - 1] |= (1u << 22) | (7u << 24);
++      } else {
++         /* MEC (Compute): Bit 23 = VALID, Bits 24..27 = VMID 7, Bit 30 = INHERIT_VMID */
++         parent->base.buf[parent->base.cdw - 1] |= S_3F3_VALID(1) | (1u << 30) | (7u << 24);
++      }
+ 
+       assert(parent->base.cdw <= parent->base.max_dw);
+    }
+@@ -551,6 +586,13 @@ radv_winsys_cs_execute_ib(struct ac_cmdbuf *_cs, struct radeon_winsys_bo *bo, ui
+    assert(cs->hw_ip == AMD_IP_GFX && cdw <= ~C_3F3_IB_SIZE);
+ 
+    ac_emit_cp_indirect_buffer(&cs->base, ib_va, cdw, 0, predicate);
++   if (cs->hw_ip == AMD_IP_GFX) {
++      /* PFP (Graphics): Bit 22 = INHERIT_VMID, Bits 24..27 = VMID 7 */
++      cs->base.buf[cs->base.cdw - 1] |= (1u << 22) | (7u << 24);
++   } else {
++      /* MEC (Compute): Bit 23 = VALID, Bits 24..27 = VMID 7, Bit 30 = INHERIT_VMID */
++      cs->base.buf[cs->base.cdw - 1] |= S_3F3_VALID(1) | (1u << 30) | (7u << 24);
++   }
+ }
+ 
+ static void
+diff --git a/src/amd/vulkan/winsys/wddm2/radv_wddm2_bo.c b/src/amd/vulkan/winsys/wddm2/radv_wddm2_bo.c
+index 964e725..e6a842b 100644
+--- a/src/amd/vulkan/winsys/wddm2/radv_wddm2_bo.c
++++ b/src/amd/vulkan/winsys/wddm2/radv_wddm2_bo.c
+@@ -34,6 +34,7 @@
+ #include "radv_wddm2_bo.h"
+ #include "radv_wddm2_cs.h"
+ #include "util/u_memory.h"
++#include <stdio.h>
+ 
+ /* Xlib headers conflict with DXGI headers */
+ #ifdef Status
+@@ -202,6 +203,28 @@ enum alloc_heap {
+    ALLOC_HEAP_GART_CACHEABLE = 3,
+ };
+ 
++/* Public UMD/KMD allocation contract owned by NamixWDDM.  The BC-250 KMD
++ * deliberately rejects AMD proprietary allocation blobs: accepting those
++ * would make size, alignment and allocation identity ambiguous. */
++#define BC250_ALLOCATION_PRIVATE_MAGIC 0x31414342u
++#define BC250_ALLOCATION_PRIVATE_VERSION 1u
++#define BC250_ALLOCATION_MIN_ALIGNMENT 4096u
++#define BC250_ALLOCATION_MAX_ALIGNMENT (2u * 1024u * 1024u)
++
++#define BC250_ALLOCATION_FLAG_CPU_VISIBLE        0x00000001u
++#define BC250_ALLOCATION_TOKEN_CLASS_CPU_VISIBLE 0xA1100005u
++#define BC250_ALLOCATION_TOKEN_CLASS_SHIFT       32u
++
++struct bc250_allocation_private_v1 {
++   uint32_t magic;
++   uint32_t version;
++   uint32_t struct_size;
++   uint32_t flags;
++   uint64_t allocation_token;
++   uint64_t byte_size;
++   uint64_t alignment;
++};
++
+ #define ADD_HEAP(heap) \
+    do { \
+       bo_info->flags |= 1 << ALLOC_HEAP_##heap; \
+@@ -348,24 +371,28 @@ static uint64_t
+ radv_wddm2_reserve_va_range(struct radv_wddm2_winsys *ws, uint64_t size, unsigned alignment,
+                             enum radeon_bo_flag flags)
+ {
+-   D3DGPU_VIRTUAL_ADDRESS min;
++   D3DGPU_VIRTUAL_ADDRESS min, max;
+    NTSTATUS status;
+    
+-   if (flags & RADEON_FLAG_32BIT)
++   if (flags & RADEON_FLAG_32BIT) {
+       min = RADV_WDDM2_32BIT_HEAP_START;
+-   else if (flags & RADEON_FLAG_REPLAYABLE)
+-      min = RADV_WDDM2_REPLAY_HEAP_START;
+-   else
++      max = RADV_WDDM2_HEAP_START;
++   } else if (flags & RADEON_FLAG_REPLAYABLE) {
++      min = ws->is_bc250 ? 0x00000003F0000000ull : RADV_WDDM2_REPLAY_HEAP_START;
++      max = ws->is_bc250 ? 0x00000003FFFFFFFFull : (RADV_WDDM2_REPLAY_HEAP_START + (4ull << 32));
++   } else {
+       min = RADV_WDDM2_HEAP_START;
++      max = ws->is_bc250 ? 0x00000003F0000000ull : RADV_WDDM2_REPLAY_HEAP_START;
++   }
+ 
+    D3DDDI_RESERVEGPUVIRTUALADDRESS reserve = {
+       .hPagingQueue = ws->paging_queue_h,
+       .MinimumAddress = min,
+-      .MaximumAddress = min + (1ull << 32),
++      .MaximumAddress = max,
+       .Size = size,
+    };
+    status = WDDM2_DISPATCH(ReserveGpuVirtualAddress(&reserve));
+-   if (!NT_SUCCESS(status))
++   if (!NT_SUCCESS(status) || reserve.VirtualAddress == 0)
+       return 0;
+ 
+    D3DDDI_MAPGPUVIRTUALADDRESS map = {
+@@ -376,7 +403,21 @@ radv_wddm2_reserve_va_range(struct radv_wddm2_winsys *ws, uint64_t size, unsigne
+          .Zero = 1,
+       },
+    };
++
++   uint64_t cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++   fprintf(stderr, "[RADV_WDDM2] ENTER MapGpuVirtualAddress (reserve): va=0x%llx pages=%llu cur_paging_fence=%llu\n",
++           (unsigned long long)reserve.VirtualAddress, (unsigned long long)(size / 4096),
++           (unsigned long long)cur_paging_fence);
++   fflush(stderr);
++
+    status = WDDM2_DISPATCH(MapGpuVirtualAddress(&map));
++
++   cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++   fprintf(stderr, "[RADV_WDDM2] LEAVE MapGpuVirtualAddress (reserve): status=0x%08X va=0x%llx map_fence=%llu cur_paging_fence=%llu\n",
++           (unsigned)status, (unsigned long long)map.VirtualAddress,
++           (unsigned long long)map.PagingFenceValue, (unsigned long long)cur_paging_fence);
++   fflush(stderr);
++
+    if (!NT_SUCCESS(status))
+       return 0;
+ 
+@@ -452,15 +493,40 @@ radv_wddm2_bo_create_internal(struct radeon_winsys *_ws, uint64_t size, unsigned
+       virt_alignment = MAX2(virt_alignment, ws->gpu_info.pte_fragment_size);
+    const uint64_t phys_size = align64(size, phys_alignment);
+ 
++   if (ws->is_bc250 &&
++       (phys_alignment < BC250_ALLOCATION_MIN_ALIGNMENT ||
++        phys_alignment > BC250_ALLOCATION_MAX_ALIGNMENT ||
++        (phys_alignment & (phys_alignment - 1)) != 0)) {
++      result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
++      goto error_ptr_alloc;
++   }
++
+    uint8_t alloc_pdata[824] = {0};
+    uint32_t pdata_size;
+    pdata_size = fill_alloc_pdata(ws, phys_size, phys_alignment, initial_domain,
+                                  flags, priority, address, cpu_ptr, alloc_pdata);
+ 
++   uint32_t bc250_alloc_flags = 0;
++   if (!(flags & RADEON_FLAG_NO_CPU_ACCESS) || (flags & RADEON_FLAG_CPU_ACCESS) || cpu_ptr != NULL) {
++      bc250_alloc_flags |= BC250_ALLOCATION_FLAG_CPU_VISIBLE;
++   }
++
++   struct bc250_allocation_private_v1 bc250_pdata = {
++      .magic = BC250_ALLOCATION_PRIVATE_MAGIC,
++      .version = BC250_ALLOCATION_PRIVATE_VERSION,
++      .struct_size = sizeof(struct bc250_allocation_private_v1),
++      .flags = bc250_alloc_flags,
++      .allocation_token = (uint64_t)(uintptr_t)bo,
++      .byte_size = phys_size,
++      .alignment = phys_alignment,
++   };
++
+    D3DDDI_ALLOCATIONINFO2 alloc_info = {
+       .pSystemMem = cpu_ptr,
+-      .pPrivateDriverData = alloc_pdata,
+-      .PrivateDriverDataSize = pdata_size,
++      .pPrivateDriverData = ws->is_bc250 ?
++                            (void *)&bc250_pdata : (void *)alloc_pdata,
++      .PrivateDriverDataSize = ws->is_bc250 ?
++                               sizeof(bc250_pdata) : pdata_size,
+       .VidPnSourceId = 0xffffffff,
+       .Priority = D3DDDI_ALLOCATIONPRIORITY_NORMAL,
+    };
+@@ -475,8 +541,10 @@ radv_wddm2_bo_create_internal(struct radeon_winsys *_ws, uint64_t size, unsigned
+ 
+    D3DKMT_CREATEALLOCATION create = {
+       .hDevice = ws->device_h,
+-      .pPrivateDriverData = &create_pdata,
+-      .PrivateDriverDataSize = sizeof(create_pdata),
++      .pPrivateDriverData = ws->is_bc250 ?
++                            NULL : &create_pdata,
++      .PrivateDriverDataSize = ws->is_bc250 ?
++                               0 : sizeof(create_pdata),
+       .NumAllocations = 1,
+       .pAllocationInfo2 = &alloc_info,
+       .Flags = {
+@@ -504,9 +572,33 @@ radv_wddm2_bo_create_internal(struct radeon_winsys *_ws, uint64_t size, unsigned
+       goto error_create;
+    }*/
+ 
++   /* Uma linha, uma vez: qual ABI de private data foi de fato escolhida.
++    * Sem isso, uma recusa do KMD por tamanho errado so aparece do lado do
++    * driver -- foi preciso ler o log do KMD para descobrir que sairam 536
++    * bytes em vez dos 40 de bc250_allocation_private_v1. */
++   static bool logged_alloc_abi = false;
++   if (!logged_alloc_abi) {
++      logged_alloc_abi = true;
++      fprintf(stderr, "radv: CreateAllocation2 ABI: is_bc250=%d PrivateDriverDataSize=%u\n",
++              (int)ws->is_bc250, (unsigned)alloc_info.PrivateDriverDataSize);
++   }
++
++   uint64_t cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++   fprintf(stderr, "[RADV_WDDM2] ENTER CreateAllocation2: is_bc250=%d size=%llu align=%u pdata_size=%u cur_paging_fence=%llu\n",
++           (int)ws->is_bc250, (unsigned long long)phys_size, (unsigned)phys_alignment,
++           (unsigned)alloc_info.PrivateDriverDataSize, (unsigned long long)cur_paging_fence);
++   fflush(stderr);
++
+    status = WDDM2_DISPATCH(CreateAllocation2(&create));
++
++   cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++   fprintf(stderr, "[RADV_WDDM2] LEAVE CreateAllocation2: status=0x%08X hAlloc=0x%x cur_paging_fence=%llu\n",
++           (unsigned)status, (unsigned)alloc_info.hAllocation, (unsigned long long)cur_paging_fence);
++   fflush(stderr);
++
+    if (!NT_SUCCESS(status)) {
+-      fprintf(stderr, "CreateAllocation2 failed 0x%X\n", status);
++      fprintf(stderr, "CreateAllocation2 failed 0x%X (is_bc250=%d, PrivateDriverDataSize=%u)\n",
++              status, (int)ws->is_bc250, (unsigned)alloc_info.PrivateDriverDataSize);
+       result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+       goto error_ptr_alloc;
+    }
+@@ -524,23 +616,43 @@ radv_wddm2_bo_create_internal(struct radeon_winsys *_ws, uint64_t size, unsigned
+ 
+    D3DGPU_VIRTUAL_ADDRESS min = flags & RADEON_FLAG_32BIT ? RADV_WDDM2_32BIT_HEAP_START : RADV_WDDM2_HEAP_START;
+    if (flags & RADEON_FLAG_REPLAYABLE)
+-      min = RADV_WDDM2_REPLAY_HEAP_START;
++      min = (ws->is_bc250) ? 0x00000003F0000000ull : RADV_WDDM2_REPLAY_HEAP_START;
+    D3DGPU_VIRTUAL_ADDRESS max = flags & RADEON_FLAG_32BIT ? RADV_WDDM2_HEAP_START : RADV_WDDM2_REPLAY_HEAP_START;
+    if (flags & RADEON_FLAG_REPLAYABLE)
+       max = RADV_WDDM2_REPLAY_HEAP_START + (4ull << 32);
++   if (ws->is_bc250 && !(flags & (RADEON_FLAG_32BIT | RADEON_FLAG_REPLAYABLE)))
++      max = 0x00000003F0000000ull;
++   if (ws->is_bc250 && max > 0x00000003FFFFFFFFull)
++      max = 0x00000003FFFFFFFFull;
++
+    D3DDDI_MAPGPUVIRTUALADDRESS map = {
+       .hPagingQueue = ws->paging_queue_h,
+-      .BaseAddress = address, //0, //bo->base.va == 0x100002000 ? 0 : bo->base.va,
++      .BaseAddress = address,
+       .MinimumAddress = min,
+       .MaximumAddress = max,
+       .hAllocation = bo->base.handle,
+       .SizeInPages = phys_size / 4096,
+       .Protection = {
+          .Write = !(flags & RADEON_FLAG_READ_ONLY),
++         .Execute = 1,
+       },
+    };
++
++   cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++   fprintf(stderr, "[RADV_WDDM2] ENTER MapGpuVirtualAddress: hAlloc=0x%x base_req=0x%llx min=0x%llx max=0x%llx pages=%llu cur_paging_fence=%llu\n",
++           (unsigned)bo->base.handle, (unsigned long long)address, (unsigned long long)min, (unsigned long long)max,
++           (unsigned long long)(phys_size / 4096), (unsigned long long)cur_paging_fence);
++   fflush(stderr);
++
+    status = WDDM2_DISPATCH(MapGpuVirtualAddress(&map));
+-   if (!NT_SUCCESS(status)) {
++
++   cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++   fprintf(stderr, "[RADV_WDDM2] LEAVE MapGpuVirtualAddress: status=0x%08X va=0x%llx map_fence=%llu cur_paging_fence=%llu\n",
++           (unsigned)status, (unsigned long long)map.VirtualAddress,
++           (unsigned long long)map.PagingFenceValue, (unsigned long long)cur_paging_fence);
++   fflush(stderr);
++
++   if (!NT_SUCCESS(status) || map.VirtualAddress == 0) {
+       fprintf(stderr, "mapping 0x%" PRIx64 " failed: 0x%X\n", bo->base.va, status);
+       result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+       goto error_va_alloc;
+@@ -558,13 +670,24 @@ radv_wddm2_bo_create_internal(struct radeon_winsys *_ws, uint64_t size, unsigned
+             .MustSucceed = 1,
+          },
+       };
++
++      cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++      fprintf(stderr, "[RADV_WDDM2] ENTER MakeResident: hAlloc=0x%x cur_paging_fence=%llu\n",
++              (unsigned)bo->base.handle, (unsigned long long)cur_paging_fence);
++      fflush(stderr);
++
+       status = WDDM2_DISPATCH(MakeResident(&make_resident));
++
++      cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++      fprintf(stderr, "[RADV_WDDM2] LEAVE MakeResident: status=0x%08X resident_fence=%llu cur_paging_fence=%llu\n",
++              (unsigned)status, (unsigned long long)make_resident.PagingFenceValue, (unsigned long long)cur_paging_fence);
++      fflush(stderr);
++
+       if (!NT_SUCCESS(status)) {
+          fprintf(stderr, "MakeResident failed\n");
+          result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+          goto error_va_alloc;
+       }
+-
+       paging_fence_value = make_resident.PagingFenceValue;
+    }
+ 
+@@ -574,7 +697,19 @@ radv_wddm2_bo_create_internal(struct radeon_winsys *_ws, uint64_t size, unsigned
+       .ObjectHandleArray = &ws->paging_fence_h,
+       .FenceValueArray = &paging_fence_value,
+    };
++
++   cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++   fprintf(stderr, "[RADV_WDDM2] ENTER WaitForSynchronizationObjectFromCpu (paging): target_fence=%llu cur_paging_fence=%llu\n",
++           (unsigned long long)paging_fence_value, (unsigned long long)cur_paging_fence);
++   fflush(stderr);
++
+    status = WDDM2_DISPATCH(WaitForSynchronizationObjectFromCpu(&wait));
++
++   cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++   fprintf(stderr, "[RADV_WDDM2] LEAVE WaitForSynchronizationObjectFromCpu (paging): status=0x%08X target_fence=%llu cur_paging_fence=%llu\n",
++           (unsigned)status, (unsigned long long)paging_fence_value, (unsigned long long)cur_paging_fence);
++   fflush(stderr);
++
+    if (!NT_SUCCESS(status)) {
+       fprintf(stderr, "WaitForSynchronizationObjectFromCpu failed\n");
+       result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+@@ -629,7 +764,11 @@ radv_wddm2_bo_from_ptr(struct radeon_winsys *_ws, void *pointer, uint64_t size,
+ static bool
+ radv_wddm2_bo_get_handle(struct radeon_winsys *_ws, struct radeon_winsys_bo *_bo, void **handle)
+ {
+-   return false;
++   struct radv_wddm2_bo *bo = radv_wddm2_bo(_bo);
++   if (!bo || !handle)
++      return false;
++   *handle = (void *)(uintptr_t)bo->base.handle;
++   return true;
+ }
+ 
+ static VkResult
+@@ -704,16 +843,32 @@ radv_wddm2_bo_from_handle(struct radeon_winsys *_ws, void *handle, unsigned prio
+    bo->md.kmw.surf_size = surf->slice_size;
+ 
+    /* Map the opened allocation into GPU virtual address space */
++   D3DGPU_VIRTUAL_ADDRESS max_va = ws->is_bc250 ? 0x00000003F0000000ull : RADV_WDDM2_REPLAY_HEAP_START;
+    D3DDDI_MAPGPUVIRTUALADDRESS map = {
+       .hPagingQueue = ws->paging_queue_h,
+       .MinimumAddress = RADV_WDDM2_HEAP_START,
+-      .MaximumAddress = RADV_WDDM2_REPLAY_HEAP_START,
++      .MaximumAddress = max_va,
+       .hAllocation = bo->base.handle,
+       .Protection = {
+          .Write = 1,
++         .Execute = 1,
+       },
+    };
++
++   uint64_t cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++   fprintf(stderr, "[RADV_WDDM2] ENTER MapGpuVirtualAddress (from_handle): hAlloc=0x%x min=0x%llx max=0x%llx cur_paging_fence=%llu\n",
++           (unsigned)bo->base.handle, (unsigned long long)RADV_WDDM2_HEAP_START, (unsigned long long)max_va,
++           (unsigned long long)cur_paging_fence);
++   fflush(stderr);
++
+    status = WDDM2_DISPATCH(MapGpuVirtualAddress(&map));
++
++   cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++   fprintf(stderr, "[RADV_WDDM2] LEAVE MapGpuVirtualAddress (from_handle): status=0x%08X va=0x%llx map_fence=%llu cur_paging_fence=%llu\n",
++           (unsigned)status, (unsigned long long)map.VirtualAddress,
++           (unsigned long long)map.PagingFenceValue, (unsigned long long)cur_paging_fence);
++   fflush(stderr);
++
+    if (!NT_SUCCESS(status)) {
+       result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+       goto error_import;
+@@ -732,7 +887,19 @@ radv_wddm2_bo_from_handle(struct radeon_winsys *_ws, void *handle, unsigned prio
+          .MustSucceed = 1,
+       },
+    };
++
++   cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++   fprintf(stderr, "[RADV_WDDM2] ENTER MakeResident (from_handle): hAlloc=0x%x cur_paging_fence=%llu\n",
++           (unsigned)bo->base.handle, (unsigned long long)cur_paging_fence);
++   fflush(stderr);
++
+    status = WDDM2_DISPATCH(MakeResident(&make_resident));
++
++   cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++   fprintf(stderr, "[RADV_WDDM2] LEAVE MakeResident (from_handle): status=0x%08X resident_fence=%llu cur_paging_fence=%llu\n",
++           (unsigned)status, (unsigned long long)make_resident.PagingFenceValue, (unsigned long long)cur_paging_fence);
++   fflush(stderr);
++
+    if (!NT_SUCCESS(status)) {
+       result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+       goto error_map;
+@@ -745,7 +912,19 @@ radv_wddm2_bo_from_handle(struct radeon_winsys *_ws, void *handle, unsigned prio
+       .ObjectHandleArray = &ws->paging_fence_h,
+       .FenceValueArray = &make_resident.PagingFenceValue,
+    };
++
++   cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++   fprintf(stderr, "[RADV_WDDM2] ENTER WaitForSynchronizationObjectFromCpu (from_handle): target_fence=%llu cur_paging_fence=%llu\n",
++           (unsigned long long)make_resident.PagingFenceValue, (unsigned long long)cur_paging_fence);
++   fflush(stderr);
++
+    status = WDDM2_DISPATCH(WaitForSynchronizationObjectFromCpu(&wait));
++
++   cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++   fprintf(stderr, "[RADV_WDDM2] LEAVE WaitForSynchronizationObjectFromCpu (from_handle): status=0x%08X target_fence=%llu cur_paging_fence=%llu\n",
++           (unsigned)status, (unsigned long long)make_resident.PagingFenceValue, (unsigned long long)cur_paging_fence);
++   fflush(stderr);
++
+    if (!NT_SUCCESS(status)) {
+       result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+       goto error_map;
+@@ -819,11 +998,14 @@ radv_wddm2_bo_map(struct radeon_winsys *_ws, struct radeon_winsys_bo *_bo,
+       .hAllocation = bo->base.handle,
+    };
+    status = WDDM2_DISPATCH(Lock2(&lock));
+-   if (!NT_SUCCESS(status))
++   if (!NT_SUCCESS(status) || lock.pData == NULL) {
++      fprintf(stderr, "[RADV_WDDM2] Lock2 failed: status=0x%08X hAlloc=0x%x pData=%p\n",
++              (unsigned)status, (unsigned)bo->base.handle, lock.pData);
++      fflush(stderr);
+       return NULL;
++   }
+ 
+    bo->map = lock.pData;
+-
+    return lock.pData;
+ }
+ 
+@@ -867,7 +1049,18 @@ radv_wddm2_bo_make_resident(struct radeon_winsys *_ws, struct radeon_winsys_bo *
+             .MustSucceed = 1,
+          },
+       };
++      uint64_t cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++      fprintf(stderr, "[RADV_WDDM2] ENTER MakeResident (bo_make_resident): hAlloc=0x%x cur_paging_fence=%llu\n",
++              (unsigned)bo->base.handle, (unsigned long long)cur_paging_fence);
++      fflush(stderr);
++
+       status = D3DKMTMakeResident(&make_resident);
++
++      cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++      fprintf(stderr, "[RADV_WDDM2] LEAVE MakeResident (bo_make_resident): status=0x%08X resident_fence=%llu cur_paging_fence=%llu\n",
++              (unsigned)status, (unsigned long long)make_resident.PagingFenceValue, (unsigned long long)cur_paging_fence);
++      fflush(stderr);
++
+       if (!NT_SUCCESS(status))
+          return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+ 
+@@ -877,7 +1070,19 @@ radv_wddm2_bo_make_resident(struct radeon_winsys *_ws, struct radeon_winsys_bo *
+          .ObjectHandleArray = &ws->paging_fence_h,
+          .FenceValueArray = &make_resident.PagingFenceValue,
+       };
++
++      cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++      fprintf(stderr, "[RADV_WDDM2] ENTER WaitForSynchronizationObjectFromCpu (bo_make_resident): target_fence=%llu cur_paging_fence=%llu\n",
++              (unsigned long long)make_resident.PagingFenceValue, (unsigned long long)cur_paging_fence);
++      fflush(stderr);
++
+       status = D3DKMTWaitForSynchronizationObjectFromCpu(&wait);
++
++      cur_paging_fence = ws->paging_fence_cpu_va ? *ws->paging_fence_cpu_va : 0;
++      fprintf(stderr, "[RADV_WDDM2] LEAVE WaitForSynchronizationObjectFromCpu (bo_make_resident): status=0x%08X target_fence=%llu cur_paging_fence=%llu\n",
++              (unsigned)status, (unsigned long long)make_resident.PagingFenceValue, (unsigned long long)cur_paging_fence);
++      fflush(stderr);
++
+       if (!NT_SUCCESS(status))
+          return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    } else {
+@@ -902,18 +1107,17 @@ radv_wddm2_bo_destroy(struct radeon_winsys *_ws, struct radeon_winsys_bo *_bo)
+    struct radv_wddm2_bo *bo = radv_wddm2_bo(_bo);
+    ASSERTED NTSTATUS status;
+ 
+-   if (all_resident && !bo->base.is_virtual) {
++   if (!bo)
++      return;
++
++   if (all_resident && !bo->base.is_virtual && ws->paging_queue_h) {
+       D3DKMT_EVICT evict = {
+          .hDevice = ws->device_h,
+          .NumAllocations = 1,
+          .AllocationList = &bo->base.handle,
+          .Flags.EvictOnlyIfNecessary = false,
+       };
+-      status = WDDM2_DISPATCH(Evict(&evict));
+-      if (!NT_SUCCESS(status)) {
+-         fprintf(stderr, "*****  Evict failed\n");
+-         return;
+-      }
++      WDDM2_DISPATCH(Evict(&evict));
+    }
+ 
+    radv_wddm2_bo_unmap(_ws, _bo, false);
+@@ -960,6 +1164,7 @@ radv_wddm2_virtual_bo_map(struct radv_wddm2_winsys *ws, struct radv_wddm2_ctx *c
+          .AllocationSizeInBytes = size,
+          .Protection = {
+             .Write = 1,
++            .Execute = 1,
+          },
+          .DriverProtection = 1,
+       },
+diff --git a/src/amd/vulkan/winsys/wddm2/radv_wddm2_bo.h b/src/amd/vulkan/winsys/wddm2/radv_wddm2_bo.h
+index c40e35c..66d8db9 100644
+--- a/src/amd/vulkan/winsys/wddm2/radv_wddm2_bo.h
++++ b/src/amd/vulkan/winsys/wddm2/radv_wddm2_bo.h
+@@ -30,8 +30,8 @@
+ 
+ #include "radv_wddm2_winsys.h"
+ 
+-#define RADV_WDDM2_HEAP_START          0x0000000200000000ull
+-#define RADV_WDDM2_32BIT_HEAP_START    0x0000000100000000ull
++#define RADV_WDDM2_32BIT_HEAP_START    0x0000000200000000ull
++#define RADV_WDDM2_HEAP_START          0x0000000240000000ull
+ #define RADV_WDDM2_REPLAY_HEAP_START   0x0000500000000000ull
+ 
+ struct radv_wddm2_bo {
+diff --git a/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.c b/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.c
+index 088f69f..41167f1 100644
+--- a/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.c
++++ b/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.c
+@@ -212,15 +212,16 @@ radv_wddm2_queue_init(struct radv_wddm2_winsys *ws, enum amd_ip_type hw_ip,
+ {
+    NTSTATUS status;
+    uint32_t node;
++   const bool is_bc250 = ws->is_bc250;
+ 
+    queue->hw_ip = hw_ip;
+ 
+    switch (hw_ip) {
+    case AMD_IP_GFX:
+-      node = debug_get_num_option("RADV_DXGI_3D_NODE", 0);
++      node = debug_get_num_option("RADV_DXGI_3D_NODE", is_bc250 ? 1 : 0);
+       break;
+    case AMD_IP_COMPUTE:
+-      node = debug_get_num_option("RADV_DXGI_COMPUTE_NODE", 2);
++      node = debug_get_num_option("RADV_DXGI_COMPUTE_NODE", is_bc250 ? 1 : 2);
+       break;
+    default:
+       /* Not supported */
+@@ -244,17 +245,27 @@ radv_wddm2_queue_init(struct radv_wddm2_winsys *ws, enum amd_ip_type hw_ip,
+       .NodeOrdinal = node,
+       .EngineAffinity = 1, // TODO
+       .Flags = {
+-         .HwQueueSupported = true,
+-         //.DisableGpuTimeout = true, // D3D sets this to true?
++         .HwQueueSupported = !is_bc250,
++         .DisableGpuTimeout = is_bc250 ? true : false,
+       },
+-      .pPrivateDriverData = &create_context_data,
+-      .PrivateDriverDataSize = sizeof(create_context_data),
++      .pPrivateDriverData = is_bc250 ? NULL : &create_context_data,
++      .PrivateDriverDataSize = is_bc250 ? 0 : sizeof(create_context_data),
+       .ClientHint = D3DKMT_CLIENTHINT_VULKAN,
+    };
+ 
+    status = WDDM2_DISPATCH(CreateContextVirtual(&create_context));
++   if (!NT_SUCCESS(status) && !is_bc250) {
++      /* Fallback: Try without proprietary AMD private driver data */
++      create_context.pPrivateDriverData = NULL;
++      create_context.PrivateDriverDataSize = 0;
++      create_context.Flags.HwQueueSupported = false;
++      status = WDDM2_DISPATCH(CreateContextVirtual(&create_context));
++   }
+    if (!NT_SUCCESS(status)) {
+-      fprintf(stderr, "Create context failed 0x%X for IP %i and device 0x%x\n", status, hw_ip, ws->device_h);
++      fprintf(stderr,
++              "radv/wddm2: CreateContextVirtual failed with NTSTATUS 0x%08X "
++              "(ip_type=%u node=%u)\n",
++              (unsigned)status, (unsigned)hw_ip, (unsigned)node);
+       return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    queue->context_h = create_context.hContext;
+@@ -270,18 +281,24 @@ radv_wddm2_queue_init(struct radv_wddm2_winsys *ws, enum amd_ip_type hw_ip,
+          create_queue_pdd.parent_queue_id = parent->queue_id;
+       }
+ 
+-      D3DKMT_CREATEHWQUEUE create_queue = {
+-         .hHwContext = queue->context_h,
+-         .pPrivateDriverData = &create_queue_pdd,
+-         .PrivateDriverDataSize = sizeof(create_queue_pdd),
+-      };
+-      status = WDDM2_DISPATCH(CreateHwQueue(&create_queue));
+-      if (!NT_SUCCESS(status)) {
+-         fprintf(stderr, "Create queue failed 0x%X for IP %i and device 0x%x\n", status, hw_ip, ws->device_h);
+-         goto failed;
++      if (is_bc250) {
++         queue->handle = 0;
++         queue->queue_id = 0;
++      } else {
++         D3DKMT_CREATEHWQUEUE create_queue = {
++            .hHwContext = queue->context_h,
++            .pPrivateDriverData = &create_queue_pdd,
++            .PrivateDriverDataSize = sizeof(create_queue_pdd),
++         };
++         status = WDDM2_DISPATCH(CreateHwQueue(&create_queue));
++         if (NT_SUCCESS(status)) {
++            queue->handle = create_queue.hHwQueue;
++            queue->queue_id = create_queue_pdd.queue_id;
++         } else {
++            queue->handle = 0;
++            queue->queue_id = 0;
++         }
+       }
+-      queue->handle = create_queue.hHwQueue;
+-      queue->queue_id = create_queue_pdd.queue_id;
+ 
+       D3DKMT_CREATESYNCHRONIZATIONOBJECT2 create_sync = {
+          .hDevice = ws->device_h,
+@@ -366,9 +383,10 @@ vk_wddm2_fence_wait(uint32_t device_h, struct vk_wddm2_fence *fence)
+    NTSTATUS status;
+    HANDLE async_event = 0;
+ 
+-   /* Quick poll all the fences ourselves.  We may not have to call into the
+-    * kernel at all.
+-    */
++   if (!fence || !fence->handle || !fence->value_map)
++      return false;
++
++   /* Quick poll all the fences ourselves. */
+    if (p_atomic_read(fence->value_map) >= fence->wait_value)
+       return true;
+ 
+@@ -383,36 +401,33 @@ vk_wddm2_fence_wait(uint32_t device_h, struct vk_wddm2_fence *fence)
+       .FenceValueArray = &fence->wait_value,
+       .hAsyncEvent = async_event,
+    };
++   uint64_t cur_val_before = fence->value_map ? p_atomic_read(fence->value_map) : 0;
++   fprintf(stderr, "[RADV_WDDM2] ENTER WaitForSynchronizationObjectFromCpu (fence_wait): fence_h=0x%x target_fence=%llu cur_fence=%llu\n",
++           (unsigned)fence->handle, (unsigned long long)fence->wait_value, (unsigned long long)cur_val_before);
++   fflush(stderr);
++
+    status = WDDM2_DISPATCH(WaitForSynchronizationObjectFromCpu(&wait));
+ 
++   uint64_t cur_val_after = fence->value_map ? p_atomic_read(fence->value_map) : 0;
++   fprintf(stderr, "[RADV_WDDM2] LEAVE WaitForSynchronizationObjectFromCpu (fence_wait): status=0x%08X target_fence=%llu cur_fence=%llu\n",
++           (unsigned)status, (unsigned long long)fence->wait_value, (unsigned long long)cur_val_after);
++   fflush(stderr);
++
+    if (unlikely(!NT_SUCCESS(status))) {
+       vk_async_event_close(async_event);
+-      fprintf(stderr, "fence wait failed: 0x%X\n", status);
++      fprintf(stderr, "radv/wddm2: fence wait failed: 0x%08X\n",
++              (unsigned)status);
+       return false;
+    }
+ 
+    result = vk_async_event_wait(async_event, 10000000000ull);
+    vk_async_event_close(async_event);
+-   if (result != VK_SUCCESS)
+-      fprintf(stderr, "async wait event: 0x%x\n", result);
+-
+-   D3DKMT_GETDEVICESTATE get_state = {
+-      .hDevice = device_h,
+-      .StateType = D3DKMT_DEVICESTATE_EXECUTION,
+-   };
+-
+-   if (get_state.ExecutionState == D3DKMT_DEVICEEXECUTION_ERROR_DMAPAGEFAULT) {
+-      get_state.StateType = D3DKMT_DEVICESTATE_PAGE_FAULT;
+-      status = WDDM2_DISPATCH(GetDeviceState(&get_state));
+-      D3DKMT_DEVICEPAGEFAULT_STATE fault = get_state.PageFaultState;
+-
+-      fprintf(stderr, "faulted VA: 0x%" PRIx64 ", error: 0x%x (vendor specific: %i), flags: %i, stage: %i\n",
+-             fault.FaultedVirtualAddress, fault.FaultErrorCode.GeneralErrorCode,
+-             fault.FaultErrorCode.DeviceSpecificCode, fault.PageFaultFlags, fault.FaultedPipelineStage);
++   if (result != VK_SUCCESS) {
++      fprintf(stderr, "radv/wddm2: async fence wait failed: 0x%x\n", result);
+       return false;
+    }
+ 
+-   return result == VK_SUCCESS;
++   return p_atomic_read(fence->value_map) >= fence->wait_value;
+ }
+ 
+ static bool
+@@ -589,7 +604,7 @@ radv_wddm2_submit_add_cs(struct radv_wddm2_ctx *ctx, struct submit_pdd_writer *p
+          }
+       } else {
+          WRITE_ENTRY(pdd, GFX_IB, gfx_ib, entry) {
+-            fprintf(stderr, "Adding IB with VA 0x%" PRIx64 " and length %u bytes\n", ib.va, ib.cdw * 4);
++            // fprintf(stderr, "Adding IB with VA 0x%" PRIx64 " and length %u bytes\n", ib.va, ib.cdw * 4);
+             entry->len = ib.cdw * 4;
+             entry->flags = flags;
+             entry->ip_type = radv_wddm2_cs_translate_ip_type(cs->hw_ip);
+@@ -679,6 +694,119 @@ radv_wddm2_submit_add_queue(struct radv_wddm2_ctx *ctx, struct submit_pdd_writer
+    radv_wddm2_cs_submit_add_ibs(ctx, pdd, submit, queue->hw_ip, first_ib);
+ }
+ 
++
++/*
++ * =========================================================================
++ * BC-250: DESPEJO DO IB GRAFICO, PARA ANALISE OFFLINE. OPT-IN POR AMBIENTE.
++ * =========================================================================
++ * Motivo (19/09/2026): na Corrida 34 o CP_RB0 parou dentro de um IB de
++ * 1008 DW e nao haviamos guardado UM dword dele. O miniport confirmou que o
++ * fluxo era linear e bem formado (264 pacotes, zero CHAIN), mas "bem formado"
++ * nao diz QUAL pacote travou -- e o diagnostico publicado saiu com tres
++ * hipoteses e nenhuma medicao que as separasse.
++ *
++ * Com o despejo, a proxima corrida produz o stream exato, e ele se cruza com
++ * a sonda [TDR_GFX_PACKET] do KMD, que nomeia o opcode em que o ME parou.
++ * O decodificador vive no outro repositorio (tools/decode-gfx-ib.py), de
++ * proposito: assim a logica de decodificacao e testavel offline e nao depende
++ * de reconstruir o Mesa.
++ *
++ * FAIL-CLOSED: sem a variavel BC250_RADV_IB_DUMP nada acontece, nenhum
++ * arquivo e' aberto e o caminho de submissao fica byte a byte o mesmo. O teto
++ * de arquivos existe para o despejo nao encher o disco numa corrida longa.
++ */
++#define BC250_IB_DUMP_MAX_FILES 16u
++
++static void
++bc250_dump_ib(const uint32_t *dwords, unsigned cdw, uint64_t va)
++{
++   static uint32_t s_dumped = 0;
++   static char s_dir[512];
++   static int s_dir_resolved = 0;
++   const char *dir;
++   char path[512];
++   FILE *f;
++
++   /*
++    * MEDIDO na Corrida 35 (19/09 10:51): o despejo saiu VAZIO, e nao por
++    * defeito do codigo de gravacao. A variavel de ambiente so' existe na
++    * arvore de processos do harness, e quem submeteu o IB que travou o CP foi
++    * o dwm.exe -- que nao herda nada do nosso runner. O despejo nao enxergava
++    * justamente o processo que importa.
++    *
++    * Por isso o diretorio passa a ser resolvido em DOIS lugares, nesta ordem:
++    *   1. BC250_RADV_IB_DUMP, que continua valendo para o harness;
++    *   2. HKLM\SOFTWARE\BC250\Umd\GfxIbDumpDir, que TODO processo enxerga.
++    * O segundo e' o mesmo padrao de tunable por registro que o projeto ja usa
++    * (D3D11LabPromotion e companhia). Continua fail-closed: sem nenhum dos
++    * dois, nada e' aberto e o caminho de submissao fica byte a byte o mesmo.
++    * A resolucao acontece UMA vez por processo -- ler o registro a cada
++    * submissao seria custo no caminho quente.
++    */
++   if (!s_dir_resolved) {
++      const char *env = getenv("BC250_RADV_IB_DUMP");
++      s_dir_resolved = 1;
++      s_dir[0] = '\0';
++      if (env != NULL && env[0] != '\0') {
++         strncpy(s_dir, env, sizeof(s_dir) - 1);
++         s_dir[sizeof(s_dir) - 1] = '\0';
++      } else {
++         HKEY key;
++         if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\BC250\\Umd", 0,
++                           KEY_QUERY_VALUE, &key) == ERROR_SUCCESS) {
++            DWORD type = 0;
++            DWORD cb = (DWORD)(sizeof(s_dir) - 1);
++            if (RegQueryValueExA(key, "GfxIbDumpDir", NULL, &type,
++                                 (LPBYTE)s_dir, &cb) != ERROR_SUCCESS ||
++                type != REG_SZ) {
++               s_dir[0] = '\0';
++            } else {
++               s_dir[cb < sizeof(s_dir) ? cb : sizeof(s_dir) - 1] = '\0';
++            }
++            RegCloseKey(key);
++         }
++      }
++      if (s_dir[0] != '\0') {
++         fprintf(stderr, "radv/wddm2: BC-250 IB_DUMP armado em %s\n", s_dir);
++         fflush(stderr);
++      }
++   }
++   dir = s_dir;
++
++   if (dir[0] == '\0')
++      return;
++   if (dwords == NULL || cdw == 0)
++      return;
++   if (s_dumped >= BC250_IB_DUMP_MAX_FILES) {
++      if (s_dumped == BC250_IB_DUMP_MAX_FILES) {
++         s_dumped++;
++         fprintf(stderr, "radv/wddm2: BC-250 IB_DUMP: teto de %u arquivos atingido; "
++                         "despejos posteriores NAO foram gravados\n",
++                 BC250_IB_DUMP_MAX_FILES);
++         fflush(stderr);
++      }
++      return;
++   }
++
++   snprintf(path, sizeof(path), "%s\\bc250_ib_%03u_va%016llx_dw%u.bin",
++            dir, s_dumped, (unsigned long long)va, cdw);
++   f = fopen(path, "wb");
++   if (f == NULL) {
++      fprintf(stderr, "radv/wddm2: BC-250 IB_DUMP RECUSADO: nao abriu %s\n", path);
++      fflush(stderr);
++      return;
++   }
++   if (fwrite(dwords, sizeof(uint32_t), cdw, f) != cdw) {
++      fprintf(stderr, "radv/wddm2: BC-250 IB_DUMP INCOMPLETO: %s\n", path);
++   } else {
++      fprintf(stderr, "radv/wddm2: BC-250 IB_DUMP #%u gravado: %s (%u DW, %u bytes)\n",
++              s_dumped, path, cdw, cdw * 4u);
++   }
++   fflush(stderr);
++   fclose(f);
++   s_dumped++;
++}
++
+ static VkResult
+ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+                      const struct radv_winsys_submit_info *submit,
+@@ -737,6 +865,115 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+    if (submit->cs_count > 0) {
+       struct radv_winsys_ib first_ib = {};
+       struct submit_pdd_writer pdd;
++      const bool is_bc250 = ctx->ws->is_bc250;
++
++      if (is_bc250) {
++         struct ac_cmdbuf *cs_list[64];
++         unsigned cs_total = 0;
++         unsigned hw_ip = submit->ip_type;
++
++         for (unsigned i = 0; i < submit->initial_preamble_count && cs_total < 64; i++) {
++            if (submit->initial_preamble_cs[i] &&
++                radv_winsys_cs(submit->initial_preamble_cs[i])->hw_ip == hw_ip)
++               cs_list[cs_total++] = submit->initial_preamble_cs[i];
++         }
++         for (unsigned i = 0; i < submit->cs_count && cs_total < 64; i++) {
++            if (submit->cs_array[i] &&
++                radv_winsys_cs(submit->cs_array[i])->hw_ip == hw_ip)
++               cs_list[cs_total++] = submit->cs_array[i];
++         }
++         for (unsigned i = 0; i < submit->postamble_count && cs_total < 64; i++) {
++            if (submit->postamble_cs[i] &&
++                radv_winsys_cs(submit->postamble_cs[i])->hw_ip == hw_ip)
++               cs_list[cs_total++] = submit->postamble_cs[i];
++         }
++
++         if (cs_total > 1) {
++            for (unsigned i = 0; i < cs_total; i++) {
++               radv_winsys_cs_unchain(cs_list[i]);
++            }
++
++            /* BC-250: Concatena preamble e main CS em cs_list[0] para formar um unico IB linear contiguo */
++            struct radv_winsys_cs *rcs0 = radv_winsys_cs(cs_list[0]);
++            unsigned copy_base = (rcs0->chain_ib && cs_list[0]->cdw >= 4) ? (cs_list[0]->cdw - 4) : cs_list[0]->cdw;
++            unsigned total_req = copy_base;
++            for (unsigned i = 1; i < cs_total; i++) {
++               total_req += cs_list[i]->cdw;
++            }
++            unsigned total_aligned = (total_req + 7) & ~7u;
++
++            if (total_aligned <= rcs0->base.max_dw + 4) {
++               unsigned cur_offset = copy_base;
++               for (unsigned i = 1; i < cs_total; i++) {
++                  memcpy(cs_list[0]->buf + cur_offset, cs_list[i]->buf, cs_list[i]->cdw * sizeof(uint32_t));
++                  cur_offset += cs_list[i]->cdw;
++               }
++               while (cur_offset % 8 != 0) {
++                  cs_list[0]->buf[cur_offset++] = PKT3(PKT3_NOP, 0, 0);
++               }
++               cs_list[0]->cdw = cur_offset;
++               rcs0->ib_buffers[0].cdw = cur_offset;
++               first_ib = rcs0->ib_buffers[0];
++
++
++               static uint32_t s_concat_log_count = 0;
++               if (s_concat_log_count++ < 5) {
++                  fprintf(stderr, "radv/wddm2: BC-250 UNIFICADO: %u CS concatenados em IB unico VA=0x%" PRIx64 " DW=%u (%u bytes)\n",
++                          cs_total, first_ib.va, first_ib.cdw, first_ib.cdw * 4);
++               }
++            } else {
++               /* Fallback para chaining caso exceda o buffer */
++               for (unsigned i = 0; i + 1 < cs_total; i++) {
++                  bool ok = radv_winsys_cs_chain(cs_list[i], cs_list[i + 1], false);
++                  if (!ok) {
++                     fprintf(stderr, "radv/wddm2: radv_winsys_cs_chain falhou [%u -> %u]\n", i, i + 1);
++                  } else {
++                     struct ac_cmdbuf *c = cs_list[i];
++                     struct radv_winsys_cs *rcs = radv_winsys_cs(c);
++                     if (rcs->hw_ip == AMD_IP_GFX) {
++                        /* PFP: bit 22 e inherit_vmid, bits 24..27 e VMID 7, bit 23 e RESERVADO (estritamente 0!) */
++                        c->buf[c->cdw - 1] &= ~S_3F3_VALID(1);
++                        c->buf[c->cdw - 1] |= (1u << 22) | (7u << 24);
++                     } else {
++                        /* MEC: bit 23 e valid, bit 30 e inherit_vmid, bits 24..27 e VMID 7 */
++                        c->buf[c->cdw - 1] |= S_3F3_VALID(1) | (1u << 30) | (7u << 24);
++                     }
++                     static uint32_t s_chain_log_count = 0;
++                     if (s_chain_log_count++ < 5) {
++                        fprintf(stderr, "radv/wddm2: Chain [%u -> %u] hw_ip=%u: PKT3=0x%08X VA=0x%08X%08X CTRL=0x%08X (VALID=%u)\n",
++                                i, i + 1, rcs->hw_ip,
++                                c->buf[c->cdw - 4], c->buf[c->cdw - 2], c->buf[c->cdw - 3],
++                                c->buf[c->cdw - 1], (c->buf[c->cdw - 1] >> 23) & 1u);
++                     }
++                  }
++               }
++            }
++         }
++         fprintf(stderr, "radv/wddm2: BC-250 submit: cs_total=%u (pre=%u cs=%u post=%u)\n",
++                 cs_total, submit->initial_preamble_count, submit->cs_count, submit->postamble_count);
++
++         /*
++          * DESPEJO DO IB -- DEPOIS dos dois ramos, de proposito.
++          *
++          * MEDIDO nas Corridas 35 e 36: gfx-ib-dump saiu VAZIO nas duas, e na
++          * 36 nao foi por falta da chave (o runner criou GfxIbDumpDir
++          * apontando para a pasta certa). A chamada estava DENTRO do ramo de
++          * concatenacao (cs_total > 1), e a submissao que travou o CP nao
++          * passou por ele. A colocacao era estreita demais.
++          *
++          * Aqui cs_list[0] ja e o buffer final em QUALQUER dos caminhos --
++          * concatenado, encadeado, ou CS unico sem concatenacao nenhuma. A VA
++          * sai de ib_buffers[0] porque first_ib so' e preenchido no ramo de
++          * concatenacao; usar first_ib.va aqui publicaria 0 justamente no caso
++          * que faltava cobrir.
++          */
++         if (cs_total >= 1 && cs_list[0] != NULL && cs_list[0]->buf != NULL &&
++             cs_list[0]->cdw > 0) {
++            struct radv_winsys_cs *dump_cs = radv_winsys_cs(cs_list[0]);
++            bc250_dump_ib(cs_list[0]->buf, cs_list[0]->cdw,
++                          dump_cs->ib_buffers[0].va);
++         }
++      }
+ 
+       submit_pdd_writer_init(&pdd);
+       if (submit->is_gang) {
+@@ -747,7 +984,7 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+       }
+       submit_pdd_writer_finalize(&pdd);
+ 
+-      print_hex_data(stderr, pdd.buffer, pdd.offset);
++      // print_hex_data(stderr, pdd.buffer, pdd.offset);
+ 
+       if (queue->handle) {
+          static uint32_t submit_count = 0;
+@@ -757,25 +994,54 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+             .HwQueueProgressFenceId = submit_count,
+             .CommandBuffer = first_ib.va,
+             .CommandLength = first_ib.cdw * 4,
+-            .pPrivateDriverData = pdd.buffer,
+-            .PrivateDriverDataSize = pdd.offset,
++            .pPrivateDriverData = is_bc250 ? NULL : pdd.buffer,
++            .PrivateDriverDataSize = is_bc250 ? 0 : pdd.offset,
+          };
+          status = WDDM2_DISPATCH(SubmitCommandToHwQueue(&wddm2_submit));
+       } else {
+          D3DKMT_SUBMITCOMMAND wddm2_submit = {
+             .Commands = first_ib.va,
+             .CommandLength = first_ib.cdw * 4,
+-            .pPrivateDriverData = pdd.buffer,
+-            .PrivateDriverDataSize = pdd.offset,
++            .pPrivateDriverData = is_bc250 ? NULL : pdd.buffer,
++            .PrivateDriverDataSize = is_bc250 ? 0 : pdd.offset,
+             .BroadcastContextCount = 1,
+             .BroadcastContext[0] = queue->context_h,
+          };
+          status = WDDM2_DISPATCH(SubmitCommand(&wddm2_submit));          
+       }
++      static uint32_t s_submit_call_count = 0;
++      s_submit_call_count++;
++      if (is_bc250 && (s_submit_call_count == 1 || (s_submit_call_count % 60) == 0 || !NT_SUCCESS(status))) {
++         fprintf(stderr, "radv/wddm2: BC-250 SubmitCommand #%u: status=0x%08X first_ib.va=0x%" PRIx64 " bytes=%u\n",
++                 s_submit_call_count, (unsigned)status, first_ib.va, first_ib.cdw * 4);
++      }
+       if (!NT_SUCCESS(status)) {
+-         fprintf(stderr, "SubmitCommand: VK_ERROR_DEVICE_LOST\n");
++         /*
++          * BC-250: a versao anterior descartava este NTSTATUS com o comentario
++          * "Non-fatal: kernel processes command asynchronously" e reportava
++          * sucesso para cima.
++          *
++          * Isso nao e' assincronia. D3DKMTSubmitCommand so devolve erro quando
++          * a submissao NAO foi enfileirada; a execucao e' que e' assincrona.
++          * Engolir o status faz a aplicacao acreditar que despachou, ler
++          * buffers nunca escritos pela GPU e medir throughput impossivel.
++          *
++          * Foi exatamente o observado na BC-250 em 2026-08-31: llama-bench
++          * reportando 115.504 t/s (~60x acima do pico de compute do silicio)
++          * com ZERO submissoes chegando ao miniport, e tokens saindo como
++          * ruido. O erro estava aqui, invisivel.
++          */
++         fprintf(stderr,
++                 "radv/wddm2: %s falhou com NTSTATUS 0x%08X "
++                 "(ip_type=%u cs_count=%u cmd_bytes=%u)\n",
++                 queue->handle ? "D3DKMTSubmitCommandToHwQueue"
++                               : "D3DKMTSubmitCommand",
++                 (unsigned)status, (unsigned)submit->ip_type,
++                 (unsigned)submit->cs_count, (unsigned)(first_ib.cdw * 4));
++         submit_pdd_writer_destroy(&pdd);
+          return VK_ERROR_DEVICE_LOST;
+       }
++
+    }
+ 
+    if (signal_count > 0) {
+@@ -783,7 +1049,8 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+       STACK_ARRAY(uint64_t, values, signal_count);
+ 
+       for (uint32_t i = 0; i < signal_count; i++) {
+-         handles[i] = vk_sync_as_wddm2_monitored_fence(signals[i].sync)->handle;
++         struct vk_wddm2_monitored_fence *mf = vk_sync_as_wddm2_monitored_fence(signals[i].sync);
++         handles[i] = mf->handle;
+          values[i] = signals[i].signal_value;
+       }
+ 
+@@ -813,7 +1080,6 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+       STACK_ARRAY_FINISH(handles);
+       STACK_ARRAY_FINISH(values);
+ 
+-      assert(NT_SUCCESS(status));
+       if (!NT_SUCCESS(status))
+          return VK_ERROR_DEVICE_LOST;
+ 
+diff --git a/src/amd/vulkan/winsys/wddm2/radv_wddm2_winsys.c b/src/amd/vulkan/winsys/wddm2/radv_wddm2_winsys.c
+index e2f4987..580f687 100644
+--- a/src/amd/vulkan/winsys/wddm2/radv_wddm2_winsys.c
++++ b/src/amd/vulkan/winsys/wddm2/radv_wddm2_winsys.c
+@@ -121,6 +121,12 @@ radv_wddm2_fill_gpu_info(struct radv_wddm2_winsys *ws,
+    uint32_t node, node_count = 0;
+    NTSTATUS status;
+ 
++   /* stderr sem buffer, antes de qualquer diagnostico: uma falha adiante nao
++    * pode engolir o que a precede. A corrida 06/09 13:19 terminou em
++    * ACCESS_VIOLATION com o stderr contendo so duas linhas, e nao deu para
++    * decidir de quem eram as alocacoes que o KMD recusou. */
++   setvbuf(stderr, NULL, _IONBF, 0);
++
+    struct drm_amdgpu_memory_info mem = {};
+    struct drm_amdgpu_info_device dev = {
+       .min_engine_clock = UINT64_C(500000),
+@@ -137,13 +143,33 @@ radv_wddm2_fill_gpu_info(struct radv_wddm2_winsys *ws,
+          .PhysicalAdapterIndex = adapter_info->physical_adapter_index,
+       };
+       status = query_adapter_info(ws, KMTQAITYPE_PHYSICALADAPTERDEVICEIDS, &query_ids, sizeof(query_ids));
+-      if (!NT_SUCCESS(status))
+-         return status;
++      if (NT_SUCCESS(status))
++         dev.device_id = query_ids.DeviceIds.DeviceID;
++
++      /* Sucesso com DeviceID=0 nao e uma resposta: e a ausencia dela.
++       *
++       * MEDIDO nas corridas 06/09 13:19 e 13:41 contra a BC-250: a consulta
++       * retorna NT_SUCCESS mas com o campo zerado, e o codigo antigo so caia
++       * no fallback quando o STATUS falhava. Resultado: device_id=0, o bloco
++       * de defaults da BC-250 nunca aplicava, is_bc250 ficava falso, o
++       * CreateAllocation2 saia com a ABI proprietaria da AMD (536 bytes, os
++       * 11 recusados com STATUS_INVALID_PARAMETER pelo KMD) e o contexto ia
++       * para o node 0 em vez do node 1.
++       *
++       * adapter_info->device_id vem da enumeracao DX do proprio adaptador --
++       * e o valor que create_dx_physical_device ja imprime como 0x13fe. */
++      if (dev.device_id == 0) {
++         if (adapter_info->device_id == 0)
++            return NT_SUCCESS(status) ? STATUS_INVALID_PARAMETER : status;
++         dev.device_id = adapter_info->device_id;
++         dev.pci_rev = adapter_info->revision;
++      } else if (NT_SUCCESS(status)) {
++         dev.pci_rev = query_ids.DeviceIds.RevisionID;
++      }
+ 
+-      dev.device_id = query_ids.DeviceIds.DeviceID;
+-      dev.pci_rev = query_ids.DeviceIds.RevisionID;
+-      fprintf(stderr, "phys adapter = %i device = %x rev %x\n", adapter_info->physical_adapter_index, dev.device_id,
+-              dev.pci_rev);
++      fprintf(stderr, "radv: adaptador fisico %i: device_id=0x%04x rev=0x%02x (query=0x%08X)\n",
++              adapter_info->physical_adapter_index, dev.device_id, dev.pci_rev,
++              (unsigned)status);
+    }
+ 
+    /* PCI bus address */
+@@ -191,9 +217,7 @@ radv_wddm2_fill_gpu_info(struct radv_wddm2_winsys *ws,
+          };
+          if (NT_SUCCESS(query_adapter_info(ws, KMTQAITYPE_NODEMETADATA,
+                                            &metadata, sizeof(metadata)))) {
+-            fprintf(stderr, "node %i (type: %i) = %ls, flags = %x\n",
+-                    i, metadata.NodeData.EngineType, metadata.NodeData.FriendlyName,
+-                    metadata.NodeData.Flags.Value);
++            // fprintf(stderr, "node %i (type: %i) = %ls, flags = %x\n", i, metadata.NodeData.EngineType, metadata.NodeData.FriendlyName, metadata.NodeData.Flags.Value);
+             if (metadata.NodeData.EngineType == DXGK_ENGINE_TYPE_3D)
+                node = i;
+          }
+@@ -304,17 +328,86 @@ radv_wddm2_fill_gpu_info(struct radv_wddm2_winsys *ws,
+    query_adapter_info(ws, KMTQAITYPE_UMDRIVERPRIVATE, &props1, 3008);
+    query_adapter_info(ws, KMTQAITYPE_UMDRIVERPRIVATE, &props2, 17248);
+ 
++   /* Fixa a identidade ANTES de qualquer decisao dependente dela. dev.device_id
++    * ja veio do adaptador real; gpu_info.pci_id so existe depois de
++    * ac_identify_chip e depende de dados que o KMD da BC-250 nao fornece. */
++   ws->is_bc250 = (dev.device_id == 0x13FE);
++   fprintf(stderr, "radv: is_bc250=%d (device_id=0x%04x); ABI de alocacao = %s\n",
++           (int)ws->is_bc250, dev.device_id,
++           ws->is_bc250 ? "bc250_allocation_private_v1" : "proprietaria AMD");
++
++   if (dev.device_id == 0x13FE) {
++      /* AMD BC-250 / Cyan Skillfish / Navi12 Defaults */
++      props2.me_fw_version = 29;
++      props2.mec_fw_version = 29;
++      props2.pfp_fw_version = 29;
++      props2.chip_rev = 1;
++      /*
++       * BC-250: era 1, o que fazia o chip ser identificado como NAVI10.
++       *
++       * ac_gpu_info.c resolve (family_id, chip_external_rev) por faixa, e
++       * amdgpu_asic_addr.h define:
++       *
++       *   AMDGPU_NAVI10_RANGE    0x01, 0x0A     <- external_rev 1 caia aqui
++       *   AMDGPU_GFX1013_RANGE   0x82, 0x86
++       *
++       * Com 1 o device era anunciado como "RADV NAVI10" e o ACO compilava
++       * gfx1010 para um silicio gfx1013 (GC 10.1.3 / Cyan Skillfish 2).
++       * 0x82 e' o primeiro valor da faixa de CHIP_GFX1013, que este mesmo
++       * fork ja declara em amd_family.h anotado como sendo a AMD BC-250.
++       */
++      props2.chip_external_rev = 0x82;
++      props2.family_id = FAMILY_NV;
++      props2.num_shader_engines = 2;
++      props2.num_shader_arrays_per_engine = 1;
++      props2.clock_crystal_freq_hz = 25000000;
++      props2.wave_front_size = 32;
++      props2.num_shader_visible_vgprs = 512;
++      props2.num_tcc_blocks = 8;
++      props1.num_rb_pipes = 8;
++      props1.enabled_rb_pipes_mask = 0xFF;
++      props1.enabled_rb_pipes_mask_hi = 0;
++      props2.max_gs_waves_per_vgt = 32;
++      props2.gs_vgt_table_depth = 32;
++      props2.gs_prim_buffer_depth = 256;
++      props2.num_sqc_per_wgp = 2;
++      props2.sqc_inst_cache_size = 32 * 1024;
++      props2.sqc_data_cache_size = 16 * 1024;
++      props2.gl1c_cache_size = 128 * 1024;
++      props2.gl2c_cache_size = 2048 * 1024;
++      props2.mall_size_mb = 0;
++      props1.vram_type = 6; /* AMDGPU_VRAM_TYPE_GDDR6 */
++      props1.vram_bit_width = 256;
++      props2.large_page = 4;
++      props2.va_start = 0x200000;
++      props2.va_end = 0x7FFFFFFFFFFULL;
++      props2.vram_vis_size = 16ULL * 1024 * 1024 * 1024;
++      props2.vram_inv_size = 0;
++      props2.gb_addr_cfg = 0x00000044;
++      props2.ib_alignments[0].start = 256;
++      props2.ib_alignments[0].size = 256;
++      props2.ib_alignments[1].start = 256;
++      props2.ib_alignments[1].size = 256;
++      props2.wgp_bitmap[0][0] = 0x3F; /* 6 WGPs (12 CUs) */
++      props2.wgp_bitmap[1][0] = 0x3F; /* 6 WGPs (12 CUs) */
++      props2.wgp_ao_bitmap[0][0] = 0x3F;
++      props2.wgp_ao_bitmap[1][0] = 0x3F;
++      props2.num_shader_engines = 2;
++      props2.num_shader_arrays_per_engine = 1;
++      props2.num_cu_per_wgp = 2;
++   }
++
+    /* IP Engines */
+    struct drm_amdgpu_info_hw_ip hw_ip_gfx = {
+-      .hw_ip_version_major = 11,
+-      .hw_ip_version_minor = 0,
++      .hw_ip_version_major = 10,
++      .hw_ip_version_minor = 1,
+       .available_rings = 0x1,
+       .ib_start_alignment = props2.ib_alignments[0].start,
+       .ib_size_alignment = props2.ib_alignments[0].size,
+    };
+    struct drm_amdgpu_info_hw_ip hw_ip_compute = {
+-      .hw_ip_version_major = 11,
+-      .hw_ip_version_minor = 0,
++      .hw_ip_version_major = 10,
++      .hw_ip_version_minor = 1,
+       .available_rings = 0xf,
+       .ib_start_alignment = props2.ib_alignments[1].start,
+       .ib_size_alignment = props2.ib_alignments[1].size,
+@@ -410,11 +503,18 @@ radv_wddm2_fill_gpu_info(struct radv_wddm2_winsys *ws,
+ static NTSTATUS
+ radv_wddm2_query_marketing_name(struct radv_wddm2_winsys *ws, char *name, size_t name_len)
+ {
++   if (ws->is_bc250) {
++      snprintf(name, name_len, "AMD BC-250 Graphics");
++      return STATUS_SUCCESS;
++   }
++
+    D3DKMT_ADAPTERREGISTRYINFO registry = {};
+    NTSTATUS status = query_adapter_info(ws, KMTQAITYPE_ADAPTERREGISTRYINFO_RENDER,
+                                         &registry, sizeof(registry));
+-   if (!NT_SUCCESS(status))
+-      return status;
++   if (!NT_SUCCESS(status) || registry.AdapterString[0] == L'\0') {
++      snprintf(name, name_len, "AMD BC-250 Graphics");
++      return STATUS_SUCCESS;
++   }
+ 
+    char *old_locale = setlocale(LC_CTYPE, "en_US.utf8");
+    size_t len = wcstombs(name, registry.AdapterString, name_len);
+@@ -593,7 +693,7 @@ radv_wddm2_winsys_create(const struct vk_dx_adapter_info *adapter_info,
+    VkResult result = VK_SUCCESS;
+    struct radv_wddm2_winsys *ws = NULL;
+    NTSTATUS status;
+-   fprintf(stderr, "radv_wddm2_winsys_create\n");
++   // fprintf(stderr, "radv_wddm2_winsys_create\n");
+ 
+    /* We have to keep this lock till insertion. */
+    simple_mtx_lock(&winsys_creation_mutex);
+@@ -605,7 +705,10 @@ radv_wddm2_winsys_create(const struct vk_dx_adapter_info *adapter_info,
+       goto fail;
+    }
+ 
+-   struct hash_entry *entry = _mesa_hash_table_search(winsyses, (void *) 1);
++   uint64_t luid_key = ((uint64_t)adapter_info->adapter_luid.HighPart << 32) | (uint64_t)adapter_info->adapter_luid.LowPart;
++   if (!luid_key) luid_key = (uint64_t)adapter_info->physical_adapter_index + 1;
++
++   struct hash_entry *entry = _mesa_hash_table_search(winsyses, (void *)(uintptr_t)luid_key);
+    if (entry) {
+       ws = (struct radv_wddm2_winsys *)entry->data;
+       ++ws->refcount;
+@@ -635,8 +738,7 @@ radv_wddm2_winsys_create(const struct vk_dx_adapter_info *adapter_info,
+    D3DKMT_OPENADAPTERFROMLUID open_adapter = {
+       .AdapterLuid = ws->adapter_luid,
+    };
+-   fprintf(stderr, "OpenAdapterFromLuid 0x%x 0x%x\n",
+-           adapter_info->adapter_luid.HighPart, adapter_info->adapter_luid.LowPart);
++   // fprintf(stderr, "OpenAdapterFromLuid 0x%x 0x%x\n", adapter_info->adapter_luid.HighPart, adapter_info->adapter_luid.LowPart);
+    status = WDDM2_DISPATCH(OpenAdapterFromLuid(&open_adapter));
+    if (!NT_SUCCESS(status)) {
+       fprintf(stderr, "Can't open adapter with luid %X%X\n", adapter_info->adapter_luid.LowPart, adapter_info->adapter_luid.HighPart);
+@@ -693,12 +795,31 @@ radv_wddm2_winsys_create(const struct vk_dx_adapter_info *adapter_info,
+ 
+    ws->paging_queue_h = create_paging_queue.hPagingQueue;
+    ws->paging_fence_h = create_paging_queue.hSyncObject;
+-
+-   /* Initialize the heaps */
++   ws->paging_fence_cpu_va = (volatile uint64_t *)create_paging_queue.FenceValueCPUVirtualAddress;
++   fprintf(stderr, "radv: PagingQueue=0x%x PagingFence=0x%x PagingFenceCpuVa=%p InitValue=%llu\n",
++           ws->paging_queue_h, ws->paging_fence_h, (void *)ws->paging_fence_cpu_va,
++           ws->paging_fence_cpu_va ? (unsigned long long)*ws->paging_fence_cpu_va : 0ULL);
++   fflush(stderr);
++
++   /* Initialize the heaps.
++    * Para BC-250, a MMU global cobre 34 bits (0 a 0x00000003FFFFFFFFull = 16 GiB).
++    * Faixa 0 a 0x1FFFFFFFF (8 GiB) e' reservada para o KMD (VRAM local, GART aperture 0x100000000, paging).
++    * _32bit_heap: 8 GiB a 9 GiB (RADV_WDDM2_32BIT_HEAP_START = 0x200000000ull, tamanho 1 GiB).
++    *              address32_hi = 0x2. Shaders, descriptor pools e upload BOs usam esta faixa.
++    * heap: 9 GiB a 15.75 GiB (RADV_WDDM2_HEAP_START = 0x240000000ull, tamanho ~6.75 GiB).
++    * replay_heap: clampado na faixa de 34 bits (15.75 GiB a 16 GiB, tamanho 256 MiB).
++    * Tanto _32bit_heap quanto heap compartilham o prefixo de 32-bit (0x200000000 >> 32 == 2),
++    * garantindo que SGPRs de 32 bits em shaders nao gerem violacao de pagina no GCVM. */
+    simple_mtx_init(&ws->heap_mtx, mtx_plain);
+-   util_vma_heap_init(&ws->_32bit_heap, RADV_WDDM2_32BIT_HEAP_START, 1ull << 32);
+-   util_vma_heap_init(&ws->heap, RADV_WDDM2_HEAP_START, RADV_WDDM2_REPLAY_HEAP_START - RADV_WDDM2_HEAP_START);
+-   util_vma_heap_init(&ws->replay_heap, RADV_WDDM2_REPLAY_HEAP_START, 1ull << 32);
++   if (ws->is_bc250) {
++      util_vma_heap_init(&ws->_32bit_heap, RADV_WDDM2_32BIT_HEAP_START, RADV_WDDM2_HEAP_START - RADV_WDDM2_32BIT_HEAP_START);
++      util_vma_heap_init(&ws->heap, RADV_WDDM2_HEAP_START, 0x00000003F0000000ull - RADV_WDDM2_HEAP_START);
++      util_vma_heap_init(&ws->replay_heap, 0x00000003F0000000ull, 0x0000000010000000ull);
++   } else {
++      util_vma_heap_init(&ws->_32bit_heap, RADV_WDDM2_32BIT_HEAP_START, 1ull << 32);
++      util_vma_heap_init(&ws->heap, RADV_WDDM2_HEAP_START, RADV_WDDM2_REPLAY_HEAP_START - RADV_WDDM2_HEAP_START);
++      util_vma_heap_init(&ws->replay_heap, RADV_WDDM2_REPLAY_HEAP_START, 1ull << 32);
++   }
+ 
+    ws->base.destroy = radv_wddm2_winsys_destroy;
+    ws->base.query_info = radv_wddm2_winsys_query_info;
+@@ -716,7 +837,7 @@ radv_wddm2_winsys_create(const struct vk_dx_adapter_info *adapter_info,
+    ws->sync_types[1] = &ws->sync_binary_type.sync;
+    ws->sync_types[2] = NULL;
+ 
+-   _mesa_hash_table_insert(winsyses, (void *) 1, ws);
++   _mesa_hash_table_insert(winsyses, (void *)(uintptr_t)luid_key, ws);
+    simple_mtx_unlock(&winsys_creation_mutex);
+ 
+    *winsys = &ws->base;
+diff --git a/src/amd/vulkan/winsys/wddm2/radv_wddm2_winsys.h b/src/amd/vulkan/winsys/wddm2/radv_wddm2_winsys.h
+index 75cbc71..2adeb1d 100644
+--- a/src/amd/vulkan/winsys/wddm2/radv_wddm2_winsys.h
++++ b/src/amd/vulkan/winsys/wddm2/radv_wddm2_winsys.h
+@@ -47,6 +47,20 @@ struct radv_wddm2_winsys {
+ 
+    struct radeon_info gpu_info;
+ 
++   /* Identidade da BC-250 tomada do PRÓPRIO adaptador enumerado
++    * (D3DKMT_QUERY_DEVICE_IDS, com vk_dx_adapter_info como fallback), e não
++    * de gpu_info.pci_id.
++    *
++    * gpu_info é preenchido a partir de KMTQAITYPE_UMDRIVERPRIVATE, que o KMD
++    * da BC-250 recusa com STATUS_NOT_SUPPORTED -- medido nas corridas
++    * 05/09 22:20 e 06/09 13:19. Amarrar o comportamento específico da placa a
++    * um campo que pode nunca ser preenchido significa cair, em silêncio, no
++    * caminho proprietário da AMD: foi assim que CreateAllocation2 saiu com
++    * PrivateDriverDataSize=536 em vez dos 40 bytes de
++    * bc250_allocation_private_v1, e o KMD recusou com STATUS_INVALID_PARAMETER
++    * as 11 tentativas. */
++   bool is_bc250;
++
+    bool debug_all_bos;
+    bool debug_log_bos;
+    bool chain_ib;
+@@ -57,6 +71,7 @@ struct radv_wddm2_winsys {
+    uint32_t device_h;
+    uint32_t paging_queue_h;
+    uint32_t paging_fence_h;
++   volatile uint64_t *paging_fence_cpu_va;
+ 
+    simple_mtx_t heap_mtx;
+    struct util_vma_heap heap;
+diff --git a/src/amd/vulkan/winsys/wddm2/radv_wddm2_wsi.c b/src/amd/vulkan/winsys/wddm2/radv_wddm2_wsi.c
+index 1d1dd83..cfc2ec5 100644
+--- a/src/amd/vulkan/winsys/wddm2/radv_wddm2_wsi.c
++++ b/src/amd/vulkan/winsys/wddm2/radv_wddm2_wsi.c
+@@ -29,8 +29,13 @@
+ #include <directx/d3d12.h>
+ 
+ #include "radv_device.h"
++#include "radv_device_memory.h"
++#include "radv_queue.h"
++#include "radv_wddm2_bo.h"
++#include "radv_wddm2_cs.h"
+ #include "vk_dxgi.h"
+ #include "wsi_common.h"
++#include "d3dkmthk.h"
+ 
+ static void *
+ radv_wddm2_wsi_get_d3d12_device(VkDevice _device)
+@@ -38,6 +43,9 @@ radv_wddm2_wsi_get_d3d12_device(VkDevice _device)
+    VK_FROM_HANDLE(radv_device, device, _device);
+    struct radv_wddm2_winsys *ws = radv_wddm2_winsys(device->ws);
+ 
++   if (!ws || ws->is_bc250)
++      return NULL;
++
+    if (!ws->wsi.d3d12_device) {
+       ws->wsi.d3d12_device =
+          vk_dxgi_create_d3d12_device(ws->adapter_luid);
+@@ -52,8 +60,14 @@ radv_wddm2_wsi_get_d3d12_command_queue(VkDevice _device)
+    VK_FROM_HANDLE(radv_device, device, _device);
+    struct radv_wddm2_winsys *ws = radv_wddm2_winsys(device->ws);
+ 
++   if (!ws || ws->is_bc250)
++      return NULL;
++
+    if (!ws->wsi.d3d12_queue) {
+-      ID3D12Device *d3d12_device = (ID3D12Device *)radv_wddm2_wsi_get_d3d12_device(_device);      D3D12_COMMAND_QUEUE_DESC desc = {};
++      ID3D12Device *d3d12_device = (ID3D12Device *)radv_wddm2_wsi_get_d3d12_device(_device);
++      if (!d3d12_device)
++         return NULL;
++      D3D12_COMMAND_QUEUE_DESC desc = {0};
+       ID3D12Device_CreateCommandQueue(d3d12_device, &desc,
+                                       &IID_ID3D12CommandQueue, (void **)&ws->wsi.d3d12_queue);
+    }
+@@ -70,6 +84,18 @@ radv_wddm2_wsi_needs_blits(VkDevice _device)
+ void
+ radv_wddm2_wsi_init(struct radeon_winsys *ws, struct wsi_device *wsi)
+ {
++   struct radv_wddm2_winsys *wddm_ws = radv_wddm2_winsys(ws);
++#ifdef _WIN32
++   if (wddm_ws && wddm_ws->is_bc250) {
++      wsi->win32.queue_present = radv_bc250_present_scanout;
++      wsi->win32.get_d3d12_device = NULL;
++      wsi->win32.get_d3d12_command_queue = NULL;
++      wsi->win32.requires_blits = NULL;
++      wsi->blit = NULL;
++      wsi->sw = false;
++      return;
++   }
++#endif
+    wsi->win32.get_d3d12_device = radv_wddm2_wsi_get_d3d12_device;
+    wsi->win32.get_d3d12_command_queue = radv_wddm2_wsi_get_d3d12_command_queue;
+    wsi->win32.requires_blits = radv_wddm2_wsi_needs_blits;
+@@ -86,4 +112,175 @@ radv_wddm2_wsi_finish(struct radv_wddm2_winsys *ws)
+       ID3D12Device_Release((ID3D12Device *)ws->wsi.d3d12_device);
+       ws->wsi.d3d12_device = NULL;
+    }
+-}
+\ No newline at end of file
++}
++
++#ifdef _WIN32
++__declspec(dllexport) uint64_t VKAPI_CALL
++radv_bc250_get_memory_gpu_va(
++   VkDeviceMemory _memory)
++{
++   VK_FROM_HANDLE(radv_device_memory, memory, _memory);
++   if (!memory || !memory->bo) {
++      return 0;
++   }
++   return memory->bo->va;
++}
++
++__declspec(dllexport) VkResult VKAPI_CALL
++radv_bc250_present_scanout(
++   VkDevice _device,
++   VkQueue _queue,
++   VkDeviceMemory _memory,
++   uint32_t width,
++   uint32_t height)
++{
++   VK_FROM_HANDLE(radv_device, device, _device);
++   VK_FROM_HANDLE(radv_queue, queue, _queue);
++   VK_FROM_HANDLE(radv_device_memory, memory, _memory);
++
++   if (!device || !memory || !memory->bo) {
++      fprintf(stderr, "[RADV_BC250_PRESENT] Invalid parameters: dev=%p mem=%p\n",
++              (void *)device, (void *)memory);
++      return VK_ERROR_INITIALIZATION_FAILED;
++   }
++
++   /* Sincronização obrigatória: assegurar que o compute shader e o blit de destiling
++    * (wsi_cmd_blit_image_to_buffer) foram completamente concluídos pela GPU antes de
++    * disparar o SDMA Blt de apresentação para o scanout da VRAM */
++   if (device->vk.dispatch_table.DeviceWaitIdle) {
++      device->vk.dispatch_table.DeviceWaitIdle(_device);
++   }
++
++   struct radv_wddm2_winsys *ws = radv_wddm2_winsys(device->ws);
++   struct radv_wddm2_bo *bo = radv_wddm2_bo(memory->bo);
++   struct radv_wddm2_ctx *ctx = queue ? (struct radv_wddm2_ctx *)queue->hw_ctx : NULL;
++
++   if (!ws || !bo) {
++      fprintf(stderr, "[RADV_BC250_PRESENT] Invalid winsys or bo\n");
++      return VK_ERROR_INITIALIZATION_FAILED;
++   }
++
++   HMODULE gdi = GetModuleHandleA("gdi32.dll");
++   if (!gdi) gdi = LoadLibraryA("gdi32.dll");
++   if (!gdi) {
++      fprintf(stderr, "[RADV_BC250_PRESENT] Failed to load gdi32.dll\n");
++      return VK_ERROR_INITIALIZATION_FAILED;
++   }
++
++#define BC250_ESCAPE_SIGNATURE              0xBC250000u
++#define BC250_ESCAPE_OP_PRESENT_BLT         (BC250_ESCAPE_SIGNATURE | 0x01u)
++
++#define BC250_PRESENT_BLT_FLAG_NONE         0x00000000u
++#define BC250_PRESENT_BLT_FLAG_SDMA_ONLY    0x00000001u
++#define BC250_PRESENT_BLT_FLAG_HOST_COPY    0x00000002u
++
++#define BC250_PRESENT_BLT_STATUS_SUCCESS    0x00000000u
++
++#pragma pack(push, 8)
++typedef struct _BC250_ESCAPE_PRESENT_BLT {
++   uint32_t Opcode;             /* BC250_ESCAPE_OP_PRESENT_BLT */
++   uint32_t Width;              /* Largura em pixels (ex: 2560) */
++   uint32_t Height;             /* Altura em pixels (ex: 1080) */
++   uint32_t Pitch;              /* Pitch em bytes (ex: 2560 * 4 = 10240) */
++   uint32_t SizeBytes;          /* Total de bytes (ex: 11059200) */
++   uint32_t SourceAllocation;   /* Handle da alocação (D3DKMT_HANDLE) ou 0 */
++   uint64_t SourceGpuVa;        /* Endereço Virtual GPU (GPUVA) ou 0 */
++   uint64_t SourcePhysAddress;  /* Endereço Físico VRAM (offset local) ou 0 */
++   uint32_t Flags;              /* BC250_PRESENT_BLT_FLAG_* */
++   uint32_t ResultCode;         /* Código de retorno preenchido pelo KMD */
++   void    *pUserPixelBuffer;   /* Ponteiro de memória host-visible mapeada em user-mode */
++   uint64_t Reserved;           /* Alinhamento / expansão futura */
++} BC250_ESCAPE_PRESENT_BLT;
++#pragma pack(pop)
++
++   typedef NTSTATUS (APIENTRY *PFN_D3DKMTEscape)(CONST D3DKMT_ESCAPE *);
++   PFN_D3DKMTEscape pfnEscape = (PFN_D3DKMTEscape)(void *)GetProcAddress(gdi, "D3DKMTEscape");
++   if (pfnEscape) {
++      BC250_ESCAPE_PRESENT_BLT escBlt = {0};
++      escBlt.Opcode = BC250_ESCAPE_OP_PRESENT_BLT;
++      escBlt.Width = width ? width : 2560;
++      escBlt.Height = height ? height : 1080;
++      escBlt.Pitch = escBlt.Width * 4;
++      escBlt.SizeBytes = escBlt.Pitch * escBlt.Height;
++      escBlt.SourceAllocation = bo->base.handle;
++      escBlt.SourceGpuVa = bo->base.va;
++      escBlt.pUserPixelBuffer = bo->map;
++      escBlt.Flags = BC250_PRESENT_BLT_FLAG_NONE;
++
++      static uint32_t s_present_call_count = 0;
++      s_present_call_count++;
++      bool should_log = (s_present_call_count == 1 || (s_present_call_count % 60) == 0);
++
++      D3DKMT_ESCAPE esc = {0};
++      esc.hAdapter = ws->adapter_h;
++      esc.hDevice = ws->device_h;
++      esc.hContext = 0; /* Escape no nivel de adapter/device para desacoplar do ciclo da fila */
++      esc.Type = D3DKMT_ESCAPE_DRIVERPRIVATE;
++      esc.pPrivateDriverData = &escBlt;
++      esc.PrivateDriverDataSize = sizeof(escBlt);
++
++      if (should_log) {
++         fprintf(stderr, "[RADV_BC250_PRESENT #%u] Calling D3DKMTEscape: Opcode=0x%08X Size=%u GpuVa=0x%llX Map=%p\n",
++                 s_present_call_count, escBlt.Opcode, escBlt.SizeBytes, (unsigned long long)escBlt.SourceGpuVa, escBlt.pUserPixelBuffer);
++      }
++
++      NTSTATUS escStatus = pfnEscape(&esc);
++      if (should_log || !NT_SUCCESS(escStatus) || escBlt.ResultCode != BC250_PRESENT_BLT_STATUS_SUCCESS) {
++         fprintf(stderr, "[RADV_BC250_PRESENT #%u] D3DKMTEscape returned NTSTATUS 0x%08X (ResultCode=0x%08X)\n",
++                 s_present_call_count, (unsigned)escStatus, escBlt.ResultCode);
++         fflush(stderr);
++      }
++
++      if (NT_SUCCESS(escStatus) && escBlt.ResultCode == BC250_PRESENT_BLT_STATUS_SUCCESS) {
++         if (should_log) {
++            fprintf(stderr, "[RADV_BC250_PRESENT #%u] Presentation via KMD Escape SUCCEEDED!\n", s_present_call_count);
++            fflush(stderr);
++         }
++         return VK_SUCCESS;
++      }
++      fprintf(stderr, "[RADV_BC250_PRESENT #%u] Escape presentation failed, attempting D3DKMTPresent fallback...\n", s_present_call_count);
++      fflush(stderr);
++   }
++
++   typedef NTSTATUS (APIENTRY *PFN_D3DKMTPresent)(D3DKMT_PRESENT *);
++   PFN_D3DKMTPresent pfnPresent = (PFN_D3DKMTPresent)(void *)GetProcAddress(gdi, "D3DKMTPresent");
++   if (!pfnPresent) {
++      fprintf(stderr, "[RADV_BC250_PRESENT] Failed to resolve D3DKMTPresent in gdi32.dll\n");
++      return VK_ERROR_INITIALIZATION_FAILED;
++   }
++
++   D3DKMT_PRESENT present = {0};
++   if (ctx && ctx->per_ip[AMD_IP_COMPUTE].queue.context_h) {
++      present.hContext = ctx->per_ip[AMD_IP_COMPUTE].queue.context_h;
++   } else if (ctx && ctx->per_ip[AMD_IP_GFX].queue.context_h) {
++      present.hContext = ctx->per_ip[AMD_IP_GFX].queue.context_h;
++   } else {
++      present.hDevice = ws->device_h;
++   }
++
++   present.hSource = bo->base.handle;
++   present.VidPnSourceId = 0;
++   present.Flags.Blt = 1;
++   present.Flags.DstRectValid = 1;
++   present.Flags.SrcRectValid = 1;
++   present.DstRect.left = 0;
++   present.DstRect.top = 0;
++   present.DstRect.right = (LONG)(width ? width : 2560);
++   present.DstRect.bottom = (LONG)(height ? height : 1080);
++   present.SrcRect = present.DstRect;
++
++   fprintf(stderr, "[RADV_BC250_PRESENT] Calling D3DKMTPresent: hCtx=0x%x hDev=0x%x hSource=0x%x rect=(%ld,%ld)-(%ld,%ld)\n",
++           (unsigned)present.hContext, (unsigned)ws->device_h, (unsigned)present.hSource,
++           present.DstRect.left, present.DstRect.top, present.DstRect.right, present.DstRect.bottom);
++   fflush(stderr);
++
++   NTSTATUS status = pfnPresent(&present);
++   fprintf(stderr, "[RADV_BC250_PRESENT] D3DKMTPresent returned NTSTATUS 0x%08X\n", (unsigned)status);
++   fflush(stderr);
++
++   if (!NT_SUCCESS(status)) {
++      return VK_ERROR_DEVICE_LOST;
++   }
++   return VK_SUCCESS;
++}
++#endif
+diff --git a/src/amd/vulkan/winsys/wddm2/radv_wddm2_wsi.h b/src/amd/vulkan/winsys/wddm2/radv_wddm2_wsi.h
+index ad0bae7..f5ec07e 100644
+--- a/src/amd/vulkan/winsys/wddm2/radv_wddm2_wsi.h
++++ b/src/amd/vulkan/winsys/wddm2/radv_wddm2_wsi.h
+@@ -24,6 +24,8 @@
+ #ifndef RADV_WDDM2_WSI_H
+ #define RADV_WDDM2_WSI_H
+ 
++#include <vulkan/vulkan.h>
++
+ struct radeon_winsys;
+ struct radv_wddm2_winsys;
+ struct wsi_device;
+@@ -31,4 +33,18 @@ struct wsi_device;
+ void radv_wddm2_wsi_init(struct radeon_winsys *ws, struct wsi_device *wsi);
+ void radv_wddm2_wsi_finish(struct radv_wddm2_winsys *ws);
+ 
++#ifdef _WIN32
++__declspec(dllexport) VkResult VKAPI_CALL
++radv_bc250_present_scanout(
++   VkDevice device,
++   VkQueue queue,
++   VkDeviceMemory memory,
++   uint32_t width,
++   uint32_t height);
++
++__declspec(dllexport) uint64_t VKAPI_CALL
++radv_bc250_get_memory_gpu_va(
++   VkDeviceMemory memory);
++#endif
++
+ #endif /* RADV_WDDM2_WSI_H */
+\ No newline at end of file
+diff --git a/src/vulkan/runtime/vk_dx_adapter_info.h b/src/vulkan/runtime/vk_dx_adapter_info.h
+index 84d8f21..d225453 100644
+--- a/src/vulkan/runtime/vk_dx_adapter_info.h
++++ b/src/vulkan/runtime/vk_dx_adapter_info.h
+@@ -24,7 +24,11 @@
+ #ifndef VK_DX_ADAPTER_INFO_H
+ #define VK_DX_ADAPTER_INFO_H
+ 
++#ifdef _WIN32
++#include <windows.h>
++#else
+ #include <wsl/winadapter.h>
++#endif
+ #include <vulkan/vulkan_core.h>
+ #include <stdbool.h>
+ 
+diff --git a/src/vulkan/runtime/vk_dxcore.cpp b/src/vulkan/runtime/vk_dxcore.cpp
+index b59ebbb..3133963 100644
+--- a/src/vulkan/runtime/vk_dxcore.cpp
++++ b/src/vulkan/runtime/vk_dxcore.cpp
+@@ -26,8 +26,13 @@
+ #include <wsl/winadapter.h>
+ #endif
+ 
++#ifdef _WIN32
++#include <dxcore.h>
++#include <initguid.h>
++#else
+ #include <directx/dxcore.h>
+ #include <dxguids/dxguids.h>
++#endif
+ 
+ #include "util/u_dl.h"
+ #include "util/log.h"
+diff --git a/src/vulkan/runtime/vk_dxcore.h b/src/vulkan/runtime/vk_dxcore.h
+index d3ae00b..0d3a698 100644
+--- a/src/vulkan/runtime/vk_dxcore.h
++++ b/src/vulkan/runtime/vk_dxcore.h
+@@ -24,6 +24,11 @@
+ #define VK_DXCORE_H
+ 
+ #include "vk_dx_adapter_info.h"
++#ifdef _WIN32
++#include <unknwn.h>
++#else
++struct IUnknown;
++#endif
+ 
+ #ifdef __cplusplus
+ extern "C" {
+diff --git a/src/vulkan/runtime/vk_dxgi.cpp b/src/vulkan/runtime/vk_dxgi.cpp
+index ce00013..b2c27e7 100644
+--- a/src/vulkan/runtime/vk_dxgi.cpp
++++ b/src/vulkan/runtime/vk_dxgi.cpp
+@@ -24,8 +24,14 @@
+ #include "vk_dxgi.h"
+ 
+ #include <windows.h>
++#include <stdio.h>
++#include <stdlib.h>
+ #include <dxgi1_4.h>
++#ifdef _WIN32
++#include <d3d12.h>
++#else
+ #include <directx/d3d12.h>
++#endif
+ 
+ static IDXGIFactory4 *
+ vk_dxgi_get_factory(bool debug)
+@@ -56,43 +62,106 @@ vk_dxgi_get_factory(bool debug)
+    return factory;
+ }
+ 
++static void
++vk_d3dkmt_enumerate_adapters(vk_dxgi_adapter_cb func, void *user_data)
++{
++   HMODULE gdi = LoadLibraryA("gdi32.dll");
++   if (!gdi) return;
++
++   typedef struct _D3DKMT_ADAPTERINFO {
++      UINT  hAdapter;
++      LUID  AdapterLuid;
++      ULONG NumOfSources;
++      BOOL  bIsCurrentOwner;
++   } D3DKMT_ADAPTERINFO;
++
++   typedef struct _D3DKMT_ENUMADAPTERS2 {
++      ULONG              NumAdapters;
++      D3DKMT_ADAPTERINFO *pAdapters;
++   } D3DKMT_ENUMADAPTERS2;
++
++   typedef LONG (APIENTRY *PFN_D3DKMTEnumAdapters2)(D3DKMT_ENUMADAPTERS2*);
++   typedef LONG (APIENTRY *PFN_D3DKMTCloseAdapter)(const void*);
++
++   PFN_D3DKMTEnumAdapters2 pfnEnumAdapters2 = (PFN_D3DKMTEnumAdapters2)GetProcAddress(gdi, "D3DKMTEnumAdapters2");
++   PFN_D3DKMTCloseAdapter pfnCloseAdapter = (PFN_D3DKMTCloseAdapter)GetProcAddress(gdi, "D3DKMTCloseAdapter");
++
++   if (!pfnEnumAdapters2) return;
++
++   D3DKMT_ENUMADAPTERS2 enumInfo = {0};
++   pfnEnumAdapters2(&enumInfo);
++
++   if (enumInfo.NumAdapters == 0)
++      return;
++
++   enumInfo.pAdapters = (D3DKMT_ADAPTERINFO*)malloc(enumInfo.NumAdapters * sizeof(D3DKMT_ADAPTERINFO));
++   if (!enumInfo.pAdapters) return;
++
++   if (pfnEnumAdapters2(&enumInfo) == 0) {
++      for (ULONG i = 0; i < enumInfo.NumAdapters; i++) {
++         /* Skip null/dummy LUIDs */
++         if (enumInfo.pAdapters[i].AdapterLuid.LowPart == 0 && enumInfo.pAdapters[i].AdapterLuid.HighPart == 0)
++            continue;
++
++         struct vk_dx_adapter_info info = {};
++         info.physical_adapter_index = i;
++         info.adapter_luid = enumInfo.pAdapters[i].AdapterLuid;
++         info.vendor_id = 0x1002; /* AMD */
++         info.device_id = 0x13FE; /* AMD BC-250 */
++         info.dedicated_video_memory = 16ULL * 1024 * 1024 * 1024;
++         strcpy_s(info.description, sizeof(info.description), "AMD BC-250 (Cyan Skillfish / Navi12 Lite)");
++
++         func(&info, NULL, user_data);
++
++         if (pfnCloseAdapter) {
++            struct { UINT hAdapter; } ca = { enumInfo.pAdapters[i].hAdapter };
++            pfnCloseAdapter(&ca);
++         }
++      }
++   }
++   free(enumInfo.pAdapters);
++}
++
+ VkResult
+ vk_dxgi_adapter_foreach(vk_dxgi_adapter_cb func, void *user_data)
+-{   IDXGIFactory4 *factory = vk_dxgi_get_factory(false);
+-   if (!factory)
+-      return VK_ERROR_INITIALIZATION_FAILED;
+-
+-   IDXGIAdapter1 *adapter = NULL;
+-   VkResult result = VK_SUCCESS;
+-
+-   for (UINT i = 0; SUCCEEDED(factory->EnumAdapters1(i, &adapter)); ++i) {
+-      DXGI_ADAPTER_DESC1 dxgi_desc;
+-      adapter->GetDesc1(&dxgi_desc);
+-
+-      struct vk_dx_adapter_info info = {};
+-      info.physical_adapter_index = i;
+-      info.adapter_luid = dxgi_desc.AdapterLuid;
+-      info.vendor_id = dxgi_desc.VendorId;
+-      info.device_id = dxgi_desc.DeviceId;
+-      info.subsys_id = dxgi_desc.SubSysId;
+-      info.revision = dxgi_desc.Revision;
+-      info.shared_system_memory = dxgi_desc.SharedSystemMemory;
+-      info.dedicated_system_memory = dxgi_desc.DedicatedSystemMemory;
+-      info.dedicated_video_memory = dxgi_desc.DedicatedVideoMemory;
+-      info.is_warp = (dxgi_desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0;
+-      WideCharToMultiByte(CP_ACP, 0, dxgi_desc.Description,
+-                          ARRAYSIZE(dxgi_desc.Description),
+-                          info.description, sizeof(info.description), NULL, NULL);
+-
+-      result = func(&info, (void *)adapter, user_data);
+-      adapter->Release();
+-
+-      if (result != VK_SUCCESS)
+-         break;
++{
++   bool found_amd = false;
++   IDXGIFactory4 *factory = vk_dxgi_get_factory(false);
++   if (factory) {
++      IDXGIAdapter1 *adapter = NULL;
++      for (UINT i = 0; SUCCEEDED(factory->EnumAdapters1(i, &adapter)); ++i) {
++         DXGI_ADAPTER_DESC1 dxgi_desc;
++         adapter->GetDesc1(&dxgi_desc);
++
++         if (dxgi_desc.VendorId == 0x1002)
++            found_amd = true;
++
++         struct vk_dx_adapter_info info = {};
++         info.physical_adapter_index = i;
++         info.adapter_luid = dxgi_desc.AdapterLuid;
++         info.vendor_id = dxgi_desc.VendorId;
++         info.device_id = dxgi_desc.DeviceId;
++         info.subsys_id = dxgi_desc.SubSysId;
++         info.revision = dxgi_desc.Revision;
++         info.shared_system_memory = dxgi_desc.SharedSystemMemory;
++         info.dedicated_system_memory = dxgi_desc.DedicatedSystemMemory;
++         info.dedicated_video_memory = dxgi_desc.DedicatedVideoMemory;
++         info.is_warp = (dxgi_desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0;
++         WideCharToMultiByte(CP_ACP, 0, dxgi_desc.Description,
++                             ARRAYSIZE(dxgi_desc.Description),
++                             info.description, sizeof(info.description), NULL, NULL);
++
++         func(&info, (void *)adapter, user_data);
++         adapter->Release();
++      }
++      factory->Release();
+    }
+ 
+-   factory->Release();
+-   return result;
++   /* Enumerate raw WDDM adapters via D3DKMT only if DXGI didn't enumerate AMD */
++   if (!found_amd)
++      vk_d3dkmt_enumerate_adapters(func, user_data);
++
++   return VK_SUCCESS;
+ }
+ 
+ void *
+@@ -136,23 +205,24 @@ vk_dxgi_create_d3d12_device(LUID adapter_luid)
+    ID3D12Device *device = NULL;
+    IDXGIAdapter1 *adapter;
+    
+-   adapter = (IDXGIAdapter1 *)vk_dxgi_find_adapter(adapter_luid);
+-   if (!adapter)
+-      return NULL;
+-
+    HMODULE d3d12_mod = LoadLibraryA("D3D12.DLL");
+    if (!d3d12_mod)
+-      goto fail;
++      return NULL;
+ 
+    D3D12CreateDevice = (PFN_D3D12CREATEDEVICE)GetProcAddress(d3d12_mod, "D3D12CreateDevice");
+    if (!D3D12CreateDevice)
+-      goto fail;
+-
+-   D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&device));
++      return NULL;
+ 
+-fail:
+-   if (adapter)
++   adapter = (IDXGIAdapter1 *)vk_dxgi_find_adapter(adapter_luid);
++   if (adapter) {
++      D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device));
+       adapter->Release();
++   }
++
++   if (!device) {
++      D3D12CreateDevice(NULL, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device));
++   }
++
+    return device;
+ }
+ 
+diff --git a/src/vulkan/runtime/vk_instance.c b/src/vulkan/runtime/vk_instance.c
+index 912b9f6..d217780 100644
+--- a/src/vulkan/runtime/vk_instance.c
++++ b/src/vulkan/runtime/vk_instance.c
+@@ -30,6 +30,7 @@
+ #include "vk_common_entrypoints.h"
+ #include "vk_dispatch_trampolines.h"
+ #include "vk_dxcore.h"
++#include "vk_dxgi.h"
+ #include "vk_log.h"
+ #include "vk_util.h"
+ #include "vk_debug_utils.h"
+@@ -468,7 +469,11 @@ try_add_dx_physical_device(const struct vk_dx_adapter_info *info,
+ static VkResult
+ enumerate_dx_physical_devices_locked(struct vk_instance *instance)
+ {
+-   return vk_dxcore_adapter_foreach(try_add_dx_physical_device, instance);
++   VkResult result = vk_dxcore_adapter_foreach(try_add_dx_physical_device, instance);
++   if (result != VK_SUCCESS || list_is_empty(&instance->physical_devices.list)) {
++      result = vk_dxgi_adapter_foreach(try_add_dx_physical_device, instance);
++   }
++   return result;
+ }
+ #else
+ static VkResult
+diff --git a/src/vulkan/runtime/vk_wddm2_monitored_fence.c b/src/vulkan/runtime/vk_wddm2_monitored_fence.c
+index bec8a96..410af6e 100644
+--- a/src/vulkan/runtime/vk_wddm2_monitored_fence.c
++++ b/src/vulkan/runtime/vk_wddm2_monitored_fence.c
+@@ -288,8 +288,41 @@ vk_wddm2_monitored_fence_wait_many(struct vk_device *device,
+       } while (abs_timeout_ns <= now_ns);
+    }
+ 
+-   if (result == VK_SUCCESS)
+-      result = vk_wddm2_check_device_status(device);
++   if (result == VK_SUCCESS) {
++      VkResult dev_status = vk_wddm2_check_device_status(device);
++      if (dev_status != VK_SUCCESS) {
++         /*
++          * ==============================================================
++          * BC-250 19/09/2026 -- FAIL-OPEN REMOVIDO.
++          * ==============================================================
++          * A versao anterior rebaixava o device-lost para VK_SUCCESS quando
++          * TODAS as fences esperadas ja tinham atingido o valor-alvo na
++          * memoria, imprimindo "but all fences satisfied -> continuing!".
++          *
++          * O raciocinio era sedutor e esta errado: a fence ter chegado ao
++          * alvo prova que AQUELAS escritas aconteceram, nao que o dispositivo
++          * esta vivo nem que o restante do trabalho submetido executou. O
++          * WDDM ja declarou ExecutionState nao-ativo; seguir em frente faz a
++          * aplicacao construir em cima de um device que o sistema considera
++          * perdido, e foi assim que a Corrida 34 conseguiu produzir 51 ciclos
++          * de "draw" com Lock2 devolvendo 0xC00002B6 em todos.
++          *
++          * Ressalva de escopo, para nao trocar uma mentira por outra: naquela
++          * corrida o FlushCommands devolveu res=-4 logo em seguida, entao
++          * ESTE fail-open nao foi a causa provada dos quadros fantasmas -- a
++          * causa provada era o harness D3D11 descartar o HRESULT de Present.
++          * Ele continua saindo porque devolver sucesso com o device perdido e
++          * violacao da Lei 4 por si so, independentemente do que ele custou.
++          *
++          * A deteccao continua exatamente igual; so' o rebaixamento saiu.
++          */
++         fprintf(stderr, "[RADV_WDDM2] check_device_status: dev_status=%d -- device perdido, "
++                         "propagando (fail-closed; nao ha rebaixamento por fence satisfeita)\n",
++                 dev_status);
++         fflush(stderr);
++         result = dev_status;
++      }
++   }
+ 
+ fail_close_event:
+    if (use_event)
+@@ -382,10 +415,17 @@ vk_wddm2_check_device_status(struct vk_device *device)
+    };
+    status = WDDM2_DISPATCH(GetDeviceState(&get_state));
+    if (unlikely(!NT_SUCCESS(status))) {
++      fprintf(stderr, "[RADV_WDDM2] check_device_status: D3DKMTGetDeviceState failed NTSTATUS=0x%08X\n", (unsigned)status);
++      fflush(stderr);
+       return vk_errorf(device, VK_ERROR_UNKNOWN,
+                        "D3DKMTGetDeviceState failed");
+    }
+ 
++   if (get_state.ExecutionState != D3DKMT_DEVICEEXECUTION_ACTIVE) {
++      fprintf(stderr, "[RADV_WDDM2] check_device_status: NON-ACTIVE ExecutionState=%u\n", (unsigned)get_state.ExecutionState);
++      fflush(stderr);
++   }
++
+    switch (get_state.ExecutionState) {
+    case D3DKMT_DEVICEEXECUTION_ACTIVE:
+       return VK_SUCCESS;
+diff --git a/src/vulkan/wsi/wsi_common.h b/src/vulkan/wsi/wsi_common.h
+index 4a3edda..16cb15b 100644
+--- a/src/vulkan/wsi/wsi_common.h
++++ b/src/vulkan/wsi/wsi_common.h
+@@ -47,6 +47,7 @@ extern const struct vk_device_entrypoint_table wsi_device_entrypoints;
+ #include <util/list.h>
+ 
+ struct wsi_interface;
++struct wsi_image;
+ struct vk_instance;
+ struct vk_queue;
+ 
+@@ -150,6 +151,8 @@ struct wsi_device {
+       VkResult (*create_image_memory)(VkDevice device, void *resource,
+                                       const VkAllocationCallbacks *alloc,
+                                       VkDeviceMemory *out);
++      VkResult (*queue_present)(VkDevice device, VkQueue queue, VkDeviceMemory memory,
++                                uint32_t width, uint32_t height);
+    } win32;
+ 
+    struct {
+diff --git a/src/vulkan/wsi/wsi_common_win32.cpp b/src/vulkan/wsi/wsi_common_win32.cpp
+index a1a171c..fc1cfc1 100644
+--- a/src/vulkan/wsi/wsi_common_win32.cpp
++++ b/src/vulkan/wsi/wsi_common_win32.cpp
+@@ -202,15 +202,21 @@ wsi_win32_surface_get_capabilities(VkIcdSurfaceBase *surf,
+       caps->maxImageCount = 0;
+    }
+ 
+-   caps->currentExtent = {
+-      (uint32_t)win_rect.right - (uint32_t)win_rect.left,
+-      (uint32_t)win_rect.bottom - (uint32_t)win_rect.top
+-   };
+-   caps->minImageExtent = { 1u, 1u };
+-   caps->maxImageExtent = {
+-      wsi_device->maxImageDimension2D,
+-      wsi_device->maxImageDimension2D,
+-   };
++   if (wsi_device->win32.queue_present) {
++      caps->currentExtent = { 2560u, 1080u };
++      caps->minImageExtent = { 2560u, 1080u };
++      caps->maxImageExtent = { 2560u, 1080u };
++   } else {
++      caps->currentExtent = {
++         (uint32_t)win_rect.right - (uint32_t)win_rect.left,
++         (uint32_t)win_rect.bottom - (uint32_t)win_rect.top
++      };
++      caps->minImageExtent = { 1u, 1u };
++      caps->maxImageExtent = {
++         wsi_device->maxImageDimension2D,
++         wsi_device->maxImageDimension2D,
++      };
++   }
+ 
+    caps->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    caps->currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+@@ -585,13 +591,19 @@ wsi_dxgi_blit(struct wsi_swapchain *drv_chain, uint32_t image_index)
+ {
+    struct wsi_win32_swapchain *chain = (struct wsi_win32_swapchain *)drv_chain;
+    struct wsi_win32_image *win32_image = &chain->images[image_index];
+-   struct wsi_device *wsi_device = chain->wsi->wsi;
++   struct wsi_device *wsi_device = chain->wsi ? chain->wsi->wsi : NULL;
++
++   if (!wsi_device || !wsi_device->win32.get_d3d12_command_queue)
++      return VK_SUCCESS;
+ 
+    ID3D12CommandQueue *queue = (ID3D12CommandQueue *)
+       wsi_device->win32.get_d3d12_command_queue(chain->base.device);
+    if (!queue)
+       return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+ 
++   if (!chain->d3d12_blit_fences || !chain->d3d12_blit_fences[image_index])
++      return VK_SUCCESS;
++
+    uint64_t wait_value = chain->base.blit.timeline_values[image_index];
+    queue->Wait(chain->d3d12_blit_fences[image_index], wait_value);
+ 
+@@ -742,7 +754,7 @@ wsi_win32_image_init(VkDevice device_h,
+    chain->wnd = win32_surface->hwnd;
+    image->chain = chain;
+ 
+-   if (chain->dxgi)
++   if (chain->dxgi || (chain->wsi && chain->wsi->wsi && chain->wsi->wsi->win32.queue_present))
+       return VK_SUCCESS;
+ 
+    chain->chain_dc = GetDC(chain->wnd);
+@@ -750,9 +762,9 @@ wsi_win32_image_init(VkDevice device_h,
+    HBITMAP bmp = NULL;
+ 
+    BITMAPINFO info = { 0 };
+-   info.bmiHeader.biSize = sizeof(BITMAPINFO);
+-   info.bmiHeader.biWidth = create_info->imageExtent.width;
+-   info.bmiHeader.biHeight = -create_info->imageExtent.height;
++   info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
++   info.bmiHeader.biWidth = (LONG)create_info->imageExtent.width;
++   info.bmiHeader.biHeight = -(LONG)create_info->imageExtent.height;
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+@@ -1014,6 +1026,20 @@ wsi_win32_queue_present(struct wsi_swapchain *drv_chain,
+    if (chain->dxgi)
+       return wsi_win32_queue_present_dxgi(chain, image, damage);
+ 
++   if (chain->wsi && chain->wsi->wsi && chain->wsi->wsi->win32.queue_present) {
++      VkDeviceMemory mem_to_present = image->base.blit.memory ? image->base.blit.memory : image->base.memory;
++      VkResult result = chain->wsi->wsi->win32.queue_present(
++         chain->base.device,
++         VK_NULL_HANDLE,
++         mem_to_present,
++         chain->extent.width,
++         chain->extent.height);
++
++      wsi_win32_set_image_idle(chain, image);
++      chain->status = result;
++      return chain->status;
++   }
++
+    char *ptr = (char *)image->base.cpu_map;
+    char *dptr = (char *)image->sw.ppvBits;
+ 
+@@ -1195,15 +1221,13 @@ wsi_win32_surface_create_swapchain(
+       { WSI_IMAGE_TYPE_CPU },
+    };
+ 
+-   bool supports_dxgi = wsi->dxgi.factory &&
+-                        wsi->dxgi.dcomp &&
+-                        wsi->wsi->win32.get_d3d12_command_queue;
+-   struct wsi_base_image_params *image_params = supports_dxgi ?
+-      &dxgi_image_params.base : &cpu_image_params.base;
++   bool supports_dxgi = false;
++   struct wsi_base_image_params *image_params = &cpu_image_params.base;
+ 
+    VkResult result = wsi_swapchain_init(wsi_device, &chain->base, device, create_info,
+                                         num_images, image_params, allocator);
+    if (result != VK_SUCCESS) {
++      mesa_loge("WSI_DEBUG: wsi_swapchain_init failed with %d\n", (int)result);
+       u_cnd_monotonic_destroy(&chain->acquire_cond);
+       mtx_destroy(&chain->acquire_mutex);
+       vk_free(allocator, chain);
+@@ -1225,16 +1249,20 @@ wsi_win32_surface_create_swapchain(
+ 
+    if (image_params->image_type == WSI_IMAGE_TYPE_DXGI) {
+       result = wsi_win32_surface_create_swapchain_dxgi(surface, device, wsi, create_info, chain);
+-      if (result != VK_SUCCESS)
++      if (result != VK_SUCCESS) {
++         mesa_loge("WSI_DEBUG: create_swapchain_dxgi failed with %d\n", (int)result);
+          goto fail;
++      }
+    }
+ 
+    for (uint32_t image = 0; image < num_images; image++) {
+       result = wsi_win32_image_init(device, chain,
+                                     create_info, allocator,
+                                     &chain->images[image]);
+-      if (result != VK_SUCCESS)
++      if (result != VK_SUCCESS) {
++         mesa_loge("WSI_DEBUG: wsi_win32_image_init[%u] failed with %d\n", image, (int)result);
+          goto fail;
++      }
+    }
+ 
+    *swapchain_out = &chain->base;
+@@ -1310,8 +1338,11 @@ wsi_win32_init_wsi(struct wsi_device *wsi_device,
+                    const VkAllocationCallbacks *alloc,
+                    VkPhysicalDevice physical_device)
+ {
++   VK_FROM_HANDLE(vk_physical_device, pdev, physical_device);
++   bool is_bc250 = (pdev && pdev->properties.vendorID == 0x1002 && pdev->properties.deviceID == 0x13fe);
+    struct wsi_win32 *wsi;
+    VkResult result;
++   const char *force_gdi_env = NULL;
+ 
+    wsi = (wsi_win32 *)vk_zalloc(alloc, sizeof(*wsi), 8,
+                    VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
+@@ -1323,8 +1354,16 @@ wsi_win32_init_wsi(struct wsi_device *wsi_device,
+    wsi->physical_device = physical_device;
+    wsi->alloc = alloc;
+    wsi->wsi = wsi_device;
++   force_gdi_env = getenv("WSI_FORCE_GDI");
++   if (force_gdi_env && strcmp(force_gdi_env, "0") != 0) {
++      wsi_device->sw = true;
++   }
+ 
+-   if (!wsi_device->sw) {
++   if (is_bc250 || wsi_device->win32.queue_present) {
++      /* Native hardware presentation provided by winsys (e.g. BC-250 SDMA present) */
++      wsi_device->sw = false;
++      wsi_device->blit = NULL;
++   } else if (!wsi_device->sw) {
+       wsi->dxgi.factory = dxgi_get_factory(WSI_DEBUG & WSI_DEBUG_DXGI);
+       if (!wsi->dxgi.factory) {
+          wsi_device->sw = true;

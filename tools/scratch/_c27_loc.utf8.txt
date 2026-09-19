@@ -1,0 +1,84 @@
+﻿=== PASTAS DE EVIDENCIA MAIS RECENTES ===
+  2026-09-18_14-20-07-DESKTOP-HQAG6T4-lab-binding  (34 arq, 11.067.278 bytes)
+  2026-09-18_13-12-08-DESKTOP-HQAG6T4-lab-binding  (35 arq, 1.648.000.078 bytes)
+  2026-09-18_10-20-01-DESKTOP-HQAG6T4-lab-binding  (36 arq, 1.648.825.054 bytes)
+  2026-09-18_09-43-54-DESKTOP-HQAG6T4-lab-binding  (34 arq, 1.648.195.631 bytes)
+
+=== 2026-09-18_14-20-07-DESKTOP-HQAG6T4-lab-binding ===
+  bc250_umd_log-FINAL.txt                            2.564.174  14:20:43
+  bc250_umd_log.txt                                  2.081.831  14:20:40
+  bc250_umd_log_5320-FINAL.txt                         848.197  14:20:39
+  bc250_umd_log_5320.txt                               848.197  14:20:39
+  bc250_umd_log_1208-FINAL.txt                         822.996  14:20:34
+  bc250_umd_log_1208.txt                               822.996  14:20:34
+  display-log-this-bind-FINAL.txt                      452.369  14:20:43
+  bc250_umd_log_9940-FINAL.txt                         443.429  14:20:43
+  d3d11-native-conformance-console.txt                 380.484  14:20:39
+  d3d11_native_conformance.log                         348.817  14:20:38
+  conformance-stderr.tmp                               348.130  14:20:37
+  bc250_umd_log_10444.txt                              334.209  14:20:37
+  bc250_umd_log_10444-FINAL.txt                        334.209  14:20:37
+  bc250_umd_log_10556-FINAL.txt                        106.205  14:20:43
+  display-log-this-bind.txt                            105.226  14:20:20
+  probe-registry-at-bind.txt                            83.220  14:20:20
+  bc250_umd_log_9940.txt                                71.578  14:20:39
+  probe-registry-at-bind.json                           47.784  14:20:20
+  bc250_umd_log_10784-FINAL.txt                          4.666  14:20:18
+  bc250_umd_log_10784.txt                                4.666  14:20:18
+  safe-bind-final.json                                   2.502  14:22:22
+  tail-recovery-console.txt                              1.936  14:20:14
+  prebind-policy.json                                    1.523  14:20:16
+  binding-provenance.json                                1.414  14:20:40
+  safe-bind-watchdog-journal.jsonl                       1.116  14:22:20
+  safe-bind-watchdog-config.json                         1.074  14:20:14
+  safe-bind-recovery.txt                                 1.072  14:22:16
+  safe-bind-pnp-samples.json                             1.013  14:22:20
+  conformance-stdout.tmp                                   662  14:20:36
+  display-log-archive.json                                 426  14:20:39
+  safe-bind-rollback-attempt.json                          389  14:22:14
+  safe-bind-watchdog-state.json                            368  14:22:20
+  compute-display-prerequisite-gate.json                   257  14:20:20
+  display-log-baseline.json                                143  14:20:07
+
+=== PROVENIENCIA (R4) ===
+{
+    "evidence_dir":  "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\docs\\evidence\\2026-09-18_14-20-07-DESKTOP-HQAG6T4-lab-binding",
+    "watchdog_token":  "9c32ad9d-306f-43af-8f12-dbc1c00224ae",
+    "watchdog_disabled":  false,
+    "instance_id":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
+    "published_inf":  "oem41.inf",
+    "package_sys_sha256":  "E7E7A3B2D11C9B679543DE577C34C3F9A486B6B3A4ABF810D927B271A4FC7FA0",
+    "external_libs":  [
+                          {
+                              "name":  "vulkan_radeon.dll",
+                              "path":  "C:\\BC250_LIB\\vulkan_radeon.dll",
+                              "bytes":  16621056,
+                              "modified_utc":  "2026-09-18T14:50:29.8694162Z",
+                              "sha256":  "19D62EC2248151C3389BA2E09AB1621696EB415A51E6D54A10F5690C4443EA25"
+                          },
+                          {
+                              "name":  "libvkd3d-shader-1.dll",
+                              "path":  "C:\\BC250_LIB\\libvkd3d-shader-1.dll",
+                              "bytes":  1468340,
+                              "modified_utc":  "2026-09-12T14:43:16.2171790Z",
+                              "sha256":  "098CCD8A08045BD1267424CB6F1E3467CDDAA15691A35F6D6A37468A871CA93C"
+                          }
+                      ]
+}
+
+
+=== CANDIDATO ESPERADO (empacotado por mim as 14:11) ===
+  DriverVer 3.184.1.0 | SYS E7E7A3B2D11C9B67... | UMD 473EE3E8A311CB5E... | RADV 19D62EC2...
+
+=== ESTADO FINAL DA MAQUINA ===
+  Unknown | Problem=CM_PROB_PHANTOM | AMD Radeon RX 6600
+  OK | Problem=CM_PROB_NONE | Adaptador de Vídeo Básico da Microsoft
+  BC250_BOOT_FUSE.json: INEXISTENTE
+  BC250_REQUIRE_CLEAN_BOOT.json: {     "state":  "CLEAN_BOOT_REQUIRED",     "rollback_boot_ticks":  639253484165000000,     "rollback_completed_at":  "2026-09-18T14:20:45.7867681-03:00",     "restored_service":  "BasicDisplay",     "restored_code":  0,     "hardware_validated":  false } 
+--- BugCheck / dump apos 14:00 ---
+  17/09/2026 20:10:34 | O computador foi reinicializado após uma verificação de erro. Essa verificação foi: 0x0000000a (0x0000000000000020, 0x00
+  17/09/2026 19:32:44 | O computador foi reinicializado após uma verificação de erro. Essa verificação foi: 0x00000139 (0x0000000000000000, 0x00
+  17/09/2026 18:37:14 | O computador foi reinicializado após uma verificação de erro. Essa verificação foi: 0x00000133 (0x0000000000000000, 0x00
+  16/09/2026 23:16:12 | O computador foi reinicializado após uma verificação de erro. Essa verificação foi: 0x00000116 (0xffffb50fe04dd460, 0xff
+  16/09/2026 09:27:40 | O computador foi reinicializado após uma verificação de erro. Essa verificação foi: 0x00000116 (0xffffda04e2d62010, 0xff
+  MEMORY.DMP 869.787.086 bytes 17/09/2026 20:10:20

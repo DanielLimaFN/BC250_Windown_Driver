@@ -1,7 +1,0 @@
-﻿
-Algorithm Hash                                                             Path                                        
---------- ----                                                             ----                                        
-SHA256    56C016FBA5B9C342FF6703034A9264B26F4BC484C427D26B3C1F60FA73CC0AAB C:\Windows\LiveKernelReports\WATCHDOG\WAT...
-SHA256    480F53527E4E498168721C120E8CF1FF3A6B24E486AEE14A17798F8EADC4F411 C:\Users\Daniel\Desktop\NamixWDDM\docs\ev...
-
-

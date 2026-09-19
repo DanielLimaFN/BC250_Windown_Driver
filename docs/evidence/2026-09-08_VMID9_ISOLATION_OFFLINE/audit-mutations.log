@@ -1,6 +1,0 @@
-0: BASELINE PASS
-1: REJECTED ['compute VMID must have one dedicated assignment under the engine lock']
-2: REJECTED ['missing strict retirement equality: return Submitted == Retired;']
-3: REJECTED ['missing compute-specific TLB ACK: io.Flush = Bc250ActiveFlushComputeTlb;']
-4: REJECTED ['VMID9 needs exact read AND write allowlists']
-COMPUTE VMID AUDIT MUTATIONS: PASS; NAO VALIDADO EM HARDWARE
