@@ -23,6 +23,41 @@ Preservar provas compute/SDMA no seu escopo. Não equiparar imagem 3D produzida 
 > **Plano de produto solicitado pelo proprietário (16/09/2026, análise documental):** [desktop acelerado, Direct3D transparente e DCN básico em P9](docs/281_PLANO_PRODUTO_DESKTOP_E_JOGOS_TRANSPARENTES.md). Os 600 quadros do Marco 4 não fecham desktop DWM nem jogos arbitrários. A fonte atual do Cube.cpp usa pipeline compute e vkCmdDispatch; sua proveniência exata em relação ao binário da corrida precisa ser conferida. Não usar esse teste como prova de vkCmdDraw/pipeline gráfico geral. Expor uma fila GRAPHICS requer backend comprovado, não apenas mudar uma flag. Nenhum novo item foi validado em hardware nesta revisão.
 **Passagem de bastão atual:** [docs/288 — HANDOFF: CORRIDA 34, CURA GCVM E DIAGNÓSTICO DO STALL DA DRAWING ENGINE](docs/288_HANDOFF_2026-09-19_CORRIDA34_CURA_GCVM_E_DIAGNOSTICO_TELA_PRETA.md), [docs/287 — HANDOFF: CORRIDA 18, BUGCHECK 0x0A E DESACOPLAMENTO DE DPCS](docs/287_HANDOFF_2026-09-17_20-10_CORRIDA18_0x0A_E_SEPARACAO_DPCS.md), [docs/286 — HANDOFF: CORRIDA 17, BUGCHECK 0x139 E CORREÇÃO DE INICIALIZAÇÃO DE DPC](docs/286_HANDOFF_2026-09-17_19-32_CORRIDA17_0x139_E_CORRECAO_DPC_INIT.md), [PLANO_DESKTOP_ACELERADO](PLANO_DESKTOP_ACELERADO.md).
 
+> **19/09 12:11:58 (P0, lab 3.194.1.0, SYS 60FD95A5) — CORRIDA 36: PAREDE REPRODUZIDA PELA
+> TERCEIRA VEZ, IDENTICA; A SONDA DE ONDA NAO RODOU POR DEFEITO DE COMPILACAO CONDICIONAL.**
+> **Evidencia:** `docs/evidence/2026-09-19_12-11-58-DESKTOP-HQAG6T4-lab-binding/`.
+> Criterio: [docs/290](docs/290_CRITERIO_CORRIDA_36_ONDE_A_ONDA_PARA.md), Desfecho D.
+>
+> - **P0, reproducao exata da Corrida 35:** mesmo IB (`DmaVA=0x240D10000`, 1872 DW),
+>   `GRBM_STATUS=0xA2613028`, `RPTR=24 WPTR=32`, `SQ_DEBUG_STS_GLOBAL=0x00030031`
+>   (WaveLevelSA0=3, SA1=3), `SE0=SE1=0x09000006` com `CB_CLEAN=1`, e `SemPolling=0
+>   EopDoneBusy=0 CoherCntNeqZero=0`. O travamento e DETERMINISTICO, nao intermitente.
+> - **A pergunta da corrida NAO foi respondida:** `[TDR_GFX_WAVEPC] DESARMADO: GfxWaveProbe=0
+>   present=0`. O `present=0` e o discriminante -- o tunable nunca foi consultado, embora o INF
+>   empacotado trouxesse 1 e o manifesto derivasse disso.
+> - **TRES DEFEITOS MEUS, todos de instrumentacao, todos corrigidos offline em 19/09:**
+>   1. a leitura do tunable estava depois de
+>      `#if !defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)` -- compilada FORA da imagem de
+>      laboratorio. **Quarta ocorrencia** da classe (A13, B4, ContextAbi), escrita a poucas linhas
+>      do comentario que registra a correcao do B4;
+>   2. `bc250_dump_ib()` vivia so no ramo de concatenacao (`cs_total > 1`) e a submissao que trava
+>      nao passa por ele -- `gfx-ib-dump/` vazio pela segunda vez, desta vez NAO por falta da
+>      chave de registro, que o runner criou corretamente;
+>   3. a cauda arquivada tinha 210.851 de 219.325 bytes, e os 8.474 perdidos continham o BLOCO
+>      INTEIRO DO TDR. A pasta nao dizia que estava incompleta. O codigo de copia nunca esteve
+>      errado: o defeito e TEMPORAL, o KMD escreve depois da copia.
+> - **Controles mantidos:** zero `GFXHUB_FAULT`, zero BugCheck, 121 IBs no Node 0 com 112
+>   `TRIPE_PROVADO`, `TDR_GFX_RESTART` aprovado com `CpMeCntl=0x00000000`, rollback pelo watchdog.
+> - **Dados novos, pequenos:** `CP_BUSY_STAT=0x00028080` trouxe `ME_PARSER_BUSY=1` alem do que a
+>   Corrida 35 mostrou, e `GRBM_STATUS2` trouxe `CPF_BUSY=1`.
+> - **Veredito:** INCONCLUSIVO quanto a pergunta, COM REPRODUCAO CONFIRMADA da parede. A corrida
+>   nao foi desperdicada no silicio -- provou determinismo e reconfirmou as tres medicoes --, mas
+>   nao disse onde a onda esta, e a causa disso e minha.
+> - **Candidato seguinte:** 3.195.1.0 com os tres defeitos corrigidos, tres portoes novos e 4
+>   mutacoes verificadas. Sonda ARMADA. NAO INSTALADO.
+>
+> ---
+>
 > **19/09 10:51:35 (P0, lab 3.192.1.0, SYS E48CBB12) — CORRIDA 35: A SONDA RESPONDEU. O CP NAO
 > ESTA ESPERANDO SINCRONIZACAO; HA SEIS ONDAS EM VOO QUE NAO RETIRAM.**
 > **Evidencia:** `docs/evidence/2026-09-19_10-51-35-DESKTOP-HQAG6T4-lab-binding/`.

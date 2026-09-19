@@ -1,6 +1,8 @@
-# 290 — Critério da Corrida 36 — Onde a onda para
+# 290 — Critério das Corridas 36 e 37 — Onde a onda para
 
-> **Escrito em 19/09/2026, ANTES do ensaio.** Candidato lab **3.194.1.0**, com a sonda de onda **ARMADA**.
+> **Escrito em 19/09/2026, ANTES do ensaio.** Candidato vigente: **3.195.1.0**, sonda **ARMADA**.
+> A Corrida 36 rodou com o 3.194.1.0 e **não respondeu** — a sonda não executou por defeito de
+> compilação condicional (§8). A pergunta é a mesma; o que mudou foi a instrumentação.
 > **Alvo:** AMD BC-250 (`1002:13FE`, GC 10.1.3) | Windows 10 Pro 22H2 build 19045
 > **Pergunta única:** *as seis ondas presas estão paradas em qual instrução, e esperando o quê?*
 > **Critério anterior:** [docs/289](289_CRITERIO_CORRIDA_35_ONDE_O_CP_PARA.md) — fechou no Desfecho 1.
@@ -189,3 +191,61 @@ UMD foi tocada, de propósito.
 `9FD1BC19…`. São dois artefatos distintos, cada um com seu `DriverVer` — a confusão de dois
 binários sob a mesma versão já foi erro nosso uma vez (3.92.1.0) e não se repete aqui. Use o
 **3.194.1.0**.
+
+---
+
+## 8. Por que a Corrida 36 não respondeu, e o que mudou para a 37
+
+A Corrida 36 (19/09 12:11:58, lab 3.194.1.0) **reproduziu a parede pela terceira vez, idêntica** —
+mesmo IB (`0x240D10000`, 1872 DW), `GRBM_STATUS=0xA2613028`, `SQ_DEBUG_STS_GLOBAL=0x00030031`
+(seis ondas), `SE0=SE1=0x09000006` com `CB_CLEAN=1`. O fenômeno é determinístico, não intermitente.
+
+Mas a sonda não rodou:
+
+```
+[TDR_GFX_WAVEPC] DESARMADO: GfxWaveProbe=0 present=0
+```
+
+`present=0` é o discriminante — o valor não foi lido como zero, **nunca foi consultado**. Três
+defeitos meus, todos de instrumentação, todos corrigidos:
+
+| # | Defeito | Correção |
+|---|---|---|
+| 1 | Leitura do tunable dentro de `#if !defined(BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP)` — compilada **fora** da imagem de lab | movida para o caminho comum, ao lado de `GfxRingPreflight` |
+| 2 | `bc250_dump_ib()` só no ramo `cs_total > 1`; a submissão que trava não passa por ele | movida para depois dos dois ramos, VA de `ib_buffers[0]` |
+| 3 | Cauda arquivada com 210.851 de 219.325 bytes — **o bloco inteiro do TDR estava nos 8.474 perdidos**, e nada dizia que a pasta estava truncada | duas passagens + `display-log-final-archive.json` com `complete_at_capture` |
+
+O defeito 1 é a **quarta ocorrência** da classe no projeto (A13, B4, ContextAbi), e foi escrito a
+poucas linhas do comentário que registra a correção do B4.
+
+Três portões novos cobrem os três, com 4 mutações verificadas. Duas mutações passaram na primeira
+tentativa pelo mesmo buraco — `require()` casa substring e o nome certo é prefixo do errado —,
+o que gerou o helper `require_token()`; e uma terceira passou porque o campo renomeado sobrevivia
+dentro de uma string de comentário, o que fez o portão passar a exigir a **atribuição**.
+
+**Os quatro desfechos do §3 agora são alcançáveis.** Na Corrida 36 só o D era.
+
+---
+
+## 9. Pacote vigente — 3.195.1.0, assinado, auditado, NÃO INSTALADO
+
+`MCDM_LAB_BRINGUP` · `DISPLAY_RENDER_LAB` · WDDM 2.7 · P1 PERSISTENT SUBMISSION · schema 135 ·
+**GfxWaveProbe=1 (ARMADO)**
+
+| Artefato | SHA-256 |
+|---|---|
+| SYS (pacote, assinado) | `B11DADBC5DE10C74614580B56A65547D6148A16585F85C7A022537335D948E13` |
+| SYS (fonte lab) | `FFBFFF17618A4A05BFCE31AAB86416EE1EB6EBB705C3F0EC455D473180727BF2` |
+| UMD | `372FEBCFD24C7B2217A0413B3DFEDF35A9D475D02DADF5CAADD8787DF412D678` |
+| INF | `D9D5210DC1BEE4B3B5DF70875F30C4CE0433F7BE487F69219634B5BB804251C8` |
+| CAT | `1855D8AB69129E9C1C4D839307DFE2BEE6C181D4D6AC8EB6B1882851BFF2F437` |
+| `vulkan_radeon.dll` (em `C:\BC250_LIB\`) | `7837c96027e5e56233fa16735cbe22a301a62f61d1e0075ad833efddeefe5868` |
+
+`audit-bc250mcdm-lab-package.ps1`: **PASS**. INF empacotado com
+`HKR,Parameters,GfxWaveProbe,0x00010001,1`; manifesto deriva (`GfxWaveProbeArmed=True`).
+
+**Conferido por string no SYS assinado:** `TDR_GFX_WAVEPC`, `GfxWaveProbe=%u (present=%u)`,
+`ALERTA: GRBM_GFX_INDEX`, `selector_stuck`, `TDR_GFX_WAVES`. A linha do `StartDevice` agora existe
+no binário de laboratório — na Corrida 36 ela não existia, e era exatamente esse o defeito.
+
+**NADA DESTA FAIXA FOI VALIDADO EM HARDWARE.**
