@@ -1,17 +1,17 @@
 ﻿{
-    "evidence_dir":  "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\docs\\evidence\\2026-09-19_12-11-58-DESKTOP-HQAG6T4-lab-binding",
-    "watchdog_token":  "e744f518-c632-4f19-809e-87acc06f560f",
+    "evidence_dir":  "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\docs\\evidence\\2026-09-19_17-38-38-DESKTOP-HQAG6T4-lab-binding",
+    "watchdog_token":  "a9324ec9-139c-418c-86fc-4223bb15807b",
     "watchdog_disabled":  false,
     "instance_id":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
     "published_inf":  "oem41.inf",
-    "package_sys_sha256":  "60FD95A55DA6050357C97D143DE3D16F1D8FB8B30E2000C5D7110732C977740A",
+    "package_sys_sha256":  "749BA458F5F235B702C25204E17DF0DC85E98C9D6F0B5DD1F8E88926A7875041",
     "external_libs":  [
                           {
                               "name":  "vulkan_radeon.dll",
                               "path":  "C:\\BC250_LIB\\vulkan_radeon.dll",
                               "bytes":  16671232,
-                              "modified_utc":  "2026-09-19T14:14:56.8354016Z",
-                              "sha256":  "6FF3202F29F643D8B5F791EE53867109022A4E255DD15518930531700B747BD8"
+                              "modified_utc":  "2026-09-19T15:22:32.0188695Z",
+                              "sha256":  "7837C96027E5E56233FA16735CBE22A301A62F61D1E0075AD833EFDDEEFE5868"
                           },
                           {
                               "name":  "libvkd3d-shader-1.dll",

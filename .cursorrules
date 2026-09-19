@@ -53,6 +53,17 @@ CLOSED PATHS — do not reopen: render-only under `Class=Display` (failed, `docs
 - Physical runs are the scarce resource and DANIEL runs them. Answer from source reading and
   from mining `docs/evidence/` first. Define a run budget and an abandonment criterion BEFORE
   arming a run. Cold boot between binds.
+- HOW TO WRITE A RUN CRITERION. Three rules, born from measured failures in Corrida 39
+  (19/09), not from style:
+  (a) SIGNATURE AND IMPLICATION ARE SEPARATE FIELDS. State what the log will show, and in a
+      distinct field, where that leads the investigation. Coupled, one outcome's signature was
+      falsified while its conclusion held, leaving no way to accept one without the other.
+  (b) EVERY CRITERION CARRIES A FINAL OUTCOME "E — something off the map", to be described
+      before it is judged. In Corrida 39 the largest result (118 graphics submissions with no
+      hang, IBs ten times larger than the one that used to hang) fell outside all four letters,
+      because convergence had been treated only as a control not to regress.
+  (c) A PARTIAL OUTCOME IS NOT AN OUTCOME. Two of three signals close nothing, least of all
+      when the missing signal is the one that defines the outcome.
 ## Diretriz vigente — qualidade e relato de corridas (16/09/2026)
 
 Esta decisão do proprietário prevalece sobre orientações históricas conflitantes abaixo. Cumprir [DIRETRIZ_QUALIDADE_UMD_DX11_E_MARCOS_GRAPHICS.md](DIRETRIZ_QUALIDADE_UMD_DX11_E_MARCOS_GRAPHICS.md).

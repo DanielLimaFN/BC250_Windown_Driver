@@ -2,6 +2,7 @@
 #define BC250_UMD_PIPELINE_CACHE_H
 
 #include "bc250_umd_vulkan_bridge.h"
+#include "bc250_descriptor_binding.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -60,6 +61,8 @@ typedef struct _BC250_PSO_ENTRY {
     VkPipeline Pipeline;
     VkPipelineLayout PipelineLayout;
     VkDescriptorSetLayout DescriptorSetLayout;
+    uint32_t BindingCount;
+    VkDescriptorSetLayoutBinding Bindings[BC250_DESCRIPTOR_MAX_BINDINGS];
     uint64_t LastUsedSequence;
     BOOL InUse;
 } BC250_PSO_ENTRY;

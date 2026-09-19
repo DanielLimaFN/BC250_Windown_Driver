@@ -3534,6 +3534,20 @@ def audit_wave_probe_restores_the_selector(errors: list[str]) -> None:
     require(inf_text, "HKR,Parameters,GfxWaveProbe,0x00010001,0",
             "GfxWaveProbe declarado no INF com default 0 (fail-closed)", errors)
 
+    # O soft-reset do quiesce NAO pode ser disparado com o seletor possivelmente
+    # fora de broadcast. Enquanto a duvida do selector_stuck (Corrida 37) nao
+    # fecha, a reposicao incondicional antes do reset e a mitigacao fisica, e
+    # ela e independente do veredito da sonda -- vale ate com a sonda desarmada.
+    reset_pos = mini.find("BC250_GRBM_REG_SOFT_RESET")
+    if reset_pos < 0:
+        errors.append("soft-reset do quiesce nao localizado: mitigacao do seletor sem portao")
+    else:
+        janela = mini[max(0, reset_pos - 2500):reset_pos]
+        if "GRBM_GFX_INDEX reposto em broadcast antes do soft-reset" not in janela:
+            errors.append(
+                "o quiesce dispara GRBM_SOFT_RESET sem repor GRBM_GFX_INDEX em broadcast: "
+                "com o seletor apontando para um unico shader engine, o reset atinge so ele")
+
     # 3. O caminho desarmado NAO pode ser mudo, e nao pode escrever nada.
     require(mini, "[TDR_GFX_WAVEPC] DESARMADO",
             "linha que nomeia a sonda desarmada", errors)
@@ -3549,6 +3563,47 @@ def audit_wave_probe_restores_the_selector(errors: list[str]) -> None:
             "caso de teste do seletor preso", errors)
     require(test_text, "sq.GfxIndexWrites == 0u",
             "caso de teste que prova que a sonda desarmada nao escreve nada", errors)
+
+
+def audit_descriptor_and_wave_contracts(errors: list[str]) -> None:
+    """Corrida 37: real bindings, poison exclusion, exact read ceiling."""
+    def code(path: str) -> str:
+        return strip_c_comments((ROOT / path).read_text(encoding="utf-8"))
+    desc = code("driver/umd/bc250_umd_descriptors.c")
+    draw = code("driver/umd/bc250_d3d_umd.c")
+    bridge = code("driver/umd/bc250_umd_vulkan_bridge.c")
+    adapter = code("driver/umd/bc250_vkd3d_shader_adapter.c")
+    wave = code("driver/core/bc250_gfx_ring_transaction.c")
+    cache = code("driver/umd/bc250_umd_pipeline_cache.c")
+    upload = code("driver/umd/bc250_umd_resource_vk.c")
+    for expression, body, reason in (
+        (r"vkCreateDescriptorPool\s*\(", desc, "descriptor pool creation"),
+        (r"vkAllocateDescriptorSets\s*\(", desc, "descriptor set allocation"),
+        (r"vkUpdateDescriptorSets\s*\(", desc, "descriptor writes"),
+        (r"vkCmdBindDescriptorSets\s*\(", desc, "descriptor bind"),
+        (r"info\.next\s*=\s*&interfaceInfo\s*;", adapter, "explicit vkd3d interface"),
+        (r"b->binding\.binding\s*=\s*stage\s*\*\s*BC250_DESCRIPTOR_STAGE_STRIDE\s*\+", adapter, "stage binding isolation"),
+        (r"if\s*\(!Bc250UmdBindDrawDescriptors\([^;]+\)\)\s*return FALSE;", draw, "draw descriptor guard"),
+        (r"if\s*\(Bc250UmdVkFlushCommands\(&pDevice->VkBridge\)\s*!=\s*VK_SUCCESS\)\s*return FALSE;", draw, "fence errors propagate"),
+        (r"pBridge->SubmissionFailed\s*=\s*TRUE;", bridge, "failed submit cannot be reused"),
+        (r"WaveStatus\s*!=\s*0xBEBEBEEFu", wave, "poison cannot be a wave"),
+        (r"WaveStatus\s*&\s*0x00010000u", wave, "SQ VALID bit required"),
+        (r"if\s*\(Evidence->ReadsIssued\s*>=\s*ReadBudget\)\s*return 0u;", wave, "strict per-read ceiling"),
+        (r"Evidence->SelectorReadback\s*==\s*BC250_GRBM_GFX_INDEX_BROADCAST_ALL", wave, "unproven selector readback must not be accepted"),
+        (r"pShader->NumBindings\s*==\s*UINT32_MAX", cache, "reflection failure rejects shader"),
+        (r"res\s*=\s*pBridge->vk.vkFlushMappedMemoryRanges\(", upload, "constant buffer flush result propagated"),
+    ):
+        if not re.search(expression, body):
+            errors.append("descriptor/wave contract: " + reason)
+    order = [desc.find(name + "(") for name in
+             ("vkCreateDescriptorPool", "vkAllocateDescriptorSets", "vkUpdateDescriptorSets", "vkCmdBindDescriptorSets")]
+    if order != sorted(order) or min(order) < 0:
+        errors.append("descriptor/wave contract: allocate/update/bind order")
+    wait = bridge[bridge.find("res = pBridge->vk.vkWaitForFences"):]
+    if not re.search(r"else\s*\{\s*Bc250UmdVkReleaseDescriptorBatches\(pBridge\);", wait):
+        errors.append("descriptor/wave contract: descriptor retirement only after successful wait")
+    if "FALLBACK DE SEGURANCA" in cache or "effectiveKey.VsModule = pCache->DefaultVsModule" in cache:
+        errors.append("descriptor/wave contract: substitute shaders hide descriptor errors")
 
 
 def audit_lab_tunables_are_read_in_the_common_path(errors: list[str]) -> None:
@@ -3675,6 +3730,136 @@ def audit_kmd_tail_archive_declares_truncation(errors: list[str]) -> None:
         errors.append(
             "arquivamento da cauda do KMD voltou a ter UMA passagem: o bloco do TDR "
             "e escrito na borda da coleta e some sem deixar rastro")
+
+
+def audit_resource_copy_requires_created(errors: list[str]) -> None:
+    """Copia entre recursos nao pode confiar em struct nao criada.
+
+    MEDIDO em 19/09, com cdb, em bc250_d3d_umd_test.exe:
+      rcx = rdx = 0x00007ffd58bb5b40   (origem e destino iguais)
+      r8  = 0x58bb34e0                 (1,4 GB)
+    memcpy com comprimento lido de memoria nao inicializada -- o tamanho ate
+    carregava o padrao alto do proprio ponteiro. A origem era um
+    BC250_UMD_RESOURCE declarado na pilha e nunca inicializado, entregue a
+    ResourceResolveSubresource.
+
+    A mina existia havia tempo e so' foi pisada porque acrescentar um campo a
+    struct mudou QUAL lixo caia em TotalByteSize. Por isso o portao trava a
+    condicao, nao o sintoma: sem Created dos dois lados a copia nao acontece, e
+    a recusa fala. Tambem exige que o teste pare de fabricar a entrada invalida
+    -- consertar so um lado deixaria o outro pronto para repetir.
+    """
+    prod = ROOT / "driver" / "umd" / "bc250_d3d_umd.c"
+    test = ROOT / "driver" / "tests" / "bc250_d3d_umd_test.c"
+    for path in (prod, test):
+        if not path.exists():
+            errors.append(path.name + " ausente: copia de recurso sem portao")
+            return
+    code = strip_c_comments(prod.read_text(encoding="utf-8", errors="replace"))
+
+    start = code.find("Bc250Umd10ResourceCopyRegion")
+    if start < 0:
+        errors.append("Bc250Umd10ResourceCopyRegion ausente")
+        return
+    end = code.find("\nVOID APIENTRY", start + 10)
+    body = code[start:end if end > 0 else len(code)]
+
+    guard = body.find("!dst->Created || !src->Created")
+    copy = body.find("memcpy(")
+    if guard < 0:
+        errors.append(
+            "ResourceCopyRegion nao exige Created dos dois recursos: TotalByteSize e "
+            "pCpuShadow voltariam a ser lidos de memoria nao inicializada")
+    elif copy >= 0 and guard > copy:
+        errors.append(
+            "a guarda de Created em ResourceCopyRegion esta DEPOIS do primeiro memcpy: "
+            "conferir depois de copiar nao desfaz a copia")
+
+    require(prod.read_text(encoding="utf-8", errors="replace"),
+            "ResourceCopyRegion RECUSADO: recurso nao criado",
+            "recusa nomeada da copia com recurso nao criado", errors)
+
+    tcode = test.read_text(encoding="utf-8", errors="replace")
+    if "memset(&soRes, 0, sizeof(soRes));" not in tcode:
+        errors.append(
+            "o teste voltou a entregar BC250_UMD_RESOURCE de pilha nao inicializado a "
+            "ResourceResolveSubresource")
+
+
+def audit_texture_path_is_named_and_complete(errors: list[str]) -> None:
+    """A recusa de SRV nomeia UMA condicao, e a textura sobe pelos tres caminhos.
+
+    Duas medicoes da Corrida 39 (19/09 16:20:14) sustentam este portao:
+
+    1. `[VK_DESCRIPTOR] RECUSADO: binding index=2 motivo=SRV_AUSENTE_OU_SEM_IMAGEM`
+       -- esse nome agregava SETE checagens. Foram nomeadas 17 recusas naquela
+       faixa e justamente a que disparou ficou grossa: a corrida disse onde
+       parou, nao por que.
+
+    2. `dwm.exe` saiu com upload=0 enquanto outros processos tiveram 21. A
+       sincronia com Vulkan em ResourceUpdateSubresourceUP e em ResourceUnmap
+       so' acontecia para BUFFER; textura escrevia no shadow de CPU e nunca
+       chegava a VkImage. O DWM cria a textura vazia e preenche depois, entao
+       cobrir so a criacao nao o alcancava.
+
+    O portao trava as duas: o motivo agregado nao pode voltar, e os dois DDIs
+    de atualizacao tem de sincronizar textura pela fonte unica.
+    """
+    desc = ROOT / "driver" / "umd" / "bc250_umd_descriptors.c"
+    umd = ROOT / "driver" / "umd" / "bc250_d3d_umd.c"
+    for path in (desc, umd):
+        if not path.exists():
+            errors.append(path.name + " ausente: caminho de textura sem portao")
+            return
+
+    dtext = desc.read_text(encoding="utf-8", errors="replace")
+    # Comentario pode CITAR o nome banido -- o registro historico e' util e nao
+    # e' publicacao. A proibicao vale sobre o codigo; strip_c_comments preserva
+    # literais de string, entao um refusedReason com o nome antigo ainda casa.
+    dcode = strip_c_comments(dtext)
+
+    # 1. O agregado morreu e os sete nomes existem.
+    if "SRV_AUSENTE_OU_SEM_IMAGEM" in dcode:
+        errors.append(
+            "SRV_AUSENTE_OU_SEM_IMAGEM voltou: esse motivo agrega sete condicoes e foi "
+            "exatamente o que deixou a Corrida 39 sem saber por que a SRV do dwm.exe caiu")
+    for motivo in ("SRV_SLOT_VAZIO", "SRV_NAO_CRIADA", "SRV_SEM_RECURSO_ASSOCIADO",
+                   "SRV_RECURSO_SEM_VKIMAGE", "SRV_DIMENSAO_NAO_E_TEXTURE2D",
+                   "SRV_MULTISAMPLE_NAO_SUPORTADA",
+                   "SRV_LAYOUT_UNDEFINED_NUNCA_TRANSICIONADA"):
+        require_token(dcode, motivo, "motivo de recusa de SRV " + motivo, errors)
+
+    # Nenhuma recusa pode sair sem motivo atribuido.
+    code = dcode
+    import re as _re
+    for m in _re.finditer(r"goto refused;", code):
+        janela = code[max(0, m.start() - 120):m.start()]
+        if "refusedReason" not in janela:
+            errors.append(
+                "existe 'goto refused' sem refusedReason atribuido nas 120 letras anteriores: "
+                "a recusa sairia como MOTIVO_NAO_REGISTRADO")
+            break
+
+    # 2. Os dois DDIs de atualizacao sincronizam textura, pela MESMA funcao.
+    utext = umd.read_text(encoding="utf-8", errors="replace")
+    require(utext, "static void Bc250UmdSyncTextureToVkImage",
+            "fonte unica da sincronia de textura", errors)
+    ucode = strip_c_comments(utext)
+    for ddi in ("Bc250Umd10ResourceUpdateSubresourceUP", "Bc250Umd10ResourceUnmap"):
+        ini = ucode.find("VOID APIENTRY " + ddi + "(")
+        if ini < 0:
+            errors.append("DDI " + ddi + " ausente")
+            continue
+        fim = ucode.find("\n}\n", ini)
+        corpo = ucode[ini:fim if fim > 0 else len(ucode)]
+        if "Bc250UmdSyncTextureToVkImage(" not in corpo:
+            errors.append(
+                ddi + " nao sincroniza textura com a VkImage: era assim que o dwm.exe "
+                "ficava com upload=0 e a SRV dele sem conteudo")
+
+    # E o escopo tem de ser declarado, nao aproximado.
+    require(utext, "fora do escopo carregado",
+            "recusa nomeada para subrecurso alem do carregado", errors)
 
 
 def audit_lost_log_tail_is_recovered(errors: list[str]) -> None:
@@ -6936,9 +7121,12 @@ def main() -> int:
     audit_conformance_harness_checks_present(errors)
     audit_radv_fork_delta_is_mirrored(errors)
     audit_wave_probe_restores_the_selector(errors)
+    audit_descriptor_and_wave_contracts(errors)
     audit_lab_tunables_are_read_in_the_common_path(errors)
     audit_ib_dump_covers_every_submission_path(errors)
     audit_kmd_tail_archive_declares_truncation(errors)
+    audit_resource_copy_requires_created(errors)
+    audit_texture_path_is_named_and_complete(errors)
     audit_probe_field_names(errors)
     audit_marco3_closes_its_own_transaction(errors)
     audit_present_is_gpu_attributable(errors)
@@ -7014,6 +7202,8 @@ def main() -> int:
     print("  lab tunables read before the production #if (GfxWaveProbe present=0 defect): enforced")
     print("  IB dump covers every submission path, not just the concat branch: enforced")
     print("  KMD tail archived in two passes and truncation is declared: enforced")
+    print("  resource copy refuses uncreated resources (wild memcpy of 1.4GB measured): enforced")
+    print("  SRV refusals name one condition each; texture syncs to VkImage on update and unmap: enforced")
     print("  GFXHUB TLB serialization with spinlock: enforced")
     print("  Marco 3 partial proof + unconditional recovery: enforced")
     print("  GPUVA journal stores final interval overlay, not raw update history: enforced")

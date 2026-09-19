@@ -43,6 +43,13 @@ VOID Bc250UmdVkDestroyDsv(
     _Inout_ struct _BC250_UMD_DSV* pDsv);
 
 /* Buffer upload helper */
+BOOL Bc250UmdVkUploadImageData(
+    _Inout_ struct _BC250_UMD_DEVICE* pDevice,
+    _Inout_ struct _BC250_UMD_RESOURCE* pRes,
+    _In_reads_bytes_(ByteSize) CONST VOID* pData,
+    UINT RowPitch,
+    SIZE_T ByteSize);
+
 BOOL Bc250UmdVkUploadBufferData(
     _Inout_ struct _BC250_UMD_DEVICE* pDevice,
     _Inout_ struct _BC250_UMD_RESOURCE* pRes,

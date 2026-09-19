@@ -503,7 +503,7 @@ const char *Bc250GfxRingTxnStatusName(BC250_GFX_RING_TXN_STATUS Status);
 #define BC250_IX_SQ_WAVE_INST_DW0            0x010Au
 
 /* Tetos do orcamento. Numeros pequenos de proposito: ver risco (b) acima. */
-#define BC250_WAVE_PROBE_MAX_READS           192u
+#define BC250_WAVE_PROBE_MAX_READS           52u
 #define BC250_WAVE_PROBE_MAX_REPORTED        4u
 #define BC250_WAVE_PROBE_MAX_SLOTS           32u
 
@@ -535,6 +535,7 @@ typedef struct BC250_WAVE_PROBE_FOUND {
     uint32_t IbSts;
     uint32_t InstDw0;
     uint32_t TrapSts;
+    uint32_t ValidMask; /* bit 0 STATUS; bits 1..5 PC_LO/HI, IB_STS, INST, TRAP */
 } BC250_WAVE_PROBE_FOUND;
 
 typedef struct BC250_WAVE_PROBE_EVIDENCE {
@@ -547,6 +548,7 @@ typedef struct BC250_WAVE_PROBE_EVIDENCE {
     uint32_t SelectorReadback;
     /* 1 = alguma leitura de SQ_IND_DATA foi recusada pelo transporte. */
     uint32_t ReadRefused;
+    uint32_t PoisonReads;
 } BC250_WAVE_PROBE_EVIDENCE;
 
 typedef enum BC250_WAVE_PROBE_STATUS {

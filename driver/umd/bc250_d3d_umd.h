@@ -83,7 +83,7 @@ typedef struct _BC250_UMD_SHADER {
     VkShaderModule VkModule;
     BOOL VkModuleCreated;
     uint32_t NumBindings;
-    VkDescriptorSetLayoutBinding Bindings[16];
+    VkDescriptorSetLayoutBinding Bindings[158];
     VkDescriptorSetLayout DescriptorSetLayout;
 } BC250_UMD_SHADER;
 

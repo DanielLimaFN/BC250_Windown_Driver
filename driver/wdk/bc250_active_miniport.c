@@ -5001,9 +5001,13 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                              * o log diz isso -- laco longo em DISPATCH_LEVEL
                              * foi a causa do 0x133 em 10/09 12:16.
                              */
-                            for (se = 0u; se < 2u; ++se) {
+                            /* Breadth first: visit every SE/SA before another
+                             * instance. 24 CUs alone does not establish SQ instance
+                             * encoding; keep the existing shallow candidate set.
+                             * 16 statuses + 4*5 payload reads <= 52-read ceiling. */
+                            for (inst = 0u; inst < 4u; ++inst) {
                                 for (sa = 0u; sa < 2u; ++sa) {
-                                    for (inst = 0u; inst < 4u; ++inst) {
+                                    for (se = 0u; se < 2u; ++se) {
                                         if (slot >= BC250_WAVE_PROBE_MAX_SLOTS) break;
                                         wavePlan.Slots[slot].SeIndex = se;
                                         wavePlan.Slots[slot].SaIndex = sa;
@@ -5018,6 +5022,9 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                             wavePlan.ReadBudget = BC250_WAVE_PROBE_MAX_READS;
 
                             waveStatus = Bc250WaveProbeRun(&waveIface, &wavePlan, &waveEv);
+                            if (waveEv.PoisonReads != 0u) {
+                                Bc250DisplayLog("[TDR_GFX_WAVEPC] INDETERMINADO_POISON: leituras=%u -- nao contam como ondas\n", waveEv.PoisonReads);
+                            }
                             Bc250DisplayLog("[TDR_GFX_WAVEPC] status=%s SlotsVisitados=%u Leituras=%u OndasAchadas=%u SeletorRestaurado=%u (readback=0x%08X) LeituraRecusada=%u -- varredura RASA (2 SE x 2 SA x 4 inst, wave 0)\n",
                                 Bc250WaveProbeStatusName(waveStatus),
                                 waveEv.SlotsVisited, waveEv.ReadsIssued, waveEv.WavesFound,
@@ -5032,9 +5039,9 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                                 uint32_t w;
                                 for (w = 0u; w < waveEv.WavesFound; ++w) {
                                     const BC250_WAVE_PROBE_FOUND *f = &waveEv.Found[w];
-                                    Bc250DisplayLog("[TDR_GFX_WAVEPC] onda #%u SE=%u SA=%u Inst=%u Wave=%u STATUS=0x%08X PC=0x%08X%08X IB_STS=0x%08X INST_DW0=0x%08X TRAPSTS=0x%08X\n",
+                                    Bc250DisplayLog("[TDR_GFX_WAVEPC] onda #%u SE=%u SA=%u Inst=%u Wave=%u STATUS=0x%08X PC=0x%08X%08X IB_STS=0x%08X INST_DW0=0x%08X TRAPSTS=0x%08X ValidMask=0x%02X\n",
                                         w, f->SeIndex, f->SaIndex, f->InstanceIndex, f->WaveId,
-                                        f->Status, f->PcHi, f->PcLo, f->IbSts, f->InstDw0, f->TrapSts);
+                                        f->Status, f->PcHi, f->PcLo, f->IbSts, f->InstDw0, f->TrapSts, f->ValidMask);
                                 }
                                 if (waveEv.WavesFound == 0u) {
                                     Bc250DisplayLog("[TDR_GFX_WAVEPC] NENHUMA onda localizada nesta varredura rasa -- STATUS zero e INDISTINGUIVEL de slot vazio, entao isto NAO refuta as %u ondas que o SQ contou\n",
@@ -5065,6 +5072,45 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                         grbm2,
                         (grbm2 & 0x00008000u) ? 1u : 0u, (grbm2 & 0x00010000u) ? 1u : 0u,
                         (grbm2 & 0x40000000u) ? 1u : 0u, (grbm2 & 0x10000000u) ? 1u : 0u);
+                }
+
+                /*
+                 * ==========================================================
+                 * BROADCAST REPOSTO INCONDICIONALMENTE ANTES DO SOFT-RESET.
+                 * ==========================================================
+                 * Esta escrita existe por causa do risco declarado da sonda de
+                 * onda, e ela nao depende do veredito da sonda.
+                 *
+                 * MEDIDO na Corrida 37 (19/09 12:34:24): a sonda devolveu
+                 * status=selector_stuck com SeletorRestaurado=0 e
+                 * readback=0x00000000. Ficou em aberto se GRBM_GFX_INDEX
+                 * realmente permaneceu fora de broadcast ou se o nosso criterio
+                 * de readback e que esta errado -- a auditoria seguinte NAO
+                 * conseguiu demonstrar que os bits de broadcast sejam
+                 * write-only, e por isso a guarda foi preservada.
+                 *
+                 * Enquanto a pergunta nao fecha, o PERIGO concreto e um so':
+                 * disparar GRBM_SOFT_RESET com o seletor apontando para um
+                 * unico shader engine. Esta escrita remove o perigo sem
+                 * resolver a duvida e sem silenciar o relato -- o
+                 * [TDR_GFX_WAVEPC] ALERTA continua saindo se a sonda achar que
+                 * nao conseguiu restaurar. Diagnostico honesto e mitigacao
+                 * fisica sao coisas separadas, e aqui as duas coexistem.
+                 *
+                 * E incondicional de proposito: vale inclusive quando a sonda
+                 * esta DESARMADA, porque o caminho MEC acima tambem mexe no
+                 * seletor.
+                 */
+                {
+                    uint32_t bcastReadback = 0xFFFFFFFFu;
+                    const uint32_t bcastWritten = Bc250MmioTopologyWrite32(
+                        &activeCtx->Core.MmioTransport,
+                        BC250_GFX_REG_GRBM_GFX_INDEX,
+                        BC250_GRBM_GFX_INDEX_BROADCAST_ALL);
+                    (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                        BC250_GFX_REG_GRBM_GFX_INDEX, &bcastReadback);
+                    Bc250DisplayLog("[TDR_GFX_QUIESCE] GRBM_GFX_INDEX reposto em broadcast antes do soft-reset: escrita=%u readback=0x%08X (esperado 0x%08X; divergencia NAO e' prova de falha -- ver o ALERTA da sonda)\n",
+                        bcastWritten, bcastReadback, BC250_GRBM_GFX_INDEX_BROADCAST_ALL);
                 }
 
                 /* Desativa CP_RB0 */

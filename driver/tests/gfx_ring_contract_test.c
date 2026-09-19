@@ -1247,6 +1247,8 @@ typedef struct WaveFakeSq {
     uint32_t LiveSlotMask;      /* bit i = slot i tem onda viva */
     uint32_t SlotCursor;        /* quantas leituras de STATUS ja aconteceram */
     uint32_t IndDataReads;
+    uint32_t PoisonSlotMask;
+    uint32_t ZeroSelectorReadback;
 } WaveFakeSq;
 
 static uint32_t WaveFakeRead32(void *Context, uint32_t Offset, uint32_t *Value)
@@ -1255,7 +1257,7 @@ static uint32_t WaveFakeRead32(void *Context, uint32_t Offset, uint32_t *Value)
     if (Value == NULL) return 0u;
     *Value = 0u;
     if (Offset == BC250_GFX_REG_GRBM_GFX_INDEX) {
-        *Value = sq->GfxIndex;
+        *Value = sq->ZeroSelectorReadback ? 0u : sq->GfxIndex;
         return 1u;
     }
     if (Offset == BC250_GFX_REG_SQ_IND_DATA) {
@@ -1264,8 +1266,9 @@ static uint32_t WaveFakeRead32(void *Context, uint32_t Offset, uint32_t *Value)
         sq->IndDataReads++;
         if (ix == BC250_IX_SQ_WAVE_STATUS) {
             uint32_t live = (sq->LiveSlotMask >> (sq->SlotCursor & 31u)) & 1u;
+            uint32_t poison = (sq->PoisonSlotMask >> (sq->SlotCursor & 31u)) & 1u;
             sq->SlotCursor++;
-            *Value = live ? 0x00001234u : 0u;   /* 0 = slot vazio */
+            *Value = poison ? 0xBEBEBEEFu : (live ? 0x00818019u : 0u);
             return 1u;
         }
         if (ix == BC250_IX_SQ_WAVE_PC_LO)   { *Value = 0x0000A100u; return 1u; }
@@ -1341,7 +1344,9 @@ static int Bc250RunWaveProbeTest(void)
     /* [TEST] SONDA DE ONDA: status zero NAO conta como onda... */
     CHECK(Bc250WaveProbeStatusIsValid(0u) == 0u);
     CHECK(Bc250WaveProbeStatusIsValid(0xFFFFFFFFu) == 0u);
-    CHECK(Bc250WaveProbeStatusIsValid(0x1234u) == 1u);
+    CHECK(Bc250WaveProbeStatusIsValid(0x1234u) == 0u);
+    CHECK(Bc250WaveProbeStatusIsValid(0xBEBEBEEFu) == 0u);
+    CHECK(Bc250WaveProbeStatusIsValid(0x00818019u) == 1u);
 
     /* [TEST] SONDA DE ONDA: sem onda em voo NAO escreve nada... */
     memset(&sq, 0, sizeof(sq));
@@ -1370,7 +1375,8 @@ static int Bc250RunWaveProbeTest(void)
     WavePlanFill(&plan, 8u);
     CHECK(Bc250WaveProbeRun(&iface, &plan, &ev) == BC250_WAVE_PROBE_OK);
     CHECK(ev.WavesFound == 1u);
-    CHECK(ev.Found[0].Status == 0x00001234u);
+    CHECK(ev.Found[0].Status == 0x00818019u);
+    CHECK(ev.Found[0].ValidMask == 0x3Fu);
     CHECK(ev.Found[0].PcHi == 0x00000002u);
     CHECK(ev.Found[0].PcLo == 0x0000A100u);
     CHECK(ev.Found[0].InstDw0 == 0xBF8C0F70u);
@@ -1414,9 +1420,31 @@ static int Bc250RunWaveProbeTest(void)
     WavePlanFill(&plan, BC250_WAVE_PROBE_MAX_SLOTS);
     CHECK(Bc250WaveProbeRun(&iface, &plan, &ev) == BC250_WAVE_PROBE_OK);
     CHECK(ev.WavesFound == BC250_WAVE_PROBE_MAX_REPORTED);
-    CHECK(ev.ReadsIssued <= plan.ReadBudget + 6u);
+    CHECK(ev.ReadsIssued <= plan.ReadBudget);
     CHECK(ev.SelectorRestored == 1u);
 
+    /* Regression: Corrida 37's three poisoned slots must not exhaust reports. */
+    memset(&sq, 0, sizeof(sq));
+    sq.PoisonSlotMask = 0xEu;
+    sq.LiveSlotMask = 0x11u;
+    WavePlanFill(&plan, 8u);
+    CHECK(Bc250WaveProbeRun(&iface, &plan, &ev) == BC250_WAVE_PROBE_OK);
+    CHECK(ev.PoisonReads == 3u && ev.WavesFound == 2u && ev.SlotsVisited == 8u);
+    CHECK(ev.Found[1].InstanceIndex == 4u);
+    /* Exact ceiling, including a partial payload. No fabricated zero field. */
+    memset(&sq, 0, sizeof(sq));
+    sq.LiveSlotMask = 1u;
+    WavePlanFill(&plan, 1u);
+    plan.ReadBudget = 2u;
+    CHECK(Bc250WaveProbeRun(&iface, &plan, &ev) == BC250_WAVE_PROBE_OK);
+    CHECK(ev.ReadsIssued == 2u && ev.Found[0].ValidMask == 3u);
+    CHECK(ev.SelectorRestored == 1u);
+    /* A write accepted by transport is not proof that broadcast was restored. */
+    memset(&sq, 0, sizeof(sq));
+    sq.ZeroSelectorReadback = 1u;
+    WavePlanFill(&plan, 1u);
+    CHECK(Bc250WaveProbeRun(&iface, &plan, &ev) == BC250_WAVE_PROBE_SELECTOR_STUCK);
+    CHECK(ev.SelectorRestored == 0u);
     /* SONDA DE ONDA: OK (SQ falso, selecao indireta, restauracao de broadcast) */
     return 1;
 }

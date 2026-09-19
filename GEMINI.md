@@ -1370,6 +1370,16 @@ NADA DESTA FAIXA FOI VALIDADO EM HARDWARE.
 10. **Economia de corridas.** Corrida física é o recurso escasso e é o **Daniel** quem
     executa. Leitura de fonte e mineração de evidência primeiro; teto e critério de
     abandono antes de armar; boot frio entre binds.
+11. **Como se escreve o critério de uma corrida.** Três regras, nascidas de falhas medidas
+    na Corrida 39 (19/09), não de estilo:
+    (a) **assinatura e implicação em campos separados** — o que o log vai mostrar, e à parte,
+    para onde isso leva; acoplados, a assinatura de um desfecho foi falsificada enquanto a
+    conclusão dele se confirmou, e não havia como aceitar uma sem a outra;
+    (b) **todo critério leva um desfecho final `E — algo fora do mapa`**, descrito antes de
+    julgado; na Corrida 39 o maior resultado (118 submissões gráficas sem hang) caiu fora das
+    quatro letras porque a convergência era tratada só como controle a não regredir;
+    (c) **desfecho parcial não é desfecho** — dois de três sinais não fecham nada, ainda mais
+    quando falta justamente o que define o desfecho.
 
 ### Caminhos encerrados — não reabrir
 Render-only sob `Class=Display` (reprovado, `docs/162`) · `MiscCaps.ComputeOnly`

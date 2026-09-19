@@ -1178,7 +1178,9 @@ uint32_t Bc250WaveProbeStatusIsValid(uint32_t WaveStatus)
      * status NAO-ZERO e o log diz que zero e' INDISTINGUIVEL de slot vazio.
      * Nao se conta slot vazio como onda.
      */
-    return (WaveStatus != 0u && WaveStatus != 0xFFFFFFFFu) ? 1u : 0u;
+    /* gc_10_1_0_sh_mask.h SQ_WAVE_STATUS__VALID_MASK; poison is not a wave. */
+    return (WaveStatus != 0xBEBEBEEFu && WaveStatus != 0xFFFFFFFFu &&
+            (WaveStatus & 0x00010000u) != 0u) ? 1u : 0u;
 }
 
 BC250_WAVE_PROBE_STATUS Bc250WaveProbeValidatePlan(const BC250_WAVE_PROBE_PLAN *Plan)
@@ -1213,21 +1215,27 @@ static uint32_t Bc250WaveProbeReadIndirect(
     uint32_t IxAddress,
     uint32_t WaveId,
     uint32_t *Value,
+    uint32_t ReadBudget,
     BC250_WAVE_PROBE_EVIDENCE *Evidence)
 {
     uint32_t raw = 0u;
 
     *Value = 0u;
+    if (Evidence->ReadsIssued >= ReadBudget) return 0u;
     if (Interface->Write32(Interface->Context, BC250_GFX_REG_SQ_IND_INDEX,
                            Bc250WaveProbeEncodeIndIndex(IxAddress, WaveId)) == 0u) {
         Evidence->ReadRefused = 1u;
         return 0u;
     }
+    Evidence->ReadsIssued++; /* attempts consume budget, including refused reads */
     if (Interface->Read32(Interface->Context, BC250_GFX_REG_SQ_IND_DATA, &raw) == 0u) {
         Evidence->ReadRefused = 1u;
         return 0u;
     }
-    Evidence->ReadsIssued++;
+    if (raw == 0xBEBEBEEFu || raw == 0xFFFFFFFFu) {
+        Evidence->PoisonReads++;
+        return 0u;
+    }
     *Value = raw;
     return 1u;
 }
@@ -1252,6 +1260,7 @@ BC250_WAVE_PROBE_STATUS Bc250WaveProbeRun(
     Evidence->SelectorRestored = 0u;
     Evidence->SelectorReadback = 0u;
     Evidence->ReadRefused = 0u;
+    Evidence->PoisonReads = 0u;
     for (i = 0u; i < BC250_WAVE_PROBE_MAX_REPORTED; ++i) {
         Evidence->Found[i].SeIndex = 0u;
         Evidence->Found[i].SaIndex = 0u;
@@ -1263,6 +1272,7 @@ BC250_WAVE_PROBE_STATUS Bc250WaveProbeRun(
         Evidence->Found[i].IbSts = 0u;
         Evidence->Found[i].InstDw0 = 0u;
         Evidence->Found[i].TrapSts = 0u;
+        Evidence->Found[i].ValidMask = 0u;
     }
 
     planStatus = Bc250WaveProbeValidatePlan(Plan);
@@ -1291,7 +1301,7 @@ BC250_WAVE_PROBE_STATUS Bc250WaveProbeRun(
         Evidence->SlotsVisited++;
 
         if (Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_STATUS,
-                                       slot->WaveId, &waveStatus, Evidence) == 0u) {
+                                       slot->WaveId, &waveStatus, Plan->ReadBudget, Evidence) == 0u) {
             continue;
         }
         if (Bc250WaveProbeStatusIsValid(waveStatus) == 0u) {
@@ -1305,16 +1315,17 @@ BC250_WAVE_PROBE_STATUS Bc250WaveProbeRun(
             found->InstanceIndex = slot->InstanceIndex;
             found->WaveId = slot->WaveId;
             found->Status = waveStatus;
-            (void)Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_PC_LO,
-                                             slot->WaveId, &found->PcLo, Evidence);
-            (void)Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_PC_HI,
-                                             slot->WaveId, &found->PcHi, Evidence);
-            (void)Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_IB_STS,
-                                             slot->WaveId, &found->IbSts, Evidence);
-            (void)Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_INST_DW0,
-                                             slot->WaveId, &found->InstDw0, Evidence);
-            (void)Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_TRAPSTS,
-                                             slot->WaveId, &found->TrapSts, Evidence);
+            found->ValidMask = 1u;
+            found->ValidMask |= Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_PC_LO,
+                slot->WaveId, &found->PcLo, Plan->ReadBudget, Evidence) << 1;
+            found->ValidMask |= Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_PC_HI,
+                slot->WaveId, &found->PcHi, Plan->ReadBudget, Evidence) << 2;
+            found->ValidMask |= Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_IB_STS,
+                slot->WaveId, &found->IbSts, Plan->ReadBudget, Evidence) << 3;
+            found->ValidMask |= Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_INST_DW0,
+                slot->WaveId, &found->InstDw0, Plan->ReadBudget, Evidence) << 4;
+            found->ValidMask |= Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_TRAPSTS,
+                slot->WaveId, &found->TrapSts, Plan->ReadBudget, Evidence) << 5;
             Evidence->WavesFound++;
         }
     }

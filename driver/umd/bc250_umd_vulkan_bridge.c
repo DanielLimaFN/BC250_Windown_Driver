@@ -400,6 +400,20 @@ static BOOL Bc250UmdVkBridgeInitInternal(_Out_ BC250_UMD_VK_BRIDGE *pBridge)
     return TRUE;
 }
 
+VOID Bc250UmdVkReleaseDescriptorBatches(BC250_UMD_VK_BRIDGE *pBridge)
+{
+    while (pBridge->DescriptorBatches) {
+        BC250_VK_DESCRIPTOR_BATCH *batch = pBridge->DescriptorBatches;
+        pBridge->DescriptorBatches = batch->Next;
+        if (batch->Pool) pBridge->vk.vkDestroyDescriptorPool(pBridge->Device, batch->Pool, NULL);
+        for (uint32_t i = 0; i < 316; ++i) {
+            if (batch->Views[i]) pBridge->vk.vkDestroyImageView(pBridge->Device, batch->Views[i], NULL);
+            if (batch->Samplers[i]) pBridge->vk.vkDestroySampler(pBridge->Device, batch->Samplers[i], NULL);
+        }
+        free(batch);
+    }
+}
+
 VOID Bc250UmdVkBridgeShutdown(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
 {
     if (pBridge == NULL) return;
@@ -409,6 +423,7 @@ VOID Bc250UmdVkBridgeShutdown(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
         if (pBridge->vk.vkDeviceWaitIdle != NULL) {
             pBridge->vk.vkDeviceWaitIdle(pBridge->Device);
         }
+        Bc250UmdVkReleaseDescriptorBatches(pBridge);
         if (pBridge->LinearPresentBuf != VK_NULL_HANDLE && pBridge->vk.vkDestroyBuffer != NULL) {
             pBridge->vk.vkDestroyBuffer(pBridge->Device, pBridge->LinearPresentBuf, NULL);
             pBridge->LinearPresentBuf = VK_NULL_HANDLE;
@@ -493,10 +508,13 @@ uint32_t Bc250UmdVkFindMemoryType(
 
 VkCommandBuffer Bc250UmdVkGetCommandBuffer(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
 {
-    if (pBridge == NULL || !pBridge->DeviceActive) return VK_NULL_HANDLE;
+    if (pBridge == NULL || !pBridge->DeviceActive || pBridge->SubmissionFailed) return VK_NULL_HANDLE;
 
     if (!pBridge->RecordingActive) {
-        pBridge->vk.vkResetCommandBuffer(pBridge->CommandBuffer, 0);
+        if (pBridge->vk.vkResetCommandBuffer(pBridge->CommandBuffer, 0) != VK_SUCCESS) {
+            pBridge->SubmissionFailed = TRUE;
+            return VK_NULL_HANDLE;
+        }
         VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         if (pBridge->vk.vkBeginCommandBuffer(pBridge->CommandBuffer, &beginInfo) == VK_SUCCESS) {
@@ -512,7 +530,7 @@ VkCommandBuffer Bc250UmdVkGetCommandBuffer(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
 
 VkResult Bc250UmdVkFlushCommands(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
 {
-    if (pBridge == NULL || !pBridge->DeviceActive) return VK_ERROR_DEVICE_LOST;
+    if (pBridge == NULL || !pBridge->DeviceActive || pBridge->SubmissionFailed) return VK_ERROR_DEVICE_LOST;
     if (!pBridge->RecordingActive) return VK_SUCCESS;
 
     Bc250VkTrace("[VK_BRIDGE] FlushCommands ENTER: gravacao ativa, finalizando (cmd=%p)...", (void*)pBridge->CommandBuffer);
@@ -520,10 +538,15 @@ VkResult Bc250UmdVkFlushCommands(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
     VkResult res = pBridge->vk.vkEndCommandBuffer(pBridge->CommandBuffer);
     if (res != VK_SUCCESS) {
         Bc250VkTrace("[VK_BRIDGE] FlushCommands: vkEndCommandBuffer falhou: res=%d", res);
+        pBridge->SubmissionFailed = TRUE;
         return res;
     }
 
-    pBridge->vk.vkResetFences(pBridge->Device, 1, &pBridge->Fence);
+    res = pBridge->vk.vkResetFences(pBridge->Device, 1, &pBridge->Fence);
+    if (res != VK_SUCCESS) {
+        pBridge->SubmissionFailed = TRUE;
+        return res;
+    }
 
     VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
     submitInfo.commandBufferCount = 1;
@@ -532,13 +555,16 @@ VkResult Bc250UmdVkFlushCommands(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
     res = pBridge->vk.vkQueueSubmit(pBridge->GraphicsQueue, 1, &submitInfo, pBridge->Fence);
     if (res != VK_SUCCESS) {
         Bc250VkTrace("[VK_BRIDGE] FlushCommands: vkQueueSubmit falhou: res=%d", res);
+        pBridge->SubmissionFailed = TRUE;
         return res;
     }
 
     res = pBridge->vk.vkWaitForFences(pBridge->Device, 1, &pBridge->Fence, VK_TRUE, 2000000000ull);
     if (res != VK_SUCCESS) {
         Bc250VkTrace("[VK_BRIDGE] FlushCommands: vkWaitForFences retorno nao-sucesso: res=%d (TIMEOUT ou ERRO)", res);
+        pBridge->SubmissionFailed = TRUE;
     } else {
+        Bc250UmdVkReleaseDescriptorBatches(pBridge);
         Bc250VkTrace("[VK_BRIDGE] FlushCommands: Execucao e Fence em hardware CONCLUIDOS com SUCESSO!");
     }
     pBridge->RecordingActive = FALSE;

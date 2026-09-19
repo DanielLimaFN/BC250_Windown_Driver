@@ -39,10 +39,10 @@ static uint32_t Bc250ReflectSpirvBindings(
     uint32_t numBindings = 0;
     uint32_t i;
 
-    if (!words || numWords < 5 || words[0] != 0x07230203 || !outBindings || maxBindings == 0) return 0;
+    if (!words || numWords < 5 || words[0] != 0x07230203 || words[3] > BC250_MAX_SPIRV_IDS || !outBindings || maxBindings == 0) return UINT32_MAX;
 
     ctx = (BC250_SPIRV_REFLECT_CTX*)calloc(1, sizeof(BC250_SPIRV_REFLECT_CTX));
-    if (!ctx) return 0;
+    if (!ctx) return UINT32_MAX;
 
     for (i = 0; i < BC250_MAX_SPIRV_IDS; ++i) {
         ctx->idBinding[i] = -1;
@@ -54,7 +54,7 @@ static uint32_t Bc250ReflectSpirvBindings(
         uint32_t header = words[i];
         uint32_t op = header & 0xFFFF;
         uint32_t len = (header >> 16) & 0xFFFF;
-        if (len == 0 || i + len > numWords) break;
+        if (len == 0 || len > numWords - i) { free(ctx); return UINT32_MAX; }
 
         if (op == 71 && len >= 4) { /* OpDecorate */
             uint32_t target = words[i + 1];
@@ -77,9 +77,9 @@ static uint32_t Bc250ReflectSpirvBindings(
         } else if (op == 26 && len >= 2) { /* OpTypeSampler */
             uint32_t resId = words[i + 1];
             if (resId < BC250_MAX_SPIRV_IDS) ctx->idType[resId] = 2;
-        } else if (op == 25 && len >= 2) { /* OpTypeImage */
+        } else if (op == 25 && len >= 9) { /* OpTypeImage: sampled, not buffer/storage */
             uint32_t resId = words[i + 1];
-            if (resId < BC250_MAX_SPIRV_IDS) ctx->idType[resId] = 3;
+            if (resId < BC250_MAX_SPIRV_IDS && words[i + 3] != 5u && words[i + 7] == 1u) ctx->idType[resId] = 3;
         } else if (op == 27 && len >= 2) { /* OpTypeSampledImage */
             uint32_t resId = words[i + 1];
             if (resId < BC250_MAX_SPIRV_IDS) ctx->idType[resId] = 4;
@@ -99,6 +99,10 @@ static uint32_t Bc250ReflectSpirvBindings(
             uint32_t type = ctx->varType[varId];
             uint32_t kind = (type < BC250_MAX_SPIRV_IDS) ? ctx->idType[type] : 0;
             uint32_t descType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+
+            if (ctx->idSet[varId] != 0 || kind == 0 || kind == 4 || numBindings >= maxBindings) {
+                free(ctx); return UINT32_MAX; /* no silent truncation or guessed descriptor type */
+            }
 
             if (kind == 1 || ctx->varStorage[varId] == 2) {
                 descType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -257,17 +261,22 @@ BOOL Bc250UmdVkCreateShaderModule(
     smInfo.codeSize = pShader->Spirv.SizeBytes;
     smInfo.pCode = pShader->Spirv.Words;
 
+    {
+        VkShaderStageFlags stage = (pShader->Type == BC250_DXBC_SHADER_PIXEL) ?
+            VK_SHADER_STAGE_FRAGMENT_BIT : VK_SHADER_STAGE_VERTEX_BIT;
+        pShader->NumBindings = Bc250ReflectSpirvBindings(smInfo.pCode,
+            pShader->Spirv.SizeBytes / 4, stage, pShader->Bindings, 158);
+        if (pShader->NumBindings == UINT32_MAX) {
+            pShader->NumBindings = 0;
+            Bc250PsoTrace("[VK_DESCRIPTOR] RECUSADO: reflection unsupported or malformed");
+            return FALSE;
+        }
+    }
     res = pBridge->vk.vkCreateShaderModule(pBridge->Device, &smInfo, NULL, &pShader->VkModule);
     if (res == VK_SUCCESS) {
         VkShaderStageFlags stage = (pShader->Type == BC250_DXBC_SHADER_PIXEL) ?
             VK_SHADER_STAGE_FRAGMENT_BIT : VK_SHADER_STAGE_VERTEX_BIT;
         pShader->VkModuleCreated = TRUE;
-        pShader->NumBindings = Bc250ReflectSpirvBindings(
-            (const uint32_t*)pShader->Spirv.Words,
-            pShader->Spirv.SizeBytes / 4,
-            stage,
-            pShader->Bindings,
-            16);
         Bc250PsoTrace("[VK_PSO] SUCESSO: Shader Module criado: module=%p (stage=0x%X, bindings=%u)",
             (void*)pShader->VkModule, stage, pShader->NumBindings);
         return TRUE;
@@ -335,12 +344,6 @@ BOOL Bc250UmdPipelineCacheGetOrCreate(
     pBridge = &pCache->pDevice->VkBridge;
 
     effectiveKey = *pKey;
-    if (effectiveKey.VsModule == VK_NULL_HANDLE) {
-        effectiveKey.VsModule = pCache->DefaultVsModule;
-    }
-    if (effectiveKey.PsModule == VK_NULL_HANDLE) {
-        effectiveKey.PsModule = pCache->DefaultPsModule;
-    }
     if (effectiveKey.VsModule == VK_NULL_HANDLE || effectiveKey.PsModule == VK_NULL_HANDLE) {
         Bc250PsoTrace("[VK_PSO] RECUSA: VsModule (%p) ou PsModule (%p) ausente",
             (void*)effectiveKey.VsModule, (void*)effectiveKey.PsModule);
@@ -451,20 +454,20 @@ BOOL Bc250UmdPipelineCacheGetOrCreate(
     /* 2b. Build Descriptor Set Layout & Pipeline Layout */
     VkDescriptorSetLayout dsLayout = VK_NULL_HANDLE;
     VkPushConstantRange pcRange;
-    VkDescriptorSetLayoutBinding combinedBindings[32];
+    VkDescriptorSetLayoutBinding combinedBindings[BC250_DESCRIPTOR_MAX_BINDINGS];
     uint32_t combinedCount = 0;
 
     memset(combinedBindings, 0, sizeof(combinedBindings));
     combinedCount = 0;
 
     if (effectiveKey.pVs != NULL && effectiveKey.pVs->NumBindings > 0) {
-        for (uint32_t b = 0; b < effectiveKey.pVs->NumBindings && combinedCount < 32; ++b) {
+        for (uint32_t b = 0; b < effectiveKey.pVs->NumBindings && combinedCount < BC250_DESCRIPTOR_MAX_BINDINGS; ++b) {
             combinedBindings[combinedCount++] = effectiveKey.pVs->Bindings[b];
         }
     }
 
     if (effectiveKey.pPs != NULL && effectiveKey.pPs->NumBindings > 0) {
-        for (uint32_t b = 0; b < effectiveKey.pPs->NumBindings && combinedCount < 32; ++b) {
+        for (uint32_t b = 0; b < effectiveKey.pPs->NumBindings && combinedCount < BC250_DESCRIPTOR_MAX_BINDINGS; ++b) {
             uint32_t psBind = effectiveKey.pPs->Bindings[b].binding;
             BOOL found = FALSE;
             for (uint32_t c = 0; c < combinedCount; ++c) {
@@ -489,7 +492,7 @@ BOOL Bc250UmdPipelineCacheGetOrCreate(
                     break;
                 }
             }
-            if (!found && combinedCount < 32) {
+            if (!found && combinedCount < BC250_DESCRIPTOR_MAX_BINDINGS) {
                 combinedBindings[combinedCount].binding = 0;
                 combinedBindings[combinedCount].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
                 combinedBindings[combinedCount].descriptorCount = 1;
@@ -584,50 +587,6 @@ BOOL Bc250UmdPipelineCacheGetOrCreate(
         pipeline = VK_NULL_HANDLE;
     }
 
-    if (!psoSuccess && pCache->DefaultShadersCreated &&
-        (effectiveKey.VsModule != pCache->DefaultVsModule || effectiveKey.PsModule != pCache->DefaultPsModule)) {
-        Bc250PsoTrace("[VK_PSO] FALLBACK DE SEGURANCA: recompilando pipeline com Shaders Padrao...");
-        stages[0].module = pCache->DefaultVsModule;
-        stages[1].module = pCache->DefaultPsModule;
-
-        if (pipelineLayout != VK_NULL_HANDLE) {
-            pBridge->vk.vkDestroyPipelineLayout(pBridge->Device, pipelineLayout, NULL);
-            pipelineLayout = VK_NULL_HANDLE;
-        }
-        if (dsLayout != VK_NULL_HANDLE && dsLayout != pCache->DefaultDescriptorSetLayout) {
-            pBridge->vk.vkDestroyDescriptorSetLayout(pBridge->Device, dsLayout, NULL);
-            dsLayout = VK_NULL_HANDLE;
-        }
-        dsLayout = pCache->DefaultDescriptorSetLayout;
-        pipelineLayoutInfo.setLayoutCount = (dsLayout != VK_NULL_HANDLE) ? 1 : 0;
-        pipelineLayoutInfo.pSetLayouts = (dsLayout != VK_NULL_HANDLE) ? &dsLayout : NULL;
-
-        res = pBridge->vk.vkCreatePipelineLayout(pBridge->Device, &pipelineLayoutInfo, NULL, &pipelineLayout);
-        if (res == VK_SUCCESS) {
-            VkPipelineVertexInputStateCreateInfo fallbackVertexInput;
-            memset(&fallbackVertexInput, 0, sizeof(fallbackVertexInput));
-            fallbackVertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-            fallbackVertexInput.vertexBindingDescriptionCount = 0;
-            fallbackVertexInput.pVertexBindingDescriptions = NULL;
-            fallbackVertexInput.vertexAttributeDescriptionCount = 0;
-            fallbackVertexInput.pVertexAttributeDescriptions = NULL;
-
-            pipelineInfo.pVertexInputState = &fallbackVertexInput;
-            pipelineInfo.layout = pipelineLayout;
-            __try {
-                res = pBridge->vk.vkCreateGraphicsPipelines(pBridge->Device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &pipeline);
-                if (res == VK_SUCCESS && pipeline != VK_NULL_HANDLE) {
-                    psoSuccess = TRUE;
-                    effectiveKey.VsModule = pCache->DefaultVsModule;
-                    effectiveKey.PsModule = pCache->DefaultPsModule;
-                    Bc250PsoTrace("[VK_PSO] SUCESSO NO FALLBACK: Pipeline criado com Shaders Padrao (pipeline=%p)", (void*)pipeline);
-                }
-            } __except(EXCEPTION_EXECUTE_HANDLER) {
-                Bc250PsoTrace("[VK_PSO] ERRO FATAL: Fallback tambem gerou excecao: 0x%08X", GetExceptionCode());
-            }
-        }
-    }
-
     if (!psoSuccess || pipeline == VK_NULL_HANDLE) {
         if (pipelineLayout != VK_NULL_HANDLE) {
             pBridge->vk.vkDestroyPipelineLayout(pBridge->Device, pipelineLayout, NULL);
@@ -659,6 +618,8 @@ BOOL Bc250UmdPipelineCacheGetOrCreate(
     pCache->Entries[targetSlot].Pipeline = pipeline;
     pCache->Entries[targetSlot].PipelineLayout = pipelineLayout;
     pCache->Entries[targetSlot].DescriptorSetLayout = dsLayout;
+    pCache->Entries[targetSlot].BindingCount = combinedCount;
+    memcpy(pCache->Entries[targetSlot].Bindings, combinedBindings, combinedCount * sizeof(combinedBindings[0]));
     pCache->Entries[targetSlot].LastUsedSequence = ++pCache->AccessSequence;
     pCache->Entries[targetSlot].InUse = TRUE;
 

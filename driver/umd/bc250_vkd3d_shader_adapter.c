@@ -1,5 +1,6 @@
 #include "bc250_vkd3d_shader_adapter.h"
 #include "bc250_vkd3d_shader_abi.h"
+#include "bc250_descriptor_binding.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -53,6 +54,9 @@ static int Bc250Vkd3dCompile(void *Context, const void *Dxbc, uint32_t DxbcBytes
     BC250_VKD3D_SHADER_ADAPTER *adapter = (BC250_VKD3D_SHADER_ADAPTER *)Context;
     BC250_VKD3D_COMPILE_INFO info;
     BC250_VKD3D_CODE output;
+    BC250_VKD3D_INTERFACE_INFO interfaceInfo;
+    BC250_VKD3D_RESOURCE_BINDING bindings[BC250_DESCRIPTOR_MAX_BINDINGS];
+    unsigned int count = 0, stage, kind, slot;
     BC250_PFN_VKD3D_COMPILE compile;
     BC250_PFN_VKD3D_FREE_CODE freeCode;
     void *copy;
@@ -64,6 +68,28 @@ static int Bc250Vkd3dCompile(void *Context, const void *Dxbc, uint32_t DxbcBytes
     info.source.code = Dxbc; info.source.size = DxbcBytes;
     info.source_type = BC250_VKD3D_SOURCE_DXBC_TPF;
     info.target_type = BC250_VKD3D_TARGET_SPIRV_BINARY;
+    memset(&interfaceInfo, 0, sizeof(interfaceInfo));
+    memset(bindings, 0, sizeof(bindings));
+    for (stage = 0; stage < BC250_DESCRIPTOR_STAGE_COUNT; ++stage) {
+        for (kind = 0; kind < 3; ++kind) {
+            const unsigned int limits[] = {BC250_DESCRIPTOR_CB_COUNT, BC250_DESCRIPTOR_SRV_COUNT, BC250_DESCRIPTOR_SAMPLER_COUNT};
+            const unsigned int bases[] = {BC250_DESCRIPTOR_CB_BASE, BC250_DESCRIPTOR_SRV_BASE, BC250_DESCRIPTOR_SAMPLER_BASE};
+            const int types[] = {2, 0, 3}; /* CBV, SRV, SAMPLER */
+            for (slot = 0; slot < limits[kind]; ++slot) {
+                BC250_VKD3D_RESOURCE_BINDING *b = &bindings[count++];
+                b->type = types[kind];
+                b->register_index = slot;
+                b->shader_visibility = stage == 0 ? 1 : 5; /* VERTEX / PIXEL */
+                b->flags = kind == 0 ? 1u : 2u; /* BUFFER / IMAGE */
+                b->binding.binding = stage * BC250_DESCRIPTOR_STAGE_STRIDE + bases[kind] + slot;
+                b->binding.count = 1u;
+            }
+        }
+    }
+    interfaceInfo.type = 1; /* VKD3D_SHADER_STRUCTURE_TYPE_INTERFACE_INFO */
+    interfaceInfo.bindings = bindings;
+    interfaceInfo.binding_count = count;
+    info.next = &interfaceInfo;
     compile = (BC250_PFN_VKD3D_COMPILE)adapter->CompileProc;
     freeCode = (BC250_PFN_VKD3D_FREE_CODE)adapter->FreeCodeProc;
     result = compile(&info, &output, NULL);

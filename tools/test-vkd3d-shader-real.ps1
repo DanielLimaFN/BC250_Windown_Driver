@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string]$DllPath
+    [string]$DllPath,
+    [switch]$Descriptors
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,13 +19,16 @@ New-Item -ItemType Directory -Path $run | Out-Null
 try {
     $vs = Join-Path $run 'smoke-vs.cso'
     $ps = Join-Path $run 'smoke-ps.cso'
-    & $fxc /nologo /T vs_4_0 /E main /Fo $vs (Join-Path $root 'driver\tests\shaders\vkd3d_smoke_vs.hlsl')
+    $vsSource = if ($Descriptors) { 'driver\tests\shaders\descriptor_vs.hlsl' } else { 'driver\tests\shaders\vkd3d_smoke_vs.hlsl' }
+    $psSource = if ($Descriptors) { 'driver\tests\shaders\descriptor_ps.hlsl' } else { 'driver\tests\shaders\vkd3d_smoke_ps.hlsl' }
+    & $fxc /nologo /T vs_4_0 /E main /Fo $vs (Join-Path $root $vsSource)
     if ($LASTEXITCODE -ne 0) { throw "fxc VS failed: $LASTEXITCODE" }
-    & $fxc /nologo /T ps_4_0 /E main /Fo $ps (Join-Path $root 'driver\tests\shaders\vkd3d_smoke_ps.hlsl')
+    & $fxc /nologo /T ps_4_0 /E main /Fo $ps (Join-Path $root $psSource)
     if ($LASTEXITCODE -ne 0) { throw "fxc PS failed: $LASTEXITCODE" }
     $identity = Get-FileHash -Algorithm SHA256 -LiteralPath $dll
     Write-Host ("PROVIDER_SHA256=" + $identity.Hash)
-    & $harness $dll $vs $ps
+    if ($Descriptors) { & $harness $dll $vs $ps descriptors }
+    else { & $harness $dll $vs $ps }
     if ($LASTEXITCODE -ne 0) { throw "real shader smoke failed: $LASTEXITCODE" }
 } finally {
     if (Test-Path -LiteralPath $run) { Remove-Item -LiteralPath $run -Recurse -Force }

@@ -103,6 +103,14 @@ typedef uint64_t (VKAPI_PTR *PFN_radv_bc250_get_memory_gpu_va)(
     VkDeviceMemory memory);
 
 /* UMD Vulkan Translation Bridge State */
+typedef struct BC250_VK_DESCRIPTOR_BATCH {
+    VkDescriptorPool Pool;
+    VkImageView Views[316];
+    VkSampler Samplers[316];
+    VkImageMemoryBarrier RestoreImages[316];
+    struct BC250_VK_DESCRIPTOR_BATCH *Next;
+} BC250_VK_DESCRIPTOR_BATCH;
+
 typedef struct _BC250_UMD_VK_BRIDGE {
     HMODULE hIcdModule;
     BOOL Initialized;
@@ -119,6 +127,8 @@ typedef struct _BC250_UMD_VK_BRIDGE {
     VkCommandBuffer CommandBuffer;
     VkFence Fence;
     BOOL RecordingActive;
+    BOOL SubmissionFailed;
+    BC250_VK_DESCRIPTOR_BATCH *DescriptorBatches;
 
     /* Destiled linear presentation buffer for artifact-free scanout */
     VkBuffer LinearPresentBuf;
@@ -142,6 +152,7 @@ uint32_t Bc250UmdVkFindMemoryType(
 
 VkCommandBuffer Bc250UmdVkGetCommandBuffer(_Inout_ BC250_UMD_VK_BRIDGE *pBridge);
 VkResult Bc250UmdVkFlushCommands(_Inout_ BC250_UMD_VK_BRIDGE *pBridge);
+VOID Bc250UmdVkReleaseDescriptorBatches(BC250_UMD_VK_BRIDGE *pBridge);
 
 VkFormat Bc250UmdVkFormatFromDxgi(uint32_t dxgiFormat);
 BOOL Bc250UmdVkEnsureLinearPresentBuf(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, uint32_t width, uint32_t height);

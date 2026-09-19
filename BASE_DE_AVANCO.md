@@ -2,6 +2,23 @@
 
 **Documento base do projeto.** Toda decisão de o-que-fazer-agora sai daqui.
 
+> **19/09/2026 — Corrida 37 (12:34:24, lab 3.195.1.0) consolidada e faixa OFFLINE de descritores.**
+> [Relato, contratos, limites e critério do próximo ensaio](docs/292_HANDOFF_DESCRIPTORS_E_SONDA_2026-09-19.md).
+> Avanço **diagnóstico**, não funcional: uma onda válida com FATAL_HALT/XNACK/EXCP bit 8;
+> três leituras poison foram contadas indevidamente. A cauda incompleta foi recuperada por offset
+> (290611 bytes, SHA-256 `BD5BCD3B560268DA437F652D53DC4A2F06151276A6F05A65F44811D375350692`).
+> TDR persistiu e a restauração do seletor não foi confirmada. Veredito **PARCIAL**;
+> rollback online para BasicDisplay Código 0 às 12:36:38, confirmado em cinco amostras.
+> Offline: UMD agora aloca/escreve/vincula descritores VS/PS com namespaces separados,
+> ownership até fence, recusa explícita dos tipos não implementados; sonda rejeita poison,
+> exige VALID e respeita teto estrito com validade por campo. Builds e testes offline passaram.
+> O mecanismo write-only do seletor **não foi demonstrado**; guarda preservada, próximo
+> candidato deve manter sonda **desarmada**. Fonte INF 3.196.0.0, **sem novo pacote lab**;
+> o output_lab 3.195.1.0 antigo permanece armado e não contém esta faixa.
+> Upload/importação geral de texturas do DWM e topologia SQ completa continuam pendentes.
+> Descritores como causa do hang são **H**. Draw concluído, pixels e monitor:
+> **NÃO VALIDADO EM HARDWARE**.
+
 ## Diretriz do proprietário — 16/09/2026
 
 **Qualidade, correção e estabilidade antes de velocidade.** Cumprir a [diretriz de UMD D3D11 e marcos gráficos](DIRETRIZ_QUALIDADE_UMD_DX11_E_MARCOS_GRAPHICS.md), que prevalece sobre conclusões históricas conflitantes abaixo.
@@ -23,6 +40,42 @@ Preservar provas compute/SDMA no seu escopo. Não equiparar imagem 3D produzida 
 > **Plano de produto solicitado pelo proprietário (16/09/2026, análise documental):** [desktop acelerado, Direct3D transparente e DCN básico em P9](docs/281_PLANO_PRODUTO_DESKTOP_E_JOGOS_TRANSPARENTES.md). Os 600 quadros do Marco 4 não fecham desktop DWM nem jogos arbitrários. A fonte atual do Cube.cpp usa pipeline compute e vkCmdDispatch; sua proveniência exata em relação ao binário da corrida precisa ser conferida. Não usar esse teste como prova de vkCmdDraw/pipeline gráfico geral. Expor uma fila GRAPHICS requer backend comprovado, não apenas mudar uma flag. Nenhum novo item foi validado em hardware nesta revisão.
 **Passagem de bastão atual:** [docs/288 — HANDOFF: CORRIDA 34, CURA GCVM E DIAGNÓSTICO DO STALL DA DRAWING ENGINE](docs/288_HANDOFF_2026-09-19_CORRIDA34_CURA_GCVM_E_DIAGNOSTICO_TELA_PRETA.md), [docs/287 — HANDOFF: CORRIDA 18, BUGCHECK 0x0A E DESACOPLAMENTO DE DPCS](docs/287_HANDOFF_2026-09-17_20-10_CORRIDA18_0x0A_E_SEPARACAO_DPCS.md), [docs/286 — HANDOFF: CORRIDA 17, BUGCHECK 0x139 E CORREÇÃO DE INICIALIZAÇÃO DE DPC](docs/286_HANDOFF_2026-09-17_19-32_CORRIDA17_0x139_E_CORRECAO_DPC_INIT.md), [PLANO_DESKTOP_ACELERADO](PLANO_DESKTOP_ACELERADO.md).
 
+> **19/09 16:20:14 (P0, lab 3.197.1.0, SYS 749BA458) — CORRIDA 39: 118 SUBMISSOES GRAFICAS SEM
+> HANG, IBs DEZ VEZES MAIORES QUE O QUE TRAVAVA, E A PRIMEIRA COPIA DE PIXEL PARA VkImage.**
+> **Evidencia:** `docs/evidence/2026-09-19_16-20-14-DESKTOP-HQAG6T4-lab-binding/`; a pasta
+> declarou-se incompleta e a cauda foi resgatada (884.034 bytes, sha256 `7BAF856D...718ECB`).
+> Criterio e resultado: [docs/293](docs/293_CRITERIO_CORRIDA_39_TEXTURA_E_RECUSA_NOMEADA.md),
+> **Desfecho B**.
+>
+> - **P0, estabilidade:** 118 submissoes no anel grafico, 65 delas de **20.208 DW (~80 KB)**, todas
+>   com `Perna1=REGISTRADOR` e fence escrita pela GPU. ZERO `NAO_CONVERGIU`, ZERO TDR, zero
+>   `GFXHUB_FAULT`, zero BugCheck, 461 `TRIPE_PROVADO` no Node 0, rollback `RECOVERY_OK_ONLINE`.
+>   Contra 3 submissoes na Corrida 38, e contra o IB de 1.872 DW que travava nas Corridas 34-37.
+> - **P0, primeira no silicio:** `UploadImageData SUCESSO: 1024x1, 4096 bytes em mip0/camada0`
+>   (21 uploads). `vkCmdCopyBufferToImage` NUNCA havia executado nesta UMD -- ele simplesmente nao
+>   era chamado em lugar nenhum. O `SUCESSO` sai apos o flush com fence, entao a copia concluiu.
+> - **A recusa nomeada pagou e MUDOU o suspeito:**
+>   `[VK_DESCRIPTOR] RECUSADO: binding index=2 motivo=SRV_AUSENTE_OU_SEM_IMAGEM`. NAO e
+>   `SRV_SEM_CONTEUDO_NUNCA_ESCRITO`, o que DESCARTA "a textura nao recebeu upload" como
+>   explicacao. Na Corrida 38 as 17 condicoes compartilhavam uma frase so.
+> - **O que NAO avancou:** ZERO draws (`DRAW fence concluida`=0 em todos os processos). O caminho
+>   D3D11 de desenho segue bloqueado. As 118 submissoes vem de uploads e flushes do bridge; a
+>   origem das 65 de 20.208 DW fica **NAO ATRIBUIDA**, nao "nossa".
+> - **Achado que aponta o proximo passo:** `dwm.exe` teve `upload=0`. As texturas dele nao passam
+>   por `pInitialDataUP` -- ele cria vazio e preenche por `Map`/`UpdateSubresource`, que esta faixa
+>   nao cobre.
+> - **DUAS FALHAS DO CRITERIO, declaradas:** (a) assinatura e conclusao vinham acopladas -- a
+>   conclusao de D confirmou-se enquanto a assinatura de D era falsificada; os criterios passam a
+>   separar *o que o log mostra* de *o que isso implica*; (b) o maior resultado da corrida caiu
+>   FORA das quatro letras, porque a convergencia era tratada so' como controle a nao regredir.
+>   Todo criterio passa a levar um desfecho **"E -- algo fora do mapa"**.
+> - **Limitacao da faixa:** `SRV_AUSENTE_OU_SEM_IMAGEM` ainda agrega SETE condicoes. Foram nomeadas
+>   17 recusas e justamente a que disparou ficou grossa.
+> - **Veredito:** AVANCO FUNCIONAL EM ESTABILIDADE, MAIS UMA PRIMEIRA NO SILICIO; A PAREDE DO DRAW
+>   PERMANECE. Draw, pixel e monitor: **NAO VALIDADO EM HARDWARE**.
+>
+> ---
+>
 > **19/09 12:11:58 (P0, lab 3.194.1.0, SYS 60FD95A5) — CORRIDA 36: PAREDE REPRODUZIDA PELA
 > TERCEIRA VEZ, IDENTICA; A SONDA DE ONDA NAO RODOU POR DEFEITO DE COMPILACAO CONDICIONAL.**
 > **Evidencia:** `docs/evidence/2026-09-19_12-11-58-DESKTOP-HQAG6T4-lab-binding/`.

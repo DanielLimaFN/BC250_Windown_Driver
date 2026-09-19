@@ -271,6 +271,7 @@ VOID Bc250UmdDeviceTeardown(
 /* Vulkan Resource and Pipeline Cache translation implementations */
 #include "bc250_umd_resource_vk.c"
 #include "bc250_umd_pipeline_cache.c"
+#include "bc250_umd_descriptors.c"
 
 VOID APIENTRY Bc250Umd10DestroyDevice(D3D10DDI_HDEVICE hDevice)
 {
@@ -1210,6 +1211,69 @@ VOID APIENTRY Bc250Umd10DestroyResource(
     }
 }
 
+/*
+ * =========================================================================
+ * SINCRONIA DE TEXTURA: shadow de CPU -> VkImage. Fonte unica.
+ * =========================================================================
+ * MEDIDO na Corrida 39 (19/09 16:20:14): o dwm.exe saiu com upload=0 enquanto
+ * outros processos tiveram 21 uploads. A razao estava aqui: tanto
+ * ResourceUpdateSubresourceUP quanto ResourceUnmap sincronizavam com Vulkan
+ * SOMENTE quando ResourceDimension era BUFFER. Textura escrevia no shadow de
+ * CPU e nunca chegava a VkImage -- e o descritor recusava, corretamente, uma
+ * imagem sem conteudo.
+ *
+ * O DWM nao usa pInitialDataUP: cria a textura vazia e preenche depois. Por
+ * isso cobrir so a criacao, como fez a faixa anterior, nao o alcancava.
+ *
+ * ESCOPO DECLARADO, herdado de Bc250UmdVkUploadImageData: subrecurso 0
+ * (mip 0, camada 0). Subrecurso diferente e RECUSADO com motivo, nunca
+ * aproximado -- carregar mip 0 e deixar o resto indefinido seria pior que nao
+ * carregar, porque o descritor passaria a aceitar a imagem.
+ *
+ * A origem e o shadow INTEIRO com o pitch do proprio recurso, nao o pedaco que
+ * a chamada trouxe: a atualizacao parcial ja foi aplicada ao shadow, entao
+ * subir o shadow completo mantem a imagem coerente com o que o D3D enxerga.
+ */
+static void Bc250UmdSyncTextureToVkImage(
+    BC250_UMD_DEVICE* device,
+    BC250_UMD_RESOURCE* res,
+    UINT Subresource,
+    const char* origem)
+{
+    SIZE_T bytes;
+
+    if (device == NULL || res == NULL) return;
+    if (!device->VkBridgeInitialized || !res->VkResourceCreated) return;
+    if (res->ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D) return;
+    if (res->VkImg == VK_NULL_HANDLE || res->pCpuShadow == NULL) return;
+
+    if (Subresource != 0u) {
+        Bc250UmdTrace("%s: textura NAO sincronizada -- Subresource=%u fora do escopo carregado "
+            "(mip 0 / camada 0); a imagem segue sem este subrecurso", origem, Subresource);
+        return;
+    }
+    if (res->RowPitch == 0u || res->Height == 0u) {
+        Bc250UmdTrace("%s: textura NAO sincronizada -- RowPitch=%u Height=%u; sem geometria "
+            "declarada o tamanho da origem seria adivinhado", origem, res->RowPitch, res->Height);
+        return;
+    }
+
+    bytes = (SIZE_T)res->RowPitch * (SIZE_T)res->Height;
+    if (res->TotalByteSize != 0u && bytes > (SIZE_T)res->TotalByteSize) {
+        Bc250UmdTrace("%s: textura NAO sincronizada -- RowPitch*Height (%zu) excede o shadow (%u)",
+            origem, bytes, res->TotalByteSize);
+        return;
+    }
+
+    if (Bc250UmdVkUploadImageData(device, res, res->pCpuShadow, res->RowPitch, bytes)) {
+        Bc250UmdTrace("%s: textura sincronizada com VkImage (%ux%u, %zu bytes, mip0/camada0)",
+            origem, res->Width, res->Height, bytes);
+    } else {
+        Bc250UmdTrace("%s: sincronia de textura RECUSADA pelo upload; a imagem continua sem "
+            "conteudo e o descritor vai recusa-la (fail-closed)", origem);
+    }
+}
+
 VOID APIENTRY Bc250Umd10ResourceMap(
     D3D10DDI_HDEVICE hDevice,
     D3D10DDI_HRESOURCE hResource,
@@ -1249,7 +1313,6 @@ VOID APIENTRY Bc250Umd10ResourceUnmap(
 {
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     BC250_UMD_RESOURCE* res = (BC250_UMD_RESOURCE*)hResource.pDrvPrivate;
-    UNREFERENCED_PARAMETER(Subresource);
 
     if (device != NULL && device->WinsysInitialized && res != NULL &&
         res->Allocation.Created && res->pCpuShadow != NULL && res->TotalByteSize > 0u) {
@@ -1264,6 +1327,8 @@ VOID APIENTRY Bc250Umd10ResourceUnmap(
         (void)Bc250UmdVkUploadBufferData(device, res, res->pCpuShadow, res->TotalByteSize);
         Bc250UmdTrace("ResourceUnmap: buffer sincronizado com VkBuffer (%u bytes)", res->TotalByteSize);
     }
+
+    Bc250UmdSyncTextureToVkImage(device, res, Subresource, "ResourceUnmap");
 
     Bc250UmdTrace("ResourceUnmap: res=%p Sub=%u", (void*)res, Subresource);
 }
@@ -1608,6 +1673,7 @@ VOID APIENTRY Bc250Umd10ClearRenderTargetView(
             device->InRenderPass = TRUE;
             device->ActiveRenderPass = rtv->VkPass;
             device->ActiveFramebuffer = rtv->VkFb;
+            if (rtv->pResource) rtv->pResource->VkLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
             Bc250UmdTrace("ClearRenderTargetView: EXECUTADO VULKAN FAST-CLEAR (rtv=%p res=%p %ux%u RGBA=[%.2f,%.2f,%.2f,%.2f])",
                 (void*)rtv, (void*)rtv->pResource, rpBegin.renderArea.extent.width, rpBegin.renderArea.extent.height,
@@ -1919,7 +1985,6 @@ VOID APIENTRY Bc250Umd10ResourceUpdateSubresourceUP(
 {
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     BC250_UMD_RESOURCE* res = (BC250_UMD_RESOURCE*)hDstResource.pDrvPrivate;
-    UNREFERENCED_PARAMETER(DstSubresource);
     UNREFERENCED_PARAMETER(DepthPitch);
 
     if (res == NULL || pSysMemBuffer == NULL) return;
@@ -1958,6 +2023,8 @@ VOID APIENTRY Bc250Umd10ResourceUpdateSubresourceUP(
                 uploadBytes);
         }
     }
+
+    Bc250UmdSyncTextureToVkImage(device, res, DstSubresource, "ResourceUpdateSubresourceUP");
 
     Bc250UmdTrace("ResourceUpdateSubresourceUP: res=%p pitch=%u", (void*)res, RowPitch);
 }
@@ -2169,6 +2236,36 @@ VOID APIENTRY Bc250Umd10ResourceCopyRegion(
         (void)Bc250UmdVkCopyImageInternal(device, dst, DstX, DstY, src, pSrcBox);
     }
 
+    /*
+     * ==================================================================
+     * RECURSO NAO CRIADO NAO E ORIGEM NEM DESTINO DE COPIA.
+     * ==================================================================
+     * Ate 19/09 este caminho lia TotalByteSize e pCpuShadow sem perguntar se o
+     * recurso chegou a existir, e passava o resultado direto a um memcpy.
+     *
+     * MEDIDO: bc250_d3d_umd_test.exe estourou dentro de memcpy com
+     *   rcx = rdx = 0x00007ffd58bb5b40   (origem e destino iguais)
+     *   r8  = 0x58bb34e0                 (1,4 GB)
+     * O tamanho carrega o mesmo padrao alto do ponteiro: era um campo lido de
+     * memoria nao inicializada. O teste declarava BC250_UMD_RESOURCE na pilha
+     * sem inicializar e o entregava a ResourceResolveSubresource.
+     *
+     * O defeito NAO era do teste. Qualquer recurso cujo Created seja falso --
+     * por lixo de pilha, por falha de criacao, por handle reaproveitado --
+     * levava a um memcpy de comprimento arbitrario. A descoberta veio de
+     * acrescentar um campo a struct, o que mudou QUAL lixo caia em
+     * TotalByteSize; a mina ja estava armada, so nao tinha sido pisada.
+     *
+     * Agora a copia exige Created dos dois lados e confere que o tamanho cabe
+     * no que foi de fato alocado. Recusa fala.
+     */
+    if (!dst->Created || !src->Created) {
+        Bc250UmdTrace("ResourceCopyRegion RECUSADO: recurso nao criado (dstCreated=%d srcCreated=%d) -- "
+            "TotalByteSize e pCpuShadow seriam lidos de memoria nao inicializada",
+            (int)dst->Created, (int)src->Created);
+        return;
+    }
+
     if (dst->pCpuShadow == NULL && dst->TotalByteSize > 0u) {
         dst->pCpuShadow = calloc(1, dst->TotalByteSize);
     }
@@ -2176,6 +2273,11 @@ VOID APIENTRY Bc250Umd10ResourceCopyRegion(
     if (dst->pCpuShadow != NULL && src->pCpuShadow != NULL) {
         if (pSrcBox == NULL) {
             UINT copySize = (dst->TotalByteSize < src->TotalByteSize) ? dst->TotalByteSize : src->TotalByteSize;
+            if (copySize == 0u) {
+                Bc250UmdTrace("ResourceCopyRegion RECUSADO: copySize=0 (dst=%u src=%u)",
+                    dst->TotalByteSize, src->TotalByteSize);
+                return;
+            }
             memcpy(dst->pCpuShadow, src->pCpuShadow, copySize);
         } else {
             UINT boxWidth = (pSrcBox->right > pSrcBox->left) ? (pSrcBox->right - pSrcBox->left) : 0;
@@ -2467,6 +2569,7 @@ static BOOL Bc250UmdExecuteVkDraw(
     BC250_UMD_DEPTH_STENCIL_STATE* ds = NULL;
     BC250_UMD_RASTERIZER_STATE* rs = NULL;
     BC250_UMD_ELEMENT_LAYOUT* il = NULL;
+    BOOL hasDescriptors = FALSE;
 
     if (pDevice == NULL || !pDevice->VkBridgeInitialized || !pDevice->VkBridge.DeviceActive) {
         return FALSE;
@@ -2605,6 +2708,13 @@ static BOOL Bc250UmdExecuteVkDraw(
         }
     }
 
+    /* Complete earlier commands before uploads, descriptor replacement or PSO
+     * eviction. This conservative synchronous path prioritizes lifetime correctness. */
+    if (pDevice->InRenderPass) {
+        pDevice->VkBridge.vk.vkCmdEndRenderPass(pDevice->VkBridge.CommandBuffer);
+        pDevice->InRenderPass = FALSE;
+    }
+    if (Bc250UmdVkFlushCommands(&pDevice->VkBridge) != VK_SUCCESS) return FALSE;
     if (!Bc250UmdPipelineCacheGetOrCreate(&pDevice->PipelineCache, &psoKey, &pipeline, &layout)) {
         Bc250UmdTrace("Bc250UmdExecuteVkDraw: falha ao obter/compilar VkPipeline");
         return FALSE;
@@ -2614,6 +2724,8 @@ static BOOL Bc250UmdExecuteVkDraw(
     if (cmd == VK_NULL_HANDLE) {
         return FALSE;
     }
+
+    if (!Bc250UmdBindDrawDescriptors(pDevice, layout, cmd, &hasDescriptors)) return FALSE;
 
     if (!pDevice->InRenderPass || pDevice->ActiveFramebuffer != rtv->VkFb) {
         VkRenderPassBeginInfo rpBegin;
@@ -2689,7 +2801,7 @@ static BOOL Bc250UmdExecuteVkDraw(
             if (vb != NULL && vb->VkBuf != VK_NULL_HANDLE) {
                 if (vb->pCpuShadow != NULL && vb->TotalByteSize > 0u && vb->VkMem != VK_NULL_HANDLE) {
                     UINT uploadBytes = (vb->Width > 0 && vb->Width < vb->TotalByteSize) ? vb->Width : vb->TotalByteSize;
-                    (void)Bc250UmdVkUploadBufferData(pDevice, vb, vb->pCpuShadow, uploadBytes);
+                    if (!Bc250UmdVkUploadBufferData(pDevice, vb, vb->pCpuShadow, uploadBytes)) return FALSE;
                 }
                 VkDeviceSize offset = pDevice->PipelineState.VertexOffsets[slot];
                 pDevice->VkBridge.vk.vkCmdBindVertexBuffers(cmd, slot, 1, &vb->VkBuf, &offset);
@@ -2709,7 +2821,7 @@ static BOOL Bc250UmdExecuteVkDraw(
             if (ib != NULL && ib->VkBuf != VK_NULL_HANDLE) {
                 if (ib->pCpuShadow != NULL && ib->TotalByteSize > 0u && ib->VkMem != VK_NULL_HANDLE) {
                     UINT uploadBytes = (ib->Width > 0 && ib->Width < ib->TotalByteSize) ? ib->Width : ib->TotalByteSize;
-                    (void)Bc250UmdVkUploadBufferData(pDevice, ib, ib->pCpuShadow, uploadBytes);
+                    if (!Bc250UmdVkUploadBufferData(pDevice, ib, ib->pCpuShadow, uploadBytes)) return FALSE;
                 }
                 VkIndexType idxType = (pDevice->PipelineState.IndexFormat == DXGI_FORMAT_R16_UINT) ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
                 pDevice->VkBridge.vk.vkCmdBindIndexBuffer(cmd, ib->VkBuf, pDevice->PipelineState.IndexOffset, idxType);
@@ -2724,9 +2836,14 @@ static BOOL Bc250UmdExecuteVkDraw(
             StartVertexLocation, StartInstanceLocation);
     }
 
+    pDevice->VkBridge.vk.vkCmdEndRenderPass(cmd);
+    pDevice->InRenderPass = FALSE;
+    if (rtv->pResource) rtv->pResource->VkLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    if (hasDescriptors) Bc250UmdRestoreDescriptorImages(&pDevice->VkBridge, cmd);
+    if (Bc250UmdVkFlushCommands(&pDevice->VkBridge) != VK_SUCCESS) return FALSE;
     pDevice->NativeVkDrawCount++;
     pDevice->PipelineState.DrawCount++;
-    Bc250UmdTrace("Bc250UmdExecuteVkDraw: DRAW EXECUTADO NATIVO EM VULKAN (VkDraws=%llu, Total=%llu, Verts=%u, Inst=%u, Indexed=%d)",
+    Bc250UmdTrace("Bc250UmdExecuteVkDraw: DRAW fence concluida; pixels NAO CONFERIDOS (VkDraws=%llu, Total=%llu, Verts=%u, Inst=%u, Indexed=%d)",
         pDevice->NativeVkDrawCount, pDevice->PipelineState.DrawCount, VertexCount, InstanceCount, (int)Indexed);
     return TRUE;
 }
@@ -2739,7 +2856,7 @@ VOID APIENTRY Bc250Umd10Draw(
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     if (device == NULL) return;
     if (Bc250UmdExecuteVkDraw(device, VertexCount, StartVertexLocation, 1, 0, FALSE, 0)) return;
-    if (Bc250UmdSubstituteDrawWithBlt(device)) return;
+    if (!device->VkBridgeInitialized && Bc250UmdSubstituteDrawWithBlt(device)) return;
     Bc250UmdRejectUnbackedDraw(device, "Draw");
 }
 
@@ -2752,7 +2869,7 @@ VOID APIENTRY Bc250Umd10DrawIndexed(
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     if (device == NULL) return;
     if (Bc250UmdExecuteVkDraw(device, IndexCount, StartIndexLocation, 1, 0, TRUE, BaseVertexLocation)) return;
-    if (Bc250UmdSubstituteDrawWithBlt(device)) return;
+    if (!device->VkBridgeInitialized && Bc250UmdSubstituteDrawWithBlt(device)) return;
     Bc250UmdRejectUnbackedDraw(device, "DrawIndexed");
 }
 
@@ -2767,7 +2884,7 @@ VOID APIENTRY Bc250Umd10DrawInstanced(
 
     if (device == NULL) return;
     if (Bc250UmdExecuteVkDraw(device, VertexCountPerInstance, StartVertexLocation, InstanceCount, StartInstanceLocation, FALSE, 0)) return;
-    if (Bc250UmdSubstituteDrawWithBlt(device)) return;
+    if (!device->VkBridgeInitialized && Bc250UmdSubstituteDrawWithBlt(device)) return;
     Bc250UmdRejectUnbackedDraw(device, "DrawInstanced");
 }
 
@@ -2783,7 +2900,7 @@ VOID APIENTRY Bc250Umd10DrawIndexedInstanced(
 
     if (device == NULL) return;
     if (Bc250UmdExecuteVkDraw(device, IndexCountPerInstance, StartIndexLocation, InstanceCount, StartInstanceLocation, TRUE, BaseVertexLocation)) return;
-    if (Bc250UmdSubstituteDrawWithBlt(device)) return;
+    if (!device->VkBridgeInitialized && Bc250UmdSubstituteDrawWithBlt(device)) return;
     Bc250UmdRejectUnbackedDraw(device, "DrawIndexedInstanced");
 }
 

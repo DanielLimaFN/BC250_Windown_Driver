@@ -31,6 +31,28 @@ typedef struct BC250_VKD3D_DXBC_SECTION_DESC {
     BC250_VKD3D_CODE data;
 } BC250_VKD3D_DXBC_SECTION_DESC;
 
+/* Wine vkd3d_shader.h: resource_binding and interface_info (public ABI).
+ * https://github.com/wine-mirror/wine/blob/master/libs/vkd3d/include/vkd3d_shader.h */
+typedef struct BC250_VKD3D_RESOURCE_BINDING {
+    int type;
+    unsigned int register_space, register_index;
+    int shader_visibility;
+    unsigned int flags;
+    struct { unsigned int set, binding, count; } binding;
+} BC250_VKD3D_RESOURCE_BINDING;
+typedef struct BC250_VKD3D_INTERFACE_INFO {
+    int type;
+    const void *next;
+    const BC250_VKD3D_RESOURCE_BINDING *bindings;
+    unsigned int binding_count;
+    const void *push_constant_buffers;
+    unsigned int push_constant_buffer_count;
+    const void *combined_samplers;
+    unsigned int combined_sampler_count;
+    const void *uav_counters;
+    unsigned int uav_counter_count;
+} BC250_VKD3D_INTERFACE_INFO;
+
 typedef int (__cdecl *BC250_PFN_VKD3D_COMPILE)(
     const BC250_VKD3D_COMPILE_INFO *, BC250_VKD3D_CODE *, char **);
 typedef void (__cdecl *BC250_PFN_VKD3D_FREE_CODE)(BC250_VKD3D_CODE *);
@@ -40,6 +62,8 @@ typedef int (__cdecl *BC250_PFN_VKD3D_SERIALIZE_DXBC)(
     size_t, const BC250_VKD3D_DXBC_SECTION_DESC *, BC250_VKD3D_CODE *, char **);
 
 #if defined(_WIN64)
+static_assert(sizeof(BC250_VKD3D_RESOURCE_BINDING) == 32, "resource binding ABI drift");
+static_assert(sizeof(BC250_VKD3D_INTERFACE_INFO) == 80, "interface info ABI drift");
 static_assert(sizeof(BC250_VKD3D_CODE) == 16, "vkd3d code ABI drift");
 static_assert(sizeof(BC250_VKD3D_COMPILE_INFO) == 64, "vkd3d compile ABI drift");
 static_assert(offsetof(BC250_VKD3D_COMPILE_INFO, source) == 16, "vkd3d source ABI drift");

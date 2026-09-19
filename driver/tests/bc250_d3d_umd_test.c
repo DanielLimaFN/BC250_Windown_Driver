@@ -2503,6 +2503,13 @@ static void TestStreamOutputAndTableCompleteness(void)
     memset(&dev, 0, sizeof(dev));
     dev.DeviceActive = TRUE;
     hDev.pDrvPrivate = &dev;
+    /* Struct de pilha NAO INICIALIZADA era entregue ao driver aqui, e o
+     * ResourceCopyRegion lia TotalByteSize de lixo. O produto agora recusa por
+     * Created, e o teste para de produzir a entrada invalida -- as duas pontas,
+     * porque consertar so uma deixaria a outra pronta para repetir. */
+    memset(&soRes, 0, sizeof(soRes));
+    soRes.Created = TRUE;
+    soRes.TotalByteSize = 0u;
     hSoRes.pDrvPrivate = &soRes;
 
     memset(&deviceFuncs10_1, 0, sizeof(deviceFuncs10_1));

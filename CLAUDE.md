@@ -1421,6 +1421,29 @@ analiso e preparo. Antes de propor ensaio: responda o que puder por leitura de f
 mineração de `docs/evidence/` e comparação com drivers reais da máquina. Defina teto de
 corridas e critério de abandono **antes** de armar. Boot frio entre binds.
 
+### Lei 10 — Como se escreve o critério de uma corrida
+
+O critério é escrito **antes** do ensaio (Lei 9) e obedece a três regras que nasceram de falhas
+medidas, não de estilo:
+
+1. **Assinatura e implicação são campos separados.** Cada desfecho declara *o que o log vai
+   mostrar* e, em campo distinto, *para onde isso leva a investigação*. Na Corrida 39 os dois
+   vinham acoplados: a assinatura do desfecho D foi falsificada (*"zero `UploadImageData`"* — houve
+   21) enquanto a conclusão de D se confirmou (*"o DWM não usa `pInitialDataUP`"*). Pacote fechado
+   força escolher entre aceitar uma conclusão certa por uma assinatura errada, ou descartar as
+   duas. Ambas as saídas são falsas.
+
+2. **Todo critério leva um desfecho final `E — algo fora do mapa`,** com a instrução de descrever
+   o observado antes de julgá-lo. Na Corrida 39 o maior resultado — 118 submissões gráficas sem
+   hang, com IBs dez vezes maiores que o que travava — não estava em nenhuma das quatro letras,
+   porque a convergência fora tratada apenas como *controle a não regredir*. Escrever só o
+   esperado cega para o inesperado, e nesse caso o inesperado era o avanço.
+
+3. **Desfecho parcial não é desfecho.** Se um desfecho exige três sinais e aparecem dois, ele
+   **não** ocorreu — em especial quando o sinal ausente é o que o define. Na Corrida 39 o desfecho
+   A teve upload e submissões maiores, mas não teve `VK_DESCRIPTOR] BOUND`; chamar aquilo de "A
+   parcial" teria transformado ausência de draw em quase-sucesso.
+
 ---
 
 ## ⚡ 3. Comandos rápidos
