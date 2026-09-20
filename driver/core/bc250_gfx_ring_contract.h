@@ -242,6 +242,15 @@ BC250_GFX_RING_STATUS Bc250GfxRingDeriveBufsz(
     uint32_t *RbBlksz);
 
 /*
+ * Fonte unica para o formato de CP_RB0_BASE. O registrador recebe GPUVA >> 8,
+ * dividido entre LO[31:0] e HI. Manter isso fora dos chamadores impede que o
+ * caminho de restart volte a publicar o endereco bruto, como ocorreu na
+ * Corrida 43.
+ */
+uint32_t Bc250GfxRingEncodeBaseLo(uint64_t RingGpuVa);
+uint32_t Bc250GfxRingEncodeBaseHi(uint64_t RingGpuVa);
+
+/*
  * Valida o plano inteiro ANTES de qualquer escrita em registrador (Lei 5,
  * estagio PREFLIGHT). Nao escreve nada e nao tem efeito colateral.
  */

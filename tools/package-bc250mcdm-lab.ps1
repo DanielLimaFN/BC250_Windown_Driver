@@ -125,6 +125,9 @@ function Find-Tool([string]$Name, [string[]]$Candidates) {
 if (-not (Test-Path -LiteralPath $sourceSys)) {
     throw "Imagem de lab ausente: $sourceSys. Execute tools\build-bc250mcdm-lab-bringup.ps1 -Execute -IUnderstandThisEnablesDestructiveBringup"
 }
+if (-not (Test-Path -LiteralPath $sourcePdb -PathType Leaf)) {
+    throw "PDB privado do SYS de lab ausente: $sourcePdb. Recusado gerar candidato sem simbolos exatos."
+}
 if (-not (Test-Path -LiteralPath $sourceUmd -PathType Leaf)) {
     throw "UMD auditada ausente: $sourceUmd. Execute driver\umd\build-umd.bat."
 }
@@ -471,8 +474,10 @@ $manifest = [ordered]@{
     Inf2CatPath = $inf2cat
     SignToolPath = $signtool
     SourceSysSha256 = (Get-FileHash -LiteralPath $sourceSys -Algorithm SHA256).Hash
+    SourcePdbSha256 = (Get-FileHash -LiteralPath $sourcePdb -Algorithm SHA256).Hash
     SourceUmdSha256 = (Get-FileHash -LiteralPath $sourceUmd -Algorithm SHA256).Hash
     PackageSysSha256 = (Get-FileHash -LiteralPath $packageSys -Algorithm SHA256).Hash
+    PackagePdbSha256 = (Get-FileHash -LiteralPath $packagePdb -Algorithm SHA256).Hash
     PackageUmdSha256 = (Get-FileHash -LiteralPath $packageUmd -Algorithm SHA256).Hash
     PackageInfSha256 = (Get-FileHash -LiteralPath $packageInf -Algorithm SHA256).Hash
     PackageCatSha256 = (Get-FileHash -LiteralPath $packageCat -Algorithm SHA256).Hash

@@ -22,6 +22,7 @@ void Bc250WinsysTraceRaw(const char *Message)
     char line[768];
     char imagePath[MAX_PATH];
     char logPath[MAX_PATH];
+    char sharedLogPath[MAX_PATH];
     char tempPath[MAX_PATH];
     const char *imageName = "?";
     int lineLength;
@@ -33,6 +34,7 @@ void Bc250WinsysTraceRaw(const char *Message)
     if (Message == NULL) {
         return;
     }
+    logPath[0] = '\0';
     if (GetModuleFileNameA(NULL, imagePath, (DWORD)sizeof(imagePath)) != 0) {
         const char *slash = strrchr(imagePath, '\\');
         imageName = (slash != NULL) ? (slash + 1) : imagePath;
@@ -71,18 +73,30 @@ void Bc250WinsysTraceRaw(const char *Message)
         }
     }
 
-    /* Escrita no diretorio compartilhado do sistema para DWM e auditoria */
-    if (_snprintf_s(logPath, sizeof(logPath), _TRUNCATE,
+    /*
+     * Escrita no diretorio compartilhado do sistema para DWM e auditoria.
+     *
+     * Corrida 40 (P0): dwm.exe e dxgiadaptercache.exe produziram uma copia
+     * adjacente identica de praticamente toda linha, enquanto Explorer.EXE e
+     * o harness nao. Este sink continha um mecanismo suficiente para o efeito:
+     * se %%TEMP%% resolver para C:\Windows\Temp, o bloco acima e este abririam
+     * O MESMO arquivo duas vezes. Compare os caminhos resolvidos; a atribuicao
+     * ao runtime ainda depende da proxima corrida. Quando os caminhos sao
+     * diferentes, ambos continuam existindo por seus contratos distintos.
+     */
+    if (_snprintf_s(sharedLogPath, sizeof(sharedLogPath), _TRUNCATE,
             "C:\\Windows\\Temp\\BC250_UMD_LOG_%lu.txt",
             GetCurrentProcessId()) >= 0) {
-        file = CreateFileA(logPath,
-            FILE_APPEND_DATA,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH, NULL);
-        if (file != INVALID_HANDLE_VALUE) {
-            (void)WriteFile(file, line, (DWORD)lineLength, &written, NULL);
-            FlushFileBuffers(file);
-            (void)CloseHandle(file);
+        if (logPath[0] == '\0' || _stricmp(logPath, sharedLogPath) != 0) {
+            file = CreateFileA(sharedLogPath,
+                FILE_APPEND_DATA,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH, NULL);
+            if (file != INVALID_HANDLE_VALUE) {
+                (void)WriteFile(file, line, (DWORD)lineLength, &written, NULL);
+                FlushFileBuffers(file);
+                (void)CloseHandle(file);
+            }
         }
     }
 }

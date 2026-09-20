@@ -79,6 +79,11 @@ static int Bc250RunGfxRingContractTest(void)
     CHECK(Bc250GfxRingDeriveBufsz(0x200000u, &bufsz, &blksz) == BC250_GFX_RING_BAD_SIZE);
     CHECK(Bc250GfxRingDeriveBufsz(8192u, NULL, &blksz) == BC250_GFX_RING_BAD_ARGUMENT);
 
+    /* Corrida 43: CP_RB0_BASE nao recebe o endereco bruto. Exercitar LO e HI
+     * com bits acima de 32 impede que apenas metade da correcao sobreviva. */
+    CHECK(Bc250GfxRingEncodeBaseLo(0x000123456789AB00ull) == 0x456789ABu);
+    CHECK(Bc250GfxRingEncodeBaseHi(0x000123456789AB00ull) == 0x00000123u);
+
     /* ------------------------------------------------------------------
      * 2. Plano valido -- o contraponto. Sem ele as recusas abaixo virariam
      *    peneira: um contrato que recusa tudo tambem passa nos negativos.

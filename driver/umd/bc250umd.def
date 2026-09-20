@@ -23,3 +23,4 @@ EXPORTS
     Bc250UmdSubmitNode1Proof
     Bc250UmdRunNode1ProofTransaction
     Bc250UmdEmitPm4Draw
+    Bc250UmdVkComputeImageUploadLayout

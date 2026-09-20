@@ -2901,6 +2901,13 @@ def audit_umd_trace_reaches_the_evidence_file(errors: list[str]) -> None:
     require(umd, "Bc250WinsysTraceRaw(message)",
             "Bc250UmdTrace delegando ao sink unico", errors)
 
+    # Corrida 40: para dwm.exe e dxgiadaptercache.exe, %TEMP% ja resolvia para
+    # C:\Windows\Temp. O sink abria o mesmo arquivo no destino por-processo e
+    # no destino compartilhado, duplicando cada linha. A comparacao precisa ser
+    # de caminho resolvido, nao de identidade de processo inferida.
+    require(winsys, "_stricmp(logPath, sharedLogPath) != 0",
+            "sink UMD evita segunda escrita quando %TEMP% e Windows\\Temp sao o mesmo caminho", errors)
+
     # Escrever no arquivo nao basta: o binder tem de ARQUIVAR o arquivo no fim
     # da janela fisica. A coleta original roda logo apos o bind e arquiva um
     # snapshot de poucos segundos -- nas corridas de 13/09 08:12, 11:25 e 11:32
@@ -2916,6 +2923,26 @@ def audit_umd_trace_reaches_the_evidence_file(errors: list[str]) -> None:
             "coleta FINAL dos logs da UMD no fim da janela fisica", errors)
     require(binder, "Coleta FINAL da UMD",
             "coleta FINAL da UMD reportada ao operador", errors)
+    require(binder, "$collectionDeadlineUtc = $deadlineUtc.AddSeconds(-10)",
+            "prazo da coleta FINAL derivado do relogio absoluto do watchdog", errors)
+    require(binder, "while ([datetime]::UtcNow -lt $collectionDeadlineUtc)",
+            "coleta FINAL espera o relogio mesmo quando o harness termina cedo", errors)
+    final_collection = binder.split("# COLETA FINAL NO CAMINHO COMUM.", 1)[-1]
+    forbid(strip_c_comments(final_collection), "Start-Sleep -Seconds 3",
+           "atalho de 3 s apos harness que truncou a Corrida 40", errors)
+
+    require(binder, "[switch]$EnableDwmCrashCapture",
+            "LocalDumps do dwm.exe opt-in no binder de laboratorio", errors)
+    require(binder, "DWM LocalDumps: DESARMADO (default fail-closed)",
+            "LocalDumps desarmado por default", errors)
+    require(binder, "-EnableDwmCrashCapture exige watchdog",
+            "LocalDumps nao arma sem restauracao pelo guardiao", errors)
+    watchdog_path = ROOT / "tools" / "watch-bc250mcdm-safe-bind.ps1"
+    watchdog_text = watchdog_path.read_text(encoding="utf-8", errors="replace")
+    require(watchdog_text, "Restore-DwmCaptureIfArmed",
+            "guardiao restaura LocalDumps mesmo se o binder morrer", errors)
+    require(watchdog_text, "dwm_capture_restore_ok",
+            "resultado da restauracao LocalDumps arquivado", errors)
 
     # A segunda copia da escrita em arquivo nao pode voltar a existir na UMD:
     # duas instrumentacoes divergentes foi exatamente o defeito.
@@ -3208,6 +3235,118 @@ def audit_gfx_restart_checks_the_real_halt_bits(errors: list[str]) -> None:
                 "CP_ME_CNTL (" + frozen + "): o teste estaria congelando a mascara errada")
 
 
+# Casa a escrita em CP_RB0_BASE/_HI nas DUAS formas usadas no driver: pela
+# transacao MMIO (registrador como argumento) e pelo acesso direto ao BAR por
+# offset literal, que e como o bc250_compute_service.c escreve.
+CP_RB0_BASE_WRITE_RE = re.compile(
+    r"(?:BC250_GFX_REG_CP_RB0_BASE(?:_HI)?\s*,\s*|"
+    r"0x0000C(?:100|2C4)u\s*\)\s*=\s*)(?P<value>[^;,]*?)\s*[;)]",
+    re.MULTILINE)
+
+
+def audit_gfx_restart_is_executable_and_aborts_old_fences(errors: list[str]) -> None:
+    """Restart do CP_RB0 precisa executar e nao concluir fences abortadas."""
+    miniport_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
+    engine_path = ROOT / "driver" / "wdk" / "bc250_submission_engine.c"
+    test_path = ROOT / "driver" / "tests" / "active_miniport_test.c"
+    for path in (miniport_path, engine_path, test_path):
+        if not path.exists():
+            errors.append(path.name + " ausente: restart GFX executavel sem portao")
+            return
+
+    miniport = miniport_path.read_text(encoding="utf-8", errors="replace")
+    engine = engine_path.read_text(encoding="utf-8", errors="replace")
+    test = test_path.read_text(encoding="utf-8", errors="replace")
+    txn_path = ROOT / "driver" / "core" / "bc250_gfx_ring_transaction.c"
+    gfx_txn = txn_path.read_text(encoding="utf-8", errors="replace")         if txn_path.exists() else ""
+    if not gfx_txn:
+        errors.append(
+            "bc250_gfx_ring_transaction.c ausente: caminho ONLINE de CP_RB0_BASE sem portao")
+
+    compute_path = ROOT / "driver" / "wdk" / "bc250_compute_service.c"
+    compute_ring = compute_path.read_text(encoding="utf-8", errors="replace")         if compute_path.exists() else ""
+    if not compute_ring:
+        errors.append(
+            "bc250_compute_service.c ausente: terceiro escritor de CP_RB0_BASE sem portao")
+
+    proof = function_body(miniport, "static BOOLEAN Bc250ActiveTdrProveGfxRestart(")
+    restart = function_body(miniport, "static BOOLEAN Bc250ActiveTdrRestartLifecycle(")
+    online = function_body(miniport, "static NTSTATUS Bc250ActiveGfxEngineOnline(")
+    abort = function_body(engine, "BOOLEAN Bc250WddmFenceTrackerAbortPending(")
+
+    for needle, label in (
+        ("BC250_PM4_PACKET2_NOP", "physical NOP in GFX restart proof"),
+        ("Bc250Pm4EmitReleaseMemEop32(", "RELEASE_MEM in GFX restart proof"),
+        ("BC250_GFX_FENCE_POISON", "poison before GFX restart proof"),
+        ("rptr == cursor && fenceObserved == proofFence",
+         "RPTR plus GPU fence verdict in GFX restart proof"),
+        ("[TDR_GFX_RESTART_PROOF] PASS", "explicit executable restart evidence"),
+    ):
+        require(proof, needle, label, errors)
+    for needle, label in (
+        ("Bc250GfxRingEncodeBaseLo(activeCtx->GfxEngine.RingGpuVa)",
+         "CP_RB0_BASE restart encoded as GPUVA shifted by 8"),
+        ("Bc250GfxRingEncodeBaseHi(activeCtx->GfxEngine.RingGpuVa)",
+         "CP_RB0_BASE_HI restart encoded from the shifted GPUVA"),
+        ("[TDR_GFX_RESTART_BASE]", "restart BASE expected/readback telemetry"),
+        ("baseHi != baseExpectedHi || baseLo != baseExpectedLo",
+         "restart fails closed on CP_RB0_BASE readback mismatch"),
+        ("*activeCtx->GfxEngine.RptrWbCpuVirtual = 0u",
+         "stale GFX RPTR writeback cleared"),
+        ("Bc250ActiveTdrAbortFenceTracker(activeCtx)",
+         "old WDDM fences aborted before restart proof"),
+        ("Bc250ActiveTdrProveGfxRestart(activeCtx)",
+         "executable GFX proof gates restart success"),
+        ("Bc250WddmFenceTrackerSetAcceptingWork(",
+         "tracker admission reopened only by restart lifecycle"),
+    ):
+        require(restart, needle, label, errors)
+    # O forbid textual da primeira versao deste portao cobria UMA unica forma
+    # da expressao errada -- a LO com mascara. Um cast sem mascara, ou a variante
+    # HI antiga, passavam. Trocado por verificacao ESTRUTURAL: toda escrita em
+    # CP_RB0_BASE/_HI, em qualquer dos tres escritores, tem de carregar o valor
+    # vindo da fonte unica. Leitura (argumento por referencia) e permitida.
+    for body, origin in (
+        (restart, "GFX restart"),
+        (gfx_txn, "GFX ring transaction (caminho ONLINE)"),
+        (compute_ring, "compute service CP ring setup"),
+    ):
+        for match in CP_RB0_BASE_WRITE_RE.finditer(body):
+            value = match.group("value").strip()
+            if value.startswith("&"):
+                continue  # readback
+            if "Bc250GfxRingEncodeBase" in value:
+                continue
+            # Excecao NOMINAL e estreita: o ROLLBACK da Lei 5 devolve ao
+            # registrador o valor CRU que o SNAPSHOT leu dele. Isso nao e
+            # codificacao e nao pode passar pelos helpers. Qualquer outro
+            # nome cai no erro -- a excecao nao e generica de proposito.
+            if value in ("Evidence->BaseBefore", "Evidence->BaseHiBefore"):
+                continue
+            errors.append(
+                "CP_RB0_BASE written outside the single source in " + origin +
+                " (Corrida 43: base 256x errada): " + value)
+    for needle, label in (
+        ("if (!bootDrainOk)", "boot preamble execution gates GFX online"),
+        ("(void)Bc250ActiveGfxEngineOffline(Context);",
+         "failed boot preamble rolls the GFX engine back"),
+        ("return STATUS_DEVICE_HARDWARE_ERROR;",
+         "failed boot preamble fails StartDevice path closed"),
+    ):
+        require(online, needle, label, errors)
+    for needle, label in (
+        ("--Tracker->Count", "committed entries removed by abort"),
+        ("Tracker->ReservedCount = 0u", "reservations removed by abort"),
+    ):
+        require(abort, needle, label, errors)
+    forbid(abort, "++Tracker->NotifiedTotal",
+           "TDR abort must not count work as WDDM completion", errors)
+    require(test, "Bc250WddmFenceTrackerAbortPending(",
+            "offline regression for TDR fence abort", errors)
+    require(test, "tracker.NotifiedTotal == 1u",
+            "offline proof that abort does not notify completion", errors)
+
+
 def audit_gfx_stall_probe_is_read_only(errors: list[str]) -> None:
     """A sonda do stall do CP grafico e diagnostico, nunca escrita.
 
@@ -3344,6 +3483,21 @@ def audit_conformance_harness_checks_present(errors: list[str]) -> None:
         # sozinho, o despejo volta a nao alcancar o dwm.exe em silencio.
         require(rtext, "-Name 'GfxIbDumpDir'",
                 "runner arma o despejo por registro com o nome exato", errors)
+        # Corrida 41: no Windows PowerShell 5.1, New-Item -Force sobre uma
+        # chave existente recriou HKLM\SOFTWARE\BC250\Umd e apagou
+        # D3D11LabPromotion antes de iniciar o harness. O DWM antigo manteve o
+        # valor em cache; todo processo novo falhou com 0x887A0004.
+        require(rtext, "if (-not (Test-Path -LiteralPath $umdRegistryPath))",
+                "criacao condicional da chave UMD sem apagar gates", errors)
+        require(rtext, "New-Item -Path $umdRegistryPath -ErrorAction Stop",
+                "criacao da chave UMD somente quando ausente", errors)
+        registry_block = rtext[rtext.find("$umdRegistryPath ="):
+                               rtext.find("$argsList =")]
+        if re.search(r"(?im)^\s*New-Item\b[^\r\n]*\s-Force(?:\s|$)",
+                     registry_block):
+            errors.append(
+                "runner voltou a usar New-Item -Force no bloco HKLM Umd: no "
+                "PowerShell 5.1 isso apaga D3D11LabPromotion e fabrica o fail-fast")
         patch = ROOT / "external" / "radv-wddm" / "bc250-radv-wddm.patch"
         if patch.exists():
             ptext = patch.read_text(encoding="utf-8", errors="replace")
@@ -3584,7 +3738,7 @@ def audit_descriptor_and_wave_contracts(errors: list[str]) -> None:
         (r"info\.next\s*=\s*&interfaceInfo\s*;", adapter, "explicit vkd3d interface"),
         (r"b->binding\.binding\s*=\s*stage\s*\*\s*BC250_DESCRIPTOR_STAGE_STRIDE\s*\+", adapter, "stage binding isolation"),
         (r"if\s*\(!Bc250UmdBindDrawDescriptors\([^;]+\)\)\s*return FALSE;", draw, "draw descriptor guard"),
-        (r"if\s*\(Bc250UmdVkFlushCommands\(&pDevice->VkBridge\)\s*!=\s*VK_SUCCESS\)\s*return FALSE;", draw, "fence errors propagate"),
+        (r"if\s*\(Bc250UmdVkFlushCommands\(&pDevice->VkBridge\)\s*!=\s*VK_SUCCESS\)\s*\{[^}]*return FALSE;[^}]*\}", draw, "fence errors propagate"),
         (r"pBridge->SubmissionFailed\s*=\s*TRUE;", bridge, "failed submit cannot be reused"),
         (r"WaveStatus\s*!=\s*0xBEBEBEEFu", wave, "poison cannot be a wave"),
         (r"WaveStatus\s*&\s*0x00010000u", wave, "SQ VALID bit required"),
@@ -3861,6 +4015,57 @@ def audit_texture_path_is_named_and_complete(errors: list[str]) -> None:
     require(utext, "fora do escopo carregado",
             "recusa nomeada para subrecurso alem do carregado", errors)
 
+    # Corrida 41: width=590, linha real=2360 e shadow pitch=2560. A DDI
+    # copiava apenas 590 bytes quando pDstBox==NULL, e o upload recusava todo
+    # pitch com padding. As duas metades precisam permanecer corrigidas.
+    require(ucode, "src + (SIZE_T)y * RowPitch, lineBytes",
+            "UpdateSubresourceUP copia cada linha pelo pitch da origem", errors)
+    require(ucode, "dst + (SIZE_T)y * res->RowPitch",
+            "UpdateSubresourceUP avanca pelo pitch do shadow", errors)
+    require(ucode, "(UINT)pDstBox->right > res->Width",
+            "box de textura validado contra a largura", errors)
+    vk_source = (ROOT / "driver" / "umd" / "bc250_umd_resource_vk.c").read_text(
+        encoding="utf-8", errors="replace")
+    vk_code = strip_c_comments(vk_source)
+    require(vk_code, "*pBufferRowLength = RowPitch / bpp",
+            "pitch Vulkan convertido de bytes para texels", errors)
+    require(vk_code, "region.bufferRowLength = bufferRowLength",
+            "VkBufferImageCopy publica o row pitch acolchoado", errors)
+    require(vk_code, "Bc250UmdVkUploadBytesPerTexel",
+            "tamanho de texel conhecido sem inferencia pelo pitch", errors)
+    if "linha com padding nao esta implementada" in vk_code:
+        errors.append("upload Vulkan voltou a recusar toda linha com padding")
+
+    # Corrida 40 deixou duas causas indistinguiveis: ordem legitima do DWM ou
+    # escrita por caminho ignorado. A recusa precisa nomear o recurso e quantas
+    # DDIs de escrita chegaram a ele, sem inferir causalidade por proximidade.
+    htext = (ROOT / "driver" / "umd" / "bc250_d3d_umd.h").read_text(
+        encoding="utf-8", errors="replace")
+    hcode = strip_c_comments(htext)
+    require(hcode, "LastVkDrawFailureReason",
+            "estado do motivo exato da ultima tentativa Vulkan", errors)
+    require(ucode, "backend Vulkan motivo=%s",
+            "recusa final do Draw publica a causa Vulkan", errors)
+    require(dcode, "device->LastVkDrawFailureReason = refusedReason",
+            "recusa de descritor propaga a causa ao Draw", errors)
+    for token, label in (
+        ("TextureWriteDdiCount", "contador por recurso das DDIs de escrita de textura"),
+        ("SRV_RESOURCE=%p", "ponteiro do recurso SRV recusado"),
+        ("WxH=%ux%u", "geometria do recurso SRV recusado"),
+        ("Format=%u", "formato do recurso SRV recusado"),
+        ("BindFlags=0x%08X", "BindFlags do recurso SRV recusado"),
+        ("Usage=%u", "Usage do recurso SRV recusado"),
+        ("TextureWrites=%u", "contagem de escritas do recurso SRV recusado"),
+        ("VkLayout=%s", "layout Vulkan por nome na recusa SRV"),
+        ("Bc250UmdVkImageLayoutName", "fonte unica do nome de layout Vulkan"),
+    ):
+        require(dcode + ucode + hcode, token, label, errors)
+    helper_start = ucode.find("static void Bc250UmdSyncTextureToVkImage(")
+    helper_end = ucode.find("\n}\n", helper_start)
+    helper = ucode[helper_start:helper_end if helper_end > helper_start else len(ucode)]
+    require(helper, "++res->TextureWriteDdiCount",
+            "contador de escrita incrementado na fonte unica de sincronia", errors)
+
 
 def audit_lost_log_tail_is_recovered(errors: list[str]) -> None:
     """C2: nenhuma corrida pode ficar sem o trecho decisivo do log.
@@ -3901,6 +4106,14 @@ def audit_lost_log_tail_is_recovered(errors: list[str]) -> None:
             "declaracao de que o fim do trecho e' delimitado ou nao", errors)
     require(recovery, "[System.IO.FileAccess]::Read",
             "abertura do log vivo em somente leitura", errors)
+    # Corrida 42: o binder atual arquiva um DELTA. archive.bytes e' o tamanho
+    # desse delta, nao um offset absoluto do arquivo cumulativo. Tratar o valor
+    # como offset gerou um falso resgate de 1,6 GB numa corrida anterior e
+    # esconderia novamente a fronteira real da evidencia.
+    require(recovery, "$isDelimitedDelta =",
+            "distincao entre arquivo integral antigo e delta delimitado", errors)
+    require(recovery, "$tailStart = $startOffset + [int64]$archive.bytes",
+            "offset do trecho perdido soma baseline e tamanho do delta", errors)
 
     # Somente leitura sobre o LOG VIVO: escrever ou apagar destruiria a fonte.
     #
@@ -5405,7 +5618,10 @@ def audit_snapshot_publish_retries(errors: list[str]) -> None:
         errors.append("publicador voltou a desistir na primeira tentativa")
 
     # 2. Diagnostico separando BUSY de erro real.
-    for field in ("LastPublishAttempts", "LastPublishBusyCount", "LastPublishStatus"):
+    for field in ("LastPublishAttempts", "LastPublishBusyCount", "LastPublishStatus",
+                  "LastPublishRangeCount", "LastPublishFailedRangeIndex",
+                  "LastPublishFailedMapRange", "LastPublishFailedBaseGpuVa",
+                  "LastPublishFailedSize"):
         require(header, field, f"campo de diagnostico da publicacao ({field})", errors)
     require(snap, "_InterlockedExchange(&Store->LastPublishStatus, (long)BC250_GPUVA_BUSY);",
             "BUSY registrado como causa distinta", errors)
@@ -5415,6 +5631,10 @@ def audit_snapshot_publish_retries(errors: list[str]) -> None:
     # 3. O KMD publica o diagnostico na linha de falha.
     require(active, "PublishStatus=%ld Attempts=%ld Busy=%ld",
             "diagnostico da publicacao no log de falha do flush", errors)
+    require(active, "PUBLICACAO_FALHA Batch=%ld FailedIndex=%ld",
+            "tamanho do batch e indice exato que falhou na publicacao", errors)
+    require(active, "Map=%ld Base=0x%llX Size=0x%llX",
+            "geometria e operacao da faixa que falhou", errors)
 
     # 4. O teste prova a distincao com leitor preso.
     require(test, "c38Store.ReaderState[c38Inactive] = 1L;",
@@ -6506,6 +6726,20 @@ def main() -> int:
             "lab bind checks the signed UMD package identity", errors)
     require(lab_bind, "SourceUmdSha256",
             "lab bind rejects a package stale against the UMD build", errors)
+    require(lab_package, "PackagePdbSha256",
+            "lab manifest seals the exact private PDB", errors)
+    require(lab_bind, "Assert-ArtifactHash $packagePdb $manifest.PackagePdbSha256",
+            "lab bind verifies the private PDB identity", errors)
+    require(lab_bind, "private-symbols.json",
+            "lab bind archives private symbols before destructive work", errors)
+    require(lab_bind, "Copy-Item -LiteralPath $packageSys -Destination $evidenceSys",
+            "lab bind archives the exact SYS beside its PDB", errors)
+    require(lab_bind, "Get-FileHash -LiteralPath $evidenceSys",
+            "lab bind rehashes the archived SYS destination", errors)
+    require(lab_bind, "Get-FileHash -LiteralPath $evidencePdb",
+            "lab bind rehashes the archived PDB destination", errors)
+    require(lab_bind, "$evidencePdbHash -ne [string]$manifest.PackagePdbSha256",
+            "lab bind fails closed when the archived PDB is corrupted", errors)
     require(lab_bind, "Escolha uma unica experiencia fisica: RADV ou B7_UMD_NODE1_TRIPOD",
             "lab bind forbids two physical experiments in one run", errors)
     require(lab_bind, "-RunUmdNode1Tripod exige -EnableGpuvaLabPromotion",
@@ -7117,6 +7351,7 @@ def main() -> int:
     audit_safe_bind_deadline_is_fail_closed(errors)
     audit_lost_log_tail_is_recovered(errors)
     audit_gfx_restart_checks_the_real_halt_bits(errors)
+    audit_gfx_restart_is_executable_and_aborts_old_fences(errors)
     audit_gfx_stall_probe_is_read_only(errors)
     audit_conformance_harness_checks_present(errors)
     audit_radv_fork_delta_is_mirrored(errors)
@@ -7172,7 +7407,7 @@ def main() -> int:
     print("  ring-wrap arithmetic on tripod leg 1: enforced")
     print("  Node 1 submission refusal names its reason: enforced")
     print("  Node 1 admission uses full physical page-table walk; snapshot is diagnostic: enforced")
-    print("  TDR reset/restart pair backed by physical quiesce+proof: enforced")
+    print("  TDR reset/restart pair has a physical backend (SDMA proof; GFX proof audited separately): enforced")
     print("  QueryEngineStatus answers from measurement: enforced")
     print("  induced hang fail-closed and physical: enforced")
     print("  induced hang package/start order: enforced")
@@ -7194,7 +7429,7 @@ def main() -> int:
     print("  submit path at DISPATCH_LEVEL pushlock-free: enforced")
     print("  SDMA submission asynchronous and non-blocking (0x133 eliminated): enforced")
     print("  GFX ring tripod (poison excluded, wrapped RPTR, INDETERMINADO allowed) + PM4 IB inspection with single-source verdict: enforced")
-    print("  GFX restart readback checks the REAL CP_ME_CNTL halt bits (CE/PFP/ME 0x15000000): enforced")
+    print("  GFX restart requires executable NOP/fence proof and aborts old WDDM fences without false completion: enforced")
     print("  GFX stall probe (ME/PFP header dump, IB1, SQ waves, SE busy) is read-only and speaks INDETERMINADO: enforced")
     print("  D3D11 conformance harness checks Present/GetDeviceRemovedReason and aborts; runner refuses exit 0 without frame evidence: enforced")
     print("  RADV fork delta mirrored in-repo with provenance (base commit -> patch -> DLL): enforced")

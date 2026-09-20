@@ -1,13 +1,19 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+set "FORCE_BOOT_CHECK=0"
+set "DWM_CAPTURE_ARG="
+for %%A in (%*) do (
+    if /i "%%~A"=="-Force" set "FORCE_BOOT_CHECK=1"
+    if /i "%%~A"=="-CaptureDwmDump" set "DWM_CAPTURE_ARG=-EnableDwmCrashCapture"
+)
 echo ===================================================================
 echo   BC-250: ENSAIO DE CONFORMIDADE DIRECT3D 11 NATIVO (bc250umd.dll)
 echo   Target: AMD BC-250 APU (1002:13FE) ^| Windows 10 22H2 x64
 echo ===================================================================
 echo.
 echo 0. Verificando se o rollback anterior ja foi seguido por boot frio...
-if /i "%1"=="-Force" (
+if "%FORCE_BOOT_CHECK%"=="1" (
     echo [FORCE] Marcador de boot frio ignorado por solicitacao do operador.
     del /f /q C:\BC250_REQUIRE_CLEAN_BOOT.json 2>nul
     goto skip_boot_check
@@ -42,7 +48,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Remove-ItemProperty -Pat
 echo [OK] vulkan_radeon.dll atualizada exclusivamente em C:\BC250_LIB.
 echo.
 echo 2. Iniciando vinculacao WDDM com ensaio D3D11 Nativo (bc250umd.dll)...
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bind-bc250mcdm-lab.ps1" -Execute -IAcceptBlackScreenRisk -EnableRenderNode -EnableShaderDispatch -EnablePersistentSubmission -EnableGpuvaLabPromotion -IAcceptGpuvaLabPromotion -EnableNode1JournalGatePerProcess -EnableD3D11LabPromotion -RunD3D11Native -D3D11Frames 60 -WatchdogTimeoutSeconds 120 -IAcceptAutomaticRecoveryReboot
+if defined DWM_CAPTURE_ARG echo [ATENCAO] WER LocalDumps do dwm.exe sera armado somente durante esta janela.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bind-bc250mcdm-lab.ps1" -Execute -IAcceptBlackScreenRisk -EnableRenderNode -EnableShaderDispatch -EnablePersistentSubmission -EnableGpuvaLabPromotion -IAcceptGpuvaLabPromotion -EnableNode1JournalGatePerProcess -EnableD3D11LabPromotion -RunD3D11Native -D3D11Frames 60 -WatchdogTimeoutSeconds 120 -IAcceptAutomaticRecoveryReboot %DWM_CAPTURE_ARG%
 set "BIND_EXIT=%ERRORLEVEL%"
 echo.
 echo 3. Executando rollback incondicional do ensaio automatizado...

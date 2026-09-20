@@ -1875,6 +1875,70 @@ BOOLEAN Bc250WddmFenceTrackerSnapshotCounts(
 }
 
 _Check_return_
+BOOLEAN Bc250WddmFenceTrackerAbortPending(
+    _Inout_ BC250_WDDM_FENCE_TRACKER *Tracker,
+    _Out_writes_to_(Max, *AbortedCount) BC250_WDDM_FENCE_ENTRY *Out,
+    _In_ uint32_t Max,
+    _Out_ uint32_t *AbortedCount,
+    _Out_ uint32_t *CommittedCount,
+    _Out_ uint32_t *ReservedCount)
+{
+    KIRQL irql;
+    uint32_t produced = 0u;
+    uint32_t committed;
+    uint32_t reserved;
+    uint32_t i;
+
+    if (AbortedCount != NULL) *AbortedCount = 0u;
+    if (CommittedCount != NULL) *CommittedCount = 0u;
+    if (ReservedCount != NULL) *ReservedCount = 0u;
+    if (Tracker == NULL || Out == NULL || Max < BC250_WDDM_FENCE_TRACK_DEPTH ||
+        AbortedCount == NULL || CommittedCount == NULL || ReservedCount == NULL) {
+        return FALSE;
+    }
+    if (!Bc250FenceLockAcquire(&Tracker->Lock, &irql)) {
+        return FALSE;
+    }
+
+    committed = Tracker->Count;
+    reserved = Tracker->ReservedCount;
+    if ((committed + reserved) > Max) {
+        Bc250FenceLockRelease(&Tracker->Lock, irql);
+        return FALSE;
+    }
+
+    while (Tracker->Count > 0u) {
+        Out[produced++] = Tracker->Entries[Tracker->Head];
+        RtlZeroMemory(&Tracker->Entries[Tracker->Head],
+            sizeof(Tracker->Entries[Tracker->Head]));
+        Tracker->Head = (Tracker->Head + 1u) % BC250_WDDM_FENCE_TRACK_DEPTH;
+        --Tracker->Count;
+    }
+    for (i = 0u; i < BC250_WDDM_FENCE_TRACK_DEPTH; ++i) {
+        BC250_WDDM_FENCE_RESERVATION *res = &Tracker->Reservations[i];
+        if (res->Active != 0u) {
+            BC250_WDDM_FENCE_ENTRY *entry = &Out[produced++];
+            RtlZeroMemory(entry, sizeof(*entry));
+            entry->SubmissionFenceId = res->SubmissionFenceId;
+            entry->NodeOrdinal = res->NodeOrdinal;
+            entry->EngineOrdinal = res->EngineOrdinal;
+            entry->GpuvaSlot = res->GpuvaSlot;
+            entry->GpuvaGeneration = res->GpuvaGeneration;
+            entry->GpuvaPinValid = res->GpuvaPinValid;
+        }
+        RtlZeroMemory(res, sizeof(*res));
+    }
+    Tracker->Head = 0u;
+    Tracker->ReservedCount = 0u;
+
+    *AbortedCount = produced;
+    *CommittedCount = committed;
+    *ReservedCount = reserved;
+    Bc250FenceLockRelease(&Tracker->Lock, irql);
+    return TRUE;
+}
+
+_Check_return_
 BOOLEAN Bc250WddmFenceTrackerReserve(
     _Inout_ BC250_WDDM_FENCE_TRACKER *Tracker,
     _In_ uint32_t SubmissionFenceId,

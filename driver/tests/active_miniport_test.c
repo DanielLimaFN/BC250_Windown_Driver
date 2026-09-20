@@ -982,6 +982,7 @@ static int Bc250RunWddmFenceTrackerTest(void)
 {
     static BC250_WDDM_FENCE_TRACKER tracker;
     static BC250_WDDM_FENCE_ENTRY out[8];
+    static BC250_WDDM_FENCE_ENTRY aborted[BC250_WDDM_FENCE_TRACK_DEPTH];
     uint32_t currentFence = 0xFFFFFFFFu;
     uint32_t i;
 
@@ -1092,6 +1093,44 @@ static int Bc250RunWddmFenceTrackerTest(void)
         CHECK(out[0].GpuvaPinValid == 1u);
         CHECK(out[0].GpuvaSlot == 1u);
         CHECK(out[0].GpuvaGeneration == 7u);
+    }
+
+    /*
+     * TDR completo aborta committed + reserva sem promover nenhuma delas a
+     * conclusao WDDM. Os pins sao devolvidos para liberacao pelo miniport e a
+     * marca d'agua ja notificada sobrevive ao reset.
+     */
+    {
+        uint32_t token = 0u;
+        uint32_t abortedCount = 0u;
+        uint32_t committedCount = 0u;
+        uint32_t reservedCount = 0u;
+        Bc250WddmFenceTrackerReset(&tracker);
+        CHECK(Bc250WddmFenceTrackerPush(&tracker, 10ull, 0x6000u, 1u, 0u));
+        CHECK(Bc250WddmFenceTrackerDrain(&tracker, 10ull, out, 1u) == 1u);
+        CHECK(Bc250WddmFenceTrackerPush(&tracker, 11ull, 0x6001u, 1u, 0u));
+        CHECK(Bc250WddmFenceTrackerReserve(
+            &tracker, 0x6002u, 1u, 0u, &token));
+        CHECK(Bc250WddmFenceTrackerAttachGpuvaPin(
+            &tracker, token, 0u, 9u));
+        Bc250WddmFenceTrackerSetAcceptingWork(&tracker, FALSE);
+        CHECK(Bc250WddmFenceTrackerAbortPending(
+            &tracker, aborted, BC250_WDDM_FENCE_TRACK_DEPTH,
+            &abortedCount, &committedCount, &reservedCount));
+        CHECK(abortedCount == 2u);
+        CHECK(committedCount == 1u);
+        CHECK(reservedCount == 1u);
+        CHECK(tracker.Count == 0u);
+        CHECK(tracker.ReservedCount == 0u);
+        CHECK(tracker.NotifiedTotal == 1u);
+        CHECK(tracker.LastNotifiedFenceIdByNode[1] == 0x6000u);
+        CHECK(aborted[0].SubmissionFenceId == 0x6001u);
+        CHECK(aborted[1].SubmissionFenceId == 0x6002u);
+        CHECK(aborted[1].GpuvaPinValid == 1u);
+        CHECK(aborted[1].GpuvaSlot == 0u);
+        CHECK(aborted[1].GpuvaGeneration == 9u);
+        CHECK(!Bc250WddmFenceTrackerReserve(
+            &tracker, 0x6003u, 1u, 0u, &token));
     }
 
     return 1;

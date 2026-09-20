@@ -1,6 +1,25 @@
 /* Included in bc250_d3d_umd.c. A new immutable set per draw. The current
  * synchronous bridge retires all objects only after a successful fence wait.
  * On timeout they stay owned by the bridge until device teardown. */
+static const char *Bc250UmdVkImageLayoutName(VkImageLayout layout)
+{
+    switch (layout) {
+    case VK_IMAGE_LAYOUT_UNDEFINED: return "UNDEFINED";
+    case VK_IMAGE_LAYOUT_GENERAL: return "GENERAL";
+    case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL: return "COLOR_ATTACHMENT_OPTIMAL";
+    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL: return "DEPTH_STENCIL_ATTACHMENT_OPTIMAL";
+    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL: return "DEPTH_STENCIL_READ_ONLY_OPTIMAL";
+    case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL: return "SHADER_READ_ONLY_OPTIMAL";
+    case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL: return "TRANSFER_SRC_OPTIMAL";
+    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL: return "TRANSFER_DST_OPTIMAL";
+    case VK_IMAGE_LAYOUT_PREINITIALIZED: return "PREINITIALIZED";
+#ifdef VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+    case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR: return "PRESENT_SRC_KHR";
+#endif
+    default: return "DESCONHECIDO";
+    }
+}
+
 static BOOL Bc250UmdBindDrawDescriptors(BC250_UMD_DEVICE *device,
     VkPipelineLayout layout, VkCommandBuffer cmd, BOOL *hasDescriptors)
 {
@@ -16,16 +35,20 @@ static BOOL Bc250UmdBindDrawDescriptors(BC250_UMD_DEVICE *device,
     VkDescriptorImageInfo images[BC250_DESCRIPTOR_MAX_BINDINGS];
     VkDescriptorSet set;
     const char *refusedReason = "MOTIVO_NAO_REGISTRADO";
+    BC250_UMD_RESOURCE *refusedSrvResource = NULL;
+    BOOL refusedIsSrv = FALSE;
     uint32_t i;
     *hasDescriptors = FALSE;
+    device->LastVkDrawFailureReason = NULL;
     for (i = 0; i < BC250_PSO_CACHE_CAPACITY; ++i)
         if (device->PipelineCache.Entries[i].InUse && device->PipelineCache.Entries[i].PipelineLayout == layout)
             entry = &device->PipelineCache.Entries[i];
-    if (!entry) return FALSE;
+    if (!entry) { device->LastVkDrawFailureReason = "PIPELINE_SEM_ENTRADA_DE_DESCRITOR"; return FALSE; }
     if (!entry->BindingCount) return TRUE;
-    if (device->InRenderPass || bridge->SubmissionFailed) return FALSE;
+    if (device->InRenderPass) { device->LastVkDrawFailureReason = "DESCRITOR_DENTRO_DE_RENDERPASS"; return FALSE; }
+    if (bridge->SubmissionFailed) { device->LastVkDrawFailureReason = "SUBMISSAO_VULKAN_JA_FALHOU"; return FALSE; }
     batch = (BC250_VK_DESCRIPTOR_BATCH *)calloc(1, sizeof(*batch));
-    if (!batch) return FALSE;
+    if (!batch) { device->LastVkDrawFailureReason = "SEM_MEMORIA_PARA_DESCRITOR"; return FALSE; }
     batch->Next = bridge->DescriptorBatches;
     bridge->DescriptorBatches = batch;
     memset(writes, 0, sizeof(writes));
@@ -58,6 +81,7 @@ static BOOL Bc250UmdBindDrawDescriptors(BC250_UMD_DEVICE *device,
             BC250_UMD_RESOURCE *resource;
             VkImageViewCreateInfo view = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
             VkImageMemoryBarrier barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            refusedIsSrv = TRUE;
             if (reg < BC250_DESCRIPTOR_SRV_BASE || reg >= BC250_DESCRIPTOR_SRV_BASE + BC250_DESCRIPTOR_SRV_COUNT) { refusedReason = "SRV_REGISTRADOR_FORA_DE_FAIXA"; goto refused; }
             reg -= BC250_DESCRIPTOR_SRV_BASE;
             srv = (BC250_UMD_SRV *)(stage == 0 ? device->PipelineState.VsShaderResources[reg].pDrvPrivate :
@@ -76,6 +100,7 @@ static BOOL Bc250UmdBindDrawDescriptors(BC250_UMD_DEVICE *device,
             if (!srv) { refusedReason = "SRV_SLOT_VAZIO"; goto refused; }
             if (!srv->Created) { refusedReason = "SRV_NAO_CRIADA"; goto refused; }
             if (!(resource = srv->pResource)) { refusedReason = "SRV_SEM_RECURSO_ASSOCIADO"; goto refused; }
+            refusedSrvResource = resource;
             if (!resource->VkImg) { refusedReason = "SRV_RECURSO_SEM_VKIMAGE"; goto refused; }
             if (srv->Desc.ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D) {
                 refusedReason = "SRV_DIMENSAO_NAO_E_TEXTURE2D"; goto refused;
@@ -203,7 +228,23 @@ refused:
     /* Commands may already reference image transitions. Keep ownership through
      * teardown and prevent a partial recording from being submitted. */
     bridge->SubmissionFailed = TRUE;
-    Bc250UmdTrace("[VK_DESCRIPTOR] RECUSADO: binding index=%u motivo=%s -- uma condicao NOMEADA, nao um agregado; ver bc250_umd_descriptors.c", i, refusedReason);
+    device->LastVkDrawFailureReason = refusedReason;
+    if (refusedIsSrv) {
+        Bc250UmdTrace("[VK_DESCRIPTOR] RECUSADO: binding index=%u motivo=%s "
+            "SRV_RESOURCE=%p WxH=%ux%u Format=%u BindFlags=0x%08X Usage=%u "
+            "TextureWrites=%u VkLayout=%s -- recurso e condicao nomeados",
+            i, refusedReason, (void *)refusedSrvResource,
+            refusedSrvResource ? refusedSrvResource->Width : 0u,
+            refusedSrvResource ? refusedSrvResource->Height : 0u,
+            refusedSrvResource ? (uint32_t)refusedSrvResource->Format : 0u,
+            refusedSrvResource ? refusedSrvResource->BindFlags : 0u,
+            refusedSrvResource ? refusedSrvResource->Usage : 0u,
+            refusedSrvResource ? refusedSrvResource->TextureWriteDdiCount : 0u,
+            Bc250UmdVkImageLayoutName(refusedSrvResource ?
+                refusedSrvResource->VkLayout : VK_IMAGE_LAYOUT_UNDEFINED));
+    } else {
+        Bc250UmdTrace("[VK_DESCRIPTOR] RECUSADO: binding index=%u motivo=%s -- uma condicao NOMEADA, nao um agregado; ver bc250_umd_descriptors.c", i, refusedReason);
+    }
     return FALSE;
 }
 

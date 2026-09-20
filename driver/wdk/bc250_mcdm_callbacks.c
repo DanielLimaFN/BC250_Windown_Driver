@@ -2583,7 +2583,7 @@ NTSTATUS APIENTRY Bc250McdmRestartFromTimeout(CONST HANDLE hAdapter)
         return STATUS_DEVICE_NOT_READY;
     }
 
-    Bc250DisplayLog("[McdmRestartFromTimeout] TDR: engine provada por NOP fisico; adaptador aceita submissao novamente\n");
+    Bc250DisplayLog("[McdmRestartFromTimeout] TDR: SDMA0 e CP_RB0 provados fisicamente; MEC com readback coerente; fences abortadas reconciliadas; adaptador aceita submissao novamente\n");
     return STATUS_SUCCESS;
 }
 

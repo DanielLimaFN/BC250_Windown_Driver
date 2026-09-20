@@ -89,8 +89,20 @@ for ($i = 0; $i -lt $ordered.Count; $i++) {
     # De onde o trecho perdido comeca: fim do que ja foi arquivado, ou o proprio
     # inicio do bind quando nao houve arquivamento nenhum.
     if ($null -ne $archive -and $null -ne $archive.bytes) {
-        $tailStart = [int64]$archive.bytes
-        $reason = 'arquivo integral existe mas foi copiado antes do fim da corrida'
+        # Binders atuais arquivam somente o delta a partir de start_offset. Nesse
+        # formato, "bytes" e' o comprimento do delta, nao um offset absoluto do
+        # log cumulativo. Binders antigos copiavam o arquivo integral; preserve
+        # essa semantica quando o manifesto nao declara o delta delimitado.
+        $isDelimitedDelta = ($archive.note -like '*delta delimitado*') -or
+            ($null -ne $archive.bind_start_offset -and
+             [int64]$archive.bind_start_offset -eq $startOffset)
+        if ($isDelimitedDelta) {
+            $tailStart = $startOffset + [int64]$archive.bytes
+            $reason = 'delta delimitado existe mas foi copiado antes do fim da corrida'
+        } else {
+            $tailStart = [int64]$archive.bytes
+            $reason = 'arquivo integral existe mas foi copiado antes do fim da corrida'
+        }
     } else {
         $tailStart = $startOffset
         $reason = 'nenhum display-log-archive.json: o bind morreu antes de arquivar'

@@ -844,7 +844,8 @@ static UINT Bc250DxgiFormatBytesPerPixel(DXGI_FORMAT Format)
     case DXGI_FORMAT_A8_UNORM:
         return 1u;
     default:
-        return 4u;
+        /* Formato desconhecido nao pode virar implicitamente RGBA8. */
+        return 0u;
     }
 }
 
@@ -1132,12 +1133,21 @@ VOID APIENTRY Bc250Umd10CreateResource(
                 UINT copyBytes = (res->Width > 0 && res->Width < res->TotalByteSize) ? res->Width : res->TotalByteSize;
                 memcpy(res->pCpuShadow, pCreate->pInitialDataUP->pSysMem, copyBytes);
             } else if (res->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D && res->Height > 0u) {
-                UINT pitch = (pCreate->pInitialDataUP->SysMemPitch > 0 && pCreate->pInitialDataUP->SysMemPitch < res->RowPitch)
-                             ? pCreate->pInitialDataUP->SysMemPitch : res->RowPitch;
-                for (UINT y = 0; y < res->Height; ++y) {
-                    memcpy((BYTE*)res->pCpuShadow + (size_t)y * res->RowPitch,
-                           (CONST BYTE*)pCreate->pInitialDataUP->pSysMem + (size_t)y * pCreate->pInitialDataUP->SysMemPitch,
-                           pitch);
+                const UINT bpp = Bc250DxgiFormatBytesPerPixel(res->Format);
+                const SIZE_T lineBytes = (SIZE_T)res->Width * bpp;
+                if (bpp != 0u && pCreate->pInitialDataUP->SysMemPitch >= lineBytes &&
+                    res->RowPitch >= lineBytes) {
+                    for (UINT y = 0; y < res->Height; ++y) {
+                        memcpy((BYTE*)res->pCpuShadow + (size_t)y * res->RowPitch,
+                               (CONST BYTE*)pCreate->pInitialDataUP->pSysMem +
+                                   (size_t)y * pCreate->pInitialDataUP->SysMemPitch,
+                               lineBytes);
+                    }
+                } else {
+                    Bc250UmdTrace("CreateResource: pInitialDataUP de textura RECUSADO "
+                        "(Fmt=%u bpp=%u Width=%u SrcPitch=%u DstPitch=%u)",
+                        (UINT)res->Format, bpp, res->Width,
+                        pCreate->pInitialDataUP->SysMemPitch, res->RowPitch);
                 }
             } else {
                 memcpy(res->pCpuShadow, pCreate->pInitialDataUP->pSysMem, res->TotalByteSize);
@@ -1243,8 +1253,9 @@ static void Bc250UmdSyncTextureToVkImage(
     SIZE_T bytes;
 
     if (device == NULL || res == NULL) return;
-    if (!device->VkBridgeInitialized || !res->VkResourceCreated) return;
     if (res->ResourceDimension != D3D10DDIRESOURCE_TEXTURE2D) return;
+    ++res->TextureWriteDdiCount;
+    if (!device->VkBridgeInitialized || !res->VkResourceCreated) return;
     if (res->VkImg == VK_NULL_HANDLE || res->pCpuShadow == NULL) return;
 
     if (Subresource != 0u) {
@@ -1985,6 +1996,7 @@ VOID APIENTRY Bc250Umd10ResourceUpdateSubresourceUP(
 {
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     BC250_UMD_RESOURCE* res = (BC250_UMD_RESOURCE*)hDstResource.pDrvPrivate;
+    BOOL copied = FALSE;
     UNREFERENCED_PARAMETER(DepthPitch);
 
     if (res == NULL || pSysMemBuffer == NULL) return;
@@ -1994,26 +2006,97 @@ VOID APIENTRY Bc250Umd10ResourceUpdateSubresourceUP(
     }
 
     if (res->pCpuShadow != NULL) {
-        if (pDstBox == NULL) {
-            UINT copyBytes = (res->Width > 0 && res->Width < res->TotalByteSize) ? res->Width : res->TotalByteSize;
-            memcpy(res->pCpuShadow, pSysMemBuffer, copyBytes);
-        } else {
-            UINT boxWidth = (pDstBox->right > pDstBox->left) ? (pDstBox->right - pDstBox->left) : 0;
-            UINT boxHeight = (pDstBox->bottom > pDstBox->top) ? (pDstBox->bottom - pDstBox->top) : 1;
-            UINT bpp = Bc250DxgiFormatBytesPerPixel(res->Format);
-            if (bpp == 0 || res->ResourceDimension == D3D10DDIRESOURCE_BUFFER) bpp = 1;
-            UINT lineBytes = boxWidth * bpp;
-            BYTE* dst = (BYTE*)res->pCpuShadow + (size_t)pDstBox->top * res->RowPitch + (size_t)pDstBox->left * bpp;
-            CONST BYTE* src = (CONST BYTE*)pSysMemBuffer;
-
-            if (lineBytes == 0) lineBytes = RowPitch;
-            for (UINT y = 0; y < boxHeight; ++y) {
-                memcpy(dst + (size_t)y * res->RowPitch, src + (size_t)y * RowPitch, lineBytes);
+        if (res->ResourceDimension == D3D10DDIRESOURCE_BUFFER) {
+            SIZE_T dstOffset = 0u;
+            SIZE_T copyBytes = (res->Width > 0u && res->Width < res->TotalByteSize) ?
+                (SIZE_T)res->Width : (SIZE_T)res->TotalByteSize;
+            if (pDstBox != NULL) {
+                if (pDstBox->left < 0 || pDstBox->right <= pDstBox->left ||
+                    (UINT)pDstBox->right > res->Width || pDstBox->top != 0u ||
+                    pDstBox->bottom > 1u || pDstBox->front != 0u ||
+                    pDstBox->back > 1u) {
+                    Bc250UmdTrace("ResourceUpdateSubresourceUP: buffer RECUSADO -- box invalido");
+                    goto update_invalid;
+                }
+                dstOffset = pDstBox->left;
+                copyBytes = (SIZE_T)(pDstBox->right - pDstBox->left);
             }
+            if (dstOffset > res->TotalByteSize ||
+                copyBytes > (SIZE_T)res->TotalByteSize - dstOffset) {
+                Bc250UmdTrace("ResourceUpdateSubresourceUP: buffer RECUSADO -- copia excede shadow");
+                goto update_invalid;
+            }
+            memcpy((BYTE*)res->pCpuShadow + dstOffset, pSysMemBuffer, copyBytes);
+            copied = TRUE;
+        } else if (res->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D) {
+            const UINT bpp = Bc250DxgiFormatBytesPerPixel(res->Format);
+            UINT left = 0u, top = 0u, width = res->Width, height = res->Height;
+            SIZE_T lineBytes;
+            SIZE_T dstOffset;
+            SIZE_T dstRequired;
+            CONST BYTE* src = (CONST BYTE*)pSysMemBuffer;
+            BYTE* dst = (BYTE*)res->pCpuShadow;
+
+            if (DstSubresource != 0u || bpp == 0u || width == 0u || height == 0u ||
+                res->RowPitch == 0u) {
+                Bc250UmdTrace("ResourceUpdateSubresourceUP: textura RECUSADA -- Sub=%u Fmt=%u "
+                    "bpp=%u WxH=%ux%u DstPitch=%u", DstSubresource,
+                    (UINT)res->Format, bpp, width, height, res->RowPitch);
+                goto update_invalid;
+            }
+            if (pDstBox != NULL) {
+                if (pDstBox->left < 0 || pDstBox->top < 0 ||
+                    pDstBox->right <= pDstBox->left ||
+                    pDstBox->bottom <= pDstBox->top ||
+                    (UINT)pDstBox->right > res->Width ||
+                    (UINT)pDstBox->bottom > res->Height ||
+                    pDstBox->front != 0u || pDstBox->back != 1u) {
+                    Bc250UmdTrace("ResourceUpdateSubresourceUP: textura RECUSADA -- box fora da geometria");
+                    goto update_invalid;
+                }
+                left = pDstBox->left;
+                top = pDstBox->top;
+                width = pDstBox->right - pDstBox->left;
+                height = pDstBox->bottom - pDstBox->top;
+            }
+            if ((SIZE_T)width > ((SIZE_T)-1) / bpp) goto update_invalid;
+            lineBytes = (SIZE_T)width * bpp;
+            if ((SIZE_T)RowPitch < lineBytes || (SIZE_T)res->RowPitch < lineBytes) {
+                Bc250UmdTrace("ResourceUpdateSubresourceUP: textura RECUSADA -- linha=%zu "
+                    "SrcPitch=%u DstPitch=%u", lineBytes, RowPitch, res->RowPitch);
+                goto update_invalid;
+            }
+            dstOffset = (SIZE_T)top * res->RowPitch + (SIZE_T)left * bpp;
+            dstRequired = dstOffset + (SIZE_T)(height - 1u) * res->RowPitch + lineBytes;
+            if (dstRequired < dstOffset || dstRequired > (SIZE_T)res->TotalByteSize) {
+                Bc250UmdTrace("ResourceUpdateSubresourceUP: textura RECUSADA -- destino exige %zu, shadow=%u",
+                    dstRequired, res->TotalByteSize);
+                goto update_invalid;
+            }
+            dst += dstOffset;
+            for (UINT y = 0u; y < height; ++y) {
+                memcpy(dst + (SIZE_T)y * res->RowPitch,
+                    src + (SIZE_T)y * RowPitch, lineBytes);
+            }
+            copied = TRUE;
+            Bc250UmdTrace("ResourceUpdateSubresourceUP: textura copiada linha-a-linha "
+                "(%ux%u bpp=%u SrcPitch=%u DstPitch=%u)",
+                width, height, bpp, RowPitch, res->RowPitch);
+        } else {
+            Bc250UmdTrace("ResourceUpdateSubresourceUP: dimensao %u RECUSADA",
+                (UINT)res->ResourceDimension);
+            goto update_invalid;
         }
+
+        if (!copied) goto update_invalid;
         if (device != NULL && device->WinsysInitialized && res->Allocation.Created) {
-            (void)Bc250WinsysUploadAllocation(&device->Winsys, &res->Allocation,
-                res->pCpuShadow, res->TotalByteSize);
+            BC250_WINSYS_STATUS wsStatus = Bc250WinsysUploadAllocation(
+                &device->Winsys, &res->Allocation, res->pCpuShadow, res->TotalByteSize);
+            if (wsStatus != BC250_WINSYS_OK) {
+                Bc250UmdTrace("ResourceUpdateSubresourceUP: WDDM allocation NAO sincronizada "
+                    "(status=%s hr=0x%08X); Vulkan pode ter copia separada",
+                    Bc250WinsysStatusName(wsStatus), (unsigned)device->Winsys.LastCallbackHr);
+            }
         }
         if (device != NULL && device->VkBridgeInitialized && res->VkResourceCreated &&
             res->VkMem != VK_NULL_HANDLE && res->ResourceDimension == D3D10DDIRESOURCE_BUFFER) {
@@ -2024,9 +2107,18 @@ VOID APIENTRY Bc250Umd10ResourceUpdateSubresourceUP(
         }
     }
 
-    Bc250UmdSyncTextureToVkImage(device, res, DstSubresource, "ResourceUpdateSubresourceUP");
+    if (copied) {
+        Bc250UmdSyncTextureToVkImage(device, res, DstSubresource, "ResourceUpdateSubresourceUP");
+    }
 
     Bc250UmdTrace("ResourceUpdateSubresourceUP: res=%p pitch=%u", (void*)res, RowPitch);
+    return;
+
+update_invalid:
+    if (device != NULL && device->pUMCallbacks != NULL &&
+        device->pUMCallbacks->pfnSetErrorCb != NULL) {
+        device->pUMCallbacks->pfnSetErrorCb(device->hRTCoreLayer, E_INVALIDARG);
+    }
 }
 
 static BOOL Bc250UmdVkCopyImageInternal(
@@ -2333,8 +2425,13 @@ static VOID Bc250UmdRejectUnbackedDraw(
             Operation, Device->RejectedDrawCount);
         return;
     }
+    if (Device->VkBridgeInitialized && Device->LastVkDrawFailureReason != NULL) {
+        Bc250UmdTrace("%s: RECUSADO -- backend Vulkan motivo=%s (Rejected=%llu)",
+            Operation, Device->LastVkDrawFailureReason, Device->RejectedDrawCount);
+    } else {
     Bc250UmdTrace("%s: RECUSADO -- compilador/shader-state/draw PM4 ausente "
         "(Rejected=%llu)", Operation, Device->RejectedDrawCount);
+    }
     if (Device->pUMCallbacks != NULL &&
         Device->pUMCallbacks->pfnSetErrorCb != NULL) {
         Device->pUMCallbacks->pfnSetErrorCb(Device->hRTCoreLayer, E_NOTIMPL);
@@ -2571,12 +2668,14 @@ static BOOL Bc250UmdExecuteVkDraw(
     BC250_UMD_ELEMENT_LAYOUT* il = NULL;
     BOOL hasDescriptors = FALSE;
 
+    if (pDevice != NULL) pDevice->LastVkDrawFailureReason = "VULKAN_BRIDGE_INATIVA";
     if (pDevice == NULL || !pDevice->VkBridgeInitialized || !pDevice->VkBridge.DeviceActive) {
         return FALSE;
     }
 
     if (pDevice->PipelineState.NumBoundRTVs == 0 ||
         pDevice->PipelineState.BoundRTVs[0].pDrvPrivate == NULL) {
+        pDevice->LastVkDrawFailureReason = "RTV_NAO_VINCULADO";
         Bc250UmdTrace("Bc250UmdExecuteVkDraw: RECUSADO -- nenhum RTV vinculado (NumBoundRTVs=%u)",
             pDevice->PipelineState.NumBoundRTVs);
         return FALSE;
@@ -2584,6 +2683,7 @@ static BOOL Bc250UmdExecuteVkDraw(
 
     rtv = (BC250_UMD_RTV*)pDevice->PipelineState.BoundRTVs[0].pDrvPrivate;
     if (rtv == NULL || !rtv->VkRtvCreated || rtv->VkPass == VK_NULL_HANDLE || rtv->VkFb == VK_NULL_HANDLE) {
+        pDevice->LastVkDrawFailureReason = "RTV_VULKAN_INVALIDO";
         Bc250UmdTrace("Bc250UmdExecuteVkDraw: RECUSADO -- RTV invalido ou sem VkPass/VkFb (rtv=%p, VkRtvCreated=%d)",
             (void*)rtv, rtv ? (int)rtv->VkRtvCreated : 0);
         return FALSE;
@@ -2714,14 +2814,19 @@ static BOOL Bc250UmdExecuteVkDraw(
         pDevice->VkBridge.vk.vkCmdEndRenderPass(pDevice->VkBridge.CommandBuffer);
         pDevice->InRenderPass = FALSE;
     }
-    if (Bc250UmdVkFlushCommands(&pDevice->VkBridge) != VK_SUCCESS) return FALSE;
+    if (Bc250UmdVkFlushCommands(&pDevice->VkBridge) != VK_SUCCESS) {
+        pDevice->LastVkDrawFailureReason = "FLUSH_ANTES_DO_DRAW_FALHOU";
+        return FALSE;
+    }
     if (!Bc250UmdPipelineCacheGetOrCreate(&pDevice->PipelineCache, &psoKey, &pipeline, &layout)) {
+        pDevice->LastVkDrawFailureReason = "PIPELINE_NAO_OBTIDA_OU_COMPILADA";
         Bc250UmdTrace("Bc250UmdExecuteVkDraw: falha ao obter/compilar VkPipeline");
         return FALSE;
     }
 
     cmd = Bc250UmdVkGetCommandBuffer(&pDevice->VkBridge);
     if (cmd == VK_NULL_HANDLE) {
+        pDevice->LastVkDrawFailureReason = "COMMAND_BUFFER_AUSENTE";
         return FALSE;
     }
 
@@ -2840,7 +2945,11 @@ static BOOL Bc250UmdExecuteVkDraw(
     pDevice->InRenderPass = FALSE;
     if (rtv->pResource) rtv->pResource->VkLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     if (hasDescriptors) Bc250UmdRestoreDescriptorImages(&pDevice->VkBridge, cmd);
-    if (Bc250UmdVkFlushCommands(&pDevice->VkBridge) != VK_SUCCESS) return FALSE;
+    if (Bc250UmdVkFlushCommands(&pDevice->VkBridge) != VK_SUCCESS) {
+        pDevice->LastVkDrawFailureReason = "FLUSH_FENCE_DO_DRAW_FALHOU";
+        return FALSE;
+    }
+    pDevice->LastVkDrawFailureReason = NULL;
     pDevice->NativeVkDrawCount++;
     pDevice->PipelineState.DrawCount++;
     Bc250UmdTrace("Bc250UmdExecuteVkDraw: DRAW fence concluida; pixels NAO CONFERIDOS (VkDraws=%llu, Total=%llu, Verts=%u, Inst=%u, Indexed=%d)",

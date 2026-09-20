@@ -50,6 +50,17 @@ BOOL Bc250UmdVkUploadImageData(
     UINT RowPitch,
     SIZE_T ByteSize);
 
+/* Contrato puro/testavel da geometria VkBufferImageCopy. */
+BOOL Bc250UmdVkComputeImageUploadLayout(
+    DXGI_FORMAT Format,
+    UINT Width,
+    UINT Height,
+    UINT RowPitch,
+    SIZE_T ByteSize,
+    UINT TotalByteSize,
+    _Out_ UINT* pBufferRowLength,
+    _Out_ SIZE_T* pRequiredBytes);
+
 BOOL Bc250UmdVkUploadBufferData(
     _Inout_ struct _BC250_UMD_DEVICE* pDevice,
     _Inout_ struct _BC250_UMD_RESOURCE* pRes,

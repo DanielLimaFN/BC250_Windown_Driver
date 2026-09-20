@@ -46,6 +46,11 @@ typedef struct BC250_GPUVA_SNAPSHOT_STORE {
     volatile long LastPublishAttempts;
     volatile long LastPublishBusyCount;
     volatile long LastPublishStatus;
+    volatile long LastPublishRangeCount;
+    volatile long LastPublishFailedRangeIndex;
+    volatile long LastPublishFailedMapRange;
+    uint64_t LastPublishFailedBaseGpuVa;
+    uint64_t LastPublishFailedSize;
     BC250_GPUVA_SPACE Slots[2];
 } BC250_GPUVA_SNAPSHOT_STORE;
 

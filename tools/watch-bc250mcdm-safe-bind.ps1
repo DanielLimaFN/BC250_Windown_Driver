@@ -179,7 +179,7 @@ function Invoke-Bc250SafeGuardCleanup {
         if (-not (Test-Path -LiteralPath $archive)) {
             New-Item -ItemType Directory -Path $archive -Force | Out-Null
         }
-        foreach ($name in @('armed.json','watch-bc250mcdm-safe-bind.ps1')) {
+        foreach ($name in @('armed.json','watch-bc250mcdm-safe-bind.ps1','restore-dwm-crash-capture.ps1')) {
             $source = Join-Path $guardDir $name
             if (Test-Path -LiteralPath $source -PathType Leaf) {
                 Copy-Item -LiteralPath $source -Destination $archive -Force
@@ -192,11 +192,34 @@ function Invoke-Bc250SafeGuardCleanup {
     }
 }
 
+function Restore-DwmCaptureIfArmed {
+    if ($null -eq $config.PSObject.Properties['dwm_capture_enabled'] -or
+        -not [bool]$config.dwm_capture_enabled) {
+        return $true
+    }
+    $restore = [string]$config.dwm_restore_script
+    if (-not (Test-Path -LiteralPath $restore -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $restore -Algorithm SHA256).Hash -ne
+            [string]$config.dwm_restore_sha256) {
+        try { Write-State 'DWM_CAPTURE_RESTORE_FAILED' 'script de restore ausente ou alterado' 13 } catch { }
+        return $false
+    }
+    try {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $restore `
+            -EvidenceDir ([string]$config.evidence_dir) -Execute | Out-Null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        try { Write-State 'DWM_CAPTURE_RESTORE_FAILED' $_.Exception.Message 13 } catch { }
+        return $false
+    }
+}
+
 function Complete-Bc250SafeBind([string]$FinalState, [string]$Detail, [int]$ExitCode = 0) {
     # Capturado ANTES do Write-State: aquele avanca $script:previousState para
     # o estado final, e o final.json passaria a registrar previous_state igual
     # a final_state -- perdendo justamente a transicao que interessa ler.
     $stateBefore = $script:previousState
+    $dwmRestoreOk = Restore-DwmCaptureIfArmed
     Write-State $FinalState $Detail $ExitCode
     Unregister-ScheduledTask -TaskName ([string]$config.task_name) `
         -Confirm:$false -ErrorAction SilentlyContinue
@@ -216,6 +239,7 @@ function Complete-Bc250SafeBind([string]$FinalState, [string]$Detail, [int]$Exit
         pnp_samples = $script:lastSamples
         journal_path = $journalPath
         cleanup_ok = $cleanupOk
+        dwm_capture_restore_ok = $dwmRestoreOk
         hardware_validated = $false
     })
 }
@@ -330,6 +354,11 @@ try {
     # Evidencia e' importante, mas indisponibilidade do disco nao tem direito
     # de impedir a acao de seguranca. A recovery continua fail-closed.
 }
+
+# LocalDumps e' estado global do Windows: desarmar antes da recovery/reboot,
+# mesmo se algum dump ainda estiver bloqueado. O script preserva dumps
+# pendentes e restaura o registro independentemente da copia.
+[void](Restore-DwmCaptureIfArmed)
 
 # SNAPSHOT antes do rollback: preserva a causa mesmo quando a tela esta preta
 # e o operador nao consegue executar o inspetor manualmente.

@@ -128,6 +128,11 @@ BC250_GPUVA_STATUS Bc250GpuvaSnapshotPublishBatch(
         Store->Signature != BC250_GPUVA_SNAPSHOT_SIGNATURE) {
         return BC250_GPUVA_BAD_ARGUMENT;
     }
+    _InterlockedExchange(&Store->LastPublishRangeCount, (long)RangeCount);
+    _InterlockedExchange(&Store->LastPublishFailedRangeIndex, -1L);
+    _InterlockedExchange(&Store->LastPublishFailedMapRange, -1L);
+    Store->LastPublishFailedBaseGpuVa = 0u;
+    Store->LastPublishFailedSize = 0u;
     active = Bc250GpuvaAtomicRead(&Store->ActiveSlot);
     if (active < 0L || active > 1L) return BC250_GPUVA_BAD_STATE;
     inactive = 1L - active;
@@ -198,6 +203,11 @@ BC250_GPUVA_STATUS Bc250GpuvaSnapshotPublishBatch(
              */
             _InterlockedExchange(&Store->ReaderState[inactive], 0L);
             /* C3.8: erro REAL de substituicao de faixa -- distinto de BUSY. */
+            _InterlockedExchange(&Store->LastPublishFailedRangeIndex, (long)index);
+            _InterlockedExchange(&Store->LastPublishFailedMapRange,
+                (long)MapRanges[index]);
+            Store->LastPublishFailedBaseGpuVa = Ranges[index].BaseGpuVa;
+            Store->LastPublishFailedSize = Ranges[index].Size;
             _InterlockedExchange(&Store->LastPublishStatus, (long)status);
             return status;
         }

@@ -147,6 +147,48 @@ static int Bc250RunGpuvaSnapshotContractTest(void)
         CHECK(c38Store.LastPublishStatus == (long)BC250_GPUVA_OK);
     }
 
+    /* Corrida 41: PublishStatus=NO_SPACE sem dizer qual item do batch o
+     * provocou. Preenche o snapshot ativo e prova a foto exata da falha. */
+    {
+        static BC250_GPUVA_SNAPSHOT_STORE fullStore;
+        static BC250_GPUVA_SPACE fullScratch;
+        BC250_GPUVA_RANGE_RECORD extra;
+        uint32_t map = 1u;
+        long activeSlot;
+
+        CHECK(Bc250GpuvaSnapshotStoreInitialize(&fullStore, 34u) == BC250_GPUVA_OK);
+        CHECK(Bc250GpuvaSpaceInitialize(&fullScratch, 34u) == BC250_GPUVA_OK);
+        activeSlot = fullStore.ActiveSlot;
+        for (uint32_t i = 0u; i < BC250_GPUVA_SPACE_MAX_RANGES; ++i) {
+            BC250_GPUVA_RANGE_RECORD *r = &fullStore.Slots[activeSlot].Ranges[i];
+            memset(r, 0, sizeof(*r));
+            r->State = BC250_GPUVA_RANGE_MAPPED;
+            r->BaseGpuVa = 0x100000ull + (uint64_t)i * 0x1000ull;
+            r->Size = 0x1000ull;
+            r->EndGpuVa = r->BaseGpuVa + r->Size;
+            r->OwnerProcess = (BC250_MCDM_HANDLE)0x5151;
+            r->Permissions = BC250_PTE_READABLE;
+            r->IsResident = 1u;
+            fullStore.Slots[activeSlot].SortedIndices[i] = i;
+        }
+        fullStore.Slots[activeSlot].SortedCount = BC250_GPUVA_SPACE_MAX_RANGES;
+        memset(&extra, 0, sizeof(extra));
+        extra.State = BC250_GPUVA_RANGE_MAPPED;
+        extra.BaseGpuVa = 0x80000000ull;
+        extra.Size = 0x2000ull;
+        extra.EndGpuVa = extra.BaseGpuVa + extra.Size;
+        extra.OwnerProcess = (BC250_MCDM_HANDLE)0x5151;
+        extra.Permissions = BC250_PTE_READABLE;
+        extra.IsResident = 1u;
+        CHECK(Bc250GpuvaSnapshotPublishBatch(&fullStore, &fullScratch,
+            &extra, &map, 1u, NULL) == BC250_GPUVA_NO_SPACE);
+        CHECK(fullStore.LastPublishRangeCount == 1L);
+        CHECK(fullStore.LastPublishFailedRangeIndex == 0L);
+        CHECK(fullStore.LastPublishFailedMapRange == 1L);
+        CHECK(fullStore.LastPublishFailedBaseGpuVa == extra.BaseGpuVa);
+        CHECK(fullStore.LastPublishFailedSize == extra.Size);
+    }
+
     /*
      * C3.14 (12/09) -- REPLAY DO ENVELOPE MEDIDO NA CORRIDA 17:45.
      *

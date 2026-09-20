@@ -16,6 +16,94 @@ static void Bc250VkResTrace(const char *fmt, ...)
     Bc250WinsysTraceRaw(buf);
 }
 
+/* Bytes por texel somente para formatos nao comprimidos que a bridge publica.
+ * Desconhecido retorna zero: nunca inferir RGBA8 a partir do pitch. */
+static UINT Bc250UmdVkUploadBytesPerTexel(DXGI_FORMAT format)
+{
+    switch (format) {
+    case DXGI_FORMAT_R32G32B32A32_FLOAT:
+    case DXGI_FORMAT_R32G32B32A32_UINT:
+    case DXGI_FORMAT_R32G32B32A32_SINT: return 16u;
+    case DXGI_FORMAT_R32G32B32_FLOAT:
+    case DXGI_FORMAT_R32G32B32_UINT:
+    case DXGI_FORMAT_R32G32B32_SINT: return 12u;
+    case DXGI_FORMAT_R16G16B16A16_FLOAT:
+    case DXGI_FORMAT_R16G16B16A16_UNORM:
+    case DXGI_FORMAT_R16G16B16A16_UINT:
+    case DXGI_FORMAT_R16G16B16A16_SNORM:
+    case DXGI_FORMAT_R16G16B16A16_SINT:
+    case DXGI_FORMAT_R32G32_FLOAT:
+    case DXGI_FORMAT_R32G32_UINT:
+    case DXGI_FORMAT_R32G32_SINT: return 8u;
+    case DXGI_FORMAT_R8G8B8A8_UNORM:
+    case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+    case DXGI_FORMAT_R8G8B8A8_UINT:
+    case DXGI_FORMAT_R8G8B8A8_SNORM:
+    case DXGI_FORMAT_R8G8B8A8_SINT:
+    case DXGI_FORMAT_R16G16_FLOAT:
+    case DXGI_FORMAT_R16G16_UNORM:
+    case DXGI_FORMAT_R16G16_UINT:
+    case DXGI_FORMAT_R16G16_SNORM:
+    case DXGI_FORMAT_R16G16_SINT:
+    case DXGI_FORMAT_D32_FLOAT:
+    case DXGI_FORMAT_R32_FLOAT:
+    case DXGI_FORMAT_R32_UINT:
+    case DXGI_FORMAT_R32_SINT:
+    case DXGI_FORMAT_D24_UNORM_S8_UINT:
+    case DXGI_FORMAT_B8G8R8A8_UNORM:
+    case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+    case DXGI_FORMAT_B8G8R8X8_UNORM:
+    case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB: return 4u;
+    case DXGI_FORMAT_R8G8_UNORM:
+    case DXGI_FORMAT_R8G8_UINT:
+    case DXGI_FORMAT_R8G8_SNORM:
+    case DXGI_FORMAT_R8G8_SINT:
+    case DXGI_FORMAT_R16_FLOAT:
+    case DXGI_FORMAT_R16_UNORM:
+    case DXGI_FORMAT_R16_UINT:
+    case DXGI_FORMAT_R16_SNORM:
+    case DXGI_FORMAT_R16_SINT:
+    case DXGI_FORMAT_B5G6R5_UNORM:
+    case DXGI_FORMAT_B5G5R5A1_UNORM: return 2u;
+    case DXGI_FORMAT_R8_UNORM:
+    case DXGI_FORMAT_R8_UINT:
+    case DXGI_FORMAT_R8_SNORM:
+    case DXGI_FORMAT_R8_SINT:
+    case DXGI_FORMAT_A8_UNORM: return 1u;
+    default: return 0u;
+    }
+}
+
+BOOL Bc250UmdVkComputeImageUploadLayout(
+    DXGI_FORMAT Format,
+    UINT Width,
+    UINT Height,
+    UINT RowPitch,
+    SIZE_T ByteSize,
+    UINT TotalByteSize,
+    _Out_ UINT* pBufferRowLength,
+    _Out_ SIZE_T* pRequiredBytes)
+{
+    const UINT bpp = Bc250UmdVkUploadBytesPerTexel(Format);
+    SIZE_T lineBytes;
+    SIZE_T required;
+
+    if (pBufferRowLength != NULL) *pBufferRowLength = 0u;
+    if (pRequiredBytes != NULL) *pRequiredBytes = 0u;
+    if (pBufferRowLength == NULL || pRequiredBytes == NULL ||
+        Width == 0u || Height == 0u || RowPitch == 0u || bpp == 0u ||
+        (SIZE_T)Width > ((SIZE_T)-1) / bpp) return FALSE;
+    lineBytes = (SIZE_T)Width * bpp;
+    if ((SIZE_T)RowPitch < lineBytes || (RowPitch % bpp) != 0u ||
+        (SIZE_T)Height > ((SIZE_T)-1) / RowPitch) return FALSE;
+    required = (SIZE_T)RowPitch * Height;
+    if (ByteSize < required ||
+        (TotalByteSize != 0u && required > (SIZE_T)TotalByteSize)) return FALSE;
+    *pBufferRowLength = RowPitch / bpp;
+    *pRequiredBytes = required;
+    return *pBufferRowLength >= Width;
+}
+
 BOOL Bc250UmdVkCreateResource(
     _Inout_ BC250_UMD_DEVICE* pDevice,
     _Inout_ BC250_UMD_RESOURCE* pRes,
@@ -578,6 +666,7 @@ BOOL Bc250UmdVkUploadImageData(
     void* mapped = NULL;
     VkResult res;
     BOOL ok = FALSE;
+    UINT bufferRowLength = 0u;
 
     if (pDevice == NULL || pRes == NULL || pData == NULL || ByteSize == 0 ||
         !pDevice->VkBridgeInitialized || pRes->VkImg == VK_NULL_HANDLE ||
@@ -617,37 +706,21 @@ BOOL Bc250UmdVkUploadImageData(
      * posterior conserta uma leitura que ja aconteceu.
      *
      * Regras, todas verificaveis com o que a aplicacao nos deu:
-     *  - pitch tem de ser multiplo EXATO da largura (a copia usa
-     *    bufferRowLength=0, isto e, linhas justapostas; pitch com padding
-     *    exigiria outra regiao e nao esta implementado);
+     *  - pitch tem de conter width*bpp e ser multiplo exato do texel;
+     *    padding e representado em bufferRowLength, em TEXELS;
      *  - o byte count declarado tem de cobrir pitch*altura;
      *  - o total tem de caber no que o proprio recurso diz ter.
      * Qualquer duvida RECUSA, e a textura fica sem conteudo declaradamente.
      */
     {
-        UINT bytesPerTexel;
-        SIZE_T required;
-
-        if (RowPitch == 0u) {
-            Bc250VkResTrace("[VK_RES] UploadImageData RECUSADO: RowPitch=0; o tamanho da origem seria adivinhado");
-            return FALSE;
-        }
-        bytesPerTexel = RowPitch / pRes->Width;
-        if (bytesPerTexel == 0u || (bytesPerTexel * pRes->Width) != RowPitch) {
-            Bc250VkResTrace("[VK_RES] UploadImageData RECUSADO: RowPitch=%u nao e multiplo exato da largura=%u; "
-                "linha com padding nao esta implementada e converter seria adivinhacao",
-                RowPitch, pRes->Width);
-            return FALSE;
-        }
-        required = (SIZE_T)RowPitch * (SIZE_T)pRes->Height;
-        if (ByteSize < required) {
-            Bc250VkResTrace("[VK_RES] UploadImageData RECUSADO: origem declara %zu bytes mas pitch*altura exige %zu; "
-                "copiar leria alem do buffer", ByteSize, required);
-            return FALSE;
-        }
-        if (pRes->TotalByteSize != 0u && required > (SIZE_T)pRes->TotalByteSize) {
-            Bc250VkResTrace("[VK_RES] UploadImageData RECUSADO: pitch*altura (%zu) excede o tamanho do recurso (%u)",
-                required, pRes->TotalByteSize);
+        SIZE_T required = 0u;
+        if (!Bc250UmdVkComputeImageUploadLayout(pRes->Format, pRes->Width,
+                pRes->Height, RowPitch, ByteSize, pRes->TotalByteSize,
+                &bufferRowLength, &required)) {
+            Bc250VkResTrace("[VK_RES] UploadImageData RECUSADO: geometria invalida "
+                "Format=%u WxH=%ux%u RowPitch=%u ByteSize=%zu Total=%u",
+                (UINT)pRes->Format, pRes->Width, pRes->Height, RowPitch,
+                ByteSize, pRes->TotalByteSize);
             return FALSE;
         }
         /* So' copiamos o que foi justificado, nunca o ByteSize bruto. */
@@ -716,9 +789,8 @@ BOOL Bc250UmdVkUploadImageData(
 
     memset(&region, 0, sizeof(region));
     region.bufferOffset = 0;
-    /* 0 = linhas justapostas. Pitch proprio so e aceito se for multiplo exato
-     * do texel, senao a conversao seria adivinhacao. */
-    region.bufferRowLength = 0;
+    /* Vulkan recebe o pitch real em texels; isto preserva padding de 256 B. */
+    region.bufferRowLength = bufferRowLength;
     region.bufferImageHeight = 0;
     region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     region.imageSubresource.mipLevel = 0;
@@ -751,9 +823,11 @@ BOOL Bc250UmdVkUploadImageData(
      * aqui, e so' depois que a fence da copia voltou. */
     pRes->VkLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     ok = TRUE;
-    Bc250VkResTrace("[VK_RES] UploadImageData SUCESSO: %ux%u, %zu bytes em mip0/camada0 "
-        "(img=%p) -- mip chain e array NAO carregados por escopo declarado",
-        pRes->Width, pRes->Height, ByteSize, (void*)pRes->VkImg);
+    Bc250VkResTrace("[VK_RES] UploadImageData SUCESSO: %ux%u, %zu bytes, RowPitch=%u "
+        "bufferRowLength=%u texels em mip0/camada0 (img=%p) -- mip chain e array "
+        "NAO carregados por escopo declarado",
+        pRes->Width, pRes->Height, ByteSize, RowPitch, bufferRowLength,
+        (void*)pRes->VkImg);
 
 cleanup:
     if (stagingMem != VK_NULL_HANDLE) pBridge->vk.vkFreeMemory(pBridge->Device, stagingMem, NULL);

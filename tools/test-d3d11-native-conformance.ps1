@@ -112,8 +112,14 @@ $env:BC250_RADV_IB_DUMP = $ibDumpDir
 # dwm.exe que submeteu o IB que travou o CP. O despejo saiu vazio por isso.
 # A chave de registro alcanca TODO processo que carrega o vulkan_radeon.dll.
 try {
-    New-Item -Path 'HKLM:\SOFTWARE\BC250\Umd' -Force -ErrorAction Stop | Out-Null
-    Set-ItemProperty -Path 'HKLM:\SOFTWARE\BC250\Umd' -Name 'GfxIbDumpDir' `
+    $umdRegistryPath = 'HKLM:\SOFTWARE\BC250\Umd'
+    # PowerShell 5.1 trata New-Item -Force sobre chave existente como
+    # recriacao: os valores preexistentes (inclusive D3D11LabPromotion) somem.
+    # Crie somente quando ausente; a instrumentacao nao pode alterar gates.
+    if (-not (Test-Path -LiteralPath $umdRegistryPath)) {
+        New-Item -Path $umdRegistryPath -ErrorAction Stop | Out-Null
+    }
+    Set-ItemProperty -Path $umdRegistryPath -Name 'GfxIbDumpDir' `
         -Value $ibDumpDir -Type String -ErrorAction Stop
     Write-Host "  -> GfxIbDumpDir (HKLM) e BC250_RADV_IB_DUMP = $ibDumpDir" -ForegroundColor Cyan
 } catch {

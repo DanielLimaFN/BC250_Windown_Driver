@@ -116,6 +116,10 @@ typedef struct _BC250_UMD_RESOURCE {
     VkDeviceMemory VkMem;
     VkDeviceSize VkMemSize;
     VkImageLayout VkLayout;
+    /* Numero de DDIs de escrita de textura que chegaram a fonte unica de
+     * sincronia (UpdateSubresourceUP ou Unmap). Diagnostico por recurso; nao
+     * afirma que o upload Vulkan concluiu. */
+    UINT TextureWriteDdiCount;
     BOOL VkResourceCreated;
 } BC250_UMD_RESOURCE;
 
@@ -400,6 +404,10 @@ typedef struct _BC250_UMD_DEVICE {
     VkRenderPass ActiveRenderPass;
     VkFramebuffer ActiveFramebuffer;
     UINT64 NativeVkDrawCount;
+    /* Motivo exato da ultima tentativa Vulkan. Aponta somente para literais
+     * estaticos; Bc250UmdRejectUnbackedDraw o publica em vez do diagnostico
+     * historico e falso de "PM4 ausente". */
+    const char* LastVkDrawFailureReason;
 } BC250_UMD_DEVICE;
 
 /* Device foundation lifecycle helpers */

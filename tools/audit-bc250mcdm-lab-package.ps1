@@ -6,6 +6,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $packageDir = Join-Path $root 'driver\wdk\package\output_lab'
 $manifestPath = Join-Path $root 'driver\wdk\package\output_lab.manifest.json'
 $sourceSys = Join-Path $root 'driver\wdk\output_lab\bc250mcdm.sys'
+$sourcePdb = Join-Path $root 'driver\wdk\output_lab\bc250mcdm.pdb'
 $recoveryPath = 'C:\BC250_RECOVERY.cmd'
 $errors = [System.Collections.Generic.List[string]]::new()
 
@@ -63,6 +64,7 @@ if ($expectedSchema -lt 114 -or [uint32]$manifest.SkipHwBringup -ne 0) {
 
 $artifactMap = [ordered]@{
     'bc250mcdm.sys' = [string]$manifest.PackageSysSha256
+    'bc250mcdm.pdb' = [string]$manifest.PackagePdbSha256
     'bc250umd.dll' = [string]$manifest.PackageUmdSha256
     'bc250mcdm.inf' = [string]$manifest.PackageInfSha256
     'bc250mcdm.cat' = [string]$manifest.PackageCatSha256
@@ -159,6 +161,11 @@ if (-not (Test-Path -LiteralPath $sourceSys -PathType Leaf) -or
     (Get-FileHash -LiteralPath $sourceSys -Algorithm SHA256).Hash -ne
         $manifest.SourceSysSha256) {
     $errors.Add('hash divergente ou fonte SYS de laboratorio ausente')
+}
+if (-not (Test-Path -LiteralPath $sourcePdb -PathType Leaf) -or
+    (Get-FileHash -LiteralPath $sourcePdb -Algorithm SHA256).Hash -ne
+        $manifest.SourcePdbSha256) {
+    $errors.Add('hash divergente ou PDB privado exato de laboratorio ausente')
 }
 $sourceUmd = Join-Path $root 'driver\umd\output\bc250umd.dll'
 if (-not (Test-Path -LiteralPath $sourceUmd -PathType Leaf) -or
@@ -264,6 +271,7 @@ Write-Host "  DriverVer: $($manifest.DriverVer)"
 Write-Host "  schema/skip/shader: $($manifest.TelemetrySchemaVersion) / $($manifest.SkipHwBringup) / $([uint32][bool]$manifest.ShaderDispatchEnabled)"
 Write-Host "  recipe cp/vmid0/sdma: $([uint32][bool]$manifest.CpSoftResetEnabled) / $([uint32][bool]$manifest.Vmid0PageTableEnabled) / $([uint32][bool]$manifest.SdmaAutoCtxSwEnabled)"
 Write-Host "  package SYS: $($manifest.PackageSysSha256)"
+Write-Host "  package PDB: $($manifest.PackagePdbSha256)"
 Write-Host "  package UMD: $($manifest.PackageUmdSha256)"
 Write-Host "  package INF: $($manifest.PackageInfSha256)"
 Write-Host "  package CAT: $($manifest.PackageCatSha256)"

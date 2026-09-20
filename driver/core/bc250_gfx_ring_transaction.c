@@ -155,9 +155,9 @@ BC250_GFX_RING_TXN_STATUS Bc250GfxRingTxnApply(
 
     /* CP_RB0_BASE carrega GPUVA >> 8 -- o alinhamento ja foi exigido no plano. */
     if (!Bc250GfxTxnWrite(Interface, Evidence, BC250_GFX_REG_CP_RB0_BASE,
-            (uint32_t)(Plan->RingGpuVa >> 8)) ||
+            Bc250GfxRingEncodeBaseLo(Plan->RingGpuVa)) ||
         !Bc250GfxTxnWrite(Interface, Evidence, BC250_GFX_REG_CP_RB0_BASE_HI,
-            (uint32_t)((Plan->RingGpuVa >> 8) >> 32)) ||
+            Bc250GfxRingEncodeBaseHi(Plan->RingGpuVa)) ||
         !Bc250GfxTxnWrite(Interface, Evidence, BC250_GFX_REG_CP_RB0_RPTR_ADDR_LO,
             (uint32_t)Plan->RptrWritebackGpuVa) ||
         !Bc250GfxTxnWrite(Interface, Evidence, BC250_GFX_REG_CP_RB0_RPTR_ADDR_HI,
@@ -248,8 +248,8 @@ BC250_GFX_RING_TXN_STATUS Bc250GfxRingTxnApply(
     }
 
     if (Evidence->CntlReadback != Evidence->CntlPlanned ||
-        Evidence->BaseReadback != (uint32_t)(Plan->RingGpuVa >> 8) ||
-        Evidence->BaseHiReadback != (uint32_t)((Plan->RingGpuVa >> 8) >> 32)) {
+        Evidence->BaseReadback != Bc250GfxRingEncodeBaseLo(Plan->RingGpuVa) ||
+        Evidence->BaseHiReadback != Bc250GfxRingEncodeBaseHi(Plan->RingGpuVa)) {
         return BC250_GFX_RING_TXN_READBACK_MISMATCH;
     }
     Evidence->ApplyReadbackPassed = 1u;

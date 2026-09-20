@@ -521,6 +521,22 @@ BOOLEAN Bc250WddmFenceTrackerSnapshotCounts(
     _Out_ uint32_t *ReservedCount);
 
 /*
+ * Descarta trabalho interrompido por um reset completo do adaptador.
+ *
+ * As entradas sao DEVOLVIDAS ao chamador apenas para que pins de snapshots
+ * GPUVA sejam liberados; elas NAO entram no caminho de notificacao de fence.
+ * Preserva as marcas d'agua ja notificadas e os contadores historicos.
+ */
+_Check_return_
+BOOLEAN Bc250WddmFenceTrackerAbortPending(
+    _Inout_ BC250_WDDM_FENCE_TRACKER *Tracker,
+    _Out_writes_to_(Max, *AbortedCount) BC250_WDDM_FENCE_ENTRY *Out,
+    _In_ uint32_t Max,
+    _Out_ uint32_t *AbortedCount,
+    _Out_ uint32_t *CommittedCount,
+    _Out_ uint32_t *ReservedCount);
+
+/*
  * Reserva capacidade no rastreador antes da submissao ao motor.
  * Retorna FALSE se nao houver espaco no FIFO.
  */

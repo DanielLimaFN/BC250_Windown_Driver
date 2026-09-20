@@ -2165,6 +2165,9 @@ if exist "%ODIR%\bc250compute.sys" (
   del "%ODIR%\bc250compute.sys" >nul 2>&1
 )
 
+rem A codificacao de CP_RB0_BASE sai da fonte unica do contrato do anel grafico
+rem (Corrida 43: base 256x errada porque o formato estava duplicado). Este driver
+rem de laboratorio tambem escreve o registrador, logo linka o contrato.
 echo [link] bc250compute.sys
 link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry ^
   /OUT:"%ODIR%\bc250compute.sys" ^
@@ -2183,6 +2186,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_compute_mqd_contract.obj" ^
   "%ODIR%\bc250_compute_dispatch_contract.obj" ^
   "%ODIR%\bc250_observable_shader.obj" ^
+  "%ODIR%\bc250_gfx_ring_contract.obj" ^
+  "%ODIR%\bc250_blt_proof_contract.obj" ^
   "%WDK%\Lib\%WDKVER%\km\x64\ntoskrnl.lib" ^
   "%WDK%\Lib\%WDKVER%\km\x64\hal.lib" ^
   "%WDK%\Lib\%WDKVER%\km\x64\BufferOverflowK.lib"

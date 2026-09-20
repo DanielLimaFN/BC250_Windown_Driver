@@ -1305,6 +1305,93 @@ static void TestResourceDDIs(void)
     printf("  -> D3D10 Resource DDIs PASS\n");
 }
 
+/* Corrida 41: a textura 590x800 tinha SrcPitch=2360 e shadow pitch=2560.
+ * A implementacao antiga copiava somente res->Width (590 bytes) quando a box
+ * era NULL. Este replay pequeno prova todas as linhas e o padding. */
+static void TestUpdateSubresourceRowPitch(void)
+{
+    D3D10_1DDI_DEVICEFUNCS funcs;
+    BC250_UMD_DEVICE dev;
+    BC250_UMD_RESOURCE res;
+    D3D10DDI_HDEVICE hDev;
+    D3D10DDI_HRESOURCE hRes;
+    enum { WIDTH = 590, HEIGHT = 3, SRC_PITCH = WIDTH * 4, DST_PITCH = 2560 };
+    BYTE *source = (BYTE *)malloc(SRC_PITCH * HEIGHT);
+    BYTE *shadow = (BYTE *)malloc(DST_PITCH * HEIGHT);
+    D3D10_DDI_BOX badBox;
+
+    printf("[TEST] UpdateSubresourceUP row pitch acolchoado...\n");
+    assert(source != NULL && shadow != NULL);
+    for (UINT y = 0; y < HEIGHT; ++y)
+        memset(source + y * SRC_PITCH, 0x20 + y, SRC_PITCH);
+    memset(shadow, 0xCC, DST_PITCH * HEIGHT);
+    memset(&funcs, 0, sizeof(funcs));
+    memset(&dev, 0, sizeof(dev));
+    memset(&res, 0, sizeof(res));
+    Bc250UmdPopulateDeviceFuncs10_1(&funcs);
+    res.Created = TRUE;
+    res.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
+    res.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    res.Width = WIDTH;
+    res.Height = HEIGHT;
+    res.RowPitch = DST_PITCH;
+    res.TotalByteSize = DST_PITCH * HEIGHT;
+    res.pCpuShadow = shadow;
+    hDev.pDrvPrivate = &dev;
+    hRes.pDrvPrivate = &res;
+
+    funcs.pfnResourceUpdateSubresourceUP(hDev, hRes, 0, NULL,
+        source, SRC_PITCH, SRC_PITCH * HEIGHT);
+    assert(res.TextureWriteDdiCount == 1u);
+    for (UINT y = 0; y < HEIGHT; ++y) {
+        for (UINT x = 0; x < SRC_PITCH; ++x)
+            assert(shadow[y * DST_PITCH + x] == (BYTE)(0x20 + y));
+        for (UINT x = SRC_PITCH; x < DST_PITCH; ++x)
+            assert(shadow[y * DST_PITCH + x] == 0xCC);
+    }
+
+    /* Box fora da textura: recusa antes de escrever e nao conta uma escrita. */
+    memset(&badBox, 0, sizeof(badBox));
+    badBox.left = WIDTH - 1u;
+    badBox.right = WIDTH + 1u;
+    badBox.bottom = badBox.back = 1u;
+    funcs.pfnResourceUpdateSubresourceUP(hDev, hRes, 0, &badBox,
+        source, SRC_PITCH, SRC_PITCH);
+    assert(res.TextureWriteDdiCount == 1u);
+
+    free(source);
+    free(shadow);
+    printf("  -> copia 590x3, ultima linha, padding e box invalida PASS\n");
+}
+
+static void TestVkImageUploadLayout(void)
+{
+    UINT rowLength = 0u;
+    SIZE_T required = 0u;
+
+    printf("[TEST] VkBufferImageCopy row pitch contract...\n");
+    assert(Bc250UmdVkComputeImageUploadLayout(
+        DXGI_FORMAT_B8G8R8A8_UNORM, 590u, 800u, 2560u,
+        (SIZE_T)2560u * 800u, 2560u * 800u, &rowLength, &required));
+    assert(rowLength == 640u); /* pitch em texels, nao bytes */
+    assert(required == (SIZE_T)2560u * 800u);
+
+    assert(Bc250UmdVkComputeImageUploadLayout(
+        DXGI_FORMAT_B8G8R8A8_UNORM, 590u, 800u, 2360u,
+        (SIZE_T)2360u * 800u, 2360u * 800u, &rowLength, &required));
+    assert(rowLength == 590u);
+    assert(!Bc250UmdVkComputeImageUploadLayout(
+        DXGI_FORMAT_B8G8R8A8_UNORM, 590u, 800u, 2359u,
+        (SIZE_T)2359u * 800u, 0u, &rowLength, &required));
+    assert(!Bc250UmdVkComputeImageUploadLayout(
+        DXGI_FORMAT_UNKNOWN, 590u, 800u, 2560u,
+        (SIZE_T)2560u * 800u, 0u, &rowLength, &required));
+    assert(!Bc250UmdVkComputeImageUploadLayout(
+        DXGI_FORMAT_B8G8R8A8_UNORM, 590u, 800u, 2560u,
+        (SIZE_T)2560u * 799u, 0u, &rowLength, &required));
+    printf("  -> padding, compacto, pitch curto, formato e tamanho invalidos PASS\n");
+}
+
 static void TestViewAndOutputMergerDDIs(void)
 {
     BC250_UMD_DEVICE dev;
@@ -3176,6 +3263,8 @@ int main(void)
     TestShaderDDIs();
     TestShaderSpirvOwnership();
     TestResourceDDIs();
+    TestUpdateSubresourceRowPitch();
+    TestVkImageUploadLayout();
     TestViewAndOutputMergerDDIs();
     TestDrawAndPipelineBindingDDIs();
     TestDrawBltSubstitutionFailsClosed();

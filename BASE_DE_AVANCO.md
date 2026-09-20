@@ -2,6 +2,235 @@
 
 **Documento base do projeto.** Toda decisão de o-que-fazer-agora sai daqui.
 
+> **20/09/2026 — Corrida 43 (10:05:31, lab 3.201.1.0): a prova executável reprovou
+> honestamente o restart e revelou `CP_RB0_BASE` codificado sem `>> 8`.** Evidência:
+> `docs/evidence/2026-09-20_10-05-31-DESKTOP-HQAG6T4-lab-binding/`; relato em
+> [docs/301](docs/301_HANDOFF_2026-09-20_CORRIDA43_RESTART_GFX_FALHA_FECHADO_BASE_ERRADA.md).
+>
+> - **Houve avanço? SIM, diagnóstico; NÃO funcional. Veredito: FALHA.** O primeiro IB GFX
+>   voltou a parar em `RPTR=24/WPTR=32`. O reset abortou uma fence sem notificação falsa,
+>   provou o SDMA, mas a prova GFX ficou em `RPTR=0/WPTR=12`, fence no poison, e devolveu
+>   `STATUS_DEVICE_NOT_READY` em vez de declarar o adaptador pronto.
+> - O Windows registrou `0x116 (..., fffff8028a0cfb80, ffffffffc00000a3, 4)`; o dump fixou
+>   Arg2 em `bc250mcdm+0x1FB80`. Reconstrução com `.text/.pdata` idênticas atribuiu o RVA a
+>   `Bc250McdmRestartFromTimeout`; Arg3 é a recusa fail-closed. Sem AV/IRQL/verifier/corrupção.
+> - **Causa no código:** ONLINE escrevia `CP_RB0_BASE=RingGpuVa>>8`; restart escrevia a GPUVA
+>   bruta em LO/HI. Para `RingGpuVa=0xF40FF70000`, escreveu `F4:0FF70000` em vez de
+>   `0:F40FF700`, isto é, base decodificada 256 vezes maior. Isso explica `RPTR=0`.
+> - A cauda integral foi recuperada: 173.347 bytes, SHA-256 `36B67CA1...FB0536`. Três arquivos
+>   pré-alocados ficaram somente com zeros porque o BugCheck interrompeu o binder.
+> - O PDB arquivado também estava corrompido (`CCDA...` contra `8376...` declarado). O binder
+>   agora arquiva SYS+PDB e revalida os hashes dos destinos antes de tocar no dispositivo.
+> - Recuperação/estado: na inspeção final do handoff o fusível estava `TRIPPED`, `Boots=4`;
+>   BC-250 em `CM_PROB_FAILED_POST_START` e serviço parado. BasicDisplay, se visível, é
+>   recuperação e não sucesso do nosso driver.
+
+> **20/09/2026 — faixa OFFLINE pós-Corrida 43; candidato lab 3.202.1.0 pronto e NÃO
+> INSTALADO.** Critério prévio em
+> [docs/302](docs/302_CRITERIO_CORRIDA44_BASE_CP_RB0_CORRIGIDA.md), **emendado antes da corrida
+> por [docs/302A](docs/302A_EMENDA_CRITERIO_CORRIDA44.md), que é o critério vigente** — ver a
+> faixa de auditoria logo abaixo.
+>
+> - `Bc250GfxRingEncodeBaseLo/Hi` virou fonte única do formato `GPUVA>>8` para ONLINE e
+>   restart. Teste cobre LO e HI; auditoria proíbe a volta da GPUVA bruta no restart.
+> - Build contratual completo e auditorias de segurança/pacote passaram. Pacote 3.202.1.0:
+>   SYS `33E8FF29...ABCCFF`, PDB `EF6EFD68...82575F`, UMD `934DBD84...236A`, INF
+>   `B2FE0DE4...6C998`, CAT `70FB1638...C7A8F`. **NÃO VALIDADO EM HARDWARE.**
+> - Próximo ensaio mede se a base correta faz a prova pós-reset chegar a
+>   `RPTR=WPTR=12` e substituir o poison. A causa do stall inicial em `RPTR=24` permanece
+>   separada e aberta.
+
+> **20/09/2026 — faixa OFFLINE de auditoria do critério e da fonte única, ANTES da Corrida 44.
+> O candidato 3.202.1.0 NÃO foi alterado e o selo dele foi reconferido: segue pronto e NÃO
+> INSTALADO.** Critério vigente em
+> [docs/302A](docs/302A_EMENDA_CRITERIO_CORRIDA44.md).
+>
+> - **O critério da Corrida 44 estava defeituoso em três pontos, corrigidos ANTES do ensaio.**
+>   (1) Havia **dois critérios congelados discordando em disco** — `docs/302` com 6 itens de
+>   sucesso obrigatório e `docs/303` §11 com 7 —, arranjo que permite escolher o mais
+>   conveniente depois de ver o log. (2) Faltava o desfecho **`E — algo fora do mapa`**, exigido
+>   pela Lei 10, regra 2. (3) O sucesso obrigatório exigia **submissão GFX posterior aposentada**
+>   e **nenhum segundo TDR**, que dependem do stall inicial em `RPTR=24/WPTR=32` — dívida que a
+>   faixa 3.202 declara **separada** e não toca. Com eles na lista, H44 podia ser confirmada por
+>   inteiro e a corrida ser graduada FALHA, atribuindo à correção de BASE uma falha que não é dela.
+> - **Sucesso da faixa passou a ser 5 itens** (`TDR_GFX_RESTART_BASE Pass=1`,
+>   `TDR_FENCE_RECONCILE PASS` com `NotificadasComoConcluidas=0`, `TDR_GFX_RESTART_PROOF PASS`
+>   com `RPTR=WPTR=12` e poison substituído, `CP_RB0 rearmado e comprovado por execucao fisica`,
+>   e callback devolvendo sucesso). Os antigos itens 6 e 7 viraram **observação declarada como
+>   dependente de dívida aberta**: relatados sempre, sem rebaixar o veredito. Os 302 e 303 ficam
+>   intactos como registro do que foi escrito primeiro, com aviso apontando para a emenda.
+> - **Correção de enquadramento, minha:** o terceiro escritor de `CP_RB0_BASE`
+>   (`bc250_compute_service.c`) **não** pertence ao `bc250mcdm.sys` — ele é linkado no
+>   `bc250compute.sys`, driver de laboratório separado. A duplicação da codificação era real,
+>   mas **fora** do binário que vai à Corrida 44. Quem revelou isso foi o próprio build, com
+>   `LNK2019` ao passar a usar os helpers.
+> - As duas escritas daquele driver passaram à fonte única e `bc250compute.sys` agora linka
+>   `bc250_gfx_ring_contract.obj` + `bc250_blt_proof_contract.obj`.
+> - **O portão da BASE era fraco e um dos alvos era vazio.** O `forbid` textual cobria uma única
+>   forma da expressão errada — a LO com máscara; um cast sem máscara, ou a variante HI antiga,
+>   passavam. Virou verificação **estrutural**: toda escrita em `CP_RB0_BASE/_HI` nos três
+>   escritores tem de carregar valor vindo da fonte única, com leitura por referência isenta e
+>   **exceção nominal, não genérica**, para o rollback da Lei 5 (`Evidence->BaseBefore`). O alvo
+>   `Bc250ActiveGfxEngineOnline` dava **0 matches** — as escritas ONLINE vivem em
+>   `bc250_gfx_ring_transaction.c`; portão vazio trocado pelo arquivo certo.
+> - **Quatro mutações verificadas**, todas reprovando com baseline em zero: GPUVA bruta com
+>   máscara (forma exata da Corrida 43); cast **sem** máscara (o buraco do `forbid` antigo);
+>   conta reimplementada no compute; e ONLINE disfarçado de rollback.
+> - `driver/wdk/build-contract.bat` **EXIT=0**; `audit-bc250mcdm-safety.py`,
+>   `audit-mcdm-ddi-matrix.py`, `audit-ddi-noop-callbacks.py` e
+>   `audit-bc250mcdm-lab-package.ps1` **PASS**; `git diff --check` limpo.
+> - **Selo do 3.202.1.0 reconferido e INTACTO** (`SourceSys 1007DACB...040894` e
+>   `PackageSys 33E8FF29...ABCCFF` batendo com o manifesto). Nenhuma fonte do `bc250mcdm.sys`
+>   mudou de conteúdo e o `output_lab` não foi reconstruído, logo **não há novo DriverVer nem
+>   reempacotamento**. A sequência física pré-bind (recuperar, resetar fusível, boot frio)
+>   permanece obrigatória e inalterada.
+> - **Higiene, registrado porque é violação de norma:** durante as mutações foi usado
+>   `git checkout --` num arquivo com trabalho não commitado, o que o `docs/303` §0 proíbe, e
+>   dois restauros falharam por lock do sistema de arquivos. **Dano: nenhum, verificado** — o
+>   `checkout` não chegou a aplicar, a faixa não commitada continua presente e os quatro sítios
+>   foram restaurados por conteúdo, com line-endings preservados.
+> - **A integridade dos restauros foi PROVADA por rebuild do `output_lab`, com backup prévio e
+>   comparação de seções PE** — não apenas por inspeção. O SHA-256 global do SYS reconstruído
+>   difere (`F9980F8C...41D9` contra o selo `1007DACB...040894`), como difere o do PDB, porque
+>   o CodeView é regenerado a cada build; é o mesmo fenômeno já documentado no `docs/303` §6
+>   para a reconstrução da Corrida 43. Por seção: **`.text`, `.pdata`, `.data`, `.reloc`,
+>   `INIT`, `PAGE` e `fothk` byte a byte IDÊNTICAS**; só `.rdata` diverge, em **64 de 158.208
+>   bytes (0,04%)**, e **os 64 estão inteiramente dentro do debug directory e dos registros
+>   CodeView e REPRO — zero bytes divergentes fora deles**. `.text` idêntica também prova que a
+>   toolchain produziu o mesmo codegen, apesar do aviso de `vswhere.exe` ausente no script.
+> - **O `output_lab` foi restaurado do backup e o selo do 3.202.1.0 está ÍNTEGRO**: os sete
+>   hashes (`SourceSys`, `SourcePdb`, `PackageSys`, `PackagePdb`, `PackageUmd`, `PackageInf`,
+>   `PackageCat`) voltaram a bater com o manifesto, e `audit-bc250mcdm-lab-package.ps1` e
+>   `audit-bc250mcdm-safety.py` passaram depois disso. O artefato que vai ao hardware continua
+>   bit a bit o mesmo que foi assinado e auditado.
+> - **NADA DESTA FAIXA FOI VALIDADO EM HARDWARE.** Ela não altera nenhum caminho de GPU do
+>   candidato: corrige critério, portão e um driver de laboratório distinto.
+
+> **20/09/2026 — faixa OFFLINE pós-Corrida 42; candidato lab 3.201.1.0 pronto e NÃO
+> INSTALADO.** Critério prévio em
+> [docs/300](docs/300_CRITERIO_CORRIDA43_TDR_GFX_EXECUTAVEL.md).
+>
+> - O restart do CP_RB0 não aceita mais readback como prova suficiente: emite `NOP x4 +
+>   RELEASE_MEM` e exige `RPTR==WPTR==12` mais fence da GPU sobre poison. Falha mantém o motor
+>   offline e devolve `STATUS_DEVICE_NOT_READY`.
+> - O rastreador WDDM fecha a admissão e aborta committed/reservas do reset sem notificar
+>   conclusão falsa; pins GPUVA são devolvidos. A marca d'água já notificada é preservada.
+> - O writeback de RPTR passa a ser zerado no rearmamento. O boot preamble também se tornou
+>   fail-closed: `DrenoOk=0` não pode mais terminar em `ONLINE SUCESSO`.
+> - O MEC segue com readback, não prova executável pós-reset; os logs deixaram de chamá-lo de
+>   comprovado no silício.
+> - Build KMD completo, auditoria de segurança e auditoria do pacote passaram. Pacote
+>   3.201.1.0: SYS `A76A3DA6...E514`, UMD `934DBD84...236A`, INF
+>   `32DE2A66...ECA6`, CAT `FDA7D224...A54`, PDB privado `8376AA54...4542`.
+>   **NÃO VALIDADO EM HARDWARE.** O manifesto agora sela o PDB e o binder o arquiva antes
+>   do bind; isso não recupera o PDB exato ausente da Corrida 42.
+> - Antes de novo bind, analisar o `MEMORY.DMP` da Corrida 42 em sessão elevada. O próximo
+>   ensaio não busca desktop: mede uma única recuperação GFX executável e falha fechado.
+> - **Dump analisado:** bucket `0x116_IMAGE_bc250mcdm.sys`; Arg2 pertence ao nosso SYS no RVA
+>   `+0x1D770`; pilha em `VidSchiWaitForCompletePreemption`, sem bucket de AV/IRQL/verifier ou
+>   corrupção. Relatório SHA-256 `36CD8FD6...BD0F`. A função privada exata permanece sem nome
+>   porque o PDB de 3.200.1.0 não foi arquivado. O gate de dump da Corrida 43 está liberado.
+
+> **20/09/2026 — Corrida 42 (00:03:31, lab 3.200.1.0): row pitch executou, CP_RB0
+> reincidiu e a máquina terminou em `VIDEO_TDR_FAILURE 0x116`.** Evidência:
+> `docs/evidence/2026-09-20_00-03-31-DESKTOP-HQAG6T4-lab-binding/`; relato completo em
+> [docs/299](docs/299_HANDOFF_2026-09-20_CORRIDA42_UPLOAD_OK_TDR_0X116.md).
+>
+> - **Houve avanço? SIM, funcional parcial e diagnóstico; veredito global: FALHA.** O gate
+>   permaneceu armado em todos os processos novos e uma textura 2560x1080 foi copiada linha a
+>   linha e enviada ao Vulkan com `RowPitch=10240`, `bufferRowLength=2560`, fence concluída.
+>   O caso acolchoado 590x800 não chegou a rodar e segue sem prova física direta.
+> - **Falha dominante:** 6 submits GFX aceitos, zero aposentados. O primeiro IB, idêntico ao
+>   primeiro da Corrida 41, parou em `RPTR=24/WPTR=32`; após cinco resets, os seguintes pararam
+>   em `0/12`, sem ondas e sem `GFXHUB_FAULT`. O DWM recebeu `VK_ERROR_DEVICE_LOST` e o Windows
+>   registrou `0x116 (ffffd305de0b5460, fffff803475ad770, 0, d)`.
+> - **TDR não está fechado:** o restart GFX atual valida readbacks, mas não executa NOP/fence
+>   no CP_RB0; a frase genérica de NOP físico só é sustentada pelo backend SDMA. Pendências GFX
+>   cresceram até 7. Corrigir essa prova e reconciliar fences abortadas antes de nova corrida.
+> - **Publicação GPUVA fechou diagnóstico:** duas falhas nomeadas, `Batch=864/FailedIndex=529`
+>   e `Batch=721/FailedIndex=530`, com 529/530 slots reutilizáveis. São falhas reais tardias,
+>   mas não explicam o primeiro stall. O journal não pode escrever PTEs físicos antes de saber
+>   que consegue publicar o lote inteiro.
+> - **Recuperação:** houve reboot; fusível impediu segundo bind, watchdog restaurou BasicDisplay
+>   Código 0 em cinco amostras. `MEMORY.DMP` existe, mas a sessão não elevada recebeu acesso
+>   negado; pilha e módulo de Arg2 ainda não foram extraídos.
+> - A cauda perdida foi recuperada: 656.463 bytes, SHA-256 `C1C76B59...09A134`. O recuperador
+>   foi corrigido para somar `start_offset` quando o arquivo arquivado é delta delimitado.
+
+> **20/09/2026 — faixa OFFLINE pós-Corrida 41; candidato lab 3.200.1.0 pronto e NÃO
+> INSTALADO.** Critério prévio da próxima corrida em
+> [docs/298](docs/298_CRITERIO_CORRIDA_42_ROW_PITCH_E_GATE_PRESERVADO.md).
+>
+> - O runner não recria mais `HKLM:\SOFTWARE\BC250\Umd`: a chave só nasce quando ausente,
+>   preservando `D3D11LabPromotion`. Gate e mutação reprovam a volta de `New-Item -Force`.
+> - `ResourceUpdateSubresourceUP` agora copia textura linha a linha com pitches independentes,
+>   valida formato/box/subrecurso/limites e cobre a última linha. O upload usa
+>   `VkBufferImageCopy.bufferRowLength=RowPitch/bpp`; o replay `590x800` exige 640 texels.
+> - A recusa final do Draw publica `LastVkDrawFailureReason`; descriptor não volta a ser
+>   descrito falsamente como ausência genérica de compilador/PM4.
+> - `BC250_GPUVA_NO_SPACE` agora fotografa batch, índice, map/unmap, base e tamanho da faixa.
+>   Isso é observabilidade; não é correção da causa ainda inconclusiva.
+> - `pfnLockCb=0x80070057` segue dívida funcional: o update nomeia a divergência entre o espelho
+>   WDDM e a cópia Vulkan, mas o contrato de backing ainda não foi redesenhado.
+> - Builds UMD/KMD, suites contratuais, auditoria de segurança, 5/5 mutações da Corrida 41,
+>   14/14 mutações descriptor/wave e auditoria do pacote passaram. Pacote 3.200.1.0:
+>   SYS `7B6E1F58...F0E901`, UMD `934DBD84...5236A`, INF `29666314...F474D`,
+>   CAT `DC95AB47...13358`. **NÃO VALIDADO EM HARDWARE.**
+
+> **19/09/2026 — Corrida 41 (19:29:03, lab 3.199.1.0): Desfecho B fechado; upload 2D com
+> padding é a parede, e os dumps separaram a tempestade posterior.** Evidência:
+> `docs/evidence/2026-09-19_19-29-03-DESKTOP-HQAG6T4-lab-binding/`; relato completo em
+> [docs/297](docs/297_HANDOFF_2026-09-19_CORRIDA41_ROW_PITCH_E_FAILFAST.md).
+>
+> - **Houve avanço? SIM, diagnóstico; NÃO funcional contra a Corrida 40.** O recurso
+>   `0x930AC70` chegou a `ResourceUpdateSubresourceUP` com pitch 2360 e foi recusado depois com
+>   `TextureWrites=1`, `VkLayout=UNDEFINED`: Desfecho B exato do critério prévio.
+> - **Causa local medida:** o shadow 590x800 usa stride 2560, mas o upload Vulkan ainda só aceita
+>   linha compacta. Além disso, o caminho `pDstBox==NULL` copia apenas 590 bytes em vez de 800
+>   linhas de 2360 bytes. Aceitar apenas `bufferRowLength` não basta; a cópia 2D também precisa
+>   ser corrigida e testada byte a byte.
+> - **Sucessos:** seis uploads, um descriptor completo e um draw com fence no primeiro device;
+>   129 submits GFX, zero `NAO_CONVERGIU`, TDR, `GFXHUB_FAULT` ou BugCheck no escopo medido.
+>   A coleta final permaneceu ativa, fechou completa em 1.002.092 bytes e capturou dois dumps.
+> - **Falhas:** tela preta, nenhum pixel conferido, uma recusa de descriptor, quatro
+>   `BYTE_PROOF INCONCLUSIVO`, 137 `Upload LOCK falhou: 0x80070057` ignorados pelos chamadores,
+>   e duas falhas `ActiveFlushTlb` devolvendo `STATUS_IO_DEVICE_ERROR`/`BC250_GPUVA_NO_SPACE`
+>   apesar de 904/892 slots reutilizáveis. A causa interna dessas duas publicações segue
+>   inconclusiva. Harness sem frame e oito APPCRASH do DWM também ocorreram.
+> - **Desfecho E — causa fechada offline:** o próprio runner executou `New-Item -Force` na chave
+>   existente `HKLM:\SOFTWARE\BC250\Umd` para gravar `GfxIbDumpDir`; essa operação apaga os
+>   valores no Windows PowerShell 5.1. O harness já leu a promoção desarmada às 19:29:19, antes
+>   do teardown. Reprodução isolada confirmou `Before=1`, `After=null`.
+> - **Dumps:** os dois últimos crashes estão em `dwmcore!CD3DDevice::CreateD3D11Device` após a
+>   UMD recusar abertura por promoção apagada; ambos preservam HRESULT `0x887A0004` no frame de
+>   `MilFailFastForHR`, e `bc250umd.dll` não está carregada. Isto não atribui o teardown inicial
+>   à recusa do descriptor: as duas falhas de FlushTlb são outra causa possível ainda aberta.
+> - **Veredito:** **SUCESSO DIAGNÓSTICO; PARCIAL frente ao produto.** Recuperação
+>   `RECOVERY_OK_ONLINE`, BasicDisplay Código 0 em cinco amostras; LocalDumps restaurado. Desktop
+>   visível, pixel correto e apresentação sustentada continuam **NÃO VALIDADOS EM HARDWARE**.
+
+> **19/09/2026 — Corrida 40 (17:38:38, lab 3.198.1.0) consolidada; candidato offline
+> 3.199.1.0 pronto.** Evidência:
+> `docs/evidence/2026-09-19_17-38-38-DESKTOP-HQAG6T4-lab-binding/`; próximo critério escrito
+> antes do ensaio em [docs/296](docs/296_CRITERIO_CORRIDA_41_RECURSO_SRV_E_DUMP_DWM.md).
+>
+> - **Houve avanço? SIM, funcional:** seis texturas do `dwm.exe` sincronizadas com `VkImage`
+>   (maior 2560x1080, 11.059.200 bytes), dois descriptor sets completos e o primeiro draw gráfico
+>   com fence concluída (`VkDraws=1`, 42 vértices, uma instância, indexed).
+> - **Sucessos:** 137 submissões GFX; zero TDR, BugCheck, `GFXHUB_FAULT` e `NAO_CONVERGIU` no
+>   escopo medido. A violação de memória da Corrida 37 não reapareceu com a sonda armada.
+> - **Falhas:** segundo pipeline do DWM recusado duas vezes por
+>   `SRV_LAYOUT_UNDEFINED_NUNCA_TRANSICIONADA`; três fail-fast `0xe0464645`; tela preta; texels não
+>   conferidos. A coleta final fechou cedo e perdeu os crashes e mais 29 submissões; a cauda foi
+>   resgatada manualmente. O log UMD de dois processos saiu duplicado.
+> - **Veredito:** **SUCESSO FUNCIONAL PARCIAL** frente ao critério da Corrida 40. Upload,
+>   descriptor e draw ocorreram; quadro completo, pixel e desktop visível não foram provados.
+> - **Recuperação:** `RECOVERY_OK_ONLINE`, BasicDisplay restaurado; isto não é sucesso do DWM.
+> - **Faixa offline seguinte:** coleta final agora segue relógio absoluto; sink evita segunda
+>   escrita no mesmo caminho; recusa SRV nomeia recurso/metadados/contador/layout; LocalDumps do
+>   DWM é opt-in e transacional. Quatro gates foram provados por mutação. Pacote 3.199.1.0
+>   assinado e auditado, **NÃO INSTALADO**. Esta faixa: **NÃO VALIDADO EM HARDWARE**.
+
 > **19/09/2026 — Corrida 37 (12:34:24, lab 3.195.1.0) consolidada e faixa OFFLINE de descritores.**
 > [Relato, contratos, limites e critério do próximo ensaio](docs/292_HANDOFF_DESCRIPTORS_E_SONDA_2026-09-19.md).
 > Avanço **diagnóstico**, não funcional: uma onda válida com FATAL_HALT/XNACK/EXCP bit 8;

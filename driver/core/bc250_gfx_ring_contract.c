@@ -72,6 +72,16 @@ static uint32_t Bc250GfxRangeInWindow(
     return 1u;
 }
 
+uint32_t Bc250GfxRingEncodeBaseLo(uint64_t RingGpuVa)
+{
+    return (uint32_t)(RingGpuVa >> 8);
+}
+
+uint32_t Bc250GfxRingEncodeBaseHi(uint64_t RingGpuVa)
+{
+    return (uint32_t)((RingGpuVa >> 8) >> 32);
+}
+
 BC250_GFX_RING_STATUS Bc250GfxRingDeriveBufsz(
     uint32_t RingBytes,
     uint32_t *RbBufsz,

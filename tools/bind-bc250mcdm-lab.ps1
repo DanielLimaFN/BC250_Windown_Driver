@@ -90,6 +90,9 @@ param(
     [switch]$EnableD3D11DrawBltSubstitution,
     [switch]$EnableD3D11ShaderTranslator,
     [string]$D3D11ShaderTranslatorDllPath,
+    # Arma WER LocalDumps exclusivamente para dwm.exe durante esta corrida.
+    # Default desarmado: a chave global so' muda por escolha explicita do dono.
+    [switch]$EnableDwmCrashCapture,
     [switch]$EnablePhysicalRenderOnly,
     # Permite o fluxo solicitado pelo operador sem rollback temporizado.
     # A recuperacao manual C:\BC250_RECOVERY.cmd continua obrigatoria.
@@ -116,6 +119,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $packageDir = Join-Path $root 'driver\wdk\package\output_lab'
 $packageInf = Join-Path $packageDir 'bc250mcdm.inf'
 $packageSys = Join-Path $packageDir 'bc250mcdm.sys'
+$packagePdb = Join-Path $packageDir 'bc250mcdm.pdb'
 $packageCat = Join-Path $packageDir 'bc250mcdm.cat'
 $manifestPath = Join-Path $root 'driver\wdk\package\output_lab.manifest.json'
 $radvComputeTripod = Join-Path $root 'tools\test-radv-wddm-compute-tripod.ps1'
@@ -126,6 +130,8 @@ $umdNode1Tripod = Join-Path $root 'tools\test-b7-umd-node1-tripod.ps1'
 $marco3Runner = Join-Path $root 'tools\test-marco3-graphics-draw.ps1'
 $marco4Runner = Join-Path $root 'tools\test-marco4-graphics-cube.ps1'
 $d3d11Runner = Join-Path $root 'tools\test-d3d11-native-conformance.ps1'
+$armDwmCapture = Join-Path $root 'tools\arm-dwm-crash-capture.ps1'
+$restoreDwmCapture = Join-Path $root 'tools\restore-dwm-crash-capture.ps1'
 # Gate proprio do laboratorio: o de producao exige SkipHwBringup=1 e por isso
 # rejeita este binding sempre, por construcao (doc 95 secao B3).
 $safeConfirmScript = Join-Path $root 'tools\confirm-bc250mcdm-safe-bind.ps1'
@@ -161,7 +167,7 @@ function Disarm-Bc250SafeGuard([string]$TaskName, [string]$EvidenceDir) {
             if (-not (Test-Path -LiteralPath $archive)) {
                 New-Item -ItemType Directory -Path $archive -Force | Out-Null
             }
-            foreach ($name in @('armed.json','watch-bc250mcdm-safe-bind.ps1')) {
+            foreach ($name in @('armed.json','watch-bc250mcdm-safe-bind.ps1','restore-dwm-crash-capture.ps1')) {
                 $source = Join-Path $guardDir $name
                 if (Test-Path -LiteralPath $source -PathType Leaf) {
                     Copy-Item -LiteralPath $source -Destination $archive -Force
@@ -210,6 +216,16 @@ if (-not (Test-Path -LiteralPath $packageInf) -or -not (Test-Path -LiteralPath $
 }
 if (-not (Test-Path -LiteralPath $recoveryPath)) {
     throw "C:\BC250_RECOVERY.cmd nao encontrado."
+}
+if ($EnableDwmCrashCapture) {
+    foreach ($captureTool in @($armDwmCapture, $restoreDwmCapture)) {
+        if (-not (Test-Path -LiteralPath $captureTool -PathType Leaf)) {
+            throw "Captura DWM recusada: ferramenta ausente: $captureTool"
+        }
+    }
+    if ($DisableWatchdog) {
+        throw '-EnableDwmCrashCapture exige watchdog para restauracao fail-closed.'
+    }
 }
 if ($DisableWatchdog -and -not $IAcceptNoAutomaticRollback) {
     throw '-DisableWatchdog exige -IAcceptNoAutomaticRollback.'
@@ -480,6 +496,7 @@ if ($manifest.BuildKind -ne 'MCDM_LAB_BRINGUP' -or [bool]$manifest.HardwareValid
     throw 'Contrato do manifesto de laboratorio invalido (kind/validacao/schema/bring-up).'
 }
 Assert-ArtifactHash $packageSys $manifest.PackageSysSha256 'SYS'
+Assert-ArtifactHash $packagePdb $manifest.PackagePdbSha256 'PDB privado'
 Assert-ArtifactHash (Join-Path $packageDir 'bc250umd.dll') $manifest.PackageUmdSha256 'UMD'
 Assert-ArtifactHash $packageInf $manifest.PackageInfSha256 'INF'
 Assert-ArtifactHash $packageCat $manifest.PackageCatSha256 'CAT'
@@ -955,6 +972,7 @@ if (-not $Execute -or -not $IAcceptBlackScreenRisk) {
     $gfxStageFlag = $(if ($GfxRingBringupLevel -ge 4 -and $GfxRingStage -gt 0) { " -GfxRingStage $GfxRingStage" } else { '' })
     # Achado na mesma auditoria: este tambem faltava, desde antes da B.1.
     $shaderTranslatorFlag = $(if ($EnableD3D11ShaderTranslator) { ' -EnableD3D11ShaderTranslator' } else { '' })
+    $dwmCaptureFlag = $(if ($EnableDwmCrashCapture) { ' -EnableDwmCrashCapture' } else { '' })
     $restartExplorerFlag = $(if ($RestartExplorer) { ' -RestartExplorer' } else { '' })
     $watchdogFlag = $(if ($DisableWatchdog) {
         ' -DisableWatchdog -IAcceptNoAutomaticRollback'
@@ -963,7 +981,7 @@ if (-not $Execute -or -not $IAcceptBlackScreenRisk) {
         " -Execute -IAcceptBlackScreenRisk" + $shaderFlag + $persistentFlag +
         $renderNodeFlag + $renderOnlyFlag + $gpuvaFlag + $planoAFlag + $d3d11PromotionFlag +
         $d3d11SubstFlag + $shaderTranslatorFlag + $gfxRingFlag + $gfxBringupFlag + $gfxStageFlag +
-        $journalGateFlag + $tripodFlag + $restartExplorerFlag + $watchdogFlag)
+        $journalGateFlag + $tripodFlag + $dwmCaptureFlag + $restartExplorerFlag + $watchdogFlag)
     exit 0
 }
 if (-not $DisableWatchdog -and -not $IAcceptAutomaticRecoveryReboot) {
@@ -1046,6 +1064,32 @@ if ($null -ne $liveSafeGuard -and [string]$liveSafeGuard.State -eq 'Running') {
 $stamp = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
 $evidenceDir = Join-Path $root "docs\evidence\$stamp-$($env:COMPUTERNAME)-lab-binding"
 New-Item -ItemType Directory -Path $evidenceDir -Force | Out-Null
+# SYS e PDB precisam sobreviver juntos ao proximo build. Na Corrida 43 o PDB
+# foi criado na pasta, mas seu hash real divergiu do manifesto e o symchk o
+# recusou; alem disso, sem o SYS o debugger nem sequer carregava a imagem.
+# Copiar o par antes do bind e conferir o DESTINO, nao apenas a origem.
+$evidenceSys = Join-Path $evidenceDir 'bc250mcdm.sys'
+$evidencePdb = Join-Path $evidenceDir 'bc250mcdm.pdb'
+Copy-Item -LiteralPath $packageSys -Destination $evidenceSys -Force
+Copy-Item -LiteralPath $packagePdb -Destination $evidencePdb -Force
+$evidenceSysHash = (Get-FileHash -LiteralPath $evidenceSys -Algorithm SHA256).Hash
+$evidencePdbHash = (Get-FileHash -LiteralPath $evidencePdb -Algorithm SHA256).Hash
+if ($evidenceSysHash -ne [string]$manifest.PackageSysSha256) {
+    throw "SYS arquivado divergiu do manifesto: $evidenceSysHash"
+}
+if ($evidencePdbHash -ne [string]$manifest.PackagePdbSha256) {
+    throw "PDB arquivado divergiu do manifesto: $evidencePdbHash"
+}
+[ordered]@{
+    sys_file = 'bc250mcdm.sys'
+    sys_sha256 = $evidenceSysHash
+    package_sys_manifest_sha256 = [string]$manifest.PackageSysSha256
+    pdb_file = 'bc250mcdm.pdb'
+    pdb_sha256 = $evidencePdbHash
+    package_pdb_manifest_sha256 = [string]$manifest.PackagePdbSha256
+    captured_at = (Get-Date).ToString('o')
+} | ConvertTo-Json | Set-Content -LiteralPath `
+    (Join-Path $evidenceDir 'private-symbols.json') -Encoding UTF8
 # B2: Limpeza de logs residuais da UMD em C:\Windows\Temp para isolar este bind.
 Get-ChildItem -LiteralPath 'C:\Windows\Temp' -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue |
     Remove-Item -Force -ErrorAction SilentlyContinue
@@ -1079,6 +1123,7 @@ if (Test-Path -LiteralPath $tailRecovery -PathType Leaf) {
 }
 
 $watchdogToken = $null
+$collectionDeadlineUtc = $null
 if ($DisableWatchdog) {
     Write-Host "`n[2/4] Watchdog omitido por aceite explicito; evidencia criada." -ForegroundColor Yellow
 } else {
@@ -1091,12 +1136,19 @@ if ($DisableWatchdog) {
     $deadlineTaskName = 'BC250-SafeBindDeadline'
     $guardDir = 'C:\BC250_SAFE_GUARD'
     $guardScript = Join-Path $guardDir 'watch-bc250mcdm-safe-bind.ps1'
+    $guardDwmRestore = Join-Path $guardDir 'restore-dwm-crash-capture.ps1'
     $configPath = Join-Path $guardDir 'armed.json'
     New-Item -ItemType Directory -Path $guardDir -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'watch-bc250mcdm-safe-bind.ps1') `
         -Destination $guardScript -Force
+    if ($EnableDwmCrashCapture) {
+        Copy-Item -LiteralPath $restoreDwmCapture -Destination $guardDwmRestore -Force
+    }
     $armedAtUtc = [datetime]::UtcNow
     $deadlineUtc = $armedAtUtc.AddSeconds($WatchdogTimeoutSeconds)
+    # A coleta fecha pelo mesmo relogio absoluto do watchdog. Dez segundos
+    # ficam reservados para copiar logs/dumps antes da recovery.
+    $collectionDeadlineUtc = $deadlineUtc.AddSeconds(-10)
     $guardConfig = [ordered]@{
         schema_version = 1; task_name = $taskName
         deadline_task_name = $deadlineTaskName; token = $watchdogToken
@@ -1110,6 +1162,11 @@ if ($DisableWatchdog) {
         armed_boot_ticks = [long](Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks
         armed_at_utc_ticks = [long]$armedAtUtc.Ticks
         deadline_utc_ticks = [long]$deadlineUtc.Ticks
+        dwm_capture_enabled = [bool]$EnableDwmCrashCapture
+        dwm_restore_script = $(if ($EnableDwmCrashCapture) { $guardDwmRestore } else { $null })
+        dwm_restore_sha256 = $(if ($EnableDwmCrashCapture) {
+            (Get-FileHash -LiteralPath $guardDwmRestore -Algorithm SHA256).Hash
+        } else { $null })
         automatic_recovery_reboot = $true; hardware_validated = $false
     }
     $guardConfig | ConvertTo-Json -Depth 5 | Set-Content $configPath -Encoding UTF8
@@ -1149,6 +1206,18 @@ if ($DisableWatchdog) {
         throw 'Watchdog SYSTEM nao entrou em OBSERVING.'
     }
     Write-Host "  Watchdog SYSTEM ativo; reboot automatico autorizado." -ForegroundColor Green
+
+    if ($EnableDwmCrashCapture) {
+        Write-Warning ('DWM LOCALDUMPS ARMADO PARA ESTA CORRIDA: um fail-fast do dwm.exe ' +
+            'vai gerar dump completo; a configuracao WER sera restaurada transacionalmente.')
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $armDwmCapture `
+            -EvidenceDir $evidenceDir -Token $watchdogToken -Execute
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Binding bloqueado: LocalDumps do dwm.exe nao armou.'
+        }
+    } else {
+        Write-Host '  DWM LocalDumps: DESARMADO (default fail-closed).' -ForegroundColor DarkYellow
+    }
 }
 
 # DriverEntry e StartDevice leem estes valores durante o proprio binding. A
@@ -2001,22 +2070,24 @@ if ($EnablePhysicalRenderOnly) {
 # fica no caminho comum, e a janela termina com folga ANTES do watchdog.
 # ==========================================================================
 if (-not $DisableWatchdog) {
-    if (-not $RunVulkanCube -and -not $RunDxvkD3D11 -and -not $RunRadvPresentTripod -and -not $RunRadvComputeTripod -and -not $RunUmdNode1Tripod -and -not $RunMarco3Graphics -and -not $RunMarco4Cube -and -not $RunD3D11Native) {
-        # Reserva 90 s para confirmacao visual (60 s) e margem de teardown.
-        $collectDelay = [Math]::Max(30, $WatchdogTimeoutSeconds - 90)
-        Write-Host ''
-        Write-Host ("=== JANELA DE OBSERVACAO: {0}s antes da coleta FINAL ===" -f $collectDelay) -ForegroundColor Magenta
-        Write-Host '  (o watchdog SYSTEM continua armado e e a rede de seguranca)'
+    # Corrida 40: o harness morreu em 16 s e a coleta FINAL fechou 22 s apos o
+    # bind, mas o watchdog continuou por mais 104 s. Tres crashes do dwm.exe e
+    # 29 submissoes GFX ficaram depois da coleta. A janela termina pelo RELOGIO
+    # ABSOLUTO do watchdog, nunca pela saida (cedo ou tarde) do harness.
+    if ($null -eq $collectionDeadlineUtc) {
+        throw 'Coleta FINAL recusada: prazo absoluto da janela nao foi definido.'
+    }
+    Write-Host ''
+    Write-Host ("=== JANELA DE OBSERVACAO ATE {0:o} UTC ===" -f $collectionDeadlineUtc) -ForegroundColor Magenta
+    Write-Host '  (a saida do harness nao encerra a observacao; o watchdog SYSTEM segue como rede de seguranca)'
 
-        if ($RestartExplorer) {
-            Write-Host '  Reiniciando explorer.exe para forcar enumeracao e criacao de recursos DXGI...' -ForegroundColor Yellow
-            Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
-        }
+    if ($RestartExplorer) {
+        Write-Host '  Reiniciando explorer.exe para forcar enumeracao e criacao de recursos DXGI...' -ForegroundColor Yellow
+        Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+    }
 
-        Start-Sleep -Seconds $collectDelay
-    } else {
-        # Para ensaios de harness/VulkanCube, a execucao ja ocorreu; pausa breve para flush de telemetria.
-        Start-Sleep -Seconds 3
+    while ([datetime]::UtcNow -lt $collectionDeadlineUtc) {
+        Start-Sleep -Milliseconds 500
     }
 
     try {
@@ -2038,6 +2109,18 @@ if (-not $DisableWatchdog) {
         Write-Host ("  Coleta FINAL da UMD: {0} arquivo(s)." -f $umdFinal.Count) -ForegroundColor Yellow
     } catch {
         Write-Host ("  AVISO: coleta FINAL da UMD falhou: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+    }
+
+    if ($EnableDwmCrashCapture) {
+        try {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $restoreDwmCapture `
+                -EvidenceDir $evidenceDir -Execute
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning 'LocalDumps: restauracao terminou com codigo nao-zero; o guardiao tentara novamente.'
+            }
+        } catch {
+            Write-Warning ("LocalDumps: restauracao no binder falhou; o guardiao tentara novamente: {0}" -f $_.Exception.Message)
+        }
     }
 
     # Cauda do log do KMD no fim da janela, pelo offset do baseline. Sem isto o

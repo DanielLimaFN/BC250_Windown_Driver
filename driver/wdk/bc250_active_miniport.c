@@ -666,6 +666,9 @@ static BC250_GFX_RING_TXN_STATUS Bc250ActiveRunGfxRingBringup(
  */
 #define BC250_GFX_FENCE_POISON 0x43DAFFFEu
 
+static NTSTATUS Bc250ActiveGfxEngineOffline(
+    BC250_DXGK_ACTIVE_CONTEXT *Context);
+
 static NTSTATUS Bc250ActiveGfxEngineOnline(BC250_DXGK_ACTIVE_CONTEXT *Context)
 {
     BC250_VRAM_ALLOCATOR *allocator;
@@ -883,13 +886,17 @@ static NTSTATUS Bc250ActiveGfxEngineOnline(BC250_DXGK_ACTIVE_CONTEXT *Context)
         Context->GfxEngine.RingCpuVirtual[bootCursor++] = 0x00000000u;
 
         /* 5. PACKET3_RELEASE_MEM EOP (32-bit) para gravar fence=1 na VRAM (8 dw) */
-        (void)Bc250Pm4EmitReleaseMemEop32(
+        if (Bc250Pm4EmitReleaseMemEop32(
             Context->GfxEngine.RingCpuVirtual,
             Context->GfxEngine.RingDwords,
             &bootCursor,
             Context->GfxEngine.FenceGpuVa,
             1u,
-            BC250_PM4_RELEASE_MEM_INT_SEL_NONE);
+            BC250_PM4_RELEASE_MEM_INT_SEL_NONE) != BC250_PM4_OK) {
+            Bc250DisplayLog("[GfxEngine] BOOT_PREAMBLE FALHOU: RELEASE_MEM nao foi emitido; motor nao ficara ONLINE\n");
+            (void)Bc250ActiveGfxEngineOffline(Context);
+            return STATUS_DEVICE_HARDWARE_ERROR;
+        }
 
         /* 6. Alinhamento com NOP a 4 dwords */
         while ((bootCursor & 3u) != 0u) {
@@ -925,12 +932,17 @@ static NTSTATUS Bc250ActiveGfxEngineOnline(BC250_DXGK_ACTIVE_CONTEXT *Context)
             }
         }
 
+        Bc250DisplayLog("[GfxEngine] BOOT_PREAMBLE: WPTR=%u RPTR=%u Fence=0x%08X DrenoOk=%u Polls=%u (CONTEXT_CONTROL+CLEAR_STATE provados no silicio no Gate K)\n",
+            bootCursor, bootRptr, bootFence, bootDrainOk ? 1u : 0u, bootPoll);
+        if (!bootDrainOk) {
+            Bc250DisplayLog("[GfxEngine] BOOT_PREAMBLE FALHOU: RPTR/fence nao provaram execucao; motor nao ficara ONLINE\n");
+            (void)Bc250ActiveGfxEngineOffline(Context);
+            return STATUS_DEVICE_HARDWARE_ERROR;
+        }
+
         Context->GfxEngine.WptrDwords = bootCursor;
         Context->GfxEngine.LastSubmittedFence = 1ull;
         Context->GfxEngine.LastRetiredFence = 1ull;
-
-        Bc250DisplayLog("[GfxEngine] BOOT_PREAMBLE: WPTR=%u RPTR=%u Fence=0x%08X DrenoOk=%u Polls=%u (CONTEXT_CONTROL+CLEAR_STATE provados no silicio no Gate K)\n",
-            bootCursor, bootRptr, bootFence, bootDrainOk ? 1u : 0u, bootPoll);
     }
 
     Bc250DisplayLog("[GfxEngine] ONLINE SUCESSO: RingMc=0x%llX (64KB, %u dw) RptrWbMc=0x%llX FenceMc=0x%llX RB0_ACTIVE=1\n",
@@ -5139,11 +5151,149 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
     return result;
 }
 
+/*
+ * O reset de adaptador invalida todo trabalho que estava em voo. Essas
+ * entradas nao podem sobreviver ate a fence privada usada para provar o
+ * restart: drena-las ali notificaria ao dxgkrnl uma conclusao que a GPU nunca
+ * produziu. AbortPending remove-as sem chamar DxgkCbNotifyInterrupt e devolve
+ * somente os pins que precisam ser liberados.
+ */
+static BOOLEAN Bc250ActiveTdrAbortFenceTracker(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    BC250_WDDM_FENCE_ENTRY aborted[BC250_WDDM_FENCE_TRACK_DEPTH];
+    uint32_t abortedCount = 0u;
+    uint32_t committedCount = 0u;
+    uint32_t reservedCount = 0u;
+    uint32_t i;
+
+    Bc250WddmFenceTrackerSetAcceptingWork(
+        &Context->SubmissionEngine.WddmFences, FALSE);
+    if (!Bc250WddmFenceTrackerAbortPending(
+            &Context->SubmissionEngine.WddmFences,
+            aborted, BC250_WDDM_FENCE_TRACK_DEPTH,
+            &abortedCount, &committedCount, &reservedCount)) {
+        Bc250DisplayLog("[TDR_FENCE_RECONCILE] FALHA: rastreador nao foi adquirido; admissao permanece fechada\n");
+        return FALSE;
+    }
+
+    for (i = 0u; i < abortedCount; ++i) {
+        if (aborted[i].GpuvaPinValid != 0u) {
+            BC250_GPUVA_SNAPSHOT_READER reader;
+            if (aborted[i].GpuvaSlot > 1u ||
+                (uint32_t)InterlockedCompareExchange(
+                    &Context->GpuvaSnapshots.SlotGeneration[aborted[i].GpuvaSlot],
+                    0, 0) != aborted[i].GpuvaGeneration) {
+                InterlockedExchange(&Context->GpuvaMappingsOperational, 0);
+                Bc250DisplayLog("[TDR_FENCE_RECONCILE] FALHA: pin GPUVA invalido Slot=%u Generation=%u; admissao permanece fechada\n",
+                    aborted[i].GpuvaSlot, aborted[i].GpuvaGeneration);
+                return FALSE;
+            }
+            RtlZeroMemory(&reader, sizeof(reader));
+            reader.Space = &Context->GpuvaSnapshots.Slots[aborted[i].GpuvaSlot];
+            reader.Slot = aborted[i].GpuvaSlot;
+            reader.PublicationGeneration = aborted[i].GpuvaGeneration;
+            reader.Acquired = 1u;
+            Bc250GpuvaSnapshotRelease(&Context->GpuvaSnapshots, &reader);
+        }
+    }
+
+    Bc250DisplayLog("[TDR_FENCE_RECONCILE] PASS: Abortadas=%u Committed=%u Reserved=%u NotificadasComoConcluidas=0\n",
+        abortedCount, committedCount, reservedCount);
+    return TRUE;
+}
+
+/*
+ * Prova executavel do CP_RB0 depois do reset: quatro PACKET2 NOP seguidos de
+ * RELEASE_MEM sobre poison. Readback de ACTIVE/RPTR/WPTR sozinho prova apenas
+ * programacao de registrador; este tripe exige consumo do anel e escrita EOP
+ * feita pela GPU.
+ */
+static BOOLEAN Bc250ActiveTdrProveGfxRestart(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    uint32_t cursor = 0u;
+    uint32_t poll;
+    uint32_t rptr = 0u;
+    uint32_t fenceObserved = BC250_GFX_FENCE_POISON;
+    uint64_t proofFence64 = Context->GfxEngine.LastSubmittedFence + 1ull;
+    uint32_t proofFence = (uint32_t)proofFence64;
+    BC250_PM4_STATUS pm4Status;
+    uint32_t writeLo;
+    uint32_t writeHi;
+
+    if (Context->GfxEngine.RingCpuVirtual == NULL ||
+        Context->GfxEngine.RingDwords < 16u ||
+        Context->GfxEngine.FenceCpuVirtual == NULL ||
+        Context->GfxEngine.RptrWbCpuVirtual == NULL) {
+        return FALSE;
+    }
+    if (proofFence == 0u || proofFence == BC250_GFX_FENCE_POISON) {
+        ++proofFence64;
+        proofFence = (uint32_t)proofFence64;
+    }
+
+    Context->GfxEngine.RingCpuVirtual[cursor++] = BC250_PM4_PACKET2_NOP;
+    Context->GfxEngine.RingCpuVirtual[cursor++] = BC250_PM4_PACKET2_NOP;
+    Context->GfxEngine.RingCpuVirtual[cursor++] = BC250_PM4_PACKET2_NOP;
+    Context->GfxEngine.RingCpuVirtual[cursor++] = BC250_PM4_PACKET2_NOP;
+    pm4Status = Bc250Pm4EmitReleaseMemEop32(
+        Context->GfxEngine.RingCpuVirtual,
+        Context->GfxEngine.RingDwords,
+        &cursor,
+        Context->GfxEngine.FenceGpuVa,
+        proofFence,
+        BC250_PM4_RELEASE_MEM_INT_SEL_NONE);
+    if (pm4Status != BC250_PM4_OK || cursor != 12u) {
+        return FALSE;
+    }
+
+    *Context->GfxEngine.FenceCpuVirtual = BC250_GFX_FENCE_POISON;
+    if (Context->GfxEngine.WptrPollCpuVirtual != NULL) {
+        *Context->GfxEngine.WptrPollCpuVirtual = cursor;
+    }
+    Bc250SdmaPresentFlushHdp();
+    KeMemoryBarrier();
+    (void)Bc250MmioTopologyWrite32(&Context->Core.MmioTransport,
+        BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+    writeLo = Bc250MmioTopologyWrite32(&Context->Core.MmioTransport,
+        BC250_GFX_REG_CP_RB0_WPTR, cursor);
+    writeHi = Bc250MmioTopologyWrite32(&Context->Core.MmioTransport,
+        BC250_GFX_REG_CP_RB0_WPTR_HI, 0u);
+    if (!writeLo || !writeHi) {
+        Bc250DisplayLog("[TDR_GFX_RESTART_PROOF] FALHA: publicacao WPTR recusada Lo=%u Hi=%u\n",
+            writeLo ? 1u : 0u, writeHi ? 1u : 0u);
+        return FALSE;
+    }
+
+    for (poll = 0u; poll < 2000u; ++poll) {
+        Bc250ActiveTlbStall(Context, 25u);
+        Bc250SdmaPresentFlushHdp();
+        (void)Bc250MmioTopologyRead32(&Context->Core.MmioTransport,
+            BC250_GFX_REG_CP_RB0_RPTR, &rptr);
+        fenceObserved = *Context->GfxEngine.FenceCpuVirtual;
+        if (rptr == cursor && fenceObserved == proofFence) {
+            Context->GfxEngine.WptrDwords = cursor;
+            Context->GfxEngine.LastSubmittedFence = proofFence64;
+            Context->GfxEngine.LastRetiredFence = proofFence64;
+            Context->GfxEngine.LastRptrMmio = rptr;
+            Bc250DisplayLog("[TDR_GFX_RESTART_PROOF] PASS: NOPx4+RELEASE_MEM executados RPTR=%u WPTR=%u Fence=0x%08X PoisonSubstituido=1 Polls=%u\n",
+                rptr, cursor, fenceObserved, poll + 1u);
+            return TRUE;
+        }
+    }
+
+    Bc250DisplayLog("[TDR_GFX_RESTART_PROOF] FALHA: RPTR=%u WPTR=%u FenceObs=0x%08X FenceEsp=0x%08X Polls=%u\n",
+        rptr, cursor, fenceObserved, proofFence, poll);
+    return FALSE;
+}
+
 static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
 {
     BOOLEAN sdmaRestart = Bc250SdmaPresentRestartAfterTdr();
     BOOLEAN mecRestart = TRUE;
     BOOLEAN gfxRestart = TRUE;
+    BOOLEAN fenceReconcile = TRUE;
     uint32_t dirIdx;
 
     KeEnterCriticalRegion();
@@ -5152,11 +5302,17 @@ static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
         BC250_DXGK_ACTIVE_CONTEXT *activeCtx = g_Bc250AdapterDirectory[dirIdx];
         if (activeCtx != NULL && activeCtx->Signature == BC250_ACTIVE_SIGNATURE) {
             InterlockedExchange(&activeCtx->SdmaRetireBusy, 0);
+            if (!Bc250ActiveTdrAbortFenceTracker(activeCtx)) {
+                fenceReconcile = FALSE;
+            }
         }
         if (activeCtx != NULL && activeCtx->Signature == BC250_ACTIVE_SIGNATURE &&
             activeCtx->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED &&
             activeCtx->GfxEngine.RingDwords != 0u) {
             uint32_t active = 0u, rptr = 0u, wptr = 0u, meCntl = 0u, grbmReset = 0u;
+            uint32_t baseLo = 0u, baseHi = 0u;
+            uint32_t baseExpectedLo = Bc250GfxRingEncodeBaseLo(activeCtx->GfxEngine.RingGpuVa);
+            uint32_t baseExpectedHi = Bc250GfxRingEncodeBaseHi(activeCtx->GfxEngine.RingGpuVa);
             BC250_TDR_STATUS gfxStatus;
 
             uint32_t plannedCntl = activeCtx->GfxEngine.Evidence.CntlPlanned != 0u ?
@@ -5165,10 +5321,16 @@ static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
             /* Rearma CP_RB0 */
             (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
                 BC250_GFX_REG_CP_RB0_ACTIVE, 0u);
+            /* CP_RB0_BASE recebe GPUVA >> 8. Na Corrida 43 este caminho
+             * escrevia RingGpuVa bruto (inclusive no HI), apontando o CP para
+             * uma base 256 vezes errada; o caminho ONLINE ja usava o formato
+             * correto. Os helpers tornam a codificacao fonte unica. */
             (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
-                BC250_GFX_REG_CP_RB0_BASE, (uint32_t)(activeCtx->GfxEngine.RingGpuVa & 0xFFFFFFFFull));
+                BC250_GFX_REG_CP_RB0_BASE,
+                Bc250GfxRingEncodeBaseLo(activeCtx->GfxEngine.RingGpuVa));
             (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
-                BC250_GFX_REG_CP_RB0_BASE_HI, (uint32_t)((activeCtx->GfxEngine.RingGpuVa >> 32) & 0xFFFFull));
+                BC250_GFX_REG_CP_RB0_BASE_HI,
+                Bc250GfxRingEncodeBaseHi(activeCtx->GfxEngine.RingGpuVa));
             (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
                 BC250_GFX_REG_CP_RB0_CNTL, plannedCntl);
             (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
@@ -5202,6 +5364,9 @@ static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
             if (activeCtx->GfxEngine.WptrPollCpuVirtual != NULL) {
                 *activeCtx->GfxEngine.WptrPollCpuVirtual = 0u;
             }
+            if (activeCtx->GfxEngine.RptrWbCpuVirtual != NULL) {
+                *activeCtx->GfxEngine.RptrWbCpuVirtual = 0u;
+            }
             if (activeCtx->GfxEngine.FenceCpuVirtual != NULL) {
                 *activeCtx->GfxEngine.FenceCpuVirtual = BC250_GFX_FENCE_POISON;
             }
@@ -5223,19 +5388,37 @@ static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
             (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
                 BC250_GFX_REG_CP_RB0_WPTR, &wptr);
             (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_BASE, &baseLo);
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                BC250_GFX_REG_CP_RB0_BASE_HI, &baseHi);
+            (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
                 BC250_GFX_REG_CP_ME_CNTL, &meCntl);
             (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
                 BC250_GRBM_REG_SOFT_RESET, &grbmReset);
 
+            Bc250DisplayLog("[TDR_GFX_RESTART_BASE] RingGpuVa=0x%llX Esperado=%08X:%08X Readback=%08X:%08X Pass=%u\n",
+                (unsigned long long)activeCtx->GfxEngine.RingGpuVa,
+                baseExpectedHi, baseExpectedLo, baseHi, baseLo,
+                (baseHi == baseExpectedHi && baseLo == baseExpectedLo) ? 1u : 0u);
+
             gfxStatus = Bc250TdrValidateGfxRestartReadback(active, rptr, wptr, meCntl, grbmReset);
-            if (gfxStatus != BC250_TDR_OK) {
+            if (baseHi != baseExpectedHi || baseLo != baseExpectedLo) {
+                Bc250DisplayLog("[TDR_GFX_RESTART] Readback INVALIDO: CP_RB0_BASE esperado=%08X:%08X observado=%08X:%08X\n",
+                    baseExpectedHi, baseExpectedLo, baseHi, baseLo);
+                gfxRestart = FALSE;
+                activeCtx->GfxEngine.State = 0u;
+            } else if (gfxStatus != BC250_TDR_OK) {
                 Bc250DisplayLog("[TDR_GFX_RESTART] Readback INVALIDO: status=%s Active=%u RPTR=%u WPTR=%u MeCntl=0x%X GrbmReset=0x%X\n",
                     Bc250TdrStatusName(gfxStatus), active, rptr, wptr, meCntl, grbmReset);
                 gfxRestart = FALSE;
                 activeCtx->GfxEngine.State = 0u;
+            } else if (!Bc250ActiveTdrProveGfxRestart(activeCtx)) {
+                Bc250DisplayLog("[TDR_GFX_RESTART] FALHA: registradores rearmados, mas o CP_RB0 nao executou NOP+RELEASE_MEM\n");
+                gfxRestart = FALSE;
+                activeCtx->GfxEngine.State = 0u;
             } else {
                 activeCtx->GfxEngine.State = 1u;
-                Bc250DisplayLog("[TDR_GFX_RESTART] CP_RB0 rearmado e comprovado no silicio\n");
+                Bc250DisplayLog("[TDR_GFX_RESTART] CP_RB0 rearmado e comprovado por execucao fisica\n");
             }
         }
         if (activeCtx != NULL && activeCtx->Signature == BC250_ACTIVE_SIGNATURE &&
@@ -5284,7 +5467,7 @@ static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
                     Bc250TdrStatusName(mecStatus), active, rptr, wptr, deq, err, stall);
                 mecRestart = FALSE;
             } else {
-                Bc250DisplayLog("[TDR_MEC_RESTART] MEC queue rearmada e comprovada no silicio\n");
+                Bc250DisplayLog("[TDR_MEC_RESTART] MEC queue reprogramada com readback coerente; execucao pos-reset nao foi provada aqui\n");
             }
             break;
         }
@@ -5292,7 +5475,21 @@ static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
     ExReleasePushLockShared(&g_Bc250AdapterDirectoryLock);
     KeLeaveCriticalRegion();
 
-    return (sdmaRestart && mecRestart && gfxRestart) ? TRUE : FALSE;
+    if (sdmaRestart && mecRestart && gfxRestart && fenceReconcile) {
+        KeEnterCriticalRegion();
+        ExAcquirePushLockShared(&g_Bc250AdapterDirectoryLock);
+        for (dirIdx = 0u; dirIdx < BC250_ACTIVE_MAX_ADAPTERS; ++dirIdx) {
+            BC250_DXGK_ACTIVE_CONTEXT *activeCtx = g_Bc250AdapterDirectory[dirIdx];
+            if (activeCtx != NULL && activeCtx->Signature == BC250_ACTIVE_SIGNATURE) {
+                Bc250WddmFenceTrackerSetAcceptingWork(
+                    &activeCtx->SubmissionEngine.WddmFences, TRUE);
+            }
+        }
+        ExReleasePushLockShared(&g_Bc250AdapterDirectoryLock);
+        KeLeaveCriticalRegion();
+        return TRUE;
+    }
+    return FALSE;
 }
 
 static BOOLEAN Bc250ActiveGfxProbeResponsive(_Out_ UINT32 *IsResponsive)
@@ -11828,6 +12025,13 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
                 active->GpuvaSnapshots.LastPublishStatus,
                 active->GpuvaSnapshots.LastPublishAttempts,
                 active->GpuvaSnapshots.LastPublishBusyCount);
+            Bc250DisplayLog("[ActiveFlushTlb] PUBLICACAO_FALHA Batch=%ld FailedIndex=%ld "
+                "Map=%ld Base=0x%llX Size=0x%llX\n",
+                active->GpuvaSnapshots.LastPublishRangeCount,
+                active->GpuvaSnapshots.LastPublishFailedRangeIndex,
+                active->GpuvaSnapshots.LastPublishFailedMapRange,
+                active->GpuvaSnapshots.LastPublishFailedBaseGpuVa,
+                active->GpuvaSnapshots.LastPublishFailedSize);
             Bc250DisplayLog("[ActiveFlushTlb] OCUPACAO slot=%ld st=%u Cap=%u Mapped=%u Teardown=%u Reusable=%u Live=%u\n",
                 occSlot, (uint32_t)occStatus,
                 occupancy.Capacity, occupancy.Mapped,
