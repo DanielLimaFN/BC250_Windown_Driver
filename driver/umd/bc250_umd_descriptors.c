@@ -140,6 +140,8 @@ static BOOL Bc250UmdBindDrawDescriptors(BC250_UMD_DEVICE *device,
             view.image = resource->VkImg;
             view.viewType = resource->ArraySize > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
             view.format = Bc250UmdVkFormatFromDxgi(srv->Desc.Format);
+            /* DX.24: X8 amostra alpha=1 e A8 amostra (0,0,0,a), como no D3D. */
+            view.components = Bc250UmdVkSrvComponentMapping(srv->Desc.Format);
             view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
             view.subresourceRange.baseMipLevel = srv->Desc.Tex2D.MostDetailedMip;
             view.subresourceRange.levelCount = srv->Desc.Tex2D.MipLevels;

@@ -1,4 +1,5 @@
 #include "bc250_d3d_umd.h"
+#include "bc250_umd_state_translate.h"
 #include "bc250_umd_caps_probe.h"
 #include "bc250_vkd3d_shader_adapter.h"
 #include "../core/bc250_umd_private_contract.h"
@@ -272,6 +273,7 @@ VOID Bc250UmdDeviceTeardown(
 #include "bc250_umd_resource_vk.c"
 #include "bc250_umd_pipeline_cache.c"
 #include "bc250_umd_descriptors.c"
+#include "bc250_umd_state_translate.c"
 
 VOID APIENTRY Bc250Umd10DestroyDevice(D3D10DDI_HDEVICE hDevice)
 {
@@ -1153,8 +1155,11 @@ VOID APIENTRY Bc250Umd10CreateResource(
                 memcpy(res->pCpuShadow, pCreate->pInitialDataUP->pSysMem, res->TotalByteSize);
             }
             if (device != NULL && device->WinsysInitialized && res->Allocation.Created) {
-                (void)Bc250WinsysUploadAllocation(&device->Winsys, &res->Allocation,
+                wsStatus = Bc250WinsysUploadAllocation(&device->Winsys, &res->Allocation,
                     res->pCpuShadow, res->TotalByteSize);
+                if (wsStatus == BC250_WINSYS_OK) {
+                    res->WddmAllocationUploaded = TRUE;
+                }
             }
             {
                 UINT copyBytesReported = (res->ResourceDimension == D3D10DDIRESOURCE_BUFFER && res->Width > 0 && res->Width < res->TotalByteSize) ? res->Width : res->TotalByteSize;
@@ -1258,6 +1263,7 @@ static void Bc250UmdSyncTextureToVkImage(
     if (!device->VkBridgeInitialized || !res->VkResourceCreated) return;
     if (res->VkImg == VK_NULL_HANDLE || res->pCpuShadow == NULL) return;
 
+
     if (Subresource != 0u) {
         Bc250UmdTrace("%s: textura NAO sincronizada -- Subresource=%u fora do escopo carregado "
             "(mip 0 / camada 0); a imagem segue sem este subrecurso", origem, Subresource);
@@ -1327,8 +1333,11 @@ VOID APIENTRY Bc250Umd10ResourceUnmap(
 
     if (device != NULL && device->WinsysInitialized && res != NULL &&
         res->Allocation.Created && res->pCpuShadow != NULL && res->TotalByteSize > 0u) {
-        (void)Bc250WinsysUploadAllocation(&device->Winsys, &res->Allocation,
+        BC250_WINSYS_STATUS wsStatus = Bc250WinsysUploadAllocation(&device->Winsys, &res->Allocation,
             res->pCpuShadow, res->TotalByteSize);
+        if (wsStatus == BC250_WINSYS_OK) {
+            res->WddmAllocationUploaded = TRUE;
+        }
     }
 
     if (device != NULL && device->VkBridgeInitialized && res != NULL &&
@@ -1632,8 +1641,15 @@ VOID APIENTRY Bc250Umd10SetRenderTargets(
     device->PipelineState.NumBoundRTVs = count;
     device->PipelineState.BoundDSV = hDepthStencilView;
 
-    Bc250UmdTrace("SetRenderTargets: NumViews=%u ClearSlots=%u DSV=%p",
-        count, ClearSlots, hDepthStencilView.pDrvPrivate);
+    {
+        /* DX.23: qual recurso e' o RT0 -- sem isso nao se liga draw a superficie apresentada. */
+        BC250_UMD_RTV *rtv0 = (count > 0) ? (BC250_UMD_RTV *)device->PipelineState.BoundRTVs[0].pDrvPrivate : NULL;
+        Bc250UmdTrace("SetRenderTargets: NumViews=%u ClearSlots=%u DSV=%p RTV0=%p res=%p %ux%u",
+            count, ClearSlots, hDepthStencilView.pDrvPrivate, (void *)rtv0,
+            rtv0 ? (void *)rtv0->pResource : NULL,
+            (rtv0 && rtv0->pResource) ? rtv0->pResource->Width : 0u,
+            (rtv0 && rtv0->pResource) ? rtv0->pResource->Height : 0u);
+    }
 }
 
 VOID APIENTRY Bc250Umd10ClearRenderTargetView(
@@ -1644,8 +1660,13 @@ VOID APIENTRY Bc250Umd10ClearRenderTargetView(
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     BC250_UMD_RTV* rtv = (BC250_UMD_RTV*)hRenderTargetView.pDrvPrivate;
 
-    if (device != NULL && device->VkBridgeInitialized && device->VkBridge.DeviceActive &&
-        rtv != NULL && rtv->VkRtvCreated && rtv->VkPass != VK_NULL_HANDLE && rtv->VkFb != VK_NULL_HANDLE) {
+    /* DX.28: o clear tambem vai para a imagem atual do recurso. Se a RTV nao
+     * conseguir seguir, VkRtvCreated continua TRUE mas o clear cai no ramo de
+     * recusa abaixo pela checagem explicita. */
+    BOOL rtvCurrent = (device != NULL && device->VkBridgeInitialized && device->VkBridge.DeviceActive &&
+        rtv != NULL && rtv->VkRtvCreated) ? Bc250UmdVkRtvFollowResource(device, rtv) : FALSE;
+
+    if (rtvCurrent && rtv->VkPass != VK_NULL_HANDLE && rtv->VkFb != VK_NULL_HANDLE) {
         VkCommandBuffer cmd = Bc250UmdVkGetCommandBuffer(&device->VkBridge);
         if (cmd != VK_NULL_HANDLE) {
             VkClearValue clearVal;
@@ -2092,7 +2113,9 @@ VOID APIENTRY Bc250Umd10ResourceUpdateSubresourceUP(
         if (device != NULL && device->WinsysInitialized && res->Allocation.Created) {
             BC250_WINSYS_STATUS wsStatus = Bc250WinsysUploadAllocation(
                 &device->Winsys, &res->Allocation, res->pCpuShadow, res->TotalByteSize);
-            if (wsStatus != BC250_WINSYS_OK) {
+            if (wsStatus == BC250_WINSYS_OK) {
+                res->WddmAllocationUploaded = TRUE;
+            } else {
                 Bc250UmdTrace("ResourceUpdateSubresourceUP: WDDM allocation NAO sincronizada "
                     "(status=%s hr=0x%08X); Vulkan pode ter copia separada",
                     Bc250WinsysStatusName(wsStatus), (unsigned)device->Winsys.LastCallbackHr);
@@ -2646,6 +2669,221 @@ static BOOL Bc250UmdSubstituteDrawWithBlt(BC250_UMD_DEVICE* device)
     return TRUE;
 }
 
+/*
+ * DX.24 -- traducao do estado D3D11 que era IGNORADA EM SILENCIO.
+ *
+ * Corrida 69 (desfecho B): origem com conteudo, draws no alvo apresentado e
+ * superficie preta. A leitura achou pontos em que o estado pedido pelo DWM nao
+ * chegava ao Vulkan. Regra desta faixa: ou traduz exatamente, ou RECUSA o draw
+ * com motivo nomeado -- nunca substitui por um valor "razoavel".
+ */
+/*
+ * DX.24 (medicao para a Corrida 70): conteudo dos dados que o VS le, medido na
+ * sombra de CPU. O VS do DWM multiplica a posicao pelo CB; CB zerado colapsa a
+ * geometria e da preto sem erro nenhum. Amostra ate 4096 dwords por buffer.
+ */
+static void Bc250UmdTraceDrawData(_In_ BC250_UMD_DEVICE *d, UINT StartVertexLocation)
+{
+    BC250_UMD_RESOURCE *vscb = (BC250_UMD_RESOURCE *)d->PipelineState.VsConstantBuffers[0].pDrvPrivate;
+    BC250_UMD_RESOURCE *pscb = (BC250_UMD_RESOURCE *)d->PipelineState.PsConstantBuffers[0].pDrvPrivate;
+    BC250_UMD_RESOURCE *vb0 = (BC250_UMD_RESOURCE *)d->PipelineState.VertexBuffers[0].pDrvPrivate;
+    uint32_t vsNz = 0, vsN = 0, psNz = 0, psN = 0, vbNz = 0, vbN = 0;
+    float f[8] = {0};
+    uint32_t v[8] = {0};
+    if (vscb && vscb->pCpuShadow && vscb->Width >= 4u) {
+        const uint32_t *w = (const uint32_t *)vscb->pCpuShadow;
+        uint32_t n = vscb->Width / 4u, step = (n > 4096u) ? n / 4096u : 1u;
+        for (uint32_t i = 0; i < n; i += step) { vsN++; if (w[i]) vsNz++; }
+        /* so' leitura para o log -- nada e' escrito em recurso (portao C1) */
+        for (uint32_t k = 0; k < 8u && k < n; ++k) { union { uint32_t u; float fl; } cv; cv.u = w[k]; f[k] = cv.fl; }
+    }
+    if (pscb && pscb->pCpuShadow && pscb->Width >= 4u) {
+        const uint32_t *w = (const uint32_t *)pscb->pCpuShadow;
+        uint32_t n = pscb->Width / 4u, step = (n > 4096u) ? n / 4096u : 1u;
+        for (uint32_t i = 0; i < n; i += step) { psN++; if (w[i]) psNz++; }
+    }
+    if (vb0 && vb0->pCpuShadow && vb0->TotalByteSize >= 4u) {
+        const uint8_t *base = (const uint8_t *)vb0->pCpuShadow;
+        uint64_t off = (uint64_t)d->PipelineState.VertexOffsets[0] +
+                       (uint64_t)StartVertexLocation * d->PipelineState.VertexStrides[0];
+        uint32_t n = vb0->TotalByteSize / 4u, step = (n > 4096u) ? n / 4096u : 1u;
+        const uint32_t *w = (const uint32_t *)base;
+        for (uint32_t i = 0; i < n; i += step) { vbN++; if (w[i]) vbNz++; }
+        if (off + 32u <= vb0->TotalByteSize && (off & 3u) == 0u) {
+            const uint32_t *vw = (const uint32_t *)(base + off);
+            for (uint32_t k = 0; k < 8u; ++k) v[k] = vw[k];
+        }
+    }
+    Bc250UmdTrace("[DRAW_DATA] VSCB0=%p nz=%u/%u f0..7=[%.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f] "
+        "PSCB0=%p nz=%u/%u VB0=%p stride=%u off=%u nz=%u/%u v0=[%08X %08X %08X %08X %08X %08X %08X %08X]",
+        (void *)vscb, vsNz, vsN, f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7],
+        (void *)pscb, psNz, psN, (void *)vb0, d->PipelineState.VertexStrides[0],
+        d->PipelineState.VertexOffsets[0], vbNz, vbN, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
+}
+
+/*
+ * DX.25 -- os vertices REALMENTE desenhados.
+ *
+ * Corrida 70: o [DRAW_DATA] amostrou o vertice do offset 0 do VB, que saiu zero,
+ * mas os draws do DWM sao INDEXADOS: o vertice lido depende de StartIndexLocation,
+ * BaseVertexLocation e do index buffer, e nada disso estava no log. Aqui: os
+ * 6 primeiros indices (lidos da sombra do IB) e os 3 primeiros vertices que eles
+ * apontam, com os 3 primeiros dwords como float (posicao no layout do DWM) e o
+ * quarto em hex (cor R8G8B8A8 no offset 12). So' leitura.
+ */
+static void Bc250UmdTraceDrawVertices(_In_ BC250_UMD_DEVICE *d, BOOL Indexed, UINT Start, INT BaseVertex)
+{
+    BC250_UMD_RESOURCE *vb0 = (BC250_UMD_RESOURCE *)d->PipelineState.VertexBuffers[0].pDrvPrivate;
+    BC250_UMD_RESOURCE *ib = (BC250_UMD_RESOURCE *)d->PipelineState.IndexBuffer.pDrvPrivate;
+    UINT stride = d->PipelineState.VertexStrides[0];
+    uint64_t vbOff = d->PipelineState.VertexOffsets[0];
+    uint32_t idx[6] = {0};
+    uint32_t nIdx = 0;
+    char verts[3][96];
+    const char *ibState = "N/A";
+
+    if (Indexed) {
+        uint32_t size = (d->PipelineState.IndexFormat == DXGI_FORMAT_R16_UINT) ? 2u : 4u;
+        ibState = "OK";
+        if (ib == NULL || ib->pCpuShadow == NULL) {
+            ibState = "IB_SEM_SOMBRA";
+        } else {
+            for (uint32_t k = 0; k < 6u; ++k) {
+                uint64_t o = (uint64_t)d->PipelineState.IndexOffset + ((uint64_t)Start + k) * size;
+                if (o + size > ib->TotalByteSize) { ibState = "IB_FORA_DO_BUFFER"; break; }
+                idx[k] = (size == 2u) ? ((const uint16_t *)((const uint8_t *)ib->pCpuShadow + o))[0]
+                                      : ((const uint32_t *)((const uint8_t *)ib->pCpuShadow + o))[0];
+                nIdx++;
+            }
+        }
+    } else {
+        for (uint32_t k = 0; k < 6u; ++k) idx[k] = Start + k;
+        nIdx = 6u;
+    }
+
+    for (uint32_t k = 0; k < 3u; ++k) {
+        int64_t vi = (int64_t)idx[k] + (Indexed ? (int64_t)BaseVertex : 0);
+        uint64_t o;
+        if (k >= nIdx || vb0 == NULL || vb0->pCpuShadow == NULL || vi < 0) {
+            _snprintf_s(verts[k], sizeof(verts[k]), _TRUNCATE, "v%u=INDISPONIVEL", k);
+            continue;
+        }
+        o = vbOff + (uint64_t)vi * stride;
+        if (o + 16u > vb0->TotalByteSize || (o & 3u) != 0u) {
+            _snprintf_s(verts[k], sizeof(verts[k]), _TRUNCATE, "v%u(i=%lld)=FORA_DO_BUFFER(off=%llu)",
+                k, (long long)vi, (unsigned long long)o);
+            continue;
+        }
+        {
+            const uint32_t *w = (const uint32_t *)((const uint8_t *)vb0->pCpuShadow + o);
+            union { uint32_t u; float f; } x, y, z;
+            x.u = w[0]; y.u = w[1]; z.u = w[2];
+            _snprintf_s(verts[k], sizeof(verts[k]), _TRUNCATE, "v%u(i=%lld)=(%.2f,%.2f,%.2f) w3=%08X",
+                k, (long long)vi, x.f, y.f, z.f, w[3]);
+        }
+    }
+    Bc250UmdTrace("[DRAW_VERTS] Indexed=%d Start=%u Base=%d IB=%p fmt=%u off=%u %s idx=[%u %u %u %u %u %u] "
+        "stride=%u vbOff=%llu %s %s %s",
+        (int)Indexed, Start, BaseVertex, (void *)ib, (UINT)d->PipelineState.IndexFormat,
+        d->PipelineState.IndexOffset, ibState, idx[0], idx[1], idx[2], idx[3], idx[4], idx[5],
+        stride, (unsigned long long)vbOff, verts[0], verts[1], verts[2]);
+}
+
+/*
+ * DX.25 -- o ALVO logo depois do draw.
+ *
+ * Separa "nada rasterizado" / "rasterizado em preto" / "desenhado e sobrescrito
+ * depois": a grade do Present so' ve o fim do quadro. Instrumentacao de
+ * laboratorio: copia o alvo inteiro (11 MB em 2560x1080) para o buffer linear e
+ * roda a mesma grade. So' alvos grandes (>= 1024x512) e teto de 40 por device,
+ * DECLARADO no log. Nada e' escrito no alvo.
+ */
+#define BC250_DRAW_READBACK_MAX 40u
+static void Bc250UmdReadbackDrawTarget(_Inout_ BC250_UMD_DEVICE *d, _In_opt_ BC250_UMD_RESOURCE *res)
+{
+    VkCommandBuffer cmd;
+    VkImageMemoryBarrier imb;
+    VkBufferMemoryBarrier bmb;
+    VkBufferImageCopy region;
+    uint32_t n;
+
+    if (res == NULL || !res->VkResourceCreated || res->VkImg == VK_NULL_HANDLE ||
+        res->Width < 1024u || res->Height < 512u) {
+        return;
+    }
+    if (d->DrawReadbackCount >= BC250_DRAW_READBACK_MAX) {
+        if (d->DrawReadbackCount == BC250_DRAW_READBACK_MAX) {
+            Bc250UmdTrace("[DRAW_READBACK] TETO de %u leituras atingido neste device; draws seguintes NAO sao lidos",
+                BC250_DRAW_READBACK_MAX);
+            d->DrawReadbackCount++;
+        }
+        return;
+    }
+    n = ++d->DrawReadbackCount;
+    if (!Bc250UmdVkEnsureLinearPresentBuf(&d->VkBridge, res->Width, res->Height) ||
+        d->VkBridge.LinearPresentBuf == VK_NULL_HANDLE) {
+        Bc250UmdTrace("[DRAW_READBACK] #%u PULADA: buffer linear indisponivel", n);
+        return;
+    }
+    cmd = Bc250UmdVkGetCommandBuffer(&d->VkBridge);
+    if (cmd == VK_NULL_HANDLE) {
+        Bc250UmdTrace("[DRAW_READBACK] #%u PULADA: command buffer indisponivel", n);
+        return;
+    }
+
+    memset(&imb, 0, sizeof(imb));
+    imb.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    imb.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    imb.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    imb.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    imb.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    imb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imb.image = res->VkImg;
+    imb.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    imb.subresourceRange.levelCount = 1;
+    imb.subresourceRange.layerCount = 1;
+    d->VkBridge.vk.vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &imb);
+
+    memset(&region, 0, sizeof(region));
+    region.bufferRowLength = res->Width;
+    region.bufferImageHeight = res->Height;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.layerCount = 1;
+    region.imageExtent.width = res->Width;
+    region.imageExtent.height = res->Height;
+    region.imageExtent.depth = 1;
+    d->VkBridge.vk.vkCmdCopyImageToBuffer(cmd, res->VkImg, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        d->VkBridge.LinearPresentBuf, 1, &region);
+
+    memset(&bmb, 0, sizeof(bmb));
+    bmb.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    bmb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    bmb.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    bmb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    bmb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    bmb.buffer = d->VkBridge.LinearPresentBuf;
+    bmb.size = (VkDeviceSize)res->Width * res->Height * 4u;
+    d->VkBridge.vk.vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT, 0, 0, NULL, 1, &bmb, 0, NULL);
+
+    imb.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    imb.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    imb.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    imb.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    d->VkBridge.vk.vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, NULL, 0, NULL, 1, &imb);
+
+    if (Bc250UmdVkFlushCommands(&d->VkBridge) != VK_SUCCESS) {
+        Bc250UmdTrace("[DRAW_READBACK] #%u FALHOU: flush/fence da copia", n);
+        return;
+    }
+    Bc250UmdTrace("[DRAW_READBACK] #%u VkDraws=%llu RT0=%p %ux%u -- a GRADE seguinte e' do ALVO logo apos este draw, nao do Present",
+        n, d->NativeVkDrawCount, (void *)res, res->Width, res->Height);
+    (void)Bc250UmdVkInspectLinearPresentBuf(&d->VkBridge, res->Width, res->Height);
+}
+
 static BOOL Bc250UmdExecuteVkDraw(
     _Inout_ BC250_UMD_DEVICE* pDevice,
     UINT VertexCount,
@@ -2682,6 +2920,13 @@ static BOOL Bc250UmdExecuteVkDraw(
     }
 
     rtv = (BC250_UMD_RTV*)pDevice->PipelineState.BoundRTVs[0].pDrvPrivate;
+    /* DX.28: depois de RotateResourceIdentities a RTV tem de desenhar na
+     * VkImage que o recurso carrega AGORA, nao na da criacao. */
+    if (rtv != NULL && rtv->VkRtvCreated && !Bc250UmdVkRtvFollowResource(pDevice, rtv)) {
+        pDevice->LastVkDrawFailureReason = "RTV_NAO_SEGUIU_ROTACAO";
+        Bc250UmdTrace("Bc250UmdExecuteVkDraw: RECUSADO -- RTV nao conseguiu seguir a imagem do recurso apos rotacao (rtv=%p)", (void*)rtv);
+        return FALSE;
+    }
     if (rtv == NULL || !rtv->VkRtvCreated || rtv->VkPass == VK_NULL_HANDLE || rtv->VkFb == VK_NULL_HANDLE) {
         pDevice->LastVkDrawFailureReason = "RTV_VULKAN_INVALIDO";
         Bc250UmdTrace("Bc250UmdExecuteVkDraw: RECUSADO -- RTV invalido ou sem VkPass/VkFb (rtv=%p, VkRtvCreated=%d)",
@@ -2749,9 +2994,37 @@ static BOOL Bc250UmdExecuteVkDraw(
     }
 
     if (pDevice->PipelineState.BoundBlendState.pDrvPrivate != NULL) {
+        const D3D10_DDI_RENDER_TARGET_BLEND_DESC1 *rt0;
+        const char *why = NULL;
+        BOOL okMap = TRUE;
         blend = (BC250_UMD_BLEND_STATE*)pDevice->PipelineState.BoundBlendState.pDrvPrivate;
-        psoKey.BlendEnable = blend->Desc.RenderTarget[0].BlendEnable;
-        psoKey.ColorWriteMask = blend->Desc.RenderTarget[0].RenderTargetWriteMask;
+        rt0 = &blend->Desc.RenderTarget[0];
+        psoKey.BlendEnable = rt0->BlendEnable;
+        psoKey.ColorWriteMask = rt0->RenderTargetWriteMask;
+        psoKey.AlphaToCoverageEnable = blend->Desc.AlphaToCoverageEnable;
+        psoKey.BlendFactorsExplicit = TRUE;
+        if (rt0->BlendEnable) {
+            okMap = Bc250UmdMapBlendFactor((UINT)rt0->SrcBlend, &psoKey.SrcColorBlendFactor, &why) &&
+                    Bc250UmdMapBlendFactor((UINT)rt0->DestBlend, &psoKey.DstColorBlendFactor, &why) &&
+                    Bc250UmdMapBlendOp((UINT)rt0->BlendOp, &psoKey.ColorBlendOp, &why) &&
+                    Bc250UmdMapBlendFactor((UINT)rt0->SrcBlendAlpha, &psoKey.SrcAlphaBlendFactor, &why) &&
+                    Bc250UmdMapBlendFactor((UINT)rt0->DestBlendAlpha, &psoKey.DstAlphaBlendFactor, &why) &&
+                    Bc250UmdMapBlendOp((UINT)rt0->BlendOpAlpha, &psoKey.AlphaBlendOp, &why);
+        } else {
+            psoKey.SrcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+            psoKey.DstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+            psoKey.ColorBlendOp = VK_BLEND_OP_ADD;
+            psoKey.SrcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            psoKey.DstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+            psoKey.AlphaBlendOp = VK_BLEND_OP_ADD;
+        }
+        if (!okMap) {
+            pDevice->LastVkDrawFailureReason = why;
+            Bc250UmdTrace("Bc250UmdExecuteVkDraw: RECUSADO -- %s (Src=%u Dst=%u Op=%u SrcA=%u DstA=%u OpA=%u)",
+                why, (UINT)rt0->SrcBlend, (UINT)rt0->DestBlend, (UINT)rt0->BlendOp,
+                (UINT)rt0->SrcBlendAlpha, (UINT)rt0->DestBlendAlpha, (UINT)rt0->BlendOpAlpha);
+            return FALSE;
+        }
     } else {
         psoKey.BlendEnable = FALSE;
         psoKey.ColorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
@@ -2767,43 +3040,23 @@ static BOOL Bc250UmdExecuteVkDraw(
     if (pDevice->PipelineState.InputLayout.pDrvPrivate != NULL) {
         il = (BC250_UMD_ELEMENT_LAYOUT*)pDevice->PipelineState.InputLayout.pDrvPrivate;
         if (il != NULL && il->NumElements > 0) {
-            UINT e;
-            uint32_t boundSlotsMask = 0;
-            psoKey.NumInputElements = (il->NumElements <= 16) ? il->NumElements : 16;
-            for (e = 0; e < psoKey.NumInputElements; ++e) {
-                uint32_t slot = il->Elements[e].InputSlot;
-                VkFormat vkFmt = Bc250UmdVkFormatFromDxgi(il->Elements[e].Format);
-                psoKey.InputAttributes[e].location = e;
-                psoKey.InputAttributes[e].binding = slot;
-                psoKey.InputAttributes[e].format = vkFmt;
-                psoKey.InputAttributes[e].offset = il->Elements[e].AlignedByteOffset;
-                if (slot < 16) {
-                    boundSlotsMask |= (1u << slot);
-                }
+            uint32_t vbPresent = 0;
+            UINT failedElement = 0;
+            const char *why;
+            for (uint32_t s = 0; s < 16u && s < D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT; ++s) {
+                BC250_UMD_RESOURCE *vbs = (BC250_UMD_RESOURCE *)pDevice->PipelineState.VertexBuffers[s].pDrvPrivate;
+                if (vbs != NULL && vbs->VkBuf != VK_NULL_HANDLE) vbPresent |= (1u << s);
             }
-
-            psoKey.NumInputBindings = 0;
-            for (uint32_t s = 0; s < 16; ++s) {
-                if (boundSlotsMask & (1u << s)) {
-                    uint32_t bIdx = psoKey.NumInputBindings++;
-                    uint32_t stride = (s < D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT) ?
-                                      pDevice->PipelineState.VertexStrides[s] : 0;
-
-                    /* Prevenir divisao por zero no compilador ACO/RADV (0xC0000094) */
-                    if (stride == 0) {
-                        for (e = 0; e < psoKey.NumInputElements; ++e) {
-                            if (psoKey.InputAttributes[e].binding == s) {
-                                uint32_t attrEnd = psoKey.InputAttributes[e].offset + 16;
-                                if (attrEnd > stride) stride = attrEnd;
-                            }
-                        }
-                        if (stride == 0) stride = 16;
-                    }
-
-                    psoKey.InputBindings[bIdx].binding = s;
-                    psoKey.InputBindings[bIdx].stride = stride;
-                    psoKey.InputBindings[bIdx].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-                }
+            /* DX.24: traducao pura em bc250_umd_state_translate.c (testada offline). */
+            why = Bc250UmdTranslateInputLayout(il->Elements, il->NumElements,
+                pDevice->PipelineState.VertexStrides, vbPresent,
+                psoKey.InputAttributes, &psoKey.NumInputElements,
+                psoKey.InputBindings, &psoKey.NumInputBindings, &failedElement);
+            if (why != NULL) {
+                pDevice->LastVkDrawFailureReason = why;
+                Bc250UmdTrace("Bc250UmdExecuteVkDraw: RECUSADO -- %s (elementos=%u elemento=%u)",
+                    why, il->NumElements, failedElement);
+                return FALSE;
             }
         }
     }
@@ -2862,19 +3115,24 @@ static BOOL Bc250UmdExecuteVkDraw(
 
     if (pDevice->PipelineState.NumViewports > 0) {
         VkViewport vp;
+        /*
+         * DX.24: D3D tem y=+1 no TOPO do NDC; Vulkan tem y=+1 EMBAIXO. Altura
+         * negativa (Vulkan 1.1 / maintenance1) reproduz o D3D, como o vkd3d faz.
+         * Antes a imagem saia de cabeca para baixo e com o enrolamento invertido.
+         */
         vp.x = pDevice->PipelineState.Viewports[0].TopLeftX;
-        vp.y = pDevice->PipelineState.Viewports[0].TopLeftY;
+        vp.y = pDevice->PipelineState.Viewports[0].TopLeftY + pDevice->PipelineState.Viewports[0].Height;
         vp.width = pDevice->PipelineState.Viewports[0].Width;
-        vp.height = pDevice->PipelineState.Viewports[0].Height;
+        vp.height = -pDevice->PipelineState.Viewports[0].Height;
         vp.minDepth = pDevice->PipelineState.Viewports[0].MinDepth;
         vp.maxDepth = pDevice->PipelineState.Viewports[0].MaxDepth;
         pDevice->VkBridge.vk.vkCmdSetViewport(cmd, 0, 1, &vp);
     } else {
         VkViewport vp;
         vp.x = 0.0f;
-        vp.y = 0.0f;
         vp.width = (float)((rtv->pResource != NULL) ? rtv->pResource->Width : 1920);
-        vp.height = (float)((rtv->pResource != NULL) ? rtv->pResource->Height : 1080);
+        vp.y = (float)((rtv->pResource != NULL) ? rtv->pResource->Height : 1080);
+        vp.height = -vp.y;
         vp.minDepth = 0.0f;
         vp.maxDepth = 1.0f;
         pDevice->VkBridge.vk.vkCmdSetViewport(cmd, 0, 1, &vp);
@@ -2897,6 +3155,10 @@ static BOOL Bc250UmdExecuteVkDraw(
     }
 
     pDevice->VkBridge.vk.vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    /* DX.24: o pipeline declara BLEND_CONSTANTS dinamico; o valor e' o do OMSetBlendState. */
+    pDevice->VkBridge.vk.vkCmdSetBlendConstants(cmd, pDevice->PipelineState.BlendFactor);
+    Bc250UmdTraceDrawData(pDevice, StartVertexLocation);
+    Bc250UmdTraceDrawVertices(pDevice, Indexed, StartVertexLocation, BaseVertexLocation);
 
     for (uint32_t b = 0; b < psoKey.NumInputBindings; ++b) {
         uint32_t slot = psoKey.InputBindings[b].binding;
@@ -2911,13 +3173,8 @@ static BOOL Bc250UmdExecuteVkDraw(
                 VkDeviceSize offset = pDevice->PipelineState.VertexOffsets[slot];
                 pDevice->VkBridge.vk.vkCmdBindVertexBuffers(cmd, slot, 1, &vb->VkBuf, &offset);
             }
-        } else if (pDevice->PipelineState.VertexBuffers[0].pDrvPrivate != NULL) {
-            BC250_UMD_RESOURCE* vb0 = (BC250_UMD_RESOURCE*)pDevice->PipelineState.VertexBuffers[0].pDrvPrivate;
-            if (vb0 != NULL && vb0->VkBuf != VK_NULL_HANDLE) {
-                VkDeviceSize offset = 0;
-                pDevice->VkBridge.vk.vkCmdBindVertexBuffers(cmd, slot, 1, &vb0->VkBuf, &offset);
-            }
         }
+        /* DX.24: slot sem buffer ja foi recusado antes do flush; nada e' substituido aqui. */
     }
 
     if (Indexed) {
@@ -2952,8 +3209,13 @@ static BOOL Bc250UmdExecuteVkDraw(
     pDevice->LastVkDrawFailureReason = NULL;
     pDevice->NativeVkDrawCount++;
     pDevice->PipelineState.DrawCount++;
-    Bc250UmdTrace("Bc250UmdExecuteVkDraw: DRAW fence concluida; pixels NAO CONFERIDOS (VkDraws=%llu, Total=%llu, Verts=%u, Inst=%u, Indexed=%d)",
-        pDevice->NativeVkDrawCount, pDevice->PipelineState.DrawCount, VertexCount, InstanceCount, (int)Indexed);
+    /* DX.23: nomeia o alvo do draw, para cruzar com hSurfaceToPresent (Corrida 68). */
+    Bc250UmdTrace("Bc250UmdExecuteVkDraw: DRAW fence concluida; pixels NAO CONFERIDOS (VkDraws=%llu, Total=%llu, Verts=%u, Inst=%u, Indexed=%d) RT0=%p %ux%u img=%p",
+        pDevice->NativeVkDrawCount, pDevice->PipelineState.DrawCount, VertexCount, InstanceCount, (int)Indexed,
+        (void*)rtv->pResource, rtv->pResource ? rtv->pResource->Width : 0u,
+        rtv->pResource ? rtv->pResource->Height : 0u,
+        rtv->pResource ? (void*)rtv->pResource->VkImg : NULL);
+    Bc250UmdReadbackDrawTarget(pDevice, rtv->pResource);
     return TRUE;
 }
 
@@ -4723,7 +4985,7 @@ static BOOL Bc250UmdPresentVulkanDetileAndScanout(
                 VkResult vkPresRes = device->VkBridge.pfnPresentScanout(
                     device->VkBridge.Device, device->VkBridge.GraphicsQueue,
                     device->VkBridge.LinearPresentMem, srcRes->Width, srcRes->Height);
-                Bc250UmdTrace("DXGI Present: radv_bc250_present_scanout (DIRECT SCANOUT) res=%d (%ux%u, NonZero=%u/5)",
+                Bc250UmdTrace("DXGI Present: radv_bc250_present_scanout (DIRECT SCANOUT) res=%d (%ux%u, NonZeroGrade=%u)",
                     vkPresRes, srcRes->Width, srcRes->Height, nonZeroSamples);
             }
             return TRUE;
@@ -5208,26 +5470,63 @@ HRESULT APIENTRY Bc250DxgiRotateResourceIdentities(DXGI_DDI_ARG_ROTATE_RESOURCE_
         savedAllocation = first->Allocation;
         savedShadow = first->pCpuShadow;
 
-        for (i = 0; i + 1u < pRotateData->Resources; ++i) {
-            BC250_UMD_RESOURCE* dst = (BC250_UMD_RESOURCE*)pRotateData->pResources[i];
-            BC250_UMD_RESOURCE* src = (BC250_UMD_RESOURCE*)pRotateData->pResources[i + 1u];
-            dst->Allocation = src->Allocation;
-            dst->pCpuShadow = src->pCpuShadow;
-        }
-
+        /*
+         * DX.28 -- O CONTEUDO RENDERIZADO TAMBEM E' IDENTIDADE.
+         *
+         * Ate a Corrida 73 so' Allocation e pCpuShadow giravam. Mas o que o DWM
+         * desenhou mora na VkImage (e na VkDeviceMemory dela), que ficava no
+         * recurso antigo: depois da rotacao, o "buffer anterior" que o DWM copia
+         * para o novo back buffer era uma imagem com zeros ou com um quadro
+         * velho. Medido na 73: grade 86400/86400 depois do draw e 0/86400 no
+         * Present, logo apos os ResourceCopyRegion do buffer anterior -- os
+         * quadrados do desktop que apareciam e sumiam. O grupo Vulkan gira
+         * junto com o backing; a RTV segue a imagem em Bc250UmdVkRtvFollowResource.
+         */
         {
-            BC250_UMD_RESOURCE* last =
-                (BC250_UMD_RESOURCE*)pRotateData->pResources[pRotateData->Resources - 1u];
-            last->Allocation = savedAllocation;
-            last->pCpuShadow = savedShadow;
-        }
+            const VkBuffer savedBuf = first->VkBuf;
+            const VkImage savedImg = first->VkImg;
+            const VkDeviceMemory savedMem = first->VkMem;
+            const VkDeviceSize savedMemSize = first->VkMemSize;
+            const VkImageLayout savedLayout = first->VkLayout;
+            const BOOL savedVkCreated = first->VkResourceCreated;
+            const BOOL savedUploaded = first->WddmAllocationUploaded;
 
-        Bc250UmdTrace("DXGI RotateResourceIdentities LEAVE: %u recursos rotacionados; "
-            "res[0] agora tem hAlloc=0x%x GpuVa=0x%llX (antes 0x%x)",
-            pRotateData->Resources,
-            (unsigned)first->Allocation.KernelAllocation,
-            (unsigned long long)first->Allocation.GpuVirtualAddress,
-            (unsigned)savedAllocation.KernelAllocation);
+            for (i = 0; i + 1u < pRotateData->Resources; ++i) {
+                BC250_UMD_RESOURCE* dst = (BC250_UMD_RESOURCE*)pRotateData->pResources[i];
+                BC250_UMD_RESOURCE* src = (BC250_UMD_RESOURCE*)pRotateData->pResources[i + 1u];
+                dst->Allocation = src->Allocation;
+                dst->pCpuShadow = src->pCpuShadow;
+                dst->VkBuf = src->VkBuf;
+                dst->VkImg = src->VkImg;
+                dst->VkMem = src->VkMem;
+                dst->VkMemSize = src->VkMemSize;
+                dst->VkLayout = src->VkLayout;
+                dst->VkResourceCreated = src->VkResourceCreated;
+                dst->WddmAllocationUploaded = src->WddmAllocationUploaded;
+            }
+
+            {
+                BC250_UMD_RESOURCE* last =
+                    (BC250_UMD_RESOURCE*)pRotateData->pResources[pRotateData->Resources - 1u];
+                last->Allocation = savedAllocation;
+                last->pCpuShadow = savedShadow;
+                last->VkBuf = savedBuf;
+                last->VkImg = savedImg;
+                last->VkMem = savedMem;
+                last->VkMemSize = savedMemSize;
+                last->VkLayout = savedLayout;
+                last->VkResourceCreated = savedVkCreated;
+                last->WddmAllocationUploaded = savedUploaded;
+            }
+
+            Bc250UmdTrace("DXGI RotateResourceIdentities LEAVE: %u recursos rotacionados; "
+                "res[0] agora tem hAlloc=0x%x GpuVa=0x%llX (antes 0x%x) VkImg=%p (antes %p) -- DX.28: imagem Vulkan gira junto",
+                pRotateData->Resources,
+                (unsigned)first->Allocation.KernelAllocation,
+                (unsigned long long)first->Allocation.GpuVirtualAddress,
+                (unsigned)savedAllocation.KernelAllocation,
+                (void*)first->VkImg, (void*)savedImg);
+        }
         return S_OK;
     }
 }

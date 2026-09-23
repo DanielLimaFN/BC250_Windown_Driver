@@ -121,6 +121,7 @@ typedef struct _BC250_UMD_RESOURCE {
      * afirma que o upload Vulkan concluiu. */
     UINT TextureWriteDdiCount;
     BOOL VkResourceCreated;
+    BOOL WddmAllocationUploaded;
 } BC250_UMD_RESOURCE;
 
 /* Maximum simultaneous render targets and viewports */
@@ -169,6 +170,10 @@ typedef struct _BC250_UMD_RTV {
     VkRenderPass VkPassLoad;
     VkFramebuffer VkFb;
     BOOL VkRtvCreated;
+    /* DX.28: imagem para a qual VkView/VkFb foram criados. Se a rotacao de
+     * identidades trocar pResource->VkImg, a RTV tem de seguir o recurso
+     * (Bc250UmdVkRtvFollowResource) em vez de desenhar na imagem antiga. */
+    VkImage VkImageAtCreation;
 } BC250_UMD_RTV;
 
 /* Depth Stencil View representation */
@@ -404,6 +409,7 @@ typedef struct _BC250_UMD_DEVICE {
     VkRenderPass ActiveRenderPass;
     VkFramebuffer ActiveFramebuffer;
     UINT64 NativeVkDrawCount;
+    UINT32 DrawReadbackCount; /* DX.25: leituras do alvo logo apos o draw (teto por device) */
     /* Motivo exato da ultima tentativa Vulkan. Aponta somente para literais
      * estaticos; Bc250UmdRejectUnbackedDraw o publica em vez do diagnostico
      * historico e falso de "PM4 ausente". */

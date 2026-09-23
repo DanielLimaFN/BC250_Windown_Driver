@@ -649,6 +649,47 @@ static BOOLEAN Bc250ShouldEmitVerboseLog(
         Bc250LogTextContains(Text, "FAULT") ||
         Bc250LogTextContains(Text, "DIVERGENCIA") ||
         Bc250LogTextContains(Text, "OCUPACAO") ||
+        /*
+         * COMPOSICAO sai da amostragem (Corrida 45, 20/09). A linha
+         * PUBLICACAO_COMPOSICAO foi adicionada na faixa D3 para dizer se a
+         * falha de publicacao de GPUVA e' de ORDEM ou de CAPACIDADE, e saiu
+         * ZERO vezes em 10 PUBLICACAO_FALHA daquela corrida -- a string estava
+         * no SYS assinado, mas a isencao do amostrador casa por SUBSTRING
+         * ("FALHA", "OCUPACAO", "PASS"...) e o nome escolhido nao continha
+         * nenhum token isento. Caiu na classe 4 e foi amostrada fora,
+         * exatamente na medicao que a faixa existia para obter.
+         */
+        Bc250LogTextContains(Text, "COMPOSICAO") ||
+        /*
+         * Corrida 57: o fault nao latchou, mas o UpdatePageTable que cobre
+         * 0x200040000 aconteceu uma unica vez. A identidade/permissao desse
+         * alvo nao pode ser amostrada fora justamente por ser rara.
+         */
+        Bc250LogTextContains(Text, "DX_TARGET_200040") ||
+        /*
+         * DX.12: a mascara de VMIDs invalidados e a MEDICAO da Corrida 59.
+         * A linha comeca com "[FLUSH_POOL_VMIDS]", que cairia na classe 5
+         * ("[FlushMappedGfxhubTlb] " nao, mas o ramo final devolve TRUE para
+         * tag desconhecida) -- o risco real e' alguem futuramente lhe dar uma
+         * classe. A isencao explicita e' a armadilha 16 ja paga: PUBLICACAO_
+         * COMPOSICAO saiu ZERO vezes em 10 falhas porque o nome escolhido nao
+         * continha token isento. O teto desta linha e' proprio, no emissor.
+         */
+        Bc250LogTextContains(Text, "FLUSH_POOL_VMIDS") ||
+        /*
+         * DX.13: as tres linhas da escrita de diretorio de paginas. Todas sao
+         * raras POR CONSTRUCAO -- PDE_WRITE so sai quando a atualizacao cobre
+         * o indice da arena, e as outras duas so saem quando algo anormal
+         * acontece. Rara e critica e exatamente o perfil que a armadilha 16
+         * queimou uma vez: PUBLICACAO_COMPOSICAO saiu ZERO vezes em 10 falhas
+         * por nao ter token isento. PDE_TRIPWIRE ja carrega FALHA, mas nao
+         * dependa disso -- o nome pode mudar e a isencao nao pode depender de
+         * uma palavra no meio do texto.
+         */
+        Bc250LogTextContains(Text, "PDE_WRITE") ||
+        Bc250LogTextContains(Text, "PDE_ARENA_CONFRONTO") ||
+        Bc250LogTextContains(Text, "PDE_TRIPWIRE") ||
+        Bc250LogTextContains(Text, "PDE_LARGEPAGE") ||
         Bc250LogTextContains(Text, "REJECT") ||
         Bc250LogTextContains(Text, "ERROR") ||
         Bc250LogTextContains(Text, "FAILED") ||

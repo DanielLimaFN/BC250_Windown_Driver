@@ -152,6 +152,9 @@ ULONG Bc250McdmGetComputeOnly(VOID)
     return (ULONG)InterlockedCompareExchange(&g_Bc250McdmComputeOnly, 0, 0);
 }
 
+/* DX.13 -- teto proprio da linha [PDE_LARGEPAGE]; so telemetria. */
+static volatile LONG g_Bc250PdeLargePageCount = 0;
+
 NTSTATUS Bc250McdmEncodeVidMmPteWithLevel(
     const BC250_MCDM_RUNTIME_CAPS *Caps,
     const DXGK_PTE *Source,
@@ -193,6 +196,52 @@ NTSTATUS Bc250McdmEncodeVidMmPteWithLevel(
             Bc250DisplayLog("[EncodeVidMmPte FAIL PDE Segment] Lvl=%u, Seg=%u\n",
                 PageTableLevel, (UINT32)Source->Segment);
             return STATUS_NOT_SUPPORTED;
+        }
+        /*
+         * DX.13 -- LargePage DEIXOU DE SER INVISIVEL NO NIVEL DE DIRETORIO.
+         *
+         * O nivel 0 ja recusava LargePage desde sempre; o nivel > 0 sequer
+         * olhava o campo. Uma pagina grande pedida no diretorio e, pelo
+         * layout do Navi 10, uma FOLHA ocupando o slot do PDE (o bit P,
+         * 54) -- e nos a encodavamos como ponteiro de diretorio comum,
+         * calados.
+         *
+         * Isso importa agora porque a Corrida 59 leu formato de PTE no
+         * slot de PDE do indice 4096. NAO afirmo que a origem seja esta:
+         * afirmo que, enquanto este ramo fosse mudo, "o VidMm pediu
+         * pagina grande" e "alguem corrompeu o PDE" eram indistinguiveis
+         * no log.
+         *
+         * POR QUE ESTA FAIXA MEDE EM VEZ DE RECUSAR. Recusar seria o lado
+         * seguro SE soubessemos a frequencia -- e nao sabemos: nenhuma
+         * corrida ate hoje registrou LargePage no nivel de diretorio,
+         * porque o campo nunca foi olhado aqui. Se o VidMm o usar de
+         * rotina, recusar faria a UpdatePageTable falhar em serie e a
+         * proxima corrida nao mediria NADA -- e o projeto ja pagou
+         * exatamente esse preco quando a instalacao lateral recusava a
+         * submissao antes de existir medicao (Corrida 53).
+         *
+         * Entao: a linha sai, o caso fica CONTADO, e a decisao de recusar
+         * vem depois do numero. Isto NAO e sucesso silencioso (Lei 4) --
+         * o log nomeia a aproximacao que estamos fazendo e diz que ela
+         * nao esta provada.
+         */
+        if (Source->LargePage != 0u) {
+            /*
+             * TETO PROPRIO. A linha e isenta da amostragem global (ela e
+             * rara POR HIPOTESE, nao por construcao), e esta funcao roda
+             * por ENTRADA de page table. Se a hipotese estiver errada,
+             * sem teto ela afogaria o log e destruiria justamente a
+             * evidencia que a faixa existe para coletar. O contador conta
+             * TODAS; o log mostra as 8 primeiras e 1 em 512.
+             */
+            LONG seq = InterlockedIncrement(
+                &g_Bc250PdeLargePageCount) - 1L;
+            if (seq < 8L || (seq % 512L) == 0L) {
+                Bc250DisplayLog("[PDE_LARGEPAGE] Lvl=%u Pfn=0x%llX -- VidMm pediu pagina GRANDE no nivel de diretorio; pelo layout do Navi 10 isso e uma FOLHA no slot de PDE (bit P) e nos encodamos ponteiro de diretorio comum (ocorrencia #%ld). APROXIMACAO DECLARADA, NAO PROVADA\n",
+                    seq + 1L, PageTableLevel,
+                    (unsigned long long)Source->PageAddress);
+            }
         }
         if (pageOffsetInSegment >= Caps->LocalSegmentBytes) {
             Bc250DisplayLog("[EncodeVidMmPte FAIL PDE LocalBounds] Lvl=%u, Pfn=0x%llX, Offset=0x%llX, MaxBytes=0x%llX\n",

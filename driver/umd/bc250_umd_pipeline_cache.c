@@ -324,9 +324,10 @@ BOOL Bc250UmdPipelineCacheGetOrCreate(
     VkPipelineDepthStencilStateCreateInfo depthStencil;
     VkPipelineColorBlendAttachmentState colorBlendAttachment;
     VkPipelineColorBlendStateCreateInfo colorBlending;
-    VkDynamicState dynamicStates[2] = {
+    VkDynamicState dynamicStates[3] = {
         VK_DYNAMIC_STATE_VIEWPORT,
-        VK_DYNAMIC_STATE_SCISSOR
+        VK_DYNAMIC_STATE_SCISSOR,
+        VK_DYNAMIC_STATE_BLEND_CONSTANTS /* DX.24: D3D11 BLEND_FACTOR vem do OMSetBlendState */
     };
     VkPipelineDynamicStateCreateInfo dynamicState;
     VkPipelineLayoutCreateInfo pipelineLayoutInfo;
@@ -421,6 +422,7 @@ BOOL Bc250UmdPipelineCacheGetOrCreate(
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = effectiveKey.SampleCount ? (VkSampleCountFlagBits)effectiveKey.SampleCount : VK_SAMPLE_COUNT_1_BIT;
+    multisampling.alphaToCoverageEnable = effectiveKey.AlphaToCoverageEnable ? VK_TRUE : VK_FALSE;
 
     memset(&depthStencil, 0, sizeof(depthStencil));
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -431,14 +433,27 @@ BOOL Bc250UmdPipelineCacheGetOrCreate(
     depthStencil.stencilTestEnable = VK_FALSE;
 
     memset(&colorBlendAttachment, 0, sizeof(colorBlendAttachment));
-    colorBlendAttachment.colorWriteMask = effectiveKey.ColorWriteMask ? effectiveKey.ColorWriteMask : (VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT);
+    /* DX.24: com blend state vinculado, mascara 0 e' "nao escrever" (D3D11), nao "padrao". */
+    colorBlendAttachment.colorWriteMask = effectiveKey.BlendFactorsExplicit ? effectiveKey.ColorWriteMask :
+        (effectiveKey.ColorWriteMask ? effectiveKey.ColorWriteMask : (VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT));
     colorBlendAttachment.blendEnable = effectiveKey.BlendEnable ? VK_TRUE : VK_FALSE;
-    colorBlendAttachment.srcColorBlendFactor = effectiveKey.SrcColorBlendFactor ? effectiveKey.SrcColorBlendFactor : VK_BLEND_FACTOR_ONE;
-    colorBlendAttachment.dstColorBlendFactor = effectiveKey.DstColorBlendFactor ? effectiveKey.DstColorBlendFactor : VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachment.colorBlendOp = effectiveKey.ColorBlendOp ? effectiveKey.ColorBlendOp : VK_BLEND_OP_ADD;
-    colorBlendAttachment.srcAlphaBlendFactor = effectiveKey.SrcAlphaBlendFactor ? effectiveKey.SrcAlphaBlendFactor : VK_BLEND_FACTOR_ONE;
-    colorBlendAttachment.dstAlphaBlendFactor = effectiveKey.DstAlphaBlendFactor ? effectiveKey.DstAlphaBlendFactor : VK_BLEND_FACTOR_ZERO;
-    colorBlendAttachment.alphaBlendOp = effectiveKey.AlphaBlendOp ? effectiveKey.AlphaBlendOp : VK_BLEND_OP_ADD;
+    if (effectiveKey.BlendFactorsExplicit) {
+        /* DX.24: valor pedido pelo D3D11, inclusive ZERO/ADD (que valem 0). */
+        colorBlendAttachment.srcColorBlendFactor = effectiveKey.SrcColorBlendFactor;
+        colorBlendAttachment.dstColorBlendFactor = effectiveKey.DstColorBlendFactor;
+        colorBlendAttachment.colorBlendOp = effectiveKey.ColorBlendOp;
+        colorBlendAttachment.srcAlphaBlendFactor = effectiveKey.SrcAlphaBlendFactor;
+        colorBlendAttachment.dstAlphaBlendFactor = effectiveKey.DstAlphaBlendFactor;
+        colorBlendAttachment.alphaBlendOp = effectiveKey.AlphaBlendOp;
+    } else {
+        /* Padrao D3D11 (sem blend state): ONE/ZERO/ADD. */
+        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+        colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+    }
 
     memset(&colorBlending, 0, sizeof(colorBlending));
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -448,7 +463,7 @@ BOOL Bc250UmdPipelineCacheGetOrCreate(
 
     memset(&dynamicState, 0, sizeof(dynamicState));
     dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamicState.dynamicStateCount = 2;
+    dynamicState.dynamicStateCount = 3;
     dynamicState.pDynamicStates = dynamicStates;
 
     /* 2b. Build Descriptor Set Layout & Pipeline Layout */
@@ -570,6 +585,10 @@ BOOL Bc250UmdPipelineCacheGetOrCreate(
     pipelineInfo.subpass = 0;
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineInfo.basePipelineIndex = -1;
+    /* DX.21: captura somente de leitura do programa final; nao altera o codigo gerado. */
+    if (pBridge->PipelineIrCaptureEnabled) {
+        pipelineInfo.flags |= VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR;
+    }
 
     BOOL psoSuccess = FALSE;
     __try {
@@ -596,6 +615,8 @@ BOOL Bc250UmdPipelineCacheGetOrCreate(
         }
         return FALSE;
     }
+
+    Bc250UmdVkDumpPipelineIr(pBridge, pipeline, (const void *)effectiveKey.VsModule, (const void *)effectiveKey.PsModule);
 
     /* 3. Insert into Cache */
     uint32_t targetSlot = (freeSlot != UINT32_MAX) ? freeSlot : oldestSlot;

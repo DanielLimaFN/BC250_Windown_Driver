@@ -217,6 +217,7 @@ BOOL Bc250UmdVkCreateResource(
 
         memset(&imgInfo, 0, sizeof(imgInfo));
         imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imgInfo.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
         imgInfo.imageType = VK_IMAGE_TYPE_2D;
         imgInfo.format = vkFormat;
         imgInfo.extent.width = (pRes->Width > 0) ? pRes->Width : 1;
@@ -517,6 +518,7 @@ BOOL Bc250UmdVkCreateRtv(
     }
 
     pRtv->VkRtvCreated = TRUE;
+    pRtv->VkImageAtCreation = pRes->VkImg;
     Bc250VkResTrace("[VK_RES] SUCESSO: RTV criado (view=%p, passClear=%p, passLoad=%p, fb=%p)",
         (void*)pRtv->VkView, (void*)pRtv->VkPass, (void*)pRtv->VkPassLoad, (void*)pRtv->VkFb);
     return TRUE;
@@ -550,6 +552,115 @@ VOID Bc250UmdVkDestroyRtv(
         pRtv->VkView = VK_NULL_HANDLE;
     }
     pRtv->VkRtvCreated = FALSE;
+}
+
+/*
+ * DX.28 -- A RTV SEGUE O RECURSO DEPOIS DA ROTACAO DE IDENTIDADES.
+ *
+ * Corrida 73: o DWM desenhava a regiao suja no back buffer, copiava o resto do
+ * buffer anterior (ResourceCopyRegion) e apresentava -- e a grade do Present
+ * saia 0/86400 logo depois das copias. A rotacao movia Allocation e
+ * pCpuShadow, mas o conteudo renderizado vive na VkImage, que ficava para tras.
+ * Agora a rotacao leva o grupo Vulkan junto; esta funcao refaz VkView/VkFb
+ * quando a imagem do recurso nao e' mais a da criacao. Os render passes nao
+ * dependem da imagem e ficam.
+ *
+ * O framebuffer antigo pode estar referenciado pelo command buffer em
+ * gravacao: antes de destrui-lo, fecha o render pass e faz flush (espera a
+ * fence), o mesmo par que Bc250Umd10Flush usa.
+ */
+BOOL Bc250UmdVkRtvFollowResource(
+    _Inout_ BC250_UMD_DEVICE* pDevice,
+    _Inout_ BC250_UMD_RTV* pRtv)
+{
+    BC250_UMD_VK_BRIDGE* pBridge;
+    BC250_UMD_RESOURCE* pRes;
+    VkFramebufferCreateInfo fbInfo;
+    VkImageViewCreateInfo viewInfo;
+    VkImageView newView = VK_NULL_HANDLE;
+    VkFramebuffer newFb = VK_NULL_HANDLE;
+    VkFormat vkFormat;
+    VkResult res;
+    uint32_t resLayers, baseLayer, layerCount;
+
+    if (pDevice == NULL || pRtv == NULL || !pDevice->VkBridgeInitialized) return FALSE;
+    if (!pRtv->VkRtvCreated) return FALSE;
+    pRes = pRtv->pResource;
+    if (pRes == NULL || pRes->VkImg == VK_NULL_HANDLE) return FALSE;
+    if (pRes->VkImg == pRtv->VkImageAtCreation) return TRUE;
+
+    pBridge = &pDevice->VkBridge;
+    if (pDevice->InRenderPass) {
+        pBridge->vk.vkCmdEndRenderPass(pBridge->CommandBuffer);
+        pDevice->InRenderPass = FALSE;
+    }
+    res = Bc250UmdVkFlushCommands(pBridge);
+    if (res != VK_SUCCESS) {
+        Bc250VkResTrace("[VK_RES] RTV_SEGUE_RECURSO RECUSADO: flush antes de trocar a imagem falhou (res=%d); a RTV NAO desenha na imagem antiga", res);
+        return FALSE;
+    }
+    pDevice->ActiveFramebuffer = VK_NULL_HANDLE;
+
+    vkFormat = Bc250UmdVkFormatFromDxgi(pRtv->Format ? pRtv->Format : pRes->Format);
+    if (vkFormat == VK_FORMAT_UNDEFINED) {
+        vkFormat = VK_FORMAT_B8G8R8A8_UNORM;
+    }
+    resLayers = (pRes->ArraySize > 0) ? pRes->ArraySize : 1;
+    baseLayer = pRtv->FirstArraySlice;
+    layerCount = (pRtv->ArraySize > 0 && pRtv->ArraySize != (UINT)-1) ? pRtv->ArraySize : 1;
+    if (baseLayer >= resLayers) baseLayer = 0;
+    if (baseLayer + layerCount > resLayers) {
+        layerCount = (resLayers > baseLayer) ? (resLayers - baseLayer) : 1;
+    }
+
+    memset(&viewInfo, 0, sizeof(viewInfo));
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = pRes->VkImg;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = vkFormat;
+    viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+    viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+    viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+    viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseMipLevel = pRtv->MipSlice;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = baseLayer;
+    viewInfo.subresourceRange.layerCount = layerCount;
+    res = pBridge->vk.vkCreateImageView(pBridge->Device, &viewInfo, NULL, &newView);
+    if (res != VK_SUCCESS) {
+        Bc250VkResTrace("[VK_RES] RTV_SEGUE_RECURSO RECUSADO: vkCreateImageView falhou (res=%d)", res);
+        return FALSE;
+    }
+
+    memset(&fbInfo, 0, sizeof(fbInfo));
+    fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    fbInfo.renderPass = pRtv->VkPass;
+    fbInfo.attachmentCount = 1;
+    fbInfo.pAttachments = &newView;
+    fbInfo.width = (pRes->Width > 0) ? pRes->Width : 1;
+    fbInfo.height = (pRes->Height > 0) ? pRes->Height : 1;
+    fbInfo.layers = 1;
+    res = pBridge->vk.vkCreateFramebuffer(pBridge->Device, &fbInfo, NULL, &newFb);
+    if (res != VK_SUCCESS) {
+        pBridge->vk.vkDestroyImageView(pBridge->Device, newView, NULL);
+        Bc250VkResTrace("[VK_RES] RTV_SEGUE_RECURSO RECUSADO: vkCreateFramebuffer falhou (res=%d)", res);
+        return FALSE;
+    }
+
+    Bc250VkResTrace("[VK_RES] RTV_SEGUE_RECURSO: rtv=%p res=%p imagem %p -> %p (view %p -> %p, fb %p -> %p)",
+        (void*)pRtv, (void*)pRes, (void*)pRtv->VkImageAtCreation, (void*)pRes->VkImg,
+        (void*)pRtv->VkView, (void*)newView, (void*)pRtv->VkFb, (void*)newFb);
+    if (pRtv->VkFb != VK_NULL_HANDLE) {
+        pBridge->vk.vkDestroyFramebuffer(pBridge->Device, pRtv->VkFb, NULL);
+    }
+    if (pRtv->VkView != VK_NULL_HANDLE) {
+        pBridge->vk.vkDestroyImageView(pBridge->Device, pRtv->VkView, NULL);
+    }
+    pRtv->VkView = newView;
+    pRtv->VkFb = newFb;
+    pRtv->VkImageAtCreation = pRes->VkImg;
+    return TRUE;
 }
 
 BOOL Bc250UmdVkCreateDsv(
@@ -646,6 +757,26 @@ VOID Bc250UmdVkDestroyDsv(
  * motivo nomeado. Preencher parcialmente e deixar o resto indefinido seria a
  * mesma falha de origem com outra roupa.
  */
+/*
+ * DX.23: conteudo da ORIGEM do upload, medido na memoria da CPU (barato).
+ * Corrida 68: todos os Presents sairam pretos e nao havia como saber se as
+ * texturas que o DWM nos entregou ja eram pretas. Amostra ate 65536 dwords
+ * espalhados pelo buffer inteiro; zero aqui significa que o preto veio de cima.
+ */
+static uint32_t Bc250VkCountNonZeroSource(const VOID *pData, SIZE_T ByteSize, uint32_t *pSamples)
+{
+    const uint32_t *words = (const uint32_t *)pData;
+    SIZE_T count = ByteSize / 4u;
+    SIZE_T step = (count > 65536u) ? (count / 65536u) : 1u;
+    uint32_t nonZero = 0u, samples = 0u;
+    for (SIZE_T i = 0; i < count; i += step) {
+        samples++;
+        if (words[i] != 0u) nonZero++;
+    }
+    if (pSamples != NULL) *pSamples = samples;
+    return nonZero;
+}
+
 BOOL Bc250UmdVkUploadImageData(
     _Inout_ struct _BC250_UMD_DEVICE* pDevice,
     _Inout_ struct _BC250_UMD_RESOURCE* pRes,
@@ -823,11 +954,15 @@ BOOL Bc250UmdVkUploadImageData(
      * aqui, e so' depois que a fence da copia voltou. */
     pRes->VkLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     ok = TRUE;
-    Bc250VkResTrace("[VK_RES] UploadImageData SUCESSO: %ux%u, %zu bytes, RowPitch=%u "
-        "bufferRowLength=%u texels em mip0/camada0 (img=%p) -- mip chain e array "
-        "NAO carregados por escopo declarado",
-        pRes->Width, pRes->Height, ByteSize, RowPitch, bufferRowLength,
-        (void*)pRes->VkImg);
+    {
+        uint32_t srcSamples = 0u;
+        uint32_t srcNonZero = Bc250VkCountNonZeroSource(pData, ByteSize, &srcSamples);
+        Bc250VkResTrace("[VK_RES] UploadImageData SUCESSO: %ux%u, %zu bytes, RowPitch=%u "
+            "bufferRowLength=%u texels em mip0/camada0 (img=%p res=%p) NonZeroSrc=%u/%u -- mip chain e array "
+            "NAO carregados por escopo declarado",
+            pRes->Width, pRes->Height, ByteSize, RowPitch, bufferRowLength,
+            (void*)pRes->VkImg, (void*)pRes, srcNonZero, srcSamples);
+    }
 
 cleanup:
     if (stagingMem != VK_NULL_HANDLE) pBridge->vk.vkFreeMemory(pBridge->Device, stagingMem, NULL);

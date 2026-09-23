@@ -34,6 +34,7 @@ static int Bc250RunGpuvaJournalContractTest(void)
     entries[0].SegmentId = 1u;
     entries[0].SegmentOffset = 0x800000u;
     entries[0].Allocation = (BC250_MCDM_HANDLE)0x2000;
+    entries[0].AllocationToken = 0x5245530000000042ull;
     entries[1] = entries[0];
     entries[1].SegmentOffset += BC250_GPUVA_PAGE_BYTES;
 
@@ -47,6 +48,7 @@ static int Bc250RunGpuvaJournalContractTest(void)
     CHECK(journal.Pending == 1u && journal.ChangeCount == 1u);
     CHECK(journal.Changes[0].BaseGpuVa == 0x40000000u);
     CHECK(journal.Changes[0].Size == 2u * BC250_GPUVA_PAGE_BYTES);
+    CHECK(journal.Changes[0].AllocationToken == 0x5245530000000042ull);
     CHECK(Bc250GpuvaJournalCommitFlush(&journal, &store, &scratch, process,
         0xA00000u, 0u, 0u, &generation) == BC250_GPUVA_JOURNAL_MISMATCH);
     CHECK(journal.Pending == 1u);

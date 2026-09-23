@@ -808,6 +808,10 @@ static void TestDxgiBaseFunctions(void)
             chain[c].Allocation.Created = TRUE;
             chain[c].Allocation.KernelAllocation = (D3DKMT_HANDLE)(0xA000u + c);
             chain[c].Allocation.GpuVirtualAddress = 0x100000ull * (c + 1u);
+            /* DX.28: a VkImage/VkDeviceMemory carregam o conteudo renderizado. */
+            chain[c].VkImg = (VkImage)(uintptr_t)(0xB000u + c);
+            chain[c].VkMem = (VkDeviceMemory)(uintptr_t)(0xC000u + c);
+            chain[c].VkLayout = (c == 1u) ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             chainHandles[c] = (DXGI_DDI_HRESOURCE)&chain[c];
         }
 
@@ -823,12 +827,21 @@ static void TestDxgiBaseFunctions(void)
         /* A GPUVA viaja junto com o backing, nao fica para tras. */
         assert(chain[0].Allocation.GpuVirtualAddress == 0x200000ull);
         assert(chain[2].Allocation.GpuVirtualAddress == 0x100000ull);
+        /* DX.28 (Corrida 73): o CONTEUDO gira junto. Se so' o backing WDDM
+         * girasse, o DWM copiaria zeros do "buffer anterior" -- os quadrados. */
+        assert(chain[0].VkImg == (VkImage)(uintptr_t)0xB001u);
+        assert(chain[1].VkImg == (VkImage)(uintptr_t)0xB002u);
+        assert(chain[2].VkImg == (VkImage)(uintptr_t)0xB000u);
+        assert(chain[0].VkMem == (VkDeviceMemory)(uintptr_t)0xC001u);
+        assert(chain[2].VkMem == (VkDeviceMemory)(uintptr_t)0xC000u);
+        assert(chain[0].VkLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
         /* Tres voltas restauram a identidade original: nada se perdeu. */
         assert(dxgiFuncs.pfnRotateResourceIdentities(&rotateData) == S_OK);
         assert(dxgiFuncs.pfnRotateResourceIdentities(&rotateData) == S_OK);
         for (c = 0; c < 3; ++c) {
             assert(chain[c].Allocation.KernelAllocation == (D3DKMT_HANDLE)(0xA000u + c));
+            assert(chain[c].VkImg == (VkImage)(uintptr_t)(0xB000u + c));
         }
 
         /*

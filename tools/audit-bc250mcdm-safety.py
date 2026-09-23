@@ -360,6 +360,1113 @@ def audit_gfx_ring_tripod_and_ib_inspection(errors: list[str]) -> None:
             "o veredito do anel grafico nao tem estado INDETERMINADO: leitura ausente "
             "nao pode ser reportada como convergencia")
 
+    # (2d) FAULT DE TRADUCAO TEM DE SAIR DECODIFICADO (Corrida 45).
+    # FaultStatus=0x0070153C estava no log dos CINCO TDRs, em hexadecimal cru,
+    # e dizia VMID=7 WALKER_ERROR=6 MAPPING_ERROR=1 -- o caminhador de tabela
+    # falhou sob o MESMO VMID das submissoes GFX. Ninguem leu, porque a busca
+    # do projeto era pela string GFXHUB_FAULT, que sai ZERO. As mascaras sao
+    # copiadas de gc_10_1_0_sh_mask.h; a primeira versao transcrita de cabeca
+    # errou os SEIS shifts.
+    for needle, label in (
+        ("[TDR_GCVM_FAULT] DECODIFICADO",
+         "fault de traducao sai decodificado, nao em hexadecimal cru"),
+        ("(faultStatus & 0x00F00000u) >> 20", "VMID do fault pela mascara do header"),
+        ("(faultStatus & 0x0000000Eu) >> 1", "WALKER_ERROR pela mascara do header"),
+        ("(faultStatus & 0x00000100u) >> 8", "MAPPING_ERROR pela mascara do header"),
+        ("(faultStatus & 0x0003FE00u) >> 9", "CID pela mascara do header"),
+        ("SEM FAULT LATCHADO", "ausencia de fault e' declarada, nao silenciosa"),
+    ):
+        require(active, needle, label, errors)
+
+    # (2e) DISCRIMINADOR DA GRANULARIDADE DO ENDERECO DE FAULT (Corrida 46->47).
+    # gc_10_1_0_sh_mask.h declara LOGICAL_PAGE_ADDR e NAO declara o tamanho da
+    # pagina. Com o valor medido 0x2431, << 12 cai em 36 MB (regiao vazia) e
+    # << 20 cai em 9,05 GB (entre duas alocacoes vivas). Escolher por intuicao
+    # ja derrubou DUAS hipoteses nesta investigacao; quem escolhe e' a medicao.
+    space_path = ROOT / "driver" / "core" / "bc250_gpuva_space_contract.c"
+    space_src = space_path.read_text(encoding="utf-8", errors="replace")         if space_path.exists() else ""
+    if not space_src:
+        errors.append(
+            "bc250_gpuva_space_contract.c ausente: discriminador de fault sem portao")
+    for needle, label in (
+        ("static const uint32_t kShifts[2] = { 12u, 20u };",
+         "as DUAS conversoes candidatas sao avaliadas, nao uma"),
+        ("[TDR_GCVM_FAULT] CANDIDATO <<%u",
+         "cada candidato publica seu veredito"),
+        ("Bc250GpuvaSpaceDescribeAddress(",
+         "o candidato e' procurado no snapshot, nao julgado por intuicao"),
+        ("DENTRO da faixa viva", "acerto nomeia a alocacao"),
+        # O SEGMENTO decide o conserto: Seg1 e local (~243 MB, CpuVisible,
+        # limitado pela janela BAR de 256 MB) e Seg2 e GART em MEMORIA DE
+        # SISTEMA -- PTE e coerencia diferentes. A Corrida 47 nomeou as
+        # alocacoes que falham e nao disse em qual segmento vivem.
+        ("Seg=%u (%s) SegOff=", "acerto nomeia o SEGMENTO de backing"),
+        ("LOCAL_VRAM", "segmento local nomeado por extenso"),
+        ("GART_SISTEMA", "segmento de sistema nomeado por extenso"),
+        ("FORA de toda faixa viva", "erro nomeia a vizinhanca"),
+        ("SEM VEREDITO", "snapshot indisponivel e' declarado, nao silencioso"),
+        # CARIMBO DE RAIZ (Corrida 48 -> 49). A caminhada do fault usa a raiz do
+        # INSTANTE DO TDR. Se as submissoes recentes usaram outra, "a PTE nao
+        # existe" so' significa que se caminhou a tabela ERRADA -- e o defeito
+        # passa a ser troca de contexto no VMID 7, nao escrita de PTE. Sem esta
+        # comparacao as tres leituras (raiz trocada, corrida de publicacao, TLB
+        # obsoleto) sao indistinguiveis, e exigem consertos diferentes.
+        ("RAIZ_NO_TDR=0x%llX Carimbos=%u Divergentes=%u",
+         "o fault compara a raiz do TDR com a das submissoes"),
+        ("RaizNaSubmissao=0x%llX",
+         "cada carimbo publica a raiz que estava instalada na submissao"),
+        ("(RAIZ DIFERENTE)", "divergencia de raiz e nomeada, nao inferida"),
+        ("Context->GfxSubmitStamps[slot].RootAtSubmit",
+         "a submissao carimba a raiz instalada"),
+    ):
+        require(active, needle, label, errors)
+    require(space_src, "if (r->State != BC250_GPUVA_RANGE_MAPPED) continue;",
+            "so faixa MAPEADA conta como acerto (falso positivo inverteria o veredito)",
+            errors)
+
+    # (2h) POOL DE VMID POR CONTEXTO -- DX.7, fatia minima (Corrida 49 -> 52).
+    # A Corrida 49 mediu 5 faults com divergencia de raiz em TODAS as
+    # comparacoes (2, 8, 9, 14 e 15 de 16), 6 raizes distintas em 82 submissoes
+    # e o MESMO IB sob TRES raizes. O conserto e VMID por contexto. Os quatro
+    # reservados sao MEDIDOS, nao convencao: 0 e do microengine MEC (confirmado
+    # no silicio na Corrida 51), 7 usuario, 8 paginacao, 9 compute.
+    pool_path = ROOT / "driver" / "core" / "bc250_vmid_pool_contract.c"
+    pool_src = pool_path.read_text(encoding="utf-8", errors="replace")         if pool_path.exists() else ""
+    if not pool_src:
+        errors.append("bc250_vmid_pool_contract.c ausente: pool de VMID sem portao")
+    for needle, label in (
+        ("if (Bc250VmidIsReserved(i) != 0u) continue;",
+         "VMID reservado nunca entra no pool"),
+        ("++Pool->ExhaustedCount;", "exaustao e contada, nao mascarada"),
+        ("return BC250_VMID_POOL_EXHAUSTED;",
+         "exaustao FALHA em vez de cair no VMID compartilhado"),
+    ):
+        require(pool_src, needle, label, errors)
+    # Fallback para o VMID de usuario dentro do pool devolveria o defeito que a
+    # faixa conserta, disfarcado de "modo degradado".
+    forbid(pool_src, "BC250_VMID_RESERVED_USER;",
+           "o pool nao pode devolver o VMID compartilhado como fallback", errors)
+    pool_hdr = (ROOT / "driver/core/bc250_vmid_pool_contract.h").read_text(
+        encoding="utf-8", errors="replace")
+    for needle, label in (
+        ("#define BC250_VMID_RESERVED_MEC     0u", "VMID 0 reservado ao MEC, por medicao"),
+        ("#define BC250_VMID_RESERVED_USER    7u", "VMID 7 reservado"),
+        ("#define BC250_VMID_RESERVED_PAGING  8u", "VMID 8 reservado"),
+        ("#define BC250_VMID_RESERVED_COMPUTE 9u", "VMID 9 reservado"),
+    ):
+        require(pool_hdr, needle, label, errors)
+
+    # (2h.2) LIGACAO DO POOL NO MINIPORT -- DX.7.
+    # O contrato sozinho nao vale nada se ninguem o chamar: uma faixa anterior
+    # deste projeto ja entregou codigo correto e inalcancavel (ContextAbi
+    # populado so' num ramo do #if, tres ocorrencias da mesma classe). Os
+    # portoes abaixo comparam TEXTO SEM ESPACOS, para nao reprovarem por
+    # reformatacao nem passarem por mudanca de indentacao.
+    pool_ws = re.sub(r"\s+", "", active)
+    if "Bc250VmidPoolInitialize(&context->VmidPool);" not in pool_ws:
+        errors.append(
+            "o pool de VMID nunca e' inicializado no miniport: "
+            "Entries[].Vmid ficaria zerado e o mapa mentiria")
+    if ("Bc250VmidPoolAcquire(&context->VmidPool,"
+            "(BC250_MCDM_HANDLE)pSubmitCommand->hContext,") not in pool_ws:
+        errors.append(
+            "o caminho de submissao GFX nao adquire VMID do pool: "
+            "sem isso a corrida nao mede quantos contextos disputam o VMID 7")
+    # A raiz tem de ser registrada no MESMO sitio em que entra no silicio.
+    # Registrar depois abre janela para o mapa e o hardware discordarem --
+    # exatamente a classe de defeito sob investigacao.
+    if ("context->UserVmidInstalledRootPhysical=physicalRoot;"
+            not in pool_ws):
+        errors.append("sitio de instalacao da raiz do VMID 7 nao encontrado")
+    else:
+        depois = pool_ws.split(
+            "context->UserVmidInstalledRootPhysical=physicalRoot;", 1)[1]
+        if "(void)Bc250VmidPoolNoteRoot(&context->VmidPool," not in depois[:900]:
+            errors.append(
+                "a raiz instalada no VMID 7 nao e' registrada no pool logo "
+                "apos entrar no silicio: mapa e hardware podem divergir")
+    if ("Bc250VmidPoolRelease(&context->VmidPool,ContextHandle,"
+            not in pool_ws):
+        errors.append(
+            "DestroyContext nao devolve o VMID ao pool: os 12 slots vazariam "
+            "e a exaustao viraria artefato do vazamento, nao medicao")
+    destroy_context_fn = function_body(active,
+        "NTSTATUS Bc250ActiveDestroyContextObject(")
+    destroy_context_ws = re.sub(r"\s+", "", destroy_context_fn)
+    if ("result=Bc250ObjectStatusToNtStatus(status);"
+            "if(status==BC250_MCDM_OBJECT_OK){"
+            "(void)Bc250GpuvaSpaceInvalidateForObject(" not in destroy_context_ws):
+        errors.append(
+            "DestroyContext invalida GPUVA antes de provar destruicao concluida: "
+            "IN_FLIGHT_SUBMISSIONS ainda usa esse estado")
+    if ("if(status==BC250_MCDM_OBJECT_OK){" not in destroy_context_ws or
+            "Bc250VmidPoolRelease(&context->VmidPool,ContextHandle,"
+            not in destroy_context_ws.split(
+                "if(status==BC250_MCDM_OBJECT_OK){", 1)[1]):
+        errors.append(
+            "DestroyContext pode devolver VMID sem destruicao concluida: "
+            "slot seria reciclado durante submissao em voo")
+    active_test = (ROOT / "driver/tests/active_miniport_test.c").read_text(
+        encoding="utf-8", errors="replace")
+    for needle, label in (
+        ("DxgkDdiDestroyContext(contextHandle) ==\n                STATUS_DEVICE_BUSY",
+         "teste exercita DestroyContext com submissao em voo"),
+        ("Bc250VmidPoolLookup(&activeCtx->VmidPool, contextHandle,\n"
+         "                &heldVmid) == BC250_VMID_POOL_OK",
+         "teste prova que VMID permanece retido durante submissao"),
+        ("Bc250VmidPoolLookup(&activeCtx->VmidPool, contextHandle,\n"
+         "            NULL) == BC250_VMID_POOL_NOT_FOUND",
+         "teste prova devolucao apenas apos destroy concluido"),
+    ):
+        require(active_test, needle, label, errors)
+    # O pool agora instala lateralmente e publica READY, mas o pacote continua
+    # em VMID 7. Isso isola escrita/readback/flush da futura troca no CP.
+    if "Bc250GcvmInstallVmid(BC250_GCVM_USER_VMID,physicalRoot," not in pool_ws:
+        errors.append(
+            "a submissao GFX deixou de instalar a raiz em BC250_GCVM_USER_VMID "
+            "sem que este portao fosse revisto: escopo da faixa violado")
+    require(active, "Bc250GcvmInstallVmid(poolVmid, physicalRoot,",
+            "miniport instala lateralmente a raiz no VMID alocado", errors)
+    # PORTAO FRACO CORRIGIDO (21/09). A mutacao que trocava
+    # "poolIo.FlushVmid = Bc250ActiveFlushVmidTlb" por
+    # "poolIo.Flush = Bc250ActiveFlushUserVmidOnly" PASSAVA na auditoria.
+    # Bc250GcvmInstallVmid recusa FlushVmid==NULL, entao o efeito seria falha
+    # fechada em vez de flush no VMID errado -- mas a deteccao aconteceria
+    # SO' no silicio, e o sintoma (raiz instalada sem TLB invalidado) e'
+    # indistinguivel do defeito antigo. A armadilha (b) do handoff 307 exige
+    # que a invalidacao acompanhe o VMID que esta sendo instalado.
+    if "poolIo.FlushVmid=Bc250ActiveFlushVmidTlb;" not in pool_ws:
+        errors.append(
+            "a instalacao lateral nao liga FlushVmid por VMID: a TLB do VMID "
+            "alocado ficaria com a traducao antiga e o fault pareceria o mesmo")
+    if "poolIo.Flush=" in pool_ws:
+        errors.append(
+            "a instalacao lateral usa o flush de VMID fixo: invalidacao tem de "
+            "seguir o VMID instalado, nunca o 7 legado")
+    require(active, "Bc250VmidPoolRecordInstall(&context->VmidPool,",
+            "resultado fisico e publicado na entrada do pool", errors)
+    require(active, "Bc250VmidPoolBeginInstall(&context->VmidPool,",
+            "miniport reserva a transacao antes de escrever MMIO", errors)
+    require(active, "RECUSA POR EXAUSTAO",
+            "exaustao falha fechada antes de tocar o anel", errors)
+    # A INSTALACAO DEIXOU DE SER LATERAL (Corrida 54).
+    #
+    # Ate a Corrida 53 o pacote ia em VMID 7 e a instalacao no VMID do pool era
+    # um efeito colateral observado: falhar ali e SEGUIR era o certo, porque o
+    # slot nao era usado por ninguem, e recusar teria zerado a medicao caso o
+    # silicio nao aceitasse raiz nesses contextos. A Corrida 53 respondeu isso
+    # com 32/32 Readback=1 Flush=1 Ready=1 em cinco VMIDs.
+    #
+    # Agora o INDIRECT_BUFFER CARREGA esse VMID, e a polaridade se inverte: uma
+    # submissao que parta com a tabela do proprio VMID nao instalada produz
+    # exatamente o fault de traducao que esta faixa existe para eliminar -- e o
+    # log diria que tudo correu bem. Todo ramo de tropeco TEM de recusar.
+    inst_ini = active.find("Bc250VmidPoolBeginInstall(&context->VmidPool,")
+    inst_fim = active.find(
+        "/* 2.5. Garantir instalacao da tabela de paginas fisica no VMID 7",
+        inst_ini if inst_ini >= 0 else 0)
+    if inst_ini < 0 or inst_fim <= inst_ini:
+        errors.append(
+            "regiao da instalacao do VMID do contexto nao delimitavel: o "
+            "portao do fail-closed nao pode ser avaliado")
+    else:
+        instala = active[inst_ini:inst_fim]
+        # Cada ramo de tropeco e CONTADO, nao procurado por string: mutar um so'
+        # deixava o outro cobrindo a falta (mutacao B3 da faixa anterior).
+        linhas = instala.splitlines()
+        tropecos = 0
+        sem_recusa = 0
+        for idx, ln in enumerate(linhas):
+            if "beginStatus ==" not in ln and "beginStatus !=" not in ln and \
+                    "installStatus != BC250_GCVM_VMID8_OK" not in ln:
+                continue
+            tropecos += 1
+            janela = "".join(linhas[idx:idx + 12])
+            if "return STATUS_" not in janela or \
+                    "ReleaseSubmissionView" not in janela:
+                sem_recusa += 1
+        if tropecos < 3:
+            errors.append(
+                "instalacao do VMID do contexto: esperados 3 ramos de tropeco "
+                "(BUSY, BeginInstall != OK, install/record falhou), "
+                "encontrados %d -- portao nao avalia o que deveria" % tropecos)
+        if sem_recusa:
+            errors.append(
+                "instalacao do VMID do contexto: %d de %d ramos de tropeco NAO "
+                "recusam a submissao -- o pacote partiria com a tabela do "
+                "proprio VMID ausente" % (sem_recusa, tropecos))
+        if "a submissao SEGUE em VMID" in instala:
+            errors.append(
+                "instalacao do VMID do contexto: sobrou telemetria da faixa "
+                "lateral dizendo que a submissao segue -- ela NAO segue mais")
+        # TELEMETRIA NAO PODE DESCREVER O ESTADO ANTERIOR. A linha de sucesso
+        # dizia "INDIRECT_BUFFER ainda em VMID7" e continuou dizendo depois de
+        # o pacote passar a carregar o VMID do contexto -- seria lida como
+        # medicao de um estado que nao existe mais.
+        if "INDIRECT_BUFFER ainda em VMID" in instala:
+            errors.append(
+                "telemetria da instalacao afirma que o INDIRECT_BUFFER ainda "
+                "vai em VMID 7: isso deixou de ser verdade quando o pacote "
+                "passou a carregar o VMID do contexto")
+        for needle, label in (
+            ("o INDIRECT_BUFFER desta submissao carrega VMID%02u",
+             "a linha de sucesso nomeia o VMID que o pacote realmente carrega"),
+            ("[VMID_POOL] RECUSA:",
+             "cada recusa se declara, com o VMID e o motivo"),
+            ("Bc250VmidPoolRecordInstall(&context->VmidPool,",
+             "resultado fisico e publicado na entrada do pool"),
+        ):
+            if needle not in instala:
+                errors.append(
+                    "instalacao do VMID do contexto: %s -- ausente" % label)
+
+    # O PACOTE CARREGA O VMID DO CONTEXTO (Corrida 54). Este e o portao que
+    # troca de lado: ate a Corrida 53 ele EXIGIA BC250_GCVM_USER_VMID aqui.
+    require(active, "ibSizeDwords,\n            poolVmid,",
+            "o INDIRECT_BUFFER carrega o VMID do contexto, nao o 7 compartilhado",
+            errors)
+    if re.sub(r"\s+", "", active).count(
+            "ibSizeDwords,BC250_GCVM_USER_VMID,") != 0:
+        errors.append(
+            "a submissao GFX voltou a emitir o pacote em BC250_GCVM_USER_VMID: "
+            "varios contextos disputariam a mesma raiz de novo, que e o defeito "
+            "medido na Corrida 49 (5 de 5 comparacoes divergentes)")
+    # O pool e tocado por SubmitCommandVirtual em DISPATCH_LEVEL, por
+    # DestroyContext e pelo diagnostico do TDR. ObjectLock nao cobre os tres
+    # caminhos e e proibido no submit; um spin lock dedicado evita alocacao
+    # dupla, reuse durante destroy e snapshot rasgado no fault.
+    active_hdr = (ROOT / "driver/wdk/bc250_active_miniport.h").read_text(
+        encoding="utf-8", errors="replace")
+    require(active_hdr, "KSPIN_LOCK VmidPoolLock;",
+            "pool de VMID tem spin lock dedicado", errors)
+    require(active, "KeInitializeSpinLock(&context->VmidPoolLock);",
+            "spin lock do pool e inicializado", errors)
+    if active.count("KeAcquireSpinLock(&context->VmidPoolLock") < 3:
+        errors.append(
+            "Acquire/Release/NoteRoot do pool nao estao todos serializados "
+            "pelo VmidPoolLock")
+    require(active, "KeAcquireSpinLock(&activeCtx->VmidPoolLock",
+            "mapa do pool no TDR tira snapshot sob o lock", errors)
+    # O mapa no fault e CALCULADO percorrendo os slots. Sem a contagem, a linha
+    # viraria carimbo -- e "o gate carimbava o falso sucesso" ja apareceu cinco
+    # vezes neste projeto.
+    for needle, label in (
+        ("if(poolContexts[pv]==NULL)continue;",
+         "o mapa do fault pula slots livres no snapshot em vez de imprimir lixo"),
+        ("++ocupados;", "o mapa do fault CONTA os ocupados"),
+    ):
+        if needle not in pool_ws:
+            errors.append("mapa do pool no fault: %s -- ausente" % label)
+
+    # (2h.3) A INVALIDACAO SEGUE OS VMIDs QUE A GPU USA -- DX.12.
+    #
+    # DEFEITO MEDIDO POR LEITURA apos a Corrida 58: desde a Corrida 54 o
+    # PACKET3_INDIRECT_BUFFER carrega o VMID dinamico do pool (na 58 foram
+    # 1..4), mas Bc250ActiveFlushMappedGfxhubTlb invalidava apenas 8/7/9.
+    # Bc250GcvmInstallVmid invalida o slot NA INSTALACAO; uma UpdatePageTable
+    # posterior nao invalidava slot dinamico nenhum. Casa com a medicao da
+    # Corrida 58 (PTE contemporanea R/W/X na CPU, escrita falhando na GPU),
+    # mas continua HIPOTESE ate a corrida -- o portao trava a COBERTURA, nao
+    # a conclusao.
+    transport_early = (ROOT / "driver/wdk/bc250_mmio_topology_transport.c").read_text(
+        encoding="utf-8", errors="replace")
+    flush_map = function_body(
+        active, "static uint32_t Bc250ActiveFlushMappedGfxhubTlb(void *Context)")
+    if not flush_map:
+        errors.append(
+            "Bc250ActiveFlushMappedGfxhubTlb nao localizada: o portao da "
+            "cobertura de flush nao pode ser avaliado")
+    else:
+        if "Bc250VmidPoolReadyFlushMask(&active->VmidPool)" not in flush_map:
+            errors.append(
+                "o flush de TLB voltou a cobrir somente VMIDs fixos: os slots "
+                "dinamicos do pool, que o INDIRECT_BUFFER carrega desde a "
+                "Corrida 54, ficariam com a traducao antiga")
+        # ORDEM, nao presenca. Segurar VmidPoolLock durante o flush (ate 1000
+        # polls, em DISPATCH_LEVEL) e a classe do BugCheck 0x133 ja pago.
+        i_rel = flush_map.find("KeReleaseSpinLock(&active->VmidPoolLock")
+        i_mmio = flush_map.find("Bc250ActiveFlushVmidTlb(Context, vmid)")
+        if i_rel < 0:
+            errors.append(
+                "a mascara do pool e lida sem soltar VmidPoolLock: o flush "
+                "gastaria polls de MMIO com o lock do pool retido")
+        elif i_mmio < 0 or i_mmio < i_rel:
+            errors.append(
+                "o flush por VMID acontece ANTES de soltar VmidPoolLock: "
+                "spinlock retido durante MMIO em DISPATCH_LEVEL")
+        # O VMID 0 e da microengine do MEC e tem politica transacional propria.
+        if "requestedMask &= ~1u;" not in flush_map:
+            errors.append(
+                "a mascara de flush nao recusa o bit 0: o VMID do MEC entraria "
+                "por carona se o pool mudar")
+        # FLUSH PARCIAL NAO E SUCESSO. Contado por RAMO, nao por string: o
+        # portao B3 da faixa anterior passou por procurar texto em vez de
+        # contar, e foi refeito por isso.
+        linhas = flush_map.splitlines()
+        ramos = 0
+        sem_falha_fechada = 0
+        for idx, ln in enumerate(linhas):
+            if "Bc250ActiveFlushVmidTlb(Context, vmid) == 0u" not in ln:
+                continue
+            ramos += 1
+            janela = "".join(linhas[idx:idx + 5])
+            if "failedMask |=" not in janela or "gfxhubOk = 0u;" not in janela:
+                sem_falha_fechada += 1
+        if ramos != 1:
+            errors.append(
+                "cobertura de flush: esperado 1 ramo de falha por VMID, "
+                "encontrados %d -- o portao nao avalia o que deveria" % ramos)
+        if sem_falha_fechada:
+            errors.append(
+                "cobertura de flush: %d ramo(s) de falha nao fecham o veredito "
+                "global -- flush parcial viraria sucesso, e o chamador "
+                "admitiria submissao com TLB nao invalidada" % sem_falha_fechada)
+        # A MEDICAO DA CORRIDA 59 SAI DAQUI. Sem a mascara no log, os desfechos
+        # B (flush exercitado, mesmo fault) e C (flush nao exercitado) ficam
+        # indistinguiveis -- e desfecho indistinguivel nao e desfecho (Lei 10).
+        for needle, label in (
+            ("[FLUSH_POOL_VMIDS] #%u FixedMask=0x%04X PoolReadyMask=0x%04X",
+             "a mascara pedida e publicada"),
+            ("FalhouMask=0x%04X",
+             "os VMIDs que nao invalidaram sao nomeados"),
+            ("[FLUSH_POOL_VMIDS] FALHA:",
+             "flush parcial se declara em vez de passar calado"),
+        ):
+            if needle not in flush_map:
+                errors.append("cobertura de flush: %s -- ausente" % label)
+        # ARMADILHA 16, JA PAGA: PUBLICACAO_COMPOSICAO saiu ZERO vezes em 10
+        # falhas porque o nome escolhido nao continha token isento do
+        # amostrador. A linha desta faixa tem teto PROPRIO no emissor; a
+        # amostragem global nao pode alcanca-la.
+        display_c = (ROOT / "driver/wdk/bc250_display_ddi.c").read_text(
+            encoding="utf-8", errors="replace")
+        require(display_c, 'Bc250LogTextContains(Text, "FLUSH_POOL_VMIDS")',
+                "a linha da mascara de flush e isenta da amostragem global",
+                errors)
+        # (2h.5) DX.14 -- A ORDEM E O CONTEUDO DA FAIXA.
+        #
+        # As page tables sao escritas pela CPU em VRAM e ficam na cache de
+        # escrita do HDP. Invalidar a TLB ANTES de drenar o HDP manda o walker
+        # rebuscar bytes que ainda nao chegaram -- pioraria a janela em vez de
+        # fecha-la. Por isso o portao trava a ORDEM, nao a presenca.
+        #
+        # Motivo medido: na Corrida 60, duas caminhadas com JANELA INALTERADA
+        # (logo contemporaneas do fault) RESOLVERAM ate a folha, com PDE limpo
+        # e PTE valida e legivel, enquanto a GPU reportava WALKER_ERROR=6 no
+        # mesmo endereco. E o projeto ja mediu este mecanismo neste silicio em
+        # 10/09 12:16 (antes_hdp=43DAFFFE, depois_hdp=00001304).
+        # PORTAO FRACO CORRIGIDO PELA MUTACAO: a versao anterior procurava
+        # so o ARGUMENTO ("..._FLUSH_CNTL, 1u)"), e passava quando a CHAMADA
+        # de escrita era removida e o argumento ficava para tras. O invariante
+        # agora e a chamada inteira, comparada sem espacos.
+        flush_ws = re.sub(r"\s+", "", flush_map)
+        if ("Bc250MmioTopologyWrite32(&active->Core.MmioTransport,"
+                "BC250_ACTIVE_REG_HDP_MEM_COHERENCY_FLUSH_CNTL,1u)"
+                not in flush_ws):
+            errors.append(
+                "a drenagem do HDP nao e mais uma escrita de verdade: o "
+                "argumento ficou no fonte sem a chamada que o usa")
+        i_hdp = flush_map.find(
+            "BC250_ACTIVE_REG_HDP_MEM_COHERENCY_FLUSH_CNTL, 1u)")
+        i_loop = flush_map.find("for (vmid = 1u; vmid < BC250_VMID_COUNT")
+        if i_hdp < 0:
+            errors.append(
+                "o flush de TLB nao drena o HDP: as escritas de page table da "
+                "CPU podem nao estar visiveis ao walker, e invalidar a TLB "
+                "nesse estado manda a GPU rebuscar bytes velhos")
+        elif i_loop < 0 or i_hdp > i_loop:
+            errors.append(
+                "o HDP e drenado DEPOIS da invalidacao de TLB: a ordem esta "
+                "invertida e a janela de visibilidade continua aberta")
+        for needle, label in (
+            ("[HDP_PT_FLUSH] FALHA:",
+             "falha de drenagem do HDP se declara, nunca passa calada"),
+            ("HdpFlush=%u",
+             "a linha da mascara publica se o HDP foi drenado"),
+        ):
+            if needle not in flush_map:
+                errors.append("drenagem do HDP: %s -- ausente" % label)
+        # O offset NAO e novo e nao pode virar numero solto: ele ja existe em
+        # bc250_gfx_ring_transaction.h e nas allowlists do transporte.
+        require(active,
+                "#define BC250_ACTIVE_REG_HDP_MEM_COHERENCY_FLUSH_CNTL 0x00003FC4u",
+                "offset do HDP declarado, igual ao ja catalogado", errors)
+        if "0x00003FC4u" not in transport_early:
+            errors.append(
+                "o offset do HDP saiu da allowlist do transporte: a drenagem "
+                "seria recusada e o flush de TLB seguiria com a tabela "
+                "possivelmente invisivel")
+    # A REGRA VIVE NO CONTRATO, nao so' no miniport: regra que existe apenas no
+    # miniport nao tem como falhar numa suite offline.
+    for needle, label in (
+        ("uint32_t Bc250VmidPoolReadyFlushMask(const BC250_VMID_POOL *Pool)",
+         "a mascara de invalidacao e funcao pura do contrato"),
+        ("if (entry->Context == NULL) continue;",
+         "slot livre nao entra na mascara"),
+        ("if (entry->InstallState != BC250_VMID_POOL_INSTALL_READY) continue;",
+         "NEVER/INSTALLING/FAILED nao entram: nenhum prova raiz aceita"),
+        ("if (entry->InstalledRootPhysical == 0ull) continue;",
+         "READY sem raiz nao entra"),
+        ("return mask & BC250_VMID_POOL_MASK;",
+         "os reservados 0/7/8/9 nunca saem da mascara do pool"),
+    ):
+        require(pool_src, needle, label, errors)
+    pool_test = (ROOT / "driver/tests/vmid_pool_contract_test.c").read_text(
+        encoding="utf-8", errors="replace")
+    # O TESTE TAMBEM E PORTAO. "O gate congelava a mentira" ja apareceu cinco
+    # vezes neste projeto; aqui a suite tem de EXIGIR os dois lados.
+    for needle, label in (
+        ("Bc250VmidPoolReadyFlushMask(&g_pool) == 0u",
+         "a suite exige mascara vazia quando nenhum slot esta READY"),
+        ("((1u << maskVmidA) | (1u << maskVmidB))",
+         "a suite exige DOIS slots READY na mesma mascara"),
+        ("BC250_VMID_RESERVED_MASK) == 0u",
+         "a suite prova que nenhum reservado entra"),
+    ):
+        if needle not in pool_test:
+            errors.append("suite do pool: %s -- ausente" % label)
+
+    # (2h.4) A ESCRITA DE DIRETORIO DE PAGINAS NAO PODE SER MUDA -- DX.13.
+    #
+    # MEDIDO NA CORRIDA 59: no indice 4096 de uma raiz REAL (a da arena
+    # 0x200040000) o TDR leu 0x450C9C071 -- formato de PTE num slot de PDE.
+    # Pelo layout do Navi 10 o endereco do PDE comeca no bit 6, logo o bit 6 e
+    # endereco e os bits [5:3] sao reservados: a GPU caminharia 64 bytes
+    # adiante. E a assinatura do defeito de 05/09 (0x61), que ficou invisivel
+    # por seis corridas porque o decodificador mascarava com 4 KiB.
+    #
+    # Dois defeitos corrigidos aqui, e um discriminante acrescentado. O portao
+    # trava a OBSERVABILIDADE; nao afirma de onde o valor veio.
+    upd_body = function_body(
+        active, "static NTSTATUS Bc250ActiveUpdatePageTableHandler(")
+    if not upd_body:
+        errors.append(
+            "Bc250ActiveUpdatePageTableHandler nao localizada: o portao da "
+            "escrita de page table nao pode ser avaliado")
+    else:
+        # DEFEITO 1: o status do encode era descartado com (void) e o zero
+        # resultante era gravado numa page table VIVA, sem uma linha de log.
+        if re.search(r"\(void\)\s*Bc250McdmEncodeVidMmPteWithLevel", upd_body):
+            errors.append(
+                "a escrita de page table voltou a descartar o status do "
+                "encode: uma recusa gravaria ZERO numa tabela viva sem dizer "
+                "nada, que e a Lei 4 no caminho mais caro do driver")
+        require(upd_body, "if (!NT_SUCCESS(encodeStatus)) {",
+                "a escrita de page table confere o status do encode", errors)
+        # Recusa NAO pode gravar. Contado por ramo, nao procurado por string.
+        linhas = upd_body.splitlines()
+        ramos = 0
+        sem_skip = 0
+        for idx, ln in enumerate(linhas):
+            if "if (!NT_SUCCESS(encodeStatus)) {" not in ln and                     "BC250_ACTIVE_PDE_RESERVED_MASK) != 0ull) {" not in ln:
+                continue
+            ramos += 1
+            janela = "".join(linhas[idx:idx + 6])
+            if "continue;" not in janela:
+                sem_skip += 1
+        if ramos != 2:
+            errors.append(
+                "escrita de page table: esperados 2 ramos que impedem a "
+                "gravacao (encode recusado e tripwire de PDE), encontrados "
+                "%d -- o portao nao avalia o que deveria" % ramos)
+        if sem_skip:
+            errors.append(
+                "escrita de page table: %d de %d ramos NAO pulam a gravacao -- "
+                "entrada invalida chegaria a page table viva" % (sem_skip, ramos))
+        for needle, label in (
+            ("[ActiveUpdatePT] RECUSA:",
+             "entrada que nao codificou se declara, e diz que nada foi gravado"),
+            ("[PDE_TRIPWIRE] FALHA:",
+             "formato de PTE em slot de PDE dispara tripwire nomeado"),
+            ("[PDE_WRITE] ARENA idx=%u Lvl=%u",
+             "quem escreve o indice da arena fica registrado"),
+            ("BC250_ACTIVE_ARENA_ROOT_INDEX",
+             "o indice da arena vem da constante derivada, nao digitado"),
+        ):
+            if needle not in upd_body:
+                errors.append("escrita de page table: %s -- ausente" % label)
+    # AS CONSTANTES SAO DERIVADAS. Numero digitado a mao ja custou seis
+    # corridas neste projeto (os shifts do FAULT_STATUS transcritos de cabeca).
+    require(active,
+            "#define BC250_ACTIVE_PDE_RESERVED_MASK 0x0000000000000038ull",
+            "mascara de reservados do PDE em fonte unica com o decodificador",
+            errors)
+    require(active,
+            "(0x200040000ull >> (12u + BC250_GPUVA_PT_LEAF_INDEX_BITS))",
+            "o indice da arena e DERIVADO da geometria, nunca constante solta",
+            errors)
+    gcvm_contract = (ROOT / "driver/core/bc250_gcvm_contract.c").read_text(
+        encoding="utf-8", errors="replace")
+    require(gcvm_contract, "#define BC250_PDE_RESERVED_MASK    0x0000000000000038ull",
+            "o decodificador de PDE mantem a mesma mascara de reservados",
+            errors)
+    # DEFEITO 2: LargePage nunca era olhado no nivel de diretorio. Esta faixa
+    # MEDE em vez de recusar -- nenhuma corrida registrou a frequencia, e
+    # recusar sem o numero poderia zerar a proxima medicao inteira, que e o
+    # preco ja pago na Corrida 53. A recusa vem depois do numero.
+    callbacks = (ROOT / "driver/wdk/bc250_mcdm_callbacks.c").read_text(
+        encoding="utf-8", errors="replace")
+    for needle, label in (
+        ("[PDE_LARGEPAGE] Lvl=%u Pfn=0x%llX",
+         "pagina grande no nivel de diretorio deixou de ser invisivel"),
+        ("APROXIMACAO DECLARADA, NAO PROVADA",
+         "a linha declara que a codificacao e aproximacao, nao prova"),
+        ("if (seq < 8L || (seq % 512L) == 0L) {",
+         "o teto e 8 primeiras mais 1 em 512, nao amostragem global"),
+    ):
+        require(callbacks, needle, "PDE LargePage: %s" % label, errors)
+    # PORTAO FRACO CORRIGIDO PELA PROPRIA MUTACAO: procurar
+    # "InterlockedIncrement(" solto PASSAVA, porque este arquivo ja tem SETE
+    # ocorrencias em outros caminhos -- a mutacao que tirava o teto desta
+    # linha nao reprovava nada. O contador tem de ser o DELA, e a comparacao
+    # ignora espacos para nao depender de indentacao nem de quebra de linha.
+    callbacks_ws = re.sub(r"\s+", "", callbacks)
+    if "InterlockedIncrement(&g_Bc250PdeLargePageCount)-1L;" not in callbacks_ws:
+        errors.append(
+            "a linha [PDE_LARGEPAGE] perdeu o teto do contador proprio: ela e "
+            "isenta da amostragem global e roda por ENTRADA de page table, "
+            "entao sem teto afogaria o log que a faixa existe para coletar")
+    # Linha rara e critica TEM de escapar da amostragem (armadilha 16).
+    display_pde = (ROOT / "driver/wdk/bc250_display_ddi.c").read_text(
+        encoding="utf-8", errors="replace")
+    for tag in ("PDE_WRITE", "PDE_TRIPWIRE", "PDE_LARGEPAGE"):
+        require(display_pde, 'Bc250LogTextContains(Text, "%s")' % tag,
+                "a linha %s e isenta da amostragem global" % tag, errors)
+
+    # (2h.6) DX.15 -- O SLOT E DEVOLVIDO TAMBEM NO SILICIO.
+    #
+    # ACHADO POR LEITURA apos a Corrida 61: Bc250VmidPoolRelease era SOMENTE
+    # SOFTWARE. A entrada do pool era limpa e o VMID voltava para os livres,
+    # mas o contexto GCVM continuava com ENABLE_CONTEXT ligado e PT_BASE
+    # apontando para a raiz do processo MORTO -- pagina que o VidMm pode
+    # liberar e reutilizar. E a Lei 5 quebrada: APPLY sem TEARDOWN.
+    #
+    # Este portao NAO afirma que isso causa o fault medido. Afirma que o
+    # estado nao tem direito de existir.
+    gcvm_txn = (ROOT / "driver/core/bc250_gcvm_vmid8_transaction.c").read_text(
+        encoding="utf-8", errors="replace")
+    off_body = function_body(gcvm_txn, "BC250_GCVM_VMID8_STATUS Bc250GcvmUninstallVmid(")
+    if not off_body:
+        errors.append(
+            "Bc250GcvmUninstallVmid nao localizada: o VMID volta ao pool com o "
+            "silicio ainda armado sobre a raiz de um processo morto")
+    else:
+        off_ws = re.sub(r"\s+", "", off_body)
+        # A ORDEM e o conteudo: CNTL primeiro, endereco depois, TLB por ultimo.
+        i_cntl = off_body.find("Interface->Write32(Interface->Context, cntlReg, 0u)")
+        i_regs = off_body.find("Interface->Write32(Interface->Context, regs[i], 0u)")
+        i_tlb = off_body.find("Interface->FlushVmid(Interface->Context, Vmid)")
+        if i_cntl < 0 or i_regs < 0 or i_tlb < 0:
+            errors.append(
+                "desarme do VMID: falta desabilitar CNTL, zerar enderecos ou "
+                "invalidar a TLB -- desarme parcial parece completo")
+        elif not (i_cntl < i_regs < i_tlb):
+            errors.append(
+                "desarme do VMID fora de ordem: CNTL tem de cair ANTES de os "
+                "enderecos serem zerados, e a TLB por ULTIMO; invalidar antes "
+                "de desabilitar deixa a janela aberta")
+        # O desarme e PROVADO por readback, nunca suposto.
+        if "(value&BC250_GCVM_ENABLE_CONTEXT)!=0u" not in off_ws:
+            errors.append(
+                "desarme do VMID nao confere ENABLE_CONTEXT por readback: "
+                "'escrevi 0' nao e' 'o contexto esta desarmado'")
+        # FlushVmid por VMID, nunca o Flush de VMID fixo.
+        if "Interface->Flush(" in off_body:
+            errors.append(
+                "desarme do VMID usa o flush de VMID FIXO: a traducao velha "
+                "sobreviveria justamente no slot que esta sendo devolvido")
+    # A LIGACAO. Contrato correto que ninguem chama ja aconteceu tres vezes
+    # neste projeto (ContextAbi, GpuvaLabPromotion, SdmaIndirectOnly).
+    for needle, label in (
+        ("Bc250GcvmUninstallVmid(\n                                liberado, &disarmIo, &disarmEvidence);",
+         "o miniport desarma o VMID que acabou de devolver"),
+        ("[VMID_POOL] DESARMADO: VMID%02u status=%u",
+         "o desarme publica status, readback e flush"),
+        ("[VMID_POOL] FALHA NO DESARME:",
+         "desarme que falha se declara, nunca passa calado"),
+        ("disarmIo.FlushVmid = Bc250ActiveFlushVmidTlb;",
+         "o desarme invalida a TLB do VMID devolvido, nao de um fixo"),
+    ):
+        if needle.replace("\n", "\n") not in active and \
+                re.sub(r"\s+", "", needle) not in re.sub(r"\s+", "", active):
+            errors.append("desarme do VMID: %s -- ausente" % label)
+    # A SUITE TAMBEM E PORTAO.
+    gcvm_test = (ROOT / "driver/tests/gcvm_vmid8_transaction_test.c").read_text(
+        encoding="utf-8", errors="replace")
+    # PORTAO FRACO CORRIGIDO PELA MUTACAO (terceira vez nesta sequencia): a
+    # versao anterior procurava "CHECK(f->LastFlushVmid == target);" no ARQUIVO
+    # inteiro, e a string tambem existe no bloco de INSTALL -- afrouxar a
+    # assercao do bloco de DESARME nao reprovava nada. A busca agora e
+    # DELIMITADA ao bloco do desarme.
+    i_off = gcvm_test.find("DX.15 -- DESARME DO SLOT NO SILICIO")
+    j_off = gcvm_test.find("Bc250GcvmInstallVmid(BC250_GCVM_CONTEXT_COUNT", i_off)         if i_off >= 0 else -1
+    if i_off < 0 or j_off <= i_off:
+        errors.append(
+            "bloco do desarme nao delimitavel na suite: o portao nao pode "
+            "avaliar o que deveria")
+    else:
+        bloco_off = gcvm_test[i_off:j_off]
+        for needle, label in (
+            ("Bc250GcvmUninstallVmid(target, &io, &offEv)",
+             "a suite exercita o desarme"),
+            ("CHECK(f->LastFlushVmid == target);",
+             "a suite exige que a TLB invalidada seja a do VMID desarmado"),
+            ("CHECK(f->Registers[Bc250GcvmContextCntlOffset(15u) / 4u] != 0u);",
+             "contraponto: desarmar um VMID nao pode tocar outro"),
+            ("CHECK(offEv.ProgramReadbackPassed == 1u);",
+             "a suite exige a prova de readback do desarme"),
+        ):
+            if needle not in bloco_off:
+                errors.append("suite do desarme: %s -- ausente" % label)
+
+    # (2h.7) DX.17 -- READBACK DA ESCRITA NO INDICE DA ARENA.
+    #
+    # MEDIDO, tres corridas concordando: escrevemos o indice 4096 SEMPRE limpo
+    # (Corridas 60, 61 e 63 somam 314 escritas, zero sujas, zero tripwire) e o
+    # TDR leu valor de PTE nesse mesmo indice em TRES corridas (59, 61, 63).
+    # As duas coisas nao podem ser verdadeiras sem que alguem escreva depois --
+    # ou sem que a nossa escrita nao chegue onde acreditamos. O readback
+    # imediato e a UNICA coisa que separa os dois casos.
+    if not upd_body:
+        pass
+    else:
+        upd_ws = re.sub(r"\s+", "", upd_body)
+        if ("constUINT64arenaReadback=destination[BC250_ACTIVE_ARENA_ROOT_INDEX];"
+                not in upd_ws):
+            errors.append(
+                "a escrita no indice da arena nao e lida de volta: 'escrevemos "
+                "limpo' e 'a memoria esta suja' continuariam sendo duas "
+                "afirmacoes que nunca se encontram no mesmo log")
+        if "if (arenaReadback != arenaEncoded) {" not in upd_body:
+            errors.append(
+                "o readback do indice da arena nao e COMPARADO: ler sem "
+                "conferir e' custo sem informacao")
+        for needle, label in (
+            ("[PDE_WRITE] DIVERGENCIA: idx=%u escrevemos 0x%016llX",
+             "divergencia entre escrita e readback se declara"),
+            ("active->ArenaPdeLastWritten = arenaEncoded;",
+             "o ultimo valor escrito fica retido para o TDR comparar"),
+        ):
+            if needle not in upd_body:
+                errors.append("readback da arena: %s -- ausente" % label)
+        # A divergencia NAO pode ser "corrigida" reescrevendo: isso esconderia
+        # a frequencia, que e' justamente o dado que falta.
+        if re.search(r"if \(arenaReadback != arenaEncoded\) \{[^}]*destination\[",
+                     upd_body, re.S):
+            errors.append(
+                "o ramo de divergencia reescreve o destino: reescrever esconde "
+                "a frequencia, que e o dado que a faixa existe para obter")
+    # O confronto no TDR poe os dois numeros no MESMO log.
+    for needle, label in (
+        ("[PDE_ARENA_CONFRONTO] UltimoQueEscrevemos=0x%016llX Escritas=%u",
+         "o TDR publica o ultimo valor que NOS escrevemos"),
+        ("activeCtx->ArenaPdeWriteSeq", "a contagem de escritas acompanha, e "
+         "zero escritas fica DECLARADO em vez de virar 'eram iguais'"),
+    ):
+        require(active, needle, "confronto da arena: %s" % label, errors)
+    require(display_pde, 'Bc250LogTextContains(Text, "PDE_ARENA_CONFRONTO")',
+            "a linha do confronto e isenta da amostragem global", errors)
+
+    # (2g) INVENTARIO DOS 16 CONTEXTOS GCVM (Corrida 49 -> 50).
+    # A Corrida 49 provou que varios contextos disputam o VMID 7: 5 faults, 5
+    # comparacoes de raiz, TODAS divergentes, e o mesmo IB sob TRES raizes. O
+    # conserto e VMID por contexto. A Corrida 51 confirmou que os offsets nao
+    # sao aliases e a 52 validou o mapa do pool. O inventario continua SOMENTE
+    # LEITURA; a escrita ganhou uma politica separada, exata, apenas para os
+    # VMIDs nao reservados do pool.
+    gcvm_path = ROOT / "driver" / "core" / "bc250_gcvm_vmid8_transaction.c"
+    gcvm_src = gcvm_path.read_text(encoding="utf-8", errors="replace")         if gcvm_path.exists() else ""
+    if not gcvm_src:
+        errors.append("bc250_gcvm_vmid8_transaction.c ausente: inventario sem portao")
+    for needle, label in (
+        ("[GCVM_INVENTARIO] Varridos=%u EmUso=%u Livres=%u Ilegiveis=%u",
+         "o inventario publica o resumo dos 16 contextos"),
+        ("ILEGIVEL", "contexto nao lido e' declarado, nao contado como livre"),
+    ):
+        require(active, needle, label, errors)
+    for needle, label in (
+        ("BC250_GCVM_CNTL_BASE + (Vmid * BC250_GCVM_CNTL_STRIDE)",
+         "offset de CNTL derivado por formula, nao tabela nova a mao"),
+        ('if (e->CntlRead == 0u && e->PtBaseRead == 0u) {',
+         "leitura falha nao vira veredito"),
+        ("++Inventory->UnreadableCount;",
+         "ilegivel tem contador proprio"),
+        ("(uint64_t)lo & ~0xFFFull",
+         "flags da PT_BASE mascaradas (sem isso, livre com flag vira ocupado)"),
+    ):
+        require(gcvm_src, needle, label, errors)
+    # O inventario NAO pode escrever. A allowlist nao pode ganhar a faixa crua
+    # dos 16 contextos: so' a funcao exata do pool pode autorizar cada offset.
+    transport = (ROOT / "driver/wdk/bc250_mmio_topology_transport.c").read_text(
+        encoding="utf-8", errors="replace")
+    write_fn = function_body(transport,
+        "static uint32_t Bc250MmioTopologyWriteOffsetAllowed(")
+    forbid(write_fn, "0x0000A240u",
+           "allowlist de ESCRITA nao pode abrir a faixa dos 16 contextos GCVM",
+           errors)
+    require(write_fn, "Bc250VmidPoolIsWritableGcvmRegister(ByteOffset)",
+            "escrita GCVM dos VMIDs do pool passa pela allowlist exata", errors)
+    read_fn = function_body(transport,
+        "static uint32_t Bc250MmioTopologyOffsetAllowed(")
+    require(read_fn, "Bc250VmidPoolIsWritableGcvmRegister(ByteOffset)",
+            "readback dos sete registradores do pool usa a mesma allowlist exata",
+            errors)
+    pool_hdr = (ROOT / "driver/core/bc250_vmid_pool_contract.h").read_text(
+        encoding="utf-8", errors="replace")
+    for needle, label in (
+        ("BC250_VMID_POOL_MASK >> vmid", "allowlist deriva da mascara do pool"),
+        ("Bc250GcvmIsContextRegisterForVmid(vmid, Offset)",
+         "allowlist reconhece os sete offsets exatos do contexto"),
+    ):
+        require(pool_hdr, needle, label, errors)
+
+    # InstallVmid tem de carregar a identidade do VMID ate o flush. Um
+    # callback fixo em 7/8 repetiria o fault mesmo com a raiz no slot certo.
+    gcvm_install_src = (ROOT / "driver/core/bc250_gcvm_vmid8_transaction.c").read_text(
+        encoding="utf-8", errors="replace")
+    gcvm_install_hdr = (ROOT / "driver/core/bc250_gcvm_vmid8_transaction.h").read_text(
+        encoding="utf-8", errors="replace")
+    install_fn = function_body(gcvm_install_src,
+        "BC250_GCVM_VMID8_STATUS Bc250GcvmInstallVmid(")
+    require(gcvm_install_hdr, "BC250_GCVM_FLUSH_VMID FlushVmid;",
+            "interface de instalacao recebe callback parametrizado por VMID",
+            errors)
+    require(install_fn, "Interface->FlushVmid(Interface->Context, Vmid)",
+            "InstallVmid invalida exatamente o VMID programado", errors)
+    forbid(install_fn, "Interface->Flush(Interface->Context)",
+           "InstallVmid nao pode voltar ao flush sem identidade de VMID",
+           errors)
+    require(active, "io.FlushVmid = Bc250ActiveFlushVmidTlb;",
+            "miniport entrega o VMID escolhido ao backend de TLB", errors)
+
+    # RootPhysical ainda e' diagnostico do contexto sob o VMID7 legado. A
+    # autoridade de hardware do slot precisa de estado separado; falha nova
+    # apaga qualquer READY antigo.
+    pool_src = (ROOT / "driver/core/bc250_vmid_pool_contract.c").read_text(
+        encoding="utf-8", errors="replace")
+    require(pool_hdr, "InstalledRootPhysical;",
+            "pool separa raiz observada de raiz instalada no slot", errors)
+    require(pool_hdr, "BC250_VMID_POOL_INSTALL_STATE InstallState;",
+            "pool guarda estado de instalacao por entrada", errors)
+    require(pool_hdr, "BC250_VMID_POOL_INSTALLING",
+            "pool tem estado transitorio antes do ACK fisico", errors)
+    begin_install = function_body(pool_src,
+        "BC250_VMID_POOL_STATUS Bc250VmidPoolBeginInstall(")
+    require(begin_install,
+            "entry->InstallState = BC250_VMID_POOL_INSTALLING;",
+            "BeginInstall publica INSTALLING antes de soltar o lock", errors)
+    release_vmid = function_body(pool_src,
+        "BC250_VMID_POOL_STATUS Bc250VmidPoolRelease(")
+    require(release_vmid, "BC250_VMID_POOL_INSTALLING",
+            "slot INSTALLING nao pode ser reciclado", errors)
+    record_install = function_body(pool_src,
+        "BC250_VMID_POOL_STATUS Bc250VmidPoolRecordInstall(")
+    require(record_install,
+            "entry->InstallState != BC250_VMID_POOL_INSTALLING",
+            "RecordInstall so publica resultado de um BeginInstall", errors)
+    require(record_install, "entry->InstalledRootPhysical = 0ull;",
+            "falha de instalacao limpa raiz READY anterior", errors)
+    require(record_install,
+            "entry->InstallState = BC250_VMID_POOL_INSTALL_FAILED;",
+            "falha de instalacao fica explicita por entrada", errors)
+    # DX.10: Release limpa a autoridade viva, mas a ultima instalacao PROVADA
+    # sobrevive fora da entrada para a caminhada post-mortem. A fonte usada
+    # precisa ser publicada; caso contrario a telemetria volta a mentir.
+    require(pool_hdr, "BC250_VMID_POOL_RETAINED_ROOT RetainedRoots[",
+            "raiz post-mortem fica fora da entrada reciclavel", errors)
+    require(record_install,
+            "Pool->RetainedRoots[Vmid].RootPhysical = RootPhysical;",
+            "somente RecordInstall OK atualiza a raiz retida", errors)
+    fault_walk_root = function_body(pool_src,
+        "BC250_VMID_POOL_STATUS Bc250VmidPoolRootForFaultWalk(")
+    require(fault_walk_root, "BC250_VMID_POOL_WALK_ROOT_LIVE_READY",
+            "caminhada prefere entrada viva READY", errors)
+    require(fault_walk_root, "BC250_VMID_POOL_WALK_ROOT_RETAINED",
+            "caminhada cai explicitamente na ultima raiz provada", errors)
+    forbid(release_vmid, "RetainedRoots",
+           "Release nao pode apagar a raiz diagnostica post-mortem", errors)
+
+    # (2f) CAMINHADA DA TABELA NO PONTO DO FAULT (Corrida 47->48).
+    # A Corrida 47 provou que o endereco que falha esta DENTRO de uma faixa que
+    # o snapshot declara MAPPED: software e hardware discordam. O log nao podia
+    # dizer de que lado, porque [ActiveUpdatePT] e classe AMOSTRADA -- terceira
+    # vez que a amostragem barrou a conclusao. A caminhada tira a resposta do
+    # log e poe no silicio. E SOMENTE LEITURA, e so' e legal porque
+    # DXGKDDI_RESETFROMTIMEOUT e _IRQL_requires_(PASSIVE_LEVEL) (d3dkmddi.h):
+    # a leitura de VRAM fora da janela usa MmMapIoSpace, que exige <= APC_LEVEL.
+    for needle, label in (
+        # O rotulo passou a ser DERIVADO do VMID do fault (Corrida 55): ate a
+        # Corrida 54 ele dizia FAULT_VMID7 enquanto caminhava VMID 1, 2 ou 3.
+        ('(faultVmid == BC250_GCVM_USER_VMID) ?',
+         "o rotulo da caminhada segue o VMID que o fault nomeia"),
+        ('"FAULT_VMID_POOL"',
+         "fault em VMID do pool tem rotulo proprio, nao o do 7"),
+        # (a raiz e conferida ESTRUTURALMENTE logo abaixo -- exigir so a
+        #  presenca da string nao pega a TROCA, porque o campo aparece em
+        #  outros sitios do arquivo; a mutacao M2 passou por esse buraco)
+        # A CONCLUSAO QUE ESTE PORTAO EXIGIA ESTAVA ERRADA (Corrida 62), e
+        # ele a estava CONGELANDO -- a classe "o gate carimbava a mentira",
+        # agora aplicada a uma frase de veredito em vez de a um contador.
+        #
+        # A frase antiga era "a PTE EXISTE, logo o defeito NAO e' PTE ausente".
+        # Ela so' valeria se o endereco caminhado fosse o endereco que faltou.
+        # O segundo candidato do discriminador NAO e': pageAddr<<20 e
+        # identicamente (pageAddr<<12)<<8, entao resolver ali significa que o
+        # endereco real e 256x o que faltou -- perda de 8 bits --, e NAO que a
+        # tabela esteja certa no endereco do fault.
+        #
+        # gc_10_1_0_sh_mask.h:12163-12168 fecha a questao: LOGICAL_PAGE_ADDR e
+        # LO32 (32 bits) + HI4 (4 bits) = pagina de 36 bits, logo << 12.
+        ("se o shift for VA<<8, isso significa que o endereco que FALTOU perdeu "
+         "8 bits, NAO que a tabela esteja certa",
+         "resolver publica a conclusao CERTA, nao a de que a tabela esta boa"),
+        ('"VA<<8(perda de 8 bits)"',
+         "o segundo candidato se chama pelo que e, nao de granularidade"),
+        ("NAO RESOLVE com Root=",
+         "nao resolver tambem e' veredito publicado"),
+        # PORTAO FRACO CORRIGIDO PELA MUTACAO (quarta vez nesta sequencia, e de
+        # novo "procurei a existencia em vez do uso"): exigir a string do rotulo
+        # provava que o ARRAY existe, nao que as duas linhas o CONSUMAM. A
+        # mutacao que fixava "<<20" na chamada passava.
+    ):
+        require(active, needle, label, errors)
+    if re.sub(r"\s+", "", active).count(
+            "kShiftNames[k],(unsignedlonglong)candidate,") != 2:
+        errors.append(
+            "as duas linhas do resolver nao consomem kShiftNames: o rotulo do "
+            "candidato voltaria a ser um shift cru, e foi assim que eu li "
+            "'<<20 resolveu' como 'a tabela esta certa' por tres corridas")
+    for needle, label in (
+        ("raiz do VMID %u AUSENTE",
+         "raiz ausente nomeia o VMID real, nao o 7 antigo"),
+        ("runtime caps INDISPONIVEIS",
+         "sem VramMcBase nao se caminha e nao se inventa"),
+    ):
+        require(active, needle, label, errors)
+    # A RAIZ DA CAMINHADA SEGUE O VMID QUE O FAULT NOMEIA (Corrida 54).
+    #
+    # Ate a Corrida 53 este portao exigia a raiz do VMID 7, e estava certo: era
+    # o unico VMID que o pacote usava. Agora o pacote carrega o VMID do
+    # contexto, e caminhar um fault de VMID 3 com a raiz do VMID 7 leria a
+    # TABELA ERRADA -- "a PTE nao existe" viraria conclusao falsa sobre a tabela
+    # certa. Armadilha (d) do handoff 307.
+    active_ws = re.sub(r"\s+", "", active)
+    for needle, label in (
+        ("constuint32_tfaultVmid=(faultStatus&0x00F00000u)>>20;",
+         "o VMID do fault e extraido do proprio status, nao suposto"),
+        ("Bc250VmidPoolRootForFaultWalk(&activeCtx->VmidPool,faultVmid,&poolWalk)",
+         "a raiz vem da entrada viva ou da retencao do VMID que faltou"),
+        ("(faultVmid==BC250_GCVM_USER_VMID)?activeCtx->UserVmidInstalledRootPhysical:poolRoot",
+         "fault no VMID 7 legado ainda usa a escrituracao do 7"),
+    ):
+        if needle not in active_ws:
+            errors.append(
+                "caminhada do fault: %s -- ausente; caminhar a tabela errada "
+                "responde a pergunta errada e parece funcionar" % label)
+    # (55a) O LATCH DECIDE O SIGNIFICADO DE TUDO. Dez corridas leram
+    # GCVM_L2_PROTECTION_FAULT_STATUS sem nunca ler o CNTL que o governa. Com
+    # ALLOW_SUBSEQUENT_..._UPDATES em zero, o par STATUS/ADDR fica preso no
+    # PRIMEIRO fault -- e o Status decodificado pode ser de minutos antes.
+    require(active, "[TDR_GCVM_FAULT] LATCH_CNTL=0x%08X",
+            "o fault le e decodifica o CNTL que governa o latch", errors)
+    require(active, "LATCH PRESO -- o Status acima pode ser do PRIMEIRO fault",
+            "o veredito do latch e declarado nos dois sentidos", errors)
+    require(active, "LATCH_CNTL NAO LIDO",
+            "falha de leitura do CNTL e declarada, nunca silenciosa", errors)
+    # A ESCRITA em 0xA120 continua PROIBIDA: limpar o latch muda o estado do
+    # silicio no meio do TDR e e' decisao separada, com criterio proprio.
+    transporte = (ROOT / "driver/wdk/bc250_mmio_topology_transport.c").read_text(
+        encoding="utf-8", errors="replace")
+    escrita_fn = function_body(transporte,
+        "static uint32_t Bc250MmioTopologyWriteOffsetAllowed(")
+    # A ESCRITA EM 0xA120 FOI ABERTA NA CORRIDA 56, e a polaridade deste portao
+    # se inverteu de proposito. A justificativa e' medida: LATCH_CNTL=0x3FFFFFFC
+    # com AceitaAtualizacoes=0 prende o par STATUS/ADDR no primeiro fault.
+    #
+    # PORTAO FRACO CORRIGIDO NO MESMO DIA: a versao anterior procurava o
+    # literal "0x0000A120u" e foi ATRAVESSADA sem reprovar quando a allowlist
+    # passou a usar a constante simbolica. Agora as duas grafias contam.
+    escrita_tem_cntl = (
+        "0x0000A120u" in escrita_fn or
+        "BC250_REG_GCVM_L2_PROTECTION_FAULT_CNTL" in escrita_fn)
+    if not escrita_tem_cntl:
+        errors.append(
+            "0xA120 saiu da allowlist de ESCRITA: sem o pulso de CLEAR o latch "
+            "volta a prender o primeiro fault, que e o defeito medido na "
+            "Corrida 55")
+    # Escrever no CNTL das sete classes de fault e' perigoso o bastante para
+    # ter UM escritor so'. O adaptador do miniport recusa qualquer outro
+    # offset ANTES da allowlist, e o contrato e' quem monta o valor.
+    if "if (ByteOffset != BC250_REG_GCVM_L2_PROTECTION_FAULT_CNTL) return 0u;" \
+            not in active:
+        errors.append(
+            "o adaptador de escrita do dreno nao restringe o offset: ele "
+            "viraria porta aberta para escrever qualquer registrador")
+    latch_src = (ROOT / "driver/core/bc250_fault_latch_contract.c").read_text(
+        encoding="utf-8", errors="replace")
+    latch_ws = re.sub(r"\s+", "", latch_src)
+    for needle, label in (
+        ("cntlBefore|BC250_FAULT_CNTL_CLEAR_STATUS_ADDR_BIT",
+         "o pulso LIGA o bit 0 preservando os demais (Lei 6), nunca constante"),
+        ("cntlBefore&~BC250_FAULT_CNTL_CLEAR_STATUS_ADDR_BIT",
+         "o pulso DESLIGA o bit 0 preservando os demais"),
+        ("if(readback!=cntlBefore)returnBC250_FAULT_LATCH_RESTORE_FAILED;",
+         "a restauracao do CNTL e PROVADA por readback, nao suposta"),
+        ("if(temAnterior!=0u&&status==anterior)",
+         "repeticao do mesmo Status nao vira fault novo"),
+        ("Evidence->ClearIneficaz=1u;",
+         "CLEAR que nao pega e declarado, nao mascarado"),
+    ):
+        if needle not in latch_ws:
+            errors.append("dreno do latch: %s -- ausente" % label)
+    # O valor escrito NUNCA pode ser constante: perderia as sete classes de
+    # fault que o POST habilitou (medido: Range/Pde0/Pde1/Pde2/TranslateFurther/
+    # Nack/DummyPage/Valid/Read/Write/Execute todos em 1).
+    if re.search(r"Write32\([^)]*FAULT_CNTL,\s*0x[0-9A-Fa-f]+u?\)", latch_src):
+        errors.append(
+            "o dreno escreve CONSTANTE no CNTL de fault: os 11 enables que o "
+            "POST deixou ligados seriam perdidos")
+    # A telemetria do dreno tem de existir e declarar a ausencia.
+    for needle, label in (
+        ("[TDR_GCVM_FAULT] DRENO: status=%u Drenados=%u",
+         "o dreno publica quantos faults saiu da fila"),
+        ("nenhum fault na fila -- a ausencia esta DECLARADA",
+         "fila vazia e declarada, nunca silenciosa"),
+        ("[TDR_GCVM_FAULT] DRENO #%u:",
+         "cada fault drenado e decodificado individualmente"),
+    ):
+        require(active, needle, "dreno do latch: %s" % label, errors)
+    # A funcao de LEITURA chama-se Bc250MmioTopologyOffsetAllowed (sem "Read");
+    # a de escrita e' Bc250MmioTopologyWriteOffsetAllowed. Errar o nome faria o
+    # portao passar por fatia vazia -- falso negativo silencioso.
+    leitura_fn = function_body(transporte,
+        "static uint32_t Bc250MmioTopologyOffsetAllowed(")
+    if not leitura_fn.strip():
+        errors.append(
+            "allowlist de leitura do MMIO nao localizada: o portao do 0xA120 "
+            "nao pode ser avaliado")
+    if "0x0000A120u" not in leitura_fn:
+        errors.append(
+            "0xA120 nao esta na allowlist de LEITURA: sem o CNTL nao se sabe "
+            "se o Status do fault e recente ou preso")
+
+    # (55b) A CAMINHADA E' POST-MORTEM. Sem comparar a epoca da tabela entre a
+    # submissao e o fault, "a PTE existe" nao diz nada sobre o INSTANTE do
+    # fault -- a PTE pode ter nascido depois.
+    require(active, "[TDR_GCVM_FAULT] JANELA_DE_PUBLICACAO:",
+            "a janela entre submissao e fault e medida, nao suposta", errors)
+    for needle, label in (
+        ("TABELA INALTERADA na janela",
+         "desfecho em que a caminhada FALA do instante do fault"),
+        ("TABELA MUDOU na janela",
+         "desfecho em que a caminhada NAO prova nada sobre o instante"),
+    ):
+        require(active, needle,
+                "janela de publicacao: %s -- ausente" % label, errors)
+    janela_ws = re.sub(r"\s+", "", active)
+    if "epocaSub==epocaAgora" not in janela_ws:
+        errors.append(
+            "o veredito da janela nao COMPARA as duas epocas: sem a comparacao "
+            "a linha vira carimbo, e carimbo ja foi confundido com medicao "
+            "cinco vezes neste projeto")
+
+    # (55c) O CARIMBO GRAVA A RAIZ DO VMID QUE O PACOTE CARREGA. Ate a Corrida
+    # 54 gravava a do VMID 7 legado, e a comparacao no fault era contra uma raiz
+    # que o pacote nao usava.
+    if "RootAtSubmit=(Vmid==BC250_GCVM_USER_VMID)?" not in janela_ws:
+        errors.append(
+            "o carimbo de submissao nao grava a raiz do VMID do pacote: a "
+            "comparacao no fault seria contra uma raiz que o pacote nao usa")
+
+    require(active, "[TDR_GCVM_FAULT] ORIGEM_DA_RAIZ:",
+            "o log declara de onde veio a raiz usada na caminhada", errors)
+    require(active, "RETIDA_POS_MORTE -- ultima instalacao provada",
+            "o log distingue raiz retida de entrada viva READY", errors)
+    forbid(active, "raiz do VMID 7 AUSENTE",
+           "telemetria antiga mentia VMID 7 para faults do pool", errors)
+    # Somente READY pode entregar raiz: INSTALLING e FAILED devolveriam um
+    # endereco que o silicio talvez nunca tenha aceitado, e o resultado
+    # pareceria medicao.
+    pool_src_walk = (ROOT / "driver/core/bc250_vmid_pool_contract.c").read_text(
+        encoding="utf-8", errors="replace")
+    leitor = function_body(pool_src_walk,
+        "uint64_t Bc250VmidPoolInstalledRootForVmid(")
+    if "entry->InstallState != BC250_VMID_POOL_INSTALL_READY" not in leitor:
+        errors.append(
+            "Bc250VmidPoolInstalledRootForVmid entrega raiz de slot que nao "
+            "esta READY: a caminhada usaria um endereco nao confirmado")
+
+    # DX.11: o alvo medido 0x200040 precisa sair nomeado pelo token imutavel da
+    # alocacao. O handle sozinho pode morrer antes do TDR e nao e' nome.
+    gpuva_hdr = (ROOT / "driver/core/bc250_gpuva_space_contract.h").read_text(
+        encoding="utf-8", errors="replace")
+    gpuva_src = (ROOT / "driver/core/bc250_gpuva_space_contract.c").read_text(
+        encoding="utf-8", errors="replace")
+    journal_hdr = (ROOT / "driver/core/bc250_gpuva_journal_contract.h").read_text(
+        encoding="utf-8", errors="replace")
+    require(gpuva_hdr, "uint64_t AllocationToken;",
+            "snapshot de GPUVA preserva o nome imutavel da alocacao", errors)
+    require(journal_hdr, "uint64_t AllocationToken;",
+            "journal transporta o nome imutavel ate o snapshot", errors)
+    require(gpuva_src, "slot->AllocationToken = Param->AllocationToken;",
+            "insercao no snapshot preserva o token da alocacao", errors)
+    require(gpuva_src, "Site->AllocationToken = r->AllocationToken;",
+            "descricao do endereco devolve o nome da alocacao", errors)
+    require(active, "entries[index].AllocationToken = allocationToken;",
+            "UpdatePageTable captura o token enquanto o objeto ainda vive", errors)
+    require(active, "[TDR_GCVM_FAULT] ALVO 0x200040:",
+            "o endereco repetido da Corrida 56 tem veredito dedicado", errors)
+    require(active, "Nome=%s Token=0x%llX",
+            "alocacao que contem o fault sai nomeada, nao so por handle", errors)
+    require(active, "EXCEDE 34 BITS -- fora do espaco traduzivel",
+            "<<20 invalido e declarado em vez de competir com <<12", errors)
+
+    # Corrida 57 nao reteve fault em nenhum dos cinco TDRs, embora tenha
+    # mapeado 0x200040000. O alvo precisa falar no UpdatePageTable tambem: e'
+    # a unica forma de obter permissao DXGK + PTE codificada sem depender do
+    # latch. A linha e desamostrada explicitamente porque ocorre uma vez.
+    require(active, "[DX_TARGET_200040] MAP:",
+            "alvo 0x200040 fala durante o UpdatePageTable mesmo sem fault", errors)
+    for needle, label in (
+        ("ReadOnly=%u NoExecute=%u CacheCoherent=%u",
+         "permissoes DXGK da pagina-alvo"),
+        ("EncodedPte=0x%llX EncodeStatus=0x%08X",
+         "PTE realmente codificada e status da codificacao"),
+        ("Token=0x%llX Nome=%s AllocBytes=0x%llX AllocKnown=%u",
+         "identidade e tamanho da alocacao do alvo"),
+    ):
+        require(active, needle, "DX_TARGET_200040: %s" % label, errors)
+    display_ddi = (ROOT / "driver/wdk/bc250_display_ddi.c").read_text(
+        encoding="utf-8", errors="replace")
+    require(display_ddi, 'Bc250LogTextContains(Text, "DX_TARGET_200040")',
+            "veredito raro de 0x200040 isento da amostragem", errors)
+
+    # (2b) PERNA 3 NAO PODE PROMETER DELEGADO INEXISTENTE (Corrida 44).
+    # A linha imprimia "Perna3=DELEGADA_AO_BYTE_PROOF" e a mineracao contou 111
+    # ocorrencias de BYTE_PROOF no log inteiro, TODAS elas esta propria linha:
+    # o delegado nunca rodou. [GfxIbInspect] varre a estrutura do IB pela CPU e
+    # nao confere byte de destino. Rotulo que promete prova inexistente faz o
+    # leitor contar tripe completo onde ha 2 de 3 pernas.
+    forbid(active, "Perna3=DELEGADA_AO_BYTE_PROOF",
+           "perna 3 do tripe GFX nomeia delegado que ninguem executa", errors)
+    require(active, "BC250_GFX_TRIPOD_LEG3_STATE",
+            "estado da perna 3 do tripe GFX em fonte unica", errors)
+    require(active, "NAO_EXECUTADA_SEM_GABARITO_DE_DESTINO",
+            "perna 3 do tripe GFX declarada aberta, nao simulada", errors)
+    require(poll, "TRIPE INCOMPLETO, 2 de 3 pernas",
+            "veredito do tripe GFX declara que esta incompleto", errors)
+
+    # (2c) APOSENTADORIA GFX MENSURAVEL (Corrida 44). A retirada existia em
+    # RetiredCount/LastRetiredFence, mas nao era impressa -- e por isso o item
+    # O6 do criterio teve de ser INFERIDO das fences em vez de medido.
+    for needed, label in (
+        ("Submetidas=%llu Aposentadas=%llu EmVoo=%llu",
+         "veredito do tripe GFX publica submetidas/aposentadas/em voo"),
+        ("GfxEngine.LastRetiredFence", "aposentadoria GFX sai do contador real"),
+        ("GfxEngine.RetiredCount", "contagem de aposentadas GFX publicada"),
+    ):
+        require(poll, needed, label, errors)
+
     # (3) Inspecao do IB ligada ao caminho de submissao do anel grafico.
     submit_gfx = active
     for needed in ("Bc250ActiveGfxInspectSubmittedIb(",
@@ -5762,6 +6869,340 @@ def audit_gpuva_snapshot_capacity(errors: list[str]) -> None:
             "sobreposicao parcial preserva as duas pontas", errors)
 
 
+
+def audit_dx21_pipeline_ir_and_ib_dump_reach_evidence(errors: list[str]) -> None:
+    """Faixa DX.21 (22/09/2026).
+
+    (1) O despejo do programa ACO de cada pipeline so' vale se for chamado
+    DEPOIS do vkCreateGraphicsPipelines bem-sucedido, se a flag de captura for
+    condicionada a extensao ter sido aceita, e se o device tiver fallback sem a
+    extensao (instrumentacao nunca decide se o device existe).
+    (2) O despejo de IB nao pode apontar para a pasta de evidencia: ela fica no
+    perfil do Daniel e o dwm.exe (DWM-<n>) nao grava la' -- causa do
+    gfx-ib-dump vazio nas Corridas 35, 36 e 66. Staging em C:/Windows/Temp,
+    armado ANTES do bind, copiado para a evidencia na coleta FINAL.
+    """
+    cache = (ROOT / "driver" / "umd" / "bc250_umd_pipeline_cache.c").read_text(encoding="utf-8", errors="replace")
+    bridge = (ROOT / "driver" / "umd" / "bc250_umd_vulkan_bridge.c").read_text(encoding="utf-8", errors="replace")
+    create = cache.find("vkCreateGraphicsPipelines(pBridge->Device")
+    dump = cache.find("Bc250UmdVkDumpPipelineIr(pBridge, pipeline")
+    fail = cache.find("if (!psoSuccess || pipeline == VK_NULL_HANDLE)")
+    if create < 0 or dump < 0 or fail < 0 or not (create < fail < dump):
+        errors.append("DX.21: Bc250UmdVkDumpPipelineIr tem de vir DEPOIS da criacao e do ramo de falha do pipeline")
+    flag = cache.find("VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR")
+    guard = cache.rfind("if (pBridge->PipelineIrCaptureEnabled)", 0, flag if flag >= 0 else 0)
+    if flag < 0 or guard < 0 or flag - guard > 200:
+        errors.append("DX.21: flag de captura de IR sem a guarda PipelineIrCaptureEnabled imediatamente antes")
+    fn = bridge.find("VOID Bc250UmdVkDumpPipelineIr(")
+    body = bridge[fn:bridge.find("VOID Bc250UmdVkReleaseDescriptorBatches", fn)] if fn >= 0 else ""
+    if "!pBridge->PipelineIrCaptureEnabled" not in body.split("pipelineIndex = ")[0]:
+        errors.append("DX.21: o despejo de IR tem de sair ANTES de qualquer chamada quando a captura esta desarmada")
+    if "TRUNCADO NO TETO" not in body or "TETO de %u pipelines" not in body:
+        errors.append("DX.21: truncamento e teto do despejo de IR precisam ser DECLARADOS no log")
+    dev = bridge[bridge.find("kIrExtensions"):bridge.find("LOAD_VK_DEV(vkDestroyDevice)")]
+    if dev.count("vkCreateDevice(pBridge->PhysicalDevice") != 2 or "enabledExtensionCount = 0" not in dev:
+        errors.append("DX.21: vkCreateDevice precisa de fallback SEM a extensao de IR (duas criacoes, a segunda sem extensoes)")
+    runner = (ROOT / "tools" / "test-d3d11-native-conformance.ps1").read_text(encoding="utf-8", errors="replace")
+    binder = (ROOT / "tools" / "bind-bc250mcdm-lab.ps1").read_text(encoding="utf-8", errors="replace")
+    staging = r"C:\Windows\Temp\BC250_GFX_IB_DUMP"
+    if re.search(r"\$ibDumpDir\s*=\s*Join-Path\s+\$EvidenceDir", runner):
+        errors.append("DX.21: runner voltou a apontar o despejo de IB para a pasta de evidencia (dwm.exe nao grava la')")
+    if ("$ibDumpDir = '" + staging + "'") not in runner:
+        errors.append("DX.21: runner nao usa o staging gravavel pelo DWM para o despejo de IB")
+    arm = binder.find("$gfxIbDumpStaging = '" + staging + "'")
+    reg = binder.find("-Name 'GfxIbDumpDir' -Value $gfxIbDumpStaging", arm if arm >= 0 else 0)
+    acl = binder.find("*S-1-5-90-0:(OI)(CI)M", arm if arm >= 0 else 0)
+    baseline = binder.find("display-log-baseline.json")
+    if arm < 0 or reg < 0 or acl < 0 or not (arm < acl < reg < baseline):
+        errors.append("DX.21: binder tem de criar o staging, conceder ACL ao DWM e armar GfxIbDumpDir ANTES do bind")
+    final = binder.rfind("Coleta FINAL do despejo de IB")
+    copy = binder.rfind("Get-ChildItem -LiteralPath '" + staging + "'", 0, final if final >= 0 else 0)
+    if final < 0 or copy < 0 or final - copy > 800:
+        errors.append("DX.21: coleta FINAL nao copia o staging do despejo de IB para a evidencia")
+
+
+def audit_dx24_d3d11_state_reaches_vulkan(errors: list[str]) -> None:
+    """Faixa DX.24 (22/09/2026).
+
+    Corrida 69, desfecho B: origem com conteudo, draws no alvo apresentado e
+    superficie preta. A leitura achou estado D3D11 que nao chegava ao Vulkan.
+    Este portao trava as correcoes que nao passam pelo modulo puro
+    bc250_umd_state_translate.c (esse tem suite propria com mutacao).
+    """
+    umd = ROOT / "driver" / "umd"
+    cache = (umd / "bc250_umd_pipeline_cache.c").read_text(encoding="utf-8", errors="replace")
+    draw = (umd / "bc250_d3d_umd.c").read_text(encoding="utf-8", errors="replace")
+    desc = (umd / "bc250_umd_descriptors.c").read_text(encoding="utf-8", errors="replace")
+    bridge = (umd / "bc250_umd_vulkan_bridge.c").read_text(encoding="utf-8", errors="replace")
+
+    explicit = cache.find("if (effectiveKey.BlendFactorsExplicit) {")
+    raw = cache.find("colorBlendAttachment.srcColorBlendFactor = effectiveKey.SrcColorBlendFactor;", explicit)
+    if explicit < 0 or raw < 0 or raw - explicit > 400:
+        errors.append("DX.24: pipeline nao usa os fatores de blend pedidos quando BlendFactorsExplicit")
+    if "effectiveKey.SrcColorBlendFactor ? effectiveKey.SrcColorBlendFactor" in cache:
+        errors.append("DX.24: pipeline voltou a trocar VK_BLEND_FACTOR_ZERO (valor 0) pelo padrao")
+    if "effectiveKey.BlendFactorsExplicit ? effectiveKey.ColorWriteMask" not in cache:
+        errors.append("DX.24: mascara de escrita 0 do D3D11 voltou a virar RGBA")
+    if "VK_DYNAMIC_STATE_BLEND_CONSTANTS" not in cache or "dynamicState.dynamicStateCount = 3;" not in cache:
+        errors.append("DX.24: BLEND_CONSTANTS dinamico ausente do pipeline")
+
+    bind = draw.find("vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);")
+    setc = draw.find("vkCmdSetBlendConstants(cmd, pDevice->PipelineState.BlendFactor);", bind if bind >= 0 else 0)
+    trace = draw.find("Bc250UmdTraceDrawData(pDevice, StartVertexLocation);", bind if bind >= 0 else 0)
+    if bind < 0 or setc < 0 or trace < 0 or setc - bind > 300 or trace - bind > 400:
+        errors.append("DX.24: blend constante e [DRAW_DATA] tem de sair logo apos o bind do pipeline")
+    if "vp.height = -pDevice->PipelineState.Viewports[0].Height;" not in draw:
+        errors.append("DX.24: viewport sem altura negativa -- a imagem D3D sai de cabeca para baixo")
+    if "&vb0->VkBuf, &offset" in draw:
+        errors.append("DX.24: slot de vertice sem buffer voltou a ser preenchido com o slot 0")
+    if "psoKey.InputAttributes[e].location = e;" in draw:
+        errors.append("DX.24: location voltou a seguir a ordem do elemento em vez do InputRegister")
+    if "Bc250UmdTranslateInputLayout(il->Elements" not in draw:
+        errors.append("DX.24: draw nao usa a traducao pura do layout de entrada")
+    if "Bc250UmdMapBlendFactor((UINT)rt0->SrcBlend" not in draw or "psoKey.BlendFactorsExplicit = TRUE;" not in draw:
+        errors.append("DX.24: fatores de blend do D3D11 nao sao traduzidos")
+    if "view.components = Bc250UmdVkSrvComponentMapping(srv->Desc.Format);" not in desc:
+        errors.append("DX.24: view de amostragem sem swizzle (X8 sem alpha=1, A8 em vermelho)")
+    if "case 88: /* DXGI_FORMAT_B8G8R8A8_UNORM_SRGB */" in bridge:
+        errors.append("DX.24: tabela de formatos voltou com os comentarios trocados")
+
+
+def audit_dx25_drawn_vertices_and_target_readback(errors: list[str]) -> None:
+    """Faixa DX.25 (22/09/2026).
+
+    Corrida 70: o vertice amostrado (offset 0 do VB) nao era o desenhado -- os
+    draws do DWM sao indexados. E a grade do Present so' ve o fim do quadro.
+    Trava: indice lido a partir de IndexOffset + Start, BaseVertex somado, e a
+    leitura do alvo apos o draw com teto e SEM escrever no alvo.
+    """
+    draw = (ROOT / "driver" / "umd" / "bc250_d3d_umd.c").read_text(encoding="utf-8", errors="replace")
+    fn = draw.find("static void Bc250UmdTraceDrawVertices(")
+    body = draw[fn:draw.find("static void Bc250UmdReadbackDrawTarget(", fn)] if fn >= 0 else ""
+    if "d->PipelineState.IndexOffset + ((uint64_t)Start + k) * size" not in body:
+        errors.append("DX.25: indice nao e' lido a partir de IndexOffset + StartIndexLocation")
+    if "(Indexed ? (int64_t)BaseVertex : 0)" not in body:
+        errors.append("DX.25: BaseVertexLocation nao e' somado ao indice -- o vertice medido nao seria o desenhado")
+    rb = draw.find("static void Bc250UmdReadbackDrawTarget(")
+    rbody = draw[rb:draw.find("static BOOL Bc250UmdExecuteVkDraw(", rb)] if rb >= 0 else ""
+    if "BC250_DRAW_READBACK_MAX" not in rbody or "TETO de %u leituras" not in rbody:
+        errors.append("DX.25: leitura do alvo apos o draw sem teto declarado")
+    for forbidden in ("vkCmdClearColorImage", "vkCmdCopyBufferToImage", "vkCmdCopyImage(", "memcpy("):
+        if forbidden in rbody:
+            errors.append(f"DX.25: leitura do alvo ESCREVE ({forbidden}) -- instrumentacao nao pode tocar no pixel")
+    t1 = draw.find("Bc250UmdTraceDrawData(pDevice, StartVertexLocation);")
+    t2 = draw.find("Bc250UmdTraceDrawVertices(pDevice, Indexed, StartVertexLocation, BaseVertexLocation);")
+    fin = draw.find("DRAW fence concluida; pixels NAO CONFERIDOS")
+    rcall = draw.find("Bc250UmdReadbackDrawTarget(pDevice, rtv->pResource);", fin if fin >= 0 else 0)
+    if t1 < 0 or t2 < 0 or t2 - t1 > 200 or fin < 0 or rcall < 0 or rcall - fin > 600:
+        errors.append("DX.25: [DRAW_VERTS] e [DRAW_READBACK] fora do lugar no ExecuteVkDraw")
+
+
+def audit_dx26_golden_csib_snapshot_is_read_only(errors: list[str]) -> None:
+    """Faixa DX.26 (22/09/2026): snapshot dos golden settings e do CSB e' so' LEITURA.
+
+    A Fase A (docs/338) mostrou que o KMD nunca aplica nem le os 34 goldens nem
+    o RLC_CSIB_*. Medir antes de escrever: a funcao de snapshot nao pode conter
+    escrita, e os offsets novos entram so' na allowlist de LEITURA.
+    """
+    mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    trans = (ROOT / "driver" / "wdk" / "bc250_mmio_topology_transport.c").read_text(encoding="utf-8", errors="replace")
+    fn = mini.find("static void Bc250ActiveGoldenSnapshotReadOnly(")
+    # o corpo termina no fim da propria funcao (DX.27 pos um escritor logo abaixo)
+    body = mini[fn:mini.find("\n}\n", fn)] if fn >= 0 else ""
+    if not body:
+        errors.append("DX.26: snapshot dos golden/CSB ausente")
+    elif "Write32" in body or "WRITE_REGISTER" in body:
+        errors.append("DX.26: snapshot dos golden/CSB ESCREVE em registrador -- era para ser somente leitura")
+    if "Bc250ActiveGoldenSnapshotReadOnly(Context);" not in mini:
+        errors.append("DX.26: snapshot dos golden/CSB nunca e' chamado")
+    rd = trans.find("static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)")
+    wr = trans.find("Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)")
+    rd_body = trans[rd:trans.find("}", rd)] if rd >= 0 else ""
+    wr_body = trans[wr:trans.find("\n}", wr)] if wr >= 0 else ""
+    if "Bc250MmioTopologyGoldenReadAllowed(ByteOffset)" not in rd_body:
+        errors.append("DX.26: offsets de golden/CSB fora da allowlist de leitura")
+    # DX.27 abriu ESCRITA so' para RLC_CSIB_* (escritor unico, portao proprio);
+    # os golden settings continuam proibidos na allowlist de escrita.
+    if "Golden" in wr_body:
+        errors.append("DX.26: golden settings entraram na allowlist de ESCRITA")
+
+    # Autoteste grafico (controle positivo) tem de rodar ANTES do harness D3D11,
+    # nas tres variantes do RADV, e sua ausencia tem de ser declarada.
+    runner = (ROOT / "tools" / "test-d3d11-native-conformance.ps1").read_text(encoding="utf-8", errors="replace")
+    st = runner.find("bc250-gfx-selftest.exe")
+    harness = runner.find("$proc = Start-Process -FilePath $Harness")
+    if st < 0 or harness < 0 or st > harness:
+        errors.append("DX.26: autoteste grafico nao roda antes do harness D3D11")
+    if "@('nodcc', 'nodcc,nonggc', 'nodcc,nongg')" not in runner:
+        errors.append("DX.26: autoteste sem as tres variantes (nodcc / nonggc / nongg)")
+    if "AUTOTESTE GRAFICO AUSENTE" not in runner:
+        errors.append("DX.26: ausencia do autoteste nao e' declarada")
+    selftest_src = (ROOT / "driver" / "tests" / "gfx_selftest" / "bc250_gfx_selftest.c").read_text(encoding="utf-8", errors="replace")
+    if "MAP_FALHOU" not in selftest_src or "NAO_MEDIDO" not in selftest_src:
+        errors.append("DX.26: autoteste pode transformar falha de medicao em zero")
+    if selftest_src.count("PoisonAndCopy(img);") < 2 or "p_vkCmdFillBuffer(g_cmd, g_rb, 0, VK_WHOLE_SIZE, POISON);" not in selftest_src:
+        errors.append("DX.26: autoteste nao reenvenena o buffer pela GPU antes de cada copia")
+
+
+def audit_dx27_clear_state_follows_upstream(errors: list[str]) -> None:
+    """Faixa DX.27 (22/09/2026): clear state do GFX10 como no upstream.
+
+    A Corrida 72 leu RLC_CSIB_* = 0 e o preambulo de boot emitia PREAMBLE_CNTL
+    com payload 0/1 sem nenhum SET_CONTEXT_REG. Este portao exige: tabela upstream
+    sem edicao, codificacao BEGIN/END_CLEAR_STATE de nvd.h, escritor UNICO do
+    RLC_CSIB com snapshot/readback/restauracao, CSB antes do anel, sem SET_BASE, e
+    o S1 do autoteste sem a confusao veneno==esperado.
+    """
+    lr = ROOT / "inc" / "linux_ref"
+    want = {
+        "clearstate_gfx10.h": "e6ca3544dd51a657d9200243be9e6d05c4dcfa052a239dadebbc6cd7409e64cd",
+        "clearstate_defs.h": "70eb9f9a57d2cacb2ee2d7b9f17485384019ac03c845ce4bea941acdae137285",
+    }
+    for name, digest in want.items():
+        p = lr / name
+        if not p.exists() or hashlib.sha256(p.read_bytes()).hexdigest() != digest:
+            errors.append(f"DX.27: inc/linux_ref/{name} ausente ou EDITADO (sha256 diverge do upstream registrado)")
+    if not (lr / "PROVENANCE_CLEARSTATE.txt").exists():
+        errors.append("DX.27: procedencia do clear state ausente")
+
+    pm4 = (ROOT / "driver" / "core" / "bc250_pm4_packet_builder.c").read_text(encoding="utf-8", errors="replace")
+    pm4h = (ROOT / "driver" / "core" / "bc250_pm4_packet_builder.h").read_text(encoding="utf-8", errors="replace")
+    if "clearstate_gfx10.h" not in pm4 or "gfx10_cs_data" not in pm4:
+        errors.append("DX.27: CSB nao sai da tabela upstream gfx10_cs_data")
+    if "#define BC250_PM4_PREAMBLE_BEGIN_CLEAR_STATE (2u << 28)" not in pm4h or \
+       "#define BC250_PM4_PREAMBLE_END_CLEAR_STATE   (3u << 28)" not in pm4h:
+        errors.append("DX.27: BEGIN/END_CLEAR_STATE diferentes de nvd.h:395-396")
+    test = (ROOT / "driver" / "tests" / "pm4_packet_builder_test.c").read_text(encoding="utf-8", errors="replace")
+    for needle in ("g_csb[1] == 0x20000000u", "g_csb[n - 3] == 0x30000000u",
+                   "g_csb[7 + 144] == 0x80000000u", "return Bc250RunGfx10ClearStateTest();"):
+        if needle not in test:
+            errors.append(f"DX.27: teste do CSB perdeu a assercao {needle!r}")
+
+    mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    fn = mini.find("static BOOLEAN Bc250ActiveProgramClearStateBuffer(")
+    body = mini[fn:mini.find("\n}\n", fn)] if fn >= 0 else ""
+    if not body:
+        errors.append("DX.27: escritor unico do RLC_CSIB ausente")
+    else:
+        first_write = body.find("Write32(mmio, BC250_REG_RLC_CSIB")
+        first_read = body.find("Read32(mmio, BC250_REG_RLC_CSIB")
+        if first_read < 0 or first_write < 0 or first_read > first_write:
+            errors.append("DX.27: RLC_CSIB escrito sem snapshot anterior")
+        if body.count("Read32(mmio, BC250_REG_RLC_CSIB") < 6:
+            errors.append("DX.27: RLC_CSIB sem readback dos tres registradores")
+        if "if (!pass)" not in body:
+            errors.append("DX.27: RLC_CSIB nao restaura o snapshot quando o readback falha")
+    # nenhum outro sitio do driver pode escrever o CSIB
+    for src in (ROOT / "driver" / "wdk").glob("*.c"):
+        txt = src.read_text(encoding="utf-8", errors="replace")
+        for m in re.finditer(r"Write32\([^;]*RLC_CSIB", txt):
+            if src.name != "bc250_active_miniport.c" or not (fn <= m.start() < fn + len(body)):
+                errors.append(f"DX.27: escrita de RLC_CSIB fora do escritor unico em {src.name}")
+    online = mini.find("static NTSTATUS Bc250ActiveGfxEngineOnline(")
+    boot = mini[online:mini.find("Bc250ActiveGoldenSnapshotReadOnly(Context);", online)] if online >= 0 else ""
+    b = boot.find("Bc250Pm4BuildGfx10ClearState(")
+    w = boot.find("Bc250ActiveProgramClearStateBuffer(Context, csbMc, csbDwords)")
+    c = boot.find("RingCpuVirtual[bootCursor++] = csbCpu[csbIdx];")
+    if not (0 <= b < w < c):
+        errors.append("DX.27: ordem do upstream quebrada (montar CSB -> programar RLC_CSIB -> anel)")
+    if "0xC0004A00u" in boot or "IT_SET_BASE" in boot:
+        errors.append("DX.27: preambulo de boot voltou a ter PREAMBLE_CNTL manual ou SET_BASE")
+
+    trans = (ROOT / "driver" / "wdk" / "bc250_mmio_topology_transport.c").read_text(encoding="utf-8", errors="replace")
+    wr = trans.find("Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)")
+    wr_body = trans[wr:trans.find("\n}", wr)] if wr >= 0 else ""
+    for name in ("BC250_REG_RLC_CSIB_ADDR_LO_BYTE", "BC250_REG_RLC_CSIB_ADDR_HI_BYTE", "BC250_REG_RLC_CSIB_LENGTH_BYTE"):
+        if name not in wr_body:
+            errors.append(f"DX.27: {name} fora da allowlist de escrita -- o escritor falharia calado")
+
+    st = (ROOT / "driver" / "tests" / "gfx_selftest" / "bc250_gfx_selftest.c").read_text(encoding="utf-8", errors="replace")
+    if "Submit(), S1_FILL);" not in st or "CPU_SENTINEL" not in st:
+        errors.append("DX.27: S1 do autoteste voltou a esperar o proprio veneno")
+    i_exp = st.find("if (v == expected) ++exp;")
+    i_poi = st.find("else if (v == POISON) ++poison;")
+    if i_exp < 0 or i_poi < 0 or i_exp > i_poi:
+        errors.append("DX.27: Inspect classifica veneno antes do esperado")
+
+
+def audit_dx28_rotation_carries_vulkan_content(errors: list[str]) -> None:
+    """Faixa DX.28 (22/09/2026): a rotacao de identidades leva o conteudo Vulkan.
+
+    Corrida 73: grade 86400/86400 apos o draw e 0/86400 no Present, logo depois
+    dos ResourceCopyRegion do buffer anterior. RotateResourceIdentities girava
+    Allocation/pCpuShadow e deixava a VkImage para tras. Exige: grupo Vulkan na
+    rotacao, RTV seguindo a imagem no Draw e no Clear, teste que confere a
+    VkImage girando, e a sentinela de fault GFX somente leitura.
+    """
+    umd = (ROOT / "driver" / "umd" / "bc250_d3d_umd.c").read_text(encoding="utf-8", errors="replace")
+    rv = (ROOT / "driver" / "umd" / "bc250_umd_resource_vk.c").read_text(encoding="utf-8", errors="replace")
+    test = (ROOT / "driver" / "tests" / "bc250_d3d_umd_test.c").read_text(encoding="utf-8", errors="replace")
+    fn = umd.find("HRESULT APIENTRY Bc250DxgiRotateResourceIdentities(")
+    body = umd[fn:umd.find("\n}\n", fn)] if fn >= 0 else ""
+    for needle in ("dst->VkImg = src->VkImg;", "dst->VkMem = src->VkMem;", "dst->VkLayout = src->VkLayout;",
+                   "last->VkImg = savedImg;", "last->VkMem = savedMem;", "last->VkLayout = savedLayout;"):
+        if needle not in body:
+            errors.append(f"DX.28: rotacao nao leva o conteudo Vulkan ({needle!r} ausente)")
+    # a linha tambem existe dentro da FollowResource: tem de ser procurada no
+    # corpo da CRIACAO (a primeira versao deste portao passou com ela removida)
+    cr = rv.find("BOOL Bc250UmdVkCreateRtv(")
+    cr_body = rv[cr:rv.find("\n}\n", cr)] if cr >= 0 else ""
+    if "pRtv->VkImageAtCreation = pRes->VkImg;" not in cr_body or "BOOL Bc250UmdVkRtvFollowResource(" not in rv:
+        errors.append("DX.28: RTV nao registra na criacao / nao segue a imagem do recurso")
+    draw = umd.find("rtv = (BC250_UMD_RTV*)pDevice->PipelineState.BoundRTVs[0].pDrvPrivate;")
+    if draw < 0 or "Bc250UmdVkRtvFollowResource(pDevice, rtv)" not in umd[draw:draw + 600]:
+        errors.append("DX.28: Draw usa a RTV sem seguir a rotacao")
+    clr = umd.find("VOID APIENTRY Bc250Umd10ClearRenderTargetView(")
+    if clr < 0 or "Bc250UmdVkRtvFollowResource(device, rtv)" not in umd[clr:clr + 1200]:
+        errors.append("DX.28: Clear usa a RTV sem seguir a rotacao")
+    for needle in ("assert(chain[0].VkImg == (VkImage)(uintptr_t)0xB001u);",
+                   "assert(chain[2].VkImg == (VkImage)(uintptr_t)0xB000u);"):
+        if needle not in test:
+            errors.append(f"DX.28: teste da rotacao perdeu {needle!r}")
+
+    mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    s = mini.find("DX.28 -- SENTINELA DE FAULT DO GCVM")
+    blk = mini[s:mini.find("s_faultSentinelLast = st;", s)] if s >= 0 else ""
+    if not blk:
+        errors.append("DX.28: sentinela de fault GFX ausente")
+    elif "Write32" in blk:
+        errors.append("DX.28: sentinela de fault GFX ESCREVE -- era somente leitura")
+    if not (ROOT / "external" / "radv-wddm" / "pending" / "DX29-remover-preamble-cntl-do-fork.patch").exists():
+        errors.append("DX.28: patch pendente do PREAMBLE_CNTL do fork ausente")
+
+
+def audit_dx29_vmid_switch_sync_on_gfx_ring(errors: list[str]) -> None:
+    """Faixa DX.29 (22/09/2026): sincronia de troca de VMID no anel grafico.
+
+    Corridas 73-74: 5 de 5 travamentos de 240 ondas num IB logo apos IB de OUTRO
+    VMID. Exige: WAIT_REG_MEM mem/PFP sobre a fence do anel + PFP_SYNC_ME ANTES do
+    INDIRECT_BUFFER quando o VMID muda, codificacao de nvd.h, LastSubmitVmid
+    atualizado so' no sucesso e zerado (0xFFFFFFFF) no boot e no restart.
+    """
+    mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    pm4h = (ROOT / "driver" / "core" / "bc250_pm4_packet_builder.h").read_text(encoding="utf-8", errors="replace")
+    test = (ROOT / "driver" / "tests" / "pm4_packet_builder_test.c").read_text(encoding="utf-8", errors="replace")
+    fn = mini.find("static NTSTATUS Bc250ActiveGfxEngineSubmit(")
+    body = mini[fn:mini.find("\n}\n", fn)] if fn >= 0 else ""
+    w = body.find("BC250_PM4_WAIT_REG_MEM_PFP_MEM_GE")
+    s = body.find("BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_PFP_SYNC_ME, 1u)")
+    ib = body.find("pm4Status = Bc250Pm4EmitIndirectBuffer(")
+    if not (0 <= w < s < ib):
+        errors.append("DX.29: sincronia de troca de VMID ausente ou depois do INDIRECT_BUFFER")
+    if "prevVmid != Vmid" not in body or "Context->GfxEngine.FenceGpuVa, waitFence" not in body:
+        errors.append("DX.29: a espera nao e' condicionada a troca de VMID ou nao usa a fence do anel")
+    if "Context->GfxEngine.LastSubmitVmid = Vmid;" not in body:
+        errors.append("DX.29: LastSubmitVmid nao e' atualizado no sucesso")
+    if mini.count("LastSubmitVmid = 0xFFFFFFFFu;") < 2:
+        errors.append("DX.29: LastSubmitVmid nao volta a 'nenhum' no boot e no restart de TDR")
+    if "#define BC250_PM4_WAIT_REG_MEM_PFP_MEM_GE    ((5u << 0) | (1u << 4) | (1u << 8))" not in pm4h or \
+       "#define BC250_PM4_IT_PFP_SYNC_ME             0x42u" not in pm4h:
+        errors.append("DX.29: codificacao do WAIT_REG_MEM/PFP_SYNC_ME diverge de nvd.h")
+    for needle in ("CHECK(BC250_PM4_WAIT_REG_MEM_PFP_MEM_GE == 0x00000115u);",
+                   "CHECK(ring[1] == 0x00000115u);"):
+        if needle not in test:
+            errors.append(f"DX.29: teste perdeu {needle!r}")
+
+
 def main() -> int:
     active_path = ROOT / "driver" / "wdk" / "bc250_active_miniport.c"
     engine_path = ROOT / "driver" / "wdk" / "bc250_submission_engine.c"
@@ -6740,6 +8181,52 @@ def main() -> int:
             "lab bind rehashes the archived PDB destination", errors)
     require(lab_bind, "$evidencePdbHash -ne [string]$manifest.PackagePdbSha256",
             "lab bind fails closed when the archived PDB is corrupted", errors)
+    # REBAIXAMENTO DE PERFIL (20/09, preparando a Corrida 45). O empacotador
+    # aceita qualquer combinacao de switches e a auditoria do PACOTE da PASS num
+    # perfil fraco -- ela confere o pacote, nao a INTENCAO do ensaio. Ao preparar
+    # o candidato pos-Corrida 44 foi produzido um DISPLAY_LAB em modo READ-ONLY
+    # para um ensaio que EXIGE DISPLAY_RENDER_LAB com submissao persistente:
+    # nada comparava com o que havia rodado antes, e um bind assim mede o nada.
+    for needle, label in (
+        ("$lastBinding.profile",
+         "lab bind compares the candidate profile against the last binding"),
+        ("Perfil do candidato e MAIS FRACO que o do ultimo bind",
+         "lab bind names the profile downgrade instead of binding silently"),
+        ("if (-not $IAcceptProfileDowngrade) { throw $msg }",
+         "profile downgrade fails closed without explicit acceptance"),
+        ("profile = [ordered]@{",
+         "lab bind records the bound profile for the next comparison"),
+        ("PersistentSubmissionEnabled = [bool]$manifest.PersistentSubmissionEnabled",
+         "recorded profile carries the submission mode"),
+    ):
+        require(lab_bind, needle, label, errors)
+
+    # CAUDA FINAL: CONTEUDO, NAO TAMANHO (Corrida 50). O criterio era
+    # $tailPass2 -ge $expected -- puro tamanho. Deu "completo" com 2.751.230
+    # bytes que eram 100% ESPACO, e a leitura da corrida concluiu "perdemos a
+    # coleta" com o dado intacto no arquivamento inicial. Medir o proxy em vez
+    # do efeito e a classe de defeito mais cara deste projeto.
+    for needle, label in (
+        # (o CALCULO e exigido estruturalmente abaixo -- exigir so o nome deixa
+        #  passar "$contentIsPadding = $false", e a mutacao M2 passou por isso)
+        ("-and (-not $contentIsPadding)",
+         "completude exige conteudo real, nao so tamanho"),
+        ("content_is_padding  = $contentIsPadding",
+         "o veredito de preenchimento vai para a proveniencia"),
+        ("e' preenchimento. NAO leia esse arquivo",
+         "arquivo so com preenchimento alerta em voz alta"),
+    ):
+        require(lab_bind, needle, label, errors)
+    # O veredito tem de vir da CONTAGEM de bytes nao-preenchimento, nao de um
+    # literal. Espacos normalizados para sobreviver a reformatacao.
+    lab_bind_ws = re.sub(r"\s+", "", lab_bind)
+    if "$contentIsPadding=($finalNonPad-le64)" not in lab_bind_ws:
+        errors.append(
+            "a cauda FINAL nao classifica preenchimento pela contagem de bytes "
+            "($contentIsPadding = ($finalNonPad -le 64)): fixar o veredito num literal "
+            "devolveria o defeito da Corrida 50, em que tamanho plausivel e zero conteudo "
+            "passaram como coleta completa")
+
     require(lab_bind, "Escolha uma unica experiencia fisica: RADV ou B7_UMD_NODE1_TRIPOD",
             "lab bind forbids two physical experiments in one run", errors)
     require(lab_bind, "-RunUmdNode1Tripod exige -EnableGpuvaLabPromotion",
@@ -7388,6 +8875,13 @@ def main() -> int:
     audit_gfx_primitive_assembler_is_honest(errors)
     audit_gfx_draw_initiator_is_honest(errors)
     audit_offline_check_is_not_inverted(errors)
+    audit_dx21_pipeline_ir_and_ib_dump_reach_evidence(errors)
+    audit_dx24_d3d11_state_reaches_vulkan(errors)
+    audit_dx25_drawn_vertices_and_target_readback(errors)
+    audit_dx26_golden_csib_snapshot_is_read_only(errors)
+    audit_dx27_clear_state_follows_upstream(errors)
+    audit_dx28_rotation_carries_vulkan_content(errors)
+    audit_dx29_vmid_switch_sync_on_gfx_ring(errors)
 
     if errors:
         print("BC250 MCDM SAFETY AUDIT: FAILED")
@@ -7396,6 +8890,10 @@ def main() -> int:
         return 1
 
     print("BC250 MCDM SAFETY AUDIT: PASS")
+    print("  DX.26 golden settings and CSB snapshot is read-only: enforced")
+    print("  DX.25 drawn vertices (index+base) and capped read-only target readback: enforced")
+    print("  DX.24 D3D11 blend/IA/viewport/format state reaches Vulkan or refuses by name: enforced")
+    print("  DX.21 pipeline IR dump after creation, gated, fallback device; IB dump staged where dwm.exe can write: enforced")
     print("  synthetic ownership/reservations: absent")
     print("  GPUVA geometry (GPUMMUCAPS vs UMDRIVERPRIVATE): single source")
     print("  operational DDIs without hardware backing: fail-closed")

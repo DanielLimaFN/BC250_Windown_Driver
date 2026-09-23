@@ -15,6 +15,7 @@ static uint32_t Bc250GpuvaJournalEntriesAreContiguous(
     if (Previous->Permissions != Current->Permissions) return 0u;
     if (Previous->Allocation != Current->Allocation) return 0u;
     if (Previous->OpenAllocation != Current->OpenAllocation) return 0u;
+    if (Previous->AllocationToken != Current->AllocationToken) return 0u;
     if (Previous->Valid == 0u) return 1u;
     if (Previous->SegmentId != Current->SegmentId) return 0u;
     if (Previous->SegmentOffset + BC250_GPUVA_PAGE_BYTES !=
@@ -36,6 +37,7 @@ static uint32_t Bc250GpuvaJournalChangesAreContiguous(
     if (Previous->Permissions != Current->Permissions) return 0u;
     if (Previous->Allocation != Current->Allocation) return 0u;
     if (Previous->OpenAllocation != Current->OpenAllocation) return 0u;
+    if (Previous->AllocationToken != Current->AllocationToken) return 0u;
     if (CurrentIsMap == 0u) return 1u;
     if (Previous->BackingSegmentId != Current->BackingSegmentId) return 0u;
     if (Previous->BackingSegmentOffset + Previous->Size !=
@@ -397,6 +399,7 @@ BC250_GPUVA_JOURNAL_STATUS Bc250GpuvaJournalStageLeafUpdate(
         incoming.OwnerProcess = Process;
         incoming.Allocation = entry->Allocation;
         incoming.OpenAllocation = entry->OpenAllocation;
+        incoming.AllocationToken = entry->AllocationToken;
         incoming.BackingSegmentId = entry->SegmentId;
         incoming.BackingSegmentOffset = entry->SegmentOffset;
         incoming.Permissions = entry->Permissions;

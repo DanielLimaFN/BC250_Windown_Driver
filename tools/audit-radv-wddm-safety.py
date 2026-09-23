@@ -61,6 +61,56 @@ def main() -> int:
         if needle not in text[name]:
             errors.append(f"missing {label}")
 
+    # DX.22 (22/09/2026). MEDIDO na Corrida 67: todo IB saia da VA do CS do
+    # preambulo, crescendo 392 DW por submissao com prefixo identico -- o ramo
+    # BC-250 copiava o CS principal para dentro do preambulo e deixava o cdw
+    # dele crescido, e a GPU reexecutava todos os draws anteriores. O CS de
+    # origem nao pode mais ser escrito pela concatenacao.
+    cs_text = text["cs"]
+    for label, needle in {
+        "concatenacao cresce o cdw do CS de origem": "cs_list[0]->cdw =",
+        "concatenacao reescreve o tamanho do IB de origem": "ib_buffers[0].cdw =",
+        "concatenacao copia para dentro do CS de origem": "memcpy(cs_list[0]->buf",
+        "concatenacao escreve NOP no CS de origem": "cs_list[0]->buf[cur_offset",
+    }.items():
+        if needle in cs_text:
+            errors.append(f"DX.22: {label} ({needle})")
+    acquire = cs_text.find("slot = radv_wddm2_bc250_concat_acquire(ctx, hw_ip, total_aligned)")
+    grown = cs_text.rfind("num_ib_buffers > 1", 0, acquire if acquire >= 0 else 0)
+    if acquire < 0 or grown < 0:
+        errors.append("DX.22: concatenacao sem pool proprio ou sem a guarda de CS crescido")
+    fail = cs_text.find('"D3DKMTSubmitCommandToHwQueue"')
+    seq = cs_text.find("concat_slot->seq = ++ctx->per_ip[submit->ip_type].concat_seq;")
+    cover = cs_text.find("slots[i].fence_known = true;")
+    if fail < 0 or seq < 0 or cover < 0 or not (fail < seq < cover):
+        errors.append("DX.22: slot tem de ser preso SO' depois da submissao aceita e coberto pela fence sinalizada depois")
+    if "radv_wddm2_bc250_concat_release_all(ctx);" not in cs_text:
+        errors.append("DX.22: ctx_destroy nao libera os BOs do pool de concatenacao")
+
+    # DX.26 (22/09/2026). Sem ip_discovery_version o Mesa aplica a correcao de
+    # versao do kernel e o GFX1013 vira GFX10_3 (MEDIDO: IB da Corrida 71 escrevia
+    # PA_CL_VRS_CNTL, DB_VRS_OVERRIDE_CNTL e SX_PS_DOWNCONVERT_CONTROL). Os dois
+    # blocos hw_ip do winsys tem de declarar 10.1.3.
+    ws_text = (root / "src/amd/vulkan/winsys/wddm2/radv_wddm2_winsys.c").read_text(encoding="utf-8")
+    for block in ("hw_ip_gfx = {", "hw_ip_compute = {"):
+        start = ws_text.find(block)
+        body = ws_text[start:ws_text.find("};", start)] if start >= 0 else ""
+        if ".ip_discovery_version = (10u << 16) | (1u << 8) | 3u," not in body:
+            errors.append(f"DX.26: {block.split(' ')[0]} sem ip_discovery_version 10.1.3 -- o GFX1013 volta a ser tratado como GFX10_3")
+    if "BC-250 IDENTIDADE: gfx_level=" not in ws_text:
+        errors.append("DX.26: winsys nao registra a identidade efetiva (gfx_level) no stderr")
+
+    # DX.29 (22/09/2026). O Mesa upstream NAO emite PREAMBLE_CNTL em radv_emit_graphics;
+    # o fork inseria PKT3(0x4A) com payload 0/1, que nao e' BEGIN/END_CLEAR_STATE
+    # ((2<<28)/(3<<28), nvd.h:395-396). Removido; nao pode voltar.
+    q_text = (root / "src/amd/vulkan/radv_queue.c").read_text(encoding="utf-8")
+    ge = q_text.find("radv_emit_graphics(struct radv_device *device")
+    ge_body = q_text[ge:q_text.find("\n}\n", ge)] if ge >= 0 else ""
+    if not ge_body:
+        errors.append("DX.29: radv_emit_graphics nao encontrado")
+    elif "PKT3(0x4A" in ge_body:
+        errors.append("DX.29: radv_emit_graphics voltou a emitir PREAMBLE_CNTL (0x4A) -- o upstream nao emite")
+
     if errors:
         print("RADV WDDM SAFETY AUDIT: FAILED")
         for error in errors:
@@ -71,6 +121,9 @@ def main() -> int:
     print("  fabricated handles/GPUVA/fences: absent")
     print("  WARP/software WSI advertisement: absent")
     print("  WDDM callback failures: fail-closed")
+    print("  DX.22 BC-250 concatenation in own pooled BO, source CS untouched: enforced")
+    print("  DX.26 GFX1013 identified as GC 10.1.3 (ip_discovery_version), not GFX10_3: enforced")
+    print("  DX.29 no PREAMBLE_CNTL in radv_emit_graphics (matches upstream Mesa): enforced")
     print("  verdict: NAO VALIDADO EM HARDWARE")
     return 0
 

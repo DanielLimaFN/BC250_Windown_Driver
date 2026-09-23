@@ -3,7 +3,7 @@ Signature="$Windows NT$"
 Class=Display
 ClassGuid={4d36e968-e325-11ce-bfc1-08002be10318}
 Provider=%ProviderName%
-DriverVer=09/20/2026,3.202.1.0
+DriverVer=09/22/2026,3.236.1.0
 CatalogFile=bc250mcdm.cat
 PnpLockdown=1
 

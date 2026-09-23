@@ -1,0 +1,498 @@
+ANEXO DA AUDITORIA EXTERNA (docs/336) -- Corrida 71, 22/09/2026 16:53:51, lab 3.232.1.0
+Fonte: docs/evidence/2026-09-22_16-53-51-DESKTOP-HQAG6T4-lab-binding
+
+=== 1. UMD, dwm.exe pid 12116: draw 5 (SEM textura, cor branca) e a leitura do alvo logo depois ===
+16:54:46.900 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E0 0310| 	s_endpgm
+16:54:46.901 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E0 0311| 
+16:54:46.902 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E0 fim (312 linhas)
+16:54:46.903 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 stages=0x00000010 nome='fragment' subgroup=64 representacoes=3 res=0
+16:54:46.904 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 'Assembly' 1032 bytes res=0 -- inicio
+16:54:46.904 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0000| Shader disassembly is not supported in the current configuration (LLVM not available), falling back to print_program.
+16:54:46.905 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0001| 
+16:54:46.906 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0002| After lowering to hw instructions:
+16:54:46.907 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0003| ACO shader stage: SW (FS), HW (PIXEL_SHADER)
+16:54:46.908 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0004| BB0
+16:54:46.909 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0005| /* logical preds: / linear preds: / kind: uniform, top-level, export_end, */
+16:54:46.910 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0006| 	 s1: %0:m0 = s_mov_b32 %12:s[2]
+16:54:46.911 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0007| 	 v1: %21:v[2] = v_interp_p1_f32 %19:v[0], %25:m0 attr0.y
+16:54:46.912 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0008| 	 v1: %22:v[3] = v_interp_p1_f32 %19:v[0], %25:m0 attr0.x
+16:54:46.913 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0009| 	 v1: %23:v[4] = v_interp_p1_f32 %19:v[0], %25:m0 attr0.z
+16:54:46.914 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0010| 	 v1: %24:v[0] = v_interp_p1_f32 %19:v[0], %25:m0 attr0.w
+16:54:46.915 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0011| 	 v1: %3:v[2] = v_interp_p2_f32 %20:v[1], %25:m0, %21:v[2] attr0.y
+16:54:46.916 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0012| 	 v1: %4:v[3] = v_interp_p2_f32 %20:v[1], %25:m0, %22:v[3] attr0.x
+16:54:46.917 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0013| 	 v1: %6:v[4] = v_interp_p2_f32 %20:v[1], %25:m0, %23:v[4] attr0.z
+16:54:46.918 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0014| 	 v1: %7:v[0] = v_interp_p2_f32 %20:v[1], %25:m0, %24:v[0] attr0.w
+16:54:46.918 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0015| 	 v1: (SzInfNaNPreserve)%5:v[3] = v_cvt_pkrtz_f16_f32 %4:v[3], %3:v[2]
+16:54:46.919 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0016| 	 v1: (SzInfNaNPreserve)%8:v[4] = v_cvt_pkrtz_f16_f32 %6:v[4], %7:v[0]
+16:54:46.920 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0017| 	exp %5:v[3], %8:v[4],  v1: undef,  v1: undef compr done vm mrt0
+16:54:46.921 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0018| 	s_endpgm
+16:54:46.922 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 0019| 
+16:54:46.923 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 E1 fim (20 linhas)
+16:54:46.923 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P3 END
+16:54:46.924 [pid=12116 dwm.exe] [VK_PSO] SUCESSO: Graphics Pipeline compilado e armazenado no slot 3 (pipeline=000000000723A220, layout=0000000007063B10, dsLayout=0000000006F84230)
+16:54:46.925 [pid=12116 dwm.exe] [VK_BRIDGE] BeginCommandBuffer: gravacao iniciada (cmd=000000000B683F40)
+16:54:46.928 [pid=12116 dwm.exe] [VK_RES] UploadBufferData SUCESSO: 192 bytes copiados para VkMem=00000000070DEC50 (res=00000000071C3BF0)
+16:54:46.951 [pid=12116 dwm.exe] [VK_DESCRIPTOR] BOUND: bindings=1 (CB=1 SRV=0 SAMPLER=0)
+16:54:46.952 [pid=12116 dwm.exe] [DRAW_DATA] VSCB0=00000000071C3BF0 nz=4/48 f0..7=[0.001 -0.002 -1.000 1.000 0.000 0.000 0.000 0.000] PSCB0=000000000B68ACB0 nz=0/0 VB0=000000000B68A5B0 stride=32 off=0 nz=17/4096 v0=[436C0000 44574000 3F800000 A8191919 00000000 00000000 00000000 00000000]
+16:54:46.953 [pid=12116 dwm.exe] [DRAW_VERTS] Indexed=1 Start=36 Base=0 IB=000000000B689EB0 fmt=57 off=0 OK idx=[24 25 27 24 27 26] stride=32 vbOff=0 v0(i=24)=(236.00,228.00,1.00) w3=A8191919 v1(i=25)=(1095.00,228.00,1.00) w3=A8191919 v2(i=27)=(1095.00,229.00,1.00) w3=A8191919
+16:54:46.954 [pid=12116 dwm.exe] [VK_RES] UploadBufferData SUCESSO: 160000 bytes copiados para VkMem=00000000070E2880 (res=000000000B68A5B0)
+16:54:46.955 [pid=12116 dwm.exe] [VK_RES] UploadBufferData SUCESSO: 16000 bytes copiados para VkMem=00000000070DEAA0 (res=000000000B689EB0)
+16:54:46.956 [pid=12116 dwm.exe] [VK_BRIDGE] FlushCommands ENTER: gravacao ativa, finalizando (cmd=000000000B683F40)...
+16:54:47.015 [pid=12116 dwm.exe] [VK_BRIDGE] FlushCommands: Execucao e Fence em hardware CONCLUIDOS com SUCESSO!
+16:54:47.017 [pid=12116 dwm.exe] Bc250UmdExecuteVkDraw: DRAW fence concluida; pixels NAO CONFERIDOS (VkDraws=4, Total=4, Verts=24, Inst=1, Indexed=1) RT0=00000000071C3F70 2560x1080 img=0000000007279ED0
+16:54:47.018 [pid=12116 dwm.exe] [VK_BRIDGE] BeginCommandBuffer: gravacao iniciada (cmd=000000000B683F40)
+16:54:47.019 [pid=12116 dwm.exe] [VK_BRIDGE] FlushCommands ENTER: gravacao ativa, finalizando (cmd=000000000B683F40)...
+16:54:47.023 [pid=12116 dwm.exe] [VK_BRIDGE] FlushCommands: Execucao e Fence em hardware CONCLUIDOS com SUCESSO!
+16:54:47.024 [pid=12116 dwm.exe] [DRAW_READBACK] #4 VkDraws=4 RT0=00000000071C3F70 2560x1080 -- a GRADE seguinte e' do ALVO logo apos este draw, nao do Present
+16:54:47.025 [pid=12116 dwm.exe] [VK_BRIDGE] INSPECAO LINEAR_BUF: Px0..3=[0x00000000 0x00000000 0x00000000 0x00000000] Center(1280,540)=0x00000000 NonZeroSamples=0/5
+16:54:47.054 [pid=12116 dwm.exe] [VK_BRIDGE] INSPECAO LINEAR_BUF GRADE: NonZero=0/86400 -- superficie inteira preta na grade (1 linha em 4, 1 pixel em 8; Faixa40Inferior=0/3200)
+16:54:47.055 [pid=12116 dwm.exe] SetBlendState: state=00000000072429C8 SampleMask=0xFFFFFFFF
+16:54:47.056 [pid=12116 dwm.exe] PsSetShaderResources: Offset=0 Count=2 srv0=0000000000000000 srv1=0000000000000000
+16:54:47.057 [pid=12116 dwm.exe] PsSetSamplers: Offset=0 Count=2
+16:54:47.059 [pid=12116 dwm.exe] ResourceMap: res=000000000B689EB0 Sub=0 pData=000000000B5F3CB0 Pitch=16000
+16:54:47.060 [pid=12116 dwm.exe] ResourceMap: res=000000000B68A5B0 Sub=0 pData=00000000071D4F50 Pitch=160000
+16:54:47.061 [pid=12116 dwm.exe] [WDDM_WINSYS] Upload ENTER: hAlloc=0x40004400 Bytes=163840
+16:54:47.063 [pid=12116 dwm.exe] [WDDM_WINSYS] Upload LEAVE: hr=0x00000000 Bytes=163840
+16:54:47.064 [pid=12116 dwm.exe] [VK_RES] UploadBufferData SUCESSO: 163840 bytes copiados para VkMem=00000000070E2880 (res=000000000B68A5B0)
+16:54:47.065 [pid=12116 dwm.exe] ResourceUnmap: buffer sincronizado com VkBuffer (163840 bytes)
+16:54:47.066 [pid=12116 dwm.exe] ResourceUnmap: res=000000000B68A5B0 Sub=0
+16:54:47.068 [pid=12116 dwm.exe] [WDDM_WINSYS] Upload ENTER: hAlloc=0x40004500 Bytes=16384
+16:54:47.069 [pid=12116 dwm.exe] [WDDM_WINSYS] Upload LEAVE: hr=0x00000000 Bytes=16384
+16:54:47.071 [pid=12116 dwm.exe] [VK_RES] UploadBufferData SUCESSO: 16384 bytes copiados para VkMem=00000000070DEAA0 (res=000000000B689EB0)
+16:54:47.072 [pid=12116 dwm.exe] ResourceUnmap: buffer sincronizado com VkBuffer (16384 bytes)
+16:54:47.074 [pid=12116 dwm.exe] ResourceUnmap: res=000000000B689EB0 Sub=0
+16:54:47.075 [pid=12116 dwm.exe] [VK_PSO] Cache HIT no slot 0: pipeline=000000000708BDA0, layout=0000000007063110
+16:54:47.076 [pid=12116 dwm.exe] [VK_BRIDGE] BeginCommandBuffer: gravacao iniciada (cmd=000000000B683F40)
+16:54:47.077 [pid=12116 dwm.exe] [VK_RES] UploadBufferData SUCESSO: 192 bytes copiados para VkMem=00000000070DEC50 (res=00000000071C3BF0)
+16:54:47.085 [pid=12116 dwm.exe] [VK_DESCRIPTOR] BOUND: bindings=1 (CB=1 SRV=0 SAMPLER=0)
+16:54:47.086 [pid=12116 dwm.exe] [DRAW_DATA] VSCB0=00000000071C3BF0 nz=4/48 f0..7=[0.001 -0.002 -1.000 1.000 0.000 0.000 0.000 0.000] PSCB0=000000000B68ACB0 nz=0/0 VB0=000000000B68A5B0 stride=32 off=0 nz=19/4096 v0=[00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000]
+16:54:47.087 [pid=12116 dwm.exe] [DRAW_VERTS] Indexed=1 Start=60 Base=0 IB=000000000B689EB0 fmt=57 off=0 OK idx=[40 41 43 40 43 42] stride=32 vbOff=0 v0(i=40)=(237.00,229.00,1.00) w3=FFFFFFFF v1(i=41)=(1094.00,229.00,1.00) w3=FFFFFFFF v2(i=43)=(1094.00,259.00,1.00) w3=FFFFFFFF
+16:54:47.088 [pid=12116 dwm.exe] [VK_RES] UploadBufferData SUCESSO: 160000 bytes copiados para VkMem=00000000070E2880 (res=000000000B68A5B0)
+16:54:47.089 [pid=12116 dwm.exe] [VK_RES] UploadBufferData SUCESSO: 16000 bytes copiados para VkMem=00000000070DEAA0 (res=000000000B689EB0)
+16:54:47.091 [pid=12116 dwm.exe] [VK_BRIDGE] FlushCommands ENTER: gravacao ativa, finalizando (cmd=000000000B683F40)...
+16:54:47.103 [pid=12116 dwm.exe] [VK_BRIDGE] FlushCommands: Execucao e Fence em hardware CONCLUIDOS com SUCESSO!
+16:54:47.105 [pid=12116 dwm.exe] Bc250UmdExecuteVkDraw: DRAW fence concluida; pixels NAO CONFERIDOS (VkDraws=5, Total=5, Verts=6, Inst=1, Indexed=1) RT0=00000000071C3F70 2560x1080 img=0000000007279ED0
+16:54:47.106 [pid=12116 dwm.exe] [VK_BRIDGE] BeginCommandBuffer: gravacao iniciada (cmd=000000000B683F40)
+16:54:47.107 [pid=12116 dwm.exe] [VK_BRIDGE] FlushCommands ENTER: gravacao ativa, finalizando (cmd=000000000B683F40)...
+16:54:47.110 [pid=12116 dwm.exe] [VK_BRIDGE] FlushCommands: Execucao e Fence em hardware CONCLUIDOS com SUCESSO!
+16:54:47.111 [pid=12116 dwm.exe] [DRAW_READBACK] #5 VkDraws=5 RT0=00000000071C3F70 2560x1080 -- a GRADE seguinte e' do ALVO logo apos este draw, nao do Present
+16:54:47.112 [pid=12116 dwm.exe] [VK_BRIDGE] INSPECAO LINEAR_BUF: Px0..3=[0x00000000 0x00000000 0x00000000 0x00000000] Center(1280,540)=0x00000000 NonZeroSamples=0/5
+16:54:47.142 [pid=12116 dwm.exe] [VK_BRIDGE] INSPECAO LINEAR_BUF GRADE: NonZero=0/86400 -- superficie inteira preta na grade (1 linha em 4, 1 pixel em 8; Faixa40Inferior=0/3200)
+16:54:47.143 [pid=12116 dwm.exe] SetBlendState: state=0000000007243908 SampleMask=0xFFFFFFFF
+
+=== 2. UMD: programa ACO do pipeline usado no draw 5 (P0: VS e PS) ===
+16:54:44.870 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 BEGIN pipeline=000000000708BDA0 VS=000000000B708AF0 PS=000000000B688EA0 executaveis=2 res=0
+16:54:44.871 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 stages=0x00000001 nome='vertex' subgroup=64 representacoes=3 res=0
+16:54:44.872 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 'Assembly' 14992 bytes res=0 -- inicio
+16:54:44.873 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0000| Shader disassembly is not supported in the current configuration (LLVM not available), falling back to print_program.
+16:54:44.874 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0001| 
+16:54:44.875 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0002| After lowering to hw instructions:
+16:54:44.877 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0003| ACO shader stage: SW (VS), HW (NEXT_GEN_GEOMETRY_SHADER)
+16:54:44.878 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0004| BB0
+16:54:44.879 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0005| /* logical preds: / linear preds: / kind: top-level, branch, */
+16:54:44.880 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0006| 	s_setprio imm:3
+16:54:44.882 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0007| 	 s1: %288:s[0] = s_pack_ll_b32_b16 0, %263:s[3]
+16:54:44.883 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0008| 	 s2: %0:exec,  s1: %289:scc = s_bfe_u64 -1, %288:s[0]
+16:54:44.885 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0009| 	 s2: %0:s[0-1] = s_mov_b64 %0:exec
+16:54:44.886 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0010| 	s_cbranch_execz block:BB6
+16:54:44.888 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0011| BB1
+16:54:44.889 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0012| /* logical preds: BB0, / linear preds: BB0, / kind: uniform, */
+16:54:44.890 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0013| 	 s1: %0:s[11] = s_mov_b32 2
+16:54:44.892 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0014| 	 s4: %16:s[4-7] = s_load_dwordx4 %15:s[10-11], 0 storage:buffer semantics:private,reorder
+16:54:44.894 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0015| 	 s1: %0:s[10] = s_mov_b32 %268:s[8]
+16:54:44.895 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0016| 	 s1: %0:s[11] = s_mov_b32 2
+16:54:44.896 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0017| 	 s4: %10:s[20-23] = s_load_dwordx4 %9:s[10-11], 0 storage:buffer semantics:private,reorder
+16:54:44.898 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0018| 	 v1: %12:v[2] = v_add_u32 %269:s[9], %282:v[5]
+16:54:44.899 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0019| 	s_waitcnt lgkmcnt(0)
+16:54:44.901 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0020| 	 v3: %13:v[6-8] = buffer_load_dwordx3 %10:s[20-23], %12:v[2], 0 idxen
+16:54:44.902 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0021| 	 s4: %17:s[4-7] = s_buffer_load_dwordx4 %16:s[4-7], 0
+16:54:44.903 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0022| 	s_waitcnt lgkmcnt(0) vmcnt(0)
+16:54:44.904 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0023| 	 v1: %18:v[2] = v_mul_f32 %302:s[4], %295:v[6]
+16:54:44.905 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0024| 	 v1: %19:v[3] = v_mul_f32 %303:s[5], %296:v[7]
+16:54:44.907 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0025| 	 v1: %22:v[2] = v_fmac_f32 %304:s[6], %297:v[8], %18:v[2]
+16:54:44.908 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0026| 	 v1: %23:v[3] = v_fmac_f32 %305:s[7], %297:v[8], %19:v[3]
+16:54:44.909 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0027| BB6
+16:54:44.911 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0028| /* logical preds: BB1, BB0, / linear preds: BB1, BB0, / kind: uniform, top-level, merge, */
+16:54:44.912 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0029| 	 s2: %0:exec = s_mov_b64 -1
+16:54:44.914 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0030| 	 s1: %34:s[4],  s1: %306:scc = s_and_b32 %262:s[2], 0x7c000000
+16:54:44.916 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0031| 	 s1: %37:s[5] = s_cselect_b32 11, 0, %306:scc
+16:54:44.917 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0032| 	 s1: %38:s[5],  s1: %310:scc = s_and_b32 %272:s[12], %37:s[5]
+16:54:44.918 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0033| 	s_cbranch_scc0 block:BB68
+16:54:44.920 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0034| BB7
+16:54:44.921 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0035| /* logical preds: BB6, / linear preds: BB6, / kind: branch, */
+16:54:44.923 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0036| 	 s1: %47:s[4],  s1: %314:scc = s_bfe_u32 %263:s[3], 0x40018
+16:54:44.924 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0037| 	 s1: %49:s[5],  s1: %315:scc = s_lshl_b32 (is16bit)%47:s[4], 6
+16:54:44.926 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0038| 	 v1: %319:v[4] = v_mbcnt_lo_u32_b32 -1, %49:s[5]
+16:54:44.927 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0039| 	 v1: %50:v[4] = v_mbcnt_hi_u32_b32_e64 -1, %319:v[4]
+16:54:44.929 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0040| 	 v1: (nuw)%52:v[6] = v_mul_u32_u24 28, (is16bit)%50:v[4]
+16:54:44.930 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0041| 	 s2: %0:exec = s_mov_b64 %290:s[0-1]
+16:54:44.931 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0042| BB8
+16:54:44.932 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0043| /* logical preds: BB7, / linear preds: BB7, / kind: uniform, */
+16:54:44.933 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0044| 	 v1: %53:v[7] = v_rcp_f32 %30:v[8]
+16:54:44.934 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0045| 	 v1: %0:v[10] = v_mov_b32 0
+16:54:44.935 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0046| 	 v1: %54:v[9] = v_mul_f32 %28:v[2], %53:v[7]
+16:54:44.936 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0047| 	 v1: %55:v[7] = v_mul_f32 %29:v[3], %53:v[7]
+16:54:44.938 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0048| 	ds_write_b32 %52:v[6], %30:v[8] offset0:16 storage:shared
+16:54:44.939 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0049| 	ds_write2_b32 %52:v[6], %54:v[9], %55:v[7] offset0:1 offset1:2 storage:shared
+16:54:44.941 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0050| 	ds_write_b8 %52:v[6], %320:v[10] offset0:20 storage:shared
+16:54:44.942 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0051| BB13
+16:54:44.943 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0052| /* logical preds: BB8, BB7, / linear preds: BB8, / kind: branch, merge, */
+16:54:44.945 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0053| 	s_waitcnt_depctr vm_vsrc(0)
+16:54:44.946 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0054| 	s_barrier
+16:54:44.947 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0055| 	 s1: %322:s[5],  s1: %321:scc = s_lshl_b32 %263:s[3], 8
+16:54:44.949 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0056| 	 s2: %0:exec,  s1: %323:scc = s_bfe_u64 -1, %322:s[5]
+16:54:44.950 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0057| 	 s2: %0:s[6-7] = s_mov_b64 %0:exec
+16:54:44.952 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0058| 	s_cbranch_execz block:BB34
+16:54:44.953 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0059| BB14
+16:54:44.954 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0060| /* logical preds: BB13, / linear preds: BB13, / kind: branch, */
+16:54:44.956 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0061| 	 v1: %60:v[7] = v_mad_u32_u16 28, (is16bit)%277:v[0], 0
+16:54:44.957 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0062| 	 v1: %62:v[0] = v_mad_u32_u16 28, hi((is16bit)%277:v[0]), 0
+16:54:44.958 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0063| 	 v1: %64:v[1] = v_mad_u32_u16 28, (is16bit)%278:v[1], 0
+16:54:44.960 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0064| 	 v1: %61:v[9] = ds_read_b32 %60:v[7] offset0:16 storage:shared
+16:54:44.961 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0065| 	 v1: %63:v[10] = ds_read_b32 %62:v[0] offset0:16 storage:shared
+16:54:44.962 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0066| 	 v1: %65:v[11] = ds_read_b32 %64:v[1] offset0:16 storage:shared
+16:54:44.964 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0067| 	 v2: %66:v[12-13] = ds_read2_b32 %60:v[7] offset0:1 offset1:2 storage:shared
+16:54:44.965 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0068| 	 v2: %67:v[14-15] = ds_read2_b32 %62:v[0] offset0:1 offset1:2 storage:shared
+16:54:44.967 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0069| 	 v2: %68:v[16-17] = ds_read2_b32 %64:v[1] offset0:1 offset1:2 storage:shared
+16:54:44.968 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0070| 	 s1: %335:scc = s_bitcmp1_b32 %272:s[12], 0
+16:54:44.970 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0071| 	 s2: %88:s[10-11] = s_cselect_b64 -1, 0, %335:scc
+16:54:44.972 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0072| 	 s1: %336:scc = s_bitcmp1_b32 %272:s[12], 1
+16:54:44.973 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0073| 	 s2: %89:s[18-19] = s_cselect_b64 -1, 0, %336:scc
+16:54:44.974 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0074| 	 s1: %337:scc = s_bitcmp1_b32 %272:s[12], 2
+16:54:44.976 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0075| 	 s2: %91:s[20-21] = s_cselect_b64 -1, 0, %337:scc
+16:54:44.977 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0076| 	s_waitcnt lgkmcnt(5)
+16:54:44.978 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0077| 	 s2: %69:vcc = v_cmp_gt_f32 0, %61:v[9]
+16:54:44.980 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0078| 	s_waitcnt lgkmcnt(4)
+16:54:44.981 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0079| 	 s2: %70:s[22-23] = v_cmp_gt_f32 0, %63:v[10]
+16:54:44.983 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0080| 	s_waitcnt lgkmcnt(3)
+16:54:44.984 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0081| 	 v1: %77:v[10] = v_max3_f32 %63:v[10], %65:v[11], %61:v[9]
+16:54:44.985 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0082| 	s_waitcnt lgkmcnt(1)
+16:54:44.987 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0083| 	 v1: %79:v[18] = v_sub_f32 %328:v[15], %326:v[13]
+16:54:44.988 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0084| 	 v1: %80:v[19] = v_sub_f32 %325:v[12], %327:v[14]
+16:54:44.989 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0085| 	s_waitcnt lgkmcnt(0)
+16:54:44.990 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0086| 	 v1: %78:v[9] = v_sub_f32 %329:v[16], %325:v[12]
+16:54:44.991 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0087| 	 s2: %71:s[24-25],  s1: %331:scc = s_xor_b64 %70:s[22-23], %69:vcc
+16:54:44.993 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0088| 	 s2: %72:s[22-23],  s1: %332:scc = s_or_b64 %70:s[22-23], %69:vcc
+16:54:44.994 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0089| 	 s2: %73:vcc = v_cmp_gt_f32 0, %65:v[11]
+16:54:44.996 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0090| 	 v1: %82:v[9] = v_mul_f32 %78:v[9], %79:v[18]
+16:54:44.997 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0091| 	 s2: %74:s[24-25],  s1: %333:scc = s_xor_b64 %73:vcc, %71:s[24-25]
+16:54:44.999 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0092| 	 s2: %75:s[22-23],  s1: %334:scc = s_or_b64 %73:vcc, %72:s[22-23]
+16:54:45.000 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0093| 	 s2: %100:vcc = v_cmp_ge_f32 0, %77:v[10]
+16:54:45.001 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0094| 	 v1: %81:v[10] = v_sub_f32 %326:v[13], %330:v[17]
+16:54:45.003 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0095| 	 v1: %84:v[19] = v_fma_f32 -%80:v[19], %81:v[10], %82:v[9]
+16:54:45.004 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0096| 	 v1: %86:v[19] = v_cndmask_b32 %84:v[19], -%84:v[19], %74:s[24-25]
+16:54:45.006 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0097| 	 s2: %90:s[24-25] = v_cmp_lt_f32 0, %86:v[19]
+16:54:45.007 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0098| 	 s2: %92:s[20-21],  s1: %338:scc = s_xnor_b64 %90:s[24-25], %91:s[20-21]
+16:54:45.009 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0099| 	 s2: %340:s[10-11],  s1: %339:scc = s_and_b64 %92:s[20-21], %88:s[10-11]
+16:54:45.010 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0100| 	 s2: %342:s[18-19],  s1: %341:scc = s_andn2_b64 %89:s[18-19], %92:s[20-21]
+16:54:45.011 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0101| 	 s2: %93:s[10-11],  s1: %343:scc = s_or_b64 %340:s[10-11], %342:s[18-19]
+16:54:45.013 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0102| 	 s2: %94:s[18-19] = v_cmp_eq_f32 0, %86:v[19]
+16:54:45.014 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0103| 	 s2: %95:s[10-11],  s1: %344:scc = s_or_b64 %93:s[10-11], %94:s[18-19]
+16:54:45.016 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0104| 	 s2: (InfNaNPreserve)%98:s[18-19] = v_cmp_gt_f32 0x7f800000, |%86:v[19]|
+16:54:45.017 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0105| 	 s2: %99:s[10-11],  s1: %345:scc = s_and_b64 %95:s[10-11], %98:s[18-19]
+16:54:45.018 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0106| 	 s2: %102:s[10-11],  s1: %347:scc = s_nor_b64 %100:vcc, %99:s[10-11]
+16:54:45.020 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0107| 	 s2: %435:s[10-11],  s1: %434:scc,  s2: %0:exec = s_and_saveexec_b64 %102:s[10-11], %0:exec
+16:54:45.021 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0108| 	s_cbranch_execz block:BB29
+16:54:45.022 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0109| BB15
+16:54:45.023 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0110| /* logical preds: BB14, / linear preds: BB14, / kind: uniform, */
+16:54:45.024 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0111| 	 v1: %104:v[9] = v_min3_f32 %327:v[14], %329:v[16], %325:v[12]
+16:54:45.026 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0112| 	 v1: %106:v[14] = v_max3_f32 %327:v[14], %329:v[16], %325:v[12]
+16:54:45.027 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0113| 	 v1: %108:v[10] = v_min3_f32 %328:v[15], %330:v[17], %326:v[13]
+16:54:45.028 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0114| 	 v1: %110:v[15] = v_max3_f32 %328:v[15], %330:v[17], %326:v[13]
+16:54:45.030 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0115| 	 v1: %112:v[12] = v_max_f32 %104:v[9], %108:v[10]
+16:54:45.031 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0116| 	 v1: %111:v[11] = v_min_f32 %106:v[14], %110:v[15]
+16:54:45.033 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0117| 	 s2: %116:s[18-19] = v_cmp_lt_f32 1.0, %112:v[12]
+16:54:45.034 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0118| 	 s2: %115:vcc = v_cmp_gt_f32 -1.0, %111:v[11]
+16:54:45.035 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0119| 	 s2: %117:s[18-19],  s1: %348:scc = s_or_b64 %116:s[18-19], %115:vcc
+16:54:45.037 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0120| 	 s1: %349:scc = s_bitcmp1_b32 %272:s[12], 3
+16:54:45.038 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0121| 	s_cbranch_scc0 block:BB18
+16:54:45.040 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0122| BB16
+16:54:45.041 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0123| /* logical preds: BB15, / linear preds: BB15, / kind: uniform, */
+16:54:45.042 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0124| 	 v1: %124:v[9] = v_fma_f32 %104:v[9], %273:s[13], %275:s[15]
+16:54:45.043 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0125| 	 v1: %125:v[14] = v_fma_f32 %106:v[14], %273:s[13], %275:s[15]
+16:54:45.045 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0126| 	 s1: %126:s[12],  s1: %354:scc = s_ashr_i32 %272:s[12], 24
+16:54:45.046 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0127| 	 v1: %130:v[10] = v_fma_f32 %108:v[10], %274:s[14], %276:s[16]
+16:54:45.048 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0128| 	 v1: %131:v[15] = v_fma_f32 %110:v[15], %274:s[14], %276:s[16]
+16:54:45.049 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0129| 	 v1: %127:v[11] = v_ldexp_f32 1.0, %126:s[12]
+16:54:45.050 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0130| 	 v1: %128:v[9] = v_sub_f32 %124:v[9], %127:v[11]
+16:54:45.051 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0131| 	 v1: %129:v[14] = v_add_f32 %125:v[14], %127:v[11]
+16:54:45.052 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0132| 	 v1: %132:v[10] = v_sub_f32 %130:v[10], %127:v[11]
+16:54:45.053 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0133| 	 v1: %133:v[15] = v_add_f32 %131:v[15], %127:v[11]
+16:54:45.055 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0134| 	 v1: %136:v[9] = v_rndne_f32 %128:v[9]
+16:54:45.057 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0135| 	 v1: %137:v[14] = v_rndne_f32 %129:v[14]
+16:54:45.058 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0136| 	 v1: %135:v[10] = v_rndne_f32 %132:v[10]
+16:54:45.059 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0137| 	 v1: %134:v[15] = v_rndne_f32 %133:v[15]
+16:54:45.060 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0138| 	 s2: %138:vcc = v_cmp_eq_f32 %136:v[9], %137:v[14]
+16:54:45.062 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0139| 	 s2: %139:s[12-13] = v_cmp_eq_f32 %135:v[10], %134:v[15]
+16:54:45.063 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0140| 	 s2: %140:s[12-13],  s1: %358:scc = s_or_b64 %138:vcc, %139:s[12-13]
+16:54:45.065 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0141| 	 s2: %141:s[18-19],  s1: %359:scc = s_or_b64 %117:s[18-19], %140:s[12-13]
+16:54:45.066 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0142| BB18
+16:54:45.068 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0143| /* logical preds: BB16, BB15, / linear preds: BB16, BB15, / kind: branch, */
+16:54:45.069 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0144| 	 s2: %144:s[12-13],  s1: %361:scc = s_orn2_b64 %75:s[22-23], %142:s[18-19]
+16:54:45.070 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0145| 	 s2: %437:s[14-15],  s1: %436:scc,  s2: %0:exec = s_and_saveexec_b64 %144:s[12-13], %0:exec
+16:54:45.072 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0146| BB19
+16:54:45.073 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0147| /* logical preds: BB18, / linear preds: BB18, / kind: uniform, */
+16:54:45.074 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0148| 	 v1: %0:v[9] = v_mov_b32 1
+16:54:45.075 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0149| 	ds_write_b8 %60:v[7], %362:v[9] offset0:20 storage:shared
+16:54:45.077 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0150| 	ds_write_b8 %62:v[0], %362:v[9] offset0:20 storage:shared
+16:54:45.078 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0151| 	ds_write_b8 %64:v[1], %362:v[9] offset0:20 storage:shared
+16:54:45.079 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0152| BB24
+16:54:45.081 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0153| /* logical preds: BB19, BB18, / linear preds: BB19, / kind: uniform, merge, */
+16:54:45.082 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0154| 	 s2: %0:exec = s_mov_b64 %437:s[14-15]
+16:54:45.083 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0155| BB29
+16:54:45.084 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0156| /* logical preds: BB24, BB14, / linear preds: BB24, BB14, / kind: uniform, merge, */
+16:54:45.085 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0157| 	 s2: %424:s[12-13],  s1: %423:scc = s_and_b64 %422:s[12-13], %0:exec
+16:54:45.086 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0158| 	 s2: %0:exec = s_mov_b64 %435:s[10-11]
+16:54:45.088 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0159| 	 v1: (nuw)%147:v[1] = v_add_u32 4, %64:v[1]
+16:54:45.089 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0160| 	 v1: (nuw)%148:v[7] = v_add_u32 4, %60:v[7]
+16:54:45.090 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0161| 	 v1: (nuw)%149:v[0] = v_add_u32 4, %62:v[0]
+16:54:45.092 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0162| BB34
+16:54:45.093 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0163| /* logical preds: BB29, BB13, / linear preds: BB29, BB13, / kind: branch, merge, */
+16:54:45.094 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0164| 	 s2: %427:s[10-11],  s1: %426:scc = s_and_b64 %425:s[12-13], %0:exec
+16:54:45.096 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0165| 	s_waitcnt_depctr vm_vsrc(0)
+16:54:45.097 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0166| 	s_barrier
+16:54:45.099 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0167| 	 s2: %0:exec = s_mov_b64 %290:s[0-1]
+16:54:45.100 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0168| BB35
+16:54:45.102 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0169| /* logical preds: BB34, / linear preds: BB34, / kind: uniform, */
+16:54:45.103 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0170| 	 v1: %158:v[9] = ds_read_u8 %52:v[6] offset0:20 storage:shared
+16:54:45.105 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0171| 	s_waitcnt lgkmcnt(0)
+16:54:45.106 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0172| 	 s2: %159:vcc = v_cmp_lg_i32 0, %158:v[9]
+16:54:45.108 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0173| 	 s2: %430:s[0-1],  s1: %429:scc = s_and_b64 %428:vcc, %0:exec
+16:54:45.109 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0174| BB40
+16:54:45.110 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0175| /* logical preds: BB35, BB34, / linear preds: BB35, / kind: branch, merge, */
+16:54:45.111 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0176| 	 s2: %0:exec = s_mov_b64 1
+16:54:45.113 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0177| 	 s1: %162:s[5],  s1: %366:scc = s_bcnt1_i32_b64 %430:s[0-1]
+16:54:45.114 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0178| BB41
+16:54:45.116 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0179| /* logical preds: BB40, / linear preds: BB40, / kind: uniform, */
+16:54:45.117 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0180| 	 v1: %0:v[10] = v_mov_b32 %47:s[4]
+16:54:45.119 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0181| 	 v1: %0:v[9] = v_mov_b32 %162:s[5]
+16:54:45.120 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0182| 	ds_write_b8 %368:v[10], %367:v[9] storage:shared
+16:54:45.121 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0183| 	s_waitcnt_depctr vm_vsrc(0)
+16:54:45.122 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0184| 	s_barrier
+16:54:45.123 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0185| 	 v1: %0:v[11] = v_mov_b32 0
+16:54:45.124 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0186| 	 v1: %166:v[11] = ds_read_b32 %369:v[11] storage:shared
+16:54:45.126 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0187| BB46
+16:54:45.127 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0188| /* logical preds: BB41, BB40, / linear preds: BB41, / kind: uniform, merge, */
+16:54:45.128 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0189| 	 s2: %0:exec = s_mov_b64 -1
+16:54:45.130 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0190| 	 v1: %373:v[9] = v_mbcnt_lo_u32_b32 -1, 0
+16:54:45.131 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0191| 	 v1: %169:v[9] = v_mbcnt_hi_u32_b32_e64 -1, %373:v[9]
+16:54:45.133 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0192| 	 v1: %173:v[9] = v_mad_i32_i24 (is16bit)%169:v[9], -8, 24
+16:54:45.134 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0193| 	s_waitcnt lgkmcnt(0)
+16:54:45.136 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0194| 	 v1: %170:v[11] = v_permlane16_b32 %168:v[11], 0, 0
+16:54:45.137 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0195| 	 v1: %174:v[9] = v_lshlrev_b32 %173:v[9], %170:v[11]
+16:54:45.138 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0196| 	 v1: %175:v[9] = v_msad_u8 0, %174:v[9], 0
+16:54:45.140 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0197| 	 s1: %375:s[12] = v_readlane_b32_e64 %175:v[9], %47:s[4]
+16:54:45.141 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0198| 	 s1: %177:s[12],  s1: %376:scc = s_sub_i32 %375:s[12], %162:s[5]
+16:54:45.143 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0199| 	 s1: %178:s[3],  s1: %377:scc = s_lshr_b32 %263:s[3], 28
+16:54:45.144 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0200| 	 v1: %383:v[10] = v_mbcnt_lo_u32_b32 %382:s[0], %177:s[12]
+16:54:45.145 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0201| 	 s1: %180:s[3],  s1: %378:scc = s_add_u32 %178:s[3], -1
+16:54:45.146 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0202| 	 s1: %185:s[2],  s1: %384:scc = s_bfe_u32 %262:s[2], 0x90016
+16:54:45.148 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0203| 	 s1: %379:s[3] = v_readlane_b32_e64 %175:v[9], %180:s[3]
+16:54:45.149 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0204| 	 v1: %182:v[10] = v_mbcnt_hi_u32_b32_e64 %381:s[1], %383:v[10]
+16:54:45.150 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0205| 	 s1: %385:scc = s_cmp_eq_i32 %379:s[3], 0
+16:54:45.152 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0206| 	 s2: %186:s[12-13] = s_cselect_b64 -1, 0, %385:scc
+16:54:45.153 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0207| 	 s1: %187:s[2] = s_cselect_b32 0, %185:s[2], %385:scc
+16:54:45.155 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0208| 	 s2: %189:s[6-7],  s1: %389:scc = s_andn2_b64 %324:s[6-7], %186:s[12-13]
+16:54:45.156 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0209| 	 s1: %390:scc = s_cmp_eq_i32 %47:s[4], 0
+16:54:45.157 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0210| 	s_cbranch_scc0 block:BB49
+16:54:45.158 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0211| BB47
+16:54:45.159 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0212| /* logical preds: BB46, / linear preds: BB46, / kind: uniform, */
+16:54:45.160 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0213| 	 s1: %192:s[2],  s1: %393:scc = s_lshl_b32 (is16bit)%187:s[2], 12
+16:54:45.162 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0214| 	 s1: %193:m0,  s1: %394:scc = s_or_b32 %192:s[2], %379:s[3]
+16:54:45.163 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0215| 	s_sendmsg %193:m0 sendmsg(gs_alloc_req)
+16:54:45.164 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0216| BB49
+16:54:45.166 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0217| /* logical preds: BB47, BB46, / linear preds: BB47, BB46, / kind: branch, */
+16:54:45.167 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0218| 	 s2: %0:exec = s_mov_b64 %430:s[0-1]
+16:54:45.169 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0219| 	s_cbranch_execz block:BB55
+16:54:45.171 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0220| BB50
+16:54:45.172 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0221| /* logical preds: BB49, / linear preds: BB49, / kind: uniform, */
+16:54:45.173 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0222| 	 v1b: %0:v[9][0:8] = v_mov_b32 %0:v[10][0:8] dst_sel:ubyte0 dst_preserve src0_sel:ubyte0
+16:54:45.175 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0223| 	 v1: %196:v[10] = v_mul_lo_u32 28, %182:v[10]
+16:54:45.176 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0224| 	 v1: %0:v[11] = v_mov_b32 0
+16:54:45.178 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0225| 	ds_write_b8 %52:v[6], %194:v[9][0:8] offset0:21 storage:shared
+16:54:45.179 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0226| 	ds_write2_b32 %196:v[10], %28:v[2], %29:v[3] offset0:1 offset1:2 storage:shared
+16:54:45.180 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0227| 	ds_write2_b32 %196:v[10], %431:v[11], %30:v[8] offset0:3 offset1:4 storage:shared
+16:54:45.182 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0228| 	ds_write_b32 %196:v[10], %282:v[5] offset0:24 storage:shared
+16:54:45.183 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0229| BB55
+16:54:45.185 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0230| /* logical preds: BB50, BB49, / linear preds: BB50, BB49, / kind: branch, merge, */
+16:54:45.186 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0231| 	 s2: %0:exec = s_mov_b64 -1
+16:54:45.187 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0232| 	s_waitcnt_depctr vm_vsrc(0)
+16:54:45.189 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0233| 	s_barrier
+16:54:45.190 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0234| 	 s2: %0:exec = v_cmpx_gt_i32 %379:s[3], %50:v[4]
+16:54:45.192 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0235| 	 s2: %0:s[0-1] = s_mov_b64 %0:exec
+16:54:45.193 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0236| 	s_cbranch_execz block:BB61
+16:54:45.195 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0237| BB56
+16:54:45.196 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0238| /* logical preds: BB55, / linear preds: BB55, / kind: uniform, */
+16:54:45.197 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0239| 	 v2: %199:v[2-3] = ds_read2_b32 %52:v[6] offset0:1 offset1:2 storage:shared
+16:54:45.199 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0240| 	 v2: %200:v[4-5] = ds_read2_b32 %52:v[6] offset0:3 offset1:4 storage:shared
+16:54:45.200 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0241| 	 v1: %201:v[6] = ds_read_b32 %52:v[6] offset0:24 storage:shared
+16:54:45.201 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0242| BB61
+16:54:45.203 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0243| /* logical preds: BB56, BB55, / linear preds: BB56, BB55, / kind: branch, merge, */
+16:54:45.204 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0244| 	 s2: %0:exec = s_mov_b64 %427:s[10-11]
+16:54:45.205 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0245| 	s_cbranch_execz block:BB65
+16:54:45.206 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0246| BB62
+16:54:45.207 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0247| /* logical preds: BB61, / linear preds: BB61, / kind: uniform, */
+16:54:45.208 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0248| 	 v1: %219:v[7] = ds_read_u8 %155:v[7] offset0:17 storage:shared
+16:54:45.210 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0249| 	 v1: %217:v[0] = ds_read_u8 %154:v[0] offset0:17 storage:shared
+16:54:45.211 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0250| 	 v1: %222:v[1] = ds_read_u8 %153:v[1] offset0:17 storage:shared
+16:54:45.212 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0251| 	s_waitcnt lgkmcnt(1)
+16:54:45.213 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0252| 	 v1: %220:v[0] = v_lshl_or_b32 (is16bit)%217:v[0], 10, %219:v[7]
+16:54:45.214 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0253| 	s_waitcnt lgkmcnt(0)
+16:54:45.216 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0254| 	 v1: %224:v[1] = v_lshl_or_b32 (is16bit)%222:v[1], 20, %220:v[0]
+16:54:45.217 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0255| BB65
+16:54:45.218 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0256| /* logical preds: BB61, / linear preds: BB62, BB61, / kind: uniform, */
+16:54:45.220 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0257| 	 s2: %0:exec,  s1: %445:scc = s_andn2_b64 -1, %0:exec
+16:54:45.221 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0258| 	 v1: %0:v[1] = v_bfrev_b32 1
+16:54:45.222 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0259| BB67
+16:54:45.223 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0260| /* logical preds: BB62, BB65, / linear preds: BB65, / kind: uniform, merge, */
+16:54:45.225 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0261| 	 s2: %0:exec = s_mov_b64 -1
+16:54:45.226 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0262| 	s_waitcnt lgkmcnt(1)
+16:54:45.227 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0263| 	 v1: %0:v[8] = v_mov_b32 %212:v[5]
+16:54:45.228 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0264| 	s_branch block:BB72
+16:54:45.229 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0265| BB68
+16:54:45.231 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0266| /* logical preds: BB6, / linear preds: BB6, / kind: uniform, */
+16:54:45.232 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0267| 	 s1: %228:s[4],  s1: %401:scc = s_and_b32 %263:s[3], 0xf000000
+16:54:45.233 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0268| 	s_cbranch_scc1 block:BB71
+16:54:45.234 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0269| BB69
+16:54:45.235 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0270| /* logical preds: BB68, / linear preds: BB68, / kind: uniform, */
+16:54:45.236 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0271| 	 s1: %232:s[4],  s1: %405:scc = s_bfe_u32 %262:s[2], 0x90016
+16:54:45.237 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0272| 	 s1: %234:s[4],  s1: %406:scc = s_lshl_b32 (is16bit)%232:s[4], 12
+16:54:45.238 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0273| 	 s1: %235:s[2],  s1: %407:scc = s_bfe_u32 %262:s[2], 0x9000c
+16:54:45.239 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0274| 	 s1: %236:m0,  s1: %408:scc = s_or_b32 %234:s[4], %235:s[2]
+16:54:45.241 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0275| 	s_sendmsg %236:m0 sendmsg(gs_alloc_req)
+16:54:45.242 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0276| BB71
+16:54:45.243 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0277| /* logical preds: BB69, BB68, / linear preds: BB69, BB68, / kind: uniform, */
+16:54:45.244 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0278| 	 v1: %238:v[4] = v_lshlrev_b32 10, (is16bit)%277:v[0] dst_sel:dword src0_sel:dword src1_sel:uword1
+16:54:45.245 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0279| 	 s1: %410:s[3],  s1: %409:scc = s_lshl_b32 %263:s[3], 8
+16:54:45.246 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0280| 	 v1: %0:v[6] = v_mov_b32 %282:v[5]
+16:54:45.247 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0281| 	 s2: %412:s[6-7],  s1: %411:scc = s_bfe_u64 -1, %410:s[3]
+16:54:45.248 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0282| 	 v1: %239:v[0] = v_or_b32 %277:v[0], %238:v[4] dst_sel:dword src0_sel:uword0 src1_sel:dword
+16:54:45.250 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0283| 	 v1: %242:v[1] = v_lshl_or_b32 (is16bit)%278:v[1], 20, %239:v[0]
+16:54:45.251 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0284| BB72
+16:54:45.253 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0285| /* logical preds: BB67, BB71, / linear preds: BB67, BB71, / kind: top-level, branch, */
+16:54:45.254 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0286| 	 s2: %0:exec = s_mov_b64 %250:s[6-7]
+16:54:45.255 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0287| 	s_cbranch_execz block:BB78
+16:54:45.257 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0288| BB73
+16:54:45.258 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0289| /* logical preds: BB72, / linear preds: BB72, / kind: uniform, */
+16:54:45.259 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0290| 	exp %244:v[1],  v1: undef,  v1: undef,  v1: undef en:r*** done
+16:54:45.261 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0291| BB78
+16:54:45.262 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0292| /* logical preds: BB73, BB72, / linear preds: BB73, BB72, / kind: top-level, branch, merge, */
+16:54:45.263 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0293| 	s_waitcnt expcnt(0)
+16:54:45.265 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0294| 	 s2: %0:exec = s_mov_b64 %245:s[0-1]
+16:54:45.266 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0295| 	s_cbranch_execz block:BB84
+16:54:45.267 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0296| BB79
+16:54:45.268 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0297| /* logical preds: BB78, / linear preds: BB78, / kind: uniform, export_end, */
+16:54:45.269 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0298| 	 s1: %0:s[0] = s_mov_b32 %269:s[9]
+16:54:45.271 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0299| 	 s1: %0:s[9] = s_mov_b32 2
+16:54:45.272 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0300| 	 s4: %256:s[4-7] = s_load_dwordx4 %255:s[8-9], 0 storage:buffer semantics:private,reorder
+16:54:45.273 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0301| 	s_waitcnt lgkmcnt(0)
+16:54:45.274 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0302| 	 v1: %258:v[6] = v_add_u32 %448:s[0], %246:v[6]
+16:54:45.277 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0303| 	 v4: %259:v[4-7] = tbuffer_load_format_xyzw %256:s[4-7], %258:v[6], 0 dfmt:8_8_8_8 nfmt:unorm offset:12 idxen
+16:54:45.278 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0304| 	 v1: %0:v[0] = v_mov_b32 0
+16:54:45.279 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0305| 	s_waitcnt vmcnt(0)
+16:54:45.280 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0306| 	exp %247:v[2], %248:v[3], %421:v[0], %249:v[8] done pos0
+16:54:45.281 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0307| 	exp %417:v[4], %418:v[5], %419:v[6], %420:v[7] param0
+16:54:45.282 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0308| BB84
+16:54:45.283 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0309| /* logical preds: BB79, BB78, / linear preds: BB79, BB78, / kind: uniform, top-level, merge, */
+16:54:45.284 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0310| 	s_endpgm
+16:54:45.285 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 0311| 
+16:54:45.287 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E0 fim (312 linhas)
+16:54:45.288 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 stages=0x00000010 nome='fragment' subgroup=64 representacoes=3 res=0
+16:54:45.289 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 'Assembly' 1032 bytes res=0 -- inicio
+16:54:45.290 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0000| Shader disassembly is not supported in the current configuration (LLVM not available), falling back to print_program.
+16:54:45.292 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0001| 
+16:54:45.293 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0002| After lowering to hw instructions:
+16:54:45.295 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0003| ACO shader stage: SW (FS), HW (PIXEL_SHADER)
+16:54:45.296 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0004| BB0
+16:54:45.298 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0005| /* logical preds: / linear preds: / kind: uniform, top-level, export_end, */
+16:54:45.299 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0006| 	 s1: %0:m0 = s_mov_b32 %12:s[2]
+16:54:45.300 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0007| 	 v1: %21:v[2] = v_interp_p1_f32 %19:v[0], %25:m0 attr0.y
+16:54:45.301 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0008| 	 v1: %22:v[3] = v_interp_p1_f32 %19:v[0], %25:m0 attr0.x
+16:54:45.302 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0009| 	 v1: %23:v[4] = v_interp_p1_f32 %19:v[0], %25:m0 attr0.z
+16:54:45.302 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0010| 	 v1: %24:v[0] = v_interp_p1_f32 %19:v[0], %25:m0 attr0.w
+16:54:45.303 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0011| 	 v1: %3:v[2] = v_interp_p2_f32 %20:v[1], %25:m0, %21:v[2] attr0.y
+16:54:45.304 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0012| 	 v1: %4:v[3] = v_interp_p2_f32 %20:v[1], %25:m0, %22:v[3] attr0.x
+16:54:45.305 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0013| 	 v1: %6:v[4] = v_interp_p2_f32 %20:v[1], %25:m0, %23:v[4] attr0.z
+16:54:45.306 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0014| 	 v1: %7:v[0] = v_interp_p2_f32 %20:v[1], %25:m0, %24:v[0] attr0.w
+16:54:45.308 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0015| 	 v1: (SzInfNaNPreserve)%5:v[3] = v_cvt_pkrtz_f16_f32 %4:v[3], %3:v[2]
+16:54:45.309 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0016| 	 v1: (SzInfNaNPreserve)%8:v[4] = v_cvt_pkrtz_f16_f32 %6:v[4], %7:v[0]
+16:54:45.311 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0017| 	exp %5:v[3], %8:v[4],  v1: undef,  v1: undef compr done vm mrt0
+16:54:45.312 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0018| 	s_endpgm
+16:54:45.313 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 0019| 
+16:54:45.315 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 E1 fim (20 linhas)
+16:54:45.316 [pid=12116 dwm.exe] [VK_PIPELINE_IR] P0 END
+
+=== 3. UMD: harness de conformidade (clear azul + triangulo; map -5; TDR) ===
+16:54:02.027 [pid=5496 bc250-d3d11-conformance.exe] [WDDM_WINSYS] CreatePresentContext ENTER: Node=0
+16:54:02.031 [pid=5496 bc250-d3d11-conformance.exe] [WDDM_WINSYS] CreatePresentContext LEAVE: hr=0x00000000 hContext=000000000052C7B0 Node=0
+16:54:11.984 [pid=5496 bc250-d3d11-conformance.exe] ClearRenderTargetView: EXECUTADO VULKAN FAST-CLEAR (rtv=00000000005DCE28 res=00000000005DC370 1280x720 RGBA=[0.15,0.45,0.90,1.00])
+16:54:14.363 [pid=5496 bc250-d3d11-conformance.exe] [DRAW_DATA] VSCB0=0000000000000000 nz=0/0 f0..7=[0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000] PSCB0=0000000000000000 nz=0/0 VB0=00000000005DEE30 stride=24 off=0 nz=8/1024 v0=[00000000 3F000000 00000000 3F800000 00000000 00000000 3F000000 BF000000]
+16:54:14.366 [pid=5496 bc250-d3d11-conformance.exe] [DRAW_VERTS] Indexed=0 Start=0 Base=0 IB=0000000000000000 fmt=0 off=0 N/A idx=[0 1 2 3 4 5] stride=24 vbOff=0 v0(i=0)=(0.00,0.50,0.00) w3=3F800000 v1(i=1)=(0.50,-0.50,0.00) w3=00000000 v2(i=2)=(-0.50,-0.50,0.00) w3=00000000
+16:54:14.460 [pid=5496 bc250-d3d11-conformance.exe] Bc250UmdExecuteVkDraw: DRAW fence concluida; pixels NAO CONFERIDOS (VkDraws=1, Total=1, Verts=3, Inst=1, Indexed=0) RT0=00000000005DC370 1280x720 img=00000000005DC480
+16:54:15.168 [pid=5496 bc250-d3d11-conformance.exe] [VK_BRIDGE] LinearPresentBuf LAZY criado com sucesso (3686400 bytes, mem=000000000052C8C0, memType=2, nivel=HOST_VISIBLE|HOST_COHERENT)
+16:54:20.625 [pid=5496 bc250-d3d11-conformance.exe] [DRAW_READBACK] #1 VkDraws=1 RT0=00000000005DC370 1280x720 -- a GRADE seguinte e' do ALVO logo apos este draw, nao do Present
+16:54:20.678 [pid=5496 bc250-d3d11-conformance.exe] [VK_BRIDGE] INSPECAO LINEAR_BUF: vkMapMemory retornou -5 (memoria nao host-visible ou ocupada)
+16:54:20.759 [pid=5496 bc250-d3d11-conformance.exe] DXGI Present: hSurfaceToPresent=00000000005DC370, hDstResource=0000000000000000, Flags=0x00000001, FlipInterval=0
+16:54:20.914 [pid=5496 bc250-d3d11-conformance.exe] [VK_BRIDGE] FlushCommands: vkQueueSubmit falhou: res=-4
+16:54:20.918 [pid=5496 bc250-d3d11-conformance.exe] DXGI Present: Vulkan Destile CommandBuffer flushed: res=-4
+16:54:20.944 [pid=5496 bc250-d3d11-conformance.exe] [VK_BRIDGE] INSPECAO LINEAR_BUF: vkMapMemory retornou -5 (memoria nao host-visible ou ocupada)
+16:54:20.955 [pid=5496 bc250-d3d11-conformance.exe] DXGI Present: Bc250UmdBridgeLinearToWddm res=0x88760870 (LinearVa=0x2407D0000 -> DstVa=0x240024000 1280x720)
+16:54:21.081 [pid=5496 bc250-d3d11-conformance.exe] DXGI Present: radv_bc250_present_scanout (DIRECT SCANOUT) res=-4 (1280x720, NonZeroGrade=0)
+16:54:21.084 [pid=5496 bc250-d3d11-conformance.exe] DXGI Present ENTER cb: hContext=000000000052C7B0 PresentNode=0 WorkNode=1 hSrcAlloc=0x400005c0 hDstAlloc=0x0 SrcPrimary=0 SrcDeclaredPrimary=0 SrcRTResource=00000000033F9EE0 Flags=0x00000001
+16:54:21.088 [pid=5496 bc250-d3d11-conformance.exe] DXGI Present LEAVE cb: hr=0x00000000 (hr!=0 significa que o dxgkrnl RECUSOU a apresentacao antes de chamar DxgkDdiPresent; compare com [Present #] no log do KMD)
+16:54:21.392 [pid=5496 bc250-d3d11-conformance.exe] [WDDM_WINSYS] DestroyPresentContext ENTER: hContext=000000000052C7B0
+16:54:21.406 [pid=5496 bc250-d3d11-conformance.exe] [WDDM_WINSYS] DestroyPresentContext LEAVE: hr=0x00000000
+
+=== 4. KMD: bloco do TDR ===
+[PT_RANGE DEST] PASS: VA=[0x253000,0x263000) Pages=16 Perm=0x40
+[SubmitVirtual Node0 SDMA] IB_TRIPE_VEREDITO #536: TRIPE_PROVADO (WPTR=3652 RPTR_Reg=3652 RPTR_Wb=3652 Casou=WRITEBACK+REGISTRADOR Fence=00001225 Poison=43DAFFFE Canaries=5 Divergentes=0 PostGPU=[00000000 00000000 00000000 00000000 00000000] Esperado=00000000 Vmid=8 (async))
+[SubmitVirtual Node0 SDMA] IB_TRIPE PROVADO NO SILICIO #536: a GPU buscou o DMA buffer sob VMID8 e o efeito declarado esta nos bytes do destino (async)
+[SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 32 bytes em VA=0x238760; FenceId=536 (batch #1)
+[GfxEngine] GFX_TRIPE_VEREDITO: Perna1=NAO_CONVERGIU (WPTR=1208 RPTR_Reg=1200[lido=1] RPTR_Wb=1196[lido=1], reduzidos WPTR=4832 Reg=4800 Wb=4784, motivo=SEM_OBSTACULO_DE_LEITURA) Perna2=FENCE_ESCRITA_PELA_GPU (Fence=0x00000063 Poison=0x43DAFFFE) Perna3=NAO_EXECUTADA_SEM_GABARITO_DE_DESTINO -- TRIPE INCOMPLETO, 2 de 3 pernas | Submetidas=100 Aposentadas=99 EmVoo=1 RetiredCount=98
+[Vsync #1320] Type=3, TargetId=1, PhysAddr=0xABC000, OTG_Frame=34258
+[McdmResetFromTimeout] TDR: quiesce fisico do SDMA0 iniciado
+[SdmaPresent] TDR_QUIESCE: RB_ENABLE desligado e F32 travado (HwEstavaLigado=1 RPTR=36420 WPTR=36420 STATUS=46DEED57 STATUS1=000003FF [0x3FF=idle] ERR_LOG=0000000F RB_CNTL=80841015->80841014 F32_CNTL=00000000->00000001)
+[TDR_MEC_QUIESCE] HQD dequeue drain: Polls=1 ActiveAfter=0
+[TDR_MEC_SNAPSHOT] Selector=0x00000000 (Req=0x00000008) RestoredSel=0x00000000 HqdValid=0xFFF Active=00000000 RPTR=204 WPTR=204 Error=00000000 HqStatus=40008040 IbCtrl=00300000 Vmid=00000000 FaultValid=0x7 FaultStatus=00000000 FaultAddr=00000000:00000000
+[TDR_GCVM_FAULT] SEM FAULT LATCHADO (FaultValid=0x7 Status=0x00000000) -- ausencia aqui NAO prova ausencia de fault, so' que este registrador nao o reteve
+[TDR_MEC_CPF_STAT] CpValid=0xFFF CpfStat=BC000063 CpfBusy=20000002 CpfStalled=00000000 CpcStat=00000000 CpcBusy=00000000 CpcStalled=00000000 CpStalled1=00000C00 CpStat=8003A600
+[TDR_MEC_EXEC_STAT] Mec1Hdr=DEF4DEF4 Mec2Hdr=C0000E00 Mec1Pntr=00000000 Mec2Pntr=00000491 IbBase=0000002D:000000F4 IbRptr=00000000 PqCtrl=D030890D Dequeue=00000000
+[TDR_GFX_QUIESCE] Snapshot: Active=1 RPTR=1200 WPTR=1208 GrbmStatus=0xA0403028 CpMeCntl=0x00000000
+[TDR_GFX_STALL] CpStalled1=0x00000C00[lido=1] CpStalled2=0x00018000[lido=1]
+[TDR_GFX_STALL] STAT1 (0x8674): ME_HAS_ACTIVE_CE_BUFFER_FLAG=1 ME_HAS_ACTIVE_DE_BUFFER_FLAG=1 ME_STALLED_ON_TC_WR_CONFIRM=0 ME_WAITING_ON_TC_READ_DATA=0 ME_WAITING_ON_REG_READ_DATA=0 RCIU_WAITING_ON_GRBM_FREE=0 RCIU_STALLED_ON_ME_READ=0 RCIU_HALTED_BY_REG_VIOLATION=0
+[TDR_GFX_STALL] STAT2 (0x8678): ME_WAIT_ON_AVAIL_BUFFER=0 GFX_CNTX_NOT_AVAIL_TO_ME=0 -- estes DOIS sao os bits de indisponibilidade de contexto grafico, e vivem no STAT2, nao no STAT1
+[TDR_GFX_STALL] GRBM_STATUS 0xA0403028: GUI_ACTIVE=1 CP_BUSY=1 CP_COHERENCY_BUSY=0
+[TDR_GFX_PACKET] ME_HEADER_DUMP=0xC0004600 Type=3 Opcode=0x46 (EVENT_WRITE) PayloadDW=1
+[TDR_GFX_PACKET] PFP_HEADER_DUMP=0xC0004200 Type=3 Opcode=0x42 (desconhecido) PayloadDW=1
+[TDR_GFX_PACKET] IB1 Base=0x0002407BC000 RestamDW=0 -- comparar com DmaVA e SizeDW da ultima linha [SubmitVirtual Node1 GFX]
+[TDR_GFX_WAVES] SQ_DEBUG_STS_GLOBAL=0x00F00F01 Busy=1 WaveLevelSA0=240 WaveLevelSA1=240 -- ondas>0 com o CP parado aponta shader que nao retira; ondas==0 aponta estado ou pacote
+[TDR_GFX_WAVEPC] DESARMADO: GfxWaveProbe=0 present=1 -- nenhuma escrita de seletor foi feita
+[TDR_GFX_SE] SE0=0x08000006 (SPI=1 SX=0 TA=0 PA=0 SC=0 CB=0 DB=0 CB_CLEAN=1 DB_CLEAN=1) SE1=0x08000006
+[TDR_GFX_CPWAIT] CP_BUSY_STAT=0x00020000 (PfpParsing=0 MeParsing=0 CeParsing=0 SemPolling=0 SemFailedHolding=0 EopDoneBusy=0 GfxContextBusy=0 CoherCntNeqZero=0) GRBM_STATUS2=0x50000008 (UTCL2_BUSY=0 EA_BUSY=0 CPG_BUSY=1 CPF_BUSY=1)
+[TDR_GFX_QUIESCE] GRBM_GFX_INDEX reposto em broadcast antes do soft-reset: escrita=1 readback=0x00000000 (esperado 0xE0000000; divergencia NAO e' prova de falha -- ver o ALERTA da sonda)
+[TDR_GFX_QUIESCE] CP_RB0 desativado e soft-reset executado
+[McdmResetFromTimeout] TDR: adaptador quiescido; RPTR/WPTR/STATUS/ERR_LOG sairam na linha TDR_QUIESCE do executor
+[McdmRestartFromTimeout] TDR: rearmando o SDMA0 e exigindo prova fisica
+[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=40 RPTR=40 Fence=00001226 in 2 polls
+[SdmaPresent] TDR_FULL_RESET E REPROGRAMACAO: READBACK PASS (GRBM=00000000/00800000/00000000 RPTR=0 WPTR=0 RB_CNTL=80841015 BASE=00000000:F40FF000 POLL=00403004 IB=00080101 F32=00000000 CNTL=000000C2)
+[SdmaPresent] TDR_RESTART PROVADO: anel rearmado e NOP fisico com fence sobre poison concluido; HardwareEnabled=1
+[TDR_FENCE_RECONCILE] PASS: Abortadas=1 Committed=1 Reserved=0 NotificadasComoConcluidas=0
+[TDR_GFX_RESTART_BASE] RingGpuVa=0xF40FF70000 Esperado=00000000:F40FF700 Readback=00000000:F40FF700 Pass=1
+[TDR_GFX_RESTART_PROOF] PASS: NOPx4+RELEASE_MEM executados RPTR=12 WPTR=12 Fence=0x00000065 PoisonSubstituido=1 Polls=1
+[TDR_GFX_RESTART] CP_RB0 rearmado e comprovado por execucao fisica
+[TDR_MEC_RESTART] MEC queue reprogramada com readback coerente; execucao pos-reset nao foi provada aqui
+[McdmRestartFromTimeout] TDR: SDMA0 e CP_RB0 provados fisicamente; MEC com readback coerente; fences abortadas reconciliadas; adaptador aceita submissao novamente
+[McdmSetRootPageTable] Context=0000000400000004, SegId=1, Offset=0x0, NumEntries=512, MaxEntries=8192 (rootBits=13)
+[ActiveSetRootPT] ENTER: Ctx=0000000400000004, SegId=1, Addr=0x0, Num=512, Max=8192 (CtxMax=8192, Active=1, AbiReady=1)
+[SetRootPageTable] ROOT_MC: TopologyVramBase=0x450000000 (NAO usada; concorda com a base em uso)
+[SetRootPageTable] ROOT_MC: VramBase=0x450000000 + LocalSegBase=0xA8C000 + Offset=0x0 -> PT=0x450A8C000
+[SetRootPageTable] [Vmid8Install] readback OK: PT_BASE=450a8c000 CNTL=0x007FFE03 (PhysReady=1, Flush=1)
+[McdmSetRootPageTable] Result=0x00000000
+[PDE_WRITE] ARENA idx=4096 Lvl=1 Start=0 Num=5120 Repeat=0 hProc=000000FD000000FD | V=0 Z=0 Seg=0 LargePage=0 PFN=0x0 RawFlags=0x0 | Encoded=0x0000000000000000 Status=0x00000000 Reservado[5:3]=0x0
+[PDE_WRITE] ARENA idx=4096 Lvl=1 Start=0 Num=5120 Repeat=0 hProc=0000003B0000003B | V=0 Z=0 Seg=0 LargePage=0 PFN=0x0 RawFlags=0x0 | Encoded=0x0000000000000000 Status=0x00000000 Reservado[5:3]=0x0
+[PDE_WRITE] ARENA idx=4096 Lvl=1 Start=0 Num=5120 Repeat=0 hProc=0000001E0000001E | V=0 Z=0 Seg=0 LargePage=0 PFN=0x0 RawFlags=0x0 | Encoded=0x0000000000000000 Status=0x00000000 Reservado[5:3]=0x0
+[PDE_WRITE] ARENA idx=4096 Lvl=1 Start=0 Num=5120 Repeat=0 hProc=0000001C0000001C | V=0 Z=0 Seg=0 LargePage=0 PFN=0x0 RawFlags=0x0 | Encoded=0x0000000000000000 Status=0x00000000 Reservado[5:3]=0x0
+[PDE_WRITE] ARENA idx=4096 Lvl=1 Start=0 Num=5120 Repeat=0 hProc=0000001A0000001A | V=0 Z=0 Seg=0 LargePage=0 PFN=0x0 RawFlags=0x0 | Encoded=0x0000000000000000 Status=0x00000000 Reservado[5:3]=0x0
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[ControlInterrupt] VSYNC Enable=0 (Type=3)
+[DestroyProcess] GPUVA: faixas do processo 0000000500000005 invalidadas (Epoch=1 LiveCount=0)

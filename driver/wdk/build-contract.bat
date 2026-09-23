@@ -207,6 +207,13 @@ echo [cc] bc250_gfxhub_tlb_transaction.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_gfxhub_tlb_transaction.obj" "%ROOTDIR%\driver\core\bc250_gfxhub_tlb_transaction.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
+echo [cc] bc250_fault_latch_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_fault_latch_contract.obj" "%ROOTDIR%\driver\core\bc250_fault_latch_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [cc] bc250_vmid_pool_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_vmid_pool_contract.obj" "%ROOTDIR%\driver\core\bc250_vmid_pool_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
 echo [cc] bc250_gcvm_vmid8_transaction.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_gcvm_vmid8_transaction.obj" "%ROOTDIR%\driver\core\bc250_gcvm_vmid8_transaction.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -583,6 +590,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\mmio_topology_transport_test.obj" kernel32.lib
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -662,6 +670,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\bc250_post_display_reservation.obj" ^
   "%ODIR%\bc250_vram_probe_transaction.obj" ^
@@ -1119,6 +1128,43 @@ if %ERRORLEVEL% NEQ 0 (
   exit /b 1
 )
 
+echo [cc] fault_latch_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\fault_latch_contract_test.obj" "%ROOTDIR%\driver\tests\fault_latch_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] fault_latch_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\fault_latch_contract_test.exe" ^
+  "%ODIR%\fault_latch_contract_test.obj" ^
+  "%ODIR%\bc250_fault_latch_contract.obj" ^
+  "%WDK%\Lib\%WDKVER%\km\x64\ntoskrnl.lib" ^
+  "%WDK%\Lib\%WDKVER%\um\x64\kernel32.lib"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+"%ODIR%\fault_latch_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(fault_latch_contract_test^) - Linha/Codigo: %ERRORLEVEL%
+  exit /b 1
+)
+echo FAULT LATCH DRAIN: OK ^(dreno com CLEAR pulsado, repeticao nao vira fault novo, CNTL restaurado^)
+
+echo [cc] vmid_pool_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\vmid_pool_contract_test.obj" "%ROOTDIR%\driver\tests\vmid_pool_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] vmid_pool_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\vmid_pool_contract_test.exe" ^
+  "%ODIR%\bc250_vmid_pool_contract.obj" ^
+  "%ODIR%\bc250_fault_latch_contract.obj" ^
+  "%ODIR%\vmid_pool_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+"%ODIR%\vmid_pool_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(vmid_pool_contract_test^) - Linha/Codigo: %ERRORLEVEL%
+  exit /b 1
+)
+echo VMID POOL: OK ^(12 slots, reservados 0/7/8/9 medidos, exaustao falha fechada^)
+
 echo [cc] gcvm_vmid8_transaction_test.c
 cl %CFLAGS% /Fo"%ODIR%\gcvm_vmid8_transaction_test.obj" "%ROOTDIR%\driver\tests\gcvm_vmid8_transaction_test.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -1127,6 +1173,8 @@ echo [link] gcvm_vmid8_transaction_test.exe
 link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   /OUT:"%ODIR%\gcvm_vmid8_transaction_test.exe" ^
   "%ODIR%\bc250_gcvm_vmid8_transaction.obj" ^
+  "%ODIR%\bc250_vmid_pool_contract.obj" ^
+  "%ODIR%\bc250_fault_latch_contract.obj" ^
   "%ODIR%\gcvm_vmid8_transaction_test.obj" kernel32.lib
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
@@ -1144,6 +1192,8 @@ echo [link] gcvm_context8_cntl_test.exe
 link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   /OUT:"%ODIR%\gcvm_context8_cntl_test.exe" ^
   "%ODIR%\bc250_gcvm_vmid8_transaction.obj" ^
+  "%ODIR%\bc250_vmid_pool_contract.obj" ^
+  "%ODIR%\bc250_fault_latch_contract.obj" ^
   "%ODIR%\gcvm_context8_cntl_test.obj" kernel32.lib
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
@@ -1374,6 +1424,8 @@ echo [link] gpuva_space_contract_test.exe
 link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   /OUT:"%ODIR%\gpuva_space_contract_test.exe" ^
   "%ODIR%\bc250_gpuva_space_contract.obj" ^
+  "%ODIR%\bc250_vmid_pool_contract.obj" ^
+  "%ODIR%\bc250_fault_latch_contract.obj" ^
   "%ODIR%\bc250_mcdm_object_contract.obj" ^
   "%ODIR%\gpuva_space_contract_test.obj" kernel32.lib
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -1393,6 +1445,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   /OUT:"%ODIR%\gpuva_snapshot_contract_test.exe" ^
   "%ODIR%\bc250_gpuva_snapshot_contract.obj" ^
   "%ODIR%\bc250_gpuva_space_contract.obj" ^
+  "%ODIR%\bc250_vmid_pool_contract.obj" ^
+  "%ODIR%\bc250_fault_latch_contract.obj" ^
   "%ODIR%\bc250_mcdm_object_contract.obj" ^
   "%ODIR%\gpuva_snapshot_contract_test.obj" kernel32.lib
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -1413,6 +1467,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_gpuva_journal_contract.obj" ^
   "%ODIR%\bc250_gpuva_snapshot_contract.obj" ^
   "%ODIR%\bc250_gpuva_space_contract.obj" ^
+  "%ODIR%\bc250_vmid_pool_contract.obj" ^
+  "%ODIR%\bc250_fault_latch_contract.obj" ^
   "%ODIR%\bc250_mcdm_object_contract.obj" ^
   "%ODIR%\gpuva_journal_contract_test.obj" kernel32.lib
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -1431,6 +1487,8 @@ echo [link] wddm_submission_pipeline_test.exe
 link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   /OUT:"%ODIR%\wddm_submission_pipeline_test.exe" ^
   "%ODIR%\bc250_gpuva_space_contract.obj" ^
+  "%ODIR%\bc250_vmid_pool_contract.obj" ^
+  "%ODIR%\bc250_fault_latch_contract.obj" ^
   "%ODIR%\bc250_mcdm_object_contract.obj" ^
   "%ODIR%\bc250_persistent_ring_contract.obj" ^
   "%ODIR%\bc250_pm4_packet_builder.obj" ^
@@ -1442,6 +1500,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_isa_validator.obj" ^
   "%ODIR%\bc250_vram_allocator.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_probe_telemetry.obj" ^
   "%ODIR%\bc250_submission_engine.obj" ^
   "%ODIR%\wddm_submission_pipeline_test.obj" kernel32.lib
@@ -1461,6 +1520,8 @@ echo [link] bc250_unified_wddm_submission_test.exe
 link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   /OUT:"%ODIR%\bc250_unified_wddm_submission_test.exe" ^
   "%ODIR%\bc250_gpuva_space_contract.obj" ^
+  "%ODIR%\bc250_vmid_pool_contract.obj" ^
+  "%ODIR%\bc250_fault_latch_contract.obj" ^
   "%ODIR%\bc250_mcdm_object_contract.obj" ^
   "%ODIR%\bc250_persistent_ring_contract.obj" ^
   "%ODIR%\bc250_pm4_packet_builder.obj" ^
@@ -1472,6 +1533,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_isa_validator.obj" ^
   "%ODIR%\bc250_vram_allocator.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_probe_telemetry.obj" ^
   "%ODIR%\bc250_submission_engine.obj" ^
   "%ODIR%\bc250_unified_wddm_submission_test.obj" kernel32.lib
@@ -1765,6 +1827,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\bc250_post_display_reservation.obj" ^
   "%ODIR%\bc250_vram_probe_transaction.obj" ^
@@ -1868,6 +1931,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   /OUT:"%ODIR%\active_miniport_test.exe" ^
   "%ODIR%\bc250_mcdm_object_contract.obj" ^
   "%ODIR%\bc250_gpuva_space_contract.obj" ^
+  "%ODIR%\bc250_vmid_pool_contract.obj" ^
+  "%ODIR%\bc250_fault_latch_contract.obj" ^
   "%ODIR%\bc250_gpuva_snapshot_contract.obj" ^
   "%ODIR%\bc250_gpuva_journal_contract.obj" ^
   "%ODIR%\bc250_gpuva_sdma_broker_contract.obj" ^
@@ -1888,6 +1953,7 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\bc250_post_display_reservation.obj" ^
   "%ODIR%\bc250_vram_probe_transaction.obj" ^
@@ -2087,6 +2153,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
   "%ODIR%\bc250_segment_address_contract.obj" ^
   "%ODIR%\bc250_gpuva_space_contract.obj" ^
+  "%ODIR%\bc250_vmid_pool_contract.obj" ^
+  "%ODIR%\bc250_fault_latch_contract.obj" ^
   "%ODIR%\bc250_gpuva_snapshot_contract.obj" ^
   "%ODIR%\bc250_gpuva_journal_contract.obj" ^
   "%ODIR%\bc250_gpuva_sdma_broker_contract.obj" ^

@@ -8,13 +8,54 @@
 > **Data:** 2026-09-17 20:05 · revisado 2026-09-18 · **Target:** AMD BC-250 (`1002:13FE`, GC 10.1.3) | Windows 10 22H2 x64
 > **Governança:** subordinado a [`AGENTS.md`](AGENTS.md), [`GEMINI.md`](GEMINI.md) e
 > [`DIRETRIZ_QUALIDADE_UMD_DX11_E_MARCOS_GRAPHICS.md`](DIRETRIZ_QUALIDADE_UMD_DX11_E_MARCOS_GRAPHICS.md).
-> **Status:** Em execução ativa. **Bloqueado na nova Fase D0**, criada em 18/09: a corrida
-> `2026-09-18_14-20-07` provou no silício (P0) que a escrita MMIO de `CP_RB0_WPTR` **não é retida
-> pelo hardware** — 4 de 4 submissões com `WPTR_READBACK_DIVERGENTE`, transporte mapeado e escrita
-> aceita. O anel gráfico nunca executou uma submissão em todo o projeto, e D1.6–D1.8 são
-> inalcançáveis até D0.5–D0.7 fecharem. D1.3, D1.4, D1.5, D2.4 e D5.3 seguem validados no silício
-> (Corrida 15), mas medem **emissão**, não consumo. Estabilidade: zero TDR, zero BugCheck e zero
-> `DEVICE_REMOVED` na corrida de 18/09.
+> **Status (revisado 2026-09-21, após a Corrida 58):** Em execução ativa.
+> O que fechou até aqui são principalmente fases de **emissão e diagnóstico**; o que falta é
+> o **efeito gráfico**. Ver §2.0.
+>
+> **O bloqueador observado mais recente tem endereço `0x2469A6000`.** Na Corrida 58, três
+> TDRs repetiram uma escrita (`Cid=8`, `Rw=1`) nessa GPUVA. No terceiro, a janela de
+> publicação ficou inalterada e a caminhada pela raiz do VMID 2 encontrou folha válida com
+> R/W/X. A imagem CPU-visível estava completa; ainda falta provar o que a GPU efetivamente
+> observou e discriminar visibilidade/invalidação, hierarquia ou uso da alocação.
+>
+> A Corrida 58 resolveu a pergunta deixada pela 57: em 25/25 mapeamentos com geometria da
+> arena de 256 KiB, `0x200040000` saiu `NoExecute=0` e com o bit executável na PTE. Portanto,
+> falta de permissão de execução nesse alvo foi refutada como causa suficiente. A classe do
+> token RADV ainda saiu desconhecida, e DX.5 continua aberto porque o produto ainda trava.
+>
+> **Próxima faixa offline:** o FlushTlb do VidMm cobre hoje apenas 8/7/9 e não os VMIDs
+> dinâmicos READY do pool usados pelo GFX. Corrigir essa cobertura é o próximo trabalho; a
+> relação causal continua hipótese até uma corrida com máscara, ACK e carga equivalente.
+> Passagem autocontida e VIGENTE: `docs/324_PASSAGEM_DE_BASTAO_2026-09-22_CORRIDAS_59_A_63.md` (o docs/317 está desatualizado: a faixa que ele propunha foi medida na Corrida 59 e refutada como causa).
+>
+> **DX.10 e DX.11 continuam fechados como implementação offline, agora com validação física
+> parcial.** A Corrida 58 provou a seleção `VIVA_READY` da raiz e mediu permissões/PTE do alvo;
+> não exercitou `RETIDA_POS_MORTE`, e o token da arena permaneceu sem classe semântica. A
+> última raiz instalada continua retida por VMID fora da entrada reciclável, e o log distingue
+> `VIVA_READY`, `RETIDA_POS_MORTE` e `AUSENTE`. `0x200040 << 12` ganha veredito dedicado,
+> enquanto `<<20` é recusado por exceder 34 bits.
+>
+> (bloco anterior, mantido como registro:) Em execução ativa.
+> **A Fase D0 deixou de ser o bloqueador.** O `WPTR_READBACK_DIVERGENTE` que a criou saiu
+> **zero vezes** na Corrida 46, e o anel gráfico passou a **consumir**: 89 vereditos com
+> `RPTR_Reg == WPTR` e **105 de 105** fences escritas **pela GPU** sobre poison. **D0.5 e D0.6
+> estão FECHADOS NO SILÍCIO**; **D0.7 continua aberto** (perna 3, byte a byte, nunca executou).
+>
+> **O bloqueador agora é outro, e tem nome: falha de tradução sob VMID 7.** Medido nas Corridas
+> 45 e 46, em candidatos diferentes, com a mesma assinatura:
+> `GCVM_L2_PROTECTION_FAULT_STATUS = 0x0070153C` → **`VMID=7`** (o mesmo VMID de todas as
+> submissões gráficas), **`WALKER_ERROR=6`**, `MAPPING_ERROR=1`, em **`GpuVa=0x2431000`** e
+> `0x245B000`. No mesmo TDR, a onda lida pela sonda trouxe `SQ_WAVE_STATUS FATAL_HALT=1` com
+> `SQ_WAVE_TRAPSTS XNACK_ERROR=1`. Dois registradores independentes contam a mesma história: o
+> caminhador de tabela de páginas falha, a onda recebe XNACK e morre, e o CP espera para sempre
+> por quem nunca vai retirar. **Enquanto isso não fechar, D1.6–D1.8 seguem inalcançáveis** — e
+> agora pelo motivo certo, não mais por falta de consumo do anel.
+>
+> **Estabilidade: três corridas seguidas (44, 45, 46) com ZERO BugCheck**, recuperação de TDR
+> 5/5 e rollback limpo para BasicDisplay. `MEMORY.DMP` congelado no da Corrida 43.
+>
+> ⚠️ **Este bloco corrige o status anterior**, que dizia "o anel gráfico nunca executou uma
+> submissão em todo o projeto". Isso era verdade em 18/09 e **deixou de ser** em 20/09.
 >
 > ⚠️ **Numeração de corridas:** três esquemas incompatíveis em uso. Este documento dizia "Corrida 18
 > (próxima)"; a `BASE_DE_AVANCO.md` para na 18 de 17/09; uma das análises chama a corrida de 18/09
@@ -58,7 +99,49 @@ Qualquer uma sem resposta mantém a tarefa 🟡, por mais que o código esteja p
 
 ## 2. Fases e tarefas
 
-### Fase D0 — O anel gráfico consome uma submissão  ⛔ **BLOQUEIA TODA A FASE D1**
+### 2.0 Placar por fase (21/09, após a Corrida 58)
+
+**Placar do catálogo:** 22 itens fechados de 51 registrados (**43%**), mais 3 itens que
+deixaram de pertencer ao caminho vigente (D0.3/D0.4 obsoletos e DX.3 retirado).
+
+**Placar do trabalho ativo:** excluindo esses três itens mortos do denominador, são **23 de
+48 fechados (48%)**, com 25 abertos. Esta é a porcentagem útil para planejamento. O placar
+antigo de 14/45 não regrediu nem estava aritmeticamente errado: ele antecede a expansão da
+fase DX de 5 para 12 itens. O escopo cresceu em sete itens e nove entregas fecharam desde
+então (D0.2 e DX.4/DX.6–DX.17).
+
+| Fase | O que é | Fechado | Aberto ativo | Fora do caminho | Estado |
+|---|---|---:|---:|---:|---|
+| **D0** | anel gráfico consome | 4 | 1 (D0.7) | 2 obsoletos | ✅ quase pronto |
+| **DX** | tradução nos VMIDs de contexto | 10 | 1 (DX.5) | 1 retirado | ⛔ **bloqueador atual** |
+| **D1** | primeiro pixel não-nulo | 5 | 3 | 0 | 🟡 bloqueada por DX |
+| **D2** | compilador de shader | 2 | 4 | 0 | 🟡 dependência externa permanece |
+| **D3** | cobertura D3D11 do DWM | 0 | 8 | 0 | ⬜ **maior bloco** |
+| **D4** | desktop acelerado | 0 | 6 | 0 | ⬜ não iniciado |
+| **D5** | desktop estável | 2 | 3 | 0 | 🟡 backend de recuperação existe |
+
+**Corrente de bloqueio.** Cada elo só abre depois do anterior:
+
+```
+DX.5 (Cid=10 = perda de 8 bits CONFIRMADA; Cid=9 = PDE sujo que nao escrevemos)
+ └→ D0.7 (IB executa, byte a byte)
+     └→ D1.6-1.8 (primeiro pixel)
+         └→ D2.5-2.6 (shaders do DWM)
+             └→ D3.1-3.8 (DWM sem recusa)   <-- maior bloco do plano
+                 └→ D4 (desktop acelerado)
+                     └→ D5 (estável sob TDR)
+```
+
+**Aviso que precisa ficar escrito:** a Fase **D3 é o verdadeiro volume de trabalho e ninguém
+tocou nela**. Oito itens — inventário de DDIs do DWM real, formatos e pitch, estado
+(blend/rasterizer/depth/samplers), SRVs e descriptor sets. Hoje
+`DefaultDescriptorSetLayout = VK_NULL_HANDLE` e não há draw nativo na última corrida. Mesmo com
+o VMID consertado e o primeiro pixel aceso, é D3 que separa "um triângulo" de "o DWM compondo",
+e ela é maior que D0 e DX somadas.
+
+---
+
+### Fase D0 — O anel gráfico consome uma submissão  ✅ **4 fechados, 1 aberto, 2 obsoletos**
 
 > **Por que esta fase existe (criada em 18/09, depois da corrida `14:20:07`):** o plano media a
 > **emissão** de comandos e não o **consumo**. D1.3, D1.4, D1.5 e D2.4 fecharam no silício — PSO
@@ -76,26 +159,75 @@ Qualquer uma sem resposta mantém a tarefa 🟡, por mais que o código esteja p
 >
 > **Consequência retroativa que precisa ficar escrita:** as *"45 submissões aposentadas no
 > `CP_RB0`"* da Corrida 15, as *"20 submissões 3D"* da Corrida 16 e as *"16 submissões gráficas"*
-> da Corrida 13 foram **aceitas, não executadas**. Nenhuma submissão gráfica jamais foi provada
-> executada neste anel.
+> da Corrida 13 foram **aceitas, não executadas**.
+>
+> ✅ **RESOLVIDO EM 20/09 (Corridas 44-46).** A frase original terminava com "nenhuma submissão
+> gráfica jamais foi provada executada neste anel" — isso **deixou de valer**. Na Corrida 46 o
+> `WPTR_READBACK_DIVERGENTE` saiu **zero vezes**, houve **89** vereditos com `RPTR_Reg == WPTR` e
+> **105 de 105** fences escritas pela GPU sobre poison. O anel **busca e consome**. O que ainda
+> NÃO está provado é a execução do conteúdo do IB (D0.7, perna 3), e o log declara isso em toda
+> linha: `TRIPE INCOMPLETO, 2 de 3 pernas`.
 
 | ID | Entrega | Fecha como | Critério de conclusão | ...porém verificar |
 |---|---|---|---|---|
 | **D0.1** | Inventário dos canais de publicação de WPTR do anel gráfico, com proveniência | ✅ **FECHADO (OFFLINE, 18/09)** | Quatro canais identificados por leitura de código e header: `CP_RB_WPTR_POLL_ADDR_LO/HI` (`0x0C3AC/0C3B0`) **programados** em `bc250_gfx_ring_transaction.c:166`; `CP_RB_WPTR_POLL_CNTL` (`0x08708`) **só lido**, e sem bit de enable no header (`POLL_FREQUENCY[15:0]`, `IDLE_POLL_COUNT[31:16]`); `CP_RB_DOORBELL_CONTROL` (`0x0C3B4`) escrito **`0`** em `:150`; MMIO `CP_RB0_WPTR` (`0x0C150`), o único aberto. | Fechamos dois canais e deixamos aberto justamente o que o silício não retém. O inventário é P1; qual canal resolve é **H** |
-| **D0.2** | O veredito de tripé é emitido **mesmo quando a submissão é recusada** | 🔧 OFFLINE | `GFX_TRIPE_VEREDITO` aparece no log com `RPTR`, `WPTR` e fence em **toda** submissão, aceita ou recusada | Dívida introduzida pela própria correção de 18/09: com 4/4 recusadas antes do retirement, o veredito saiu **zero vezes** e as Pernas 1 e 2 foram perdidas na corrida em que foram consertadas |
-| **D0.3** | Divergência de MMIO deixa de ser veto **quando outro canal publicou com prova** | 🔧 OFFLINE | Enquanto o MMIO é o único canal, divergência **continua** recusando (fail-closed preservado). Com um segundo canal publicado e conferido, a divergência passa a ser **fato registrado** (`WPTR_CANAL_MMIO_NAO_RETEM`) e a submissão segue | Sem isto o canal novo **não pode ser testado**: a submissão morre antes de o CP ter chance de buscar. Afrouxar sem o segundo canal provado seria voltar ao falso sucesso |
-| **D0.4** | `CP_RB_WPTR_POLL_CNTL` programado com valor de proveniência declarada e readback | 🔧 OFFLINE | Valor derivado dos campos do header (P1), escrito na transação com snapshot/readback/rollback, e o valor do SDMA (`0x00403004`) **proibido** por `Bc250GfxRingPollCntlIsBorrowed` | Este registrador **não tem enable** — programá-lo configura frequência, não liga o mecanismo. Declarar isso no log, senão a ausência de efeito será lida como refutação do canal errado |
-| **D0.5** | **O `RPTR` do anel gráfico avança** | 🔬 CORRIDA — MARCO 0 | `CP_RB0_RPTR` lido > 0 depois de uma submissão, com o `WPTR` alcançado | `RPTR` avançar prova que o CP **buscou**. Não prova que executou o IB — o `RELEASE_MEM` que escreve a fence é emitido pelo KMD **no anel**, então fence retirada prova consumo do anel, não execução do IB (Diretriz Universal nº 3) |
-| **D0.6** | A fence do anel gráfico sai do poison | 🔬 CORRIDA — MARCO 0 | Fence física ≠ `0x43DAFFFE`, escrita **pela GPU**, sobre poison | `POISON_INTACTO_GPU_NAO_ESCREVEU` é o veredito honesto enquanto não sair. Fence grande passa comparação numérica — o poison tem de ser excluído explicitamente |
-| **D0.7** | O IB é executado, não apenas buscado | 🔬 CORRIDA — MARCO 0 | Efeito declarado do IB conferido **byte a byte** no destino, sobre canários não-nulos plantados antes do disparo | Zero sobre zero é inconclusivo. Esta é a Perna 3, e é ela que separa "o CP consumiu o anel" de "o shader rodou" |
+| **D0.2** | O veredito de tripé é emitido **mesmo quando a submissão é recusada** | ✅ **FECHADO OFFLINE** | `GFX_TRIPE_VEREDITO_RECUSA` mede RPTR/WPTR/fence no caminho de recusa; `audit_phase_d0_refusal_tripod_and_wptr_veto` exige a chamada no helper e mantém a divergência de WPTR como veto | Corrige a dívida da Corrida 42, em que 4/4 recusas produziram zero vereditos. Ainda não transforma recusa em execução nem fecha D0.7 |
+| **D0.3** | Divergência de MMIO deixa de ser veto **quando outro canal publicou com prova** | ⬛ **OBSOLETO (20/09)** | Enquanto o MMIO é o único canal, divergência **continua** recusando (fail-closed preservado). Com um segundo canal publicado e conferido, a divergência passa a ser **fato registrado** (`WPTR_CANAL_MMIO_NAO_RETEM`) e a submissão segue | Sem isto o canal novo **não pode ser testado**: a submissão morre antes de o CP ter chance de buscar. Afrouxar sem o segundo canal provado seria voltar ao falso sucesso |
+| **D0.4** | `CP_RB_WPTR_POLL_CNTL` programado com valor de proveniência declarada e readback | ⬛ **OBSOLETO (20/09)** | Valor derivado dos campos do header (P1), escrito na transação com snapshot/readback/rollback, e o valor do SDMA (`0x00403004`) **proibido** por `Bc250GfxRingPollCntlIsBorrowed` | Este registrador **não tem enable** — programá-lo configura frequência, não liga o mecanismo. Declarar isso no log, senão a ausência de efeito será lida como refutação do canal errado |
+| **D0.5** | **O `RPTR` do anel gráfico avança** | ✅ **FECHADO NO SILÍCIO (Corridas 44-46)** | Corrida 46: **89** vereditos `Perna1=REGISTRADOR` com `RPTR_Reg == WPTR` em valores reais (72, 80, 96...), e **zero** `WPTR_READBACK_DIVERGENTE`. 157 submissões aceitas, `Submetidas=160 Aposentadas=160 EmVoo=0` | `RPTR` avançar prova que o CP **buscou**. Não prova que executou o IB — o `RELEASE_MEM` que escreve a fence é emitido pelo KMD **no anel**, então fence retirada prova consumo do anel, não execução do IB (Diretriz Universal nº 3) |
+| **D0.6** | A fence do anel gráfico sai do poison | ✅ **FECHADO NO SILÍCIO (Corridas 44-46)** | **105 de 105** `Perna2=FENCE_ESCRITA_PELA_GPU` na Corrida 46, com o poison `0x43DAFFFE` excluído explicitamente e os estados `POISON_INTACTO` e `SLOT_ZERADO` distinguidos | `POISON_INTACTO_GPU_NAO_ESCREVEU` é o veredito honesto enquanto não sair. Fence grande passa comparação numérica — o poison tem de ser excluído explicitamente |
+| **D0.7** | O IB é executado, não apenas buscado | 🔬 **ABERTO — único item restante da D0** | Efeito declarado do IB conferido **byte a byte** no destino, sobre canários não-nulos plantados antes do disparo. **Estado atual: 105 de 105 `Perna3=NAO_EXECUTADA_SEM_GABARITO_DE_DESTINO`** — o tripé GFX está em **2 de 3 pernas**, e o log declara isso | Zero sobre zero é inconclusivo. Esta é a Perna 3, e é ela que separa "o CP consumiu o anel" de "o shader rodou" |
+
+---
+
+### Fase DX — A tradução de memória nos VMIDs de contexto  ⛔ **BLOQUEADOR ATUAL, substitui a D0**
+
+> **Criada em 20/09, depois das Corridas 45 e 46.** A Fase D0 foi criada porque o anel não
+> consumia; isso foi resolvido. O que impede o pixel agora é **anterior ao pixel e posterior ao
+> anel**: o shader morre.
+>
+> **Medição (P0, reproduzida em DOIS candidatos diferentes):**
+> `GCVM_L2_PROTECTION_FAULT_STATUS = 0x0070153C` nos cinco TDRs →
+> **`VMID=7`**, **`WALKER_ERROR=6`**, `MAPPING_ERROR=1`, `PERMISSION_FAULTS=3`, `CID=10`, em
+> `GpuVa=0x2431000` e `0x245B000`. No mesmo TDR, a onda: `SQ_WAVE_STATUS` com **`FATAL_HALT=1`**
+> e `SQ_WAVE_TRAPSTS` com **`XNACK_ERROR=1`**.
+>
+> **Leitura:** o shader pede um endereço, o caminhador de tabela de páginas não resolve, a onda
+> recebe XNACK e morre em halt fatal, e o CP fica esperando por quem nunca vai retirar — que é o
+> stall em `RPTR=24/WPTR=32` perseguido desde a Corrida 42.
+>
+> **Como isso passou despercebido:** o valor estava no log **em hexadecimal cru** dentro de
+> `[TDR_MEC_SNAPSHOT]` havia muitas corridas. A busca do projeto era pela string `GFXHUB_FAULT`,
+> que é outro sítio e sai **zero**. Não era lacuna de conhecimento; era lacuna de **leitura**.
+
+| ID | Entrega | Fecha como | Critério de conclusão | ...porém verificar |
+|---|---|---|---|---|
+| **DX.1** | Fault de tradução sai **decodificado**, não em hexadecimal cru | ✅ **FECHADO (OFFLINE, 20/09)** | `[TDR_GCVM_FAULT] DECODIFICADO` nomeia `Vmid`, `WalkerError`, `MappingError`, `PermissionFaults`, `Cid`, `Rw`, `MoreFaults` e converte a página em GpuVa. Ausência de fault é declarada, nunca silenciosa | Máscaras copiadas de `gc_10_1_0_sh_mask.h`. A primeira versão teve os shifts transcritos de cabeça e **os seis saíram errados** — decodificação errada é pior que hexadecimal cru |
+| **DX.2** | Composição do lote de GPUVA medida | ✅ **FECHADO NO SILÍCIO (Corrida 46)** | 11 de 11 `PUBLICACAO_COMPOSICAO` com **`Unmaps=0`** e `Maps > Livres`. **Refuta por medição** a hipótese de que reordenar unmaps antes de maps ajudaria: não há unmaps | O defeito é **capacidade real** (`Cap=1024`, o DWM pede 961 com 138 já vivos). `Teardown=0`: a reciclagem está sã |
+| **DX.3** | O GpuVa que falha veio de um lote nao publicado? | RETIRADO (Corrida 47) | A comparacao usava a conversao `<<12`, que a Corrida 47 REFUTOU (5/5 `<<20` DENTRO de faixa viva). O numero que sustentava a conclusao era do espaco errado, entao a conclusao CAI -- a independencia entre fault e publicacao NAO esta estabelecida. | Retirar conclusao e mais barato que defende-la: ela vinha de uma interpretacao que a medicao derrubou |
+| **DX.4** | **Por que o endereco nao traduz** | FECHADO (Corridas 47-49) | Tres corridas encadeadas: `<<20` e a granularidade (5/5 DENTRO de faixa viva, com alocacao nomeada); o segmento e **Seg=1 LOCAL_VRAM**, nao GART -- refutando memoria de sistema; e a caminhada mostrou que **a PTE PODE EXISTIR** (`PA=0x4519CC000`) enquanto outra falha no PDE de nivel 1. A Corrida 49 fechou a causa: **raiz trocada entre contextos no VMID 7**. | Tres hipoteses minhas morreram no caminho -- o deslocamento de 8 bits (era codificacao correta de CB_COLOR0_BASE), "o IB aponta para 36 MB" (eram ponteiros de 9,2 GB) e memoria de sistema. Todas por leitura de codigo, nenhuma por corrida |
+| **DX.6** | Os 16 contextos GCVM sao legiveis, e o inventario nao e aliasing | ✅ **FECHADO NO SILÍCIO (Corrida 51)** | Segundo inventário: `Mudaram=3 de 16`, VMID 0 mudou de `Cntl=0x007FFE80/PtBase=0` para `0x007FFE01/0xF40FF93000`, VMID 7 também mudou, e saiu `offsets DISTINTOS, inventario CONFIRMADO` | A allowlist de leitura cobre os 16; isso não autoriza escrita indiscriminada. A escrita continua sendo uma faixa separada e auditada |
+| **DX.7** | **Alocador de VMID por contexto** | ✅ **FECHADO NO SILÍCIO (Corridas 52–54)** | Mapa medido (52), instalação 32/32 (53) e o `INDIRECT_BUFFER` carregando o `poolVmid` (54, provado pelos faults nomearem VMID 1/2/3 e nunca o 7) | **Não consertou o fault.** A Corrida 56 mostrou por quê: a assinatura segue o ENDEREÇO, não o contexto. O alocador era pré-requisito para enxergar isso, não o conserto |
+| **DX.8** | **O silício aceita raiz nos VMIDs do pool** | ✅ **FECHADO NO SILÍCIO (Corrida 53)** | **32 de 32** `INSTALACAO LATERAL` com `InstallStatus=0 RecordStatus=0 Readback=1 Flush=1 Ready=1`, em **cinco** VMIDs distintos (1–5). Zero `LATERAL FALHOU`, zero `LATERAL PULADA`, zero exaustões | **Só 1–5 foram exercitados.** Os VMIDs 6 e 10–15 continuam sem escrita medida — a carga nunca pediu mais de 5 slots. Dizer "os doze funcionam" seria extrapolação |
+| **DX.9** | **O latch de fault é drenável e restaurável** | ✅ **FECHADO NO SILÍCIO (Corrida 56)** | 4/4 drenos com `ClearAcked=1`, `ClearIneficaz=0` e `CntlReadback == CntlAntes == 0x3FFFFFFC` | Antes disso, dez corridas leram um latch preso (`AceitaAtualizacoes=0`, medido na 55). `MoreFaults=1` **não** significa fila — significa algo ainda sem nome |
+| **DX.10** | **A caminhada do fault sobrevive à morte do contexto** | ✅ **FECHADO OFFLINE (21/09)** | `Bc250VmidPoolRootForFaultWalk` prefere a entrada viva `READY` e usa a última instalação comprovada retida quando o contexto já morreu; fonte, contexto e geração saem no log | A retenção fica fora da entrada reciclável e nunca dá autoridade à submissão. Build e safety audit PASS; mutação removendo a retenção reprovou. **NÃO VALIDADO EM HARDWARE** |
+| **DX.11** | **O que é o endereço `0x200040`** | ✅ **FECHADO OFFLINE (21/09)** | `0x200040 << 12 = 0x200040000` é resolvido contra o snapshot e publica handle, token imutável, nome, segmento e offset; ausência também é explícita | Corrida 58: 25/25 arenas de 64 páginas eram executáveis, mas o token RADV permaneceu `CLASSE_DESCONHECIDA`. Permissão validada no silício; identidade semântica ainda parcial |
+| **DX.12** | **A invalidação de TLB segue os VMIDs do pool** | ✅ **FECHADO NO SILÍCIO (Corrida 59)** | `Bc250VmidPoolReadyFlushMask` em fonte única; o flush soma os slots `READY` aos fixos 7/8/9, solta o `VmidPoolLock` antes do MMIO e publica `PoolReadyMask`/`FalhouMask`; flush parcial fecha o veredito global | Corrida 59: `PoolReadyMask` até `0x001E`, ACK em todos, zero falhas, `Polls=1`. **A hipótese caiu como causa suficiente** — a taxa de fault não mudou (3/7 contra 3/6 e 4/6). A cobertura está certa; ela não era o defeito |
+| **DX.13** | **A escrita de diretório de páginas é observável e fecha** | ✅ **FECHADO NO SILÍCIO (Corrida 60)** | Status do encode deixou de ser descartado (recusa não grava e se declara); `LargePage` no nível ≥ 1 deixou de ser invisível; `[PDE_WRITE] ARENA` publica o que escrevemos no índice 4096 e um tripwire recusa bits [5:3] | Corrida 60 respondeu: **escrevemos o índice 4096 101 vezes, sempre limpo**; zero tripwire, zero recusa. O PDE sujo da Corrida 59 não reproduziu — aquele achado era mais fraco do que eu o apresentei (as três caminhadas diziam `TABELA MUDOU`) |
+| **DX.14** | **O HDP é drenado antes da invalidação de TLB** | ✅ **FECHADO NO SILÍCIO (Corrida 61)** | `HDP_MEM_COHERENCY_FLUSH_CNTL` escrito com readback **antes** do laço por VMID; `HdpFlush=` publicado e falha declarada; o portão trava a ORDEM | Corrida 61: **75/75 `HdpFlush=1 Ok=1`** sob carga comparável, e o fault permaneceu. **A hipótese caiu** — a visibilidade da tabela não era a causa. A drenagem continua correta e fica; o alvo passa a ser o `PT_BASE` no instante da submissão |
+| **DX.15** | **O VMID é devolvido também no silício** | ✅ **FECHADO NO SILÍCIO (Corrida 62)** | `Bc250GcvmUninstallVmid` desarma `CNTL`, zera os endereços e invalida a TLB daquele VMID, nessa ordem, com readback e falha declarada; chamado no `Release` fora do lock | Corrida 62: **24/24 `status=0 Readback=1 Flush=1`**, zero falhas, zero BugCheck — e o fault permaneceu. Fecha a Lei 5 (APPLY sem TEARDOWN) e **não era a causa** |
+| **DX.17** | **Readback do PDE da arena: escrevemos limpo, leem sujo** | ✅ **FECHADO NO SILÍCIO (Corrida 64)** | A escrita em `destination[4096]` é lida de volta pelo mesmo ponteiro e comparada; divergência é declarada e **não** corrigida; `[PDE_ARENA_CONFRONTO]` põe o último valor escrito e o que o TDR encontrou no **mesmo log** | Corrida 64: **99 de 99 escritas limpas** com readback idêntico (25 não-nulas, todas `0x...001`, `Reservado[5:3]=0`), **zero DIVERGENCIA**. Provou no silício que a escrita da CPU chega íntegra à memória física; o defeito NÃO é da CPU |
+| **DX.5** | A tradução passa a funcionar | 🔬 CORRIDA | O fault deixa de ser latchado e as ondas param de morrer em `FATAL_HALT` | Corrida 58: escrita em `0x2469A6000` falhou apesar de PTE R/W/X válida e contemporânea na visão da CPU. Exigir submissão GFX completando; ausência isolada de fault não fecha |
 
 ---
 
 ### Fase D1 — Primeiro pixel não-nulo, por GPU, por um backend só
 
-> ⚠️ **Nada em D1.6–D1.8 é alcançável enquanto D0.5–D0.7 não fecharem.** Na corrida
-> `2026-09-18_14-20-07` houve 379 draws Vulkan nativos e 8 `DdiPresent`, com `NonZero=0/256` em
-> todas as amostras: não há pixel para apresentar porque o anel não executa.
+> ⚠️ **Nada em D1.6–D1.8 é alcançável enquanto a Fase DX não fechar.** Atualizado em 20/09: o
+> motivo mudou. Antes era "o anel não executa" — isso foi resolvido (D0.5/D0.6). Agora é "o
+> shader morre por falha de tradução". Na Corrida 46 houve 157 submissões gráficas, 89 com
+> `RPTR == WPTR`, e ainda assim **62 amostras com `NonZero=0/256`**: não há pixel porque a onda
+> que o produziria morre antes.
 
 
 | ID | Entrega | Fecha como | Critério de conclusão | ...porém verificar |
@@ -166,7 +298,14 @@ Qualquer uma sem resposta mantém a tarefa 🟡, por mais que o código esteja p
 
 ## 3. Orçamento de corridas
 
-O plano inteiro cabe em **6 corridas físicas de marco** (era 5 antes de a Fase D0 existir). Cada uma
+> ⚠️ **ESTE ORÇAMENTO ESTOUROU, e o registro tem de dizer isso.** O plano previa **6 corridas de
+> marco**; foram gastas cerca de **50**. Não foi desperdício: as Corridas 44 a 50 fecharam uma
+> cadeia diagnóstica inteira, e três achados — base `>>8` no restart, fault de VMID 7, e raiz
+> trocada entre contextos — **só existem porque foram medidos**, um por corrida. Mas a frase
+> "5 corridas no plano inteiro" na tabela de custos abaixo é **falsa** e fica mantida apenas como
+> registro do que se estimou em 17/09.
+
+O plano previa caber em **6 corridas físicas de marco**. Cada uma
 fecha um lote — e cada uma produz informação nos dois desfechos, o que é a exigência da Lei 9.
 
 | Corrida de Marco | Fecha | Pergunta única | Se refutar |
@@ -185,7 +324,20 @@ fecha um lote — e cada uma produz informação nos dois desfechos, o que é a 
 - **Corrida 17 (17/09 19:31):** `0x133` comprovadamente extinto no hardware; isolamento de BugCheck `0x139` (CFG de DPC não inicializada), corrigido com inicialização estrita no `Bc250DxgkDdiAddDeviceActive`.
 - **Corrida 18 (17/09 20:09):** `0x133` e `0x139` extintos no silício; BugCheck `0x0A` isolado (KDPC compartilhada entre timer e `KeInsertQueueDpc`), corrigido por desacoplamento estrito de DPCs.
 - **Corrida de 18/09 14:20:07 (lab 3.184.1.0, SYS `E7E7A3B2…`) — A CORRIDA QUE CRIOU A FASE D0:** 4 de 4 submissões gráficas recusadas com `WPTR_READBACK_DIVERGENTE` (escrevemos 12, o registrador devolveu 0), transporte MAPEADO e `Write32` aceito. Zero TDR, zero BugCheck, zero `DEVICE_REMOVED`, zero `GFXHUB_FAULT`. SDMA0 com 313 submissões e 287 `TRIPE_PROVADO` no mesmo log, provando que MMIO de ponteiro de anel funciona — só não no `CP_RB0`. `STALL_BASELINE` tirada antes de qualquer submissão refutou atribuir o stall ao nosso IB. Classificador de IB corrigido: 4/4 `IB_LINEAR_CONFIRMADO`. 379 draws Vulkan nativos e `NonZero=0/256` em tudo: tela preta pela causa agora nomeada. **Veredito: PARCIAL — avanço diagnóstico decisivo, zero avanço de entrega.**
-- **Próxima corrida: Marco 0 (D0.5 – D0.7)**, não Marco 1. A pergunta é se o CP busca e executa, não se há pixel.
+- **Corrida 44 (20/09 14:39, lab 3.202.1.0):** H44 confirmada — restart do CP_RB0 com `BASE = GpuVa>>8`, 5/5 em `TDR_GFX_RESTART_BASE Pass=1` e `TDR_GFX_RESTART_PROOF PASS`. **167 submissões GFX contra 1 na corrida anterior**, fences até 173 escritas pela GPU. Zero BugCheck. Foi aqui que D0.5/D0.6 começaram a fechar.
+- **Corrida 45 (20/09 20:49, lab 3.205.1.0):** a sonda de onda leu uma onda inteira — `FATAL_HALT=1`, `XNACK_ERROR=1` — e a análise achou `FaultStatus=0x0070153C` (`VMID=7`, `WALKER_ERROR=6`) nos cinco TDRs, em hexadecimal cru, que ninguém havia decodificado. **Veredito: desfecho D** (a sonda não restaurou o seletor; foi desarmada).
+- **Corrida 46 (20/09 21:37, lab 3.206.1.0):** critério fechou nos três itens. Fault **reproduzido** em outro candidato; 11/11 `PUBLICACAO_COMPOSICAO` com `Unmaps=0` → a publicação de GPUVA falha por **capacidade**, não por ordem. 89 `RPTR == WPTR`, 105/105 fence pela GPU, zero BugCheck (terceira seguida).
+- **Corrida 47 (20/09 22:07, lab 3.207.1.0):** o discriminador de granularidade fechou o garfo — 5/5 `<<20` DENTRO de faixa viva com alocação nomeada, `<<12` num vazio de gigabytes. Duas alocações: `0xF3` (`Size=0xA8C000` = 2560x1080x4) e `0xDF`.
+- **Corrida 48 (21/09 07:58, lab 3.209.1.0):** os DOIS desfechos na mesma corrida — em `0x243100000` a caminhada RESOLVEU (`PA=0x4519CC000`), em `0x242100000` o PDE de nível 1 estava ZERO. As faixas são **`Seg=1 LOCAL_VRAM`**, refutando memória de sistema. O defeito deixou de ser "PTE nunca escrita" e virou dessincronização no tempo.
+- **Corrida 49 (21/09 08:46, lab 3.210.1.0):** **a causa.** 5 comparações de raiz, TODAS divergentes (2, 8, 9, 14, 15 de 16 carimbos); 6 raízes distintas em 82 submissões; o mesmo IB sob três raízes. Contextos disputam o VMID 7.
+- **Corrida 50 (21/09 09:34, lab 3.211.1.0):** inventário dos 16 contextos — `EmUso=0 Livres=16 Ilegiveis=0`. VMID por contexto é viável com folga. Coleta interrompida por reset manual; cauda resgatada (2.690.800 bytes, SHA-256 `E11D8D24…`), e o inventário teve de ser lido do log cumulativo vivo — **defeito de coleta a consertar**.
+- **Corrida 51 (21/09 10:00, lab 3.212.1.0):** segundo inventário fechou o aliasing: 3 de 16 mudaram, incluindo VMID 0 (`0x007FFE80/0` → `0x007FFE01/0xF40FF93000`) e o alvo VMID 7; veredito `offsets DISTINTOS, inventario CONFIRMADO`. DX.6 fechado.
+- **Corrida 52 (21/09 11:24, lab 3.213.1.0, SYS `831C79B7…`):** desfecho A do critério prévio. Quatro faults com 2/3/3/3 contextos vivos; a raiz do TDR coincide com um contexto e diverge dos demais. 27 atribuições, 24 liberações, zero exaustões, pico simultâneo 4. Cinco TDR/restart, mas só quatro faults decodificados; um declarou `SEM FAULT LATCHADO`. Zero BugCheck e rollback `RECOVERY_OK_ONLINE`.
+- **Faixa offline 1 pós-Corrida 52 concluída:** pool serializado por spin lock dedicado; aquisição, raiz, liberação e snapshot de TDR compartilham a mesma proteção.
+- **Faixa offline 2 pós-Corrida 52 concluída:** leitura e escrita MMIO permitem somente os sete registradores exatos dos VMIDs derivados do pool. Reservados e vizinhos têm testes negativos; build e auditorias passaram, com portões provados por mutação.
+- **Faixa offline 3 pós-Corrida 52 concluída:** `InstallVmid` preserva a identidade até o flush e o pool distingue raiz observada de raiz realmente instalada, com invalidação de estado velho em falha e reciclagem. O miniport ainda não popula esse estado.
+- **Faixa offline 4 pós-Corrida 52 concluída:** corrigida a janela de `DestroyContext`: `IN_FLIGHT_SUBMISSIONS` preserva GPUVA, vínculo e VMID; a devolução só ocorre depois da destruição concluída. Teste integrado e mutação do portão passaram.
+- **Próxima faixa:** integrar a instalação no `poolVmid` e registrar seu resultado por entrada, mantendo ainda o `INDIRECT_BUFFER` em VMID 7 para isolar a mudança. Na faixa seguinte, instalação e pacote passam juntos ao mesmo VMID e o diagnóstico de fault deixa de assumir 7. Não empacotar nem gastar corrida entre essas faixas offline.
 
 **Regra:** corrida que não tem critério escrito **antes** não é corrida, é tentativa. Critério
 escrito depois vira racionalização do que aconteceu.
@@ -211,7 +363,7 @@ Imposta por `CLAUDE.md` e pelo histórico. Pular qualquer passo já custou corri
 
 ## 5. Armadilhas já pagas — reler antes de marcar qualquer ✅
 
-Treze vezes o portão, o teste ou o relato carimbou o falso sucesso.
+Dezoito vezes o portão, o teste ou o relato carimbou o falso sucesso — ou a medição certa existia e não foi lida.
 
 | # | O que aconteceu | Como não repetir |
 |---|---|---|
@@ -227,6 +379,11 @@ Treze vezes o portão, o teste ou o relato carimbou o falso sucesso.
 | 10 | 18/09 — **"submissão aceita" contada como "submissão executada"**, três corridas seguidas. `SUBMIT SUCESSO ... NewWptr=12` era o KMD relatando o **seu próprio shadow**; o registrador estava em 0 e o CP nunca buscou nada. Isso inflou o registro de progresso de três corridas | Ponteiro de anel só conta como avanço com **readback do registrador**. `RPTR` avançando prova busca; fence sobre poison prova consumo do anel; byte a byte prova execução do IB. São três coisas distintas (Diretriz Universal nº 3) |
 | 11 | 18/09 — **a correção fail-closed apagou a própria telemetria que a mediria.** Recusar a submissão antes do retirement fez `GFX_TRIPE_VEREDITO` sair zero vezes, na corrida em que as Pernas 1 e 2 foram consertadas | Veredito de medição tem de ser emitido no caminho de **recusa** também. Instrumentação que só existe no caminho de sucesso desaparece exatamente quando é necessária |
 | 12 | 18/09 — **decodificação de registrador afirmada sem conferir o dono do bit**, duas corridas seguidas. `CpStalled1=0x00000C00` foi lido como `GFX_CNTX_NOT_AVAIL_TO_ME \| ME_WAIT_ON_AVAIL_BUFFER`, que são campos do **`CP_STALLED_STAT2`** (`:6466-6467`), não do STAT1 (cujos bits 10/11 são `ME_HAS_ACTIVE_CE_BUFFER_FLAG` / `ME_HAS_ACTIVE_DE_BUFFER_FLAG`, `:6428-6429`). O STAT2 medido é `0x00000000` | Nome de campo vem do header, com número de linha citado. Dois registradores irmãos têm campos homônimos em posições diferentes — conferir **qual** registrador antes de nomear o bit |
+| 14 | 20/09 — **medição existente em hexadecimal cru equivale a medição ausente.** `FaultStatus=0x0070153C` estava no log havia corridas, dizendo `VMID=7 WALKER_ERROR=6`; ninguém leu porque a busca era pela string `GFXHUB_FAULT`, que sai zero | Todo registrador de diagnóstico sai **decodificado por campo**, com as máscaras copiadas do header. Hexadecimal num campo que ninguém lê não é evidência |
+| 15 | 20/09 — **decodificação com shifts transcritos de cabeça: os seis saíram errados** (`VMID` em 18 no lugar de 20, `WALKER_ERROR` em 8 no lugar de 1, `RW` em 31 no lugar de 18) | Máscara vem do header por cópia literal, nunca de memória. Decodificação errada é pior que o cru: o cru não mente |
+| 16 | 20/09 — **linha de telemetria nova sumiu por amostragem.** `PUBLICACAO_COMPOSICAO` saiu **zero vezes** em 10 falhas; a isenção do amostrador casa por **substring** (`FALHA`, `OCUPACAO`, `PASS`) e o nome escolhido não tinha token isento | Toda linha nova em caminho raro e crítico precisa conferir a lista de isenção do amostrador **antes** da corrida |
+| 17 | 20/09 — **quase-corrida gasta com perfil rebaixado.** O empacotador aceitou `DISPLAY_LAB` em modo READ-ONLY para um ensaio que exige `DISPLAY_RENDER_LAB`; o audit do pacote deu PASS porque confere o **pacote**, não a **intenção** | O binder agora registra o perfil ligado e **recusa** candidato mais fraco que o do último bind, nomeando a capacidade que caiu |
+| 18 | 20/09 — **um conserto quase implementado sem medir o efeito.** Reordenar unmaps antes de maps parecia obviamente certo; a medição mostrou **`Unmaps=0`** em 11 de 11 lotes — teria tido efeito zero | Fix cujo efeito não pode ser previsto por medição vira **telemetria primeiro**, conserto depois |
 | 13 | 18/09 — **verificação de string no binário errado.** `ONLINE SUCESSO`, que provadamente executou, aparece como **ausente** no `bc250mcdm.sys` de `build-contract.bat`, que é a *MCDM DEVELOPMENT IMAGE* | R4 se confere no SYS **assinado** de `package/output_lab`. Positivos valem em qualquer binário; **negativos só valem no assinado** |
 
 ---

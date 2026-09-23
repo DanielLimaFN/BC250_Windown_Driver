@@ -265,6 +265,93 @@ static int Bc250RunGpuvaSnapshotContractTest(void)
             c314Reader.Space->PageTableEpoch) == BC250_GPUVA_OK);
         Bc250GpuvaSnapshotRelease(&c314Store, &c314Reader);
     }
+
+    /*
+     * D3 (20/09) -- REPLAY DA CORRIDA 44 E COMPOSICAO DO LOTE.
+     *
+     * Na Corrida 44 houve SEIS PUBLICACAO_FALHA e em TODAS FailedIndex saiu
+     * exatamente igual a Reusable do slot ativo, com Mapped+Reusable=Cap=1024:
+     *   Batch=832 FailedIndex=655 Mapped=369    Batch=657 FailedIndex=640 Mapped=384
+     *   Batch=721 FailedIndex=603 Mapped=421    Batch=695 FailedIndex=460 Mapped=564
+     *   Batch=513 FailedIndex=430 Mapped=594    Batch=657 FailedIndex=415 Mapped=609
+     *
+     * O mecanismo e' que Bc250GpuvaCopySnapshot copia o slot ATIVO para o
+     * inativo e o lote entra POR CIMA: o teto util e' Cap menos Mapped. Este
+     * caso reproduz o primeiro par (369 vivas, lote de 832 maps) e exige o
+     * indice EXATO 655 -- se a aritmetica mudar, o teste reprova em vez de
+     * aceitar "falhou em algum lugar".
+     *
+     * E exige a COMPOSICAO: Maps e Unmaps contados antes de qualquer mutacao.
+     * Sem esse numero nao se sabe se aplicar unmaps antes de maps derrubaria o
+     * pico ou se e' capacidade real, e propor a reordenacao seria fix de efeito
+     * imprevisivel.
+     */
+    {
+        static BC250_GPUVA_SNAPSHOT_STORE d3Store;
+        static BC250_GPUVA_SPACE d3Scratch;
+        static BC250_GPUVA_RANGE_RECORD d3Batch[832];
+        static uint32_t d3Map[832];
+        const uint32_t kLive = 369u;
+        const uint32_t kBatch = 832u;
+        long d3Slot;
+
+        CHECK(Bc250GpuvaSnapshotStoreInitialize(&d3Store, 34u) == BC250_GPUVA_OK);
+        CHECK(Bc250GpuvaSpaceInitialize(&d3Scratch, 34u) == BC250_GPUVA_OK);
+        /* O teto tem de ser 1024 -- o replay so' vale com a capacidade medida. */
+        CHECK(BC250_GPUVA_SPACE_MAX_RANGES == 1024u);
+
+        d3Slot = d3Store.ActiveSlot;
+        for (uint32_t i = 0u; i < kLive; ++i) {
+            BC250_GPUVA_RANGE_RECORD *r = &d3Store.Slots[d3Slot].Ranges[i];
+            memset(r, 0, sizeof(*r));
+            r->State = BC250_GPUVA_RANGE_MAPPED;
+            r->BaseGpuVa = 0x200000ull + (uint64_t)i * 0x1000ull;
+            r->Size = 0x1000ull;
+            r->EndGpuVa = r->BaseGpuVa + r->Size;
+            r->OwnerProcess = (BC250_MCDM_HANDLE)0x4444;
+            r->Permissions = BC250_PTE_READABLE;
+            r->IsResident = 1u;
+            d3Store.Slots[d3Slot].SortedIndices[i] = i;
+        }
+        d3Store.Slots[d3Slot].SortedCount = kLive;
+
+        /* Lote disjunto das vivas, para que cada entrada consuma slot novo. */
+        for (uint32_t i = 0u; i < kBatch; ++i) {
+            memset(&d3Batch[i], 0, sizeof(d3Batch[i]));
+            d3Batch[i].State = BC250_GPUVA_RANGE_MAPPED;
+            d3Batch[i].BaseGpuVa = 0x40000000ull + (uint64_t)i * 0x1000ull;
+            d3Batch[i].Size = 0x1000ull;
+            d3Batch[i].EndGpuVa = d3Batch[i].BaseGpuVa + d3Batch[i].Size;
+            d3Batch[i].OwnerProcess = (BC250_MCDM_HANDLE)0x4444;
+            d3Batch[i].Permissions = BC250_PTE_READABLE;
+            d3Batch[i].IsResident = 1u;
+            d3Map[i] = 1u;
+        }
+
+        CHECK(Bc250GpuvaSnapshotPublishBatch(&d3Store, &d3Scratch,
+            d3Batch, d3Map, kBatch, NULL) == BC250_GPUVA_NO_SPACE);
+        /* O indice EXATO da Corrida 44: Cap - Mapped = 1024 - 369 = 655. */
+        CHECK(d3Store.LastPublishFailedRangeIndex ==
+              (long)(BC250_GPUVA_SPACE_MAX_RANGES - kLive));
+        CHECK(d3Store.LastPublishFailedRangeIndex == 655L);
+        CHECK(d3Store.LastPublishRangeCount == (long)kBatch);
+        /* Composicao: lote 100% MAP -- reordenar unmaps NAO ajudaria aqui. */
+        CHECK(d3Store.LastPublishMapCount == (long)kBatch);
+        CHECK(d3Store.LastPublishUnmapCount == 0L);
+        /* A publicacao falhada NAO pode trocar o slot ativo nem a geracao. */
+        CHECK(d3Store.ActiveSlot == d3Slot);
+
+        /*
+         * CONTRAPONTO, para a assercao acima nao virar carimbo: o MESMO lote,
+         * agora metade unmaps, tem composicao diferente -- e e' exatamente essa
+         * diferenca que a proxima corrida vai medir no silicio.
+         */
+        for (uint32_t i = 0u; i < kBatch; i += 2u) { d3Map[i] = 0u; }
+        (void)Bc250GpuvaSnapshotPublishBatch(&d3Store, &d3Scratch,
+            d3Batch, d3Map, kBatch, NULL);
+        CHECK(d3Store.LastPublishMapCount == (long)(kBatch / 2u));
+        CHECK(d3Store.LastPublishUnmapCount == (long)(kBatch / 2u));
+    }
     return 0;
 }
 

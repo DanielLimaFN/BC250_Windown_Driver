@@ -3,6 +3,7 @@
 #include "bc250_display_ddi.h"
 #include "bc250_probe_telemetry.h"
 #include "bc250_sdma_present.h"
+#include "../core/bc250_golden_settings_contract.h"
 #include "bc250_cp_firmware_manifest.h"
 #include "../core/bc250_adapter_info_contract.h"
 #include "../core/bc250_allocation_abi_contract.h"
@@ -47,12 +48,43 @@ static uint32_t Bc250ActiveVmidRead32(
 static uint32_t Bc250ActiveVmidWrite32(
     void *Context, uint32_t ByteOffset, uint32_t Value);
 static uint32_t Bc250ActiveFlushMappedGfxhubTlb(void *Context);
+/*
+ * Declaracao adiantada: o caminho de TDR precisa caminhar a tabela do VMID 7
+ * no endereco que o fault nomeou, e a definicao vive bem depois neste arquivo.
+ */
+static BOOLEAN Bc250ActiveWalkGpuVa(
+    _In_ const char *Label,
+    _In_ uint64_t GpuVa,
+    _In_ uint64_t RootMcAddress,
+    _In_ uint64_t VramMcBase,
+    _Out_ uint64_t *ResolvedPhysical);
 static uint32_t Bc250ActiveFlushComputeTlb(void *Context);
 static uint32_t Bc250ActiveFlushVmid8Only(void *Context);
 static uint32_t Bc250ActiveFlushUserVmidOnly(void *Context);
+static uint32_t Bc250ActiveFlushVmidTlb(void *Context, uint32_t Vmid);
+static uint32_t Bc250ActiveFaultLatchRead32(
+    void *Context, uint32_t ByteOffset, uint32_t *Value);
+static uint32_t Bc250ActiveFaultLatchWrite32(
+    void *Context, uint32_t ByteOffset, uint32_t Value);
 static NTSTATUS Bc250ActiveEnsureGlobalMmu(
     BC250_DXGK_ACTIVE_CONTEXT *Context,
     const char *Origin);
+
+/* Nome estavel do token que o snapshot de GPUVA leva ate o TDR. */
+static const char *Bc250ActiveAllocationTokenClassName(uint64_t Token)
+{
+    switch (BC250_ALLOCATION_TOKEN_CLASS(Token)) {
+    case BC250_ALLOCATION_TOKEN_CLASS_PRIMARY: return "PRIMARY";
+    case BC250_ALLOCATION_TOKEN_CLASS_SHADOW: return "SHADOW";
+    case BC250_ALLOCATION_TOKEN_CLASS_STAGING: return "STAGING";
+    case BC250_ALLOCATION_TOKEN_CLASS_GDI: return "GDI";
+    case BC250_ALLOCATION_TOKEN_CLASS_CPU_VISIBLE: return "CPU_VISIBLE";
+    case BC250_ALLOCATION_TOKEN_CLASS_COMMAND: return "COMMAND";
+    case BC250_ALLOCATION_TOKEN_CLASS_PROOF: return "PROOF";
+    case BC250_ALLOCATION_TOKEN_CLASS_RESOURCE: return "RESOURCE";
+    default: return Token == 0ull ? "SEM_TOKEN" : "CLASSE_DESCONHECIDA";
+    }
+}
 
 /*
  * Marcador de proveniencia do bring-up inseguro.
@@ -669,6 +701,113 @@ static BC250_GFX_RING_TXN_STATUS Bc250ActiveRunGfxRingBringup(
 static NTSTATUS Bc250ActiveGfxEngineOffline(
     BC250_DXGK_ACTIVE_CONTEXT *Context);
 
+/*
+ * DX.26 -- snapshot SOMENTE LEITURA dos golden settings do GC e do CSB.
+ *
+ * Fase A das auditorias externas (docs/338): (1) a tabela de 34 golden settings
+ * do Cyan Skillfish nunca foi aplicada nem lida no silicio; (2) o KMD nunca
+ * programa RLC_CSIB_ADDR_LO/HI/LENGTH, e o IB do RADV depende do CLEAR_STATE
+ * para PA_SC_GENERIC_SCISSOR_*. Aqui so' se MEDE: duas leituras por registrador,
+ * comparacao apenas dos bits cobertos pela mascara. Nenhuma escrita. Os
+ * registradores de banco (SE/SA) sao lidos na selecao GRBM corrente, que e'
+ * registrada primeiro (GRBM_GFX_INDEX esta na tabela).
+ */
+#define BC250_REG_RLC_CSIB_ADDR_LO_SNAP 0x0003B288u /* (0xA000 + 0x4CA2) * 4 */
+#define BC250_REG_RLC_CSIB_ADDR_HI_SNAP 0x0003B28Cu
+#define BC250_REG_RLC_CSIB_LENGTH_SNAP  0x0003B290u
+static void Bc250ActiveGoldenSnapshotReadOnly(_In_ BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    uint32_t count = 0u, diverge = 0u, unstable = 0u, unread = 0u;
+    const BC250_GOLDEN_ENTRY *table = Bc250GoldenSettingsGetTable(&count);
+    uint32_t lo = 0u, hi = 0u, len = 0u;
+    uint32_t okLo, okHi, okLen;
+
+    for (uint32_t i = 0; table != NULL && i < count; ++i) {
+        uint32_t v1 = 0u, v2 = 0u;
+        uint32_t r1 = Bc250MmioTopologyRead32(&Context->Core.MmioTransport, table[i].BarOffset, &v1);
+        uint32_t r2 = Bc250MmioTopologyRead32(&Context->Core.MmioTransport, table[i].BarOffset, &v2);
+        BOOLEAN stable = (r1 && r2 && v1 == v2);
+        BOOLEAN match = stable && ((v1 & table[i].Mask) == (table[i].ValueOr & table[i].Mask));
+        if (!r1 || !r2) ++unread;
+        else if (!stable) ++unstable;
+        else if (!match) ++diverge;
+        Bc250DisplayLog("[GOLDEN_SNAPSHOT] %-34s base=%u off=0x%05X atual=0x%08X mascara=0x%08X esperado=0x%08X -> %s\n",
+            table[i].Name, table[i].BaseIndex, table[i].BarOffset, v1, table[i].Mask,
+            table[i].ValueOr & table[i].Mask,
+            (!r1 || !r2) ? "NAO_LIDO" : (!stable ? "INSTAVEL" : (match ? "IGUAL" : "DIFERENTE")));
+    }
+    Bc250DisplayLog("[GOLDEN_SNAPSHOT] RESUMO: %u registradores, %u DIFERENTES, %u INSTAVEIS, %u NAO_LIDOS -- somente leitura, nada foi escrito\n",
+        count, diverge, unstable, unread);
+
+    okLo = Bc250MmioTopologyRead32(&Context->Core.MmioTransport, BC250_REG_RLC_CSIB_ADDR_LO_SNAP, &lo);
+    okHi = Bc250MmioTopologyRead32(&Context->Core.MmioTransport, BC250_REG_RLC_CSIB_ADDR_HI_SNAP, &hi);
+    okLen = Bc250MmioTopologyRead32(&Context->Core.MmioTransport, BC250_REG_RLC_CSIB_LENGTH_SNAP, &len);
+    Bc250DisplayLog("[CSIB_SNAPSHOT] RLC_CSIB_ADDR_LO=0x%08X HI=0x%08X LENGTH=0x%08X lidos=%u/3 -> %s\n",
+        lo, hi, len, okLo + okHi + okLen,
+        (okLo + okHi + okLen) != 3u ? "NAO_LIDO" :
+        (len == 0u ? "CSB NAO PROGRAMADO (LENGTH=0): CLEAR_STATE nao tem de onde carregar os defaults"
+                   : "CSB PROGRAMADO por alguem antes de nos (endereco/tamanho acima)"));
+}
+
+/*
+ * DX.27 -- ESCRITOR UNICO do RLC_CSIB_ADDR_HI/LO/LENGTH (gfx_v10_0_init_csb).
+ *
+ * A Corrida 72 leu os tres em zero: o CLEAR_STATE que o RADV emite em todo IB
+ * nao tinha de onde carregar os padroes de contexto. O upstream, no caminho de
+ * carga por PSP (o nosso), escreve estes tres com o RLC ja rodando, depois do
+ * autoload e antes do cp_gfx_start (gfx_v10_0_rlc_resume). LENGTH e' em DWORDS
+ * (clear_state_size = get_csb_size; o BO tem dws*4 bytes, amdgpu_gfx_rlc_init_csb).
+ *
+ * Lei 5: snapshot -> escrita -> readback -> se nao conferir, restaura o
+ * snapshot e falha fechado. Offsets com procedencia: gc_10_1_0_offset.h:9529-9534
+ * (0x4CA2..0x4CA4, BASE_IDX 1 -> bytes 0x3B288/0x3B28C/0x3B290).
+ */
+static BOOLEAN Bc250ActiveProgramClearStateBuffer(
+    _In_ BC250_DXGK_ACTIVE_CONTEXT *Context,
+    uint64_t CsbMc,
+    uint32_t CsbDwords)
+{
+    BC250_MMIO_TOPOLOGY_CONTEXT *mmio = &Context->Core.MmioTransport;
+    const uint32_t wantHi = (uint32_t)(CsbMc >> 32);
+    const uint32_t wantLo = (uint32_t)(CsbMc & 0xFFFFFFFCull);
+    uint32_t loB = 0u, hiB = 0u, lenB = 0u, lo = 0u, hi = 0u, len = 0u;
+    uint32_t wOk = 0u, rOk = 0u;
+    BOOLEAN pass;
+
+    (void)Bc250MmioTopologyRead32(mmio, BC250_REG_RLC_CSIB_ADDR_LO_SNAP, &loB);
+    (void)Bc250MmioTopologyRead32(mmio, BC250_REG_RLC_CSIB_ADDR_HI_SNAP, &hiB);
+    (void)Bc250MmioTopologyRead32(mmio, BC250_REG_RLC_CSIB_LENGTH_SNAP, &lenB);
+
+    wOk += Bc250MmioTopologyWrite32(mmio, BC250_REG_RLC_CSIB_ADDR_HI_SNAP, wantHi);
+    wOk += Bc250MmioTopologyWrite32(mmio, BC250_REG_RLC_CSIB_ADDR_LO_SNAP, wantLo);
+    wOk += Bc250MmioTopologyWrite32(mmio, BC250_REG_RLC_CSIB_LENGTH_SNAP, CsbDwords);
+
+    rOk += Bc250MmioTopologyRead32(mmio, BC250_REG_RLC_CSIB_ADDR_LO_SNAP, &lo);
+    rOk += Bc250MmioTopologyRead32(mmio, BC250_REG_RLC_CSIB_ADDR_HI_SNAP, &hi);
+    rOk += Bc250MmioTopologyRead32(mmio, BC250_REG_RLC_CSIB_LENGTH_SNAP, &len);
+
+    pass = (wOk == 3u && rOk == 3u && lo == wantLo && hi == wantHi && len == CsbDwords);
+    Bc250DisplayLog("[CSIB_PROGRAM] antes LO=0x%08X HI=0x%08X LEN=0x%08X | escrito LO=0x%08X HI=0x%08X LEN=%u (dwords) | readback LO=0x%08X HI=0x%08X LEN=%u escritas=%u/3 leituras=%u/3 -> %s\n",
+        loB, hiB, lenB, wantLo, wantHi, CsbDwords, lo, hi, len, wOk, rOk,
+        pass ? "PASS" : "FALHOU (snapshot restaurado)");
+    if (!pass) {
+        (void)Bc250MmioTopologyWrite32(mmio, BC250_REG_RLC_CSIB_ADDR_HI_SNAP, hiB);
+        (void)Bc250MmioTopologyWrite32(mmio, BC250_REG_RLC_CSIB_ADDR_LO_SNAP, loB);
+        (void)Bc250MmioTopologyWrite32(mmio, BC250_REG_RLC_CSIB_LENGTH_SNAP, lenB);
+    }
+    return pass;
+}
+
+/*
+ * PA_SC_TILE_STEERING_OVERRIDE que vai no CSB. O upstream calcula NUM_SC,
+ * NUM_RB_PER_SC e NUM_PACKER_PER_SC a partir do gc_info da IP discovery do
+ * GFX10.1 (gfx_v10_0_init_pa_sc_tile_steering_override); nao temos esse gc_info
+ * medido deste chip. 0 e' o valor que o upstream usa no GFX10.3 e deixa o
+ * override desligado (ENABLE=0, gc_10_1_0_sh_mask.h:22524). DIVERGENCIA
+ * DECLARADA do upstream 10.1, classe H.
+ */
+#define BC250_GFX10_CSB_TILE_STEERING_OVERRIDE 0u
+
 static NTSTATUS Bc250ActiveGfxEngineOnline(BC250_DXGK_ACTIVE_CONTEXT *Context)
 {
     BC250_VRAM_ALLOCATOR *allocator;
@@ -681,7 +820,8 @@ static NTSTATUS Bc250ActiveGfxEngineOnline(BC250_DXGK_ACTIVE_CONTEXT *Context)
     BC250_GFX_RING_TXN_STATUS status;
     const uint64_t ringBytes = 65536ull; /* 64 KB = 16384 dwords */
     const uint64_t auxBytes = 4096ull;  /* Writeback + Shadow + Fence */
-    const uint64_t totalBytes = ringBytes + auxBytes;
+    const uint64_t csbBytes = 4096ull;  /* DX.27: Clear State Buffer (949 dw = 3796 bytes) */
+    const uint64_t totalBytes = ringBytes + auxBytes + csbBytes;
     const BC250_RESOLVED_BAR_RESOURCE *vramBar = NULL;
     PVOID cpuMapped = NULL;
     uint32_t bIdx;
@@ -851,15 +991,21 @@ static NTSTATUS Bc250ActiveGfxEngineOnline(BC250_DXGK_ACTIVE_CONTEXT *Context)
     InterlockedExchange(&Context->GfxEngine.State, 1); /* ONLINE */
 
     /*
-     * PREAMBULO CANONICO GFX10 (CONTEXT_CONTROL + CLEAR_STATE + RELEASE_MEM)
+     * DX.27 -- CLEAR STATE DO GFX10 COMO NO UPSTREAM (uma variavel: CSB + preambulo).
      *
-     * Sem esta sequencia no CP_RB0, o Scan Converter e o Primitive Assembler
-     * permanecem sem contexto de hardware inicializado no silicio. Na Corrida 30,
-     * a primeira submissao 3D causou CpStalled2 = 0x00210000 (MEQ_TO_ME_NOT_RDY_TO_RCV
-     * e EOPD_FIFO_NEEDS_SC_EOP_DONE), travando a aposentadoria da fence EOP.
-     * Na Corrida 31, a presenca de PACKET3_SET_BASE com CE_PARTITION_BASE=2 causou
-     * ME_HAS_ACTIVE_CE_BUFFER_FLAG=1, parando o ME no dword 4 (RPTR=4) a espera do CE.
-     * Esta sequencia sem SET_BASE e' a comprovada no silicio desde o Gate K (bc250ctl probe).
+     * Ate a Corrida 72 o preambulo de boot era PREAMBLE_CNTL(0), CONTEXT_CONTROL,
+     * PREAMBLE_CNTL(1), CLEAR_STATE -- sem nenhum SET_CONTEXT_REG entre as marcas e
+     * com payloads que NAO sao os do upstream (BEGIN/END_CLEAR_STATE = (2<<28) e
+     * (3<<28), nvd.h:395-396). E o RLC_CSIB estava em zero (Corrida 72, P0).
+     *
+     * Agora, na ordem do upstream (rlc_resume -> cp_gfx_start):
+     *   1. o CSB (gfx_v10_0_get_csb_buffer) e' montado numa pagina de VRAM logo
+     *      depois do bloco auxiliar do anel;
+     *   2. RLC_CSIB_ADDR_HI/LO/LENGTH apontam para ele (escritor unico, readback);
+     *   3. o MESMO conteudo e' emitido no CP_RB0, que e' o que gfx_v10_0_cp_gfx_start
+     *      faz, MENOS o SET_BASE(CE_PARTITION_BASE): na Corrida 31 ele parou o ME
+     *      a espera do CE (ME_HAS_ACTIVE_CE_BUFFER_FLAG=1). Essa omissao continua.
+     * Falha em qualquer passo = motor grafico NAO fica ONLINE (falha fechada).
      */
     {
         uint32_t bootCursor = 0u;
@@ -867,23 +1013,35 @@ static NTSTATUS Bc250ActiveGfxEngineOnline(BC250_DXGK_ACTIVE_CONTEXT *Context)
         uint32_t bootRptr = 0u;
         uint32_t bootFence = 0u;
         BOOLEAN bootDrainOk = FALSE;
+        uint32_t *csbCpu = (uint32_t *)((unsigned char *)cpuMapped + ringBytes + auxBytes);
+        const uint64_t csbMc = ringMc + ringBytes + auxBytes;
+        uint32_t csbDwords = 0u;
+        uint32_t csbIdx;
 
-        /* 1. PACKET3_PREAMBLE_CNTL: BEGIN_CLEAR_STATE (Opcode 0x4A, count=0 -> 2 dw) */
-        Context->GfxEngine.RingCpuVirtual[bootCursor++] = 0xC0004A00u;
-        Context->GfxEngine.RingCpuVirtual[bootCursor++] = 0x00000000u;
+        if (Bc250Pm4BuildGfx10ClearState(csbCpu, (uint32_t)(csbBytes / sizeof(uint32_t)),
+                BC250_GFX10_CSB_TILE_STEERING_OVERRIDE, &csbDwords) != BC250_PM4_OK ||
+            csbDwords != BC250_PM4_GFX10_CSB_DWORDS) {
+            Bc250DisplayLog("[GfxEngine] CSB FALHOU: montagem devolveu %u dwords (esperado %u); motor nao ficara ONLINE\n",
+                csbDwords, BC250_PM4_GFX10_CSB_DWORDS);
+            (void)Bc250ActiveGfxEngineOffline(Context);
+            return STATUS_DEVICE_HARDWARE_ERROR;
+        }
+        Bc250SdmaPresentFlushHdp();
+        KeMemoryBarrier();
+        Bc250DisplayLog("[GfxEngine] CSB montado: Mc=0x%llX Dwords=%u Inicio=%08X %08X Fim=%08X %08X Steering=0x%08X (upstream gfx_v10_0_get_csb_buffer)\n",
+            (unsigned long long)csbMc, csbDwords, csbCpu[0], csbCpu[1],
+            csbCpu[csbDwords - 4u], csbCpu[csbDwords - 3u], BC250_GFX10_CSB_TILE_STEERING_OVERRIDE);
 
-        /* 2. PACKET3_CONTEXT_CONTROL (Opcode 0x28, count=1 -> 3 dw): LOAD_ENABLE=0x80000000, SHADOW_ENABLE=0x80000000 */
-        Context->GfxEngine.RingCpuVirtual[bootCursor++] = 0xC0012800u;
-        Context->GfxEngine.RingCpuVirtual[bootCursor++] = 0x80000000u;
-        Context->GfxEngine.RingCpuVirtual[bootCursor++] = 0x80000000u;
+        if (!Bc250ActiveProgramClearStateBuffer(Context, csbMc, csbDwords)) {
+            Bc250DisplayLog("[GfxEngine] CSB FALHOU: RLC_CSIB nao conferiu no readback; motor nao ficara ONLINE\n");
+            (void)Bc250ActiveGfxEngineOffline(Context);
+            return STATUS_DEVICE_HARDWARE_ERROR;
+        }
 
-        /* 3. PACKET3_PREAMBLE_CNTL: END_CLEAR_STATE (Opcode 0x4A, count=0 -> 2 dw) */
-        Context->GfxEngine.RingCpuVirtual[bootCursor++] = 0xC0004A00u;
-        Context->GfxEngine.RingCpuVirtual[bootCursor++] = 0x00000001u;
-
-        /* 4. PACKET3_CLEAR_STATE (Opcode 0x12, count=0 -> 2 dw) */
-        Context->GfxEngine.RingCpuVirtual[bootCursor++] = 0xC0001200u;
-        Context->GfxEngine.RingCpuVirtual[bootCursor++] = 0x00000000u;
+        /* 1..4. o conteudo do CSB no anel (gfx_v10_0_cp_gfx_start sem SET_BASE) */
+        for (csbIdx = 0u; csbIdx < csbDwords; ++csbIdx) {
+            Context->GfxEngine.RingCpuVirtual[bootCursor++] = csbCpu[csbIdx];
+        }
 
         /* 5. PACKET3_RELEASE_MEM EOP (32-bit) para gravar fence=1 na VRAM (8 dw) */
         if (Bc250Pm4EmitReleaseMemEop32(
@@ -932,8 +1090,8 @@ static NTSTATUS Bc250ActiveGfxEngineOnline(BC250_DXGK_ACTIVE_CONTEXT *Context)
             }
         }
 
-        Bc250DisplayLog("[GfxEngine] BOOT_PREAMBLE: WPTR=%u RPTR=%u Fence=0x%08X DrenoOk=%u Polls=%u (CONTEXT_CONTROL+CLEAR_STATE provados no silicio no Gate K)\n",
-            bootCursor, bootRptr, bootFence, bootDrainOk ? 1u : 0u, bootPoll);
+        Bc250DisplayLog("[GfxEngine] BOOT_PREAMBLE: WPTR=%u RPTR=%u Fence=0x%08X DrenoOk=%u Polls=%u (DX.27: CSB upstream de %u dw no anel + RELEASE_MEM)\n",
+            bootCursor, bootRptr, bootFence, bootDrainOk ? 1u : 0u, bootPoll, csbDwords);
         if (!bootDrainOk) {
             Bc250DisplayLog("[GfxEngine] BOOT_PREAMBLE FALHOU: RPTR/fence nao provaram execucao; motor nao ficara ONLINE\n");
             (void)Bc250ActiveGfxEngineOffline(Context);
@@ -943,6 +1101,10 @@ static NTSTATUS Bc250ActiveGfxEngineOnline(BC250_DXGK_ACTIVE_CONTEXT *Context)
         Context->GfxEngine.WptrDwords = bootCursor;
         Context->GfxEngine.LastSubmittedFence = 1ull;
         Context->GfxEngine.LastRetiredFence = 1ull;
+        Context->GfxEngine.LastSubmitVmid = 0xFFFFFFFFu; /* DX.29: anel sem IB de usuario */
+
+        /* DX.26: medicao somente leitura, uma vez por bring-up do motor grafico. */
+        Bc250ActiveGoldenSnapshotReadOnly(Context);
     }
 
     Bc250DisplayLog("[GfxEngine] ONLINE SUCESSO: RingMc=0x%llX (64KB, %u dw) RptrWbMc=0x%llX FenceMc=0x%llX RB0_ACTIVE=1\n",
@@ -1185,7 +1347,11 @@ static NTSTATUS Bc250ActiveGfxEngineSubmit(
     uint32_t rptr = 0u;
     uint64_t nextFence;
     BC250_PM4_STATUS pm4Status;
-    const uint32_t neededDwords = 16u; /* 4 (IB) + 8 (RELEASE_MEM) + 4 (NOP pad) */
+    /* 7 (WAIT_REG_MEM) + 2 (PFP_SYNC_ME) na troca de VMID + 4 (IB) + 8 (RELEASE_MEM) + 4 (NOP pad) */
+    const uint32_t neededDwords = 25u;
+    BOOLEAN vmidSwitch = FALSE;
+    uint32_t prevVmid = 0xFFFFFFFFu;
+    uint32_t waitFence = 0u;
 
     if (Context == NULL || AssignedFence == NULL || IbGpuVirtualAddress == 0ull || IbSizeDwords == 0u) {
         return STATUS_INVALID_PARAMETER;
@@ -1221,6 +1387,46 @@ static NTSTATUS Bc250ActiveGfxEngineSubmit(
 
     nextFence = Context->GfxEngine.LastSubmittedFence + 1ull;
     cursor = currentWptr;
+
+    /*
+     * DX.29 -- SINCRONIA DE TROCA DE VMID NO ANEL GRAFICO (pipeline sync do upstream).
+     *
+     * Corridas 73 e 74 (P0): os 5 travamentos de 240 ondas foram TODOS num IB
+     * logo apos um IB de OUTRO VMID (taxa de base 18-26% dos IBs), e nos faults
+     * de busca de instrucao o VMID do fault era o do IB ANTERIOR. H: o PFP
+     * avanca para o IB novo enquanto o anterior ainda nao terminou.
+     *
+     * O upstream, na troca, emite gfx_v10_0_ring_emit_pipeline_sync -- um
+     * WAIT_REG_MEM no PFP (usepfp=1) sobre a fence do anel -- e, no fim do
+     * vm_flush, PFP_SYNC_ME ("otherwise we might get invalid PFP reads").
+     * Aqui: WAIT_REG_MEM mem/PFP ate a fence do anel alcancar a ultima
+     * submetida, seguido de PFP_SYNC_ME. Codificacao: nvd.h:166-186 e :322.
+     * DIVERGENCIAS DECLARADAS: funcao 5 (>=) em vez de 3 (==) -- a fence e'
+     * monotonica e >= nao trava se o slot ja estiver adiante; o flush de TLB
+     * continua por MMIO na instalacao do VMID, nao no anel.
+     */
+    prevVmid = Context->GfxEngine.LastSubmitVmid;
+    if (prevVmid != 0xFFFFFFFFu && prevVmid != Vmid && Context->GfxEngine.LastSubmittedFence != 0ull) {
+        waitFence = (uint32_t)Context->GfxEngine.LastSubmittedFence;
+        pm4Status = Bc250Pm4EmitWaitRegMem(
+            Context->GfxEngine.RingCpuVirtual, ringDwords, &cursor,
+            BC250_PM4_WAIT_REG_MEM_PFP_MEM_GE,
+            Context->GfxEngine.FenceGpuVa, waitFence, 0xFFFFFFFFu, 4u);
+        if (pm4Status == BC250_PM4_OK) {
+            Context->GfxEngine.RingCpuVirtual[cursor & (ringDwords - 1u)] =
+                BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_PFP_SYNC_ME, 1u);
+            cursor++;
+            Context->GfxEngine.RingCpuVirtual[cursor & (ringDwords - 1u)] = 0u;
+            cursor++;
+            vmidSwitch = TRUE;
+        } else {
+            ++Context->GfxEngine.SubmitRejected;
+            KeReleaseSpinLock(&Context->GfxEngine.Lock, irql);
+            Bc250DisplayLog("[GfxEngine] SUBMIT RECUSA: sincronia de troca de VMID %u->%u nao emitida (pm4=%u); o IB nao parte sem ela\n",
+                prevVmid, Vmid, (uint32_t)pm4Status);
+            return STATUS_UNSUCCESSFUL;
+        }
+    }
 
     /* 1. Emite PACKET3_INDIRECT_BUFFER com VMID e bit de validade */
     pm4Status = Bc250Pm4EmitIndirectBuffer(
@@ -1453,14 +1659,61 @@ static NTSTATUS Bc250ActiveGfxEngineSubmit(
     Context->GfxEngine.LastSubmittedFence = nextFence;
     Context->GfxEngine.LastSubmitSizeDwords = IbSizeDwords;
     Context->GfxEngine.LastSubmitVa = IbGpuVirtualAddress;
+    Context->GfxEngine.LastSubmitVmid = Vmid;
+    if (vmidSwitch) {
+        ++Context->GfxEngine.VmidSwitchSyncs;
+    }
     ++Context->GfxEngine.SubmitAccepted;
     *AssignedFence = nextFence;
+
+    /*
+     * CARIMBO DA RAIZ NO INSTANTE DA SUBMISSAO (21/09, apos a Corrida 48).
+     * Ver o bloco longo em bc250_active_miniport.h. Escrita barata e sem log:
+     * quem publica e' o caminho do fault, que compara esta raiz com a que
+     * estava instalada quando o TDR aconteceu. Sem isso nao se distingue
+     * "raiz trocada" de "corrida de publicacao" nem de "TLB obsoleto", e as
+     * tres exigem consertos diferentes.
+     */
+    {
+        const uint32_t slot =
+            Context->GfxSubmitStampNext % BC250_GFX_SUBMIT_STAMP_SLOTS;
+        Context->GfxSubmitStamps[slot].Fence = nextFence;
+        /*
+         * A RAIZ CARIMBADA E' A DO VMID DO PACOTE (Corrida 55).
+         *
+         * Ate a Corrida 54 esta linha gravava UserVmidInstalledRootPhysical --
+         * a raiz do VMID 7 legado -- mesmo depois de o pacote passar a carregar
+         * o VMID do contexto. O carimbo comparava, no fault, uma raiz que o
+         * pacote nao usava: telemetria do estado anterior, a mesma classe de
+         * defeito ja corrigida na linha de sucesso da instalacao.
+         */
+        Context->GfxSubmitStamps[slot].RootAtSubmit =
+            (Vmid == BC250_GCVM_USER_VMID)
+                ? Context->UserVmidInstalledRootPhysical
+                : Bc250VmidPoolInstalledRootForVmid(&Context->VmidPool, Vmid);
+        Context->GfxSubmitStamps[slot].IbGpuVa = IbGpuVirtualAddress;
+        Context->GfxSubmitStamps[slot].Vmid = Vmid;
+        Context->GfxSubmitStamps[slot].PageTableEpoch =
+            Context->GpuvaSnapshots.Slots[
+                (Context->GpuvaSnapshots.ActiveSlot >= 0 &&
+                 Context->GpuvaSnapshots.ActiveSlot <= 1) ?
+                Context->GpuvaSnapshots.ActiveSlot : 0].PageTableEpoch;
+        Context->GfxSubmitStampNext = slot + 1u;
+        if (Context->GfxSubmitStampCount < BC250_GFX_SUBMIT_STAMP_SLOTS) {
+            ++Context->GfxSubmitStampCount;
+        }
+    }
 
     KeReleaseSpinLock(&Context->GfxEngine.Lock, irql);
 
     Bc250DisplayLog("[GfxEngine] SUBMIT SUCESSO: Fence=%llu NewWptr=%u DmaVA=0x%llX SizeDW=%u VMID=%u\n",
         (unsigned long long)nextFence, cursor,
         (unsigned long long)IbGpuVirtualAddress, IbSizeDwords, Vmid);
+    if (vmidSwitch) {
+        Bc250DisplayLog("[GfxEngine] VMID_SWITCH_SYNC #%u: VMID %u -> %u antes do Fence=%llu -- PFP espera fence>=%u (WAIT_REG_MEM mem/pfp) + PFP_SYNC_ME\n",
+            Context->GfxEngine.VmidSwitchSyncs, prevVmid, Vmid,
+            (unsigned long long)nextFence, waitFence);
+    }
 
     return STATUS_SUCCESS;
 }
@@ -1569,6 +1822,44 @@ static NTSTATUS Bc250ActiveGfxEnginePoll(
     KeReleaseSpinLock(&Context->GfxEngine.Lock, irql);
 
     /*
+     * DX.28 -- SENTINELA DE FAULT DO GCVM POR APOSENTADORIA GRAFICA (SOMENTE LEITURA).
+     *
+     * Corrida 73: o TDR de 240 ondas trouxe um fault latchado de busca de
+     * instrucao (CID=9) sob o VMID 1 (DWM) na pagina exata do shader do
+     * harness (VMID 4). Mas o latch guarda o PRIMEIRO fault desde o ultimo TDR,
+     * entao nao se sabia EM QUE submissao ele nasceu. Aqui, a cada fence GFX
+     * aposentada, o STATUS e' lido; so' a TRANSICAO sai no log, com a faixa de
+     * fences, o VMID e o IB da ultima submissao. Nao escreve nada -- o dreno
+     * continua sendo so' do caminho de TDR. Campos: gc_10_1_0_sh_mask.h:12143-12162.
+     */
+    if (RetiredNow != NULL && *RetiredNow != 0u &&
+        Context->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED) {
+        static uint32_t s_faultSentinelLast = 0u;
+        static uint32_t s_faultSentinelLogs = 0u;
+        uint32_t st = 0u;
+        uint32_t lo = 0u;
+        if (Bc250MmioTopologyRead32(&Context->Core.MmioTransport,
+                BC250_REG_GCVM_L2_PROTECTION_FAULT_STATUS, &st) != 0u &&
+            st != s_faultSentinelLast && s_faultSentinelLogs < 64u) {
+            (void)Bc250MmioTopologyRead32(&Context->Core.MmioTransport,
+                BC250_REG_GCVM_L2_PROTECTION_FAULT_ADDR_LO32, &lo);
+            ++s_faultSentinelLogs;
+            Bc250DisplayLog("[GFX_FAULT_SENTINELA] #%u fences GFX aposentadas ate %llu (ultima submetida %llu, IB=0x%llX SizeDW=%u): Status 0x%08X -> 0x%08X Vmid=%u Cid=%u Perm=0x%X Rw=%u Walker=%u Mapping=%u More=%u AddrPagina=0x%08X (GpuVa=0x%llX) -- somente leitura\n",
+                s_faultSentinelLogs,
+                (unsigned long long)Context->GfxEngine.LastRetiredFence,
+                (unsigned long long)Context->GfxEngine.LastSubmittedFence,
+                (unsigned long long)Context->GfxEngine.LastSubmitVa,
+                Context->GfxEngine.LastSubmitSizeDwords,
+                s_faultSentinelLast, st,
+                (st & 0x00F00000u) >> 20, (st & 0x0003FE00u) >> 9,
+                (st & 0x000000F0u) >> 4, (st & 0x00040000u) >> 18,
+                (st & 0x0000000Eu) >> 1, (st & 0x00000100u) >> 8,
+                (st & 0x00000001u), lo, ((unsigned long long)lo) << 12);
+            s_faultSentinelLast = st;
+        }
+    }
+
+    /*
      * VEREDITO DO TRIPE DO ANEL GRAFICO -- amostrado (o poll e' quente), mas a
      * transicao poison -> fence escrita NUNCA e' amostrada, porque e' o instante
      * em que o CP prova pela primeira vez que consumiu o anel desta submissao.
@@ -1579,6 +1870,33 @@ static NTSTATUS Bc250ActiveGfxEnginePoll(
      * conferencia de bytes no destino. E nao provam dispatch de shader, pela
      * Diretriz Universal 3.
      */
+    /*
+     * PERNA 3 DO TRIPE -- NAO EXISTE para o anel grafico, e a linha tem de
+     * dizer isso com todas as letras.
+     *
+     * DEFEITO CORRIGIDO AQUI (analise da Corrida 44, 20/09): esta posicao
+     * imprimia a perna 3 como DELEGADA a uma prova de bytes, nomeando um
+     * delegado que NINGUEM executa. (O literal antigo nao e' reproduzido aqui:
+     * o portao o PROIBE no arquivo inteiro, e citar o nome banido em comentario
+     * ja reprovou build neste projeto.)
+     * A mineracao daquela corrida contou 111 ocorrencias da
+     * string BYTE_PROOF no log inteiro, e TODAS as 111 eram esta propria
+     * linha -- o delegado nunca rodou uma vez. O [GfxIbInspect] varre a
+     * ESTRUTURA do IB pela CPU (linear, saltos CHAIN, chamadas IB2) e nao
+     * confere UM byte de destino.
+     *
+     * Rotulo que promete prova inexistente e' a mesma classe de falso sucesso
+     * que a Lei 4 proibe: um leitor que confie nele conta 111 tripes completos
+     * onde ha 2 de 3 pernas. Pela Lei 2, submissao GFX NAO pode ser declarada
+     * comprovada com este estado.
+     *
+     * Gabarito de destino para IB arbitrario de UMD nao existe -- nao se sabe
+     * o que o shader do DWM deveria escrever --, entao a perna 3 fica ABERTA e
+     * declarada, em vez de simulada.
+     */
+#define BC250_GFX_TRIPOD_LEG3_STATE \
+    "NAO_EXECUTADA_SEM_GABARITO_DE_DESTINO"
+
     {
         static uint32_t s_gfxTripodPollCount = 0u;
         static BOOLEAN s_gfxFenceEverWritten = FALSE;
@@ -1621,12 +1939,18 @@ static NTSTATUS Bc250ActiveGfxEnginePoll(
                 (observedFence == 0u) ? "INDETERMINADO_SLOT_ZERADO_SEM_POISON" :
                 "FENCE_ESCRITA_PELA_GPU";
 
-            Bc250DisplayLog("[GfxEngine] GFX_TRIPE_VEREDITO: Perna1=%s (WPTR=%u RPTR_Reg=%u[lido=%u] RPTR_Wb=%u[lido=%u], reduzidos WPTR=%u Reg=%u Wb=%u, motivo=%s) Perna2=%s (Fence=0x%08X Poison=0x%08X) Perna3=DELEGADA_AO_BYTE_PROOF\n",
+            Bc250DisplayLog("[GfxEngine] GFX_TRIPE_VEREDITO: Perna1=%s (WPTR=%u RPTR_Reg=%u[lido=%u] RPTR_Wb=%u[lido=%u], reduzidos WPTR=%u Reg=%u Wb=%u, motivo=%s) Perna2=%s (Fence=0x%08X Poison=0x%08X) Perna3=%s -- TRIPE INCOMPLETO, 2 de 3 pernas | Submetidas=%llu Aposentadas=%llu EmVoo=%llu RetiredCount=%u\n",
                 convergencia, wptr, rptrReg, rptrRegRead ? 1u : 0u,
                 rptrWb, rptrWbRead ? 1u : 0u,
                 wptrWrapped, regWrapped, wbWrapped,
                 (indeterminateReason != NULL) ? indeterminateReason : "SEM_OBSTACULO_DE_LEITURA",
-                pernaDois, observedFence, BC250_GFX_FENCE_POISON);
+                pernaDois, observedFence, BC250_GFX_FENCE_POISON,
+                BC250_GFX_TRIPOD_LEG3_STATE,
+                (unsigned long long)Context->GfxEngine.LastSubmittedFence,
+                (unsigned long long)Context->GfxEngine.LastRetiredFence,
+                (unsigned long long)(Context->GfxEngine.LastSubmittedFence -
+                                     Context->GfxEngine.LastRetiredFence),
+                Context->GfxEngine.RetiredCount);
 
             if (fenceIsPoison && Context->GfxEngine.LastSubmittedFence > 0ull) {
                 Bc250DisplayLog("[GfxEngine] GFX_TRIPE AVISO: %llu submissao(oes) pendente(s) e a fence segue em poison -- ZERO aposentadas por decisao, nao por falta de medicao\n",
@@ -3701,13 +4025,99 @@ NTSTATUS Bc250ActiveDestroyContextObject(
         if (status != BC250_MCDM_OBJECT_INVALID_HANDLE) {
             if (status == BC250_MCDM_OBJECT_OK &&
                 InterlockedCompareExchange(&context->IsActive, 1, 1) == 1) {
-                (void)Bc250GpuvaSpaceInvalidateForObject(&context->GpuvaSpace,
-                    record.OwnerProcess, ContextHandle, NULL);
                 status = Bc250McdmObjectDestroy(&context->Objects,
                     ContextHandle, BC250_MCDM_OBJECT_CONTEXT,
                     record.OwnerProcess);
                 result = Bc250ObjectStatusToNtStatus(status);
-                Bc250DisplayUnregisterContextProcess(ContextHandle);
+                if (status == BC250_MCDM_OBJECT_OK) {
+                    (void)Bc250GpuvaSpaceInvalidateForObject(
+                        &context->GpuvaSpace,
+                        record.OwnerProcess, ContextHandle, NULL);
+                    Bc250DisplayUnregisterContextProcess(ContextHandle);
+                    /*
+                     * DX.7 -- somente a destruicao CONCLUIDA devolve o VMID.
+                     * IN_FLIGHT_SUBMISSIONS fecha o rundown mas preserva
+                     * contexto, GPUVA e slot para a submissao que ainda os usa.
+                     * NOT_FOUND e' normal: a maioria nunca submeteu em GFX.
+                     */
+                    {
+                        uint32_t liberado = BC250_VMID_COUNT;
+                        uint32_t liberados = 0u;
+                        uint32_t inUseMask = 0u;
+                        BC250_VMID_POOL_STATUS poolStatus;
+                        KIRQL poolIrql;
+
+                        KeAcquireSpinLock(&context->VmidPoolLock, &poolIrql);
+                        poolStatus = Bc250VmidPoolRelease(&context->VmidPool,
+                            ContextHandle, &liberado);
+                        liberados = context->VmidPool.FreeCount;
+                        inUseMask = context->VmidPool.InUseMask;
+                        KeReleaseSpinLock(&context->VmidPoolLock, poolIrql);
+
+                        if (poolStatus == BC250_VMID_POOL_OK) {
+                            Bc250DisplayLog("[VMID_POOL] LIBERADO: Ctx=%p devolveu VMID%02u (Liberados=%u InUseMask=0x%04X)\n",
+                                ContextHandle, liberado, liberados, inUseMask);
+                            /*
+                             * DX.15 -- DEVOLVER O SLOT TAMBEM NO SILICIO.
+                             *
+                             * Ate aqui Release era SOMENTE SOFTWARE: a entrada
+                             * do pool era limpa e o VMID voltava para os
+                             * livres, mas o contexto GCVM continuava com
+                             * ENABLE_CONTEXT ligado e PT_BASE apontando para a
+                             * raiz do processo MORTO -- uma pagina que o VidMm
+                             * pode liberar e reutilizar a qualquer momento.
+                             *
+                             * O desarme acontece FORA do VmidPoolLock (solto
+                             * logo acima): ele escreve MMIO e invalida TLB, e
+                             * o flush por VMID pode gastar polls.
+                             *
+                             * Isto NAO e' a correcao de um fault medido -- e'
+                             * fechar um estado que nao tem direito de existir
+                             * (Lei 5: todo APPLY tem TEARDOWN). Se o fault
+                             * sobreviver, o desarme continua certo.
+                             */
+                            BC250_GCVM_VMID8_INTERFACE disarmIo;
+                            BC250_GCVM_VMID8_INSTALL_EVIDENCE disarmEvidence;
+                            BC250_GCVM_VMID8_STATUS disarmStatus;
+
+                            RtlZeroMemory(&disarmIo, sizeof(disarmIo));
+                            disarmIo.Identity = BC250_GCVM_VMID8_IDENTITY;
+                            disarmIo.Context = context;
+                            disarmIo.Read32 = Bc250ActiveVmidRead32;
+                            disarmIo.Write32 = Bc250ActiveVmidWrite32;
+                            disarmIo.FlushVmid = Bc250ActiveFlushVmidTlb;
+                            RtlZeroMemory(&disarmEvidence,
+                                sizeof(disarmEvidence));
+
+                            disarmStatus = Bc250GcvmUninstallVmid(
+                                liberado, &disarmIo, &disarmEvidence);
+                            Bc250DisplayLog("[VMID_POOL] DESARMADO: VMID%02u status=%u Readback=%u Flush=%u (passo=%u reg=0x%04X val=0x%08X) -- o contexto GCVM nao aponta mais para a raiz do processo morto\n",
+                                liberado, (uint32_t)disarmStatus,
+                                disarmEvidence.ProgramReadbackPassed,
+                                disarmEvidence.TlbFlushPassed,
+                                disarmEvidence.FailureStep,
+                                disarmEvidence.FailureRegister,
+                                disarmEvidence.FailureValue);
+                            if (disarmStatus != BC250_GCVM_VMID8_OK) {
+                                /*
+                                 * FALHA DECLARADA, e o slot NAO volta
+                                 * calado para a circulacao com o
+                                 * silicio armado. A entrada de software
+                                 * ja foi liberada acima; o que esta
+                                 * linha garante e que a divergencia
+                                 * entre software e silicio seja VISIVEL
+                                 * em vez de virar o proximo fault sem
+                                 * explicacao.
+                                 */
+                                Bc250DisplayLog("[VMID_POOL] FALHA NO DESARME: VMID%02u continua armado no silicio apesar de devolvido ao pool\n",
+                                    liberado);
+                            }
+                        }
+                    }
+                } else if (status == BC250_MCDM_OBJECT_IN_FLIGHT_SUBMISSIONS) {
+                    Bc250DisplayLog("[VMID_POOL] RETIDO: Ctx=%p ainda tem submissao em voo; GPUVA e VMID permanecem ate DestroyContext concluir\n",
+                        ContextHandle);
+                }
             } else if (status == BC250_MCDM_OBJECT_OK) {
                 result = STATUS_DEVICE_NOT_READY;
             } else {
@@ -3858,6 +4268,7 @@ NTSTATUS Bc250ActiveSetRootPageTableObject(
         io.Read32 = Bc250ActiveVmidRead32;
         io.Write32 = Bc250ActiveVmidWrite32;
         io.Flush = Bc250ActiveFlushVmid8Only;
+        io.FlushVmid = Bc250ActiveFlushVmidTlb;
         io.Context = context;
         io.Identity = BC250_GCVM_VMID8_IDENTITY;
 
@@ -4308,8 +4719,7 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                 if (Bc250AllocationIsPrimary(&request) ||
                     Bc250AllocationRequiresCpuAccess(&request)) {
                     cpuVisible = TRUE;
-                } else if (CreateAllocation->Flags.Resource == 0u &&
-                           (info->FlagsWddm2.CpuVisible != 0u || info->Flags.CpuVisible != 0u)) {
+                } else if (info->FlagsWddm2.CpuVisible != 0u || info->Flags.CpuVisible != 0u) {
                     cpuVisible = TRUE;
                 }
                 info->PhysicalAdapterIndex = 0u;
@@ -4774,6 +5184,542 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                 selReadback, activeCtx->SubmissionEngine.SelectedSelector, restReadback,
                 hqdValid, hqdActive, hqdRptr, hqdWptr, hqdError, hqStatus0, ibCtrl, hqdVmid,
                 faultValid, faultStatus, faultAddrHi, faultAddrLo);
+            /*
+             * FAULT DE TRADUCAO DECODIFICADO -- Corrida 45, 20/09.
+             *
+             * DEFEITO DE LEGIBILIDADE QUE CUSTOU MESES: este snapshot ja
+             * imprimia FaultStatus e FaultAddr em hexadecimal CRU, e ninguem
+             * decodificou. A analise da Corrida 45 achou FaultStatus=0x0070153C
+             * repetido nos CINCO TDRs, e ele diz, por gc_10_1_0_sh_mask.h:
+             * VMID=7 (o mesmo VMID das submissoes GFX), WALKER_ERROR=6,
+             * MAPPING_ERROR=1, PERMISSION_FAULTS=3, CID=10 -- isto e', o
+             * caminhador de tabela de paginas FALHOU. Casa com a onda lida pela
+             * sonda no mesmo TDR: SQ_WAVE_STATUS FATAL_HALT=1 e
+             * SQ_WAVE_TRAPSTS XNACK_ERROR=1.
+             *
+             * Havia UM fault de traducao real desde o inicio, e o projeto
+             * procurava pela string "GFXHUB_FAULT", que e' outro sitio e sai
+             * ZERO. Hexadecimal cru num campo que ninguem le e' ausencia de
+             * medicao na pratica; por isso a decodificacao passa a ser emitida.
+             * SOMENTE LEITURA -- nenhum registrador novo e' tocado.
+             */
+            if ((faultValid & 0x1u) != 0u && faultStatus != 0u) {
+                Bc250DisplayLog("[TDR_GCVM_FAULT] DECODIFICADO Status=0x%08X -> Vmid=%u WalkerError=%u "
+                    "MappingError=%u PermissionFaults=0x%X Cid=%u Rw=%u MoreFaults=%u | "
+                    "FaultAddrPagina=0x%08X%08X -> GpuVa=0x%llX\n",
+                    /*
+                     * Shifts e mascaras COPIADOS de gc_10_1_0_sh_mask.h,
+                     * GCVM_L2_PROTECTION_FAULT_STATUS__*. A primeira versao
+                     * desta linha teve os shifts transcritos de cabeca e TODOS
+                     * os seis sairam errados -- VMID em 18 no lugar de 20,
+                     * WALKER_ERROR em 8 no lugar de 1, RW em 31 no lugar de 18.
+                     * Decodificacao errada e' pior que hexadecimal cru: o cru
+                     * ao menos nao mente.
+                     */
+                    faultStatus,
+                    (faultStatus & 0x00F00000u) >> 20,  /* VMID */
+                    (faultStatus & 0x0000000Eu) >> 1,   /* WALKER_ERROR */
+                    (faultStatus & 0x00000100u) >> 8,   /* MAPPING_ERROR */
+                    (faultStatus & 0x000000F0u) >> 4,   /* PERMISSION_FAULTS */
+                    (faultStatus & 0x0003FE00u) >> 9,   /* CID */
+                    (faultStatus & 0x00040000u) >> 18,  /* RW */
+                    (faultStatus & 0x00000001u),        /* MORE_FAULTS */
+                    faultAddrHi, faultAddrLo,
+                    ((unsigned long long)faultAddrLo) << 12);
+
+                /*
+                 * O LATCH E' A PRIMEIRA PERGUNTA (Corrida 55).
+                 *
+                 * Dez corridas leram GCVM_L2_PROTECTION_FAULT_STATUS sem nunca
+                 * ler o CNTL que o governa. Pelo sh_mask (12091-12092) o bit 0
+                 * e CLEAR_PROTECTION_FAULT_STATUS_ADDR e o bit 1 e
+                 * ALLOW_SUBSEQUENT_PROTECTION_FAULT_STATUS_ADDR_UPDATES. Com o
+                 * bit 1 em ZERO o par STATUS/ADDR fica preso no PRIMEIRO fault
+                 * ate alguem escrever o bit 0 -- e entao o Status que estamos
+                 * decodificando pode ser de minutos antes, o que sozinho ja
+                 * explicaria "a PTE existe e mesmo assim faltou".
+                 *
+                 * SOMENTE LEITURA. Nao limpamos o latch aqui: escrever mudaria
+                 * o estado do silicio no meio do TDR e e' decisao separada.
+                 *
+                 * Os nomes dos bits sao P1 (sh_mask local). Os VALORES de
+                 * WALKER_ERROR e PERMISSION_FAULTS continuam SEM enumeracao
+                 * local e NAO sao nomeados (Lei 7).
+                 */
+                {
+                    uint32_t faultCntl = 0u;
+                    if (Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                            0x0000A120u, &faultCntl) != 0u) {
+                        Bc250DisplayLog("[TDR_GCVM_FAULT] LATCH_CNTL=0x%08X -> Clear=%u AceitaAtualizacoes=%u | enables: Range=%u Pde0=%u Pde1=%u Pde2=%u TranslateFurther=%u Nack=%u DummyPage=%u Valid=%u Read=%u Write=%u Execute=%u | CrashNoRetry=%u CrashRetry=%u -> %s\n",
+                            faultCntl,
+                            (faultCntl >> 0) & 1u,
+                            (faultCntl >> 1) & 1u,
+                            (faultCntl >> 2) & 1u,
+                            (faultCntl >> 3) & 1u,
+                            (faultCntl >> 4) & 1u,
+                            (faultCntl >> 5) & 1u,
+                            (faultCntl >> 6) & 1u,
+                            (faultCntl >> 7) & 1u,
+                            (faultCntl >> 8) & 1u,
+                            (faultCntl >> 9) & 1u,
+                            (faultCntl >> 10) & 1u,
+                            (faultCntl >> 11) & 1u,
+                            (faultCntl >> 12) & 1u,
+                            (faultCntl >> 29) & 1u,
+                            (faultCntl >> 31) & 1u,
+                            (((faultCntl >> 1) & 1u) != 0u) ?
+                                "ACEITA ATUALIZACOES -- o Status acima e' do fault MAIS RECENTE" :
+                                "LATCH PRESO -- o Status acima pode ser do PRIMEIRO fault, nao do que causou este TDR");
+                    } else {
+                        Bc250DisplayLog("[TDR_GCVM_FAULT] LATCH_CNTL NAO LIDO -- sem ele nao se sabe se o Status acima e' recente ou preso, e a ausencia esta DECLARADA\n");
+                    }
+                }
+
+                /*
+                 * DRENO DO LATCH (Corrida 56).
+                 *
+                 * Com AceitaAtualizacoes=0 medido, o Status decodificado acima
+                 * e' o PRIMEIRO fault desde o ultimo clear -- e nunca houve um.
+                 * Aqui o latch e' drenado: le, pulsa o CLEAR, le de novo, ate
+                 * sair zero ou bater o teto. A fila que MoreFaults anunciava em
+                 * toda corrida finalmente aparece.
+                 *
+                 * O CNTL e' restaurado e conferido por readback; repeticao do
+                 * mesmo Status NAO conta como fault novo.
+                 */
+                {
+                    BC250_FAULT_LATCH_IO latchIo;
+                    BC250_FAULT_LATCH_EVIDENCE latchEv;
+                    BC250_FAULT_LATCH_STATUS latchStatus;
+
+                    latchIo.Context = activeCtx;
+                    latchIo.Read32 = Bc250ActiveFaultLatchRead32;
+                    latchIo.Write32 = Bc250ActiveFaultLatchWrite32;
+                    latchStatus = Bc250FaultLatchDrain(&latchIo, &latchEv);
+
+                    Bc250DisplayLog("[TDR_GCVM_FAULT] DRENO: status=%u Drenados=%u ClearAcked=%u ClearIneficaz=%u Teto=%u MoreFaults=%u CntlAntes=0x%08X CntlReadback=0x%08X Restaurado=%u\n",
+                        (uint32_t)latchStatus, latchEv.Drained,
+                        latchEv.ClearAcked, latchEv.ClearIneficaz,
+                        latchEv.HitCeiling, latchEv.MoreFaultsSeen,
+                        latchEv.CntlBefore, latchEv.CntlReadback,
+                        latchEv.RestorePassed);
+                    if (latchEv.Drained == 0u) {
+                        Bc250DisplayLog("[TDR_GCVM_FAULT] DRENO: nenhum fault na fila -- a ausencia esta DECLARADA, nao suposta\n");
+                    } else {
+                        uint32_t dq;
+                        for (dq = 0u; dq < latchEv.Drained; ++dq) {
+                            const uint32_t st = latchEv.Entries[dq].Status;
+                            Bc250DisplayLog("[TDR_GCVM_FAULT] DRENO #%u: Status=0x%08X -> Vmid=%u WalkerError=%u MappingError=%u PermissionFaults=0x%X Cid=%u Rw=%u MoreFaults=%u | AddrPagina=0x%08X%08X\n",
+                                dq, st,
+                                (st & 0x00F00000u) >> 20,
+                                (st & 0x0000000Eu) >> 1,
+                                (st & 0x00000100u) >> 8,
+                                (st & 0x000000F0u) >> 4,
+                                (st & 0x0003FE00u) >> 9,
+                                (st & 0x00040000u) >> 18,
+                                (st & 0x00000001u),
+                                latchEv.Entries[dq].AddrHi,
+                                latchEv.Entries[dq].AddrLo);
+                        }
+                    }
+                }
+
+                /*
+                 * A GRANULARIDADE ESTA RESOLVIDA, E NAO ERA GRANULARIDADE
+                 * (Corrida 62). Este bloco continua existindo, mas o que ele
+                 * mede MUDOU DE NOME.
+                 *
+                 * PROVENIENCIA (P1, local): gc_10_1_0_sh_mask.h linhas 12163
+                 * a 12168 declaram GCVM_L2_PROTECTION_FAULT_ADDR_LO32 com
+                 * LOGICAL_PAGE_ADDR_LO32 de 32 bits e _HI32 com
+                 * LOGICAL_PAGE_ADDR_HI4 de 4 bits -- ou seja, um numero de
+                 * pagina de 36 BITS. Com pagina de 4 KiB isso cobre 48 bits de
+                 * VA, que e' o espaco de uma GPU. Com pagina de 1 MiB seriam 56
+                 * bits, e vinte dos trinta e seis bits ficariam permanentemente
+                 * zerados. O endereco e' pageAddr << 12. Ponto.
+                 *
+                 * CORROBORACAO INDEPENDENTE (P0): a pagina 0x200040 sob << 12
+                 * da 0x200040000, que a nossa propria linha [ALVO 0x200040]
+                 * reporta como a BASE EXATA de uma alocacao viva
+                 * (Base=0x200040000 Size=0x40000).
+                 *
+                 * O QUE ISSO CORRIGE. A Corrida 47 concluiu "a granularidade e
+                 * << 20" porque o candidato << 20 caia dentro de faixa viva.
+                 * Mas << 20 e' identicamente (pageAddr << 12) << 8 -- e o que
+                 * aquele ensaio mediu foi que O ENDERECO REAL E 256 VEZES O
+                 * ENDERECO QUE FALTOU, nao que a pagina tenha 1 MiB. Isso e
+                 * assinatura de PERDA DE 8 BITS, e vale para TODOS os faults
+                 * de Cid=10 do projeto: 0x2431 -> 0x243100000 (Corridas 45, 46,
+                 * 48, 59) e 0x245B -> 0x245B00000 (Corridas 45, 62).
+                 *
+                 * Por isso o segundo candidato deixou de se chamar "<<20" e
+                 * passou a se chamar o que e': VA<<8. Quando ELE resolve e o
+                 * VA real nao, a leitura correta NAO e' "a tabela esta certa" --
+                 * e' "alguem dereferenciou o endereco com 8 bits a menos".
+                 *
+                 * Leitura PURA do slot ativo, sem lock e sem escrita.
+                 */
+                {
+                    const uint64_t pageAddr =
+                        (((uint64_t)(faultAddrHi & 0xFu)) << 32) | (uint64_t)faultAddrLo;
+                    const LONG siteSlot = activeCtx->GpuvaSnapshots.ActiveSlot;
+                    static const uint32_t kShifts[2] = { 12u, 20u };
+                    /*
+                     * O SEGUNDO CANDIDATO NAO E UMA GRANULARIDADE.
+                     * pageAddr<<20 e identicamente (pageAddr<<12)<<8, e
+                     * o que ele testa e se o endereco real e 256x o que
+                     * faltou -- perda de 8 bits. Chamar isso de <<20 foi
+                     * o que me fez ler, por tres corridas, 'a tabela
+                     * esta certa e a GPU falta mesmo assim'.
+                     */
+                    static const char *const kShiftNames[2] = {
+                        "VA(pagina<<12)", "VA<<8(perda de 8 bits)" };
+                    uint32_t k;
+
+                    for (k = 0u; k < 2u; ++k) {
+                        BC250_GPUVA_ADDRESS_SITE site;
+                        BC250_GPUVA_STATUS siteStatus = BC250_GPUVA_BAD_ARGUMENT;
+                        const uint64_t candidate = pageAddr << kShifts[k];
+
+                        RtlZeroMemory(&site, sizeof(site));
+                        if (candidate >= BC250_GPUVA_TRANSLATABLE_LIMIT) {
+                            Bc250DisplayLog("[TDR_GCVM_FAULT] CANDIDATO <<%u = 0x%llX EXCEDE 34 BITS -- fora do espaco traduzivel, nao e' candidato valido\n",
+                                kShifts[k], (unsigned long long)candidate);
+                            continue;
+                        }
+                        if (siteSlot >= 0 && siteSlot <= 1) {
+                            siteStatus = Bc250GpuvaSpaceDescribeAddress(
+                                &activeCtx->GpuvaSnapshots.Slots[siteSlot],
+                                candidate, &site);
+                        }
+                        if (siteStatus != BC250_GPUVA_OK) {
+                            Bc250DisplayLog("[TDR_GCVM_FAULT] CANDIDATO <<%u = 0x%llX -- snapshot INDISPONIVEL (slot=%ld status=%u); este candidato fica SEM VEREDITO\n",
+                                kShifts[k], (unsigned long long)candidate,
+                                siteSlot, (uint32_t)siteStatus);
+                        } else if (site.Found != 0u) {
+                            Bc250DisplayLog("[TDR_GCVM_FAULT] CANDIDATO <<%u = 0x%llX DENTRO da faixa viva Base=0x%llX Size=0x%llX Offset=0x%llX Proc=%p Alloc=%p Token=0x%llX Nome=%s Seg=%u (%s) SegOff=0x%llX (LiveScan=%u)\n",
+                                kShifts[k], (unsigned long long)candidate,
+                                (unsigned long long)site.BaseGpuVa,
+                                (unsigned long long)site.Size,
+                                (unsigned long long)site.OffsetInRange,
+                                site.OwnerProcess, site.Allocation,
+                                (unsigned long long)site.AllocationToken,
+                                Bc250ActiveAllocationTokenClassName(
+                                    site.AllocationToken),
+                                site.BackingSegmentId,
+                                (site.BackingSegmentId == 1u) ? "LOCAL_VRAM" :
+                                (site.BackingSegmentId == 2u) ? "GART_SISTEMA" :
+                                "DESCONHECIDO",
+                                (unsigned long long)site.BackingSegmentOffset,
+                                site.LiveRangesScanned);
+                            if (pageAddr == 0x200040ull && kShifts[k] == 12u) {
+                                Bc250DisplayLog("[TDR_GCVM_FAULT] ALVO 0x200040: GpuVa=0x%llX pertence a Nome=%s Token=0x%llX Alloc=%p Base=0x%llX Size=0x%llX Offset=0x%llX\n",
+                                    (unsigned long long)candidate,
+                                    Bc250ActiveAllocationTokenClassName(
+                                        site.AllocationToken),
+                                    (unsigned long long)site.AllocationToken,
+                                    site.Allocation,
+                                    (unsigned long long)site.BaseGpuVa,
+                                    (unsigned long long)site.Size,
+                                    (unsigned long long)site.OffsetInRange);
+                            }
+                        } else {
+                            Bc250DisplayLog("[TDR_GCVM_FAULT] CANDIDATO <<%u = 0x%llX FORA de toda faixa viva | abaixo:%u fim=0x%llX dist=0x%llX | acima:%u base=0x%llX dist=0x%llX (LiveScan=%u)\n",
+                                kShifts[k], (unsigned long long)candidate,
+                                site.HasBelow, (unsigned long long)site.NearestBelowEnd,
+                                (unsigned long long)site.DistanceAboveEnd,
+                                site.HasAbove, (unsigned long long)site.NearestAboveBase,
+                                (unsigned long long)site.DistanceBelowBase,
+                                site.LiveRangesScanned);
+                            if (pageAddr == 0x200040ull && kShifts[k] == 12u) {
+                                Bc250DisplayLog("[TDR_GCVM_FAULT] ALVO 0x200040: GpuVa=0x%llX NAO PERTENCE A NENHUMA ALOCACAO VIVA\n",
+                                    (unsigned long long)candidate);
+                            }
+                        }
+
+                        /*
+                         * CAMINHADA DA NOSSA PROPRIA TABELA (Corrida 47 -> 48).
+                         *
+                         * A Corrida 47 respondeu a granularidade -- << 20, 5 de 5 --
+                         * e mostrou que o endereco que falha esta DENTRO de uma
+                         * faixa que o snapshot declara MAPPED (Alloc=0xF3 e 0xDF).
+                         * Software e hardware DISCORDAM, e o log nao sabe dizer de
+                         * que lado: [ActiveUpdatePT] e classe AMOSTRADA, entao a
+                         * ausencia de linha de PTE nao prova ausencia de PTE. Foi a
+                         * terceira vez que a amostragem barrou a conclusao.
+                         *
+                         * Aqui a pergunta deixa de depender do log: caminha-se a
+                         * tabela do VMID 7 -- o VMID que o proprio fault nomeia --
+                         * no endereco exato que falhou. Existe PTE? Qual o
+                         * conteudo? Isso separa "nunca escrevemos a PTE" de
+                         * "escrevemos e o hardware nao a enxerga", que exigem
+                         * consertos opostos.
+                         *
+                         * SOMENTE LEITURA. Legal aqui porque DXGKDDI_RESETFROMTIMEOUT
+                         * e _IRQL_requires_(PASSIVE_LEVEL) (d3dkmddi.h), e a leitura
+                         * de VRAM fora da janela do framebuffer usa MmMapIoSpace,
+                         * que exige IRQL <= APC_LEVEL. Em DISPATCH_LEVEL isto seria
+                         * defeito -- o projeto ja pagou 0x0A, 0x133 e 0x139 por erro
+                         * dessa familia.
+                         */
+                        {
+                            /*
+                             * A RAIZ DA CAMINHADA SEGUE O VMID QUE O FAULT
+                             * NOMEIA (21/09, Corrida 54).
+                             *
+                             * Enquanto o pacote ia em VMID 7 esta linha lia
+                             * UserVmidInstalledRootPhysical e isso bastava.
+                             * Com o INDIRECT_BUFFER carregando o VMID do pool,
+                             * um fault em VMID 3 caminhado com a raiz do VMID 7
+                             * leria a TABELA ERRADA -- e "a PTE nao existe"
+                             * viraria conclusao falsa sobre a tabela certa.
+                             * Esta e' a armadilha (d) do handoff 307.
+                             *
+                             * Raiz ausente nao e' substituida por palpite: fica
+                             * zero, e o ramo abaixo DECLARA a ausencia.
+                             */
+                            const uint32_t faultVmid =
+                                (faultStatus & 0x00F00000u) >> 20;
+                            BC250_VMID_POOL_WALK_ROOT poolWalk;
+                            BC250_VMID_POOL_STATUS poolWalkStatus =
+                                BC250_VMID_POOL_NOT_FOUND;
+                            KIRQL walkPoolIrql;
+                            uint64_t poolRoot;
+
+                            poolWalk.RootPhysical = 0ull;
+                            poolWalk.Context = NULL;
+                            poolWalk.Generation = 0u;
+                            poolWalk.Source = BC250_VMID_POOL_WALK_ROOT_NONE;
+                            if (faultVmid != BC250_GCVM_USER_VMID) {
+                                KeAcquireSpinLock(&activeCtx->VmidPoolLock,
+                                    &walkPoolIrql);
+                                poolWalkStatus = Bc250VmidPoolRootForFaultWalk(
+                                    &activeCtx->VmidPool, faultVmid,
+                                    &poolWalk);
+                                KeReleaseSpinLock(&activeCtx->VmidPoolLock,
+                                    walkPoolIrql);
+                            }
+                            poolRoot = poolWalk.RootPhysical;
+                            const uint64_t walkRoot =
+                                (faultVmid == BC250_GCVM_USER_VMID)
+                                    ? activeCtx->UserVmidInstalledRootPhysical
+                                    : poolRoot;
+                            /*
+                             * COMPARACAO DE RAIZ (21/09, apos a Corrida 48).
+                             * A caminhada acima usa a raiz do INSTANTE DO TDR.
+                             * Se as submissoes recentes foram feitas com OUTRA
+                             * raiz, "a PTE nao existe nesta raiz" nao significa
+                             * que ela nunca foi escrita -- significa que se
+                             * caminhou a tabela ERRADA, e o defeito e' troca de
+                             * contexto no VMID 7, nao escrita de PTE.
+                             * So' e emitido uma vez por fault, no primeiro
+                             * candidato, para nao repetir o mesmo dado.
+                             */
+                            if (k == 0u) {
+                                uint32_t st;
+                                uint32_t divergentes = 0u;
+                                const uint32_t total =
+                                    activeCtx->GfxSubmitStampCount;
+                                for (st = 0u; st < total; ++st) {
+                                    if (activeCtx->GfxSubmitStamps[st].RootAtSubmit
+                                            != walkRoot) {
+                                        ++divergentes;
+                                    }
+                                }
+                                Bc250DisplayLog("[TDR_GCVM_FAULT] ORIGEM_DA_RAIZ: FaultVmid=%u -> %s Status=%u CtxDaRaiz=%p Geracao=%u (RaizDoPool=0x%llX RaizVmid7=0x%llX) -- a caminhada abaixo usa a tabela DESTE VMID, nao a do 7\n",
+                                    faultVmid,
+                                    (faultVmid == BC250_GCVM_USER_VMID) ?
+                                        "VMID7 legado" :
+                                        (poolWalk.Source ==
+                                            BC250_VMID_POOL_WALK_ROOT_LIVE_READY ?
+                                            "VIVA_READY do pool" :
+                                         poolWalk.Source ==
+                                            BC250_VMID_POOL_WALK_ROOT_RETAINED ?
+                                            "RETIDA_POS_MORTE -- ultima instalacao provada" :
+                                            "SEM RAIZ CONHECIDA"),
+                                    (uint32_t)poolWalkStatus,
+                                    poolWalk.Context, poolWalk.Generation,
+                                    (unsigned long long)poolRoot,
+                                    (unsigned long long)activeCtx->UserVmidInstalledRootPhysical);
+                                /*
+                                 * A CAMINHADA E' POST-MORTEM (Corrida 55).
+                                 *
+                                 * Ela roda no TDR, muito depois do fault. Se a
+                                 * tabela foi publicada nesse intervalo, a PTE
+                                 * valida que lemos agora pode ter NASCIDO
+                                 * DEPOIS do fault -- e "a PTE existe, logo o
+                                 * defeito nao e PTE ausente" seria conclusao
+                                 * sobre um estado que nao existia na hora.
+                                 *
+                                 * A epoca da tabela ja e carimbada por
+                                 * submissao. Comparar com a epoca de AGORA diz
+                                 * se houve publicacao na janela. Os dois
+                                 * desfechos informam, e este e o unico jeito de
+                                 * a caminhada falar do INSTANTE do fault.
+                                 */
+                                {
+                                    const int slotAtivo =
+                                        (activeCtx->GpuvaSnapshots.ActiveSlot >= 0 &&
+                                         activeCtx->GpuvaSnapshots.ActiveSlot <= 1) ?
+                                        activeCtx->GpuvaSnapshots.ActiveSlot : 0;
+                                    const uint32_t epocaAgora =
+                                        activeCtx->GpuvaSnapshots.Slots[slotAtivo].PageTableEpoch;
+                                    const uint32_t idxUlt =
+                                        (activeCtx->GfxSubmitStampNext +
+                                         BC250_GFX_SUBMIT_STAMP_SLOTS - 1u) %
+                                        BC250_GFX_SUBMIT_STAMP_SLOTS;
+                                    const uint32_t epocaSub =
+                                        activeCtx->GfxSubmitStamps[idxUlt].PageTableEpoch;
+                                    Bc250DisplayLog("[TDR_GCVM_FAULT] JANELA_DE_PUBLICACAO: EpocaNaUltimaSubmissao=%u EpocaAgora=%u Geracao=%ld Maps=%ld Unmaps=%ld -> %s\n",
+                                        epocaSub, epocaAgora,
+                                        activeCtx->GpuvaSnapshots.PublicationGeneration,
+                                        activeCtx->GpuvaSnapshots.LastPublishMapCount,
+                                        activeCtx->GpuvaSnapshots.LastPublishUnmapCount,
+                                        (epocaSub == epocaAgora) ?
+                                            "TABELA INALTERADA na janela -- a PTE lida abaixo JA valia no instante do fault, e a caminhada FALA do fault" :
+                                            "TABELA MUDOU na janela -- a PTE lida abaixo pode ter nascido DEPOIS do fault, e a caminhada NAO prova nada sobre o instante do fault");
+                                }
+                                Bc250DisplayLog("[TDR_GCVM_FAULT] RAIZ_NO_TDR=0x%llX Carimbos=%u Divergentes=%u -- Divergentes>0 significa que submissoes recentes usaram OUTRA raiz, e a caminhada acima pode ter lido a tabela errada\n",
+                                    (unsigned long long)walkRoot, total, divergentes);
+                                for (st = 0u; st < total && st < 4u; ++st) {
+                                    const uint32_t idx =
+                                        (activeCtx->GfxSubmitStampNext +
+                                         BC250_GFX_SUBMIT_STAMP_SLOTS - 1u - st) %
+                                        BC250_GFX_SUBMIT_STAMP_SLOTS;
+                                    Bc250DisplayLog("[TDR_GCVM_FAULT] CARIMBO -%u Fence=%llu RaizNaSubmissao=0x%llX IbVa=0x%llX Vmid=%u Epoca=%u %s\n",
+                                        st,
+                                        (unsigned long long)activeCtx->GfxSubmitStamps[idx].Fence,
+                                        (unsigned long long)activeCtx->GfxSubmitStamps[idx].RootAtSubmit,
+                                        (unsigned long long)activeCtx->GfxSubmitStamps[idx].IbGpuVa,
+                                        activeCtx->GfxSubmitStamps[idx].Vmid,
+                                        activeCtx->GfxSubmitStamps[idx].PageTableEpoch,
+                                        (activeCtx->GfxSubmitStamps[idx].RootAtSubmit == walkRoot) ?
+                                            "(MESMA RAIZ DO TDR)" : "(RAIZ DIFERENTE)");
+                                }
+                                /*
+                                 * DX.7 -- MAPA DO POOL NO INSTANTE DO FAULT.
+                                 *
+                                 * Os carimbos acima dizem QUANTAS raizes
+                                 * diferentes passaram; este mapa diz QUANTOS
+                                 * CONTEXTOS existiam ao mesmo tempo. Sao
+                                 * perguntas distintas: um unico contexto que
+                                 * troca de raiz e varios contextos brigando
+                                 * pelo mesmo VMID produzem o mesmo numero de
+                                 * divergencias e exigem consertos diferentes.
+                                 * Somente leitura de estado do software.
+                                 */
+                                {
+                                    uint32_t pv;
+                                    uint32_t ocupados = 0u;
+                                    BC250_MCDM_HANDLE poolContexts[BC250_VMID_COUNT];
+                                    uint64_t poolRoots[BC250_VMID_COUNT];
+                                    uint32_t poolGenerations[BC250_VMID_COUNT];
+                                    uint32_t poolAllocCount;
+                                    uint32_t poolFreeCount;
+                                    uint32_t poolExhaustedCount;
+                                    uint32_t poolInUseMask;
+                                    KIRQL poolIrql;
+
+                                    /*
+                                     * O TDR nao imprime enquanto segura o
+                                     * lock. Tira um snapshot curto e so'
+                                     * entao formata o mapa; assim Acquire e
+                                     * Release nunca deixam Entries[] pela
+                                     * metade para o diagnostico.
+                                     */
+                                    KeAcquireSpinLock(&activeCtx->VmidPoolLock,
+                                        &poolIrql);
+                                    for (pv = 0u; pv < BC250_VMID_COUNT; ++pv) {
+                                        poolContexts[pv] = activeCtx->VmidPool.Entries[pv].Context;
+                                        poolRoots[pv] = activeCtx->VmidPool.Entries[pv].RootPhysical;
+                                        poolGenerations[pv] = activeCtx->VmidPool.Entries[pv].Generation;
+                                    }
+                                    poolAllocCount = activeCtx->VmidPool.AllocCount;
+                                    poolFreeCount = activeCtx->VmidPool.FreeCount;
+                                    poolExhaustedCount = activeCtx->VmidPool.ExhaustedCount;
+                                    poolInUseMask = activeCtx->VmidPool.InUseMask;
+                                    KeReleaseSpinLock(&activeCtx->VmidPoolLock,
+                                        poolIrql);
+
+                                    for (pv = 0u; pv < BC250_VMID_COUNT; ++pv) {
+                                        if (poolContexts[pv] == NULL) continue;
+                                        ++ocupados;
+                                        Bc250DisplayLog("[VMID_POOL] MAPA: Ctx=%p -> VMID%02u Raiz=0x%llX Geracao=%u\n",
+                                            poolContexts[pv], pv,
+                                            (unsigned long long)poolRoots[pv],
+                                            poolGenerations[pv]);
+                                    }
+                                    Bc250DisplayLog("[VMID_POOL] MAPA NO FAULT: Ocupados=%u Alocados=%u Liberados=%u Exaustoes=%u InUseMask=0x%04X -- Ocupados>1 confirma que MAIS DE UM contexto disputa o VMID%u hoje; Ocupados==1 REFUTA a disputa e o suspeito volta a ser troca de raiz do mesmo contexto\n",
+                                        ocupados, poolAllocCount,
+                                        poolFreeCount,
+                                        poolExhaustedCount,
+                                        poolInUseMask,
+                                        BC250_GCVM_USER_VMID);
+                                }
+                            }
+                            BC250_MCDM_RUNTIME_CAPS walkCaps;
+                            uint64_t resolved = 0ull;
+
+                            /*
+                             * DX.17 -- O QUE NOS ESCREVEMOS x O QUE ESTA LA.
+                             *
+                             * Tres corridas (59, 61, 63) leram valor de PTE no
+                             * indice 4096 de uma raiz real, enquanto as nossas
+                             * 314 escritas nesse indice sairam TODAS limpas.
+                             * Esta linha poe os dois numeros lado a lado no
+                             * mesmo log, para que a divergencia deixe de ser
+                             * uma comparacao que eu faco a mao entre corridas.
+                             *
+                             * ArenaPdeWriteSeq==0 significa que nunca
+                             * escrevemos esse indice nesta sessao -- e a
+                             * ausencia fica DECLARADA em vez de virar "eram
+                             * iguais".
+                             */
+                            if (k == 0u && candidate == 0x200040000ull) {
+                                Bc250DisplayLog("[PDE_ARENA_CONFRONTO] UltimoQueEscrevemos=0x%016llX Escritas=%u -- compare com o PDE que a linha [PT_WALK] acima leu no indice 4096\n",
+                                    (unsigned long long)activeCtx->ArenaPdeLastWritten,
+                                    activeCtx->ArenaPdeWriteSeq);
+                            }
+
+                            RtlZeroMemory(&walkCaps, sizeof(walkCaps));
+                            if (walkRoot == 0ull) {
+                                Bc250DisplayLog("[TDR_GCVM_FAULT] WALK <<%u: raiz do VMID %u AUSENTE (Fonte=%s Status=%u) -- sem caminhada, e a ausencia esta DECLARADA\n",
+                                    kShifts[k], faultVmid,
+                                    (faultVmid == BC250_GCVM_USER_VMID) ?
+                                        "VMID7_LEGADO" : "POOL_VIVA_OU_RETIDA",
+                                    (uint32_t)poolWalkStatus);
+                            } else if (!NT_SUCCESS(Bc250ActiveQueryRuntimeCaps(
+                                           activeCtx, &walkCaps)) || !walkCaps.Ready) {
+                                Bc250DisplayLog("[TDR_GCVM_FAULT] WALK <<%u: runtime caps INDISPONIVEIS -- sem VramMcBase nao se caminha, e nao se inventa\n",
+                                    kShifts[k]);
+                            /*
+                             * O rotulo dizia FAULT_VMID7 mesmo caminhando VMID
+                             * 1, 2 ou 3 (medido na Corrida 54). Rotulo que
+                             * nomeia o VMID errado e' telemetria do estado
+                             * anterior -- a classe que esta faixa combate.
+                             */
+                            } else if (Bc250ActiveWalkGpuVa(
+                                           (faultVmid == BC250_GCVM_USER_VMID) ?
+                                               "FAULT_VMID7" : "FAULT_VMID_POOL",
+                                           candidate,
+                                           walkRoot, walkCaps.VramMcBase, &resolved)) {
+                                Bc250DisplayLog("[TDR_GCVM_FAULT] WALK %s = 0x%llX RESOLVEU para PA=0x%llX com Root=0x%llX -- a PTE existe NESTE endereco; se o shift for VA<<8, isso significa que o endereco que FALTOU perdeu 8 bits, NAO que a tabela esteja certa\n",
+                                    kShiftNames[k], (unsigned long long)candidate,
+                                    (unsigned long long)resolved,
+                                    (unsigned long long)walkRoot);
+                            } else {
+                                Bc250DisplayLog("[TDR_GCVM_FAULT] WALK %s = 0x%llX NAO RESOLVE com Root=0x%llX -- as linhas [PT_WALK] acima dizem em qual nivel parou\n",
+                                    kShiftNames[k], (unsigned long long)candidate,
+                                    (unsigned long long)walkRoot);
+                            }
+                        }
+                    }
+                }
+            } else {
+                Bc250DisplayLog("[TDR_GCVM_FAULT] SEM FAULT LATCHADO (FaultValid=0x%X Status=0x%08X) -- "
+                    "ausencia aqui NAO prova ausencia de fault, so' que este registrador nao o reteve\n",
+                    faultValid, faultStatus);
+            }
             Bc250DisplayLog("[TDR_MEC_CPF_STAT] CpValid=0x%X CpfStat=%08X CpfBusy=%08X CpfStalled=%08X CpcStat=%08X CpcBusy=%08X CpcStalled=%08X CpStalled1=%08X CpStat=%08X\n",
                 cpValid, cpfStatus, cpfBusy, cpfStalled, cpcStatus, cpcBusy, cpcStalled, cpStalled1, cpStat);
             Bc250DisplayLog("[TDR_MEC_EXEC_STAT] Mec1Hdr=%08X Mec2Hdr=%08X Mec1Pntr=%08X Mec2Pntr=%08X IbBase=%08X:%08X IbRptr=%08X PqCtrl=%08X Dequeue=%08X\n",
@@ -5275,6 +6221,7 @@ static BOOLEAN Bc250ActiveTdrProveGfxRestart(
         if (rptr == cursor && fenceObserved == proofFence) {
             Context->GfxEngine.WptrDwords = cursor;
             Context->GfxEngine.LastSubmittedFence = proofFence64;
+            Context->GfxEngine.LastSubmitVmid = 0xFFFFFFFFu; /* DX.29: anel vazio apos o restart */
             Context->GfxEngine.LastRetiredFence = proofFence64;
             Context->GfxEngine.LastRptrMmio = rptr;
             Bc250DisplayLog("[TDR_GFX_RESTART_PROOF] PASS: NOPx4+RELEASE_MEM executados RPTR=%u WPTR=%u Fence=0x%08X PoisonSubstituido=1 Polls=%u\n",
@@ -5400,6 +6347,16 @@ static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
                 (unsigned long long)activeCtx->GfxEngine.RingGpuVa,
                 baseExpectedHi, baseExpectedLo, baseHi, baseLo,
                 (baseHi == baseExpectedHi && baseLo == baseExpectedLo) ? 1u : 0u);
+
+            /* DX.27: o soft-reset do CP preserva o RLC_CSIB? Somente leitura. */
+            {
+                uint32_t csLo = 0u, csHi = 0u, csLen = 0u;
+                (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport, BC250_REG_RLC_CSIB_ADDR_LO_SNAP, &csLo);
+                (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport, BC250_REG_RLC_CSIB_ADDR_HI_SNAP, &csHi);
+                (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport, BC250_REG_RLC_CSIB_LENGTH_SNAP, &csLen);
+                Bc250DisplayLog("[TDR_GFX_RESTART_CSIB] pos-reset LO=0x%08X HI=0x%08X LEN=%u (somente leitura)\n",
+                    csLo, csHi, csLen);
+            }
 
             gfxStatus = Bc250TdrValidateGfxRestartReadback(active, rptr, wptr, meCntl, grbmReset);
             if (baseHi != baseExpectedHi || baseLo != baseExpectedLo) {
@@ -5766,6 +6723,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiAddDeviceActive(
     RtlZeroMemory(&context->Display, sizeof(context->Display));
     ExInitializePushLock(&context->ObjectLock);
     KeInitializeSpinLock(&context->TlbLock);
+    KeInitializeSpinLock(&context->VmidPoolLock);
     if (Bc250McdmObjectRegistryInitialize(&context->Objects) !=
         BC250_MCDM_OBJECT_OK) {
         ExFreePoolWithTag(context, BC250_ACTIVE_POOL_TAG);
@@ -6287,6 +7245,77 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceActive(
                 Bc250DisplayLog("[StartDevice] RECUSADO fail-closed: MMU global status=0x%08X\n",
                     (uint32_t)globalMmuNtStatus);
                 return globalMmuNtStatus;
+            }
+        }
+
+        /*
+         * INVENTARIO DOS 16 CONTEXTOS GCVM -- SOMENTE LEITURA (21/09).
+         *
+         * A Corrida 49 mediu que varios contextos do DWM disputam o VMID 7 e
+         * que suas raizes se alternam entre submissoes -- 5 faults, 5
+         * comparacoes, TODAS divergentes, e o mesmo IB submetido sob TRES
+         * raizes. O conserto e' VMID por contexto, e as pecas ja existem
+         * (Bc250GcvmInstallVmid recebe o VMID; o INDIRECT_BUFFER ja o codifica
+         * no pacote). Falta saber QUAIS VMIDs estao livres.
+         *
+         * Assumir que 1-6 e 10-15 estao livres seria a quarta hipotese desta
+         * investigacao a nascer de intuicao; as tres anteriores morreram por
+         * leitura. Entao o driver PERGUNTA ao silicio, uma vez, no bring-up.
+         * Nao escreve nada: a allowlist de ESCRITA segue restrita a 7 e 8.
+         */
+        /*
+         * DX.7 -- pool de VMID inicializado ANTES do inventario, para que o
+         * mapa do software e o retrato do silicio aparecam no log na ordem em
+         * que o driver os constroi. A contagem de slots e' CALCULADA a partir
+         * da mascara de reservados, nao escrita a mao: se um reservado entrar
+         * ou sair, o numero no log muda junto.
+         */
+        {
+            uint32_t pf;
+            uint32_t livres = 0u;
+            Bc250VmidPoolInitialize(&context->VmidPool);
+            for (pf = 0u; pf < BC250_VMID_COUNT; ++pf) {
+                if (Bc250VmidIsReserved(pf) == 0u) ++livres;
+            }
+            Bc250DisplayLog("[VMID_POOL] INICIALIZADO: %u slots livres de %u (reservados 0=MEC 7=usuario 8=paginacao 9=compute), MascaraDoPool=0x%04X\n",
+                livres, BC250_VMID_COUNT, (uint32_t)BC250_VMID_POOL_MASK);
+        }
+
+        if (context->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED) {
+            BC250_GCVM_VMID8_INTERFACE invIo;
+            BC250_GCVM_CONTEXT_INVENTORY inv;
+            BC250_GCVM_VMID8_STATUS invStatus;
+
+            RtlZeroMemory(&invIo, sizeof(invIo));
+            invIo.Identity = BC250_GCVM_VMID8_IDENTITY;
+            invIo.Context = context;
+            invIo.Read32 = Bc250ActiveVmidRead32;
+            invIo.Write32 = Bc250ActiveVmidWrite32;
+            invIo.Flush = Bc250ActiveFlushUserVmidOnly;
+
+            invStatus = Bc250GcvmScanContexts(&invIo, &inv);
+            if (invStatus != BC250_GCVM_VMID8_OK) {
+                Bc250DisplayLog("[GCVM_INVENTARIO] NAO EXECUTADO: status=%u -- quais VMIDs estao livres segue SEM RESPOSTA\n",
+                    (uint32_t)invStatus);
+            } else {
+                uint32_t iv;
+                Bc250DisplayLog("[GCVM_INVENTARIO] Varridos=%u EmUso=%u Livres=%u Ilegiveis=%u MascaraLivre=0x%04X\n",
+                    inv.Scanned, inv.InUseCount, inv.FreeCount,
+                    inv.UnreadableCount, inv.FreeMask);
+                /* DX.6: guarda a foto para o segundo inventario comparar. */
+                for (iv = 0u; iv < BC250_GCVM_CONTEXT_COUNT; ++iv) {
+                    context->GcvmInventoryFirstCntl[iv] = inv.Entries[iv].Cntl;
+                    context->GcvmInventoryFirstPtBase[iv] = inv.Entries[iv].PageTableBase;
+                }
+                context->GcvmInventoryFirstValid = 1u;
+                for (iv = 0u; iv < BC250_GCVM_CONTEXT_COUNT; ++iv) {
+                    const BC250_GCVM_CONTEXT_INVENTORY_ENTRY *e = &inv.Entries[iv];
+                    Bc250DisplayLog("[GCVM_INVENTARIO] VMID%02u Cntl=0x%08X[lido=%u] Enable=%u PtBase=0x%llX[lido=%u] -> %s\n",
+                        e->Vmid, e->Cntl, e->CntlRead, e->Enabled,
+                        (unsigned long long)e->PageTableBase, e->PtBaseRead,
+                        (e->CntlRead == 0u && e->PtBaseRead == 0u) ? "ILEGIVEL" :
+                        (e->InUse != 0u) ? "EM USO" : "LIVRE");
+                }
             }
         }
 
@@ -10607,6 +11636,7 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
                 } else {
                     io.Flush = Bc250ActiveFlushUserVmidOnly;
                 }
+                io.FlushVmid = Bc250ActiveFlushVmidTlb;
 
                 RtlZeroMemory(pInstallEvidence, sizeof(*pInstallEvidence));
                 vStatus = Bc250GcvmInstallVmid(targetVmid, targetPtPhys, &io, pInstallEvidence);
@@ -10974,6 +12004,8 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
         BC250_MCDM_RUNTIME_CAPS physicalCaps;
         uint64_t physicalRoot = 0ull;
         uint64_t firstPhysical = 0ull;
+        uint32_t poolVmid = BC250_VMID_COUNT;
+        BC250_VMID_POOL_STATUS poolStatus = BC250_VMID_POOL_BAD_ARGUMENT;
         BOOLEAN committed = FALSE;
 
         assignedFence = 0ull;
@@ -11092,6 +12124,180 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
             }
         }
 
+        /*
+         * DX.7 -- AQUISICAO DE VMID POR CONTEXTO (21/09).
+         *
+         * ESCOPO DELIBERADO: este bloco ALOCA; o bloco seguinte instala a raiz
+         * lateralmente, e a submissao continua em BC250_GCVM_USER_VMID.
+         * Trocar o VMID da
+         * submissao junto com o mapeamento faria um mapa ERRADO produzir
+         * exatamente o mesmo sintoma do defeito atual -- fault de traducao --
+         * e a corrida nao saberia dizer qual dos dois falou. Primeiro a
+         * medicao prova o mapa; depois a submissao passa a usa-lo.
+         *
+         * So' os contextos que chegam ATE AQUI entram no pool, e esse e' o
+         * ponto: e' exatamente o conjunto que disputa o VMID 7 hoje. O numero
+         * de disputantes passa a ser medido em vez de estimado pelos carimbos.
+        */
+        {
+            uint32_t jaTinha = 0u;
+            uint32_t allocCount = 0u;
+            uint32_t exhaustedCount = 0u;
+            uint32_t inUseMask = 0u;
+            KIRQL poolIrql;
+
+            KeAcquireSpinLock(&context->VmidPoolLock, &poolIrql);
+            poolStatus = Bc250VmidPoolAcquire(
+                &context->VmidPool,
+                (BC250_MCDM_HANDLE)pSubmitCommand->hContext,
+                &poolVmid, &jaTinha);
+            allocCount = context->VmidPool.AllocCount;
+            exhaustedCount = context->VmidPool.ExhaustedCount;
+            inUseMask = context->VmidPool.InUseMask;
+            KeReleaseSpinLock(&context->VmidPoolLock, poolIrql);
+
+            if (poolStatus == BC250_VMID_POOL_OK && jaTinha == 0u) {
+                Bc250DisplayLog("[VMID_POOL] ATRIBUIDO: Ctx=%p -> VMID%02u (Alocados=%u InUseMask=0x%04X) -- instalado lateralmente; INDIRECT_BUFFER ainda segue em VMID%u\n",
+                    pSubmitCommand->hContext, poolVmid,
+                    allocCount, inUseMask,
+                    BC250_GCVM_USER_VMID);
+            } else if (poolStatus == BC250_VMID_POOL_EXHAUSTED) {
+                Bc250DisplayLog("[VMID_POOL] RECUSA POR EXAUSTAO #%u: Ctx=%p sem VMID livre; proibido cair no VMID%u compartilhado\n",
+                    exhaustedCount, pSubmitCommand->hContext, BC250_GCVM_USER_VMID);
+            } else if (poolStatus != BC250_VMID_POOL_OK) {
+                Bc250DisplayLog("[VMID_POOL] FALHA: Ctx=%p status=%u -- a atribuicao NAO aconteceu, e a ausencia esta DECLARADA\n",
+                    pSubmitCommand->hContext, (uint32_t)poolStatus);
+            }
+            if (poolStatus != BC250_VMID_POOL_OK) {
+                Bc250McdmContextReleaseSubmissionView(&context->Objects,
+                    (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
+                return (poolStatus == BC250_VMID_POOL_EXHAUSTED) ?
+                    STATUS_INSUFFICIENT_RESOURCES : STATUS_DEVICE_NOT_READY;
+            }
+        }
+
+        /*
+         * DX.7 -- INSTALACAO LATERAL NO VMID DO POOL.
+         *
+         * O Begin acontece sob VmidPoolLock, mas MMIO/readback/flush acontecem
+         * SEM esse lock: o ACK pode levar centenas de polls e SubmitVirtual
+         * roda em DISPATCH_LEVEL. INSTALLING impede uma segunda transacao no
+         * mesmo slot durante essa janela. A submission view ja adquirida faz
+         * DestroyContext reter o VMID ate o RecordInstall terminar.
+         *
+         * Esta faixa NAO muda o pacote: o INDIRECT_BUFFER abaixo continua em
+         * BC250_GCVM_USER_VMID. Assim, um erro de instalacao do slot e'
+         * distinguivel do efeito da troca do VMID no CP.
+         */
+        {
+            uint32_t needsInstall = 0u;
+            BC250_VMID_POOL_STATUS beginStatus;
+            KIRQL poolIrql;
+
+            KeAcquireSpinLock(&context->VmidPoolLock, &poolIrql);
+            beginStatus = Bc250VmidPoolBeginInstall(&context->VmidPool,
+                (BC250_MCDM_HANDLE)pSubmitCommand->hContext,
+                poolVmid, physicalRoot, &needsInstall);
+            KeReleaseSpinLock(&context->VmidPoolLock, poolIrql);
+
+            /*
+             * LATERAL QUER DIZER LATERAL (corrigido em 21/09).
+             *
+             * Ate esta correcao, qualquer tropeco da instalacao lateral
+             * RECUSAVA a submissao GFX. Isso quebrava o proprio escopo da
+             * faixa: o VMID alocado nao e' usado por ninguem, entao recusar
+             * aqui nao compra seguranca nenhuma -- e transformaria a PRIMEIRA
+             * corrida que escreve nos VMIDs 1-15 num desastre total, com
+             * todas as submissoes recusadas e nenhuma medicao, caso o silicio
+             * simplesmente nao aceite raiz nesses contextos.
+             *
+             * Continuar aqui NAO e' sucesso silencioso (Lei 4): a submissao
+             * sempre foi para BC250_GCVM_USER_VMID, esse caminho esta
+             * intocado, o motivo do tropeco e' nomeado no log e a entrada do
+             * pool fica marcada FAILED. O que nao pode acontecer e' o slot
+             * ficar presos em INSTALLING -- e nao fica, porque BUSY nao inicia
+             * transacao e RecordInstall publica FAILED nas demais.
+             */
+            if (beginStatus == BC250_VMID_POOL_BUSY) {
+                /*
+                 * Outra submissao do MESMO contexto ja esta instalando este
+                 * slot. Nao ha segunda transacao MMIO e nao ha como saber se a
+                 * tabela ja vale; o dxgkrnl reapresenta com ALLOCATION_BUSY.
+                 */
+                Bc250DisplayLog("[VMID_POOL] RECUSA: VMID%02u ja INSTALLING para Ctx=%p; a submissao e adiada em vez de partir com tabela incerta\n",
+                    poolVmid, pSubmitCommand->hContext);
+                Bc250McdmContextReleaseSubmissionView(&context->Objects,
+                    (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
+                return STATUS_GRAPHICS_ALLOCATION_BUSY;
+            }
+            if (beginStatus != BC250_VMID_POOL_OK) {
+                Bc250DisplayLog("[VMID_POOL] RECUSA: BeginInstall VMID%02u Ctx=%p status=%u -- sem transacao nao ha tabela, e o pacote carregaria este VMID\n",
+                    poolVmid, pSubmitCommand->hContext,
+                    (uint32_t)beginStatus);
+                Bc250McdmContextReleaseSubmissionView(&context->Objects,
+                    (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
+                return STATUS_DEVICE_NOT_READY;
+            }
+
+            if (needsInstall != 0u) {
+                BC250_GCVM_VMID8_INTERFACE poolIo;
+                BC250_GCVM_VMID8_INSTALL_EVIDENCE poolEvidence;
+                BC250_GCVM_VMID8_STATUS installStatus;
+                BC250_VMID_POOL_STATUS recordStatus;
+
+                RtlZeroMemory(&poolIo, sizeof(poolIo));
+                poolIo.Identity = BC250_GCVM_VMID8_IDENTITY;
+                poolIo.Context = context;
+                poolIo.Read32 = Bc250ActiveVmidRead32;
+                poolIo.Write32 = Bc250ActiveVmidWrite32;
+                poolIo.FlushVmid = Bc250ActiveFlushVmidTlb;
+                RtlZeroMemory(&poolEvidence, sizeof(poolEvidence));
+
+                installStatus = Bc250GcvmInstallVmid(poolVmid, physicalRoot,
+                    &poolIo, &poolEvidence);
+
+                KeAcquireSpinLock(&context->VmidPoolLock, &poolIrql);
+                recordStatus = Bc250VmidPoolRecordInstall(&context->VmidPool,
+                    (BC250_MCDM_HANDLE)pSubmitCommand->hContext,
+                    poolVmid, physicalRoot, installStatus);
+                KeReleaseSpinLock(&context->VmidPoolLock, poolIrql);
+
+                /*
+                 * Ate a Corrida 53 esta linha afirmava que o pacote seguia
+                 * no VMID 7 legado. Isso DEIXOU DE SER VERDADE na Corrida 54:
+                 * o pacote carrega este mesmo VMID. Telemetria que descreve o
+                 * estado anterior e' pior que telemetria ausente -- ela e' lida
+                 * como medicao. Um portao proibe a frase antiga de voltar.
+                 */
+                Bc250DisplayLog("[VMID_POOL] INSTALACAO: Ctx=%p VMID%02u Root=0x%llX InstallStatus=%u RecordStatus=%u Readback=%u Flush=%u Ready=%u -- o INDIRECT_BUFFER desta submissao carrega VMID%02u\n",
+                    pSubmitCommand->hContext, poolVmid,
+                    (unsigned long long)physicalRoot,
+                    (uint32_t)installStatus, (uint32_t)recordStatus,
+                    poolEvidence.ProgramReadbackPassed,
+                    poolEvidence.TlbFlushPassed,
+                    poolEvidence.PhysicalReady,
+                    poolVmid);
+
+                /*
+                 * A RECUSA VOLTOU (21/09, Corrida 54). Enquanto a instalacao
+                 * era lateral, falhar aqui e seguir era o certo: o VMID nao era
+                 * usado por ninguem. Agora o INDIRECT_BUFFER abaixo CARREGA
+                 * este VMID -- submeter com a tabela nao instalada produziria
+                 * exatamente o fault de traducao que esta faixa existe para
+                 * eliminar, e o log diria que tudo correu bem.
+                 */
+                if (installStatus != BC250_GCVM_VMID8_OK ||
+                    recordStatus != BC250_VMID_POOL_OK) {
+                    Bc250DisplayLog("[VMID_POOL] RECUSA: instalacao do VMID%02u FALHOU para Ctx=%p (InstallStatus=%u RecordStatus=%u) -- o pacote carregaria um VMID sem tabela, entao a submissao e RECUSADA\n",
+                        poolVmid, pSubmitCommand->hContext,
+                        (uint32_t)installStatus, (uint32_t)recordStatus);
+                    Bc250McdmContextReleaseSubmissionView(&context->Objects,
+                        (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
+                    return STATUS_DEVICE_NOT_READY;
+                }
+            }
+        }
+
         /* 2.5. Garantir instalacao da tabela de paginas fisica no VMID 7 de usuario */
         if (context->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED &&
             physicalCaps.Ready != 0u) {
@@ -11108,6 +12314,7 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
                 io.Read32 = Bc250ActiveVmidRead32;
                 io.Write32 = Bc250ActiveVmidWrite32;
                 io.Flush = Bc250ActiveFlushUserVmidOnly;
+                io.FlushVmid = Bc250ActiveFlushVmidTlb;
 
                 RtlZeroMemory(&context->UserVmidInstallEvidence, sizeof(context->UserVmidInstallEvidence));
                 vStatus = Bc250GcvmInstallVmid(BC250_GCVM_USER_VMID, physicalRoot, &io, &context->UserVmidInstallEvidence);
@@ -11116,10 +12323,86 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
                     HANDLE prevCtx = (HANDLE)context->UserVmidInstalledContext;
                     context->UserVmidInstalledContext = (BC250_MCDM_HANDLE)pSubmitCommand->hContext;
                     context->UserVmidInstalledRootPhysical = physicalRoot;
+                    /*
+                     * DX.7 -- a raiz observada e' registrada no pool no mesmo
+                     * instante em que entra no VMID 7 legado. Isto NAO marca
+                     * InstalledRootPhysical do VMID alocado: esse estado so'
+                     * ganha autoridade quando o proprio poolVmid for instalado.
+                     */
+                    {
+                        KIRQL poolIrql;
+                        KeAcquireSpinLock(&context->VmidPoolLock, &poolIrql);
+                        (void)Bc250VmidPoolNoteRoot(&context->VmidPool,
+                            (BC250_MCDM_HANDLE)pSubmitCommand->hContext,
+                            physicalRoot);
+                        KeReleaseSpinLock(&context->VmidPoolLock, poolIrql);
+                    }
                     Bc250DisplayLog("[SubmitVirtual Node1 GFX] VMID%u CONTEXT SWITCH: Ctx %p -> %p (Root=0x%llX, PT_BASE=0x%llX)\n",
                         BC250_GCVM_USER_VMID, prevCtx, pSubmitCommand->hContext,
                         (unsigned long long)physicalRoot,
                         (unsigned long long)context->UserVmidInstallEvidence.PageTablePhysical);
+
+                    /*
+                     * DX.6 -- SEGUNDO INVENTARIO, UMA UNICA VEZ POR BIND.
+                     *
+                     * Ver o bloco longo em bc250_active_miniport.h. O primeiro
+                     * inventario (bring-up) devolveu os 16 contextos com
+                     * valores IDENTICOS, o que e indistinguivel de aliasing de
+                     * leitura. Aqui acabamos de instalar UMA raiz num VMID
+                     * especifico -- entao, se os offsets forem distintos, so'
+                     * esse contexto pode ter mudado. Se TODOS mudarem, os 16
+                     * offsets caem no mesmo registrador e o inventario inteiro
+                     * cai, junto com a viabilidade de VMID por contexto.
+                     *
+                     * Somente leitura. Disparo unico por InterlockedCompareExchange:
+                     * a troca de contexto acontece dezenas de vezes por corrida e
+                     * repetir a varredura em todas afogaria o log sem informar mais.
+                     */
+                    if (context->GcvmInventoryFirstValid != 0u &&
+                        InterlockedCompareExchange(
+                            &context->GcvmInventorySecondDone, 1, 0) == 0) {
+                        BC250_GCVM_VMID8_INTERFACE inv2Io;
+                        BC250_GCVM_CONTEXT_INVENTORY inv2;
+                        BC250_GCVM_VMID8_STATUS inv2Status;
+
+                        RtlZeroMemory(&inv2Io, sizeof(inv2Io));
+                        inv2Io.Identity = BC250_GCVM_VMID8_IDENTITY;
+                        inv2Io.Context = context;
+                        inv2Io.Read32 = Bc250ActiveVmidRead32;
+                        inv2Io.Write32 = Bc250ActiveVmidWrite32;
+                        inv2Io.Flush = Bc250ActiveFlushUserVmidOnly;
+
+                        inv2Status = Bc250GcvmScanContexts(&inv2Io, &inv2);
+                        if (inv2Status != BC250_GCVM_VMID8_OK) {
+                            Bc250DisplayLog("[GCVM_INVENTARIO_2] NAO EXECUTADO: status=%u -- a duvida de aliasing fica SEM RESPOSTA\n",
+                                (uint32_t)inv2Status);
+                        } else {
+                            uint32_t iv2;
+                            uint32_t mudaram = 0u;
+                            uint32_t mudouOAlvo = 0u;
+                            for (iv2 = 0u; iv2 < BC250_GCVM_CONTEXT_COUNT; ++iv2) {
+                                const uint32_t difere =
+                                    (inv2.Entries[iv2].Cntl != context->GcvmInventoryFirstCntl[iv2] ||
+                                     inv2.Entries[iv2].PageTableBase != context->GcvmInventoryFirstPtBase[iv2]) ? 1u : 0u;
+                                if (difere != 0u) {
+                                    ++mudaram;
+                                    if (iv2 == BC250_GCVM_USER_VMID) mudouOAlvo = 1u;
+                                    Bc250DisplayLog("[GCVM_INVENTARIO_2] VMID%02u MUDOU: Cntl 0x%08X -> 0x%08X  PtBase 0x%llX -> 0x%llX\n",
+                                        iv2, context->GcvmInventoryFirstCntl[iv2],
+                                        inv2.Entries[iv2].Cntl,
+                                        (unsigned long long)context->GcvmInventoryFirstPtBase[iv2],
+                                        (unsigned long long)inv2.Entries[iv2].PageTableBase);
+                                }
+                            }
+                            Bc250DisplayLog("[GCVM_INVENTARIO_2] VEREDITO: Mudaram=%u de %u (alvo VMID%u mudou=%u) -> %s\n",
+                                mudaram, BC250_GCVM_CONTEXT_COUNT,
+                                BC250_GCVM_USER_VMID, mudouOAlvo,
+                                (mudaram == 0u) ? "NENHUM MUDOU -- instalacao nao foi observada, inventario INCONCLUSIVO" :
+                                (mudaram >= BC250_GCVM_CONTEXT_COUNT) ? "TODOS MUDARAM -- ALIASING DE LEITURA, o inventario NAO vale" :
+                                (mudouOAlvo != 0u) ? "SO O ALVO (e vizinhos) MUDOU -- offsets DISTINTOS, inventario CONFIRMADO" :
+                                "MUDOU QUEM NAO DEVIA -- offsets suspeitos, tratar como INCONCLUSIVO");
+                        }
+                    }
                 } else {
                     Bc250DisplayLog("[SubmitVirtual Node1 GFX] VMID%u CONTEXT SWITCH FALHOU: Ctx=%p, Root=0x%llX, Status=%u\n",
                         BC250_GCVM_USER_VMID, pSubmitCommand->hContext, (unsigned long long)physicalRoot, (uint32_t)vStatus);
@@ -11160,12 +12443,23 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
             return STATUS_GRAPHICS_ALLOCATION_BUSY;
         }
 
-        /* 4. Submissao ao anel CP_RB0 sob VMID 7 (BC250_GCVM_USER_VMID) */
+        /*
+         * 4. Submissao ao anel CP_RB0 sob o VMID DO CONTEXTO (Corrida 54).
+         *
+         * Este e' o passo que o pool inteiro existe para permitir. Ate aqui o
+         * pacote ia em BC250_GCVM_USER_VMID e varios contextos disputavam essa
+         * unica raiz -- 5 de 5 comparacoes divergentes na Corrida 49, ate 5
+         * contextos vivos ao mesmo tempo na Corrida 53. Com um VMID por
+         * contexto nao ha raiz para disputar.
+         *
+         * Chegar aqui ja garante que a tabela DESTE VMID esta instalada e
+         * READY: os ramos acima recusam a submissao em qualquer outro caso.
+         */
         submitStatus = Bc250ActiveGfxEngineSubmit(
             context,
             (uint64_t)pSubmitCommand->DmaBufferVirtualAddress,
             ibSizeDwords,
-            BC250_GCVM_USER_VMID,
+            poolVmid,
             &assignedFence);
 
         if (NT_SUCCESS(submitStatus)) {
@@ -12032,6 +13326,23 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
                 active->GpuvaSnapshots.LastPublishFailedMapRange,
                 active->GpuvaSnapshots.LastPublishFailedBaseGpuVa,
                 active->GpuvaSnapshots.LastPublishFailedSize);
+            /*
+             * COMPOSICAO DO LOTE (Corrida 44). Na 44, FailedIndex saiu igual a
+             * Reusable nas SEIS falhas -- o mecanismo e' que o slot inativo e'
+             * COPIA do ativo e o lote entra por cima, entao o teto util e'
+             * Cap menos Mapped. O que falta e' saber se o lote e' dominado por
+             * MAP ou por UNMAP: se for UNMAP, aplicar unmaps antes de maps
+             * derruba o pico sem mudar o estado final; se for MAP, e'
+             * capacidade de verdade e reordenar nao resolveria nada.
+             */
+            Bc250DisplayLog("[ActiveFlushTlb] PUBLICACAO_COMPOSICAO Maps=%ld Unmaps=%ld "
+                "Livres=%u (Cap=%u - Mapped=%u) -- Maps>Livres significa capacidade real; "
+                "Unmaps altos significam que a ORDEM e' o defeito\n",
+                active->GpuvaSnapshots.LastPublishMapCount,
+                active->GpuvaSnapshots.LastPublishUnmapCount,
+                (occupancy.Capacity >= occupancy.Mapped) ?
+                    (occupancy.Capacity - occupancy.Mapped) : 0u,
+                occupancy.Capacity, occupancy.Mapped);
             Bc250DisplayLog("[ActiveFlushTlb] OCUPACAO slot=%ld st=%u Cap=%u Mapped=%u Teardown=%u Reusable=%u Live=%u\n",
                 occSlot, (uint32_t)occStatus,
                 occupancy.Capacity, occupancy.Mapped,
@@ -12165,6 +13476,37 @@ static BC250_GPUVA_JOURNAL_STATUS Bc250ActiveInitializeJournalSet(
     return BC250_GPUVA_JOURNAL_OK;
 }
 
+/*
+ * DX.13 -- bits RESERVADOS de um PDE do Navi 10.
+ *
+ * PROVENIENCIA (Lei 7): o layout esta em bc250_gcvm_contract.h, derivado do
+ * comentario de gmc_v10_0.c no amdgpu -- PDE tem 47:6 endereco, 5:3
+ * RESERVADO, 2 C, 1 system, 0 valid. NAO e' numero novo: e' exatamente a
+ * mascara que Bc250GcvmDecodePde ja usa para reportar reservado[5:3], em
+ * fonte unica com ela.
+ */
+#define BC250_ACTIVE_PDE_RESERVED_MASK 0x0000000000000038ull
+
+/*
+ * DX.14 -- HDP_MEM_COHERENCY_FLUSH_CNTL.
+ *
+ * PROVENIENCIA (Lei 7): offset ja catalogado e ja usado por quatro caminhos
+ * deste driver -- bc250_gfx_ring_transaction.h (0x3FC4),
+ * bc250_pfp_direct_load.c, bc250_compute_service.c e bc250_submission_engine.c
+ * (onde tem o nome HDP_READ_CACHE_INVALIDATE). Nao e endereco novo, e ja esta
+ * nas allowlists de leitura E escrita do transporte.
+ */
+#define BC250_ACTIVE_REG_HDP_MEM_COHERENCY_FLUSH_CNTL 0x00003FC4u
+
+/*
+ * Indice de raiz da arena que falha. DERIVADO, nunca digitado:
+ * 0x200040000 >> (12 + BC250_GPUVA_PT_LEAF_INDEX_BITS) = 0x200040000 >> 21
+ * = 4096. E' a mesma conta que Bc250ActiveWalkPageTable faz para achar o
+ * rootIndex, e por isso as duas nao podem divergir se a geometria mudar.
+ */
+#define BC250_ACTIVE_ARENA_ROOT_INDEX \
+    ((UINT32)(0x200040000ull >> (12u + BC250_GPUVA_PT_LEAF_INDEX_BITS)))
+
 static NTSTATUS Bc250ActiveUpdatePageTableHandler(
     _In_ HANDLE hAdapter,
     _In_ CONST BC250_MCDM_RUNTIME_CAPS *Caps,
@@ -12181,6 +13523,11 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
     UINT32 chunkCount = 0u;
     UINT64 *destination;
     UINT64 rootKey;
+    uint64_t allocationToken = 0ull;
+    BC250_MCDM_OBJECT_RECORD allocationRecord;
+    uint32_t allocationRecordKnown = 0u;
+
+    RtlZeroMemory(&allocationRecord, sizeof(allocationRecord));
 
     if (active == NULL || Caps == NULL || update == NULL ||
         active->Signature != BC250_ACTIVE_SIGNATURE ||
@@ -12214,6 +13561,20 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
         rootKey = 0ull;
         journalStatus = BC250_GPUVA_JOURNAL_OK;
     } else {
+        /*
+         * DX.11: o handle sozinho nao nomeia a alocacao no TDR e pode ja ter
+         * morrido quando a caminhada roda. Copiamos o token imutavel para o
+         * journal/snapshot enquanto o registro ainda esta sob ObjectLock.
+         */
+        if (update->hAllocation != NULL) {
+            if (Bc250McdmObjectLookup(&active->Objects,
+                    (BC250_MCDM_HANDLE)update->hAllocation,
+                    BC250_MCDM_OBJECT_ALLOCATION, NULL,
+                    &allocationRecord) == BC250_MCDM_OBJECT_OK) {
+                allocationToken = allocationRecord.AllocationToken;
+                allocationRecordKnown = 1u;
+            }
+        }
         Bc250DisplayLog("[ActiveUpdatePT] Lvl=%u, FirstPteVA=0x%llX, hProc=0x%p, RootAddr=0x%llX, SegId=%u\n",
             update->PageTableLevel, (unsigned long long)update->FirstPteVirtualAddress,
             update->hProcess,
@@ -12251,6 +13612,64 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
             }
             if (leafJournal != NULL) {
                 journalStatus = BC250_GPUVA_JOURNAL_OK;
+
+                /*
+                 * Corrida 57: nenhum dos cinco TDRs reteve um fault, mas o
+                 * UpdatePageTable mapeou 64 paginas exatamente em
+                 * 0x200040000. O PC fisico medido na Corrida 45 foi
+                 * 0x20004114C, isto e', +0x114C dentro dessa mesma faixa.
+                 * Esperar outro fault para descobrir as permissoes da PTE e
+                 * o nome da alocacao desperdicaria a unica observacao que
+                 * ocorre em toda corrida. Este veredito e somente leitura:
+                 * descreve a entrada DXGK e a codificacao que ja seria usada.
+                 */
+                {
+                    const uint64_t targetGpuVa = 0x200040000ull;
+                    const uint64_t firstGpuVa =
+                        update->FirstPteVirtualAddress;
+                    uint64_t targetPage = 0ull;
+
+                    if (firstGpuVa <= targetGpuVa) {
+                        targetPage =
+                            (targetGpuVa - firstGpuVa) /
+                            BC250_GPUVA_PAGE_BYTES;
+                    }
+                    if (firstGpuVa <= targetGpuVa &&
+                        targetPage < update->NumPageTableEntries) {
+                        const DXGK_PTE *targetPte =
+                            (update->Flags.Repeat != 0u) ?
+                                &update->pPageTableEntries[0] :
+                                &update->pPageTableEntries[targetPage];
+                        UINT64 encoded = 0ull;
+                        NTSTATUS encodeStatus =
+                            Bc250McdmEncodeVidMmPteWithLevel(
+                                Caps, targetPte, 0u, &encoded);
+
+                        Bc250DisplayLog("[DX_TARGET_200040] MAP: GpuVa=0x%llX MapBase=0x%llX MapPages=%u TargetPage=%llu hProc=%p hAlloc=%p Token=0x%llX Nome=%s AllocBytes=0x%llX AllocKnown=%u | V=%u Z=%u Seg=%u PFN=0x%llX ReadOnly=%u NoExecute=%u CacheCoherent=%u RawFlags=0x%llX | EncodedPte=0x%llX EncodeStatus=0x%08X\n",
+                            (unsigned long long)targetGpuVa,
+                            (unsigned long long)firstGpuVa,
+                            update->NumPageTableEntries,
+                            (unsigned long long)targetPage,
+                            update->hProcess, update->hAllocation,
+                            (unsigned long long)allocationToken,
+                            Bc250ActiveAllocationTokenClassName(
+                                allocationToken),
+                            (unsigned long long)(allocationRecordKnown != 0u ?
+                                allocationRecord.AllocationBytes : 0ull),
+                            allocationRecordKnown,
+                            (uint32_t)targetPte->Valid,
+                            (uint32_t)targetPte->Zero,
+                            (uint32_t)targetPte->Segment,
+                            (unsigned long long)targetPte->PageAddress,
+                            (uint32_t)targetPte->ReadOnly,
+                            (uint32_t)targetPte->NoExecute,
+                            (uint32_t)targetPte->CacheCoherent,
+                            (unsigned long long)targetPte->Flags,
+                            (unsigned long long)encoded,
+                            (uint32_t)encodeStatus);
+                    }
+                }
+
                 for (chunkStart = 0u;
                      chunkStart < update->NumPageTableEntries &&
                          journalStatus == BC250_GPUVA_JOURNAL_OK;
@@ -12273,6 +13692,7 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
                         entries[index].SegmentId = (uint32_t)pte->Segment;
                         entries[index].SegmentOffset = pte->PageAddress << 12;
                         entries[index].Allocation = (BC250_MCDM_HANDLE)update->hAllocation;
+                        entries[index].AllocationToken = allocationToken;
                     }
                     journalStatus = Bc250GpuvaJournalStageLeafUpdate(leafJournal,
                         (BC250_MCDM_HANDLE)update->hProcess,
@@ -12313,20 +13733,151 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
      */
     destination = (UINT64 *)update->PageTableAddress.CpuVirtual;
     if (destination != NULL) {
-        if (update->Flags.Repeat != 0u) {
+        /*
+         * DX.13 -- A ESCRITA DE ENTRADA DE DIRETORIO DEIXOU DE SER MUDA.
+         *
+         * Dois defeitos reais nesta escrita, achados depois da Corrida 59:
+         *
+         * (1) O STATUS DO ENCODE ERA DESCARTADO com (void). Quando
+         *     Bc250McdmEncodeVidMmPteWithLevel recusa, ele deixa *Encoded em
+         *     ZERO -- e o laco gravava esse zero numa page table VIVA, sem uma
+         *     linha de log. E' a Lei 4 no caminho mais caro que existe: uma
+         *     entrada zerada nao e' "operacao que falhou", e' um mapeamento
+         *     que some. O laco de validacao em bc250_mcdm_callbacks.c torna
+         *     isso improvavel hoje, mas "improvavel e mudo" e' exatamente a
+         *     classe que este projeto ja pagou cinco vezes.
+         *
+         * (2) TRIPWIRE DE PDE. A Corrida 59 leu, no indice 4096 de uma raiz
+         *     REAL, o valor 0x450C9C071 -- formato de PTE (VALID|EXE|READ|
+         *     WRITE) num slot de PDE. Pelo layout do Navi 10 o endereco do PDE
+         *     comeca no bit 6, entao o bit 6 e' endereco e os bits 5:3 sao
+         *     RESERVADOS: a GPU caminharia 64 bytes adiante. E' a assinatura
+         *     do defeito de 05/09 (0x61), que ficou invisivel por seis
+         *     corridas. O MESMO indice 4096 e' o da arena 0x200040000 que
+         *     falha, e o indice 4632 da MESMA raiz tinha PDE limpo -- logo a
+         *     caminhada leu a tabela certa.
+         *
+         *     Bc250GcvmEncodePde nao consegue produzir esse valor: ele recusa
+         *     qualquer flag fora de VALID/SYSTEM/SNOOPED. Por isso o tripwire
+         *     e' util nos DOIS desfechos -- se disparar, o valor sai de um
+         *     caminho nosso que eu nao conheco; se nunca disparar enquanto o
+         *     TDR continuar lendo 0x...071, quem escreve nao somos nos.
+         */
+        UINT32 pdeTripwires = 0u;
+        UINT32 encodeRefusals = 0u;
+        NTSTATUS lastRefusal = STATUS_SUCCESS;
+
+        for (index = 0u; index < update->NumPageTableEntries; ++index) {
+            const DXGK_PTE *sourcePte = (update->Flags.Repeat != 0u) ?
+                &update->pPageTableEntries[0] :
+                &update->pPageTableEntries[index];
             UINT64 encoded = 0u;
-            (void)Bc250McdmEncodeVidMmPteWithLevel(
-                Caps, &update->pPageTableEntries[0], update->PageTableLevel, &encoded);
-            for (index = 0u; index < update->NumPageTableEntries; ++index) {
-                destination[update->StartIndex + index] = encoded;
+            NTSTATUS encodeStatus = Bc250McdmEncodeVidMmPteWithLevel(
+                Caps, sourcePte, update->PageTableLevel, &encoded);
+
+            if (!NT_SUCCESS(encodeStatus)) {
+                ++encodeRefusals;
+                lastRefusal = encodeStatus;
+                continue;
             }
-        } else {
-            for (index = 0u; index < update->NumPageTableEntries; ++index) {
-                UINT64 encoded = 0u;
-                (void)Bc250McdmEncodeVidMmPteWithLevel(
-                    Caps, &update->pPageTableEntries[index], update->PageTableLevel, &encoded);
-                destination[update->StartIndex + index] = encoded;
+            if (update->PageTableLevel > 0u &&
+                (encoded & BC250_ACTIVE_PDE_RESERVED_MASK) != 0ull) {
+                ++pdeTripwires;
+                continue;
             }
+            destination[update->StartIndex + index] = encoded;
+        }
+
+        if (encodeRefusals != 0u) {
+            Bc250DisplayLog("[ActiveUpdatePT] RECUSA: %u de %u entradas NAO codificaram (ultimo status=0x%08X, Lvl=%u, Start=%u) -- NENHUM zero foi gravado no lugar delas\n",
+                encodeRefusals, update->NumPageTableEntries,
+                lastRefusal, update->PageTableLevel, update->StartIndex);
+        }
+        if (pdeTripwires != 0u) {
+            /*
+             * Se esta linha existir num log, a pergunta da Corrida 59
+             * esta respondida do lado errado: o valor de PTE no slot de
+             * PDE saiu daqui, e o indice e o nivel dizem de onde.
+             */
+            Bc250DisplayLog("[PDE_TRIPWIRE] FALHA: %u entradas de nivel %u com bits reservados [5:3] -- formato de PTE em slot de PDE, Start=%u Num=%u; a GPU caminharia endereco deslocado\n",
+                pdeTripwires, update->PageTableLevel,
+                update->StartIndex, update->NumPageTableEntries);
+        }
+        /*
+         * QUEM ESCREVE O INDICE DA ARENA. O fault que sobrou e em
+         * 0x200040000, cujo indice de raiz e 4096 (VA >> 21). Esta
+         * linha e rara por natureza -- so sai quando a atualizacao de
+         * DIRETORIO cobre esse indice -- e e o discriminante da proxima
+         * corrida: com ela, "nos escrevemos" e "nao fomos nos" deixam
+         * de ser indistinguiveis.
+         */
+        if (update->PageTableLevel > 0u &&
+            update->StartIndex <= BC250_ACTIVE_ARENA_ROOT_INDEX &&
+            BC250_ACTIVE_ARENA_ROOT_INDEX <
+                update->StartIndex + update->NumPageTableEntries) {
+            const DXGK_PTE *arenaPte = (update->Flags.Repeat != 0u) ?
+                &update->pPageTableEntries[0] :
+                &update->pPageTableEntries[
+                    BC250_ACTIVE_ARENA_ROOT_INDEX - update->StartIndex];
+            UINT64 arenaEncoded = 0u;
+            NTSTATUS arenaStatus = Bc250McdmEncodeVidMmPteWithLevel(
+                Caps, arenaPte, update->PageTableLevel, &arenaEncoded);
+            /*
+             * DX.17 -- LER DE VOLTA O QUE ACABAMOS DE ESCREVER.
+             *
+             * O DISCRIMINANTE, e ele nasce de tres corridas concordando:
+             * escrevemos o indice 4096 SEMPRE limpo (208 escritas nas Corridas
+             * 60 e 61, mais 106 na 63, zero sujas, zero tripwire) e o TDR leu
+             * valor de PTE nesse mesmo indice em TRES corridas (59, 61, 63):
+             * 0x450C9C071, 0x4526CC071 e 0x451BCC071.
+             *
+             * "Nos escrevemos limpo" e "a memoria contem sujo" nao podem ser
+             * os dois verdadeiros sem que alguem escreva depois -- OU sem que
+             * a escrita nao chegue onde pensamos. O readback IMEDIATO separa
+             * os dois casos, e e a unica coisa que separa:
+             *
+             *   readback != encoded  -> a escrita nao chegou ao destino que
+             *                           acreditamos; o defeito e do nosso
+             *                           caminho de escrita ou do mapeamento.
+             *   readback == encoded  -> escrevemos certo, e quem suja e' outro
+             *                           agente ou momento; a comparacao do TDR
+             *                           com o ultimo valor escrito diz quando.
+             *
+             * Isto le a MESMA memoria pelo MESMO ponteiro que acabou de ser
+             * escrito. Nao prova o que a GPU enxerga -- prova o que a CPU
+             * deixou la.
+             */
+            const UINT64 arenaReadback = destination[BC250_ACTIVE_ARENA_ROOT_INDEX];
+            Bc250DisplayLog("[PDE_WRITE] ARENA idx=%u Lvl=%u Start=%u Num=%u Repeat=%u hProc=%p | V=%u Z=%u Seg=%u LargePage=%u PFN=0x%llX RawFlags=0x%llX | Encoded=0x%016llX Status=0x%08X Reservado[5:3]=0x%llX\n",
+                (UINT32)BC250_ACTIVE_ARENA_ROOT_INDEX,
+                update->PageTableLevel, update->StartIndex,
+                update->NumPageTableEntries,
+                (UINT32)update->Flags.Repeat, update->hProcess,
+                (UINT32)arenaPte->Valid, (UINT32)arenaPte->Zero,
+                (UINT32)arenaPte->Segment, (UINT32)arenaPte->LargePage,
+                (unsigned long long)arenaPte->PageAddress,
+                (unsigned long long)arenaPte->Flags,
+                (unsigned long long)arenaEncoded, arenaStatus,
+                (unsigned long long)(arenaEncoded &
+                    BC250_ACTIVE_PDE_RESERVED_MASK));
+            if (arenaReadback != arenaEncoded) {
+                /*
+                 * FALHA DECLARADA. Nao corrige e nao tenta de novo: se
+                 * a escrita nao chega, reescrever so' esconderia a
+                 * frequencia, que e' o dado que falta.
+                 */
+                Bc250DisplayLog("[PDE_WRITE] DIVERGENCIA: idx=%u escrevemos 0x%016llX e lemos de volta 0x%016llX -- a escrita NAO chegou ao destino que acreditamos\n",
+                    (UINT32)BC250_ACTIVE_ARENA_ROOT_INDEX,
+                    (unsigned long long)arenaEncoded,
+                    (unsigned long long)arenaReadback);
+            }
+            /*
+             * Retem o ultimo valor escrito para o TDR comparar. Nao da
+             * autoridade a nada: e diagnostico puro.
+             */
+            active->ArenaPdeLastWritten = arenaEncoded;
+            active->ArenaPdeWriteSeq++;
+
         }
     }
     if (journalStatus == BC250_GPUVA_JOURNAL_OK) {
@@ -13523,6 +15074,28 @@ static uint32_t Bc250ActiveVmidWrite32(
         &active->Core.MmioTransport, ByteOffset, Value);
 }
 
+static uint32_t Bc250ActiveFaultLatchRead32(
+    void *Context, uint32_t ByteOffset, uint32_t *Value)
+{
+    BC250_DXGK_ACTIVE_CONTEXT *active = (BC250_DXGK_ACTIVE_CONTEXT *)Context;
+    if (active == NULL || Value == NULL) return 0u;
+    return Bc250MmioTopologyRead32(&active->Core.MmioTransport, ByteOffset, Value);
+}
+
+static uint32_t Bc250ActiveFaultLatchWrite32(
+    void *Context, uint32_t ByteOffset, uint32_t Value)
+{
+    BC250_DXGK_ACTIVE_CONTEXT *active = (BC250_DXGK_ACTIVE_CONTEXT *)Context;
+    if (active == NULL) return 0u;
+    /*
+     * Guarda de sitio: este adaptador existe SO' para o dreno do latch. Se
+     * alguem o reaproveitar para outro registrador, a escrita e' recusada
+     * aqui, antes mesmo da allowlist do transporte.
+     */
+    if (ByteOffset != BC250_REG_GCVM_L2_PROTECTION_FAULT_CNTL) return 0u;
+    return Bc250MmioTopologyWrite32(&active->Core.MmioTransport, ByteOffset, Value);
+}
+
 static uint32_t Bc250ActiveFlushVmidTlb(void *Context, uint32_t Vmid)
 {
     BC250_DXGK_ACTIVE_CONTEXT *active =
@@ -13568,7 +15141,15 @@ static uint32_t Bc250ActiveFlushVmidTlb(void *Context, uint32_t Vmid)
         active->Core.MmioTransport.State,
         active->Core.MmioTransport.VirtualBase,
         active->Core.MmioTransport.Length);
-    Bc250DisplayLog("[FlushMappedGfxhubTlb] Transaction status=%u, PhysReady=%u, AckObserved=%u, Polls=%u\n",
+    /*
+     * O VMID ENTROU NA LINHA (21/09, faixa DX.12). Ate aqui esta telemetria
+     * dizia o resultado da invalidacao sem dizer de QUEM -- e com tres VMIDs
+     * fixos era so' inconveniente. Com a mascara dinamica do pool, uma linha
+     * sem VMID nao distingue "invalidou o 2" de "invalidou o 9", que e'
+     * exatamente a pergunta da Corrida 59.
+     */
+    Bc250DisplayLog("[FlushMappedGfxhubTlb] VMID%02u status=%u, PhysReady=%u, AckObserved=%u, Polls=%u\n",
+        Vmid,
         (uint32_t)localStatus,
         localEvidence.PhysicalReady,
         localEvidence.AckObserved,
@@ -13598,12 +15179,141 @@ static uint32_t Bc250ActiveFlushMappedGfxhubTlb(void *Context)
 {
     BC250_DXGK_ACTIVE_CONTEXT *active =
         (BC250_DXGK_ACTIVE_CONTEXT *)Context;
-    uint32_t gfxhubOk;
+    uint32_t gfxhubOk = 1u;
+    uint32_t fixedMask;
+    uint32_t poolReadyMask = 0u;
+    uint32_t requestedMask;
+    uint32_t rejectedMask;
+    uint32_t failedMask = 0u;
+    uint32_t hdpFlushed = 0u;
+    uint32_t vmid;
 
-    /* VidMm updates may affect paging (VMID 8), user process (VMID 7), or compute (VMID 9). */
-    gfxhubOk = Bc250ActiveFlushVmidTlb(Context, BC250_GCVM_VMID8) &&
-        Bc250ActiveFlushVmidTlb(Context, BC250_GCVM_USER_VMID) &&
-        Bc250ActiveFlushComputeTlb(Context);
+    /*
+     * DX.12 -- A COBERTURA DO FLUSH SEGUE QUEM A GPU ESTA USANDO.
+     *
+     * Ate 21/09 esta funcao invalidava tres VMIDs FIXOS -- 8 (paginacao), 7
+     * (usuario legado) e 9 (compute) -- e mais nenhum. Isso estava certo
+     * enquanto o anel grafico submetia em VMID 7. Deixou de estar na Corrida
+     * 54, quando o PACKET3_INDIRECT_BUFFER passou a carregar o VMID dinamico
+     * do pool: na Corrida 58 foram os VMIDs 1 a 4. Bc250GcvmInstallVmid
+     * invalida o slot NA INSTALACAO, mas uma UpdatePageTable posterior nao
+     * invalidava nenhum slot dinamico ja instalado.
+     *
+     * A hipotese que isso ataca: a CPU passa a enxergar a folha nova enquanto
+     * a GPU conserva a traducao velha no VMID do contexto. Casa com a medicao
+     * da Corrida 58 -- escrita em 0x2469A6000 falhando com a janela de
+     * publicacao INALTERADA e a PTE contemporanea 0x458F72071 valida e R/W/X
+     * na visao da CPU. CASAR NAO E' PROVAR: continua HIPOTESE ate a corrida.
+     *
+     * A mascara e' copiada sob VmidPoolLock e o lock e' SOLTO antes de
+     * qualquer MMIO. Bc250ActiveFlushVmidTlb toma TlbLock e pode gastar ate
+     * 1000 polls; segurar o lock do pool durante isso, em DISPATCH_LEVEL,
+     * seria a classe do BugCheck 0x133 ja pago em 10/09.
+     */
+    fixedMask = (1u << BC250_GCVM_VMID8) |
+        (1u << BC250_GCVM_USER_VMID) |
+        (1u << BC250_GCVM_COMPUTE_VMID);
+
+    if (active != NULL) {
+        KIRQL poolIrql;
+        KeAcquireSpinLock(&active->VmidPoolLock, &poolIrql);
+        poolReadyMask = Bc250VmidPoolReadyFlushMask(&active->VmidPool);
+        KeReleaseSpinLock(&active->VmidPoolLock, poolIrql);
+    }
+
+    /*
+     * O bit 0 e' recusado explicitamente: o VMID 0 pertence a microengine do
+     * MEC, que programa e restaura a propria raiz de forma transacional. O
+     * pool ja o exclui, mas a recusa aqui e' o que impede que uma mudanca
+     * futura no pool abra esse caminho em silencio.
+     */
+    requestedMask = (fixedMask | poolReadyMask) & 0xFFFFu;
+    rejectedMask = requestedMask & 1u;
+    requestedMask &= ~1u;
+
+    /*
+     * DX.14 -- TORNAR A TABELA VISIVEL ANTES DE MANDAR A GPU RELE-LA.
+     *
+     * A ORDEM E O CONTEUDO DA FAIXA. As page tables sao escritas pela CPU em
+     * VRAM atraves de PageTableAddress.CpuVirtual, e essas escritas ficam na
+     * cache de escrita do HDP. Invalidar a TLB antes de drenar o HDP manda o
+     * walker BUSCAR DE NOVO bytes que ainda nao chegaram -- ou seja, a
+     * invalidacao pioraria a janela em vez de fecha-la. Primeiro drenar,
+     * depois invalidar.
+     *
+     * POR QUE ESTA HIPOTESE E FORTE (mas continua HIPOTESE -- H, nao P0):
+     * este projeto JA mediu exatamente este mecanismo neste silicio. Na
+     * corrida de 10/09 12:16 a linha FENCE_VISIBILIDADE trouxe
+     * antes_hdp=43DAFFFE e depois_hdp=00001304: o valor apareceu NO FLUSH.
+     * Era outra consumidora -- uma fence --, mas a mesma memoria, a mesma
+     * cache e o mesmo sentido (CPU escreve, GPU le).
+     *
+     * E CASA COM O QUE A CORRIDA 60 MEDIU, que nenhuma outra explicacao cobre:
+     * duas caminhadas com JANELA INALTERADA -- portanto contemporaneas do
+     * fault -- RESOLVERAM ate a folha, com PDE limpo e PTE valida e legivel,
+     * enquanto a GPU reportava WALKER_ERROR=6 e MAPPING_ERROR=1 no MESMO
+     * endereco. A imagem vista pela CPU estava certa; a vista pela GPU, nao.
+     *
+     * O QUE ISTO NAO E: prova. Se o fault sobreviver ao flush, a hipotese cai
+     * e o suspeito passa a ser o que a GPU usa como raiz, nao o conteudo da
+     * tabela.
+     */
+    if (active != NULL &&
+        active->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED) {
+        uint32_t hdpReadback = 0u;
+        uint32_t hdpWrote = Bc250MmioTopologyWrite32(
+            &active->Core.MmioTransport,
+            BC250_ACTIVE_REG_HDP_MEM_COHERENCY_FLUSH_CNTL, 1u);
+        /*
+         * O readback existe para PROVAR que a escrita alcancou o registrador.
+         * O valor lido NAO e' o conteudo (este registrador dispara e limpa):
+         * o que se afirma e' que a transacao MMIO aconteceu, nada alem disso.
+         */
+        uint32_t hdpRead = Bc250MmioTopologyRead32(
+            &active->Core.MmioTransport,
+            BC250_ACTIVE_REG_HDP_MEM_COHERENCY_FLUSH_CNTL, &hdpReadback);
+        hdpFlushed = (hdpWrote != 0u && hdpRead != 0u) ? 1u : 0u;
+        if (hdpFlushed == 0u) {
+            Bc250DisplayLog("[HDP_PT_FLUSH] FALHA: Write=%u Read=%u -- a tabela pode nao estar visivel a GPU, e a invalidacao de TLB abaixo faria o walker rebuscar bytes velhos\n",
+                hdpWrote, hdpRead);
+        }
+    }
+
+    for (vmid = 1u; vmid < BC250_VMID_COUNT; ++vmid) {
+        if (((requestedMask >> vmid) & 1u) == 0u) continue;
+        if (Bc250ActiveFlushVmidTlb(Context, vmid) == 0u) {
+            failedMask |= (1u << vmid);
+            gfxhubOk = 0u;
+        }
+    }
+
+    if (active != NULL) {
+        /*
+         * A linha sai quando a mascara MUDA, nas primeiras ocorrencias e
+         * periodicamente. FlushTlb e' frequente; emitir sempre afogaria o
+         * log. Emitir SO' na mudanca deixaria "o pool estava vazio"
+         * indistinguivel de "a funcao nunca rodou" -- e essa e' exatamente a
+         * diferenca entre os desfechos B e C do criterio da Corrida 59.
+         */
+        uint32_t seq = active->FlushPoolLogCount++;
+        if (poolReadyMask != active->FlushPoolLastMask ||
+            seq < 8u || (seq % 512u) == 0u || failedMask != 0u) {
+            active->FlushPoolLastMask = poolReadyMask;
+            Bc250DisplayLog("[FLUSH_POOL_VMIDS] #%u FixedMask=0x%04X PoolReadyMask=0x%04X RequestedMask=0x%04X RejeitadaMask=0x%04X FalhouMask=0x%04X HdpFlush=%u Ok=%u\n",
+                seq, fixedMask, poolReadyMask, requestedMask,
+                rejectedMask, failedMask, hdpFlushed, gfxhubOk);
+        }
+        if (failedMask != 0u) {
+            /*
+             * Flush PARCIAL nao vira sucesso. O chamador (FlushTlbHandler)
+             * fecha GpuvaMappingsOperational quando isto devolve zero, e e'
+             * o comportamento certo: submeter com um VMID cuja TLB nao foi
+             * invalidada e' exatamente o defeito que esta faixa ataca.
+             */
+            Bc250DisplayLog("[FLUSH_POOL_VMIDS] FALHA: mascara 0x%04X nao invalidou; o flush PARCIAL nao e contado como sucesso\n",
+                failedMask);
+        }
+    }
 
     /*
      * Invalidação da micro-TLB UTCL1 da SDMA0.

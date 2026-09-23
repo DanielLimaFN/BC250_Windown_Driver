@@ -159,6 +159,8 @@ typedef struct BC250_GPUVA_RANGE_RECORD {
     BC250_MCDM_HANDLE OwnerContext;
     BC250_MCDM_HANDLE Allocation;
     BC250_MCDM_HANDLE OpenAllocation;
+    /* Nome imutavel da alocacao, preservado no snapshot para o TDR. */
+    uint64_t AllocationToken;
     uint32_t BackingSegmentId;
     uint64_t BackingSegmentOffset;
     uint32_t Permissions;       /* BC250_PTE_READABLE | BC250_PTE_WRITEABLE | BC250_PTE_EXECUTABLE */
@@ -212,6 +214,75 @@ typedef struct BC250_GPUVA_SPACE_OCCUPANCY {
 BC250_GPUVA_STATUS Bc250GpuvaSpaceDescribeOccupancy(
     const BC250_GPUVA_SPACE *Space,
     BC250_GPUVA_SPACE_OCCUPANCY *Occupancy);
+
+/*
+ * =========================================================================
+ * DISCRIMINADOR DE ENDERECO DE FAULT (20/09, apos a Corrida 46).
+ *
+ * POR QUE EXISTE: o registrador GCVM_L2_PROTECTION_FAULT_ADDR_* guarda
+ * LOGICAL_PAGE_ADDR, e o header upstream vendorizado NAO declara o tamanho
+ * da pagina. Duas conversoes sao defensaveis e levam a lugares OPOSTOS --
+ * com o valor medido 0x2431:
+ *
+ *   << 12  ->  0x2431000    (36 MB)   regiao VAZIA, nenhuma alocacao
+ *   << 20  ->  0x243100000  (9,05 GB) cai ENTRE duas alocacoes vivas da winsys
+ *
+ * A primeira leitura acusa ponteiro perdido; a segunda, acesso alem do fim de
+ * um buffer. Escolher por intuicao ja quase aconteceu duas vezes nesta
+ * investigacao (a aritmetica do ">> 8" e o "IB aponta para 36 MB", ambas
+ * derrubadas por leitura de codigo). Entao quem escolhe e' a MEDICAO: cada
+ * candidato e' procurado no snapshot publicado, e o que aterrissar numa faixa
+ * conhecida nomeia a alocacao.
+ *
+ * Nao encontrar tambem informa, desde que se diga QUAO LONGE ficou: um
+ * endereco 4 KB depois do fim de uma faixa viva e estouro de buffer; um
+ * endereco a gigabytes de qualquer faixa e outra coisa.
+ *
+ * Leitor PURO: nao escreve nada, nao pega lock, nao exige dono. No TDR nao se
+ * sabe de quem e' o endereco que falhou, entao exigir OwnerProcess (como
+ * Bc250GpuvaSpaceResolveAddress faz) tornaria a funcao inutil justamente aqui.
+ * =========================================================================
+ */
+typedef struct BC250_GPUVA_ADDRESS_SITE {
+    uint32_t Found;              /* 1 = o endereco cai DENTRO de uma faixa */
+    uint32_t State;              /* BC250_GPUVA_RANGE_STATE da faixa achada */
+    uint64_t BaseGpuVa;          /* base da faixa achada */
+    uint64_t Size;               /* tamanho da faixa achada */
+    uint64_t OffsetInRange;      /* GpuVa - BaseGpuVa, quando Found */
+    BC250_MCDM_HANDLE OwnerProcess;
+    BC250_MCDM_HANDLE Allocation;
+    uint64_t AllocationToken;
+    /*
+     * SEGMENTO DE BACKING -- acrescentado em 20/09, depois da Corrida 47.
+     *
+     * O driver declara DOIS segmentos (QUERYSEGMENT4): o 1 e' local, ~243 MB,
+     * CpuVisible, limitado pela janela BAR de 256 MB; o 2 e' GART/aperture, com
+     * 2 GB e backing em MEMORIA DE SISTEMA. Sao codificacoes de PTE e semanticas
+     * de coerencia DIFERENTES.
+     *
+     * A Corrida 47 nomeou as alocacoes que falham traduzir (0xF3 e 0xDF, ambas
+     * do processo 0x2B, uma delas com Size = 2560*1080*4 exato) e NAO disse em
+     * qual segmento elas vivem -- eu esqueci de publicar o campo. Sem ele, "a
+     * faixa esta MAPPED e o walker falha" nao distingue defeito de tabela local
+     * de defeito de mapeamento de memoria de sistema, que exigem consertos
+     * opostos. O campo ja existia no registro; faltava mostra-lo.
+     */
+    uint32_t BackingSegmentId;
+    uint64_t BackingSegmentOffset;
+    /* Vizinhanca, valida SEMPRE -- e' ela que separa estouro de ponteiro perdido. */
+    uint32_t HasBelow;
+    uint64_t NearestBelowEnd;    /* fim da faixa viva imediatamente abaixo */
+    uint64_t DistanceAboveEnd;   /* GpuVa - NearestBelowEnd (0 se Found) */
+    uint32_t HasAbove;
+    uint64_t NearestAboveBase;   /* base da faixa viva imediatamente acima */
+    uint64_t DistanceBelowBase;  /* NearestAboveBase - GpuVa (0 se Found) */
+    uint32_t LiveRangesScanned;
+} BC250_GPUVA_ADDRESS_SITE;
+
+BC250_GPUVA_STATUS Bc250GpuvaSpaceDescribeAddress(
+    const BC250_GPUVA_SPACE *Space,
+    uint64_t GpuVa,
+    BC250_GPUVA_ADDRESS_SITE *Site);
 
 BC250_GPUVA_STATUS Bc250GpuvaSpaceInitialize(
     BC250_GPUVA_SPACE *Space,

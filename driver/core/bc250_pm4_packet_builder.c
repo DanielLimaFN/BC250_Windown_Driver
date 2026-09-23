@@ -1,5 +1,9 @@
 #include "bc250_pm4_packet_builder.h"
 
+/* Tabelas upstream sem edicao; procedencia em inc/linux_ref/PROVENANCE_CLEARSTATE.txt. */
+#include "../../inc/linux_ref/clearstate_defs.h"
+#include "../../inc/linux_ref/clearstate_gfx10.h"
+
 static int Bc250IsPowerOfTwo32(uint32_t Value)
 {
     return Value != 0 && (Value & (Value - 1u)) == 0;
@@ -490,6 +494,78 @@ const char *Bc250Pm4StatusName(BC250_PM4_STATUS Status)
     }
 }
 
+uint32_t Bc250Pm4Gfx10ClearStateDwords(void)
+{
+    const struct cs_section_def *sect;
+    const struct cs_extent_def *ext;
+    uint32_t count = 2u + 3u;
+
+    for (sect = gfx10_cs_data; sect->section != NULL; ++sect) {
+        for (ext = sect->section; ext->extent != NULL; ++ext) {
+            if (sect->id != SECT_CONTEXT) {
+                return 0u; /* gfx_v10_0_get_csb_size devolve 0 no mesmo caso */
+            }
+            count += 2u + ext->reg_count;
+        }
+    }
+    return count + 3u + 2u + 2u;
+}
+
+BC250_PM4_STATUS Bc250Pm4BuildGfx10ClearState(
+    uint32_t *Buffer,
+    uint32_t CapacityDwords,
+    uint32_t TileSteeringOverride,
+    uint32_t *WrittenDwords)
+{
+    const struct cs_section_def *sect;
+    const struct cs_extent_def *ext;
+    uint32_t need = Bc250Pm4Gfx10ClearStateDwords();
+    uint32_t n = 0u;
+
+    if (WrittenDwords != NULL) {
+        *WrittenDwords = 0u;
+    }
+    if (Buffer == NULL || WrittenDwords == NULL || need == 0u) {
+        return BC250_PM4_BAD_ARGUMENT;
+    }
+    if (CapacityDwords < need) {
+        return BC250_PM4_RING_FULL;
+    }
+
+    /* amdgpu_gfx_csb_preamble_start */
+    Buffer[n++] = BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_PREAMBLE_CNTL, 1u);
+    Buffer[n++] = BC250_PM4_PREAMBLE_BEGIN_CLEAR_STATE;
+    Buffer[n++] = BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_CONTEXT_CONTROL, 2u);
+    Buffer[n++] = 0x80000000u;
+    Buffer[n++] = 0x80000000u;
+
+    /* amdgpu_gfx_csb_data_parser: PACKET3(SET_CONTEXT_REG, reg_count) = reg_count+1 dwords de carga */
+    for (sect = gfx10_cs_data; sect->section != NULL; ++sect) {
+        for (ext = sect->section; ext->extent != NULL; ++ext) {
+            uint32_t i;
+            Buffer[n++] = BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_SET_CONTEXT_REG, ext->reg_count + 1u);
+            Buffer[n++] = ext->reg_index - BC250_PM4_CONTEXT_REG_BASE;
+            for (i = 0u; i < ext->reg_count; ++i) {
+                Buffer[n++] = ext->extent[i];
+            }
+        }
+    }
+
+    /* gfx_v10_0_get_csb_buffer: PA_SC_TILE_STEERING_OVERRIDE fica fora dos extents (0xA0D7) */
+    Buffer[n++] = BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_SET_CONTEXT_REG, 2u);
+    Buffer[n++] = BC250_PM4_REG_PA_SC_TILE_STEERING_OVERRIDE - BC250_PM4_CONTEXT_REG_BASE;
+    Buffer[n++] = TileSteeringOverride;
+
+    /* amdgpu_gfx_csb_preamble_end */
+    Buffer[n++] = BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_PREAMBLE_CNTL, 1u);
+    Buffer[n++] = BC250_PM4_PREAMBLE_END_CLEAR_STATE;
+    Buffer[n++] = BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_CLEAR_STATE, 1u);
+    Buffer[n++] = 0u;
+
+    *WrittenDwords = n;
+    return (n == need) ? BC250_PM4_OK : BC250_PM4_OUT_OF_BOUNDS;
+}
+
 uint32_t Bc250Pm4HeaderType(uint32_t Header)
 {
     return (Header >> 30) & 0x3u;
@@ -537,6 +613,7 @@ const char *Bc250Pm4Type3OpcodeName(uint32_t Opcode)
     case 0x28u:                           return "CONTEXT_CONTROL";
     case 0x2Fu:                           return "NUM_INSTANCES";
     case 0x4Au:                           return "PREAMBLE_CNTL";
+    case 0x42u:                           return "PFP_SYNC_ME"; /* nvd.h:322 */
     default:                              return "desconhecido";
     }
 }

@@ -129,6 +129,26 @@ BC250_GPUVA_STATUS Bc250GpuvaSnapshotPublishBatch(
         return BC250_GPUVA_BAD_ARGUMENT;
     }
     _InterlockedExchange(&Store->LastPublishRangeCount, (long)RangeCount);
+    /*
+     * Composicao do lote, contada ANTES de qualquer mutacao. Ver o bloco em
+     * bc250_gpuva_snapshot_contract.h: responde se aplicar unmaps antes de maps
+     * derrubaria o pico de ocupacao ou se o problema e' capacidade real.
+     *
+     * Escrito AQUI, junto dos demais LastPublish*, e' o mesmo padrao que ja
+     * funciona. A C3.12 registrou que gravar ocupacao DENTRO do ramo de falha
+     * reprovou active_miniport_test por mecanismo nao explicado; nao repetir
+     * isso e' deliberado -- contagem pura na entrada, nada no ramo de falha.
+     */
+    {
+        uint32_t composition;
+        long maps = 0L;
+        long unmaps = 0L;
+        for (composition = 0u; composition < RangeCount; ++composition) {
+            if (MapRanges[composition] != 0u) { ++maps; } else { ++unmaps; }
+        }
+        _InterlockedExchange(&Store->LastPublishMapCount, maps);
+        _InterlockedExchange(&Store->LastPublishUnmapCount, unmaps);
+    }
     _InterlockedExchange(&Store->LastPublishFailedRangeIndex, -1L);
     _InterlockedExchange(&Store->LastPublishFailedMapRange, -1L);
     Store->LastPublishFailedBaseGpuVa = 0u;

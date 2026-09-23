@@ -35,6 +35,7 @@ typedef struct BC250_GPUVA_JOURNAL_PTE {
     uint64_t SegmentOffset;
     BC250_MCDM_HANDLE Allocation;
     BC250_MCDM_HANDLE OpenAllocation;
+    uint64_t AllocationToken;
 } BC250_GPUVA_JOURNAL_PTE;
 
 typedef struct BC250_GPUVA_JOURNAL {

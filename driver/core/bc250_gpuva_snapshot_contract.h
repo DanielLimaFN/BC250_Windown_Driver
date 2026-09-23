@@ -51,6 +51,30 @@ typedef struct BC250_GPUVA_SNAPSHOT_STORE {
     volatile long LastPublishFailedMapRange;
     uint64_t LastPublishFailedBaseGpuVa;
     uint64_t LastPublishFailedSize;
+    /*
+     * COMPOSICAO DO LOTE -- maps e unmaps contados ANTES de qualquer mutacao.
+     *
+     * POR QUE (Corrida 44, 20/09): seis PUBLICACAO_FALHA sairam com
+     * FailedIndex EXATAMENTE igual a Reusable do slot ativo, seis de seis
+     * (655/369, 640/384, 603/421, 460/564, 430/594, 415/609, sempre somando
+     * Cap=1024). Isso fecha o MECANISMO -- Bc250GpuvaCopySnapshot copia o slot
+     * ativo para o inativo e o lote e' aplicado POR CIMA, logo a capacidade
+     * livre e' Cap menos Mapped e um lote maior que isso morre no indice
+     * exato --, e REFUTA o diagnostico anterior de exaustao do teto de 256
+     * slots: Teardown=0 e reciclagem esta sa.
+     *
+     * O que NAO se sabe e' a composicao do lote. Se a maioria das 832 mudancas
+     * for UNMAP, aplicar unmaps antes de maps derrubaria o pico de ocupacao sem
+     * mudar o estado final (o journal garante intervalos nao sobrepostos, logo
+     * operacoes disjuntas comutam). Se for maioria MAP, reordenar nao resolve
+     * nada e o problema e' de capacidade de verdade.
+     *
+     * Propor a reordenacao sem esse numero seria fix de efeito imprevisivel.
+     * Estes dois contadores existem para responder a pergunta na proxima
+     * corrida, e por isso esta faixa NAO altera comportamento nenhum.
+     */
+    volatile long LastPublishMapCount;
+    volatile long LastPublishUnmapCount;
     BC250_GPUVA_SPACE Slots[2];
 } BC250_GPUVA_SNAPSHOT_STORE;
 

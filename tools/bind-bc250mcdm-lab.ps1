@@ -111,7 +111,21 @@ param(
     # rollback e reinicia. O fim e' o mesmo; a diferenca e' que passa a ser
     # o contrato, e nao um acidente.
     [ValidateRange(30,240)][int]$PhysicalWindowSeconds = 60,
-    [switch]$RestartExplorer
+    [switch]$RestartExplorer,
+    # Aceita ligar um candidato com perfil MAIS FRACO que o do ultimo bind.
+    #
+    # POR QUE EXISTE (20/09, preparando a Corrida 45): ao empacotar o candidato
+    # seguinte a Corrida 44 eu omiti -EnableRenderNode/-EnableShaderDispatch/
+    # -EnablePersistentSubmission e produzi um pacote DISPLAY_LAB em modo
+    # READ-ONLY, quando o ensaio EXIGE DISPLAY_RENDER_LAB com submissao
+    # persistente. O empacotador aceitou (o perfil e' legitimo), a auditoria do
+    # pacote deu PASS (ela confere o pacote, nao a INTENCAO), e nada comparava
+    # com o que havia rodado antes. Um bind assim nao produz submissao GFX
+    # nenhuma: a corrida inteira seria gasta medindo o nada.
+    #
+    # O rebaixamento pode ser deliberado -- isolar variavel e' metodo valido --,
+    # entao a saida nao e' proibir, e' exigir que seja DECLARADO.
+    [switch]$IAcceptProfileDowngrade
 )
 
 $ErrorActionPreference = 'Stop'
@@ -495,6 +509,41 @@ if ($manifest.BuildKind -ne 'MCDM_LAB_BRINGUP' -or [bool]$manifest.HardwareValid
     $expectedSchema -lt 114 -or [uint32]$manifest.SkipHwBringup -ne 0) {
     throw 'Contrato do manifesto de laboratorio invalido (kind/validacao/schema/bring-up).'
 }
+# ==========================================================================
+# PREFLIGHT DE REBAIXAMENTO DE PERFIL.
+#
+# Compara o perfil do candidato com o do ULTIMO bind registrado. Se alguma
+# capacidade cair de ligada para desligada, recusa -- a menos que o operador
+# declare o rebaixamento. Ver o comentario de -IAcceptProfileDowngrade.
+# ==========================================================================
+$lastBindingPath = Join-Path $root 'tools\_last_lab_binding.json'
+if (Test-Path -LiteralPath $lastBindingPath -PathType Leaf) {
+    $lastBinding = Get-Content -LiteralPath $lastBindingPath -Raw | ConvertFrom-Json
+    if ($null -ne $lastBinding.profile) {
+        $downgrades = @()
+        foreach ($cap in @('RenderNode','ShaderDispatchEnabled','PersistentSubmissionEnabled')) {
+            $before = $lastBinding.profile.$cap
+            $now = $manifest.$cap
+            if ($null -eq $before) { continue }
+            if ([bool]$before -and -not [bool]$now) { $downgrades += $cap }
+        }
+        if ($lastBinding.profile.ProfileMode -and
+            $lastBinding.profile.ProfileMode -ne $manifest.ProfileMode) {
+            $downgrades += ('ProfileMode {0} -> {1}' -f `
+                $lastBinding.profile.ProfileMode, $manifest.ProfileMode)
+        }
+        if ($downgrades.Count -gt 0) {
+            $msg = ('Perfil do candidato e MAIS FRACO que o do ultimo bind: {0}. ' -f
+                    ($downgrades -join ', ')) +
+                   'Um ensaio de submissao GFX num perfil rebaixado mede o nada. ' +
+                   'Reempacote com os switches certos, ou passe -IAcceptProfileDowngrade ' +
+                   'se o rebaixamento for deliberado.'
+            if (-not $IAcceptProfileDowngrade) { throw $msg }
+            Write-Host ('  [AVISO] REBAIXAMENTO DE PERFIL ACEITO: {0}' -f ($downgrades -join ', '))
+        }
+    }
+}
+
 Assert-ArtifactHash $packageSys $manifest.PackageSysSha256 'SYS'
 Assert-ArtifactHash $packagePdb $manifest.PackagePdbSha256 'PDB privado'
 Assert-ArtifactHash (Join-Path $packageDir 'bc250umd.dll') $manifest.PackageUmdSha256 'UMD'
@@ -1093,6 +1142,34 @@ if ($evidencePdbHash -ne [string]$manifest.PackagePdbSha256) {
 # B2: Limpeza de logs residuais da UMD em C:\Windows\Temp para isolar este bind.
 Get-ChildItem -LiteralPath 'C:\Windows\Temp' -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue |
     Remove-Item -Force -ErrorAction SilentlyContinue
+
+# DX.21: DESPEJO DO IB GRAFICO EM STAGING GRAVAVEL PELO dwm.exe.
+# LIDO em 22/09 (icacls): a pasta de evidencia fica no perfil do Daniel e so'
+# da acesso a SISTEMA, Administradores e Daniel. O dwm.exe roda como DWM-<n>,
+# fora dos tres; o fopen do RADV falhava e a unica linha que dizia isso ia para
+# stderr, que o dwm.exe nao tem. Por isso gfx-ib-dump saiu VAZIO nas Corridas
+# 35, 36 e 66. C:\Windows\Temp ja' e' onde o dwm.exe grava BC250_UMD_LOG_* com
+# sucesso. Armado ANTES do bind porque o RADV resolve o diretorio uma vez por
+# processo; copiado para a evidencia na coleta FINAL.
+$gfxIbDumpStaging = 'C:\Windows\Temp\BC250_GFX_IB_DUMP'
+try {
+    if (Test-Path -LiteralPath $gfxIbDumpStaging) {
+        Get-ChildItem -LiteralPath $gfxIbDumpStaging -File -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+    } else {
+        New-Item -ItemType Directory -Path $gfxIbDumpStaging -Force | Out-Null
+    }
+    # *S-1-1-0 = Todos; *S-1-5-90-0 = Window Manager Group (DWM-<n>).
+    & icacls.exe $gfxIbDumpStaging /grant '*S-1-1-0:(OI)(CI)M' '*S-1-5-90-0:(OI)(CI)M' | Out-Null
+    $umdRegistryPath = 'HKLM:\SOFTWARE\BC250\Umd'
+    if (-not (Test-Path -LiteralPath $umdRegistryPath)) {
+        New-Item -Path $umdRegistryPath -ErrorAction Stop | Out-Null
+    }
+    Set-ItemProperty -Path $umdRegistryPath -Name 'GfxIbDumpDir' -Value $gfxIbDumpStaging -Type String -ErrorAction Stop
+    Write-Host ("  GfxIbDumpDir armado em staging gravavel pelo DWM: {0}" -f $gfxIbDumpStaging) -ForegroundColor Cyan
+} catch {
+    Write-Host ("  AVISO: staging do despejo de IB falhou: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+}
 $displayLogStartOffset = if (Test-Path -LiteralPath $displayLogPath -PathType Leaf) {
     [int64](Get-Item -LiteralPath $displayLogPath).Length
 } else { [int64]0 }
@@ -1861,6 +1938,17 @@ if (-not $umdLogCollected) {
     instance_id = $device.PNPDeviceID
     published_inf = $publishedName
     package_sys_sha256 = (Get-FileHash -LiteralPath $pkgSysPath -Algorithm SHA256).Hash
+    # PERFIL DO CANDIDATO LIGADO. Sem este registro o bind seguinte nao tem com
+    # o que comparar, e o rebaixamento de perfil passa calado -- foi o que
+    # quase gastou a Corrida 45 num pacote READ-ONLY.
+    profile = [ordered]@{
+        ProfileMode = [string]$manifest.ProfileMode
+        RenderNode = [uint32]$manifest.RenderNode
+        ShaderDispatchEnabled = [bool]$manifest.ShaderDispatchEnabled
+        PersistentSubmissionEnabled = [bool]$manifest.PersistentSubmissionEnabled
+        GfxWaveProbe = [uint32]$manifest.GfxWaveProbe
+        DriverVer = [string]$manifest.DriverVer
+    }
     # ======================================================================
     # PROVENIENCIA DOS COMPONENTES FORA DO PACOTE ASSINADO.
     #
@@ -2111,6 +2199,25 @@ if (-not $DisableWatchdog) {
         Write-Host ("  AVISO: coleta FINAL da UMD falhou: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
     }
 
+    # DX.21: despejo de IB do staging gravavel pelo DWM -> evidencia, com
+    # contagem declarada. Zero arquivos agora e' conclusivo sobre o RADV (o
+    # staging e' gravavel), nao mais sobre a ACL.
+    try {
+        $gfxIbDumpEvidence = Join-Path $evidenceDir 'gfx-ib-dump'
+        if (-not (Test-Path -LiteralPath $gfxIbDumpEvidence)) {
+            New-Item -ItemType Directory -Path $gfxIbDumpEvidence -Force | Out-Null
+        }
+        $ibDumps = @(Get-ChildItem -LiteralPath 'C:\Windows\Temp\BC250_GFX_IB_DUMP' -File -ErrorAction SilentlyContinue)
+        foreach ($dump in $ibDumps) {
+            Copy-Item -LiteralPath $dump.FullName -Destination (Join-Path $gfxIbDumpEvidence $dump.Name) -Force
+        }
+        ("{0} arquivo(s) copiados de C:\Windows\Temp\BC250_GFX_IB_DUMP em {1:o}" -f $ibDumps.Count, (Get-Date)) |
+            Set-Content -LiteralPath (Join-Path $gfxIbDumpEvidence '_COLETA.txt') -Encoding UTF8
+        Write-Host ("  Coleta FINAL do despejo de IB: {0} arquivo(s)." -f $ibDumps.Count) -ForegroundColor Yellow
+    } catch {
+        Write-Host ("  AVISO: coleta FINAL do despejo de IB falhou: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+    }
+
     if ($EnableDwmCrashCapture) {
         try {
             & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $restoreDwmCapture `
@@ -2166,9 +2273,56 @@ if (-not $DisableWatchdog) {
             } finally { $fs2.Dispose() }
             $tailPass2 = (Get-Item -LiteralPath $finalTailPath).Length
 
+            # ================================================================
+            # CONTEUDO, NAO TAMANHO (21/09, apos a Corrida 50).
+            #
+            # O criterio de completude era $tailPass2 -ge $expected -- puro
+            # TAMANHO. Na Corrida 50 isso deu "completo" com 2.751.230 bytes que
+            # eram 100% ESPACO: o KMD ainda nao havia descarregado o trecho, e a
+            # copia pegou o preenchimento. O arquivo tinha tamanho plausivel e
+            # ZERO conteudo, e enganou a leitura da corrida -- a conclusao foi
+            # "perdemos a coleta" quando o dado estava intacto no arquivo do
+            # arquivamento inicial.
+            #
+            # Medir o proxy (tamanho) em vez do efeito (conteudo) e a classe de
+            # defeito mais cara deste projeto. Aqui a captura passa a OLHAR os
+            # bytes, e retenta enquanto forem so' preenchimento.
+            # ================================================================
+            $paddingRetries = 0
+            while ($paddingRetries -lt 4) {
+                $probe = [System.IO.File]::ReadAllBytes($finalTailPath)
+                $nonPad = 0
+                foreach ($byte in $probe) {
+                    if ($byte -ne 32 -and $byte -ne 0 -and $byte -ne 13 -and $byte -ne 10) { $nonPad++ }
+                    if ($nonPad -gt 64) { break }
+                }
+                if ($nonPad -gt 64) { break }
+                $paddingRetries++
+                Write-Host ("  [AVISO] cauda FINAL veio SO' com preenchimento ({0} bytes, tentativa {1}/4) -- o KMD ainda nao descarregou; aguardando" -f $probe.Length, $paddingRetries) -ForegroundColor Yellow
+                Start-Sleep -Seconds 6
+                $fsR = [System.IO.File]::Open($displayLogPath, 'Open', 'Read', 'ReadWrite')
+                try {
+                    $null = $fsR.Seek($displayLogStartOffset, 'Begin')
+                    $outR = [System.IO.File]::Create($finalTailPath)
+                    try { $fsR.CopyTo($outR) } finally { $outR.Dispose() }
+                } finally { $fsR.Dispose() }
+                $tailPass2 = (Get-Item -LiteralPath $finalTailPath).Length
+            }
+            $finalBytes = [System.IO.File]::ReadAllBytes($finalTailPath)
+            $finalNonPad = 0
+            foreach ($byte in $finalBytes) {
+                if ($byte -ne 32 -and $byte -ne 0 -and $byte -ne 13 -and $byte -ne 10) { $finalNonPad++ }
+                if ($finalNonPad -gt 64) { break }
+            }
+            $contentIsPadding = ($finalNonPad -le 64)
+            if ($contentIsPadding) {
+                Write-Host ("  [ALERTA] display-log-this-bind-FINAL.txt tem {0} bytes e NENHUM conteudo -- e' preenchimento. NAO leia esse arquivo como se fosse a corrida; use display-log-this-bind.txt e recover-bc250mcdm-lost-tail.ps1" -f $finalBytes.Length) -ForegroundColor Red
+            }
+
             $liveLen = (Get-Item -LiteralPath $displayLogPath).Length
             $expected = $liveLen - $displayLogStartOffset
-            $complete = ($tailPass2 -ge $expected)
+            # Completude exige AS DUAS COISAS: tamanho suficiente E conteudo real.
+            $complete = ($tailPass2 -ge $expected) -and (-not $contentIsPadding)
             [pscustomobject]@{
                 source              = $displayLogPath
                 bind_start_offset   = $displayLogStartOffset
@@ -2177,6 +2331,8 @@ if (-not $DisableWatchdog) {
                 grew_between_passes = ($tailPass2 - $tailPass1)
                 live_log_length     = $liveLen
                 expected_tail_bytes = $expected
+                content_is_padding  = $contentIsPadding
+                padding_retries     = $paddingRetries
                 complete_at_capture = $complete
                 note                = 'duas passagens; se complete_at_capture for false a pasta esta INCOMPLETA e o resgate pelo offset do baseline e obrigatorio'
                 hardware_validated  = $false

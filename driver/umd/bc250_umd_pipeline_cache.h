@@ -53,6 +53,15 @@ typedef struct _BC250_PSO_KEY {
     VkVertexInputAttributeDescription InputAttributes[16];
     VkVertexInputBindingDescription InputBindings[16];
     uint32_t NumInputBindings;
+
+    /*
+     * DX.24: os fatores de blend vem do D3D11 e valem exatamente o que dizem.
+     * VK_BLEND_FACTOR_ZERO e VK_BLEND_OP_ADD valem 0 -- sem esta marca o
+     * pipeline confundia "ZERO pedido" com "campo nao preenchido" e trocava por
+     * ONE. Quando FALSE (nenhum blend state vinculado), valem os padroes D3D.
+     */
+    BOOL BlendFactorsExplicit;
+    BOOL AlphaToCoverageEnable;
 } BC250_PSO_KEY;
 
 /* Cache entry */

@@ -22,6 +22,89 @@ static void Bc250GpuvaCopySpace(
     }
 }
 
+/*
+ * Discriminador de endereco de fault. Ver o bloco longo em
+ * bc250_gpuva_space_contract.h. Leitor PURO: nao escreve, nao trava, nao exige
+ * dono -- no TDR nao se sabe de quem e' o endereco que falhou.
+ */
+BC250_GPUVA_STATUS Bc250GpuvaSpaceDescribeAddress(
+    const BC250_GPUVA_SPACE *Space,
+    uint64_t GpuVa,
+    BC250_GPUVA_ADDRESS_SITE *Site)
+{
+    uint32_t i;
+
+    if (Site == NULL) return BC250_GPUVA_BAD_ARGUMENT;
+    Site->Found = 0u;
+    Site->State = BC250_GPUVA_RANGE_FREE;
+    Site->BaseGpuVa = 0ull;
+    Site->Size = 0ull;
+    Site->OffsetInRange = 0ull;
+    Site->OwnerProcess = NULL;
+    Site->Allocation = NULL;
+    Site->AllocationToken = 0ull;
+    Site->BackingSegmentId = 0u;
+    Site->BackingSegmentOffset = 0ull;
+    Site->HasBelow = 0u;
+    Site->NearestBelowEnd = 0ull;
+    Site->DistanceAboveEnd = 0ull;
+    Site->HasAbove = 0u;
+    Site->NearestAboveBase = 0ull;
+    Site->DistanceBelowBase = 0ull;
+    Site->LiveRangesScanned = 0u;
+
+    if (Space == NULL || Space->Signature != BC250_GPUVA_SPACE_SIGNATURE) {
+        return BC250_GPUVA_BAD_ARGUMENT;
+    }
+
+    for (i = 0u; i < BC250_GPUVA_SPACE_MAX_RANGES; ++i) {
+        const BC250_GPUVA_RANGE_RECORD *r = &Space->Ranges[i];
+        /*
+         * So' faixas MAPEADAS contam. Uma faixa em TEARDOWN ou UNMAPPED nao
+         * tem traducao valida, e dizer que o endereco "esta dentro" dela seria
+         * exatamente o falso positivo que inverteria o veredito.
+         */
+        if (r->State != BC250_GPUVA_RANGE_MAPPED) continue;
+        if (r->Size == 0ull) continue;
+        ++Site->LiveRangesScanned;
+
+        if (GpuVa >= r->BaseGpuVa && GpuVa < r->EndGpuVa) {
+            Site->Found = 1u;
+            Site->State = r->State;
+            Site->BaseGpuVa = r->BaseGpuVa;
+            Site->Size = r->Size;
+            Site->OffsetInRange = GpuVa - r->BaseGpuVa;
+            Site->OwnerProcess = r->OwnerProcess;
+            Site->Allocation = r->Allocation;
+            Site->AllocationToken = r->AllocationToken;
+            Site->BackingSegmentId = r->BackingSegmentId;
+            Site->BackingSegmentOffset = r->BackingSegmentOffset;
+            /* Achou: a vizinhanca perde sentido e fica zerada de proposito. */
+            Site->HasBelow = 0u;
+            Site->HasAbove = 0u;
+            Site->DistanceAboveEnd = 0ull;
+            Site->DistanceBelowBase = 0ull;
+            return BC250_GPUVA_OK;
+        }
+
+        if (r->EndGpuVa <= GpuVa) {
+            if (!Site->HasBelow || r->EndGpuVa > Site->NearestBelowEnd) {
+                Site->HasBelow = 1u;
+                Site->NearestBelowEnd = r->EndGpuVa;
+                Site->DistanceAboveEnd = GpuVa - r->EndGpuVa;
+            }
+        } else if (r->BaseGpuVa > GpuVa) {
+            if (!Site->HasAbove || r->BaseGpuVa < Site->NearestAboveBase) {
+                Site->HasAbove = 1u;
+                Site->NearestAboveBase = r->BaseGpuVa;
+                Site->DistanceBelowBase = r->BaseGpuVa - GpuVa;
+            }
+        }
+    }
+
+    return BC250_GPUVA_OK;
+}
+
 BC250_GPUVA_STATUS Bc250GpuvaSpaceDescribeOccupancy(
     const BC250_GPUVA_SPACE *Space,
     BC250_GPUVA_SPACE_OCCUPANCY *Occupancy)
@@ -150,6 +233,7 @@ BC250_GPUVA_STATUS Bc250GpuvaSpaceInsertRange(
         slot->OwnerContext = Param->OwnerContext;
         slot->Allocation = Param->Allocation;
         slot->OpenAllocation = Param->OpenAllocation;
+        slot->AllocationToken = Param->AllocationToken;
         slot->BackingSegmentId = Param->BackingSegmentId;
         slot->BackingSegmentOffset = Param->BackingSegmentOffset;
         slot->Permissions = Param->Permissions ? Param->Permissions :

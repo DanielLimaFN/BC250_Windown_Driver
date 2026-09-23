@@ -387,6 +387,15 @@ static int TestAbiTokenClassification(void)
         CHECK(Bc250AllocationRequiresCpuAccess(&flagAlloc));
         CHECK(!Bc250AllocationIsPrimary(&flagAlloc));
     }
+    {
+        BC250_ALLOCATION_PRIVATE_V1 resourceAlloc;
+        uint64_t resToken = ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_RESOURCE <<
+            BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 48ull;
+        CHECK(Bc250AllocationAbiFormat(resToken, 4096ull, 4096ull, 0u, NULL, &resourceAlloc) ==
+            BC250_ALLOCATION_ABI_OK);
+        CHECK(Bc250AllocationRequiresCpuAccess(&resourceAlloc));
+        CHECK(!Bc250AllocationIsPrimary(&resourceAlloc));
+    }
     return 1;
 }
 

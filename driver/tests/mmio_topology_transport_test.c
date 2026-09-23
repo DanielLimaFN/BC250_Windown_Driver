@@ -287,7 +287,12 @@ static int Bc250RunMmioTopologyTransportTest(void)
             CHECK(value == n + 1u);
             CHECK(Bc250MmioTopologyWrite32(&context, computeOffsets[n], 0u));
         }
-        CHECK(!Bc250MmioTopologyWrite32(&context, BC250_GCVM_VMID9_CNTL + 4u, 1u));
+        /* VMID9_CNTL + 4 e' VMID10_CNTL, agora pertencente ao pool. A antiga
+         * assercao chamava um registrador catalogado de "vizinho". */
+        CHECK(Bc250VmidPoolIsWritableGcvmRegister(
+            BC250_GCVM_VMID9_CNTL + 4u) == 1u);
+        CHECK(Bc250VmidPoolIsWritableGcvmRegister(
+            BC250_GCVM_VMID9_CNTL + 2u) == 0u);
     }
     CHECK(Bc250MmioTopologyRead32(
         &context, BC250_HQD_MMIO_CC_GC_SHADER_ARRAY_CONFIG, &value) == 1u);
@@ -410,6 +415,42 @@ static int Bc250RunMmioTopologyTransportTest(void)
     CHECK(Bc250MmioTopologyRead32(&context, 0x000032D4u, &value) == 0u);
     CHECK(Bc250MmioTopologyWrite32(&context, 0x000032D4u, 1u) == 0u);
     CHECK(context.ReadCount == 148u && context.WriteCount == 51u);
+    /*
+     * DX.7: o transporte aceita somente os sete offsets exatos de cada VMID
+     * do pool. Este bloco fica depois das assercoes historicas de contadores
+     * para que a nova cobertura nao reescreva o baseline delas.
+     */
+    {
+        static const uint32_t poolEdges[2] = { 1u, 15u };
+        uint32_t edge;
+        for (edge = 0u; edge < 2u; ++edge) {
+            const uint32_t v = poolEdges[edge];
+            const uint32_t pairOffset = v * BC250_GCVM_PT_BASE_STRIDE;
+            const uint32_t offsets[7] = {
+                BC250_GCVM_CNTL_BASE + v * BC250_GCVM_CNTL_STRIDE,
+                BC250_GCVM_PT_BASE_LO_BASE + pairOffset,
+                BC250_GCVM_PT_BASE_LO_BASE + pairOffset + 4u,
+                BC250_GCVM_PT_START_LO_BASE + pairOffset,
+                BC250_GCVM_PT_START_LO_BASE + pairOffset + 4u,
+                BC250_GCVM_PT_END_LO_BASE + pairOffset,
+                BC250_GCVM_PT_END_LO_BASE + pairOffset + 4u
+            };
+            uint32_t r;
+            for (r = 0u; r < 7u; ++r) {
+                CHECK(Bc250MmioTopologyWrite32(&context, offsets[r],
+                    0xA5000000u | (v << 8) | r) == 1u);
+                CHECK(Bc250MmioTopologyRead32(&context, offsets[r], &value) == 1u);
+                CHECK(value == (0xA5000000u | (v << 8) | r));
+            }
+        }
+        /* Desalinhado e primeiro offset alem do VMID15 continuam recusados. */
+        CHECK(Bc250MmioTopologyWrite32(&context,
+            BC250_GCVM_PT_BASE_LO_BASE + 2u, 1u) == 0u);
+        CHECK(Bc250MmioTopologyWrite32(&context,
+            BC250_GCVM_PT_END_LO_BASE +
+                BC250_GCVM_CONTEXT_COUNT * BC250_GCVM_PT_BASE_STRIDE,
+            1u) == 0u);
+    }
     CHECK(Bc250MmioTopologyUnmap(&context) == BC250_MMIO_TOPOLOGY_OK);
     CHECK(g_unmapCalls == 1u && context.State == BC250_MMIO_TOPOLOGY_EMPTY);
     CHECK(context.VirtualBase == NULL);

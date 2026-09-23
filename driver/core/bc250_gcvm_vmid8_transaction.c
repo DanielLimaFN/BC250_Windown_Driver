@@ -213,14 +213,94 @@ uint32_t Bc250GcvmBuildVmidCntl(
             BC250_GCVM_CONTEXT_CNTL_PAGE_TABLE_BLOCK_SIZE_MASK);
 }
 
-static const uint32_t g_Bc250Vmid7Registers[6] = {
-    BC250_GCVM_VMID7_PT_BASE_LO,
-    BC250_GCVM_VMID7_PT_BASE_HI,
-    BC250_GCVM_VMID7_PT_START_LO,
-    BC250_GCVM_VMID7_PT_START_HI,
-    BC250_GCVM_VMID7_PT_END_LO,
-    BC250_GCVM_VMID7_PT_END_HI
-};
+/*
+ * Inventario dos 16 contextos GCVM. Ver o bloco longo no header.
+ * SOMENTE LEITURA: nao escreve registrador nenhum.
+ */
+uint32_t Bc250GcvmContextCntlOffset(uint32_t Vmid)
+{
+    return BC250_GCVM_CNTL_BASE + (Vmid * BC250_GCVM_CNTL_STRIDE);
+}
+
+uint32_t Bc250GcvmContextPtBaseLoOffset(uint32_t Vmid)
+{
+    return BC250_GCVM_PT_BASE_LO_BASE + (Vmid * BC250_GCVM_PT_BASE_STRIDE);
+}
+
+BC250_GCVM_VMID8_STATUS Bc250GcvmScanContexts(
+    const BC250_GCVM_VMID8_INTERFACE *Interface,
+    BC250_GCVM_CONTEXT_INVENTORY *Inventory)
+{
+    uint32_t v;
+
+    if (Inventory == NULL) return BC250_GCVM_VMID8_BAD_ARGUMENT;
+    /*
+     * Zeragem EXPLICITA, campo a campo. memset sobre uma estrutura deste
+     * tamanho e' reemitido pelo /O2 como chamada real a memset, que NAO existe
+     * no link offline das suites -- armadilha ja registrada no projeto quando
+     * uma copia caractere a caractere virou memcpy e quebrou o link.
+     */
+    for (v = 0u; v < BC250_GCVM_CONTEXT_COUNT; ++v) {
+        Inventory->Entries[v].Vmid = 0u;
+        Inventory->Entries[v].CntlRead = 0u;
+        Inventory->Entries[v].Cntl = 0u;
+        Inventory->Entries[v].Enabled = 0u;
+        Inventory->Entries[v].PtBaseRead = 0u;
+        Inventory->Entries[v].PageTableBase = 0ull;
+        Inventory->Entries[v].InUse = 0u;
+    }
+    Inventory->Scanned = 0u;
+    Inventory->InUseCount = 0u;
+    Inventory->FreeCount = 0u;
+    Inventory->UnreadableCount = 0u;
+    Inventory->FreeMask = 0u;
+    if (Interface == NULL || Interface->Read32 == NULL ||
+        Interface->Identity != BC250_GCVM_VMID8_IDENTITY) {
+        return BC250_GCVM_VMID8_BAD_ARGUMENT;
+    }
+
+    for (v = 0u; v < BC250_GCVM_CONTEXT_COUNT; ++v) {
+        BC250_GCVM_CONTEXT_INVENTORY_ENTRY *e = &Inventory->Entries[v];
+        uint32_t lo = 0u, hi = 0u;
+
+        e->Vmid = v;
+        ++Inventory->Scanned;
+
+        if (Interface->Read32(Interface->Context,
+                Bc250GcvmContextCntlOffset(v), &e->Cntl) != 0u) {
+            e->CntlRead = 1u;
+            e->Enabled = (e->Cntl & BC250_GCVM_CONTEXT_CNTL_ENABLE_CONTEXT_MASK) ? 1u : 0u;
+        }
+        if (Interface->Read32(Interface->Context,
+                Bc250GcvmContextPtBaseLoOffset(v), &lo) != 0u &&
+            Interface->Read32(Interface->Context,
+                Bc250GcvmContextPtBaseLoOffset(v) + 4u, &hi) != 0u) {
+            e->PtBaseRead = 1u;
+            /*
+             * Os bits baixos da PT_BASE carregam flags (BC250_PTE_VALID entre
+             * elas). Mascarar para 4 KB devolve o endereco da raiz; NAO
+             * mascarar faria um contexto livre com flag parecer ocupado.
+             */
+            e->PageTableBase = (((uint64_t)hi) << 32) |
+                               ((uint64_t)lo & ~0xFFFull);
+        }
+
+        if (e->CntlRead == 0u && e->PtBaseRead == 0u) {
+            ++Inventory->UnreadableCount;
+            continue;   /* "nao sei" nunca vira "livre" */
+        }
+
+        e->InUse = (e->Enabled != 0u || e->PageTableBase != 0ull) ? 1u : 0u;
+        if (e->InUse != 0u) {
+            ++Inventory->InUseCount;
+        } else {
+            ++Inventory->FreeCount;
+            Inventory->FreeMask |= (1u << v);
+        }
+    }
+
+    return BC250_GCVM_VMID8_OK;
+}
 
 BC250_GCVM_VMID8_STATUS Bc250GcvmInstallVmid(
     uint32_t Vmid,
@@ -229,30 +309,32 @@ BC250_GCVM_VMID8_STATUS Bc250GcvmInstallVmid(
     BC250_GCVM_VMID8_INSTALL_EVIDENCE *Evidence)
 {
     uint32_t programmed[6], value, i;
+    uint32_t regs[6];
     uint32_t cntl;
-    const uint32_t *regs;
     uint32_t cntlReg;
 
     if (Evidence != NULL) memset(Evidence, 0, sizeof(*Evidence));
     if (Interface == NULL || Evidence == NULL || Interface->Read32 == NULL ||
-        Interface->Write32 == NULL || Interface->Flush == NULL ||
+        Interface->Write32 == NULL || Interface->FlushVmid == NULL ||
         Interface->Identity != BC250_GCVM_VMID8_IDENTITY ||
+        Vmid >= BC250_GCVM_CONTEXT_COUNT ||
         PageTablePhysical == 0ull ||
         (PageTablePhysical & 0xFFFu) != 0u) {
         return BC250_GCVM_VMID8_BAD_ARGUMENT;
     }
 
-    if (Vmid == BC250_GCVM_VMID8) {
-        regs = g_Bc250Vmid8Registers;
-        cntlReg = BC250_GCVM_VMID8_CNTL;
-    } else if (Vmid == BC250_GCVM_USER_VMID) {
-        regs = g_Bc250Vmid7Registers;
-        cntlReg = BC250_GCVM_VMID7_CNTL;
-    } else {
-        return BC250_GCVM_VMID8_BAD_ARGUMENT;
-    }
+    cntlReg = Bc250GcvmContextCntlOffset(Vmid);
+    regs[0] = Bc250GcvmContextPtBaseLoOffset(Vmid);
+    regs[1] = regs[0] + 4u;
+    regs[2] = BC250_GCVM_PT_START_LO_BASE +
+        (Vmid * BC250_GCVM_PT_BASE_STRIDE);
+    regs[3] = regs[2] + 4u;
+    regs[4] = BC250_GCVM_PT_END_LO_BASE +
+        (Vmid * BC250_GCVM_PT_BASE_STRIDE);
+    regs[5] = regs[4] + 4u;
 
     Evidence->PageTablePhysical = PageTablePhysical;
+    Evidence->Vmid = Vmid;
     programmed[0] = (uint32_t)((PageTablePhysical | BC250_PTE_VALID) & 0xFFFFFFFFull);
     programmed[1] = (uint32_t)(PageTablePhysical >> 32);
     programmed[2] = BC250_GCVM_CONTEXT8_PT_START_VALUE;
@@ -308,7 +390,7 @@ BC250_GCVM_VMID8_STATUS Bc250GcvmInstallVmid(
     Evidence->ProgramReadbackPassed = 1u;
 
     /* 4. Invalidacao de TLB na engine para o VMID */
-    if (!Interface->Flush(Interface->Context)) {
+    if (!Interface->FlushVmid(Interface->Context, Vmid)) {
         Evidence->FailureStep = 5u;
         (void)Interface->Write32(Interface->Context, cntlReg, 0u);
         return BC250_GCVM_VMID8_TLB_FAILED;
@@ -325,6 +407,77 @@ BC250_GCVM_VMID8_STATUS Bc250GcvmVmid8Install(
     BC250_GCVM_VMID8_INSTALL_EVIDENCE *Evidence)
 {
     return Bc250GcvmInstallVmid(BC250_GCVM_VMID8, PageTablePhysical, Interface, Evidence);
+}
+
+BC250_GCVM_VMID8_STATUS Bc250GcvmUninstallVmid(
+    uint32_t Vmid,
+    const BC250_GCVM_VMID8_INTERFACE *Interface,
+    BC250_GCVM_VMID8_INSTALL_EVIDENCE *Evidence)
+{
+    uint32_t regs[6];
+    uint32_t cntlReg;
+    uint32_t value = 0u;
+    uint32_t i;
+
+    if (Evidence != NULL) memset(Evidence, 0, sizeof(*Evidence));
+    if (Interface == NULL || Evidence == NULL || Interface->Read32 == NULL ||
+        Interface->Write32 == NULL || Interface->FlushVmid == NULL ||
+        Interface->Identity != BC250_GCVM_VMID8_IDENTITY ||
+        Vmid >= BC250_GCVM_CONTEXT_COUNT) {
+        return BC250_GCVM_VMID8_BAD_ARGUMENT;
+    }
+
+    Evidence->Vmid = Vmid;
+    cntlReg = Bc250GcvmContextCntlOffset(Vmid);
+    regs[0] = Bc250GcvmContextPtBaseLoOffset(Vmid);
+    regs[1] = regs[0] + 4u;
+    regs[2] = BC250_GCVM_PT_START_LO_BASE +
+        (Vmid * BC250_GCVM_PT_BASE_STRIDE);
+    regs[3] = regs[2] + 4u;
+    regs[4] = BC250_GCVM_PT_END_LO_BASE +
+        (Vmid * BC250_GCVM_PT_BASE_STRIDE);
+    regs[5] = regs[4] + 4u;
+
+    /*
+     * 1. CNTL primeiro. Enquanto ENABLE_CONTEXT estiver ligado, o walker pode
+     *    nascer uma traducao nova a partir da raiz que estamos prestes a
+     *    abandonar.
+     */
+    if (!Interface->Write32(Interface->Context, cntlReg, 0u)) {
+        Evidence->FailureStep = 20u;
+        Evidence->FailureRegister = cntlReg;
+        return BC250_GCVM_VMID8_WRITE_FAILED;
+    }
+    /* O desarme e PROVADO por readback, nunca suposto. */
+    if (!Interface->Read32(Interface->Context, cntlReg, &value) ||
+        (value & BC250_GCVM_ENABLE_CONTEXT) != 0u) {
+        Evidence->FailureStep = 21u;
+        Evidence->FailureRegister = cntlReg;
+        Evidence->FailureValue = value;
+        return BC250_GCVM_VMID8_READBACK_FAILED;
+    }
+    Evidence->ProgramReadbackPassed = 1u;
+
+    /* 2. Zerar os registradores de endereco, ja com o contexto desabilitado. */
+    for (i = 0u; i < 6u; ++i) {
+        if (!Interface->Write32(Interface->Context, regs[i], 0u)) {
+            Evidence->FailureStep = 22u;
+            Evidence->FailureRegister = regs[i];
+            return BC250_GCVM_VMID8_WRITE_FAILED;
+        }
+    }
+
+    /*
+     * 3. Invalidar a TLB DESTE VMID. Traducao ja cacheada sobrevive ao
+     *    desarme do CNTL -- sem isto o desarme seria parcial e pareceria
+     *    completo.
+     */
+    if (!Interface->FlushVmid(Interface->Context, Vmid)) {
+        Evidence->FailureStep = 23u;
+        return BC250_GCVM_VMID8_TLB_FAILED;
+    }
+    Evidence->TlbFlushPassed = 1u;
+    return BC250_GCVM_VMID8_OK;
 }
 
 BC250_GCVM_VMID8_STATUS Bc250GcvmVmid8Uninstall(

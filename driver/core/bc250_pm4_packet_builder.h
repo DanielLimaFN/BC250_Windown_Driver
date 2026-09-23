@@ -267,6 +267,46 @@ const char *Bc250Pm4StatusName(BC250_PM4_STATUS Status);
  * Type3 (bits 31:30 == 3): opcode em 15:8, count em 29:16 (payload = count+1).
  * Qualquer opcode fora da tabela sai como "desconhecido": nao se inventa nome.
  */
+/*
+ * DX.27 -- Clear State Buffer do GFX10, montado como no upstream.
+ *
+ * A Corrida 72 mediu RLC_CSIB_ADDR_LO/HI/LENGTH = 0: o CLEAR_STATE que o
+ * RADV emite em todo IB nao tinha de onde carregar os padroes de contexto
+ * (PA_SC_GENERIC_SCISSOR_*, PA_SC_TILE_STEERING_OVERRIDE e mais ~920
+ * registradores que o Mesa deixa para o CLEAR_STATE no gfx10, ac_cmdbuf.c).
+ *
+ * Sequencia = gfx_v10_0_get_csb_buffer (amdgpu_gfx_csb_preamble_start +
+ * amdgpu_gfx_csb_data_parser + steering + amdgpu_gfx_csb_preamble_end):
+ *   PREAMBLE_CNTL(BEGIN_CLEAR_STATE) CONTEXT_CONTROL(0x80000000,0x80000000)
+ *   SET_CONTEXT_REG por extent de gfx10_cs_data   (clearstate_gfx10.h)
+ *   SET_CONTEXT_REG PA_SC_TILE_STEERING_OVERRIDE
+ *   PREAMBLE_CNTL(END_CLEAR_STATE) CLEAR_STATE(0)
+ * Dados e codificacoes: inc/linux_ref/PROVENANCE_CLEARSTATE.txt (P1).
+ *
+ * ATENCAO: o nosso preambulo de boot e o fork do RADV emitiam PREAMBLE_CNTL com
+ * payload 0 e 1. O upstream usa (2 << 28) e (3 << 28) (nvd.h:395-396).
+ */
+#define BC250_PM4_IT_CLEAR_STATE             0x12u  /* nvd.h:59  */
+#define BC250_PM4_IT_CONTEXT_CONTROL         0x28u
+#define BC250_PM4_IT_PREAMBLE_CNTL           0x4Au  /* nvd.h:394 */
+/* DX.29: sincronia de troca de VMID no anel grafico (pipeline sync do upstream). */
+#define BC250_PM4_IT_PFP_SYNC_ME             0x42u  /* nvd.h:322 */
+/* WAIT_REG_MEM: FUNCTION(5 '>=') | MEM_SPACE(1 mem) | ENGINE(1 pfp) -- nvd.h:166-186 */
+#define BC250_PM4_WAIT_REG_MEM_PFP_MEM_GE    ((5u << 0) | (1u << 4) | (1u << 8))
+#define BC250_PM4_PREAMBLE_BEGIN_CLEAR_STATE (2u << 28) /* nvd.h:395 */
+#define BC250_PM4_PREAMBLE_END_CLEAR_STATE   (3u << 28) /* nvd.h:396 */
+/* mmPA_SC_TILE_STEERING_OVERRIDE 0x00d7, BASE_IDX 1 (gc_10_1_0_offset.h:5977) */
+#define BC250_PM4_REG_PA_SC_TILE_STEERING_OVERRIDE (BC250_PM4_CONTEXT_REG_BASE + 0x00D7u)
+/* 2+3 (inicio) + soma(2+reg_count) dos 8 extents (16+921) + 3 (steering) + 2+2 (fim) */
+#define BC250_PM4_GFX10_CSB_DWORDS           949u
+
+uint32_t Bc250Pm4Gfx10ClearStateDwords(void);
+BC250_PM4_STATUS Bc250Pm4BuildGfx10ClearState(
+    uint32_t *Buffer,
+    uint32_t CapacityDwords,
+    uint32_t TileSteeringOverride,
+    uint32_t *WrittenDwords);
+
 uint32_t Bc250Pm4HeaderType(uint32_t Header);
 uint32_t Bc250Pm4HeaderType3Opcode(uint32_t Header);
 uint32_t Bc250Pm4HeaderType3CountDwords(uint32_t Header);

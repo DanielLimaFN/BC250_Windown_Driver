@@ -1,4 +1,6 @@
 #include "bc250_mmio_topology_transport.h"
+#include "../core/bc250_fault_latch_contract.h"
+#include "../core/bc250_golden_settings_contract.h"
 
 static void Bc250MmioTopologyClearMapping(
     BC250_MMIO_TOPOLOGY_CONTEXT *Context)
@@ -140,9 +142,38 @@ BC250_MMIO_TOPOLOGY_STATUS Bc250MmioTopologyMapReadonly(
     return BC250_MMIO_TOPOLOGY_OK;
 }
 
+/*
+ * DX.26 -- LEITURA dos golden settings do GC e do Clear State Buffer.
+ *
+ * Fase A das auditorias externas (docs/338): o KMD nunca aplica nem LE os 34
+ * golden settings do Cyan Skillfish, nem os RLC_CSIB_*. Esta allowlist e' so'
+ * de LEITURA -- a de escrita nao ganha nada aqui. Offsets com procedencia:
+ * a tabela de bc250_golden_settings_contract.c e inc/linux_ref/gc_10_1_0_offset.h
+ * (mmRLC_CSIB_ADDR_LO/HI/LENGTH = 0x4CA2..0x4CA4, BASE_IDX 1 -> (0xA000+x)*4).
+ */
+#define BC250_REG_RLC_CSIB_ADDR_LO_BYTE 0x0003B288u
+#define BC250_REG_RLC_CSIB_ADDR_HI_BYTE 0x0003B28Cu
+#define BC250_REG_RLC_CSIB_LENGTH_BYTE  0x0003B290u
+
+static uint32_t Bc250MmioTopologyGoldenReadAllowed(uint32_t ByteOffset)
+{
+    uint32_t count = 0u;
+    const BC250_GOLDEN_ENTRY *table = Bc250GoldenSettingsGetTable(&count);
+    if (ByteOffset == BC250_REG_RLC_CSIB_ADDR_LO_BYTE ||
+        ByteOffset == BC250_REG_RLC_CSIB_ADDR_HI_BYTE ||
+        ByteOffset == BC250_REG_RLC_CSIB_LENGTH_BYTE) {
+        return 1u;
+    }
+    for (uint32_t i = 0; table != NULL && i < count; ++i) {
+        if (table[i].BarOffset == ByteOffset) return 1u;
+    }
+    return 0u;
+}
+
 static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
 {
     return Bc250MmioTopologyGlobalMmuOffsetAllowed(ByteOffset) ||
+        Bc250MmioTopologyGoldenReadAllowed(ByteOffset) ||
         ByteOffset == BC250_RCC_CONFIG_MEMSIZE_BYTE_OFFSET ||
         ByteOffset == BC250_DRIVER_SCRATCH_0_BYTE_OFFSET ||
         ByteOffset == BC250_DRIVER_SCRATCH_1_BYTE_OFFSET ||
@@ -186,6 +217,7 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == 0xA318u ||
         ByteOffset == 0xA3A4u ||
         ByteOffset == 0xA3A8u ||
+        Bc250VmidPoolIsWritableGcvmRegister(ByteOffset) ||
         Bc250GcvmIsUserRegister(ByteOffset) ||
         Bc250GcvmIsComputeRegister(ByteOffset) ||
         ByteOffset == BC250_GCVM_VMID8_CNTL ||
@@ -223,6 +255,21 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == 0x0003B000u || ByteOffset == 0x0003B9B8u ||
         ByteOffset == 0x000086D8u || ByteOffset == 0x00008694u ||
         ByteOffset == 0x00008698u || ByteOffset == 0x0000869Cu ||
+        /*
+         * 0xA120 GCVM_L2_PROTECTION_FAULT_CNTL -- SOMENTE LEITURA.
+         *
+         * Nunca foi lido por este driver, e decide o significado de tudo que
+         * lemos em 0xA130/0xA134/0xA138. O bit 1
+         * (ALLOW_SUBSEQUENT_PROTECTION_FAULT_STATUS_ADDR_UPDATES, sh_mask
+         * 12092) diz se o par STATUS/ADDR acompanha o fault mais RECENTE ou
+         * fica preso no PRIMEIRO ate alguem escrever o bit 0
+         * (CLEAR_PROTECTION_FAULT_STATUS_ADDR). Se for o segundo caso, toda
+         * analise de fault desde a Corrida 45 leu um latch velho.
+         *
+         * A allowlist de ESCRITA nao ganha este offset: limpar o latch muda o
+         * estado do silicio e e' decisao separada, com criterio proprio.
+         */
+        ByteOffset == 0x0000A120u ||
         ByteOffset == 0x0000A130u || ByteOffset == 0x0000A134u ||
         ByteOffset == 0x0000A138u ||
         ByteOffset == 0x0003E050u || ByteOffset == 0x0003E054u ||
@@ -339,15 +386,63 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == BC250_HQD_MMIO_PQ_WPTR_HI ||
         ByteOffset == 0x00030100u ||
         ByteOffset == 0x000086A0u || ByteOffset == 0x000086A4u ||
-        ByteOffset == 0x0000A4B0u || ByteOffset == 0x00030800u;
+        ByteOffset == 0x0000A4B0u || ByteOffset == 0x00030800u ||
+        /*
+         * INVENTARIO DOS 16 CONTEXTOS GCVM -- SOMENTE LEITURA (21/09).
+         *
+         * A Corrida 49 provou que varios contextos compartilham o VMID 7 e que
+         * suas raizes se alternam: 5 faults, 5 comparacoes, divergencia de 2 a
+         * 15 carimbos de 16, e o MESMO IB submetido sob TRES raizes distintas.
+         * O conserto e' VMID por contexto -- e para isso e preciso saber quais
+         * VMIDs estao livres, em vez de assumir.
+         *
+         * Layout regular, conferido contra gc_10_1_0_offset.h E contra as
+         * constantes de CONTEXT0 ja presentes em bc250_compute_service.c:
+         *   CNTL        = 0xA200 + vmid*4
+         *   PT_BASE_LO  = 0xA3AC + vmid*8   (HI = +4)
+         * Liberar a FAIXA inteira aqui vale so' para LEITURA; a allowlist de
+         * escrita continua restrita aos VMIDs 7 e 8, entao um inventario nao
+         * pode, por construcao, reprogramar contexto nenhum.
+         */
+        (ByteOffset >= 0x0000A200u && ByteOffset < 0x0000A240u &&
+         (ByteOffset & 3u) == 0u) ||
+        (ByteOffset >= 0x0000A3ACu && ByteOffset < 0x0000A42Cu &&
+         (ByteOffset & 3u) == 0u);
 }
 
 static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
 {
     return Bc250MmioTopologyGlobalMmuOffsetAllowed(ByteOffset) ||
+        /*
+         * 0xA120 GCVM_L2_PROTECTION_FAULT_CNTL -- ESCRITA, aberta na Corrida 56.
+         *
+         * JUSTIFICATIVA MEDIDA, nao conveniencia: a Corrida 55 leu
+         * LATCH_CNTL=0x3FFFFFFC, isto e Clear=0 e AceitaAtualizacoes=0. O par
+         * STATUS/ADDR trava no PRIMEIRO fault e so se solta quando alguem
+         * escreve o bit 0. Sem esta escrita cada TDR le um residuo antigo --
+         * foi o que aconteceu em dez corridas.
+         *
+         * O UNICO escritor autorizado e Bc250FaultLatchDrain, que faz snapshot,
+         * pulsa somente o bit 0 preservando os demais (Lei 6), restaura o valor
+         * de entrada e PROVA por readback. Um portao exige esse formato.
+         */
+        ByteOffset == BC250_REG_GCVM_L2_PROTECTION_FAULT_CNTL ||
+        /*
+         * DX.27 -- RLC_CSIB_ADDR_LO/HI/LENGTH, ESCRITA aberta apos medicao.
+         *
+         * A Corrida 72 leu os tres em zero (CSB nao programado). O UNICO
+         * escritor autorizado e' Bc250ActiveProgramClearStateBuffer, que faz
+         * snapshot, escreve, confere por readback e restaura se nao conferir
+         * (Lei 5); um portao exige esse formato. Os golden settings continuam
+         * FORA desta allowlist: so' leitura.
+         */
+        ByteOffset == BC250_REG_RLC_CSIB_ADDR_LO_BYTE ||
+        ByteOffset == BC250_REG_RLC_CSIB_ADDR_HI_BYTE ||
+        ByteOffset == BC250_REG_RLC_CSIB_LENGTH_BYTE ||
         ByteOffset == 0xA2D0u ||
         ByteOffset == 0xA3A4u ||
         ByteOffset == 0xA3A8u ||
+        Bc250VmidPoolIsWritableGcvmRegister(ByteOffset) ||
         Bc250GcvmIsUserRegister(ByteOffset) ||
         Bc250GcvmIsComputeRegister(ByteOffset) ||
         ByteOffset == BC250_GCVM_VMID8_CNTL ||

@@ -1942,7 +1942,25 @@ static int Bc250RunActiveMiniportTest(void)
             STATUS_DEVICE_BUSY);
         CHECK(initData.DxgkDdiDestroyContext(
             (HANDLE)(ULONG_PTR)0xBAD251u) == STATUS_INVALID_HANDLE);
+        {
+            BC250_CONTEXT_SUBMISSION_VIEW subView;
+            uint32_t heldVmid = 0u;
+            uint32_t wasAssigned = 0u;
+
+            CHECK(Bc250VmidPoolAcquire(&activeCtx->VmidPool, contextHandle,
+                &heldVmid, &wasAssigned) == BC250_VMID_POOL_OK);
+            CHECK(Bc250McdmContextAcquireSubmissionView(&activeCtx->Objects,
+                contextHandle, activeCtx, 0u, &subView) == BC250_MCDM_OBJECT_OK);
+            CHECK(initData.DxgkDdiDestroyContext(contextHandle) ==
+                STATUS_DEVICE_BUSY);
+            CHECK(Bc250VmidPoolLookup(&activeCtx->VmidPool, contextHandle,
+                &heldVmid) == BC250_VMID_POOL_OK);
+            CHECK(Bc250McdmContextReleaseSubmissionView(&activeCtx->Objects,
+                contextHandle) == BC250_MCDM_OBJECT_OK);
+        }
         CHECK(initData.DxgkDdiDestroyContext(contextHandle) == STATUS_SUCCESS);
+        CHECK(Bc250VmidPoolLookup(&activeCtx->VmidPool, contextHandle,
+            NULL) == BC250_VMID_POOL_NOT_FOUND);
         CHECK(initData.DxgkDdiDestroyContext(contextHandle) ==
             STATUS_INVALID_HANDLE);
 
@@ -2089,6 +2107,31 @@ static int Bc250RunActiveMiniportTest(void)
             CHECK(initData.DxgkDdiCreateAllocation(activeCtx, &createCmd) == STATUS_SUCCESS);
             CHECK(cmdInfo.FlagsWddm2.CpuVisible == 1u);
             CHECK(cmdInfo.FlagsWddm2.AccessedPhysically == 0u);
+        }
+
+        /* Verify resource allocation gets CpuVisible = 1u and AccessedPhysically = 0u */
+        {
+            DXGKARG_CREATEALLOCATION createRes;
+            DXGK_ALLOCATIONINFO resInfo;
+            BC250_ALLOCATION_PRIVATE_V1 resPrivate;
+            memset(&createRes, 0, sizeof(createRes));
+            memset(&resInfo, 0, sizeof(resInfo));
+            memset(&resPrivate, 0, sizeof(resPrivate));
+            resPrivate.Magic = BC250_ALLOCATION_PRIVATE_MAGIC;
+            resPrivate.Version = BC250_ALLOCATION_PRIVATE_VERSION;
+            resPrivate.StructSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
+            resPrivate.AllocationToken =
+                ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_RESOURCE << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x9Du;
+            resPrivate.ByteSize = 65536u;
+            resPrivate.Alignment = 4096u;
+            resInfo.pPrivateDriverData = &resPrivate;
+            resInfo.PrivateDriverDataSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
+            createRes.NumAllocations = 1u;
+            createRes.pAllocationInfo = &resInfo;
+            createRes.Flags.Resource = 1u;
+            CHECK(initData.DxgkDdiCreateAllocation(activeCtx, &createRes) == STATUS_SUCCESS);
+            CHECK(resInfo.FlagsWddm2.CpuVisible == 1u);
+            CHECK(resInfo.FlagsWddm2.AccessedPhysically == 0u);
         }
 
         memset(openInfo, 0, sizeof(openInfo));

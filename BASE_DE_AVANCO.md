@@ -1,6 +1,1385 @@
 # BASE DE AVANÇO — AMD BC-250 → WDDM com jogos no Windows
 
+> **22/09/2026 — Corrida 75 (22:34:53, lab 3.236.1.0 + ICD `5988B38E`): desfecho C do docs/342.** Evidência em
+> `docs/evidence/2026-09-22_22-34-53-DESKTOP-HQAG6T4-lab-binding/` (e a foto do Daniel).
+>
+> - **Reproduzido (P0):**
+>   - quadro do harness D3D11 no monitor: fundo azul 0xFF2673E5 e triângulo com cor **interpolada por vértice**
+>     (vermelho/verde/azul, visível na foto);
+>   - Present do quadro 1 aceito, copiado por SDMA ao scanout em DstXY=640,180 (Present Blt, não composição do DWM);
+>   - desktop sem quadrados: nenhuma grade de Present zerada, nos 3 DWMs.
+> - **Variável 2 (ICD) sem regressão (P0):** zero `PREAMBLE_CNTL` em 71 IBs e autoteste 5/5 nas 3 variantes.
+> - **Variável 1 (KMD) ativa e INEFICAZ (P0):** 77 `VMID_SWITCH_SYNC`, zero recusa, mas 3 TDRs de 240 ondas, **de novo
+>   todos num IB de dispatch (280/288 DW) logo após troca de VMID**, com o fault sob o VMID do IB **anterior** (TDR 1:
+>   shader do harness sob VMID 1; TDR 3: shader do DWM sob VMID 2, WalkerError=6). Somando as corridas: **8 de 8**. A
+>   hipótese "o PFP avança para o IB novo" está **refutada**; a espera por fence no PFP não impede.
+> - O mouse continua travado (DWM preso após os TDRs, H); harness com `DEVICE_REMOVED` no quadro 2. BasicDisplay em
+>   Código 0 depois da recuperação.
+
+> **22/09/2026 — faixa DX.29, OFFLINE e sem corrida: sincronia de troca de VMID no anel gráfico e fork sem
+> `PREAMBLE_CNTL`. DUAS variáveis comportamentais, por decisão do Daniel. NÃO VALIDADO EM HARDWARE.** Critério da 75 em
+> [docs/342](docs/342_CORRIDA74_ANALISE_E_CRITERIO_CORRIDA75_TROCA_DE_VMID.md).
+>
+> - **Motivação (P0):** 5 de 5 travamentos das Corridas 73–74 foram num IB logo após IB de outro VMID (taxa de base 18–26%).
+> - **Variável 1 (KMD):** na troca de VMID, `WAIT_REG_MEM` mem/PFP `>=` sobre a fence do anel + `PFP_SYNC_ME`, antes do
+>   `INDIRECT_BUFFER` (pipeline sync + fim do vm_flush do upstream; `>=` e TLB por MMIO são divergências declaradas). Log
+>   `VMID_SWITCH_SYNC`.
+> - **Variável 2 (ICD):** `radv_emit_graphics` sem `PKT3(0x4A)`, igual ao upstream; ICD **`5988B38E...`**, patch
+>   `74304831...`. O autoteste separa as duas variáveis, porque roda num processo só, sem troca de VMID.
+> - **Verificação:** builds EXIT=0; auditorias PASS (portões DX.29 no MCDM e no RADV); 7 mutações reprovam.
+>   **lab 3.236.1.0**, NÃO INSTALADO: SYS `52CD8A05...`, UMD `5D66F9B3...` (igual à 74), INF `82BC8BD9...`, CAT `B751F262...`.
+
+> **22/09/2026 — Corrida 74 (22:15:50, lab 3.235.1.0 + ICD `57D60ACB`): desfecho G do docs/341 (A parcial não conta,
+> Lei 10.3). PRIMEIRO QUADRO DE UM APP D3D11 NO MONITOR, e os quadrados sumiram.** Evidência em
+> `docs/evidence/2026-09-22_22-15-50-DESKTOP-HQAG6T4-lab-binding/`.
+>
+> - **Harness D3D11 (P0):**
+>   - clear azul 0xFF2673E5 em 28800/28800 amostras e triângulo no centro (0xFF7F4040), renderizados pelo RADV;
+>   - **Present do quadro 1 aceito** (1 de 60), o primeiro da história;
+>   - o KMD copiou por SDMA o quadro de 1280×720 para o scanout em DstXY=640,180. É o quadrado azul com triângulo que o
+>     operador viu. Foi Present Blt do próprio harness, **não** composição do DWM.
+> - **Rotação DX.28 (P0):** 5 rotações no DWM 1212, com a `VkImg` girando pelas 3 imagens da cadeia; 5 `RTV_SEGUE_RECURSO`,
+>   zero recusas; as 5 grades de Present deram 86400/86400, **nenhuma voltou a zero** (na 73 zerava). O operador viu o
+>   desktop inteiro. O critério A exigia ≥10 grades e ≥5 `BYTE_PROOF PASS`; houve 5 e 3, porque os TDRs encurtaram o DWM.
+> - **TDRs (P0):** 3, todos com 240 ondas. Nas duas corridas, **5 de 5 travamentos** foram num IB logo após um IB de **outro
+>   VMID**, contra uma taxa de base de 18–26% dos IBs. Nos casos com fault de instrução, o VMID do fault é o do IB
+>   **anterior** (74: TDR 1 = shader do harness sob o VMID 1; TDR 3 = shader do próprio DWM sob o VMID 1, com
+>   WalkerError=6). H: o trabalho após troca de VMID no anel gráfico executa, ao menos em parte, com o VMID anterior; falta a
+>   sequência de troca do upstream (pipeline sync + flush de VM no anel + `PFP_SYNC_ME`).
+> - **Autoteste 5/5** nas 3 variantes; `CSIB_PROGRAM` PASS; zero BugCheck; mouse travado (H: DWM preso após os TDRs);
+>   harness com `DEVICE_REMOVED` no quadro 2. BasicDisplay em Código 0 depois da recuperação.
+
+> **22/09/2026 — faixa DX.28, OFFLINE e sem corrida: causa dos quadrados encontrada e corrigida, TDR de 240 ondas
+> caracterizado, patch do fork preparado. NÃO VALIDADO EM HARDWARE.** Detalhe e critério da 74 em
+> [docs/341](docs/341_CORRIDA73_ITENS_1_2_3_E_CRITERIO_CORRIDA74_ROTACAO.md).
+>
+> - **Quadrados (P0):** o alvo do DWM chegava a 86400/86400 e a grade do Present dava 0/86400 logo depois dos
+>   `ResourceCopyRegion` do buffer anterior. `RotateResourceIdentities` girava `Allocation`/`pCpuShadow` e deixava a
+>   `VkImage` para trás. **Correção (única variável da 74):** o grupo Vulkan gira junto, e a RTV refaz view e
+>   framebuffer para seguir a imagem (Draw e Clear).
+> - **TDR de 240 ondas:**
+>   - P0: o IB travado é um dispatch de cópia do harness (VMID 4); o fault latchado é busca de instrução (CID 9) sob o
+>     VMID 1 (DWM), na página exata do shader do harness, onde o VMID 1 mapeia a PRIMARY sem bit de execução;
+>   - H: código de um processo buscado com a tabela de outro. A raiz do VMID é instalada por MMIO fora da ordem do anel,
+>     e o pool reatribui VMIDs o tempo todo;
+>   - instrumento novo, somente leitura: `[GFX_FAULT_SENTINELA]`, que registra a transição do status de fault por fence.
+> - **Fork:** o upstream não emite `PREAMBLE_CNTL`; patch de remoção em `external/radv-wddm/pending/DX29-...` (aplica
+>   limpo), **não aplicado**, reservado para a 75. O ICD segue `57D60ACB`.
+> - **Verificação:** builds EXIT=0; auditorias PASS; 5 mutações de auditoria e 1 de teste reprovam. Uma mutação expôs um
+>   furo no meu portão DX.28, já corrigido. **lab 3.235.1.0**, NÃO INSTALADO: SYS `E395E3F2...`, UMD `5D66F9B3...`,
+>   INF `6066D2AA...`, CAT `9643AD6D...`.
+
+> **22/09/2026 — Corrida 73 (21:49:38, lab 3.234.1.0 + ICD `57D60ACB`): desfecho A do docs/340. A RASTERIZAÇÃO FUNCIONA
+> NO SILÍCIO, e pedaços do desktop composto pelo DWM chegaram ao monitor pela GPU.** Evidência em
+> `docs/evidence/2026-09-22_21-49-38-DESKTOP-HQAG6T4-lab-binding/`.
+>
+> - **Clear state (P0):** CSB de 949 dw montado; `[CSIB_PROGRAM]` com readback PASS; `BOOT_PREAMBLE` com WPTR=RPTR=960,
+>   fence=1, `DrenoOk=1`; snapshot com `LENGTH=0x3B5`; o CSIB sobreviveu aos 2 resets de TDR.
+> - **Controle positivo (P0), 3 de 3 variantes (`nodcc`, `nonggc`, `nongg`):** S1 fill pela GPU sobre sentinela da CPU,
+>   S2 clear de transferência, S3 clear de render pass, S4 draw de tela cheia e S5 contador = **65536/65536**, todos PASS.
+>   Primeiro draw com fragmentos conferidos da história do projeto.
+> - **Identidade GFX10.1:** zero registradores só-10.3 em 44 IBs; sem IB cumulativo.
+> - **DWM (P0):**
+>   - 507 submissões gráficas (7 na 72);
+>   - alvo não-nulo logo após o draw, até 86400/86400 amostras, com a faixa de 40 linhas do rodapé (barra de tarefas) cheia;
+>   - Presents com `DESKTOP REAL DETECTADO` NonZero=256/256, cópia de 11 MB **por SDMA** para o scanout e 2 `BYTE_PROOF PASS`;
+>   - zero fallback de CPU.
+>   - O operador viu blocos do desktop alternando com preto. A causa do padrão em blocos é **H**: redesenho parcial do
+>     DWM por buffer, mais os 2 TDRs derrubando o DWM (dois PIDs).
+> - **Falhas:**
+>   - 2 TDRs recuperados: um com **240 ondas presas** (ME em `EVENT_WRITE`), outro com zero ondas e o PFP dentro de um
+>     `INDIRECT_BUFFER`;
+>   - o harness D3D11 reprovou no quadro 1 com `DEVICE_REMOVED` (887A0007) após TDR;
+>   - `BYTE_PROOF INCONCLUSIVO` (frame em branco) no Present #25.
+> - Zero BugCheck, zero fault GCVM, BasicDisplay em Código 0 depois da recuperação.
+
+> **22/09/2026 — faixa DX.27, OFFLINE e sem corrida: clear state do GFX10 como no upstream (CSB + `RLC_CSIB` +
+> preâmbulo de boot) e correção do S1 do autoteste. NÃO VALIDADO EM HARDWARE.** Análise da 72 e critério da 73 em
+> [docs/340](docs/340_CORRIDA72_ANALISE_E_CRITERIO_CORRIDA73_CLEAR_STATE_UPSTREAM.md).
+>
+> - **Comparação dos IBs da 71 e da 72:** a identidade só removeu os registradores do 10.3 e mudou campos de geração
+>   (`CU_EN`, `MEM_ORDERED`, `PA_CL_NGG_CNTL`, `GE_CNTL`). Com as duas identidades, `PA_SC_GENERIC_SCISSOR_*` e
+>   `PA_SC_TILE_STEERING_OVERRIDE` ficam para o `CLEAR_STATE` (`ac_cmdbuf.c`). **Achado (P1):** o boot do KMD e o fork
+>   emitem `PREAMBLE_CNTL` com payload 0/1; o upstream usa `(2<<28)` e `(3<<28)` (`nvd.h:395-396`). O boot também não tinha
+>   nenhum `SET_CONTEXT_REG`. O `CLEAR_STATE` nunca teve dados.
+> - **Única variável comportamental:**
+>   - CSB de 949 dw montado a partir de `inc/linux_ref/clearstate_gfx10.h` (upstream sem edição, SHA-256 registrado);
+>   - `RLC_CSIB_ADDR_HI/LO/LENGTH` gravados por escritor único, com snapshot, readback e restauração;
+>   - o mesmo conteúdo emitido no CP_RB0, sem `SET_BASE`.
+>
+>   Steering = 0 (**H**, divergência declarada do 10.1). O `PREAMBLE_CNTL` do fork **não** foi tocado; o ICD segue `57D60ACB`.
+> - **Autoteste:** S1 com sentinela da CPU 0x5E5E5E5E e fill 0x3C3C3C3C; o esperado é classificado antes do veneno.
+> - **Verificação:**
+>   - builds EXIT=0 e auditorias PASS;
+>   - portão DX.27 novo e DX.26 ajustado (goldens seguem só leitura);
+>   - 6 mutações reprovando na auditoria e 1 no teste do CSB (25 asserções).
+> - **lab 3.234.1.0** assinado e auditado, NÃO INSTALADO: SYS `AF13FD89...`, UMD `A757ACED...` (igual), INF `7CFF430B...`,
+>   CAT `43983AF7...`.
+
+> **22/09/2026 — Corrida 72 (21:19:06, lab 3.233.1.0 + ICD `57D60ACB`): desfecho G, fora do mapa.** A identidade GFX10.1
+> entrou (P0) e todo draw passou a travar a GPU. Evidência em `docs/evidence/2026-09-22_21-19-06-DESKTOP-HQAG6T4-lab-binding/`.
+>
+> - **Houve avanço?** Diagnóstico: SIM. Funcional: NÃO; houve regressão frente à 71, onde os draws retiravam sem pixel.
+> - **Sucessos (P0):**
+>   - `gfx_level=12` e `ngg_fully_culled_bug=1` em 4 processos; zero registradores só-10.3 em 5 IBs;
+>   - o IB de fill (sem draw) retirou 2 de 2;
+>   - snapshot: `RLC_CSIB` = 0/0/0 (CSB não programado) e 30 de 34 goldens diferentes (`GB_ADDR_CONFIG` confere);
+>   - controles mantidos: sem cumulativo, zero fault GCVM latchado, 4 de 4 TDRs recuperados, zero BugCheck.
+> - **Falhas (P0):**
+>   - 7 submissões gráficas. Das 5 com draw, 4 geraram TDR e o destino da última ficou indeterminado;
+>   - assinatura: ME em `WAIT_REG_MEM` após `RELEASE_MEM` pós-draw, `EopDoneBusy=1`, SPI e PA ocupados, **ondas=0**, em
+>     `nonggc` e `nongg`;
+>   - a variante `nodcc` foi derrubada pelo TDR do DWM antes de submeter;
+>   - o S1 imprimiu FAIL por defeito meu (esperava o próprio veneno), com 65536 de 65536 no valor escrito.
+> - **Recuperação:** BasicDisplay em Código 0 confirmado. Marcador de boot frio armado.
+
+> **22/09/2026 — faixa DX.26, OFFLINE e sem corrida: identidade GFX10.1 no RADV, autoteste de controle positivo e
+> snapshot somente leitura de goldens/CSB. NÃO VALIDADO EM HARDWARE.** Critério:
+> [docs/339](docs/339_CRITERIO_CORRIDA72_IDENTIDADE_GFX10_E_CONTROLE_POSITIVO.md).
+>
+> - **Única variável comportamental:** winsys do fork declara `ip_discovery_version = 10.1.3` nos IPs GFX e COMPUTE, e
+>   registra `BC-250 IDENTIDADE: gfx_level=...` no stderr. ICD `57D60ACB...`; portão novo no auditor do RADV (mutação reprova).
+> - **Autoteste** `bc250-gfx-selftest.exe` (Vulkan puro, ICD direto, nada vai à tela): fill pela GPU → clear de transferência →
+>   clear de render pass → draw de tela cheia → contador atômico de fragmentos; buffer reenvenenado pela GPU antes de cada cópia;
+>   falha de map/fence é estado próprio. O runner o roda 3× (`nodcc`, `nonggc`, `nongg`) antes do harness.
+> - **KMD:** snapshot somente leitura dos 34 golden settings (dupla leitura, comparação mascarada) e de `RLC_CSIB_*`
+>   (`BASE_IDX 1` → 0x3B288; o 0x13288 do Gemini estava errado e eu o havia aceitado no docs/338 — corrigido). Portão garante
+>   zero escrita e allowlist só de leitura (mutação reprova).
+> - Builds EXIT=0 (fork, contrato, SYS lab, UMD, autoteste); auditorias PASS; **lab 3.233.1.0** assinado e auditado, NÃO
+>   INSTALADO: SYS `7DE5C2D5...`, UMD `A757ACED...` (igual), INF `3530DAC9...`, CAT `521E2EB6...`.
+
+> **22/09/2026 — Fase A (offline) das auditorias externas: o RADV trata o BC-250 como GFX10.3 (RDNA2).**
+> Resultado em [docs/338](docs/338_RESULTADO_FASE_A_AUDITORIAS.md); plano em [docs/337](docs/337_PLANO_VALIDACAO_AUDITORIAS_GPT6_GEMINI.md).
+>
+> - **P1:** o winsys `wddm2` não preenche `ip_discovery_version`; `ac_fill_hw_ip_info` força `ver_minor=3` para NV fora de
+>   NAVI10/12/14 → `gfx_level=GFX10_3`. **P0:** os IBs da Corrida 71 escrevem `DB_VRS_OVERRIDE_CNTL`, `PA_CL_VRS_CNTL` e
+>   `SX_PS_DOWNCONVERT_CONTROL` (só existem no 10.3). **P1:** contornos de defeitos do GFX10.1 (`has_ngg_fully_culled_bug` e
+>   outros) ficam desligados e o ACO gera 10.3. O patch da comunidade Linux (`referencias/bc250-gfx1013-fix`) corrige exatamente isto.
+>   Efeito sobre "zero fragmento" e sobre o TDR de 240 ondas: **H**.
+> - Outras verificações: topologia fixa no winsys (SA/SE=1) **confirmada**; captura Linux com SA/SE=2 citada mas **não
+>   reverificável** (diretório ausente); CSB (`RLC_CSIB_*`) nunca programado **confirmado** e `GENERIC_SCISSOR` não é escrito
+>   pelo IB; nenhum passo de init do GFX do upstream (goldens, `constants_init`, `init_csb`, `SH_MEM_*`) está no KMD;
+>   primeiro uso `UNDEFINED` com pass `LOAD` **confirmado**; `-5` = `STATUS_DEVICE_REMOVED` após TDR (P0); `PA_SC_RASTER_CONFIG`
+>   no GFX10 (Gemini) **refutado**; mecanismo "viewport negativo" (Gemini) **refutado** pela Corrida 70.
+> - Ferramenta nova `tools/decode-gfx-ib-regs.py`. Nenhuma corrida; nenhuma mudança de driver.
+
+> **22/09/2026 — Corrida 71 (16:53:51, lab 3.232.1.0 + ICD DX.22): DESFECHO C — vértices
+> desenhados VÁLIDOS e o alvo continua zero logo depois de CADA draw, inclusive de draw SEM
+> textura com cor branca. Nenhum fragmento chega ao alvo.** Evidência:
+> `docs/evidence/2026-09-22_16-53-51-DESKTOP-HQAG6T4-lab-binding/`; critério em
+> [docs/335](docs/335_CRITERIO_CORRIDA71_VERTICES_DESENHADOS_E_ALVO_APOS_DRAW.md).
+>
+> - **Houve avanço? SIM, diagnóstico decisivo; NÃO funcional.**
+> - **Vértices (P0):** quads em coordenadas de tela coerentes — faixa `(0,0)–(2560,259)` branca,
+>   janela `(237,259)–(1094,861)` branca, barra `(0,1040)–(2560,1080)` com cor `FF000000`, z=1;
+>   índices lidos do IB (R16) com `Base=0`. CB do VS com a transformação tela→NDC.
+> - **Alvo após cada draw (P0):** 84 leituras, **todas** `NonZero=0/86400`. O draw 5 é **sem
+>   textura**, PS = cor interpolada (`[VK_PIPELINE_IR]`), cor branca, retângulo
+>   `(237,229)–(1094,259)` com ~750 pontos da grade dentro — e a leitura deu **0**. Mesma imagem
+>   no RTV, nos draws e na leitura (`0x7279ED0`). Scissor e viewport = tela inteira.
+>   **A textura NÃO é a causa; nenhum fragmento é gerado ou escrito.** Não é A nem D.
+> - **Suspeitos, ambos H:** (1) **golden settings do GC nunca aplicados** — a tabela de 34
+>   registradores (`bc250_golden_settings_contract.c`: PA_SC_ENHANCE, PA_SC_BINNER_EVENT_CNTL_0,
+>   CB_HW_CONTROL_3/4, DB_DEBUG*, GB_ADDR_CONFIG, SQ_ARB_CONFIG…) só existe em teste offline; nenhum
+>   código do miniport a lê ou aplica (P0 pela busca), e o efeito disso é H; (2) **NGG** — o VS
+>   roda como NGG com culling de primitivas no shader; se o NGG ou o culling falhar neste chip,
+>   o resultado é exatamente "vértices válidos, zero fragmento", e a classe de TDR "240 ondas sem
+>   retirar" cabe no mesmo quadro.
+> - Controles: checker de IB SEM CUMULATIVO, zero `[TDR_GCVM_FAULT]`, GFX `446/446/0`, 1 TDR,
+>   `RECOVERY_OK_ONLINE`.
+
+> **22/09/2026 — faixa DX.25, OFFLINE e sem corrida: medir os vértices realmente desenhados e o
+> alvo logo após cada draw. NÃO VALIDADO EM HARDWARE.** Critério:
+> [docs/335](docs/335_CRITERIO_CORRIDA71_VERTICES_DESENHADOS_E_ALVO_APOS_DRAW.md).
+>
+> - `[DRAW_VERTS]`: `Start`, `Base`, IB (formato/offset), 6 índices da sombra do IB e os 3 vértices
+>   que eles apontam (posição como float, cor em hex). `[DRAW_READBACK]`: cópia do alvo ≥ 1024x512
+>   logo após o draw e a mesma GRADE do Present, teto de 40 por device, sem escrever no alvo.
+> - Portão `audit_dx25_drawn_vertices_and_target_readback`; mutação sem `BaseVertex` reprova.
+>   Builds EXIT=0, três auditorias PASS. **A 1ª passada do empacotador falhou e a auditoria de
+>   pacote BLOQUEOU o pacote inconsistente**; a 2ª passou com PASS.
+> - **Candidato lab 3.232.1.0 assinado, auditado e NÃO INSTALADO:** SYS `F2A3F42C...` (igual),
+>   UMD `A757ACEDFA8B4EED...`, INF `AC2651E4E60BC962...`, CAT `9F90AF08F12D47A5...`.
+
+> **22/09/2026 — Corrida 70 (16:42:23, lab 3.231.1.0 + ICD DX.22): DESFECHO C — preto com o CB
+> do VS e o VB com conteúdo; nenhuma recusa nova.** Evidência:
+> `docs/evidence/2026-09-22_16-42-23-DESKTOP-HQAG6T4-lab-binding/`; critério em
+> [docs/334](docs/334_CRITERIO_CORRIDA70_ESTADO_D3D11_E_DADOS_DO_DRAW.md).
+>
+> - **Houve avanço? Diagnóstico parcial; NÃO funcional.** Operador: tela preta até o watchdog.
+> - **Preto medido de novo:** 25 Presents do DWM com `GRADE NonZero=0/86400` (27 `hr=0`).
+> - **As correções da DX.24 não quebraram nada:** zero `RECUSADO -- IA_`/`BLEND_`, zero exceção na
+>   criação de pipeline (o stride 0 não reproduziu a divisão por zero histórica), 166 draws
+>   concluídos com `[DRAW_DATA]`.
+> - **CB do VS com conteúdo coerente (P0):** `nz=5/48`, `f0..3=[0,001 −0,002 −1 1]` — a
+>   transformação tela 2560x1080 → NDC (2/2560, −2/1080, −1, +1). **Não é B.**
+> - **VB0 com ~20% não-nulo, mas o vértice amostrado (offset 0) é zero — e isso NÃO conclui nada:**
+>   os draws são indexados (`Indexed=1`, 6 índices), e o vértice lido depende de
+>   `StartIndexLocation`, `BaseVertexLocation` e do index buffer, que a medição não registrou.
+>   Imprecisão da instrumentação, declarada.
+> - Controles: checker de IB = SEM CUMULATIVO (34 despejos), zero `[TDR_GCVM_FAULT]`, GFX
+>   `381/381/0`, `RECOVERY_OK_ONLINE`. **2 TDRs**, ambos da classe "240 ondas/SA sem retirar".
+> - **Próximo (offline):** medir os vértices REALMENTE desenhados (índices + base vertex) e ler o
+>   alvo logo depois de cada draw na superfície apresentada, para separar "nada rasterizado" de
+>   "rasterizado em preto" de "sobrescrito por um draw posterior".
+
+> **22/09/2026 — faixa DX.24, OFFLINE e sem corrida: o estado D3D11 que era ignorado em silêncio
+> passa a chegar ao Vulkan (ou recusa com nome), e cada draw mede CB/VB. NÃO VALIDADO EM
+> HARDWARE.** Critério: [docs/334](docs/334_CRITERIO_CORRIDA70_ESTADO_D3D11_E_DADOS_DO_DRAW.md).
+>
+> - **Corrigido:** fatores/operações de blend (antes nunca mapeados; `ZERO`=0 virava `ONE`;
+>   máscara 0 virava RGBA), blend constante dinâmico, `inputRate` por instância, stride 0
+>   preservado, `location = InputRegister`, slot sem buffer **recusado** (antes recebia o buffer do
+>   slot 0), formato de vértice desconhecido e >16 elementos **recusados**, X8 com alpha=1, sRGB
+>   em formato sRGB, A8 como alpha, viewport com altura negativa (antes a imagem saía invertida).
+> - **Medição:** `[DRAW_DATA]` com conteúdo do CB0 do VS/PS e do VB0 em todo draw.
+> - Lógica pura extraída para `bc250_umd_state_translate.c` com `umd_state_translate_test`;
+>   portão `audit_dx24_d3d11_state_reaches_vulkan`; **quatro mutações, todas reprovando**.
+>   Um portão antigo (C1) pegou `memcpy` na função de medição — trocado por leitura indexada,
+>   sem afrouxar o portão. Builds EXIT=0, três auditorias PASS.
+> - **Candidato lab 3.231.1.0 assinado, auditado e NÃO INSTALADO:** SYS `F2A3F42C...` (igual),
+>   UMD `1402DD97FD7D22FE...`, INF `D46AE420DDEF9F4A...`, CAT `E90A260278A11F6B...`.
+> - **Risco declarado:** as recusas novas podem bloquear draws que antes rodavam com dado inventado.
+
+> **22/09/2026 — Corrida 69 (16:07:25, lab 3.230.1.0 + ICD DX.22): DESFECHO B — a origem tem
+> conteúdo, os draws miram a superfície apresentada, e a superfície sai PRETA.**
+> Evidência: `docs/evidence/2026-09-22_16-07-25-DESKTOP-HQAG6T4-lab-binding/`; critério em
+> [docs/333](docs/333_CRITERIO_CORRIDA69_ONDE_O_PIXEL_SE_PERDE.md).
+>
+> - **Houve avanço? SIM, diagnóstico decisivo; NÃO funcional.** Identidade: 3.230.1.0, ICD `45F93753...`.
+> - **Preto agora é MEDIDO:** 23 Presents do `dwm.exe` com `GRADE NonZero=0/86400` e
+>   `Faixa40Inferior=0/3200`. A pergunta "havia barra de tarefas?" está respondida: **não**.
+> - **Origem com conteúdo (P0):** textura 2560x1080 com `NonZeroSrc=65829/65829`, janela 873x641
+>   com 70510/71792, barra 2560x40 com 20356/102400, 192x15 com 2810/2880.
+> - **Draws no alvo certo (P0):** 46 draws com `RT0=0x65076F0` 2560x1080, o mesmo recurso dos 16
+>   `hSurfaceToPresent` do pid 7664. **Não é C nem D.**
+> - **O PS do draw texturizado é `cor_do_vértice × texel → mrt0`** (`[VK_PIPELINE_IR]`), com texel
+>   não-nulo na origem. O preto vem da cor do vértice, da geometria (nada rasterizado) ou do estado.
+> - **Defeitos de tradução achados por leitura (P1), todos da classe "estado D3D11 ignorado em
+>   silêncio":** (1) fatores e operações de blend nunca mapeados — só `BlendEnable` e a máscara
+>   passam, e o Vulkan recebe `ONE/ZERO`; (2) `inputRate` sempre `VERTEX`, ignorando elementos por
+>   instância (`Class=1`, que o DWM usa); (3) slot com stride 0 recebe stride inventado;
+>   (4) `location = e` em vez de `InputRegister`; (5) tabela DXGI→Vulkan com comentários trocados:
+>   88 é `B8G8R8X8` (sem alpha=1 forçado) e 91/93 são sRGB tratados como UNORM. Nenhum deles,
+>   sozinho, explica cor zero no draw lido — **a causa do preto continua H**. O suspeito mais barato
+>   de medir é o **conteúdo do constant buffer e do vertex buffer** (o VS multiplica a posição pelo CB;
+>   CB zerado colapsa a geometria), que hoje não é medido.
+> - **Controles:** checker de IB = SEM CUMULATIVO (31 despejos); zero `[TDR_GCVM_FAULT]`; GFX
+>   `349/349/0`. **2 TDRs:** um da classe da 68 (240 ondas/SA, PFP em `ACQUIRE_MEM`) no 1º DWM, e um
+>   **novo** (ME em `INDIRECT_BUFFER`, PFP sem pacote, **zero ondas**). Recuperação OK nos dois.
+>   `RECOVERY_OK_ONLINE`, zero BugCheck.
+
+> **22/09/2026 — faixa DX.23, OFFLINE e sem corrida: "os Presents da 68 eram pretos" NÃO SE
+> SUSTENTA como medido, e o lab 3.230.1.0 passa a medir a superfície inteira. NÃO VALIDADO EM
+> HARDWARE.** Critério: [docs/333](docs/333_CRITERIO_CORRIDA69_ONDE_O_PIXEL_SE_PERDE.md).
+>
+> - **Correção do meu relato da 68:** eu disse que tudo o que foi apresentado era preto. As 5
+>   amostras da UMD são 4 pixels do canto superior esquerdo e o centro; o draw daquele quadro tinha
+>   scissor `0,1040..2560,1080` (a barra de tarefas), com textura 2560x40 enviada logo antes, e
+>   nenhuma amostra caía ali. E o `0/256` do KMD mede a alocação WDDM, que a ponte Vulkan→WDDM
+>   não abasteceu (16 de 22 tentativas falharam: 12 com `DstVa` não resolvida no KMD). **O conteúdo
+>   real do quadro é INDETERMINADO**, não zero.
+> - Descartado por leitura: `RotateResourceIdentities` não troca a `VkImg`, então RTV e Present
+>   usam a mesma imagem Vulkan.
+> - **Instrumentação:** inspeção por GRADE (1 linha em 4, 1 pixel em 8, caixa envolvente, faixa
+>   das 40 linhas inferiores); `NonZeroSrc` na origem de cada upload de textura; `RTV0`/`RT0` em
+>   `SetRenderTargets` e em cada draw. `umd_present_grid_test` novo, mutação reprovando; builds
+>   EXIT=0; três auditorias PASS.
+> - **Candidato lab 3.230.1.0 assinado, auditado e NÃO INSTALADO:** SYS `F2A3F42C...` (igual),
+>   UMD `D2761B8CDF3F62B4...`, INF `FFD5BCA8C77C0703...`, CAT `B3B6EE01DD58F57C...`. ICD o da DX.22.
+> - **Pendente, não tocado:** a ponte Vulkan→WDDM (`COMPOSITE_BLT RECUSADO (resolucao)` com
+>   `DstVa` de 2 dos 3 buffers do swapchain → `0x0`). Afeta o caminho de flip do dxgkrnl, não o
+>   scanout direto.
+
+> **22/09/2026 — Corrida 68 (15:48:59, lab 3.229.1.0 + ICD DX.22): O REPLAY ACABOU E A CLASSE DE
+> FAULT `Cid=10 VA>>8` SUMIU. Desfecho E pela Lei 10.3 — A não fechou por um TDR de outra classe.**
+> Evidência: `docs/evidence/2026-09-22_15-48-59-DESKTOP-HQAG6T4-lab-binding/`; critério em
+> [docs/332](docs/332_CRITERIO_CORRIDA68_IB_NAO_CUMULATIVO.md).
+>
+> - **Houve avanço? SIM, funcional — o maior desde a Corrida 45.** ICD conferido em
+>   `binding-provenance.json` (`45F93753...`).
+> - **DX.22 validada no silício:** `check-gfx-ib-dump-cumulative.py` = **SEM CUMULATIVO** sobre 33
+>   despejos em 4 VAs; **zero `[TDR_GCVM_FAULT]`** (contra 6 na 67); GFX `341/341/0`; 3.170 IBs SDMA.
+> - **DWM andou:** pid 7984 rodou 52 s com **85 draws** (57 com SRV+sampler, 18 com 2 SRVs), upload
+>   de textura 2582x1062, e **zero TDR**; no total 143 draws concluídos contra 28 na 67.
+>   **21 `DXGI Present LEAVE cb: hr=0`** (16 do pid 7984) e 8 `[DdiPresent] ENTER` no KMD.
+> - **`vkCreateDevice` voltou a funcionar depois do TDR** (`res=0` nas recriações; zero `res=-3`).
+>   A falha da 67 era provavelmente consequência do estado envenenado pelo replay — H.
+> - **FALHA 1 — um TDR de CLASSE NOVA** às 15:49:28, no 1º DWM (pid 1196): sem fault GCVM,
+>   `SQ_DEBUG_STS_GLOBAL Busy=1`, **240 ondas por SA** sem retirar, PFP em `ACQUIRE_MEM`, ME em
+>   `EVENT_WRITE`, `GFX_TRIPE Perna1=NAO_CONVERGIU` (RPTR 996, WPTR 1004). É shader que não
+>   termina, não tradução. Recuperação completa: SDMA e CP_RB0 com restart provado, fences
+>   reconciliadas, e o DWM seguinte rodou limpo.
+> - **FALHA 2 — o que foi apresentado é PRETO:** todos os Presents aceitos com
+>   `INSPECAO LINEAR_BUF ... NonZeroSamples=0/5` e `NonZero=0/256` no KMD. Os draws completam, mas
+>   nenhum pixel não-nulo chega à superfície apresentada. Os clears pedidos pelo DWM foram todos
+>   `RGBA=[0,0,0,0]`, então o conteúdo teria de vir dos draws texturizados.
+> - Explorer: 6 `CreateResource RECUSADO: CALLBACK_FAILED`. Zero BugCheck; `RECOVERY_OK_ONLINE`.
+> - **Veredito:** A exigia zero `TDR_QUIESCE` e houve 1 → **não é A**. Não há `Cid=10` → não é C.
+>   O ICD entrou → não é D. **E**, descrito acima.
+
+> **22/09/2026 — faixa DX.22, OFFLINE e sem corrida: o IB concatenado da BC-250 sai do preâmbulo
+> e vai para BO próprio. NÃO VALIDADO EM HARDWARE.** Critério:
+> [docs/332](docs/332_CRITERIO_CORRIDA68_IB_NAO_CUMULATIVO.md).
+>
+> - **No fork do RADV** (`radv_wddm2_cs.c/.h`): pool de até 32 BOs por contexto e IP; o preâmbulo
+>   e os CS da aplicação **não são mais escritos**; o slot só é reciclado depois que uma fence
+>   sinalizada após a submissão dele retira; sem fence e sem slot livre, `CONCAT RECUSA` e
+>   `VK_ERROR_DEVICE_LOST`. **Segundo defeito corrigido no mesmo ramo:** CS que cresceu para
+>   vários IBs encadeados tinha só o último buffer copiado; agora vai para o encadeamento
+>   (`CONCAT PULADA`). O despejo grava o buffer realmente submetido.
+> - Build do fork EXIT=0; DLL `45F937536A4EF368...` com as strings novas. `audit-radv-wddm-safety.py`
+>   **PASS** com portão novo; o fonte anterior **reprova em 7 pontos**; mutação (prender o slot antes
+>   de a submissão ser aceita) **reprova**. Delta espelhado em `external/radv-wddm/` (patch
+>   `9EAB0174...`).
+> - **`tools/check-gfx-ib-dump-cumulative.py`** novo: **reprova a Corrida 67 (18 pares de replay)**,
+>   é inconclusivo na 66 (sem despejo) e aceita reuso legítimo de slot (sintético).
+> - O pacote do driver continua o lab 3.229.1.0; muda só o ICD, que o `EXECUTAR_D3D11_NATIVO.cmd`
+>   copia do `build\` do fork. Até lá, o `C:\BC250_LIB\vulkan_radeon.dll` implantado é o anterior
+>   (`7837C960...`) e `sync-radv-fork-delta.py` reprova **só** nisso, como esperado.
+
+> **22/09/2026 — Corrida 67 (15:25:56, lab 3.229.1.0): DESFECHO C, e a instrumentação DX.21 achou
+> a causa: o fork do RADV reexecuta TODOS os draws anteriores a cada submissão.**
+> Evidência: `docs/evidence/2026-09-22_15-25-56-DESKTOP-HQAG6T4-lab-binding/`; critério em
+> [docs/330A](docs/330A_EMENDA_CRITERIO_CORRIDA67_CID_CORRIGIDO_E_DX21.md).
+>
+> - **Houve avanço? SIM, diagnóstico decisivo; NÃO funcional.** Identidade: 3.229.1.0, SYS
+>   `F2A3F42C...`. `nodcc` ativo (29 linhas) e **6 faults `Cid=10` (SQC data) com `VA>>8`
+>   resolvendo em `VA<<8`** (`0x2465`, `0x2466`×3, `0x245A`×2), 6 TDRs, 6/6 restarts provados.
+>   A previsão registrada antes (o `nodcc` não elimina o `Cid=10`) **se confirmou**.
+> - **Instrumentação funcionou na 1ª tentativa:** 32 arquivos em `gfx-ib-dump/` (primeira vez desde
+>   a Corrida 35) e 6.010 linhas `[VK_PIPELINE_IR]` com os programas ACO do dwm.exe.
+> - **O programa nomeou a leitura (P0):** o VS faz `s_load_dwordx4` do V# do constant buffer em
+>   `set+64` (ponteiro `{s10, hi=2}`) e depois `s_buffer_load_dwordx4` com ele — leitura escalar,
+>   `Cid=10`. Se `set+64` contiver um T#, a base vira exatamente `VA>>8`.
+> - **Hipótese do ACQUIRE_MEM ausente, REFUTADA pelo despejo:** o RADV abre cada IB com
+>   `ACQUIRE_MEM` GLI/GLK/GLV/GL1/GL2 INV.
+> - **CAUSA (P0 pelo despejo + P1 pela fonte):** os IBs são **cumulativos** — mesma VA
+>   `0x244f24000`, +392 DW por submissão, e o IB *n* tem prefixo idêntico ao IB *n-1* (576 → 976
+>   → … → 6.664 DW). Em `radv_wddm2_cs.c:895-918` do fork, o ramo "BC-250 UNIFICADO" copia o CS
+>   principal **para dentro do CS do preâmbulo** (`cs_list[0]`, persistente da fila) e grava
+>   `cs_list[0]->cdw = cur_offset` **sem restaurar**. Cada submissão reexecuta os draws antigos,
+>   cujos descriptor sets a UMD já liberou depois da fence — descritor velho, shader liberado
+>   (`Cid=9` em `0x200040000`) e tempo de IB crescendo até o TDR (VkDraws 7→8 levou 2,46 s).
+>   Explica a classe `Cid=10 VA>>8` desde a Corrida 45 — **H de alta confiança para as corridas
+>   antigas**, P0 para a 67.
+> - **Fora do mapa (desfecho E, parcial):** depois do TDR, `vkCreateDevice` falhou com `res=-3`
+>   **nas duas tentativas** (com e sem a extensão) no dwm.exe e no explorer.exe — a ponte não se
+>   recria após device-lost.
+> - Controles: zero BugCheck, GFX `Submetidas=129 Aposentadas=129 EmVoo=0`, Present 0 aceito
+>   (`NENHUM_RENDER_DETECTADO`), `RECOVERY_OK_ONLINE`, BasicDisplay ao final.
+> - **Próximo:** corrigir o ramo de concatenação no fork (não mutar o preâmbulo; buffer por
+>   submissão), com teste que reprove IB cumulativo pelo próprio `gfx-ib-dump`.
+
+> **22/09/2026 — faixa DX.21, OFFLINE e sem corrida: o `Cid` da Corrida 66 estava com o NOME
+> ERRADO, o despejo de IB nunca pôde gravar do `dwm.exe`, e a Corrida 67 passa a rodar o lab
+> 3.229.1.0 com o programa de shader no log. NÃO VALIDADO EM HARDWARE.**
+> Emenda do critério: [docs/330A](docs/330A_EMENDA_CRITERIO_CORRIDA67_CID_CORRIGIDO_E_DX21.md).
+>
+> - **CORREÇÃO DE REGISTRO (Lei 7):** docs/329, 330 e 331 chamaram `Cid=10` de `TCP_UTCL0` e
+>   `Cid=9` de `SQC_DCACHE`, citando `gc_10_1_0_sh_mask.h`. Esse arquivo **não tem tabela de
+>   clientes**. Com fonte (P1): GC 10.1.x usa `gfxhub_v2_0` (`gmc_v10_0.c:593-609`), onde
+>   **`Cid=8` = TCP, `Cid=9` = SQC (inst), `Cid=10` = SQC (data)** (`gfxhub_v2_0.c:34-53`, sha256
+>   `BF032415...`). Os dois faults da 66 são **leituras do SQC**: `0x2431000` é leitura escalar e
+>   `0x200040000` é busca de instrução no heap de 32 bits dos shaders.
+> - **A hipótese do DCC não explica o fault `Cid=10`** (P1): o SQC não lê metadados de DCC, e o
+>   mesmo `0x2431` já aparecia nas Corridas 45–64, antes do upload por staging. O `nodcc` da DX.20
+>   **alcança** o RADV (o fork lê por `GetEnvironmentVariableA`, `os_misc.c:217`; DLL implantada =
+>   `build/` do fork, sha256 `7837C960...`) e fica como **variável isolada**, não como causa.
+> - **`gfx-ib-dump/` vazio nas Corridas 35, 36 e 66 tem causa lida:** a pasta de evidência só dá
+>   acesso a SISTEMA, Administradores e Daniel (`icacls`); o `dwm.exe` roda como `DWM-<n>`, o
+>   `fopen` do RADV falhava e a recusa ia para stderr. Agora: staging
+>   `C:\Windows\Temp\BC250_GFX_IB_DUMP` com ACL para o DWM, armado **antes** do bind e copiado na
+>   coleta FINAL com `_COLETA.txt`. Correção só de ferramenta.
+> - **`[VK_PIPELINE_IR]`:** a UMD liga `VK_KHR_pipeline_executable_properties` (com fallback sem
+>   a extensão) e despeja o programa pós-RA de cada pipeline (sem LLVM, o `aco_print_program`),
+>   para nomear o `s_load`/`s_buffer_load` que lê em `VA>>8`.
+> - `build-umd.bat` **EXIT=0** (`umd_pipeline_ir_dump_test` novo, PASS), `build-contract.bat`
+>   **EXIT=0**, três auditorias **PASS**, portão novo
+>   `audit_dx21_pipeline_ir_and_ib_dump_reach_evidence`. **Três mutações, todas reprovando.**
+> - **Candidato lab 3.229.1.0 assinado, auditado e NÃO INSTALADO:** SYS
+>   `F2A3F42C3823D592CAB428ED9497EB457A85C854A676C5CFCBB2C70971DB614D` (**igual** ao 3.228.1.0),
+>   UMD `A24F3A3F438DC779...`, INF `82C25BF28CB3E452...`, CAT `0CA120B7616B4040...`.
+>   `Lab package audit: PASS`; strings novas conferidas na UMD assinada.
+> - **Previsão registrada antes (P1):** o `nodcc` **não** deve eliminar o `Cid=10`.
+
+> **22/09/2026 — Corrida 66 (13:06:56, lab 3.227.1.0) e faixa DX.19: RESTAURAÇÃO DO UPLOAD VULKAN DE TEXTURAS 100% PROVADA NO SILÍCIO, SALTO PARA 64 SUBMISSÕES 3D APOSENTADAS (FENCES ATÉ 66), DRAW 1 DO DWM CONCLUÍDO EM 21 MS E ISOLAMENTO DO STALL DO DRAW 2 EM METADADOS DCC.**
+> Evidência: `docs/evidence/2026-09-22_13-06-56-DESKTOP-HQAG6T4-lab-binding/`; critério em
+> [docs/328](docs/328_CRITERIO_CORRIDA66_VULKAN_TEXTURE_UPLOAD_RESTORED.md); handoff em
+> [docs/329](docs/329_HANDOFF_2026-09-22_CORRIDA66_UPLOAD_PROVADO_E_FENCE66.md).
+>
+> - **Houve avanço? SIM, avanço funcional e diagnóstico decisivo.** Identidade conferida: 3.227.1.0, SYS
+>   `F2A3F42C3823D592CAB428ED9497EB457A85C854A676C5CFCBB2C70971DB614D`.
+> - **Upload Vulkan de texturas comprovado:** `Bc250UmdVkUploadImageData` via staging buffer executou com sucesso
+>   para a textura 590x800 e demais recursos do DWM, aplicando as barreiras explícitas e validando o layout via fence física.
+> - **Salto no anel gráfico Node 1 GFX:** 64 submissões 3D aceitas e aposentadas no silício, avançando fences até Fence 66
+>   (contra 10 na Corrida 65).
+> - **Render do DWM avançou:** Draw 1 (`VkDraws=1`, vertices=48, `CB=1, SRV=0`) executou e aposentou em apenas 21 ms.
+> - **Isolamento do stall do Draw 2:** Draw 2 (`VkDraws=2`, vertices=126, `CB=1, SRV=1, SAMPLER=1`) levou 2,065 s na GPU,
+>   disparando o watchdog TDR de 2,0 s do Windows. O fault `Cid=10` (~~`TCP_UTCL0`~~ **SQC (data)**, corrigido na DX.21)
+>   foi registrado em `0x2431` (`0x2431000` = `0x243100000 >> 8`). ~~A causa raiz foi isolada em metadados de compressão
+>   DCC~~ — **retirado na DX.21:** o DCC era H, não isolamento, e o SQC não lê DCC.
+> - Controles da 66: zero BugCheck, fusível CLEAN, `RECOVERY_OK_ONLINE` com BasicDisplay Código 0 em 5/5 amostras.
+
+> **22/09/2026 — Corrida 65 (10:52:21, lab 3.226.1.0) e faixa DX.18: UPLOAD DE RECURSOS EM VRAM VISIVEL PELA CPU PROVADO (0x80070057 ZERO), BYPASS DA COPIA META COMPUTE ATIVO, 10 SUBMISSOES GFX APOSENTADAS NO SILICIO E CID=10 ISOLADO NO DESCRITOR T# DE TEXTURA.**
+> Evidência: `docs/evidence/2026-09-22_10-52-21-DESKTOP-HQAG6T4-lab-binding/`; critério em
+> [docs/326](docs/326_CRITERIO_CORRIDA65_CPU_VISIBLE_RESOURCE_E_DESCRITOR_FIX.md); handoff em
+> [docs/327](docs/327_HANDOFF_2026-09-22_CORRIDA65_CPU_VISIBLE_PROVADO_E_T_HASH_CID10.md).
+>
+> - **Houve avanço? SIM, funcional e diagnóstico.** Identidade conferida: 3.226.1.0, SYS
+>   `F2A3F42C3823D592CAB428ED9497EB457A85C854A676C5CFCBB2C70971DB614D`.
+> - **A falha de lock foi eliminada:** `pfnLockCb` em alocações `RESOURCE` (`0x52455300...`) passou em 100%
+>   das tentativas (`hr=0x00000000`). O erro `0x80070057` desapareceu dos logs do DWM.
+> - **Bypass de meta-compute copy comprovado:** Texturas atualizadas via VRAM direta dispensaram a chamada
+>   de cópia redundante `radv_meta_buffer_to_image_cs`.
+> - **Avanço no motor gráfico Node 1 GFX:** 10 submissões aceitas e aposentadas no silício sob `VMID 1`
+>   com avanço de fences físicas (Fences 1..10 completadas).
+> - **Isolamento físico do `Cid=10`:** O fault `Cid=10` (`0x2441` -> `0x2441000` / `0x244100000 >> 8`)
+>   não ocorreu no upload, mas foi disparado quando o Pixel Shader tentou amostrar a textura através do
+>   descritor `T#` (`desc[0] = va >> 8`) após o bind do SRV.
+> - Controles da 65: zero BugCheck, fusível CLEAN, `RECOVERY_OK_ONLINE` com BasicDisplay Código 0 em 5/5 amostras.
+
+> **22/09/2026 — Corrida 64 (08:54:17, lab 3.225.1.0) e faixa DX.17: O READBACK COMPROVOU ZERO DIVERGENCIA NA ESCRITA DO PDE (99/99 batem), E O CID=10 COM PERDA DE 8 BITS ATINGE A PRIMARIA DO DWM.**
+> Evidência: `docs/evidence/2026-09-22_08-54-17-DESKTOP-HQAG6T4-lab-binding/`; critério em
+> [docs/323](docs/323_CRITERIO_CORRIDA64_ESCREVEMOS_LIMPO_LEEM_SUJO.md); handoff em
+> [docs/325](docs/325_HANDOFF_2026-09-22_CORRIDA64_READBACK_ZERO_DIVERGENCIA_E_CID10.md).
+>
+> - **Houve avanço? SIM, diagnóstico decisivo; NÃO funcional.** Identidade conferida: 3.225.1.0, SYS
+>   `5C2950513E5C66CEE312A2535F773C2093CA1B9075465A63F21DB3B289236072`.
+> - **A pergunta de DX.17 foi fechada:** Em **99 de 99 escritas** no índice 4096 (25 não-nulas, todas
+>   limpas), o readback imediato pela CPU leu exatamente o valor codificado (`arenaReadback == arenaEncoded`).
+>   **DIVERGENCIA = 0.** A nossa escrita chega à memória física com 100% de integridade. A hipótese de
+>   defeito no ponteiro ou mapeamento da CPU está **refutada**.
+> - **O `Cid=10` reproduziu pela sétima vez:** `FaultAddrPagina=0x2431` (`GpuVa=0x2431000`), com L1 idx 18
+>   em `PDE=0` (não mapeado). A caminhada em `0x243100000` (`VA<<8`) resolveu perfeitamente para
+>   `PA=0x451CCC000` (`PDE=0x45FDB1001`, `PTE=0x451CCC071`).
+> - **Identidade do alvo:** `0x243100000` está a 2 MiB da base da **superfície primária do DWM**
+>   (`2560x1080 bpp=4`, 11.059.200 bytes, `Base=0x242F00000`, `Primary=1`). O acesso em `0x2431000` é
+>   a primária com perda de 8 bits (`>>8`).
+> - Controles da 64: 1.723 IBs, 7/7 restarts provados, 1 fault drenado (`Cid=10`), 6 sem latch, 21 desarmes
+>   de VMID OK, `HdpFlush` 66/66, zero BugCheck, `RECOVERY_OK_ONLINE`. Present falhou no quadro 1 (`0x887A0005`);
+>   tela preta mantida.
+
+> **22/09/2026 — PASSAGEM DE BASTÃO ATUAL (Pós-Corrida 66, Pré-Corrida 67):** [docs/331](docs/331_PROMPT_HANDOFF_POS_CORRIDA66_PRE_CORRIDA67.md), **emendado por [docs/330A](docs/330A_EMENDA_CRITERIO_CORRIDA67_CID_CORRIGIDO_E_DX21.md)** — o candidato da 67 é o 3.229.1.0.
+> **22/09/2026 — PASSAGEM DE BASTÃO ANTERIOR:** [docs/324](docs/324_PASSAGEM_DE_BASTAO_2026-09-22_CORRIDAS_59_A_63.md).
+
+> **22/09/2026 — Corrida 63 (08:39:11, lab 3.224.1.0) e faixa DX.17: A PERDA DE 8 BITS ESTA
+> CONFIRMADA PELO PROPRIO LOG (desfecho A do `Cid=10`), e sobrou UMA contradicao que e NOSSA.**
+> Evidência: `docs/evidence/2026-09-22_08-39-11-DESKTOP-HQAG6T4-lab-binding/`; critério em
+> [docs/322](docs/322_CRITERIO_CORRIDA63_O_ENDERECO_PERDEU_8_BITS.md).
+>
+> - **Houve avanço? SIM, diagnóstico; NÃO funcional.** Identidade conferida: 3.224.1.0, SYS
+>   `6FCFB6EC0F0456E2B2AD090717B970F77F17548871028DD416672E7ED3541BAB`.
+> - **Desfecho A para o `Cid=10`:** `WALK VA(pagina<<12) = 0x245B000 NAO RESOLVE` e
+>   `WALK VA<<8(perda de 8 bits) = 0x245B00000 RESOLVEU para PA=0x4565CC000`. O endereço que
+>   faltou perdeu 8 bits, e agora **o próprio log diz isso** em vez de eu reconstruir entre
+>   corridas. Sexta ocorrência do padrão no projeto.
+> - **O `Cid=9` mudou de comportamento:** na Corrida 60 o `0x200040000` resolvia; aqui **não**
+>   resolve — a caminhada parou no PDE sujo `0x451BCC071` no índice 4096 (`reservado[5:3]=0x30`).
+>   **Terceira ocorrência** do PDE sujo (Corridas 59, 61, 63).
+> - **A CONTRADIÇÃO QUE SOBROU, e ela é nossa:** somando as Corridas 60, 61 e 63, **nós
+>   escrevemos o índice 4096 trezentas e quatorze vezes, TODAS limpas**, com zero
+>   `[PDE_TRIPWIRE]` e zero recusa — e o TDR leu valor de **PTE** nesse mesmo índice em três
+>   corridas. As duas coisas não podem ser verdadeiras sem que alguém escreva depois, **ou** sem
+>   que a nossa escrita não chegue onde acreditamos.
+> - **FAIXA DX.17, offline — o mínimo que separa os dois casos:** readback imediato da escrita em
+>   `destination[4096]` pelo **mesmo ponteiro**, comparado com o que escrevemos; divergência
+>   declarada e **NÃO corrigida** (reescrever esconderia a frequência, e há portão proibindo);
+>   mais `[PDE_ARENA_CONFRONTO]`, que publica no TDR o **último valor que nós escrevemos** e
+>   quantas escritas houve — os dois números passam a estar no mesmo log. `Escritas=0` fica
+>   declarado em vez de virar "eram iguais".
+> - Controles da 63: 1.877 IBs, 6/6 restarts, 106 `[PDE_WRITE]` todas limpas, 24/24 desarmes OK,
+>   `HdpFlush` 75/75, zero BugCheck, `RECOVERY_OK_ONLINE`.
+> - `build-contract.bat` **EXIT=0**, `build-umd.bat` **EXIT=0**, três auditorias **PASS**.
+>   **Sete mutações verificadas, todas reprovando** — inclusive a que transforma a divergência em
+>   reescrita silenciosa.
+> - **NENHUM portão meu passou nesta faixa — a primeira em cinco.** Nas quatro anteriores o padrão
+>   foi sempre "procurei a string no escopo errado"; aqui os invariantes foram escritos sobre
+>   **uso** e **ordem** desde a primeira versão.
+> - **Candidato lab 3.225.1.0 assinado, auditado e NÃO INSTALADO:** SYS
+>   `5C2950513E5C66CEE312A2535F773C2093CA1B9075465A63F21DB3B289236072`, PDB `348052E9D5320C58...`,
+>   UMD `24D604813802DC57...`, INF `B77EBBDCC0EDB0F6...`, CAT `10DCBDDE6C795C21...`.
+>   `Lab package audit: PASS`; as duas strings novas conferidas **em ANSI** no SYS assinado.
+> - **Critério da Corrida 64:**
+>   [docs/323](docs/323_CRITERIO_CORRIDA64_ESCREVEMOS_LIMPO_LEEM_SUJO.md). Diagnóstico: **não deve
+>   mudar o fault**. Tela preta segue correta.
+
+> **22/09/2026 — Corrida 62 (08:20:23, lab 3.223.1.0) e faixa DX.16: O DESARME FUNCIONOU E O
+> FAULT PERMANECEU (desfecho B) — e a GRANULARIDADE FOI RESOLVIDA, revelando que a conclusão da
+> Corrida 47 era uma LEITURA ERRADA.** Evidência:
+> `docs/evidence/2026-09-22_08-20-23-DESKTOP-HQAG6T4-lab-binding/`; critério em
+> [docs/321](docs/321_CRITERIO_CORRIDA62_DESARME_DO_VMID_NO_SILICIO.md).
+>
+> - **Houve avanço? SIM, e é o maior desta sequência — mas é diagnóstico, não funcional.**
+>   Identidade conferida: 3.223.1.0, SYS
+>   `A17258E9FC9AB4A63CCB9916B58FEB6A08315E7638C4CB12C2226DCCDA6EFB29`.
+> - **DX.15 exercitada:** **24 de 24** `[VMID_POOL] DESARMADO` com `status=0 Readback=1 Flush=1`,
+>   zero falhas, e **dois faults permaneceram**. Desfecho B — o desarme continua certo pela Lei 5,
+>   e não era a causa. O risco que declarei (MMIO em `DestroyContext`) **não se materializou**:
+>   zero BugCheck.
+> - **A GRANULARIDADE ESTÁ RESOLVIDA, E NUNCA FOI GRANULARIDADE.** `gc_10_1_0_sh_mask.h:12163-12168`
+>   (P1, local) declara `LOGICAL_PAGE_ADDR_LO32` com **32 bits** e `_HI4` com **4 bits** — página
+>   de **36 bits**. Com 4 KiB isso cobre 48 bits de VA; com 1 MiB seriam 56, e vinte dos trinta e
+>   seis ficariam sempre zerados. **O endereço é `página << 12`.** Corroborado (P0): a página
+>   `0x200040` sob `<<12` dá `0x200040000`, que a nossa própria linha `[ALVO 0x200040]` reporta
+>   como a **base exata** de uma alocação viva.
+> - **A CONCLUSÃO DA CORRIDA 47 ERA UMA LEITURA ERRADA.** `<<20` é identicamente
+>   `(página<<12)<<8`. O que aquele ensaio mediu foi que **o endereço real é 256× o que faltou** —
+>   assinatura de **perda de 8 bits**, não tamanho de página. Vale para TODOS os faults `Cid=10`
+>   do projeto: `0x2431 -> 0x243100000` (Corridas 45, 46, 48, 59) e `0x245B -> 0x245B00000`
+>   (Corridas 45, 62).
+> - **CORREÇÃO DO MEU PRÓPRIO RELATO, três corridas seguidas.** Eu afirmei que "a tabela vista
+>   pela CPU está certa e a GPU falta no mesmo endereço". Para os faults `Cid=10` — **2 de 2**
+>   nesta corrida — isso é **FALSO**: no endereço que realmente faltou (`0x245B000`) a tabela diz
+>   `PDE=0` no índice 18, **não mapeado**, e a GPU concorda. **Não há paradoxo.** As linhas
+>   `RESOLVEU em <<20` caminhavam **outro endereço** e não provavam nada. O paradoxo do `Cid=9`
+>   (`0x200040000`, mapeado e mesmo assim faltou) **continua de pé**, mas não ocorreu aqui.
+> - **FAIXA DX.16, offline — correção de honestidade, não experimento:** o segundo candidato
+>   deixou de se chamar `<<20` e passou a `VA<<8(perda de 8 bits)`; a linha de sucesso do resolver
+>   dizia *"a PTE EXISTE, logo o defeito NÃO é PTE ausente"* e passou a dizer que resolver ali
+>   significa que **o endereço que faltou perdeu 8 bits**, não que a tabela esteja certa.
+> - **UM PORTÃO MEU ESTAVA CONGELANDO A CONCLUSÃO ERRADA** — ele *exigia* a frase antiga. É a
+>   classe "o gate carimbava a mentira", pela primeira vez neste projeto aplicada a uma
+>   **conclusão** em vez de a um contador. Corrigido junto.
+> - Os encodings `>>8` conferidos por leitura estão **corretos** (`CP_RB0_BASE`,
+>   `SPI_SHADER_PGM_LO/HI`, `CB_COLOR0_BASE`). **O sítio defeituoso ainda não tem nome**, e o
+>   campo `Cid` não tem enumeração local — não invento (Lei 7).
+> - Controles da 62: 1.755 IBs, 7/7 restarts, `HdpFlush` 73/73, GFX `70/70/0`, zero BugCheck,
+>   `RECOVERY_OK_ONLINE`. Present falhou no quadro 1; nenhum pixel.
+> - **Três mutações verificadas na DX.16, todas reprovando.** E **um portão meu passou — quarta
+>   vez nesta sequência**: provava que o array de rótulos existe, não que as linhas o **consumam**.
+>   As quatro foram: string no arquivo em vez do bloco (2×), argumento em vez da chamada, e
+>   existência em vez de uso. **É padrão meu, não azar.**
+> - **Candidato lab 3.224.1.0 assinado, auditado e NÃO INSTALADO:** SYS
+>   `6FCFB6EC0F0456E2B2AD090717B970F77F17548871028DD416672E7ED3541BAB`, PDB `63C59F930E056B4C...`,
+>   UMD `DA6CFC4222C9C54C...`, INF `87AA2A642AA89F92...`, CAT `C7F49EF24C616F0F...`.
+>   `Lab package audit: PASS`; a frase antiga conferida **ausente** no SYS assinado.
+> - **Critério da Corrida 63:** [docs/322](docs/322_CRITERIO_CORRIDA63_O_ENDERECO_PERDEU_8_BITS.md).
+>   Só telemetria: **não deve mudar o fault**. Tela preta segue correta.
+
+> **21/09/2026 — faixa DX.15, OFFLINE após a Corrida 61: o VMID passou a ser devolvido TAMBÉM
+> NO SILÍCIO. NÃO VALIDADO EM HARDWARE.**
+>
+> - **Achado por leitura, e não é hipótese:** `Bc250VmidPoolRelease` era **somente software**.
+>   O contexto morria, a entrada do pool era limpa, o VMID voltava para os livres — e o contexto
+>   GCVM continuava com `ENABLE_CONTEXT` ligado e `PT_BASE` apontando para a raiz do processo
+>   **morto**, página que o VidMm pode liberar e reutilizar. Existia `Bc250GcvmVmid8Uninstall`,
+>   mas só para o VMID 8 fixo: os doze slots do pool nunca tiveram teardown.
+>   **É a Lei 5 quebrada — APPLY sem TEARDOWN.** Vale corrigir tenha ou não relação com o fault,
+>   e eu **não afirmo que tenha**.
+> - `Bc250GcvmUninstallVmid` é o gêmeo por VMID, com a ordem que importa: `CNTL` primeiro
+>   (enquanto ele estiver ligado o walker pode nascer tradução nova da raiz abandonada), depois
+>   os seis registradores de endereço, e a **TLB daquele VMID por último** — tradução já cacheada
+>   sobrevive ao desarme do `CNTL`. Provado por readback de `ENABLE_CONTEXT`, com `FlushVmid`
+>   (nunca o flush fixo), fora do `VmidPoolLock`, e falha declarada.
+> - Nenhuma allowlist ampliada: escrever o `CNTL` dos VMIDs do pool já era permitido.
+> - `build-contract.bat` **EXIT=0**, `build-umd.bat` **EXIT=0**, três auditorias **PASS**.
+>   **Sete mutações verificadas, todas reprovando na auditoria E na suíte.**
+> - **UM PORTÃO MEU PASSOU — terceira faixa seguida, e a mesma classe.** Ele procurava
+>   `CHECK(f->LastFlushVmid == target);` no arquivo inteiro, e a string também existe no bloco de
+>   **install**; afrouxar a asserção do bloco de **desarme** não reprovava nada. Refeito com a
+>   busca delimitada ao bloco. As três ocorrências desta sequência foram todas **"procurei a
+>   string no escopo errado"** — é padrão, não incidente isolado.
+> - **Armadilha de ferramenta:** `bc250_gcvm_vmid8_transaction.{c,h}` estavam com finais de linha
+>   **mistos**. Normalizados para CRLF. Terceiro arquivo da sequência com o problema.
+> - **Candidato lab 3.223.1.0 assinado, auditado e NÃO INSTALADO:** SYS
+>   `A17258E9FC9AB4A63CCB9916B58FEB6A08315E7638C4CB12C2226DCCDA6EFB29`, PDB `0E42773DCDDEA026...`,
+>   UMD `45814D0E115E4BAD...`, INF `DE1FE0A5C0C0EBD2...`, CAT `8FE7C55CB95497B0...`.
+>   `Lab package audit: PASS`; as duas strings novas conferidas **em ANSI** no SYS assinado.
+> - **Critério da Corrida 62, escrito antes:**
+>   [docs/321](docs/321_CRITERIO_CORRIDA62_DESARME_DO_VMID_NO_SILICIO.md). **Tela preta continua
+>   sendo o resultado correto.**
+
+> **21/09/2026 — Corrida 61 (21:47:11, lab 3.222.1.0): o HDP foi drenado 75 de 75 vezes e O
+> FAULT PERMANECEU. Desfecho B — a visibilidade da tabela NÃO era a causa.** Evidência:
+> `docs/evidence/2026-09-21_21-47-11-DESKTOP-HQAG6T4-lab-binding/`; critério escrito antes em
+> [docs/320](docs/320_CRITERIO_CORRIDA61_HDP_ANTES_DA_INVALIDACAO.md).
+>
+> - **Houve avanço? SIM, diagnóstico; NÃO funcional.** Identidade conferida: 3.222.1.0, SYS
+>   `E12F2375BA9EA172513D9767E8FCFEFFC6354D5BF677D540AE11530ABF90607B`.
+> - **DX.14 exercitada:** 75 linhas `HdpFlush=1 Ok=1`, **zero** `[HDP_PT_FLUSH] FALHA:`, sob
+>   carga comparável — 1.819 IBs contra 1.758. E **um fault** `WalkerError=6 MappingError=1
+>   Cid=9 Rw=0` em `0x200040000` permaneceu. **Pela implicação escrita antes: a hipótese cai.**
+> - **NÃO atribuo nada à queda de 3 faults para 1.** Faults já eram raros, é uma corrida só, e
+>   `SEM FAULT LATCHADO` subiu de 4 para 6 — menos fault latchado não é menos fault.
+> - **NÓS NUNCA ESCREVEMOS O PDE SUJO.** Corridas 60 + 61 somam **208 escritas** no índice 4096,
+>   **todas limpas**, com zero `[PDE_TRIPWIRE]`, zero `[PDE_LARGEPAGE]` e zero
+>   `[ActiveUpdatePT] RECUSA`. Ainda assim o TDR leu `0x4526CC071` — formato de PTE em slot de
+>   PDE, mesma assinatura da Corrida 59.
+> - **HIPÓTESE MINHA REFUTADA PELA PRÓPRIA MEDIÇÃO, antes de eu afirmá-la:** cheguei a explicar
+>   o PDE sujo como "a caminhada lê uma raiz já reciclada" e testei a correlação com a janela de
+>   publicação. **Não se sustenta** — na Corrida 58, 3 caminhadas resolveram com 2 janelas
+>   `MUDOU`. Fica registrado como **refutado**, não como pendência.
+> - Controles: 7/7 restarts provados, `PoolReadyMask` até `0x000E`, GFX fechando `56/56/0`,
+>   **zero BugCheck**. Produto: Present falhou no quadro 1 (`0x887A0005`, `DRR=0x887A0020`),
+>   0/600; nenhum pixel. Recuperação: `RECOVERY_OK_ONLINE` — recuperação, não sucesso nosso.
+
+> **21/09/2026 — faixa DX.14, OFFLINE após a Corrida 60: o HDP passou a ser drenado ANTES da
+> invalidação de TLB. NÃO VALIDADO EM HARDWARE.**
+>
+> - **A ORDEM é o conteúdo da faixa.** As page tables são escritas pela CPU em VRAM por
+>   `PageTableAddress.CpuVirtual` e ficam na cache de escrita do HDP. Invalidar a TLB **antes**
+>   de drenar mandaria o walker **rebuscar** bytes que ainda não chegaram — pioraria a janela em
+>   vez de fechá-la. Primeiro drenar, depois invalidar; o portão trava a ordem, não a presença.
+> - **Precedente medido NESTE silício:** Corrida 10/09 12:16, `FENCE_VISIBILIDADE
+>   antes_hdp=43DAFFFE depois_hdp=00001304` — o valor apareceu **no flush**. Outra consumidora,
+>   mesma memória, mesma cache, mesmo sentido. **Continua H, não P0.**
+> - O offset `0x3FC4` **não é novo**: já catalogado em `bc250_gfx_ring_transaction.h`, já usado
+>   por quatro caminhos e já presente nas allowlists de leitura **e** escrita. Nenhuma allowlist
+>   foi ampliada.
+> - `[FLUSH_POOL_VMIDS]` publica `HdpFlush=`; a falha de drenagem se declara.
+> - `build-contract.bat` **EXIT=0**, `build-umd.bat` **EXIT=0**, três auditorias **PASS**.
+>   **Seis mutações verificadas, todas reprovando** — incluindo o HDP drenado DEPOIS da
+>   invalidação e o offset saindo da allowlist.
+> - **UM PORTÃO MEU PASSOU, e a mutação o pegou — segunda faixa seguida.** Ele procurava o
+>   **argumento** (`..._FLUSH_CNTL, 1u)`) e passava quando a **chamada** de escrita era removida
+>   e o argumento ficava para trás. Refeito com invariante sobre a chamada inteira.
+> - **Candidato lab 3.222.1.0 assinado, auditado e NÃO INSTALADO:** SYS
+>   `E12F2375BA9EA172513D9767E8FCFEFFC6354D5BF677D540AE11530ABF90607B`, PDB `B0CB5D0D5E9FBC64...`,
+>   UMD `401C3FBBBC958411...`, INF `ABCC183C6B0CBF35...`, CAT `B3B11630E97889E4...`.
+>   `Lab package audit: PASS`; a linha antiga sem `HdpFlush` conferida **ausente** no SYS
+>   assinado, prova de que o empacotador não copiou o candidato anterior.
+> - **Critério da Corrida 61, escrito antes:**
+>   [docs/320](docs/320_CRITERIO_CORRIDA61_HDP_ANTES_DA_INVALIDACAO.md). A assinatura do
+>   desfecho A exige **zero fault de qualquer classe** — não um endereço específico, que foi o
+>   defeito do critério da Corrida 59. **Tela preta continua sendo o resultado correto.**
+
+> **21/09/2026 — Corrida 60 (21:30:42, lab 3.221.1.0): NÓS ESCREVEMOS O PDE, E ESCREVEMOS
+> LIMPO; e duas caminhadas CONTEMPORÂNEAS do fault RESOLVERAM até a folha.** Evidência:
+> `docs/evidence/2026-09-21_21-30-42-DESKTOP-HQAG6T4-lab-binding/`; critério escrito antes em
+> [docs/319](docs/319_CRITERIO_CORRIDA60_QUEM_ESCREVE_O_PDE_DA_ARENA.md).
+>
+> - **Houve avanço? SIM, diagnóstico decisivo; NÃO funcional.** Identidade conferida:
+>   3.221.1.0, SYS `783E3CD392DD4F972B9FF2A96EF47CB89E9A20B71871612B38C515126E9A93DA`.
+> - **101 `[PDE_WRITE] ARENA`**, todas em `idx=4096 Lvl=1`; 23 com `V=1`, e **todas limpas**
+>   (`Encoded=0x…001`, `Reservado[5:3]=0x0`). **Zero** `[PDE_TRIPWIRE]`, **zero**
+>   `[PDE_LARGEPAGE]`, **zero** `[ActiveUpdatePT] RECUSA`.
+> - **O PDE sujo `0x…071` da Corrida 59 NÃO reproduziu:** o TDR leu `0x45FDFE001`, limpo, no
+>   mesmo índice. **Correção de enquadramento meu:** eu havia apresentado esse achado como "o
+>   alvo agora"; as três caminhadas da Corrida 59 diziam `TABELA MUDOU`, logo ele era **mais
+>   fraco do que eu o apresentei**. O que sobrevive dele são os dois defeitos reais que a busca
+>   revelou, e esses continuam corrigidos.
+> - **A MEDIÇÃO MAIS FORTE DA SEQUÊNCIA — duas caminhadas com `TABELA INALTERADA`, portanto
+>   contemporâneas do fault, que RESOLVERAM:** `L1 idx=4096 PDE=0x45FDFE001` limpo →
+>   `L0 idx=64 PTE=0x4520CC031` → `RESOLVIDO 0x200040000 -> 0x4520CC000`; e o fault `Cid=10`
+>   resolvendo em `<<20` (`0x245B00000 -> 0x4566CC000`). `0x31` = `VALID|EXEC|READ`, e o fault
+>   é `Rw=0`: **leitura de página legível**.
+> - **Isso refuta CONTEMPORANEAMENTE as três explicações que sobravam:** PTE ausente, PDE
+>   corrompido e permissão. No instante do fault a imagem vista pela CPU estava completa e
+>   correta, e a GPU reportou `WalkerError=6 MappingError=1` no mesmo endereço.
+> - **VEREDITO: desfecho E.** O desfecho C está refutado (nós escrevemos, 101 vezes); A também
+>   (zero tripwire, zero escrita suja); D também (zero recusa — o defeito 1 era **latente**, o
+>   laço de validação anterior o alcança primeiro). B teve só **metade** da assinatura —
+>   escrevemos limpo, mas o TDR **não** leu sujo — e metade não é desfecho.
+> - Controles: 1.758 IBs, 7/7 restarts provados, `PoolReadyMask` até `0x000E`, zero falha de
+>   flush, **zero BugCheck**. Produto: Present falhou no quadro 1 (`0x887A0005`,
+>   `DRR=0x887A0020`), 0/600; nenhum pixel.
+> - Recuperação: `RECOVERY_OK_ONLINE`, sem reboot — recuperação, não sucesso nosso.
+
+> **21/09/2026 — faixa DX.13, OFFLINE após a Corrida 59: a escrita de diretório de páginas
+> deixou de ser muda, e o alvo passou a ser o PDE. NÃO VALIDADO EM HARDWARE.**
+>
+> - **Defeito 1, real e independente da hipótese:** o laço que grava a page table descartava o
+>   status do encode com `(void)`. Quando `Bc250McdmEncodeVidMmPteWithLevel` recusa, ele deixa
+>   `*Encoded` em **zero** — e esse zero era gravado numa tabela **viva**, sem uma linha de log.
+>   Agora a recusa **não grava** e se declara (`[ActiveUpdatePT] RECUSA:`).
+> - **Defeito 2:** `LargePage` nunca era olhado no nível de diretório. O nível 0 já o recusava
+>   desde sempre. Esta faixa **mede em vez de recusar**, com teto próprio e contador: nenhuma
+>   corrida registrou a frequência, e recusar sem o número poderia zerar a medição inteira —
+>   preço já pago na Corrida 53. A recusa vem depois do número.
+> - **Discriminante novo:** `[PDE_WRITE] ARENA` publica a `DXGK_PTE` crua e o valor codificado
+>   sempre que uma atualização de diretório cobre o índice **4096** — o da arena `0x200040000`.
+>   Mais um tripwire que recusa entrada de nível ≥ 1 com bits [5:3] no valor codificado.
+> - Constantes **derivadas**, nunca digitadas: a máscara de reservados é a mesma de
+>   `Bc250GcvmDecodePde`, e o índice da arena sai de `0x200040000 >> (12 + LEAF_INDEX_BITS)`.
+> - `build-contract.bat` **EXIT=0**, `build-umd.bat` **EXIT=0**, três auditorias **PASS**.
+>   **Oito mutações verificadas, todas reprovando.**
+> - **UM PORTÃO MEU PASSOU, e a mutação o pegou:** ele exigia a string `InterlockedIncrement(`
+>   no arquivo, que já tem **sete** ocorrências em outros caminhos — tirar o teto da linha nova
+>   não reprovava nada. Refeito com invariante sobre o contador próprio.
+> - **Duas armadilhas de ferramenta:** um `sed -i` converteu `bc250_mcdm_callbacks.c` inteiro de
+>   CRLF para LF (restaurado), e `bc250_display_ddi.c` ficou com finais de linha **mistos** — a
+>   mesma armadilha já registrada para `bc250_mmio_topology_transport.c`. Normalizado.
+> - **Candidato lab 3.221.1.0 assinado, auditado e NÃO INSTALADO:** SYS
+>   `783E3CD392DD4F972B9FF2A96EF47CB89E9A20B71871612B38C515126E9A93DA`, PDB `83429C5866E95D91...`,
+>   UMD `B4D07A72C1B70BAA...`, INF `E4C6C97AB51F3799...`, CAT `1833BA4CD3CA59C7...`.
+>   `Lab package audit: PASS`; seis strings conferidas **em ANSI** no SYS assinado.
+> - **Critério da Corrida 60, escrito antes:**
+>   [docs/319](docs/319_CRITERIO_CORRIDA60_QUEM_ESCREVE_O_PDE_DA_ARENA.md). É diagnóstico: não
+>   espere o fault sumir nem pixel. **Tela preta continua sendo o resultado correto.**
+
+> **21/09/2026 — Corrida 59 (20:05:34, lab 3.220.1.0): a invalidação passou a cobrir os VMIDs do
+> pool, com ACK, e a TAXA DE FAULT NÃO MUDOU.** Evidência:
+> `docs/evidence/2026-09-21_20-05-34-DESKTOP-HQAG6T4-lab-binding/`; critério escrito antes em
+> [docs/318](docs/318_CRITERIO_CORRIDA59_FLUSH_DOS_VMIDS_DO_POOL.md).
+>
+> - **Houve avanço? SIM, diagnóstico; NÃO funcional.** Identidade conferida: 3.220.1.0, SYS
+>   `890AA873A556225FB2BE36B89CAE1771471C4B6AB28006BA2BE13F770BCFB677`.
+> - **DX.12 validada no silício:** 77 linhas `[FLUSH_POOL_VMIDS]`, `PoolReadyMask` chegando a
+>   `0x001E` (VMIDs 1–4), `RejeitadaMask=0` e `FalhouMask=0` em **todas**, `Ok=1` em todas,
+>   zero `FALHA`. Cada VMID do pool com `status=0 PhysReady=1 AckObserved=1`.
+> - **O risco que eu havia declarado não se materializou, e foi medido:** `Polls=1` nas 94
+>   amostras. O flush por VMID custa **um** poll, não centenas; a preocupação com `0x133` era
+>   infundada.
+> - **DX.10 exercitada em hardware pela primeira vez:** 2 das 3 caminhadas usaram
+>   `RETIDA_POS_MORTE`. Na Corrida 58 só `VIVA_READY` havia rodado.
+> - **VEREDITO: a assinatura do desfecho A foi cumprida e a implicação de A está REFUTADA;
+>   o desfecho real é E.** O fault `Cid=8 Rw=1` de `0x2469A6000` sumiu (**zero** ocorrências,
+>   contra 6 na Corrida 58), mas voltaram os `Cid=9 Rw=0` em `0x200040000` (assinatura da
+>   Corrida 56) e um `Cid=10 Rw=0` em `0x2431` (a da Corrida 45). **A taxa não mudou:** 3 faults
+>   em 7 TDRs, contra 3 em 6 (Corrida 58) e 4 em 6 (Corrida 56).
+> - **DEFEITO DO MEU CRITÉRIO, e a Lei 10 o conteve.** Escrevi a assinatura de A amarrada a **um
+>   endereço específico** em vez de "nenhum fault de tradução no GFX". Como assinatura e
+>   implicação estavam em campos separados, deu para aceitar uma e rejeitar a outra — mas a
+>   escolha da assinatura foi estreita demais, e com pacote fechado teria virado falso sucesso.
+> - Atribuir o sumiço do `Cid=8` ao flush é **H, não P0**: a classe do fault já alternava entre
+>   corridas (56 tinha as duas, 57 não latchou nenhuma), e é uma corrida só.
+> - **ACHADO QUE MOVE O ALVO:** `L1 idx=4096 PDE=0x450C9C071` — formato de **PTE** num slot de
+>   **PDE**. Pelo layout do Navi 10 o endereço do PDE começa no bit 6, logo bits [5:3] são
+>   reservados e a GPU caminharia 64 bytes adiante. É a assinatura do defeito de 05/09 (`0x61`).
+>   O índice 4096 é o da arena `0x200040000`; o índice 4632 da **mesma raiz** tinha PDE limpo e
+>   resolveu, logo a caminhada leu a tabela certa. O portão que disparou **já existia** e nunca
+>   havia disparado. **Ressalva:** as três janelas de publicação disseram `TABELA MUDOU`.
+> - Controles: 1.969 IBs, 7/7 restarts provados, GFX fechando `99/99/0`, **zero BugCheck**.
+>   Produto: Present falhou no quadro 1 (`0x887A0005`, `DRR=0x887A0020`), 0/600; um
+>   `BYTE_PROOF INCONCLUSIVO`; nenhum pixel.
+> - Recuperação: `RECOVERY_OK_ONLINE`, sem reboot, BasicDisplay Código 0 em cinco amostras —
+>   recuperação, não sucesso nosso.
+
+> **21/09/2026 — faixa DX.12, OFFLINE após a Corrida 58: a invalidação de TLB passou a seguir
+> os VMIDs que a GPU realmente usa. NÃO VALIDADO EM HARDWARE.**
+>
+> - **O defeito, achado por leitura:** `Bc250ActiveFlushMappedGfxhubTlb` invalidava três VMIDs
+>   FIXOS — 8, 7 e 9. Desde a Corrida 54 o `PACKET3_INDIRECT_BUFFER` carrega o VMID dinâmico do
+>   pool (na Corrida 58, os VMIDs 1 a 4), e `Bc250GcvmInstallVmid` invalida o slot **só na
+>   instalação**. Uma `UpdatePageTable` posterior não invalidava slot dinâmico nenhum.
+> - **Isso CASA com a medição da Corrida 58** — escrita em `0x2469A6000` falhando com a janela
+>   de publicação `INALTERADA` e a PTE contemporânea `0x458F72071` válida e R/W/X na visão da
+>   CPU —, mas **casar não é provar**. A relação causal segue **HIPÓTESE** até a Corrida 59.
+> - `Bc250VmidPoolReadyFlushMask` é função **pura** do contrato: só entra o slot ocupado, `READY`
+>   e com raiz instalada; os reservados 0/7/8/9 nunca saem dela. A máscara é copiada sob
+>   `VmidPoolLock` e o lock é **solto antes de qualquer MMIO** — o flush por VMID pode gastar até
+>   1000 polls em DISPATCH_LEVEL, que é a classe do BugCheck 0x133 já pago em 10/09.
+> - **Flush parcial não vira sucesso:** qualquer VMID que não invalide fecha o veredito global,
+>   e o chamador fecha `GpuvaMappingsOperational`. `[FLUSH_POOL_VMIDS]` publica `FixedMask`,
+>   `PoolReadyMask`, `RequestedMask`, `RejeitadaMask` e `FalhouMask`, com teto próprio e isenção
+>   explícita do amostrador (armadilha 16). A linha por VMID **passou a dizer qual VMID**.
+> - `build-contract.bat` **EXIT=0**, `build-umd.bat` **EXIT=0**, três auditorias **PASS**.
+>   **Onze mutações verificadas**, nove contra a auditoria e duas contra a suíte.
+> - **DUAS GUARDAS MINHAS ERAM CARIMBO, e a mutação mostrou isso.** Pelo caminho vivo,
+>   `RecordInstall` zera `InstalledRootPhysical` em toda saída que não seja `READY` — logo a
+>   guarda de estado e a de raiz se cobriam e **nenhuma das duas conseguia falhar sozinha**. Os
+>   casos foram refeitos forçando estados que a API não produz.
+> - **Candidato lab 3.220.1.0 assinado, auditado e NÃO INSTALADO:** SYS
+>   `890AA873A556225FB2BE36B89CAE1771471C4B6AB28006BA2BE13F770BCFB677`, PDB `015AE6FA78BB01E3...`,
+>   UMD `3D4322E8B2544919...`, INF `B7AC565A58E75190...`, CAT `B8EE192B5884AB02...`. Perfil
+>   `DISPLAY_RENDER_LAB`, P1 persistente, schema 135. `Lab package audit: PASS`. As quatro
+>   strings novas foram conferidas **em ANSI** no SYS assinado, e a string antiga sem VMID foi
+>   conferida **ausente** — prova de que o empacotador não copiou o candidato anterior.
+> - **Critério da Corrida 59, escrito antes:**
+>   [docs/318](docs/318_CRITERIO_CORRIDA59_FLUSH_DOS_VMIDS_DO_POOL.md). **Tela preta continua
+>   sendo o resultado correto**: a parede de rasterização não foi tocada.
+
+> **21/09/2026 — passagem de bastão pós-Corrida 58: candidato de causa isolado offline,
+> ainda não implementado.** `Bc250ActiveFlushTlbHandler` chega a
+> `Bc250ActiveFlushMappedGfxhubTlb`, que invalida somente VMIDs 8/7/9. Desde a Corrida 54 o
+> GFX usa o VMID dinâmico do pool; na Corrida 58 foram 1–4. `Bc250GcvmInstallVmid` invalida o
+> slot na instalação, mas atualizações posteriores de PTE não invalidam os slots dinâmicos.
+> Isso casa com PTE R/W/X contemporânea na CPU e fault na GPU, porém segue **HIPÓTESE OFFLINE,
+> NÃO PROVADA NO SILÍCIO**. Próxima faixa: snapshot dos slots `READY`, flush de cada VMID fora
+> do `VmidPoolLock`, telemetria/ACK, testes e mutação; somente depois empacotar e congelar a
+> Corrida 59. Instruções autocontidas em
+> [docs/317](docs/317_PASSAGEM_DE_BASTAO_POS_CORRIDA58_FLUSH_DOS_VMIDS_DO_POOL.md).
+
+> **21/09/2026 — Corrida 58 (17:55:20, lab 3.219.1.0): a arena `0x200040000` é
+> executável; o fault real reapareceu como escrita em `0x2469A6000`, com PTE R/W/X válida e
+> contemporânea na visão da CPU.** Evidência:
+> `docs/evidence/2026-09-21_17-55-20-DESKTOP-HQAG6T4-lab-binding/`; resultado completo em
+> [docs/316](docs/316_HANDOFF_2026-09-21_CORRIDA58_ALVO_EXECUTAVEL_FAULT_DE_ESCRITA.md).
+>
+> - **Houve avanço? SIM, diagnóstico; NÃO funcional. Veredito: SUCESSO da pergunta de
+>   permissão (B + ressalva D) e FALHA do produto.** Identidade conferida: 3.219.1.0, SYS
+>   `5E53951F2A1F89D91C3B3815C9615F6870DC519B053D292617832F72C46FBC8C`.
+> - Das 102 linhas `[DX_TARGET_200040]`, 27 eram válidas. As **25/25** com geometria da arena
+>   (64 páginas, 0x40000 bytes) tinham `NoExecute=0`, PTE terminada em `0x31` e
+>   `EncodeStatus=0`: o bit 4 executável está presente. O nome continuou
+>   `CLASSE_DESCONHECIDA`; identidade semântica incompleta. Duas sobreposições grandes
+>   `RESOURCE`/`PRIMARY` eram NX e não pertencem à arena.
+> - Dos 6 TDRs, 3 vieram sem latch e 3 repetiram uma escrita (`Cid=8 Rw=1`) em
+>   `0x2469A6000`. Na terceira, VMID 2, a janela ficou **INALTERADA** e a raiz `VIVA_READY`
+>   resolveu a PTE contemporânea `0x458F72071`, flags baixas `0x71` = R/W/X válidas. Isso
+>   refuta folha ausente e falta de R/W/X na imagem CPU-visível, mas não prova que a GPU viu
+>   a mesma publicação.
+> - Controles: 1.900 IBs SDMA, 6/6 restarts provados, 26 instalações de VMID sem exaustão;
+>   GFX máximo `83/81/2`, 107 fences escritas pela GPU e 107 pernas 3 ainda abertas.
+> - Falha funcional: primeiro Present `0x887A0005`, remoção `0x887A0007`, 0/600; dois
+>   `BYTE_PROOF INCONCLUSIVO`; nenhum pixel provado.
+> - Recuperação: rollback online sem reboot, `RECOVERY_OK_ONLINE`, BasicDisplay Código 0 em
+>   cinco amostras. Nenhum BugCheck/dump novo observado. BasicDisplay é recuperação.
+> - **Próximo foco, ainda não executado:** discriminar visibilidade/invalidação, hierarquia ou
+>   uso da alocação `0x246400000`; não alterar execução de `0x200040000` às cegas.
+
+> **21/09/2026 — Corrida 57 (17:11:51, lab 3.218.1.0): nenhum fault ficou latchado;
+> DX.10/DX.11 não foram exercitados, mas `0x200040000` coincide com a arena do PC da onda.**
+> Evidência: `docs/evidence/2026-09-21_17-11-51-DESKTOP-HQAG6T4-lab-binding/`; critério e
+> resultado em [docs/313](docs/313_CRITERIO_CORRIDA57_RAIZ_RETIDA_E_ALVO_200040.md).
+>
+> - **Houve avanço? SIM, diagnóstico; NÃO funcional. Veredito: INCONCLUSIVO para a faixa
+>   DX.10/DX.11 (desfecho E) e FALHA funcional.** Identidade conferida: 3.218.1.0, SYS
+>   `05731245B6000F196D1F7D815A3181E77B21A39CEF0169CCE4A9F16B00A056CF`.
+> - O controle de carga foi superior à Corrida 56: **2.173 IBs SDMA**. Houve **cinco TDRs e
+>   cinco `TDR_RESTART PROVADO`**, mas os cinco disseram `SEM FAULT LATCHADO` com
+>   `FaultValid=0x7 Status=0`. Portanto saíram zero `DRENO #`, zero `ORIGEM_DA_RAIZ`, zero
+>   caminhada e zero `ALVO 0x200040`. A raiz retida e o token continuam **NÃO VALIDADOS EM
+>   HARDWARE**; ausência de latch não prova ausência de fault nem tradução corrigida.
+> - O stall continua físico e gráfico: cinco snapshots com `CP_RB0` ativo, `RPTR != WPTR`,
+>   `GUI_ACTIVE=1`, `CP_BUSY=1` e ondas vivas. Das 107 linhas `GFX_TRIPE_VEREDITO`, todas
+>   tiveram fence escrita pela GPU e perna 3 aberta; 90 deram RPTR convergente e 17 não.
+>   Máximo observado: `Submetidas=131 Aposentadas=130 EmVoo=1`.
+> - O pool permaneceu são: **31 instalações físicas**, VMID01=7, VMID02=13, VMID03=6,
+>   VMID04=4, VMID05=1, zero exaustão.
+> - **Achado cruzado:** o KMD recebeu `UpdatePT FirstPteVA=0x200040000 Num=64`; o log RADV
+>   atribui a mesma VA a uma alocação de **262.144 bytes**. O PC medido na Corrida 45 foi
+>   `0x20004114C`, exatamente `+0x114C` dentro dessa faixa. É candidato forte a arena de
+>   código/instruções, mas esta corrida não preservou as permissões DXGK nem a PTE codificada.
+> - Falha do produto: harness D3D11 reprovou no quadro 1 (`Present=0x887A0005`,
+>   `DeviceRemovedReason=0x887A0020`, 0/600); 10 Presents KMD, dois `BYTE_PROOF INCONCLUSIVO`
+>   zero contra zero; nenhum pixel provado.
+> - Recuperação: rollback online sem reboot, `RECOVERY_OK_ONLINE`, BasicDisplay Código 0 em
+>   cinco amostras. Não houve BugCheck observado. BasicDisplay é recuperação, não sucesso.
+
+> **21/09/2026 — faixa pós-Corrida 57, OFFLINE: o alvo fala no UpdatePageTable mesmo sem
+> fault. NÃO VALIDADO EM HARDWARE.** Quando uma atualização cobre `0x200040000`, a nova linha
+> `[DX_TARGET_200040]` publica processo, alocação, token/nome, tamanho, base/páginas, atributos
+> `ReadOnly/NoExecute/CacheCoherent`, flags DXGK, PFN e a PTE codificada com status. A linha
+> rara foi isenta da amostragem. `build-contract.bat` **EXIT=0**, safety audit **PASS**; três
+> mutações verificadas reprovaram ao perder, separadamente, as permissões, a isenção do
+> amostrador e o marcador do alvo. **Candidato lab 3.219.1.0 assinado, auditado e NÃO
+> INSTALADO:** SYS `5E53951F2A1F89D91C3B3815C9615F6870DC519B053D292617832F72C46FBC8C`,
+> PDB `8D3B95D491A0AB258663BC3256F30D2E1B937A5E1A60CD4221CC6B117DD092E5`, UMD
+> `934DBD84E04F10024F6B7CAB28FBE014CAA41D35E103600F160BBF395AB5236A`, INF
+> `6EE2DE01ED51978B81853ABB58F6CFA2668764687302E38C9258D533995F4D95`, CAT
+> `863179B8CB0D64934EECFAC415D64262899DADA466A6A0A998C7BD24A286688B`. Perfil
+> `DISPLAY_RENDER_LAB`, P1 persistente, `GfxWaveProbe=0`. Critério da Corrida 58 em
+> [docs/315](docs/315_CRITERIO_CORRIDA58_PTE_DO_ALVO_200040.md).
+
+> **21/09/2026 — faixa DX.10/DX.11, OFFLINE após a Corrida 56: a caminhada agora sobrevive à
+> morte do contexto e o alvo `0x200040` sai nomeado. NÃO VALIDADO EM HARDWARE.**
+>
+> - `BC250_VMID_POOL` ganhou retenção diagnóstica separada da entrada reciclável. Somente uma
+>   instalação física concluída com `BC250_GCVM_VMID8_OK` atualiza a retenção; `Release` limpa
+>   toda autoridade viva, mas preserva raiz, contexto e geração para o TDR. A consulta prefere
+>   `VIVA_READY`, cai em `RETIDA_POS_MORTE` e declara `AUSENTE` quando nenhuma existe.
+> - A mensagem falsa `raiz do VMID 7 AUSENTE` foi removida. O log agora nomeia o VMID real do
+>   fault, a fonte da raiz, o contexto e a geração usados na caminhada.
+> - O token imutável da alocação passa de `UpdatePageTable` pelo journal e snapshot até
+>   `Bc250GpuvaSpaceDescribeAddress`. Para `AddrPagina=0x200040`, o TDR publica um veredito
+>   dedicado para `GpuVa=0x200040000`, com nome/token, handle, base, tamanho e offset, ou declara
+>   que não há alocação viva. `<<20` é recusado explicitamente por exceder o teto de 34 bits.
+> - `build-contract.bat` **EXIT=0**; safety, DDI matrix e DDI noop **PASS**; `git diff --check`
+>   limpo salvo avisos de normalização LF/CRLF. Três mutações verificadas reprovaram: apagar a
+>   raiz retida, remover o veredito do alvo e perder o token na publicação do snapshot.
+> - **Candidato lab 3.218.1.0 assinado, auditado e NÃO INSTALADO:** SYS
+>   `05731245B6000F19...`, PDB `491B9951D62E5F7B...`, UMD `934DBD84E04F1002...`,
+>   INF `003E14F3CDC09B66...`, CAT `D4700F95B49E2136...`. As quatro strings novas foram
+>   conferidas em ANSI dentro do SYS assinado. `Lab package audit: PASS`.
+> - **Próximo passo físico:** Corrida 57, com volume comparável à Corrida 56, exigindo que faults
+>   pós-destruição caminhem por `RETIDA_POS_MORTE` e que `ALVO 0x200040` publique o nome real da
+>   alocação. Isso é diagnóstico; ausência isolada de fault não fecha DX.5.
+
 **Documento base do projeto.** Toda decisão de o-que-fazer-agora sai daqui.
+
+> **21/09/2026 — Corrida 52 (11:24:16, lab 3.213.1.0): disputa entre contextos pelo VMID 7
+> PROVADA NO SILÍCIO; o pool é o conserto correto, mas ainda não governa a GPU.** Evidência:
+> `docs/evidence/2026-09-21_11-24-16-DESKTOP-HQAG6T4-lab-binding/`; critério escrito antes em
+> [docs/306](docs/306_CRITERIO_CORRIDA52_POOL_DE_VMID_MAPA_MEDIDO.md); passagem em
+> [docs/307](docs/307_HANDOFF_2026-09-21_CORRIDA52_VMID_POR_CONTEXTO.md).
+>
+> - **Houve avanço? SIM — diagnóstico decisivo, sem avanço funcional. Veredito: SUCESSO da
+>   faixa, desfecho A.** O SYS arquivado tem SHA-256 completo
+>   `831C79B70CE4EB7C9910E4208FCFEB6C2E15B37F3242BCEC3CA3A1DE23A4D6CE`, igual ao
+>   `package_sys_sha256` de `binding-provenance.json`.
+> - **Assinatura completa em quatro faults GCVM:** `MAPA NO FAULT` encontrou 2, 3, 3 e 3
+>   contextos vivos; em cada caso a `RAIZ_NO_TDR` coincide exatamente com a raiz de um deles,
+>   enquanto os demais têm raízes distintas. Divergências dos carimbos: 15/16, 12/16, 13/16
+>   e 13/16. Isso distingue vários contextos concorrentes de um único contexto republicando a
+>   própria raiz.
+> - **Pool medido:** 27 atribuições, 24 linhas `LIBERADO`, zero `EXAUSTAO`, pico de 4 contextos
+>   simultâneos em 55 amostras (`0:6 1:17 2:19 3:12 4:1`), somente VMIDs 1–4 entregues e
+>   nenhum reservado 0/7/8/9. A antiga premissa de “6 raízes simultâneas” estava errada: eram
+>   seis raízes distintas ao longo do tempo; o pico coexistente medido é quatro.
+> - **Controles:** 5 TDR com 5 `TDR_RESTART PROVADO`, zero BugCheck, zero `DEVICE_REMOVED`, zero
+>   `StopDevice` e zero `IB_TRIPOD TIMEOUT`. Ressalva de precisão: houve **quatro** faults GCVM
+>   decodificados; no quinto TDR o log declarou `SEM FAULT LATCHADO`. Não transformar “5 TDR”
+>   em “5 faults”.
+> - **Falha esperada, não corrigida nesta faixa:** o fault permaneceu em
+>   `Vmid=7 WalkerError=6 MappingError=1` e a tela permaneceu preta, porque o candidato ainda
+>   instala a raiz e submete deliberadamente sob VMID 7. A Corrida 52 validou o mapa, não o uso
+>   do VMID alocado.
+> - **Recuperação:** rollback online sem reboot; `safe-bind-final.json` registra
+>   `RECOVERY_OK_ONLINE` e cinco amostras de BasicDisplay Código 0. Isso é recuperação, não
+>   sucesso do nosso desktop.
+> - **Continua NÃO VALIDADO EM HARDWARE:** escrita/flush/instalação nos VMIDs 1–6/10–15,
+>   submissão usando o VMID do pool, caminhada do fault pela raiz nomeada pelo fault e ausência
+>   do fault após a correção.
+>
+> **21/09/2026 — faixa pós-Corrida 52, OFFLINE: pool serializado antes de ganhar autoridade
+> sobre hardware.** A auditoria do handoff encontrou uma quinta armadilha anterior às quatro
+> já listadas: `Acquire`/`NoteRoot` rodam em `SubmitCommandVirtual` a DISPATCH_LEVEL,
+> `Release` roda em `DestroyContext` e o TDR percorre `Entries[]`, mas nenhum lock comum cobria
+> os três caminhos. O comentário do contrato que dizia que “o mesmo lock já protege” era falso.
+> Foi adicionado `VmidPoolLock` (spin lock dedicado): aquisição, registro, devolução e snapshot
+> do fault são serializados; o TDR copia o mapa sob o lock e só imprime depois de soltá-lo.
+> `build-contract.bat` **EXIT=0**, safety audit **PASS**; mutação removendo o campo do lock fez a
+> auditoria falhar e a restauração voltou a PASS. **Zero mudança de MMIO ou VMID de submissão;
+> NÃO VALIDADO EM HARDWARE.**
+>
+> **Segunda faixa pós-Corrida 52, OFFLINE: allowlist MMIO exata dos VMIDs do pool.** A política
+> agora deriva os VMIDs autorizados de `BC250_VMID_POOL_MASK` e reconhece somente os sete
+> registradores por contexto (`CNTL`, `PT_BASE` LO/HI, `PT_START` LO/HI e `PT_END` LO/HI).
+> Reservados 0/7/8/9, offsets desalinhados e vizinhos continuam recusados por essa política.
+> A mesma lista exata cobre leitura porque a instalação verifica por readback todos os sete
+> registradores; a primeira implementação abriu só leitura por engano, e a suíte detectou a
+> ausência de escrita. Depois, ela também expôs que `VMID9_CNTL + 4` é `VMID10_CNTL`, não um
+> negativo válido. Ambos foram corrigidos antes do fechamento. `build-contract.bat` **EXIT=0**;
+> safety audit, matriz DDI, auditoria de no-op e `git diff --check` **PASS**. Mutações removendo
+> separadamente a leitura e a escrita do pool fizeram a auditoria falhar nos portões corretos,
+> e a restauração voltou a PASS. **Ainda não foram alterados instalação, flush, estado instalado
+> ou submissão; NÃO VALIDADO EM HARDWARE.**
+>
+> **Terceira faixa pós-Corrida 52, OFFLINE: flush parametrizado e estado instalado por
+> entrada, ainda sem mudar a submissão.** `Bc250GcvmInstallVmid` deixou de aceitar um callback
+> que perdia a identidade do VMID: agora chama obrigatoriamente `FlushVmid(Context, Vmid)`,
+> deriva os sete offsets para qualquer VMID 0–15 e grava o VMID no evidence. Os testes
+> exercitam as bordas do pool (VMID 1 e 15), conferem o endereço programado e provam que o
+> callback recebeu o mesmo VMID; 16 e callback ausente falham fechados. O pool ganhou estado
+> separado por entrada (`NEVER/READY/FAILED`, raiz instalada e último status). Correção de
+> semântica importante: `RootPhysical` continua sendo a raiz **observada** do contexto enquanto
+> o caminho legado instala no VMID 7; ela não é mais descrita como prova de instalação no VMID
+> alocado. Uma falha posterior apaga a raiz `READY`, e liberar/reciclar o slot apaga toda a
+> autoridade anterior. `build-contract.bat` **EXIT=0**; os dois testes direcionados retornaram
+> 0; safety audit **PASS**. Duas mutações foram detectadas: flush forçado no VMID 7 e remoção
+> da limpeza de uma raiz `READY` após falha. O primeiro build desta faixa parou somente porque
+> o teste referenciou uma constante privada ao `.c`; o teste foi corrigido para conferir o bit
+> ABI `0x1` e a suíte completa passou. **O caminho GFX ainda instala e submete no VMID 7; o
+> estado Installed* do pool ainda não é preenchido pelo miniport. NÃO VALIDADO EM HARDWARE.**
+>
+> **Quarta faixa pós-Corrida 52, OFFLINE: ciclo de vida fechado antes da instalação lateral.**
+> A tentativa de integrar `poolVmid` encontrou um bloqueador anterior: `DestroyContext`
+> invalidava as faixas de GPUVA, removia o vínculo contexto/processo e devolvia o VMID mesmo
+> quando `Bc250McdmObjectDestroy` retornava `IN_FLIGHT_SUBMISSIONS`. Nessa janela, o slot podia
+> ser reciclado enquanto a submissão ainda instalava ou usava seu estado. Agora essas três
+> ações só acontecem após `BC250_MCDM_OBJECT_OK`; no caso ocupado o log declara `RETIDO`, GPUVA
+> e VMID permanecem associados, e uma tentativa posterior conclui a destruição. O teste do
+> miniport adquire uma submission view real, atribui um VMID, exige `STATUS_DEVICE_BUSY`, prova
+> que o slot continua no pool, libera a view, destrói com sucesso e só então exige `NOT_FOUND`.
+> `build-contract.bat` **EXIT=0**, safety audit **PASS**. Mutação recolocando a liberação fora
+> do sucesso foi detectada por dois portões: invalidação prematura de GPUVA e reciclagem de VMID
+> em voo. **Nenhuma instalação no poolVmid foi ligada nesta faixa; NÃO VALIDADO EM HARDWARE.**
+
+> **21/09/2026 — Corrida 56 (16:10:11, lab 3.217.1.0): O LATCH DE FAULT É DRENÁVEL E RESTAURÁVEL,
+> e a assinatura do fault segue o ENDEREÇO, não o contexto.** Desfecho B do critério
+> ([docs/311](docs/311_CRITERIO_CORRIDA56_DRENO_DO_LATCH_DE_FAULT.md)). Evidência:
+> `docs/evidence/2026-09-21_16-10-11-DESKTOP-HQAG6T4-lab-binding/`.
+>
+> - **Quatro TDRs, quatro drenos, todos `Drenados=1 ClearAcked=1 ClearIneficaz=0 Teto=0`,
+>   `CntlAntes=CntlReadback=0x3FFFFFFC`, `Restaurado=1`.** A primeira escrita da história do
+>   projeto em `GCVM_L2_PROTECTION_FAULT_CNTL` funcionou e devolveu o registrador bit a bit ao
+>   valor do POST. **Zero BugCheck** — o risco declarado não se materializou.
+> - **`MoreFaults=1` NÃO significa fila.** Com o latch drenado, nenhum TDR entregou um segundo
+>   fault. O bit significa outra coisa que **não sei nomear**, e não invento (Lei 7).
+> - **O ACHADO: três dos quatro faults são o mesmo, e diferem SÓ no nibble do VMID.**
+>   `0x003013BC` (Vmid=3), `0x001013BD` (Vmid=1) e `0x002013BD` (Vmid=2) — todos com
+>   `AddrPagina=0x200040`, `Cid=9`, `Rw=0` (leitura) e `PermissionFaults=0xB`. O quarto é
+>   distinto: `0x0014115D` Vmid=1, `AddrPagina=0x2464E0`, `Cid=8`, `Rw=1`.
+>   **A assinatura segue o ENDEREÇO, não o contexto.** Isso derruba o que restava da leitura
+>   "é disputa entre contextos" e dá um alvo único: `0x200040`.
+> - **DOIS DEFEITOS MEUS, um material.** (1) Três das quatro caminhadas não aconteceram e a
+>   mensagem diz `raiz do VMID 7 AUSENTE` — mas o fault era em VMID 1, 2 e 3. Terceira vez que
+>   deixo telemetria descrevendo o estado anterior. (2) O material: `poolRoot` veio **zero**
+>   porque o contexto já tinha sido destruído quando o TDR rodou, e `DestroyContext` limpa o
+>   `InstallState`. **Sem reter a última raiz instalada por VMID, a caminhada não acontece
+>   exatamente nos casos que interessam.**
+> - Estabilidade: 1.611 IBs, 6 TDR / 6 `TDR_RESTART PROVADO`, 25 instalações OK, 0 exaustões,
+>   rollback `RECOVERY_OK_ONLINE`. Tela preta — correto.
+> - **PRÓXIMA FAIXA, já definida e toda offline:** reter a última raiz por VMID mesmo após
+>   reciclagem do slot; corrigir a mensagem para nomear o VMID certo; resolver `0x200040`
+>   contra o espaço de GPUVA.
+
+> **21/09/2026 — Corrida 55 (15:47:13, lab 3.216.1.0): O LATCH ESTAVA PRESO, e isso invalidou a
+> leitura de fault de dez corridas. Desfecho B. BugCheck 0x116 — a sequência de dez corridas
+> limpas acabou.** Critério: [docs/310](docs/310_CRITERIO_CORRIDA55_LATCH_DO_FAULT_E_JANELA_DE_PUBLICACAO.md).
+>
+> - **`LATCH_CNTL=0x3FFFFFFC -> Clear=0 AceitaAtualizacoes=0`.** O par `STATUS`/`ADDR` não
+>   acompanhava o fault mais recente, e nunca limpávamos. Das 6 TDRs, só **2** tiveram fault
+>   latchado, e o primeiro veio bit a bit idêntico ao da Corrida 54 (`0x0014115D`).
+> - **A `JANELA_DE_PUBLICACAO` caiu do mesmo lado, 2 de 2: `TABELA MUDOU`.** A conclusão "a PTE
+>   existe, logo o defeito não é PTE ausente" **não se sustentava por dois motivos
+>   independentes** — o `Status` podia ser de um fault anterior, e a PTE caminhada podia ter
+>   nascido depois dele. Eu ia atacar esse caso; teria atacado um número sem procedência.
+> - **ERRO MEU NA DECODIFICAÇÃO:** rotulei o bit 29 como `CrashNoRetry`. O bit 29 é
+>   `OTHER_CLIENT_ID_NO_RETRY_FAULT_INTERRUPT`; `CRASH_ON_NO_RETRY_FAULT` é o bit **30**, que
+>   não imprimi. Pelo valor cru, **o bit 30 está em 1**.
+> - **BugCheck 0x116** `(…, 0, 0xd)` — assinatura idêntica às de 12–13/09. `Arg3=0`: nenhuma
+>   operação nossa falhou. Recuperamos 6 de 6 TDRs; o Windows estourou o `TdrLimitCount`.
+>   O log foi resgatado pelo offset do baseline (1.690.232 bytes, sha256 `96944DB7...`).
+> - Faixa de resposta empacotada como 3.217.1.0: contrato `bc250_fault_latch_contract` com
+>   dreno transacional, allowlist de **escrita** aberta só para `0xA120` com escritor único e
+>   guarda de sítio. **Um portão meu foi atravessado**: o que *proibia* essa escrita procurava o
+>   literal `0x0000A120u` e passou quando a allowlist usou a constante simbólica. Corrigido no
+>   mesmo dia; agora as duas grafias contam.
+
+> **21/09/2026 — Faixa pós-Corrida 53, OFFLINE: O PACOTE GRÁFICO PASSA A CARREGAR O VMID DO
+> CONTEXTO. Candidato lab 3.215.1.0 empacotado e NÃO INSTALADO.** Critério escrito antes em
+> [docs/309](docs/309_CRITERIO_CORRIDA54_PACOTE_NO_VMID_DO_CONTEXTO.md).
+>
+> - **É o passo que o alocador inteiro existia para permitir.** `Bc250ActiveGfxEngineSubmit`
+>   recebe o `poolVmid`; `Bc250Pm4EmitIndirectBuffer` já o codificava por pacote. As quatro
+>   incógnitas caíram todas por medição: disputa (Corrida 52), offsets distintos (51), allowlist
+>   e ciclo de vida (offline com mutação) e **aceitação do silício (53, 32/32)**.
+> - **A RECUSA VOLTOU A SER OBRIGATÓRIA, e isso é a inversão deliberada da faixa anterior.**
+>   Enquanto a instalação era lateral, falhar e seguir era o certo — o slot não era usado por
+>   ninguém. Agora partir com a tabela do próprio VMID ausente produziria exatamente o fault que
+>   a faixa elimina, com o log dizendo que correu bem. Os três ramos de tropeço recusam, cada um
+>   nomeando o motivo.
+> - **ARMADILHA (d) DO HANDOFF 307 FECHADA:** a caminhada do fault segue o VMID que o fault
+>   nomeia. Caminhar um fault de VMID 3 com a raiz do VMID 7 leria a tabela ERRADA, e "a PTE não
+>   existe" viraria conclusão falsa sobre a tabela certa. Novo leitor
+>   `Bc250VmidPoolInstalledRootForVmid`, em que **só `READY` entrega raiz** — `INSTALLING` e
+>   `FAILED` devolvem zero e a ausência é declarada em `[TDR_GCVM_FAULT] ORIGEM_DA_RAIZ`.
+> - **TELEMETRIA VENCIDA CORRIGIDA:** a linha de sucesso afirmava que o pacote seguia no VMID 7
+>   legado, e isso deixou de ser verdade. Telemetria que descreve o estado anterior é pior que
+>   telemetria ausente — ela é lida como medição. Portão novo proíbe a frase de voltar, e ele
+>   **pegou o meu próprio comentário explicativo**; reescrevi o comentário em vez de afrouxar o
+>   portão, como o projeto já fez antes.
+> - **SETE MUTAÇÕES VERIFICADAS, todas reprovando:** pacote voltando ao VMID 7; falha de
+>   instalação deixando de recusar; `BUSY` seguindo em vez de adiar; caminhada voltando à raiz
+>   fixa do VMID 7; leitor entregando raiz de slot não-`READY`; origem da raiz deixando de ser
+>   declarada; telemetria voltando a afirmar o estado anterior.
+> - **OITO PORTÕES INVERTIDOS de propósito** — os que exigiam `BC250_GCVM_USER_VMID` no pacote e
+>   proibiam a recusa agora exigem o oposto. Estava previsto por escrito desde a faixa que os
+>   criou.
+> - **RUÍDO ESPERADO:** o bloco de instalação no VMID 7 legado continua rodando, para mudar uma
+>   variável só. As linhas `VMID7 CONTEXT SWITCH` seguem aparecendo e agora são ruído, não o
+>   caminho do pacote.
+> - `build-contract.bat` **EXIT=0**, três auditorias **PASS**, `git diff --check` limpo.
+> - **PACOTE LAB 3.215.1.0 assinado, auditado e NÃO INSTALADO:** SYS `718809CF...`,
+>   PDB `F6EFD8AD...`, UMD `934DBD84...` (inalterada), INF `F3B01A64...`, CAT `AFCF8B73...`.
+>   A primeira passada do empacotador falhou com `IOException` em `Copy-Item` e a auditoria
+>   reprovou com cinco hashes divergentes; repetir resolveu — armadilha já registrada.
+> - **NADA DESTA FAIXA FOI VALIDADO EM HARDWARE.**
+
+> **21/09/2026 — Corrida 53 (14:56:52, lab 3.214.1.0): O SILÍCIO ACEITA RAIZ DE TABELA DE
+> PÁGINAS NOS VMIDs DO POOL. Desfecho A do critério, completo.** Evidência:
+> `docs/evidence/2026-09-21_14-56-52-DESKTOP-HQAG6T4-lab-binding/`; critério escrito antes em
+> [docs/308](docs/308_CRITERIO_CORRIDA53_INSTALACAO_LATERAL_EM_VMID_DO_POOL.md).
+>
+> - **Houve avanço? SIM. Veredito: SUCESSO, desfecho A.** Identidade conferida: SYS
+>   `D2A551DC...`, igual ao pacote; perfil `DISPLAY_RENDER_LAB`, P1 PERSISTENT SUBMISSION.
+> - **32 de 32 instalações laterais com `InstallStatus=0 RecordStatus=0 Readback=1 Flush=1
+>   Ready=1`**, em **cinco VMIDs distintos** (1, 2, 3, 4 e 5). Zero `LATERAL FALHOU`, zero
+>   `LATERAL PULADA`, zero exaustões em 32 aquisições. A escrita persiste, o readback confere e
+>   **o ACK de invalidação de TLB volta** — o desfecho C (o pior caso previsto: raiz entra e
+>   flush não reconhece) **não ocorreu**.
+> - **ESCOPO HONESTO DA PROVA: só os VMIDs 1–5 foram exercitados.** A carga nunca pediu mais de
+>   cinco slots simultâneos. Os VMIDs 6 e 10–15 continuam **sem escrita medida**; afirmar que
+>   "os doze funcionam" seria extrapolação, não medição.
+> - **O risco declarado não se materializou:** zero BugCheck (nona corrida seguida), zero
+>   `DEVICE_REMOVED`, zero `StopDevice`, zero `IB_TRIPOD TIMEOUT`, 2.294 IBs executados,
+>   rollback `RECOVERY_OK_ONLINE` com BasicDisplay Código 0 em 5 amostras. Escrever em sete
+>   registradores de contextos GCVM nunca tocados não desestabilizou a placa.
+> - **A correção de escopo da faixa anterior foi decisiva por construção, não por sorte:** como
+>   nenhuma lateral falhou, a submissão nunca precisou do caminho de continuação. Se o silício
+>   tivesse recusado, a versão anterior teria recusado **todas** as submissões e a corrida sairia
+>   sem medição nenhuma.
+> - **O fault do VMID 7 continua idêntico:** 6 TDR, 6 `TDR_RESTART PROVADO`, 6 faults
+>   `Vmid=7 WalkerError=6 MappingError=1`. **Isso era o esperado** — nada usa o VMID novo ainda.
+>   Pico de ocupação subiu para **5** (contra 4 na Corrida 52), ainda sem exaustão.
+> - **Tela preta, resultado correto.** Nenhum pixel é produzido por esta faixa.
+> - **FALTA UM ÚNICO PASSO para o alocador governar a GPU:** trocar o VMID do `INDIRECT_BUFFER`
+>   para o `poolVmid`. A partir daí a falha de instalação volta a ser motivo de recusa.
+
+> **21/09/2026 — Quinta faixa pós-Corrida 52, OFFLINE: verificação interrompida fechada, dois
+> portões fracos corrigidos e o escopo lateral restaurado. Candidato lab 3.214.1.0 empacotado e
+> NÃO INSTALADO.** Critério da corrida escrito antes em
+> [docs/308](docs/308_CRITERIO_CORRIDA53_INSTALACAO_LATERAL_EM_VMID_DO_POOL.md).
+>
+> - **A árvore estava QUEBRADA ao assumir.** `build-contract.bat` saía **EXIT=1**
+>   (`vmid_pool_contract_test` linha 160) e o safety audit **FAILED**. A faixa anterior aplicou
+>   a mutação "liberar slot `INSTALLING`" e o limite de uso cortou antes da restauração: a
+>   guarda de `Bc250VmidPoolRelease` ficou removida no código. Restaurada, com `ReleasedVmid`
+>   permanecendo em `BC250_VMID_COUNT` no caminho `BUSY` — nada foi devolvido, e devolver um
+>   número ali faria o chamador registrar uma reciclagem que não houve. **O lado bom: os dois
+>   portões pegaram** — teste na linha exata e auditoria nomeando a causa.
+> - **DEFEITO DE ESCOPO ENCONTRADO E CORRIGIDO: a instalação lateral não era lateral.** Os três
+>   ramos de tropeço (`BUSY`, `BeginInstall != OK`, `install/record` falhou) **recusavam a
+>   submissão GFX** com `STATUS_DEVICE_NOT_READY` / `STATUS_GRAPHICS_ALLOCATION_BUSY`. Como o
+>   VMID alocado não é usado por ninguém nesta faixa, recusar não comprava segurança alguma — e
+>   transformaria a PRIMEIRA corrida que escreve nos VMIDs 1–15 em **zero medição**, com todas
+>   as submissões recusadas, caso o silício não aceite raiz nesses contextos. Agora os três
+>   ramos declaram o motivo, marcam a entrada `FAILED` e a submissão **segue em VMID 7**. Isso
+>   não é sucesso silencioso: o caminho do VMID 7 está intocado e o log diz por onde seguiu.
+>   Quando o `INDIRECT_BUFFER` passar a usar o `poolVmid`, a recusa volta a ser obrigatória e o
+>   portão muda junto, de propósito.
+> - **DOIS PORTÕES FRACOS, achados por mutação.** (1) Trocar `poolIo.FlushVmid` por um flush
+>   fixo no VMID 7 **passava** na auditoria — `Bc250GcvmInstallVmid` recusa `FlushVmid==NULL`,
+>   então o efeito seria falha fechada, mas a detecção só aconteceria no silício e o sintoma
+>   (raiz instalada sem TLB invalidado) é indistinguível do defeito antigo. (2) Deixar **um**
+>   dos dois ramos de desistência mudo **passava**, porque o portão procurava a string em vez de
+>   **contar** os ramos; refeito com o invariante sem janela de
+>   `audit_process_lifecycle_ddis_speak`, e agora a mensagem nomeia qual ramo emudeceu.
+> - **SEIS MUTAÇÕES VERIFICADAS, todas reprovando:** instalação lateral voltando a VMID 7; flush
+>   lateral fixo no VMID 7; submissão passando a usar o `poolVmid`; lateral derrubando a
+>   submissão; lateral devolvendo a submission view; um ramo de desistência mudo.
+> - `build-contract.bat` **EXIT=0**, três auditorias **PASS**, `git diff --check` limpo.
+> - **PACOTE LAB 3.214.1.0 assinado, auditado e NÃO INSTALADO:** SYS `D2A551DC...`,
+>   PDB `1D4CBB0A...`, UMD `934DBD84...` (inalterada), INF `E9651A39...`, CAT `3677BC93...`.
+>   Perfil `DISPLAY_RENDER_LAB`, WDDM 2.7, P1 PERSISTENT SUBMISSION. Strings conferidas em
+>   **ANSI** no SYS assinado. Um pacote 3.214.1.0 anterior (SYS `F514C2F4...`) foi gerado e
+>   **descartado sem instalar**, antes da correção do escopo lateral.
+> - **A PRÓXIMA CORRIDA DEIXA DE SER OBSERVACIONAL:** ela escreve sete registradores por
+>   contexto nos VMIDs 1–6 e 10–15, nunca tocados nesta placa. BugCheck é desfecho possível do
+>   ensaio. **NADA DESTA FAIXA FOI VALIDADO EM HARDWARE.**
+
+> **20/09/2026 — Corrida 45 (20:49:00, lab 3.205.1.0): a onda foi lida, e a CAUSA RAIZ DO STALL
+> APARECEU — falha de tradução sob VMID 7, que estava no log em hexadecimal cru desde muito
+> antes.** Evidência: `docs/evidence/2026-09-20_20-49-00-DESKTOP-HQAG6T4-lab-binding/`; critério
+> prévio em [docs/304](docs/304_CRITERIO_CORRIDA45_ONDA_VIVA_COM_CP_PARADO.md).
+>
+> - **Houve avanço? SIM, diagnóstico, e grande. Veredito da faixa: NÃO cumpriu o critério —
+>   desfecho D.** Identidade conferida: SYS `148BD71F...07DCC`, igual ao manifesto.
+> - **A MEDIÇÃO SAIU (item 2 do critério).** A sonda leu uma onda inteira:
+>   `SE=0 SA=1 Inst=2 Wave=0 STATUS=0x00810019 PC=0x000000020004114C IB_STS=0x00000000
+>   INST_DW0=0x10040C04 TRAPSTS=0x50000100 ValidMask=0x3F`. Decodificado contra
+>   `gc_10_1_0_sh_mask.h`: `SQ_WAVE_STATUS` → **`VALID=1`, `FATAL_HALT=1`**;
+>   `SQ_WAVE_TRAPSTS` → **`XNACK_ERROR=1`** e `EXCP=0x100`. O bit 8 de `EXCP` **não tem
+>   enumeração local e NÃO foi nomeado** (Lei 7).
+> - **CAUSA RAIZ, e uma correção de registro minha.** Eu reportei "zero `FaultStatus`" — era
+>   FALSO, meu grep (`[^0]`) falhou porque o valor começa com zero. Nos **cinco** TDRs há
+>   `FaultStatus=0x0070153C`, que por `gc_10_1_0_sh_mask.h` é **`VMID=7`** (o mesmo VMID das 142
+>   submissões GFX), **`WALKER_ERROR=6`**, **`MAPPING_ERROR=1`**, `PERMISSION_FAULTS=3`,
+>   `CID=10`, com `FaultAddr` de página `0x245B`/`0x2431` → GpuVa **`0x245B000`/`0x2431000`**.
+>   Dois registradores independentes dizem a mesma coisa: **o caminhador de tabela de páginas
+>   falhou sob VMID 7, a onda recebeu XNACK e morreu, e o CP espera por quem nunca retira.**
+> - **O dado estava no log há muito tempo, em hexadecimal cru dentro de `[TDR_MEC_SNAPSHOT]`.**
+>   Ninguém leu porque a busca do projeto era pela string `GFXHUB_FAULT`, que é outro sítio e
+>   sai zero. Não era lacuna de conhecimento; era lacuna de **leitura**. Hexadecimal cru num
+>   campo que ninguém lê é ausência de medição na prática.
+> - **D1 pagou:** `Submetidas=148 Aposentadas=148 EmVoo=0 RetiredCount=132`. A aposentadoria GFX
+>   agora é **medida**; o item O6 da Corrida 44, que tive de inferir, está provado direto.
+> - **Controle intacto:** `TDR_GFX_RESTART_BASE Pass=1` 5/5, `TDR_GFX_RESTART_PROOF PASS` 5/5,
+>   142 submits GFX, 92 convergências, 2.479 IBs SDMA, **zero BugCheck** (segunda corrida
+>   seguida), zero `DEVICE_REMOVED`, zero `StopDevice`, **zero crash de dwm.exe** — contra 1 na
+>   Corrida 44 e 7–10 historicamente.
+> - **FALHAS.** `status=selector_stuck` nas duas execuções da sonda, `SeletorRestaurado=0`,
+>   `readback=0x00000000` onde se esperava `0xE0000000`, mais `INDETERMINADO_POISON` em 15 e 16
+>   leituras. Pelo critério isso é **desfecho D** e manda **desarmar** — feito no 3.206.1.0.
+>   Ressalva: `readback=0` é compatível com seletor preso **ou** com registrador que não devolve
+>   o valor escrito; a corrida seguiu com 5 TDRs, restart 5/5 e zero BugCheck, o que não casa com
+>   soft-reset atingindo um só SE. Não distingo as duas com este dado.
+> - **DEFEITO MEU: o D3 não mediu nada.** `PUBLICACAO_COMPOSICAO` saiu **0 vezes** em 10
+>   `PUBLICACAO_FALHA`, embora a string esteja no SYS assinado. O amostrador isenta por
+>   **substring** (`FALHA`, `OCUPACAO`, `PASS`…) e o nome que escolhi não continha token isento:
+>   caiu na classe 4 e foi amostrado fora, exatamente na medição que a faixa existia para obter.
+> - Conformance **sem medição**: o harness não imprimiu nenhuma linha de quadro, e o portão
+>   recusou contar Exit 0 como sucesso. O stall reapareceu (esperado) e o tripé segue 2/3.
+> - **Pela §8 do critério não existe "C parcial":** a faixa entregou a medição do item 2 mas
+>   falhou o item 3, logo **não teve sucesso**. Os dois fatos ficam registrados separados.
+> - **Recuperação:** BasicDisplay `Status OK`, fusível inexistente, sem reboot não planejado.
+
+> **20/09/2026 — faixa D4, OFFLINE: o fault deixou de ser hexadecimal cru, e o candidato
+> 3.206.1.0 está pronto e NÃO INSTALADO.** Critério em
+> [docs/305](docs/305_CRITERIO_CORRIDA46_FAULT_VMID7_E_PUBLICACAO.md).
+>
+> - `[TDR_GCVM_FAULT] DECODIFICADO` nomeia `Vmid`, `WalkerError`, `MappingError`,
+>   `PermissionFaults`, `Cid`, `Rw`, `MoreFaults` e converte o endereço de página em GpuVa.
+>   Ausência de fault é **declarada**, nunca silenciosa.
+> - **Armadilha apanhada antes de virar veredito:** a primeira versão dessa linha teve os shifts
+>   transcritos de cabeça e **os seis saíram errados** — `VMID` em 18 no lugar de 20,
+>   `WALKER_ERROR` em 8 no lugar de 1, `RW` em 31 no lugar de 18. As máscaras foram então
+>   copiadas de `gc_10_1_0_sh_mask.h`. Decodificação errada é pior que hexadecimal cru: o cru ao
+>   menos não mente.
+> - `COMPOSICAO` entrou na lista de isenção do amostrador, com a causa registrada no comentário.
+> - Sonda de onda **desarmada** por ordem do desfecho D.
+> - Portão novo com 6 exigências dentro de `audit_gfx_ring_tripod_and_ib_inspection`;
+>   **três mutações verificadas** (fault volta a cru; shift de VMID volta ao errado; ausência de
+>   fault volta a ser muda), todas reprovando com baseline em zero.
+> - `build-contract.bat` **EXIT=0**; safety, DDI matrix, DDI noop e lab package audit **PASS**.
+>   Pacote 3.206.1.0: SYS fonte `13CE38BC...`, SYS assinado `7D3154A8...`, PDB `B842E639...`,
+>   UMD `934DBD84...`, INF `AD192AD4...`, CAT `D33D3F04...`. **Perfil idêntico ao 3.202 — ZERO
+>   diferenças de tunable.** Binário conferido por string.
+> - **NADA DESTA FAIXA FOI VALIDADO EM HARDWARE.** A Corrida 46 é de medição: fecha ou refuta a
+>   cadeia publicação → walker → XNACK → `FATAL_HALT` → CP travado.
+
+> **20/09/2026 — Corrida 44 (14:39:20, lab 3.202.1.0): H44 CONFIRMADA. O TDR gráfico recupera
+> e readmite trabalho GFX real — 167 submissões contra 1, e ZERO BugCheck.** Evidência:
+> `docs/evidence/2026-09-20_14-39-20-DESKTOP-HQAG6T4-lab-binding/`; critério prévio em
+> [docs/302A](docs/302A_EMENDA_CRITERIO_CORRIDA44.md).
+>
+> - **Houve avanço? SIM, funcional e diagnóstico. Veredito: SUCESSO da faixa**, pelo critério
+>   congelado antes do ensaio, mais um **desfecho E — algo fora do mapa**.
+> - **Identidade conferida:** SYS `33E8FF29...ABCCFF` em `private-symbols.json` igual ao
+>   manifesto. **Coleta completa** — `display-log-this-bind-FINAL.txt` (2.910.536 bytes) e logs
+>   `-FINAL` da UMD, sem necessidade de resgate de cauda.
+> - **Os cinco itens de sucesso ocorreram, 5 de 5 cada um:**
+>   `[TDR_GFX_RESTART_BASE] Esperado=00000000:F40FF700 Readback=00000000:F40FF700 Pass=1`;
+>   `[TDR_FENCE_RECONCILE] PASS` com `NotificadasComoConcluidas=0`;
+>   `[TDR_GFX_RESTART_PROOF] PASS ... RPTR=12 WPTR=12 PoisonSubstituido=1 Polls=1` — contra
+>   2000 polls falhando na Corrida 43; `CP_RB0 rearmado e comprovado por execucao fisica`; e o
+>   callback devolvendo `adaptador aceita submissao novamente`. **A base 256 vezes errada era a
+>   causa do `RPTR=0`.**
+> - **Desfecho E, o resultado que não estava em nenhuma letra:** **167 submissões GFX** contra
+>   **1** na Corrida 43. Fences submetidas até **173**, e a maior fence **escrita pela GPU** é
+>   `0xAD` = **173** — o anel acompanhou até a última. **94 de 111** tripés com
+>   `Perna1=REGISTRADOR` (RPTR convergiu com WPTR) e **111 de 111** com
+>   `Perna2=FENCE_ESCRITA_PELA_GPU` sobre poison. IB de até **20.208 dwords**. Nenhuma corrida
+>   anterior mostrou readmissão sustentada de trabalho gráfico.
+> - **Zero BugCheck:** `MEMORY.DMP` continua o das 10:06 da Corrida 43; sem evento 41, 1001 ou
+>   6008. O Windows registrou **3x evento 4101** (driver parou e **se recuperou**). Zero
+>   `DEVICE_REMOVED`, `StopDevice`, `IB_TRIPOD TIMEOUT` e `GFXHUB_FAULT`; 2.308 IBs SDMA.
+>   Houve 5 TDRs — o segundo TDR era esperado e não rebaixa o veredito, por decisão do 302A.
+> - **Falhas medidas.** O stall inicial **reapareceu**: 17 de 111 tripés `NAO_CONVERGIU`, 6 com
+>   a assinatura exata da Corrida 43 (`WPTR=32 RPTR_Reg=24 RPTR_Wb=20`), e três
+>   `TDR_GFX_PROBE Responsive=0`. Deixou de ser terminal; não foi resolvido, e esta faixa não o
+>   tocou. **Pela Lei 2 o tripé GFX está em 2 de 3**: as 111 linhas dizem
+>   `Perna3=DELEGADA_AO_BYTE_PROOF` e **não há byte proof de GFX** — destino conferido byte a
+>   byte NÃO existe. Também **não há telemetria de aposentadoria GFX** em nível WDDM
+>   (`DMA_COMPLETED`); as 17 linhas `[SdmaRetire]` são do Node 0 e de classe **amostrada**.
+>   Conformance D3D11 **REPROVADO**: `PRESENT_FALHOU` no quadro 1, `hr=0x887A0005`,
+>   `DeviceRemovedReason=0x887A0020` — este segundo código **sem procedência local, não
+>   nomeado** —, 0 de 60 quadros. 1 crash do `dwm.exe` (dump 316 MB), contra 7 a 10 antes.
+>   Sem prova de pixel: 8 `DdiPresent ENTER`, 6 `CommitVidPn`, 30 `SetVidPnSourceAddress`.
+> - **ACHADO QUE APONTA O PRÓXIMO PASSO:** no **5º TDR** apareceu
+>   `[TDR_GFX_WAVES] SQ_DEBUG_STS_GLOBAL=0x00000011 Busy=1 WaveLevelSA0=1`. Nos outros quatro,
+>   e em toda a Corrida 43, era `Busy=0` com zero ondas. Pela legenda do próprio log, ondas > 0
+>   com o CP parado aponta **shader que não retira** — primeira medição que discrimina entre
+>   "estado ou pacote" e "shader". É H, com uma única amostra.
+> - **Recuperação:** BC-250 de volta ao BasicDisplay, `Status OK`, `Service BasicDisplay` —
+>   recuperação, **não** sucesso do nosso driver. Watchdog registrou `BLOCKED` (exit 11), mas o
+>   rollback se efetivou. Fusível inexistente: próximo boot assume CLEAN. Sem reboot não
+>   planejado.
+
+> **20/09/2026 — faixa D1, OFFLINE pós-Corrida 44: a perna 3 do tripé GFX parou de prometer
+> uma prova que ninguém executa, e a aposentadoria GFX virou mensurável.** Sem candidato novo:
+> esta faixa **não altera nenhum caminho de GPU** e não justifica queimar uma corrida sozinha.
+>
+> - **DEFEITO CORRIGIDO, classe "o rótulo carimbava o falso sucesso" (oitava ocorrência).** O
+>   veredito do tripé GFX imprimia a perna 3 como DELEGADA a uma prova de bytes. A mineração da
+>   Corrida 44 contou **111 ocorrências da string `BYTE_PROOF` no log inteiro, e todas as 111
+>   eram essa própria linha** — o delegado nunca rodou uma vez. O `[GfxIbInspect]` varre a
+>   **estrutura** do IB pela CPU (linear, saltos CHAIN, chamadas IB2) e não confere um byte de
+>   destino. Quem confiasse no rótulo contaria 111 tripés completos onde há **2 de 3 pernas**.
+> - A perna 3 passou a sair de fonte única como `NAO_EXECUTADA_SEM_GABARITO_DE_DESTINO`, e a
+>   linha declara `TRIPE INCOMPLETO, 2 de 3 pernas`. Gabarito de destino para IB arbitrário de
+>   UMD **não existe** — não se sabe o que o shader do DWM deveria escrever —, então a perna
+>   fica **aberta e declarada**, nunca simulada. Pela Lei 2, submissão GFX não pode ser
+>   declarada comprovada neste estado.
+> - **Aposentadoria GFX virou medição.** Ela já existia em `LastRetiredFence`/`RetiredCount`,
+>   avançando pela fence da GPU com o poison excluído, mas **não era impressa** — e por isso o
+>   item O6 do critério da Corrida 44 teve de ser **inferido** das fences em vez de medido.
+>   O veredito agora publica `Submetidas`, `Aposentadas`, `EmVoo` e `RetiredCount`.
+> - Dois portões novos dentro de `audit_gfx_ring_tripod_and_ib_inspection`: o literal antigo da
+>   perna 3 está **proibido** no arquivo inteiro, e o veredito é obrigado a declarar-se
+>   incompleto e a publicar os quatro contadores. **Quatro mutações verificadas**, todas
+>   reprovando com baseline em zero: rótulo antigo de volta; veredito deixando de declarar-se
+>   incompleto; telemetria de aposentadoria removida; e a perna 3 passando a alegar `PASS`.
+> - Armadilha registrada: o portão reprovou o **meu próprio comentário** por citar o literal
+>   banido. O comentário foi reescrito; o portão **não** foi afrouxado — mesma decisão tomada
+>   quando o gate do B3 pegou um comentário.
+> - `build-contract.bat` **EXIT=0** sem warning em `bc250_active_miniport.c`; safety, DDI
+>   matrix, DDI noop e lab package audit **PASS**. Selo do 3.202.1.0 intacto.
+> - **NADA DESTA FAIXA FOI VALIDADO EM HARDWARE.** Ela deve pegar carona no próximo candidato
+>   substantivo, não motivar uma corrida própria. **E pegou: saiu no 3.204.1.0, abaixo.**
+
+> **20/09/2026 — faixa D2, OFFLINE: a medição que a Corrida 44 perdeu. Candidato lab
+> 3.204.1.0 pronto e NÃO INSTALADO.** Critério prévio em
+> [docs/304](docs/304_CRITERIO_CORRIDA45_ONDA_VIVA_COM_CP_PARADO.md).
+>
+> - **A pergunta da onda ficou sem resposta por um tunable desarmado.** Nos cinco TDRs da
+>   Corrida 44 a sonda indireta saiu `[TDR_GFX_WAVEPC] DESARMADO: GfxWaveProbe=0 present=1` —
+>   **inclusive no único TDR com `Busy=1`**. A sonda existe, está ligada ao caminho de TDR e lê
+>   por onda `SQ_WAVE_STATUS`, `PC_LO/HI`, `IB_STS`, `INST_DW0` e `TRAPSTS`; ela só nunca foi
+>   armada. Nenhuma linha de código nova foi precisa para responder à pergunta.
+> - **Offsets da sonda conferidos e catalogados.** Os seis índices indiretos `ixSQ_WAVE_*`
+>   batem **exatamente** com `inc/linux_ref/gc_10_1_0_offset.h:11188-11199`, e os dois `mm` de
+>   idx0 dão base implícita idêntica de `0x1260` dwords — a mesma já catalogada. Estavam em uso
+>   com procedência citada só no header do driver, o que a Lei 7 não aceita; entraram em
+>   `docs/03` numa seção própria, com a ressalva de que **só `SQ_DEBUG_STS_GLOBAL` tem leitura
+>   física até aqui**. Correção de registro: `inc/linux_ref/` **tem** o `gc_10_1_0_offset.h` —
+>   a nota de que só havia o `sh_mask` estava errada.
+> - Segurança verificada por leitura, já que a sonda nunca correu no silício: a restauração de
+>   `GRBM_GFX_INDEX` para broadcast é feita **com readback** e falha fechada em
+>   `SELECTOR_STUCK`; a sonda só corre quando o SQ disse que há onda; leitura inválida é
+>   recusada em vez de interpretada. Armar exigiu `-IAcceptSelectorWritesDuringTdr`, no mesmo
+>   padrão do `-ArmTdrInducedHang`. **Decisão do dono do projeto, tomada em 20/09.**
+> - **QUASE-ACIDENTE QUE VIROU PORTÃO.** O primeiro pacote que gerei saiu `DISPLAY_LAB` em modo
+>   **READ-ONLY**, com `RenderNode=0` e sem submissão persistente, porque omiti
+>   `-EnableRenderNode/-EnableShaderDispatch/-EnablePersistentSubmission`. O empacotador aceitou
+>   (o perfil é legítimo) e o `audit-bc250mcdm-lab-package.ps1` deu **PASS** — ele confere o
+>   pacote, não a **intenção** do ensaio. Um bind assim não produz submissão GFX nenhuma: a
+>   corrida inteira teria sido gasta medindo o nada, e o log pareceria apenas "sem submissões".
+>   Agora o binder **registra o perfil ligado** em `_last_lab_binding.json` e **recusa** um
+>   candidato mais fraco que o do último bind, nomeando a capacidade que caiu; rebaixamento
+>   deliberado exige `-IAcceptProfileDowngrade`. **Quatro mutações verificadas.**
+> - Identidade do candidato conferida campo a campo contra o manifesto commitado do 3.202:
+>   **a única diferença de perfil é `GfxWaveProbe 0 -> 1`**. `DISPLAY_RENDER_LAB`
+>   (RenderNode=1, RenderOnlyLab=0), WDDM 2.7, schema 135, P1 PERSISTENT SUBMISSION.
+>   SYS fonte `871B0131...B1FE8D`, SYS assinado `34580DC5...B364E8A`, PDB `7B9C6C49...662B409`,
+>   UMD `934DBD84...5AB5236A`, INF `697A127B...6EFEBBCA`, CAT `0A447B11...96BD6C5A0`.
+>   DriverVer subiu para 3.204 para não repetir a ambiguidade do 3.92.1.0 — o pacote errado
+>   chegou a existir como 3.203.1.0 e foi substituído.
+> - Binário **conferido por string** (o empacotador copia, não compila): estão no SYS assinado
+>   `NAO_EXECUTADA_SEM_GABARITO_DE_DESTINO`, `TRIPE INCOMPLETO, 2 de 3 pernas`, `Submetidas=` e
+>   `TDR_GFX_WAVEPC`; o literal antigo da perna 3 **não** está.
+> - `build-contract.bat` **EXIT=0**; safety, DDI matrix, DDI noop e lab package audit **PASS**;
+>   `git diff --check` limpo; selo do 3.204.1.0 íntegro nos sete hashes.
+> - **NADA DESTA FAIXA FOI VALIDADO EM HARDWARE.** A Corrida 45 é de **medição**, não de
+>   correção: sucesso é obter PC e instrução da onda parada, não o stall desaparecer. Não
+>   esperar desktop nem pixel.
+> - **NOTA DE IDENTIDADE:** o 3.204.1.0 **nunca foi instalado**; foi substituído pelo
+>   **3.205.1.0**, que carrega também a faixa D3 abaixo.
+
+> **20/09/2026 — faixa D3, OFFLINE: a falha de publicação de GPUVA teve o mecanismo fechado por
+> aritmética, e o diagnóstico anterior está REFUTADO.** Candidato lab **3.205.1.0** pronto e
+> NÃO INSTALADO. Critério em [docs/304](docs/304_CRITERIO_CORRIDA45_ONDA_VIVA_COM_CP_PARADO.md).
+>
+> - A falha **reapareceu na Corrida 44**: seis `[ActiveFlushTlb] PUBLICACAO_FALHA`, todas com
+>   `PublishStatus=3` (NO_SPACE), `Attempts=1`, `Busy=0`.
+> - **MECANISMO FECHADO, P0 por aritmética exata, seis de seis:** `FailedIndex` é **idêntico**
+>   a `Reusable` do slot ativo, e `Mapped + Reusable = Cap = 1024` em todas —
+>   832/655/369, 657/640/384, 721/603/421, 695/460/564, 513/430/594, 657/415/609. Confirmado por
+>   leitura: `Bc250GpuvaCopySnapshot` copia o slot **ativo** para o inativo e o lote é aplicado
+>   **por cima**, logo o teto útil é `Cap − Mapped` e um lote maior morre no índice exato.
+> - **REFUTA o diagnóstico anterior**, que atribuía o NO_SPACE à exaustão do teto de 256 slots:
+>   o teto é 1024, `Teardown=0` e `Reusable` é o complemento exato de `Mapped` — a reciclagem
+>   está **sã**. Não é slot preso em teardown.
+> - Confirmado também que a falha **não corrompe**: a publicação retorna cedo sem trocar
+>   `ActiveSlot` nem incrementar a geração, e o slot inativo parcialmente construído é
+>   sobrescrito pelo `CopySnapshot` seguinte.
+> - **A faixa é MEDIÇÃO, não conserto, e isso é deliberado.** O journal já coalesce em
+>   intervalos não sobrepostos, então aplicar unmaps antes de maps derrubaria o pico sem mudar o
+>   estado final — **mas não se sabe a composição do lote**. Se for dominado por MAP, reordenar
+>   não resolve nada e o assunto é capacidade real. Propor a reordenação sem esse número seria
+>   fix de efeito imprevisível, então o que entrou foram os contadores:
+>   `[ActiveFlushTlb] PUBLICACAO_COMPOSICAO Maps=N Unmaps=M Livres=L`, contados **antes** de
+>   qualquer mutação. Zero mudança de comportamento.
+> - Armadilha respeitada: a C3.12 registrou que gravar ocupação **dentro do ramo de falha**
+>   reprovava `active_miniport_test` por mecanismo não explicado. A contagem foi posta na
+>   **entrada**, junto dos demais `LastPublish*`, e nada foi escrito no ramo de falha.
+> - Teste novo em `gpuva_snapshot_contract_test.c` faz **replay dos números da Corrida 44** (369
+>   vivas, lote de 832 maps) e exige o índice **exato 655**, mais o invariante de que a falha não
+>   troca o slot ativo, mais um contraponto com metade unmaps para a asserção não virar carimbo.
+>   **Três mutações verificadas** com atribuição conferida — a reprovação sai como
+>   `TESTE FALHOU (gpuva_snapshot_contract_test) - Linha/Codigo: 339`, não como erro de compilação.
+> - Armadilha registrada: a primeira rodada de mutações teve **baseline reprovando**, porque o
+>   heredoc do bash comeu a barra invertida do caminho do build. Resultado não-atribuível,
+>   descartado e refeito com `os.path.normpath`.
+> - `build-contract.bat` **EXIT=0**; safety, DDI matrix, DDI noop e lab package audit **PASS**.
+>   Pacote 3.205.1.0: SYS fonte `26223CBC...`, SYS assinado `148BD71F...`, PDB `69D7E878...`,
+>   UMD `934DBD84...`, INF `ACDABF8C...`, CAT `FA554F79...`; perfil idêntico ao 3.202 **exceto
+>   `GfxWaveProbe 0 → 1`**. Binário conferido por string: D1, D2 e D3 presentes, literal antigo
+>   da perna 3 ausente.
+> - **NADA DESTA FAIXA FOI VALIDADO EM HARDWARE.**
 
 > **20/09/2026 — Corrida 43 (10:05:31, lab 3.201.1.0): a prova executável reprovou
 > honestamente o restart e revelou `CP_RB0_BASE` codificado sem `>> 8`.** Evidência:
@@ -267,7 +1646,7 @@ Preservar provas compute/SDMA no seu escopo. Não equiparar imagem 3D produzida 
 **A obrigação de enviar a barra “STATUS DO DRIVER BC-250” antes de cada mensagem está revogada.** Os registros antigos são histórico, não modelo de resposta nem medida atual de prontidão.
 
 > **Plano de produto solicitado pelo proprietário (16/09/2026, análise documental):** [desktop acelerado, Direct3D transparente e DCN básico em P9](docs/281_PLANO_PRODUTO_DESKTOP_E_JOGOS_TRANSPARENTES.md). Os 600 quadros do Marco 4 não fecham desktop DWM nem jogos arbitrários. A fonte atual do Cube.cpp usa pipeline compute e vkCmdDispatch; sua proveniência exata em relação ao binário da corrida precisa ser conferida. Não usar esse teste como prova de vkCmdDraw/pipeline gráfico geral. Expor uma fila GRAPHICS requer backend comprovado, não apenas mudar uma flag. Nenhum novo item foi validado em hardware nesta revisão.
-**Passagem de bastão atual:** [docs/288 — HANDOFF: CORRIDA 34, CURA GCVM E DIAGNÓSTICO DO STALL DA DRAWING ENGINE](docs/288_HANDOFF_2026-09-19_CORRIDA34_CURA_GCVM_E_DIAGNOSTICO_TELA_PRETA.md), [docs/287 — HANDOFF: CORRIDA 18, BUGCHECK 0x0A E DESACOPLAMENTO DE DPCS](docs/287_HANDOFF_2026-09-17_20-10_CORRIDA18_0x0A_E_SEPARACAO_DPCS.md), [docs/286 — HANDOFF: CORRIDA 17, BUGCHECK 0x139 E CORREÇÃO DE INICIALIZAÇÃO DE DPC](docs/286_HANDOFF_2026-09-17_19-32_CORRIDA17_0x139_E_CORRECAO_DPC_INIT.md), [PLANO_DESKTOP_ACELERADO](PLANO_DESKTOP_ACELERADO.md).
+**Passagem de bastão atual:** [docs/307 — Corrida 52: VMID por contexto](docs/307_HANDOFF_2026-09-21_CORRIDA52_VMID_POR_CONTEXTO.md), [PLANO_DESKTOP_ACELERADO](PLANO_DESKTOP_ACELERADO.md). Passagens 288/287/286 permanecem como histórico, não como estado vigente.
 
 > **19/09 16:20:14 (P0, lab 3.197.1.0, SYS 749BA458) — CORRIDA 39: 118 SUBMISSOES GRAFICAS SEM
 > HANG, IBs DEZ VEZES MAIORES QUE O QUE TRAVAVA, E A PRIMEIRA COPIA DE PIXEL PARA VkImage.**

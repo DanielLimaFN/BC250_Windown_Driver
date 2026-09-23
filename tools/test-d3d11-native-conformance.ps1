@@ -103,9 +103,16 @@ Write-Host "`n[EXECUCAO NO SILICIO] Disparando bc250-d3d11-conformance.exe..." -
 # que custou tres criterios de corrida: o que nao cai na pasta de evidencia
 # desaparece quando a maquina reinicia, e o despejo so' serve se sobreviver.
 # ---------------------------------------------------------------------------
-$ibDumpDir = Join-Path $EvidenceDir 'gfx-ib-dump'
+#
+# DX.21 (22/09): o destino passou a ser o STAGING C:\Windows\Temp\BC250_GFX_IB_DUMP,
+# armado pelo binder antes do bind e copiado para <evidencia>\gfx-ib-dump na
+# coleta FINAL. A pasta de evidencia fica no perfil do Daniel e o dwm.exe (DWM-<n>)
+# nao tem permissao de escrita nela -- o despejo saiu vazio nas Corridas 35, 36 e
+# 66 por isso. Apontar para a evidencia aqui DESFARIA a correcao do binder.
+$ibDumpDir = 'C:\Windows\Temp\BC250_GFX_IB_DUMP'
 if (-not (Test-Path -LiteralPath $ibDumpDir)) {
     New-Item -ItemType Directory -Path $ibDumpDir -Force | Out-Null
+    & icacls.exe $ibDumpDir /grant '*S-1-1-0:(OI)(CI)M' '*S-1-5-90-0:(OI)(CI)M' | Out-Null
 }
 $env:BC250_RADV_IB_DUMP = $ibDumpDir
 # MEDIDO na Corrida 35: a variavel de ambiente NAO alcanca o dwm.exe, e foi o
@@ -125,6 +132,40 @@ try {
 } catch {
     Write-Warning ("Nao foi possivel armar HKLM GfxIbDumpDir: " + $_.Exception.Message +
                    " -- o despejo so valera para o harness, nao para o dwm.exe")
+}
+
+# ---------------------------------------------------------------------------
+# DX.26 -- AUTOTESTE GRAFICO (controle positivo), ANTES do harness D3D11.
+#
+# docs/337 Fase B: o instrumento de leitura nunca teve controle positivo. O
+# bc250-gfx-selftest.exe e' Vulkan puro (ICD direto, sem traducao D3D11, nada
+# vai a tela) e isola fill -> clear de transferencia -> clear de render pass ->
+# draw -> contador de fragmentos. Uma execucao por variante do RADV, cada uma em
+# processo proprio (RADV_DEBUG e' lido no vkCreateInstance): um TDR numa variante
+# nao contamina a seguinte. Ausencia do executavel e' DECLARADA, nunca silenciosa.
+# ---------------------------------------------------------------------------
+$selftest = Join-Path ([System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($Harness))) 'bc250-gfx-selftest.exe'
+if (Test-Path -LiteralPath $selftest) {
+    $selftestHash = (Get-FileHash -LiteralPath $selftest -Algorithm SHA256).Hash
+    foreach ($variant in @('nodcc', 'nodcc,nonggc', 'nodcc,nongg')) {
+        $tag = $variant.Replace(',', '_')
+        $stOut = Join-Path $EvidenceDir ("selftest-$tag-stdout.txt")
+        $stErr = Join-Path $EvidenceDir ("selftest-$tag-stderr.txt")
+        $env:RADV_DEBUG = $variant
+        $st = Start-Process -FilePath $selftest -NoNewWindow -PassThru `
+            -RedirectStandardOutput $stOut -RedirectStandardError $stErr
+        $stDone = $st.WaitForExit(40000)
+        if (-not $stDone) { try { $st.Kill() } catch { } }
+        $st.Refresh()
+        $stCode = if ($stDone) { $st.ExitCode } else { 'TIMEOUT' }
+        Write-Host ("  SELFTEST RADV_DEBUG={0}: exit={1} (sha256 {2})" -f $variant, $stCode, $selftestHash) -ForegroundColor Cyan
+        ("SELFTEST RADV_DEBUG={0} exit={1} exe_sha256={2} terminou={3}" -f $variant, $stCode, $selftestHash, $stDone) |
+            Add-Content -LiteralPath (Join-Path $EvidenceDir 'selftest-resumo.txt') -Encoding UTF8
+    }
+    Remove-Item Env:\RADV_DEBUG -ErrorAction SilentlyContinue
+} else {
+    Write-Warning "AUTOTESTE GRAFICO AUSENTE: $selftest nao existe -- rode tools\build-gfx-selftest.bat; o controle positivo NAO sera medido"
+    "AUTOTESTE AUSENTE: $selftest" | Set-Content -LiteralPath (Join-Path $EvidenceDir 'selftest-resumo.txt') -Encoding UTF8
 }
 
 $argsList = @("--frames", "$Frames", "--width", "$Width", "--height", "$Height", "--vsync", "$Vsync")

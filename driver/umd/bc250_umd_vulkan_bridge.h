@@ -75,6 +75,7 @@ typedef struct _BC250_VK_DISPATCH {
     PFN_vkCmdBindDescriptorSets vkCmdBindDescriptorSets;
     PFN_vkCmdSetViewport vkCmdSetViewport;
     PFN_vkCmdSetScissor vkCmdSetScissor;
+    PFN_vkCmdSetBlendConstants vkCmdSetBlendConstants;
     PFN_vkCmdPushConstants vkCmdPushConstants;
     PFN_vkCmdDraw vkCmdDraw;
     PFN_vkCmdDrawIndexed vkCmdDrawIndexed;
@@ -138,8 +139,22 @@ typedef struct _BC250_UMD_VK_BRIDGE {
 
     PFN_radv_bc250_present_scanout pfnPresentScanout;
     PFN_radv_bc250_get_memory_gpu_va pfnGetMemoryGpuVa;
+
+    /*
+     * Faixa DX.21: despejo do assembly ACO de cada pipeline no log da UMD.
+     * Somente leitura (VK_KHR_pipeline_executable_properties). Ausente =
+     * declarado no log, nunca fatal: instrumentacao nao pode derrubar o device.
+     */
+    BOOL PipelineIrCaptureEnabled;
+    uint32_t PipelineIrDumpCount;
+    PFN_vkGetPipelineExecutablePropertiesKHR pfnGetPipelineExecutableProperties;
+    PFN_vkGetPipelineExecutableInternalRepresentationsKHR pfnGetPipelineExecutableInternalRepresentations;
+
     BC250_VK_DISPATCH vk;
 } BC250_UMD_VK_BRIDGE;
+
+VOID Bc250UmdVkDumpPipelineIr(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, VkPipeline pipeline,
+    const void *vsModuleTag, const void *psModuleTag);
 
 /* Functions exported by the Vulkan Bridge */
 BOOL Bc250UmdVkBridgeInit(_Out_ BC250_UMD_VK_BRIDGE *pBridge);
@@ -155,6 +170,10 @@ VkResult Bc250UmdVkFlushCommands(_Inout_ BC250_UMD_VK_BRIDGE *pBridge);
 VOID Bc250UmdVkReleaseDescriptorBatches(BC250_UMD_VK_BRIDGE *pBridge);
 
 VkFormat Bc250UmdVkFormatFromDxgi(uint32_t dxgiFormat);
+/* DX.24: igual, mas devolve VK_FORMAT_UNDEFINED para formato nao mapeado explicitamente. */
+VkFormat Bc250UmdVkFormatFromDxgiStrict(uint32_t dxgiFormat);
+/* DX.24: swizzle que uma view de AMOSTRAGEM precisa para imitar o D3D (X8 -> alpha 1, A8 -> so' alpha). */
+VkComponentMapping Bc250UmdVkSrvComponentMapping(uint32_t dxgiFormat);
 BOOL Bc250UmdVkEnsureLinearPresentBuf(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, uint32_t width, uint32_t height);
 uint32_t Bc250UmdVkInspectLinearPresentBuf(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, uint32_t width, uint32_t height);
 

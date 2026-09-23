@@ -294,6 +294,152 @@ static int Bc250RunGpuvaSpaceContractTest(void)
         CHECK(occ.Mapped == 0u && occ.Teardown == 0u && occ.Reusable == 0u);
         CHECK(Bc250GpuvaSpaceDescribeOccupancy(&occSpace, NULL) == BC250_GPUVA_BAD_ARGUMENT);
     }
+
+    /*
+     * DISCRIMINADOR DE ENDERECO DE FAULT (20/09) -- replay da Corrida 46.
+     *
+     * O registrador devolveu LOGICAL_PAGE_ADDR=0x2431 e o header vendorizado
+     * nao declara o tamanho da pagina. As duas conversoes defensaveis caem em
+     * lugares opostos, e este caso monta EXATAMENTE a vizinhanca medida no
+     * silicio para provar que o discriminador separa as duas:
+     *
+     *   << 12 -> 0x2431000    (36 MB)   -- nada mapeado la
+     *   << 20 -> 0x243100000  (9,05 GB) -- entre 0x242F00000 e 0x243340000,
+     *                                      que sao alocacoes REAIS da winsys
+     *                                      observadas no log da UMD.
+     */
+    {
+        static BC250_GPUVA_SPACE faultSpace;
+        BC250_GPUVA_RANGE_RECORD r;
+        BC250_GPUVA_ADDRESS_SITE site;
+        uint64_t faultRangeId = 0ull;
+        const uint64_t page = 0x2431ull;
+
+        CHECK(Bc250GpuvaSpaceInitialize(&faultSpace, 34u) == BC250_GPUVA_OK);
+
+        /* Duas faixas vivas, com os endereços medidos na Corrida 46. */
+        memset(&r, 0, sizeof(r));
+        r.State = BC250_GPUVA_RANGE_MAPPED;
+        r.BaseGpuVa = 0x242F00000ull;
+        r.Size = 0x100000ull;                    /* termina em 0x243000000 */
+        r.EndGpuVa = r.BaseGpuVa + r.Size;
+        r.OwnerProcess = (BC250_MCDM_HANDLE)0x7777;
+        r.Permissions = BC250_PTE_READABLE;
+        r.IsResident = 1u;
+        CHECK(Bc250GpuvaSpaceInsertRange(&faultSpace, &r, &faultRangeId) == BC250_GPUVA_OK);
+
+        memset(&r, 0, sizeof(r));
+        r.State = BC250_GPUVA_RANGE_MAPPED;
+        r.BaseGpuVa = 0x243340000ull;
+        r.Size = 0x10000ull;
+        r.EndGpuVa = r.BaseGpuVa + r.Size;
+        r.OwnerProcess = (BC250_MCDM_HANDLE)0x7777;
+        r.Permissions = BC250_PTE_READABLE;
+        r.IsResident = 1u;
+        CHECK(Bc250GpuvaSpaceInsertRange(&faultSpace, &r, &faultRangeId) == BC250_GPUVA_OK);
+
+        /* Candidato << 12: tem de cair FORA, e longe de tudo. */
+        memset(&site, 0, sizeof(site));
+        CHECK(Bc250GpuvaSpaceDescribeAddress(&faultSpace, page << 12, &site) == BC250_GPUVA_OK);
+        CHECK(site.Found == 0u);
+        CHECK(site.LiveRangesScanned == 2u);
+        /* Esta abaixo de TUDO: nao ha faixa viva abaixo dele. */
+        CHECK(site.HasBelow == 0u);
+        CHECK(site.HasAbove == 1u);
+        CHECK(site.NearestAboveBase == 0x242F00000ull);
+
+        /* Candidato << 20: tem de cair FORA tambem, mas ENTRE as duas faixas. */
+        memset(&site, 0, sizeof(site));
+        CHECK(Bc250GpuvaSpaceDescribeAddress(&faultSpace, page << 20, &site) == BC250_GPUVA_OK);
+        CHECK(site.Found == 0u);
+        CHECK(site.HasBelow == 1u);
+        CHECK(site.NearestBelowEnd == 0x243000000ull);
+        CHECK(site.DistanceAboveEnd == (0x243100000ull - 0x243000000ull));
+        CHECK(site.HasAbove == 1u);
+        CHECK(site.NearestAboveBase == 0x243340000ull);
+
+        /*
+         * CONTRAPONTO, para as assercoes acima nao virarem carimbo: se a faixa
+         * de baixo for grande o bastante para conter o candidato << 20, ele tem
+         * de ser reportado DENTRO, com o offset exato.
+         */
+        memset(&r, 0, sizeof(r));
+        r.State = BC250_GPUVA_RANGE_MAPPED;
+        r.BaseGpuVa = 0x243050000ull;
+        r.Size = 0x200000ull;                    /* cobre 0x243100000 */
+        r.EndGpuVa = r.BaseGpuVa + r.Size;
+        r.BackingSegmentId = 2u;                 /* GART / memoria de sistema */
+        r.BackingSegmentOffset = 0x12340000ull;
+        r.OwnerProcess = (BC250_MCDM_HANDLE)0x7777;
+        r.Permissions = BC250_PTE_READABLE;
+        r.IsResident = 1u;
+        CHECK(Bc250GpuvaSpaceInsertRange(&faultSpace, &r, &faultRangeId) == BC250_GPUVA_OK);
+
+        memset(&site, 0, sizeof(site));
+        CHECK(Bc250GpuvaSpaceDescribeAddress(&faultSpace, page << 20, &site) == BC250_GPUVA_OK);
+        CHECK(site.Found == 1u);
+        CHECK(site.BaseGpuVa == 0x243050000ull);
+        CHECK(site.OffsetInRange == (0x243100000ull - 0x243050000ull));
+        CHECK(site.OwnerProcess == (BC250_MCDM_HANDLE)0x7777);
+        /*
+         * O segmento de backing tem de ser PROPAGADO. Sem ele, a Corrida 47
+         * nomeou a alocacao que falha e nao disse se ela vive na VRAM local
+         * (Seg 1, ~243 MB, limitada pela janela BAR) ou na GART em memoria de
+         * sistema (Seg 2, 2 GB) -- que exigem consertos opostos.
+         */
+        CHECK(site.BackingSegmentId == 2u);
+        CHECK(site.BackingSegmentOffset == 0x12340000ull);
+
+        /*
+         * Faixa NAO mapeada nao pode contar como acerto -- seria falso positivo
+         * capaz de INVERTER o veredito do discriminador.
+         */
+        faultSpace.Ranges[2].State = BC250_GPUVA_RANGE_TEARDOWN;
+        memset(&site, 0, sizeof(site));
+        CHECK(Bc250GpuvaSpaceDescribeAddress(&faultSpace, page << 20, &site) == BC250_GPUVA_OK);
+        CHECK(site.Found == 0u);
+    }
+
+    /*
+     * DX.11 -- replay exato da Corrida 56. Tres faults, em VMIDs diferentes,
+     * trouxeram AddrPagina=0x200040. <<12 cai no inicio de uma faixa viva de
+     * 0x40000 bytes; <<20 excede o teto traduzivel de 34 bits. O token e' o
+     * nome imutavel que precisa sobreviver ate o diagnostico post-mortem.
+     */
+    {
+        static BC250_GPUVA_SPACE targetSpace;
+        BC250_GPUVA_RANGE_RECORD target;
+        BC250_GPUVA_ADDRESS_SITE site;
+        uint64_t targetRangeId = 0ull;
+        const uint64_t page = 0x200040ull;
+
+        CHECK(Bc250GpuvaSpaceInitialize(&targetSpace, 34u) == BC250_GPUVA_OK);
+        memset(&target, 0, sizeof(target));
+        target.State = BC250_GPUVA_RANGE_MAPPED;
+        target.BaseGpuVa = page << 12;
+        target.Size = 0x40000ull;
+        target.EndGpuVa = target.BaseGpuVa + target.Size;
+        target.OwnerProcess = (BC250_MCDM_HANDLE)0x1C;
+        target.Allocation = (BC250_MCDM_HANDLE)0xAE;
+        target.AllocationToken = 0x52455300000000AEull;
+        target.BackingSegmentId = 1u;
+        target.BackingSegmentOffset = 0x5B00000ull;
+        target.Permissions = BC250_PTE_READABLE;
+        target.IsResident = 1u;
+        CHECK(Bc250GpuvaSpaceInsertRange(&targetSpace, &target,
+            &targetRangeId) == BC250_GPUVA_OK);
+
+        memset(&site, 0, sizeof(site));
+        CHECK(Bc250GpuvaSpaceDescribeAddress(&targetSpace, page << 12,
+            &site) == BC250_GPUVA_OK);
+        CHECK(site.Found == 1u);
+        CHECK(site.OffsetInRange == 0ull);
+        CHECK(site.Allocation == (BC250_MCDM_HANDLE)0xAE);
+        CHECK(site.AllocationToken == 0x52455300000000AEull);
+        CHECK(site.BackingSegmentId == 1u);
+        CHECK(site.BackingSegmentOffset == 0x5B00000ull);
+        CHECK((page << 20) >= BC250_GPUVA_TRANSLATABLE_LIMIT);
+    }
     return 0;
 }
 

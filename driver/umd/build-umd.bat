@@ -108,6 +108,21 @@ cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\core" 
 if errorlevel 1 exit /b 1
 "%ODIR%\umd_descriptor_binding_test.exe"
 if errorlevel 1 exit /b 1
+echo [PIPELINE IR TEST] umd_pipeline_ir_dump_test
+cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\core" /I "%ROOTDIR%\driver\wdk" /I "%ROOTDIR%\inc" /Fo"%ODIR%\umd_pipeline_ir_dump_test.obj" /Fe"%ODIR%\umd_pipeline_ir_dump_test.exe" "%ROOTDIR%\driver\tests\umd_pipeline_ir_dump_test.c" "%ODIR%\bc250_umd_vulkan_bridge.obj" "%ODIR%\bc250_wddm_winsys.obj" "%ODIR%\bc250_allocation_abi_contract.obj" /link kernel32.lib advapi32.lib
+if errorlevel 1 exit /b 1
+"%ODIR%\umd_pipeline_ir_dump_test.exe" 2>nul
+if errorlevel 1 exit /b 1
+echo [PRESENT GRID TEST] umd_present_grid_test
+cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\core" /I "%ROOTDIR%\driver\wdk" /I "%ROOTDIR%\inc" /Fo"%ODIR%\umd_present_grid_test.obj" /Fe"%ODIR%\umd_present_grid_test.exe" "%ROOTDIR%\driver\tests\umd_present_grid_test.c" "%ODIR%\bc250_umd_vulkan_bridge.obj" "%ODIR%\bc250_wddm_winsys.obj" "%ODIR%\bc250_allocation_abi_contract.obj" /link kernel32.lib advapi32.lib
+if errorlevel 1 exit /b 1
+"%ODIR%\umd_present_grid_test.exe" 2>nul
+if errorlevel 1 exit /b 1
+echo [STATE TRANSLATE TEST] umd_state_translate_test
+cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\core" /I "%ROOTDIR%\driver\wdk" /I "%ROOTDIR%\inc" /Fo"%ODIR%\umd_state_translate_test.obj" /Fe"%ODIR%\umd_state_translate_test.exe" "%ROOTDIR%\driver\tests\umd_state_translate_test.c" "%ODIR%\bc250_umd_vulkan_bridge.obj" "%ODIR%\bc250_wddm_winsys.obj" "%ODIR%\bc250_allocation_abi_contract.obj" /link kernel32.lib advapi32.lib
+if errorlevel 1 exit /b 1
+"%ODIR%\umd_state_translate_test.exe" 2>nul
+if errorlevel 1 exit /b 1
 
 cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\core" /Fo"%ODIR%\vkd3d_shader_adapter_test.obj" /c "%ROOTDIR%\driver\tests\vkd3d_shader_adapter_test.c"
 if errorlevel 1 exit /b 1

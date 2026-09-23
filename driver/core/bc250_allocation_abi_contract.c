@@ -172,7 +172,8 @@ int Bc250AllocationRequiresCpuAccess(
         tokenClass == BC250_ALLOCATION_TOKEN_CLASS_GDI ||
         tokenClass == BC250_ALLOCATION_TOKEN_CLASS_CPU_VISIBLE ||
         tokenClass == BC250_ALLOCATION_TOKEN_CLASS_COMMAND ||
-        tokenClass == BC250_ALLOCATION_TOKEN_CLASS_PROOF) {
+        tokenClass == BC250_ALLOCATION_TOKEN_CLASS_PROOF ||
+        tokenClass == BC250_ALLOCATION_TOKEN_CLASS_RESOURCE) {
         return 1;
     }
     return 0;

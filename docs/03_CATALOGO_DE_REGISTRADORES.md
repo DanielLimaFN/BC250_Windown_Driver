@@ -213,6 +213,40 @@ Esses registros configuram estado de dispatch; eles não substituem firmware, MQ
 | `CP_PQ_WPTR_POLL_CNTL1` | `0x1E24` idx0 | `0x0C210` | P1/P2 | `QUEUE_MASK[31:0]`, um bit por fila (`gc_10_1_0_sh_mask.h`). Base `+0x1260` dw confirmada por `0x1E23→0xC20C`, `0x1E2D→0xC234` e `0x1E55→0xC2D4`. Escrito por `kgd_gfx_v9_hqd_load` antes de `INIT_FETCHER`/`ACTIVE`. Candidato 3.30. |
 | `CP_PQ_STATUS` | `0x1E58` idx0 | `0x0C2E0` | P1/P2 | `DOORBELL_ENABLE` é bit 1; Linux sweep observou `0x2`. `0x7960` fica em quarentena. |
 
+## SQ — sonda de onda (wave probe)
+
+Catalogado em 20/09, na preparação da Corrida 45. Estes endereços **já eram usados** por
+`Bc250WaveProbeRun` com a procedência citada apenas no header do driver; faltavam aqui, o que
+é exigência da Lei 7. Todos foram conferidos **um a um** contra
+`inc/linux_ref/gc_10_1_0_offset.h`, que está vendorizado neste repositório.
+
+| Registro | mmREG conhecido | BAR5 byte usado | Classe | Nota |
+|---|---:|---:|---:|---|
+| `SQ_DEBUG_STS_GLOBAL` | `0x10A9` idx0 | `0x08C24` | P1/P0 | `BUSY[0]`, `WAVE_LEVEL_SA0[15:4]`, `WAVE_LEVEL_SA1[27:16]` por `gc_10_1_0_sh_mask.h`. Ondas em voo. Medido vivo na Corrida 44: `0x00000011` no 5º TDR. |
+| `SQ_IND_INDEX` | `0x1118` idx0 | `0x08DE0` | P1/P2 | Janela indireta; recebe `(ixSQ_WAVE_* << 16) \| WAVE_ID`. |
+| `GRBM_GFX_INDEX` | `0x2200` idx1 | `0x30800` | P1/P0 | Seletor SE/SA/instância. Já em uso pelo caminho MEC. A sonda **restaura BROADCAST_ALL com readback** e falha fechada (`SELECTOR_STUCK`) se não conseguir. |
+
+Endereços **indiretos** `ix`, lidos pela janela `SQ_IND_INDEX` — não são offsets de BAR e **não**
+levam base de segmento. Fonte: `gc_10_1_0_offset.h:11188-11199`, conferidos byte a byte:
+
+| Índice indireto | Valor | Classe | Nota |
+|---|---:|---:|---|
+| `ixSQ_WAVE_STATUS` | `0x0102` | P1 | Validade da onda; `Bc250WaveProbeStatusIsValid` recusa leitura inválida. |
+| `ixSQ_WAVE_TRAPSTS` | `0x0103` | P1 | Estado de trap/exceção da onda. |
+| `ixSQ_WAVE_IB_STS` | `0x0107` | P1 | Contadores de instrução em voo. |
+| `ixSQ_WAVE_PC_LO` | `0x0108` | P1 | PC da onda, parte baixa. |
+| `ixSQ_WAVE_PC_HI` | `0x0109` | P1 | PC da onda, parte alta. |
+| `ixSQ_WAVE_INST_DW0` | `0x010A` | P1 | Instrução em que a onda está parada. |
+
+**Derivação conferida:** os dois `mm` de idx0 dão base implícita idêntica de `0x1260` dwords
+(`0x08C24/4 − 0x10A9` e `0x08DE0/4 − 0x1118`), e `GRBM_GFX_INDEX` em idx1 dá `0xA000` — os
+mesmos valores já catalogados na seção "Domínios de endereço". A consistência dos três é prova
+de que a base certa foi aplicada a cada segmento.
+
+**NÃO VALIDADO EM HARDWARE:** a sonda indireta nunca executou. Nos cinco TDRs da Corrida 44 ela
+saiu `[TDR_GFX_WAVEPC] DESARMADO: GfxWaveProbe=0 present=1` — inclusive no único TDR com ondas
+vivas. Só `SQ_DEBUG_STS_GLOBAL` tem leitura física até aqui.
+
 ### `gc_10_1_0_offset.h` vendorizado em 14/09 — e **provado contra o silício**
 
 `inc/linux_ref/gc_10_1_0_offset.h` (AMD, 2019; 5.264 offsets) foi aceito por

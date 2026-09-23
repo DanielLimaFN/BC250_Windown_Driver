@@ -8,6 +8,7 @@
 #include "../core/bc250_discovery_tmr_reader.h"
 #include "../core/bc250_platform_register_snapshot.h"
 #include "../core/bc250_gcvm_vmid8_transaction.h"
+#include "../core/bc250_vmid_pool_contract.h"
 #include "../core/bc250_gcvm_global_mmu.h"
 #include "../core/bc250_psp_ring_transaction.h"
 #include "../core/bc250_sdma_f32_transaction.h"

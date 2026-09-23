@@ -32,6 +32,11 @@ VOID Bc250UmdVkDestroyRtv(
     _Inout_ struct _BC250_UMD_DEVICE* pDevice,
     _Inout_ struct _BC250_UMD_RTV* pRtv);
 
+/* DX.28: refaz VkView/VkFb se a rotacao trocou a VkImage do recurso. */
+BOOL Bc250UmdVkRtvFollowResource(
+    _Inout_ struct _BC250_UMD_DEVICE* pDevice,
+    _Inout_ struct _BC250_UMD_RTV* pRtv);
+
 /* Depth Stencil View Lifecycle */
 BOOL Bc250UmdVkCreateDsv(
     _Inout_ struct _BC250_UMD_DEVICE* pDevice,

@@ -143,33 +143,10 @@ index fa2fef4..fafa27e 100644
  
  static inline uint32_t
 diff --git a/src/amd/vulkan/radv_queue.c b/src/amd/vulkan/radv_queue.c
-index 1824002..383bbcb 100644
+index 1824002..47e8040 100644
 --- a/src/amd/vulkan/radv_queue.c
 +++ b/src/amd/vulkan/radv_queue.c
-@@ -685,11 +685,22 @@ radv_emit_graphics(struct radv_device *device, struct radv_cmd_stream *cs)
-       return;
- 
-    if (!device->uses_shadow_regs) {
-+      if (pdev->info.pci_id == 0x13fe) {
-+         /* PACKET3_PREAMBLE_CNTL: BEGIN_CLEAR_STATE (Opcode 0x4A, count=0 -> 2 dw) */
-+         ac_pm4_cmd_add(pm4, PKT3(0x4A, 0, 0));
-+         ac_pm4_cmd_add(pm4, 0);
-+      }
-+
-       ac_pm4_cmd_add(pm4, PKT3(PKT3_CONTEXT_CONTROL, 1, 0));
-       ac_pm4_cmd_add(pm4, S_281_UPDATE_LOAD_ENABLES(1));
-       ac_pm4_cmd_add(pm4, S_282_UPDATE_SHADOW_ENABLES(1));
- 
-       if (has_clear_state) {
-+         if (pdev->info.pci_id == 0x13fe) {
-+            /* PACKET3_PREAMBLE_CNTL: END_CLEAR_STATE (Opcode 0x4A, count=0 -> 2 dw) */
-+            ac_pm4_cmd_add(pm4, PKT3(0x4A, 0, 0));
-+            ac_pm4_cmd_add(pm4, 1);
-+         }
-          ac_pm4_cmd_add(pm4, PKT3(PKT3_CLEAR_STATE, 0, 0));
-          ac_pm4_cmd_add(pm4, 0);
-       }
-@@ -839,7 +850,8 @@ radv_emit_graphics(struct radv_device *device, struct radv_cmd_stream *cs)
+@@ -839,7 +839,8 @@ radv_emit_graphics(struct radv_device *device, struct radv_cmd_stream *cs)
  static void
  radv_init_graphics_state(struct radv_cmd_stream *cs, struct radv_device *device)
  {
@@ -749,7 +726,7 @@ index c40e35c..66d8db9 100644
  
  struct radv_wddm2_bo {
 diff --git a/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.c b/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.c
-index 088f69f..41167f1 100644
+index 088f69f..51018d6 100644
 --- a/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.c
 +++ b/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.c
 @@ -212,15 +212,16 @@ radv_wddm2_queue_init(struct radv_wddm2_winsys *ws, enum amd_ip_type hw_ip,
@@ -840,7 +817,23 @@ index 088f69f..41167f1 100644
  
        D3DKMT_CREATESYNCHRONIZATIONOBJECT2 create_sync = {
           .hDevice = ws->device_h,
-@@ -366,9 +383,10 @@ vk_wddm2_fence_wait(uint32_t device_h, struct vk_wddm2_fence *fence)
+@@ -339,11 +356,15 @@ fail_contexts:
+    return result;
+ }
+ 
++static void radv_wddm2_bc250_concat_release_all(struct radv_wddm2_ctx *ctx);
++
+ static void
+ radv_wddm2_ctx_destroy(struct radeon_winsys_ctx *rwctx)
+ {
+    struct radv_wddm2_ctx *ctx = radv_wddm2_ctx(rwctx);
+ 
++   radv_wddm2_bc250_concat_release_all(ctx);
++
+    for (uint32_t ip = 0; ip < AMD_NUM_IP_TYPES; ip++)
+       radv_wddm2_queue_destroy(&ctx->per_ip[ip].queue);
+    radv_wddm2_queue_destroy(&ctx->ace_queue);
+@@ -366,9 +387,10 @@ vk_wddm2_fence_wait(uint32_t device_h, struct vk_wddm2_fence *fence)
     NTSTATUS status;
     HANDLE async_event = 0;
  
@@ -854,7 +847,7 @@ index 088f69f..41167f1 100644
     if (p_atomic_read(fence->value_map) >= fence->wait_value)
        return true;
  
-@@ -383,36 +401,33 @@ vk_wddm2_fence_wait(uint32_t device_h, struct vk_wddm2_fence *fence)
+@@ -383,36 +405,33 @@ vk_wddm2_fence_wait(uint32_t device_h, struct vk_wddm2_fence *fence)
        .FenceValueArray = &fence->wait_value,
        .hAsyncEvent = async_event,
     };
@@ -906,7 +899,152 @@ index 088f69f..41167f1 100644
  }
  
  static bool
-@@ -589,7 +604,7 @@ radv_wddm2_submit_add_cs(struct radv_wddm2_ctx *ctx, struct submit_pdd_writer *p
+@@ -427,6 +446,144 @@ radv_wddm2_ctx_wait_idle(struct radeon_winsys_ctx *rwctx, enum amd_ip_type ip_ty
+    return ret;
+ }
+ 
++/*
++ * ---------------------------------------------------------------------------
++ * BC-250, faixa DX.22 -- pool de BOs para o IB concatenado.
++ *
++ * MEDIDO na Corrida 67 (22/09, gfx-ib-dump, 32 arquivos): todo IB saia da
++ * MESMA VA 0x244f24000 -- o BO do CS do preambulo -- crescendo 392 DW por
++ * submissao, com o IB n tendo prefixo byte a byte igual ao IB n-1 (576, 976,
++ * 1368 ... 6664 DW). O ramo "UNIFICADO" copiava o CS principal para dentro do
++ * preambulo e gravava cur_offset no cdw do preambulo sem nunca restaurar: a
++ * submissao seguinte partia do fim da anterior e a GPU reexecutava TODOS os
++ * draws antigos, com descriptor sets e shaders ja liberados pela aplicacao.
++ * E' a origem medida do Cid=10 (SQC data) em VA>>8, do Cid=9 (SQC inst) em
++ * 0x200040000 e do tempo de IB crescendo ate o TDR.
++ *
++ * Regra agora: o preambulo e os CS da aplicacao NAO sao escritos. O IB unico
++ * e' montado num BO do pool; o slot fica preso ate uma fence sinalizada DEPOIS
++ * da submissao dele retirar (a fila e' em ordem, entao qualquer fence posterior
++ * cobre as anteriores). Sem fence conhecida e sem slot livre, RECUSA com log:
++ * reescrever um IB que a GPU ainda pode estar lendo e' pior que falhar.
++ * ---------------------------------------------------------------------------
++ */
++static bool
++radv_wddm2_bc250_fence_retired(const struct vk_wddm2_fence *fence)
++{
++   return fence->handle && fence->value_map &&
++          p_atomic_read(fence->value_map) >= fence->wait_value;
++}
++
++static void
++radv_wddm2_bc250_concat_slot_free_bo(struct radv_wddm2_winsys *ws,
++                                     struct radv_wddm2_bc250_concat_slot *slot)
++{
++   if (slot->bo)
++      ws->base.buffer_destroy(&ws->base, slot->bo);
++   slot->bo = NULL;
++   slot->map = NULL;
++   slot->size_dw = 0;
++}
++
++static struct radv_wddm2_bc250_concat_slot *
++radv_wddm2_bc250_concat_acquire(struct radv_wddm2_ctx *ctx, enum amd_ip_type ip, uint32_t need_dw)
++{
++   struct radv_wddm2_winsys *ws = ctx->ws;
++   struct radv_wddm2_bc250_concat_slot *slots = ctx->per_ip[ip].concat;
++   uint32_t *count = &ctx->per_ip[ip].concat_count;
++   struct radv_wddm2_bc250_concat_slot *slot = NULL;
++
++   /* 1. Recolhe os slots cuja submissao ja retirou. */
++   for (uint32_t i = 0; i < *count; i++) {
++      if (slots[i].seq && slots[i].fence_known && radv_wddm2_bc250_fence_retired(&slots[i].fence)) {
++         slots[i].seq = 0;
++         slots[i].fence_known = false;
++      }
++   }
++
++   /* 2. Livre que ja comporta. */
++   for (uint32_t i = 0; i < *count; i++) {
++      if (!slots[i].seq && slots[i].bo && slots[i].size_dw >= need_dw)
++         return &slots[i];
++   }
++
++   /* 3. Livre pequeno (sera realocado) ou slot novo. */
++   for (uint32_t i = 0; i < *count && !slot; i++) {
++      if (!slots[i].seq)
++         slot = &slots[i];
++   }
++   if (!slot && *count < RADV_WDDM2_BC250_CONCAT_SLOTS)
++      slot = &slots[(*count)++];
++
++   /* 4. Todos presos: espera o mais antigo com fence conhecida. */
++   if (!slot) {
++      struct radv_wddm2_bc250_concat_slot *oldest = NULL;
++      for (uint32_t i = 0; i < *count; i++) {
++         if (slots[i].fence_known && (!oldest || slots[i].seq < oldest->seq))
++            oldest = &slots[i];
++      }
++      if (!oldest) {
++         fprintf(stderr, "radv/wddm2: BC-250 CONCAT RECUSA: %u slots presos e NENHUM com fence "
++                         "sinalizada depois da submissao -- nao ha como provar que a GPU terminou "
++                         "de ler; o IB NAO sera reescrito\n", *count);
++         return NULL;
++      }
++      if (!vk_wddm2_fence_wait(ws->device_h, &oldest->fence)) {
++         fprintf(stderr, "radv/wddm2: BC-250 CONCAT RECUSA: espera da fence do slot seq=%" PRIu64
++                         " falhou -- o IB NAO sera reescrito\n", oldest->seq);
++         return NULL;
++      }
++      oldest->seq = 0;
++      oldest->fence_known = false;
++      slot = oldest;
++      if (slot->bo && slot->size_dw >= need_dw)
++         return slot;
++   }
++
++   /* 5. (Re)aloca com as mesmas flags dos BOs de IB do winsys comum. */
++   radv_wddm2_bc250_concat_slot_free_bo(ws, slot);
++   {
++      struct radeon_info *info = ws->base.query_info(&ws->base);
++      const uint32_t align_bytes = MAX2(info->ip[ip].ib_alignment, 4096u);
++      uint64_t size = MAX2((uint64_t)need_dw * 4u + 64u, 64u * 1024u);
++      const enum radeon_bo_flag flags = RADEON_FLAG_CPU_ACCESS | RADEON_FLAG_NO_INTERPROCESS_SHARING |
++                                        RADEON_FLAG_READ_ONLY | RADEON_FLAG_GL2_BYPASS | RADEON_FLAG_GTT_WC;
++      size = align64(size, align_bytes);
++      VkResult result = ws->base.buffer_create(&ws->base, size, align_bytes, ws->base.cs_domain(&ws->base),
++                                               flags, RADV_BO_PRIORITY_CS, 0, NULL, &slot->bo);
++      if (result != VK_SUCCESS || !slot->bo) {
++         slot->bo = NULL;
++         fprintf(stderr, "radv/wddm2: BC-250 CONCAT RECUSA: buffer_create de %" PRIu64 " bytes falhou (%d)\n",
++                 size, (int)result);
++         return NULL;
++      }
++      slot->map = (uint32_t *)radv_buffer_map(&ws->base, slot->bo);
++      if (!slot->map) {
++         radv_wddm2_bc250_concat_slot_free_bo(ws, slot);
++         fprintf(stderr, "radv/wddm2: BC-250 CONCAT RECUSA: map do BO de concatenacao falhou\n");
++         return NULL;
++      }
++      slot->size_dw = (uint32_t)(size / 4u);
++   }
++   return slot;
++}
++
++static void
++radv_wddm2_bc250_concat_release_all(struct radv_wddm2_ctx *ctx)
++{
++   for (uint32_t ip = 0; ip < AMD_NUM_IP_TYPES; ip++) {
++      struct radv_wddm2_bc250_concat_slot *slots = ctx->per_ip[ip].concat;
++      if (!ctx->per_ip[ip].concat_count)
++         continue;
++      /* Um BO que a GPU ainda le nao pode ser destruido: espera a ultima fence. */
++      if (ctx->per_ip[ip].last_submission.handle)
++         (void)vk_wddm2_fence_wait(ctx->ws->device_h, &ctx->per_ip[ip].last_submission);
++      for (uint32_t i = 0; i < ctx->per_ip[ip].concat_count; i++)
++         radv_wddm2_bc250_concat_slot_free_bo(ctx->ws, &slots[i]);
++      ctx->per_ip[ip].concat_count = 0;
++   }
++}
++
+ struct radv_wddm2_cs {
+    struct radv_winsys_cs base;
+    struct set *buffers;
+@@ -589,7 +746,7 @@ radv_wddm2_submit_add_cs(struct radv_wddm2_ctx *ctx, struct submit_pdd_writer *p
           }
        } else {
           WRITE_ENTRY(pdd, GFX_IB, gfx_ib, entry) {
@@ -915,7 +1053,7 @@ index 088f69f..41167f1 100644
              entry->len = ib.cdw * 4;
              entry->flags = flags;
              entry->ip_type = radv_wddm2_cs_translate_ip_type(cs->hw_ip);
-@@ -679,6 +694,119 @@ radv_wddm2_submit_add_queue(struct radv_wddm2_ctx *ctx, struct submit_pdd_writer
+@@ -679,6 +836,119 @@ radv_wddm2_submit_add_queue(struct radv_wddm2_ctx *ctx, struct submit_pdd_writer
     radv_wddm2_cs_submit_add_ibs(ctx, pdd, submit, queue->hw_ip, first_ib);
  }
  
@@ -1035,11 +1173,16 @@ index 088f69f..41167f1 100644
  static VkResult
  radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
                       const struct radv_winsys_submit_info *submit,
-@@ -737,6 +865,115 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+@@ -737,6 +1007,166 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
     if (submit->cs_count > 0) {
        struct radv_winsys_ib first_ib = {};
        struct submit_pdd_writer pdd;
 +      const bool is_bc250 = ctx->ws->is_bc250;
++      struct radv_wddm2_bc250_concat_slot *concat_slot = NULL;
++      const uint32_t *dump_buf = NULL;
++      unsigned dump_cdw = 0;
++      uint64_t dump_va = 0;
++      bool submit_failed_concat = false;
 +
 +      if (is_bc250) {
 +         struct ac_cmdbuf *cs_list[64];
@@ -1067,35 +1210,69 @@ index 088f69f..41167f1 100644
 +               radv_winsys_cs_unchain(cs_list[i]);
 +            }
 +
-+            /* BC-250: Concatena preamble e main CS em cs_list[0] para formar um unico IB linear contiguo */
++            /*
++             * BC-250 (DX.22): concatena preambulo + CS principal(is) + postambulo
++             * num BO PROPRIO do pool. Nenhum CS de origem e' escrito -- em
++             * particular o preambulo, que e' persistente da fila e cujo cdw
++             * crescido fazia cada submissao reexecutar as anteriores.
++             *
++             * So' concatena CS de UM buffer de IB. Um CS que cresceu (chain_ib)
++             * tem o conteudo espalhado em varios BOs encadeados, e cs->buf aponta
++             * so' para o ULTIMO: copia-lo sozinho perderia o comeco. Nesse caso
++             * vai para o encadeamento, declarado.
++             */
 +            struct radv_winsys_cs *rcs0 = radv_winsys_cs(cs_list[0]);
 +            unsigned copy_base = (rcs0->chain_ib && cs_list[0]->cdw >= 4) ? (cs_list[0]->cdw - 4) : cs_list[0]->cdw;
 +            unsigned total_req = copy_base;
-+            for (unsigned i = 1; i < cs_total; i++) {
-+               total_req += cs_list[i]->cdw;
++            unsigned grown_index = UINT32_MAX;
++            for (unsigned i = 0; i < cs_total; i++) {
++               if (radv_winsys_cs(cs_list[i])->num_ib_buffers > 1 && grown_index == UINT32_MAX)
++                  grown_index = i;
++               if (i > 0)
++                  total_req += cs_list[i]->cdw;
 +            }
 +            unsigned total_aligned = (total_req + 7) & ~7u;
 +
-+            if (total_aligned <= rcs0->base.max_dw + 4) {
-+               unsigned cur_offset = copy_base;
++            struct radv_wddm2_bc250_concat_slot *slot = NULL;
++            if (grown_index == UINT32_MAX)
++               slot = radv_wddm2_bc250_concat_acquire(ctx, hw_ip, total_aligned);
++
++            if (slot) {
++               unsigned cur_offset = 0;
++               memcpy(slot->map, cs_list[0]->buf, copy_base * sizeof(uint32_t));
++               cur_offset = copy_base;
 +               for (unsigned i = 1; i < cs_total; i++) {
-+                  memcpy(cs_list[0]->buf + cur_offset, cs_list[i]->buf, cs_list[i]->cdw * sizeof(uint32_t));
++                  memcpy(slot->map + cur_offset, cs_list[i]->buf, cs_list[i]->cdw * sizeof(uint32_t));
 +                  cur_offset += cs_list[i]->cdw;
 +               }
 +               while (cur_offset % 8 != 0) {
-+                  cs_list[0]->buf[cur_offset++] = PKT3(PKT3_NOP, 0, 0);
++                  slot->map[cur_offset++] = PKT3(PKT3_NOP, 0, 0);
 +               }
-+               cs_list[0]->cdw = cur_offset;
-+               rcs0->ib_buffers[0].cdw = cur_offset;
-+               first_ib = rcs0->ib_buffers[0];
-+
++               first_ib.bo = slot->bo;
++               first_ib.va = slot->bo->va;
++               first_ib.cdw = cur_offset;
++               concat_slot = slot;
++               dump_buf = slot->map;
++               dump_cdw = cur_offset;
++               dump_va = slot->bo->va;
 +
 +               static uint32_t s_concat_log_count = 0;
-+               if (s_concat_log_count++ < 5) {
-+                  fprintf(stderr, "radv/wddm2: BC-250 UNIFICADO: %u CS concatenados em IB unico VA=0x%" PRIx64 " DW=%u (%u bytes)\n",
-+                          cs_total, first_ib.va, first_ib.cdw, first_ib.cdw * 4);
++               if (s_concat_log_count++ < 8) {
++                  fprintf(stderr, "radv/wddm2: BC-250 UNIFICADO (DX.22): %u CS em BO proprio slot=%u VA=0x%" PRIx64
++                                  " DW=%u; preambulo INTOCADO (cdw=%u)\n",
++                          cs_total, (unsigned)(slot - ctx->per_ip[hw_ip].concat), first_ib.va, first_ib.cdw,
++                          cs_list[0]->cdw);
 +               }
-+            } else {
++            } else if (grown_index != UINT32_MAX) {
++               fprintf(stderr, "radv/wddm2: BC-250 CONCAT PULADA: CS[%u] cresceu para %u IBs encadeados; "
++                               "copiar so' o ultimo perderia o comeco -- indo para o encadeamento\n",
++                       grown_index, radv_winsys_cs(cs_list[grown_index])->num_ib_buffers);
++            }
++
++            if (!slot && grown_index == UINT32_MAX) {
++               /* A recusa do pool ja foi declarada; nao encadear em silencio. */
++               submit_failed_concat = true;
++            } else if (!slot) {
 +               /* Fallback para chaining caso exceda o buffer */
 +               for (unsigned i = 0; i + 1 < cs_total; i++) {
 +                  bool ok = radv_winsys_cs_chain(cs_list[i], cs_list[i + 1], false);
@@ -1141,17 +1318,29 @@ index 088f69f..41167f1 100644
 +          * concatenacao; usar first_ib.va aqui publicaria 0 justamente no caso
 +          * que faltava cobrir.
 +          */
-+         if (cs_total >= 1 && cs_list[0] != NULL && cs_list[0]->buf != NULL &&
++         /*
++          * DX.22: com a concatenacao em BO proprio, o que a GPU le e' o slot,
++          * nao cs_list[0]. Despejar cs_list[0] publicaria so' o preambulo.
++          */
++         if (dump_buf == NULL && cs_total >= 1 && cs_list[0] != NULL && cs_list[0]->buf != NULL &&
 +             cs_list[0]->cdw > 0) {
-+            struct radv_winsys_cs *dump_cs = radv_winsys_cs(cs_list[0]);
-+            bc250_dump_ib(cs_list[0]->buf, cs_list[0]->cdw,
-+                          dump_cs->ib_buffers[0].va);
++            dump_buf = cs_list[0]->buf;
++            dump_cdw = cs_list[0]->cdw;
++            dump_va = radv_winsys_cs(cs_list[0])->ib_buffers[0].va;
++         }
++         if (dump_buf != NULL && dump_cdw > 0)
++            bc250_dump_ib(dump_buf, dump_cdw, dump_va);
++
++         if (submit_failed_concat) {
++            fprintf(stderr, "radv/wddm2: BC-250 submit RECUSADO: IB concatenado nao pode ser montado "
++                            "sem reescrever memoria que a GPU pode estar lendo (ver CONCAT RECUSA acima)\n");
++            return VK_ERROR_DEVICE_LOST;
 +         }
 +      }
  
        submit_pdd_writer_init(&pdd);
        if (submit->is_gang) {
-@@ -747,7 +984,7 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+@@ -747,7 +1177,7 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
        }
        submit_pdd_writer_finalize(&pdd);
  
@@ -1160,7 +1349,7 @@ index 088f69f..41167f1 100644
  
        if (queue->handle) {
           static uint32_t submit_count = 0;
-@@ -757,25 +994,54 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+@@ -757,25 +1187,59 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
              .HwQueueProgressFenceId = submit_count,
              .CommandBuffer = first_ib.va,
              .CommandLength = first_ib.cdw * 4,
@@ -1217,10 +1406,15 @@ index 088f69f..41167f1 100644
           return VK_ERROR_DEVICE_LOST;
        }
 +
++      /* DX.22: a partir daqui a GPU pode estar lendo o slot; ele fica preso. */
++      if (concat_slot) {
++         concat_slot->seq = ++ctx->per_ip[submit->ip_type].concat_seq;
++         concat_slot->fence_known = false;
++      }
     }
  
     if (signal_count > 0) {
-@@ -783,7 +1049,8 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+@@ -783,7 +1247,8 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
        STACK_ARRAY(uint64_t, values, signal_count);
  
        for (uint32_t i = 0; i < signal_count; i++) {
@@ -1230,7 +1424,7 @@ index 088f69f..41167f1 100644
           values[i] = signals[i].signal_value;
        }
  
-@@ -813,7 +1080,6 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+@@ -813,7 +1278,6 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
        STACK_ARRAY_FINISH(handles);
        STACK_ARRAY_FINISH(values);
  
@@ -1238,8 +1432,70 @@ index 088f69f..41167f1 100644
        if (!NT_SUCCESS(status))
           return VK_ERROR_DEVICE_LOST;
  
+@@ -821,7 +1285,20 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+       ctx->per_ip[submit->ip_type].last_submission.handle = fence->handle;
+       ctx->per_ip[submit->ip_type].last_submission.wait_value = signals[0].signal_value;
+       ctx->per_ip[submit->ip_type].last_submission.value_map = fence->value_map;
+-   }   
++
++      /*
++       * DX.22: esta fence foi sinalizada no mesmo contexto DEPOIS de toda
++       * submissao ja feita nele (fila em ordem), entao cobre todo slot preso
++       * que ainda nao tinha fence conhecida.
++       */
++      struct radv_wddm2_bc250_concat_slot *slots = ctx->per_ip[submit->ip_type].concat;
++      for (uint32_t i = 0; i < ctx->per_ip[submit->ip_type].concat_count; i++) {
++         if (slots[i].seq && !slots[i].fence_known) {
++            slots[i].fence_known = true;
++            slots[i].fence = ctx->per_ip[submit->ip_type].last_submission;
++         }
++      }
++   }
+ 
+    return VK_SUCCESS;
+ }
+diff --git a/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.h b/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.h
+index ef91d5b..6be968b 100644
+--- a/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.h
++++ b/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.h
+@@ -47,6 +47,25 @@ struct radv_wddm2_queue {
+    struct vk_wddm2_fence vm_fence;
+ };
+ 
++/*
++ * BC-250 (faixa DX.22): o IB concatenado vive num BO PROPRIO por submissao,
++ * nunca dentro do CS do preambulo. O ramo anterior copiava o CS principal para
++ * dentro do preambulo (persistente da fila) e deixava o cdw dele crescido; cada
++ * submissao reexecutava todos os draws anteriores (Corrida 67, gfx-ib-dump:
++ * mesma VA, +392 DW por submit, prefixo identico). Um slot so' e' reutilizado
++ * depois que uma fence sinalizada APOS a submissao dele retirou.
++ */
++#define RADV_WDDM2_BC250_CONCAT_SLOTS 32u
++
++struct radv_wddm2_bc250_concat_slot {
++   struct radeon_winsys_bo *bo;
++   uint32_t *map;
++   uint32_t size_dw;
++   uint64_t seq;       /* 0 = livre; senao, numero da submissao que o usa */
++   bool fence_known;   /* existe fence sinalizada depois desta submissao */
++   struct vk_wddm2_fence fence;
++};
++
+ struct radv_wddm2_ctx {
+    struct radv_wddm2_winsys *ws;
+ 
+@@ -55,6 +74,9 @@ struct radv_wddm2_ctx {
+    struct {
+       struct radv_wddm2_queue queue;
+       struct vk_wddm2_fence last_submission;
++      struct radv_wddm2_bc250_concat_slot concat[RADV_WDDM2_BC250_CONCAT_SLOTS];
++      uint32_t concat_count;
++      uint64_t concat_seq;
+    } per_ip[AMD_NUM_IP_TYPES];
+ };
+ 
 diff --git a/src/amd/vulkan/winsys/wddm2/radv_wddm2_winsys.c b/src/amd/vulkan/winsys/wddm2/radv_wddm2_winsys.c
-index e2f4987..580f687 100644
+index e2f4987..247a608 100644
 --- a/src/amd/vulkan/winsys/wddm2/radv_wddm2_winsys.c
 +++ b/src/amd/vulkan/winsys/wddm2/radv_wddm2_winsys.c
 @@ -121,6 +121,12 @@ radv_wddm2_fill_gpu_info(struct radv_wddm2_winsys *ws,
@@ -1306,7 +1562,7 @@ index e2f4987..580f687 100644
              if (metadata.NodeData.EngineType == DXGK_ENGINE_TYPE_3D)
                 node = i;
           }
-@@ -304,17 +328,86 @@ radv_wddm2_fill_gpu_info(struct radv_wddm2_winsys *ws,
+@@ -304,20 +328,104 @@ radv_wddm2_fill_gpu_info(struct radv_wddm2_winsys *ws,
     query_adapter_info(ws, KMTQAITYPE_UMDRIVERPRIVATE, &props1, 3008);
     query_adapter_info(ws, KMTQAITYPE_UMDRIVERPRIVATE, &props2, 17248);
  
@@ -1380,6 +1636,19 @@ index e2f4987..580f687 100644
 +   }
 +
     /* IP Engines */
++   /*
++    * BC-250 (faixa DX.26): ip_discovery_version = GC 10.1.3.
++    *
++    * Sem este campo, ac_fill_hw_ip_info aplica a "correcao de versao do
++    * kernel" (ac_gpu_info.c:475-485): familia NV fora de NAVI10/12/14 recebe
++    * ver_minor = 3, e o GFX1013 virava gfx_level = GFX10_3 (RDNA2). MEDIDO na
++    * Corrida 71: os IBs escreviam DB_VRS_OVERRIDE_CNTL, PA_CL_VRS_CNTL e
++    * SX_PS_DOWNCONVERT_CONTROL, que so existem no GFX10.3, e os contornos de
++    * defeitos do GFX10.1 (has_ngg_fully_culled_bug e outros) ficavam
++    * desligados. O patch da comunidade Linux para o BC-250 corrige o mesmo
++    * ponto (upstream !43465). Com a versao de descoberta, o Mesa usa 10.1.3
++    * direto e nao passa pela correcao.
++    */
     struct drm_amdgpu_info_hw_ip hw_ip_gfx = {
 -      .hw_ip_version_major = 11,
 -      .hw_ip_version_minor = 0,
@@ -1388,6 +1657,7 @@ index e2f4987..580f687 100644
        .available_rings = 0x1,
        .ib_start_alignment = props2.ib_alignments[0].start,
        .ib_size_alignment = props2.ib_alignments[0].size,
++      .ip_discovery_version = (10u << 16) | (1u << 8) | 3u,
     };
     struct drm_amdgpu_info_hw_ip hw_ip_compute = {
 -      .hw_ip_version_major = 11,
@@ -1397,7 +1667,25 @@ index e2f4987..580f687 100644
        .available_rings = 0xf,
        .ib_start_alignment = props2.ib_alignments[1].start,
        .ib_size_alignment = props2.ib_alignments[1].size,
-@@ -410,11 +503,18 @@ radv_wddm2_fill_gpu_info(struct radv_wddm2_winsys *ws,
++      .ip_discovery_version = (10u << 16) | (1u << 8) | 3u,
+    };
+ 
+    /* Firmware versions */
+@@ -396,6 +504,13 @@ radv_wddm2_fill_gpu_info(struct radv_wddm2_winsys *ws,
+    ac_fill_bug_info(info);
+    ac_fill_tess_info(info);
+    ac_fill_compiler_info(info, &dev);
++   /* DX.26: identidade efetiva, para a corrida confirmar sem depender do IB. */
++   fprintf(stderr, "radv/wddm2: BC-250 IDENTIDADE: gfx_level=%d (GFX10=%d GFX10_3=%d) family=%d "
++                   "gfx_ip=%u.%u ngg_fully_culled_bug=%d\n",
++           (int)info->gfx_level, (int)GFX10, (int)GFX10_3, (int)info->family,
++           info->ip[AMD_IP_GFX].ver_major, info->ip[AMD_IP_GFX].ver_minor,
++           (int)info->compiler_info.has_ngg_fully_culled_bug);
++   fflush(stderr);
+    ac_get_default_max_submitted_ibs(info);
+    ac_fill_attribute_ring_info(info);
+    //set_custom_cu_en_mask(info);
+@@ -410,11 +525,18 @@ radv_wddm2_fill_gpu_info(struct radv_wddm2_winsys *ws,
  static NTSTATUS
  radv_wddm2_query_marketing_name(struct radv_wddm2_winsys *ws, char *name, size_t name_len)
  {
@@ -1418,7 +1706,7 @@ index e2f4987..580f687 100644
  
     char *old_locale = setlocale(LC_CTYPE, "en_US.utf8");
     size_t len = wcstombs(name, registry.AdapterString, name_len);
-@@ -593,7 +693,7 @@ radv_wddm2_winsys_create(const struct vk_dx_adapter_info *adapter_info,
+@@ -593,7 +715,7 @@ radv_wddm2_winsys_create(const struct vk_dx_adapter_info *adapter_info,
     VkResult result = VK_SUCCESS;
     struct radv_wddm2_winsys *ws = NULL;
     NTSTATUS status;
@@ -1427,7 +1715,7 @@ index e2f4987..580f687 100644
  
     /* We have to keep this lock till insertion. */
     simple_mtx_lock(&winsys_creation_mutex);
-@@ -605,7 +705,10 @@ radv_wddm2_winsys_create(const struct vk_dx_adapter_info *adapter_info,
+@@ -605,7 +727,10 @@ radv_wddm2_winsys_create(const struct vk_dx_adapter_info *adapter_info,
        goto fail;
     }
  
@@ -1439,7 +1727,7 @@ index e2f4987..580f687 100644
     if (entry) {
        ws = (struct radv_wddm2_winsys *)entry->data;
        ++ws->refcount;
-@@ -635,8 +738,7 @@ radv_wddm2_winsys_create(const struct vk_dx_adapter_info *adapter_info,
+@@ -635,8 +760,7 @@ radv_wddm2_winsys_create(const struct vk_dx_adapter_info *adapter_info,
     D3DKMT_OPENADAPTERFROMLUID open_adapter = {
        .AdapterLuid = ws->adapter_luid,
     };
@@ -1449,7 +1737,7 @@ index e2f4987..580f687 100644
     status = WDDM2_DISPATCH(OpenAdapterFromLuid(&open_adapter));
     if (!NT_SUCCESS(status)) {
        fprintf(stderr, "Can't open adapter with luid %X%X\n", adapter_info->adapter_luid.LowPart, adapter_info->adapter_luid.HighPart);
-@@ -693,12 +795,31 @@ radv_wddm2_winsys_create(const struct vk_dx_adapter_info *adapter_info,
+@@ -693,12 +817,31 @@ radv_wddm2_winsys_create(const struct vk_dx_adapter_info *adapter_info,
  
     ws->paging_queue_h = create_paging_queue.hPagingQueue;
     ws->paging_fence_h = create_paging_queue.hSyncObject;
@@ -1486,7 +1774,7 @@ index e2f4987..580f687 100644
  
     ws->base.destroy = radv_wddm2_winsys_destroy;
     ws->base.query_info = radv_wddm2_winsys_query_info;
-@@ -716,7 +837,7 @@ radv_wddm2_winsys_create(const struct vk_dx_adapter_info *adapter_info,
+@@ -716,7 +859,7 @@ radv_wddm2_winsys_create(const struct vk_dx_adapter_info *adapter_info,
     ws->sync_types[1] = &ws->sync_binary_type.sync;
     ws->sync_types[2] = NULL;
  

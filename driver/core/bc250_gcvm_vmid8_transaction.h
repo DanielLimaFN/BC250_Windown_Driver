@@ -27,6 +27,46 @@ extern "C" {
 #define BC250_GCVM_VMID8 8u
 /* P1: docs/03, GC_BASE[0]=0x1260, gc_10_1_0_offset.h, BASE_IDX=0. */
 #define BC250_GCVM_COMPUTE_VMID 9u
+
+/*
+ * =========================================================================
+ * INVENTARIO DOS 16 CONTEXTOS GCVM (21/09, apos a Corrida 49).
+ *
+ * POR QUE EXISTE: a Corrida 49 mediu que varios contextos do DWM disputam o
+ * VMID 7. Foram 5 faults e 5 comparacoes de raiz, TODAS divergentes (2, 8, 9,
+ * 14 e 15 carimbos de 16), com 6 raizes distintas em 82 submissoes e o MESMO
+ * IB (0x244FE4000) submetido sob TRES raizes diferentes. O hardware so' tem
+ * UMA raiz por VMID: quando o IB do contexto A executa com a raiz de B
+ * instalada, os enderecos de A nao traduzem -- e' o WALKER_ERROR=6 com
+ * MAPPING_ERROR=1 medido desde a Corrida 45.
+ *
+ * O conserto e' VMID POR CONTEXTO. As pecas ja existem: Bc250GcvmInstallVmid
+ * recebe o VMID, e Bc250Pm4EmitIndirectBuffer JA codifica o VMID no pacote.
+ * Falta saber QUAIS VMIDs estao livres -- e assumir isso seria a quarta
+ * hipotese desta investigacao a morrer por leitura de codigo.
+ *
+ * DERIVACAO DOS ENDERECOS (Lei 7). Conferida contra DUAS fontes independentes:
+ * os strides de gc_10_1_0_offset.h (CNTL 1 dword por contexto, PT_BASE 2) e as
+ * constantes de CONTEXT0 ja presentes em bc250_compute_service.c.
+ *
+ *   CNTL       = 0xA200 + vmid*4     (VMID7 -> 0xA21C, VMID8 -> 0xA220)
+ *   PT_BASE_LO = 0xA3AC + vmid*8     (VMID7 -> 0xA3E4, VMID8 -> 0xA3EC)
+ *   PT_BASE_HI = PT_BASE_LO + 4
+ *
+ * O inventario continua SOMENTE LEITURA. Depois da Corrida 52, a allowlist de
+ * ESCRITA ganhou somente os sete offsets exatos dos VMIDs pertencentes ao
+ * pool; isto nao muda o inventario nem abre intervalos de MMIO.
+ * =========================================================================
+ */
+#define BC250_GCVM_CONTEXT_COUNT 16u
+#define BC250_GCVM_CNTL_BASE     0x0000A200u
+#define BC250_GCVM_CNTL_STRIDE   4u
+#define BC250_GCVM_PT_BASE_LO_BASE   0x0000A3ACu
+#define BC250_GCVM_PT_BASE_STRIDE    8u
+#define BC250_GCVM_PT_START_LO_BASE  0x0000A42Cu
+#define BC250_GCVM_PT_END_LO_BASE    0x0000A4ACu
+
+
 #define BC250_GCVM_VMID9_CNTL        0x0000A224u
 #define BC250_GCVM_VMID9_PT_BASE_LO  0x0000A3F4u
 #define BC250_GCVM_VMID9_PT_BASE_HI  0x0000A3F8u
@@ -139,11 +179,14 @@ typedef uint32_t (*BC250_GCVM_VMID8_READ32)(
 typedef uint32_t (*BC250_GCVM_VMID8_WRITE32)(
     void *Context, uint32_t ByteOffset, uint32_t Value);
 typedef uint32_t (*BC250_GCVM_VMID8_FLUSH)(void *Context);
+typedef uint32_t (*BC250_GCVM_FLUSH_VMID)(void *Context, uint32_t Vmid);
 
 typedef struct BC250_GCVM_VMID8_INTERFACE {
     BC250_GCVM_VMID8_READ32 Read32;
     BC250_GCVM_VMID8_WRITE32 Write32;
     BC250_GCVM_VMID8_FLUSH Flush;
+    /* InstallVmid exige este callback: o VMID escolhido nao pode se perder. */
+    BC250_GCVM_FLUSH_VMID FlushVmid;
     void *Context;
     uint32_t Identity;
 } BC250_GCVM_VMID8_INTERFACE;
@@ -165,6 +208,7 @@ typedef struct BC250_GCVM_VMID8_EVIDENCE {
 
 typedef struct BC250_GCVM_VMID8_INSTALL_EVIDENCE {
     uint64_t PageTablePhysical;
+    uint32_t Vmid;
     uint32_t BaseLowProgrammed;
     uint32_t BaseHighProgrammed;
     uint32_t StartLowProgrammed;
@@ -204,6 +248,29 @@ static __inline uint32_t Bc250GcvmIsComputeRegister(uint32_t Offset)
         Offset == BC250_GCVM_VMID9_PT_START_LO || Offset == BC250_GCVM_VMID9_PT_START_HI ||
         Offset == BC250_GCVM_VMID9_PT_END_LO || Offset == BC250_GCVM_VMID9_PT_END_HI;
 }
+
+/*
+ * Reconhece somente os sete registradores de UM contexto GCVM. Nao usar uma
+ * faixa: entre CNTL, PT_BASE, PT_START e PT_END existem registradores de
+ * outras familias. O limite de VMID tambem e parte do contrato fail-closed.
+ */
+static __inline uint32_t Bc250GcvmIsContextRegisterForVmid(
+    uint32_t Vmid, uint32_t Offset)
+{
+    uint32_t pairOffset;
+
+    if (Vmid >= BC250_GCVM_CONTEXT_COUNT) return 0u;
+    if (Offset == BC250_GCVM_CNTL_BASE +
+            (Vmid * BC250_GCVM_CNTL_STRIDE)) return 1u;
+
+    pairOffset = Vmid * BC250_GCVM_PT_BASE_STRIDE;
+    return Offset == BC250_GCVM_PT_BASE_LO_BASE + pairOffset ||
+        Offset == BC250_GCVM_PT_BASE_LO_BASE + pairOffset + 4u ||
+        Offset == BC250_GCVM_PT_START_LO_BASE + pairOffset ||
+        Offset == BC250_GCVM_PT_START_LO_BASE + pairOffset + 4u ||
+        Offset == BC250_GCVM_PT_END_LO_BASE + pairOffset ||
+        Offset == BC250_GCVM_PT_END_LO_BASE + pairOffset + 4u;
+}
 uint32_t Bc250GcvmComputeCanSwitch(uint64_t Submitted, uint64_t Retired);
 BC250_GCVM_VMID8_STATUS Bc250GcvmComputeInstall(
     uint64_t Root, uint64_t Submitted, uint64_t Retired,
@@ -227,12 +294,61 @@ BC250_GCVM_VMID8_STATUS Bc250GcvmInstallVmid(
     const BC250_GCVM_VMID8_INTERFACE *Interface,
     BC250_GCVM_VMID8_INSTALL_EVIDENCE *Evidence);
 
+uint32_t Bc250GcvmContextCntlOffset(uint32_t Vmid);
+uint32_t Bc250GcvmContextPtBaseLoOffset(uint32_t Vmid);
+
+typedef struct BC250_GCVM_CONTEXT_INVENTORY_ENTRY {
+    uint32_t Vmid;
+    uint32_t CntlRead;       /* 1 = leitura bem-sucedida */
+    uint32_t Cntl;
+    uint32_t Enabled;        /* ENABLE_CONTEXT, bit 0 */
+    uint32_t PtBaseRead;
+    uint64_t PageTableBase;  /* HI:LO, sem os bits de flag */
+    uint32_t InUse;          /* Enabled != 0 OU raiz != 0 */
+} BC250_GCVM_CONTEXT_INVENTORY_ENTRY;
+
+typedef struct BC250_GCVM_CONTEXT_INVENTORY {
+    BC250_GCVM_CONTEXT_INVENTORY_ENTRY Entries[BC250_GCVM_CONTEXT_COUNT];
+    uint32_t Scanned;
+    uint32_t InUseCount;
+    uint32_t FreeCount;
+    uint32_t UnreadableCount;
+    uint32_t FreeMask;       /* bit N = VMID N livre e legivel */
+} BC250_GCVM_CONTEXT_INVENTORY;
+
+BC250_GCVM_VMID8_STATUS Bc250GcvmScanContexts(
+    const BC250_GCVM_VMID8_INTERFACE *Interface,
+    BC250_GCVM_CONTEXT_INVENTORY *Inventory);
+
 BC250_GCVM_VMID8_STATUS Bc250GcvmVmid8Install(
     uint64_t PageTablePhysical,
     const BC250_GCVM_VMID8_INTERFACE *Interface,
     BC250_GCVM_VMID8_INSTALL_EVIDENCE *Evidence);
 
 BC250_GCVM_VMID8_STATUS Bc250GcvmVmid8Uninstall(
+    const BC250_GCVM_VMID8_INTERFACE *Interface,
+    BC250_GCVM_VMID8_INSTALL_EVIDENCE *Evidence);
+
+/*
+ * DX.15 -- DESARMAR O CONTEXTO GCVM DE UM VMID DO POOL.
+ *
+ * POR QUE EXISTE (achado por leitura apos a Corrida 61): Bc250VmidPoolRelease
+ * era SOMENTE SOFTWARE. Quando o contexto morria, a entrada do pool era
+ * limpa e o VMID voltava para a lista de livres -- mas o SILICIO continuava
+ * com CNTL habilitado e PT_BASE apontando para a raiz do processo morto, que
+ * o VidMm pode liberar e reutilizar a qualquer momento.
+ *
+ * E o gemeo exato de Bc250GcvmVmid8Uninstall, que so' existia para o VMID 8
+ * fixo. Mesma ordem, pelo mesmo motivo: desabilitar o CNTL PRIMEIRO (para que
+ * nenhuma traducao nova nasca da tabela velha), depois zerar os registradores
+ * de endereco, e so' entao invalidar a TLB DAQUELE VMID -- invalidar antes de
+ * desabilitar deixaria a janela aberta em vez de fecha-la.
+ *
+ * Usa FlushVmid (por VMID), nunca Flush (fixo): invalidar o VMID errado
+ * deixaria a traducao velha viva justamente no slot que esta sendo devolvido.
+ */
+BC250_GCVM_VMID8_STATUS Bc250GcvmUninstallVmid(
+    uint32_t Vmid,
     const BC250_GCVM_VMID8_INTERFACE *Interface,
     BC250_GCVM_VMID8_INSTALL_EVIDENCE *Evidence);
 

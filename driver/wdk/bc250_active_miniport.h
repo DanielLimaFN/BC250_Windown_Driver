@@ -22,6 +22,8 @@
 #include "../core/bc250_vram_allocator.h"
 #include "../core/bc250_mcdm_object_contract.h"
 #include "../core/bc250_gpuva_space_contract.h"
+#include "../core/bc250_vmid_pool_contract.h"
+#include "../core/bc250_fault_latch_contract.h"
 #include "../core/bc250_gpuva_journal_contract.h"
 #include "../core/bc250_gpuva_sdma_broker_contract.h"
 #include "../core/bc250_submit_command_contract.h"
@@ -309,6 +311,10 @@ typedef struct BC250_GFX_ENGINE {
     uint32_t TdrResets;
     uint32_t LastSubmitSizeDwords;
     uint64_t LastSubmitVa;
+    /* DX.29: VMID do ultimo INDIRECT_BUFFER emitido (0xFFFFFFFF = nenhum) e
+     * quantas sincronizacoes de troca de VMID foram emitidas no anel. */
+    uint32_t LastSubmitVmid;
+    uint32_t VmidSwitchSyncs;
 
     BC250_GFX_RING_PLAN Plan;
     BC250_GFX_RING_TXN_EVIDENCE Evidence;
@@ -356,6 +362,97 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     BC250_GCVM_VMID8_INSTALL_EVIDENCE UserVmidInstallEvidence;
     BC250_MCDM_HANDLE UserVmidInstalledContext;
     uint64_t UserVmidInstalledRootPhysical;
+    /*
+     * =====================================================================
+     * CARIMBO DE RAIZ POR SUBMISSAO GFX (21/09, apos a Corrida 48).
+     *
+     * A Corrida 48 mostrou que a PTE do endereco que falha PODE EXISTIR: em
+     * 0x243100000 a caminhada resolveu (L1 valido -> L0 PTE valida ->
+     * PA=0x4519CC000), enquanto em 0x242100000 o PDE de nivel 1 estava ZERO.
+     * Logo o defeito NAO e' "nunca escrevemos a PTE" -- e' dessincronizacao no
+     * TEMPO entre software e hardware. Sobraram tres leituras:
+     *
+     *   1. RAIZ TROCADA -- a GPU acessa endereco do contexto A enquanto o
+     *      VMID 7 carrega a raiz do contexto B. Houve 43 trocas de contexto
+     *      nesse VMID numa corrida so.
+     *   2. CORRIDA DE PUBLICACAO -- a GPU acessou antes de a PTE ser escrita.
+     *   3. TLB OBSOLETO -- a PTE existe e o TLB guardou a negativa.
+     *
+     * As tres exigem consertos diferentes, e o log nao as distinguia porque a
+     * caminhada do fault usa a raiz do INSTANTE DO TDR, que pode nao ser a do
+     * instante da submissao. Este anel guarda, por submissao, QUAL raiz estava
+     * instalada -- e no fault as duas sao comparadas lado a lado.
+     *
+     * Anel pequeno e de escrita barata: preenchido no caminho quente de
+     * submissao, entao nao aloca, nao trava e nao loga. Quem loga e' o fault.
+     * =====================================================================
+     */
+#define BC250_GFX_SUBMIT_STAMP_SLOTS 16u
+    struct {
+        uint64_t Fence;
+        uint64_t RootAtSubmit;
+        uint64_t IbGpuVa;
+        uint32_t Vmid;
+        uint32_t PageTableEpoch;
+    } GfxSubmitStamps[BC250_GFX_SUBMIT_STAMP_SLOTS];
+    /*
+     * DX.6 -- SEGUNDO INVENTARIO, PARA FECHAR A DUVIDA DE ALIASING.
+     *
+     * A Corrida 50 varreu os 16 contextos GCVM e devolveu EmUso=0, Livres=16,
+     * Ilegiveis=0. Mas os 16 leram valores IDENTICOS (Cntl=0x007FFE80,
+     * PtBase=0), e isso e indistinguivel de aliasing de leitura -- 16 offsets
+     * caindo no mesmo registrador produziriam exatamente esse retrato.
+     *
+     * O discriminador e temporal: guardar a foto do primeiro inventario e
+     * repetir a varredura DEPOIS de instalar VMID 7/8. Se so' esses dois
+     * mudarem, os offsets sao distintos e o inventario vale. Se TODOS os 16
+     * mudarem, e aliasing e o inventario inteiro cai.
+     *
+     * Comecar o alocador de VMID sobre medicao nao confirmada seria construir
+     * sobre areia: tres hipoteses desta investigacao ja morreram assim.
+     */
+    uint32_t GcvmInventoryFirstCntl[BC250_GCVM_CONTEXT_COUNT];
+    uint64_t GcvmInventoryFirstPtBase[BC250_GCVM_CONTEXT_COUNT];
+    uint32_t GcvmInventoryFirstValid;
+    volatile LONG GcvmInventorySecondDone;
+    /*
+     * DX.7 -- POOL DE VMID POR CONTEXTO (fatia minima).
+     *
+     * O bloco longo com a medicao que justifica isto esta em
+     * bc250_vmid_pool_contract.h. Resumo: a Corrida 49 mediu 6 raizes
+     * distintas em 82 submissoes e o MESMO IB submetido sob TRES raizes,
+     * porque varios contextos disputam o unico VMID 7.
+     *
+     * O pool ALOCA, registra a raiz observada e recebe o resultado da
+     * instalacao lateral em Installed* por entrada. A submissao ainda segue em
+     * BC250_GCVM_USER_VMID para isolar esta faixa da futura troca no pacote.
+     */
+    /*
+     * Acquire/NoteRoot rodam em SubmitCommandVirtual (DISPATCH_LEVEL),
+     * Release roda em DestroyContext e o TDR tira um retrato do mapa. O
+     * ObjectLock nao cobre esses tres caminhos e nem pode ser adquirido no
+     * submit. Este spin lock e, portanto, a autoridade de serializacao do
+     * pool; nenhum chamador acessa Entries[] ou os contadores sem ele.
+     */
+    KSPIN_LOCK VmidPoolLock;
+    BC250_VMID_POOL VmidPool;
+    /*
+     * DX.12 -- estado de telemetria do flush dos VMIDs do pool. Nao participa
+     * de decisao nenhuma: serve para a linha [FLUSH_POOL_VMIDS] sair quando a
+     * mascara MUDA em vez de a cada FlushTlb, que e' frequente. Nao precisa do
+     * VmidPoolLock -- e' lido e escrito so' dentro do flush, e um retrato
+     * desatualizado no pior caso faz a linha sair uma vez a mais.
+     */
+    /*
+     * DX.17 -- ultimo PDE que NOS escrevemos no indice da arena, retido para o
+     * TDR comparar com o que estiver la. Diagnostico puro: nao autoriza nada.
+     */
+    uint64_t ArenaPdeLastWritten;
+    uint32_t ArenaPdeWriteSeq;
+    uint32_t FlushPoolLastMask;
+    uint32_t FlushPoolLogCount;
+    uint32_t GfxSubmitStampNext;
+    uint32_t GfxSubmitStampCount;
     BC250_GCVM_COMPUTE_BINDING ComputeVmidBinding;
     BC250_PSP_RING_STATUS PspRingStatus;
     BC250_PSP_RING_EVIDENCE PspRingEvidence;

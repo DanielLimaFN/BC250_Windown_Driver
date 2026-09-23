@@ -12,8 +12,12 @@
 - **Assunto do commit base:** `HACK: vulkan/wddm2: always check status`
 - **Origin:** `https://gitlab.freedesktop.org/lfrb/mesa.git`
 - **Árvore de trabalho:** `C:\Users\Daniel\Desktop\bc250-win\bc250-win\mesa-radv-wddm` (~1,6 GB)
-- **SHA-256 do patch:** `2b21bde03dfd36d9fca05f7310e9a0a1d9472ca58a08f342acb75327486dd575`
-- **SHA-256 do DLL:** `7837c96027e5e56233fa16735cbe22a301a62f61d1e0075ad833efddeefe5868`
+- **SHA-256 do patch:** `743048311433e329d01621bf2021a0ca627120c69608c6aeb7ae6b59af6e87fe` (faixa DX.29, 22/09/2026: DX.26 + remocao do PREAMBLE_CNTL 0/1 do fork em radv_emit_graphics)
+- **SHA-256 do DLL:** `5988b38e86febb514c4c5f1d5fb5ce5a4b6fdd2b57668f2a1b6baca3b1a0461f` (DX.22 + DX.26 + DX.29; implantado pelo EXECUTAR_D3D11_NATIVO.cmd). Anterior: `57d60acb...` (Corridas 72-74)
+
+> **DX.26 (22/09/2026):** o winsys passa a declarar `ip_discovery_version = 10.1.3`; sem isso o Mesa aplicava a correcao de versao do kernel e tratava o GFX1013 como GFX10_3 (medido no IB da Corrida 71). NAO VALIDADO EM HARDWARE.
+
+> **DX.22 (22/09/2026):** a concatenacao BC-250 do IB passou a usar BO proprio por submissao (pool por contexto/IP, reciclagem so apos fence), em vez de escrever dentro do CS do preambulo. Corrida 67 mediu o defeito: IBs cumulativos na VA do preambulo, +392 DW por submit. NAO VALIDADO EM HARDWARE.
 
 **A base NÃO é o Mesa main.** É o ramo de desenvolvimento WDDM2 de `lfrb`, e o próprio
 commit base é um `HACK:`. O winsys `src/amd/vulkan/winsys/wddm2/` (9 arquivos) **já existe

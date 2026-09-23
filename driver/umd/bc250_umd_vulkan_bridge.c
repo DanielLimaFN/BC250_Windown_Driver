@@ -114,6 +114,24 @@ static BOOL Bc250UmdVkBridgeInitInternal(_Out_ BC250_UMD_VK_BRIDGE *pBridge)
 {
     Bc250VkTrace("[VK_BRIDGE] Bc250UmdVkBridgeInitInternal: iniciando ponte Vulkan RADV...");
 
+    /*
+     * Faixa DX.20: desativa DCC no RADV. E' a VARIAVEL ISOLADA da Corrida 67,
+     * nao uma causa provada.
+     *
+     * CORRECAO DE REGISTRO (DX.21, 22/09): o comentario anterior atribuia o
+     * fault Cid=10 ao "Texture Cache Pipe (TCP_UTCL0)". FALSO. Em GC 10.1.x o
+     * gmc_v10_0 usa gfxhub_v2_0, cuja tabela de clientes da Cid=8 "TCP",
+     * Cid=9 "SQC (inst)" e Cid=10 "SQC (data)" (P1, gfxhub_v2_0.c upstream,
+     * sha256 BF032415...). O fault em 0x2431000 e' LEITURA ESCALAR, e o SQC nao
+     * le metadados de DCC. A hipotese do DCC nao explica o endereco; o despejo
+     * [VK_PIPELINE_IR] existe para nomear a instrucao que o produz.
+     *
+     * O RADV no Windows le a opcao por GetEnvironmentVariableA
+     * (src/util/os_misc.c:217 do fork), entao SetEnvironmentVariableA alcanca.
+     */
+    SetEnvironmentVariableA("RADV_DEBUG", "nodcc");
+    Bc250VkTrace("[VK_BRIDGE] RADV_DEBUG='nodcc' definido antes do ICD (variavel isolada da Corrida 67; causa NAO provada)");
+
     pBridge->hIcdModule = Bc250LocateAndLoadIcd();
     if (pBridge->hIcdModule == NULL) {
         Bc250VkTrace("[VK_BRIDGE] RECUSA: modulo ICD nao carregado");
@@ -272,7 +290,41 @@ static BOOL Bc250UmdVkBridgeInitInternal(_Out_ BC250_UMD_VK_BRIDGE *pBridge)
     deviceCreateInfo.queueCreateInfoCount = 1;
     deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
 
+    /*
+     * Faixa DX.21: VK_KHR_pipeline_executable_properties, SOMENTE para ler o
+     * programa final do ACO de cada pipeline e grava-lo no log da UMD.
+     *
+     * MEDIDO na Corrida 66: os dois faults sao do SQC -- Cid=10 "SQC (data)" em
+     * 0x2431000 (= VA da imagem >> 8) e Cid=9 "SQC (inst)" em 0x200040000
+     * (gfxhub_v2_0.c, P1). Leitura escalar com endereco igual ao word0 de um T#
+     * so' se nomeia olhando o s_load/s_buffer_load que a produz; sem o programa
+     * isso seria H para sempre.
+     *
+     * Se a criacao com a extensao falhar, o device e' criado exatamente como
+     * antes e a ausencia fica declarada -- a instrumentacao nunca decide se o
+     * device existe.
+     */
+    static const char *const kIrExtensions[] = {VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME};
+    VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR irFeature =
+        {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
+    irFeature.pipelineExecutableInfo = VK_TRUE;
+    deviceCreateInfo.pNext = &irFeature;
+    deviceCreateInfo.enabledExtensionCount = 1;
+    deviceCreateInfo.ppEnabledExtensionNames = kIrExtensions;
+
     res = pBridge->vk.vkCreateDevice(pBridge->PhysicalDevice, &deviceCreateInfo, NULL, &pBridge->Device);
+    if (res == VK_SUCCESS && pBridge->Device != VK_NULL_HANDLE) {
+        pBridge->PipelineIrCaptureEnabled = TRUE;
+    } else {
+        Bc250VkTrace("[VK_PIPELINE_IR] INDISPONIVEL: vkCreateDevice com %s devolveu res=%d; "
+            "device recriado SEM a extensao, programas de shader NAO serao despejados",
+            VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME, res);
+        pBridge->Device = VK_NULL_HANDLE;
+        deviceCreateInfo.pNext = NULL;
+        deviceCreateInfo.enabledExtensionCount = 0;
+        deviceCreateInfo.ppEnabledExtensionNames = NULL;
+        res = pBridge->vk.vkCreateDevice(pBridge->PhysicalDevice, &deviceCreateInfo, NULL, &pBridge->Device);
+    }
     Bc250VkTrace("[VK_BRIDGE] vkCreateDevice: res=%d, Device=%p", res, (void*)pBridge->Device);
     if (res != VK_SUCCESS || pBridge->Device == VK_NULL_HANDLE) {
         Bc250VkTrace("[VK_BRIDGE] ERRO CRITICO: vkCreateDevice falhou (res=%d)", res);
@@ -329,6 +381,7 @@ static BOOL Bc250UmdVkBridgeInitInternal(_Out_ BC250_UMD_VK_BRIDGE *pBridge)
     LOAD_VK_DEV(vkCmdBindDescriptorSets);
     LOAD_VK_DEV(vkCmdSetViewport);
     LOAD_VK_DEV(vkCmdSetScissor);
+    LOAD_VK_DEV(vkCmdSetBlendConstants);
     LOAD_VK_DEV(vkCmdPushConstants);
     LOAD_VK_DEV(vkCmdDraw);
     LOAD_VK_DEV(vkCmdDrawIndexed);
@@ -346,6 +399,21 @@ static BOOL Bc250UmdVkBridgeInitInternal(_Out_ BC250_UMD_VK_BRIDGE *pBridge)
     LOAD_VK_DEV(vkQueueSubmit);
     LOAD_VK_DEV(vkWaitForFences);
     LOAD_VK_DEV(vkDeviceWaitIdle);
+
+    if (pBridge->PipelineIrCaptureEnabled) {
+        pBridge->pfnGetPipelineExecutableProperties = (PFN_vkGetPipelineExecutablePropertiesKHR)
+            pBridge->vk.vkGetDeviceProcAddr(pBridge->Device, "vkGetPipelineExecutablePropertiesKHR");
+        pBridge->pfnGetPipelineExecutableInternalRepresentations = (PFN_vkGetPipelineExecutableInternalRepresentationsKHR)
+            pBridge->vk.vkGetDeviceProcAddr(pBridge->Device, "vkGetPipelineExecutableInternalRepresentationsKHR");
+        if (pBridge->pfnGetPipelineExecutableProperties == NULL ||
+            pBridge->pfnGetPipelineExecutableInternalRepresentations == NULL) {
+            pBridge->PipelineIrCaptureEnabled = FALSE;
+        }
+    }
+    Bc250VkTrace("[VK_PIPELINE_IR] captura %s (props=%p reps=%p)",
+        pBridge->PipelineIrCaptureEnabled ? "ARMADA" : "DESARMADA",
+        (void*)pBridge->pfnGetPipelineExecutableProperties,
+        (void*)pBridge->pfnGetPipelineExecutableInternalRepresentations);
 
     pBridge->vk.vkGetDeviceQueue(pBridge->Device, pBridge->GraphicsQueueFamily, 0, &pBridge->GraphicsQueue);
     Bc250VkTrace("[VK_BRIDGE] vkGetDeviceQueue: GraphicsQueue=%p", (void*)pBridge->GraphicsQueue);
@@ -398,6 +466,127 @@ static BOOL Bc250UmdVkBridgeInitInternal(_Out_ BC250_UMD_VK_BRIDGE *pBridge)
     pBridge->RecordingActive = FALSE;
     Bc250VkTrace("[VK_BRIDGE] Bc250UmdVkBridgeInitInternal: CONCLUIDO COM SUCESSO!");
     return TRUE;
+}
+
+#define BC250_PIPELINE_IR_MAX_PIPELINES 32u
+#define BC250_PIPELINE_IR_MAX_EXECUTABLES 8u
+#define BC250_PIPELINE_IR_MAX_REPRESENTATIONS 8u
+#define BC250_PIPELINE_IR_MAX_BYTES (96u * 1024u)
+
+/*
+ * Grava no log da UMD o programa final de cada estagio do pipeline, linha a
+ * linha, com o rotulo [VK_PIPELINE_IR] P<n> E<m>. Preferencia: "Assembly"
+ * (sem LLVM o RADV entrega ali o aco_print_program pos-RA, com cada s_load /
+ * s_buffer_load e os SGPRs de origem); se ausente, "ACO IR". NIR fica de fora
+ * por volume. Teto por processo e por representacao, com truncamento
+ * DECLARADO -- nunca silencioso.
+ */
+VOID Bc250UmdVkDumpPipelineIr(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, VkPipeline pipeline,
+    const void *vsModuleTag, const void *psModuleTag)
+{
+    VkPipelineInfoKHR pipelineInfo = {VK_STRUCTURE_TYPE_PIPELINE_INFO_KHR};
+    VkPipelineExecutablePropertiesKHR props[BC250_PIPELINE_IR_MAX_EXECUTABLES];
+    uint32_t execCount = BC250_PIPELINE_IR_MAX_EXECUTABLES;
+    uint32_t pipelineIndex;
+    VkResult res;
+
+    if (pBridge == NULL || pipeline == VK_NULL_HANDLE || !pBridge->PipelineIrCaptureEnabled) {
+        return;
+    }
+    if (pBridge->PipelineIrDumpCount >= BC250_PIPELINE_IR_MAX_PIPELINES) {
+        if (pBridge->PipelineIrDumpCount == BC250_PIPELINE_IR_MAX_PIPELINES) {
+            Bc250VkTrace("[VK_PIPELINE_IR] TETO de %u pipelines atingido neste processo; os seguintes NAO serao despejados",
+                BC250_PIPELINE_IR_MAX_PIPELINES);
+            pBridge->PipelineIrDumpCount++;
+        }
+        return;
+    }
+    pipelineIndex = pBridge->PipelineIrDumpCount++;
+
+    pipelineInfo.pipeline = pipeline;
+    for (uint32_t i = 0; i < BC250_PIPELINE_IR_MAX_EXECUTABLES; ++i) {
+        memset(&props[i], 0, sizeof(props[i]));
+        props[i].sType = VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_PROPERTIES_KHR;
+    }
+    res = pBridge->pfnGetPipelineExecutableProperties(pBridge->Device, &pipelineInfo, &execCount, props);
+    Bc250VkTrace("[VK_PIPELINE_IR] P%u BEGIN pipeline=%p VS=%p PS=%p executaveis=%u res=%d",
+        pipelineIndex, (void*)pipeline, vsModuleTag, psModuleTag, execCount, res);
+    if (res != VK_SUCCESS && res != VK_INCOMPLETE) {
+        return;
+    }
+
+    for (uint32_t e = 0; e < execCount && e < BC250_PIPELINE_IR_MAX_EXECUTABLES; ++e) {
+        VkPipelineExecutableInfoKHR execInfo = {VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INFO_KHR};
+        VkPipelineExecutableInternalRepresentationKHR reps[BC250_PIPELINE_IR_MAX_REPRESENTATIONS];
+        uint32_t repCount = BC250_PIPELINE_IR_MAX_REPRESENTATIONS;
+        int chosen = -1;
+        char *text;
+
+        execInfo.pipeline = pipeline;
+        execInfo.executableIndex = e;
+        memset(reps, 0, sizeof(reps));
+        for (uint32_t r = 0; r < BC250_PIPELINE_IR_MAX_REPRESENTATIONS; ++r) {
+            reps[r].sType = VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INTERNAL_REPRESENTATION_KHR;
+        }
+        /* 1a passada: nomes e tamanhos (pData NULL). */
+        res = pBridge->pfnGetPipelineExecutableInternalRepresentations(pBridge->Device, &execInfo, &repCount, reps);
+        Bc250VkTrace("[VK_PIPELINE_IR] P%u E%u stages=0x%08X nome='%s' subgroup=%u representacoes=%u res=%d",
+            pipelineIndex, e, props[e].stages, props[e].name, props[e].subgroupSize, repCount, res);
+        if (res != VK_SUCCESS && res != VK_INCOMPLETE) {
+            continue;
+        }
+        for (uint32_t r = 0; r < repCount && r < BC250_PIPELINE_IR_MAX_REPRESENTATIONS; ++r) {
+            if (reps[r].isText && strcmp(reps[r].name, "Assembly") == 0) { chosen = (int)r; break; }
+        }
+        if (chosen < 0) {
+            for (uint32_t r = 0; r < repCount && r < BC250_PIPELINE_IR_MAX_REPRESENTATIONS; ++r) {
+                if (reps[r].isText && strcmp(reps[r].name, "ACO IR") == 0) { chosen = (int)r; break; }
+            }
+        }
+        if (chosen < 0 || reps[chosen].dataSize == 0) {
+            Bc250VkTrace("[VK_PIPELINE_IR] P%u E%u SEM representacao textual 'Assembly' nem 'ACO IR'", pipelineIndex, e);
+            continue;
+        }
+        {
+            size_t fullSize = reps[chosen].dataSize;
+            size_t allocSize = fullSize < BC250_PIPELINE_IR_MAX_BYTES ? fullSize : BC250_PIPELINE_IR_MAX_BYTES;
+            text = (char *)calloc(1, allocSize + 1);
+            if (text == NULL) {
+                Bc250VkTrace("[VK_PIPELINE_IR] P%u E%u sem memoria para %zu bytes", pipelineIndex, e, allocSize);
+                continue;
+            }
+            /* 2a passada: o texto. dataSize menor que o total devolve VK_INCOMPLETE e texto truncado. */
+            repCount = BC250_PIPELINE_IR_MAX_REPRESENTATIONS;
+            for (uint32_t r = 0; r < BC250_PIPELINE_IR_MAX_REPRESENTATIONS; ++r) {
+                reps[r].pData = NULL;
+            }
+            reps[chosen].dataSize = allocSize;
+            reps[chosen].pData = text;
+            for (uint32_t r = 0; r < BC250_PIPELINE_IR_MAX_REPRESENTATIONS; ++r) {
+                if ((int)r != chosen) reps[r].dataSize = 0;
+            }
+            res = pBridge->pfnGetPipelineExecutableInternalRepresentations(pBridge->Device, &execInfo, &repCount, reps);
+            text[allocSize] = '\0';
+            Bc250VkTrace("[VK_PIPELINE_IR] P%u E%u '%s' %zu bytes%s res=%d -- inicio",
+                pipelineIndex, e, reps[chosen].name, fullSize,
+                fullSize > allocSize ? " (TRUNCADO NO TETO)" : "", res);
+            {
+                char *cursor = text;
+                uint32_t lineNo = 0;
+                while (*cursor != '\0') {
+                    char *end = strchr(cursor, '\n');
+                    if (end != NULL) *end = '\0';
+                    if (end > cursor && end[-1] == '\r') end[-1] = '\0';
+                    Bc250VkTrace("[VK_PIPELINE_IR] P%u E%u %04u| %.600s", pipelineIndex, e, lineNo++, cursor);
+                    if (end == NULL) break;
+                    cursor = end + 1;
+                }
+                Bc250VkTrace("[VK_PIPELINE_IR] P%u E%u fim (%u linhas)", pipelineIndex, e, lineNo);
+            }
+            free(text);
+        }
+    }
+    Bc250VkTrace("[VK_PIPELINE_IR] P%u END", pipelineIndex);
 }
 
 VOID Bc250UmdVkReleaseDescriptorBatches(BC250_UMD_VK_BRIDGE *pBridge)
@@ -573,6 +762,40 @@ VkResult Bc250UmdVkFlushCommands(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
 
 VkFormat Bc250UmdVkFormatFromDxgi(uint32_t dxgiFormat)
 {
+    VkFormat strict = Bc250UmdVkFormatFromDxgiStrict(dxgiFormat);
+    /*
+     * Criacao de RECURSO mantem o fallback historico para BGRA8 (formato que o
+     * DWM usa na cadeia); atributo de VERTICE usa a versao estrita e recusa.
+     */
+    return (strict != VK_FORMAT_UNDEFINED) ? strict : VK_FORMAT_B8G8R8A8_UNORM;
+}
+
+VkComponentMapping Bc250UmdVkSrvComponentMapping(uint32_t dxgiFormat)
+{
+    VkComponentMapping m;
+    m.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+    m.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+    m.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+    m.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+    switch (dxgiFormat) {
+    case 88: /* DXGI_FORMAT_B8G8R8X8_UNORM: o D3D devolve alpha = 1 */
+    case 93: /* DXGI_FORMAT_B8G8R8X8_UNORM_SRGB */
+        m.a = VK_COMPONENT_SWIZZLE_ONE;
+        break;
+    case 65: /* DXGI_FORMAT_A8_UNORM: o D3D devolve (0,0,0,a); a imagem Vulkan e' R8 */
+        m.r = VK_COMPONENT_SWIZZLE_ZERO;
+        m.g = VK_COMPONENT_SWIZZLE_ZERO;
+        m.b = VK_COMPONENT_SWIZZLE_ZERO;
+        m.a = VK_COMPONENT_SWIZZLE_R;
+        break;
+    default:
+        break;
+    }
+    return m;
+}
+
+VkFormat Bc250UmdVkFormatFromDxgiStrict(uint32_t dxgiFormat)
+{
     switch (dxgiFormat) {
     case 2:  /* DXGI_FORMAT_R32G32B32A32_FLOAT */
         return VK_FORMAT_R32G32B32A32_SFLOAT;
@@ -602,9 +825,11 @@ VkFormat Bc250UmdVkFormatFromDxgi(uint32_t dxgiFormat)
         return VK_FORMAT_R32G32_UINT;
     case 18: /* DXGI_FORMAT_R32G32_SINT */
         return VK_FORMAT_R32G32_SINT;
+    case 27: /* DXGI_FORMAT_R8G8B8A8_TYPELESS */
     case 28: /* DXGI_FORMAT_R8G8B8A8_UNORM */
-    case 29: /* DXGI_FORMAT_R8G8B8A8_UNORM_SRGB */
         return VK_FORMAT_R8G8B8A8_UNORM;
+    case 29: /* DXGI_FORMAT_R8G8B8A8_UNORM_SRGB -- DX.24: antes caia em UNORM (gama errada) */
+        return VK_FORMAT_R8G8B8A8_SRGB;
     case 30: /* DXGI_FORMAT_R8G8B8A8_UINT */
         return VK_FORMAT_R8G8B8A8_UINT;
     case 31: /* DXGI_FORMAT_R8G8B8A8_SNORM */
@@ -662,13 +887,23 @@ VkFormat Bc250UmdVkFormatFromDxgi(uint32_t dxgiFormat)
         return VK_FORMAT_B5G6R5_UNORM_PACK16;
     case 86: /* DXGI_FORMAT_B5G5R5A1_UNORM */
         return VK_FORMAT_B5G5R5A1_UNORM_PACK16;
+    /*
+     * DX.24: os comentarios anteriores estavam TROCADOS (88 rotulado como SRGB,
+     * 90/91 como X8). Valores de dxgiformat.h: 87 B8G8R8A8_UNORM,
+     * 88 B8G8R8X8_UNORM, 90 B8G8R8A8_TYPELESS, 91 B8G8R8A8_UNORM_SRGB,
+     * 92 B8G8R8X8_TYPELESS, 93 B8G8R8X8_UNORM_SRGB. O alpha=1 dos X8 sai do
+     * swizzle da view de amostragem (Bc250UmdVkSrvComponentMapping).
+     */
     case 87: /* DXGI_FORMAT_B8G8R8A8_UNORM */
-    case 88: /* DXGI_FORMAT_B8G8R8A8_UNORM_SRGB */
-    case 90: /* DXGI_FORMAT_B8G8R8X8_UNORM */
-    case 91: /* DXGI_FORMAT_B8G8R8X8_UNORM_SRGB */
+    case 88: /* DXGI_FORMAT_B8G8R8X8_UNORM */
+    case 90: /* DXGI_FORMAT_B8G8R8A8_TYPELESS */
+    case 92: /* DXGI_FORMAT_B8G8R8X8_TYPELESS */
         return VK_FORMAT_B8G8R8A8_UNORM;
+    case 91: /* DXGI_FORMAT_B8G8R8A8_UNORM_SRGB */
+    case 93: /* DXGI_FORMAT_B8G8R8X8_UNORM_SRGB */
+        return VK_FORMAT_B8G8R8A8_SRGB;
     default:
-        return VK_FORMAT_B8G8R8A8_UNORM;
+        return VK_FORMAT_UNDEFINED;
     }
 }
 
@@ -825,6 +1060,55 @@ uint32_t Bc250UmdVkInspectLinearPresentBuf(
 
         Bc250VkTrace("[VK_BRIDGE] INSPECAO LINEAR_BUF: Px0..3=[0x%08X 0x%08X 0x%08X 0x%08X] Center(%u,%u)=0x%08X NonZeroSamples=%u/5",
             s0, s1, s2, s3, width / 2, height / 2, sc, nonZeroSamples);
+
+        /*
+         * DX.23 -- GRADE sobre a superficie inteira.
+         *
+         * MEDIDO na Corrida 68: os 16 Presents aceitos do DWM sairam com
+         * NonZeroSamples=0/5, e a conclusao "tudo preto" nao se sustenta: as 5
+         * amostras sao 4 pixels do canto superior esquerdo e o centro, e o draw
+         * daquele quadro tinha scissor 0,1040..2560,1080 -- as 40 linhas de baixo
+         * (barra de tarefas), onde nenhuma amostra caia. Aqui: uma linha a cada
+         * 4 e um pixel a cada 8, com caixa envolvente dos nao-nulos e a faixa
+         * das 40 linhas inferiores contada a parte. O valor devolvido passa a
+         * ser o da grade.
+         */
+        if (width > 0 && height > 0 && (VkDeviceSize)width * height * 4u <= checkSize) {
+            uint32_t gridTotal = 0u, gridNonZero = 0u, bottomTotal = 0u, bottomNonZero = 0u;
+            uint32_t minX = UINT32_MAX, minY = UINT32_MAX, maxX = 0u, maxY = 0u;
+            uint32_t firstValue = 0u, firstX = 0u, firstY = 0u;
+            const uint32_t bottomStart = (height > 40u) ? (height - 40u) : 0u;
+            for (uint32_t y = 0; y < height; y += 4u) {
+                const uint32_t *row = pWords + (size_t)y * width;
+                for (uint32_t x = 0; x < width; x += 8u) {
+                    uint32_t v = row[x];
+                    gridTotal++;
+                    if (y >= bottomStart) bottomTotal++;
+                    if (v != 0u) {
+                        if (gridNonZero == 0u) { firstValue = v; firstX = x; firstY = y; }
+                        gridNonZero++;
+                        if (y >= bottomStart) bottomNonZero++;
+                        if (x < minX) minX = x;
+                        if (y < minY) minY = y;
+                        if (x > maxX) maxX = x;
+                        if (y > maxY) maxY = y;
+                    }
+                }
+            }
+            if (gridNonZero > 0u) {
+                Bc250VkTrace("[VK_BRIDGE] INSPECAO LINEAR_BUF GRADE: NonZero=%u/%u Caixa=(%u,%u)-(%u,%u) "
+                    "Faixa40Inferior=%u/%u Primeiro=0x%08X@(%u,%u)",
+                    gridNonZero, gridTotal, minX, minY, maxX, maxY, bottomNonZero, bottomTotal,
+                    firstValue, firstX, firstY);
+            } else {
+                Bc250VkTrace("[VK_BRIDGE] INSPECAO LINEAR_BUF GRADE: NonZero=0/%u -- superficie inteira preta "
+                    "na grade (1 linha em 4, 1 pixel em 8; Faixa40Inferior=0/%u)", gridTotal, bottomTotal);
+            }
+            nonZeroSamples = gridNonZero;
+        } else {
+            Bc250VkTrace("[VK_BRIDGE] INSPECAO LINEAR_BUF GRADE: PULADA -- %ux%u nao cabe no buffer mapeado (%llu bytes)",
+                width, height, (unsigned long long)checkSize);
+        }
 
         pBridge->vk.vkUnmapMemory(pBridge->Device, pBridge->LinearPresentMem);
     } else {
