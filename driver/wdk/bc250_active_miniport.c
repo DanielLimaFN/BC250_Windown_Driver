@@ -66,6 +66,8 @@ static uint32_t Bc250ActiveFaultLatchRead32(
     void *Context, uint32_t ByteOffset, uint32_t *Value);
 static uint32_t Bc250ActiveFaultLatchWrite32(
     void *Context, uint32_t ByteOffset, uint32_t Value);
+/* DX.35: numeracao da linha do tempo de faltas amostrada nas trocas de VMID. */
+static volatile LONG s_Bc250FaultTimelineSeq = 0;
 static NTSTATUS Bc250ActiveEnsureGlobalMmu(
     BC250_DXGK_ACTIVE_CONTEXT *Context,
     const char *Origin);
@@ -1347,11 +1349,18 @@ static NTSTATUS Bc250ActiveGfxEngineSubmit(
     uint32_t rptr = 0u;
     uint64_t nextFence;
     BC250_PM4_STATUS pm4Status;
-    /* 7 (WAIT_REG_MEM) + 2 (PFP_SYNC_ME) na troca de VMID + 4 (IB) + 8 (RELEASE_MEM) + 4 (NOP pad) */
-    const uint32_t neededDwords = 25u;
+    uint32_t neededDwords;
     BOOLEAN vmidSwitch = FALSE;
     uint32_t prevVmid = 0xFFFFFFFFu;
     uint32_t waitFence = 0u;
+    uint64_t targetRoot = 0ull;
+    BC250_PAGING_FLUSH_TLB_PARAMS flushParams;
+    BC250_GFXHUB_TLB_FLUSH_PLAN flushPlan = {0};
+    BC250_PM4_GFX_VM_SWITCH vmSwitch;
+    uint32_t switchStartCursor = 0u;
+    uint32_t switchPm4[BC250_PM4_GFX_VM_SWITCH_DWORDS + BC250_PM4_DWORDS_INDIRECT_BUFFER];
+    uint32_t switchWord;
+    BOOLEAN dumpFirstSwitch = FALSE;
 
     if (Context == NULL || AssignedFence == NULL || IbGpuVirtualAddress == 0ull || IbSizeDwords == 0u) {
         return STATUS_INVALID_PARAMETER;
@@ -1367,6 +1376,39 @@ static NTSTATUS Bc250ActiveGfxEngineSubmit(
 
     ringDwords = Context->GfxEngine.RingDwords;
     currentWptr = Context->GfxEngine.WptrDwords;
+    prevVmid = Context->GfxEngine.LastSubmitVmid;
+    vmidSwitch = (prevVmid != 0xFFFFFFFFu && prevVmid != Vmid &&
+        Context->GfxEngine.LastSubmittedFence != 0ull);
+    /* 31 dwords da transicao + IB(4) + RELEASE(8) + ate 3 de padding. */
+    neededDwords = vmidSwitch ? (BC250_PM4_GFX_VM_SWITCH_DWORDS + 15u) : 15u;
+
+    if (vmidSwitch) {
+        targetRoot = Bc250VmidPoolInstalledRootForVmid(&Context->VmidPool, Vmid);
+        if (Vmid == BC250_GCVM_USER_VMID && targetRoot == 0ull) {
+            targetRoot = Context->UserVmidInstalledRootPhysical;
+        }
+        flushParams.Vmid = Vmid;
+        flushParams.HubIndex = 0u;
+        flushParams.FlushType = 0u;
+        /*
+         * DX.32: o anel invalida no engine 0, proprio dele. O 17 fica so' para a
+         * CPU (flush de VMID por MMIO, servico de compute), sem disputa entre o
+         * REQ escrito pelo CP e o REQ escrito pela CPU -- o upstream da um engine
+         * por anel (amdgpu_gmc_allocate_vm_inv_eng). Faixa do engine 0 ja
+         * programada 0xFFFFFFFF/0x1F pelo MMU global.
+         */
+        if (targetRoot == 0ull ||
+            Bc250PagingBuildGfxhubTlbFlushPlanForEngine(&flushParams,
+                BC250_GFX_RING_INVALIDATE_ENGINE, &flushPlan) != BC250_PAGING_OK ||
+            flushPlan.EngineId != BC250_GFX_RING_INVALIDATE_ENGINE ||
+            flushPlan.UsesSemaphore != 0u) {
+            ++Context->GfxEngine.SubmitRejected;
+            KeReleaseSpinLock(&Context->GfxEngine.Lock, irql);
+            Bc250DisplayLog("[GfxEngine] SUBMIT RECUSA: VMID_SWITCH_VM_FLUSH raiz READY/plano ausente (VMID=%u Root=0x%llX)\n",
+                Vmid, (unsigned long long)targetRoot);
+            return STATUS_DEVICE_NOT_READY;
+        }
+    }
 
     if (Context->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED) {
         (void)Bc250MmioTopologyRead32(&Context->Core.MmioTransport,
@@ -1388,41 +1430,27 @@ static NTSTATUS Bc250ActiveGfxEngineSubmit(
     nextFence = Context->GfxEngine.LastSubmittedFence + 1ull;
     cursor = currentWptr;
 
-    /*
-     * DX.29 -- SINCRONIA DE TROCA DE VMID NO ANEL GRAFICO (pipeline sync do upstream).
-     *
-     * Corridas 73 e 74 (P0): os 5 travamentos de 240 ondas foram TODOS num IB
-     * logo apos um IB de OUTRO VMID (taxa de base 18-26% dos IBs), e nos faults
-     * de busca de instrucao o VMID do fault era o do IB ANTERIOR. H: o PFP
-     * avanca para o IB novo enquanto o anterior ainda nao terminou.
-     *
-     * O upstream, na troca, emite gfx_v10_0_ring_emit_pipeline_sync -- um
-     * WAIT_REG_MEM no PFP (usepfp=1) sobre a fence do anel -- e, no fim do
-     * vm_flush, PFP_SYNC_ME ("otherwise we might get invalid PFP reads").
-     * Aqui: WAIT_REG_MEM mem/PFP ate a fence do anel alcancar a ultima
-     * submetida, seguido de PFP_SYNC_ME. Codificacao: nvd.h:166-186 e :322.
-     * DIVERGENCIAS DECLARADAS: funcao 5 (>=) em vez de 3 (==) -- a fence e'
-     * monotonica e >= nao trava se o slot ja estiver adiante; o flush de TLB
-     * continua por MMIO na instalacao do VMID, nao no anel.
-     */
-    prevVmid = Context->GfxEngine.LastSubmitVmid;
-    if (prevVmid != 0xFFFFFFFFu && prevVmid != Vmid && Context->GfxEngine.LastSubmittedFence != 0ull) {
+    /* DX.30: fence anterior -> PT_BASE do alvo -> invalidate ENG17/ACK ->
+     * PFP_SYNC_ME -> IB. A instalacao MMIO anterior permanece preflight. */
+    if (vmidSwitch) {
         waitFence = (uint32_t)Context->GfxEngine.LastSubmittedFence;
-        pm4Status = Bc250Pm4EmitWaitRegMem(
-            Context->GfxEngine.RingCpuVirtual, ringDwords, &cursor,
-            BC250_PM4_WAIT_REG_MEM_PFP_MEM_GE,
-            Context->GfxEngine.FenceGpuVa, waitFence, 0xFFFFFFFFu, 4u);
-        if (pm4Status == BC250_PM4_OK) {
-            Context->GfxEngine.RingCpuVirtual[cursor & (ringDwords - 1u)] =
-                BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_PFP_SYNC_ME, 1u);
-            cursor++;
-            Context->GfxEngine.RingCpuVirtual[cursor & (ringDwords - 1u)] = 0u;
-            cursor++;
-            vmidSwitch = TRUE;
-        } else {
+        vmSwitch.FenceGpuVa = Context->GfxEngine.FenceGpuVa;
+        vmSwitch.RootPhysical = targetRoot;
+        vmSwitch.FenceValue = waitFence;
+        vmSwitch.Vmid = Vmid;
+        vmSwitch.PtBaseLoRegisterBytes = BC250_GCVM_PT_BASE_LO_BASE +
+            Vmid * BC250_GCVM_PT_BASE_STRIDE;
+        vmSwitch.RequestRegisterBytes = flushPlan.RequestRegisterOffset;
+        vmSwitch.AckRegisterBytes = flushPlan.AckRegisterOffset;
+        vmSwitch.RequestValue = flushPlan.RequestValue;
+        vmSwitch.AckMask = flushPlan.AckMask;
+        switchStartCursor = cursor;
+        pm4Status = Bc250Pm4EmitGfxVmSwitch(
+            Context->GfxEngine.RingCpuVirtual, ringDwords, &cursor, &vmSwitch);
+        if (pm4Status != BC250_PM4_OK) {
             ++Context->GfxEngine.SubmitRejected;
             KeReleaseSpinLock(&Context->GfxEngine.Lock, irql);
-            Bc250DisplayLog("[GfxEngine] SUBMIT RECUSA: sincronia de troca de VMID %u->%u nao emitida (pm4=%u); o IB nao parte sem ela\n",
+            Bc250DisplayLog("[GfxEngine] SUBMIT RECUSA: VMID_SWITCH_VM_FLUSH %u->%u nao emitido (pm4=%u); IB nao parte\n",
                 prevVmid, Vmid, (uint32_t)pm4Status);
             return STATUS_UNSUCCESSFUL;
         }
@@ -1661,6 +1689,16 @@ static NTSTATUS Bc250ActiveGfxEngineSubmit(
     Context->GfxEngine.LastSubmitVa = IbGpuVirtualAddress;
     Context->GfxEngine.LastSubmitVmid = Vmid;
     if (vmidSwitch) {
+        /* Copia sob o lock: o anel pode girar antes do log fora do lock. */
+        dumpFirstSwitch = (Context->GfxEngine.VmidSwitchSyncs == 0u);
+        if (dumpFirstSwitch) {
+            for (switchWord = 0u;
+                 switchWord < BC250_PM4_GFX_VM_SWITCH_DWORDS + BC250_PM4_DWORDS_INDIRECT_BUFFER;
+                 ++switchWord) {
+                switchPm4[switchWord] = Context->GfxEngine.RingCpuVirtual[
+                    (switchStartCursor + switchWord) & (ringDwords - 1u)];
+            }
+        }
         ++Context->GfxEngine.VmidSwitchSyncs;
     }
     ++Context->GfxEngine.SubmitAccepted;
@@ -1710,9 +1748,67 @@ static NTSTATUS Bc250ActiveGfxEngineSubmit(
         (unsigned long long)nextFence, cursor,
         (unsigned long long)IbGpuVirtualAddress, IbSizeDwords, Vmid);
     if (vmidSwitch) {
-        Bc250DisplayLog("[GfxEngine] VMID_SWITCH_SYNC #%u: VMID %u -> %u antes do Fence=%llu -- PFP espera fence>=%u (WAIT_REG_MEM mem/pfp) + PFP_SYNC_ME\n",
+        Bc250DisplayLog("[GfxEngine] VMID_SWITCH_VM_FLUSH #%u: VMID %u -> %u Root=0x%llX Eng=%u REQ=0x%08X ACK_MASK=0x%08X Fence=%llu WaitFence=%u PM4DW=%u\n",
             Context->GfxEngine.VmidSwitchSyncs, prevVmid, Vmid,
-            (unsigned long long)nextFence, waitFence);
+            (unsigned long long)targetRoot, flushPlan.EngineId, flushPlan.RequestValue, flushPlan.AckMask,
+            (unsigned long long)nextFence, waitFence, BC250_PM4_GFX_VM_SWITCH_DWORDS);
+        if (dumpFirstSwitch) {
+            for (switchWord = 0u;
+                 switchWord < BC250_PM4_GFX_VM_SWITCH_DWORDS + BC250_PM4_DWORDS_INDIRECT_BUFFER;
+                 switchWord += 4u) {
+                Bc250DisplayLog("[GfxEngine] VMID_SWITCH_VM_FLUSH_PM4 +%02u: %08X %08X %08X %08X\n",
+                    switchWord, switchPm4[switchWord], switchPm4[switchWord + 1u],
+                    switchPm4[switchWord + 2u],
+                    (switchWord + 3u < BC250_PM4_GFX_VM_SWITCH_DWORDS + BC250_PM4_DWORDS_INDIRECT_BUFFER)
+                        ? switchPm4[switchWord + 3u] : 0u);
+            }
+        }
+
+        /*
+         * DX.35 -- LINHA DO TEMPO DE FALTAS, AMOSTRADA A CADA TROCA DE VMID.
+         *
+         * Corrida 80 (P0): o latch de GCVM_L2_PROTECTION_FAULT_STATUS guarda so'
+         * o PRIMEIRO fault desde o ultimo CLEAR, e o unico CLEAR era o dreno do
+         * TDR. No TDR 2 o latch trazia um fault de ESCRITA do VMID 2 (processo
+         * morto) e o das ondas presas (VMID 3) ficou escondido atras dele.
+         * Agora cada troca de VMID le o STATUS; se nao-zero, drena pelo mesmo
+         * contrato do TDR (Bc250FaultLatchDrain, CNTL restaurado com readback) e
+         * registra cada entrada decodificada. Assim o latch do proximo TDR e' o
+         * fault mais recente desde a ultima troca -- nao o mais antigo desde o
+         * TDR anterior. Fora do spinlock do anel; teto de 8 leituras do contrato.
+         * Shifts identicos aos de [TDR_GCVM_FAULT] DECODIFICADO (sh_mask.h).
+         */
+        if (Context->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED) {
+            uint32_t sampledStatus = 0u;
+            if (Bc250ActiveFaultLatchRead32(Context,
+                    BC250_REG_GCVM_L2_PROTECTION_FAULT_STATUS, &sampledStatus) != 0u &&
+                sampledStatus != 0u) {
+                BC250_FAULT_LATCH_IO timelineIo;
+                BC250_FAULT_LATCH_EVIDENCE timelineEv;
+                BC250_FAULT_LATCH_STATUS timelineStatus;
+                LONG timelineSeq = InterlockedIncrement(&s_Bc250FaultTimelineSeq);
+                uint32_t entry;
+
+                timelineIo.Context = Context;
+                timelineIo.Read32 = Bc250ActiveFaultLatchRead32;
+                timelineIo.Write32 = Bc250ActiveFaultLatchWrite32;
+                timelineStatus = Bc250FaultLatchDrain(&timelineIo, &timelineEv);
+                Bc250DisplayLog("[GCVM_FAULT_TIMELINE] #%ld na troca VMID %u -> %u (Fence=%llu WaitFence=%u): dreno status=%u Drenados=%u ClearAcked=%u ClearIneficaz=%u Teto=%u Restaurado=%u -- faults ocorridos DESDE a amostra anterior\n",
+                    timelineSeq, prevVmid, Vmid, (unsigned long long)nextFence, waitFence,
+                    (uint32_t)timelineStatus, timelineEv.Drained, timelineEv.ClearAcked,
+                    timelineEv.ClearIneficaz, timelineEv.HitCeiling, timelineEv.RestorePassed);
+                for (entry = 0u; entry < timelineEv.Drained && entry < BC250_FAULT_LATCH_MAX_DRAIN; ++entry) {
+                    uint32_t st = timelineEv.Entries[entry].Status;
+                    Bc250DisplayLog("[GCVM_FAULT_TIMELINE] #%ld.%u Status=0x%08X -> Vmid=%u WalkerError=%u MappingError=%u PermissionFaults=0x%X Cid=%u Rw=%u MoreFaults=%u | GpuVa=0x%llX\n",
+                        timelineSeq, entry, st,
+                        (st & 0x00F00000u) >> 20, (st & 0x0000000Eu) >> 1,
+                        (st & 0x00000100u) >> 8, (st & 0x000000F0u) >> 4,
+                        (st & 0x0003FE00u) >> 9, (st & 0x00040000u) >> 18,
+                        (st & 0x00000001u),
+                        ((unsigned long long)timelineEv.Entries[entry].AddrLo) << 12);
+                }
+            }
+        }
     }
 
     return STATUS_SUCCESS;
@@ -5919,6 +6015,58 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                     }
 
                     /*
+                     * DX.32 -- VMID OBSERVADO DO DISPATCH, SOMENTE LEITURA.
+                     *
+                     * 9 de 9 TDRs de 240 ondas (Corridas 73-77) cairam num dispatch
+                     * logo apos troca de VMID, com o fault sob o VMID do IB ANTERIOR.
+                     * COMPUTE_VMID (mm 0x1BB4, BASE_IDX 0 -> (0x1260+0x1BB4)*4 =
+                     * 0xB850; campo DATA[3:0], gc_10_1_0_sh_mask.h) e' o que o CP
+                     * programou para o dispatch. O upstream nao o escreve por job;
+                     * aqui so' se LE. LIMITE: registrador SH lido pela selecao GRBM
+                     * corrente (GRBM_GFX_CNTL vai junto na linha); a atribuicao ao
+                     * pipe grafico e' H ate uma corrida mostrar valores coerentes.
+                     */
+                    {
+                        uint32_t computeVmid = 0u, grbmCntl = 0u;
+                        uint32_t okCv = Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                            BC250_GFX_REG_COMPUTE_VMID, &computeVmid);
+                        (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                            BC250_GRBM_GFX_CNTL_BYTE_OFFSET, &grbmCntl);
+                        Bc250DisplayLog("[TDR_GFX_VMID] ObservedComputeVmid=%s%u (COMPUTE_VMID=0x%08X lido=%u) UltimoVmidSubmetido=%u GRBM_GFX_CNTL=0x%08X -- somente leitura; comparar com os CARIMBOS de fence/VMID abaixo\n",
+                            okCv ? "" : "INDETERMINADO:", computeVmid & 0xFu, computeVmid, okCv,
+                            activeCtx->GfxEngine.LastSubmitVmid, grbmCntl);
+                    }
+
+                    /*
+                     * DX.33 -- VMID DO PIPE GRAFICO, SEM SELECAO GRBM.
+                     *
+                     * Corrida 78 (P0): COMPUTE_VMID leu 0xCFBB8BBC nos dois TDRs,
+                     * com bits fora de DATA[3:0] e sob GRBM_GFX_CNTL=0 (ME0) --
+                     * registrador de fila de compute lido pela selecao do grafico,
+                     * sem significado (desfecho C3 do docs/348).
+                     * CP_ME0_PIPE0_VMID (mm 0x1DF2, BASE_IDX 0 -> (0x1260+0x1DF2)*4
+                     * = 0xC148; campo VMID[3:0], gc_10_1_0_sh_mask.h) e' por NOME o
+                     * VMID do ME0/pipe0, o pipe do anel grafico, e nao depende de
+                     * GRBM_GFX_CNTL. Offset e campo sao P1; que ele reflita o VMID
+                     * do IB em execucao e' H ate uma corrida mostrar valor coerente.
+                     * Bits fora de [3:0] marcam a leitura como INCOERENTE. Somente
+                     * leitura; nao ha escrita de seletor neste bloco.
+                     */
+                    {
+                        uint32_t pipeVmid = 0u, rbVmid = 0u;
+                        uint32_t okPv = Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                            BC250_GFX_REG_CP_ME0_PIPE0_VMID, &pipeVmid);
+                        uint32_t okRv = Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                            BC250_GFX_REG_CP_RB_VMID, &rbVmid);
+                        Bc250DisplayLog("[TDR_GFX_PIPE_VMID] PipeVmid=%s%u (CP_ME0_PIPE0_VMID=0x%08X lido=%u) RB0_VMID=%u (CP_RB_VMID=0x%08X lido=%u) UltimoVmidSubmetido=%u -- somente leitura, sem selecao GRBM; comparar com os CARIMBOS -0/-1 abaixo\n",
+                            !okPv ? "INDETERMINADO:" :
+                                ((pipeVmid & ~0xFu) != 0u ? "INCOERENTE:" : ""),
+                            pipeVmid & 0xFu, pipeVmid, okPv,
+                            rbVmid & 0xFu, rbVmid, okRv,
+                            activeCtx->GfxEngine.LastSubmitVmid);
+                    }
+
+                    /*
                      * INSPECAO INDIRETA DE ONDA -- so' quando ARMADA e so'
                      * quando o SQ disse que HA onda. Ver o bloco longo em
                      * bc250_gfx_ring_transaction.h para o risco do seletor.
@@ -6000,6 +6148,21 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                                     Bc250DisplayLog("[TDR_GFX_WAVEPC] onda #%u SE=%u SA=%u Inst=%u Wave=%u STATUS=0x%08X PC=0x%08X%08X IB_STS=0x%08X INST_DW0=0x%08X TRAPSTS=0x%08X ValidMask=0x%02X\n",
                                         w, f->SeIndex, f->SaIndex, f->InstanceIndex, f->WaveId,
                                         f->Status, f->PcHi, f->PcLo, f->IbSts, f->InstDw0, f->TrapSts, f->ValidMask);
+                                    /*
+                                     * DX.34 -- VMID DA PROPRIA ONDA PRESA.
+                                     * Corrida 79: CP_ME0_PIPE0_VMID e CP_RB_VMID leram 0 = VMID do
+                                     * anel, nao do IB (T3). SQ_WAVE_HW_ID2.VM_ID (27:24) e' o VMID
+                                     * com que o SQ lancou ESTA onda -- a resposta direta a "o
+                                     * dispatch roda sob o VMID anterior?". Comparar com os CARIMBOS
+                                     * -0/-1. Sem o bit 6 no ValidMask, INDETERMINADO.
+                                     */
+                                    Bc250DisplayLog("[TDR_GFX_WAVE_VMID] onda #%u WaveVmid=%s%u ME=%u PIPE=%u QUEUE=%u (HW_ID2=0x%08X) UltimoVmidSubmetido=%u -- comparar com os CARIMBOS -0 (IB travado) e -1 (anterior)\n",
+                                        w, (f->ValidMask & 0x40u) != 0u ? "" : "INDETERMINADO:",
+                                        BC250_WAVE_HW_ID2_VM_ID(f->HwId2),
+                                        BC250_WAVE_HW_ID2_ME_ID(f->HwId2),
+                                        BC250_WAVE_HW_ID2_PIPE_ID(f->HwId2),
+                                        BC250_WAVE_HW_ID2_QUEUE_ID(f->HwId2),
+                                        f->HwId2, activeCtx->GfxEngine.LastSubmitVmid);
                                 }
                                 if (waveEv.WavesFound == 0u) {
                                     Bc250DisplayLog("[TDR_GFX_WAVEPC] NENHUMA onda localizada nesta varredura rasa -- STATUS zero e INDISTINGUIVEL de slot vazio, entao isto NAO refuta as %u ondas que o SQ contou\n",
@@ -13667,6 +13830,64 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
                             (unsigned long long)targetPte->Flags,
                             (unsigned long long)encoded,
                             (uint32_t)encodeStatus);
+                    }
+                }
+
+                /*
+                 * DX.36 -- SEGUNDO ALVO: 0x2401A1000, SOMENTE LEITURA.
+                 *
+                 * Corridas 80 e 81 (P0): tres faults de ESCRITA sem permissao
+                 * (PermissionFaults=0x4, Cid=0 = CB/DB por gfxhub_v2_0.c) nessa
+                 * pagina, cada um logo apos aposentar o IB 0x2401DC000 (552 DW),
+                 * primeiro IB de um contexto recem-instalado, e SEMPRE com o
+                 * mesmo VMID desse IB -- nao e' mistura de VMID. Nenhum log dizia
+                 * com que flags DXGK a pagina foi mapeada. Esta linha diz, no
+                 * mesmo formato da DX_TARGET_200040.
+                 */
+                {
+                    const uint64_t targetGpuVa2 = 0x2401A1000ull;
+                    const uint64_t firstGpuVa2 =
+                        update->FirstPteVirtualAddress;
+                    uint64_t targetPage2 = 0ull;
+
+                    if (firstGpuVa2 <= targetGpuVa2) {
+                        targetPage2 =
+                            (targetGpuVa2 - firstGpuVa2) /
+                            BC250_GPUVA_PAGE_BYTES;
+                    }
+                    if (firstGpuVa2 <= targetGpuVa2 &&
+                        targetPage2 < update->NumPageTableEntries) {
+                        const DXGK_PTE *targetPte2 =
+                            (update->Flags.Repeat != 0u) ?
+                                &update->pPageTableEntries[0] :
+                                &update->pPageTableEntries[targetPage2];
+                        UINT64 encoded2 = 0ull;
+                        NTSTATUS encodeStatus2 =
+                            Bc250McdmEncodeVidMmPteWithLevel(
+                                Caps, targetPte2, 0u, &encoded2);
+
+                        Bc250DisplayLog("[DX_TARGET_2401A1] MAP: GpuVa=0x%llX MapBase=0x%llX MapPages=%u TargetPage=%llu hProc=%p hAlloc=%p Token=0x%llX Nome=%s AllocBytes=0x%llX AllocKnown=%u | V=%u Z=%u Seg=%u PFN=0x%llX ReadOnly=%u NoExecute=%u CacheCoherent=%u RawFlags=0x%llX | EncodedPte=0x%llX EncodeStatus=0x%08X\n",
+                            (unsigned long long)targetGpuVa2,
+                            (unsigned long long)firstGpuVa2,
+                            update->NumPageTableEntries,
+                            (unsigned long long)targetPage2,
+                            update->hProcess, update->hAllocation,
+                            (unsigned long long)allocationToken,
+                            Bc250ActiveAllocationTokenClassName(
+                                allocationToken),
+                            (unsigned long long)(allocationRecordKnown != 0u ?
+                                allocationRecord.AllocationBytes : 0ull),
+                            allocationRecordKnown,
+                            (uint32_t)targetPte2->Valid,
+                            (uint32_t)targetPte2->Zero,
+                            (uint32_t)targetPte2->Segment,
+                            (unsigned long long)targetPte2->PageAddress,
+                            (uint32_t)targetPte2->ReadOnly,
+                            (uint32_t)targetPte2->NoExecute,
+                            (uint32_t)targetPte2->CacheCoherent,
+                            (unsigned long long)targetPte2->Flags,
+                            (unsigned long long)encoded2,
+                            (uint32_t)encodeStatus2);
                     }
                 }
 

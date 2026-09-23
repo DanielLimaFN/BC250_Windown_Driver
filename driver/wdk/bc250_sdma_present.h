@@ -291,6 +291,20 @@ typedef struct BC250_SDMA_PRESENT_CONTEXT {
     uint64_t ScanoutGpuAddress;
 
     /*
+     * DX.32 -- ULTIMA ESCRITA NO SCANOUT, fonte unica: os wrappers publicos de
+     * Bc250SdmaPresentBlt/BltRect. Corrida 77: cada PRIMARY_COPY do MPO3 copiava
+     * a MESMA origem que o DxgkDdiPresent anterior acabara de copiar (22 de 22
+     * com amostras do destino ja iguais). Com isto a DDI de flip sabe se o
+     * scanout ja recebeu, por INTEIRO e sem escrita posterior, esta origem.
+     * Paginacao do dxgkrnl (fill/INDIRECT) nao passa por aqui e nao mira o
+     * scanout reservado do GOP -- limite declarado.
+     */
+    uint64_t ScanoutLastFullSourceMc;
+    ULONG ScanoutLastFullBytes;
+    volatile LONG ScanoutWriteSequence;
+    BOOLEAN ScanoutLastWriteFull;
+
+    /*
      * Último offset de segmento apresentado via Escape (PRESENT_BLT / Vulkan scanout).
      * Permite a Bc250DxgkDdiPresent apresentar a imagem real destilada quando a swapchain
      * do dxgkrnl vier vazia, eliminando a alternância com tela preta.
@@ -349,6 +363,12 @@ BOOLEAN Bc250SdmaPresentBltRect(
     _In_ ULONG DestY,
     _In_ ULONG Width,
     _In_ ULONG Height);
+
+/* DX.32: o scanout recebeu, por inteiro e sem escrita posterior, esta origem? */
+BOOLEAN Bc250SdmaPresentScanoutHoldsFullCopyOf(
+    _In_ uint64_t SourceGpuAddress,
+    _In_ ULONG ByteCount,
+    _Out_ LONG *WriteSequence);
 
 BOOLEAN Bc250SdmaPresentFill(
     _In_ uint64_t DestGpuAddress,

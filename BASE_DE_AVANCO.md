@@ -1,5 +1,220 @@
 # BASE DE AVANÇO — AMD BC-250 → WDDM com jogos no Windows
 
+> **23/09/2026 — Corrida 82 (10:12:15, lab 3.243.1.0): mecanismo da classe de TDR fechado, 3 de 3.**
+> Relatório: [docs/357](docs/357_CORRIDA82_DX36_RESULTADO.md).
+>
+> - **TDRs:** nos 3, as ondas presas têm o **VMID do IB anterior**, e a linha do tempo registrou, logo antes, a falta
+>   de busca de instrução (`Cid=9`) desse VMID **na página do PC das ondas** (P0). O dispatch do IB novo roda com a
+>   tabela do processo antigo.
+> - **Escrita sem permissão (P1):** o IB `0x2401DC000` renderiza em `CB_COLOR0_BASE=0x2401A0000`, um VA que acabou de
+>   ser remapeado de uma alocação gravável de 16 páginas para uma somente leitura de 20. H: reuso de VA do render
+>   target. Não causa TDR.
+> - **Controles:** reversão OK; sem BugCheck. O desktop apareceu e ficou, com partes faltando; o cursor mudou de
+>   posição por retângulos sujos (5/5). Harness 0/60.
+
+> **23/09/2026 10:06 — tentativa da Corrida 82 abortada ANTES do bind (defeito de host, sem driver instalado).**
+> - `tools/_last_lab_binding.json` estava com 1.762 bytes **todos zero**: foi gravado às 09:41:01, 20 s antes do 0x116
+>   da 81, e os dados não chegaram ao disco. O binder quebrou no `ConvertFrom-Json`; o wrapper fez rollback e regravou
+>   o marcador de boot frio.
+> - **Correção:**
+>   - arquivo restaurado da cópia íntegra `binding-provenance.json` da 81; a versão zerada foi arquivada na pasta dela;
+>   - o gravador passou a `WriteThrough` + `Flush(true)`;
+>   - o leitor, se o registro não parsear, usa a `binding-provenance.json` válida mais recente e avisa. O preflight de
+>     rebaixamento continua valendo.
+>   - Parse do script OK, teste offline com arquivo zerado OK, auditorias PASS.
+> - Pacote 3.243.1.0 inalterado. **Novo boot frio necessário** (o marcador foi regravado com o boot de 10:04).
+
+> **23/09/2026 — faixa DX.36, OFFLINE e sem corrida.** Critério da 82 em
+> [docs/356](docs/356_DX36_CRITERIO_CORRIDA82_REVERSAO_E_ALVO_2401A1.md). **NÃO VALIDADO EM HARDWARE.**
+>
+> - **R1:** `SWITCH_BUFFER` revertido; a troca volta a 31 DW. Portão e teste passam a **proibi-lo**.
+> - **Investigação offline** da escrita sem permissão em `0x2401A1000`:
+>   - 3 de 3 ocorrências (80 e 81) são CB/DB (`Cid=0`), logo depois do IB `0x2401DC000` (552 DW, primeiro IB de um
+>     contexto novo), **com o mesmo VMID do IB**: não é mistura de VMID;
+>   - faltava saber os flags do mapeamento.
+> - **M1:** sonda `[DX_TARGET_2401A1] MAP:`, somente leitura. A 82 é controle da reversão mais medição, sem
+>   comportamento novo.
+> - **Verificação:** 6 de 6 mutações DX.36 reprovam, mais 1 de teste; todas as auditorias PASS.
+> - **Pacote lab 3.243.1.0**, NÃO INSTALADO: SYS `1E1575F5...`, `GfxWaveProbe=1`; UMD/ICD inalterados.
+
+> **23/09/2026 — Corrida 81 (09:40:07, lab 3.242.1.0): desfecho D, o `SWITCH_BUFFER` trava o anel; BugCheck 0x116.**
+> Relatório: [docs/355](docs/355_CORRIDA81_DX35_RESULTADO.md).
+>
+> - **5 de 5 TDRs** com ME e PFP parados em `0xC0008B00`, zero ondas, logo depois de cada troca de VMID. Em seguida,
+>   0x116 com Arg3=0/Arg4=0xD, pilha **conferida** (`TdrBugcheckOnTimeout`, zero quadros nossos, igual a 12–13/09).
+> - **Reverter a V1.**
+> - **Linha do tempo de faltas funcionou:** escrita sem permissão recorrente em `0x2401A1000` (`Vmid=1`, `Cid=0`),
+>   mesmo endereço do TDR 2 da 80. É a pista nova.
+> - O host fechou certo: boot novo e marcador gravado pelo watchdog. BasicDisplay em Código 0.
+
+> **23/09/2026 — faixa DX.35, OFFLINE e sem corrida.** Critério da 81 em
+> [docs/354](docs/354_DX35_CRITERIO_CORRIDA81_SWITCH_BUFFER_E_LINHA_DO_TEMPO_DE_FALTAS.md). **NÃO VALIDADO EM HARDWARE.**
+>
+> - **CORREÇÃO:** a entrada da Corrida 80 dizia que o estado das ondas era novo. `FATAL_HALT`/`XNACK_ERROR` já tinham
+>   sido lidos na Corrida 45; o novo na 80 é o VMID da onda.
+> - **V1 (comportamental, única):** a troca de VMID no anel passou a emitir o **par de `SWITCH_BUFFER`** depois do
+>   `PFP_SYNC_ME`, como em `amdgpu_vm_flush` (upstream v6.6, lido em `amdgpu_vm.c`/`gfx_v10_0.c`). Era a única parte
+>   da sequência upstream que faltava. A troca passa de 31 para 35 DW, e a reserva do anel deriva do tamanho.
+> - **M1 (medição):** `[GCVM_FAULT_TIMELINE]` lê o latch de fault a cada troca de VMID e drena pelo contrato do TDR se
+>   não-zero. O dreno por TDR já existia desde a Corrida 56; faltava amostrar entre TDRs.
+> - **Verificação:** builds EXIT=0; 8 de 8 mutações DX.35 reprovam, mais 1 de teste; DX.33/DX.34 continuam 0 falhas.
+> - **Pacote lab 3.242.1.0**, NÃO INSTALADO: SYS `91767BD0...`, `GfxWaveProbe=1`; UMD/ICD inalterados.
+
+> **23/09/2026 — Corrida 80 (09:14:40, lab 3.241.1.0): as ondas presas estão mortas por falta fatal de memória, e o
+> TDR 1 rodou com o VMID do IB anterior.** Relatório: [docs/353](docs/353_CORRIDA80_DX34_RESULTADO.md).
+>
+> - **Estado das ondas (P0):** `FATAL_HALT` + `XNACK_ERROR` nas 4 ondas lidas de cada TDR; elas nunca retiram.
+>   *(Correção: esse estado já era conhecido desde a Corrida 45. Novo aqui é só o VMID da onda.)*
+> - **TDR 1 (T1):** ondas com VMID 1, IB com VMID 3. Fault `Vmid=1 Cid=9` (busca de instrução), permissão de execução,
+>   PC `0x200040C00`, que é uma página `STAGING` com `NoExecute=1` no espaço do VMID 1.
+> - **TDR 2 (T2):** VMID certo (3), também `FATAL_HALT`; a falta própria não foi capturada (latch antigo).
+> - **Display:** quadro do harness e depois desktop do DWM **ficaram** (`BYTE_PROOF PASS` 256/256), com a entrada
+>   congelada. Retângulos sujos: 1 uso, Match 5/5.
+> - **H1** funcionou: boot novo e marcador gravado pelo watchdog. Sem BugCheck. Harness 1/60.
+
+> **23/09/2026 — faixa DX.34, OFFLINE e sem corrida.** Critério da 80 em
+> [docs/352](docs/352_DX34_CRITERIO_CORRIDA80_RETANGULOS_SUJOS_E_VMID_DA_ONDA.md). **NÃO VALIDADO EM HARDWARE.**
+>
+> - **H1 (host):** o watchdog grava o marcador de boot frio com os ticks do boot corrente, no início do rollback e em
+>   `RECOVERY_OK_ONLINE`. Fecha o furo que deixou a 79 rodar no mesmo boot.
+> - **V1:** o Present Blt copia só `pDstSubRects` (1–16, com Src == Dst == tela cheia), com prova amostral por retângulo.
+> - **V2:** a sonda de ondas lê `SQ_WAVE_HW_ID2.VM_ID` da onda presa, e `GfxWaveProbe=1` foi armado. Troquei o
+>   "marcador no IB" proposto porque nenhum registrador do CP expõe o VMID da onda.
+> - **Verificação:** builds EXIT=0; 11 de 11 mutações DX.34 reprovam, mais 1 de teste; safebind offline PASS.
+> - **Pacote lab 3.241.1.0**, NÃO INSTALADO: SYS `0D681AC8...`; UMD e ICD inalterados. Marcador de boot frio armado.
+
+> **23/09/2026 — Corrida 79 (08:40:28, lab 3.240.1.0): display G, TDR T3, e violação de protocolo.**
+> Relatório: [docs/351](docs/351_CORRIDA79_DX33_RESULTADO.md).
+>
+> - **Sem boot frio após a 78:** o binder aceitou o reboot quente do watchdog. Defeito de host: `RECOVERY_OK_ONLINE` não
+>   grava o marcador de boot frio.
+> - **V1 atuou:** 20 skips, 1 preservando 256/256, confirmado nos 2 Presents seguintes. V2 atuou pela primeira vez (1
+>   `REDUNDANT_SKIP`).
+> - **3 TDRs de 240 ondas pós-troca:** `CP_ME0_PIPE0_VMID=0` = VMID do anel, não do IB (T3).
+> - **Novo apagador:** o Present Blt ignora `pDstSubRects` e copia a superfície inteira (zerada fora do cursor) sobre o
+>   scanout. É a tela preta com cursor travado. Harness 0/60.
+
+> **23/09/2026 — faixa DX.33, OFFLINE e sem corrida.** Critério da 79 em
+> [docs/350](docs/350_DX33_CRITERIO_CORRIDA79_MODECHANGE_E_VMID_DO_PIPE.md). **NÃO VALIDADO EM HARDWARE.**
+>
+> - **V1 (comportamental, única):** `SET_ADDRESS` com `ModeChange` e sem flip deixa de copiar primária vazia (1024
+>   amostras zero) sobre o scanout. Motivo: na 78, 16 de 16 cópias assim apagavam o quadro. MPO1/MPO3 inalterados.
+> - **M1 (medição):** `[TDR_GFX_PIPE_VMID]` lê `CP_ME0_PIPE0_VMID` (0xC148, P1) e `CP_RB_VMID`, sem seleção GRBM.
+> - **Verificação:** builds EXIT=0; 4 auditorias PASS; 8 de 8 mutações do portão DX.33 reprovam.
+> - **Pacote lab 3.240.1.0**, NÃO INSTALADO: SYS `BC6F4FCE...`; UMD `239B046C...` e ICD `5988B38E...` inalterados.
+>   Marca de boot frio ARMADA.
+
+> **23/09/2026 — Corrida 78 (08:13:52, lab 3.239.1.0): classe de TDR C3, V2 não exercitada, e fora do mapa.**
+> Relatório: [docs/349](docs/349_CORRIDA78_DX32_RESULTADO.md).
+>
+> - **Engine 0 funcionou** (79 flushes `Eng=0`, REQ/ACK nos dwords 0x28A3/0x28B5), e ainda houve **2 TDRs de 240 ondas pós-troca
+>   de VMID**. A disputa do engine 17 **não é causa suficiente** (P0).
+> - **`COMPUTE_VMID` não serve:** leu `0xCFBB8BBC` nos dois TDRs, sob `GRBM_GFX_CNTL=0` (C3).
+> - **V2 nunca agiu:** 0 `REDUNDANT_*`, porque 19 de 20 `PRIMARY_COPY` tinham origem zerada.
+> - **Harness 12/60 quadros**, contra o máximo anterior de 1/60. O quadro 1280×720 chegou ao scanout em 0,0: o "quadrado com
+>   triângulo" visto.
+> - **Achado:** a rota `SET_ADDRESS` da DX.31 copia a primária do GOP `0xAAC000`, sempre zerada, sobre o scanout, e apaga o
+>   quadro. Isso aconteceu 16 vezes (P0 amostral).
+> - Controles sem regressão: 5/5 em duas variantes, `nodcc` NÃO MEDIDO por device perdido; 0 BugCheck.
+>   Recuperação: `RECOVERY_OK_ONLINE`.
+
+> **23/09/2026 — faixa DX.32, OFFLINE e sem corrida: engine de invalidação próprio do anel, cópia de flip não
+> repetida e `COMPUTE_VMID` lido no TDR. NÃO VALIDADO EM HARDWARE.** Critério da 78 em
+> [docs/348](docs/348_DX32_CRITERIO_CORRIDA78_ENGINE_PROPRIO_E_COPIA_UNICA.md).
+>
+> - **V1 (comportamental):** o anel gráfico invalida no engine 0 (REQ 0xA28C / ACK 0xA2D4) e a CPU fica no 17. Até a 77
+>   os dois disputavam o engine 17 sem serialização; o upstream dá um engine por anel. Motivação: 9 de 9 TDRs de 240 ondas
+>   em dispatch logo após troca de VMID, resistentes à DX.29 e à DX.30.
+> - **V2 (comportamental):** `PRIMARY_COPY` não repete a cópia que o Present acabou de fazer, e só pula se houver marca de
+>   cópia integral desta origem (fonte única nos wrappers de Blt) **e** 256 amostras pareadas iguais.
+> - **M1 (medição):** `[TDR_GFX_VMID] ObservedComputeVmid` (`COMPUTE_VMID` 0xB850, somente leitura), prometido no docs/344 e
+>   que nunca tinha existido.
+> - **Verificação:** builds EXIT=0; 4 auditorias PASS; 7 mutações de auditoria e 1 de teste reprovam.
+>   **lab 3.239.1.0**, NÃO INSTALADO: SYS `9324073F...`, UMD `239B046C...` e ICD `5988B38E...` iguais aos da 77.
+
+> **23/09/2026 — CORREÇÃO de registros das Corridas 76 e 77 (revisão).**
+> - **A foto do triângulo RGB é da Corrida 75, não da 74.** O docs/345 §6 e a entrada da 76 abaixo diziam 74 e omitiam a 75,
+>   que teve 1 Present aceito do harness copiado ao scanout em 640,180.
+> - **A "regressão de controle" da 76 não está provada.** O `nodcc` 4/5 foi S5 NÃO MEDIDO (device perdido), não FAIL. Pelo
+>   conteúdo, a 76 mostrou que a DX.30 não basta.
+> - **Corrida 77, leituras que faltavam:**
+>   - a cópia do flip repetia a do Present (explica "destino já igual");
+>   - o hash do scanout mudou de flip #12 a #21 e congelou de #22 a #29 (P0 amostral);
+>   - o TDR de 240 ondas foi o 9º de 9 da mesma classe.
+>
+>   Adendos anexados ao docs/345 (topo e §6) e ao docs/347 (§6).
+
+> **23/09/2026 — Corrida 77 (07:41:45, lab 3.238.1.0), handoff final desta etapa:**
+> [docs/347](docs/347_HANDOFF_POS_CORRIDA77_DX31.md), evidência em
+> `docs/evidence/2026-09-23_07-41-45-DESKTOP-HQAG6T4-lab-binding/`.
+> **Avanço visual/diagnóstico, não desktop funcional:** Daniel viu desktop
+> congelado, contra tela preta na 76. KMD: 30 `PRIMARY_COPY` distintas,
+> 22 amostras não-nulas pareadas, 8 branco/branco inconclusivas, zero falha
+> de cópia; quatro `Present BYTE_PROOF PASS` (#1/#5/#10/#25, o último na
+> cauda recuperada). Isso não prova quadro móvel nem que cada cópia mudou
+> bytes — o destino já tinha as amostras não-nulas antes dessas cópias.
+> As três variantes do autoteste RADV passaram 5/5, mas o harness D3D11 não
+> gerou resumo de Presents aceitos; runner exit 3. Houve TDR de GFX com
+> 240/240 ondas durante o teste e outro evento de TDR com 0/0 ondas após
+> o início do rollback. **Veredito F/falha funcional** frente ao critério
+> prévio; não anunciar 60 quadros ou desktop estável. O watchdog pediu
+> reboot após recovery incompleta e confirmou BasicDisplay Código 0 no boot
+> seguinte. A cauda de log foi arquivada com SHA-256 em `docs/347`;
+> **não repetir sem boot frio, novo preflight e nova decisão do Daniel**.
+>
+> **23/09/2026 — faixa DX.31, OFFLINE e sem corrida: telemetria da cópia de primária GOP e gate honesto do harness. NÃO VALIDADO EM HARDWARE.** Critério proposto da Corrida 77 em
+> [docs/346](docs/346_DX31_CRITERIO_CORRIDA77_COPIA_PRIMARIA_GOP.md).
+>
+> - A Corrida 76 mostrou conteúdo não-nulo em buffers de Flip, mas nenhum
+>   `BYTE_PROOF PASS` do Present e tela preta. Auditoria de fonte encontrou
+>   três DDIs que descartavam o retorno da SDMA e declaravam sucesso.
+> - DX.31 registra cada cópia de primária com origem/destino, resultado da
+>   engine, amostras antes/depois e comparação pareada limitada a 256 pontos;
+>   falha não publica a primária nova. Amostra não é prova integral nem imagem
+>   física. MPO3 não recebe leitura integral de ~11 MB no scheduler.
+> - O runner não aceita Exit 0 com 0/60 ou autoteste 4/5; só a contagem final de
+>   quadros aceitos e os três controles 5/5 podem passar seu gate. Build de
+>   contratos, auditoria e mutações DX.31 passaram offline. Pacote lab
+>   3.238.1.0 assinado/auditado (SYS `4AFA7AAF...`, UMD/ICD inalterados),
+>   **não instalado**. Prebinding read-only bloqueado por reboot pendente
+>   (`PendingFileRenameOperations`); boot frio e novo preflight são obrigatórios.
+>   A DX.30 ainda está no fonte e sua classe de TDR continua aberta.
+
+> **23/09/2026 — Corrida 76 (00:06:09, lab 3.237.1.0): desfecho F, regressão de controle.**
+> Relatório e recuperação em [docs/345](docs/345_CORRIDA76_VM_FLUSH_NO_ANEL_RESULTADO.md);
+> prova em `docs/evidence/2026-09-23_00-06-09-DESKTOP-HQAG6T4-lab-binding/`.
+>
+> - **Avanço diagnóstico, não funcional (P0):** 36 transições `VMID_SWITCH_VM_FLUSH`;
+>   primeiro dump PM4 confirma `WAIT fence → PT_BASE LO/HI → REQ → WAIT ACK → PFP_SYNC_ME → IB`.
+> - **Falhas (P0):** 3 TDRs de 240/240 ondas, todos após troca de VMID; dois IBs de
+>   280/288 DW repetem a classe `DRAW_READBACK`. `nodcc` 4/5 (S5 não medido);
+>   outros dois autotestes 5/5. Harness D3D11: 0/60 Presents aceitos, primeiro
+>   falhou com `0x887A0005`, reason `0x887A0007`. O `EXIT 0` do wrapper é falso
+>   sucesso perante a prova de frame.
+> - **Recuperação:** watchdog pediu reboot após rollback online incompleto; no boot
+>   seguinte BasicDisplay Código 0 foi confirmado em 5 amostras. Nosso DWM não
+>   foi validado. Log FINAL incompleto foi complementado pelo resgate de tail
+>   com SHA-256 arquivado. **Não repetir sem novo boot frio e novo critério.**
+> - **Reanálise visual 73/74/76 (foto do Daniel, docs/345 §6):** 73 e 74 tinham
+>   2 e 3 `BYTE_PROOF PASS` de conteúdo no scanout `0x0` antes do rollback; 76
+>   teve zero PASS e um zero→zero inconclusivo. O triângulo fotografado combina
+>   especialmente com a 74 (1 Present aceito do harness); 73 e 76 tiveram 0.
+>   Buffers de Flip não-nulos na 76 não provam imagem no monitor. Tela preta
+>   observada durante a 76 = regressão visual, não BasicDisplay após rollback.
+
+> **23/09/2026 — faixa DX.30, OFFLINE e sem corrida: transição de VMID no anel gráfico implementada, compilada e empacotada como lab 3.237.1.0; NÃO VALIDADA EM HARDWARE.** Critério prévio da Corrida 76 e handoff em
+> [docs/344](docs/344_POS_CORRIDA75_UPSTREAM_E_CRITERIO_CORRIDA76_VM_FLUSH_NO_ANEL.md).
+>
+> - **P0/P1:** os IBs de dispatch que travam são as cópias imagem→buffer de `DRAW_READBACK`; isso identifica o
+>   disparador atual, não a causa. Desligar o instrumento ocultaria a classe e não corrigiria jogos com compute.
+> - **P1:** `DISPATCH_DIRECT` não tem VMID; ele herda o VMID do `INDIRECT_BUFFER`. O upstream ordena no mesmo anel
+>   pipeline sync → raiz do VMID → invalidação/ACK → `PFP_SYNC_ME` → IB. A DX.30 agora emite essa sequência
+>   no CP_RB0 quando o VMID muda; a instalação MMIO permanece como preflight.
+> - **Candidato offline:** raiz `READY` do pool (ou raiz instalada legada do VMID 7), plano GFXHUB engine 17,
+>   recusa antes do WPTR se não houver raiz/plano/espaço, dump PM4 da primeira transição até o IB. `CONTEXT_CONTROL`
+>   e `ACQUIRE_MEM` ficam fora desta variável. Build de contratos, SYS lab, UMD, auditorias e mutações PASS.
+> - O teto segue uma corrida física pelo Daniel, após boot frio. Nenhum bind/instalação foi realizado aqui.
+
 > **22/09/2026 — Corrida 75 (22:34:53, lab 3.236.1.0 + ICD `5988B38E`): desfecho C do docs/342.** Evidência em
 > `docs/evidence/2026-09-22_22-34-53-DESKTOP-HQAG6T4-lab-binding/` (e a foto do Daniel).
 >

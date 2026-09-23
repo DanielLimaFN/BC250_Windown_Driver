@@ -518,7 +518,34 @@ if ($manifest.BuildKind -ne 'MCDM_LAB_BRINGUP' -or [bool]$manifest.HardwareValid
 # ==========================================================================
 $lastBindingPath = Join-Path $root 'tools\_last_lab_binding.json'
 if (Test-Path -LiteralPath $lastBindingPath -PathType Leaf) {
-    $lastBinding = Get-Content -LiteralPath $lastBindingPath -Raw | ConvertFrom-Json
+    # DX.36: registro ilegivel NAO pode derrubar o bind nem desligar o preflight.
+    # Na Corrida 81 um BugCheck deixou este arquivo com bytes zero; a copia gravada
+    # na pasta de evidencia (binding-provenance.json) sobreviveu. Se o registro nao
+    # parsear, usa a copia mais recente e AVISA; se nenhuma parsear, recusa com a
+    # instrucao de recuperacao. O preflight de rebaixamento continua valendo.
+    $lastBinding = $null
+    try {
+        $lastBinding = Get-Content -LiteralPath $lastBindingPath -Raw | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        $lastBinding = $null
+    }
+    if ($null -eq $lastBinding) {
+        $provenanceCopy = Get-ChildItem -LiteralPath (Join-Path $root 'docs\evidence') -Directory |
+            Sort-Object LastWriteTime -Descending |
+            ForEach-Object { Join-Path $_.FullName 'binding-provenance.json' } |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+            Where-Object {
+                try { $null -ne (Get-Content -LiteralPath $_ -Raw | ConvertFrom-Json -ErrorAction Stop).profile } catch { $false }
+            } | Select-Object -First 1
+        if (-not $provenanceCopy) {
+            throw ('Registro do ultimo bind ilegivel (' + $lastBindingPath + ') e nenhuma ' +
+                'binding-provenance.json valida em docs\evidence. Provavel BugCheck antes do flush; ' +
+                'restaure o arquivo a partir da pasta de evidencia do ultimo bind.')
+        }
+        Write-Host ('AVISO: ' + $lastBindingPath + ' ilegivel (provavel BugCheck antes do flush). ' +
+            'Preflight de rebaixamento usa a copia ' + $provenanceCopy) -ForegroundColor Yellow
+        $lastBinding = Get-Content -LiteralPath $provenanceCopy -Raw | ConvertFrom-Json
+    }
     if ($null -ne $lastBinding.profile) {
         $downgrades = @()
         foreach ($cap in @('RenderNode','ShaderDispatchEnabled','PersistentSubmissionEnabled')) {
@@ -1986,7 +2013,24 @@ if (-not $umdLogCollected) {
             }
         }
     )
-} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'tools\_last_lab_binding.json') -Encoding UTF8
+} | ConvertTo-Json -Depth 5 | ForEach-Object {
+    # DX.36: escrita WRITE-THROUGH. Na Corrida 81 o 0x116 veio 20 s depois do
+    # Set-Content e o arquivo ficou com 1762 bytes TODOS ZERO (tamanho gravado,
+    # dados nao): o bind seguinte quebrou no ConvertFrom-Json. FileOptions.WriteThrough
+    # + Flush($true) forca os dados ao disco antes do bind prosseguir.
+    $lastBindingBytes = [System.Text.UTF8Encoding]::new($true).GetPreamble() +
+        [System.Text.UTF8Encoding]::new($false).GetBytes([string]$_)
+    $lastBindingStream = [System.IO.FileStream]::new(
+        (Join-Path $root 'tools\_last_lab_binding.json'),
+        [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::None, 4096, [System.IO.FileOptions]::WriteThrough)
+    try {
+        $lastBindingStream.Write($lastBindingBytes, 0, $lastBindingBytes.Length)
+        $lastBindingStream.Flush($true)
+    } finally {
+        $lastBindingStream.Dispose()
+    }
+}
 
 # A pasta de evidencia e' o que sobrevive e e' arquivado com SHA-256; tools/ e'
 # estado de trabalho e e' sobrescrito pelo bind seguinte. Sem esta copia, a

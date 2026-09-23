@@ -1281,6 +1281,8 @@ static uint32_t WaveFakeRead32(void *Context, uint32_t Offset, uint32_t *Value)
         if (ix == BC250_IX_SQ_WAVE_IB_STS)  { *Value = 0x00000041u; return 1u; }
         if (ix == BC250_IX_SQ_WAVE_INST_DW0){ *Value = 0xBF8C0F70u; return 1u; }
         if (ix == BC250_IX_SQ_WAVE_TRAPSTS) { *Value = 0u; return 1u; }
+        /* VM_ID=4, ME=0, PIPE=0, QUEUE=0: onda do anel grafico sob VMID 4. */
+        if (ix == BC250_IX_SQ_WAVE_HW_ID2)  { *Value = 0x04000000u; return 1u; }
         return 1u;
     }
     return 0u;
@@ -1381,7 +1383,11 @@ static int Bc250RunWaveProbeTest(void)
     CHECK(Bc250WaveProbeRun(&iface, &plan, &ev) == BC250_WAVE_PROBE_OK);
     CHECK(ev.WavesFound == 1u);
     CHECK(ev.Found[0].Status == 0x00818019u);
-    CHECK(ev.Found[0].ValidMask == 0x3Fu);
+    CHECK(ev.Found[0].ValidMask == 0x7Fu);
+    CHECK(ev.Found[0].HwId2 == 0x04000000u);
+    CHECK(BC250_WAVE_HW_ID2_VM_ID(ev.Found[0].HwId2) == 4u);
+    CHECK(BC250_WAVE_HW_ID2_VM_ID(0x0F000000u) == 15u);
+    CHECK(BC250_WAVE_HW_ID2_ME_ID(0x00000300u) == 3u);
     CHECK(ev.Found[0].PcHi == 0x00000002u);
     CHECK(ev.Found[0].PcLo == 0x0000A100u);
     CHECK(ev.Found[0].InstDw0 == 0xBF8C0F70u);
@@ -1442,7 +1448,10 @@ static int Bc250RunWaveProbeTest(void)
     WavePlanFill(&plan, 1u);
     plan.ReadBudget = 2u;
     CHECK(Bc250WaveProbeRun(&iface, &plan, &ev) == BC250_WAVE_PROBE_OK);
-    CHECK(ev.ReadsIssued == 2u && ev.Found[0].ValidMask == 3u);
+    /* DX.34: com orcamento para 2 leituras, a segunda e' HW_ID2 (bit 6), nao PC_LO:
+     * o VMID da onda e' a leitura que decide a classe de TDR. */
+    CHECK(ev.ReadsIssued == 2u && ev.Found[0].ValidMask == 0x41u);
+    CHECK(BC250_WAVE_HW_ID2_VM_ID(ev.Found[0].HwId2) == 4u);
     CHECK(ev.SelectorRestored == 1u);
     /* A write accepted by transport is not proof that broadcast was restored. */
     memset(&sq, 0, sizeof(sq));

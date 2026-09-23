@@ -97,6 +97,46 @@ static int Bc250RunGfx10ClearStateTest(void)
         CHECK(ring[2] == 0x0FF80020u && ring[3] == 0x000000F4u);
         CHECK(ring[4] == 0x1234u && ring[5] == 0xFFFFFFFFu && ring[6] == 4u);
     }
+    /* DX.30: bytes esperados independentes para VMID 6 e raiz acima de 4 GiB.
+     * Registradores PM4 usam indice DWORD; plano/GCVM publicam bytes. */
+    {
+        uint32_t ring[64];
+        uint32_t cur = 0u;
+        BC250_PM4_GFX_VM_SWITCH sw;
+        memset(ring, 0xA5, sizeof(ring));
+        memset(&sw, 0, sizeof(sw));
+        sw.FenceGpuVa = 0xF40FF80020ull;
+        sw.RootPhysical = 0x123400005000ull;
+        sw.FenceValue = 0x1234u;
+        sw.Vmid = 6u;
+        sw.PtBaseLoRegisterBytes = 0xA3DCu;
+        sw.RequestRegisterBytes = 0xA2D0u;
+        sw.AckRegisterBytes = 0xA318u;
+        sw.RequestValue = 0x00F80040u;
+        sw.AckMask = 0x40u;
+        CHECK(Bc250Pm4EmitGfxVmSwitch(ring, 64u, &cur, &sw) == BC250_PM4_OK);
+        CHECK(cur == BC250_PM4_GFX_VM_SWITCH_DWORDS);
+        CHECK(ring[0] == 0xC0053C00u && ring[1] == 0x115u);
+        CHECK(ring[2] == 0x0FF80020u && ring[3] == 0xF4u);
+        CHECK(ring[4] == 0x1234u && ring[5] == 0xFFFFFFFFu && ring[6] == 4u);
+        CHECK(ring[7] == 0xC0033700u && ring[8] == 0x40100000u);
+        CHECK(ring[9] == 0x28F7u && ring[10] == 0u && ring[11] == 0x5001u);
+        CHECK(ring[12] == 0xC0033700u && ring[13] == 0x40100000u);
+        CHECK(ring[14] == 0x28F8u && ring[15] == 0u && ring[16] == 0x1234u);
+        CHECK(ring[17] == 0xC0033700u && ring[18] == 0x40100000u);
+        CHECK(ring[19] == 0x28B4u && ring[20] == 0u && ring[21] == 0x00F80040u);
+        CHECK(ring[22] == 0xC0053C00u && ring[23] == 3u);
+        CHECK(ring[24] == 0x28C6u && ring[25] == 0u);
+        CHECK(ring[26] == 0x40u && ring[27] == 0x40u && ring[28] == 0x20u);
+        CHECK(ring[29] == 0xC0004200u && ring[30] == 0u);
+        /* DX.36: SEM SWITCH_BUFFER -- a Corrida 81 travou o CP nele. O dword
+         * depois do PFP_SYNC_ME fica intocado (0xA5 do memset). */
+        CHECK(BC250_PM4_GFX_VM_SWITCH_DWORDS == 31u);
+        CHECK(ring[31] == 0xA5A5A5A5u && ring[32] == 0xA5A5A5A5u);
+        sw.RootPhysical = 0ull;
+        CHECK(Bc250Pm4EmitGfxVmSwitch(ring, 64u, &cur, &sw) == BC250_PM4_BAD_ARGUMENT);
+        CHECK(cur == BC250_PM4_GFX_VM_SWITCH_DWORDS);
+    }
     return 1;
 }
 

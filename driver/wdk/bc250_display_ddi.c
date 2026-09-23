@@ -506,6 +506,292 @@ BOOLEAN Bc250DisplayCompareSurfaceBytes(
     return TRUE;
 }
 
+/*
+ * DX.31: a mudanca de primaria do WDDM nao e' um flip fisico neste perfil.
+ * O GOP continua lendo o mesmo scanout; a nova primaria precisa ser copiada
+ * por SDMA. A Corrida 76 registrou buffers de Flip nao-nulos sem a prova de
+ * dados que o caminho DxgkDdiPresent possui. Toda chamada agora deixa uma
+ * trilha correlacionavel, inclusive a recusa e o quadro em branco. Esta DDI
+ * pode bloquear o scheduler em nivel de interrupcao: somente 256 amostras
+ * pareadas, NUNCA a comparacao integral de 11 MB do caminho DxgkDdiPresent.
+ */
+static volatile LONG s_Bc250PrimaryCopySequence = 0;
+
+/*
+ * DX.34: retangulos sujos do Present Blt. Teto pequeno de proposito: cada
+ * retangulo e' uma submissao SDMA sincrona; lista maior cai na copia de tela
+ * cheia de antes, com log. Aceita so' Src == Dst == tela cheia, para que (x,y)
+ * na origem e no scanout sejam o mesmo ponto.
+ */
+#define BC250_DIRTY_RECT_MAX 16u
+static volatile LONG s_Bc250DirtyRectLogCount = 0;
+
+static BOOLEAN Bc250DisplayDirtyRectsUsable(
+    _In_ CONST DXGKARG_PRESENT *Present,
+    _Out_ UINT *Count)
+{
+    ULONG w = g_Bc250DisplayState.CurrentMode.Width;
+    ULONG h = g_Bc250DisplayState.CurrentMode.Height;
+    UINT i;
+
+    *Count = 0u;
+    if (Present->SubRectCnt == 0u || Present->SubRectCnt > BC250_DIRTY_RECT_MAX ||
+        Present->pDstSubRects == NULL || w == 0u || h == 0u ||
+        g_Bc250DisplayState.CurrentMode.Pitch < w * 4u) {
+        return FALSE;
+    }
+    if (Present->SrcRect.left != 0 || Present->SrcRect.top != 0 ||
+        Present->SrcRect.right != (LONG)w || Present->SrcRect.bottom != (LONG)h ||
+        Present->DstRect.left != 0 || Present->DstRect.top != 0 ||
+        Present->DstRect.right != (LONG)w || Present->DstRect.bottom != (LONG)h) {
+        return FALSE;
+    }
+    for (i = 0u; i < Present->SubRectCnt; ++i) {
+        CONST RECT *rc = &Present->pDstSubRects[i];
+        if (rc->left < 0 || rc->top < 0 || rc->right <= rc->left ||
+            rc->bottom <= rc->top || (ULONG)rc->right > w || (ULONG)rc->bottom > h) {
+            return FALSE;
+        }
+    }
+    *Count = Present->SubRectCnt;
+    return TRUE;
+}
+
+/* Prova amostral dos retangulos: centro e 4 cantos de cada um, origem x scanout. */
+static VOID Bc250DisplayDirtyRectProof(
+    _In_ CONST DXGKARG_PRESENT *Present,
+    _In_ UINT Count,
+    _In_ UINT64 SourceOffset,
+    _Out_ ULONG *Match,
+    _Out_ ULONG *Probes,
+    _Out_ ULONG *SourceNonZero)
+{
+    CONST UCHAR *fb = (CONST UCHAR *)g_Bc250DisplayState.FrameBufferVirtual;
+    ULONG pitch = g_Bc250DisplayState.CurrentMode.Pitch;
+    UINT64 scanoutOffset = g_Bc250SdmaPresent.ScanoutGpuAddress -
+        g_Bc250SdmaPresent.VramMcStart;
+    UINT i, p;
+
+    *Match = 0u; *Probes = 0u; *SourceNonZero = 0u;
+    if (fb == NULL) return;
+    for (i = 0u; i < Count; ++i) {
+        CONST RECT *rc = &Present->pDstSubRects[i];
+        LONG pts[5][2] = {
+            { (rc->left + rc->right) / 2, (rc->top + rc->bottom) / 2 },
+            { rc->left, rc->top }, { rc->right - 1, rc->top },
+            { rc->left, rc->bottom - 1 }, { rc->right - 1, rc->bottom - 1 } };
+        for (p = 0u; p < 5u; ++p) {
+            UINT64 rel = (UINT64)(ULONG)pts[p][1] * pitch + (UINT64)(ULONG)pts[p][0] * 4ull;
+            ULONG s, d;
+            if (SourceOffset + rel + 4ull > g_Bc250DisplayState.FrameBufferSize ||
+                scanoutOffset + rel + 4ull > g_Bc250DisplayState.FrameBufferSize) {
+                continue;
+            }
+            s = *(CONST volatile ULONG *)(fb + SourceOffset + rel);
+            d = *(CONST volatile ULONG *)(fb + scanoutOffset + rel);
+            ++*Probes;
+            if (s != 0u) ++*SourceNonZero;
+            if (s == d) ++*Match;
+        }
+    }
+}
+
+/* 256 comparacoes pareadas origem x scanout pelo mapa de CPU. Devolve os pares lidos. */
+static ULONG Bc250DisplayPairedSampleCompare(
+    _In_ UINT64 SourceOffset,
+    _In_ UINT64 ScanoutOffset,
+    _In_ ULONG Bytes,
+    _Out_ ULONG *MismatchCount,
+    _Out_ UINT64 *FirstMismatch)
+{
+    volatile CONST UCHAR *base = (volatile CONST UCHAR *)g_Bc250DisplayState.FrameBufferVirtual;
+    ULONG stride = ((Bytes - sizeof(ULONG)) / 256u) & ~3u;
+    ULONG index;
+    *MismatchCount = 0u;
+    *FirstMismatch = ~(UINT64)0;
+    if (stride == 0u) stride = sizeof(ULONG);
+    for (index = 0u; index < 256u; ++index) {
+        ULONG offset = index * stride;
+        ULONG srcWord, dstWord;
+        if (offset > Bytes - sizeof(ULONG)) break;
+        srcWord = *(volatile CONST ULONG *)(base + SourceOffset + offset);
+        dstWord = *(volatile CONST ULONG *)(base + ScanoutOffset + offset);
+        if (srcWord != dstWord) {
+            if (*FirstMismatch == ~(UINT64)0) *FirstMismatch = offset;
+            ++*MismatchCount;
+        }
+    }
+    return index;
+}
+
+static NTSTATUS Bc250DisplayCopyPrimaryToGop(
+    _In_ const char *Route,
+    _In_ UINT32 SegmentId,
+    _In_ UINT64 SourceOffset,
+    _In_ BOOLEAN ModeChangeOnly)
+{
+    LONG sequence = InterlockedIncrement(&s_Bc250PrimaryCopySequence);
+    UINT64 scanoutOffset;
+    UINT64 sourceMc;
+    ULONG bytes;
+    ULONG srcNz = 0u, srcHash = 0u, beforeNz = 0u, beforeHash = 0u;
+    ULONG afterNz = 0u, afterHash = 0u;
+    UINT64 firstMismatch = ~(UINT64)0;
+    ULONG mismatchCount = 0u;
+    ULONG sampleIndex;
+    BOOLEAN copied;
+    BOOLEAN srcSampled;
+    BOOLEAN beforeSampled;
+    BOOLEAN afterSampled;
+
+    if (SegmentId != 1u || !g_Bc250SdmaPresent.Initialized ||
+        !g_Bc250SdmaPresent.HardwareEnabled ||
+        g_Bc250SdmaPresent.ScanoutGpuAddress < g_Bc250SdmaPresent.VramMcStart ||
+        g_Bc250DisplayState.FrameBufferVirtual == NULL) {
+        Bc250DisplayLog("[PRIMARY_COPY #%ld] REJECT Route=%s Seg=%u SrcOff=0x%llX Init=%u Hw=%u ScanoutMc=0x%llX VramMc=0x%llX Map=%p Status=DEVICE_NOT_READY\n",
+            sequence, Route, SegmentId, SourceOffset,
+            g_Bc250SdmaPresent.Initialized ? 1u : 0u,
+            g_Bc250SdmaPresent.HardwareEnabled ? 1u : 0u,
+            g_Bc250SdmaPresent.ScanoutGpuAddress,
+            g_Bc250SdmaPresent.VramMcStart,
+            g_Bc250DisplayState.FrameBufferVirtual);
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    scanoutOffset = g_Bc250SdmaPresent.ScanoutGpuAddress -
+        g_Bc250SdmaPresent.VramMcStart;
+    bytes = g_Bc250DisplayState.CurrentMode.Pitch *
+        g_Bc250DisplayState.CurrentMode.Height;
+    if (bytes < sizeof(ULONG) || SourceOffset > ~(UINT64)0 -
+            g_Bc250SdmaPresent.VramMcStart) {
+        Bc250DisplayLog("[PRIMARY_COPY #%ld] REJECT Route=%s Seg=%u SrcOff=0x%llX DstOff=0x%llX Bytes=%u MapBytes=%u Status=INVALID_PARAMETER\n",
+            sequence, Route, SegmentId, SourceOffset, scanoutOffset,
+            bytes, g_Bc250DisplayState.FrameBufferSize);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    sourceMc = g_Bc250SdmaPresent.VramMcStart + SourceOffset;
+    srcSampled = Bc250DisplaySampleSurface(SourceOffset, bytes, 256u,
+        &srcNz, &srcHash);
+    beforeSampled = Bc250DisplaySampleSurface(scanoutOffset, bytes, 256u,
+        &beforeNz, &beforeHash);
+    if (!srcSampled || !beforeSampled) {
+        Bc250DisplayLog("[PRIMARY_COPY #%ld] SAMPLE_UNAVAILABLE Route=%s SrcSample=%u DstBeforeSample=%u; CPU BAR may cover less than local VRAM; SDMA still attempted\n",
+            sequence, Route, srcSampled ? 1u : 0u,
+            beforeSampled ? 1u : 0u);
+    }
+
+    Bc250DisplayLog("[PRIMARY_COPY #%ld] BEGIN Route=%s Seg=%u SrcOff=0x%llX SrcMc=0x%llX DstOff=0x%llX DstMc=0x%llX Bytes=%u Pitch=%u SrcSample=%u SrcNZ=%u/256 SrcHash=%08X DstBeforeSample=%u DstBeforeNZ=%u/256 DstBeforeHash=%08X\n",
+        sequence, Route, SegmentId, SourceOffset, sourceMc, scanoutOffset,
+        g_Bc250SdmaPresent.ScanoutGpuAddress, bytes,
+        g_Bc250DisplayState.CurrentMode.Pitch,
+        srcSampled ? 1u : 0u, srcNz, srcHash,
+        beforeSampled ? 1u : 0u, beforeNz, beforeHash);
+
+    if (SourceOffset == scanoutOffset) {
+        Bc250DisplayLog("[PRIMARY_COPY #%ld] ALIAS: source is inherited GOP scanout; no SDMA copy, bytes already at destination; visibility on monitor NOT PROVEN\n",
+            sequence);
+        return STATUS_SUCCESS;
+    }
+
+    /*
+     * DX.33 -- MODE CHANGE NAO APAGA O SCANOUT COM PRIMARIA VAZIA.
+     *
+     * Corrida 78 (P0 amostral): as 16 PRIMARY_COPY da rota SET_ADDRESS vieram
+     * todas com Flags=0x1 (ModeChange, d3dkmddi.h) e origem 0/256 -- a
+     * primaria do GOP 0xAAC000 e as primarias novas do DWM, que ninguem
+     * desenhou ainda. No modelo Blt o Present escreve DIRETO no scanout, entao
+     * copiar essa primaria apagava o quadro valido: 86/256 (o 1280x720 do
+     * harness) -> 0/256 em #5-#8, e 256/256 -> 0/256 em #12. Na 77, 8 de 8
+     * SET_ADDRESS tambem tinham origem zero.
+     *
+     * Pula SO' se as duas condicoes valem: (1) o dxgkrnl declarou ModeChange
+     * sem FlipImmediate/FlipOnNextVSync -- troca de modo, nao flip; (2) uma
+     * amostragem de 1024 dwords da origem e' INTEIRAMENTE zero. Origem com
+     * qualquer amostra nao-nula copia como antes; flips (MPO1/MPO3) nao passam
+     * por aqui. Risco declarado: uma primaria com conteudo esparso que caia
+     * fora das 1024 amostras nao seria copiada ate o proximo Present/flip.
+     */
+    if (ModeChangeOnly && srcSampled) {
+        ULONG denseNz = 0u, denseHash = 0u;
+        if (Bc250DisplaySampleSurface(SourceOffset, bytes, 1024u,
+                &denseNz, &denseHash) && denseNz == 0u) {
+            Bc250DisplayLog("[PRIMARY_COPY #%ld] MODECHANGE_BLANK_SKIP Route=%s SrcOff=0x%llX SrcNZ=0/1024: ModeChange sem flip para primaria sem conteudo amostrado; scanout PRESERVADO (DstNZ=%u/256 DstHash=%08X) Status=SUCCESS\n",
+                sequence, Route, SourceOffset, beforeNz, beforeHash);
+            return STATUS_SUCCESS;
+        }
+    }
+
+    /*
+     * DX.32 -- NAO REPETIR A COPIA QUE O PRESENT ACABOU DE FAZER.
+     *
+     * Corrida 77 (P0): as 22 PRIMARY_COPY nao-nulas do MPO3 copiavam a MESMA
+     * origem que o DxgkDdiPresent imediatamente anterior ja tinha copiado por
+     * SDMA (Present #1 e #4 de 0x153C000; #10 e #12 de 0x266C000), e as 256
+     * amostras do destino ja batiam com a origem antes da copia em 22 de 22.
+     * Era uma segunda copia sincrona de ~11 MB numa DDI que a Microsoft
+     * documenta como chamada em nivel de interrupcao, bloqueando o scheduler.
+     *
+     * Pula SO' se as DUAS condicoes valem: (1) a fonte unica em
+     * bc250_sdma_present.c diz que a ultima escrita no scanout foi a copia
+     * INTEGRAL desta mesma origem, sem escrita posterior; (2) as 256 amostras
+     * pareadas conferem AGORA, com origem nao-nula. Qualquer uma falhando, a
+     * copia acontece como antes. Nao e' prova integral de bytes; e' a mesma
+     * classe de prova amostral do END, e o rotulo diz isso.
+     */
+    if (srcSampled && beforeSampled && srcNz != 0u) {
+        LONG holdSeq = 0;
+        if (Bc250SdmaPresentScanoutHoldsFullCopyOf(sourceMc, bytes, &holdSeq)) {
+            ULONG preMismatch = 0u;
+            UINT64 preFirst = ~(UINT64)0;
+            ULONG prePairs = Bc250DisplayPairedSampleCompare(SourceOffset, scanoutOffset,
+                bytes, &preMismatch, &preFirst);
+            if (preMismatch == 0u && prePairs == 256u) {
+                Bc250DisplayLog("[PRIMARY_COPY #%ld] REDUNDANT_SKIP Route=%s SrcOff=0x%llX: ultima escrita no scanout (#%ld) foi a copia INTEGRAL desta origem e %u/256 amostras pareadas conferem; SDMA NAO repetida Proof=SAMPLED_MATCH_NONZERO_NOT_FULL_BYTE_PROOF Status=SUCCESS\n",
+                    sequence, Route, SourceOffset, holdSeq, prePairs);
+                return STATUS_SUCCESS;
+            }
+            Bc250DisplayLog("[PRIMARY_COPY #%ld] REDUNDANT_CANDIDATE_REJEITADO Route=%s: marca de copia integral presente, mas %u/%u pares divergem (primeiro 0x%llX); copia SDMA executada\n",
+                sequence, Route, preMismatch, prePairs, preFirst);
+        }
+    }
+
+    copied = Bc250SdmaPresentBlt(sourceMc,
+        g_Bc250SdmaPresent.ScanoutGpuAddress, bytes);
+    afterSampled = Bc250DisplaySampleSurface(scanoutOffset, bytes, 256u,
+        &afterNz, &afterHash);
+    if (!copied) {
+        Bc250DisplayLog("[PRIMARY_COPY #%ld] FAIL Route=%s Sdma=0 DstAfterSample=%u DstAfterNZ=%u/256 DstAfterHash=%08X Status=GPU_EXCEPTION; no successful primary switch\n",
+            sequence, Route, afterSampled ? 1u : 0u,
+            afterNz, afterHash);
+        return STATUS_GRAPHICS_GPU_EXCEPTION_ON_DEVICE;
+    }
+
+    if (!srcSampled || !afterSampled) {
+        Bc250DisplayLog("[PRIMARY_COPY #%ld] END Route=%s Sdma=YES FenceAndRptr=YES Proof=DATA_UNOBSERVED_CPU_MAP SrcSample=%u DstAfterSample=%u Visibility=NOT_PROVEN Status=SUCCESS_ENGINE_ONLY\n",
+            sequence, Route, srcSampled ? 1u : 0u,
+            afterSampled ? 1u : 0u);
+        return STATUS_SUCCESS;
+    }
+
+    sampleIndex = Bc250DisplayPairedSampleCompare(SourceOffset, scanoutOffset,
+        bytes, &mismatchCount, &firstMismatch);
+    if (mismatchCount != 0u) {
+        /* A origem pode ser reescrita pelo produtor entre a fence da SDMA
+         * e esta leitura de CPU. A divergencia perde a prova de dados, mas
+         * nao refuta a conclusao fisica da engine nem justifica device-lost. */
+        Bc250DisplayLog("[PRIMARY_COPY #%ld] SAMPLE_MISMATCH_INCONCLUSIVE Route=%s Count=%u/256 FirstOffset=0x%llX SrcNZ=%u/256 DstNZ=%u/256 Sdma=YES Status=SUCCESS_ENGINE_ONLY\n",
+            sequence, Route, mismatchCount, firstMismatch, srcNz, afterNz);
+    }
+    Bc250DisplayLog("[PRIMARY_COPY #%ld] END Route=%s Sdma=YES FenceAndRptr=YES SrcNZ=%u/256 SrcHash=%08X DstAfterNZ=%u/256 DstAfterHash=%08X PairedSamples=%u Mismatch=%u Proof=%s Visibility=NOT_PROVEN Status=SUCCESS\n",
+        sequence, Route, srcNz, srcHash, afterNz, afterHash,
+        sampleIndex, mismatchCount,
+        mismatchCount != 0u ? "SAMPLE_MISMATCH_INCONCLUSIVE" :
+            (afterNz == 0u ? "MATCH_BLANK_INCONCLUSIVE" :
+                "SAMPLED_MATCH_NONZERO_NOT_FULL_BYTE_PROOF"));
+    return STATUS_SUCCESS;
+}
+
 static volatile LONG g_Bc250DisplaySyntheticEdidEnabled = 0; /* Default: 0 (disabled) para forçar o DMM a usar DxgkDdiRecommendMonitorModes */
 
 void Bc250DisplaySetSyntheticEdidEnabled(BOOLEAN Enabled)
@@ -666,6 +952,8 @@ static BOOLEAN Bc250ShouldEmitVerboseLog(
          * alvo nao pode ser amostrada fora justamente por ser rara.
          */
         Bc250LogTextContains(Text, "DX_TARGET_200040") ||
+        /* DX.36: mesmo motivo para o alvo da escrita sem permissao (80/81). */
+        Bc250LogTextContains(Text, "DX_TARGET_2401A1") ||
         /*
          * DX.12: a mascara de VMIDs invalidados e a MEDICAO da Corrida 59.
          * A linha comeca com "[FLUSH_POOL_VMIDS]", que cairia na classe 5
@@ -2471,11 +2759,6 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddress(
     if (pSetVidPnSourceAddress->VidPnSourceId != 0) {
         return STATUS_NOT_SUPPORTED;
     }
-    g_Bc250DisplayState.PrimaryAddress = pSetVidPnSourceAddress->PrimaryAddress;
-    g_Bc250DisplayState.PrimarySegment = pSetVidPnSourceAddress->PrimarySegment;
-    g_Bc250DisplayState.hPrimarySourceAllocation =
-        pSetVidPnSourceAddress->hAllocation;
-    g_Bc250DisplayState.PrimaryAddressValid = TRUE;
     Bc250DisplayLog("=== SetVidPnSourceAddress (SourceId=%u, Segment=%u, Addr=0x%I64X, hAlloc=%p, ContextCount=%u, Flags=0x%08X) ===\n",
         pSetVidPnSourceAddress->VidPnSourceId,
         pSetVidPnSourceAddress->PrimarySegment,
@@ -2484,17 +2767,24 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddress(
         pSetVidPnSourceAddress->ContextCount,
         *(CONST ULONG *)&pSetVidPnSourceAddress->Flags);
 
-    if (pSetVidPnSourceAddress->PrimarySegment == 1 && g_Bc250SdmaPresent.HardwareEnabled && g_Bc250SdmaPresent.ScanoutGpuAddress != 0) {
-        uint64_t srcGpu = g_Bc250SdmaPresent.VramMcStart + pSetVidPnSourceAddress->PrimaryAddress.QuadPart;
-        ULONG bytesToCopy = g_Bc250DisplayState.CurrentMode.Pitch * g_Bc250DisplayState.CurrentMode.Height;
-        if (bytesToCopy == 0 || bytesToCopy > g_Bc250DisplayState.FrameBufferSize) {
-            bytesToCopy = g_Bc250DisplayState.FrameBufferSize;
-        }
-        if (srcGpu != g_Bc250SdmaPresent.ScanoutGpuAddress && bytesToCopy > 0) {
-            (void)Bc250SdmaPresentBlt(srcGpu, g_Bc250SdmaPresent.ScanoutGpuAddress, bytesToCopy);
-        }
+    if (pSetVidPnSourceAddress->PrimarySegment == 1u) {
+        NTSTATUS copyStatus = Bc250DisplayCopyPrimaryToGop("SET_ADDRESS",
+            pSetVidPnSourceAddress->PrimarySegment,
+            (UINT64)pSetVidPnSourceAddress->PrimaryAddress.QuadPart,
+            (pSetVidPnSourceAddress->Flags.ModeChange != 0u &&
+             pSetVidPnSourceAddress->Flags.FlipImmediate == 0u &&
+             pSetVidPnSourceAddress->Flags.FlipOnNextVSync == 0u) ? TRUE : FALSE);
+        if (!NT_SUCCESS(copyStatus)) return copyStatus;
+    } else if (pSetVidPnSourceAddress->PrimarySegment != 0u) {
+        Bc250DisplayLog("[PRIMARY_COPY] REJECT Route=SET_ADDRESS Seg=%u Status=NOT_SUPPORTED\n",
+            pSetVidPnSourceAddress->PrimarySegment);
+        return STATUS_NOT_SUPPORTED;
     }
-
+    g_Bc250DisplayState.PrimaryAddress = pSetVidPnSourceAddress->PrimaryAddress;
+    g_Bc250DisplayState.PrimarySegment = pSetVidPnSourceAddress->PrimarySegment;
+    g_Bc250DisplayState.hPrimarySourceAllocation = pSetVidPnSourceAddress->hAllocation;
+    g_Bc250DisplayState.PrimaryAddressValid =
+        (pSetVidPnSourceAddress->PrimarySegment == 1u) ? TRUE : FALSE;
     return STATUS_SUCCESS;
 }
 
@@ -2520,26 +2810,26 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay(
     if (pSetVidPnSourceAddressWithMultiPlaneOverlay->pPlanes != NULL) {
         CONST DXGK_MULTIPLANE_OVERLAY_PLANE *pPlane0 = &pSetVidPnSourceAddressWithMultiPlaneOverlay->pPlanes[0];
         if (pPlane0->AllocationSegment != 0) {
-            g_Bc250DisplayState.PrimaryAddress = pPlane0->AllocationAddress;
-            g_Bc250DisplayState.PrimarySegment = pPlane0->AllocationSegment;
-            g_Bc250DisplayState.hPrimarySourceAllocation = pPlane0->hAllocation;
-            g_Bc250DisplayState.PrimaryAddressValid = TRUE;
             Bc250DisplayLog("=== SetVidPnSourceAddressWithMultiPlaneOverlay (SourceId=%u, Seg=%u, Addr=0x%I64X, hAlloc=%p, PlaneCount=%u) ===\n",
                 pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId,
                 pPlane0->AllocationSegment,
                 pPlane0->AllocationAddress.QuadPart,
                 pPlane0->hAllocation,
                 pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount);
-            if (pPlane0->AllocationSegment == 1 && g_Bc250SdmaPresent.HardwareEnabled && g_Bc250SdmaPresent.ScanoutGpuAddress != 0) {
-                uint64_t srcGpu = g_Bc250SdmaPresent.VramMcStart + pPlane0->AllocationAddress.QuadPart;
-                ULONG bytesToCopy = g_Bc250DisplayState.CurrentMode.Pitch * g_Bc250DisplayState.CurrentMode.Height;
-                if (bytesToCopy == 0 || bytesToCopy > g_Bc250DisplayState.FrameBufferSize) {
-                    bytesToCopy = g_Bc250DisplayState.FrameBufferSize;
-                }
-                if (srcGpu != g_Bc250SdmaPresent.ScanoutGpuAddress && bytesToCopy > 0) {
-                    (void)Bc250SdmaPresentBlt(srcGpu, g_Bc250SdmaPresent.ScanoutGpuAddress, bytesToCopy);
-                }
+            if (pPlane0->AllocationSegment == 1u) {
+                NTSTATUS copyStatus = Bc250DisplayCopyPrimaryToGop("MPO1",
+                    pPlane0->AllocationSegment,
+                    (UINT64)pPlane0->AllocationAddress.QuadPart, FALSE);
+                if (!NT_SUCCESS(copyStatus)) return copyStatus;
+            } else {
+                Bc250DisplayLog("[PRIMARY_COPY] REJECT Route=MPO1 Seg=%u Status=NOT_SUPPORTED\n",
+                    pPlane0->AllocationSegment);
+                return STATUS_NOT_SUPPORTED;
             }
+            g_Bc250DisplayState.PrimaryAddress = pPlane0->AllocationAddress;
+            g_Bc250DisplayState.PrimarySegment = pPlane0->AllocationSegment;
+            g_Bc250DisplayState.hPrimarySourceAllocation = pPlane0->hAllocation;
+            g_Bc250DisplayState.PrimaryAddressValid = TRUE;
         }
     }
 
@@ -2644,26 +2934,32 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay3(
         if (pPlane0->ContextCount > 0 && pPlane0->ppContextData != NULL && pPlane0->ppContextData[0] != NULL) {
             DXGK_PRIMARYCONTEXTDATA *pCtx = pPlane0->ppContextData[0];
             if (pCtx->SegmentId != 0) {
-                g_Bc250DisplayState.PrimaryAddress = pCtx->SegmentAddress;
-                g_Bc250DisplayState.PrimarySegment = (UINT)pCtx->SegmentId;
-                g_Bc250DisplayState.hPrimarySourceAllocation = pCtx->hAllocation;
-                g_Bc250DisplayState.PrimaryAddressValid = TRUE;
                 Bc250DisplayLog("=== SetVidPnSourceAddressWithMultiPlaneOverlay3 (SourceId=%u, Seg=%u, Addr=0x%I64X, hAlloc=%p, PlaneCount=%u) ===\n",
                     pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId,
                     (UINT)pCtx->SegmentId,
                     pCtx->SegmentAddress.QuadPart,
                     pCtx->hAllocation,
                     pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount);
-                if (pCtx->SegmentId == 1 && g_Bc250SdmaPresent.HardwareEnabled && g_Bc250SdmaPresent.ScanoutGpuAddress != 0) {
-                    uint64_t srcGpu = g_Bc250SdmaPresent.VramMcStart + pCtx->SegmentAddress.QuadPart;
-                    ULONG bytesToCopy = g_Bc250DisplayState.CurrentMode.Pitch * g_Bc250DisplayState.CurrentMode.Height;
-                    if (bytesToCopy == 0 || bytesToCopy > g_Bc250DisplayState.FrameBufferSize) {
-                        bytesToCopy = g_Bc250DisplayState.FrameBufferSize;
+                if (pCtx->SegmentId == 1u) {
+                    NTSTATUS copyStatus = Bc250DisplayCopyPrimaryToGop("MPO3",
+                        (UINT32)pCtx->SegmentId,
+                        (UINT64)pCtx->SegmentAddress.QuadPart, FALSE);
+                    if (!NT_SUCCESS(copyStatus)) {
+                        /* MPO3 documenta INVALID_PARAMETER para flip que nao
+                         * pode ser processado. O motivo preciso fica no log. */
+                        Bc250DisplayLog("[PRIMARY_COPY] MPO3 FAIL_CLOSED InternalStatus=0x%08X ReturnStatus=INVALID_PARAMETER\n",
+                            (ULONG)copyStatus);
+                        return STATUS_INVALID_PARAMETER;
                     }
-                    if (srcGpu != g_Bc250SdmaPresent.ScanoutGpuAddress && bytesToCopy > 0) {
-                        (void)Bc250SdmaPresentBlt(srcGpu, g_Bc250SdmaPresent.ScanoutGpuAddress, bytesToCopy);
-                    }
+                } else {
+                    Bc250DisplayLog("[PRIMARY_COPY] REJECT Route=MPO3 Seg=%u Status=NOT_SUPPORTED\n",
+                        (UINT)pCtx->SegmentId);
+                    return STATUS_NOT_SUPPORTED;
                 }
+                g_Bc250DisplayState.PrimaryAddress = pCtx->SegmentAddress;
+                g_Bc250DisplayState.PrimarySegment = (UINT)pCtx->SegmentId;
+                g_Bc250DisplayState.hPrimarySourceAllocation = pCtx->hAllocation;
+                g_Bc250DisplayState.PrimaryAddressValid = TRUE;
             }
         }
     }
@@ -3346,6 +3642,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                 effectiveSrcPhys <= g_Bc250DisplayState.FrameBufferSize &&
                 requiredSrcBytes <= g_Bc250DisplayState.FrameBufferSize - effectiveSrcPhys) {
                 BOOLEAN sdmaDone = FALSE;
+                BOOLEAN dirtyRectsUsed = FALSE;
+                UINT dirtyRectCount = 0u;
+                ULONG dirtyRectBytes = 0u;
                 uint64_t srcGpu = g_Bc250SdmaPresent.VramMcStart + effectiveSrcPhys;
                 uint64_t dstScanoutGpu = g_Bc250SdmaPresent.ScanoutGpuAddress;
 
@@ -3377,7 +3676,59 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                                 dstScanoutGpu, dstPitch,
                                 dstX, dstY,
                                 presentW, presentH);
+                        } else if (Bc250DisplayDirtyRectsUsable(pPresent, &dirtyRectCount)) {
+                            /*
+                             * DX.34 -- HONRAR pDstSubRects (contrato do DXGKARG_PRESENT).
+                             *
+                             * Corrida 79 (P0): Present #8 veio com SubRects=1 do tamanho de
+                             * um cursor e a superficie inteira 0/256; o KMD copiava os
+                             * 11.059.200 bytes e o Present #9 ja amostrava o scanout 0/256
+                             * -- tela preta com o cursor sozinho. So' os retangulos sujos
+                             * sao conteudo novo; o resto do scanout e' o quadro anterior.
+                             * Cada retangulo vai por COPY_LINEAR_SUB_WINDOW (o caminho do
+                             * SUBWINDOW que pos o 1280x720 da Corrida 75 no monitor), com a
+                             * origem no mesmo (x,y) da superficie de tela cheia.
+                             */
+                            ULONG pitch = g_Bc250DisplayState.CurrentMode.Pitch;
+                            UINT r;
+                            dirtyRectsUsed = TRUE;
+                            sdmaDone = TRUE;
+                            for (r = 0u; r < dirtyRectCount && sdmaDone; ++r) {
+                                CONST RECT *rc = &pPresent->pDstSubRects[r];
+                                uint64_t rectSrc = srcGpu + (uint64_t)(ULONG)rc->top * pitch +
+                                    (uint64_t)(ULONG)rc->left * 4ull;
+                                sdmaDone = Bc250SdmaPresentBltRect(
+                                    rectSrc, pitch, dstScanoutGpu, pitch,
+                                    (ULONG)rc->left, (ULONG)rc->top,
+                                    (ULONG)(rc->right - rc->left),
+                                    (ULONG)(rc->bottom - rc->top));
+                                dirtyRectBytes += (ULONG)(rc->right - rc->left) *
+                                    (ULONG)(rc->bottom - rc->top) * 4u;
+                            }
+                            {
+                                LONG dirtyLog = InterlockedIncrement(&s_Bc250DirtyRectLogCount);
+                                if (dirtyLog <= 16 || (dirtyLog % 128) == 0) {
+                                    ULONG match = 0u, probes = 0u, srcNonZero = 0u;
+                                    if (sdmaDone) {
+                                        Bc250DisplayDirtyRectProof(pPresent, dirtyRectCount,
+                                            effectiveSrcPhys, &match, &probes, &srcNonZero);
+                                    }
+                                    Bc250DisplayLog("[Present #%d] DIRTY_RECTS n=%u Bytes=%u rect0=(%ld,%ld)-(%ld,%ld) SDMA=%s DIRTY_RECT_PROOF Match=%u/%u SrcNZ=%u -- so' os retangulos sujos foram ao scanout (ocorrencia #%ld)\n",
+                                        count, dirtyRectCount, dirtyRectBytes,
+                                        pPresent->pDstSubRects[0].left, pPresent->pDstSubRects[0].top,
+                                        pPresent->pDstSubRects[0].right, pPresent->pDstSubRects[0].bottom,
+                                        sdmaDone ? "YES" : "FAILED_CLOSED",
+                                        match, probes, srcNonZero, dirtyLog);
+                                }
+                            }
                         } else {
+                            if (pPresent->SubRectCnt > 0u) {
+                                LONG fullLog = InterlockedIncrement(&s_Bc250DirtyRectLogCount);
+                                if (fullLog <= 16 || (fullLog % 128) == 0) {
+                                    Bc250DisplayLog("[Present #%d] DIRTY_RECTS_RECUSADOS SubRectCnt=%u -- lista fora do contrato aceito (vazia, >%u, fora da tela ou Src!=Dst); copia de tela cheia (ocorrencia #%ld)\n",
+                                        count, pPresent->SubRectCnt, BC250_DIRTY_RECT_MAX, fullLog);
+                                }
+                            }
                             sdmaDone = Bc250SdmaPresentBlt(srcGpu, dstScanoutGpu, scanoutBytes);
                         }
                     }
@@ -3389,6 +3740,12 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                                 count, presentW, presentH,
                                 g_Bc250DisplayState.CurrentMode.Width,
                                 g_Bc250DisplayState.CurrentMode.Height);
+                        } else if (dirtyRectsUsed) {
+                            /* DX.34: so' os retangulos sujos foram copiados; comparar a
+                             * superficie inteira reprovaria um present correto. A prova
+                             * amostral por retangulo sai na linha DIRTY_RECTS. */
+                            Bc250DisplayLog("[Present #%d] BYTE_PROOF SKIPPED (DIRTY_RECTS n=%u Bytes=%u): prova amostral por retangulo na linha DIRTY_RECTS\n",
+                                count, dirtyRectCount, dirtyRectBytes);
                         } else {
                             UINT64 mismatchOffset = ~(UINT64)0;
                             ULONG postNz = 0u, postHx = 0u;
@@ -3468,6 +3825,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                                 (g_Bc250DisplayState.CurrentMode.Width > presentW) ? ((g_Bc250DisplayState.CurrentMode.Width - presentW) / 2u) : 0u,
                                 (g_Bc250DisplayState.CurrentMode.Height > presentH) ? ((g_Bc250DisplayState.CurrentMode.Height - presentH) / 2u) : 0u,
                                 sdmaDone ? "YES" : "FAILED_CLOSED");
+                        } else if (dirtyRectsUsed) {
+                            Bc250DisplayLog("[Present #%d] Blt DIRTY_RECTS n=%u %u bytes (src 0x%llX -> scanout 0x0): SDMA=%s\n",
+                                count, dirtyRectCount, dirtyRectBytes, effectiveSrcPhys, sdmaDone ? "YES" : "FAILED_CLOSED");
                         } else {
                             Bc250DisplayLog("[Present #%d] Blt %u bytes (src 0x%llX -> scanout 0x0): SDMA=%s\n",
                                 count, scanoutBytes, effectiveSrcPhys, sdmaDone ? "YES" : "FAILED_CLOSED");

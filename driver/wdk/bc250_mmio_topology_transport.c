@@ -350,6 +350,10 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == 0x00008C24u ||
         /* SQ_IND_DATA: janela de leitura indireta da sonda de onda (19/09). */
         ByteOffset == 0x00008DE4u ||
+        /* DX.32: COMPUTE_VMID no snapshot de TDR -- SOMENTE LEITURA, fora da allowlist de escrita. */
+        ByteOffset == 0x0000B850u ||
+        /* DX.33: CP_ME0_PIPE0_VMID (VMID do pipe grafico ME0/pipe0) -- SOMENTE LEITURA. */
+        ByteOffset == 0x0000C148u ||
         ByteOffset == 0x00030330u || ByteOffset == 0x00030334u ||
         ByteOffset == 0x00030338u ||
         ByteOffset == 0x00008680u || ByteOffset == 0x00008694u ||

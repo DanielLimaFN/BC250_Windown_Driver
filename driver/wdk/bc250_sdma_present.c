@@ -632,7 +632,7 @@ static uint32_t Bc250SdmaPresentAllocateRingSlot(
 }
 #endif
 
-BOOLEAN Bc250SdmaPresentBlt(
+static BOOLEAN Bc250SdmaPresentBltCore(
     _In_ uint64_t SourceGpuAddress,
     _In_ uint64_t DestGpuAddress,
     _In_ ULONG ByteCount)
@@ -790,7 +790,7 @@ BOOLEAN Bc250SdmaPresentBlt(
 #endif
 }
 
-BOOLEAN Bc250SdmaPresentBltRect(
+static BOOLEAN Bc250SdmaPresentBltRectCore(
     _In_ uint64_t SourceGpuAddress,
     _In_ ULONG SourcePitchBytes,
     _In_ uint64_t DestGpuAddress,
@@ -933,6 +933,73 @@ BOOLEAN Bc250SdmaPresentBltRect(
     UNREFERENCED_PARAMETER(Height);
     return TRUE;
 #endif
+}
+
+/*
+ * DX.32 -- wrappers publicos: toda escrita de apresentacao no scanout passa por
+ * aqui, entao a marca "o scanout contem, por inteiro, a origem X" tem uma fonte
+ * so'. Escrita integral bem-sucedida do scanout inteiro a partir do seu inicio
+ * grava a marca; qualquer outra escrita que toque o scanout (retangulo, parcial,
+ * falha) a apaga. Falha tambem apaga: depois de timeout o estado e' desconhecido.
+ */
+static BOOLEAN Bc250SdmaPresentTouchesScanout(uint64_t DestGpuAddress)
+{
+    const uint64_t scanout = g_Bc250SdmaPresent.ScanoutGpuAddress;
+    return (scanout != 0ull && DestGpuAddress >= scanout &&
+            DestGpuAddress < scanout + (64ull * 1024ull * 1024ull)) ? TRUE : FALSE;
+}
+
+BOOLEAN Bc250SdmaPresentBlt(
+    _In_ uint64_t SourceGpuAddress,
+    _In_ uint64_t DestGpuAddress,
+    _In_ ULONG ByteCount)
+{
+    const BOOLEAN ok = Bc250SdmaPresentBltCore(SourceGpuAddress, DestGpuAddress, ByteCount);
+    if (Bc250SdmaPresentTouchesScanout(DestGpuAddress)) {
+        const BOOLEAN full = (ok && DestGpuAddress == g_Bc250SdmaPresent.ScanoutGpuAddress) ? TRUE : FALSE;
+        g_Bc250SdmaPresent.ScanoutLastWriteFull = FALSE;
+        KeMemoryBarrier();
+        g_Bc250SdmaPresent.ScanoutLastFullSourceMc = full ? SourceGpuAddress : 0ull;
+        g_Bc250SdmaPresent.ScanoutLastFullBytes = full ? ByteCount : 0u;
+        InterlockedIncrement(&g_Bc250SdmaPresent.ScanoutWriteSequence);
+        KeMemoryBarrier();
+        g_Bc250SdmaPresent.ScanoutLastWriteFull = full;
+    }
+    return ok;
+}
+
+BOOLEAN Bc250SdmaPresentBltRect(
+    _In_ uint64_t SourceGpuAddress,
+    _In_ ULONG SourcePitchBytes,
+    _In_ uint64_t DestGpuAddress,
+    _In_ ULONG DestPitchBytes,
+    _In_ ULONG DestX,
+    _In_ ULONG DestY,
+    _In_ ULONG Width,
+    _In_ ULONG Height)
+{
+    const BOOLEAN ok = Bc250SdmaPresentBltRectCore(SourceGpuAddress, SourcePitchBytes,
+        DestGpuAddress, DestPitchBytes, DestX, DestY, Width, Height);
+    if (Bc250SdmaPresentTouchesScanout(DestGpuAddress)) {
+        /* Retangulo nunca prova "scanout inteiro = esta origem". */
+        g_Bc250SdmaPresent.ScanoutLastWriteFull = FALSE;
+        g_Bc250SdmaPresent.ScanoutLastFullSourceMc = 0ull;
+        g_Bc250SdmaPresent.ScanoutLastFullBytes = 0u;
+        InterlockedIncrement(&g_Bc250SdmaPresent.ScanoutWriteSequence);
+    }
+    return ok;
+}
+
+BOOLEAN Bc250SdmaPresentScanoutHoldsFullCopyOf(
+    _In_ uint64_t SourceGpuAddress,
+    _In_ ULONG ByteCount,
+    _Out_ LONG *WriteSequence)
+{
+    *WriteSequence = g_Bc250SdmaPresent.ScanoutWriteSequence;
+    return (g_Bc250SdmaPresent.ScanoutLastWriteFull &&
+            g_Bc250SdmaPresent.ScanoutLastFullSourceMc == SourceGpuAddress &&
+            SourceGpuAddress != 0ull &&
+            g_Bc250SdmaPresent.ScanoutLastFullBytes >= ByteCount) ? TRUE : FALSE;
 }
 
 BOOLEAN Bc250SdmaPresentFill(

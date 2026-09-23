@@ -123,6 +123,26 @@ static int Bc250RunPagingContractTest(void)
         &flushParams, &flushPlan) == BC250_PAGING_OK);
     CHECK(flushPlan.RequestValue == 0x00F80200u);
     CHECK(flushPlan.AckMask == 0x00000200u);
+
+    /*
+     * DX.32: engine 0 para o anel grafico. Numeros independentes do codigo:
+     * gc_10_1_0_offset.h (ENG0_REQ 0x1643, ENG0_ACK 0x1655, ENG0_ADDR_RANGE_LO32
+     * 0x1667) com GC_BASE[0]=0x1260, vezes 4. Engine sem faixa programada recusa.
+     */
+    CHECK(Bc250PagingBuildGfxhubTlbFlushPlanForEngine(
+        &flushParams, BC250_GFX_RING_INVALIDATE_ENGINE, &flushPlan) == BC250_PAGING_OK);
+    CHECK(flushPlan.EngineId == 0u);
+    CHECK(flushPlan.RequestRegisterOffset == 0xA28Cu);
+    CHECK(flushPlan.AckRegisterOffset == 0xA2D4u);
+    CHECK(flushPlan.RangeLowRegisterOffset == 0xA31Cu);
+    CHECK(flushPlan.RangeHighRegisterOffset == 0xA320u);
+    CHECK(flushPlan.RequestValue == 0x00F80200u && flushPlan.AckMask == 0x00000200u);
+    CHECK(Bc250PagingBuildGfxhubTlbFlushPlanForEngine(
+        &flushParams, 17u, &flushPlan) == BC250_PAGING_OK);
+    CHECK(flushPlan.RequestRegisterOffset == 0xA2D0u && flushPlan.AckRegisterOffset == 0xA318u);
+    CHECK(flushPlan.RangeLowRegisterOffset == 0xA3A4u && flushPlan.RangeHighRegisterOffset == 0xA3A8u);
+    CHECK(Bc250PagingBuildGfxhubTlbFlushPlanForEngine(
+        &flushParams, 5u, &flushPlan) == BC250_PAGING_BAD_ARGUMENT);
     flushParams.Vmid = 8u;
 
     CHECK(Bc250PagingBuildFlushTlb(

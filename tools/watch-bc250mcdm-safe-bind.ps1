@@ -214,6 +214,33 @@ function Restore-DwmCaptureIfArmed {
     }
 }
 
+# --------------------------------------------------------------------------
+# DX.34 -- MARCADOR DE BOOT FRIO GRAVADO PELO PROPRIO WATCHDOG.
+#
+# Corrida 79 (P0): a 78 terminou em RECOVERY_OK_ONLINE no boot seguinte ao
+# reboot QUENTE que este watchdog pediu, e nenhum caminho aqui gravava
+# C:\BC250_REQUIRE_CLEAN_BOOT.json. O marcador que existia era o do binder, com
+# os ticks do boot ANTERIOR ao reboot; o binder da 79 viu ticks diferentes,
+# concluiu "boot posterior confirmado" e ligou o driver no MESMO boot do
+# rollback. Agora todo rollback (inicio e fim) grava o marcador com os ticks do
+# boot CORRENTE, no formato de rollback-bc250mcdm-lab.ps1. Falha de escrita nao
+# impede a recovery: seguranca vem antes de evidencia.
+# --------------------------------------------------------------------------
+$cleanBootMarkerPath = 'C:\BC250_REQUIRE_CLEAN_BOOT.json'
+function Write-Bc250CleanBootMarker([string]$Why) {
+    try {
+        Write-AtomicJson $cleanBootMarkerPath ([ordered]@{
+            state = 'CLEAN_BOOT_REQUIRED'
+            rollback_boot_ticks = [long]$script:currentBootTicks
+            rollback_completed_at = (Get-Date).ToString('o')
+            restored_service = 'BasicDisplay'
+            restored_code = 0
+            written_by = "watch-bc250mcdm-safe-bind.ps1 ($Why)"
+            hardware_validated = $false
+        })
+    } catch { }
+}
+
 function Complete-Bc250SafeBind([string]$FinalState, [string]$Detail, [int]$ExitCode = 0) {
     # Capturado ANTES do Write-State: aquele avanca $script:previousState para
     # o estado final, e o final.json passaria a registrar previous_state igual
@@ -354,6 +381,7 @@ try {
     # Evidencia e' importante, mas indisponibilidade do disco nao tem direito
     # de impedir a acao de seguranca. A recovery continua fail-closed.
 }
+Write-Bc250CleanBootMarker 'ROLLBACK_STARTED'
 
 # LocalDumps e' estado global do Windows: desarmar antes da recovery/reboot,
 # mesmo se algum dump ainda estiver bloqueado. O script preserva dumps
@@ -408,6 +436,7 @@ if ($exitCode -eq 0) {
     # acreditar: exit 0 e' afirmacao do script, nao medicao do PnP.
     $afterVerdict = Get-Bc250PnpVerdict
     if ($afterVerdict.healthy) {
+        Write-Bc250CleanBootMarker 'RECOVERY_OK_ONLINE'
         Complete-Bc250SafeBind 'RECOVERY_OK_ONLINE' `
             'recovery fechou sem reboot e BasicDisplay Codigo 0 foi confirmado em 5 amostras'
         $recoveryMutex.ReleaseMutex(); $recoveryMutex.Dispose()

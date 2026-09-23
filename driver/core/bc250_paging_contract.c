@@ -110,24 +110,51 @@ BC250_PAGING_STATUS Bc250PagingBuildGfxhubTlbFlushPlan(
     const BC250_PAGING_FLUSH_TLB_PARAMS *Params,
     BC250_GFXHUB_TLB_FLUSH_PLAN *Plan)
 {
+    /* Flushes da CPU (MMIO) ficam no engine 17, como o flush de GART do upstream. */
+    return Bc250PagingBuildGfxhubTlbFlushPlanForEngine(Params, 17u, Plan);
+}
+
+/*
+ * DX.32 -- plano de invalidacao para QUALQUER engine do GFXHUB.
+ *
+ * Offsets por gc_10_1_0_offset.h com GC_BASE[0]=0x1260 (docs/03):
+ *   REQ_ENGn = (0x1260 + 0x1643 + n) * 4 = 0xA28C + 4n   (ENG17 = 0xA2D0)
+ *   ACK_ENGn = (0x1260 + 0x1655 + n) * 4 = 0xA2D4 + 4n   (ENG17 = 0xA318)
+ *   RANGE_LO_ENGn = (0x1260 + 0x1667 + 2n) * 4 = 0xA31C + 8n (ENG17 = 0xA3A4)
+ * eng_addr_distance = ENG1_ADDR_RANGE_LO32 - ENG0_ADDR_RANGE_LO32 = 2 dwords
+ * (gfxhub_v2_0.c:461). A faixa de TODOS os engines e' 0xFFFFFFFF/0x1F no
+ * upstream (gfxhub_v2_0_program_invalidation); o nosso programa global ja faz
+ * isso para os engines 0 e 17 (bc250_gcvm_global_mmu.c).
+ *
+ * Por que existe: na Corrida 76/77 o anel grafico invalidava no MESMO engine 17
+ * que a CPU usa por MMIO, sem serializacao entre os dois. O upstream da um
+ * engine proprio a cada anel (amdgpu_gmc_allocate_vm_inv_eng) e deixa o 17 para
+ * o flush do driver. Aqui so' os engines 0 e 17 tem faixa programada.
+ */
+BC250_PAGING_STATUS Bc250PagingBuildGfxhubTlbFlushPlanForEngine(
+    const BC250_PAGING_FLUSH_TLB_PARAMS *Params,
+    uint32_t EngineId,
+    BC250_GFXHUB_TLB_FLUSH_PLAN *Plan)
+{
     const uint32_t invalidateAllLevels = 0x00F80000u;
 
     if (Params == NULL || Plan == NULL) {
         return BC250_PAGING_BAD_ARGUMENT;
     }
     if (Params->HubIndex != 0u || Params->Vmid == 0u ||
-        Params->Vmid >= 16u || Params->FlushType > 7u) {
+        Params->Vmid >= 16u || Params->FlushType > 7u ||
+        (EngineId != 0u && EngineId != 17u)) {
         return BC250_PAGING_BAD_ARGUMENT;
     }
 
     memset(Plan, 0, sizeof(*Plan));
     Plan->Vmid = Params->Vmid;
-    Plan->EngineId = 17u;
+    Plan->EngineId = EngineId;
     Plan->FlushType = Params->FlushType;
-    Plan->RequestRegisterOffset = 0xA2D0u;
-    Plan->AckRegisterOffset = 0xA318u;
-    Plan->RangeLowRegisterOffset = 0xA3A4u;
-    Plan->RangeHighRegisterOffset = 0xA3A8u;
+    Plan->RequestRegisterOffset = 0xA28Cu + 4u * EngineId;
+    Plan->AckRegisterOffset = 0xA2D4u + 4u * EngineId;
+    Plan->RangeLowRegisterOffset = 0xA31Cu + 8u * EngineId;
+    Plan->RangeHighRegisterOffset = 0xA320u + 8u * EngineId;
     Plan->RequestValue = (1u << Params->Vmid) |
         (Params->FlushType << 16) | invalidateAllLevels;
     Plan->AckMask = 1u << Params->Vmid;

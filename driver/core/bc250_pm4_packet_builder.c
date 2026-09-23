@@ -1,4 +1,5 @@
 #include "bc250_pm4_packet_builder.h"
+#include "bc250_gcvm_contract.h"
 
 /* Tabelas upstream sem edicao; procedencia em inc/linux_ref/PROVENANCE_CLEARSTATE.txt. */
 #include "../../inc/linux_ref/clearstate_defs.h"
@@ -335,6 +336,61 @@ BC250_PM4_STATUS Bc250Pm4EmitWaitRegMem(
     Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, Mask);
     Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, PollIntervalUs);
 
+    return BC250_PM4_OK;
+}
+
+BC250_PM4_STATUS Bc250Pm4EmitGfxVmSwitch(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    const BC250_PM4_GFX_VM_SWITCH *Switch)
+{
+    uint32_t data;
+    const uint32_t regWrite = BC250_PM4_WD_ENGINE_PFP |
+        BC250_PM4_WD_DST_REG | BC250_PM4_WD_CONFIRM;
+
+    /* Validate the complete transaction before writing even its first dword. */
+    if (RingBuffer == NULL || CursorDwords == NULL || Switch == NULL ||
+        !Bc250IsPowerOfTwo32(RingDwords) || Switch->Vmid == 0u ||
+        Switch->Vmid >= 16u || Switch->RootPhysical == 0ull ||
+        (Switch->RootPhysical & 0xFFFu) != 0ull ||
+        Switch->FenceGpuVa == 0ull || Switch->FenceValue == 0u ||
+        (Switch->PtBaseLoRegisterBytes & 3u) != 0u ||
+        (Switch->RequestRegisterBytes & 3u) != 0u ||
+        (Switch->AckRegisterBytes & 3u) != 0u ||
+        Switch->AckMask != (1u << Switch->Vmid) ||
+        (Switch->RequestValue & Switch->AckMask) == 0u) {
+        return BC250_PM4_BAD_ARGUMENT;
+    }
+
+    /* Upstream order: previous IB retired, PT base, invalidate, ACK, PFP sync. */
+    (void)Bc250Pm4EmitWaitRegMem(RingBuffer, RingDwords, CursorDwords,
+        BC250_PM4_WAIT_REG_MEM_PFP_MEM_GE, Switch->FenceGpuVa,
+        Switch->FenceValue, 0xFFFFFFFFu, 4u);
+    data = (uint32_t)(Switch->RootPhysical | BC250_PTE_VALID);
+    (void)Bc250Pm4EmitWriteData(RingBuffer, RingDwords, CursorDwords,
+        regWrite, Switch->PtBaseLoRegisterBytes / 4u, &data, 1u);
+    data = (uint32_t)(Switch->RootPhysical >> 32);
+    (void)Bc250Pm4EmitWriteData(RingBuffer, RingDwords, CursorDwords,
+        regWrite, Switch->PtBaseLoRegisterBytes / 4u + 1u, &data, 1u);
+    data = Switch->RequestValue;
+    (void)Bc250Pm4EmitWriteData(RingBuffer, RingDwords, CursorDwords,
+        regWrite, Switch->RequestRegisterBytes / 4u, &data, 1u);
+    (void)Bc250Pm4EmitWaitRegMem(RingBuffer, RingDwords, CursorDwords,
+        BC250_PM4_WAIT_REG_MEM_ME_REG_EQ, Switch->AckRegisterBytes / 4u,
+        Switch->AckMask, Switch->AckMask, 0x20u);
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords,
+        BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_PFP_SYNC_ME, 1u));
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, 0u);
+    /*
+     * DX.36 -- SEM SWITCH_BUFFER NA TROCA (revertido da DX.35).
+     *
+     * Corrida 81 (P0): com o par de SWITCH_BUFFER que amdgpu_vm_flush emite, 5
+     * de 5 TDRs tiveram ME_HEADER_DUMP = PFP_HEADER_DUMP = 0xC0008B00, zero
+     * ondas, logo apos cada troca -- o CP nao passa do pacote neste anel (H:
+     * sem Constant Engine em uso, falta a contrapartida do CE). Seguiu-se o
+     * 0x116 por TDRs repetidos. Nao reintroduzir sem CE/preambulo.
+     */
     return BC250_PM4_OK;
 }
 

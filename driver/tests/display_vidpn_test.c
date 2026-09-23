@@ -505,6 +505,12 @@ static int Bc250RunDisplayVidPnTest(void)
     DXGKARG_ENUMVIDPNCOFUNCMODALITY enumCofunc;
     DXGKARG_COMMITVIDPN commitVidPn;
     DXGKARG_PRESENT presentArg;
+    static DXGKARG_SETVIDPNSOURCEADDRESS setAddress;
+    static DXGKARG_SETVIDPNSOURCEADDRESSWITHMULTIPLANEOVERLAY3 setMpo3;
+    static DXGK_MULTIPLANE_OVERLAY_PLANE3 mpoPlane;
+    static DXGK_MULTIPLANE_OVERLAY_PLANE3 *mpoPlanes[1];
+    static DXGK_PRIMARYCONTEXTDATA mpoContext;
+    static DXGK_PRIMARYCONTEXTDATA *mpoContexts[1];
     DXGK_PRESENTALLOCATIONINFO presentAllocations[3];
     DXGKRNL_INTERFACE dxgkInterface;
     DXGK_DISPLAY_INFORMATION postDisplayInfo;
@@ -526,6 +532,10 @@ static int Bc250RunDisplayVidPnTest(void)
     memset(&enumCofunc, 0, sizeof(enumCofunc));
     memset(&commitVidPn, 0, sizeof(commitVidPn));
     memset(&presentArg, 0, sizeof(presentArg));
+    memset(&setAddress, 0, sizeof(setAddress));
+    memset(&setMpo3, 0, sizeof(setMpo3));
+    memset(&mpoPlane, 0, sizeof(mpoPlane));
+    memset(&mpoContext, 0, sizeof(mpoContext));
     memset(presentAllocations, 0, sizeof(presentAllocations));
     memset(&dxgkInterface, 0, sizeof(dxgkInterface));
     memset(&postDisplayInfo, 0, sizeof(postDisplayInfo));
@@ -861,6 +871,27 @@ static int Bc250RunDisplayVidPnTest(void)
     CHECK(!Bc250DisplayResolvePrimarySource(&resolvedPhysical, &resolvedSegment));
     g_Bc250DisplayState.PrimaryAddressValid = FALSE;
     g_Bc250DisplayState.PrimarySegment = 0;
+
+    /* DX.31: sem SDMA inicializada, nenhuma DDI publica primaria nova nem
+     * confunde tentativa de Flip com copia GOP concluida. */
+    setAddress.VidPnSourceId = 0u;
+    setAddress.PrimarySegment = 1u;
+    setAddress.PrimaryAddress.QuadPart = 0xAD0000ll;
+    CHECK(Bc250DxgkDdiSetVidPnSourceAddress(NULL, &setAddress) ==
+        STATUS_DEVICE_NOT_READY);
+    CHECK(g_Bc250DisplayState.PrimaryAddressValid == FALSE);
+    mpoContext.SegmentId = 1u;
+    mpoContext.SegmentAddress.QuadPart = 0xAD0000ll;
+    mpoContexts[0] = &mpoContext;
+    mpoPlane.ContextCount = 1u;
+    mpoPlane.ppContextData = mpoContexts;
+    mpoPlanes[0] = &mpoPlane;
+    setMpo3.VidPnSourceId = 0u;
+    setMpo3.PlaneCount = 1u;
+    setMpo3.ppPlanes = mpoPlanes;
+    CHECK(Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay3(
+        NULL, &setMpo3) == STATUS_INVALID_PARAMETER);
+    CHECK(g_Bc250DisplayState.PrimaryAddressValid == FALSE);
 
     /* 10. PresentDisplayOnly validates format/pitch and copies bounded pixels. */
     g_Bc250DisplayState.CurrentMode.Width = 4;

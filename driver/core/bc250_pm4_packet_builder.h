@@ -293,6 +293,32 @@ const char *Bc250Pm4StatusName(BC250_PM4_STATUS Status);
 #define BC250_PM4_IT_PFP_SYNC_ME             0x42u  /* nvd.h:322 */
 /* WAIT_REG_MEM: FUNCTION(5 '>=') | MEM_SPACE(1 mem) | ENGINE(1 pfp) -- nvd.h:166-186 */
 #define BC250_PM4_WAIT_REG_MEM_PFP_MEM_GE    ((5u << 0) | (1u << 4) | (1u << 8))
+/* DX.30: espera do ACK de registrador no ME, FUNCTION ==, MEM_SPACE reg. */
+#define BC250_PM4_WAIT_REG_MEM_ME_REG_EQ     3u
+/* DX.35: SWITCH_BUFFER (nvd.h:550 PACKET3_SWITCH_BUFFER 0x8B), emitido DUAS vezes
+ * depois do flush de VM como em amdgpu_vm_flush ("the double SWITCH_BUFFER here
+ * *cannot* be skipped") com gfx_v10_0_ring_emit_sb = PACKET3(SWITCH_BUFFER,0), 0. */
+#define BC250_PM4_IT_SWITCH_BUFFER           0x8Bu
+/* DX.36: a troca NAO emite SWITCH_BUFFER -- Corrida 81 travou o CP nele (5/5 TDRs). */
+#define BC250_PM4_GFX_VM_SWITCH_DWORDS      31u
+
+typedef struct BC250_PM4_GFX_VM_SWITCH {
+    uint64_t FenceGpuVa;
+    uint64_t RootPhysical;
+    uint32_t FenceValue;
+    uint32_t Vmid;
+    uint32_t PtBaseLoRegisterBytes;
+    uint32_t RequestRegisterBytes;
+    uint32_t AckRegisterBytes;
+    uint32_t RequestValue;
+    uint32_t AckMask;
+} BC250_PM4_GFX_VM_SWITCH;
+
+BC250_PM4_STATUS Bc250Pm4EmitGfxVmSwitch(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    const BC250_PM4_GFX_VM_SWITCH *Switch);
 #define BC250_PM4_PREAMBLE_BEGIN_CLEAR_STATE (2u << 28) /* nvd.h:395 */
 #define BC250_PM4_PREAMBLE_END_CLEAR_STATE   (3u << 28) /* nvd.h:396 */
 /* mmPA_SC_TILE_STEERING_OVERRIDE 0x00d7, BASE_IDX 1 (gc_10_1_0_offset.h:5977) */

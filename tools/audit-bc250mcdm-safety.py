@@ -4577,6 +4577,12 @@ def audit_conformance_harness_checks_present(errors: list[str]) -> None:
                 "contagem de quadros com Present aceito no runner", errors)
         require(rtext, "PRESENT_FALHOU",
                 "contagem de Presents falhos no runner", errors)
+        require(rtext, "Presents aceitos pelo runtime:",
+                "runner usa a contagem final de quadros, nao so linhas periodicas", errors)
+        require(rtext, "frameEvidence -ne $Frames",
+                "runner recusa 0/N ou quadro parcial mesmo com Exit 0", errors)
+        require(rtext, "S5=1\\s+contador=65536",
+                "runner exige controle grafico 5/5 nas tres variantes", errors)
         if "if ($exitCode -eq 0) { $exitCode = 3 }" not in rtext:
             errors.append(
                 "runner nao converte exit 0 SEM prova de quadro em falha: "
@@ -7171,24 +7177,20 @@ def audit_dx28_rotation_carries_vulkan_content(errors: list[str]) -> None:
 
 
 def audit_dx29_vmid_switch_sync_on_gfx_ring(errors: list[str]) -> None:
-    """Faixa DX.29 (22/09/2026): sincronia de troca de VMID no anel grafico.
+    """Faixa DX.29 preservada dentro da transacao DX.30."""
 
-    Corridas 73-74: 5 de 5 travamentos de 240 ondas num IB logo apos IB de OUTRO
-    VMID. Exige: WAIT_REG_MEM mem/PFP sobre a fence do anel + PFP_SYNC_ME ANTES do
-    INDIRECT_BUFFER quando o VMID muda, codificacao de nvd.h, LastSubmitVmid
-    atualizado so' no sucesso e zerado (0xFFFFFFFF) no boot e no restart.
-    """
     mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
     pm4h = (ROOT / "driver" / "core" / "bc250_pm4_packet_builder.h").read_text(encoding="utf-8", errors="replace")
+    pm4c = (ROOT / "driver" / "core" / "bc250_pm4_packet_builder.c").read_text(encoding="utf-8", errors="replace")
     test = (ROOT / "driver" / "tests" / "pm4_packet_builder_test.c").read_text(encoding="utf-8", errors="replace")
     fn = mini.find("static NTSTATUS Bc250ActiveGfxEngineSubmit(")
     body = mini[fn:mini.find("\n}\n", fn)] if fn >= 0 else ""
-    w = body.find("BC250_PM4_WAIT_REG_MEM_PFP_MEM_GE")
-    s = body.find("BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_PFP_SYNC_ME, 1u)")
+    w = pm4c.find("BC250_PM4_WAIT_REG_MEM_PFP_MEM_GE", pm4c.find("BC250_PM4_STATUS Bc250Pm4EmitGfxVmSwitch("))
+    s = pm4c.find("BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_PFP_SYNC_ME, 1u)", w)
     ib = body.find("pm4Status = Bc250Pm4EmitIndirectBuffer(")
-    if not (0 <= w < s < ib):
+    if not (0 <= w < s and 0 <= body.find("pm4Status = Bc250Pm4EmitGfxVmSwitch(") < ib):
         errors.append("DX.29: sincronia de troca de VMID ausente ou depois do INDIRECT_BUFFER")
-    if "prevVmid != Vmid" not in body or "Context->GfxEngine.FenceGpuVa, waitFence" not in body:
+    if "prevVmid != Vmid" not in body or "vmSwitch.FenceGpuVa = Context->GfxEngine.FenceGpuVa" not in body:
         errors.append("DX.29: a espera nao e' condicionada a troca de VMID ou nao usa a fence do anel")
     if "Context->GfxEngine.LastSubmitVmid = Vmid;" not in body:
         errors.append("DX.29: LastSubmitVmid nao e' atualizado no sucesso")
@@ -7201,6 +7203,325 @@ def audit_dx29_vmid_switch_sync_on_gfx_ring(errors: list[str]) -> None:
                    "CHECK(ring[1] == 0x00000115u);"):
         if needle not in test:
             errors.append(f"DX.29: teste perdeu {needle!r}")
+
+
+def audit_dx30_gfx_vm_flush_order(errors: list[str]) -> None:
+    """DX.30: base/invalidacao/ACK no anel, entre fence anterior e IB alvo."""
+    mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    pm4c = (ROOT / "driver" / "core" / "bc250_pm4_packet_builder.c").read_text(encoding="utf-8", errors="replace")
+    test = (ROOT / "driver" / "tests" / "pm4_packet_builder_test.c").read_text(encoding="utf-8", errors="replace")
+    fn = mini.find("static NTSTATUS Bc250ActiveGfxEngineSubmit(")
+    body = mini[fn:mini.find("\n}\n", fn)] if fn >= 0 else ""
+    start = pm4c.find("BC250_PM4_STATUS Bc250Pm4EmitGfxVmSwitch(")
+    flush = pm4c[start:pm4c.find("\n}\n", start)] if start >= 0 else ""
+    order = ["BC250_PM4_WAIT_REG_MEM_PFP_MEM_GE", "Switch->PtBaseLoRegisterBytes / 4u",
+             "Switch->PtBaseLoRegisterBytes / 4u + 1u", "Switch->RequestRegisterBytes / 4u",
+             "BC250_PM4_WAIT_REG_MEM_ME_REG_EQ", "Switch->AckRegisterBytes / 4u",
+             "BC250_PM4_IT_PFP_SYNC_ME"]
+    positions = [flush.find(token) for token in order]
+    if -1 in positions or positions != sorted(positions):
+        errors.append("DX.30: ordem PM4 fence->PT_BASE->REQ->ACK->PFP_SYNC_ME perdida")
+    if "Switch->RootPhysical | BC250_PTE_VALID" not in flush or \
+       "Switch->AckMask != (1u << Switch->Vmid)" not in flush:
+        errors.append("DX.30: raiz/ACK sem validacao fail-closed")
+    if "Bc250VmidPoolInstalledRootForVmid(&Context->VmidPool, Vmid)" not in body or \
+       "targetRoot == 0ull" not in body or \
+       "Bc250PagingBuildGfxhubTlbFlushPlanForEngine(&flushParams," not in body:
+        errors.append("DX.30: raiz READY/plano GFXHUB nao exigidos antes da emissao")
+    # DX.35: a reserva passou a derivar do tamanho da troca (31 -> 35 DW com o
+    # par de SWITCH_BUFFER); literal 46 subdimensionaria o anel.
+    if "vmidSwitch ? (BC250_PM4_GFX_VM_SWITCH_DWORDS + 15u) : 15u" not in body or \
+       not (0 <= body.find("Bc250Pm4EmitGfxVmSwitch(") < body.find("Bc250Pm4EmitIndirectBuffer(")):
+        errors.append("DX.30: reserva do anel ou precedencia sobre IB perdida")
+    if "switchPm4[BC250_PM4_GFX_VM_SWITCH_DWORDS + BC250_PM4_DWORDS_INDIRECT_BUFFER]" not in body or \
+       "VMID_SWITCH_VM_FLUSH_PM4" not in body:
+        errors.append("DX.30: dump de primeira transicao ate o IB ausente")
+    for token in ("CHECK(cur == BC250_PM4_GFX_VM_SWITCH_DWORDS);",
+                  "CHECK(ring[26] == 0x40u && ring[27] == 0x40u && ring[28] == 0x20u);",
+                  "sw.RootPhysical = 0ull;"):
+        if token not in test:
+            errors.append(f"DX.30: teste de bytes/recusa perdeu {token!r}")
+
+
+def audit_dx32_engine_split_skip_and_vmid_probe(errors: list[str]) -> None:
+    """DX.32 (23/09/2026): engine proprio do anel, copia de flip nao repetida, COMPUTE_VMID lido.
+
+    Corrida 77: o anel invalidava no engine 17 junto com a CPU; a copia do MPO3
+    repetia a do Present em 22 de 22; e o ObservedComputeVmid prometido no
+    docs/344 nunca existiu. Exige: plano por engine com os offsets do header,
+    anel no engine 0, CPU no 17; pulo da copia so' com marca de copia integral
+    E amostras pareadas; marca gravada/apagada so' nos wrappers de Blt; leitura
+    de COMPUTE_VMID so' leitura.
+    """
+    paging = (ROOT / "driver" / "core" / "bc250_paging_contract.c").read_text(encoding="utf-8", errors="replace")
+    pagingh = (ROOT / "driver" / "core" / "bc250_paging_contract.h").read_text(encoding="utf-8", errors="replace")
+    mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    disp = (ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace")
+    sdma = (ROOT / "driver" / "wdk" / "bc250_sdma_present.c").read_text(encoding="utf-8", errors="replace")
+    trans = (ROOT / "driver" / "wdk" / "bc250_mmio_topology_transport.c").read_text(encoding="utf-8", errors="replace")
+    ptest = (ROOT / "driver" / "tests" / "paging_contract_test.c").read_text(encoding="utf-8", errors="replace")
+
+    for needle in ("Plan->RequestRegisterOffset = 0xA28Cu + 4u * EngineId;",
+                   "Plan->AckRegisterOffset = 0xA2D4u + 4u * EngineId;",
+                   "Plan->RangeLowRegisterOffset = 0xA31Cu + 8u * EngineId;",
+                   "(EngineId != 0u && EngineId != 17u)"):
+        if needle not in paging:
+            errors.append(f"DX.32: plano por engine perdeu {needle!r}")
+    if "#define BC250_GFX_RING_INVALIDATE_ENGINE 0u" not in pagingh:
+        errors.append("DX.32: engine do anel grafico deixou de ser o 0")
+    fn = mini.find("static NTSTATUS Bc250ActiveGfxEngineSubmit(")
+    body = mini[fn:mini.find("\n}\n", fn)] if fn >= 0 else ""
+    if "BC250_GFX_RING_INVALIDATE_ENGINE, &flushPlan)" not in body or \
+       "flushPlan.EngineId != BC250_GFX_RING_INVALIDATE_ENGINE" not in body:
+        errors.append("DX.32: o anel grafico nao usa o engine proprio")
+    for needle in ("CHECK(flushPlan.RequestRegisterOffset == 0xA28Cu);",
+                   "CHECK(flushPlan.AckRegisterOffset == 0xA2D4u);",
+                   "&flushParams, 5u, &flushPlan) == BC250_PAGING_BAD_ARGUMENT);"):
+        if needle not in ptest:
+            errors.append(f"DX.32: teste do plano por engine perdeu {needle!r}")
+
+    cp = disp.find("static NTSTATUS Bc250DisplayCopyPrimaryToGop(")
+    cpb = disp[cp:disp.find("\n}\n", cp)] if cp >= 0 else ""
+    skip = cpb.find("REDUNDANT_SKIP")
+    hold = cpb.find("Bc250SdmaPresentScanoutHoldsFullCopyOf(sourceMc, bytes, &holdSeq)")
+    pre = cpb.find("preMismatch == 0u && prePairs == 256u")
+    blt = cpb.find("copied = Bc250SdmaPresentBlt(")
+    if not (0 <= hold < pre < skip < blt):
+        errors.append("DX.32: pulo da copia de flip sem as DUAS condicoes (marca integral + amostras) antes da SDMA")
+    if "srcNz != 0u" not in cpb[:skip if skip > 0 else 0]:
+        errors.append("DX.32: pulo permitido com origem em branco")
+    w = sdma.find("BOOLEAN Bc250SdmaPresentBlt(\n")
+    wb = sdma[w:sdma.find("\n}\n", w)] if w >= 0 else ""
+    if "Bc250SdmaPresentBltCore(" not in wb or "ScanoutLastWriteFull = full;" not in wb or \
+       "DestGpuAddress == g_Bc250SdmaPresent.ScanoutGpuAddress" not in wb:
+        errors.append("DX.32: wrapper de Blt nao e' a fonte unica da marca de copia integral")
+    r = sdma.find("BOOLEAN Bc250SdmaPresentBltRect(\n")
+    rb = sdma[r:sdma.find("\n}\n", r)] if r >= 0 else ""
+    if "ScanoutLastWriteFull = FALSE;" not in rb:
+        errors.append("DX.32: escrita em retangulo nao apaga a marca de copia integral")
+    if sdma.count("ScanoutLastWriteFull =") != 3:
+        errors.append("DX.32: marca de copia integral escrita fora dos wrappers")
+
+    if "BC250_GFX_REG_COMPUTE_VMID, &computeVmid)" not in mini or "[TDR_GFX_VMID] ObservedComputeVmid=" not in mini:
+        errors.append("DX.32: leitura de COMPUTE_VMID ausente do snapshot de TDR")
+    wr = trans.find("Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)")
+    wr_body = trans[wr:trans.find("\n}", wr)] if wr >= 0 else ""
+    if "0x0000B850u" in wr_body:
+        errors.append("DX.32: COMPUTE_VMID entrou na allowlist de ESCRITA")
+
+
+def audit_dx33_modechange_skip_and_pipe_vmid(errors: list[str]) -> None:
+    """DX.33 (23/09/2026): ModeChange nao apaga o scanout; VMID do pipe grafico sem selecao GRBM.
+
+    Corrida 78: 16 de 16 SET_ADDRESS (ModeChange) copiaram primaria zerada sobre
+    o scanout e apagaram o quadro do harness; COMPUTE_VMID leu lixo sob
+    GRBM_GFX_CNTL=0. Exige: pulo SO' com ModeChange sem flip E 1024 amostras
+    zero, antes da SDMA; MPO1/MPO3 nunca pulam por esta regra; leitura de
+    CP_ME0_PIPE0_VMID so' leitura, com marca de INCOERENTE.
+    """
+    disp = (ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace")
+    mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    trans = (ROOT / "driver" / "wdk" / "bc250_mmio_topology_transport.c").read_text(encoding="utf-8", errors="replace")
+    ring = (ROOT / "driver" / "core" / "bc250_gfx_ring_transaction.h").read_text(encoding="utf-8", errors="replace")
+
+    cpb = function_body(disp, "static NTSTATUS Bc250DisplayCopyPrimaryToGop(")
+    gate_at = cpb.find("if (ModeChangeOnly && srcSampled) {")
+    dense = cpb.find("Bc250DisplaySampleSurface(SourceOffset, bytes, 1024u,")
+    zero = cpb.find("&denseNz, &denseHash) && denseNz == 0u)")
+    skip = cpb.find("MODECHANGE_BLANK_SKIP")
+    blt = cpb.find("copied = Bc250SdmaPresentBlt(")
+    if not (0 <= gate_at < dense < zero < skip < blt):
+        errors.append("DX.33: pulo de ModeChange sem as DUAS condicoes (flag + 1024 amostras zero) antes da SDMA")
+    sa = function_body(disp, "NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddress(")
+    for token in ("Flags.ModeChange != 0u", "Flags.FlipImmediate == 0u", "Flags.FlipOnNextVSync == 0u"):
+        require(sa, token, "DX.33 SET_ADDRESS so' pula em ModeChange sem flip", errors)
+    for sig, route in (("NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay(", "MPO1"),
+                       ("NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay3(", "MPO3")):
+        body = function_body(disp, sig)
+        c = body.find(f'Bc250DisplayCopyPrimaryToGop("{route}"')
+        call = body[c:body.find(";", c)] if c >= 0 else ""
+        if not call.rstrip(")").rstrip().endswith("FALSE"):
+            errors.append(f"DX.33: {route} (flip) pode pular a copia pela regra de ModeChange")
+
+    if "#define BC250_GFX_REG_CP_ME0_PIPE0_VMID      0x0000C148u" not in ring:
+        errors.append("DX.33: offset de CP_ME0_PIPE0_VMID ausente ou divergente de (0x1260+0x1DF2)*4")
+    for token in ("BC250_GFX_REG_CP_ME0_PIPE0_VMID, &pipeVmid)", "[TDR_GFX_PIPE_VMID] PipeVmid=",
+                  "(pipeVmid & ~0xFu) != 0u ? \"INCOERENTE:\""):
+        require(mini, token, "DX.33 leitura do VMID do pipe grafico no TDR", errors)
+    rd = trans.find("0x0000B850u ||")
+    if rd < 0 or "0x0000C148u" not in trans[rd:rd + 300]:
+        errors.append("DX.33: CP_ME0_PIPE0_VMID fora da allowlist de leitura")
+    wr = trans.find("Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)")
+    wr_body = trans[wr:trans.find("\n}", wr)] if wr >= 0 else ""
+    if "0x0000C148u" in wr_body:
+        errors.append("DX.33: CP_ME0_PIPE0_VMID entrou na allowlist de ESCRITA")
+
+
+def audit_dx34_marker_dirty_rects_and_wave_vmid(errors: list[str]) -> None:
+    """DX.34 (23/09/2026): marcador de boot frio no watchdog, retangulos sujos, VMID da onda.
+
+    Corrida 79: bind no MESMO boot do rollback da 78 (o watchdog nao gravava o
+    marcador em RECOVERY_OK_ONLINE); o Present copiava a superficie inteira a
+    partir de um retangulo de cursor; CP_ME0_PIPE0_VMID leu o VMID do anel.
+    """
+    watch = (ROOT / "tools" / "watch-bc250mcdm-safe-bind.ps1").read_text(encoding="utf-8", errors="replace")
+    disp = (ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace")
+    txn = (ROOT / "driver" / "core" / "bc250_gfx_ring_transaction.c").read_text(encoding="utf-8", errors="replace")
+    ring = (ROOT / "driver" / "core" / "bc250_gfx_ring_transaction.h").read_text(encoding="utf-8", errors="replace")
+    mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    test = (ROOT / "driver" / "tests" / "gfx_ring_contract_test.c").read_text(encoding="utf-8", errors="replace")
+
+    # (1) marcador de boot frio gravado pelo watchdog, com os ticks do boot corrente.
+    marker_fn = watch.find("function Write-Bc250CleanBootMarker(")
+    if marker_fn < 0 or "rollback_boot_ticks = [long]$script:currentBootTicks" not in watch[marker_fn:marker_fn + 900]:
+        errors.append("DX.34: watchdog sem marcador de boot frio com os ticks do boot corrente")
+    if "$cleanBootMarkerPath = 'C:\\BC250_REQUIRE_CLEAN_BOOT.json'" not in watch:
+        errors.append("DX.34: caminho do marcador divergente do binder")
+    started = watch.find("Write-Bc250CleanBootMarker 'ROLLBACK_STARTED'")
+    recovery = watch.find("& cmd.exe /d /c ([string]$config.recovery_path)")
+    if not (0 <= started < recovery):
+        errors.append("DX.34: marcador nao e' gravado antes de executar a recovery")
+    ok_marker = watch.find("Write-Bc250CleanBootMarker 'RECOVERY_OK_ONLINE'")
+    ok_complete = watch.find("Complete-Bc250SafeBind 'RECOVERY_OK_ONLINE'")
+    if not (0 <= ok_marker < ok_complete):
+        errors.append("DX.34: RECOVERY_OK_ONLINE termina sem regravar o marcador")
+
+    # (2) retangulos sujos do Present Blt.
+    usable = function_body(disp, "static BOOLEAN Bc250DisplayDirtyRectsUsable(")
+    for token in ("Present->SubRectCnt > BC250_DIRTY_RECT_MAX", "Present->SrcRect.right != (LONG)w",
+                  "Present->DstRect.bottom != (LONG)h", "(ULONG)rc->right > w"):
+        require(usable, token, "DX.34 lista de retangulos validada antes de usar", errors)
+    if "#define BC250_DIRTY_RECT_MAX 16u" not in disp:
+        errors.append("DX.34: teto de retangulos sujos ausente ou alterado")
+    present = function_body(disp, "NTSTATUS APIENTRY Bc250DxgkDdiPresent(")
+    use = present.find("Bc250DisplayDirtyRectsUsable(pPresent, &dirtyRectCount)")
+    rect = present.find("sdmaDone = Bc250SdmaPresentBltRect(\n                                    rectSrc, pitch, dstScanoutGpu, pitch,")
+    full = present.find("sdmaDone = Bc250SdmaPresentBlt(srcGpu, dstScanoutGpu, scanoutBytes);")
+    if not (0 <= use < rect < full):
+        errors.append("DX.34: Present nao copia os retangulos sujos antes da copia de tela cheia")
+    if "(uint64_t)(ULONG)rc->top * pitch" not in present or "(uint64_t)(ULONG)rc->left * 4ull" not in present:
+        errors.append("DX.34: origem do retangulo nao e' o mesmo (x,y) da superficie")
+    skip = present.find("} else if (dirtyRectsUsed) {")
+    compare = present.find("Bc250DisplayCompareSurfaceBytes(")
+    if not (0 <= skip < compare):
+        errors.append("DX.34: prova integral roda depois de copia so' dos retangulos (reprovaria present correto)")
+    require(present, "DIRTY_RECT_PROOF Match=", "DX.34 prova amostral por retangulo", errors)
+    require(present, "DIRTY_RECTS_RECUSADOS", "DX.34 recusa da lista fala", errors)
+
+    # (3) VMID da propria onda presa.
+    if "#define BC250_IX_SQ_WAVE_HW_ID2              0x0118u" not in ring or \
+       "#define BC250_WAVE_HW_ID2_VM_ID(v)           (((v) >> 24) & 0xFu)" not in ring:
+        errors.append("DX.34: ixSQ_WAVE_HW_ID2/VM_ID divergente de gc_10_1_0_offset.h/sh_mask.h")
+    run = function_body(txn, "BC250_WAVE_PROBE_STATUS Bc250WaveProbeRun(")
+    hw = run.find("BC250_IX_SQ_WAVE_HW_ID2,")
+    pc = run.find("BC250_IX_SQ_WAVE_PC_LO,")
+    if not (0 <= hw < pc) or "&found->HwId2, Plan->ReadBudget, Evidence) << 6;" not in run:
+        errors.append("DX.34: HW_ID2 nao e' a primeira leitura depois do STATUS (ou sem bit 6)")
+    for token in ("[TDR_GFX_WAVE_VMID] onda #%u WaveVmid=", "(f->ValidMask & 0x40u) != 0u ? \"\" : \"INDETERMINADO:\"",
+                  "BC250_WAVE_HW_ID2_VM_ID(f->HwId2)"):
+        require(mini, token, "DX.34 VMID da onda no TDR", errors)
+    for token in ("CHECK(ev.Found[0].ValidMask == 0x7Fu);", "CHECK(BC250_WAVE_HW_ID2_VM_ID(ev.Found[0].HwId2) == 4u);"):
+        require(test, token, "DX.34 teste da leitura de HW_ID2", errors)
+
+
+def audit_dx35_switch_buffer_and_fault_timeline(errors: list[str]) -> None:
+    """DX.35 (23/09/2026): par de SWITCH_BUFFER apos o flush de VM; faults amostrados por troca.
+
+    Corrida 80: ondas presas com o VMID do IB anterior (TDR 1) e fault das ondas
+    do TDR 2 escondido por um fault anterior no latch. Exige: dois
+    SWITCH_BUFFER (0x8B, nvd.h:550) DEPOIS do PFP_SYNC_ME, tamanho 35 DW com
+    teste travando os 4 dwords; dreno do latch a cada troca, fora do spinlock,
+    pelo contrato unico.
+    """
+    pm4c = (ROOT / "driver" / "core" / "bc250_pm4_packet_builder.c").read_text(encoding="utf-8", errors="replace")
+    pm4h = (ROOT / "driver" / "core" / "bc250_pm4_packet_builder.h").read_text(encoding="utf-8", errors="replace")
+    test = (ROOT / "driver" / "tests" / "pm4_packet_builder_test.c").read_text(encoding="utf-8", errors="replace")
+    mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+
+    # DX.36: INVERTIDO. A Corrida 81 travou o CP no SWITCH_BUFFER em 5 de 5 TDRs
+    # (ME/PFP_HEADER_DUMP=0xC0008B00) e terminou em 0x116. A troca volta a 31 DW
+    # e fica PROIBIDO emitir SWITCH_BUFFER nela; o teste trava a ausencia.
+    if "#define BC250_PM4_GFX_VM_SWITCH_DWORDS      31u" not in pm4h:
+        errors.append("DX.36: troca de VMID deve ter 31 DW (sem SWITCH_BUFFER)")
+    flush = function_body(pm4c, "BC250_PM4_STATUS Bc250Pm4EmitGfxVmSwitch(")
+    if not flush or "BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_SWITCH_BUFFER" in flush:
+        errors.append("DX.36: SWITCH_BUFFER reintroduzido na troca de VMID (travou o CP na Corrida 81)")
+    require(test, "CHECK(ring[31] == 0xA5A5A5A5u && ring[32] == 0xA5A5A5A5u);",
+            "DX.36 teste trava a ausencia de pacote depois do PFP_SYNC_ME", errors)
+
+    body = function_body(mini, "static NTSTATUS Bc250ActiveGfxEngineSubmit(")
+    release = body.find("KeReleaseSpinLock(&Context->GfxEngine.Lock, irql);\n\n    Bc250DisplayLog(\"[GfxEngine] SUBMIT SUCESSO")
+    drain = body.find("timelineStatus = Bc250FaultLatchDrain(&timelineIo, &timelineEv);")
+    if not (0 <= release < drain):
+        errors.append("DX.35: dreno da linha do tempo ausente ou dentro do spinlock do anel")
+    for token in ("BC250_REG_GCVM_L2_PROTECTION_FAULT_STATUS, &sampledStatus) != 0u &&",
+                  "sampledStatus != 0u", "[GCVM_FAULT_TIMELINE] #%ld na troca VMID",
+                  "(st & 0x00F00000u) >> 20", "(st & 0x0003FE00u) >> 9"):
+        require(body, token, "DX.35 linha do tempo de faltas", errors)
+
+
+def audit_dx36_second_target_probe(errors: list[str]) -> None:
+    """DX.36: sonda de mapeamento de 0x2401A1000 (escrita CB/DB sem permissao, 80/81)."""
+    mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    disp = (ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace")
+    i = mini.find("const uint64_t targetGpuVa2 = 0x2401A1000ull;")
+    blk = mini[i:i + 3500] if i >= 0 else ""
+    for token in ("[DX_TARGET_2401A1] MAP:", "ReadOnly=%u NoExecute=%u CacheCoherent=%u",
+                  "EncodedPte=0x%llX EncodeStatus=0x%08X", "(uint32_t)targetPte2->ReadOnly"):
+        require(blk, token, "DX.36 sonda do alvo 0x2401A1", errors)
+    if "Bc250McdmEncodeVidMmPteWithLevel(" not in blk:
+        errors.append("DX.36: sonda 0x2401A1 nao mostra a PTE realmente codificada")
+    require(disp, 'Bc250LogTextContains(Text, "DX_TARGET_2401A1")',
+            "DX.36 alvo 0x2401A1 isento da amostragem", errors)
+
+
+def audit_dx31_primary_copy_is_observable(errors: list[str]) -> None:
+    """Flip GOP emulado: resultado SDMA e dados nao podem sumir em STATUS_SUCCESS."""
+    display = (ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(
+        encoding="utf-8", errors="replace")
+    test = (ROOT / "driver" / "tests" / "display_vidpn_test.c").read_text(
+        encoding="utf-8", errors="replace")
+    helper = function_body(display, "static NTSTATUS Bc250DisplayCopyPrimaryToGop(")
+    if not helper:
+        errors.append("DX.31: helper de copia da primaria ausente")
+        return
+    for token in ("Bc250SdmaPresentBlt(sourceMc,",
+                  "if (!copied)", "DATA_UNOBSERVED_CPU_MAP",
+                  "Bc250DisplaySampleSurface(SourceOffset",
+                  "Bc250DisplaySampleSurface(scanoutOffset",
+                  "Bc250DisplayPairedSampleCompare(SourceOffset, scanoutOffset,",
+                  "if (mismatchCount != 0u)",
+                  "STATUS_GRAPHICS_GPU_EXCEPTION_ON_DEVICE",
+                  "MATCH_BLANK_INCONCLUSIVE", "Visibility=NOT_PROVEN"):
+        require(helper, token, "DX.31 prova/recusa da copia primaria", errors)
+    # DX.32: o laco pareado mora na funcao auxiliar, e continua limitado a 256.
+    pair = function_body(display, "static ULONG Bc250DisplayPairedSampleCompare(")
+    for token in ("index < 256u", "srcWord != dstWord"):
+        require(pair, token, "DX.31 comparacao pareada limitada", errors)
+    if "Bc250DisplayCompareSurfaceBytes(" in helper:
+        errors.append("DX.31: comparacao integral na DDI de Flip bloqueia o scheduler")
+    for signature, route in (
+        ("NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddress(", "SET_ADDRESS"),
+        ("NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay(", "MPO1"),
+        ("NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay3(", "MPO3"),
+    ):
+        body = function_body(display, signature)
+        require(body, f'Bc250DisplayCopyPrimaryToGop("{route}"',
+                f"DX.31 {route} chama copia rastreavel", errors)
+        if route == "MPO3":
+            require(body, "if (!NT_SUCCESS(copyStatus)) {",
+                    "DX.31 MPO3 inspeciona falha de copia", errors)
+            require(body, "return STATUS_INVALID_PARAMETER;",
+                    "DX.31 MPO3 devolve erro documentado de flip nao processado", errors)
+        else:
+            require(body, "if (!NT_SUCCESS(copyStatus)) return copyStatus;",
+                    f"DX.31 {route} nao declara sucesso apos falha", errors)
+        if "(void)Bc250SdmaPresentBlt(" in body:
+            errors.append(f"DX.31 {route} ainda descarta o resultado SDMA")
+    for token in ("Bc250DxgkDdiSetVidPnSourceAddress(NULL, &setAddress)",
+                  "STATUS_DEVICE_NOT_READY", "Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay3(",
+                  "g_Bc250DisplayState.PrimaryAddressValid == FALSE"):
+        require(test, token, "DX.31 teste offline de primaria nao publicada", errors)
 
 
 def main() -> int:
@@ -7395,7 +7716,7 @@ def main() -> int:
     resolve_present = function_body(
         display, "BOOLEAN Bc250DisplayResolvePresentSource(")
     sdma_blt = function_body(
-        sdma_present, "BOOLEAN Bc250SdmaPresentBlt(")
+        sdma_present, "static BOOLEAN Bc250SdmaPresentBltCore(")  # DX.32: corpo real no nucleo
     require(update_pt, "return STATUS_DEVICE_BUSY;",
             "journal BUSY propagated by UpdatePageTable", errors)
     require(update_pt, "return STATUS_INVALID_PARAMETER;",
@@ -7976,8 +8297,9 @@ def main() -> int:
             "VRAM probe restoration", errors)
     require(vram_probe, "BC250_VRAM_PROBE_RESTORE_FAILED",
             "VRAM probe restore verification", errors)
-    require(paging, "Plan->EngineId = 17u;",
-            "GC 10.1.3 GFXHUB invalidation engine", errors)
+    # DX.32: CPU segue no engine 17; o anel grafico tem o engine 0 (portao DX.32).
+    require(paging, "return Bc250PagingBuildGfxhubTlbFlushPlanForEngine(Params, 17u, Plan);",
+            "GC 10.1.3 GFXHUB invalidation engine (CPU = 17)", errors)
     require(paging, "Plan->RequiresDummyRequestRead = 1u;",
             "GFXHUB invalidation dummy request read", errors)
     require(paging, "Plan->UsesSemaphore = 0u;",
@@ -8882,6 +9204,13 @@ def main() -> int:
     audit_dx27_clear_state_follows_upstream(errors)
     audit_dx28_rotation_carries_vulkan_content(errors)
     audit_dx29_vmid_switch_sync_on_gfx_ring(errors)
+    audit_dx30_gfx_vm_flush_order(errors)
+    audit_dx31_primary_copy_is_observable(errors)
+    audit_dx32_engine_split_skip_and_vmid_probe(errors)
+    audit_dx33_modechange_skip_and_pipe_vmid(errors)
+    audit_dx34_marker_dirty_rects_and_wave_vmid(errors)
+    audit_dx35_switch_buffer_and_fault_timeline(errors)
+    audit_dx36_second_target_probe(errors)
 
     if errors:
         print("BC250 MCDM SAFETY AUDIT: FAILED")
@@ -8945,6 +9274,7 @@ def main() -> int:
     print("  PM4 SET_CONTEXT_REG viewport/scissor emission (0x69, 20DW, IEEE-754, fail-closed): enforced")
     print("  PM4 SET_UCONFIG_REG primitive assembler (0x79, TRILIST 0x04, 8DW, fail-closed): enforced")
     print("  Phase D0 GFX refusal tripod and WPTR divergence veto: enforced")
+    print("  DX.31 GOP primary copy: SDMA result, bounded paired samples and fail-closed: enforced")
     print("  verdict: NAO VALIDADO EM HARDWARE")
     return 0
 

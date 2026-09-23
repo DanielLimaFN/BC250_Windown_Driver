@@ -1199,8 +1199,8 @@ BC250_WAVE_PROBE_STATUS Bc250WaveProbeValidatePlan(const BC250_WAVE_PROBE_PLAN *
         return BC250_WAVE_PROBE_PLAN_REJECTED;
     }
     /*
-     * Cada slot custa ate 6 leituras (STATUS, PC_LO, PC_HI, IB_STS, INST_DW0,
-     * TRAPSTS). Plano que nao cabe no proprio orcamento e' rejeitado ANTES de
+     * Cada slot custa ate 7 leituras (STATUS, HW_ID2, PC_LO, PC_HI, IB_STS,
+     * INST_DW0, TRAPSTS). Plano que nao cabe no proprio orcamento e' rejeitado ANTES de
      * tocar no silicio -- e' a guarda contra o laco longo em DISPATCH_LEVEL
      * que produziu o 0x133 em 10/09 12:16.
      */
@@ -1272,6 +1272,7 @@ BC250_WAVE_PROBE_STATUS Bc250WaveProbeRun(
         Evidence->Found[i].IbSts = 0u;
         Evidence->Found[i].InstDw0 = 0u;
         Evidence->Found[i].TrapSts = 0u;
+        Evidence->Found[i].HwId2 = 0u;
         Evidence->Found[i].ValidMask = 0u;
     }
 
@@ -1316,6 +1317,11 @@ BC250_WAVE_PROBE_STATUS Bc250WaveProbeRun(
             found->WaveId = slot->WaveId;
             found->Status = waveStatus;
             found->ValidMask = 1u;
+            /* DX.34: HW_ID2 logo depois do STATUS -- o VMID da onda e' a leitura
+             * que decide a classe de TDR, e nao pode ser a primeira a cair quando
+             * o orcamento acaba. */
+            found->ValidMask |= Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_HW_ID2,
+                slot->WaveId, &found->HwId2, Plan->ReadBudget, Evidence) << 6;
             found->ValidMask |= Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_PC_LO,
                 slot->WaveId, &found->PcLo, Plan->ReadBudget, Evidence) << 1;
             found->ValidMask |= Bc250WaveProbeReadIndirect(Interface, BC250_IX_SQ_WAVE_PC_HI,

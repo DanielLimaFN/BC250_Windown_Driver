@@ -128,6 +128,10 @@ extern "C" {
 #define BC250_GFX_REG_CP_ME_HEADER_DUMP      0x00008684u
 #define BC250_GFX_REG_CP_PFP_HEADER_DUMP     0x00008688u
 #define BC250_GFX_REG_SQ_DEBUG_STS_GLOBAL    0x00008C24u
+/* DX.32: mmCOMPUTE_VMID 0x1BB4 BASE_IDX 0 -> (0x1260+0x1BB4)*4; SOMENTE LEITURA. */
+#define BC250_GFX_REG_COMPUTE_VMID           0x0000B850u
+/* DX.33: mmCP_ME0_PIPE0_VMID 0x1DF2 BASE_IDX 0 -> (0x1260+0x1DF2)*4; campo VMID[3:0]; SOMENTE LEITURA. */
+#define BC250_GFX_REG_CP_ME0_PIPE0_VMID      0x0000C148u
 #define BC250_GFX_REG_CP_IB1_BASE_LO         0x00030330u
 #define BC250_GFX_REG_CP_IB1_BASE_HI         0x00030334u
 #define BC250_GFX_REG_CP_IB1_BUFSZ           0x00030338u
@@ -501,6 +505,13 @@ const char *Bc250GfxRingTxnStatusName(BC250_GFX_RING_TXN_STATUS Status);
 #define BC250_IX_SQ_WAVE_PC_LO               0x0108u
 #define BC250_IX_SQ_WAVE_PC_HI               0x0109u
 #define BC250_IX_SQ_WAVE_INST_DW0            0x010Au
+/* DX.34: ixSQ_WAVE_HW_ID2 0x0118 (gc_10_1_0_offset.h:11201); VM_ID em 27:24
+ * (SQ_WAVE_HW_ID2__VM_ID_MASK 0x0F000000, sh_mask.h:42910) -- o VMID DA ONDA. */
+#define BC250_IX_SQ_WAVE_HW_ID2              0x0118u
+#define BC250_WAVE_HW_ID2_VM_ID(v)           (((v) >> 24) & 0xFu)
+#define BC250_WAVE_HW_ID2_ME_ID(v)           (((v) >> 8) & 0x3u)
+#define BC250_WAVE_HW_ID2_PIPE_ID(v)         (((v) >> 4) & 0x3u)
+#define BC250_WAVE_HW_ID2_QUEUE_ID(v)        ((v) & 0xFu)
 
 /* Tetos do orcamento. Numeros pequenos de proposito: ver risco (b) acima. */
 #define BC250_WAVE_PROBE_MAX_READS           52u
@@ -535,7 +546,8 @@ typedef struct BC250_WAVE_PROBE_FOUND {
     uint32_t IbSts;
     uint32_t InstDw0;
     uint32_t TrapSts;
-    uint32_t ValidMask; /* bit 0 STATUS; bits 1..5 PC_LO/HI, IB_STS, INST, TRAP */
+    uint32_t HwId2;
+    uint32_t ValidMask; /* bit 0 STATUS; bits 1..5 PC_LO/HI, IB_STS, INST, TRAP; bit 6 HW_ID2 */
 } BC250_WAVE_PROBE_FOUND;
 
 typedef struct BC250_WAVE_PROBE_EVIDENCE {

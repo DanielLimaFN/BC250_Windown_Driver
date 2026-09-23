@@ -145,6 +145,7 @@ try {
 # nao contamina a seguinte. Ausencia do executavel e' DECLARADA, nunca silenciosa.
 # ---------------------------------------------------------------------------
 $selftest = Join-Path ([System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($Harness))) 'bc250-gfx-selftest.exe'
+$selftestAllPass = $true
 if (Test-Path -LiteralPath $selftest) {
     $selftestHash = (Get-FileHash -LiteralPath $selftest -Algorithm SHA256).Hash
     foreach ($variant in @('nodcc', 'nodcc,nonggc', 'nodcc,nongg')) {
@@ -158,12 +159,20 @@ if (Test-Path -LiteralPath $selftest) {
         if (-not $stDone) { try { $st.Kill() } catch { } }
         $st.Refresh()
         $stCode = if ($stDone) { $st.ExitCode } else { 'TIMEOUT' }
+        $stText = if (Test-Path -LiteralPath $stOut) {
+            Get-Content -LiteralPath $stOut -Raw -ErrorAction SilentlyContinue
+        } else { '' }
+        $verdictPattern = 'VEREDITO RADV_DEBUG=' + [regex]::Escape($variant) +
+            '\s+S1=1\s+S2=1\s+S3=1\s+S4=1\s+S5=1\s+contador=65536\b'
+        $stPass = $stDone -and $stText -match $verdictPattern
+        if (-not $stPass) { $selftestAllPass = $false }
         Write-Host ("  SELFTEST RADV_DEBUG={0}: exit={1} (sha256 {2})" -f $variant, $stCode, $selftestHash) -ForegroundColor Cyan
-        ("SELFTEST RADV_DEBUG={0} exit={1} exe_sha256={2} terminou={3}" -f $variant, $stCode, $selftestHash, $stDone) |
+        ("SELFTEST RADV_DEBUG={0} exit={1} prova_5de5={2} exe_sha256={3} terminou={4}" -f $variant, $stCode, $stPass, $selftestHash, $stDone) |
             Add-Content -LiteralPath (Join-Path $EvidenceDir 'selftest-resumo.txt') -Encoding UTF8
     }
     Remove-Item Env:\RADV_DEBUG -ErrorAction SilentlyContinue
 } else {
+    $selftestAllPass = $false
     Write-Warning "AUTOTESTE GRAFICO AUSENTE: $selftest nao existe -- rode tools\build-gfx-selftest.bat; o controle positivo NAO sera medido"
     "AUTOTESTE AUSENTE: $selftest" | Set-Content -LiteralPath (Join-Path $EvidenceDir 'selftest-resumo.txt') -Encoding UTF8
 }
@@ -238,9 +247,6 @@ foreach ($src in $candidateSources) {
     }
 }
 
-Write-Host "`n===================================================================" -ForegroundColor Cyan
-Write-Host " RESULTADO DO TESTE D3D11 NATIVO (EXIT CODE: $exitCode)" -ForegroundColor Cyan
-Write-Host "===================================================================" -ForegroundColor Cyan
 # ---------------------------------------------------------------------------
 # PROVA DE QUADRO -- 19/09, depois da Corrida 35.
 #
@@ -250,26 +256,44 @@ Write-Host "==================================================================="
 # ausencia de medicao. O mecanismo daquele 0 permanece INDETERMINADO, e este
 # bloco nao depende de descobri-lo -- ele exige a evidencia positiva.
 # ---------------------------------------------------------------------------
-$frameEvidence = 0
+$frameEvidence = -1
 $frameFailure = 0
 if (Test-Path -LiteralPath $stdoutFile) {
     $stdoutText = Get-Content -LiteralPath $stdoutFile -Raw -ErrorAction SilentlyContinue
     if ($stdoutText) {
-        $frameEvidence = ([regex]::Matches($stdoutText, 'PRESENT_OK')).Count
         $frameFailure = ([regex]::Matches($stdoutText, 'PRESENT_FALHOU')).Count
+        $accepted = [regex]::Match($stdoutText,
+            'Presents aceitos pelo runtime:\s*(\d+)\s+de\s+(\d+)')
+        $failed = [regex]::Match($stdoutText,
+            'TESTE REPROVADO:[^\r\n]*Quadros completos:\s*(\d+)\s+de\s+(\d+)')
+        if ($accepted.Success) {
+            $frameEvidence = [int]$accepted.Groups[1].Value
+            $reportedFrames = [int]$accepted.Groups[2].Value
+        } elseif ($failed.Success) {
+            $frameEvidence = [int]$failed.Groups[1].Value
+            $reportedFrames = [int]$failed.Groups[2].Value
+        }
     }
 }
-if ($frameEvidence -eq 0 -and $frameFailure -eq 0) {
-    Write-Host ("`n[SEM MEDICAO] O harness nao imprimiu NENHUMA linha de quadro " +
-                "(PRESENT_OK/PRESENT_FALHOU). Exit code reportado: $exitCode. " +
-                "Esta corrida nao mediu apresentacao -- nao a conte como sucesso.") -ForegroundColor Red
+if ($frameEvidence -lt 0) {
+    Write-Host "`n[SEM MEDICAO] Nao ha resumo verificavel de quadros aceitos; Exit 0 nao vale como sucesso." -ForegroundColor Red
     if ($exitCode -eq 0) { $exitCode = 3 }
+} elseif ($frameEvidence -ne $Frames -or $reportedFrames -ne $Frames -or $frameFailure -gt 0) {
+    Write-Host "`n[GATE DE QUADROS] Reprovado: aceitos=$frameEvidence/$Frames; falhas=$frameFailure." -ForegroundColor Red
+    if ($exitCode -eq 0) { $exitCode = 4 }
+}
+if (-not $selftestAllPass) {
+    Write-Host "`n[GATE SELFTEST] Reprovado: as tres variantes precisam S1-S5=PASS e contador=65536." -ForegroundColor Red
+    if ($exitCode -eq 0) { $exitCode = 5 }
 }
 
+Write-Host "`n===================================================================" -ForegroundColor Cyan
+Write-Host " RESULTADO DO TESTE D3D11 NATIVO (EXIT CODE FINAL: $exitCode)" -ForegroundColor Cyan
+Write-Host "===================================================================" -ForegroundColor Cyan
 if ($exitCode -eq 0) {
     Write-Host " Quadros com Present aceito: $frameEvidence | Presents falhos: $frameFailure" -ForegroundColor Cyan
     if ($pixelVerdict) {
-        Write-Host " VEREDITO: SUCESSO COMPROVADO - D3D11 Nativo com rasterizacao fisica de pixels confirmada!" -ForegroundColor Green
+        Write-Host " VEREDITO: PARCIAL - runtime aceitou quadros e UMD viu bytes; pixels no scanout e monitor ainda exigem prova KMD/visual." -ForegroundColor Yellow
     } else {
         Write-Host " VEREDITO: PARCIAL - Processo finalizou com Exit 0, mas inspecao de pixels pendente de confirmacao." -ForegroundColor Yellow
     }
