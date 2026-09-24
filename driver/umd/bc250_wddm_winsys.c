@@ -17,88 +17,141 @@
  * C:\Windows\Temp porque a raiz de C: nao e' gravavel pela conta virtual do
  * dwm.exe; sobrevive a tela preta e ao reboot.
  */
-void Bc250WinsysTraceRaw(const char *Message)
+/*
+ * DX.49 -- SINK LEVE. Corrida 93 (P0): o dwm.exe escreveu ~10 mil linhas por
+ * minuto, e cada uma fazia GetModuleFileNameA + GetTempPathA + CreateFileA com
+ * FILE_FLAG_WRITE_THROUGH + WriteFile + FlushFileBuffers + CloseHandle, em ate
+ * dois arquivos. Agora os caminhos e os handles sao resolvidos UMA vez por
+ * processo e cada linha e' um WriteFile sem write-through.
+ *
+ * DX.49b -- DURABILIDADE DE VOLTA. Corrida 94 (P0): travamento duro e NENHUM
+ * BC250_UMD_LOG_* sobreviveu -- sem write-through, as linhas ficaram no cache
+ * do sistema e morreram com a maquina, justamente na corrida em que o log do
+ * DWM era a evidencia que faltava. O handle continua aberto UMA vez, mas com
+ * FILE_FLAG_WRITE_THROUGH: cada WriteFile vai ao disco. O que saiu de cada
+ * linha foi so' CreateFileA + FlushFileBuffers + CloseHandle. A descarga de
+ * metadados (tamanho do arquivo) acontece na abertura e, depois, no maximo a
+ * cada BC250_TRACE_FLUSH_MS, fora de Bc250WinsysTraceRaw.
+ */
+#define BC250_TRACE_FLUSH_MS 250u
+typedef struct BC250_TRACE_SINK_STATE {
+    INIT_ONCE Once;
+    HANDLE File[2];
+    char ImageName[MAX_PATH];
+} BC250_TRACE_SINK_STATE;
+
+static BC250_TRACE_SINK_STATE g_Bc250TraceSink = { INIT_ONCE_STATIC_INIT, { INVALID_HANDLE_VALUE, INVALID_HANDLE_VALUE }, { 0 } };
+
+static HANDLE Bc250WinsysTraceOpen(const char *Path)
 {
-    char line[768];
+    return CreateFileA(Path,
+        FILE_APPEND_DATA,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH, NULL);
+}
+
+static volatile LONG64 g_Bc250TraceLastFlushMs;
+
+/* Metadados (tamanho do arquivo) ao disco no maximo a cada BC250_TRACE_FLUSH_MS.
+ * Os dados de cada linha ja foram ao disco pelo write-through. */
+static void Bc250WinsysTraceFlushMetadataIfDue(void)
+{
+    LONG64 now = (LONG64)GetTickCount64();
+    LONG64 last = g_Bc250TraceLastFlushMs;
+    unsigned i;
+    if (now - last < (LONG64)BC250_TRACE_FLUSH_MS) return;
+    if (InterlockedCompareExchange64(&g_Bc250TraceLastFlushMs, now, last) != last) return;
+    for (i = 0; i < 2u; ++i) {
+        if (g_Bc250TraceSink.File[i] != INVALID_HANDLE_VALUE && g_Bc250TraceSink.File[i] != NULL) {
+            (void)FlushFileBuffers(g_Bc250TraceSink.File[i]);
+        }
+    }
+}
+
+static BOOL CALLBACK Bc250WinsysTraceInit(PINIT_ONCE Once, PVOID Parameter, PVOID *Context)
+{
     char imagePath[MAX_PATH];
     char logPath[MAX_PATH];
     char sharedLogPath[MAX_PATH];
     char tempPath[MAX_PATH];
-    const char *imageName = "?";
-    int lineLength;
-    HANDLE file;
-    DWORD written = 0;
     DWORD tempLen;
+    (void)Once; (void)Parameter; (void)Context;
+
+    strcpy_s(g_Bc250TraceSink.ImageName, sizeof(g_Bc250TraceSink.ImageName), "?");
+    if (GetModuleFileNameA(NULL, imagePath, (DWORD)sizeof(imagePath)) != 0) {
+        const char *slash = strrchr(imagePath, '\\');
+        strcpy_s(g_Bc250TraceSink.ImageName, sizeof(g_Bc250TraceSink.ImageName),
+            (slash != NULL) ? (slash + 1) : imagePath);
+    }
+
+    /* Destino por processo no %TEMP% do usuario. */
+    logPath[0] = '\0';
+    tempLen = GetTempPathA(MAX_PATH, tempPath);
+    if (tempLen > 0 && tempLen < MAX_PATH &&
+        _snprintf_s(logPath, sizeof(logPath), _TRUNCATE,
+            "%sBC250_UMD_LOG_%lu.txt", tempPath, GetCurrentProcessId()) >= 0) {
+        g_Bc250TraceSink.File[0] = Bc250WinsysTraceOpen(logPath);
+    } else {
+        logPath[0] = '\0';
+    }
+
+    /*
+     * Destino compartilhado do sistema para DWM e auditoria.
+     *
+     * Corrida 40 (P0): dwm.exe e dxgiadaptercache.exe produziram uma copia
+     * adjacente identica de praticamente toda linha, enquanto Explorer.EXE e
+     * o harness nao. Se %%TEMP%% resolver para C:\Windows\Temp, os dois
+     * destinos seriam O MESMO arquivo. Compare os caminhos resolvidos; quando
+     * sao diferentes, ambos continuam existindo por seus contratos distintos.
+     */
+    if (_snprintf_s(sharedLogPath, sizeof(sharedLogPath), _TRUNCATE,
+            "C:\\Windows\\Temp\\BC250_UMD_LOG_%lu.txt",
+            GetCurrentProcessId()) >= 0) {
+        if (logPath[0] == '\0' || _stricmp(logPath, sharedLogPath) != 0) {
+            g_Bc250TraceSink.File[1] = Bc250WinsysTraceOpen(sharedLogPath);
+        }
+    }
+    /* O arquivo precisa existir no disco antes da primeira linha. */
+    g_Bc250TraceLastFlushMs = 0;
+    Bc250WinsysTraceFlushMetadataIfDue();
+    return TRUE;
+}
+
+void Bc250WinsysTraceRaw(const char *Message)
+{
+    char line[768];
+    int lineLength;
+    DWORD written = 0;
     SYSTEMTIME now;
+    unsigned i;
 
     if (Message == NULL) {
         return;
     }
-    logPath[0] = '\0';
-    if (GetModuleFileNameA(NULL, imagePath, (DWORD)sizeof(imagePath)) != 0) {
-        const char *slash = strrchr(imagePath, '\\');
-        imageName = (slash != NULL) ? (slash + 1) : imagePath;
-    }
+    (void)InitOnceExecuteOnce(&g_Bc250TraceSink.Once, Bc250WinsysTraceInit, NULL, NULL);
 
     GetLocalTime(&now);
     lineLength = _snprintf_s(line, sizeof(line), _TRUNCATE,
         "%02u:%02u:%02u.%03u [pid=%lu %s] %s\r\n",
         now.wHour, now.wMinute, now.wSecond, now.wMilliseconds,
-        GetCurrentProcessId(), imageName, Message);
+        GetCurrentProcessId(), g_Bc250TraceSink.ImageName, Message);
     if (lineLength < 0) {
         return;
     }
 
     OutputDebugStringA(line);
 
-    /* Emissao sincrona para stderr (capturada pelo harness de teste e console) */
+    /* stderr: capturado pelo harness de teste e pelas suites offline. */
     fputs(line, stderr);
-    fflush(stderr);
 
-    /* Escrita no diretorio Temp do usuario (%TEMP%) com garantia de flush */
-    tempLen = GetTempPathA(MAX_PATH, tempPath);
-    if (tempLen > 0 && tempLen < MAX_PATH) {
-        if (_snprintf_s(logPath, sizeof(logPath), _TRUNCATE,
-                "%sBC250_UMD_LOG_%lu.txt", tempPath,
-                GetCurrentProcessId()) >= 0) {
-            file = CreateFileA(logPath,
-                FILE_APPEND_DATA,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH, NULL);
-            if (file != INVALID_HANDLE_VALUE) {
-                (void)WriteFile(file, line, (DWORD)lineLength, &written, NULL);
-                FlushFileBuffers(file);
-                (void)CloseHandle(file);
-            }
+    /* Um WriteFile por destino; FILE_APPEND_DATA torna cada linha atomica
+     * entre threads. O handle e' write-through (DX.49b): a linha vai ao disco. */
+    for (i = 0; i < 2u; ++i) {
+        if (g_Bc250TraceSink.File[i] != INVALID_HANDLE_VALUE && g_Bc250TraceSink.File[i] != NULL) {
+            (void)WriteFile(g_Bc250TraceSink.File[i], line, (DWORD)lineLength, &written, NULL);
         }
     }
-
-    /*
-     * Escrita no diretorio compartilhado do sistema para DWM e auditoria.
-     *
-     * Corrida 40 (P0): dwm.exe e dxgiadaptercache.exe produziram uma copia
-     * adjacente identica de praticamente toda linha, enquanto Explorer.EXE e
-     * o harness nao. Este sink continha um mecanismo suficiente para o efeito:
-     * se %%TEMP%% resolver para C:\Windows\Temp, o bloco acima e este abririam
-     * O MESMO arquivo duas vezes. Compare os caminhos resolvidos; a atribuicao
-     * ao runtime ainda depende da proxima corrida. Quando os caminhos sao
-     * diferentes, ambos continuam existindo por seus contratos distintos.
-     */
-    if (_snprintf_s(sharedLogPath, sizeof(sharedLogPath), _TRUNCATE,
-            "C:\\Windows\\Temp\\BC250_UMD_LOG_%lu.txt",
-            GetCurrentProcessId()) >= 0) {
-        if (logPath[0] == '\0' || _stricmp(logPath, sharedLogPath) != 0) {
-            file = CreateFileA(sharedLogPath,
-                FILE_APPEND_DATA,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH, NULL);
-            if (file != INVALID_HANDLE_VALUE) {
-                (void)WriteFile(file, line, (DWORD)lineLength, &written, NULL);
-                FlushFileBuffers(file);
-                (void)CloseHandle(file);
-            }
-        }
-    }
+    Bc250WinsysTraceFlushMetadataIfDue();
 }
 
 /*
@@ -473,7 +526,16 @@ BC250_WINSYS_STATUS Bc250WinsysAllocateForResource(
     hr = Context->Callbacks->pfnAllocateCb(Context->RuntimeDevice, &args);
     BC250_WINSYS_LOG("Allocate LEAVE: hr=0x%08X hAlloc=0x%x hKMResource=0x%x",
         (unsigned)hr, (unsigned)info.hAllocation, (unsigned)args.hKMResource);
-    if (FAILED(hr)) return Bc250WinsysRememberFailure(Context, hr);
+    if (FAILED(hr)) {
+        /* DX.52: a recusa diz O QUE foi pedido (laco do Explorer, Corridas 93..97). */
+        BC250_WINSYS_LOG("Allocate RECUSADO pelo runtime/KMD: hr=0x%08X TokenClass=%u Flags=0x%X "
+            "Geometria=%d (%ux%u pitch=%u fmt=%u) PrivSize=%u hRTResource=%p -- ver [CREATE_ALLOC_RECUSADO] no KMD",
+            (unsigned)hr, (unsigned)tokenClass, (unsigned)flags, geometry != NULL ? 1 : 0,
+            geometry != NULL ? geometry->Width : 0u, geometry != NULL ? geometry->Height : 0u,
+            geometry != NULL ? geometry->Pitch : 0u, geometry != NULL ? geometry->Format : 0u,
+            (unsigned)info.PrivateDriverDataSize, (void*)args.hResource);
+        return Bc250WinsysRememberFailure(Context, hr);
+    }
     if (info.hAllocation == 0u) {
         Context->LastCallbackHr = E_UNEXPECTED;
         return BC250_WINSYS_BAD_CALLBACK_OUTPUT;

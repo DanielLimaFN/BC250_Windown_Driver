@@ -153,8 +153,8 @@ def main() -> int:
          src, hdr.replace("BC250_GFX_RING_POLL_CNTL_SDMA_BORROWED 0x00403004u",
                           "BC250_GFX_RING_POLL_CNTL_SDMA_BORROWED 0xFFFFFFFFu", 1), test),
 
-        ("M7  teste nao exige reproduzir o POST medido",
-         src, hdr, test.replace("    CHECK(cntl == BC250_GFX_RING_CNTL_CONFIGURED_REFERENCE);\n", "", 1)),
+        ("M7  teste nao exige o CNTL do upstream (DX.46)",
+         src, hdr, test.replace("    CHECK(cntl == BC250_GFX_RING_CNTL_UPSTREAM_8K_REFERENCE);\n", "", 1)),
 
         ("M8  teste nao detecta o CNTL nao executavel do prototipo",
          src, hdr, test.replace(
@@ -168,8 +168,8 @@ def main() -> int:
 
         ("M11 assercao do teste neutralizada com assert(1)",
          src, hdr, test.replace(
-             "    CHECK(cntl == 0x50000709u);",
-             "    assert(1); /* CHECK(cntl == 0x50000709u); */", 1)),
+             "    CHECK(cntl == BC250_GFX_RING_CNTL_UPSTREAM_8K_REFERENCE);",
+             "    assert(1); /* CHECK(cntl == BC250_GFX_RING_CNTL_UPSTREAM_8K_REFERENCE); */", 1)),
 
         ("M12 recusa de sobreposicao desaparece",
          src.replace("        return BC250_GFX_RING_OVERLAP;", "        (void)0;", 1), hdr, test),

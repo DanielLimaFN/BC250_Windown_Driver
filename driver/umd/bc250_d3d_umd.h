@@ -406,9 +406,14 @@ typedef struct _BC250_UMD_DEVICE {
     BC250_UMD_PIPELINE_CACHE PipelineCache;
     BOOL PipelineCacheInitialized;
     BOOL InRenderPass;
+    /* DX.49: TRUE enquanto o draw corrente grava VB/IB/CB no anel do bridge
+     * (lote); FALSE = caminho direto, que forca flush ao fim do draw. */
+    BOOL DrawUsesRing;
     VkRenderPass ActiveRenderPass;
     VkFramebuffer ActiveFramebuffer;
     UINT64 NativeVkDrawCount;
+    /* DX.54: Presents do device, para amostrar a inspecao do buffer linear. */
+    UINT32 PresentInspectCount;
     UINT32 DrawReadbackCount; /* DX.25: leituras do alvo logo apos o draw (teto por device) */
     /* Motivo exato da ultima tentativa Vulkan. Aponta somente para literais
      * estaticos; Bc250UmdRejectUnbackedDraw o publica em vez do diagnostico

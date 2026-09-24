@@ -300,7 +300,9 @@ const char *Bc250Pm4StatusName(BC250_PM4_STATUS Status);
  * *cannot* be skipped") com gfx_v10_0_ring_emit_sb = PACKET3(SWITCH_BUFFER,0), 0. */
 #define BC250_PM4_IT_SWITCH_BUFFER           0x8Bu
 /* DX.36: a troca NAO emite SWITCH_BUFFER -- Corrida 81 travou o CP nele (5/5 TDRs). */
-#define BC250_PM4_GFX_VM_SWITCH_DWORDS      31u
+/* DX.37: gfx_v10_0_ring_emit_cntxcntl(AMDGPU_HAVE_CTX_SWITCH), sem CE RAM. */
+#define BC250_PM4_GFX_CONTEXT_SWITCH_LOAD  0x81018003u
+#define BC250_PM4_GFX_VM_SWITCH_DWORDS      34u
 
 typedef struct BC250_PM4_GFX_VM_SWITCH {
     uint64_t FenceGpuVa;

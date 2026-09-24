@@ -294,6 +294,18 @@ typedef NTSTATUS (*BC250_MCDM_ESCAPE_HANDLER)(
 VOID Bc250McdmInstallEscapeHandler(
     _In_opt_ BC250_MCDM_ESCAPE_HANDLER EscapeHandler);
 
+/*
+ * DX.47: backend da preempcao. Registra o pedido; a conclusao
+ * (DXGK_INTERRUPT_DMA_PREEMPTED) sai do retirement quando o no drenar.
+ * Ausente = comportamento anterior (sucesso sem backend, declarado no log).
+ */
+typedef NTSTATUS (*BC250_MCDM_PREEMPT_HANDLER)(
+    _In_ HANDLE AdapterContext,
+    _In_ CONST DXGKARG_PREEMPTCOMMAND *pPreemptCommand);
+
+VOID Bc250McdmInstallPreemptHandler(
+    _In_opt_ BC250_MCDM_PREEMPT_HANDLER PreemptHandler);
+
 NTSTATUS Bc250McdmEncodeVidMmPte(
     _In_ CONST BC250_MCDM_RUNTIME_CAPS *Caps,
     _In_ CONST DXGK_PTE *Source,

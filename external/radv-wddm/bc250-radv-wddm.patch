@@ -726,10 +726,124 @@ index c40e35c..66d8db9 100644
  
  struct radv_wddm2_bo {
 diff --git a/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.c b/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.c
-index 088f69f..51018d6 100644
+index 088f69f..b2a0160 100644
 --- a/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.c
 +++ b/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.c
-@@ -212,15 +212,16 @@ radv_wddm2_queue_init(struct radv_wddm2_winsys *ws, enum amd_ip_type hw_ip,
+@@ -56,6 +56,100 @@
+ 
+ #include <assert.h>
+ #include <d3dkmthk.h>
++#include <stdarg.h>
++
++/* DX.40: arquivo de fluxo por processo no mesmo staging opt-in dos IBs.
++ * O stderr do DWM nao e' uma fonte arquivavel confiavel. Cada linha tem PID,
++ * submit_id e fase; o limite impede crescimento sem fim numa sessao longa. */
++static char s_bc250_diag_dir[512];
++static INIT_ONCE s_bc250_diag_dir_once = INIT_ONCE_STATIC_INIT;
++
++static BOOL CALLBACK
++bc250_diag_resolve_dir(PINIT_ONCE once, PVOID parameter, PVOID *context)
++{
++   char *dir = s_bc250_diag_dir;
++   (void)once;
++   (void)parameter;
++   (void)context;
++   {
++      const char *env = getenv("BC250_RADV_IB_DUMP");
++      if (env && env[0]) {
++         strncpy(dir, env, sizeof(s_bc250_diag_dir) - 1);
++         dir[sizeof(s_bc250_diag_dir) - 1] = '\0';
++      } else {
++         HKEY key;
++         if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\BC250\\Umd", 0,
++                           KEY_QUERY_VALUE, &key) == ERROR_SUCCESS) {
++            DWORD type = 0;
++            DWORD cb = (DWORD)(sizeof(s_bc250_diag_dir) - 1);
++            if (RegQueryValueExA(key, "GfxIbDumpDir", NULL, &type,
++                                 (LPBYTE)dir, &cb) != ERROR_SUCCESS || type != REG_SZ)
++               dir[0] = '\0';
++            else
++               dir[cb < sizeof(s_bc250_diag_dir) ? cb : sizeof(s_bc250_diag_dir) - 1] = '\0';
++            RegCloseKey(key);
++         }
++      }
++   }
++   return TRUE;
++}
++
++static const char *
++bc250_diag_dir(void)
++{
++   InitOnceExecuteOnce(&s_bc250_diag_dir_once, bc250_diag_resolve_dir, NULL, NULL);
++   return s_bc250_diag_dir;
++}
++
++static void
++bc250_diag_printf(const char *fmt, ...)
++{
++   static volatile LONG bytes_written = 0;
++   static volatile LONG cap_logged = 0;
++   char path[512];
++   char line[1024];
++   const char *dir = bc250_diag_dir();
++   FILETIME created, exited, kernel, user;
++   va_list args;
++   int len;
++   HANDLE file;
++   DWORD written;
++
++   va_start(args, fmt);
++   len = vsnprintf(line, sizeof(line), fmt, args);
++   va_end(args);
++   if (len < 0 || (size_t)len >= sizeof(line)) {
++      fprintf(stderr, "BC250_DIAG schema=1 level=ERROR event=RADV_TRACE_FORMAT\n");
++      return;
++   }
++   fputs(line, stderr);
++   if (!dir[0])
++      return;
++   if (InterlockedCompareExchange(&bytes_written, 0, 0) >= 4 * 1024 * 1024) {
++      if (InterlockedCompareExchange(&cap_logged, 1, 0) == 0)
++         fprintf(stderr, "BC250_DIAG schema=1 level=ERROR event=RADV_TRACE_CAP bytes=4194304\n");
++      return;
++   }
++   if (!GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user))
++      return;
++   int n = snprintf(path, sizeof(path), "%s\\bc250_flow_pid%lu_start%08lx%08lx.log", dir,
++                    (unsigned long)GetCurrentProcessId(),
++                    (unsigned long)created.dwHighDateTime, (unsigned long)created.dwLowDateTime);
++   if (n < 0 || (size_t)n >= sizeof(path))
++      return;
++   file = CreateFileA(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
++                      NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
++   if (file == INVALID_HANDLE_VALUE) {
++      fprintf(stderr, "BC250_DIAG schema=1 level=ERROR event=RADV_TRACE_OPEN error=%lu\n",
++              (unsigned long)GetLastError());
++      return;
++   }
++   written = 0;
++   if (!WriteFile(file, line, (DWORD)len, &written, NULL) || written != (DWORD)len)
++      fprintf(stderr, "BC250_DIAG schema=1 level=ERROR event=RADV_TRACE_WRITE path=%s\n", path);
++   InterlockedExchangeAdd(&bytes_written, (LONG)written);
++   CloseHandle(file);
++}
+ 
+ struct PACKED create_context_private_data {
+    uint32_t header_size;
+@@ -182,6 +276,12 @@ submit_pdd_writer_reserve(struct submit_pdd_writer *writer, unsigned size)
+ static void
+ radv_wddm2_queue_destroy(struct radv_wddm2_queue *queue)
+ {
++   if (queue->context_h || queue->handle)
++      bc250_diag_printf("BC250_DIAG schema=1 level=INFO event=RADV_QUEUE_DESTROY "
++                      "pid=%lu ctx=0x%llx ip=%u hwqueue=0x%llx queue_id=%u\n",
++              (unsigned long)GetCurrentProcessId(),
++              (unsigned long long)queue->context_h, (unsigned)queue->hw_ip,
++              (unsigned long long)queue->handle, queue->queue_id);
+    if (queue->vm_fence.handle) {
+       D3DKMT_DESTROYSYNCHRONIZATIONOBJECT destroy_fence = {
+          .hSyncObject = queue->vm_fence.handle,
+@@ -212,15 +312,16 @@ radv_wddm2_queue_init(struct radv_wddm2_winsys *ws, enum amd_ip_type hw_ip,
  {
     NTSTATUS status;
     uint32_t node;
@@ -748,7 +862,7 @@ index 088f69f..51018d6 100644
        break;
     default:
        /* Not supported */
-@@ -244,17 +245,27 @@ radv_wddm2_queue_init(struct radv_wddm2_winsys *ws, enum amd_ip_type hw_ip,
+@@ -244,20 +345,40 @@ radv_wddm2_queue_init(struct radv_wddm2_winsys *ws, enum amd_ip_type hw_ip,
        .NodeOrdinal = node,
        .EngineAffinity = 1, // TODO
        .Flags = {
@@ -781,7 +895,20 @@ index 088f69f..51018d6 100644
        return VK_ERROR_INITIALIZATION_FAILED;
     }
     queue->context_h = create_context.hContext;
-@@ -270,18 +281,24 @@ radv_wddm2_queue_init(struct radv_wddm2_winsys *ws, enum amd_ip_type hw_ip,
++   if (is_bc250)
++      bc250_diag_printf("BC250_DIAG schema=1 level=INFO event=RADV_CONTEXT_CREATE "
++                      "pid=%lu ctx=0x%llx ip=%u node=%u priority=%u "
++                      "hwqueue_supported=%u timeout_disabled=%u status=0x%08x\n",
++              (unsigned long)GetCurrentProcessId(),
++              (unsigned long long)queue->context_h, (unsigned)hw_ip,
++              node, (unsigned)priority,
++              create_context.Flags.HwQueueSupported ? 1u : 0u,
++              create_context.Flags.DisableGpuTimeout ? 1u : 0u,
++              (unsigned)status);
+ 
+    if (hw_ip == AMD_IP_GFX || hw_ip == AMD_IP_COMPUTE) {
+       struct create_queue_private_data create_queue_pdd = {
+@@ -270,18 +391,24 @@ radv_wddm2_queue_init(struct radv_wddm2_winsys *ws, enum amd_ip_type hw_ip,
           create_queue_pdd.parent_queue_id = parent->queue_id;
        }
  
@@ -817,7 +944,23 @@ index 088f69f..51018d6 100644
  
        D3DKMT_CREATESYNCHRONIZATIONOBJECT2 create_sync = {
           .hDevice = ws->device_h,
-@@ -339,11 +356,15 @@ fail_contexts:
+@@ -298,6 +425,15 @@ radv_wddm2_queue_init(struct radv_wddm2_winsys *ws, enum amd_ip_type hw_ip,
+          goto failed;
+       }
+       queue->vm_fence.handle = create_sync.hSyncObject;
++      if (is_bc250)
++         bc250_diag_printf("BC250_DIAG schema=1 level=INFO event=RADV_QUEUE_READY "
++                         "pid=%lu ctx=0x%llx ip=%u node=%u hwqueue=0x%llx "
++                         "queue_id=%u vm_fence=0x%llx parent_id=%u\n",
++                 (unsigned long)GetCurrentProcessId(),
++                 (unsigned long long)queue->context_h, (unsigned)hw_ip,
++                 node, (unsigned long long)queue->handle, queue->queue_id,
++                 (unsigned long long)queue->vm_fence.handle,
++                 parent ? parent->queue_id : 0u);
+    }
+ 
+    return VK_SUCCESS;
+@@ -339,11 +475,15 @@ fail_contexts:
     return result;
  }
  
@@ -833,7 +976,7 @@ index 088f69f..51018d6 100644
     for (uint32_t ip = 0; ip < AMD_NUM_IP_TYPES; ip++)
        radv_wddm2_queue_destroy(&ctx->per_ip[ip].queue);
     radv_wddm2_queue_destroy(&ctx->ace_queue);
-@@ -366,9 +387,10 @@ vk_wddm2_fence_wait(uint32_t device_h, struct vk_wddm2_fence *fence)
+@@ -366,9 +506,10 @@ vk_wddm2_fence_wait(uint32_t device_h, struct vk_wddm2_fence *fence)
     NTSTATUS status;
     HANDLE async_event = 0;
  
@@ -847,7 +990,7 @@ index 088f69f..51018d6 100644
     if (p_atomic_read(fence->value_map) >= fence->wait_value)
        return true;
  
-@@ -383,36 +405,33 @@ vk_wddm2_fence_wait(uint32_t device_h, struct vk_wddm2_fence *fence)
+@@ -383,36 +524,33 @@ vk_wddm2_fence_wait(uint32_t device_h, struct vk_wddm2_fence *fence)
        .FenceValueArray = &fence->wait_value,
        .hAsyncEvent = async_event,
     };
@@ -899,7 +1042,7 @@ index 088f69f..51018d6 100644
  }
  
  static bool
-@@ -427,6 +446,144 @@ radv_wddm2_ctx_wait_idle(struct radeon_winsys_ctx *rwctx, enum amd_ip_type ip_ty
+@@ -427,11 +565,191 @@ radv_wddm2_ctx_wait_idle(struct radeon_winsys_ctx *rwctx, enum amd_ip_type ip_ty
     return ret;
  }
  
@@ -1041,10 +1184,102 @@ index 088f69f..51018d6 100644
 +   }
 +}
 +
++/*
++ * DX.42 -- identidade do CS. Na Corrida 84 os dois IBs com prefixo zero
++ * tinham EXATAMENTE os 180 DW do preambulo zerados e o CS principal intacto
++ * na mesma pagina do slot: a origem (cs->buf do preambulo) leu zero. Para
++ * separar "preambulo regenerado e nascido zero" de "mesmo BO que perdeu o
++ * conteudo", cada CS ganha serial unico e o hash dos bytes no finalize.
++ * Somente medicao; nenhum byte submetido muda.
++ */
  struct radv_wddm2_cs {
     struct radv_winsys_cs base;
     struct set *buffers;
-@@ -589,7 +746,7 @@ radv_wddm2_submit_add_cs(struct radv_wddm2_ctx *ctx, struct submit_pdd_writer *p
++   uint64_t bc250_serial;
++   uint64_t bc250_fin_fnv;
++   unsigned bc250_fin_cdw;
++   unsigned bc250_fin_zero_prefix;
++   unsigned bc250_fin_count;
++   unsigned bc250_reset_count;
++   unsigned bc250_concat_uses;
++   bool bc250_fin_hashed;
+ };
+ 
++#define BC250_CS_FIN_HASH_MAX_DW 512u
++
++static volatile LONG64 s_bc250_cs_serial = 0;
++
++/* Mesmo FNV-1a de 64 bits por byte do dump de IB (base 0xCBF29CE484222325). */
++static uint64_t
++bc250_fnv64_dwords(const uint32_t *dw, unsigned count)
++{
++   const uint8_t *bytes = (const uint8_t *)dw;
++   uint64_t hash = UINT64_C(0xCBF29CE484222325);
++   for (size_t i = 0; i < (size_t)count * sizeof(uint32_t); ++i) {
++      hash ^= bytes[i];
++      hash *= UINT64_C(0x100000001B3);
++   }
++   return hash;
++}
++
++static unsigned
++bc250_zero_prefix_dwords(const uint32_t *dw, unsigned count)
++{
++   unsigned n = 0;
++   while (n < count && dw[n] == 0)
++      n++;
++   return n;
++}
++
+ static inline struct radv_wddm2_cs *
+ radv_wddm2_cs(struct ac_cmdbuf *base)
+ {
+@@ -464,10 +782,35 @@ radv_wddm2_cs_create(struct radeon_winsys *rws, enum amd_ip_type ip_type, bool i
+    }
+ 
+    _mesa_set_add(cs->buffers, radv_wddm2_bo(cs->base.ib_buffer));
++   cs->bc250_serial = (uint64_t)InterlockedIncrement64(&s_bc250_cs_serial);
+ 
+    return &cs->base.base;
+ }
+ 
++/* DX.42: finalize comum, depois hash dos bytes que a CPU acabou de escrever.
++ * So' CS pequenos (o preambulo BC-250 tem 180 DW): ler memoria WC custa, e o
++ * CS principal e' reescrito a cada submit. A janela exclui os 4 DW de encadeamento,
++ * igual ao copy_base da concatenacao, para os dois hashes serem comparaveis. */
++static VkResult
++radv_wddm2_cs_finalize(struct ac_cmdbuf *_cs)
++{
++   struct radv_wddm2_cs *cs = radv_wddm2_cs(_cs);
++   VkResult result = radv_winsys_cs_finalize(_cs);
++   unsigned cdw = _cs->cdw;
++
++   if (cs->base.chain_ib && cdw >= 4)
++      cdw -= 4;
++   cs->bc250_fin_count++;
++   cs->bc250_fin_cdw = cdw;
++   cs->bc250_fin_hashed = false;
++   if (_cs->buf && cdw <= BC250_CS_FIN_HASH_MAX_DW) {
++      cs->bc250_fin_fnv = bc250_fnv64_dwords(_cs->buf, cdw);
++      cs->bc250_fin_zero_prefix = bc250_zero_prefix_dwords(_cs->buf, cdw);
++      cs->bc250_fin_hashed = true;
++   }
++   return result;
++}
++
+ static unsigned
+ radv_wddm2_cs_num_ibs(UNUSED const struct radv_wddm2_cs *cs)
+ {
+@@ -498,6 +841,8 @@ radv_wddm2_cs_reset(struct ac_cmdbuf *_cs)
+ 
+    radv_winsys_cs_reset(&cs->base);
+    _mesa_set_clear(cs->buffers, NULL);
++   cs->bc250_reset_count++;
++   cs->bc250_fin_hashed = false;
+ }
+ 
+ static void
+@@ -589,7 +934,7 @@ radv_wddm2_submit_add_cs(struct radv_wddm2_ctx *ctx, struct submit_pdd_writer *p
           }
        } else {
           WRITE_ENTRY(pdd, GFX_IB, gfx_ib, entry) {
@@ -1053,7 +1288,7 @@ index 088f69f..51018d6 100644
              entry->len = ib.cdw * 4;
              entry->flags = flags;
              entry->ip_type = radv_wddm2_cs_translate_ip_type(cs->hw_ip);
-@@ -679,6 +836,119 @@ radv_wddm2_submit_add_queue(struct radv_wddm2_ctx *ctx, struct submit_pdd_writer
+@@ -679,6 +1024,167 @@ radv_wddm2_submit_add_queue(struct radv_wddm2_ctx *ctx, struct submit_pdd_writer
     radv_wddm2_cs_submit_add_ibs(ctx, pdd, submit, queue->hw_ip, first_ib);
  }
  
@@ -1078,63 +1313,33 @@ index 088f69f..51018d6 100644
 + * arquivo e' aberto e o caminho de submissao fica byte a byte o mesmo. O teto
 + * de arquivos existe para o despejo nao encher o disco numa corrida longa.
 + */
-+#define BC250_IB_DUMP_MAX_FILES 16u
++#define BC250_IB_DUMP_MAX_FILES 128u
++
++struct bc250_ib_dump_record {
++   char path[512];
++   uint64_t hash;
++   uint64_t va;
++   unsigned cdw;
++   bool valid;
++};
 +
 +static void
-+bc250_dump_ib(const uint32_t *dwords, unsigned cdw, uint64_t va)
++bc250_dump_ib(const uint32_t *dwords, unsigned cdw, uint64_t va,
++              D3DKMT_HANDLE context_h, unsigned hw_ip,
++              struct bc250_ib_dump_record *record)
 +{
 +   static uint32_t s_dumped = 0;
-+   static char s_dir[512];
-+   static int s_dir_resolved = 0;
-+   const char *dir;
++   const char *dir = bc250_diag_dir();
 +   char path[512];
-+   FILE *f;
++   HANDLE file;
++   DWORD written = 0;
++   int path_chars;
++   uint64_t hash = UINT64_C(0xCBF29CE484222325);
++   const uint8_t *bytes = (const uint8_t *)dwords;
++   const DWORD byte_count = cdw * (DWORD)sizeof(uint32_t);
 +
-+   /*
-+    * MEDIDO na Corrida 35 (19/09 10:51): o despejo saiu VAZIO, e nao por
-+    * defeito do codigo de gravacao. A variavel de ambiente so' existe na
-+    * arvore de processos do harness, e quem submeteu o IB que travou o CP foi
-+    * o dwm.exe -- que nao herda nada do nosso runner. O despejo nao enxergava
-+    * justamente o processo que importa.
-+    *
-+    * Por isso o diretorio passa a ser resolvido em DOIS lugares, nesta ordem:
-+    *   1. BC250_RADV_IB_DUMP, que continua valendo para o harness;
-+    *   2. HKLM\SOFTWARE\BC250\Umd\GfxIbDumpDir, que TODO processo enxerga.
-+    * O segundo e' o mesmo padrao de tunable por registro que o projeto ja usa
-+    * (D3D11LabPromotion e companhia). Continua fail-closed: sem nenhum dos
-+    * dois, nada e' aberto e o caminho de submissao fica byte a byte o mesmo.
-+    * A resolucao acontece UMA vez por processo -- ler o registro a cada
-+    * submissao seria custo no caminho quente.
-+    */
-+   if (!s_dir_resolved) {
-+      const char *env = getenv("BC250_RADV_IB_DUMP");
-+      s_dir_resolved = 1;
-+      s_dir[0] = '\0';
-+      if (env != NULL && env[0] != '\0') {
-+         strncpy(s_dir, env, sizeof(s_dir) - 1);
-+         s_dir[sizeof(s_dir) - 1] = '\0';
-+      } else {
-+         HKEY key;
-+         if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\BC250\\Umd", 0,
-+                           KEY_QUERY_VALUE, &key) == ERROR_SUCCESS) {
-+            DWORD type = 0;
-+            DWORD cb = (DWORD)(sizeof(s_dir) - 1);
-+            if (RegQueryValueExA(key, "GfxIbDumpDir", NULL, &type,
-+                                 (LPBYTE)s_dir, &cb) != ERROR_SUCCESS ||
-+                type != REG_SZ) {
-+               s_dir[0] = '\0';
-+            } else {
-+               s_dir[cb < sizeof(s_dir) ? cb : sizeof(s_dir) - 1] = '\0';
-+            }
-+            RegCloseKey(key);
-+         }
-+      }
-+      if (s_dir[0] != '\0') {
-+         fprintf(stderr, "radv/wddm2: BC-250 IB_DUMP armado em %s\n", s_dir);
-+         fflush(stderr);
-+      }
-+   }
-+   dir = s_dir;
++   if (record != NULL)
++      memset(record, 0, sizeof(*record));
 +
 +   if (dir[0] == '\0')
 +      return;
@@ -1151,29 +1356,160 @@ index 088f69f..51018d6 100644
 +      return;
 +   }
 +
-+   snprintf(path, sizeof(path), "%s\\bc250_ib_%03u_va%016llx_dw%u.bin",
-+            dir, s_dumped, (unsigned long long)va, cdw);
-+   f = fopen(path, "wb");
-+   if (f == NULL) {
-+      fprintf(stderr, "radv/wddm2: BC-250 IB_DUMP RECUSADO: nao abriu %s\n", path);
++   /* PID e tick distinguem processos/restarts; CREATE_NEW impede sobrescrita
++    * mesmo se o contador local e o PID forem reutilizados. O hash e' dos bytes
++    * preparados para submit, antes de a GPU ter qualquer chance de le-los. */
++   for (DWORD i = 0; i < byte_count; ++i) {
++      hash ^= bytes[i];
++      hash *= UINT64_C(0x100000001B3);
++   }
++   path_chars = snprintf(path, sizeof(path), "%s\\bc250_ib_pid%lu_t%llu_%03u_va%016llx_dw%u.bin",
++            dir, (unsigned long)GetCurrentProcessId(),
++            (unsigned long long)GetTickCount64(), s_dumped,
++            (unsigned long long)va, cdw);
++   if (path_chars < 0 || (size_t)path_chars >= sizeof(path)) {
++      fprintf(stderr, "radv/wddm2: BC-250 IB_DUMP RECUSADO: caminho longo demais\n");
 +      fflush(stderr);
 +      return;
 +   }
-+   if (fwrite(dwords, sizeof(uint32_t), cdw, f) != cdw) {
++   file = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_NEW,
++                      FILE_ATTRIBUTE_NORMAL, NULL);
++   if (file == INVALID_HANDLE_VALUE) {
++      fprintf(stderr, "radv/wddm2: BC-250 IB_DUMP RECUSADO: nao criou %s erro=%lu\n",
++              path, (unsigned long)GetLastError());
++      fflush(stderr);
++      return;
++   }
++   if (!WriteFile(file, dwords, byte_count, &written, NULL) || written != byte_count) {
 +      fprintf(stderr, "radv/wddm2: BC-250 IB_DUMP INCOMPLETO: %s\n", path);
 +   } else {
-+      fprintf(stderr, "radv/wddm2: BC-250 IB_DUMP #%u gravado: %s (%u DW, %u bytes)\n",
-+              s_dumped, path, cdw, cdw * 4u);
++      if (record != NULL) {
++         memcpy(record->path, path, (size_t)path_chars + 1u);
++         record->hash = hash;
++         record->va = va;
++         record->cdw = cdw;
++         record->valid = true;
++      }
++      fprintf(stderr, "radv/wddm2: BC-250 IB_DUMP #%u PREPARADO: %s "
++                      "PID=%lu Ctx=0x%llx Ip=%u VA=0x%llx DW=%u Fnv64=%016llx "
++                      "-- arquivo antes do submit, nao prova aceite nem execucao\n",
++              s_dumped, path, (unsigned long)GetCurrentProcessId(),
++              (unsigned long long)context_h, hw_ip,
++              (unsigned long long)va, cdw, (unsigned long long)hash);
 +   }
 +   fflush(stderr);
-+   fclose(f);
++   CloseHandle(file);
 +   s_dumped++;
++}
++
++/* O stderr do dwm.exe pode nao chegar ao coletor. O .meta acompanha o .bin e
++ * registra a fila e o retorno D3DKMT. Nunca confundir aceite com execucao. */
++static void
++bc250_dump_submit_meta(const struct bc250_ib_dump_record *record,
++                       const struct radv_wddm2_queue *queue,
++                       uint64_t submit_id,
++                       const char *layout,
++                       bool gang, uint32_t waits, uint32_t signals,
++                       uint64_t first_wait, uint64_t first_signal,
++                       bool called, NTSTATUS status)
++{
++   char path[sizeof(record->path) + 6];
++   char line[1024];
++   int path_len, line_len;
++   HANDLE file;
++   DWORD written = 0;
++
++   if (record == NULL || !record->valid || queue == NULL)
++      return;
++   path_len = snprintf(path, sizeof(path), "%s.meta", record->path);
++   if (path_len < 0 || (size_t)path_len >= sizeof(path))
++      return;
++   line_len = snprintf(line, sizeof(line),
++      "BC250_DIAG schema=1 event=RADV_SUBMIT pid=%lu submit_id=%llu ctx=0x%llx ip=%u "
++      "hwqueue=0x%llx queue_id=%u layout=%s gang=%u waits=%u signals=%u "
++      "first_wait=%llu first_signal=%llu "
++      "called=%u status=0x%08x accepted=%u va=0x%llx dw=%u fnv64=%016llx\n",
++      (unsigned long)GetCurrentProcessId(),
++      (unsigned long long)submit_id,
++      (unsigned long long)queue->context_h, (unsigned)queue->hw_ip,
++      (unsigned long long)queue->handle, queue->queue_id, layout,
++      gang ? 1u : 0u, waits, signals,
++      (unsigned long long)first_wait, (unsigned long long)first_signal,
++      called ? 1u : 0u,
++      (unsigned)status, called && NT_SUCCESS(status) ? 1u : 0u,
++      (unsigned long long)record->va, record->cdw,
++      (unsigned long long)record->hash);
++   if (line_len < 0 || (size_t)line_len >= sizeof(line))
++      return;
++   file = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_NEW,
++                      FILE_ATTRIBUTE_NORMAL, NULL);
++   if (file == INVALID_HANDLE_VALUE) {
++         bc250_diag_printf("BC250_DIAG schema=1 level=ERROR event=RADV_META_CREATE path=%s error=%lu\n",
++              path, (unsigned long)GetLastError());
++      return;
++   }
++   if (!WriteFile(file, line, (DWORD)line_len, &written, NULL) || written != (DWORD)line_len)
++      bc250_diag_printf("BC250_DIAG schema=1 level=ERROR event=RADV_META_WRITE path=%s\n", path);
++   CloseHandle(file);
 +}
 +
  static VkResult
  radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
                       const struct radv_winsys_submit_info *submit,
-@@ -737,6 +1007,166 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+@@ -688,15 +1194,37 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+    struct radv_wddm2_ctx *ctx = radv_wddm2_ctx(_ctx);
+    struct radv_wddm2_queue *queue = &ctx->per_ip[submit->ip_type].queue;
+    struct radv_wddm2_queue *ace_queue = &ctx->ace_queue;
++   static volatile LONG64 submit_serial = 0;
++   const uint64_t submit_id = (uint64_t)InterlockedIncrement64(&submit_serial);
+    NTSTATUS status;
+ 
+    assert(queue->context_h != 0 && "Unsupported IP type");
++   if (ctx->ws->is_bc250) {
++      bc250_diag_printf("BC250_DIAG schema=1 level=INFO event=RADV_QUEUE_SUBMIT_BEGIN "
++              "pid=%lu submit_id=%llu ctx=0x%llx ip=%u hwqueue=0x%llx queue_id=%u "
++              "gang=%u cs=%u pre=%u post=%u waits=%u signals=%u\n",
++              (unsigned long)GetCurrentProcessId(),
++              (unsigned long long)submit_id,
++              (unsigned long long)queue->context_h, (unsigned)submit->ip_type,
++              (unsigned long long)queue->handle, queue->queue_id,
++              submit->is_gang ? 1u : 0u, submit->cs_count,
++              submit->initial_preamble_count, submit->postamble_count,
++              wait_count, signal_count);
++   }
+ 
+    if (submit->is_gang && ace_queue->handle == 0) {
+       assert(submit->ip_type == AMD_IP_GFX);
+       radv_wddm2_queue_init(ctx->ws, AMD_IP_COMPUTE, 0, queue, ace_queue);
+-      if (ace_queue->handle == 0)
++      if (ace_queue->handle == 0) {
++         bc250_diag_printf("BC250_DIAG schema=1 level=ERROR event=RADV_GANG_NO_HWQUEUE "
++                         "submit_id=%llu ctx=0x%llx ip=%u ace_ctx=0x%llx ace_hwqueue=0x%llx "
++                         "-- gang recusado antes do submit\n",
++                 (unsigned long long)submit_id,
++                 (unsigned long long)queue->context_h, (unsigned)submit->ip_type,
++                 (unsigned long long)ace_queue->context_h,
++                 (unsigned long long)ace_queue->handle);
+          return VK_ERROR_DEVICE_LOST;
++      }
+    }
+ 
+    if (wait_count > 0) {
+@@ -729,6 +1257,13 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+       STACK_ARRAY_FINISH(handles);
+       STACK_ARRAY_FINISH(values);
+ 
++      if (ctx->ws->is_bc250)
++         bc250_diag_printf("BC250_DIAG schema=1 level=%s event=RADV_QUEUE_WAIT "
++                         "submit_id=%llu ctx=0x%llx ip=%u count=%u status=0x%08x\n",
++                 NT_SUCCESS(status) ? "INFO" : "ERROR",
++                 (unsigned long long)submit_id,
++                 (unsigned long long)queue->context_h,
++                 (unsigned)submit->ip_type, wait_count, (unsigned)status);
+       assert(NT_SUCCESS(status));
+       if (!NT_SUCCESS(status))
+          return VK_ERROR_DEVICE_LOST;
+@@ -737,6 +1272,260 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
     if (submit->cs_count > 0) {
        struct radv_winsys_ib first_ib = {};
        struct submit_pdd_writer pdd;
@@ -1183,10 +1519,12 @@ index 088f69f..51018d6 100644
 +      unsigned dump_cdw = 0;
 +      uint64_t dump_va = 0;
 +      bool submit_failed_concat = false;
++      const char *layout = "SINGLE";
++      unsigned cs_total = 0;
++      struct bc250_ib_dump_record dump_record = {0};
 +
 +      if (is_bc250) {
 +         struct ac_cmdbuf *cs_list[64];
-+         unsigned cs_total = 0;
 +         unsigned hw_ip = submit->ip_type;
 +
 +         for (unsigned i = 0; i < submit->initial_preamble_count && cs_total < 64; i++) {
@@ -1239,7 +1577,78 @@ index 088f69f..51018d6 100644
 +
 +            if (slot) {
 +               unsigned cur_offset = 0;
++               unsigned source_zero_prefix = 0;
++               unsigned copied_zero_prefix = 0;
++               const uint32_t source_first = copy_base ? cs_list[0]->buf[0] : 0;
++               while (source_zero_prefix < copy_base &&
++                      cs_list[0]->buf[source_zero_prefix] == 0)
++                  source_zero_prefix++;
 +               memcpy(slot->map, cs_list[0]->buf, copy_base * sizeof(uint32_t));
++               while (copied_zero_prefix < copy_base &&
++                      slot->map[copied_zero_prefix] == 0)
++                  copied_zero_prefix++;
++               bc250_diag_printf("BC250_DIAG schema=1 level=%s event=RADV_CONCAT_PREAMBLE "
++                                 "pid=%lu submit_id=%llu ctx=0x%llx ip=%u "
++                                 "source_first=0x%08x copied_first=0x%08x "
++                                 "source_zero_prefix=%u copied_zero_prefix=%u "
++                                 "copied_dw=%u slot_va=0x%llx\n",
++                                 copied_zero_prefix ? "ERROR" : "INFO",
++                                 (unsigned long)GetCurrentProcessId(),
++                                 (unsigned long long)submit_id,
++                                 (unsigned long long)queue->context_h,
++                                 (unsigned)submit->ip_type,
++                                 source_first, copy_base ? slot->map[0] : 0,
++                                 source_zero_prefix, copied_zero_prefix,
++                                 copy_base, (unsigned long long)slot->bo->va);
++               {
++                  /* DX.42: identidade do CS de origem (o preambulo quando pre=1).
++                   * changed=1 com uses=1 e fonte zero -> preambulo regenerado que
++                   * ja nasceu zero; changed=0, uses>1, fin_fnv ok e src zero -> o
++                   * MESMO BO perdeu o conteudo depois de escrito; fin_zero=180 ->
++                   * a CPU ja leu zero no finalize, logo a escrita nao ficou. */
++                  struct radv_wddm2_cs *pcs = radv_wddm2_cs(cs_list[0]);
++                  const struct radv_winsys_ib *pib =
++                     pcs->base.num_ib_buffers ? &pcs->base.ib_buffers[pcs->base.num_ib_buffers - 1] : NULL;
++                  const uint64_t src_fnv = bc250_fnv64_dwords(cs_list[0]->buf, copy_base);
++                  const uint64_t copy_fnv = bc250_fnv64_dwords(slot->map, copy_base);
++                  const bool changed = ctx->per_ip[hw_ip].bc250_last_preamble_serial != pcs->bc250_serial;
++                  const bool fin_match = pcs->bc250_fin_hashed && pcs->bc250_fin_cdw == copy_base &&
++                                         pcs->bc250_fin_fnv == src_fnv;
++                  pcs->bc250_concat_uses++;
++                  if (changed)
++                     ctx->per_ip[hw_ip].bc250_preamble_changes++;
++                  ctx->per_ip[hw_ip].bc250_last_preamble_serial = pcs->bc250_serial;
++                  bc250_diag_printf("BC250_DIAG schema=1 level=%s event=RADV_PREAMBLE_IDENTITY "
++                                    "pid=%lu submit_id=%llu ctx=0x%llx ip=%u "
++                                    "cs_serial=%llu changed=%u changes=%llu uses=%u resets=%u "
++                                    "cs_ptr=%p buf=%p ib_va=0x%llx bo_handle=0x%08x num_ib=%u "
++                                    "fin_count=%u fin_hashed=%u fin_cdw=%u fin_zero_prefix=%u "
++                                    "fin_fnv=%016llx src_fnv=%016llx copy_fnv=%016llx "
++                                    "fin_match=%u src_zero_prefix=%u copied_dw=%u\n",
++                                    (!fin_match || source_zero_prefix) ? "ERROR" : "INFO",
++                                    (unsigned long)GetCurrentProcessId(),
++                                    (unsigned long long)submit_id,
++                                    (unsigned long long)queue->context_h,
++                                    (unsigned)submit->ip_type,
++                                    (unsigned long long)pcs->bc250_serial, changed ? 1u : 0u,
++                                    (unsigned long long)ctx->per_ip[hw_ip].bc250_preamble_changes,
++                                    pcs->bc250_concat_uses, pcs->bc250_reset_count,
++                                    (void *)pcs, (void *)cs_list[0]->buf,
++                                    (unsigned long long)(pib ? pib->va : 0),
++                                    (pib && pib->bo) ? radv_wddm2_bo(pib->bo)->handle : 0u,
++                                    pcs->base.num_ib_buffers, pcs->bc250_fin_count,
++                                    pcs->bc250_fin_hashed ? 1u : 0u, pcs->bc250_fin_cdw,
++                                    pcs->bc250_fin_zero_prefix,
++                                    (unsigned long long)pcs->bc250_fin_fnv,
++                                    (unsigned long long)src_fnv, (unsigned long long)copy_fnv,
++                                    fin_match ? 1u : 0u, source_zero_prefix, copy_base);
++               }
++               /* Corrida 84: dois IBs tinham exatamente os primeiros 180 DW
++                * zerados, inclusive um aceito pelo KMD antes do TDR sem onda.
++                * A fonte e a copia acima distinguem CS corrompido de copia/BO.
++                * Recusar antes de D3DKMT: este preambulo BC-250 deve comecar
++                * com PKT3; DW0=0 quebra o contrato observado, mesmo que um
++                * PACKET0 zerado possa ser decodificado como PM4 generico. */
 +               cur_offset = copy_base;
 +               for (unsigned i = 1; i < cs_total; i++) {
 +                  memcpy(slot->map + cur_offset, cs_list[i]->buf, cs_list[i]->cdw * sizeof(uint32_t));
@@ -1252,9 +1661,14 @@ index 088f69f..51018d6 100644
 +               first_ib.va = slot->bo->va;
 +               first_ib.cdw = cur_offset;
 +               concat_slot = slot;
++               layout = "CONCAT";
 +               dump_buf = slot->map;
 +               dump_cdw = cur_offset;
 +               dump_va = slot->bo->va;
++               if (copy_base && copied_zero_prefix) {
++                  submit_failed_concat = true;
++                  layout = "REJECT_ZERO_PREAMBLE";
++               }
 +
 +               static uint32_t s_concat_log_count = 0;
 +               if (s_concat_log_count++ < 8) {
@@ -1264,12 +1678,14 @@ index 088f69f..51018d6 100644
 +                          cs_list[0]->cdw);
 +               }
 +            } else if (grown_index != UINT32_MAX) {
++               layout = "CHAIN";
 +               fprintf(stderr, "radv/wddm2: BC-250 CONCAT PULADA: CS[%u] cresceu para %u IBs encadeados; "
 +                               "copiar so' o ultimo perderia o comeco -- indo para o encadeamento\n",
 +                       grown_index, radv_winsys_cs(cs_list[grown_index])->num_ib_buffers);
 +            }
 +
 +            if (!slot && grown_index == UINT32_MAX) {
++               layout = "REJECT_POOL";
 +               /* A recusa do pool ja foi declarada; nao encadear em silencio. */
 +               submit_failed_concat = true;
 +            } else if (!slot) {
@@ -1300,6 +1716,8 @@ index 088f69f..51018d6 100644
 +               }
 +            }
 +         }
++         if (cs_total == 0)
++            layout = "EMPTY";
 +         fprintf(stderr, "radv/wddm2: BC-250 submit: cs_total=%u (pre=%u cs=%u post=%u)\n",
 +                 cs_total, submit->initial_preamble_count, submit->cs_count, submit->postamble_count);
 +
@@ -1329,27 +1747,52 @@ index 088f69f..51018d6 100644
 +            dump_va = radv_winsys_cs(cs_list[0])->ib_buffers[0].va;
 +         }
 +         if (dump_buf != NULL && dump_cdw > 0)
-+            bc250_dump_ib(dump_buf, dump_cdw, dump_va);
++            bc250_dump_ib(dump_buf, dump_cdw, dump_va,
++                          queue->context_h, submit->ip_type, &dump_record);
 +
 +         if (submit_failed_concat) {
-+            fprintf(stderr, "radv/wddm2: BC-250 submit RECUSADO: IB concatenado nao pode ser montado "
-+                            "sem reescrever memoria que a GPU pode estar lendo (ver CONCAT RECUSA acima)\n");
++            bc250_dump_submit_meta(&dump_record, queue, submit_id, layout, submit->is_gang,
++                                   wait_count, signal_count,
++                                   wait_count ? waits[0].wait_value : 0,
++                                   signal_count ? signals[0].signal_value : 0,
++                                   false, STATUS_UNSUCCESSFUL);
++            bc250_diag_printf("BC250_DIAG schema=1 level=ERROR event=RADV_CONCAT_REJECT "
++                              "pid=%lu submit_id=%llu ctx=0x%llx ip=%u cs_total=%u layout=%s\n",
++                              (unsigned long)GetCurrentProcessId(),
++                              (unsigned long long)submit_id,
++                              (unsigned long long)queue->context_h,
++                              (unsigned)submit->ip_type, cs_total, layout);
++            fprintf(stderr, "radv/wddm2: BC-250 submit RECUSADO: layout=%s; "
++                            "ver RADV_CONCAT_PREAMBLE e RADV_CONCAT_REJECT\n", layout);
 +            return VK_ERROR_DEVICE_LOST;
 +         }
 +      }
  
        submit_pdd_writer_init(&pdd);
        if (submit->is_gang) {
-@@ -747,7 +1177,7 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+@@ -747,7 +1536,20 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
        }
        submit_pdd_writer_finalize(&pdd);
  
 -      print_hex_data(stderr, pdd.buffer, pdd.offset);
++      if (is_bc250)
++         bc250_diag_printf("BC250_DIAG schema=1 level=%s event=RADV_CS_LAYOUT "
++                           "pid=%lu submit_id=%llu ctx=0x%llx ip=%u layout=%s "
++                           "cs_total=%u pre=%u main=%u post=%u va=0x%llx dw=%u pdd_bytes=%u dump=%u\n",
++                           first_ib.va && first_ib.cdw ? "INFO" : "ERROR",
++                           (unsigned long)GetCurrentProcessId(),
++                           (unsigned long long)submit_id,
++                           (unsigned long long)queue->context_h, (unsigned)submit->ip_type,
++                           layout, cs_total, submit->initial_preamble_count,
++                           submit->cs_count, submit->postamble_count,
++                           (unsigned long long)first_ib.va, first_ib.cdw, pdd.offset,
++                           dump_record.valid ? 1u : 0u);
++
 +      // print_hex_data(stderr, pdd.buffer, pdd.offset);
  
        if (queue->handle) {
           static uint32_t submit_count = 0;
-@@ -757,25 +1187,59 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+@@ -757,25 +1559,76 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
              .HwQueueProgressFenceId = submit_count,
              .CommandBuffer = first_ib.va,
              .CommandLength = first_ib.cdw * 4,
@@ -1372,6 +1815,23 @@ index 088f69f..51018d6 100644
           };
           status = WDDM2_DISPATCH(SubmitCommand(&wddm2_submit));          
        }
++      if (is_bc250) {
++         bc250_dump_submit_meta(&dump_record, queue, submit_id, layout, submit->is_gang,
++                                wait_count, signal_count,
++                                wait_count ? waits[0].wait_value : 0,
++                                signal_count ? signals[0].signal_value : 0,
++                                true, status);
++         bc250_diag_printf("BC250_DIAG schema=1 level=%s event=RADV_QUEUE_SUBMIT_END "
++                         "submit_id=%llu ctx=0x%llx ip=%u hwqueue=0x%llx va=0x%llx dw=%u "
++                         "status=0x%08x accepted=%u dump=%u\n",
++                 NT_SUCCESS(status) ? "INFO" : "ERROR",
++                 (unsigned long long)submit_id,
++                 (unsigned long long)queue->context_h, (unsigned)submit->ip_type,
++                 (unsigned long long)queue->handle,
++                 (unsigned long long)first_ib.va, first_ib.cdw,
++                 (unsigned)status, NT_SUCCESS(status) ? 1u : 0u,
++                 dump_record.valid ? 1u : 0u);
++      }
 +      static uint32_t s_submit_call_count = 0;
 +      s_submit_call_count++;
 +      if (is_bc250 && (s_submit_call_count == 1 || (s_submit_call_count % 60) == 0 || !NT_SUCCESS(status))) {
@@ -1414,7 +1874,7 @@ index 088f69f..51018d6 100644
     }
  
     if (signal_count > 0) {
-@@ -783,7 +1247,8 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+@@ -783,7 +1636,8 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
        STACK_ARRAY(uint64_t, values, signal_count);
  
        for (uint32_t i = 0; i < signal_count; i++) {
@@ -1424,15 +1884,23 @@ index 088f69f..51018d6 100644
           values[i] = signals[i].signal_value;
        }
  
-@@ -813,7 +1278,6 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+@@ -813,7 +1667,14 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
        STACK_ARRAY_FINISH(handles);
        STACK_ARRAY_FINISH(values);
  
 -      assert(NT_SUCCESS(status));
++      if (ctx->ws->is_bc250)
++         bc250_diag_printf("BC250_DIAG schema=1 level=%s event=RADV_QUEUE_SIGNAL "
++                         "submit_id=%llu ctx=0x%llx ip=%u count=%u first_target=%llu status=0x%08x\n",
++                 NT_SUCCESS(status) ? "INFO" : "ERROR",
++                 (unsigned long long)submit_id,
++                 (unsigned long long)queue->context_h,
++                 (unsigned)submit->ip_type, signal_count,
++                 (unsigned long long)signals[0].signal_value, (unsigned)status);
        if (!NT_SUCCESS(status))
           return VK_ERROR_DEVICE_LOST;
  
-@@ -821,7 +1285,20 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
+@@ -821,7 +1682,20 @@ radv_wddm2_cs_submit(struct radeon_winsys_ctx *_ctx,
        ctx->per_ip[submit->ip_type].last_submission.handle = fence->handle;
        ctx->per_ip[submit->ip_type].last_submission.wait_value = signals[0].signal_value;
        ctx->per_ip[submit->ip_type].last_submission.value_map = fence->value_map;
@@ -1454,8 +1922,17 @@ index 088f69f..51018d6 100644
  
     return VK_SUCCESS;
  }
+@@ -835,7 +1709,7 @@ radv_wddm2_cs_init_functions(struct radv_wddm2_winsys *ws)
+    ws->base.ctx_wait_idle = radv_wddm2_ctx_wait_idle;
+    ws->base.cs_domain = radv_wddm2_cs_domain;
+    ws->base.cs_create = radv_wddm2_cs_create;
+-   ws->base.cs_finalize = radv_winsys_cs_finalize;
++   ws->base.cs_finalize = radv_wddm2_cs_finalize;
+    ws->base.cs_reset = radv_wddm2_cs_reset;
+    ws->base.cs_chain = radv_winsys_cs_chain;
+    ws->base.cs_unchain = radv_winsys_cs_unchain;
 diff --git a/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.h b/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.h
-index ef91d5b..6be968b 100644
+index ef91d5b..35d2d8b 100644
 --- a/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.h
 +++ b/src/amd/vulkan/winsys/wddm2/radv_wddm2_cs.h
 @@ -47,6 +47,25 @@ struct radv_wddm2_queue {
@@ -1484,13 +1961,15 @@ index ef91d5b..6be968b 100644
  struct radv_wddm2_ctx {
     struct radv_wddm2_winsys *ws;
  
-@@ -55,6 +74,9 @@ struct radv_wddm2_ctx {
+@@ -55,6 +74,11 @@ struct radv_wddm2_ctx {
     struct {
        struct radv_wddm2_queue queue;
        struct vk_wddm2_fence last_submission;
 +      struct radv_wddm2_bc250_concat_slot concat[RADV_WDDM2_BC250_CONCAT_SLOTS];
 +      uint32_t concat_count;
 +      uint64_t concat_seq;
++      uint64_t bc250_last_preamble_serial; /* DX.42: serial do CS de origem da submissao anterior */
++      uint64_t bc250_preamble_changes;
     } per_ip[AMD_NUM_IP_TYPES];
  };
  

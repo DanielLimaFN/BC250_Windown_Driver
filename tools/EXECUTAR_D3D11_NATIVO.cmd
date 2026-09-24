@@ -3,6 +3,9 @@ setlocal
 cd /d "%~dp0"
 set "FORCE_BOOT_CHECK=0"
 set "DWM_CAPTURE_ARG="
+rem Corrida 91: janela do watchdog parametrizavel (padrao 120 s). O binder da ao
+rem harness min(180, janela-60) s; com 120 s eram 60 s e o harness da 90 foi cortado.
+if not defined BC250_WATCHDOG_SECONDS set "BC250_WATCHDOG_SECONDS=120"
 for %%A in (%*) do (
     if /i "%%~A"=="-Force" set "FORCE_BOOT_CHECK=1"
     if /i "%%~A"=="-CaptureDwmDump" set "DWM_CAPTURE_ARG=-EnableDwmCrashCapture"
@@ -44,12 +47,21 @@ if %ERRORLEVEL% neq 0 (
 echo 1b. Isolando vulkan_radeon.dll em C:\BC250_LIB (sem contaminar System32 ou LogonUI)...
 if not exist "C:\BC250_LIB" mkdir "C:\BC250_LIB" >nul
 copy /Y "C:\Users\Daniel\Desktop\bc250-win\bc250-win\mesa-radv-wddm\build\src\amd\vulkan\vulkan_radeon.dll" "C:\BC250_LIB\vulkan_radeon.dll" >nul
+if errorlevel 1 (
+    echo [ERRO] Nao foi possivel copiar a RADV construida. Bind cancelado.
+    exit /b 1
+)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$src='C:\Users\Daniel\Desktop\bc250-win\bc250-win\mesa-radv-wddm\build\src\amd\vulkan\vulkan_radeon.dll'; $dst='C:\BC250_LIB\vulkan_radeon.dll'; if ((Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash) { exit 1 }"
+if errorlevel 1 (
+    echo [ERRO] Hash da RADV implantada difere do build. Bind cancelado.
+    exit /b 1
+)
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Khronos\Vulkan\Drivers' -Name 'C:\Windows\system32\vulkan_radeon.json' -ErrorAction SilentlyContinue; Remove-ItemProperty -Path 'HKLM:\SOFTWARE\WOW6432Node\Khronos\Vulkan\Drivers' -Name 'C:\Windows\system32\vulkan_radeon.json' -ErrorAction SilentlyContinue; if (Test-Path 'C:\Windows\System32\vulkan_radeon.dll') { Remove-Item 'C:\Windows\System32\vulkan_radeon.dll' -Force -ErrorAction SilentlyContinue }"
 echo [OK] vulkan_radeon.dll atualizada exclusivamente em C:\BC250_LIB.
 echo.
 echo 2. Iniciando vinculacao WDDM com ensaio D3D11 Nativo (bc250umd.dll)...
 if defined DWM_CAPTURE_ARG echo [ATENCAO] WER LocalDumps do dwm.exe sera armado somente durante esta janela.
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bind-bc250mcdm-lab.ps1" -Execute -IAcceptBlackScreenRisk -EnableRenderNode -EnableShaderDispatch -EnablePersistentSubmission -EnableGpuvaLabPromotion -IAcceptGpuvaLabPromotion -EnableNode1JournalGatePerProcess -EnableD3D11LabPromotion -RunD3D11Native -D3D11Frames 60 -WatchdogTimeoutSeconds 120 -IAcceptAutomaticRecoveryReboot %DWM_CAPTURE_ARG%
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bind-bc250mcdm-lab.ps1" -Execute -IAcceptBlackScreenRisk -EnableRenderNode -EnableShaderDispatch -EnablePersistentSubmission -EnableGpuvaLabPromotion -IAcceptGpuvaLabPromotion -EnableNode1JournalGatePerProcess -EnableD3D11LabPromotion -RunD3D11Native -D3D11Frames 60 -WatchdogTimeoutSeconds %BC250_WATCHDOG_SECONDS% -IAcceptAutomaticRecoveryReboot %DWM_CAPTURE_ARG%
 set "BIND_EXIT=%ERRORLEVEL%"
 echo.
 echo 3. Executando rollback incondicional do ensaio automatizado...
@@ -57,6 +69,9 @@ call "%~dp0BC250_RECOVERY.cmd"
 set "RECOVERY_EXIT=%ERRORLEVEL%"
 if not "%RECOVERY_EXIT%"=="0" (
     echo [ERRO] Rollback incompleto, exit=%RECOVERY_EXIT%. Nao execute outro ensaio.
+    rem DX.44 host: na Corrida 86 este ramo pulou a coleta RADV 3b. Coletar mesmo assim.
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0collect-bc250-gfx-ib-after-recovery.ps1"
+    if errorlevel 1 echo [AVISO] Coleta RADV pos-rollback incompleta; staging preservado para resgate manual.
     pause
     exit /b %RECOVERY_EXIT%
 )
@@ -67,6 +82,11 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 echo [OK] BasicDisplay Codigo 0 restaurado. Boot frio obrigatorio antes de outro ensaio.
+echo 3b. Reconciliando IBs e logs RADV apos rollback...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0collect-bc250-gfx-ib-after-recovery.ps1"
+if errorlevel 1 (
+    echo [AVISO] Coleta RADV pos-rollback incompleta; staging preservado para resgate manual.
+)
 powershell -NoProfile -ExecutionPolicy Bypass -Command "if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { Stop-Process -Name sihost -Force -ErrorAction SilentlyContinue; Start-Process explorer.exe }"
 echo.
 echo ===================================================================

@@ -13,9 +13,16 @@ static void Bc250UmdTrace(const char *fmt, ...) { (void)fmt; }
 BOOL Bc250UmdVkUploadBufferData(BC250_UMD_DEVICE *d, BC250_UMD_RESOURCE *r, const void *p, SIZE_T n)
 { (void)d; (void)r; (void)p; assert(n == 64); uploads++; return TRUE; }
 #include "../umd/bc250_umd_pipeline_cache.c"
+/* DX.54: variavel (nao const) para a suite exercitar os dois caminhos. */
+static BOOL s_Bc250Dx54PersistentDescriptors = FALSE;
+static unsigned persistentCreates, samplerCreates, resets;
 #include "../umd/bc250_umd_descriptors.c"
 static VkResult VKAPI_CALL CreatePool(VkDevice d, const VkDescriptorPoolCreateInfo *p, const VkAllocationCallbacks *a, VkDescriptorPool *out)
-{ (void)d; (void)a; assert(p->maxSets == 1); assert(p->poolSizeCount == (imageMode ? 2u : 1u)); *out = (VkDescriptorPool)(uintptr_t)++creates; return VK_SUCCESS; }
+{ (void)d; (void)a;
+  if (p->maxSets == BC250_DX54_POOL_MAX_SETS) { assert(s_Bc250Dx54PersistentDescriptors && p->poolSizeCount == 3u); persistentCreates++; *out = (VkDescriptorPool)(uintptr_t)0x5000; return VK_SUCCESS; }
+  assert(p->maxSets == 1); assert(p->poolSizeCount == (imageMode ? 2u : 1u)); *out = (VkDescriptorPool)(uintptr_t)++creates; return VK_SUCCESS; }
+static VkResult VKAPI_CALL ResetPool(VkDevice d, VkDescriptorPool p, VkDescriptorPoolResetFlags f)
+{ (void)d; (void)f; assert(p == (VkDescriptorPool)(uintptr_t)0x5000); resets++; return VK_SUCCESS; }
 static VkResult VKAPI_CALL Allocate(VkDevice d, const VkDescriptorSetAllocateInfo *p, VkDescriptorSet *out)
 { (void)d; assert(p->descriptorSetCount == 1); allocations++; if (failAllocation) return VK_ERROR_OUT_OF_POOL_MEMORY; *out = (VkDescriptorSet)(uintptr_t)allocations; return VK_SUCCESS; }
 static void VKAPI_CALL Update(VkDevice d, uint32_t n, const VkWriteDescriptorSet *w, uint32_t c, const VkCopyDescriptorSet *copy)
@@ -29,7 +36,7 @@ static void VKAPI_CALL Destroy(VkDevice d, VkDescriptorPool p, const VkAllocatio
 static VkResult VKAPI_CALL View(VkDevice d, const VkImageViewCreateInfo *p, const VkAllocationCallbacks *a, VkImageView *out)
 { (void)d; (void)a; assert(p->image == (VkImage)(uintptr_t)20 && p->subresourceRange.levelCount == 1); *out = (VkImageView)(uintptr_t)21; return VK_SUCCESS; }
 static VkResult VKAPI_CALL Sampler(VkDevice d, const VkSamplerCreateInfo *p, const VkAllocationCallbacks *a, VkSampler *out)
-{ (void)d; (void)a; assert(p->minFilter == VK_FILTER_LINEAR && p->addressModeU == VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE); *out = (VkSampler)(uintptr_t)22; return VK_SUCCESS; }
+{ (void)d; (void)a; assert(p->minFilter == VK_FILTER_LINEAR && p->addressModeU == VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE); samplerCreates++; *out = (VkSampler)(uintptr_t)22; return VK_SUCCESS; }
 static void VKAPI_CALL DestroyView(VkDevice d, VkImageView v, const VkAllocationCallbacks *a)
 { (void)d; (void)v; (void)a; viewsDestroyed++; }
 static void VKAPI_CALL DestroySampler(VkDevice d, VkSampler v, const VkAllocationCallbacks *a)
@@ -38,7 +45,7 @@ static void VKAPI_CALL Barrier(VkCommandBuffer c, VkPipelineStageFlags src, VkPi
     uint32_t mc, const VkMemoryBarrier *m, uint32_t bc, const VkBufferMemoryBarrier *b, uint32_t ic, const VkImageMemoryBarrier *im)
 { (void)c; (void)src; (void)dst; (void)dep; (void)mc; (void)m; (void)bc; (void)b;
   assert(ic == 1 && im->image == (VkImage)(uintptr_t)20);
-  assert(im->newLayout == (barriers == 0 ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)); barriers++; }
+  assert(im->newLayout == ((barriers % 2u) == 0 ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)); barriers++; }
 int main(void)
 {
     BC250_UMD_DEVICE *d = calloc(1, sizeof(*d));
@@ -110,6 +117,39 @@ int main(void)
         texture.VkLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         assert(!Bc250UmdBindDrawDescriptors(d, layout, VK_NULL_HANDLE, &has));
         Bc250UmdVkReleaseDescriptorBatches(&d->VkBridge);
+
+        /*
+         * DX.54: pool persistente e cache de samplers. Um pool so' para varios
+         * draws, sampler criado uma vez e NUNCA destruido pelo lote, e o 65o
+         * conjunto sem reset cai no pool por draw -- contado.
+         */
+        {
+            unsigned createsBefore, samplersBefore, destroysBefore, draw;
+            s_Bc250Dx54PersistentDescriptors = TRUE;
+            d->VkBridge.vk.vkResetDescriptorPool = ResetPool;
+            entry->DescriptorSetLayout = (VkDescriptorSetLayout)(uintptr_t)0x77;
+            d->VkBridge.SubmissionFailed = FALSE;
+            texture.VkLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            createsBefore = creates; samplersBefore = samplersDestroyed; destroysBefore = destroys;
+            samplerCreates = 0;
+            for (draw = 0; draw < BC250_DX54_POOL_MAX_SETS; ++draw) {
+                assert(Bc250UmdBindDrawDescriptors(d, layout, VK_NULL_HANDLE, &has) && has);
+                Bc250UmdRestoreDescriptorImages(&d->VkBridge, VK_NULL_HANDLE);
+            }
+            assert(persistentCreates == 1u && creates == createsBefore);
+            assert(samplerCreates == 1u && d->VkBridge.SamplerCacheCount == 1u);
+            assert(d->VkBridge.PersistentPoolSets == BC250_DX54_POOL_MAX_SETS);
+            assert(d->VkBridge.DescriptorFallbackPools == 0u);
+            /* Esgotado sem fence: o proximo draw usa pool proprio, contado. */
+            assert(Bc250UmdBindDrawDescriptors(d, layout, VK_NULL_HANDLE, &has) && has);
+            Bc250UmdRestoreDescriptorImages(&d->VkBridge, VK_NULL_HANDLE);
+            assert(creates == createsBefore + 1u && d->VkBridge.DescriptorFallbackPools == 1u);
+            Bc250UmdVkReleaseDescriptorBatches(&d->VkBridge);
+            /* O lote destroi so' o pool por draw; sampler do cache e pool persistente ficam. */
+            assert(destroys == destroysBefore + 1u && samplersDestroyed == samplersBefore);
+            assert(d->VkBridge.PersistentPool == (VkDescriptorPool)(uintptr_t)0x5000);
+            s_Bc250Dx54PersistentDescriptors = FALSE;
+        }
     }
     /* Malformed reflection is an error, never an empty descriptor layout. */
     { uint32_t invalid[] = {0x07230203, 0x10000, 0, 4, 0, 0};

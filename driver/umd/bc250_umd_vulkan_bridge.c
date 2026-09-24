@@ -360,6 +360,7 @@ static BOOL Bc250UmdVkBridgeInitInternal(_Out_ BC250_UMD_VK_BRIDGE *pBridge)
     LOAD_VK_DEV(vkDestroyDescriptorSetLayout);
     LOAD_VK_DEV(vkCreateDescriptorPool);
     LOAD_VK_DEV(vkDestroyDescriptorPool);
+    LOAD_VK_DEV(vkResetDescriptorPool);
     LOAD_VK_DEV(vkAllocateDescriptorSets);
     LOAD_VK_DEV(vkUpdateDescriptorSets);
     LOAD_VK_DEV(vkCreatePipelineLayout);
@@ -603,6 +604,61 @@ VOID Bc250UmdVkReleaseDescriptorBatches(BC250_UMD_VK_BRIDGE *pBridge)
     }
 }
 
+VkDescriptorSet Bc250UmdVkAllocPersistentSet(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, VkDescriptorSetLayout layout)
+{
+    VkDescriptorSetAllocateInfo allocInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    VkResult res;
+
+    if (pBridge == NULL || pBridge->PersistentPoolFailed || layout == VK_NULL_HANDLE ||
+        pBridge->vk.vkResetDescriptorPool == NULL) return VK_NULL_HANDLE;
+    if (pBridge->PersistentPool == VK_NULL_HANDLE) {
+        VkDescriptorPoolSize sizes[3] = {
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, BC250_DX54_POOL_UNIFORM_BUFFERS},
+            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, BC250_DX54_POOL_SAMPLED_IMAGES},
+            {VK_DESCRIPTOR_TYPE_SAMPLER, BC250_DX54_POOL_SAMPLERS}};
+        VkDescriptorPoolCreateInfo poolInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        poolInfo.maxSets = BC250_DX54_POOL_MAX_SETS;
+        poolInfo.poolSizeCount = 3;
+        poolInfo.pPoolSizes = sizes;
+        res = pBridge->vk.vkCreateDescriptorPool(pBridge->Device, &poolInfo, NULL, &pBridge->PersistentPool);
+        if (res != VK_SUCCESS) {
+            pBridge->PersistentPool = VK_NULL_HANDLE;
+            pBridge->PersistentPoolFailed = TRUE;
+            Bc250VkTrace("[DX54_DESC] POOL PERSISTENTE RECUSADO: vkCreateDescriptorPool res=%d; draws seguem com pool por draw", res);
+            return VK_NULL_HANDLE;
+        }
+        Bc250VkTrace("[DX54_DESC] POOL PERSISTENTE criado: %u conjuntos, %u CB, %u SRV, %u samplers (pool=%p)",
+            BC250_DX54_POOL_MAX_SETS, BC250_DX54_POOL_UNIFORM_BUFFERS, BC250_DX54_POOL_SAMPLED_IMAGES,
+            BC250_DX54_POOL_SAMPLERS, (void *)pBridge->PersistentPool);
+    }
+    if (pBridge->PersistentPoolSets >= BC250_DX54_POOL_MAX_SETS) return VK_NULL_HANDLE;
+    allocInfo.descriptorPool = pBridge->PersistentPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &layout;
+    res = pBridge->vk.vkAllocateDescriptorSets(pBridge->Device, &allocInfo, &set);
+    if (res != VK_SUCCESS) return VK_NULL_HANDLE;
+    pBridge->PersistentPoolSets++;
+    return set;
+}
+
+VkSampler Bc250UmdVkCachedSampler(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, _In_ const VkSamplerCreateInfo *pInfo)
+{
+    VkSampler sampler = VK_NULL_HANDLE;
+    uint32_t i;
+
+    if (pBridge == NULL || pInfo == NULL || pInfo->pNext != NULL) return VK_NULL_HANDLE;
+    for (i = 0; i < pBridge->SamplerCacheCount; ++i)
+        if (memcmp(&pBridge->SamplerCache[i].Info, pInfo, sizeof(*pInfo)) == 0)
+            return pBridge->SamplerCache[i].Sampler;
+    if (pBridge->SamplerCacheCount >= BC250_DX54_SAMPLER_CACHE_CAPACITY) return VK_NULL_HANDLE;
+    if (pBridge->vk.vkCreateSampler(pBridge->Device, pInfo, NULL, &sampler) != VK_SUCCESS) return VK_NULL_HANDLE;
+    pBridge->SamplerCache[pBridge->SamplerCacheCount].Info = *pInfo;
+    pBridge->SamplerCache[pBridge->SamplerCacheCount].Sampler = sampler;
+    pBridge->SamplerCacheCount++;
+    return sampler;
+}
+
 VOID Bc250UmdVkBridgeShutdown(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
 {
     if (pBridge == NULL) return;
@@ -613,6 +669,37 @@ VOID Bc250UmdVkBridgeShutdown(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
             pBridge->vk.vkDeviceWaitIdle(pBridge->Device);
         }
         Bc250UmdVkReleaseDescriptorBatches(pBridge);
+        /* DX.54: pool persistente e cache de samplers vivem ate aqui. */
+        if (pBridge->PersistentPool != VK_NULL_HANDLE && pBridge->vk.vkDestroyDescriptorPool != NULL)
+            pBridge->vk.vkDestroyDescriptorPool(pBridge->Device, pBridge->PersistentPool, NULL);
+        pBridge->PersistentPool = VK_NULL_HANDLE;
+        pBridge->PersistentPoolSets = 0;
+        for (uint32_t s = 0; s < pBridge->SamplerCacheCount; ++s)
+            if (pBridge->SamplerCache[s].Sampler != VK_NULL_HANDLE && pBridge->vk.vkDestroySampler != NULL)
+                pBridge->vk.vkDestroySampler(pBridge->Device, pBridge->SamplerCache[s].Sampler, NULL);
+        pBridge->SamplerCacheCount = 0;
+        /* DX.49: anel de draws e staging persistente vivem ate aqui. */
+        if (pBridge->DrawRingBuf != VK_NULL_HANDLE && pBridge->vk.vkDestroyBuffer != NULL) {
+            pBridge->vk.vkDestroyBuffer(pBridge->Device, pBridge->DrawRingBuf, NULL);
+            pBridge->DrawRingBuf = VK_NULL_HANDLE;
+        }
+        if (pBridge->DrawRingMem != VK_NULL_HANDLE && pBridge->vk.vkFreeMemory != NULL) {
+            pBridge->vk.vkFreeMemory(pBridge->Device, pBridge->DrawRingMem, NULL);
+            pBridge->DrawRingMem = VK_NULL_HANDLE;
+        }
+        pBridge->DrawRingMapped = NULL;
+        pBridge->DrawRingSize = 0;
+        pBridge->DrawRingHead = 0;
+        if (pBridge->UploadStagingBuf != VK_NULL_HANDLE && pBridge->vk.vkDestroyBuffer != NULL) {
+            pBridge->vk.vkDestroyBuffer(pBridge->Device, pBridge->UploadStagingBuf, NULL);
+            pBridge->UploadStagingBuf = VK_NULL_HANDLE;
+        }
+        if (pBridge->UploadStagingMem != VK_NULL_HANDLE && pBridge->vk.vkFreeMemory != NULL) {
+            pBridge->vk.vkFreeMemory(pBridge->Device, pBridge->UploadStagingMem, NULL);
+            pBridge->UploadStagingMem = VK_NULL_HANDLE;
+        }
+        pBridge->UploadStagingMapped = NULL;
+        pBridge->UploadStagingSize = 0;
         if (pBridge->LinearPresentBuf != VK_NULL_HANDLE && pBridge->vk.vkDestroyBuffer != NULL) {
             pBridge->vk.vkDestroyBuffer(pBridge->Device, pBridge->LinearPresentBuf, NULL);
             pBridge->LinearPresentBuf = VK_NULL_HANDLE;
@@ -717,12 +804,36 @@ VkCommandBuffer Bc250UmdVkGetCommandBuffer(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
     return pBridge->CommandBuffer;
 }
 
+static uint64_t Bc250VkNowMicros(void)
+{
+    LARGE_INTEGER now, freq;
+    if (!QueryPerformanceCounter(&now) || !QueryPerformanceFrequency(&freq) || freq.QuadPart <= 0) return 0u;
+    /* Dividir antes de multiplicar: now*1e6 estoura int64 depois de ~10 dias a 10 MHz. */
+    return (uint64_t)(now.QuadPart / freq.QuadPart) * 1000000ull +
+           (uint64_t)((now.QuadPart % freq.QuadPart) * 1000000ll / freq.QuadPart);
+}
+
 VkResult Bc250UmdVkFlushCommands(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
 {
+    uint64_t waitStart, waitMicros, flushStart, submitStart, submitMicros, endMicros;
+    uint32_t drawsInBatch;
+    VkDeviceSize ringUsed;
+
     if (pBridge == NULL || !pBridge->DeviceActive || pBridge->SubmissionFailed) return VK_ERROR_DEVICE_LOST;
     if (!pBridge->RecordingActive) return VK_SUCCESS;
 
-    Bc250VkTrace("[VK_BRIDGE] FlushCommands ENTER: gravacao ativa, finalizando (cmd=%p)...", (void*)pBridge->CommandBuffer);
+    flushStart = Bc250VkNowMicros();
+    drawsInBatch = pBridge->PendingDraws;
+    ringUsed = pBridge->DrawRingHead;
+    Bc250VkTrace("[VK_BRIDGE] FlushCommands ENTER: gravacao ativa, finalizando (cmd=%p) DrawsNoLote=%u RingUsado=%llu...",
+        (void*)pBridge->CommandBuffer, drawsInBatch, (unsigned long long)ringUsed);
+
+    /* DX.49: um clear deixa o render pass aberto; fecha-lo aqui torna todo
+     * flush seguro, inclusive o dreno chamado de dentro de uma destruicao. */
+    if (pBridge->pRenderPassOpen != NULL && *pBridge->pRenderPassOpen) {
+        pBridge->vk.vkCmdEndRenderPass(pBridge->CommandBuffer);
+        *pBridge->pRenderPassOpen = FALSE;
+    }
 
     VkResult res = pBridge->vk.vkEndCommandBuffer(pBridge->CommandBuffer);
     if (res != VK_SUCCESS) {
@@ -741,23 +852,208 @@ VkResult Bc250UmdVkFlushCommands(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &pBridge->CommandBuffer;
 
+    /* DX.54: EsperaUs sozinho enganava -- na 98R o flush levava ~14 ms com
+     * EsperaUs=190. Fim do CB e vkQueueSubmit passam a ter tempo proprio. */
+    submitStart = Bc250VkNowMicros();
+    endMicros = submitStart - flushStart;
     res = pBridge->vk.vkQueueSubmit(pBridge->GraphicsQueue, 1, &submitInfo, pBridge->Fence);
+    submitMicros = Bc250VkNowMicros() - submitStart;
     if (res != VK_SUCCESS) {
         Bc250VkTrace("[VK_BRIDGE] FlushCommands: vkQueueSubmit falhou: res=%d", res);
         pBridge->SubmissionFailed = TRUE;
         return res;
     }
 
+    waitStart = Bc250VkNowMicros();
     res = pBridge->vk.vkWaitForFences(pBridge->Device, 1, &pBridge->Fence, VK_TRUE, 2000000000ull);
+    waitMicros = Bc250VkNowMicros() - waitStart;
     if (res != VK_SUCCESS) {
-        Bc250VkTrace("[VK_BRIDGE] FlushCommands: vkWaitForFences retorno nao-sucesso: res=%d (TIMEOUT ou ERRO)", res);
+        Bc250VkTrace("[VK_BRIDGE] FlushCommands: vkWaitForFences retorno nao-sucesso: res=%d (TIMEOUT ou ERRO) DrawsNoLote=%u "
+            "-- os draws deste lote foram gravados e NAO tem conclusao provada", res, drawsInBatch);
         pBridge->SubmissionFailed = TRUE;
     } else {
         Bc250UmdVkReleaseDescriptorBatches(pBridge);
-        Bc250VkTrace("[VK_BRIDGE] FlushCommands: Execucao e Fence em hardware CONCLUIDOS com SUCESSO!");
+        /* DX.54: conjuntos do pool persistente so' voltam com a fence concluida. */
+        if (pBridge->PersistentPool != VK_NULL_HANDLE && pBridge->PersistentPoolSets != 0u) {
+            if (pBridge->vk.vkResetDescriptorPool(pBridge->Device, pBridge->PersistentPool, 0) == VK_SUCCESS) {
+                pBridge->PersistentPoolSets = 0;
+                pBridge->PersistentPoolResets++;
+            }
+        }
+        /* So' com a fence concluida o anel pode voltar ao inicio. */
+        pBridge->DrawRingHead = 0;
+        pBridge->BatchFlushCount++;
+        pBridge->BatchDrawsFlushed += drawsInBatch;
+        Bc250VkTrace("[VK_BRIDGE] FlushCommands: Execucao e Fence em hardware CONCLUIDOS com SUCESSO! "
+            "[DX49_BATCH] DrawsNoLote=%u RingUsado=%llu EsperaUs=%llu Flushes=%llu DrawsTotais=%llu "
+            "[DX54_TEMPO] FimCbUs=%llu SubmitUs=%llu DescritoresNoLoteUs=%llu PoolResets=%llu PoolsPorDraw=%llu",
+            drawsInBatch, (unsigned long long)ringUsed, (unsigned long long)waitMicros,
+            (unsigned long long)pBridge->BatchFlushCount, (unsigned long long)pBridge->BatchDrawsFlushed,
+            (unsigned long long)endMicros, (unsigned long long)submitMicros,
+            (unsigned long long)pBridge->DescriptorMicrosInBatch,
+            (unsigned long long)pBridge->PersistentPoolResets,
+            (unsigned long long)pBridge->DescriptorFallbackPools);
     }
+    pBridge->PendingDraws = 0;
+    pBridge->DescriptorMicrosInBatch = 0;
     pBridge->RecordingActive = FALSE;
     return res;
+}
+
+VkResult Bc250UmdVkDrainPending(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, _In_z_ const char *reason)
+{
+    if (pBridge == NULL) return VK_ERROR_DEVICE_LOST;
+    if (!pBridge->RecordingActive) return VK_SUCCESS;
+    Bc250VkTrace("[DX49_BATCH] DRENO antes de %s: DrawsPendentes=%u", reason, pBridge->PendingDraws);
+    return Bc250UmdVkFlushCommands(pBridge);
+}
+
+static BOOL Bc250UmdVkDrawRingEnsure(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
+{
+    VkBufferCreateInfo bufInfo = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    VkMemoryAllocateInfo allocInfo = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    VkMemoryRequirements req;
+    uint32_t typeIndex;
+    void *mapped = NULL;
+
+    if (pBridge->DrawRingMapped != NULL) return TRUE;
+    if (pBridge->DrawRingFailed || pBridge->Device == VK_NULL_HANDLE ||
+        pBridge->vk.vkCreateBuffer == NULL || pBridge->vk.vkAllocateMemory == NULL ||
+        pBridge->vk.vkBindBufferMemory == NULL || pBridge->vk.vkMapMemory == NULL ||
+        pBridge->vk.vkGetBufferMemoryRequirements == NULL) {
+        pBridge->DrawRingFailed = TRUE;
+        return FALSE;
+    }
+    bufInfo.size = BC250_DX49_DRAW_RING_BYTES;
+    bufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (pBridge->vk.vkCreateBuffer(pBridge->Device, &bufInfo, NULL, &pBridge->DrawRingBuf) != VK_SUCCESS) {
+        pBridge->DrawRingBuf = VK_NULL_HANDLE;
+        goto fail;
+    }
+    pBridge->vk.vkGetBufferMemoryRequirements(pBridge->Device, pBridge->DrawRingBuf, &req);
+    typeIndex = Bc250UmdVkFindMemoryType(pBridge, req.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    if (typeIndex == UINT32_MAX) goto fail;
+    allocInfo.allocationSize = req.size;
+    allocInfo.memoryTypeIndex = typeIndex;
+    if (pBridge->vk.vkAllocateMemory(pBridge->Device, &allocInfo, NULL, &pBridge->DrawRingMem) != VK_SUCCESS) {
+        pBridge->DrawRingMem = VK_NULL_HANDLE;
+        goto fail;
+    }
+    if (pBridge->vk.vkBindBufferMemory(pBridge->Device, pBridge->DrawRingBuf, pBridge->DrawRingMem, 0) != VK_SUCCESS ||
+        pBridge->vk.vkMapMemory(pBridge->Device, pBridge->DrawRingMem, 0, VK_WHOLE_SIZE, 0, &mapped) != VK_SUCCESS ||
+        mapped == NULL) {
+        goto fail;
+    }
+    pBridge->DrawRingMapped = (uint8_t *)mapped;
+    pBridge->DrawRingSize = BC250_DX49_DRAW_RING_BYTES;
+    pBridge->DrawRingHead = 0;
+    Bc250VkTrace("[DX49_BATCH] ANEL de dados por draw criado: %u bytes host-visible/coerente, mapa persistente (buf=%p)",
+        BC250_DX49_DRAW_RING_BYTES, (void *)pBridge->DrawRingBuf);
+    return TRUE;
+fail:
+    Bc250VkTrace("[DX49_BATCH] ANEL RECUSADO: criacao/mapa falhou; draws seguem pelo caminho direto com flush por draw");
+    if (pBridge->DrawRingMem != VK_NULL_HANDLE && pBridge->vk.vkFreeMemory != NULL)
+        pBridge->vk.vkFreeMemory(pBridge->Device, pBridge->DrawRingMem, NULL);
+    if (pBridge->DrawRingBuf != VK_NULL_HANDLE && pBridge->vk.vkDestroyBuffer != NULL)
+        pBridge->vk.vkDestroyBuffer(pBridge->Device, pBridge->DrawRingBuf, NULL);
+    pBridge->DrawRingMem = VK_NULL_HANDLE;
+    pBridge->DrawRingBuf = VK_NULL_HANDLE;
+    pBridge->DrawRingFailed = TRUE;
+    return FALSE;
+}
+
+VkDeviceSize Bc250UmdVkDrawRingFree(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
+{
+    if (pBridge == NULL || !Bc250UmdVkDrawRingEnsure(pBridge)) return 0;
+    return (pBridge->DrawRingHead >= pBridge->DrawRingSize) ? 0 : pBridge->DrawRingSize - pBridge->DrawRingHead;
+}
+
+BOOL Bc250UmdVkDrawRingPut(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, _In_reads_bytes_(Bytes) const void *pData,
+    VkDeviceSize Bytes, _Out_ VkBuffer *pBuffer, _Out_ VkDeviceSize *pOffset)
+{
+    VkDeviceSize start;
+    *pBuffer = VK_NULL_HANDLE;
+    *pOffset = 0;
+    if (pBridge == NULL || pData == NULL || Bytes == 0 || !Bc250UmdVkDrawRingEnsure(pBridge)) return FALSE;
+    start = (pBridge->DrawRingHead + (BC250_DX49_DRAW_RING_ALIGN - 1u)) & ~(VkDeviceSize)(BC250_DX49_DRAW_RING_ALIGN - 1u);
+    if (start > pBridge->DrawRingSize || Bytes > pBridge->DrawRingSize - start) return FALSE;
+    memcpy(pBridge->DrawRingMapped + start, pData, (size_t)Bytes);
+    pBridge->DrawRingHead = start + Bytes;
+    *pBuffer = pBridge->DrawRingBuf;
+    *pOffset = start;
+    return TRUE;
+}
+
+BOOL Bc250UmdVkEnsureUploadStaging(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, VkDeviceSize Bytes,
+    _Out_ BOOL *pGrew, _Out_ uint64_t *pAllocMicros)
+{
+    VkBufferCreateInfo bufInfo = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    VkMemoryAllocateInfo allocInfo = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    VkMemoryRequirements req;
+    VkBuffer buf = VK_NULL_HANDLE;
+    VkDeviceMemory mem = VK_NULL_HANDLE;
+    VkDeviceSize size;
+    uint32_t typeIndex;
+    void *mapped = NULL;
+    uint64_t t0;
+
+    *pGrew = FALSE;
+    *pAllocMicros = 0u;
+    if (pBridge == NULL || Bytes == 0) return FALSE;
+    if (pBridge->UploadStagingMapped != NULL && pBridge->UploadStagingSize >= Bytes) return TRUE;
+
+    /* Crescer libera o anterior: so' e' seguro sem gravacao pendente que o
+     * referencie. O upload sempre espera a propria fence, mas o dreno fecha
+     * a porta para qualquer outro caminho. */
+    if (pBridge->UploadStagingMapped != NULL &&
+        Bc250UmdVkDrainPending(pBridge, "crescer o staging persistente") != VK_SUCCESS) {
+        return FALSE;
+    }
+    t0 = Bc250VkNowMicros();
+    size = Bytes;
+    if (size < (VkDeviceSize)(4u * 1024u * 1024u)) size = (VkDeviceSize)(4u * 1024u * 1024u);
+    size = (size + 0xFFFFu) & ~(VkDeviceSize)0xFFFFu;
+    bufInfo.size = size;
+    bufInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (pBridge->vk.vkCreateBuffer(pBridge->Device, &bufInfo, NULL, &buf) != VK_SUCCESS) return FALSE;
+    pBridge->vk.vkGetBufferMemoryRequirements(pBridge->Device, buf, &req);
+    typeIndex = Bc250UmdVkFindMemoryType(pBridge, req.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    if (typeIndex == UINT32_MAX) goto fail;
+    allocInfo.allocationSize = req.size;
+    allocInfo.memoryTypeIndex = typeIndex;
+    if (pBridge->vk.vkAllocateMemory(pBridge->Device, &allocInfo, NULL, &mem) != VK_SUCCESS) {
+        mem = VK_NULL_HANDLE;
+        goto fail;
+    }
+    if (pBridge->vk.vkBindBufferMemory(pBridge->Device, buf, mem, 0) != VK_SUCCESS ||
+        pBridge->vk.vkMapMemory(pBridge->Device, mem, 0, VK_WHOLE_SIZE, 0, &mapped) != VK_SUCCESS ||
+        mapped == NULL) {
+        goto fail;
+    }
+    if (pBridge->UploadStagingMem != VK_NULL_HANDLE) pBridge->vk.vkFreeMemory(pBridge->Device, pBridge->UploadStagingMem, NULL);
+    if (pBridge->UploadStagingBuf != VK_NULL_HANDLE) pBridge->vk.vkDestroyBuffer(pBridge->Device, pBridge->UploadStagingBuf, NULL);
+    pBridge->UploadStagingBuf = buf;
+    pBridge->UploadStagingMem = mem;
+    pBridge->UploadStagingMapped = mapped;
+    pBridge->UploadStagingSize = size;
+    pBridge->UploadStagingGrowCount++;
+    *pGrew = TRUE;
+    *pAllocMicros = Bc250VkNowMicros() - t0;
+    Bc250VkTrace("[DX49_STAGING] staging persistente %s: %llu bytes (pedido %llu) AlocUs=%llu Crescimentos=%u",
+        pBridge->UploadStagingGrowCount == 1u ? "CRIADO" : "CRESCEU",
+        (unsigned long long)size, (unsigned long long)Bytes,
+        (unsigned long long)*pAllocMicros, pBridge->UploadStagingGrowCount);
+    return TRUE;
+fail:
+    Bc250VkTrace("[DX49_STAGING] RECUSADO: criacao do staging de %llu bytes falhou", (unsigned long long)size);
+    if (mem != VK_NULL_HANDLE) pBridge->vk.vkFreeMemory(pBridge->Device, mem, NULL);
+    if (buf != VK_NULL_HANDLE) pBridge->vk.vkDestroyBuffer(pBridge->Device, buf, NULL);
+    return FALSE;
 }
 
 VkFormat Bc250UmdVkFormatFromDxgi(uint32_t dxgiFormat)
@@ -925,6 +1221,10 @@ BOOL Bc250UmdVkEnsureLinearPresentBuf(
         }
         Bc250VkTrace("[VK_BRIDGE] Redimensionando LinearPresentBuf: atual=%llu, necessario=%llu",
             (unsigned long long)pBridge->LinearPresentSize, (unsigned long long)requiredSize);
+        /* DX.49: gravacao pendente pode referenciar o buffer antigo. */
+        if (Bc250UmdVkDrainPending(pBridge, "redimensionar LinearPresentBuf") != VK_SUCCESS) {
+            return FALSE;
+        }
         if (pBridge->vk.vkDeviceWaitIdle != NULL) {
             pBridge->vk.vkDeviceWaitIdle(pBridge->Device);
         }

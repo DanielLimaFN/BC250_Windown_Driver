@@ -87,6 +87,58 @@ def main() -> int:
     if "radv_wddm2_bc250_concat_release_all(ctx);" not in cs_text:
         errors.append("DX.22: ctx_destroy nao libera os BOs do pool de concatenacao")
 
+    # DX.40: o fluxo do DWM precisa sobreviver sem captura de stderr. O log
+    # persiste somente no staging opt-in, com limite e ID de submit por processo.
+    for label, needle in {
+        "diretorio opt-in unico para dump e fluxo": "const char *dir = bc250_diag_dir();",
+        "arquivo por processo": "bc250_flow_pid%lu_start%08lx%08lx.log",
+        "limite de fluxo": "4 * 1024 * 1024",
+        "identidade por submit": "InterlockedIncrement64(&submit_serial)",
+        "layout antes do D3DKMT": "event=RADV_CS_LAYOUT",
+        "espera de fila": "event=RADV_QUEUE_WAIT",
+        "retorno de submit": "event=RADV_QUEUE_SUBMIT_END",
+        "sinalizacao de fila": "event=RADV_QUEUE_SIGNAL",
+        "metadado com layout": "queue_id=%u layout=%s gang=%u",
+    }.items():
+        if needle not in cs_text:
+            errors.append(f"DX.40: falta {label}")
+
+    # Corrida 84: um IB aceito tinha 180 DW iniciais zerados e travou no CP.
+    # A sonda mede origem/copia e o veto precisa ocorrer antes de D3DKMT.
+    zero_probe = cs_text.find("event=RADV_CONCAT_PREAMBLE")
+    concat_layout = cs_text.find('layout = "CONCAT"')
+    zero_guard = cs_text.find("if (copy_base && copied_zero_prefix)")
+    zero_layout = cs_text.find('layout = "REJECT_ZERO_PREAMBLE"')
+    reject_branch = cs_text.find("if (submit_failed_concat)", zero_layout)
+    d3dkmt_call = cs_text.find("WDDM2_DISPATCH(SubmitCommand(", reject_branch)
+    if min(zero_probe, concat_layout, zero_guard, zero_layout,
+           reject_branch, d3dkmt_call) < 0 or not (
+            zero_probe < concat_layout < zero_guard < zero_layout < reject_branch < d3dkmt_call):
+        errors.append("DX.41: prefixo zero sem log, layout final ou recusa anterior ao D3DKMT")
+
+    # DX.42: identidade do preambulo. Na Corrida 84 os 180 DW zerados eram o
+    # preambulo inteiro e o CS principal na mesma pagina do slot estava intacto;
+    # falta saber se o preambulo foi regenerado ou se o MESMO BO perdeu o
+    # conteudo. Exige serial no create, hash no finalize (e o finalize ligado
+    # no winsys) e o evento de identidade antes do veto do DX.41.
+    serial_create = cs_text.find("cs->bc250_serial = (uint64_t)InterlockedIncrement64(&s_bc250_cs_serial);")
+    fin_def = cs_text.find("radv_wddm2_cs_finalize(struct ac_cmdbuf *_cs)")
+    fin_body = cs_text[fin_def:cs_text.find("\n}\n", fin_def)] if fin_def >= 0 else ""
+    identity = cs_text.find("event=RADV_PREAMBLE_IDENTITY")
+    if serial_create < 0:
+        errors.append("DX.42: CS sem serial unico no create")
+    if ("radv_winsys_cs_finalize(_cs)" not in fin_body or
+            "bc250_fnv64_dwords(_cs->buf, cdw)" not in fin_body):
+        errors.append("DX.42: finalize sem hash dos bytes escritos pela CPU")
+    if "ws->base.cs_finalize = radv_wddm2_cs_finalize;" not in cs_text:
+        errors.append("DX.42: winsys nao usa o finalize que registra o hash")
+    for field in ("cs_serial=%llu", "changed=%u", "ib_va=0x%llx", "bo_handle=0x%08x",
+                  "fin_fnv=%016llx", "src_fnv=%016llx", "fin_match=%u"):
+        if identity < 0 or field not in cs_text[identity:identity + 1200]:
+            errors.append(f"DX.42: evento de identidade sem {field}")
+    if identity < 0 or zero_guard < 0 or not (zero_probe < identity < zero_guard):
+        errors.append("DX.42: identidade do preambulo nao e' registrada antes do veto do prefixo zero")
+
     # DX.26 (22/09/2026). Sem ip_discovery_version o Mesa aplica a correcao de
     # versao do kernel e o GFX1013 vira GFX10_3 (MEDIDO: IB da Corrida 71 escrevia
     # PA_CL_VRS_CNTL, DB_VRS_OVERRIDE_CNTL e SX_PS_DOWNCONVERT_CONTROL). Os dois
@@ -124,6 +176,9 @@ def main() -> int:
     print("  DX.22 BC-250 concatenation in own pooled BO, source CS untouched: enforced")
     print("  DX.26 GFX1013 identified as GC 10.1.3 (ip_discovery_version), not GFX10_3: enforced")
     print("  DX.29 no PREAMBLE_CNTL in radv_emit_graphics (matches upstream Mesa): enforced")
+    print("  DX.40 bounded opt-in flow log, submit ID, layout, wait/submit/signal: enforced")
+    print("  DX.41 zero-prefix preamble measured and rejected before D3DKMT: enforced")
+    print("  DX.42 preamble identity (serial, finalize hash, BO VA/handle) before the veto: enforced")
     print("  verdict: NAO VALIDADO EM HARDWARE")
     return 0
 

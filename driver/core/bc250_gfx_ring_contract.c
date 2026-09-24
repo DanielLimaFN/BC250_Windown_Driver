@@ -100,12 +100,18 @@ BC250_GFX_RING_STATUS Bc250GfxRingDeriveBufsz(
         return BC250_GFX_RING_BAD_SIZE;
     }
 
-    /* RB_BUFSZ = log2(RingBytes / 8) - 1. RingBytes >= 4096 garante >= 8. */
+    /*
+     * DX.46: RB_BUFSZ = log2(RingBytes / 8), como o upstream -- Linux v6.6
+     * gfx_v10_0.c:6106 `rb_bufsz = order_base_2(ring->ring_size / 8)` (P1).
+     * O anel do CP tem 2^(RB_BUFSZ+1) dwords. A formula anterior subtraia 1
+     * (classe H, "corroborada" por um valor que o proprio driver escreveu) e
+     * programava METADE do anel: com 64 KB o CP voltava em 8192 DW e lia
+     * pacotes antigos -- Corridas 87 e 89, TDR no submit que cruzou 8192.
+     */
     bufsz = Bc250GfxLog2Exact32(RingBytes / 8u);
     if (bufsz < 3u) {
         return BC250_GFX_RING_BAD_SIZE;
     }
-    bufsz -= 1u;
 
     if (bufsz > GFX_RB_BUFSZ_MAX || (bufsz - 2u) > GFX_RB_BLKSZ_MAX) {
         return BC250_GFX_RING_FIELD_OVERFLOW;

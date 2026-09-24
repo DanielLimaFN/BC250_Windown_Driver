@@ -129,10 +129,12 @@ static int Bc250RunGfx10ClearStateTest(void)
         CHECK(ring[24] == 0x28C6u && ring[25] == 0u);
         CHECK(ring[26] == 0x40u && ring[27] == 0x40u && ring[28] == 0x20u);
         CHECK(ring[29] == 0xC0004200u && ring[30] == 0u);
-        /* DX.36: SEM SWITCH_BUFFER -- a Corrida 81 travou o CP nele. O dword
-         * depois do PFP_SYNC_ME fica intocado (0xA5 do memset). */
-        CHECK(BC250_PM4_GFX_VM_SWITCH_DWORDS == 31u);
-        CHECK(ring[31] == 0xA5A5A5A5u && ring[32] == 0xA5A5A5A5u);
+        /* DX.37: CONTEXT_CONTROL depois do flush e antes do IB; sem CE RAM.
+         * DX.36 continua proibindo SWITCH_BUFFER. */
+        CHECK(BC250_PM4_GFX_VM_SWITCH_DWORDS == 34u);
+        CHECK(ring[31] == 0xC0012800u);
+        CHECK(ring[32] == 0x81018003u && ring[33] == 0u);
+        CHECK(ring[34] == 0xA5A5A5A5u);
         sw.RootPhysical = 0ull;
         CHECK(Bc250Pm4EmitGfxVmSwitch(ring, 64u, &cur, &sw) == BC250_PM4_BAD_ARGUMENT);
         CHECK(cur == BC250_PM4_GFX_VM_SWITCH_DWORDS);

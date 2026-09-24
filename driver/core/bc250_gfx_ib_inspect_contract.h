@@ -133,6 +133,16 @@ void Bc250GfxIbInspectStream(
     void *ReaderContext,
     BC250_GFX_IB_INSPECTION *Inspection);
 
+/* Identidade do stream inteiro, em bytes little-endian, FNV-1a 64. O hash so'
+ * vale quando TODOS os dwords foram lidos; 0 na falha, sem hash parcial.
+ * Serve para correlacionar o dump RADV com o IB lido pelo KMD, nao como prova
+ * criptografica de execucao da GPU. */
+int Bc250GfxIbFingerprint(
+    uint32_t RequestedDwords,
+    BC250_GFX_IB_READ_DWORD Read,
+    void *ReaderContext,
+    uint64_t *Hash);
+
 /*
  * Veredito em texto, para o log. Tres valores possiveis e nada mais:
  *   "IB_LINEAR_CONFIRMADO"  -- stream inteiro varrido, ZERO saltos (CHAIN=1).

@@ -61,17 +61,38 @@ static int Bc250RunGfxRingContractTest(void)
      * e RB_EXE=0. O 0x50000709 e' referencia de um anel CONFIGURADO, vinda de
      * docs/03 e observada em outro momento -- nao e' o estado de boot.
      * ------------------------------------------------------------------ */
+    /*
+     * DX.46 (23/09): a ancora antiga (8192 -> (9, 7)) congelava a formula com
+     * "-1", classe H, que programava METADE do anel -- Corridas 87/89. A ancora
+     * agora e' o upstream (Linux v6.6 gfx_v10_0.c:6106, P1):
+     * RB_BUFSZ = log2(RingBytes/8), e o anel do CP tem 2^(RB_BUFSZ+1) DW.
+     */
     CHECK(Bc250GfxRingDeriveBufsz(8192u, &bufsz, &blksz) == BC250_GFX_RING_OK);
+    CHECK(bufsz == 10u);
+    CHECK(blksz == 8u);
+
+    CHECK(Bc250GfxRingDeriveBufsz(4096u, &bufsz, &blksz) == BC250_GFX_RING_OK);
     CHECK(bufsz == 9u);
     CHECK(blksz == 7u);
 
-    CHECK(Bc250GfxRingDeriveBufsz(4096u, &bufsz, &blksz) == BC250_GFX_RING_OK);
-    CHECK(bufsz == 8u);
-    CHECK(blksz == 6u);
+    /* O anel real do GfxEngine: 64 KB = 16384 DW (bc250_active_miniport.c). */
+    CHECK(Bc250GfxRingDeriveBufsz(65536u, &bufsz, &blksz) == BC250_GFX_RING_OK);
+    CHECK(bufsz == 13u);
+    CHECK(blksz == 11u);
 
     CHECK(Bc250GfxRingDeriveBufsz(0x100000u, &bufsz, &blksz) == BC250_GFX_RING_OK);
-    CHECK(bufsz == 16u);
-    CHECK(blksz == 14u);
+    CHECK(bufsz == 17u);
+    CHECK(blksz == 15u);
+
+    /* Invariante que teria pego o defeito: o anel que o CP enxerga tem de ter
+     * o MESMO numero de dwords que o buffer que o KMD escreve. */
+    {
+        uint32_t ringBytesProbe;
+        for (ringBytesProbe = 4096u; ringBytesProbe <= 0x100000u; ringBytesProbe <<= 1) {
+            CHECK(Bc250GfxRingDeriveBufsz(ringBytesProbe, &bufsz, &blksz) == BC250_GFX_RING_OK);
+            CHECK((1u << (bufsz + 1u)) == ringBytesProbe / 4u);
+        }
+    }
 
     /* Tamanhos recusados: nao potencia de dois, abaixo do piso, acima do teto. */
     CHECK(Bc250GfxRingDeriveBufsz(6144u, &bufsz, &blksz) == BC250_GFX_RING_BAD_SIZE);
@@ -92,18 +113,22 @@ static int Bc250RunGfxRingContractTest(void)
     CHECK(Bc250GfxRingValidatePlan(&plan) == BC250_GFX_RING_OK);
 
     /* ------------------------------------------------------------------
-     * 3. O CNTL calculado tem de REPRODUZIR a referencia de anel configurado.
+     * 3. O CNTL calculado segue o UPSTREAM (DX.46), nao a referencia antiga.
      *
      * Anel de 8192 bytes, RB_EXE=1, CE_HQD_NEQ_RB_HQD=1, resto zero:
-     *   9 | (7 << 8) | (1 << 28) | (1 << 30) == 0x50000709
-     * que e' exatamente BC250_GFX_RING_CNTL_CONFIGURED_REFERENCE.
+     *   10 | (8 << 8) | (1 << 28) | (1 << 30) == 0x5000080A
+     * A referencia antiga 0x50000709 (9, 7) era a formula com "-1".
      *
      * Isto confere a ARITMETICA e corrobora RB_BLKSZ = RB_BUFSZ - 2. NAO
      * afirma que a placa esta nesse estado -- ela nao esta (ver bloco 3b).
      * ------------------------------------------------------------------ */
+    /* DX.46: o anel de 8192 bytes pelo upstream e' 10 | (8 << 8) | RB_EXE |
+     * CE_HQD_NEQ = 0x5000080A. O 0x50000709 (o "POST medido") era o anel pela
+     * METADE e nao pode mais ser reproduzido pelo calculo. */
     CHECK(Bc250GfxRingComputeCntl(&plan, &cntl) == BC250_GFX_RING_OK);
-    CHECK(cntl == BC250_GFX_RING_CNTL_CONFIGURED_REFERENCE);
-    CHECK(cntl == 0x50000709u);
+    CHECK(cntl == BC250_GFX_RING_CNTL_UPSTREAM_8K_REFERENCE);
+    CHECK(cntl == 0x5000080Au);
+    CHECK(cntl != BC250_GFX_RING_CNTL_CONFIGURED_REFERENCE);
 
     /* ------------------------------------------------------------------
      * 4. Decodificacao do valor medido.
@@ -482,7 +507,7 @@ static int Bc250RunGfxRingTransactionTest(void)
     CHECK(ev.MeCntlBefore == BC250_GFX_RING_ME_CNTL_MEASURED_BOOT);
     CHECK(ev.MeCntlFields.AllHalted == 1u);
     CHECK(ev.MicroEnginesHalted == 1u);
-    CHECK(ev.CntlPlanned == BC250_GFX_RING_CNTL_CONFIGURED_REFERENCE);
+    CHECK(ev.CntlPlanned == BC250_GFX_RING_CNTL_UPSTREAM_8K_REFERENCE);
     CHECK(ev.FieldsPlanned.RbExe == 1u);
 
     /* Plano recusado nao gera leitura nenhuma. */
@@ -625,7 +650,7 @@ static int Bc250RunGfxRingTransactionTest(void)
     CHECK(FakeRead32(NULL, BC250_GFX_REG_CP_RB0_BASE, &probe) == 1u);
     CHECK(probe == (uint32_t)(plan.RingGpuVa >> 8));
     CHECK(FakeRead32(NULL, BC250_GFX_REG_CP_RB0_CNTL, &probe) == 1u);
-    CHECK(probe == BC250_GFX_RING_CNTL_CONFIGURED_REFERENCE);
+    CHECK(probe == BC250_GFX_RING_CNTL_UPSTREAM_8K_REFERENCE);
 
     CHECK(Bc250GfxRingTxnRollback(&iface, &ev) == BC250_GFX_RING_TXN_OK);
     CHECK(ev.RollbackAttempted == 1u);

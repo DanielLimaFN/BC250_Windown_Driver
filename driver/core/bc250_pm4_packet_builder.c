@@ -382,6 +382,13 @@ BC250_PM4_STATUS Bc250Pm4EmitGfxVmSwitch(
     Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords,
         BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_PFP_SYNC_ME, 1u));
     Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, 0u);
+    /* DX.37: contexto novo antes do IB; o payload segue gfx_v10_0_ring_emit_cntxcntl.
+     * Nao carregar CE RAM: nao ha preambulo CE neste anel. */
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords,
+        BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_CONTEXT_CONTROL, 2u));
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords,
+        BC250_PM4_GFX_CONTEXT_SWITCH_LOAD);
+    Bc250Pm4WriteDword(RingBuffer, RingDwords, CursorDwords, 0u);
     /*
      * DX.36 -- SEM SWITCH_BUFFER NA TROCA (revertido da DX.35).
      *

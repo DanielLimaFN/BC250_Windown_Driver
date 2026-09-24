@@ -1874,6 +1874,53 @@ BOOLEAN Bc250WddmFenceTrackerSnapshotCounts(
     return TRUE;
 }
 
+/*
+ * DX.47: estado de UM no para concluir a preempcao. Em voo = entradas
+ * empurradas e ainda nao notificadas; reservas = submissoes entre reserve e
+ * commit. LastNotified e' a ultima SubmissionFenceId ja reportada como
+ * DMA_COMPLETED naquele no -- o LastCompletedFenceId do DMA_PREEMPTED.
+ */
+_Check_return_
+BOOLEAN Bc250WddmFenceTrackerNodeState(
+    _Inout_ BC250_WDDM_FENCE_TRACKER *Tracker,
+    _In_ uint32_t NodeOrdinal,
+    _Out_ uint32_t *InFlight,
+    _Out_ uint32_t *Reserved,
+    _Out_ uint32_t *LastNotified)
+{
+    KIRQL irql;
+    uint32_t i;
+    uint32_t inFlight = 0u;
+    uint32_t reserved = 0u;
+
+    if (InFlight != NULL) *InFlight = 0u;
+    if (Reserved != NULL) *Reserved = 0u;
+    if (LastNotified != NULL) *LastNotified = 0u;
+    if (Tracker == NULL || InFlight == NULL || Reserved == NULL ||
+        LastNotified == NULL || NodeOrdinal > BC250_SUBMISSION_NODE_COMPUTE) {
+        return FALSE;
+    }
+    if (!Bc250FenceLockAcquire(&Tracker->Lock, &irql)) {
+        return FALSE;
+    }
+    for (i = 0u; i < Tracker->Count; ++i) {
+        const BC250_WDDM_FENCE_ENTRY *entry =
+            &Tracker->Entries[(Tracker->Head + i) % BC250_WDDM_FENCE_TRACK_DEPTH];
+        if (entry->NodeOrdinal == NodeOrdinal) ++inFlight;
+    }
+    for (i = 0u; i < BC250_WDDM_FENCE_TRACK_DEPTH; ++i) {
+        if (Tracker->Reservations[i].Active != 0u &&
+            Tracker->Reservations[i].NodeOrdinal == NodeOrdinal) {
+            ++reserved;
+        }
+    }
+    *InFlight = inFlight;
+    *Reserved = reserved;
+    *LastNotified = Tracker->LastNotifiedFenceIdByNode[NodeOrdinal];
+    Bc250FenceLockRelease(&Tracker->Lock, irql);
+    return TRUE;
+}
+
 _Check_return_
 BOOLEAN Bc250WddmFenceTrackerAbortPending(
     _Inout_ BC250_WDDM_FENCE_TRACKER *Tracker,

@@ -514,9 +514,10 @@ def audit_gfx_ring_tripod_and_ib_inspection(errors: list[str]) -> None:
         ("Bc250VmidPoolLookup(&activeCtx->VmidPool, contextHandle,\n"
          "                &heldVmid) == BC250_VMID_POOL_OK",
          "teste prova que VMID permanece retido durante submissao"),
-        ("Bc250VmidPoolLookup(&activeCtx->VmidPool, contextHandle,\n"
-         "            NULL) == BC250_VMID_POOL_NOT_FOUND",
-         "teste prova devolucao apenas apos destroy concluido"),
+        # DX.53: sem desarme confirmado (offline) o slot fica em QUARENTENA e
+        # nenhum outro contexto o recebe.
+        ("CHECK(otherVmid != quarantined && otherAssigned == 0u);",
+         "teste prova que slot sem desarme confirmado nao e' reciclado"),
     ):
         require(active_test, needle, label, errors)
     # O pool agora instala lateralmente e publica READY, mas o pacote continua
@@ -978,12 +979,12 @@ def audit_gfx_ring_tripod_and_ib_inspection(errors: list[str]) -> None:
     # A LIGACAO. Contrato correto que ninguem chama ja aconteceu tres vezes
     # neste projeto (ContextAbi, GpuvaLabPromotion, SdmaIndirectOnly).
     for needle, label in (
-        ("Bc250GcvmUninstallVmid(\n                                liberado, &disarmIo, &disarmEvidence);",
-         "o miniport desarma o VMID que acabou de devolver"),
+        ("Bc250GcvmUninstallVmid(\n                                alvo, &disarmIo, &disarmEvidence);",
+         "o miniport desarma o VMID antes de devolve-lo (DX.53)"),
         ("[VMID_POOL] DESARMADO: VMID%02u status=%u",
          "o desarme publica status, readback e flush"),
-        ("[VMID_POOL] FALHA NO DESARME:",
-         "desarme que falha se declara, nunca passa calado"),
+        ("[VMID_POOL] QUARENTENA: VMID%02u NAO devolvido",
+         "desarme que falha se declara e o slot fica fora de circulacao"),
         ("disarmIo.FlushVmid = Bc250ActiveFlushVmidTlb;",
          "o desarme invalida a TLB do VMID devolvido, nao de um fixo"),
     ):
@@ -1801,7 +1802,7 @@ def audit_sdma_submission_is_asynchronous(errors: list[str]) -> None:
                 "SDMA DPC telemetry run counter", errors)
 
     # Lifecycle cleanup
-    remove_body = function_body(active, "NTSTATUS APIENTRY Bc250DxgkDdiRemoveDeviceActive")
+    remove_body = function_body(active, "static NTSTATUS Bc250DxgkDdiRemoveDeviceActiveImpl(")
     stop_body = function_body(active, "static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason")
     cleanup_body = function_body(active, "VOID Bc250ActiveDriverUnloadCleanup")
     if remove_body:
@@ -1816,7 +1817,7 @@ def audit_device_removal_and_unload_safety(errors: list[str]) -> None:
     active = (ROOT / "driver/wdk/bc250_active_miniport.c").read_text(encoding="utf-8")
     callbacks = (ROOT / "driver/wdk/bc250_mcdm_callbacks.c").read_text(encoding="utf-8")
 
-    remove_body = function_body(active, "NTSTATUS APIENTRY Bc250DxgkDdiRemoveDeviceActive")
+    remove_body = function_body(active, "static NTSTATUS Bc250DxgkDdiRemoveDeviceActiveImpl(")
     if not remove_body:
         errors.append("Bc250DxgkDdiRemoveDeviceActive nao localizado")
     else:
@@ -1911,7 +1912,7 @@ def audit_tlb_invalidation_safety(errors: list[str]) -> None:
     require(active_h, "KSPIN_LOCK TlbLock;",
             "TlbLock member in BC250_DXGK_ACTIVE_CONTEXT", errors)
 
-    add_body = function_body(active_c, "NTSTATUS APIENTRY Bc250DxgkDdiAddDeviceActive")
+    add_body = function_body(active_c, "static NTSTATUS Bc250DxgkDdiAddDeviceActiveImpl(")
     if not add_body:
         errors.append("Bc250DxgkDdiAddDeviceActive nao localizado")
     else:
@@ -3231,8 +3232,13 @@ def audit_gfx_ring_contract_is_honest(errors: list[str]) -> None:
     if not test_func:
         errors.append("funcao Bc250RunGfxRingContractTest ausente no teste do anel")
     else:
-        require(test_func, "cntl == BC250_GFX_RING_CNTL_CONFIGURED_REFERENCE",
-                "teste exige que o CNTL calculado reproduza o POST medido", errors)
+        # DX.46: INVERTIDO. Este portao exigia que o CNTL calculado reproduzisse
+        # 0x50000709 -- a formula com "-1", que programava METADE do anel
+        # (Corridas 87/89). Agora exige o valor do upstream e PROIBE o antigo.
+        require(test_func, "cntl == BC250_GFX_RING_CNTL_UPSTREAM_8K_REFERENCE",
+                "teste exige o CNTL de 8 KB pela formula do upstream (DX.46)", errors)
+        require(test_func, "cntl != BC250_GFX_RING_CNTL_CONFIGURED_REFERENCE",
+                "teste exige que o CNTL calculado NAO reproduza mais o anel pela metade", errors)
         require(test_func, "Bc250GfxRingCntlRefusesNonExecutable(0x00A00709u) == 1u",
                 "teste exige deteccao do CP_RB0_CNTL nao executavel do prototipo", errors)
         require(test_func, "== BC250_GFX_RING_NOT_EXECUTABLE",
@@ -6997,9 +7003,10 @@ def audit_dx25_drawn_vertices_and_target_readback(errors: list[str]) -> None:
             errors.append(f"DX.25: leitura do alvo ESCREVE ({forbidden}) -- instrumentacao nao pode tocar no pixel")
     t1 = draw.find("Bc250UmdTraceDrawData(pDevice, StartVertexLocation);")
     t2 = draw.find("Bc250UmdTraceDrawVertices(pDevice, Indexed, StartVertexLocation, BaseVertexLocation);")
-    fin = draw.find("DRAW fence concluida; pixels NAO CONFERIDOS")
+    # DX.49: o draw GRAVA no lote; "fence concluida" deixou de ser verdade por draw.
+    fin = draw.find("DRAW GRAVADO NO LOTE; pixels NAO CONFERIDOS")
     rcall = draw.find("Bc250UmdReadbackDrawTarget(pDevice, rtv->pResource);", fin if fin >= 0 else 0)
-    if t1 < 0 or t2 < 0 or t2 - t1 > 200 or fin < 0 or rcall < 0 or rcall - fin > 600:
+    if t1 < 0 or t2 < 0 or t2 - t1 > 200 or fin < 0 or rcall < 0 or rcall - fin > 900:
         errors.append("DX.25: [DRAW_VERTS] e [DRAW_READBACK] fora do lugar no ExecuteVkDraw")
 
 
@@ -7388,13 +7395,16 @@ def audit_dx34_marker_dirty_rects_and_wave_vmid(errors: list[str]) -> None:
 
     # (2) retangulos sujos do Present Blt.
     usable = function_body(disp, "static BOOLEAN Bc250DisplayDirtyRectsUsable(")
-    for token in ("Present->SubRectCnt > BC250_DIRTY_RECT_MAX", "Present->SrcRect.right != (LONG)w",
-                  "Present->DstRect.bottom != (LONG)h", "(ULONG)rc->right > w"):
+    # DX.49: Src/Dst vazios nos DOIS lados = superficie inteira; senao tela cheia.
+    for token in ("Present->SubRectCnt > BC250_DIRTY_RECT_MAX",
+                  "Bc250DisplayRectIsEmpty(&Present->SrcRect) && Bc250DisplayRectIsEmpty(&Present->DstRect)",
+                  "!Bc250DisplayRectIsFull(&Present->SrcRect, w, h) || !Bc250DisplayRectIsFull(&Present->DstRect, w, h)",
+                  "(ULONG)rc->right > w"):
         require(usable, token, "DX.34 lista de retangulos validada antes de usar", errors)
     if "#define BC250_DIRTY_RECT_MAX 16u" not in disp:
         errors.append("DX.34: teto de retangulos sujos ausente ou alterado")
     present = function_body(disp, "NTSTATUS APIENTRY Bc250DxgkDdiPresent(")
-    use = present.find("Bc250DisplayDirtyRectsUsable(pPresent, &dirtyRectCount)")
+    use = present.find("Bc250DisplayDirtyRectsUsable(pPresent, &dirtyRectCount,")
     rect = present.find("sdmaDone = Bc250SdmaPresentBltRect(\n                                    rectSrc, pitch, dstScanoutGpu, pitch,")
     full = present.find("sdmaDone = Bc250SdmaPresentBlt(srcGpu, dstScanoutGpu, scanoutBytes);")
     if not (0 <= use < rect < full):
@@ -7425,13 +7435,11 @@ def audit_dx34_marker_dirty_rects_and_wave_vmid(errors: list[str]) -> None:
 
 
 def audit_dx35_switch_buffer_and_fault_timeline(errors: list[str]) -> None:
-    """DX.35 (23/09/2026): par de SWITCH_BUFFER apos o flush de VM; faults amostrados por troca.
+    """DX.35–37: fault timeline, SWITCH_BUFFER proibido, CONTEXT_CONTROL na troca.
 
-    Corrida 80: ondas presas com o VMID do IB anterior (TDR 1) e fault das ondas
-    do TDR 2 escondido por um fault anterior no latch. Exige: dois
-    SWITCH_BUFFER (0x8B, nvd.h:550) DEPOIS do PFP_SYNC_ME, tamanho 35 DW com
-    teste travando os 4 dwords; dreno do latch a cada troca, fora do spinlock,
-    pelo contrato unico.
+    A 81 travou no SWITCH_BUFFER; a 82 confirmou a reversao e tres TDRs com
+    ondas usando VMID anterior. DX.37 adiciona CONTEXT_CONTROL apos PFP_SYNC_ME.
+    O dreno do latch continua fora do spinlock, pelo contrato unico.
     """
     pm4c = (ROOT / "driver" / "core" / "bc250_pm4_packet_builder.c").read_text(encoding="utf-8", errors="replace")
     pm4h = (ROOT / "driver" / "core" / "bc250_pm4_packet_builder.h").read_text(encoding="utf-8", errors="replace")
@@ -7440,14 +7448,25 @@ def audit_dx35_switch_buffer_and_fault_timeline(errors: list[str]) -> None:
 
     # DX.36: INVERTIDO. A Corrida 81 travou o CP no SWITCH_BUFFER em 5 de 5 TDRs
     # (ME/PFP_HEADER_DUMP=0xC0008B00) e terminou em 0x116. A troca volta a 31 DW
-    # e fica PROIBIDO emitir SWITCH_BUFFER nela; o teste trava a ausencia.
-    if "#define BC250_PM4_GFX_VM_SWITCH_DWORDS      31u" not in pm4h:
-        errors.append("DX.36: troca de VMID deve ter 31 DW (sem SWITCH_BUFFER)")
+    # e fica PROIBIDO emitir SWITCH_BUFFER nela. DX.37 soma 3 DW de CONTEXT_CONTROL.
+    if "#define BC250_PM4_GFX_VM_SWITCH_DWORDS      34u" not in pm4h:
+        errors.append("DX.37: troca de VMID deve ter 34 DW (31 + CONTEXT_CONTROL)")
     flush = function_body(pm4c, "BC250_PM4_STATUS Bc250Pm4EmitGfxVmSwitch(")
     if not flush or "BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_SWITCH_BUFFER" in flush:
         errors.append("DX.36: SWITCH_BUFFER reintroduzido na troca de VMID (travou o CP na Corrida 81)")
-    require(test, "CHECK(ring[31] == 0xA5A5A5A5u && ring[32] == 0xA5A5A5A5u);",
-            "DX.36 teste trava a ausencia de pacote depois do PFP_SYNC_ME", errors)
+    sync = flush.find("BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_PFP_SYNC_ME, 1u)")
+    context = flush.find("BC250_PM4_TYPE3_HEADER(BC250_PM4_IT_CONTEXT_CONTROL, 2u)")
+    load = flush.find("BC250_PM4_GFX_CONTEXT_SWITCH_LOAD")
+    if not (0 <= sync < context < load):
+        errors.append("DX.37: CONTEXT_CONTROL ausente ou fora da ordem apos PFP_SYNC_ME")
+    if "#define BC250_PM4_GFX_CONTEXT_SWITCH_LOAD  0x81018003u" not in pm4h:
+        errors.append("DX.37: load_enable/global/cs_sh/gfx_sh divergem do upstream")
+    for token in ("CHECK(ring[31] == 0xC0012800u);",
+                  "CHECK(ring[32] == 0x81018003u && ring[33] == 0u);"):
+        require(test, token, "DX.37 teste de CONTEXT_CONTROL", errors)
+    require(mini, "DX37_CONTEXT_CONTROL=0x%08X", "DX.37 identificador no SYS empacotado", errors)
+    require(test, "CHECK(ring[34] == 0xA5A5A5A5u);",
+            "DX.37 teste trava fim do CONTEXT_CONTROL", errors)
 
     body = function_body(mini, "static NTSTATUS Bc250ActiveGfxEngineSubmit(")
     release = body.find("KeReleaseSpinLock(&Context->GfxEngine.Lock, irql);\n\n    Bc250DisplayLog(\"[GfxEngine] SUBMIT SUCESSO")
@@ -7473,6 +7492,530 @@ def audit_dx36_second_target_probe(errors: list[str]) -> None:
         errors.append("DX.36: sonda 0x2401A1 nao mostra a PTE realmente codificada")
     require(disp, 'Bc250LogTextContains(Text, "DX_TARGET_2401A1")',
             "DX.36 alvo 0x2401A1 isento da amostragem", errors)
+
+
+def audit_dx43_vmid_warmup_ib(errors: list[str]) -> None:
+    """DX.43: IB de aquecimento de 3 DW sob o VMID novo, antes do IB real.
+
+    Corrida 85, 4 de 4 TDRs: o PC das ondas e' do IB em CP_IB1 e o VMID delas e'
+    o do IB anterior. O aquecimento so' pode sair na troca, so' com o DW0 do IB
+    LIDO e igual a CONTEXT_CONTROL, antes do IB real, com reserva de anel propria,
+    e toda troca tem de dizer se saiu e por que.
+    """
+    mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    disp = (ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace")
+    require(mini, "#define BC250_GFX_DX43_WARMUP_HEAD   0xC0012800u", "DX.43 cabeca CONTEXT_CONTROL", errors)
+    require(mini, "#define BC250_GFX_DX43_WARMUP_DWORDS 3u", "DX.43 tamanho do aquecimento", errors)
+    body = function_body(mini, "static NTSTATUS Bc250ActiveGfxEngineSubmit(")
+    gate_switch = body.find("if (vmidSwitch) {\n        if (!IbHeadValid) {")
+    gate_head = body.find("} else if (IbHeadDw0 != BC250_GFX_DX43_WARMUP_HEAD) {")
+    reserve = body.find("(warmupIb ? BC250_PM4_DWORDS_INDIRECT_BUFFER : 0u);")
+    vmswitch = body.find("pm4Status = Bc250Pm4EmitGfxVmSwitch(")
+    warm = body.find("BC250_GFX_DX43_WARMUP_DWORDS,\n            Vmid);")
+    real = body.find("ibStartCursor = cursor;")
+    if not (0 <= gate_switch < gate_head < reserve < vmswitch < warm < real):
+        errors.append("DX.43: aquecimento fora de ordem, sem guarda de troca/cabeca ou sem reserva de anel")
+    if body.count("if (warmupIb) {") != 1:
+        errors.append("DX.43: emissao do aquecimento deve ser unica e condicionada a warmupIb")
+    require(body, "DX43_VMID_WARMUP_IB: Fence=%llu VMID %u->%u Emitido=%u Motivo=%s",
+            "DX.43 linha por troca", errors)
+    require(mini, "ibHeadValid = Bc250ActiveGfxIbReadDword(&headReader, 0u, &ibHeadDw0) ? TRUE : FALSE;",
+            "DX.43 DW0 lido pelo KMD", errors)
+    require(disp, 'Bc250LogTextContains(Text, "DX43_VMID_WARMUP")',
+            "DX.43 linha isenta da amostragem", errors)
+
+
+def audit_dx44_preempt_command_speaks(errors: list[str]) -> None:
+    """DX.44: a DDI de preempcao nao pode voltar a ser muda.
+
+    Corrida 86: TDR com a GPU ociosa, e Bc250McdmPreemptCommand devolvia
+    STATUS_SUCCESS sem backend e sem log. Toda saida registra; o sucesso diz
+    explicitamente que nao ha backend nem DMA_PREEMPTED; teto proprio.
+    """
+    cb = (ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c").read_text(encoding="utf-8", errors="replace")
+    disp = (ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace")
+    body = function_body(cb, "NTSTATUS APIENTRY Bc250McdmPreemptCommand(")
+    if not body:
+        errors.append("DX.44: Bc250McdmPreemptCommand nao encontrado")
+        return
+    returns = [i for i in range(len(body)) if body.startswith("return STATUS_", i)]
+    # A janela de cada return comeca no return ANTERIOR: um log de outra saida
+    # nao pode cobrir esta (a primeira versao, de 900 chars, foi pega por mutacao).
+    for idx, r in enumerate(returns):
+        window = body[(returns[idx - 1] if idx > 0 else 0):r]
+        if "[PREEMPT_COMMAND]" not in window:
+            errors.append("DX.44: saida da DDI de preempcao sem log ([PREEMPT_COMMAND]) antes do return")
+            break
+    # DX.47: +1 saida (backend instalado devolve o status do handler).
+    returns_all = [i for i in range(len(body)) if body.startswith("return ", i)]
+    if len(returns_all) != 4:
+        errors.append(f"DX.44/47: esperado 4 saidas na DDI de preempcao, achei {len(returns_all)}")
+    for idx, r in enumerate(returns_all):
+        window = body[(returns_all[idx - 1] if idx > 0 else 0):r]
+        if "[PREEMPT_COMMAND]" not in window:
+            errors.append("DX.44/47: saida da DDI de preempcao sem log ([PREEMPT_COMMAND]) antes do return")
+            break
+    for token in ("SEM BACKEND: nenhuma preempcao feita e DMA_PREEMPTED NAO sera reportado",
+                  "PreemptionFenceId=%u Node=%u Engine=%u",
+                  "InterlockedIncrement(&s_Bc250PreemptCalls)"):
+        require(body, token, "DX.44 DDI de preempcao falante", errors)
+    require(cb, "return (Seq <= 256 || (Seq % 64) == 0) ? TRUE : FALSE;",
+            "DX.44 teto proprio do log de preempcao", errors)
+    require(disp, 'Bc250LogTextContains(Text, "PREEMPT_COMMAND")',
+            "DX.44 linha de preempcao isenta da amostragem", errors)
+    # Host (Corrida 86): o ramo de rollback com erro saia antes da coleta RADV 3b.
+    wrapper = (ROOT / "tools" / "EXECUTAR_D3D11_NATIVO.cmd").read_text(encoding="cp1252", errors="replace")
+    err = wrapper.find('if not "%RECOVERY_EXIT%"=="0" (')
+    err_block = wrapper[err:wrapper.find("exit /b %RECOVERY_EXIT%", err)] if err >= 0 else ""
+    if "collect-bc250-gfx-ib-after-recovery.ps1" not in err_block:
+        errors.append("DX.44 host: ramo de rollback com erro nao coleta os IBs/fluxos RADV")
+
+
+def audit_dx45_cp_reset_detector(errors: list[str]) -> None:
+    """DX.45: detector somente leitura do reset silencioso do CP (Corrida 87).
+
+    Tem de ler CP_ME_CNTL no poll (fora do spinlock) e no submit, registrar os
+    registradores RLC/CP, nao escrever NADA e nao se acusar no proprio quiesce.
+    """
+    mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    disp = (ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace")
+    require(mini, "#define BC250_DX45_CP_HALT_MASK        0x15000000u", "DX.45 mascara de halt", errors)
+    log_body = function_body(mini, "static void Bc250ActiveGfxDx45LogCpReset(")
+    chk_body = function_body(mini, "static void Bc250ActiveGfxDx45Check(\n    BC250_DXGK_ACTIVE_CONTEXT *Context,\n    const char *Onde,\n    uint32_t RptrNow,\n    BOOLEAN RptrValid,\n    uint32_t Wptr,\n    uint32_t ObservedFence)\n{")
+    if not log_body or not chk_body:
+        errors.append("DX.45: funcoes do detector ausentes")
+        return
+    staged = function_body(mini, "static void Bc250ActiveGfxDx45StagedRead(")
+    for body, name in ((log_body, "log"), (chk_body, "check"), (staged, "staged")):
+        if "Write32" in body:
+            errors.append(f"DX.45: detector ({name}) escreve registrador -- tem de ser somente leitura")
+    for token in ("BC250_GFX_REG_CP_STAT", "BC250_GFX_REG_GRBM_STATUS", "BC250_DX45_REG_RLC_CNTL",
+                  "BC250_HQD_MMIO_RLC_PG_CNTL", "BC250_DX45_REG_RLC_GPM_STAT",
+                  "[CP_RESET_DETECTED] #%ld Onde=%s CP_ME_CNTL=0x%08X"):
+        require(log_body, token, "DX.45 registradores do detector", errors)
+    # DX.45b (Corrida 88): a linha sai ANTES de qualquer leitura extra, e cada
+    # leitura extra e' anunciada antes; em DPC nenhuma leitura extra.
+    phase1 = log_body.find('Bc250DisplayLog("[CP_RESET_DETECTED] #%ld Onde=%s')
+    first_read = log_body.find("Bc250ActiveGfxDx45StagedRead(")
+    if not (0 <= phase1 < first_read) or "Read32" in log_body:
+        errors.append("DX.45b: leitura extra antes da linha de deteccao, ou leitura direta fora da fase anunciada")
+    ann = staged.find('"[CP_RESET_DETECTED] #%ld LENDO %s')
+    rd = staged.find("Bc250MmioTopologyRead32(")
+    if not (0 <= ann < rd):
+        errors.append("DX.45b: leitura extra sem a linha LENDO antes dela")
+    irql = chk_body.find("if (KeGetCurrentIrql() > PASSIVE_LEVEL) {")
+    call_log = chk_body.find("Bc250ActiveGfxDx45LogCpReset(")
+    if not (0 <= irql < call_log) or "StagedRead" in chk_body[irql:call_log]:
+        errors.append("DX.45b: em DPC o detector nao pode fazer leitura extra nem o log detalhado")
+    require(chk_body, "BC250_GFX_REG_CP_ME_CNTL, &meCntl", "DX.45 leitura de CP_ME_CNTL", errors)
+    require(chk_body, "if (InterlockedCompareExchange(&s_Bc250Dx45OwnQuiesce, 0, 0) != 0) return;",
+            "DX.45 nao se acusa no proprio quiesce", errors)
+    poll = function_body(mini, "static NTSTATUS Bc250ActiveGfxEnginePoll(")
+    rel = poll.find("KeReleaseSpinLock(&Context->GfxEngine.Lock, irql);")
+    call = poll.find('Bc250ActiveGfxDx45Check(Context, "POLL"')
+    if not (0 <= rel < call):
+        errors.append("DX.45: detector ausente no poll ou dentro do spinlock")
+    sub = function_body(mini, "static NTSTATUS Bc250ActiveGfxEngineSubmit(")
+    if 'Bc250ActiveGfxDx45Check(Context, "SUBMIT"' not in sub:
+        errors.append("DX.45: detector ausente no submit")
+    q = mini.find("InterlockedExchange(&s_Bc250Dx45OwnQuiesce, 1);")
+    sr = mini.find("BC250_GRBM_REG_SOFT_RESET,\n                    BC250_GRBM_SOFT_RESET_CP_MASK", q if q >= 0 else 0)
+    if q < 0 or not (q < sr):
+        errors.append("DX.45: marca do proprio quiesce ausente antes do soft-reset do CP")
+    require(disp, 'Bc250LogTextContains(Text, "CP_RESET_DETECTED")',
+            "DX.45 linha isenta da amostragem", errors)
+    # DX.45b host (Corrida 88): armed.json zerado e tarefas perdidas no travamento.
+    binder = (ROOT / "tools" / "bind-bc250mcdm-lab.ps1").read_text(encoding="utf-8", errors="replace")
+    armed = binder.find("$armedStream = [System.IO.FileStream]::new($configPath,")
+    wt = binder.find("[System.IO.FileOptions]::WriteThrough)", armed if armed >= 0 else 0)
+    reg = binder.find("[Bc250Durable.Reg]::RegFlushKey(")
+    vol = binder.find("Write-VolumeCache -DriveLetter C")
+    start = binder.find("Start-ScheduledTask -TaskName $taskName")
+    if not (0 <= armed < wt < reg < vol < start):
+        errors.append("DX.45b host: armed.json sem write-through ou tarefas sem flush de HKLM/volume antes de iniciar o guardiao")
+    if "Set-Content $configPath" in binder:
+        errors.append("DX.45b host: armed.json voltou a Set-Content (perdido no travamento da Corrida 88)")
+
+
+def audit_dx46_gfx_ring_full_size(errors: list[str]) -> None:
+    """DX.46: RB_BUFSZ pela formula do upstream; o CP enxerga o anel inteiro.
+
+    Linux v6.6 gfx_v10_0.c:6106: rb_bufsz = order_base_2(ring_size / 8). A
+    formula com "-1" programava 8192 DW para um buffer de 16384 DW, e o submit
+    que cruzava 8192 travava (Corridas 87 e 89).
+    """
+    src = (ROOT / "driver" / "core" / "bc250_gfx_ring_contract.c").read_text(encoding="utf-8", errors="replace")
+    hdr = (ROOT / "driver" / "core" / "bc250_gfx_ring_contract.h").read_text(encoding="utf-8", errors="replace")
+    test = strip_c_comments((ROOT / "driver" / "tests" / "gfx_ring_contract_test.c").read_text(encoding="utf-8", errors="replace"))
+    mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    derive = strip_c_comments(function_body(src, "BC250_GFX_RING_STATUS Bc250GfxRingDeriveBufsz("))
+    if not derive or "bufsz -= 1u" in derive or "bufsz--" in derive or "- 1u;" in derive:
+        errors.append("DX.46: Bc250GfxRingDeriveBufsz voltou a subtrair 1 -- anel do CP pela metade")
+    require(hdr, "#define BC250_GFX_RING_CNTL_UPSTREAM_8K_REFERENCE 0x5000080Au",
+            "DX.46 referencia de 8 KB pelo upstream", errors)
+    for token in ("CHECK(Bc250GfxRingDeriveBufsz(65536u, &bufsz, &blksz) == BC250_GFX_RING_OK);",
+                  "CHECK(bufsz == 13u);", "CHECK(blksz == 11u);",
+                  "CHECK((1u << (bufsz + 1u)) == ringBytesProbe / 4u);"):
+        require(test, token, "DX.46 teste do anel inteiro (64 KB e invariante)", errors)
+    if "0x50000A0Cu" in strip_c_comments(mini):
+        errors.append("DX.46: CNTL fixo 0x50000A0C (anel pela metade) ainda no miniport")
+    # Corrida 91 (host): janela parametrizavel, padrao 120 s. Com 120 s o binder
+    # dava 60 s ao harness (min(180, janela-60)) e cortou a Corrida 90 em 20+/60.
+    wrapper = (ROOT / "tools" / "EXECUTAR_D3D11_NATIVO.cmd").read_text(encoding="cp1252", errors="replace")
+    if ('if not defined BC250_WATCHDOG_SECONDS set "BC250_WATCHDOG_SECONDS=120"' not in wrapper or
+            "-WatchdogTimeoutSeconds %BC250_WATCHDOG_SECONDS% " not in wrapper):
+        errors.append("Corrida 91 host: janela do watchdog nao parametrizada no wrapper (padrao 120)")
+
+
+def audit_dx47_preemption_completes(errors: list[str]) -> None:
+    """DX.47: a preempcao e' concluida com DMA_PREEMPTED so' com o no drenado.
+
+    Corridas 86 e 91: TDR com a GPU ociosa depois de um PreemptCommand nunca
+    respondido. O pedido e' registrado na DDI (sem notificar la dentro: 0x133);
+    o retirement conclui DEPOIS do dreno, inclusive no caso ocioso.
+    """
+    cb = (ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c").read_text(encoding="utf-8", errors="replace")
+    mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    seng = (ROOT / "driver" / "wdk" / "bc250_submission_engine.c").read_text(encoding="utf-8", errors="replace")
+    disp = (ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace")
+    ddi = function_body(cb, "NTSTATUS APIENTRY Bc250McdmPreemptCommand(")
+    h = ddi.find("if (g_Bc250PreemptHandler != NULL) {")
+    call = ddi.find("g_Bc250PreemptHandler((HANDLE)hAdapter, pPreemptCommand);")
+    if not (0 <= h < call):
+        errors.append("DX.47: DDI de preempcao nao delega ao backend instalado")
+    handler = function_body(mini, "static NTSTATUS Bc250ActivePreemptHandler(")
+    if not handler or "DxgkCbNotifyInterrupt" in handler or "DxgkCbNotifyDpc" in handler:
+        errors.append("DX.47: handler de preempcao ausente ou notificando de dentro da DDI (reentrancia 0x133)")
+    for token in ("InterlockedExchange(&s_Bc250PreemptPending[node], 1);",
+                  "KeInsertQueueDpc(&active->RetirementTimerDpc, NULL, NULL);"):
+        require(handler, token, "DX.47 handler registra e agenda", errors)
+    cbk = function_body(mini, "static BOOLEAN Bc250ActiveSynchronizedFenceCallback(")
+    op = cbk.find("if (sync->Operation == BC250_ACTIVE_FENCE_SYNC_PREEMPT) {")
+    sdma = cbk.find("inFlight += g_Bc250SdmaPresent.InFlightCount;", op)
+    gate = cbk.find("if (inFlight != 0u || reserved != 0u) {", op)
+    notify = cbk.find("data.InterruptType = DXGK_INTERRUPT_DMA_PREEMPTED;", op)
+    last = cbk.find("data.DmaPreempted.LastCompletedFenceId = lastDone;", op)
+    if not (0 <= op < sdma < gate < notify < last):
+        errors.append("DX.47: DMA_PREEMPTED sem a guarda de no drenado (em voo/reservas/SDMA) antes da notificacao")
+    ret = function_body(mini, "static void Bc250ActiveRetireAndNotify(")
+    drain = ret.find("sync.Operation = BC250_ACTIVE_FENCE_SYNC_DRAIN;")
+    pre = ret.find("Bc250ActiveTryCompletePreemptions(Context);")
+    if not (0 <= drain < pre) or "return;" in ret[drain:pre]:
+        errors.append("DX.47: conclusao da preempcao nao roda depois do dreno, ou ha retorno antes dela (caso ocioso)")
+    require(seng, "BOOLEAN Bc250WddmFenceTrackerNodeState(", "DX.47 estado por no do rastreador", errors)
+    require(mini, "Bc250McdmInstallPreemptHandler(Bc250ActivePreemptHandler);", "DX.47 handler instalado", errors)
+    require(mini, "Bc250McdmInstallPreemptHandler(NULL);", "DX.47 handler desinstalado no teardown", errors)
+    q = function_body(mini, "static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)")
+    if ("InterlockedExchange(&s_Bc250PreemptPending[0], 0);" not in q or
+            "InterlockedExchange(&s_Bc250PreemptPending[1], 0);" not in q):
+        errors.append("DX.47: TDR nao limpa os pedidos de preempcao dos dois nos")
+    for token in ('Bc250LogTextContains(Text, "PREEMPT_DONE")', 'Bc250LogTextContains(Text, "PREEMPT_WAIT")'):
+        require(disp, token, "DX.47 linhas de preempcao isentas da amostragem", errors)
+
+
+def audit_dx48_adapter_lifecycle_speaks(errors: list[str]) -> None:
+    """DX.48: AddDevice/StartDevice/StopDevice/RemoveDevice e o QAI dizem quem.
+
+    Corridas 88/92 travaram logo apos um QAI Type=29 servido por contexto nao
+    iniciado; AddDevice era mudo e o QAI nao dizia o contexto.
+    """
+    mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    cb = (ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c").read_text(encoding="utf-8", errors="replace")
+    disp = (ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace")
+    wrappers = (
+        ("NTSTATUS APIENTRY Bc250DxgkDdiAddDeviceActive(", "AddDevice", "Bc250DxgkDdiAddDeviceActiveImpl("),
+        ("NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceV5Telemetry(", "StartDevice", "Bc250DxgkDdiStartDeviceV5TelemetryImpl("),
+        ("NTSTATUS APIENTRY Bc250DxgkDdiStopDeviceActive(", "StopDevice", "Bc250DxgkDdiStopDeviceActiveReason("),
+        ("NTSTATUS APIENTRY Bc250DxgkDdiRemoveDeviceActive(", "RemoveDevice", "Bc250DxgkDdiRemoveDeviceActiveImpl("),
+    )
+    for sig, name, impl in wrappers:
+        body = function_body(mini, sig)
+        enter = body.find(f'"[DX48_LIFECYCLE] {name} ENTER')
+        call = body.find(impl)
+        leave = body.find(f'"[DX48_LIFECYCLE] {name} LEAVE')
+        if not (0 <= enter < call < leave):
+            errors.append(f"DX.48: {name} sem ENTER/LEAVE em volta da implementacao")
+    require(cb, "CapsStatus=0x%08X hAdapter=%p", "DX.48 QAI com hAdapter", errors)
+    require(disp, 'Bc250LogTextContains(Text, "DX48_LIFECYCLE")', "DX.48 ciclo de vida isento da amostragem", errors)
+    require(disp, 'Bc250LogTextContains(Text, "Type=29,")', "DX.48 QAI Type=29 isento da amostragem", errors)
+
+
+def audit_dx49_desktop_throughput(errors: list[str]) -> None:
+    """DX.49: staging persistente, lote de draws, trace leve e dirty rects de flip.
+
+    Corrida 93 (P0): desktop visivel a ~0,6 FPS. No minuto 21:28 do dwm.exe,
+    24 s depois de UploadImageData SUCESSO (staging criado e liberado por
+    upload), 9,6 s em 425 esperas de fence (flush antes E depois de cada draw),
+    ~10 mil linhas de trace com write-through e 17 dirty rects recusados por
+    Src/Dst vazios.
+    """
+    umd_dir = ROOT / "driver" / "umd"
+    def read(name: str) -> str:
+        return (umd_dir / name).read_text(encoding="cp1252", errors="replace")
+    res = strip_c_comments(read("bc250_umd_resource_vk.c"))
+    bridge = strip_c_comments(read("bc250_umd_vulkan_bridge.c"))
+    draw = strip_c_comments(read("bc250_d3d_umd.c"))
+    desc = strip_c_comments(read("bc250_umd_descriptors.c"))
+    cache = strip_c_comments(read("bc250_umd_pipeline_cache.c"))
+    blt = strip_c_comments(read("bc250_umd_blt.inl"))
+    winsys = strip_c_comments(read("bc250_wddm_winsys.c"))
+    disp = (ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace")
+
+    # (1) staging persistente, com a fence da copia ainda esperada.
+    up = function_body(res, "BOOL Bc250UmdVkUploadImageData(")
+    if "Bc250UmdVkEnsureUploadStaging(pBridge" not in up:
+        errors.append("DX.49: upload de textura nao usa o staging persistente")
+    for forbidden in ("vkAllocateMemory(", "vkFreeMemory(", "vkCreateBuffer(", "vkDestroyBuffer("):
+        if forbidden in up:
+            errors.append(f"DX.49: upload de textura voltou a criar/liberar staging por chamada ({forbidden})")
+    flush = up.find("res = Bc250UmdVkFlushCommands(pBridge);")
+    layout = up.find("pRes->VkLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;")
+    if not (0 <= flush < layout):
+        errors.append("DX.49: layout de textura declarado antes da fence da copia")
+    if "VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT" in up or "VK_PIPELINE_STAGE_ALL_COMMANDS_BIT" not in up:
+        errors.append("DX.49: barreira do upload nao espera draws anteriores do lote (WAR)")
+    ens = function_body(bridge, "BOOL Bc250UmdVkEnsureUploadStaging(")
+    grow_drain = ens.find("Bc250UmdVkDrainPending(pBridge")
+    grow_free = ens.find("vkFreeMemory(pBridge->Device, pBridge->UploadStagingMem")
+    if not (0 <= grow_drain < grow_free):
+        errors.append("DX.49: staging cresce liberando o anterior sem drenar")
+
+    # (2) lote de draws.
+    ex = function_body(draw, "static BOOL Bc250UmdExecuteVkDraw(")
+    pso = ex.find("Bc250UmdPipelineCacheGetOrCreate(")
+    if pso < 0 or "Bc250UmdVkFlushCommands(&pDevice->VkBridge)" in ex[:pso]:
+        errors.append("DX.49: flush incondicional voltou para antes do draw")
+    if "Bc250UmdDrawRingBytesNeeded(pDevice, &psoKey, Indexed)" not in ex[:pso]:
+        errors.append("DX.49: espaco do anel nao e' decidido antes de gravar o draw")
+    for token in ("Bc250UmdVkDrawRingPut(&pDevice->VkBridge, vb->pCpuShadow",
+                  "Bc250UmdVkDrawRingPut(&pDevice->VkBridge, ib->pCpuShadow",
+                  "flushNow = (!usedRing || directRef || batchPosition >= BC250_DX49_BATCH_MAX_DRAWS);",
+                  "if (flushNow) {",
+                  "DRAW GRAVADO NO LOTE; pixels NAO CONFERIDOS"):
+        require(ex, token, "DX.49 draw grava no lote com dados em faixa propria", errors)
+    if "DRAW fence concluida" in ex:
+        errors.append("DX.49: trace do draw afirma fence concluida sem flush")
+    require(desc, "if (device->DrawUsesRing) {", "DX.49 CB do lote no anel", errors)
+    require(desc, "Bc250UmdVkDrawRingPut(bridge, resource->pCpuShadow", "DX.49 CB do lote no anel", errors)
+    fl = function_body(bridge, "VkResult Bc250UmdVkFlushCommands(")
+    close_rp = fl.find("*pBridge->pRenderPassOpen = FALSE;")
+    end_cb = fl.find("vkEndCommandBuffer(")
+    if not (0 <= close_rp < end_cb):
+        errors.append("DX.49: flush nao fecha o render pass antes de vkEndCommandBuffer")
+    ok_branch = fl.find("Bc250UmdVkReleaseDescriptorBatches(pBridge);")
+    reset = fl.find("pBridge->DrawRingHead = 0;")
+    if not (0 <= ok_branch < reset) or fl.count("pBridge->DrawRingHead = 0;") != 1:
+        errors.append("DX.49: anel volta ao inicio fora do ramo de fence concluida")
+    require(draw, "pDevice->VkBridge.pRenderPassOpen = &pDevice->InRenderPass;",
+            "DX.49 flush conhece o render pass do device", errors)
+    drains = (
+        (function_body(res, "VOID Bc250UmdVkDestroyResource("), "destruir recurso"),
+        (function_body(res, "VOID Bc250UmdVkDestroyRtv("), "destruir RTV"),
+        (function_body(res, "VOID Bc250UmdVkDestroyDsv("), "destruir DSV"),
+        (function_body(cache, "VOID Bc250UmdVkDestroyShaderModule("), "destruir shader"),
+        (function_body(cache, "BOOL Bc250UmdPipelineCacheGetOrCreate("), "despejar pipeline"),
+        (function_body(blt, "static HRESULT Bc250UmdBltViaKmd("), "BltViaKmd"),
+        (function_body(draw, "static HRESULT Bc250UmdBridgeLinearToWddm("), "ponte Vulkan->WDDM"),
+    )
+    for body, name in drains:
+        if "Bc250UmdVkDrainPending(" not in body:
+            errors.append(f"DX.49: {name} sem dreno do lote")
+    follow = res.find("RTV_SEGUE_RECURSO: rtv=%p")
+    follow_drain = res.find("Bc250UmdVkDrainPending(pBridge, \"RTV seguir", follow if follow >= 0 else 0)
+    follow_destroy = res.find("vkDestroyFramebuffer(pBridge->Device, pRtv->VkFb", follow if follow >= 0 else 0)
+    if not (0 <= follow < follow_drain < follow_destroy):
+        errors.append("DX.49: RTV seguindo rotacao destroi framebuffer sem drenar")
+
+    # (3) trace leve E duravel. DX.49b (Corrida 94, P0): sem write-through o
+    # travamento duro levou TODOS os BC250_UMD_LOG_*. Handle aberto uma vez,
+    # COM write-through; por linha so' WriteFile; metadados com teto de tempo.
+    raw = function_body(winsys, "void Bc250WinsysTraceRaw(")
+    require(raw, "InitOnceExecuteOnce(", "DX.49 sink resolvido uma vez", errors)
+    for forbidden in ("CreateFileA(", "FlushFileBuffers(", "GetModuleFileNameA(", "GetTempPathA(", "CloseHandle("):
+        if forbidden in raw:
+            errors.append(f"DX.49: trace por linha voltou a pagar {forbidden}")
+    opener = function_body(winsys, "static HANDLE Bc250WinsysTraceOpen(")
+    if "FILE_FLAG_WRITE_THROUGH" not in opener:
+        errors.append("DX.49b: handle do trace sem write-through -- travamento duro apaga o log da UMD")
+    due = function_body(winsys, "static void Bc250WinsysTraceFlushMetadataIfDue(")
+    if "BC250_TRACE_FLUSH_MS" not in due or "FlushFileBuffers(" not in due:
+        errors.append("DX.49b: descarga de metadados do trace sem teto de tempo")
+    require(raw, "Bc250WinsysTraceFlushMetadataIfDue();", "DX.49b descarga periodica chamada", errors)
+
+    # (4) dirty rects: recusa nomeia a condicao.
+    require(disp, "DIRTY_RECTS_RECUSADOS SubRectCnt=%u motivo=%s", "DX.49 recusa de dirty rect nomeada", errors)
+    usable = function_body(disp, "static BOOLEAN Bc250DisplayDirtyRectsUsable(")
+    for token in ('*Reason = "SRC_DST_NEM_VAZIOS_NEM_TELA_CHEIA"', '*Reason = "RETANGULO_FORA_DA_TELA_OU_DEGENERADO"'):
+        require(usable, token, "DX.49 recusa de dirty rect nomeada", errors)
+
+
+def audit_dx50_dirty_rect_bisection(errors: list[str]) -> None:
+    """DX.50: dirty rects desligados por bisseccao; logs residuais da UMD arquivados.
+
+    Corridas 94/95: travamento duro nas duas e defeito visual na 95, logo que as
+    copias SDMA por retangulo passaram a existir. O binder APAGAVA os
+    BC250_UMD_LOG_* residuais -- o log do dwm.exe da corrida travada morria no
+    bind seguinte.
+    """
+    disp = (ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace")
+    binder = (ROOT / "tools" / "bind-bc250mcdm-lab.ps1").read_text(encoding="utf-8", errors="replace")
+    if "static const BOOLEAN s_Bc250Dx50DirtyRectsEnabled = FALSE;" not in disp:
+        errors.append("DX.50: interruptor dos dirty rects ausente ou ligado")
+    present = function_body(disp, "NTSTATUS APIENTRY Bc250DxgkDdiPresent(")
+    if not re.search(r"else if \(s_Bc250Dx50DirtyRectsEnabled &&\s*Bc250DisplayDirtyRectsUsable\(pPresent", present):
+        errors.append("DX.50: Present usa dirty rects sem passar pelo interruptor")
+    require(present, '"DX50_BISSECCAO_DESLIGADO"', "DX.50 recusa nomeia a bisseccao", errors)
+    pre = binder.find("$residualUmd = @(Get-ChildItem -LiteralPath 'C:\\Windows\\Temp' -Filter 'BC250_UMD_LOG_*.txt'")
+    seg = binder[pre:pre + 2400] if pre >= 0 else ""
+    # Copia (herda a ACL da evidencia) e so' apaga a origem depois do hash bater.
+    rm = seg.find("Remove-Item -LiteralPath $residual.FullName")
+    chk = seg.find("-ne (Get-FileHash -LiteralPath $residual.FullName")
+    if pre < 0 or "Copy-Item -LiteralPath $residual.FullName" not in seg or "Move-Item" in seg or \
+            "SHA256SUMS.txt" not in seg or not (0 <= chk < rm):
+        errors.append("DX.50: binder nao arquiva (copia + hash antes de apagar) os logs residuais da UMD")
+    if re.search(r"Filter 'BC250_UMD_LOG_\*\.txt' -File -ErrorAction SilentlyContinue \|\s*Remove-Item", binder):
+        errors.append("DX.50: binder voltou a APAGAR os logs residuais da UMD")
+
+
+def audit_dx54_desktop_speed(errors: list[str]) -> None:
+    """DX.54: velocidade do desktop sem reabrir o piscar.
+
+    Corrida 98R (P0 de tempo, log do dwm.exe): ~14-24 ms por draw entre o
+    upload do CB e o BOUND (VkDescriptorPool novo por draw = BO no RADV),
+    flush de ~14 ms com EsperaUs=190, e ~29 ms por Present lendo a grade do
+    buffer linear pela CPU. Substitui o portao DX.51 (lote desligado): o lote
+    volta, com anel de 4 MB criado so' em device que ja desenhou bastante.
+    """
+    umd_dir = ROOT / "driver" / "umd"
+    def read(name: str) -> str:
+        return (umd_dir / name).read_text(encoding="cp1252", errors="replace")
+    draw = strip_c_comments(read("bc250_d3d_umd.c"))
+    desc = strip_c_comments(read("bc250_umd_descriptors.c"))
+    bridge = strip_c_comments(read("bc250_umd_vulkan_bridge.c"))
+    header = strip_c_comments(read("bc250_umd_vulkan_bridge.h"))
+
+    # (1) DX.55: lote DESLIGADO de novo por bisseccao (Corrida 99 travou em
+    # ~39 s com ele ligado). Anel de 4 MB e limiar continuam no codigo.
+    if "static const BOOL s_Bc250Dx51DrawBatchEnabled = FALSE;" not in draw:
+        errors.append("DX.55: interruptor do lote ausente ou ligado (bisseccao da Corrida 99)")
+    if "#define BC250_DX49_DRAW_RING_BYTES (4u * 1024u * 1024u)" not in header:
+        errors.append("DX.54: anel de draws nao e' de 4 MB")
+    ex = function_body(draw, "static BOOL Bc250UmdExecuteVkDraw(")
+    if not re.search(r"BOOL ringAllowed = s_Bc250Dx51DrawBatchEnabled &&\s*"
+                     r"pDevice->NativeVkDrawCount >= BC250_DX54_RING_MIN_DIRECT_DRAWS;", ex):
+        errors.append("DX.54: anel pode nascer em device de vida curta (sem limiar de draws diretos)")
+    if "VkDeviceSize ringFree = ringAllowed ? Bc250UmdVkDrawRingFree(" not in ex:
+        errors.append("DX.54: anel criado fora do limiar")
+    if not re.search(r"if \(ringAllowed &&\s*pDevice->VkBridge\.DrawRingMapped != NULL", ex):
+        errors.append("DX.54: draw usa o anel sem passar pelo limiar")
+
+    # (2) pool de descritores persistente, zerado so' com fence concluida.
+    if "static const BOOL s_Bc250Dx54PersistentDescriptors = TRUE;" not in draw:
+        errors.append("DX.54: interruptor do pool persistente ausente ou desligado")
+    bind = function_body(desc, "static BOOL Bc250UmdBindDrawDescriptors(")
+    persist = bind.find("set = Bc250UmdVkAllocPersistentSet(bridge, entry->DescriptorSetLayout);")
+    fallback = bind.find("if (set == VK_NULL_HANDLE) {", persist if persist >= 0 else 0)
+    per_draw = bind.find("vkCreateDescriptorPool(bridge->Device, &poolInfo, NULL, &batch->Pool)",
+                         fallback if fallback >= 0 else 0)
+    if not (0 <= persist < fallback < per_draw):
+        errors.append("DX.54: pool por draw nao e' so' o fallback do pool persistente")
+    require(bind, "bridge->DescriptorFallbackPools++;", "DX.54 fallback contado", errors)
+    require(bind, "[DX54_DESC] POOL POR DRAW (fallback #%llu)", "DX.54 fallback dito no log", errors)
+    fl = function_body(bridge, "VkResult Bc250UmdVkFlushCommands(")
+    ok_branch = fl.find("Bc250UmdVkReleaseDescriptorBatches(pBridge);")
+    reset = fl.find("vkResetDescriptorPool(pBridge->Device, pBridge->PersistentPool, 0)")
+    if not (0 <= ok_branch < reset) or bridge.count("vkResetDescriptorPool(pBridge->Device") != 1:
+        errors.append("DX.54: pool persistente zerado fora do ramo de fence concluida")
+    alloc = function_body(bridge, "VkDescriptorSet Bc250UmdVkAllocPersistentSet(")
+    require(alloc, "if (pBridge->PersistentPoolSets >= BC250_DX54_POOL_MAX_SETS) return VK_NULL_HANDLE;",
+            "DX.54 pool persistente tem teto", errors)
+
+    # (3) sampler do cache nunca entra no lote que e' destruido.
+    cached = bind.find("cached = Bc250UmdVkCachedSampler(bridge, &info);")
+    use_cached = bind.find("images[i].sampler = cached;", cached if cached >= 0 else 0)
+    own = bind.find("&batch->Samplers[i]", use_cached if use_cached >= 0 else 0)
+    if not (0 <= cached < use_cached < own):
+        errors.append("DX.54: sampler do cache pode ir para o lote (seria destruido com o cache vivo)")
+    require(bind, "memset(&info, 0, sizeof(info));", "DX.54 chave do cache sem padding sujo", errors)
+    shut = function_body(bridge, "VOID Bc250UmdVkBridgeShutdown(")
+    if "pBridge->SamplerCache[s].Sampler" not in shut or "pBridge->PersistentPool, NULL);" not in shut:
+        errors.append("DX.54: shutdown nao libera pool persistente e cache de samplers")
+
+    # (4) tempos no flush e inspecao amostrada, que nunca inventa valor.
+    for token in ("[DX54_TEMPO] FimCbUs=%llu SubmitUs=%llu", "submitMicros = Bc250VkNowMicros() - submitStart;"):
+        require(fl, token, "DX.54 flush diz onde gasta", errors)
+    if "static const BOOL s_Bc250Dx54SampledPresentInspection = TRUE;" not in draw:
+        errors.append("DX.54: interruptor da inspecao amostrada ausente ou desligado")
+    if "(%ux%u, NonZeroGrade=NAO_AMOSTRADO)" not in draw or "if (inspectThis) {" not in draw:
+        errors.append("DX.54: Present fora da amostra nao declara NAO_AMOSTRADO")
+
+
+def audit_dx52_create_allocation_refusal_speaks(errors: list[str]) -> None:
+    """DX.52: toda recusa de CreateAllocation fala, fora da amostragem, e a UMD
+    descreve o recurso recusado (laco de recriacao do Explorer, Corridas 93..97)."""
+    mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="cp1252", errors="replace")
+    disp = (ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace")
+    umd = (ROOT / "driver" / "umd" / "bc250_d3d_umd.c").read_text(encoding="cp1252", errors="replace")
+    winsys = (ROOT / "driver" / "umd" / "bc250_wddm_winsys.c").read_text(encoding="cp1252", errors="replace")
+    body = function_body(mini, "static NTSTATUS Bc250ActiveCreateAllocationLifecycle(")
+    for reason in ("ABI_PRIVADA_RECUSADA_PELO_PARSE", "TAMANHO_ACIMA_DO_SEGMENTO",
+                   "SEGMENTO_DE_ALOCACAO_NAO_CONFIGURADO", "SEM_ABI_TAMANHO_ACIMA_DO_SEGMENTO",
+                   "REGISTRO_DO_OBJETO_DE_ALOCACAO_FALHOU", "ADAPTADOR_INATIVO_OU_ABI_NAO_PRONTA"):
+        require(body, f'"{reason}"', "DX.52 recusa de CreateAllocation nomeada", errors)
+    log = body.find("[CREATE_ALLOC_RECUSADO] status=0x%08X motivo=%s")
+    guard = body.rfind("if (!NT_SUCCESS(result)) {", 0, log if log >= 0 else 0)
+    if log < 0 or guard < 0:
+        errors.append("DX.52: recusa de CreateAllocation sem linha [CREATE_ALLOC_RECUSADO]")
+    # cada saida INVALID_PARAMETER precisa ter nomeado o motivo antes.
+    for m in re.finditer(r"result = STATUS_INVALID_PARAMETER;", body):
+        window = body[max(0, m.start() - 260):m.start()]
+        if "if (refuseReason != NULL)" not in window:
+            errors.append("DX.52: STATUS_INVALID_PARAMETER sem motivo nomeado em CreateAllocation")
+            break
+    require(disp, 'Bc250LogTextContains(Text, "CREATE_ALLOC_RECUSADO")', "DX.52 recusa isenta da amostragem", errors)
+    require(umd, "CreateResource RECUSADO desc: Dim=%u", "DX.52 UMD descreve o recurso recusado", errors)
+    require(winsys, "Allocate RECUSADO pelo runtime/KMD: hr=0x%08X", "DX.52 winsys descreve a alocacao recusada", errors)
+
+
+def audit_dx53_vmid_disarm_before_release(errors: list[str]) -> None:
+    """DX.53: o VMID so' volta ao pool DEPOIS do desarme confirmado no silicio.
+
+    Ate a DX.52: Release (slot livre) -> solta o lock -> Uninstall. Outro
+    contexto podia adquirir o slot no meio e ter o contexto GCVM desligado pelo
+    desarme atrasado (auditoria externa, doc 396).
+    """
+    mini = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="cp1252", errors="replace"))
+    look = mini.find("lookupStatus = Bc250VmidPoolLookup(&context->VmidPool,")
+    uninst = mini.find("disarmStatus = Bc250GcvmUninstallVmid(\n                                alvo,")
+    ok_branch = mini.find("if (disarmStatus == BC250_GCVM_VMID8_OK) {", uninst if uninst >= 0 else 0)
+    rel = mini.find("poolStatus = Bc250VmidPoolRelease(&context->VmidPool,", ok_branch if ok_branch >= 0 else 0)
+    quar = mini.find("[VMID_POOL] QUARENTENA: VMID%02u NAO devolvido", rel if rel >= 0 else 0)
+    if not (0 <= look < uninst < ok_branch < rel < quar):
+        errors.append("DX.53: VMID nao segue Lookup -> Uninstall -> (OK) Release / (falha) quarentena")
+    # nenhum Release do pool entre o Lookup e o Uninstall.
+    if look >= 0 and uninst > look and "Bc250VmidPoolRelease(" in mini[look:uninst]:
+        errors.append("DX.53: VMID devolvido ao pool antes do desarme no silicio")
+    if mini.count("Bc250VmidPoolRelease(&context->VmidPool,") != 1:
+        errors.append("DX.53: mais de um ponto devolve VMID ao pool no DestroyContext")
+    require(mini, "[DX53_VMID] DESARME ANTES DA DEVOLUCAO:", "DX.53 mede fences pendentes no desarme", errors)
+    require(mini, "sync.Operation = BC250_ACTIVE_FENCE_SYNC_PENDING;\n    st = Context->Core.DxgkInterface.DxgkCbSynchronizeExecution(",
+            "DX.53 medicao sincronizada com a ISR", errors)
+
+
+def audit_dx40_gfx_flow_and_radv_copy(errors: list[str]) -> None:
+    """DX.40: ordem PM4 e identidade RADV nao podem voltar a ser invisiveis."""
+    mini = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(
+        encoding="utf-8", errors="replace")
+    wrapper = (ROOT / "tools" / "EXECUTAR_D3D11_NATIVO.cmd").read_text(
+        encoding="cp1252", errors="replace")
+    for token in ("event=KMD_GFX_SWITCH", "prev_vmid=%u vmid=%u switch=%u",
+                  "ib_header=0x%08X ib_control=0x%08X", "ib_valid=%u ib_inherit_vmid=%u ib_vmid=%u",
+                  "ibPacketControl = Context->GfxEngine.RingCpuVirtual"):
+        require(mini, token, "DX.40 fluxo GFX e bytes reais do IB", errors)
+    for token in ("Get-FileHash -LiteralPath $src -Algorithm SHA256",
+                  "Get-FileHash -LiteralPath $dst -Algorithm SHA256",
+                  "Hash da RADV implantada difere do build. Bind cancelado"):
+        require(wrapper, token, "DX.40 identidade da RADV antes do bind", errors)
 
 
 def audit_dx31_primary_copy_is_observable(errors: list[str]) -> None:
@@ -8067,8 +8610,8 @@ def main() -> int:
     # so every real boot silently remained display-only.
     driver_entry = function_body(active, "NTSTATUS DriverEntry(")
     start_v5 = function_body(
-        active, "NTSTATUS APIENTRY "
-                "Bc250DxgkDdiStartDeviceV5Telemetry(")
+        active, "static NTSTATUS "
+                "Bc250DxgkDdiStartDeviceV5TelemetryImpl(")
     for needle, label in (
         ('L"RenderNode"', "RenderNode DriverEntry tunable read"),
         ("renderNodePresent == 1u && renderNode == 1u",
@@ -9211,6 +9754,18 @@ def main() -> int:
     audit_dx34_marker_dirty_rects_and_wave_vmid(errors)
     audit_dx35_switch_buffer_and_fault_timeline(errors)
     audit_dx36_second_target_probe(errors)
+    audit_dx40_gfx_flow_and_radv_copy(errors)
+    audit_dx43_vmid_warmup_ib(errors)
+    audit_dx44_preempt_command_speaks(errors)
+    audit_dx45_cp_reset_detector(errors)
+    audit_dx46_gfx_ring_full_size(errors)
+    audit_dx47_preemption_completes(errors)
+    audit_dx48_adapter_lifecycle_speaks(errors)
+    audit_dx49_desktop_throughput(errors)
+    audit_dx50_dirty_rect_bisection(errors)
+    audit_dx54_desktop_speed(errors)
+    audit_dx52_create_allocation_refusal_speaks(errors)
+    audit_dx53_vmid_disarm_before_release(errors)
 
     if errors:
         print("BC250 MCDM SAFETY AUDIT: FAILED")
@@ -9275,6 +9830,7 @@ def main() -> int:
     print("  PM4 SET_UCONFIG_REG primitive assembler (0x79, TRILIST 0x04, 8DW, fail-closed): enforced")
     print("  Phase D0 GFX refusal tripod and WPTR divergence veto: enforced")
     print("  DX.31 GOP primary copy: SDMA result, bounded paired samples and fail-closed: enforced")
+    print("  DX.40 GFX switch/IB bits and RADV build-to-deploy hash before bind: enforced")
     print("  verdict: NAO VALIDADO EM HARDWARE")
     return 0
 

@@ -9,6 +9,33 @@
  */
 #include "bc250_gfx_ib_inspect_contract.h"
 
+int Bc250GfxIbFingerprint(
+    uint32_t RequestedDwords,
+    BC250_GFX_IB_READ_DWORD Read,
+    void *ReaderContext,
+    uint64_t *Hash)
+{
+    uint64_t value = 0xCBF29CE484222325ull;
+    uint32_t i;
+
+    if (Hash == NULL) return 0;
+    *Hash = 0ull;
+    if (Read == NULL || RequestedDwords == 0u ||
+        RequestedDwords > BC250_GFX_IB_SCAN_MAX_DWORDS) return 0;
+
+    for (i = 0u; i < RequestedDwords; ++i) {
+        uint32_t word = 0u;
+        uint32_t byteIndex;
+        if (!Read(ReaderContext, i, &word)) return 0;
+        for (byteIndex = 0u; byteIndex < 4u; ++byteIndex) {
+            value ^= (uint64_t)((word >> (byteIndex * 8u)) & 0xFFu);
+            value *= 0x100000001B3ull;
+        }
+    }
+    *Hash = value;
+    return 1;
+}
+
 /*
  * Sem <string.h>: em kernel-mode o CRT nao esta no caminho de include (foi assim
  * que a primeira versao deste arquivo quebrou o build). A zeragem e' explicita e

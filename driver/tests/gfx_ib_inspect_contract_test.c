@@ -361,6 +361,29 @@ static int TestMisturaSaltoEIb2(void)
     return 0;
 }
 
+static int TestFingerprintInteiroOuIndeterminado(void)
+{
+    const uint32_t words[2] = {0x12345678u, 0x90ABCDEFu};
+    ARRAY_READER r;
+    uint64_t hash = 0ull;
+
+    r.Words = words; r.Count = 2u; r.FailAtIndex = 0xFFFFFFFFu; r.ReadCalls = 0u;
+    CHECK(Bc250GfxIbFingerprint(2u, ArrayRead, &r, &hash) == 1);
+    CHECK(hash == 0x5C5D73A7ACCC7D82ull);
+    CHECK(r.ReadCalls == 2u);
+
+    r.FailAtIndex = 1u; r.ReadCalls = 0u; hash = 0xFFFFFFFFFFFFFFFFull;
+    CHECK(Bc250GfxIbFingerprint(2u, ArrayRead, &r, &hash) == 0);
+    CHECK(hash == 0ull);
+    CHECK(r.ReadCalls == 2u);
+
+    r.FailAtIndex = 0xFFFFFFFFu; r.ReadCalls = 0u;
+    CHECK(Bc250GfxIbFingerprint(BC250_GFX_IB_SCAN_MAX_DWORDS + 1u,
+        ArrayRead, &r, &hash) == 0);
+    CHECK(r.ReadCalls == 0u);
+    return 0;
+}
+
 int main(void)
 {
     if (TestStreamMedidoDaCorrida() != 0) return 1;
@@ -372,6 +395,7 @@ int main(void)
     if (TestEntradasDegeneradas() != 0) return 1;
     if (TestMultiplosSaltos() != 0) return 1;
     if (TestMisturaSaltoEIb2() != 0) return 1;
+    if (TestFingerprintInteiroOuIndeterminado() != 0) return 1;
 
     /* GFX IB INSPECT CONTRACT: OK (9 casos, 4 negativos + 2 de classe CHAIN/IB2, offline) */
     /* Escopo: descreve a MEMORIA apontada ao CP. Nao prova busca, execucao nem dispatch de shader. */

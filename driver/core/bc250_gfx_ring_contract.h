@@ -96,6 +96,13 @@ extern "C" {
  * ligou RB_EXE. Ver Bc250GfxRingCntlRefusesNonExecutable.
  */
 #define BC250_GFX_RING_CNTL_CONFIGURED_REFERENCE 0x50000709u
+/*
+ * DX.46: CNTL do anel de 8192 bytes pela formula do upstream (P1):
+ * RB_BUFSZ=10, RB_BLKSZ=8, RB_EXE=1, CE_HQD_NEQ_RB_HQD=1.
+ * O 0x50000709 acima fica SO' como valor historico para decodificacao: pela
+ * semantica do upstream ele descreve um anel de 4096 bytes.
+ */
+#define BC250_GFX_RING_CNTL_UPSTREAM_8K_REFERENCE 0x5000080Au
 
 /*
  * VALOR PROIBIDO, herdado de um aviso que o catalogo ja dava.
@@ -230,9 +237,13 @@ typedef struct BC250_GFX_RING_CNTL_FIELDS {
 /*
  * Deriva RB_BUFSZ do tamanho do anel.
  *
- * RB_BUFSZ = log2(RingBytes / 8) - 1, e RB_BLKSZ = RB_BUFSZ - 2.
- * ORIGEM DA FORMULA: classe H (upstream sem copia local). CORROBORACAO:
- * reproduz exatamente o par (9, 7) do CP_RB0_CNTL medido nesta placa.
+ * RB_BUFSZ = log2(RingBytes / 8), e RB_BLKSZ = RB_BUFSZ - 2 (DX.46).
+ * ORIGEM: Linux v6.6 gfx_v10_0.c:6106-6108 (P1). O anel do CP tem
+ * 2^(RB_BUFSZ+1) dwords == RingBytes / 4.
+ * CORRECAO (DX.46, 23/09): a formula anterior era log2(RingBytes/8) - 1,
+ * classe H, "corroborada" por reproduzir (9, 7) -- valor que o proprio driver
+ * antigo escreveu, prova circular. Ela programava METADE do anel (Corridas 87
+ * e 89: TDR no submit que levou o WPTR alem de 8192 com anel de 64 KB).
  *
  * Devolve BC250_GFX_RING_BAD_SIZE se o tamanho nao permitir campos validos.
  */

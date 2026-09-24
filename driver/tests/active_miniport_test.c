@@ -218,6 +218,15 @@ KIRQL (*__imp_KeAcquireSpinLockRaiseToDpc)(PKSPIN_LOCK) =
 VOID (*__imp_KeReleaseSpinLock)(PKSPIN_LOCK, KIRQL) =
     Bc250TestReleaseSpinLock;
 
+/* DX.45b: o detector de reset do CP decide por IRQL. Offline tudo roda como
+ * PASSIVE_LEVEL, que e' o ramo da escrita sincrona. */
+static KIRQL Bc250TestGetCurrentIrql(void)
+{
+    return (KIRQL)PASSIVE_LEVEL;
+}
+
+KIRQL (*__imp_KeGetCurrentIrql)(void) = Bc250TestGetCurrentIrql;
+
 /*
  * Fase V2: a varredura de retirada de fence usa KTIMER + KDPC.  Fora do kernel
  * eles viram no-ops observaveis — o teste de host exercita o rastreador de
@@ -529,6 +538,23 @@ static int Bc250RunStopQuiescenceTest(
          */
         QCHECK(!(!Bc250WddmFenceTrackerSnapshotCounts( &context->SubmissionEngine.WddmFences, &pending, &reserved)));
         QCHECK(!(pending != 0u || reserved != 1u));
+
+        /*
+         * DX.47: a conclusao da preempcao so' pode sair com o no DRENADO. A
+         * reserva pendente no no 1 tem de aparecer por no -- e o no 0 nao pode
+         * herdar a reserva do vizinho, senao a preempcao do SDMA nunca sairia.
+         */
+        {
+            uint32_t inFlight = 7u, nodeReserved = 7u, lastDone = 7u;
+            QCHECK(Bc250WddmFenceTrackerNodeState(&context->SubmissionEngine.WddmFences,
+                1u, &inFlight, &nodeReserved, &lastDone));
+            QCHECK(inFlight == 0u && nodeReserved == 1u);
+            QCHECK(Bc250WddmFenceTrackerNodeState(&context->SubmissionEngine.WddmFences,
+                0u, &inFlight, &nodeReserved, &lastDone));
+            QCHECK(inFlight == 0u && nodeReserved == 0u);
+            QCHECK(!Bc250WddmFenceTrackerNodeState(&context->SubmissionEngine.WddmFences,
+                2u, &inFlight, &nodeReserved, &lastDone));
+        }
 
         /*
          * Depois do STOPPING nenhuma reserva nova entra, e a recusa e'
@@ -1959,8 +1985,28 @@ static int Bc250RunActiveMiniportTest(void)
                 contextHandle) == BC250_MCDM_OBJECT_OK);
         }
         CHECK(initData.DxgkDdiDestroyContext(contextHandle) == STATUS_SUCCESS);
+        /*
+         * DX.53: o VMID so' volta ao pool DEPOIS do desarme confirmado no
+         * silicio. Offline nao ha transporte MMIO, o desarme falha, e o slot
+         * fica em QUARENTENA com o contexto morto -- antes ele voltava ao pool
+         * armado (a janela de reuso que a auditoria externa apontou, doc 396).
+         */
         CHECK(Bc250VmidPoolLookup(&activeCtx->VmidPool, contextHandle,
-            NULL) == BC250_VMID_POOL_NOT_FOUND);
+            NULL) == BC250_VMID_POOL_OK);
+        {
+            uint32_t otherVmid = BC250_VMID_COUNT;
+            uint32_t otherAssigned = 0u;
+            uint32_t quarantined = BC250_VMID_COUNT;
+            CHECK(Bc250VmidPoolLookup(&activeCtx->VmidPool, contextHandle,
+                &quarantined) == BC250_VMID_POOL_OK);
+            /* Outro contexto NUNCA recebe o slot em quarentena. */
+            CHECK(Bc250VmidPoolAcquire(&activeCtx->VmidPool,
+                (BC250_MCDM_HANDLE)(ULONG_PTR)0xD53D53u, &otherVmid,
+                &otherAssigned) == BC250_VMID_POOL_OK);
+            CHECK(otherVmid != quarantined && otherAssigned == 0u);
+            CHECK(Bc250VmidPoolRelease(&activeCtx->VmidPool,
+                (BC250_MCDM_HANDLE)(ULONG_PTR)0xD53D53u, NULL) == BC250_VMID_POOL_OK);
+        }
         CHECK(initData.DxgkDdiDestroyContext(contextHandle) ==
             STATUS_INVALID_HANDLE);
 

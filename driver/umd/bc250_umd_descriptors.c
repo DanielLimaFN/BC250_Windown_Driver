@@ -1,6 +1,8 @@
-/* Included in bc250_d3d_umd.c. A new immutable set per draw. The current
- * synchronous bridge retires all objects only after a successful fence wait.
- * On timeout they stay owned by the bridge until device teardown. */
+/* Included in bc250_d3d_umd.c. A new immutable set per draw. The bridge
+ * retires all objects only after a successful fence wait -- with DX.49 that is
+ * the flush of the whole draw batch, so every set of the batch stays alive
+ * until the batch completes. On timeout they stay owned by the bridge until
+ * device teardown. */
 static const char *Bc250UmdVkImageLayoutName(VkImageLayout layout)
 {
     switch (layout) {
@@ -20,6 +22,14 @@ static const char *Bc250UmdVkImageLayoutName(VkImageLayout layout)
     }
 }
 
+static uint64_t Bc250UmdDescNowMicros(void)
+{
+    LARGE_INTEGER now, freq;
+    if (!QueryPerformanceCounter(&now) || !QueryPerformanceFrequency(&freq) || freq.QuadPart <= 0) return 0u;
+    return (uint64_t)(now.QuadPart / freq.QuadPart) * 1000000ull +
+           (uint64_t)((now.QuadPart % freq.QuadPart) * 1000000ll / freq.QuadPart);
+}
+
 static BOOL Bc250UmdBindDrawDescriptors(BC250_UMD_DEVICE *device,
     VkPipelineLayout layout, VkCommandBuffer cmd, BOOL *hasDescriptors)
 {
@@ -33,7 +43,9 @@ static BOOL Bc250UmdBindDrawDescriptors(BC250_UMD_DEVICE *device,
     VkWriteDescriptorSet writes[BC250_DESCRIPTOR_MAX_BINDINGS];
     VkDescriptorBufferInfo buffers[BC250_DESCRIPTOR_MAX_BINDINGS];
     VkDescriptorImageInfo images[BC250_DESCRIPTOR_MAX_BINDINGS];
-    VkDescriptorSet set;
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    uint64_t descStart = Bc250UmdDescNowMicros();
+    const char *poolKind = "POR_DRAW";
     const char *refusedReason = "MOTIVO_NAO_REGISTRADO";
     BC250_UMD_RESOURCE *refusedSrvResource = NULL;
     BOOL refusedIsSrv = FALSE;
@@ -71,8 +83,20 @@ static BOOL Bc250UmdBindDrawDescriptors(BC250_UMD_DEVICE *device,
                 device->PipelineState.PsConstantBuffers[reg].pDrvPrivate);
             if (!resource || !resource->VkBuf || !resource->Width || resource->Width > 65536u ||
                 resource->Width > resource->TotalByteSize || !resource->pCpuShadow) { refusedReason = "CB_RECURSO_AUSENTE_OU_INVALIDO"; goto refused; }
-            if (!Bc250UmdVkUploadBufferData(device, resource, resource->pCpuShadow, resource->Width)) { refusedReason = "CB_UPLOAD_FALHOU"; goto refused; }
-            buffers[i].buffer = resource->VkBuf;
+            if (device->DrawUsesRing) {
+                /* DX.49: faixa propria no anel; o draw seguinte do lote nao
+                 * reescreve o CB que este ainda vai ler. */
+                VkBuffer ringBuf = VK_NULL_HANDLE;
+                VkDeviceSize ringOff = 0;
+                if (!Bc250UmdVkDrawRingPut(bridge, resource->pCpuShadow, resource->Width, &ringBuf, &ringOff)) {
+                    refusedReason = "CB_ANEL_SEM_ESPACO"; goto refused;
+                }
+                buffers[i].buffer = ringBuf;
+                buffers[i].offset = ringOff;
+            } else {
+                if (!Bc250UmdVkUploadBufferData(device, resource, resource->pCpuShadow, resource->Width)) { refusedReason = "CB_UPLOAD_FALHOU"; goto refused; }
+                buffers[i].buffer = resource->VkBuf;
+            }
             buffers[i].range = resource->Width;
             writes[i].pBufferInfo = &buffers[i];
             sizes[0].descriptorCount++;
@@ -182,8 +206,12 @@ static BOOL Bc250UmdBindDrawDescriptors(BC250_UMD_DEVICE *device,
             sizes[1].descriptorCount++;
         } else if (binding->descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER) {
             BC250_UMD_SAMPLER *sampler;
-            VkSamplerCreateInfo info = {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+            VkSamplerCreateInfo info;
+            VkSampler cached = VK_NULL_HANDLE;
             uint32_t filter;
+            /* DX.54: o cache compara a struct inteira; o padding tem de ser zero. */
+            memset(&info, 0, sizeof(info));
+            info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
             if (reg < BC250_DESCRIPTOR_SAMPLER_BASE || reg >= BC250_DESCRIPTOR_SAMPLER_BASE + BC250_DESCRIPTOR_SAMPLER_COUNT) { refusedReason = "SAMPLER_REGISTRADOR_FORA_DE_FAIXA"; goto refused; }
             reg -= BC250_DESCRIPTOR_SAMPLER_BASE;
             sampler = (BC250_UMD_SAMPLER *)(stage == 0 ? device->PipelineState.VsSamplers[reg].pDrvPrivate : device->PipelineState.PsSamplers[reg].pDrvPrivate);
@@ -204,27 +232,58 @@ static BOOL Bc250UmdBindDrawDescriptors(BC250_UMD_DEVICE *device,
             info.compareEnable = (filter & 0x80u) != 0;
             if (sampler->Desc.ComparisonFunc < 1 || sampler->Desc.ComparisonFunc > 8) { refusedReason = "SAMPLER_COMPARISON_INVALIDA"; goto refused; }
             info.compareOp = (VkCompareOp)(sampler->Desc.ComparisonFunc - 1);
-            if (bridge->vk.vkCreateSampler(bridge->Device, &info, NULL, &batch->Samplers[i]) != VK_SUCCESS) { refusedReason = "SAMPLER_CREATE_FALHOU"; goto refused; }
-            images[i].sampler = batch->Samplers[i];
+            if (s_Bc250Dx54PersistentDescriptors)
+                cached = Bc250UmdVkCachedSampler(bridge, &info);
+            if (cached != VK_NULL_HANDLE) {
+                /* Do cache: vive ate o shutdown, nunca entra no lote que e' destruido. */
+                images[i].sampler = cached;
+            } else {
+                if (bridge->vk.vkCreateSampler(bridge->Device, &info, NULL, &batch->Samplers[i]) != VK_SUCCESS) { refusedReason = "SAMPLER_CREATE_FALHOU"; goto refused; }
+                images[i].sampler = batch->Samplers[i];
+            }
             writes[i].pImageInfo = &images[i];
             sizes[2].descriptorCount++;
         } else { refusedReason = "TIPO_DE_DESCRITOR_NAO_SUPORTADO"; goto refused; }
     }
-    poolInfo.maxSets = 1;
-    VkDescriptorPoolSize compact[3];
-    for (i = 0; i < 3; ++i) if (sizes[i].descriptorCount) compact[poolInfo.poolSizeCount++] = sizes[i];
-    poolInfo.pPoolSizes = compact;
-    if (bridge->vk.vkCreateDescriptorPool(bridge->Device, &poolInfo, NULL, &batch->Pool) != VK_SUCCESS) { refusedReason = "DESCRIPTOR_POOL_FALHOU"; goto refused; }
-    allocInfo.descriptorPool = batch->Pool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &entry->DescriptorSetLayout;
-    if (bridge->vk.vkAllocateDescriptorSets(bridge->Device, &allocInfo, &set) != VK_SUCCESS) { refusedReason = "ALOCACAO_DO_CONJUNTO_FALHOU"; goto refused; }
+    /*
+     * DX.54: conjunto do pool persistente (zerado so' na fence do lote). Sem
+     * pool ou com o pool esgotado, o draw usa o pool proprio de antes -- e isso
+     * e' contado e dito no log, nunca silencioso.
+     */
+    if (s_Bc250Dx54PersistentDescriptors) {
+        set = Bc250UmdVkAllocPersistentSet(bridge, entry->DescriptorSetLayout);
+        if (set != VK_NULL_HANDLE) poolKind = "PERSISTENTE";
+    }
+    if (set == VK_NULL_HANDLE) {
+        poolInfo.maxSets = 1;
+        VkDescriptorPoolSize compact[3];
+        for (i = 0; i < 3; ++i) if (sizes[i].descriptorCount) compact[poolInfo.poolSizeCount++] = sizes[i];
+        poolInfo.pPoolSizes = compact;
+        if (bridge->vk.vkCreateDescriptorPool(bridge->Device, &poolInfo, NULL, &batch->Pool) != VK_SUCCESS) { refusedReason = "DESCRIPTOR_POOL_FALHOU"; goto refused; }
+        allocInfo.descriptorPool = batch->Pool;
+        allocInfo.descriptorSetCount = 1;
+        allocInfo.pSetLayouts = &entry->DescriptorSetLayout;
+        if (bridge->vk.vkAllocateDescriptorSets(bridge->Device, &allocInfo, &set) != VK_SUCCESS) { refusedReason = "ALOCACAO_DO_CONJUNTO_FALHOU"; goto refused; }
+        if (s_Bc250Dx54PersistentDescriptors) {
+            bridge->DescriptorFallbackPools++;
+            if (bridge->DescriptorFallbackPools <= 8u || (bridge->DescriptorFallbackPools % 256u) == 0u)
+                Bc250UmdTrace("[DX54_DESC] POOL POR DRAW (fallback #%llu): pool persistente %s, conjuntos no lote=%u",
+                    (unsigned long long)bridge->DescriptorFallbackPools,
+                    bridge->PersistentPoolFailed ? "RECUSADO" : "esgotado ou alocacao falhou",
+                    bridge->PersistentPoolSets);
+        }
+    }
     for (i = 0; i < entry->BindingCount; ++i) writes[i].dstSet = set;
     bridge->vk.vkUpdateDescriptorSets(bridge->Device, entry->BindingCount, writes, 0, NULL);
     bridge->vk.vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &set, 0, NULL);
     *hasDescriptors = TRUE;
-    Bc250UmdTrace("[VK_DESCRIPTOR] BOUND: bindings=%u (CB=%u SRV=%u SAMPLER=%u)", entry->BindingCount,
-        sizes[0].descriptorCount, sizes[1].descriptorCount, sizes[2].descriptorCount);
+    {
+        uint64_t descMicros = Bc250UmdDescNowMicros() - descStart;
+        bridge->DescriptorMicrosInBatch += descMicros;
+        Bc250UmdTrace("[VK_DESCRIPTOR] BOUND: bindings=%u (CB=%u SRV=%u SAMPLER=%u) [DX54_DESC] Pool=%s DescUs=%llu",
+            entry->BindingCount, sizes[0].descriptorCount, sizes[1].descriptorCount, sizes[2].descriptorCount,
+            poolKind, (unsigned long long)descMicros);
+    }
     return TRUE;
 refused:
     /* Commands may already reference image transitions. Keep ownership through

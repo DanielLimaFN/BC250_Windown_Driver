@@ -1,0 +1,46 @@
+# Corrida 84 — DX.40: fluxo RADV medido, desktop ainda preto
+
+> 23/09/2026, bind iniciado às 13:08:48 (America/Sao_Paulo). Candidato lab
+> `3.246.1.0`, `DISPLAY_RENDER_LAB`, `GfxWaveProbe=1`, SYS SHA-256
+> `F1EE106C78517506F6625E08CAE5C9717D298B9CEBEF1E8198A3F8A0FE403796`,
+> RADV instalada SHA-256 `BF6A1EDAE5C6F64E5A0C5795878E5D187814EB91A1E5C0F3447074B6F7CEE14A`.
+> Critério definido antes do ensaio: [docs/366](366_CRITERIO_CORRIDA84_DX40_TELEMETRIA_FLUXO.md).
+> Prova: [`docs/evidence/2026-09-23_13-08-48-DESKTOP-HQAG6T4-lab-binding/`](evidence/2026-09-23_13-08-48-DESKTOP-HQAG6T4-lab-binding/).
+
+## 1. Houve avanço?
+
+**Funcional parcial, sem fechar o objetivo.** Daniel viu **tela preta com quadrado azul e triângulo colorido no centro**. É uma melhora visual localizada em relação ao “desktop todo zoado” da Corrida 83, mas não demonstra desktop íntegro, DWM estável ou origem exata de cada pixel. O harness teve **1/60 Presents aceitos**, contra 0/60 na 83; o primeiro `PRESENT_OK` é aceite do runtime, não prova de rasterização. No segundo quadro houve `0x887A0005` (`DXGI_ERROR_DEVICE_REMOVED`) e `DeviceRemovedReason=0x887A0007` (`DXGI_ERROR_DEVICE_RESET`). Houve **quatro TDRs GFX**, contra três na 83. Avanço diagnóstico: sim, o fluxo e as identidades de parte dos IBs agora são observáveis. A estabilidade não melhorou.
+
+## 2. Sucessos e alcance da telemetria
+
+- A evidência inclui `display-log-this-bind-FINAL.txt` de 3.323.899 bytes, `complete_at_capture=true`, 16 logs de fluxo por processo. A coleta inicial trouxe 56 pares `.bin`/`.meta` de IB; 9 pares adicionais foram resgatados do staging e dois fluxos RADV foram completados; as versões da captura original desses fluxos ficaram em `.snapshot`, com hashes de origem/destino conferidos em [`ib-staging-rescue.json`](evidence/2026-09-23_13-08-48-DESKTOP-HQAG6T4-lab-binding/ib-staging-rescue.json), totalizando **65** pares. A cauda KMD estava completa, mas a cópia inicial dos IBs ocorreu cedo. O pacote e a RADV no bind conferem com o candidato fixado. O índice `telemetry-index.md` foi gerado; seus 90 alertas após o resgate são sinais para investigação, não 90 TDRs.
+- No KMD, **104** `KMD_GFX_SWITCH` e **104** `KMD_GFX_SUBMIT`; 49 trocas de VMID emitiram `CONTEXT_CONTROL` com PM4 de 34 DW, e 55 submissões não exigiram troca. Todos os 104 registros dizem `ib_valid=1`, `ib_inherit_vmid=0`. Isso mede os dwords construídos e publicados; não prova a interpretação correta pelo hardware. O bit 23 `VALID` no `ib_control` continua diferente do emissor GFX10 Linux analisado em [docs/365](365_DX40_BUILD_COMPLETO_FLUXO_RADV_LINUX_WDDM.md), sem nexo causal demonstrado.
+- Os logs RADV mostram **76** `RADV_QUEUE_SUBMIT_BEGIN`, **65** `RADV_CS_LAYOUT` e `RADV_QUEUE_SUBMIT_END`, e **75** `RADV_QUEUE_SIGNAL`. O `CONCAT` observado combina preâmbulo e CS principal (`pre=1, main=1`) em um IB. Há submissões sem CS (`cs=0`) que sinalizam sem `CS_LAYOUT`/`SUBMIT_END`; ausência dessas etapas nesse caso não é perda de log. Não apareceu `RADV_QUEUE_WAIT` no índice; os `waits=0` observados não exercitam a espera. A maioria dos contextos observados usa `ip=0`/Node1; a criação de `ip=1` não prova submit ACE.
+- O cruzamento por VA, DW e FNV64 completo encontrou **54 matches únicos, 8 ambíguos e 42 ausentes** entre 104 submissões KMD. Um dump rejeitado foi separado e não contou como execução. As fences de anel **19, 32 e 47**, imediatamente antes dos três TDRs com ondas, e a **107** antes do quarto têm match único de bytes RADV para o IB recém-submetido. Isto identifica os bytes preparados/lidos antes do submit; não identifica de qual IB nasceram as ondas ainda ativas. A fence 108 do quarto TDR não tem dump correspondente.
+- Nos **4/4 TDRs**, `TDR_GFX_RESTART_PROOF PASS` e `TDR_RESTART PROVADO` do SDMA confirmam reinício físico por NOP/fence; o KMD voltou a aceitar submissões após os três primeiros. O autoteste `nodcc,nonggc` passou S1–S5, 65.536 pixels por etapa e contador de fragmentos 65.536. `nodcc` passou S1 e deixou S2–S5 **NÃO MEDIDOS** após `vkMapMemory=-5`; `nodcc,nongg` passou S1–S3 e deixou S4–S5 **NÃO MEDIDOS** após submit/fence `-4`.
+- O display copiou retângulos sujos por SDMA com 14 provas amostrais `DIRTY_RECT_PROOF` sem mismatch registrado. `Present #14` amostrou um tile com 256/256 pixels não nulos; `Present #36`, 126/256. Essas provas não certificam a tela inteira. Nesta corrida não há `BYTE_PROOF PASS` de tela cheia: em `Present #10` e `#25`, a prova de tela cheia foi pulada porque o caminho era de retângulos sujos.
+
+## 3. Falhas e quatro TDRs
+
+| TDR | Fence recém-submetida / VMID | Evidência física no reset | Limite |
+|---|---|---|---|
+| 1 | 19 / 4, após 18 / 1 | RPTR 1454, WPTR 1464; 4 ondas VMID **1**, PC `0x200040C00`; fault `Cid=9` no VA `0x200040000` registrado na troca 1→4 | Assinatura de VMID anterior recorrente; não há carimbo imutável da fence nas ondas. |
+| 2 | 32 / 3, após 31 / 2 | RPTR 290, WPTR 300; 4 ondas VMID **2**, PC `0x200040800`; fault `Cid=9` no VA `0x200040000` registrado na troca 2→3 | Mesmo limite temporal. |
+| 3 | 47 / 1, após 46 / 3 | RPTR 314, WPTR 324; 4 ondas VMID **3**, PC `0x2003C0B00`; fault `Cid=9` no VA `0x2003C0000` registrado na troca 3→1 | Mesmo limite temporal. |
+| 4 | 108 / 1, após 107 / 3 | RPTR 1864, WPTR 1920; `IB1=0x241D88000`, 24 DW restantes; `SQ_DEBUG_STS_GLOBAL=0`, nenhuma onda para inspecionar. `CP_BUSY=1`, `PfpParsing=1`; `ME_HEADER_DUMP=INDIRECT_BUFFER` | Classe observada distinta dos três primeiros: CP/IB pendente sem onda visível. A VA do IB1 coincide com a fence **107**, não a 108. O dump único da 107 começa com **180 DW zero**; o ponto causal exato ainda não foi provado. |
+
+Nos três primeiros TDRs, o último carimbo KMD tem VMID novo e as quatro ondas amostradas têm o VMID anterior. `CONTEXT_CONTROL` aparece na construção de todas essas trocas, portanto a alteração DX.37 continua **insuficiente** no cenário medido. A linha de fault é colhida na troca seguinte e representa faults desde a amostra anterior; ela reforça a correlação com o PC, mas não data a instrução exata. O quarto TDR não permite inferir “sem fault” só porque o registrador não reteve um fault no reset.
+
+Houve ainda faults `Cid=0` de escrita sem permissão nos VAs `0x2401A1000` e `0x2401A3000`, recorrência da frente de render target. Nove `Present #1`–`#9` registraram `REJECT source contract` com `SlotSeg=0`; o log também registra apresentações posteriores e provas parciais de pixels. Não atribuir a aparência da tela a uma dessas falhas sem ligação direta. No fluxo do processo do harness (`pid=11804`), `submit_id=10`, `layout=CONCAT`, VA `0x240030000`, 288 DW, terminou em `0xC00002B6` (`STATUS_DEVICE_REMOVED`), `accepted=0`; não houve sinal de conclusão desse submit. Não há BugCheck registrado; a recuperação ocorreu online, sem reboot.
+
+**Achado após resgate:** o dump recusado do harness e o IB aceito da fence 107 têm **os mesmos primeiros 180 DW zerados**; os outros 63 dumps começam com um header PM4 tipo 3 válido. No IB107, 313/560 DW são não nulos, mas o decodificador encontra `0x00000000` no primeiro DW e para. O FNV64 do arquivo coincide com a `.meta` RADV e com o hash completo do KMD para a fence 107: os bytes já estavam assim antes de D3DKMT e foram lidos assim pelo KMD. O registro não mostra se o CS de origem estava zerado ou se a cópia/BO de concatenação perdeu os bytes. A relação causal com o quarto TDR é **hipótese forte**, não fato fechado; `IB1` tinha 24 DW restantes e não há amostra do primeiro pacote que o CP interpretou. [Análise detalhada](368_DX41_ANALISE_IB_ZERO_POS_CORRIDA84.md).
+
+## 4. Veredito frente ao critério prévio
+
+**Diagnóstico parcial; função falhou.** O arquivo integral, o fluxo RADV, os dwords KMD, o índice e a recuperação foram preservados. O requisito de correlação **única para todas as submissões relevantes** não foi alcançado: as fences anteriores de TDR2/TDR3 e a 108 ainda estão ausentes; a identidade da onda continua sem carimbo de fence. Os 42 `AUSENTE` também mostram que a coleta de dump não cobre todo o tráfego KMD, embora o hash KMD tenha sido completo. A falha funcional é objetiva: tela preta parcial, quatro TDRs, device reset e 1/60. Código 0 ou reinício bem-sucedido do anel não fecham desktop.
+
+## 5. Recuperação e próximo passo
+
+O rollback começou às 13:10:49 por ausência de confirmação explícita e terminou às **13:10:58** em `RECOVERY_OK_ONLINE`, na primeira tentativa. `BasicDisplay` ficou em **Código 0 por cinco amostras**; o pacote `oem42.inf`/serviço experimental foi removido. Esse desktop restaurado pertence ao BasicDisplay, não ao nosso DWM. O marcador de boot frio da recuperação deve ser respeitado antes de qualquer outra corrida.
+
+**NÃO VALIDADO EM HARDWARE:** desktop íntegro e interativo, 60/60 quadros, ausência de TDR, identidade temporal da onda com fence/IB, causa dos 180 DW zero e do quarto TDR sem ondas, cobertura completa de dumps RADV e causa do fault de escrita no render target. A [DX.41 offline](368_DX41_ANALISE_IB_ZERO_POS_CORRIDA84.md) mede origem e cópia do preâmbulo e recusa IB com primeiro DW zero antes de D3DKMT; essa alteração **não rodou**. Investigar a origem do prefixo, os TDRs com onda e os 42 dumps ausentes antes de empacotar outro candidato. Nenhuma nova corrida foi iniciada nesta análise.

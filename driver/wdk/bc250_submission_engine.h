@@ -605,6 +605,15 @@ uint32_t Bc250WddmFenceTrackerDrainEx(
     _Out_writes_to_(Max, return) BC250_WDDM_FENCE_ENTRY *Out,
     _In_ uint32_t Max);
 
+/* DX.47: em voo, reservas e ultima fence notificada de UM no. */
+_Check_return_
+BOOLEAN Bc250WddmFenceTrackerNodeState(
+    _Inout_ BC250_WDDM_FENCE_TRACKER *Tracker,
+    _In_ uint32_t NodeOrdinal,
+    _Out_ uint32_t *InFlight,
+    _Out_ uint32_t *Reserved,
+    _Out_ uint32_t *LastNotified);
+
 /* Consulta somente o namespace WDDM já notificado, nunca a fence do ring. */
 _Check_return_
 BOOLEAN Bc250WddmFenceTrackerQueryCurrent(

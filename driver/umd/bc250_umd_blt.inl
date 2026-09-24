@@ -51,6 +51,16 @@ static HRESULT Bc250UmdBltViaKmd(BC250_UMD_DEVICE *d, BC250_UMD_RESOURCE *dst,
         Bc250UmdTrace("BltViaKmd RECUSADO: geometria ausente");
         return E_INVALIDARG;
     }
+    /*
+     * DX.49: o SDMA do KMD le a memoria fora da fila Vulkan. Draws gravados no
+     * lote e ainda nao submetidos precisam terminar antes, senao a composicao
+     * copiaria o quadro anterior.
+     */
+    if (d->VkBridgeInitialized &&
+        Bc250UmdVkDrainPending(&d->VkBridge, "composicao pelo KMD (BltViaKmd)") != VK_SUCCESS) {
+        Bc250UmdTrace("BltViaKmd RECUSADO: dreno do lote Vulkan falhou; a origem nao tem conclusao provada");
+        return E_FAIL;
+    }
 
     memset(&payload, 0, sizeof(payload));
     payload.Opcode = BC250_ESCAPE_OP_COMPOSITE_BLT;

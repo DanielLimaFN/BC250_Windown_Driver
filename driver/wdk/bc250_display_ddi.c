@@ -526,30 +526,71 @@ static volatile LONG s_Bc250PrimaryCopySequence = 0;
 #define BC250_DIRTY_RECT_MAX 16u
 static volatile LONG s_Bc250DirtyRectLogCount = 0;
 
+/*
+ * DX.49 -- RETANGULO VAZIO = SUPERFICIE INTEIRA.
+ *
+ * Corrida 93 (P0): as 17 recusas vieram com SubRectCnt 1..3 e, nas amostradas,
+ * "DstRect=(0,0)-(0,0), SrcRect=(0,0)-(0,0)". No Present de flip o dxgkrnl nao
+ * preenche Src/Dst; a exigencia de Src == Dst == tela cheia recusava TODOS e
+ * caia na copia de 11 MB. Retangulo vazio nos DOIS lados e' aceito como
+ * superficie inteira; qualquer outro Src/Dst continua exigindo tela cheia.
+ * A recusa agora nomeia a condicao, em vez de uma lista de quatro possiveis.
+ */
+/*
+ * DX.50 -- BISSECCAO: dirty rects DESLIGADOS.
+ *
+ * Corridas 94 e 95 (P0): travamento duro nas duas, e defeito visual "depois de
+ * um tempo" na 95, logo que os dirty rects passaram a ser aceitos (384 copias
+ * SDMA por retangulo na 95; zero em todas as corridas anteriores). Com isto em
+ * FALSE todo Present volta a copia de tela cheia da Corrida 93; a validacao
+ * acima continua compilada e testada, e a recusa sai no log com
+ * motivo=DX50_BISSECCAO_DESLIGADO. Uma variavel: o lote de draws, o staging e
+ * o trace da DX.49/49b continuam ligados.
+ */
+static const BOOLEAN s_Bc250Dx50DirtyRectsEnabled = FALSE;
+
+static BOOLEAN Bc250DisplayRectIsEmpty(_In_ CONST RECT *Rect)
+{
+    return Rect->left == 0 && Rect->top == 0 && Rect->right == 0 && Rect->bottom == 0;
+}
+
+static BOOLEAN Bc250DisplayRectIsFull(_In_ CONST RECT *Rect, ULONG Width, ULONG Height)
+{
+    return Rect->left == 0 && Rect->top == 0 &&
+        Rect->right == (LONG)Width && Rect->bottom == (LONG)Height;
+}
+
 static BOOLEAN Bc250DisplayDirtyRectsUsable(
     _In_ CONST DXGKARG_PRESENT *Present,
-    _Out_ UINT *Count)
+    _Out_ UINT *Count,
+    _Out_ CONST char **Reason,
+    _Out_ UINT *BadIndex)
 {
     ULONG w = g_Bc250DisplayState.CurrentMode.Width;
     ULONG h = g_Bc250DisplayState.CurrentMode.Height;
+    BOOLEAN bothEmpty;
     UINT i;
 
     *Count = 0u;
-    if (Present->SubRectCnt == 0u || Present->SubRectCnt > BC250_DIRTY_RECT_MAX ||
-        Present->pDstSubRects == NULL || w == 0u || h == 0u ||
-        g_Bc250DisplayState.CurrentMode.Pitch < w * 4u) {
-        return FALSE;
+    *BadIndex = 0u;
+    *Reason = "OK";
+    if (Present->SubRectCnt == 0u) { *Reason = "LISTA_VAZIA"; return FALSE; }
+    if (Present->SubRectCnt > BC250_DIRTY_RECT_MAX) { *Reason = "LISTA_ACIMA_DO_TETO"; return FALSE; }
+    if (Present->pDstSubRects == NULL) { *Reason = "pDstSubRects_NULL"; return FALSE; }
+    if (w == 0u || h == 0u || g_Bc250DisplayState.CurrentMode.Pitch < w * 4u) {
+        *Reason = "MODO_SEM_GEOMETRIA"; return FALSE;
     }
-    if (Present->SrcRect.left != 0 || Present->SrcRect.top != 0 ||
-        Present->SrcRect.right != (LONG)w || Present->SrcRect.bottom != (LONG)h ||
-        Present->DstRect.left != 0 || Present->DstRect.top != 0 ||
-        Present->DstRect.right != (LONG)w || Present->DstRect.bottom != (LONG)h) {
-        return FALSE;
+    bothEmpty = Bc250DisplayRectIsEmpty(&Present->SrcRect) && Bc250DisplayRectIsEmpty(&Present->DstRect);
+    if (!bothEmpty &&
+        (!Bc250DisplayRectIsFull(&Present->SrcRect, w, h) || !Bc250DisplayRectIsFull(&Present->DstRect, w, h))) {
+        *Reason = "SRC_DST_NEM_VAZIOS_NEM_TELA_CHEIA"; return FALSE;
     }
     for (i = 0u; i < Present->SubRectCnt; ++i) {
         CONST RECT *rc = &Present->pDstSubRects[i];
         if (rc->left < 0 || rc->top < 0 || rc->right <= rc->left ||
             rc->bottom <= rc->top || (ULONG)rc->right > w || (ULONG)rc->bottom > h) {
+            *Reason = "RETANGULO_FORA_DA_TELA_OU_DEGENERADO";
+            *BadIndex = i;
             return FALSE;
         }
     }
@@ -954,6 +995,21 @@ static BOOLEAN Bc250ShouldEmitVerboseLog(
         Bc250LogTextContains(Text, "DX_TARGET_200040") ||
         /* DX.36: mesmo motivo para o alvo da escrita sem permissao (80/81). */
         Bc250LogTextContains(Text, "DX_TARGET_2401A1") ||
+        /* DX.43: uma linha por troca de VMID -- e' a variavel da Corrida 86. */
+        Bc250LogTextContains(Text, "DX43_VMID_WARMUP") ||
+        /* DX.44: a DDI de preempcao tem teto proprio no emissor (Corrida 87). */
+        Bc250LogTextContains(Text, "PREEMPT_COMMAND") ||
+        /* DX.47: conclusao e espera da preempcao (teto proprio no emissor). */
+        Bc250LogTextContains(Text, "PREEMPT_DONE") ||
+        /* DX.48: ciclo de vida do adaptador e o QAI Type=29 (ultima linha dos
+         * travamentos 88/92) nunca podem ser amostrados fora. */
+        Bc250LogTextContains(Text, "DX48_LIFECYCLE") ||
+        /* DX.52: recusa de CreateAllocation (laco do Explorer, Corridas 93..97). */
+        Bc250LogTextContains(Text, "CREATE_ALLOC_RECUSADO") ||
+        (Bc250LogTextStartsWith(Text, "[McdmQAI]") && Bc250LogTextContains(Text, "Type=29,")) ||
+        Bc250LogTextContains(Text, "PREEMPT_WAIT") ||
+        /* DX.45: reset silencioso do CP (Corrida 88); teto de 16 no emissor. */
+        Bc250LogTextContains(Text, "CP_RESET_DETECTED") ||
         /*
          * DX.12: a mascara de VMIDs invalidados e a MEDICAO da Corrida 59.
          * A linha comeca com "[FLUSH_POOL_VMIDS]", que cairia na classe 5
@@ -3644,6 +3700,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                 BOOLEAN sdmaDone = FALSE;
                 BOOLEAN dirtyRectsUsed = FALSE;
                 UINT dirtyRectCount = 0u;
+                CONST char *dirtyRefuseReason = s_Bc250Dx50DirtyRectsEnabled ?
+                    "NAO_AVALIADO" : "DX50_BISSECCAO_DESLIGADO";
+                UINT dirtyRefuseIndex = 0u;
                 ULONG dirtyRectBytes = 0u;
                 uint64_t srcGpu = g_Bc250SdmaPresent.VramMcStart + effectiveSrcPhys;
                 uint64_t dstScanoutGpu = g_Bc250SdmaPresent.ScanoutGpuAddress;
@@ -3676,7 +3735,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                                 dstScanoutGpu, dstPitch,
                                 dstX, dstY,
                                 presentW, presentH);
-                        } else if (Bc250DisplayDirtyRectsUsable(pPresent, &dirtyRectCount)) {
+                        } else if (s_Bc250Dx50DirtyRectsEnabled &&
+                                   Bc250DisplayDirtyRectsUsable(pPresent, &dirtyRectCount,
+                                       &dirtyRefuseReason, &dirtyRefuseIndex)) {
                             /*
                              * DX.34 -- HONRAR pDstSubRects (contrato do DXGKARG_PRESENT).
                              *
@@ -3725,8 +3786,19 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                             if (pPresent->SubRectCnt > 0u) {
                                 LONG fullLog = InterlockedIncrement(&s_Bc250DirtyRectLogCount);
                                 if (fullLog <= 16 || (fullLog % 128) == 0) {
-                                    Bc250DisplayLog("[Present #%d] DIRTY_RECTS_RECUSADOS SubRectCnt=%u -- lista fora do contrato aceito (vazia, >%u, fora da tela ou Src!=Dst); copia de tela cheia (ocorrencia #%ld)\n",
-                                        count, pPresent->SubRectCnt, BC250_DIRTY_RECT_MAX, fullLog);
+                                    CONST RECT *bad = (pPresent->pDstSubRects != NULL &&
+                                        dirtyRefuseIndex < pPresent->SubRectCnt) ?
+                                        &pPresent->pDstSubRects[dirtyRefuseIndex] : NULL;
+                                    Bc250DisplayLog("[Present #%d] DIRTY_RECTS_RECUSADOS SubRectCnt=%u motivo=%s Src=(%ld,%ld)-(%ld,%ld) Dst=(%ld,%ld)-(%ld,%ld) rect[%u]=(%ld,%ld)-(%ld,%ld) teto=%u; copia de tela cheia (ocorrencia #%ld)\n",
+                                        count, pPresent->SubRectCnt, dirtyRefuseReason,
+                                        pPresent->SrcRect.left, pPresent->SrcRect.top,
+                                        pPresent->SrcRect.right, pPresent->SrcRect.bottom,
+                                        pPresent->DstRect.left, pPresent->DstRect.top,
+                                        pPresent->DstRect.right, pPresent->DstRect.bottom,
+                                        dirtyRefuseIndex,
+                                        bad ? bad->left : 0L, bad ? bad->top : 0L,
+                                        bad ? bad->right : 0L, bad ? bad->bottom : 0L,
+                                        BC250_DIRTY_RECT_MAX, fullLog);
                                 }
                             }
                             sdmaDone = Bc250SdmaPresentBlt(srcGpu, dstScanoutGpu, scanoutBytes);

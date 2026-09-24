@@ -195,6 +195,8 @@ HRESULT Bc250UmdDeviceInit(
         pCreateData->pKTCallbacks->pfnCreateContextVirtualCb != NULL &&
         Bc250UmdVkBridgeInit(&pDevice->VkBridge)) {
         pDevice->VkBridgeInitialized = TRUE;
+        /* DX.49: todo flush fecha o render pass aberto por um clear. */
+        pDevice->VkBridge.pRenderPassOpen = &pDevice->InRenderPass;
         if (Bc250UmdPipelineCacheInit(&pDevice->PipelineCache, pDevice)) {
             pDevice->PipelineCacheInitialized = TRUE;
         }
@@ -272,6 +274,16 @@ VOID Bc250UmdDeviceTeardown(
 /* Vulkan Resource and Pipeline Cache translation implementations */
 #include "bc250_umd_resource_vk.c"
 #include "bc250_umd_pipeline_cache.c"
+/*
+ * DX.54 -- VELOCIDADE (Corrida 98R, P0 de tempo no log do dwm.exe): ~14-24 ms
+ * por draw entre o upload do CB e "[VK_DESCRIPTOR] BOUND", onde so' ha a
+ * criacao de view, sampler e de um VkDescriptorPool novo por draw. Ligado: um
+ * pool por device, zerado depois de fence concluida, e samplers em cache. Cada
+ * peca da DX.54 tem interruptor proprio para bisseccao.
+ */
+static const BOOL s_Bc250Dx54PersistentDescriptors = TRUE;
+/* DX.54: inspecao do buffer linear no Present amostrada (ver o Present). */
+static const BOOL s_Bc250Dx54SampledPresentInspection = TRUE;
 #include "bc250_umd_descriptors.c"
 #include "bc250_umd_state_translate.c"
 
@@ -1114,6 +1126,17 @@ VOID APIENTRY Bc250Umd10CreateResource(
             BC250_WINSYS_STATUS cleanup = Bc250WinsysDeallocate(&device->Winsys, &res->Allocation);
             Bc250UmdTrace("CreateResource RECUSADO: status=%s cleanup=%s; Created=FALSE",
                 Bc250WinsysStatusName(wsStatus), Bc250WinsysStatusName(cleanup));
+            /* DX.52: descreve o recurso recusado (laco do Explorer, Corridas 93..97). */
+            Bc250UmdTrace("CreateResource RECUSADO desc: Dim=%u %ux%u Mips=%u Array=%u Fmt=%u Samples=%u "
+                "Bind=0x%X Misc=0x%X Usage=%u CpuAccess=0x%X TotalSize=%llu RowPitch=%u InitData=%d hr=0x%08X",
+                (UINT)pCreate->ResourceDimension,
+                pCreate->pMipInfoList != NULL ? pCreate->pMipInfoList[0].TexelWidth : 0u,
+                pCreate->pMipInfoList != NULL ? pCreate->pMipInfoList[0].TexelHeight : 0u,
+                pCreate->MipLevels, pCreate->ArraySize, (UINT)pCreate->Format,
+                pCreate->SampleDesc.Count, pCreate->BindFlags, pCreate->MiscFlags,
+                (UINT)pCreate->Usage, pCreate->MapFlags,
+                (unsigned long long)totalSize, res->RowPitch,
+                pCreate->pInitialDataUP != NULL ? 1 : 0, (unsigned)failure);
             if (device->pUMCallbacks != NULL && device->pUMCallbacks->pfnSetErrorCb != NULL)
                 device->pUMCallbacks->pfnSetErrorCb(device->hRTCoreLayer,
                     FAILED(failure) ? failure : E_FAIL);
@@ -2884,6 +2907,62 @@ static void Bc250UmdReadbackDrawTarget(_Inout_ BC250_UMD_DEVICE *d, _In_opt_ BC2
     (void)Bc250UmdVkInspectLinearPresentBuf(&d->VkBridge, res->Width, res->Height);
 }
 
+/*
+ * DX.49: teto SUPERIOR dos bytes que um draw grava no anel -- todo CB ligado
+ * (VS e PS, mesmo que a pipeline nao use), todo VB das ligacoes de entrada e o
+ * IB, cada um arredondado ao alinhamento do anel. Decidido ANTES de gravar
+ * qualquer comando: drenar no meio de um draw deixaria meio draw no lote.
+ */
+/*
+ * DX.51 -- BISSECCAO: lote de draws DESLIGADO (Corridas 94..96 travaram).
+ * Corrida 97: travou com o lote desligado -- o lote nao era a causa do
+ * travamento, mas a 96 piscou com ele ligado.
+ *
+ * DX.54 -- RELIGADO, com o anel de 4 MB (antes 16 MB) e criado so' em device
+ * que ja fez BC250_DX54_RING_MIN_DIRECT_DRAWS draws pelo caminho direto. H da
+ * 96: o piscar era a ponte perdendo residencia (438 SpaceResolveAddress
+ * status=9) com 16 MB mapeados por device, inclusive nos ~36 devices/min do
+ * laco do Explorer, que fazem 1 draw cada e agora nunca criam anel.
+ *
+ * DX.55 -- DESLIGADO DE NOVO (bisseccao). Corrida 99: travamento duro em ~39 s
+ * com o lote ligado, pool persistente e inspecao amostrada; a 98R, com o lote
+ * desligado, rodou 5 min. Todas as corridas com lote ligado travaram (94, 95,
+ * 96, 99). Uma variavel contra a 99: o pool persistente (DescUs 14 ms -> 32 us,
+ * P0) e a inspecao amostrada ficam. Anel e limiar continuam no codigo.
+ */
+static const BOOL s_Bc250Dx51DrawBatchEnabled = FALSE;
+
+static VkDeviceSize Bc250UmdDrawRingBytesNeeded(
+    _In_ BC250_UMD_DEVICE *d,
+    _In_ const BC250_PSO_KEY *key,
+    BOOL Indexed)
+{
+    const VkDeviceSize align = BC250_DX49_DRAW_RING_ALIGN;
+    VkDeviceSize total = 0;
+    uint32_t i;
+
+    for (i = 0; i < BC250_DESCRIPTOR_CB_COUNT && i < D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT; ++i) {
+        BC250_UMD_RESOURCE *vs = (BC250_UMD_RESOURCE *)d->PipelineState.VsConstantBuffers[i].pDrvPrivate;
+        BC250_UMD_RESOURCE *ps = (BC250_UMD_RESOURCE *)d->PipelineState.PsConstantBuffers[i].pDrvPrivate;
+        if (vs != NULL && vs->pCpuShadow != NULL) total += (VkDeviceSize)vs->Width + align;
+        if (ps != NULL && ps->pCpuShadow != NULL) total += (VkDeviceSize)ps->Width + align;
+    }
+    for (i = 0; i < key->NumInputBindings; ++i) {
+        uint32_t slot = key->InputBindings[i].binding;
+        BC250_UMD_RESOURCE *vb;
+        if (slot >= D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT) continue;
+        vb = (BC250_UMD_RESOURCE *)d->PipelineState.VertexBuffers[slot].pDrvPrivate;
+        if (vb != NULL && vb->pCpuShadow != NULL && vb->TotalByteSize > 0u)
+            total += (VkDeviceSize)vb->TotalByteSize + align;
+    }
+    if (Indexed) {
+        BC250_UMD_RESOURCE *ib = (BC250_UMD_RESOURCE *)d->PipelineState.IndexBuffer.pDrvPrivate;
+        if (ib != NULL && ib->pCpuShadow != NULL && ib->TotalByteSize > 0u)
+            total += (VkDeviceSize)ib->TotalByteSize + align;
+    }
+    return total;
+}
+
 static BOOL Bc250UmdExecuteVkDraw(
     _Inout_ BC250_UMD_DEVICE* pDevice,
     UINT VertexCount,
@@ -2905,6 +2984,10 @@ static BOOL Bc250UmdExecuteVkDraw(
     BC250_UMD_RASTERIZER_STATE* rs = NULL;
     BC250_UMD_ELEMENT_LAYOUT* il = NULL;
     BOOL hasDescriptors = FALSE;
+    BOOL directRef = FALSE;
+    BOOL usedRing = FALSE;
+    BOOL flushNow = FALSE;
+    uint32_t batchPosition = 0u;
 
     if (pDevice != NULL) pDevice->LastVkDrawFailureReason = "VULKAN_BRIDGE_INATIVA";
     if (pDevice == NULL || !pDevice->VkBridgeInitialized || !pDevice->VkBridge.DeviceActive) {
@@ -3061,15 +3144,42 @@ static BOOL Bc250UmdExecuteVkDraw(
         }
     }
 
-    /* Complete earlier commands before uploads, descriptor replacement or PSO
-     * eviction. This conservative synchronous path prioritizes lifetime correctness. */
+    /*
+     * DX.49 -- O DRAW SO' GRAVA. Ate a Corrida 93 havia um flush com espera
+     * ANTES e outro DEPOIS de cada draw (425 flushes/min, ~100 ms de parede por
+     * draw). A vida util que aquele flush protegia agora tem dono explicito:
+     *  - VB/IB/CB vao para uma faixa propria do anel (Bc250UmdVkDrawRingPut);
+     *  - conjuntos de descritores so' sao liberados na fence do lote;
+     *  - quem destroi objeto (recurso, RTV, DSV, shader, pipeline despejada)
+     *    drena antes (Bc250UmdVkDrainPending);
+     *  - quem nao cabe no anel vai pelo caminho direto de antes, drenando
+     *    antes e com flush ao fim do draw.
+     * O render pass aberto por um clear e' fechado sem flush.
+     */
+    pDevice->DrawUsesRing = FALSE;
     if (pDevice->InRenderPass) {
         pDevice->VkBridge.vk.vkCmdEndRenderPass(pDevice->VkBridge.CommandBuffer);
         pDevice->InRenderPass = FALSE;
     }
-    if (Bc250UmdVkFlushCommands(&pDevice->VkBridge) != VK_SUCCESS) {
-        pDevice->LastVkDrawFailureReason = "FLUSH_ANTES_DO_DRAW_FALHOU";
-        return FALSE;
+    {
+        VkDeviceSize ringNeed = Bc250UmdDrawRingBytesNeeded(pDevice, &psoKey, Indexed);
+        /* DX.51: desligado, o anel nem e' criado. DX.54: e nem nasce em device
+         * de vida curta (menos de BC250_DX54_RING_MIN_DIRECT_DRAWS draws). */
+        BOOL ringAllowed = s_Bc250Dx51DrawBatchEnabled &&
+            pDevice->NativeVkDrawCount >= BC250_DX54_RING_MIN_DIRECT_DRAWS;
+        VkDeviceSize ringFree = ringAllowed ? Bc250UmdVkDrawRingFree(&pDevice->VkBridge) : 0;
+        if (ringAllowed &&
+            pDevice->VkBridge.DrawRingMapped != NULL && ringNeed <= pDevice->VkBridge.DrawRingSize) {
+            if (ringNeed > ringFree &&
+                Bc250UmdVkDrainPending(&pDevice->VkBridge, "anel de draws sem espaco") != VK_SUCCESS) {
+                pDevice->LastVkDrawFailureReason = "DRENO_DO_ANEL_FALHOU";
+                return FALSE;
+            }
+            pDevice->DrawUsesRing = TRUE;
+        } else if (Bc250UmdVkDrainPending(&pDevice->VkBridge, "draw pelo caminho direto") != VK_SUCCESS) {
+            pDevice->LastVkDrawFailureReason = "FLUSH_ANTES_DO_DRAW_FALHOU";
+            return FALSE;
+        }
     }
     if (!Bc250UmdPipelineCacheGetOrCreate(&pDevice->PipelineCache, &psoKey, &pipeline, &layout)) {
         pDevice->LastVkDrawFailureReason = "PIPELINE_NAO_OBTIDA_OU_COMPILADA";
@@ -3166,12 +3276,26 @@ static BOOL Bc250UmdExecuteVkDraw(
             pDevice->PipelineState.VertexBuffers[slot].pDrvPrivate != NULL) {
             BC250_UMD_RESOURCE* vb = (BC250_UMD_RESOURCE*)pDevice->PipelineState.VertexBuffers[slot].pDrvPrivate;
             if (vb != NULL && vb->VkBuf != VK_NULL_HANDLE) {
+                VkBuffer bindBuf = vb->VkBuf;
+                VkDeviceSize offset = pDevice->PipelineState.VertexOffsets[slot];
                 if (vb->pCpuShadow != NULL && vb->TotalByteSize > 0u && vb->VkMem != VK_NULL_HANDLE) {
                     UINT uploadBytes = (vb->Width > 0 && vb->Width < vb->TotalByteSize) ? vb->Width : vb->TotalByteSize;
-                    if (!Bc250UmdVkUploadBufferData(pDevice, vb, vb->pCpuShadow, uploadBytes)) return FALSE;
+                    if (pDevice->DrawUsesRing) {
+                        VkDeviceSize ringOff = 0;
+                        if (!Bc250UmdVkDrawRingPut(&pDevice->VkBridge, vb->pCpuShadow, uploadBytes, &bindBuf, &ringOff)) {
+                            pDevice->LastVkDrawFailureReason = "VB_ANEL_SEM_ESPACO";
+                            return FALSE;
+                        }
+                        offset += ringOff;
+                    } else if (!Bc250UmdVkUploadBufferData(pDevice, vb, vb->pCpuShadow, uploadBytes)) {
+                        return FALSE;
+                    }
+                } else {
+                    /* Sem sombra: o draw le a memoria do proprio recurso, que um
+                     * Unmap posterior reescreve. Nao pode ficar pendente. */
+                    directRef = TRUE;
                 }
-                VkDeviceSize offset = pDevice->PipelineState.VertexOffsets[slot];
-                pDevice->VkBridge.vk.vkCmdBindVertexBuffers(cmd, slot, 1, &vb->VkBuf, &offset);
+                pDevice->VkBridge.vk.vkCmdBindVertexBuffers(cmd, slot, 1, &bindBuf, &offset);
             }
         }
         /* DX.24: slot sem buffer ja foi recusado antes do flush; nada e' substituido aqui. */
@@ -3181,12 +3305,25 @@ static BOOL Bc250UmdExecuteVkDraw(
         if (pDevice->PipelineState.IndexBuffer.pDrvPrivate != NULL) {
             BC250_UMD_RESOURCE* ib = (BC250_UMD_RESOURCE*)pDevice->PipelineState.IndexBuffer.pDrvPrivate;
             if (ib != NULL && ib->VkBuf != VK_NULL_HANDLE) {
+                VkBuffer ibBuf = ib->VkBuf;
+                VkDeviceSize ibOffset = pDevice->PipelineState.IndexOffset;
                 if (ib->pCpuShadow != NULL && ib->TotalByteSize > 0u && ib->VkMem != VK_NULL_HANDLE) {
                     UINT uploadBytes = (ib->Width > 0 && ib->Width < ib->TotalByteSize) ? ib->Width : ib->TotalByteSize;
-                    if (!Bc250UmdVkUploadBufferData(pDevice, ib, ib->pCpuShadow, uploadBytes)) return FALSE;
+                    if (pDevice->DrawUsesRing) {
+                        VkDeviceSize ringOff = 0;
+                        if (!Bc250UmdVkDrawRingPut(&pDevice->VkBridge, ib->pCpuShadow, uploadBytes, &ibBuf, &ringOff)) {
+                            pDevice->LastVkDrawFailureReason = "IB_ANEL_SEM_ESPACO";
+                            return FALSE;
+                        }
+                        ibOffset += ringOff;
+                    } else if (!Bc250UmdVkUploadBufferData(pDevice, ib, ib->pCpuShadow, uploadBytes)) {
+                        return FALSE;
+                    }
+                } else {
+                    directRef = TRUE;
                 }
                 VkIndexType idxType = (pDevice->PipelineState.IndexFormat == DXGI_FORMAT_R16_UINT) ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
-                pDevice->VkBridge.vk.vkCmdBindIndexBuffer(cmd, ib->VkBuf, pDevice->PipelineState.IndexOffset, idxType);
+                pDevice->VkBridge.vk.vkCmdBindIndexBuffer(cmd, ibBuf, ibOffset, idxType);
             }
         }
         pDevice->VkBridge.vk.vkCmdDrawIndexed(
@@ -3202,16 +3339,27 @@ static BOOL Bc250UmdExecuteVkDraw(
     pDevice->InRenderPass = FALSE;
     if (rtv->pResource) rtv->pResource->VkLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     if (hasDescriptors) Bc250UmdRestoreDescriptorImages(&pDevice->VkBridge, cmd);
-    if (Bc250UmdVkFlushCommands(&pDevice->VkBridge) != VK_SUCCESS) {
-        pDevice->LastVkDrawFailureReason = "FLUSH_FENCE_DO_DRAW_FALHOU";
-        return FALSE;
+    pDevice->VkBridge.PendingDraws++;
+    batchPosition = pDevice->VkBridge.PendingDraws;
+    usedRing = pDevice->DrawUsesRing;
+    pDevice->DrawUsesRing = FALSE;
+    flushNow = (!usedRing || directRef || batchPosition >= BC250_DX49_BATCH_MAX_DRAWS);
+    if (flushNow) {
+        if (Bc250UmdVkFlushCommands(&pDevice->VkBridge) != VK_SUCCESS) {
+            pDevice->LastVkDrawFailureReason = "FLUSH_FENCE_DO_DRAW_FALHOU";
+            return FALSE;
+        }
     }
     pDevice->LastVkDrawFailureReason = NULL;
     pDevice->NativeVkDrawCount++;
     pDevice->PipelineState.DrawCount++;
-    /* DX.23: nomeia o alvo do draw, para cruzar com hSurfaceToPresent (Corrida 68). */
-    Bc250UmdTrace("Bc250UmdExecuteVkDraw: DRAW fence concluida; pixels NAO CONFERIDOS (VkDraws=%llu, Total=%llu, Verts=%u, Inst=%u, Indexed=%d) RT0=%p %ux%u img=%p",
+    /* DX.23: nomeia o alvo do draw, para cruzar com hSurfaceToPresent (Corrida 68).
+     * DX.49: o draw foi GRAVADO; so' ha fence concluida quando FlushAgora=1 ou
+     * no proximo flush do lote ([DX49_BATCH] no FlushCommands). */
+    Bc250UmdTrace("Bc250UmdExecuteVkDraw: DRAW GRAVADO NO LOTE; pixels NAO CONFERIDOS (VkDraws=%llu, Total=%llu, Verts=%u, Inst=%u, Indexed=%d) "
+        "[DX49_BATCH] Lote=%u Anel=%d Direto=%d FlushAgora=%d RT0=%p %ux%u img=%p",
         pDevice->NativeVkDrawCount, pDevice->PipelineState.DrawCount, VertexCount, InstanceCount, (int)Indexed,
+        batchPosition, (int)usedRing, (int)directRef, (int)flushNow,
         (void*)rtv->pResource, rtv->pResource ? rtv->pResource->Width : 0u,
         rtv->pResource ? rtv->pResource->Height : 0u,
         rtv->pResource ? (void*)rtv->pResource->VkImg : NULL);
@@ -4747,6 +4895,12 @@ static HRESULT Bc250UmdBridgeLinearToWddm(
         Bc250UmdTrace("BRIDGE VULKAN->WDDM RECUSADO: contrato de escape ausente");
         return E_NOTIMPL;
     }
+    /* DX.49: o KMD le a origem fora da fila Vulkan; nada do lote pode faltar. */
+    if (d->VkBridgeInitialized &&
+        Bc250UmdVkDrainPending(&d->VkBridge, "ponte Vulkan->WDDM") != VK_SUCCESS) {
+        Bc250UmdTrace("BRIDGE VULKAN->WDDM RECUSADO: dreno do lote Vulkan falhou");
+        return E_FAIL;
+    }
 
     pitch = dstRes->RowPitch ? dstRes->RowPitch : (dstRes->Width * 4);
 
@@ -4961,8 +5115,21 @@ static BOOL Bc250UmdPresentVulkanDetileAndScanout(
                 device->VkBridge.vk.vkDeviceWaitIdle(device->VkBridge.Device);
             }
 
-            /* 5. Inspecao de telemetria dos primeiros pixels e centro do buffer linear */
-            uint32_t nonZeroSamples = Bc250UmdVkInspectLinearPresentBuf(&device->VkBridge, srcRes->Width, srcRes->Height);
+            /*
+             * 5. Inspecao de telemetria dos primeiros pixels e centro do buffer linear.
+             * DX.54: a grade le a VRAM pela CPU e custava ~29 ms por Present (449
+             * inspecoes na 98R). Amostrada: 16 primeiros Presents do device e 1 em
+             * 64 depois. Fora da amostra o log diz NAO_AMOSTRADO, nunca um valor.
+             */
+            uint32_t nonZeroSamples = 0u;
+            uint32_t presentIndex = ++device->PresentInspectCount;
+            BOOL inspectThis = !s_Bc250Dx54SampledPresentInspection ||
+                presentIndex <= 16u || (presentIndex % 64u) == 0u;
+            if (inspectThis) {
+                nonZeroSamples = Bc250UmdVkInspectLinearPresentBuf(&device->VkBridge, srcRes->Width, srcRes->Height);
+            } else if (presentIndex == 17u) {
+                Bc250UmdTrace("[DX54_INSPECAO] grade do buffer linear passa a ser amostrada: 1 Present em 64 (NonZeroGrade=NAO_AMOSTRADO nos demais)");
+            }
 
             /* 6. Ponte Vulkan -> WDDM: copia imagem linear para a alocacao WDDM oficial (srcRes->Allocation) */
             uint64_t linearGpuVa = 0;
@@ -4985,8 +5152,12 @@ static BOOL Bc250UmdPresentVulkanDetileAndScanout(
                 VkResult vkPresRes = device->VkBridge.pfnPresentScanout(
                     device->VkBridge.Device, device->VkBridge.GraphicsQueue,
                     device->VkBridge.LinearPresentMem, srcRes->Width, srcRes->Height);
-                Bc250UmdTrace("DXGI Present: radv_bc250_present_scanout (DIRECT SCANOUT) res=%d (%ux%u, NonZeroGrade=%u)",
-                    vkPresRes, srcRes->Width, srcRes->Height, nonZeroSamples);
+                if (inspectThis)
+                    Bc250UmdTrace("DXGI Present: radv_bc250_present_scanout (DIRECT SCANOUT) res=%d (%ux%u, NonZeroGrade=%u)",
+                        vkPresRes, srcRes->Width, srcRes->Height, nonZeroSamples);
+                else
+                    Bc250UmdTrace("DXGI Present: radv_bc250_present_scanout (DIRECT SCANOUT) res=%d (%ux%u, NonZeroGrade=NAO_AMOSTRADO)",
+                        vkPresRes, srcRes->Width, srcRes->Height);
             }
             return TRUE;
         } else {

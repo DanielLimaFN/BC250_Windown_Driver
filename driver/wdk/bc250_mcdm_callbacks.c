@@ -1048,6 +1048,14 @@ VOID Bc250McdmInstallEscapeHandler(
     g_Bc250EscapeHandler = EscapeHandler;
 }
 
+static BC250_MCDM_PREEMPT_HANDLER g_Bc250PreemptHandler;
+
+VOID Bc250McdmInstallPreemptHandler(
+    _In_opt_ BC250_MCDM_PREEMPT_HANDLER PreemptHandler)
+{
+    g_Bc250PreemptHandler = PreemptHandler;
+}
+
 #if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_2)
 static NTSTATUS Bc250McdmBuildSignalMonitoredFence(
     _Inout_ DXGKARG_BUILDPAGINGBUFFER *Args)
@@ -1307,6 +1315,8 @@ NTSTATUS APIENTRY Bc250McdmCreateContext(
         Bc250DisplayLog("[McdmCreateContext] System Paging Context: DmaBuf=0x%X, SegSet=0x%X\n",
             pCreateContext->ContextInfo.DmaBufferSize,
             pCreateContext->ContextInfo.DmaBufferSegmentSet);
+        Bc250DisplayLog("BC250_DIAG schema=1 level=INFO event=KMD_CONTEXT_CREATE ctx=%p device=%p node=%u paging=1 status=0x00000000\n",
+            pCreateContext->hContext, hDevice, pCreateContext->NodeOrdinal);
         return STATUS_SUCCESS;
     }
     status = g_Bc250CreateContextObject(hDevice,
@@ -1315,12 +1325,18 @@ NTSTATUS APIENTRY Bc250McdmCreateContext(
     if (!NT_SUCCESS(status)) {
         Bc250DisplayLog("[McdmCreateContext] RECUSADO: provedor devolveu status=0x%08X (Node=%u)\n",
             (uint32_t)status, pCreateContext->NodeOrdinal);
+        Bc250DisplayLog("BC250_DIAG schema=1 level=ERROR event=KMD_CONTEXT_CREATE ctx=0x0 device=%p node=%u paging=0 status=0x%08X\n",
+            hDevice, pCreateContext->NodeOrdinal, (uint32_t)status);
         return status;
     }
     pCreateContext->hContext = contextHandle;
     Bc250DisplayLog("[McdmCreateContext] OK: Node=%u, hContext=0x%p, DmaBuf=0x%X, SegSet=0x%X\n",
         pCreateContext->NodeOrdinal, contextHandle,
         pCreateContext->ContextInfo.DmaBufferSize,
+        pCreateContext->ContextInfo.DmaBufferSegmentSet);
+    Bc250DisplayLog("BC250_DIAG schema=1 level=INFO event=KMD_CONTEXT_CREATE ctx=%p device=%p node=%u paging=0 status=0x%08X dma_bytes=%u segment_set=0x%X\n",
+        contextHandle, hDevice, pCreateContext->NodeOrdinal,
+        (uint32_t)status, pCreateContext->ContextInfo.DmaBufferSize,
         pCreateContext->ContextInfo.DmaBufferSegmentSet);
     return STATUS_SUCCESS;
 }
@@ -1551,10 +1567,21 @@ NTSTATUS APIENTRY Bc250McdmDestroyAllocation(
 
 NTSTATUS APIENTRY Bc250McdmDestroyContext(CONST HANDLE hContext)
 {
+    NTSTATUS status;
     if (hContext == NULL) return STATUS_INVALID_PARAMETER;
-    if (hContext == (HANDLE)1 || hContext == (HANDLE)2) return STATUS_SUCCESS;
-    if (g_Bc250DestroyContextObject == NULL) return STATUS_NOT_SUPPORTED;
-    return g_Bc250DestroyContextObject(hContext);
+    if (hContext == (HANDLE)1 || hContext == (HANDLE)2) {
+        Bc250DisplayLog("BC250_DIAG schema=1 level=INFO event=KMD_CONTEXT_DESTROY ctx=%p paging=1 status=0x00000000\n", hContext);
+        return STATUS_SUCCESS;
+    }
+    if (g_Bc250DestroyContextObject == NULL) {
+        Bc250DisplayLog("BC250_DIAG schema=1 level=ERROR event=KMD_CONTEXT_DESTROY ctx=%p paging=0 status=0x%08X\n",
+            hContext, (uint32_t)STATUS_NOT_SUPPORTED);
+        return STATUS_NOT_SUPPORTED;
+    }
+    status = g_Bc250DestroyContextObject(hContext);
+    Bc250DisplayLog("BC250_DIAG schema=1 level=%s event=KMD_CONTEXT_DESTROY ctx=%p paging=0 status=0x%08X\n",
+        NT_SUCCESS(status) ? "INFO" : "ERROR", hContext, (uint32_t)status);
+    return status;
 }
 
 NTSTATUS APIENTRY Bc250McdmDestroyDevice(CONST HANDLE hDevice)
@@ -1870,24 +1897,72 @@ NTSTATUS APIENTRY Bc250McdmOpenAllocation(
     return g_Bc250OpenAllocationObjects(hDevice, pOpenAllocation);
 }
 
+/*
+ * DX.44 -- a DDI de preempcao passa a FALAR (Corrida 87, so' medicao).
+ *
+ * Corrida 86: um TDR com a GPU inteira ociosa (GFX 188/188 aposentadas, fence
+ * escrita, RPTR==WPTR, zero ondas, SDMA ocioso, Committed=0). Esta DDI devolve
+ * STATUS_SUCCESS sem fazer nada, e o driver NUNCA reporta
+ * DXGK_INTERRUPT_DMA_PREEMPTED (grep no driver inteiro), com PreemptionAware=1
+ * declarado. H: o VidSch pede preempcao, nunca recebe a conclusao e declara TDR.
+ * Ate aqui a DDI era muda e o probe some com o rollback, entao a corrida nao
+ * podia dizer se ela foi chamada. Retornos INALTERADOS; toda saida registra.
+ * Teto por contador proprio: 256 primeiras + 1 em 64, com o numero de ordem em
+ * toda linha para a contagem total ser inferivel.
+ */
+static volatile LONG s_Bc250PreemptCalls;
+
+static BOOLEAN Bc250PreemptShouldLog(LONG Seq)
+{
+    return (Seq <= 256 || (Seq % 64) == 0) ? TRUE : FALSE;
+}
+
 NTSTATUS APIENTRY Bc250McdmPreemptCommand(
     CONST HANDLE hAdapter,
     CONST DXGKARG_PREEMPTCOMMAND *pPreemptCommand)
 {
     Bc250ProbeMarkDdi(BC250_V5_DDI_PREEMPT_COMMAND);
     BC250_MCDM_RUNTIME_CAPS caps;
+    const LONG seq = InterlockedIncrement(&s_Bc250PreemptCalls);
+    const BOOLEAN logIt = Bc250PreemptShouldLog(seq);
+    NTSTATUS capsStatus;
 
     if (pPreemptCommand == NULL ||
         pPreemptCommand->NodeOrdinal >= BC250_ADAPTER_NODE_COUNT) {
+        Bc250DisplayLog("[PREEMPT_COMMAND] #%ld RECUSADO: pPreempt=%p Node=%u -> STATUS_INVALID_PARAMETER\n",
+            seq, (const void *)pPreemptCommand,
+            pPreemptCommand != NULL ? pPreemptCommand->NodeOrdinal : 0xFFFFFFFFu);
         return STATUS_INVALID_PARAMETER;
     }
 
-    if (g_Bc250QueryRuntimeCaps == NULL ||
-        !NT_SUCCESS(g_Bc250QueryRuntimeCaps((HANDLE)hAdapter, &caps)) ||
+    RtlZeroMemory(&caps, sizeof(caps));
+    capsStatus = (g_Bc250QueryRuntimeCaps != NULL) ?
+        g_Bc250QueryRuntimeCaps((HANDLE)hAdapter, &caps) : STATUS_NOT_SUPPORTED;
+    if (!NT_SUCCESS(capsStatus) ||
         caps.FullMcdmReady == 0u || caps.PreemptionReady == 0u) {
+        Bc250DisplayLog("[PREEMPT_COMMAND] #%ld RECUSADO: PreemptionFenceId=%u Node=%u Engine=%u Flags=0x%08X caps=0x%08X Full=%u PreemptReady=%u -> STATUS_NOT_SUPPORTED\n",
+            seq, pPreemptCommand->PreemptionFenceId, pPreemptCommand->NodeOrdinal,
+            pPreemptCommand->EngineOrdinal, pPreemptCommand->Flags.Value,
+            (uint32_t)capsStatus, caps.FullMcdmReady, caps.PreemptionReady);
         return STATUS_NOT_SUPPORTED;
     }
 
+    /* DX.47: com backend instalado, o pedido e' registrado e a conclusao
+     * (DMA_PREEMPTED) sai do retirement quando o no drenar. */
+    if (g_Bc250PreemptHandler != NULL) {
+        const NTSTATUS handlerStatus = g_Bc250PreemptHandler((HANDLE)hAdapter, pPreemptCommand);
+        Bc250DisplayLog("[PREEMPT_COMMAND] #%ld PreemptionFenceId=%u Node=%u Engine=%u Flags=0x%08X -> 0x%08X REGISTRADO: DMA_PREEMPTED sai do retirement quando o no drenar\n",
+            seq, pPreemptCommand->PreemptionFenceId, pPreemptCommand->NodeOrdinal,
+            pPreemptCommand->EngineOrdinal, pPreemptCommand->Flags.Value,
+            (uint32_t)handlerStatus);
+        return handlerStatus;
+    }
+
+    if (logIt) {
+        Bc250DisplayLog("[PREEMPT_COMMAND] #%ld PreemptionFenceId=%u Node=%u Engine=%u Flags=0x%08X -> STATUS_SUCCESS SEM BACKEND: nenhuma preempcao feita e DMA_PREEMPTED NAO sera reportado\n",
+            seq, pPreemptCommand->PreemptionFenceId, pPreemptCommand->NodeOrdinal,
+            pPreemptCommand->EngineOrdinal, pPreemptCommand->Flags.Value);
+    }
     return STATUS_SUCCESS;
 }
 
@@ -1959,8 +2034,11 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         STATUS_DEVICE_NOT_READY;
 
     Bc250ProbeRecord(BC250_PROBE_DMM_QUERY_ADAPTER_TYPE, (ULONG)pQueryAdapterInfo->Type);
-    Bc250DisplayLog("[McdmQAI] Type=%u, OutSize=%u, CapsStatus=0x%08X\n",
-        (UINT)pQueryAdapterInfo->Type, pQueryAdapterInfo->OutputDataSize, capsStatus);
+    /* DX.48: qual contexto foi consultado. Corridas 88/92 travaram logo apos um
+     * Type=29 servido por contexto NAO iniciado no meio da corrida. */
+    Bc250DisplayLog("[McdmQAI] Type=%u, OutSize=%u, CapsStatus=0x%08X hAdapter=%p\n",
+        (UINT)pQueryAdapterInfo->Type, pQueryAdapterInfo->OutputDataSize, capsStatus,
+        (void *)hAdapter);
 
     switch (pQueryAdapterInfo->Type) {
     /*

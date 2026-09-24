@@ -1334,11 +1334,45 @@ static void Bc250ActiveGfxLogRefusalMeasurement(
         Context->GfxEngine.SubmitRejected);
 }
 
+/*
+ * DX.43 -- IB DE AQUECIMENTO NA TROCA DE VMID (Corrida 86, uma variavel).
+ *
+ * Corrida 85, P0 em 4 de 4 TDRs: o PC das ondas presas e' programado pelo IB
+ * que estava em CP_IB1 (fences 29, 50, 62, 78: COMPUTE_PGM_LO no dump), e as
+ * ondas carregam o VMID do IB ANTERIOR. Os anteriores com dump (28, 61) nem tem
+ * COMPUTE_PGM. O dispatch do IB novo nasce com o VMID atrasado em um IB.
+ * H: o VMID que o pipe grafico aplica ao dispatch so' e' atualizado numa
+ * fronteira de INDIRECT_BUFFER. Teste: depois da transicao, um IB de 3 DW, sob
+ * o VMID NOVO, apontando para o primeiro pacote do proprio IB -- um
+ * CONTEXT_CONTROL completo (PKT3 0x28, nvd.h:94) que o RADV ja executa no
+ * inicio de todo IB. So' e' emitido se o KMD LEU esse cabecalho; senao, pula
+ * e diz por que. O IB real segue identico.
+ */
+#define BC250_GFX_DX43_WARMUP_HEAD   0xC0012800u
+#define BC250_GFX_DX43_WARMUP_DWORDS 3u
+
+/* DX.47: pedidos de preempcao pendentes por no (0 = copia/SDMA, 1 = 3D). */
+static volatile LONG s_Bc250PreemptPending[2];
+static volatile LONG s_Bc250PreemptFenceId[2];
+static volatile LONG s_Bc250PreemptEngine[2];
+static volatile LONG s_Bc250PreemptCompletedTotal;
+static volatile LONG s_Bc250PreemptDeferredLogs;
+
+static void Bc250ActiveGfxDx45Check(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    const char *Onde,
+    uint32_t RptrNow,
+    BOOLEAN RptrValid,
+    uint32_t Wptr,
+    uint32_t ObservedFence);
+
 static NTSTATUS Bc250ActiveGfxEngineSubmit(
     BC250_DXGK_ACTIVE_CONTEXT *Context,
     uint64_t IbGpuVirtualAddress,
     uint32_t IbSizeDwords,
     uint32_t Vmid,
+    uint32_t IbHeadDw0,
+    BOOLEAN IbHeadValid,
     uint64_t *AssignedFence)
 {
     KIRQL irql;
@@ -1358,9 +1392,17 @@ static NTSTATUS Bc250ActiveGfxEngineSubmit(
     BC250_GFXHUB_TLB_FLUSH_PLAN flushPlan = {0};
     BC250_PM4_GFX_VM_SWITCH vmSwitch;
     uint32_t switchStartCursor = 0u;
+    uint32_t ibStartCursor = 0u;
+    uint32_t ibPacketHeader = 0u, ibPacketControl = 0u;
     uint32_t switchPm4[BC250_PM4_GFX_VM_SWITCH_DWORDS + BC250_PM4_DWORDS_INDIRECT_BUFFER];
     uint32_t switchWord;
     BOOLEAN dumpFirstSwitch = FALSE;
+    uint32_t waveBefore = 0u, waveAfter = 0u;
+    uint32_t waveBeforeOk = 0u, waveAfterOk = 0u;
+    uint32_t fenceBefore = 0u, fenceAfter = 0u;
+    BOOLEAN waveBoundaryEnabled = FALSE;
+    BOOLEAN warmupIb = FALSE;
+    const char *warmupMotivo = "SEM_TROCA";
 
     if (Context == NULL || AssignedFence == NULL || IbGpuVirtualAddress == 0ull || IbSizeDwords == 0u) {
         return STATUS_INVALID_PARAMETER;
@@ -1379,8 +1421,29 @@ static NTSTATUS Bc250ActiveGfxEngineSubmit(
     prevVmid = Context->GfxEngine.LastSubmitVmid;
     vmidSwitch = (prevVmid != 0xFFFFFFFFu && prevVmid != Vmid &&
         Context->GfxEngine.LastSubmittedFence != 0ull);
-    /* 31 dwords da transicao + IB(4) + RELEASE(8) + ate 3 de padding. */
-    neededDwords = vmidSwitch ? (BC250_PM4_GFX_VM_SWITCH_DWORDS + 15u) : 15u;
+    waveBoundaryEnabled = vmidSwitch && Context->GfxWaveProbePresent == 1u &&
+        Context->GfxWaveProbe == 1u;
+    if (waveBoundaryEnabled) {
+        waveBeforeOk = Bc250MmioTopologyRead32(&Context->Core.MmioTransport,
+            BC250_GFX_REG_SQ_DEBUG_STS_GLOBAL, &waveBefore);
+        if (Context->GfxEngine.FenceCpuVirtual != NULL)
+            fenceBefore = *Context->GfxEngine.FenceCpuVirtual;
+    }
+    if (vmidSwitch) {
+        if (!IbHeadValid) {
+            warmupMotivo = "CABECA_ILEGIVEL";
+        } else if (IbHeadDw0 != BC250_GFX_DX43_WARMUP_HEAD) {
+            warmupMotivo = "CABECA_NAO_E_CONTEXT_CONTROL";
+        } else if (IbSizeDwords <= BC250_GFX_DX43_WARMUP_DWORDS) {
+            warmupMotivo = "IB_CURTO";
+        } else {
+            warmupIb = TRUE;
+            warmupMotivo = "EMITIDO";
+        }
+    }
+    /* 34 dwords da transicao + [IB de aquecimento(4)] + IB(4) + RELEASE(8) + ate 3 de padding. */
+    neededDwords = (vmidSwitch ? (BC250_PM4_GFX_VM_SWITCH_DWORDS + 15u) : 15u) +
+        (warmupIb ? BC250_PM4_DWORDS_INDIRECT_BUFFER : 0u);
 
     if (vmidSwitch) {
         targetRoot = Bc250VmidPoolInstalledRootForVmid(&Context->VmidPool, Vmid);
@@ -1430,8 +1493,8 @@ static NTSTATUS Bc250ActiveGfxEngineSubmit(
     nextFence = Context->GfxEngine.LastSubmittedFence + 1ull;
     cursor = currentWptr;
 
-    /* DX.30: fence anterior -> PT_BASE do alvo -> invalidate ENG17/ACK ->
-     * PFP_SYNC_ME -> IB. A instalacao MMIO anterior permanece preflight. */
+    /* DX.37: fence anterior -> PT_BASE do alvo -> invalidate ENG0/ACK ->
+     * PFP_SYNC_ME -> CONTEXT_CONTROL -> IB. MMIO anterior permanece preflight. */
     if (vmidSwitch) {
         waitFence = (uint32_t)Context->GfxEngine.LastSubmittedFence;
         vmSwitch.FenceGpuVa = Context->GfxEngine.FenceGpuVa;
@@ -1456,7 +1519,26 @@ static NTSTATUS Bc250ActiveGfxEngineSubmit(
         }
     }
 
+    /* 0. DX.43: IB de aquecimento sob o VMID novo, antes do IB real. */
+    if (warmupIb) {
+        pm4Status = Bc250Pm4EmitIndirectBuffer(
+            Context->GfxEngine.RingCpuVirtual,
+            ringDwords,
+            &cursor,
+            IbGpuVirtualAddress,
+            BC250_GFX_DX43_WARMUP_DWORDS,
+            Vmid);
+        if (pm4Status != BC250_PM4_OK) {
+            ++Context->GfxEngine.SubmitRejected;
+            KeReleaseSpinLock(&Context->GfxEngine.Lock, irql);
+            Bc250DisplayLog("[GfxEngine] SUBMIT RECUSA: DX43 IB de aquecimento nao emitido (pm4=%u); IB nao parte\n",
+                (uint32_t)pm4Status);
+            return STATUS_UNSUCCESSFUL;
+        }
+    }
+
     /* 1. Emite PACKET3_INDIRECT_BUFFER com VMID e bit de validade */
+    ibStartCursor = cursor;
     pm4Status = Bc250Pm4EmitIndirectBuffer(
         Context->GfxEngine.RingCpuVirtual,
         ringDwords,
@@ -1488,6 +1570,10 @@ static NTSTATUS Bc250ActiveGfxEngineSubmit(
     while ((cursor & 3u) != 0u) {
         Context->GfxEngine.RingCpuVirtual[cursor & (ringDwords - 1u)] = BC250_PM4_PACKET2_NOP;
         cursor++;
+    }
+    if (Context->GfxWaveProbePresent == 1u && Context->GfxWaveProbe == 1u) {
+        ibPacketHeader = Context->GfxEngine.RingCpuVirtual[ibStartCursor & (ringDwords - 1u)];
+        ibPacketControl = Context->GfxEngine.RingCpuVirtual[(ibStartCursor + 3u) & (ringDwords - 1u)];
     }
 
     /* 4. Atualiza shadow de WPTR em memoria */
@@ -1683,6 +1769,13 @@ static NTSTATUS Bc250ActiveGfxEngineSubmit(
         }
     }
 
+    if (waveBoundaryEnabled) {
+        waveAfterOk = Bc250MmioTopologyRead32(&Context->Core.MmioTransport,
+            BC250_GFX_REG_SQ_DEBUG_STS_GLOBAL, &waveAfter);
+        if (Context->GfxEngine.FenceCpuVirtual != NULL)
+            fenceAfter = *Context->GfxEngine.FenceCpuVirtual;
+    }
+
     Context->GfxEngine.WptrDwords = cursor;
     Context->GfxEngine.LastSubmittedFence = nextFence;
     Context->GfxEngine.LastSubmitSizeDwords = IbSizeDwords;
@@ -1747,11 +1840,37 @@ static NTSTATUS Bc250ActiveGfxEngineSubmit(
     Bc250DisplayLog("[GfxEngine] SUBMIT SUCESSO: Fence=%llu NewWptr=%u DmaVA=0x%llX SizeDW=%u VMID=%u\n",
         (unsigned long long)nextFence, cursor,
         (unsigned long long)IbGpuVirtualAddress, IbSizeDwords, Vmid);
+    /* DX.45: CP parado ja no instante do submit (Corrida 87: fence 315). */
+    Bc250ActiveGfxDx45Check(Context, "SUBMIT", rptr, TRUE, cursor,
+        (Context->GfxEngine.FenceCpuVirtual != NULL) ? *Context->GfxEngine.FenceCpuVirtual : 0u);
+    if (Context->GfxWaveProbePresent == 1u && Context->GfxWaveProbe == 1u)
+        Bc250DisplayLog("BC250_DIAG schema=1 level=INFO event=KMD_GFX_SWITCH ring_fence=%llu prev_vmid=%u vmid=%u switch=%u trigger=VMID_CHANGE wait_fence=%u root=0x%llX pm4_dw=%u context_control=%u ib_header=0x%08X ib_control=0x%08X ib_valid=%u ib_inherit_vmid=%u ib_vmid=%u new_wptr=%u\n",
+            (unsigned long long)nextFence, prevVmid, Vmid, vmidSwitch ? 1u : 0u,
+            vmidSwitch ? waitFence : 0u, (unsigned long long)targetRoot,
+            vmidSwitch ? BC250_PM4_GFX_VM_SWITCH_DWORDS : 0u,
+            vmidSwitch ? 1u : 0u, ibPacketHeader, ibPacketControl,
+            (ibPacketControl >> 23u) & 1u, (ibPacketControl >> 22u) & 1u,
+            (ibPacketControl >> 24u) & 0xFu, cursor);
     if (vmidSwitch) {
-        Bc250DisplayLog("[GfxEngine] VMID_SWITCH_VM_FLUSH #%u: VMID %u -> %u Root=0x%llX Eng=%u REQ=0x%08X ACK_MASK=0x%08X Fence=%llu WaitFence=%u PM4DW=%u\n",
+        /* DX.43: toda troca diz se o aquecimento saiu e, se nao, por que. Nao
+         * depende do GfxWaveProbe: e' a variavel da corrida. */
+        Bc250DisplayLog("[GfxEngine] DX43_VMID_WARMUP_IB: Fence=%llu VMID %u->%u Emitido=%u Motivo=%s Head=0x%08X[lido=%u] VA=0x%llX WarmupDW=%u IbDW=%u\n",
+            (unsigned long long)nextFence, prevVmid, Vmid, warmupIb ? 1u : 0u,
+            warmupMotivo, IbHeadDw0, IbHeadValid ? 1u : 0u,
+            (unsigned long long)IbGpuVirtualAddress,
+            warmupIb ? BC250_GFX_DX43_WARMUP_DWORDS : 0u, IbSizeDwords);
+        if (waveBoundaryEnabled) {
+            Bc250DisplayLog("[GFX_WAVE_BOUNDARY] Fence=%llu VMID=%u->%u WaitFence=%u SQ_before=0x%08X[lido=%u] SQ_after=0x%08X[lido=%u] Fence_before=%u Fence_after=%u FenceMap=%u -- snapshots CPU antes/depois da publicacao WPTR, NAO sao barreira nem identificam VMID da onda\n",
+                (unsigned long long)nextFence, prevVmid, Vmid, waitFence,
+                waveBefore, waveBeforeOk, waveAfter, waveAfterOk,
+                fenceBefore, fenceAfter,
+                Context->GfxEngine.FenceCpuVirtual != NULL ? 1u : 0u);
+        }
+        Bc250DisplayLog("[GfxEngine] VMID_SWITCH_VM_FLUSH #%u: VMID %u -> %u Root=0x%llX Eng=%u REQ=0x%08X ACK_MASK=0x%08X Fence=%llu WaitFence=%u PM4DW=%u DX37_CONTEXT_CONTROL=0x%08X\n",
             Context->GfxEngine.VmidSwitchSyncs, prevVmid, Vmid,
             (unsigned long long)targetRoot, flushPlan.EngineId, flushPlan.RequestValue, flushPlan.AckMask,
-            (unsigned long long)nextFence, waitFence, BC250_PM4_GFX_VM_SWITCH_DWORDS);
+            (unsigned long long)nextFence, waitFence, BC250_PM4_GFX_VM_SWITCH_DWORDS,
+            BC250_PM4_GFX_CONTEXT_SWITCH_LOAD);
         if (dumpFirstSwitch) {
             for (switchWord = 0u;
                  switchWord < BC250_PM4_GFX_VM_SWITCH_DWORDS + BC250_PM4_DWORDS_INDIRECT_BUFFER;
@@ -1812,6 +1931,144 @@ static NTSTATUS Bc250ActiveGfxEngineSubmit(
     }
 
     return STATUS_SUCCESS;
+}
+
+/*
+ * DX.45 -- DETECTOR DE RESET SILENCIOSO DO CP (Corrida 88, so' leitura).
+ *
+ * Corrida 87, P0: entre os submits das fences 314 e 315 o RPTR do CP_RB0 caiu
+ * de 8188 para 5 e o snapshot do TDR leu CP_ME_CNTL=0x15000000 -- CE, PFP e ME
+ * parados, o valor de power-on desta placa -- sem UMA linha nossa tocando o CP.
+ * O upstream (Linux v6.6 nv.c) zera cg_flags/pg_flags para GC 10.1.3 e o SMU
+ * do Cyan Skillfish nao tem mensagem de GFXOFF (P1), entao power gating pelo
+ * driver nao e' o caminho do Linux; o default do firmware NAO e' conhecido.
+ *
+ * Este detector le, sem escrever nada: CP_ME_CNTL (0x86D8, mmCP_ME_CNTL
+ * 0x0f56 base 0), CP_STAT (0x8680), GRBM_STATUS (0x8010), RLC_CNTL (0x3B000,
+ * mmRLC_CNTL 0x4c00 base 1), RLC_PG_CNTL (0x3B10C, mmRLC_PG_CNTL 0x4c43 base 1)
+ * e RLC_GPM_STAT (0x3B9B8, mmRLC_GPM_STAT 0x4e6e base 1) -- inc/linux_ref/
+ * gc_10_1_0_offset.h, todos ja na allowlist de LEITURA. Registra na transicao
+ * para "ME/PFP/CE parado" enquanto o motor esta ONLINE, no poll (janela
+ * temporal) e no submit. Nenhuma decisao muda.
+ */
+#define BC250_DX45_REG_RLC_CNTL        0x0003B000u
+#define BC250_DX45_REG_RLC_GPM_STAT    0x0003B9B8u
+#define BC250_DX45_CP_HALT_MASK        0x15000000u
+
+static volatile LONG s_Bc250CpResetLogs;
+static volatile LONG s_Bc250CpHaltSeen;
+static volatile LONG s_Bc250CpLastPollRptr = -1;
+static volatile LONG s_Bc250Dx45OwnQuiesce;
+
+/*
+ * DX.45b (Corrida 88): o PC travou sem TDR, e a DX.45 tinha dois defeitos de
+ * desenho, ambos meus:
+ *   1. as cinco leituras extras vinham ANTES da linha de log -- se uma delas
+ *      nao completasse no PCIe, a prova nunca era escrita;
+ *   2. acima de PASSIVE o Bc250DisplayLog so' grava num ANEL EM MEMORIA
+ *      (bc250_display_ddi.c), drenado depois em PASSIVE: tudo que o poll (DPC)
+ *      escreve se perde num travamento duro.
+ * Agora: em DPC so' CP_ME_CNTL e' lido e a deteccao fica PENDENTE em memoria,
+ * sem leitura extra. Em PASSIVE (submit) a linha sai PRIMEIRO -- escrita e
+ * flush sincronos -- e cada leitura extra e' precedida de "LENDO <reg>", tambem
+ * sincrona: um novo travamento aponta o registrador. Ordem: do mais lido
+ * historicamente (GRBM_STATUS/CP_STAT nos snapshots de TDR, RLC_PG_CNTL 361.524
+ * vezes) ao nunca lido em corrida (RLC_CNTL, RLC_GPM_STAT).
+ */
+static volatile LONG s_Bc250Dx45Pending;
+static volatile LONG s_Bc250Dx45PendMe;
+static volatile LONG s_Bc250Dx45PendRptrPrev;
+static volatile LONG s_Bc250Dx45PendRptrNow;
+static volatile LONG s_Bc250Dx45PendFence;
+
+static void Bc250ActiveGfxDx45StagedRead(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    LONG Seq,
+    const char *Name,
+    uint32_t ByteOffset)
+{
+    uint32_t value = 0u;
+    uint32_t ok;
+
+    Bc250DisplayLog("[CP_RESET_DETECTED] #%ld LENDO %s (0x%05X) -- se esta for a ultima linha, esta leitura nao completou\n",
+        Seq, Name, ByteOffset);
+    ok = Bc250MmioTopologyRead32(&Context->Core.MmioTransport, ByteOffset, &value);
+    Bc250DisplayLog("[CP_RESET_DETECTED] #%ld LIDO %s=0x%08X[%u]\n", Seq, Name, value, ok);
+}
+
+/* So' em PASSIVE_LEVEL: a escrita no arquivo e' sincrona com flush. */
+static void Bc250ActiveGfxDx45LogCpReset(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    const char *Onde,
+    uint32_t MeCntl,
+    uint32_t RptrPrev,
+    uint32_t RptrNow,
+    uint32_t Wptr,
+    uint32_t ObservedFence)
+{
+    LONG n;
+    const LONG pending = InterlockedExchange(&s_Bc250Dx45Pending, 0);
+
+    if (InterlockedCompareExchange(&s_Bc250CpHaltSeen, 1, 0) != 0) return;
+    n = InterlockedIncrement(&s_Bc250CpResetLogs);
+    if (n > 16) return;
+    /* Fase 1: a prova primeiro, so' com o que ja foi lido. */
+    Bc250DisplayLog("[CP_RESET_DETECTED] #%ld Onde=%s CP_ME_CNTL=0x%08X Halt(CE=%u PFP=%u ME=%u) RPTR %u->%u WPTR=%u Fence=%u Submetidas=%llu Aposentadas=%llu DPC_antes=%ld(ME=0x%08X RPTR %u->%u Fence=%u) -- somente leitura; quem parou o CP NAO fomos nos (nenhum escritor de CP_ME_CNTL fora do bring-up e do quiesce)\n",
+        n, Onde, MeCntl, (MeCntl >> 24) & 1u, (MeCntl >> 26) & 1u, (MeCntl >> 28) & 1u,
+        RptrPrev, RptrNow, Wptr, ObservedFence,
+        (unsigned long long)Context->GfxEngine.LastSubmittedFence,
+        (unsigned long long)Context->GfxEngine.LastRetiredFence,
+        pending, (uint32_t)s_Bc250Dx45PendMe, (uint32_t)s_Bc250Dx45PendRptrPrev,
+        (uint32_t)s_Bc250Dx45PendRptrNow, (uint32_t)s_Bc250Dx45PendFence);
+    /* Fase 2: uma leitura por vez, anunciada antes. */
+    Bc250ActiveGfxDx45StagedRead(Context, n, "GRBM_STATUS", BC250_GFX_REG_GRBM_STATUS);
+    Bc250ActiveGfxDx45StagedRead(Context, n, "CP_STAT", BC250_GFX_REG_CP_STAT);
+    Bc250ActiveGfxDx45StagedRead(Context, n, "RLC_PG_CNTL", BC250_HQD_MMIO_RLC_PG_CNTL);
+    Bc250ActiveGfxDx45StagedRead(Context, n, "RLC_CNTL", BC250_DX45_REG_RLC_CNTL);
+    Bc250ActiveGfxDx45StagedRead(Context, n, "RLC_GPM_STAT", BC250_DX45_REG_RLC_GPM_STAT);
+}
+
+static void Bc250ActiveGfxDx45Check(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    const char *Onde,
+    uint32_t RptrNow,
+    BOOLEAN RptrValid,
+    uint32_t Wptr,
+    uint32_t ObservedFence)
+{
+    uint32_t meCntl = 0u;
+    uint32_t rptrPrev;
+
+    if (Context->Core.MmioTransport.State != BC250_MMIO_TOPOLOGY_MAPPED) return;
+    if (Bc250MmioTopologyRead32(&Context->Core.MmioTransport,
+            BC250_GFX_REG_CP_ME_CNTL, &meCntl) == 0u) return;
+    rptrPrev = (uint32_t)InterlockedCompareExchange(&s_Bc250CpLastPollRptr, 0, 0);
+    if (RptrValid) InterlockedExchange(&s_Bc250CpLastPollRptr, (LONG)RptrNow);
+    if ((meCntl & BC250_DX45_CP_HALT_MASK) != 0u) {
+        /* Durante o nosso proprio quiesce de TDR o halt e' esperado. */
+        if (InterlockedCompareExchange(&s_Bc250Dx45OwnQuiesce, 0, 0) != 0) return;
+        if (KeGetCurrentIrql() > PASSIVE_LEVEL) {
+            /* DX.45b: em DPC o log so' iria para o anel em memoria; guarda a
+             * primeira deteccao e nao faz leitura extra nenhuma. */
+            if (InterlockedCompareExchange(&s_Bc250Dx45Pending, 1, 0) == 0) {
+                InterlockedExchange(&s_Bc250Dx45PendMe, (LONG)meCntl);
+                InterlockedExchange(&s_Bc250Dx45PendRptrPrev, (LONG)rptrPrev);
+                InterlockedExchange(&s_Bc250Dx45PendRptrNow, (LONG)RptrNow);
+                InterlockedExchange(&s_Bc250Dx45PendFence, (LONG)ObservedFence);
+                /* Vai para o anel em memoria: chega ao disco se NAO houver
+                 * travamento; a prova duravel e' a da fase PASSIVE. */
+                Bc250DisplayLog("[CP_RESET_DETECTED] PENDENTE_EM_DPC Onde=%s CP_ME_CNTL=0x%08X RPTR %u->%u Fence=%u -- sem leitura extra; detalhe no proximo ponto PASSIVE\n",
+                    Onde, meCntl, rptrPrev, RptrNow, ObservedFence);
+            }
+            return;
+        }
+        Bc250ActiveGfxDx45LogCpReset(Context, Onde, meCntl, rptrPrev, RptrNow, Wptr, ObservedFence);
+    } else {
+        /* CP rodando de novo (ex.: depois do restart do TDR): rearma o detector. */
+        InterlockedExchange(&s_Bc250CpHaltSeen, 0);
+        InterlockedExchange(&s_Bc250Dx45OwnQuiesce, 0);
+        InterlockedExchange(&s_Bc250Dx45Pending, 0);
+    }
 }
 
 static NTSTATUS Bc250ActiveGfxEnginePoll(
@@ -2054,6 +2311,9 @@ static NTSTATUS Bc250ActiveGfxEnginePoll(
             }
         }
     }
+
+    /* DX.45: fora do spinlock do anel (liberado acima). */
+    Bc250ActiveGfxDx45Check(Context, "POLL", rptrReg, rptrRegRead, wptr, observedFence);
 
     return STATUS_SUCCESS;
 }
@@ -4006,6 +4266,12 @@ static NTSTATUS Bc250ActiveCreateDeviceLifecycle(
         (BC250_MCDM_HANDLE *)DeviceHandle);
 }
 
+/* DX.53: medicao sincronizada do rastreador de fences (definida adiante). */
+static uint32_t Bc250ActiveDx53PendingFences(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    uint32_t *Pending,
+    uint32_t *Reserved);
+
 static NTSTATUS Bc250ActiveDestroyDeviceLifecycle(HANDLE DeviceHandle)
 {
     return Bc250ActiveDestroyDeviceObject((BC250_MCDM_HANDLE)DeviceHandle);
@@ -4136,45 +4402,57 @@ NTSTATUS Bc250ActiveDestroyContextObject(
                      * contexto, GPUVA e slot para a submissao que ainda os usa.
                      * NOT_FOUND e' normal: a maioria nunca submeteu em GFX.
                      */
+                    /*
+                     * DX.53 -- DESARMAR ANTES DE DEVOLVER.
+                     *
+                     * Ate a DX.52 a ordem era: Release sob VmidPoolLock (slot
+                     * volta aos livres) -> solta o lock -> Uninstall no silicio.
+                     * Entre as duas, o SubmitCommandVirtual GFX de OUTRO
+                     * contexto podia adquirir o MESMO VMID e instalar a raiz
+                     * dele -- e o Uninstall atrasado desligava o contexto GCVM
+                     * do dono NOVO (auditoria externa, doc 396; P0 de leitura).
+                     * Com o laco de recriacao do Explorer (~290 contextos/min
+                     * nas Corridas 94..97) a janela abria centenas de vezes.
+                     *
+                     * Agora: Lookup sob o lock; Uninstall FORA do lock com o
+                     * slot ainda pertencendo ao contexto morto (Acquire pula
+                     * slot com Context != NULL, entao ninguem o recebe); so'
+                     * com o desarme confirmado o slot e' devolvido. Desarme que
+                     * falha deixa o slot em QUARENTENA -- nunca volta armado.
+                     */
                     {
+                        uint32_t alvo = BC250_VMID_COUNT;
                         uint32_t liberado = BC250_VMID_COUNT;
                         uint32_t liberados = 0u;
                         uint32_t inUseMask = 0u;
+                        uint32_t installState = 0u;
+                        BC250_VMID_POOL_STATUS lookupStatus;
                         BC250_VMID_POOL_STATUS poolStatus;
                         KIRQL poolIrql;
 
                         KeAcquireSpinLock(&context->VmidPoolLock, &poolIrql);
-                        poolStatus = Bc250VmidPoolRelease(&context->VmidPool,
-                            ContextHandle, &liberado);
-                        liberados = context->VmidPool.FreeCount;
-                        inUseMask = context->VmidPool.InUseMask;
+                        lookupStatus = Bc250VmidPoolLookup(&context->VmidPool,
+                            ContextHandle, &alvo);
+                        if (lookupStatus == BC250_VMID_POOL_OK && alvo < BC250_VMID_COUNT) {
+                            installState = (uint32_t)context->VmidPool.Entries[alvo].InstallState;
+                        }
                         KeReleaseSpinLock(&context->VmidPoolLock, poolIrql);
 
-                        if (poolStatus == BC250_VMID_POOL_OK) {
-                            Bc250DisplayLog("[VMID_POOL] LIBERADO: Ctx=%p devolveu VMID%02u (Liberados=%u InUseMask=0x%04X)\n",
-                                ContextHandle, liberado, liberados, inUseMask);
-                            /*
-                             * DX.15 -- DEVOLVER O SLOT TAMBEM NO SILICIO.
-                             *
-                             * Ate aqui Release era SOMENTE SOFTWARE: a entrada
-                             * do pool era limpa e o VMID voltava para os
-                             * livres, mas o contexto GCVM continuava com
-                             * ENABLE_CONTEXT ligado e PT_BASE apontando para a
-                             * raiz do processo MORTO -- uma pagina que o VidMm
-                             * pode liberar e reutilizar a qualquer momento.
-                             *
-                             * O desarme acontece FORA do VmidPoolLock (solto
-                             * logo acima): ele escreve MMIO e invalida TLB, e
-                             * o flush por VMID pode gastar polls.
-                             *
-                             * Isto NAO e' a correcao de um fault medido -- e'
-                             * fechar um estado que nao tem direito de existir
-                             * (Lei 5: todo APPLY tem TEARDOWN). Se o fault
-                             * sobreviver, o desarme continua certo.
-                             */
+                        if (lookupStatus == BC250_VMID_POOL_OK && alvo < BC250_VMID_COUNT &&
+                            installState == (uint32_t)BC250_VMID_POOL_INSTALLING) {
+                            Bc250DisplayLog("[VMID_POOL] RETIDO EM INSTALACAO: Ctx=%p VMID%02u em transacao de instalacao; nao desarmado nem devolvido agora\n",
+                                ContextHandle, alvo);
+                        } else if (lookupStatus == BC250_VMID_POOL_OK && alvo < BC250_VMID_COUNT) {
                             BC250_GCVM_VMID8_INTERFACE disarmIo;
                             BC250_GCVM_VMID8_INSTALL_EVIDENCE disarmEvidence;
                             BC250_GCVM_VMID8_STATUS disarmStatus;
+                            uint32_t pendentes = 0u, reservadas = 0u, medido = 0u;
+
+                            /* So' medicao: a outra janela da auditoria (IB em voo
+                             * no instante do desarme). Nao muda a decisao. */
+                            medido = Bc250ActiveDx53PendingFences(context, &pendentes, &reservadas);
+                            Bc250DisplayLog("[DX53_VMID] DESARME ANTES DA DEVOLUCAO: VMID%02u Ctx=%p Medido=%u PendentesNoRastreador=%u Reservadas=%u -- o slot segue do contexto morto durante o desarme\n",
+                                alvo, ContextHandle, medido, pendentes, reservadas);
 
                             RtlZeroMemory(&disarmIo, sizeof(disarmIo));
                             disarmIo.Identity = BC250_GCVM_VMID8_IDENTITY;
@@ -4182,31 +4460,42 @@ NTSTATUS Bc250ActiveDestroyContextObject(
                             disarmIo.Read32 = Bc250ActiveVmidRead32;
                             disarmIo.Write32 = Bc250ActiveVmidWrite32;
                             disarmIo.FlushVmid = Bc250ActiveFlushVmidTlb;
-                            RtlZeroMemory(&disarmEvidence,
-                                sizeof(disarmEvidence));
+                            RtlZeroMemory(&disarmEvidence, sizeof(disarmEvidence));
 
                             disarmStatus = Bc250GcvmUninstallVmid(
-                                liberado, &disarmIo, &disarmEvidence);
+                                alvo, &disarmIo, &disarmEvidence);
                             Bc250DisplayLog("[VMID_POOL] DESARMADO: VMID%02u status=%u Readback=%u Flush=%u (passo=%u reg=0x%04X val=0x%08X) -- o contexto GCVM nao aponta mais para a raiz do processo morto\n",
-                                liberado, (uint32_t)disarmStatus,
+                                alvo, (uint32_t)disarmStatus,
                                 disarmEvidence.ProgramReadbackPassed,
                                 disarmEvidence.TlbFlushPassed,
                                 disarmEvidence.FailureStep,
                                 disarmEvidence.FailureRegister,
                                 disarmEvidence.FailureValue);
-                            if (disarmStatus != BC250_GCVM_VMID8_OK) {
+
+                            if (disarmStatus == BC250_GCVM_VMID8_OK) {
+                                KeAcquireSpinLock(&context->VmidPoolLock, &poolIrql);
+                                poolStatus = Bc250VmidPoolRelease(&context->VmidPool,
+                                    ContextHandle, &liberado);
+                                liberados = context->VmidPool.FreeCount;
+                                inUseMask = context->VmidPool.InUseMask;
+                                KeReleaseSpinLock(&context->VmidPoolLock, poolIrql);
+                                if (poolStatus == BC250_VMID_POOL_OK) {
+                                    Bc250DisplayLog("[VMID_POOL] LIBERADO: Ctx=%p devolveu VMID%02u DEPOIS do desarme (Liberados=%u InUseMask=0x%04X)\n",
+                                        ContextHandle, liberado, liberados, inUseMask);
+                                } else {
+                                    Bc250DisplayLog("[VMID_POOL] DEVOLUCAO RECUSADA: Ctx=%p VMID%02u desarmado, Release=%u -- slot NAO voltou ao pool\n",
+                                        ContextHandle, alvo, (uint32_t)poolStatus);
+                                }
+                            } else {
                                 /*
-                                 * FALHA DECLARADA, e o slot NAO volta
-                                 * calado para a circulacao com o
-                                 * silicio armado. A entrada de software
-                                 * ja foi liberada acima; o que esta
-                                 * linha garante e que a divergencia
-                                 * entre software e silicio seja VISIVEL
-                                 * em vez de virar o proximo fault sem
-                                 * explicacao.
+                                 * FALHA DECLARADA: o slot fica com o contexto
+                                 * morto e fora de circulacao. Perder um VMID e'
+                                 * visivel (exaustao falha fechado); devolver um
+                                 * VMID armado com a raiz de um processo morto e'
+                                 * o defeito que esta faixa fecha.
                                  */
-                                Bc250DisplayLog("[VMID_POOL] FALHA NO DESARME: VMID%02u continua armado no silicio apesar de devolvido ao pool\n",
-                                    liberado);
+                                Bc250DisplayLog("[VMID_POOL] QUARENTENA: VMID%02u NAO devolvido -- desarme falhou; o slot fica fora de circulacao ate o StopDevice\n",
+                                    alvo);
                             }
                         }
                     }
@@ -4639,6 +4928,23 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
 {
     uint32_t directoryIndex;
     NTSTATUS result = STATUS_INVALID_HANDLE;
+    /*
+     * DX.52 -- TODA recusa desta DDI fala, fora da amostragem.
+     * Corridas 93..97 (P0): o Explorer recebe E_INVALIDARG do pfnAllocateCb para
+     * uma alocacao de 3.407.872 bytes, destroi o device inteiro e recomeca a
+     * cada ~1,5 s (ate 173 vezes em 4 min). Nenhuma linha do KMD dizia por que:
+     * as cinco saidas STATUS_INVALID_PARAMETER abaixo eram mudas, e o
+     * "[McdmCreateAllocation] Result=" e' amostrado. Somente registro.
+     */
+    CONST char *refuseReason = NULL;
+    UINT refuseIndex = 0u;
+    uint64_t refuseBytes = 0u;
+    UINT refusePrivSize = 0u;
+    int refuseAbi = 0;
+    int refuseObj = 0;
+    uint64_t refuseToken = 0u;
+    uint64_t refuseSegBytes = 0u;
+    uint32_t refuseSegSet = 0u;
 
     /*
      * Instrumentacao 3.82 (somente leitura, zero mudanca de comportamento).
@@ -4682,29 +4988,50 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
             InterlockedCompareExchange(
                 &context->AllocationAbiReady, 1, 1) != 1) {
             result = STATUS_DEVICE_NOT_READY;
+            refuseReason = "ADAPTADOR_INATIVO_OU_ABI_NAO_PRONTA";
         } else {
             result = STATUS_SUCCESS;
+            refuseSegBytes = (uint64_t)context->AllocationSegmentBytes;
+            refuseSegSet = (uint32_t)context->AllocationSegmentSet;
             for (index = 0u; index < CreateAllocation->NumAllocations; ++index) {
                 BC250_ALLOCATION_PRIVATE_V1 request;
                 DXGK_ALLOCATIONINFO *info =
                     &CreateAllocation->pAllocationInfo[index];
+                refuseIndex = index;
+                refusePrivSize = info->PrivateDriverDataSize;
+                refuseBytes = (uint64_t)info->Size;
                 if (info->pPrivateDriverData != NULL && info->PrivateDriverDataSize != 0u) {
-                    if (Bc250AllocationAbiParse(info->pPrivateDriverData,
-                            info->PrivateDriverDataSize, &request) !=
-                            BC250_ALLOCATION_ABI_OK ||
-                        request.ByteSize > (uint64_t)(SIZE_T)~(SIZE_T)0 ||
-                        context->AllocationSegmentSet != 1u ||
-                        context->AllocationSegmentBytes == 0u ||
-                        request.ByteSize > context->AllocationSegmentBytes) {
+                    BC250_ALLOCATION_ABI_STATUS abi = Bc250AllocationAbiParse(
+                        info->pPrivateDriverData, info->PrivateDriverDataSize, &request);
+                    refuseAbi = (int)abi;
+                    if (abi == BC250_ALLOCATION_ABI_OK) {
+                        refuseBytes = request.ByteSize;
+                        refuseToken = request.AllocationToken;
+                    }
+                    if (abi != BC250_ALLOCATION_ABI_OK) {
+                        refuseReason = "ABI_PRIVADA_RECUSADA_PELO_PARSE";
+                    } else if (request.ByteSize > (uint64_t)(SIZE_T)~(SIZE_T)0) {
+                        refuseReason = "TAMANHO_ACIMA_DE_SIZE_T";
+                    } else if (context->AllocationSegmentSet != 1u || context->AllocationSegmentBytes == 0u) {
+                        refuseReason = "SEGMENTO_DE_ALOCACAO_NAO_CONFIGURADO";
+                    } else if (request.ByteSize > context->AllocationSegmentBytes) {
+                        refuseReason = "TAMANHO_ACIMA_DO_SEGMENTO";
+                    }
+                    if (refuseReason != NULL) {
                         result = STATUS_INVALID_PARAMETER;
                         break;
                     }
                 } else {
                     uint64_t allocSize = info->Size != 0u ? (uint64_t)info->Size : 4096ull;
-                    if (allocSize > (uint64_t)(SIZE_T)~(SIZE_T)0 ||
-                        context->AllocationSegmentSet != 1u ||
-                        context->AllocationSegmentBytes == 0u ||
-                        allocSize > context->AllocationSegmentBytes) {
+                    refuseBytes = allocSize;
+                    if (allocSize > (uint64_t)(SIZE_T)~(SIZE_T)0) {
+                        refuseReason = "SEM_ABI_TAMANHO_ACIMA_DE_SIZE_T";
+                    } else if (context->AllocationSegmentSet != 1u || context->AllocationSegmentBytes == 0u) {
+                        refuseReason = "SEM_ABI_SEGMENTO_NAO_CONFIGURADO";
+                    } else if (allocSize > context->AllocationSegmentBytes) {
+                        refuseReason = "SEM_ABI_TAMANHO_ACIMA_DO_SEGMENTO";
+                    }
+                    if (refuseReason != NULL) {
                         result = STATUS_INVALID_PARAMETER;
                         break;
                     }
@@ -4752,7 +5079,14 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                         request.Alignment, &handle);
                 }
                 result = Bc250ObjectStatusToNtStatus(status);
-                if (!NT_SUCCESS(result)) break;
+                if (!NT_SUCCESS(result)) {
+                    refuseReason = "REGISTRO_DO_OBJETO_DE_ALOCACAO_FALHOU";
+                    refuseIndex = index;
+                    refuseObj = (int)status;
+                    refuseBytes = request.ByteSize;
+                    refuseToken = request.AllocationToken;
+                    break;
+                }
 
                 /*
                  * F2.1 -- a geometria entra no registro de objetos AQUI, e e' o
@@ -4880,6 +5214,17 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
     }
     ExReleasePushLockExclusive(&g_Bc250AdapterDirectoryLock);
     KeLeaveCriticalRegion();
+    if (!NT_SUCCESS(result)) {
+        Bc250DisplayLog("[CREATE_ALLOC_RECUSADO] status=0x%08X motivo=%s idx=%u/%u Bytes=%llu PrivSize=%u "
+            "AbiStatus=%d ObjStatus=%d Token=0x%llX SegBytes=%llu SegSet=%u Resource=%u hResource=%p\n",
+            (uint32_t)result,
+            refuseReason != NULL ? refuseReason : "ADAPTADOR_NAO_ENCONTRADO_NO_DIRETORIO",
+            refuseIndex, CreateAllocation != NULL ? CreateAllocation->NumAllocations : 0u,
+            (unsigned long long)refuseBytes, refusePrivSize, refuseAbi, refuseObj,
+            (unsigned long long)refuseToken, (unsigned long long)refuseSegBytes, refuseSegSet,
+            CreateAllocation != NULL ? CreateAllocation->Flags.Resource : 0u,
+            CreateAllocation != NULL ? CreateAllocation->hResource : NULL);
+    }
     return result;
 }
 
@@ -5192,8 +5537,20 @@ static NTSTATUS Bc250ActiveCloseAllocationLifecycle(
 static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
 {
     BC250_SDMA_TDR_SNAPSHOT snapshot;
-    BOOLEAN result = Bc250SdmaPresentQuiesceForTdr(&snapshot);
+    BOOLEAN result;
     uint32_t dirIdx;
+
+    /* DX.47: o reset do adaptador descarta pedidos de preempcao em curso; um
+     * DMA_PREEMPTED antigo nao pode sair depois do restart. */
+    {
+        const LONG pending0 = InterlockedExchange(&s_Bc250PreemptPending[0], 0);
+        const LONG pending1 = InterlockedExchange(&s_Bc250PreemptPending[1], 0);
+        if (pending0 != 0 || pending1 != 0) {
+            Bc250DisplayLog("[PREEMPT_DONE] DESCARTADO pelo TDR: pendentes Node0=%ld Node1=%ld limpos antes do quiesce\n",
+                pending0, pending1);
+        }
+    }
+    result = Bc250SdmaPresentQuiesceForTdr(&snapshot);
 
     KeEnterCriticalRegion();
     ExAcquirePushLockShared(&g_Bc250AdapterDirectoryLock);
@@ -6163,6 +6520,13 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                                         BC250_WAVE_HW_ID2_PIPE_ID(f->HwId2),
                                         BC250_WAVE_HW_ID2_QUEUE_ID(f->HwId2),
                                         f->HwId2, activeCtx->GfxEngine.LastSubmitVmid);
+                                    Bc250DisplayLog("BC250_DIAG schema=1 level=ERROR event=KMD_TDR_WAVE wave=%u vmid=%u vmid_valid=%u pc=0x%08X%08X status=0x%08X trap=0x%08X hwid2=0x%08X last_fence=%llu last_vmid=%u\n",
+                                        w, BC250_WAVE_HW_ID2_VM_ID(f->HwId2),
+                                        (f->ValidMask & 0x40u) != 0u ? 1u : 0u,
+                                        f->PcHi, f->PcLo, f->Status, f->TrapSts,
+                                        f->HwId2,
+                                        (unsigned long long)activeCtx->GfxEngine.LastSubmittedFence,
+                                        activeCtx->GfxEngine.LastSubmitVmid);
                                 }
                                 if (waveEv.WavesFound == 0u) {
                                     Bc250DisplayLog("[TDR_GFX_WAVEPC] NENHUMA onda localizada nesta varredura rasa -- STATUS zero e INDISTINGUIVEL de slot vazio, entao isto NAO refuta as %u ondas que o SQ contou\n",
@@ -6233,6 +6597,10 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                     Bc250DisplayLog("[TDR_GFX_QUIESCE] GRBM_GFX_INDEX reposto em broadcast antes do soft-reset: escrita=%u readback=0x%08X (esperado 0x%08X; divergencia NAO e' prova de falha -- ver o ALERTA da sonda)\n",
                         bcastWritten, bcastReadback, BC250_GRBM_GFX_INDEX_BROADCAST_ALL);
                 }
+
+                /* DX.45: marca de telemetria -- o reset que vem a seguir e' NOSSO;
+                 * o detector nao pode atribui-lo a terceiros. Nao muda o fluxo. */
+                InterlockedExchange(&s_Bc250Dx45OwnQuiesce, 1);
 
                 /* Desativa CP_RB0 */
                 (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
@@ -6425,8 +6793,21 @@ static BOOLEAN Bc250ActiveTdrRestartLifecycle(VOID)
             uint32_t baseExpectedHi = Bc250GfxRingEncodeBaseHi(activeCtx->GfxEngine.RingGpuVa);
             BC250_TDR_STATUS gfxStatus;
 
-            uint32_t plannedCntl = activeCtx->GfxEngine.Evidence.CntlPlanned != 0u ?
-                activeCtx->GfxEngine.Evidence.CntlPlanned : 0x50000A0Cu;
+            /* DX.46: o fallback fixo era 0x50000A0C -- RB_BUFSZ=12, METADE do
+             * anel de 64 KB. Agora sai da fonte unica (formula do upstream);
+             * se nem ela produzir, o CNTL ja planejado no bring-up manda. */
+            uint32_t plannedCntl = activeCtx->GfxEngine.Evidence.CntlPlanned;
+            if (plannedCntl == 0u) {
+                uint32_t fbBufsz = 0u, fbBlksz = 0u;
+                /* RB_EXE[28] e CE_HQD_NEQ_RB_HQD[30], como o bring-up planeja. */
+                if (Bc250GfxRingDeriveBufsz(
+                        activeCtx->GfxEngine.RingDwords * (uint32_t)sizeof(uint32_t),
+                        &fbBufsz, &fbBlksz) == BC250_GFX_RING_OK) {
+                    plannedCntl = fbBufsz | (fbBlksz << 8) | (1u << 28) | (1u << 30);
+                } else {
+                    plannedCntl = 0x50000B0Du; /* 64 KB pelo upstream: (13, 11) */
+                }
+            }
 
             /* Rearma CP_RB0 */
             (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
@@ -6851,7 +7232,42 @@ static KDEFERRED_ROUTINE Bc250ActiveRetirementTimerDpcRoutine;
 static KDEFERRED_ROUTINE Bc250ActiveRetirementNotifyDpcRoutine;
 static KDEFERRED_ROUTINE Bc250ActiveSdmaRetirementDpcRoutine;
 
+/*
+ * DX.48 -- CICLO DE VIDA DO ADAPTADOR FALA (Corrida 93, so' medicao).
+ *
+ * Corridas 88 e 92 travaram a maquina, e nas duas a ultima linha gravada foi
+ * "[McdmQAI] Type=29 CapsStatus=0xC00000A3": WDDMDEVICECAPS -- que o dxgkrnl
+ * consulta logo depois de um AddDevice -- servido por um contexto que NAO
+ * passou pelo StartDevice, no meio da corrida. AddDevice nao escrevia nada e
+ * o QAI nao dizia qual contexto, entao "segunda instancia do adaptador" era H
+ * sem como medir. Agora AddDevice/StartDevice/StopDevice/RemoveDevice escrevem
+ * ENTER/LEAVE sincronos (PASSIVE) com o contexto, o PDO e um numero de
+ * instancia. Nenhum retorno muda: o nome publico so' envolve a implementacao.
+ */
+static volatile LONG s_Bc250Dx48AddDeviceCalls;
+
+static NTSTATUS Bc250DxgkDdiAddDeviceActiveImpl(
+    CONST PDEVICE_OBJECT PhysicalDeviceObject,
+    PVOID *MiniportDeviceContext);
+
 NTSTATUS APIENTRY Bc250DxgkDdiAddDeviceActive(
+    CONST PDEVICE_OBJECT PhysicalDeviceObject,
+    PVOID *MiniportDeviceContext)
+{
+    const LONG seq = InterlockedIncrement(&s_Bc250Dx48AddDeviceCalls);
+    NTSTATUS status;
+
+    Bc250DisplayLog("[DX48_LIFECYCLE] AddDevice ENTER #%ld PDO=%p -- instancia numero %ld deste driver carregado\n",
+        seq, (void *)PhysicalDeviceObject, seq);
+    status = Bc250DxgkDdiAddDeviceActiveImpl(PhysicalDeviceObject, MiniportDeviceContext);
+    Bc250DisplayLog("[DX48_LIFECYCLE] AddDevice LEAVE #%ld PDO=%p Contexto=%p status=0x%08X\n",
+        seq, (void *)PhysicalDeviceObject,
+        (MiniportDeviceContext != NULL) ? *MiniportDeviceContext : NULL,
+        (uint32_t)status);
+    return status;
+}
+
+static NTSTATUS Bc250DxgkDdiAddDeviceActiveImpl(
     CONST PDEVICE_OBJECT PhysicalDeviceObject,
     PVOID *MiniportDeviceContext)
 {
@@ -9887,11 +10303,32 @@ static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason(
 NTSTATUS APIENTRY Bc250DxgkDdiStopDeviceActive(
     CONST PVOID MiniportDeviceContext)
 {
-    return Bc250DxgkDdiStopDeviceActiveReason(
+    NTSTATUS status;
+    /* DX.48 */
+    Bc250DisplayLog("[DX48_LIFECYCLE] StopDevice ENTER Contexto=%p\n", MiniportDeviceContext);
+    status = Bc250DxgkDdiStopDeviceActiveReason(
         MiniportDeviceContext, BC250_ACTIVE_STOP_REASON_STOP_DEVICE);
+    Bc250DisplayLog("[DX48_LIFECYCLE] StopDevice LEAVE Contexto=%p status=0x%08X\n",
+        MiniportDeviceContext, (uint32_t)status);
+    return status;
 }
 
+static NTSTATUS Bc250DxgkDdiRemoveDeviceActiveImpl(
+    CONST PVOID MiniportDeviceContext);
+
 NTSTATUS APIENTRY Bc250DxgkDdiRemoveDeviceActive(
+    CONST PVOID MiniportDeviceContext)
+{
+    NTSTATUS status;
+    /* DX.48 */
+    Bc250DisplayLog("[DX48_LIFECYCLE] RemoveDevice ENTER Contexto=%p\n", MiniportDeviceContext);
+    status = Bc250DxgkDdiRemoveDeviceActiveImpl(MiniportDeviceContext);
+    Bc250DisplayLog("[DX48_LIFECYCLE] RemoveDevice LEAVE Contexto=%p status=0x%08X\n",
+        MiniportDeviceContext, (uint32_t)status);
+    return status;
+}
+
+static NTSTATUS Bc250DxgkDdiRemoveDeviceActiveImpl(
     CONST PVOID MiniportDeviceContext)
 {
     BC250_DXGK_ACTIVE_CONTEXT *context =
@@ -9963,6 +10400,7 @@ VOID Bc250ActiveDriverUnloadCleanup(VOID)
 
     Bc250DisplayTeardown();
     Bc250McdmInstallEscapeHandler(NULL);
+    Bc250McdmInstallPreemptHandler(NULL);
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
     KeFlushQueuedDpcs();
 #endif
@@ -9980,6 +10418,8 @@ VOID Bc250ActiveDriverUnloadCleanup(VOID)
 #define BC250_ACTIVE_FENCE_SYNC_QUERY   5u
 #define BC250_ACTIVE_FENCE_SYNC_PENDING 6u
 #define BC250_ACTIVE_FENCE_SYNC_NOTIFY_SDMA 7u
+/* DX.47: conclui a preempcao pendente de UM no se ele estiver drenado. */
+#define BC250_ACTIVE_FENCE_SYNC_PREEMPT 8u
 
 #define BC250_ACTIVE_FENCE_NOTIFY_BATCH 16u
 
@@ -10122,6 +10562,47 @@ static BOOLEAN Bc250ActiveSynchronizedFenceCallback(
             &context->SubmissionEngine.WddmFences,
             &sync->PendingCount,
             &sync->ReservedCount);
+    }
+
+    /*
+     * DX.47 -- conclusao da preempcao (Corridas 86 e 91: TDR com a GPU ociosa
+     * logo depois de um PreemptCommand nunca respondido). Granularidade
+     * declarada: DMA_BUFFER_BOUNDARY. O que ja esta no anel termina; quando o
+     * no nao tiver nada em voo nem reservado, reporta DMA_PREEMPTED com a
+     * ultima fence ja notificada como concluida. Como tudo terminou, o dxgkrnl
+     * nao tem pacote a reenviar. Nunca notifica com trabalho pendente.
+     */
+    if (sync->Operation == BC250_ACTIVE_FENCE_SYNC_PREEMPT) {
+        uint32_t inFlight = 0u, reserved = 0u, lastDone = 0u;
+        if (context->Core.DxgkInterface.DxgkCbNotifyInterrupt == NULL ||
+            context->Core.DxgkInterface.DeviceHandle == NULL ||
+            sync->NodeOrdinal > BC250_SUBMISSION_NODE_COMPUTE) {
+            return FALSE;
+        }
+        if (!Bc250WddmFenceTrackerNodeState(&context->SubmissionEngine.WddmFences,
+                sync->NodeOrdinal, &inFlight, &reserved, &lastDone)) {
+            return FALSE;
+        }
+        if (sync->NodeOrdinal == BC250_SUBMISSION_NODE_SDMA) {
+            /* O Node 0 aposenta pela fila propria do SDMA, fora do rastreador. */
+            inFlight += g_Bc250SdmaPresent.InFlightCount;
+        }
+        sync->PendingCount = inFlight;
+        sync->ReservedCount = reserved;
+        sync->CurrentFence = lastDone;
+        if (inFlight != 0u || reserved != 0u) {
+            return TRUE; /* ainda nao drenou: tenta de novo no proximo retirement */
+        }
+        RtlZeroMemory(&data, sizeof(data));
+        data.InterruptType = DXGK_INTERRUPT_DMA_PREEMPTED;
+        data.DmaPreempted.PreemptionFenceId = sync->SubmissionFenceId;
+        data.DmaPreempted.LastCompletedFenceId = lastDone;
+        data.DmaPreempted.NodeOrdinal = sync->NodeOrdinal;
+        data.DmaPreempted.EngineOrdinal = sync->EngineOrdinal;
+        context->Core.DxgkInterface.DxgkCbNotifyInterrupt(
+            context->Core.DxgkInterface.DeviceHandle, &data);
+        sync->Notified = 1u;
+        return TRUE;
     }
 
     if (context->Core.DxgkInterface.DxgkCbNotifyInterrupt == NULL ||
@@ -10353,6 +10834,83 @@ static NTSTATUS Bc250ActiveQuiesceAndSnapshotTracker(
     return STATUS_SUCCESS;
 }
 
+/*
+ * DX.47 -- pedidos de preempcao pendentes, um por no (0 = copia/SDMA, 1 = 3D).
+ * PreemptCommand so' REGISTRA e enfileira o DPC de retirement: notificar de
+ * dentro da DDI, com o VidSch na pilha, e' a reentrancia que ja custou 0x133.
+ */
+/* (estado declarado junto das definicoes DX.43, antes do codigo de TDR) */
+
+/* Chamado so' do retirement. Devolve TRUE se notificou algum DMA_PREEMPTED. */
+static BOOLEAN Bc250ActiveTryCompletePreemptions(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    uint32_t node;
+    BOOLEAN any = FALSE;
+
+    for (node = 0u; node <= BC250_SUBMISSION_NODE_COMPUTE; ++node) {
+        BC250_ACTIVE_FENCE_SYNC sync;
+        BOOLEAN ran = FALSE;
+        NTSTATUS status;
+        LONG fenceId;
+
+        if (InterlockedCompareExchange(&s_Bc250PreemptPending[node], 0, 0) == 0) {
+            continue;
+        }
+        fenceId = InterlockedCompareExchange(&s_Bc250PreemptFenceId[node], 0, 0);
+        RtlZeroMemory(&sync, sizeof(sync));
+        sync.Context = Context;
+        sync.Operation = BC250_ACTIVE_FENCE_SYNC_PREEMPT;
+        sync.NodeOrdinal = node;
+        sync.EngineOrdinal = (uint32_t)InterlockedCompareExchange(&s_Bc250PreemptEngine[node], 0, 0);
+        sync.SubmissionFenceId = (uint32_t)fenceId;
+        status = Context->Core.DxgkInterface.DxgkCbSynchronizeExecution(
+            Context->Core.DxgkInterface.DeviceHandle,
+            Bc250ActiveSynchronizedFenceCallback,
+            &sync, 0, &ran);
+        if (NT_SUCCESS(status) && ran && sync.Notified != 0u) {
+            /* So' limpa se o pedido nao foi trocado por outro no meio. */
+            (void)InterlockedCompareExchange(&s_Bc250PreemptPending[node], 0, 1);
+            InterlockedIncrement(&s_Bc250PreemptCompletedTotal);
+            Bc250DisplayLog("[PREEMPT_DONE] Node=%u Engine=%u PreemptionFenceId=%u LastCompletedFenceId=%u -- DMA_PREEMPTED notificado com o no drenado (total=%ld)\n",
+                node, sync.EngineOrdinal, (uint32_t)fenceId, sync.CurrentFence,
+                InterlockedCompareExchange(&s_Bc250PreemptCompletedTotal, 0, 0));
+            any = TRUE;
+        } else if (InterlockedIncrement(&s_Bc250PreemptDeferredLogs) <= 32) {
+            Bc250DisplayLog("[PREEMPT_WAIT] Node=%u PreemptionFenceId=%u EmVoo=%u Reservas=%u status=0x%08X ran=%u -- no ainda nao drenou; tenta no proximo retirement\n",
+                node, (uint32_t)fenceId, sync.PendingCount, sync.ReservedCount,
+                (uint32_t)status, ran ? 1u : 0u);
+        }
+    }
+    return any;
+}
+
+/* DxgkDdiPreemptCommand (LowIrqlPreemptCommand=1): registra e agenda. */
+static NTSTATUS Bc250ActivePreemptHandler(
+    _In_ HANDLE hAdapter,
+    _In_ CONST DXGKARG_PREEMPTCOMMAND *pPreemptCommand)
+{
+    BC250_DXGK_ACTIVE_CONTEXT *active = (BC250_DXGK_ACTIVE_CONTEXT *)hAdapter;
+    uint32_t node;
+
+    if (active == NULL || pPreemptCommand == NULL ||
+        active->Signature != BC250_ACTIVE_SIGNATURE) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    node = pPreemptCommand->NodeOrdinal;
+    if (node > BC250_SUBMISSION_NODE_COMPUTE) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    InterlockedExchange(&s_Bc250PreemptFenceId[node], (LONG)pPreemptCommand->PreemptionFenceId);
+    InterlockedExchange(&s_Bc250PreemptEngine[node], (LONG)pPreemptCommand->EngineOrdinal);
+    InterlockedExchange(&s_Bc250PreemptPending[node], 1);
+    /* O timer de retirement ja roda; o DPC imediato so' encurta a espera. */
+    if (InterlockedCompareExchange(&active->RetirementTimerInitialized, 0, 0) != 0) {
+        KeInsertQueueDpc(&active->RetirementTimerDpc, NULL, NULL);
+    }
+    return STATUS_SUCCESS;
+}
+
 static void Bc250ActiveRetireAndNotify(
     _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context,
     _In_ BOOLEAN FromDpc)
@@ -10406,13 +10964,21 @@ static void Bc250ActiveRetireAndNotify(
         &sync,
         0,
         &notified);
-    if (!NT_SUCCESS(status) || !notified || sync.Notified == 0u) {
-        InterlockedExchange(&Context->RetireBusy, 0);
-        return;
+    {
+        const BOOLEAN drained = (NT_SUCCESS(status) && notified && sync.Notified != 0u) ? TRUE : FALSE;
+        /* DX.47: DEPOIS do dreno, para o DMA_PREEMPTED nunca passar a frente
+         * de um DMA_COMPLETED do mesmo no. O caso ocioso (nada drenado) e'
+         * justamente o das Corridas 86/91, entao nao pode haver retorno antes. */
+        const BOOLEAN preempted = Bc250ActiveTryCompletePreemptions(Context);
+        if (!drained && !preempted) {
+            InterlockedExchange(&Context->RetireBusy, 0);
+            return;
+        }
+        if (drained) {
+            ++Context->RetirementNotifyBatches;
+            Context->RetirementNotifiedTotal += sync.Notified;
+        }
     }
-
-    ++Context->RetirementNotifyBatches;
-    Context->RetirementNotifiedTotal += sync.Notified;
     InterlockedExchange(&Context->DpcNotifyPending, 1);
 
     if (FromDpc) {
@@ -11273,6 +11839,31 @@ static void Bc250ActiveGfxInspectSubmittedIb(
     KeMemoryBarrier();
 }
 
+/* Diagnostico DX.38: a mesma janela VRAM e raiz usadas na inspecao, mas
+ * cobrindo TODOS os bytes declarados. Somente com GfxWaveProbe armado; nunca
+ * publica hash parcial quando uma pagina deixa de resolver. */
+static int Bc250ActiveGfxFingerprintSubmittedIb(
+    uint64_t IbGpuVa,
+    uint32_t IbSizeDwords,
+    uint64_t RootMcAddress,
+    uint64_t VramMcBase,
+    uint64_t *Hash)
+{
+    BC250_GFX_IB_READER_CTX reader;
+    int ok;
+    if (Hash == NULL) return 0;
+    *Hash = 0ull;
+    if (RootMcAddress == 0ull || VramMcBase == 0ull) return 0;
+    RtlZeroMemory(&reader, sizeof(reader));
+    reader.IbGpuVa = IbGpuVa;
+    reader.RootMcAddress = RootMcAddress;
+    reader.VramMcBase = VramMcBase;
+    ok = Bc250GfxIbFingerprint(IbSizeDwords,
+        Bc250ActiveGfxIbReadDword, &reader, Hash);
+    KeMemoryBarrier();
+    return ok;
+}
+
 /* Emite o veredito da inspecao. Tres desfechos, todos distinguiveis. O nome do
  * veredito sai de FONTE UNICA (Bc250GfxIbInspectVerdictName), para que o log e
  * a suite offline nunca possam discordar sobre o que foi concluido. */
@@ -12094,6 +12685,14 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
             Bc250DisplayLog("[SubmitVirtual Node0 SDMA] IB NAO EXECUTADO #%ld: FenceId=%llu; completion NAO notificado\n",
                 notExecuted,
                 (unsigned long long)pSubmitCommand->SubmissionFenceId);
+            if (context->GfxWaveProbePresent == 1u && context->GfxWaveProbe == 1u)
+                Bc250DisplayLog("BC250_DIAG schema=1 level=ERROR event=KMD_SDMA_SUBMIT ctx=%p node=0 dxg_fence=%llu vmid=%u path=%s accepted=0 status=0x%08X va=0x%llX bytes=%u fault_status=0x%08X\n",
+                    pSubmitCommand->hContext,
+                    (unsigned long long)pSubmitCommand->SubmissionFenceId,
+                    targetVmid, Bc250SubmitPathName(execPath),
+                    (uint32_t)STATUS_IO_DEVICE_ERROR,
+                    (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress,
+                    pSubmitCommand->DmaBufferSize, faultStatus);
 
             /*
              * MEDIDO NA CORRIDA DE 04/09 23:23 -- NAO REINTRODUZIR SEM NOVA
@@ -12148,6 +12747,13 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
             assignedHwFence,
             (unsigned long long)pSubmitCommand->SubmissionFenceId,
             pSubmitCommand->DmaBufferSize);
+        if (context->GfxWaveProbePresent == 1u && context->GfxWaveProbe == 1u)
+            Bc250DisplayLog("BC250_DIAG schema=1 level=INFO event=KMD_SDMA_SUBMIT ctx=%p node=0 dxg_fence=%llu hw_fence=%u vmid=%u path=%s accepted=1 va=0x%llX bytes=%u\n",
+                pSubmitCommand->hContext,
+                (unsigned long long)pSubmitCommand->SubmissionFenceId,
+                assignedHwFence, targetVmid, Bc250SubmitPathName(execPath),
+                (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress,
+                pSubmitCommand->DmaBufferSize);
 
         return STATUS_SUCCESS;
     }
@@ -12168,6 +12774,10 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
         uint64_t physicalRoot = 0ull;
         uint64_t firstPhysical = 0ull;
         uint32_t poolVmid = BC250_VMID_COUNT;
+        uint64_t ibFingerprint = 0ull;
+        int ibFingerprintValid = 0;
+        uint32_t ibHeadDw0 = 0u;
+        BOOLEAN ibHeadValid = FALSE;
         BC250_VMID_POOL_STATUS poolStatus = BC250_VMID_POOL_BAD_ARGUMENT;
         BOOLEAN committed = FALSE;
 
@@ -12285,6 +12895,25 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
                     (uint64_t)pSubmitCommand->DmaBufferVirtualAddress,
                     &inspection);
             }
+        }
+
+        if (context->GfxWaveProbePresent == 1u && context->GfxWaveProbe == 1u) {
+            ibFingerprintValid = Bc250ActiveGfxFingerprintSubmittedIb(
+                (uint64_t)pSubmitCommand->DmaBufferVirtualAddress,
+                ibSizeDwords, physicalRoot, physicalCaps.VramMcBase,
+                &ibFingerprint);
+        }
+
+        /* DX.43: o KMD le o DW0 do IB pela mesma janela/raiz da inspecao; o IB
+         * de aquecimento so' sai se esse DW0 for um CONTEXT_CONTROL completo. */
+        if (physicalRoot != 0ull && physicalCaps.VramMcBase != 0ull &&
+            ibSizeDwords > BC250_GFX_DX43_WARMUP_DWORDS) {
+            BC250_GFX_IB_READER_CTX headReader;
+            RtlZeroMemory(&headReader, sizeof(headReader));
+            headReader.IbGpuVa = (uint64_t)pSubmitCommand->DmaBufferVirtualAddress;
+            headReader.RootMcAddress = physicalRoot;
+            headReader.VramMcBase = physicalCaps.VramMcBase;
+            ibHeadValid = Bc250ActiveGfxIbReadDword(&headReader, 0u, &ibHeadDw0) ? TRUE : FALSE;
         }
 
         /*
@@ -12623,9 +13252,21 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
             (uint64_t)pSubmitCommand->DmaBufferVirtualAddress,
             ibSizeDwords,
             poolVmid,
+            ibHeadDw0,
+            ibHeadValid,
             &assignedFence);
 
         if (NT_SUCCESS(submitStatus)) {
+            if (context->GfxWaveProbePresent == 1u && context->GfxWaveProbe == 1u) {
+                Bc250DisplayLog("[GFX_IB_IDENTITY] Ctx=%p DxgFence=%llu RingFence=%llu VMID=%u Root=0x%llX VA=0x%llX DW=%u Fnv64=%016llX Complete=%u -- hash dos bytes vistos pelo KMD antes do submit; NAO prova execucao\n",
+                    pSubmitCommand->hContext,
+                    (unsigned long long)pSubmitCommand->SubmissionFenceId,
+                    (unsigned long long)assignedFence, poolVmid,
+                    (unsigned long long)physicalRoot,
+                    (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress,
+                    ibSizeDwords, (unsigned long long)ibFingerprint,
+                    ibFingerprintValid != 0 ? 1u : 0u);
+            }
             commitSync.Context = context;
             commitSync.Operation = BC250_ACTIVE_FENCE_SYNC_COMMIT;
             commitSync.ReservationToken = reserveSync.ReservationToken;
@@ -12647,6 +13288,33 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
                     (uint32_t)submitStatus, committed, commitSync.CommitAccepted);
             }
 
+            if (context->GfxWaveProbePresent == 1u && context->GfxWaveProbe == 1u) {
+                uint32_t diagRptr = 0u, diagWptr = 0u, diagSq = 0u;
+                uint32_t rptrOk, wptrOk, sqOk;
+                uint32_t observedFence = 0u;
+                rptrOk = Bc250MmioTopologyRead32(&context->Core.MmioTransport,
+                    BC250_GFX_REG_CP_RB0_RPTR, &diagRptr);
+                wptrOk = Bc250MmioTopologyRead32(&context->Core.MmioTransport,
+                    BC250_GFX_REG_CP_RB0_WPTR, &diagWptr);
+                sqOk = Bc250MmioTopologyRead32(&context->Core.MmioTransport,
+                    BC250_GFX_REG_SQ_DEBUG_STS_GLOBAL, &diagSq);
+                if (context->GfxEngine.FenceCpuVirtual != NULL)
+                    observedFence = *context->GfxEngine.FenceCpuVirtual;
+                Bc250DisplayLog("BC250_DIAG schema=1 level=%s event=KMD_GFX_SUBMIT ctx=%p node=1 engine=%u dxg_fence=%llu ring_fence=%llu vmid=%u root=0x%llX va=0x%llX dw=%u fnv64=%016llX hash_complete=%u committed=%u commit_status=0x%08X rptr=%u rptr_read=%u wptr=%u wptr_read=%u sq=0x%08X sq_read=%u fence_observed=%u fence_map=%u\n",
+                    (NT_SUCCESS(submitStatus) && committed && commitSync.CommitAccepted) ? "INFO" : "ERROR",
+                    pSubmitCommand->hContext, pSubmitCommand->EngineOrdinal,
+                    (unsigned long long)pSubmitCommand->SubmissionFenceId,
+                    (unsigned long long)assignedFence, poolVmid,
+                    (unsigned long long)physicalRoot,
+                    (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress,
+                    ibSizeDwords, (unsigned long long)ibFingerprint,
+                    ibFingerprintValid != 0 ? 1u : 0u,
+                    (NT_SUCCESS(submitStatus) && committed && commitSync.CommitAccepted) ? 1u : 0u,
+                    (uint32_t)submitStatus, diagRptr, rptrOk, diagWptr, wptrOk,
+                    diagSq, sqOk, observedFence,
+                    context->GfxEngine.FenceCpuVirtual != NULL ? 1u : 0u);
+            }
+
             Bc250McdmContextReleaseSubmissionView(&context->Objects,
                 (BC250_MCDM_HANDLE)pSubmitCommand->hContext);
 
@@ -12657,6 +13325,12 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
         } else {
             Bc250DisplayLog("[SubmitVirtual Node1 GFX] GfxEngineSubmit FALHOU: status=0x%08X; cancelando reserva de fence\n",
                 (uint32_t)submitStatus);
+            Bc250DisplayLog("BC250_DIAG schema=1 level=ERROR event=KMD_GFX_REJECT ctx=%p node=1 dxg_fence=%llu vmid=%u root=0x%llX va=0x%llX dw=%u status=0x%08X\n",
+                pSubmitCommand->hContext,
+                (unsigned long long)pSubmitCommand->SubmissionFenceId,
+                poolVmid, (unsigned long long)physicalRoot,
+                (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress,
+                ibSizeDwords, (uint32_t)submitStatus);
             BC250_ACTIVE_FENCE_SYNC cancelSync;
             BOOLEAN cancelled = FALSE;
             RtlZeroMemory(&cancelSync, sizeof(cancelSync));
@@ -14146,7 +14820,32 @@ static NTSTATUS Bc250ActiveUpdatePageTableHandler(
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS Bc250DxgkDdiStartDeviceV5TelemetryImpl(
+    CONST PVOID MiniportDeviceContext,
+    PDXGK_START_INFO DxgkStartInfo,
+    PDXGKRNL_INTERFACE DxgkInterface,
+    PULONG NumberOfVideoPresentSources,
+    PULONG NumberOfChildren);
+
+/* DX.48: StartDevice fala na entrada e na saida, com o contexto. */
 NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceV5Telemetry(
+    CONST PVOID MiniportDeviceContext,
+    PDXGK_START_INFO DxgkStartInfo,
+    PDXGKRNL_INTERFACE DxgkInterface,
+    PULONG NumberOfVideoPresentSources,
+    PULONG NumberOfChildren)
+{
+    NTSTATUS status;
+
+    Bc250DisplayLog("[DX48_LIFECYCLE] StartDevice ENTER Contexto=%p\n", MiniportDeviceContext);
+    status = Bc250DxgkDdiStartDeviceV5TelemetryImpl(MiniportDeviceContext, DxgkStartInfo,
+        DxgkInterface, NumberOfVideoPresentSources, NumberOfChildren);
+    Bc250DisplayLog("[DX48_LIFECYCLE] StartDevice LEAVE Contexto=%p status=0x%08X\n",
+        MiniportDeviceContext, (uint32_t)status);
+    return status;
+}
+
+static NTSTATUS Bc250DxgkDdiStartDeviceV5TelemetryImpl(
     CONST PVOID MiniportDeviceContext,
     PDXGK_START_INFO DxgkStartInfo,
     PDXGKRNL_INTERFACE DxgkInterface,
@@ -15006,6 +15705,7 @@ NTSTATUS Bc250BuildActiveInitializationDataForProfile(
     Bc250McdmInstallUnloadCleanupHandler(Bc250ActiveDriverUnloadCleanup);
     Bc250DisplayInstallGpuVaResolver(Bc250ActiveResolveDisplayGpuVa);
     Bc250McdmInstallEscapeHandler(Bc250ActiveEscapeHandler);
+    Bc250McdmInstallPreemptHandler(Bc250ActivePreemptHandler);
     (void)Bc250McdmPopulateRequiredCallbacks(InitializationData);
     /*
      * DxgkInitialize valida a tabela completa de display+render antes de
@@ -15668,4 +16368,32 @@ static BC250_PSP_RING_STATUS Bc250ActiveProbePspRing(
         Context->DeferredPspRingVirtual = ringVirtual;
     }
     return status;
+}
+
+static uint32_t Bc250ActiveDx53PendingFences(
+    BC250_DXGK_ACTIVE_CONTEXT *Context,
+    uint32_t *Pending,
+    uint32_t *Reserved)
+{
+    BC250_ACTIVE_FENCE_SYNC sync;
+    BOOLEAN ran = FALSE;
+    NTSTATUS st;
+
+    *Pending = 0u;
+    *Reserved = 0u;
+    if (Context == NULL ||
+        Context->Core.DxgkInterface.DxgkCbSynchronizeExecution == NULL ||
+        Context->Core.DxgkInterface.DeviceHandle == NULL) {
+        return 0u;
+    }
+    RtlZeroMemory(&sync, sizeof(sync));
+    sync.Context = Context;
+    sync.Operation = BC250_ACTIVE_FENCE_SYNC_PENDING;
+    st = Context->Core.DxgkInterface.DxgkCbSynchronizeExecution(
+        Context->Core.DxgkInterface.DeviceHandle,
+        Bc250ActiveSynchronizedFenceCallback, &sync, 0, &ran);
+    if (!NT_SUCCESS(st) || !ran) return 0u;
+    *Pending = sync.PendingCount;
+    *Reserved = sync.ReservedCount;
+    return 1u;
 }

@@ -194,6 +194,7 @@ VOID Bc250UmdPipelineCacheDestroy(
         return;
     }
     pBridge = &pCache->pDevice->VkBridge;
+    (void)Bc250UmdVkDrainPending(pBridge, "destruir cache de pipelines");
 
     for (i = 0; i < BC250_PSO_CACHE_CAPACITY; ++i) {
         if (pCache->Entries[i].InUse) {
@@ -291,6 +292,9 @@ VOID Bc250UmdVkDestroyShaderModule(
     _Inout_ BC250_UMD_SHADER* pShader)
 {
     if (pDevice == NULL || pShader == NULL || !pDevice->VkBridgeInitialized) return;
+    if (pShader->DescriptorSetLayout != VK_NULL_HANDLE || pShader->VkModule != VK_NULL_HANDLE) {
+        (void)Bc250UmdVkDrainPending(&pDevice->VkBridge, "destruir shader");
+    }
     if (pShader->DescriptorSetLayout != VK_NULL_HANDLE) {
         pDevice->VkBridge.vk.vkDestroyDescriptorSetLayout(pDevice->VkBridge.Device, pShader->DescriptorSetLayout, NULL);
         pShader->DescriptorSetLayout = VK_NULL_HANDLE;
@@ -621,6 +625,8 @@ BOOL Bc250UmdPipelineCacheGetOrCreate(
     /* 3. Insert into Cache */
     uint32_t targetSlot = (freeSlot != UINT32_MAX) ? freeSlot : oldestSlot;
     if (pCache->Entries[targetSlot].InUse) {
+        /* DX.49: um draw do lote pode estar usando a pipeline despejada. */
+        (void)Bc250UmdVkDrainPending(pBridge, "despejar pipeline do cache");
         if (pCache->Entries[targetSlot].Pipeline != VK_NULL_HANDLE) {
             pBridge->vk.vkDestroyPipeline(pBridge->Device, pCache->Entries[targetSlot].Pipeline, NULL);
         }

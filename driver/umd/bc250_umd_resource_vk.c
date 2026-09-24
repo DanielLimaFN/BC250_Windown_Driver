@@ -349,6 +349,8 @@ VOID Bc250UmdVkDestroyResource(
 
     Bc250VkResTrace("[VK_RES] Bc250UmdVkDestroyResource: buf=%p, img=%p, mem=%p",
         (void*)pRes->VkBuf, (void*)pRes->VkImg, (void*)pRes->VkMem);
+    /* DX.49: um draw gravado no lote pode referenciar este recurso. */
+    (void)Bc250UmdVkDrainPending(pBridge, "destruir recurso");
 
     if (pRes->VkBuf != VK_NULL_HANDLE) {
         pBridge->vk.vkDestroyBuffer(pBridge->Device, pRes->VkBuf, NULL);
@@ -534,6 +536,7 @@ VOID Bc250UmdVkDestroyRtv(
 
     Bc250VkResTrace("[VK_RES] Bc250UmdVkDestroyRtv: view=%p, passClear=%p, passLoad=%p, fb=%p",
         (void*)pRtv->VkView, (void*)pRtv->VkPass, (void*)pRtv->VkPassLoad, (void*)pRtv->VkFb);
+    (void)Bc250UmdVkDrainPending(pBridge, "destruir RTV");
 
     if (pRtv->VkFb != VK_NULL_HANDLE) {
         pBridge->vk.vkDestroyFramebuffer(pBridge->Device, pRtv->VkFb, NULL);
@@ -651,6 +654,7 @@ BOOL Bc250UmdVkRtvFollowResource(
     Bc250VkResTrace("[VK_RES] RTV_SEGUE_RECURSO: rtv=%p res=%p imagem %p -> %p (view %p -> %p, fb %p -> %p)",
         (void*)pRtv, (void*)pRes, (void*)pRtv->VkImageAtCreation, (void*)pRes->VkImg,
         (void*)pRtv->VkView, (void*)newView, (void*)pRtv->VkFb, (void*)newFb);
+    (void)Bc250UmdVkDrainPending(pBridge, "RTV seguir recurso rotacionado");
     if (pRtv->VkFb != VK_NULL_HANDLE) {
         pBridge->vk.vkDestroyFramebuffer(pBridge->Device, pRtv->VkFb, NULL);
     }
@@ -729,6 +733,7 @@ VOID Bc250UmdVkDestroyDsv(
     pBridge = &pDevice->VkBridge;
 
     Bc250VkResTrace("[VK_RES] Bc250UmdVkDestroyDsv: view=%p", (void*)pDsv->VkView);
+    (void)Bc250UmdVkDrainPending(pBridge, "destruir DSV");
 
     if (pDsv->VkView != VK_NULL_HANDLE) {
         pBridge->vk.vkDestroyImageView(pBridge->Device, pDsv->VkView, NULL);
@@ -777,6 +782,14 @@ static uint32_t Bc250VkCountNonZeroSource(const VOID *pData, SIZE_T ByteSize, ui
     return nonZero;
 }
 
+static uint64_t Bc250VkUploadNowMicros(void)
+{
+    LARGE_INTEGER now, freq;
+    if (!QueryPerformanceCounter(&now) || !QueryPerformanceFrequency(&freq) || freq.QuadPart <= 0) return 0u;
+    return (uint64_t)(now.QuadPart / freq.QuadPart) * 1000000ull +
+           (uint64_t)((now.QuadPart % freq.QuadPart) * 1000000ll / freq.QuadPart);
+}
+
 BOOL Bc250UmdVkUploadImageData(
     _Inout_ struct _BC250_UMD_DEVICE* pDevice,
     _Inout_ struct _BC250_UMD_RESOURCE* pRes,
@@ -785,18 +798,13 @@ BOOL Bc250UmdVkUploadImageData(
     SIZE_T ByteSize)
 {
     BC250_UMD_VK_BRIDGE* pBridge;
-    VkBuffer staging = VK_NULL_HANDLE;
-    VkDeviceMemory stagingMem = VK_NULL_HANDLE;
-    VkBufferCreateInfo bufInfo;
-    VkMemoryRequirements memReqs;
-    VkMemoryAllocateInfo allocInfo;
     VkCommandBuffer cmd;
     VkImageMemoryBarrier barrier;
     VkBufferImageCopy region;
-    uint32_t memTypeIndex;
-    void* mapped = NULL;
     VkResult res;
-    BOOL ok = FALSE;
+    BOOL grew = FALSE;
+    uint64_t allocMicros = 0u;
+    uint64_t t0;
     UINT bufferRowLength = 0u;
 
     if (pDevice == NULL || pRes == NULL || pData == NULL || ByteSize == 0 ||
@@ -858,51 +866,35 @@ BOOL Bc250UmdVkUploadImageData(
         ByteSize = required;
     }
 
-    memset(&bufInfo, 0, sizeof(bufInfo));
-    bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufInfo.size = (VkDeviceSize)ByteSize;
-    bufInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    if (pBridge->vk.vkCreateBuffer(pBridge->Device, &bufInfo, NULL, &staging) != VK_SUCCESS) {
-        Bc250VkResTrace("[VK_RES] UploadImageData RECUSADO: vkCreateBuffer do staging falhou");
+    /*
+     * DX.49 -- STAGING PERSISTENTE. Corrida 93 (P0): ~1,1 s entre o trace
+     * SUCESSO e o retorno de cada upload de 3,6 MB; ali so' existia a
+     * liberacao do staging criado nesta chamada (atribuicao P2). O staging agora
+     * e' do bridge, cresce quando precisa e so' morre no shutdown. A fence da
+     * copia continua sendo esperada antes de retornar: o proximo upload nunca
+     * reescreve um staging que a GPU ainda le.
+     */
+    t0 = Bc250VkUploadNowMicros();
+    if (!Bc250UmdVkEnsureUploadStaging(pBridge, (VkDeviceSize)ByteSize, &grew, &allocMicros)) {
+        Bc250VkResTrace("[VK_RES] UploadImageData RECUSADO: staging persistente indisponivel para %zu bytes", ByteSize);
         return FALSE;
     }
-    pBridge->vk.vkGetBufferMemoryRequirements(pBridge->Device, staging, &memReqs);
-    memTypeIndex = Bc250UmdVkFindMemoryType(pBridge, memReqs.memoryTypeBits,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    if (memTypeIndex == UINT32_MAX) {
-        Bc250VkResTrace("[VK_RES] UploadImageData RECUSADO: sem tipo de memoria host-visible para o staging");
-        goto cleanup;
-    }
-    memset(&allocInfo, 0, sizeof(allocInfo));
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memReqs.size;
-    allocInfo.memoryTypeIndex = memTypeIndex;
-    if (pBridge->vk.vkAllocateMemory(pBridge->Device, &allocInfo, NULL, &stagingMem) != VK_SUCCESS) {
-        Bc250VkResTrace("[VK_RES] UploadImageData RECUSADO: vkAllocateMemory do staging falhou");
-        goto cleanup;
-    }
-    if (pBridge->vk.vkBindBufferMemory(pBridge->Device, staging, stagingMem, 0) != VK_SUCCESS) {
-        Bc250VkResTrace("[VK_RES] UploadImageData RECUSADO: vkBindBufferMemory do staging falhou");
-        goto cleanup;
-    }
-    res = pBridge->vk.vkMapMemory(pBridge->Device, stagingMem, 0, VK_WHOLE_SIZE, 0, &mapped);
-    if (res != VK_SUCCESS || mapped == NULL) {
-        Bc250VkResTrace("[VK_RES] UploadImageData RECUSADO: vkMapMemory do staging falhou (res=%d)", res);
-        goto cleanup;
-    }
-    memcpy(mapped, pData, ByteSize);
-    pBridge->vk.vkUnmapMemory(pBridge->Device, stagingMem);
+    memcpy(pBridge->UploadStagingMapped, pData, ByteSize);
 
     cmd = Bc250UmdVkGetCommandBuffer(pBridge);
     if (cmd == VK_NULL_HANDLE) {
         Bc250VkResTrace("[VK_RES] UploadImageData RECUSADO: sem command buffer");
-        goto cleanup;
+        return FALSE;
     }
 
     /* UNDEFINED -> TRANSFER_DST. Descartar o conteudo anterior e correto aqui:
      * a imagem ou acabou de nascer, ou vai ser integralmente reescrita no
-     * subrecurso 0, que e o unico que esta funcao declara carregar. */
+     * subrecurso 0, que e o unico que esta funcao declara carregar.
+     *
+     * DX.49: com o lote de draws, draws ANTERIORES gravados no mesmo command
+     * buffer podem amostrar esta imagem. A origem da barreira passa a ser
+     * ALL_COMMANDS com MEMORY_WRITE: a copia espera quem veio antes (WAR/WAW).
+     * TOP_OF_PIPE com acesso 0 so' era correto porque nada ficava pendente. */
     memset(&barrier, 0, sizeof(barrier));
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -913,9 +905,9 @@ BOOL Bc250UmdVkUploadImageData(
     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barrier.subresourceRange.levelCount = pRes->MipLevels ? pRes->MipLevels : 1u;
     barrier.subresourceRange.layerCount = pRes->ArraySize ? pRes->ArraySize : 1u;
-    barrier.srcAccessMask = 0;
+    barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    pBridge->vk.vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+    pBridge->vk.vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
 
     memset(&region, 0, sizeof(region));
@@ -930,7 +922,7 @@ BOOL Bc250UmdVkUploadImageData(
     region.imageExtent.width = pRes->Width;
     region.imageExtent.height = pRes->Height;
     region.imageExtent.depth = 1;
-    pBridge->vk.vkCmdCopyBufferToImage(cmd, staging, pRes->VkImg,
+    pBridge->vk.vkCmdCopyBufferToImage(cmd, pBridge->UploadStagingBuf, pRes->VkImg,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -941,33 +933,30 @@ BOOL Bc250UmdVkUploadImageData(
         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
         0, 0, NULL, 0, NULL, 1, &barrier);
 
-    /* O flush submete e ESPERA a fence. O staging so pode morrer depois disso,
-     * e o layout so pode ser declarado depois que a copia de fato executou. */
+    /* O flush submete e ESPERA a fence. O staging so pode ser reusado depois
+     * disso, e o layout so pode ser declarado depois que a copia de fato executou. */
     res = Bc250UmdVkFlushCommands(pBridge);
     if (res != VK_SUCCESS) {
         Bc250VkResTrace("[VK_RES] UploadImageData RECUSADO: flush/fence devolveu res=%d; "
             "a imagem NAO recebeu conteudo e continua sem VkImageHasContent", res);
-        goto cleanup;
+        return FALSE;
     }
 
     /* Unica fonte de verdade: o layout. SHADER_READ_ONLY_OPTIMAL so' chega
      * aqui, e so' depois que a fence da copia voltou. */
     pRes->VkLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    ok = TRUE;
     {
         uint32_t srcSamples = 0u;
         uint32_t srcNonZero = Bc250VkCountNonZeroSource(pData, ByteSize, &srcSamples);
         Bc250VkResTrace("[VK_RES] UploadImageData SUCESSO: %ux%u, %zu bytes, RowPitch=%u "
             "bufferRowLength=%u texels em mip0/camada0 (img=%p res=%p) NonZeroSrc=%u/%u -- mip chain e array "
-            "NAO carregados por escopo declarado",
+            "NAO carregados por escopo declarado [DX49_STAGING] Persistente=1 Cresceu=%d AlocUs=%llu TotalUs=%llu",
             pRes->Width, pRes->Height, ByteSize, RowPitch, bufferRowLength,
-            (void*)pRes->VkImg, (void*)pRes, srcNonZero, srcSamples);
+            (void*)pRes->VkImg, (void*)pRes, srcNonZero, srcSamples,
+            (int)grew, (unsigned long long)allocMicros,
+            (unsigned long long)(Bc250VkUploadNowMicros() - t0));
     }
-
-cleanup:
-    if (stagingMem != VK_NULL_HANDLE) pBridge->vk.vkFreeMemory(pBridge->Device, stagingMem, NULL);
-    if (staging != VK_NULL_HANDLE) pBridge->vk.vkDestroyBuffer(pBridge->Device, staging, NULL);
-    return ok;
+    return TRUE;
 }
 
 BOOL Bc250UmdVkUploadBufferData(

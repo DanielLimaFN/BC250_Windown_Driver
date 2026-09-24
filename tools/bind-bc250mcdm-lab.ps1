@@ -1166,9 +1166,37 @@ if ($evidencePdbHash -ne [string]$manifest.PackagePdbSha256) {
     captured_at = (Get-Date).ToString('o')
 } | ConvertTo-Json | Set-Content -LiteralPath `
     (Join-Path $evidenceDir 'private-symbols.json') -Encoding UTF8
-# B2: Limpeza de logs residuais da UMD em C:\Windows\Temp para isolar este bind.
-Get-ChildItem -LiteralPath 'C:\Windows\Temp' -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue |
-    Remove-Item -Force -ErrorAction SilentlyContinue
+# B2: logs residuais da UMD em C:\Windows\Temp saem do caminho para isolar este bind.
+# DX.50: eram APAGADOS. Depois de um travamento duro o binder morre antes da
+# coleta FINAL, e o log do dwm.exe da corrida travada so' existe aqui -- o bind
+# seguinte o destruia (Corridas 94 e 95). Agora sao MOVIDOS para a evidencia
+# deste bind, com hash, antes de qualquer outra coisa tocar neles.
+$residualUmdDir = Join-Path $evidenceDir 'umd-logs-residuais-do-bind-anterior'
+$residualUmd = @(Get-ChildItem -LiteralPath 'C:\Windows\Temp' -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue)
+if ($residualUmd.Count -gt 0) {
+    New-Item -ItemType Directory -Path $residualUmdDir -Force | Out-Null
+    foreach ($residual in $residualUmd) {
+        try {
+            $residualDest = Join-Path $residualUmdDir $residual.Name
+            # COPIA, nao mover: mover levava junto a ACL de C:\Windows\Temp e a
+            # sessao de analise (sem elevacao) nao conseguia ler o arquivo
+            # (medido na Corrida 96). A copia herda a ACL da pasta de evidencia.
+            # A origem so' sai depois de o hash da copia bater.
+            Copy-Item -LiteralPath $residual.FullName -Destination $residualDest -Force -ErrorAction Stop
+            $residualHash = (Get-FileHash -LiteralPath $residualDest -Algorithm SHA256).Hash
+            if ($residualHash -ne (Get-FileHash -LiteralPath $residual.FullName -Algorithm SHA256).Hash) {
+                throw 'hash da copia difere da origem; origem mantida'
+            }
+            '{0}  {1}  {2}  {3:o}' -f $residualHash,
+                $residual.Name, $residual.Length, $residual.LastWriteTime |
+                Add-Content -LiteralPath (Join-Path $residualUmdDir 'SHA256SUMS.txt') -Encoding UTF8
+            Remove-Item -LiteralPath $residual.FullName -Force -ErrorAction Stop
+        } catch {
+            Write-Host "AVISO: log residual da UMD nao arquivado ($($residual.Name)): $($_.Exception.Message)"
+        }
+    }
+    Write-Host "Logs residuais da UMD arquivados: $($residualUmd.Count) em $residualUmdDir"
+}
 
 # DX.21: DESPEJO DO IB GRAFICO EM STAGING GRAVAVEL PELO dwm.exe.
 # LIDO em 22/09 (icacls): a pasta de evidencia fica no perfil do Daniel e so'
@@ -1273,7 +1301,23 @@ if ($DisableWatchdog) {
         } else { $null })
         automatic_recovery_reboot = $true; hardware_validated = $false
     }
-    $guardConfig | ConvertTo-Json -Depth 5 | Set-Content $configPath -Encoding UTF8
+    # DX.45b host (Corrida 88): travamento duro ~40 s depois do bind deixou
+    # armed.json com 1178 bytes TODOS ZERO e o XML das duas tarefas ausente de
+    # System32\Tasks -- o guardiao nao tinha config nem tarefa no boot seguinte
+    # e o rollback nao aconteceu. Mesma classe do _last_lab_binding.json da 81.
+    # Config em WRITE-THROUGH; depois do registro das tarefas, flush do hive
+    # HKLM e do cache do volume antes de o bind prosseguir.
+    $armedBytes = [System.Text.UTF8Encoding]::new($true).GetPreamble() +
+        [System.Text.UTF8Encoding]::new($false).GetBytes(($guardConfig | ConvertTo-Json -Depth 5))
+    $armedStream = [System.IO.FileStream]::new($configPath,
+        [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::None, 4096, [System.IO.FileOptions]::WriteThrough)
+    try {
+        $armedStream.Write($armedBytes, 0, $armedBytes.Length)
+        $armedStream.Flush($true)
+    } finally {
+        $armedStream.Dispose()
+    }
     $guardConfig | ConvertTo-Json -Depth 5 | Set-Content `
         (Join-Path $evidenceDir 'safe-bind-watchdog-config.json') -Encoding UTF8
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
@@ -1291,6 +1335,21 @@ if ($DisableWatchdog) {
     $deadlineTrigger = New-ScheduledTaskTrigger -Once -At $deadlineUtc.ToLocalTime()
     Register-ScheduledTask -TaskName $deadlineTaskName -Action $deadlineAction `
         -Trigger $deadlineTrigger -Principal $taskPrincipal -Settings $settings -Force | Out-Null
+    # DX.45b host: as tarefas vivem no hive SOFTWARE (TaskCache) e em
+    # System32\Tasks; os dois sao gravados preguicosamente pelo Windows.
+    if (-not ('Bc250Durable.Reg' -as [type])) {
+        Add-Type -Namespace Bc250Durable -Name Reg -MemberDefinition `
+            '[System.Runtime.InteropServices.DllImport("advapi32.dll")] public static extern int RegFlushKey(System.IntPtr hKey);'
+    }
+    $regFlush = [Bc250Durable.Reg]::RegFlushKey([IntPtr][long]-2147483646)  # HKEY_LOCAL_MACHINE
+    $volFlushOk = $true
+    try { Write-VolumeCache -DriveLetter C -ErrorAction Stop } catch { $volFlushOk = $false }
+    if ($regFlush -ne 0 -or -not $volFlushOk -or
+        -not (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) -or
+        ((Get-Content -LiteralPath $configPath -Raw) -notmatch '"task_name"')) {
+        throw "Guardiao nao ficou duravel (RegFlushKey=$regFlush VolumeCache=$volFlushOk); bind cancelado antes de tocar o driver."
+    }
+    Write-Host "[OK] Guardiao duravel: armed.json write-through, HKLM e volume C: descarregados."
     Start-ScheduledTask -TaskName $taskName
     $guardState = Join-Path $evidenceDir 'safe-bind-watchdog-state.json'
     $guardDeadline = (Get-Date).AddSeconds(10)
@@ -2397,6 +2456,24 @@ if (-not $DisableWatchdog) {
     } catch {
         Write-Host ("  AVISO: cauda FINAL do KMD falhou: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
     }
+}
+
+# DX.39: indice humano dos logs JA ARQUIVADOS. Falha do indexador nao muda o
+# rollback nem converte uma corrida incompleta em sucesso. O bruto prevalece.
+try {
+    $telemetryIndexer = Join-Path $PSScriptRoot 'index-bc250-telemetry.py'
+    $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+    if ((Test-Path -LiteralPath $telemetryIndexer) -and $null -ne $pythonCommand -and
+        (Test-Path -LiteralPath (Join-Path $evidenceDir 'display-log-this-bind-FINAL.txt'))) {
+        & $pythonCommand.Source $telemetryIndexer $evidenceDir
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning ("DX.39: indexador saiu com {0}; logs brutos preservados." -f $LASTEXITCODE)
+        }
+    } else {
+        Write-Warning 'DX.39: indice nao gerado (Python, script ou log FINAL ausente); logs brutos preservados.'
+    }
+} catch {
+    Write-Warning ("DX.39: indice falhou: {0}; logs brutos preservados." -f $_.Exception.Message)
 }
 
 Write-Host "`n==========================================================================" -ForegroundColor Green
