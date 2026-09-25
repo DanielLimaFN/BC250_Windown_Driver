@@ -1,0 +1,5 @@
+# Scripts do cmd.exe precisam de CRLF: com LF o cmd.exe erra goto/labels
+# (defeito medido na Corrida 100 e no build-contract.bat da faixa A8).
+# O indice guarda LF; o checkout em qualquer SO entrega CRLF.
+*.cmd text eol=crlf
+*.bat text eol=crlf
