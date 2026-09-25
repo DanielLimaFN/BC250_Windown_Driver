@@ -165,6 +165,7 @@ HRESULT Bc250UmdDeviceInit(
     }
 
     memset(pDevice, 0, sizeof(*pDevice));
+    InitializeSRWLock(&pDevice->DeviceLock);
     pDevice->hRTDevice = pCreateData->hRTDevice;
     pDevice->hRTCoreLayer = pCreateData->hRTCoreLayer;
     pDevice->pAdapter = pAdapter;
@@ -216,11 +217,19 @@ HRESULT Bc250UmdDeviceInit(
 VOID Bc250UmdDeviceTeardown(
     _Inout_ BC250_UMD_DEVICE* pDevice)
 {
-    if (pDevice == NULL || !pDevice->DeviceActive) {
+    if (pDevice == NULL || pDevice->TeardownActive) {
         return;
     }
 
-    Bc250UmdTrace("Bc250UmdDeviceTeardown: device=%p iniciando teardown", (void*)pDevice);
+    /* DX.82: Marca imediatamente como em teardown para que operacoes concorrentes retornem fail-closed */
+    pDevice->TeardownActive = TRUE;
+    pDevice->DeviceActive = FALSE;
+    pDevice->VkBridge.DeviceActive = FALSE;
+
+    /* DX.82: Bloqueia com lock exclusivo para que chamadas em andamento (WaitPaging, CreateResource) terminem */
+    AcquireSRWLockExclusive(&pDevice->DeviceLock);
+
+    Bc250UmdTrace("Bc250UmdDeviceTeardown: device=%p iniciando teardown seguro", (void*)pDevice);
 
     /*
      * Nao ha mais teardown de blt: a composicao passou a ser executada pelo
@@ -267,8 +276,8 @@ VOID Bc250UmdDeviceTeardown(
     }
 
     pDevice->NativeNode1Ready = FALSE;
-    pDevice->DeviceActive = FALSE;
     Bc250UmdTrace("Bc250UmdDeviceTeardown: device=%p concluido", (void*)pDevice);
+    ReleaseSRWLockExclusive(&pDevice->DeviceLock);
 }
 
 /* Vulkan Resource and Pipeline Cache translation implementations */
@@ -935,6 +944,61 @@ SIZE_T APIENTRY Bc250Umd10CalcPrivateOpenedResourceSize(
     return sizeof(BC250_UMD_RESOURCE);
 }
 
+/* DX.59: consulta exata por token, sem alterar o resultado de pfnAllocateCb. */
+static void Bc250UmdProbeAllocationCallback(
+    BC250_UMD_DEVICE *device,
+    UINT64 token,
+    HRESULT allocateHr,
+    UINT bindFlags,
+    UINT miscFlags)
+{
+    static volatile LONG s_AllocationQueryCount = 0;
+    BC250_ESCAPE_ALLOCATION_QUERY payload;
+    D3DDDICB_ESCAPE args;
+    HRESULT escapeHr;
+    BOOL replyValid;
+    LONG queryNumber = InterlockedIncrement(&s_AllocationQueryCount);
+    /* A primeira amostra captura o controle; as seguintes cobrem a recusa
+     * sem acrescentar centenas de escapes ao caminho do Explorer. */
+    if (queryNumber > 16L && (queryNumber % 32L) != 0L)
+        return;
+    if (device == NULL || device->pAdapter == NULL ||
+        device->pAdapter->hRTAdapter.handle == NULL ||
+        device->Winsys.Callbacks == NULL ||
+        device->Winsys.Callbacks->pfnEscapeCb == NULL) {
+        Bc250UmdTrace("DX59_ALLOC_QUERY INDISPONIVEL: Token=0x%llX hr=0x%08X",
+            (unsigned long long)token, (unsigned)allocateHr);
+        return;
+    }
+    memset(&payload, 0, sizeof(payload));
+    payload.Opcode = BC250_ESCAPE_OP_ALLOCATION_QUERY;
+    payload.Version = BC250_ESCAPE_ALLOCATION_QUERY_VERSION;
+    payload.Token = token;
+    memset(&args, 0, sizeof(args));
+    args.hDevice = device->Winsys.RuntimeDevice;
+    args.pPrivateDriverData = &payload;
+    args.PrivateDriverDataSize = (UINT)sizeof(payload);
+    escapeHr = device->Winsys.Callbacks->pfnEscapeCb(
+        device->pAdapter->hRTAdapter.handle, &args);
+    replyValid = SUCCEEDED(escapeHr) &&
+        payload.Opcode == BC250_ESCAPE_OP_ALLOCATION_QUERY &&
+        payload.Version == BC250_ESCAPE_ALLOCATION_QUERY_VERSION &&
+        payload.Token == token;
+    Bc250UmdTrace("DX59_ALLOC_QUERY Token=0x%llX AllocateHr=0x%08X EscapeHr=0x%08X ReplyValid=%u "
+        "Seen=%u KmdStatus=0x%08X Seq=%u Resource=%u Flags=0x%08X Priority=%u "
+        "SegSet=0x%X Preferred=0x%X Align=%u Size=%llu hAlloc=%u hResource=%u "
+        "Bind=0x%X Misc=0x%X OpenCalls=%u OpenStatus=0x%08X DestroyCalls=%u DestroyStatus=0x%08X",
+        (unsigned long long)token, (unsigned)allocateHr, (unsigned)escapeHr,
+        (unsigned)replyValid,
+        payload.Seen, payload.KmdStatus, payload.Sequence,
+        payload.FlagsResource, payload.AllocationFlags, payload.AllocationPriority,
+        payload.WriteSegmentSet, payload.PreferredSegment, payload.Alignment,
+        (unsigned long long)payload.SizeBytes, payload.KmdAllocationNonNull,
+        payload.KmdResourceNonNull, bindFlags, miscFlags,
+        payload.OpenCalls, payload.OpenLastStatus,
+        payload.DestroyCalls, payload.DestroyLastStatus);
+}
+
 VOID APIENTRY Bc250Umd10CreateResource(
     D3D10DDI_HDEVICE hDevice,
     _In_ CONST D3D10DDIARG_CREATERESOURCE* pCreate,
@@ -953,6 +1017,19 @@ VOID APIENTRY Bc250Umd10CreateResource(
         Bc250UmdTrace("CreateResource: argumento invalido (res=%p, create=%p)",
             (void*)res, (void*)pCreate);
         return;
+    }
+
+    if (device != NULL) {
+        if (device->TeardownActive) {
+            Bc250UmdTrace("CreateResource RECUSADO: device em teardown (res=%p)", (void*)res);
+            return;
+        }
+        AcquireSRWLockShared(&device->DeviceLock);
+        if (device->TeardownActive) {
+            ReleaseSRWLockShared(&device->DeviceLock);
+            Bc250UmdTrace("CreateResource ABORTADO: device em teardown (res=%p)", (void*)res);
+            return;
+        }
     }
 
     memset(res, 0, sizeof(*res));
@@ -1113,6 +1190,12 @@ VOID APIENTRY Bc250Umd10CreateResource(
         }
         wsStatus = Bc250WinsysAllocateForResource(&device->Winsys, token,
             totalSize, alignment, &binding, &res->Allocation);
+        if (res->ResourceDimension == D3D10DDIRESOURCE_TEXTURE2D &&
+            res->Width == 1024u && res->Height == 832u) {
+            Bc250UmdProbeAllocationCallback(device, token,
+                device->Winsys.LastCallbackHr, pCreate->BindFlags,
+                pCreate->MiscFlags);
+        }
         if (wsStatus == BC250_WINSYS_OK)
             wsStatus = Bc250WinsysMapAllocation(&device->Winsys, &res->Allocation, FALSE);
         if (wsStatus == BC250_WINSYS_OK)
@@ -1140,9 +1223,16 @@ VOID APIENTRY Bc250Umd10CreateResource(
             if (device->pUMCallbacks != NULL && device->pUMCallbacks->pfnSetErrorCb != NULL)
                 device->pUMCallbacks->pfnSetErrorCb(device->hRTCoreLayer,
                     FAILED(failure) ? failure : E_FAIL);
+            ReleaseSRWLockShared(&device->DeviceLock);
             return;
         }
         res->Created = TRUE;
+        /* DX.82: Se o device entrou em teardown durante a paginacao, aborta com seguranca */
+        if (device->TeardownActive || (device->VkBridgeInitialized && !device->VkBridge.DeviceActive)) {
+            Bc250UmdTrace("CreateResource ABORTADO: device desmontado durante WaitPaging (res=%p)", (void*)res);
+            ReleaseSRWLockShared(&device->DeviceLock);
+            return;
+        }
     } else {
         res->Created = TRUE;
     }
@@ -1191,7 +1281,7 @@ VOID APIENTRY Bc250Umd10CreateResource(
         }
     }
 
-    if (device != NULL && device->VkBridgeInitialized) {
+    if (device != NULL && !device->TeardownActive && device->VkBridgeInitialized && device->VkBridge.DeviceActive) {
         (void)Bc250UmdVkCreateResource(device, res, pCreate);
     }
 
@@ -1200,6 +1290,8 @@ VOID APIENTRY Bc250Umd10CreateResource(
         res->Width, res->Height, Bc250DxgiFormatBytesPerPixel(res->Format),
         (unsigned long long)res->Allocation.GpuVirtualAddress, res->IsPrimary,
         (int)res->VkResourceCreated);
+
+    ReleaseSRWLockShared(&device->DeviceLock);
 }
 
 VOID APIENTRY Bc250Umd10OpenResource(
@@ -1235,11 +1327,15 @@ VOID APIENTRY Bc250Umd10DestroyResource(
 
     Bc250UmdTrace("DestroyResource: res=%p", (void*)res);
     if (res != NULL) {
-        if (device != NULL && device->VkBridgeInitialized) {
-            Bc250UmdVkDestroyResource(device, res);
-        }
-        if (device != NULL && device->WinsysInitialized && res->Allocation.Created) {
-            (void)Bc250WinsysDeallocate(&device->Winsys, &res->Allocation);
+        if (device != NULL) {
+            AcquireSRWLockShared(&device->DeviceLock);
+            if (!device->TeardownActive && device->VkBridgeInitialized && device->VkBridge.DeviceActive) {
+                Bc250UmdVkDestroyResource(device, res);
+            }
+            if (device->WinsysInitialized && res->Allocation.Created) {
+                (void)Bc250WinsysDeallocate(&device->Winsys, &res->Allocation);
+            }
+            ReleaseSRWLockShared(&device->DeviceLock);
         }
         if (res->pCpuShadow != NULL) {
             free(res->pCpuShadow);
@@ -1324,15 +1420,24 @@ VOID APIENTRY Bc250Umd10ResourceMap(
 {
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     BC250_UMD_RESOURCE* res = (BC250_UMD_RESOURCE*)hResource.pDrvPrivate;
-    UNREFERENCED_PARAMETER(device);
     UNREFERENCED_PARAMETER(Subresource);
-    UNREFERENCED_PARAMETER(MapType);
-    UNREFERENCED_PARAMETER(MapFlags);
 
     if (pMappedSubResource == NULL) return;
     memset(pMappedSubResource, 0, sizeof(*pMappedSubResource));
 
     if (res == NULL) return;
+
+    /*
+     * DX.77: se a aplicacao descarta o conteudo anterior do buffer (WRITE_DISCARD),
+     * draws pendentes no command buffer precisam ser executados antes que a CPU
+     * sobrescreva a memoria compartilhada. Chamadas com WRITE_NOOVERWRITE (como o DWM
+     * faz para draws sequenciais na mesma moldura) garantem nao-sobreposicao e
+     * NAO drenam, permitindo coalescencia de lote completa no command buffer.
+     */
+    if (device != NULL && device->VkBridgeInitialized && device->VkBridge.PendingDraws > 0 &&
+        MapType == D3D10_DDI_MAP_WRITE_DISCARD) {
+        (void)Bc250UmdVkDrainPending(&device->VkBridge, "ResourceMap DISCARD de buffer");
+    }
 
     if (res->pCpuShadow == NULL && res->TotalByteSize > 0u) {
         res->pCpuShadow = calloc(1, res->TotalByteSize);
@@ -1342,8 +1447,8 @@ VOID APIENTRY Bc250Umd10ResourceMap(
     pMappedSubResource->RowPitch = res->RowPitch;
     pMappedSubResource->DepthPitch = res->SlicePitch;
 
-    Bc250UmdTrace("ResourceMap: res=%p Sub=%u pData=%p Pitch=%u",
-        (void*)res, Subresource, pMappedSubResource->pData, pMappedSubResource->RowPitch);
+    Bc250UmdTrace("ResourceMap: res=%p Sub=%u MapType=%u Flags=0x%x pData=%p Pitch=%u",
+        (void*)res, Subresource, (unsigned)MapType, (unsigned)MapFlags, pMappedSubResource->pData, pMappedSubResource->RowPitch);
 }
 
 VOID APIENTRY Bc250Umd10ResourceUnmap(
@@ -1437,6 +1542,8 @@ VOID APIENTRY Bc250Umd10CheckMultisampleQualityLevels(
     UINT SampleCount,
     _Out_ UINT* pNumQualityLevels)
 {
+    static volatile LONG s_Bc250MsaaQueryLogOrdinal = 0;
+    LONG logOrdinal;
     UNREFERENCED_PARAMETER(hDevice);
     UNREFERENCED_PARAMETER(Format);
 
@@ -1449,8 +1556,14 @@ VOID APIENTRY Bc250Umd10CheckMultisampleQualityLevels(
         *pNumQualityLevels = 0u;
     }
 
-    Bc250UmdTrace("CheckMultisampleQualityLevels: Format=%u Samples=%u -> Levels=%u",
-        (UINT)Format, SampleCount, *pNumQualityLevels);
+    /* DX.69: o Explorer chamou esta query 550.800 vezes na Corrida 112.
+     * Cada linha fazia ate dois WriteFile write-through. O retorno e' identico;
+     * registrar as primeiras 16 e cada 4096a preserva atividade e contrato. */
+    logOrdinal = InterlockedIncrement(&s_Bc250MsaaQueryLogOrdinal);
+    if (logOrdinal <= 16 || (logOrdinal % 4096) == 0) {
+        Bc250UmdTrace("[DX69_MSAA_SAMPLE] #%ld CheckMultisampleQualityLevels: Format=%u Samples=%u -> Levels=%u",
+            logOrdinal, (UINT)Format, SampleCount, *pNumQualityLevels);
+    }
 }
 
 /* D3D10 Render Target View DDIs */
@@ -2188,10 +2301,56 @@ static BOOL Bc250UmdVkCopyImageInternal(
         return FALSE;
     }
 
-    /* 1. Barreira de transicao de layout:
-     *    src: COLOR_ATTACHMENT_OPTIMAL -> TRANSFER_SRC_OPTIMAL
-     *    dst: COLOR_ATTACHMENT_OPTIMAL -> TRANSFER_DST_OPTIMAL
+    /* DX.78: se houver render pass aberto no command buffer, encerra antes de gravar barreiras e copia */
+    if (device->InRenderPass) {
+        device->VkBridge.vk.vkCmdEndRenderPass(cmdBuf);
+        device->InRenderPass = FALSE;
+    }
+
+    /*
+     * DX.64 (Corrida 106) -- A COPIA PASSA A RESPEITAR E ATUALIZAR O LAYOUT RASTREADO.
+     *
+     * MEDIDO: o dwm.exe criou uma textura 256x256 (SRV|RT), escreveu nela por
+     * ResourceCopyRegion (esta funcao, Extent=50x26) e 120 ms depois o Draw a
+     * amostrou -- recusado com SRV_LAYOUT_UNDEFINED_NUNCA_TRANSICIONADA, porque
+     * esta funcao (a) supunha COLOR_ATTACHMENT_OPTIMAL como layout anterior das
+     * duas imagens, qualquer que fosse o real, e (b) nunca gravava VkLayout.
+     * O Draw recusado chama pfnSetErrorCb(E_NOTIMPL) e o DWM recriou o device
+     * ~3 s depois, 2 de 2 vezes; as primarias da recriacao nao sobrevivem.
+     *
+     * Agora: layout anterior = o rastreado (UNDEFINED e' oldLayout sempre
+     * valido e descarta so' conteudo que nunca existiu); barreiras cobrem a
+     * imagem inteira, como em bc250_umd_descriptors.c; a origem volta ao seu
+     * layout; o destino so' passa a declarar conteudo se a origem tinha.
      */
+    const VkImageLayout srcOld = src->VkLayout;
+    const VkImageLayout dstOld = dst->VkLayout;
+    const BOOL srcHasContent =
+        (srcOld == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ||
+         srcOld == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) ? TRUE : FALSE;
+    const BOOL dstHadContent =
+        (dstOld == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ||
+         dstOld == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) ? TRUE : FALSE;
+    VkImageLayout srcFinal = srcHasContent ? srcOld : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    VkImageLayout dstFinal;
+
+    if (src->VkImg == dst->VkImg) {
+        /* Duas barreiras sobre a mesma imagem com layouts diferentes e' invalido. */
+        Bc250UmdTrace("[VK_BRIDGE] ResourceCopyImage RECUSADO: origem e destino sao a mesma imagem (res=%p)",
+            (void*)src);
+        return FALSE;
+    }
+    if (!srcHasContent && !dstHadContent) {
+        dstFinal = VK_IMAGE_LAYOUT_UNDEFINED;   /* nada foi escrito de verdade */
+    } else if (dstOld == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL ||
+               (dst->MipLevels <= 1u && dst->ArraySize <= 1u)) {
+        dstFinal = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    } else {
+        /* Com mips/camadas, a copia escreve so' o subrecurso 0: mesma
+         * semantica do upload, e o descritor recusa views alem dele. */
+        dstFinal = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+
     VkImageMemoryBarrier barriers[2];
     memset(barriers, 0, sizeof(barriers));
 
@@ -2199,31 +2358,31 @@ static BOOL Bc250UmdVkCopyImageInternal(
     barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barriers[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
     barriers[0].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    barriers[0].oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barriers[0].oldLayout = srcOld;
     barriers[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barriers[0].image = src->VkImg;
     barriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barriers[0].subresourceRange.baseMipLevel = 0;
-    barriers[0].subresourceRange.levelCount = 1;
+    barriers[0].subresourceRange.levelCount = src->MipLevels ? src->MipLevels : 1u;
     barriers[0].subresourceRange.baseArrayLayer = 0;
-    barriers[0].subresourceRange.layerCount = 1;
+    barriers[0].subresourceRange.layerCount = src->ArraySize ? src->ArraySize : 1u;
 
     /* Destination barrier */
     barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barriers[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
     barriers[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    barriers[1].oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barriers[1].oldLayout = dstOld;
     barriers[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barriers[1].image = dst->VkImg;
     barriers[1].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barriers[1].subresourceRange.baseMipLevel = 0;
-    barriers[1].subresourceRange.levelCount = 1;
+    barriers[1].subresourceRange.levelCount = dst->MipLevels ? dst->MipLevels : 1u;
     barriers[1].subresourceRange.baseArrayLayer = 0;
-    barriers[1].subresourceRange.layerCount = 1;
+    barriers[1].subresourceRange.layerCount = dst->ArraySize ? dst->ArraySize : 1u;
 
     device->VkBridge.vk.vkCmdPipelineBarrier(cmdBuf,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
@@ -2270,27 +2429,52 @@ static BOOL Bc250UmdVkCopyImageInternal(
         dst->VkImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         1, &region);
 
-    /* 3. Barreira de retorno para COLOR_ATTACHMENT_OPTIMAL */
+    /* 3. Barreira de retorno: origem ao layout que tinha; destino ao layout
+     * que passa a declarar (UNDEFINED rastreado vira COLOR_ATTACHMENT fisico,
+     * e UNDEFINED continua oldLayout valido na proxima barreira). */
     barriers[0].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    barriers[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barriers[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
     barriers[0].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    barriers[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barriers[0].newLayout = srcFinal;
 
     barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    barriers[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    barriers[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_MEMORY_WRITE_BIT |
+        VK_ACCESS_SHADER_READ_BIT;
     barriers[1].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barriers[1].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barriers[1].newLayout = (dstFinal == VK_IMAGE_LAYOUT_UNDEFINED) ?
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : dstFinal;
 
     device->VkBridge.vk.vkCmdPipelineBarrier(cmdBuf,
         VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
         0, 0, NULL, 0, NULL, 2, barriers);
 
-    /* Flusha os comandos de copia imediatamente para garantir consistencia de composicao */
-    (void)Bc250UmdVkFlushCommands(&device->VkBridge);
+    /* DX.78: Coalescencia de copias de regioes de imagem (damage rects do DWM).
+     * O comando de copia permanece gravado no command buffer sem flush sincrono
+     * imediato, unificando copias de dano com o destile e a submissao ao hardware
+     * por quadro. Flushes ocorrem apenas se a capacidade do lote for atingida. */
+    device->VkBridge.PendingDraws++;
+    const uint32_t batchPos = device->VkBridge.PendingDraws;
+    const BOOL flushNow = (batchPos >= BC250_DX49_BATCH_MAX_DRAWS);
+    if (flushNow) {
+        if (Bc250UmdVkFlushCommands(&device->VkBridge) != VK_SUCCESS) {
+            /* Sem prova de execucao, nada de conteudo declarado; UNDEFINED
+             * e' oldLayout valido para qualquer estado fisico. */
+            src->VkLayout = srcHasContent ? srcOld : VK_IMAGE_LAYOUT_UNDEFINED;
+            dst->VkLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            Bc250UmdTrace("[VK_BRIDGE] ResourceCopyImage FALHOU no flush: src=%p dst=%p; destino sem conteudo declarado",
+                (void*)src, (void*)dst);
+            return FALSE;
+        }
+    }
+    src->VkLayout = srcHasContent ? srcOld : VK_IMAGE_LAYOUT_UNDEFINED;
+    dst->VkLayout = dstFinal;
 
-    Bc250UmdTrace("[VK_BRIDGE] ResourceCopyImage Vk: src=%p dst=%p Extent=%ux%u DstXY=(%u,%u)",
-        (void*)src, (void*)dst, region.extent.width, region.extent.height, dstX, dstY);
+    Bc250UmdTrace("[VK_BRIDGE] ResourceCopyImage Vk: src=%p dst=%p Extent=%ux%u DstXY=(%u,%u) "
+        "LayoutSrc=%d->%d LayoutDst=%d->%d FlushAgora=%d Lote=%u",
+        (void*)src, (void*)dst, region.extent.width, region.extent.height, dstX, dstY,
+        (int)srcOld, (int)src->VkLayout, (int)dstOld, (int)dst->VkLayout,
+        (int)flushNow, batchPos);
 
     return TRUE;
 }
@@ -2821,7 +3005,7 @@ static void Bc250UmdTraceDrawVertices(_In_ BC250_UMD_DEVICE *d, BOOL Indexed, UI
  * roda a mesma grade. So' alvos grandes (>= 1024x512) e teto de 40 por device,
  * DECLARADO no log. Nada e' escrito no alvo.
  */
-#define BC250_DRAW_READBACK_MAX 40u
+#define BC250_DRAW_READBACK_MAX 3u
 static void Bc250UmdReadbackDrawTarget(_Inout_ BC250_UMD_DEVICE *d, _In_opt_ BC250_UMD_RESOURCE *res)
 {
     VkCommandBuffer cmd;
@@ -2987,6 +3171,7 @@ static BOOL Bc250UmdExecuteVkDraw(
     BOOL directRef = FALSE;
     BOOL usedRing = FALSE;
     BOOL flushNow = FALSE;
+    BOOL readbackActive = FALSE;
     uint32_t batchPosition = 0u;
 
     if (pDevice != NULL) pDevice->LastVkDrawFailureReason = "VULKAN_BRIDGE_INATIVA";
@@ -3157,7 +3342,7 @@ static BOOL Bc250UmdExecuteVkDraw(
      * O render pass aberto por um clear e' fechado sem flush.
      */
     pDevice->DrawUsesRing = FALSE;
-    if (pDevice->InRenderPass) {
+    if (pDevice->InRenderPass && pDevice->ActiveFramebuffer != rtv->VkFb) {
         pDevice->VkBridge.vk.vkCmdEndRenderPass(pDevice->VkBridge.CommandBuffer);
         pDevice->InRenderPass = FALSE;
     }
@@ -3176,9 +3361,19 @@ static BOOL Bc250UmdExecuteVkDraw(
                 return FALSE;
             }
             pDevice->DrawUsesRing = TRUE;
-        } else if (Bc250UmdVkDrainPending(&pDevice->VkBridge, "draw pelo caminho direto") != VK_SUCCESS) {
-            pDevice->LastVkDrawFailureReason = "FLUSH_ANTES_DO_DRAW_FALHOU";
-            return FALSE;
+        } else if (pDevice->VkBridge.PendingDraws >= BC250_DX49_BATCH_MAX_DRAWS ||
+                   (pDevice->VkBridge.PersistentPoolSets >= BC250_DX54_POOL_MAX_SETS - 2)) {
+            /*
+             * DX.77: no caminho direto, draws coalescem livremente no mesmo command buffer
+             * ate o limite do lote (BC250_DX49_BATCH_MAX_DRAWS) ou ate quase esgotar os
+             * conjuntos do pool persistente. O dreno incondicional anterior a cada draw
+             * (PendingDraws > 0) destruia o lote e forcava ~8 flushes/quadro no DWM (~120 ms).
+             * Agora, o flush ocorre de forma consolidada no Present (Bc250DxgiPrepareScanout).
+             */
+            if (Bc250UmdVkDrainPending(&pDevice->VkBridge, "teto do lote no caminho direto") != VK_SUCCESS) {
+                pDevice->LastVkDrawFailureReason = "FLUSH_ANTES_DO_DRAW_FALHOU";
+                return FALSE;
+            }
         }
     }
     if (!Bc250UmdPipelineCacheGetOrCreate(&pDevice->PipelineCache, &psoKey, &pipeline, &layout)) {
@@ -3191,6 +3386,25 @@ static BOOL Bc250UmdExecuteVkDraw(
     if (cmd == VK_NULL_HANDLE) {
         pDevice->LastVkDrawFailureReason = "COMMAND_BUFFER_AUSENTE";
         return FALSE;
+    }
+
+    /* DX.75: se a pipeline exige descritores (BindingCount > 0), o render pass aberto por
+     * ClearRenderTargetView precisa ser fechado antes de Bc250UmdBindDrawDescriptors
+     * para permitir barreiras de imagem se houver SRVs. Se BindingCount == 0, o render pass
+     * permanece aberto e coalescido! */
+    if (pDevice->InRenderPass) {
+        uint32_t bCount = 0;
+        for (uint32_t e = 0; e < BC250_PSO_CACHE_CAPACITY; ++e) {
+            if (pDevice->PipelineCache.Entries[e].InUse &&
+                pDevice->PipelineCache.Entries[e].PipelineLayout == layout) {
+                bCount = pDevice->PipelineCache.Entries[e].BindingCount;
+                break;
+            }
+        }
+        if (bCount > 0) {
+            pDevice->VkBridge.vk.vkCmdEndRenderPass(cmd);
+            pDevice->InRenderPass = FALSE;
+        }
     }
 
     if (!Bc250UmdBindDrawDescriptors(pDevice, layout, cmd, &hasDescriptors)) return FALSE;
@@ -3343,7 +3557,12 @@ static BOOL Bc250UmdExecuteVkDraw(
     batchPosition = pDevice->VkBridge.PendingDraws;
     usedRing = pDevice->DrawUsesRing;
     pDevice->DrawUsesRing = FALSE;
-    flushNow = (!usedRing || directRef || batchPosition >= BC250_DX49_BATCH_MAX_DRAWS);
+    /* DX.76: o draw permanece gravado no command buffer sem flush sincrono
+     * imediato se houver Present subsequente, unificando Clear+Draw+Destile
+     * em UMA UNICA submissao ao hardware por quadro. Flushes ocorrem apenas
+     * se directRef for true, no limite de lotes ou durante readback ativo. */
+    readbackActive = (rtv->pResource && pDevice->DrawReadbackCount < BC250_DRAW_READBACK_MAX);
+    flushNow = (directRef || readbackActive || batchPosition >= BC250_DX49_BATCH_MAX_DRAWS);
     if (flushNow) {
         if (Bc250UmdVkFlushCommands(&pDevice->VkBridge) != VK_SUCCESS) {
             pDevice->LastVkDrawFailureReason = "FLUSH_FENCE_DO_DRAW_FALHOU";
@@ -4917,10 +5136,10 @@ static HRESULT Bc250UmdBridgeLinearToWddm(
 
     memset(&args, 0, sizeof(args));
     args.hDevice = d->Winsys.RuntimeDevice;
-    args.hContext = NULL;
+    args.hContext = d->Winsys.PresentContextCreated ? d->Winsys.PresentContext : NULL;
     args.pPrivateDriverData = &payload;
     args.PrivateDriverDataSize = (UINT)sizeof(payload);
-    args.Flags.HardwareAccess = 1u;
+    args.Flags.HardwareAccess = 0u;
 
     Bc250UmdTrace("BRIDGE VULKAN->WDDM ENTER: %ux%u SrcVa=0x%llX DstVa=0x%llX Pitch=%u/%u",
         dstRes->Width, dstRes->Height,
@@ -4937,51 +5156,6 @@ static HRESULT Bc250UmdBridgeLinearToWddm(
     if (FAILED(hr)) return hr;
     if (payload.ResultCode != BC250_PRESENT_BLT_STATUS_SUCCESS) return E_FAIL;
     return S_OK;
-}
-
-static HRESULT Bc250UmdPresentBltToScanout(
-    _Inout_ BC250_UMD_DEVICE *d,
-    _In_ BC250_UMD_RESOURCE *res)
-{
-    BC250_ESCAPE_PRESENT_BLT payload;
-    D3DDDICB_ESCAPE args;
-    HRESULT hr;
-
-    if (d == NULL || res == NULL || res->Allocation.GpuVirtualAddress == 0) {
-        return E_INVALIDARG;
-    }
-    if (!d->WinsysInitialized || d->pAdapter == NULL ||
-        d->pAdapter->hRTAdapter.handle == NULL ||
-        d->Winsys.Callbacks == NULL ||
-        d->Winsys.Callbacks->pfnEscapeCb == NULL) {
-        return E_NOTIMPL;
-    }
-
-    memset(&payload, 0, sizeof(payload));
-    payload.Opcode = BC250_ESCAPE_OP_PRESENT_BLT;
-    payload.Width = res->Width;
-    payload.Height = res->Height;
-    payload.Pitch = res->RowPitch ? res->RowPitch : (res->Width * 4);
-    payload.SizeBytes = res->TotalByteSize;
-    payload.SourceGpuVa = res->Allocation.GpuVirtualAddress;
-
-    memset(&args, 0, sizeof(args));
-    args.hDevice = d->Winsys.RuntimeDevice;
-    args.hContext = NULL;
-    args.pPrivateDriverData = &payload;
-    args.PrivateDriverDataSize = (UINT)sizeof(payload);
-    args.Flags.HardwareAccess = 1u;
-
-    hr = d->Winsys.Callbacks->pfnEscapeCb(
-        d->pAdapter->hRTAdapter.handle, &args);
-
-    Bc250UmdTrace("PRESENT_BLT (WDDM ALLOC -> SCANOUT): hr=0x%08X Result=0x%08X (GpuVa=0x%llX %ux%u)",
-        (unsigned)hr, payload.ResultCode,
-        (unsigned long long)payload.SourceGpuVa,
-        payload.Width, payload.Height);
-
-    if (FAILED(hr)) return hr;
-    return (payload.ResultCode == BC250_PRESENT_BLT_STATUS_SUCCESS) ? S_OK : E_FAIL;
 }
 
 static BOOL Bc250UmdPresentVulkanDetileAndScanout(
@@ -5021,18 +5195,20 @@ static BOOL Bc250UmdPresentVulkanDetileAndScanout(
     }
 
     /*
-     * D1.2: Se nenhum render foi detectado neste quadro, recusa nomeada para nao destilar zeros calado.
+     * DX.81: Se nenhum render novo foi detectado neste quadro (quadro inicial do DWM ou
+     * sem draws pendentes), nao destila zeros e repassa a alocacao WDDM existente
+     * para pfnPresentCb sem reprovar com E_FAIL (evitando o laco de crash/reinicio do DWM).
      */
-    if (!vkRendered && device->NativePm4DrawCount == 0) {
-        Bc250UmdTrace("DXGI Present RECUSADO: [PRESENT RECUSADO: NENHUM_RENDER_DETECTADO] "
-            "Nenhum render detectado neste quadro (VkRendered=0, NativePm4DrawCount=0, NativeVkDrawCount=%llu)",
-            device->NativeVkDrawCount);
-        return FALSE;
-    }
+     if (!vkRendered && device->NativePm4DrawCount == 0) {
+         Bc250UmdTrace("[DX81_PASSTHROUGH] Nenhum render novo detectado (VkRendered=0, NativePm4DrawCount=0, NativeVkDrawCount=%llu) -> repassa para pfnPresentCb",
+             device->NativeVkDrawCount);
+         return TRUE;
+     }
 
     /*
      * Rota 1: Renderizacao Vulkan ocorreu sobre srcRes->VkImg.
-     * Executa destiling e apresentacao da imagem Vulkan ao scanout e alocacao WDDM.
+     * Destila a imagem Vulkan para a alocacao WDDM. O callback DXGI Present
+     * entrega essa alocacao ao KMD; a UMD nao escreve no scanout fisico.
      */
     if (vkRendered && srcRes->VkResourceCreated &&
         srcRes->VkImg != VK_NULL_HANDLE && srcRes->Width > 0 && srcRes->Height > 0) {
@@ -5041,6 +5217,10 @@ static BOOL Bc250UmdPresentVulkanDetileAndScanout(
         if (hasLinear && device->VkBridge.LinearPresentCreated && device->VkBridge.LinearPresentBuf != VK_NULL_HANDLE) {
             VkCommandBuffer cmdBuf = Bc250UmdVkGetCommandBuffer(&device->VkBridge);
             if (cmdBuf != VK_NULL_HANDLE) {
+                if (device->InRenderPass) {
+                    device->VkBridge.vk.vkCmdEndRenderPass(cmdBuf);
+                    device->InRenderPass = FALSE;
+                }
                 /* 1. Barreira de Imagem: COLOR_ATTACHMENT -> TRANSFER_SRC */
                 VkImageMemoryBarrier imb = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
                 imb.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
@@ -5111,10 +5291,6 @@ static BOOL Bc250UmdPresentVulkanDetileAndScanout(
             VkResult vkFlushRes = Bc250UmdVkFlushCommands(&device->VkBridge);
             Bc250UmdTrace("DXGI Present: Vulkan Destile CommandBuffer flushed: res=%d", vkFlushRes);
 
-            if (device->VkBridge.vk.vkDeviceWaitIdle != NULL) {
-                device->VkBridge.vk.vkDeviceWaitIdle(device->VkBridge.Device);
-            }
-
             /*
              * 5. Inspecao de telemetria dos primeiros pixels e centro do buffer linear.
              * DX.54: a grade le a VRAM pela CPU e custava ~29 ms por Present (449
@@ -5138,64 +5314,56 @@ static BOOL Bc250UmdPresentVulkanDetileAndScanout(
                 linearGpuVa = device->VkBridge.pfnGetMemoryGpuVa(device->VkBridge.LinearPresentMem);
             }
 
-            if (linearGpuVa != 0 && srcRes->Allocation.GpuVirtualAddress != 0) {
+            if (linearGpuVa == 0 || srcRes->Allocation.GpuVirtualAddress == 0) {
+                Bc250UmdTrace("DXGI Present RECUSADO: ponte Vulkan->WDDM sem GPUVA de origem/destino");
+                return FALSE;
+            }
+            {
                 HRESULT bridgeHr = Bc250UmdBridgeLinearToWddm(device, linearGpuVa, srcRes);
                 Bc250UmdTrace("DXGI Present: Bc250UmdBridgeLinearToWddm res=0x%08X (LinearVa=0x%llX -> DstVa=0x%llX %ux%u)",
                     (unsigned)bridgeHr, (unsigned long long)linearGpuVa,
                     (unsigned long long)srcRes->Allocation.GpuVirtualAddress,
                     srcRes->Width, srcRes->Height);
+                if (FAILED(bridgeHr)) return FALSE;
             }
-
-            /* 7. Apresentacao simultanea ao scanout fisico da BC-250 (0xC0000000) */
-            if (device->VkBridge.pfnPresentScanout != NULL &&
-                device->VkBridge.LinearPresentMem != VK_NULL_HANDLE) {
-                VkResult vkPresRes = device->VkBridge.pfnPresentScanout(
-                    device->VkBridge.Device, device->VkBridge.GraphicsQueue,
-                    device->VkBridge.LinearPresentMem, srcRes->Width, srcRes->Height);
-                if (inspectThis)
-                    Bc250UmdTrace("DXGI Present: radv_bc250_present_scanout (DIRECT SCANOUT) res=%d (%ux%u, NonZeroGrade=%u)",
-                        vkPresRes, srcRes->Width, srcRes->Height, nonZeroSamples);
-                else
-                    Bc250UmdTrace("DXGI Present: radv_bc250_present_scanout (DIRECT SCANOUT) res=%d (%ux%u, NonZeroGrade=NAO_AMOSTRADO)",
-                        vkPresRes, srcRes->Width, srcRes->Height);
-            }
+            Bc250UmdTrace("[DX71_WDDM_ONLY] imagem preparada para pfnPresentCb; scanout direto omitido (NonZeroGrade=%s)",
+                inspectThis ? (nonZeroSamples ? "AMOSTRA_NAO_ZERO" : "AMOSTRA_ZERO") : "NAO_AMOSTRADO");
             return TRUE;
         } else {
             /* Contingencia caso linear buffer nao esteja disponivel */
             VkResult vkFlushRes = Bc250UmdVkFlushCommands(&device->VkBridge);
             Bc250UmdTrace("DXGI Present: Vulkan CommandBuffer flushed: res=%d", vkFlushRes);
 
-            if (device->VkBridge.vk.vkDeviceWaitIdle != NULL) {
-                device->VkBridge.vk.vkDeviceWaitIdle(device->VkBridge.Device);
+            if (srcRes->Allocation.GpuVirtualAddress == 0 ||
+                device->VkBridge.pfnGetMemoryGpuVa == NULL ||
+                srcRes->VkMem == VK_NULL_HANDLE) {
+                Bc250UmdTrace("DXGI Present RECUSADO: ponte RAW sem memoria/GPUVA WDDM");
+                return FALSE;
             }
-
-            if (srcRes->Allocation.GpuVirtualAddress != 0 &&
-                device->VkBridge.pfnGetMemoryGpuVa != NULL &&
-                srcRes->VkMem != VK_NULL_HANDLE) {
+            {
                 uint64_t rawGpuVa = device->VkBridge.pfnGetMemoryGpuVa(srcRes->VkMem);
-                if (rawGpuVa != 0) {
-                    HRESULT bridgeHr = Bc250UmdBridgeLinearToWddm(device, rawGpuVa, srcRes);
-                    Bc250UmdTrace("DXGI Present: Bc250UmdBridgeLinearToWddm (RAW) res=0x%08X", (unsigned)bridgeHr);
+                HRESULT bridgeHr;
+                if (rawGpuVa == 0) {
+                    Bc250UmdTrace("DXGI Present RECUSADO: ponte RAW sem GPUVA Vulkan");
+                    return FALSE;
                 }
+                bridgeHr = Bc250UmdBridgeLinearToWddm(device, rawGpuVa, srcRes);
+                Bc250UmdTrace("DXGI Present: Bc250UmdBridgeLinearToWddm (RAW) res=0x%08X", (unsigned)bridgeHr);
+                if (FAILED(bridgeHr)) return FALSE;
             }
-            if (device->VkBridge.pfnPresentScanout != NULL && srcRes->VkMem != VK_NULL_HANDLE) {
-                VkResult vkPresRes = device->VkBridge.pfnPresentScanout(
-                    device->VkBridge.Device, device->VkBridge.GraphicsQueue,
-                    srcRes->VkMem, srcRes->Width, srcRes->Height);
-                Bc250UmdTrace("DXGI Present: radv_bc250_present_scanout (RAW MEM DIRECT SCANOUT) res=%d (%ux%u)",
-                    vkPresRes, srcRes->Width, srcRes->Height);
-            }
+            Bc250UmdTrace("[DX71_WDDM_ONLY] imagem RAW preparada para pfnPresentCb; scanout direto omitido");
             return TRUE;
         }
     }
     /*
      * Rota 2: Renderizacao PM4 nativa ocorreu diretamente na alocacao WDDM (CP_RB0 Node 1 GFX).
-     * NUNCA sobrescrever com zeros da Vulkan Bridge. Apresenta srcRes->Allocation diretamente ao scanout.
+     * NUNCA sobrescrever com zeros da Vulkan Bridge. A alocacao WDDM ja contem
+     * o render e sera apresentada pelo callback DXGI Present.
      */
     else if (device->NativePm4DrawCount > 0 && srcRes->Allocation.GpuVirtualAddress != 0) {
-        Bc250UmdTrace("DXGI Present: PM4 DRAW DETECTADO (NativePm4DrawCount=%llu) -> apresentando alocacao WDDM diretamente ao scanout",
+        Bc250UmdTrace("[DX71_WDDM_ONLY] PM4 DRAW DETECTADO (NativePm4DrawCount=%llu) -> alocacao WDDM pronta para pfnPresentCb",
             device->NativePm4DrawCount);
-        return SUCCEEDED(Bc250UmdPresentBltToScanout(device, srcRes));
+        return TRUE;
     }
     else {
         Bc250UmdTrace("DXGI Present RECUSADO: [PRESENT RECUSADO: CONDICAO_SCANOUT_INVALIDA] (VkRendered=%d, Pm4Draws=%llu)",
@@ -5300,8 +5468,31 @@ HRESULT APIENTRY Bc250DxgiPresent(DXGI_DDI_ARG_PRESENT* pPresentData)
             (srcRes != NULL) ? (void*)srcRes->Allocation.RuntimeResource : NULL,
             pPresentData->Flags.Value);
 
+        LARGE_INTEGER qpcStart, qpcEnd, qpcFreq;
+        ULONGLONG cbElapsedUs = 0ull;
+        static volatile LONG s_UmdPresentCbOrdinal = 0;
+        LONG cbOrdinal = InterlockedIncrement(&s_UmdPresentCbOrdinal);
+
+        if (QueryPerformanceFrequency(&qpcFreq) && qpcFreq.QuadPart > 0) {
+            QueryPerformanceCounter(&qpcStart);
+        } else {
+            qpcStart.QuadPart = 0;
+            qpcFreq.QuadPart = 1;
+        }
+
         presentHr = device->pDXGICallbacks->pfnPresentCb(
             device->hRTDevice.handle, &presentCb);
+
+        QueryPerformanceCounter(&qpcEnd);
+        if (qpcFreq.QuadPart > 0 && qpcEnd.QuadPart >= qpcStart.QuadPart) {
+            cbElapsedUs = (ULONGLONG)((qpcEnd.QuadPart - qpcStart.QuadPart) * 1000000ull / (ULONGLONG)qpcFreq.QuadPart);
+        }
+
+        if (!srcIsPrimary || cbOrdinal <= 16L || (cbOrdinal % 32L) == 0L || FAILED(presentHr)) {
+            Bc250UmdTrace("[DX74_PRESENT_UMD_CB] n=%ld StartQpc=%llu EndQpc=%llu ElapsedUs=%llu hr=0x%08X",
+                cbOrdinal, (unsigned long long)qpcStart.QuadPart, (unsigned long long)qpcEnd.QuadPart,
+                (unsigned long long)cbElapsedUs, (unsigned)presentHr);
+        }
 
         Bc250UmdTrace("DXGI Present LEAVE cb: hr=0x%08X (hr!=0 significa que o "
             "dxgkrnl RECUSOU a apresentacao antes de chamar DxgkDdiPresent; "
@@ -5389,8 +5580,31 @@ HRESULT APIENTRY Bc250DxgiPresent1(DXGI1_6_1_DDI_ARG_PRESENT* pPresentData)
             (srcRes != NULL) ? (void*)srcRes->Allocation.RuntimeResource : NULL,
             pPresentData->Flags.Value);
 
+        LARGE_INTEGER qpcStart, qpcEnd, qpcFreq;
+        ULONGLONG cbElapsedUs = 0ull;
+        static volatile LONG s_UmdPresent1CbOrdinal = 0;
+        LONG cbOrdinal = InterlockedIncrement(&s_UmdPresent1CbOrdinal);
+
+        if (QueryPerformanceFrequency(&qpcFreq) && qpcFreq.QuadPart > 0) {
+            QueryPerformanceCounter(&qpcStart);
+        } else {
+            qpcStart.QuadPart = 0;
+            qpcFreq.QuadPart = 1;
+        }
+
         presentHr = device->pDXGICallbacks->pfnPresentCb(
             device->hRTDevice.handle, &presentCb);
+
+        QueryPerformanceCounter(&qpcEnd);
+        if (qpcFreq.QuadPart > 0 && qpcEnd.QuadPart >= qpcStart.QuadPart) {
+            cbElapsedUs = (ULONGLONG)((qpcEnd.QuadPart - qpcStart.QuadPart) * 1000000ull / (ULONGLONG)qpcFreq.QuadPart);
+        }
+
+        if (!srcIsPrimary || cbOrdinal <= 16L || (cbOrdinal % 32L) == 0L || FAILED(presentHr)) {
+            Bc250UmdTrace("[DX74_PRESENT1_UMD_CB] n=%ld StartQpc=%llu EndQpc=%llu ElapsedUs=%llu hr=0x%08X",
+                cbOrdinal, (unsigned long long)qpcStart.QuadPart, (unsigned long long)qpcEnd.QuadPart,
+                (unsigned long long)cbElapsedUs, (unsigned)presentHr);
+        }
 
         Bc250UmdTrace("DXGI Present1 LEAVE cb: hr=0x%08X", (unsigned)presentHr);
         return presentHr;

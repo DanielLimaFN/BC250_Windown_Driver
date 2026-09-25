@@ -75,17 +75,9 @@ static HRESULT Bc250UmdBltViaKmd(BC250_UMD_DEVICE *d, BC250_UMD_RESOURCE *dst,
 
     memset(&args, 0, sizeof(args));
     args.hDevice = d->Winsys.RuntimeDevice;
-    args.hContext = NULL;
+    args.hContext = d->Winsys.PresentContextCreated ? d->Winsys.PresentContext : NULL;
     args.pPrivateDriverData = &payload;
     args.PrivateDriverDataSize = (UINT)sizeof(payload);
-    /*
-     * O handler dirige o SDMA, portanto o contrato D3DDDI_ESCAPEFLAGS exige
-     * HardwareAccess. As corridas 12:09 (flag=1) e 12:21 (flag=0) tiveram a
-     * mesma assinatura ENTER sem LEAVE; elas refutam a flag como causa. Nas
-     * duas, o primeiro argumento do callback era o hDevice, embora
-     * PFND3DDDI_ESCAPECB exija hAdapter. Esta chamada usa os dois handles nos
-     * campos definidos pelo WDK. Correcao ainda NAO VALIDADA EM HARDWARE.
-     */
     args.Flags.HardwareAccess = 1u;
 
     /*

@@ -174,6 +174,15 @@ typedef struct _BC250_UMD_RTV {
      * identidades trocar pResource->VkImg, a RTV tem de seguir o recurso
      * (Bc250UmdVkRtvFollowResource) em vez de desenhar na imagem antiga. */
     VkImage VkImageAtCreation;
+#define BC250_RTV_MAX_CACHED_FBS 8u
+    struct {
+        VkImage Image;
+        VkImageView View;
+        VkFramebuffer Fb;
+    } FbCache[BC250_RTV_MAX_CACHED_FBS];
+    uint32_t FbCacheCount;
+    uint32_t FollowHitCount;
+    uint32_t FollowMissCount;
 } BC250_UMD_RTV;
 
 /* Depth Stencil View representation */
@@ -399,6 +408,9 @@ typedef struct _BC250_UMD_DEVICE {
     UINT64 NativePm4DrawCount;
     BOOL NativeNode1Ready;
     BOOL DeviceActive;
+    BOOL TeardownActive;
+    /* DX.82: Sincronizacao de ciclo de vida do device contra criacao concorrente de recursos */
+    SRWLOCK DeviceLock;
 
     /* Vulkan Graphics Translation Backend */
     BC250_UMD_VK_BRIDGE VkBridge;

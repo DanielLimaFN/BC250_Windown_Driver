@@ -1,6 +1,7 @@
 #include "bc250_active_miniport.h"
 #include "../core/bc250_sdma_packet_builder.h"
 #include "bc250_sdma_present.h"
+#include "bc250_mmio_breadcrumb.h"
 
 #define BC250_SDMA_WORK_PAGE_BYTES 4096u
 #define BC250_SDMA_WORK_BYTES (4u * BC250_SDMA_WORK_PAGE_BYTES)
@@ -171,12 +172,17 @@ static void Bc250SdmaCopyToDevice(
 
 static uint32_t Bc250SdmaDeviceRead(volatile uint32_t *Address)
 {
-    return READ_REGISTER_ULONG((volatile ULONG *)Address);
+    ULONG crumb = Bc250CrumbBefore(BC250_CRUMB_SITE_RINGWORK_READ, (ULONG)(ULONG_PTR)Address);
+    uint32_t value = READ_REGISTER_ULONG((volatile ULONG *)Address);
+    Bc250CrumbAfter(crumb);
+    return value;
 }
 
 static void Bc250SdmaDeviceWrite(volatile uint32_t *Address, uint32_t Value)
 {
+    ULONG crumb = Bc250CrumbBefore(BC250_CRUMB_SITE_RINGWORK_WRITE, (ULONG)(ULONG_PTR)Address);
     WRITE_REGISTER_ULONG((volatile ULONG *)Address, Value);
+    Bc250CrumbAfter(crumb);
 }
 #endif
 

@@ -15,7 +15,7 @@
  * chamadas do VidMm. Se o estado final exceder 1024, a transacao inteira e'
  * abortada; nenhum prefixo pode ficar pronto para publicacao.
  */
-#define BC250_GPUVA_JOURNAL_MAX_CHANGES 1024u
+#define BC250_GPUVA_JOURNAL_MAX_CHANGES 4096u
 
 typedef enum BC250_GPUVA_JOURNAL_STATUS {
     BC250_GPUVA_JOURNAL_OK = 0,

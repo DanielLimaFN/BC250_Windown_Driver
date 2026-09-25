@@ -3,7 +3,7 @@
 > **Governança para qualquer agente autônomo neste repositório** (OpenAI Codex, ChatGPT,
 > Copilot Workspace, Cursor, auto-agents).
 > *Target: AMD BC-250 (`1002:13FE`, GC 10.1.3 / Cyan Skillfish 2) | Windows 10 22H2 x64*
-> **Última revisão: 2026-09-16** · Núcleo normativo idêntico a `CLAUDE.md`, `GEMINI.md` e `.cursorrules`.
+> **Última revisão: 2026-09-25** · Núcleo normativo idêntico a `CLAUDE.md`, `GEMINI.md` e `.cursorrules`.
 
 ---
 
@@ -25,15 +25,13 @@ Display v1 é **por herança do UEFI GOP**: VidPn de um modo único, scanout em 
 fora da prioridade P9. Leitura é permitida.
 
 ### Onde estamos, de verdade
-O adaptador WDDM **alcançou Código 0 em 02/09/2026** com `DRIVERCAPS`, `QUERYSEGMENT4`,
-Paging Context e VidPn ativos no silício por 121 s (itens 97 e 102 fechados com evidência
-arquivada). O compute direto, display KMDOD/GOP e SDMA0 com tripé completo estão provados no silício.
-O anel gráfico físico `CP_RB0` (Node 1 GFX) foi ativado e na Corrida 13 (17/09 15:12) consumiu
-e aposentou 16 submissões 3D no silício sob VMID 7 com avanço de fences (Fences 1..16). A tela preta
-na apresentação foi isolada na UMD (desconexão entre render PM4 WDDM e cópia de textura vazia da bridge
-para o scanout). As correções na UMD (harmonização de apresentação PM4 vs Vulkan), no harness D3D11
-(`BufferCount = 1`, ordem do `OMSetRenderTargets`) e RTV clamping foram implementadas, compiladas e
-empacotadas offline em `output_lab`, prontas para validação física na Corrida 14.
+Em 25/09, a [Corrida 118](docs/437_CORRIDA118_DX73_TRIANGULO_PIXELS_COPIA_E_R1.md) do candidato
+DX.73/3.277.1.0 completou 180 s: desktop e triângulo visualmente corretos, harness 60/60,
+60/60 amostras de centro/canto preservadas na cópia e rollback para BasicDisplay Código 0 no
+mesmo boot. A Corrida 117 não mostrou o triângulo; a intermitência visual permanece aberta.
+Velocidade da 118: DWM 2,68 inícios de Present/s nos primeiros 120 s e harness 0,9 FPS.
+Ensaios longos anteriores travaram duramente; 600 s, 60 FPS e jogos não estão validados.
+O próximo bind exige boot frio. [Handoff completo 438](docs/438_HANDOFF_2026-09-25_CORRIDAS_111_A_118_VISUAL_VELOCIDADE_E_TRAVAMENTO.md).
 
 ---
 

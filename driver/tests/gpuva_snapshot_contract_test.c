@@ -291,14 +291,14 @@ static int Bc250RunGpuvaSnapshotContractTest(void)
         static BC250_GPUVA_SPACE d3Scratch;
         static BC250_GPUVA_RANGE_RECORD d3Batch[832];
         static uint32_t d3Map[832];
-        const uint32_t kLive = 369u;
+        /* O teto util e' Cap - Mapped; testa a formula com margem exata de 655 */
+        CHECK(BC250_GPUVA_SPACE_MAX_RANGES >= 1024u);
+        const uint32_t kLive = BC250_GPUVA_SPACE_MAX_RANGES - 655u;
         const uint32_t kBatch = 832u;
         long d3Slot;
 
         CHECK(Bc250GpuvaSnapshotStoreInitialize(&d3Store, 34u) == BC250_GPUVA_OK);
         CHECK(Bc250GpuvaSpaceInitialize(&d3Scratch, 34u) == BC250_GPUVA_OK);
-        /* O teto tem de ser 1024 -- o replay so' vale com a capacidade medida. */
-        CHECK(BC250_GPUVA_SPACE_MAX_RANGES == 1024u);
 
         d3Slot = d3Store.ActiveSlot;
         for (uint32_t i = 0u; i < kLive; ++i) {

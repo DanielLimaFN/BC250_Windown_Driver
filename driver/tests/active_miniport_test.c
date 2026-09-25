@@ -45,9 +45,10 @@ void * __cdecl memcpy(void *Destination, const void *Source, size_t Length)
 /*
  * Fase P1: o contexto do adaptador passou a carregar o motor de submissao
  * persistente (estado de teardown do HQD + duas evidencias completas), o que
- * o levou acima de 32 KiB.  O pool do fixture acompanha.
+ * o levou acima de 32 KiB. DX.81: expansao de ranges GPUVA para 4096 elevou
+ * o contexto acima de 2 MiB. O pool do fixture acompanha (8 MiB).
  */
-static __declspec(align(16)) unsigned char g_pool[2097152];
+static __declspec(align(16)) unsigned char g_pool[8388608];
 static int g_poolAllocated;
 static BC250_DXGK_ACTIVE_CONTEXT g_diagnosticContext;
 static __declspec(align(4096)) unsigned char g_contiguousPage[4096];

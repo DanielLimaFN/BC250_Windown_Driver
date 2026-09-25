@@ -1,5 +1,7 @@
 # Roadmap 164 — WDDM com jogos na BC-250, **sem** implementar DCN no caminho crítico
 
+> **Estado operacional em 25/09/2026:** [handoff 438](438_HANDOFF_2026-09-25_CORRIDAS_111_A_118_VISUAL_VELOCIDADE_E_TRAVAMENTO.md) e [base de avanço](../BASE_DE_AVANCO.md). A Corrida 118 validou desktop visual por 180 s, 60/60 apresentações e rollback no mesmo boot; taxa ~0,9 FPS no harness, visual intermitente entre corridas e travamentos em janelas longas mantêm a meta de desktop rápido/estável e jogos aberta. As etapas e percentuais antigos deste roadmap são planejamento/histórico, não veredito atual.
+
 > **Escopo de produto atualizado em 17/09/2026:** ver [plano de desktop e jogos transparentes](281_PLANO_PRODUTO_DESKTOP_E_JOGOS_TRANSPARENTES.md) e [handoff doc 284](284_HANDOFF_2026-09-17_15-12_D3D11_NATIVO_GFX_RB0_E_ISOLAMENTO_SCANOUT.md). A meta inclui desktop D3D11 acelerado, aplicações não modificadas e integração Direct3D ao driver. DCN básico em P9 integra a conclusão desse produto, embora não seja pré-requisito do primeiro desktop em modo GOP. As menções históricas abaixo a DCN totalmente opcional valem para a demonstração em modo fixo, não para esse escopo ampliado. Os marcos antigos abaixo não representam o status atual; consultar BASE_DE_AVANCO.md e o plano.
 
 **Data-base:** 2026-09-02 · **Revisão 2** (substitui a revisão 1, que colocava DCN como pré-requisito)

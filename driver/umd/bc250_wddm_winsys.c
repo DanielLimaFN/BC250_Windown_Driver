@@ -52,6 +52,22 @@ static HANDLE Bc250WinsysTraceOpen(const char *Path)
 
 static volatile LONG64 g_Bc250TraceLastFlushMs;
 
+/* DX.70: apenas linhas rotineiras de sucesso; falhas, Present e tempos de
+ * FlushCommands continuam integrais e write-through. */
+static volatile LONG g_Bc250RoutineTraceOrdinal[8];
+
+static unsigned Bc250WinsysRoutineTraceClass(const char *message)
+{
+    if (strncmp(message, "[VK_RES] UploadBufferData SUCESSO:", 34) == 0) return 1u;
+    if (strncmp(message, "[WDDM_WINSYS] Upload ENTER:", 27) == 0) return 2u;
+    if (strncmp(message, "[WDDM_WINSYS] Upload LEAVE: hr=0x00000000", 41) == 0) return 3u;
+    if (strncmp(message, "[VK_BRIDGE] BeginCommandBuffer: gravacao iniciada", 49) == 0) return 4u;
+    if (strncmp(message, "ResourceMap: res=", 17) == 0) return 5u;
+    if (strncmp(message, "ResourceUnmap: buffer sincronizado", 34) == 0) return 6u;
+    if (strncmp(message, "ResourceUnmap: res=", 19) == 0) return 7u;
+    return 0u;
+}
+
 /* Metadados (tamanho do arquivo) ao disco no maximo a cada BC250_TRACE_FLUSH_MS.
  * Os dados de cada linha ja foram ao disco pelo write-through. */
 static void Bc250WinsysTraceFlushMetadataIfDue(void)
@@ -124,17 +140,32 @@ void Bc250WinsysTraceRaw(const char *Message)
     DWORD written = 0;
     SYSTEMTIME now;
     unsigned i;
+    unsigned routineClass;
+    LONG routineOrdinal = 0;
 
     if (Message == NULL) {
         return;
     }
+    routineClass = Bc250WinsysRoutineTraceClass(Message);
+    if (routineClass != 0u) {
+        routineOrdinal = InterlockedIncrement(&g_Bc250RoutineTraceOrdinal[routineClass]);
+        if (routineOrdinal > 16 && (routineOrdinal % 64) != 0) return;
+    }
     (void)InitOnceExecuteOnce(&g_Bc250TraceSink.Once, Bc250WinsysTraceInit, NULL, NULL);
 
     GetLocalTime(&now);
-    lineLength = _snprintf_s(line, sizeof(line), _TRUNCATE,
-        "%02u:%02u:%02u.%03u [pid=%lu %s] %s\r\n",
-        now.wHour, now.wMinute, now.wSecond, now.wMilliseconds,
-        GetCurrentProcessId(), g_Bc250TraceSink.ImageName, Message);
+    if (routineClass != 0u) {
+        lineLength = _snprintf_s(line, sizeof(line), _TRUNCATE,
+            "%02u:%02u:%02u.%03u [pid=%lu %s] [DX70_SAMPLE c=%u n=%ld] %s\r\n",
+            now.wHour, now.wMinute, now.wSecond, now.wMilliseconds,
+            GetCurrentProcessId(), g_Bc250TraceSink.ImageName,
+            routineClass, routineOrdinal, Message);
+    } else {
+        lineLength = _snprintf_s(line, sizeof(line), _TRUNCATE,
+            "%02u:%02u:%02u.%03u [pid=%lu %s] %s\r\n",
+            now.wHour, now.wMinute, now.wSecond, now.wMilliseconds,
+            GetCurrentProcessId(), g_Bc250TraceSink.ImageName, Message);
+    }
     if (lineLength < 0) {
         return;
     }

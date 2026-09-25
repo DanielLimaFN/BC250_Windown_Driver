@@ -2,7 +2,7 @@
 
 > **Contexto normativo para Antigravity / Gemini CLI neste repositório.**
 > *Target: AMD BC-250 APU (`1002:13FE`, GC 10.1.3 / Cyan Skillfish 2) | Windows 10 22H2 x64*
-> **Última revisão: 2026-09-16** · Núcleo normativo idêntico a `CLAUDE.md`, `AGENTS.md` e `.cursorrules`.
+> **Última revisão: 2026-09-25** · Núcleo normativo idêntico a `CLAUDE.md`, `AGENTS.md` e `.cursorrules`.
 
 O Antigravity carrega `GEMINI.md` e `AGENTS.md` da raiz para o contexto hierárquico. Este
 arquivo é o ponto de entrada; as leis são as mesmas dos demais.
@@ -23,15 +23,13 @@ scanout em VRAM real, `DxgkDdiPresent` no modelo **blt** por SDMA, VSync **lido*
 counter do OTG. **DCN não entra no caminho crítico**; escrita em registrador de DCN é
 proibida fora da prioridade P9.
 
-**Onde estamos:** o adaptador WDDM **alcançou Código 0 em 02/09/2026** com `DRIVERCAPS`,
-`QUERYSEGMENT4`, Paging Context e VidPn ativos no silício por 121 s (itens 97/102 fechados
-com evidência arquivada). Compute direto, display KMDOD/GOP e SDMA0 com tripé completo **estão** provados no silício.
-O anel gráfico físico `CP_RB0` (Node 1 GFX) foi ativado e na Corrida 13 (17/09 15:12) consumiu
-e aposentou 16 submissões 3D no silício sob VMID 7 com avanço de fences (Fences 1..16). A tela preta
-na apresentação foi isolada na UMD (desconexão entre render PM4 WDDM e cópia de textura vazia da bridge
-para o scanout). As correções na UMD (harmonização de apresentação PM4 vs Vulkan), no harness D3D11
-(`BufferCount = 1`, ordem do `OMSetRenderTargets`) e RTV clamping foram implementadas, compiladas e
-empacotadas offline em `output_lab`, prontas para validação física na Corrida 14.
+**Onde estamos em 25/09/2026:** a [Corrida 118](docs/437_CORRIDA118_DX73_TRIANGULO_PIXELS_COPIA_E_R1.md)
+com DX.73/3.277.1.0 completou 180 s com desktop e triângulo visualmente corretos,
+harness 60/60, amostras de centro/canto preservadas em 60/60 cópias e rollback para
+BasicDisplay Código 0 no mesmo boot. Na 117 o triângulo faltou; a falha visual é
+intermitente. DWM 2,68 inícios de Present/s nos primeiros 120 s, harness 0,9 FPS.
+Travamentos longos, 600 s, 60 FPS e jogos seguem abertos. O próximo bind exige boot frio.
+Leia o [handoff 438](docs/438_HANDOFF_2026-09-25_CORRIDAS_111_A_118_VISUAL_VELOCIDADE_E_TRAVAMENTO.md).
 
 ---
 

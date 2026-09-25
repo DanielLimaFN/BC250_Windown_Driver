@@ -2,7 +2,7 @@
 
 > **Governança de engenharia do repositório BC250-WinDv**
 > *Target: AMD BC-250 (`1002:13FE`, GC 10.1.3 / Cyan Skillfish 2) | Windows 10 22H2 x64*
-> **Última revisão: 2026-09-16**
+> **Última revisão: 2026-09-25**
 
 ---
 
@@ -20,6 +20,14 @@ Tabela 2 (o que falta, em ordem de prioridade, com o teste que fecha cada item).
 **Decisão de arquitetura vigente:** display v1 é **por herança do UEFI GOP**. Não
 implementamos DCN no caminho crítico. Escrita em registrador de DCN é **proibida** fora
 da prioridade P9; leitura é permitida.
+
+**Estado em 25/09/2026:** a [Corrida 118](docs/437_CORRIDA118_DX73_TRIANGULO_PIXELS_COPIA_E_R1.md)
+com DX.73/3.277.1.0 completou 180 s com desktop e triângulo visualmente corretos,
+harness 60/60, amostras de centro/canto preservadas em 60/60 cópias e rollback para
+BasicDisplay Código 0 no mesmo boot. Na 117 o triângulo faltou; a falha visual é
+intermitente. DWM 2,68 inícios de Present/s nos primeiros 120 s, harness 0,9 FPS.
+Travamentos longos, 600 s, 60 FPS e jogos seguem abertos. O próximo bind exige boot frio.
+Leia o [handoff 438](docs/438_HANDOFF_2026-09-25_CORRIDAS_111_A_118_VISUAL_VELOCIDADE_E_TRAVAMENTO.md).
 
 ---
 

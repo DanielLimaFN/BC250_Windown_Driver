@@ -2,6 +2,7 @@
 #include "bc250_driver_caps_contract.h"
 #include "bc250_probe_telemetry.h"
 #include "bc250_display_ddi.h"
+#include "bc250_mmio_breadcrumb.h"
 #include "../core/bc250_adapter_info_contract.h"
 #include "../core/bc250_segment_contract.h"
 #include "../core/bc250_umd_private_contract.h"
@@ -15,6 +16,16 @@
 #include "../core/bc250_pm4_packet_builder.h"
 #include "../core/bc250_gpuva_space_contract.h"
 #include "../core/bc250_allocation_abi_contract.h"
+
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+NTSYSAPI NTSTATUS NTAPI ZwFlushBuffersFile(
+    _In_ HANDLE FileHandle,
+    _Out_ PIO_STATUS_BLOCK IoStatusBlock);
+NTSYSAPI NTSTATUS NTAPI ZwWaitForSingleObject(
+    _In_ HANDLE Handle,
+    _In_ BOOLEAN Alertable,
+    _In_opt_ PLARGE_INTEGER Timeout);
+#endif
 
 /*
  * Fase V5: as DDIs que devolvem NOT_SUPPORTED sao as candidatas naturais a
@@ -77,6 +88,8 @@ typedef struct BC250_PAGING_STAGE_SLOT {
     ULONG Stage;
     ULONG Operation;
     NTSTATUS Status;
+    UINT64 ThreadId;
+    UINT64 InterruptTime100ns;
 } BC250_PAGING_STAGE_SLOT;
 
 enum {
@@ -109,9 +122,181 @@ static VOID Bc250PagingStage(
     slot->Stage = Stage;
     slot->Operation = Operation;
     slot->Status = Status;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    slot->ThreadId = (UINT64)(ULONG_PTR)PsGetCurrentThreadId();
+    slot->InterruptTime100ns = KeQueryInterruptTime();
+#endif
     KeMemoryBarrier();
     InterlockedExchange(&slot->Sequence, sequence);
 }
+
+/*
+ * DX.56: amostra duravel dos 16 estagios mais recentes. O writer e' uma thread
+ * separada. Bc250PagingStage permanece livre de arquivo, alocacao e lock.
+ * Arquivo binario em registros fixos; checksum detecta ultimo write truncado.
+ * Um reset pode perder ate um periodo e nao prova persistencia sem a corrida.
+ */
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+#define BC250_PAGING_TRACE_MAGIC 0x36585042u /* BPX6 */
+#define BC250_PAGING_TRACE_SLOTS 16u
+typedef struct BC250_PAGING_TRACE_SLOT {
+    UINT32 Sequence;
+    UINT32 Stage;
+    UINT32 Operation;
+    INT32 Status;
+    UINT64 ThreadId;
+    UINT64 InterruptTime100ns;
+} BC250_PAGING_TRACE_SLOT;
+
+typedef struct BC250_PAGING_TRACE_RECORD {
+    UINT32 Magic;
+    UINT32 Version;
+    UINT32 SlotCount;
+    UINT32 ActiveCount;
+    UINT32 LatestSequence;
+    UINT32 Reserved;
+    UINT64 SnapshotTime100ns;
+    BC250_PAGING_TRACE_SLOT Slots[BC250_PAGING_TRACE_SLOTS];
+    UINT32 Checksum;
+    UINT32 Padding;
+} BC250_PAGING_TRACE_RECORD;
+C_ASSERT(sizeof(BC250_PAGING_TRACE_SLOT) == 32u);
+C_ASSERT(sizeof(BC250_PAGING_TRACE_RECORD) == 552u);
+
+static KEVENT g_Bc250PagingTraceStopEvent;
+static HANDLE g_Bc250PagingTraceFile;
+static HANDLE g_Bc250PagingTraceThreadHandle;
+static volatile LONG g_Bc250PagingTraceStarted;
+
+static UINT32 Bc250PagingTraceChecksum(const BC250_PAGING_TRACE_RECORD *Record)
+{
+    const UCHAR *bytes = (const UCHAR *)Record;
+    UINT32 hash = 2166136261u;
+    SIZE_T index;
+    for (index = 0u; index < FIELD_OFFSET(BC250_PAGING_TRACE_RECORD, Checksum); ++index) {
+        hash = (hash ^ bytes[index]) * 16777619u;
+    }
+    return hash;
+}
+
+static VOID Bc250PagingTraceSnapshot(BC250_PAGING_TRACE_RECORD *Record)
+{
+    LONG latest = InterlockedCompareExchange(&g_Bc250PagingStageSequence, 0, 0);
+    UINT32 index;
+    RtlZeroMemory(Record, sizeof(*Record));
+    Record->Magic = BC250_PAGING_TRACE_MAGIC;
+    /* v2 (DX.65): Reserved carrega o contador de batimento do escritor. */
+    Record->Version = 2u;
+    Record->SlotCount = BC250_PAGING_TRACE_SLOTS;
+    Record->ActiveCount = (UINT32)InterlockedCompareExchange(&g_Bc250PagingActiveCount, 0, 0);
+    Record->LatestSequence = (UINT32)latest;
+    Record->SnapshotTime100ns = KeQueryInterruptTime();
+    for (index = 0u; index < BC250_PAGING_TRACE_SLOTS; ++index) {
+        LONG wanted = latest - (LONG)index;
+        BC250_PAGING_STAGE_SLOT *source;
+        BC250_PAGING_TRACE_SLOT *target;
+        LONG before;
+        LONG after;
+        if (wanted <= 0) break;
+        source = &g_Bc250PagingStages[((UINT32)wanted - 1u) & 63u];
+        target = &Record->Slots[index];
+        before = InterlockedCompareExchange(&source->Sequence, 0, 0);
+        if (before != wanted) continue;
+        KeMemoryBarrier();
+        target->Stage = source->Stage;
+        target->Operation = source->Operation;
+        target->Status = source->Status;
+        target->ThreadId = source->ThreadId;
+        target->InterruptTime100ns = source->InterruptTime100ns;
+        KeMemoryBarrier();
+        after = InterlockedCompareExchange(&source->Sequence, 0, 0);
+        if (after == wanted) target->Sequence = (UINT32)wanted;
+        else RtlZeroMemory(target, sizeof(*target));
+    }
+    Record->Checksum = Bc250PagingTraceChecksum(Record);
+}
+
+static VOID Bc250PagingTraceThread(_In_ PVOID Context)
+{
+    LARGE_INTEGER interval;
+    IO_STATUS_BLOCK ioStatus;
+    UINT32 writerTick = 0u;
+    UNREFERENCED_PARAMETER(Context);
+    interval.QuadPart = -1000000LL; /* 100 ms */
+    for (;;) {
+        BC250_PAGING_TRACE_RECORD record;
+        (void)KeWaitForSingleObject(&g_Bc250PagingTraceStopEvent,
+            Executive, KernelMode, FALSE, &interval);
+        Bc250PagingTraceSnapshot(&record);
+        /*
+         * DX.65 (Corrida 108): gravava so' quando a sequencia mudava, entao o
+         * ultimo registro nao distinguia "paginacao parou com o kernel vivo"
+         * de "maquina morreu". Agora grava a cada periodo: registros com a
+         * MESMA sequencia e SnapshotTime/Reserved avancando provam que esta
+         * thread (PASSIVE_LEVEL) ainda rodava depois da ultima paginacao.
+         */
+        record.Reserved = ++writerTick;
+        record.Checksum = Bc250PagingTraceChecksum(&record);
+        {
+            NTSTATUS status = ZwWriteFile(g_Bc250PagingTraceFile, NULL, NULL,
+                NULL, &ioStatus, &record, sizeof(record), NULL, NULL);
+            if (NT_SUCCESS(status) && ioStatus.Information == sizeof(record)) {
+                status = ZwFlushBuffersFile(g_Bc250PagingTraceFile, &ioStatus);
+                (void)status;   /* falha de flush nao para o batimento */
+            }
+        }
+        if (KeReadStateEvent(&g_Bc250PagingTraceStopEvent) != 0) break;
+    }
+    ZwClose(g_Bc250PagingTraceFile);
+    g_Bc250PagingTraceFile = NULL;
+    PsTerminateSystemThread(STATUS_SUCCESS);
+}
+
+NTSTATUS Bc250PagingTraceStart(VOID)
+{
+    UNICODE_STRING path = RTL_CONSTANT_STRING(L"\\DosDevices\\C:\\BC250_PAGING_TRACE.bin");
+    OBJECT_ATTRIBUTES attributes;
+    IO_STATUS_BLOCK ioStatus;
+    NTSTATUS status;
+    if (InterlockedCompareExchange(&g_Bc250PagingTraceStarted, 1, 0) != 0)
+        return STATUS_SUCCESS;
+    KeInitializeEvent(&g_Bc250PagingTraceStopEvent, NotificationEvent, FALSE);
+    InitializeObjectAttributes(&attributes, &path,
+        OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    status = ZwCreateFile(&g_Bc250PagingTraceFile,
+        FILE_APPEND_DATA | SYNCHRONIZE, &attributes, &ioStatus, NULL,
+        FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_OPEN_IF,
+        FILE_SYNCHRONOUS_IO_NONALERT | FILE_WRITE_THROUGH,
+        NULL, 0);
+    if (!NT_SUCCESS(status)) {
+        InterlockedExchange(&g_Bc250PagingTraceStarted, 0);
+        return status;
+    }
+    status = PsCreateSystemThread(&g_Bc250PagingTraceThreadHandle, THREAD_ALL_ACCESS, NULL,
+        NULL, NULL, Bc250PagingTraceThread, NULL);
+    if (!NT_SUCCESS(status)) {
+        ZwClose(g_Bc250PagingTraceFile);
+        g_Bc250PagingTraceFile = NULL;
+        InterlockedExchange(&g_Bc250PagingTraceStarted, 0);
+        return status;
+    }
+    return STATUS_SUCCESS;
+}
+
+VOID Bc250PagingTraceStop(VOID)
+{
+    if (InterlockedCompareExchange(&g_Bc250PagingTraceStarted, 0, 0) == 0)
+        return;
+    KeSetEvent(&g_Bc250PagingTraceStopEvent, IO_NO_INCREMENT, FALSE);
+    (void)ZwWaitForSingleObject(g_Bc250PagingTraceThreadHandle, FALSE, NULL);
+    ZwClose(g_Bc250PagingTraceThreadHandle);
+    g_Bc250PagingTraceThreadHandle = NULL;
+    InterlockedExchange(&g_Bc250PagingTraceStarted, 0);
+}
+#else
+NTSTATUS Bc250PagingTraceStart(VOID) { return STATUS_SUCCESS; }
+VOID Bc250PagingTraceStop(VOID) { }
+#endif
 static BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER g_Bc250UpdatePageTableHandler;
 static BC250_MCDM_ESCAPE_HANDLER g_Bc250EscapeHandler;
 static volatile LONG g_Bc250WddmContractVersion =
@@ -1117,7 +1302,7 @@ static NTSTATUS Bc250McdmBuildSignalMonitoredFence(
 }
 #endif
 
-NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(
+static NTSTATUS Bc250McdmBuildPagingBufferBody(
     CONST HANDLE hAdapter,
     DXGKARG_BUILDPAGINGBUFFER *pBuildPagingBuffer)
 {
@@ -1221,6 +1406,20 @@ NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(
         BC250_PAGING_STAGE_AFTER_DISPATCH, operation, dispatchStatus);
     InterlockedDecrement(&g_Bc250PagingActiveCount);
     return dispatchStatus;
+}
+
+NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(
+    CONST HANDLE hAdapter,
+    DXGKARG_BUILDPAGINGBUFFER *pBuildPagingBuffer)
+{
+    ULONG operation = pBuildPagingBuffer != NULL ?
+        (ULONG)pBuildPagingBuffer->Operation : MAXULONG;
+    UNREFERENCED_PARAMETER(operation); /* a migalha vira no-op na suite offline */
+    ULONG crumb = Bc250CrumbBeforeBank(
+        BC250_CRUMB_SITE_PAGING_DDI, operation, BC250_CRUMB_BANK_PAGING);
+    NTSTATUS status = Bc250McdmBuildPagingBufferBody(hAdapter, pBuildPagingBuffer);
+    Bc250CrumbAfter(crumb);
+    return status;
 }
 
 NTSTATUS APIENTRY Bc250McdmCloseAllocation(
@@ -1749,7 +1948,8 @@ static volatile LONG g_Bc250StdAllocSequence = 0;
 static VOID Bc250McdmPublishStandardAllocationPrivateData(
     _Inout_ DXGKARG_GETSTANDARDALLOCATIONDRIVERDATA *Args,
     _In_ UINT64 Token,
-    _In_ UINT64 ByteSize)
+    _In_ UINT64 ByteSize,
+    _In_opt_ const BC250_ALLOCATION_GEOMETRY *Geometry)
 {
     BC250_ALLOCATION_PRIVATE_V1 priv;
     UINT64 aligned;
@@ -1783,12 +1983,26 @@ static VOID Bc250McdmPublishStandardAllocationPrivateData(
     priv.AllocationToken = ((UINT64)Token << 32) | (UINT64)(ULONG)seq;
     priv.ByteSize = aligned;
     priv.Alignment = BC250_STD_ALLOC_ALIGNMENT;
+    /*
+     * DX.63b (Corrida 105): os 60 presents Blt do harness foram recusados com
+     * GEOMETRIA_DO_DESTINO_DESCONHECIDA -- o destino era alocacao padrao, cuja
+     * largura/altura/pitch o KMD conhece aqui e nao publicava. Geometria
+     * incoerente com o tamanho nao e' publicada (o parse a recusaria).
+     */
+    if (Geometry != NULL && Geometry->Width != 0u && Geometry->Height != 0u &&
+        Geometry->Pitch >= Geometry->Width && Geometry->Format != 0u &&
+        (UINT64)Geometry->Pitch * Geometry->Height <= aligned) {
+        priv.Flags |= BC250_ALLOCATION_FLAG_HAS_GEOMETRY;
+        priv.Geometry = *Geometry;
+    }
     RtlCopyMemory(Args->pAllocationPrivateDriverData, &priv, sizeof(priv));
 
-    Bc250DisplayLog("[GetStdAllocData] Filled: Token=0x%llX, Size=%llu, Align=%llu\n",
+    Bc250DisplayLog("[GetStdAllocData] Filled: Token=0x%llX, Size=%llu, Align=%llu, Geometria=%ux%u pitch=%u fmt=%u\n",
         (unsigned long long)priv.AllocationToken,
         (unsigned long long)priv.ByteSize,
-        (unsigned long long)priv.Alignment);
+        (unsigned long long)priv.Alignment,
+        priv.Geometry.Width, priv.Geometry.Height,
+        priv.Geometry.Pitch, priv.Geometry.Format);
 }
 
 NTSTATUS APIENTRY Bc250McdmGetStandardAllocationDriverData(
@@ -1819,7 +2033,7 @@ NTSTATUS APIENTRY Bc250McdmGetStandardAllocationDriverData(
         }
         Bc250McdmPublishStandardAllocationPrivateData(
             pGetStandardAllocationDriverData,
-            BC250_STD_ALLOC_TOKEN_PRIMARY, bytes);
+            BC250_STD_ALLOC_TOKEN_PRIMARY, bytes, NULL);
         return STATUS_SUCCESS;
     }
 
@@ -1835,7 +2049,7 @@ NTSTATUS APIENTRY Bc250McdmGetStandardAllocationDriverData(
         }
         Bc250McdmPublishStandardAllocationPrivateData(
             pGetStandardAllocationDriverData,
-            BC250_STD_ALLOC_TOKEN_SHADOW, bytes);
+            BC250_STD_ALLOC_TOKEN_SHADOW, bytes, NULL);
         return STATUS_SUCCESS;
     }
 
@@ -1843,15 +2057,28 @@ NTSTATUS APIENTRY Bc250McdmGetStandardAllocationDriverData(
         D3DKMDT_STAGINGSURFACEDATA *pStaging =
             pGetStandardAllocationDriverData->pCreateStagingSurfaceData;
         UINT64 bytes = 0ull;
+        BC250_ALLOCATION_GEOMETRY geometry;
+        RtlZeroMemory(&geometry, sizeof(geometry));
         if (pStaging != NULL) {
             pStaging->Pitch = (UINT)(pStaging->Width * 4u);
             Bc250DisplayLog("[GetStdAllocData] StagingSurface: %ux%u, Pitch=%u\n",
                 pStaging->Width, pStaging->Height, pStaging->Pitch);
             bytes = (UINT64)pStaging->Pitch * (UINT64)pStaging->Height;
+            /*
+             * D3DKMDT_STAGINGSURFACEDATA nao tem formato (d3dkmdt.h:1361). O
+             * proprio KMD declara 4 bytes por pixel no Pitch acima; 21
+             * (A8R8G8B8) registra so' isso -- 32 bpp --, sem afirmar a
+             * semantica do alfa.
+             */
+            geometry.Width = pStaging->Width;
+            geometry.Height = pStaging->Height;
+            geometry.Pitch = pStaging->Pitch;
+            geometry.Format = 21u;
         }
         Bc250McdmPublishStandardAllocationPrivateData(
             pGetStandardAllocationDriverData,
-            BC250_STD_ALLOC_TOKEN_STAGING, bytes);
+            BC250_STD_ALLOC_TOKEN_STAGING, bytes,
+            pStaging != NULL ? &geometry : NULL);
         return STATUS_SUCCESS;
     }
 
@@ -1859,15 +2086,22 @@ NTSTATUS APIENTRY Bc250McdmGetStandardAllocationDriverData(
         D3DKMDT_GDISURFACEDATA *pGdi =
             pGetStandardAllocationDriverData->pCreateGdiSurfaceData;
         UINT64 bytes = 0ull;
+        BC250_ALLOCATION_GEOMETRY geometry;
+        RtlZeroMemory(&geometry, sizeof(geometry));
         if (pGdi != NULL) {
             pGdi->Pitch = (UINT)(pGdi->Width * 4u);
-            Bc250DisplayLog("[GetStdAllocData] GdiSurface: %ux%u, Type=%u, Pitch=%u\n",
-                pGdi->Width, pGdi->Height, pGdi->Type, pGdi->Pitch);
+            Bc250DisplayLog("[GetStdAllocData] GdiSurface: %ux%u, Type=%u, Format=%u, Pitch=%u\n",
+                pGdi->Width, pGdi->Height, pGdi->Type, (UINT)pGdi->Format, pGdi->Pitch);
             bytes = (UINT64)pGdi->Pitch * (UINT64)pGdi->Height;
+            geometry.Width = pGdi->Width;
+            geometry.Height = pGdi->Height;
+            geometry.Pitch = pGdi->Pitch;
+            geometry.Format = (UINT32)pGdi->Format;   /* formato entregue pelo dxgkrnl */
         }
         Bc250McdmPublishStandardAllocationPrivateData(
             pGetStandardAllocationDriverData,
-            BC250_STD_ALLOC_TOKEN_GDI, bytes);
+            BC250_STD_ALLOC_TOKEN_GDI, bytes,
+            pGdi != NULL ? &geometry : NULL);
         return STATUS_SUCCESS;
     }
 
@@ -1888,12 +2122,19 @@ NTSTATUS APIENTRY Bc250McdmOpenAllocation(
         pOpenAllocation->NumAllocations == 0u ||
         pOpenAllocation->pOpenAllocation == NULL ||
         pOpenAllocation->Flags.Reserved != 0u) {
+        /* DX.62: saida muda ate a Corrida 104. */
+        Bc250DisplayLog("[McdmOpenAllocation] RECUSADO: hDevice=%p pOpen=%p Num=%u -> STATUS_INVALID_PARAMETER\n",
+            hDevice, (const void *)pOpenAllocation,
+            pOpenAllocation != NULL ? pOpenAllocation->NumAllocations : 0u);
         return STATUS_INVALID_PARAMETER;
     }
     for (index = 0u; index < pOpenAllocation->NumAllocations; ++index) {
         pOpenAllocation->pOpenAllocation[index].hDeviceSpecificAllocation = NULL;
     }
-    if (g_Bc250OpenAllocationObjects == NULL) return STATUS_NOT_SUPPORTED;
+    if (g_Bc250OpenAllocationObjects == NULL) {
+        Bc250DisplayLog("[McdmOpenAllocation] RECUSADO: sem backend -> STATUS_NOT_SUPPORTED\n");
+        return STATUS_NOT_SUPPORTED;
+    }
     return g_Bc250OpenAllocationObjects(hDevice, pOpenAllocation);
 }
 

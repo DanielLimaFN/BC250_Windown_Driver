@@ -1,4 +1,5 @@
 #include "bc250_sdma_present.h"
+#include "bc250_mmio_breadcrumb.h"
 #include "bc250_probe_telemetry.h"
 #include "bc250_display_ddi.h"
 #include "../core/bc250_sdma_queue_state_contract.h"
@@ -71,10 +72,15 @@ static inline uint32_t Bc250SdmaRegRead(
     _In_ BC250_SDMA_PRESENT_CONTEXT *Context,
     _In_ ULONG RegOffset)
 {
+    uint32_t value;
+    ULONG crumb;
     if (Context->MmioVirtual == NULL || RegOffset >= Context->MmioLength) {
         return 0u;
     }
-    return *(volatile uint32_t *)(Context->MmioVirtual + RegOffset);
+    crumb = Bc250CrumbBefore(BC250_CRUMB_SITE_SDMA_READ, RegOffset);
+    value = *(volatile uint32_t *)(Context->MmioVirtual + RegOffset);
+    Bc250CrumbAfter(crumb);
+    return value;
 }
 
 static inline void Bc250SdmaRegWrite(
@@ -83,7 +89,9 @@ static inline void Bc250SdmaRegWrite(
     _In_ uint32_t Value)
 {
     if (Context->MmioVirtual != NULL && RegOffset < Context->MmioLength) {
+        ULONG crumb = Bc250CrumbBefore(BC250_CRUMB_SITE_SDMA_WRITE, RegOffset);
         *(volatile uint32_t *)(Context->MmioVirtual + RegOffset) = Value;
+        Bc250CrumbAfter(crumb);
     }
 }
 

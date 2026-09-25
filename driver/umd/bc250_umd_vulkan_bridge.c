@@ -662,6 +662,8 @@ VkSampler Bc250UmdVkCachedSampler(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, _In_ con
 VOID Bc250UmdVkBridgeShutdown(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
 {
     if (pBridge == NULL) return;
+    pBridge->DeviceActive = FALSE;
+    pBridge->RecordingActive = FALSE;
     Bc250VkTrace("[VK_BRIDGE] Bc250UmdVkBridgeShutdown ENTER: DeviceActive=%d", pBridge->DeviceActive);
 
     if (pBridge->Device != VK_NULL_HANDLE) {
@@ -700,6 +702,7 @@ VOID Bc250UmdVkBridgeShutdown(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
         }
         pBridge->UploadStagingMapped = NULL;
         pBridge->UploadStagingSize = 0;
+        pBridge->UploadStagingHead = 0;
         if (pBridge->LinearPresentBuf != VK_NULL_HANDLE && pBridge->vk.vkDestroyBuffer != NULL) {
             pBridge->vk.vkDestroyBuffer(pBridge->Device, pBridge->LinearPresentBuf, NULL);
             pBridge->LinearPresentBuf = VK_NULL_HANDLE;
@@ -880,8 +883,9 @@ VkResult Bc250UmdVkFlushCommands(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
                 pBridge->PersistentPoolResets++;
             }
         }
-        /* So' com a fence concluida o anel pode voltar ao inicio. */
+        /* So' com a fence concluida o anel e o staging podem voltar ao inicio. */
         pBridge->DrawRingHead = 0;
+        pBridge->UploadStagingHead = 0;
         pBridge->BatchFlushCount++;
         pBridge->BatchDrawsFlushed += drawsInBatch;
         Bc250VkTrace("[VK_BRIDGE] FlushCommands: Execucao e Fence em hardware CONCLUIDOS com SUCESSO! "
@@ -1041,6 +1045,7 @@ BOOL Bc250UmdVkEnsureUploadStaging(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, VkDevic
     pBridge->UploadStagingMem = mem;
     pBridge->UploadStagingMapped = mapped;
     pBridge->UploadStagingSize = size;
+    pBridge->UploadStagingHead = 0;
     pBridge->UploadStagingGrowCount++;
     *pGrew = TRUE;
     *pAllocMicros = Bc250VkNowMicros() - t0;

@@ -154,6 +154,7 @@ $cleanBootMarkerPath = 'C:\BC250_REQUIRE_CLEAN_BOOT.json'
 $bootFusePath = 'C:\BC250_BOOT_FUSE.dat'
 $recoveryPath = 'C:\BC250_RECOVERY.cmd'
 $displayLogPath = 'C:\BC250_DISPLAY_LOG.txt'
+$pagingTracePath = 'C:\BC250_PAGING_TRACE.bin'
 $hardwareId = 'PCI\VEN_1002&DEV_13FE'
 
 # --------------------------------------------------------------------------
@@ -1235,6 +1236,17 @@ $displayLogStartOffset = if (Test-Path -LiteralPath $displayLogPath -PathType Le
 } | ConvertTo-Json | Set-Content -LiteralPath `
     (Join-Path $evidenceDir 'display-log-baseline.json') -Encoding UTF8
 
+# DX.56: o arquivo binario e cumulativo; este offset separa a corrida atual.
+$pagingTraceStartOffset = if (Test-Path -LiteralPath $pagingTracePath -PathType Leaf) {
+    [int64](Get-Item -LiteralPath $pagingTracePath).Length
+} else { [int64]0 }
+[ordered]@{
+    path = $pagingTracePath
+    start_offset = $pagingTraceStartOffset
+    captured_at = (Get-Date).ToString('o')
+} | ConvertTo-Json | Set-Content -LiteralPath `
+    (Join-Path $evidenceDir 'paging-trace-baseline.json') -Encoding UTF8
+
 # C2: antes de qualquer coisa deste bind, resgata do log cumulativo o trecho que
 # corridas anteriores perderam. MEDIDO em 10/09: seis pastas de evidencia do
 # mesmo dia estavam truncadas, e a da corrida do marco (11:21) perdeu 438.038
@@ -1996,12 +2008,19 @@ if ($GfxRingBringupLevel -gt 0 -and (Test-Path -LiteralPath $deltaLogDest -PathT
 # B2: Arquivamento dos logs da UMD pelo binder de lab
 $umdLogCollected = $false
 $umdAggregate = Join-Path $evidenceDir 'bc250_umd_log.txt'
+$umdSnapshotEntries = @()
 $umdLogs = @(Get-ChildItem -LiteralPath 'C:\Windows\Temp' `
     -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue |
     Sort-Object Name)
 foreach ($umdLog in $umdLogs) {
-    Copy-Item -LiteralPath $umdLog.FullName `
-        -Destination (Join-Path $evidenceDir $umdLog.Name.ToLowerInvariant()) -Force
+    $snapshotPath = Join-Path $evidenceDir $umdLog.Name.ToLowerInvariant()
+    Copy-Item -LiteralPath $umdLog.FullName -Destination $snapshotPath -Force
+    $umdSnapshotEntries += [ordered]@{
+        name = $umdLog.Name
+        source_last_write_utc = $umdLog.LastWriteTimeUtc.ToString('o')
+        copied_bytes = (Get-Item -LiteralPath $snapshotPath).Length
+        sha256 = (Get-FileHash -LiteralPath $snapshotPath -Algorithm SHA256).Hash
+    }
     ("===== {0} =====" -f $umdLog.Name),
         (Get-Content -LiteralPath $umdLog.FullName -ErrorAction SilentlyContinue) |
         Add-Content -LiteralPath $umdAggregate -Encoding UTF8
@@ -2011,6 +2030,13 @@ if (-not $umdLogCollected) {
     'bc250umd.dll nunca escreveu: a DLL nao foi carregada por nenhum processo.' |
         Set-Content -LiteralPath $umdAggregate -Encoding UTF8
 }
+[ordered]@{
+    kind = 'INTERMEDIATE_BIND_SNAPSHOT'
+    captured_at = (Get-Date).ToString('o')
+    note = 'Copiado pelo binder com a janela fisica ainda aberta; nao e a cauda do travamento.'
+    files = @($umdSnapshotEntries)
+} | ConvertTo-Json -Depth 5 |
+    Set-Content -LiteralPath (Join-Path $evidenceDir 'umd-snapshot-manifest.json') -Encoding UTF8
 
 # Registro duravel do que foi realmente instalado, gravado ANTES de qualquer
 # ciclo que possa reiniciar a maquina. A quarentena depende disto para

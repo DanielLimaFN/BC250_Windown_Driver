@@ -1,5 +1,7 @@
 # `docs/` — documentos ativos
 
+**Ponto de partida em 25/09/2026:** [handoff 438 — Corridas 111–118](438_HANDOFF_2026-09-25_CORRIDAS_111_A_118_VISUAL_VELOCIDADE_E_TRAVAMENTO.md), com estado da máquina, proveniência do pacote, falhas conhecidas, erros anteriores e próximos testes. [Critério da 118](436_DX73_PIXEL_CENTRAL_DA_COPIA_E_CRITERIO_CORRIDA118.md) e [resultado da 118](437_CORRIDA118_DX73_TRIANGULO_PIXELS_COPIA_E_R1.md) preservam a prova do ensaio mais recente. Os handoffs de 17/09 e 24/09 abaixo são históricos.
+
 **O documento base do projeto está na raiz:** [`BASE_DE_AVANCO.md`](../BASE_DE_AVANCO.md)
 — Tabela 1 (já feito, com prova física) e Tabela 2 (o que falta, por prioridade, com o
 teste que fecha cada item).
@@ -48,7 +50,7 @@ intermediários e diários de trabalho encerrado foram movidos para
 
 ---
 
-## 4. Handoffs da Rodada Atual (17/09 e 18/09)
+## 4. Handoffs históricos (17/09 e 18/09)
 
 | Documento | Assunto |
 |---|---|
@@ -85,4 +87,3 @@ intermediários e diários de trabalho encerrado foram movidos para
 | [`84_MEC_HQD_PROGRAMMING_GATE.md`](84_MEC_HQD_PROGRAMMING_GATE.md) | Gate de programação do HQD |
 | [`12_RECUPERACAO_DRIVER_TESTE.md`](12_RECUPERACAO_DRIVER_TESTE.md) | Recuperação do driver de teste |
 | `evidence/` | Corpus de evidências físicas preservadas |
-

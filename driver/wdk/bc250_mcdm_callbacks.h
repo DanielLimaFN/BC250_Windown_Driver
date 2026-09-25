@@ -5,6 +5,8 @@
 #include <dispmprt.h>
 #include "../core/bc250_paging_proof_contract.h"
 BOOLEAN Bc250PagingTakeProof(UINT64 Physical, ULONG Bytes, BC250_PAGING_PROOF *Proof);
+NTSTATUS Bc250PagingTraceStart(VOID);
+VOID Bc250PagingTraceStop(VOID);
 
 DXGKDDI_BUILDPAGINGBUFFER Bc250McdmBuildPagingBuffer;
 DXGKDDI_CALIBRATEGPUCLOCK Bc250McdmCalibrateGpuClock;

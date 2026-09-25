@@ -3,6 +3,10 @@
 #include "bc250_display_ddi.h"
 #include "bc250_probe_telemetry.h"
 #include "bc250_sdma_present.h"
+#include "bc250_mmio_breadcrumb.h"
+/* DX.66: mapeamento da pagina de migalhas (definido antes do uso no unload/StopDevice). */
+static PVOID g_Bc250CrumbMapping = NULL;
+static VOID Bc250CrumbMarkClean(VOID);
 #include "../core/bc250_golden_settings_contract.h"
 #include "bc250_cp_firmware_manifest.h"
 #include "../core/bc250_adapter_info_contract.h"
@@ -23,6 +27,45 @@ int _fltused = 0x9875;
 #define BC250_ACTIVE_GCVM_FAULT_ADDR_LO  0x0A134u
 #define BC250_ACTIVE_GCVM_FAULT_ADDR_HI  0x0A138u
 static EX_PUSH_LOCK g_Bc250AdapterDirectoryLock;
+/* DX.59: o lock do diretorio protege tambem o pequeno anel de diagnostico. */
+#define BC250_ALLOC_QUERY_SLOTS 256u
+static BC250_ESCAPE_ALLOCATION_QUERY g_Bc250AllocationQueries[BC250_ALLOC_QUERY_SLOTS];
+/* DX.62: handle KMD publicado por slot, so' para casar o DestroyAllocation. */
+static HANDLE g_Bc250AllocationQueryHandles[BC250_ALLOC_QUERY_SLOTS];
+static UINT32 g_Bc250AllocationQuerySequence;
+
+/*
+ * DX.62: anota no registro da sonda o que o dxgkrnl fez depois do
+ * CreateAllocation. Chamar com g_Bc250AdapterDirectoryLock EXCLUSIVO.
+ * Somente memoria; zero I/O e zero MMIO.
+ */
+static BC250_ESCAPE_ALLOCATION_QUERY *Bc250AllocQueryFindByToken(UINT64 Token)
+{
+    UINT32 distance;
+    if (Token == 0u) return NULL;
+    for (distance = 0u; distance < BC250_ALLOC_QUERY_SLOTS &&
+        distance < g_Bc250AllocationQuerySequence; ++distance) {
+        BC250_ESCAPE_ALLOCATION_QUERY *entry = &g_Bc250AllocationQueries[
+            (g_Bc250AllocationQuerySequence - 1u - distance) % BC250_ALLOC_QUERY_SLOTS];
+        if (entry->Seen != 0u && entry->Token == Token) return entry;
+    }
+    return NULL;
+}
+
+static VOID Bc250AllocQueryNoteDestroy(HANDLE Allocation, NTSTATUS Status)
+{
+    UINT32 slot;
+    if (Allocation == NULL) return;
+    for (slot = 0u; slot < BC250_ALLOC_QUERY_SLOTS; ++slot) {
+        if (g_Bc250AllocationQueryHandles[slot] == Allocation &&
+            g_Bc250AllocationQueries[slot].Seen != 0u) {
+            ++g_Bc250AllocationQueries[slot].DestroyCalls;
+            g_Bc250AllocationQueries[slot].DestroyLastStatus = (UINT32)Status;
+            /* O handle pode ser reciclado: um Destroy fecha o casamento. */
+            g_Bc250AllocationQueryHandles[slot] = NULL;
+        }
+    }
+}
 static BC250_GPUVA_JOURNAL_STATUS Bc250ActiveInitializeJournalSet(
     BC250_DXGK_ACTIVE_CONTEXT *Context);
 
@@ -3421,6 +3464,57 @@ static NTSTATUS Bc250ActiveQueryRuntimeCaps(
             }
         }
     }
+    /*
+     * DX.67 (Corrida 110) -- O SEGMENTO DO VIDMM NAO PODE CONTER REGIAO INTERNA EM USO.
+     *
+     * MEDIDO (P0, mesmo boot): segmento publicado [0xA8C000, 0xFE00000)
+     * (SegBase=0xA8C000 SegBytes=0xF374000) e regiao em uso do alocador do
+     * bootstrap [0xFB00000, +0x400000) papel TMR -- 3 MB de sobreposicao. E o
+     * VidMm pos tabelas de pagina raiz DENTRO dela (SegOff 0xF2F9000..0xF34B000
+     * -> VRAM 0xFD85000..0xFDD7000). O corte acima so' descontava a dummy e o
+     * motor de submissao; TMR, firmware CP, MQDs e backings GCVM ficavam de fora.
+     * Agora toda regiao em uso dos dois alocadores que comece dentro do
+     * segmento o trunca abaixo dela.
+     */
+    {
+        const BC250_VRAM_ALLOCATOR *allocs[2];
+        static volatile LONG64 s_Bc250Dx67LoggedEnd = 0;
+        uint64_t endBefore = localEnd;
+        uint32_t a, r;
+        allocs[0] = &context->GlobalMmuAllocator;
+        allocs[1] = &context->Core.StartDevice.Owned.Bootstrap.Allocator;
+        for (a = 0u; a < 2u; ++a) {
+            for (r = 0u; r < allocs[a]->RegionCount && r < BC250_VRAM_MAX_REGIONS; ++r) {
+                const BC250_VRAM_REGION *region = &allocs[a]->Regions[r];
+                if (region->InUse == 0u || region->Length == 0u) continue;
+                if (region->Offset >= localStart && region->Offset < localEnd) {
+                    localEnd = region->Offset;
+                } else if (region->Offset < localStart &&
+                            region->Length > localStart - region->Offset) {
+                    Bc250DisplayLog("[DX67_VRAM_MAPA] SOBREPOSICAO_NA_BASE: alocador %u regiao [0x%llX,+0x%llX) papel=%u invade a base do segmento 0x%llX; QUERYSEGMENT4 recusada\n",
+                        a, (unsigned long long)region->Offset, (unsigned long long)region->Length,
+                        region->Role, (unsigned long long)localStart);
+                    RtlZeroMemory(Caps, sizeof(*Caps));
+                    return STATUS_DEVICE_CONFIGURATION_ERROR;
+                }
+            }
+        }
+        if ((LONG64)localEnd != InterlockedCompareExchange64(&s_Bc250Dx67LoggedEnd, 0, 0)) {
+            InterlockedExchange64(&s_Bc250Dx67LoggedEnd, (LONG64)localEnd);
+            Bc250DisplayLog("[DX67_VRAM_MAPA] segmento [0x%llX, 0x%llX) (antes do corte DX.67: fim 0x%llX)\n",
+                (unsigned long long)localStart, (unsigned long long)localEnd,
+                (unsigned long long)endBefore);
+            for (a = 0u; a < 2u; ++a) {
+                for (r = 0u; r < allocs[a]->RegionCount && r < BC250_VRAM_MAX_REGIONS; ++r) {
+                    const BC250_VRAM_REGION *region = &allocs[a]->Regions[r];
+                    if (region->InUse == 0u) continue;
+                    Bc250DisplayLog("[DX67_VRAM_MAPA] alocador %u regiao [0x%llX,+0x%llX) papel=%u\n",
+                        a, (unsigned long long)region->Offset,
+                        (unsigned long long)region->Length, region->Role);
+                }
+            }
+        }
+    }
     if (localStart >= localEnd) {
         RtlZeroMemory(Caps, sizeof(*Caps));
         return STATUS_DEVICE_CONFIGURATION_ERROR;
@@ -4945,6 +5039,8 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
     uint64_t refuseToken = 0u;
     uint64_t refuseSegBytes = 0u;
     uint32_t refuseSegSet = 0u;
+    UINT64 probeToken = 0u;
+    UINT probeIndex = 0u;
 
     /*
      * Instrumentacao 3.82 (somente leitura, zero mudanca de comportamento).
@@ -5007,6 +5103,11 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                     if (abi == BC250_ALLOCATION_ABI_OK) {
                         refuseBytes = request.ByteSize;
                         refuseToken = request.AllocationToken;
+                        if (request.Geometry.Width == 1024u &&
+                            request.Geometry.Height == 832u) {
+                            probeToken = request.AllocationToken;
+                            probeIndex = index;
+                        }
                     }
                     if (abi != BC250_ALLOCATION_ABI_OK) {
                         refuseReason = "ABI_PRIVADA_RECUSADA_PELO_PARSE";
@@ -5145,6 +5246,16 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
                 info->SupportedWriteSegmentSet =
                     context->AllocationSegmentSet;
                 info->EvictionSegmentSet = 0u;
+                /*
+                 * DX.58 (candidato da Corrida 102): AllocationPriority e' campo de SAIDA.
+                 * Zero nao e' prioridade inicial valida no contrato WDDM 2.x
+                 * (d3dkmddi.h / DXGK_ALLOCATIONINFO). A estrutura chega
+                 * zerada e nunca preenchíamos este campo; o VidMm pode
+                 * rejeitar o recurso depois do nosso STATUS_SUCCESS.
+                 * Prioridade normal vale para todas as classes de alocacao;
+                 * nao promove a textura compartilhada a primaria.
+                 */
+                info->AllocationPriority = D3DDDI_ALLOCATIONPRIORITY_NORMAL;
                 BOOLEAN cpuVisible = FALSE;
                 if (Bc250AllocationIsPrimary(&request) ||
                     Bc250AllocationRequiresCpuAccess(&request)) {
@@ -5211,6 +5322,32 @@ static NTSTATUS Bc250ActiveCreateAllocationLifecycle(
         }
         ExReleasePushLockExclusive(&context->ObjectLock);
         break;
+    }
+    /* A UMD consulta por token logo apos pfnAllocateCb; zero I/O ou MMIO aqui. */
+    if (probeToken != 0u && CreateAllocation != NULL &&
+        probeIndex < CreateAllocation->NumAllocations) {
+        const DXGK_ALLOCATIONINFO *probeInfo =
+            &CreateAllocation->pAllocationInfo[probeIndex];
+        BC250_ESCAPE_ALLOCATION_QUERY *entry =
+            &g_Bc250AllocationQueries[
+                g_Bc250AllocationQuerySequence % BC250_ALLOC_QUERY_SLOTS];
+        RtlZeroMemory(entry, sizeof(*entry));
+        entry->Token = probeToken;
+        entry->Seen = 1u;
+        entry->KmdStatus = (UINT32)result;
+        entry->FlagsResource = CreateAllocation->Flags.Resource;
+        entry->AllocationFlags = probeInfo->FlagsWddm2.Value;
+        entry->AllocationPriority = probeInfo->AllocationPriority;
+        entry->WriteSegmentSet = probeInfo->SupportedWriteSegmentSet;
+        entry->PreferredSegment = probeInfo->PreferredSegment.Value;
+        entry->Alignment = probeInfo->Alignment;
+        entry->SizeBytes = (UINT64)probeInfo->Size;
+        entry->KmdAllocationNonNull = probeInfo->hAllocation != NULL ? 1u : 0u;
+        entry->KmdResourceNonNull = CreateAllocation->hResource != NULL ? 1u : 0u;
+        g_Bc250AllocationQueryHandles[
+            g_Bc250AllocationQuerySequence % BC250_ALLOC_QUERY_SLOTS] =
+            NT_SUCCESS(result) ? probeInfo->hAllocation : NULL;
+        entry->Sequence = ++g_Bc250AllocationQuerySequence;
     }
     ExReleasePushLockExclusive(&g_Bc250AdapterDirectoryLock);
     KeLeaveCriticalRegion();
@@ -5288,6 +5425,16 @@ static NTSTATUS Bc250ActiveDestroyAllocationLifecycle(
                 result = Bc250ObjectStatusToNtStatus(status);
             }
         }
+        /* DX.62: o registro da sonda sabe se o dxgkrnl desfez a alocacao. */
+        for (index = 0u; DestroyAllocation != NULL &&
+             DestroyAllocation->pAllocationList != NULL &&
+             index < DestroyAllocation->NumAllocations; ++index) {
+            Bc250AllocQueryNoteDestroy(DestroyAllocation->pAllocationList[index], result);
+        }
+        if (!NT_SUCCESS(result)) {
+            Bc250DisplayLog("[ActiveDestroyAlloc] RECUSADO: NumAllocs=%u result=0x%08X\n",
+                DestroyAllocation->NumAllocations, (UINT32)result);
+        }
         ExReleasePushLockExclusive(&context->ObjectLock);
         break;
     }
@@ -5321,7 +5468,7 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
         objectStatus = Bc250McdmObjectLookup(&context->Objects,
             DeviceContext, BC250_MCDM_OBJECT_DEVICE, NULL, &deviceRecord);
         if (objectStatus != BC250_MCDM_OBJECT_OK) {
-            Bc250DisplayLog("[ActiveOpenAlloc] Device lookup failed for %p (status=%u)\n",
+            Bc250DisplayLog("[ActiveOpenAlloc] RECUSADO: device lookup failed for %p (status=%u)\n",
                 DeviceContext, (uint32_t)objectStatus);
             ExReleasePushLockExclusive(&context->ObjectLock);
             continue;
@@ -5329,7 +5476,7 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
         if (InterlockedCompareExchange(&context->IsActive, 1, 1) != 1 ||
             InterlockedCompareExchange(
                 &context->AllocationAbiReady, 1, 1) != 1) {
-            Bc250DisplayLog("[ActiveOpenAlloc] Adapter inactive or AbiNotReady (Active=%ld, AbiReady=%ld)\n",
+            Bc250DisplayLog("[ActiveOpenAlloc] RECUSADO: adapter inactive or AbiNotReady (Active=%ld, AbiReady=%ld)\n",
                 context->IsActive, context->AllocationAbiReady);
             result = STATUS_DEVICE_NOT_READY;
         } else {
@@ -5339,7 +5486,7 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
                 DXGK_OPENALLOCATIONINFO *info =
                     &OpenAllocation->pOpenAllocation[index];
                 if (info->hAllocation == 0u) {
-                    Bc250DisplayLog("[ActiveOpenAlloc] Invalid hAllocation 0 at index %u\n", index);
+                    Bc250DisplayLog("[ActiveOpenAlloc] RECUSADO: invalid hAllocation 0 at index %u\n", index);
                     result = STATUS_INVALID_PARAMETER;
                     break;
                 }
@@ -5347,7 +5494,7 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
                     if (Bc250AllocationAbiParse(info->pPrivateDriverData,
                             info->PrivateDriverDataSize, &request) !=
                             BC250_ALLOCATION_ABI_OK) {
-                        Bc250DisplayLog("[ActiveOpenAlloc] ABI parse failed at index %u\n", index);
+                        Bc250DisplayLog("[ActiveOpenAlloc] RECUSADO: ABI parse failed at index %u\n", index);
                         result = STATUS_INVALID_PARAMETER;
                         break;
                     }
@@ -5360,7 +5507,7 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
                                 prior->PrivateDriverDataSize, &previous);
                             if (prior->hAllocation == info->hAllocation ||
                                 previous.AllocationToken == request.AllocationToken) {
-                                Bc250DisplayLog("[ActiveOpenAlloc] Duplicate token at index %u\n", index);
+                                Bc250DisplayLog("[ActiveOpenAlloc] RECUSADO: duplicate token at index %u\n", index);
                                 result = STATUS_INVALID_PARAMETER;
                                 break;
                             }
@@ -5408,7 +5555,7 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
                         if (request.ByteSize != 0u &&
                             (allocationRecord.AllocationBytes != request.ByteSize ||
                              allocationRecord.AllocationAlignment != request.Alignment)) {
-                            Bc250DisplayLog("[ActiveOpenAlloc] Size/Alignment mismatch at index %u: rec=%llu/%llu req=%llu/%llu\n",
+                            Bc250DisplayLog("[ActiveOpenAlloc] RECUSADO: size/alignment mismatch at index %u: rec=%llu/%llu req=%llu/%llu\n",
                                 index, allocationRecord.AllocationBytes, allocationRecord.AllocationAlignment,
                                 request.ByteSize, request.Alignment);
                             result = STATUS_INVALID_PARAMETER;
@@ -5441,13 +5588,41 @@ static NTSTATUS Bc250ActiveOpenAllocationLifecycle(
                 }
             }
         }
+        /* DX.62: resultado do Open anotado no registro da sonda, por token. */
+        if (OpenAllocation != NULL && OpenAllocation->pOpenAllocation != NULL) {
+            UINT noteIndex;
+            for (noteIndex = 0u; noteIndex < OpenAllocation->NumAllocations; ++noteIndex) {
+                const DXGK_OPENALLOCATIONINFO *noteInfo =
+                    &OpenAllocation->pOpenAllocation[noteIndex];
+                BC250_ALLOCATION_PRIVATE_V1 noteRequest;
+                BC250_ESCAPE_ALLOCATION_QUERY *noteEntry;
+                if (noteInfo->pPrivateDriverData == NULL ||
+                    noteInfo->PrivateDriverDataSize == 0u ||
+                    Bc250AllocationAbiParse(noteInfo->pPrivateDriverData,
+                        noteInfo->PrivateDriverDataSize, &noteRequest) !=
+                        BC250_ALLOCATION_ABI_OK) {
+                    continue;
+                }
+                noteEntry = Bc250AllocQueryFindByToken(noteRequest.AllocationToken);
+                if (noteEntry != NULL) {
+                    ++noteEntry->OpenCalls;
+                    noteEntry->OpenLastStatus = (UINT32)result;
+                }
+            }
+        }
         ExReleasePushLockExclusive(&context->ObjectLock);
         break;
     }
     ExReleasePushLockExclusive(&g_Bc250AdapterDirectoryLock);
     KeLeaveCriticalRegion();
 
-    Bc250DisplayLog("[ActiveOpenAlloc] LEAVE: result=0x%08X\n", result);
+    if (!NT_SUCCESS(result)) {
+        /* DX.62: "LEAVE" caia na amostragem da classe 9; a recusa nao pode. */
+        Bc250DisplayLog("[ActiveOpenAlloc] RECUSADO LEAVE: DevCtx=%p NumAllocs=%u result=0x%08X\n",
+            DeviceContext, OpenAllocation ? OpenAllocation->NumAllocations : 0u, (UINT32)result);
+    } else {
+        Bc250DisplayLog("[ActiveOpenAlloc] LEAVE: result=0x%08X\n", result);
+    }
     return result;
 }
 
@@ -8387,6 +8562,20 @@ Bc250PhysicalRenderBringup:
             dummy->Flags = BC250_VRAM_REGION_PERSISTENT |
                 BC250_VRAM_ALLOC_CPU_VISIBLE;
         }
+        /* DX.67: reservar a migalha antes do preflight e da publicacao do segmento.
+         * O inventario rejeita qualquer conflito com scanout/firmware herdado. */
+        if (context->Core.TopologyEvidence.AddressSpace.CpuVisibleBytes >=
+            BC250_CRUMB_VRAM_OFFSET + BC250_CRUMB_PAGE_BYTES) {
+            BC250_INHERITED_VRAM_RESERVATION *crumb =
+                &context->RuntimeInventoryInput.PlatformCarveouts[
+                    context->RuntimeInventoryInput.PlatformCarveoutCount++];
+            crumb->Offset = BC250_CRUMB_VRAM_OFFSET;
+            crumb->Length = BC250_CRUMB_PAGE_BYTES;
+            crumb->Alignment = BC250_CRUMB_PAGE_BYTES;
+            crumb->Role = BC250_VRAM_ROLE_PLATFORM_RESERVED;
+            crumb->Flags = BC250_VRAM_REGION_PERSISTENT |
+                BC250_VRAM_ALLOC_CPU_VISIBLE;
+        }
         if (context->Core.TopologyEvidence.AddressSpace.TotalBytes >
             context->Core.TopologyEvidence.AddressSpace.CpuVisibleBytes) {
             BC250_INHERITED_VRAM_RESERVATION *opaque =
@@ -10040,6 +10229,7 @@ static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason(
     Bc250ProbeMarkDdi(BC250_V5_DDI_STOP_DEVICE);
     Bc250ProbeRecord(BC250_PROBE_STOP_DEVICE_ENTERED, 1);
     Bc250DisplayLog("[StopDevice] Entered. Reason=%u\n", StopReason);
+    Bc250CrumbMarkClean();   /* DX.66 */
     if (context == NULL ||
         context->Signature != BC250_ACTIVE_SIGNATURE) {
         Bc250ProbeRecord(BC250_PROBE_STOP_DEVICE_STATUS,
@@ -10383,6 +10573,15 @@ static NTSTATUS Bc250DxgkDdiRemoveDeviceActiveImpl(
 VOID Bc250ActiveDriverUnloadCleanup(VOID)
 {
     uint32_t index;
+
+    Bc250PagingTraceStop();
+#if defined(BC250_ENABLE_DXGK_REGISTRATION) && !defined(BC250_CRUMB_DISABLED)
+    if (g_Bc250CrumbMapping != NULL) {   /* DX.66 */
+        InterlockedExchangePointer((PVOID volatile *)&g_Bc250CrumbPage, NULL);
+        MmUnmapIoSpace(g_Bc250CrumbMapping, BC250_CRUMB_PAGE_BYTES);
+        g_Bc250CrumbMapping = NULL;
+    }
+#endif
 
     KeEnterCriticalRegion();
     ExAcquirePushLockExclusive(&g_Bc250AdapterDirectoryLock);
@@ -10851,11 +11050,27 @@ static BOOLEAN Bc250ActiveTryCompletePreemptions(
     for (node = 0u; node <= BC250_SUBMISSION_NODE_COMPUTE; ++node) {
         BC250_ACTIVE_FENCE_SYNC sync;
         BOOLEAN ran = FALSE;
+        BOOLEAN sdmaRetireGateHeld = FALSE;
         NTSTATUS status;
         LONG fenceId;
 
         if (InterlockedCompareExchange(&s_Bc250PreemptPending[node], 0, 0) == 0) {
             continue;
+        }
+        if (node == BC250_SUBMISSION_NODE_SDMA) {
+            /*
+             * PollRetirement remove o ultimo slot antes de notificar a fence.
+             * InFlightCount pode ser zero enquanto o lote ainda esta no DPC.
+             * Serializar PREEMPT com esse intervalo evita ultrapassar a fence.
+             * Um DPC perdedor aguarda o timer seguinte, sem spin.
+             */
+            if (InterlockedCompareExchange(&Context->SdmaRetireBusy, 1, 0) != 0) {
+                if (InterlockedIncrement(&s_Bc250PreemptDeferredLogs) <= 32) {
+                    Bc250DisplayLog("[PREEMPT_WAIT] Node=0 -- retiro SDMA em curso; aguardando notificacao da fence\n");
+                }
+                continue;
+            }
+            sdmaRetireGateHeld = TRUE;
         }
         fenceId = InterlockedCompareExchange(&s_Bc250PreemptFenceId[node], 0, 0);
         RtlZeroMemory(&sync, sizeof(sync));
@@ -10880,6 +11095,9 @@ static BOOLEAN Bc250ActiveTryCompletePreemptions(
             Bc250DisplayLog("[PREEMPT_WAIT] Node=%u PreemptionFenceId=%u EmVoo=%u Reservas=%u status=0x%08X ran=%u -- no ainda nao drenou; tenta no proximo retirement\n",
                 node, (uint32_t)fenceId, sync.PendingCount, sync.ReservedCount,
                 (uint32_t)status, ran ? 1u : 0u);
+        }
+        if (sdmaRetireGateHeld) {
+            InterlockedExchange(&Context->SdmaRetireBusy, 0);
         }
     }
     return any;
@@ -12747,13 +12965,16 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(
             assignedHwFence,
             (unsigned long long)pSubmitCommand->SubmissionFenceId,
             pSubmitCommand->DmaBufferSize);
-        if (context->GfxWaveProbePresent == 1u && context->GfxWaveProbe == 1u)
-            Bc250DisplayLog("BC250_DIAG schema=1 level=INFO event=KMD_SDMA_SUBMIT ctx=%p node=0 dxg_fence=%llu hw_fence=%u vmid=%u path=%s accepted=1 va=0x%llX bytes=%u\n",
+        if (context->GfxWaveProbePresent == 1u && context->GfxWaveProbe == 1u) {
+            LARGE_INTEGER submitQpc = KeQueryPerformanceCounter(NULL);
+            Bc250DisplayLog("BC250_DIAG schema=1 level=INFO event=KMD_SDMA_SUBMIT ctx=%p node=0 dxg_fence=%llu hw_fence=%u vmid=%u path=%s accepted=1 va=0x%llX bytes=%u qpc=%llu\n",
                 pSubmitCommand->hContext,
                 (unsigned long long)pSubmitCommand->SubmissionFenceId,
                 assignedHwFence, targetVmid, Bc250SubmitPathName(execPath),
                 (unsigned long long)pSubmitCommand->DmaBufferVirtualAddress,
-                pSubmitCommand->DmaBufferSize);
+                pSubmitCommand->DmaBufferSize,
+                (unsigned long long)submitQpc.QuadPart);
+        }
 
         return STATUS_SUCCESS;
     }
@@ -13809,6 +14030,7 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualLifecycle(
     BC250_DXGK_ACTIVE_CONTEXT *context =
         (BC250_DXGK_ACTIVE_CONTEXT *)AdapterContext;
     NTSTATUS status;
+    ULONG crumb;
 
     if (context == NULL || context->Signature != BC250_ACTIVE_SIGNATURE) {
         return STATUS_INVALID_PARAMETER;
@@ -13822,7 +14044,12 @@ static NTSTATUS Bc250ActiveSubmitCommandVirtualLifecycle(
      * DxgkDdiSubmitCommandVirtual executa em DISPATCH_LEVEL (IRQL 2):
      * push locks (ObjectLock) e KeEnterCriticalRegion são proibidos (BugCheck 0xD1).
      */
+    crumb = Bc250CrumbBeforeBank(
+        BC250_CRUMB_SITE_SUBMIT_DDI,
+        pSubmitCommand != NULL ? (ULONG)pSubmitCommand->NodeOrdinal : MAXULONG,
+        BC250_CRUMB_BANK_SUBMIT);
     status = Bc250ActiveSubmitCommandVirtualBody(AdapterContext, pSubmitCommand);
+    Bc250CrumbAfter(crumb);
     Bc250ActiveSubmissionGateLeave(context);
     return status;
 }
@@ -14194,6 +14421,72 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
     Bc250DisplayLog("[ActiveFlushTlb] Journal commit GLOBAL after physical GFXHUB invalidation: Generation=%u -> SUCCESS\n",
         generation);
     return STATUS_SUCCESS;
+}
+
+/*
+ * DX.63: geometria de DXGK_PRESENTALLOCATIONINFO.hDeviceSpecificAllocation.
+ * O handle e' o do OpenAllocation (registro OPEN_ALLOCATION cujo
+ * ReferencedObject e' a alocacao); aceita tambem o handle da propria alocacao.
+ * Somente leitura do registro, sob os mesmos locks do DescribeAllocation.
+ */
+static BOOLEAN Bc250ActiveResolveAllocationGeometry(
+    HANDLE DeviceSpecificAllocation,
+    UINT32 *Width,
+    UINT32 *Height,
+    UINT32 *Pitch,
+    UINT32 *Format)
+{
+    uint32_t index;
+    BOOLEAN resolved = FALSE;
+
+    if (Width != NULL) *Width = 0u;
+    if (Height != NULL) *Height = 0u;
+    if (Pitch != NULL) *Pitch = 0u;
+    if (Format != NULL) *Format = 0u;
+    if (DeviceSpecificAllocation == NULL || Width == NULL || Height == NULL ||
+        Pitch == NULL || Format == NULL || KeGetCurrentIrql() > APC_LEVEL) {
+        return FALSE;
+    }
+
+    KeEnterCriticalRegion();
+    ExAcquirePushLockShared(&g_Bc250AdapterDirectoryLock);
+    for (index = 0u; index < BC250_ACTIVE_MAX_ADAPTERS && !resolved; ++index) {
+        BC250_DXGK_ACTIVE_CONTEXT *active = g_Bc250AdapterDirectory[index];
+        BC250_MCDM_OBJECT_RECORD record;
+        BC250_MCDM_HANDLE allocation = NULL;
+        uint32_t w = 0u, h = 0u, p = 0u, f = 0u;
+
+        if (active == NULL || active->Signature != BC250_ACTIVE_SIGNATURE ||
+            InterlockedCompareExchange(&active->IsActive, 1, 1) != 1) {
+            continue;
+        }
+        ExAcquirePushLockShared(&active->ObjectLock);
+        if (Bc250McdmObjectLookup(&active->Objects,
+                (BC250_MCDM_HANDLE)DeviceSpecificAllocation,
+                BC250_MCDM_OBJECT_OPEN_ALLOCATION, NULL, &record) ==
+                BC250_MCDM_OBJECT_OK) {
+            allocation = record.ReferencedObject;
+        } else if (Bc250McdmObjectLookup(&active->Objects,
+                (BC250_MCDM_HANDLE)DeviceSpecificAllocation,
+                BC250_MCDM_OBJECT_ALLOCATION, NULL, &record) ==
+                BC250_MCDM_OBJECT_OK) {
+            allocation = (BC250_MCDM_HANDLE)DeviceSpecificAllocation;
+        }
+        if (allocation != NULL &&
+            Bc250McdmObjectGetAllocationGeometry(&active->Objects, allocation,
+                &w, &h, &p, &f) == BC250_MCDM_OBJECT_OK &&
+            w != 0u && h != 0u && p != 0u) {
+            *Width = w;
+            *Height = h;
+            *Pitch = p;
+            *Format = f;
+            resolved = TRUE;
+        }
+        ExReleasePushLockShared(&active->ObjectLock);
+    }
+    ExReleasePushLockShared(&g_Bc250AdapterDirectoryLock);
+    KeLeaveCriticalRegion();
+    return resolved;
 }
 
 static BOOLEAN Bc250ActiveResolveDisplayGpuVa(
@@ -14827,6 +15120,209 @@ static NTSTATUS Bc250DxgkDdiStartDeviceV5TelemetryImpl(
     PULONG NumberOfVideoPresentSources,
     PULONG NumberOfChildren);
 
+/*
+ * DX.66: ciclo de vida das migalhas de MMIO (bc250_mmio_breadcrumb.h).
+ * Leitura da pagina anterior ANTES do fusivel (que pode recusar o start);
+ * arme so' depois de um StartDevice bem-sucedido e de conferir que nenhuma
+ * regiao dos alocadores internos sobrepoe a pagina; estado LIMPO no StopDevice.
+ */
+#if defined(BC250_ENABLE_DXGK_REGISTRATION) && !defined(BC250_CRUMB_DISABLED)
+static BOOLEAN Bc250CrumbFindVramBar(
+    _In_ PDXGKRNL_INTERFACE DxgkInterface,
+    _Out_ PHYSICAL_ADDRESS *Physical)
+{
+    DXGK_DEVICE_INFO info;
+    PCM_RESOURCE_LIST list;
+    PCM_FULL_RESOURCE_DESCRIPTOR full;
+    ULONG f, p;
+
+    Physical->QuadPart = 0;
+    if (DxgkInterface == NULL || DxgkInterface->DxgkCbGetDeviceInformation == NULL) return FALSE;
+    RtlZeroMemory(&info, sizeof(info));
+    if (!NT_SUCCESS(DxgkInterface->DxgkCbGetDeviceInformation(
+            DxgkInterface->DeviceHandle, &info)) ||
+        info.TranslatedResourceList == NULL) {
+        return FALSE;
+    }
+    list = info.TranslatedResourceList;
+    full = list->List;
+    for (f = 0u; f < list->Count; ++f) {
+        for (p = 0u; p < full->PartialResourceList.Count; ++p) {
+            PCM_PARTIAL_RESOURCE_DESCRIPTOR desc = &full->PartialResourceList.PartialDescriptors[p];
+            if (desc->Type == CmResourceTypeMemory || desc->Type == CmResourceTypeMemoryLarge) {
+                ULONGLONG start = 0u;
+                ULONGLONG length = RtlCmDecodeMemIoResource(desc, &start);
+                /* BAR 0 da BC-250: abertura de VRAM de 256 MB (DisplayInit: Phys=0xC0000000). */
+                if (length == 0x10000000ull) {
+                    Physical->QuadPart = (LONGLONG)start;
+                    return TRUE;
+                }
+            }
+        }
+        full = (PCM_FULL_RESOURCE_DESCRIPTOR)
+            &full->PartialResourceList.PartialDescriptors[full->PartialResourceList.Count];
+    }
+    return FALSE;
+}
+
+static const char *Bc250CrumbSiteName(ULONG Site)
+{
+    switch (Site) {
+    case BC250_CRUMB_SITE_TRANSPORT_READ:  return "TRANSPORT_READ";
+    case BC250_CRUMB_SITE_TRANSPORT_WRITE: return "TRANSPORT_WRITE";
+    case BC250_CRUMB_SITE_SDMA_READ:       return "SDMA_REG_READ";
+    case BC250_CRUMB_SITE_SDMA_WRITE:      return "SDMA_REG_WRITE";
+    case BC250_CRUMB_SITE_OTG_READ:        return "OTG_FRAMECOUNT_READ";
+    case BC250_CRUMB_SITE_RINGWORK_READ:   return "RINGWORK_VRAM_READ";
+    case BC250_CRUMB_SITE_RINGWORK_WRITE:  return "RINGWORK_VRAM_WRITE";
+    case BC250_CRUMB_SITE_VRAM_SAMPLE:     return "VRAM_SAMPLE_LOOP";
+    case BC250_CRUMB_SITE_VRAM_COMPARE:    return "VRAM_COMPARE_LOOP";
+    case BC250_CRUMB_SITE_PAGING_DDI:      return "PAGING_DDI";
+    case BC250_CRUMB_SITE_SUBMIT_DDI:      return "SUBMIT_DDI";
+    default:                               return "DESCONHECIDO";
+    }
+}
+
+static VOID Bc250CrumbReportPrevious(_In_ PDXGKRNL_INTERFACE DxgkInterface)
+{
+    PHYSICAL_ADDRESS bar, phys;
+    volatile ULONG *page;
+    ULONG dw[BC250_CRUMB_SLOT_BASE_DW + BC250_CRUMB_SLOTS * BC250_CRUMB_SLOT_DWORDS];
+    ULONG i, printed = 0u, lastSeq;
+
+    if (!Bc250CrumbFindVramBar(DxgkInterface, &bar)) {
+        Bc250DisplayLog("[DX66_MIGALHA] LEITURA RECUSADA: BAR de VRAM de 256 MB nao encontrado nos recursos\n");
+        return;
+    }
+    phys.QuadPart = bar.QuadPart + (LONGLONG)BC250_CRUMB_VRAM_OFFSET;
+    page = (volatile ULONG *)MmMapIoSpaceEx(phys, BC250_CRUMB_PAGE_BYTES, PAGE_READWRITE | PAGE_NOCACHE);
+    if (page == NULL) {
+        Bc250DisplayLog("[DX66_MIGALHA] LEITURA RECUSADA: MmMapIoSpaceEx falhou (Phys=0x%llX)\n",
+            (unsigned long long)phys.QuadPart);
+        return;
+    }
+    for (i = 0u; i < RTL_NUMBER_OF(dw); ++i) dw[i] = page[i];
+    MmUnmapIoSpace((PVOID)page, BC250_CRUMB_PAGE_BYTES);
+
+    if (dw[BC250_CRUMB_DW_MAGIC] != BC250_CRUMB_MAGIC || dw[BC250_CRUMB_DW_VERSION] != BC250_CRUMB_VERSION) {
+        Bc250DisplayLog("[DX66_MIGALHA] ANTERIOR AUSENTE: magic=0x%08X versao=%u (Phys=0x%llX) -- VRAM nao preservou a pagina ou nunca foi armada\n",
+            dw[BC250_CRUMB_DW_MAGIC], dw[BC250_CRUMB_DW_VERSION], (unsigned long long)phys.QuadPart);
+        return;
+    }
+    lastSeq = dw[BC250_CRUMB_DW_LASTSEQ];
+    Bc250DisplayLog("[DX66_MIGALHA] ANTERIOR PRESENTE: estado=%s nonce=0x%08X%08X ultimaSeq=%u\n",
+        dw[BC250_CRUMB_DW_STATE] == BC250_CRUMB_STATE_CLEAN ? "LIMPO" :
+        dw[BC250_CRUMB_DW_STATE] == BC250_CRUMB_STATE_RUNNING ? "EM_EXECUCAO(sem StopDevice)" : "DESCONHECIDO",
+        dw[BC250_CRUMB_DW_NONCE_HI], dw[BC250_CRUMB_DW_NONCE_LO], lastSeq);
+    /* Todos os slots com sequencia, do mais novo ao mais antigo (ordem pela seq). */
+    while (printed < BC250_CRUMB_SLOTS) {
+        ULONG best = 0xFFFFFFFFu, bestSeq = 0u, slot;
+        for (slot = 0u; slot < BC250_CRUMB_SLOTS; ++slot) {
+            ULONG seq = dw[BC250_CRUMB_SLOT_BASE_DW + slot * BC250_CRUMB_SLOT_DWORDS];
+            if (seq != 0u && seq > bestSeq) {
+                best = slot;
+                bestSeq = seq;
+            }
+        }
+        if (best == 0xFFFFFFFFu) break;
+        {
+            ULONG base = BC250_CRUMB_SLOT_BASE_DW + best * BC250_CRUMB_SLOT_DWORDS;
+            ULONG code = dw[base + 1u];
+            ULONG phase = dw[base + 2u];
+            Bc250DisplayLog("[DX66_MIGALHA] CPU%02u camada=%s seq=%u sitio=%s detalhe=0x%06X fase=%s%s\n",
+                best % BC250_CRUMB_CPUS,
+                best < BC250_CRUMB_CPUS ? "INTERNA" :
+                best < 2u * BC250_CRUMB_CPUS ? "PAGINACAO" : "SUBMISSAO",
+                dw[base], Bc250CrumbSiteName(code >> 24), code & 0x00FFFFFFu,
+                phase == BC250_CRUMB_PHASE_BEFORE ? "ANTES(acesso NAO concluido)" :
+                phase == BC250_CRUMB_PHASE_AFTER ? "DEPOIS(concluido)" : "INVALIDA",
+                dw[base] == lastSeq ? " <- ULTIMA DA MAQUINA" : "");
+            dw[base] = 0u;   /* retira da proxima busca */
+        }
+        ++printed;
+    }
+}
+
+static VOID Bc250CrumbArm(_In_ BC250_DXGK_ACTIVE_CONTEXT *Context, _In_ PDXGKRNL_INTERFACE DxgkInterface)
+{
+    const BC250_VRAM_ALLOCATOR *allocators[2];
+    PHYSICAL_ADDRESS bar, phys;
+    volatile ULONG *page;
+    LARGE_INTEGER now;
+    ULONG a, r, i;
+    BOOLEAN reserved = FALSE;
+
+    if (g_Bc250CrumbPage != NULL || Context == NULL) return;
+    allocators[0] = &Context->GlobalMmuAllocator;
+    allocators[1] = &Context->Core.StartDevice.Owned.Bootstrap.Allocator;
+    for (a = 0u; a < 2u; ++a) {
+        for (r = 0u; r < allocators[a]->RegionCount && r < BC250_VRAM_MAX_REGIONS; ++r) {
+            const BC250_VRAM_REGION *region = &allocators[a]->Regions[r];
+            if (a == 1u && region->InUse != 0u &&
+                region->Offset == BC250_CRUMB_VRAM_OFFSET &&
+                region->Length == BC250_CRUMB_PAGE_BYTES &&
+                region->Role == BC250_VRAM_ROLE_PLATFORM_RESERVED) {
+                reserved = TRUE;
+                continue;
+            }
+            if (region->InUse != 0u &&
+                region->Offset < BC250_CRUMB_VRAM_OFFSET + BC250_CRUMB_PAGE_BYTES &&
+                BC250_CRUMB_VRAM_OFFSET < region->Offset + region->Length) {
+                Bc250DisplayLog("[DX66_MIGALHA] ARME RECUSADO: alocador %u regiao [0x%llX,+0x%llX) papel=%u sobrepoe a pagina 0x%llX\n",
+                    a, (unsigned long long)region->Offset, (unsigned long long)region->Length,
+                    region->Role, (unsigned long long)BC250_CRUMB_VRAM_OFFSET);
+                return;
+            }
+        }
+    }
+    if (!reserved) {
+        Bc250DisplayLog("[DX66_MIGALHA] ARME RECUSADO: pagina sem reserva no inventario DX.67\n");
+        return;
+    }
+    if (!Bc250CrumbFindVramBar(DxgkInterface, &bar)) {
+        Bc250DisplayLog("[DX66_MIGALHA] ARME RECUSADO: BAR de VRAM de 256 MB nao encontrado\n");
+        return;
+    }
+    phys.QuadPart = bar.QuadPart + (LONGLONG)BC250_CRUMB_VRAM_OFFSET;
+    page = (volatile ULONG *)MmMapIoSpaceEx(phys, BC250_CRUMB_PAGE_BYTES, PAGE_READWRITE | PAGE_NOCACHE);
+    if (page == NULL) {
+        Bc250DisplayLog("[DX66_MIGALHA] ARME RECUSADO: MmMapIoSpaceEx falhou\n");
+        return;
+    }
+    for (i = 0u; i < BC250_CRUMB_PAGE_BYTES / sizeof(ULONG); ++i) page[i] = 0u;
+    KeQuerySystemTimePrecise(&now);
+    page[BC250_CRUMB_DW_VERSION] = BC250_CRUMB_VERSION;
+    page[BC250_CRUMB_DW_NONCE_LO] = now.LowPart;
+    page[BC250_CRUMB_DW_NONCE_HI] = (ULONG)now.HighPart;
+    page[BC250_CRUMB_DW_STATE] = BC250_CRUMB_STATE_RUNNING;
+    page[BC250_CRUMB_DW_MAGIC] = BC250_CRUMB_MAGIC;
+    g_Bc250CrumbMapping = (PVOID)page;
+    KeMemoryBarrier();
+    InterlockedExchangePointer((PVOID volatile *)&g_Bc250CrumbPage, (PVOID)page);
+    Bc250DisplayLog("[DX66_MIGALHA] ARMADA: Phys=0x%llX (VRAM 0x%llX) UNCACHED, %u slots em %u camadas, nonce=0x%08X%08X\n",
+        (unsigned long long)phys.QuadPart, (unsigned long long)BC250_CRUMB_VRAM_OFFSET,
+        BC250_CRUMB_SLOTS, BC250_CRUMB_BANKS, (ULONG)now.HighPart, now.LowPart);
+}
+
+static VOID Bc250CrumbMarkClean(VOID)
+{
+    volatile ULONG *page = (volatile ULONG *)g_Bc250CrumbMapping;
+    if (page == NULL) return;
+    InterlockedExchangePointer((PVOID volatile *)&g_Bc250CrumbPage, NULL);
+    KeMemoryBarrier();
+    page[BC250_CRUMB_DW_STATE] = BC250_CRUMB_STATE_CLEAN;
+    Bc250DisplayLog("[DX66_MIGALHA] ESTADO LIMPO gravado (StopDevice); ultimaSeq=%u\n",
+        page[BC250_CRUMB_DW_LASTSEQ]);
+}
+
+#else
+static VOID Bc250CrumbReportPrevious(_In_ PDXGKRNL_INTERFACE DxgkInterface)
+{ UNREFERENCED_PARAMETER(DxgkInterface); }
+static VOID Bc250CrumbArm(_In_ BC250_DXGK_ACTIVE_CONTEXT *Context, _In_ PDXGKRNL_INTERFACE DxgkInterface)
+{ UNREFERENCED_PARAMETER(Context); UNREFERENCED_PARAMETER(DxgkInterface); }
+static VOID Bc250CrumbMarkClean(VOID) { }
+#endif
+
 /* DX.48: StartDevice fala na entrada e na saida, com o contexto. */
 NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceV5Telemetry(
     CONST PVOID MiniportDeviceContext,
@@ -14838,8 +15334,13 @@ NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceV5Telemetry(
     NTSTATUS status;
 
     Bc250DisplayLog("[DX48_LIFECYCLE] StartDevice ENTER Contexto=%p\n", MiniportDeviceContext);
+    /* DX.66: antes do fusivel, que pode recusar este start. */
+    Bc250CrumbReportPrevious(DxgkInterface);
     status = Bc250DxgkDdiStartDeviceV5TelemetryImpl(MiniportDeviceContext, DxgkStartInfo,
         DxgkInterface, NumberOfVideoPresentSources, NumberOfChildren);
+    if (NT_SUCCESS(status)) {
+        Bc250CrumbArm((BC250_DXGK_ACTIVE_CONTEXT *)MiniportDeviceContext, DxgkInterface);
+    }
     Bc250DisplayLog("[DX48_LIFECYCLE] StartDevice LEAVE Contexto=%p status=0x%08X\n",
         MiniportDeviceContext, (uint32_t)status);
     return status;
@@ -15190,6 +15691,20 @@ static NTSTATUS Bc250ActiveEscapeCompositeBlt(
                 proofMismatches++;
             }
         }
+        /* DX.73: a prova de cinco pontos ja incluia o centro, mas so publicava
+         * Match=5/5. Na 117 o triangulo sumiu apesar desse PASS. Registrar o
+         * valor real do centro do quadro 1280x720 do harness nos dois lados
+         * da copia, com SourcePitch/DestPitch do escape (nao pitch do GOP).
+         * Somente leitura, sem amostras extras e fora do caminho 2560x1080
+         * do DWM; permite separar ponte/copia de composicao posterior. */
+        if (esc->Width == 1280u && esc->Height == 720u) {
+            Bc250DisplayLog("[DX73_COMPOSITE_CENTER] Src=%08X Dst=%08X CornerSrc=%08X CornerDst=%08X Match=%u/%u SrcMc=0x%llX DstMc=0x%llX\n",
+                sourceBefore[3], destinationAfter[3], sourceBefore[0],
+                destinationAfter[0],
+                BC250_DATA_PROOF_CANARY_COUNT - proofMismatches,
+                BC250_DATA_PROOF_CANARY_COUNT,
+                (unsigned long long)srcMc, (unsigned long long)dstMc);
+        }
         proofVerdict = Bc250ClassifyBltProof(
             (proofMismatches == 0u) ? 1u : 0u,
             sourceNonZero,
@@ -15231,6 +15746,42 @@ static NTSTATUS Bc250ActiveEscapeCompositeBlt(
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS Bc250ActiveEscapeAllocationQuery(
+    _In_ CONST DXGKARG_ESCAPE *pEscape)
+{
+    BC250_ESCAPE_ALLOCATION_QUERY *query;
+    UINT64 token;
+    UINT32 distance;
+    if (pEscape->PrivateDriverDataSize != sizeof(BC250_ESCAPE_ALLOCATION_QUERY))
+        return STATUS_INVALID_PARAMETER;
+    query = (BC250_ESCAPE_ALLOCATION_QUERY *)pEscape->pPrivateDriverData;
+    if (query->Version != BC250_ESCAPE_ALLOCATION_QUERY_VERSION ||
+        query->Token == 0u || query->Reserved != 0u)
+        return STATUS_INVALID_PARAMETER;
+    token = query->Token;
+    RtlZeroMemory(query, sizeof(*query));
+    query->Opcode = BC250_ESCAPE_OP_ALLOCATION_QUERY;
+    query->Version = BC250_ESCAPE_ALLOCATION_QUERY_VERSION;
+    query->Token = token;
+    KeEnterCriticalRegion();
+    ExAcquirePushLockShared(&g_Bc250AdapterDirectoryLock);
+    for (distance = 0u; distance < BC250_ALLOC_QUERY_SLOTS &&
+        distance < g_Bc250AllocationQuerySequence; ++distance) {
+        const BC250_ESCAPE_ALLOCATION_QUERY *entry =
+            &g_Bc250AllocationQueries[(g_Bc250AllocationQuerySequence -
+                1u - distance) % BC250_ALLOC_QUERY_SLOTS];
+        if (entry->Seen != 0u && entry->Token == token) {
+            *query = *entry;
+            query->Opcode = BC250_ESCAPE_OP_ALLOCATION_QUERY;
+            query->Version = BC250_ESCAPE_ALLOCATION_QUERY_VERSION;
+            break;
+        }
+    }
+    ExReleasePushLockShared(&g_Bc250AdapterDirectoryLock);
+    KeLeaveCriticalRegion();
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS Bc250ActiveEscapeHandler(
     _In_ HANDLE hAdapter,
     _In_ CONST DXGKARG_ESCAPE *pEscape)
@@ -15267,6 +15818,9 @@ static NTSTATUS Bc250ActiveEscapeHandler(
 
     if (*(UINT32 *)pEscape->pPrivateDriverData == BC250_ESCAPE_OP_COMPOSITE_BLT) {
         return Bc250ActiveEscapeCompositeBlt(hAdapter, pEscape);
+    }
+    if (*(UINT32 *)pEscape->pPrivateDriverData == BC250_ESCAPE_OP_ALLOCATION_QUERY) {
+        return Bc250ActiveEscapeAllocationQuery(pEscape);
     }
 
     if (pEscape->PrivateDriverDataSize < sizeof(BC250_ESCAPE_PRESENT_BLT)) {
@@ -15704,6 +16258,7 @@ NTSTATUS Bc250BuildActiveInitializationDataForProfile(
     Bc250McdmInstallFlushTlbHandler(Bc250ActiveFlushTlbHandler);
     Bc250McdmInstallUnloadCleanupHandler(Bc250ActiveDriverUnloadCleanup);
     Bc250DisplayInstallGpuVaResolver(Bc250ActiveResolveDisplayGpuVa);
+    Bc250DisplayInstallAllocationGeometryResolver(Bc250ActiveResolveAllocationGeometry);
     Bc250McdmInstallEscapeHandler(Bc250ActiveEscapeHandler);
     Bc250McdmInstallPreemptHandler(Bc250ActivePreemptHandler);
     (void)Bc250McdmPopulateRequiredCallbacks(InitializationData);
@@ -15892,8 +16447,16 @@ NTSTATUS DriverEntry(
             }
             Bc250ProbeRecord(BC250_PROBE_V5_REGISTRATION_MODE,
                 profile == BC250_ADAPTER_PROFILE_RENDER_ONLY_LAB ? 2u : 1u);
+            status = Bc250PagingTraceStart();
+            if (!NT_SUCCESS(status)) {
+                Bc250DisplayLog("[DX56_PAGING_TRACE] START FALHA status=0x%08X; bind recusado\n",
+                    (UINT32)status);
+                return status;
+            }
+            Bc250DisplayLog("[DX56_PAGING_TRACE] START arquivo=C:\\BC250_PAGING_TRACE.bin periodo=100ms slots=16\n");
             status = DxgkInitialize(
                 DriverObject, RegistryPath, &g_Bc250ActiveInitializationData);
+            if (!NT_SUCCESS(status)) Bc250PagingTraceStop();
             Bc250ProbeRecord(BC250_PROBE_DXGK_INITIALIZE_STATUS,
                 (ULONG)status);
             return status;

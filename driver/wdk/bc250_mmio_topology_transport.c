@@ -1,4 +1,5 @@
 #include "bc250_mmio_topology_transport.h"
+#include "bc250_mmio_breadcrumb.h"
 #include "../core/bc250_fault_latch_contract.h"
 #include "../core/bc250_golden_settings_contract.h"
 
@@ -575,7 +576,11 @@ uint32_t Bc250MmioTopologyRead32(
         return 0;
     }
     address = (volatile ULONG *)((PUCHAR)transport->VirtualBase + ByteOffset);
-    *Value = READ_REGISTER_ULONG(address);
+    {
+        ULONG crumb = Bc250CrumbBefore(BC250_CRUMB_SITE_TRANSPORT_READ, ByteOffset);
+        *Value = READ_REGISTER_ULONG(address);
+        Bc250CrumbAfter(crumb);
+    }
     ++transport->ReadCount;
     return 1;
 }
@@ -598,8 +603,12 @@ uint32_t Bc250MmioTopologyWrite32(
         return 0u;
     }
     address = (volatile ULONG *)((PUCHAR)transport->VirtualBase + ByteOffset);
-    WRITE_REGISTER_ULONG(address, Value);
-    KeMemoryBarrier();
+    {
+        ULONG crumb = Bc250CrumbBefore(BC250_CRUMB_SITE_TRANSPORT_WRITE, ByteOffset);
+        WRITE_REGISTER_ULONG(address, Value);
+        KeMemoryBarrier();
+        Bc250CrumbAfter(crumb);
+    }
     ++transport->WriteCount;
     return 1u;
 }

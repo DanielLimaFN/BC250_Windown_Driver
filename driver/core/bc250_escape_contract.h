@@ -62,6 +62,10 @@ typedef unsigned long long UINT64;
  * HIPOTESE (H), NAO VALIDADA EM HARDWARE.
  */
 #define BC250_ESCAPE_OP_COMPOSITE_BLT       (BC250_ESCAPE_SIGNATURE | 0x02u)
+/* DX.59: consulta somente leitura do resultado de CreateAllocation por token. */
+#define BC250_ESCAPE_OP_ALLOCATION_QUERY    (BC250_ESCAPE_SIGNATURE | 0x03u)
+/* DX.62: versao 2 acrescenta o que o dxgkrnl fez DEPOIS do CreateAllocation. */
+#define BC250_ESCAPE_ALLOCATION_QUERY_VERSION 2u
 
 #define BC250_PRESENT_BLT_FLAG_NONE         0x00000000u
 #define BC250_PRESENT_BLT_FLAG_SDMA_ONLY    0x00000001u
@@ -102,6 +106,35 @@ typedef struct _BC250_ESCAPE_COMPOSITE_BLT {
     UINT32 ResultCode;         /* Preenchido pelo KMD */
     UINT32 Reserved;
 } BC250_ESCAPE_COMPOSITE_BLT;
+
+typedef struct _BC250_ESCAPE_ALLOCATION_QUERY {
+    UINT32 Opcode;
+    UINT32 Version;
+    UINT64 Token;                 /* Entrada: token privado da UMD. */
+    UINT32 Seen;                  /* Saida: a DDI KMD viu este token? */
+    UINT32 KmdStatus;             /* Saida: NTSTATUS da DDI, se Seen=1. */
+    UINT32 FlagsResource;         /* Saida: DXGK_CREATEALLOCATIONFLAGS.Resource. */
+    UINT32 AllocationFlags;       /* Saida: DXGK_ALLOCATIONINFO.FlagsWddm2.Value. */
+    UINT32 AllocationPriority;    /* Saida: prioridade entregue ao VidMm. */
+    UINT32 WriteSegmentSet;       /* Saida: segmentos permitidos para escrita. */
+    UINT32 PreferredSegment;      /* Saida: DXGK_SEGMENTPREFERENCE.Value. */
+    UINT32 Alignment;             /* Saida: alinhamento entregue ao VidMm. */
+    UINT64 SizeBytes;             /* Saida: tamanho entregue ao VidMm. */
+    UINT32 KmdAllocationNonNull;  /* Saida: hAllocation foi publicado. */
+    UINT32 KmdResourceNonNull;    /* Saida: hResource retornado pelo KMD. */
+    UINT32 Sequence;              /* Saida: ordem relativa no anel. */
+    /*
+     * DX.62 (Corrida 104): o KMD devolve sucesso e o pfnAllocateCb devolve
+     * E_INVALIDARG. O dxgkrnl chama OpenAllocation no dispositivo criador
+     * depois do CreateAllocation; se o nosso OpenAllocation recusou, a recusa
+     * era amostrada fora do log. Estes campos respondem sem depender do log.
+     */
+    UINT32 OpenCalls;             /* Saida: OpenAllocation que citou o token. */
+    UINT32 OpenLastStatus;        /* Saida: NTSTATUS do ultimo OpenAllocation. */
+    UINT32 DestroyCalls;          /* Saida: DestroyAllocation do hAllocation. */
+    UINT32 DestroyLastStatus;     /* Saida: NTSTATUS do ultimo DestroyAllocation. */
+    UINT32 Reserved;
+} BC250_ESCAPE_ALLOCATION_QUERY;
 #pragma pack(pop)
 
 #endif /* BC250_ESCAPE_CONTRACT_H */

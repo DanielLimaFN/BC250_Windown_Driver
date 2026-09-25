@@ -116,7 +116,7 @@ BOOL Bc250UmdVkCreateResource(
         return FALSE;
     }
 
-    if (!pDevice->VkBridgeInitialized || !pDevice->VkBridge.DeviceActive) {
+    if (!pDevice->DeviceActive || !pDevice->VkBridgeInitialized || !pDevice->VkBridge.DeviceActive || pDevice->VkBridge.Device == VK_NULL_HANDLE) {
         return FALSE;
     }
 
@@ -346,6 +346,13 @@ VOID Bc250UmdVkDestroyResource(
     BC250_UMD_VK_BRIDGE* pBridge;
     if (pDevice == NULL || pRes == NULL || !pDevice->VkBridgeInitialized) return;
     pBridge = &pDevice->VkBridge;
+    if (!pDevice->DeviceActive || !pBridge->DeviceActive || pBridge->Device == VK_NULL_HANDLE) {
+        pRes->VkBuf = VK_NULL_HANDLE;
+        pRes->VkImg = VK_NULL_HANDLE;
+        pRes->VkMem = VK_NULL_HANDLE;
+        pRes->VkResourceCreated = FALSE;
+        return;
+    }
 
     Bc250VkResTrace("[VK_RES] Bc250UmdVkDestroyResource: buf=%p, img=%p, mem=%p",
         (void*)pRes->VkBuf, (void*)pRes->VkImg, (void*)pRes->VkMem);
@@ -521,6 +528,12 @@ BOOL Bc250UmdVkCreateRtv(
 
     pRtv->VkRtvCreated = TRUE;
     pRtv->VkImageAtCreation = pRes->VkImg;
+    pRtv->FbCache[0].Image = pRes->VkImg;
+    pRtv->FbCache[0].View = pRtv->VkView;
+    pRtv->FbCache[0].Fb = pRtv->VkFb;
+    pRtv->FbCacheCount = 1u;
+    pRtv->FollowHitCount = 0u;
+    pRtv->FollowMissCount = 0u;
     Bc250VkResTrace("[VK_RES] SUCESSO: RTV criado (view=%p, passClear=%p, passLoad=%p, fb=%p)",
         (void*)pRtv->VkView, (void*)pRtv->VkPass, (void*)pRtv->VkPassLoad, (void*)pRtv->VkFb);
     return TRUE;
@@ -531,18 +544,59 @@ VOID Bc250UmdVkDestroyRtv(
     _Inout_ BC250_UMD_RTV* pRtv)
 {
     BC250_UMD_VK_BRIDGE* pBridge;
+    uint32_t i;
     if (pDevice == NULL || pRtv == NULL || !pDevice->VkBridgeInitialized) return;
     pBridge = &pDevice->VkBridge;
+    if (!pDevice->DeviceActive || !pBridge->DeviceActive || pBridge->Device == VK_NULL_HANDLE) {
+        pRtv->FbCacheCount = 0;
+        pRtv->VkFb = VK_NULL_HANDLE;
+        pRtv->VkView = VK_NULL_HANDLE;
+        pRtv->VkPassLoad = VK_NULL_HANDLE;
+        pRtv->VkPass = VK_NULL_HANDLE;
+        pRtv->VkRtvCreated = FALSE;
+        return;
+    }
 
-    Bc250VkResTrace("[VK_RES] Bc250UmdVkDestroyRtv: view=%p, passClear=%p, passLoad=%p, fb=%p",
-        (void*)pRtv->VkView, (void*)pRtv->VkPass, (void*)pRtv->VkPassLoad, (void*)pRtv->VkFb);
+    Bc250VkResTrace("[VK_RES] Bc250UmdVkDestroyRtv: view=%p, passClear=%p, passLoad=%p, fb=%p (CachedFbs=%u)",
+        (void*)pRtv->VkView, (void*)pRtv->VkPass, (void*)pRtv->VkPassLoad, (void*)pRtv->VkFb, pRtv->FbCacheCount);
     (void)Bc250UmdVkDrainPending(pBridge, "destruir RTV");
 
-    if (pRtv->VkFb != VK_NULL_HANDLE) {
-        pBridge->vk.vkDestroyFramebuffer(pBridge->Device, pRtv->VkFb, NULL);
-        pRtv->VkFb = VK_NULL_HANDLE;
+    for (i = 0; i < pRtv->FbCacheCount; ++i) {
+        if (pRtv->FbCache[i].Fb != VK_NULL_HANDLE) {
+            uint32_t j;
+            if (pRtv->VkFb == pRtv->FbCache[i].Fb) {
+                pRtv->VkFb = VK_NULL_HANDLE;
+            }
+            for (j = i + 1; j < pRtv->FbCacheCount; ++j) {
+                if (pRtv->FbCache[j].Fb == pRtv->FbCache[i].Fb) {
+                    pRtv->FbCache[j].Fb = VK_NULL_HANDLE;
+                }
+            }
+            pBridge->vk.vkDestroyFramebuffer(pBridge->Device, pRtv->FbCache[i].Fb, NULL);
+            pRtv->FbCache[i].Fb = VK_NULL_HANDLE;
+        }
+        if (pRtv->FbCache[i].View != VK_NULL_HANDLE) {
+            uint32_t j;
+            if (pRtv->VkView == pRtv->FbCache[i].View) {
+                pRtv->VkView = VK_NULL_HANDLE;
+            }
+            for (j = i + 1; j < pRtv->FbCacheCount; ++j) {
+                if (pRtv->FbCache[j].View == pRtv->FbCache[i].View) {
+                    pRtv->FbCache[j].View = VK_NULL_HANDLE;
+                }
+            }
+            pBridge->vk.vkDestroyImageView(pBridge->Device, pRtv->FbCache[i].View, NULL);
+            pRtv->FbCache[i].View = VK_NULL_HANDLE;
+        }
     }
+    pRtv->FbCacheCount = 0;
+    pRtv->VkFb = VK_NULL_HANDLE;
+    pRtv->VkView = VK_NULL_HANDLE;
+
     if (pRtv->VkPassLoad != VK_NULL_HANDLE) {
+        if (pRtv->VkPassLoad == pRtv->VkPass) {
+            pRtv->VkPass = VK_NULL_HANDLE;
+        }
         pBridge->vk.vkDestroyRenderPass(pBridge->Device, pRtv->VkPassLoad, NULL);
         pRtv->VkPassLoad = VK_NULL_HANDLE;
     }
@@ -550,27 +604,20 @@ VOID Bc250UmdVkDestroyRtv(
         pBridge->vk.vkDestroyRenderPass(pBridge->Device, pRtv->VkPass, NULL);
         pRtv->VkPass = VK_NULL_HANDLE;
     }
-    if (pRtv->VkView != VK_NULL_HANDLE) {
-        pBridge->vk.vkDestroyImageView(pBridge->Device, pRtv->VkView, NULL);
-        pRtv->VkView = VK_NULL_HANDLE;
-    }
     pRtv->VkRtvCreated = FALSE;
 }
 
 /*
- * DX.28 -- A RTV SEGUE O RECURSO DEPOIS DA ROTACAO DE IDENTIDADES.
+ * DX.28 / DX.80 -- A RTV SEGUE O RECURSO DEPOIS DA ROTACAO DE IDENTIDADES.
  *
- * Corrida 73: o DWM desenhava a regiao suja no back buffer, copiava o resto do
- * buffer anterior (ResourceCopyRegion) e apresentava -- e a grade do Present
- * saia 0/86400 logo depois das copias. A rotacao movia Allocation e
- * pCpuShadow, mas o conteudo renderizado vive na VkImage, que ficava para tras.
- * Agora a rotacao leva o grupo Vulkan junto; esta funcao refaz VkView/VkFb
- * quando a imagem do recurso nao e' mais a da criacao. Os render passes nao
- * dependem da imagem e ficam.
+ * DX.28: a rotacao de identidades leva o grupo Vulkan junto; esta funcao
+ * sincroniza VkView/VkFb quando a imagem do recurso nao e' mais a da criacao.
  *
- * O framebuffer antigo pode estar referenciado pelo command buffer em
- * gravacao: antes de destrui-lo, fecha o render pass e faz flush (espera a
- * fence), o mesmo par que Bc250Umd10Flush usa.
+ * DX.80: cache de framebuffers por imagem. Na Corrida 124 (DX.79), a destruicao
+ * e recriacao continua de VkFb/VkView a cada troca de backbuffer provocou 369
+ * flushes sincronos incondicionais (~3,7 s de CPU parada). Com o cache, imagens
+ * ja vistas na swapchain reutilizam seus framebuffers/views sem emitir nenhum
+ * flush e sem travar a CPU.
  */
 BOOL Bc250UmdVkRtvFollowResource(
     _Inout_ BC250_UMD_DEVICE* pDevice,
@@ -585,6 +632,7 @@ BOOL Bc250UmdVkRtvFollowResource(
     VkFormat vkFormat;
     VkResult res;
     uint32_t resLayers, baseLayer, layerCount;
+    uint32_t i;
 
     if (pDevice == NULL || pRtv == NULL || !pDevice->VkBridgeInitialized) return FALSE;
     if (!pRtv->VkRtvCreated) return FALSE;
@@ -593,14 +641,41 @@ BOOL Bc250UmdVkRtvFollowResource(
     if (pRes->VkImg == pRtv->VkImageAtCreation) return TRUE;
 
     pBridge = &pDevice->VkBridge;
-    if (pDevice->InRenderPass) {
-        pBridge->vk.vkCmdEndRenderPass(pBridge->CommandBuffer);
-        pDevice->InRenderPass = FALSE;
+
+    /* DX.80 -- 1. Busca no cache de framebuffers por imagem */
+    for (i = 0; i < pRtv->FbCacheCount; ++i) {
+        if (pRtv->FbCache[i].Image == pRes->VkImg &&
+            pRtv->FbCache[i].Fb != VK_NULL_HANDLE &&
+            pRtv->FbCache[i].View != VK_NULL_HANDLE) {
+
+            /* Se ha um render pass gravando no framebuffer antigo, fecha-o no CB */
+            if (pDevice->InRenderPass && pDevice->ActiveFramebuffer != pRtv->FbCache[i].Fb) {
+                if (pBridge->CommandBuffer != VK_NULL_HANDLE && pBridge->vk.vkCmdEndRenderPass != NULL) {
+                    pBridge->vk.vkCmdEndRenderPass(pBridge->CommandBuffer);
+                }
+                pDevice->InRenderPass = FALSE;
+            }
+
+            pRtv->VkView = pRtv->FbCache[i].View;
+            pRtv->VkFb = pRtv->FbCache[i].Fb;
+            pRtv->VkImageAtCreation = pRes->VkImg;
+            pRtv->FollowHitCount++;
+
+            Bc250VkResTrace("[VK_RES] RTV_SEGUE_RECURSO (CACHE HIT): rtv=%p res=%p imagem=%p fb=%p (Hits=%u Misses=%u)",
+                (void*)pRtv, (void*)pRes, (void*)pRes->VkImg, (void*)pRtv->VkFb,
+                pRtv->FollowHitCount, pRtv->FollowMissCount);
+            return TRUE;
+        }
     }
-    res = Bc250UmdVkFlushCommands(pBridge);
-    if (res != VK_SUCCESS) {
-        Bc250VkResTrace("[VK_RES] RTV_SEGUE_RECURSO RECUSADO: flush antes de trocar a imagem falhou (res=%d); a RTV NAO desenha na imagem antiga", res);
-        return FALSE;
+
+    /* DX.80 -- 2. Cache Miss: criar nova View e Framebuffer para esta imagem */
+    pRtv->FollowMissCount++;
+
+    if (pDevice->InRenderPass) {
+        if (pBridge->CommandBuffer != VK_NULL_HANDLE && pBridge->vk.vkCmdEndRenderPass != NULL) {
+            pBridge->vk.vkCmdEndRenderPass(pBridge->CommandBuffer);
+        }
+        pDevice->InRenderPass = FALSE;
     }
     pDevice->ActiveFramebuffer = VK_NULL_HANDLE;
 
@@ -651,19 +726,36 @@ BOOL Bc250UmdVkRtvFollowResource(
         return FALSE;
     }
 
-    Bc250VkResTrace("[VK_RES] RTV_SEGUE_RECURSO: rtv=%p res=%p imagem %p -> %p (view %p -> %p, fb %p -> %p)",
-        (void*)pRtv, (void*)pRes, (void*)pRtv->VkImageAtCreation, (void*)pRes->VkImg,
-        (void*)pRtv->VkView, (void*)newView, (void*)pRtv->VkFb, (void*)newFb);
-    (void)Bc250UmdVkDrainPending(pBridge, "RTV seguir recurso rotacionado");
-    if (pRtv->VkFb != VK_NULL_HANDLE) {
-        pBridge->vk.vkDestroyFramebuffer(pBridge->Device, pRtv->VkFb, NULL);
+    /* Se o cache estiver cheio, drena o lote e descarta a entrada mais antiga */
+    if (pRtv->FbCacheCount >= BC250_RTV_MAX_CACHED_FBS) {
+        Bc250VkResTrace("[VK_RES] RTV_SEGUE_RECURSO: rtv=%p res=%p reciclagem de slot", (void*)pRtv, (void*)pRes);
+        (void)Bc250UmdVkDrainPending(pBridge, "RTV seguir recurso rotacionado");
+        if (pRtv->FbCache[0].Fb != VK_NULL_HANDLE) {
+            pRtv->VkFb = pRtv->FbCache[0].Fb;
+            pBridge->vk.vkDestroyFramebuffer(pBridge->Device, pRtv->VkFb, NULL);
+        }
+        if (pRtv->FbCache[0].View != VK_NULL_HANDLE) {
+            pBridge->vk.vkDestroyImageView(pBridge->Device, pRtv->FbCache[0].View, NULL);
+        }
+        for (i = 0; i + 1 < BC250_RTV_MAX_CACHED_FBS; ++i) {
+            pRtv->FbCache[i] = pRtv->FbCache[i + 1];
+        }
+        pRtv->FbCacheCount = BC250_RTV_MAX_CACHED_FBS - 1;
     }
-    if (pRtv->VkView != VK_NULL_HANDLE) {
-        pBridge->vk.vkDestroyImageView(pBridge->Device, pRtv->VkView, NULL);
-    }
+
+    pRtv->FbCache[pRtv->FbCacheCount].Image = pRes->VkImg;
+    pRtv->FbCache[pRtv->FbCacheCount].View = newView;
+    pRtv->FbCache[pRtv->FbCacheCount].Fb = newFb;
+    pRtv->FbCacheCount++;
+
     pRtv->VkView = newView;
     pRtv->VkFb = newFb;
     pRtv->VkImageAtCreation = pRes->VkImg;
+
+    Bc250VkResTrace("[VK_RES] RTV_SEGUE_RECURSO: rtv=%p res=%p imagem %p -> %p (view %p -> %p, fb %p -> %p) [DX80_CACHE] Count=%u Hits=%u Misses=%u",
+        (void*)pRtv, (void*)pRes, (void*)pRtv->VkImageAtCreation, (void*)pRes->VkImg,
+        (void*)pRtv->VkView, (void*)newView, (void*)pRtv->VkFb, (void*)newFb,
+        pRtv->FbCacheCount, pRtv->FollowHitCount, pRtv->FollowMissCount);
     return TRUE;
 }
 
@@ -731,6 +823,11 @@ VOID Bc250UmdVkDestroyDsv(
     BC250_UMD_VK_BRIDGE* pBridge;
     if (pDevice == NULL || pDsv == NULL || !pDevice->VkBridgeInitialized) return;
     pBridge = &pDevice->VkBridge;
+    if (!pDevice->DeviceActive || !pBridge->DeviceActive || pBridge->Device == VK_NULL_HANDLE) {
+        pDsv->VkView = VK_NULL_HANDLE;
+        pDsv->VkDsvCreated = FALSE;
+        return;
+    }
 
     Bc250VkResTrace("[VK_RES] Bc250UmdVkDestroyDsv: view=%p", (void*)pDsv->VkView);
     (void)Bc250UmdVkDrainPending(pBridge, "destruir DSV");
@@ -808,7 +905,8 @@ BOOL Bc250UmdVkUploadImageData(
     UINT bufferRowLength = 0u;
 
     if (pDevice == NULL || pRes == NULL || pData == NULL || ByteSize == 0 ||
-        !pDevice->VkBridgeInitialized || pRes->VkImg == VK_NULL_HANDLE ||
+        !pDevice->DeviceActive || !pDevice->VkBridgeInitialized || !pDevice->VkBridge.DeviceActive ||
+        pRes->VkImg == VK_NULL_HANDLE ||
         pRes->Width == 0 || pRes->Height == 0) {
         return FALSE;
     }
@@ -874,12 +972,48 @@ BOOL Bc250UmdVkUploadImageData(
      * copia continua sendo esperada antes de retornar: o proximo upload nunca
      * reescreve um staging que a GPU ainda le.
      */
+    VkDeviceSize uploadOffset = 0;
+    BOOL wrapNeeded = FALSE;
+    VkDeviceSize alignedHead = 0;
+
+    /*
+     * DX.79 -- COALESCENCIA DE UPLOADS NO STAGING PERSISTENTE.
+     * Na Corrida 123 (DX.78) o DWM realizou 504 uploads com flush sincrono a cada chamada,
+     * somando ~3,5 s de espera em fence. Com o anel de staging, uploads sucessivos
+     * gravam em faixas disjuntas alinhadas a 256 B sem necessidade de flush sincrono.
+     * Se o espaco restante no staging for insuficiente, executamos o dreno dos
+     * comandos pendentes (wrap) antes de posicionar o dado no inicio.
+     */
     t0 = Bc250VkUploadNowMicros();
+    if (pBridge->UploadStagingMapped != NULL && pBridge->UploadStagingSize > 0) {
+        alignedHead = (pBridge->UploadStagingHead + (BC250_DX79_UPLOAD_ALIGN - 1u)) &
+                      ~(VkDeviceSize)(BC250_DX79_UPLOAD_ALIGN - 1u);
+        if (alignedHead > pBridge->UploadStagingSize ||
+            (VkDeviceSize)ByteSize > (pBridge->UploadStagingSize - alignedHead)) {
+            wrapNeeded = TRUE;
+        }
+    }
+
+    if (wrapNeeded && pBridge->RecordingActive) {
+        res = Bc250UmdVkFlushCommands(pBridge);
+        if (res != VK_SUCCESS) {
+            Bc250VkResTrace("[VK_RES] UploadImageData RECUSADO: dreno de wrapping falhou res=%d", res);
+            return FALSE;
+        }
+        alignedHead = 0;
+    }
+
     if (!Bc250UmdVkEnsureUploadStaging(pBridge, (VkDeviceSize)ByteSize, &grew, &allocMicros)) {
         Bc250VkResTrace("[VK_RES] UploadImageData RECUSADO: staging persistente indisponivel para %zu bytes", ByteSize);
         return FALSE;
     }
-    memcpy(pBridge->UploadStagingMapped, pData, ByteSize);
+    if (grew) {
+        alignedHead = 0;
+    }
+
+    uploadOffset = alignedHead;
+    memcpy((uint8_t *)pBridge->UploadStagingMapped + uploadOffset, pData, ByteSize);
+    pBridge->UploadStagingHead = uploadOffset + (VkDeviceSize)ByteSize;
 
     cmd = Bc250UmdVkGetCommandBuffer(pBridge);
     if (cmd == VK_NULL_HANDLE) {
@@ -911,7 +1045,7 @@ BOOL Bc250UmdVkUploadImageData(
         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
 
     memset(&region, 0, sizeof(region));
-    region.bufferOffset = 0;
+    region.bufferOffset = uploadOffset;
     /* Vulkan recebe o pitch real em texels; isto preserva padding de 256 B. */
     region.bufferRowLength = bufferRowLength;
     region.bufferImageHeight = 0;
@@ -933,28 +1067,42 @@ BOOL Bc250UmdVkUploadImageData(
         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
         0, 0, NULL, 0, NULL, 1, &barrier);
 
-    /* O flush submete e ESPERA a fence. O staging so pode ser reusado depois
-     * disso, e o layout so pode ser declarado depois que a copia de fato executou. */
-    res = Bc250UmdVkFlushCommands(pBridge);
-    if (res != VK_SUCCESS) {
-        Bc250VkResTrace("[VK_RES] UploadImageData RECUSADO: flush/fence devolveu res=%d; "
-            "a imagem NAO recebeu conteudo e continua sem VkImageHasContent", res);
-        return FALSE;
+    /* DX.79: Coalescencia de upload de textura.
+     * A copia para a VkImage e a barreira para SHADER_READ_ONLY foram
+     * gravadas no command buffer em faixa exclusiva do staging persistente.
+     * O flush sincrono com espera de fence SO' ocorre se o staging precisou
+     * de wrap. Nos demais casos, a execucao e' coalescida no proximo flush natural. */
+    if (wrapNeeded) {
+        res = Bc250UmdVkFlushCommands(pBridge);
+        if (res != VK_SUCCESS) {
+            Bc250VkResTrace("[VK_RES] UploadImageData RECUSADO: flush/fence devolveu res=%d; "
+                "a imagem NAO recebeu conteudo e continua sem VkImageHasContent", res);
+            return FALSE;
+        }
+        pBridge->UploadFlushCount++;
+    } else {
+        res = VK_SUCCESS;
+        pBridge->UploadCoalescedCount++;
     }
 
     /* Unica fonte de verdade: o layout. SHADER_READ_ONLY_OPTIMAL so' chega
-     * aqui, e so' depois que a fence da copia voltou. */
+     * aqui, protegido pela barreira de pipeline da GPU. */
     pRes->VkLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     {
         uint32_t srcSamples = 0u;
         uint32_t srcNonZero = Bc250VkCountNonZeroSource(pData, ByteSize, &srcSamples);
         Bc250VkResTrace("[VK_RES] UploadImageData SUCESSO: %ux%u, %zu bytes, RowPitch=%u "
             "bufferRowLength=%u texels em mip0/camada0 (img=%p res=%p) NonZeroSrc=%u/%u -- mip chain e array "
-            "NAO carregados por escopo declarado [DX49_STAGING] Persistente=1 Cresceu=%d AlocUs=%llu TotalUs=%llu",
+            "NAO carregados por escopo declarado [DX49_STAGING] Persistente=1 Cresceu=%d AlocUs=%llu TotalUs=%llu "
+            "[DX79_UPLOAD] Offset=%llu Head=%llu FlushSincrono=%d Coalescidos=%llu FlushesUpload=%llu",
             pRes->Width, pRes->Height, ByteSize, RowPitch, bufferRowLength,
             (void*)pRes->VkImg, (void*)pRes, srcNonZero, srcSamples,
             (int)grew, (unsigned long long)allocMicros,
-            (unsigned long long)(Bc250VkUploadNowMicros() - t0));
+            (unsigned long long)(Bc250VkUploadNowMicros() - t0),
+            (unsigned long long)uploadOffset, (unsigned long long)pBridge->UploadStagingHead,
+            wrapNeeded ? 1 : 0,
+            (unsigned long long)pBridge->UploadCoalescedCount,
+            (unsigned long long)pBridge->UploadFlushCount);
     }
     return TRUE;
 }
@@ -970,7 +1118,8 @@ BOOL Bc250UmdVkUploadBufferData(
     VkResult res;
 
     if (pDevice == NULL || pRes == NULL || pData == NULL || ByteSize == 0 ||
-        !pDevice->VkBridgeInitialized || pRes->VkMem == VK_NULL_HANDLE || ByteSize > pRes->VkMemSize) {
+        !pDevice->DeviceActive || !pDevice->VkBridgeInitialized || !pDevice->VkBridge.DeviceActive ||
+        pRes->VkMem == VK_NULL_HANDLE || ByteSize > pRes->VkMemSize) {
         return FALSE;
     }
     pBridge = &pDevice->VkBridge;

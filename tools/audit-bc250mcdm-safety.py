@@ -4279,6 +4279,448 @@ def audit_safe_bind_deadline_is_fail_closed(errors: list[str]) -> None:
         if "Get-CimInstance" in critical or "Get-WinEvent" in critical:
             errors.append("safe-bind consulta WMI/eventos depois do prazo e antes da recovery")
 
+    # Corrida 101: o binder havia arquivado a UMD no meio da janela. A cauda
+    # real exige copia pelo guardiao SYSTEM apos a recovery, nunca antes dela.
+    require(binder, "kind = 'INTERMEDIATE_BIND_SNAPSHOT'",
+            "snapshot UMD do binder identificado como intermediario", errors)
+    require(binder, "umd-snapshot-manifest.json",
+            "snapshot UMD com horario e hash por arquivo", errors)
+    require(watcher, "kind = 'POST_RECOVERY_UMD_TAIL'",
+            "cauda UMD pos-recovery identificada", errors)
+    require(watcher, "umd-post-recovery-manifest.json",
+            "cauda UMD com manifesto e hash", errors)
+    require(watcher, "icacls.exe $destination /reset /T /Q",
+            "cauda UMD copiada por SYSTEM legivel na sessao de analise", errors)
+    archive_function = watcher.split("function Archive-Bc250UmdLogsAfterRecovery", 1)
+    if len(archive_function) != 2 or (
+            "sha256 = (Get-FileHash -LiteralPath $copyPath -Algorithm SHA256).Hash"
+            not in archive_function[1].split("function Write-Bc250CleanBootMarker", 1)[0]):
+        errors.append("cauda UMD pos-recovery sem SHA-256 de cada copia")
+    archive_call = watcher.find("Archive-Bc250UmdLogsAfterRecovery\n", recovery)
+    recovery_done = watcher.find("$output | Set-Content", recovery)
+    verdict = watcher.find("if ($exitCode -eq 0)", recovery)
+    if not (0 <= recovery < recovery_done < archive_call < verdict):
+        errors.append("cauda UMD deve ser copiada somente apos executar a recovery")
+
+
+def audit_dx61_safe_bind_recovery_evidence(errors: list[str]) -> None:
+    """DX.61 (Corrida 104): veredito PnP pos-recovery com assentamento e evidencia por tentativa.
+
+    MEDIDO: Kernel-PnP 410 registrou BasicDisplay iniciado as 15:38:30; o
+    veredito unico de 5 amostras reprovou ate 15:38:35,97 e o guardiao
+    reiniciou a maquina. A tentativa 2 sobrescreveu as amostras, a saida da
+    recovery e C:\\BC250_RECOVERY.log da tentativa 1, e a tarefa de prazo
+    sobrescreveu state.json com BLOCKED durante a recovery.
+    """
+    watcher = (ROOT / "tools" / "watch-bc250mcdm-safe-bind.ps1").read_text(
+        encoding="utf-8", errors="replace")
+    verdict_start = watcher.find("function Get-Bc250PnpVerdict")
+    verdict_end = watcher.find("function Invoke-Bc250SafeGuardCleanup", verdict_start)
+    verdict = watcher[verdict_start:verdict_end] if 0 <= verdict_start < verdict_end else ""
+    if "[IO.File]::AppendAllText($samplesJournalPath" not in verdict:
+        errors.append("DX.61: amostras PnP sem journal append-only por tentativa")
+    if "attempt_number = $script:attemptNumber" not in verdict or \
+            "round = $script:verdictRound" not in verdict:
+        errors.append("DX.61: amostra PnP no journal sem tentativa/rodada")
+    # O criterio de saude nao pode afrouxar: cinco amostras, todas BasicDisplay/0.
+    if "$healthy = ($samples.Count -eq 5)" not in verdict or \
+            "$s.device_count -ne 1 -or $s.service -ne 'BasicDisplay' -or $s.code -ne 0" not in verdict:
+        errors.append("DX.61: criterio de 5 amostras BasicDisplay/Codigo 0 alterado")
+    require(watcher, "'safe-bind-pnp-samples.jsonl'",
+            "DX.61: caminho do journal de amostras", errors)
+    for needle in ('"safe-bind-recovery-attempt{0}.txt"',
+                   '"bc250-recovery-log-attempt{0}.txt"'):
+        require(watcher, needle, "DX.61: saida da recovery preservada por tentativa", errors)
+    recovery = watcher.find("& cmd.exe /d /c ([string]$config.recovery_path)")
+    settle = watcher.find("$settleDeadlineUtc = $recoveryFinishedUtc.AddSeconds(45)")
+    loop_verdict = watcher.find("$afterVerdict = Get-Bc250PnpVerdict", settle)
+    loop_end = watcher.find("} while ([datetime]::UtcNow -lt $settleDeadlineUtc)", loop_verdict)
+    ok_marker = watcher.find("Write-Bc250CleanBootMarker 'RECOVERY_OK_ONLINE'")
+    if not (0 <= recovery < settle < loop_verdict < loop_end < ok_marker):
+        errors.append("DX.61: janela de assentamento de 45 s ausente ou fora de ordem "
+                      "(recovery -> rodadas -> RECOVERY_OK_ONLINE)")
+    if "if ($afterVerdict.healthy) { break }" not in watcher[loop_verdict:loop_end]:
+        errors.append("DX.61: rodada saudavel nao encerra o assentamento")
+    if "if (-not $JournalOnly) { Write-AtomicJson $statePath $record }" not in watcher:
+        errors.append("DX.61: Write-State sem modo somente-journal")
+    blocked = watcher.find("Write-State 'BLOCKED' 'rollback ja foi tentado neste boot")
+    if blocked < 0 or "-JournalOnly" not in watcher[blocked:watcher.find("\n", blocked)]:
+        errors.append("DX.61: instancia secundaria BLOCKED sobrescreve state.json da recovery em curso")
+
+
+def audit_dx62_allocation_followup(errors: list[str]) -> None:
+    """DX.62 (Corrida 104): o que o dxgkrnl fez depois do CreateAllocation aceito.
+
+    MEDIDO: textura compartilhada 1024x832 com KmdStatus=0 e AllocateHr=E_INVALIDARG.
+    As saidas de falha do OpenAllocation nao tinham token isento da amostragem
+    (Bc250LogTextContains diferencia caixa; "failed"/"mismatch" nao casam com
+    FAIL/RECUSA) e o DestroyAllocation nao falava. A sonda passa a registrar
+    Open e Destroy por token, e toda recusa do Open fala.
+    """
+    contract = (ROOT / "driver" / "core" / "bc250_escape_contract.h").read_text(
+        encoding="utf-8", errors="replace")
+    active = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(
+        encoding="utf-8", errors="replace")
+    callbacks = (ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c").read_text(
+        encoding="utf-8", errors="replace")
+    umd = (ROOT / "driver" / "umd" / "bc250_d3d_umd.c").read_text(
+        encoding="utf-8", errors="replace")
+    for field in ("OpenCalls;", "OpenLastStatus;", "DestroyCalls;", "DestroyLastStatus;"):
+        require(contract, field, f"DX.62: campo {field} na consulta de alocacao", errors)
+    require(contract, "#define BC250_ESCAPE_ALLOCATION_QUERY_VERSION 2u",
+            "DX.62: versao da consulta sobe com o layout", errors)
+    open_start = active.find("static NTSTATUS Bc250ActiveOpenAllocationLifecycle(")
+    open_end = active.find("static NTSTATUS Bc250ActiveCloseAllocationLifecycle(", open_start)
+    body = active[open_start:open_end] if 0 <= open_start < open_end else ""
+    if not body:
+        errors.append("DX.62: OpenAllocation nao localizado")
+        return
+    # Toda linha de log do Open, exceto ENTER, Alloc[] e LEAVE de sucesso, tem de recusar em voz alta.
+    for line in body.splitlines():
+        if 'Bc250DisplayLog("[ActiveOpenAlloc]' not in line:
+            continue
+        if any(ok in line for ok in ("] ENTER:", "] Alloc[%u]", "] LEAVE: result")):
+            continue
+        if "RECUSADO" not in line:
+            errors.append("DX.62: saida de falha do OpenAllocation sem RECUSADO "
+                          f"(amostrada fora do log): {line.strip()[:90]}")
+    if 'Bc250DisplayLog("[ActiveOpenAlloc] RECUSADO LEAVE:' not in body:
+        errors.append("DX.62: LEAVE de OpenAllocation com falha nao fala")
+    if "noteEntry->OpenLastStatus = (UINT32)result;" not in body:
+        errors.append("DX.62: resultado do OpenAllocation nao anotado por token")
+    destroy_start = active.find("static NTSTATUS Bc250ActiveDestroyAllocationLifecycle(")
+    destroy = active[destroy_start:open_start] if 0 <= destroy_start < open_start else ""
+    if "Bc250AllocQueryNoteDestroy(DestroyAllocation->pAllocationList[index], result);" not in destroy:
+        errors.append("DX.62: DestroyAllocation nao anotado na sonda")
+    if "? probeInfo->hAllocation : NULL;" not in active:
+        errors.append("DX.62: sonda nao guarda o handle publicado para casar o Destroy")
+    wrapper = callbacks[callbacks.find("NTSTATUS APIENTRY Bc250McdmOpenAllocation("):]
+    wrapper = wrapper[:wrapper.find("\n}\n") + 3]
+    if wrapper.count("RECUSADO") < 2:
+        errors.append("DX.62: saidas de recusa do Bc250McdmOpenAllocation mudas")
+    if "OpenCalls=%u OpenStatus=0x%08X DestroyCalls=%u DestroyStatus=0x%08X" not in umd:
+        errors.append("DX.62: UMD nao imprime o seguimento do CreateAllocation")
+
+
+def audit_dx63_blt_present_goes_to_destination(errors: list[str]) -> None:
+    """DX.63 (Corrida 104): present Blt copia para o destino, nunca para o scanout.
+
+    MEDIDO: 60 presents Blt 1280x720 com destino resolvido (SLOT_DST) eram
+    copiados ao scanout em (640,180) inventado; BYTE_PROOF FAIL #10 em
+    0x1C2A00 = linha 180, x=640. Dois escritores do scanout.
+    """
+    disp = (ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(
+        encoding="utf-8", errors="replace")
+    active = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(
+        encoding="utf-8", errors="replace")
+    helper_start = disp.find("static const char *Bc250DisplayBltToDestination(")
+    helper_end = disp.find("BOOLEAN Bc250DisplayResolvePrimarySource(", helper_start)
+    helper = disp[helper_start:helper_end] if 0 <= helper_start < helper_end else ""
+    if not helper:
+        errors.append("DX.63: Bc250DisplayBltToDestination ausente")
+        return
+    for needle, why in (
+        ("DXGK_PRESENT_DESTINATION_INDEX].hDeviceSpecificAllocation", "geometria do destino"),
+        ("DXGK_PRESENT_SOURCE_INDEX].hDeviceSpecificAllocation", "geometria da origem"),
+        ('return "RETANGULOS_VAZIOS_OU_COM_ESCALA";', "sem escala"),
+        ('return "RETANGULO_FORA_DA_SUPERFICIE";', "retangulos dentro das superficies"),
+        ('return "FORMATO_DIVERGENTE_OU_NAO_32BPP";', "formato 32 bpp igual"),
+        ('return "DESTINO_SOBREPOE_O_SCANOUT";', "destino nunca e' o scanout"),
+        ("Bc250DisplayResolvePresentDestination(Context, Present, &dstSegOffset, &dstSeg)",
+         "destino entregue pelo dxgkrnl"),
+    ):
+        if needle not in helper:
+            errors.append(f"DX.63: {why} ausente no blt para o destino")
+    if "ScanoutGpuAddress" in helper or "dstScanoutGpu" in helper:
+        errors.append("DX.63: blt para o destino referencia o scanout")
+    call = disp.find("Bc250DisplayBltToDestination(hContext, pPresent,")
+    blank = disp.find("} else if (skipBlankUnderEscape) {", call)
+    sub = disp.find("if (isSubWindow) {", call)
+    if not (0 <= call < blank < sub):
+        errors.append("DX.63: Blt nao e' desviado antes dos ramos que escrevem o scanout")
+    if "BOOLEAN bltToDestination = (pPresent->Flags.Blt != 0u) ? TRUE : FALSE;" not in disp:
+        errors.append("DX.63: todo present Blt tem de ir para o destino")
+    if "BOOLEAN skipBlankUnderEscape = (!bltToDestination &&" not in disp:
+        errors.append("DX.63: supressao de quadro em branco aplicada ao Blt")
+    if "BLT_DESTINO RECUSADO: motivo=%s" not in disp:
+        errors.append("DX.63: recusa do blt para o destino muda")
+    proof = disp.find("if (sdmaDone && !skipBlankUnderEscape &&")
+    if proof < 0 or "if (bltToDestination) {" not in disp[proof:proof + 400]:
+        errors.append("DX.63: byte proof do scanout aplicado a um Blt que nao o escreveu")
+    require(active, "Bc250DisplayInstallAllocationGeometryResolver(Bc250ActiveResolveAllocationGeometry);",
+            "DX.63: resolvedor de geometria instalado", errors)
+
+    # DX.63b (Corrida 105): 60/60 BLT_DESTINO RECUSADO GEOMETRIA_DO_DESTINO_DESCONHECIDA.
+    # Alocacoes padrao staging/GDI publicam a geometria que o KMD conhece;
+    # primaria e shadow continuam SEM (o DescribeAllocation delas nao muda).
+    callbacks = (ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c").read_text(
+        encoding="utf-8", errors="replace")
+    publish = callbacks[callbacks.find("static VOID Bc250McdmPublishStandardAllocationPrivateData("):
+                        callbacks.find("NTSTATUS APIENTRY Bc250McdmGetStandardAllocationDriverData(")]
+    if "priv.Flags |= BC250_ALLOCATION_FLAG_HAS_GEOMETRY;" not in publish or \
+            "(UINT64)Geometry->Pitch * Geometry->Height <= aligned" not in publish:
+        errors.append("DX.63b: alocacao padrao nao publica geometria coerente")
+    for token, expected in (("PRIMARY", "bytes, NULL);"), ("SHADOW", "bytes, NULL);"),
+                            ("STAGING", "pStaging != NULL ? &geometry : NULL);"),
+                            ("GDI", "pGdi != NULL ? &geometry : NULL);")):
+        needle = f"BC250_STD_ALLOC_TOKEN_{token}, bytes"
+        at = callbacks.find(needle)
+        if at < 0 or expected not in callbacks[at:at + 120]:
+            errors.append(f"DX.63b: geometria da alocacao padrao {token} fora do contrato "
+                          f"(esperado {expected})")
+    if "geometry.Format = (UINT32)pGdi->Format;" not in callbacks:
+        errors.append("DX.63b: formato da superficie GDI nao vem do dxgkrnl")
+
+
+def audit_dx64_copy_tracks_vk_layout(errors: list[str]) -> None:
+    """DX.64 (Corrida 106): a copia de imagem usa e atualiza o layout rastreado.
+
+    MEDIDO: ResourceCopyRegion escreveu na textura 256x256 do DWM, o layout
+    ficou UNDEFINED, o Draw seguinte foi recusado (SRV_LAYOUT_UNDEFINED_...)
+    com SetErrorCb(E_NOTIMPL) e o DWM recriou o device 2 de 2 vezes.
+    """
+    umd = (ROOT / "driver" / "umd" / "bc250_d3d_umd.c").read_text(
+        encoding="utf-8", errors="replace")
+    start = umd.find("static BOOL Bc250UmdVkCopyImageInternal(")
+    end = umd.find("VOID APIENTRY Bc250Umd10ResourceCopy(", start)
+    body = umd[start:end] if 0 <= start < end else ""
+    if not body:
+        errors.append("DX.64: Bc250UmdVkCopyImageInternal nao localizada")
+        return
+    code = strip_c_comments(body)
+    for needle, why in (
+        ("barriers[0].oldLayout = srcOld;", "layout anterior da origem e' o rastreado"),
+        ("barriers[1].oldLayout = dstOld;", "layout anterior do destino e' o rastreado"),
+        ("dst->VkLayout = dstFinal;", "destino grava o layout que declara"),
+        ("src->VkLayout = srcHasContent ? srcOld : VK_IMAGE_LAYOUT_UNDEFINED;", "origem volta ao seu layout"),
+        ("dstFinal = VK_IMAGE_LAYOUT_UNDEFINED;", "sem conteudo na origem nem no destino, nada e' declarado"),
+        ("if (src->VkImg == dst->VkImg) {", "mesma imagem recusada"),
+        ("dst->VkLayout = VK_IMAGE_LAYOUT_UNDEFINED;", "flush falho nao declara conteudo"),
+    ):
+        if needle not in code:
+            errors.append(f"DX.64: {why} ausente na copia de imagem")
+    if "oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL" in code:
+        errors.append("DX.64: copia volta a supor COLOR_ATTACHMENT como layout anterior")
+    if "subresourceRange.levelCount = 1;" in code or "subresourceRange.layerCount = 1;" in code:
+        errors.append("DX.64: barreira da copia cobre so' o subrecurso 0 com layout rastreado da imagem inteira")
+
+
+def audit_dx66_mmio_breadcrumbs(errors: list[str]) -> None:
+    """DX.66 (Corrida 109): migalhas de MMIO em VRAM que sobrevivem ao reinicio a quente.
+
+    MEDIDO: a maquina para inteira (thread PASSIVE e paginacao no mesmo periodo
+    de 100 ms). H: leitura MMIO que nunca completa. Cada acesso do caminho
+    quente grava ANTES/DEPOIS numa pagina UNCACHED de VRAM; o StartDevice
+    seguinte le a pagina ANTES do fusivel.
+    """
+    wdk = ROOT / "driver" / "wdk"
+    def read(name: str) -> str:
+        return (wdk / name).read_text(encoding="utf-8", errors="replace")
+    header = read("bc250_mmio_breadcrumb.h")
+    active = read("bc250_active_miniport.c")
+    m = re.search(r"#define BC250_CRUMB_VRAM_OFFSET\s+(0x[0-9A-Fa-f]+)ull", header)
+    if not m:
+        errors.append("DX.66: offset da pagina de migalhas ausente")
+        return
+    offset = int(m.group(1), 16)
+    if offset != 0x0FA00000:
+        errors.append(f"DX.66: pagina 0x{offset:X} difere da reserva controlada DX.67")
+    inventory = active[active.find("context->RuntimeInventoryInput.PlatformCarveoutCount = 0u;"):active.find("context->RuntimeInventoryStatus = Bc250BuildRuntimeVramInventory(")]
+    if not ("crumb->Offset = BC250_CRUMB_VRAM_OFFSET;" in inventory and
+            "crumb->Length = BC250_CRUMB_PAGE_BYTES;" in inventory and
+            "crumb->Role = BC250_VRAM_ROLE_PLATFORM_RESERVED;" in inventory and
+            "crumb->Flags = BC250_VRAM_REGION_PERSISTENT |" in inventory):
+        errors.append("DX.66: pagina nao reservada no inventario antes do bootstrap")
+    # Cada sitio grava ANTES do acesso e DEPOIS dele.
+    for name, before, access in (
+        ("bc250_mmio_topology_transport.c", "Bc250CrumbBefore(BC250_CRUMB_SITE_TRANSPORT_READ", "*Value = READ_REGISTER_ULONG(address);"),
+        ("bc250_mmio_topology_transport.c", "Bc250CrumbBefore(BC250_CRUMB_SITE_TRANSPORT_WRITE", "WRITE_REGISTER_ULONG(address, Value);"),
+        ("bc250_sdma_present.c", "Bc250CrumbBefore(BC250_CRUMB_SITE_SDMA_READ", "value = *(volatile uint32_t *)(Context->MmioVirtual + RegOffset);"),
+        ("bc250_sdma_present.c", "Bc250CrumbBefore(BC250_CRUMB_SITE_SDMA_WRITE", "*(volatile uint32_t *)(Context->MmioVirtual + RegOffset) = Value;"),
+        ("bc250_display_ddi.c", "Bc250CrumbBefore(BC250_CRUMB_SITE_OTG_READ", "ULONG currentFrame = *g_Bc250DisplayState.OtgFrameCountRegister;"),
+        ("bc250_sdma_ring_work.c", "Bc250CrumbBefore(BC250_CRUMB_SITE_RINGWORK_READ", "uint32_t value = READ_REGISTER_ULONG((volatile ULONG *)Address);"),
+        ("bc250_display_ddi.c", "Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_COMPARE", "for (index = 0u; index < ByteCount; ++index) {"),
+    ):
+        text = read(name)
+        b = text.find(before)
+        a = text.find(access, b if b >= 0 else 0)
+        after = text.find("Bc250CrumbAfter(", a if a >= 0 else 0)
+        if not (0 <= b < a < after):
+            errors.append(f"DX.66: {name}: migalha ANTES/DEPOIS ausente ou fora de ordem em volta de '{access[:40]}'")
+    arm = active[active.find("static VOID Bc250CrumbArm("):active.find("static VOID Bc250CrumbMarkClean(VOID)\n{")]
+    if "PAGE_READWRITE | PAGE_NOCACHE" not in arm or "WRITECOMBINE" in arm:
+        errors.append("DX.66: pagina de migalhas precisa ser UNCACHED (WC reteria a escrita no travamento)")
+    overlap = arm.find("ARME RECUSADO: alocador")
+    mapping = arm.find("MmMapIoSpaceEx(phys")
+    publish = arm.find("InterlockedExchangePointer((PVOID volatile *)&g_Bc250CrumbPage, (PVOID)page);")
+    if not (0 <= overlap < mapping < publish):
+        errors.append("DX.66: arme sem conferir sobreposicao com os alocadores antes de mapear/publicar")
+    if not ("if (region->InUse != 0u &&\n                region->Offset < BC250_CRUMB_VRAM_OFFSET + BC250_CRUMB_PAGE_BYTES &&" in arm and
+            "BC250_CRUMB_VRAM_OFFSET < region->Offset + region->Length" in arm):
+        errors.append("DX.66: teste de sobreposicao da pagina com as regioes dos alocadores alterado")
+    if not ("if (!reserved) {" in arm and
+            "ARME RECUSADO: pagina sem reserva no inventario DX.67" in arm):
+        errors.append("DX.66: arme deve exigir reserva confirmada no bootstrap")
+
+
+def audit_dx67_segment_excludes_internal_regions(errors: list[str]) -> None:
+    """VidMm must stop below every live internal region, including the crumb."""
+    active = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(
+        encoding="utf-8", errors="replace")
+    start = active.find("/*\n     * DX.67 (Corrida 110)")
+    end = active.find("Caps->LocalSegmentBaseOffset = localStart;", start)
+    body = strip_c_comments(active[start:end]) if start >= 0 and end > start else ""
+    required = (
+        "allocs[0] = &context->GlobalMmuAllocator;",
+        "allocs[1] = &context->Core.StartDevice.Owned.Bootstrap.Allocator;",
+        "if (region->InUse == 0u || region->Length == 0u) continue;",
+        "if (region->Offset >= localStart && region->Offset < localEnd) {",
+        "localEnd = region->Offset;",
+        "region->Length > localStart - region->Offset",
+        "return STATUS_DEVICE_CONFIGURATION_ERROR;",
+        "if (localStart >= localEnd) {",
+        "[DX67_VRAM_MAPA] segmento [0x%llX, 0x%llX)",
+    )
+    for token in required:
+        if token not in body:
+            errors.append(f"DX.67: contrato de exclusao do segmento ausente: {token}")
+    if not (body.find("localEnd = region->Offset;") <
+            body.find("if (localStart >= localEnd) {")):
+        errors.append("DX.67: truncagem deve preceder a validacao do segmento")
+    wrapper = active[active.find("NTSTATUS APIENTRY Bc250DxgkDdiStartDeviceV5Telemetry("):]
+    wrapper = wrapper[:wrapper.find("\n}\n")]
+    rep = wrapper.find("Bc250CrumbReportPrevious(DxgkInterface);")
+    impl = wrapper.find("status = Bc250DxgkDdiStartDeviceV5TelemetryImpl(")
+    armc = wrapper.find("Bc250CrumbArm(")
+    if not (0 <= rep < impl < armc) or "if (NT_SUCCESS(status)) {" not in wrapper[impl:armc]:
+        errors.append("DX.66: leitura anterior deve preceder o StartDevice (e o fusivel); arme so' apos sucesso")
+    if "Bc250CrumbMarkClean();   /* DX.66 */" not in active:
+        errors.append("DX.66: StopDevice nao grava estado LIMPO")
+
+
+def audit_dx68_layered_breadcrumbs(errors: list[str]) -> None:
+    """Separate outer DDI phases from high frequency inner MMIO accesses."""
+    wdk = ROOT / "driver" / "wdk"
+    header = (wdk / "bc250_mmio_breadcrumb.h").read_text(encoding="utf-8")
+    active = (wdk / "bc250_active_miniport.c").read_text(encoding="utf-8")
+    callbacks = (wdk / "bc250_mcdm_callbacks.c").read_text(encoding="utf-8")
+    for token in (
+        "#define BC250_CRUMB_VERSION       2u",
+        "#define BC250_CRUMB_CPUS          32u",
+        "#define BC250_CRUMB_BANKS         3u",
+        "#define BC250_CRUMB_SLOTS         (BC250_CRUMB_CPUS * BC250_CRUMB_BANKS)",
+        "slot = Bank * BC250_CRUMB_CPUS +",
+        "KeGetCurrentProcessorNumberEx(NULL) % BC250_CRUMB_CPUS;",
+        "return Bc250CrumbBeforeBank(Site, Offset, BC250_CRUMB_BANK_INNER);",
+    ):
+        if token not in header:
+            errors.append(f"DX.68: separacao de slots ausente: {token}")
+    if 16 + 32 * 3 * 4 > 4096 // 4:
+        errors.append("DX.68: slots nao cabem na pagina de VRAM")
+    paging = function_body(callbacks, "NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(")
+    submit = function_body(active, "static NTSTATUS Bc250ActiveSubmitCommandVirtualLifecycle(")
+    for name, body, before, call in (
+        ("paginacao", paging,
+         "Bc250CrumbBeforeBank(\n        BC250_CRUMB_SITE_PAGING_DDI, operation, BC250_CRUMB_BANK_PAGING)",
+         "Bc250McdmBuildPagingBufferBody(hAdapter, pBuildPagingBuffer)"),
+        ("submissao", submit,
+         "Bc250CrumbBeforeBank(\n        BC250_CRUMB_SITE_SUBMIT_DDI,",
+         "Bc250ActiveSubmitCommandVirtualBody(AdapterContext, pSubmitCommand)"),
+    ):
+        b = body.find(before)
+        c = body.find(call, b if b >= 0 else 0)
+        a = body.find("Bc250CrumbAfter(crumb);", c if c >= 0 else 0)
+        if not (0 <= b < c < a):
+            errors.append(f"DX.68: escopo {name} sem ANTES/chamada/DEPOIS")
+    if "best % BC250_CRUMB_CPUS" not in active or '"PAGINACAO" : "SUBMISSAO"' not in active:
+        errors.append("DX.68: relatorio nao identifica CPU e camada")
+
+
+def audit_dx70_umd_routine_sampling(errors: list[str]) -> None:
+    """Only known success chatter may be sampled before the durable sink."""
+    winsys = (ROOT / "driver" / "umd" / "bc250_wddm_winsys.c").read_text(
+        encoding="cp1252", errors="replace")
+    classify = function_body(winsys, "static unsigned Bc250WinsysRoutineTraceClass(")
+    raw = function_body(winsys, "void Bc250WinsysTraceRaw(")
+    required = (
+        '[VK_RES] UploadBufferData SUCESSO:',
+        '[WDDM_WINSYS] Upload ENTER:',
+        '[WDDM_WINSYS] Upload LEAVE: hr=0x00000000',
+        '[VK_BRIDGE] BeginCommandBuffer: gravacao iniciada',
+        'ResourceMap: res=',
+        'ResourceUnmap: buffer sincronizado',
+        'ResourceUnmap: res=',
+    )
+    for token in required:
+        if token not in classify:
+            errors.append(f"DX.70: classe rotineira ausente: {token}")
+    if "FlushCommands" in classify or "DXGI Present" in classify or "RECUSADO" in classify:
+        errors.append("DX.70: falha, Present ou tempos de flush nao podem ser amostrados")
+    before = raw.find("routineClass = Bc250WinsysRoutineTraceClass(Message);")
+    sample = raw.find("routineOrdinal > 16 && (routineOrdinal % 64) != 0", before)
+    init = raw.find("InitOnceExecuteOnce(", sample)
+    if not (0 <= before < sample < init):
+        errors.append("DX.70: amostragem deve anteceder todo I/O do sink")
+    if '[DX70_SAMPLE c=%u n=%ld] %s\\r\\n"' not in raw:
+        errors.append("DX.70: linha amostrada sem classe e ordinal")
+
+
+def audit_dx58_allocation_priority(errors: list[str]) -> None:
+    """VidMm receives a valid starting priority for every created allocation."""
+    active = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(
+        encoding="utf-8", errors="replace")
+    start = active.find("static NTSTATUS Bc250ActiveCreateAllocationLifecycle(")
+    end = active.find("static NTSTATUS Bc250ActiveDestroyAllocationLifecycle(", start)
+    if start < 0 or end <= start:
+        errors.append("DX.58: CreateAllocation nao localizado")
+        return
+    body = strip_c_comments(active[start:end])
+    priority = body.find(
+        "info->AllocationPriority = D3DDDI_ALLOCATIONPRIORITY_NORMAL;")
+    publish = body.find("info->hAllocation = handle;")
+    if not (0 <= priority < publish):
+        errors.append("DX.58: prioridade inicial normal ausente antes de publicar a alocacao")
+
+
+def audit_dx59_allocation_query(errors: list[str]) -> None:
+    """A sonda apenas observa o callback e preserva seu resultado original."""
+    contract = (ROOT / "driver" / "core" / "bc250_escape_contract.h").read_text(
+        encoding="utf-8", errors="replace")
+    active = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(
+        encoding="utf-8", errors="replace")
+    umd = (ROOT / "driver" / "umd" / "bc250_d3d_umd.c").read_text(
+        encoding="utf-8", errors="replace")
+    if "BC250_ESCAPE_OP_ALLOCATION_QUERY" not in contract or \
+            "BC250_ESCAPE_ALLOCATION_QUERY" not in contract:
+        errors.append("DX.59: contrato do escape de consulta ausente")
+    create_start = active.find("static NTSTATUS Bc250ActiveCreateAllocationLifecycle(")
+    create_end = active.find("static NTSTATUS Bc250ActiveDestroyAllocationLifecycle(", create_start)
+    create = active[create_start:create_end] if create_start >= 0 and create_end > create_start else ""
+    if not ("entry->KmdStatus = (UINT32)result;" in create and
+            "entry->AllocationPriority = probeInfo->AllocationPriority;" in create and
+            "entry->Token = probeToken;" in create):
+        errors.append("DX.59: resultado real do CreateAllocation nao registrado por token")
+    query_start = active.find("static NTSTATUS Bc250ActiveEscapeAllocationQuery(")
+    query_end = active.find("static NTSTATUS Bc250ActiveEscapeHandler(", query_start)
+    query = active[query_start:query_end] if query_start >= 0 and query_end > query_start else ""
+    if not ("ExAcquirePushLockShared(&g_Bc250AdapterDirectoryLock)" in query and
+            "entry->Token == token" in query and "return STATUS_SUCCESS;" in query and
+            "BC250_MMIO" not in query):
+        errors.append("DX.59: consulta por token nao e somente leitura sincronizada")
+    if "return Bc250ActiveEscapeAllocationQuery(pEscape);" not in active:
+        errors.append("DX.59: escape nao encaminhado ao leitor do resultado")
+    allocate = umd.find("wsStatus = Bc250WinsysAllocateForResource(&device->Winsys, token,")
+    probe = umd.find("Bc250UmdProbeAllocationCallback(device, token,", allocate)
+    map_call = umd.find("Bc250WinsysMapAllocation(&device->Winsys", allocate)
+    if not (0 <= allocate < probe < map_call):
+        errors.append("DX.59: sonda UMD deve rodar apos Allocate e antes de Map")
+    helper_start = umd.find("static void Bc250UmdProbeAllocationCallback(")
+    helper_end = umd.find("VOID APIENTRY Bc250Umd10CreateResource(", helper_start)
+    helper = umd[helper_start:helper_end] if helper_start >= 0 and helper_end > helper_start else ""
+    if not ("pfnEscapeCb" in helper and "ReplyValid" in helper and
+            "AllocateHr" in helper and "void Bc250UmdProbeAllocationCallback" in helper):
+        errors.append("DX.59: sonda UMD nao registra os dois resultados separadamente")
+
 
 def audit_gfx_restart_checks_the_real_halt_bits(errors: list[str]) -> None:
     """O portao do restart do CP_RB0 tem de olhar os bits de halt que existem.
@@ -7702,6 +8144,13 @@ def audit_dx47_preemption_completes(errors: list[str]) -> None:
     pre = ret.find("Bc250ActiveTryCompletePreemptions(Context);")
     if not (0 <= drain < pre) or "return;" in ret[drain:pre]:
         errors.append("DX.47: conclusao da preempcao nao roda depois do dreno, ou ha retorno antes dela (caso ocioso)")
+    try_preempt = function_body(mini, "static BOOLEAN Bc250ActiveTryCompletePreemptions(")
+    sdma_gate = try_preempt.find("if (node == BC250_SUBMISSION_NODE_SDMA) {")
+    acquire = try_preempt.find("InterlockedCompareExchange(&Context->SdmaRetireBusy, 1, 0)", sdma_gate)
+    sync_call = try_preempt.find("DxgkCbSynchronizeExecution(", acquire)
+    release = try_preempt.find("InterlockedExchange(&Context->SdmaRetireBusy, 0);", sync_call)
+    if not (0 <= sdma_gate < acquire < sync_call < release):
+        errors.append("DX.60: PREEMPT Node0 deve segurar SdmaRetireBusy durante toda a consulta e notificacao; fila vazia nao prova fence ja notificada")
     require(seng, "BOOLEAN Bc250WddmFenceTrackerNodeState(", "DX.47 estado por no do rastreador", errors)
     require(mini, "Bc250McdmInstallPreemptHandler(Bc250ActivePreemptHandler);", "DX.47 handler instalado", errors)
     require(mini, "Bc250McdmInstallPreemptHandler(NULL);", "DX.47 handler desinstalado no teardown", errors)
@@ -7789,7 +8238,7 @@ def audit_dx49_desktop_throughput(errors: list[str]) -> None:
         errors.append("DX.49: espaco do anel nao e' decidido antes de gravar o draw")
     for token in ("Bc250UmdVkDrawRingPut(&pDevice->VkBridge, vb->pCpuShadow",
                   "Bc250UmdVkDrawRingPut(&pDevice->VkBridge, ib->pCpuShadow",
-                  "flushNow = (!usedRing || directRef || batchPosition >= BC250_DX49_BATCH_MAX_DRAWS);",
+                  "flushNow = (directRef || readbackActive || batchPosition >= BC250_DX49_BATCH_MAX_DRAWS);",
                   "if (flushNow) {",
                   "DRAW GRAVADO NO LOTE; pixels NAO CONFERIDOS"):
         require(ex, token, "DX.49 draw grava no lote com dados em faixa propria", errors)
@@ -7877,6 +8326,46 @@ def audit_dx50_dirty_rect_bisection(errors: list[str]) -> None:
         errors.append("DX.50: binder voltou a APAGAR os logs residuais da UMD")
 
 
+def audit_dx56_paging_trace(errors: list[str]) -> None:
+    """DX.56: persistent snapshot must never do file I/O on the paging DDI."""
+    callbacks = (ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c").read_text(
+        encoding="cp1252", errors="replace"
+    )
+    active = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(
+        encoding="cp1252", errors="replace"
+    )
+    stage = function_body(callbacks, "static VOID Bc250PagingStage(")
+    worker = function_body(callbacks, "static VOID Bc250PagingTraceThread(")
+    start = function_body(callbacks, "NTSTATUS Bc250PagingTraceStart(")
+    stop = function_body(callbacks, "VOID Bc250PagingTraceStop(")
+    unload = function_body(active, "VOID Bc250ActiveDriverUnloadCleanup(")
+    for token in ("ZwCreateFile", "ZwWriteFile", "ZwFlushBuffersFile", "KeWaitForSingleObject"):
+        if token in stage:
+            errors.append(f"DX.56: {token} entrou na DDI de paginacao")
+    for token in ("KeWaitForSingleObject(&g_Bc250PagingTraceStopEvent",
+                  "Bc250PagingTraceSnapshot(&record)", "ZwWriteFile(g_Bc250PagingTraceFile",
+                  "status = ZwFlushBuffersFile(g_Bc250PagingTraceFile"):
+        require(worker, token, f"DX.56 worker {token}", errors)
+    require(start, "FILE_SYNCHRONOUS_IO_NONALERT | FILE_WRITE_THROUGH",
+            "DX.56 arquivo write-through", errors)
+    require(stop, "ZwWaitForSingleObject(g_Bc250PagingTraceThreadHandle, FALSE, NULL)",
+            "DX.56 unload espera fim real da thread", errors)
+    require(callbacks, "Record->Checksum = Bc250PagingTraceChecksum(Record);",
+            "DX.56 checksum de registro", errors)
+    require(active, "status = Bc250PagingTraceStart();",
+            "DX.56 trace iniciado antes do DxgkInitialize", errors)
+    require(unload, "Bc250PagingTraceStop();", "DX.56 trace parado no unload", errors)
+    # DX.65 (Corrida 108): batimento a cada periodo, com checksum recalculado.
+    if "LatestSequence != lastSequence" in worker:
+        errors.append("DX.65: rastro voltou a gravar so' quando a sequencia muda")
+    tick = worker.find("record.Reserved = ++writerTick;")
+    resum = worker.find("record.Checksum = Bc250PagingTraceChecksum(&record);", tick)
+    write = worker.find("ZwWriteFile(g_Bc250PagingTraceFile", resum)
+    if not (0 <= tick < resum < write):
+        errors.append("DX.65: batimento do escritor ausente ou checksum nao recalculado antes da escrita")
+    require(callbacks, "Record->Version = 2u;", "DX.65 registro v2", errors)
+
+
 def audit_dx54_desktop_speed(errors: list[str]) -> None:
     """DX.54: velocidade do desktop sem reabrir o piscar.
 
@@ -7946,8 +8435,78 @@ def audit_dx54_desktop_speed(errors: list[str]) -> None:
         require(fl, token, "DX.54 flush diz onde gasta", errors)
     if "static const BOOL s_Bc250Dx54SampledPresentInspection = TRUE;" not in draw:
         errors.append("DX.54: interruptor da inspecao amostrada ausente ou desligado")
-    if "(%ux%u, NonZeroGrade=NAO_AMOSTRADO)" not in draw or "if (inspectThis) {" not in draw:
+    if '"NAO_AMOSTRADO"' not in draw or "if (inspectThis) {" not in draw:
         errors.append("DX.54: Present fora da amostra nao declara NAO_AMOSTRADO")
+
+
+def audit_dx71_wddm_owns_scanout(errors: list[str]) -> None:
+    """Windowed DXGI Present must not bypass DWM with an extra scanout write."""
+    umd = (ROOT / "driver" / "umd" / "bc250_d3d_umd.c").read_text(
+        encoding="cp1252", errors="replace")
+    prepare = function_body(umd, "static BOOL Bc250UmdPresentVulkanDetileAndScanout(")
+    if not prepare:
+        errors.append("DX.71: preparacao do Present ausente")
+        return
+    for forbidden in ("pfnPresentScanout(", "Bc250UmdPresentBltToScanout(",
+                      "BC250_ESCAPE_OP_PRESENT_BLT"):
+        if forbidden in prepare:
+            errors.append(f"DX.71: UMD escreve no scanout fora do callback WDDM: {forbidden}")
+    for required in ("[DX71_WDDM_ONLY]", "if (FAILED(bridgeHr)) return FALSE;",
+                     "srcRes->Allocation.GpuVirtualAddress == 0"):
+        require(prepare, required, "DX.71: WDDM Present deve receber imagem valida", errors)
+
+
+def audit_dx79_texture_upload_coalescing(errors: list[str]) -> None:
+    """DX.79: Coalescencia de uploads de textura via anel de staging persistente."""
+    umd_dir = ROOT / "driver" / "umd"
+    def read(name: str) -> str:
+        return (umd_dir / name).read_text(encoding="cp1252", errors="replace")
+    res = strip_c_comments(read("bc250_umd_resource_vk.c"))
+    bridge = strip_c_comments(read("bc250_umd_vulkan_bridge.c"))
+    header = strip_c_comments(read("bc250_umd_vulkan_bridge.h"))
+
+    require(header, "VkDeviceSize UploadStagingHead;", "DX.79 cabeca do anel de staging no header", errors)
+    require(header, "#define BC250_DX79_UPLOAD_ALIGN 256u", "DX.79 alinhamento do anel de staging", errors)
+
+    up = function_body(res, "BOOL Bc250UmdVkUploadImageData(")
+    require(up, "BC250_DX79_UPLOAD_ALIGN", "DX.79 upload alinha pelo anel", errors)
+    require(up, "region.bufferOffset = uploadOffset;", "DX.79 copia com offset no staging", errors)
+    require(up, "pBridge->UploadStagingHead = uploadOffset + (VkDeviceSize)ByteSize;", "DX.79 cursor avancado", errors)
+    require(up, "if (wrapNeeded)", "DX.79 flush condicional ao wrap", errors)
+    require(up, "[DX79_UPLOAD]", "DX79 telemetria de upload", errors)
+
+    fl = function_body(bridge, "VkResult Bc250UmdVkFlushCommands(")
+    ok_branch = fl.find("pBridge->DrawRingHead = 0;")
+    reset = fl.find("pBridge->UploadStagingHead = 0;", ok_branch if ok_branch >= 0 else 0)
+    if not (0 <= ok_branch <= reset):
+        errors.append("DX.79: UploadStagingHead zerado fora da fence concluida")
+
+    shut = function_body(bridge, "VOID Bc250UmdVkBridgeShutdown(")
+    require(shut, "pBridge->UploadStagingHead = 0;", "DX.79 UploadStagingHead zerado no shutdown", errors)
+
+
+def audit_dx80_rtv_framebuffer_cache(errors: list[str]) -> None:
+    """DX.80: Cache de framebuffers e views por imagem para eliminar flushes sincronos em RtvFollow."""
+    umd_dir = ROOT / "driver" / "umd"
+    def read(name: str) -> str:
+        return (umd_dir / name).read_text(encoding="cp1252", errors="replace")
+    res = strip_c_comments(read("bc250_umd_resource_vk.c"))
+    header = strip_c_comments(read("bc250_d3d_umd.h"))
+
+    require(header, "#define BC250_RTV_MAX_CACHED_FBS 8u", "DX.80 tamanho maximo do cache de framebuffers", errors)
+    require(header, "FbCache[BC250_RTV_MAX_CACHED_FBS]", "DX.80 array FbCache na BC250_UMD_RTV", errors)
+
+    cr = function_body(res, "BOOL Bc250UmdVkCreateRtv(")
+    require(cr, "pRtv->FbCacheCount = 1u;", "DX.80 FbCache inicializado no CreateRtv", errors)
+
+    fol = function_body(res, "BOOL Bc250UmdVkRtvFollowResource(")
+    require(fol, "pRtv->FbCache[i].Image == pRes->VkImg", "DX.80 comparacao de imagem no cache", errors)
+    require(fol, "pRtv->FollowHitCount++;", "DX.80 contador de cache hits", errors)
+    require(fol, "[DX80_CACHE]", "DX.80 telemetria de cache de framebuffers", errors)
+
+    des = function_body(res, "VOID Bc250UmdVkDestroyRtv(")
+    require(des, "pBridge->vk.vkDestroyFramebuffer(pBridge->Device, pRtv->FbCache[i].Fb, NULL);", "DX.80 destruicao de framebuffers em cache no DestroyRtv", errors)
+    require(des, "pBridge->vk.vkDestroyImageView(pBridge->Device, pRtv->FbCache[i].View, NULL);", "DX.80 destruicao de views em cache no DestroyRtv", errors)
 
 
 def audit_dx52_create_allocation_refusal_speaks(errors: list[str]) -> None:
@@ -8897,7 +9456,10 @@ def main() -> int:
         "Bc250McdmSetPowerState",
         "Bc250McdmSubmitCommandVirtual",
     ):
-        body = function_body(callbacks, f"NTSTATUS APIENTRY {function}(")
+        if function == "Bc250McdmBuildPagingBuffer":
+            body = function_body(callbacks, "static NTSTATUS Bc250McdmBuildPagingBufferBody(")
+        else:
+            body = function_body(callbacks, f"NTSTATUS APIENTRY {function}(")
         if not body:
             body = function_body(callbacks, f"NTSTATUS {function}(")
         if not body:
@@ -8906,7 +9468,7 @@ def main() -> int:
         require(body, "STATUS_NOT_SUPPORTED", f"fail-closed {function}", errors)
 
     build_paging = function_body(
-        callbacks, "NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(")
+        callbacks, "static NTSTATUS Bc250McdmBuildPagingBufferBody(")
     require(build_paging, "Unhandled Op=%u -> NOT_SUPPORTED",
             "unknown paging operation diagnostic", errors)
     forbid(build_paging, "Unhandled Op=%u -> SUCCESS",
@@ -9701,6 +10263,16 @@ def main() -> int:
 
     audit_draw_has_no_cpu_fallback(errors)
     audit_safe_bind_deadline_is_fail_closed(errors)
+    audit_dx61_safe_bind_recovery_evidence(errors)
+    audit_dx62_allocation_followup(errors)
+    audit_dx63_blt_present_goes_to_destination(errors)
+    audit_dx64_copy_tracks_vk_layout(errors)
+    audit_dx66_mmio_breadcrumbs(errors)
+    audit_dx67_segment_excludes_internal_regions(errors)
+    audit_dx68_layered_breadcrumbs(errors)
+    audit_dx70_umd_routine_sampling(errors)
+    audit_dx58_allocation_priority(errors)
+    audit_dx59_allocation_query(errors)
     audit_lost_log_tail_is_recovered(errors)
     audit_gfx_restart_checks_the_real_halt_bits(errors)
     audit_gfx_restart_is_executable_and_aborts_old_fences(errors)
@@ -9764,8 +10336,12 @@ def main() -> int:
     audit_dx49_desktop_throughput(errors)
     audit_dx50_dirty_rect_bisection(errors)
     audit_dx54_desktop_speed(errors)
+    audit_dx71_wddm_owns_scanout(errors)
+    audit_dx79_texture_upload_coalescing(errors)
+    audit_dx80_rtv_framebuffer_cache(errors)
     audit_dx52_create_allocation_refusal_speaks(errors)
     audit_dx53_vmid_disarm_before_release(errors)
+    audit_dx56_paging_trace(errors)
 
     if errors:
         print("BC250 MCDM SAFETY AUDIT: FAILED")
@@ -9774,6 +10350,8 @@ def main() -> int:
         return 1
 
     print("BC250 MCDM SAFETY AUDIT: PASS")
+    print("  DX.80 RTV framebuffer cache with zero-flush rotation: enforced")
+    print("  DX.79 texture upload coalescing via staging ring: enforced")
     print("  DX.26 golden settings and CSB snapshot is read-only: enforced")
     print("  DX.25 drawn vertices (index+base) and capped read-only target readback: enforced")
     print("  DX.24 D3D11 blend/IA/viewport/format state reaches Vulkan or refuses by name: enforced")

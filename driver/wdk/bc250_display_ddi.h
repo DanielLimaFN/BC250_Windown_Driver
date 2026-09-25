@@ -87,6 +87,22 @@ typedef BOOLEAN (*BC250_DISPLAY_GPUVA_RESOLVER)(
 void Bc250DisplayInstallGpuVaResolver(
     _In_opt_ BC250_DISPLAY_GPUVA_RESOLVER Resolver);
 
+/*
+ * DX.63: geometria (largura, altura, pitch, formato D3DDDI) da alocacao que o
+ * dxgkrnl entrega em DXGK_PRESENTALLOCATIONINFO.hDeviceSpecificAllocation.
+ * FALSE = geometria nao declarada ou handle desconhecido; o chamador falha
+ * fechado, nunca inventa numeros.
+ */
+typedef BOOLEAN (*BC250_DISPLAY_ALLOCATION_GEOMETRY_RESOLVER)(
+    _In_ HANDLE DeviceSpecificAllocation,
+    _Out_ UINT32 *Width,
+    _Out_ UINT32 *Height,
+    _Out_ UINT32 *Pitch,
+    _Out_ UINT32 *Format);
+
+void Bc250DisplayInstallAllocationGeometryResolver(
+    _In_opt_ BC250_DISPLAY_ALLOCATION_GEOMETRY_RESOLVER Resolver);
+
 void Bc250DisplayRecordGpuVaMapping(
     _In_opt_ HANDLE ProcessHandle,
     _In_ UINT64 GpuVa,

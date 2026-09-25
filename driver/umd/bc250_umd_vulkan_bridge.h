@@ -200,6 +200,14 @@ typedef struct _BC250_UMD_VK_BRIDGE {
     void *UploadStagingMapped;
     VkDeviceSize UploadStagingSize;
     uint32_t UploadStagingGrowCount;
+    /*
+     * DX.79 -- ANEL DE STAGING PERSISTENTE para upload de textura.
+     * Permite coalescer multiplos uploads na mesma batelada sem flush sincrono por chamada.
+     * Reseta a 0 quando a fence conclui (em Bc250UmdVkFlushCommands).
+     */
+    VkDeviceSize UploadStagingHead;
+    uint64_t UploadCoalescedCount;
+    uint64_t UploadFlushCount;
 
     /* Destiled linear presentation buffer for artifact-free scanout */
     VkBuffer LinearPresentBuf;
@@ -246,6 +254,7 @@ VOID Bc250UmdVkReleaseDescriptorBatches(BC250_UMD_VK_BRIDGE *pBridge);
 #define BC250_DX49_BATCH_MAX_DRAWS 64u
 #define BC250_DX49_DRAW_RING_BYTES (4u * 1024u * 1024u)
 #define BC250_DX49_DRAW_RING_ALIGN 256u
+#define BC250_DX79_UPLOAD_ALIGN 256u
 /* DX.54: o anel so' nasce num device que ja fez este numero de draws pelo
  * caminho direto -- os devices de vida curta do laco do Explorer (1 draw
  * cada) nunca o criam. */

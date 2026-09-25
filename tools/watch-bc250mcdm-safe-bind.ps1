@@ -79,6 +79,11 @@ $finalPath = Join-Path ([string]$config.evidence_dir) 'safe-bind-final.json'
 $confirmationPath = Join-Path ([string]$config.evidence_dir) 'safe-bind-confirmation.json'
 $attemptPath = Join-Path ([string]$config.evidence_dir) 'safe-bind-rollback-attempt.json'
 $samplesPath = Join-Path ([string]$config.evidence_dir) 'safe-bind-pnp-samples.json'
+# DX.61 (Corrida 104): o arquivo acima e' sobrescrito a cada veredito, e a
+# tentativa 2 apagou as amostras que reprovaram a tentativa 1. Este jsonl e'
+# append-only, com tentativa, rodada e boot em cada amostra.
+$samplesJournalPath = Join-Path ([string]$config.evidence_dir) 'safe-bind-pnp-samples.jsonl'
+$script:verdictRound = 0
 
 # Semeado a partir do state.json que sobreviveu ao boot anterior, quando houver.
 $script:previousState = 'NONE'
@@ -94,7 +99,8 @@ $script:shutdownExitCode = $null
 $script:lastSamples = @()
 $script:currentBootTicks = [long]$config.armed_boot_ticks
 
-function Write-State([string]$State, [string]$Detail, [int]$ExitCode = 0) {
+function Write-State([string]$State, [string]$Detail, [int]$ExitCode = 0,
+    [switch]$JournalOnly) {
     $record = [ordered]@{
         state = $State
         previous_state = $script:previousState
@@ -105,7 +111,9 @@ function Write-State([string]$State, [string]$Detail, [int]$ExitCode = 0) {
         exit_code = $ExitCode
         hardware_validated = $false
     }
-    Write-AtomicJson $statePath $record
+    # -JournalOnly: uma segunda instancia que sai sem agir nao pode sobrescrever
+    # o state.json da instancia que esta executando a recovery.
+    if (-not $JournalOnly) { Write-AtomicJson $statePath $record }
     # Append-only: e' o unico artefato que nenhuma transicao posterior apaga.
     try {
         $line = ($record | ConvertTo-Json -Depth 8 -Compress)
@@ -126,6 +134,7 @@ function Write-State([string]$State, [string]$Detail, [int]$ExitCode = 0) {
 # --------------------------------------------------------------------------
 function Get-Bc250PnpVerdict {
     $samples = @()
+    $script:verdictRound++
     for ($i = 1; $i -le 5; $i++) {
         $sampleError = $null
         try {
@@ -142,14 +151,27 @@ function Get-Bc250PnpVerdict {
         # desta maquina, o adaptador prioriza a chave e devolve o valor certo
         # — mas a leitura fica ambigua para quem revisa, e o desempate depende
         # do adaptador. O nome explicito remove a duvida.
-        $samples += [ordered]@{
+        $sample = [ordered]@{
             index = $i
             at = (Get-Date).ToString('o')
             device_count = $devices.Count
             service = $(if ($devices.Count -eq 1) { [string]$devices[0].Service } else { $null })
             code = $(if ($devices.Count -eq 1) { [uint32]$devices[0].ConfigManagerErrorCode } else { $null })
+            status = $(if ($devices.Count -eq 1) { [string]$devices[0].Status } else { $null })
             error = $sampleError
         }
+        $samples += $sample
+        try {
+            $journalSample = [ordered]@{
+                attempt_number = $script:attemptNumber
+                round = $script:verdictRound
+                boot_ticks = $script:currentBootTicks
+            }
+            foreach ($key in $sample.Keys) { $journalSample[$key] = $sample[$key] }
+            [IO.File]::AppendAllText($samplesJournalPath,
+                ($journalSample | ConvertTo-Json -Compress) + [Environment]::NewLine,
+                (New-Object Text.UTF8Encoding($false)))
+        } catch { }
         if ($i -lt 5) { Start-Sleep -Seconds 1 }
     }
     $healthy = ($samples.Count -eq 5)
@@ -212,6 +234,56 @@ function Restore-DwmCaptureIfArmed {
         try { Write-State 'DWM_CAPTURE_RESTORE_FAILED' $_.Exception.Message 13 } catch { }
         return $false
     }
+}
+
+# Arquivar a cauda real da UMD depois da recovery. O binder copia uma amostra
+# intermediaria e pode nao voltar de um travamento duro. Esta funcao so' roda
+# DEPOIS de executar BC250_RECOVERY.cmd; falha de coleta nunca impede rollback.
+function Archive-Bc250UmdLogsAfterRecovery(
+    [string]$SourceDirectory = 'C:\Windows\Temp') {
+    $destination = Join-Path ([string]$config.evidence_dir) 'umd-logs-pos-travamento'
+    $manifestPath = Join-Path ([string]$config.evidence_dir) 'umd-post-recovery-manifest.json'
+    $entries = @()
+    $errors = @()
+    $aclResetOk = $false
+    try {
+        New-Item -ItemType Directory -Path $destination -Force | Out-Null
+        $logs = @(Get-ChildItem -LiteralPath $SourceDirectory `
+            -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction Stop | Sort-Object Name)
+        foreach ($log in $logs) {
+            try {
+                $copyPath = Join-Path $destination $log.Name
+                Copy-Item -LiteralPath $log.FullName -Destination $copyPath -Force -ErrorAction Stop
+                $entries += [ordered]@{
+                    name = $log.Name
+                    source_last_write_utc = $log.LastWriteTimeUtc.ToString('o')
+                    copied_bytes = (Get-Item -LiteralPath $copyPath).Length
+                    sha256 = (Get-FileHash -LiteralPath $copyPath -Algorithm SHA256).Hash
+                }
+            } catch {
+                $errors += "$($log.Name): $($_.Exception.Message)"
+            }
+        }
+        # O guardiao roda como SYSTEM. Herdar a ACL da pasta de evidencia
+        # permite que a sessao de analise sem elevacao leia as copias.
+        & icacls.exe $destination /reset /T /Q | Out-Null
+        $aclResetOk = ($LASTEXITCODE -eq 0)
+        if (-not $aclResetOk) { $errors += 'icacls /reset falhou para as copias UMD' }
+    } catch {
+        $errors += $_.Exception.Message
+    }
+    try {
+        Write-AtomicJson $manifestPath ([ordered]@{
+            kind = 'POST_RECOVERY_UMD_TAIL'
+            captured_at = (Get-Date).ToString('o')
+            armed_boot_ticks = [long]$config.armed_boot_ticks
+            recovery_boot_ticks = [long]$script:currentBootTicks
+            source = (Join-Path $SourceDirectory 'BC250_UMD_LOG_*.txt')
+            files = @($entries)
+            acl_reset_ok = $aclResetOk
+            errors = @($errors)
+        })
+    } catch { }
 }
 
 # --------------------------------------------------------------------------
@@ -296,7 +368,10 @@ if (Test-Path -LiteralPath $attemptPath) {
     $previousAttempt = Get-Content -LiteralPath $attemptPath -Raw | ConvertFrom-Json
     if ([long]$previousAttempt.boot_ticks -eq $currentBootTicks -or
         [uint32]$previousAttempt.attempt_number -ge 2) {
-        Write-State 'BLOCKED' 'rollback ja foi tentado neste boot ou atingiu o limite de 2 boots' 11
+        # Corrida 104: a tarefa de prazo chegou aqui 0,24 s depois da tarefa
+        # principal publicar ROLLBACK_STARTED e sobrescreveu o state.json com
+        # BLOCKED enquanto a recovery rodava. So' o journal registra a saida.
+        Write-State 'BLOCKED' 'rollback ja foi tentado neste boot ou atingiu o limite de 2 boots' 11 -JournalOnly
         exit 11
     }
     $script:attemptNumber = [uint32]$previousAttempt.attempt_number + 1
@@ -430,20 +505,45 @@ try {
 }
 $script:recoveryExitCode = $exitCode
 $output | Set-Content -LiteralPath (Join-Path ([string]$config.evidence_dir) 'safe-bind-recovery.txt') -Encoding UTF8
+# DX.61: a tentativa 2 sobrescreveu safe-bind-recovery.txt e C:\BC250_RECOVERY.log
+# da tentativa 1. Copias por tentativa nunca sao reescritas.
+try {
+    $output | Set-Content -LiteralPath (Join-Path ([string]$config.evidence_dir) `
+        ("safe-bind-recovery-attempt{0}.txt" -f $script:attemptNumber)) -Encoding UTF8
+    Copy-Item -LiteralPath 'C:\BC250_RECOVERY.log' -Destination (Join-Path `
+        ([string]$config.evidence_dir) ("bc250-recovery-log-attempt{0}.txt" -f $script:attemptNumber)) `
+        -ErrorAction Stop
+} catch { }
+$recoveryFinishedUtc = [datetime]::UtcNow
+Archive-Bc250UmdLogsAfterRecovery
 
 if ($exitCode -eq 0) {
     # A recovery diz que fechou. Confirmar por amostragem propria antes de
     # acreditar: exit 0 e' afirmacao do script, nao medicao do PnP.
-    $afterVerdict = Get-Bc250PnpVerdict
+    #
+    # DX.61 (Corrida 104): Kernel-PnP 410 registrou BasicDisplay iniciado as
+    # 15:38:30 e o veredito unico reprovou ate 15:38:35,97 -- o dispositivo ja
+    # estava no driver certo e o guardiao reiniciou a maquina. Janela de
+    # assentamento: novas rodadas ate 45 s depois da recovery. O criterio NAO
+    # afrouxa -- uma rodada inteira de 5 amostras consecutivas em
+    # BasicDisplay/Codigo 0; amostra ruim anula a rodada inteira.
+    $settleDeadlineUtc = $recoveryFinishedUtc.AddSeconds(45)
+    do {
+        $afterVerdict = Get-Bc250PnpVerdict
+        if ($afterVerdict.healthy) { break }
+        Start-Sleep -Seconds 2
+    } while ([datetime]::UtcNow -lt $settleDeadlineUtc)
     if ($afterVerdict.healthy) {
         Write-Bc250CleanBootMarker 'RECOVERY_OK_ONLINE'
         Complete-Bc250SafeBind 'RECOVERY_OK_ONLINE' `
-            'recovery fechou sem reboot e BasicDisplay Codigo 0 foi confirmado em 5 amostras'
+            ("recovery fechou sem reboot e BasicDisplay Codigo 0 foi confirmado em 5 amostras " +
+             "consecutivas (rodada $($script:verdictRound))")
         $recoveryMutex.ReleaseMutex(); $recoveryMutex.Dispose()
         exit 0
     }
     Write-State 'ROLLED_BACK' `
-        'recovery devolveu 0 mas o PnP ainda nao confirmou BasicDisplay; escalando para reboot' 0
+        ("recovery devolveu 0 mas o PnP nao confirmou BasicDisplay em $($script:verdictRound) " +
+         'rodadas / 45 s; escalando para reboot') 0
 }
 
 if ([bool]$config.automatic_recovery_reboot -and $script:attemptNumber -eq 1) {

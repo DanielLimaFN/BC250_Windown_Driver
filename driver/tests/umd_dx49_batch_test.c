@@ -109,9 +109,15 @@ int main(void)
         assert(Bc250UmdVkEnsureUploadStaging(&b, 6u * 1024u * 1024u, &grew, &us) && grew);
         assert(g_submits == submitsBefore + 1 && g_frees == freesBefore + 1 && b.UploadStagingGrowCount == 2);
         assert(b.UploadStagingSize >= 6u * 1024u * 1024u);
+        assert(b.UploadStagingHead == 0);
     }
 
+    /* DX.79: cursor do anel de upload reseta na conclusao da fence do flush. */
+    b.UploadStagingHead = 1024;
+    assert(Bc250UmdVkFlushCommands(&b) == VK_SUCCESS);
+    assert(b.UploadStagingHead == 0);
+
     puts("UMD DX49 BATCH CONTRACT: PASS (anel alinhado/disjunto, dreno, render pass fechado, "
-         "anel retido sem fence, staging reusado; offline)");
+         "anel retido sem fence, staging reusado, DX.79 staging head zerada; offline)");
     return 0;
 }

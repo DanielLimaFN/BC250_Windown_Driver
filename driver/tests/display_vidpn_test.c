@@ -1,6 +1,23 @@
 #include "../wdk/bc250_display_ddi.h"
 #include "../wdk/bc250_active_miniport.h"
 
+/* The display DDI measures Present with this kernel import. The offline
+ * VidPn test only needs a monotonic counter and its frequency. */
+static LARGE_INTEGER NTAPI Bc250FakePerformanceCounter(
+    PLARGE_INTEGER PerformanceFrequency)
+{
+    static LONGLONG ticks = 0;
+    LARGE_INTEGER value;
+    if (PerformanceFrequency != NULL) {
+        PerformanceFrequency->QuadPart = 1000000;
+    }
+    value.QuadPart = ++ticks;
+    return value;
+}
+
+LARGE_INTEGER (NTAPI *__imp_KeQueryPerformanceCounter)(PLARGE_INTEGER) =
+    Bc250FakePerformanceCounter;
+
 __declspec(dllimport) void __stdcall ExitProcess(unsigned long ExitCode);
 
 #pragma function(memset)

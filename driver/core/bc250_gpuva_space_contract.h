@@ -38,7 +38,7 @@ extern "C" {
  * Isto nao e' prova no silicio. O teste de snapshot reproduz 252 + 256 runs e
  * impede que o teto volte a 256 silenciosamente.
  */
-#define BC250_GPUVA_SPACE_MAX_RANGES 1024u
+#define BC250_GPUVA_SPACE_MAX_RANGES 4096u
 #define BC250_GPUVA_PAGE_BYTES 4096ull
 #define BC250_GPUVA_PAGE_MASK (BC250_GPUVA_PAGE_BYTES - 1ull)
 /*
