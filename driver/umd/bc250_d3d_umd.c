@@ -217,9 +217,14 @@ HRESULT Bc250UmdDeviceInit(
 VOID Bc250UmdDeviceTeardown(
     _Inout_ BC250_UMD_DEVICE* pDevice)
 {
+    UINT64 hangSpan;
     if (pDevice == NULL || pDevice->TeardownActive) {
         return;
     }
+
+    hangSpan = Bc250WinsysHangSpan();
+    Bc250WinsysHangEvent("DEVICE_TEARDOWN", "ENTER", pDevice, hangSpan,
+        (UINT64)(ULONG_PTR)&pDevice->Winsys, 0u, S_OK);
 
     /* DX.82: Marca imediatamente como em teardown para que operacoes concorrentes retornem fail-closed */
     pDevice->TeardownActive = TRUE;
@@ -227,7 +232,9 @@ VOID Bc250UmdDeviceTeardown(
     pDevice->VkBridge.DeviceActive = FALSE;
 
     /* DX.82: Bloqueia com lock exclusivo para que chamadas em andamento (WaitPaging, CreateResource) terminem */
+    Bc250WinsysHangEvent("LOCK_EXCLUSIVE", "WAIT", pDevice, hangSpan, 0u, 0u, S_OK);
     AcquireSRWLockExclusive(&pDevice->DeviceLock);
+    Bc250WinsysHangEvent("LOCK_EXCLUSIVE", "ACQUIRED", pDevice, hangSpan, 0u, 0u, S_OK);
 
     Bc250UmdTrace("Bc250UmdDeviceTeardown: device=%p iniciando teardown seguro", (void*)pDevice);
 
@@ -277,7 +284,9 @@ VOID Bc250UmdDeviceTeardown(
 
     pDevice->NativeNode1Ready = FALSE;
     Bc250UmdTrace("Bc250UmdDeviceTeardown: device=%p concluido", (void*)pDevice);
+    Bc250WinsysHangEvent("LOCK_EXCLUSIVE", "RELEASE", pDevice, hangSpan, 0u, 0u, S_OK);
     ReleaseSRWLockExclusive(&pDevice->DeviceLock);
+    Bc250WinsysHangEvent("DEVICE_TEARDOWN", "LEAVE", pDevice, hangSpan, 0u, 0u, S_OK);
 }
 
 /* Vulkan Resource and Pipeline Cache translation implementations */
@@ -1012,6 +1021,7 @@ VOID APIENTRY Bc250Umd10CreateResource(
     uint64_t token;
     BOOL isPrimary = FALSE;
     BC250_WINSYS_STATUS wsStatus;
+    UINT64 hangSpan = Bc250WinsysHangSpan();
 
     if (res == NULL || pCreate == NULL) {
         Bc250UmdTrace("CreateResource: argumento invalido (res=%p, create=%p)",
@@ -1024,8 +1034,14 @@ VOID APIENTRY Bc250Umd10CreateResource(
             Bc250UmdTrace("CreateResource RECUSADO: device em teardown (res=%p)", (void*)res);
             return;
         }
+        Bc250WinsysHangEvent("CREATE_LOCK_SHARED", "WAIT", device, hangSpan,
+            (UINT64)(ULONG_PTR)res, (UINT64)(ULONG_PTR)&device->Winsys, S_OK);
         AcquireSRWLockShared(&device->DeviceLock);
+        Bc250WinsysHangEvent("CREATE_LOCK_SHARED", "ACQUIRED", device, hangSpan,
+            (UINT64)(ULONG_PTR)res, 0u, S_OK);
         if (device->TeardownActive) {
+            Bc250WinsysHangEvent("CREATE_LOCK_SHARED", "RELEASE", device, hangSpan,
+                (UINT64)(ULONG_PTR)res, 0u, S_OK);
             ReleaseSRWLockShared(&device->DeviceLock);
             Bc250UmdTrace("CreateResource ABORTADO: device em teardown (res=%p)", (void*)res);
             return;
@@ -1223,6 +1239,8 @@ VOID APIENTRY Bc250Umd10CreateResource(
             if (device->pUMCallbacks != NULL && device->pUMCallbacks->pfnSetErrorCb != NULL)
                 device->pUMCallbacks->pfnSetErrorCb(device->hRTCoreLayer,
                     FAILED(failure) ? failure : E_FAIL);
+            Bc250WinsysHangEvent("CREATE_LOCK_SHARED", "RELEASE", device, hangSpan,
+                (UINT64)(ULONG_PTR)res, 0u, failure);
             ReleaseSRWLockShared(&device->DeviceLock);
             return;
         }
@@ -1230,6 +1248,8 @@ VOID APIENTRY Bc250Umd10CreateResource(
         /* DX.82: Se o device entrou em teardown durante a paginacao, aborta com seguranca */
         if (device->TeardownActive || (device->VkBridgeInitialized && !device->VkBridge.DeviceActive)) {
             Bc250UmdTrace("CreateResource ABORTADO: device desmontado durante WaitPaging (res=%p)", (void*)res);
+            Bc250WinsysHangEvent("CREATE_LOCK_SHARED", "RELEASE", device, hangSpan,
+                (UINT64)(ULONG_PTR)res, 0u, E_FAIL);
             ReleaseSRWLockShared(&device->DeviceLock);
             return;
         }
@@ -1291,6 +1311,8 @@ VOID APIENTRY Bc250Umd10CreateResource(
         (unsigned long long)res->Allocation.GpuVirtualAddress, res->IsPrimary,
         (int)res->VkResourceCreated);
 
+    Bc250WinsysHangEvent("CREATE_LOCK_SHARED", "RELEASE", device, hangSpan,
+        (UINT64)(ULONG_PTR)res, 0u, S_OK);
     ReleaseSRWLockShared(&device->DeviceLock);
 }
 
@@ -1324,17 +1346,24 @@ VOID APIENTRY Bc250Umd10DestroyResource(
 {
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     BC250_UMD_RESOURCE* res = (BC250_UMD_RESOURCE*)hResource.pDrvPrivate;
+    UINT64 hangSpan = Bc250WinsysHangSpan();
 
     Bc250UmdTrace("DestroyResource: res=%p", (void*)res);
     if (res != NULL) {
         if (device != NULL) {
+            Bc250WinsysHangEvent("DESTROY_LOCK_SHARED", "WAIT", device, hangSpan,
+                (UINT64)(ULONG_PTR)res, 0u, S_OK);
             AcquireSRWLockShared(&device->DeviceLock);
+            Bc250WinsysHangEvent("DESTROY_LOCK_SHARED", "ACQUIRED", device, hangSpan,
+                (UINT64)(ULONG_PTR)res, 0u, S_OK);
             if (!device->TeardownActive && device->VkBridgeInitialized && device->VkBridge.DeviceActive) {
                 Bc250UmdVkDestroyResource(device, res);
             }
             if (device->WinsysInitialized && res->Allocation.Created) {
                 (void)Bc250WinsysDeallocate(&device->Winsys, &res->Allocation);
             }
+            Bc250WinsysHangEvent("DESTROY_LOCK_SHARED", "RELEASE", device, hangSpan,
+                (UINT64)(ULONG_PTR)res, 0u, S_OK);
             ReleaseSRWLockShared(&device->DeviceLock);
         }
         if (res->pCpuShadow != NULL) {
@@ -5472,6 +5501,7 @@ HRESULT APIENTRY Bc250DxgiPresent(DXGI_DDI_ARG_PRESENT* pPresentData)
         ULONGLONG cbElapsedUs = 0ull;
         static volatile LONG s_UmdPresentCbOrdinal = 0;
         LONG cbOrdinal = InterlockedIncrement(&s_UmdPresentCbOrdinal);
+        UINT64 hangSpan = Bc250WinsysHangSpan();
 
         if (QueryPerformanceFrequency(&qpcFreq) && qpcFreq.QuadPart > 0) {
             QueryPerformanceCounter(&qpcStart);
@@ -5480,8 +5510,14 @@ HRESULT APIENTRY Bc250DxgiPresent(DXGI_DDI_ARG_PRESENT* pPresentData)
             qpcFreq.QuadPart = 1;
         }
 
+        Bc250WinsysHangEvent("PRESENT_CB", "ENTER", device, hangSpan,
+            (UINT64)(UINT32)presentCb.hSrcAllocation,
+            (UINT64)(ULONG_PTR)presentCb.hContext, S_OK);
         presentHr = device->pDXGICallbacks->pfnPresentCb(
             device->hRTDevice.handle, &presentCb);
+        Bc250WinsysHangEvent("PRESENT_CB", "LEAVE", device, hangSpan,
+            (UINT64)(UINT32)presentCb.hSrcAllocation,
+            (UINT64)(ULONG_PTR)presentCb.hContext, presentHr);
 
         QueryPerformanceCounter(&qpcEnd);
         if (qpcFreq.QuadPart > 0 && qpcEnd.QuadPart >= qpcStart.QuadPart) {
@@ -5584,6 +5620,7 @@ HRESULT APIENTRY Bc250DxgiPresent1(DXGI1_6_1_DDI_ARG_PRESENT* pPresentData)
         ULONGLONG cbElapsedUs = 0ull;
         static volatile LONG s_UmdPresent1CbOrdinal = 0;
         LONG cbOrdinal = InterlockedIncrement(&s_UmdPresent1CbOrdinal);
+        UINT64 hangSpan = Bc250WinsysHangSpan();
 
         if (QueryPerformanceFrequency(&qpcFreq) && qpcFreq.QuadPart > 0) {
             QueryPerformanceCounter(&qpcStart);
@@ -5592,8 +5629,14 @@ HRESULT APIENTRY Bc250DxgiPresent1(DXGI1_6_1_DDI_ARG_PRESENT* pPresentData)
             qpcFreq.QuadPart = 1;
         }
 
+        Bc250WinsysHangEvent("PRESENT1_CB", "ENTER", device, hangSpan,
+            (UINT64)(UINT32)presentCb.hSrcAllocation,
+            (UINT64)(ULONG_PTR)presentCb.hContext, S_OK);
         presentHr = device->pDXGICallbacks->pfnPresentCb(
             device->hRTDevice.handle, &presentCb);
+        Bc250WinsysHangEvent("PRESENT1_CB", "LEAVE", device, hangSpan,
+            (UINT64)(UINT32)presentCb.hSrcAllocation,
+            (UINT64)(ULONG_PTR)presentCb.hContext, presentHr);
 
         QueryPerformanceCounter(&qpcEnd);
         if (qpcFreq.QuadPart > 0 && qpcEnd.QuadPart >= qpcStart.QuadPart) {

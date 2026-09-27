@@ -1768,6 +1768,15 @@ if ($RunRadvComputeTripod -or $RunRadvPresentTripod -or $RunVulkanCube -or $RunD
     } | ConvertTo-Json | Set-Content -LiteralPath `
         (Join-Path $evidenceDir 'compute-display-prerequisite-gate.json') -Encoding UTF8
 
+    if ($env:BC250_CAPTURE_MONITOR_EDID -eq '1') {
+        try {
+            & (Join-Path $PSScriptRoot 'capture-bc250-monitor-edid.ps1') `
+                -Phase Bound -EvidenceDir $evidenceDir -SkipWmi
+        } catch {
+            Write-Warning ("EDID Bound nao capturado: {0}" -f $_.Exception.Message)
+        }
+    }
+
     if (-not $displayGatePassed) {
         $experimentName = $(if ($RunUmdNode1Tripod) {
             'B7_UMD_NODE1_TRIPOD'

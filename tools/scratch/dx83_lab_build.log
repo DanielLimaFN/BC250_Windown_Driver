@@ -1,0 +1,623 @@
+
+=== BUILD DE LABORATORIO - BRING-UP DE HARDWARE ATIVO ===
+
+  build-contract.bat : C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\build-contract.bat
+  objetos no link    : 78
+  objeto substituido : bc250_active_miniport_driver.obj -> bc250_active_miniport_lab.obj
+  saida              : C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\output_lab\bc250mcdm.sys
+
+  Preflight aprovado.
+
+  A imagem resultante executa PFP direct load, CP, GCVM e HQD durante o
+  StartDevice, com o dispositivo detendo o display. Cenario de tela preta.
+
+[base] reconstruindo todos os objetos e executando contratos...
+[toolchain] VS2026 + SDK/WDK 10.0.28000.0
+[cc] bc250_driver_caps_contract.c
+bc250_driver_caps_contract.c
+[cc] bc250_umd_private_contract.c
+bc250_umd_private_contract.c
+[cc] bc250_blt_proof_contract.c
+bc250_blt_proof_contract.c
+[cc] bc250_gfx_ib_inspect_contract.c
+bc250_gfx_ib_inspect_contract.c
+[cc] bc250_sdma_queue_state_contract.c
+bc250_sdma_queue_state_contract.c
+[cc] bc250_segment_address_contract.c
+bc250_segment_address_contract.c
+[cc] bc250_resource_contract.c
+bc250_resource_contract.c
+[cc] bc250_vram_allocator.c
+bc250_vram_allocator.c
+[cc] bc250_address_contract.c
+bc250_address_contract.c
+[cc] bc250_vram_topology_contract.c
+bc250_vram_topology_contract.c
+[cc] bc250_vram_topology_reader.c
+bc250_vram_topology_reader.c
+[cc] bc250_discovery_tmr_reader.c
+bc250_discovery_tmr_reader.c
+[cc] bc250_platform_register_snapshot.c
+bc250_platform_register_snapshot.c
+[cc] bc250_ip_discovery_contract.c
+bc250_ip_discovery_contract.c
+[cc] bc250_ih_register_layout_contract.c
+bc250_ih_register_layout_contract.c
+[cc] bc250_psp_contract.c
+bc250_psp_contract.c
+[cc] bc250_firmware_staging.c
+bc250_firmware_staging.c
+[cc] bc250_compute_bootstrap.c
+bc250_compute_bootstrap.c
+[cc] bc250_staging_lease.c
+bc250_staging_lease.c
+[cc] bc250_runtime_inventory.c
+bc250_runtime_inventory.c
+[cc] bc250_gcvm_contract.c
+bc250_gcvm_contract.c
+[cc] bc250_sdma_packet_builder.c
+bc250_sdma_packet_builder.c
+[cc] bc250_pm4_packet_builder.c
+bc250_pm4_packet_builder.c
+[cc] bc250_gfx_ring_contract.c
+bc250_gfx_ring_contract.c
+[cc] bc250_gfx_ring_transaction.c
+bc250_gfx_ring_transaction.c
+[cc] bc250_gfx_shader_contract.c
+bc250_gfx_shader_contract.c
+[cc] bc250_gfx_observable_shader.c
+bc250_gfx_observable_shader.c
+[cc] bc250_gfx_shader_staging_contract.c
+bc250_gfx_shader_staging_contract.c
+[cc] bc250_gfx_sh_reg_packet.c
+bc250_gfx_sh_reg_packet.c
+[cc] bc250_gfx_viewport_scissor.c
+bc250_gfx_viewport_scissor.c
+[cc] bc250_gfx_primitive_assembler.c
+bc250_gfx_primitive_assembler.c
+[cc] bc250_gfx_draw_initiator.c
+bc250_gfx_draw_initiator.c
+[cc] bc250_golden_settings_contract.c
+bc250_golden_settings_contract.c
+[cc] bc250_compute_mqd_contract.c
+bc250_compute_mqd_contract.c
+[cc] bc250_context_dispatcher_contract.c
+bc250_context_dispatcher_contract.c
+[cc] bc250_ih_contract.c
+bc250_ih_contract.c
+[cc] bc250_paging_contract.c
+bc250_paging_contract.c
+[cc] bc250_gfxhub_tlb_transaction.c
+bc250_gfxhub_tlb_transaction.c
+[cc] bc250_fault_latch_contract.c
+bc250_fault_latch_contract.c
+[cc] bc250_vmid_pool_contract.c
+bc250_vmid_pool_contract.c
+[cc] bc250_gcvm_vmid8_transaction.c
+bc250_gcvm_vmid8_transaction.c
+[cc] bc250_gcvm_global_mmu.c
+bc250_gcvm_global_mmu.c
+[cc] bc250_psp_ring_transaction.c
+bc250_psp_ring_transaction.c
+[cc] bc250_psp_load_fw_transaction.c
+bc250_psp_load_fw_transaction.c
+[cc] bc250_sdma_f32_transaction.c
+bc250_sdma_f32_transaction.c
+[cc] bc250_adapter_info_contract.c
+bc250_adapter_info_contract.c
+[cc] bc250_segment_contract.c
+bc250_segment_contract.c
+[cc] bc250_tdr_recovery_contract.c
+bc250_tdr_recovery_contract.c
+[cc] bc250_submit_command_contract.c
+bc250_submit_command_contract.c
+[cc] bc250_persistent_ring_contract.c
+bc250_persistent_ring_contract.c
+[cc] bc250_preemption_contract.c
+bc250_preemption_contract.c
+[cc] bc250_gpu_clock_contract.c
+bc250_gpu_clock_contract.c
+[cc] bc250_power_contract.c
+bc250_power_contract.c
+[cc] bc250_smu_telemetry_contract.c
+bc250_smu_telemetry_contract.c
+[cc] bc250_superio_nct6686_contract.c
+bc250_superio_nct6686_contract.c
+[cc] bc250_isa_validator.c
+bc250_isa_validator.c
+[cc] bc250_compute_dispatch_contract.c
+bc250_compute_dispatch_contract.c
+[cc] bc250_observable_shader.c
+bc250_observable_shader.c
+[cc] bc250_owned_adapter_contract.c
+bc250_owned_adapter_contract.c
+[cc] bc250_mcdm_object_contract.c
+bc250_mcdm_object_contract.c
+[cc] bc250_gpuva_space_contract.c
+bc250_gpuva_space_contract.c
+[cc] bc250_gpuva_snapshot_contract.c
+bc250_gpuva_snapshot_contract.c
+[cc] bc250_gpuva_journal_contract.c
+bc250_gpuva_journal_contract.c
+[cc] bc250_allocation_abi_contract.c
+bc250_allocation_abi_contract.c
+[cc] bc250_dxbc_parser.c
+bc250_dxbc_parser.c
+[cc] bc250_dxbc_spirv_bridge.c
+bc250_dxbc_spirv_bridge.c
+[cc] bc250_gpuva_sdma_broker_contract.c
+bc250_gpuva_sdma_broker_contract.c
+[cc] bc250_gpuva_sdma_executor_contract.c
+bc250_gpuva_sdma_executor_contract.c
+[cc] bc250_cm_resource_adapter.c
+bc250_cm_resource_adapter.c
+[cc] bc250_start_device_adapter.c
+bc250_start_device_adapter.c
+[cc] bc250_cp_firmware_manifest.c
+bc250_cp_firmware_manifest.c
+[cc] bc250_dxgk_readonly_ddi.c
+bc250_dxgk_readonly_ddi.c
+[cc] bc250_pci_bar_reader.c
+bc250_pci_bar_reader.c
+[cc] bc250_rebar_reader.c
+bc250_rebar_reader.c
+[cc] bc250_post_display_reservation.c
+bc250_post_display_reservation.c
+[cc] bc250_vram_probe_transaction.c
+bc250_vram_probe_transaction.c
+[cc] bc250_gcvm_backing_transaction.c
+bc250_gcvm_backing_transaction.c
+[cc] bc250_mmio_topology_transport.c
+bc250_mmio_topology_transport.c
+[cc] bc250_readonly_miniport.c
+bc250_readonly_miniport.c
+[cc] bc250_active_miniport.c
+bc250_active_miniport.c
+[cc] bc250_submission_engine.c
+bc250_submission_engine.c
+[cc] bc250_sdma_ring_work.c
+bc250_sdma_ring_work.c
+[cc] bc250_pfp_direct_load.c
+bc250_pfp_direct_load.c
+[cc] bc250_mcdm_callbacks.c (offline)
+bc250_mcdm_callbacks.c
+[cc] bc250_mcdm_callbacks.c (Dxgk registration)
+bc250_mcdm_callbacks.c
+[cc] bc250_display_ddi.c (offline)
+bc250_display_ddi.c
+[cc] bc250_display_ddi.c (Dxgk registration)
+bc250_display_ddi.c
+[cc] bc250_boot_fuse.c (offline)
+bc250_boot_fuse.c
+[cc] bc250_boot_fuse.c (Dxgk registration)
+bc250_boot_fuse.c
+[cc] bc250_sdma_present.c (offline)
+bc250_sdma_present.c
+[cc] bc250_sdma_present.c (Dxgk registration)
+bc250_sdma_present.c
+[cc] bc250_probe_telemetry.c (offline)
+bc250_probe_telemetry.c
+[cc] bc250_probe_telemetry.c (persistent registry)
+bc250_probe_telemetry.c
+[cc] bc250_readonly_miniport.c (Dxgk registration)
+bc250_readonly_miniport.c
+[cc] bc250_active_miniport.c (Dxgk registration)
+bc250_active_miniport.c
+[cc] bc250_submission_engine.c (Dxgk registration)
+bc250_submission_engine.c
+[cc] bc250_sdma_ring_work.c (Dxgk registration)
+bc250_sdma_ring_work.c
+[cc] bc250_pfp_direct_load.c (Dxgk registration)
+bc250_pfp_direct_load.c
+[cc] bc250_compute_service.c
+bc250_compute_service.c
+[cc] cm_resource_adapter_test.c
+cm_resource_adapter_test.c
+[link] cm_resource_adapter_test.exe
+[cc] vram_topology_contract_test.c
+vram_topology_contract_test.c
+[link] vram_topology_contract_test.exe
+[cc] vram_topology_reader_test.c
+vram_topology_reader_test.c
+[link] vram_topology_reader_test.exe
+[cc] discovery_tmr_reader_test.c
+discovery_tmr_reader_test.c
+[link] discovery_tmr_reader_test.exe
+[cc] ip_discovery_contract_test.c
+ip_discovery_contract_test.c
+[link] ip_discovery_contract_test.exe
+[cc] ih_register_layout_contract_test.c
+ih_register_layout_contract_test.c
+[link] ih_register_layout_contract_test.exe
+[cc] mmio_topology_transport_test.c
+mmio_topology_transport_test.c
+[link] mmio_topology_transport_test.exe
+[cc] start_device_adapter_test.c
+start_device_adapter_test.c
+[link] start_device_adapter_test.exe
+[cc] firmware_staging_test.c
+firmware_staging_test.c
+[link] firmware_staging_test.exe
+[cc] dxgk_readonly_ddi_test.c
+dxgk_readonly_ddi_test.c
+[link] dxgk_readonly_ddi_test.exe
+[cc] pci_bar_reader_test.c
+pci_bar_reader_test.c
+[link] pci_bar_reader_test.exe
+[cc] rebar_reader_test.c
+rebar_reader_test.c
+[link] rebar_reader_test.exe
+[cc] post_display_reservation_test.c
+post_display_reservation_test.c
+[link] post_display_reservation_test.exe
+[cc] runtime_inventory_test.c
+runtime_inventory_test.c
+[link] runtime_inventory_test.exe
+[cc] gcvm_contract_test.c
+gcvm_contract_test.c
+[link] gcvm_contract_test.exe
+[cc] sdma_packet_builder_test.c
+sdma_packet_builder_test.c
+[link] sdma_packet_builder_test.exe
+[cc] pm4_packet_builder_test.c
+pm4_packet_builder_test.c
+[link] pm4_packet_builder_test.exe
+[cc] gfx_ring_contract_test.c
+gfx_ring_contract_test.c
+[link] gfx_ring_contract_test.exe
+GFX RING CONTRACT: OK (boot medido 00A00000 com as 3 micro-engines halted, CNTL de referencia por aritmetica, RB_EXE fail-closed, tripe com volta, transacao Lei 5)
+[cc] gfx_shader_contract_test.c
+gfx_shader_contract_test.c
+[link] gfx_shader_contract_test.exe
+GFX SHADER CONTRACT: OK (granularidade conferida contra manifesto de compilador real, divisao 8/40 do endereco, RSRC do manifesto com campos derivados conferidos, MEM_ORDERED por estagio)
+[cc] gfx_observable_shader_test.c
+gfx_observable_shader_test.c
+[link] gfx_observable_shader_test.exe
+GFX OBSERVABLE SHADER: OK (VS pos0 e PS mrt0 em ISA gfx1010 Classe H, s_endpgm provado, integracao com contrato B.2.1)
+[cc] gfx_shader_staging_test.c
+gfx_shader_staging_test.c
+[link] gfx_shader_staging_test.exe
+GFX SHADER STAGING CONTRACT: OK (alinhamento 256B, deteccao de sobreposicao, readback proof e integracao com B.2.1/B.2.2)
+[cc] gfx_sh_reg_packet_test.c
+gfx_sh_reg_packet_test.c
+[link] gfx_sh_reg_packet_test.exe
+GFX SH REG PACKET CONTRACT: OK (SET_SH_REG 0x76 sem bit compute, 12 dwords para VS/PS, fail-closed)
+[cc] gfx_viewport_scissor_test.c
+gfx_viewport_scissor_test.c
+[link] gfx_viewport_scissor_test.exe
+GFX VIEWPORT & SCISSOR CONTRACT: OK (SET_CONTEXT_REG 0x69, 20 DW stream, IEEE-754 math, fail-closed)
+[cc] gfx_primitive_assembler_test.c
+gfx_primitive_assembler_test.c
+[link] gfx_primitive_assembler_test.exe
+GFX PRIMITIVE ASSEMBLER CONTRACT: OK (SET_UCONFIG_REG 0x79, DI_PT_TRILIST 0x04, 8 DW stream, fail-closed)
+[cc] gfx_draw_initiator_test.c
+gfx_draw_initiator_test.c
+[link] gfx_draw_initiator_test.exe
+GFX DRAW INITIATOR CONTRACT: OK (DRAW_INDEX_AUTO 0x2D, AUTO_INDEX 0x02, 4 DW stream, fail-closed)
+[cc] golden_settings_contract_test.c
+golden_settings_contract_test.c
+[link] golden_settings_contract_test.exe
+[cc] compute_mqd_contract_test.c
+compute_mqd_contract_test.c
+[link] compute_mqd_contract_test.exe
+[cc] compute_dispatch_contract_test.c
+compute_dispatch_contract_test.c
+[link] compute_dispatch_contract_test.exe
+[cc] observable_shader_test.c
+observable_shader_test.c
+[link] observable_shader_test.exe
+[cc] context_dispatcher_contract_test.c
+context_dispatcher_contract_test.c
+[link] context_dispatcher_contract_test.exe
+[cc] ih_contract_test.c
+ih_contract_test.c
+[link] ih_contract_test.exe
+[cc] paging_contract_test.c
+paging_contract_test.c
+[link] paging_contract_test.exe
+[cc] gfxhub_tlb_transaction_test.c
+gfxhub_tlb_transaction_test.c
+[link] gfxhub_tlb_transaction_test.exe
+[cc] fault_latch_contract_test.c
+fault_latch_contract_test.c
+[link] fault_latch_contract_test.exe
+FAULT LATCH DRAIN: OK (dreno com CLEAR pulsado, repeticao nao vira fault novo, CNTL restaurado)
+[cc] vmid_pool_contract_test.c
+vmid_pool_contract_test.c
+[link] vmid_pool_contract_test.exe
+VMID POOL: OK (12 slots, reservados 0/7/8/9 medidos, exaustao falha fechada)
+[cc] gcvm_vmid8_transaction_test.c
+gcvm_vmid8_transaction_test.c
+[link] gcvm_vmid8_transaction_test.exe
+[cc] gcvm_context8_cntl_test.c
+gcvm_context8_cntl_test.c
+[link] gcvm_context8_cntl_test.exe
+[cc] gcvm_global_mmu_test.c
+gcvm_global_mmu_test.c
+[link] gcvm_global_mmu_test.exe
+[cc] psp_ring_transaction_test.c
+psp_ring_transaction_test.c
+[link] psp_ring_transaction_test.exe
+[cc] psp_load_fw_transaction_test.c
+psp_load_fw_transaction_test.c
+[link] psp_load_fw_transaction_test.exe
+[cc] sdma_f32_transaction_test.c
+sdma_f32_transaction_test.c
+[link] sdma_f32_transaction_test.exe
+[cc] adapter_info_contract_test.c
+adapter_info_contract_test.c
+[link] adapter_info_contract_test.exe
+[cc] segment_contract_test.c
+segment_contract_test.c
+[link] segment_contract_test.exe
+[cc] tdr_recovery_contract_test.c
+tdr_recovery_contract_test.c
+[link] tdr_recovery_contract_test.exe
+[cc] mcdm_callbacks_test.c
+mcdm_callbacks_test.c
+[link] mcdm_callbacks_test.exe
+[cc] mcdm_object_contract_test.c
+mcdm_object_contract_test.c
+[link] mcdm_object_contract_test.exe
+[cc] gpuva_sdma_broker_contract_test.c
+gpuva_sdma_broker_contract_test.c
+[link] gpuva_sdma_broker_contract_test.exe
+[cc] gpuva_sdma_executor_contract_test.c
+gpuva_sdma_executor_contract_test.c
+[link] gpuva_sdma_executor_contract_test.exe
+[cc] gpuva_space_contract_test.c
+gpuva_space_contract_test.c
+[link] gpuva_space_contract_test.exe
+[cc] gpuva_snapshot_contract_test.c
+gpuva_snapshot_contract_test.c
+[link] gpuva_snapshot_contract_test.exe
+[cc] gpuva_journal_contract_test.c
+gpuva_journal_contract_test.c
+[link] gpuva_journal_contract_test.exe
+[cc] wddm_submission_pipeline_test.c
+wddm_submission_pipeline_test.c
+[link] wddm_submission_pipeline_test.exe
+[cc] bc250_unified_wddm_submission_test.c
+bc250_unified_wddm_submission_test.c
+[link] bc250_unified_wddm_submission_test.exe
+[cc] allocation_abi_contract_test.c
+allocation_abi_contract_test.c
+[link] allocation_abi_contract_test.exe
+[cc] dxbc_parser_test.c
+dxbc_parser_test.c
+[link] dxbc_parser_test.exe
+[cc] segment_address_contract_test.c
+segment_address_contract_test.c
+[link] segment_address_contract_test.exe
+[run] segment_address_contract_test.exe
+=========== BC250 SEGMENT ADDRESS CONTRACT TEST ===========
+  -> 12:29: SrcMc 0xF401560000 (errado) -> 0xF401FEC000 (certo), delta 0xA8C000
+  -> 12:51: base da GCVM da' 0x451FEC000, fora do dominio do destino 0xF400000000
+SEGMENT ADDRESS CONTRACT: OK (base do segmento obrigatoria, faixa conferida, fail-closed; offline)
+[cc] dxbc_spirv_bridge_test.c
+dxbc_spirv_bridge_test.c
+[link] dxbc_spirv_bridge_test.exe
+[cc] submit_command_contract_test.c
+submit_command_contract_test.c
+[link] submit_command_contract_test.exe
+[cc] persistent_ring_contract_test.c
+persistent_ring_contract_test.c
+[link] persistent_ring_contract_test.exe
+[cc] preemption_contract_test.c
+preemption_contract_test.c
+[link] preemption_contract_test.exe
+[cc] gpu_clock_contract_test.c
+gpu_clock_contract_test.c
+[link] gpu_clock_contract_test.exe
+[cc] power_contract_test.c
+power_contract_test.c
+[link] power_contract_test.exe
+[cc] smu_telemetry_contract_test.c
+smu_telemetry_contract_test.c
+[link] smu_telemetry_contract_test.exe
+[cc] superio_nct6686_contract_test.c
+superio_nct6686_contract_test.c
+[link] superio_nct6686_contract_test.exe
+[cc] global_readiness_audit_test.c
+global_readiness_audit_test.c
+[link] global_readiness_audit_test.exe
+[cc] compute_umd_bridge_test.c
+compute_umd_bridge_test.c
+[link] compute_umd_bridge_test.exe
+[cc] readonly_miniport_test.c
+readonly_miniport_test.c
+[link] readonly_miniport_test.exe
+[link] bc250readonly.sys
+[cc] active_miniport_test.c
+active_miniport_test.c
+[link] active_miniport_test.exe
+[cc] umd_private_contract_test.c
+umd_private_contract_test.c
+[link] umd_private_contract_test.exe
+[cc] sdma_queue_state_contract_test.c
+sdma_queue_state_contract_test.c
+[link] sdma_queue_state_contract_test.exe
+SDMA QUEUE STATE: OK (CONTEXT_STATUS/SKIP_CNTL/IB_CNTL decodificados contra gc_10_1_0_sh_mask.h + valores medidos em 05/09, offline)
+[cc] blt_proof_contract_test.c
+blt_proof_contract_test.c
+[link] blt_proof_contract_test.exe
+[cc] gfx_ib_inspect_contract_test.c
+gfx_ib_inspect_contract_test.c
+[link] gfx_ib_inspect_contract_test.exe
+[cc] driver_caps_contract_test.c
+driver_caps_contract_test.c
+[link] driver_caps_contract_test.exe
+[cc] display_vidpn_test.c
+display_vidpn_test.c
+[link] display_vidpn_test.exe
+[cc] bc250_boot_fuse_test.c
+bc250_boot_fuse_test.c
+bc250_boot_fuse.c
+Gerando Código...
+=== BC250 BOOT FUSE UNIT TEST ===
+RESULTADO: TODOS OS TESTES APROVADOS (0 falhas)
+[link] bc250mcdm.sys
+[link] bc250compute.sys
+[cc] bc250-compute-cli.c
+bc250-compute-cli.c
+C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\..\..\tools\bc250-compute-cli.c(13): warning C4101: 'mmioReq': variável local não referenciada
+[cc] bc250-gpuva-sdma-gate.c
+bc250-gpuva-sdma-gate.c
+C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\..\..\tools\bc250-gpuva-sdma-gate.c(49): warning C4245: 'função': conversão de 'int' para 'DWORD', incompatibilidade de signed/unsigned
+[cc] bc250_runtime.c
+bc250_runtime.c
+[cc] bc250-hardware-diag.c
+bc250-hardware-diag.c
+C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\..\..\tools\bc250-hardware-diag.c(34): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\..\..\tools\bc250-hardware-diag.c(36): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+[cc] bc250-mcdm-submit-test.c
+bc250-mcdm-submit-test.c
+   Criando biblioteca C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\output\bc250-mcdm-submit-test.lib e objeto C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\output\bc250-mcdm-submit-test.exp
+LINK : warning LNK4217: o símbolo 'bc250_device_init' definido em 'bc250_runtime.obj' é importado por 'bc250-mcdm-submit-test.obj' na função 'main'
+LINK : warning LNK4217: o símbolo 'bc250_device_close' definido em 'bc250_runtime.obj' é importado por 'bc250-mcdm-submit-test.obj' na função 'main'
+LINK : warning LNK4217: o símbolo 'bc250_dispatch_kernel' definido em 'bc250_runtime.obj' é importado por 'bc250-mcdm-submit-test.obj' na função 'main'
+BC250 DDI MATRIX
+  perfil MCDM  (imagem readonly, compute-only)
+    prohibited respeitadas: 18/18
+  perfil WDDM  (miniport ativo, display+render)
+    minimum MCDM:      37/37
+    GPUVA extension:   5/5
+    local compat:      1/1
+    render node:       7/7
+    display:           10/10
+    restauradas como divida (baseline KMDOD): 2/2
+    opcionais ausentes por decisao: 0/0
+  semantic/hardware validation: NOT PROVEN
+BC250 DDI MATRIX: PASS (STRUCTURAL ONLY)
+BC250 MCDM SAFETY AUDIT: PASS
+  DX.80 RTV framebuffer cache with zero-flush rotation: enforced
+  DX.79 texture upload coalescing via staging ring: enforced
+  DX.26 golden settings and CSB snapshot is read-only: enforced
+  DX.25 drawn vertices (index+base) and capped read-only target readback: enforced
+  DX.24 D3D11 blend/IA/viewport/format state reaches Vulkan or refuses by name: enforced
+  DX.21 pipeline IR dump after creation, gated, fallback device; IB dump staged where dwm.exe can write: enforced
+  synthetic ownership/reservations: absent
+  GPUVA geometry (GPUMMUCAPS vs UMDRIVERPRIVATE): single source
+  operational DDIs without hardware backing: fail-closed
+  DXGI 1.6 table complete (22 slots, MaxPlanes=1, fail-closed): enforced
+  Parede B (PM4 3D draw on Node 1, CB alignment, separate telemetry): enforced
+  'IB EXECUTADO' restricted to the INDIRECT path: enforced
+  SDMA tripod leg 1 (RPTR==WPTR) inside the gate: enforced
+  INDIRECT data leg (canary proof): enforced
+  ring-wrap arithmetic on tripod leg 1: enforced
+  Node 1 submission refusal names its reason: enforced
+  Node 1 admission uses full physical page-table walk; snapshot is diagnostic: enforced
+  TDR reset/restart pair has a physical backend (SDMA proof; GFX proof audited separately): enforced
+  QueryEngineStatus answers from measurement: enforced
+  induced hang fail-closed and physical: enforced
+  induced hang package/start order: enforced
+  second readonly preflight sees an empty MMIO transport: enforced
+  UMD/winsys trace reaches the archived evidence file: enforced
+  primary allocation declared to the kernel (hResource+Primary+VidPnSourceId): enforced
+  primary derivation narrowed (dwm.exe primary, Explorer.EXE non-primary): enforced
+  Present path speaks on both sides; device/context sampling unshared: enforced
+  DXGI presentation chain refuses instead of faking success; test cannot re-freeze it: enforced
+  DescribeAllocation speaks on entry and on every refusal: enforced
+  pixel and residency truth (no CPU clear, no suppressed black blt, OS residency): enforced
+  DWM composition runs on the KMD blt path, never a context submit: enforced
+  process/device/context DDIs name their refusals: enforced
+  context ABI populated before ContextAbiReady: enforced
+  24-CU firmware WGP/power policy is read-only: enforced
+  drained MEC cursor reconciliation before planning: enforced
+  per-process GPUVA ranges released on process destroy: enforced
+  bc250mcdm recovery identity: covered
+  submit path at DISPATCH_LEVEL pushlock-free: enforced
+  SDMA submission asynchronous and non-blocking (0x133 eliminated): enforced
+  GFX ring tripod (poison excluded, wrapped RPTR, INDETERMINADO allowed) + PM4 IB inspection with single-source verdict: enforced
+  GFX restart requires executable NOP/fence proof and aborts old WDDM fences without false completion: enforced
+  GFX stall probe (ME/PFP header dump, IB1, SQ waves, SE busy) is read-only and speaks INDETERMINADO: enforced
+  D3D11 conformance harness checks Present/GetDeviceRemovedReason and aborts; runner refuses exit 0 without frame evidence: enforced
+  RADV fork delta mirrored in-repo with provenance (base commit -> patch -> DLL): enforced
+  GFX wave probe writes only selectors, restores broadcast with readback, fail-closed: enforced
+  lab tunables read before the production #if (GfxWaveProbe present=0 defect): enforced
+  IB dump covers every submission path, not just the concat branch: enforced
+  KMD tail archived in two passes and truncation is declared: enforced
+  resource copy refuses uncreated resources (wild memcpy of 1.4GB measured): enforced
+  SRV refusals name one condition each; texture syncs to VkImage on update and unmap: enforced
+  GFXHUB TLB serialization with spinlock: enforced
+  Marco 3 partial proof + unconditional recovery: enforced
+  GPUVA journal stores final interval overlay, not raw update history: enforced
+  shader staging and allocation (256B alignment, zero overlap, readback proof, fail-closed): enforced
+  PM4 SET_SH_REG shader packet emission (0x76, 12DW, compute bit forbidden, fail-closed): enforced
+  PM4 SET_CONTEXT_REG viewport/scissor emission (0x69, 20DW, IEEE-754, fail-closed): enforced
+  PM4 SET_UCONFIG_REG primitive assembler (0x79, TRILIST 0x04, 8DW, fail-closed): enforced
+  Phase D0 GFX refusal tripod and WPTR divergence veto: enforced
+  DX.31 GOP primary copy: SDMA result, bounded paired samples and fail-closed: enforced
+  DX.40 GFX switch/IB bits and RADV build-to-deploy hash before bind: enforced
+  verdict: NAO VALIDADO EM HARDWARE
+DIVIDA Bc250DxgkDdiCollectDbgInfo (DxgkDdiCollectDbgInfo)
+       driver/wdk/bc250_display_ddi.c:2221 - falso sucesso ACEITO temporariamente: 3.76: stub KMDOD restaurado para isolar o Gate 1.5.
+       Remover apos fechar o Gate 1.5, em candidato proprio.
+DIVIDA Bc250DxgkDdiSetDisplayPrivateDriverFormat (DxgkDdiSetDisplayPrivateDriverFormat)
+       driver/wdk/bc250_display_ddi.c:4438 - falso sucesso ACEITO temporariamente: 3.76: tabela KMDOD congelada na baseline para isolar o Gate 1.5.
+       Remover apos fechar o Gate 1.5, em candidato proprio.
+DIVIDA Bc250DxgkDdiSetPalette (DxgkDdiSetPalette)
+       driver/wdk/bc250_display_ddi.c:2189 - falso sucesso ACEITO temporariamente: 3.76: tabela KMDOD congelada na baseline para isolar o Gate 1.5.
+       Remover apos fechar o Gate 1.5, em candidato proprio.
+AVISO  Bc250DxgkDdiNotifySurpriseRemoval (DxgkDdiNotifySurpriseRemoval)
+       driver/wdk/bc250_display_ddi.c:2230 - ignora TODOS os argumentos, mas produz efeito; confirme que nenhum argumento deveria alterar a acao.
+
+Anunciados: 105 | Divida aceita: 3 | Avisos: 1 | Falhas: 0
+APROVADO: nenhuma DDI anunciada ignora tudo e declara sucesso.
+WDK RESOURCE ADAPTER: OK (CM real types + variable full lists + fail-closed)
+VRAM TOPOLOGY CONTRACT: OK (RCC + GCMC + CPU window, offline)
+VRAM TOPOLOGY READER: OK (two stable readonly passes, offline)
+DISCOVERY TMR READER: OK (DRIVER_SCRATCH_0/1/2, two stable readonly passes)
+IP DISCOVERY CONTRACT: OK (GC 10.1.3 + generic OSSSYS identity + checksums + bounds, offline)
+IH REGISTER LAYOUT: OK (OSSSYS 5.0 base+dword composition; 0x4480 coherent, 0x3800 rejected, offline)
+MMIO TOPOLOGY TRANSPORT: OK (PnP BAR bounds + map/unmap, fake callbacks)
+WDK STARTDEVICE ADAPTER: OK (ownership + readonly preflight + teardown)
+FIRMWARE STAGING CONTRACT: OK (sealed lease + SHA-256 + readback + restore, fake transport)
+RUNTIME VRAM INVENTORY: OK (scanout + discovery TMR + carveouts + driver allocations, offline)
+GCVM PAGE TABLE CONTRACT: OK (PTE encoding + 8 TB translation + GFXHUB invalidation, offline)
+SDMA PACKET BUILDER: OK (COPY + FENCE + CONST_FILL + wraparound, offline)
+PM4 PACKET BUILDER: OK (NOP + WRITE_DATA + SH/CTX/UCONFIG + RELEASE_MEM + wraparound, offline)
+GOLDEN SETTINGS CONTRACT: OK (34 entries + RMW + 2-pass preflight + LIFO rollback, offline)
+COMPUTE MQD CONTRACT: OK (GFX10 512B MQD + EOP buffer + HQD queue bounds, offline)
+CONTEXT DISPATCHER CONTRACT: OK (SDMA + Compute engine context dispatch + IB + EOP fences, offline)
+INTERRUPT HANDLER CONTRACT: OK (Navi/GFX10 32B IV decode + byte RPTR/WPTR + provenance gate, offline)
+PAGING/TLB CONTRACT: OK (GFXHUB ACK + owned VMID8 inert transaction validated in hardware)
+ADAPTER INFO CONTRACT: OK (2 nodes: SDMA0 + Compute MEC + 34-bit GPUVA derivado, offline)
+SEGMENT CONTRACT: OK (Segment 1 Local VRAM + Segment 2 GART Aperture, offline)
+TDR RECOVERY CONTRACT: OK (Two-pass hang detection + Node 0/1 atomic reset + HQD dequeue, offline)
+SUBMIT COMMAND CONTRACT: OK (DxgkDdiSubmitCommand + Indirect Buffers + Release Mem EOP, offline)
+PERSISTENT RING CONTRACT: OK (anel persistente P1 + wraparound PACKET2 + retire de fence, offline)
+PREEMPTION CONTRACT: OK (DxgkDdiPreemptCommand + HQD dequeue + SDMA preemption fence, offline)
+GPU CLOCK CONTRACT: OK (DxgkDdiCalibrateGpuClock + 100MHz timestamp counter + QPC sync, offline)
+POWER MANAGEMENT CONTRACT: OK (DxgkDdiSetPowerState D0/D3 + SetStablePowerState + GFXOFF gating, offline)
+ISA VALIDATOR & COMPUTE UMD: OK (Wave32/64 + SGPR/VGPR/LDS bounds + IT_DISPATCH_DIRECT, offline)
+DXBC PARSER CONTRACT: OK (fail-closed SM4/SM5 parser + opcode stream iterator, offline)
+OBSERVABLE COMPUTE DISPATCH: OK (shader state + complete dispatch + post-dispatch fence + strict verdict, offline)
+OBSERVABLE GFX1010 SHADER: OK (allowlisted blob + SHA-256 provenance + negative mutation test, offline)
+GFX VIEWPORT & SCISSOR CONTRACT: OK (SET_CONTEXT_REG 0x69, 20 DW stream, IEEE-754 math, fail-closed)
+CONTRACT INTEGRATION AUDIT: OK (offline structures only; not hardware readiness)
+MCDM DDI CALLBACK TABLE: OK (36 minimum + 5 GPUVA pointers; semantics fail-closed)
+MCDM OBJECT LIFECYCLE: OK (typed handles + allocation open/close + debug snapshot + Stop race, offline)
+DXGK READONLY DDI: OK (real signature + callback + fail-closed)
+PCI BAR READER: OK (DxgkCbReadDeviceSpace readonly, no sizing writes)
+REBAR READER: OK (supported + selected + assigned, readonly)
+POST-DISPLAY RESERVATION: OK (active StartDevice integration + fail-closed telemetry)
+READONLY MCDM IMAGE: OK (DriverEntry links DxgkInitialize via displib; StartDevice fail-closed)
+MCDM DEVELOPMENT IMAGE: OK (DriverEntry links DxgkInitialize; StartDevice fail-closed)
+KERNEL COMPUTE SERVICE: OK (DriverEntry links IoCreateDevice; unsafe alloc/free/copy IOCTLs fail-closed)
+Zero driver, zero install, zero hardware.
+Veredito: NAO VALIDADO EM HARDWARE.
+[cc-lab] bc250_active_miniport.c (bring-up ATIVO)
+bc250_active_miniport.c
+[link-lab] bc250mcdm.sys (laboratorio)
+
+=== VERIFICACAO ===
+  laboratorio : E1AFAA2D8AEB033C  639488 bytes
+  producao    : 1B63C093DE18BD98  605696 bytes
+  bring-up compilado: CONFIRMADO no binario
+
+IMAGEM DE LABORATORIO PRONTA: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\output_lab\bc250mcdm.sys
+
+Esta imagem NAO passa pelo pacote assinado de producao e NAO deve ser
+instalada pela cadeia auditada. Instalar exige decisao explicita.
+NAO VALIDADO EM HARDWARE

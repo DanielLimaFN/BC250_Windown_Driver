@@ -1236,7 +1236,17 @@ void Bc250DisplayLog(const char *Format, ...)
         return;
     }
 
-    DbgPrintEx(DPFLTR_IHVVIDEO_ID, DPFLTR_ERROR_LEVEL, "[BC250] %s", buffer);
+    /*
+     * DX.86 -- SEM DbgPrintEx NO CAMINHO DO LOG.
+     *
+     * Corrida 132 (P0): com DEBUG/DEBUGPORT=NET no boot, 536 de 10.615 FLUSH_TLB
+     * duraram exatamente ~510 ms ou ~1.030 ms, o VidMm passou 96% da janela em
+     * PagingPreparation (ETW) e o Present do DWM ficou 88-116 s por chamada.
+     * Cada linha emitida passava por DbgPrintEx em DPFLTR_ERROR_LEVEL, que
+     * nenhum filtro barra, e com depurador de kernel habilitado isso vai ao
+     * transporte KD. O arquivo C:\BC250_DISPLAY_LOG.txt e' a evidencia; o
+     * espelho em DbgPrint so' custava tempo e mudava o experimento.
+     */
 
     /*
      * Operacoes de paginacao (VidMm DxgkDdiBuildPagingBuffer e rotinas associadas)

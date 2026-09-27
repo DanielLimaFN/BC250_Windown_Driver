@@ -14,8 +14,11 @@
  * capacidade mede o ESTADO FINAL ainda publicavel, nao o historico bruto de
  * chamadas do VidMm. Se o estado final exceder 1024, a transacao inteira e'
  * abortada; nenhum prefixo pode ficar pronto para publicacao.
+ *
+ * DX.85: de volta a 1024 junto com BC250_GPUVA_SPACE_MAX_RANGES; ver o bloco
+ * DX.85 em bc250_gpuva_space_contract.h.
  */
-#define BC250_GPUVA_JOURNAL_MAX_CHANGES 4096u
+#define BC250_GPUVA_JOURNAL_MAX_CHANGES 1024u
 
 typedef enum BC250_GPUVA_JOURNAL_STATUS {
     BC250_GPUVA_JOURNAL_OK = 0,

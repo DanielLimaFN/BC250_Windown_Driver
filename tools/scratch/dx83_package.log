@@ -1,0 +1,23 @@
+Done Adding Additional Store
+Successfully signed: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab\bc250umd.dll
+
+Done Adding Additional Store
+Successfully signed: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab\bc250mcdm.sys
+
+................................
+Signability test complete.
+
+Errors:
+None
+
+Warnings:
+None
+
+Catalog generation complete.
+C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab\bc250mcdm.cat
+Done Adding Additional Store
+Successfully signed: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab\bc250mcdm.cat
+
+Pacote MCDM de LABORATORIO construido: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab
+Manifesto de build: C:\Users\Daniel\Desktop\NamixWDDM\driver\wdk\package\output_lab.manifest.json
+NAO VALIDADO EM HARDWARE; imagem de laboratorio com bring-up ativo.

@@ -37,8 +37,20 @@ extern "C" {
  *
  * Isto nao e' prova no silicio. O teste de snapshot reproduz 252 + 256 runs e
  * impede que o teto volte a 256 silenciosamente.
+ *
+ * DX.85 -- DE VOLTA A 1024 (a DX.81 tinha subido para 4096).
+ * O custo do commit de FLUSH_TLB escala com este teto, e nao so com o uso:
+ * cada Bc250GpuvaSpaceReplaceRangeTransactional zera um Scratch do tamanho do
+ * espaco inteiro, reinsere cada faixa viva com InsertRange, que varre TODOS os
+ * slots, e copia o espaco inteiro byte a byte. Custo ~ M * (N * teto + tamanho
+ * do espaco), tudo com ObjectLock na thread de paginacao do VidMm (P1 por
+ * leitura). As Corridas 127, 128 e 129 terminam com a thread de paginacao DENTRO
+ * do despacho de FLUSH_TLB; 128 (214 s) e 129 (90 s) sao as duas primeiras com
+ * 4096. Que o teto maior tenha causado ou antecipado o travamento e' HIPOTESE:
+ * a Corrida 115 ja travou aos ~2m19s com o mesmo ultimo estagio. 1024 e' o
+ * estado medido das Corridas 118..127, inclusive os 600 s da 127.
  */
-#define BC250_GPUVA_SPACE_MAX_RANGES 4096u
+#define BC250_GPUVA_SPACE_MAX_RANGES 1024u
 #define BC250_GPUVA_PAGE_BYTES 4096ull
 #define BC250_GPUVA_PAGE_MASK (BC250_GPUVA_PAGE_BYTES - 1ull)
 /*

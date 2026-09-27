@@ -21,13 +21,13 @@ Tabela 2 (o que falta, em ordem de prioridade, com o teste que fecha cada item).
 implementamos DCN no caminho crítico. Escrita em registrador de DCN é **proibida** fora
 da prioridade P9; leitura é permitida.
 
-**Estado em 25/09/2026:** a [Corrida 118](docs/437_CORRIDA118_DX73_TRIANGULO_PIXELS_COPIA_E_R1.md)
-com DX.73/3.277.1.0 completou 180 s com desktop e triângulo visualmente corretos,
-harness 60/60, amostras de centro/canto preservadas em 60/60 cópias e rollback para
-BasicDisplay Código 0 no mesmo boot. Na 117 o triângulo faltou; a falha visual é
-intermitente. DWM 2,68 inícios de Present/s nos primeiros 120 s, harness 0,9 FPS.
-Travamentos longos, 600 s, 60 FPS e jogos seguem abertos. O próximo bind exige boot frio.
-Leia o [handoff 438](docs/438_HANDOFF_2026-09-25_CORRIDAS_111_A_118_VISUAL_VELOCIDADE_E_TRAVAMENTO.md).
+**Estado em 26/09/2026:** as Corridas 118–126 deram desktop por 180 s e a 127 chegou a 600 s.
+As 128 e 129 travaram com a thread de paginação dentro de `FLUSH_TLB`, e as 130 e 131 ficaram em
+tela preta por um deadlock da própria instrumentação DX.83 (log com I/O de arquivo na thread de
+paginação do VidMm). A DX.85 (pacote 3.290.1.0) corrige isso, torna fail-closed a espera de fence
+da UMD, volta a topologia para `ChildUid=1`/EDID 0 e a GPUVA para 1024. **Nada disso foi validado
+em hardware.** A trava de `FLUSH_TLB`, 600 s estáveis, 60 FPS e jogos seguem abertos. O próximo
+bind exige boot frio. Leia o [doc 467](docs/467_DX85_DEADLOCK_DA_DX83_NA_PAGINACAO_E_CRITERIO_CORRIDA132.md).
 
 ---
 

@@ -99,6 +99,8 @@ enum {
     BC250_PAGING_STAGE_AFTER_CAPS = 4u,
     BC250_PAGING_STAGE_BEFORE_DISPATCH = 5u,
     BC250_PAGING_STAGE_AFTER_DISPATCH = 6u,
+    BC250_PAGING_STAGE_FLUSH_HANDLER_ENTER = 7u,
+    BC250_PAGING_STAGE_FLUSH_HANDLER_LEAVE = 8u,
     BC250_PAGING_STAGE_UPDATE_ENTER = 20u,
     BC250_PAGING_STAGE_UPDATE_AFTER_HEADER_LOG = 21u,
     BC250_PAGING_STAGE_UPDATE_AFTER_ENTRY_LOGS = 22u,
@@ -109,6 +111,9 @@ enum {
 volatile LONG g_Bc250PagingStageSequence;
 BC250_PAGING_STAGE_SLOT g_Bc250PagingStages[64];
 volatile LONG g_Bc250PagingActiveCount = 0;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+static volatile LONG g_Bc250PagingCallSequence;
+#endif
 
 static VOID Bc250PagingStage(
     _In_ ULONG Stage,
@@ -128,6 +133,11 @@ static VOID Bc250PagingStage(
 #endif
     KeMemoryBarrier();
     InterlockedExchange(&slot->Sequence, sequence);
+}
+
+VOID Bc250PagingTraceMarkExternal(ULONG Stage, ULONG Operation, NTSTATUS Status)
+{
+    Bc250PagingStage(Stage, Operation, Status);
 }
 
 /*
@@ -162,6 +172,58 @@ typedef struct BC250_PAGING_TRACE_RECORD {
 } BC250_PAGING_TRACE_RECORD;
 C_ASSERT(sizeof(BC250_PAGING_TRACE_SLOT) == 32u);
 C_ASSERT(sizeof(BC250_PAGING_TRACE_RECORD) == 552u);
+
+/*
+ * DX.87: registro de migalhas MMIO (espelho em RAM, bc250_mmio_breadcrumb.h)
+ * no mesmo arquivo, logo apos cada registro de paginacao. Magic proprio: o
+ * decodificador antigo pula o que nao conhece. Por slot: seq, sitio<<24|offset,
+ * fase (0xB0 ANTES, 0xA0 DEPOIS).
+ */
+#define BC250_CRUMB_TRACE_MAGIC 0x31524342u /* BCR1 */
+typedef struct BC250_CRUMB_TRACE_RECORD {
+    UINT32 Magic;
+    UINT32 Version;
+    UINT32 SlotCount;
+    UINT32 WriterTick;
+    UINT32 LastSequence;
+    UINT32 Reserved;
+    UINT64 SnapshotTime100ns;
+    UINT32 Slots[BC250_CRUMB_SLOTS][3];
+    UINT32 Checksum;
+    UINT32 Padding;
+} BC250_CRUMB_TRACE_RECORD;
+C_ASSERT(sizeof(BC250_CRUMB_TRACE_RECORD) == 32u + BC250_CRUMB_SLOTS * 12u + 8u);
+
+static UINT32 Bc250CrumbTraceChecksum(const BC250_CRUMB_TRACE_RECORD *Record)
+{
+    const UCHAR *bytes = (const UCHAR *)Record;
+    UINT32 hash = 2166136261u;
+    SIZE_T index;
+    for (index = 0u; index < FIELD_OFFSET(BC250_CRUMB_TRACE_RECORD, Checksum); ++index) {
+        hash = (hash ^ bytes[index]) * 16777619u;
+    }
+    return hash;
+}
+
+static VOID Bc250CrumbTraceSnapshot(BC250_CRUMB_TRACE_RECORD *Record, UINT32 WriterTick)
+{
+    UINT32 slot;
+    RtlZeroMemory(Record, sizeof(*Record));
+    Record->Magic = BC250_CRUMB_TRACE_MAGIC;
+    Record->Version = 1u;
+    Record->SlotCount = BC250_CRUMB_SLOTS;
+    Record->WriterTick = WriterTick;
+    Record->LastSequence = g_Bc250CrumbMirror[BC250_CRUMB_DW_LASTSEQ];
+    Record->SnapshotTime100ns = KeQueryInterruptTime();
+    for (slot = 0u; slot < BC250_CRUMB_SLOTS; ++slot) {
+        const volatile ULONG *entry = g_Bc250CrumbMirror +
+            BC250_CRUMB_SLOT_BASE_DW + slot * BC250_CRUMB_SLOT_DWORDS;
+        Record->Slots[slot][0] = entry[0];
+        Record->Slots[slot][1] = entry[1];
+        Record->Slots[slot][2] = entry[2];
+    }
+    Record->Checksum = Bc250CrumbTraceChecksum(Record);
+}
 
 static KEVENT g_Bc250PagingTraceStopEvent;
 static HANDLE g_Bc250PagingTraceFile;
@@ -238,9 +300,16 @@ static VOID Bc250PagingTraceThread(_In_ PVOID Context)
         record.Reserved = ++writerTick;
         record.Checksum = Bc250PagingTraceChecksum(&record);
         {
+            BC250_CRUMB_TRACE_RECORD crumbs;
             NTSTATUS status = ZwWriteFile(g_Bc250PagingTraceFile, NULL, NULL,
                 NULL, &ioStatus, &record, sizeof(record), NULL, NULL);
-            if (NT_SUCCESS(status) && ioStatus.Information == sizeof(record)) {
+            /* DX.87: migalhas logo depois, no mesmo flush. */
+            Bc250CrumbTraceSnapshot(&crumbs, writerTick);
+            if (NT_SUCCESS(status)) {
+                status = ZwWriteFile(g_Bc250PagingTraceFile, NULL, NULL,
+                    NULL, &ioStatus, &crumbs, sizeof(crumbs), NULL, NULL);
+            }
+            if (NT_SUCCESS(status) && ioStatus.Information == sizeof(crumbs)) {
                 status = ZwFlushBuffersFile(g_Bc250PagingTraceFile, &ioStatus);
                 (void)status;   /* falha de flush nao para o batimento */
             }
@@ -1379,8 +1448,12 @@ static NTSTATUS Bc250McdmBuildPagingBufferBody(
 
     case DXGK_OPERATION_FLUSH_TLB:
         if (g_Bc250FlushTlbHandler != NULL) {
+            Bc250PagingStage(BC250_PAGING_STAGE_FLUSH_HANDLER_ENTER,
+                operation, STATUS_PENDING);
             dispatchStatus = g_Bc250FlushTlbHandler(
                 (HANDLE)hAdapter, &pBuildPagingBuffer->FlushTlb);
+            Bc250PagingStage(BC250_PAGING_STAGE_FLUSH_HANDLER_LEAVE,
+                operation, dispatchStatus);
             if (!NT_SUCCESS(dispatchStatus) &&
                 dispatchStatus != STATUS_INVALID_PARAMETER) {
                 dispatchStatus = STATUS_SUCCESS;
@@ -1417,7 +1490,47 @@ NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(
     UNREFERENCED_PARAMETER(operation); /* a migalha vira no-op na suite offline */
     ULONG crumb = Bc250CrumbBeforeBank(
         BC250_CRUMB_SITE_PAGING_DDI, operation, BC250_CRUMB_BANK_PAGING);
+    /*
+     * DX.85 -- A INSTRUMENTACAO DA DX.83 TRAVAVA A THREAD DE PAGINACAO.
+     *
+     * Bc250DisplayLog so' desvia para o anel em RAM quando
+     * g_Bc250PagingActiveCount > 0; com o contador em zero, em PASSIVE_LEVEL,
+     * ele faz ZwCreateFile/ZwWriteFile/ZwFlushBuffersFile. As linhas
+     * BC250_HANG ENTER/LEAVE da DX.83 ficavam FORA da janela do contador (o
+     * incremento so' acontece dentro do Body), portanto faziam I/O de arquivo
+     * sincrono NA THREAD DE PAGINACAO DO VIDMM -- exatamente o deadlock que o
+     * comentario do logger proibe.
+     *
+     * Medido (P0): Corrida 130 com 110 ENTER e 109 LEAVE, Corrida 131 com 90
+     * ENTER e 89 LEAVE; nas duas o ultimo ENTER (op=12) nao tem LEAVE, o
+     * rastro duravel DX.56 NUNCA registrou o BUILD_ENTER seguinte (primeira
+     * instrucao do Body) e a migalha DX.66 ficou em PAGING_DDI 0x0C fase=ANTES.
+     * A thread parou entre a linha escrita e o Body: dentro do logger. Sem
+     * paginacao, a paging fence nao avanca -- WaitPaging do Explorer e
+     * vkAllocateMemory do DWM/RADV eram SINTOMAS desta trava.
+     *
+     * O contador agora cobre o wrapper inteiro, inclusive as duas linhas.
+     */
+    InterlockedIncrement(&g_Bc250PagingActiveCount);
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    LONG callId = 0;
+    if (operation == DXGK_OPERATION_FLUSH_TLB) {
+        LARGE_INTEGER enterQpc = KeQueryPerformanceCounter(NULL);
+        callId = InterlockedIncrement(&g_Bc250PagingCallSequence);
+        Bc250DisplayLog("BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=%ld tid=%p qpc=%llu operation=%u\n",
+            callId, PsGetCurrentThreadId(), (unsigned long long)enterQpc.QuadPart, operation);
+    }
+#endif
     NTSTATUS status = Bc250McdmBuildPagingBufferBody(hAdapter, pBuildPagingBuffer);
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    if (operation == DXGK_OPERATION_FLUSH_TLB) {
+        LARGE_INTEGER leaveQpc = KeQueryPerformanceCounter(NULL);
+        Bc250DisplayLog("BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=%ld tid=%p qpc=%llu operation=%u status=0x%08X\n",
+            callId, PsGetCurrentThreadId(), (unsigned long long)leaveQpc.QuadPart,
+            operation, status);
+    }
+#endif
+    InterlockedDecrement(&g_Bc250PagingActiveCount);
     Bc250CrumbAfter(crumb);
     return status;
 }

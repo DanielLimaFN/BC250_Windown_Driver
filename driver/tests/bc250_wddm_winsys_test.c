@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <share.h>
 
 #include "../umd/bc250_wddm_winsys.h"
 
@@ -26,6 +27,8 @@ typedef struct TEST_STATE {
     UINT SignalSyncGpuCalls;
     HRESULT ForcedResult;
     HRESULT WaitResult;
+    /* DX.85: o dxgkrnl aceita a espera assincrona mas a fence nunca chega. */
+    BOOL WithholdAsyncSignal;
     BC250_WINSYS_ALLOCATION *PendingAllocation;
     /*
      * 13/09 -- vinculo de recurso. Sem estes campos o teste nao podia distinguir
@@ -203,11 +206,16 @@ static HRESULT APIENTRY TestWaitPaging(
     if (FAILED(g_State.WaitResult)) return g_State.WaitResult;
     if (FAILED(g_State.ForcedResult) && g_State.ForcedResult != E_PENDING)
         return g_State.ForcedResult;
+    /* Espera aceita, fence parada: nem o valor avanca nem o evento sinaliza. */
+    if (g_State.WithholdAsyncSignal && Args->hAsyncEvent != NULL) return S_OK;
     if (Args->ObjectHandleArray[0] == 0x9002u) {
         assert(Args->FenceValueArray[0] == 7u || Args->FenceValueArray[0] == 8u);
         g_PagingFence = Args->FenceValueArray[0];
     } else if (Args->ObjectHandleArray[0] == (D3DKMT_HANDLE)0x5001u) {
         g_MonitoredFence = Args->FenceValueArray[0];
+    }
+    if (Args->hAsyncEvent != NULL) {
+        SetEvent(Args->hAsyncEvent);
     }
     return S_OK;
 }
@@ -796,6 +804,23 @@ static void TestPagingPendingStatus(void)
     assert(g_State.WaitCalls == 1u);
     assert(g_PagingFence == 7u);
 
+    /*
+     * DX.85: espera aceita cuja fence nunca chega NAO pode virar sucesso.
+     * A DX.84 devolvia OK apos 1000 ms ("continuando sem travar"), o que
+     * liberava a UMD para usar memoria com paginacao pendente.
+     */
+    g_PagingFence = 6u; /* fence volta a ficar atras do alvo 7 */
+    g_State.WithholdAsyncSignal = TRUE;
+    assert(Bc250WinsysWaitPaging(&context, &allocation) == BC250_WINSYS_CALLBACK_FAILED);
+    assert(context.LastCallbackHr == (HRESULT)0x80070102L);
+    assert(g_State.WaitCalls == 2u);
+    assert(g_PagingFence == 6u);
+    g_State.WithholdAsyncSignal = FALSE;
+    assert(Bc250WinsysWaitPaging(&context, &allocation) == BC250_WINSYS_OK);
+    assert(context.LastCallbackHr == S_OK);
+    assert(g_State.WaitCalls == 3u);
+    assert(g_PagingFence == 7u);
+
     /* F3.3: request accepted, but a failed wait must not publish Resident.
      * The callback observes Resident=FALSE while the fence is still pending. */
     g_State.ForcedResult = E_PENDING;
@@ -895,6 +920,13 @@ static void TestSignalMonitoredFenceFromGpu(void)
 
 int main(void)
 {
+    char tempPath[MAX_PATH];
+    char logPath[MAX_PATH];
+    char line[1024];
+    FILE *logFile = NULL;
+    BOOL sawWaitEnter = FALSE;
+    BOOL sawWaitLeave = FALSE;
+    assert(SetEnvironmentVariableA("BC250_HANG_TRACE", "1"));
     printf("=== BC250 WDDM WINSYS CONTRACT TEST ===\n");
     TestLifecycle();
     TestResidencyAndPrimaryClass();
@@ -902,6 +934,17 @@ int main(void)
     TestPagingPendingStatus();
     TestSignalMonitoredFenceFromGpu();
     TestFailClosed();
+    assert(GetTempPathA(MAX_PATH, tempPath) < MAX_PATH);
+    assert(_snprintf_s(logPath, sizeof(logPath), _TRUNCATE,
+        "%sBC250_UMD_LOG_%lu.txt", tempPath, GetCurrentProcessId()) >= 0);
+    logFile = _fsopen(logPath, "rb", _SH_DENYNO);
+    assert(logFile != NULL);
+    while (fgets(line, sizeof(line), logFile) != NULL) {
+        if (strstr(line, "op=WAIT_PAGING phase=ENTER") != NULL) sawWaitEnter = TRUE;
+        if (strstr(line, "op=WAIT_PAGING phase=LEAVE") != NULL) sawWaitLeave = TRUE;
+    }
+    fclose(logFile);
+    assert(sawWaitEnter && sawWaitLeave);
     printf("WDDM WINSYS CONTRACT: PASS (callbacks offline; hardware not touched)\n");
     return 0;
 }

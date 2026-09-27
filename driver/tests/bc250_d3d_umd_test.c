@@ -3084,7 +3084,10 @@ static HRESULT APIENTRY F3Resident(HANDLE h, D3DDDI_MAKERESIDENT *a)
 }
 static HRESULT APIENTRY F3Wait(HANDLE h, const D3DDDICB_WAITFORSYNCHRONIZATIONOBJECTFROMCPU *a)
 {
-    (void)h; (void)a;
+    (void)h;
+    if (a != NULL && a->hAsyncEvent != NULL) {
+        SetEvent(a->hAsyncEvent);
+    }
     return S_OK;
 }
 static HRESULT APIENTRY F3FreeVa(HANDLE h, const D3DDDICB_FREEGPUVIRTUALADDRESS *a)

@@ -80,6 +80,17 @@ extern "C" {
 #define BC250_GFX_REG_CP_RB_WPTR_DELAY       0x00008704u
 
 /*
+ * RLC_SAFE_MODE -- mmRLC_SAFE_MODE 0x4C05 idx1 -> (0xA000 + 0x4C05) * 4 = 0x3B014 (docs/03:1455).
+ * Permite isolar o RLC antes de emitir soft-reset no CP ou reconfigurar aneis, evitando colisao no crossbar
+ * e falha UTCL1 XNACK no SDMA.
+ */
+#define BC250_REG_RLC_SAFE_MODE              0x0003B014u
+#define BC250_RLC_SAFE_MODE_CMD_MASK         0x00000001u
+#define BC250_RLC_SAFE_MODE_MESSAGE_SHIFT    1u
+#define BC250_RLC_SAFE_MODE_ENTER_CMD        0x00000003u /* CMD=1, MESSAGE=1 */
+#define BC250_RLC_SAFE_MODE_EXIT_CMD         0x00000001u /* CMD=1, MESSAGE=0 */
+
+/*
  * DIAGNOSTICO EM TEMPO REAL E TELEMETRIA DE HARDWARE -- classe P1 (docs/03 e gc_10_1_0).
  */
 #define BC250_GFX_REG_GRBM_STATUS            0x00008010u

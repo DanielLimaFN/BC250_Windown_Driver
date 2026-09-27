@@ -88,7 +88,7 @@ cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\wdk" /
 if errorlevel 1 exit /b 1
 
 echo [WDDM WINSYS TEST LINK] bc250_wddm_winsys_test.exe
-link /nologo /OUT:"%ODIR%\bc250_wddm_winsys_test.exe" "%ODIR%\bc250_wddm_winsys_test.obj" "%ODIR%\bc250_wddm_winsys.obj" "%ODIR%\bc250_allocation_abi_contract.obj" kernel32.lib
+link /nologo /OUT:"%ODIR%\bc250_wddm_winsys_test.exe" "%ODIR%\bc250_wddm_winsys_test.obj" "%ODIR%\bc250_wddm_winsys.obj" "%ODIR%\bc250_allocation_abi_contract.obj" kernel32.lib advapi32.lib
 if errorlevel 1 exit /b 1
 
 echo [D3D UMD TEST CC] bc250_d3d_umd_test.c
@@ -157,7 +157,7 @@ cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\core" 
 if errorlevel 1 exit /b 1
 
 echo [NODE1 SUBMIT TEST LINK] umd_node1_submit_contract_test.exe
-link /nologo /OUT:"%ODIR%\umd_node1_submit_contract_test.exe" "%ODIR%\umd_node1_submit_contract_test.obj" "%ODIR%\bc250_wddm_winsys.obj" "%ODIR%\bc250_allocation_abi_contract.obj" "%ODIR%\bc250umd.lib" kernel32.lib
+link /nologo /OUT:"%ODIR%\umd_node1_submit_contract_test.exe" "%ODIR%\umd_node1_submit_contract_test.obj" "%ODIR%\bc250_wddm_winsys.obj" "%ODIR%\bc250_allocation_abi_contract.obj" "%ODIR%\bc250umd.lib" kernel32.lib advapi32.lib
 if errorlevel 1 exit /b 1
 
 echo [NODE1 TRIPOD TEST CC] umd_node1_tripod_contract_test.c
@@ -165,7 +165,7 @@ cl /nologo /W4 /WX /O2 /MD /I "%ROOTDIR%\driver\umd" /I "%ROOTDIR%\driver\core" 
 if errorlevel 1 exit /b 1
 
 echo [NODE1 TRIPOD TEST LINK] umd_node1_tripod_contract_test.exe
-link /nologo /OUT:"%ODIR%\umd_node1_tripod_contract_test.exe" "%ODIR%\umd_node1_tripod_contract_test.obj" "%ODIR%\bc250_wddm_winsys.obj" "%ODIR%\bc250_allocation_abi_contract.obj" "%ODIR%\bc250umd.lib" kernel32.lib
+link /nologo /OUT:"%ODIR%\umd_node1_tripod_contract_test.exe" "%ODIR%\umd_node1_tripod_contract_test.obj" "%ODIR%\bc250_wddm_winsys.obj" "%ODIR%\bc250_allocation_abi_contract.obj" "%ODIR%\bc250umd.lib" kernel32.lib advapi32.lib
 if errorlevel 1 exit /b 1
 
 echo [NODE1 PHYSICAL HARNESS CC] bc250-umd-node1-tripod.c

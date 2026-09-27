@@ -25,13 +25,13 @@ Display v1 é **por herança do UEFI GOP**: VidPn de um modo único, scanout em 
 fora da prioridade P9. Leitura é permitida.
 
 ### Onde estamos, de verdade
-Em 25/09, a [Corrida 118](docs/437_CORRIDA118_DX73_TRIANGULO_PIXELS_COPIA_E_R1.md) do candidato
-DX.73/3.277.1.0 completou 180 s: desktop e triângulo visualmente corretos, harness 60/60,
-60/60 amostras de centro/canto preservadas na cópia e rollback para BasicDisplay Código 0 no
-mesmo boot. A Corrida 117 não mostrou o triângulo; a intermitência visual permanece aberta.
-Velocidade da 118: DWM 2,68 inícios de Present/s nos primeiros 120 s e harness 0,9 FPS.
-Ensaios longos anteriores travaram duramente; 600 s, 60 FPS e jogos não estão validados.
-O próximo bind exige boot frio. [Handoff completo 438](docs/438_HANDOFF_2026-09-25_CORRIDAS_111_A_118_VISUAL_VELOCIDADE_E_TRAVAMENTO.md).
+Em 26/09: as Corridas 118–126 deram desktop por 180 s e a 127 chegou a 600 s. As 128 e 129
+travaram com a thread de paginação dentro de `FLUSH_TLB`, e as 130 e 131 ficaram em tela preta por
+um deadlock da própria instrumentação DX.83 (log com I/O de arquivo na thread de paginação do VidMm).
+O diagnóstico do doc 466 (RADV, UID0, "KMD vivo") foi retificado. A DX.85 (pacote 3.290.1.0) corrige
+o deadlock, torna fail-closed a espera de fence da UMD, volta a topologia para `ChildUid=1`/EDID 0 e a
+GPUVA para 1024. **NÃO VALIDADO EM HARDWARE.** O próximo bind exige boot frio.
+[Doc 467](docs/467_DX85_DEADLOCK_DA_DX83_NA_PAGINACAO_E_CRITERIO_CORRIDA132.md).
 
 ---
 

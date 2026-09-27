@@ -450,6 +450,13 @@ static int Bc250RunMmioTopologyTransportTest(void)
             BC250_GCVM_PT_END_LO_BASE +
                 BC250_GCVM_CONTEXT_COUNT * BC250_GCVM_PT_BASE_STRIDE,
             1u) == 0u);
+        /* RLC_SAFE_MODE (0x3B014) aceita leitura e escrita */
+        CHECK(Bc250MmioTopologyWrite32(&context, 0x0003B014u, 3u) == 1u);
+        CHECK(Bc250MmioTopologyRead32(&context, 0x0003B014u, &value) == 1u);
+        CHECK(value == 3u);
+        CHECK(Bc250MmioTopologyWrite32(&context, 0x0003B014u, 1u) == 1u);
+        CHECK(Bc250MmioTopologyRead32(&context, 0x0003B014u, &value) == 1u);
+        CHECK(value == 1u);
     }
     CHECK(Bc250MmioTopologyUnmap(&context) == BC250_MMIO_TOPOLOGY_OK);
     CHECK(g_unmapCalls == 1u && context.State == BC250_MMIO_TOPOLOGY_EMPTY);

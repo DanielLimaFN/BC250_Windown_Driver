@@ -8509,6 +8509,86 @@ def audit_dx80_rtv_framebuffer_cache(errors: list[str]) -> None:
     require(des, "pBridge->vk.vkDestroyImageView(pBridge->Device, pRtv->FbCache[i].View, NULL);", "DX.80 destruicao de views em cache no DestroyRtv", errors)
 
 
+def audit_dx85_paging_thread_never_does_file_io(errors: list[str]) -> None:
+    """DX.85: toda linha de log no wrapper de BuildPagingBuffer fica DENTRO da
+    janela de g_Bc250PagingActiveCount. Fora dela o logger faz I/O de arquivo
+    sincrono na thread de paginacao do VidMm; medido nas Corridas 130 e 131
+    (ultimo ENTER op=12 sem LEAVE, BUILD_ENTER seguinte nunca registrado)."""
+    callbacks = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c")
+                                 .read_text(encoding="utf-8", errors="replace"))
+    body = function_body(callbacks, "NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(")
+    if not body:
+        errors.append("DX.85: wrapper Bc250McdmBuildPagingBuffer nao encontrado")
+        return
+    inc = body.find("InterlockedIncrement(&g_Bc250PagingActiveCount);")
+    dec = body.rfind("InterlockedDecrement(&g_Bc250PagingActiveCount);")
+    if inc < 0 or dec < 0 or dec < inc:
+        errors.append("DX.85: wrapper de BuildPagingBuffer sem janela de g_Bc250PagingActiveCount")
+        return
+    for m in re.finditer(r"Bc250DisplayLog\s*\(", body):
+        if m.start() < inc or m.start() > dec:
+            errors.append("DX.85: Bc250DisplayLog fora da janela de paginacao no wrapper "
+                          "(I/O de arquivo na thread de paginacao do VidMm)")
+            break
+    body_start = body.find("Bc250McdmBuildPagingBufferBody(")
+    if body_start < 0 or not (inc < body_start < dec):
+        errors.append("DX.85: o Body de BuildPagingBuffer precisa rodar dentro da janela do wrapper")
+
+
+def audit_dx86_no_dbgprint_in_driver(errors: list[str]) -> None:
+    """DX.86: nenhum DbgPrint/DbgPrintEx/KdPrint no KMD. Na Corrida 132, com KD
+    habilitado no boot, o espelho em DbgPrint de cada linha de log coincidiu com
+    FLUSH_TLB de ~510 ms e 96% do VidMm em PagingPreparation."""
+    for path in sorted((ROOT / "driver" / "wdk").glob("*.c")):
+        text = strip_c_comments(path.read_text(encoding="utf-8", errors="replace"))
+        if re.search(r"\b(DbgPrintEx|DbgPrint|KdPrintEx|KdPrint)\s*\(", text):
+            errors.append(f"DX.86: chamada de DbgPrint/KdPrint em {path.name}")
+
+
+def audit_dx87_crumbs_reach_disk(errors: list[str]) -> None:
+    """DX.87: as migalhas MMIO tem espelho em RAM e o escritor do rastro DX.56
+    as grava em disco a cada periodo; a pagina de VRAM nao sobreviveu ao reset
+    nas travas duras das Corridas 115/128/129/133."""
+    header = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_mmio_breadcrumb.h")
+                              .read_text(encoding="utf-8", errors="replace"))
+    callbacks = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c")
+                                 .read_text(encoding="utf-8", errors="replace"))
+    before = function_body(header, "static __forceinline ULONG Bc250CrumbBeforeBank(")
+    after = function_body(header, "static __forceinline VOID Bc250CrumbAfter(")
+    require(before, "g_Bc250CrumbMirror[BC250_CRUMB_DW_LASTSEQ] = seq;",
+            "DX.87 migalha ANTES grava o espelho em RAM", errors)
+    if "if (page == NULL || Bank" in before:
+        errors.append("DX.87: migalha voltou a depender da pagina de VRAM para existir")
+    require(after, "g_Bc250CrumbMirror[", "DX.87 migalha DEPOIS grava o espelho em RAM", errors)
+    thread = function_body(callbacks, "static VOID Bc250PagingTraceThread(")
+    require(thread, "Bc250CrumbTraceSnapshot(&crumbs, writerTick);",
+            "DX.87 escritor do rastro grava o registro de migalhas", errors)
+    decoder = (ROOT / "tools" / "decode-bc250-paging-trace.py").read_text(encoding="utf-8")
+    require(decoder, "CRUMB_MAGIC = 0x31524342", "DX.87 decodificador le as migalhas", errors)
+
+
+def audit_dx85_cpu_wait_timeout_is_failure(errors: list[str]) -> None:
+    """DX.85: espera de fence pela CPU que expira NAO pode devolver sucesso.
+    A DX.84 devolvia OK apos 1000 ms ("continuando sem travar")."""
+    winsys = strip_c_comments((ROOT / "driver" / "umd" / "bc250_wddm_winsys.c")
+                              .read_text(encoding="cp1252", errors="replace"))
+    helper = function_body(winsys, "static HRESULT Bc250WinsysBoundedCpuWait(")
+    if not helper:
+        errors.append("DX.85: helper Bc250WinsysBoundedCpuWait ausente")
+        return
+    require(helper, "hr = BC250_WINSYS_HR_WAIT_TIMEOUT;",
+            "DX.85 timeout de espera vira falha nomeada", errors)
+    for signature, label in (
+            ("BC250_WINSYS_STATUS Bc250WinsysWaitPaging(", "WaitPaging"),
+            ("BC250_WINSYS_STATUS Bc250WinsysWaitForFenceFromCpu(", "WaitForFenceFromCpu")):
+        body = function_body(winsys, signature)
+        require(body, "Bc250WinsysBoundedCpuWait(", f"DX.85 {label} usa a espera limitada", errors)
+        if "pfnWaitForSynchronizationObjectFromCpuCb(" in body:
+            errors.append(f"DX.85: {label} chama o callback de espera direto, fora do helper limitado")
+    if "continuando" in winsys:
+        errors.append("DX.85: winsys voltou a ter caminho de timeout que continua como sucesso")
+
+
 def audit_dx52_create_allocation_refusal_speaks(errors: list[str]) -> None:
     """DX.52: toda recusa de CreateAllocation fala, fora da amostragem, e a UMD
     descreve o recurso recusado (laco de recriacao do Explorer, Corridas 93..97)."""
@@ -10339,6 +10419,10 @@ def main() -> int:
     audit_dx71_wddm_owns_scanout(errors)
     audit_dx79_texture_upload_coalescing(errors)
     audit_dx80_rtv_framebuffer_cache(errors)
+    audit_dx85_paging_thread_never_does_file_io(errors)
+    audit_dx85_cpu_wait_timeout_is_failure(errors)
+    audit_dx86_no_dbgprint_in_driver(errors)
+    audit_dx87_crumbs_reach_disk(errors)
     audit_dx52_create_allocation_refusal_speaks(errors)
     audit_dx53_vmid_disarm_before_release(errors)
     audit_dx56_paging_trace(errors)

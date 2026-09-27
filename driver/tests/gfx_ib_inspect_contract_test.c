@@ -1,4 +1,4 @@
-﻿/*
+/*
  * gfx_ib_inspect_contract_test.c -- suite offline do classificador de stream PM4
  * do IB submetido ao anel grafico CP_RB0.
  *

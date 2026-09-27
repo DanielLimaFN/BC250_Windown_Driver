@@ -17,6 +17,57 @@ SLOT = struct.Struct("<IIIiQQ")
 TRAILER = struct.Struct("<II")
 RECORD_SIZE = HEADER.size + 16 * SLOT.size + TRAILER.size
 MAGIC = 0x36585042
+STAGE_NAMES = {
+    1: "BUILD_ENTER", 2: "AFTER_DDI_MARK", 3: "AFTER_ENTRY_LOG",
+    4: "AFTER_CAPS", 5: "BEFORE_DISPATCH", 6: "AFTER_DISPATCH",
+    7: "FLUSH_HANDLER_ENTER", 8: "FLUSH_HANDLER_LEAVE",
+    20: "UPDATE_ENTER", 21: "UPDATE_AFTER_HEADER_LOG",
+    22: "UPDATE_AFTER_ENTRY_LOGS", 23: "UPDATE_BEFORE_HANDLER",
+    24: "UPDATE_AFTER_HANDLER", 40: "FLUSH_OBJECT_LOCK_WAIT",
+    41: "FLUSH_OBJECT_LOCK_HELD", 42: "FLUSH_GFXHUB_WAIT",
+    43: "FLUSH_GFXHUB_DONE", 44: "FLUSH_JOURNAL_WAIT",
+    45: "FLUSH_JOURNAL_DONE", 46: "FLUSH_OBJECT_LOCK_RELEASE",
+}
+
+
+# DX.87: registro de migalhas MMIO (espelho em RAM) gravado depois de cada
+# registro de paginacao. Layout em bc250_mcdm_callbacks.c (BC250_CRUMB_TRACE_RECORD).
+CRUMB_MAGIC = 0x31524342
+CRUMB_SLOTS = 96
+CRUMB_CPUS = 32
+CRUMB_HEADER = struct.Struct("<IIIIIIQ")
+CRUMB_SIZE = CRUMB_HEADER.size + CRUMB_SLOTS * 12 + 8
+CRUMB_SITES = {
+    1: "TRANSPORT_READ", 2: "TRANSPORT_WRITE", 3: "SDMA_READ", 4: "SDMA_WRITE",
+    5: "OTG_READ", 6: "RINGWORK_READ", 7: "RINGWORK_WRITE", 8: "VRAM_SAMPLE",
+    9: "VRAM_COMPARE", 10: "PAGING_DDI", 11: "SUBMIT_DDI",
+}
+CRUMB_BANKS = {0: "INTERNA", 1: "PAGINACAO", 2: "SUBMISSAO"}
+
+
+def decode_crumb_record(data: bytes) -> dict:
+    if len(data) != CRUMB_SIZE:
+        raise ValueError("registro de migalha incompleto")
+    magic, version, count, tick, last, _reserved, when = CRUMB_HEADER.unpack_from(data)
+    checksum, padding = struct.unpack_from("<II", data, CRUMB_SIZE - 8)
+    if magic != CRUMB_MAGIC or version != 1 or count != CRUMB_SLOTS or padding:
+        raise ValueError("cabecalho de migalha invalido")
+    if checksum != fnv1a(data[: CRUMB_SIZE - 8]):
+        raise ValueError("checksum de migalha divergente")
+    in_flight = []
+    for slot in range(CRUMB_SLOTS):
+        seq, site_offset, phase = struct.unpack_from("<III", data, CRUMB_HEADER.size + slot * 12)
+        if seq and phase == 0xB0:
+            in_flight.append({
+                "sequence": seq,
+                "cpu": slot % CRUMB_CPUS,
+                "bank": CRUMB_BANKS.get(slot // CRUMB_CPUS, "?"),
+                "site": CRUMB_SITES.get(site_offset >> 24, f"SITE_{site_offset >> 24}"),
+                "offset": f"0x{site_offset & 0xFFFFFF:06X}",
+            })
+    in_flight.sort(key=lambda item: item["sequence"])
+    return {"writer_tick": tick, "last_sequence": last,
+            "snapshot_time_100ns": when, "in_flight": in_flight}
 
 
 def fnv1a(data: bytes) -> int:
@@ -44,16 +95,21 @@ def decode_record(data: bytes) -> dict:
             data, HEADER.size + index * SLOT.size
         )
         if seq:
-            slots.append(
-                {
-                    "sequence": seq,
-                    "stage": stage,
-                    "operation": operation,
-                    "status": f"0x{status & 0xFFFFFFFF:08X}",
-                    "thread": f"0x{thread:X}",
-                    "time_100ns": when,
-                }
-            )
+            slot = {
+                "sequence": seq,
+                "stage": stage,
+                "stage_name": STAGE_NAMES.get(stage, "UNKNOWN"),
+                "operation": operation,
+                "status": f"0x{status & 0xFFFFFFFF:08X}",
+                "thread": f"0x{thread:X}",
+                "time_100ns": when,
+            }
+            # DX.85+: o estagio 44 carrega (M << 16) | N do commit do journal.
+            # Binarios DX.83/DX.84 gravavam STATUS_PENDING (0x103) aqui.
+            if stage == 44 and (status & 0xFFFFFFFF) != 0x103:
+                slot["commit_changes_m"] = (status >> 16) & 0xFFFF
+                slot["commit_live_ranges_n"] = status & 0xFFFF
+            slots.append(slot)
     return {
         "version": version,
         "writer_tick": reserved if version == 2 else None,
@@ -91,6 +147,36 @@ def main() -> None:
         except ValueError as error:
             invalid.append({"file_offset": candidate, "reason": str(error)})
             offset = candidate + len(magic)
+    # DX.87: registros de migalhas. Um acesso em fase ANTES que aparece com a
+    # mesma sequencia nos ultimos registros e' o candidato a acesso que parou.
+    crumbs = []
+    crumb_magic = struct.pack("<I", CRUMB_MAGIC)
+    position = contents.find(crumb_magic)
+    while position >= 0:
+        try:
+            crumbs.append(decode_crumb_record(contents[position : position + CRUMB_SIZE]))
+            position = contents.find(crumb_magic, position + CRUMB_SIZE)
+        except ValueError:
+            position = contents.find(crumb_magic, position + 4)
+    crumb_summary = None
+    if crumbs:
+        last_crumb = crumbs[-1]
+        persistent = []
+        for item in last_crumb["in_flight"]:
+            streak = 0
+            for record in reversed(crumbs):
+                if any(o["sequence"] == item["sequence"] and o["cpu"] == item["cpu"]
+                       for o in record["in_flight"]):
+                    streak += 1
+                else:
+                    break
+            persistent.append(dict(item, records_in_flight=streak))
+        crumb_summary = {
+            "crumb_records": len(crumbs),
+            "last_writer_tick": last_crumb["writer_tick"],
+            "last_sequence": last_crumb["last_sequence"],
+            "in_flight_at_last_record": persistent,
+        }
     # DX.65: batimento depois da ultima paginacao. So' registros v2 com a
     # MESMA latest_sequence no fim, em sequencia de writer_tick, contam.
     heartbeat = None
@@ -118,6 +204,7 @@ def main() -> None:
                 "valid_records": len(valid),
                 "invalid_records": invalid[-5:],
                 "heartbeat_after_last_paging": heartbeat,
+                "mmio_crumbs": crumb_summary,
                 "last_snapshots": valid[-args.last :],
             },
             indent=2,

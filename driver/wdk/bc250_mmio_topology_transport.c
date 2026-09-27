@@ -253,7 +253,7 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == 0x00004BA4u || ByteOffset == 0x00004BA8u ||
         ByteOffset == 0x00004BC8u || ByteOffset == 0x00004C48u ||
         ByteOffset == 0x00004C4Cu || ByteOffset == 0x00004C54u ||
-        ByteOffset == 0x0003B000u || ByteOffset == 0x0003B9B8u ||
+        ByteOffset == 0x0003B000u || ByteOffset == 0x0003B014u || ByteOffset == 0x0003B9B8u ||
         ByteOffset == 0x000086D8u || ByteOffset == 0x00008694u ||
         ByteOffset == 0x00008698u || ByteOffset == 0x0000869Cu ||
         /*
@@ -477,7 +477,7 @@ static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == 0x00004BA4u || ByteOffset == 0x00004BA8u ||
         ByteOffset == 0x00004BC8u || ByteOffset == 0x00004C48u ||
         ByteOffset == 0x00004C4Cu || ByteOffset == 0x00004C54u ||
-        ByteOffset == 0x0003B000u || ByteOffset == 0x000086D8u ||
+        ByteOffset == 0x0003B000u || ByteOffset == 0x0003B014u || ByteOffset == 0x000086D8u ||
         ByteOffset == 0x0003E050u || ByteOffset == 0x0003E054u ||
         ByteOffset == 0x0003E058u || ByteOffset == 0x0003E05Cu ||
         ByteOffset == 0x0003E060u || ByteOffset == 0x0003E064u ||

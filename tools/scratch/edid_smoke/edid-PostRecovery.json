@@ -1,0 +1,53 @@
+﻿{
+    "schema":  1,
+    "phase":  "PostRecovery",
+    "captured_at":  "2026-09-25T23:07:13.9665040-03:00",
+    "boot_ticks":  639259676585000000,
+    "source":  "Windows monitor PnP registry and WMI (may be cached or overridden)",
+    "fresh_dp_aux_read":  false,
+    "monitor_count":  1,
+    "monitors":  [
+                     {
+                         "instance_id":  "DISPLAY\\GSM5B98\\5\u002641A81D0\u002615\u0026UID0",
+                         "friendly_name":  "Monitor Genérico PnP",
+                         "parent":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619caf403\u00260\u00260041",
+                         "registry_path":  "Registry::HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Enum\\DISPLAY\\GSM5B98\\5\u002641A81D0\u002615\u0026UID0\\Device Parameters",
+                         "registry_bytes":  128,
+                         "registry_sha256":  "5CA654D3A16BEF2B556770F5A83242DC48D900AED6F4DABD2F9F746B5E511861",
+                         "header_valid":  true,
+                         "base_checksum_valid":  true,
+                         "all_available_checksums_valid":  true,
+                         "manufacturer":  "GSM",
+                         "product_code":  "0x5B98",
+                         "serial_number":  271109,
+                         "extensions_declared":  1,
+                         "extensions_available":  0,
+                         "pixel_clock_khz_dtd1":  185580,
+                         "h_active_dtd1":  2560,
+                         "v_active_dtd1":  1080,
+                         "edid_override_present":  false,
+                         "wmi_blocks":  [
+                                            {
+                                                "block":  0,
+                                                "returned":  true,
+                                                "type":  1,
+                                                "bytes":  128,
+                                                "checksum_valid":  true,
+                                                "sha256":  "5CA654D3A16BEF2B556770F5A83242DC48D900AED6F4DABD2F9F746B5E511861"
+                                            },
+                                            {
+                                                "block":  1,
+                                                "error":  "Falha genérica "
+                                            }
+                                        ],
+                         "wmi_base_matches_registry":  true,
+                         "errors":  [
+
+                                    ]
+                     }
+                 ],
+    "errors":  [
+
+               ],
+    "same_base_hash_as_prebind":  true
+}

@@ -661,14 +661,23 @@ VkSampler Bc250UmdVkCachedSampler(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, _In_ con
 
 VOID Bc250UmdVkBridgeShutdown(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
 {
+    UINT64 hangSpan;
     if (pBridge == NULL) return;
+    hangSpan = Bc250WinsysHangSpan();
+    Bc250WinsysHangEvent("VK_SHUTDOWN", "ENTER", pBridge, hangSpan,
+        (UINT64)(uintptr_t)pBridge->Device, 0u, S_OK);
     pBridge->DeviceActive = FALSE;
     pBridge->RecordingActive = FALSE;
     Bc250VkTrace("[VK_BRIDGE] Bc250UmdVkBridgeShutdown ENTER: DeviceActive=%d", pBridge->DeviceActive);
 
     if (pBridge->Device != VK_NULL_HANDLE) {
         if (pBridge->vk.vkDeviceWaitIdle != NULL) {
-            pBridge->vk.vkDeviceWaitIdle(pBridge->Device);
+            VkResult idleResult;
+            Bc250WinsysHangEvent("VK_WAIT_IDLE", "ENTER", pBridge, hangSpan,
+                (UINT64)(uintptr_t)pBridge->Device, 0u, S_OK);
+            idleResult = pBridge->vk.vkDeviceWaitIdle(pBridge->Device);
+            Bc250WinsysHangEvent("VK_WAIT_IDLE", "LEAVE", pBridge, hangSpan,
+                (UINT64)(uintptr_t)pBridge->Device, 0u, (HRESULT)idleResult);
         }
         Bc250UmdVkReleaseDescriptorBatches(pBridge);
         /* DX.54: pool persistente e cache de samplers vivem ate aqui. */
@@ -723,7 +732,11 @@ VOID Bc250UmdVkBridgeShutdown(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
             pBridge->CommandPool = VK_NULL_HANDLE;
         }
         if (pBridge->vk.vkDestroyDevice != NULL) {
+            Bc250WinsysHangEvent("VK_DESTROY_DEVICE", "ENTER", pBridge, hangSpan,
+                (UINT64)(uintptr_t)pBridge->Device, 0u, S_OK);
             pBridge->vk.vkDestroyDevice(pBridge->Device, NULL);
+            Bc250WinsysHangEvent("VK_DESTROY_DEVICE", "LEAVE", pBridge, hangSpan,
+                (UINT64)(uintptr_t)pBridge->Device, 0u, S_OK);
             pBridge->Device = VK_NULL_HANDLE;
         }
     }
@@ -736,7 +749,11 @@ VOID Bc250UmdVkBridgeShutdown(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
     }
 
     if (pBridge->hIcdModule != NULL) {
+        Bc250WinsysHangEvent("VK_FREE_LIBRARY", "ENTER", pBridge, hangSpan,
+            (UINT64)(uintptr_t)pBridge->hIcdModule, 0u, S_OK);
         FreeLibrary(pBridge->hIcdModule);
+        Bc250WinsysHangEvent("VK_FREE_LIBRARY", "LEAVE", pBridge, hangSpan,
+            (UINT64)(uintptr_t)pBridge->hIcdModule, 0u, S_OK);
         pBridge->hIcdModule = NULL;
     }
 
@@ -746,6 +763,7 @@ VOID Bc250UmdVkBridgeShutdown(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
     pBridge->DeviceActive = FALSE;
     pBridge->RecordingActive = FALSE;
     Bc250VkTrace("[VK_BRIDGE] Bc250UmdVkBridgeShutdown LEAVE: Desmontado com sucesso");
+    Bc250WinsysHangEvent("VK_SHUTDOWN", "LEAVE", pBridge, hangSpan, 0u, 0u, S_OK);
 }
 
 BOOL Bc250UmdVkBridgeInit(_Out_ BC250_UMD_VK_BRIDGE *pBridge)
@@ -1421,5 +1439,4 @@ uint32_t Bc250UmdVkInspectLinearPresentBuf(
     }
     return nonZeroSamples;
 }
-
 

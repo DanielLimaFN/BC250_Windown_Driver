@@ -67,21 +67,45 @@ enum {
 __declspec(selectany) volatile ULONG *g_Bc250CrumbPage = NULL;
 __declspec(selectany) volatile LONG g_Bc250CrumbSeq = 0;
 
+/*
+ * DX.87 -- ESPELHO EM RAM, COPIADO PARA DISCO PELO ESCRITOR DO RASTRO DX.56.
+ *
+ * A pagina de VRAM so' serve se sobreviver ao reset, e nas travas duras das
+ * Corridas 115, 128, 129 e 133 ela NAO sobreviveu ("ANTERIOR AUSENTE"). O
+ * escritor do rastro, porem, as vezes vive depois da ultima paginacao (12,3 s
+ * na 129). O mesmo layout vai para este vetor em pool nao-paginado (escrita
+ * simples, sem MMIO) e o escritor o grava em disco a cada periodo: um slot em
+ * fase ANTES que persista em registros seguidos nomeia CPU, sitio e offset do
+ * acesso que nao terminou. Nenhum acesso MMIO muda de valor, ordem ou numero.
+ */
+__declspec(selectany) volatile ULONG g_Bc250CrumbMirror[
+    BC250_CRUMB_SLOT_BASE_DW + BC250_CRUMB_SLOTS * BC250_CRUMB_SLOT_DWORDS] = { 0 };
+
 static __forceinline ULONG Bc250CrumbBeforeBank(ULONG Site, ULONG Offset, ULONG Bank)
 {
     volatile ULONG *page = g_Bc250CrumbPage;
     ULONG slot;
     ULONG seq;
+    ULONG siteOffset;
     volatile ULONG *entry;
-    if (page == NULL || Bank >= BC250_CRUMB_BANKS) return 0xFFFFFFFFu;
+    volatile ULONG *mirror;
+    if (Bank >= BC250_CRUMB_BANKS) return 0xFFFFFFFFu;
     seq = (ULONG)InterlockedIncrement(&g_Bc250CrumbSeq);
     slot = Bank * BC250_CRUMB_CPUS +
         KeGetCurrentProcessorNumberEx(NULL) % BC250_CRUMB_CPUS;
-    entry = page + BC250_CRUMB_SLOT_BASE_DW + slot * BC250_CRUMB_SLOT_DWORDS;
-    entry[1] = (Site << 24) | (Offset & 0x00FFFFFFu);
-    entry[2] = BC250_CRUMB_PHASE_BEFORE;
-    entry[0] = seq;
-    page[BC250_CRUMB_DW_LASTSEQ] = seq;
+    siteOffset = (Site << 24) | (Offset & 0x00FFFFFFu);
+    mirror = g_Bc250CrumbMirror + BC250_CRUMB_SLOT_BASE_DW + slot * BC250_CRUMB_SLOT_DWORDS;
+    mirror[1] = siteOffset;
+    mirror[2] = BC250_CRUMB_PHASE_BEFORE;
+    mirror[0] = seq;
+    g_Bc250CrumbMirror[BC250_CRUMB_DW_LASTSEQ] = seq;
+    if (page != NULL) {
+        entry = page + BC250_CRUMB_SLOT_BASE_DW + slot * BC250_CRUMB_SLOT_DWORDS;
+        entry[1] = siteOffset;
+        entry[2] = BC250_CRUMB_PHASE_BEFORE;
+        entry[0] = seq;
+        page[BC250_CRUMB_DW_LASTSEQ] = seq;
+    }
     return slot;
 }
 
@@ -93,7 +117,10 @@ static __forceinline ULONG Bc250CrumbBefore(ULONG Site, ULONG Offset)
 static __forceinline VOID Bc250CrumbAfter(ULONG Slot)
 {
     volatile ULONG *page = g_Bc250CrumbPage;
-    if (page == NULL || Slot >= BC250_CRUMB_SLOTS) return;
+    if (Slot >= BC250_CRUMB_SLOTS) return;
+    g_Bc250CrumbMirror[BC250_CRUMB_SLOT_BASE_DW + Slot * BC250_CRUMB_SLOT_DWORDS + 2u] =
+        BC250_CRUMB_PHASE_AFTER;
+    if (page == NULL) return;
     page[BC250_CRUMB_SLOT_BASE_DW + Slot * BC250_CRUMB_SLOT_DWORDS + 2u] =
         BC250_CRUMB_PHASE_AFTER;
 }

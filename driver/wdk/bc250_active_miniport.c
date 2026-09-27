@@ -1218,6 +1218,87 @@ static NTSTATUS Bc250ActiveGfxEngineOnline(BC250_DXGK_ACTIVE_CONTEXT *Context)
     return STATUS_SUCCESS;
 }
 
+/*
+ * =========================================================================
+ * PROTOCOLO RLC_SAFE_MODE E SOFT-RESET SEGURO DO CP/GFX (RDNA1 / GFX10)
+ * =========================================================================
+ * Proveniencia: AMDRadeonX6000_AMDGFX10PM4Engine::enterRlcSafeModeEv / exitRlcSafeModeEv
+ * e Linux upstream gfx_v10_0_set_safe_mode.
+ *
+ * Ao isolar o RLC em safe mode antes de disparar o soft-reset no bloco GRBM
+ * (CP + GFX), evitamos concorrencia no crossbar de energia/gerenciamento de
+ * filas e o disparo de faltas UTCL1 XNACK no SDMA. Isso permite o reset completo
+ * das microengines do CP sem congelamento de barramento PCIe e sem exigir reboot
+ * frio entre testes consecutivos.
+ */
+static BOOLEAN Bc250EnterRlcSafeMode(
+    _Inout_ BC250_MMIO_TOPOLOGY_CONTEXT *Transport)
+{
+    uint32_t data = 0u;
+    uint32_t poll;
+
+    if (Transport == NULL || Transport->State != BC250_MMIO_TOPOLOGY_MAPPED) {
+        return FALSE;
+    }
+
+    /* CMD=1, MESSAGE=1 (0x3): solicita ao RLC entrada em modo seguro */
+    if (Bc250MmioTopologyWrite32(Transport, BC250_REG_RLC_SAFE_MODE,
+            BC250_RLC_SAFE_MODE_ENTER_CMD) == 0u) {
+        Bc250DisplayLog("[RLC_SAFE_MODE] Falha ao escrever comando ENTER em 0x%05X\n",
+            BC250_REG_RLC_SAFE_MODE);
+        return FALSE;
+    }
+
+    /* Polling limitado: o hardware do RLC limpa o bit 0 (CMD) ao concluir a transicao.
+     * Limite: 1000 iteracoes com 10 us = 10 ms maximo (identico ao macOS e Linux). */
+    for (poll = 0u; poll < 1000u; ++poll) {
+        if (Bc250MmioTopologyRead32(Transport, BC250_REG_RLC_SAFE_MODE, &data) != 0u) {
+            if ((data & BC250_RLC_SAFE_MODE_CMD_MASK) == 0u) {
+                Bc250DisplayLog("[RLC_SAFE_MODE] ENTER confirmado em poll=%u (reg=0x%08X)\n",
+                    poll, data);
+                return TRUE;
+            }
+        }
+        KeStallExecutionProcessor(10u);
+    }
+
+    Bc250DisplayLog("[RLC_SAFE_MODE] ENTER TIMEOUT: RLC nao confirmou safe mode apos 10ms (reg=0x%08X)\n",
+        data);
+    return FALSE;
+}
+
+static void Bc250ExitRlcSafeMode(
+    _Inout_ BC250_MMIO_TOPOLOGY_CONTEXT *Transport)
+{
+    uint32_t data = 0u;
+    uint32_t poll;
+
+    if (Transport == NULL || Transport->State != BC250_MMIO_TOPOLOGY_MAPPED) {
+        return;
+    }
+
+    /* CMD=1, MESSAGE=0 (0x1): solicita ao RLC saida do modo seguro */
+    (void)Bc250MmioTopologyWrite32(Transport, BC250_REG_RLC_SAFE_MODE,
+        BC250_RLC_SAFE_MODE_EXIT_CMD);
+
+    for (poll = 0u; poll < 1000u; ++poll) {
+        if (Bc250MmioTopologyRead32(Transport, BC250_REG_RLC_SAFE_MODE, &data) != 0u) {
+            if ((data & BC250_RLC_SAFE_MODE_CMD_MASK) == 0u) {
+                Bc250DisplayLog("[RLC_SAFE_MODE] EXIT confirmado em poll=%u (reg=0x%08X)\n",
+                    poll, data);
+                return;
+            }
+        }
+        KeStallExecutionProcessor(10u);
+    }
+
+    Bc250DisplayLog("[RLC_SAFE_MODE] EXIT TIMEOUT: RLC nao limpou CMD apos 10ms (reg=0x%08X)\n",
+        data);
+}
+
+static BOOLEAN Bc250SafeGfxCpReset(
+    _Inout_ BC250_MMIO_TOPOLOGY_CONTEXT *Transport);
+
 static NTSTATUS Bc250ActiveGfxEngineOffline(BC250_DXGK_ACTIVE_CONTEXT *Context)
 {
     BC250_VRAM_ALLOCATOR *allocator;
@@ -1242,6 +1323,7 @@ static NTSTATUS Bc250ActiveGfxEngineOffline(BC250_DXGK_ACTIVE_CONTEXT *Context)
         interfaceData.Identity = BC250_GFX_RING_TXN_IDENTITY;
 
         (void)Bc250GfxRingTxnRollback(&interfaceData, &Context->GfxEngine.Evidence);
+        (void)Bc250SafeGfxCpReset(&Context->Core.MmioTransport);
     }
 
     if (Context->GfxEngine.RingCpuVirtual != NULL) {
@@ -6474,15 +6556,34 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                  * mantem assim. NAO VALIDADO EM HARDWARE.
                  */
                 {
-                    uint32_t meHdr = 0u, pfpHdr = 0u, ib1Lo = 0u, ib1Hi = 0u;
+                    uint32_t meHdr[8] = {0};
+                    uint32_t pfpHdr[8] = {0};
+                    uint32_t ib1Lo = 0u, ib1Hi = 0u;
                     uint32_t ib1Sz = 0u, se0 = 0u, se1 = 0u, sq = 0u;
                     uint32_t grbm2 = 0u, busyStat = 0u;
-                    uint32_t okMe, okPfp, okSq, okIb;
+                    uint32_t okMe = 0u, okPfp = 0u, okSq, okIb;
+                    uint32_t h;
 
-                    okMe = Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
-                        BC250_GFX_REG_CP_ME_HEADER_DUMP, &meHdr);
-                    okPfp = Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
-                        BC250_GFX_REG_CP_PFP_HEADER_DUMP, &pfpHdr);
+                    for (h = 0u; h < 8u; ++h) {
+                        uint32_t val = 0u;
+                        if (Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                                BC250_GFX_REG_CP_ME_HEADER_DUMP, &val) != 0u) {
+                            meHdr[h] = val;
+                            if (h == 0u) {
+                                okMe = 1u;
+                            }
+                        }
+                    }
+                    for (h = 0u; h < 8u; ++h) {
+                        uint32_t val = 0u;
+                        if (Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
+                                BC250_GFX_REG_CP_PFP_HEADER_DUMP, &val) != 0u) {
+                            pfpHdr[h] = val;
+                            if (h == 0u) {
+                                okPfp = 1u;
+                            }
+                        }
+                    }
                     okIb = Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
                         BC250_GFX_REG_CP_IB1_BUFSZ, &ib1Sz);
                     (void)Bc250MmioTopologyRead32(&activeCtx->Core.MmioTransport,
@@ -6502,24 +6603,46 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
 
                     if (okMe != 0u) {
                         Bc250DisplayLog("[TDR_GFX_PACKET] ME_HEADER_DUMP=0x%08X Type=%u Opcode=0x%02X (%s) PayloadDW=%u\n",
-                            meHdr, Bc250Pm4HeaderType(meHdr),
-                            Bc250Pm4HeaderType3Opcode(meHdr),
-                            Bc250Pm4HeaderType(meHdr) == BC250_PM4_TYPE_3 ?
-                                Bc250Pm4Type3OpcodeName(Bc250Pm4HeaderType3Opcode(meHdr)) :
+                            meHdr[0], Bc250Pm4HeaderType(meHdr[0]),
+                            Bc250Pm4HeaderType3Opcode(meHdr[0]),
+                            Bc250Pm4HeaderType(meHdr[0]) == BC250_PM4_TYPE_3 ?
+                                Bc250Pm4Type3OpcodeName(Bc250Pm4HeaderType3Opcode(meHdr[0])) :
                                 "nao-e-type3",
-                            Bc250Pm4HeaderType3CountDwords(meHdr));
+                            Bc250Pm4HeaderType3CountDwords(meHdr[0]));
+                        for (h = 1u; h < 8u; ++h) {
+                            if (meHdr[h] != 0u) {
+                                Bc250DisplayLog("[TDR_GFX_PACKET] ME_HEADER_DUMP[%u]=0x%08X Type=%u Opcode=0x%02X (%s) PayloadDW=%u\n",
+                                    h, meHdr[h], Bc250Pm4HeaderType(meHdr[h]),
+                                    Bc250Pm4HeaderType3Opcode(meHdr[h]),
+                                    Bc250Pm4HeaderType(meHdr[h]) == BC250_PM4_TYPE_3 ?
+                                        Bc250Pm4Type3OpcodeName(Bc250Pm4HeaderType3Opcode(meHdr[h])) :
+                                        "nao-e-type3",
+                                    Bc250Pm4HeaderType3CountDwords(meHdr[h]));
+                            }
+                        }
                     } else {
                         Bc250DisplayLog("[TDR_GFX_PACKET] ME_HEADER_DUMP INDETERMINADO: Read32 recusou 0x%05X; o pacote em que o ME parou fica SEM RESPOSTA nesta corrida\n",
                             BC250_GFX_REG_CP_ME_HEADER_DUMP);
                     }
                     if (okPfp != 0u) {
                         Bc250DisplayLog("[TDR_GFX_PACKET] PFP_HEADER_DUMP=0x%08X Type=%u Opcode=0x%02X (%s) PayloadDW=%u\n",
-                            pfpHdr, Bc250Pm4HeaderType(pfpHdr),
-                            Bc250Pm4HeaderType3Opcode(pfpHdr),
-                            Bc250Pm4HeaderType(pfpHdr) == BC250_PM4_TYPE_3 ?
-                                Bc250Pm4Type3OpcodeName(Bc250Pm4HeaderType3Opcode(pfpHdr)) :
+                            pfpHdr[0], Bc250Pm4HeaderType(pfpHdr[0]),
+                            Bc250Pm4HeaderType3Opcode(pfpHdr[0]),
+                            Bc250Pm4HeaderType(pfpHdr[0]) == BC250_PM4_TYPE_3 ?
+                                Bc250Pm4Type3OpcodeName(Bc250Pm4HeaderType3Opcode(pfpHdr[0])) :
                                 "nao-e-type3",
-                            Bc250Pm4HeaderType3CountDwords(pfpHdr));
+                            Bc250Pm4HeaderType3CountDwords(pfpHdr[0]));
+                        for (h = 1u; h < 8u; ++h) {
+                            if (pfpHdr[h] != 0u) {
+                                Bc250DisplayLog("[TDR_GFX_PACKET] PFP_HEADER_DUMP[%u]=0x%08X Type=%u Opcode=0x%02X (%s) PayloadDW=%u\n",
+                                    h, pfpHdr[h], Bc250Pm4HeaderType(pfpHdr[h]),
+                                    Bc250Pm4HeaderType3Opcode(pfpHdr[h]),
+                                    Bc250Pm4HeaderType(pfpHdr[h]) == BC250_PM4_TYPE_3 ?
+                                        Bc250Pm4Type3OpcodeName(Bc250Pm4HeaderType3Opcode(pfpHdr[h])) :
+                                        "nao-e-type3",
+                                    Bc250Pm4HeaderType3CountDwords(pfpHdr[h]));
+                            }
+                        }
                     } else {
                         Bc250DisplayLog("[TDR_GFX_PACKET] PFP_HEADER_DUMP INDETERMINADO: Read32 recusou 0x%05X\n",
                             BC250_GFX_REG_CP_PFP_HEADER_DUMP);
@@ -6781,6 +6904,8 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                 (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
                     BC250_GFX_REG_CP_RB0_ACTIVE, 0u);
 
+                (void)Bc250EnterRlcSafeMode(&activeCtx->Core.MmioTransport);
+
                 /* Pulso de soft-reset no CP e GFX */
                 (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
                     BC250_GRBM_REG_SOFT_RESET,
@@ -6791,6 +6916,9 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
                 KeStallExecutionProcessor(50u);
                 (void)Bc250MmioTopologyWrite32(&activeCtx->Core.MmioTransport,
                     BC250_GRBM_REG_SOFT_RESET, 0u);
+                KeStallExecutionProcessor(50u);
+
+                Bc250ExitRlcSafeMode(&activeCtx->Core.MmioTransport);
 
                 activeCtx->GfxEngine.State = 0u;
                 Bc250DisplayLog("[TDR_GFX_QUIESCE] CP_RB0 desativado e soft-reset executado\n");
@@ -6801,6 +6929,48 @@ static BOOLEAN Bc250ActiveTdrQuiesceLifecycle(VOID)
     ExReleasePushLockShared(&g_Bc250AdapterDirectoryLock);
     KeLeaveCriticalRegion();
     return result;
+}
+
+static BOOLEAN Bc250SafeGfxCpReset(
+    _Inout_ BC250_MMIO_TOPOLOGY_CONTEXT *Transport)
+{
+    uint32_t bcastReadback = 0u;
+    uint32_t bcastWritten;
+    const uint32_t resetMask =
+        BC250_GRBM_SOFT_RESET_CP_MASK |
+        BC250_GRBM_SOFT_RESET_GFX_MASK |
+        BC250_GRBM_SOFT_RESET_CPF_MASK |
+        BC250_GRBM_SOFT_RESET_CPG_MASK;
+
+    if (Transport == NULL || Transport->State != BC250_MMIO_TOPOLOGY_MAPPED) {
+        return FALSE;
+    }
+
+    /* Repoe GRBM_GFX_INDEX em broadcast antes do reset */
+    bcastWritten = Bc250MmioTopologyWrite32(
+        Transport,
+        BC250_GFX_REG_GRBM_GFX_INDEX,
+        BC250_GRBM_GFX_INDEX_BROADCAST_ALL);
+    (void)Bc250MmioTopologyRead32(Transport,
+        BC250_GFX_REG_GRBM_GFX_INDEX, &bcastReadback);
+    Bc250DisplayLog("[RLC_SAFE_MODE] GRBM_GFX_INDEX reposto em broadcast antes do soft-reset: escrita=%u readback=0x%08X\n",
+        bcastWritten, bcastReadback);
+
+    /* Desativa fila antes do reset */
+    (void)Bc250MmioTopologyWrite32(Transport, BC250_GFX_REG_CP_RB0_ACTIVE, 0u);
+
+    if (!Bc250EnterRlcSafeMode(Transport)) {
+        Bc250DisplayLog("[RLC_SAFE_MODE] AVISO: entrada em safe mode falhou; prosseguindo com soft-reset com cautela\n");
+    }
+
+    (void)Bc250MmioTopologyWrite32(Transport, BC250_GRBM_REG_SOFT_RESET, resetMask);
+    KeStallExecutionProcessor(50u);
+    (void)Bc250MmioTopologyWrite32(Transport, BC250_GRBM_REG_SOFT_RESET, 0u);
+    KeStallExecutionProcessor(50u);
+
+    Bc250ExitRlcSafeMode(Transport);
+    Bc250DisplayLog("[RLC_SAFE_MODE] CP e GFX soft-reset seguro concluido\n");
+    return TRUE;
 }
 
 /*
@@ -10355,6 +10525,7 @@ static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason(
     /* Stop the consumer before restoring the address space it may still
      * reference. Offline borrows core MMIO; the mapping remains available. */
     (void)Bc250ActiveGfxEngineOffline(context);
+    (void)Bc250SafeGfxCpReset(&context->Core.MmioTransport);
     engineStatus = Bc250SubmissionEngineOffline(context);
     Bc250ProbeRecordFirstFailure(engineStatus);
     if (context->ComputeVmidBinding.SnapshotValid) {
@@ -14230,9 +14401,15 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
             BC250_ACTIVE_GPUVA_JOURNAL_SLOTS),
         active->GpuvaHierarchyPending);
 
+    Bc250PagingTraceMarkExternal(BC250_PAGING_HANG_LOCK_WAIT,
+        DXGK_OPERATION_FLUSH_TLB, STATUS_PENDING);
     KeEnterCriticalRegion();
     ExAcquirePushLockExclusive(&active->ObjectLock);
+    Bc250PagingTraceMarkExternal(BC250_PAGING_HANG_LOCK_HELD,
+        DXGK_OPERATION_FLUSH_TLB, STATUS_SUCCESS);
     if (InterlockedCompareExchange(&active->GpuvaJournalReady, 1, 1) != 1) {
+        Bc250PagingTraceMarkExternal(BC250_PAGING_HANG_LOCK_RELEASE,
+            DXGK_OPERATION_FLUSH_TLB, STATUS_SUCCESS);
         ExReleasePushLockExclusive(&active->ObjectLock);
         KeLeaveCriticalRegion();
         Bc250DisplayLog("[ActiveFlushTlb] GpuvaJournalReady != 1 -> Handled (SUCCESS)\n");
@@ -14258,13 +14435,21 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
         active->GpuvaHierarchyRootPageTable = 0u;
         active->GpuvaHierarchyHighestLevel = 0u;
     }
+    Bc250PagingTraceMarkExternal(BC250_PAGING_HANG_HW_FLUSH_WAIT,
+        DXGK_OPERATION_FLUSH_TLB, STATUS_PENDING);
     if (Bc250ActiveFlushMappedGfxhubTlb(active) == 0u) {
+        Bc250PagingTraceMarkExternal(BC250_PAGING_HANG_HW_FLUSH_DONE,
+            DXGK_OPERATION_FLUSH_TLB, STATUS_IO_DEVICE_ERROR);
         InterlockedExchange(&active->GpuvaMappingsOperational, 0);
+        Bc250PagingTraceMarkExternal(BC250_PAGING_HANG_LOCK_RELEASE,
+            DXGK_OPERATION_FLUSH_TLB, STATUS_IO_DEVICE_ERROR);
         ExReleasePushLockExclusive(&active->ObjectLock);
         KeLeaveCriticalRegion();
         Bc250DisplayLog("[ActiveFlushTlb] FlushMappedGfxhubTlb failed -> internal fail-closed (SUCCESS)\n");
         return STATUS_SUCCESS;
     }
+    Bc250PagingTraceMarkExternal(BC250_PAGING_HANG_HW_FLUSH_DONE,
+        DXGK_OPERATION_FLUSH_TLB, STATUS_SUCCESS);
     if (!canCommitJournal) {
         active->GpuvaHierarchyPending = 0u;
         active->GpuvaHierarchyProcess = NULL;
@@ -14283,6 +14468,8 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
         telemetryGeneration = active->GpuvaActivationSnapshotGeneration;
         telemetryEpoch = active->GpuvaActivationSnapshotEpoch;
         telemetryLiveCount = active->GpuvaActivationSnapshotLiveCount;
+        Bc250PagingTraceMarkExternal(BC250_PAGING_HANG_LOCK_RELEASE,
+            DXGK_OPERATION_FLUSH_TLB, STATUS_SUCCESS);
         ExReleasePushLockExclusive(&active->ObjectLock);
         KeLeaveCriticalRegion();
         Bc250ActiveRecordGpuvaGateTelemetry(telemetryEligible,
@@ -14293,12 +14480,30 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
             canCommitJournal ? 1u : 0u);
         return STATUS_SUCCESS;
     }
+    {
+        /*
+         * DX.85: o marcador 44 carrega (M << 16) | N em vez de STATUS_PENDING.
+         * M = mudancas no journal, N = faixas vivas no slot publicado. O custo
+         * do commit escala com M * N (ver o bloco DX.85 do espaco GPUVA); com
+         * isso um travamento neste estagio diz se o lote era anormal.
+         */
+        long activeSlot = active->GpuvaSnapshots.ActiveSlot;
+        ULONG commitM = flushJournal != NULL ? flushJournal->ChangeCount : 0u;
+        ULONG commitN = (activeSlot == 0L || activeSlot == 1L) ?
+            active->GpuvaSnapshots.Slots[activeSlot].LiveCount : 0u;
+        Bc250PagingTraceMarkExternal(BC250_PAGING_HANG_JOURNAL_WAIT,
+            DXGK_OPERATION_FLUSH_TLB,
+            (NTSTATUS)(((commitM & 0xFFFFu) << 16) | (commitN & 0xFFFFu)));
+    }
     journalStatus = Bc250GpuvaJournalCommitFlush(flushJournal,
         &active->GpuvaSnapshots, &active->GpuvaSnapshotScratch,
         (BC250_MCDM_HANDLE)pFlushTlb->hProcess,
         flushRootKey,
         0u, 0u,
         &generation);
+    Bc250PagingTraceMarkExternal(BC250_PAGING_HANG_JOURNAL_DONE,
+        DXGK_OPERATION_FLUSH_TLB,
+        journalStatus == BC250_GPUVA_JOURNAL_OK ? STATUS_SUCCESS : STATUS_IO_DEVICE_ERROR);
     if (journalStatus == BC250_GPUVA_JOURNAL_OK) {
         active->GpuvaHierarchyPending = 0u;
         active->GpuvaHierarchyProcess = NULL;
@@ -14330,6 +14535,8 @@ NTSTATUS Bc250ActiveFlushTlbHandler(
     telemetryGeneration = active->GpuvaActivationSnapshotGeneration;
     telemetryEpoch = active->GpuvaActivationSnapshotEpoch;
     telemetryLiveCount = active->GpuvaActivationSnapshotLiveCount;
+    Bc250PagingTraceMarkExternal(BC250_PAGING_HANG_LOCK_RELEASE,
+        DXGK_OPERATION_FLUSH_TLB, STATUS_SUCCESS);
     ExReleasePushLockExclusive(&active->ObjectLock);
     KeLeaveCriticalRegion();
     if (journalStatus != BC250_GPUVA_JOURNAL_OK) {

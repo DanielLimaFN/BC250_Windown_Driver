@@ -131,6 +131,9 @@ static HRESULT APIENTRY TestWait(
     assert(Args != NULL && Args->ObjectHandleArray[0] == 0x9002u);
     g_State.Wait++;
     g_PagingFence = Args->FenceValueArray[0];
+    if (Args->hAsyncEvent != NULL) {
+        SetEvent(Args->hAsyncEvent);
+    }
     return S_OK;
 }
 

@@ -55,6 +55,53 @@ static volatile LONG64 g_Bc250TraceLastFlushMs;
 /* DX.70: apenas linhas rotineiras de sucesso; falhas, Present e tempos de
  * FlushCommands continuam integrais e write-through. */
 static volatile LONG g_Bc250RoutineTraceOrdinal[8];
+static volatile LONG64 g_Bc250HangSpanSequence;
+static volatile LONG64 g_Bc250HangEventSequence;
+static INIT_ONCE g_Bc250HangTraceOnce = INIT_ONCE_STATIC_INIT;
+static BOOL g_Bc250HangTraceEnabled;
+
+static BOOL CALLBACK Bc250WinsysHangTraceInit(PINIT_ONCE Once, PVOID Parameter, PVOID *Context)
+{
+    DWORD value = 0u;
+    DWORD bytes = sizeof(value);
+    (void)Once; (void)Parameter; (void)Context;
+    g_Bc250HangTraceEnabled = RegGetValueA(HKEY_LOCAL_MACHINE,
+        "SOFTWARE\\BC250\\Umd", "HangTrace", RRF_RT_REG_DWORD,
+        NULL, &value, &bytes) == ERROR_SUCCESS && value == 1u;
+    /* Processo de teste pode exercitar o contrato sem elevacao. */
+    if (!g_Bc250HangTraceEnabled) {
+        char override[2] = { 0, 0 };
+        g_Bc250HangTraceEnabled = GetEnvironmentVariableA(
+            "BC250_HANG_TRACE", override, sizeof(override)) == 1u && override[0] == '1';
+    }
+    return TRUE;
+}
+
+UINT64 Bc250WinsysHangSpan(void)
+{
+    return (UINT64)InterlockedIncrement64(&g_Bc250HangSpanSequence);
+}
+
+void Bc250WinsysHangEvent(const char *Operation, const char *Phase,
+    const void *Owner, UINT64 Span, UINT64 A, UINT64 B, HRESULT Result)
+{
+    char message[384];
+    LARGE_INTEGER qpc;
+    LONG64 sequence;
+    if (Operation == NULL || Phase == NULL) return;
+    (void)InitOnceExecuteOnce(&g_Bc250HangTraceOnce, Bc250WinsysHangTraceInit, NULL, NULL);
+    if (!g_Bc250HangTraceEnabled) return;
+    QueryPerformanceCounter(&qpc);
+    sequence = InterlockedIncrement64(&g_Bc250HangEventSequence);
+    if (_snprintf_s(message, sizeof(message), _TRUNCATE,
+            "BC250_HANG v=1 seq=%llu span=%llu tid=%lu qpc=%llu op=%s phase=%s owner=%p a=0x%llX b=0x%llX hr=0x%08X",
+            (unsigned long long)sequence, (unsigned long long)Span,
+            GetCurrentThreadId(), (unsigned long long)qpc.QuadPart,
+            Operation, Phase, Owner, (unsigned long long)A,
+            (unsigned long long)B, (unsigned)Result) >= 0) {
+        Bc250WinsysTraceRaw(message);
+    }
+}
 
 static unsigned Bc250WinsysRoutineTraceClass(const char *message)
 {
@@ -205,6 +252,63 @@ static BC250_WINSYS_STATUS Bc250WinsysRememberFailure(
 {
     if (Context != NULL) Context->LastCallbackHr = Hr;
     return BC250_WINSYS_CALLBACK_FAILED;
+}
+
+/*
+ * DX.85 -- ESPERA DE FENCE PELA CPU: LIMITADA E FAIL-CLOSED.
+ *
+ * A DX.84 registrava um evento assincrono, esperava 1000 ms e, no TIMEOUT,
+ * devolvia BC250_WINSYS_OK ("continuando sem travar"). Isso e' sucesso sem o
+ * trabalho (Lei 4): WaitPaging OK autoriza a UMD a usar uma alocacao cuja
+ * paginacao nao terminou, e WaitForFenceFromCpu OK autoriza a reescrita de
+ * slots do anel de staging que a GPU ainda pode estar lendo. Alem disso a
+ * trava que o timeout "contornava" era a da propria DX.83 na thread de
+ * paginacao do KMD (ver Bc250McdmBuildPagingBuffer) -- sintoma, nao causa.
+ *
+ * Agora: o evento assincrono continua (a thread nunca fica presa sem saida no
+ * dxgkrnl), mas o timeout vira FALHA nomeada. O teto e' maior que o TdrDelay
+ * de 2 s, para que uma GPU realmente travada produza TDR antes da nossa
+ * desistencia. Sem evento (CreateEventW falhou) a espera e' a sincrona
+ * original do contrato.
+ */
+#define BC250_WINSYS_CPU_WAIT_TIMEOUT_MS 5000u
+#define BC250_WINSYS_HR_WAIT_TIMEOUT ((HRESULT)0x80070102L) /* HRESULT_FROM_WIN32(WAIT_TIMEOUT) */
+
+static HRESULT Bc250WinsysBoundedCpuWait(
+    BC250_WINSYS_CONTEXT *Context,
+    D3DDDICB_WAITFORSYNCHRONIZATIONOBJECTFROMCPU *Args,
+    const char *Label,
+    BOOL *TimedOut)
+{
+    HANDLE waitEvent;
+    HRESULT hr;
+    DWORD waitResult;
+
+    *TimedOut = FALSE;
+    waitEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
+    Args->hAsyncEvent = waitEvent;
+    hr = Context->Callbacks->pfnWaitForSynchronizationObjectFromCpuCb(
+        Context->RuntimeDevice, Args);
+    if (waitEvent == NULL) {
+        return hr;
+    }
+    if (SUCCEEDED(hr)) {
+        waitResult = WaitForSingleObject(waitEvent,
+            BC250_WINSYS_CPU_WAIT_TIMEOUT_MS);
+        if (waitResult == WAIT_TIMEOUT) {
+            *TimedOut = TRUE;
+            hr = BC250_WINSYS_HR_WAIT_TIMEOUT;
+            BC250_WINSYS_LOG("%s TIMEOUT (%ums): fence NAO chegou -- FALHA fechada, sem continuar",
+                Label, BC250_WINSYS_CPU_WAIT_TIMEOUT_MS);
+        } else if (waitResult != WAIT_OBJECT_0) {
+            hr = HRESULT_FROM_WIN32(GetLastError());
+            if (SUCCEEDED(hr)) hr = E_FAIL;
+            BC250_WINSYS_LOG("%s WaitForSingleObject FALHOU: result=%lu hr=0x%08X",
+                Label, (unsigned long)waitResult, (unsigned)hr);
+        }
+    }
+    CloseHandle(waitEvent);
+    return hr;
 }
 
 BC250_WINSYS_STATUS Bc250WinsysInitialize(
@@ -722,7 +826,9 @@ BC250_WINSYS_STATUS Bc250WinsysWaitPaging(
     D3DKMT_HANDLE objectHandle;
     UINT64 fenceValue;
     UINT64 currentFence = 0ull;
+    UINT64 hangSpan;
     HRESULT hr;
+    BOOL timedOut = FALSE;
 
     if (Context == NULL || !Context->Initialized || Allocation == NULL ||
         !Allocation->Created) {
@@ -750,15 +856,26 @@ BC250_WINSYS_STATUS Bc250WinsysWaitPaging(
     args.ObjectCount = 1u;
     args.ObjectHandleArray = &objectHandle;
     args.FenceValueArray = &fenceValue;
+
     BC250_WINSYS_LOG("WaitPaging ENTER: TargetFence=%llu CurrentFence=%llu SyncObj=0x%x",
         (unsigned long long)fenceValue, (unsigned long long)currentFence, (unsigned)objectHandle);
-    hr = Context->Callbacks->pfnWaitForSynchronizationObjectFromCpuCb(
-        Context->RuntimeDevice, &args);
+    hangSpan = Bc250WinsysHangSpan();
+    Bc250WinsysHangEvent("WAIT_PAGING", "ENTER", Context, hangSpan,
+        fenceValue, ((UINT64)(UINT32)objectHandle << 32) | (UINT32)Allocation->KernelAllocation,
+        S_OK);
+    hr = Bc250WinsysBoundedCpuWait(Context, &args, "WaitPaging", &timedOut);
+    if (timedOut) {
+        Bc250WinsysHangEvent("WAIT_PAGING", "TIMEOUT", Context, hangSpan,
+            fenceValue, currentFence, hr);
+    }
+
     if (Context->PagingFenceCpuVa != NULL) {
         currentFence = *Context->PagingFenceCpuVa;
     }
     BC250_WINSYS_LOG("WaitPaging LEAVE: hr=0x%08X TargetFence=%llu CurrentFence=%llu",
         (unsigned)hr, (unsigned long long)fenceValue, (unsigned long long)currentFence);
+    Bc250WinsysHangEvent("WAIT_PAGING", "LEAVE", Context, hangSpan,
+        fenceValue, currentFence, hr);
     if (FAILED(hr)) return Bc250WinsysRememberFailure(Context, hr);
     Context->LastCallbackHr = S_OK;
     return BC250_WINSYS_OK;
@@ -1209,6 +1326,7 @@ BC250_WINSYS_STATUS Bc250WinsysWaitForFenceFromCpu(
     D3DDDICB_WAITFORSYNCHRONIZATIONOBJECTFROMCPU args;
     UINT64 currentFence = 0ull;
     HRESULT hr;
+    BOOL timedOut = FALSE;
 
     if (Context == NULL || !Context->Initialized || Fence == NULL || !Fence->Created) {
         return BC250_WINSYS_BAD_ARGUMENT;
@@ -1233,7 +1351,8 @@ BC250_WINSYS_STATUS Bc250WinsysWaitForFenceFromCpu(
 
     BC250_WINSYS_LOG("WaitForFenceFromCpu ENTER: TargetFence=%llu CurrentFence=%llu SyncObj=0x%x",
         (unsigned long long)TargetFenceValue, (unsigned long long)currentFence, (unsigned)Fence->SyncObject);
-    hr = Context->Callbacks->pfnWaitForSynchronizationObjectFromCpuCb(Context->RuntimeDevice, &args);
+    hr = Bc250WinsysBoundedCpuWait(Context, &args, "WaitForFenceFromCpu", &timedOut);
+
     if (Fence->CpuVirtualAddress != NULL) {
         currentFence = *Fence->CpuVirtualAddress;
     }

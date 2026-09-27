@@ -294,6 +294,11 @@ const char *Bc250WinsysStatusName(BC250_WINSYS_STATUS Status);
  * Sem isto as linhas da winsys morriam em stderr, que o dwm.exe nao tem.
  */
 void Bc250WinsysTraceRaw(const char *Message);
+/* DX.83 diagnostic: paired, write-through boundary events. Registry gate:
+ * HKLM\SOFTWARE\BC250\Umd\HangTrace=1, read once per process. */
+UINT64 Bc250WinsysHangSpan(void);
+void Bc250WinsysHangEvent(const char *Operation, const char *Phase,
+    const void *Owner, UINT64 Span, UINT64 A, UINT64 B, HRESULT Result);
 
 #ifdef __cplusplus
 }

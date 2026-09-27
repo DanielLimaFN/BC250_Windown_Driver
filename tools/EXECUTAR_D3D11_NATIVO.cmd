@@ -61,12 +61,35 @@ echo [OK] vulkan_radeon.dll atualizada exclusivamente em C:\BC250_LIB.
 echo.
 echo 2. Iniciando vinculacao WDDM com ensaio D3D11 Nativo (bc250umd.dll)...
 if defined DWM_CAPTURE_ARG echo [ATENCAO] WER LocalDumps do dwm.exe sera armado somente durante esta janela.
+if "%BC250_ENABLE_HANG_ETW%"=="1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bc250-hang-etw.ps1" -Start
+    if errorlevel 1 (
+        echo [RECUSADO] Captura ETW nao iniciou. Nenhum bind foi iniciado.
+        exit /b 1
+    )
+)
+if "%BC250_CAPTURE_MONITOR_EDID%"=="1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0capture-bc250-monitor-edid.ps1" -Phase PreBind -RequireValidBase
+    if errorlevel 1 (
+        echo [RECUSADO] EDID base do monitor ativo nao foi comprovado. Nenhum bind foi iniciado.
+        if "%BC250_ENABLE_HANG_ETW%"=="1" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bc250-hang-etw.ps1" -Stop
+        exit /b 1
+    )
+)
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bind-bc250mcdm-lab.ps1" -Execute -IAcceptBlackScreenRisk -EnableRenderNode -EnableShaderDispatch -EnablePersistentSubmission -EnableGpuvaLabPromotion -IAcceptGpuvaLabPromotion -EnableNode1JournalGatePerProcess -EnableD3D11LabPromotion -RunD3D11Native -D3D11Frames 60 -WatchdogTimeoutSeconds %BC250_WATCHDOG_SECONDS% -IAcceptAutomaticRecoveryReboot %DWM_CAPTURE_ARG%
 set "BIND_EXIT=%ERRORLEVEL%"
 echo.
 echo 3. Executando rollback incondicional do ensaio automatizado...
 call "%~dp0BC250_RECOVERY.cmd"
 set "RECOVERY_EXIT=%ERRORLEVEL%"
+if "%BC250_CAPTURE_MONITOR_EDID%"=="1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0capture-bc250-monitor-edid.ps1" -Phase PostRecovery
+    if errorlevel 1 echo [AVISO] Captura EDID apos rollback falhou; evidencia PreBind preservada.
+)
+if "%BC250_ENABLE_HANG_ETW%"=="1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bc250-hang-etw.ps1" -Stop
+    if errorlevel 1 echo [AVISO] ETW nao parou; verifique bc250-hang-etw.ps1 -Status e -Recover.
+)
 if not "%RECOVERY_EXIT%"=="0" (
     echo [ERRO] Rollback incompleto, exit=%RECOVERY_EXIT%. Nao execute outro ensaio.
     rem DX.44 host: na Corrida 86 este ramo pulou a coleta RADV 3b. Coletar mesmo assim.

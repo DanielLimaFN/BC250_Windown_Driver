@@ -1,17 +1,17 @@
 ﻿{
-    "evidence_dir":  "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\docs\\evidence\\2026-09-25_16-54-07-DESKTOP-HQAG6T4-lab-binding",
-    "watchdog_token":  "213d7818-7503-46a3-88be-d6ce4ef195aa",
+    "evidence_dir":  "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\docs\\evidence\\2026-09-26_22-05-40-DESKTOP-HQAG6T4-lab-binding",
+    "watchdog_token":  "a14b6523-dcb1-4fae-bf0a-4382d7ae30da",
     "watchdog_disabled":  false,
     "instance_id":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
     "published_inf":  "oem12.inf",
-    "package_sys_sha256":  "6B29F04981761D14EF84960596D10A452E08512CF035881D1375626A3321EEA9",
+    "package_sys_sha256":  "F5C9B85EF1C2B52BCAADDFEE358F398F1E032E3DF390B63BE9DBC514D547A702",
     "profile":  {
                     "ProfileMode":  "DISPLAY_RENDER_LAB",
                     "RenderNode":  1,
                     "ShaderDispatchEnabled":  true,
                     "PersistentSubmissionEnabled":  true,
                     "GfxWaveProbe":  1,
-                    "DriverVer":  "09/25/2026,3.286.1.0"
+                    "DriverVer":  "09/26/2026,3.292.1.0"
                 },
     "external_libs":  [
                           {

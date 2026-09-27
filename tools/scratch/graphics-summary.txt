@@ -1,0 +1,509 @@
+Files Processed:
+	docs\evidence\2026-09-26_08-19-18-DX83-HANG-ETW\graphics-dxg-dwm.etl
+Total Buffers Processed 686
+Total Events  Processed 79320
+Total Events  Lost      0
+Start Time              sábado, 26 de setembro de 2026
+End Time                sábado, 26 de setembro de 2026
+Elapsed Time            116 sec
++-------------------------------------------------------------------------------------------------------------------------+
+|Event Count   Event Name           Task            Opcode          Version         Guid                                  |
++-------------------------------------------------------------------------------------------------------------------------+
+|          1   EventTrace           0               PartitionInfoExtension 2               {68fdd900-4a3e-11d1-84f4-0000f80464e3}|
+|          1   EventTrace           0               Header          2               {68fdd900-4a3e-11d1-84f4-0000f80464e3}|
+|       3421   Microsoft-Windows-Kernel-Process  5               Informações     0               {22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}|
+|       1059   Microsoft-Windows-Kernel-Process  3               Iniciar         1               {22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}|
+|         98   Microsoft-Windows-Kernel-Process  1               Iniciar         3               {22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}|
+|         91   Microsoft-Windows-Kernel-Process  2               Parar           2               {22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}|
+|       1389   Microsoft-Windows-Kernel-Process  4               Parar           1               {22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}|
+|       3099   Microsoft-Windows-Kernel-Process  6               Informações     0               {22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}|
+|         24   Microsoft-Windows-DxgKrnl 130             Stop            1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         21   Microsoft-Windows-DxgKrnl 50              Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         25   Microsoft-Windows-DxgKrnl 172             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 139             Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       3860   Microsoft-Windows-DxgKrnl 159             Info            2               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       3860   Microsoft-Windows-DxgKrnl 10              Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          3   Microsoft-Windows-DxgKrnl 139             Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          7   Microsoft-Windows-DxgKrnl 276             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 231             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 257             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         18   Microsoft-Windows-DxgKrnl 137             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         20   Microsoft-Windows-DxgKrnl 182             Stop            1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 249             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 256             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 129             Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 129             Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 1086            Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 1086            Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         90   Microsoft-Windows-DxgKrnl 182             Start           1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         99   Microsoft-Windows-DxgKrnl 1045            Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         99   Microsoft-Windows-DxgKrnl 1045            Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         92   Microsoft-Windows-DxgKrnl 130             Start           1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        138   Microsoft-Windows-DxgKrnl 181             Stop            1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 141             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 62              Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         12   Microsoft-Windows-DxgKrnl 183             Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        230   Microsoft-Windows-DxgKrnl 181             Start           1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          3   Microsoft-Windows-DxgKrnl 53              Info            1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 89              Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 89              Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 84              Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 84              Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 134             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          6   Microsoft-Windows-DxgKrnl 170             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 97              Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 83              Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 83              Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 97              Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          4   Microsoft-Windows-DxgKrnl 70              Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         22   Microsoft-Windows-DxgKrnl 201             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          4   Microsoft-Windows-DxgKrnl 135             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 154             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         25   Microsoft-Windows-DxgKrnl 212             Info            1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         10   Microsoft-Windows-DxgKrnl 166             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          3   Microsoft-Windows-DxgKrnl 258             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        104   Microsoft-Windows-DxgKrnl 49              Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        104   Microsoft-Windows-DxgKrnl 45              Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        104   Microsoft-Windows-DxgKrnl 45              Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        104   Microsoft-Windows-DxgKrnl 47              Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         33   Microsoft-Windows-DxgKrnl 14              Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        103   Microsoft-Windows-DxgKrnl 168             Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          3   Microsoft-Windows-DxgKrnl 99              Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          3   Microsoft-Windows-DxgKrnl 99              Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         20   Microsoft-Windows-DxgKrnl 80              Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         20   Microsoft-Windows-DxgKrnl 80              Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         25   Microsoft-Windows-DxgKrnl 95              Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         25   Microsoft-Windows-DxgKrnl 95              Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 86              Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 86              Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          5   Microsoft-Windows-DxgKrnl 91              Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          5   Microsoft-Windows-DxgKrnl 91              Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 155             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 124             Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 124             Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 71              Info            1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          9   Microsoft-Windows-DxgKrnl 72              Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          4   Microsoft-Windows-DxgKrnl 100             Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          4   Microsoft-Windows-DxgKrnl 100             Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         45   Microsoft-Windows-DxgKrnl 168             Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        130   Microsoft-Windows-DxgKrnl 160             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         27   Microsoft-Windows-DxgKrnl 48              Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         10   Microsoft-Windows-DxgKrnl 52              Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         44   Microsoft-Windows-DxgKrnl 163             Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         44   Microsoft-Windows-DxgKrnl 163             Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          4   Microsoft-Windows-DxgKrnl 65              Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          9   Microsoft-Windows-DxgKrnl 1080            Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         88   Microsoft-Windows-DxgKrnl 78              Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         88   Microsoft-Windows-DxgKrnl 78              Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          3   Microsoft-Windows-DxgKrnl 1046            Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          3   Microsoft-Windows-DxgKrnl 190             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 6               Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         61   Microsoft-Windows-DxgKrnl 66              Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 176             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 175             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       5210   Microsoft-Windows-DxgKrnl 180             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          3   Microsoft-Windows-DxgKrnl 193             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         62   Microsoft-Windows-DxgKrnl 189             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         59   Microsoft-Windows-DxgKrnl 178             Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         41   Microsoft-Windows-DxgKrnl 177             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        734   Microsoft-Windows-DxgKrnl 165             Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        735   Microsoft-Windows-DxgKrnl 165             Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         60   Microsoft-Windows-DxgKrnl 178             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         63   Microsoft-Windows-DxgKrnl 188             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        364   Microsoft-Windows-DxgKrnl 204             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         78   Microsoft-Windows-DxgKrnl 178             Start           1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        102   Microsoft-Windows-DxgKrnl 81              Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        102   Microsoft-Windows-DxgKrnl 81              Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         62   Microsoft-Windows-DxgKrnl 1057            Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        338   Microsoft-Windows-DxgKrnl 9               Stop            1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         31   Microsoft-Windows-DxgKrnl 200             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        138   Microsoft-Windows-DxgKrnl 8               Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        224   Microsoft-Windows-DxgKrnl 213             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        138   Microsoft-Windows-DxgKrnl 8               Info            1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         67   Microsoft-Windows-DxgKrnl 107             Info            1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        248   Microsoft-Windows-DxgKrnl 1060            Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        248   Microsoft-Windows-DxgKrnl 1060            Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        715   Microsoft-Windows-DxgKrnl 25              Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        638   Microsoft-Windows-DxgKrnl 24              Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        206   Microsoft-Windows-DxgKrnl 12              Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        325   Microsoft-Windows-DxgKrnl 169             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        196   Microsoft-Windows-DxgKrnl 9               Start           2               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        138   Microsoft-Windows-DxgKrnl 8               Start           1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        340   Microsoft-Windows-DxgKrnl 9               Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        138   Microsoft-Windows-DxgKrnl 15              Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        634   Microsoft-Windows-DxgKrnl 263             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        205   Microsoft-Windows-DxgKrnl 12              Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        685   Microsoft-Windows-DxgKrnl 13              Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       1610   Microsoft-Windows-DxgKrnl 74              Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        144   Microsoft-Windows-DxgKrnl 9               Start           1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        119   Microsoft-Windows-DxgKrnl 4               Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         62   Microsoft-Windows-DxgKrnl 106             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        258   Microsoft-Windows-DxgKrnl 105             Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         97   Microsoft-Windows-DxgKrnl 1043            Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         75   Microsoft-Windows-DxgKrnl 6               Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         75   Microsoft-Windows-DxgKrnl 6               Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         74   Microsoft-Windows-DxgKrnl 126             Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       9465   Microsoft-Windows-DxgKrnl 1083            Stop            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       9472   Microsoft-Windows-DxgKrnl 1083            Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       9472   Microsoft-Windows-DxgKrnl 1083            Start           0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       4299   Microsoft-Windows-DxgKrnl 11              Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        501   Microsoft-Windows-DxgKrnl 1058            Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       4299   Microsoft-Windows-DxgKrnl 1044            Info            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-Dwm-Core  190             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          1   Microsoft-Windows-Dwm-Core  188             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          2   Microsoft-Windows-Dwm-Core  288             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          2   Microsoft-Windows-Dwm-Core  224             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          7   Microsoft-Windows-Dwm-Core  22              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          1   Microsoft-Windows-Dwm-Core  142             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          6   Microsoft-Windows-Dwm-Core  260             Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          6   Microsoft-Windows-Dwm-Core  260             Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         23   Microsoft-Windows-Dwm-Core  262             Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         23   Microsoft-Windows-Dwm-Core  262             Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          2   Microsoft-Windows-Dwm-Core  301             Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          1   Microsoft-Windows-Dwm-Core  137             Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          1   Microsoft-Windows-Dwm-Core  138             Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          1   Microsoft-Windows-Dwm-Core  138             Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          2   Microsoft-Windows-Dwm-Core  301             Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          8   Microsoft-Windows-Dwm-Core  54              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          3   Microsoft-Windows-Dwm-Core  19              Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          3   Microsoft-Windows-Dwm-Core  19              Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          4   Microsoft-Windows-Dwm-Core  88              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          2   Microsoft-Windows-Dwm-Core  131             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          2   Microsoft-Windows-Dwm-Core  137             Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          1   Microsoft-Windows-Dwm-Core  87              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         13   Microsoft-Windows-Dwm-Core  50              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         15   Microsoft-Windows-Dwm-Core  49              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          3   Microsoft-Windows-Dwm-Core  127             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          9   Microsoft-Windows-Dwm-Core  284             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         20   Microsoft-Windows-Dwm-Core  236             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         31   Microsoft-Windows-Dwm-Core  81              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        102   Microsoft-Windows-Dwm-Core  34              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         27   Microsoft-Windows-Dwm-Core  23              Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         27   Microsoft-Windows-Dwm-Core  23              Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  132             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         67   Microsoft-Windows-Dwm-Core  86              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  10              Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  2               Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  231             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  230             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  229             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  228             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  226             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  2               Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         86   Microsoft-Windows-Dwm-Core  283             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  4               Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  285             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  11              Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  11              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  13              Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  37              Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  89              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  220             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  37              Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  13              Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        109   Microsoft-Windows-Dwm-Core  5               Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  12              Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  114             Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  36              Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        131   Microsoft-Windows-Dwm-Core  32              Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        131   Microsoft-Windows-Dwm-Core  32              Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         64   Microsoft-Windows-Dwm-Core  128             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         64   Microsoft-Windows-Dwm-Core  28              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  135             Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  135             Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  36              Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  114             Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  146             Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  29              Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        143   Microsoft-Windows-Dwm-Core  29              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  29              Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  146             Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         61   Microsoft-Windows-Dwm-Core  35              Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         61   Microsoft-Windows-Dwm-Core  35              Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         97   Microsoft-Windows-Dwm-Core  232             Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         97   Microsoft-Windows-Dwm-Core  232             Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         97   Microsoft-Windows-Dwm-Core  67              Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         97   Microsoft-Windows-Dwm-Core  67              Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         98   Microsoft-Windows-Dwm-Core  125             Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         98   Microsoft-Windows-Dwm-Core  125             Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  39              Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         37   Microsoft-Windows-Dwm-Core  39              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  39              Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  126             Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  126             Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  38              Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        152   Microsoft-Windows-Dwm-Core  30              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         71   Microsoft-Windows-Dwm-Core  53              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  63              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  38              Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  34              Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  272             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  34              Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  12              Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  219             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  11              Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  66              Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  15              Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         97   Microsoft-Windows-Dwm-Core  85              Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         98   Microsoft-Windows-Dwm-Core  134             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         98   Microsoft-Windows-Dwm-Core  133             Informações     0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  15              Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  66              Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  9               Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  9               Iniciar         0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  10              Parar           0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
++-------------------------------------------------------------------------------------------------------------------------+
++---------------------------------------------------------------------------------------------------------+
+|Event Count   Event Name           Event ID        Version         Guid                                  |
++---------------------------------------------------------------------------------------------------------+
+|          2   EventTrace           0               2               {68fdd900-4a3e-11d1-84f4-0000f80464e3}|
+|         98   Microsoft-Windows-Kernel-Process  1               3               {22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}|
+|         91   Microsoft-Windows-Kernel-Process  2               2               {22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}|
+|       1059   Microsoft-Windows-Kernel-Process  3               1               {22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}|
+|       1389   Microsoft-Windows-Kernel-Process  4               1               {22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}|
+|       3421   Microsoft-Windows-Kernel-Process  5               0               {22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}|
+|       3099   Microsoft-Windows-Kernel-Process  6               0               {22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716}|
+|       4299   Microsoft-Windows-DxgKrnl 17              0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        206   Microsoft-Windows-DxgKrnl 18              0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        205   Microsoft-Windows-DxgKrnl 19              0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        685   Microsoft-Windows-DxgKrnl 20              0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         33   Microsoft-Windows-DxgKrnl 21              0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        138   Microsoft-Windows-DxgKrnl 22              0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        634   Microsoft-Windows-DxgKrnl 41              0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        714   Microsoft-Windows-DxgKrnl 42              0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        104   Microsoft-Windows-DxgKrnl 67              0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        104   Microsoft-Windows-DxgKrnl 68              0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        104   Microsoft-Windows-DxgKrnl 71              0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         27   Microsoft-Windows-DxgKrnl 72              0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        104   Microsoft-Windows-DxgKrnl 73              0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         21   Microsoft-Windows-DxgKrnl 74              0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         10   Microsoft-Windows-DxgKrnl 76              0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          3   Microsoft-Windows-DxgKrnl 78              1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 92              0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          4   Microsoft-Windows-DxgKrnl 102             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         61   Microsoft-Windows-DxgKrnl 103             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          4   Microsoft-Windows-DxgKrnl 109             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 110             1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          9   Microsoft-Windows-DxgKrnl 111             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       1610   Microsoft-Windows-DxgKrnl 113             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 118             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 119             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          3   Microsoft-Windows-DxgKrnl 122             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          3   Microsoft-Windows-DxgKrnl 123             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          4   Microsoft-Windows-DxgKrnl 124             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          4   Microsoft-Windows-DxgKrnl 125             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         88   Microsoft-Windows-DxgKrnl 126             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         88   Microsoft-Windows-DxgKrnl 127             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         20   Microsoft-Windows-DxgKrnl 130             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         20   Microsoft-Windows-DxgKrnl 131             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        102   Microsoft-Windows-DxgKrnl 132             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        102   Microsoft-Windows-DxgKrnl 133             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 136             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 137             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 138             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 139             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 142             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 143             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 148             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 149             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          5   Microsoft-Windows-DxgKrnl 152             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          5   Microsoft-Windows-DxgKrnl 153             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         25   Microsoft-Windows-DxgKrnl 160             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         25   Microsoft-Windows-DxgKrnl 161             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        119   Microsoft-Windows-DxgKrnl 169             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 171             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         75   Microsoft-Windows-DxgKrnl 172             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         75   Microsoft-Windows-DxgKrnl 173             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        138   Microsoft-Windows-DxgKrnl 175             1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        138   Microsoft-Windows-DxgKrnl 176             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        138   Microsoft-Windows-DxgKrnl 177             1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        142   Microsoft-Windows-DxgKrnl 178             1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        340   Microsoft-Windows-DxgKrnl 179             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        338   Microsoft-Windows-DxgKrnl 180             1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       3860   Microsoft-Windows-DxgKrnl 181             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        258   Microsoft-Windows-DxgKrnl 182             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         62   Microsoft-Windows-DxgKrnl 183             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         67   Microsoft-Windows-DxgKrnl 184             1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 210             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 211             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         74   Microsoft-Windows-DxgKrnl 215             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 218             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 219             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         92   Microsoft-Windows-DxgKrnl 225             1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         24   Microsoft-Windows-DxgKrnl 226             1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 238             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          4   Microsoft-Windows-DxgKrnl 239             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         18   Microsoft-Windows-DxgKrnl 242             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 244             1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        196   Microsoft-Windows-DxgKrnl 245             2               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          3   Microsoft-Windows-DxgKrnl 247             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 248             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 250             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 271             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 272             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       3860   Microsoft-Windows-DxgKrnl 273             2               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        130   Microsoft-Windows-DxgKrnl 274             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         44   Microsoft-Windows-DxgKrnl 277             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         44   Microsoft-Windows-DxgKrnl 278             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        735   Microsoft-Windows-DxgKrnl 281             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        734   Microsoft-Windows-DxgKrnl 282             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 284             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 285             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          7   Microsoft-Windows-DxgKrnl 287             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        103   Microsoft-Windows-DxgKrnl 290             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         45   Microsoft-Windows-DxgKrnl 292             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        325   Microsoft-Windows-DxgKrnl 294             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          6   Microsoft-Windows-DxgKrnl 295             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         25   Microsoft-Windows-DxgKrnl 297             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 298             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 299             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         41   Microsoft-Windows-DxgKrnl 300             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       1971   Microsoft-Windows-DxgKrnl 301             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       1346   Microsoft-Windows-DxgKrnl 302             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       1893   Microsoft-Windows-DxgKrnl 303             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         97   Microsoft-Windows-DxgKrnl 318             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       4299   Microsoft-Windows-DxgKrnl 319             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         67   Microsoft-Windows-DxgKrnl 322             1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         11   Microsoft-Windows-DxgKrnl 323             1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         60   Microsoft-Windows-DxgKrnl 324             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         59   Microsoft-Windows-DxgKrnl 325             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         99   Microsoft-Windows-DxgKrnl 327             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         99   Microsoft-Windows-DxgKrnl 328             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          3   Microsoft-Windows-DxgKrnl 329             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        230   Microsoft-Windows-DxgKrnl 331             1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        138   Microsoft-Windows-DxgKrnl 332             1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         90   Microsoft-Windows-DxgKrnl 334             1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         12   Microsoft-Windows-DxgKrnl 336             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          4   Microsoft-Windows-DxgKrnl 340             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 341             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         63   Microsoft-Windows-DxgKrnl 346             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         62   Microsoft-Windows-DxgKrnl 347             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          3   Microsoft-Windows-DxgKrnl 350             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          3   Microsoft-Windows-DxgKrnl 353             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         31   Microsoft-Windows-DxgKrnl 359             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         22   Microsoft-Windows-DxgKrnl 360             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        364   Microsoft-Windows-DxgKrnl 362             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        224   Microsoft-Windows-DxgKrnl 363             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 383             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 416             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 428             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          1   Microsoft-Windows-DxgKrnl 429             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          3   Microsoft-Windows-DxgKrnl 430             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         20   Microsoft-Windows-DxgKrnl 435             1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        634   Microsoft-Windows-DxgKrnl 436             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          7   Microsoft-Windows-DxgKrnl 458             0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         62   Microsoft-Windows-DxgKrnl 1066            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        501   Microsoft-Windows-DxgKrnl 1067            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|         25   Microsoft-Windows-DxgKrnl 1069            1               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        248   Microsoft-Windows-DxgKrnl 1071            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        248   Microsoft-Windows-DxgKrnl 1072            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          9   Microsoft-Windows-DxgKrnl 1092            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       9472   Microsoft-Windows-DxgKrnl 1100            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       9472   Microsoft-Windows-DxgKrnl 1101            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|       9465   Microsoft-Windows-DxgKrnl 1102            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 1103            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|          2   Microsoft-Windows-DxgKrnl 1104            0               {802ec45a-1e99-4b83-9920-87c98277ba9d}|
+|        109   Microsoft-Windows-Dwm-Core  2               0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  6               0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  7               0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  8               0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  9               0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  10              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  11              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  12              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  13              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  14              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  15              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  16              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  19              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  21              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          3   Microsoft-Windows-Dwm-Core  26              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          3   Microsoft-Windows-Dwm-Core  27              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          7   Microsoft-Windows-Dwm-Core  33              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         27   Microsoft-Windows-Dwm-Core  34              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         27   Microsoft-Windows-Dwm-Core  35              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         64   Microsoft-Windows-Dwm-Core  42              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  43              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        143   Microsoft-Windows-Dwm-Core  44              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  45              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        152   Microsoft-Windows-Dwm-Core  46              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        131   Microsoft-Windows-Dwm-Core  49              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        131   Microsoft-Windows-Dwm-Core  51              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  54              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        102   Microsoft-Windows-Dwm-Core  55              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  56              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         61   Microsoft-Windows-Dwm-Core  57              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         61   Microsoft-Windows-Dwm-Core  58              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  59              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  60              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  61              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  62              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  63              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  64              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  65              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  66              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         37   Microsoft-Windows-Dwm-Core  67              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  68              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  79              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  80              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         15   Microsoft-Windows-Dwm-Core  83              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         13   Microsoft-Windows-Dwm-Core  84              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         71   Microsoft-Windows-Dwm-Core  87              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          8   Microsoft-Windows-Dwm-Core  88              0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  110             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  111             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         97   Microsoft-Windows-Dwm-Core  112             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         97   Microsoft-Windows-Dwm-Core  113             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  114             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         31   Microsoft-Windows-Dwm-Core  133             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         97   Microsoft-Windows-Dwm-Core  137             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         67   Microsoft-Windows-Dwm-Core  138             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          1   Microsoft-Windows-Dwm-Core  139             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          4   Microsoft-Windows-Dwm-Core  140             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  141             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  180             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  181             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         98   Microsoft-Windows-Dwm-Core  192             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         98   Microsoft-Windows-Dwm-Core  193             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  194             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  195             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          3   Microsoft-Windows-Dwm-Core  196             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         64   Microsoft-Windows-Dwm-Core  197             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          2   Microsoft-Windows-Dwm-Core  201             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  202             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         98   Microsoft-Windows-Dwm-Core  203             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         98   Microsoft-Windows-Dwm-Core  204             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  205             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  206             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          2   Microsoft-Windows-Dwm-Core  208             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          1   Microsoft-Windows-Dwm-Core  209             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          1   Microsoft-Windows-Dwm-Core  210             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          1   Microsoft-Windows-Dwm-Core  211             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          1   Microsoft-Windows-Dwm-Core  215             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  221             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  222             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          1   Microsoft-Windows-Dwm-Core  272             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          1   Microsoft-Windows-Dwm-Core  274             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  303             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         62   Microsoft-Windows-Dwm-Core  304             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          2   Microsoft-Windows-Dwm-Core  309             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  311             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  313             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  314             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  315             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  316             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         97   Microsoft-Windows-Dwm-Core  317             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         97   Microsoft-Windows-Dwm-Core  318             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         20   Microsoft-Windows-Dwm-Core  323             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          6   Microsoft-Windows-Dwm-Core  351             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          6   Microsoft-Windows-Dwm-Core  352             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         23   Microsoft-Windows-Dwm-Core  354             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         23   Microsoft-Windows-Dwm-Core  355             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        105   Microsoft-Windows-Dwm-Core  371             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|         86   Microsoft-Windows-Dwm-Core  385             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          9   Microsoft-Windows-Dwm-Core  386             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|        104   Microsoft-Windows-Dwm-Core  387             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          2   Microsoft-Windows-Dwm-Core  390             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          2   Microsoft-Windows-Dwm-Core  409             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
+|          2   Microsoft-Windows-Dwm-Core  410             0               {9e9bba3c-2e38-40cb-99f4-9e8281425164}|
++---------------------------------------------------------------------------------------------------------+
