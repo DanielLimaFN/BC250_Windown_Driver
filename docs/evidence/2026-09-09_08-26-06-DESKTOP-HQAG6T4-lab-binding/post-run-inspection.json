@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-09-09T08:34:34.9006984-03:00",
+  "sys_sha256": "19F5D13030D7B7BEF08D2D8A935F8F0A62D783AF1A11531C901A455E809DFBC2",
+  "slice_sha256": "352E94A5D48598FB927376387ADF82186CD0DDE467941581E4BA34B95B622E87",
+  "tlb_transactions": 13,
+  "tlb_status8": 0,
+  "sdma_full_tripods": 5,
+  "mec_pending_archive": 0,
+  "mmu_restore_ok": true,
+  "device": {
+    "Service": "BasicDisplay",
+    "ConfigManagerErrorCode": 0
+  },
+  "events": [
+    {
+      "TimeCreated": "2026-09-09T08:26:23.2385477-03:00",
+      "Id": 4101,
+      "Message": "O driver de vídeo bc250mcdm parou de responder e se recuperou com êxito."
+    }
+  ]
+}

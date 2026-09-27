@@ -1,4 +1,0 @@
-﻿
-HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\bc250readonly\Parameters\Probe
-    SchemaVersion    REG_DWORD    0x6
-

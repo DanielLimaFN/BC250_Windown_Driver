@@ -1232,8 +1232,8 @@ NTSTATUS BcSdmaInit(ULONG RingSizeBytes, ULONG Placement, ULONG VramOffset,
     /* UTCL1 ligada: sem isso a SDMA nao traduz o endereco do anel.
      * AUTO_CTXSW_ENABLE vem de sdma_v5_0_ctx_switch_enable. */
     temp = BcRegReadRaw(A_SDMA0_CNTL);
-    temp |= F_SDMA0_CNTL__UTC_L1_ENABLE | F_SDMA0_CNTL__MIDCMD_PREEMPT_ENABLE
-          | F_SDMA0_CNTL__AUTO_CTXSW_ENABLE;
+    temp |= F_SDMA0_CNTL__UTC_L1_ENABLE | F_SDMA0_CNTL__AUTO_CTXSW_ENABLE;
+    temp &= ~F_SDMA0_CNTL__MIDCMD_PREEMPT_ENABLE;
     BcRegWriteRaw(A_SDMA0_CNTL, temp);
 
     temp = BcRegReadRaw(A_SDMA0_UTCL1_CNTL);

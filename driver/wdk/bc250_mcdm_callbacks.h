@@ -3,6 +3,19 @@
 
 #include <ntddk.h>
 #include <dispmprt.h>
+#include "../core/bc250_paging_proof_contract.h"
+BOOLEAN Bc250PagingTakeProof(UINT64 Physical, ULONG Bytes, BC250_PAGING_PROOF *Proof);
+NTSTATUS Bc250PagingTraceStart(VOID);
+VOID Bc250PagingTraceStop(VOID);
+/* DX.83: fases internas de FLUSH_TLB no mesmo rastro duravel DX.56. */
+#define BC250_PAGING_HANG_LOCK_WAIT     40u
+#define BC250_PAGING_HANG_LOCK_HELD     41u
+#define BC250_PAGING_HANG_HW_FLUSH_WAIT 42u
+#define BC250_PAGING_HANG_HW_FLUSH_DONE 43u
+#define BC250_PAGING_HANG_JOURNAL_WAIT  44u
+#define BC250_PAGING_HANG_JOURNAL_DONE  45u
+#define BC250_PAGING_HANG_LOCK_RELEASE  46u
+VOID Bc250PagingTraceMarkExternal(ULONG Stage, ULONG Operation, NTSTATUS Status);
 
 DXGKDDI_BUILDPAGINGBUFFER Bc250McdmBuildPagingBuffer;
 DXGKDDI_CALIBRATEGPUCLOCK Bc250McdmCalibrateGpuClock;
@@ -64,12 +77,32 @@ DXGKDDI_SUBMITCOMMANDVIRTUAL Bc250McdmSubmitCommandVirtual;
 DXGKDDI_QUERY_CHILD_STATUS Bc250McdmQueryChildStatus;
 DXGKDDI_QUERY_CHILD_RELATIONS Bc250McdmQueryChildRelations;
 DXGKDDI_QUERYCONNECTIONCHANGE Bc250McdmQueryConnectionChange;
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_5)
+DXGKDDI_SIGNALMONITOREDFENCE Bc250McdmSignalMonitoredFence;
+#endif
 DXGKDDI_UNLOAD Bc250McdmUnload;
 
 typedef struct BC250_MCDM_RUNTIME_CAPS {
     UINT64 LocalSegmentBaseOffset;
     UINT64 LocalSegmentBytes;
     UINT64 CpuPhysicalStart;
+    /*
+     * Base da VRAM em espaco MC -- o endereco pelo qual a GPU enxerga o byte 0
+     * da VRAM local. Todo endereco de VRAM gravado numa entrada de page table
+     * PRECISA inclui-la; enderecos de memoria de sistema NAO.
+     *
+     * Medido na corrida de 05/09 00:55: o PDE em VRAM+0xA90008 continha
+     * 0x00A91061, ou seja, o offset cru 0xA91000. A GPU caminha em MC e foi
+     * buscar a tabela folha no MC 0x0000A91000, que nao e VRAM (ela comeca em
+     * 0x450000000). O segundo nivel caiu no nada, o fetch do IB faultou e a
+     * engine drenou o anel sem executar. Ver
+     * docs/evidence/2026-09-05_P6_PT_WALK_GATE_OFFLINE.
+     *
+     * Este campo e a unica fonte da base, usada tanto pelo codificador de
+     * entradas quanto pela instalacao da root, para que as duas nao possam
+     * mais sair de fase.
+     */
+    UINT64 VramMcBase;
     UINT32 NodeCount;
     UINT32 Ready;
     UINT32 FullMcdmReady;
@@ -82,6 +115,7 @@ typedef struct BC250_MCDM_RUNTIME_CAPS {
     UINT32 GpuVaBitCount;
     UINT32 PageTableLevelCount;
     UINT32 PageTableIndexBitCount;
+    UINT32 RootPageTableIndexBitCount;
     UINT32 PageTableSizeBytes;
     UINT32 PageTableAlignmentBytes;
 } BC250_MCDM_RUNTIME_CAPS;
@@ -147,6 +181,24 @@ typedef NTSTATUS (*BC250_MCDM_COLLECT_DEBUG_SNAPSHOT)(
     _In_ HANDLE AdapterContext,
     _In_ const DXGKARG_COLLECTDBGINFO *CollectDebugInfo);
 
+/*
+ * F2.1 (13/09) -- BACKEND DA DESCRICAO DE ALOCACAO.
+ *
+ * `Bc250McdmDescribeAllocation` devolvia STATUS_NOT_SUPPORTED para TODA
+ * alocacao, porque o KMD nao tinha onde consultar a geometria. Agora a UMD a
+ * declara na ABI de alocacao e o registro de objetos a guarda; este executor e'
+ * quem faz a consulta, no mesmo padrao dos outros ciclos de vida.
+ *
+ * Ponteiro ausente = DDI falha fechada, por construcao. Nao ha caminho em que a
+ * DDI invente uma geometria.
+ */
+typedef NTSTATUS (*BC250_MCDM_DESCRIBE_ALLOCATION_OBJECT)(
+    _In_ HANDLE AdapterContext,
+    _Inout_ DXGKARG_DESCRIBEALLOCATION *DescribeAllocation);
+
+VOID Bc250McdmInstallDescribeAllocation(
+    _In_opt_ BC250_MCDM_DESCRIBE_ALLOCATION_OBJECT DescribeAllocationObject);
+
 VOID Bc250McdmInstallProcessLifecycle(
     _In_opt_ BC250_MCDM_CREATE_PROCESS_OBJECT CreateProcessObject,
     _In_opt_ BC250_MCDM_DESTROY_PROCESS_OBJECT DestroyProcessObject);
@@ -168,8 +220,38 @@ VOID Bc250McdmInstallAllocationLifecycle(
     _In_opt_ BC250_MCDM_OPEN_ALLOCATION_OBJECTS OpenAllocationObjects,
     _In_opt_ BC250_MCDM_CLOSE_ALLOCATION_OBJECTS CloseAllocationObjects);
 
+/*
+ * B6 / item 25 (07/09): executor fisico do par de TDR. As DDIs
+ * ResetFromTimeout/RestartFromTimeout devolviam STATUS_SUCCESS sem tocar em
+ * registrador; agora elas dependem destes executores, e ponteiro NULO faz a
+ * DDI falhar fechado em vez de mentir para o dxgkrnl.
+ *
+ * Executor de quiesce: desliga anel e trava o F32; devolve FALSE se nao houver
+ * transporte. Executor de restart: rearma e PROVA por fence fisica.
+ */
+/*
+ * item 24: probe de responsividade por no (SDMA=0, MEC=1). Devolve FALSE
+ * quando nao foi possivel medir; nesse caso a DDI recusa em vez de afirmar engine viva.
+ */
+typedef BOOLEAN (*BC250_MCDM_ENGINE_RESPONSIVE_PROBE)(UINT32 NodeOrdinal, UINT32 *IsResponsive);
+
+typedef BOOLEAN (*BC250_MCDM_TDR_QUIESCE_EXECUTOR)(VOID);
+typedef BOOLEAN (*BC250_MCDM_TDR_RESTART_EXECUTOR)(VOID);
+
+VOID Bc250McdmInstallTdrExecutors(
+    BC250_MCDM_TDR_QUIESCE_EXECUTOR QuiesceExecutor,
+    BC250_MCDM_TDR_RESTART_EXECUTOR RestartExecutor);
+
+VOID Bc250McdmInstallEngineResponsiveProbe(
+    BC250_MCDM_ENGINE_RESPONSIVE_PROBE Probe);
+
 VOID Bc250McdmInstallDebugLifecycle(
     _In_opt_ BC250_MCDM_COLLECT_DEBUG_SNAPSHOT CollectDebugSnapshot);
+
+typedef VOID (*BC250_MCDM_UNLOAD_CLEANUP_HANDLER)(VOID);
+
+VOID Bc250McdmInstallUnloadCleanupHandler(
+    _In_opt_ BC250_MCDM_UNLOAD_CLEANUP_HANDLER Handler);
 
 typedef NTSTATUS (*BC250_MCDM_SUBMIT_COMMAND_EXECUTOR)(
     _In_ HANDLE AdapterContext,
@@ -216,9 +298,34 @@ typedef NTSTATUS (*BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER)(
 VOID Bc250McdmInstallUpdatePageTableHandler(
     _In_opt_ BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER UpdatePageTableHandler);
 
+typedef NTSTATUS (*BC250_MCDM_ESCAPE_HANDLER)(
+    _In_ HANDLE AdapterContext,
+    _In_ CONST DXGKARG_ESCAPE *pEscape);
+
+VOID Bc250McdmInstallEscapeHandler(
+    _In_opt_ BC250_MCDM_ESCAPE_HANDLER EscapeHandler);
+
+/*
+ * DX.47: backend da preempcao. Registra o pedido; a conclusao
+ * (DXGK_INTERRUPT_DMA_PREEMPTED) sai do retirement quando o no drenar.
+ * Ausente = comportamento anterior (sucesso sem backend, declarado no log).
+ */
+typedef NTSTATUS (*BC250_MCDM_PREEMPT_HANDLER)(
+    _In_ HANDLE AdapterContext,
+    _In_ CONST DXGKARG_PREEMPTCOMMAND *pPreemptCommand);
+
+VOID Bc250McdmInstallPreemptHandler(
+    _In_opt_ BC250_MCDM_PREEMPT_HANDLER PreemptHandler);
+
 NTSTATUS Bc250McdmEncodeVidMmPte(
     _In_ CONST BC250_MCDM_RUNTIME_CAPS *Caps,
     _In_ CONST DXGK_PTE *Source,
+    _Out_ UINT64 *Encoded);
+
+NTSTATUS Bc250McdmEncodeVidMmPteWithLevel(
+    _In_ CONST BC250_MCDM_RUNTIME_CAPS *Caps,
+    _In_ CONST DXGK_PTE *Source,
+    _In_ UINT32 PageTableLevel,
     _Out_ UINT64 *Encoded);
 
 typedef BOOLEAN (*BC250_MCDM_INTERRUPT_HANDLER)(
@@ -267,6 +374,42 @@ DXGK_WDDMVERSION Bc250McdmGetWddmContractVersion(VOID);
  * ==========================================================================
  */
 NTSTATUS Bc250McdmSetComputeOnly(_In_ ULONG ComputeOnly);
+
+/*
+ * Devolve quantos dwords do ultimo paging buffer codificado sao UTEIS, isto e,
+ * excluindo os NOPs de cauda que existem so para alinhar a GPUVA do proximo
+ * buffer. Devolve 0 quando a publicacao nao casa com PublishedDwords -- nesse
+ * caso o executor deve derivar o IB_SIZE do tamanho publicado pelo VidMm.
+ * A leitura e destrutiva: so a primeira submissao apos o encode a consome.
+ */
+ULONG Bc250PagingConsumeIbUsefulDwords(_In_ ULONG PublishedDwords);
+
+/*
+ * Faixa de GPUVA [Start, End) que os pacotes do ultimo paging buffer
+ * codificado vao ESCREVER. Leitura nao destrutiva. FALSE quando nada foi
+ * publicado ainda.
+ */
+BOOLEAN Bc250PagingPeekIbDestRange(_Out_ UINT64 *Start, _Out_ UINT64 *End);
+
+/*
+ * Endereco fisico do ultimo paging buffer codificado, medido pela CPU. A
+ * submissao compara com o PA que a caminhada de page table resolveu: se
+ * divergirem, a GPU busca uma pagina que nao e a nossa. 0 = nada publicado.
+ */
+UINT64 Bc250PagingPeekIbCpuPhysical(void);
+UINT64 Bc250PagingConsumeIbCpuPhysical(void);
+
+/*
+ * Parametros completos do ultimo FillVirtual codificado: GPUVA de destino,
+ * contagem de bytes e padrao de preenchimento. Retorna FALSE se nao for FillVirtual.
+ */
+BOOLEAN Bc250PagingPeekFillParams(
+    _Out_ UINT64 *DestVa,
+    _Out_ ULONG *ByteCount,
+    _Out_ ULONG *FillPattern);
+
+void Bc250PagingClearFillParams(void);
+
 ULONG Bc250McdmGetComputeOnly(VOID);
 
 #endif

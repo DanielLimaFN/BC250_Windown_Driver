@@ -1,9 +1,0 @@
-﻿{
-    "state":  "DISARMED",
-    "detail":  "visual confirmation received",
-    "target_inf":  "oem19.inf",
-    "instance_id":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
-    "timestamp":  "2026-08-29T18:53:38.9094238-03:00",
-    "exit_code":  0,
-    "hardware_validated":  false
-}

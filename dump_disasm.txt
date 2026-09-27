@@ -1,0 +1,285 @@
+﻿
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+   EnableRedirectToChakraJsProvider : false
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.015 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 30
+
+Microsoft (R) Windows Debugger Version 10.0.28000.2526 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [C:\Windows\MEMORY.DMP]
+Kernel Bitmap Dump File: Kernel address space is available, User address space may not be available.
+
+Symbol search path is: srv*
+Executable search path is: 
+Windows 10 Kernel Version 19041 MP (12 procs) Free x64
+Product: WinNt, suite: TerminalServer SingleUserTS
+Edition build lab: 19041.1.amd64fre.vb_release.191206-1406
+Kernel base = 0xfffff800`80800000 PsLoadedModuleList = 0xfffff800`8142a2b0
+Debug session time: Sun Sep 13 20:32:00.665 2026 (UTC - 3:00)
+System Uptime: 0 days 2:30:20.170
+Loading Kernel Symbols
+...............................................................
+................................................................
+..........................................
+Loading User Symbols
+PEB is paged out (Peb.Ldr = 00000000`002d6018).  Type ".hh dbgerr001" for details
+Loading unloaded module list
+..............
+For analysis of this file, run !analyze -v
+2: kd> cdb: Reading initial command '.symfix C:\Symbols; .reload /f; u dxgkrnl!ADAPTER_DISPLAY::DdiSetVidPnSourceAddressWithMultiPlaneOverlay3+0xb0 L30; r; kv; q'
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+Loading Kernel Symbols
+............Unable to load image \SystemRoot\System32\drivers\clipsp.sys, Win32 error 0n2
+..................................Unable to load image \SystemRoot\system32\drivers\wd\WdFilter.sys, Win32 error 0n2
+.................
+..................................Unable to load image \SystemRoot\System32\drivers\amdxe.sys, Win32 error 0n2
+.Unable to load image \SystemRoot\System32\DriverStore\FileRepository\amdfendr.inf_amd64_bea53a1d416fbcfa\amdfendr.sys, Win32 error 0n2
+...Unable to load image \SystemRoot\System32\DriverStore\FileRepository\amdsafd.inf_amd64_d4de13a10f2586d0\amdsafd.sys, Win32 error 0n2
+..Unable to load image \SystemRoot\System32\drivers\drmk.sys, Win32 error 0n2
+.................Unable to load image \SystemRoot\System32\DriverStore\FileRepository\amdfendr.inf_amd64_bea53a1d416fbcfa\amdfendrmgr.sys, Win32 error 0n2
+.......
+.............................Unable to load image \SystemRoot\system32\drivers\peauth.sys, Win32 error 0n2
+
+
+Press ctrl-c (cdb, kd, ntsd) or ctrl-break (windbg) to abort symbol loads that take too long.
+Run !sym noisy before .reload to track down problems loading symbols.
+
+.....Unable to load image \SystemRoot\system32\drivers\wd\KslD.sys, Win32 error 0n2
+......Unable to load image \SystemRoot\System32\drivers\bc250mcdm.sys, Win32 error 0n2
+..
+Loading User Symbols
+PEB is paged out (Peb.Ldr = 00000000`002d6018).  Type ".hh dbgerr001" for details
+Loading unloaded module list
+..............
+
+************* Symbol Loading Error Summary **************
+Module name            Error
+kdnet                  The system cannot find the file specified
+kd_02_10ec             The system cannot find the file specified
+mcupdate_AuthenticAMD  The system cannot find the file specified
+clipsp                 The system cannot find the file specified
+WdFilter               The system cannot find the file specified
+NETIO                  The system cannot find the file specified
+ksecpkg                The system cannot find the file specified
+tcpip                  The system cannot find the file specified
+fwpkclnt               The system cannot find the file specified
+wfplwfs                The system cannot find the file specified
+fvevol                 The system cannot find the file specified
+volume                 The system cannot find the file specified
+volsnap                The system cannot find the file specified
+rdyboost               The system cannot find the file specified
+mup                    The system cannot find the file specified
+iorate                 The system cannot find the file specified
+disk                   The system cannot find the file specified
+CLASSPNP               The system cannot find the file specified
+crashdmp               The system cannot find the file specified
+cdrom                  The system cannot find the file specified
+filecrypt              The system cannot find the file specified
+tbs                    The system cannot find the file specified
+Null                   The system cannot find the file specified
+Beep                   The system cannot find the file specified
+BasicDisplay           The system cannot find the file specified
+BasicRender            The system cannot find the file specified
+Npfs                   The system cannot find the file specified
+Msfs                   The system cannot find the file specified
+CimFS                  The system cannot find the file specified
+tdx                    The system cannot find the file specified
+TDI                    The system cannot find the file specified
+netbt                  The system cannot find the file specified
+afunix                 The system cannot find the file specified
+afd                    The system cannot find the file specified
+vwififlt               The system cannot find the file specified
+pacer                  The system cannot find the file specified
+ndiscap                The system cannot find the file specified
+netbios                The system cannot find the file specified
+Vid                    The system cannot find the file specified
+winhvr                 The system cannot find the file specified
+rdbss                  The system cannot find the file specified
+csc                    The system cannot find the file specified
+nsiproxy               The system cannot find the file specified
+npsvctrig              The system cannot find the file specified
+gpuenergydrv           The system cannot find the file specified
+dfsc                   The system cannot find the file specified
+fastfat                The system cannot find the file specified
+bam                    The system cannot find the file specified
+ahcache                The system cannot find the file specified
+amdxe                  The system cannot find the file specified
+amdfendr               The system cannot find the file specified
+CompositeBus           The system cannot find the file specified
+kdnic                  The system cannot find the file specified
+amdsafd                The system cannot find the file specified
+portcls                The system cannot find the file specified
+drmk                   The system cannot find the file specified
+ks                     The system cannot find the file specified
+ksthunk                The system cannot find the file specified
+umbus                  The system cannot find the file specified
+HDAudBus               The system cannot find the file specified
+USBXHCI                The system cannot find the file specified
+ucx01000               The system cannot find the file specified
+usbohci                The system cannot find the file specified
+USBPORT                The system cannot find the file specified
+usbehci                The system cannot find the file specified
+kbdclass               The system cannot find the file specified
+mouclass               The system cannot find the file specified
+serial                 The system cannot find the file specified
+serenum                The system cannot find the file specified
+amdppm                 The system cannot find the file specified
+msgpiowin32            The system cannot find the file specified
+UEFI                   The system cannot find the file specified
+amdfendrmgr            The system cannot find the file specified
+NdisVirtualBus         The system cannot find the file specified
+swenum                 The system cannot find the file specified
+rdpbus                 The system cannot find the file specified
+usbhub                 The system cannot find the file specified
+USBD                   The system cannot find the file specified
+UsbHub3                The system cannot find the file specified
+win32kbase             The system cannot find the file specified
+hidparse               The system cannot find the file specified
+win32kfull             The system cannot find the file specified
+dump_dumpstorport      The system cannot find the file specified
+dump_dumpfve           The system cannot find the file specified
+hidusb                 The system cannot find the file specified
+HIDCLASS               The system cannot find the file specified
+kbdhid                 The system cannot find the file specified
+mouhid                 The system cannot find the file specified
+usbccgp                The system cannot find the file specified
+luafv                  The system cannot find the file specified
+wcifs                  The system cannot find the file specified
+cldflt                 The system cannot find the file specified
+storqosflt             The system cannot find the file specified
+bindflt                The system cannot find the file specified
+lltdio                 The system cannot find the file specified
+mslldp                 The system cannot find the file specified
+rspndr                 The system cannot find the file specified
+msquic                 The system cannot find the file specified
+HTTP                   The system cannot find the file specified
+bowser                 The system cannot find the file specified
+mpsdrv                 The system cannot find the file specified
+mrxsmb                 The system cannot find the file specified
+mrxsmb20               The system cannot find the file specified
+srvnet                 The system cannot find the file specified
+mmcss                  The system cannot find the file specified
+peauth                 The system cannot find the file specified
+Ndu                    The system cannot find the file specified
+tcpipreg               The system cannot find the file specified
+srv2                   The system cannot find the file specified
+condrv                 The system cannot find the file specified
+KslD                   The system cannot find the file specified
+qwavedrv               The system cannot find the file specified
+USBSTOR                The system cannot find the file specified
+WUDFRd                 The system cannot find the file specified
+WpdUpFltr              The system cannot find the file specified
+exfat                  The system cannot find the file specified
+monitor                The system cannot find the file specified
+cdd                    The system cannot find the file specified
+
+You can troubleshoot most symbol related issues by turning on symbol loading diagnostics (!sym noisy) and repeating the command that caused symbols to be loaded.
+You should also verify that your symbol search path (.sympath) is correct.
+dxgkrnl!ADAPTER_DISPLAY::DdiSetVidPnSourceAddressWithMultiPlaneOverlay3+0xb0:
+fffff800`97f0cffc 448b7020        mov     r14d,dword ptr [rax+20h]
+fffff800`97f0d000 eb03            jmp     dxgkrnl!ADAPTER_DISPLAY::DdiSetVidPnSourceAddressWithMultiPlaneOverlay3+0xb9 (fffff800`97f0d005)
+fffff800`97f0d002 4533f6          xor     r14d,r14d
+fffff800`97f0d005 488b5310        mov     rdx,qword ptr [rbx+10h]
+fffff800`97f0d009 488d4db8        lea     rcx,[rbp-48h]
+fffff800`97f0d00d e86e6efcff      call    dxgkrnl!DXGVALIDATIONPROCESSATTACH::DXGVALIDATIONPROCESSATTACH (fffff800`97ed3e80)
+fffff800`97f0d012 488b4b10        mov     rcx,qword ptr [rbx+10h]
+fffff800`97f0d016 498bd5          mov     rdx,r13
+fffff800`97f0d019 488b81a8030000  mov     rax,qword ptr [rcx+3A8h]
+fffff800`97f0d020 488b8910010000  mov     rcx,qword ptr [rcx+110h]
+fffff800`97f0d027 e874d23600      call    fffff800`9827a2a0
+fffff800`97f0d02c 90              nop
+fffff800`97f0d02d 807db800        cmp     byte ptr [rbp-48h],0
+fffff800`97f0d031 4863f8          movsxd  rdi,eax
+fffff800`97f0d034 7410            je      dxgkrnl!ADAPTER_DISPLAY::DdiSetVidPnSourceAddressWithMultiPlaneOverlay3+0xfa (fffff800`97f0d046)
+fffff800`97f0d036 488d4dc0        lea     rcx,[rbp-40h]
+fffff800`97f0d03a 4c8b15af120900  mov     r10,qword ptr [dxgkrnl!_imp_KeUnstackDetachProcess (fffff800`97f9e2f0)]
+fffff800`97f0d041 e89ab8b5e8      call    nt!KeUnstackDetachProcess (fffff800`80a688e0)
+fffff800`97f0d046 440f20c1        mov     rcx,cr8
+fffff800`97f0d04a 443af9          cmp     r15b,cl
+fffff800`97f0d04d 7442            je      dxgkrnl!ADAPTER_DISPLAY::DdiSetVidPnSourceAddressWithMultiPlaneOverlay3+0x145 (fffff800`97f0d091)
+fffff800`97f0d04f 4c8b157a200900  mov     r10,qword ptr [dxgkrnl!_imp_WdLogNewEntry5_WdCriticalError (fffff800`97f9f0d0)]
+fffff800`97f0d056 e835713700      call    watchdog!WdLogNewEntry5_WdCriticalError (fffff800`98284190)
+fffff800`97f0d05b 410fb6cf        movzx   ecx,r15b
+fffff800`97f0d05f 48c7401813010000 mov     qword ptr [rax+18h],113h
+fffff800`97f0d067 48c7402010000000 mov     qword ptr [rax+20h],10h
+fffff800`97f0d06f 48895828        mov     qword ptr [rax+28h],rbx
+fffff800`97f0d073 48894830        mov     qword ptr [rax+30h],rcx
+fffff800`97f0d077 440f20c1        mov     rcx,cr8
+fffff800`97f0d07b 0fb6d1          movzx   edx,cl
+fffff800`97f0d07e 488bc8          mov     rcx,rax
+fffff800`97f0d081 48895038        mov     qword ptr [rax+38h],rdx
+fffff800`97f0d085 4c8b154c200900  mov     r10,qword ptr [dxgkrnl!_imp_WdLogEvent5_WdCriticalError (fffff800`97f9f0d8)]
+fffff800`97f0d08c e85f693700      call    watchdog!WdLogEvent5_WdCriticalError (fffff800`982839f0)
+fffff800`97f0d091 4885f6          test    rsi,rsi
+fffff800`97f0d094 7445            je      dxgkrnl!ADAPTER_DISPLAY::DdiSetVidPnSourceAddressWithMultiPlaneOverlay3+0x18f (fffff800`97f0d0db)
+fffff800`97f0d096 44397620        cmp     dword ptr [rsi+20h],r14d
+fffff800`97f0d09a 743f            je      dxgkrnl!ADAPTER_DISPLAY::DdiSetVidPnSourceAddressWithMultiPlaneOverlay3+0x18f (fffff800`97f0d0db)
+fffff800`97f0d09c 4c8b152d200900  mov     r10,qword ptr [dxgkrnl!_imp_WdLogNewEntry5_WdCriticalError (fffff800`97f9f0d0)]
+fffff800`97f0d0a3 e8e8703700      call    watchdog!WdLogNewEntry5_WdCriticalError (fffff800`98284190)
+fffff800`97f0d0a8 48c7401813010000 mov     qword ptr [rax+18h],113h
+fffff800`97f0d0b0 48c7402026000000 mov     qword ptr [rax+20h],26h
+fffff800`97f0d0b8 48634e20        movsxd  rcx,dword ptr [rsi+20h]
+fffff800`97f0d0bc 4883603800      and     qword ptr [rax+38h],0
+fffff800`97f0d0c1 48894828        mov     qword ptr [rax+28h],rcx
+fffff800`97f0d0c5 4963ce          movsxd  rcx,r14d
+fffff800`97f0d0c8 48894830        mov     qword ptr [rax+30h],rcx
+fffff800`97f0d0cc 488bc8          mov     rcx,rax
+rax=fffff80080c05e90 rbx=ffffa0057e9628e0 rcx=0000000000000139
+rdx=0000000000000000 rsi=ffffa0057eea8ea0 rdi=0000000000001402
+rip=fffff80080bfbca0 rsp=ffff9d0193908d98 rbp=ffff9d0193908e50
+ r8=0000000000000000  r9=0000000000000000 r10=fffff80080aff4e0
+r11=0000000000000000 r12=0000000000000000 r13=ffff9d0193909018
+r14=0000000000000000 r15=0000000000000000
+iopl=0         nv up ei pl zr na po nc
+cs=0010  ss=0018  ds=002b  es=002b  fs=0053  gs=002b             efl=00040246
+nt!KeBugCheckEx:
+fffff800`80bfbca0 48894c2408      mov     qword ptr [rsp+8],rcx ss:0018:ffff9d01`93908da0=0000000000000139
+ # Child-SP          RetAddr               : Args to Child                                                           : Call Site
+00 ffff9d01`93908d98 fffff800`80c05eab     : 00000000`00000139 00000000`00000000 00000000`00000000 00000000`00000000 : nt!KeBugCheckEx
+01 ffff9d01`93908da0 fffff800`97f0d02c     : 00000000`00001402 ffffa005`7e9628e0 ffffa005`7edf4080 fffff800`80a1beef : nt!guard_icall_bugcheck+0x1b
+02 ffff9d01`93908dd0 fffff800`97f11249     : 00000000`00000001 00000000`00000000 ffffa005`86d1f000 fffff800`97ed2c12 : dxgkrnl!ADAPTER_DISPLAY::DdiSetVidPnSourceAddressWithMultiPlaneOverlay3+0xe0
+03 ffff9d01`93908e90 fffff800`9fae1d67     : 00000000`00000000 00000000`00000000 00000000`00000000 fffff800`980e37b5 : dxgkrnl!ADAPTER_DISPLAY_DdiSetVidPnSourceAddressWithMultiPlaneOverlay3+0x9
+04 ffff9d01`93908ec0 fffff800`9fb93836     : 00000000`00000002 ffffa005`85ec1000 ffffa005`7e962ae8 00000000`00000000 : dxgmms2!ADAPTER_DISPLAY::DdiSetVidPnSourceAddressWithMultiPlaneOverlay3+0x17
+05 ffff9d01`93908ef0 fffff800`980e193a     : 00000000`00000000 00000000`00000000 00000000`00000000 ffffa005`7f824140 : dxgmms2!VidSchSetVidPnSourceAddressWithMultiPlaneOverlay3+0x56
+06 ffff9d01`93908f20 fffff800`97fd8d7e     : 00000000`00000001 ffff9d01`93909630 00000000`00000001 ffffca0a`2e5ce010 : dxgkrnl!ADAPTER_DISPLAY::DisableMPOPlanes+0x15a
+07 ffff9d01`93909120 fffff800`97fda89a     : ffffa005`7e58c598 ffff9d01`93909630 00000000`00000000 ffffca0a`2e5ce010 : dxgkrnl!DxgkDestroyAllocationInternal+0xa8e
+08 ffff9d01`93909530 fffff800`97fdac3b     : 00000000`02abea90 00000000`00000000 00000000`00a90000 00100084`00000000 : dxgkrnl!DxgkDestroyAllocationHelper+0x9ba
+09 ffff9d01`93909a20 fffff800`80c0f4f8     : ffffa005`7edf4000 ffffa005`7edf4080 00000000`00000000 ffffa005`80c65e70 : dxgkrnl!DxgkDestroyAllocation2+0x21b
+0a ffff9d01`93909b00 00007ff9`f19549c4     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`00000000 : nt!KiSystemServiceCopyEnd+0x28 (TrapFrame @ ffff9d01`93909b00)
+0b 00000000`02abe9f8 00000000`00000000     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`00000000 : 0x00007ff9`f19549c4
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Kernel.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Usb4Kd.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'

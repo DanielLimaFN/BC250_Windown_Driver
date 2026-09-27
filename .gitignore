@@ -10,6 +10,8 @@ tmp/
 *.exp
 *.sys
 *.cer
+referencias/*
+docs/evidence/*
 
 # Studio build & dependencies
 studio/output/
@@ -35,3 +37,6 @@ tools/monitor/*.exe
 
 # Laboratory bring-up image (nunca vai para o pacote assinado)
 driver/wdk/output_lab/
+
+*.dmp
+referencias/

@@ -5,17 +5,16 @@ set "ROOT=%~dp0.."
 set "OUT=%ROOT%\driver\wdk\output_compute"
 if not exist "%OUT%" mkdir "%OUT%"
 
-where cl.exe >nul 2>&1
-if errorlevel 1 (
-  set "VCVARS="
+set "VCVARS="
+if not defined VCVARS (
   for %%D in (C D E F G) do (
     for %%E in (BuildTools Community Professional Enterprise) do (
-      if not defined VCVARS if exist "%%D:\Program Files\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat"
-      if not defined VCVARS if exist "%%D:\Program Files (x86)\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files (x86)\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat"
+      if not defined VCVARS if exist "%%D:\Program Files\Microsoft Visual Studio\18\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files\Microsoft Visual Studio\18\%%E\VC\Auxiliary\Build\vcvars64.bat"
+      if not defined VCVARS if exist "%%D:\Program Files\Microsoft Visual Studio\2026\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files\Microsoft Visual Studio\2026\%%E\VC\Auxiliary\Build\vcvars64.bat"
     )
   )
   if not defined VCVARS (
-    echo ERRO: Visual Studio 2022 nao encontrado.
+    echo ERRO: Visual Studio 2026 nao encontrado.
     exit /b 1
   )
   call "!VCVARS!" >nul
@@ -23,10 +22,9 @@ if errorlevel 1 (
 
 set "WDK=C:\Program Files (x86)\Windows Kits\10"
 if defined WindowsSdkDir set "WDK=%WindowsSdkDir:~0,-1%"
-set "WDKVER="
-for %%V in (10.0.26100.0 10.0.22621.0) do if not defined WDKVER if exist "%WDK%\Include\%%V\km\ntddk.h" set "WDKVER=%%V"
-if not defined WDKVER (
-  echo ERRO: WDK 10.0.22621 ou superior nao encontrado.
+set "WDKVER=10.0.28000.0"
+if not exist "%WDK%\Include\%WDKVER%\km\ntddk.h" (
+  echo ERRO: WDK 10.0.28000.0 nao encontrado.
   exit /b 1
 )
 

@@ -1,0 +1,8 @@
+{
+  "file_format_version": "1.0.1",
+  "ICD": {
+    "library_path": "C:\\Users\\Daniel\\Desktop\\bc250-win\\bc250-win\\mesa-radv-wddm\\build\\src\\amd\\vulkan\\vulkan_radeon.dll",
+    "library_arch": "64",
+    "api_version": "1.4.348"
+  }
+}

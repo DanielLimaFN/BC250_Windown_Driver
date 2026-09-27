@@ -1,0 +1,32 @@
+Procedencia dos headers de clear state do GFX10 (faixa DX.27, 22/09/2026)
+
+Baixados em 22/09/2026 de torvalds/linux, ramo master, sem nenhuma edicao:
+
+  clearstate_gfx10.h
+    https://raw.githubusercontent.com/torvalds/linux/master/drivers/gpu/drm/amd/amdgpu/clearstate_gfx10.h
+    sha256 e6ca3544dd51a657d9200243be9e6d05c4dcfa052a239dadebbc6cd7409e64cd
+    Conteudo identico (salvo uma linha em branco final) a copia local mais antiga
+    bc250-win/BC250-V4/clearstate_gfx10.h (sha256 e8a39b0f...).
+
+  clearstate_defs.h
+    https://raw.githubusercontent.com/torvalds/linux/master/drivers/gpu/drm/amd/include/clearstate_defs.h
+    sha256 70eb9f9a57d2cacb2ee2d7b9f17485384019ac03c845ce4bea941acdae137285
+
+  nvd.h (so' consulta; nao e' incluido por nenhum fonte do driver)
+    https://raw.githubusercontent.com/torvalds/linux/master/drivers/gpu/drm/amd/amdgpu/nvd.h
+    sha256 0a4de0b61f8be33d83e7dc1af4b96370898af36d211f296daf018e72820ea0eb
+    Linhas usadas (P1):
+      394  PACKET3_PREAMBLE_CNTL              0x4A
+      395  PACKET3_PREAMBLE_BEGIN_CLEAR_STATE (2 << 28)
+      396  PACKET3_PREAMBLE_END_CLEAR_STATE   (3 << 28)
+      516  PACKET3_SET_CONTEXT_REG            0x69
+      517  PACKET3_SET_CONTEXT_REG_START      0x0000a000
+       59  PACKET3_CLEAR_STATE                0x12
+
+Uso de referencia (sequencia, nao codigo copiado): gfx_v10_0.c
+(gfx_v10_0_get_csb_size, gfx_v10_0_get_csb_buffer, gfx_v10_0_init_csb,
+gfx_v10_0_cp_gfx_start) e amdgpu_gfx.c (amdgpu_gfx_csb_preamble_start,
+amdgpu_gfx_csb_data_parser, amdgpu_gfx_csb_preamble_end), copias locais em
+bc250-win/BC250-V4/referencias/BC250-windowsDriverTest/docs/upstream/.
+
+Licenca: MIT (cabecalho AMD preservado nos arquivos).

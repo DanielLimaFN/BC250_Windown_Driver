@@ -9,18 +9,45 @@ static uint32_t Bc250McdmNextGeneration(BC250_MCDM_OBJECT_REGISTRY *Registry)
     return Registry->NextGeneration;
 }
 
+static inline BC250_MCDM_HANDLE Bc250McdmMakeHandle(uint32_t Slot, uint32_t Generation)
+{
+#if defined(_WIN64) || defined(__x86_64__) || defined(_M_X64)
+    return (BC250_MCDM_HANDLE)(((uintptr_t)Generation << 32) | (uintptr_t)(Slot + 1u));
+#else
+    return (BC250_MCDM_HANDLE)(((uintptr_t)(Generation & 0xFFFFu) << 16) | (uintptr_t)((Slot + 1u) & 0xFFFFu));
+#endif
+}
+
 static BC250_MCDM_OBJECT_RECORD *Bc250McdmFindObject(
     BC250_MCDM_OBJECT_REGISTRY *Registry,
     BC250_MCDM_HANDLE Handle)
 {
-    uint32_t index;
+    uint32_t slot;
+    uint32_t gen;
+    BC250_MCDM_OBJECT_RECORD *record;
 
     if (Registry == NULL || Handle == NULL) return NULL;
-    for (index = 0u; index < Registry->NextSlot; ++index) {
-        if (Handle == (BC250_MCDM_HANDLE)&Registry->Objects[index]) {
-            return &Registry->Objects[index];
+
+#if defined(_WIN64) || defined(__x86_64__) || defined(_M_X64)
+    slot = (uint32_t)((uintptr_t)Handle & 0xFFFFFFFFu);
+    gen = (uint32_t)((uintptr_t)Handle >> 32);
+#else
+    slot = (uint32_t)((uintptr_t)Handle & 0xFFFFu);
+    gen = (uint32_t)((uintptr_t)Handle >> 16);
+#endif
+
+    if (slot > 0u && slot <= Registry->NextSlot) {
+        record = &Registry->Objects[slot - 1u];
+        if (record->Signature == BC250_MCDM_OBJECT_LIVE_SIGNATURE ||
+            record->Signature == BC250_MCDM_OBJECT_DEAD_SIGNATURE) {
+#if defined(_WIN64) || defined(__x86_64__) || defined(_M_X64)
+            if (record->Generation == gen) return record;
+#else
+            if ((record->Generation & 0xFFFFu) == (gen & 0xFFFFu)) return record;
+#endif
         }
     }
+
     return NULL;
 }
 
@@ -28,14 +55,32 @@ static const BC250_MCDM_OBJECT_RECORD *Bc250McdmFindObjectConst(
     const BC250_MCDM_OBJECT_REGISTRY *Registry,
     BC250_MCDM_HANDLE Handle)
 {
-    uint32_t index;
+    uint32_t slot;
+    uint32_t gen;
+    const BC250_MCDM_OBJECT_RECORD *record;
 
     if (Registry == NULL || Handle == NULL) return NULL;
-    for (index = 0u; index < Registry->NextSlot; ++index) {
-        if (Handle == (BC250_MCDM_HANDLE)&Registry->Objects[index]) {
-            return &Registry->Objects[index];
+
+#if defined(_WIN64) || defined(__x86_64__) || defined(_M_X64)
+    slot = (uint32_t)((uintptr_t)Handle & 0xFFFFFFFFu);
+    gen = (uint32_t)((uintptr_t)Handle >> 32);
+#else
+    slot = (uint32_t)((uintptr_t)Handle & 0xFFFFu);
+    gen = (uint32_t)((uintptr_t)Handle >> 16);
+#endif
+
+    if (slot > 0u && slot <= Registry->NextSlot) {
+        record = &Registry->Objects[slot - 1u];
+        if (record->Signature == BC250_MCDM_OBJECT_LIVE_SIGNATURE ||
+            record->Signature == BC250_MCDM_OBJECT_DEAD_SIGNATURE) {
+#if defined(_WIN64) || defined(__x86_64__) || defined(_M_X64)
+            if (record->Generation == gen) return record;
+#else
+            if ((record->Generation & 0xFFFFu) == (gen & 0xFFFFu)) return record;
+#endif
         }
     }
+
     return NULL;
 }
 
@@ -109,11 +154,27 @@ static BC250_MCDM_OBJECT_STATUS Bc250McdmAllocateRecord(
     if (Registry->Teardown != 0u) {
         return BC250_MCDM_OBJECT_IN_TEARDOWN;
     }
-    if (Registry->NextSlot == BC250_MCDM_MAX_OBJECTS) {
-        return BC250_MCDM_OBJECT_NO_SPACE;
+    uint32_t slotIndex = 0u;
+    if (Registry->NextSlot < BC250_MCDM_MAX_OBJECTS) {
+        slotIndex = Registry->NextSlot++;
+        record = &Registry->Objects[slotIndex];
+    } else {
+        uint32_t i;
+        record = NULL;
+        for (i = 0u; i < Registry->NextSlot; ++i) {
+            if (Registry->Objects[i].State == (uint32_t)BC250_MCDM_OBJECT_STATE_DEAD &&
+                Registry->Objects[i].ChildCount == 0u &&
+                Registry->Objects[i].InFlightSubmissions == 0) {
+                record = &Registry->Objects[i];
+                slotIndex = i;
+                break;
+            }
+        }
+        if (record == NULL) {
+            return BC250_MCDM_OBJECT_NO_SPACE;
+        }
     }
 
-    record = &Registry->Objects[Registry->NextSlot++];
     memset(record, 0, sizeof(*record));
     record->Signature = BC250_MCDM_OBJECT_LIVE_SIGNATURE;
     record->Generation = Bc250McdmNextGeneration(Registry);
@@ -123,7 +184,7 @@ static BC250_MCDM_OBJECT_STATUS Bc250McdmAllocateRecord(
     record->OwnerProcess = OwnerProcess;
     record->Parent = Parent;
     ++Registry->LiveCount;
-    *Handle = (BC250_MCDM_HANDLE)record;
+    *Handle = Bc250McdmMakeHandle(slotIndex, record->Generation);
     return BC250_MCDM_OBJECT_OK;
 }
 
@@ -316,7 +377,15 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmContextAcquireSubmissionView(
         processRec->State != (uint32_t)BC250_MCDM_OBJECT_STATE_LIVE) {
         return BC250_MCDM_OBJECT_OWNER_MISMATCH;
     }
-    if (processRec->RootPageTableAddress == 0u ||
+    /*
+     * Segment offset zero is a valid root in the local segment.  The physical
+     * address is LocalSegmentBase + 0, not address zero.  The 19:53 hardware
+     * run installed exactly that root and then could not acquire a submission
+     * view because this check treated the offset as an absence sentinel.
+     * Presence is carried explicitly by SetCount + SegmentId + Entries.
+     */
+    if (processRec->RootPageTableSetCount == 0u ||
+        processRec->RootPageTableSegmentId != 1u ||
         processRec->RootPageTableEntries == 0u) {
         return BC250_MCDM_OBJECT_NO_ROOT_PAGE_TABLE;
     }
@@ -488,11 +557,95 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectFindAllocationByToken(
         if (record->Signature == BC250_MCDM_OBJECT_LIVE_SIGNATURE &&
             record->Type == BC250_MCDM_OBJECT_ALLOCATION &&
             record->AllocationToken == AllocationToken) {
-            *Handle = (BC250_MCDM_HANDLE)record;
+            *Handle = Bc250McdmMakeHandle(index, record->Generation);
             return BC250_MCDM_OBJECT_OK;
         }
     }
     return BC250_MCDM_OBJECT_INVALID_HANDLE;
+}
+
+/*
+ * F2.1 (13/09) -- GEOMETRIA DA SUPERFICIE PARA DxgkDdiDescribeAllocation.
+ *
+ * Ate a F2 a DDI devolvia STATUS_NOT_SUPPORTED para toda alocacao, porque o KMD
+ * simplesmente nao sabia a geometria: a ABI de alocacao carregava apenas token,
+ * tamanho e alinhamento. Agora a UMD declara Width/Height/Pitch/Format na
+ * criacao e o registro guarda o que foi declarado.
+ *
+ * As duas funcoes falham FECHADO. Em particular, `Get` devolve erro -- e nao uma
+ * geometria zerada -- quando a alocacao nunca declarou uma: o chamador precisa
+ * ser obrigado a distinguir "nao sei" de "e' 0x0", que e' exatamente o tipo de
+ * confusao que a Lei 4 proibe.
+ */
+BC250_MCDM_OBJECT_STATUS Bc250McdmObjectSetAllocationGeometry(
+    BC250_MCDM_OBJECT_REGISTRY *Registry,
+    BC250_MCDM_HANDLE Allocation,
+    uint32_t Width,
+    uint32_t Height,
+    uint32_t Pitch,
+    uint32_t Format)
+{
+    BC250_MCDM_OBJECT_RECORD *record;
+    BC250_MCDM_OBJECT_RECORD probe;
+    BC250_MCDM_OBJECT_STATUS status;
+
+    if (Width == 0u || Height == 0u || Pitch == 0u || Format == 0u) {
+        return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+    }
+    if ((uint64_t)Pitch < (uint64_t)Width) {
+        return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+    }
+    status = Bc250McdmObjectLookup(Registry, Allocation,
+        BC250_MCDM_OBJECT_ALLOCATION, NULL, &probe);
+    if (status != BC250_MCDM_OBJECT_OK) return status;
+    /* A geometria tem de caber no que foi realmente alocado. */
+    if ((uint64_t)Pitch * (uint64_t)Height > probe.AllocationBytes) {
+        return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+    }
+    record = Bc250McdmFindObject(Registry, Allocation);
+    if (record == NULL ||
+        record->Signature != BC250_MCDM_OBJECT_LIVE_SIGNATURE ||
+        record->Type != BC250_MCDM_OBJECT_ALLOCATION) {
+        return BC250_MCDM_OBJECT_BAD_REGISTRY;
+    }
+    record->AllocationWidth = Width;
+    record->AllocationHeight = Height;
+    record->AllocationPitch = Pitch;
+    record->AllocationFormat = Format;
+    record->AllocationGeometryValid = 1u;
+    return BC250_MCDM_OBJECT_OK;
+}
+
+BC250_MCDM_OBJECT_STATUS Bc250McdmObjectGetAllocationGeometry(
+    const BC250_MCDM_OBJECT_REGISTRY *Registry,
+    BC250_MCDM_HANDLE Allocation,
+    uint32_t *Width,
+    uint32_t *Height,
+    uint32_t *Pitch,
+    uint32_t *Format)
+{
+    BC250_MCDM_OBJECT_RECORD record;
+    BC250_MCDM_OBJECT_STATUS status;
+
+    if (Width != NULL) *Width = 0u;
+    if (Height != NULL) *Height = 0u;
+    if (Pitch != NULL) *Pitch = 0u;
+    if (Format != NULL) *Format = 0u;
+    if (Width == NULL || Height == NULL || Pitch == NULL || Format == NULL) {
+        return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+    }
+    status = Bc250McdmObjectLookup(Registry, Allocation,
+        BC250_MCDM_OBJECT_ALLOCATION, NULL, &record);
+    if (status != BC250_MCDM_OBJECT_OK) return status;
+    if (record.AllocationGeometryValid == 0u) {
+        /* Nunca declarada. NAO devolver zeros como se fossem medida. */
+        return BC250_MCDM_OBJECT_NO_GEOMETRY;
+    }
+    *Width = record.AllocationWidth;
+    *Height = record.AllocationHeight;
+    *Pitch = record.AllocationPitch;
+    *Format = record.AllocationFormat;
+    return BC250_MCDM_OBJECT_OK;
 }
 
 BC250_MCDM_OBJECT_STATUS Bc250McdmObjectSetRootPageTable(
@@ -507,13 +660,19 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectSetRootPageTable(
     BC250_MCDM_OBJECT_RECORD *process;
     BC250_MCDM_OBJECT_STATUS status;
 
-    if (MaxEntries == 0u || (SegmentId != 0u && SegmentId != 1u) ||
-        ((Address == 0u) != (NumEntries == 0u)) ||
-        ((Address == 0u) != (SegmentId == 0u)) ||
-        (Address != 0u && ((Address & 0xFFFull) != 0u ||
-         (Address & ~0x0000FFFFFFFFF000ull) != 0u)) ||
-        NumEntries > MaxEntries) {
+    if (MaxEntries == 0u || (SegmentId != 0u && SegmentId != 1u)) {
         return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+    }
+    if (SegmentId == 0u) {
+        if (NumEntries != 0u || Address != 0u) {
+            return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+        }
+    } else {
+        if (NumEntries == 0u || NumEntries > MaxEntries ||
+            (Address & 0xFFFull) != 0u ||
+            (Address & ~0x0000FFFFFFFFF000ull) != 0u) {
+            return BC250_MCDM_OBJECT_BAD_ARGUMENT;
+        }
     }
     status = Bc250McdmObjectLookup(Registry, Context,
         BC250_MCDM_OBJECT_CONTEXT, NULL, &contextRecord);
@@ -532,6 +691,19 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectSetRootPageTable(
         process->RootPageTableSetCount = 1u;
     }
     ++process->PageTableEpoch;
+
+    {
+        BC250_MCDM_OBJECT_RECORD *ctx = Bc250McdmFindObject(Registry, Context);
+        if (ctx != NULL) {
+            ctx->RootPageTableAddress = Address;
+            ctx->RootPageTableSegmentId = SegmentId;
+            ctx->RootPageTableEntries = NumEntries;
+            ++ctx->RootPageTableSetCount;
+            if (ctx->RootPageTableSetCount == 0u) {
+                ctx->RootPageTableSetCount = 1u;
+            }
+        }
+    }
     return BC250_MCDM_OBJECT_OK;
 }
 

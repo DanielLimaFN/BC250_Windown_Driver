@@ -1,0 +1,33 @@
+BC250 MCDM SAFETY AUDIT: PASS
+  synthetic ownership/reservations: absent
+  GPUVA geometry (GPUMMUCAPS vs UMDRIVERPRIVATE): single source
+  operational DDIs without hardware backing: fail-closed
+  'IB EXECUTADO' restricted to the INDIRECT path: enforced
+  SDMA tripod leg 1 (RPTR==WPTR) inside the gate: enforced
+  INDIRECT data leg (canary proof): enforced
+  ring-wrap arithmetic on tripod leg 1: enforced
+  Node 1 submission refusal names its reason: enforced
+  Node 1 admission uses full physical page-table walk; snapshot is diagnostic: enforced
+  TDR reset/restart pair backed by physical quiesce+proof: enforced
+  QueryEngineStatus answers from measurement: enforced
+  induced hang fail-closed and physical: enforced
+  induced hang package/start order: enforced
+  second readonly preflight sees an empty MMIO transport: enforced
+  UMD/winsys trace reaches the archived evidence file: enforced
+  primary allocation declared to the kernel (hResource+Primary+VidPnSourceId): enforced
+  Present path speaks on both sides; device/context sampling unshared: enforced
+  DXGI presentation chain refuses instead of faking success; test cannot re-freeze it: enforced
+  DescribeAllocation speaks on entry and on every refusal: enforced
+  DWM composition runs on the KMD blt path, never a context submit: enforced
+  process/device/context DDIs name their refusals: enforced
+  context ABI populated before ContextAbiReady: enforced
+  24-CU firmware WGP/power policy is read-only: enforced
+  drained MEC cursor reconciliation before planning: enforced
+  per-process GPUVA ranges released on process destroy: enforced
+  bc250mcdm recovery identity: covered
+  submit path at DISPATCH_LEVEL pushlock-free: enforced
+  SDMA submission asynchronous and non-blocking (0x133 eliminated): enforced
+  GFXHUB TLB serialization with spinlock: enforced
+  Marco 3 partial proof + unconditional recovery: enforced
+  GPUVA journal stores final interval overlay, not raw update history: enforced
+  verdict: NAO VALIDADO EM HARDWARE

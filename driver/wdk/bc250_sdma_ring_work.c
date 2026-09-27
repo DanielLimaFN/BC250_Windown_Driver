@@ -1,5 +1,7 @@
 #include "bc250_active_miniport.h"
 #include "../core/bc250_sdma_packet_builder.h"
+#include "bc250_sdma_present.h"
+#include "bc250_mmio_breadcrumb.h"
 
 #define BC250_SDMA_WORK_PAGE_BYTES 4096u
 #define BC250_SDMA_WORK_BYTES (4u * BC250_SDMA_WORK_PAGE_BYTES)
@@ -67,6 +69,35 @@
 #define F_MINOR_PTR 0x00000001u
 #define F_POLL_ENABLE 0x00000004u
 #define F_F32_HALT 0x00000001u
+
+/*
+ * Este modulo e' o caminho provado em silicio (Item 63).  bc250_sdma_present.c
+ * reimplementa a mesma sequencia para o blt de apresentacao e, ate a corrida
+ * 09:04, tinha divergido em cinco offsets/mascaras sem que nada acusasse.
+ * As afirmacoes abaixo travam as duas copias em tempo de compilacao: qualquer
+ * divergencia futura passa a ser erro de build, nao surpresa no silicio.
+ *
+ * Nenhum comportamento deste modulo muda -- sao apenas asserts.
+ */
+C_ASSERT(R_UTCL1_CNTL == BC250_SDMA0_REG_UTCL1_CNTL);
+C_ASSERT(R_UTCL1_PAGE == BC250_SDMA0_REG_UTCL1_PAGE);
+C_ASSERT(R_HDP_INVALIDATE == BC250_SDMA0_REG_HDP_INVALIDATE);
+C_ASSERT(R_HDP_MISC == BC250_SDMA0_REG_HDP_MISC);
+C_ASSERT(R_HDP_FLUSH == BC250_SDMA0_REG_HDP_FLUSH);
+C_ASSERT(R_STATUS1 == BC250_SDMA0_REG_STATUS1);
+C_ASSERT(R_ERROR_LOG == BC250_SDMA0_REG_ERROR_LOG);
+C_ASSERT(R_RB_CNTL == BC250_SDMA0_REG_RB_CNTL);
+C_ASSERT(R_RB_BASE == BC250_SDMA0_REG_RB_BASE);
+C_ASSERT(R_DOORBELL == BC250_SDMA0_REG_DOORBELL);
+C_ASSERT(R_MINOR_PTR == BC250_SDMA0_REG_MINOR_PTR);
+C_ASSERT(R_WPTR_POLL_CNTL == BC250_SDMA0_REG_WPTR_POLL_CNTL);
+/*
+ * A janela mapeada por bc250_sdma_present.c precisa cobrir tanto o bloco HDP
+ * quanto o do SDMA0.
+ */
+C_ASSERT(R_HDP_INVALIDATE >= BC250_SDMA0_MMIO_WINDOW_START);
+C_ASSERT(R_MINOR_PTR <
+    BC250_SDMA0_MMIO_WINDOW_START + BC250_SDMA0_MMIO_WINDOW_BYTES);
 
 static const uint32_t g_Bc250SdmaRegisters[] = {
     R_SEM_TIMER, R_CNTL, R_CHICKEN, R_GB_ADDR, R_GB_ADDR_READ,
@@ -141,12 +172,17 @@ static void Bc250SdmaCopyToDevice(
 
 static uint32_t Bc250SdmaDeviceRead(volatile uint32_t *Address)
 {
-    return READ_REGISTER_ULONG((volatile ULONG *)Address);
+    ULONG crumb = Bc250CrumbBefore(BC250_CRUMB_SITE_RINGWORK_READ, (ULONG)(ULONG_PTR)Address);
+    uint32_t value = READ_REGISTER_ULONG((volatile ULONG *)Address);
+    Bc250CrumbAfter(crumb);
+    return value;
 }
 
 static void Bc250SdmaDeviceWrite(volatile uint32_t *Address, uint32_t Value)
 {
+    ULONG crumb = Bc250CrumbBefore(BC250_CRUMB_SITE_RINGWORK_WRITE, (ULONG)(ULONG_PTR)Address);
     WRITE_REGISTER_ULONG((volatile ULONG *)Address, Value);
+    Bc250CrumbAfter(crumb);
 }
 #endif
 
@@ -416,8 +452,8 @@ BC250_SDMA_RING_WORK_STATUS Bc250ActiveRunSdmaRingWork(
         !Bc250SdmaWrite(Context, R_CNTL,
             (Evidence->CntlApplied =
                 (Context->SdmaAutoCtxSw != 0u)
-                    ? (Evidence->CntlBefore | F_UTC_L1 | F_MIDCMD | F_AUTO_CTXSW)
-                    : ((Evidence->CntlBefore | F_UTC_L1 | F_MIDCMD) & ~F_AUTO_CTXSW))) ||
+                    ? ((Evidence->CntlBefore | F_UTC_L1 | F_AUTO_CTXSW) & ~F_MIDCMD)
+                    : ((Evidence->CntlBefore | F_UTC_L1) & ~(F_AUTO_CTXSW | F_MIDCMD)))) ||
         !Bc250SdmaRead(Context, R_UTCL1_CNTL, &value) ||
         !Bc250SdmaWrite(Context, R_UTCL1_CNTL,
             (value & ~(0x00000E00u | 0x0000003Eu)) |

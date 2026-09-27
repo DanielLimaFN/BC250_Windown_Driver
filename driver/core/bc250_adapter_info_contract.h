@@ -14,6 +14,7 @@ typedef UINT32 uint32_t;
 #endif
 
 #include "bc250_context_dispatcher_contract.h"
+#include "bc250_gpuva_space_contract.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,8 +24,16 @@ extern "C" {
 #define BC250_ADAPTER_NODE_SDMA           0u
 #define BC250_ADAPTER_NODE_COMPUTE        1u
 
-#define BC250_ADAPTER_GPUVA_BITS          48u
-#define BC250_ADAPTER_MAX_GPUVA_ADDRESS   0x0000FFFFFFFFFFFFull
+/*
+ * FONTE UNICA (07/09). Estes dois nomes valiam 48 e 0xFFFFFFFFFFFF, numeros que
+ * o silicio nao tem: a hierarquia de 2 niveis em uso cobre 12 + 9 + 13 = 34 bits
+ * (16 GiB), conforme derivado em docs/03 e em bc250_gpuva_space_contract.h. O que
+ * o driver declara ao WDDM em GPUMMUCAPS ja era BC250_GPUVA_PT_VA_BITS; estes
+ * defines eram uma segunda fonte de verdade -- morta, mas pronta para reintroduzir
+ * o defeito ao ser ligada. Agora derivam, e nao podem mais divergir.
+ */
+#define BC250_ADAPTER_GPUVA_BITS          BC250_GPUVA_PT_VA_BITS
+#define BC250_ADAPTER_MAX_GPUVA_ADDRESS   ((1ull << BC250_GPUVA_PT_VA_BITS) - 1ull)
 #define BC250_ADAPTER_PAGE_SIZE_BYTES     4096u
 
 #define BC250_ADAPTER_VRAM_BAR_INDEX      0u

@@ -18,8 +18,8 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
 #pragma function(memcpy)
 void * __cdecl memcpy(void *Destination, const void *Source, size_t Length)
 {
-    unsigned char *destination = (unsigned char *)Destination;
-    const unsigned char *source = (const unsigned char *)Source;
+    volatile unsigned char *destination = (volatile unsigned char *)Destination;
+    const volatile unsigned char *source = (const volatile unsigned char *)Source;
     size_t index;
     for (index = 0; index < Length; ++index) destination[index] = source[index];
     return Destination;
@@ -28,7 +28,11 @@ void * __cdecl memcpy(void *Destination, const void *Source, size_t Length)
 #define CHECK(Expression) do { if (!(Expression)) return 0; } while (0)
 #else
 #include <stdio.h>
-#define CHECK(Expression) do { if (!(Expression)) return 1; } while (0)
+/* Falha devolve 0 porque main() faz `return Run() ? 0 : 1`: devolver 1
+ * aqui fazia a falha virar SUCESSO no build offline. Medido em 14/09
+ * quebrando o emissor de proposito -- suite offline saiu EXIT=0 e a
+ * kernel EXIT=1. Travado por audit_offline_check_is_not_inverted. */
+#define CHECK(Expression) do { if (!(Expression)) return 0; } while (0)
 #endif
 
 static BC250_RUNTIME_INVENTORY_INPUT g_input;
@@ -122,18 +126,17 @@ static int Bc250RunRuntimeInventoryTest(void)
             &vramStatus) == BC250_CP_BOOTSTRAP_OK);
     }
 
-    memset(&space, 0, sizeof(space));
-    space.TotalBytes = g_report.VramTotalBytes;
-    space.CpuVisibleBytes = g_report.CpuVisibleBytes;
-    space.VramMcStart = 0xF400000000ull;
-    space.VramMcEnd = space.VramMcStart + g_report.VramTotalBytes - 1ull;
-    space.VramBaseOffset = 0x4500000ull;
-    space.EvidenceFlags = BC250_ADDR_EVIDENCE_REQUIRED;
-    space.SnapshotGeneration = g_report.SnapshotGeneration;
-
-    CHECK(Bc250CpBootstrapSealInventory(
-        &g_bootstrap, &space, &vramStatus) == BC250_CP_BOOTSTRAP_OK);
-
+    /*
+     * As alocacoes gerenciadas pelo driver precisam entrar ANTES do lacre.
+     * Bc250CpBootstrapBuildPreflight compara RegionCount, NextGeneration e o
+     * selo do inventario contra o que foi lacrado; qualquer alocacao feita
+     * depois do lacre e' rejeitada com BC250_CP_BOOTSTRAP_INVENTORY_CHANGED.
+     * O teste alocava depois de lacrar e exigia OK -- contradicao com o
+     * proprio contrato.  A falha ficou escondida porque o stub de memcpy
+     * deste arquivo recursava infinitamente e o processo morria com codigo
+     * negativo, que o portao `if errorlevel 1` do build-contract.bat deixava
+     * passar.
+     */
     /* Allocate future driver-managed structures */
     CHECK(Bc250VramAllocate(
         &g_bootstrap.Allocator, 0x00400000ull, 0x100000ull,
@@ -169,6 +172,18 @@ static int Bc250RunRuntimeInventoryTest(void)
     CHECK(Bc250VramGetRegion(&g_bootstrap.Allocator, queueToken, &region) ==
         BC250_VRAM_OK);
     CHECK(region.Role == BC250_VRAM_ROLE_COMPUTE_QUEUE);
+
+    memset(&space, 0, sizeof(space));
+    space.TotalBytes = g_report.VramTotalBytes;
+    space.CpuVisibleBytes = g_report.CpuVisibleBytes;
+    space.VramMcStart = 0xF400000000ull;
+    space.VramMcEnd = space.VramMcStart + g_report.VramTotalBytes - 1ull;
+    space.VramBaseOffset = 0x4500000ull;
+    space.EvidenceFlags = BC250_ADDR_EVIDENCE_REQUIRED;
+    space.SnapshotGeneration = g_report.SnapshotGeneration;
+
+    CHECK(Bc250CpBootstrapSealInventory(
+        &g_bootstrap, &space, &vramStatus) == BC250_CP_BOOTSTRAP_OK);
 
     /* Build preflight plans for TMR and CP firmwares */
     memset(&policy, 0, sizeof(policy));
@@ -209,10 +224,41 @@ static int Bc250RunRuntimeInventoryTest(void)
         NULL, &vramStatus) == BC250_STAGING_LEASE_OK);
 
     /* Test failure modes */
-    g_input.ScanoutReservation.Offset = 0x1FC00000ull; /* overlaps carveout */
+
+    /*
+     * Scanout fora da janela visivel pela CPU.  O contrato valida o scanout
+     * (`Offset + Length <= CpuVisibleBytes`) ANTES de procurar sobreposicao,
+     * e devolve SCANOUT_INVALID -- ordem correta: um scanout que a CPU nao
+     * alcanca e' invalido independentemente de colidir com algo.
+     *
+     * O gabarito antigo exigia OVERLAP aqui.  0x1FC00000 esta fora dos
+     * 0x10000000 visiveis, entao esse retorno nunca era possivel.  A
+     * assercao ficou escondida atras da recursao infinita do stub de memcpy
+     * deste arquivo e do portao `if errorlevel 1` do build-contract.bat.
+     */
+    g_input.ScanoutReservation.Offset = 0x1FC00000ull;
+    CHECK(Bc250BuildRuntimeVramInventory(
+        &g_input, 0x20000000ull, 0x10000000ull, 42, &g_report) ==
+        BC250_RUNTIME_INVENTORY_SCANOUT_INVALID);
+
+    /*
+     * Sobreposicao de verdade: carveout dentro da janela visivel pela CPU
+     * colidindo com o scanout em 0x00100000.  Este e' o caso que o gabarito
+     * antigo pretendia cobrir e nunca cobriu.
+     */
+    g_input.ScanoutReservation.Offset = 0x00100000ull;
+    g_input.PlatformCarveoutCount = 2;
+    g_input.PlatformCarveouts[1].Offset = 0x00100000ull;
+    g_input.PlatformCarveouts[1].Length = 0x00100000ull;
+    g_input.PlatformCarveouts[1].Alignment = 0x100000ull;
+    g_input.PlatformCarveouts[1].Role = BC250_VRAM_ROLE_PLATFORM_RESERVED;
+    g_input.PlatformCarveouts[1].Flags = BC250_VRAM_REGION_PERSISTENT;
     CHECK(Bc250BuildRuntimeVramInventory(
         &g_input, 0x20000000ull, 0x10000000ull, 42, &g_report) ==
         BC250_RUNTIME_INVENTORY_OVERLAP);
+    memset(&g_input.PlatformCarveouts[1], 0,
+        sizeof(g_input.PlatformCarveouts[1]));
+    g_input.PlatformCarveoutCount = 1;
 
     g_input.ScanoutReservation.Offset = 0x00100000ull;
     g_input.DiscoveryTmrEvidence.Offset = 0x20000000ull; /* out of range */

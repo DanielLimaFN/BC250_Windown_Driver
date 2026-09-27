@@ -14,14 +14,19 @@
 #include "../core/bc250_runtime_inventory.h"
 #include "../core/bc250_gfxhub_tlb_transaction.h"
 #include "../core/bc250_gcvm_vmid8_transaction.h"
+#include "../core/bc250_gcvm_global_mmu.h"
 #include "../core/bc250_psp_ring_transaction.h"
 #include "../core/bc250_psp_load_fw_transaction.h"
 #include "../core/bc250_sdma_f32_transaction.h"
+#include "../core/bc250_gfx_ring_transaction.h"
 #include "../core/bc250_vram_allocator.h"
 #include "../core/bc250_mcdm_object_contract.h"
 #include "../core/bc250_gpuva_space_contract.h"
+#include "../core/bc250_vmid_pool_contract.h"
+#include "../core/bc250_fault_latch_contract.h"
 #include "../core/bc250_gpuva_journal_contract.h"
 #include "../core/bc250_gpuva_sdma_broker_contract.h"
+#include "../core/bc250_submit_command_contract.h"
 #include "bc250_submission_engine.h"
 #include "bc250_boot_fuse.h"
 
@@ -251,6 +256,70 @@ typedef struct BC250_PFP_DIRECT_LOAD_EVIDENCE {
     uint32_t Vmid0SemAcquired;
 } BC250_PFP_DIRECT_LOAD_EVIDENCE;
 
+#define BC250_ACTIVE_GPUVA_JOURNAL_SLOTS 4u
+
+/* Motor grafico persistente (CP_RB0 / PFP / ME) no Node 1 (3D Graphics) */
+typedef struct BC250_GFX_ENGINE {
+    volatile LONG State; /* 0 = OFFLINE, 1 = ONLINE, 2 = FAULTED */
+    KSPIN_LOCK Lock;
+
+    /* Recursos de VRAM e mapeamento de anel */
+    BC250_VRAM_TOKEN VramToken;
+    uint64_t VramTotalBytes;
+    uint64_t RingGpuVa;
+    uint32_t RingDwords;
+    uint32_t *RingCpuVirtual;
+
+    uint64_t RptrWbGpuVa;
+    volatile uint32_t *RptrWbCpuVirtual;
+
+    uint64_t WptrPollGpuVa;
+    volatile uint32_t *WptrPollCpuVirtual;
+
+    /*
+     * D0.2 -- MOTIVO DA ULTIMA RECUSA, registrado barato.
+     *
+     * Duas escritas de campo, nada mais. Existe porque a primeira versao da
+     * medicao de recusa emitia o veredito de DENTRO do submit, com a reserva de
+     * fence do WDDM ainda de pe -- e isso alargou a janela em que o StopDevice
+     * observa reservedCount != 0, reprovando deterministicamente o Caso 5 de
+     * active_miniport_test (exit 651). Atribuicao confirmada por build de
+     * isolamento.
+     *
+     * O ponteiro e' um literal de string estatico do proprio driver, nunca
+     * memoria de terceiros, e por isso guardar o ponteiro e' seguro.
+     */
+    const char *LastRefusalReason;
+    uint32_t LastRefusalCursor;
+
+    uint64_t FenceGpuVa;
+    volatile uint32_t *FenceCpuVirtual;
+
+    /* Cursores de hardware e fences */
+    uint32_t WptrDwords;
+    uint32_t LastRptrMmio;
+    uint32_t LastRptrWb;
+    uint64_t LastSubmittedFence;
+    uint64_t LastRetiredFence;
+
+    /* Telemetria e metricas */
+    uint32_t SubmitCalls;
+    uint32_t SubmitAccepted;
+    uint32_t SubmitRejected;
+    uint32_t PollCalls;
+    uint32_t RetiredCount;
+    uint32_t TdrResets;
+    uint32_t LastSubmitSizeDwords;
+    uint64_t LastSubmitVa;
+    /* DX.29: VMID do ultimo INDIRECT_BUFFER emitido (0xFFFFFFFF = nenhum) e
+     * quantas sincronizacoes de troca de VMID foram emitidas no anel. */
+    uint32_t LastSubmitVmid;
+    uint32_t VmidSwitchSyncs;
+
+    BC250_GFX_RING_PLAN Plan;
+    BC250_GFX_RING_TXN_EVIDENCE Evidence;
+} BC250_GFX_ENGINE;
+
 typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     uint32_t Signature;
     PDEVICE_OBJECT PhysicalDeviceObject;
@@ -270,10 +339,121 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     BC250_VRAM_PROBE_EVIDENCE VramProbeEvidence;
     BC250_TLB_TRANSACTION_STATUS TlbTransactionStatus;
     BC250_TLB_TRANSACTION_EVIDENCE TlbTransactionEvidence;
+    KSPIN_LOCK TlbLock;
     BC250_GCVM_BACKING_STATUS GcvmBackingStatus;
     BC250_GCVM_BACKING_EVIDENCE GcvmBackingEvidence;
     BC250_GCVM_VMID8_STATUS GcvmVmid8Status;
     BC250_GCVM_VMID8_EVIDENCE GcvmVmid8Evidence;
+    BC250_GCVM_VMID8_STATUS Vmid8InstallStatus;
+    BC250_GCVM_VMID8_INSTALL_EVIDENCE Vmid8InstallEvidence;
+    BC250_GCVM_GLOBAL_MMU_STATUS GlobalMmuStatus;
+    BC250_GCVM_GLOBAL_MMU_EVIDENCE GlobalMmuEvidence;
+    BOOLEAN GlobalMmuReady;
+    BOOLEAN GlobalMmuDummyAllocated;
+    BC250_VRAM_ALLOCATOR GlobalMmuAllocator;
+    BC250_VRAM_TOKEN GlobalMmuDummyToken;
+    uint64_t GlobalMmuDummyOffset;
+    /* Root atualmente instalada no VMID 8. SubmitCommandVirtual valida este
+     * vínculo antes de permitir que a SDMA interprete um IB com GPUVA. */
+    BC250_MCDM_HANDLE Vmid8InstalledContext;
+    uint64_t Vmid8InstalledRootPhysical;
+    /* Root atualmente instalada no VMID 7 (processo de usuario/DWM). */
+    BC250_GCVM_VMID8_STATUS UserVmidInstallStatus;
+    BC250_GCVM_VMID8_INSTALL_EVIDENCE UserVmidInstallEvidence;
+    BC250_MCDM_HANDLE UserVmidInstalledContext;
+    uint64_t UserVmidInstalledRootPhysical;
+    /*
+     * =====================================================================
+     * CARIMBO DE RAIZ POR SUBMISSAO GFX (21/09, apos a Corrida 48).
+     *
+     * A Corrida 48 mostrou que a PTE do endereco que falha PODE EXISTIR: em
+     * 0x243100000 a caminhada resolveu (L1 valido -> L0 PTE valida ->
+     * PA=0x4519CC000), enquanto em 0x242100000 o PDE de nivel 1 estava ZERO.
+     * Logo o defeito NAO e' "nunca escrevemos a PTE" -- e' dessincronizacao no
+     * TEMPO entre software e hardware. Sobraram tres leituras:
+     *
+     *   1. RAIZ TROCADA -- a GPU acessa endereco do contexto A enquanto o
+     *      VMID 7 carrega a raiz do contexto B. Houve 43 trocas de contexto
+     *      nesse VMID numa corrida so.
+     *   2. CORRIDA DE PUBLICACAO -- a GPU acessou antes de a PTE ser escrita.
+     *   3. TLB OBSOLETO -- a PTE existe e o TLB guardou a negativa.
+     *
+     * As tres exigem consertos diferentes, e o log nao as distinguia porque a
+     * caminhada do fault usa a raiz do INSTANTE DO TDR, que pode nao ser a do
+     * instante da submissao. Este anel guarda, por submissao, QUAL raiz estava
+     * instalada -- e no fault as duas sao comparadas lado a lado.
+     *
+     * Anel pequeno e de escrita barata: preenchido no caminho quente de
+     * submissao, entao nao aloca, nao trava e nao loga. Quem loga e' o fault.
+     * =====================================================================
+     */
+#define BC250_GFX_SUBMIT_STAMP_SLOTS 16u
+    struct {
+        uint64_t Fence;
+        uint64_t RootAtSubmit;
+        uint64_t IbGpuVa;
+        uint32_t Vmid;
+        uint32_t PageTableEpoch;
+    } GfxSubmitStamps[BC250_GFX_SUBMIT_STAMP_SLOTS];
+    /*
+     * DX.6 -- SEGUNDO INVENTARIO, PARA FECHAR A DUVIDA DE ALIASING.
+     *
+     * A Corrida 50 varreu os 16 contextos GCVM e devolveu EmUso=0, Livres=16,
+     * Ilegiveis=0. Mas os 16 leram valores IDENTICOS (Cntl=0x007FFE80,
+     * PtBase=0), e isso e indistinguivel de aliasing de leitura -- 16 offsets
+     * caindo no mesmo registrador produziriam exatamente esse retrato.
+     *
+     * O discriminador e temporal: guardar a foto do primeiro inventario e
+     * repetir a varredura DEPOIS de instalar VMID 7/8. Se so' esses dois
+     * mudarem, os offsets sao distintos e o inventario vale. Se TODOS os 16
+     * mudarem, e aliasing e o inventario inteiro cai.
+     *
+     * Comecar o alocador de VMID sobre medicao nao confirmada seria construir
+     * sobre areia: tres hipoteses desta investigacao ja morreram assim.
+     */
+    uint32_t GcvmInventoryFirstCntl[BC250_GCVM_CONTEXT_COUNT];
+    uint64_t GcvmInventoryFirstPtBase[BC250_GCVM_CONTEXT_COUNT];
+    uint32_t GcvmInventoryFirstValid;
+    volatile LONG GcvmInventorySecondDone;
+    /*
+     * DX.7 -- POOL DE VMID POR CONTEXTO (fatia minima).
+     *
+     * O bloco longo com a medicao que justifica isto esta em
+     * bc250_vmid_pool_contract.h. Resumo: a Corrida 49 mediu 6 raizes
+     * distintas em 82 submissoes e o MESMO IB submetido sob TRES raizes,
+     * porque varios contextos disputam o unico VMID 7.
+     *
+     * O pool ALOCA, registra a raiz observada e recebe o resultado da
+     * instalacao lateral em Installed* por entrada. A submissao ainda segue em
+     * BC250_GCVM_USER_VMID para isolar esta faixa da futura troca no pacote.
+     */
+    /*
+     * Acquire/NoteRoot rodam em SubmitCommandVirtual (DISPATCH_LEVEL),
+     * Release roda em DestroyContext e o TDR tira um retrato do mapa. O
+     * ObjectLock nao cobre esses tres caminhos e nem pode ser adquirido no
+     * submit. Este spin lock e, portanto, a autoridade de serializacao do
+     * pool; nenhum chamador acessa Entries[] ou os contadores sem ele.
+     */
+    KSPIN_LOCK VmidPoolLock;
+    BC250_VMID_POOL VmidPool;
+    /*
+     * DX.12 -- estado de telemetria do flush dos VMIDs do pool. Nao participa
+     * de decisao nenhuma: serve para a linha [FLUSH_POOL_VMIDS] sair quando a
+     * mascara MUDA em vez de a cada FlushTlb, que e' frequente. Nao precisa do
+     * VmidPoolLock -- e' lido e escrito so' dentro do flush, e um retrato
+     * desatualizado no pior caso faz a linha sair uma vez a mais.
+     */
+    /*
+     * DX.17 -- ultimo PDE que NOS escrevemos no indice da arena, retido para o
+     * TDR comparar com o que estiver la. Diagnostico puro: nao autoriza nada.
+     */
+    uint64_t ArenaPdeLastWritten;
+    uint32_t ArenaPdeWriteSeq;
+    uint32_t FlushPoolLastMask;
+    uint32_t FlushPoolLogCount;
+    uint32_t GfxSubmitStampNext;
+    uint32_t GfxSubmitStampCount;
+    BC250_GCVM_COMPUTE_BINDING ComputeVmidBinding;
     BC250_PSP_RING_STATUS PspRingStatus;
     BC250_PSP_RING_EVIDENCE PspRingEvidence;
     PVOID DeferredPspRingVirtual;
@@ -288,6 +468,42 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     uint32_t CpVmid0PageTable;
     uint32_t SdmaAutoCtxSw;
     uint32_t SdmaWakeOnExIdle;
+    /*
+     * B3 (07/09) -- SdmaPlanoAFallback=1 RESTAURA a precedencia dos dois
+     * caminhos PLANO A no SubmitCommandVirtual do Node 0. O default e' 0:
+     * somente INDIRECT, que e' o unico ramo que le o DMA buffer do dxgkrnl.
+     *
+     * MOTIVO: na corrida 16:19 os PLANO A absorveram 14 de 14 submissoes, o
+     * ramo INDIRECT nunca foi alcancado e a telemetria IB_QUEUE_* da faixa A12
+     * nao escreveu uma linha. Sem este tunable nao existe corrida capaz de
+     * medir o INDIRECT no perfil ativo.
+     *
+     * Default 0 = comportamento medido, preservado. Ligar e' decisao do dono do
+     * projeto, e Present==0 (valor ausente/ilegivel) NUNCA liga.
+     */
+    uint32_t SdmaPlanoAFallback;
+    uint32_t SdmaPlanoAFallbackPresent;
+    /*
+     * item 25 (07/09) -- TdrInduceHang arma UM hang de propósito no Node 0:
+     * um POLL_REGMEM que nunca satisfaz, submissao aceita e completion NAO
+     * notificado, para que o timeout de 2 s do dxgkrnl dispare o TDR e a
+     * cadeia deteccao -> reset -> readmissao -> display possa ser medida.
+     *
+     * Default 0. Dispara UMA VEZ por bind (TdrHangInduced viar 1), para que a
+     * corrida nao entre em laco de TDR.
+     */
+    uint32_t TdrInduceHang;
+    uint32_t TdrInduceHangPresent;
+    /*
+     * GfxWaveProbe -- 19/09, depois da Corrida 35. Default 0, fail-closed.
+     * Arma a inspecao indireta de onda no quiesce do TDR. E a UNICA parte da
+     * faixa que escreve registrador (GRBM_GFX_INDEX e SQ_IND_INDEX, ambos
+     * seletores), por isso nao entra ligada por conta propria: armar e decisao
+     * do dono do projeto, como em TdrInduceHang.
+     */
+    uint32_t GfxWaveProbe;
+    uint32_t GfxWaveProbePresent;
+    volatile LONG TdrHangInduced;
     uint32_t SdmaEarlyClkUngate;
     uint32_t ShaderDispatch;
     uint32_t TunableEnginePresent;
@@ -307,6 +523,22 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     uint32_t HqdPreflightReadCount;
     BC250_HQD_SELECTOR_STATUS MecHqdSelectorStatus;
     BC250_HQD_SELECTOR_EVIDENCE MecHqdSelectorEvidence;
+    /* B.1 -- medicao somente-leitura do anel grafico. Fail-closed: sem o
+     * tunable GfxRingPreflight em 1, nada disto e' exercitado. */
+    uint32_t GfxRingPreflightArmed;
+    uint32_t GfxRingPreflightPresent;
+    BC250_GFX_RING_TXN_STATUS GfxRingPreflightStatus;
+    BC250_GFX_RING_TXN_EVIDENCE GfxRingPreflightEvidence;
+    uint32_t GfxRingPreflightTransportWrites;
+    /* B.1 -- ensaio escalonado do anel grafico. 0 = nada (default). */
+    uint32_t GfxRingBringupLevel;
+    uint32_t GfxRingBringupPresent;
+    uint32_t GfxRingIsolationStage;
+    uint32_t GfxRingStagePresent;
+    BC250_GFX_RING_TXN_STATUS GfxRingBringupStatus;
+    BC250_GFX_RING_TXN_EVIDENCE GfxRingBringupEvidence;
+    BC250_GFX_RING_SUBMIT_SH_REG_EVIDENCE GfxRingSubmitEvidence;
+    BC250_GFX_RING_SUBMIT_3D_DRAW_EVIDENCE GfxRing3DDrawEvidence;
     BC250_HQD_BANK_PROBE_STATUS MecHqdBankProbeStatus;
     BC250_HQD_BANK_PROBE_EVIDENCE MecHqdBankProbeEvidence;
     BC250_HQD_PROGRAM_STATUS HqdProgramStatus;
@@ -320,6 +552,16 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     BC250_SDMA_F32_EVIDENCE SdmaF32Evidence;
     BC250_SDMA_RING_WORK_STATUS SdmaRingWorkStatus;
     BC250_SDMA_RING_WORK_EVIDENCE SdmaRingWorkEvidence;
+    /*
+     * Prova fisica de que a SDMA0 executa: o tripe de boot de
+     * Bc250SdmaPresentInit (RPTR avancou, a GPU gravou a fence sobre o poison
+     * e os 4 dwords de destino conferem byte a byte). Vale 1 somente quando
+     * g_Bc250SdmaPresent.TripodValidated saiu TRUE.
+     *
+     * Substitui SdmaRingWorkStatus como porta da cadeia de bring-up. Ver o
+     * comentario em Bc250DxgkDdiStartDeviceActive.
+     */
+    uint32_t SdmaBootTripodValidated;
     PVOID DeferredPspLoadRing;
     PVOID DeferredPspLoadCommand;
     PVOID DeferredPspLoadFence;
@@ -333,9 +575,19 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     volatile LONG GpuvaSpaceReady;
     BC250_GPUVA_SNAPSHOT_STORE GpuvaSnapshots;
     BC250_GPUVA_SPACE GpuvaSnapshotScratch;
-    BC250_GPUVA_JOURNAL GpuvaJournal;
+    /*
+     * Um journal por processo. Com um journal unico, dois processos paginando
+     * ao mesmo tempo se atropelavam e cada troca de produtor abortava a
+     * transacao do outro -- foi assim que o range 0xAC0000 da primary do DWM
+     * nunca chegou ao snapshot na corrida 04/09 18:25. Ver o comentario de
+     * Bc250GpuvaJournalSetSelect em bc250_gpuva_journal_contract.h.
+     */
+    BC250_GPUVA_JOURNAL GpuvaJournals[BC250_ACTIVE_GPUVA_JOURNAL_SLOTS];
     BC250_GPUVA_JOURNAL_PTE GpuvaJournalStaging[BC250_GPUVA_JOURNAL_MAX_CHANGES];
     volatile LONG GpuvaJournalReady;
+    /* Submissoes cujo DMA buffer foi descartado sem execucao. Divida
+     * declarada: ver o comentario em Bc250DxgkDdiSubmitCommandVirtual. */
+    volatile LONG SubmissionsNotExecutedCount;
     uint32_t GpuvaHierarchyPending;
     BC250_MCDM_HANDLE GpuvaHierarchyProcess;
     uint64_t GpuvaHierarchyRootPageTable;
@@ -344,6 +596,36 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     volatile LONG GpuvaActivationEligible;
     uint32_t GpuvaLabPromotion;
     uint32_t GpuvaLabPromotionPresent;
+
+    /*
+     * C3.9 (12/09) -- granularidade do bloqueio por journal no gate do Node 1.
+     *
+     * MEDIDO na corrida 13:29: com o dwm.exe vivo 3 min 13 s (so' acontece com
+     * D3D11LabPromotion armado), Bc250GpuvaJournalSetAnyPending -- que responde
+     * "ALGUM slot do adaptador esta pendente?" -- nunca ficou zero, o gate
+     * fechou em BlockMask=0x1 (JOURNAL) e a submissao de compute do RADV foi
+     * RECUSADA. O shader nao rodou e o byte proof leu poison 0x43DAFFFE.
+     * Compute e desktop nao coexistiam por GRANULARIDADE do gate.
+     *
+     * Node1JournalGatePerProcess=1 troca a condicao global pela pendencia do
+     * PROCESSO QUE SUBMETE -- dado que cada slot ja carrega em Journal.Process.
+     * Default 0 (fail-closed): sem armar, o comportamento e' exatamente o de
+     * antes, e a telemetria abaixo mede quem segura o journal.
+     */
+    uint32_t Node1JournalGatePerProcess;
+    uint32_t Node1JournalGatePerProcessPresent;
+
+    /* Telemetria pura do journal: nao decide nada, so' nomeia quem esta pendente. */
+    uint32_t GpuvaJournalPendingSlotMask;
+    uint32_t GpuvaJournalPendingCount;
+    /*
+     * Declara ao dxgkrnl o modelo de memoria GpuMmu (GpuVaReady/PagingReady
+     * nos runtime caps). Separado de GpuvaLabPromotion, que governa se a
+     * SUBMISSAO e' liberada. Default 0: sem ele o adaptador continua
+     * declarando Mem(VA=0, GpuMmu=0), que e' o estado medido em 03/09.
+     */
+    uint32_t GpuMmuDeclare;
+    uint32_t GpuMmuDeclarePresent;
     uint32_t GpuvaActivationBlockMask;
     uint32_t GpuvaActivationSnapshotGeneration;
     uint32_t GpuvaActivationSnapshotEpoch;
@@ -364,6 +646,15 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     uint32_t PersistentSubmission;
     uint32_t TunablePersistentSubmissionPresent;
     BC250_SUBMISSION_ENGINE SubmissionEngine;
+    /* Motor grafico persistente (CP_RB0 / PFP / ME) no Node 1 (3D Graphics) */
+    BC250_GFX_ENGINE GfxEngine;
+    /* CPU observation of the first IB page, before the MEC is kicked.
+     * Bounded prefix, never a GPU-execution verdict. */
+    uint64_t Node1IbObservedVa;
+    uint64_t Node1IbObservedPhysical;
+    uint32_t Node1IbRequestedBytes;
+    uint32_t Node1IbObservedDwords;
+    uint32_t Node1IbCpuWords[32];
 
     /*
      * Fase V2 — retirada de fence para o dxgkrnl.
@@ -376,7 +667,8 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
      * Trocar por interrupcao real e' item posterior deste roadmap.
      */
     KTIMER RetirementTimer;
-    KDPC RetirementDpc;
+    KDPC RetirementTimerDpc;
+    KDPC RetirementNotifyDpc;
     volatile LONG RetirementTimerInitialized;
     volatile LONG RetirementTimerRunning;
     uint32_t RetirementDpcRuns;
@@ -386,6 +678,25 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     uint32_t RetirementPushFailures;
     uint32_t RetirementBackpressure;
     uint32_t InterruptsSeen;
+    volatile LONG RetireBusy;
+    volatile LONG DpcNotifyPending;
+
+    /*
+     * Submissao e aposentadoria assincrona do No 0 (SDMA) -- elimina BugCheck 0x133.
+     */
+    KTIMER SdmaRetirementTimer;
+    KDPC SdmaRetirementTimerDpc;
+    KDPC SdmaRetirementDpc;
+    volatile LONG SdmaRetirementTimerInitialized;
+    volatile LONG SdmaRetirementTimerRunning;
+    uint32_t SdmaRetirementDpcRuns;
+    uint32_t SdmaRetirementNotifiedTotal;
+    uint32_t SdmaRetirementNotifyFailedTotal;
+    uint32_t SdmaRetirementBusyYields;
+    volatile LONG SdmaRetireBusy;
+    uint32_t SdmaRetirementBatchesNotifiedTotal;
+    uint32_t SdmaRetirementFencesSkippedWatermark;
+    volatile LONG SdmaDpcNotifyPending;
 
     /*
      * Ciclo de vida explicito (candidato 3.67).
@@ -438,6 +749,12 @@ void Bc250ActiveRetirementTimerStart(
     _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
 
 void Bc250ActiveRetirementTimerStop(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
+
+void Bc250ActiveSdmaRetirementTimerStart(
+    _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
+
+void Bc250ActiveSdmaRetirementTimerStop(
     _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
 
 /* Portao testavel usado por SubmitCommandVirtual e pela corrida Stop/Submit. */
@@ -615,6 +932,12 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
 BC250_HQD_PROGRAM_STATUS Bc250ActiveRunInactiveHqdProgramTransaction(
     BC250_DXGK_ACTIVE_CONTEXT *Context,
     BC250_HQD_PROGRAM_EVIDENCE *Evidence);
+
+VOID Bc250ActiveDriverUnloadCleanup(VOID);
+
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+VOID Bc250ActiveSdmaRetirePendingOnAllAdapters(_In_ BOOLEAN FromDpc);
+#endif
 
 #ifdef __cplusplus
 }

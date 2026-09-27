@@ -1,0 +1,219 @@
+﻿
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+   EnableRedirectToChakraJsProvider : false
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.016 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 30
+
+Microsoft (R) Windows Debugger Version 10.0.28000.2526 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [C:\Windows\MEMORY.DMP]
+Kernel Bitmap Dump File: Kernel address space is available, User address space may not be available.
+
+Symbol search path is: srv*
+Executable search path is: 
+Windows 10 Kernel Version 19041 MP (12 procs) Free x64
+Product: WinNt, suite: TerminalServer SingleUserTS
+Edition build lab: 19041.1.amd64fre.vb_release.191206-1406
+Kernel base = 0xfffff800`80800000 PsLoadedModuleList = 0xfffff800`8142a2b0
+Debug session time: Sun Sep 13 20:32:00.665 2026 (UTC - 3:00)
+System Uptime: 0 days 2:30:20.170
+Loading Kernel Symbols
+...............................................................
+................................................................
+..........................................
+Loading User Symbols
+PEB is paged out (Peb.Ldr = 00000000`002d6018).  Type ".hh dbgerr001" for details
+Loading unloaded module list
+..............
+For analysis of this file, run !analyze -v
+2: kd> cdb: Reading initial command '.symfix C:\Symbols; .reload /f; .frame 2; r rbx; dq poi(rbx+0x10)+0x390 L8; dq poi(rbx+0x10)+0x100 L8; q'
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+WARNING: Whitespace at start of path element
+Loading Kernel Symbols
+............Unable to load image \SystemRoot\System32\drivers\clipsp.sys, Win32 error 0n2
+..................................Unable to load image \SystemRoot\system32\drivers\wd\WdFilter.sys, Win32 error 0n2
+.................
+..................................Unable to load image \SystemRoot\System32\drivers\amdxe.sys, Win32 error 0n2
+.Unable to load image \SystemRoot\System32\DriverStore\FileRepository\amdfendr.inf_amd64_bea53a1d416fbcfa\amdfendr.sys, Win32 error 0n2
+...Unable to load image \SystemRoot\System32\DriverStore\FileRepository\amdsafd.inf_amd64_d4de13a10f2586d0\amdsafd.sys, Win32 error 0n2
+..Unable to load image \SystemRoot\System32\drivers\drmk.sys, Win32 error 0n2
+.................Unable to load image \SystemRoot\System32\DriverStore\FileRepository\amdfendr.inf_amd64_bea53a1d416fbcfa\amdfendrmgr.sys, Win32 error 0n2
+.......
+.............................Unable to load image \SystemRoot\system32\drivers\peauth.sys, Win32 error 0n2
+.....Unable to load image \SystemRoot\system32\drivers\wd\KslD.sys, Win32 error 0n2
+......Unable to load image \SystemRoot\System32\drivers\bc250mcdm.sys, Win32 error 0n2
+..
+Loading User Symbols
+PEB is paged out (Peb.Ldr = 00000000`002d6018).  Type ".hh dbgerr001" for details
+Loading unloaded module list
+..............
+
+************* Symbol Loading Error Summary **************
+Module name            Error
+kdnet                  The system cannot find the file specified
+kd_02_10ec             The system cannot find the file specified
+mcupdate_AuthenticAMD  The system cannot find the file specified
+clipsp                 The system cannot find the file specified
+WdFilter               The system cannot find the file specified
+NETIO                  The system cannot find the file specified
+ksecpkg                The system cannot find the file specified
+tcpip                  The system cannot find the file specified
+fwpkclnt               The system cannot find the file specified
+wfplwfs                The system cannot find the file specified
+fvevol                 The system cannot find the file specified
+volume                 The system cannot find the file specified
+volsnap                The system cannot find the file specified
+rdyboost               The system cannot find the file specified
+mup                    The system cannot find the file specified
+iorate                 The system cannot find the file specified
+disk                   The system cannot find the file specified
+CLASSPNP               The system cannot find the file specified
+crashdmp               The system cannot find the file specified
+cdrom                  The system cannot find the file specified
+filecrypt              The system cannot find the file specified
+tbs                    The system cannot find the file specified
+Null                   The system cannot find the file specified
+Beep                   The system cannot find the file specified
+BasicDisplay           The system cannot find the file specified
+BasicRender            The system cannot find the file specified
+Npfs                   The system cannot find the file specified
+Msfs                   The system cannot find the file specified
+CimFS                  The system cannot find the file specified
+tdx                    The system cannot find the file specified
+TDI                    The system cannot find the file specified
+netbt                  The system cannot find the file specified
+afunix                 The system cannot find the file specified
+afd                    The system cannot find the file specified
+vwififlt               The system cannot find the file specified
+pacer                  The system cannot find the file specified
+ndiscap                The system cannot find the file specified
+netbios                The system cannot find the file specified
+Vid                    The system cannot find the file specified
+winhvr                 The system cannot find the file specified
+rdbss                  The system cannot find the file specified
+csc                    The system cannot find the file specified
+nsiproxy               The system cannot find the file specified
+npsvctrig              The system cannot find the file specified
+gpuenergydrv           The system cannot find the file specified
+dfsc                   The system cannot find the file specified
+fastfat                The system cannot find the file specified
+bam                    The system cannot find the file specified
+ahcache                The system cannot find the file specified
+amdxe                  The system cannot find the file specified
+amdfendr               The system cannot find the file specified
+CompositeBus           The system cannot find the file specified
+kdnic                  The system cannot find the file specified
+amdsafd                The system cannot find the file specified
+portcls                The system cannot find the file specified
+drmk                   The system cannot find the file specified
+ks                     The system cannot find the file specified
+ksthunk                The system cannot find the file specified
+umbus                  The system cannot find the file specified
+HDAudBus               The system cannot find the file specified
+USBXHCI                The system cannot find the file specified
+ucx01000               The system cannot find the file specified
+usbohci                The system cannot find the file specified
+USBPORT                The system cannot find the file specified
+usbehci                The system cannot find the file specified
+kbdclass               The system cannot find the file specified
+mouclass               The system cannot find the file specified
+serial                 The system cannot find the file specified
+serenum                The system cannot find the file specified
+amdppm                 The system cannot find the file specified
+msgpiowin32            The system cannot find the file specified
+UEFI                   The system cannot find the file specified
+amdfendrmgr            The system cannot find the file specified
+NdisVirtualBus         The system cannot find the file specified
+swenum                 The system cannot find the file specified
+rdpbus                 The system cannot find the file specified
+usbhub                 The system cannot find the file specified
+USBD                   The system cannot find the file specified
+UsbHub3                The system cannot find the file specified
+win32kbase             The system cannot find the file specified
+hidparse               The system cannot find the file specified
+win32kfull             The system cannot find the file specified
+dump_dumpstorport      The system cannot find the file specified
+dump_dumpfve           The system cannot find the file specified
+hidusb                 The system cannot find the file specified
+HIDCLASS               The system cannot find the file specified
+kbdhid                 The system cannot find the file specified
+mouhid                 The system cannot find the file specified
+usbccgp                The system cannot find the file specified
+luafv                  The system cannot find the file specified
+wcifs                  The system cannot find the file specified
+cldflt                 The system cannot find the file specified
+storqosflt             The system cannot find the file specified
+bindflt                The system cannot find the file specified
+lltdio                 The system cannot find the file specified
+mslldp                 The system cannot find the file specified
+rspndr                 The system cannot find the file specified
+msquic                 The system cannot find the file specified
+HTTP                   The system cannot find the file specified
+bowser                 The system cannot find the file specified
+mpsdrv                 The system cannot find the file specified
+mrxsmb                 The system cannot find the file specified
+mrxsmb20               The system cannot find the file specified
+srvnet                 The system cannot find the file specified
+mmcss                  The system cannot find the file specified
+peauth                 The system cannot find the file specified
+Ndu                    The system cannot find the file specified
+tcpipreg               The system cannot find the file specified
+srv2                   The system cannot find the file specified
+condrv                 The system cannot find the file specified
+KslD                   The system cannot find the file specified
+qwavedrv               The system cannot find the file specified
+USBSTOR                The system cannot find the file specified
+WUDFRd                 The system cannot find the file specified
+WpdUpFltr              The system cannot find the file specified
+exfat                  The system cannot find the file specified
+monitor                The system cannot find the file specified
+cdd                    The system cannot find the file specified
+
+You can troubleshoot most symbol related issues by turning on symbol loading diagnostics (!sym noisy) and repeating the command that caused symbols to be loaded.
+You should also verify that your symbol search path (.sympath) is correct.
+02 ffff9d01`93908dd0 fffff800`97f11249     dxgkrnl!ADAPTER_DISPLAY::DdiSetVidPnSourceAddressWithMultiPlaneOverlay3+0xe0
+rbx=ffffa0057e9628e0
+ffffa005`85ec1390  fffff800`ad0df700 00000000`00000000
+ffffa005`85ec13a0  00000000`00000000 00000000`00000000
+ffffa005`85ec13b0  00000000`00000000 ffffa005`867f34d8
+ffffa005`85ec13c0  ffffa005`867f35e0 ffffa005`867f3558
+ffffa005`85ec1100  ffffa005`85ec10f8 ffffa005`8851d210
+ffffa005`85ec1110  ffffa005`7ce00000 3d37c400`00000001
+ffffa005`85ec1120  29b0b5bf`11f1afc9 f875486f`adc1a270
+ffffa005`85ec1130  6e80f2be`11f1a960 032e53b4`63696e6f
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Kernel.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Usb4Kd.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'

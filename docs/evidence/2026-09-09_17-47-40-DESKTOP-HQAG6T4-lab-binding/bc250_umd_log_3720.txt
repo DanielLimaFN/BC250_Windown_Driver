@@ -1,0 +1,34 @@
+17:48:06.356 [pid=3720 msedge.exe] === bc250umd.dll CARREGADA ===
+17:48:06.357 [pid=3720 msedge.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+17:48:06.357 [pid=3720 msedge.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+17:48:06.357 [pid=3720 msedge.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+17:48:06.358 [pid=3720 msedge.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+17:48:06.358 [pid=3720 msedge.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+17:48:06.358 [pid=3720 msedge.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+17:48:06.359 [pid=3720 msedge.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+17:48:06.359 [pid=3720 msedge.exe] OpenAdapter10_2: Interface=0x000B0011, Version=0x00060000
+17:48:06.359 [pid=3720 msedge.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+17:48:06.359 [pid=3720 msedge.exe] OpenAdapter10_2: Interface=0x000B000B, Version=0x00020009
+17:48:06.359 [pid=3720 msedge.exe] OpenAdapter10_2: D3D10/11 nativo indisponivel -> E_NOTIMPL
+17:48:06.360 [pid=3720 msedge.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+17:48:06.360 [pid=3720 msedge.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+17:48:06.360 [pid=3720 msedge.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+17:48:06.360 [pid=3720 msedge.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+17:48:06.361 [pid=3720 msedge.exe] OpenAdapter10: Interface=0x000A0002, Version=0x00010000
+17:48:06.361 [pid=3720 msedge.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+17:48:06.361 [pid=3720 msedge.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+17:48:06.361 [pid=3720 msedge.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+17:48:06.361 [pid=3720 msedge.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+17:48:06.361 [pid=3720 msedge.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+17:48:06.362 [pid=3720 msedge.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+17:48:06.362 [pid=3720 msedge.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+17:48:06.362 [pid=3720 msedge.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00040000
+17:48:06.362 [pid=3720 msedge.exe] OpenAdapter10: D3D10 nativo indisponivel -> E_NOTIMPL
+17:48:06.378 [pid=3720 msedge.exe] === bc250umd.dll CARREGADA ===
+17:48:06.379 [pid=3720 msedge.exe] OpenAdapter12: D3D12 nao implementado nativamente -> E_NOTIMPL
+17:48:06.380 [pid=3720 msedge.exe] === bc250umd.dll CARREGADA ===
+17:48:06.380 [pid=3720 msedge.exe] OpenAdapter12: D3D12 nao implementado nativamente -> E_NOTIMPL
+17:48:06.381 [pid=3720 msedge.exe] === bc250umd.dll CARREGADA ===
+17:48:06.382 [pid=3720 msedge.exe] OpenAdapter12: D3D12 nao implementado nativamente -> E_NOTIMPL
+17:48:06.383 [pid=3720 msedge.exe] === bc250umd.dll CARREGADA ===
+17:48:06.383 [pid=3720 msedge.exe] OpenAdapter12: D3D12 nao implementado nativamente -> E_NOTIMPL

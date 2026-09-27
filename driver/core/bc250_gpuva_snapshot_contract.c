@@ -128,15 +128,74 @@ BC250_GPUVA_STATUS Bc250GpuvaSnapshotPublishBatch(
         Store->Signature != BC250_GPUVA_SNAPSHOT_SIGNATURE) {
         return BC250_GPUVA_BAD_ARGUMENT;
     }
+    _InterlockedExchange(&Store->LastPublishRangeCount, (long)RangeCount);
+    /*
+     * Composicao do lote, contada ANTES de qualquer mutacao. Ver o bloco em
+     * bc250_gpuva_snapshot_contract.h: responde se aplicar unmaps antes de maps
+     * derrubaria o pico de ocupacao ou se o problema e' capacidade real.
+     *
+     * Escrito AQUI, junto dos demais LastPublish*, e' o mesmo padrao que ja
+     * funciona. A C3.12 registrou que gravar ocupacao DENTRO do ramo de falha
+     * reprovou active_miniport_test por mecanismo nao explicado; nao repetir
+     * isso e' deliberado -- contagem pura na entrada, nada no ramo de falha.
+     */
+    {
+        uint32_t composition;
+        long maps = 0L;
+        long unmaps = 0L;
+        for (composition = 0u; composition < RangeCount; ++composition) {
+            if (MapRanges[composition] != 0u) { ++maps; } else { ++unmaps; }
+        }
+        _InterlockedExchange(&Store->LastPublishMapCount, maps);
+        _InterlockedExchange(&Store->LastPublishUnmapCount, unmaps);
+    }
+    _InterlockedExchange(&Store->LastPublishFailedRangeIndex, -1L);
+    _InterlockedExchange(&Store->LastPublishFailedMapRange, -1L);
+    Store->LastPublishFailedBaseGpuVa = 0u;
+    Store->LastPublishFailedSize = 0u;
     active = Bc250GpuvaAtomicRead(&Store->ActiveSlot);
     if (active < 0L || active > 1L) return BC250_GPUVA_BAD_STATE;
     inactive = 1L - active;
 
-    if (_InterlockedCompareExchange(
-            &Store->ReaderState[inactive],
-            BC250_GPUVA_SNAPSHOT_WRITER_LOCK,
-            0L) != 0L) {
-        return BC250_GPUVA_BUSY;
+    /*
+     * C3.8 (12/09) -- ASSIMETRIA CORRIGIDA.
+     *
+     * Bc250GpuvaSnapshotAcquire (o LEITOR) sempre tentou 16 vezes antes de
+     * devolver BUSY. O PUBLICADOR fazia UMA tentativa de CAS e desistia.
+     *
+     * Medido na corrida 16:09: com o dwm.exe vivo, cada Present resolve uma
+     * GPUVA e mantem contagem de leitor num slot; quando esse slot vira o
+     * inativo, a publicacao seguinte exige contagem ZERO e falhava de imediato.
+     * O journal devolvia PUBLISH_FAILED (status 7), ActiveFlushTlb traduzia
+     * para STATUS_IO_DEVICE_ERROR, e como GpuvaMappingsOperational so' reabre
+     * dentro do ramo "journalStatus == OK", a admissao do Node 1 NUNCA voltava.
+     * Fim da linha: STATUS_GRAPHICS_GPU_EXCEPTION_ON_DEVICE no 3o submit.
+     *
+     * A contencao e' TRANSITORIA -- dura o tempo de um resolve. Retentar e'
+     * estritamente mais forte que desistir: mesma semantica, mais chances.
+     * O diagnostico fica no Store para que o log possa separar BUSY de erro
+     * real, que ate' aqui saiam com o mesmo numero.
+     */
+    {
+        uint32_t attempt;
+        long busy = 0L;
+        long taken = 0L;
+        for (attempt = 0u; attempt < BC250_GPUVA_SNAPSHOT_PUBLISH_ATTEMPTS; ++attempt) {
+            if (_InterlockedCompareExchange(
+                    &Store->ReaderState[inactive],
+                    BC250_GPUVA_SNAPSHOT_WRITER_LOCK,
+                    0L) == 0L) {
+                taken = 1L;
+                break;
+            }
+            ++busy;
+        }
+        _InterlockedExchange(&Store->LastPublishAttempts, (long)(busy + taken));
+        _InterlockedExchange(&Store->LastPublishBusyCount, busy);
+        if (!taken) {
+            _InterlockedExchange(&Store->LastPublishStatus, (long)BC250_GPUVA_BUSY);
+            return BC250_GPUVA_BUSY;
+        }
     }
 
     Bc250GpuvaCopySnapshot(&Store->Slots[inactive], &Store->Slots[active]);
@@ -144,11 +203,37 @@ BC250_GPUVA_STATUS Bc250GpuvaSnapshotPublishBatch(
         status = Bc250GpuvaSpaceReplaceRangeTransactional(
             &Store->Slots[inactive], Scratch, &Ranges[index], MapRanges[index]);
         if (status != BC250_GPUVA_OK) {
+            /*
+             * C3.12: a ocupacao NAO e' fotografada aqui.
+             *
+             * A primeira versao gravava Mapped/Teardown/Reusable no Store neste
+             * ponto, e isso REPROVOU active_miniport_test (linha 632,
+             * StopDeviceActive deixando de devolver STATUS_SUCCESS) de forma
+             * deterministica, inclusive com build limpo. A bisseccao isolou as
+             * ESCRITAS -- a chamada a Bc250GpuvaSpaceDescribeOccupancy sozinha
+             * passa. NAO CONSEGUI EXPLICAR O MECANISMO, e entregar mudanca de
+             * contrato que eu nao sei explicar e' pior que perder a foto exata.
+             *
+             * A medicao passou para o lado do KMD, no sitio do log, lendo o slot
+             * ativo: nao escreve nada no Store e responde a mesma pergunta
+             * (capacidade esgotada x slots presos em TEARDOWN). RESSALVA HONESTA:
+             * a leitura e' POSTERIOR a falha, nao simultanea -- para contagem de
+             * ocupacao isso basta, para uma corrida de um unico evento nao
+             * bastaria.
+             */
             _InterlockedExchange(&Store->ReaderState[inactive], 0L);
+            /* C3.8: erro REAL de substituicao de faixa -- distinto de BUSY. */
+            _InterlockedExchange(&Store->LastPublishFailedRangeIndex, (long)index);
+            _InterlockedExchange(&Store->LastPublishFailedMapRange,
+                (long)MapRanges[index]);
+            Store->LastPublishFailedBaseGpuVa = Ranges[index].BaseGpuVa;
+            Store->LastPublishFailedSize = Ranges[index].Size;
+            _InterlockedExchange(&Store->LastPublishStatus, (long)status);
             return status;
         }
     }
 
+    _InterlockedExchange(&Store->LastPublishStatus, (long)BC250_GPUVA_OK);
     generation = _InterlockedIncrement(&Store->PublicationGeneration);
     _InterlockedExchange(&Store->SlotGeneration[inactive], generation);
     _InterlockedExchange(&Store->ReaderState[inactive], 0L);

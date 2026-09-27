@@ -52,6 +52,17 @@ typedef struct BC250_DISPLAY_STATE {
     BOOLEAN PresentRundownInitialized;
     UCHAR Edid[128];
     BOOLEAN EdidValid;
+    HANDLE hPrimaryAllocation;
+    PHYSICAL_ADDRESS PrimaryAddress;
+    BOOLEAN PrimaryAddressValid;
+    /*
+     * Contrato DXGKARG_SETVIDPNSOURCEADDRESS (WDK 10.0.26100, d3dkmddi.h):
+     * o DMM entrega PrimarySegment + PrimaryAddress + hAllocation. Essa e' a
+     * preservado para telemetria e diagnostico. No Present WDDM virtual, a
+     * origem autoritativa e' o Slot 1 resolvido pelo snapshot GPUVA comitado.
+     */
+    UINT PrimarySegment;
+    HANDLE hPrimarySourceAllocation;
 } BC250_DISPLAY_STATE;
 
 extern BC250_DISPLAY_STATE g_Bc250DisplayState;
@@ -62,7 +73,101 @@ NTSTATUS Bc250DisplayInit(
 
 void Bc250DisplaySetMmioBase(_In_ PHYSICAL_ADDRESS MmioPhysical);
 
+void Bc250DisplaySetSyntheticEdidEnabled(BOOLEAN Enabled);
+BOOLEAN Bc250DisplayGetSyntheticEdidEnabled(void);
+
 void Bc250DisplayTeardown(void);
+
+typedef BOOLEAN (*BC250_DISPLAY_GPUVA_RESOLVER)(
+    _In_ HANDLE Context,
+    _In_ UINT64 Va,
+    _Out_ UINT64 *PhysicalAddress,
+    _Out_ UINT32 *SegmentId);
+
+void Bc250DisplayInstallGpuVaResolver(
+    _In_opt_ BC250_DISPLAY_GPUVA_RESOLVER Resolver);
+
+/*
+ * DX.63: geometria (largura, altura, pitch, formato D3DDDI) da alocacao que o
+ * dxgkrnl entrega em DXGK_PRESENTALLOCATIONINFO.hDeviceSpecificAllocation.
+ * FALSE = geometria nao declarada ou handle desconhecido; o chamador falha
+ * fechado, nunca inventa numeros.
+ */
+typedef BOOLEAN (*BC250_DISPLAY_ALLOCATION_GEOMETRY_RESOLVER)(
+    _In_ HANDLE DeviceSpecificAllocation,
+    _Out_ UINT32 *Width,
+    _Out_ UINT32 *Height,
+    _Out_ UINT32 *Pitch,
+    _Out_ UINT32 *Format);
+
+void Bc250DisplayInstallAllocationGeometryResolver(
+    _In_opt_ BC250_DISPLAY_ALLOCATION_GEOMETRY_RESOLVER Resolver);
+
+void Bc250DisplayRecordGpuVaMapping(
+    _In_opt_ HANDLE ProcessHandle,
+    _In_ UINT64 GpuVa,
+    _In_ UINT64 PhysicalAddress,
+    _In_ UINT64 ByteSize,
+    _In_ UINT32 SegmentId);
+
+BOOLEAN Bc250DisplayLookupPhysicalAddress(
+    _In_opt_ HANDLE ProcessHandle,
+    _In_ UINT64 GpuVa,
+    _Out_ UINT64 *PhysicalAddress,
+    _Out_ UINT32 *SegmentId);
+
+void Bc250DisplayRegisterContextProcess(
+    _In_ HANDLE ContextHandle,
+    _In_opt_ HANDLE ProcessHandle);
+
+void Bc250DisplayUnregisterContextProcess(
+    _In_ HANDLE ContextHandle);
+
+HANDLE Bc250DisplayGetContextProcess(
+    _In_ HANDLE ContextHandle);
+
+void Bc250DisplayClearGpuVaMappings(void);
+
+BOOLEAN Bc250DisplayResolvePresentSource(
+    _In_ HANDLE Context,
+    _In_ const DXGKARG_PRESENT *Present,
+    _Out_ UINT64 *PhysicalAddress,
+    _Out_ UINT32 *SegmentId);
+
+BOOLEAN Bc250DisplayResolvePresentDestination(
+    _In_ HANDLE Context,
+    _In_ const DXGKARG_PRESENT *Present,
+    _Out_ UINT64 *PhysicalAddress,
+    _Out_ UINT32 *SegmentId);
+
+/*
+ * Origem de scanout com autoridade: o par PrimarySegment/PrimaryAddress
+ * publicado pelo ultimo DxgkDdiSetVidPnSourceAddress. Devolve FALSE enquanto
+ * o DMM nao tiver publicado um endereco no segmento 1 (VRAM local).
+ */
+BOOLEAN Bc250DisplayResolvePrimarySource(
+    _Out_ UINT64 *PhysicalAddress,
+    _Out_ UINT32 *SegmentId);
+
+/*
+ * Amostragem distribuida de uma superficie mapeada na abertura de VRAM.
+ * Percorre Samples pontos igualmente espacados e devolve quantos sao
+ * diferentes de zero e o XOR acumulado. Substitui a leitura de 4 DWORDs,
+ * que nao distingue "buffer zerado" de "primeiros pixels pretos".
+ */
+BOOLEAN Bc250DisplaySampleSurface(
+    _In_ UINT64 ByteOffset,
+    _In_ ULONG ByteCount,
+    _In_ ULONG Samples,
+    _Out_ ULONG *NonZeroCount,
+    _Out_ ULONG *XorHash);
+
+/* Prova integral do blit: compara cada byte de duas faixas da abertura VRAM. */
+BOOLEAN Bc250DisplayCompareSurfaceBytes(
+    _In_ UINT64 SourceOffset,
+    _In_ UINT64 DestinationOffset,
+    _In_ ULONG ByteCount,
+    _Out_ UINT64 *FirstMismatchOffset);
 
 DXGKDDI_QUERY_CHILD_RELATIONS           Bc250DxgkDdiQueryChildRelations;
 DXGKDDI_QUERY_CHILD_STATUS              Bc250DxgkDdiQueryChildStatus;
@@ -97,7 +202,18 @@ DXGKDDI_CONTROL_ETW_LOGGING             Bc250DxgkDdiControlEtwLogging;
 DXGKDDI_COLLECTDBGINFO                  Bc250DxgkDdiCollectDbgInfo;
 DXGKDDI_SETDISPLAYPRIVATEDRIVERFORMAT   Bc250DxgkDdiSetDisplayPrivateDriverFormat;
 DXGKDDI_NOTIFY_SURPRISE_REMOVAL         Bc250DxgkDdiNotifySurpriseRemoval;
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM1_3)
+DXGKDDI_SETVIDPNSOURCEADDRESSWITHMULTIPLANEOVERLAY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay;
+DXGKDDI_CHECKMULTIPLANEOVERLAYSUPPORT              Bc250DxgkDdiCheckMultiPlaneOverlaySupport;
+#endif
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_0)
+DXGKDDI_SETVIDPNSOURCEADDRESSWITHMULTIPLANEOVERLAY2 Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay2;
+DXGKDDI_CHECKMULTIPLANEOVERLAYSUPPORT2              Bc250DxgkDdiCheckMultiPlaneOverlaySupport2;
+#endif
 #if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_1)
+DXGKDDI_SETVIDPNSOURCEADDRESSWITHMULTIPLANEOVERLAY3 Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay3;
+DXGKDDI_CHECKMULTIPLANEOVERLAYSUPPORT3              Bc250DxgkDdiCheckMultiPlaneOverlaySupport3;
+DXGKDDI_POSTMULTIPLANEOVERLAYPRESENT                Bc250DxgkDdiPostMultiPlaneOverlayPresent;
 DXGKDDI_UPDATEMONITORLINKINFO            Bc250DxgkDdiUpdateMonitorLinkInfo;
 #endif
 #if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_2)
@@ -141,12 +257,27 @@ void Bc250DisplaySetChildEnumeration(_In_ BOOLEAN Enabled);
 _Check_return_
 BOOLEAN Bc250DisplayGetChildEnumeration(void);
 
+extern volatile LONG g_Bc250PagingActiveCount;
+
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
 void Bc250DisplayLog(const char *Format, ...);
+void Bc250DisplayLogSamplingSummary(void);
 #else
 static __inline void Bc250DisplayLog(const char *Format, ...)
 {
     UNREFERENCED_PARAMETER(Format);
+}
+static __inline void Bc250DisplayLogSamplingSummary(void)
+{
+}
+#endif
+
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+VOID Bc250ActiveSdmaRetirePendingOnAllAdapters(_In_ BOOLEAN FromDpc);
+#else
+static __inline VOID Bc250ActiveSdmaRetirePendingOnAllAdapters(BOOLEAN FromDpc)
+{
+    UNREFERENCED_PARAMETER(FromDpc);
 }
 #endif
 

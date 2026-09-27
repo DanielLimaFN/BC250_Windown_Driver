@@ -1,0 +1,80 @@
+﻿############ UMD: A CORRECAO DO memType ############
+
+--- LinearPresentBuf criado com nivel   [LinearPresentBuf LAZY criado] ---
+    [bc250_umd_log-FINAL.txt] 14:20:35.558 [pid=10444 bc250-d3d11-conformance.exe] [VK_BRIDGE] LinearPresentBuf LAZY criado com sucesso (3686400 bytes, mem=0000000005856E50, memType=2, nivel=HOST_VISIBLE|HOST_COHERENT)
+    [bc250_umd_log-FINAL.txt] 14:20:33.776 [pid=1208 dwm.exe] [VK_BRIDGE] LinearPresentBuf LAZY criado com sucesso (11059200 bytes, mem=0000000009483370, memType=2, nivel=HOST_VISIBLE|HOST_COHERENT)
+    [bc250_umd_log-FINAL.txt] 14:20:33.776 [pid=1208 dwm.exe] [VK_BRIDGE] LinearPresentBuf LAZY criado com sucesso (11059200 bytes, mem=0000000009483370, memType=2, nivel=HOST_VISIBLE|HOST_COHERENT)
+    [bc250_umd_log-FINAL.txt] 14:20:39.564 [pid=5320 Explorer.EXE] [VK_BRIDGE] LinearPresentBuf LAZY criado com sucesso (3407872 bytes, mem=000000001034A9C0, memType=2, nivel=HOST_VISIBLE|HOST_COHERENT)
+    TOTAL: 17
+
+--- AVISO nao host-visible   [NAO MAPEAVEL PELA CPU|Perna 3 do tripe fica sem medicao] ---
+    TOTAL: 0
+
+--- INSPECAO LINEAR_BUF   [INSPECAO LINEAR_BUF] ---
+    [bc250_umd_log-FINAL.txt] 14:20:36.123 [pid=10444 bc250-d3d11-conformance.exe] [VK_BRIDGE] INSPECAO LINEAR_BUF: Px0..3=[0x00000000 0x00000000 0x00000000 0x00000000] Center(640,360)=0x00000000 NonZeroSamples=0/5
+    [bc250_umd_log-FINAL.txt] 14:20:36.824 [pid=10444 bc250-d3d11-conformance.exe] [VK_BRIDGE] INSPECAO LINEAR_BUF: Px0..3=[0x00000000 0x00000000 0x00000000 0x00000000] Center(640,360)=0x00000000 NonZeroSamples=0/5
+    [bc250_umd_log-FINAL.txt] 14:20:33.814 [pid=1208 dwm.exe] [VK_BRIDGE] INSPECAO LINEAR_BUF: Px0..3=[0x00000000 0x00000000 0x00000000 0x00000000] Center(1280,540)=0x00000000 NonZeroSamples=0/5
+    [bc250_umd_log-FINAL.txt] 14:20:33.814 [pid=1208 dwm.exe] [VK_BRIDGE] INSPECAO LINEAR_BUF: Px0..3=[0x00000000 0x00000000 0x00000000 0x00000000] Center(1280,540)=0x00000000 NonZeroSamples=0/5
+    [bc250_umd_log-FINAL.txt] 14:20:34.452 [pid=1208 dwm.exe] [VK_BRIDGE] INSPECAO LINEAR_BUF: Px0..3=[0x00000000 0x00000000 0x00000000 0x00000000] Center(1280,540)=0x00000000 NonZeroSamples=0/5
+    TOTAL: 158
+
+############ UMD/RADV ############
+
+--- BC-250 UNIFICADO   [BC-250 UNIFICADO] ---
+    [d3d11-native-conformance-console.txt] radv/wddm2: BC-250 UNIFICADO: 2 CS concatenados em IB unico VA=0x200b60000 DW=664 (2656 bytes)
+    [d3d11-native-conformance-console.txt] radv/wddm2: BC-250 UNIFICADO: 2 CS concatenados em IB unico VA=0x200b60000 DW=1304 (5216 bytes)
+    TOTAL: 2
+
+--- Chain [   [Chain \[] ---
+    TOTAL: 0
+
+--- SubmitCommand #   [BC-250 SubmitCommand #] ---
+    [d3d11-native-conformance-console.txt] radv/wddm2: BC-250 SubmitCommand #1: status=0x00000000 first_ib.va=0x200b60000 bytes=2656
+    [d3d11-native-conformance-console.txt] radv/wddm2: BC-250 SubmitCommand #2: status=0xC01E0200 first_ib.va=0x200b60000 bytes=5216
+    TOTAL: 2
+
+--- NTSTATUS de falha no submit   [falhou com NTSTATUS] ---
+    [d3d11-native-conformance-console.txt] radv/wddm2: D3DKMTSubmitCommand falhou com NTSTATUS 0xC01E0200 (ip_type=0 cs_count=1 cmd_bytes=5216)
+    TOTAL: 1
+
+--- DRAW EXECUTADO   [DRAW EXECUTADO NATIVO] ---
+    [bc250_umd_log-FINAL.txt] 14:20:35.382 [pid=10444 bc250-d3d11-conformance.exe] Bc250UmdExecuteVkDraw: DRAW EXECUTADO NATIVO EM VULKAN (VkDraws=1, Total=1, Verts=3, Inst=1, Indexed=0)
+    [bc250_umd_log-FINAL.txt] 14:20:36.729 [pid=10444 bc250-d3d11-conformance.exe] Bc250UmdExecuteVkDraw: DRAW EXECUTADO NATIVO EM VULKAN (VkDraws=2, Total=2, Verts=3, Inst=1, Indexed=0)
+    [bc250_umd_log-FINAL.txt] 14:20:37.288 [pid=10444 bc250-d3d11-conformance.exe] Bc250UmdExecuteVkDraw: DRAW EXECUTADO NATIVO EM VULKAN (VkDraws=3, Total=3, Verts=3, Inst=1, Indexed=0)
+    TOTAL: 379
+
+--- DEVICE_REMOVED / 0xC00002B6   [C00002B6] ---
+    TOTAL: 0
+
+--- PRESENT RECUSADO   [PRESENT RECUSADO] ---
+    TOTAL: 0
+
+############ CONTRASTE SDMA (mesma tecnica, anel que funciona) ############
+  IB_TRIPE_VEREDITO (SDMA): 287
+  [SubmitVirtual Node0 SDMA] IB_TRIPE_VEREDITO #313: TRIPE_PROVADO (WPTR=1476 RPTR_Reg=1476 RPTR_Wb=1476 Casou=WRITEBACK+REGISTRADOR Fence=00001148 Poison=43DAFFFE Canaries=5 Divergentes=0 PostGPU=[00000000 00000000 00000000 00000000 00000000] Esperado=00000000 Vmid=8 (async))
+  IB EXECUTADO: 313
+
+############ CONFORMANCE ############
+  ===================================================================
+    BC-250 NATIVE DIRECT3D 11 CONFORMANCE TEST (via bc250umd.dll)  
+  ===================================================================
+    Max Frames: 60 | VSync: 0
+    Adapter [0]: AMD BC-250 Graphics (Cyan Skillfish 2) (Vendor: 0x1002, Device: 0x13FE, VRAM: 243 MB)
+    -> SELECIONADO: Adaptador BC-250 (1002:13FE)
+    Adapter [1]: Microsoft Basic Render Driver (Vendor: 0x1414, Device: 0x008C, VRAM: 0 MB)
+    [OK] Dispositivo D3D11 criado com sucesso! Feature Level: 0xA100
+    [OK] Pipeline Direct3D 11 configurado! Iniciando renderizacao...
+    [Frame    1/60] FPS: 0.6 | Status: RENDERING_OK
+
+--- RESULTADO / VEREDITO   [RESULTADO DO TESTE|VEREDITO:] ---
+    [d3d11-native-conformance-console.txt] RESULTADO DO TESTE D3D11 NATIVO (EXIT CODE: 0)
+    [d3d11-native-conformance-console.txt] VEREDITO: PARCIAL - Processo finalizou com Exit 0, mas inspecao de pixels pendente de confirmacao.
+    [display-log-this-bind-FINAL.txt] [SdmaPresent] TRIPE_VEREDITO: TRIPE_PROVADO (TargetWPTR=68 RPTR_Wb=52 RPTR_Reg=68 Casou=REGISTRADOR FenceExp=00001001 FenceObs=00001001 Poison=43DAFFFE Mismatches=0 Polls=1)
+    [display-log-this-bind-FINAL.txt] [GfxIbInspect] VEREDITO: IB_LINEAR_CONFIRMADO -- 840 DW varridos, ZERO saltos com CHAIN=1. 1 chamada(s) IB2 com CHAIN=0 foram encontradas e NAO desqualificam: o CP executa o alvo e retorna. Isto descreve a MEMORIA apontada ao CP; NAO prova busca nem execucao pela GPU, e nao prova dispatch de shader
+    TOTAL: 8
+
+############ ESTADO FINAL ############
+--- safe-bind-final.json ---
+  final_state=RECOVERY_OK_ONLINE detail=recovery fechou sem reboot e BasicDisplay Codigo 0 foi confirmado em 5 amostras recovery_exit=0
+--- compute-display-prerequisite-gate.json ---
+  state=PASSED shared_primary=True commit_vidpn=True set_addr=True

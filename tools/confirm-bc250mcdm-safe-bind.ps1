@@ -9,7 +9,12 @@ $ErrorActionPreference = 'Stop'
 if (-not $IConfirmDisplayIsVisible) { throw 'Falta -IConfirmDisplayIsVisible.' }
 $config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 if ($Token -ne [string]$config.token) { throw 'Token de confirmacao invalido.' }
-$devices = @(Get-CimInstance Win32_PnPEntity -ErrorAction Stop |
+$absoluteDeadlineUtc = [datetime]::new(
+    [long]$config.deadline_utc_ticks, [DateTimeKind]::Utc)
+if (($absoluteDeadlineUtc - [datetime]::UtcNow).TotalSeconds -lt 70) {
+    throw 'Confirmacao recusada: restam menos de 70 s; deixe o rollback acontecer.'
+}
+$devices = @(Get-CimInstance Win32_PnPEntity -OperationTimeoutSec 2 -ErrorAction Stop |
     Where-Object { $_.PNPDeviceID -eq [string]$config.instance_id })
 if ($devices.Count -ne 1 -or $devices[0].Service -ne 'bc250mcdm' -or
     [uint32]$devices[0].ConfigManagerErrorCode -ne 0) {
@@ -25,7 +30,10 @@ if (-not (Test-Path -LiteralPath $driverPath) -or
 $deadline = (Get-Date).AddSeconds(60)
 do {
     Start-Sleep -Seconds 2
-    $sample = @(Get-CimInstance Win32_PnPEntity -ErrorAction Stop |
+    if ([datetime]::UtcNow.AddSeconds(5) -ge $absoluteDeadlineUtc) {
+        throw 'Confirmacao recusada: prazo absoluto alcancado durante a estabilidade.'
+    }
+    $sample = @(Get-CimInstance Win32_PnPEntity -OperationTimeoutSec 2 -ErrorAction Stop |
         Where-Object { $_.PNPDeviceID -eq [string]$config.instance_id })
     if ($sample.Count -ne 1 -or $sample[0].Service -ne 'bc250mcdm' -or
         [uint32]$sample[0].ConfigManagerErrorCode -ne 0) {
@@ -38,7 +46,8 @@ $temporary = "$confirmationPath.$([guid]::NewGuid().ToString('N')).tmp"
 [ordered]@{
     token = [string]$config.token
     instance_id = [string]$config.instance_id
-    boot_ticks = [long](Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks
+    boot_ticks = [long](Get-CimInstance Win32_OperatingSystem `
+        -OperationTimeoutSec 2 -ErrorAction Stop).LastBootUpTime.ToUniversalTime().Ticks
     display_visible = $true
     stable_seconds = 60
     confirmed_at = (Get-Date).ToString('o')

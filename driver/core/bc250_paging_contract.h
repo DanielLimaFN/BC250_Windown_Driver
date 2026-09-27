@@ -115,6 +115,13 @@ BC250_PAGING_STATUS Bc250PagingBuildGfxhubTlbFlushPlan(
     const BC250_PAGING_FLUSH_TLB_PARAMS *Params,
     BC250_GFXHUB_TLB_FLUSH_PLAN *Plan);
 
+/* DX.32: plano para o engine 0 (anel grafico) ou 17 (CPU). */
+#define BC250_GFX_RING_INVALIDATE_ENGINE 0u
+BC250_PAGING_STATUS Bc250PagingBuildGfxhubTlbFlushPlanForEngine(
+    const BC250_PAGING_FLUSH_TLB_PARAMS *Params,
+    uint32_t EngineId,
+    BC250_GFXHUB_TLB_FLUSH_PLAN *Plan);
+
 BC250_PAGING_STATUS Bc250PagingBuildRequest(
     const BC250_PAGING_REQUEST *Request,
     uint32_t *PagingBuffer,

@@ -135,6 +135,44 @@ static int Bc250RunGcvmContractTest(void)
     CHECK(region.Role == BC250_VRAM_ROLE_PAGE_TABLE);
     CHECK(region.Length >= g_plan.TableSizeBytes);
 
+    /*
+     * P6_PTE_BIT_LAYOUT_OFFLINE
+     *
+     * Layout do Navi 10 (gmc_v10_0.c, amdgpu_vm.h):
+     *   11:7 fragment | 6 write | 5 read | 4 exe | 3 Z | 2 snooped
+     *   1 system | 0 valid
+     *
+     * Ate 05/09 EXECUTABLE era 0x80 codificado em (1ull << 7): ligava FRAG[0]
+     * e nunca ligava a permissao de execucao. A PTE do IB saia 0xE7 no lugar
+     * de 0x77 -- e a busca de um indirect buffer e leitura de INSTRUCAO.
+     */
+    {
+        uint64_t layoutPte = 0;
+        uint64_t layoutPhys = 0;
+        uint32_t layoutFlags = 0;
+
+        CHECK(Bc250GcvmEncodePte(0x450A91000ull,
+            BC250_PTE_VALID | BC250_PTE_SYSTEM | BC250_PTE_SNOOPED |
+            BC250_PTE_EXECUTABLE | BC250_PTE_READABLE | BC250_PTE_WRITEABLE,
+            &layoutPte) == BC250_GCVM_OK);
+        CHECK((layoutPte & 0xFFFull) == 0x77ull);
+
+        /* Nenhum bit de fragmento pode sair ligado numa pagina de 4 KiB. */
+        CHECK((layoutPte & 0x0000000000000F80ull) == 0ull);
+
+        /* Ida e volta preserva a permissao de execucao. */
+        CHECK(Bc250GcvmDecodePte(layoutPte, &layoutPhys, &layoutFlags) == BC250_GCVM_OK);
+        CHECK((layoutFlags & BC250_PTE_EXECUTABLE) != 0u);
+        CHECK(layoutPhys == 0x450A91000ull);
+
+        /* Sem EXECUTABLE o bit 4 fica limpo -- e o caso que travava o IB. */
+        CHECK(Bc250GcvmEncodePte(0x450A91000ull,
+            BC250_PTE_VALID | BC250_PTE_READABLE | BC250_PTE_WRITEABLE,
+            &layoutPte) == BC250_GCVM_OK);
+        CHECK((layoutPte & 0xFFFull) == 0x61ull);
+        CHECK((layoutPte & (1ull << 4)) == 0ull);
+    }
+
     return 1;
 }
 

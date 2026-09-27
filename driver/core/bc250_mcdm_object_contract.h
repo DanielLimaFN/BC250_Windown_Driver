@@ -38,7 +38,7 @@ extern "C" {
 #define BC250_MCDM_OBJECT_REGISTRY_SIGNATURE 0x524A424Fu /* "OBJR" */
 #define BC250_MCDM_OBJECT_LIVE_SIGNATURE     0x564A424Fu /* "OBJV" */
 #define BC250_MCDM_OBJECT_DEAD_SIGNATURE     0x444A424Fu /* "OBJD" */
-#define BC250_MCDM_MAX_OBJECTS 128u
+#define BC250_MCDM_MAX_OBJECTS 4096u
 #define BC250_MCDM_SUBMISSION_RUNDOWN_CLOSING 0x40000000L
 #define BC250_MCDM_SUBMISSION_RUNDOWN_COUNT_MASK 0x3FFFFFFFL
 
@@ -75,7 +75,11 @@ typedef enum BC250_MCDM_OBJECT_STATUS {
     BC250_MCDM_OBJECT_NODE_MISMATCH,
     BC250_MCDM_OBJECT_NO_ROOT_PAGE_TABLE,
     BC250_MCDM_OBJECT_IN_TEARDOWN,
-    BC250_MCDM_OBJECT_IN_FLIGHT_SUBMISSIONS
+    BC250_MCDM_OBJECT_IN_FLIGHT_SUBMISSIONS,
+    /* F2.1: geometria nunca declarada para esta alocacao. Acrescentado no
+     * FIM do enum de proposito -- inserir no meio mudaria o valor numerico
+     * dos membros seguintes, e ha' telemetria que grava esses numeros. */
+    BC250_MCDM_OBJECT_NO_GEOMETRY
 } BC250_MCDM_OBJECT_STATUS;
 
 typedef struct BC250_MCDM_OBJECT_RECORD {
@@ -99,6 +103,17 @@ typedef struct BC250_MCDM_OBJECT_RECORD {
     uint64_t AllocationToken;
     uint64_t AllocationBytes;
     uint64_t AllocationAlignment;
+    /*
+     * F2.1 (13/09): geometria da superficie, recebida pela ABI de alocacao.
+     * `AllocationGeometryValid` == 0 significa que a UMD nao declarou geometria
+     * (command buffer, staging, formato desconhecido) -- e DescribeAllocation
+     * tem de RECUSAR essa alocacao, nunca descrever com numeros inventados.
+     */
+    uint32_t AllocationGeometryValid;
+    uint32_t AllocationWidth;
+    uint32_t AllocationHeight;
+    uint32_t AllocationPitch;
+    uint32_t AllocationFormat;
     uint64_t RootPageTableAddress;
     uint32_t RootPageTableSegmentId;
     uint32_t RootPageTableEntries;
@@ -189,6 +204,30 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectFindAllocationByToken(
     const BC250_MCDM_OBJECT_REGISTRY *Registry,
     uint64_t AllocationToken,
     BC250_MCDM_HANDLE *Handle);
+
+/*
+ * F2.1 (13/09) -- geometria da superficie, para DxgkDdiDescribeAllocation.
+ *
+ * Set: chamado uma vez na criacao, com o que a ABI de alocacao trouxe. Get:
+ * chamado por quadro pela DDI de descricao. Ambos falham fechado -- handle
+ * invalido, tipo errado ou geometria nunca declarada devolvem status de erro, e
+ * NAO uma geometria zerada que o chamador pudesse confundir com valida.
+ */
+BC250_MCDM_OBJECT_STATUS Bc250McdmObjectSetAllocationGeometry(
+    BC250_MCDM_OBJECT_REGISTRY *Registry,
+    BC250_MCDM_HANDLE Allocation,
+    uint32_t Width,
+    uint32_t Height,
+    uint32_t Pitch,
+    uint32_t Format);
+
+BC250_MCDM_OBJECT_STATUS Bc250McdmObjectGetAllocationGeometry(
+    const BC250_MCDM_OBJECT_REGISTRY *Registry,
+    BC250_MCDM_HANDLE Allocation,
+    uint32_t *Width,
+    uint32_t *Height,
+    uint32_t *Pitch,
+    uint32_t *Format);
 
 BC250_MCDM_OBJECT_STATUS Bc250McdmObjectSetRootPageTable(
     BC250_MCDM_OBJECT_REGISTRY *Registry,

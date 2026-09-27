@@ -22,12 +22,135 @@ static void Bc250GpuvaCopySpace(
     }
 }
 
+/*
+ * Discriminador de endereco de fault. Ver o bloco longo em
+ * bc250_gpuva_space_contract.h. Leitor PURO: nao escreve, nao trava, nao exige
+ * dono -- no TDR nao se sabe de quem e' o endereco que falhou.
+ */
+BC250_GPUVA_STATUS Bc250GpuvaSpaceDescribeAddress(
+    const BC250_GPUVA_SPACE *Space,
+    uint64_t GpuVa,
+    BC250_GPUVA_ADDRESS_SITE *Site)
+{
+    uint32_t i;
+
+    if (Site == NULL) return BC250_GPUVA_BAD_ARGUMENT;
+    Site->Found = 0u;
+    Site->State = BC250_GPUVA_RANGE_FREE;
+    Site->BaseGpuVa = 0ull;
+    Site->Size = 0ull;
+    Site->OffsetInRange = 0ull;
+    Site->OwnerProcess = NULL;
+    Site->Allocation = NULL;
+    Site->AllocationToken = 0ull;
+    Site->BackingSegmentId = 0u;
+    Site->BackingSegmentOffset = 0ull;
+    Site->HasBelow = 0u;
+    Site->NearestBelowEnd = 0ull;
+    Site->DistanceAboveEnd = 0ull;
+    Site->HasAbove = 0u;
+    Site->NearestAboveBase = 0ull;
+    Site->DistanceBelowBase = 0ull;
+    Site->LiveRangesScanned = 0u;
+
+    if (Space == NULL || Space->Signature != BC250_GPUVA_SPACE_SIGNATURE) {
+        return BC250_GPUVA_BAD_ARGUMENT;
+    }
+
+    for (i = 0u; i < BC250_GPUVA_SPACE_MAX_RANGES; ++i) {
+        const BC250_GPUVA_RANGE_RECORD *r = &Space->Ranges[i];
+        /*
+         * So' faixas MAPEADAS contam. Uma faixa em TEARDOWN ou UNMAPPED nao
+         * tem traducao valida, e dizer que o endereco "esta dentro" dela seria
+         * exatamente o falso positivo que inverteria o veredito.
+         */
+        if (r->State != BC250_GPUVA_RANGE_MAPPED) continue;
+        if (r->Size == 0ull) continue;
+        ++Site->LiveRangesScanned;
+
+        if (GpuVa >= r->BaseGpuVa && GpuVa < r->EndGpuVa) {
+            Site->Found = 1u;
+            Site->State = r->State;
+            Site->BaseGpuVa = r->BaseGpuVa;
+            Site->Size = r->Size;
+            Site->OffsetInRange = GpuVa - r->BaseGpuVa;
+            Site->OwnerProcess = r->OwnerProcess;
+            Site->Allocation = r->Allocation;
+            Site->AllocationToken = r->AllocationToken;
+            Site->BackingSegmentId = r->BackingSegmentId;
+            Site->BackingSegmentOffset = r->BackingSegmentOffset;
+            /* Achou: a vizinhanca perde sentido e fica zerada de proposito. */
+            Site->HasBelow = 0u;
+            Site->HasAbove = 0u;
+            Site->DistanceAboveEnd = 0ull;
+            Site->DistanceBelowBase = 0ull;
+            return BC250_GPUVA_OK;
+        }
+
+        if (r->EndGpuVa <= GpuVa) {
+            if (!Site->HasBelow || r->EndGpuVa > Site->NearestBelowEnd) {
+                Site->HasBelow = 1u;
+                Site->NearestBelowEnd = r->EndGpuVa;
+                Site->DistanceAboveEnd = GpuVa - r->EndGpuVa;
+            }
+        } else if (r->BaseGpuVa > GpuVa) {
+            if (!Site->HasAbove || r->BaseGpuVa < Site->NearestAboveBase) {
+                Site->HasAbove = 1u;
+                Site->NearestAboveBase = r->BaseGpuVa;
+                Site->DistanceBelowBase = r->BaseGpuVa - GpuVa;
+            }
+        }
+    }
+
+    return BC250_GPUVA_OK;
+}
+
+BC250_GPUVA_STATUS Bc250GpuvaSpaceDescribeOccupancy(
+    const BC250_GPUVA_SPACE *Space,
+    BC250_GPUVA_SPACE_OCCUPANCY *Occupancy)
+{
+    uint32_t i;
+
+    if (Occupancy == NULL) return BC250_GPUVA_BAD_ARGUMENT;
+    Occupancy->Capacity = BC250_GPUVA_SPACE_MAX_RANGES;
+    Occupancy->Free = 0u;
+    Occupancy->Mapped = 0u;
+    Occupancy->Unmapped = 0u;
+    Occupancy->Teardown = 0u;
+    Occupancy->Reusable = 0u;
+    Occupancy->LiveCount = 0u;
+
+    if (Space == NULL || Space->Signature != BC250_GPUVA_SPACE_SIGNATURE) {
+        return BC250_GPUVA_BAD_ARGUMENT;
+    }
+
+    Occupancy->LiveCount = Space->LiveCount;
+    for (i = 0u; i < BC250_GPUVA_SPACE_MAX_RANGES; ++i) {
+        switch (Space->Ranges[i].State) {
+        case BC250_GPUVA_RANGE_FREE:     ++Occupancy->Free; break;
+        case BC250_GPUVA_RANGE_MAPPED:   ++Occupancy->Mapped; break;
+        case BC250_GPUVA_RANGE_UNMAPPED: ++Occupancy->Unmapped; break;
+        case BC250_GPUVA_RANGE_TEARDOWN: ++Occupancy->Teardown; break;
+        default: break;
+        }
+    }
+    /*
+     * Reusable espelha EXATAMENTE o criterio de Bc250GpuvaSpaceInsertRange:
+     * so' FREE e UNMAPPED sao reaproveitados. Se Reusable==0 e Teardown>0, a
+     * exaustao e' vazamento, nao capacidade -- e o conserto e' outro.
+     */
+    Occupancy->Reusable = Occupancy->Free + Occupancy->Unmapped;
+    return BC250_GPUVA_OK;
+}
+
 BC250_GPUVA_STATUS Bc250GpuvaSpaceInitialize(
     BC250_GPUVA_SPACE *Space,
     uint32_t AddressBits)
 {
     if (Space == NULL) return BC250_GPUVA_BAD_ARGUMENT;
-    if (AddressBits == 0u || AddressBits > BC250_GPUVA_DEFAULT_BITS) {
+    if (AddressBits == 0u) {
+        AddressBits = BC250_GPUVA_DEFAULT_BITS;
+    } else if (AddressBits > BC250_GPUVA_ARCH_MAX_BITS) {
         AddressBits = BC250_GPUVA_DEFAULT_BITS;
     }
     memset(Space, 0, sizeof(*Space));
@@ -110,6 +233,7 @@ BC250_GPUVA_STATUS Bc250GpuvaSpaceInsertRange(
         slot->OwnerContext = Param->OwnerContext;
         slot->Allocation = Param->Allocation;
         slot->OpenAllocation = Param->OpenAllocation;
+        slot->AllocationToken = Param->AllocationToken;
         slot->BackingSegmentId = Param->BackingSegmentId;
         slot->BackingSegmentOffset = Param->BackingSegmentOffset;
         slot->Permissions = Param->Permissions ? Param->Permissions :
@@ -188,6 +312,64 @@ BC250_GPUVA_STATUS Bc250GpuvaSpaceRemoveRange(
     return BC250_GPUVA_NOT_FOUND;
 }
 
+BC250_GPUVA_STATUS Bc250GpuvaSpaceResolveAddress(
+    const BC250_GPUVA_SPACE *Space,
+    BC250_MCDM_HANDLE OwnerProcess,
+    uint64_t GpuVa,
+    uint32_t RequiredPermissions,
+    uint32_t *BackingSegmentId,
+    uint64_t *BackingSegmentOffset)
+{
+    BC250_GPUVA_STATUS status;
+    uint32_t i;
+    uint32_t addressOwnedByAnotherProcess = 0u;
+
+    if (BackingSegmentId != NULL) *BackingSegmentId = 0u;
+    if (BackingSegmentOffset != NULL) *BackingSegmentOffset = 0ull;
+    status = Bc250GpuvaValidateSpace(Space);
+    if (status != BC250_GPUVA_OK) return status;
+    if (OwnerProcess == NULL || GpuVa == 0u || BackingSegmentId == NULL ||
+        BackingSegmentOffset == NULL) {
+        return BC250_GPUVA_BAD_ARGUMENT;
+    }
+    if (Space->Teardown != 0u) return BC250_GPUVA_IN_TEARDOWN;
+    if (GpuVa >= Space->MaxAddress) return BC250_GPUVA_OUT_OF_BOUNDS;
+
+    for (i = 0u; i < Space->SortedCount; ++i) {
+        const BC250_GPUVA_RANGE_RECORD *record =
+            &Space->Ranges[Space->SortedIndices[i]];
+        uint64_t withinRange;
+
+        if (record->BaseGpuVa > GpuVa) break;
+        if (GpuVa >= record->EndGpuVa) continue;
+        if (record->OwnerProcess != OwnerProcess) {
+            addressOwnedByAnotherProcess = 1u;
+            continue;
+        }
+        if (record->State == BC250_GPUVA_RANGE_TEARDOWN ||
+            record->TeardownState != 0u) {
+            return BC250_GPUVA_IN_TEARDOWN;
+        }
+        if (record->State != BC250_GPUVA_RANGE_MAPPED ||
+            record->IsResident == 0u) {
+            return BC250_GPUVA_NOT_RESIDENT;
+        }
+        if ((record->Permissions & RequiredPermissions) != RequiredPermissions) {
+            return BC250_GPUVA_PERMISSION_DENIED;
+        }
+        withinRange = GpuVa - record->BaseGpuVa;
+        if (record->BackingSegmentOffset > (uint64_t)~0ull - withinRange) {
+            return BC250_GPUVA_RANGE_OVERFLOW;
+        }
+        *BackingSegmentId = record->BackingSegmentId;
+        *BackingSegmentOffset = record->BackingSegmentOffset + withinRange;
+        return BC250_GPUVA_OK;
+    }
+
+    return addressOwnedByAnotherProcess != 0u ?
+        BC250_GPUVA_OWNER_MISMATCH : BC250_GPUVA_NOT_FOUND;
+}
+
 BC250_GPUVA_STATUS Bc250GpuvaSpaceReplaceRangeTransactional(
     BC250_GPUVA_SPACE *Space,
     BC250_GPUVA_SPACE *Scratch,
@@ -201,7 +383,7 @@ BC250_GPUVA_STATUS Bc250GpuvaSpaceReplaceRangeTransactional(
     status = Bc250GpuvaValidateSpace(Space);
     if (status != BC250_GPUVA_OK) return status;
     if (Scratch == NULL || Scratch == Space || Param == NULL ||
-        Param->OwnerProcess == NULL || Param->BaseGpuVa == 0u ||
+        Param->OwnerProcess == NULL ||
         Param->Size == 0u || MapRange > 1u) {
         return BC250_GPUVA_BAD_ARGUMENT;
     }

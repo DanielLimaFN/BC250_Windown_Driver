@@ -6,25 +6,21 @@ set ROOTDIR=%~dp0..
 set ODIR=%ROOTDIR%\output
 if not exist "%ODIR%" mkdir "%ODIR%"
 
-set HAVE_CL=
-where cl.exe >nul 2>&1 && set HAVE_CL=1
-
 set VCVARS=
-if not defined HAVE_CL (
-  for %%D in (C D E F G) do (
-    for %%E in (BuildTools Community Professional Enterprise) do (
-      if not defined VCVARS (
-        if exist "%%D:\Program Files\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat"
-        if exist "%%D:\Program Files (x86)\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files (x86)\Microsoft Visual Studio\2022\%%E\VC\Auxiliary\Build\vcvars64.bat"
-      )
+for %%D in (C D E F G) do (
+  for %%E in (BuildTools Community Professional Enterprise) do (
+    if not defined VCVARS (
+      if exist "%%D:\Program Files\Microsoft Visual Studio\18\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files\Microsoft Visual Studio\18\%%E\VC\Auxiliary\Build\vcvars64.bat"
+      if exist "%%D:\Program Files\Microsoft Visual Studio\2026\%%E\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%D:\Program Files\Microsoft Visual Studio\2026\%%E\VC\Auxiliary\Build\vcvars64.bat"
     )
   )
-  if not defined VCVARS (
-    echo ERRO: vcvars64.bat do VS2022 nao encontrado.
-    exit /b 1
-  )
-  call "!VCVARS!" >nul
 )
+if not defined VCVARS (
+  echo ERRO: vcvars64.bat do VS2026 nao encontrado.
+  exit /b 1
+)
+call "!VCVARS!" >nul
+if !ERRORLEVEL! NEQ 0 exit /b 1
 
 set CFLAGS=/nologo /W4 /O2 /Oi /I "%ROOTDIR%\driver\core"
 

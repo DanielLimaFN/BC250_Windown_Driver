@@ -1,0 +1,33 @@
+contagens e primeira ocorrencia (linha):
+  SubmitIndirectAsync recusado n=2      primeira=84826
+  IB NAO EXECUTADO             n=2      primeira=84828
+  Teardown Complete            n=0      primeira=-
+  SDMA disabled                n=1      primeira=84788
+  BYTE_PROOF                   n=1      primeira=84788
+  AVISO TRIP                   n=0      primeira=-
+  TDR_                         n=0      primeira=-
+  Blt Timeout                  n=0      primeira=-
+  PAGING_FILL RECUSADO         n=0      primeira=-
+  IB_TRIPE_VEREDITO            n=210    primeira=912
+
+--- 18 linhas antes da 1a recusa do async (linha 84826) ---
+  [FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+  [SetRootPageTable] [Vmid8Install] readback OK: PT_BASE=45fdff000 CNTL=0x007FFE03 (PhysReady=1, Flush=1)
+  [McdmSetRootPageTable] Result=0x00000000
+  [McdmSubmitCommandVirtual] Node=0, FenceId=632, DmaSize=4
+  [SubmitVirtual Node0 SDMA] FenceId=632, DmaSize=4, DmaVA=0x20000
+  [SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=0000000700000007, Proc=0000000500000005, hasRoot=1, targetPtPhys=0x45FDFF000, Vmid=7, instCtx=00000000000000
+  [FlushMappedGfxhubTlb] Transport State=1, Base=FFFFBA81D1E82000, Len=524288
+  [FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+  [SubmitVirtual Node0 SDMA] VMID7 CONTEXT SWITCH: Ctx 0000000000000000 -> 0000000700000007 (Root=0x45FDFF000, PT_BASE=0x45FDFF000)
+  [SubmitVirtual Node0 SDMA] IB_GPUVA_SNAPSHOT: Status=0 ObjStatus=0 VA=0x20000 Size=4 -> Segment=0 Offset=0x3E85DF000 Epoch=0
+  [PT_WALK] RootMC=0x45FDFF000 VramMcBase=0x450000000 LocalSegBase=0xA8C000 Janela=268435456 bytes
+  [PT_WALK IB] L1 idx=0 VRAM+0xFDFF000 PDE=000000045FDFE001 -> leafPA=0x45FDFE000 flags=0x1 valid=1 reservado[5:3]=0x0
+  [PT_WALK IB] L0 idx=32 VRAM+0xFDFE100 PTE=00000003E85DF037 -> pageMC=0x3E85DF000 flags=0x37 valid=1
+  [PT_WALK IB] RESOLVIDO: VA=0x20000 -> 0x3E85DF000 (root=MC, folha=MC)
+  [PT_WALK] IB_PROOF_BIND: PA=0x3E85DF000 Bytes=4 ExactMetadata=0 (miss: no poison)
+  [PT_WALK] DEST: encoder nao publicou faixa de escrita
+  [SubmitVirtual Node0 SDMA] CAMINHO_ESCOLHIDO: INDIRECT (Fill=0/0 bytes DestPA=0x0 DmaBytes=4 IbResolve=1 PlanoAFallback=0)
+  [SubmitVirtual Node0 SDMA] IB_EFEITO_DECLARADO: AUSENTE (hasFill=0 destPA=0x0 bytes=0) -- perna de dados ficara NAO CONFERIDA
+  [SdmaPresent] SubmitIndirectAsync recusado: Init=1 HwEnabled=0 TripodValidated=1
+  [SubmitVirtual Node0 SDMA] GFXHUB_FAULT_SNAPSHOT: Read=1/1/1 STATUS=00000000 ADDR=00000000:00000000

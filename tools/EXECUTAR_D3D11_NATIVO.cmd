@@ -1,0 +1,125 @@
+@echo off
+setlocal
+cd /d "%~dp0"
+set "FORCE_BOOT_CHECK=0"
+set "DWM_CAPTURE_ARG="
+rem Corrida 91: janela do watchdog parametrizavel (padrao 120 s). O binder da ao
+rem harness min(180, janela-60) s; com 120 s eram 60 s e o harness da 90 foi cortado.
+if not defined BC250_WATCHDOG_SECONDS set "BC250_WATCHDOG_SECONDS=120"
+for %%A in (%*) do (
+    if /i "%%~A"=="-Force" set "FORCE_BOOT_CHECK=1"
+    if /i "%%~A"=="-CaptureDwmDump" set "DWM_CAPTURE_ARG=-EnableDwmCrashCapture"
+)
+echo ===================================================================
+echo   BC-250: ENSAIO DE CONFORMIDADE DIRECT3D 11 NATIVO (bc250umd.dll)
+echo   Target: AMD BC-250 APU (1002:13FE) ^| Windows 10 22H2 x64
+echo ===================================================================
+echo.
+echo 0. Verificando se o rollback anterior ja foi seguido por boot frio...
+if "%FORCE_BOOT_CHECK%"=="1" (
+    echo [FORCE] Marcador de boot frio ignorado por solicitacao do operador.
+    del /f /q C:\BC250_REQUIRE_CLEAN_BOOT.json 2>nul
+    goto skip_boot_check
+)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$marker='C:\BC250_REQUIRE_CLEAN_BOOT.json'; if (-not (Test-Path -LiteralPath $marker)) { exit 0 }; $m=Get-Content -LiteralPath $marker -Raw | ConvertFrom-Json; $boot=(Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks; if ([int64]$m.rollback_boot_ticks -eq [int64]$boot) { exit 42 }; exit 0"
+if %ERRORLEVEL% equ 42 (
+    echo [RECUSADO] O rollback anterior exige BOOT FRIO antes de outro binding.
+    echo Desligue completamente a maquina, ligue novamente e execute este arquivo outra vez.
+    echo O fusivel nao foi alterado e o adaptador nao foi vinculado.
+    pause
+    exit /b 42
+)
+if %ERRORLEVEL% neq 0 (
+    echo [ERRO] Nao foi possivel verificar o marcador de boot limpo.
+    pause
+    exit /b 1
+)
+:skip_boot_check
+echo [OK] Preflight de boot frio aprovado.
+echo.
+echo 1. Resetando fusivel de boot C:\BC250_BOOT_FUSE.dat...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0inspect-boot-fuse.ps1" -Reset
+if %ERRORLEVEL% neq 0 (
+    echo [ERRO] Falha ao resetar o fusivel. Certifique-se de executar como Administrador!
+    pause
+    exit /b 1
+)
+echo 1b. Isolando vulkan_radeon.dll em C:\BC250_LIB (sem contaminar System32 ou LogonUI)...
+if not exist "C:\BC250_LIB" mkdir "C:\BC250_LIB" >nul
+copy /Y "C:\Users\Daniel\Desktop\bc250-win\bc250-win\mesa-radv-wddm\build\src\amd\vulkan\vulkan_radeon.dll" "C:\BC250_LIB\vulkan_radeon.dll" >nul
+if errorlevel 1 (
+    echo [ERRO] Nao foi possivel copiar a RADV construida. Bind cancelado.
+    exit /b 1
+)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$src='C:\Users\Daniel\Desktop\bc250-win\bc250-win\mesa-radv-wddm\build\src\amd\vulkan\vulkan_radeon.dll'; $dst='C:\BC250_LIB\vulkan_radeon.dll'; if ((Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash) { exit 1 }"
+if errorlevel 1 (
+    echo [ERRO] Hash da RADV implantada difere do build. Bind cancelado.
+    exit /b 1
+)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Khronos\Vulkan\Drivers' -Name 'C:\Windows\system32\vulkan_radeon.json' -ErrorAction SilentlyContinue; Remove-ItemProperty -Path 'HKLM:\SOFTWARE\WOW6432Node\Khronos\Vulkan\Drivers' -Name 'C:\Windows\system32\vulkan_radeon.json' -ErrorAction SilentlyContinue; if (Test-Path 'C:\Windows\System32\vulkan_radeon.dll') { Remove-Item 'C:\Windows\System32\vulkan_radeon.dll' -Force -ErrorAction SilentlyContinue }"
+echo [OK] vulkan_radeon.dll atualizada exclusivamente em C:\BC250_LIB.
+echo.
+echo 2. Iniciando vinculacao WDDM com ensaio D3D11 Nativo (bc250umd.dll)...
+if defined DWM_CAPTURE_ARG echo [ATENCAO] WER LocalDumps do dwm.exe sera armado somente durante esta janela.
+if "%BC250_ENABLE_HANG_ETW%"=="1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bc250-hang-etw.ps1" -Start
+    if errorlevel 1 (
+        echo [RECUSADO] Captura ETW nao iniciou. Nenhum bind foi iniciado.
+        exit /b 1
+    )
+)
+if "%BC250_CAPTURE_MONITOR_EDID%"=="1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0capture-bc250-monitor-edid.ps1" -Phase PreBind -RequireValidBase
+    if errorlevel 1 (
+        echo [RECUSADO] EDID base do monitor ativo nao foi comprovado. Nenhum bind foi iniciado.
+        if "%BC250_ENABLE_HANG_ETW%"=="1" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bc250-hang-etw.ps1" -Stop
+        exit /b 1
+    )
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bind-bc250mcdm-lab.ps1" -Execute -IAcceptBlackScreenRisk -EnableRenderNode -EnableShaderDispatch -EnablePersistentSubmission -EnableGpuvaLabPromotion -IAcceptGpuvaLabPromotion -EnableNode1JournalGatePerProcess -EnableD3D11LabPromotion -RunD3D11Native -D3D11Frames 60 -WatchdogTimeoutSeconds %BC250_WATCHDOG_SECONDS% -IAcceptAutomaticRecoveryReboot %DWM_CAPTURE_ARG%
+set "BIND_EXIT=%ERRORLEVEL%"
+echo.
+echo 3. Executando rollback incondicional do ensaio automatizado...
+call "%~dp0BC250_RECOVERY.cmd"
+set "RECOVERY_EXIT=%ERRORLEVEL%"
+if "%BC250_CAPTURE_MONITOR_EDID%"=="1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0capture-bc250-monitor-edid.ps1" -Phase PostRecovery
+    if errorlevel 1 echo [AVISO] Captura EDID apos rollback falhou; evidencia PreBind preservada.
+)
+if "%BC250_ENABLE_HANG_ETW%"=="1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bc250-hang-etw.ps1" -Stop
+    if errorlevel 1 echo [AVISO] ETW nao parou; verifique bc250-hang-etw.ps1 -Status e -Recover.
+)
+if not "%RECOVERY_EXIT%"=="0" (
+    echo [ERRO] Rollback incompleto, exit=%RECOVERY_EXIT%. Nao execute outro ensaio.
+    rem DX.44 host: na Corrida 86 este ramo pulou a coleta RADV 3b. Coletar mesmo assim.
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0collect-bc250-gfx-ib-after-recovery.ps1"
+    if errorlevel 1 echo [AVISO] Coleta RADV pos-rollback incompleta; staging preservado para resgate manual.
+    pause
+    exit /b %RECOVERY_EXIT%
+)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$m=[ordered]@{state='CLEAN_BOOT_REQUIRED';rollback_boot_ticks=(Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks;rollback_completed_at=(Get-Date).ToString('o');restored_service='BasicDisplay';restored_code=0;hardware_validated=$false}; $m | ConvertTo-Json | Set-Content -LiteralPath 'C:\BC250_REQUIRE_CLEAN_BOOT.json' -Encoding UTF8"
+if %ERRORLEVEL% neq 0 (
+    echo [ERRO] BasicDisplay voltou, mas o marcador de boot frio nao foi gravado.
+    pause
+    exit /b 1
+)
+echo [OK] BasicDisplay Codigo 0 restaurado. Boot frio obrigatorio antes de outro ensaio.
+echo 3b. Reconciliando IBs e logs RADV apos rollback...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0collect-bc250-gfx-ib-after-recovery.ps1"
+if errorlevel 1 (
+    echo [AVISO] Coleta RADV pos-rollback incompleta; staging preservado para resgate manual.
+)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { Stop-Process -Name sihost -Force -ErrorAction SilentlyContinue; Start-Process explorer.exe }"
+echo.
+echo ===================================================================
+echo   RESUMO DO ENSAIO D3D11 EXTRAIDO DA EVIDENCIA
+echo ===================================================================
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$last=Join-Path '%~dp0' '_last_lab_binding.json'; if (Test-Path $last) { $j=Get-Content $last -Raw | ConvertFrom-Json; $d3dLog=Join-Path $j.evidence_dir 'd3d11-native-conformance-console.txt'; if (Test-Path $d3dLog) { Get-Content $d3dLog | ForEach-Object { Write-Host ('  ' + $_) -ForegroundColor Green } } $umdLog=Join-Path $j.evidence_dir 'bc250_umd_log-FINAL.txt'; if (Test-Path $umdLog) { Select-String -Path $umdLog -Pattern 'DRAW EXECUTADO|OpenAdapter10|CreateDevice|INSPECAO LINEAR_BUF' | Select-Object -First 20 | ForEach-Object { Write-Host ('  ' + $_.Line.Trim()) -ForegroundColor Cyan } } }"
+echo ===================================================================
+echo.
+echo ===================================================================
+echo   ENSAIO FINALIZADO COM EXIT CODE: %BIND_EXIT%
+echo ===================================================================
+pause
+exit /b %BIND_EXIT%

@@ -15,8 +15,8 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
 #pragma function(memcpy)
 void * __cdecl memcpy(void *Destination, const void *Source, size_t Length)
 {
-    unsigned char *destination = (unsigned char *)Destination;
-    const unsigned char *source = (const unsigned char *)Source;
+    volatile unsigned char *destination = (volatile unsigned char *)Destination;
+    const volatile unsigned char *source = (const volatile unsigned char *)Source;
     size_t index;
     for (index = 0; index < Length; ++index) destination[index] = source[index];
     return Destination;
@@ -324,7 +324,60 @@ static int Bc250RunDxgkReadonlyDdiTest(void)
     CHECK(sources == 0 && children == 0);
     CHECK(g_context.LastStage == BC250_DXGK_STAGE_MMIO_UNMAP_FAILED);
     CHECK(g_context.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED);
+
+    /*
+     * REPRODUCAO OFFLINE DA CORRIDA 08/09 11:48 (Codigo 43).
+     *
+     * Estado de partida: runtime STAGED e transporte MMIO ainda MAPEADO -- foi
+     * exatamente esse o estado em que o StartDevice de laboratorio chamou o
+     * segundo preflight, depois de programar a MMU global.
+     *
+     * Duas coisas sao travadas aqui, e as duas falharam de forma silenciosa na
+     * corrida:
+     *
+     *  1. a guarda de entrada RECUSA, e recusa com STATUS_INVALID_PARAMETER --
+     *     NAO com STATUS_NOT_SUPPORTED. Confundir os dois foi o que fez a
+     *     corrida parecer "runtime ausente" quando o runtime estava staged;
+     *
+     *  2. LastStage NAO e' tocado. O chamador que ler apenas o estagio vera o
+     *     residuo da chamada ANTERIOR e concluira errado. Por isso o
+     *     StartDevice passou a publicar tambem o NTSTATUS cru
+     *     (BC250_PROBE_SECOND_PREFLIGHT_STATUS).
+     */
     g_failUnmap = 0u;
+    CHECK(g_context.RuntimeStaged == 1u);
+    CHECK(g_context.LastStage == BC250_DXGK_STAGE_MMIO_UNMAP_FAILED);
+    sources = 99; children = 99;
+    status = g_startDdi(
+        &g_context, &g_startInfo, &g_interface, &sources, &children);
+    CHECK(status == STATUS_INVALID_PARAMETER);
+    CHECK(status != STATUS_NOT_SUPPORTED);
+    CHECK(g_context.LastStage == BC250_DXGK_STAGE_MMIO_UNMAP_FAILED);
+    CHECK(g_context.ReadonlyGatePassed == 0u);
+    CHECK(g_context.RuntimeStaged == 1u);
+    CHECK(sources == 0 && children == 0);
+
+    /*
+     * E o contraponto que da sentido ao caso acima: com o MESMO runtime
+     * staged, devolver o transporte a vazio faz o preflight ANDAR de verdade --
+     * ele passa da guarda e chega ao fim do gate readonly. Sem esta metade, a
+     * assercao anterior seria satisfeita por um preflight quebrado de qualquer
+     * outra forma.
+     */
+    CHECK(g_stopDdi(&g_context) == STATUS_SUCCESS);
+    CHECK(g_context.MmioTransport.State == BC250_MMIO_TOPOLOGY_EMPTY);
+    Bc250TestBuildMmio();
+    Bc250TestBuildRuntime();
+    CHECK(Bc250DxgkReadonlyStageRuntime(&g_context, &g_runtime) ==
+        STATUS_SUCCESS);
+    sources = 99; children = 99;
+    status = g_startDdi(
+        &g_context, &g_startInfo, &g_interface, &sources, &children);
+    CHECK(status == STATUS_NOT_SUPPORTED);
+    CHECK(g_context.LastStage == BC250_DXGK_STAGE_PREFLIGHT_READY);
+    CHECK(g_context.ReadonlyGatePassed == 1u);
+    CHECK(g_context.MmioTransport.State == BC250_MMIO_TOPOLOGY_EMPTY);
+
     CHECK(g_stopDdi(&g_context) == STATUS_SUCCESS);
     CHECK(g_context.MmioTransport.State == BC250_MMIO_TOPOLOGY_EMPTY);
     return 1;

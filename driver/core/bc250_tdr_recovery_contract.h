@@ -25,12 +25,25 @@ extern "C" {
 #define BC250_TDR_ACTION_DEQUEUE_HQD     0x00000004u
 #define BC250_TDR_ACTION_FAULT_CONTEXT   0x00000008u
 #define BC250_TDR_ACTION_RESUME          0x00000010u
+#define BC250_TDR_ACTION_FULL_BLOCK_RESET 0x00000020u
+
+/* GRBM Soft Reset (BAR5 0x08020) and masks for GFX10 */
+#ifndef BC250_GRBM_REG_SOFT_RESET
+#define BC250_GRBM_REG_SOFT_RESET        0x00008020u
+#endif
+#ifndef BC250_GRBM_SOFT_RESET_CP_MASK
+#define BC250_GRBM_SOFT_RESET_CP_MASK    0x00000001u
+#define BC250_GRBM_SOFT_RESET_GFX_MASK   0x00010000u
+#define BC250_GRBM_SOFT_RESET_CPF_MASK   0x00020000u
+#define BC250_GRBM_SOFT_RESET_CPG_MASK   0x00080000u
+#endif
 
 typedef enum BC250_TDR_STATUS {
     BC250_TDR_OK = 0,
     BC250_TDR_BAD_ARGUMENT,
     BC250_TDR_INVALID_NODE,
-    BC250_TDR_NOT_HANGING
+    BC250_TDR_NOT_HANGING,
+    BC250_TDR_RESTART_NOT_READY
 } BC250_TDR_STATUS;
 
 typedef struct BC250_TDR_ENGINE_STATE {
@@ -69,6 +82,50 @@ BC250_TDR_STATUS Bc250TdrBuildResetPlan(
 BC250_TDR_STATUS Bc250TdrExecuteResetPlan(
     const BC250_TDR_RESET_PLAN *Plan,
     BC250_TDR_ENGINE_STATE *State);
+
+/*
+ * Gate puro para o readback minimo depois do reset completo da SDMA0.
+ * A corrida 07/09 20:41 mediu RPTR=68 depois de o restart publicar WPTR=40;
+ * o backend anterior nunca zerava RB_RPTR e apenas removia F32.HALT, portanto
+ * podia retomar o POLL_REGMEM que causou o hang. Nenhuma fence de prova deve
+ * ser submetida antes de este gate fechar.
+ */
+BC250_TDR_STATUS Bc250TdrValidateSdmaRestartReadback(
+    uint32_t Rptr,
+    uint32_t RptrHi,
+    uint32_t Wptr,
+    uint32_t WptrHi,
+    uint32_t RbCntl,
+    uint32_t RbEnableMask,
+    uint32_t F32Cntl,
+    uint32_t F32HaltMask,
+    uint32_t GrbmSoftReset,
+    uint32_t SdmaResetMask);
+
+/*
+ * Gate puro para o readback pos-quiesce/restart da fila MEC (Compute Node 1).
+ * Exige fila drenada (ACTIVE=0), sem requisicao de dequeue pendente,
+ * sem erro latchado em HQD_ERROR e sem stall no pipeline do CP.
+ */
+BC250_TDR_STATUS Bc250TdrValidateMecRestartReadback(
+    uint32_t HqdActive,
+    uint32_t HqdRptr,
+    uint32_t HqdWptr,
+    uint32_t DequeueRequest,
+    uint32_t HqdError,
+    uint32_t CpStalled);
+
+/*
+ * Gate puro para o readback pos-quiesce/restart do anel grafico CP_RB0 (Node 1 GFX).
+ * Exige anel ativo (CP_RB0_ACTIVE=1), micro-engines liberadas (CE/PFP/ME unhalted),
+ * soft reset desarmado e cursores sincronizados.
+ */
+BC250_TDR_STATUS Bc250TdrValidateGfxRestartReadback(
+    uint32_t CpRb0Active,
+    uint32_t CpRb0Rptr,
+    uint32_t CpRb0Wptr,
+    uint32_t CpMeCntl,
+    uint32_t GrbmSoftReset);
 
 const char *Bc250TdrStatusName(BC250_TDR_STATUS Status);
 

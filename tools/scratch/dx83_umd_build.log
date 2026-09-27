@@ -1,0 +1,1333 @@
+[toolchain] VS2026
+[UMD CC] bc250_runtime.c
+bc250_runtime.c
+[LLM CC] bc250_llm_kernels.c
+bc250_llm_kernels.c
+[UMD LINK] bc250_runtime.dll
+   Criando biblioteca C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250_runtime.lib e objeto C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250_runtime.exp
+[UMD PRIVATE CC] bc250_umd_private_contract.c
+bc250_umd_private_contract.c
+[ALLOCATION ABI CC] bc250_allocation_abi_contract.c
+bc250_allocation_abi_contract.c
+[CAPS PROBE CC] bc250_umd_caps_probe.c
+bc250_umd_caps_probe.c
+[DXBC PARSER CC] bc250_dxbc_parser.c
+bc250_dxbc_parser.c
+[DXBC-SPIRV BRIDGE CC] bc250_dxbc_spirv_bridge.c
+bc250_dxbc_spirv_bridge.c
+[VKD3D-SHADER ADAPTER CC] bc250_vkd3d_shader_adapter.c
+bc250_vkd3d_shader_adapter.c
+[PM4 PACKET BUILDER CC] bc250_pm4_packet_builder.c
+bc250_pm4_packet_builder.c
+[SDMA PACKET BUILDER CC] bc250_sdma_packet_builder.c
+bc250_sdma_packet_builder.c
+[VULKAN BRIDGE CC] bc250_umd_vulkan_bridge.c
+bc250_umd_vulkan_bridge.c
+[D3D UMD CC] bc250_d3d_umd.c
+bc250_d3d_umd.c
+[WDDM WINSYS CC] bc250_wddm_winsys.c
+bc250_wddm_winsys.c
+[D3D UMD LINK] bc250umd.dll
+   Criando biblioteca C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250umd.lib e objeto C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250umd.exp
+[WDDM WINSYS TEST CC] bc250_wddm_winsys_test.c
+bc250_wddm_winsys_test.c
+[WDDM WINSYS TEST LINK] bc250_wddm_winsys_test.exe
+[D3D UMD TEST CC] bc250_d3d_umd_test.c
+bc250_d3d_umd_test.c
+[D3D UMD TEST LINK] bc250_d3d_umd_test.exe
+[VKD3D SHADER ADAPTER TEST CC] vkd3d_shader_adapter_test.c
+[DESCRIPTOR TEST] umd_descriptor_binding_test
+umd_descriptor_binding_test.c
+21:04:09.426 [pid=1836 umd_descriptor_binding_test.exe] [DX54_DESC] POOL PERSISTENTE criado: 64 conjuntos, 1792 CB, 2048 SRV, 2048 samplers (pool=0000000000005000)
+
+UMD_DESCRIPTOR_BINDING: PASS (offline dispatch spy; no hardware)
+[DX49 BATCH TEST] umd_dx49_batch_test
+umd_dx49_batch_test.c
+[PIPELINE IR TEST] umd_pipeline_ir_dump_test
+umd_pipeline_ir_dump_test.c
+UMD PIPELINE IR DUMP: PASS (desarmada=0 chamadas, Assembly>ACO IR, truncamento no teto, teto 32/processo; offline)
+HARDWARE VERDICT: NAO VALIDADO EM HARDWARE
+[PRESENT GRID TEST] umd_present_grid_test
+umd_present_grid_test.c
+UMD PRESENT GRID: PASS (preto=0; barra de 40 linhas vista pela grade e invisivel as 5 amostras; offline)
+HARDWARE VERDICT: NAO VALIDADO EM HARDWARE
+[STATE TRANSLATE TEST] umd_state_translate_test
+umd_state_translate_test.c
+UMD STATE TRANSLATE: PASS (blend mapeado com recusas nomeadas; layout do DWM por InputRegister, slot por instancia, stride 0 preservado, slot sem buffer recusado; X8/sRGB/A8 corrigidos; offline)
+HARDWARE VERDICT: NAO VALIDADO EM HARDWARE
+vkd3d_shader_adapter_test.c
+[VKD3D MOCK PROVIDER CC] vkd3d_shader_mock_provider.c
+vkd3d_shader_mock_provider.c
+[VKD3D MOCK PROVIDER LINK] bc250_vkd3d_mock.dll
+   Criando biblioteca C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250_vkd3d_mock.lib e objeto C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250_vkd3d_mock.exp
+[VKD3D SHADER ADAPTER TEST LINK] vkd3d_shader_adapter_test.exe
+[VKD3D REAL SMOKE CC] vkd3d_shader_real_smoke.c
+vkd3d_shader_real_smoke.c
+[VKD3D REAL SMOKE LINK] vkd3d_shader_real_smoke.exe
+[NODE1 SUBMIT TEST CC] umd_node1_submit_contract_test.c
+umd_node1_submit_contract_test.c
+[NODE1 SUBMIT TEST LINK] umd_node1_submit_contract_test.exe
+[NODE1 TRIPOD TEST CC] umd_node1_tripod_contract_test.c
+umd_node1_tripod_contract_test.c
+[NODE1 TRIPOD TEST LINK] umd_node1_tripod_contract_test.exe
+[NODE1 PHYSICAL HARNESS CC] bc250-umd-node1-tripod.c
+bc250-umd-node1-tripod.c
+[NODE1 PHYSICAL HARNESS LINK] bc250-umd-node1-tripod.exe
+[VK ICD CC] bc250_vulkan_icd.c
+bc250_vulkan_icd.c
+[VK ICD LINK] bc250_vulkan.dll
+   Criando biblioteca C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250_vulkan.lib e objeto C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250_vulkan.exp
+[UMD CONTRACT TEST CC] umd_runtime_contract_test.c
+umd_runtime_contract_test.c
+[UMD CONTRACT TEST LINK] umd_runtime_contract_test.exe
+[UMD TEST CC] bc250-umd-test.c
+bc250-umd-test.c
+[UMD TEST LINK] bc250-umd-test.exe
+[VK TEST CC] bc250-vulkan-test.c
+bc250-vulkan-test.c
+[VK TEST LINK] bc250-vulkan-test.exe
+[LLM BENCHMARK CC] bc250-llm-benchmark.c
+bc250-llm-benchmark.c
+[LLM BENCHMARK LINK] bc250-llm-benchmark.exe
+
+=== EXECUTANDO TESTE DE CONTRATO UMD RUNTIME ===
+=== TESTE DE CONTRATO UMD RUNTIME (BC250_RUNTIME_API) ===
+UMD RUNTIME CONTRACT: OK (21/21 invariantes de seguranca validadas)
+
+=== EXECUTANDO TESTE DE CONTRATO D3D UMD ===
+21:04:16.531 [pid=1680 bc250_d3d_umd_test.exe] === bc250umd.dll CARREGADA ===
+
+21:04:16.533 [pid=1680 bc250_d3d_umd_test.exe] CreateResource: res=00000000000CBD50 Dim=3 Fmt=87 Size=3407872 (1024x832 bpp=4) GpuVa=0x0 Primary=0 VkRes=0
+
+21:04:16.533 [pid=1680 bc250_d3d_umd_test.exe] DestroyResource: res=00000000000CBD50
+
+21:04:16.534 [pid=1680 bc250_d3d_umd_test.exe] D3D11_NO_SCANOUT_OPTOUT: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11NoScanoutOptOut) -- armado faz o DXGI pedir Blt em vez de Flip
+
+21:04:16.534 [pid=1680 bc250_d3d_umd_test.exe] PRIMARY_DESC recebido: Flags=0x00000000 (OPTIONAL=0 NONPREROTATED=0 STEREO=0 INDIRECT=0) VidPnSourceId=0 DriverFlags_in=0x00000000 Mode=2560x1080 Fmt=87
+
+21:04:16.535 [pid=1680 bc250_d3d_umd_test.exe] PRIMARY_DESC VALIDO: res=2560x1080 compativel com mode=2560x1080 VidPnSourceId=0 -> Primary=1
+
+21:04:16.536 [pid=1680 bc250_d3d_umd_test.exe] CreateResource: res=00000000000CBE40 Dim=3 Fmt=87 Size=11075584 (2560x1080 bpp=4) GpuVa=0x0 Primary=1 VkRes=0
+
+21:04:16.536 [pid=1680 bc250_d3d_umd_test.exe] DestroyResource: res=00000000000CBE40
+
+21:04:16.536 [pid=1680 bc250_d3d_umd_test.exe] PRIMARY_DESC recebido: Flags=0x00000000 (OPTIONAL=0 NONPREROTATED=0 STEREO=0 INDIRECT=0) VidPnSourceId=0 DriverFlags_in=0x00000000 Mode=2560x1080 Fmt=87
+
+21:04:16.536 [pid=1680 bc250_d3d_umd_test.exe] PRIMARY_DESC INCOMPATIVEL RECUSADO: res=1024x832 != mode=2560x1080 VidPnSourceId=0 -> Primary=0 (recusa nomeada)
+
+21:04:16.537 [pid=1680 bc250_d3d_umd_test.exe] CreateResource: res=00000000000CBF30 Dim=3 Fmt=87 Size=3407872 (1024x832 bpp=4) GpuVa=0x0 Primary=0 VkRes=0
+
+21:04:16.537 [pid=1680 bc250_d3d_umd_test.exe] DestroyResource: res=00000000000CBF30
+
+21:04:16.537 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] Allocate ENTER: Token=0x5245530006900004 Size=16384 Align=4096 hRTResource=00000000000000AB Primary=0 VidPnSourceId=0
+
+21:04:16.538 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] Allocate LEAVE: hr=0x00000000 hAlloc=0xa110 hKMResource=0x0
+
+21:04:16.538 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] MapAllocation ENTER: hAlloc=0xa110 Min=0x10000 Max=0x3FFFFFFFF Pages=4 Exec=0
+
+21:04:16.538 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] MapAllocation LEAVE: hr=0x00000000 VA=0x200000 PagingFence=7
+
+21:04:16.538 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] MakeResident ENTER: hAlloc=0xa110 hPagingQueue=0x0
+
+21:04:16.540 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] MakeResident LEAVE: hr=0x8000000A PagingFence=8
+
+21:04:16.540 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] WaitPaging ENTER: TargetFence=8 CurrentFence=0 SyncObj=0x0
+
+21:04:16.540 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] WaitPaging LEAVE: hr=0x00000000 TargetFence=8 CurrentFence=0
+
+21:04:16.540 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] WaitPaging ENTER: TargetFence=8 CurrentFence=0 SyncObj=0x0
+
+21:04:16.541 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] WaitPaging LEAVE: hr=0x00000000 TargetFence=8 CurrentFence=0
+
+21:04:16.541 [pid=1680 bc250_d3d_umd_test.exe] CreateResource: res=00000000000CBC50 Dim=3 Fmt=87 Size=16384 (64x64 bpp=4) GpuVa=0x200000 Primary=0 VkRes=0
+
+21:04:16.541 [pid=1680 bc250_d3d_umd_test.exe] DestroyResource: res=00000000000CBC50
+
+21:04:16.541 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] WaitPaging ENTER: TargetFence=8 CurrentFence=0 SyncObj=0x0
+
+21:04:16.542 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] WaitPaging LEAVE: hr=0x00000000 TargetFence=8 CurrentFence=0
+
+21:04:16.542 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] Allocate ENTER: Token=0x5245530006900005 Size=16384 Align=4096 hRTResource=00000000000000AB Primary=0 VidPnSourceId=0
+
+21:04:16.542 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] Allocate LEAVE: hr=0x8007000E hAlloc=0x0 hKMResource=0x0
+
+21:04:16.543 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] Allocate RECUSADO pelo runtime/KMD: hr=0x8007000E TokenClass=1380274944 Flags=0x1 Geometria=1 (64x64 pitch=256 fmt=21) PrivSize=56 hRTResource=00000000000000AB -- ver [CREATE_ALLOC_RECUSADO] no KMD
+
+21:04:16.543 [pid=1680 bc250_d3d_umd_test.exe] CreateResource RECUSADO: status=CALLBACK_FAILED cleanup=OK; Created=FALSE
+
+21:04:16.544 [pid=1680 bc250_d3d_umd_test.exe] CreateResource RECUSADO desc: Dim=3 64x64 Mips=1 Array=1 Fmt=87 Samples=1 Bind=0x0 Misc=0x0 Usage=0 CpuAccess=0x0 TotalSize=16384 RowPitch=256 InitData=0 hr=0x8007000E
+
+21:04:16.544 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] Allocate ENTER: Token=0x5245530006900006 Size=16384 Align=4096 hRTResource=00000000000000AB Primary=0 VidPnSourceId=0
+
+21:04:16.544 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] Allocate LEAVE: hr=0x00000000 hAlloc=0xa110 hKMResource=0x0
+
+21:04:16.544 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] MapAllocation ENTER: hAlloc=0xa110 Min=0x10000 Max=0x3FFFFFFFF Pages=4 Exec=0
+
+21:04:16.545 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] MapAllocation LEAVE: hr=0x8007000E VA=0x0 PagingFence=0
+
+21:04:16.545 [pid=1680 bc250_d3d_umd_test.exe] CreateResource RECUSADO: status=CALLBACK_FAILED cleanup=OK; Created=FALSE
+
+21:04:16.545 [pid=1680 bc250_d3d_umd_test.exe] CreateResource RECUSADO desc: Dim=3 64x64 Mips=1 Array=1 Fmt=87 Samples=1 Bind=0x0 Misc=0x0 Usage=0 CpuAccess=0x0 TotalSize=16384 RowPitch=256 InitData=0 hr=0x8007000E
+
+21:04:16.545 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] Allocate ENTER: Token=0x5245530006900007 Size=16384 Align=4096 hRTResource=00000000000000AB Primary=0 VidPnSourceId=0
+
+21:04:16.546 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] Allocate LEAVE: hr=0x00000000 hAlloc=0xa110 hKMResource=0x0
+
+21:04:16.546 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] MapAllocation ENTER: hAlloc=0xa110 Min=0x10000 Max=0x3FFFFFFFF Pages=4 Exec=0
+
+21:04:16.546 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] MapAllocation LEAVE: hr=0x00000000 VA=0x200000 PagingFence=7
+
+21:04:16.546 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] MakeResident ENTER: hAlloc=0xa110 hPagingQueue=0x0
+
+21:04:16.547 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] MakeResident LEAVE: hr=0x8007000E PagingFence=0
+
+21:04:16.547 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] WaitPaging ENTER: TargetFence=7 CurrentFence=0 SyncObj=0x0
+
+21:04:16.547 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] WaitPaging LEAVE: hr=0x00000000 TargetFence=7 CurrentFence=0
+
+21:04:16.548 [pid=1680 bc250_d3d_umd_test.exe] CreateResource RECUSADO: status=CALLBACK_FAILED cleanup=OK; Created=FALSE
+
+21:04:16.548 [pid=1680 bc250_d3d_umd_test.exe] CreateResource RECUSADO desc: Dim=3 64x64 Mips=1 Array=1 Fmt=87 Samples=1 Bind=0x0 Misc=0x0 Usage=0 CpuAccess=0x0 TotalSize=16384 RowPitch=256 InitData=0 hr=0x8007000E
+
+21:04:16.548 [pid=1680 bc250_d3d_umd_test.exe] OpenAdapter10_2: Interface=0x000A0001, Version=0x00000001
+
+21:04:16.548 [pid=1680 bc250_d3d_umd_test.exe] CAPS_PROBE: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11CapsProbe)
+
+21:04:16.549 [pid=1680 bc250_d3d_umd_test.exe] D3D11_LAB_PROMOTION: ARMADO (HKLM\SOFTWARE\BC250\Umd\D3D11LabPromotion)
+
+21:04:16.549 [pid=1680 bc250_d3d_umd_test.exe] OpenAdapter10_2: Interface=0x000A0001 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000B000B)
+
+21:04:16.549 [pid=1680 bc250_d3d_umd_test.exe] OpenAdapter10: Interface=0x000A0001, Version=0x00000000
+
+21:04:16.549 [pid=1680 bc250_d3d_umd_test.exe] OpenAdapter10: Interface=0x000A0001 fora da allowlist deste entry point -> E_NOTIMPL (o runtime desce a escada; alvo daqui e' 0x000A0002)
+
+21:04:16.550 [pid=1680 bc250_d3d_umd_test.exe] OpenAdapter11: Interface=0x000B0000, Version=0x00000000
+
+21:04:16.550 [pid=1680 bc250_d3d_umd_test.exe] OpenAdapter11: D3D11 nativo indisponivel -> E_NOTIMPL
+
+21:04:16.550 [pid=1680 bc250_d3d_umd_test.exe] OpenAdapter12: D3D12 nao implementado nativamente -> E_NOTIMPL
+
+21:04:16.550 [pid=1680 bc250_d3d_umd_test.exe] Bc250UmdDeviceInit: Vulkan Graphics Bridge nao disponivel (fail-closed)
+
+21:04:16.551 [pid=1680 bc250_d3d_umd_test.exe] Bc250UmdDeviceInit: device=00000000000CC320 inicializado com sucesso (Interface=0x000A0002, Version=0x00010000, Winsys=OK, VkBridge=0)
+
+21:04:16.551 [pid=1680 bc250_d3d_umd_test.exe] Bc250UmdDeviceTeardown: device=00000000000CC320 iniciando teardown seguro
+
+21:04:16.551 [pid=1680 bc250_d3d_umd_test.exe] Bc250UmdDeviceTeardown: device=00000000000CC320 concluido
+
+21:04:16.552 [pid=1680 bc250_d3d_umd_test.exe] Bc250UmdDeviceInit: Vulkan Graphics Bridge nao disponivel (fail-closed)
+
+21:04:16.552 [pid=1680 bc250_d3d_umd_test.exe] Bc250UmdDeviceInit: device=00000000000CC320 inicializado com sucesso (Interface=0x000A0002, Version=0x00010000, Winsys=OK, VkBridge=0)
+
+21:04:16.552 [pid=1680 bc250_d3d_umd_test.exe] D3D10 DestroyDevice: pDrvPrivate=00000000000CC320, device=00000000000CC320
+
+21:04:16.552 [pid=1680 bc250_d3d_umd_test.exe] Bc250UmdDeviceTeardown: device=00000000000CC320 iniciando teardown seguro
+
+21:04:16.553 [pid=1680 bc250_d3d_umd_test.exe] Bc250UmdDeviceTeardown: device=00000000000CC320 concluido
+
+21:04:16.553 [pid=1680 bc250_d3d_umd_test.exe] D3D10 CreateDevice: pCreateData=NULL -> E_INVALIDARG
+
+21:04:16.553 [pid=1680 bc250_d3d_umd_test.exe] D3D10 CreateDevice: adapter invalido ou inativo -> E_INVALIDARG
+
+21:04:16.554 [pid=1680 bc250_d3d_umd_test.exe] D3D10 CreateDevice: hDrvDevice.pDrvPrivate=NULL -> E_INVALIDARG
+
+21:04:16.554 [pid=1680 bc250_d3d_umd_test.exe] D3D10 CreateDevice: INTERFACE ACORDADA=0x000A0002, Version=0x00010000, hRTDevice=00000000ABCDEF00, Flags=0x00000000
+
+21:04:16.554 [pid=1680 bc250_d3d_umd_test.exe] Bc250UmdDeviceInit: Vulkan Graphics Bridge nao disponivel (fail-closed)
+
+21:04:16.555 [pid=1680 bc250_d3d_umd_test.exe] Bc250UmdDeviceInit: device=00000000000CC390 inicializado com sucesso (Interface=0x000A0002, Version=0x00010000, Winsys=OK, VkBridge=0)
+
+21:04:16.555 [pid=1680 bc250_d3d_umd_test.exe] D3D10 CreateDevice: start Node1 nao inicializado (hr=0x80004005)
+
+21:04:16.555 [pid=1680 bc250_d3d_umd_test.exe] Bc250UmdDeviceTeardown: device=00000000000CC390 iniciando teardown seguro
+
+21:04:16.556 [pid=1680 bc250_d3d_umd_test.exe] Bc250UmdDeviceTeardown: device=00000000000CC390 concluido
+
+21:04:16.556 [pid=1680 bc250_d3d_umd_test.exe] GetSupportedVersions: sondagem de contagem -> 4
+
+21:04:16.556 [pid=1680 bc250_d3d_umd_test.exe] GetSupportedVersions: buffer de 2 < 4 necessarias -> E_INVALIDARG
+
+21:04:16.556 [pid=1680 bc250_d3d_umd_test.exe] GetSupportedVersions: declarado[0]=0x000A000100040000
+
+21:04:16.557 [pid=1680 bc250_d3d_umd_test.exe] GetSupportedVersions: declarado[1]=0x000A000200010000
+
+21:04:16.557 [pid=1680 bc250_d3d_umd_test.exe] GetSupportedVersions: declarado[2]=0x000B000B00020000
+
+21:04:16.557 [pid=1680 bc250_d3d_umd_test.exe] GetSupportedVersions: declarado[3]=0x000B000A00020000
+
+21:04:16.558 [pid=1680 bc250_d3d_umd_test.exe] D3D10 RelocateDeviceFuncs: device=00000000000CC3B0, pDeviceFuncs=00000000000CBBC0
+
+21:04:16.558 [pid=1680 bc250_d3d_umd_test.exe] D3D10 Flush: device=00000000000CC3B0
+
+21:04:16.558 [pid=1680 bc250_d3d_umd_test.exe] D3D10 DestroyDevice: pDrvPrivate=00000000000CC3B0, device=00000000000CC3B0
+
+21:04:16.559 [pid=1680 bc250_d3d_umd_test.exe] Bc250UmdDeviceTeardown: device=00000000000CC3B0 iniciando teardown seguro
+
+21:04:16.559 [pid=1680 bc250_d3d_umd_test.exe] Bc250UmdDeviceTeardown: device=00000000000CC3B0 concluido
+
+21:04:16.559 [pid=1680 bc250_d3d_umd_test.exe] DXGI GetGammaCaps: respondendo caps padrao
+
+21:04:16.560 [pid=1680 bc250_d3d_umd_test.exe] DXGI SetDisplayMode ENTER: hDevice=0000000000000000 hResource=0000000000000000 SubResourceIndex=0 hAlloc=0x0 Primary=-1
+
+21:04:16.560 [pid=1680 bc250_d3d_umd_test.exe] DXGI SetDisplayMode RECUSADO: pfnSetDisplayModeCb ausente (device=0000000000000000 callbacks=0000000000000000)
+
+21:04:16.560 [pid=1680 bc250_d3d_umd_test.exe] DXGI SetDisplayMode ENTER: hDevice=00000000000CAF60 hResource=00000000000CAC60 SubResourceIndex=0 hAlloc=0xa110 Primary=1
+
+21:04:16.561 [pid=1680 bc250_d3d_umd_test.exe] DXGI SetDisplayMode LEAVE cb: hr=0x00000000 hPrimaryAllocation=0xa110 PrivateDriverFormatAttribute=0
+
+21:04:16.561 [pid=1680 bc250_d3d_umd_test.exe] DXGI SetDisplayMode ENTER: hDevice=00000000000CAF60 hResource=00000000000CAC60 SubResourceIndex=0 hAlloc=0xa110 Primary=0
+
+21:04:16.562 [pid=1680 bc250_d3d_umd_test.exe] DXGI SetDisplayMode RECUSADO: recurso nao e' primaria declarada (hAlloc=0xa110 Token=0x0)
+
+21:04:16.562 [pid=1680 bc250_d3d_umd_test.exe] DXGI SetResourcePriority: hResource=0000000000000000 Priority=1
+
+21:04:16.562 [pid=1680 bc250_d3d_umd_test.exe] QueryResourceResidency RECUSADO: callback hr=0x80004005
+
+21:04:16.563 [pid=1680 bc250_d3d_umd_test.exe] QueryResourceResidency RECUSADO: status desconhecido=99
+
+21:04:16.563 [pid=1680 bc250_d3d_umd_test.exe] QueryResourceResidency RECUSADO: pfnQueryResidencyCb ausente
+
+21:04:16.563 [pid=1680 bc250_d3d_umd_test.exe] DXGI RotateResourceIdentities ENTER: hDevice=0000000000000000 Resources=0 pResources=0000000000000000
+
+21:04:16.563 [pid=1680 bc250_d3d_umd_test.exe] DXGI RotateResourceIdentities LEAVE: Resources=0, no-op legitimo -> S_OK
+
+21:04:16.564 [pid=1680 bc250_d3d_umd_test.exe] DXGI RotateResourceIdentities ENTER: hDevice=0000000000000000 Resources=3 pResources=000000000014FB40
+
+21:04:16.564 [pid=1680 bc250_d3d_umd_test.exe] DXGI RotateResourceIdentities LEAVE: 3 recursos rotacionados; res[0] agora tem hAlloc=0xa001 GpuVa=0x200000 (antes 0xa000) VkImg=000000000000B001 (antes 000000000000B000) -- DX.28: imagem Vulkan gira junto
+
+21:04:16.564 [pid=1680 bc250_d3d_umd_test.exe] DXGI RotateResourceIdentities ENTER: hDevice=0000000000000000 Resources=3 pResources=000000000014FB40
+
+21:04:16.565 [pid=1680 bc250_d3d_umd_test.exe] DXGI RotateResourceIdentities LEAVE: 3 recursos rotacionados; res[0] agora tem hAlloc=0xa002 GpuVa=0x300000 (antes 0xa001) VkImg=000000000000B002 (antes 000000000000B001) -- DX.28: imagem Vulkan gira junto
+
+21:04:16.565 [pid=1680 bc250_d3d_umd_test.exe] DXGI RotateResourceIdentities ENTER: hDevice=0000000000000000 Resources=3 pResources=000000000014FB40
+
+21:04:16.565 [pid=1680 bc250_d3d_umd_test.exe] DXGI RotateResourceIdentities LEAVE: 3 recursos rotacionados; res[0] agora tem hAlloc=0xa000 GpuVa=0x100000 (antes 0xa002) VkImg=000000000000B000 (antes 000000000000B002) -- DX.28: imagem Vulkan gira junto
+
+21:04:16.565 [pid=1680 bc250_d3d_umd_test.exe] DXGI RotateResourceIdentities ENTER: hDevice=0000000000000000 Resources=3 pResources=000000000014FB40
+
+21:04:16.566 [pid=1680 bc250_d3d_umd_test.exe] DXGI RotateResourceIdentities RECUSADO: recurso[1]=000000000014FC48 invalido ou nao criado -- rotacao ABORTADA sem mover nada
+
+21:04:16.566 [pid=1680 bc250_d3d_umd_test.exe] DXGI RotateResourceIdentities ENTER: hDevice=0000000000000000 Resources=2 pResources=0000000000000000
+
+21:04:16.566 [pid=1680 bc250_d3d_umd_test.exe] DXGI RotateResourceIdentities RECUSADO: Resources=2 com pResources NULL
+
+21:04:16.567 [pid=1680 bc250_d3d_umd_test.exe] DXGI Blt: dst=0000000000000000 (sub=0) src=0000000000000000 (sub=0) rect=[0,0-0,0] flags=0x00000000 rotate=0
+
+21:04:16.567 [pid=1680 bc250_d3d_umd_test.exe] DXGI Blt: parametros invalidos ou recursos nao criados -> E_INVALIDARG
+
+21:04:16.567 [pid=1680 bc250_d3d_umd_test.exe] DXGI Blt: dst=00000000000CAC60 (sub=0) src=000000000014FB60 (sub=0) rect=[0,0-0,0] flags=0x00000000 rotate=0
+
+21:04:16.567 [pid=1680 bc250_d3d_umd_test.exe] BltGpu REPROVOU (NOTIMPL): dim=0/0 samples=0/0 mips=0/0 arr=0/0 misc=0x0/0x0 fmt=0/0 rot=0
+
+21:04:16.568 [pid=1680 bc250_d3d_umd_test.exe] DXGI Present: hSurfaceToPresent=0000000000000000, hDstResource=0000000000000000, Flags=0x00000000, FlipInterval=0
+
+21:04:16.568 [pid=1680 bc250_d3d_umd_test.exe] DXGI Present RECUSADO: preparacao de scanout falhou ou divergiu -> E_FAIL
+
+21:04:16.568 [pid=1680 bc250_d3d_umd_test.exe] DXGI ResolveSharedResource: hResource=0000000000000000 -> DXGI_DDI_ERR_UNSUPPORTED
+
+21:04:16.569 [pid=1680 bc250_d3d_umd_test.exe] DXGI Blt1 RECUSADO: Rotate=2 nao suportado (SupportSmoothRotation=FALSE)
+
+21:04:16.569 [pid=1680 bc250_d3d_umd_test.exe] DXGI OfferResources1: Resources=1, Priority=0, Flags=0x0 -> S_OK
+
+21:04:16.569 [pid=1680 bc250_d3d_umd_test.exe] DXGI ReclaimResources: Resources=1 -> S_OK
+
+21:04:16.569 [pid=1680 bc250_d3d_umd_test.exe] DXGI ReclaimResources1: Resources=1 -> S_OK
+
+21:04:16.570 [pid=1680 bc250_d3d_umd_test.exe] DXGI GetMultiplaneOverlayCaps: MaxPlanes=1, NumCapabilityGroups=0 -> S_OK
+
+21:04:16.570 [pid=1680 bc250_d3d_umd_test.exe] DXGI GetMultiplaneOverlayGroupCaps RECUSADO: sem grupos MPO
+
+21:04:16.571 [pid=1680 bc250_d3d_umd_test.exe] DXGI PresentMultiplaneOverlay RECUSADO: MPO nao suportado
+
+21:04:16.572 [pid=1680 bc250_d3d_umd_test.exe] DXGI PresentMultiplaneOverlay1 RECUSADO: MPO1 nao suportado
+
+21:04:16.572 [pid=1680 bc250_d3d_umd_test.exe] DXGI CheckPresentDurationSupport RECUSADO: nao suportado
+
+21:04:16.572 [pid=1680 bc250_d3d_umd_test.exe] DXGI TrimResidencySet: NumBytesToTrim=0 -> S_OK
+
+21:04:16.573 [pid=1680 bc250_d3d_umd_test.exe] DXGI CheckMultiplaneOverlayColorSpaceSupport: Supported=FALSE -> S_OK
+
+21:04:16.573 [pid=1680 bc250_d3d_umd_test.exe] DXGI Present1: Surfaces=0, hDstResource=0000000000000000, Flags=0x00000000, FlipInterval=0, DirtyRects=0
+
+21:04:16.574 [pid=1680 bc250_d3d_umd_test.exe] DXGI Present1 RECUSADO: preparacao de scanout falhou ou divergiu -> E_FAIL
+
+21:04:16.574 [pid=1680 bc250_d3d_umd_test.exe] GetCaps: Type=130 (D3D11DDICAPS_3DPIPELINESUPPORT) DataSize=4 -> Level 10_0 e 10_1 (Caps=0x00000003)
+
+21:04:16.574 [pid=1680 bc250_d3d_umd_test.exe] CalcPrivateShaderSize: DXBC container OK, tipo=PixelShader SM=4.0, 5 tokens -> 4776 bytes
+
+21:04:16.575 [pid=1680 bc250_d3d_umd_test.exe] CalcPrivateShaderSize: pShaderCode=NULL -> 0
+
+21:04:16.575 [pid=1680 bc250_d3d_umd_test.exe] CalcPrivateShaderSize: token stream desconhecido (0x12345678) -> 0
+
+21:04:16.575 [pid=1680 bc250_d3d_umd_test.exe] SHADER_TRANSLATOR: ativo via biblioteca padrao 'C:\BC250_LIB\libvkd3d-shader-1.dll'
+
+21:04:16.576 [pid=1680 bc250_d3d_umd_test.exe] SHADER_TRANSLATOR: ARMADO (vkd3d-shader 1.17 1.17)
+
+21:04:16.577 [pid=1680 bc250_d3d_umd_test.exe] SHADER_TRANSLATOR: traducao DXBC falhou (status=3) -- shader segue sem SPIR-V
+
+21:04:16.577 [pid=1680 bc250_d3d_umd_test.exe] CreatePixelShader: shader=00000000000CAEC0 SM=4.0 tokens=5 hRT=0000000000584452 VkModule=0
+
+21:04:16.577 [pid=1680 bc250_d3d_umd_test.exe] DestroyShader: shader=00000000000CAEC0
+
+21:04:16.577 [pid=1680 bc250_d3d_umd_test.exe] SHADER_TRANSLATOR: traducao DXBC falhou (status=3) -- shader segue sem SPIR-V
+
+21:04:16.578 [pid=1680 bc250_d3d_umd_test.exe] CreateVertexShader: shader=00000000000CAEC0 SM=4.1 tokens=5 hRT=0000000000584452 VkModule=0
+
+21:04:16.578 [pid=1680 bc250_d3d_umd_test.exe] DestroyShader: shader=00000000000CAEC0
+
+21:04:16.578 [pid=1680 bc250_d3d_umd_test.exe] CalcPrivateShaderSize: direct stream tipo=1 SM=5.0, 7 tokens -> 4776 bytes
+
+21:04:16.579 [pid=1680 bc250_d3d_umd_test.exe] SHADER_TRANSLATOR: traducao TokenStream falhou (status=3, tokens=7) -- shader segue sem SPIR-V
+
+21:04:16.579 [pid=1680 bc250_d3d_umd_test.exe] CreateVertexShader: shader=00000000000CAEC0 SM=5.0 tokens=5 hRT=0000000000584452 VkModule=0
+
+21:04:16.579 [pid=1680 bc250_d3d_umd_test.exe] DestroyShader: shader=00000000000CAEC0
+
+21:04:16.580 [pid=1680 bc250_d3d_umd_test.exe] SHADER_TRANSLATOR: traducao TokenStream falhou (status=3, tokens=7) -- shader segue sem SPIR-V
+
+21:04:16.580 [pid=1680 bc250_d3d_umd_test.exe] CreateVertexShader: shader=00000000000CAEC0 SM=5.0 tokens=5 hRT=0000000000584452 VkModule=0
+
+21:04:16.580 [pid=1680 bc250_d3d_umd_test.exe] DestroyShader: shader=00000000000CAEC0
+
+21:04:16.580 [pid=1680 bc250_d3d_umd_test.exe] SHADER_TRANSLATOR: traducao TokenStream falhou (status=3, tokens=7) -- shader segue sem SPIR-V
+
+21:04:16.581 [pid=1680 bc250_d3d_umd_test.exe] CreateVertexShader: shader=00000000000CB060 SM=5.0 tokens=5 hRT=0000000053504952 VkModule=0
+
+21:04:16.581 [pid=1680 bc250_d3d_umd_test.exe] DestroyShader: shader=00000000000CB060
+
+21:04:16.581 [pid=1680 bc250_d3d_umd_test.exe] SHADER_TRANSLATOR: traducao DXBC falhou (status=3) -- shader segue sem SPIR-V
+
+21:04:16.581 [pid=1680 bc250_d3d_umd_test.exe] CreateVertexShader: shader=00000000000CB060 SM=4.0 tokens=5 hRT=0000000053504952 VkModule=0
+
+21:04:16.582 [pid=1680 bc250_d3d_umd_test.exe] DestroyShader: shader=00000000000CB060
+
+21:04:16.582 [pid=1680 bc250_d3d_umd_test.exe] DestroyShader: shader=00000000000CB060
+
+21:04:16.582 [pid=1680 bc250_d3d_umd_test.exe] DestroyShader: shader=00000000000CB060
+
+21:04:16.583 [pid=1680 bc250_d3d_umd_test.exe] CreateResource: res=00000000000CBF60 Dim=3 Fmt=87 Size=8294400 (1920x1080 bpp=4) GpuVa=0x0 Primary=0 VkRes=0
+
+21:04:16.583 [pid=1680 bc250_d3d_umd_test.exe] [DX70_SAMPLE c=5 n=1] ResourceMap: res=00000000000CBF60 Sub=0 MapType=3 Flags=0x0 pData=0000000000A98040 Pitch=7680
+
+21:04:16.583 [pid=1680 bc250_d3d_umd_test.exe] [DX70_SAMPLE c=7 n=1] ResourceUnmap: res=00000000000CBF60 Sub=0
+
+21:04:16.583 [pid=1680 bc250_d3d_umd_test.exe] DestroyResource: res=00000000000CBF60
+
+21:04:16.584 [pid=1680 bc250_d3d_umd_test.exe] CheckFormatSupport: Format=87 -> Caps=0x00000007
+
+21:04:16.584 [pid=1680 bc250_d3d_umd_test.exe] CheckFormatSupport: Format=0 -> Caps=0x00000000
+
+21:04:16.584 [pid=1680 bc250_d3d_umd_test.exe] [DX69_MSAA_SAMPLE] #1 CheckMultisampleQualityLevels: Format=87 Samples=1 -> Levels=1
+
+21:04:16.585 [pid=1680 bc250_d3d_umd_test.exe] [DX69_MSAA_SAMPLE] #2 CheckMultisampleQualityLevels: Format=87 Samples=4 -> Levels=0
+
+21:04:16.585 [pid=1680 bc250_d3d_umd_test.exe] CreateResource: res=00000000000CBF60 Dim=1 Fmt=0 Size=65536 (65536x1 bpp=0) GpuVa=0x0 Primary=0 VkRes=0
+
+21:04:16.585 [pid=1680 bc250_d3d_umd_test.exe] DestroyResource: res=00000000000CBF60
+
+21:04:16.585 [pid=1680 bc250_d3d_umd_test.exe] ResourceUpdateSubresourceUP: textura copiada linha-a-linha (590x3 bpp=4 SrcPitch=2360 DstPitch=2560)
+
+21:04:16.586 [pid=1680 bc250_d3d_umd_test.exe] ResourceUpdateSubresourceUP: res=00000000000CBF30 pitch=2360
+
+21:04:16.586 [pid=1680 bc250_d3d_umd_test.exe] ResourceUpdateSubresourceUP: textura RECUSADA -- box fora da geometria
+
+21:04:16.586 [pid=1680 bc250_d3d_umd_test.exe] CreateResource: res=00000000000CBC40 Dim=3 Fmt=87 Size=8294400 (1920x1080 bpp=4) GpuVa=0x0 Primary=0 VkRes=0
+
+21:04:16.587 [pid=1680 bc250_d3d_umd_test.exe] CreateResource: res=00000000000CC070 Dim=3 Fmt=45 Size=8294400 (1920x1080 bpp=4) GpuVa=0x0 Primary=0 VkRes=0
+
+21:04:16.587 [pid=1680 bc250_d3d_umd_test.exe] CreateRenderTargetView: rtv=00000000000CC230 res=00000000000CBC40 Dim=3 Fmt=87 Mip=0 Slice=0 Count=1 VkRtv=0
+
+21:04:16.587 [pid=1680 bc250_d3d_umd_test.exe] CreateDepthStencilView: dsv=00000000000CBC00 res=00000000000CC070 Dim=3 Fmt=45 Mip=0 Slice=0 Count=1 VkDsv=0
+
+21:04:16.587 [pid=1680 bc250_d3d_umd_test.exe] SetRenderTargets: NumViews=1 ClearSlots=0 DSV=00000000000CBC00 RTV0=00000000000CC230 res=00000000000CBC40 1920x1080
+
+21:04:16.588 [pid=1680 bc250_d3d_umd_test.exe] DRAW_BLT_SUBSTITUTION: desarmado (HKLM\SOFTWARE\BC250\Umd\D3D11DrawBltSubstitution) -- armado NAO significa rasterizacao; e' copia 1:1 declarada
+
+21:04:16.588 [pid=1680 bc250_d3d_umd_test.exe] ClearRenderTargetView RECUSADO: sem backend de fill GPU; shadow preservado
+
+21:04:16.590 [pid=1680 bc250_d3d_umd_test.exe] ClearRenderTargetView RECUSADO: sem backend de fill GPU; shadow preservado
+
+21:04:16.590 [pid=1680 bc250_d3d_umd_test.exe] ClearDepthStencilView: dsv=00000000000CBC00 res=00000000000CC070 Flags=0x3 Depth=1.000 Stencil=0
+
+21:04:16.590 [pid=1680 bc250_d3d_umd_test.exe] SetViewports: NumViewports=1 [0.0,0.0..1920.0,1080.0]
+
+21:04:16.591 [pid=1680 bc250_d3d_umd_test.exe] SetScissorRects: NumRects=1 [0,0..1920,1080]
+
+21:04:16.591 [pid=1680 bc250_d3d_umd_test.exe] DestroyRenderTargetView: rtv=00000000000CC230
+
+21:04:16.591 [pid=1680 bc250_d3d_umd_test.exe] DestroyDepthStencilView: dsv=00000000000CBC00
+
+21:04:16.591 [pid=1680 bc250_d3d_umd_test.exe] DestroyResource: res=00000000000CBC40
+
+21:04:16.592 [pid=1680 bc250_d3d_umd_test.exe] DestroyResource: res=00000000000CC070
+
+21:04:16.593 [pid=1680 bc250_d3d_umd_test.exe] VsSetShader: shader=0000000000534801
+
+21:04:16.593 [pid=1680 bc250_d3d_umd_test.exe] PsSetShader: shader=0000000000534802
+
+21:04:16.593 [pid=1680 bc250_d3d_umd_test.exe] GsSetShader: shader=0000000000534803
+
+21:04:16.593 [pid=1680 bc250_d3d_umd_test.exe] IaSetTopology: Topology=4
+
+21:04:16.594 [pid=1680 bc250_d3d_umd_test.exe] IaSetInputLayout: layout=0000000000001A01
+
+21:04:16.594 [pid=1680 bc250_d3d_umd_test.exe] CreateResource: res=00000000000CC1B0 Dim=1 Fmt=0 Size=4096 (4096x1 bpp=0) GpuVa=0x0 Primary=0 VkRes=0
+
+21:04:16.594 [pid=1680 bc250_d3d_umd_test.exe] IaSetVertexBuffers: Start=0 Count=1
+
+21:04:16.595 [pid=1680 bc250_d3d_umd_test.exe]   VB Slot[0]: Buf=00000000000CC1B0 Stride=32 Offset=0
+
+21:04:16.595 [pid=1680 bc250_d3d_umd_test.exe] CreateResource: res=00000000000CBFD0 Dim=1 Fmt=0 Size=4096 (4096x1 bpp=0) GpuVa=0x0 Primary=0 VkRes=0
+
+21:04:16.595 [pid=1680 bc250_d3d_umd_test.exe] IaSetIndexBuffer: Buffer=00000000000CBFD0 Format=57 Offset=16
+
+21:04:16.595 [pid=1680 bc250_d3d_umd_test.exe] CreateResource: res=00000000000CC0C0 Dim=1 Fmt=0 Size=4096 (4096x1 bpp=0) GpuVa=0x0 Primary=0 VkRes=0
+
+21:04:16.596 [pid=1680 bc250_d3d_umd_test.exe] VsSetConstantBuffers: Start=0 Count=1
+
+21:04:16.596 [pid=1680 bc250_d3d_umd_test.exe] PsSetConstantBuffers: Start=1 Count=1
+
+21:04:16.596 [pid=1680 bc250_d3d_umd_test.exe] GsSetConstantBuffers: Start=2 Count=1
+
+21:04:16.596 [pid=1680 bc250_d3d_umd_test.exe] DefaultConstantBufferUpdateSubresourceUP: res=00000000000CC0C0 bytes=4096
+
+21:04:16.597 [pid=1680 bc250_d3d_umd_test.exe] [DX70_SAMPLE c=5 n=2] ResourceMap: res=00000000000CC1B0 Sub=0 MapType=3 Flags=0x0 pData=00000000005C1FA0 Pitch=4096
+
+21:04:16.597 [pid=1680 bc250_d3d_umd_test.exe] [DX70_SAMPLE c=7 n=2] ResourceUnmap: res=00000000000CC1B0 Sub=0
+
+21:04:16.597 [pid=1680 bc250_d3d_umd_test.exe] ResourceCopy: dst=00000000000CBFD0 src=00000000000CC1B0
+
+21:04:16.598 [pid=1680 bc250_d3d_umd_test.exe] ResourceCopyRegion: dst=00000000000CBFD0 src=00000000000CC1B0 DstX=100 DstY=0
+
+21:04:16.598 [pid=1680 bc250_d3d_umd_test.exe] Draw: RECUSADO -- compilador/shader-state/draw PM4 ausente (Rejected=1)
+
+21:04:16.598 [pid=1680 bc250_d3d_umd_test.exe] DrawIndexed: RECUSADO -- compilador/shader-state/draw PM4 ausente (Rejected=2)
+
+21:04:16.598 [pid=1680 bc250_d3d_umd_test.exe] DrawInstanced: RECUSADO -- compilador/shader-state/draw PM4 ausente (Rejected=3)
+
+21:04:16.599 [pid=1680 bc250_d3d_umd_test.exe] DrawIndexedInstanced: RECUSADO -- compilador/shader-state/draw PM4 ausente (Rejected=4)
+
+21:04:16.599 [pid=1680 bc250_d3d_umd_test.exe] DrawAuto: RECUSADO -- compilador/shader-state/draw PM4 ausente (Rejected=5)
+
+21:04:16.599 [pid=1680 bc250_d3d_umd_test.exe] DestroyResource: res=00000000000CC1B0
+
+21:04:16.599 [pid=1680 bc250_d3d_umd_test.exe] DestroyResource: res=00000000000CBFD0
+
+21:04:16.600 [pid=1680 bc250_d3d_umd_test.exe] DestroyResource: res=00000000000CC0C0
+
+21:04:16.600 [pid=1680 bc250_d3d_umd_test.exe] CreateResource: res=00000000000CBD50 Dim=3 Fmt=87 Size=16384 (64x64 bpp=4) GpuVa=0x0 Primary=0 VkRes=0
+
+21:04:16.600 [pid=1680 bc250_d3d_umd_test.exe] CreateResource: res=00000000000CBC60 Dim=3 Fmt=87 Size=16384 (64x64 bpp=4) GpuVa=0x0 Primary=0 VkRes=0
+
+21:04:16.601 [pid=1680 bc250_d3d_umd_test.exe] DrawIndexed: RECUSADO -- compilador/shader-state/draw PM4 ausente (Rejected=1)
+
+21:04:16.601 [pid=1680 bc250_d3d_umd_test.exe] Draw: RECUSADO -- compilador/shader-state/draw PM4 ausente (Rejected=2)
+
+21:04:16.601 [pid=1680 bc250_d3d_umd_test.exe] DestroyResource: res=00000000000CBD50
+
+21:04:16.601 [pid=1680 bc250_d3d_umd_test.exe] DestroyResource: res=00000000000CBC60
+
+21:04:16.602 [pid=1680 bc250_d3d_umd_test.exe] [DX70_SAMPLE c=2 n=1] [WDDM_WINSYS] Upload ENTER: hAlloc=0xa200 Bytes=60
+
+21:04:16.602 [pid=1680 bc250_d3d_umd_test.exe] [DX70_SAMPLE c=3 n=1] [WDDM_WINSYS] Upload LEAVE: hr=0x00000000 Bytes=60
+
+21:04:16.602 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] SubmitGpuVa ENTER: hCtx=0x000000000000C001 Gpuva=0x220000 Bytes=60 Node=1
+
+21:04:16.603 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] SubmitGpuVa LEAVE: hr=0x00000000 Bytes=60
+
+21:04:16.603 [pid=1680 bc250_d3d_umd_test.exe] CommandBufferFlush: Node=1 bytes=60 status=OK
+
+21:04:16.603 [pid=1680 bc250_d3d_umd_test.exe] EmitPm4Draw: IndexCount=3 Topology=4 ColorBase=0x10000000 (1920x1080) PM4 Dwords=15 NativePm4DrawCount=1
+
+21:04:16.603 [pid=1680 bc250_d3d_umd_test.exe] [DX70_SAMPLE c=2 n=2] [WDDM_WINSYS] Upload ENTER: hAlloc=0xa200 Bytes=60
+
+21:04:16.604 [pid=1680 bc250_d3d_umd_test.exe] [DX70_SAMPLE c=3 n=2] [WDDM_WINSYS] Upload LEAVE: hr=0x00000000 Bytes=60
+
+21:04:16.604 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] SubmitGpuVa ENTER: hCtx=0x000000000000C001 Gpuva=0x220000 Bytes=60 Node=1
+
+21:04:16.604 [pid=1680 bc250_d3d_umd_test.exe] [WDDM_WINSYS] SubmitGpuVa LEAVE: hr=0x00000000 Bytes=60
+
+21:04:16.604 [pid=1680 bc250_d3d_umd_test.exe] CommandBufferFlush: Node=1 bytes=60 status=OK
+
+21:04:16.605 [pid=1680 bc250_d3d_umd_test.exe] EmitPm4Draw: IndexCount=6 Topology=4 ColorBase=0x10000000 (1920x1080) PM4 Dwords=15 NativePm4DrawCount=2
+
+21:04:16.605 [pid=1680 bc250_d3d_umd_test.exe] EmitPm4Draw RECUSOU: BaseGpuVa 0x10000004 nao alinhado a 256 bytes
+
+21:04:16.605 [pid=1680 bc250_d3d_umd_test.exe] Draw: RECUSADO -- compilador/shader-state/draw PM4 ausente (Rejected=1)
+
+21:04:16.606 [pid=1680 bc250_d3d_umd_test.exe] DXGI Present: hSurfaceToPresent=00000000000CBEA0, hDstResource=0000000000000000, Flags=0x00000000, FlipInterval=0
+
+21:04:16.606 [pid=1680 bc250_d3d_umd_test.exe] DXGI Present RECUSADO: [PRESENT RECUSADO: DIVERGENCIA_BACKEND_DRAW_VS_PRESENT] (NativeVkDrawCount=5, NativePm4DrawCount=10, InRenderPass=0) - render e apresentacao divergem
+
+21:04:16.606 [pid=1680 bc250_d3d_umd_test.exe] DXGI Present RECUSADO: preparacao de scanout falhou ou divergiu -> E_FAIL
+
+21:04:16.607 [pid=1680 bc250_d3d_umd_test.exe] DXGI Present: hSurfaceToPresent=00000000000CBEA0, hDstResource=0000000000000000, Flags=0x00000000, FlipInterval=0
+
+21:04:16.607 [pid=1680 bc250_d3d_umd_test.exe] [DX81_PASSTHROUGH] Nenhum render novo detectado (VkRendered=0, NativePm4DrawCount=0, NativeVkDrawCount=0) -> repassa para pfnPresentCb
+
+21:04:16.607 [pid=1680 bc250_d3d_umd_test.exe] DXGI Present: pDXGICallbacks ou pfnPresentCb ausente -> E_FAIL
+
+21:04:16.607 [pid=1680 bc250_d3d_umd_test.exe] CreateResource: pInitialDataUP consumido (16 bytes copiados para pCpuShadow)
+
+21:04:16.608 [pid=1680 bc250_d3d_umd_test.exe] CreateResource: res=00000000000CBEA0 Dim=1 Fmt=0 Size=4096 (16x1 bpp=0) GpuVa=0x0 Primary=0 VkRes=0
+
+21:04:16.608 [pid=1680 bc250_d3d_umd_test.exe] DestroyResource: res=00000000000CBEA0
+
+21:04:16.608 [pid=1680 bc250_d3d_umd_test.exe] CreateBlendState: state=000000000014FBE0 AlphaToCoverage=1 IndBlend=0
+
+21:04:16.609 [pid=1680 bc250_d3d_umd_test.exe] SetBlendState: state=000000000014FBE0 SampleMask=0xFFFFFFFF
+
+21:04:16.609 [pid=1680 bc250_d3d_umd_test.exe] DestroyBlendState: state=000000000014FBE0
+
+21:04:16.609 [pid=1680 bc250_d3d_umd_test.exe] CreateDepthStencilState: state=000000000014FB90 DepthEnable=1 StencilEnable=1
+
+21:04:16.609 [pid=1680 bc250_d3d_umd_test.exe] SetDepthStencilState: state=000000000014FB90 StencilRef=128
+
+21:04:16.610 [pid=1680 bc250_d3d_umd_test.exe] DestroyDepthStencilState: state=000000000014FB90
+
+21:04:16.610 [pid=1680 bc250_d3d_umd_test.exe] CreateRasterizerState: state=000000000014FA88 FillMode=3 CullMode=3 Scissor=1
+
+21:04:16.610 [pid=1680 bc250_d3d_umd_test.exe] SetRasterizerState: state=000000000014FA88
+
+21:04:16.610 [pid=1680 bc250_d3d_umd_test.exe] DestroyRasterizerState: state=000000000014FA88
+
+21:04:16.611 [pid=1680 bc250_d3d_umd_test.exe] CreateSampler: sampler=000000000014FB40 Filter=21 AddressU=3
+
+21:04:16.611 [pid=1680 bc250_d3d_umd_test.exe] VsSetSamplers: Offset=0 Count=1
+
+21:04:16.611 [pid=1680 bc250_d3d_umd_test.exe] PsSetSamplers: Offset=1 Count=1
+
+21:04:16.612 [pid=1680 bc250_d3d_umd_test.exe] GsSetSamplers: Offset=2 Count=1
+
+21:04:16.612 [pid=1680 bc250_d3d_umd_test.exe] DestroySampler: sampler=000000000014FB40
+
+21:04:16.612 [pid=1680 bc250_d3d_umd_test.exe] CreateElementLayout: layout=000000000014FAD0 NumElements=2
+
+21:04:16.612 [pid=1680 bc250_d3d_umd_test.exe]   Element[0]: Slot=0 Fmt=2 Offset=0 Class=0
+
+21:04:16.613 [pid=1680 bc250_d3d_umd_test.exe]   Element[1]: Slot=0 Fmt=16 Offset=16 Class=0
+
+21:04:16.613 [pid=1680 bc250_d3d_umd_test.exe] IaSetInputLayout: layout=000000000014FAD0
+
+21:04:16.613 [pid=1680 bc250_d3d_umd_test.exe] DestroyElementLayout: layout=000000000014FAD0
+
+21:04:16.613 [pid=1680 bc250_d3d_umd_test.exe] CreateResource: res=00000000000CBC10 Dim=3 Fmt=28 Size=1048576 (512x512 bpp=4) GpuVa=0x0 Primary=0 VkRes=0
+
+21:04:16.614 [pid=1680 bc250_d3d_umd_test.exe] CreateShaderResourceView: srv=00000000000CBBD0 res=00000000000CBC10 Format=28 Dim=3
+
+21:04:16.615 [pid=1680 bc250_d3d_umd_test.exe] VsSetShaderResources: Offset=0 Count=1
+
+21:04:16.615 [pid=1680 bc250_d3d_umd_test.exe] PsSetShaderResources: Offset=1 Count=1 srv0=00000000000CBBD0 srv1=0000000000000000
+
+21:04:16.615 [pid=1680 bc250_d3d_umd_test.exe] GsSetShaderResources: Offset=2 Count=1
+
+21:04:16.616 [pid=1680 bc250_d3d_umd_test.exe] DestroyShaderResourceView: srv=00000000000CBBD0
+
+21:04:16.616 [pid=1680 bc250_d3d_umd_test.exe] DestroyResource: res=00000000000CBC10
+
+21:04:16.616 [pid=1680 bc250_d3d_umd_test.exe] CreateQuery: query=00000000000CBFD0 Type=0 Flags=0x00000000
+
+21:04:16.617 [pid=1680 bc250_d3d_umd_test.exe] QueryBegin: query=00000000000CBFD0 Type=0 StartCount=0
+
+21:04:16.617 [pid=1680 bc250_d3d_umd_test.exe] QueryEnd: query=00000000000CBFD0 Type=0 EndCount=0 Data=0
+
+21:04:16.617 [pid=1680 bc250_d3d_umd_test.exe] QueryGetData: query=00000000000CBFD0 Type=0 DataSize=4
+
+21:04:16.617 [pid=1680 bc250_d3d_umd_test.exe] SetPredication: query=00000000000CBFD0 PredicateValue=1
+
+21:04:16.618 [pid=1680 bc250_d3d_umd_test.exe] DestroyQuery: query=00000000000CBFD0
+
+21:04:16.618 [pid=1680 bc250_d3d_umd_test.exe] CreateQuery: query=00000000000CBFD0 Type=1 Flags=0x00000000
+
+21:04:16.618 [pid=1680 bc250_d3d_umd_test.exe] QueryBegin: query=00000000000CBFD0 Type=1 StartCount=5
+
+21:04:16.618 [pid=1680 bc250_d3d_umd_test.exe] QueryEnd: query=00000000000CBFD0 Type=1 EndCount=12 Data=7
+
+21:04:16.619 [pid=1680 bc250_d3d_umd_test.exe] QueryGetData: query=00000000000CBFD0 Type=1 DataSize=8
+
+21:04:16.619 [pid=1680 bc250_d3d_umd_test.exe] DestroyQuery: query=00000000000CBFD0
+
+21:04:16.619 [pid=1680 bc250_d3d_umd_test.exe] CreateQuery: query=00000000000CBFD0 Type=2 Flags=0x00000000
+
+21:04:16.619 [pid=1680 bc250_d3d_umd_test.exe] QueryEnd: query=00000000000CBFD0 Type=2 EndCount=42 Data=42
+
+21:04:16.620 [pid=1680 bc250_d3d_umd_test.exe] QueryGetData: query=00000000000CBFD0 Type=2 DataSize=8
+
+21:04:16.620 [pid=1680 bc250_d3d_umd_test.exe] DestroyQuery: query=00000000000CBFD0
+
+21:04:16.620 [pid=1680 bc250_d3d_umd_test.exe] CreateQuery: query=00000000000CBFD0 Type=3 Flags=0x00000000
+
+21:04:16.620 [pid=1680 bc250_d3d_umd_test.exe] QueryEnd: query=00000000000CBFD0 Type=3 EndCount=42 Data=42
+
+21:04:16.621 [pid=1680 bc250_d3d_umd_test.exe] QueryGetData: query=00000000000CBFD0 Type=3 DataSize=16
+
+21:04:16.621 [pid=1680 bc250_d3d_umd_test.exe] DestroyQuery: query=00000000000CBFD0
+
+21:04:16.621 [pid=1680 bc250_d3d_umd_test.exe] CreateQuery: query=00000000000CBFD0 Type=4 Flags=0x00000000
+
+21:04:16.621 [pid=1680 bc250_d3d_umd_test.exe] QueryEnd: query=00000000000CBFD0 Type=4 EndCount=10 Data=10
+
+21:04:16.622 [pid=1680 bc250_d3d_umd_test.exe] QueryGetData: query=00000000000CBFD0 Type=4 DataSize=64
+
+21:04:16.622 [pid=1680 bc250_d3d_umd_test.exe] DestroyQuery: query=00000000000CBFD0
+
+21:04:16.622 [pid=1680 bc250_d3d_umd_test.exe] SoSetTargets: NumBuffers=1 ClearTargets=0
+
+21:04:16.623 [pid=1680 bc250_d3d_umd_test.exe] SoSetTargets: NumBuffers=0 ClearTargets=1
+
+21:04:16.623 [pid=1680 bc250_d3d_umd_test.exe] GenMips: srv=0000000000000000
+
+21:04:16.623 [pid=1680 bc250_d3d_umd_test.exe] ResourceCopyRegion: dst=00000000000CBF60 src=00000000000CBF60 DstX=0 DstY=0
+
+21:04:16.623 [pid=1680 bc250_d3d_umd_test.exe] ResourceResolveSubresource: dst=00000000000CBF60 src=00000000000CBF60
+
+21:04:16.624 [pid=1680 bc250_d3d_umd_test.exe] CheckCounterInfo: reported 0 hw counters
+
+21:04:16.624 [pid=1680 bc250_d3d_umd_test.exe] CheckCounter: Query=0
+
+21:04:16.624 [pid=1680 bc250_d3d_umd_test.exe] SetTextFilterSize: Width=4 Height=8
+
+21:04:16.624 [pid=1680 bc250_d3d_umd_test.exe] NODE1_PROOF_BUILD: Dst=0x500000 Values=5 Fence=0x600000/BC250F01 Dwords=17 -- OFFLINE
+
+21:04:16.625 [pid=1680 bc250_d3d_umd_test.exe] DXGI Blt: dst=00000000000CBCB0 (sub=0) src=00000000000CBBC0 (sub=0) rect=[0,0-4,4] flags=0x00000000 rotate=0
+
+21:04:16.625 [pid=1680 bc250_d3d_umd_test.exe] BltViaKmd ENTER RECT 1:1: 4x4 srcPitch=16 dstPitch=16 DstXY=0,0 SrcVa=0x100000 DstVa=0x200000 Opcode=0xBC250002 sizeof=56 hAdapter=000000000000A00A hDevice=000000000000D00D hContext=0000000000000000 Flags=0x00000001
+
+21:04:16.625 [pid=1680 bc250_d3d_umd_test.exe] BltViaKmd LEAVE: hr=0x00000000 ResultCode=0x00000000 (hr!=0 significa que o dxgkrnl ou o KMD recusaram; compare com [Bc250Escape] no log do KMD)
+
+21:04:16.625 [pid=1680 bc250_d3d_umd_test.exe] DXGI Blt: dst=00000000000CBCB0 (sub=0) src=00000000000CBBC0 (sub=0) rect=[0,0-4,4] flags=0x00000000 rotate=0
+
+21:04:16.626 [pid=1680 bc250_d3d_umd_test.exe] BltViaKmd ENTER RECT 1:1: 4x4 srcPitch=16 dstPitch=16 DstXY=0,0 SrcVa=0x100000 DstVa=0x200000 Opcode=0xBC250002 sizeof=56 hAdapter=000000000000A00A hDevice=000000000000D00D hContext=0000000000000000 Flags=0x00000001
+
+21:04:16.626 [pid=1680 bc250_d3d_umd_test.exe] BltViaKmd LEAVE: hr=0x00000000 ResultCode=0xC000000D (hr!=0 significa que o dxgkrnl ou o KMD recusaram; compare com [Bc250Escape] no log do KMD)
+
+21:04:16.626 [pid=1680 bc250_d3d_umd_test.exe] DXGI Blt: dst=00000000000CBCB0 (sub=0) src=00000000000CBBC0 (sub=0) rect=[0,0-4,4] flags=0x00000000 rotate=0
+
+21:04:16.626 [pid=1680 bc250_d3d_umd_test.exe] BltViaKmd ENTER RECT 1:1: 4x4 srcPitch=16 dstPitch=16 DstXY=0,0 SrcVa=0x100000 DstVa=0x200000 Opcode=0xBC250002 sizeof=56 hAdapter=000000000000A00A hDevice=000000000000D00D hContext=0000000000000000 Flags=0x00000001
+
+21:04:16.627 [pid=1680 bc250_d3d_umd_test.exe] BltViaKmd LEAVE: hr=0x80004005 ResultCode=0x00000000 (hr!=0 significa que o dxgkrnl ou o KMD recusaram; compare com [Bc250Escape] no log do KMD)
+
+21:04:16.627 [pid=1680 bc250_d3d_umd_test.exe] DXGI Blt: dst=00000000000CBCB0 (sub=0) src=00000000000CBBC0 (sub=0) rect=[0,0-4,4] flags=0x00000000 rotate=0
+
+21:04:16.627 [pid=1680 bc250_d3d_umd_test.exe] BltViaKmd ENTER RECT 1:1: 4x4 srcPitch=16 dstPitch=20 DstXY=0,0 SrcVa=0x100000 DstVa=0x200000 Opcode=0xBC250002 sizeof=56 hAdapter=000000000000A00A hDevice=000000000000D00D hContext=0000000000000000 Flags=0x00000001
+
+21:04:16.627 [pid=1680 bc250_d3d_umd_test.exe] BltViaKmd LEAVE: hr=0x00000000 ResultCode=0x00000000 (hr!=0 significa que o dxgkrnl ou o KMD recusaram; compare com [Bc250Escape] no log do KMD)
+
+21:04:16.628 [pid=1680 bc250_d3d_umd_test.exe] DXGI Blt: dst=00000000000CBCB0 (sub=0) src=00000000000CBBC0 (sub=0) rect=[1,1-3,3] flags=0x00000000 rotate=0
+
+21:04:16.628 [pid=1680 bc250_d3d_umd_test.exe] BltViaKmd ENTER RECT 1:1: 2x2 srcPitch=16 dstPitch=16 DstXY=1,1 SrcVa=0x100000 DstVa=0x200000 Opcode=0xBC250002 sizeof=56 hAdapter=000000000000A00A hDevice=000000000000D00D hContext=0000000000000000 Flags=0x00000001
+
+21:04:16.628 [pid=1680 bc250_d3d_umd_test.exe] BltViaKmd LEAVE: hr=0x00000000 ResultCode=0x00000000 (hr!=0 significa que o dxgkrnl ou o KMD recusaram; compare com [Bc250Escape] no log do KMD)
+
+21:04:16.628 [pid=1680 bc250_d3d_umd_test.exe] DXGI Blt: dst=00000000000CBCB0 (sub=0) src=00000000000CBBC0 (sub=0) rect=[0,0-4,4] flags=0x00000000 rotate=0
+
+21:04:16.629 [pid=1680 bc250_d3d_umd_test.exe] BltViaKmd RECUSADO: contrato de escape incompleto (wsInit=1 adapter=00000000000CC270 hAdapter=000000000000A00A hDevice=000000000000D00D callbacks=00000000000CC060 hasEscape=0)
+
+21:04:16.629 [pid=1680 bc250_d3d_umd_test.exe] DXGI Blt: dst=00000000000CBCB0 (sub=0) src=00000000000CBBC0 (sub=0) rect=[0,0-4,4] flags=0x00000000 rotate=0
+
+21:04:16.629 [pid=1680 bc250_d3d_umd_test.exe] BltGpu REPROVOU (NOTIMPL): dim=3/3 samples=1/1 mips=1/1 arr=1/1 misc=0x0/0x80000000 fmt=28/28 rot=0
+
+21:04:16.629 [pid=1680 bc250_d3d_umd_test.exe] DXGI Blt: dst=00000000000CBCB0 (sub=0) src=00000000000CBBC0 (sub=0) rect=[0,0-4,4] flags=0x00000000 rotate=0
+
+21:04:16.630 [pid=1680 bc250_d3d_umd_test.exe] BltGpu REPROVOU (INVALIDARG alloc/pitch): sPitch=16 dPitch=16 sAlloc=1 dAlloc=1 sRes=0 dRes=1 sVA=0x100000 dVA=0x200000
+
+21:04:16.630 [pid=1680 bc250_d3d_umd_test.exe] DXGI Blt: dst=00000000000CBCB0 (sub=0) src=00000000000CBBC0 (sub=0) rect=[0,0-4,4] flags=0x00000000 rotate=0
+
+21:04:16.630 [pid=1680 bc250_d3d_umd_test.exe] BltViaKmd RECUSADO: contrato de escape incompleto (wsInit=1 adapter=00000000000CC270 hAdapter=0000000000000000 hDevice=000000000000D00D callbacks=00000000000CBE50 hasEscape=1)
+
+21:04:16.630 [pid=1680 bc250_d3d_umd_test.exe] DXGI Blt: dst=00000000000CBCB0 (sub=0) src=00000000000CBBC0 (sub=0) rect=[0,0-4,4] flags=0x00000000 rotate=0
+
+21:04:16.631 [pid=1680 bc250_d3d_umd_test.exe] BltViaKmd RECUSADO: contrato de escape incompleto (wsInit=1 adapter=0000000000000000 hAdapter=0000000000000000 hDevice=000000000000D00D callbacks=00000000000CBE50 hasEscape=1)
+
+21:04:16.631 [pid=1680 bc250_d3d_umd_test.exe] DXGI Blt: dst=00000000000CBCB0 (sub=0) src=00000000000CBBC0 (sub=0) rect=[0,0-4,4] flags=0x00000000 rotate=1
+
+21:04:16.631 [pid=1680 bc250_d3d_umd_test.exe] BltViaKmd ENTER RECT 1:1: 4x4 srcPitch=16 dstPitch=16 DstXY=0,0 SrcVa=0x100000 DstVa=0x200000 Opcode=0xBC250002 sizeof=56 hAdapter=000000000000A00A hDevice=000000000000D00D hContext=0000000000000000 Flags=0x00000001
+
+21:04:16.631 [pid=1680 bc250_d3d_umd_test.exe] BltViaKmd LEAVE: hr=0x00000000 ResultCode=0x00000000 (hr!=0 significa que o dxgkrnl ou o KMD recusaram; compare com [Bc250Escape] no log do KMD)
+
+================ BC250 D3D UMD CONTRACT TEST ================
+[TEST] Testing F5.0 Primary Derivation (dwm.exe vs Explorer.EXE)...
+  -> F5.0 Primary Derivation PASS
+[TEST] P7_D3D11_CAPS_PROBE: tabela de decisao...
+  -> tabela de decisao do probe PASS
+[TEST] B7_NODE1_TRIPOD: autorizacao por processo/token...
+  -> registro + executavel exato + token 128-bit PASS
+[TEST] P7_D3D11_CAPS_PROBE: allowlist de interface...
+  -> allowlist de interface PASS
+[TEST] P7_D3D11_CAPS_PROBE v4: allowlist por entry point...
+  -> allowlist por entry point PASS
+[TEST] P7_D3D11_CAPS_PROBE v4: honestidade do caps zerado...
+  -> honestidade do caps zerado PASS
+[TEST] P7_D3D11_CAPS_PROBE: decodificacao dos caps...
+  -> decodificacao dos caps PASS
+[TEST] Testing fail-closed OpenAdapter10_2...
+  -> OpenAdapter10_2 FAIL-CLOSED PASS
+[TEST] Testing fail-closed OpenAdapter10...
+  -> OpenAdapter10 FAIL-CLOSED PASS
+[TEST] Testing fail-closed OpenAdapter11...
+  -> OpenAdapter11 FAIL-CLOSED PASS
+[TEST] Testing fail-closed OpenAdapter12...
+  -> OpenAdapter12 FAIL-CLOSED PASS
+[TEST] Testing BC250_UMD_ADAPTER structure and private blob caching...
+  -> BC250_UMD_ADAPTER structure and blob PASS
+[TEST] Testing BC250_UMD_DEVICE foundation and winsys wiring...
+  -> BC250_UMD_DEVICE foundation and winsys wiring PASS
+[TEST] Testing Bc250Umd10CreateDevice fail-closed gate...
+  -> AVISO: D3D11LabPromotion=1 nesta maquina; gate de CreateDevice avaliado por coerencia (hr=0x80004005)
+  -> Bc250Umd10CreateDevice fail-closed gate PASS
+[TEST] Testing Bc250Umd10GetSupportedVersions D3D10/D3D11 negotiation...
+  -> Bc250Umd10GetSupportedVersions returns 4 versions (D3D10.0, D3D10.1, D3D11_0_7, D3D11.0) PASS
+[TEST] Testing D3D10.1, D3D11 & DXGI device functions table population...
+  -> D3D10.1, D3D11 & DXGI device functions table population PASS
+[TEST] Testing DXGI base DDI implementations...
+  -> DXGI base DDI implementations PASS
+[TEST] Testing D3D11DDICAPS_3DPIPELINESUPPORT...
+  -> D3D11DDICAPS_3DPIPELINESUPPORT PASS
+[TEST] Testing D3D10 Shader DDIs...
+  -> D3D10 Shader DDIs PASS
+[TEST] Testing SPIR-V module ownership per shader...
+  -> SPIR-V fail-closed sem container, coerencia com o ambiente, zero vazamento e zero double-free PASS
+[TEST] Testing D3D10 Resource DDIs...
+  -> D3D10 Resource DDIs PASS
+[TEST] UpdateSubresourceUP row pitch acolchoado...
+  -> copia 590x3, ultima linha, padding e box invalida PASS
+[TEST] VkBufferImageCopy row pitch contract...
+  -> padding, compacto, pitch curto, formato e tamanho invalidos PASS
+[TEST] D3D10 View and Output Merger DDIs...
+  -> D3D10 View and Output Merger DDIs PASS
+[TEST] D3D10 Draw, Input Assembly, and Resource Copy DDIs...
+  -> D3D10 IA/Copy PASS; Draw fail-closed sem backend PM4 PASS
+[TEST] C1 DRAW_BLT_SUBSTITUTION: politica e fail-closed...
+  -> C1 politica 9/9, Draw fail-closed sem memcpy e tokens unicos PASS
+[TEST] F5.2 PM4 3D Draw Emission on Node 1 (Parede B)...
+  -> F5.2 PM4 3D Draw Emission PASS (Fail-Closed Default + Experimental Mode Tested)
+[TEST] D1 Phase: Vulkan Draw/Present backend integrity and InitialDataUP...
+  -> D1 Phase Vulkan/Present & InitialDataUP PASS
+[TEST] Testing D3D10 State Object DDIs (Blend, DS, Rasterizer, Sampler)...
+  -> D3D10 State Object DDIs PASS
+[TEST] Testing Shader Resource View (SRV) and Element Layout DDIs...
+  -> Shader Resource View (SRV) and Element Layout DDIs PASS
+[TEST] Testing D3D10 Query and Predication DDIs...
+  -> D3D10 Query and Predication DDIs PASS
+[TEST] Testing Stream Output, Misc Render & 100% Table Completeness...
+  -> Stream Output, Misc Render & 100% Table Completeness PASS (103/103 functions populated)
+[TEST] Testing Hardware Command Buffer & Packet Builders...
+  -> Packet builders + Node1 proof command assembly PASS (offline)
+SDMA Blt: composicao retangular 1:1 pelo KMD via escape, zero submissao de contexto PASS (offline)
+================ ALL UMD CONTRACT TESTS PASSED ===============
+
+=== EXECUTANDO TESTE DO ADAPTADOR VKD3D-SHADER ===
+VKD3D SHADER ADAPTER: PASS (load, ABI, translate, ownership, fail-closed)
+
+=== EXECUTANDO TESTE DO WINSYS WDDM ===
+21:04:16.656 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] CreatePresentContext ENTER: Node=0
+
+21:04:16.657 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] CreatePresentContext LEAVE: hr=0x00000000 hContext=000000000000C000 Node=0
+
+21:04:16.658 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] Allocate ENTER: Token=0x1234 Size=16384 Align=4096 hRTResource=0000000000000000 Primary=0 VidPnSourceId=0
+
+21:04:16.658 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] Allocate LEAVE: hr=0x00000000 hAlloc=0xa110 hKMResource=0x0
+
+21:04:16.659 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] MapAllocation ENTER: hAlloc=0xa110 Min=0x10000 Max=0x3FFFFFFFF Pages=4 Exec=1
+
+21:04:16.660 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] MapAllocation LEAVE: hr=0x00000000 VA=0x200000 PagingFence=7
+
+21:04:16.660 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] WaitPaging ENTER: TargetFence=7 CurrentFence=0 SyncObj=0x9002
+
+21:04:16.660 [pid=11112 bc250_wddm_winsys_test.exe] BC250_HANG v=1 seq=1 span=1 tid=1624 qpc=102030725486 op=WAIT_PAGING phase=ENTER owner=000000000014F350 a=0x7 b=0x90020000A110 hr=0x00000000
+
+21:04:16.661 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] WaitPaging LEAVE: hr=0x00000000 TargetFence=7 CurrentFence=7
+
+21:04:16.661 [pid=11112 bc250_wddm_winsys_test.exe] BC250_HANG v=1 seq=2 span=1 tid=1624 qpc=102030731039 op=WAIT_PAGING phase=LEAVE owner=000000000014F350 a=0x7 b=0x7 hr=0x00000000
+
+21:04:16.661 [pid=11112 bc250_wddm_winsys_test.exe] [DX70_SAMPLE c=2 n=1] [WDDM_WINSYS] Upload ENTER: hAlloc=0xa110 Bytes=64
+
+21:04:16.661 [pid=11112 bc250_wddm_winsys_test.exe] [DX70_SAMPLE c=3 n=1] [WDDM_WINSYS] Upload LEAVE: hr=0x00000000 Bytes=64
+
+21:04:16.662 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] SubmitGpuVa ENTER: hCtx=0x000000000000C001 Gpuva=0x200000 Bytes=64 Node=1
+
+21:04:16.662 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] SubmitGpuVa LEAVE: hr=0x00000000 Bytes=64
+
+21:04:16.662 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=7 CurrentFence=7
+
+21:04:16.662 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] DestroyPresentContext ENTER: hContext=000000000000C000
+
+21:04:16.663 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] DestroyPresentContext LEAVE: hr=0x00000000
+
+21:04:16.663 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] Allocate ENTER: Token=0x1234 Size=16384 Align=4096 hRTResource=0000000000000000 Primary=0 VidPnSourceId=0
+
+21:04:16.663 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] Allocate LEAVE: hr=0x00000000 hAlloc=0xa110 hKMResource=0x0
+
+21:04:16.664 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] MakeResident ENTER: hAlloc=0xa110 hPagingQueue=0x9001
+
+21:04:16.664 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] MakeResident LEAVE: hr=0x00000000 PagingFence=8
+
+21:04:16.664 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] WaitPaging ENTER: TargetFence=8 CurrentFence=7 SyncObj=0x9002
+
+21:04:16.664 [pid=11112 bc250_wddm_winsys_test.exe] BC250_HANG v=1 seq=3 span=2 tid=1624 qpc=102030765523 op=WAIT_PAGING phase=ENTER owner=000000000014F290 a=0x8 b=0x90020000A110 hr=0x00000000
+
+21:04:16.665 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] WaitPaging LEAVE: hr=0x00000000 TargetFence=8 CurrentFence=8
+
+21:04:16.665 [pid=11112 bc250_wddm_winsys_test.exe] BC250_HANG v=1 seq=4 span=2 tid=1624 qpc=102030770837 op=WAIT_PAGING phase=LEAVE owner=000000000014F290 a=0x8 b=0x8 hr=0x00000000
+
+21:04:16.665 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] Evict ENTER: hAlloc=0xa110
+
+21:04:16.665 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] Evict LEAVE: hr=0x00000000 NumBytesToTrim=0
+
+21:04:16.666 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] MakeResident ENTER: hAlloc=0xa110 hPagingQueue=0x9001
+
+21:04:16.666 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] MakeResident LEAVE: hr=0x00000000 PagingFence=8
+
+21:04:16.666 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=8 CurrentFence=8
+
+21:04:16.666 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] Allocate ENTER: Token=0xA110000100000042 Size=16384 Align=4096 hRTResource=000000000000B1D0 Primary=1 VidPnSourceId=0
+
+21:04:16.667 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] Allocate LEAVE: hr=0x00000000 hAlloc=0xa110 hKMResource=0x4b4d
+
+21:04:16.667 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] Allocate RECUSADO: token PRIMARY sem vinculo de recurso (Token=0xA110000100000043) -- use Bc250WinsysAllocateForResource
+
+21:04:16.667 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] Allocate RECUSADO: primaria sem hRTResource -- o dxgkrnl nao ligaria Flags.Resource e o KMD a trataria como nao-primaria (Token=0xA110000100000043)
+
+21:04:16.668 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] Allocate RECUSADO: divergencia de primariedade (token=1 binding=0 Token=0xA110000100000043) -- duas fontes de verdade
+
+21:04:16.668 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] Allocate ENTER: Token=0x1234 Size=16384 Align=4096 hRTResource=0000000000000000 Primary=0 VidPnSourceId=0
+
+21:04:16.668 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] Allocate LEAVE: hr=0x00000000 hAlloc=0xa110 hKMResource=0x0
+
+21:04:16.669 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] CreateMonitoredFence ENTER: InitialValue=100
+
+21:04:16.669 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] CreateMonitoredFence LEAVE: hr=0x00000000 hSync=0x5001 CpuVa=00007FF7EE511258 GpuVa=0x300000
+
+21:04:16.669 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] SignalFenceFromCpu ENTER: hSync=0x5001 Value=105
+
+21:04:16.669 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] SignalFenceFromCpu LEAVE: hr=0x00000000
+
+21:04:16.670 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] WaitForFenceFromCpu SKIP (already reached): TargetFence=105 CurrentFence=105
+
+21:04:16.670 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] WaitForFenceFromCpu ENTER: TargetFence=110 CurrentFence=105 SyncObj=0x5001
+
+21:04:16.670 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] WaitForFenceFromCpu LEAVE: hr=0x00000000 TargetFence=110 CurrentFence=110
+
+21:04:16.670 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] DestroyMonitoredFence ENTER: hSync=0x5001
+
+21:04:16.671 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] DestroyMonitoredFence LEAVE: hr=0x00000000
+
+21:04:16.671 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] Allocate ENTER: Token=0x1234 Size=16384 Align=4096 hRTResource=0000000000000000 Primary=0 VidPnSourceId=0
+
+21:04:16.671 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] Allocate LEAVE: hr=0x00000000 hAlloc=0xa110 hKMResource=0x0
+
+21:04:16.671 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] MapAllocation ENTER: hAlloc=0xa110 Min=0x10000 Max=0x3FFFFFFFF Pages=4 Exec=1
+
+21:04:16.672 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] MapAllocation LEAVE: hr=0x8000000A VA=0x200000 PagingFence=7
+
+21:04:16.672 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] WaitPaging ENTER: TargetFence=7 CurrentFence=0 SyncObj=0x9002
+
+21:04:16.672 [pid=11112 bc250_wddm_winsys_test.exe] BC250_HANG v=1 seq=5 span=3 tid=1624 qpc=102030845105 op=WAIT_PAGING phase=ENTER owner=000000000014F400 a=0x7 b=0x90020000A110 hr=0x00000000
+
+21:04:16.673 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] WaitPaging LEAVE: hr=0x00000000 TargetFence=7 CurrentFence=7
+
+21:04:16.673 [pid=11112 bc250_wddm_winsys_test.exe] BC250_HANG v=1 seq=6 span=3 tid=1624 qpc=102030850430 op=WAIT_PAGING phase=LEAVE owner=000000000014F400 a=0x7 b=0x7 hr=0x00000000
+
+21:04:16.673 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] MakeResident ENTER: hAlloc=0xa110 hPagingQueue=0x9001
+
+21:04:16.673 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] MakeResident LEAVE: hr=0x8000000A PagingFence=8
+
+21:04:16.674 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] WaitPaging ENTER: TargetFence=8 CurrentFence=7 SyncObj=0x9002
+
+21:04:16.674 [pid=11112 bc250_wddm_winsys_test.exe] BC250_HANG v=1 seq=7 span=4 tid=1624 qpc=102030861031 op=WAIT_PAGING phase=ENTER owner=000000000014F400 a=0x8 b=0x90020000A110 hr=0x00000000
+
+21:04:16.674 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] WaitPaging LEAVE: hr=0x80004005 TargetFence=8 CurrentFence=7
+
+21:04:16.675 [pid=11112 bc250_wddm_winsys_test.exe] BC250_HANG v=1 seq=8 span=4 tid=1624 qpc=102030868337 op=WAIT_PAGING phase=LEAVE owner=000000000014F400 a=0x8 b=0x7 hr=0x80004005
+
+21:04:16.675 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] WaitPaging ENTER: TargetFence=8 CurrentFence=7 SyncObj=0x9002
+
+21:04:16.675 [pid=11112 bc250_wddm_winsys_test.exe] BC250_HANG v=1 seq=9 span=5 tid=1624 qpc=102030873704 op=WAIT_PAGING phase=ENTER owner=000000000014F400 a=0x8 b=0x90020000A110 hr=0x00000000
+
+21:04:16.675 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] WaitPaging LEAVE: hr=0x00000000 TargetFence=8 CurrentFence=8
+
+21:04:16.676 [pid=11112 bc250_wddm_winsys_test.exe] BC250_HANG v=1 seq=10 span=5 tid=1624 qpc=102030879112 op=WAIT_PAGING phase=LEAVE owner=000000000014F400 a=0x8 b=0x8 hr=0x00000000
+
+21:04:16.676 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=8 CurrentFence=8
+
+21:04:16.676 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] CreateMonitoredFence ENTER: InitialValue=0
+
+21:04:16.676 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] CreateMonitoredFence LEAVE: hr=0x00000000 hSync=0x5001 CpuVa=00007FF7EE511258 GpuVa=0x300000
+
+21:04:16.677 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] SignalMonitoredFenceFromGpu ENTER: hCtx=0xc000 hSync=0x5001 Value=42
+
+21:04:16.677 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] SignalMonitoredFenceFromGpu LEAVE: hr=0x00000000
+
+21:04:16.677 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] SignalMonitoredFenceFromGpu ENTER: hCtx=0xc000 hSync=0x5001 Value=43
+
+21:04:16.677 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] SignalMonitoredFenceFromGpu LEAVE: hr=0x80004005
+
+21:04:16.678 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] DestroyMonitoredFence ENTER: hSync=0x5001
+
+21:04:16.678 [pid=11112 bc250_wddm_winsys_test.exe] [WDDM_WINSYS] DestroyMonitoredFence LEAVE: hr=0x00000000
+
+=== BC250 WDDM WINSYS CONTRACT TEST ===
+WDDM WINSYS CONTRACT: PASS (callbacks offline; hardware not touched)
+
+=== EXECUTANDO TESTE DE SUBMISSAO NODE 1 DA UMD ===
+21:04:16.693 [pid=5112 umd_node1_submit_contract_test.exe] === bc250umd.dll CARREGADA ===
+
+21:04:16.695 [pid=5112 umd_node1_submit_contract_test.exe] [WDDM_WINSYS] Allocate ENTER: Token=0x434D440013F80001 Size=4096 Align=4096 hRTResource=0000000000000000 Primary=0 VidPnSourceId=0
+
+21:04:16.695 [pid=5112 umd_node1_submit_contract_test.exe] [WDDM_WINSYS] Allocate LEAVE: hr=0x00000000 hAlloc=0xa200 hKMResource=0x0
+
+21:04:16.696 [pid=5112 umd_node1_submit_contract_test.exe] [WDDM_WINSYS] MapAllocation ENTER: hAlloc=0xa200 Min=0x10000 Max=0x3FFFFFFFF Pages=1 Exec=1
+
+21:04:16.696 [pid=5112 umd_node1_submit_contract_test.exe] [WDDM_WINSYS] MapAllocation LEAVE: hr=0x00000000 VA=0x220000 PagingFence=7
+
+21:04:16.698 [pid=5112 umd_node1_submit_contract_test.exe] [WDDM_WINSYS] MakeResident ENTER: hAlloc=0xa200 hPagingQueue=0x9001
+
+21:04:16.698 [pid=5112 umd_node1_submit_contract_test.exe] [WDDM_WINSYS] MakeResident LEAVE: hr=0x00000000 PagingFence=8
+
+21:04:16.698 [pid=5112 umd_node1_submit_contract_test.exe] [WDDM_WINSYS] WaitPaging ENTER: TargetFence=8 CurrentFence=0 SyncObj=0x9002
+
+21:04:16.699 [pid=5112 umd_node1_submit_contract_test.exe] [WDDM_WINSYS] WaitPaging LEAVE: hr=0x00000000 TargetFence=8 CurrentFence=8
+
+21:04:16.699 [pid=5112 umd_node1_submit_contract_test.exe] CommandBufferInit: GpuVA=0x220000 Capacity=1024 dwords
+
+21:04:16.699 [pid=5112 umd_node1_submit_contract_test.exe] [WDDM_WINSYS] CreatePresentContext ENTER: Node=0
+
+21:04:16.700 [pid=5112 umd_node1_submit_contract_test.exe] [WDDM_WINSYS] CreatePresentContext LEAVE: hr=0x00000000 hContext=000000000000C000 Node=0
+
+21:04:16.700 [pid=5112 umd_node1_submit_contract_test.exe] PRESENT_CONTEXT: Node=0 hContext=000000000000C000 (contexto de trabalho segue no Node 1) -- NAO VALIDADO EM HARDWARE
+
+21:04:16.700 [pid=5112 umd_node1_submit_contract_test.exe] NODE1_SUBMISSION_READY: Context=000000000000C001 GpuVA=0x220000 -- NAO VALIDADO EM HARDWARE
+
+21:04:16.700 [pid=5112 umd_node1_submit_contract_test.exe] NODE1_PROOF_BUILD: Dst=0x500000 Values=5 Fence=0x600000/BC250F01 Dwords=17 -- OFFLINE
+
+21:04:16.701 [pid=5112 umd_node1_submit_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=8 CurrentFence=8
+
+21:04:16.701 [pid=5112 umd_node1_submit_contract_test.exe] [DX70_SAMPLE c=2 n=1] [WDDM_WINSYS] Upload ENTER: hAlloc=0xa200 Bytes=68
+
+21:04:16.701 [pid=5112 umd_node1_submit_contract_test.exe] [DX70_SAMPLE c=3 n=1] [WDDM_WINSYS] Upload LEAVE: hr=0x00000000 Bytes=68
+
+21:04:16.702 [pid=5112 umd_node1_submit_contract_test.exe] [WDDM_WINSYS] SubmitGpuVa ENTER: hCtx=0x000000000000C001 Gpuva=0x220000 Bytes=68 Node=1
+
+21:04:16.702 [pid=5112 umd_node1_submit_contract_test.exe] [WDDM_WINSYS] SubmitGpuVa LEAVE: hr=0x00000000 Bytes=68
+
+21:04:16.702 [pid=5112 umd_node1_submit_contract_test.exe] CommandBufferFlush: Node=1 bytes=68 status=OK
+
+21:04:16.702 [pid=5112 umd_node1_submit_contract_test.exe] Bc250UmdDeviceTeardown: device=00000000000CC450 iniciando teardown seguro
+
+21:04:16.703 [pid=5112 umd_node1_submit_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=8 CurrentFence=8
+
+21:04:16.703 [pid=5112 umd_node1_submit_contract_test.exe] CommandBufferTeardown: concluido
+
+21:04:16.703 [pid=5112 umd_node1_submit_contract_test.exe] [WDDM_WINSYS] DestroyPresentContext ENTER: hContext=000000000000C000
+
+21:04:16.703 [pid=5112 umd_node1_submit_contract_test.exe] [WDDM_WINSYS] DestroyPresentContext LEAVE: hr=0x00000000
+
+21:04:16.704 [pid=5112 umd_node1_submit_contract_test.exe] Bc250UmdDeviceTeardown: device=00000000000CC450 concluido
+
+UMD NODE1 SUBMIT CONTRACT: PASS (17 DWORDs uploaded and routed; offline)
+HARDWARE VERDICT: NAO VALIDADO EM HARDWARE
+
+=== EXECUTANDO TESTE DO TRIPE NODE 1 DA UMD ===
+21:04:16.719 [pid=2184 umd_node1_tripod_contract_test.exe] === bc250umd.dll CARREGADA ===
+
+21:04:16.720 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Allocate ENTER: Token=0x434D440008880001 Size=4096 Align=4096 hRTResource=0000000000000000 Primary=0 VidPnSourceId=0
+
+21:04:16.720 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Allocate LEAVE: hr=0x00000000 hAlloc=0xa200 hKMResource=0x0
+
+21:04:16.720 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MapAllocation ENTER: hAlloc=0xa200 Min=0x10000 Max=0x3FFFFFFFF Pages=1 Exec=1
+
+21:04:16.721 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MapAllocation LEAVE: hr=0x00000000 VA=0x220000 PagingFence=1
+
+21:04:16.721 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MakeResident ENTER: hAlloc=0xa200 hPagingQueue=0x9001
+
+21:04:16.722 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MakeResident LEAVE: hr=0x00000000 PagingFence=2
+
+21:04:16.722 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=2 CurrentFence=2
+
+21:04:16.722 [pid=2184 umd_node1_tripod_contract_test.exe] CommandBufferInit: GpuVA=0x220000 Capacity=1024 dwords
+
+21:04:16.723 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] CreatePresentContext ENTER: Node=0
+
+21:04:16.723 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] CreatePresentContext LEAVE: hr=0x00000000 hContext=000000000000C000 Node=0
+
+21:04:16.723 [pid=2184 umd_node1_tripod_contract_test.exe] PRESENT_CONTEXT: Node=0 hContext=000000000000C000 (contexto de trabalho segue no Node 1) -- NAO VALIDADO EM HARDWARE
+
+21:04:16.723 [pid=2184 umd_node1_tripod_contract_test.exe] NODE1_SUBMISSION_READY: Context=000000000000C001 GpuVA=0x220000 -- NAO VALIDADO EM HARDWARE
+
+21:04:16.724 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Allocate ENTER: Token=0x5052460008880001 Size=4096 Align=4096 hRTResource=0000000000000000 Primary=0 VidPnSourceId=0
+
+21:04:16.724 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Allocate LEAVE: hr=0x00000000 hAlloc=0xa201 hKMResource=0x0
+
+21:04:16.724 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MapAllocation ENTER: hAlloc=0xa201 Min=0x10000 Max=0x3FFFFFFFF Pages=1 Exec=0
+
+21:04:16.724 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MapAllocation LEAVE: hr=0x00000000 VA=0x500000 PagingFence=3
+
+21:04:16.725 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MakeResident ENTER: hAlloc=0xa201 hPagingQueue=0x9001
+
+21:04:16.725 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MakeResident LEAVE: hr=0x00000000 PagingFence=4
+
+21:04:16.725 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=4 CurrentFence=4
+
+21:04:16.726 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=4 CurrentFence=4
+
+21:04:16.726 [pid=2184 umd_node1_tripod_contract_test.exe] [DX70_SAMPLE c=2 n=1] [WDDM_WINSYS] Upload ENTER: hAlloc=0xa201 Bytes=20
+
+21:04:16.726 [pid=2184 umd_node1_tripod_contract_test.exe] [DX70_SAMPLE c=3 n=1] [WDDM_WINSYS] Upload LEAVE: hr=0x00000000 Bytes=20
+
+21:04:16.726 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Read ENTER: hAlloc=0xa201 Bytes=20
+
+21:04:16.726 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Read LEAVE: hr=0x00000000 Bytes=20
+
+21:04:16.727 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] CreateMonitoredFence ENTER: InitialValue=1138425854
+
+21:04:16.727 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] CreateMonitoredFence LEAVE: hr=0x00000000 hSync=0x5001 CpuVa=00007FF7214361E0 GpuVa=0x600000
+
+21:04:16.728 [pid=2184 umd_node1_tripod_contract_test.exe] NODE1_PROOF_BUILD: Dst=0x500000 Values=5 Fence=0x600000/BC250F01 Dwords=17 -- OFFLINE
+
+21:04:16.728 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=2 CurrentFence=4
+
+21:04:16.728 [pid=2184 umd_node1_tripod_contract_test.exe] [DX70_SAMPLE c=2 n=2] [WDDM_WINSYS] Upload ENTER: hAlloc=0xa200 Bytes=68
+
+21:04:16.728 [pid=2184 umd_node1_tripod_contract_test.exe] [DX70_SAMPLE c=3 n=2] [WDDM_WINSYS] Upload LEAVE: hr=0x00000000 Bytes=68
+
+21:04:16.729 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] SubmitGpuVa ENTER: hCtx=0x000000000000C001 Gpuva=0x220000 Bytes=68 Node=1
+
+21:04:16.729 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] SubmitGpuVa LEAVE: hr=0x00000000 Bytes=68
+
+21:04:16.729 [pid=2184 umd_node1_tripod_contract_test.exe] CommandBufferFlush: Node=1 bytes=68 status=OK
+
+21:04:16.729 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitForFenceFromCpu SKIP (already reached): TargetFence=3156545281 CurrentFence=3156545281
+
+21:04:16.730 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Read ENTER: hAlloc=0xa201 Bytes=20
+
+21:04:16.730 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Read LEAVE: hr=0x00000000 Bytes=20
+
+21:04:16.730 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] DestroyMonitoredFence ENTER: hSync=0x5001
+
+21:04:16.731 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] DestroyMonitoredFence LEAVE: hr=0x00000000
+
+21:04:16.731 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=4 CurrentFence=4
+
+21:04:16.731 [pid=2184 umd_node1_tripod_contract_test.exe] NODE1_TRIPOD: contrato completo por callbacks; prova fisica ainda exige RPTR/WPTR e evidencia arquivada -- NAO VALIDADO EM HARDWARE
+
+21:04:16.732 [pid=2184 umd_node1_tripod_contract_test.exe] Bc250UmdDeviceTeardown: device=00000000000CC430 iniciando teardown seguro
+
+21:04:16.732 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=2 CurrentFence=4
+
+21:04:16.732 [pid=2184 umd_node1_tripod_contract_test.exe] CommandBufferTeardown: concluido
+
+21:04:16.732 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] DestroyPresentContext ENTER: hContext=000000000000C000
+
+21:04:16.733 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] DestroyPresentContext LEAVE: hr=0x00000000
+
+21:04:16.733 [pid=2184 umd_node1_tripod_contract_test.exe] Bc250UmdDeviceTeardown: device=00000000000CC430 concluido
+
+21:04:16.733 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Allocate ENTER: Token=0x434D440008880002 Size=4096 Align=4096 hRTResource=0000000000000000 Primary=0 VidPnSourceId=0
+
+21:04:16.734 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Allocate LEAVE: hr=0x00000000 hAlloc=0xa200 hKMResource=0x0
+
+21:04:16.734 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MapAllocation ENTER: hAlloc=0xa200 Min=0x10000 Max=0x3FFFFFFFF Pages=1 Exec=1
+
+21:04:16.734 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MapAllocation LEAVE: hr=0x00000000 VA=0x220000 PagingFence=1
+
+21:04:16.734 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MakeResident ENTER: hAlloc=0xa200 hPagingQueue=0x9001
+
+21:04:16.735 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MakeResident LEAVE: hr=0x00000000 PagingFence=2
+
+21:04:16.735 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=2 CurrentFence=2
+
+21:04:16.735 [pid=2184 umd_node1_tripod_contract_test.exe] CommandBufferInit: GpuVA=0x220000 Capacity=1024 dwords
+
+21:04:16.735 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] CreatePresentContext ENTER: Node=0
+
+21:04:16.736 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] CreatePresentContext LEAVE: hr=0x00000000 hContext=000000000000C000 Node=0
+
+21:04:16.736 [pid=2184 umd_node1_tripod_contract_test.exe] PRESENT_CONTEXT: Node=0 hContext=000000000000C000 (contexto de trabalho segue no Node 1) -- NAO VALIDADO EM HARDWARE
+
+21:04:16.736 [pid=2184 umd_node1_tripod_contract_test.exe] NODE1_SUBMISSION_READY: Context=000000000000C001 GpuVA=0x220000 -- NAO VALIDADO EM HARDWARE
+
+21:04:16.736 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Allocate ENTER: Token=0x5052460008880002 Size=4096 Align=4096 hRTResource=0000000000000000 Primary=0 VidPnSourceId=0
+
+21:04:16.737 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Allocate LEAVE: hr=0x00000000 hAlloc=0xa201 hKMResource=0x0
+
+21:04:16.737 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MapAllocation ENTER: hAlloc=0xa201 Min=0x10000 Max=0x3FFFFFFFF Pages=1 Exec=0
+
+21:04:16.737 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MapAllocation LEAVE: hr=0x00000000 VA=0x500000 PagingFence=3
+
+21:04:16.738 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MakeResident ENTER: hAlloc=0xa201 hPagingQueue=0x9001
+
+21:04:16.738 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MakeResident LEAVE: hr=0x00000000 PagingFence=4
+
+21:04:16.738 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=4 CurrentFence=4
+
+21:04:16.739 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=4 CurrentFence=4
+
+21:04:16.739 [pid=2184 umd_node1_tripod_contract_test.exe] [DX70_SAMPLE c=2 n=3] [WDDM_WINSYS] Upload ENTER: hAlloc=0xa201 Bytes=20
+
+21:04:16.739 [pid=2184 umd_node1_tripod_contract_test.exe] [DX70_SAMPLE c=3 n=3] [WDDM_WINSYS] Upload LEAVE: hr=0x00000000 Bytes=20
+
+21:04:16.739 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Read ENTER: hAlloc=0xa201 Bytes=20
+
+21:04:16.740 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Read LEAVE: hr=0x00000000 Bytes=20
+
+21:04:16.740 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] CreateMonitoredFence ENTER: InitialValue=1138425854
+
+21:04:16.740 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] CreateMonitoredFence LEAVE: hr=0x00000000 hSync=0x5001 CpuVa=00007FF7214361E0 GpuVa=0x600000
+
+21:04:16.740 [pid=2184 umd_node1_tripod_contract_test.exe] NODE1_PROOF_BUILD: Dst=0x500000 Values=5 Fence=0x600000/BC250F01 Dwords=17 -- OFFLINE
+
+21:04:16.741 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=2 CurrentFence=4
+
+21:04:16.741 [pid=2184 umd_node1_tripod_contract_test.exe] [DX70_SAMPLE c=2 n=4] [WDDM_WINSYS] Upload ENTER: hAlloc=0xa200 Bytes=68
+
+21:04:16.741 [pid=2184 umd_node1_tripod_contract_test.exe] [DX70_SAMPLE c=3 n=4] [WDDM_WINSYS] Upload LEAVE: hr=0x00000000 Bytes=68
+
+21:04:16.741 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] SubmitGpuVa ENTER: hCtx=0x000000000000C001 Gpuva=0x220000 Bytes=68 Node=1
+
+21:04:16.742 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] SubmitGpuVa LEAVE: hr=0x00000000 Bytes=68
+
+21:04:16.742 [pid=2184 umd_node1_tripod_contract_test.exe] CommandBufferFlush: Node=1 bytes=68 status=OK
+
+21:04:16.742 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitForFenceFromCpu ENTER: TargetFence=3156545281 CurrentFence=1138425854 SyncObj=0x5001
+
+21:04:16.742 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitForFenceFromCpu LEAVE: hr=0x00000000 TargetFence=3156545281 CurrentFence=1138425854
+
+21:04:16.743 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] DestroyMonitoredFence ENTER: hSync=0x5001
+
+21:04:16.743 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] DestroyMonitoredFence LEAVE: hr=0x00000000
+
+21:04:16.743 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=4 CurrentFence=4
+
+21:04:16.744 [pid=2184 umd_node1_tripod_contract_test.exe] NODE1_TRIPOD: FAIL-CLOSED poison=1 submit=1 fence=0 data=0 cleanup=1 -- NAO VALIDADO EM HARDWARE
+
+21:04:16.744 [pid=2184 umd_node1_tripod_contract_test.exe] Bc250UmdDeviceTeardown: device=00000000000CC430 iniciando teardown seguro
+
+21:04:16.744 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=2 CurrentFence=4
+
+21:04:16.744 [pid=2184 umd_node1_tripod_contract_test.exe] CommandBufferTeardown: concluido
+
+21:04:16.745 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] DestroyPresentContext ENTER: hContext=000000000000C000
+
+21:04:16.745 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] DestroyPresentContext LEAVE: hr=0x00000000
+
+21:04:16.745 [pid=2184 umd_node1_tripod_contract_test.exe] Bc250UmdDeviceTeardown: device=00000000000CC430 concluido
+
+21:04:16.746 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Allocate ENTER: Token=0x434D440008880003 Size=4096 Align=4096 hRTResource=0000000000000000 Primary=0 VidPnSourceId=0
+
+21:04:16.746 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Allocate LEAVE: hr=0x00000000 hAlloc=0xa200 hKMResource=0x0
+
+21:04:16.746 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MapAllocation ENTER: hAlloc=0xa200 Min=0x10000 Max=0x3FFFFFFFF Pages=1 Exec=1
+
+21:04:16.747 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MapAllocation LEAVE: hr=0x00000000 VA=0x220000 PagingFence=1
+
+21:04:16.747 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MakeResident ENTER: hAlloc=0xa200 hPagingQueue=0x9001
+
+21:04:16.747 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MakeResident LEAVE: hr=0x00000000 PagingFence=2
+
+21:04:16.748 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=2 CurrentFence=2
+
+21:04:16.748 [pid=2184 umd_node1_tripod_contract_test.exe] CommandBufferInit: GpuVA=0x220000 Capacity=1024 dwords
+
+21:04:16.748 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] CreatePresentContext ENTER: Node=0
+
+21:04:16.748 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] CreatePresentContext LEAVE: hr=0x00000000 hContext=000000000000C000 Node=0
+
+21:04:16.749 [pid=2184 umd_node1_tripod_contract_test.exe] PRESENT_CONTEXT: Node=0 hContext=000000000000C000 (contexto de trabalho segue no Node 1) -- NAO VALIDADO EM HARDWARE
+
+21:04:16.749 [pid=2184 umd_node1_tripod_contract_test.exe] NODE1_SUBMISSION_READY: Context=000000000000C001 GpuVA=0x220000 -- NAO VALIDADO EM HARDWARE
+
+21:04:16.749 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Allocate ENTER: Token=0x5052460008880003 Size=4096 Align=4096 hRTResource=0000000000000000 Primary=0 VidPnSourceId=0
+
+21:04:16.749 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Allocate LEAVE: hr=0x00000000 hAlloc=0xa201 hKMResource=0x0
+
+21:04:16.750 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MapAllocation ENTER: hAlloc=0xa201 Min=0x10000 Max=0x3FFFFFFFF Pages=1 Exec=0
+
+21:04:16.750 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MapAllocation LEAVE: hr=0x00000000 VA=0x500000 PagingFence=3
+
+21:04:16.750 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MakeResident ENTER: hAlloc=0xa201 hPagingQueue=0x9001
+
+21:04:16.750 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] MakeResident LEAVE: hr=0x00000000 PagingFence=4
+
+21:04:16.751 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=4 CurrentFence=4
+
+21:04:16.751 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=4 CurrentFence=4
+
+21:04:16.751 [pid=2184 umd_node1_tripod_contract_test.exe] [DX70_SAMPLE c=2 n=5] [WDDM_WINSYS] Upload ENTER: hAlloc=0xa201 Bytes=20
+
+21:04:16.751 [pid=2184 umd_node1_tripod_contract_test.exe] [DX70_SAMPLE c=3 n=5] [WDDM_WINSYS] Upload LEAVE: hr=0x00000000 Bytes=20
+
+21:04:16.752 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Read ENTER: hAlloc=0xa201 Bytes=20
+
+21:04:16.752 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Read LEAVE: hr=0x00000000 Bytes=20
+
+21:04:16.752 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] CreateMonitoredFence ENTER: InitialValue=1138425854
+
+21:04:16.753 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] CreateMonitoredFence LEAVE: hr=0x00000000 hSync=0x5001 CpuVa=00007FF7214361E0 GpuVa=0x600000
+
+21:04:16.753 [pid=2184 umd_node1_tripod_contract_test.exe] NODE1_PROOF_BUILD: Dst=0x500000 Values=5 Fence=0x600000/BC250F01 Dwords=17 -- OFFLINE
+
+21:04:16.753 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=2 CurrentFence=4
+
+21:04:16.754 [pid=2184 umd_node1_tripod_contract_test.exe] [DX70_SAMPLE c=2 n=6] [WDDM_WINSYS] Upload ENTER: hAlloc=0xa200 Bytes=68
+
+21:04:16.754 [pid=2184 umd_node1_tripod_contract_test.exe] [DX70_SAMPLE c=3 n=6] [WDDM_WINSYS] Upload LEAVE: hr=0x00000000 Bytes=68
+
+21:04:16.754 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] SubmitGpuVa ENTER: hCtx=0x000000000000C001 Gpuva=0x220000 Bytes=68 Node=1
+
+21:04:16.755 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] SubmitGpuVa LEAVE: hr=0x00000000 Bytes=68
+
+21:04:16.755 [pid=2184 umd_node1_tripod_contract_test.exe] CommandBufferFlush: Node=1 bytes=68 status=OK
+
+21:04:16.755 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitForFenceFromCpu SKIP (already reached): TargetFence=3156545281 CurrentFence=3156545281
+
+21:04:16.755 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Read ENTER: hAlloc=0xa201 Bytes=20
+
+21:04:16.756 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] Read LEAVE: hr=0x00000000 Bytes=20
+
+21:04:16.756 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] DestroyMonitoredFence ENTER: hSync=0x5001
+
+21:04:16.756 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] DestroyMonitoredFence LEAVE: hr=0x00000000
+
+21:04:16.756 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=4 CurrentFence=4
+
+21:04:16.757 [pid=2184 umd_node1_tripod_contract_test.exe] NODE1_TRIPOD: FAIL-CLOSED poison=1 submit=1 fence=1 data=0 cleanup=1 -- NAO VALIDADO EM HARDWARE
+
+21:04:16.757 [pid=2184 umd_node1_tripod_contract_test.exe] Bc250UmdDeviceTeardown: device=00000000000CC430 iniciando teardown seguro
+
+21:04:16.757 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] WaitPaging SKIP (already reached): TargetFence=2 CurrentFence=4
+
+21:04:16.757 [pid=2184 umd_node1_tripod_contract_test.exe] CommandBufferTeardown: concluido
+
+21:04:16.758 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] DestroyPresentContext ENTER: hContext=000000000000C000
+
+21:04:16.758 [pid=2184 umd_node1_tripod_contract_test.exe] [WDDM_WINSYS] DestroyPresentContext LEAVE: hr=0x00000000
+
+21:04:16.758 [pid=2184 umd_node1_tripod_contract_test.exe] Bc250UmdDeviceTeardown: device=00000000000CC430 concluido
+
+UMD NODE1 TRIPOD CONTRACT: PASS (success + stale fence/data rejected; offline)
+HARDWARE VERDICT: NAO VALIDADO EM HARDWARE
+
+=== EXECUTANDO AUDITORIA SEMANTICA NODE 1 ===
+UMD NODE1 SUBMISSION AUDIT: PASS
+  Draw sem backend: recusa explicita; zero progresso fabricado
+  Command buffer: token nao nulo + map + residency + Lock/Unlock upload
+  Submit: contexto confere NodeOrdinal; payload WRITE_DATA + RELEASE_MEM
+  Tripe: poison pre-submit + fence exata + readback byte a byte + teardown
+  Acionador: registro + executavel exato + token 128-bit; device segue fail-closed
+  Mutacoes sem upload/prova de dados: detectadas
+  Veredito fisico: NAO VALIDADO EM HARDWARE
+
+=======================================================================
+D3D UMD:       C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250umd.dll
+UMD RUNTIME:   C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250_runtime.dll
+VULKAN ICD:    C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250_vulkan.dll
+ICD MANIFEST:  C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250_icd.json
+HARNESS D3D:   C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250_d3d_umd_test.exe
+HARNESS WINSYS:C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250_wddm_winsys_test.exe
+HARNESS NODE1: C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\umd_node1_submit_contract_test.exe
+TRIPOD NODE1:  C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\umd_node1_tripod_contract_test.exe
+PHYSICAL NODE1:C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250-umd-node1-tripod.exe (NAO EXECUTADO PELO BUILD)
+HARNESS UMD:   C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250-umd-test.exe
+HARNESS VK:    C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250-vulkan-test.exe
+HARNESS LLM:   C:\Users\Daniel\Desktop\NamixWDDM\driver\umd\..\..\driver\umd\output\bc250-llm-benchmark.exe
+=======================================================================

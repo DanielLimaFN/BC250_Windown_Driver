@@ -1,0 +1,43 @@
+--- linhas 84778..84800 (o BYTE_PROOF FAIL e o que veio depois) ---
+ 84778 [PT_WALK DEST] L1 idx=1 VRAM+0xA8C008 PDE=0000000450A8D001 -> leafPA=0x450A8D000 flags=0x1 valid=1 reservado[5:3]=0x0
+ 84779 [PT_WALK DEST] L0 idx=102 VRAM+0xA8D330 PTE=00000004516EF061 -> pageMC=0x4516EF000 flags=0x61 valid=1
+ 84780 [PT_WALK DEST] RESOLVIDO: VA=0x266000 -> 0x4516EF000 (root=MC, folha=MC)
+ 84781 [SubmitVirtual Node0 SDMA] CAMINHO_ESCOLHIDO: INDIRECT (Fill=0/81920 bytes DestPA=0x4516DC000 DmaBytes=32 IbResolve=1 PlanoAFallback=0)
+ 84782 [SubmitVirtual Node0 SDMA] IB_EFEITO_DECLARADO: AUSENTE (hasFill=0 destPA=0x4516DC000 bytes=81920) -- perna de dados ficara NAO CONFERIDA
+ 84783 [SubmitVirtual Node0 SDMA] SUBMISSAO DESPACHADA (ASYNC INDIRECT): HwFence=4729 FenceId=631 DmaBytes=32; DPC agendado
+ 84784 [SubmitVirtual Node0 SDMA] IB_ALIGN: StartDW=49 PadDW=1 IndirectEndDW=56 EndModulo8=0 TargetWPTR=41220 IbSizeDW=8 PublishedDW=8
+ 84785 [SubmitVirtual Node0 SDMA] IB_ENGINE_2LEGS #631 (RPTR==WPTR + fence sobre poison; PERNA DE DADOS NAO CONFERIDA): WPTR=260 RPTR=260 Fence=00001279 Poison=43DAFFFE Siz
+ 84786 [SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 32 bytes em VA=0x221F20; FenceId=631 (batch #1)
+ 84787 [SdmaRetire] LOTE CONCLUIDO: 1 submissoes aposentadas; DMA_COMPLETED notificado com a maior FenceId=631
+ 84788 [Present #1] BYTE_PROOF FAIL: Source=0x15D0000 Dest=0x0 Bytes=11059200 FirstMismatch=0x10C004; SDMA disabled
+ 84789 [Present #1] Blt 11059200 bytes (src 0x15D0000 -> scanout 0x0): SDMA=FAILED_CLOSED
+ 84790 [McdmSetRootPageTable] Context=0000000700000007, SegId=1, Offset=0xF373000, NumEntries=512, MaxEntries=8192 (rootBits=13)
+ 84791 [McdmBuildPagingBuffer] Entered: Op=11
+ 84792 [UpdatePT] Lvl=0, FirstPteVA=0x1AE000, Num=1, Start=430, Mode=0, Repeat=1, CpuVa=0xFFFFBA81CE43D000, Flags=0x00000001
+ 84793 [UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+ 84794 [ActiveUpdatePT] Lvl=0, FirstPteVA=0x1AE000, hProc=0x0000002B0000002B, RootAddr=0x0, SegId=0
+ 84795 [ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+ 84796 [McdmBuildPagingBuffer] Entered: Op=12
+ 84797 [ActiveFlushTlb] RootSeg=1, RootOff=0xF36E000, StartVA=0x1AE000, EndVA=0x1AF000, hProc=0x0000002B0000002B, Pending=1, HierPending=0
+ 84798 [FlushMappedGfxhubTlb] Transport State=1, Base=FFFFBA81D1E82000, Len=524288
+ 84799 [FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+ 84800 [FlushMappedGfxhubTlb] Transport State=1, Base=FFFFBA81D1E82000, Len=524288
+
+--- linhas 84824..84840 (a morte) ---
+ 84824 [SubmitVirtual Node0 SDMA] CAMINHO_ESCOLHIDO: INDIRECT (Fill=0/0 bytes DestPA=0x0 DmaBytes=4 IbResolve=1 PlanoAFallback=0)
+ 84825 [SubmitVirtual Node0 SDMA] IB_EFEITO_DECLARADO: AUSENTE (hasFill=0 destPA=0x0 bytes=0) -- perna de dados ficara NAO CONFERIDA
+ 84826 [SdmaPresent] SubmitIndirectAsync recusado: Init=1 HwEnabled=0 TripodValidated=1
+ 84827 [SubmitVirtual Node0 SDMA] GFXHUB_FAULT_SNAPSHOT: Read=1/1/1 STATUS=00000000 ADDR=00000000:00000000
+ 84828 [SubmitVirtual Node0 SDMA] IB NAO EXECUTADO #1: FenceId=632; completion NAO notificado
+ 84829 [ResolveGpuVa] SUCCESS: Hdl=0000000700000007 Proc=0000000500000005 VA=0xAC0000 -> Phys=0x15D0000 Seg=1
+ 84830 [Present #2] Source=PRESENT_SLOT -> Physical VRAM 0x15D0000 (Seg=1); PresentSlot: resolved=1 Phys=0x15D0000 Seg=1
+ 84831 [Present #2] Blt=1, hCtx=0000000700000007, DmaSize=65536, DmaVA=0x10000, NumSrc=0, NumDst=0, Flags=0x00000001
+ 84832 [Present #2] Info0: hDev=0000000000000000, Seg=0, PhysAdapter=0, VA=0x0, Phys=0x0
+ 84833 [Present #2] Info1: hDev=0000030F0000030F, Seg=0, PhysAdapter=0, VA=0xAC0000, Phys=0x0
+ 84834 [Present #2] Info2: hDev=0000030D0000030D, Seg=0, PhysAdapter=0, VA=0x30000, Phys=0x0
+ 84835 [Present #2] DstRect=(0,0)-(2560,1080), SrcRect=(0,0)-(2560,1080), SubRects=1
+ 84836 [Present #2] SubRect[0]=(1280,532)-(1304,559), CenterPixel=0xFFFCFCFB
+ 84837 [Present #2] SrcPhysSample @ 0x15D0000: 00000000 00000000 00000000 00000000
+ 84838 [Present #2] SrcVaOffsetSample @ 0xAC0000: 00000000 00000000 00000000 00000000
+ 84839 [Present #2] ScanoutSample @ 0x0: 00000000 00000000 00000000 00000000
+ 84840 [ResolveGpuVa] SUCCESS: Hdl=0000000700000007 Proc=0000000500000005 VA=0x30000 -> Phys=0x1C0000 Seg=1

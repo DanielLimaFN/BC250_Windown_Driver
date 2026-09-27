@@ -1,0 +1,114 @@
+﻿
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+   EnableRedirectToChakraJsProvider : false
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.000 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 30
+
+Microsoft (R) Windows Debugger Version 10.0.28000.2526 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [C:\Windows\MEMORY.DMP]
+Kernel Bitmap Dump File: Kernel address space is available, User address space may not be available.
+
+Symbol search path is: srv*
+Executable search path is: 
+Windows 10 Kernel Version 19041 MP (12 procs) Free x64
+Product: WinNt, suite: TerminalServer SingleUserTS
+Edition build lab: 19041.1.amd64fre.vb_release.191206-1406
+Kernel base = 0xfffff801`7b200000 PsLoadedModuleList = 0xfffff801`7be2a2b0
+Debug session time: Thu Sep 10 10:23:38.997 2026 (UTC - 3:00)
+System Uptime: 0 days 0:18:56.520
+Loading Kernel Symbols
+...............................................................
+...Page 404d25 not present in the dump file. Type ".hh dbgerr004" for details
+.............................................................
+.....................................
+Loading User Symbols
+
+Loading unloaded module list
+...........
+For analysis of this file, run !analyze -v
+10: kd> cdb: Reading initial command '.reload; !dbgprint; q'
+Loading Kernel Symbols
+...............................................................
+...Page 404d25 not present in the dump file. Type ".hh dbgerr004" for details
+.............................................................
+.....................................
+Loading User Symbols
+
+Loading unloaded module list
+...........
+=8 PublishedDW=8
+[BC250] [SubmitVirtual Node0 SDMA] IB_ENGINE_2LEGS #40 (RPTR==WPTR + fence sobre poison; PERNA DE DADOS NAO CONFERIDA): WPTR=2628 RPTR=2628 Fence=00001029 Poison=43DAFFFE Size=32 Vmid=8 EfeitoDeclarado=0x0/0/0x00000000 in 2 polls
+[BC250] [SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 32 bytes em VA=0x22F580; DMA_COMPLETED notificado para FenceId=40
+[BC250] [ActiveFlushTlb] Journal commit GLOBAL after physical GFXHUB invalidation: Generation=174 -> SUCCESS
+[BC250] [McdmBuildPagingBuffer] Entered: Op=11
+[BC250] [UpdatePT] Lvl=0, FirstPteVA=0x23F000, Num=1, Start=63, Mode=0, Repeat=1, CpuVa=0xFFFFA300D4F0B000, Flags=0x00000001
+[BC250] [UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[BC250] [ActiveUpdatePT] Lvl=0, FirstPteVA=0x23F000, hProc=0x0000000100000001, RootAddr=0x0, SegId=1
+[BC250] [ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[BC250] [McdmBuildPagingBuffer] Entered: Op=12
+[BC250] [ActiveFlushTlb] RootSeg=1, RootOff=0x0, StartVA=0x23F000, EndVA=0x240000, hProc=0x0000000100000001, Pending=1, HierPending=0
+[BC250] [FlushMappedGfxhubTlb] Transport State=1, Base=FFFFA300D7442000, Len=524288
+[BC250] [FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+[BC250] [FlushMappedGfxhubTlb] Transport State=1, Base=FFFFA300D7442000, Len=524288
+[BC250] [FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+[BC250] [ActiveFlushTlb] Journal commit GLOBAL after physical GFXHUB invalidation: Generation=175 -> SUCCESS
+[BC250] [McdmBuildPagingBuffer] Entered: Op=11
+[BC250] [UpdatePT] Lvl=0, FirstPteVA=0x240000, Num=1, Start=64, Mode=0, Repeat=1, CpuVa=0xFFFFA300D4F0C000, Flags=0x00000001
+[BC250] [UpdatePT Lvl=0 Entry 0] V=0, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x0
+[BC250] [ActiveUpdatePT] Lvl=0, FirstPteVA=0x240000, hProc=0x0000000100000001, RootAddr=0x0, SegId=1
+[BC250] [ActiveUpdatePT] Finished: journalStatus=0 -> SUCCESS
+[BC250] [McdmBuildPagingBuffer] Entered: Op=12
+[BC250] [ActiveFlushTlb] RootSeg=1, RootOff=0x0, StartVA=0x240000, EndVA=0x241000, hProc=0x0000000100000001, Pending=1, HierPending=0
+[BC250] [FlushMappedGfxhubTlb] Transport State=1, Base=FFFFA300D7442000, Len=524288
+[BC250] [FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+[BC250] [FlushMappedGfxhubTlb] Transport State=1, Base=FFFFA300D7442000, Len=524288
+[BC250] [FlushMappedGfxhubTlb] Transaction status=0, PhysReady=1, AckObserved=1, Polls=1
+[BC250] [ActiveFlushTlb] Journal commit GLOBAL after physical GFXHUB invalidation: Generation=176 -> SUCCESS
+[BC250] [McdmBuildPagingBuffer] Entered: Op=11
+[BC250] [UpdatePT] Lvl=0, FirstPteVA=0x23F000, Num=449, Start=63, Mode=0, Repeat=0, CpuVa=0xFFFFA300D4F0D000, Flags=0x00000000
+[BC250] [UpdatePT Lvl=0 Entry 0] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x1DF1E4
+[BC250] [UpdatePT Lvl=0 Entry 1] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x3D4EE5
+[BC250] [UpdatePT Lvl=0 Entry 2] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x109EE6
+[BC250] [UpdatePT Lvl=0 Entry 3] V=1, Z=0, LP=0, PhysIdx=0, PTPgSz=0, Seg=0, Addr=0x3DA8E7
+[BC250] [ActiveUpdatePT] Lvl=0, FirstPteVA=0x23F000, hProc=0x0000000100000001, RootAddr=0x0, SegId=1
+[BC250] [ActiveUpdatePT] Finished: journalStatus=4 -> STATUS_INVALID_PARAMETER
+0x1 valid=1 reservado[5:3]=0x0
+[BC250] [PT_WALK IB] L0 idx=47 VRAM+0xA8D178 PTE=000000017466A037 -> pageMC=0x17466A000 flags=0x37 valid=1
+[BC250] [PT_WALK IB] RESOLVIDO: VA=0x22F580 -> 0x17466A580 (root=MC, folha=MC)
+[BC250] [PT_WALK] IB_PROOF_BIND: PA=0x17466A580 Bytes=32 ExactMetadata=0 (miss: no poison)
+[BC250] [PT_WALK] DEST: encoder nao publicou faixa de escrita
+[BC250] [SubmitVirtual Node0 SDMA] CAMINHO_ESCOLHIDO: INDIRECT (Fill=0/0 bytes DestPA=0x0 DmaBytes=32 IbResolve=1 PlanoAFallback=0)
+[BC250] [SubmitVirtual Node0 SDMA] IB_EFEITO_DECLARADO: AUSENTE (hasFill=0 destPA=0x0 bytes=0) -- perna de dados ficara NAO CONFERIDA
+[BC250] [SubmitVirtual Node0 SDMA] IB_ALIGN: StartDW=641 PadDW=1 IndirectEndDW=648 EndModulo8=0 TargetWPTR=2628 IbSizeDWquit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Kernel.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Usb4Kd.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'

@@ -17,7 +17,11 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
 #define CHECK(Expression) do { if (!(Expression)) return 0; } while (0)
 #else
 #include <stdio.h>
-#define CHECK(Expression) do { if (!(Expression)) return 1; } while (0)
+/* Falha devolve 0 porque main() faz `return Run() ? 0 : 1`: devolver 1
+ * aqui fazia a falha virar SUCESSO no build offline. Medido em 14/09
+ * quebrando o emissor de proposito -- suite offline saiu EXIT=0 e a
+ * kernel EXIT=1. Travado por audit_offline_check_is_not_inverted. */
+#define CHECK(Expression) do { if (!(Expression)) return 0; } while (0)
 #endif
 
 static BC250_ADAPTER_CAPABILITIES g_testCaps;
@@ -35,8 +39,13 @@ static int Bc250RunAdapterInfoContractTest(void)
     /* 1. Test Capabilities */
     CHECK(Bc250GetAdapterCapabilities(&g_testCaps) == BC250_ADAPTER_INFO_OK);
     CHECK(g_testCaps.NodeCount == 2u);
-    CHECK(g_testCaps.GpuVaBits == 48u);
-    CHECK(g_testCaps.MaxVaAddress == 0x0000FFFFFFFFFFFFull);
+    /*
+     * 34 bits, nao 48: a hierarquia de 2 niveis cobre 12 + 9 + 13 (docs/03).
+     * O valor literal fica aqui de proposito -- se alguem mexer na geometria,
+     * este teste tem de ser reescrito conscientemente, nao seguir junto.
+     */
+    CHECK(g_testCaps.GpuVaBits == 34u);
+    CHECK(g_testCaps.MaxVaAddress == 0x00000003FFFFFFFFull);
     CHECK(g_testCaps.PageSizeBytes == 4096u);
     CHECK(g_testCaps.VramBarIndex == 0u);
     CHECK(g_testCaps.DoorbellBarIndex == 2u);

@@ -1166,6 +1166,15 @@ typedef enum BC250_PROBE_FIELD {
     BC250_PROBE_V5_DDI_HIST_14,
     BC250_PROBE_V5_DDI_HIST_15,
 
+    /*
+     * NTSTATUS cru da SEGUNDA chamada de Bc250DxgkDdiStartDeviceReadonly.
+     * BC250_PROBE_SECOND_PREFLIGHT_STAGE nao basta: numa recusa de guarda de
+     * entrada a funcao retorna sem escrever LastStage, e o estagio publicado e'
+     * o do PRIMEIRO preflight (corrida 08/09 11:48). Acrescentado no FIM do
+     * enum de proposito, para nao deslocar o indice de nenhum campo existente.
+     */
+    BC250_PROBE_SECOND_PREFLIGHT_STATUS,
+
     /* Sentinela: mantem o reset integral completo por construcao. */
     BC250_PROBE_FIELD_COUNT
 } BC250_PROBE_FIELD;
@@ -1383,6 +1392,7 @@ VOID Bc250ProbeResetRenderTrace(VOID);
 #define BC250_V5_DDI_START_DEVICE                 68u
 #define BC250_V5_DDI_STOP_DEVICE                  69u
 #define BC250_V5_DDI_REMOVE_DEVICE                70u
+#define BC250_V5_DDI_SIGNAL_MONITORED_FENCE       71u
 
 /* Profundidade do anel de rastro. Ver BC250_PROBE_V5_DDI_HIST_00. */
 #define BC250_V5_DDI_HISTORY_COUNT 16u

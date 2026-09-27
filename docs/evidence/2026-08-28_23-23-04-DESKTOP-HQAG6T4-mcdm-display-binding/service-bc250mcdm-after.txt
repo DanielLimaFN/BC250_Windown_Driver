@@ -1,9 +1,0 @@
-﻿
-NOME_DO_SERVIÇO: bc250mcdm 
-    TIPO                       : 1  KERNEL_DRIVER  
-    ESTADO                     : 4  RUNNING 
-                                (STOPPABLE, NOT_PAUSABLE, IGNORES_SHUTDOWN)
-    CÓDIGO_DE_SAÍDA_DO_WIN32   : 0  (0x0)
-    CÓDIGO_DE_SAÍDA_DO_SERVIÇO : 0  (0x0)
-    PONTO_DE_VERIFICAÇÃO       : 0x0
-    AGUARDAR_DICA              : 0x0

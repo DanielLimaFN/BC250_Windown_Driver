@@ -1,5 +1,9 @@
 # Roadmap 164 — WDDM com jogos na BC-250, **sem** implementar DCN no caminho crítico
 
+> **Estado operacional em 26/09/2026:** [handoff 466](466_HANDOFF_2026-09-26_CORRIDA131_UID0_EDID_E_RADV_VKALLOCATE.md) e [base de avanço](../BASE_DE_AVANCO.md). A Corrida 131 comprovou no silício o alinhamento da topologia do monitor em UID0, geração de EDID sintético de 128 bytes, CommitVidPn/SetVidPnSourceAddress e desacoplamento do kernel no WaitPaging. O gargalo ativo está isolado em vkAllocateMemory na RADV (radv_wddm2_bo.c). As etapas e percentuais antigos deste roadmap são planejamento/histórico, não veredito atual.
+
+> **Escopo de produto atualizado em 17/09/2026:** ver [plano de desktop e jogos transparentes](281_PLANO_PRODUTO_DESKTOP_E_JOGOS_TRANSPARENTES.md) e [handoff doc 284](284_HANDOFF_2026-09-17_15-12_D3D11_NATIVO_GFX_RB0_E_ISOLAMENTO_SCANOUT.md). A meta inclui desktop D3D11 acelerado, aplicações não modificadas e integração Direct3D ao driver. DCN básico em P9 integra a conclusão desse produto, embora não seja pré-requisito do primeiro desktop em modo GOP. As menções históricas abaixo a DCN totalmente opcional valem para a demonstração em modo fixo, não para esse escopo ampliado. Os marcos antigos abaixo não representam o status atual; consultar BASE_DE_AVANCO.md e o plano.
+
 **Data-base:** 2026-09-02 · **Revisão 2** (substitui a revisão 1, que colocava DCN como pré-requisito)
 **Meta:** BC-250 rodando jogos no Windows (D3D12/Vulkan) com as 24 CUs e 16 GB GDDR6, com
 o monitor ligado ao DisplayPort da própria placa.

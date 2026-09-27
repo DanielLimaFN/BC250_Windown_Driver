@@ -1,0 +1,86 @@
+﻿
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+   EnableRedirectToChakraJsProvider : false
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.015 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 30
+
+Microsoft (R) Windows Debugger Version 10.0.28000.2526 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [C:\Windows\MEMORY.DMP]
+Kernel Bitmap Dump File: Kernel address space is available, User address space may not be available.
+
+Symbol search path is: srv*
+Executable search path is: 
+Windows 10 Kernel Version 19041 MP (12 procs) Free x64
+Product: WinNt, suite: TerminalServer SingleUserTS
+Edition build lab: 19041.1.amd64fre.vb_release.191206-1406
+Kernel base = 0xfffff801`7b200000 PsLoadedModuleList = 0xfffff801`7be2a2b0
+Debug session time: Thu Sep 10 10:23:38.997 2026 (UTC - 3:00)
+System Uptime: 0 days 0:18:56.520
+Loading Kernel Symbols
+...............................................................
+...Page 404d25 not present in the dump file. Type ".hh dbgerr004" for details
+.............................................................
+.....................................
+Loading User Symbols
+
+Loading unloaded module list
+...........
+For analysis of this file, run !analyze -v
+10: kd> cdb: Reading initial command 'u dxgmms2!VIDMM_GLOBAL::UpdatePageTable+0xd60 dxgmms2!VIDMM_GLOBAL::UpdatePageTable+0xdc5; q'
+dxgmms2!VIDMM_GLOBAL::UpdatePageTable+0xd60:
+fffff801`956bd300 0000            add     byte ptr [rax],al
+fffff801`956bd302 4181fe01001ec0  cmp     r14d,0C01E0001h
+fffff801`956bd309 7548            jne     dxgmms2!VIDMM_GLOBAL::UpdatePageTable+0xdb3 (fffff801`956bd353)
+fffff801`956bd30b 488b054eddfdff  mov     rax,qword ptr [dxgmms2!g_IsInternalReleaseOrDbg (fffff801`9569b060)]
+fffff801`956bd312 803800          cmp     byte ptr [rax],0
+fffff801`956bd315 740c            je      dxgmms2!VIDMM_GLOBAL::UpdatePageTable+0xd83 (fffff801`956bd323)
+fffff801`956bd317 4c8b1502e4fdff  mov     r10,qword ptr [dxgmms2!_imp_WdLogNewEntry5_WdTrace (fffff801`9569b720)]
+fffff801`956bd31e e8ed3c0ffd      call    watchdog!WdLogNewEntry5_WdTrace (fffff801`927b1010)
+fffff801`956bd323 c644243000      mov     byte ptr [rsp+30h],0
+fffff801`956bd328 4533c9          xor     r9d,r9d
+fffff801`956bd32b c644242801      mov     byte ptr [rsp+28h],1
+fffff801`956bd330 41b001          mov     r8b,1
+fffff801`956bd333 418bd5          mov     edx,r13d
+fffff801`956bd336 48897c2420      mov     qword ptr [rsp+20h],rdi
+fffff801`956bd33b 488bce          mov     rcx,rsi
+fffff801`956bd33e e83d9effff      call    dxgmms2!VIDMM_GLOBAL::FlushPagingBufferInternal (fffff801`956b7180)
+fffff801`956bd343 4c8bb5d8000000  mov     r14,qword ptr [rbp+0D8h]
+fffff801`956bd34a 448b7d80        mov     r15d,dword ptr [rbp-80h]
+fffff801`956bd34e e975f3ffff      jmp     dxgmms2!VIDMM_GLOBAL::UpdatePageTable+0x128 (fffff801`956bc6c8)
+fffff801`956bd353 488b7e18        mov     rdi,qword ptr [rsi+18h]
+fffff801`956bd357 4c8b15dae3fdff  mov     r10,qword ptr [dxgmms2!_imp_WdLogNewEntry5_WdCriticalError (fffff801`9569b738)]
+fffff801`956bd35e e82d6e0ffd      call    watchdog!WdLogNewEntry5_WdCriticalError (fffff801`927b4190)
+fffff801`956bd363 488d4d90        lea     rcx,[rbp-70h]
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Kernel.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Usb4Kd.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'

@@ -1,6 +1,23 @@
 #include "../wdk/bc250_display_ddi.h"
 #include "../wdk/bc250_active_miniport.h"
 
+/* The display DDI measures Present with this kernel import. The offline
+ * VidPn test only needs a monotonic counter and its frequency. */
+static LARGE_INTEGER NTAPI Bc250FakePerformanceCounter(
+    PLARGE_INTEGER PerformanceFrequency)
+{
+    static LONGLONG ticks = 0;
+    LARGE_INTEGER value;
+    if (PerformanceFrequency != NULL) {
+        PerformanceFrequency->QuadPart = 1000000;
+    }
+    value.QuadPart = ++ticks;
+    return value;
+}
+
+LARGE_INTEGER (NTAPI *__imp_KeQueryPerformanceCounter)(PLARGE_INTEGER) =
+    Bc250FakePerformanceCounter;
+
 __declspec(dllimport) void __stdcall ExitProcess(unsigned long ExitCode);
 
 #pragma function(memset)
@@ -15,8 +32,8 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
 #pragma function(memcpy)
 void * __cdecl memcpy(void *Destination, const void *Source, size_t Length)
 {
-    unsigned char *destination = (unsigned char *)Destination;
-    const unsigned char *source = (const unsigned char *)Source;
+    volatile unsigned char *destination = (volatile unsigned char *)Destination;
+    const volatile unsigned char *source = (const volatile unsigned char *)Source;
     size_t index;
     for (index = 0; index < Length; ++index) destination[index] = source[index];
     return Destination;
@@ -56,6 +73,21 @@ void Bc250ProbeRecordQueryInterface(const void *Record)
 void Bc250ProbeRecordFirstFailure(long Status)
 {
     (void)Status;
+}
+
+static BOOLEAN Bc250FakeResolveGpuVa(
+    HANDLE Context,
+    UINT64 Va,
+    UINT64 *PhysicalAddress,
+    UINT32 *SegmentId)
+{
+    if (Context != (HANDLE)0x1234 || Va != 0xAC0000ull ||
+        PhysicalAddress == NULL || SegmentId == NULL) {
+        return FALSE;
+    }
+    *PhysicalAddress = 0xC10000ull;
+    *SegmentId = 1u;
+    return TRUE;
 }
 
 typedef struct BC250_FAKE_VIDPN {
@@ -235,6 +267,43 @@ static NTSTATUS APIENTRY Bc250FakeAcquirePinnedSourceMode(
     return g_FakeVidPn.SourcePinnedStatus;
 }
 
+static NTSTATUS APIENTRY Bc250FakeAcquireFirstSourceMode(
+    D3DKMDT_HVIDPNSOURCEMODESET ModeSet,
+    CONST D3DKMDT_VIDPN_SOURCE_MODE **Mode)
+{
+    if (ModeSet != BC250_FAKE_SOURCE_SET_HANDLE || Mode == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *Mode = NULL;
+    return STATUS_GRAPHICS_NO_MORE_ELEMENTS_IN_DATASET;
+}
+
+/*
+ * pfnGetNumModes existe no contrato do dxgkrnl e e' usado pela instrumentacao
+ * de topologia vazia.  Sem estes dois fakes o ramo chamava por ponteiro nulo.
+ */
+static NTSTATUS APIENTRY Bc250FakeGetNumSourceModes(
+    D3DKMDT_HVIDPNSOURCEMODESET ModeSet,
+    SIZE_T *NumModes)
+{
+    if (ModeSet != BC250_FAKE_SOURCE_SET_HANDLE || NumModes == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *NumModes = g_FakeVidPn.SourceModeAdds;
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS APIENTRY Bc250FakeGetNumTargetModes(
+    D3DKMDT_HVIDPNTARGETMODESET ModeSet,
+    SIZE_T *NumModes)
+{
+    if (ModeSet != BC250_FAKE_TARGET_SET_HANDLE || NumModes == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *NumModes = g_FakeVidPn.TargetModeAdds;
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS APIENTRY Bc250FakeReleaseSourceMode(
     D3DKMDT_HVIDPNSOURCEMODESET ModeSet,
     CONST D3DKMDT_VIDPN_SOURCE_MODE *Mode)
@@ -339,6 +408,17 @@ static NTSTATUS APIENTRY Bc250FakeAcquirePinnedTargetMode(
     return g_FakeVidPn.TargetPinnedStatus;
 }
 
+static NTSTATUS APIENTRY Bc250FakeAcquireFirstTargetMode(
+    D3DKMDT_HVIDPNTARGETMODESET ModeSet,
+    CONST D3DKMDT_VIDPN_TARGET_MODE **Mode)
+{
+    if (ModeSet != BC250_FAKE_TARGET_SET_HANDLE || Mode == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    *Mode = NULL;
+    return STATUS_GRAPHICS_NO_MORE_ELEMENTS_IN_DATASET;
+}
+
 static NTSTATUS APIENTRY Bc250FakeReleaseTargetMode(
     D3DKMDT_HVIDPNTARGETMODESET ModeSet,
     CONST D3DKMDT_VIDPN_TARGET_MODE *Mode)
@@ -420,10 +500,14 @@ static void Bc250InitFakeVidPn(void)
     g_FakeTopologyInterface.pfnUpdatePathSupportInfo = Bc250FakeUpdatePathSupport;
     g_FakeTopologyInterface.pfnReleasePathInfo = Bc250FakeReleasePath;
     g_FakeSourceInterface.pfnAcquirePinnedModeInfo = Bc250FakeAcquirePinnedSourceMode;
+    g_FakeSourceInterface.pfnAcquireFirstModeInfo = Bc250FakeAcquireFirstSourceMode;
+    g_FakeSourceInterface.pfnGetNumModes = Bc250FakeGetNumSourceModes;
+    g_FakeTargetInterface.pfnGetNumModes = Bc250FakeGetNumTargetModes;
     g_FakeSourceInterface.pfnReleaseModeInfo = Bc250FakeReleaseSourceMode;
     g_FakeSourceInterface.pfnCreateNewModeInfo = Bc250FakeCreateSourceMode;
     g_FakeSourceInterface.pfnAddMode = Bc250FakeAddSourceMode;
     g_FakeTargetInterface.pfnAcquirePinnedModeInfo = Bc250FakeAcquirePinnedTargetMode;
+    g_FakeTargetInterface.pfnAcquireFirstModeInfo = Bc250FakeAcquireFirstTargetMode;
     g_FakeTargetInterface.pfnReleaseModeInfo = Bc250FakeReleaseTargetMode;
     g_FakeTargetInterface.pfnCreateNewModeInfo = Bc250FakeCreateTargetMode;
     g_FakeTargetInterface.pfnAddMode = Bc250FakeAddTargetMode;
@@ -438,6 +522,13 @@ static int Bc250RunDisplayVidPnTest(void)
     DXGKARG_ENUMVIDPNCOFUNCMODALITY enumCofunc;
     DXGKARG_COMMITVIDPN commitVidPn;
     DXGKARG_PRESENT presentArg;
+    static DXGKARG_SETVIDPNSOURCEADDRESS setAddress;
+    static DXGKARG_SETVIDPNSOURCEADDRESSWITHMULTIPLANEOVERLAY3 setMpo3;
+    static DXGK_MULTIPLANE_OVERLAY_PLANE3 mpoPlane;
+    static DXGK_MULTIPLANE_OVERLAY_PLANE3 *mpoPlanes[1];
+    static DXGK_PRIMARYCONTEXTDATA mpoContext;
+    static DXGK_PRIMARYCONTEXTDATA *mpoContexts[1];
+    DXGK_PRESENTALLOCATIONINFO presentAllocations[3];
     DXGKRNL_INTERFACE dxgkInterface;
     DXGK_DISPLAY_INFORMATION postDisplayInfo;
     DXGKARG_PRESENT_DISPLAYONLY displayOnly;
@@ -447,6 +538,9 @@ static int Bc250RunDisplayVidPnTest(void)
     unsigned long frameBufferPixels[16];
     unsigned long index;
     ULONG releaseBaseline;
+    UINT64 resolvedPhysical;
+    UINT64 firstMismatch;
+    UINT32 resolvedSegment;
 
     memset(&initData, 0, sizeof(initData));
     memset(&childDescriptor, 0, sizeof(childDescriptor));
@@ -455,6 +549,11 @@ static int Bc250RunDisplayVidPnTest(void)
     memset(&enumCofunc, 0, sizeof(enumCofunc));
     memset(&commitVidPn, 0, sizeof(commitVidPn));
     memset(&presentArg, 0, sizeof(presentArg));
+    memset(&setAddress, 0, sizeof(setAddress));
+    memset(&setMpo3, 0, sizeof(setMpo3));
+    memset(&mpoPlane, 0, sizeof(mpoPlane));
+    memset(&mpoContext, 0, sizeof(mpoContext));
+    memset(presentAllocations, 0, sizeof(presentAllocations));
     memset(&dxgkInterface, 0, sizeof(dxgkInterface));
     memset(&postDisplayInfo, 0, sizeof(postDisplayInfo));
     memset(&displayOnly, 0, sizeof(displayOnly));
@@ -492,6 +591,81 @@ static int Bc250RunDisplayVidPnTest(void)
 
     /* 5. Test Present */
     CHECK(Bc250DxgkDdiPresent(NULL, &presentArg) == STATUS_NOT_SUPPORTED);
+    CHECK(Bc250DxgkDdiPresent((HANDLE)0x1234, NULL) == STATUS_INVALID_PARAMETER);
+    CHECK(Bc250DxgkDdiPresent((HANDLE)0x1234, &presentArg) == STATUS_NOT_SUPPORTED);
+
+    /* 5b. Contrato da origem sobre DXGK_PRESENTALLOCATIONINFO (WDDM 2.0 GpuMmu).
+     *
+     * O dxgkrnl preenche pAllocationInfo, nao pAllocationList: sao membros da
+     * mesma uniao com layouts diferentes. A corrida 04/09 18:10 provou o efeito
+     * de ler o membro errado (SegmentId=16, hDev=NULL, ponteiro de kernel no
+     * slot 2). Ver o comentario em Bc250DisplayResolvePresentSource.
+     *
+     * Autoridade: PhysicalAddress + SegmentId==1 entregues pelo VidMm primeiro;
+     * GPUVA resolvida no snapshot comitado depois. hDeviceSpecificAllocation
+     * NAO e exigido -- o DWM entrega NULL nesse campo. */
+    presentArg.Flags.Blt = 1u;
+    presentArg.pAllocationInfo = presentAllocations;
+    CHECK(!Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
+        &resolvedPhysical, &resolvedSegment));
+    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].SegmentId = 12u;
+    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].PhysicalAddress.QuadPart =
+        0xAC0000ll;
+    CHECK(!Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
+        &resolvedPhysical, &resolvedSegment));
+    /* Segmento 1 com fisico valido resolve mesmo com hDeviceSpecificAllocation
+     * NULL, que e exatamente o formato entregue pelo DWM. */
+    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].SegmentId = 1u;
+    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].PhysicalAddress.QuadPart =
+        0xAD0000ll;
+    CHECK(presentAllocations[DXGK_PRESENT_SOURCE_INDEX].hDeviceSpecificAllocation
+        == NULL);
+    CHECK(Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
+        &resolvedPhysical, &resolvedSegment));
+    CHECK(resolvedPhysical == 0xAD0000ull && resolvedSegment == 1u);
+    /* Sem fisico utilizavel, cai para a GPUVA resolvida no snapshot. */
+    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].SegmentId = 0u;
+    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].PhysicalAddress.QuadPart = 0ll;
+    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].AllocationVirtualAddress =
+        0xAC0000ull;
+    Bc250DisplayInstallGpuVaResolver(Bc250FakeResolveGpuVa);
+    CHECK(Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
+        &resolvedPhysical, &resolvedSegment));
+    CHECK(resolvedPhysical == 0xC10000ull && resolvedSegment == 1u);
+    Bc250DisplayInstallGpuVaResolver(NULL);
+    CHECK(!Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
+        &resolvedPhysical, &resolvedSegment));
+
+    /* Modelo Flip (WDDM 2.0+): resolve com Flags.Flip==1 e Flags.Blt==0 */
+    presentArg.Flags.Blt = 0u;
+    presentArg.Flags.Flip = 1u;
+    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].SegmentId = 1u;
+    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].PhysicalAddress.QuadPart = 0xAD0000ll;
+    CHECK(Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
+        &resolvedPhysical, &resolvedSegment));
+    CHECK(resolvedPhysical == 0xAD0000ull && resolvedSegment == 1u);
+    /* Falha fechada: se nem Blt nem Flip forem solicitados, rejeita */
+    presentArg.Flags.Flip = 0u;
+    CHECK(!Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
+        &resolvedPhysical, &resolvedSegment));
+    presentArg.Flags.Blt = 1u;
+    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].SegmentId = 0u;
+    presentAllocations[DXGK_PRESENT_SOURCE_INDEX].PhysicalAddress.QuadPart = 0ll;
+
+    /* O tracker paralelo pode ser consultado para diagnostico, mas nao tem
+     * autoridade para liberar Present antes do commit do journal/FlushTlb. */
+    Bc250DisplayRecordGpuVaMapping((HANDLE)0x9980, 0xAC0000ull, 0xC10000ull, 11075584ull, 1u);
+    CHECK(Bc250DisplayLookupPhysicalAddress((HANDLE)0x9980, 0xAC0000ull, &resolvedPhysical, &resolvedSegment));
+    CHECK(resolvedPhysical == 0xC10000ull && resolvedSegment == 1u);
+    /* Process isolation: different process fails lookup */
+    CHECK(!Bc250DisplayLookupPhysicalAddress((HANDLE)0x9740, 0xAC0000ull, &resolvedPhysical, &resolvedSegment));
+    /* Present continua fail-closed sem o resolver do snapshot comitado. */
+    Bc250DisplayRegisterContextProcess((HANDLE)0x1234, (HANDLE)0x9980);
+    CHECK(!Bc250DisplayResolvePresentSource((HANDLE)0x1234, &presentArg,
+        &resolvedPhysical, &resolvedSegment));
+    Bc250DisplayUnregisterContextProcess((HANDLE)0x1234);
+    Bc250DisplayClearGpuVaMappings();
+    CHECK(!Bc250DisplayLookupPhysicalAddress((HANDLE)0x9980, 0xAC0000ull, &resolvedPhysical, &resolvedSegment));
 
     /* 6. GOP ownership data must be complete and arithmetically safe. */
     CHECK(Bc250DisplayInit(NULL, &postDisplayInfo) == STATUS_INVALID_PARAMETER);
@@ -571,6 +745,40 @@ static int Bc250RunDisplayVidPnTest(void)
     CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.RotationSupport.Identity == 1);
     CHECK(g_FakeVidPn.PathReleases == releaseBaseline + 1);
 
+    /* The DMM contract forbids changing support for the active scaling or
+     * rotation pivot.  The other (non-pivot) field must still be sanitized
+     * to keep the 0x113/0x1C protection. */
+    RtlZeroMemory(&g_FakeVidPn.Path.ContentTransformation.ScalingSupport,
+        sizeof(g_FakeVidPn.Path.ContentTransformation.ScalingSupport));
+    g_FakeVidPn.Path.ContentTransformation.ScalingSupport.Centered = 1;
+    RtlZeroMemory(&g_FakeVidPn.Path.ContentTransformation.RotationSupport,
+        sizeof(g_FakeVidPn.Path.ContentTransformation.RotationSupport));
+    g_FakeVidPn.Path.ContentTransformation.RotationSupport.Rotate90 = 1;
+    g_FakeVidPn.Path.ContentTransformation.RotationSupport.Offset90 = 1;
+
+    enumCofunc.EnumPivotType = D3DKMDT_EPT_SCALING;
+    enumCofunc.EnumPivot.VidPnSourceId = 0;
+    enumCofunc.EnumPivot.VidPnTargetId = 0;
+    CHECK(Bc250DxgkDdiEnumVidPnCofuncModality(NULL, &enumCofunc) == STATUS_SUCCESS);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.ScalingSupport.Centered == 1);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.ScalingSupport.Identity == 0);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.RotationSupport.Identity == 1);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.RotationSupport.Offset0 == 1);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.RotationSupport.Rotate90 == 0);
+
+    enumCofunc.EnumPivotType = D3DKMDT_EPT_ROTATION;
+    CHECK(Bc250DxgkDdiEnumVidPnCofuncModality(NULL, &enumCofunc) == STATUS_SUCCESS);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.RotationSupport.Rotate90 == 1);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.RotationSupport.Offset90 == 1);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.RotationSupport.Identity == 0);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.ScalingSupport.Identity == 1);
+    CHECK(g_FakeVidPn.LastSupportedPath.ContentTransformation.ScalingSupport.Centered == 0);
+
+    RtlZeroMemory(&g_FakeVidPn.Path.ContentTransformation.ScalingSupport,
+        sizeof(g_FakeVidPn.Path.ContentTransformation.ScalingSupport));
+    RtlZeroMemory(&g_FakeVidPn.Path.ContentTransformation.RotationSupport,
+        sizeof(g_FakeVidPn.Path.ContentTransformation.RotationSupport));
+
     enumCofunc.EnumPivotType = D3DKMDT_EPT_VIDPNSOURCE;
     enumCofunc.EnumPivot.VidPnSourceId = 0;
     releaseBaseline = g_FakeVidPn.SourceSetReleases;
@@ -599,11 +807,22 @@ static int Bc250RunDisplayVidPnTest(void)
     CHECK(g_FakeVidPn.TargetSetAssignments == 1);
     CHECK(g_FakeVidPn.CreatedSourceMode.Format.Graphics.Stride == 10240);
     CHECK(g_FakeVidPn.CreatedTargetMode.VideoSignalInfo.ActiveSize.cx == 2560);
-    CHECK(g_FakeVidPn.CreatedTargetMode.VideoSignalInfo.TotalSize.cx == 2720);
-    CHECK(g_FakeVidPn.CreatedTargetMode.VideoSignalInfo.TotalSize.cy == 1125);
-    CHECK(g_FakeVidPn.CreatedTargetMode.VideoSignalInfo.HSyncFreq.Numerator == 67500000);
-    CHECK(g_FakeVidPn.CreatedTargetMode.VideoSignalInfo.HSyncFreq.Denominator == 1000);
-    CHECK(g_FakeVidPn.CreatedTargetMode.VideoSignalInfo.PixelRate == 183600000);
+    /*
+     * Timings ancorados na medicao fisica do OTG
+     * (docs/evidence/2026-09-02_21-40-32-.../dcn_inventory.json):
+     * H_TOTAL=2783(+1)=2784, V_TOTAL=1110(+1)=1111, 56.13 Hz,
+     * PixelRate = 2784 * 1111 * 56.13 = 173611437 Hz.
+     * O gabarito antigo (2720x1125@60) era CVT sintetico e nunca existiu
+     * no silicio; ficou obsoleto no commit 55cbcb8 e mantinha este teste
+     * vermelho desde entao.
+     */
+    CHECK(g_FakeVidPn.CreatedTargetMode.VideoSignalInfo.TotalSize.cx == 2784);
+    CHECK(g_FakeVidPn.CreatedTargetMode.VideoSignalInfo.TotalSize.cy == 1111);
+    CHECK(g_FakeVidPn.CreatedTargetMode.VideoSignalInfo.HSyncFreq.Numerator == 6236043);
+    CHECK(g_FakeVidPn.CreatedTargetMode.VideoSignalInfo.HSyncFreq.Denominator == 100);
+    CHECK(g_FakeVidPn.CreatedTargetMode.VideoSignalInfo.VSyncFreq.Numerator == 5613);
+    CHECK(g_FakeVidPn.CreatedTargetMode.VideoSignalInfo.VSyncFreq.Denominator == 100);
+    CHECK(g_FakeVidPn.CreatedTargetMode.VideoSignalInfo.PixelRate == 173611437);
 
     g_FakeVidPn.AssignSourceStatus = STATUS_UNSUCCESSFUL;
     releaseBaseline = g_FakeVidPn.SourceSetReleases;
@@ -623,6 +842,73 @@ static int Bc250RunDisplayVidPnTest(void)
     CHECK(g_Bc250DisplayState.VidPnCommitted == 1);
     CHECK(g_Bc250DisplayState.ForceFullPresent == 1);
     g_FakeVidPn.SourceMode.Format.Graphics.Stride = 10240;
+
+    /*
+     * 9b. Commit de topologia vazia: aceitar durante transicao de energia
+     * (Flags.PathPoweredOff ou Flags.PathPowerTransition) e durante transicao
+     * transiente de cofuncionalidade (Flags==0, pathCount==0) para permitir que
+     * o DMM avance para GetStandardAllocationDriverData sem travar em cofunc loop.
+     * Em ambos os casos, VidPnCommitted permanece 0 e o scanout GOP e preservado.
+     */
+    g_Bc250DisplayState.SourceVisible = 0;
+    g_Bc250DisplayState.ForceFullPresent = 0;
+    g_Bc250DisplayState.VidPnCommitted = 0;
+    g_FakeVidPn.PathCount = 0;
+    commitVidPn.Flags.PathPoweredOff = 1;
+    CHECK(Bc250DxgkDdiCommitVidPn(NULL, &commitVidPn) == STATUS_SUCCESS);
+    CHECK(g_Bc250DisplayState.SourceVisible == 0);
+    CHECK(g_Bc250DisplayState.ForceFullPresent == 0);
+    CHECK(g_Bc250DisplayState.VidPnCommitted == 0);
+
+    /* Transicao transiente sem transicao de energia (pathCount==0, Flags==0) tambem deve retornar SUCCESS */
+    commitVidPn.Flags.PathPoweredOff = 0;
+    CHECK(Bc250DxgkDdiCommitVidPn(NULL, &commitVidPn) == STATUS_SUCCESS);
+    CHECK(g_Bc250DisplayState.VidPnCommitted == 0);
+    g_FakeVidPn.PathCount = 1;
+
+    /*
+     * 9c. Origem de scanout com autoridade: PrimarySegment/PrimaryAddress do
+     * SetVidPnSourceAddress.  Somente o segmento 1 (VRAM local) e' aceito; o
+     * segmento 2 (GART) e qualquer valor fora do contrato falham fechado.
+     */
+    g_Bc250DisplayState.PrimaryAddressValid = FALSE;
+    g_Bc250DisplayState.PrimarySegment = 0;
+    g_Bc250DisplayState.PrimaryAddress.QuadPart = 0;
+    CHECK(!Bc250DisplayResolvePrimarySource(&resolvedPhysical, &resolvedSegment));
+    g_Bc250DisplayState.PrimaryAddressValid = TRUE;
+    g_Bc250DisplayState.PrimaryAddress.QuadPart = 0xAD0000ll;
+    g_Bc250DisplayState.PrimarySegment = 2u;
+    CHECK(!Bc250DisplayResolvePrimarySource(&resolvedPhysical, &resolvedSegment));
+    g_Bc250DisplayState.PrimarySegment = 12u;
+    CHECK(!Bc250DisplayResolvePrimarySource(&resolvedPhysical, &resolvedSegment));
+    g_Bc250DisplayState.PrimarySegment = 1u;
+    CHECK(Bc250DisplayResolvePrimarySource(&resolvedPhysical, &resolvedSegment));
+    CHECK(resolvedPhysical == 0xAD0000ull && resolvedSegment == 1u);
+    g_Bc250DisplayState.PrimaryAddress.QuadPart = 0;
+    CHECK(!Bc250DisplayResolvePrimarySource(&resolvedPhysical, &resolvedSegment));
+    g_Bc250DisplayState.PrimaryAddressValid = FALSE;
+    g_Bc250DisplayState.PrimarySegment = 0;
+
+    /* DX.31: sem SDMA inicializada, nenhuma DDI publica primaria nova nem
+     * confunde tentativa de Flip com copia GOP concluida. */
+    setAddress.VidPnSourceId = 0u;
+    setAddress.PrimarySegment = 1u;
+    setAddress.PrimaryAddress.QuadPart = 0xAD0000ll;
+    CHECK(Bc250DxgkDdiSetVidPnSourceAddress(NULL, &setAddress) ==
+        STATUS_DEVICE_NOT_READY);
+    CHECK(g_Bc250DisplayState.PrimaryAddressValid == FALSE);
+    mpoContext.SegmentId = 1u;
+    mpoContext.SegmentAddress.QuadPart = 0xAD0000ll;
+    mpoContexts[0] = &mpoContext;
+    mpoPlane.ContextCount = 1u;
+    mpoPlane.ppContextData = mpoContexts;
+    mpoPlanes[0] = &mpoPlane;
+    setMpo3.VidPnSourceId = 0u;
+    setMpo3.PlaneCount = 1u;
+    setMpo3.ppPlanes = mpoPlanes;
+    CHECK(Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay3(
+        NULL, &setMpo3) == STATUS_INVALID_PARAMETER);
+    CHECK(g_Bc250DisplayState.PrimaryAddressValid == FALSE);
 
     /* 10. PresentDisplayOnly validates format/pitch and copies bounded pixels. */
     g_Bc250DisplayState.CurrentMode.Width = 4;
@@ -677,6 +963,62 @@ static int Bc250RunDisplayVidPnTest(void)
     CHECK(frameBufferPixels[6] == sourcePixels[6]);
     CHECK(frameBufferPixels[9] == sourcePixels[9]);
     CHECK(frameBufferPixels[10] == sourcePixels[10]);
+
+    /*
+     * 11. Amostragem distribuida.  Este e' o teste que separa "superficie
+     * zerada" de "primeiros pixels pretos" -- a distincao que a corrida 09:04
+     * nao conseguiu fazer porque olhava apenas 4 DWORDs no inicio do buffer.
+     */
+    {
+        ULONG nonZero = 0xFFFFFFFFu;
+        ULONG xorHash = 0xFFFFFFFFu;
+
+        g_Bc250DisplayState.FrameBufferVirtual = frameBufferPixels;
+        g_Bc250DisplayState.FrameBufferSize = sizeof(frameBufferPixels);
+
+        /* Buffer inteiramente zerado: nenhum ponto amostrado e' diferente de zero. */
+        memset(frameBufferPixels, 0, sizeof(frameBufferPixels));
+        CHECK(Bc250DisplaySampleSurface(0ull, sizeof(frameBufferPixels), 16u,
+            &nonZero, &xorHash));
+        CHECK(nonZero == 0 && xorHash == 0);
+
+        /*
+         * Um unico pixel diferente de zero no FIM do buffer, com os primeiros
+         * 4 DWORDs em zero: a leitura antiga diria "tudo zero", a amostragem
+         * distribuida acusa.
+         */
+        frameBufferPixels[15] = 0xDEADBEEFu;
+        CHECK(Bc250DisplaySampleSurface(0ull, sizeof(frameBufferPixels), 16u,
+            &nonZero, &xorHash));
+        CHECK(nonZero == 1 && xorHash == 0xDEADBEEFu);
+        CHECK(frameBufferPixels[0] == 0 && frameBufferPixels[1] == 0 &&
+              frameBufferPixels[2] == 0 && frameBufferPixels[3] == 0);
+
+        /* Fail-closed nos limites: fora da abertura nao amostra. */
+        CHECK(!Bc250DisplaySampleSurface(sizeof(frameBufferPixels) + 4u,
+            sizeof(frameBufferPixels), 16u, &nonZero, &xorHash));
+        CHECK(!Bc250DisplaySampleSurface(0ull, sizeof(frameBufferPixels) + 4u,
+            16u, &nonZero, &xorHash));
+        CHECK(!Bc250DisplaySampleSurface(0ull, sizeof(frameBufferPixels), 0u,
+            &nonZero, &xorHash));
+        g_Bc250DisplayState.FrameBufferVirtual = NULL;
+        CHECK(!Bc250DisplaySampleSurface(0ull, sizeof(frameBufferPixels), 16u,
+            &nonZero, &xorHash));
+
+        /* Prova integral: igualdade, primeiro byte divergente e bounds. */
+        for (index = 0; index < 8; ++index) {
+            frameBufferPixels[index] = 0xA5000000u + index;
+            frameBufferPixels[index + 8] = frameBufferPixels[index];
+        }
+        g_Bc250DisplayState.FrameBufferVirtual = frameBufferPixels;
+        CHECK(Bc250DisplayCompareSurfaceBytes(0ull, 32ull, 32u, &firstMismatch));
+        CHECK(firstMismatch == ~(UINT64)0);
+        ((unsigned char *)&frameBufferPixels[8])[13] ^= 1u;
+        CHECK(!Bc250DisplayCompareSurfaceBytes(0ull, 32ull, 32u, &firstMismatch));
+        CHECK(firstMismatch == 13u);
+        CHECK(!Bc250DisplayCompareSurfaceBytes(0ull, 60ull, 8u, &firstMismatch));
+        CHECK(!Bc250DisplayCompareSurfaceBytes(0ull, 32ull, 32u, NULL));
+    }
 
     return 1;
 }

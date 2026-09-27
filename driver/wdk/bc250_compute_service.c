@@ -6,6 +6,7 @@
 #include "../core/bc250_psp_load_fw_transaction.h"
 #include "../core/bc250_sdma_f32_transaction.h"
 #include "../core/bc250_compute_mqd_contract.h"
+#include "../core/bc250_gfx_ring_contract.h"
 #include <ntddk.h>
 
 #define BC250_PCI_VENDOR_ID 0x1002u
@@ -814,8 +815,12 @@ static NTSTATUS Bc250ComputeExecutePm4Dispatch(PBC250_COMPUTE_DISPATCH_REQ req)
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C12Cu) = 1u; /* R_CP_DEVICE_ID */
 
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C3B4u) = 0u; /* R_CP_RB_DOORBELL_CONTROL */
-    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C100u) = (uint32_t)(ringGpuva >> 8); /* R_CP_RB0_BASE */
-    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C2C4u) = (uint32_t)((ringGpuva >> 8) >> 32); /* R_CP_RB0_BASE_HI */
+    /* CP_RB0_BASE carrega GPUVA >> 8. A codificacao sai da fonte unica do
+     * contrato do anel grafico: a Corrida 43 falhou porque ESTE formato
+     * estava duplicado e o caminho de restart publicou o endereco bruto.
+     * Terceiro escritor do registrador -- nao reimplementar a conta. */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C100u) = Bc250GfxRingEncodeBaseLo(ringGpuva); /* R_CP_RB0_BASE */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C2C4u) = Bc250GfxRingEncodeBaseHi(ringGpuva); /* R_CP_RB0_BASE_HI */
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C10Cu) = (uint32_t)rptrWbGpuva; /* R_CP_RB0_RPTR_ADDR */
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C110u) = (uint32_t)(rptrWbGpuva >> 32); /* R_CP_RB0_RPTR_ADDR_HI */
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000C3ACu) = (uint32_t)wptrPollGpuva; /* R_CP_RB_WPTR_POLL_ADDR_LO */

@@ -1,6 +1,8 @@
 #include "../wdk/bc250_mcdm_callbacks.h"
+#include "../core/bc250_gcvm_contract.h"
 #include "../core/bc250_adapter_info_contract.h"
 #include "../core/bc250_segment_contract.h"
+#include "../core/bc250_umd_private_contract.h"
 
 #ifdef BC250_KERNEL_MODE
 __declspec(dllimport) void __stdcall ExitProcess(unsigned long ExitCode);
@@ -17,7 +19,11 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
 #define CHECK(Expression) do { if (!(Expression)) { ExitProcess((unsigned long)__LINE__); return 0; } } while (0)
 #else
 #include <stdio.h>
-#define CHECK(Expression) do { if (!(Expression)) return 1; } while (0)
+/* Falha devolve 0 porque main() faz `return Run() ? 0 : 1`: devolver 1
+ * aqui fazia a falha virar SUCESSO no build offline. Medido em 14/09
+ * quebrando o emissor de proposito -- suite offline saiu EXIT=0 e a
+ * kernel EXIT=1. Travado por audit_offline_check_is_not_inverted. */
+#define CHECK(Expression) do { if (!(Expression)) return 0; } while (0)
 #endif
 
 void Bc250ProbeRecord(int Field, unsigned long Value)
@@ -75,15 +81,19 @@ static DXGK_QUERYSEGMENTOUT4 g_segmentOut;
 static DXGK_SEGMENTDESCRIPTOR4 g_segmentDescriptor;
 static DXGK_QUERYGPUMMUCAPSIN g_gpuMmuIn;
 static DXGK_GPUMMUCAPS g_gpuMmuCaps;
+static BC250_UMD_PRIVATE g_umdPrivate;
 static DXGK_QUERYPAGETABLELEVELDESCIN g_pageLevelIn;
 static DXGK_PAGE_TABLE_LEVEL_DESC g_pageLevelDesc;
 static UINT g_numNodesOut;
 static UINT g_fullMcdmReady;
 static UINT64 g_rootAddress;
 static UINT32 g_rootEntries;
+static UINT32 g_rootMaxEntries;
+static UINT32 g_testRootIndexBits;
 static DXGKARG_BUILDPAGINGBUFFER g_paging;
 static DXGK_PTE g_pagingEntries[2];
 static UINT64 g_pageTable[512];
+static UINT32 g_pagingDmaBuffer[64];
 static UINT32 g_updateHandlerCalls;
 static UINT32 g_updateHandlerLastLevel;
 
@@ -110,12 +120,12 @@ static NTSTATUS Bc250TestSetRootPageTable(
     UINT32 MaxEntries)
 {
     if (AdapterContext != (HANDLE)0x250 ||
-        ContextHandle != (HANDLE)0x253 || SegmentId != 1u ||
-        MaxEntries != 512u) {
+        ContextHandle != (HANDLE)0x253 || SegmentId != 1u) {
         return STATUS_INVALID_PARAMETER;
     }
     g_rootAddress = Address;
     g_rootEntries = NumEntries;
+    g_rootMaxEntries = MaxEntries;
     return STATUS_SUCCESS;
 }
 
@@ -128,6 +138,7 @@ static NTSTATUS Bc250TestRuntimeCaps(
     memset(Caps, 0, sizeof(*Caps));
     Caps->LocalSegmentBaseOffset = 0x00A8C000ull;
     Caps->LocalSegmentBytes = 0x0F132000ull;
+    Caps->VramMcBase = BC250_GCVM_VRAM_MC_BASE_FALLBACK;
     Caps->CpuPhysicalStart = 0xC0A8C000ull;
     Caps->NodeCount = 2u;
     Caps->Ready = 1u;
@@ -142,6 +153,7 @@ static NTSTATUS Bc250TestRuntimeCaps(
         Caps->GpuVaBitCount = 48u;
         Caps->PageTableLevelCount = 4u;
         Caps->PageTableIndexBitCount = 9u;
+        Caps->RootPageTableIndexBitCount = g_testRootIndexBits;
         Caps->PageTableSizeBytes = 4096u;
         Caps->PageTableAlignmentBytes = 4096u;
     }
@@ -178,6 +190,54 @@ static VOID Bc250TestDpcHandler(
 {
     UNREFERENCED_PARAMETER(MiniportDeviceContext);
     g_dpcExecutionCount++;
+}
+
+static BOOLEAN TestProbeHung(UINT32 NodeOrdinal, UINT32 *IsResponsive)
+{
+    (void)NodeOrdinal;
+    *IsResponsive = 0u;
+    return TRUE;
+}
+
+static BOOLEAN TestProbeAlive(UINT32 NodeOrdinal, UINT32 *IsResponsive)
+{
+    (void)NodeOrdinal;
+    *IsResponsive = 1u;
+    return TRUE;
+}
+
+/* Nao conseguiu medir: "nao sei" nao pode virar "esta viva". */
+static BOOLEAN TestProbeCannotMeasure(UINT32 NodeOrdinal, UINT32 *IsResponsive)
+{
+    (void)NodeOrdinal;
+    *IsResponsive = 1u;   /* mesmo escrevendo 1, a DDI tem de zerar */
+    return FALSE;
+}
+
+static unsigned g_testTdrQuiesceCalls;
+static unsigned g_testTdrRestartCalls;
+
+static BOOLEAN TestTdrQuiesceOk(void)
+{
+    ++g_testTdrQuiesceCalls;
+    return TRUE;
+}
+
+static BOOLEAN TestTdrRestartOk(void)
+{
+    ++g_testTdrRestartCalls;
+    return TRUE;
+}
+
+/* Um unico stub de falha serve aos dois lados; os contadores separam quem foi. */
+static BOOLEAN TestTdrExecutorFails(void)
+{
+    if (g_testTdrQuiesceCalls == g_testTdrRestartCalls) {
+        ++g_testTdrQuiesceCalls;
+    } else {
+        ++g_testTdrRestartCalls;
+    }
+    return FALSE;
 }
 
 static int Bc250RunMcdmCallbacksTest(void)
@@ -240,14 +300,33 @@ static int Bc250RunMcdmCallbacksTest(void)
      * contradicao.
      */
     CHECK(driverCaps.MiscCaps.ComputeOnly == 0u);
-    CHECK(driverCaps.SupportNonVGA == FALSE);
+    /*
+     * A1 (06/09): esta assercao dizia FALSE e com isso CONGELAVA o defeito.
+     * wddm-driver-and-feature-caps.md marca SupportNonVGA como M para Full
+     * Graphics e para Display Only, e o handler KMDOD do mesmo binario ja
+     * declarava TRUE -- os dois caminhos divergiam e o teste protegia a
+     * divergencia. O valor agora vem de Bc250GetDriverCapsPolicy.
+     */
+    CHECK(driverCaps.SupportNonVGA == TRUE);
+    /*
+     * Dispensado por nao existir modo rotacionado
+     * (optimized-screen-rotation-support.md condiciona a exigencia).
+     */
+    CHECK(driverCaps.SupportSmoothRotation == FALSE);
+    /*
+     * DIVIDA DECLARADA: direct-flip-of-video-memory.md marca Mandatory para
+     * Full Graphics, mas exigiria reprogramar o endereco de scanout (escrita
+     * em DCN, proibida fora da P9). Declarar TRUE seria cap sem backend.
+     */
+    CHECK(driverCaps.SupportDirectFlip == FALSE);
     CHECK(driverCaps.SupportPerEngineTDR == TRUE);
+    CHECK(driverCaps.FlipCaps.FlipOnVSyncMmIo == 1u);
     CHECK(driverCaps.SchedulingCaps.MultiEngineAware == 1u);
     CHECK(driverCaps.SchedulingCaps.PreemptionAware == 1u);
     CHECK(driverCaps.SchedulingCaps.LowIrqlPreemptCommand == 1u);
     CHECK(driverCaps.MemoryManagementCaps.VirtualAddressingSupported == 1u);
     CHECK(driverCaps.MemoryManagementCaps.GpuMmuSupported == 1u);
-    CHECK(driverCaps.MemoryManagementCaps.ParavirtualizationSupported == 1u);
+    CHECK(driverCaps.MemoryManagementCaps.ParavirtualizationSupported == 0u);
 
     /* A/B usa o mesmo binario: ambas as respostas devem mudar juntas. */
     CHECK(Bc250McdmSetWddmContractVersion(DXGKDDI_WDDMv2) ==
@@ -297,6 +376,49 @@ static int Bc250RunMcdmCallbacksTest(void)
     CHECK(g_gpuMmuCaps.VirtualAddressBitCount == 48u);
     CHECK(g_gpuMmuCaps.PageTableLevelCount == 4u);
 
+    /*
+     * FONTE UNICA DA GEOMETRIA DE GPUVA (regressao de 07/09).
+     *
+     * O mock acima devolve 48/4 de proposito -- numeros que NAO sao os do
+     * silicio (34/2, ver BC250_GPUVA_PT_VA_BITS e docs/03). Isso torna este
+     * teste capaz de distinguir repasse de hardcode: se um handler cravar um
+     * numero proprio, ele aparece aqui divergindo do mock.
+     *
+     * A primeira versao do blob UMDRIVERPRIVATE cravava
+     * BC250_ADAPTER_GPUVA_BITS (= 48) e PageTableLevels = 2, enquanto o mesmo
+     * driver declarava VaBits=34 ao WDDM (log da corrida 11:08). Era uma
+     * segunda fonte de verdade -- o defeito do A1 -- e faria a UMD (e, na rota
+     * B, o winsys do RADV) dispor enderecos fora do que o VMID8 traduz.
+     *
+     * Este bloco trava as DUAS respostas na MESMA fonte.
+     */
+    memset(&g_queryInfo, 0, sizeof(g_queryInfo));
+    memset(&g_umdPrivate, 0, sizeof(g_umdPrivate));
+    g_queryInfo.Type = DXGKQAITYPE_UMDRIVERPRIVATE;
+    g_queryInfo.pOutputData = &g_umdPrivate;
+    g_queryInfo.OutputDataSize = sizeof(g_umdPrivate);
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) ==
+        STATUS_SUCCESS);
+    CHECK(Bc250UmdPrivateValidate(&g_umdPrivate, (uint32_t)sizeof(g_umdPrivate)) ==
+        BC250_UMD_PRIVATE_OK);
+    CHECK(g_umdPrivate.GpuVaBits == g_gpuMmuCaps.VirtualAddressBitCount);
+    CHECK(g_umdPrivate.PageTableLevels == g_gpuMmuCaps.PageTableLevelCount);
+
+    /*
+     * E sem a geometria o blob nao sai: melhor a UMD nao receber nada do que
+     * receber numero inventado.
+     */
+    g_fullMcdmReady = 0u;
+    memset(&g_queryInfo, 0, sizeof(g_queryInfo));
+    memset(&g_umdPrivate, 0, sizeof(g_umdPrivate));
+    g_queryInfo.Type = DXGKQAITYPE_UMDRIVERPRIVATE;
+    g_queryInfo.pOutputData = &g_umdPrivate;
+    g_queryInfo.OutputDataSize = sizeof(g_umdPrivate);
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) ==
+        STATUS_DEVICE_NOT_READY);
+    CHECK(g_umdPrivate.Magic == 0ull);
+    g_fullMcdmReady = 1u;
+
     memset(&g_pageLevelIn, 0, sizeof(g_pageLevelIn));
     memset(&g_pageLevelDesc, 0, sizeof(g_pageLevelDesc));
     memset(&g_queryInfo, 0, sizeof(g_queryInfo));
@@ -315,6 +437,11 @@ static int Bc250RunMcdmCallbacksTest(void)
     g_pageLevelIn.LevelIndex = 4u;
     CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) ==
         STATUS_INVALID_PARAMETER);
+    g_pageLevelIn.LevelIndex = 1u;
+    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) ==
+        STATUS_SUCCESS);
+    CHECK(g_pageLevelDesc.PageTableIndexBitCount == 13u);
+    CHECK(g_pageLevelDesc.PageTableSizeInBytes == 65536u);
     g_pageLevelIn.LevelIndex = 0u;
     {
         DXGKARG_SETROOTPAGETABLE setRoot;
@@ -324,14 +451,26 @@ static int Bc250RunMcdmCallbacksTest(void)
         setRoot.Address.SegmentOffset = 0x0000000000345000ull;
         setRoot.NumEntries = 512u;
         Bc250McdmInstallGpuVaLifecycle(Bc250TestSetRootPageTable);
+        /* Fallback: sem RootPageTableIndexBitCount usa PageTableIndexBitCount (9 bits -> 512) */
+        g_testRootIndexBits = 0u;
         Bc250McdmSetRootPageTable((HANDLE)0x250, &setRoot);
         CHECK(g_rootAddress == 0x0000000000345000ull);
         CHECK(g_rootEntries == 512u);
+        CHECK(g_rootMaxEntries == 512u);
+
+        /* Com RootPageTableIndexBitCount = 13 (espaço 34-bit / 2 níveis), maxEntries = 8192 */
+        g_testRootIndexBits = 13u;
+        setRoot.NumEntries = 8192u;
+        Bc250McdmSetRootPageTable((HANDLE)0x250, &setRoot);
+        CHECK(g_rootEntries == 8192u);
+        CHECK(g_rootMaxEntries == 8192u);
+        g_testRootIndexBits = 0u;
     }
     {
+        NTSTATUS badStatus;
         memset(&g_paging, 0, sizeof(g_paging));
-        memset(g_pagingEntries, 0, sizeof(g_pagingEntries));
         memset(g_pageTable, 0xCC, sizeof(g_pageTable));
+        memset(g_pagingEntries, 0, sizeof(g_pagingEntries));
         g_pagingEntries[0].Valid = 1u;
         g_pagingEntries[0].CacheCoherent = 1u;
         g_pagingEntries[0].ReadOnly = 1u;
@@ -339,7 +478,7 @@ static int Bc250RunMcdmCallbacksTest(void)
         g_pagingEntries[0].Segment = 1u;
         g_pagingEntries[0].PageTablePageSize =
             DXGK_PTE_PAGE_TABLE_PAGE_4KB;
-        g_pagingEntries[0].PageAddress = 0x2000u;
+        g_pagingEntries[0].PageAddress = 2u; /* PFN 2 -> 0x2000 offset */
         g_paging.Operation = DXGK_OPERATION_UPDATE_PAGE_TABLE;
         g_paging.UpdatePageTable.PageTableLevel = 0u;
         g_paging.UpdatePageTable.PageTableAddress.CpuVirtual = g_pageTable;
@@ -351,17 +490,50 @@ static int Bc250RunMcdmCallbacksTest(void)
         CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
             STATUS_SUCCESS);
         CHECK(g_pageTable[2] == 0xCCCCCCCCCCCCCCCCull);
-        CHECK(g_pageTable[3] == 0x0000000000A8E025ull);
+        /*
+         * PTE folha em VRAM: leva a base PA (GCMC_VM_FB_OFFSET << 24) mais o
+         * inicio do segmento, e mantem as flags de folha.
+         *   0x450000000 + 0xA8C000 + 0x2000 | 0x25
+         * Historico: 0x0000000000A8E025 era o offset cru (sem base nenhuma);
+         * 0x000000F400A8E025 usava a base MC, que e o dominio do anel e nao o
+         * do walker do GCVM.
+         */
+        CHECK(g_pageTable[3] == 0x0000000450A8E025ull);
         CHECK(g_pageTable[4] == 0u);
+        /* Teste de Segmento 0 (Memoria do Sistema) */
         g_pagingEntries[0].Segment = 0u;
+        g_pagingEntries[0].PageAddress = 0x442C08ull;
+        CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) == STATUS_SUCCESS);
+        CHECK((g_pageTable[3] & (1ull << 1)) != 0); /* BC250_PTE_SYSTEM bit set */
+
+        /* Teste de segmento invalido (Segmento 3) */
+        g_pagingEntries[0].Segment = 3u;
         g_pageTable[3] = 0x1122334455667788ull;
-        CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
-            STATUS_NOT_SUPPORTED);
+        badStatus = Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging);
+        CHECK(badStatus == STATUS_INVALID_PARAMETER || badStatus == STATUS_NOT_SUPPORTED);
         CHECK(g_pageTable[3] == 0x1122334455667788ull);
+
+        /* Teste de repeticao (Flags.Repeat = 1) com lote grande (512 PTEs) */
+        memset(g_pagingEntries, 0, sizeof(g_pagingEntries));
+        g_pagingEntries[0].Valid = 0u;
+        g_paging.Operation = DXGK_OPERATION_UPDATE_PAGE_TABLE;
+        g_paging.UpdatePageTable.PageTableLevel = 0u;
+        g_paging.UpdatePageTable.PageTableAddress.CpuVirtual = g_pageTable;
+        g_paging.UpdatePageTable.pPageTableEntries = g_pagingEntries;
+        g_paging.UpdatePageTable.StartIndex = 0u;
+        g_paging.UpdatePageTable.NumPageTableEntries = 512u;
+        g_paging.UpdatePageTable.Flags.Repeat = 1u;
+        g_paging.UpdatePageTable.UpdateMode = DXGK_PAGETABLEUPDATE_CPU_VIRTUAL;
+        CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) == STATUS_SUCCESS);
+        CHECK(g_pageTable[0] == 0u);
+        CHECK(g_pageTable[511] == 0u);
 
         /* Diretórios não-leaf também passam pelo handler transacional ativo. */
         g_pagingEntries[0].Segment = 1u;
+        g_paging.UpdatePageTable.Flags.Repeat = 0u;
         g_paging.UpdatePageTable.PageTableLevel = 2u;
+        g_paging.UpdatePageTable.StartIndex = 3u;
+        g_paging.UpdatePageTable.NumPageTableEntries = 2u;
         g_updateHandlerCalls = 0u;
         Bc250McdmInstallUpdatePageTableHandler(
             Bc250TestUpdatePageTableHandler);
@@ -371,9 +543,272 @@ static int Bc250RunMcdmCallbacksTest(void)
         CHECK(g_updateHandlerLastLevel == 2u);
         Bc250McdmInstallUpdatePageTableHandler(NULL);
 
+        /*
+         * P6: o VidMm reutiliza a area logo apos pDmaBuffer. Cada IB SDMA
+         * precisa consumir multiplo de 8 DW para que a proxima GPUVA continue
+         * alinhada a 32 bytes.
+         */
+        memset(&g_paging, 0, sizeof(g_paging));
+        memset(g_pagingDmaBuffer, 0xCC, sizeof(g_pagingDmaBuffer));
+        g_paging.Operation = DXGK_OPERATION_VIRTUAL_FILL;
+        g_paging.pDmaBuffer = g_pagingDmaBuffer;
+        g_paging.DmaSize = sizeof(g_pagingDmaBuffer);
+        g_paging.FillVirtual.DestinationVirtualAddress = 0x260000ull;
+        g_paging.FillVirtual.FillSizeInBytes = 11075584ull;
+        g_paging.FillVirtual.FillPattern = 0u;
+        CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
+            STATUS_SUCCESS);
+        CHECK((UINT32 *)g_paging.pDmaBuffer == g_pagingDmaBuffer + 16u);
+        CHECK((g_pagingDmaBuffer[0] & 0xFFu) == BC250_SDMA_OP_CONST_FILL);
+        CHECK((g_pagingDmaBuffer[5] & 0xFFu) == BC250_SDMA_OP_CONST_FILL);
+        CHECK((g_pagingDmaBuffer[10] & 0xFFu) == BC250_SDMA_OP_CONST_FILL);
+        CHECK(g_pagingDmaBuffer[15] == BC250_SDMA_OP_NOP);
+
+        /*
+         * P6_PAGING_IB_SHAPE_PUBLICATION_OFFLINE
+         *
+         * O IB_SIZE do pacote INDIRECT precisa poder excluir os NOPs de cauda:
+         * eles existem so para alinhar a GPUVA do proximo buffer e nao
+         * precisam ser buscados pela engine. A publicacao e autovalidada
+         * contra o tamanho que o VidMm entregou e e destrutiva.
+         */
+        /*
+         * P6_PAGING_IB_DEST_RANGE_OFFLINE
+         *
+         * A faixa que o IB vai ESCREVER precisa chegar a submissao para ser
+         * caminhada. Na corrida de 05/09 01:12 so a GPUVA do IB era validada;
+         * a engine resolveu o IB, entrou nele e parou, com o UTCL1 acordando
+         * do lado de escrita. Leitura nao destrutiva.
+         */
+        {
+            UINT64 destStart = 0ull;
+            UINT64 destEnd = 0ull;
+            CHECK(Bc250PagingPeekIbDestRange(&destStart, &destEnd));
+            CHECK(destStart == 0x260000ull);
+            CHECK(destEnd == 0x260000ull + 11075584ull);
+            /* Nao destrutiva: a segunda leitura devolve o mesmo. */
+            CHECK(Bc250PagingPeekIbDestRange(&destStart, &destEnd));
+            CHECK(destStart == 0x260000ull);
+        }
+        CHECK(Bc250PagingConsumeIbUsefulDwords(16u) == 15u);
+        /* Consumo destrutivo: a segunda leitura nao reaproveita. */
+        CHECK(Bc250PagingConsumeIbUsefulDwords(16u) == 0u);
+
+        memset(&g_paging, 0, sizeof(g_paging));
+        memset(g_pagingDmaBuffer, 0xCC, sizeof(g_pagingDmaBuffer));
+        g_paging.Operation = DXGK_OPERATION_VIRTUAL_TRANSFER;
+        g_paging.pDmaBuffer = g_pagingDmaBuffer;
+        g_paging.DmaSize = sizeof(g_pagingDmaBuffer);
+        g_paging.TransferVirtual.SourceVirtualAddress = 0x200000ull;
+        g_paging.TransferVirtual.DestinationVirtualAddress = 0x400000ull;
+        g_paging.TransferVirtual.TransferSizeInBytes = 786432ull;
+        CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
+            STATUS_SUCCESS);
+        CHECK((UINT32 *)g_paging.pDmaBuffer == g_pagingDmaBuffer + 24u);
+        CHECK(g_pagingDmaBuffer[21] == BC250_SDMA_OP_NOP);
+        CHECK(g_pagingDmaBuffer[22] == BC250_SDMA_OP_NOP);
+        CHECK(g_pagingDmaBuffer[23] == BC250_SDMA_OP_NOP);
+
+        /* 21 DW uteis + 3 NOPs; o total publicado e 24 DW / 96 bytes. */
+        {
+            UINT64 destStart = 0ull;
+            UINT64 destEnd = 0ull;
+            CHECK(Bc250PagingPeekIbDestRange(&destStart, &destEnd));
+            CHECK(destStart == 0x400000ull);
+            CHECK(destEnd == 0x400000ull + 786432ull);
+        }
+        CHECK(Bc250PagingConsumeIbUsefulDwords(24u) == 21u);
+
+        /*
+         * WDDM 2.2+ Monitored Fence Signaling (Op=16).
+         */
+        memset(&g_paging, 0, sizeof(g_paging));
+        memset(g_pagingDmaBuffer, 0xCC, sizeof(g_pagingDmaBuffer));
+        g_paging.Operation = DXGK_OPERATION_SIGNAL_MONITORED_FENCE;
+        g_paging.pDmaBuffer = g_pagingDmaBuffer;
+        g_paging.DmaSize = sizeof(g_pagingDmaBuffer);
+        g_paging.SignalMonitoredFence.MonitoredFenceGpuVa = 0x20001000ull;
+        g_paging.SignalMonitoredFence.MonitoredFenceValue = 0x0123456789ABCDEFull;
+
+        CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
+            STATUS_SUCCESS);
+        CHECK((UINT32 *)g_paging.pDmaBuffer == g_pagingDmaBuffer + 16u);
+        /* Packet 0: FENCE64 header (OP=5, MTYPE_UC=3, WRITE64=1) -> 0x80030005 */
+        CHECK(g_pagingDmaBuffer[0] == 0x80030005u);
+        /* Packet 0: DstAddress = 0x20001000 */
+        CHECK(g_pagingDmaBuffer[1] == 0x20001000u);
+        CHECK(g_pagingDmaBuffer[2] == 0u);
+        /* Packet 0: Low 32 bits = 0x89ABCDEF */
+        CHECK(g_pagingDmaBuffer[3] == 0x89ABCDEFu);
+        /* Packet 0: High 32 bits = 0x01234567 */
+        CHECK(g_pagingDmaBuffer[4] == 0x01234567u);
+        /* Packet 1: GCR REQ (OP=17) */
+        CHECK((g_pagingDmaBuffer[5] & 0xFFu) == BC250_SDMA_OP_GCR_REQ);
+        /* Cauda: 6 NOPs de alinhamento */
+        CHECK(g_pagingDmaBuffer[10] == BC250_SDMA_OP_NOP);
+        CHECK(g_pagingDmaBuffer[15] == BC250_SDMA_OP_NOP);
+
+        /* Casos de erro: endereco desalinhado e buffer insuficiente */
+        g_paging.SignalMonitoredFence.MonitoredFenceGpuVa = 0x20001001ull;
+        CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
+            STATUS_INVALID_PARAMETER);
+        g_paging.SignalMonitoredFence.MonitoredFenceGpuVa = 0x20001000ull;
+        g_paging.DmaSize = 16u;
+        CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
+            STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER);
+
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_5)
+        /* DxgkDdiSignalMonitoredFence DDI */
+        {
+            DXGKARG_SIGNALMONITOREDFENCE ddiSignal;
+            memset(&ddiSignal, 0, sizeof(ddiSignal));
+            memset(g_pagingDmaBuffer, 0xCC, sizeof(g_pagingDmaBuffer));
+            ddiSignal.pDmaBuffer = g_pagingDmaBuffer;
+            ddiSignal.DmaSize = sizeof(g_pagingDmaBuffer);
+            ddiSignal.MonitoredFenceGpuVa = 0x20002000ull;
+            ddiSignal.MonitoredFenceValue = 0xFEDCBA9876543210ull;
+            CHECK(Bc250McdmSignalMonitoredFence((HANDLE)0x250, &ddiSignal) ==
+                STATUS_SUCCESS);
+            CHECK(g_pagingDmaBuffer[0] == 0x80030005u);
+            CHECK(g_pagingDmaBuffer[1] == 0x20002000u);
+            CHECK(g_pagingDmaBuffer[2] == 0u);
+            CHECK(g_pagingDmaBuffer[3] == 0x76543210u);
+            CHECK(g_pagingDmaBuffer[4] == 0xFEDCBA98u);
+            CHECK(ddiSignal.DmaSize == sizeof(g_pagingDmaBuffer) - (16u * sizeof(UINT32)));
+        }
+#endif
+
+        /*
+         * P6_PTE_VRAM_MC_BASE_OFFLINE
+         *
+         * Medido na corrida de 05/09 00:55: o PDE continha 0x00A91061, um
+         * offset CRU de VRAM. A GPU caminha em espaco MC e foi buscar a folha
+         * no MC 0x0000A91000, que nao e VRAM. Endereco de VRAM numa entrada
+         * PRECISA levar a base MC; endereco de memoria de sistema NAO pode
+         * leva-la.
+         */
+        {
+            BC250_MCDM_RUNTIME_CAPS pteCaps;
+            DXGK_PTE pte;
+            UINT64 encoded = 0ull;
+            CONST UINT64 addrMask = 0x0000FFFFFFFFF000ull;
+            CONST UINT64 base = BC250_GCVM_VRAM_MC_BASE_FALLBACK;
+            CONST UINT64 segBase = 0x00A8C000ull;
+
+            CHECK(Bc250TestRuntimeCaps((HANDLE)0x250, &pteCaps) ==
+                STATUS_SUCCESS);
+            CHECK(pteCaps.VramMcBase == base);
+
+            /* PDE (nivel 1): tabela filha mora em VRAM -> leva base MC. */
+            memset(&pte, 0, sizeof(pte));
+            pte.Valid = 1u;
+            pte.Segment = 1u;
+            pte.PageAddress = 0x100ull;
+            CHECK(Bc250McdmEncodeVidMmPteWithLevel(&pteCaps, &pte, 1u,
+                &encoded) == STATUS_SUCCESS);
+            CHECK((encoded & addrMask) == (base + segBase + 0x100000ull));
+
+            /* PTE folha em VRAM (Segment 1) -> tambem leva base MC. */
+            memset(&pte, 0, sizeof(pte));
+            pte.Valid = 1u;
+            pte.Segment = 1u;
+            pte.PageAddress = 0x100ull;
+            pte.PageTablePageSize = DXGK_PTE_PAGE_TABLE_PAGE_4KB;
+            CHECK(Bc250McdmEncodeVidMmPteWithLevel(&pteCaps, &pte, 0u,
+                &encoded) == STATUS_SUCCESS);
+            CHECK((encoded & addrMask) == (base + segBase + 0x100000ull));
+            CHECK((encoded & BC250_PTE_SYSTEM) == 0u);
+
+            /* PTE folha em memoria de sistema (Segment 0) -> endereco cru. */
+            memset(&pte, 0, sizeof(pte));
+            pte.Valid = 1u;
+            pte.Segment = 0u;
+            pte.PageAddress = 0x10721Dull;
+            pte.PageTablePageSize = DXGK_PTE_PAGE_TABLE_PAGE_4KB;
+            CHECK(Bc250McdmEncodeVidMmPteWithLevel(&pteCaps, &pte, 0u,
+                &encoded) == STATUS_SUCCESS);
+            CHECK((encoded & addrMask) == 0x10721D000ull);
+            CHECK((encoded & BC250_PTE_SYSTEM) != 0u);
+        }
+
+        /*
+         * P6_PDE_FORMAT_OFFLINE
+         *
+         * Formato de PDE do Navi 10 (gmc_v10_0.c): endereco em [47:6],
+         * [5:3] reservados, 2 C, 1 system, 0 valid. Nao existem READABLE
+         * (bit 5) nem WRITEABLE (bit 6) num PDE -- o bit 6 e o LSB do
+         * endereco. Gravar 0x61 deslocava a tabela folha em 64 bytes, e o
+         * decodificador de PTE (mascara de 4 KiB) escondia isso da caminhada
+         * durante seis corridas.
+         */
+        {
+            UINT64 pde = 0ull;
+            UINT64 phys = 0ull;
+            UINT32 flags = 0u;
+            UINT32 reserved = 0u;
+
+            /* PDE valido: so bit 0, endereco preservado. */
+            CHECK(Bc250GcvmEncodePde(0x450A91000ull, BC250_PTE_VALID, &pde) ==
+                BC250_GCVM_OK);
+            CHECK(pde == 0x0000000450A91001ull);
+
+            /* Flags de folha sao RECUSADAS num PDE (fail-closed). */
+            CHECK(Bc250GcvmEncodePde(0x450A91000ull,
+                BC250_PTE_VALID | BC250_PTE_READABLE, &pde) ==
+                BC250_GCVM_BAD_ARGUMENT);
+            CHECK(Bc250GcvmEncodePde(0x450A91000ull,
+                BC250_PTE_VALID | BC250_PTE_WRITEABLE, &pde) ==
+                BC250_GCVM_BAD_ARGUMENT);
+
+            /* Decode com mascara de 64 bytes enxerga o deslocamento. */
+            CHECK(Bc250GcvmDecodePde(0x0000000450A91061ull, &phys, &flags,
+                &reserved) == BC250_GCVM_OK);
+            CHECK(phys == 0x450A91040ull);   /* +64 bytes: o bug real */
+            CHECK(reserved == 0x20u);        /* bit 5 em campo reservado */
+
+            /* Entrada limpa: endereco intacto e nenhum bit reservado. */
+            CHECK(Bc250GcvmDecodePde(0x0000000450A91001ull, &phys, &flags,
+                &reserved) == BC250_GCVM_OK);
+            CHECK(phys == 0x450A91000ull);
+            CHECK(reserved == 0u);
+            CHECK((flags & BC250_PTE_VALID) != 0u);
+
+            /*
+             * Contraste com o decodificador de PTE, que mascara 4 KiB: ele
+             * devolve o endereco "limpo" mesmo com a entrada corrompida. Foi
+             * este falso positivo que a caminhada reportava.
+             */
+            CHECK(Bc250GcvmDecodePte(0x0000000450A91061ull, &phys, &flags) ==
+                BC250_GCVM_OK);
+            CHECK(phys == 0x450A91000ull);
+        }
+
+        memset(&g_paging, 0, sizeof(g_paging));
+        memset(g_pagingDmaBuffer, 0xCC, sizeof(g_pagingDmaBuffer));
+        g_paging.Operation = DXGK_OPERATION_VIRTUAL_FILL;
+        g_paging.pDmaBuffer = g_pagingDmaBuffer;
+        g_paging.DmaSize = sizeof(g_pagingDmaBuffer);
+        g_paging.FillVirtual.DestinationVirtualAddress = 0x260000ull;
+        g_paging.FillVirtual.FillSizeInBytes = 11075584ull;
+        g_paging.FillVirtual.FillPattern = 0u;
+        CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
+            STATUS_SUCCESS);
+        /*
+         * Fail-closed: se o total publicado nao casar com o DmaBufferSize que
+         * o VidMm entregou na submissao, a publicacao e descartada e o
+         * executor deriva o IB_SIZE do tamanho -- nunca usa um valor de outro
+         * buffer.
+         */
+        CHECK(Bc250PagingConsumeIbUsefulDwords(64u) == 0u);
+
         memset(&g_paging, 0, sizeof(g_paging));
         g_paging.Operation = DXGK_OPERATION_FLUSH_TLB;
         CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) == STATUS_NOT_SUPPORTED);
+
+        memset(&g_paging, 0, sizeof(g_paging));
+        g_paging.Operation = (DXGK_BUILDPAGINGBUFFER_OPERATION)0x7FFFFFFFu;
+        CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
+            STATUS_NOT_SUPPORTED);
     }
 
     /* 3. MCDM requires QUERYSEGMENT4 and prohibits legacy segment queries. */
@@ -433,9 +868,37 @@ static int Bc250RunMcdmCallbacksTest(void)
     CHECK(Bc250McdmGetNodeMetadata((HANDLE)0x250, 1u, &g_nodeMetadata) == STATUS_SUCCESS);
     CHECK(g_nodeMetadata.EngineType == (Bc250McdmGetComputeOnly() ? DXGK_ENGINE_TYPE_OTHER : DXGK_ENGINE_TYPE_3D));
 
-    /* 6. Test QueryEngineStatus */
+    /*
+     * 6. Test QueryEngineStatus
+     *
+     * item 24 (07/09) -- ESTE BLOCO TAMBEM CONGELAVA UM FALSO SUCESSO: exigia
+     * Responsive==1 sem probe instalada, isto e', exigia que a DDI afirmasse
+     * engine viva sem medir registrador nenhum. Contrato novo:
+     *   - sem probe             -> STATUS_NOT_SUPPORTED e Responsive=0
+     *   - probe falha ao medir  -> STATUS_DEVICE_NOT_READY e Responsive=0
+     *   - probe mede "viva"     -> STATUS_SUCCESS e Responsive=1
+     *   - probe mede "travada"  -> STATUS_SUCCESS e Responsive=0
+     */
     memset(&g_engineStatus, 0, sizeof(g_engineStatus));
     g_engineStatus.NodeOrdinal = 0u;
+    Bc250McdmInstallEngineResponsiveProbe(NULL);
+    CHECK(Bc250McdmQueryEngineStatus((HANDLE)0x250, &g_engineStatus) == STATUS_NOT_SUPPORTED);
+    CHECK(g_engineStatus.EngineStatus.Responsive == 0);
+
+    Bc250McdmInstallEngineResponsiveProbe(TestProbeCannotMeasure);
+    g_engineStatus.EngineStatus.Responsive = 1;
+    CHECK(Bc250McdmQueryEngineStatus((HANDLE)0x250, &g_engineStatus) == STATUS_DEVICE_NOT_READY);
+    CHECK(g_engineStatus.EngineStatus.Responsive == 0);
+
+    Bc250McdmInstallEngineResponsiveProbe(TestProbeHung);
+    g_engineStatus.EngineStatus.Responsive = 1;
+    CHECK(Bc250McdmQueryEngineStatus((HANDLE)0x250, &g_engineStatus) == STATUS_SUCCESS);
+    CHECK(g_engineStatus.EngineStatus.Responsive == 0);
+
+    Bc250McdmInstallEngineResponsiveProbe(TestProbeAlive);
+    CHECK(Bc250McdmQueryEngineStatus((HANDLE)0x250, &g_engineStatus) == STATUS_SUCCESS);
+    CHECK(g_engineStatus.EngineStatus.Responsive == 1);
+    g_engineStatus.NodeOrdinal = 1u;
     CHECK(Bc250McdmQueryEngineStatus((HANDLE)0x250, &g_engineStatus) == STATUS_SUCCESS);
     CHECK(g_engineStatus.EngineStatus.Responsive == 1);
 
@@ -455,11 +918,40 @@ static int Bc250RunMcdmCallbacksTest(void)
     g_createContext.NodeOrdinal = 0u;
     CHECK(Bc250McdmCreateContext((HANDLE)0x250, &g_createContext) == STATUS_NOT_SUPPORTED);
 
-    /* 9. Test Timeout Recovery Callbacks & Preemption */
+    /*
+     * 9. Test Timeout Recovery Callbacks & Preemption
+     *
+     * B6 / item 25 (07/09) -- ESTE BLOCO CONGELAVA UM FALSO SUCESSO. Ele
+     * exigia STATUS_SUCCESS de ResetFromTimeout/RestartFromTimeout SEM
+     * nenhum executor instalado, isto e', exigia que as duas DDIs mentissem
+     * ao dxgkrnl (Lei 4). Agora o contrato e':
+     *   - sem executor           -> STATUS_DEVICE_NOT_READY
+     *   - executor devolve FALSE -> STATUS_DEVICE_NOT_READY
+     *   - executor devolve TRUE  -> STATUS_SUCCESS
+     */
     CHECK(Bc250McdmResetFromTimeout(NULL) == STATUS_NOT_SUPPORTED);
-    CHECK(Bc250McdmResetFromTimeout((HANDLE)0x250) == STATUS_SUCCESS);
     CHECK(Bc250McdmRestartFromTimeout(NULL) == STATUS_NOT_SUPPORTED);
+
+    Bc250McdmInstallTdrExecutors(NULL, NULL);
+    CHECK(Bc250McdmResetFromTimeout((HANDLE)0x250) == STATUS_DEVICE_NOT_READY);
+    CHECK(Bc250McdmRestartFromTimeout((HANDLE)0x250) == STATUS_DEVICE_NOT_READY);
+
+    Bc250McdmInstallTdrExecutors(TestTdrExecutorFails, TestTdrExecutorFails);
+    CHECK(Bc250McdmResetFromTimeout((HANDLE)0x250) == STATUS_DEVICE_NOT_READY);
+    CHECK(Bc250McdmRestartFromTimeout((HANDLE)0x250) == STATUS_DEVICE_NOT_READY);
+    CHECK(g_testTdrQuiesceCalls == 1u);
+    CHECK(g_testTdrRestartCalls == 1u);
+
+    Bc250McdmInstallTdrExecutors(TestTdrQuiesceOk, TestTdrRestartOk);
+    CHECK(Bc250McdmResetFromTimeout((HANDLE)0x250) == STATUS_SUCCESS);
     CHECK(Bc250McdmRestartFromTimeout((HANDLE)0x250) == STATUS_SUCCESS);
+    CHECK(g_testTdrQuiesceCalls == 2u);
+    CHECK(g_testTdrRestartCalls == 2u);
+
+    /* Desinstalar volta ao fail-closed: nada de sucesso residual. */
+    Bc250McdmInstallTdrExecutors(NULL, NULL);
+    CHECK(Bc250McdmResetFromTimeout((HANDLE)0x250) == STATUS_DEVICE_NOT_READY);
+    CHECK(Bc250McdmRestartFromTimeout((HANDLE)0x250) == STATUS_DEVICE_NOT_READY);
 
     {
         static DXGKARG_PREEMPTCOMMAND preemptCmd;

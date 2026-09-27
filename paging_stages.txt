@@ -1,0 +1,107 @@
+﻿
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+   EnableRedirectToChakraJsProvider : false
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.016 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 30
+
+Microsoft (R) Windows Debugger Version 10.0.28000.2526 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [C:\Windows\MEMORY.DMP]
+Kernel Bitmap Dump File: Kernel address space is available, User address space may not be available.
+
+Symbol search path is: srv*
+Executable search path is: 
+Windows 10 Kernel Version 19041 MP (12 procs) Free x64
+Product: WinNt, suite: TerminalServer SingleUserTS
+Edition build lab: 19041.1.amd64fre.vb_release.191206-1406
+Kernel base = 0xfffff801`7b200000 PsLoadedModuleList = 0xfffff801`7be2a2b0
+Debug session time: Thu Sep 10 10:23:38.997 2026 (UTC - 3:00)
+System Uptime: 0 days 0:18:56.520
+Loading Kernel Symbols
+...............................................................
+...Page 404d25 not present in the dump file. Type ".hh dbgerr004" for details
+.............................................................
+.....................................
+Loading User Symbols
+
+Loading unloaded module list
+...........
+For analysis of this file, run !analyze -v
+10: kd> cdb: Reading initial command '.reload; x bc250mcdm!g_Bc250Paging*; dq bc250mcdm!g_Bc250PagingStages L40; q'
+Loading Kernel Symbols
+...............................................................
+...Page 404d25 not present in the dump file. Type ".hh dbgerr004" for details
+.............................................................
+.....................................
+Loading User Symbols
+
+Loading unloaded module list
+...........
+Unable to load image \SystemRoot\System32\drivers\bc250mcdm.sys, Win32 error 0n2
+fffff801`79e90e20 bc250mcdm!g_Bc250PagingStageSequence = <no type information>
+fffff801`79e90a20 bc250mcdm!g_Bc250PagingStages = <no type information>
+fffff801`79e8d0b0 bc250mcdm!g_Bc250PagingActiveCount = <no type information>
+fffff801`79e90a20  00000016`00001501 00000103`0000000b
+fffff801`79e90a30  00000017`00001502 00000103`0000000b
+fffff801`79e90a40  00000018`00001503 00000000`0000000b
+fffff801`79e90a50  00000006`00001504 00000000`0000000b
+fffff801`79e90a60  00000001`00001505 00000103`0000000c
+fffff801`79e90a70  00000002`00001506 00000103`0000000c
+fffff801`79e90a80  00000003`00001507 00000103`0000000c
+fffff801`79e90a90  00000004`00001508 00000000`0000000c
+fffff801`79e90aa0  00000005`00001509 00000103`0000000c
+fffff801`79e90ab0  00000006`0000150a 00000000`0000000c
+fffff801`79e90ac0  00000001`0000150b 00000103`0000000b
+fffff801`79e90ad0  00000002`0000150c 00000103`0000000b
+fffff801`79e90ae0  00000003`0000150d 00000103`0000000b
+fffff801`79e90af0  00000004`0000150e 00000000`0000000b
+fffff801`79e90b00  00000005`0000150f 00000103`0000000b
+fffff801`79e90b10  00000014`00001510 00000103`0000000b
+fffff801`79e90b20  00000015`00001511 00000103`0000000b
+fffff801`79e90b30  00000016`00001512 00000103`0000000b
+fffff801`79e90b40  00000017`00001513 00000103`0000000b
+fffff801`79e90b50  00000018`00001514 00000000`0000000b
+fffff801`79e90b60  00000006`00001515 00000000`0000000b
+fffff801`79e90b70  00000001`00001516 00000103`0000000c
+fffff801`79e90b80  00000002`00001517 00000103`0000000c
+fffff801`79e90b90  00000003`00001518 00000103`0000000c
+fffff801`79e90ba0  00000004`00001519 00000000`0000000c
+fffff801`79e90bb0  00000005`0000151a 00000103`0000000c
+fffff801`79e90bc0  00000006`0000151b 00000000`0000000c
+fffff801`79e90bd0  00000001`0000151c 00000103`0000000b
+fffff801`79e90be0  00000002`0000151d 00000103`0000000b
+fffff801`79e90bf0  00000003`0000151e 00000103`0000000b
+fffff801`79e90c00  00000004`0000151f 00000000`0000000b
+fffff801`79e90c10  00000005`00001520 00000103`0000000b
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Kernel.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Usb4Kd.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'

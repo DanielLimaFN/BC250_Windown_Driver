@@ -1,0 +1,583 @@
+﻿
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+   EnableRedirectToChakraJsProvider : false
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.016 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 30
+
+Microsoft (R) Windows Debugger Version 10.0.28000.2526 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [C:\Windows\MEMORY.DMP]
+Kernel Bitmap Dump File: Kernel address space is available, User address space may not be available.
+
+Symbol search path is: srv*
+Executable search path is: 
+Windows 10 Kernel Version 19041 MP (12 procs) Free x64
+Product: WinNt, suite: TerminalServer SingleUserTS
+Edition build lab: 19041.1.amd64fre.vb_release.191206-1406
+Kernel base = 0xfffff805`59a00000 PsLoadedModuleList = 0xfffff805`5a62a2b0
+Debug session time: Thu Sep 10 14:24:40.299 2026 (UTC - 3:00)
+System Uptime: 0 days 1:05:02.750
+Loading Kernel Symbols
+...............................................................
+...Page 403130 not present in the dump file. Type ".hh dbgerr004" for details
+.............................................................
+.....................................
+Loading User Symbols
+
+Loading unloaded module list
+...........
+For analysis of this file, run !analyze -v
+0: kd> kd: Reading initial command '!analyze -v; !dpcwatchdog; lm m bc250*; q'
+Loading Kernel Symbols
+...............................................................
+...Page 403130 not present in the dump file. Type ".hh dbgerr004" for details
+.............................................................
+.....................................
+Loading User Symbols
+
+Loading unloaded module list
+...........
+*******************************************************************************
+*                                                                             *
+*                        Bugcheck Analysis                                    *
+*                                                                             *
+*******************************************************************************
+
+DPC_WATCHDOG_VIOLATION (133)
+The DPC watchdog detected a prolonged run time at an IRQL of DISPATCH_LEVEL
+or above.
+Arguments:
+Arg1: 0000000000000000, A single DPC or ISR exceeded its time allotment. The offending
+	component can usually be identified with a stack trace.
+Arg2: 0000000000000501, The DPC time count (in ticks).
+Arg3: 0000000000000500, The DPC time allotment (in ticks).
+Arg4: fffff8055a6fb320, cast to nt!DPC_WATCHDOG_GLOBAL_TRIAGE_BLOCK, which contains
+	additional information regarding this single DPC timeout
+
+Debugging Details:
+------------------
+
+Unable to load image \SystemRoot\System32\drivers\bc250mcdm.sys, Win32 error 0n2
+*************************************************************************
+***                                                                   ***
+***                                                                   ***
+***    Either you specified an unqualified symbol, or your debugger   ***
+***    doesn't have full symbol information.  Unqualified symbol      ***
+***    resolution is turned off by default. Please either specify a   ***
+***    fully qualified symbol module!symbolname, or enable resolution ***
+***    of unqualified symbols by typing ".symopt- 100". Note that     ***
+***    enabling unqualified symbol resolution with network symbol     ***
+***    server shares in the symbol path may cause the debugger to     ***
+***    appear to hang for long periods of time when an incorrect      ***
+***    symbol name is typed or the network symbol server is down.     ***
+***                                                                   ***
+***    For some commands to work properly, your symbol path           ***
+***    must point to .pdb files that have full type information.      ***
+***                                                                   ***
+***    Certain .pdb files (such as the public OS symbols) do not      ***
+***    contain the required information.  Contact the group that      ***
+***    provided you with these symbols if you need this command to    ***
+***    work.                                                          ***
+***                                                                   ***
+***    Type referenced: TickPeriods                                   ***
+***                                                                   ***
+*************************************************************************
+
+KEY_VALUES_STRING: 1
+
+    Key  : Analysis.CPU.mSec
+    Value: 2265
+
+    Key  : Analysis.Elapsed.mSec
+    Value: 3318
+
+    Key  : Analysis.IO.Other.Mb
+    Value: 0
+
+    Key  : Analysis.IO.Read.Mb
+    Value: 2
+
+    Key  : Analysis.IO.Write.Mb
+    Value: 1
+
+    Key  : Analysis.Init.CPU.mSec
+    Value: 437
+
+    Key  : Analysis.Init.Elapsed.mSec
+    Value: 678
+
+    Key  : Analysis.Memory.CommitPeak.Mb
+    Value: 93
+
+    Key  : Analysis.Version.DbgEng
+    Value: 10.0.28000.2526
+
+    Key  : Analysis.Version.Description
+    Value: 10.2506.23.01 amd64fre
+
+    Key  : Analysis.Version.Ext
+    Value: 1.2506.23.1
+
+    Key  : Bugcheck.Code.KiBugCheckData
+    Value: 0x133
+
+    Key  : Bugcheck.Code.LegacyAPI
+    Value: 0x133
+
+    Key  : Bugcheck.Code.TargetModel
+    Value: 0x133
+
+    Key  : Failure.Bucket
+    Value: 0x133_DPC_dxgmms2!VidSchDdiNotifyDpc
+
+    Key  : Failure.Hash
+    Value: {4e6d2d74-350e-3780-03d1-7dfcf1a310f1}
+
+    Key  : Hypervisor.Enlightenments.Value
+    Value: 0
+
+    Key  : Hypervisor.Enlightenments.ValueHex
+    Value: 0x0
+
+    Key  : Hypervisor.Flags.AnyHypervisorPresent
+    Value: 0
+
+    Key  : Hypervisor.Flags.ApicEnlightened
+    Value: 0
+
+    Key  : Hypervisor.Flags.ApicVirtualizationAvailable
+    Value: 1
+
+    Key  : Hypervisor.Flags.AsyncMemoryHint
+    Value: 0
+
+    Key  : Hypervisor.Flags.CoreSchedulerRequested
+    Value: 0
+
+    Key  : Hypervisor.Flags.CpuManager
+    Value: 0
+
+    Key  : Hypervisor.Flags.DeprecateAutoEoi
+    Value: 0
+
+    Key  : Hypervisor.Flags.DynamicCpuDisabled
+    Value: 0
+
+    Key  : Hypervisor.Flags.Epf
+    Value: 0
+
+    Key  : Hypervisor.Flags.ExtendedProcessorMasks
+    Value: 0
+
+    Key  : Hypervisor.Flags.HardwareMbecAvailable
+    Value: 1
+
+    Key  : Hypervisor.Flags.MaxBankNumber
+    Value: 0
+
+    Key  : Hypervisor.Flags.MemoryZeroingControl
+    Value: 0
+
+    Key  : Hypervisor.Flags.NoExtendedRangeFlush
+    Value: 0
+
+    Key  : Hypervisor.Flags.NoNonArchCoreSharing
+    Value: 0
+
+    Key  : Hypervisor.Flags.Phase0InitDone
+    Value: 0
+
+    Key  : Hypervisor.Flags.PowerSchedulerQos
+    Value: 0
+
+    Key  : Hypervisor.Flags.RootScheduler
+    Value: 0
+
+    Key  : Hypervisor.Flags.SynicAvailable
+    Value: 0
+
+    Key  : Hypervisor.Flags.UseQpcBias
+    Value: 0
+
+    Key  : Hypervisor.Flags.Value
+    Value: 16908288
+
+    Key  : Hypervisor.Flags.ValueHex
+    Value: 0x1020000
+
+    Key  : Hypervisor.Flags.VpAssistPage
+    Value: 0
+
+    Key  : Hypervisor.Flags.VsmAvailable
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.AccessStats
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.CrashdumpEnlightened
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.CreateVirtualProcessor
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.DisableHyperthreading
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.HostTimelineSync
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.HypervisorDebuggingEnabled
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.IsHyperV
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.LivedumpEnlightened
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.MapDeviceInterrupt
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.MceEnlightened
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.Nested
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.StartLogicalProcessor
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.Value
+    Value: 0
+
+    Key  : Hypervisor.RootFlags.ValueHex
+    Value: 0x0
+
+    Key  : SecureKernel.HalpHvciEnabled
+    Value: 0
+
+    Key  : Stack.Pointer
+    Value: ISR
+
+    Key  : WER.OS.Branch
+    Value: vb_release
+
+    Key  : WER.OS.Version
+    Value: 10.0.19041.1
+
+    Key  : WER.System.BIOSRevision
+    Value: 5.13.0.0
+
+
+BUGCHECK_CODE:  133
+
+BUGCHECK_P1: 0
+
+BUGCHECK_P2: 501
+
+BUGCHECK_P3: 500
+
+BUGCHECK_P4: fffff8055a6fb320
+
+FILE_IN_CAB:  MEMORY.DMP
+
+FAULTING_THREAD:  ffffe606cc3af040
+
+DPC_TIMEOUT_TYPE:  SINGLE_DPC_TIMEOUT_EXCEEDED
+
+TRAP_FRAME:  fffff8055e89e860 -- (.trap 0xfffff8055e89e860)
+NOTE: The trap frame does not contain all registers.
+Some register values may be zeroed or incorrect.
+rax=000000003c3a8fcd rbx=0000000000000000 rcx=fffff8055e89ea50
+rdx=ffff8887897d4148 rsi=0000000000000000 rdi=0000000000000000
+rip=fffff80559cde397 rsp=fffff8055e89e9f0 rbp=fffff8055e89eb79
+ r8=0000000000000000  r9=0000000000000001 r10=fffff80559c96d60
+r11=ffffc2fe7de00000 r12=0000000000000000 r13=0000000000000000
+r14=0000000000000000 r15=0000000000000000
+iopl=0         nv up ei pl nz na pe nc
+nt!KeYieldProcessorEx+0x17:
+fffff805`59cde397 4883c420        add     rsp,20h
+Resetting default scope
+
+BLACKBOXBSD: 1 (!blackboxbsd)
+
+
+BLACKBOXNTFS: 1 (!blackboxntfs)
+
+
+BLACKBOXPNP: 1 (!blackboxpnp)
+
+
+BLACKBOXWINLOGON: 1 (!blackboxwinlogon)
+
+
+PROCESS_NAME:  System
+
+STACK_TEXT:  
+fffff805`5e8a5c88 fffff805`59e43790     : 00000000`00000133 00000000`00000000 00000000`00000501 00000000`00000500 : nt!KeBugCheckEx
+fffff805`5e8a5c90 fffff805`59c86e3d     : 00000bf1`3a740009 fffff805`565cc180 00000000`00000246 00000000`0003cfb0 : nt!KeAccumulateTicks+0x1bfb70
+fffff805`5e8a5cf0 fffff805`59c7dec1     : 00000000`0003cfaf 00000000`0002458e fffff805`565cc180 00000000`00000001 : nt!KiUpdateRunTime+0x5d
+fffff805`5e8a5d40 fffff805`59c81253     : fffff805`565cc180 00000000`00000000 fffff805`5a6315a0 00000000`00000000 : nt!KiUpdateTime+0x4a1
+fffff805`5e8a5e80 fffff805`59c88ae2     : fffff805`5e89e860 fffff805`5e89e8e0 fffff805`5e89e800 00000000`00000002 : nt!KeClockInterruptNotify+0x2e3
+fffff805`5e8a5f30 fffff805`59d3e965     : 00000009`18b924c5 fffff805`5a6f3a60 fffff805`5a6f3b10 ffffd300`60168c80 : nt!HalpTimerClockInterrupt+0xe2
+fffff805`5e8a5f60 fffff805`59dfdc3a     : fffff805`5e89e8e0 fffff805`5a6f3a60 fffff805`5e89ee60 fffff805`5e89eae8 : nt!KiCallInterruptServiceRoutine+0xa5
+fffff805`5e8a5fb0 fffff805`59dfe407     : fffff805`579f4490 fffff805`5e89ea48 fffff805`5e89eae8 fffff805`59dfe414 : nt!KiInterruptSubDispatchNoLockNoEtw+0xfa
+fffff805`5e89e860 fffff805`59cde397     : 00000000`00000010 00000000`00000282 fffff805`5e89ea18 00000000`00000018 : nt!KiInterruptDispatchNoLockNoEtw+0x37
+fffff805`5e89e9f0 fffff805`59c950ca     : fffff805`5e89eaf0 00000000`00000003 fffff805`5e89eaf0 fffff805`722bcc59 : nt!KeYieldProcessorEx+0x17
+fffff805`5e89ea20 fffff805`59c96dd3     : ffffe606`3c3a8fcd 00000009`0ccb1009 00000000`ffffffff 00000000`00000000 : nt!KxWaitForLockOwnerShip+0x2a
+fffff805`5e89ea50 fffff805`722b59ad     : ffffe606`ccb17000 fffff805`7000d8a3 ffffe606`ccb1c030 fffff805`575e358a : nt!KeAcquireInStackQueuedSpinLockAtDpcLevel+0x73
+fffff805`5e89ea80 fffff805`7000d5d1     : fffff805`5e89eb79 00000000`00000000 fffff805`565cc180 fffff805`5e89ee60 : dxgmms2!VidSchDdiNotifyDpc+0xdd
+fffff805`5e89eb30 fffff805`83c14fb9     : 00000000`00000000 00000000`00000008 00000000`00000008 fffff805`565cc180 : dxgkrnl!DxgNotifyDpcCB+0x91
+fffff805`5e89ebe0 fffff805`59c8bbd2     : fffff805`83c603f0 fffff805`565cc180 fffff805`5e89ee68 fffff805`00000002 : bc250mcdm!Bc250DxgkDdiUpdateMonitorLinkInfo+0xfe9
+fffff805`5e89ec30 fffff805`59c8ac4d     : 00000000`00000000 00000000`00000000 00000000`00000000 00000000`000242aa : nt!KiProcessExpiredTimerList+0x172
+fffff805`5e89ed20 fffff805`59e04195     : 00000000`00000000 fffff805`565cc180 fffff805`5a6f3a60 fffff805`565cc180 : nt!KiRetireDpcList+0x5dd
+fffff805`5e89efb0 fffff805`59e03f80     : fffff805`59df7d70 fffff805`59cf5f5a ffffe606`ce10a2f0 fffff805`722bd48a : nt!KxRetireDpcList+0x5
+ffff8887`897d3cb0 fffff805`59e03705     : fffff805`565cc180 fffff805`59dfe481 00000000`00000000 74696566`4520383d : nt!KiDispatchInterruptContinue
+ffff8887`897d3ce0 fffff805`59dfe481     : 00000000`00000000 74696566`4520383d 6172616c`6365446f 302f3078`303d6f64 : nt!KiDpcInterruptBypass+0x25
+ffff8887`897d3cf0 fffff805`59c19814     : 00000000`ffffffff 00000000`00000000 205d3035`32434200 5674696d`6275535b : nt!KiInterruptDispatchNoLockNoEtw+0xb1
+ffff8887`897d3e80 fffff805`59c1936a     : ffffe606`cc1fa578 6e6f7369`6f702065 ffffe606`cc1fa578 534f4441`44204544 : nt!KiExitDispatcher+0x74
+ffff8887`897d3ef0 fffff805`722b8a34     : 00000000`00000000 ffff8887`897d4080 ffffe606`cdcf7010 ffffe606`cdcf7010 : nt!KeSetEvent+0xea
+ffff8887`897d3f80 fffff805`722b5af5     : ffffe606`ce10a200 00000000`00000744 00000000`00001101 00000000`00000001 : dxgmms2!VidSchiProcessDpcCompletedPacket+0x674
+ffff8887`897d40e0 fffff805`7000d5d1     : ffff8887`897d41d9 00000000`00000000 00000000`00000000 00000000`00000001 : dxgmms2!VidSchDdiNotifyDpc+0x225
+ffff8887`897d4190 fffff805`83c2d233     : ffffe606`c24b2000 ffffe606`c5bf0000 ffffe606`c5bf0000 00000000`00000000 : dxgkrnl!DxgNotifyDpcCB+0x91
+ffff8887`897d4240 fffff805`83c2e1d0     : fffff805`83c54701 00000000`00000000 ffffe606`c5bf0000 00000000`00000000 : bc250mcdm!Bc250ActiveRunInactiveHqdProgramTransaction+0x523
+ffff8887`897d4320 fffff805`83c2efe4     : 00000000`00000000 ffff8887`897d4960 00000000`00000000 ffff8887`00000000 : bc250mcdm!Bc250ActiveSubmissionGateLeave+0x780
+ffff8887`897d4730 fffff805`83c0e7eb     : ffff8887`897d4960 00000000`00000000 ffffe606`cbadc010 00000000`00000020 : bc250mcdm!Bc250ActiveSubmissionGateLeave+0x1594
+ffff8887`897d4760 fffff805`700f74e4     : ffffe606`ccc0c930 ffffe606`ccc0c930 ffff8887`897d4960 00000000`00000000 : bc250mcdm!Bc250McdmSubmitCommandVirtual+0xab
+ffff8887`897d47f0 fffff805`70003e69     : ffffe606`cc1fa000 ffffe606`cc285660 ffffe606`ce107000 ffffe606`ce107000 : dxgkrnl!ADAPTER_RENDER::DdiSubmitCommandVirtual+0x144
+ffff8887`897d48a0 fffff805`722b80be     : ffffe606`ce107000 00000000`00989680 ffffe606`cc285660 ffffe606`ce107000 : dxgkrnl!ADAPTER_RENDER_DdiSubmitCommandVirtual+0x9
+ffff8887`897d48d0 fffff805`72334bcd     : ffffe606`00000000 ffffe606`ce10a3d0 ffffe606`cc1fa000 ffffe606`cdbaf520 : dxgmms2!VidSchiSendToExecutionQueue+0x7be
+ffff8887`897d4a00 fffff805`7233d54a     : ffffe606`cdbaf520 ffffe606`cc1fa000 00000000`00000000 ffffe606`cc285660 : dxgmms2!VidSchiSubmitPagingCommand+0x2ed
+ffff8887`897d4b80 fffff805`7233d3ba     : ffffe606`cc1fa400 fffff805`7233d2f0 ffffe606`cc1fa000 ffffd300`5f883100 : dxgmms2!VidSchiRun_PriorityTable+0x17a
+ffff8887`897d4bd0 fffff805`59d265f5     : ffffe606`cc3af040 fffff805`00000001 ffffe606`cc1fa000 00000000`00000000 : dxgmms2!VidSchiWorkerThread+0xca
+ffff8887`897d4c10 fffff805`59e048d8     : ffffd300`5f883180 ffffe606`cc3af040 fffff805`59d265a0 00000000`00000246 : nt!PspSystemThreadStartup+0x55
+ffff8887`897d4c60 00000000`00000000     : ffff8887`897d5000 ffff8887`897cf000 00000000`00000000 00000000`00000000 : nt!KiStartSystemThread+0x28
+
+
+SYMBOL_NAME:  dxgmms2!VidSchDdiNotifyDpc+dd
+
+MODULE_NAME: dxgmms2
+
+IMAGE_NAME:  dxgmms2.sys
+
+IMAGE_VERSION:  10.0.19041.2913
+
+STACK_COMMAND: .process /r /p 0xffffe606c24b2040; .thread 0xffffe606cc3af040 ; kb
+
+BUCKET_ID_FUNC_OFFSET:  dd
+
+FAILURE_BUCKET_ID:  0x133_DPC_dxgmms2!VidSchDdiNotifyDpc
+
+OS_VERSION:  10.0.19041.1
+
+BUILDLAB_STR:  vb_release
+
+OSPLATFORM_TYPE:  x64
+
+OSNAME:  Windows 10
+
+FAILURE_ID_HASH:  {4e6d2d74-350e-3780-03d1-7dfcf1a310f1}
+
+Followup:     MachineOwner
+---------
+
+
+All durations are in seconds (1 System tick = 15.625000 milliseconds)
+
+Circular Kernel Context Logger history: !logdump 0x2
+DPC and ISR stats (total since boot): !intstats /d
+DPC and ISR stats (during DPC watchdog period): !intstats /w
+
+--------------------------------------------------
+CPU#0
+--------------------------------------------------
+Current DPC: bc250mcdm!Bc250DxgkDdiUpdateMonitorLinkInfo+0xF00 (Normal DPC)
+Debugger Saved IRQL: 13
+Cumulative DPC Time Limit: 120.000 seconds
+Current Cumulative DPC Time: 20.000 seconds
+Single DPC Time Limit: 20.000 seconds
+Current Single DPC Time: 20.016 seconds
+dt nt!_ISRDPCSTATS fffff8055a6f3b10
+IsrActive: TRUE
+
+Pending DPCs:
+----------------------------------------
+CPU Type      KDPC       Function
+ 0: Normal  : 0xfffff8055a620ea0 0xfffff80559d0beb0 nt!PpmCheckPeriodicStart
+ 0: Normal  : 0xfffff8055a631f60 0xfffff80559d5ac90 nt!KiBalanceSetManagerDeferredRoutine
+ 0: Normal  : 0xffffe606c77cc410 0xfffff80571e85c90 USBPORT!USBPORT_IsrDpc
+ 0: Normal  : 0xffffe606c780c410 0xfffff80571e85c90 USBPORT!USBPORT_IsrDpc
+
+
+DPC Watchdog Captures Analysis for CPU #0.
+   DPC Watchdog capture size: 108 stacks.
+   Number of unique stacks: 8.
+   Most common function: fffff80559e048d8  nt!KiStartSystemThread+0x28
+
+List of functions that exist often in the Watchdog record:
+Module Name    Function Name                            #Stack  #Of Occurrences
+nt             KxWaitForLockOwnerShip                   010     7 (of 7)
+
+List of functions that are called often in the Watchdog record:
+Module Name    Function Name                            #Stack  #Of Occurrences
+nt             KiDpcInterruptBypass                     011     7 (of 7)
+
+--------------------------------------------------
+CPU#1
+--------------------------------------------------
+Current DPC: No Active DPC
+
+Pending DPCs:
+----------------------------------------
+CPU Type      KDPC       Function
+
+dpcs: no pending DPCs found
+
+--------------------------------------------------
+CPU#2
+--------------------------------------------------
+Current DPC: No Active DPC
+
+Pending DPCs:
+----------------------------------------
+CPU Type      KDPC       Function
+
+dpcs: no pending DPCs found
+
+--------------------------------------------------
+CPU#3
+--------------------------------------------------
+Current DPC: No Active DPC
+
+Pending DPCs:
+----------------------------------------
+CPU Type      KDPC       Function
+
+dpcs: no pending DPCs found
+
+--------------------------------------------------
+CPU#4
+--------------------------------------------------
+Current DPC: No Active DPC
+
+Pending DPCs:
+----------------------------------------
+CPU Type      KDPC       Function
+
+dpcs: no pending DPCs found
+
+--------------------------------------------------
+CPU#5
+--------------------------------------------------
+Current DPC: No Active DPC
+
+Pending DPCs:
+----------------------------------------
+CPU Type      KDPC       Function
+
+dpcs: no pending DPCs found
+
+--------------------------------------------------
+CPU#6
+--------------------------------------------------
+Current DPC: No Active DPC
+
+Pending DPCs:
+----------------------------------------
+CPU Type      KDPC       Function
+
+dpcs: no pending DPCs found
+
+--------------------------------------------------
+CPU#7
+--------------------------------------------------
+Current DPC: No Active DPC
+
+Pending DPCs:
+----------------------------------------
+CPU Type      KDPC       Function
+
+dpcs: no pending DPCs found
+
+--------------------------------------------------
+CPU#8
+--------------------------------------------------
+Current DPC: No Active DPC
+
+Pending DPCs:
+----------------------------------------
+CPU Type      KDPC       Function
+
+dpcs: no pending DPCs found
+
+--------------------------------------------------
+CPU#9
+--------------------------------------------------
+Current DPC: No Active DPC
+
+Pending DPCs:
+----------------------------------------
+CPU Type      KDPC       Function
+
+dpcs: no pending DPCs found
+
+--------------------------------------------------
+CPU#10
+--------------------------------------------------
+Current DPC: No Active DPC
+
+Pending DPCs:
+----------------------------------------
+CPU Type      KDPC       Function
+
+dpcs: no pending DPCs found
+
+--------------------------------------------------
+CPU#11
+--------------------------------------------------
+Current DPC: No Active DPC
+
+Pending DPCs:
+----------------------------------------
+CPU Type      KDPC       Function
+
+dpcs: no pending DPCs found
+
+Browse full module list
+start             end                 module name
+fffff805`83bf0000 fffff805`83c69000   bc250mcdm   (private pdb symbols)  C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\sym\bc250mcdm.pdb\F6102CA987586B79934E7AE228FC0A8A3d\bc250mcdm.pdb
+
+Unloaded modules:
+fffff805`71cc0000 fffff805`71d3a000   bc250mcdm.sys
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Kernel.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Usb4Kd.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'

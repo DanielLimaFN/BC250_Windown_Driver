@@ -27,6 +27,7 @@ static int Bc250RunMcdmObjectContractTest(void)
     BC250_MCDM_HANDLE contextA = NULL, allocationA = NULL, openA = NULL;
     BC250_MCDM_HANDLE staleContext;
     BC250_MCDM_OBJECT_RECORD record;
+    BC250_CONTEXT_SUBMISSION_VIEW zeroRootView;
     uint32_t destroyed;
     uint32_t index;
 
@@ -66,6 +67,21 @@ static int Bc250RunMcdmObjectContractTest(void)
     CHECK(Bc250McdmObjectSetRootPageTable(&g_registry, contextA,
         1u, 0x0000000012345001ull, 512u, 512u) ==
         BC250_MCDM_OBJECT_BAD_ARGUMENT);
+    CHECK(Bc250McdmObjectSetRootPageTable(&g_registry, contextA,
+        1u, 0x0000000000000000ull, 512u, 512u) == BC250_MCDM_OBJECT_OK);
+    CHECK(Bc250McdmObjectLookup(&g_registry, processA,
+        BC250_MCDM_OBJECT_PROCESS, processA, &record) ==
+        BC250_MCDM_OBJECT_OK);
+    CHECK(record.RootPageTableSegmentId == 1u &&
+        record.RootPageTableAddress == 0x0000000000000000ull &&
+        record.RootPageTableEntries == 512u);
+    CHECK(Bc250McdmContextAcquireSubmissionView(&g_registry, contextA,
+        NULL, 0u, &zeroRootView) == BC250_MCDM_OBJECT_OK);
+    CHECK(zeroRootView.RootPageTableSegmentId == 1u &&
+        zeroRootView.RootPageTableAddress == 0u &&
+        zeroRootView.RootPageTableEntries == 512u);
+    CHECK(Bc250McdmContextReleaseSubmissionView(&g_registry, contextA) ==
+        BC250_MCDM_OBJECT_OK);
     CHECK(Bc250McdmObjectSetRootPageTable(&g_registry, contextA,
         0u, 0u, 0u, 512u) == BC250_MCDM_OBJECT_OK);
     CHECK(Bc250McdmObjectLookup(&g_registry, allocationA,
@@ -114,10 +130,20 @@ static int Bc250RunMcdmObjectContractTest(void)
     CHECK(Bc250McdmObjectDestroy(&g_registry, processA,
         BC250_MCDM_OBJECT_PROCESS, processA) == BC250_MCDM_OBJECT_OK);
 
-    /* Exhaustion never reuses tombstones, so stale pointer aliases are avoided. */
+    /*
+     * Quando NextSlot atinge BC250_MCDM_MAX_OBJECTS, slots de objetos
+     * destruidos (DEAD) sao reciclados. Somente quando todos os slots
+     * estao LIVE e' que BC250_MCDM_OBJECT_NO_SPACE e' devolvido.
+     */
     for (index = g_registry.NextSlot; index < BC250_MCDM_MAX_OBJECTS; ++index) {
         BC250_MCDM_HANDLE handle;
         const void *owner = (const void *)(ULONG_PTR)(0x10000u + index);
+        CHECK(Bc250McdmObjectCreateProcess(&g_registry, owner, &handle) == BC250_MCDM_OBJECT_OK);
+    }
+    /* Os slots mortos restantes (processA, deviceA, contextA, allocationA, openA) devem ser reciclaveis */
+    while (g_registry.LiveCount < BC250_MCDM_MAX_OBJECTS) {
+        BC250_MCDM_HANDLE handle;
+        const void *owner = (const void *)(ULONG_PTR)(0x20000u + g_registry.LiveCount);
         CHECK(Bc250McdmObjectCreateProcess(&g_registry, owner, &handle) == BC250_MCDM_OBJECT_OK);
     }
     CHECK(Bc250McdmObjectCreateProcess(&g_registry, (void *)0xFFFF,
@@ -203,6 +229,52 @@ static int Bc250RunMcdmObjectContractTest(void)
         CHECK(Bc250McdmObjectRegistryTeardown(&s_registry2, &destroyed) == BC250_MCDM_OBJECT_OK);
         CHECK(Bc250McdmContextAcquireSubmissionView(&s_registry2, ctx, adapter, 1u, &view) ==
             BC250_MCDM_OBJECT_IN_TEARDOWN);
+    }
+
+    /* Teste de Prevenção de Aliasing / Problema ABA em Slots Reciclados */
+    {
+        static BC250_MCDM_OBJECT_REGISTRY s_abaRegistry;
+        BC250_MCDM_HANDLE procOld = NULL;
+        BC250_MCDM_HANDLE procNew = NULL;
+        BC250_MCDM_HANDLE dummy = NULL;
+        uint32_t i;
+        BC250_MCDM_OBJECT_RECORD rec;
+
+        CHECK(Bc250McdmObjectRegistryInitialize(&s_abaRegistry) == BC250_MCDM_OBJECT_OK);
+
+        /* 1. Aloca procOld no slot 0 */
+        CHECK(Bc250McdmObjectCreateProcess(&s_abaRegistry, (void *)0xCAFE01, &procOld) == BC250_MCDM_OBJECT_OK);
+        CHECK(procOld != NULL);
+        CHECK(Bc250McdmObjectLookup(&s_abaRegistry, procOld, BC250_MCDM_OBJECT_PROCESS, procOld, &rec) == BC250_MCDM_OBJECT_OK);
+
+        /* 2. Destrói procOld. Enquanto não reciclado, é STALE */
+        CHECK(Bc250McdmObjectDestroy(&s_abaRegistry, procOld, BC250_MCDM_OBJECT_PROCESS, procOld) == BC250_MCDM_OBJECT_OK);
+        CHECK(Bc250McdmObjectLookup(&s_abaRegistry, procOld, BC250_MCDM_OBJECT_PROCESS, procOld, &rec) == BC250_MCDM_OBJECT_STALE_HANDLE);
+
+        /* 3. Preenche os demais slots (1 até MAX-1) até esgotar NextSlot */
+        for (i = 1u; i < BC250_MCDM_MAX_OBJECTS; ++i) {
+            CHECK(Bc250McdmObjectCreateProcess(&s_abaRegistry, (const void *)(ULONG_PTR)(0x100000 + i), &dummy) == BC250_MCDM_OBJECT_OK);
+        }
+
+        /* 4. Próxima alocação obrigatoriamente recicla o slot 0 (único DEAD) */
+        CHECK(Bc250McdmObjectCreateProcess(&s_abaRegistry, (void *)0xBEEF02, &procNew) == BC250_MCDM_OBJECT_OK);
+        CHECK(procNew != NULL);
+        CHECK(procNew != procOld); /* Handles DEVEM ser diferentes devido à geração */
+
+        /* 5. Handle novo funciona normalmente */
+        CHECK(Bc250McdmObjectLookup(&s_abaRegistry, procNew, BC250_MCDM_OBJECT_PROCESS, procNew, &rec) == BC250_MCDM_OBJECT_OK);
+        CHECK(rec.ExternalOwner == (void *)0xBEEF02);
+
+        /* 6. Handle antigo aponta para o mesmo slot físico, mas com geração antiga:
+         *    DEVE ser rejeitado como INVALID_HANDLE (não STALE, e definitivamente não OK) */
+        CHECK(Bc250McdmObjectLookup(&s_abaRegistry, procOld, BC250_MCDM_OBJECT_PROCESS, procOld, &rec) == BC250_MCDM_OBJECT_INVALID_HANDLE);
+
+        /* 7. Tentativa de destruir procOld não deve destruir procNew */
+        CHECK(Bc250McdmObjectDestroy(&s_abaRegistry, procOld, BC250_MCDM_OBJECT_PROCESS, procOld) == BC250_MCDM_OBJECT_INVALID_HANDLE);
+        CHECK(Bc250McdmObjectLookup(&s_abaRegistry, procNew, BC250_MCDM_OBJECT_PROCESS, procNew, &rec) == BC250_MCDM_OBJECT_OK);
+
+        /* 8. Destruição com handle novo funciona */
+        CHECK(Bc250McdmObjectDestroy(&s_abaRegistry, procNew, BC250_MCDM_OBJECT_PROCESS, procNew) == BC250_MCDM_OBJECT_OK);
     }
 
     return 0;

@@ -2438,6 +2438,56 @@ static int CmdSdma(int argc, char **argv)
         return 0;
     }
 
+    if (_stricmp(argv[2], "raw") == 0) {
+        /*
+         * Injecao crua de dwords no anel da SDMA0.
+         *
+         * BcSdmaRaw ja existia no driver e era usada so por testes fixos
+         * (srbmtest, parsetest). E o unico caminho para emitir um pacote
+         * arbitrario -- INDIRECT com VMID != 0, por exemplo -- sem recompilar
+         * kernel. E devolve F32Pc, o program counter do microcontrolador, que
+         * o driver de producao nao expoe.
+         */
+        BC250DBG_SDMA_RAW_IO rawIo;
+        int rawRc, k, nraw;
+
+        if (argc < 4) {
+            printf("uso: bc250ctl sdma raw <dw> [dw ...]\n");
+            printf("  emite os dwords tal como estao no anel, sem montar pacote.\n");
+            return 1;
+        }
+
+        nraw = argc - 3;
+        if (nraw > BC250DBG_SDMA_RAW_MAX_DW) nraw = BC250DBG_SDMA_RAW_MAX_DW;
+
+        memset(&rawIo, 0, sizeof(rawIo));
+        rawIo.DwordCount = (uint32_t)nraw;
+        for (k = 0; k < nraw; k++) {
+            rawIo.Data[k] = (uint32_t)strtoul(argv[3 + k], NULL, 0);
+        }
+
+        printf("SDMA raw: %d dwords\n", nraw);
+        for (k = 0; k < nraw; k++) {
+            printf("  dw%02d = 0x%08X\n", k, rawIo.Data[k]);
+        }
+
+        rawRc = Bc250SdmaRaw(&g_Ctx, &rawIo);
+        if (rawRc) {
+            printf("submissao falhou: erro %d (anel iniciado? 'arm write'?)\n", rawRc);
+            return 1;
+        }
+
+        printf("  RPTR 0x%X -> 0x%X   WPTR 0x%X   STATUS 0x%08X   PC 0x%04X\n",
+               rawIo.RptrBefore, rawIo.RptrAfter, rawIo.Wptr,
+               rawIo.StatusReg, rawIo.F32Pc);
+        printf("  RESULTADO: %s\n",
+               rawIo.Completed ? "RPTR alcancou WPTR"
+                               : "*** RPTR NAO ALCANCOU WPTR ***");
+        printf("  ATENCAO: RPTR alcancar WPTR NAO prova execucao. A prova e a\n");
+        printf("           fence gravada pela GPU e os dados no destino.\n");
+        return rawIo.Completed ? 0 : 1;
+    }
+
     if (_stricmp(argv[2], "nop") == 0) {
         uint32_t count = (argc >= 4) ? (uint32_t)strtoul(argv[3], NULL, 0) : 4;
         uint32_t dwords[64];
@@ -4736,6 +4786,31 @@ int main(int argc, char **argv)
     else if (_stricmp(argv[1], "telemetry") == 0) rc = CmdTelemetry(argc, argv);
     else if (_stricmp(argv[1], "sdma") == 0)     rc = CmdSdma(argc, argv);
     else if (_stricmp(argv[1], "vram") == 0)     rc = CmdVram(argc, argv);
+    /*
+     * Coerencia HDP entre CPU e GPU.
+     *
+     * BcVramWriteRaw NAO faz flush: ele so escreve. Quem invalida e a LEITURA
+     * (BcVramReadRaw chama BcHdpReadCacheInvalidate). Entao uma sequencia de
+     * 'vram w' seguida de submissao pode deixar os bytes no buffer de escrita
+     * do HDP, e a GPU le o que estava la antes.
+     *
+     * Medido em 05/09 11:51: com IB montado por 'vram w', a engine carregou
+     * IB_BASE corretamente e IB_RPTR andou os 8 dwords -- mas o CONST_FILL nao
+     * teve efeito. Ler lixo residual e executa-lo como pacote explica tanto o
+     * "nao escreveu" quanto a engine parar em seguida.
+     *
+     * BcHdpReadCacheInvalidate faz as duas direcoes: HDP_MEM_COHERENCY_FLUSH
+     * (0x4A80) para empurrar escrita da CPU, e READ_CACHE_INVALIDATE para a
+     * CPU enxergar escrita da GPU.
+     */
+    else if (_stricmp(argv[1], "hdp") == 0) {
+        rc = Bc250HdpInvalidate(&g_Ctx);
+        if (rc) {
+            printf("falha no HDP: erro %d (rode 'arm write' antes)\n", rc);
+        } else {
+            printf("HDP: flush de escrita da CPU + invalidacao da cache de leitura\n");
+        }
+    }
     else if (_stricmp(argv[1], "psp") == 0)      rc = CmdPsp(argc, argv);
     else if (_stricmp(argv[1], "audit") == 0)    rc = Bc250RunAudit(&g_Ctx);
     else if (_stricmp(argv[1], "stress") == 0)   rc = Bc250RunStress(&g_Ctx);

@@ -26,7 +26,7 @@ if ($clPath) {
 }
 
 # Assinar bc250compute.sys
-$signTool = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe"
+$signTool = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\signtool.exe"
 $thumb = "8D14413F3B97AEF9D7F78A1CA8D9EA99A3FBAD3B"
 foreach ($targetSys in @("$OutputDir\bc250compute.sys", "$RepoRoot\driver\wdk\output\bc250compute.sys", "$RepoRoot\driver\wdk\output\bc250compute_pkg.sys")) {
     if (Test-Path $targetSys) {

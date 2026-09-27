@@ -1,9 +1,0 @@
-﻿{
-    "api":  "UpdateDriverForPlugAndPlayDevicesW",
-    "hardware_id":  "PCI\\VEN_1002\u0026DEV_13FE",
-    "inf":  "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\driver\\wdk\\package\\output\\bc250readonly.inf",
-    "install_flags":  "0x00000001",
-    "success":  true,
-    "win32_error":  0,
-    "reboot_required":  true
-}

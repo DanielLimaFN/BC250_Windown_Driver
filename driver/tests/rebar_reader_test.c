@@ -14,8 +14,8 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
 #pragma function(memcpy)
 void * __cdecl memcpy(void *Destination, const void *Source, size_t Length)
 {
-    unsigned char *destination = (unsigned char *)Destination;
-    const unsigned char *source = (const unsigned char *)Source;
+    volatile unsigned char *destination = (volatile unsigned char *)Destination;
+    const volatile unsigned char *source = (const volatile unsigned char *)Source;
     size_t index;
     for (index = 0; index < Length; ++index) destination[index] = source[index];
     return Destination;

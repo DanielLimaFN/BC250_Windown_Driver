@@ -213,6 +213,246 @@ Esses registros configuram estado de dispatch; eles não substituem firmware, MQ
 | `CP_PQ_WPTR_POLL_CNTL1` | `0x1E24` idx0 | `0x0C210` | P1/P2 | `QUEUE_MASK[31:0]`, um bit por fila (`gc_10_1_0_sh_mask.h`). Base `+0x1260` dw confirmada por `0x1E23→0xC20C`, `0x1E2D→0xC234` e `0x1E55→0xC2D4`. Escrito por `kgd_gfx_v9_hqd_load` antes de `INIT_FETCHER`/`ACTIVE`. Candidato 3.30. |
 | `CP_PQ_STATUS` | `0x1E58` idx0 | `0x0C2E0` | P1/P2 | `DOORBELL_ENABLE` é bit 1; Linux sweep observou `0x2`. `0x7960` fica em quarentena. |
 
+## SQ — sonda de onda (wave probe)
+
+Catalogado em 20/09, na preparação da Corrida 45. Estes endereços **já eram usados** por
+`Bc250WaveProbeRun` com a procedência citada apenas no header do driver; faltavam aqui, o que
+é exigência da Lei 7. Todos foram conferidos **um a um** contra
+`inc/linux_ref/gc_10_1_0_offset.h`, que está vendorizado neste repositório.
+
+| Registro | mmREG conhecido | BAR5 byte usado | Classe | Nota |
+|---|---:|---:|---:|---|
+| `SQ_DEBUG_STS_GLOBAL` | `0x10A9` idx0 | `0x08C24` | P1/P0 | `BUSY[0]`, `WAVE_LEVEL_SA0[15:4]`, `WAVE_LEVEL_SA1[27:16]` por `gc_10_1_0_sh_mask.h`. Ondas em voo. Medido vivo na Corrida 44: `0x00000011` no 5º TDR. |
+| `SQ_IND_INDEX` | `0x1118` idx0 | `0x08DE0` | P1/P2 | Janela indireta; recebe `(ixSQ_WAVE_* << 16) \| WAVE_ID`. |
+| `GRBM_GFX_INDEX` | `0x2200` idx1 | `0x30800` | P1/P0 | Seletor SE/SA/instância. Já em uso pelo caminho MEC. A sonda **restaura BROADCAST_ALL com readback** e falha fechada (`SELECTOR_STUCK`) se não conseguir. |
+
+Endereços **indiretos** `ix`, lidos pela janela `SQ_IND_INDEX` — não são offsets de BAR e **não**
+levam base de segmento. Fonte: `gc_10_1_0_offset.h:11188-11199`, conferidos byte a byte:
+
+| Índice indireto | Valor | Classe | Nota |
+|---|---:|---:|---|
+| `ixSQ_WAVE_STATUS` | `0x0102` | P1 | Validade da onda; `Bc250WaveProbeStatusIsValid` recusa leitura inválida. |
+| `ixSQ_WAVE_TRAPSTS` | `0x0103` | P1 | Estado de trap/exceção da onda. |
+| `ixSQ_WAVE_IB_STS` | `0x0107` | P1 | Contadores de instrução em voo. |
+| `ixSQ_WAVE_PC_LO` | `0x0108` | P1 | PC da onda, parte baixa. |
+| `ixSQ_WAVE_PC_HI` | `0x0109` | P1 | PC da onda, parte alta. |
+| `ixSQ_WAVE_INST_DW0` | `0x010A` | P1 | Instrução em que a onda está parada. |
+
+**Derivação conferida:** os dois `mm` de idx0 dão base implícita idêntica de `0x1260` dwords
+(`0x08C24/4 − 0x10A9` e `0x08DE0/4 − 0x1118`), e `GRBM_GFX_INDEX` em idx1 dá `0xA000` — os
+mesmos valores já catalogados na seção "Domínios de endereço". A consistência dos três é prova
+de que a base certa foi aplicada a cada segmento.
+
+**NÃO VALIDADO EM HARDWARE:** a sonda indireta nunca executou. Nos cinco TDRs da Corrida 44 ela
+saiu `[TDR_GFX_WAVEPC] DESARMADO: GfxWaveProbe=0 present=1` — inclusive no único TDR com ondas
+vivas. Só `SQ_DEBUG_STS_GLOBAL` tem leitura física até aqui.
+
+### `gc_10_1_0_offset.h` vendorizado em 14/09 — e **provado contra o silício**
+
+`inc/linux_ref/gc_10_1_0_offset.h` (AMD, 2019; 5.264 offsets) foi aceito por
+`tools/import-gc-offset-header.py`, que **não o instala por confiança**: ele exige que o header
+reproduza, pela regra de cálculo do topo deste documento, nove endereços que esta placa já
+confirmou. As nove passaram:
+
+```
+mmCP_ME_CNTL           0x0F56 idx0 -> 0x086D8     mmCP_RB0_CNTL   0x1DE1 idx0 -> 0x0C104
+mmCP_RB0_BASE          0x1DE0 idx0 -> 0x0C100     mmCP_RB0_RPTR   0x0F60 idx0 -> 0x08700
+mmCP_RB0_WPTR          0x1DF4 idx0 -> 0x0C150     mmCP_MEC_CNTL   0x0E2D idx0 -> 0x08234
+mmCP_RB_WPTR_POLL_CNTL 0x0F62 idx0 -> 0x08708
+mmCB_COLOR0_BASE       0x0318 idx1 -> 0x28C60     mmPA_SC_WINDOW_SCISSOR_TL 0x0081 idx1 -> 0x28204
+```
+
+As duas últimas **confirmam de forma independente** o bloco `GFX10 3D` que a etapa B.0 havia
+derivado só por ordem no `sh_mask.h`. `PA_SC_VPORT_SCISSOR_0_TL/BR` também bateram
+(`0x28250`/`0x28254`).
+
+**Com isto, todo endereço abaixo sobe de `H` para `P1`.** A regra de cálculo deste catálogo
+deixa de ser a única fonte: há header autoritativo local.
+
+#### Bloco desbloqueado — partida do anel gráfico
+
+| Registro | mmREG | BASE_IDX | BAR5 byte | Classe |
+|---|---:|---:|---:|---:|
+| `CP_RB0_ACTIVE` | `0x1F40` | 0 | `0x0C680` | P1 |
+| `CP_MAX_CONTEXT` | `0x1E4E` | 0 | `0x0C2B8` | P1 |
+| `CP_RB_VMID` | `0x1DF1` | 0 | `0x0C144` | P1 |
+| `CP_RB_WPTR_DELAY` | `0x0F61` | 0 | `0x08704` | P1 |
+| `CP_PFP_IC_OP_CNTL` | `0x5843` | **1** | `0x3E10C` | P1 |
+| `CP_ME_IC_OP_CNTL` | `0x5847` | **1** | `0x3E11C` | P1 |
+| `CP_CE_IC_OP_CNTL` | `0x584B` | **1** | `0x3E12C` | P1 |
+| `CP_CPC_IC_OP_CNTL` | `0x584F` | **1** | `0x3E13C` | P1 |
+
+#### Bloco desbloqueado — programa de shader (B.2)
+
+| Registro | mmREG | BASE_IDX | BAR5 byte | Classe |
+|---|---:|---:|---:|---:|
+| `SPI_SHADER_PGM_LO_PS` | `0x19A8` | 0 | `0x0B020` | P1 |
+| `SPI_SHADER_PGM_HI_PS` | `0x19A9` | 0 | `0x0B024` | P1 |
+| `SPI_SHADER_PGM_RSRC1_PS` | `0x19AA` | 0 | `0x0B028` | P1 |
+| `SPI_SHADER_PGM_RSRC2_PS` | `0x19AB` | 0 | `0x0B02C` | P1 |
+| `SPI_SHADER_USER_DATA_PS_0` | `0x19AC` | 0 | `0x0B030` | P1 |
+| `SPI_SHADER_PGM_LO_VS` | `0x19E8` | 0 | `0x0B120` | P1 |
+| `SPI_SHADER_PGM_HI_VS` | `0x19E9` | 0 | `0x0B124` | P1 |
+| `SPI_SHADER_PGM_RSRC1_VS` | `0x19EA` | 0 | `0x0B128` | P1 |
+| `SPI_SHADER_PGM_RSRC2_VS` | `0x19EB` | 0 | `0x0B12C` | P1 |
+| `SPI_SHADER_USER_DATA_VS_0` | `0x19EC` | 0 | `0x0B130` | P1 |
+
+
+#### Bloco desbloqueado — estado de shader gráfico (B.2)
+
+Extraídos do mesmo `gc_10_1_0_offset.h` vendorizado, pela mesma regra
+`BAR5_byte = (base_dw[BASE_IDX] + mmREG) * 4` com `base_dw[0]=0x1260` e
+`base_dw[1]=0xA000`. Endereços **calculados por script**, não à mão — o erro de
+hex `0xF52A000` de 08/09 nasceu de conta manual. Classe **P1**.
+
+| Registro | mmREG | BASE_IDX | BAR5 byte | Classe |
+|---|---:|---:|---:|---:|
+| `SPI_SHADER_PGM_RSRC3_PS` | `0x19A7` | 0 | `0x0B01C` | P1 |
+| `SPI_SHADER_PGM_RSRC3_VS` | `0x19E6` | 0 | `0x0B118` | P1 |
+| `SPI_SHADER_PGM_RSRC4_VS` | `0x19E1` | 0 | `0x0B104` | P1 |
+| `VGT_SHADER_STAGES_EN` | `0x02D5` | 1 | `0x28B54` | P1 |
+| `SPI_VS_OUT_CONFIG` | `0x01B1` | 1 | `0x286C4` | P1 |
+| `SPI_SHADER_POS_FORMAT` | `0x01C3` | 1 | `0x2870C` | P1 |
+| `SPI_SHADER_Z_FORMAT` | `0x01C4` | 1 | `0x28710` | P1 |
+| `SPI_SHADER_COL_FORMAT` | `0x01C5` | 1 | `0x28714` | P1 |
+| `SPI_PS_INPUT_ENA` | `0x01B3` | 1 | `0x286CC` | P1 |
+| `SPI_PS_INPUT_ADDR` | `0x01B4` | 1 | `0x286D0` | P1 |
+| `SPI_PS_INPUT_CNTL_0` | `0x0191` | 1 | `0x28644` | P1 |
+| `SPI_PS_IN_CONTROL` | `0x01B6` | 1 | `0x286D8` | P1 |
+| `CB_SHADER_MASK` | `0x008F` | 1 | `0x2823C` | P1 |
+| `PA_SU_SC_MODE_CNTL` | `0x0205` | 1 | `0x28814` | P1 |
+| `PA_SC_AA_CONFIG` | `0x02F8` | 1 | `0x28BE0` | P1 |
+| `VGT_DRAW_PAYLOAD_CNTL` | `0x02A6` | 1 | `0x28A98` | P1 |
+
+> ⚠️ `SPI_SHADER_PGM_RSRC1_*` tem `MEM_ORDERED` em **bits diferentes** por estágio:
+> bit 25 no PS (`0x02000000`) e bit 27 no VS (`0x08000000`). O bit 25 cai **dentro**
+> de `VGPR_COMP_CNT` do VS (`0x03000000`), então uma fórmula única para os dois
+> estágios escreve um campo achando que escreve outro. Travado por
+> `audit_gfx_shader_contract_is_honest`.
+
+> ⚠️ A **granularidade** de alocação de VGPR/SGPR **não está** no `sh_mask.h` — o
+> header dá a posição do campo, não a escala. Ela é classe **H** e por isso não
+> está no caminho crítico: o valor publicado é o do manifesto do compilador, e a
+> regra apenas **confere**, falhando fechado na divergência
+> (`driver/core/bc250_gfx_shader_contract.c`).
+#### Bloco desbloqueado — geometria e viewport (B.3)
+
+| Registro | mmREG | BASE_IDX | BAR5 byte | PM4 Offset | Classe |
+|---|---:|---:|---:|---:|---:|
+| `VGT_NUM_INSTANCES` | `0x224D` | 1 | `0x30934` | UCONFIG `0x024D` | P1 |
+| `VGT_PRIMITIVE_TYPE` | `0x2242` | 1 | `0x30908` | UCONFIG `0x0242` | P1 |
+| `VGT_DRAW_INITIATOR` | `0x01FC` | 1 | `0x287F0` | CONTEXT `0x01FC` / `DRAW_INDEX_AUTO` (`0x2D`) | P1 |
+| `PA_CL_VTE_CNTL` | `0x0206` | 1 | `0x28818` | CONTEXT `0x0206` | P1 |
+| `PA_CL_CLIP_CNTL` | `0x0204` | 1 | `0x28810` | CONTEXT `0x0204` | P1 |
+| `PA_SC_VPORT_SCISSOR_0_TL` | `0x0094` | 1 | `0x28250` | CONTEXT `0x0094` | P1 |
+| `PA_SC_VPORT_SCISSOR_0_BR` | `0x0095` | 1 | `0x28254` | CONTEXT `0x0095` | P1 |
+
+### ⛔ Seis endereços do protótipo estão ERRADOS — medido contra o header
+
+Comparação automática de todas as 43 escritas nomeadas (`/* R_* */`) de
+`driver/wdk/bc250_compute_service.c` contra o header: **23 conferem, 6 divergem**, 8 usam nome
+abreviado que não existe no upstream (não é erro, é apelido local).
+
+| Registro | Protótipo escreve | Endereço real | Erro |
+|---|---:|---:|---|
+| `CP_PFP_IC_OP_CNTL` | `0x0C4D0` | `0x3E10C` | usou `BASE_IDX 0`; é **1** |
+| `CP_ME_IC_OP_CNTL` | `0x0C4D4` | `0x3E11C` | idem |
+| `CP_CE_IC_OP_CNTL` | `0x0C4D8` | `0x3E12C` | idem |
+| `CP_CPC_IC_OP_CNTL` | `0x0C4DC` | `0x3E13C` | idem |
+| `VGT_NUM_INSTANCES` | `0x28A60` | `0x30934` | registrador diferente |
+| `PA_SC_LINE_STIPPLE_STATE` | `0x28A64` | `0x30A04` | registrador diferente |
+
+**Isto acrescenta uma terceira razão** para não reaproveitar aquele protótipo, além das duas já
+registradas (`RB_EXE=0` no `CP_RB0_CNTL` e o valor de poll herdado do SDMA): ele também escreve
+em quatro registradores de invalidação de icache que **não são** os que pensa estar escrevendo.
+
+Os seis endereços ficam **proibidos**, travados por `audit_gfx_ring_contract_is_honest`.
+
+### Estado do anel gráfico no boot — **MEDIDO EM 14/09 11:43, classe P0**
+
+Primeira leitura do anel gráfico na história do projeto, pelo preflight somente-leitura
+(`Reads=7`, `Writes=0` no contador do contrato **e** no do transporte MMIO, que é fonte
+independente).
+
+| Registro | BAR5 | Lido | Decodificado |
+|---|---:|---:|---|
+| `CP_RB0_CNTL` | `0x0C104` | `0x00A00000` | `RB_BUFSZ=0` `RB_BLKSZ=0` **`RB_EXE=0`** `MIN_AVAILSZ=2` `MIN_IB_AVAILSZ=2` |
+| `CP_RB0_BASE` | `0x0C100` | `0xFEDCBAEF` | padrão de lixo — anel nunca configurado |
+| `CP_RB0_BASE_HI` | `0x0C2C4` | `0x00000000` | — |
+| `CP_RB0_RPTR` | `0x08700` | `0x00000000` | — |
+| `CP_RB0_WPTR` | `0x0C150` | `0x00000000` | — |
+| `CP_RB_WPTR_POLL_CNTL` | `0x08708` | `0x00400000` | `POLL_FREQUENCY=0` `IDLE_POLL_COUNT=64` |
+| `CP_ME_CNTL` | `0x086D8` | `0x15000000` | **`CE_HALT=1` `PFP_HALT=1` `ME_HALT=1`** |
+
+**O anel gráfico está frio.** Sem tamanho, sem execução, ponteiros zerados, base com lixo, e as
+três micro-engines paradas. A placa faz boot com o framebuffer do GOP e **nunca liga o motor
+gráfico**.
+
+`CP_ME_CNTL = 0x15000000` confere bit a bit com os campos de `gc_10_1_0_sh_mask.h` (P1):
+`CE_HALT[24]` + `PFP_HALT[26]` + `ME_HALT[28]` = `0x01000000 + 0x04000000 + 0x10000000`.
+
+#### ⚠️ Correção de registro: `0x50000709` **não** é o estado de boot
+
+A tabela `CP ring GFX` acima registra `CP_RB0_CNTL` observado `0x50000709` e `CP_RB0_BASE`
+observado `0xF40FE000` **"em V3"**. A medição de 14/09 mostra que esses valores foram lidos
+**depois** de o anel ter sido configurado por alguém — não são o que o firmware entrega.
+
+Consequência prática: **não usar `0x50000709` como ponto de partida.** Ele continua válido como
+referência de um anel *configurado* e como verificação da aritmética (`RB_BLKSZ = RB_BUFSZ − 2`
+reproduz o par `(9,7)`), mas o bring-up tem de construir o anel **do zero** e **desalt** as
+micro-engines.
+
+Isto está travado em código: a constante foi renomeada de `..._OBSERVED_POST` para
+`..._CONFIGURED_REFERENCE`, o valor de boot virou `BC250_GFX_RING_CNTL_MEASURED_BOOT`, e um
+portão proíbe a redefinição do nome antigo.
+
+#### O que isto acrescenta à B.1
+
+`CP_ME_CNTL` sai de "snapshot" e vira **alvo de escrita** — e ele **está catalogado** (`0x086D8`,
+o exemplo da regra de cálculo no topo deste documento). A parada de procedência do `APPLY`
+continua no `CP_RB0_ACTIVE`, que segue sem fonte.
+
+### `CP_RB0_CNTL` decodificado — e um defeito no único protótipo existente (B.1)
+
+Campos de `inc/linux_ref/gc_10_1_0_sh_mask.h`, classe **P1**:
+`RB_BUFSZ[5:0]` · `RB_BLKSZ[13:8]` · `BUF_SWAP[17:16]` · `MIN_AVAILSZ[21:20]` ·
+`MIN_IB_AVAILSZ[23:22]` · `CACHE_POLICY[25:24]` · `RB_VOLATILE[26]` · `RB_NO_UPDATE[27]` ·
+`RB_EXE[28]` · `CE_HQD_NEQ_RB_HQD[30]` · `RB_RPTR_WR_ENA[31]`.
+
+| Valor | Origem | `RB_BUFSZ` | `RB_BLKSZ` | `RB_EXE` | `CE_HQD_NEQ` | Outros |
+|---|---|---:|---:|---:|---:|---|
+| `0x50000709` | **medido nesta placa** (P0, tabela acima) | 9 | 7 | **1** | 1 | zero |
+| `0x00A00709` | `bc250_compute_service.c` (protótipo de laboratório) | 9 | 7 | **0** | 0 | `MIN_AVAILSZ=2`, `MIN_IB_AVAILSZ=2` |
+
+**Os dois diferem no bit que decide se o anel executa.** Os campos de tamanho são idênticos,
+o que torna a divergência invisível a olho nu — por isso ela virou asserção em
+`driver/tests/gfx_ring_contract_test.c` e portão em `audit_gfx_ring_contract_is_honest`.
+
+**Relação derivada:** `RB_BLKSZ = RB_BUFSZ − 2`, e `RB_BUFSZ = log2(RingBytes / 8) − 1`.
+A **origem** da fórmula é classe **H** (upstream `gfx_v10_0_cp_gfx_resume`, sem cópia local),
+mas ela **reproduz exatamente** o par `(9, 7)` do valor medido — corroboração por medição
+própria, não inferência solta. Pela fórmula, o anel do POST tem **8192 bytes**.
+
+### Valor de poll herdado do SDMA — proibido também em `CP_RB_WPTR_POLL_CNTL`
+
+A tabela acima já proíbe `0x00403004` em `CP_PQ_WPTR_POLL_CNTL`, por ser o `SdmaRingPollCntl`.
+O protótipo `bc250_compute_service.c` escreve **esse mesmo valor** em `CP_RB_WPTR_POLL_CNTL`
+(BAR5 `0x08708`), registrador sobre o qual esta tabela diz *"tentativas usaram `0x00400100`;
+bits precisam do header mask"*. É a mesma classe de defeito — valor de uma engine carregado
+para outra — e agora falha fechada por `Bc250GfxRingPollCntlIsBorrowed`.
+
+### Registradores que o protótipo toca e que **não estão catalogados**
+
+Ficam declarados aqui como **pendência da B.1**, não como endereços utilizáveis. Pela Lei 7,
+nenhum deles pode ser escrito pelo caminho de produção antes de entrar na tabela com fonte:
+
+`CP_RB0_ACTIVE` (`0x0C680`) · `CP_MAX_CONTEXT` (`0x0C2B8`) · `CP_RB_VMID` (`0x0C144`) ·
+`CP_RB_WPTR_DELAY` (`0x08704`) · `CP_PFP_IC_OP_CNTL` (`0x0C4D0`) · `CP_ME_IC_OP_CNTL`
+(`0x0C4D4`) · `CP_CE_IC_OP_CNTL` (`0x0C4D8`) · `CP_CPC_IC_OP_CNTL` (`0x0C4DC`) ·
+`GRBM_GFX_INDEX` (`0x30800`) · `RLC_CNTL` (`0x3B000`).
+
+**NADA DESTE BLOCO FOI VALIDADO EM HARDWARE.**
+
 ## MEC / HQD / MQD de compute (GC10.1)
 
 Derivação autoritativa local: `gc_10_1_0_offset.h`, todos com `BASE_IDX=0`.
@@ -264,6 +504,106 @@ este ASIC: não correspondem ao mapa GC10.1 derivado pelo SOC15.
 | `CP_MEC_ME2_HEADER_DUMP` | `0x0E2F` idx0 | `0x0823C` | P1/P2 | FIFO de cabecalhos PM4 do ME2, motor ativo observado no candidato 3.34. No 3.36 e drenado antes de `ACTIVE` e novamente apos o polling para separar resíduo de conteúdo produzido no ciclo; ME1 permanece como controle. **Somente leitura**; escrita proibida pelo transporte e por teste dedicado. |
 | `CP_STALLED_STAT1` | `0x0F3D` idx0 | `0x08674` | P1/P2 | Stall do CP graficos. **Somente leitura**. |
 | `CP_STAT` | `0x0F40` idx0 | `0x08680` | P1/P2 | Estado agregado do CP. **Somente leitura**. |
+## GFX10 3D — bloco de contexto (Parede B / F5.2)
+
+> **Estado de uso:** estes endereços são emitidos por `driver/core/bc250_pm4_packet_builder.c`
+> **somente** sob o tunable `D3D11ExperimentalPm4Draw`, que é **fail-closed e desarmado por
+> padrão**. Nenhuma corrida os exercitou. **NÃO VALIDADO EM HARDWARE.**
+
+### Regra de conversão, e a coincidência que a corrobora
+
+Registradores de contexto GFX10 usam `BASE_IDX = 1`. Pela regra de cálculo no topo deste
+documento, `segment_base_dw[1] = 0xA000`, logo:
+
+```text
+endereco_dw  = 0xA000 + mmREG
+BAR5_byte    = endereco_dw * 4
+PM4_reg_off  = endereco_dw - 0xA000 = mmREG      (campo do pacote SET_CONTEXT_REG, IT=0x69)
+```
+
+**Corroboração independente (P1):** `0xA000 * 4 = 0x28000`, que é exatamente a base de
+registrador de contexto usada pelo PM4 (`reg_offset = (byte - 0x28000) / 4`). A regra de
+segmento deste catálogo e a convenção do pacote chegam ao mesmo número por caminhos
+diferentes. O emissor subtrai `BC250_PM4_CONTEXT_REG_BASE` antes de montar o pacote
+(`bc250_pm4_packet_builder.c:232`) — conferido.
+
+### Registradores
+
+| Registro | mmREG | dw (`0xA000+`) | BAR5 byte | Classe | Nota |
+|---|---:|---:|---:|---:|---|
+| `PA_SC_WINDOW_SCISSOR_TL` | `0x0081` | `0xA081` | `0x28204` | P1 | `TL_X[14:0]`, `TL_Y[30:16]`, `WINDOW_OFFSET_DISABLE[31]` |
+| `PA_SC_WINDOW_SCISSOR_BR` | `0x0082` | `0xA082` | `0x28208` | P1 | `BR_X[14:0]`, `BR_Y[30:16]` |
+| `CB_TARGET_MASK` | `0x008E` | `0xA08E` | `0x28238` | P1 | declarado, ainda não emitido |
+| `PA_SC_VPORT_SCISSOR_0_TL` | `0x0094` | `0xA094` | `0x28250` | P1 | `TL_X[14:0]`, `TL_Y[30:16]`, `WINDOW_OFFSET_DISABLE[31]` |
+| `PA_SC_VPORT_SCISSOR_0_BR` | `0x0095` | `0xA095` | `0x28254` | P1 | `BR_X[14:0]`, `BR_Y[30:16]` |
+| `PA_CL_VPORT_XSCALE` | `0x010F` | `0xA10F` | `0x2843C` | P1 | float 32-bit: W / 2.0f |
+| `PA_CL_VPORT_XOFFSET` | `0x0110` | `0xA110` | `0x28440` | P1 | float 32-bit: X0 + W / 2.0f |
+| `PA_CL_VPORT_YSCALE` | `0x0111` | `0xA111` | `0x28444` | P1 | float 32-bit: -H / 2.0f (DirectX Y-down) |
+| `PA_CL_VPORT_YOFFSET` | `0x0112` | `0xA112` | `0x28448` | P1 | float 32-bit: Y0 + H / 2.0f |
+| `PA_CL_VPORT_ZSCALE` | `0x0113` | `0xA113` | `0x2844C` | P1 | float 32-bit: MaxDepth - MinDepth |
+| `PA_CL_VPORT_ZOFFSET` | `0x0114` | `0xA114` | `0x28450` | P1 | float 32-bit: MinDepth |
+| `PA_SU_SC_MODE_CNTL` | `0x0205` | `0xA205` | `0x28814` | P1 | modo de face, culling e offset de poligono |
+| `PA_CL_VTE_CNTL` | `0x0206` | `0xA206` | `0x28818` | P1 | habilitacao de transformacao de Viewport e formatos de vertice |
+| `CB_COLOR0_BASE` | `0x0318` | `0xA318` | `0x28C60` | P1 | GPUVA do render target `>> 8`; exige base alinhada a 256 B |
+| `CB_COLOR0_PITCH` | `0x0319` | `0xA319` | `0x28C64` | P1 | `TILE_MAX[10:0]`, `FMASK_TILE_MAX[30:20]` |
+| `CB_COLOR0_SLICE` | `0x031A` | `0xA31A` | `0x28C68` | P1 | `TILE_MAX[21:0]` |
+| `CB_COLOR0_VIEW` | `0x031B` | `0xA31B` | `0x28C6C` | P1 | emitido com zeros |
+| `CB_COLOR0_INFO` | `0x031C` | `0xA31C` | `0x28C70` | P1 | ver tabela de campos abaixo |
+| `CB_COLOR0_ATTRIB` | `0x031D` | `0xA31D` | `0x28C74` | P1 | declarado, ainda não emitido |
+
+Todos cabem no BAR5 medido (`0x00080000`).
+
+### O que sustenta a classe P1, e o que não sustenta
+
+**Corroborado por cópia local de `inc/linux_ref/gc_10_1_0_sh_mask.h`:**
+
+1. **Existência** — cada registro acima tem bloco de máscaras no header local.
+2. **Ordem relativa** — a sequência no header confere com os `mmREG` consecutivos:
+   `CB_COLOR0_BASE` (l. 25714) → `PITCH` (25717) → `SLICE` (25722) → `VIEW` (25725) →
+   `INFO` (25732) → `ATTRIB` (25771), batendo com `0x318`…`0x31D`; e
+   `PA_SC_WINDOW_SCISSOR_TL` (22058) → `BR` (22065) → `CB_TARGET_MASK` (22133) →
+   `PA_SC_VPORT_SCISSOR_0_TL` (22185) → `BR` (22192), batendo com `0x081`, `0x082`,
+   `0x08E`, `0x094`, `0x095`.
+3. **Layout de campos** — shifts e máscaras conferidos um a um (abaixo).
+
+**NÃO corroborado localmente:** os valores **absolutos** de `mmREG` vêm de
+`gc_10_1_0_offset.h`, que este repositório **cita como fonte mas não vendoriza** — a mesma
+limitação já aceita nos blocos `CP ring GFX` e `MEC/HQD/MQD` acima. A ordem e a existência
+travam a derivação; a âncora absoluta ainda não tem segunda fonte local.
+
+### Campos de `CB_COLOR0_INFO` — conferidos contra o header local
+
+| Campo | Shift | Máscara | Emissor |
+|---|---:|---:|---|
+| `FORMAT` | `0x2` | `0x0000007C` (5 bits) | `(FormatIndex & 0x1F) << 2` ✅ |
+| `COMP_SWAP` | `0xB` | `0x00001800` (2 bits) | `(CompSwap & 0x3) << 11` ✅ |
+| `BLEND_BYPASS` | `0x10` | `0x00010000` | `1u << 16` ✅ |
+
+O empacotamento em `bc250_pm4_packet_builder.c` respeita as três larguras.
+
+### Dívidas declaradas deste bloco
+
+1. **`FormatIndex = 0x16` para `COLOR_8_8_8_8` é classe `H`, não `P1`.** O enum de formato do
+   CB não está no header local; só a largura do campo está. O valor não foi verificado por
+   nenhuma fonte deste repositório e **não pode** ser citado como derivado.
+2. **`CB_COLOR0_PITCH` é escrito sem máscara** (`regs[1]`), enquanto `CB_COLOR0_SLICE` é
+   mascarado com `0x003FFFFF`. Para 2560 px o valor é 319 e cabe nos 11 bits de `TILE_MAX`,
+   mas um pitch suficientemente largo transborda para `FMASK_TILE_MAX[30:20]`. Assimetria a
+   corrigir.
+3. **`gc_10_1_0_offset.h` não está vendorizado.** Trazer a cópia fecha a âncora absoluta
+   deste bloco **e** eleva a segunda fonte dos blocos `CP ring GFX` e `MEC/HQD/MQD`, que hoje
+   dependem da mesma citação sem cópia.
+4. **Nenhum destes endereços foi lido nem escrito no silício.** A classe P1 descreve a
+   derivação, não o efeito.
+
+### O que este bloco NÃO cobre
+
+Render target e scissor não são pipeline. Continuam **ausentes** do catálogo e do código:
+programa de shader (`SPI_SHADER_PGM_*`, `USER_DATA`), configuração de geometria (`VGT_*`),
+transformação de viewport (`PA_CL_VTE_CNTL`), depth (`DB_*`) e os descritores. Enquanto
+faltarem, um `DRAW_INDEX_AUTO` não produz pixel — e o anel que executaria esses pacotes
+(`CP ring GFX`, catalogado acima) **não está inicializado**: o Node 1 é servido por MEC.
+
 ## Golden/context usados nas tentativas
 
 | Registro | BAR5 byte | Classe | Nota |
@@ -395,8 +735,30 @@ Esse valor foi calculado independentemente do driver antes da primeira execuçã
 justamente para que a medição possa confirmar ou desmentir a aritmética em vez de
 concordar com ela por construção.
 
-O driver **lê** `GCMC_VM_FB_OFFSET` do silício em cada construção; não usa
-constante. Se o registrador mudar entre plataformas, o PTE acompanha.
+⚠️ **CORREÇÃO (07/09) — esta afirmação estava FALSA e é normativa, então some com ela.**
+O texto anterior dizia: *"O driver lê `GCMC_VM_FB_OFFSET` do silício em cada construção; não
+usa constante. Se o registrador mudar entre plataformas, o PTE acompanha."*
+
+O que o código realmente faz, lido em `driver/wdk/bc250_active_miniport.c`:
+
+- o **leitor de topologia** de fato lê `GCMC_VM_FB_OFFSET` do silício e o expõe em
+  `Bootstrap.AddressSpace.VramBaseOffset`;
+- mas o valor usado nas PTEs e no ponteiro de root é a **constante**
+  `BC250_GCVM_VRAM_MC_BASE_FALLBACK = 0x450000000` — e isso é **deliberado**, com
+  justificativa no comentário: a base do leitor *"nunca fez um acesso funcionar"*, enquanto a
+  constante tem prova byte a byte. Ver também o registro da reversão de 05/09 01:29, quando
+  trocar esta base pela MC (`0xF400000000`) foi diagnosticado como erro de domínio — o walker
+  do GCVM opera em **PA**, anel e blts físicos operam em **MC**.
+
+Numericamente a constante é o `0x450 << 24` medido em 2026-08-23, então hoje os dois
+concordam. O risco é o silêncio se deixarem de concordar. **Fechado em 07/09:** o
+`SetRootPageTable` passou a comparar os dois e a emitir
+`ROOT_MC: DIVERGENCIA -- topologia leu 0x… do silicio, base em uso e 0x…` quando diferem;
+quando concordam, o log diz isso explicitamente. Nenhuma mudança de comportamento — o
+caminho com prova física continua o mesmo, só deixou de poder divergir em silêncio.
+
+Também removida no mesmo passo uma inicialização morta que repetia `0x450000000ull` à mão
+(quarta grafia do mesmo número) e era sobrescrita sem condição logo abaixo.
 
 ## HDP
 
@@ -475,6 +837,14 @@ unidade.
 | `SDMA0_UTCL1_RD_XNACK0/1` | `0x0043-0x0044` | `0x04A8C/90` | leitura recusada pela tradução |
 | `SDMA0_UTCL1_WR_XNACK0/1` | `0x0045-0x0046` | `0x04A94/98` | **escrita recusada pela tradução** |
 | `SDMA0_UTCL1_TIMEOUT` | `0x0047` | `0x04A9C` | timeout de tradução |
+| `SDMA0_GFX_IB_RPTR` | `0x008b` | `0x04BAC` | ponteiro de leitura DENTRO do IB |
+| `SDMA0_GFX_IB_OFFSET` | `0x008c` | `0x04BB0` | offset corrente dentro do IB |
+| `SDMA0_GFX_IB_BASE_LO` | `0x008d` | `0x04BB4` | base do IB carregada pelo `INDIRECT` |
+| `SDMA0_GFX_IB_BASE_HI` | `0x008e` | `0x04BB8` | base do IB, parte alta |
+| `SDMA0_GFX_IB_SIZE` | `0x008f` | `0x04BBC` | tamanho do IB carregado |
+| `SDMA0_GFX_SKIP_CNTL` | `0x0090` | `0x04BC0` | controle de descarte de pacotes |
+| `SDMA0_GFX_CONTEXT_STATUS` | `0x0091` | `0x04BC4` | `EXCEPTION`, `PREEMPTED`, `PREEMPT_DISABLE` |
+| `SDMA0_GFX_IB_SUB_REMAIN` | `0x00af` | `0x04C3C` | dwords restantes na execução do IB corrente |
 | `GCVM_L2_PROTECTION_FAULT_CNTL` | `0x15e8` | `0x0A120` | controle da falha de proteção |
 | `GCVM_L2_PROTECTION_FAULT_ADDR_LO32` | `0x15ed` | `0x0A134` | endereço da falha latchada |
 | `GCVM_L2_PROTECTION_FAULT_ADDR_HI32` | `0x15ee` | `0x0A138` | endereço da falha latchada |
@@ -543,6 +913,122 @@ O `sh_mask` autoritativo foi obtido:
 
 `mmGRBM_SOFT_RESET` fica em `dw 0x0da8` -> byte `0x08020` pela mesma aritmética
 dos demais registros GC.
+
+### Bloco `SDMA0_GFX_IB_*` — derivação cercada por âncoras, 2026-09-05
+
+Estes sete registros **não** foram extrapolados: eles ficam **entre dois offsets
+que já constavam deste catálogo e do módulo de laboratório**, e a aritmética
+fecha nos dois lados.
+
+| Âncora | `dw` | Byte BAR0 |
+|---|---|---|
+| `SDMA0_GFX_IB_CNTL` | `0x008a` | `0x04BA8` |
+| `SDMA0_GFX_DOORBELL` | `0x0092` | `0x04BC8` |
+
+`0x04BC8 - 0x04BA8 = 0x20` bytes = **8 dwords**, contra `0x92 - 0x8a` = **8**
+de índice. O bloco é consecutivo, e os sete registros entre eles caem em
+`0x04BAC`..`0x04BC4` pela mesma aritmética `0x4980 + dw*4` usada no resto do
+segmento 0 da SDMA0.
+
+#### Campos do bloco — decodificados em 2026-09-07, classe `P1`
+
+⚠️ **Estes campos ficaram sem interpretação por dois dias.**
+`docs/168_HANDOFF_2026-09-05_INDIRECT_SDMA.md`, seção 6 item 6, encerrou dizendo:
+*"a semântica de bits de `CONTEXT_STATUS` e `SKIP_CNTL` … não sei o que significa e não
+interpretei"*. A semântica estava no repositório desde sempre, em
+[`inc/linux_ref/gc_10_1_0_sh_mask.h`](../inc/linux_ref/gc_10_1_0_sh_mask.h) — a única cópia
+local de referência do upstream que temos. As linhas citadas abaixo são daquele arquivo.
+
+**`SDMA0_GFX_IB_CNTL`** (linhas 941–948):
+
+| Campo | Bits | Máscara |
+|---|---|---|
+| `IB_ENABLE` | 0 | `0x00000001` |
+| `IB_SWAP_ENABLE` | 4 | `0x00000010` |
+| `SWITCH_INSIDE_IB` | 8 | `0x00000100` |
+| `CMD_VMID` | 19:16 | `0x000F0000` |
+
+**`SDMA0_GFX_IB_RPTR` e `SDMA0_GFX_IB_OFFSET`** (linhas 950–954):
+
+| Campo | Bits | Máscara |
+|---|---|---|
+| `OFFSET` | 21:2 | `0x003FFFFC` |
+
+⚠️ **O campo começa no bit 2.** O valor cru é um offset em **bytes**; o campo conta
+**dwords**. Ler o cru como dwords dá quatro vezes o valor certo — e é exatamente esse o
+risco de ler `IB_RPTR = 0x20` sem decodificar: são **8 dwords**, não 32.
+
+**`SDMA0_GFX_IB_SIZE`** (962–963): `SIZE` em 19:0, `0x000FFFFF` — já em dwords, sem shift.
+**`SDMA0_GFX_SKIP_CNTL`** (965–966): `SKIP_COUNT` em 19:0, `0x000FFFFF` — o valor inteiro é
+a contagem. Os valores variáveis observados em 05/09 (`0x3CB3`, `0x3A`, `0x2A`, `0x1A`) são
+contagens de skip, não um bitmap.
+
+**`SDMA0_GFX_IB_SUB_REMAIN`** (`0x00af` -> byte `0x04C3C`, linhas 1013–1014): `REMAIN_DW` em 13:0,
+máscara `0x00003FFF` — contagem dinâmica de dwords pendentes de execução no sub-buffer do IB.
+O microcódigo F32 decrementa este registrador a cada dword consumido. Quando a engine trava dentro
+do IB, a leitura deste registrador indica exatamente quantas dwords restavam para concluir o IB.
+
+**`SDMA0_GFX_CONTEXT_STATUS`** (968–983):
+
+| Campo | Bits | Máscara |
+|---|---|---|
+| `SELECTED` | 0 | `0x00000001` |
+| `IDLE` | 2 | `0x00000004` |
+| `EXPIRED` | 3 | `0x00000008` |
+| `EXCEPTION` | 6:4 | `0x00000070` |
+| `CTXSW_ABLE` | 7 | `0x00000080` |
+| `CTXSW_READY` | 8 | `0x00000100` |
+| `PREEMPTED` | 9 | `0x00000200` |
+| `PREEMPT_DISABLE` | 10 | `0x00000400` |
+
+⚠️ Dois detalhes que enganam: **`EXCEPTION` é um campo de 3 bits**, não um flag; e **o bit 1
+não tem nome no header do upstream**. A união dos campos conhecidos é `0x000007FD`, e o
+decodificador reporta o resto em `BITS_SEM_NOME` em vez de fingir que entendeu o valor todo.
+
+#### O que a decodificação revelou nas medições de 05/09
+
+Aplicando as máscaras acima aos dois valores **medidos** (`docs/168` seção 5.3):
+
+| Variante | `CONTEXT_STATUS` | Decodificado |
+|---|---|---|
+| `PHYS` (VMID 0, MC físico) | `0x0D` | `SELECTED` + **`IDLE`** + `EXPIRED` |
+| `EXEC` (VMID 8, traduzido) | `0x09` | `SELECTED` + `EXPIRED`, **`IDLE = 0`** |
+
+| Variante | `IB_CNTL` | Decodificado |
+|---|---|---|
+| `PHYS` | `0x00000101` | `IB_ENABLE=1`, `SWITCH_INSIDE_IB=1`, `CMD_VMID=0` |
+| `EXEC` | `0x00080101` | `IB_ENABLE=1`, `SWITCH_INSIDE_IB=1`, `CMD_VMID=8` |
+
+**Os dois `CONTEXT_STATUS` diferem em exatamente um bit, e é o `IDLE`. Os dois `IB_CNTL`
+diferem em exatamente um campo, e é o `CMD_VMID`.** Medição `P0` (doc 168) somada a
+decodificação `P1` (header local) — não é hipótese.
+
+Ou seja: a engine tratou o pacote **igual** nas duas variantes, e a única diferença de
+desfecho é que **a variante traduzida não voltou a ficar ociosa**.
+
+🔶 **HIPÓTESE (`H`)** que isso sustenta: sob VMID 8 a engine consumiu o pacote do **anel**,
+latchou `IB_BASE` e `CMD_VMID`, e **parou dentro do IB** — não terminou, por isso `IDLE`
+continua 0. Aponta para *"travou buscando ou traduzindo o IB"*, não para *"não executou o
+pacote"*.
+
+⚠️ **O que isto NÃO resolve, e precisa ficar escrito:** a variante `PHYS` **foi a `IDLE`** —
+ou seja, **terminou** — e a prova de bytes dela **também falhou** (`docs/168` seção 5.2).
+Sem tradução envolvida, aquela falha não pode ser de GCVM. São **duas falhas diferentes**, e
+esta decodificação não decide nenhuma das duas.
+
+Travado por `driver/tests/sdma_queue_state_contract_test.c`, que confere as máscaras contra
+o header **e** reproduz os dois valores medidos. O contrato
+`driver/core/bc250_sdma_queue_state_contract.c` não escreve registrador nenhum, e o
+`SubmitCommandVirtual` do Node 0 passou a emitir `IB_QUEUE_RAW`, `IB_QUEUE_DECODED`,
+`IB_QUEUE_STATUS` e `IB_QUEUE_DISCRIMINANTE` **no caminho de timeout** — não no de sucesso,
+para não pôr oito leituras de MMIO no `Present` a 60 Hz.
+
+Classe **P1**. Ordem dos campos conforme `gc_10_1_0_offset.h`. **Somente
+leitura** — nenhum deles é escrito pelo driver: o microcódigo do F32 é que os
+carrega ao consumir o pacote `INDIRECT`. É exatamente por isso que eles servem
+de diagnóstico: se `IB_BASE`/`IB_SIZE` contiverem o que emitimos, a engine
+chegou a carregar o descritor; se ficarem zerados, ela nem decodificou o
+pacote.
 
 O reset é feito por leitura-modificação-escrita, mexendo apenas no bit da
 SDMA0: os outros bits do registrador incluem `SOFT_RESET_GFX`, e a máquina usa
@@ -803,8 +1289,116 @@ um boot para descobrir.
 ### O que o passo 3 deliberadamente NÃO escreve
 
 `gfxhub_v2_0_setup_vmid_config`, que configura os contextos 1..15 e existe para
-VMs de usuário. Este laboratório submete por VMID 0. Escrever 15 contextos que
+VMs de usuário. Este laboratório submetia por VMID 0. Escrever 15 contextos que
 ninguém vai usar aumenta a superfície de escrita sem aumentar a prova.
+
+### Contextos de VMID de Usuário (1..15) e `GCVM_CONTEXT8_CNTL` — `gfxhub_v2_0_setup_vmid_config`
+
+Para submissões em espaço de processo e execução real de DMA buffer com GPUVA,
+o hardware exige um VMID com root page table instalada e habilitada. O contexto 8
+(`mmGCVM_CONTEXT8_CNTL`, byte offset `0x0A220`) é o contexto alocado ao driver para
+esta função.
+
+**Proveniência:**
+- Função upstream: `gfxhub_v2_0_setup_vmid_config()` em `drivers/gpu/drm/amd/amdgpu/gfxhub_v2_0.c`.
+- Definição de máscaras e shifts: `gc_10_1_0_sh_mask.h` (linhas 12666–12704).
+- Layout: os contextos 1 a 15 compartilham o mesmo layout exato de registradores.
+- Classificação: **P1** (derivado do upstream e compatível com o silício).
+
+#### VMID9 dedicado ao MEC — 08/09, P1, NÃO VALIDADO EM HARDWARE
+
+Fonte conferida: [gc_10_1_0_offset.h do Linux](https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h),
+símbolos `mmGCVM_CONTEXT9_*`, todos `BASE_IDX=0`. Fórmula byte:
+`(GC_BASE[0] + offset) * 4`, com `GC_BASE[0]=0x1260` já catalogado.
+
+| Registro | Offset upstream (dword) | Byte MMIO |
+|---|---:|---:|
+| CNTL | 0x1629 | 0xA224 |
+| PAGE_TABLE_BASE_ADDR_LO32 | 0x169D | 0xA3F4 |
+| PAGE_TABLE_BASE_ADDR_HI32 | 0x169E | 0xA3F8 |
+| PAGE_TABLE_START_ADDR_LO32 | 0x16BD | 0xA474 |
+| PAGE_TABLE_START_ADDR_HI32 | 0x16BE | 0xA478 |
+| PAGE_TABLE_END_ADDR_LO32 | 0x16DD | 0xA4F4 |
+| PAGE_TABLE_END_ADDR_HI32 | 0x16DE | 0xA4F8 |
+
+Campos de CNTL: `inc/linux_ref/gc_10_1_0_sh_mask.h`, seção
+`GCVM_CONTEXT9_CNTL`, bits 0..22. A transação preserva os bits externos a essa
+máscara, salva os sete registros, recusa contexto previamente habilitado,
+desabilita antes de reprogramar, confere readback e invalida VMID9 na engine17
+(`ACK=1<<9`, 0x200). Restaura a baseline com readback/ACK após falha ou teardown.
+Esta inclusão cataloga endereços P1; não declara execução no silício.
+
+#### Tabela de Campos de `GCVM_CONTEXT8_CNTL`
+
+| Campo | Shift | Largura | Máscara | POST (medido) | Alvo (P1) | Papel / Origem |
+|---|---:|---:|---:|---:|---:|---|
+| `ENABLE_CONTEXT` | 0 | 1 bit | `0x00000001` | 0 | **1** | Habilita tradução para o contexto (`gfxhub_v2_0.c:291`) |
+| `PAGE_TABLE_DEPTH` | 1 | 2 bits | `0x00000006` | 0 | **1** | Profundidade da hierarquia (1 = 2 níveis, ver derivação abaixo) |
+| `PAGE_TABLE_BLOCK_SIZE` | 3 | 4 bits | `0x00000078` | 0 | **0** | Tamanho de bloco da folha além de 9 bits (0 = 4 KiB folha) |
+| `RETRY_PERMISSION_OR_INVALID_PAGE_FAULT` | 7 | 1 bit | `0x00000080` | 1 | **0** | No-retry: suprime tempestade de fault em APU (`gfxhub_v2_0.c:313`) |
+| `RETRY_OTHER_FAULT` | 8 | 1 bit | `0x00000100` | 0 | **0** | Desabilitado no upstream |
+| `RANGE_PROTECTION_FAULT_ENABLE_INTERRUPT` | 9 | 1 bit | `0x00000200` | 1 | **0** | Interrupção não habilitada no setup padrão |
+| `RANGE_PROTECTION_FAULT_ENABLE_DEFAULT` | 10 | 1 bit | `0x00000400` | 1 | **1** | Redireciona para dummy page default (`gfxhub_v2_0.c:295`) |
+| `DUMMY_PAGE_PROTECTION_FAULT_ENABLE_INTERRUPT` | 11 | 1 bit | `0x00000800` | 1 | **0** | Interrupção não habilitada no setup padrão |
+| `DUMMY_PAGE_PROTECTION_FAULT_ENABLE_DEFAULT` | 12 | 1 bit | `0x00001000` | 1 | **1** | Redireciona para dummy page default (`gfxhub_v2_0.c:297`) |
+| `PDE0_PROTECTION_FAULT_ENABLE_INTERRUPT` | 13 | 1 bit | `0x00002000` | 1 | **0** | Interrupção não habilitada no setup padrão |
+| `PDE0_PROTECTION_FAULT_ENABLE_DEFAULT` | 14 | 1 bit | `0x00004000` | 1 | **1** | Redireciona para dummy page default (`gfxhub_v2_0.c:299`) |
+| `VALID_PROTECTION_FAULT_ENABLE_INTERRUPT` | 15 | 1 bit | `0x00008000` | 1 | **0** | Interrupção não habilitada no setup padrão |
+| `VALID_PROTECTION_FAULT_ENABLE_DEFAULT` | 16 | 1 bit | `0x00010000` | 1 | **1** | Redireciona para dummy page default (`gfxhub_v2_0.c:301`) |
+| `READ_PROTECTION_FAULT_ENABLE_INTERRUPT` | 17 | 1 bit | `0x00020000` | 1 | **0** | Interrupção não habilitada no setup padrão |
+| `READ_PROTECTION_FAULT_ENABLE_DEFAULT` | 18 | 1 bit | `0x00040000` | 1 | **1** | Redireciona para dummy page default (`gfxhub_v2_0.c:303`) |
+| `WRITE_PROTECTION_FAULT_ENABLE_INTERRUPT` | 19 | 1 bit | `0x00080000` | 1 | **0** | Interrupção não habilitada no setup padrão |
+| `WRITE_PROTECTION_FAULT_ENABLE_DEFAULT` | 20 | 1 bit | `0x00100000` | 1 | **1** | Redireciona para dummy page default (`gfxhub_v2_0.c:305`) |
+| `EXECUTE_PROTECTION_FAULT_ENABLE_INTERRUPT` | 21 | 1 bit | `0x00200000` | 1 | **0** | Interrupção não habilitada no setup padrão |
+| `EXECUTE_PROTECTION_FAULT_ENABLE_DEFAULT` | 22 | 1 bit | `0x00400000` | 1 | **1** | Redireciona para dummy page default (`gfxhub_v2_0.c:307`) |
+
+**Valor de POST medido no silício (baseline `gcvm dump`):** `0x007FFE80`
+(Todos os bits de default e interrupt ativados, context desabilitado, depth 0).
+
+**Valor alvo pretendido para `GCVM_CONTEXT8_CNTL`:**
+```text
+  0x00555400  (bits 10, 12, 14, 16, 18, 20, 22 de *_FAULT_ENABLE_DEFAULT)
+| 0x00000002  (PAGE_TABLE_DEPTH = 1)
+| 0x00000001  (ENABLE_CONTEXT = 1)
+= 0x00555403
+```
+
+#### Derivação Matemática da Geometria (34 bits, 2 níveis)
+
+O driver declara ao WDDM (`DXGKQAITYPE_PAGETABLELEVELDESC` e `GPUMMUCAPS`):
+- `VaBits = 34` (espaço virtual de 16 GiB = $2^{34}$ bytes);
+- `Levels = 2`;
+- Offset de página de 4 KiB: 12 bits (`bits [11:0]`);
+- Total de bits de índice de tabela: $34 - 12 = 22$ bits;
+- `Level 0` (Folha / PTB): 9 bits de índice $\rightarrow 2^9 = 512$ PTEs de 8 bytes = 4096 bytes (4 KiB), cobrindo $512 \times 4\text{ KiB} = 2\text{ MiB}$;
+- `Level 1` (Raiz / PDB): 13 bits de índice $\rightarrow 2^{13} = 8192$ PDEs de 8 bytes = 65536 bytes (64 KiB), cobrindo $8192 \times 2\text{ MiB} = 16\text{ GiB}$.
+
+1. **Conta de `PAGE_TABLE_DEPTH`:**
+   No hardware GCVM, a profundidade indica o número de níveis abaixo da raiz:
+   - `0`: 1 nível (tabela plana / GART, PTE direta sem PDE);
+   - `1`: 2 níveis (Raiz PDE0 $\rightarrow$ Folha PTE);
+   - `2`: 3 níveis (PDE1 $\rightarrow$ PDE0 $\rightarrow$ PTE);
+   - `3`: 4 níveis (PDE2 $\rightarrow$ PDE1 $\rightarrow$ PDE0 $\rightarrow$ PTE).
+   Como nossa hierarquia é de 2 níveis:
+   $$\text{PAGE\_TABLE\_DEPTH} = \text{Levels} - 1 = 2 - 1 = 1$$
+
+2. **Conta de `PAGE_TABLE_BLOCK_SIZE`:**
+   No upstream amdgpu (`gfxhub_v2_0_setup_vmid_config`):
+   $$\text{PAGE\_TABLE\_BLOCK\_SIZE} = \text{block\_size} - 9$$
+   O parâmetro `block_size` representa o $\log_2$ do número de entradas na tabela folha.
+   A folha base de 4 KiB possui 512 entradas ($2^9$), cobrindo exatamente 2 MiB.
+   Como nosso `Level 0` possui exatamente 9 bits de índice (`BC250_GPUVA_PT_LEAF_INDEX_BITS = 9`), temos:
+   $$\text{block\_size} = 9 \implies \text{PAGE\_TABLE\_BLOCK\_SIZE} = 9 - 9 = 0$$
+   Portanto, o campo `PAGE_TABLE_BLOCK_SIZE` deve ser programado com **`0`**.
+
+3. **Limites de Endereçamento do Contexto (`PT_START` e `PT_END`):**
+   - `mmGCVM_CONTEXT8_PAGE_TABLE_START_ADDR_LO32` (`0x0A46C`) = `0`
+   - `mmGCVM_CONTEXT8_PAGE_TABLE_START_ADDR_HI32` (`0x0A470`) = `0`
+   - `mmGCVM_CONTEXT8_PAGE_TABLE_END_ADDR_LO32` (`0x0A4EC`) = $\text{max\_pfn} - 1 = 2^{22} - 1 = \mathbf{0x003FFFFF}$
+   - `mmGCVM_CONTEXT8_PAGE_TABLE_END_ADDR_HI32` (`0x0A4F0`) = `0`
+   Classificação: **P1**.
+
+---
 
 ## Registradores do CP, para a frente que vem
 

@@ -1,34 +1,24 @@
 ﻿# BC250-WinDv
 
-[![Target](https://img.shields.io/badge/Target-Windows_11_x64-blue.svg)](https://microsoft.com)
+[![Target](https://img.shields.io/badge/Target-Windows_10_22H2_x64-blue.svg)](https://microsoft.com)
 [![Architecture](https://img.shields.io/badge/Architecture-GFX10.1.3_%2F_Cyan_Skillfish-purple.svg)](docs/02_ARQUITETURA_AMDGPU.md)
-[![Status](https://img.shields.io/badge/Status-N%C3%A3o_validado_em_hardware_(WDDM)-orange.svg)](BASE_DE_AVANCO.md)
+[![Status](https://img.shields.io/badge/Status-WDDM_em_validacao_no_silicio-orange.svg)](BASE_DE_AVANCO.md)
 [![Silicon-Proof](https://img.shields.io/badge/Validation-Fail--Closed_Silicon_Tested-green.svg)](rules.md)
 
 Driver nativo para Windows e suíte de laboratório para engenharia reversa e bring-up de hardware da APU **AMD BC-250** (`1002:13FE`, revisão `00`), baseada no core gráfico **Cyan Skillfish 2 (GC / IP 10.1.3)** com 16 GB de memória GDDR6 compartilhada.
 
 ---
 
-## 📊 Status Atual do Desenvolvimento
+## 📊 Estado em 25/09/2026
 
-```text
-================================== STATUS DO DRIVER BC-250 ==================================
-Base Geral Pre-WDDM (Lab)        ██████████████████▊░  93%   Estavel e Isolado
-SDMA (DMA Engine & Robustez)     ███████████████████░  95%   Provado em Silicio
-GCVM & Traducao de Memoria       ██████████████████░░  90%   PTE 0x10 provado; sem GPUVA dinamica
-RLC, CP & PM4 Direct Load        ███████████████████░  95%   Fence em VRAM provada
-Telemetria & Observabilidade     █████████████████░░░  85%   Schema 134; anel de DDI e bitmap de QAI
-Compute & Async Queues (MEC/MQD) ██████████████████░░  90%   P1 17/17 e P2 16/16 provados no silicio
-Miniport WDDM Display+Render     ███████░░░░░░░░░░░░  35%   Codigo 43 no retorno do StartDevice
-=============================================================================================
-Veredito Global: NAO VALIDADO EM HARDWARE
-=============================================================================================
-```
+| Frente | Estado medido |
+|---|---|
+| Desktop WDDM | Corrida 118: 180 s com imagem legível e triângulo apenas na janela; 60/60 apresentações do harness e recuperação pelo watchdog no mesmo boot. O triângulo faltou na 117: a apresentação visual ainda é intermitente. |
+| Pixels | 60/60 cópias 1280×720 preservaram centro e canto em amostras antes/depois; essa prova não cobre todos os pixels nem a saída final no monitor. |
+| Velocidade | DWM 2,68 inícios de Present/s nos primeiros 120 s; harness 0,9 FPS. O modo GOP atual é ~56,13 Hz, mas o desempenho ainda está muito abaixo disso. |
+| Estabilidade | Houve travamentos duros em ensaios de 3–8 min e na Corrida 115. Estabilidade de 600 s, 60 FPS e jogos seguem abertos. |
 
-> **O que fazer agora:** [`BASE_DE_AVANCO.md`](BASE_DE_AVANCO.md) e o documento base do
-> projeto — Tabela 1 (ja feito, com prova fisica) e Tabela 2 (o que falta, por prioridade,
-> com o teste que fecha cada item). Roadmap detalhado em
-> [`docs/164_ROADMAP_WDDM_JOGOS.md`](docs/164_ROADMAP_WDDM_JOGOS.md).
+**Comece pelo [handoff atual](docs/438_HANDOFF_2026-09-25_CORRIDAS_111_A_118_VISUAL_VELOCIDADE_E_TRAVAMENTO.md)**. A [base de avanço](BASE_DE_AVANCO.md) registra o estado e as provas; o [roadmap](docs/164_ROADMAP_WDDM_JOGOS.md) define o escopo do produto.
 
 ---
 
@@ -73,7 +63,7 @@ BC250-WinDv/
 ## 🛠️ Como Compilar e Testar
 
 ### Pré-requisitos
-- Windows 11 x64 com Modo de Teste (`testsigning on`) ativado.
+- Windows 10 22H2 x64 com Modo de Teste (`testsigning on`) ativado.
 - Windows Driver Kit (WDK) e Windows SDK instalados.
 - PowerShell 5.1+.
 

@@ -1,8 +1,10 @@
 #include "bc250_submission_engine.h"
 #include "bc250_active_miniport.h"
+#include "bc250_display_ddi.h"
 #include "bc250_mmio_topology_transport.h"
 #include "bc250_probe_telemetry.h"
 #include "bc250_observable_shader.h"
+#include "bc250_sdma_present.h"
 
 /*
  * Fase P1 — implementacao do motor de submissao persistente.
@@ -57,6 +59,51 @@ static uint32_t Bc250SubmissionWrite32(
 }
 
 /*
+ * Fotografia global, deliberadamente tirada sem selecionar uma HQD. Alem de
+ * ampliar o diagnostico com CP_STALLED_STAT2/CP_BUSY_STAT, isto permite
+ * distinguir um stall que ja existia de um que aparece durante as leituras
+ * indexadas usadas pela propria telemetria da fila.
+ */
+VOID Bc250SubmissionEngineCaptureRciuStage(
+    struct BC250_DXGK_ACTIVE_CONTEXT *Context,
+    const char *Tag)
+{
+    BC250_SUBMISSION_ENGINE *engine;
+    uint32_t valid = 0u;
+    uint32_t cpcStatus = 0u, cpcBusy = 0u, cpcStalled = 0u;
+    uint32_t cpfStatus = 0u, cpfBusy = 0u, cpfStalled = 0u;
+    uint32_t cpStalled1 = 0u, cpStalled2 = 0u, cpBusy = 0u, cpStat = 0u;
+    uint32_t mec2Pntr = 0u;
+
+    if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE ||
+        Tag == NULL) return;
+    engine = &Context->SubmissionEngine;
+    if (engine->MmioMapped == 0u ||
+        Context->Core.MmioTransport.State != BC250_MMIO_TOPOLOGY_MAPPED) return;
+
+    if (Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPC_STATUS, &cpcStatus)) valid |= 1u << 0;
+    if (Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPC_BUSY_STAT, &cpcBusy)) valid |= 1u << 1;
+    if (Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPC_STALLED_STAT1, &cpcStalled)) valid |= 1u << 2;
+    if (Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPF_STATUS, &cpfStatus)) valid |= 1u << 3;
+    if (Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPF_BUSY_STAT, &cpfBusy)) valid |= 1u << 4;
+    if (Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPF_STALLED_STAT1, &cpfStalled)) valid |= 1u << 5;
+    if (Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_STALLED_STAT1, &cpStalled1)) valid |= 1u << 6;
+    if (Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_STALLED_STAT2, &cpStalled2)) valid |= 1u << 7;
+    if (Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_BUSY_STAT, &cpBusy)) valid |= 1u << 8;
+    if (Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_STAT, &cpStat)) valid |= 1u << 9;
+    if (Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_MEC2_INSTR_PNTR, &mec2Pntr)) valid |= 1u << 10;
+
+    Bc250DisplayLog("[MEC_RCIU_STAGE %s] Valid=0x%X CpcStat=%08X CpcBusy=%08X CpcStalled=%08X CpfStat=%08X CpfBusy=%08X CpfStalled=%08X CpStalled1=%08X CpStalled2=%08X CpBusy=%08X CpStat=%08X Mec2Pntr=%08X RciuBusy=%u/%u/%u RciuPath=%u/%u\n",
+        Tag, valid, cpcStatus, cpcBusy, cpcStalled, cpfStatus, cpfBusy,
+        cpfStalled, cpStalled1, cpStalled2, cpBusy, cpStat, mec2Pntr,
+        (cpcStatus & 0x00000010u) != 0u ? 1u : 0u,
+        (cpcStatus & 0x00000020u) != 0u ? 1u : 0u,
+        (cpcStatus & 0x00040000u) != 0u ? 1u : 0u,
+        (cpBusy & 0x00000200u) != 0u ? 1u : 0u,
+        (cpBusy & 0x00000400u) != 0u ? 1u : 0u);
+}
+
+/*
  * Fotografa os registradores da fila selecionada e devolve o seletor original.
  * Somente leitura: nenhuma destas chamadas altera estado da engine.
  */
@@ -69,6 +116,8 @@ static VOID Bc250SubmissionCaptureQueue(
     RtlZeroMemory(Snapshot, sizeof(*Snapshot));
     if (Engine->MmioMapped == 0u) return;
 
+    (void)Bc250SubmissionWrite32(Engine, Context,
+        BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
     (void)Bc250SubmissionWrite32(Engine, Context,
         BC250_GRBM_GFX_CNTL_BYTE_OFFSET, Engine->SelectedSelector);
 
@@ -87,6 +136,8 @@ static VOID Bc250SubmissionCaptureQueue(
     (void)Bc250SubmissionRead32(Engine, Context,
         BC250_HQD_MMIO_PQ_RPTR, &Snapshot->PqRptr);
 
+    (void)Bc250SubmissionWrite32(Engine, Context,
+        BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
     (void)Bc250SubmissionWrite32(Engine, Context,
         BC250_GRBM_GFX_CNTL_BYTE_OFFSET, Engine->OriginalSelector);
 
@@ -117,10 +168,10 @@ static VOID Bc250SubmissionEngineReleaseResources(
     struct BC250_DXGK_ACTIVE_CONTEXT *Context,
     BC250_SUBMISSION_ENGINE *Engine)
 {
-    if (Engine->MmioMapped != 0u) {
-        (void)Bc250MmioTopologyUnmap(&Context->Core.MmioTransport);
-        Engine->MmioMapped = 0u;
-    }
+    /* Core owns this shared mapping. StopDevice still needs it to restore
+     * the global MMU after the HQD has been deactivated. The readonly core
+     * releases it last, including on failed startup. */
+    Engine->MmioMapped = 0u;
     if (Engine->DoorbellVirtual != NULL) {
         (void)Context->Core.DxgkInterface.DxgkCbUnmapMemory(
             Context->Core.DxgkInterface.DeviceHandle,
@@ -208,7 +259,9 @@ NTSTATUS Bc250SubmissionEngineOnline(
     RtlZeroMemory(&region, sizeof(region));
     vramStatus = Bc250VramAllocate(allocator,
         BC250_SUBMISSION_BLOCK_BYTES, 65536u,
-        BC250_VRAM_ROLE_MQD, BC250_VRAM_ALLOC_CPU_VISIBLE, &engine->Token);
+        BC250_VRAM_ROLE_MQD,
+        BC250_VRAM_ALLOC_TOP_DOWN | BC250_VRAM_ALLOC_CPU_VISIBLE,
+        &engine->Token);
     if (vramStatus != BC250_VRAM_OK) {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -408,6 +461,11 @@ NTSTATUS Bc250SubmissionEngineOnline(
     if (engine->RingFenceBaselineWritten == 0u) {
         /* Sem baseline confiavel nao ha como aposentar submissao nenhuma. */
         BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE teardown;
+        RtlZeroMemory(&teardown, sizeof(teardown));
+        teardown.SelectedSelector = engine->SelectedSelector != 0u ?
+            engine->SelectedSelector : 0x00000008u;
+        teardown.OriginalSelector = engine->OriginalSelector;
+        teardown.ActiveConfirmed = 1u;
 
         (void)Bc250ComputeDeactivatePersistentHqd(
             &interfaceData, &engine->Buffers, &teardown, &engine->HqdState);
@@ -430,6 +488,11 @@ NTSTATUS Bc250SubmissionEngineOnline(
         (uint32_t)BC250_PRING_COMPLETION_POLL);
     if (ringStatus != BC250_PRING_OK) {
         BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE teardown;
+        RtlZeroMemory(&teardown, sizeof(teardown));
+        teardown.SelectedSelector = engine->SelectedSelector != 0u ?
+            engine->SelectedSelector : 0x00000008u;
+        teardown.OriginalSelector = engine->OriginalSelector;
+        teardown.ActiveConfirmed = 1u;
 
         (void)Bc250ComputeDeactivatePersistentHqd(
             &interfaceData, &engine->Buffers, &teardown, &engine->HqdState);
@@ -457,7 +520,7 @@ NTSTATUS Bc250SubmissionEngineOnline(
  * engine — o 3.43 mostrou que o WPTR nao assenta por escrita direta antes de
  * ACTIVE e que o CP o busca no shadow via QUEUE_MASK.
  */
-static NTSTATUS Bc250SubmissionApplyCoherency(
+static NTSTATUS Bc250SubmissionApplyCoherencyLocked(
     struct BC250_DXGK_ACTIVE_CONTEXT *Context,
     BC250_SUBMISSION_ENGINE *Engine)
 {
@@ -466,6 +529,8 @@ static NTSTATUS Bc250SubmissionApplyCoherency(
     const uint32_t l2OrValue = BC250_HQD_GCVM_L2_INVALIDATE_MASK;
     uint32_t requestReadback = 0u;
     uint32_t poll;
+    uint32_t reqValue = BC250_HQD_GCVM_INVALIDATE_REQ_VMID0;
+    uint32_t ackMask = BC250_HQD_GCVM_INVALIDATE_VMID0;
 
     Engine->CoherHdpApplied = 0u;
     Engine->CoherL2Readback = 0u;
@@ -473,15 +538,38 @@ static NTSTATUS Bc250SubmissionApplyCoherency(
     Engine->CoherInvalidatePolls = 0u;
     Engine->CoherencyPassed = 0u;
 
+    if (Engine->ComputeRing.Vmid != 0u && Engine->ComputeRing.Vmid < 16u) {
+        reqValue |= (1u << Engine->ComputeRing.Vmid);
+        ackMask |= (1u << Engine->ComputeRing.Vmid);
+    }
+
     /* PREFLIGHT/SNAPSHOT: nunca componha uma escrita mascarada sem a leitura. */
     if (!Bc250SubmissionRead32(Engine, Context,
             BC250_HQD_MMIO_GCVM_L2_CNTL2, &l2Before)) {
         return STATUS_DEVICE_HARDWARE_ERROR;
     }
 
-    /* APPLY/READBACK: mesma ordem da transacao one-shot provada no 3.43. */
+    /*
+     * HDP Write Flush & Read Invalidate:
+     * Garante que todas as escritas da CPU no anel persistente em VRAM
+     * sejam completamente drenadas pela FIFO PCIe do HDP antes que o MEC/HQD
+     * tente ler o pacote de comandos no anel.
+     * Conforme provado no silicio e especificado no upstream Linux (hdp_v5_0.c):
+     *   1. Escrita 0u em HDP_FLUSH (0x04A80) e readback de confirmacao de dreno
+     *   2. Escrita 1u em HDP_READ_CACHE_INVALIDATE (0x03FC4) e readback
+     * HDP_MISC (0x03FCC) NAO e tocado durante submissao ativa para evitar
+     * bloqueio da interface RCIU no MEC2 (CP_CPC_STALLED_STAT1 = 0x00040000).
+     */
+    uint32_t hdpDummy = 0u;
+
     if (!Bc250SubmissionWrite32(Engine, Context,
-            BC250_HQD_MMIO_HDP_READ_CACHE_INVALIDATE, 1u)) {
+            BC250_HQD_MMIO_HDP_FLUSH, 0u) ||
+        !Bc250SubmissionRead32(Engine, Context,
+            BC250_HQD_MMIO_HDP_FLUSH, &hdpDummy) ||
+        !Bc250SubmissionWrite32(Engine, Context,
+            BC250_HQD_MMIO_HDP_READ_CACHE_INVALIDATE, 1u) ||
+        !Bc250SubmissionRead32(Engine, Context,
+            BC250_HQD_MMIO_HDP_READ_CACHE_INVALIDATE, &hdpDummy)) {
         return STATUS_DEVICE_HARDWARE_ERROR;
     }
     Engine->CoherHdpApplied = 1u;
@@ -505,13 +593,13 @@ static NTSTATUS Bc250SubmissionApplyCoherency(
 
     if (!Bc250SubmissionWrite32(Engine, Context,
             BC250_HQD_MMIO_GCVM_INVALIDATE_REQ,
-            BC250_HQD_GCVM_INVALIDATE_REQ_VMID0)) {
+            reqValue)) {
         return STATUS_DEVICE_HARDWARE_ERROR;
     }
     /* GC10.1: o dummy-read do REQ deve preceder o poll do ACK. */
     if (!Bc250SubmissionRead32(Engine, Context,
             BC250_HQD_MMIO_GCVM_INVALIDATE_REQ, &requestReadback) ||
-        requestReadback != BC250_HQD_GCVM_INVALIDATE_REQ_VMID0) {
+        requestReadback != reqValue) {
         return STATUS_DEVICE_DATA_ERROR;
     }
 
@@ -521,19 +609,32 @@ static NTSTATUS Bc250SubmissionApplyCoherency(
                 &Engine->CoherInvalidateAck)) {
             return STATUS_DEVICE_HARDWARE_ERROR;
         }
-        if ((Engine->CoherInvalidateAck &
-                BC250_HQD_GCVM_INVALIDATE_VMID0) != 0u) {
+        if ((Engine->CoherInvalidateAck & ackMask) == ackMask) {
             break;
         }
     }
     Engine->CoherInvalidatePolls = poll + (poll < 1000u ? 1u : 0u);
-    if ((Engine->CoherInvalidateAck &
-            BC250_HQD_GCVM_INVALIDATE_VMID0) == 0u) {
+    if ((Engine->CoherInvalidateAck & ackMask) != ackMask) {
         return STATUS_IO_TIMEOUT;
     }
 
     Engine->CoherencyPassed = 1u;
     return STATUS_SUCCESS;
+}
+
+static NTSTATUS Bc250SubmissionApplyCoherency(
+    struct BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_SUBMISSION_ENGINE *Engine)
+{
+    NTSTATUS status;
+    KIRQL irql;
+    /* Lock order: engine Lock -> adapter TlbLock. VMID8/9 invalidations
+     * share engine17 REQ/ACK with this VMID0 operation. All exits from the
+     * transaction must release the same lock, including readback failure. */
+    KeAcquireSpinLock(&Context->TlbLock, &irql);
+    status = Bc250SubmissionApplyCoherencyLocked(Context, Engine);
+    KeReleaseSpinLock(&Context->TlbLock, irql);
+    return status;
 }
 
 static NTSTATUS Bc250SubmissionPublishWptr(
@@ -545,8 +646,20 @@ static NTSTATUS Bc250SubmissionPublishWptr(
     uint32_t readback = 0u;
     uint32_t doorbellControl = 0u;
 
+    Engine->PublishFailStep = 0u;
+    Engine->PublishHqdActive = 0u;
+    Engine->PublishHqdRptr = 0u;
+    Engine->PublishHqdError = 0u;
+    Engine->PublishReadbackDoorbellControl = 0u;
+    Engine->PublishTargetWptr = NewWptrDwords;
+
+    Bc250DisplayLog("[SubmissionPublishWptr] ENTER: NewWptr=%u EngineState=%d RingWptr=%u ShadowVirt=%p MmioWPTR=%u\n",
+        NewWptrDwords, (int)Engine->State, Engine->ComputeRing.WptrDwords,
+        Engine->ComputeWptrShadowVirtual, Engine->LastWptrMmioReadback);
+
     /* 1. Shadow em memoria: a fonte que o CP le por polling. */
     if (Engine->ComputeWptrShadowVirtual == NULL) {
+        Bc250DisplayLog("[SubmissionPublishWptr] RECUSA: ShadowVirtual nulo\n");
         return STATUS_DEVICE_NOT_READY;
     }
     Engine->ComputeWptrShadowVirtual[0] = NewWptrDwords;
@@ -554,6 +667,8 @@ static NTSTATUS Bc250SubmissionPublishWptr(
     KeMemoryBarrier();
     Engine->LastWptrShadowReadback = Engine->ComputeWptrShadowVirtual[0];
     if (Engine->LastWptrShadowReadback != NewWptrDwords) {
+        Bc250DisplayLog("[SubmissionPublishWptr] RECUSA: Shadow readback mismatch (exp=%u obs=%u)\n",
+            NewWptrDwords, Engine->LastWptrShadowReadback);
         return STATUS_DEVICE_DATA_ERROR;
     }
 
@@ -571,10 +686,15 @@ static NTSTATUS Bc250SubmissionPublishWptr(
      * invalida o HDP read cache nem a GL2 da GPU. Se qualquer passo falhar,
      * nao toque doorbell/WPTR: a submissao falha fechada.
      */
+    Bc250SubmissionEngineCaptureRciuStage(Context, "PUBLISH_BEFORE_COHERENCY");
     status = Bc250SubmissionApplyCoherency(Context, Engine);
     if (!NT_SUCCESS(status)) {
+        Engine->PublishFailStep = 1u;
+        Bc250DisplayLog("[SubmissionPublishWptr] RECUSA: ApplyCoherency falhou (status=0x%08X)\n",
+            (uint32_t)status);
         return status;
     }
+    Bc250SubmissionEngineCaptureRciuStage(Context, "PUBLISH_AFTER_COHERENCY");
 
     /*
      * 3. Publicacao direta no registrador CP_HQD_PQ_WPTR_LO com a fila ATIVA.
@@ -582,7 +702,8 @@ static NTSTATUS Bc250SubmissionPublishWptr(
      * O motor permanece continuamente ATIVO. A escrita em CP_HQD_PQ_WPTR_LO
      * avança o cursor no silício exatamente como comprovado na Fase P1.
      */
-    (void)Bc250SubmissionWrite32(Engine, Context, 0x00030800u, 0xE0000000u);
+    (void)Bc250SubmissionWrite32(Engine, Context,
+        BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
     (void)Bc250SubmissionWrite32(Engine, Context,
         BC250_GRBM_GFX_CNTL_BYTE_OFFSET, Engine->SelectedSelector);
 
@@ -597,7 +718,13 @@ static NTSTATUS Bc250SubmissionPublishWptr(
     Engine->LastWptrMmioReadback = readback;
 
     (void)Bc250SubmissionWrite32(Engine, Context,
+        BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+    (void)Bc250SubmissionWrite32(Engine, Context,
         BC250_GRBM_GFX_CNTL_BYTE_OFFSET, Engine->OriginalSelector);
+
+    Bc250DisplayLog("[SubmissionPublishWptr] Step 3 MMIO WPTR: Write=%u Readback=%u (DirWrites=%u)\n",
+        NewWptrDwords, readback, Engine->DirectWptrWrites);
+    Bc250SubmissionEngineCaptureRciuStage(Context, "PUBLISH_AFTER_MMIO_WPTR");
 
     /*
      * 4. Doorbell canonica da HQD na abertura BAR2.
@@ -611,33 +738,123 @@ static NTSTATUS Bc250SubmissionPublishWptr(
      * Nao ha fallback por WPTR MMIO: se a doorbell atribuida nao estiver
      * mapeada, alinhada e habilitada, a submissao falha fechada.
      */
+    Bc250DisplayLog("[SubmissionPublishWptr] Step 4 Precheck: Enabled=%u Virt=%p Offset=0x%X (align8=%u) Size=0x%X (Req=0x%X)\n",
+        Engine->DoorbellEnabled, Engine->DoorbellVirtual,
+        Engine->DoorbellOffsetBytes, (uint32_t)(Engine->DoorbellOffsetBytes & (sizeof(uint64_t) - 1u)),
+        Engine->Buffers.DoorbellSizeBytes,
+        (uint32_t)(Engine->DoorbellOffsetBytes + sizeof(uint64_t)));
+
     if (Engine->DoorbellEnabled == 0u || Engine->DoorbellVirtual == NULL ||
         (Engine->DoorbellOffsetBytes & (sizeof(uint64_t) - 1u)) != 0u ||
         Engine->Buffers.DoorbellSizeBytes <
             Engine->DoorbellOffsetBytes + sizeof(uint64_t)) {
         ++Engine->DoorbellWriteFailures;
+        Engine->PublishFailStep = 2u;
+        Bc250DisplayLog("[SubmissionPublishWptr] RECUSA Check A: Precheck falhou (Enabled=%u Virt=%p Offset=0x%X Size=0x%X Failures=%u)\n",
+            Engine->DoorbellEnabled, Engine->DoorbellVirtual,
+            Engine->DoorbellOffsetBytes, Engine->Buffers.DoorbellSizeBytes,
+            Engine->DoorbellWriteFailures);
         return STATUS_DEVICE_CONFIGURATION_ERROR;
     }
 
-    (void)Bc250SubmissionWrite32(Engine, Context, 0x00030800u, 0xE0000000u);
+    (void)Bc250SubmissionWrite32(Engine, Context,
+        BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
     (void)Bc250SubmissionWrite32(Engine, Context,
         BC250_GRBM_GFX_CNTL_BYTE_OFFSET, Engine->SelectedSelector);
-    if (Bc250SubmissionRead32(Engine, Context,
-            BC250_HQD_MMIO_DOORBELL_CONTROL, &doorbellControl) == 0u) {
-        (void)Bc250SubmissionWrite32(Engine, Context,
-            BC250_GRBM_GFX_CNTL_BYTE_OFFSET, Engine->OriginalSelector);
-        ++Engine->DoorbellWriteFailures;
-        return STATUS_DEVICE_HARDWARE_ERROR;
+    uint32_t selReadbackQueueBank = 0u;
+    (void)Bc250SubmissionRead32(Engine, Context,
+        BC250_GRBM_GFX_CNTL_BYTE_OFFSET, &selReadbackQueueBank);
+
+    {
+        uint32_t activeVal = 0u;
+        uint32_t rptrVal = 0u;
+        uint32_t hqdErrorVal = 0u;
+
+        (void)Bc250SubmissionRead32(Engine, Context,
+            BC250_HQD_MMIO_ACTIVE, &activeVal);
+        (void)Bc250SubmissionRead32(Engine, Context,
+            BC250_HQD_MMIO_PQ_RPTR, &rptrVal);
+        (void)Bc250SubmissionRead32(Engine, Context,
+            BC250_HQD_MMIO_HQD_ERROR, &hqdErrorVal);
+
+        Engine->PublishHqdActive = activeVal;
+        Engine->PublishHqdRptr = rptrVal;
+        Engine->PublishHqdError = hqdErrorVal;
+
+        if (Bc250SubmissionRead32(Engine, Context,
+                BC250_HQD_MMIO_DOORBELL_CONTROL, &doorbellControl) == 0u) {
+            (void)Bc250SubmissionWrite32(Engine, Context,
+                BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+            (void)Bc250SubmissionWrite32(Engine, Context,
+                BC250_GRBM_GFX_CNTL_BYTE_OFFSET, Engine->OriginalSelector);
+            ++Engine->DoorbellWriteFailures;
+            Engine->PublishFailStep = 3u;
+            Bc250DisplayLog("[SubmissionPublishWptr] RECUSA: Read32(DOORBELL_CONTROL) falhou (Active=%u Rptr=%u Error=0x%08X)\n",
+                activeVal, rptrVal, hqdErrorVal);
+            return STATUS_DEVICE_HARDWARE_ERROR;
+        }
+
+        Engine->PublishReadbackDoorbellControl = doorbellControl;
+
+        uint32_t hqdVmidVal = 0u;
+        (void)Bc250SubmissionRead32(Engine, Context,
+            BC250_HQD_MMIO_VMID, &hqdVmidVal);
+        uint32_t expectedHqdVmid = ((uint32_t)Engine->ComputeRing.Vmid << 8);
+        if (hqdVmidVal != expectedHqdVmid) {
+            (void)Bc250SubmissionWrite32(Engine, Context,
+                BC250_HQD_MMIO_VMID, expectedHqdVmid);
+            (void)Bc250SubmissionRead32(Engine, Context,
+                BC250_HQD_MMIO_VMID, &hqdVmidVal);
+        }
+
+        Bc250DisplayLog("[SubmissionPublishWptr] Step 4 QueueBank: Active=%u Rptr=%u DbCtrl=0x%08X Error=0x%08X HqdVmid=0x%08X (Selector=0x%08X Readback=0x%08X)\n",
+            activeVal, rptrVal, doorbellControl, hqdErrorVal, hqdVmidVal, Engine->SelectedSelector, selReadbackQueueBank);
     }
+
     Engine->DoorbellControlBefore = doorbellControl;
+    (void)Bc250SubmissionWrite32(Engine, Context,
+        BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
     (void)Bc250SubmissionWrite32(Engine, Context,
         BC250_GRBM_GFX_CNTL_BYTE_OFFSET, Engine->OriginalSelector);
 
-    if ((doorbellControl & BC250_SUBMISSION_DB_ENABLE) == 0u ||
-        (doorbellControl & BC250_SUBMISSION_DB_OFFSET_MASK) !=
-            Engine->DoorbellOffsetBytes) {
-        ++Engine->DoorbellWriteFailures;
-        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    Bc250DisplayLog("[SubmissionPublishWptr] Step 4 Check B: DbCtrl=0x%08X (EnableBit=%u Offset=0x%X ExpOffset=0x%X)\n",
+        doorbellControl,
+        (doorbellControl & BC250_SUBMISSION_DB_ENABLE) != 0u ? 1u : 0u,
+        doorbellControl & BC250_SUBMISSION_DB_OFFSET_MASK,
+        Engine->DoorbellOffsetBytes);
+
+    {
+        BOOLEAN dbMatched = FALSE;
+        if ((doorbellControl & BC250_SUBMISSION_DB_ENABLE) != 0u) {
+            if ((doorbellControl & BC250_SUBMISSION_DB_OFFSET_MASK) ==
+                Engine->DoorbellOffsetBytes) {
+                dbMatched = TRUE;
+            }
+        } else if (Engine->ActivateEvidence.DoorbellControlAfterKick ==
+                   (BC250_SUBMISSION_DB_ENABLE | Engine->DoorbellOffsetBytes) ||
+                   Engine->Mqd.CpHqdPqDoorbellControl ==
+                   (BC250_SUBMISSION_DB_ENABLE | Engine->DoorbellOffsetBytes)) {
+            /*
+             * Leitura dinamica de DOORBELL_CONTROL via MMIO retornou 0 (comportamento
+             * do GC 10.1 com fila ativa em runtime). A evidencia fisica
+             * de ativacao (Fases P1/P2) ja comprovou que a HQD foi inicializada com
+             * DOORBELL_CONTROL = 0x40000110. O precheck Check A ja validou que a
+             * abertura BAR2 esta mapeada, alinhada e nos limites.
+             */
+            dbMatched = TRUE;
+            Bc250DisplayLog("[SubmissionPublishWptr] Step 4 DbCtrl dinamico=0x0; validado via evidencia de ativacao (0x%08X)\n",
+                Engine->ActivateEvidence.DoorbellControlAfterKick);
+        }
+
+        if (!dbMatched) {
+            ++Engine->DoorbellWriteFailures;
+            Engine->PublishFailStep = 4u;
+            Bc250DisplayLog("[SubmissionPublishWptr] RECUSA Check B: DbCtrl mismatch (DbCtrl=0x%08X ExpOffset=0x%X En=%u Failures=%u)\n",
+                doorbellControl, Engine->DoorbellOffsetBytes,
+                (doorbellControl & BC250_SUBMISSION_DB_ENABLE) != 0u ? 1u : 0u,
+                Engine->DoorbellWriteFailures);
+            return STATUS_DEVICE_CONFIGURATION_ERROR;
+        }
     }
 
     Engine->DoorbellLastValueLow = NewWptrDwords;
@@ -648,10 +865,18 @@ static NTSTATUS Bc250SubmissionPublishWptr(
     KeMemoryBarrier();
     ++Engine->DoorbellKicks;
 
+    Bc250DisplayLog("[SubmissionPublishWptr] Step 4 DbKick: Virt=%p Offset=0x%X Val64=%u Kicks=%u\n",
+        Engine->DoorbellVirtual, Engine->DoorbellOffsetBytes,
+        NewWptrDwords, Engine->DoorbellKicks);
+
     /* Readback imediato do HIT; e' observabilidade, nao substitui o tripe. */
-    (void)Bc250SubmissionWrite32(Engine, Context, 0x00030800u, 0xE0000000u);
+    (void)Bc250SubmissionWrite32(Engine, Context,
+        BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
     (void)Bc250SubmissionWrite32(Engine, Context,
         BC250_GRBM_GFX_CNTL_BYTE_OFFSET, Engine->SelectedSelector);
+    uint32_t selReadbackDbHit = 0u;
+    (void)Bc250SubmissionRead32(Engine, Context,
+        BC250_GRBM_GFX_CNTL_BYTE_OFFSET, &selReadbackDbHit);
     if (Bc250SubmissionRead32(Engine, Context,
             BC250_HQD_MMIO_DOORBELL_CONTROL, &doorbellControl) != 0u) {
         Engine->DoorbellControlAfter = doorbellControl;
@@ -660,10 +885,340 @@ static NTSTATUS Bc250SubmissionPublishWptr(
         }
     }
     (void)Bc250SubmissionWrite32(Engine, Context,
+        BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+    (void)Bc250SubmissionWrite32(Engine, Context,
         BC250_GRBM_GFX_CNTL_BYTE_OFFSET, Engine->OriginalSelector);
 
+    Bc250DisplayLog("[SubmissionPublishWptr] Step 4 DbHit: After=0x%08X HitObserved=%u Kicks=%u (Selector=0x%08X Readback=0x%08X)\n",
+        Engine->DoorbellControlAfter, Engine->DoorbellHitObserved,
+        Engine->DoorbellKicks, Engine->SelectedSelector, selReadbackDbHit);
+    Bc250SubmissionEngineCaptureRciuStage(Context, "PUBLISH_AFTER_DOORBELL");
+
     Engine->LastWptrPublished = NewWptrDwords;
+    Engine->PublishFailStep = 0u;
+    Bc250DisplayLog("[SubmissionPublishWptr] SUCESSO: PublishedWptr=%u\n", NewWptrDwords);
     return STATUS_SUCCESS;
+}
+
+/*
+ * A corrida 3.115 mediu o primeiro submit Node 1 com dominio logico em 204,
+ * mas a HQD fisica drenada em RPTR=0/WPTR=0. Publicar diretamente 216 mistura
+ * duas epocas da fila. Reconciliamos somente quando a propria contabilidade
+ * prova zero fence em voo e as duas leituras fisicas coincidem.
+ *
+ * Esta funcao roda sob Engine->Lock. Ela NAO escreve CP_HQD_PQ_RPTR.
+ */
+static NTSTATUS Bc250SubmissionReconcileCursorLocked(
+    struct BC250_DXGK_ACTIVE_CONTEXT *Context,
+    BC250_SUBMISSION_ENGINE *Engine)
+{
+    uint32_t physicalRptr = 0u;
+    uint32_t physicalWptr = 0u;
+    uint32_t logicalBefore = 0u;
+    uint32_t reconciled = 0u;
+    uint32_t selected = 0u;
+    uint32_t readsValid = 0u;
+    uint32_t restored = 0u;
+    BC250_PRING_STATUS ringStatus;
+
+    if (Engine->ComputeRing.LastSubmittedFence !=
+        Engine->ComputeRing.LastRetiredFence) {
+        return STATUS_SUCCESS;
+    }
+
+    ++Engine->CursorReconcileAttempts;
+    Engine->CursorReconcilePassed = 0u;
+    Engine->CursorLogicalBefore = Engine->ComputeRing.WptrDwords;
+
+    if (Engine->MmioMapped == 0u) {
+        ++Engine->CursorReconcileRejected;
+        Engine->CursorReconcileStatus = (uint32_t)BC250_PRING_BAD_ARGUMENT;
+        return STATUS_DEVICE_NOT_READY;
+    }
+    if (Bc250SubmissionWrite32(Engine, Context,
+            BC250_GRBM_GFX_INDEX_BYTE_OFFSET,
+            BC250_GRBM_GFX_INDEX_BROADCAST) &&
+        Bc250SubmissionWrite32(Engine, Context,
+            BC250_GRBM_GFX_CNTL_BYTE_OFFSET, Engine->SelectedSelector)) {
+        selected = 1u;
+        if (Bc250SubmissionRead32(Engine, Context,
+                BC250_HQD_MMIO_PQ_RPTR, &physicalRptr) &&
+            Bc250SubmissionRead32(Engine, Context,
+                BC250_HQD_MMIO_PQ_WPTR_LO, &physicalWptr)) {
+            readsValid = 1u;
+        }
+    }
+
+    if (selected != 0u &&
+        Bc250SubmissionWrite32(Engine, Context,
+            BC250_GRBM_GFX_INDEX_BYTE_OFFSET,
+            BC250_GRBM_GFX_INDEX_BROADCAST) &&
+        Bc250SubmissionWrite32(Engine, Context,
+            BC250_GRBM_GFX_CNTL_BYTE_OFFSET, Engine->OriginalSelector)) {
+        restored = 1u;
+    }
+
+    Engine->CursorLogicalBefore = Engine->ComputeRing.WptrDwords;
+    Engine->CursorPhysicalRptrRaw = physicalRptr;
+    Engine->CursorPhysicalWptrRaw = physicalWptr;
+
+    if (readsValid == 0u || restored == 0u ||
+        Engine->ComputeWptrShadowVirtual == NULL) {
+        ++Engine->CursorReconcileRejected;
+        Engine->CursorReconcileStatus = (uint32_t)BC250_PRING_BAD_ARGUMENT;
+        Bc250DisplayLog("[MEC_CURSOR_RECONCILE] RECUSA: Logical=%u PhysicalRptr=%u PhysicalWptr=%u Submitted=%llu Retired=%llu Status=%u Restored=%u (RPTR nunca escrito)\n",
+            Engine->ComputeRing.WptrDwords, physicalRptr, physicalWptr,
+            (unsigned long long)Engine->ComputeRing.LastSubmittedFence,
+            (unsigned long long)Engine->ComputeRing.LastRetiredFence,
+            (uint32_t)BC250_PRING_BAD_ARGUMENT, restored);
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    ringStatus = Bc250PersistentRingReconcileDrainedCursor(
+        &Engine->ComputeRing, physicalRptr, physicalWptr,
+        &logicalBefore, &reconciled);
+    Engine->CursorLogicalBefore = logicalBefore;
+    Engine->CursorReconciled = reconciled;
+    Engine->CursorReconcileStatus = (uint32_t)ringStatus;
+    if (ringStatus != BC250_PRING_OK) {
+        ++Engine->CursorReconcileRejected;
+        Bc250DisplayLog("[MEC_CURSOR_RECONCILE] RECUSA: Logical=%u PhysicalRptr=%u PhysicalWptr=%u Submitted=%llu Retired=%llu Status=%u Restored=%u (RPTR nunca escrito)\n",
+            logicalBefore, physicalRptr, physicalWptr,
+            (unsigned long long)Engine->ComputeRing.LastSubmittedFence,
+            (unsigned long long)Engine->ComputeRing.LastRetiredFence,
+            (uint32_t)ringStatus, restored);
+        return ringStatus == BC250_PRING_CURSOR_BUSY ?
+            STATUS_GRAPHICS_ALLOCATION_BUSY : STATUS_DEVICE_NOT_READY;
+    }
+    Engine->ComputeWptrShadowVirtual[0] = reconciled;
+    Engine->ComputeWptrShadowVirtual[1] = 0u;
+    KeMemoryBarrier();
+    Engine->Mqd.CpHqdPqWptrLo = reconciled;
+    Engine->LastWptrPublished = reconciled;
+    Engine->LastWptrShadowReadback = Engine->ComputeWptrShadowVirtual[0];
+    Engine->LastWptrMmioReadback = physicalWptr;
+    Engine->LastRptrMmio = physicalRptr;
+    if (Engine->LastWptrShadowReadback != reconciled) {
+        ++Engine->CursorReconcileRejected;
+        Engine->CursorReconcileStatus = (uint32_t)BC250_PRING_BAD_ARGUMENT;
+        return STATUS_DEVICE_DATA_ERROR;
+    }
+
+    Engine->CursorReconcilePassed = 1u;
+    Bc250DisplayLog("[MEC_CURSOR_RECONCILE] PASS: Logical=%u PhysicalRptr=%u PhysicalWptr=%u Rebased=%u Submitted=%llu Retired=%llu (drained, RPTR nunca escrito)\n",
+        logicalBefore, physicalRptr, physicalWptr, reconciled,
+        (unsigned long long)Engine->ComputeRing.LastSubmittedFence,
+        (unsigned long long)Engine->ComputeRing.LastRetiredFence);
+    return STATUS_SUCCESS;
+}
+
+_Check_return_
+NTSTATUS Bc250SubmissionEngineRetargetDrainedIbVmid(
+    struct BC250_DXGK_ACTIVE_CONTEXT *Context,
+    uint32_t TargetVmid)
+{
+    BC250_SUBMISSION_ENGINE *engine;
+    BC250_PRING_STATUS ringStatus;
+    KIRQL irql;
+    NTSTATUS status = STATUS_SUCCESS;
+    uint32_t selected = 0u, restored = 0u;
+    uint32_t active = 0u, rptr = 0u, wptr = 0u, vmid = 0u;
+    uint32_t queueMask = 0u, queueMaskReadback = 0u;
+    uint32_t logicalBefore = 0u, reconciled = 0u;
+    uint32_t targetValue, poll;
+    uint32_t deactivated = 0u;
+
+    if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE ||
+        TargetVmid >= 16u) return STATUS_INVALID_PARAMETER;
+    engine = &Context->SubmissionEngine;
+    if (InterlockedCompareExchange(&engine->State,
+            BC250_SUBMISSION_ENGINE_ONLINE,
+            BC250_SUBMISSION_ENGINE_ONLINE) !=
+        BC250_SUBMISSION_ENGINE_ONLINE) return STATUS_DEVICE_NOT_READY;
+
+    Bc250SubmissionEngineCaptureRciuStage(Context, "RETARGET_ENTRY");
+    KeAcquireSpinLock(&engine->Lock, &irql);
+    ++engine->VmidRetargetAttempts;
+    targetValue = TargetVmid << 8;
+
+    if (engine->ComputeRing.LastSubmittedFence !=
+            engine->ComputeRing.LastRetiredFence ||
+        engine->ActivateEvidence.QueueMaskBit >= 32u) {
+        status = STATUS_GRAPHICS_ALLOCATION_BUSY;
+        goto RetargetDone;
+    }
+    if (Bc250SubmissionWrite32(engine, Context,
+            BC250_GRBM_GFX_INDEX_BYTE_OFFSET,
+            BC250_GRBM_GFX_INDEX_BROADCAST) &&
+        Bc250SubmissionWrite32(engine, Context,
+            BC250_GRBM_GFX_CNTL_BYTE_OFFSET, engine->SelectedSelector)) {
+        selected = 1u;
+    }
+    if (selected == 0u ||
+        !Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_ACTIVE, &active) ||
+        !Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_PQ_RPTR, &rptr) ||
+        !Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_PQ_WPTR_LO, &wptr) ||
+        !Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_VMID, &vmid)) {
+        status = STATUS_DEVICE_HARDWARE_ERROR;
+        goto RetargetDone;
+    }
+
+    engine->VmidRetargetBefore = vmid;
+    engine->VmidRetargetActiveBefore = active;
+    engine->VmidRetargetRptr = rptr;
+    engine->VmidRetargetWptr = wptr;
+
+    ringStatus = Bc250PersistentRingReconcileDrainedCursor(
+        &engine->ComputeRing, rptr, wptr, &logicalBefore, &reconciled);
+    if (ringStatus != BC250_PRING_OK) {
+        status = ringStatus == BC250_PRING_CURSOR_BUSY ?
+            STATUS_GRAPHICS_ALLOCATION_BUSY : STATUS_DEVICE_NOT_READY;
+        goto RetargetDone;
+    }
+
+    /* Reescrever o mesmo VMID seria perturbacao sem informacao. */
+    if (vmid == targetValue) {
+        engine->ComputeRing.Vmid = TargetVmid;
+        engine->Mqd.CpHqdVmid = targetValue;
+        engine->VmidRetargetAfter = vmid;
+        engine->VmidRetargetActiveAfter = active;
+        ++engine->VmidRetargetPassed;
+        goto RetargetDone;
+    }
+
+    /* O load upstream programa VMID antes de ACTIVE. Retarget vivo e' proibido. */
+    if ((active & 1u) != 0u) {
+        /*
+         * Upstream kgd_gfx_v10_hqd_destroy: requisita dequeue para drenar o
+         * pipeline MEC antes de zerar ACTIVE, prevenindo MEC2_WAIT_ON_RCIU_READ.
+         */
+        (void)Bc250SubmissionWrite32(engine, Context,
+            BC250_HQD_MMIO_DEQUEUE_REQUEST, 1u);
+        for (poll = 0u; poll < BC250_SUBMISSION_ACTIVE_POLLS; ++poll) {
+            if (!Bc250SubmissionRead32(engine, Context,
+                    BC250_HQD_MMIO_ACTIVE, &active)) {
+                status = STATUS_DEVICE_HARDWARE_ERROR;
+                goto RetargetDone;
+            }
+            if ((active & 1u) == 0u) break;
+        }
+        (void)Bc250SubmissionWrite32(engine, Context,
+            BC250_HQD_MMIO_DEQUEUE_REQUEST, 0u);
+        if (!Bc250SubmissionWrite32(engine, Context,
+                BC250_HQD_MMIO_ACTIVE, 0u)) {
+            status = STATUS_DEVICE_HARDWARE_ERROR;
+            goto RetargetDone;
+        }
+        for (poll = 0u; poll < BC250_SUBMISSION_ACTIVE_POLLS; ++poll) {
+            if (!Bc250SubmissionRead32(engine, Context,
+                    BC250_HQD_MMIO_ACTIVE, &active)) {
+                status = STATUS_DEVICE_HARDWARE_ERROR;
+                goto RetargetDone;
+            }
+            if ((active & 1u) == 0u) break;
+        }
+        if ((active & 1u) != 0u) {
+            status = STATUS_IO_TIMEOUT;
+            goto RetargetDone;
+        }
+        deactivated = 1u;
+    }
+
+    /* O shadow antigo nao pode ser reamostrado ao reativar a fila. */
+    if (engine->ComputeWptrShadowVirtual == NULL) {
+        status = STATUS_DEVICE_NOT_READY;
+        goto RetargetDone;
+    }
+    engine->ComputeWptrShadowVirtual[0] = reconciled;
+    engine->ComputeWptrShadowVirtual[1] = 0u;
+    engine->Mqd.CpHqdPqWptrLo = reconciled;
+    engine->Mqd.CpHqdPqWptrHi = 0u;
+    engine->Mqd.CpHqdVmid = targetValue;
+    if (engine->Buffers.MqdVirtual != NULL) {
+        RtlCopyMemory((PVOID)engine->Buffers.MqdVirtual, &engine->Mqd, sizeof(engine->Mqd));
+        KeMemoryBarrier();
+    }
+    KeMemoryBarrier();
+
+    if (!Bc250SubmissionWrite32(engine, Context,
+            BC250_HQD_MMIO_PQ_WPTR_LO, reconciled) ||
+        !Bc250SubmissionWrite32(engine, Context,
+            BC250_HQD_MMIO_PQ_WPTR_HI, 0u) ||
+        !Bc250SubmissionWrite32(engine, Context,
+            BC250_HQD_MMIO_VMID, targetValue) ||
+        !Bc250SubmissionRead32(engine, Context,
+            BC250_HQD_MMIO_VMID, &vmid) ||
+        vmid != targetValue) {
+        status = STATUS_DEVICE_DATA_ERROR;
+        goto RetargetDone;
+    }
+
+    queueMask = 1u << engine->ActivateEvidence.QueueMaskBit;
+    engine->VmidRetargetQueueMask = queueMask;
+    if (!Bc250SubmissionWrite32(engine, Context,
+            BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1, queueMask) ||
+        !Bc250SubmissionRead32(engine, Context,
+            BC250_HQD_MMIO_CP_PQ_WPTR_POLL_CNTL1, &queueMaskReadback) ||
+        (queueMaskReadback & queueMask) != queueMask ||
+        !Bc250SubmissionWrite32(engine, Context,
+            BC250_HQD_MMIO_ACTIVE, 1u) ||
+        !Bc250SubmissionRead32(engine, Context,
+            BC250_HQD_MMIO_ACTIVE, &active) ||
+        (active & 1u) == 0u) {
+        status = STATUS_DEVICE_DATA_ERROR;
+        goto RetargetDone;
+    }
+
+    /* Upstream gfx_v10_0_hqd_load: rearmar DOORBELL_ENABLE no CP_PQ_STATUS apos reativacao */
+    if (engine->Props.UseDoorbell != 0u) {
+        uint32_t pqStatus = 0u;
+        if (Bc250SubmissionRead32(engine, Context,
+                BC250_HQD_MMIO_CP_PQ_STATUS, &pqStatus)) {
+            (void)Bc250SubmissionWrite32(engine, Context,
+                BC250_HQD_MMIO_CP_PQ_STATUS, pqStatus | 0x00000002u);
+        }
+    }
+
+    /* Invalida cache de leitura HDP para que o MEC leia o MQD atualizado em VRAM */
+    (void)Bc250SubmissionWrite32(engine, Context,
+        BC250_HQD_MMIO_HDP_READ_CACHE_INVALIDATE, 1u);
+
+    engine->ComputeRing.Vmid = TargetVmid;
+    engine->Mqd.CpHqdVmid = targetValue;
+    engine->VmidRetargetAfter = vmid;
+    engine->VmidRetargetActiveAfter = active;
+    ++engine->VmidRetargetPassed;
+
+RetargetDone:
+    if (selected != 0u &&
+        Bc250SubmissionWrite32(engine, Context,
+            BC250_GRBM_GFX_INDEX_BYTE_OFFSET,
+            BC250_GRBM_GFX_INDEX_BROADCAST) &&
+        Bc250SubmissionWrite32(engine, Context,
+            BC250_GRBM_GFX_CNTL_BYTE_OFFSET, engine->OriginalSelector)) {
+        restored = 1u;
+    }
+    if (selected != 0u && restored == 0u && NT_SUCCESS(status)) {
+        status = STATUS_DEVICE_HARDWARE_ERROR;
+    }
+    if (!NT_SUCCESS(status)) {
+        ++engine->VmidRetargetRejected;
+        /* Uma falha depois de desligar a HQD deixa o backend indisponivel. */
+        if (deactivated != 0u &&
+            engine->VmidRetargetActiveAfter == 0u) {
+            InterlockedExchange(&engine->State, BC250_SUBMISSION_ENGINE_FAULTED);
+        }
+    }
+    KeReleaseSpinLock(&engine->Lock, irql);
+    Bc250DisplayLog("[MEC_VMID_RETARGET] Status=0x%08X Before=%08X Target=%08X After=%08X Active=%u->%u RPTR=%u WPTR=%u Rebased=%u QueueMask=%08X Selected=%u Restored=%u Sub=%llu Ret=%llu (RPTR nunca escrito)\n",
+        (uint32_t)status, engine->VmidRetargetBefore, targetValue,
+        engine->VmidRetargetAfter, engine->VmidRetargetActiveBefore,
+        engine->VmidRetargetActiveAfter, rptr, wptr, reconciled, queueMask,
+        selected, restored,
+        (unsigned long long)engine->ComputeRing.LastSubmittedFence,
+        (unsigned long long)engine->ComputeRing.LastRetiredFence);
+    Bc250SubmissionEngineCaptureRciuStage(Context, "RETARGET_EXIT");
+    return status;
 }
 
 _Check_return_
@@ -709,6 +1264,14 @@ NTSTATUS Bc250SubmissionEngineSubmit(
         return STATUS_NOT_SUPPORTED;
     }
 
+    status = Bc250SubmissionReconcileCursorLocked(Context, engine);
+    if (!NT_SUCCESS(status)) {
+        ++engine->SubmitRejectedPlan;
+        engine->LastSubmitStatus = (uint32_t)engine->CursorReconcileStatus;
+        KeReleaseSpinLock(&engine->Lock, irql);
+        return status;
+    }
+
     ringStatus = Bc250PersistentRingPlanSubmission(&engine->ComputeRing,
         IbGpuVirtualAddress, IbSizeDwords,
         engine->ComputeRing.LastSubmittedFence + 1ull, &plan);
@@ -739,6 +1302,23 @@ NTSTATUS Bc250SubmissionEngineSubmit(
     }
     KeMemoryBarrier();
 
+    if (engine->ComputeRing.Vmid == BC250_GCVM_COMPUTE_VMID) {
+        uint32_t start = (plan.NewWptrDwords - 12u) &
+            (BC250_SUBMISSION_RING_DWORDS - 1u);
+        uint32_t word;
+        for (word = 0u; word < 4u; ++word) {
+            engine->DiagnosticDescriptor[word] = engine->ComputeRingVirtual[
+                (start + word) & (BC250_SUBMISSION_RING_DWORDS - 1u)];
+        }
+        Bc250DisplayLog("[MEC_IB_DESCRIPTOR] Vmid=%u StartDW=%u Raw=%08X,%08X,%08X,%08X FenceAddress=0x%llX\n",
+            engine->ComputeRing.Vmid, start,
+            engine->ComputeRingVirtual[start],
+            engine->ComputeRingVirtual[(start + 1u) & (BC250_SUBMISSION_RING_DWORDS - 1u)],
+            engine->ComputeRingVirtual[(start + 2u) & (BC250_SUBMISSION_RING_DWORDS - 1u)],
+            engine->ComputeRingVirtual[(start + 3u) & (BC250_SUBMISSION_RING_DWORDS - 1u)],
+            (unsigned long long)engine->ComputeRing.FenceGpuAddress);
+    }
+
     ringStatus = Bc250PersistentRingCommit(&engine->ComputeRing, &plan);
     if (ringStatus != BC250_PRING_OK) {
         ++engine->SubmitRejectedEmit;
@@ -747,6 +1327,7 @@ NTSTATUS Bc250SubmissionEngineSubmit(
         return STATUS_UNSUCCESSFUL;
     }
 
+    KeMemoryBarrier();
     status = Bc250SubmissionPublishWptr(
         Context, engine, plan.NewWptrDwords);
     if (!NT_SUCCESS(status)) {
@@ -758,6 +1339,18 @@ NTSTATUS Bc250SubmissionEngineSubmit(
         engine->LastSubmitStatus = (uint32_t)status;
         InterlockedExchange(&engine->State, BC250_SUBMISSION_ENGINE_FAULTED);
         KeReleaseSpinLock(&engine->Lock, irql);
+
+        Bc250DisplayLog("[SubmissionEngineSubmit] RECUSA: Bc250SubmissionPublishWptr falhou (status=0x%08X NewWptr=%u Step=%u DbCtrl=0x%08X ExpOff=0x%X Act=%u Rptr=%u Err=0x%08X Virt=%p Size=0x%X Failures=%u)\n",
+            (uint32_t)status, plan.NewWptrDwords,
+            engine->PublishFailStep,
+            engine->PublishReadbackDoorbellControl,
+            engine->DoorbellOffsetBytes,
+            engine->PublishHqdActive,
+            engine->PublishHqdRptr,
+            engine->PublishHqdError,
+            engine->DoorbellVirtual,
+            engine->Buffers.DoorbellSizeBytes,
+            engine->DoorbellWriteFailures);
         return status;
     }
 
@@ -765,8 +1358,14 @@ NTSTATUS Bc250SubmissionEngineSubmit(
     engine->LastSubmittedFence = engine->ComputeRing.LastSubmittedFence;
     ++engine->SubmitAccepted;
     *AssignedFence = engine->ComputeRing.LastSubmittedFence;
+    engine->DiagnosticSubmitTime = KeQueryInterruptTime();
 
     KeReleaseSpinLock(&engine->Lock, irql);
+
+    Bc250DisplayLog("[SubmissionEngineSubmit] SUCESSO: NewWptr=%u Fence=%llu Pad=%u Accepted=%u Kicks=%u\n",
+        plan.NewWptrDwords, (unsigned long long)engine->ComputeRing.LastSubmittedFence,
+        plan.PadDwords, engine->SubmitAccepted, engine->DoorbellKicks);
+
     return STATUS_SUCCESS;
 }
 
@@ -869,6 +1468,16 @@ NTSTATUS Bc250SubmissionEnginePoll(
     uint32_t rptrReport = 0u;
     uint32_t rptrMmio = 0u;
     uint32_t retired = 0u;
+    uint32_t diagnostic = 0u, validReads = 0u;
+    uint32_t queueRaw[6] = {0u};
+    uint32_t cpfStalled = 0u, cpcStalled = 0u;
+    uint32_t index;
+    uint64_t pendingFence = 0ull;
+    static const uint32_t queueRegisters[6] = {
+        BC250_HQD_MMIO_ACTIVE, BC250_HQD_MMIO_HQD_ERROR,
+        BC250_HQD_MMIO_HQ_STATUS0, BC250_HQD_MMIO_PQ_WPTR_LO,
+        BC250_HQD_MMIO_VMID, BC250_HQD_MMIO_IB_CONTROL
+    };
     KIRQL irql;
 
     if (RetiredNow != NULL) *RetiredNow = 0u;
@@ -886,6 +1495,14 @@ NTSTATUS Bc250SubmissionEnginePoll(
     KeAcquireSpinLock(&engine->Lock, &irql);
     ++engine->PollCalls;
 
+    /*
+     * Dreno e coerencia HDP (PCIe) antes de ler a fence e o cursor de VRAM.
+     * Sem o dreno de HDP, leituras de CPU sobre PCIe BAR 0 podem retornar
+     * valores desatualizados (stale) cacheados na FIFO PCIe, ocasionando
+     * falsos timeouts no motor MEC.
+     */
+    Bc250SdmaPresentFlushHdp();
+
     /* Leitura pura: nada aqui escreve fence ou cursor. */
     if (engine->ComputeFenceVirtual != NULL) {
         observedFence = engine->ComputeFenceVirtual[0];
@@ -894,9 +1511,54 @@ NTSTATUS Bc250SubmissionEnginePoll(
         rptrReport = engine->ComputeRptrReportVirtual[0];
     }
     (void)Bc250SubmissionWrite32(engine, Context,
+        BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+    (void)Bc250SubmissionWrite32(engine, Context,
         BC250_GRBM_GFX_CNTL_BYTE_OFFSET, engine->SelectedSelector);
     (void)Bc250SubmissionRead32(engine, Context,
         BC250_HQD_MMIO_PQ_RPTR, &rptrMmio);
+
+    pendingFence = engine->ComputeRing.LastSubmittedFence;
+    if (engine->ComputeRing.Vmid == BC250_GCVM_COMPUTE_VMID &&
+        pendingFence > engine->ComputeRing.LastRetiredFence &&
+        observedFence != (uint32_t)pendingFence) {
+        /* Re-drena HDP e tenta releitura caso a escrita da GPU estivesse transitando na FIFO */
+        Bc250SdmaPresentFlushHdp();
+        if (engine->ComputeFenceVirtual != NULL) {
+            observedFence = engine->ComputeFenceVirtual[0];
+        }
+        if (engine->ComputeRptrReportVirtual != NULL) {
+            rptrReport = engine->ComputeRptrReportVirtual[0];
+        }
+    }
+
+    /* Capture the first pending observation before Retire can fault the
+     * engine. The 3.105 time gate could miss failures before 100 ms.
+     * This is not a hang verdict. Failed register reads stay distinguishable. */
+    if (engine->ComputeRing.Vmid == BC250_GCVM_COMPUTE_VMID &&
+        pendingFence > engine->ComputeRing.LastRetiredFence &&
+        observedFence != (uint32_t)pendingFence &&
+        engine->DiagnosticPendingFence != pendingFence) {
+        diagnostic = 1u;
+        engine->DiagnosticPendingFence = pendingFence;
+        for (index = 0u; index < 4u; ++index) {
+            engine->DiagnosticPendingDescriptor[index] = engine->DiagnosticDescriptor[index];
+        }
+        for (index = 0u; index < 6u; ++index) {
+            if (Bc250SubmissionRead32(engine, Context,
+                    queueRegisters[index], &queueRaw[index])) {
+                validReads |= 1u << index;
+            }
+            engine->DiagnosticQueueRaw[index] = queueRaw[index];
+        }
+        engine->DiagnosticValidReads = validReads;
+        engine->DiagnosticObservedFence = observedFence;
+        engine->DiagnosticRptr = rptrMmio;
+        engine->DiagnosticWriteback = rptrReport;
+        (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPF_STALLED_STAT1, &cpfStalled);
+        (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPC_STALLED_STAT1, &cpcStalled);
+    }
+    (void)Bc250SubmissionWrite32(engine, Context,
+        BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
     (void)Bc250SubmissionWrite32(engine, Context,
         BC250_GRBM_GFX_CNTL_BYTE_OFFSET, engine->OriginalSelector);
 
@@ -908,6 +1570,15 @@ NTSTATUS Bc250SubmissionEnginePoll(
         observedFence,
         rptrReport & (BC250_SUBMISSION_RING_DWORDS - 1u),
         &retired);
+
+    if (retired > 0u || ringStatus != BC250_PRING_OK || engine->State != BC250_SUBMISSION_ENGINE_ONLINE) {
+        Bc250DisplayLog("[SubmissionPoll] State=%d ObservedFence=%u RptrReport=%u RptrMmio=%u Sub=%llu Ret=%llu RingStatus=%u Retired=%u\n",
+            (int)engine->State, observedFence, rptrReport, rptrMmio,
+            (unsigned long long)engine->ComputeRing.LastSubmittedFence,
+            (unsigned long long)engine->ComputeRing.LastRetiredFence,
+            (uint32_t)ringStatus, retired);
+    }
+
     if (ringStatus == BC250_PRING_FENCE_REGRESSION) {
         /*
          * A GPU gravou um valor fora da janela em voo.  Isso e' corrupcao,
@@ -915,10 +1586,20 @@ NTSTATUS Bc250SubmissionEnginePoll(
          */
         ++engine->FenceRegressionCount;
         InterlockedExchange(&engine->State, BC250_SUBMISSION_ENGINE_FAULTED);
+        Bc250DisplayLog("[SubmissionPoll] FENCE_REGRESSION: ObservedFence=%u LastRetired=%llu LastSub=%llu InFlight=%llu -> motor FAULTED\n",
+            observedFence,
+            (unsigned long long)engine->ComputeRing.LastRetiredFence,
+            (unsigned long long)engine->ComputeRing.LastSubmittedFence,
+            (unsigned long long)(engine->ComputeRing.LastSubmittedFence > engine->ComputeRing.LastRetiredFence ?
+                engine->ComputeRing.LastSubmittedFence - engine->ComputeRing.LastRetiredFence : 0ull));
         KeReleaseSpinLock(&engine->Lock, irql);
         return STATUS_DEVICE_DATA_ERROR;
     }
     if (ringStatus != BC250_PRING_OK) {
+        Bc250DisplayLog("[SubmissionPoll] RECUSA ringStatus=%u (ObservedFence=%u LastRetired=%llu LastSub=%llu)\n",
+            (uint32_t)ringStatus, observedFence,
+            (unsigned long long)engine->ComputeRing.LastRetiredFence,
+            (unsigned long long)engine->ComputeRing.LastSubmittedFence);
         KeReleaseSpinLock(&engine->Lock, irql);
         return STATUS_UNSUCCESSFUL;
     }
@@ -928,7 +1609,106 @@ NTSTATUS Bc250SubmissionEnginePoll(
     if (RetiredNow != NULL) *RetiredNow = retired;
 
     KeReleaseSpinLock(&engine->Lock, irql);
+    if (diagnostic) {
+        Bc250DisplayLog("[MEC_PENDING] Fence=%llu Observed=%u RPTR=%u Writeback=%u ValidReads=0x%X Active=%08X Error=%08X HqStatus=%08X WPTR=%u Vmid=%08X IbControl=%08X\n",
+            (unsigned long long)pendingFence, observedFence, rptrMmio,
+            rptrReport, validReads, queueRaw[0], queueRaw[1], queueRaw[2],
+            queueRaw[3], queueRaw[4], queueRaw[5]);
+        Bc250DisplayLog("[MEC_PENDING_STALL] CpfStalled=%08X CpcStalled=%08X\n",
+            cpfStalled, cpcStalled);
+    }
     return STATUS_SUCCESS;
+}
+
+VOID Bc250SubmissionEngineArchiveDiagnostics(
+    _Inout_ struct BC250_DXGK_ACTIVE_CONTEXT *Context)
+{
+    BC250_SUBMISSION_ENGINE *engine;
+    uint32_t raw[8] = {0u};
+    uint32_t valid = 0u, i;
+    uint32_t fence = 0u, fenceMapped = 0u;
+    uint32_t ibBaseLo = 0u, ibBaseHi = 0u, ibRptr = 0u, dequeueReq = 0u;
+    uint32_t cpfStatus = 0u, cpfBusy = 0u, cpfStalled = 0u;
+    uint32_t cpcStatus = 0u, cpcBusy = 0u, cpcStalled = 0u;
+    uint32_t mecMe1Hdr = 0u, mecMe2Hdr = 0u;
+    uint32_t mec1InstrPntr = 0u, mec2InstrPntr = 0u;
+    uint32_t cpStalled1 = 0u, cpStat = 0u;
+    uint32_t selReadback = 0u, restReadback = 0u;
+    KIRQL irql;
+    static const uint32_t registers[8] = {
+        BC250_HQD_MMIO_ACTIVE, BC250_HQD_MMIO_HQD_ERROR,
+        BC250_HQD_MMIO_HQ_STATUS0, BC250_HQD_MMIO_PQ_WPTR_LO,
+        BC250_HQD_MMIO_VMID, BC250_HQD_MMIO_IB_CONTROL,
+        BC250_HQD_MMIO_PQ_RPTR, BC250_HQD_MMIO_PQ_CONTROL
+    };
+    if (Context == NULL || Context->Signature != BC250_ACTIVE_SIGNATURE) return;
+    engine = &Context->SubmissionEngine;
+    if (engine->Signature != BC250_SUBMISSION_ENGINE_SIGNATURE) {
+        Bc250DisplayLog("[MEC_STOP_STATE] UNAVAILABLE: engine was not initialized; MmioState=%u\n",
+            Context->Core.MmioTransport.State);
+        return;
+    }
+    /* No ONLINE/VMID/fence/time gate: those are precisely the unknowns.
+     * StopDevice has drained callers; use the lock for MMIO bank selection. */
+    KeAcquireSpinLock(&engine->Lock, &irql);
+    if (engine->ComputeFenceVirtual != NULL) {
+        fence = engine->ComputeFenceVirtual[0];
+        fenceMapped = 1u;
+    }
+    if (Context->Core.MmioTransport.State == BC250_MMIO_TOPOLOGY_MAPPED) {
+        (void)Bc250SubmissionWrite32(engine, Context,
+            BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+        if (Bc250SubmissionWrite32(engine, Context,
+                BC250_GRBM_GFX_CNTL_BYTE_OFFSET, engine->SelectedSelector)) {
+            (void)Bc250SubmissionRead32(engine, Context,
+                BC250_GRBM_GFX_CNTL_BYTE_OFFSET, &selReadback);
+            for (i = 0u; i < 8u; ++i) {
+                if (Bc250SubmissionRead32(engine, Context, registers[i], &raw[i]))
+                    valid |= 1u << i;
+            }
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_IB_BASE_LO, &ibBaseLo);
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_IB_BASE_HI, &ibBaseHi);
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_IB_RPTR, &ibRptr);
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_DEQUEUE_REQUEST, &dequeueReq);
+            (void)Bc250SubmissionWrite32(engine, Context,
+                BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+            (void)Bc250SubmissionWrite32(engine, Context,
+                BC250_GRBM_GFX_CNTL_BYTE_OFFSET, engine->OriginalSelector);
+            (void)Bc250SubmissionRead32(engine, Context,
+                BC250_GRBM_GFX_CNTL_BYTE_OFFSET, &restReadback);
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPF_STATUS, &cpfStatus);
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPF_BUSY_STAT, &cpfBusy);
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPF_STALLED_STAT1, &cpfStalled);
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPC_STATUS, &cpcStatus);
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPC_BUSY_STAT, &cpcBusy);
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPC_STALLED_STAT1, &cpcStalled);
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_MEC_ME1_HEADER_DUMP, &mecMe1Hdr);
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_MEC_ME2_HEADER_DUMP, &mecMe2Hdr);
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_MEC1_INSTR_PNTR, &mec1InstrPntr);
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_MEC2_INSTR_PNTR, &mec2InstrPntr);
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_STALLED_STAT1, &cpStalled1);
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_STAT, &cpStat);
+        }
+    }
+    KeReleaseSpinLock(&engine->Lock, irql);
+    Bc250DisplayLog("[MEC_STOP_STATE] Engine=%ld Vmid=%u Sub=%llu Ret=%llu Polls=%u PollFailures=%u DpcRuns=%u TimerInitialized=%ld LastSubmit=%08X CapturedFence=%llu FenceMapped=%u FenceNow=%u MmioState=%u\n",
+        engine->State, engine->ComputeRing.Vmid,
+        (unsigned long long)engine->ComputeRing.LastSubmittedFence,
+        (unsigned long long)engine->ComputeRing.LastRetiredFence,
+        engine->PollCalls, Context->RetirementPollFailures,
+        Context->RetirementDpcRuns, Context->RetirementTimerInitialized,
+        engine->LastSubmitStatus, (unsigned long long)engine->DiagnosticPendingFence,
+        fenceMapped, fence, Context->Core.MmioTransport.State);
+    Bc250DisplayLog("[MEC_STOP_QUEUE] Selector=0x%08X (Req=0x%08X) RestoredSel=0x%08X ValidReads=0x%X Active=%08X Error=%08X HqStatus=%08X WPTR=%u Vmid=%08X IbControl=%08X RPTR=%u PqControl=%08X\n",
+        selReadback, engine->SelectedSelector, restReadback, valid, raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]);
+    Bc250DisplayLog("[MEC_STOP_CPF] CpfStat=%08X CpfBusy=%08X CpfStalled=%08X CpcStat=%08X CpcBusy=%08X CpcStalled=%08X CpStalled1=%08X CpStat=%08X\n",
+        cpfStatus, cpfBusy, cpfStalled, cpcStatus, cpcBusy, cpcStalled, cpStalled1, cpStat);
+    Bc250DisplayLog("[MEC_STOP_EXEC] Mec1Hdr=%08X Mec2Hdr=%08X Mec1Pntr=%08X Mec2Pntr=%08X IbBase=%08X:%08X IbRptr=%08X Dequeue=%08X\n",
+        mecMe1Hdr, mecMe2Hdr, mec1InstrPntr, mec2InstrPntr, ibBaseHi, ibBaseLo, ibRptr, dequeueReq);
+    Bc250DisplayLog("[MEC_LAST_DESCRIPTOR] Raw=%08X,%08X,%08X,%08X SubmitTime100ns=%llu\n",
+        engine->DiagnosticDescriptor[0], engine->DiagnosticDescriptor[1],
+        engine->DiagnosticDescriptor[2], engine->DiagnosticDescriptor[3],
+        (unsigned long long)engine->DiagnosticSubmitTime);
 }
 
 /* ==========================================================================
@@ -1052,6 +1832,8 @@ void Bc250WddmFenceTrackerReset(
     Tracker->OverflowCount = 0u;
     Tracker->OutOfOrderCount = 0u;
     Tracker->LastPushedRingFence = 0ull;
+    Tracker->LastPushedRingFenceByNode[0] = 0ull;
+    Tracker->LastPushedRingFenceByNode[1] = 0ull;
     Tracker->LastNotifiedFenceId = 0u;
     Tracker->LastNotifiedFenceIdByNode[0] = 0u;
     Tracker->LastNotifiedFenceIdByNode[1] = 0u;
@@ -1088,6 +1870,117 @@ BOOLEAN Bc250WddmFenceTrackerSnapshotCounts(
     }
     *PendingCount = Tracker->Count;
     *ReservedCount = Tracker->ReservedCount;
+    Bc250FenceLockRelease(&Tracker->Lock, irql);
+    return TRUE;
+}
+
+/*
+ * DX.47: estado de UM no para concluir a preempcao. Em voo = entradas
+ * empurradas e ainda nao notificadas; reservas = submissoes entre reserve e
+ * commit. LastNotified e' a ultima SubmissionFenceId ja reportada como
+ * DMA_COMPLETED naquele no -- o LastCompletedFenceId do DMA_PREEMPTED.
+ */
+_Check_return_
+BOOLEAN Bc250WddmFenceTrackerNodeState(
+    _Inout_ BC250_WDDM_FENCE_TRACKER *Tracker,
+    _In_ uint32_t NodeOrdinal,
+    _Out_ uint32_t *InFlight,
+    _Out_ uint32_t *Reserved,
+    _Out_ uint32_t *LastNotified)
+{
+    KIRQL irql;
+    uint32_t i;
+    uint32_t inFlight = 0u;
+    uint32_t reserved = 0u;
+
+    if (InFlight != NULL) *InFlight = 0u;
+    if (Reserved != NULL) *Reserved = 0u;
+    if (LastNotified != NULL) *LastNotified = 0u;
+    if (Tracker == NULL || InFlight == NULL || Reserved == NULL ||
+        LastNotified == NULL || NodeOrdinal > BC250_SUBMISSION_NODE_COMPUTE) {
+        return FALSE;
+    }
+    if (!Bc250FenceLockAcquire(&Tracker->Lock, &irql)) {
+        return FALSE;
+    }
+    for (i = 0u; i < Tracker->Count; ++i) {
+        const BC250_WDDM_FENCE_ENTRY *entry =
+            &Tracker->Entries[(Tracker->Head + i) % BC250_WDDM_FENCE_TRACK_DEPTH];
+        if (entry->NodeOrdinal == NodeOrdinal) ++inFlight;
+    }
+    for (i = 0u; i < BC250_WDDM_FENCE_TRACK_DEPTH; ++i) {
+        if (Tracker->Reservations[i].Active != 0u &&
+            Tracker->Reservations[i].NodeOrdinal == NodeOrdinal) {
+            ++reserved;
+        }
+    }
+    *InFlight = inFlight;
+    *Reserved = reserved;
+    *LastNotified = Tracker->LastNotifiedFenceIdByNode[NodeOrdinal];
+    Bc250FenceLockRelease(&Tracker->Lock, irql);
+    return TRUE;
+}
+
+_Check_return_
+BOOLEAN Bc250WddmFenceTrackerAbortPending(
+    _Inout_ BC250_WDDM_FENCE_TRACKER *Tracker,
+    _Out_writes_to_(Max, *AbortedCount) BC250_WDDM_FENCE_ENTRY *Out,
+    _In_ uint32_t Max,
+    _Out_ uint32_t *AbortedCount,
+    _Out_ uint32_t *CommittedCount,
+    _Out_ uint32_t *ReservedCount)
+{
+    KIRQL irql;
+    uint32_t produced = 0u;
+    uint32_t committed;
+    uint32_t reserved;
+    uint32_t i;
+
+    if (AbortedCount != NULL) *AbortedCount = 0u;
+    if (CommittedCount != NULL) *CommittedCount = 0u;
+    if (ReservedCount != NULL) *ReservedCount = 0u;
+    if (Tracker == NULL || Out == NULL || Max < BC250_WDDM_FENCE_TRACK_DEPTH ||
+        AbortedCount == NULL || CommittedCount == NULL || ReservedCount == NULL) {
+        return FALSE;
+    }
+    if (!Bc250FenceLockAcquire(&Tracker->Lock, &irql)) {
+        return FALSE;
+    }
+
+    committed = Tracker->Count;
+    reserved = Tracker->ReservedCount;
+    if ((committed + reserved) > Max) {
+        Bc250FenceLockRelease(&Tracker->Lock, irql);
+        return FALSE;
+    }
+
+    while (Tracker->Count > 0u) {
+        Out[produced++] = Tracker->Entries[Tracker->Head];
+        RtlZeroMemory(&Tracker->Entries[Tracker->Head],
+            sizeof(Tracker->Entries[Tracker->Head]));
+        Tracker->Head = (Tracker->Head + 1u) % BC250_WDDM_FENCE_TRACK_DEPTH;
+        --Tracker->Count;
+    }
+    for (i = 0u; i < BC250_WDDM_FENCE_TRACK_DEPTH; ++i) {
+        BC250_WDDM_FENCE_RESERVATION *res = &Tracker->Reservations[i];
+        if (res->Active != 0u) {
+            BC250_WDDM_FENCE_ENTRY *entry = &Out[produced++];
+            RtlZeroMemory(entry, sizeof(*entry));
+            entry->SubmissionFenceId = res->SubmissionFenceId;
+            entry->NodeOrdinal = res->NodeOrdinal;
+            entry->EngineOrdinal = res->EngineOrdinal;
+            entry->GpuvaSlot = res->GpuvaSlot;
+            entry->GpuvaGeneration = res->GpuvaGeneration;
+            entry->GpuvaPinValid = res->GpuvaPinValid;
+        }
+        RtlZeroMemory(res, sizeof(*res));
+    }
+    Tracker->Head = 0u;
+    Tracker->ReservedCount = 0u;
+
+    *AbortedCount = produced;
+    *CommittedCount = committed;
+    *ReservedCount = reserved;
     Bc250FenceLockRelease(&Tracker->Lock, irql);
     return TRUE;
 }
@@ -1287,7 +2180,9 @@ static BOOLEAN Bc250WddmFenceTrackerCommitUnlocked(
                 if (Tracker->ReservedCount > 0u) --Tracker->ReservedCount;
                 return FALSE;
             }
-            if (Tracker->PushedTotal != 0u && RingFence <= Tracker->LastPushedRingFence) {
+            uint32_t nodeIdx = (res->NodeOrdinal < 2u) ? res->NodeOrdinal : 0u;
+            if (Tracker->LastPushedRingFenceByNode[nodeIdx] != 0ull &&
+                RingFence <= Tracker->LastPushedRingFenceByNode[nodeIdx]) {
                 ++Tracker->OutOfOrderCount;
                 res->Active = 0u;
                 if (Tracker->ReservedCount > 0u) --Tracker->ReservedCount;
@@ -1311,6 +2206,7 @@ static BOOLEAN Bc250WddmFenceTrackerCommitUnlocked(
             ++Tracker->Count;
             ++Tracker->PushedTotal;
             Tracker->LastPushedRingFence = RingFence;
+            Tracker->LastPushedRingFenceByNode[nodeIdx] = RingFence;
             return TRUE;
         }
     }
@@ -1355,9 +2251,10 @@ BOOLEAN Bc250WddmFenceTrackerPush(
 }
 
 _Check_return_
-uint32_t Bc250WddmFenceTrackerDrain(
+uint32_t Bc250WddmFenceTrackerDrainEx(
     _Inout_ BC250_WDDM_FENCE_TRACKER *Tracker,
-    _In_ uint64_t RetiredRingFence,
+    _In_ uint64_t RetiredMecFence,
+    _In_ uint64_t RetiredGfxFence,
     _Out_writes_to_(Max, return) BC250_WDDM_FENCE_ENTRY *Out,
     _In_ uint32_t Max)
 {
@@ -1373,8 +2270,9 @@ uint32_t Bc250WddmFenceTrackerDrain(
 
     while (produced < Max && Tracker->Count > 0u) {
         BC250_WDDM_FENCE_ENTRY *entry = &Tracker->Entries[Tracker->Head];
+        uint64_t retired = (entry->NodeOrdinal == 1u) ? RetiredGfxFence : RetiredMecFence;
 
-        if (entry->RingFence > RetiredRingFence) {
+        if (entry->RingFence > retired) {
             break;
         }
         Out[produced] = *entry;
@@ -1390,6 +2288,15 @@ uint32_t Bc250WddmFenceTrackerDrain(
     }
     Bc250FenceLockRelease(&Tracker->Lock, irql);
     return produced;
+}
+
+uint32_t Bc250WddmFenceTrackerDrain(
+    _Inout_ BC250_WDDM_FENCE_TRACKER *Tracker,
+    _In_ uint64_t RetiredRingFence,
+    _Out_writes_to_(Max, return) BC250_WDDM_FENCE_ENTRY *Out,
+    _In_ uint32_t Max)
+{
+    return Bc250WddmFenceTrackerDrainEx(Tracker, RetiredRingFence, RetiredRingFence, Out, Max);
 }
 
 _Check_return_
@@ -1439,6 +2346,12 @@ NTSTATUS Bc250SubmissionEngineOffline(
         interfaceData.Write32 = Bc250MmioTopologyWrite32;
         interfaceData.Barrier = Bc250SubmissionBarrier;
         interfaceData.Context = &Context->Core.MmioTransport;
+
+        RtlZeroMemory(&engine->TeardownEvidence, sizeof(engine->TeardownEvidence));
+        engine->TeardownEvidence.SelectedSelector = engine->SelectedSelector != 0u ?
+            engine->SelectedSelector : 0x00000008u;
+        engine->TeardownEvidence.OriginalSelector = engine->OriginalSelector;
+        engine->TeardownEvidence.ActiveConfirmed = 1u;
 
         hqdStatus = Bc250ComputeDeactivatePersistentHqd(
             &interfaceData, &engine->Buffers, &engine->TeardownEvidence,
@@ -1630,6 +2543,8 @@ NTSTATUS Bc250SubmissionEngineSelfTest(
 
     /* Candidato 3.53: leitura dos registradores base do HQD */
     (void)Bc250SubmissionWrite32(engine, Context,
+        BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+    (void)Bc250SubmissionWrite32(engine, Context,
         BC250_GRBM_GFX_CNTL_BYTE_OFFSET, engine->SelectedSelector);
     (void)Bc250SubmissionRead32(engine, Context,
         BC250_HQD_MMIO_PQ_BASE_LO, &ev->HqdPqBaseLo);
@@ -1649,6 +2564,8 @@ NTSTATUS Bc250SubmissionEngineSelfTest(
         BC250_HQD_MMIO_MQD_CONTROL, &ev->HqdMqdControl);
     (void)Bc250SubmissionRead32(engine, Context,
         BC250_HQD_MMIO_IB_CONTROL, &ev->HqdIbControl);
+    (void)Bc250SubmissionWrite32(engine, Context,
+        BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
     (void)Bc250SubmissionWrite32(engine, Context,
         BC250_GRBM_GFX_CNTL_BYTE_OFFSET, engine->OriginalSelector);
 
@@ -1709,6 +2626,8 @@ NTSTATUS Bc250SubmissionEngineSelfTest(
 
         ev->RearmAttempted = 1u;
         (void)Bc250SubmissionWrite32(engine, Context,
+            BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+        (void)Bc250SubmissionWrite32(engine, Context,
             BC250_GRBM_GFX_CNTL_BYTE_OFFSET, engine->SelectedSelector);
         (void)Bc250SubmissionRead32(engine, Context,
             BC250_HQD_MMIO_ACTIVE, &ev->RearmActiveBefore);
@@ -1742,6 +2661,8 @@ NTSTATUS Bc250SubmissionEngineSelfTest(
                 BC250_HQD_MMIO_ACTIVE, &ev->RearmActiveAfterOn);
         }
         (void)Bc250SubmissionWrite32(engine, Context,
+            BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+        (void)Bc250SubmissionWrite32(engine, Context,
             BC250_GRBM_GFX_CNTL_BYTE_OFFSET, engine->OriginalSelector);
         KeMemoryBarrier();
 
@@ -1762,9 +2683,13 @@ NTSTATUS Bc250SubmissionEngineSelfTest(
             ev->RearmRptrReport = engine->ComputeRptrReportVirtual[0];
         }
         (void)Bc250SubmissionWrite32(engine, Context,
+            BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+        (void)Bc250SubmissionWrite32(engine, Context,
             BC250_GRBM_GFX_CNTL_BYTE_OFFSET, engine->SelectedSelector);
         (void)Bc250SubmissionRead32(engine, Context,
             BC250_HQD_MMIO_PQ_RPTR, &ev->RearmRptrMmio);
+        (void)Bc250SubmissionWrite32(engine, Context,
+            BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
         (void)Bc250SubmissionWrite32(engine, Context,
             BC250_GRBM_GFX_CNTL_BYTE_OFFSET, engine->OriginalSelector);
 

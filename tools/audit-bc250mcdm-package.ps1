@@ -51,12 +51,38 @@ if ($errors.Count -ne 0) {
 
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 if ($manifest.SchemaVersion -ne 1) { $errors.Add('SchemaVersion inesperada') }
-if ($manifest.BuildKind -ne 'MCDM_FAIL_CLOSED') {
-    $errors.Add('BuildKind nao e MCDM_FAIL_CLOSED')
+if ($manifest.BuildKind -notin @('MCDM_FAIL_CLOSED', 'MCDM_TDR_INDUCED_HANG')) {
+    $errors.Add('BuildKind desconhecido')
 }
 if ($manifest.HardwareValidated -ne $false -or
     $manifest.Verdict -ne 'NAO VALIDADO EM HARDWARE') {
     $errors.Add('manifesto nao preserva o veredito fail-closed')
+}
+$expectedPolicy = [ordered]@{
+    ProfileMode = 'DISPLAY_RENDER_FAIL_CLOSED'
+    WddmContractVersion = 20
+    RenderNode = 1
+    RenderOnlyLab = 0
+    SkipHwBringup = 1
+    ShaderDispatchEnabled = $false
+    CpSoftResetEnabled = $false
+    Vmid0PageTableEnabled = $false
+    SdmaAutoCtxSwEnabled = $true
+    PersistentSubmissionEnabled = $true
+    GpuvaLabPromotionEnabled = $false
+}
+foreach ($entry in $expectedPolicy.GetEnumerator()) {
+    $actualProperty = $manifest.PSObject.Properties[$entry.Key]
+    if ($null -eq $actualProperty -or $actualProperty.Value -ne $entry.Value) {
+        $errors.Add("politica do manifesto diverge: $($entry.Key)")
+    }
+}
+if ([string]$manifest.VisualStudio -ne '2026' -or
+    [string]$manifest.WindowsKitVersion -ne '10.0.28000.0' -or
+    [string]$manifest.CompilerPath -notmatch '\\Microsoft Visual Studio\\18\\' -or
+    [string]$manifest.Inf2CatPath -notmatch '\\10\.0\.28000\.0\\' -or
+    [string]$manifest.SignToolPath -notmatch '\\10\.0\.28000\.0\\') {
+    $errors.Add('manifesto nao prova VS2026 + SDK/WDK 28000')
 }
 
 $hashChecks = @(
@@ -100,12 +126,40 @@ foreach ($needle in @(
     'cyan_skillfish2_pfp.bin',
     'cyan_skillfish2_me.bin',
     'cyan_skillfish2_ce.bin',
-    'cyan_skillfish2_mec.bin'
+    'cyan_skillfish2_mec.bin',
+    'HKR,Parameters,WddmContractVersion,0x00010001,20',
+    'HKR,Parameters,RenderNode,0x00010001,1',
+    'HKR,Parameters,RenderOnlyLab,0x00010001,0',
+    'HKR,Parameters,SkipHwBringup,0x00010001,1',
+    'HKR,Parameters,ShaderDispatch,0x00010001,0',
+    'HKR,Parameters,CpSoftReset,0x00010001,0',
+    'HKR,Parameters,Vmid0PageTable,0x00010001,0',
+    'HKR,Parameters,SdmaAutoCtxSw,0x00010001,1',
+    'HKR,Parameters,PersistentSubmission,0x00010001,1',
+    'HKR,Parameters,GpuvaLabPromotion,0x00010001,0'
 )) {
     if (-not $inf.Contains($needle)) { $errors.Add("identidade INF ausente: $needle") }
 }
 if (-not $inf.Contains("DriverVer=$($manifest.DriverVer)")) {
     $errors.Add('DriverVer do INF diverge do manifesto')
+}
+$tdrInfMatch = [regex]::Match(
+    $inf,
+    '(?m)^HKR,Parameters,TdrInduceHang,0x00010001,(\d+)\s*$')
+if (-not $tdrInfMatch.Success) {
+    $errors.Add('TdrInduceHang ausente do INF')
+} else {
+    $tdrInfValue = [int]$tdrInfMatch.Groups[1].Value
+    if ($tdrInfValue -ne [int]$manifest.TdrInduceHang -or
+        [bool]($tdrInfValue -ne 0) -ne [bool]$manifest.TdrInduceHangArmed) {
+        $errors.Add('TdrInduceHang diverge entre INF e manifesto')
+    }
+    if ($tdrInfValue -notin @(0, 1)) {
+        $errors.Add('TdrInduceHang do INF nao e booleano 0/1')
+    }
+    if (($manifest.BuildKind -eq 'MCDM_TDR_INDUCED_HANG') -ne ($tdrInfValue -eq 1)) {
+        $errors.Add('BuildKind nao corresponde ao estado TDR do INF')
+    }
 }
 
 Write-Host 'BC250 MCDM PACKAGE AUDIT'

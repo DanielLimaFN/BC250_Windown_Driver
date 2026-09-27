@@ -1,6 +1,9 @@
 #include "bc250_display_ddi.h"
+#include "bc250_driver_caps_contract.h"
+#include "bc250_blt_proof_contract.h"
 #include "bc250_probe_telemetry.h"
 #include "bc250_sdma_present.h"
+#include "bc250_mmio_breadcrumb.h"
 
 BC250_DISPLAY_STATE g_Bc250DisplayState = { 0 };
 
@@ -24,8 +27,952 @@ BOOLEAN Bc250DisplayGetChildEnumeration(void)
         &g_Bc250DisplayChildEnumerationDisabled, 0, 0) == 0 ? TRUE : FALSE;
 }
 
-#define BC250_NATIVE_HBLANK 160u
-#define BC250_NATIVE_VBLANK 45u
+static BC250_DISPLAY_GPUVA_RESOLVER g_Bc250DisplayGpuVaResolver = NULL;
+
+void Bc250DisplayInstallGpuVaResolver(
+    _In_opt_ BC250_DISPLAY_GPUVA_RESOLVER Resolver)
+{
+    g_Bc250DisplayGpuVaResolver = Resolver;
+}
+
+static BC250_DISPLAY_ALLOCATION_GEOMETRY_RESOLVER g_Bc250DisplayGeometryResolver = NULL;
+
+void Bc250DisplayInstallAllocationGeometryResolver(
+    _In_opt_ BC250_DISPLAY_ALLOCATION_GEOMETRY_RESOLVER Resolver)
+{
+    g_Bc250DisplayGeometryResolver = Resolver;
+}
+
+#define BC250_DISPLAY_MAX_GPUVA_RANGES 64
+#define BC250_DISPLAY_MAX_CONTEXT_MAP 16
+
+typedef struct BC250_DISPLAY_GPUVA_RANGE {
+    HANDLE ProcessHandle;
+    UINT64 GpuVaStart;
+    UINT64 GpuVaEnd;
+    UINT64 PhysicalStart;
+    UINT32 SegmentId;
+    UINT32 Valid;
+} BC250_DISPLAY_GPUVA_RANGE;
+
+typedef struct BC250_DISPLAY_CONTEXT_MAP {
+    HANDLE ContextHandle;
+    HANDLE ProcessHandle;
+    UINT32 Valid;
+} BC250_DISPLAY_CONTEXT_MAP;
+
+static BC250_DISPLAY_GPUVA_RANGE g_Bc250DisplayGpuVaRanges[BC250_DISPLAY_MAX_GPUVA_RANGES];
+static BC250_DISPLAY_CONTEXT_MAP g_Bc250DisplayContextMap[BC250_DISPLAY_MAX_CONTEXT_MAP];
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+static KSPIN_LOCK g_Bc250DisplayGpuVaLock;
+static BOOLEAN g_Bc250DisplayGpuVaLockInit = FALSE;
+#endif
+
+void Bc250DisplayRegisterContextProcess(
+    _In_ HANDLE ContextHandle,
+    _In_opt_ HANDLE ProcessHandle)
+{
+    ULONG i;
+    ULONG emptySlot = BC250_DISPLAY_MAX_CONTEXT_MAP;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KIRQL oldIrql;
+    if (!g_Bc250DisplayGpuVaLockInit) {
+        KeInitializeSpinLock(&g_Bc250DisplayGpuVaLock);
+        g_Bc250DisplayGpuVaLockInit = TRUE;
+    }
+    KeAcquireSpinLock(&g_Bc250DisplayGpuVaLock, &oldIrql);
+#endif
+
+    for (i = 0; i < BC250_DISPLAY_MAX_CONTEXT_MAP; ++i) {
+        if (g_Bc250DisplayContextMap[i].Valid &&
+            g_Bc250DisplayContextMap[i].ContextHandle == ContextHandle) {
+            g_Bc250DisplayContextMap[i].ProcessHandle = ProcessHandle;
+            emptySlot = i;
+            break;
+        } else if (!g_Bc250DisplayContextMap[i].Valid && emptySlot == BC250_DISPLAY_MAX_CONTEXT_MAP) {
+            emptySlot = i;
+        }
+    }
+
+    if (emptySlot < BC250_DISPLAY_MAX_CONTEXT_MAP) {
+        g_Bc250DisplayContextMap[emptySlot].ContextHandle = ContextHandle;
+        g_Bc250DisplayContextMap[emptySlot].ProcessHandle = ProcessHandle;
+        g_Bc250DisplayContextMap[emptySlot].Valid = 1;
+    }
+
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeReleaseSpinLock(&g_Bc250DisplayGpuVaLock, oldIrql);
+#endif
+}
+
+void Bc250DisplayUnregisterContextProcess(
+    _In_ HANDLE ContextHandle)
+{
+    ULONG i;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KIRQL oldIrql;
+    if (!g_Bc250DisplayGpuVaLockInit) {
+        return;
+    }
+    KeAcquireSpinLock(&g_Bc250DisplayGpuVaLock, &oldIrql);
+#endif
+
+    for (i = 0; i < BC250_DISPLAY_MAX_CONTEXT_MAP; ++i) {
+        if (g_Bc250DisplayContextMap[i].Valid &&
+            g_Bc250DisplayContextMap[i].ContextHandle == ContextHandle) {
+            g_Bc250DisplayContextMap[i].Valid = 0;
+            g_Bc250DisplayContextMap[i].ContextHandle = NULL;
+            g_Bc250DisplayContextMap[i].ProcessHandle = NULL;
+            break;
+        }
+    }
+
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeReleaseSpinLock(&g_Bc250DisplayGpuVaLock, oldIrql);
+#endif
+}
+
+HANDLE Bc250DisplayGetContextProcess(
+    _In_ HANDLE ContextHandle)
+{
+    ULONG i;
+    HANDLE proc = NULL;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KIRQL oldIrql;
+    if (!g_Bc250DisplayGpuVaLockInit) {
+        return NULL;
+    }
+    KeAcquireSpinLock(&g_Bc250DisplayGpuVaLock, &oldIrql);
+#endif
+
+    for (i = 0; i < BC250_DISPLAY_MAX_CONTEXT_MAP; ++i) {
+        if (g_Bc250DisplayContextMap[i].Valid &&
+            g_Bc250DisplayContextMap[i].ContextHandle == ContextHandle) {
+            proc = g_Bc250DisplayContextMap[i].ProcessHandle;
+            break;
+        }
+    }
+
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeReleaseSpinLock(&g_Bc250DisplayGpuVaLock, oldIrql);
+#endif
+    return proc;
+}
+
+void Bc250DisplayClearGpuVaMappings(void)
+{
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KIRQL oldIrql;
+    if (!g_Bc250DisplayGpuVaLockInit) {
+        KeInitializeSpinLock(&g_Bc250DisplayGpuVaLock);
+        g_Bc250DisplayGpuVaLockInit = TRUE;
+    }
+    KeAcquireSpinLock(&g_Bc250DisplayGpuVaLock, &oldIrql);
+#endif
+    memset(g_Bc250DisplayGpuVaRanges, 0, sizeof(g_Bc250DisplayGpuVaRanges));
+    memset(g_Bc250DisplayContextMap, 0, sizeof(g_Bc250DisplayContextMap));
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeReleaseSpinLock(&g_Bc250DisplayGpuVaLock, oldIrql);
+#endif
+}
+
+void Bc250DisplayRecordGpuVaMapping(
+    _In_opt_ HANDLE ProcessHandle,
+    _In_ UINT64 GpuVa,
+    _In_ UINT64 PhysicalAddress,
+    _In_ UINT64 ByteSize,
+    _In_ UINT32 SegmentId)
+{
+    ULONG i;
+    ULONG emptySlot = BC250_DISPLAY_MAX_GPUVA_RANGES;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KIRQL oldIrql;
+    if (!g_Bc250DisplayGpuVaLockInit) {
+        KeInitializeSpinLock(&g_Bc250DisplayGpuVaLock);
+        g_Bc250DisplayGpuVaLockInit = TRUE;
+    }
+    KeAcquireSpinLock(&g_Bc250DisplayGpuVaLock, &oldIrql);
+#endif
+
+    if (ByteSize == 0 || SegmentId == 0) {
+        /* Invalidation request: invalidate any overlapping range */
+        for (i = 0; i < BC250_DISPLAY_MAX_GPUVA_RANGES; ++i) {
+            if (g_Bc250DisplayGpuVaRanges[i].Valid &&
+                (ProcessHandle == NULL || g_Bc250DisplayGpuVaRanges[i].ProcessHandle == ProcessHandle ||
+                 g_Bc250DisplayGpuVaRanges[i].ProcessHandle == NULL) &&
+                GpuVa >= g_Bc250DisplayGpuVaRanges[i].GpuVaStart &&
+                GpuVa < g_Bc250DisplayGpuVaRanges[i].GpuVaEnd) {
+                g_Bc250DisplayGpuVaRanges[i].Valid = 0;
+            }
+        }
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+        KeReleaseSpinLock(&g_Bc250DisplayGpuVaLock, oldIrql);
+#endif
+        return;
+    }
+
+    /* Check if this chunk can be appended to an existing contiguous range */
+    for (i = 0; i < BC250_DISPLAY_MAX_GPUVA_RANGES; ++i) {
+        if (g_Bc250DisplayGpuVaRanges[i].Valid &&
+            g_Bc250DisplayGpuVaRanges[i].SegmentId == SegmentId &&
+            (ProcessHandle == NULL || g_Bc250DisplayGpuVaRanges[i].ProcessHandle == ProcessHandle ||
+             g_Bc250DisplayGpuVaRanges[i].ProcessHandle == NULL)) {
+            /* Case 1: Contiguous append: existing end == new start, and physical is also contiguous */
+            if (g_Bc250DisplayGpuVaRanges[i].GpuVaEnd == GpuVa &&
+                (g_Bc250DisplayGpuVaRanges[i].PhysicalStart +
+                 (g_Bc250DisplayGpuVaRanges[i].GpuVaEnd - g_Bc250DisplayGpuVaRanges[i].GpuVaStart)) == PhysicalAddress) {
+                g_Bc250DisplayGpuVaRanges[i].GpuVaEnd += ByteSize;
+                if (g_Bc250DisplayGpuVaRanges[i].ProcessHandle == NULL && ProcessHandle != NULL) {
+                    g_Bc250DisplayGpuVaRanges[i].ProcessHandle = ProcessHandle;
+                }
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+                KeReleaseSpinLock(&g_Bc250DisplayGpuVaLock, oldIrql);
+#endif
+                return;
+            }
+            /* Case 2: Exact replacement / overlap at the same start */
+            if (g_Bc250DisplayGpuVaRanges[i].GpuVaStart == GpuVa) {
+                g_Bc250DisplayGpuVaRanges[i].GpuVaEnd = GpuVa + ByteSize;
+                g_Bc250DisplayGpuVaRanges[i].PhysicalStart = PhysicalAddress;
+                g_Bc250DisplayGpuVaRanges[i].SegmentId = SegmentId;
+                if (ProcessHandle != NULL) {
+                    g_Bc250DisplayGpuVaRanges[i].ProcessHandle = ProcessHandle;
+                }
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+                KeReleaseSpinLock(&g_Bc250DisplayGpuVaLock, oldIrql);
+#endif
+                return;
+            }
+        } else if (!g_Bc250DisplayGpuVaRanges[i].Valid && emptySlot == BC250_DISPLAY_MAX_GPUVA_RANGES) {
+            emptySlot = i;
+        }
+    }
+
+    /* If no contiguous extension, use an empty slot */
+    if (emptySlot < BC250_DISPLAY_MAX_GPUVA_RANGES) {
+        g_Bc250DisplayGpuVaRanges[emptySlot].ProcessHandle = ProcessHandle;
+        g_Bc250DisplayGpuVaRanges[emptySlot].GpuVaStart = GpuVa;
+        g_Bc250DisplayGpuVaRanges[emptySlot].GpuVaEnd = GpuVa + ByteSize;
+        g_Bc250DisplayGpuVaRanges[emptySlot].PhysicalStart = PhysicalAddress;
+        g_Bc250DisplayGpuVaRanges[emptySlot].SegmentId = SegmentId;
+        g_Bc250DisplayGpuVaRanges[emptySlot].Valid = 1;
+    } else {
+        Bc250DisplayLog("[DisplayGpuVa] WARNING: GPUVA range table full (%u entries), dropped VA=0x%llX\n",
+            BC250_DISPLAY_MAX_GPUVA_RANGES, GpuVa);
+    }
+
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeReleaseSpinLock(&g_Bc250DisplayGpuVaLock, oldIrql);
+#endif
+}
+
+BOOLEAN Bc250DisplayLookupPhysicalAddress(
+    _In_opt_ HANDLE ProcessHandle,
+    _In_ UINT64 GpuVa,
+    _Out_ UINT64 *PhysicalAddress,
+    _Out_ UINT32 *SegmentId)
+{
+    ULONG i;
+    BOOLEAN found = FALSE;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KIRQL oldIrql;
+    if (!g_Bc250DisplayGpuVaLockInit) {
+        return FALSE;
+    }
+    KeAcquireSpinLock(&g_Bc250DisplayGpuVaLock, &oldIrql);
+#endif
+
+    for (i = 0; i < BC250_DISPLAY_MAX_GPUVA_RANGES; ++i) {
+        if (g_Bc250DisplayGpuVaRanges[i].Valid &&
+            (ProcessHandle == NULL || g_Bc250DisplayGpuVaRanges[i].ProcessHandle == ProcessHandle ||
+             g_Bc250DisplayGpuVaRanges[i].ProcessHandle == NULL) &&
+            GpuVa >= g_Bc250DisplayGpuVaRanges[i].GpuVaStart &&
+            GpuVa < g_Bc250DisplayGpuVaRanges[i].GpuVaEnd) {
+            UINT64 offset = GpuVa - g_Bc250DisplayGpuVaRanges[i].GpuVaStart;
+            if (PhysicalAddress != NULL) {
+                *PhysicalAddress = g_Bc250DisplayGpuVaRanges[i].PhysicalStart + offset;
+            }
+            if (SegmentId != NULL) {
+                *SegmentId = g_Bc250DisplayGpuVaRanges[i].SegmentId;
+            }
+            found = TRUE;
+            break;
+        }
+    }
+
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeReleaseSpinLock(&g_Bc250DisplayGpuVaLock, oldIrql);
+#endif
+    return found;
+}
+
+/*
+ * UNIAO pAllocationList / pAllocationInfo em DXGKARG_PRESENT
+ *
+ * A partir de WDDM 2.0 com modelo GpuMmu -- que e o nosso caso
+ * (DriverCaps GpuMmu=1, WDDMVersion=0x2000) -- o dxgkrnl preenche
+ * pAllocationInfo (DXGK_PRESENTALLOCATIONINFO, 32 bytes por entrada), NAO
+ * pAllocationList (DXGK_ALLOCATIONLIST, 24 bytes por entrada). Sao membros da
+ * MESMA uniao, entao ler o membro errado nao falha: le lixo com passo errado.
+ *
+ * PROVA (corrida 04/09 18:10, docs/evidence/2026-09-04_18-10-08-.../bc250_display_log.txt):
+ *   [Present #1] Slot0: hDev=0000000000000000, Seg=0,  VA=0x0,      Phys=0x0
+ *   [Present #1] Slot1: hDev=0000000000000000, Seg=16, VA=0xAC0000, Phys=0xAC0000
+ *   [Present #1] Slot2: hDev=0000000000000000, Seg=0,  VA=0xFFFFC909A9906BC0, ...
+ *   [Present #1] REJECT source contract: SlotHAlloc=0000000000000000, SlotSeg=16
+ *
+ * Lendo com passo de 24 bytes sobre um array de 32:
+ *   Slot1.hDev  (offset 24) cai em info[0].SegmentId/PhysicalAdapterIndex  -> 0
+ *   Slot1.Seg   (offset 32) cai no dword baixo de info[1].hDeviceSpecific  -> 16 (lixo)
+ *   Slot1.VA    (offset 40) cai em info[1].AllocationVirtualAddress        -> 0xAC0000 (certo por acaso)
+ *   Slot2.hDev  (offset 48) cai em info[1].PhysicalAddress / alem do array -> ponteiro de kernel
+ *
+ * Os tres sintomas so tem explicacao com o passo de 32; nenhum tem com o de 24.
+ *
+ * Lendo a estrutura certa, o SO nos entrega PhysicalAddress e SegmentId da
+ * origem prontos. Deixa de ser necessario inferir o endereco resolvendo a GPUVA
+ * no nosso snapshot -- que era exatamente o passo que falhava com
+ * BC250_GPUVA_NOT_FOUND (status=9) para VA=0xAC0000.
+ */
+static BOOLEAN Bc250DisplayResolveAllocationSlot(
+    _In_ HANDLE Context,
+    _In_ const DXGK_PRESENTALLOCATIONINFO *AllocInfo,
+    _Out_ UINT64 *PhysicalAddress,
+    _Out_ UINT32 *SegmentId)
+{
+    if (PhysicalAddress != NULL) *PhysicalAddress = 0ull;
+    if (SegmentId != NULL) *SegmentId = 0u;
+    if (AllocInfo == NULL || PhysicalAddress == NULL || SegmentId == NULL) {
+        return FALSE;
+    }
+
+    /*
+     * 0. Endereco fisico entregue pelo proprio VidMm. E a fonte de maior
+     *    autoridade que existe: nao e inferencia nossa. Segmento 1 e a VRAM
+     *    local; qualquer outro segmento nao e blitavel para o scanout GOP.
+     */
+    if (AllocInfo->SegmentId == 1u && AllocInfo->PhysicalAddress.QuadPart > 0) {
+        *PhysicalAddress = (UINT64)AllocInfo->PhysicalAddress.QuadPart;
+        *SegmentId = AllocInfo->SegmentId;
+        return TRUE;
+    }
+
+    /*
+     * 1. Tentativa por VirtualAddress (DWM sob WDDM 2.0+).
+     * Sob enderecamento virtual, hDeviceSpecificAllocation e' NULL e o DWM
+     * entrega a superficie desenhada via VirtualAddress (ex: 0xAC0000).
+     */
+    if (AllocInfo->AllocationVirtualAddress != 0ull) {
+        /*
+         * A fonte autoritativa e' somente o snapshot publicado pelo journal
+         * depois do ACK do FlushTlb. O cache paralelo de PTEs nao participa
+         * do caminho de producao: ele podia expor uma atualizacao ainda nao
+         * comitada ou devolver backing antigo depois de um remapeamento.
+         */
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+        /* Protecao contra BugCheck 0x0A: ExAcquirePushLock nao pode ser chamado em DISPATCH_LEVEL */
+        if (KeGetCurrentIrql() <= APC_LEVEL)
+#endif
+        {
+            if (g_Bc250DisplayGpuVaResolver != NULL &&
+                g_Bc250DisplayGpuVaResolver(Context, (UINT64)AllocInfo->AllocationVirtualAddress, PhysicalAddress, SegmentId)) {
+                if (*SegmentId == 1u) {
+                    return TRUE;
+                }
+            }
+        }
+    }
+
+    return FALSE;
+}
+
+BOOLEAN Bc250DisplayResolvePresentSource(
+    _In_ HANDLE Context,
+    _In_ const DXGKARG_PRESENT *Present,
+    _Out_ UINT64 *PhysicalAddress,
+    _Out_ UINT32 *SegmentId)
+{
+    if (PhysicalAddress != NULL) *PhysicalAddress = 0ull;
+    if (SegmentId != NULL) *SegmentId = 0u;
+    if (Context == NULL || Present == NULL || Present->pAllocationInfo == NULL ||
+        PhysicalAddress == NULL || SegmentId == NULL ||
+        (Present->Flags.Blt == 0u && Present->Flags.Flip == 0u)) {
+        return FALSE;
+    }
+
+    return Bc250DisplayResolveAllocationSlot(
+        Context, &Present->pAllocationInfo[DXGK_PRESENT_SOURCE_INDEX],
+        PhysicalAddress, SegmentId);
+}
+
+BOOLEAN Bc250DisplayResolvePresentDestination(
+    _In_ HANDLE Context,
+    _In_ const DXGKARG_PRESENT *Present,
+    _Out_ UINT64 *PhysicalAddress,
+    _Out_ UINT32 *SegmentId)
+{
+    if (PhysicalAddress != NULL) *PhysicalAddress = 0ull;
+    if (SegmentId != NULL) *SegmentId = 0u;
+    if (Context == NULL || Present == NULL || Present->pAllocationInfo == NULL ||
+        PhysicalAddress == NULL || SegmentId == NULL ||
+        (Present->Flags.Blt == 0u && Present->Flags.Flip == 0u)) {
+        return FALSE;
+    }
+
+    return Bc250DisplayResolveAllocationSlot(
+        Context, &Present->pAllocationInfo[DXGK_PRESENT_DESTINATION_INDEX],
+        PhysicalAddress, SegmentId);
+}
+
+/*
+ * DX.63 (Corrida 104) -- PRESENT BLT VAI PARA O DESTINO QUE O DXGKRNL ENTREGA.
+ *
+ * MEDIDO (P0): os 60 presents Blt do harness (SrcRect=DstRect=1280x720) traziam
+ * destino resolvido (SLOT_DST @ 0x4ECC000, a superficie de redirecionamento
+ * do DWM), e o KMD o ignorava: copiava direto para o scanout numa posicao
+ * CENTRALIZADA inventada (640,180). Eram dois escritores do scanout ao mesmo
+ * tempo -- o flip do DWM e este blt --, e os BYTE_PROOF FAIL dos flips #10
+ * (FirstMismatch=0x1C2A00 = linha 180, x=640, o canto da janela) e #45 (dentro
+ * da mesma area) sao a conferencia do flip pegando o blt concorrente.
+ *
+ * Contrato (DXGKARG_PRESENT, Flags.Blt): copiar SrcRect da origem para
+ * DstRect do DESTINO. O scanout so' recebe o que o flip do DWM compoe.
+ * Sem geometria de origem/destino, formato 32 bpp igual, retangulos do mesmo
+ * tamanho e dentro das duas superficies, o present e' RECUSADO -- nunca cai
+ * de volta no scanout.
+ */
+static const char *Bc250DisplayBltToDestination(
+    _In_ HANDLE Context,
+    _In_ const DXGKARG_PRESENT *Present,
+    _In_ UINT64 SourceVramOffset,
+    _Out_ BOOLEAN *Copied)
+{
+    UINT32 srcW = 0u, srcH = 0u, srcPitch = 0u, srcFmt = 0u;
+    UINT32 dstW = 0u, dstH = 0u, dstPitch = 0u, dstFmt = 0u;
+    UINT64 dstSegOffset = 0ull, dstVram = 0ull;
+    UINT32 dstSeg = 0u;
+    LONG w, h;
+    uint64_t srcGpu, dstGpu;
+
+    *Copied = FALSE;
+    if (g_Bc250DisplayGeometryResolver == NULL) return "SEM_RESOLVEDOR_DE_GEOMETRIA";
+    if (Present->pAllocationInfo == NULL) return "SEM_ALLOCATIONINFO";
+    if (!g_Bc250DisplayGeometryResolver(
+            Present->pAllocationInfo[DXGK_PRESENT_SOURCE_INDEX].hDeviceSpecificAllocation,
+            &srcW, &srcH, &srcPitch, &srcFmt)) {
+        return "GEOMETRIA_DA_ORIGEM_DESCONHECIDA";
+    }
+    if (!g_Bc250DisplayGeometryResolver(
+            Present->pAllocationInfo[DXGK_PRESENT_DESTINATION_INDEX].hDeviceSpecificAllocation,
+            &dstW, &dstH, &dstPitch, &dstFmt)) {
+        return "GEOMETRIA_DO_DESTINO_DESCONHECIDA";
+    }
+    /*
+     * D3DDDIFMT_A8R8G8B8 = 21, D3DDDIFMT_X8R8G8B8 = 22: 4 bytes por pixel na
+     * mesma ordem de bytes; copiar um para o outro e' copia byte a byte.
+     * Qualquer outro formato, em qualquer lado, e' recusado.
+     */
+    if ((srcFmt != 21u && srcFmt != 22u) || (dstFmt != 21u && dstFmt != 22u)) {
+        return "FORMATO_DIVERGENTE_OU_NAO_32BPP";
+    }
+    if (srcPitch < srcW * 4u || dstPitch < dstW * 4u) return "PITCH_MENOR_QUE_A_LINHA";
+    w = Present->SrcRect.right - Present->SrcRect.left;
+    h = Present->SrcRect.bottom - Present->SrcRect.top;
+    if (w <= 0 || h <= 0 ||
+        w != Present->DstRect.right - Present->DstRect.left ||
+        h != Present->DstRect.bottom - Present->DstRect.top) {
+        return "RETANGULOS_VAZIOS_OU_COM_ESCALA";
+    }
+    if (Present->SrcRect.left < 0 || Present->SrcRect.top < 0 ||
+        (ULONG)Present->SrcRect.right > srcW || (ULONG)Present->SrcRect.bottom > srcH ||
+        Present->DstRect.left < 0 || Present->DstRect.top < 0 ||
+        (ULONG)Present->DstRect.right > dstW || (ULONG)Present->DstRect.bottom > dstH) {
+        return "RETANGULO_FORA_DA_SUPERFICIE";
+    }
+    if ((UINT64)srcPitch * srcH > g_Bc250DisplayState.FrameBufferSize ||
+        SourceVramOffset > g_Bc250DisplayState.FrameBufferSize - (UINT64)srcPitch * srcH) {
+        return "ORIGEM_FORA_DA_VRAM";
+    }
+    if (!Bc250DisplayResolvePresentDestination(Context, Present, &dstSegOffset, &dstSeg)) {
+        return "DESTINO_NAO_RESOLVIDO";
+    }
+    if (!Bc250SdmaPresentSegmentOffsetToVram(dstSeg, dstSegOffset,
+            (UINT64)dstPitch * dstH, &dstVram)) {
+        return "DESTINO_FORA_DO_SEGMENTO";
+    }
+    if (dstVram < (UINT64)g_Bc250DisplayState.CurrentMode.Pitch *
+            g_Bc250DisplayState.CurrentMode.Height) {
+        /* O destino de um Blt nunca e' o scanout do GOP (offset 0). */
+        return "DESTINO_SOBREPOE_O_SCANOUT";
+    }
+    srcGpu = g_Bc250SdmaPresent.VramMcStart + SourceVramOffset +
+        (uint64_t)(ULONG)Present->SrcRect.top * srcPitch +
+        (uint64_t)(ULONG)Present->SrcRect.left * 4ull;
+    dstGpu = g_Bc250SdmaPresent.VramMcStart + dstVram;
+    *Copied = Bc250SdmaPresentBltRect(srcGpu, srcPitch, dstGpu, dstPitch,
+        (ULONG)Present->DstRect.left, (ULONG)Present->DstRect.top,
+        (ULONG)w, (ULONG)h);
+    return *Copied ? "OK" : "SDMA_FALHOU";
+}
+
+BOOLEAN Bc250DisplayResolvePrimarySource(
+    _Out_ UINT64 *PhysicalAddress,
+    _Out_ UINT32 *SegmentId)
+{
+    if (PhysicalAddress != NULL) *PhysicalAddress = 0ull;
+    if (SegmentId != NULL) *SegmentId = 0u;
+    if (PhysicalAddress == NULL || SegmentId == NULL) return FALSE;
+    if (!g_Bc250DisplayState.PrimaryAddressValid) return FALSE;
+    if (g_Bc250DisplayState.PrimaryAddress.QuadPart <= 0) return FALSE;
+    /*
+     * O driver declara dois segmentos (QUERYSEGMENT4): 1 = VRAM local,
+     * 2 = abertura GART.  Somente o segmento 1 e' alcancavel pelo blt de
+     * scanout; qualquer outro valor falha fechado em vez de virar offset.
+     */
+    if (g_Bc250DisplayState.PrimarySegment != 1u) return FALSE;
+    *PhysicalAddress = (UINT64)g_Bc250DisplayState.PrimaryAddress.QuadPart;
+    *SegmentId = g_Bc250DisplayState.PrimarySegment;
+    return TRUE;
+}
+
+BOOLEAN Bc250DisplaySampleSurface(
+    _In_ UINT64 ByteOffset,
+    _In_ ULONG ByteCount,
+    _In_ ULONG Samples,
+    _Out_ ULONG *NonZeroCount,
+    _Out_ ULONG *XorHash)
+{
+    CONST UCHAR *base;
+    ULONG stride;
+    ULONG i;
+    ULONG nonZero = 0u;
+    ULONG hash = 0u;
+
+    if (NonZeroCount != NULL) *NonZeroCount = 0u;
+    if (XorHash != NULL) *XorHash = 0u;
+    if (NonZeroCount == NULL || XorHash == NULL) return FALSE;
+    if (g_Bc250DisplayState.FrameBufferVirtual == NULL) return FALSE;
+    if (Samples == 0u || ByteCount < sizeof(ULONG)) return FALSE;
+    if (ByteOffset > g_Bc250DisplayState.FrameBufferSize) return FALSE;
+    if (ByteCount > g_Bc250DisplayState.FrameBufferSize - ByteOffset) return FALSE;
+
+    base = (CONST UCHAR *)g_Bc250DisplayState.FrameBufferVirtual +
+        (SIZE_T)ByteOffset;
+    stride = (ByteCount - (ULONG)sizeof(ULONG)) / Samples;
+    stride &= ~3u;
+    if (stride == 0u) stride = (ULONG)sizeof(ULONG);
+
+    {
+    ULONG crumb = Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_SAMPLE, (ULONG)ByteOffset);
+    for (i = 0u; i < Samples; ++i) {
+        ULONG offset = i * stride;
+        ULONG value;
+        if (offset > ByteCount - sizeof(ULONG)) break;
+        value = *(CONST ULONG *)(base + offset);
+        if (value != 0u) ++nonZero;
+        hash ^= value;
+    }
+    Bc250CrumbAfter(crumb);
+    }
+
+    *NonZeroCount = nonZero;
+    *XorHash = hash;
+    return TRUE;
+}
+
+BOOLEAN Bc250DisplayCompareSurfaceBytes(
+    _In_ UINT64 SourceOffset,
+    _In_ UINT64 DestinationOffset,
+    _In_ ULONG ByteCount,
+    _Out_ UINT64 *FirstMismatchOffset)
+{
+    volatile CONST UCHAR *base;
+    ULONG index;
+
+    if (FirstMismatchOffset != NULL) *FirstMismatchOffset = ~(UINT64)0;
+    if (FirstMismatchOffset == NULL || ByteCount == 0u ||
+        g_Bc250DisplayState.FrameBufferVirtual == NULL) return FALSE;
+    if (SourceOffset > g_Bc250DisplayState.FrameBufferSize ||
+        ByteCount > g_Bc250DisplayState.FrameBufferSize - SourceOffset ||
+        DestinationOffset > g_Bc250DisplayState.FrameBufferSize ||
+        ByteCount > g_Bc250DisplayState.FrameBufferSize - DestinationOffset) {
+        return FALSE;
+    }
+
+    base = (volatile CONST UCHAR *)g_Bc250DisplayState.FrameBufferVirtual;
+    {
+    ULONG crumb = Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_COMPARE, (ULONG)SourceOffset);
+    for (index = 0u; index < ByteCount; ++index) {
+        if (base[(SIZE_T)SourceOffset + index] !=
+            base[(SIZE_T)DestinationOffset + index]) {
+            *FirstMismatchOffset = index;
+            Bc250CrumbAfter(crumb);
+            return FALSE;
+        }
+    }
+    Bc250CrumbAfter(crumb);
+    }
+    return TRUE;
+}
+
+/*
+ * DX.31: a mudanca de primaria do WDDM nao e' um flip fisico neste perfil.
+ * O GOP continua lendo o mesmo scanout; a nova primaria precisa ser copiada
+ * por SDMA. A Corrida 76 registrou buffers de Flip nao-nulos sem a prova de
+ * dados que o caminho DxgkDdiPresent possui. Toda chamada agora deixa uma
+ * trilha correlacionavel, inclusive a recusa e o quadro em branco. Esta DDI
+ * pode bloquear o scheduler em nivel de interrupcao: somente 256 amostras
+ * pareadas, NUNCA a comparacao integral de 11 MB do caminho DxgkDdiPresent.
+ */
+static volatile LONG s_Bc250PrimaryCopySequence = 0;
+
+/*
+ * DX.34: retangulos sujos do Present Blt. Teto pequeno de proposito: cada
+ * retangulo e' uma submissao SDMA sincrona; lista maior cai na copia de tela
+ * cheia de antes, com log. Aceita so' Src == Dst == tela cheia, para que (x,y)
+ * na origem e no scanout sejam o mesmo ponto.
+ */
+#define BC250_DIRTY_RECT_MAX 16u
+static volatile LONG s_Bc250DirtyRectLogCount = 0;
+
+/*
+ * DX.49 -- RETANGULO VAZIO = SUPERFICIE INTEIRA.
+ *
+ * Corrida 93 (P0): as 17 recusas vieram com SubRectCnt 1..3 e, nas amostradas,
+ * "DstRect=(0,0)-(0,0), SrcRect=(0,0)-(0,0)". No Present de flip o dxgkrnl nao
+ * preenche Src/Dst; a exigencia de Src == Dst == tela cheia recusava TODOS e
+ * caia na copia de 11 MB. Retangulo vazio nos DOIS lados e' aceito como
+ * superficie inteira; qualquer outro Src/Dst continua exigindo tela cheia.
+ * A recusa agora nomeia a condicao, em vez de uma lista de quatro possiveis.
+ */
+/*
+ * DX.50 -- BISSECCAO: dirty rects DESLIGADOS.
+ *
+ * Corridas 94 e 95 (P0): travamento duro nas duas, e defeito visual "depois de
+ * um tempo" na 95, logo que os dirty rects passaram a ser aceitos (384 copias
+ * SDMA por retangulo na 95; zero em todas as corridas anteriores). Com isto em
+ * FALSE todo Present volta a copia de tela cheia da Corrida 93; a validacao
+ * acima continua compilada e testada, e a recusa sai no log com
+ * motivo=DX50_BISSECCAO_DESLIGADO. Uma variavel: o lote de draws, o staging e
+ * o trace da DX.49/49b continuam ligados.
+ */
+static const BOOLEAN s_Bc250Dx50DirtyRectsEnabled = FALSE;
+
+static BOOLEAN Bc250DisplayRectIsEmpty(_In_ CONST RECT *Rect)
+{
+    return Rect->left == 0 && Rect->top == 0 && Rect->right == 0 && Rect->bottom == 0;
+}
+
+static BOOLEAN Bc250DisplayRectIsFull(_In_ CONST RECT *Rect, ULONG Width, ULONG Height)
+{
+    return Rect->left == 0 && Rect->top == 0 &&
+        Rect->right == (LONG)Width && Rect->bottom == (LONG)Height;
+}
+
+static BOOLEAN Bc250DisplayDirtyRectsUsable(
+    _In_ CONST DXGKARG_PRESENT *Present,
+    _Out_ UINT *Count,
+    _Out_ CONST char **Reason,
+    _Out_ UINT *BadIndex)
+{
+    ULONG w = g_Bc250DisplayState.CurrentMode.Width;
+    ULONG h = g_Bc250DisplayState.CurrentMode.Height;
+    BOOLEAN bothEmpty;
+    UINT i;
+
+    *Count = 0u;
+    *BadIndex = 0u;
+    *Reason = "OK";
+    if (Present->SubRectCnt == 0u) { *Reason = "LISTA_VAZIA"; return FALSE; }
+    if (Present->SubRectCnt > BC250_DIRTY_RECT_MAX) { *Reason = "LISTA_ACIMA_DO_TETO"; return FALSE; }
+    if (Present->pDstSubRects == NULL) { *Reason = "pDstSubRects_NULL"; return FALSE; }
+    if (w == 0u || h == 0u || g_Bc250DisplayState.CurrentMode.Pitch < w * 4u) {
+        *Reason = "MODO_SEM_GEOMETRIA"; return FALSE;
+    }
+    bothEmpty = Bc250DisplayRectIsEmpty(&Present->SrcRect) && Bc250DisplayRectIsEmpty(&Present->DstRect);
+    if (!bothEmpty &&
+        (!Bc250DisplayRectIsFull(&Present->SrcRect, w, h) || !Bc250DisplayRectIsFull(&Present->DstRect, w, h))) {
+        *Reason = "SRC_DST_NEM_VAZIOS_NEM_TELA_CHEIA"; return FALSE;
+    }
+    for (i = 0u; i < Present->SubRectCnt; ++i) {
+        CONST RECT *rc = &Present->pDstSubRects[i];
+        if (rc->left < 0 || rc->top < 0 || rc->right <= rc->left ||
+            rc->bottom <= rc->top || (ULONG)rc->right > w || (ULONG)rc->bottom > h) {
+            *Reason = "RETANGULO_FORA_DA_TELA_OU_DEGENERADO";
+            *BadIndex = i;
+            return FALSE;
+        }
+    }
+    *Count = Present->SubRectCnt;
+    return TRUE;
+}
+
+/* Prova amostral dos retangulos: centro e 4 cantos de cada um, origem x scanout. */
+static VOID Bc250DisplayDirtyRectProof(
+    _In_ CONST DXGKARG_PRESENT *Present,
+    _In_ UINT Count,
+    _In_ UINT64 SourceOffset,
+    _Out_ ULONG *Match,
+    _Out_ ULONG *Probes,
+    _Out_ ULONG *SourceNonZero)
+{
+    CONST UCHAR *fb = (CONST UCHAR *)g_Bc250DisplayState.FrameBufferVirtual;
+    ULONG pitch = g_Bc250DisplayState.CurrentMode.Pitch;
+    UINT64 scanoutOffset = g_Bc250SdmaPresent.ScanoutGpuAddress -
+        g_Bc250SdmaPresent.VramMcStart;
+    UINT i, p;
+
+    *Match = 0u; *Probes = 0u; *SourceNonZero = 0u;
+    if (fb == NULL) return;
+    for (i = 0u; i < Count; ++i) {
+        CONST RECT *rc = &Present->pDstSubRects[i];
+        LONG pts[5][2] = {
+            { (rc->left + rc->right) / 2, (rc->top + rc->bottom) / 2 },
+            { rc->left, rc->top }, { rc->right - 1, rc->top },
+            { rc->left, rc->bottom - 1 }, { rc->right - 1, rc->bottom - 1 } };
+        for (p = 0u; p < 5u; ++p) {
+            UINT64 rel = (UINT64)(ULONG)pts[p][1] * pitch + (UINT64)(ULONG)pts[p][0] * 4ull;
+            ULONG s, d;
+            if (SourceOffset + rel + 4ull > g_Bc250DisplayState.FrameBufferSize ||
+                scanoutOffset + rel + 4ull > g_Bc250DisplayState.FrameBufferSize) {
+                continue;
+            }
+            s = *(CONST volatile ULONG *)(fb + SourceOffset + rel);
+            d = *(CONST volatile ULONG *)(fb + scanoutOffset + rel);
+            ++*Probes;
+            if (s != 0u) ++*SourceNonZero;
+            if (s == d) ++*Match;
+        }
+    }
+}
+
+/* 256 comparacoes pareadas origem x scanout pelo mapa de CPU. Devolve os pares lidos. */
+static ULONG Bc250DisplayPairedSampleCompare(
+    _In_ UINT64 SourceOffset,
+    _In_ UINT64 ScanoutOffset,
+    _In_ ULONG Bytes,
+    _Out_ ULONG *MismatchCount,
+    _Out_ UINT64 *FirstMismatch)
+{
+    volatile CONST UCHAR *base = (volatile CONST UCHAR *)g_Bc250DisplayState.FrameBufferVirtual;
+    ULONG stride = ((Bytes - sizeof(ULONG)) / 256u) & ~3u;
+    ULONG index;
+    *MismatchCount = 0u;
+    *FirstMismatch = ~(UINT64)0;
+    if (stride == 0u) stride = sizeof(ULONG);
+    for (index = 0u; index < 256u; ++index) {
+        ULONG offset = index * stride;
+        ULONG srcWord, dstWord;
+        if (offset > Bytes - sizeof(ULONG)) break;
+        srcWord = *(volatile CONST ULONG *)(base + SourceOffset + offset);
+        dstWord = *(volatile CONST ULONG *)(base + ScanoutOffset + offset);
+        if (srcWord != dstWord) {
+            if (*FirstMismatch == ~(UINT64)0) *FirstMismatch = offset;
+            ++*MismatchCount;
+        }
+    }
+    return index;
+}
+
+static NTSTATUS Bc250DisplayCopyPrimaryToGop(
+    _In_ const char *Route,
+    _In_ UINT32 SegmentId,
+    _In_ UINT64 SourceOffset,
+    _In_ BOOLEAN ModeChangeOnly)
+{
+    LONG sequence = InterlockedIncrement(&s_Bc250PrimaryCopySequence);
+    UINT64 scanoutOffset;
+    UINT64 sourceMc;
+    ULONG bytes;
+    ULONG srcNz = 0u, srcHash = 0u, beforeNz = 0u, beforeHash = 0u;
+    ULONG afterNz = 0u, afterHash = 0u;
+    UINT64 firstMismatch = ~(UINT64)0;
+    ULONG mismatchCount = 0u;
+    ULONG sampleIndex;
+    BOOLEAN copied;
+    BOOLEAN srcSampled;
+    BOOLEAN beforeSampled;
+    BOOLEAN afterSampled;
+
+    if (SegmentId != 1u || !g_Bc250SdmaPresent.Initialized ||
+        !g_Bc250SdmaPresent.HardwareEnabled ||
+        g_Bc250SdmaPresent.ScanoutGpuAddress < g_Bc250SdmaPresent.VramMcStart ||
+        g_Bc250DisplayState.FrameBufferVirtual == NULL) {
+        Bc250DisplayLog("[PRIMARY_COPY #%ld] REJECT Route=%s Seg=%u SrcOff=0x%llX Init=%u Hw=%u ScanoutMc=0x%llX VramMc=0x%llX Map=%p Status=DEVICE_NOT_READY\n",
+            sequence, Route, SegmentId, SourceOffset,
+            g_Bc250SdmaPresent.Initialized ? 1u : 0u,
+            g_Bc250SdmaPresent.HardwareEnabled ? 1u : 0u,
+            g_Bc250SdmaPresent.ScanoutGpuAddress,
+            g_Bc250SdmaPresent.VramMcStart,
+            g_Bc250DisplayState.FrameBufferVirtual);
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    scanoutOffset = g_Bc250SdmaPresent.ScanoutGpuAddress -
+        g_Bc250SdmaPresent.VramMcStart;
+    bytes = g_Bc250DisplayState.CurrentMode.Pitch *
+        g_Bc250DisplayState.CurrentMode.Height;
+    if (bytes < sizeof(ULONG) || SourceOffset > ~(UINT64)0 -
+            g_Bc250SdmaPresent.VramMcStart) {
+        Bc250DisplayLog("[PRIMARY_COPY #%ld] REJECT Route=%s Seg=%u SrcOff=0x%llX DstOff=0x%llX Bytes=%u MapBytes=%u Status=INVALID_PARAMETER\n",
+            sequence, Route, SegmentId, SourceOffset, scanoutOffset,
+            bytes, g_Bc250DisplayState.FrameBufferSize);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    sourceMc = g_Bc250SdmaPresent.VramMcStart + SourceOffset;
+    srcSampled = Bc250DisplaySampleSurface(SourceOffset, bytes, 256u,
+        &srcNz, &srcHash);
+    beforeSampled = Bc250DisplaySampleSurface(scanoutOffset, bytes, 256u,
+        &beforeNz, &beforeHash);
+    if (!srcSampled || !beforeSampled) {
+        Bc250DisplayLog("[PRIMARY_COPY #%ld] SAMPLE_UNAVAILABLE Route=%s SrcSample=%u DstBeforeSample=%u; CPU BAR may cover less than local VRAM; SDMA still attempted\n",
+            sequence, Route, srcSampled ? 1u : 0u,
+            beforeSampled ? 1u : 0u);
+    }
+
+    Bc250DisplayLog("[PRIMARY_COPY #%ld] BEGIN Route=%s Seg=%u SrcOff=0x%llX SrcMc=0x%llX DstOff=0x%llX DstMc=0x%llX Bytes=%u Pitch=%u SrcSample=%u SrcNZ=%u/256 SrcHash=%08X DstBeforeSample=%u DstBeforeNZ=%u/256 DstBeforeHash=%08X\n",
+        sequence, Route, SegmentId, SourceOffset, sourceMc, scanoutOffset,
+        g_Bc250SdmaPresent.ScanoutGpuAddress, bytes,
+        g_Bc250DisplayState.CurrentMode.Pitch,
+        srcSampled ? 1u : 0u, srcNz, srcHash,
+        beforeSampled ? 1u : 0u, beforeNz, beforeHash);
+
+    if (SourceOffset == scanoutOffset) {
+        Bc250DisplayLog("[PRIMARY_COPY #%ld] ALIAS: source is inherited GOP scanout; no SDMA copy, bytes already at destination; visibility on monitor NOT PROVEN\n",
+            sequence);
+        return STATUS_SUCCESS;
+    }
+
+    /*
+     * DX.33 -- MODE CHANGE NAO APAGA O SCANOUT COM PRIMARIA VAZIA.
+     *
+     * Corrida 78 (P0 amostral): as 16 PRIMARY_COPY da rota SET_ADDRESS vieram
+     * todas com Flags=0x1 (ModeChange, d3dkmddi.h) e origem 0/256 -- a
+     * primaria do GOP 0xAAC000 e as primarias novas do DWM, que ninguem
+     * desenhou ainda. No modelo Blt o Present escreve DIRETO no scanout, entao
+     * copiar essa primaria apagava o quadro valido: 86/256 (o 1280x720 do
+     * harness) -> 0/256 em #5-#8, e 256/256 -> 0/256 em #12. Na 77, 8 de 8
+     * SET_ADDRESS tambem tinham origem zero.
+     *
+     * Pula SO' se as duas condicoes valem: (1) o dxgkrnl declarou ModeChange
+     * sem FlipImmediate/FlipOnNextVSync -- troca de modo, nao flip; (2) uma
+     * amostragem de 1024 dwords da origem e' INTEIRAMENTE zero. Origem com
+     * qualquer amostra nao-nula copia como antes; flips (MPO1/MPO3) nao passam
+     * por aqui. Risco declarado: uma primaria com conteudo esparso que caia
+     * fora das 1024 amostras nao seria copiada ate o proximo Present/flip.
+     */
+    if (ModeChangeOnly && srcSampled) {
+        ULONG denseNz = 0u, denseHash = 0u;
+        if (Bc250DisplaySampleSurface(SourceOffset, bytes, 1024u,
+                &denseNz, &denseHash) && denseNz == 0u) {
+            Bc250DisplayLog("[PRIMARY_COPY #%ld] MODECHANGE_BLANK_SKIP Route=%s SrcOff=0x%llX SrcNZ=0/1024: ModeChange sem flip para primaria sem conteudo amostrado; scanout PRESERVADO (DstNZ=%u/256 DstHash=%08X) Status=SUCCESS\n",
+                sequence, Route, SourceOffset, beforeNz, beforeHash);
+            return STATUS_SUCCESS;
+        }
+    }
+
+    /*
+     * DX.32 -- NAO REPETIR A COPIA QUE O PRESENT ACABOU DE FAZER.
+     *
+     * Corrida 77 (P0): as 22 PRIMARY_COPY nao-nulas do MPO3 copiavam a MESMA
+     * origem que o DxgkDdiPresent imediatamente anterior ja tinha copiado por
+     * SDMA (Present #1 e #4 de 0x153C000; #10 e #12 de 0x266C000), e as 256
+     * amostras do destino ja batiam com a origem antes da copia em 22 de 22.
+     * Era uma segunda copia sincrona de ~11 MB numa DDI que a Microsoft
+     * documenta como chamada em nivel de interrupcao, bloqueando o scheduler.
+     *
+     * Pula SO' se as DUAS condicoes valem: (1) a fonte unica em
+     * bc250_sdma_present.c diz que a ultima escrita no scanout foi a copia
+     * INTEGRAL desta mesma origem, sem escrita posterior; (2) as 256 amostras
+     * pareadas conferem AGORA, com origem nao-nula. Qualquer uma falhando, a
+     * copia acontece como antes. Nao e' prova integral de bytes; e' a mesma
+     * classe de prova amostral do END, e o rotulo diz isso.
+     */
+    if (srcSampled && beforeSampled && srcNz != 0u) {
+        LONG holdSeq = 0;
+        if (Bc250SdmaPresentScanoutHoldsFullCopyOf(sourceMc, bytes, &holdSeq)) {
+            ULONG preMismatch = 0u;
+            UINT64 preFirst = ~(UINT64)0;
+            ULONG prePairs = Bc250DisplayPairedSampleCompare(SourceOffset, scanoutOffset,
+                bytes, &preMismatch, &preFirst);
+            if (preMismatch == 0u && prePairs == 256u) {
+                Bc250DisplayLog("[PRIMARY_COPY #%ld] REDUNDANT_SKIP Route=%s SrcOff=0x%llX: ultima escrita no scanout (#%ld) foi a copia INTEGRAL desta origem e %u/256 amostras pareadas conferem; SDMA NAO repetida Proof=SAMPLED_MATCH_NONZERO_NOT_FULL_BYTE_PROOF Status=SUCCESS\n",
+                    sequence, Route, SourceOffset, holdSeq, prePairs);
+                return STATUS_SUCCESS;
+            }
+            Bc250DisplayLog("[PRIMARY_COPY #%ld] REDUNDANT_CANDIDATE_REJEITADO Route=%s: marca de copia integral presente, mas %u/%u pares divergem (primeiro 0x%llX); copia SDMA executada\n",
+                sequence, Route, preMismatch, prePairs, preFirst);
+        }
+    }
+
+    copied = Bc250SdmaPresentBlt(sourceMc,
+        g_Bc250SdmaPresent.ScanoutGpuAddress, bytes);
+    afterSampled = Bc250DisplaySampleSurface(scanoutOffset, bytes, 256u,
+        &afterNz, &afterHash);
+    if (!copied) {
+        Bc250DisplayLog("[PRIMARY_COPY #%ld] FAIL Route=%s Sdma=0 DstAfterSample=%u DstAfterNZ=%u/256 DstAfterHash=%08X Status=GPU_EXCEPTION; no successful primary switch\n",
+            sequence, Route, afterSampled ? 1u : 0u,
+            afterNz, afterHash);
+        return STATUS_GRAPHICS_GPU_EXCEPTION_ON_DEVICE;
+    }
+
+    if (!srcSampled || !afterSampled) {
+        Bc250DisplayLog("[PRIMARY_COPY #%ld] END Route=%s Sdma=YES FenceAndRptr=YES Proof=DATA_UNOBSERVED_CPU_MAP SrcSample=%u DstAfterSample=%u Visibility=NOT_PROVEN Status=SUCCESS_ENGINE_ONLY\n",
+            sequence, Route, srcSampled ? 1u : 0u,
+            afterSampled ? 1u : 0u);
+        return STATUS_SUCCESS;
+    }
+
+    sampleIndex = Bc250DisplayPairedSampleCompare(SourceOffset, scanoutOffset,
+        bytes, &mismatchCount, &firstMismatch);
+    if (mismatchCount != 0u) {
+        /* A origem pode ser reescrita pelo produtor entre a fence da SDMA
+         * e esta leitura de CPU. A divergencia perde a prova de dados, mas
+         * nao refuta a conclusao fisica da engine nem justifica device-lost. */
+        Bc250DisplayLog("[PRIMARY_COPY #%ld] SAMPLE_MISMATCH_INCONCLUSIVE Route=%s Count=%u/256 FirstOffset=0x%llX SrcNZ=%u/256 DstNZ=%u/256 Sdma=YES Status=SUCCESS_ENGINE_ONLY\n",
+            sequence, Route, mismatchCount, firstMismatch, srcNz, afterNz);
+    }
+    Bc250DisplayLog("[PRIMARY_COPY #%ld] END Route=%s Sdma=YES FenceAndRptr=YES SrcNZ=%u/256 SrcHash=%08X DstAfterNZ=%u/256 DstAfterHash=%08X PairedSamples=%u Mismatch=%u Proof=%s Visibility=NOT_PROVEN Status=SUCCESS\n",
+        sequence, Route, srcNz, srcHash, afterNz, afterHash,
+        sampleIndex, mismatchCount,
+        mismatchCount != 0u ? "SAMPLE_MISMATCH_INCONCLUSIVE" :
+            (afterNz == 0u ? "MATCH_BLANK_INCONCLUSIVE" :
+                "SAMPLED_MATCH_NONZERO_NOT_FULL_BYTE_PROOF"));
+    return STATUS_SUCCESS;
+}
+
+static volatile LONG g_Bc250DisplaySyntheticEdidEnabled = 0; /* Default: 0 (disabled) para forçar o DMM a usar DxgkDdiRecommendMonitorModes */
+
+void Bc250DisplaySetSyntheticEdidEnabled(BOOLEAN Enabled)
+{
+    InterlockedExchange(&g_Bc250DisplaySyntheticEdidEnabled, Enabled ? 1 : 0);
+    g_Bc250DisplayState.EdidValid = Enabled;
+    Bc250DisplayLog("[DisplayConfig] Synthetic EDID %s\n", Enabled ? "ENABLED" : "DISABLED (using DxgkDdiRecommendMonitorModes)");
+}
+
+_Check_return_
+BOOLEAN Bc250DisplayGetSyntheticEdidEnabled(void)
+{
+    return InterlockedCompareExchange(&g_Bc250DisplaySyntheticEdidEnabled, 0, 0) != 0;
+}
+
+/*
+ * Timings físicos reais ancorados na medição de hardware do OTG
+ * (docs/evidence/2026-09-02_21-40-32-.../dcn_inventory.json):
+ * mmOTG0_OTG_H_TOTAL: 2783 (+1 = 2784) -> HBLANK = 224
+ * mmOTG0_OTG_V_TOTAL: 1110 (+1 = 1111) -> VBLANK = 31
+ * Ancoragem: VSyncFreq = 5613 / 100 Hz (56.13 Hz)
+ * HSyncFreq = vTotal * VSyncFreq = 1111 * 56.13 = 62360.43 Hz (6236043 / 100)
+ * PixelRate = hTotal * HSyncFreq = 2784 * 62360.43 = 173,611,437 Hz
+ */
+#define BC250_NATIVE_HBLANK         224u
+#define BC250_NATIVE_VBLANK         31u
+#define BC250_NATIVE_REFRESH_NUM    5613u
+#define BC250_NATIVE_REFRESH_DEN    100u
+#define BC250_NATIVE_HSYNC_NUM      6236043u
+#define BC250_NATIVE_HSYNC_DEN      100u
+#define BC250_NATIVE_PIXEL_RATE     173611437ULL
 
 #include <stdarg.h>
 
@@ -41,11 +988,243 @@ NTSYSAPI NTSTATUS NTAPI ZwFlushBuffersFile(
 #endif
 
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
+#define BC250_PAGING_LOG_RING_SIZE (128u * 1024u)
+static char g_Bc250PagingLogRing[BC250_PAGING_LOG_RING_SIZE];
+static ULONG g_Bc250PagingLogHead = 0u;
+static ULONG g_Bc250PagingLogTail = 0u;
+static KSPIN_LOCK g_Bc250PagingLogLock;
+static volatile LONG g_Bc250PagingLogLockInitOnce = 0;
+
+/*
+ * C3.16 (12/09) -- AMOSTRAGEM DO LOG DE ALTO VOLUME.
+ *
+ * A corrida 18:45 produziu 1.179.761 linhas / 100 MB em cerca de cinco
+ * minutos enquanto a tela parecia congelada. O KMD continuou vivo (8.895
+ * submits aposentados e 38.090 flushes publicados), portanto o proprio log
+ * fazia parte do experimento: cada linha normal ainda passava por DbgPrintEx
+ * e, em PASSIVE_LEVEL, por abrir/escrever/flushar/fechar o arquivo.
+ *
+ * Preservamos integralmente falhas e vereditos. Apenas as classes repetitivas
+ * de sucesso sao emitidas nas primeiras 16 ocorrencias e depois a cada 1024.
+ * Os contadores atomicos continuam exatos mesmo quando a linha e suprimida.
+ */
+/*
+ * I3 (13/09) -- A CLASSE 12 ESTAVA CEGANDO O CICLO DE VIDA DE DEVICE E CONTEXTO.
+ *
+ * [McdmQAI], [McdmCreateDevice] e [McdmCreateContext] compartilhavam UM contador.
+ * O [McdmQAI] sai em rajada no bind (17 linhas medidas na corrida 16:28:27) e
+ * consome sozinho as 16 primeiras ocorrencias da classe; dali em diante so' passa
+ * 1 em 1024. Resultado medido: o dwm.exe criou e destruiu 90 devices na corrida e
+ * o log do KMD nao registrou NENHUM [McdmCreateDevice] nem [McdmCreateContext].
+ *
+ * As tres classes agora tem contadores independentes (12, 13 e 14). E' a MESMA
+ * classe de defeito do teto de escape corrigido em 13/09 11:32: teto global que
+ * nao alcanca -- aqui, teto compartilhado que outra tag esgota.
+ *
+ * CORRIDA 17:18:35 -- A MESMA FALHA ESTAVA NA CLASSE 9 E EU NAO A TINHA VISTO.
+ * `[CreateAllocation]`, `[ActiveOpenAlloc]`, `[McdmCreateAllocation]` e
+ * `[McdmCloseAllocation]` dividiam um contador: 45 linhas da classe contra o
+ * orcamento de 16 primeiras. Por isso "Primary token confirmed (UMD" nao saiu
+ * NENHUMA vez mesmo com a primaria de UMD funcionando -- na mesma corrida o
+ * SetVidPnSourceAddress foi para hAlloc=0xA8, alocacao criada pela UMD, o que
+ * o dxgkrnl so' faz com uma primaria aceita. A ausencia era artefato do logger,
+ * nao medicao, e custou a conclusividade do criterio.
+ *
+ * Cada tag da classe 9 passa a ter contador proprio (9, 15, 16 e 17).
+ */
+#define BC250_VERBOSE_LOG_CLASS_COUNT 18u
+#define BC250_VERBOSE_LOG_FIRST       16L
+#define BC250_VERBOSE_LOG_PERIOD      1024L
+static volatile LONG g_Bc250VerboseLogOrdinal[BC250_VERBOSE_LOG_CLASS_COUNT];
+
+static BOOLEAN Bc250LogTextStartsWith(
+    _In_ const char *Text,
+    _In_ const char *Prefix)
+{
+    while (*Prefix != '\0') {
+        if (*Text++ != *Prefix++) return FALSE;
+    }
+    return TRUE;
+}
+
+static BOOLEAN Bc250LogTextContains(
+    _In_ const char *Text,
+    _In_ const char *Needle)
+{
+    const char *candidate;
+    if (*Needle == '\0') return TRUE;
+    for (candidate = Text; *candidate != '\0'; ++candidate) {
+        const char *left = candidate;
+        const char *right = Needle;
+        while (*left != '\0' && *right != '\0' && *left == *right) {
+            ++left;
+            ++right;
+        }
+        if (*right == '\0') return TRUE;
+    }
+    return FALSE;
+}
+
+static BOOLEAN Bc250ShouldEmitVerboseLog(
+    _In_ const char *Text,
+    _Out_ ULONG *ClassId,
+    _Out_ LONG *Ordinal)
+{
+    ULONG classId = 0u;
+    LONG ordinal;
+
+    *ClassId = 0u;
+    *Ordinal = 0L;
+
+    /* Falha, recusa e discriminante nunca sao amostrados. */
+    if (Bc250LogTextContains(Text, "NO_SPACE") ||
+        Bc250LogTextContains(Text, "FAIL") ||
+        Bc250LogTextContains(Text, "FALHA") ||
+        Bc250LogTextContains(Text, "RECUSA") ||
+        Bc250LogTextContains(Text, "TIMEOUT") ||
+        Bc250LogTextContains(Text, "FAULT") ||
+        Bc250LogTextContains(Text, "DIVERGENCIA") ||
+        Bc250LogTextContains(Text, "OCUPACAO") ||
+        /*
+         * COMPOSICAO sai da amostragem (Corrida 45, 20/09). A linha
+         * PUBLICACAO_COMPOSICAO foi adicionada na faixa D3 para dizer se a
+         * falha de publicacao de GPUVA e' de ORDEM ou de CAPACIDADE, e saiu
+         * ZERO vezes em 10 PUBLICACAO_FALHA daquela corrida -- a string estava
+         * no SYS assinado, mas a isencao do amostrador casa por SUBSTRING
+         * ("FALHA", "OCUPACAO", "PASS"...) e o nome escolhido nao continha
+         * nenhum token isento. Caiu na classe 4 e foi amostrada fora,
+         * exatamente na medicao que a faixa existia para obter.
+         */
+        Bc250LogTextContains(Text, "COMPOSICAO") ||
+        /*
+         * Corrida 57: o fault nao latchou, mas o UpdatePageTable que cobre
+         * 0x200040000 aconteceu uma unica vez. A identidade/permissao desse
+         * alvo nao pode ser amostrada fora justamente por ser rara.
+         */
+        Bc250LogTextContains(Text, "DX_TARGET_200040") ||
+        /* DX.36: mesmo motivo para o alvo da escrita sem permissao (80/81). */
+        Bc250LogTextContains(Text, "DX_TARGET_2401A1") ||
+        /* DX.43: uma linha por troca de VMID -- e' a variavel da Corrida 86. */
+        Bc250LogTextContains(Text, "DX43_VMID_WARMUP") ||
+        /* DX.44: a DDI de preempcao tem teto proprio no emissor (Corrida 87). */
+        Bc250LogTextContains(Text, "PREEMPT_COMMAND") ||
+        /* DX.47: conclusao e espera da preempcao (teto proprio no emissor). */
+        Bc250LogTextContains(Text, "PREEMPT_DONE") ||
+        /* DX.48: ciclo de vida do adaptador e o QAI Type=29 (ultima linha dos
+         * travamentos 88/92) nunca podem ser amostrados fora. */
+        Bc250LogTextContains(Text, "DX48_LIFECYCLE") ||
+        /* DX.52: recusa de CreateAllocation (laco do Explorer, Corridas 93..97). */
+        Bc250LogTextContains(Text, "CREATE_ALLOC_RECUSADO") ||
+        (Bc250LogTextStartsWith(Text, "[McdmQAI]") && Bc250LogTextContains(Text, "Type=29,")) ||
+        Bc250LogTextContains(Text, "PREEMPT_WAIT") ||
+        /* DX.45: reset silencioso do CP (Corrida 88); teto de 16 no emissor. */
+        Bc250LogTextContains(Text, "CP_RESET_DETECTED") ||
+        /*
+         * DX.12: a mascara de VMIDs invalidados e a MEDICAO da Corrida 59.
+         * A linha comeca com "[FLUSH_POOL_VMIDS]", que cairia na classe 5
+         * ("[FlushMappedGfxhubTlb] " nao, mas o ramo final devolve TRUE para
+         * tag desconhecida) -- o risco real e' alguem futuramente lhe dar uma
+         * classe. A isencao explicita e' a armadilha 16 ja paga: PUBLICACAO_
+         * COMPOSICAO saiu ZERO vezes em 10 falhas porque o nome escolhido nao
+         * continha token isento. O teto desta linha e' proprio, no emissor.
+         */
+        Bc250LogTextContains(Text, "FLUSH_POOL_VMIDS") ||
+        /*
+         * DX.13: as tres linhas da escrita de diretorio de paginas. Todas sao
+         * raras POR CONSTRUCAO -- PDE_WRITE so sai quando a atualizacao cobre
+         * o indice da arena, e as outras duas so saem quando algo anormal
+         * acontece. Rara e critica e exatamente o perfil que a armadilha 16
+         * queimou uma vez: PUBLICACAO_COMPOSICAO saiu ZERO vezes em 10 falhas
+         * por nao ter token isento. PDE_TRIPWIRE ja carrega FALHA, mas nao
+         * dependa disso -- o nome pode mudar e a isencao nao pode depender de
+         * uma palavra no meio do texto.
+         */
+        Bc250LogTextContains(Text, "PDE_WRITE") ||
+        Bc250LogTextContains(Text, "PDE_ARENA_CONFRONTO") ||
+        Bc250LogTextContains(Text, "PDE_TRIPWIRE") ||
+        Bc250LogTextContains(Text, "PDE_LARGEPAGE") ||
+        Bc250LogTextContains(Text, "REJECT") ||
+        Bc250LogTextContains(Text, "ERROR") ||
+        Bc250LogTextContains(Text, "FAILED") ||
+        Bc250LogTextContains(Text, "PASS") ||
+        Bc250LogTextContains(Text, "PROVADO") ||
+        Bc250LogTextContains(Text, "VEREDITO") ||
+        /*
+         * CTX_PROBE e CONTEXT SWITCH saem da amostragem (13/09): sao as
+         * linhas que dizem se a root do VMID do contexto foi instalada
+         * antes da submissao, e na corrida 08:12 sobraram 3 CTX_PROBE em
+         * ~958 submissoes -- justamente o dado que faltava. Sao raras por
+         * natureza (uma por troca de contexto), nao um diluvio.
+         */
+        Bc250LogTextContains(Text, "CTX_PROBE") ||
+        Bc250LogTextContains(Text, "CONTEXT SWITCH") ||
+        Bc250LogTextContains(Text, "IB EXECUTADO") ||
+        Bc250LogTextContains(Text, "IB_ENGINE_2LEGS") ||
+        Bc250LogTextContains(Text, "TDR_") ||
+        Bc250LogTextContains(Text, "DEVICE_REMOVED")) {
+        return TRUE;
+    }
+
+    if (Bc250LogTextStartsWith(Text, "[McdmBuildPagingBuffer]")) {
+        classId = 1u;
+    } else if (Bc250LogTextStartsWith(Text, "[UpdatePT] ") ||
+               Bc250LogTextStartsWith(Text, "[UpdatePT Lvl=")) {
+        classId = 2u;
+    } else if (Bc250LogTextStartsWith(Text, "[ActiveUpdatePT] ")) {
+        classId = 3u;
+    } else if (Bc250LogTextStartsWith(Text, "[ActiveFlushTlb]")) {
+        classId = 4u;
+    } else if (Bc250LogTextStartsWith(Text, "[FlushMappedGfxhubTlb] ")) {
+        classId = 5u;
+    } else if (Bc250LogTextStartsWith(Text, "[PT_WALK ") ||
+               Bc250LogTextStartsWith(Text, "[PT_RANGE ") ||
+               Bc250LogTextStartsWith(Text, "[PT_READ] ")) {
+        classId = 6u;
+    } else if (Bc250LogTextStartsWith(Text, "[SubmitVirtual Node0 SDMA]")) {
+        classId = 7u;
+    } else if (Bc250LogTextStartsWith(Text, "[TransferVirtual]") ||
+               Bc250LogTextStartsWith(Text, "[FillVirtual]")) {
+        classId = 8u;
+    } else if (Bc250LogTextStartsWith(Text, "[ActiveOpenAlloc]")) {
+        classId = 9u;
+    } else if (Bc250LogTextStartsWith(Text, "[CreateAllocation]")) {
+        classId = 15u;
+    } else if (Bc250LogTextStartsWith(Text, "[McdmCreateAllocation]")) {
+        classId = 16u;
+    } else if (Bc250LogTextStartsWith(Text, "[McdmCloseAllocation]")) {
+        classId = 17u;
+    } else if (Bc250LogTextStartsWith(Text, "[SdmaRetire]")) {
+        classId = 10u;
+    } else if (Bc250LogTextStartsWith(Text, "[McdmSubmitCommandVirtual]")) {
+        classId = 11u;
+    } else if (Bc250LogTextStartsWith(Text, "[McdmQAI]")) {
+        classId = 12u;
+    } else if (Bc250LogTextStartsWith(Text, "[McdmCreateDevice]")) {
+        classId = 13u;
+    } else if (Bc250LogTextStartsWith(Text, "[McdmCreateContext]")) {
+        classId = 14u;
+    } else {
+        return TRUE;
+    }
+
+    ordinal = InterlockedIncrement(&g_Bc250VerboseLogOrdinal[classId]);
+    *ClassId = classId;
+    *Ordinal = ordinal;
+    return ordinal <= BC250_VERBOSE_LOG_FIRST ||
+        (ordinal % BC250_VERBOSE_LOG_PERIOD) == 0L;
+}
+
 void Bc250DisplayLog(const char *Format, ...)
 {
     char buffer[512];
     va_list args;
     int len;
+    ULONG sampleClass = 0u;
+    LONG sampleOrdinal = 0L;
+
+    if (InterlockedCompareExchange(&g_Bc250PagingLogLockInitOnce, 1, 0) == 0) {
+        KeInitializeSpinLock(&g_Bc250PagingLogLock);
+    }
 
     va_start(args, Format);
     len = _vsnprintf(buffer, sizeof(buffer) - 1, Format, args);
@@ -53,9 +1232,50 @@ void Bc250DisplayLog(const char *Format, ...)
     if (len <= 0) return;
     buffer[len] = '\0';
 
-    DbgPrintEx(DPFLTR_IHVVIDEO_ID, DPFLTR_ERROR_LEVEL, "[BC250] %s", buffer);
+    if (!Bc250ShouldEmitVerboseLog(buffer, &sampleClass, &sampleOrdinal)) {
+        return;
+    }
 
-    if (KeGetCurrentIrql() == PASSIVE_LEVEL) {
+    /*
+     * DX.86 -- SEM DbgPrintEx NO CAMINHO DO LOG.
+     *
+     * Corrida 132 (P0): com DEBUG/DEBUGPORT=NET no boot, 536 de 10.615 FLUSH_TLB
+     * duraram exatamente ~510 ms ou ~1.030 ms, o VidMm passou 96% da janela em
+     * PagingPreparation (ETW) e o Present do DWM ficou 88-116 s por chamada.
+     * Cada linha emitida passava por DbgPrintEx em DPFLTR_ERROR_LEVEL, que
+     * nenhum filtro barra, e com depurador de kernel habilitado isso vai ao
+     * transporte KD. O arquivo C:\BC250_DISPLAY_LOG.txt e' a evidencia; o
+     * espelho em DbgPrint so' custava tempo e mudava o experimento.
+     */
+
+    /*
+     * Operacoes de paginacao (VidMm DxgkDdiBuildPagingBuffer e rotinas associadas)
+     * rodam em PASSIVE_LEVEL na paging thread do sistema, mas NUNCA podem realizar
+     * I/O sincrono de arquivo em disco. Fazer ZwCreateFile/ZwFlushBuffersFile na
+     * paging thread causa deadlock circular imediato com NTFS/Cache Manager/Storport.
+     * Quando g_Bc250PagingActiveCount > 0 ou IRQL > PASSIVE_LEVEL, armazenamos as
+     * mensagens no buffer circular em memoria RAM (zero disco, zero deadlock).
+     * Quando g_Bc250PagingActiveCount == 0 em PASSIVE_LEVEL, o buffer e' descarregado
+     * em lote para C:\BC250_DISPLAY_LOG.txt.
+     */
+    if (KeGetCurrentIrql() > PASSIVE_LEVEL ||
+        InterlockedCompareExchange(&g_Bc250PagingActiveCount, 0, 0) > 0) {
+        KIRQL irql;
+        KeAcquireSpinLock(&g_Bc250PagingLogLock, &irql);
+        for (int i = 0; i < len; ++i) {
+            ULONG next = (g_Bc250PagingLogHead + 1u) % BC250_PAGING_LOG_RING_SIZE;
+            if (next == g_Bc250PagingLogTail) {
+                g_Bc250PagingLogTail = (g_Bc250PagingLogTail + 1u) % BC250_PAGING_LOG_RING_SIZE;
+            }
+            g_Bc250PagingLogRing[g_Bc250PagingLogHead] = buffer[i];
+            g_Bc250PagingLogHead = next;
+        }
+        KeReleaseSpinLock(&g_Bc250PagingLogLock, irql);
+        return;
+    }
+
+    if (KeGetCurrentIrql() == PASSIVE_LEVEL &&
+        InterlockedCompareExchange(&g_Bc250PagingActiveCount, 0, 0) == 0) {
         UNICODE_STRING logFileName = RTL_CONSTANT_STRING(L"\\DosDevices\\C:\\BC250_DISPLAY_LOG.txt");
         OBJECT_ATTRIBUTES objAttr;
         IO_STATUS_BLOCK ioStatus;
@@ -63,11 +1283,47 @@ void Bc250DisplayLog(const char *Format, ...)
 
         InitializeObjectAttributes(&objAttr, &logFileName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
         if (NT_SUCCESS(ZwCreateFile(&fileHandle, FILE_APPEND_DATA | SYNCHRONIZE, &objAttr, &ioStatus, NULL, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_OPEN_IF, FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0))) {
+            /* Drena logs acumulados em memoria antes do buffer corrente */
+            char drainBuf[4096];
+            ULONG drainLen = 0u;
+            do {
+                KIRQL irql;
+                drainLen = 0u;
+                KeAcquireSpinLock(&g_Bc250PagingLogLock, &irql);
+                while (g_Bc250PagingLogTail != g_Bc250PagingLogHead && drainLen < sizeof(drainBuf)) {
+                    drainBuf[drainLen++] = g_Bc250PagingLogRing[g_Bc250PagingLogTail];
+                    g_Bc250PagingLogTail = (g_Bc250PagingLogTail + 1u) % BC250_PAGING_LOG_RING_SIZE;
+                }
+                KeReleaseSpinLock(&g_Bc250PagingLogLock, irql);
+                if (drainLen > 0u) {
+                    (void)ZwWriteFile(fileHandle, NULL, NULL, NULL, &ioStatus, drainBuf, drainLen, NULL, NULL);
+                }
+            } while (drainLen == sizeof(drainBuf));
+
             (void)ZwWriteFile(fileHandle, NULL, NULL, NULL, &ioStatus, buffer, (ULONG)len, NULL, NULL);
             (void)ZwFlushBuffersFile(fileHandle, &ioStatus);
             ZwClose(fileHandle);
         }
     }
+}
+
+void Bc250DisplayLogSamplingSummary(void)
+{
+    Bc250DisplayLog("[LOG_SAMPLING_SUMMARY] BuildPaging=%ld UpdatePT=%ld ActiveUpdatePT=%ld Flush=%ld FlushMapped=%ld PtWalk=%ld SubmitNode0=%ld PagingOps=%ld Alloc=%ld Retire=%ld SubmitDdi=%ld MiscDdi=%ld First=%ld Period=%ld\n",
+        g_Bc250VerboseLogOrdinal[1],
+        g_Bc250VerboseLogOrdinal[2],
+        g_Bc250VerboseLogOrdinal[3],
+        g_Bc250VerboseLogOrdinal[4],
+        g_Bc250VerboseLogOrdinal[5],
+        g_Bc250VerboseLogOrdinal[6],
+        g_Bc250VerboseLogOrdinal[7],
+        g_Bc250VerboseLogOrdinal[8],
+        g_Bc250VerboseLogOrdinal[9],
+        g_Bc250VerboseLogOrdinal[10],
+        g_Bc250VerboseLogOrdinal[11],
+        g_Bc250VerboseLogOrdinal[12],
+        BC250_VERBOSE_LOG_FIRST,
+        BC250_VERBOSE_LOG_PERIOD);
 }
 #endif
 
@@ -121,15 +1377,9 @@ static VOID Bc250FillNativeSignalInfo(
         BC250_NATIVE_HBLANK;
     verticalTotal = (ULONGLONG)g_Bc250DisplayState.CurrentMode.Height +
         BC250_NATIVE_VBLANK;
-    refreshNumerator =
-        g_Bc250DisplayState.CurrentMode.RefreshRateNumerator;
-    refreshDenominator =
-        g_Bc250DisplayState.CurrentMode.RefreshRateDenominator;
-    pixelRate = horizontalTotal * verticalTotal * refreshNumerator;
-    if (refreshDenominator != 0u) {
-        pixelRate = (pixelRate + (refreshDenominator / 2u)) /
-            refreshDenominator;
-    }
+    refreshNumerator = BC250_NATIVE_REFRESH_NUM;
+    refreshDenominator = BC250_NATIVE_REFRESH_DEN;
+    pixelRate = BC250_NATIVE_PIXEL_RATE;
 
     SignalInfo->VideoStandard = D3DKMDT_VSS_OTHER;
     SignalInfo->TotalSize.cx = (UINT)horizontalTotal;
@@ -138,16 +1388,19 @@ static VOID Bc250FillNativeSignalInfo(
         g_Bc250DisplayState.CurrentMode.Width;
     SignalInfo->ActiveSize.cy =
         g_Bc250DisplayState.CurrentMode.Height;
-    SignalInfo->VSyncFreq.Numerator =
-        g_Bc250DisplayState.CurrentMode.RefreshRateNumerator;
-    SignalInfo->VSyncFreq.Denominator =
-        g_Bc250DisplayState.CurrentMode.RefreshRateDenominator;
-    SignalInfo->HSyncFreq.Numerator =
-        (UINT)(verticalTotal * refreshNumerator);
-    SignalInfo->HSyncFreq.Denominator =
-        g_Bc250DisplayState.CurrentMode.RefreshRateDenominator;
+    SignalInfo->VSyncFreq.Numerator = (UINT)refreshNumerator;
+    SignalInfo->VSyncFreq.Denominator = (UINT)refreshDenominator;
+    SignalInfo->HSyncFreq.Numerator = BC250_NATIVE_HSYNC_NUM;
+    SignalInfo->HSyncFreq.Denominator = BC250_NATIVE_HSYNC_DEN;
     SignalInfo->PixelRate = pixelRate;
     SignalInfo->ScanLineOrdering = D3DDDI_VSSLO_PROGRESSIVE;
+
+    Bc250DisplayLog("[SignalInfo] Active=%ux%u, Total=%ux%u, VSync=%u/%u Hz, HSync=%u/%u Hz, PixelRate=%I64u\n",
+        SignalInfo->ActiveSize.cx, SignalInfo->ActiveSize.cy,
+        SignalInfo->TotalSize.cx, SignalInfo->TotalSize.cy,
+        SignalInfo->VSyncFreq.Numerator, SignalInfo->VSyncFreq.Denominator,
+        SignalInfo->HSyncFreq.Numerator, SignalInfo->HSyncFreq.Denominator,
+        SignalInfo->PixelRate);
 }
 
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
@@ -173,7 +1426,11 @@ static BOOLEAN Bc250SynchronizedVsyncCallback(
         interruptType == (LONG)DXGK_INTERRUPT_CRTC_VSYNC_WITH_MULTIPLANE_OVERLAY) {
         data.InterruptType = DXGK_INTERRUPT_CRTC_VSYNC;
         data.CrtcVsync.VidPnTargetId = 1;
-        data.CrtcVsync.PhysicalAddress = state->FrameBufferPhysical;
+        if (state->PrimaryAddressValid && state->PrimaryAddress.QuadPart != 0) {
+            data.CrtcVsync.PhysicalAddress = state->PrimaryAddress;
+        } else {
+            data.CrtcVsync.PhysicalAddress = state->FrameBufferPhysical;
+        }
         state->DxgkInterface.DxgkCbNotifyInterrupt(
             state->DxgkInterface.DeviceHandle, &data);
     } else {
@@ -183,7 +1440,16 @@ static BOOLEAN Bc250SynchronizedVsyncCallback(
             state->DxgkInterface.DeviceHandle, &data);
     }
 
-    InterlockedIncrement(&state->VsyncCount);
+    {
+        LONG vCount = InterlockedIncrement(&state->VsyncCount);
+        if (vCount == 1 || (vCount % 60) == 0) {
+            Bc250DisplayLog("[Vsync #%ld] Type=%ld, TargetId=1, PhysAddr=0x%llX, OTG_Frame=%u\n",
+                vCount, interruptType,
+                (unsigned long long)(data.InterruptType == DXGK_INTERRUPT_CRTC_VSYNC ?
+                    data.CrtcVsync.PhysicalAddress.QuadPart : 0),
+                state->LastOtgFrameCount);
+        }
+    }
     return TRUE;
 }
 
@@ -213,11 +1479,17 @@ static VOID Bc250VsyncDpcRoutine(
 
     if (g_Bc250DisplayState.OtgVsyncActive &&
         g_Bc250DisplayState.OtgFrameCountRegister != NULL) {
+        static ULONG s_StallTicks = 0;
+        ULONG otgCrumb = Bc250CrumbBefore(BC250_CRUMB_SITE_OTG_READ, 0x14030u);
         ULONG currentFrame = *g_Bc250DisplayState.OtgFrameCountRegister;
+        Bc250CrumbAfter(otgCrumb);
         if (currentFrame == g_Bc250DisplayState.LastOtgFrameCount) {
-            /* Quadro de hardware ainda nao avancou; aguarda proximo tick */
-            return;
+            /* Quadro de hardware ainda nao avancou; se atrasar mais de 32ms (8 ticks de 4ms), libera Vsync por tempo */
+            if (++s_StallTicks < 8u) {
+                return;
+            }
         }
+        s_StallTicks = 0u;
         g_Bc250DisplayState.LastOtgFrameCount = currentFrame;
         InterlockedIncrement(&g_Bc250DisplayState.HardwareVsyncCount);
     }
@@ -334,7 +1606,7 @@ static void Bc250BuildEdid(void)
 
     hTotal = hActive + BC250_NATIVE_HBLANK;
     vTotal = vActive + BC250_NATIVE_VBLANK;
-    clock10kHz = (ULONG)(((ULONGLONG)hTotal * vTotal * 60ULL + 5000ULL) / 10000ULL);
+    clock10kHz = (ULONG)((BC250_NATIVE_PIXEL_RATE + 5000ULL) / 10000ULL);
     if (clock10kHz > 0xFFFF) clock10kHz = 0xFFFF;
 
     hSizeMm = (hActive * 254u) / 960u;
@@ -411,6 +1683,13 @@ static void Bc250BuildEdid(void)
     for (i = 0; i < 127; i++) sum += e[i];
     e[127] = (UCHAR)((0x100u - (sum & 0xFFu)) & 0xFFu);
 
+    Bc250DisplayLog("[EDID] Synthesized %u bytes, Checksum=0x%02X (sum=0x%X)\n",
+        128, e[127], sum);
+    Bc250DisplayLog("[EDID 00-15] %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n",
+        e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10], e[11], e[12], e[13], e[14], e[15]);
+    Bc250DisplayLog("[EDID DTD1] PixelClock10kHz=%u, HActive=%u, HBlank=%u, VActive=%u, VBlank=%u\n",
+        clock10kHz, hActive, BC250_NATIVE_HBLANK, vActive, BC250_NATIVE_VBLANK);
+
     g_Bc250DisplayState.EdidValid = TRUE;
 }
 
@@ -438,8 +1717,8 @@ NTSTATUS Bc250DisplayInit(
     g_Bc250DisplayState.CurrentMode.Height = PostDisplayInfo->Height;
     g_Bc250DisplayState.CurrentMode.Pitch = PostDisplayInfo->Pitch;
     g_Bc250DisplayState.CurrentMode.Format = D3DDDIFMT_A8R8G8B8;
-    g_Bc250DisplayState.CurrentMode.RefreshRateNumerator = 60000;
-    g_Bc250DisplayState.CurrentMode.RefreshRateDenominator = 1000;
+    g_Bc250DisplayState.CurrentMode.RefreshRateNumerator = BC250_NATIVE_REFRESH_NUM;
+    g_Bc250DisplayState.CurrentMode.RefreshRateDenominator = BC250_NATIVE_REFRESH_DEN;
     g_Bc250DisplayState.ModeCount = 1;
     g_Bc250DisplayState.SourceVisible = 1;
 
@@ -449,6 +1728,9 @@ NTSTATUS Bc250DisplayInit(
         PostDisplayInfo->PhysicAddress.QuadPart, g_Bc250DisplayState.DxgkInterface.DeviceHandle);
 
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeInitializeSpinLock(&g_Bc250DisplayGpuVaLock);
+    g_Bc250DisplayGpuVaLockInit = TRUE;
+    Bc250DisplayClearGpuVaMappings();
     KeInitializeTimer(&g_Bc250DisplayState.VsyncTimer);
     KeInitializeDpc(&g_Bc250DisplayState.VsyncDpc, Bc250VsyncDpcRoutine, NULL);
     ExInitializeRundownProtection(&g_Bc250DisplayState.PresentRundown);
@@ -457,24 +1739,44 @@ NTSTATUS Bc250DisplayInit(
     InterlockedExchange(&g_Bc250DisplayState.PowerStateD0, 1);
 
     if (g_Bc250DisplayState.FrameBufferPhysical.QuadPart != 0) {
-        ULONG fbBytes = g_Bc250DisplayState.CurrentMode.Pitch * g_Bc250DisplayState.CurrentMode.Height;
+        ULONG fbBytes = 256u * 1024u * 1024u; /* 256 MB cobre 100% do BAR 0 fisico de VRAM */
         g_Bc250DisplayState.FrameBufferSize = fbBytes;
         g_Bc250DisplayState.FrameBufferVirtual = MmMapIoSpaceEx(
             g_Bc250DisplayState.FrameBufferPhysical,
             fbBytes,
             PAGE_READWRITE | PAGE_WRITECOMBINE);
         if (g_Bc250DisplayState.FrameBufferVirtual == NULL) {
+            fbBytes = 128u * 1024u * 1024u;
+            g_Bc250DisplayState.FrameBufferSize = fbBytes;
             g_Bc250DisplayState.FrameBufferVirtual = MmMapIoSpaceEx(
                 g_Bc250DisplayState.FrameBufferPhysical,
                 fbBytes,
+                PAGE_READWRITE | PAGE_WRITECOMBINE);
+        }
+        if (g_Bc250DisplayState.FrameBufferVirtual == NULL) {
+            fbBytes = g_Bc250DisplayState.CurrentMode.Pitch * g_Bc250DisplayState.CurrentMode.Height;
+            g_Bc250DisplayState.FrameBufferSize = fbBytes;
+            g_Bc250DisplayState.FrameBufferVirtual = MmMapIoSpaceEx(
+                g_Bc250DisplayState.FrameBufferPhysical,
+                fbBytes,
+                PAGE_READWRITE | PAGE_WRITECOMBINE);
+        }
+        if (g_Bc250DisplayState.FrameBufferVirtual == NULL) {
+            g_Bc250DisplayState.FrameBufferVirtual = MmMapIoSpaceEx(
+                g_Bc250DisplayState.FrameBufferPhysical,
+                g_Bc250DisplayState.FrameBufferSize,
                 PAGE_READWRITE | PAGE_NOCACHE);
         }
         if (g_Bc250DisplayState.FrameBufferVirtual == NULL) {
             g_Bc250DisplayState.FrameBufferVirtual = MmMapIoSpace(
                 g_Bc250DisplayState.FrameBufferPhysical,
-                fbBytes,
+                g_Bc250DisplayState.FrameBufferSize,
                 MmWriteCombined);
         }
+        Bc250DisplayLog("[DisplayInit] FrameBuffer mapping: Phys=0x%llX, Size=%u, Virt=%p\n",
+            (unsigned long long)g_Bc250DisplayState.FrameBufferPhysical.QuadPart,
+            g_Bc250DisplayState.FrameBufferSize,
+            g_Bc250DisplayState.FrameBufferVirtual);
     }
     Bc250ProbeRecord(
         BC250_PROBE_DMM_DISPLAY_MAPPED,
@@ -536,7 +1838,10 @@ void Bc250DisplayTeardown(void)
         g_Bc250DisplayState.FrameBufferVirtual = NULL;
         g_Bc250DisplayState.FrameBufferSize = 0;
     }
+    Bc250DisplayClearGpuVaMappings();
     Bc250SdmaPresentTeardown();
+#else
+    Bc250DisplayClearGpuVaMappings();
 #endif
 }
 
@@ -690,7 +1995,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiQueryDeviceDescriptor(
     Bc250DisplayLog("[QueryDeviceDescriptor] ChildUid=%u, Offset=%u, Len=%u\n",
         ChildUid, DeviceDescriptor->DescriptorOffset, DeviceDescriptor->DescriptorLength);
 
-    if (ChildUid != 1 || !g_Bc250DisplayState.EdidValid) {
+    if (ChildUid != 1 || !Bc250DisplayGetSyntheticEdidEnabled() || !g_Bc250DisplayState.EdidValid) {
+        Bc250DisplayLog("[QueryDeviceDescriptor] ChildUid=%u, SyntheticEdid=%d, EdidValid=%d -> STATUS_MONITOR_NO_MORE_DESCRIPTOR_DATA (forcing DxgkDdiRecommendMonitorModes)\n",
+            ChildUid, (int)Bc250DisplayGetSyntheticEdidEnabled(), (int)g_Bc250DisplayState.EdidValid);
         return STATUS_MONITOR_NO_MORE_DESCRIPTOR_DATA;
     }
 
@@ -773,8 +2080,26 @@ NTSTATUS APIENTRY Bc250DxgkDdiQueryAdapterInfoDisplay(
 
         caps->HighestAcceptableAddress.QuadPart = -1;
         caps->WDDMVersion = DXGKDDI_WDDMv1_2;
-        caps->SupportNonVGA = TRUE;
-        caps->SupportSmoothRotation = FALSE;
+
+        /*
+         * A1 (06/09): mesma fonte de verdade do caminho WDDM. Os valores aqui
+         * eram escritos a mao e divergiram do outro handler; agora os dois
+         * perfis saem da tabela em driver/core, que cita a exigencia da
+         * Microsoft campo a campo.
+         */
+        {
+            BC250_DRIVER_CAPS_POLICY capsPolicy;
+            if (Bc250GetDriverCapsPolicy(BC250_WDDM_DRIVER_DISPLAY_ONLY,
+                    &capsPolicy) != BC250_DRIVER_CAPS_OK) {
+                Bc250ProbeRecord(BC250_PROBE_DMM_QAI_STATUS,
+                    (ULONG)STATUS_DEVICE_CONFIGURATION_ERROR);
+                return STATUS_DEVICE_CONFIGURATION_ERROR;
+            }
+            caps->SupportNonVGA =
+                (capsPolicy.SupportNonVGA != 0u) ? TRUE : FALSE;
+            caps->SupportSmoothRotation =
+                (capsPolicy.SupportSmoothRotation != 0u) ? TRUE : FALSE;
+        }
         Bc250ProbeRecord(BC250_PROBE_DMM_QAI_STATUS, 0);
         return STATUS_SUCCESS;
     }
@@ -1033,9 +2358,10 @@ static NTSTATUS Bc250ValidateVidPn(
         goto Exit;
     }
     if (pathCount == 0) {
+        if (HasPath != NULL) *HasPath = FALSE;
         *Supported = TRUE;
         status = STATUS_SUCCESS;
-        Bc250DisplayLog("[VidPn] pathCount=0 -> Supported=TRUE\n");
+        Bc250DisplayLog("[VidPn] pathCount=0 -> Supported=TRUE (empty VidPN transition)\n");
         goto Exit;
     }
     if (pathCount != 1) {
@@ -1352,6 +2678,7 @@ static NTSTATUS Bc250PublishCofuncSourceMode(
     status = VidPnInterface->pfnAcquireSourceModeSet(
         VidPn, 0, &modeSet, &modeInterface);
     if (NT_SUCCESS(status) && modeInterface != NULL && modeSet != 0) {
+        CONST D3DKMDT_VIDPN_SOURCE_MODE *firstMode = NULL;
         status = modeInterface->pfnAcquirePinnedModeInfo(modeSet, &pinnedMode);
         if (status == STATUS_GRAPHICS_MODE_NOT_PINNED) {
             pinnedMode = NULL;
@@ -1361,6 +2688,19 @@ static NTSTATUS Bc250PublishCofuncSourceMode(
             (void)modeInterface->pfnReleaseModeInfo(modeSet, pinnedMode);
             (void)VidPnInterface->pfnReleaseSourceModeSet(VidPn, modeSet);
             return status;
+        } else if (!NT_SUCCESS(status)) {
+            (void)VidPnInterface->pfnReleaseSourceModeSet(VidPn, modeSet);
+            Bc250DisplayLog("[CofuncSourceMode] AcquirePinnedModeInfo failed 0x%08X\n", status);
+            return status;
+        }
+
+        /* Se o ModeSet já contiver o modo unpinned, mantemos sem reatribuir para convergir a DMM */
+        status = modeInterface->pfnAcquireFirstModeInfo(modeSet, &firstMode);
+        if (NT_SUCCESS(status) && firstMode != NULL) {
+            (void)modeInterface->pfnReleaseModeInfo(modeSet, firstMode);
+            (void)VidPnInterface->pfnReleaseSourceModeSet(VidPn, modeSet);
+            Bc250DisplayLog("[CofuncSourceMode] ModeSet already populated -> SUCCESS\n");
+            return STATUS_SUCCESS;
         }
 
         (void)VidPnInterface->pfnReleaseSourceModeSet(VidPn, modeSet);
@@ -1385,7 +2725,7 @@ static NTSTATUS Bc250PublishCofuncSourceMode(
     }
     /* Successful assignment transfers ownership to the VidPN manager. */
     modeSet = 0;
-
+    Bc250DisplayLog("[CofuncSourceMode] Created & Assigned new SourceModeSet -> SUCCESS\n");
     return STATUS_SUCCESS;
 }
 
@@ -1402,6 +2742,7 @@ static NTSTATUS Bc250PublishCofuncTargetMode(
     status = VidPnInterface->pfnAcquireTargetModeSet(
         VidPn, TargetId, &modeSet, &modeInterface);
     if (NT_SUCCESS(status) && modeInterface != NULL && modeSet != 0) {
+        CONST D3DKMDT_VIDPN_TARGET_MODE *firstMode = NULL;
         status = modeInterface->pfnAcquirePinnedModeInfo(modeSet, &pinnedMode);
         if (status == STATUS_GRAPHICS_MODE_NOT_PINNED) {
             pinnedMode = NULL;
@@ -1411,6 +2752,19 @@ static NTSTATUS Bc250PublishCofuncTargetMode(
             (void)modeInterface->pfnReleaseModeInfo(modeSet, pinnedMode);
             (void)VidPnInterface->pfnReleaseTargetModeSet(VidPn, modeSet);
             return status;
+        } else if (!NT_SUCCESS(status)) {
+            (void)VidPnInterface->pfnReleaseTargetModeSet(VidPn, modeSet);
+            Bc250DisplayLog("[CofuncTargetMode] AcquirePinnedModeInfo failed 0x%08X\n", status);
+            return status;
+        }
+
+        /* Se o ModeSet já contiver o modo unpinned, mantemos sem reatribuir para convergir a DMM */
+        status = modeInterface->pfnAcquireFirstModeInfo(modeSet, &firstMode);
+        if (NT_SUCCESS(status) && firstMode != NULL) {
+            (void)modeInterface->pfnReleaseModeInfo(modeSet, firstMode);
+            (void)VidPnInterface->pfnReleaseTargetModeSet(VidPn, modeSet);
+            Bc250DisplayLog("[CofuncTargetMode] ModeSet already populated -> SUCCESS\n");
+            return STATUS_SUCCESS;
         }
 
         (void)VidPnInterface->pfnReleaseTargetModeSet(VidPn, modeSet);
@@ -1531,17 +2885,24 @@ NTSTATUS APIENTRY Bc250DxgkDdiEnumVidPnCofuncModality(
      * UpdatePathSupportInfo em caminho unico nao-clone, o dxgkrnl dispara
      * VIDEO_DXGKRNL_FATAL_ERROR (0x113, subcode 0x1C).
      *
-     * Portanto, sanitizamos incondicionalmente ScalingSupport e RotationSupport
-     * para Identity = 1.
+     * A DMM, entretanto, proibe alterar o campo que corresponde ao pivo atual.
+     * Sanitizamos cada campo somente quando ele nao e' o pivo desta chamada.
+     * Assim preservamos o hotfix do 0x113 em campos mutaveis sem violar o
+     * contrato de EnumVidPnCofuncModality.
      */
-    RtlZeroMemory(&supportedPath.ContentTransformation.ScalingSupport,
-        sizeof(supportedPath.ContentTransformation.ScalingSupport));
-    supportedPath.ContentTransformation.ScalingSupport.Identity = 1;
-
-    RtlZeroMemory(&supportedPath.ContentTransformation.RotationSupport,
-        sizeof(supportedPath.ContentTransformation.RotationSupport));
-    supportedPath.ContentTransformation.RotationSupport.Identity = 1;
-    supportedPath.ContentTransformation.RotationSupport.Offset0 = 1;
+    if (!Bc250CofuncPivotMatchesPath(
+            pEnumCofuncModality, path, D3DKMDT_EPT_SCALING)) {
+        RtlZeroMemory(&supportedPath.ContentTransformation.ScalingSupport,
+            sizeof(supportedPath.ContentTransformation.ScalingSupport));
+        supportedPath.ContentTransformation.ScalingSupport.Identity = 1;
+    }
+    if (!Bc250CofuncPivotMatchesPath(
+            pEnumCofuncModality, path, D3DKMDT_EPT_ROTATION)) {
+        RtlZeroMemory(&supportedPath.ContentTransformation.RotationSupport,
+            sizeof(supportedPath.ContentTransformation.RotationSupport));
+        supportedPath.ContentTransformation.RotationSupport.Identity = 1;
+        supportedPath.ContentTransformation.RotationSupport.Offset0 = 1;
+    }
     status = topologyInterface->pfnUpdatePathSupportInfo(
         topology, &supportedPath);
     if (!NT_SUCCESS(status)) goto Exit;
@@ -1575,11 +2936,244 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddress(
     if (pSetVidPnSourceAddress->VidPnSourceId != 0) {
         return STATUS_NOT_SUPPORTED;
     }
-    Bc250DisplayLog("=== SetVidPnSourceAddress (SourceId=%u, Addr=0x%I64X) ===\n",
+    Bc250DisplayLog("=== SetVidPnSourceAddress (SourceId=%u, Segment=%u, Addr=0x%I64X, hAlloc=%p, ContextCount=%u, Flags=0x%08X) ===\n",
         pSetVidPnSourceAddress->VidPnSourceId,
-        pSetVidPnSourceAddress->PrimaryAddress.QuadPart);
+        pSetVidPnSourceAddress->PrimarySegment,
+        pSetVidPnSourceAddress->PrimaryAddress.QuadPart,
+        pSetVidPnSourceAddress->hAllocation,
+        pSetVidPnSourceAddress->ContextCount,
+        *(CONST ULONG *)&pSetVidPnSourceAddress->Flags);
+
+    if (pSetVidPnSourceAddress->PrimarySegment == 1u) {
+        NTSTATUS copyStatus = Bc250DisplayCopyPrimaryToGop("SET_ADDRESS",
+            pSetVidPnSourceAddress->PrimarySegment,
+            (UINT64)pSetVidPnSourceAddress->PrimaryAddress.QuadPart,
+            (pSetVidPnSourceAddress->Flags.ModeChange != 0u &&
+             pSetVidPnSourceAddress->Flags.FlipImmediate == 0u &&
+             pSetVidPnSourceAddress->Flags.FlipOnNextVSync == 0u) ? TRUE : FALSE);
+        if (!NT_SUCCESS(copyStatus)) return copyStatus;
+    } else if (pSetVidPnSourceAddress->PrimarySegment != 0u) {
+        Bc250DisplayLog("[PRIMARY_COPY] REJECT Route=SET_ADDRESS Seg=%u Status=NOT_SUPPORTED\n",
+            pSetVidPnSourceAddress->PrimarySegment);
+        return STATUS_NOT_SUPPORTED;
+    }
+    g_Bc250DisplayState.PrimaryAddress = pSetVidPnSourceAddress->PrimaryAddress;
+    g_Bc250DisplayState.PrimarySegment = pSetVidPnSourceAddress->PrimarySegment;
+    g_Bc250DisplayState.hPrimarySourceAllocation = pSetVidPnSourceAddress->hAllocation;
+    g_Bc250DisplayState.PrimaryAddressValid =
+        (pSetVidPnSourceAddress->PrimarySegment == 1u) ? TRUE : FALSE;
     return STATUS_SUCCESS;
 }
+
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM1_3)
+NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay(
+    IN_CONST_HANDLE hAdapter,
+    IN_CONST_PDXGKARG_SETVIDPNSOURCEADDRESSWITHMULTIPLANEOVERLAY pSetVidPnSourceAddressWithMultiPlaneOverlay)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId != 0) {
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount == 0) {
+        Bc250DisplayLog("=== SetVidPnSourceAddressWithMultiPlaneOverlay (PlaneCount=0, MPO disabled, SourceId=%u) ===\n",
+            pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId);
+        return STATUS_SUCCESS;
+    }
+
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->pPlanes != NULL) {
+        CONST DXGK_MULTIPLANE_OVERLAY_PLANE *pPlane0 = &pSetVidPnSourceAddressWithMultiPlaneOverlay->pPlanes[0];
+        if (pPlane0->AllocationSegment != 0) {
+            Bc250DisplayLog("=== SetVidPnSourceAddressWithMultiPlaneOverlay (SourceId=%u, Seg=%u, Addr=0x%I64X, hAlloc=%p, PlaneCount=%u) ===\n",
+                pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId,
+                pPlane0->AllocationSegment,
+                pPlane0->AllocationAddress.QuadPart,
+                pPlane0->hAllocation,
+                pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount);
+            if (pPlane0->AllocationSegment == 1u) {
+                NTSTATUS copyStatus = Bc250DisplayCopyPrimaryToGop("MPO1",
+                    pPlane0->AllocationSegment,
+                    (UINT64)pPlane0->AllocationAddress.QuadPart, FALSE);
+                if (!NT_SUCCESS(copyStatus)) return copyStatus;
+            } else {
+                Bc250DisplayLog("[PRIMARY_COPY] REJECT Route=MPO1 Seg=%u Status=NOT_SUPPORTED\n",
+                    pPlane0->AllocationSegment);
+                return STATUS_NOT_SUPPORTED;
+            }
+            g_Bc250DisplayState.PrimaryAddress = pPlane0->AllocationAddress;
+            g_Bc250DisplayState.PrimarySegment = pPlane0->AllocationSegment;
+            g_Bc250DisplayState.hPrimarySourceAllocation = pPlane0->hAllocation;
+            g_Bc250DisplayState.PrimaryAddressValid = TRUE;
+        }
+    }
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS APIENTRY Bc250DxgkDdiCheckMultiPlaneOverlaySupport(
+    IN_CONST_HANDLE hAdapter,
+    IN_OUT_PDXGKARG_CHECKMULTIPLANEOVERLAYSUPPORT pCheckMultiPlaneOverlaySupport)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pCheckMultiPlaneOverlaySupport == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    pCheckMultiPlaneOverlaySupport->ReturnInfo.Value = 0;
+    pCheckMultiPlaneOverlaySupport->Supported = FALSE;
+    Bc250DisplayLog("=== CheckMultiPlaneOverlaySupport (Planes=%u, Supported=0 [DISABLED]) ===\n",
+        pCheckMultiPlaneOverlaySupport->PlaneCount);
+    return STATUS_SUCCESS;
+}
+#endif
+
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_0)
+NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay2(
+    IN_CONST_HANDLE hAdapter,
+    IN_CONST_PDXGKARG_SETVIDPNSOURCEADDRESSWITHMULTIPLANEOVERLAY2 pSetVidPnSourceAddressWithMultiPlaneOverlay)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId != 0) {
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount == 0) {
+        Bc250DisplayLog("=== SetVidPnSourceAddressWithMultiPlaneOverlay2 (PlaneCount=0, MPO disabled, SourceId=%u) ===\n",
+            pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId);
+        return STATUS_SUCCESS;
+    }
+
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->pPlanes != NULL) {
+        CONST DXGK_MULTIPLANE_OVERLAY_PLANE2 *pPlane0 = &pSetVidPnSourceAddressWithMultiPlaneOverlay->pPlanes[0];
+        if (pPlane0->AllocationSegment != 0) {
+            g_Bc250DisplayState.PrimaryAddress = pPlane0->AllocationAddress;
+            g_Bc250DisplayState.PrimarySegment = pPlane0->AllocationSegment;
+            g_Bc250DisplayState.hPrimarySourceAllocation = pPlane0->hAllocation;
+            g_Bc250DisplayState.PrimaryAddressValid = TRUE;
+            Bc250DisplayLog("=== SetVidPnSourceAddressWithMultiPlaneOverlay2 (SourceId=%u, Seg=%u, Addr=0x%I64X, hAlloc=%p, PlaneCount=%u) ===\n",
+                pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId,
+                pPlane0->AllocationSegment,
+                pPlane0->AllocationAddress.QuadPart,
+                pPlane0->hAllocation,
+                pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount);
+        }
+    }
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS APIENTRY Bc250DxgkDdiCheckMultiPlaneOverlaySupport2(
+    IN_CONST_HANDLE hAdapter,
+    IN_OUT_PDXGKARG_CHECKMULTIPLANEOVERLAYSUPPORT2 pCheckMultiPlaneOverlaySupport)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pCheckMultiPlaneOverlaySupport == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    pCheckMultiPlaneOverlaySupport->ReturnInfo.Value = 0;
+    pCheckMultiPlaneOverlaySupport->Supported = FALSE;
+    Bc250DisplayLog("=== CheckMultiPlaneOverlaySupport2 (Planes=%u, Supported=0 [DISABLED]) ===\n",
+        pCheckMultiPlaneOverlaySupport->PlaneCount);
+    return STATUS_SUCCESS;
+}
+#endif
+
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_1)
+NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay3(
+    IN_CONST_HANDLE hAdapter,
+    IN_OUT_PDXGKARG_SETVIDPNSOURCEADDRESSWITHMULTIPLANEOVERLAY3 pSetVidPnSourceAddressWithMultiPlaneOverlay)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId != 0) {
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    pSetVidPnSourceAddressWithMultiPlaneOverlay->OutputFlags.PrePresentNeeded = 0;
+
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount == 0) {
+        Bc250DisplayLog("=== SetVidPnSourceAddressWithMultiPlaneOverlay3 (PlaneCount=0, MPO disabled, SourceId=%u) ===\n",
+            pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId);
+        return STATUS_SUCCESS;
+    }
+
+    if (pSetVidPnSourceAddressWithMultiPlaneOverlay->ppPlanes != NULL &&
+        pSetVidPnSourceAddressWithMultiPlaneOverlay->ppPlanes[0] != NULL) {
+        DXGK_MULTIPLANE_OVERLAY_PLANE3 *pPlane0 = pSetVidPnSourceAddressWithMultiPlaneOverlay->ppPlanes[0];
+        pPlane0->OutputFlags.Value = 0;
+        if (pPlane0->ContextCount > 0 && pPlane0->ppContextData != NULL && pPlane0->ppContextData[0] != NULL) {
+            DXGK_PRIMARYCONTEXTDATA *pCtx = pPlane0->ppContextData[0];
+            if (pCtx->SegmentId != 0) {
+                Bc250DisplayLog("=== SetVidPnSourceAddressWithMultiPlaneOverlay3 (SourceId=%u, Seg=%u, Addr=0x%I64X, hAlloc=%p, PlaneCount=%u) ===\n",
+                    pSetVidPnSourceAddressWithMultiPlaneOverlay->VidPnSourceId,
+                    (UINT)pCtx->SegmentId,
+                    pCtx->SegmentAddress.QuadPart,
+                    pCtx->hAllocation,
+                    pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount);
+                if (pCtx->SegmentId == 1u) {
+                    NTSTATUS copyStatus = Bc250DisplayCopyPrimaryToGop("MPO3",
+                        (UINT32)pCtx->SegmentId,
+                        (UINT64)pCtx->SegmentAddress.QuadPart, FALSE);
+                    if (!NT_SUCCESS(copyStatus)) {
+                        /* MPO3 documenta INVALID_PARAMETER para flip que nao
+                         * pode ser processado. O motivo preciso fica no log. */
+                        Bc250DisplayLog("[PRIMARY_COPY] MPO3 FAIL_CLOSED InternalStatus=0x%08X ReturnStatus=INVALID_PARAMETER\n",
+                            (ULONG)copyStatus);
+                        return STATUS_INVALID_PARAMETER;
+                    }
+                } else {
+                    Bc250DisplayLog("[PRIMARY_COPY] REJECT Route=MPO3 Seg=%u Status=NOT_SUPPORTED\n",
+                        (UINT)pCtx->SegmentId);
+                    return STATUS_NOT_SUPPORTED;
+                }
+                g_Bc250DisplayState.PrimaryAddress = pCtx->SegmentAddress;
+                g_Bc250DisplayState.PrimarySegment = (UINT)pCtx->SegmentId;
+                g_Bc250DisplayState.hPrimarySourceAllocation = pCtx->hAllocation;
+                g_Bc250DisplayState.PrimaryAddressValid = TRUE;
+            }
+        }
+    }
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS APIENTRY Bc250DxgkDdiCheckMultiPlaneOverlaySupport3(
+    IN_CONST_HANDLE hAdapter,
+    IN_OUT_PDXGKARG_CHECKMULTIPLANEOVERLAYSUPPORT3 pCheckMultiPlaneOverlaySupport)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pCheckMultiPlaneOverlaySupport == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    pCheckMultiPlaneOverlaySupport->ReturnInfo.Value = 0;
+    pCheckMultiPlaneOverlaySupport->Supported = FALSE;
+    Bc250DisplayLog("=== CheckMultiPlaneOverlaySupport3 (Planes=%u, Supported=0 [DISABLED]) ===\n",
+        pCheckMultiPlaneOverlaySupport->PlaneCount);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS APIENTRY Bc250DxgkDdiPostMultiPlaneOverlayPresent(
+    IN_CONST_HANDLE hAdapter,
+    IN_CONST_PDXGKARG_POSTMULTIPLANEOVERLAYPRESENT pPostPresent)
+{
+    UNREFERENCED_PARAMETER(hAdapter);
+    if (pPostPresent == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    Bc250DisplayLog("=== PostMultiPlaneOverlayPresent (TargetId=%u, Layer=%u, PresentId=%I64u) ===\n",
+        pPostPresent->VidPnTargetId,
+        pPostPresent->LayerIndex,
+        pPostPresent->PresentID);
+    return STATUS_SUCCESS;
+}
+#endif
 
 NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceVisibility(
     CONST HANDLE hAdapter,
@@ -1591,10 +3185,11 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceVisibility(
          pSetVidPnSourceVisibility->VidPnSourceId != D3DDDI_ID_ALL)) {
         return STATUS_INVALID_PARAMETER;
     }
-    InterlockedExchange(&g_Bc250DisplayState.SourceVisible,
-        pSetVidPnSourceVisibility->Visible ? 1 : 0);
     if (pSetVidPnSourceVisibility->Visible) {
+        InterlockedExchange(&g_Bc250DisplayState.SourceVisible, 1);
         InterlockedExchange(&g_Bc250DisplayState.ForceFullPresent, 1);
+    } else {
+        Bc250DisplayLog("=== SetVidPnSourceVisibility (Visible=0 recebido, scanout GOP preservado) ===\n");
     }
     Bc250DisplayLog("=== SetVidPnSourceVisibility (Visible=%d) ===\n",
         pSetVidPnSourceVisibility->Visible);
@@ -1633,9 +3228,12 @@ NTSTATUS APIENTRY Bc250DxgkDdiCommitVidPn(
             (ULONG)STATUS_GRAPHICS_VIDPN_MODALITY_NOT_SUPPORTED);
         return STATUS_GRAPHICS_VIDPN_MODALITY_NOT_SUPPORTED;
     }
-    if (pCommitVidPn->Flags.PathPoweredOff) {
+    if (pCommitVidPn->Flags.PathPoweredOff || pCommitVidPn->Flags.PathPowerTransition) {
         InterlockedExchange(&g_Bc250DisplayState.SourceVisible, 0);
         InterlockedExchange(&g_Bc250DisplayState.VidPnCommitted, 0);
+        Bc250DisplayLog("=== CommitVidPn: empty VidPN power transition (PowerOff=%u, PowerTrans=%u) -> SUCCESS ===\n",
+            pCommitVidPn->Flags.PathPoweredOff,
+            pCommitVidPn->Flags.PathPowerTransition);
         Bc250RecordDisplayProbePassive(
             BC250_PROBE_DMM_COMMIT_STATUS, (ULONG)STATUS_SUCCESS);
         return STATUS_SUCCESS;
@@ -1656,13 +3254,8 @@ NTSTATUS APIENTRY Bc250DxgkDdiCommitVidPn(
         return status;
     }
     if (!hasPath) {
-        /*
-         * WDDM 1.2+ spec: quando o SO chama DxgkDdiCommitVidPn com VidPN vazio
-         * (sem caminhos) e Flags.PathPoweredOff == 0, o driver DEVE tomar nenhuma acao
-         * (take no action), preservando o scanout GOP ativo para transicoes
-         * seamless de exibicao sem tela preta.
-         */
-        Bc250DisplayLog("=== CommitVidPn: empty VidPN with PathPoweredOff=0 -> taking no action (preserving display) ===\n");
+        InterlockedExchange(&g_Bc250DisplayState.VidPnCommitted, 0);
+        Bc250DisplayLog("=== CommitVidPn: empty VidPN transition -> SUCCESS (preserving GOP scanout) ===\n");
         Bc250RecordDisplayProbePassive(
             BC250_PROBE_DMM_COMMIT_STATUS, (ULONG)STATUS_SUCCESS);
         return STATUS_SUCCESS;
@@ -1711,13 +3304,19 @@ NTSTATUS APIENTRY Bc250DxgkDdiRecommendMonitorModes(
     if (pRecommendMonitorModes == NULL ||
         pRecommendMonitorModes->pMonitorSourceModeSetInterface == NULL ||
         pRecommendMonitorModes->hMonitorSourceModeSet == 0) {
+        Bc250DisplayLog("[RecommendMonitorModes] INVALID_PARAMETER\n");
         return STATUS_INVALID_PARAMETER;
     }
+
+    Bc250DisplayLog("=== DxgkDdiRecommendMonitorModes: TargetId=%u, hSet=%p ===\n",
+        pRecommendMonitorModes->VideoPresentTargetId,
+        pRecommendMonitorModes->hMonitorSourceModeSet);
 
     status = pRecommendMonitorModes->pMonitorSourceModeSetInterface->pfnCreateNewModeInfo(
         pRecommendMonitorModes->hMonitorSourceModeSet,
         &pMonitorSourceMode);
     if (!NT_SUCCESS(status) || pMonitorSourceMode == NULL) {
+        Bc250DisplayLog("[RecommendMonitorModes] CreateNewModeInfo failed 0x%08X\n", status);
         return status;
     }
 
@@ -1729,10 +3328,18 @@ NTSTATUS APIENTRY Bc250DxgkDdiRecommendMonitorModes(
         pRecommendMonitorModes->hMonitorSourceModeSet,
         pMonitorSourceMode);
     if (!NT_SUCCESS(status)) {
+        Bc250DisplayLog("[RecommendMonitorModes] AddMode failed 0x%08X\n", status);
         (void)pRecommendMonitorModes->pMonitorSourceModeSetInterface->pfnReleaseModeInfo(
             pRecommendMonitorModes->hMonitorSourceModeSet, pMonitorSourceMode);
         return status;
     }
+
+    Bc250DisplayLog("=== DxgkDdiRecommendMonitorModes SUCCESS: Added %ux%u @ %u/%u Hz to Target %u ===\n",
+        g_Bc250DisplayState.CurrentMode.Width,
+        g_Bc250DisplayState.CurrentMode.Height,
+        BC250_NATIVE_REFRESH_NUM,
+        BC250_NATIVE_REFRESH_DEN,
+        pRecommendMonitorModes->VideoPresentTargetId);
 
     return STATUS_SUCCESS;
 }
@@ -1809,16 +3416,717 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
     DXGKARG_PRESENT *pPresent)
 {
     static LONG s_PresentCount = 0;
+    static LONG s_PresentByteProofState = 0;
     LONG count;
-    if (hContext == NULL) return STATUS_NOT_SUPPORTED;
-    if (pPresent == NULL) return STATUS_INVALID_PARAMETER;
-    count = InterlockedIncrement(&s_PresentCount);
-    if (count == 1 || (count % 60) == 0) {
-        Bc250DisplayLog("[Present #%d] hContext=%p, DmaSize=%u, SubRectCnt=%u\n",
-            count, hContext, pPresent->DmaSize, pPresent->SubRectCnt);
+    NTSTATUS presentStatus = STATUS_NOT_SUPPORTED;
+    LARGE_INTEGER presentTimerFrequency;
+    LARGE_INTEGER presentTimerStart = KeQueryPerformanceCounter(
+        &presentTimerFrequency);
+
+    /*
+     * I2 (13/09) -- ESTA DDI TINHA TRES SAIDAS MUDAS, E POR ISSO "ZERO LINHAS DE
+     * PRESENT" ERA AMBIGUO POR CONSTRUCAO.
+     *
+     * Na corrida 16:28:27 nao houve UMA linha [Present #N] em 5,4 MB de log,
+     * enquanto o dwm.exe emitia 90 Present pela UMD. Com as guardas mudas nao dava
+     * para separar tres hipoteses: (a) o dxgkrnl nunca chamou, (b) chamou com
+     * hContext NULL e devolvemos NOT_SUPPORTED calados, (c) chamou mas
+     * FrameBufferVirtual era NULL e o corpo inteiro foi pulado sem log.
+     *
+     * A entrada agora e' INCONDICIONAL e anterior a qualquer guarda, entao a
+     * ausencia da linha passa a ser conclusiva: significa que a DDI nao foi
+     * chamada. Amostrada por contador PROPRIO (8 primeiras + 1 em 256) para nao
+     * afogar o log a 60 Hz -- o teto global nao alcanca esta classe.
+     */
+    {
+        static volatile LONG s_PresentEnterOrdinal = 0;
+        LONG enterOrdinal = InterlockedIncrement(&s_PresentEnterOrdinal);
+        if (enterOrdinal <= 8L || (enterOrdinal % 256L) == 0L) {
+            Bc250DisplayLog("[DdiPresent] ENTER #%ld: hContext=%p pPresent=%p FrameBufferVirtual=%p\n",
+                enterOrdinal, hContext, (PVOID)pPresent,
+                g_Bc250DisplayState.FrameBufferVirtual);
+        }
     }
-    Bc250RecordVsyncProofAfterSuccessfulPresent();
-    return STATUS_SUCCESS;
+
+    if (hContext == NULL) {
+        Bc250DisplayLog("[DdiPresent] RECUSADO: hContext NULL -> STATUS_NOT_SUPPORTED\n");
+        return STATUS_NOT_SUPPORTED;
+    }
+    if (pPresent == NULL) {
+        Bc250DisplayLog("[DdiPresent] RECUSADO: pPresent NULL -> STATUS_INVALID_PARAMETER\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+    if (g_Bc250DisplayState.FrameBufferVirtual == NULL) {
+        Bc250DisplayLog("[DdiPresent] RECUSADO: FrameBufferVirtual NULL -- scanout do GOP nao mapeado, "
+            "o corpo de apresentacao inteiro seria pulado sem log\n");
+    }
+
+    /*
+     * Liveness do SDMA a 60 Hz: drena submissoes de paginacao/transferencia concluidas
+     * no silicio para garantir que o dxgkrnl e o scheduler recebam os ACKs sem retardo.
+     */
+    Bc250ActiveSdmaRetirePendingOnAllAdapters(FALSE);
+
+    count = InterlockedIncrement(&s_PresentCount);
+
+    /*
+     * Apresentacao no scanout do UEFI GOP herdado (Fase P5 do Roadmap).
+     * O monitor esta fisicamente conectado no scanout GOP (0xC0000000, offset 0 em VRAM).
+     */
+    if (g_Bc250DisplayState.FrameBufferVirtual != NULL) {
+        ULONG numSrc = pPresent->NumSrcAllocations;
+        ULONG numDst = pPresent->NumDstAllocations;
+        ULONG allocLimit = DXGK_PRESENT_MAX_INDEX + 1u;
+        uint64_t srcVa = 0;
+        uint64_t srcPhysical = 0;
+        ULONG scanoutBytes = g_Bc250DisplayState.CurrentMode.Pitch *
+                             g_Bc250DisplayState.CurrentMode.Height;
+        BOOLEAN isBlt = (pPresent->Flags.Blt != 0);
+        BOOLEAN isFlip = (pPresent->Flags.Flip != 0);
+
+        if (pPresent->pAllocationInfo != NULL) {
+            srcVa = (uint64_t)
+                pPresent->pAllocationInfo[DXGK_PRESENT_SOURCE_INDEX].AllocationVirtualAddress;
+        }
+
+        /*
+         * Identificacao da superficie de origem.
+         *
+         * Ordem de autoridade (corrida 09:04 mostrou por que):
+         *
+        /*
+         * Resolucao da superficie de origem para Blt e Flip:
+         * 1. pAllocationInfo[DXGK_PRESENT_SOURCE_INDEX] com PhysicalAddress/SegmentId
+         *    (Slot 1 / DWM sob WDDM 2.0+).  E' onde o Windows realmente compoe
+         *    a imagem da tela (ex: GPUVA 0xAC0000 -> VRAM 0xC10000).
+         *    Possui autoridade PRIMEIRA quando resolvida com sucesso.
+         *
+         * 2. Em apresentacoes de Flip (Flags.Flip != 0), caso o Slot 1 nao resolva
+         *    mas SetVidPnSourceAddress tenha comutado uma primaria valida no Segmento 1,
+         *    o buffer da primaria e' a origem autoritativa da exibicao.
+         *
+         * Sem Slot 1 resolvido nem primaria autoritativa, Present falha fechado.
+         */
+        UINT32 srcSegmentId = 0;
+        BOOLEAN vaResolved = FALSE;
+        uint64_t presentPhysical = 0;
+        UINT32 presentSegmentId = 0;
+        BOOLEAN presentResolved;
+
+        presentResolved = Bc250DisplayResolvePresentSource(
+            hContext, pPresent, &presentPhysical, &presentSegmentId);
+        if (presentResolved && presentSegmentId == 1u) {
+            /*
+             * C3.6 (12/09) -- DEFEITO CORRIGIDO, medido na corrida 13:11.
+             *
+             * Bc250DisplayResolvePresentSource devolve um OFFSET DE SEGMENTO, e
+             * este caminho o usava DIRETO como indice de
+             * g_Bc250DisplayState.FrameBufferVirtual -- que e' um mapeamento de
+             * CPU comecando no byte ZERO da VRAM. O segmento 1 comeca em
+             * LocalSegmentBaseOffset (0xA8C000), entao toda amostragem e o byte
+             * proof liam 11.059.200 bytes antes da superficie real.
+             *
+             * Consequencia medida: `SrcPhysSample @ 0x15D0000` leu zeros, o
+             * BYTE_PROOF reprovou um quadro CORRETO, o driver desligou o SDMA e
+             * a submissao seguinte virou completion nao notificado -> BugCheck
+             * 0x119 Arg1=2 Arg2=0xC0000185.
+             *
+             * E' o MESMO defeito que a C3.4 corrigiu no caminho de escape. Dois
+             * caminhos, uma aritmetica: agora os dois saem de
+             * Bc250SdmaPresentSegmentOffsetToVram. Falha fechada: sem geometria
+             * publicada ou faixa fora do segmento, a origem e' RECUSADA em vez
+             * de virar um endereco inventado.
+             */
+            UINT64 srcVramOffset = 0ull;
+            if (Bc250SdmaPresentSegmentOffsetToVram(presentSegmentId,
+                    presentPhysical, (UINT64)scanoutBytes, &srcVramOffset)) {
+                srcPhysical = srcVramOffset;
+                srcSegmentId = presentSegmentId;
+                vaResolved = TRUE;
+            } else {
+                Bc250DisplayLog("[Present #%d] RECUSA conversao de segmento: SegOff=0x%llX Seg=%u Bytes=%u "
+                    "(geometria publicada=%d SegBase=0x%llX SegBytes=0x%llX)\n",
+                    count, (unsigned long long)presentPhysical, presentSegmentId,
+                    scanoutBytes,
+                    (int)g_Bc250SdmaPresent.SegmentGeometryReady,
+                    (unsigned long long)g_Bc250SdmaPresent.LocalSegmentBaseOffset,
+                    (unsigned long long)g_Bc250SdmaPresent.LocalSegmentBytes);
+            }
+        }
+
+        /*
+         * Fallback autoritativo para Flip: caso o Slot 1 nao tenha resolvido pelo
+         * snapshot de GPUVA, mas a comutacao do scanout pelo SetVidPnSourceAddress
+         * tenha publicado uma primaria valida no Segmento 1.
+         */
+        if (!vaResolved && isFlip && g_Bc250DisplayState.PrimaryAddressValid &&
+            g_Bc250DisplayState.PrimarySegment == 1u) {
+            UINT64 primaryOffset = 0ull;
+            UINT32 primarySeg = 0u;
+            if (Bc250DisplayResolvePrimarySource(&primaryOffset, &primarySeg)) {
+                UINT64 srcVramOffset = 0ull;
+                if (Bc250SdmaPresentSegmentOffsetToVram(primarySeg,
+                        primaryOffset, (UINT64)scanoutBytes, &srcVramOffset)) {
+                    srcPhysical = srcVramOffset;
+                    srcSegmentId = primarySeg;
+                    vaResolved = TRUE;
+                    Bc250DisplayLog("[Present #%d] Source=PRIMARY_FALLBACK SegOff=0x%llX Seg=%u SegBase=0x%llX -> VramOff=0x%llX\n",
+                        count, (unsigned long long)primaryOffset, primarySeg,
+                        (unsigned long long)g_Bc250SdmaPresent.LocalSegmentBaseOffset,
+                        (unsigned long long)srcPhysical);
+                }
+            }
+        }
+
+        if (vaResolved) {
+            /*
+             * C3.6: o log passa a mostrar os TRES numeros -- offset de segmento,
+             * base do segmento e offset de VRAM resultante. Antes so' saia um
+             * "Physical VRAM 0x%llX" que na verdade era offset de segmento, e foi
+             * essa ambiguidade que escondeu o defeito por varias corridas.
+             */
+            Bc250DisplayLog("[Present #%d] Source=PRESENT_SLOT SegOff=0x%llX Seg=%u SegBase=0x%llX -> VramOff=0x%llX (resolved=%u, Flip=%u, Blt=%u)\n",
+                count, presentPhysical, presentSegmentId,
+                (unsigned long long)g_Bc250SdmaPresent.LocalSegmentBaseOffset,
+                srcPhysical, presentResolved ? 1u : 0u, isFlip ? 1u : 0u, isBlt ? 1u : 0u);
+        } else {
+            Bc250DisplayLog("[Present #%d] REJECT source contract: Blt=%u, Flip=%u, PrimaryValid=%u, PrimarySeg=%u, SlotHAlloc=%p, SlotSeg=%u, SlotWord=0x%llX\n",
+                count, isBlt ? 1u : 0u, isFlip ? 1u : 0u,
+                g_Bc250DisplayState.PrimaryAddressValid ? 1u : 0u,
+                g_Bc250DisplayState.PrimarySegment,
+                pPresent->pAllocationInfo != NULL ?
+                    pPresent->pAllocationInfo[DXGK_PRESENT_SOURCE_INDEX].hDeviceSpecificAllocation : NULL,
+                pPresent->pAllocationInfo != NULL ?
+                    (UINT32)pPresent->pAllocationInfo[DXGK_PRESENT_SOURCE_INDEX].SegmentId : 0u,
+                srcVa);
+            srcPhysical = 0ull;
+        }
+
+        /*
+         * Amostragem de sub-retangulo (cursor / apresentacao parcial):
+         * Calculada em todo quadro para que o gate de supressao de tela preta
+         * saiba se ha conteudo valido mesmo quando os 256 pontos esparsos forem zero.
+         *
+         * Robustez (multi-retangulo e multi-ponto):
+         * 1. Varre ate 32 sub-retangulos (SubRectCnt), nao apenas o primeiro.
+         *    DWM rotineiramente entrega SubRectCnt > 1 no movimento de cursor (rect 0 =
+         *    area anterior apagada com zeros; rect 1 = nova posicao com o cursor).
+         * 2. Amostra multiplos pontos por sub-retangulo (centro e 4 vertices/bordas),
+         *    pois cursores transparentes ou com centro vazado podem ter amostra
+         *    central zero e pixels nao-nulos no restante do sub-retangulo.
+         */
+        ULONG subRectCenterSample = 0u;
+        UINT activeSubRectIndex = 0u;
+        if (pPresent->SubRectCnt > 0 && pPresent->pDstSubRects != NULL && srcPhysical != 0 &&
+            g_Bc250DisplayState.FrameBufferVirtual != NULL &&
+            g_Bc250DisplayState.CurrentMode.Pitch >= 4u) {
+            UINT maxSubRects = (pPresent->SubRectCnt > 32u) ? 32u : pPresent->SubRectCnt;
+            for (UINT r = 0u; r < maxSubRects; ++r) {
+                CONST RECT* rc = &pPresent->pDstSubRects[r];
+                if (rc->left < 0 || rc->top < 0 || rc->right <= rc->left || rc->bottom <= rc->top) {
+                    continue;
+                }
+                if ((ULONG)rc->right > g_Bc250DisplayState.CurrentMode.Width ||
+                    (ULONG)rc->bottom > g_Bc250DisplayState.CurrentMode.Height) {
+                    continue;
+                }
+
+                LONG midX = (rc->left + rc->right) / 2;
+                LONG midY = (rc->top + rc->bottom) / 2;
+                LONG probePoints[5][2] = {
+                    { midX, midY },
+                    { rc->left, rc->top },
+                    { rc->right - 1, rc->top },
+                    { rc->left, rc->bottom - 1 },
+                    { rc->right - 1, rc->bottom - 1 }
+                };
+
+                for (int p = 0; p < 5; ++p) {
+                    LONG px = probePoints[p][0];
+                    LONG py = probePoints[p][1];
+                    if (px >= 0 && py >= 0 &&
+                        (ULONG)px < g_Bc250DisplayState.CurrentMode.Width &&
+                        (ULONG)py < g_Bc250DisplayState.CurrentMode.Height) {
+                        ULONG sampleByteOffset = (ULONG)py * g_Bc250DisplayState.CurrentMode.Pitch + (ULONG)px * 4u;
+                        if ((srcPhysical + sampleByteOffset + 4u) <= g_Bc250DisplayState.FrameBufferSize) {
+                            ULONG pixelVal = *(CONST ULONG *)((CONST UCHAR *)g_Bc250DisplayState.FrameBufferVirtual + srcPhysical + sampleByteOffset);
+                            if (pixelVal != 0u) {
+                                subRectCenterSample = pixelVal;
+                                activeSubRectIndex = r;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (subRectCenterSample != 0u) {
+                    break;
+                }
+            }
+        }
+
+        /* Amostragem e telemetria extensiva solicitada */
+        if (count <= 10 || (count % 60) == 0) {
+            CONST ULONG *dstDwords = (CONST ULONG *)g_Bc250DisplayState.FrameBufferVirtual;
+            CONST ULONG *primDwords = NULL;
+            CONST ULONG *vaDwords = NULL;
+
+            if (srcPhysical != 0 && (srcPhysical + 16) <= g_Bc250DisplayState.FrameBufferSize) {
+                primDwords = (CONST ULONG *)((CONST UCHAR *)g_Bc250DisplayState.FrameBufferVirtual + srcPhysical);
+            }
+            if (srcVa != 0 && (srcVa + 16) <= g_Bc250DisplayState.FrameBufferSize) {
+                vaDwords = (CONST ULONG *)((CONST UCHAR *)g_Bc250DisplayState.FrameBufferVirtual + srcVa);
+            }
+
+            Bc250DisplayLog("[Present #%d] Blt=%d, hCtx=%p, DmaSize=%u, DmaVA=0x%llX, NumSrc=%u, NumDst=%u, Flags=0x%08X\n",
+                count, isBlt ? 1 : 0, hContext, pPresent->DmaSize,
+                (unsigned long long)pPresent->DmaBufferGpuVirtualAddress,
+                numSrc, numDst, pPresent->Flags.Value);
+
+            if (pPresent->pAllocationInfo != NULL) {
+                for (ULONG slot = 0; slot < allocLimit; ++slot) {
+                    Bc250DisplayLog("[Present #%d] Info%u: hDev=%p, Seg=%u, PhysAdapter=%u, VA=0x%llX, Phys=0x%llX\n",
+                        count, slot,
+                        pPresent->pAllocationInfo[slot].hDeviceSpecificAllocation,
+                        (UINT32)pPresent->pAllocationInfo[slot].SegmentId,
+                        (UINT32)pPresent->pAllocationInfo[slot].PhysicalAdapterIndex,
+                        (unsigned long long)pPresent->pAllocationInfo[slot].AllocationVirtualAddress,
+                        (unsigned long long)pPresent->pAllocationInfo[slot].PhysicalAddress.QuadPart);
+                }
+            }
+
+            Bc250DisplayLog("[Present #%d] DstRect=(%d,%d)-(%d,%d), SrcRect=(%d,%d)-(%d,%d), SubRects=%u\n",
+                count,
+                pPresent->DstRect.left, pPresent->DstRect.top, pPresent->DstRect.right, pPresent->DstRect.bottom,
+                pPresent->SrcRect.left, pPresent->SrcRect.top, pPresent->SrcRect.right, pPresent->SrcRect.bottom,
+                pPresent->SubRectCnt);
+
+            if (pPresent->SubRectCnt > 0 && pPresent->pDstSubRects != NULL) {
+                Bc250DisplayLog("[Present #%d] SubRect[%u]=(%d,%d)-(%d,%d), CenterPixel=0x%08X\n",
+                    count,
+                    activeSubRectIndex,
+                    pPresent->pDstSubRects[activeSubRectIndex].left, pPresent->pDstSubRects[activeSubRectIndex].top,
+                    pPresent->pDstSubRects[activeSubRectIndex].right, pPresent->pDstSubRects[activeSubRectIndex].bottom,
+                    subRectCenterSample);
+            }
+
+            if (primDwords != NULL) {
+                Bc250DisplayLog("[Present #%d] SrcPhysSample @ 0x%llX: %08X %08X %08X %08X\n",
+                    count, srcPhysical, primDwords[0], primDwords[1], primDwords[2], primDwords[3]);
+            }
+            if (vaDwords != NULL) {
+                Bc250DisplayLog("[Present #%d] SrcVaOffsetSample @ 0x%llX: %08X %08X %08X %08X\n",
+                    count, srcVa, vaDwords[0], vaDwords[1], vaDwords[2], vaDwords[3]);
+            }
+            if (dstDwords != NULL) {
+                Bc250DisplayLog("[Present #%d] ScanoutSample @ 0x0: %08X %08X %08X %08X\n",
+                    count, dstDwords[0], dstDwords[1], dstDwords[2], dstDwords[3]);
+            }
+
+            /*
+             * Amostragem distribuida dos tres candidatos, antes de qualquer
+             * escrita no scanout.  Quatro DWORDs no inicio de um buffer nao
+             * distinguem "superficie zerada" de "primeiros pixels pretos" --
+             * essa foi a fragilidade central do diagnostico da corrida 09:04.
+             * 256 pontos igualmente espacados + XOR acumulado resolvem isso.
+             */
+            {
+                ULONG nz = 0u, hx = 0u;
+                UINT64 primaryOffset = 0;
+                UINT32 primarySeg = 0;
+                UINT64 dstPhysical = 0;
+                UINT32 dstSegmentId = 0;
+                BOOLEAN dstResolved = Bc250DisplayResolvePresentDestination(
+                    hContext, pPresent, &dstPhysical, &dstSegmentId);
+
+                if (Bc250DisplaySampleSurface(0ull, scanoutBytes, 256u, &nz, &hx)) {
+                    Bc250DisplayLog("[Present #%d] Spread SCANOUT   @ 0x%llX: NonZero=%u/256, Xor=%08X\n",
+                        count, 0ull, nz, hx);
+                }
+                if (Bc250DisplayResolvePrimarySource(&primaryOffset, &primarySeg) &&
+                    Bc250DisplaySampleSurface(primaryOffset, scanoutBytes, 256u, &nz, &hx)) {
+                    Bc250DisplayLog("[Present #%d] Spread PRIMARY   @ 0x%llX: NonZero=%u/256, Xor=%08X (Seg=%u, hAlloc=%p)\n",
+                        count, primaryOffset, nz, hx, primarySeg,
+                        g_Bc250DisplayState.hPrimarySourceAllocation);
+                }
+                if (presentResolved &&
+                    Bc250DisplaySampleSurface(srcPhysical, scanoutBytes, 256u, &nz, &hx)) {
+                    Bc250DisplayLog("[Present #%d] Spread SLOT_SRC  @ 0x%llX (SegOff=0x%llX, Seg=%u): NonZero=%u/256, Xor=%08X\n",
+                        count, srcPhysical, presentPhysical, presentSegmentId, nz, hx);
+                    if (nz > 0) {
+                        Bc250DisplayLog("[Present #%d] *** DESKTOP REAL DETECTADO NA SUPERFICIE *** NonZero=%u/256, Hash=0x%08X (Phys=0x%llX)\n",
+                            count, nz, hx, srcPhysical);
+                    } else {
+                        Bc250DisplayLog("[Present #%d] AVISO: Superficie de origem 0x%llX esta com todos os pixels em zero (NonZero=0/256)\n",
+                            count, srcPhysical);
+                    }
+                }
+                if (dstResolved) {
+                    UINT64 dstVramOffset = 0ull;
+                    if (Bc250SdmaPresentSegmentOffsetToVram(dstSegmentId, dstPhysical, (UINT64)scanoutBytes, &dstVramOffset)) {
+                        if (Bc250DisplaySampleSurface(dstVramOffset, scanoutBytes, 256u, &nz, &hx)) {
+                            Bc250DisplayLog("[Present #%d] Spread SLOT_DST  @ 0x%llX (SegOff=0x%llX Seg=%u): NonZero=%u/256, Xor=%08X\n",
+                                count, dstVramOffset, dstPhysical, dstSegmentId, nz, hx);
+                        }
+                    }
+                }
+                if (srcVa != 0 &&
+                    Bc250DisplaySampleSurface(srcVa, scanoutBytes, 256u, &nz, &hx)) {
+                    Bc250DisplayLog("[Present #%d] Spread SLOT_WORD @ 0x%llX: NonZero=%u/256, Xor=%08X (union PhysicalAddress/VirtualAddress)\n",
+                        count, srcVa, nz, hx);
+                }
+            }
+        }
+
+        /*
+         * Execucao do Blt para o scanout do UEFI GOP (offset 0):
+         * Se temos a superficie primaria fisica (srcPhysical), copiamos para o scanout.
+         *
+         * F3.2: sample only for diagnostics. Black is a valid frame and must
+         * replace the previous frame through the same GPU copy path.
+         */
+        {
+            BOOLEAN isSubWindow = FALSE;
+            ULONG presentW = g_Bc250DisplayState.CurrentMode.Width;
+            ULONG presentH = g_Bc250DisplayState.CurrentMode.Height;
+            LONG rectW = pPresent->SrcRect.right - pPresent->SrcRect.left;
+            LONG rectH = pPresent->SrcRect.bottom - pPresent->SrcRect.top;
+
+            if (rectW > 0 && rectH > 0 &&
+                ((ULONG)rectW < presentW || (ULONG)rectH < presentH)) {
+                isSubWindow = TRUE;
+                presentW = (ULONG)rectW;
+                presentH = (ULONG)rectH;
+            }
+
+            ULONG requiredSrcBytes = isSubWindow ? (presentW * presentH * 4u) : scanoutBytes;
+            ULONG srcNz = 0u, srcHx = 0u;
+            (void)Bc250DisplaySampleSurface(srcPhysical, requiredSrcBytes, 256u, &srcNz, &srcHx);
+            UINT64 effectiveSrcPhys = srcPhysical;
+
+            if (effectiveSrcPhys != 0ull && (count <= 10 || (count % 60) == 0)) {
+                Bc250DisplayLog("[Present #%d] ROTEAMENTO AO SCANOUT: VramOff=0x%llX (NonZero=%u/256 Hash=0x%08X, Dim=%ux%u%s)\n",
+                    count, effectiveSrcPhys, srcNz, srcHx, presentW, presentH,
+                    isSubWindow ? " SUBWINDOW" : "");
+            }
+
+            static int s_TileProbeCount = 0;
+            if (s_TileProbeCount < 3 && srcNz >= 64u && g_Bc250DisplayState.FrameBufferVirtual != NULL && effectiveSrcPhys != 0 &&
+                effectiveSrcPhys + 10248u <= g_Bc250DisplayState.FrameBufferSize) {
+                volatile uint32_t *p = (volatile uint32_t *)((char *)g_Bc250DisplayState.FrameBufferVirtual + effectiveSrcPhys);
+                Bc250DisplayLog("[Present #%d TILE_PROBE (Content NonZero=%u/256)] Off=0: %08X %08X %08X %08X | Off+64: %08X %08X | Off+10240: %08X %08X\n",
+                    count, srcNz, p[0], p[1], p[2], p[3], p[16], p[17], p[2560], p[2561]);
+                s_TileProbeCount++;
+            }
+
+            if (effectiveSrcPhys != 0 && requiredSrcBytes > 0 &&
+                effectiveSrcPhys <= g_Bc250DisplayState.FrameBufferSize &&
+                requiredSrcBytes <= g_Bc250DisplayState.FrameBufferSize - effectiveSrcPhys) {
+                BOOLEAN sdmaDone = FALSE;
+                BOOLEAN bltToDestination = (pPresent->Flags.Blt != 0u) ? TRUE : FALSE;
+                const char *bltDestinationVerdict = NULL;
+                BOOLEAN dirtyRectsUsed = FALSE;
+                UINT dirtyRectCount = 0u;
+                CONST char *dirtyRefuseReason = s_Bc250Dx50DirtyRectsEnabled ?
+                    "NAO_AVALIADO" : "DX50_BISSECCAO_DESLIGADO";
+                UINT dirtyRefuseIndex = 0u;
+                ULONG dirtyRectBytes = 0u;
+                uint64_t srcGpu = g_Bc250SdmaPresent.VramMcStart + effectiveSrcPhys;
+                uint64_t dstScanoutGpu = g_Bc250SdmaPresent.ScanoutGpuAddress;
+
+                /* F3.2: black is valid content. Sampling is evidence only,
+                 * never permission to suppress a requested GPU copy. */
+                {
+                    if (srcNz == 0u && subRectCenterSample != 0u && (count <= 10 || (count % 60) == 0)) {
+                        Bc250DisplayLog("[Present #%d] Blt acionado por sub-retangulo parcial nao-nulo (NonZero=0/256, SubRect=0x%08X @ 0x%llX)\n",
+                            count, subRectCenterSample, effectiveSrcPhys);
+                    }
+                    /* DX.63: a supressao de quadro em branco protege o SCANOUT; um
+                     * Blt nao escreve o scanout, e preto e' conteudo valido. */
+                    BOOLEAN skipBlankUnderEscape = (!bltToDestination &&
+                        srcNz == 0u && subRectCenterSample == 0u &&
+                        (g_Bc250SdmaPresent.EscapeNonZeroBltCount > 0 || g_Bc250SdmaPresent.EscapeEnteredCount > 0 || count <= 5));
+                    if (bltToDestination) {
+                        bltDestinationVerdict = g_Bc250SdmaPresent.HardwareEnabled ?
+                            Bc250DisplayBltToDestination(hContext, pPresent,
+                                effectiveSrcPhys, &sdmaDone) : "SDMA_DESABILITADO";
+                        if (!sdmaDone) {
+                            Bc250DisplayLog("[Present #%d] BLT_DESTINO RECUSADO: motivo=%s hSrc=%p hDst=%p Src=(%ld,%ld)-(%ld,%ld) Dst=(%ld,%ld)-(%ld,%ld); scanout NAO tocado\n",
+                                count, bltDestinationVerdict,
+                                pPresent->pAllocationInfo != NULL ?
+                                    pPresent->pAllocationInfo[DXGK_PRESENT_SOURCE_INDEX].hDeviceSpecificAllocation : NULL,
+                                pPresent->pAllocationInfo != NULL ?
+                                    pPresent->pAllocationInfo[DXGK_PRESENT_DESTINATION_INDEX].hDeviceSpecificAllocation : NULL,
+                                pPresent->SrcRect.left, pPresent->SrcRect.top,
+                                pPresent->SrcRect.right, pPresent->SrcRect.bottom,
+                                pPresent->DstRect.left, pPresent->DstRect.top,
+                                pPresent->DstRect.right, pPresent->DstRect.bottom);
+                        } else if (count <= 10 || (count % 60) == 0) {
+                            Bc250DisplayLog("[Present #%d] BLT_DESTINO OK: Src=(%ld,%ld)-(%ld,%ld) -> Dst=(%ld,%ld)-(%ld,%ld) na alocacao de destino; scanout NAO tocado\n",
+                                count,
+                                pPresent->SrcRect.left, pPresent->SrcRect.top,
+                                pPresent->SrcRect.right, pPresent->SrcRect.bottom,
+                                pPresent->DstRect.left, pPresent->DstRect.top,
+                                pPresent->DstRect.right, pPresent->DstRect.bottom);
+                        }
+                    } else if (skipBlankUnderEscape) {
+                        sdmaDone = TRUE;
+                        if (count <= 10 || (count % 60) == 0) {
+                            Bc250DisplayLog("[Present #%d] SCANOUT ESCAPE ATIVO: DWM em branco suprimido, scanout mantido para aplicacao (EscapeNonZero=%ld EscapeTotal=%ld InitPreserve=%d)\n",
+                                count, (long)g_Bc250SdmaPresent.EscapeNonZeroBltCount, (long)g_Bc250SdmaPresent.EscapeEnteredCount, (count <= 5));
+                        }
+                    } else if (g_Bc250SdmaPresent.HardwareEnabled && dstScanoutGpu != 0 && srcGpu != dstScanoutGpu) {
+                        if (isSubWindow) {
+                            ULONG srcPitch = presentW * 4u;
+                            ULONG dstPitch = g_Bc250DisplayState.CurrentMode.Pitch;
+                            ULONG dstX = (g_Bc250DisplayState.CurrentMode.Width > presentW) ?
+                                         ((g_Bc250DisplayState.CurrentMode.Width - presentW) / 2u) : 0u;
+                            ULONG dstY = (g_Bc250DisplayState.CurrentMode.Height > presentH) ?
+                                         ((g_Bc250DisplayState.CurrentMode.Height - presentH) / 2u) : 0u;
+                            sdmaDone = Bc250SdmaPresentBltRect(
+                                srcGpu, srcPitch,
+                                dstScanoutGpu, dstPitch,
+                                dstX, dstY,
+                                presentW, presentH);
+                        } else if (s_Bc250Dx50DirtyRectsEnabled &&
+                                   Bc250DisplayDirtyRectsUsable(pPresent, &dirtyRectCount,
+                                       &dirtyRefuseReason, &dirtyRefuseIndex)) {
+                            /*
+                             * DX.34 -- HONRAR pDstSubRects (contrato do DXGKARG_PRESENT).
+                             *
+                             * Corrida 79 (P0): Present #8 veio com SubRects=1 do tamanho de
+                             * um cursor e a superficie inteira 0/256; o KMD copiava os
+                             * 11.059.200 bytes e o Present #9 ja amostrava o scanout 0/256
+                             * -- tela preta com o cursor sozinho. So' os retangulos sujos
+                             * sao conteudo novo; o resto do scanout e' o quadro anterior.
+                             * Cada retangulo vai por COPY_LINEAR_SUB_WINDOW (o caminho do
+                             * SUBWINDOW que pos o 1280x720 da Corrida 75 no monitor), com a
+                             * origem no mesmo (x,y) da superficie de tela cheia.
+                             */
+                            ULONG pitch = g_Bc250DisplayState.CurrentMode.Pitch;
+                            UINT r;
+                            dirtyRectsUsed = TRUE;
+                            sdmaDone = TRUE;
+                            for (r = 0u; r < dirtyRectCount && sdmaDone; ++r) {
+                                CONST RECT *rc = &pPresent->pDstSubRects[r];
+                                uint64_t rectSrc = srcGpu + (uint64_t)(ULONG)rc->top * pitch +
+                                    (uint64_t)(ULONG)rc->left * 4ull;
+                                sdmaDone = Bc250SdmaPresentBltRect(
+                                    rectSrc, pitch, dstScanoutGpu, pitch,
+                                    (ULONG)rc->left, (ULONG)rc->top,
+                                    (ULONG)(rc->right - rc->left),
+                                    (ULONG)(rc->bottom - rc->top));
+                                dirtyRectBytes += (ULONG)(rc->right - rc->left) *
+                                    (ULONG)(rc->bottom - rc->top) * 4u;
+                            }
+                            {
+                                LONG dirtyLog = InterlockedIncrement(&s_Bc250DirtyRectLogCount);
+                                if (dirtyLog <= 16 || (dirtyLog % 128) == 0) {
+                                    ULONG match = 0u, probes = 0u, srcNonZero = 0u;
+                                    if (sdmaDone) {
+                                        Bc250DisplayDirtyRectProof(pPresent, dirtyRectCount,
+                                            effectiveSrcPhys, &match, &probes, &srcNonZero);
+                                    }
+                                    Bc250DisplayLog("[Present #%d] DIRTY_RECTS n=%u Bytes=%u rect0=(%ld,%ld)-(%ld,%ld) SDMA=%s DIRTY_RECT_PROOF Match=%u/%u SrcNZ=%u -- so' os retangulos sujos foram ao scanout (ocorrencia #%ld)\n",
+                                        count, dirtyRectCount, dirtyRectBytes,
+                                        pPresent->pDstSubRects[0].left, pPresent->pDstSubRects[0].top,
+                                        pPresent->pDstSubRects[0].right, pPresent->pDstSubRects[0].bottom,
+                                        sdmaDone ? "YES" : "FAILED_CLOSED",
+                                        match, probes, srcNonZero, dirtyLog);
+                                }
+                            }
+                        } else {
+                            if (pPresent->SubRectCnt > 0u) {
+                                LONG fullLog = InterlockedIncrement(&s_Bc250DirtyRectLogCount);
+                                if (fullLog <= 16 || (fullLog % 128) == 0) {
+                                    CONST RECT *bad = (pPresent->pDstSubRects != NULL &&
+                                        dirtyRefuseIndex < pPresent->SubRectCnt) ?
+                                        &pPresent->pDstSubRects[dirtyRefuseIndex] : NULL;
+                                    Bc250DisplayLog("[Present #%d] DIRTY_RECTS_RECUSADOS SubRectCnt=%u motivo=%s Src=(%ld,%ld)-(%ld,%ld) Dst=(%ld,%ld)-(%ld,%ld) rect[%u]=(%ld,%ld)-(%ld,%ld) teto=%u; copia de tela cheia (ocorrencia #%ld)\n",
+                                        count, pPresent->SubRectCnt, dirtyRefuseReason,
+                                        pPresent->SrcRect.left, pPresent->SrcRect.top,
+                                        pPresent->SrcRect.right, pPresent->SrcRect.bottom,
+                                        pPresent->DstRect.left, pPresent->DstRect.top,
+                                        pPresent->DstRect.right, pPresent->DstRect.bottom,
+                                        dirtyRefuseIndex,
+                                        bad ? bad->left : 0L, bad ? bad->top : 0L,
+                                        bad ? bad->right : 0L, bad ? bad->bottom : 0L,
+                                        BC250_DIRTY_RECT_MAX, fullLog);
+                                }
+                            }
+                            sdmaDone = Bc250SdmaPresentBlt(srcGpu, dstScanoutGpu, scanoutBytes);
+                        }
+                    }
+
+                    if (sdmaDone && !skipBlankUnderEscape &&
+                        (count == 1 || count == 5 || count == 10 || count == 25 || count == 45)) {
+                        if (bltToDestination) {
+                            /* DX.63: o Blt nao escreveu o scanout; comparar a origem
+                             * com o scanout reprovaria um present correto. */
+                            Bc250DisplayLog("[Present #%d] BYTE_PROOF SKIPPED (BLT_DESTINO): copia para a alocacao de destino, scanout nao participa\n",
+                                count);
+                        } else if (isSubWindow) {
+                            Bc250DisplayLog("[Present #%d] BYTE_PROOF SKIPPED (SUBWINDOW %ux%u no scanout %ux%u): Blt 2D retangular conferido via engine\n",
+                                count, presentW, presentH,
+                                g_Bc250DisplayState.CurrentMode.Width,
+                                g_Bc250DisplayState.CurrentMode.Height);
+                        } else if (dirtyRectsUsed) {
+                            /* DX.34: so' os retangulos sujos foram copiados; comparar a
+                             * superficie inteira reprovaria um present correto. A prova
+                             * amostral por retangulo sai na linha DIRTY_RECTS. */
+                            Bc250DisplayLog("[Present #%d] BYTE_PROOF SKIPPED (DIRTY_RECTS n=%u Bytes=%u): prova amostral por retangulo na linha DIRTY_RECTS\n",
+                                count, dirtyRectCount, dirtyRectBytes);
+                        } else {
+                            UINT64 mismatchOffset = ~(UINT64)0;
+                            ULONG postNz = 0u, postHx = 0u;
+                            BOOLEAN bytesMatch = Bc250DisplayCompareSurfaceBytes(
+                                effectiveSrcPhys, 0ull, scanoutBytes, &mismatchOffset);
+                            BC250_BLT_PROOF_VERDICT proofVerdict;
+
+                            if (bytesMatch) {
+                                (void)Bc250DisplaySampleSurface(0ull, scanoutBytes, 256u, &postNz, &postHx);
+                            }
+                            /*
+                             * A9/A10: a classificacao vem de driver/core, e o teste
+                             * blt_proof_contract_test trava a semantica. O driver nao
+                             * decide sozinho o que e' PASS.
+                             */
+                            proofVerdict = Bc250ClassifyBltProof(
+                                bytesMatch ? 1u : 0u, (uint32_t)postNz,
+                                bytesMatch ? 256u : 0u);
+
+                            if (!Bc250BltProofRequiresFailClosed(proofVerdict)) {
+                                if (!Bc250BltProofAllowsTripodClaim(proofVerdict)) {
+                                    LONG streak = InterlockedIncrement(
+                                        &g_Bc250SdmaPresent.BltBlankStreak);
+                                    InterlockedExchange(&s_PresentByteProofState, 0);
+                                    InterlockedExchange(
+                                        &g_Bc250SdmaPresent.BltDataProofState,
+                                        BC250_BLT_DATA_PROOF_BLANK);
+                                    Bc250DisplayLog("[Present #%d] BYTE_PROOF INCONCLUSIVO (FRAME EM BRANCO): Source=0x%llX Dest=0x0 Bytes=%u copiados fielmente, mas PostScanout NonZero=0/256 Hash=0x%08X. Zero contra zero NAO prova caminho de pixel. BlankStreak=%ld\n",
+                                        count, effectiveSrcPhys, scanoutBytes, postHx, streak);
+                                } else {
+                                    InterlockedExchange(&s_PresentByteProofState, 2);
+                                    InterlockedExchange(&g_Bc250SdmaPresent.BltBlankStreak, 0);
+                                    InterlockedExchange(
+                                        &g_Bc250SdmaPresent.BltDataProofState,
+                                        BC250_BLT_DATA_PROOF_OK);
+                                    Bc250DisplayLog("[Present #%d] BYTE_PROOF PASS (dados conferidos, frame com conteudo): Source=0x%llX Dest=0x0 Bytes=%u (PostScanout: NonZero=%u/256, Hash=0x%08X)\n",
+                                        count, effectiveSrcPhys, scanoutBytes, postNz, postHx);
+                                }
+                            } else {
+                                InterlockedExchange(&s_PresentByteProofState, -1);
+                                InterlockedExchange(
+                                    &g_Bc250SdmaPresent.BltDataProofState,
+                                    BC250_BLT_DATA_PROOF_MISMATCH);
+                                sdmaDone = FALSE;
+                                /*
+                                 * C3.7 (12/09) -- A REACAO DEIXOU DE SER PIOR QUE A FALHA.
+                                 *
+                                 * Aqui havia `g_Bc250SdmaPresent.HardwareEnabled = FALSE`.
+                                 * Medido na corrida 13:11: um byte proof reprovado
+                                 * desligava o SDMA GLOBALMENTE, e a partir dai TODA
+                                 * submissao WDDM caia em `SubmitIndirectAsync recusado:
+                                 * HwEnabled=0` -> `IB NAO EXECUTADO; completion NAO
+                                 * notificado` -> o VidMm derrubou a maquina com
+                                 * BugCheck 0x119 Arg1=2 Arg2=0xC0000185, sete linhas de
+                                 * log depois.
+                                 *
+                                 * E a reprovacao era FALSA: o byte proof lia o endereco
+                                 * errado por falta de LocalSegmentBaseOffset (C3.6).
+                                 *
+                                 * Falhar fechado continua certo -- este present NAO
+                                 * declara sucesso e `sdmaDone` fica FALSE. O que nao pode
+                                 * e' um quadro reprovado condenar o motor de submissao do
+                                 * adaptador inteiro. Quem desabilita a engine e' o
+                                 * caminho de TDR, que tem quiesce e restart com prova.
+                                 */
+                                Bc250DisplayLog("[Present #%d] BYTE_PROOF FAIL: Source=0x%llX Dest=0x0 Bytes=%u FirstMismatch=0x%llX; present reprovado (engine PRESERVADA)\n",
+                                    count, effectiveSrcPhys, scanoutBytes, mismatchOffset);
+                            }
+                        }
+                    }
+
+                    if (!bltToDestination && (count <= 10 || (count % 60) == 0)) {
+                        if (isSubWindow) {
+                            Bc250DisplayLog("[Present #%d] Blt 2D %ux%u srcPitch=%u (src 0x%llX -> scanout 0x0 DstXY=%u,%u): SDMA=%s\n",
+                                count, presentW, presentH, presentW * 4u,
+                                effectiveSrcPhys,
+                                (g_Bc250DisplayState.CurrentMode.Width > presentW) ? ((g_Bc250DisplayState.CurrentMode.Width - presentW) / 2u) : 0u,
+                                (g_Bc250DisplayState.CurrentMode.Height > presentH) ? ((g_Bc250DisplayState.CurrentMode.Height - presentH) / 2u) : 0u,
+                                sdmaDone ? "YES" : "FAILED_CLOSED");
+                        } else if (dirtyRectsUsed) {
+                            Bc250DisplayLog("[Present #%d] Blt DIRTY_RECTS n=%u %u bytes (src 0x%llX -> scanout 0x0): SDMA=%s\n",
+                                count, dirtyRectCount, dirtyRectBytes, effectiveSrcPhys, sdmaDone ? "YES" : "FAILED_CLOSED");
+                        } else {
+                            Bc250DisplayLog("[Present #%d] Blt %u bytes (src 0x%llX -> scanout 0x0): SDMA=%s\n",
+                                count, scanoutBytes, effectiveSrcPhys, sdmaDone ? "YES" : "FAILED_CLOSED");
+                        }
+                    }
+                    /* F3.2: the old unconditional SUCCESS concealed failed DMA.
+                     * Do NOT return the historical STATUS_IO_DEVICE_ERROR (0x10E).
+                     * WDK DXGKDDI_PRESENT documents GPU_EXCEPTION_ON_DEVICE for
+                     * DMA errors, placing this context in the lost state. This
+                     * failure route is NOT VALIDATED ON HARDWARE; no guarantee
+                     * against BugCheck is inferred from the documented status.
+                     * No NOP/completion is generated for a failed transfer. */
+                    presentStatus = Bc250PresentCopySucceeded(sdmaDone,
+                        dstScanoutGpu != 0 && srcGpu == dstScanoutGpu) ?
+                        STATUS_SUCCESS : STATUS_GRAPHICS_GPU_EXCEPTION_ON_DEVICE;
+                    if (!NT_SUCCESS(presentStatus)) {
+                        Bc250DisplayLog("[Present #%d] RECUSADO: copia GPU nao concluida; status=0x%08X, sem NOP de sucesso\n",
+                            count, (ULONG)presentStatus);
+                    }
+                }
+            } else if (vaResolved) {
+                Bc250DisplayLog("[Present #%d] REJECT source bounds: Phys=0x%llX, Bytes=%u, Aperture=%u\n",
+                    count, effectiveSrcPhys, requiredSrcBytes, g_Bc250DisplayState.FrameBufferSize);
+                presentStatus = STATUS_INVALID_PARAMETER;
+            }
+        }
+}
+
+    /*
+     * Emite pacote SDMA no DMA buffer para que o GPU Scheduler do Windows
+     * tenha um pacote de submissao valido para despachar e avancar a fence.
+     */
+    if (NT_SUCCESS(presentStatus) && pPresent->pDmaBuffer != NULL &&
+        pPresent->DmaSize >= sizeof(uint32_t)) {
+        uint32_t *dma = (uint32_t *)pPresent->pDmaBuffer;
+        *dma = 0u; /* SDMA NOP */
+        pPresent->pDmaBuffer = (PVOID)(dma + 1);
+    }
+
+    Bc250ActiveSdmaRetirePendingOnAllAdapters(FALSE);
+
+    /*
+     * DX.72: tempo INTERNO desta DDI, comparavel ao intervalo ENTER/LEAVE do
+     * pfnPresentCb na UMD. O harness windowed usa Blt: guardar todos os seus
+     * quadros; os Flip do DWM ficam amostrados para limitar I/O no caminho
+     * quente. A leitura do contador precede o log para nao incluir seu flush.
+     * A diferenca callback - DDI inclui o runtime/scheduler, sem atribuir
+     * automaticamente toda a diferenca a uma unica camada.
+     */
+    {
+        LARGE_INTEGER presentTimerEnd = KeQueryPerformanceCounter(NULL);
+        LONGLONG elapsedTicks = presentTimerEnd.QuadPart -
+            presentTimerStart.QuadPart;
+        ULONGLONG elapsedUs = 0ull;
+        if (elapsedTicks > 0 && presentTimerFrequency.QuadPart > 0) {
+            elapsedUs = ((ULONGLONG)elapsedTicks * 1000000ull) /
+                (ULONGLONG)presentTimerFrequency.QuadPart;
+        }
+        if (pPresent->Flags.Blt || count <= 16L || (count % 32L) == 0L ||
+            !NT_SUCCESS(presentStatus)) {
+            Bc250DisplayLog("[DX74_PRESENT_KMD_TEMPO] n=%ld hContext=%p Blt=%u Flip=%u Status=0x%08X StartQpc=%llu EndQpc=%llu ElapsedUs=%llu\n",
+                count, hContext, (unsigned)pPresent->Flags.Blt,
+                (unsigned)pPresent->Flags.Flip, (unsigned)presentStatus,
+                (unsigned long long)presentTimerStart.QuadPart,
+                (unsigned long long)presentTimerEnd.QuadPart,
+                (unsigned long long)elapsedUs);
+        }
+    }
+
+    return presentStatus;
 }
 
 NTSTATUS APIENTRY Bc250DxgkDdiControlInterrupt(
@@ -1930,25 +4238,13 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresentDisplayOnly(
 
     if (InterlockedExchange(
             &g_Bc250DisplayState.ForceFullPresent, 0) != 0) {
-        BOOLEAN sdmaFullDone = FALSE;
-#if defined(BC250_ENABLE_DXGK_REGISTRATION)
-        PHYSICAL_ADDRESS srcPhys = MmGetPhysicalAddress((PVOID)pPresentDisplayOnly->pSource);
-        if (srcPhys.QuadPart != 0 && g_Bc250SdmaPresent.HardwareEnabled) {
-            sdmaFullDone = Bc250SdmaPresentBlt(
-                (uint64_t)srcPhys.QuadPart,
-                g_Bc250SdmaPresent.ScanoutGpuAddress,
-                height * destinationPitch);
-        }
-#endif
-        if (!sdmaFullDone) {
-            LONG y;
-            for (y = 0; y < (LONG)height; ++y) {
-                PUCHAR dst = frameBuffer + ((SIZE_T)y * destinationPitch);
-                CONST UCHAR *src =
-                    (CONST UCHAR *)pPresentDisplayOnly->pSource +
-                    ((SIZE_T)y * pPresentDisplayOnly->Pitch);
-                RtlCopyMemory(dst, src, (SIZE_T)width * 4u);
-            }
+        LONG y;
+        for (y = 0; y < (LONG)height; ++y) {
+            PUCHAR dst = frameBuffer + ((SIZE_T)y * destinationPitch);
+            CONST UCHAR *src =
+                (CONST UCHAR *)pPresentDisplayOnly->pSource +
+                ((SIZE_T)y * pPresentDisplayOnly->Pitch);
+            RtlCopyMemory(dst, src, (SIZE_T)width * 4u);
         }
         KeMemoryBarrier();
         Bc250ReleasePresentAccess();
@@ -1998,53 +4294,26 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresentDisplayOnly(
                     ((SIZE_T)y * pPresentDisplayOnly->Pitch) +
                     ((SIZE_T)clipped.left * 4u);
                 ULONG rowBytes = (ULONG)(clipped.right - clipped.left) * 4u;
-                BOOLEAN sdmaRowDone = FALSE;
-#if defined(BC250_ENABLE_DXGK_REGISTRATION)
-                PHYSICAL_ADDRESS rowPhys = MmGetPhysicalAddress((PVOID)src);
-                if (rowPhys.QuadPart != 0 && g_Bc250SdmaPresent.HardwareEnabled) {
-                    uint64_t dstGpu = g_Bc250SdmaPresent.ScanoutGpuAddress +
-                        ((SIZE_T)y * destinationPitch) +
-                        ((SIZE_T)clipped.left * 4u);
-                    sdmaRowDone = Bc250SdmaPresentBlt(
-                        (uint64_t)rowPhys.QuadPart,
-                        dstGpu,
-                        rowBytes);
-                }
-#endif
-                if (!sdmaRowDone) {
-                    RtlCopyMemory(
-                        dst, src, (SIZE_T)rowBytes);
-                }
+                RtlCopyMemory(dst, src, (SIZE_T)rowBytes);
             }
         }
     } else if (pPresentDisplayOnly->NumMoves == 0) {
-        BOOLEAN sdmaDone = FALSE;
-#if defined(BC250_ENABLE_DXGK_REGISTRATION)
-        PHYSICAL_ADDRESS srcPhys = MmGetPhysicalAddress((PVOID)pPresentDisplayOnly->pSource);
-        if (srcPhys.QuadPart != 0 && g_Bc250SdmaPresent.HardwareEnabled) {
-            sdmaDone = Bc250SdmaPresentBlt(
-                (uint64_t)srcPhys.QuadPart,
-                g_Bc250SdmaPresent.ScanoutGpuAddress,
-                height * destinationPitch);
-        }
-#endif
-        if (!sdmaDone) {
-            LONG y;
-            for (y = 0; y < (LONG)height; y++) {
-                PUCHAR dst = frameBuffer + ((SIZE_T)y * destinationPitch);
-                CONST UCHAR *src = (CONST UCHAR *)pPresentDisplayOnly->pSource +
-                    ((SIZE_T)y * pPresentDisplayOnly->Pitch);
-                RtlCopyMemory(dst, src, (SIZE_T)width * 4u);
-            }
+        LONG y;
+        for (y = 0; y < (LONG)height; y++) {
+            PUCHAR dst = frameBuffer + ((SIZE_T)y * destinationPitch);
+            CONST UCHAR *src = (CONST UCHAR *)pPresentDisplayOnly->pSource +
+                ((SIZE_T)y * pPresentDisplayOnly->Pitch);
+            RtlCopyMemory(dst, src, (SIZE_T)width * 4u);
         }
     }
 
     if (presentCount == 1 || (presentCount % 60) == 0) {
-        Bc250DisplayLog("[PresentDisplayOnly #%d] SDMA Blt Status: Completed=%ld, Submitted=%ld, Fallbacks=%ld\n",
+        Bc250DisplayLog("[PresentDisplayOnly #%d] SDMA Blt Status: Completed=%ld, Submitted=%ld, Fallbacks=%ld, HostCpuCopies=%ld\n",
             presentCount,
             g_Bc250SdmaPresent.BltCompletedCount,
             g_Bc250SdmaPresent.BltSubmittedCount,
-            g_Bc250SdmaPresent.FallbackCpuCount);
+            g_Bc250SdmaPresent.FallbackCpuCount,
+            g_Bc250SdmaPresent.HostCpuCopyCount);
     }
 
     KeMemoryBarrier();
@@ -2317,6 +4586,19 @@ NTSTATUS Bc250DisplayPopulateCallbacks(
     InitializationData->DxgkDdiEnumVidPnCofuncModality = Bc250DxgkDdiEnumVidPnCofuncModality;
     InitializationData->DxgkDdiSetVidPnSourceAddress = Bc250DxgkDdiSetVidPnSourceAddress;
     InitializationData->DxgkDdiSetVidPnSourceVisibility = Bc250DxgkDdiSetVidPnSourceVisibility;
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM1_3)
+    InitializationData->DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay = Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay;
+    InitializationData->DxgkDdiCheckMultiPlaneOverlaySupport = Bc250DxgkDdiCheckMultiPlaneOverlaySupport;
+#endif
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_0)
+    InitializationData->DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay2 = Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay2;
+    InitializationData->DxgkDdiCheckMultiPlaneOverlaySupport2 = Bc250DxgkDdiCheckMultiPlaneOverlaySupport2;
+#endif
+#if (DXGKDDI_INTERFACE_VERSION >= DXGKDDI_INTERFACE_VERSION_WDDM2_1)
+    InitializationData->DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay3 = Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay3;
+    InitializationData->DxgkDdiCheckMultiPlaneOverlaySupport3 = Bc250DxgkDdiCheckMultiPlaneOverlaySupport3;
+    InitializationData->DxgkDdiPostMultiPlaneOverlayPresent = Bc250DxgkDdiPostMultiPlaneOverlayPresent;
+#endif
     InitializationData->DxgkDdiCommitVidPn = Bc250DxgkDdiCommitVidPn;
     InitializationData->DxgkDdiUpdateActiveVidPnPresentPath = Bc250DxgkDdiUpdateActiveVidPnPresentPath;
     InitializationData->DxgkDdiRecommendMonitorModes = Bc250DxgkDdiRecommendMonitorModes;

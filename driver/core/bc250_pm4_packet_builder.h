@@ -29,6 +29,7 @@ extern "C" {
 #define BC250_PM4_IT_SET_BASE            0x11u
 #define BC250_PM4_IT_DISPATCH_DIRECT     0x15u
 #define BC250_PM4_IT_DISPATCH_INDIRECT   0x16u
+#define BC250_PM4_IT_DRAW_INDEX_AUTO     0x2Du
 #define BC250_PM4_IT_WRITE_DATA          0x37u
 #define BC250_PM4_IT_WAIT_REG_MEM        0x3Cu
 #define BC250_PM4_IT_INDIRECT_BUFFER     0x3Fu
@@ -85,6 +86,35 @@ extern "C" {
 #define BC250_PM4_EVENT_CS_PARTIAL_FLUSH     0x40u
 #define BC250_PM4_EVENT_EOP                  0x46u
 
+#define BC250_PM4_DI_PT_POINTLIST     0x01u
+#define BC250_PM4_DI_PT_LINELIST      0x02u
+#define BC250_PM4_DI_PT_TRIANGLELIST  0x04u
+#define BC250_PM4_DI_PT_RECTLIST      0x11u
+
+/* GFX10 Context Registers for 3D Draw / Rasterization (Parede B) */
+#define BC250_PM4_REG_PA_SC_WINDOW_SCISSOR_TL (BC250_PM4_CONTEXT_REG_BASE + 0x0081u)
+#define BC250_PM4_REG_PA_SC_WINDOW_SCISSOR_BR (BC250_PM4_CONTEXT_REG_BASE + 0x0082u)
+#define BC250_PM4_REG_CB_TARGET_MASK          (BC250_PM4_CONTEXT_REG_BASE + 0x008Eu)
+#define BC250_PM4_REG_PA_SC_VPORT_SCISSOR_0_TL (BC250_PM4_CONTEXT_REG_BASE + 0x0094u)
+#define BC250_PM4_REG_PA_SC_VPORT_SCISSOR_0_BR (BC250_PM4_CONTEXT_REG_BASE + 0x0095u)
+#define BC250_PM4_REG_PA_CL_VPORT_XSCALE      (BC250_PM4_CONTEXT_REG_BASE + 0x010Fu)
+#define BC250_PM4_REG_PA_CL_VPORT_XOFFSET     (BC250_PM4_CONTEXT_REG_BASE + 0x0110u)
+#define BC250_PM4_REG_PA_CL_VPORT_YSCALE      (BC250_PM4_CONTEXT_REG_BASE + 0x0111u)
+#define BC250_PM4_REG_PA_CL_VPORT_YOFFSET     (BC250_PM4_CONTEXT_REG_BASE + 0x0112u)
+#define BC250_PM4_REG_PA_CL_VPORT_ZSCALE      (BC250_PM4_CONTEXT_REG_BASE + 0x0113u)
+#define BC250_PM4_REG_PA_CL_VPORT_ZOFFSET     (BC250_PM4_CONTEXT_REG_BASE + 0x0114u)
+#define BC250_PM4_REG_PA_SU_SC_MODE_CNTL      (BC250_PM4_CONTEXT_REG_BASE + 0x0205u)
+#define BC250_PM4_REG_PA_CL_VTE_CNTL          (BC250_PM4_CONTEXT_REG_BASE + 0x0206u)
+#define BC250_PM4_REG_CB_COLOR0_BASE          (BC250_PM4_CONTEXT_REG_BASE + 0x0318u)
+#define BC250_PM4_REG_CB_COLOR0_PITCH         (BC250_PM4_CONTEXT_REG_BASE + 0x0319u)
+#define BC250_PM4_REG_CB_COLOR0_SLICE         (BC250_PM4_CONTEXT_REG_BASE + 0x031Au)
+#define BC250_PM4_REG_CB_COLOR0_VIEW          (BC250_PM4_CONTEXT_REG_BASE + 0x031Bu)
+#define BC250_PM4_REG_CB_COLOR0_INFO          (BC250_PM4_CONTEXT_REG_BASE + 0x031Cu)
+#define BC250_PM4_REG_CB_COLOR0_ATTRIB        (BC250_PM4_CONTEXT_REG_BASE + 0x031Du)
+#define BC250_PM4_REG_VGT_PRIMITIVE_TYPE      (BC250_PM4_UCONFIG_REG_BASE + 0x0242u)
+#define BC250_PM4_REG_VGT_NUM_INSTANCES       (BC250_PM4_UCONFIG_REG_BASE + 0x024Du)
+#define BC250_PM4_REG_VGT_DRAW_INITIATOR      (BC250_PM4_CONTEXT_REG_BASE + 0x01FCu)
+
 typedef enum BC250_PM4_STATUS {
     BC250_PM4_OK = 0,
     BC250_PM4_BAD_ARGUMENT,
@@ -94,11 +124,43 @@ typedef enum BC250_PM4_STATUS {
     BC250_PM4_OUT_OF_BOUNDS
 } BC250_PM4_STATUS;
 
+BC250_PM4_STATUS Bc250Pm4EmitDrawIndexAuto(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t IndexCount,
+    uint32_t DrawInitiator);
+
+BC250_PM4_STATUS Bc250Pm4EmitColorTarget0(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint64_t BaseGpuVa,
+    uint32_t Width,
+    uint32_t Height,
+    uint32_t PitchBytes,
+    uint32_t FormatIndex,
+    uint32_t CompSwap);
+
+BC250_PM4_STATUS Bc250Pm4EmitWindowScissor(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t Left,
+    uint32_t Top,
+    uint32_t Right,
+    uint32_t Bottom);
+
 BC250_PM4_STATUS Bc250Pm4EmitNop(
     uint32_t *RingBuffer,
     uint32_t RingDwords,
     uint32_t *CursorDwords,
     uint32_t ExtraCount);
+
+BC250_PM4_STATUS Bc250Pm4EmitPacket2Nop(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords);
 
 BC250_PM4_STATUS Bc250Pm4EmitWriteData(
     uint32_t *RingBuffer,
@@ -192,6 +254,91 @@ BC250_PM4_STATUS Bc250Pm4RingAdvanceWptr(
     uint32_t *NewWptrDwords);
 
 const char *Bc250Pm4StatusName(BC250_PM4_STATUS Status);
+
+/*
+ * DECODIFICACAO DE UM HEADER PM4 LIDO DO SILICIO -- fonte unica.
+ *
+ * Existe por causa da corrida 2026-09-19 09:06:34: o anel grafico parou com
+ * o CP ocupado e nao havia como dizer EM QUE PACOTE. CP_ME_HEADER_DUMP e
+ * CP_PFP_HEADER_DUMP guardam o ultimo header que cada micro-engine decodificou,
+ * e sem um nome eles sairiam como hexadecimal solto -- que foi exatamente o
+ * problema que a decodificacao de CP_STALLED_STAT1 ja teve neste projeto.
+ *
+ * Type3 (bits 31:30 == 3): opcode em 15:8, count em 29:16 (payload = count+1).
+ * Qualquer opcode fora da tabela sai como "desconhecido": nao se inventa nome.
+ */
+/*
+ * DX.27 -- Clear State Buffer do GFX10, montado como no upstream.
+ *
+ * A Corrida 72 mediu RLC_CSIB_ADDR_LO/HI/LENGTH = 0: o CLEAR_STATE que o
+ * RADV emite em todo IB nao tinha de onde carregar os padroes de contexto
+ * (PA_SC_GENERIC_SCISSOR_*, PA_SC_TILE_STEERING_OVERRIDE e mais ~920
+ * registradores que o Mesa deixa para o CLEAR_STATE no gfx10, ac_cmdbuf.c).
+ *
+ * Sequencia = gfx_v10_0_get_csb_buffer (amdgpu_gfx_csb_preamble_start +
+ * amdgpu_gfx_csb_data_parser + steering + amdgpu_gfx_csb_preamble_end):
+ *   PREAMBLE_CNTL(BEGIN_CLEAR_STATE) CONTEXT_CONTROL(0x80000000,0x80000000)
+ *   SET_CONTEXT_REG por extent de gfx10_cs_data   (clearstate_gfx10.h)
+ *   SET_CONTEXT_REG PA_SC_TILE_STEERING_OVERRIDE
+ *   PREAMBLE_CNTL(END_CLEAR_STATE) CLEAR_STATE(0)
+ * Dados e codificacoes: inc/linux_ref/PROVENANCE_CLEARSTATE.txt (P1).
+ *
+ * ATENCAO: o nosso preambulo de boot e o fork do RADV emitiam PREAMBLE_CNTL com
+ * payload 0 e 1. O upstream usa (2 << 28) e (3 << 28) (nvd.h:395-396).
+ */
+#define BC250_PM4_IT_CLEAR_STATE             0x12u  /* nvd.h:59  */
+#define BC250_PM4_IT_CONTEXT_CONTROL         0x28u
+#define BC250_PM4_IT_PREAMBLE_CNTL           0x4Au  /* nvd.h:394 */
+/* DX.29: sincronia de troca de VMID no anel grafico (pipeline sync do upstream). */
+#define BC250_PM4_IT_PFP_SYNC_ME             0x42u  /* nvd.h:322 */
+/* WAIT_REG_MEM: FUNCTION(5 '>=') | MEM_SPACE(1 mem) | ENGINE(1 pfp) -- nvd.h:166-186 */
+#define BC250_PM4_WAIT_REG_MEM_PFP_MEM_GE    ((5u << 0) | (1u << 4) | (1u << 8))
+/* DX.30: espera do ACK de registrador no ME, FUNCTION ==, MEM_SPACE reg. */
+#define BC250_PM4_WAIT_REG_MEM_ME_REG_EQ     3u
+/* DX.35: SWITCH_BUFFER (nvd.h:550 PACKET3_SWITCH_BUFFER 0x8B), emitido DUAS vezes
+ * depois do flush de VM como em amdgpu_vm_flush ("the double SWITCH_BUFFER here
+ * *cannot* be skipped") com gfx_v10_0_ring_emit_sb = PACKET3(SWITCH_BUFFER,0), 0. */
+#define BC250_PM4_IT_SWITCH_BUFFER           0x8Bu
+/* DX.36: a troca NAO emite SWITCH_BUFFER -- Corrida 81 travou o CP nele (5/5 TDRs). */
+/* DX.37: gfx_v10_0_ring_emit_cntxcntl(AMDGPU_HAVE_CTX_SWITCH), sem CE RAM. */
+#define BC250_PM4_GFX_CONTEXT_SWITCH_LOAD  0x81018003u
+#define BC250_PM4_GFX_VM_SWITCH_DWORDS      34u
+
+typedef struct BC250_PM4_GFX_VM_SWITCH {
+    uint64_t FenceGpuVa;
+    uint64_t RootPhysical;
+    uint32_t FenceValue;
+    uint32_t Vmid;
+    uint32_t PtBaseLoRegisterBytes;
+    uint32_t RequestRegisterBytes;
+    uint32_t AckRegisterBytes;
+    uint32_t RequestValue;
+    uint32_t AckMask;
+} BC250_PM4_GFX_VM_SWITCH;
+
+BC250_PM4_STATUS Bc250Pm4EmitGfxVmSwitch(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    const BC250_PM4_GFX_VM_SWITCH *Switch);
+#define BC250_PM4_PREAMBLE_BEGIN_CLEAR_STATE (2u << 28) /* nvd.h:395 */
+#define BC250_PM4_PREAMBLE_END_CLEAR_STATE   (3u << 28) /* nvd.h:396 */
+/* mmPA_SC_TILE_STEERING_OVERRIDE 0x00d7, BASE_IDX 1 (gc_10_1_0_offset.h:5977) */
+#define BC250_PM4_REG_PA_SC_TILE_STEERING_OVERRIDE (BC250_PM4_CONTEXT_REG_BASE + 0x00D7u)
+/* 2+3 (inicio) + soma(2+reg_count) dos 8 extents (16+921) + 3 (steering) + 2+2 (fim) */
+#define BC250_PM4_GFX10_CSB_DWORDS           949u
+
+uint32_t Bc250Pm4Gfx10ClearStateDwords(void);
+BC250_PM4_STATUS Bc250Pm4BuildGfx10ClearState(
+    uint32_t *Buffer,
+    uint32_t CapacityDwords,
+    uint32_t TileSteeringOverride,
+    uint32_t *WrittenDwords);
+
+uint32_t Bc250Pm4HeaderType(uint32_t Header);
+uint32_t Bc250Pm4HeaderType3Opcode(uint32_t Header);
+uint32_t Bc250Pm4HeaderType3CountDwords(uint32_t Header);
+const char *Bc250Pm4Type3OpcodeName(uint32_t Opcode);
 
 #ifdef __cplusplus
 }

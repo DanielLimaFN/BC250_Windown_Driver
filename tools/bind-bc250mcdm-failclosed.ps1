@@ -2,6 +2,8 @@
 param(
     [switch]$Execute,
     [switch]$IAcceptBlackScreenRisk,
+    [switch]$IAcceptDeliberateHangAndPossibleBugCheck,
+    [switch]$RunRadvComputeTripod,
     [ValidateRange(30,600)][int]$WatchdogTimeoutSeconds = 120
 )
 
@@ -11,13 +13,31 @@ $stagedAudit = Join-Path $root 'tools\audit-bc250mcdm-staged.ps1'
 $collector = Join-Path $root 'tools\capture-bc250mcdm-binding.ps1'
 $watchdog = Join-Path $root 'tools\watch-bc250mcdm-binding.ps1'
 $confirmDisplay = Join-Path $root 'tools\confirm-bc250mcdm-display.ps1'
+$armDwmCapture = Join-Path $root 'tools\arm-dwm-crash-capture.ps1'
+$restoreDwmCapture = Join-Path $root 'tools\restore-dwm-crash-capture.ps1'
+$radvComputeTripod = Join-Path $root 'tools\test-radv-wddm-compute-tripod.ps1'
 $packageInf = Join-Path $root 'driver\wdk\package\output_active\bc250mcdm.inf'
 $manifestPath = Join-Path $root 'driver\wdk\package\output_active.manifest.json'
 $markerPath = 'C:\BC250_TEST_OEMINF.txt'
 $recoveryPath = 'C:\BC250_RECOVERY.cmd'
 $hardwareId = 'PCI\VEN_1002&DEV_13FE'
 
-foreach ($path in @($stagedAudit,$collector,$watchdog,$confirmDisplay,$packageInf,$manifestPath,$recoveryPath,$markerPath)) {
+# RunRadvComputeTripod nasceu aqui por engano e foi movido para a trilha de
+# laboratorio. O pacote ativo e compilado SEM
+# BC250_ENABLE_UNSAFE_STARTDEVICE_HW_BRINGUP e grava SkipHwBringup=1: o
+# StartDevice retorna cedo, o motor P1 nunca sobe e o gate aborta sempre em
+# P1EngineState=0 (medido em docs\evidence\2026-09-05_22-20-17-*). Deixar a
+# chamada aqui so' gastaria corrida fisica para provar isso de novo.
+if ($RunRadvComputeTripod) {
+    throw ('RunRadvComputeTripod nao pertence a trilha ativa: este pacote nunca ' +
+        'publica P1EngineState=1. Use a trilha de laboratorio -- ' +
+        'tools\package-bc250mcdm-lab.ps1 -EnableRenderNode -EnableShaderDispatch ' +
+        '-EnablePersistentSubmission, tools\test-gpuva-lab-promotion.ps1 -Action ' +
+        'Prepare, tools\bind-bc250mcdm-lab.ps1 -- e depois ' +
+        'tools\test-radv-wddm-compute-tripod.ps1 -Execute com o EvidenceDir do bind.')
+}
+
+foreach ($path in @($stagedAudit,$collector,$watchdog,$confirmDisplay,$armDwmCapture,$restoreDwmCapture,$radvComputeTripod,$packageInf,$manifestPath,$recoveryPath,$markerPath)) {
     if (-not (Test-Path -LiteralPath $path)) { throw "Artefato ausente: $path" }
 }
 
@@ -28,6 +48,62 @@ $markerLines = @(Get-Content -LiteralPath $markerPath)
 if ($markerLines.Count -ne 1 -or $markerLines[0] -notmatch '^oem\d+\.inf$') {
     throw 'Binding bloqueado: marcador OEM invalido.'
 }
+$bootFusePath = 'C:\BC250_BOOT_FUSE.dat'
+if (Test-Path -LiteralPath $bootFusePath) {
+    $fuseRaw = [System.IO.File]::ReadAllBytes($bootFusePath)
+    if ($fuseRaw.Length -eq 40) {
+        $fuseMagic = [BitConverter]::ToUInt32($fuseRaw, 0)
+        $fuseState = [BitConverter]::ToUInt32($fuseRaw, 8)
+        if ($fuseMagic -eq 0x45535546 -and $fuseState -ne 0) {
+            $name = if ($fuseState -eq 1) { 'ARMED (1)' } elseif ($fuseState -eq 2) { 'TRIPPED (2)' } else { "$fuseState" }
+            throw "Binding bloqueado: Fusivel persistente em $name. O ensaio exige CLEAN (0). Use: powershell -ExecutionPolicy Bypass -File tools\inspect-boot-fuse.ps1 -Reset"
+        }
+    }
+}
+# A13: preflight do D3D11CapsProbe. A BASE_DE_AVANCO manda todo binder exigir o
+# probe ausente ou zero, mas o gate nao existia aqui. Com o probe em 1 a UMD
+# publica a tabela de adapter, o DWM falha em 3DPIPELINESUPPORT e a tela fica
+# preta DE PROPOSITO -- gastando a corrida para medir um resultado ja conhecido.
+$probeKey = 'HKLM:\SOFTWARE\BC250\Umd'
+if (Test-Path -LiteralPath $probeKey) {
+    $probeValue = (Get-ItemProperty -LiteralPath $probeKey -Name 'D3D11CapsProbe' `
+        -ErrorAction SilentlyContinue).D3D11CapsProbe
+    if ($null -ne $probeValue -and $probeValue -ne 0) {
+        throw ('Binding bloqueado: D3D11CapsProbe = ' + $probeValue + '. Desarme antes: ' +
+            'powershell -ExecutionPolicy Bypass -File tools\arm-d3d11-caps-probe.ps1 -Disarm')
+    }
+}
+
+# A13/B3: o modo de submissao do candidato tem de ser DECLARADO antes da corrida.
+# O default do driver e' somente INDIRECT -- o unico ramo que le o DMA buffer do
+# dxgkrnl. Se o pacote trouxer SdmaPlanoAFallback=1, os caminhos PLANO A voltam a
+# ter precedencia, absorvem as submissoes e o INDIRECT deixa de ser medido (foi o
+# desfecho vazio da corrida 16:19). Nao bloqueia; impede a surpresa.
+$submissionManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+if ($submissionManifest.SdmaPlanoAFallbackEnabled) {
+    Write-Warning ('Pacote com SdmaPlanoAFallback=' + $submissionManifest.SdmaPlanoAFallback +
+        ': os caminhos PLANO A tem PRECEDENCIA. Eles reimplementam a operacao no anel e ' +
+        'NAO leem o DMA buffer -- esta corrida NAO mede o ramo INDIRECT.')
+} else {
+    Write-Host ('Pacote com SdmaPlanoAFallback=' + [int]$submissionManifest.SdmaPlanoAFallback +
+        ': somente INDIRECT. Submissao cuja GPUVA de IB nao resolva sai como RECUSA ' +
+        '(STATUS_IO_DEVICE_ERROR), caminho conhecido do BugCheck 0x119 sem TDR.')
+}
+
+# item 25: se o pacote armar hang de proposito, AVISAR alto. O ensaio pode
+# terminar em BugCheck -- e' resultado, nao acidente, mas nao pode ser surpresa.
+if ($submissionManifest.TdrInduceHangArmed) {
+    Write-Warning ('Pacote com TdrInduceHang=' + $submissionManifest.TdrInduceHang +
+        ': a primeira submissao do Node 0 vai TRAVAR a SDMA0 de proposito e o completion ' +
+        'NAO sera notificado. Se o TDR do Windows nao recuperar, o desfecho e BugCheck.')
+    if (-not $IAcceptDeliberateHangAndPossibleBugCheck) {
+        throw ('Binding do pacote TDR armado exige tambem ' +
+            '-IAcceptDeliberateHangAndPossibleBugCheck.')
+    }
+} elseif ($IAcceptDeliberateHangAndPossibleBugCheck) {
+    throw '-IAcceptDeliberateHangAndPossibleBugCheck so e valido para pacote TDR armado.'
+}
+
 $publishedName = $markerLines[0].ToLowerInvariant()
 $devices = @(Get-CimInstance Win32_PnPEntity | Where-Object {
     $_.PNPDeviceID -like "$hardwareId*"
@@ -117,8 +193,18 @@ $before | ConvertTo-Json -Depth 4 |
     Set-Content -LiteralPath (Join-Path $evidenceDir 'manifest-before.json') -Encoding UTF8
 $stagedAuditOutput |
     Set-Content -LiteralPath (Join-Path $evidenceDir 'staged-audit-before.txt') -Encoding UTF8
-Get-Content -LiteralPath (Join-Path $env:SystemRoot 'INF\setupapi.dev.log') -Tail 1600 |
-    Set-Content -LiteralPath (Join-Path $evidenceDir 'setupapi-before-tail.txt') -Encoding UTF8
+$setupApiLog = Join-Path $env:SystemRoot 'INF\setupapi.dev.log'
+if (-not (Test-Path -LiteralPath $setupApiLog)) {
+    $latestDevLog = Get-ChildItem -Path (Join-Path $env:SystemRoot 'INF') -Filter 'setupapi.dev*.log' -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($latestDevLog) { $setupApiLog = $latestDevLog.FullName }
+}
+if (Test-Path -LiteralPath $setupApiLog) {
+    Get-Content -LiteralPath $setupApiLog -Tail 1600 |
+        Set-Content -LiteralPath (Join-Path $evidenceDir 'setupapi-before-tail.txt') -Encoding UTF8
+} else {
+    "" | Set-Content -LiteralPath (Join-Path $evidenceDir 'setupapi-before-tail.txt') -Encoding UTF8
+}
 @'
 SE A TELA ESTIVER PRETA:
 1. Inicie o Windows em Modo de Seguranca com Prompt de Comando.
@@ -127,6 +213,10 @@ SE A TELA ESTIVER PRETA:
 '@ | Set-Content -LiteralPath (Join-Path $evidenceDir 'RECOVERY.txt') -Encoding ASCII
 
 Remove-Item -LiteralPath 'C:\BC250_DISPLAY_LOG.txt' -ErrorAction SilentlyContinue
+# Log da UMD (bc250umd.dll roda dentro de dwm.exe/apps D3D; C:\ nao e' gravavel
+# pela conta virtual do DWM, por isso o tracer usa C:\Windows\Temp).
+Get-ChildItem -LiteralPath 'C:\Windows\Temp' -Filter 'BC250_UMD_LOG_*.txt' -File `
+    -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 
 $watchdogArguments =
     "-NoProfile -ExecutionPolicy Bypass -File `"$watchdog`" " +
@@ -144,6 +234,12 @@ $watchdogProcess.Id | Set-Content -LiteralPath (Join-Path $evidenceDir 'watchdog
 $confirmationCommand | Set-Content -LiteralPath (Join-Path $evidenceDir 'CONFIRM_DISPLAY.cmd.txt') -Encoding ASCII
 Write-Warning "WATCHDOG ARMADO: rollback automatico em $WatchdogTimeoutSeconds segundos sem confirmacao visual."
 Write-Host "Com a imagem visivel, confirme usando: $confirmationCommand"
+
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $armDwmCapture `
+    -EvidenceDir $evidenceDir -Token $watchdogToken -Execute
+if ($LASTEXITCODE -ne 0) {
+    throw 'Binding bloqueado: captura transacional do crash do DWM nao armou.'
+}
 
 $collectorArguments =
     "-NoProfile -ExecutionPolicy Bypass -File `"$collector`" " +
@@ -187,7 +283,12 @@ Write-Host "Binding API: success=$nativeOk win32=$win32Error reboot=$rebootRequi
 Write-Host 'Analise device-after.json e probe-registry.json; Codigo 0 nao implica compute.'
 if ($nativeOk) {
     Write-Warning "O watchdog continua armado. Digite DISPLAY_OK somente se a imagem estiver visivel."
-    $visualAnswer = Read-Host 'Confirmacao visual'
+    # A14: Trim() na entrada. Na corrida 17:13 a confirmacao foi digitada e
+    # recusada por espaco em branco na borda -- o -ceq comparava a string crua e
+    # o watchdog derrubou o candidato. Continua CASE-SENSITIVE de proposito:
+    # aparar espacos nao afrouxa a intencao, digitar outra coisa afrouxaria.
+    $visualAnswer = (Read-Host 'Confirmacao visual')
+    if ($null -ne $visualAnswer) { $visualAnswer = $visualAnswer.Trim() }
     if ($visualAnswer -ceq 'DISPLAY_OK') {
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $confirmDisplay `
             -EvidenceDir $evidenceDir -InstanceId $device.PNPDeviceID `
