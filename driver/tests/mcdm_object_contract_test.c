@@ -18,6 +18,13 @@ void * __cdecl memset(void *Destination, int Value, size_t Length)
 #define CHECK(Expression) do { if (!(Expression)) { printf("FAIL line %d: %s\n", __LINE__, #Expression); return __LINE__; } } while (0)
 #endif
 
+/*
+ * T4.7 (Corrida 188): com 4096 entradas a tabela encheu (CREATE_ALLOC_RECUSADO
+ * ObjStatus=3 NO_SPACE) e o Explorer perdeu texturas. Voltar abaixo de 16384
+ * NAO compila. O preenchimento abaixo exercita a capacidade inteira.
+ */
+typedef char Bc250ObjectCapacityAtLeast16384[(BC250_MCDM_MAX_OBJECTS >= 16384u) ? 1 : -1];
+
 static BC250_MCDM_OBJECT_REGISTRY g_registry;
 
 static int Bc250RunMcdmObjectContractTest(void)

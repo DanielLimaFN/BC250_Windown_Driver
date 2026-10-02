@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [switch]$Execute,
     [switch]$IAcceptBlackScreenRisk,
@@ -52,6 +52,11 @@ param(
     # Dispara UMA corrida de D3D11_NATIVE_CONFORMANCE (bc250umd.dll -> Vulkan Bridge)
     [switch]$RunD3D11Native,
     [int]$D3D11Frames = 600,
+    # Corrida 143: atraso do harness D3D11 depois da convergencia do display. As
+    # travas das 139/140 vieram com o harness sobre um Explorer ja grande (N~780);
+    # na 142 o harness rodou com o Explorer recem-nascido e nada reproduziu.
+    # 0 = comportamento historico (sem atraso).
+    [ValidateRange(0,300)][int]$D3D11StartDelaySeconds = 0,
     # Permite habilitar Plano A (fill direto no anel) para isolamento e protecao contra 0x119.
     [switch]$EnableSdmaPlanoAFallback,
     # B.1 (14/09): FOTOGRAFA o anel grafico CP_RB0 durante o bring-up. SOMENTE
@@ -168,6 +173,58 @@ $hardwareId = 'PCI\VEN_1002&DEV_13FE'
 # Sempre desregistra ANTES de remover o diretorio: na ordem inversa a tarefa
 # fica apontando para um script inexistente.
 # --------------------------------------------------------------------------
+function Copy-Bc250SharedLog([string]$Source, [string]$Destination) {
+    # I.1b (30/09, Corrida 187): o Copy-Item abre a origem compartilhando so'
+    # leitura; um log aberto para escrita pelo dwm.exe (o -RADV da I.1) derrubou
+    # o binder com erro terminante e a corrida virou rollback sem ensaio. Aqui a
+    # origem e' aberta com ReadWrite|Delete e qualquer falha so' AVISA: um log
+    # preso nunca aborta uma corrida.
+    try {
+        $in = [System.IO.File]::Open($Source, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete)
+        try {
+            $out = [System.IO.File]::Open($Destination, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write,
+                [System.IO.FileShare]::Read)
+            try { $in.CopyTo($out) } finally { $out.Dispose() }
+        } finally { $in.Dispose() }
+        return $true
+    } catch {
+        Write-Host ("  AVISO: nao copiei {0}: {1}" -f $Source, $_.Exception.Message) -ForegroundColor Yellow
+        return $false
+    }
+}
+
+function Get-Bc250BindUmdLogs([string[]]$Sources, [datetime]$CutoffUtc) {
+    # Corrida 189 (30/09): desde 29/09 18:10 cada bind copiava E concatenava por
+    # Get-Content TODOS os BC250_UMD_LOG_* das pastas Temp -- 900 arquivos antigos
+    # das suites offline e de corridas passadas, 1,1 a 1,7 GB, durante os primeiros
+    # ~5 min da janela fisica (a 189 travou com a copia em andamento). A coleta
+    # agora so' leva o que foi gravado depois do inicio deste bind.
+    $found = @()
+    foreach ($src in $Sources) {
+        $found += @(Get-ChildItem -LiteralPath $src -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.LastWriteTimeUtc -ge $CutoffUtc })
+    }
+    return @($found | Sort-Object Name -Unique)
+}
+
+function Add-Bc250LogToAggregate([string]$Source, [string]$Aggregate) {
+    # Concatena por fluxo, sem carregar o arquivo inteiro em memoria.
+    try {
+        $header = [System.Text.Encoding]::UTF8.GetBytes(("`r`n===== {0} =====`r`n" -f [System.IO.Path]::GetFileName($Source)))
+        $out = [System.IO.File]::Open($Aggregate, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write,
+            [System.IO.FileShare]::Read)
+        try {
+            $out.Write($header, 0, $header.Length)
+            $in = [System.IO.File]::Open($Source, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read,
+                [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete)
+            try { $in.CopyTo($out) } finally { $in.Dispose() }
+        } finally { $out.Dispose() }
+    } catch {
+        Write-Host ("  AVISO: nao agreguei {0}: {1}" -f $Source, $_.Exception.Message) -ForegroundColor Yellow
+    }
+}
+
 function Disarm-Bc250SafeGuard([string]$TaskName, [string]$EvidenceDir) {
     $guardDir = 'C:\BC250_SAFE_GUARD'
     try {
@@ -435,6 +492,9 @@ if ($RunMarco4Cube) {
     }
 }
 if ($RunD3D11Native) {
+    if ($D3D11StartDelaySeconds -gt 0 -and ($D3D11StartDelaySeconds + 120) -gt ($WatchdogTimeoutSeconds - 30)) {
+        throw ('-D3D11StartDelaySeconds deixa menos de 120 s de harness antes do watchdog.')
+    }
     if (-not $EnableGpuvaLabPromotion) {
         throw ('-RunD3D11Native exige -EnableGpuvaLabPromotion: sem o gate ' +
                'GPUVA aberto o submit no node 1 devolve STATUS_NOT_SUPPORTED.')
@@ -1198,6 +1258,8 @@ if ($residualUmd.Count -gt 0) {
     }
     Write-Host "Logs residuais da UMD arquivados: $($residualUmd.Count) em $residualUmdDir"
 }
+# Corrida 189: corte de tempo da coleta de logs da UMD (ver Get-Bc250BindUmdLogs).
+$bindUmdLogCutoffUtc = [datetime]::UtcNow
 
 # DX.21: DESPEJO DO IB GRAFICO EM STAGING GRAVAVEL PELO dwm.exe.
 # LIDO em 22/09 (icacls): a pasta de evidencia fica no perfil do Daniel e so'
@@ -1925,7 +1987,11 @@ if ($RunRadvComputeTripod -or $RunRadvPresentTripod -or $RunVulkanCube -or $RunD
             $previousEap = $ErrorActionPreference
             $ErrorActionPreference = 'Continue'
             try {
-                $runnerTimeout = [math]::Min(180, [math]::Max(60, $WatchdogTimeoutSeconds - 60))
+                if ($D3D11StartDelaySeconds -gt 0) {
+                    Write-Host ("  Atraso do harness D3D11: {0} s (Corrida 143)." -f $D3D11StartDelaySeconds) -ForegroundColor Yellow
+                    Start-Sleep -Seconds $D3D11StartDelaySeconds
+                }
+                $runnerTimeout = [math]::Min(180, [math]::Max(60, $WatchdogTimeoutSeconds - 60 - $D3D11StartDelaySeconds))
                 $d3dOutput = (& powershell.exe -NoProfile -ExecutionPolicy Bypass `
                     -File $d3d11Runner -EvidenceDir $evidenceDir -Execute `
                     -Frames $D3D11Frames -TimeoutSeconds $runnerTimeout 2>&1 |
@@ -2014,25 +2080,24 @@ if ($GfxRingBringupLevel -gt 0 -and (Test-Path -LiteralPath $deltaLogDest -PathT
     }
 }
 
-# B2: Arquivamento dos logs da UMD pelo binder de lab
 $umdLogCollected = $false
 $umdAggregate = Join-Path $evidenceDir 'bc250_umd_log.txt'
 $umdSnapshotEntries = @()
-$umdLogs = @(Get-ChildItem -LiteralPath 'C:\Windows\Temp' `
-    -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue |
-    Sort-Object Name)
+$umdSources = @('C:\Windows\Temp')
+if ($env:TEMP -and (Test-Path -LiteralPath $env:TEMP)) { $umdSources += $env:TEMP }
+$userTemps = @(Get-ChildItem -Path 'C:\Users\*\AppData\Local\Temp' -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+foreach ($ut in $userTemps) { if ($umdSources -notcontains $ut) { $umdSources += $ut } }
+$umdLogs = Get-Bc250BindUmdLogs $umdSources $bindUmdLogCutoffUtc
 foreach ($umdLog in $umdLogs) {
     $snapshotPath = Join-Path $evidenceDir $umdLog.Name.ToLowerInvariant()
-    Copy-Item -LiteralPath $umdLog.FullName -Destination $snapshotPath -Force
+    if (-not (Copy-Bc250SharedLog $umdLog.FullName $snapshotPath)) { continue }
     $umdSnapshotEntries += [ordered]@{
         name = $umdLog.Name
         source_last_write_utc = $umdLog.LastWriteTimeUtc.ToString('o')
         copied_bytes = (Get-Item -LiteralPath $snapshotPath).Length
         sha256 = (Get-FileHash -LiteralPath $snapshotPath -Algorithm SHA256).Hash
     }
-    ("===== {0} =====" -f $umdLog.Name),
-        (Get-Content -LiteralPath $umdLog.FullName -ErrorAction SilentlyContinue) |
-        Add-Content -LiteralPath $umdAggregate -Encoding UTF8
+    Add-Bc250LogToAggregate $snapshotPath $umdAggregate
     $umdLogCollected = $true
 }
 if (-not $umdLogCollected) {
@@ -2214,15 +2279,15 @@ if ($EnablePhysicalRenderOnly) {
     # juntos mostram o que mudou durante a janela.
     try {
         $umdFinalAggregate = Join-Path $evidenceDir 'bc250_umd_log-FINAL.txt'
-        $umdFinal = @(Get-ChildItem -LiteralPath 'C:\Windows\Temp' `
-            -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue |
-            Sort-Object Name)
+        $umdFinalSources = @('C:\Windows\Temp')
+        if ($env:TEMP -and (Test-Path -LiteralPath $env:TEMP)) { $umdFinalSources += $env:TEMP }
+        $userTemps = @(Get-ChildItem -Path 'C:\Users\*\AppData\Local\Temp' -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+        foreach ($ut in $userTemps) { if ($umdFinalSources -notcontains $ut) { $umdFinalSources += $ut } }
+        $umdFinal = Get-Bc250BindUmdLogs $umdFinalSources $bindUmdLogCutoffUtc
         foreach ($log in $umdFinal) {
             $dest = Join-Path $evidenceDir ($log.BaseName.ToLowerInvariant() + '-FINAL.txt')
-            Copy-Item -LiteralPath $log.FullName -Destination $dest -Force
-            ("===== {0} =====" -f $log.Name),
-                (Get-Content -LiteralPath $log.FullName -ErrorAction SilentlyContinue) |
-                Add-Content -LiteralPath $umdFinalAggregate -Encoding UTF8
+            if (-not (Copy-Bc250SharedLog $log.FullName $dest)) { continue }
+            Add-Bc250LogToAggregate $dest $umdFinalAggregate
         }
         Write-Host ("  Coleta FINAL da UMD: {0} arquivo(s)." -f $umdFinal.Count) -ForegroundColor Yellow
         if ($umdFinal.Count -eq 0) {
@@ -2318,15 +2383,11 @@ if (-not $DisableWatchdog) {
 
     try {
         $umdFinalAggregate = Join-Path $evidenceDir 'bc250_umd_log-FINAL.txt'
-        $umdFinal = @(Get-ChildItem -LiteralPath 'C:\Windows\Temp' `
-            -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue |
-            Sort-Object Name)
+        $umdFinal = Get-Bc250BindUmdLogs @('C:\Windows\Temp') $bindUmdLogCutoffUtc
         foreach ($log in $umdFinal) {
             $dest = Join-Path $evidenceDir ($log.BaseName.ToLowerInvariant() + '-FINAL.txt')
-            Copy-Item -LiteralPath $log.FullName -Destination $dest -Force
-            ("===== {0} =====" -f $log.Name),
-                (Get-Content -LiteralPath $log.FullName -ErrorAction SilentlyContinue) |
-                Add-Content -LiteralPath $umdFinalAggregate -Encoding UTF8
+            if (-not (Copy-Bc250SharedLog $log.FullName $dest)) { continue }
+            Add-Bc250LogToAggregate $dest $umdFinalAggregate
         }
         if ($umdFinal.Count -eq 0) {
             'Nenhum BC250_UMD_LOG_*.txt em C:\Windows\Temp no fim da janela.' |
@@ -2335,6 +2396,36 @@ if (-not $DisableWatchdog) {
         Write-Host ("  Coleta FINAL da UMD: {0} arquivo(s)." -f $umdFinal.Count) -ForegroundColor Yellow
     } catch {
         Write-Host ("  AVISO: coleta FINAL da UMD falhou: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+    }
+
+    # Doc 516 (Corrida 160): apps isolados (AppContainer: menu Iniciar, Pesquisa,
+    # Central de Acoes) gravam BC250_UMD_LOG_* e BC250_SHADER_FAIL_*.bin na
+    # pasta Temp do proprio pacote, e o %TEMP% do usuario guarda os de Explorer
+    # e harness. 772 logs de AppContainer nunca tinham sido coletados. Copia os
+    # escritos durante esta janela para umd-logs-appcontainer\ com o pacote no
+    # nome, sem apagar a origem.
+    try {
+        $windowStartLocal = $collectionDeadlineUtc.ToLocalTime().AddSeconds(-($WatchdogTimeoutSeconds + 180))
+        $acDir = Join-Path $evidenceDir 'umd-logs-appcontainer'
+        $acRoots = @()
+        $acRoots += @(Get-ChildItem -Path 'C:\Users\*\AppData\Local\Packages\*\AC\Temp' -Directory -ErrorAction SilentlyContinue)
+        $acRoots += @(Get-ChildItem -Path 'C:\Users\*\AppData\Local\Temp' -Directory -ErrorAction SilentlyContinue)
+        $acCount = 0
+        foreach ($root in $acRoots) {
+            $files = @(Get-ChildItem -LiteralPath $root.FullName -File -ErrorAction SilentlyContinue |
+                Where-Object { ($_.Name -like 'BC250_UMD_LOG_*.txt' -or $_.Name -like 'BC250_SHADER_FAIL_*.bin') -and
+                               $_.LastWriteTime -ge $windowStartLocal })
+            foreach ($file in $files) {
+                if ($acCount -eq 0) { New-Item -ItemType Directory -Force -Path $acDir | Out-Null }
+                $pkg = Split-Path -Leaf (Split-Path -Parent (Split-Path -Parent $root.FullName))
+                if ($root.FullName -like '*\AppData\Local\Temp') { $pkg = 'UserTemp' }
+                if (-not (Copy-Bc250SharedLog $file.FullName (Join-Path $acDir ($pkg + '__' + $file.Name)))) { continue }
+                $acCount++
+            }
+        }
+        Write-Host ("  Coleta de AppContainer/Temp do usuario: {0} arquivo(s) em {1}." -f $acCount, $acDir) -ForegroundColor Yellow
+    } catch {
+        Write-Host ("  AVISO: coleta de AppContainer falhou: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
     }
 
     # DX.21: despejo de IB do staging gravavel pelo DWM -> evidencia, com

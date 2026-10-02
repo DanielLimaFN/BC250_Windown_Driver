@@ -1,0 +1,22 @@
+$$ Corrida 145 -- rodar no WinDbg do PC host DEPOIS de quebrar (Debug > Break) na trava.
+$$ Uso: copie este arquivo e o bc250mcdm.pdb para C:\BC250_KD\ no host e digite:
+$$   $<C:\BC250_KD\windbg-corrida145-trava.txt
+$$ Tudo o que sair vai para C:\BC250_KD\corrida145.log (mande esse arquivo depois).
+.logopen /t C:\BC250_KD\corrida145.log
+.sympath srv*C:\Symbols*https://msdl.microsoft.com/download/symbols;C:\BC250_KD
+.reload
+.reload /f bc250mcdm.sys
+lm m bc250*
+$$ Pilha e IRQL de cada processador (o dado principal).
+!running -ti
+!irql
+$$ DPCs pendentes e fila de threads prontas.
+!dpcs
+!ready
+$$ Threads com quadros do nosso driver e do dxgkrnl/dxgmms2.
+!stacks 2 bc250mcdm
+!stacks 2 dxgmms2
+!stacks 2 dxgkrnl
+$$ Dump pequeno (rapido pela rede).
+.dump /m C:\BC250_KD\corrida145-mini.dmp
+.logclose

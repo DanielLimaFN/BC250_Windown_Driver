@@ -3,7 +3,7 @@ Signature="$Windows NT$"
 Class=Display
 ClassGuid={4d36e968-e325-11ce-bfc1-08002be10318}
 Provider=%ProviderName%
-DriverVer=09/19/2026,3.192.0.0
+DriverVer=09/29/2026,3.325.0.0
 CatalogFile=bc250mcdm.cat
 PnpLockdown=1
 
@@ -96,6 +96,17 @@ HKR,Parameters,SdmaPlanoAFallback,0x00010003,0
 ; A primeira corrida deve usar INF empacotado com 1; alterar o registro depois
 ; do bind so vale no proximo StartDevice. Nao crie a chave de servico a mao.
 HKR,Parameters,TdrInduceHang,0x00010001,0
+; GfxWaveProbe (19/09, apos a Corrida 35): 1 arma a inspecao INDIRETA de onda
+; no quiesce do TDR. A Corrida 35 mediu SQ_DEBUG_STS_GLOBAL WaveLevelSA0=3 e
+; SA1=3 -- seis ondas em voo que nao retiram -- e nao teve como dizer ONDE.
+; A sonda le PC, IB_STS e a instrucao de cada onda presa.
+; RISCO DECLARADO: e' a unica parte da faixa que ESCREVE registrador. Escreve
+; dois SELETORES (GRBM_GFX_INDEX fora de broadcast e SQ_IND_INDEX) e restaura
+; broadcast com readback; se a restauracao falhar, o soft-reset seguinte pode
+; atingir um unico shader engine. Por isso o default e 0 e armar e decisao do
+; dono do projeto. A varredura e' rasa e o orcamento de leituras e' fixo --
+; laco longo em DISPATCH_LEVEL foi a causa do BugCheck 0x133 em 10/09 12:16.
+HKR,Parameters,GfxWaveProbe,0x00010001,0
 ; B.1 (14/09): 1 fotografa o anel grafico CP_RB0 -- CNTL, BASE, RPTR, WPTR,
 ; POLL_CNTL e ME_CNTL -- durante o bring-up de laboratorio. E' SOMENTE LEITURA:
 ; o contrato nao escreve registrador algum, e o transporte MMIO confirma por

@@ -5,6 +5,7 @@
 #include "bc250_mmio_breadcrumb.h"
 #include "../core/bc250_adapter_info_contract.h"
 #include "../core/bc250_segment_contract.h"
+#include "../core/bc250_segment_address_contract.h"
 #include "../core/bc250_umd_private_contract.h"
 #include "../core/bc250_tdr_recovery_contract.h"
 #include "../core/bc250_context_dispatcher_contract.h"
@@ -111,6 +112,39 @@ enum {
 volatile LONG g_Bc250PagingStageSequence;
 BC250_PAGING_STAGE_SLOT g_Bc250PagingStages[64];
 volatile LONG g_Bc250PagingActiveCount = 0;
+/* DX.90: sonda de batimento do GPU; NULL = nada a medir (suites offline). */
+static BC250_MCDM_GPU_HEARTBEAT_PROBE g_Bc250GpuHeartbeatProbe;
+
+VOID Bc250McdmInstallGpuHeartbeatProbe(
+    _In_opt_ BC250_MCDM_GPU_HEARTBEAT_PROBE Probe)
+{
+    InterlockedExchangePointer((PVOID volatile *)&g_Bc250GpuHeartbeatProbe,
+        (PVOID)Probe);
+}
+/* I.PLAT (doc 553): sonda de plataforma; NULL = nada a medir (suites offline). */
+static BC250_MCDM_PLATFORM_PROBE g_Bc250PlatformProbe;
+
+VOID Bc250McdmInstallPlatformProbe(
+    _In_opt_ BC250_MCDM_PLATFORM_PROBE Probe)
+{
+    InterlockedExchangePointer((PVOID volatile *)&g_Bc250PlatformProbe,
+        (PVOID)Probe);
+}
+/* I.SDMA0 / I.CG (doc 556): sondas somente leitura; NULL = nada a medir. */
+static BC250_MCDM_TRACE_WORDS_PROBE g_Bc250Sdma0Probe;
+static BC250_MCDM_TRACE_WORDS_PROBE g_Bc250ClockGatingProbe;
+
+VOID Bc250McdmInstallSdma0Probe(
+    _In_opt_ BC250_MCDM_TRACE_WORDS_PROBE Probe)
+{
+    InterlockedExchangePointer((PVOID volatile *)&g_Bc250Sdma0Probe, (PVOID)Probe);
+}
+
+VOID Bc250McdmInstallClockGatingProbe(
+    _In_opt_ BC250_MCDM_TRACE_WORDS_PROBE Probe)
+{
+    InterlockedExchangePointer((PVOID volatile *)&g_Bc250ClockGatingProbe, (PVOID)Probe);
+}
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
 static volatile LONG g_Bc250PagingCallSequence;
 #endif
@@ -225,6 +259,43 @@ static VOID Bc250CrumbTraceSnapshot(BC250_CRUMB_TRACE_RECORD *Record, UINT32 Wri
     Record->Checksum = Bc250CrumbTraceChecksum(Record);
 }
 
+/*
+ * DX.90: batimento do GPU no mesmo arquivo. Fase ANTES e' gravada E
+ * descarregada antes de qualquer leitura de registrador; fase DEPOIS traz os
+ * valores. Se uma leitura nao retornar, a propria thread para -- e o ultimo
+ * registro em disco e' um ANTES sem o DEPOIS do mesmo tick, que e'
+ * exatamente o dado que o BCR1 nao consegue dar (quem grava o BCR1 e' esta
+ * thread). Somente leitura; o comportamento do driver nao muda.
+ */
+#define BC250_GPU_HEARTBEAT_MAGIC 0x31484742u /* BGH1 */
+#define BC250_GPU_HEARTBEAT_PHASE_BEFORE 0xB0u
+#define BC250_GPU_HEARTBEAT_PHASE_AFTER  0xA0u
+typedef struct BC250_GPU_HEARTBEAT_RECORD {
+    UINT32 Magic;
+    UINT32 Version;
+    UINT32 WriterTick;
+    UINT32 Phase;
+    UINT32 Measured;
+    UINT32 Reserved;
+    UINT64 SnapshotTime100ns;
+    BC250_MCDM_GPU_HEARTBEAT Heartbeat;
+    UINT32 Checksum;
+    UINT32 Padding;
+} BC250_GPU_HEARTBEAT_RECORD;
+C_ASSERT(sizeof(BC250_MCDM_GPU_HEARTBEAT) == 32u);
+C_ASSERT(sizeof(BC250_GPU_HEARTBEAT_RECORD) == 72u);
+
+static UINT32 Bc250GpuHeartbeatChecksum(const BC250_GPU_HEARTBEAT_RECORD *Record)
+{
+    const UCHAR *bytes = (const UCHAR *)Record;
+    UINT32 hash = 2166136261u;
+    SIZE_T index;
+    for (index = 0u; index < FIELD_OFFSET(BC250_GPU_HEARTBEAT_RECORD, Checksum); ++index) {
+        hash = (hash ^ bytes[index]) * 16777619u;
+    }
+    return hash;
+}
+
 static KEVENT g_Bc250PagingTraceStopEvent;
 static HANDLE g_Bc250PagingTraceFile;
 static HANDLE g_Bc250PagingTraceThreadHandle;
@@ -278,6 +349,184 @@ static VOID Bc250PagingTraceSnapshot(BC250_PAGING_TRACE_RECORD *Record)
     Record->Checksum = Bc250PagingTraceChecksum(Record);
 }
 
+static NTSTATUS Bc250GpuHeartbeatWrite(
+    UINT32 WriterTick, UINT32 Phase, UINT32 Measured,
+    _In_opt_ const BC250_MCDM_GPU_HEARTBEAT *Heartbeat)
+{
+    BC250_GPU_HEARTBEAT_RECORD record;
+    IO_STATUS_BLOCK ioStatus;
+    NTSTATUS status;
+    RtlZeroMemory(&record, sizeof(record));
+    record.Magic = BC250_GPU_HEARTBEAT_MAGIC;
+    record.Version = 1u;
+    record.WriterTick = WriterTick;
+    record.Phase = Phase;
+    record.Measured = Measured;
+    record.SnapshotTime100ns = KeQueryInterruptTime();
+    if (Heartbeat != NULL) record.Heartbeat = *Heartbeat;
+    record.Checksum = Bc250GpuHeartbeatChecksum(&record);
+    status = ZwWriteFile(g_Bc250PagingTraceFile, NULL, NULL, NULL, &ioStatus,
+        &record, sizeof(record), NULL, NULL);
+    if (NT_SUCCESS(status) && ioStatus.Information == sizeof(record)) {
+        status = ZwFlushBuffersFile(g_Bc250PagingTraceFile, &ioStatus);
+    }
+    return status;
+}
+
+static VOID Bc250GpuHeartbeatTick(UINT32 WriterTick)
+{
+    BC250_MCDM_GPU_HEARTBEAT heartbeat;
+    BC250_MCDM_GPU_HEARTBEAT_PROBE probe = (BC250_MCDM_GPU_HEARTBEAT_PROBE)
+        InterlockedCompareExchangePointer(
+            (PVOID volatile *)&g_Bc250GpuHeartbeatProbe, NULL, NULL);
+    BOOLEAN measured;
+    if (probe == NULL) return;
+    /* ANTES em disco ANTES da primeira leitura; sem isso o ensaio nao informa. */
+    if (!NT_SUCCESS(Bc250GpuHeartbeatWrite(WriterTick,
+            BC250_GPU_HEARTBEAT_PHASE_BEFORE, 0u, NULL))) {
+        return;
+    }
+    RtlZeroMemory(&heartbeat, sizeof(heartbeat));
+    measured = probe(&heartbeat);
+    (void)Bc250GpuHeartbeatWrite(WriterTick, BC250_GPU_HEARTBEAT_PHASE_AFTER,
+        measured ? 1u : 0u, &heartbeat);
+}
+
+/*
+ * I.PLAT (doc 553): registro BPS1 com o mesmo layout de 72 bytes do BGH1 e a
+ * mesma regra ANTES/DEPOIS -- se a escrita do indice SMN ou uma leitura do
+ * SDMA1 nao retornar, o ultimo BPS1 em disco e' um ANTES sem DEPOIS.
+ * Uma amostra por segundo (10 ticks): temperatura nao muda em 100 ms e a
+ * escrita no indice SMN nao precisa ser frequente.
+ */
+#define BC250_PLATFORM_SAMPLE_MAGIC 0x31535042u /* BPS1 */
+#define BC250_PLATFORM_SAMPLE_PERIOD_TICKS 10u
+typedef struct BC250_PLATFORM_SAMPLE_RECORD {
+    UINT32 Magic;
+    UINT32 Version;
+    UINT32 WriterTick;
+    UINT32 Phase;
+    UINT32 Measured;
+    UINT32 Reserved;
+    UINT64 SnapshotTime100ns;
+    BC250_MCDM_PLATFORM_SAMPLE Sample;
+    UINT32 Checksum;
+    UINT32 Padding;
+} BC250_PLATFORM_SAMPLE_RECORD;
+C_ASSERT(sizeof(BC250_MCDM_PLATFORM_SAMPLE) == 32u);
+C_ASSERT(sizeof(BC250_PLATFORM_SAMPLE_RECORD) == 72u);
+
+static NTSTATUS Bc250PlatformSampleWrite(
+    UINT32 WriterTick, UINT32 Phase, UINT32 Measured,
+    _In_opt_ const BC250_MCDM_PLATFORM_SAMPLE *Sample)
+{
+    BC250_PLATFORM_SAMPLE_RECORD record;
+    IO_STATUS_BLOCK ioStatus;
+    NTSTATUS status;
+    const UCHAR *bytes = (const UCHAR *)&record;
+    UINT32 hash = 2166136261u;
+    SIZE_T index;
+    RtlZeroMemory(&record, sizeof(record));
+    record.Magic = BC250_PLATFORM_SAMPLE_MAGIC;
+    record.Version = 1u;
+    record.WriterTick = WriterTick;
+    record.Phase = Phase;
+    record.Measured = Measured;
+    record.SnapshotTime100ns = KeQueryInterruptTime();
+    if (Sample != NULL) record.Sample = *Sample;
+    for (index = 0u; index < FIELD_OFFSET(BC250_PLATFORM_SAMPLE_RECORD, Checksum); ++index) {
+        hash = (hash ^ bytes[index]) * 16777619u;
+    }
+    record.Checksum = hash;
+    status = ZwWriteFile(g_Bc250PagingTraceFile, NULL, NULL, NULL, &ioStatus,
+        &record, sizeof(record), NULL, NULL);
+    if (NT_SUCCESS(status) && ioStatus.Information == sizeof(record)) {
+        status = ZwFlushBuffersFile(g_Bc250PagingTraceFile, &ioStatus);
+    }
+    return status;
+}
+
+static VOID Bc250PlatformSampleTick(UINT32 WriterTick)
+{
+    BC250_MCDM_PLATFORM_SAMPLE sample;
+    BC250_MCDM_PLATFORM_PROBE probe;
+    BOOLEAN measured;
+    if ((WriterTick % BC250_PLATFORM_SAMPLE_PERIOD_TICKS) != 0u) return;
+    probe = (BC250_MCDM_PLATFORM_PROBE)InterlockedCompareExchangePointer(
+        (PVOID volatile *)&g_Bc250PlatformProbe, NULL, NULL);
+    if (probe == NULL) return;
+    if (!NT_SUCCESS(Bc250PlatformSampleWrite(WriterTick,
+            BC250_GPU_HEARTBEAT_PHASE_BEFORE, 0u, NULL))) {
+        return;
+    }
+    RtlZeroMemory(&sample, sizeof(sample));
+    measured = probe(&sample);
+    (void)Bc250PlatformSampleWrite(WriterTick, BC250_GPU_HEARTBEAT_PHASE_AFTER,
+        measured ? 1u : 0u, &sample);
+}
+
+/*
+ * I.SDMA0 / I.CG (doc 556): mesmo layout de 72 bytes e mesma regra
+ * ANTES/DEPOIS do BGH1/BPS1, com magic proprio. BSQ1 a cada tick (100 ms):
+ * o ultimo DEPOIS antes da trava diz se o SDMA0 estava no meio de um IB.
+ * BCG1 a cada 100 ticks (10 s) e no tick 10: clock gating para comparar
+ * com o Linux.
+ */
+#define BC250_TRACE_SDMA0_MAGIC 0x31515342u /* BSQ1 */
+#define BC250_TRACE_CG_MAGIC    0x31474342u /* BCG1 */
+#define BC250_TRACE_CG_PERIOD_TICKS 100u
+C_ASSERT(sizeof(BC250_MCDM_TRACE_WORDS) == 32u);
+
+static NTSTATUS Bc250TraceWordsWrite(
+    UINT32 Magic, UINT32 WriterTick, UINT32 Phase, UINT32 Measured,
+    _In_opt_ const BC250_MCDM_TRACE_WORDS *Sample)
+{
+    BC250_PLATFORM_SAMPLE_RECORD record;
+    IO_STATUS_BLOCK ioStatus;
+    NTSTATUS status;
+    const UCHAR *bytes = (const UCHAR *)&record;
+    UINT32 hash = 2166136261u;
+    SIZE_T index;
+    C_ASSERT(sizeof(BC250_MCDM_TRACE_WORDS) == sizeof(BC250_MCDM_PLATFORM_SAMPLE));
+    RtlZeroMemory(&record, sizeof(record));
+    record.Magic = Magic;
+    record.Version = 1u;
+    record.WriterTick = WriterTick;
+    record.Phase = Phase;
+    record.Measured = Measured;
+    record.SnapshotTime100ns = KeQueryInterruptTime();
+    if (Sample != NULL) RtlCopyMemory(&record.Sample, Sample, sizeof(*Sample));
+    for (index = 0u; index < FIELD_OFFSET(BC250_PLATFORM_SAMPLE_RECORD, Checksum); ++index) {
+        hash = (hash ^ bytes[index]) * 16777619u;
+    }
+    record.Checksum = hash;
+    status = ZwWriteFile(g_Bc250PagingTraceFile, NULL, NULL, NULL, &ioStatus,
+        &record, sizeof(record), NULL, NULL);
+    if (NT_SUCCESS(status) && ioStatus.Information == sizeof(record)) {
+        status = ZwFlushBuffersFile(g_Bc250PagingTraceFile, &ioStatus);
+    }
+    return status;
+}
+
+static VOID Bc250TraceWordsTick(
+    UINT32 Magic, UINT32 WriterTick,
+    BC250_MCDM_TRACE_WORDS_PROBE volatile *ProbeSlot)
+{
+    BC250_MCDM_TRACE_WORDS sample;
+    BC250_MCDM_TRACE_WORDS_PROBE probe = (BC250_MCDM_TRACE_WORDS_PROBE)
+        InterlockedCompareExchangePointer((PVOID volatile *)ProbeSlot, NULL, NULL);
+    BOOLEAN measured;
+    if (probe == NULL) return;
+    if (!NT_SUCCESS(Bc250TraceWordsWrite(Magic, WriterTick,
+            BC250_GPU_HEARTBEAT_PHASE_BEFORE, 0u, NULL))) {
+        return;
+    }
+    RtlZeroMemory(&sample, sizeof(sample));
+    measured = probe(&sample);
+    (void)Bc250TraceWordsWrite(Magic, WriterTick, BC250_GPU_HEARTBEAT_PHASE_AFTER,
+        measured ? 1u : 0u, &sample);
+}
+
 static VOID Bc250PagingTraceThread(_In_ PVOID Context)
 {
     LARGE_INTEGER interval;
@@ -313,6 +562,15 @@ static VOID Bc250PagingTraceThread(_In_ PVOID Context)
                 status = ZwFlushBuffersFile(g_Bc250PagingTraceFile, &ioStatus);
                 (void)status;   /* falha de flush nao para o batimento */
             }
+        }
+        /* DX.90: depois do BPX6/BCR1, para que eles saiam mesmo se o GPU parar. */
+        Bc250GpuHeartbeatTick(writerTick);
+        /* I.PLAT: por ultimo; um travamento aqui nao esconde o BGH1 do tick. */
+        Bc250PlatformSampleTick(writerTick);
+        /* I.SDMA0 / I.CG: depois do BPS1; somente leitura. */
+        Bc250TraceWordsTick(BC250_TRACE_SDMA0_MAGIC, writerTick, &g_Bc250Sdma0Probe);
+        if (writerTick == 10u || (writerTick % BC250_TRACE_CG_PERIOD_TICKS) == 0u) {
+            Bc250TraceWordsTick(BC250_TRACE_CG_MAGIC, writerTick, &g_Bc250ClockGatingProbe);
         }
         if (KeReadStateEvent(&g_Bc250PagingTraceStopEvent) != 0) break;
     }
@@ -551,6 +809,25 @@ NTSTATUS Bc250McdmEncodeVidMmPteWithLevel(
             }
             physicalAddress = Caps->VramMcBase +
                 Caps->LocalSegmentBaseOffset + pageOffsetInSegment;
+        } else if (Source->Segment == BC250_HIDDEN_SEGMENT_ID &&
+                   Caps->HiddenSegmentBytes != 0u) {
+            /*
+             * M2 (doc 548): VRAM local sem CPU. Mesma base MC do segmento 1
+             * (VramMcBase), outra base de VRAM. Faixa conferida: pagina fora do
+             * segmento e' recusa, nunca endereco de outra coisa.
+             */
+            if (pageOffsetInSegment >= Caps->HiddenSegmentBytes) {
+                Bc250DisplayLog("[EncodeVidMmPte FAIL HiddenBounds] Lvl=0, Pfn=0x%llX, Offset=0x%llX, MaxBytes=0x%llX\n",
+                    (unsigned long long)Source->PageAddress,
+                    (unsigned long long)pageOffsetInSegment,
+                    (unsigned long long)Caps->HiddenSegmentBytes);
+                return STATUS_NOT_SUPPORTED;
+            }
+            if (Caps->HiddenSegmentBaseOffset > (UINT64)~(UINT64)0 - pageOffsetInSegment) {
+                return STATUS_INTEGER_OVERFLOW;
+            }
+            physicalAddress = Caps->VramMcBase +
+                Caps->HiddenSegmentBaseOffset + pageOffsetInSegment;
         } else if (Source->Segment == 0u || Source->Segment == 2u) {
             /* Memoria do Sistema (Segmento 0 = System Memory, Segmento 2 = Aperture / GART) */
             physicalAddress = pageOffsetInSegment;
@@ -992,6 +1269,20 @@ static void Bc250PagingAppendIbAlignmentNops(
 
 #define BC250_SDMA_TRANSFER_MAX_BYTES (256u * 1024u) /* 256 KiB para fluxo estavel via PCIe/GFXHUB */
 
+/*
+ * X2a (29/09, doc 523): o FILL de paginacao passa a ser fatiado como a copia.
+ *
+ * MEDIDO (P0): as 11 travas de 28 e 29/09 terminam com um FILL de paginacao
+ * no SDMA -- duas delas (Corridas 168 e 169) pelo anel de eventos EVT.1, com
+ * o submit do IB do FILL sem conclusao. A TRANSFER, fatiada em 256 KiB, nunca
+ * foi o ultimo trabalho de uma trava, embora seja ~40% dos movimentos. O
+ * FILL ia em pacotes CONST_FILL de ate 4 MiB-4 (teto do Mesa), rajada so' de
+ * escrita na DRAM compartilhada. A ligacao do tamanho com a trava e' HIPOTESE
+ * (H); o doc 501 ja refutou o tamanho como causa das paradas de SDMA de
+ * 151/153. O efeito e' so' o tamanho das fatias: mais pacotes, mesmo total.
+ */
+#define BC250_SDMA_PAGING_FILL_MAX_BYTES (256u * 1024u)
+
 static NTSTATUS Bc250McdmBuildTransferVirtual(
     DXGKARG_BUILDPAGINGBUFFER *Args)
 {
@@ -1076,6 +1367,24 @@ static NTSTATUS Bc250McdmBuildTransferVirtual(
         done += chunk;
     }
 
+    /*
+     * DX.91 (Corrida 145): UMA linha por passo de copia de paginacao, fora da
+     * amostragem (tag isenta DX91_PAGING_MOVE). A corrupcao visual da 145 veio
+     * com a VRAM quase cheia, que e' quando o VidMm despeja e move; a classe
+     * [TransferVirtual] e' amostrada e so' mostrava 8 "Completo".
+     */
+    Bc250CrumbEvent(BC250_CRUMB_EVT_PAGING_TRANSFER, 0u, cursor,
+        (ULONG)(done - (UINT64)Args->MultipassOffset),
+        (ULONG64)transfer->DestinationVirtualAddress + (UINT64)Args->MultipassOffset,
+        (ULONG64)transfer->SourceVirtualAddress + (UINT64)Args->MultipassOffset);
+    Bc250DisplayLog("[DX91_PAGING_MOVE] op=TRANSFER hAlloc=%p AllocOff=0x%llX Size=%llu Pass=[%llu,%llu) Src=0x%llX Dst=0x%llX Dir=%u Flags=0x%X DW=%u\n",
+        transfer->hAllocation,
+        (unsigned long long)transfer->AllocationOffsetInBytes,
+        (unsigned long long)total,
+        (unsigned long long)Args->MultipassOffset, (unsigned long long)done,
+        (unsigned long long)transfer->SourceVirtualAddress,
+        (unsigned long long)transfer->DestinationVirtualAddress,
+        (UINT32)transfer->TransferDirection, transfer->Flags.Flags, cursor);
     Bc250PagingPublishIbDestRange(
         transfer->DestinationVirtualAddress + (UINT64)Args->MultipassOffset,
         transfer->DestinationVirtualAddress + done);
@@ -1090,6 +1399,132 @@ static NTSTATUS Bc250McdmBuildTransferVirtual(
     Args->MultipassOffset = BC250_PAGING_MULTIPASS_DONE;
     Bc250DisplayLog("[TransferVirtual] Completo: %llu bytes em %u dwords\n",
         (unsigned long long)total, cursor);
+    return STATUS_SUCCESS;
+}
+
+/*
+ * X2b (02/10, doc 561): zerar alocacao nova por COPIA em vez de CONST_FILL.
+ *
+ * MEDIDO (P0, doc 560 §6): as tres travas com 256 MB (199, 200, 202) param
+ * ate' 20 ms depois do FILL de zeramento de uma alocacao nova de tela cheia,
+ * e o doc 526 ja' tinha 14 de 14 travas com um FILL de paginacao em voo. A
+ * TRANSFER (COPY_LINEAR), ~40% dos movimentos, nunca foi o ultimo trabalho de
+ * uma trava. Este ensaio troca SO' o pacote: mesmo destino, mesmas PTEs, mesmo
+ * fatiamento maximo de 256 KiB. Trava com a copia em voo -> o destino (H2);
+ * sem trava -> o pacote CONST_FILL (H1).
+ *
+ * Fonte dos zeros: a frente do PROPRIO pedaco do paging buffer desta operacao.
+ * Contrato (P1, d3dkmddi.h, DXGKARG_BUILDPAGINGBUFFER): DmaBufferGpuVirtualAddress
+ * e' a GPUVA do INICIO do DMA buffer e DmaBufferWriteOffset o deslocamento em
+ * bytes da operacao corrente. Os zeros sao executados como SDMA NOP de 1 DW
+ * (opcode 0, P1 sdma_v5_0.c) antes das copias, entao o IB continua valido.
+ * A submissao confere que a fonte == GPUVA do IB submetido.
+ *
+ * Padrao != 0 continua em CONST_FILL (nunca observado nas corridas).
+ */
+#define BC250_X2B_FILL_BY_COPY 1
+#define BC250_X2B_ZERO_MAX_BYTES (32u * 1024u)
+#define BC250_X2B_ZERO_MIN_BYTES (4u * 1024u)
+
+static volatile LONG g_Bc250X2bFillsByCopy = 0;
+static volatile LONG g_Bc250X2bNoDmaVa = 0;
+
+static NTSTATUS Bc250McdmBuildFillByCopy(
+    DXGKARG_BUILDPAGINGBUFFER *Args)
+{
+    DXGK_BUILDPAGINGBUFFER_FILLVIRTUAL *fill = &Args->FillVirtual;
+    uint32_t *dmaBuffer = (uint32_t *)Args->pDmaBuffer;
+    uint32_t dwordsAvailable;
+    uint32_t cursor = 0u;
+    uint32_t zeroBytes;
+    uint32_t i;
+    UINT64 zeroVa;
+    UINT64 done = (UINT64)Args->MultipassOffset;
+    UINT64 total = fill->FillSizeInBytes;
+    LONG count;
+
+    dwordsAvailable = Bc250PagingFloorPow2Dwords(
+        Args->DmaSize / (uint32_t)sizeof(uint32_t));
+
+    /*
+     * Maior regiao que deixa lugar para ao menos uma copia e o alinhamento.
+     * Sem lugar nem para a minima, pede buffer novo pelo multipasse legal
+     * (o paging buffer novo tem 64 KiB).
+     */
+    for (zeroBytes = BC250_X2B_ZERO_MAX_BYTES; zeroBytes >= BC250_X2B_ZERO_MIN_BYTES;
+         zeroBytes /= 2u) {
+        if (zeroBytes / 4u + BC250_SDMA_DWORDS_COPY_LINEAR +
+            BC250_SDMA_IB_PACKET_ALIGNMENT_DWORDS <= dwordsAvailable) {
+            break;
+        }
+    }
+    if (zeroBytes < BC250_X2B_ZERO_MIN_BYTES) {
+        Bc250DisplayLog("[X2B_FILL] DmaSize=%u insuficiente para a regiao de zeros (cap=%u dwords) -- multipasse\n",
+            Args->DmaSize, dwordsAvailable);
+        Args->MultipassOffset = (UINT)done;
+        return STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER;
+    }
+
+    zeroVa = (UINT64)Args->DmaBufferGpuVirtualAddress + (UINT64)Args->DmaBufferWriteOffset;
+    for (i = 0u; i < zeroBytes / 4u; ++i) {
+        dmaBuffer[cursor++] = 0u;
+    }
+
+    while (done < total) {
+        UINT64 remaining = total - done;
+        uint32_t chunk = remaining > (UINT64)zeroBytes ? zeroBytes : (uint32_t)remaining;
+        BC250_SDMA_STATUS sdmaStatus;
+
+        if (dwordsAvailable - cursor < BC250_SDMA_DWORDS_COPY_LINEAR +
+            Bc250SdmaIbSizePadDwords(
+                cursor + BC250_SDMA_DWORDS_COPY_LINEAR)) break;
+
+        sdmaStatus = Bc250SdmaEmitCopyLinear(
+            dmaBuffer,
+            dwordsAvailable,
+            &cursor,
+            zeroVa,
+            fill->DestinationVirtualAddress + done,
+            chunk);
+        if (sdmaStatus == BC250_SDMA_RING_FULL) break;
+        if (sdmaStatus != BC250_SDMA_OK) {
+            Bc250DisplayLog("[X2B_FILL] SDMA encode failed: status=%d chunk=%u done=%llu DmaSize=%u cap=%u\n",
+                (int)sdmaStatus, chunk, (unsigned long long)done,
+                Args->DmaSize, dwordsAvailable);
+            if (done == (UINT64)Args->MultipassOffset) return STATUS_INVALID_PARAMETER;
+            break;
+        }
+        done += chunk;
+    }
+
+    count = InterlockedIncrement(&g_Bc250X2bFillsByCopy);
+    /* EVT.1: no FILL por copia o parametro de origem e' a GPUVA dos zeros (nunca 0). */
+    Bc250CrumbEvent(BC250_CRUMB_EVT_PAGING_FILL, 0u, cursor,
+        (ULONG)(done - (UINT64)Args->MultipassOffset),
+        (ULONG64)fill->DestinationVirtualAddress + (UINT64)Args->MultipassOffset,
+        (ULONG64)zeroVa);
+    Bc250DisplayLog("[DX91_PAGING_MOVE] op=FILL_POR_COPIA hAlloc=%p AllocOff=0x%llX Size=%llu Pass=[%llu,%llu) Dst=0x%llX Zero=0x%llX ZeroBytes=%u DmaVA=0x%llX WriteOff=0x%X WriteOff+DmaSize=0x%X DW=%u N=%ld\n",
+        fill->hAllocation,
+        (unsigned long long)fill->AllocationOffsetInBytes,
+        (unsigned long long)total,
+        (unsigned long long)Args->MultipassOffset, (unsigned long long)done,
+        (unsigned long long)fill->DestinationVirtualAddress,
+        (unsigned long long)zeroVa, zeroBytes,
+        (unsigned long long)Args->DmaBufferGpuVirtualAddress,
+        Args->DmaBufferWriteOffset, Args->DmaBufferWriteOffset + Args->DmaSize,
+        cursor, count);
+    Bc250PagingPublishIbDestRange(
+        fill->DestinationVirtualAddress + (UINT64)Args->MultipassOffset,
+        fill->DestinationVirtualAddress + done);
+    Bc250PagingAppendIbAlignmentNops("FillByCopy", dmaBuffer, &cursor);
+    Args->pDmaBuffer = (PVOID)(dmaBuffer + cursor);
+    if (done < total) {
+        Args->MultipassOffset = (UINT)done;
+        Bc250DisplayLog("[X2B_FILL] Multipass: %llu/%llu bytes, %u dwords emitidos\n",
+            (unsigned long long)done, (unsigned long long)total, cursor);
+        return STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER;
+    }
+    Args->MultipassOffset = BC250_PAGING_MULTIPASS_DONE;
     return STATUS_SUCCESS;
 }
 
@@ -1117,6 +1552,21 @@ static NTSTATUS Bc250McdmBuildFillVirtual(
         return STATUS_INVALID_PARAMETER;
     }
 
+#if BC250_X2B_FILL_BY_COPY
+    if (fill->FillPattern == 0u) {
+        if (Args->DmaBufferGpuVirtualAddress != 0ull) {
+            return Bc250McdmBuildFillByCopy(Args);
+        }
+        /*
+         * Sem a GPUVA do DMA buffer nao ha fonte para os zeros. Fica em
+         * CONST_FILL e FALA: o criterio da corrida conta estas linhas, e
+         * qualquer uma delas tira da corrida a conclusao sobre o pacote.
+         */
+        Bc250DisplayLog("[X2B_FILL] SEM DmaBufferGpuVirtualAddress -> CONST_FILL (ocorrencia #%ld)\n",
+            InterlockedIncrement(&g_Bc250X2bNoDmaVa));
+    }
+#endif
+
     done = (UINT64)Args->MultipassOffset;
     if (done >= total) {
         Args->MultipassOffset = BC250_PAGING_MULTIPASS_DONE;
@@ -1135,8 +1585,8 @@ static NTSTATUS Bc250McdmBuildFillVirtual(
 
     while (done < total) {
         UINT64 remaining = total - done;
-        uint32_t chunk = remaining > (UINT64)BC250_SDMA_FILL_MAX_BYTES ?
-            BC250_SDMA_FILL_MAX_BYTES : (uint32_t)remaining;
+        uint32_t chunk = remaining > (UINT64)BC250_SDMA_PAGING_FILL_MAX_BYTES ?
+            BC250_SDMA_PAGING_FILL_MAX_BYTES : (uint32_t)remaining;
         BC250_SDMA_STATUS sdmaStatus;
 
         if (dwordsAvailable - cursor < BC250_SDMA_DWORDS_CONST_FILL +
@@ -1170,6 +1620,18 @@ static NTSTATUS Bc250McdmBuildFillVirtual(
         done += chunk;
     }
 
+    /* EVT.1 (doc 521): Op = dwords uteis do IB, que casam com o IB submetido. */
+    Bc250CrumbEvent(BC250_CRUMB_EVT_PAGING_FILL, 0u, cursor,
+        (ULONG)(done - (UINT64)Args->MultipassOffset),
+        (ULONG64)fill->DestinationVirtualAddress + (UINT64)Args->MultipassOffset,
+        0ull);
+    Bc250DisplayLog("[DX91_PAGING_MOVE] op=FILL hAlloc=%p AllocOff=0x%llX Size=%llu Pass=[%llu,%llu) Dst=0x%llX Pattern=0x%08X DW=%u\n",
+        fill->hAllocation,
+        (unsigned long long)fill->AllocationOffsetInBytes,
+        (unsigned long long)total,
+        (unsigned long long)Args->MultipassOffset, (unsigned long long)done,
+        (unsigned long long)fill->DestinationVirtualAddress,
+        fill->FillPattern, cursor);
     Bc250PagingPublishFillParams(
         fill->DestinationVirtualAddress + (UINT64)Args->MultipassOffset,
         (ULONG)(done - (UINT64)Args->MultipassOffset),
@@ -1283,6 +1745,7 @@ VOID Bc250McdmInstallInterruptLifecycle(
 }
 
 static BC250_MCDM_FLUSH_TLB_HANDLER g_Bc250FlushTlbHandler;
+static BC250_MCDM_RESET_ENGINE_HANDLER g_Bc250ResetEngineHandler;
 
 VOID Bc250McdmInstallFlushTlbHandler(
     _In_opt_ BC250_MCDM_FLUSH_TLB_HANDLER FlushTlbHandler)
@@ -1426,6 +1889,18 @@ static NTSTATUS Bc250McdmBuildPagingBufferBody(
     case DXGK_OPERATION_UNMAP_APERTURE_SEGMENT:
     case DXGK_OPERATION_INIT_CONTEXT_RESOURCE:
     case DXGK_OPERATION_DISCARD_CONTENT:
+        /* DX.91: descarte tambem sai fora da amostragem; o conteudo deixa de
+         * existir por decisao do VidMm e isso precisa aparecer ao lado dos moves. */
+        Bc250CrumbEvent(BC250_CRUMB_EVT_PAGING_DISCARD, 0u,
+            (ULONG)pBuildPagingBuffer->DiscardContent.SegmentId, 0u,
+            (ULONG64)pBuildPagingBuffer->DiscardContent.SegmentAddress.QuadPart, 0ull);
+        Bc250DisplayLog("[DX91_PAGING_MOVE] op=DISCARD hAlloc=%p Seg=%u Addr=0x%llX\n",
+            pBuildPagingBuffer->DiscardContent.hAllocation,
+            pBuildPagingBuffer->DiscardContent.SegmentId,
+            (unsigned long long)pBuildPagingBuffer->DiscardContent.SegmentAddress.QuadPart);
+        Bc250DisplayLog("[McdmBuildPagingBuffer] Handled Op=%u -> SUCCESS\n", pBuildPagingBuffer->Operation);
+        InterlockedDecrement(&g_Bc250PagingActiveCount);
+        return STATUS_SUCCESS;
     case DXGK_OPERATION_UPDATE_CONTEXT_ALLOCATION:
     case DXGK_OPERATION_NOTIFY_RESIDENCY:
         Bc250DisplayLog("[McdmBuildPagingBuffer] Handled Op=%u -> SUCCESS\n", pBuildPagingBuffer->Operation);
@@ -2795,14 +3270,16 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         }
         out = (DXGK_QUERYSEGMENTOUT4 *)pQueryAdapterInfo->pOutputData;
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
+        /* M2 (doc 548): segmento 3 so' existe se a topologia lida no boot o produziu. */
+        const UINT32 segmentCount = (runtimeCaps.HiddenSegmentBytes != 0u) ? 3u : 2u;
         if (out->NbSegment == 0u) {
-            out->NbSegment = 2u;
-            Bc250DisplayLog("[McdmQAI] QUERYSEGMENT4: NbSegment queried -> 2\n");
+            out->NbSegment = segmentCount;
+            Bc250DisplayLog("[McdmQAI] QUERYSEGMENT4: NbSegment queried -> %u\n", segmentCount);
             return STATUS_SUCCESS;
         }
         if (pQueryAdapterInfo->pInputData == NULL ||
             pQueryAdapterInfo->InputDataSize < sizeof(*in) ||
-            out->NbSegment < 2u || out->pSegmentDescriptor == NULL ||
+            out->NbSegment < segmentCount || out->pSegmentDescriptor == NULL ||
             out->SegmentDescriptorStride < sizeof(*segment)) {
             Bc250DisplayLog("[McdmQAI] QUERYSEGMENT4: Invalid parameter in pass 2\n");
             return STATUS_INVALID_PARAMETER;
@@ -2836,11 +3313,32 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
             gart->Flags.NonLocalBudgetGroup = 1u;
         }
 
+        /*
+         * Segment 3: VRAM local SEM acesso de CPU (M2, doc 548). Base e tamanho
+         * sairam de Bc250ComputeHiddenSegment sobre a topologia lida no boot.
+         * CpuVisible=0: so' alocacoes que a RADV criou sem acesso de CPU podem
+         * morar aqui (Bc250AllocationMayUseHiddenSegment); tabelas de pagina
+         * continuam no segmento 1 (PageTableSegmentId=1).
+         */
+        if (segmentCount == 3u) {
+            DXGK_SEGMENTDESCRIPTOR4 *hidden = (DXGK_SEGMENTDESCRIPTOR4 *)
+                ((BYTE *)out->pSegmentDescriptor + 2u * out->SegmentDescriptorStride);
+            RtlZeroMemory(hidden, sizeof(*hidden));
+            hidden->BaseAddress.QuadPart = (LONGLONG)runtimeCaps.HiddenSegmentBaseOffset;
+            hidden->Size = (SIZE_T)runtimeCaps.HiddenSegmentBytes;
+            hidden->CommitLimit = 0u;
+            hidden->Flags.LocalBudgetGroup = 1u;
+            hidden->Flags.PreservedDuringStandby = 1u;
+            hidden->Flags.PreservedDuringHibernate = 1u;
+        }
+
         out->PagingBufferSegmentId = 2u;
         out->PagingBufferSize = 0x10000u;
         out->PagingBufferPrivateDataSize = 0u;
-        Bc250DisplayLog("[McdmQAI] QUERYSEGMENT4: 2 segments filled (VRAM=0x%llX, GART=2048MB, PagingSeg=2)\n",
-            (unsigned long long)segment->Size);
+        Bc250DisplayLog("[McdmQAI] QUERYSEGMENT4: %u segments filled (VRAM=0x%llX, GART=2048MB, PagingSeg=2, VRAM_SEM_CPU=0x%llX em 0x%llX)\n",
+            segmentCount, (unsigned long long)segment->Size,
+            (unsigned long long)runtimeCaps.HiddenSegmentBytes,
+            (unsigned long long)runtimeCaps.HiddenSegmentBaseOffset);
         return STATUS_SUCCESS;
 #else
         if (out->NbSegment == 0u) {
@@ -2995,6 +3493,10 @@ NTSTATUS APIENTRY Bc250McdmResetEngine(
     if (pResetEngine == NULL ||
         pResetEngine->NodeOrdinal >= BC250_ADAPTER_NODE_COUNT) {
         return STATUS_INVALID_PARAMETER;
+    }
+
+    if (g_Bc250ResetEngineHandler != NULL) {
+        return g_Bc250ResetEngineHandler((HANDLE)hAdapter, pResetEngine);
     }
 
     if (g_Bc250QueryRuntimeCaps == NULL ||
@@ -3236,6 +3738,12 @@ NTSTATUS Bc250McdmSetPowerState(
 
 static BC250_MCDM_CURRENT_FENCE_PROVIDER g_Bc250CurrentFenceProvider;
 
+VOID Bc250McdmInstallResetEngineHandler(
+    _In_opt_ BC250_MCDM_RESET_ENGINE_HANDLER Handler)
+{
+    g_Bc250ResetEngineHandler = Handler;
+}
+
 VOID Bc250McdmInstallCurrentFenceProvider(
     _In_opt_ BC250_MCDM_CURRENT_FENCE_PROVIDER CurrentFenceProvider)
 {
@@ -3413,6 +3921,7 @@ VOID Bc250McdmUnload(VOID)
     Bc250McdmInstallDebugLifecycle(NULL);
     Bc250McdmInstallSubmissionExecutor(NULL);
     Bc250McdmInstallCurrentFenceProvider(NULL);
+    Bc250McdmInstallResetEngineHandler(NULL);
     Bc250McdmInstallUpdatePageTableHandler(NULL);
     Bc250McdmInstallFlushTlbHandler(NULL);
     Bc250McdmInstallInterruptLifecycle(NULL, NULL);

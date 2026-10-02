@@ -109,33 +109,198 @@ static inline void Bc250SdmaRegWrite(
  * As leituras de volta nao sao decorativas: sao o que garante que a escrita
  * postada chegou ao dispositivo antes do passo seguinte.
  */
+/*
+ * DX.96-HDP (28/09, auditoria doc 509): a sequencia antiga tambem alternava
+ * HDP_MISC_CNTL.FLUSH_INVALIDATE_CACHE (1 e depois 0) a CADA chamada -- em
+ * todo submit, fill, blit e em cada verificacao de conclusao sem fence visivel
+ * (centenas por segundo depois da FPS.3b) -- e terminava com o bit DESLIGADO.
+ * Upstream (hdp_v5_0.c, P1): HDP_MISC_CNTL e' escrito UMA vez, na init
+ * (hdp_v5_0_init_registers liga FLUSH_INVALIDATE_CACHE, bit 0, mascara 0x1 em
+ * hdp_5_0_0_sh_mask.h); em tempo de execucao so' flush + invalidacao com
+ * leitura de volta. bc250_submission_engine.c ja' evitava tocar HDP_MISC em
+ * submissao ativa por um bloqueio medido do MEC2 (CP_CPC_STALLED_STAT1 =
+ * 0x00040000). Agora esta rotina NAO toca HDP_MISC; a init faz a escrita
+ * unica em Bc250SdmaPresentHdpInitOnce. NAO VALIDADO EM HARDWARE.
+ */
+/*
+ * HDP.1 / T1 (28/09, doc 519): O FLUSH ERA NO REGISTRADOR ERRADO.
+ *
+ * A primeira escrita desta rotina ia para 0x4A80 com valor 0 -- que NAO e'
+ * flush de HDP, e' SDMA0_UTCL1_INV0 (P1, ../core/bc250_hdp_contract.h). Ou
+ * seja: em todo laco de espera, em varias CPUs, zeravamos o controle de
+ * invalidacao da UTCL1 do SDMA, e o flush de escrita do HDP nunca acontecia.
+ *
+ * Agora, como amdgpu_hdp_generic_flush + hdp_v5_0_invalidate_hdp (P1):
+ *   1. barreira de CPU (mb() do upstream): as escritas da CPU na VRAM pela
+ *      BAR saem dos buffers de write-combining antes do flush;
+ *   2. BIF HDP_MEM_COHERENCY_FLUSH_CNTL = 0 (0x385C) -- flush de ESCRITA;
+ *   3. leitura de RCC_CONFIG_MEMSIZE (0x378C) -- confirma a chegada, como o
+ *      get_memsize do upstream. O valor tem de ser o mesmo sempre: se mudar,
+ *      a leitura nao foi ao NBIO e a divergencia e' contada e declarada;
+ *   4. HDP_READ_CACHE_INVALIDATE = 1 (0x3FC4) + leitura, como antes.
+ * 0x4A80 nao e' mais escrito por ninguem; e' so' LIDO, de forma amostrada,
+ * para medir o valor real de UTCL1_INV0 no silicio. NAO VALIDADO EM HARDWARE.
+ */
+static volatile LONG64 g_Bc250HdpFlushCount = 0;
+static volatile LONG g_Bc250HdpMemsizeRef = 0;
+static volatile LONG g_Bc250HdpMemsizeMismatch = 0;
+
 static void Bc250SdmaPresentHdp(
     _In_ BC250_SDMA_PRESENT_CONTEXT *Context)
 {
-    uint32_t misc;
+    uint32_t memsize;
+    LONG64 seq;
 
-    misc = Bc250SdmaRegRead(Context,
-        BC250_SDMA0_REG_HDP_MISC - BC250_SDMA0_MMIO_WINDOW_START);
-
+    _mm_mfence(); /* mb() do upstream: drena write-combining antes do flush */
     Bc250SdmaRegWrite(Context,
-        BC250_SDMA0_REG_HDP_FLUSH - BC250_SDMA0_MMIO_WINDOW_START, 0u);
-    (void)Bc250SdmaRegRead(Context,
-        BC250_SDMA0_REG_HDP_FLUSH - BC250_SDMA0_MMIO_WINDOW_START);
+        BC250_HDP_REG_MEM_COHERENCY_FLUSH_CNTL - BC250_SDMA0_MMIO_WINDOW_START,
+        BC250_HDP_MEM_FLUSH_VALUE);
+    memsize = Bc250SdmaRegRead(Context,
+        BC250_HDP_REG_FLUSH_POSTING_READ - BC250_SDMA0_MMIO_WINDOW_START);
 
     Bc250SdmaRegWrite(Context,
         BC250_SDMA0_REG_HDP_INVALIDATE - BC250_SDMA0_MMIO_WINDOW_START, 1u);
     (void)Bc250SdmaRegRead(Context,
         BC250_SDMA0_REG_HDP_INVALIDATE - BC250_SDMA0_MMIO_WINDOW_START);
 
-    Bc250SdmaRegWrite(Context,
-        BC250_SDMA0_REG_HDP_MISC - BC250_SDMA0_MMIO_WINDOW_START, misc | 1u);
-    (void)Bc250SdmaRegRead(Context,
-        BC250_SDMA0_REG_HDP_MISC - BC250_SDMA0_MMIO_WINDOW_START);
+    seq = InterlockedIncrement64(&g_Bc250HdpFlushCount);
+    if (InterlockedCompareExchange(&g_Bc250HdpMemsizeRef, (LONG)memsize, 0) != 0 &&
+        (uint32_t)g_Bc250HdpMemsizeRef != memsize) {
+        LONG mismatches = InterlockedIncrement(&g_Bc250HdpMemsizeMismatch);
+        if (mismatches <= 8 || (mismatches % 4096) == 0) {
+            Bc250DisplayLog("[HDP1_FLUSH] DIVERGENCIA #%ld: leitura de confirmacao RCC_CONFIG_MEMSIZE=0x%08X, referencia=0x%08X -- a leitura nao chegou ao NBIO como esperado\n",
+                mismatches, memsize, (uint32_t)g_Bc250HdpMemsizeRef);
+        }
+    }
+    if (seq <= 4 || (seq % 65536) == 0) {
+        uint32_t inv0 = Bc250SdmaRegRead(Context,
+            BC250_SDMA0_REG_UTCL1_INV0 - BC250_SDMA0_MMIO_WINDOW_START);
+        Bc250DisplayLog("[HDP1_FLUSH] #%lld flush real 0x385C=0 + leitura 0x378C=0x%08X (ref=0x%08X divergencias=%ld) | UTCL1_INV0=0x%08X (somente leitura)\n",
+            (long long)seq, memsize, (uint32_t)g_Bc250HdpMemsizeRef,
+            (LONG)g_Bc250HdpMemsizeMismatch, inv0);
+    }
+}
 
-    Bc250SdmaRegWrite(Context,
-        BC250_SDMA0_REG_HDP_MISC - BC250_SDMA0_MMIO_WINDOW_START, misc & ~1u);
-    (void)Bc250SdmaRegRead(Context,
+/*
+ * X1 (29/09, doc 522): sondagens decididas so' pelo registrador RPTR (sem HDP
+ * e sem ler VRAM) e leituras de fence feitas depois que o RPTR passou.
+ */
+static volatile LONG64 g_Bc250X1GatedPolls = 0;
+static volatile LONG64 g_Bc250X1FenceReads = 0;
+/* X3 (doc 524): leituras de canario feitas (anel ocioso) e adiadas (SDMA ocupado). */
+static volatile LONG64 g_Bc250X3CanaryRead = 0;
+static volatile LONG64 g_Bc250X3CanarySkipped = 0;
+
+/*
+ * X4 (29/09, doc 525): SEM CANARIOS NO CAMINHO DE EXECUCAO.
+ *
+ * Corridas 170 e 171 (P0): a maquina parou com a CPU00 DENTRO da leitura dos
+ * canarios (migalha VRAM_CANARY_READ fase ANTES, VRAM 0xF280000 e 0xF3CC000),
+ * lendo pela janela WC, logo depois do flush/invalidacao do HDP, o destino que
+ * um FILL de paginacao acabara de escrever -- na 171 com o SDMA ja' OCIOSO
+ * (o portao do X3 nunca agiu). Cada alocacao nova gera um FILL com canarios,
+ * e a partida e a abertura do menu sao as fases de mais alocacoes.
+ *
+ * Agora os IBs submetidos em execucao nao plantam nem leem canarios: a prova
+ * fica com DUAS pernas (RPTR e fence gravada pela GPU sobre poison) e a de
+ * dados e' declarada NAO CONFERIDA -- nunca simulada (Leis 2 e 4). O tripe
+ * completo continua no ensaio de boot. NAO VALIDADO EM HARDWARE.
+ */
+static volatile LONG64 g_Bc250X4CanaryDisabled = 0;
+
+static VOID Bc250X4DisableRuntimeCanaries(
+    _Inout_ BC250_DATA_PROOF_PLAN *Plan,
+    _In_z_ const char *Path)
+{
+    LONG64 count;
+    if (Plan == NULL || Plan->Usable == 0u) {
+        return;
+    }
+    Plan->Usable = 0u;
+    count = InterlockedIncrement64(&g_Bc250X4CanaryDisabled);
+    if (count <= 4 || (count % 4096) == 0) {
+        Bc250DisplayLog("[X4_CANARY] #%lld %s: canarios NAO plantados nem lidos em execucao -- perna de dados NAO CONFERIDA (prova de duas pernas: RPTR + fence da GPU)\n",
+            (long long)count, Path);
+    }
+}
+
+/*
+ * X1: portao dos lacos SINCRONOS (blts do Present). Com o RingLock seguro
+ * nada e' acrescentado ao anel, entao o ultimo WPTR publicado e' o proprio
+ * alvo. Enquanto devolver FALSE, o laco NAO toca HDP nem le VRAM.
+ */
+static BOOLEAN Bc250SdmaSyncEntryConsumed(
+    _In_ uint32_t StartBytes,
+    _In_ uint32_t TargetBytes)
+{
+    uint32_t rptr = Bc250SdmaRegRead(&g_Bc250SdmaPresent,
+        BC250_SDMA0_REG_RB_RPTR - BC250_SDMA0_MMIO_WINDOW_START);
+    uint32_t tailBytes = (uint32_t)(g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t));
+    if (Bc250TripodRingEntryConsumed(rptr, StartBytes, TargetBytes,
+            tailBytes, (uint32_t)BC250_SDMA_PRESENT_RING_BYTES) == 0u) {
+        InterlockedIncrement64(&g_Bc250X1GatedPolls);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+/* X1: leitura da fence na VRAM, so' depois do portao, com HDP e migalha. */
+static uint32_t Bc250SdmaReadFenceAfterConsumed(_In_ ULONG FenceOffset)
+{
+    uint32_t value;
+    ULONG crumb;
+    InterlockedIncrement64(&g_Bc250X1FenceReads);
+    Bc250SdmaPresentHdp(&g_Bc250SdmaPresent);
+    crumb = Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_FENCE_READ, FenceOffset);
+    value = g_Bc250SdmaPresent.Work[FenceOffset / 4u];
+    Bc250CrumbAfter(crumb);
+    return value;
+}
+
+/*
+ * DX.96-HDP: escrita UNICA de HDP_MISC_CNTL, na init, como o upstream.
+ * Formula SOC15 (Lei 6): (lido & ~mask) | (or & mask), mask = bit 0.
+ * Registra o valor encontrado (o que o POST ou o bring-up deixou) e o lido de
+ * volta: a proxima corrida diz se o bit estava desligado pelo toggle antigo.
+ */
+#define BC250_HDP_MISC_FLUSH_INVALIDATE_CACHE_MASK 0x00000001u
+static void Bc250SdmaPresentHdpInitOnce(
+    _In_ BC250_SDMA_PRESENT_CONTEXT *Context)
+{
+    uint32_t found;
+    uint32_t planned;
+    uint32_t readback;
+    uint32_t inv0;
+    uint32_t memsize;
+
+    /*
+     * HDP.1: sonda SOMENTE LEITURA, antes de qualquer flush. UTCL1_INV0 nunca
+     * foi medido neste projeto e, ate a 3.310, era zerado em todo laco de
+     * espera; neste build ninguem o escreve, entao o valor lido aqui e' o que
+     * o POST/firmware deixou. RCC_CONFIG_MEMSIZE e' a referencia da leitura de
+     * confirmacao do flush (esperado 0x200 = 512 MiB, medido pelo leitor de
+     * topologia).
+     */
+    inv0 = Bc250SdmaRegRead(Context,
+        BC250_SDMA0_REG_UTCL1_INV0 - BC250_SDMA0_MMIO_WINDOW_START);
+    memsize = Bc250SdmaRegRead(Context,
+        BC250_HDP_REG_FLUSH_POSTING_READ - BC250_SDMA0_MMIO_WINDOW_START);
+    Bc250DisplayLog("[HDP1_INIT] UTCL1_INV0(SDMA0 dw 0x40)=0x%08X lido antes de qualquer flush (neste build ninguem o escreve) | RCC_CONFIG_MEMSIZE(0x378C)=0x%08X\n",
+        inv0, memsize);
+
+    found = Bc250SdmaRegRead(Context,
         BC250_SDMA0_REG_HDP_MISC - BC250_SDMA0_MMIO_WINDOW_START);
+    planned = (found & ~BC250_HDP_MISC_FLUSH_INVALIDATE_CACHE_MASK) |
+        (BC250_HDP_MISC_FLUSH_INVALIDATE_CACHE_MASK &
+         BC250_HDP_MISC_FLUSH_INVALIDATE_CACHE_MASK);
+    if (planned != found) {
+        Bc250SdmaRegWrite(Context,
+            BC250_SDMA0_REG_HDP_MISC - BC250_SDMA0_MMIO_WINDOW_START, planned);
+    }
+    readback = Bc250SdmaRegRead(Context,
+        BC250_SDMA0_REG_HDP_MISC - BC250_SDMA0_MMIO_WINDOW_START);
+    Bc250DisplayLog("[DX96_HDP] HDP_MISC_CNTL init unica: encontrado=0x%08X planejado=0x%08X lido=0x%08X escrito=%u -- em tempo de execucao HDP_MISC nao e' mais tocado\n",
+        found, planned, readback, (planned != found) ? 1u : 0u);
 }
 
 #endif /* BC250_ENABLE_DXGK_REGISTRATION */
@@ -162,6 +327,22 @@ VOID Bc250SdmaPresentSetSegmentGeometry(
     Bc250DisplayLog("[SdmaPresent] SEGMENT_GEOMETRY publicada: SegBase=0x%llX SegBytes=0x%llX\n",
         (unsigned long long)LocalSegmentBaseOffset,
         (unsigned long long)LocalSegmentBytes);
+    /*
+     * T3.1: o VidMm mapeia o segmento WC; a faixa privada UC comeca em
+     * BC250_VRAM_WC_WINDOW_BYTES. Segmento que passe desse limite poria
+     * alocacoes WC do VidMm em cima das estruturas UC do driver.
+     */
+    if (LocalSegmentBaseOffset + LocalSegmentBytes > BC250_VRAM_WC_WINDOW_BYTES) {
+        Bc250DisplayLog("[T31_CACHE_MAPA] DIVERGENCIA: segmento [0x%llX,0x%llX) passa do inicio da faixa privada UC 0x%llX -- aliasing WC/UC possivel\n",
+            (unsigned long long)LocalSegmentBaseOffset,
+            (unsigned long long)(LocalSegmentBaseOffset + LocalSegmentBytes),
+            (unsigned long long)BC250_VRAM_WC_WINDOW_BYTES);
+    } else {
+        Bc250DisplayLog("[T31_CACHE_MAPA] segmento [0x%llX,0x%llX) inteiro dentro da janela WC [0x0,0x%llX)\n",
+            (unsigned long long)LocalSegmentBaseOffset,
+            (unsigned long long)(LocalSegmentBaseOffset + LocalSegmentBytes),
+            (unsigned long long)BC250_VRAM_WC_WINDOW_BYTES);
+    }
 }
 
 BOOLEAN Bc250SdmaPresentSegmentOffsetToVram(
@@ -197,6 +378,53 @@ BOOLEAN Bc250SdmaPresentSegmentOffsetToVram(
     *VramOffset = resolved;
     return TRUE;
 }
+
+/*
+ * CG.1 (doc 557): o clock do SDMA0 e' forcado ligado (SOFT_OVERRIDE0..7 = 1)
+ * para programar o anel (29/08: EX_IDLE_POLL_TIMER_EXPIRE persistente com o
+ * motor possivelmente sem clock). Esse force NUNCA era desfeito, e a Corrida
+ * 200 mediu SDMA0_CLK_CTRL=0xFF0C0100 o tempo todo, contra 0x000C0100 no
+ * SDMA1 intocado (padrao do POST). O amdgpu nao escreve este registrador na
+ * SDMA 5.0.1 (sdma_v5_0_set_clockgating_state so' trata 5.0.0/5.0.2/5.0.5;
+ * nv.c: cg_flags = pg_flags = 0 para GC 10.1.3), e o Linux roda com o MGCG do
+ * POST sem travar (doc 552). Aqui, depois do anel PROVADO, so' os bits de
+ * override voltam ao valor de entrada (Lei 6), com releitura.
+ */
+#ifndef BC250_SDMA0_RESTORE_POST_CLOCK_GATING
+#define BC250_SDMA0_RESTORE_POST_CLOCK_GATING 1
+#endif
+#define BC250_SDMA0_CLK_SOFT_OVERRIDE_MASK 0xFF000000u
+
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+static VOID Bc250SdmaPresentRestorePostClockGating(_In_z_ const char *Where)
+{
+#if BC250_SDMA0_RESTORE_POST_CLOCK_GATING
+    uint32_t before;
+    uint32_t planned;
+    uint32_t after;
+    if (!g_Bc250SdmaPresent.ClockCtrlEntryCaptured) {
+        Bc250DisplayLog("[SDMA_CG] %s: valor de entrada do SDMA0_CLK_CTRL nao capturado; overrides MANTIDOS\n", Where);
+        return;
+    }
+    before = Bc250SdmaRegRead(&g_Bc250SdmaPresent,
+        BC250_SDMA0_REG_CLK_CTRL - BC250_SDMA0_MMIO_WINDOW_START);
+    planned = (before & ~BC250_SDMA0_CLK_SOFT_OVERRIDE_MASK) |
+        (g_Bc250SdmaPresent.ClockCtrlAtEntry & BC250_SDMA0_CLK_SOFT_OVERRIDE_MASK);
+    Bc250SdmaRegWrite(&g_Bc250SdmaPresent,
+        BC250_SDMA0_REG_CLK_CTRL - BC250_SDMA0_MMIO_WINDOW_START, planned);
+    after = Bc250SdmaRegRead(&g_Bc250SdmaPresent,
+        BC250_SDMA0_REG_CLK_CTRL - BC250_SDMA0_MMIO_WINDOW_START);
+    Bc250DisplayLog("[SDMA_CG] %s: SDMA0_CLK_CTRL entrada(POST)=0x%08X antes=0x%08X planejado=0x%08X lido=0x%08X -> %s\n",
+        Where, g_Bc250SdmaPresent.ClockCtrlAtEntry, before, planned, after,
+        ((after & BC250_SDMA0_CLK_SOFT_OVERRIDE_MASK) ==
+            (planned & BC250_SDMA0_CLK_SOFT_OVERRIDE_MASK)) ?
+            "OVERRIDES DO POST RESTAURADOS (MGCG como no Linux)" :
+            "RELEITURA DIVERGE");
+#else
+    Bc250DisplayLog("[SDMA_CG] %s: restauracao desligada (BC250_SDMA0_RESTORE_POST_CLOCK_GATING=0)\n", Where);
+#endif
+}
+#endif
 
 NTSTATUS Bc250SdmaPresentInit(
     _In_ PHYSICAL_ADDRESS MmioBar5Physical,
@@ -267,6 +495,8 @@ NTSTATUS Bc250SdmaPresentInit(
         g_Bc250SdmaPresent.MmioVirtual = NULL;
         return STATUS_INSUFFICIENT_RESOURCES;
     }
+    Bc250LogUcVramMapping("SDMA_PRESENT_RING_WORK",
+        BC250_SDMA_LEGACY_RING_OFFSET, g_Bc250SdmaPresent.VramLength);
 
     /* Divide a janela de VRAM em Ring e Work com endereços MC autoritativos da GPU */
     g_Bc250SdmaPresent.Ring = (volatile uint32_t *)g_Bc250SdmaPresent.VramVirtual;
@@ -322,10 +552,16 @@ NTSTATUS Bc250SdmaPresentInit(
     /*
      * 3. Configuração dos registradores SDMA0 (proveniência: bc250_sdma_ring_work.c):
      */
+    Bc250SdmaPresentHdpInitOnce(&g_Bc250SdmaPresent);
     Bc250SdmaPresentHdp(&g_Bc250SdmaPresent);
 
     /* Des-gating de clock ANTES de qualquer configuracao (bc250_sdma_ring_work.c:323-330) */
     clk = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_CLK_CTRL - BC250_SDMA0_MMIO_WINDOW_START);
+    /* CG.1: o primeiro valor lido e' o do POST; inits seguintes nao sobrescrevem. */
+    if (!g_Bc250SdmaPresent.ClockCtrlEntryCaptured) {
+        g_Bc250SdmaPresent.ClockCtrlAtEntry = clk;
+        g_Bc250SdmaPresent.ClockCtrlEntryCaptured = TRUE;
+    }
     Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_CLK_CTRL - BC250_SDMA0_MMIO_WINDOW_START, clk | 0xFF000000u);
     KeStallExecutionProcessor(50u);
 
@@ -426,7 +662,7 @@ NTSTATUS Bc250SdmaPresentInit(
 
     value = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_UTCL1_CNTL - BC250_SDMA0_MMIO_WINDOW_START);
     Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_UTCL1_CNTL - BC250_SDMA0_MMIO_WINDOW_START,
-        (value & ~(0x00000E00u | 0x0000003Eu)) | (3u << 9) | (9u << 1));
+        (value & ~(0x00000E00u | 0x0000003Eu | BC250_SDMA0_UTCL1_CNTL_FORCE_INVALIDATION)) | (3u << 9) | (9u << 1));
 
     {
         uint32_t cur = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_UTCL1_PAGE - BC250_SDMA0_MMIO_WINDOW_START);
@@ -561,6 +797,8 @@ NTSTATUS Bc250SdmaPresentInit(
                 Bc250TripodRptrSourceName(rptrSource),
                 fenceObserved,
                 g_Bc250SdmaPresent.TripodPolls);
+            /* CG.1: so' depois do anel provado com o clock forcado. */
+            Bc250SdmaPresentRestorePostClockGating("INIT");
         }
     }
 
@@ -657,6 +895,9 @@ static BOOLEAN Bc250SdmaPresentBltCore(
     uint64_t curDst;
     BC250_SDMA_STATUS status;
     KIRQL oldIrql;
+    uint32_t x1StartBytes;
+    uint32_t x1TargetBytes;
+    uint32_t targetWptr = 0u;
 
     if (!g_Bc250SdmaPresent.Initialized || !g_Bc250SdmaPresent.HardwareEnabled) {
         InterlockedIncrement(&g_Bc250SdmaPresent.FallbackCpuCount);
@@ -703,8 +944,13 @@ static BOOLEAN Bc250SdmaPresentBltCore(
 
     startCursor = Bc250SdmaPresentAllocateRingSlot(cursor);
 
-    for (i = 0u; i < cursor; ++i) {
-        g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+    {
+        /* X2a (doc 523): pacotes no anel, escritas UC na VRAM. */
+        ULONG ringWriteCrumb = Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_RING_WRITE, startCursor);
+        for (i = 0u; i < cursor; ++i) {
+            g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+        }
+        Bc250CrumbAfter(ringWriteCrumb);
     }
     KeMemoryBarrier();
 
@@ -722,29 +968,39 @@ static BOOLEAN Bc250SdmaPresentBltCore(
 
     InterlockedIncrement(&g_Bc250SdmaPresent.BltSubmittedCount);
 
+    /* X1 (doc 522): o laco nao le VRAM nem mexe no HDP ate o RPTR passar. */
+    x1StartBytes = startCursor * (uint32_t)sizeof(uint32_t);
+    x1TargetBytes = (uint32_t)(g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t));
+    targetWptr = x1TargetBytes;
+    KeReleaseSpinLock(&g_Bc250SdmaPresent.RingLock, oldIrql);
+
     for (poll = 1u; poll <= 10000u; ++poll) {
-        uint32_t fenceObserved = g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_FENCE_OFFSET / 4u];
-        if (fenceObserved != nextFence) {
-            uint32_t rptrRegCheck = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_RPTR - BC250_SDMA0_MMIO_WINDOW_START);
-            uint32_t rptrWbCheck = g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_RPTR_OFFSET / 4u];
-            uint32_t targetWptrCheck = (uint32_t)(g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t));
-            if (Bc250SdmaRptrMatches(rptrRegCheck, rptrWbCheck, targetWptrCheck) || ((poll & 0x7Fu) == 0u)) {
-                Bc250SdmaPresentHdp(&g_Bc250SdmaPresent);
-                fenceObserved = g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_FENCE_OFFSET / 4u];
-            }
+        uint32_t fenceObserved;
+        if (!Bc250SdmaSyncEntryConsumed(x1StartBytes, x1TargetBytes)) {
+            KeStallExecutionProcessor(5u);
+            continue;
         }
+        fenceObserved = Bc250SdmaReadFenceAfterConsumed(BC250_SDMA_PRESENT_FENCE_OFFSET);
         if (fenceObserved == nextFence) {
             uint32_t rptrReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_RPTR - BC250_SDMA0_MMIO_WINDOW_START);
             uint32_t rptrWb = g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_RPTR_OFFSET / 4u];
-            uint32_t targetWptr = (uint32_t)(g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t));
             /* A15: o helper cobre a volta do anel; o teste cru era redundante
              * e servia de molde para copiar o defeito adiante. */
             BOOLEAN rptrOk = Bc250SdmaRptrMatches(rptrReg, rptrWb, targetWptr);
+            if (!rptrOk) {
+                uint32_t currentTail = (uint32_t)(g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t));
+                if (Bc250TripodRingEntryConsumed(rptrReg, x1StartBytes, x1TargetBytes,
+                        currentTail, (uint32_t)BC250_SDMA_PRESENT_RING_BYTES) != 0u ||
+                    Bc250TripodRingEntryConsumed(rptrWb, x1StartBytes, x1TargetBytes,
+                        currentTail, (uint32_t)BC250_SDMA_PRESENT_RING_BYTES) != 0u ||
+                    fenceObserved == nextFence) {
+                    rptrOk = TRUE;
+                }
+            }
             if (rptrOk) {
                 LONG completed;
                 g_Bc250SdmaPresent.TripodValidated = TRUE;
                 completed = InterlockedIncrement(&g_Bc250SdmaPresent.BltCompletedCount);
-                KeReleaseSpinLock(&g_Bc250SdmaPresent.RingLock, oldIrql);
                 Bc250SdmaPresentHdp(&g_Bc250SdmaPresent);
                 if (completed == 1 || (completed % 60) == 0) {
                     /*
@@ -780,13 +1036,28 @@ static BOOLEAN Bc250SdmaPresentBltCore(
         uint32_t wptrReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_WPTR - BC250_SDMA0_MMIO_WINDOW_START);
         uint32_t rptrReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_RPTR - BC250_SDMA0_MMIO_WINDOW_START);
         uint32_t statusReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_STATUS - BC250_SDMA0_MMIO_WINDOW_START);
+        /*
+         * SDMA.4M (Corrida 151): o timeout so' dizia WPTR/RPTR/STATUS, e o RPTR
+         * parado ANTES do blt apontava para um IB de paginacao anterior (fill de
+         * 4 MiB) sem dizer onde dentro dele. Leituras somente, na janela SDMA0
+         * ja' mapeada, com o RingLock ainda seguro (nenhum escritor concorrente).
+         */
+        uint32_t status1Reg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_STATUS1 - BC250_SDMA0_MMIO_WINDOW_START);
+        uint32_t errLogReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_ERROR_LOG - BC250_SDMA0_MMIO_WINDOW_START);
+        uint32_t ibCntlReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_GFX_IB_CNTL_OFFSET - BC250_SDMA0_MMIO_WINDOW_START);
+        uint32_t ibRptrReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_GFX_IB_RPTR_OFFSET - BC250_SDMA0_MMIO_WINDOW_START);
+        uint32_t ibBaseLoReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_GFX_IB_BASE_LO_OFFSET - BC250_SDMA0_MMIO_WINDOW_START);
+        uint32_t ibSizeReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_GFX_IB_SIZE_OFFSET - BC250_SDMA0_MMIO_WINDOW_START);
+        uint32_t ctxStatusReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_GFX_CONTEXT_STATUS_OFFSET - BC250_SDMA0_MMIO_WINDOW_START);
         uint32_t fenceObs = g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_FENCE_OFFSET / 4u];
         LONG fallbacks = InterlockedIncrement(&g_Bc250SdmaPresent.FallbackCpuCount);
-        KeReleaseSpinLock(&g_Bc250SdmaPresent.RingLock, oldIrql);
         if (fallbacks == 1 || (fallbacks % 60) == 0) {
             Bc250DisplayLog("[SdmaPresent] Blt Timeout #%ld: TargetWPTR=%u, WPTR_Reg=%u, RPTR_Reg=%u, STATUS=%08X, FenceExp=%08X, FenceObs=%08X\n",
-                fallbacks, (uint32_t)(g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t)),
+                fallbacks, targetWptr,
                 wptrReg, rptrReg, statusReg, nextFence, fenceObs);
+            Bc250DisplayLog("[SdmaPresent] Blt Timeout IB_ESTADO #%ld: STATUS1=%08X ERR_LOG=%08X IB_CNTL=%08X IB_RPTR=%u IB_BASE_LO=%08X IB_SIZE=%u CTX_STATUS=%08X InFlight=%u\n",
+                fallbacks, status1Reg, errLogReg, ibCntlReg, ibRptrReg, ibBaseLoReg,
+                ibSizeReg, ctxStatusReg, g_Bc250SdmaPresent.InFlightCount);
         }
     }
     return FALSE;
@@ -818,6 +1089,9 @@ static BOOLEAN Bc250SdmaPresentBltRectCore(
     uint64_t byteCount64 = (uint64_t)Width * Height * 4ull;
     BC250_SDMA_STATUS status;
     KIRQL oldIrql;
+    uint32_t x1StartBytes;
+    uint32_t x1TargetBytes;
+    uint32_t targetWptr = 0u;
 
     if (!g_Bc250SdmaPresent.Initialized || !g_Bc250SdmaPresent.HardwareEnabled ||
         SourceGpuAddress == 0ull || DestGpuAddress == 0ull ||
@@ -847,8 +1121,13 @@ static BOOLEAN Bc250SdmaPresentBltRectCore(
         BC250_SDMA_PRESENT_FENCE_POISON;
     KeMemoryBarrier();
     startCursor = Bc250SdmaPresentAllocateRingSlot(cursor);
-    for (i = 0u; i < cursor; ++i) {
-        g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+    {
+        /* X2a (doc 523): pacotes no anel, escritas UC na VRAM. */
+        ULONG ringWriteCrumb = Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_RING_WRITE, startCursor);
+        for (i = 0u; i < cursor; ++i) {
+            g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+        }
+        Bc250CrumbAfter(ringWriteCrumb);
     }
     KeMemoryBarrier();
     g_Bc250SdmaPresent.CurrentCursor += cursor;
@@ -868,36 +1147,40 @@ static BOOLEAN Bc250SdmaPresentBltRectCore(
         BC250_SDMA0_REG_MINOR_PTR - BC250_SDMA0_MMIO_WINDOW_START, 0u);
     InterlockedIncrement(&g_Bc250SdmaPresent.BltSubmittedCount);
 
+    /* X1 (doc 522): o laco nao le VRAM nem mexe no HDP ate o RPTR passar. */
+    x1StartBytes = startCursor * (uint32_t)sizeof(uint32_t);
+    x1TargetBytes = (uint32_t)(g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t));
+    targetWptr = x1TargetBytes;
+    KeReleaseSpinLock(&g_Bc250SdmaPresent.RingLock, oldIrql);
+
     for (poll = 1u; poll <= 10000u; ++poll) {
-        uint32_t fenceObserved =
-            g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_FENCE_OFFSET / 4u];
-        if (fenceObserved != nextFence) {
-            uint32_t rptrRegCheck = Bc250SdmaRegRead(&g_Bc250SdmaPresent,
-                BC250_SDMA0_REG_RB_RPTR - BC250_SDMA0_MMIO_WINDOW_START);
-            uint32_t rptrWbCheck =
-                g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_RPTR_OFFSET / 4u];
-            uint32_t targetWptrCheck =
-                g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t);
-            if (Bc250SdmaRptrMatches(rptrRegCheck, rptrWbCheck,
-                    targetWptrCheck) || ((poll & 0x7Fu) == 0u)) {
-                Bc250SdmaPresentHdp(&g_Bc250SdmaPresent);
-                fenceObserved = g_Bc250SdmaPresent.Work[
-                    BC250_SDMA_PRESENT_FENCE_OFFSET / 4u];
-            }
+        uint32_t fenceObserved;
+        if (!Bc250SdmaSyncEntryConsumed(x1StartBytes, x1TargetBytes)) {
+            KeStallExecutionProcessor(5u);
+            continue;
         }
+        fenceObserved = Bc250SdmaReadFenceAfterConsumed(BC250_SDMA_PRESENT_FENCE_OFFSET);
         if (fenceObserved == nextFence) {
             uint32_t rptrReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent,
                 BC250_SDMA0_REG_RB_RPTR - BC250_SDMA0_MMIO_WINDOW_START);
             uint32_t rptrWb =
                 g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_RPTR_OFFSET / 4u];
-            uint32_t targetWptr =
-                g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t);
-            if (Bc250SdmaRptrMatches(rptrReg, rptrWb, targetWptr)) {
+            BOOLEAN rptrOk = Bc250SdmaRptrMatches(rptrReg, rptrWb, targetWptr);
+            if (!rptrOk) {
+                uint32_t currentTail = (uint32_t)(g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t));
+                if (Bc250TripodRingEntryConsumed(rptrReg, x1StartBytes, x1TargetBytes,
+                        currentTail, (uint32_t)BC250_SDMA_PRESENT_RING_BYTES) != 0u ||
+                    Bc250TripodRingEntryConsumed(rptrWb, x1StartBytes, x1TargetBytes,
+                        currentTail, (uint32_t)BC250_SDMA_PRESENT_RING_BYTES) != 0u ||
+                    fenceObserved == nextFence) {
+                    rptrOk = TRUE;
+                }
+            }
+            if (rptrOk) {
                 LONG completed;
                 g_Bc250SdmaPresent.TripodValidated = TRUE;
                 completed = InterlockedIncrement(
                     &g_Bc250SdmaPresent.BltCompletedCount);
-                KeReleaseSpinLock(&g_Bc250SdmaPresent.RingLock, oldIrql);
                 Bc250SdmaPresentHdp(&g_Bc250SdmaPresent);
                 if (completed == 1 || (completed % 60) == 0) {
                     Bc250DisplayLog("[SdmaPresent] BLT_RECT_ENGINE_2LEGS #%ld: %ux%u srcPitch=%u dstPitch=%u DstXY=%u,%u WPTR=%u RPTR=%u Fence=%08X Bytes=%llu SEMANTICA_H\n",
@@ -922,11 +1205,10 @@ static BOOLEAN Bc250SdmaPresentBltRectCore(
             BC250_SDMA_PRESENT_FENCE_OFFSET / 4u];
         LONG fallbacks = InterlockedIncrement(
             &g_Bc250SdmaPresent.FallbackCpuCount);
-        KeReleaseSpinLock(&g_Bc250SdmaPresent.RingLock, oldIrql);
         Bc250DisplayLog("[SdmaPresent] BLT_RECT TIMEOUT #%ld: %ux%u srcPitch=%u dstPitch=%u DstXY=%u,%u TargetWPTR=%u WPTR_Reg=%u RPTR_Reg=%u STATUS=%08X FenceExp=%08X FenceObs=%08X\n",
             fallbacks, Width, Height, SourcePitchBytes, DestPitchBytes,
             DestX, DestY,
-            g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t), wptrReg,
+            targetWptr, wptrReg,
             rptrReg, statusReg, nextFence, fenceObs);
     }
     return FALSE;
@@ -1031,6 +1313,7 @@ BOOLEAN Bc250SdmaPresentFill(
     ULONG canaryOff[5];
     uint32_t canaryVal[5];
     UINT32 cIdx;
+    uint32_t targetWptr = 0u;
 
     if (!g_Bc250SdmaPresent.Initialized || !g_Bc250SdmaPresent.HardwareEnabled) {
         Bc250DisplayLog("[SdmaPresent] PAGING_FILL RECUSADO: Initialized=%u, HardwareEnabled=%u, TripodValidated=%u\n",
@@ -1112,8 +1395,13 @@ BOOLEAN Bc250SdmaPresentFill(
 
     startCursor = Bc250SdmaPresentAllocateRingSlot(cursor);
 
-    for (i = 0u; i < cursor; ++i) {
-        g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+    {
+        /* X2a (doc 523): pacotes no anel, escritas UC na VRAM. */
+        ULONG ringWriteCrumb = Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_RING_WRITE, startCursor);
+        for (i = 0u; i < cursor; ++i) {
+            g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+        }
+        Bc250CrumbAfter(ringWriteCrumb);
     }
     KeMemoryBarrier();
 
@@ -1131,6 +1419,9 @@ BOOLEAN Bc250SdmaPresentFill(
     Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_WPTR_HI - BC250_SDMA0_MMIO_WINDOW_START, 0u);
     Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_MINOR_PTR - BC250_SDMA0_MMIO_WINDOW_START, 0u);
 
+    targetWptr = g_Bc250SdmaPresent.CurrentCursor * (uint32_t)sizeof(uint32_t);
+    KeReleaseSpinLock(&g_Bc250SdmaPresent.RingLock, oldIrql);
+
     for (poll = 1u; poll <= 10000u; ++poll) {
         uint32_t fenceObserved = g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_FENCE_OFFSET / 4u];
         if (fenceObserved == nextFence) {
@@ -1142,11 +1433,10 @@ BOOLEAN Bc250SdmaPresentFill(
             BOOLEAN canaryOk = TRUE;
             ULONG nonZeroCount = 0u;
             ULONG sampleHash = 0u;
-            uint32_t targetWptr = g_Bc250SdmaPresent.CurrentCursor * (uint32_t)sizeof(uint32_t);
             BOOLEAN rptrOk = Bc250SdmaRptrMatches(rptrReg, rptrWb, targetWptr);
 
             /* Aguarda até 500 µs se o RPTR de writeback/reg ainda estiver em trânsito */
-            if (!rptrOk) {
+            if (!rptrOk && fenceObserved != nextFence) {
                 UINT32 rPoll;
                 for (rPoll = 0u; rPoll < 100u && !rptrOk; ++rPoll) {
                     KeStallExecutionProcessor(5u);
@@ -1154,6 +1444,9 @@ BOOLEAN Bc250SdmaPresentFill(
                     rptrWb = g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_RPTR_OFFSET / 4u];
                     rptrOk = Bc250SdmaRptrMatches(rptrReg, rptrWb, targetWptr);
                 }
+            }
+            if (!rptrOk && fenceObserved == nextFence) {
+                rptrOk = TRUE;
             }
 
             RtlZeroMemory(post, sizeof(post));
@@ -1168,8 +1461,6 @@ BOOLEAN Bc250SdmaPresentFill(
                 }
                 (void)Bc250DisplaySampleSurface(vramOffset, ByteCount, 16u, &nonZeroCount, &sampleHash);
             }
-
-            KeReleaseSpinLock(&g_Bc250SdmaPresent.RingLock, oldIrql);
 
             Bc250DisplayLog("[SdmaPresent] PAGING_FILL TRIPÉ %s: Dest=0x%llX (Off=0x%llX), Size=%u, Pattern=0x%08X in %u polls\n",
                 (rptrOk && canaryOk) ? "PROVADO NO SILÍCIO" : "FALHA DE VALIDAÇÃO",
@@ -1212,7 +1503,6 @@ BOOLEAN Bc250SdmaPresentFill(
         uint32_t rptrReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_RPTR - BC250_SDMA0_MMIO_WINDOW_START);
         uint32_t statusReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_STATUS - BC250_SDMA0_MMIO_WINDOW_START);
         uint32_t fenceObserved = g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_FENCE_OFFSET / 4u];
-        KeReleaseSpinLock(&g_Bc250SdmaPresent.RingLock, oldIrql);
         Bc250DisplayLog("[SdmaPresent] PAGING_FILL: Dest=0x%llX, Size=%u, Pattern=0x%08X -> TIMEOUT (FenceExp=0x%08X, FenceObs=0x%08X, WPTR=%u, RPTR=%u, STATUS=0x%08X)\n",
             (unsigned long long)DestGpuAddress, ByteCount, FillPattern, nextFence,
             fenceObserved, wptrReg, rptrReg, statusReg);
@@ -1236,6 +1526,7 @@ BOOLEAN Bc250SdmaPresentSyncNop(void)
     uint32_t i;
     ULONG poll;
     KIRQL oldIrql;
+    uint32_t targetWptr = 0u;
 
     if (!g_Bc250SdmaPresent.Initialized || !g_Bc250SdmaPresent.HardwareEnabled ||
         g_Bc250SdmaPresent.Ring == NULL) {
@@ -1260,8 +1551,13 @@ BOOLEAN Bc250SdmaPresentSyncNop(void)
     KeMemoryBarrier();
 
     /* 3. Copia para o anel */
-    for (i = 0u; i < cursor; ++i) {
-        g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+    {
+        /* X2a (doc 523): pacotes no anel, escritas UC na VRAM. */
+        ULONG ringWriteCrumb = Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_RING_WRITE, startCursor);
+        for (i = 0u; i < cursor; ++i) {
+            g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+        }
+        Bc250CrumbAfter(ringWriteCrumb);
     }
     KeMemoryBarrier();
 
@@ -1279,6 +1575,8 @@ BOOLEAN Bc250SdmaPresentSyncNop(void)
     Bc250SdmaRegWrite(&g_Bc250SdmaPresent, BC250_SDMA0_REG_MINOR_PTR - BC250_SDMA0_MMIO_WINDOW_START, 0u);
 
     InterlockedIncrement(&g_Bc250SdmaPresent.SubmissionsSubmittedCount);
+    targetWptr = (uint32_t)(g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t));
+    KeReleaseSpinLock(&g_Bc250SdmaPresent.RingLock, oldIrql);
 
     /* 5. Tripé no silício: espera RPTR == WPTR e Fence == nextFence */
     for (poll = 1u; poll <= BC250_SDMA_TRIPOD_MAX_POLLS; ++poll) {
@@ -1287,10 +1585,12 @@ BOOLEAN Bc250SdmaPresentSyncNop(void)
             uint32_t rptrReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent,
                 BC250_SDMA0_REG_RB_RPTR - BC250_SDMA0_MMIO_WINDOW_START);
             uint32_t rptrWb = g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_RPTR_OFFSET / 4u];
-            uint32_t targetWptr = (uint32_t)(g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t));
-            if (Bc250SdmaRptrMatches(rptrReg, rptrWb, targetWptr)) {
+            BOOLEAN rptrOk = Bc250SdmaRptrMatches(rptrReg, rptrWb, targetWptr);
+            if (!rptrOk && fenceObserved == nextFence) {
+                rptrOk = TRUE;
+            }
+            if (rptrOk) {
                 InterlockedIncrement(&g_Bc250SdmaPresent.SubmissionsCompletedCount);
-                KeReleaseSpinLock(&g_Bc250SdmaPresent.RingLock, oldIrql);
                 Bc250DisplayLog("[SdmaPresent] SYNC_NOP TRIPOD PASS: WPTR=%u RPTR=%u Fence=%08X in %u polls\n",
                     targetWptr, rptrReg, fenceObserved, poll);
                 return TRUE;
@@ -1304,7 +1604,6 @@ BOOLEAN Bc250SdmaPresentSyncNop(void)
         uint32_t rptrReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_RB_RPTR - BC250_SDMA0_MMIO_WINDOW_START);
         uint32_t statusReg = Bc250SdmaRegRead(&g_Bc250SdmaPresent, BC250_SDMA0_REG_STATUS - BC250_SDMA0_MMIO_WINDOW_START);
         uint32_t fenceObserved = g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_FENCE_OFFSET / 4u];
-        KeReleaseSpinLock(&g_Bc250SdmaPresent.RingLock, oldIrql);
         Bc250DisplayLog("[SdmaPresent] SYNC_NOP TIMEOUT: WPTR=%u RPTR=%u FenceExp=0x%08X FenceObs=0x%08X STATUS=0x%08X\n",
             wptrReg, rptrReg, nextFence, fenceObserved, statusReg);
     }
@@ -1439,6 +1738,9 @@ BOOLEAN Bc250SdmaPresentExecuteIndirect(
 
     if (dataPlan.Usable != 0u) {
         uint32_t planIndex;
+        /* X2a (doc 523): escrita de VRAM pela janela WC, agora com migalha. */
+        ULONG canaryCrumb = Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_CANARY_WRITE,
+            (ULONG)(dataPlan.VramOffset >> 12));
         for (planIndex = 0u; planIndex < dataPlan.CanaryCount; ++planIndex) {
             volatile uint32_t *pCanary = (volatile uint32_t *)
                 ((char *)g_Bc250DisplayState.FrameBufferVirtual +
@@ -1446,6 +1748,7 @@ BOOLEAN Bc250SdmaPresentExecuteIndirect(
             *pCanary = dataPlan.Values[planIndex];
         }
         KeMemoryBarrier();
+        Bc250CrumbAfter(canaryCrumb);
         Bc250SdmaPresentHdp(&g_Bc250SdmaPresent);
     }
 
@@ -1488,8 +1791,13 @@ BOOLEAN Bc250SdmaPresentExecuteIndirect(
     KeMemoryBarrier();
 
     /* 5. Grava os pacotes no anel */
-    for (i = 0u; i < cursor; ++i) {
-        g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+    {
+        /* X2a (doc 523): pacotes no anel, escritas UC na VRAM. */
+        ULONG ringWriteCrumb = Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_RING_WRITE, startCursor);
+        for (i = 0u; i < cursor; ++i) {
+            g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+        }
+        Bc250CrumbAfter(ringWriteCrumb);
     }
     KeMemoryBarrier();
 
@@ -1518,6 +1826,7 @@ BOOLEAN Bc250SdmaPresentExecuteIndirect(
      */
     indirectEndDwords = startCursor + padDwords + BC250_SDMA_DWORDS_INDIRECT;
     targetWptrBytes = (uint32_t)(g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t));
+    KeReleaseSpinLock(&g_Bc250SdmaPresent.RingLock, oldIrql);
 
     /*
      * 7. Tripé no silício: espera RPTR == WPTR e Fence == nextFence.
@@ -1572,7 +1881,11 @@ BOOLEAN Bc250SdmaPresentExecuteIndirect(
              * comentario descrevendo a mesma falha em 17/17 fills). Este
              * caminho simplesmente nao a usava.
              */
-            if (Bc250SdmaRptrMatches(rptrReg, rptrWbRaw, targetWptr)) {
+            BOOLEAN rptrOk = Bc250SdmaRptrMatches(rptrReg, rptrWbRaw, targetWptr);
+            if (!rptrOk && fenceObserved == nextFence) {
+                rptrOk = TRUE;
+            }
+            if (rptrOk) {
                 LONG completed = InterlockedIncrement(&g_Bc250SdmaPresent.SubmissionsCompletedCount);
                 uint32_t post[BC250_DATA_PROOF_CANARY_COUNT];
                 uint32_t dataMismatches = BC250_DATA_PROOF_CANARY_COUNT;
@@ -1605,7 +1918,6 @@ BOOLEAN Bc250SdmaPresentExecuteIndirect(
                     rptrRegWrapped, nextFence, fenceObserved, dataMismatches,
                     &ibRptrSource);
 
-                KeReleaseSpinLock(&g_Bc250SdmaPresent.RingLock, oldIrql);
                 Bc250DisplayLog("[SubmitVirtual Node0 SDMA] IB_ALIGN: StartDW=%u PadDW=%u IndirectEndDW=%u EndModulo8=%u TargetWPTR=%u IbSizeDW=%u PublishedDW=%u\n",
                     startCursor, padDwords, indirectEndDwords,
                     indirectEndDwords & 7u, targetWptrBytes, ibSizeDwords,
@@ -1711,7 +2023,6 @@ BOOLEAN Bc250SdmaPresentExecuteIndirect(
         fenceAfterHdp = g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_FENCE_OFFSET / 4u];
         rptrWriteback = g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_RPTR_OFFSET / 4u];
 
-        KeReleaseSpinLock(&g_Bc250SdmaPresent.RingLock, oldIrql);
         Bc250DisplayLog("[SubmitVirtual Node0 SDMA] IB_ALIGN: StartDW=%u PadDW=%u IndirectEndDW=%u EndModulo8=%u TargetWPTR=%u IbSizeDW=%u PublishedDW=%u\n",
             startCursor, padDwords, indirectEndDwords,
             indirectEndDwords & 7u, targetWptrBytes, ibSizeDwords,
@@ -1868,6 +2179,7 @@ BOOLEAN Bc250SdmaPresentSubmitIndirectAsync(
         (uint64_t)g_Bc250DisplayState.FrameBufferSize,
         (g_Bc250DisplayState.FrameBufferVirtual != NULL) ? 1u : 0u,
         &dataPlan);
+    Bc250X4DisableRuntimeCanaries(&dataPlan, "SubmitIndirectAsync");
 
     nextFence = (uint32_t)InterlockedIncrement(&g_Bc250SdmaPresent.NextFenceSequence);
     KeAcquireSpinLock(&g_Bc250SdmaPresent.RingLock, &oldIrql);
@@ -1879,6 +2191,9 @@ BOOLEAN Bc250SdmaPresentSubmitIndirectAsync(
 
     if (dataPlan.Usable != 0u) {
         uint32_t planIndex;
+        /* X2a (doc 523): escrita de VRAM pela janela WC, agora com migalha. */
+        ULONG canaryCrumb = Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_CANARY_WRITE,
+            (ULONG)(dataPlan.VramOffset >> 12));
         for (planIndex = 0u; planIndex < dataPlan.CanaryCount; ++planIndex) {
             volatile uint32_t *pCanary = (volatile uint32_t *)
                 ((char *)g_Bc250DisplayState.FrameBufferVirtual +
@@ -1886,6 +2201,7 @@ BOOLEAN Bc250SdmaPresentSubmitIndirectAsync(
             *pCanary = dataPlan.Values[planIndex];
         }
         KeMemoryBarrier();
+        Bc250CrumbAfter(canaryCrumb);
         Bc250SdmaPresentHdp(&g_Bc250SdmaPresent);
     }
 
@@ -1913,14 +2229,20 @@ BOOLEAN Bc250SdmaPresentSubmitIndirectAsync(
             g_Bc250SdmaPresent.WorkGpuAddress + slotFenceOffset,
             nextFence);
 
-        g_Bc250SdmaPresent.Work[slotFenceOffset / 4u] =
-            BC250_SDMA_PRESENT_FENCE_POISON;
-        KeMemoryBarrier();
+        {
+            /* X2a: poison da fence + pacotes no anel, escritas UC na VRAM. */
+            ULONG ringCrumb = Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_RING_WRITE,
+                startCursor);
+            g_Bc250SdmaPresent.Work[slotFenceOffset / 4u] =
+                BC250_SDMA_PRESENT_FENCE_POISON;
+            KeMemoryBarrier();
 
-        for (i = 0u; i < cursor; ++i) {
-            g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+            for (i = 0u; i < cursor; ++i) {
+                g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+            }
+            KeMemoryBarrier();
+            Bc250CrumbAfter(ringCrumb);
         }
-        KeMemoryBarrier();
 
         g_Bc250SdmaPresent.CurrentCursor += cursor;
         g_Bc250SdmaPresent.Work[BC250_SDMA_PRESENT_WPTR_OFFSET / 4u] =
@@ -2024,6 +2346,7 @@ BOOLEAN Bc250SdmaPresentSubmitFillAsync(
         (uint64_t)g_Bc250DisplayState.FrameBufferSize,
         (g_Bc250DisplayState.FrameBufferVirtual != NULL) ? 1u : 0u,
         &dataPlan);
+    Bc250X4DisableRuntimeCanaries(&dataPlan, "SubmitFillAsync");
 
     nextFence = (uint32_t)InterlockedIncrement(&g_Bc250SdmaPresent.NextFenceSequence);
     KeAcquireSpinLock(&g_Bc250SdmaPresent.RingLock, &oldIrql);
@@ -2035,6 +2358,9 @@ BOOLEAN Bc250SdmaPresentSubmitFillAsync(
 
     if (dataPlan.Usable != 0u) {
         uint32_t planIndex;
+        /* X2a (doc 523): escrita de VRAM pela janela WC, agora com migalha. */
+        ULONG canaryCrumb = Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_CANARY_WRITE,
+            (ULONG)(dataPlan.VramOffset >> 12));
         for (planIndex = 0u; planIndex < dataPlan.CanaryCount; ++planIndex) {
             volatile uint32_t *pCanary = (volatile uint32_t *)
                 ((char *)g_Bc250DisplayState.FrameBufferVirtual +
@@ -2042,6 +2368,7 @@ BOOLEAN Bc250SdmaPresentSubmitFillAsync(
             *pCanary = dataPlan.Values[planIndex];
         }
         KeMemoryBarrier();
+        Bc250CrumbAfter(canaryCrumb);
         Bc250SdmaPresentHdp(&g_Bc250SdmaPresent);
     }
 
@@ -2074,8 +2401,13 @@ BOOLEAN Bc250SdmaPresentSubmitFillAsync(
 
         startCursor = Bc250SdmaPresentAllocateRingSlot(cursor);
 
-        for (i = 0u; i < cursor; ++i) {
-            g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+        {
+            /* X2a (doc 523): pacotes no anel, escritas UC na VRAM. */
+            ULONG ringWriteCrumb = Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_RING_WRITE, startCursor);
+            for (i = 0u; i < cursor; ++i) {
+                g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+            }
+            Bc250CrumbAfter(ringWriteCrumb);
         }
         KeMemoryBarrier();
 
@@ -2180,8 +2512,13 @@ BOOLEAN Bc250SdmaPresentSubmitSyncNopAsync(
 
         startCursor = Bc250SdmaPresentAllocateRingSlot(cursor);
 
-        for (i = 0u; i < cursor; ++i) {
-            g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+        {
+            /* X2a (doc 523): pacotes no anel, escritas UC na VRAM. */
+            ULONG ringWriteCrumb = Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_RING_WRITE, startCursor);
+            for (i = 0u; i < cursor; ++i) {
+                g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+            }
+            Bc250CrumbAfter(ringWriteCrumb);
         }
         KeMemoryBarrier();
 
@@ -2249,6 +2586,7 @@ BOOLEAN Bc250SdmaPresentPollRetirement(
     BC250_SDMA_IN_FLIGHT_SUBMISSION *head;
     uint32_t headSlot;
     uint32_t slotFenceOffset;
+    BOOLEAN fenceRead = FALSE;
 
     if (Result == NULL) {
         return FALSE;
@@ -2275,19 +2613,53 @@ BOOLEAN Bc250SdmaPresentPollRetirement(
     Result->DmaBufferVirtualAddress = head->DmaBufferVirtualAddress;
 
     /*
-     * HDP flush incondicional caso a fence ainda nao esteja visivel na memoria.
-     * Na fila assincrona multi-slot, o anel SDMA e' estritamente in-order;
-     * o pacote SDMA_OP_FENCE e' emitido no final do segmento de cada submissao
-     * apos GCR cache flush. fenceObserved == nextFence sobre o poison
-     * (0x43DAFFFE) e' a prova fisica canonica de que a GPU concluiu a submissao.
+     * X1 (29/09, doc 522) -- NADA DE HDP NEM DE LEITURA DE VRAM ENQUANTO A
+     * ENGINE TRABALHA.
+     *
+     * Ate a 3.313 esta sondagem lia a fence NA VRAM pela BAR a cada tique e,
+     * sem ela, fazia flush + invalidacao do HDP e lia de novo -- tudo isso
+     * enquanto o SDMA escrevia megabytes em rajada na DRAM compartilhada.
+     * Corrida 168 (P0, anel EVT.1): a maquina parou com um FILL de paginacao
+     * de 2,27 MB submetido e sem conclusao; a ultima migalha de MMIO foi a
+     * leitura de volta da invalidacao do HDP (0xFC4) na CPU00, e a leitura da
+     * fence na VRAM que vem logo depois NAO tinha migalha. O Linux nao sonda
+     * assim (fence/RPTR em memoria do sistema; HDP so' quando a CPU vai ler
+     * dados da GPU).
+     *
+     * Agora: a conclusao da entrada mais antiga e' decidida SO' pelo
+     * registrador RPTR (Bc250TripodRingEntryConsumed, testado offline). So'
+     * depois que a engine consumiu a entrada ha UM flush/invalidacao do HDP e
+     * a leitura da fence -- que continua sendo a prova (fence sobre poison).
+     * NAO VALIDADO EM HARDWARE.
      */
-    fenceObserved = g_Bc250SdmaPresent.Work[slotFenceOffset / 4u];
-    if (fenceObserved != nextFence) {
-        Bc250SdmaPresentHdp(&g_Bc250SdmaPresent);
-        fenceObserved = g_Bc250SdmaPresent.Work[slotFenceOffset / 4u];
+    {
+        uint32_t rptrGate = Bc250SdmaRegRead(&g_Bc250SdmaPresent,
+            BC250_SDMA0_REG_RB_RPTR - BC250_SDMA0_MMIO_WINDOW_START);
+        uint32_t tailBytes = (uint32_t)(g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t));
+        if (Bc250TripodRingEntryConsumed(rptrGate,
+                head->StartCursor * (uint32_t)sizeof(uint32_t),
+                targetWptrBytes, tailBytes,
+                (uint32_t)BC250_SDMA_PRESENT_RING_BYTES) == 0u) {
+            InterlockedIncrement64(&g_Bc250X1GatedPolls);
+            fenceObserved = 0u;
+            fenceRead = FALSE;
+        } else {
+            ULONG crumb;
+            LONG64 reads = InterlockedIncrement64(&g_Bc250X1FenceReads);
+            Bc250SdmaPresentHdp(&g_Bc250SdmaPresent);
+            crumb = Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_FENCE_READ, slotFenceOffset);
+            fenceObserved = g_Bc250SdmaPresent.Work[slotFenceOffset / 4u];
+            Bc250CrumbAfter(crumb);
+            fenceRead = TRUE;
+            if (reads <= 4 || (reads % 65536) == 0) {
+                Bc250DisplayLog("[X1_POLL] leitura de fence #%lld so' depois do RPTR (Rptr=%u Alvo=%u Ultimo=%u) | sondagens sem HDP ate aqui=%lld\n",
+                    (long long)reads, rptrGate, targetWptrBytes, tailBytes,
+                    (long long)g_Bc250X1GatedPolls);
+            }
+        }
     }
 
-    if (fenceObserved == nextFence) {
+    if (fenceRead && fenceObserved == nextFence) {
         LONG completed = InterlockedIncrement(&g_Bc250SdmaPresent.SubmissionsCompletedCount);
         uint32_t post[BC250_DATA_PROOF_CANARY_COUNT];
         uint32_t dataMismatches = BC250_DATA_PROOF_CANARY_COUNT;
@@ -2315,15 +2687,48 @@ BOOLEAN Bc250SdmaPresentPollRetirement(
             BC250_SUBMIT_EXEC_PATH execPath = (BC250_SUBMIT_EXEC_PATH)head->ExecPath;
 
             RtlZeroMemory(post, sizeof(post));
+            /*
+             * X3 (29/09, doc 524): Corrida 170 (P0) -- a maquina parou com a
+             * CPU00 DENTRO desta leitura de canarios (migalha VRAM_CANARY_READ
+             * fase ANTES, VRAM 0xF280000) enquanto o SDMA comecava um FILL de
+             * paginacao de 2,27 MB. A leitura de VRAM pela BAR so' acontece
+             * agora com o anel ocioso: este IB e' o unico em voo e o RPTR ja'
+             * chegou ao ultimo WPTR publicado. Senao a perna de dados deste IB
+             * fica NAO CONFERIDA (prova de duas pernas, declarada), nunca
+             * simulada. So' o SDMA entra na conta; o GFX pode estar escrevendo.
+             * NAO VALIDADO EM HARDWARE.
+             */
+            if (dataPlan.Usable != 0u) {
+                uint32_t tailBytesX3 = (uint32_t)(g_Bc250SdmaPresent.CurrentCursor * sizeof(uint32_t));
+                BOOLEAN ringIdle = (g_Bc250SdmaPresent.InFlightCount == 1u &&
+                    (rptrReg % BC250_SDMA_PRESENT_RING_BYTES) ==
+                        (tailBytesX3 % BC250_SDMA_PRESENT_RING_BYTES)) ? TRUE : FALSE;
+                if (!ringIdle) {
+                    LONG64 skipped = InterlockedIncrement64(&g_Bc250X3CanarySkipped);
+                    if (skipped <= 8 || (skipped % 4096) == 0) {
+                        Bc250DisplayLog("[X3_CANARY] #%lld perna de dados NAO CONFERIDA: SDMA ocupado (EmVoo=%u Rptr=%u Ultimo=%u) -- a CPU nao le VRAM pela BAR com o SDMA trabalhando | lidas=%lld\n",
+                            (long long)skipped, g_Bc250SdmaPresent.InFlightCount,
+                            rptrReg, tailBytesX3, (long long)g_Bc250X3CanaryRead);
+                    }
+                    dataPlan.Usable = 0u;
+                } else {
+                    InterlockedIncrement64(&g_Bc250X3CanaryRead);
+                }
+            }
             if (dataPlan.Usable != 0u) {
                 uint32_t planIndex;
+                ULONG canaryCrumb;
                 Bc250SdmaPresentHdp(&g_Bc250SdmaPresent);
+                /* X2a: leitura de VRAM pela janela WC, agora com migalha. */
+                canaryCrumb = Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_CANARY_READ,
+                    (ULONG)(dataPlan.VramOffset >> 12));
                 for (planIndex = 0u; planIndex < dataPlan.CanaryCount; ++planIndex) {
                     volatile uint32_t *pCanary = (volatile uint32_t *)
                         ((char *)g_Bc250DisplayState.FrameBufferVirtual +
                          dataPlan.VramOffset + dataPlan.Offsets[planIndex]);
                     post[planIndex] = *pCanary;
                 }
+                Bc250CrumbAfter(canaryCrumb);
                 dataMismatches = Bc250CountDataProofMismatches(&dataPlan, post,
                     expectedPattern);
             }
@@ -2403,8 +2808,9 @@ BOOLEAN Bc250SdmaPresentPollRetirement(
             BC250_SDMA_UTCL1_SNAPSHOT after;
             Bc250SdmaCaptureUtcl1Snapshot(&after);
 
-            Bc250DisplayLog("[SubmitVirtual Node0 SDMA] IB_TRIPOD TIMEOUT (ASYNC %lld ms): TargetWPTR=%u, WPTR=%u, RPTR=%u, STATUS=%08X, ERR_LOG=%08X, FenceExp=%08X, FenceObs=%08X (preso em voo ate TDR)\n",
-                elapsedMs, targetWptrBytes, wptrReg, rptrReg, statusReg, after.ErrorLog, nextFence, fenceObserved);
+            Bc250DisplayLog("[SubmitVirtual Node0 SDMA] IB_TRIPOD TIMEOUT (ASYNC %lld ms): TargetWPTR=%u, WPTR=%u, RPTR=%u, STATUS=%08X, ERR_LOG=%08X, FenceExp=%08X, FenceObs=%08X FenceLida=%u (X1: 0 = RPTR nao passou do alvo, fence nao lida) (preso em voo ate TDR)\n",
+                elapsedMs, targetWptrBytes, wptrReg, rptrReg, statusReg, after.ErrorLog, nextFence, fenceObserved,
+                fenceRead ? 1u : 0u);
             head->TimeoutLogged = TRUE;
         }
 
@@ -2757,7 +3163,7 @@ BOOLEAN Bc250SdmaPresentRestartAfterTdr(void)
         BC250_SDMA0_REG_UTCL1_CNTL - BC250_SDMA0_MMIO_WINDOW_START);
     Bc250SdmaRegWrite(&g_Bc250SdmaPresent,
         BC250_SDMA0_REG_UTCL1_CNTL - BC250_SDMA0_MMIO_WINDOW_START,
-        (value & ~(0x00000E00u | 0x0000003Eu)) | (3u << 9) | (9u << 1));
+        (value & ~(0x00000E00u | 0x0000003Eu | BC250_SDMA0_UTCL1_CNTL_FORCE_INVALIDATION)) | (3u << 9) | (9u << 1));
     value = Bc250SdmaRegRead(&g_Bc250SdmaPresent,
         BC250_SDMA0_REG_UTCL1_PAGE - BC250_SDMA0_MMIO_WINDOW_START);
     Bc250SdmaRegWrite(&g_Bc250SdmaPresent,
@@ -2883,6 +3289,8 @@ BOOLEAN Bc250SdmaPresentRestartAfterTdr(void)
         Bc250DisplayLog("[SdmaPresent] TDR_RESTART FALHOU: anel rearmado, mas o NOP de prova nao retirou fence. HardwareEnabled volta a FALSE; adaptador continua recusando submissao\n");
         return FALSE;
     }
+    /* CG.1: mesmo criterio do init -- so' depois da prova fisica. */
+    Bc250SdmaPresentRestorePostClockGating("TDR_RESTART");
 
     /*
      * Bc250DisplayLog persiste em arquivo somente em PASSIVE_LEVEL. O readback
@@ -3032,8 +3440,13 @@ BOOLEAN Bc250SdmaPresentInduceHangForTdr(void)
         return FALSE;
     }
 
-    for (i = 0u; i < cursor; ++i) {
-        g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+    {
+        /* X2a (doc 523): pacotes no anel, escritas UC na VRAM. */
+        ULONG ringWriteCrumb = Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_RING_WRITE, startCursor);
+        for (i = 0u; i < cursor; ++i) {
+            g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];
+        }
+        Bc250CrumbAfter(ringWriteCrumb);
     }
     KeMemoryBarrier();
 

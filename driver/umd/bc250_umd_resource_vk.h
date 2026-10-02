@@ -18,6 +18,12 @@ BOOL Bc250UmdVkCreateResource(
     _Inout_ struct _BC250_UMD_RESOURCE* pRes,
     _In_ CONST D3D10DDIARG_CREATERESOURCE* pCreate);
 
+/* Frente B (doc 547): superficie aberta com VkImage sobre a propria alocacao
+ * adota o conteudo existente (PREINITIALIZED -> SHADER_READ_ONLY), sem copia. */
+BOOL Bc250UmdVkAdoptAliasedContent(
+    _Inout_ struct _BC250_UMD_DEVICE* pDevice,
+    _Inout_ struct _BC250_UMD_RESOURCE* pRes);
+
 VOID Bc250UmdVkDestroyResource(
     _Inout_ struct _BC250_UMD_DEVICE* pDevice,
     _Inout_ struct _BC250_UMD_RESOURCE* pRes);
@@ -52,6 +58,14 @@ BOOL Bc250UmdVkUploadImageData(
     _Inout_ struct _BC250_UMD_DEVICE* pDevice,
     _Inout_ struct _BC250_UMD_RESOURCE* pRes,
     _In_reads_bytes_(ByteSize) CONST VOID* pData,
+    UINT RowPitch,
+    SIZE_T ByteSize);
+
+/* Copia direta da memoria de staging para a VkImage sem buffer intermediario de CPU */
+BOOL Bc250UmdVkCopyStagingBufferToImage(
+    _Inout_ struct _BC250_UMD_DEVICE* pDevice,
+    _Inout_ struct _BC250_UMD_RESOURCE* pRes,
+    VkDeviceSize BufferOffset,
     UINT RowPitch,
     SIZE_T ByteSize);
 

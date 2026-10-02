@@ -764,11 +764,30 @@ Também removida no mesmo passo uma inicialização morta que repetia `0x4500000
 
 | Registro | BAR5 byte usado | Classe |
 |---|---:|---:|
-| `HDP_READ_CACHE_INVALIDATE` | `0x03FC4` | P2 |
-| `HDP_MISC_CNTL` | `0x03FCC` | P2 |
-| `HDP_MEM_COHERENCY_FLUSH_CNTL` | `0x04A80` | P2 |
+| `HDP_READ_CACHE_INVALIDATE` | `0x03FC4` | P1 |
+| `HDP_MISC_CNTL` | `0x03FCC` | P1 |
+| `BIF_BX_PF_HDP_MEM_COHERENCY_FLUSH_CNTL` (flush de **escrita**) | `0x0385C` | P1 (base NBIO P0) |
+| `RCC_DEV0_EPF0_RCC_CONFIG_MEMSIZE` (leitura de confirmação do flush) | `0x0378C` | P0 |
+| ~~`HDP_MEM_COHERENCY_FLUSH_CNTL`~~ → na verdade `SDMA0_UTCL1_INV0` | `0x04A80` | P1, **somente leitura** |
 
-Os endereços devem ser derivados novamente do header HDP do IP da BC-250. Seu efeito de coerência precisa ser testado com memória, não por write-stick.
+**HDP.1 (28/09/2026, doc 519) — o `0x04A80` NÃO é flush de HDP.** É o dword `0x40` do bloco SDMA0 (`mmSDMA0_UTCL1_INV0` em `inc/linux_ref/gc_10_1_0_offset.h`), com a base GC seg0 `0x1260` dw = `0x4980` bytes. É a mesma conta que dá `UTCL1_CNTL=0x4A70`, `F32_CNTL=0x4A28` e `STATUS2=0x4A60`, e o `dbg/hw.c:791` já o chamava de `A_SDMA0_UTCL1_INV0`. Os campos (`gc_10_1_0_sh_mask.h`) incluem `CPF_INVREQ_EN` (bit 0) e `GPUVM_INVREQ_EN` (bit 1). O upstream nunca o escreve. Até a 3.310 o driver escrevia 0 nele em todo laço de espera, achando que fazia flush.
+
+O flush de escrita real vem do NBIO:
+- `nbio_2_3_offset.h`: `mmBIF_BX_PF_HDP_MEM_COHERENCY_FLUSH_CNTL = 0xF7` e `mmRCC_DEV0_EPF0_RCC_CONFIG_MEMSIZE = 0xC3`, ambos com `BASE_IDX 2`;
+- `cyan_skillfish_ip_offset.h`: `NBIO seg2 = 0xD20`. Daí `(0xD20+0xF7)×4 = 0x385C` e `(0xD20+0xC3)×4 = 0x378C`;
+- `amdgpu_discovery.c`: o Cyan Skillfish usa `nbio_v2_3_funcs` e `hdp_v5_0_funcs`;
+- `nbio_v2_3.c` do Linux v5.3/v5.4 escrevia `0` nesse registrador nativo em bare metal na Navi10. O Linux atual escreve o mesmo registrador por uma página remapeada;
+- `amdgpu_hdp_generic_flush`: escrita `0` seguida de leitura de `RCC_CONFIG_MEMSIZE`.
+
+A base NBIO seg2 é P0: o driver lê `0x378C` e recebe `0x200` (512 MiB), coerente com `FB_LOCATION 0xF400..0xF41F`. **A escrita em `0x385C` nunca rodou: NÃO VALIDADO EM HARDWARE.**
+
+**DX.96-HDP (28/09/2026):** `hdp_5_0_0_offset.h` (upstream) define `mmHDP_READ_CACHE_INVALIDATE = 0x00d1` e `mmHDP_MISC_CNTL = 0x00d3`, com `BASE_IDX 0`. Com a base do HDP em `0xF20` dwords isso dá `(0xF20+0xD1)×4 = 0x3FC4` e `(0xF20+0xD3)×4 = 0x3FCC`, iguais aos endereços em uso. `hdp_5_0_0_sh_mask.h`: `HDP_MISC_CNTL__FLUSH_INVALIDATE_CACHE` é o bit 0 (máscara `0x1`).
+
+Uso upstream (`hdp_v5_0.c`):
+- `FLUSH_INVALIDATE_CACHE=1` é escrito **uma vez**, na init (`hdp_v5_0_init_registers`);
+- a invalidação em tempo de execução é só `HDP_READ_CACHE_INVALIDATE=1` + leitura.
+
+**Não alternar `HDP_MISC_CNTL` em tempo de execução** (doc 509). O efeito de coerência do flush continua a ser testado com memória (tripé), não por write-stick. (Até a HDP.1, esta linha dizia que o flush era P2 em `0x04A80`: o endereço estava errado, ver acima.)
 
 ## SDMA0 usados nas tentativas e no `dbg`
 

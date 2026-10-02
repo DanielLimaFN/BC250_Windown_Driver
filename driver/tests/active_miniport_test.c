@@ -278,6 +278,52 @@ BOOLEAN (*__imp_KeCancelTimer)(PKTIMER) =
 VOID (*__imp_KeFlushQueuedDpcs)(VOID) =
     Bc250TestFlushQueuedDpcs;
 
+/*
+ * FPS.3b: timer de alta resolucao com contabilidade. O miniport aloca um por
+ * AddDevice e TEM de apaga-lo no RemoveDevice com Cancel=TRUE e Wait=TRUE,
+ * antes de liberar o contexto -- mesmo invariante do g_poolAllocated.
+ */
+static unsigned char g_exTimerStorage[16][16];
+static LONG g_exTimersAllocated = 0;
+static LONG g_exTimersLive = 0;
+static LONG g_exTimerSets = 0;
+static LONG g_exTimerDeletesWithoutWait = 0;
+static PEX_TIMER Bc250TestExAllocateTimer(PEXT_CALLBACK Callback, PVOID Context, ULONG Attributes)
+{
+    UNREFERENCED_PARAMETER(Callback);
+    UNREFERENCED_PARAMETER(Context);
+    if (Attributes != EX_TIMER_HIGH_RESOLUTION || g_exTimersAllocated >= 16) return NULL;
+    ++g_exTimersLive;
+    return (PEX_TIMER)(void *)g_exTimerStorage[g_exTimersAllocated++];
+}
+static BOOLEAN Bc250TestExSetTimer(PEX_TIMER Timer, LONGLONG DueTime, LONGLONG Period, PEXT_SET_PARAMETERS Parameters)
+{
+    UNREFERENCED_PARAMETER(Timer);
+    UNREFERENCED_PARAMETER(DueTime);
+    UNREFERENCED_PARAMETER(Period);
+    UNREFERENCED_PARAMETER(Parameters);
+    ++g_exTimerSets;
+    return FALSE;
+}
+static BOOLEAN Bc250TestExCancelTimer(PEX_TIMER Timer, PEXT_CANCEL_PARAMETERS Parameters)
+{
+    UNREFERENCED_PARAMETER(Timer);
+    UNREFERENCED_PARAMETER(Parameters);
+    return FALSE;
+}
+static BOOLEAN Bc250TestExDeleteTimer(PEX_TIMER Timer, BOOLEAN Cancel, BOOLEAN Wait, PEXT_DELETE_PARAMETERS Parameters)
+{
+    UNREFERENCED_PARAMETER(Timer);
+    UNREFERENCED_PARAMETER(Parameters);
+    if (!Cancel || !Wait) ++g_exTimerDeletesWithoutWait;
+    --g_exTimersLive;
+    return TRUE;
+}
+PEX_TIMER (*__imp_ExAllocateTimer)(PEXT_CALLBACK, PVOID, ULONG) = Bc250TestExAllocateTimer;
+BOOLEAN (*__imp_ExSetTimer)(PEX_TIMER, LONGLONG, LONGLONG, PEXT_SET_PARAMETERS) = Bc250TestExSetTimer;
+BOOLEAN (*__imp_ExCancelTimer)(PEX_TIMER, PEXT_CANCEL_PARAMETERS) = Bc250TestExCancelTimer;
+BOOLEAN (*__imp_ExDeleteTimer)(PEX_TIMER, BOOLEAN, BOOLEAN, PEXT_DELETE_PARAMETERS) = Bc250TestExDeleteTimer;
+
 static BOOLEAN Bc250TestInsertQueueDpc(PKDPC Dpc, PVOID SystemArgument1, PVOID SystemArgument2)
 {
     UNREFERENCED_PARAMETER(Dpc);
@@ -2171,6 +2217,8 @@ static int Bc250RunActiveMiniportTest(void)
                 ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_RESOURCE << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x9Du;
             resPrivate.ByteSize = 65536u;
             resPrivate.Alignment = 4096u;
+            /* DX.89: recurso comum chega com a flag e continua visivel pela CPU. */
+            resPrivate.Flags = BC250_ALLOCATION_FLAG_CPU_VISIBLE;
             resInfo.pPrivateDriverData = &resPrivate;
             resInfo.PrivateDriverDataSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
             createRes.NumAllocations = 1u;
@@ -2179,6 +2227,82 @@ static int Bc250RunActiveMiniportTest(void)
             CHECK(initData.DxgkDdiCreateAllocation(activeCtx, &createRes) == STATUS_SUCCESS);
             CHECK(resInfo.FlagsWddm2.CpuVisible == 1u);
             CHECK(resInfo.FlagsWddm2.AccessedPhysically == 0u);
+        }
+
+        /*
+         * DX.89: recurso COMPARTILHADO chega sem a flag (a UMD a omite para
+         * MISC_SHARED) e sai CpuVisible=0. Na Corrida 138 a classe RESOURCE
+         * forcava CpuVisible=1 pelo token e o teste da hipotese (a) nao ocorreu.
+         */
+        {
+            DXGKARG_CREATEALLOCATION createShared;
+            DXGK_ALLOCATIONINFO sharedInfo;
+            BC250_ALLOCATION_PRIVATE_V1 sharedPrivate;
+            memset(&createShared, 0, sizeof(createShared));
+            memset(&sharedInfo, 0, sizeof(sharedInfo));
+            memset(&sharedPrivate, 0, sizeof(sharedPrivate));
+            sharedPrivate.Magic = BC250_ALLOCATION_PRIVATE_MAGIC;
+            sharedPrivate.Version = BC250_ALLOCATION_PRIVATE_VERSION;
+            sharedPrivate.StructSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
+            sharedPrivate.AllocationToken =
+                ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_RESOURCE << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x9Eu;
+            sharedPrivate.ByteSize = 65536u;
+            sharedPrivate.Alignment = 4096u;
+            sharedInfo.pPrivateDriverData = &sharedPrivate;
+            sharedInfo.PrivateDriverDataSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
+            createShared.NumAllocations = 1u;
+            createShared.pAllocationInfo = &sharedInfo;
+            createShared.Flags.Resource = 1u;
+            CHECK(initData.DxgkDdiCreateAllocation(activeCtx, &createShared) == STATUS_SUCCESS);
+            CHECK(sharedInfo.FlagsWddm2.CpuVisible == 0u);
+            CHECK(sharedInfo.FlagsWddm2.AccessedPhysically == 0u);
+            /* M1: compartilhado nao ganha o segmento de sistema. */
+            CHECK(sharedInfo.SupportedReadSegmentSet == 1u);
+        }
+
+        /*
+         * M1 (doc 491): recurso GPU_VA_ONLY sai com os segmentos 1 e 2 e
+         * preferencia pelo 2 (memoria do sistema). O mesmo recurso sem a flag
+         * continua so' no segmento 1 -- sem este contraponto a regra viraria
+         * peneira.
+         */
+        {
+            DXGKARG_CREATEALLOCATION createM1;
+            DXGK_ALLOCATIONINFO m1Info;
+            BC250_ALLOCATION_PRIVATE_V1 m1Private;
+            memset(&createM1, 0, sizeof(createM1));
+            memset(&m1Info, 0, sizeof(m1Info));
+            memset(&m1Private, 0, sizeof(m1Private));
+            m1Private.Magic = BC250_ALLOCATION_PRIVATE_MAGIC;
+            m1Private.Version = BC250_ALLOCATION_PRIVATE_VERSION;
+            m1Private.StructSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
+            m1Private.AllocationToken =
+                ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_RESOURCE << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x9Fu;
+            m1Private.ByteSize = 65536u;
+            m1Private.Alignment = 4096u;
+            m1Private.Flags = BC250_ALLOCATION_FLAG_CPU_VISIBLE |
+                BC250_ALLOCATION_FLAG_GPU_VA_ONLY;
+            m1Info.pPrivateDriverData = &m1Private;
+            m1Info.PrivateDriverDataSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
+            createM1.NumAllocations = 1u;
+            createM1.pAllocationInfo = &m1Info;
+            createM1.Flags.Resource = 1u;
+            CHECK(initData.DxgkDdiCreateAllocation(activeCtx, &createM1) == STATUS_SUCCESS);
+            CHECK(m1Info.SupportedReadSegmentSet == 0x3u);
+            CHECK(m1Info.SupportedWriteSegmentSet == 0x3u);
+            CHECK(m1Info.PreferredSegment.SegmentId0 == 2u);
+            CHECK(m1Info.PreferredSegment.SegmentId1 == 1u);
+            CHECK(m1Info.FlagsWddm2.CpuVisible == 1u);
+            CHECK(m1Info.FlagsWddm2.AccessedPhysically == 0u);
+
+            memset(&m1Info, 0, sizeof(m1Info));
+            m1Private.AllocationToken += 1u;
+            m1Private.Flags = BC250_ALLOCATION_FLAG_CPU_VISIBLE;
+            m1Info.pPrivateDriverData = &m1Private;
+            m1Info.PrivateDriverDataSize = sizeof(BC250_ALLOCATION_PRIVATE_V1);
+            CHECK(initData.DxgkDdiCreateAllocation(activeCtx, &createM1) == STATUS_SUCCESS);
+            CHECK(m1Info.SupportedReadSegmentSet == 1u);
+            CHECK(m1Info.PreferredSegment.SegmentId0 == 1u);
         }
 
         memset(openInfo, 0, sizeof(openInfo));
@@ -2429,8 +2553,13 @@ static int Bc250RunActiveMiniportTest(void)
         CHECK(Bc250WddmFenceTrackerReserve(
             &busyActiveCtx->SubmissionEngine.WddmFences,
             0xCAFEu, 1u, 0u, &busyToken));
+        CHECK(busyActiveCtx->SdmaRetirementHrTimer != NULL);
         CHECK(Bc250DxgkDdiRemoveDeviceActive(removeBusyContext) == STATUS_SUCCESS);
         CHECK(g_poolAllocated == 0);
+        /* FPS.3b: RemoveDevice com IsActive=1 apagou o timer, esperando o callback. */
+        CHECK(g_exTimersAllocated > 0);
+        CHECK(g_exTimersLive == 0);
+        CHECK(g_exTimerDeletesWithoutWait == 0);
     }
     Bc250ActiveDriverUnloadCleanup();
 

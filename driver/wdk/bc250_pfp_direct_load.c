@@ -196,7 +196,13 @@
 #define R_CP_RB_WPTR_DELAY          0x00008704u
 #define R_CP_RB_WPTR_POLL_CNTL      0x00008708u
 #define R_CP_RB_DOORBELL_CONTROL    0x0000C3B4u
-#define R_HDP_MEM_COHERENCY_FLUSH_CNTL 0x00003FC4u
+/*
+ * HDP.1 (28/09, doc 519): chamava-se R_HDP_MEM_COHERENCY_FLUSH_CNTL, mas 0x3FC4
+ * e' a INVALIDACAO de leitura do HDP. So' o nome mudou aqui: este caminho roda
+ * no StartDevice e ja funciona (P0). DIVIDA DECLARADA: o firmware escrito pela
+ * CPU nao recebe flush de escrita real antes de o CP le-lo.
+ */
+#define R_HDP_READ_CACHE_INVALIDATE 0x00003FC4u
 
 #define R_CP_SCRATCH_REG0           0x00030100u
 
@@ -662,6 +668,8 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
         goto Cleanup;
     }
     mappedValid = 1u;
+    Bc250LogUcVramMapping("PFP_DIRECT_LOAD", region.Offset,
+        BC250_CP_QUAD_ALLOCATION_BYTES);
     Bc250PfpCopyFromDevice(backup, mapped, mappedDwords);
 
     /* 3. Mapeamento MMIO e Snapshot */
@@ -1061,7 +1069,7 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
     (void)Bc250PfpWrite(Context, R_GRBM_GFX_CNTL, 0u);
 
     /* Flush HDP e L2 */
-    (void)Bc250PfpWrite(Context, R_HDP_MEM_COHERENCY_FLUSH_CNTL, 1u);
+    (void)Bc250PfpWrite(Context, R_HDP_READ_CACHE_INVALIDATE, 1u);
     (void)Bc250PfpWrite(Context, R_GCVM_L2_CNTL2, 0x00000003u);
     /* O ACK desta invalidacao nunca foi registrado. O commit 7e926c0 trocou a
      * engine 0 pela 17 sob a hipotese "qualquer engine != 0 serve", declarada
@@ -1231,7 +1239,7 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
     *pWptrPoll = cursor;
     KeMemoryBarrier();
 
-    (void)Bc250PfpWrite(Context, R_HDP_MEM_COHERENCY_FLUSH_CNTL, 1u);
+    (void)Bc250PfpWrite(Context, R_HDP_READ_CACHE_INVALIDATE, 1u);
     (void)Bc250PfpWrite(Context, R_GCVM_L2_CNTL2, 0x00000003u);
     /* Este sitio disparava a invalidacao e seguia em frente sem esperar nada. */
     Evidence->InvalidateAckPreWptr = Bc250PfpGcvmInvalidate(
@@ -1316,7 +1324,7 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
     Evidence->Rb0ComparedDwords = BC250_CP_RB0_DEST_DWORDS;
     for (destPoll = 0u; destPoll < 1000u; ++destPoll) {
         uint32_t mismatches = 0u;
-        (void)Bc250PfpWrite(Context, R_HDP_MEM_COHERENCY_FLUSH_CNTL, 1u);
+        (void)Bc250PfpWrite(Context, R_HDP_READ_CACHE_INVALIDATE, 1u);
         for (i = 0u; i < BC250_CP_RB0_DEST_DWORDS; ++i) {
             if (READ_REGISTER_ULONG((volatile ULONG *)&pDest[i]) !=
                 (BC250_CP_RB0_DEST_PATTERN + i)) {

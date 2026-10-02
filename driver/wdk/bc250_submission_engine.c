@@ -282,6 +282,8 @@ NTSTATUS Bc250SubmissionEngineOnline(
     }
     engine->Mapped = mapped;
     engine->MappedBytes = BC250_SUBMISSION_BLOCK_BYTES;
+    Bc250LogUcVramMapping("MEC_SUBMISSION_BLOCK", region.Offset,
+        BC250_SUBMISSION_BLOCK_BYTES);
 
     basePhysical = addressSpace->VramMcStart + region.Offset;
     engine->BasePhysical = basePhysical;
@@ -554,18 +556,23 @@ static NTSTATUS Bc250SubmissionApplyCoherencyLocked(
      * Garante que todas as escritas da CPU no anel persistente em VRAM
      * sejam completamente drenadas pela FIFO PCIe do HDP antes que o MEC/HQD
      * tente ler o pacote de comandos no anel.
-     * Conforme provado no silicio e especificado no upstream Linux (hdp_v5_0.c):
-     *   1. Escrita 0u em HDP_FLUSH (0x04A80) e readback de confirmacao de dreno
+     * Como o upstream (amdgpu_hdp_generic_flush + hdp_v5_0_invalidate_hdp):
+     *   0. barreira de CPU (mb()) para drenar write-combining da BAR;
+     *   1. Escrita 0u no flush de ESCRITA real (0x0385C) e leitura de
+     *      confirmacao em RCC_CONFIG_MEMSIZE (0x0378C);
      *   2. Escrita 1u em HDP_READ_CACHE_INVALIDATE (0x03FC4) e readback
+     * HDP.1 (28/09, doc 519): o passo 1 escrevia 0 em 0x04A80, que e'
+     * SDMA0_UTCL1_INV0 e nao flush de HDP -- a drenagem nunca acontecia.
      * HDP_MISC (0x03FCC) NAO e tocado durante submissao ativa para evitar
      * bloqueio da interface RCIU no MEC2 (CP_CPC_STALLED_STAT1 = 0x00040000).
      */
     uint32_t hdpDummy = 0u;
 
+    _mm_mfence();
     if (!Bc250SubmissionWrite32(Engine, Context,
             BC250_HQD_MMIO_HDP_FLUSH, 0u) ||
         !Bc250SubmissionRead32(Engine, Context,
-            BC250_HQD_MMIO_HDP_FLUSH, &hdpDummy) ||
+            BC250_HQD_MMIO_HDP_FLUSH_POSTING_READ, &hdpDummy) ||
         !Bc250SubmissionWrite32(Engine, Context,
             BC250_HQD_MMIO_HDP_READ_CACHE_INVALIDATE, 1u) ||
         !Bc250SubmissionRead32(Engine, Context,

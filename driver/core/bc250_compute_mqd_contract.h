@@ -83,7 +83,14 @@ extern "C" {
 /* Coherence path used immediately before publishing the HQD WPTR. */
 #define BC250_HQD_MMIO_HDP_READ_CACHE_INVALIDATE 0x00003FC4u
 #define BC250_HQD_MMIO_HDP_MISC                  0x00003FCCu
-#define BC250_HQD_MMIO_HDP_FLUSH                 0x00004A80u
+/*
+ * HDP.1 (28/09, doc 519): valia 0x00004A80u, que e' SDMA0_UTCL1_INV0 e nao
+ * flush de HDP. Agora e' o flush de escrita real
+ * (BIF_BX_PF_HDP_MEM_COHERENCY_FLUSH_CNTL, bc250_hdp_contract.h), confirmado
+ * pela leitura de RCC_CONFIG_MEMSIZE.
+ */
+#define BC250_HQD_MMIO_HDP_FLUSH                 0x0000385Cu
+#define BC250_HQD_MMIO_HDP_FLUSH_POSTING_READ    0x0000378Cu
 #define BC250_HQD_MMIO_GCVM_L2_CNTL2              0x0000A104u
 #define BC250_HQD_MMIO_GCVM_CONTEXT0_CNTL         0x0000A200u
 #define BC250_HQD_MMIO_GCVM_CONTEXT0_PT_BASE_LO   0x0000A3ACu

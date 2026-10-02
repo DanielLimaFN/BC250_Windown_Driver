@@ -36,8 +36,21 @@ extern "C" {
 #define BC250_SDMA_FILL_SIZE_SHORT 1u
 #define BC250_SDMA_FILL_SIZE_DWORD 2u
 
-#define BC250_SDMA_COPY_MAX_BYTES 0x00400000u /* 4 MiB */
-#define BC250_SDMA_FILL_MAX_BYTES 0x00400000u /* 4 MiB */
+/*
+ * SDMA.4M (28/09, Corridas 135 e 151): as DUAS travas do SDMA0 que viraram
+ * BugCheck 0x10E Arg1=4 ("Rotation failed in a must succeed path") pararam
+ * dentro de um IB de paginacao com UM pacote CONST_FILL de EXATAMENTE 4 MiB
+ * (count=0x3FFFFF). Mesa (ac_cmdbuf_sdma.c, ac_emit_sdma_constant_fill), com o
+ * MESMO formato de pacote (fill_size=2, contagem em bytes-1), limita o fill do
+ * SDMA < 6.0 a BITFIELD64_MASK(22) & ~0x3 = 0x3FFFFC e nunca programa 0x3FFFFF;
+ * e limita a copia linear do SDMA < 5.2 a SDMA_V2_0_COPY_MAX_BYTES = 0x3FFF00
+ * (sid.h). A BC-250 e' SDMA 5.0. Proveniencia: P1 (Mesa local); a ligacao com a
+ * trava e' H FRACA: as 2 travas pararam num fill de 4 MiB, mas 333-379 fills
+ * de 4 MiB por corrida passaram sem trava nas Corridas 146/149/150. Todo chamador fatia por estes
+ * limites, entao o efeito e' so' o tamanho das fatias.
+ */
+#define BC250_SDMA_COPY_MAX_BYTES 0x003FFF00u /* Mesa SDMA_V2_0_COPY_MAX_BYTES */
+#define BC250_SDMA_FILL_MAX_BYTES 0x003FFFFCu /* Mesa: MASK(22) & ~3 */
 
 #define BC250_SDMA_DWORDS_NOP(Extra)  (1u + (Extra))
 #define BC250_SDMA_DWORDS_COPY_LINEAR 7u

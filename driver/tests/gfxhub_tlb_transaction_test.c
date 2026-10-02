@@ -28,6 +28,7 @@ typedef struct BC250_TEST_TLB_TRANSPORT {
     uint32_t RangeHigh;
     uint32_t AckOnRequest;
     uint32_t StallCount;
+    uint32_t RangeWriteCount;
 } BC250_TEST_TLB_TRANSPORT;
 
 static uint32_t Bc250TestRead32(
@@ -56,8 +57,8 @@ static uint32_t Bc250TestWrite32(
         transport->Request = Value;
         if (transport->AckOnRequest != 0u) transport->Ack |= Value & 0xFFFFu;
         return 1u;
-    case 0xA3A4u: transport->RangeLow = Value; return 1u;
-    case 0xA3A8u: transport->RangeHigh = Value; return 1u;
+    case 0xA3A4u: transport->RangeLow = Value; ++transport->RangeWriteCount; return 1u;
+    case 0xA3A8u: transport->RangeHigh = Value; ++transport->RangeWriteCount; return 1u;
     default: return 0u;
     }
 }
@@ -100,6 +101,7 @@ static int Bc250RunGfxhubTlbTransactionTest(void)
     CHECK(evidence.PollCount == 1u && evidence.PhysicalReady == 1u);
     CHECK(evidence.RangeRestorePassed == 1u);
     CHECK(transport.RangeLow == 0x12345678u && transport.RangeHigh == 0x9u);
+    CHECK(transport.RangeWriteCount == 0u);
 
     memset(&transport, 0, sizeof(transport));
     transport.RangeLow = 0x11111111u;
@@ -111,6 +113,7 @@ static int Bc250RunGfxhubTlbTransactionTest(void)
     CHECK(evidence.PollCount == 3u && evidence.PhysicalReady == 0u);
     CHECK(evidence.RangeRestorePassed == 1u && transport.StallCount == 3u);
     CHECK(transport.RangeLow == 0x11111111u && transport.RangeHigh == 0x2u);
+    CHECK(transport.RangeWriteCount == 0u);
 
     memset(&transport, 0, sizeof(transport));
     transport.Ack = 0xFFFFFFFFu;

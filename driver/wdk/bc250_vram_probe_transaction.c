@@ -16,6 +16,8 @@ BC250_VRAM_PROBE_STATUS Bc250RunVramProbeTransaction(
     UCHAR pattern[BC250_VRAM_PROBE_BYTES];
     NTSTATUS status;
     size_t count = 0, i;
+    uint64_t pageStart;
+    uint64_t pageSpan;
     BC250_VRAM_PROBE_STATUS result = BC250_VRAM_PROBE_OK;
 
     if (Evidence != NULL) RtlZeroMemory(Evidence, sizeof(*Evidence));
@@ -39,9 +41,18 @@ BC250_VRAM_PROBE_STATUS Bc250RunVramProbeTransaction(
         BC250_VRAM_PROBE_BYTES > bar->Length - Offset) {
         return BC250_VRAM_PROBE_OUT_OF_RANGE;
     }
-    physical.QuadPart = (LONGLONG)bar->Start;
+    /*
+     * T3.1 (28/09, doc 520): mapeia SO' as paginas testadas. Antes esta sonda
+     * mapeava a BAR 0 INTEIRA (256 MB) UNCACHED -- e roda no StartDevice
+     * DEPOIS de Bc250DisplayInit ter mapeado a janela WC, isto e', com as
+     * duas vistas vivas sobre as mesmas paginas fisicas. O acesso real sempre
+     * foi de BC250_VRAM_PROBE_BYTES bytes em Offset.
+     */
+    pageStart = Offset & ~0xFFFull;
+    pageSpan = ((Offset + BC250_VRAM_PROBE_BYTES + 0xFFFull) & ~0xFFFull) - pageStart;
+    physical.QuadPart = (LONGLONG)(bar->Start + pageStart);
     status = DxgkInterface->DxgkCbMapMemory(
-        DxgkInterface->DeviceHandle, physical, (ULONG)bar->Length,
+        DxgkInterface->DeviceHandle, physical, (ULONG)pageSpan,
         FALSE, FALSE, MmNonCached, &mapping);
     Evidence->MapStatus = status;
     Evidence->Offset = Offset;
@@ -49,7 +60,7 @@ BC250_VRAM_PROBE_STATUS Bc250RunVramProbeTransaction(
     if (!NT_SUCCESS(status)) return BC250_VRAM_PROBE_MAP_FAILED;
     if (mapping == NULL) return BC250_VRAM_PROBE_MAP_RETURNED_NULL;
 
-    target = (volatile UCHAR *)mapping + (SIZE_T)Offset;
+    target = (volatile UCHAR *)mapping + (SIZE_T)(Offset - pageStart);
     for (i = 0; i < BC250_VRAM_PROBE_BYTES; ++i) {
         original[i] = target[i];
         pattern[i] = (UCHAR)(original[i] ^ (UCHAR)(0xA5u + (UCHAR)i));

@@ -443,14 +443,137 @@ static int Bc250RunGpuvaSpaceContractTest(void)
     return 0;
 }
 
+/*
+ * FPS.1 (28/09): propriedade da reconstrucao otimizada. Centenas de faixas de
+ * tres donos e trezentas substituicoes aleatorias (mapear e desmapear), cada
+ * uma conferida contra um modelo de referencia simples: ordenacao de
+ * SortedIndices, nenhuma sobreposicao do mesmo dono, e ResolveAddress
+ * devolvendo exatamente o offset do modelo nas bordas de cada intervalo.
+ * Sem esta prova, "mesma semantica" seria afirmacao sem teste.
+ */
+typedef struct {
+    uint32_t Owner;
+    uint64_t Base;
+    uint64_t End;
+    uint64_t Offset;
+} FPS1_MODEL_RANGE;
+
+static uint32_t g_Fps1Seed = 0x1234567u;
+static uint32_t Fps1Rand(void)
+{
+    g_Fps1Seed = g_Fps1Seed * 1103515245u + 12345u;
+    return g_Fps1Seed >> 8;
+}
+
+static FPS1_MODEL_RANGE g_Fps1Model[1100];
+static FPS1_MODEL_RANGE g_Fps1Next[1100];
+static uint32_t g_Fps1Count;
+
+static void Fps1Copy(FPS1_MODEL_RANGE *D, const FPS1_MODEL_RANGE *S)
+{
+    volatile uint64_t *d = (volatile uint64_t *)&D->Base;
+    D->Owner = S->Owner;
+    d[0] = S->Base; d[1] = S->End; d[2] = S->Offset;
+}
+
+static int Fps1ModelApply(uint32_t Owner, uint64_t Base, uint64_t End,
+    uint32_t Map, uint64_t Offset)
+{
+    uint32_t i;
+    uint32_t n = 0u;
+    for (i = 0u; i < g_Fps1Count; ++i) {
+        const FPS1_MODEL_RANGE *r = &g_Fps1Model[i];
+        if (r->Owner != Owner || r->End <= Base || End <= r->Base) {
+            Fps1Copy(&g_Fps1Next[n++], r);
+            continue;
+        }
+        if (r->Base < Base) {
+            Fps1Copy(&g_Fps1Next[n], r);
+            g_Fps1Next[n++].End = Base;
+        }
+        if (r->End > End) {
+            Fps1Copy(&g_Fps1Next[n], r);
+            g_Fps1Next[n].Offset = r->Offset + (End - r->Base);
+            g_Fps1Next[n++].Base = End;
+        }
+    }
+    if (Map) {
+        g_Fps1Next[n].Owner = Owner; g_Fps1Next[n].Base = Base;
+        g_Fps1Next[n].End = End; g_Fps1Next[n].Offset = Offset;
+        ++n;
+    }
+    if (n > 1024u) return 0;
+    for (i = 0u; i < n; ++i) Fps1Copy(&g_Fps1Model[i], &g_Fps1Next[i]);
+    g_Fps1Count = n;
+    return 1;
+}
+
+static int Bc250RunGpuvaRebuildPropertyTest(void)
+{
+    static BC250_GPUVA_SPACE space;
+    static BC250_GPUVA_SPACE scratch;
+    const BC250_MCDM_HANDLE owners[3] = {
+        (BC250_MCDM_HANDLE)0xA1u, (BC250_MCDM_HANDLE)0xB2u, (BC250_MCDM_HANDLE)0xC3u };
+    uint32_t op;
+    CHECK(Bc250GpuvaSpaceInitialize(&space, 40u) == BC250_GPUVA_OK);
+    g_Fps1Count = 0u;
+    for (op = 0u; op < 700u; ++op) {
+        BC250_GPUVA_RANGE_RECORD param;
+        uint32_t owner = Fps1Rand() % 3u;
+        uint64_t base = 0x100000000ull + (uint64_t)(Fps1Rand() % 4096u) * 0x1000u;
+        uint64_t size = (uint64_t)(1u + Fps1Rand() % 16u) * 0x1000u;
+        uint32_t map = (op < 400u) ? 1u : (Fps1Rand() % 3u != 0u);
+        uint64_t offset = (uint64_t)(Fps1Rand() % 60000u) * 0x1000u;
+        BC250_GPUVA_STATUS status;
+        uint32_t i;
+        memset(&param, 0, sizeof(param));
+        param.BaseGpuVa = base;
+        param.Size = size;
+        param.OwnerProcess = owners[owner];
+        param.BackingSegmentId = 1u;
+        param.BackingSegmentOffset = offset;
+        param.Permissions = BC250_PTE_READABLE | BC250_PTE_WRITEABLE;
+        status = Bc250GpuvaSpaceReplaceRangeTransactional(&space, &scratch, &param, map);
+        if (status == BC250_GPUVA_OK) {
+            CHECK(Fps1ModelApply(owner, base, base + size, map, offset));
+        } else {
+            CHECK(status == BC250_GPUVA_NO_SPACE);
+        }
+        /* Ordenacao. */
+        for (i = 1u; i < space.SortedCount; ++i) {
+            CHECK(space.Ranges[space.SortedIndices[i - 1u]].BaseGpuVa <=
+                  space.Ranges[space.SortedIndices[i]].BaseGpuVa);
+        }
+        /* Contagem de faixas vivas igual ao modelo. */
+        CHECK(space.LiveCount == g_Fps1Count);
+        /* Bordas de cada intervalo do modelo resolvem com o offset exato. */
+        for (i = 0u; i < g_Fps1Count; ++i) {
+            uint32_t seg = 0u;
+            uint64_t off = 0u;
+            const FPS1_MODEL_RANGE *r = &g_Fps1Model[i];
+            CHECK(Bc250GpuvaSpaceResolveAddress(&space, owners[r->Owner], r->Base,
+                BC250_PTE_READABLE, &seg, &off) == BC250_GPUVA_OK);
+            CHECK(off == r->Offset);
+            CHECK(Bc250GpuvaSpaceResolveAddress(&space, owners[r->Owner], r->End - 0x1000u,
+                BC250_PTE_READABLE, &seg, &off) == BC250_GPUVA_OK);
+            CHECK(off == r->Offset + (r->End - 0x1000u - r->Base));
+        }
+    }
+    return 0;
+}
+
 #ifdef BC250_KERNEL_MODE
 void __stdcall mainCRTStartup(void)
 {
-    ExitProcess((unsigned long)Bc250RunGpuvaSpaceContractTest());
+    unsigned long code = (unsigned long)Bc250RunGpuvaSpaceContractTest();
+    if (code == 0ul) code = (unsigned long)Bc250RunGpuvaRebuildPropertyTest();
+    ExitProcess(code);
 }
 #else
 int main(void)
 {
-    return Bc250RunGpuvaSpaceContractTest();
+    int code = Bc250RunGpuvaSpaceContractTest();
+    if (code == 0) code = Bc250RunGpuvaRebuildPropertyTest();
+    return code;
 }
 #endif

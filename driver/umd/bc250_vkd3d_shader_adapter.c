@@ -26,6 +26,7 @@ BOOL Bc250Vkd3dShaderAdapterOpen(
     Adapter->FreeCodeProc = GetProcAddress(Adapter->Module, "vkd3d_shader_free_shader_code");
     Adapter->GetVersionProc = GetProcAddress(Adapter->Module, "vkd3d_shader_get_version");
     Adapter->SerializeDxbcProc = GetProcAddress(Adapter->Module, "vkd3d_shader_serialize_dxbc");
+    Adapter->FreeMessagesProc = GetProcAddress(Adapter->Module, "vkd3d_shader_free_messages");
     if (!Adapter->CompileProc || !Adapter->FreeCodeProc || !Adapter->GetVersionProc) {
         Bc250Vkd3dShaderAdapterClose(Adapter); return FALSE;
     }
@@ -48,6 +49,55 @@ void Bc250Vkd3dShaderAdapterClose(BC250_VKD3D_SHADER_ADAPTER *Adapter)
     memset(Adapter, 0, sizeof(*Adapter));
 }
 
+/*
+ * Doc 516: resultado e mensagens da ultima compilacao, por thread. Quebras de
+ * linha viram " | " para caber numa linha de log; truncado com "...".
+ */
+static __declspec(thread) char s_Bc250Vkd3dLastMessages[1024];
+static __declspec(thread) int s_Bc250Vkd3dLastResult;
+
+static void Bc250Vkd3dRecordMessages(
+    BC250_VKD3D_SHADER_ADAPTER *Adapter, int Result, char *Messages)
+{
+    size_t out = 0, i;
+    int truncated = 0;
+    s_Bc250Vkd3dLastResult = Result;
+    s_Bc250Vkd3dLastMessages[0] = '\0';
+    if (!Messages) return;
+    for (i = 0; Messages[i] != '\0'; ++i) {
+        char c = Messages[i];
+        if (c == '\r') continue;
+        if (c == '\n' && Messages[i + 1] == '\0') break;   /* \n final: ignora */
+        /* reserva 4 bytes: ate 3 de "..." e o terminador */
+        if (out + (c == '\n' ? 3u : 1u) + 4u > sizeof(s_Bc250Vkd3dLastMessages)) {
+            truncated = 1;
+            break;
+        }
+        if (c == '\n') {
+            s_Bc250Vkd3dLastMessages[out++] = ' ';
+            s_Bc250Vkd3dLastMessages[out++] = '|';
+            s_Bc250Vkd3dLastMessages[out++] = ' ';
+        } else {
+            s_Bc250Vkd3dLastMessages[out++] = c;
+        }
+    }
+    if (truncated) {
+        s_Bc250Vkd3dLastMessages[out++] = '.';
+        s_Bc250Vkd3dLastMessages[out++] = '.';
+        s_Bc250Vkd3dLastMessages[out++] = '.';
+    }
+    s_Bc250Vkd3dLastMessages[out] = '\0';
+    if (Adapter && Adapter->FreeMessagesProc) {
+        ((BC250_PFN_VKD3D_FREE_MESSAGES)Adapter->FreeMessagesProc)(Messages);
+    }
+}
+
+const char *Bc250Vkd3dShaderAdapterLastMessages(int *LastResult)
+{
+    if (LastResult) *LastResult = s_Bc250Vkd3dLastResult;
+    return s_Bc250Vkd3dLastMessages;
+}
+
 static int Bc250Vkd3dCompile(void *Context, const void *Dxbc, uint32_t DxbcBytes,
     const void **Spirv, uint32_t *SpirvBytes)
 {
@@ -60,6 +110,7 @@ static int Bc250Vkd3dCompile(void *Context, const void *Dxbc, uint32_t DxbcBytes
     BC250_PFN_VKD3D_COMPILE compile;
     BC250_PFN_VKD3D_FREE_CODE freeCode;
     void *copy;
+    char *messages;
     int result;
     if (!adapter || !adapter->CompileProc || !adapter->FreeCodeProc ||
         !Spirv || !SpirvBytes) return -1;
@@ -80,7 +131,11 @@ static int Bc250Vkd3dCompile(void *Context, const void *Dxbc, uint32_t DxbcBytes
                 b->type = types[kind];
                 b->register_index = slot;
                 b->shader_visibility = stage == 0 ? 1 : 5; /* VERTEX / PIXEL */
-                b->flags = kind == 0 ? 1u : 2u; /* BUFFER / IMAGE */
+                /* SHADER.2 (Corrida 161): SRV aceita BUFFER|IMAGE. So' IMAGE
+                 * recusava Buffer<T> em t# ("E2000: Could not find descriptor
+                 * binding for type 0") -- o PS do menu Iniciar. Um shader nao
+                 * usa o mesmo t# dos dois jeitos; o tipo Vulkan sai da reflexao. */
+                b->flags = kind == 0 ? 1u : (kind == 1 ? 3u : 2u); /* BUFFER / BUFFER|IMAGE / IMAGE */
                 b->binding.binding = stage * BC250_DESCRIPTOR_STAGE_STRIDE + bases[kind] + slot;
                 b->binding.count = 1u;
             }
@@ -92,7 +147,12 @@ static int Bc250Vkd3dCompile(void *Context, const void *Dxbc, uint32_t DxbcBytes
     info.next = &interfaceInfo;
     compile = (BC250_PFN_VKD3D_COMPILE)adapter->CompileProc;
     freeCode = (BC250_PFN_VKD3D_FREE_CODE)adapter->FreeCodeProc;
-    result = compile(&info, &output, NULL);
+    /* Doc 516: pede as mensagens do vkd3d (nivel WARNING) quando a DLL exporta
+     * vkd3d_shader_free_messages; sem isso a recusa chegava muda. */
+    info.log_level = adapter->FreeMessagesProc ? BC250_VKD3D_LOG_WARNING : 0;
+    messages = NULL;
+    result = compile(&info, &output, adapter->FreeMessagesProc ? &messages : NULL);
+    Bc250Vkd3dRecordMessages(adapter, result, messages);
     if (result < 0 || !output.code || output.size == 0u || output.size > UINT32_MAX) {
         if (output.code) freeCode(&output);
         return -1;

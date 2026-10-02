@@ -559,7 +559,7 @@ BC250_GFX_RING_TXN_STATUS Bc250GfxRingTxnSubmitShReg(
 
         /* Dreno e coerencia HDP (PCIe) para que a leitura de CPU sobre VRAM
          * enxergue os dados gravados pelo motor CP da GPU na VRAM (Lei 2) */
-        (void)Bc250GfxTxnWrite(Interface, NULL, BC250_GFX_REG_HDP_MEM_COHERENCY_FLUSH_CNTL, 1u);
+        (void)Bc250GfxTxnWrite(Interface, NULL, BC250_GFX_REG_HDP_READ_CACHE_INVALIDATE, 1u);
 
         fenceObs = *(volatile const uint32_t *)SubmitPlan->FenceCpuAddress;
 
@@ -1064,7 +1064,7 @@ BC250_GFX_RING_TXN_STATUS Bc250GfxRingTxnSubmit3DDraw(
 
         /* Dreno e coerencia HDP (PCIe) para que a leitura de CPU sobre VRAM
          * enxergue os dados gravados pelo motor CP da GPU na VRAM (Lei 2) */
-        (void)Bc250GfxTxnWrite(Interface, NULL, BC250_GFX_REG_HDP_MEM_COHERENCY_FLUSH_CNTL, 1u);
+        (void)Bc250GfxTxnWrite(Interface, NULL, BC250_GFX_REG_HDP_READ_CACHE_INVALIDATE, 1u);
 
         fenceObs = *(volatile const uint32_t *)SubmitPlan->FenceCpuAddress;
 

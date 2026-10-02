@@ -21,13 +21,22 @@ Tabela 2 (o que falta, em ordem de prioridade, com o teste que fecha cada item).
 implementamos DCN no caminho crítico. Escrita em registrador de DCN é **proibida** fora
 da prioridade P9; leitura é permitida.
 
-**Estado em 26/09/2026:** as Corridas 118–126 deram desktop por 180 s e a 127 chegou a 600 s.
-As 128 e 129 travaram com a thread de paginação dentro de `FLUSH_TLB`, e as 130 e 131 ficaram em
-tela preta por um deadlock da própria instrumentação DX.83 (log com I/O de arquivo na thread de
-paginação do VidMm). A DX.85 (pacote 3.290.1.0) corrige isso, torna fail-closed a espera de fence
-da UMD, volta a topologia para `ChildUid=1`/EDID 0 e a GPUVA para 1024. **Nada disso foi validado
-em hardware.** A trava de `FLUSH_TLB`, 600 s estáveis, 60 FPS e jogos seguem abertos. O próximo
-bind exige boot frio. Leia o [doc 467](docs/467_DX85_DEADLOCK_DA_DX83_NA_PAGINACAO_E_CRITERIO_CORRIDA132.md).
+**Estado em 01/10/2026:** **decisão do Daniel: VRAM mínima de 256 MB, sem VRAM grande como muleta**
+([doc 551](docs/551_DECISAO_VRAM_MINIMA_256MB_E_CRITERIO_CORRIDA199.md)). Na BC-250 VRAM e RAM são a mesma
+GDDR6; 256 MB é o BAR, então toda a VRAM fica visível à CPU, e a memória da carga real vem do segmento 2
+(**M1b**, como o GTT do Linux). Quem manda na VRAM é o bloco `APCB` da CMOS, não o menu da BIOS
+([doc 549](docs/549_COLETA_LINUX_CMOS_APCB_CONTROLA_A_VRAM_E_AMDGPU_SEM_IP_DISCOVERY.md)); a ferramenta é
+`tools\vram-cmos\bc250-vram.ps1` ([doc 550](docs/550_CONTROLE_DA_VRAM_PELA_CMOS_NO_WINDOWS.md)), validada na placa.
+O **M2** (segmento além do BAR) ficou **dormente** depois de provar o `Lock2` (197) e 2.086 imagens no segmento 3
+(198). A 197 terminou em `0x10E`/`0x34` (Lock da UMD durante um TRANSFER) e a 198 na trava dura de sempre.
+**Coleta Linux com 256 MB** ([doc 552](docs/552_COLETA_LINUX_256MB_AMDGPU_ATIVO_GABARITO_E_O_QUE_MUDA.md)):
+o `amdgpu` subiu e **não travou** sob 149 despejos completos da VRAM (L-B), com firmware idêntico ao nosso. Dois
+achados para o driver: a nossa RADV não se declara APU (`ids_flags` sem `FUSION`, e com a VRAM visível fixa em 16 GB: promete memória que o KMD não tem, [doc 554](docs/554_M1B1_RADV_NO_SEGMENTO_2_DORMENTE_E_CORRECAO_DO_HEAP.md)), e o
+Linux usa SMU, SDMA1 e fences por interrupção, que nós não usamos.
+**Corrida 199 (21:44, lab 3.346.1.0):** 256 MB sobe; trava dura ao abrir a Pesquisa, sem calor (80 °C), com SDMA1 desligado e sem erro de fabric no FCH ([doc 555](docs/555_CORRIDA199_256MB_SOBE_TRAVA_SEM_CALOR_SEM_ERRO_DE_FABRIC.md)). Placa em Código 43 pelo fusível: recuperação antes de novo bind. **Corrida 200 (22:14):** SDMA0 ocioso na parada, trava 2 s depois de o DWM ficar sem memória; nós desligamos o MGCG do SDMA0 e o Linux não ([doc 557](docs/557_CORRIDA200_SDMA0_OCIOSO_NA_PARADA_E_CG1_MGCG_DO_POST_CRITERIO_CORRIDA201.md)). **Corrida 201 (02/10 08:04, lab 3.348.1.0, CG.1):** primeira com 256 MB **sem trava dura** (591,8 s, rollback limpo); um TDR gráfico em VMID 10 recuperado ([doc 558](docs/558_CORRIDA201_PRIMEIRA_CORRIDA_256MB_SEM_TRAVA_DURA_MGCG_DO_POST.md)). **Corrida 202 (08:43, lab 3.349.1.0, boot frio):** **trava dura de novo** aos ~95 s com a CG.1 aplicada, 1,8 s depois de `res=-2` no DWM: a CG.1 não é causa suficiente ([doc 560](docs/560_CORRIDA202_TRAVA_DURA_VOLTOU_COM_CG1_CG1_NAO_E_SUFICIENTE.md)). A mineração dos finais (doc 560 §6) achou as três travas paradas até 20 ms depois do FILL de zeramento de uma alocação nova de tela cheia. **Corrida 203 (09:50, lab 3.350.1.0, X2b):** ensaio válido e **travou igual** ao abrir o menu: o `CONST_FILL` não é a causa ([doc 562](docs/562_CORRIDA203_X2B_VALIDO_TRAVOU_IGUAL_CONST_FILL_NAO_E_A_CAUSA.md)). A mineração (doc 563) achou as três travas cobertas com um processo no meio da leitura da VRAM pela CPU; no Linux as tabelas de página de VM gráfica são escritas pelo SDMA. **Próximo bind: Corrida 204**, 4b (a CPU não lê o buffer linear pela BAR, lab **3.351.1.0**, [doc 564](docs/564_4B_CPU_NAO_LE_A_VRAM_PELA_BAR_E_CRITERIO_CORRIDA204.md)), `tools/EXECUTAR_CORRIDA204_4B_CPU_SEM_LEITURA_DA_VRAM_600S.cmd`. **Corrida 204 (11:44):** 4b válido, **travou** ao abrir a Pesquisa com o zeramento de uma alocação nova em voo ([doc 565](docs/565_CORRIDA204_4B_VALIDO_TRAVOU_LEITURA_DA_CPU_NAO_BASTA.md)). Achado de código ([doc 566](docs/566_4C_DESENHO_PTE_PELA_GPU_COMO_O_LINUX_E_O_TESTE_DE_ORDEM.md)): com `CPU_VIRTUAL` o KMD escreve PTE e invalida a TLB pela CPU **no build**, fora de ordem com a GPU. **Próximo:** 4c-ordem (drenar o SDMA antes de tocar PTE) ou 4c completa (`GPU_VIRTUAL`, como o Linux), escolha do Daniel; placa em Código 43. Antes: Corrida 200 com lab **3.347.1.0** (SDMA0 e clock gating no rastro, [doc 556](docs/556_W3_SMU_NAO_E_DIFERENCA_SDMA0_E_CLOCK_GATING_NO_RASTRO_CRITERIO_CORRIDA200.md)), `tools/EXECUTAR_CORRIDA200_SDMA0_CG_600S.cmd`. Histórico: a 199 foi preparada como candidato **3.345.1.0** (3.344.1.0 + instrumentação de Tctl, SDMA1 e motivo de
+reset, [doc 553](docs/553_INSTRUMENTACAO_PLATAFORMA_TCTL_SDMA1_RESET_E_CRITERIO_CORRIDA199.md)) com a CMOS em 256, depois de
+recuperação, fusível e boot frio (`tools/EXECUTAR_CORRIDA199_UMA256_600S.cmd`). **Plano único:** [`PLANO_MESTRE.md`](PLANO_MESTRE.md).
+**NÃO VALIDADO EM HARDWARE com 256 MB.**
 
 ---
 

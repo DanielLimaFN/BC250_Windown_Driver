@@ -364,6 +364,36 @@ static int TestDataLegBreaksOtherwisePerfectIb(void)
  * devolveu STATUS_IO_DEVICE_ERROR e a maquina caiu em 0x119.
  * =====================================================================
  */
+/*
+ * X1 (29/09, doc 522): a sondagem da aposentadoria passa a decidir "a engine
+ * ja consumiu a entrada" SO' pelo registrador RPTR, sem HDP e sem ler VRAM.
+ * A aritmetica errada aqui ou declara conclusao cedo (a fence e' lida antes de
+ * existir e o tripe cai) ou nunca declara (timeout -> TDR). Os dois lados
+ * ficam travados.
+ */
+static int TestRingEntryConsumedByRptrOnly(void)
+{
+    /* Caso medido em 07/09 17:43: RPTR cru 4612 = 4096 + 516, alvo 516. */
+    CHECK(Bc250TripodRingEntryConsumed(4612u, 428u, 516u, 516u, 4096u) == 1u);
+    /* Ainda no meio da entrada. */
+    CHECK(Bc250TripodRingEntryConsumed(480u, 428u, 516u, 516u, 4096u) == 0u);
+    /* Parado exatamente no inicio: nada consumido. */
+    CHECK(Bc250TripodRingEntryConsumed(428u, 428u, 516u, 516u, 4096u) == 0u);
+    /* Entrada atravessa a volta do anel: inicio 4000, alvo 72, ultimo WPTR 200. */
+    CHECK(Bc250TripodRingEntryConsumed(8192u + 50u, 4000u, 72u, 200u, 4096u) == 0u);
+    CHECK(Bc250TripodRingEntryConsumed(8192u + 72u, 4000u, 72u, 200u, 4096u) == 1u);
+    CHECK(Bc250TripodRingEntryConsumed(8192u + 150u, 4000u, 72u, 200u, 4096u) == 1u);
+    /* RPTR ANTES do inicio (NOPs de volta do anel): NAO e' conclusao. */
+    CHECK(Bc250TripodRingEntryConsumed(4050u, 0u, 88u, 88u, 4096u) == 0u);
+    /* RPTR alem do ultimo WPTR publicado: incoerente, falha fechada. */
+    CHECK(Bc250TripodRingEntryConsumed(300u, 100u, 188u, 200u, 4096u) == 0u);
+    /* Argumentos incoerentes nunca viram "concluido". */
+    CHECK(Bc250TripodRingEntryConsumed(516u, 516u, 516u, 516u, 4096u) == 0u);
+    CHECK(Bc250TripodRingEntryConsumed(516u, 428u, 516u, 480u, 4096u) == 0u);
+    CHECK(Bc250TripodRingEntryConsumed(516u, 428u, 516u, 516u, 0u) == 0u);
+    return 0;
+}
+
 static int TestRingWrapIsTheMeasuredCase(void)
 {
     const uint32_t ringBytes = 4096u;
@@ -422,6 +452,7 @@ static int Bc250RunBltProofContractTest(void)
     if (TestCanaryMismatchCounting() != 0) return 1;
     if (TestDataLegBreaksOtherwisePerfectIb() != 0) return 1;
     if (TestRingWrapIsTheMeasuredCase() != 0) return 1;
+    if (TestRingEntryConsumedByRptrOnly() != 0) return 1;
     return 0;
 }
 

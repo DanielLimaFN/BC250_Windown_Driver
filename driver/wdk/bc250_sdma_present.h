@@ -6,6 +6,7 @@
 #include "../core/bc250_sdma_packet_builder.h"
 #include "../core/bc250_blt_proof_contract.h"
 #include "../core/bc250_tdr_recovery_contract.h"
+#include "../core/bc250_hdp_contract.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,12 +36,18 @@ static inline uint32_t Bc250SdmaAsyncSlotFenceOffset(uint32_t SlotIndex)
 /*
  * Offsets de registradores relativos à base de BAR5.
  *
- * A janela mapeada precisa cobrir DOIS blocos, nao apenas o do SDMA0:
+ * A janela mapeada precisa cobrir TRES blocos, nao apenas o do SDMA0:
  *
- *   0x03FC4  HDP_MEM_COHERENCY_FLUSH_CNTL  (bloco HDP)
+ *   0x0378C  RCC_CONFIG_MEMSIZE            (NBIO, leitura de confirmacao)
+ *   0x0385C  BIF HDP_MEM_COHERENCY_FLUSH_CNTL (NBIO, flush de ESCRITA)
+ *   0x03FC4  HDP_READ_CACHE_INVALIDATE     (bloco HDP)
  *   0x03FCC  HDP_MISC_CNTL                 (bloco HDP)
  *   0x049EC.. registradores do SDMA0
  *   0x08020  GRBM_SOFT_RESET
+ *
+ * HDP.1 (28/09): 0x03FC4 era rotulado "HDP_MEM_COHERENCY_FLUSH_CNTL" aqui --
+ * falso; e' a invalidacao de leitura. O flush de escrita real e' 0x0385C,
+ * com proveniencia em ../core/bc250_hdp_contract.h.
  *
  * A janela anterior comecava em 0x04000 com 4 KB, o que deixava os dois
  * registradores de HDP FORA do mapeamento -- por construcao, a sequencia de
@@ -82,7 +89,13 @@ static inline uint32_t Bc250SdmaAsyncSlotFenceOffset(uint32_t SlotIndex)
 #define BC250_SDMA0_REG_FREEZE            0x04A2Cu
 #define BC250_SDMA0_REG_STATUS3           0x04AB0u
 #define BC250_SDMA0_REG_F32_CNTL          0x04A28u
-#define BC250_SDMA0_REG_HDP_FLUSH         0x04A80u
+/*
+ * HDP.1: 0x04A80 NAO e' flush de HDP -- e' SDMA0_UTCL1_INV0, somente leitura
+ * para este driver. O nome verdadeiro (BC250_SDMA0_REG_UTCL1_INV0) e o flush
+ * real (BC250_HDP_REG_MEM_COHERENCY_FLUSH_CNTL) vem de
+ * ../core/bc250_hdp_contract.h. O nome antigo BC250_SDMA0_REG_HDP_FLUSH deixou
+ * de existir de proposito: qualquer uso esquecido vira erro de build.
+ */
 /*
  * UTCL1_CNTL/UTCL1_PAGE: os valores antigos (0x04AE8/0x04AEC) nao constam do
  * catalogo nem do modulo provado.  Offsets corretos pela composicao SOC15
@@ -195,6 +208,14 @@ typedef struct BC250_SDMA_PRESENT_CONTEXT {
     BOOLEAN Initialized;
     BOOLEAN HardwareEnabled;
     BOOLEAN TripodValidated;
+    /*
+     * CG.1 (doc 557): SDMA0_CLK_CTRL como o POST deixou, lido UMA vez antes do
+     * primeiro "clk |= 0xFF000000". Depois do anel provado, os SOFT_OVERRIDE
+     * voltam a este valor -- o amdgpu nunca escreve este registrador na SDMA
+     * 5.0.1 (Cyan Skillfish) e o Linux roda com o MGCG do POST.
+     */
+    BOOLEAN ClockCtrlEntryCaptured;
+    uint32_t ClockCtrlAtEntry;
 
     /* A10: ver BC250_BLT_DATA_PROOF_STATE. */
     volatile LONG BltDataProofState;

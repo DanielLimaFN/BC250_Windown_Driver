@@ -119,7 +119,55 @@ int main(void)
         0x10000ull, 1u, 0x1000ull, 0ull, &mc);
     assert(st == BC250_SEGMENT_ADDRESS_OVERFLOW);
 
-    printf("SEGMENT ADDRESS CONTRACT: OK (base do segmento obrigatoria, "
-           "faixa conferida, fail-closed; offline)\n");
+    /* 9. M2 (doc 548): segmento 3 DERIVADO da topologia, nunca constante.
+     *    Medido na 193: Total=512 MiB, CPU=256 MiB. */
+    {
+        const uint64_t mib = 1024ull * 1024ull;
+        uint64_t base = 1ull, bytes = 1ull;
+        uint64_t busyOff[2];
+        uint64_t busyLen[2];
+        BC250_HIDDEN_SEGMENT_STATUS hs;
+
+        hs = Bc250ComputeHiddenSegment(512ull * mib, 256ull * mib,
+            BC250_HIDDEN_SEGMENT_TOP_GUARD_BYTES, NULL, NULL, 0u, &base, &bytes);
+        assert(hs == BC250_HIDDEN_SEGMENT_OK);
+        assert(base == 256ull * mib && bytes == 240ull * mib);
+
+        /* O mesmo codigo com 4 GiB e 8 GiB de UMA (BIOS do Daniel) -- sem constante. */
+        hs = Bc250ComputeHiddenSegment(4096ull * mib, 256ull * mib,
+            BC250_HIDDEN_SEGMENT_TOP_GUARD_BYTES, NULL, NULL, 0u, &base, &bytes);
+        assert(hs == BC250_HIDDEN_SEGMENT_OK && base == 256ull * mib && bytes == 3824ull * mib);
+        hs = Bc250ComputeHiddenSegment(8192ull * mib, 256ull * mib,
+            BC250_HIDDEN_SEGMENT_TOP_GUARD_BYTES, NULL, NULL, 0u, &base, &bytes);
+        assert(hs == BC250_HIDDEN_SEGMENT_OK && bytes == 7920ull * mib);
+
+        /* Regiao interna no inicio empurra; no meio trunca. */
+        busyOff[0] = 256ull * mib;          busyLen[0] = 4ull * mib;
+        busyOff[1] = 400ull * mib + 0x1000; busyLen[1] = 0x1000ull;
+        hs = Bc250ComputeHiddenSegment(512ull * mib, 256ull * mib,
+            BC250_HIDDEN_SEGMENT_TOP_GUARD_BYTES, busyOff, busyLen, 2u, &base, &bytes);
+        assert(hs == BC250_HIDDEN_SEGMENT_OK);
+        assert(base == 260ull * mib && base + bytes == 400ull * mib);
+
+        /* Regiao abaixo da janela de CPU nao afeta. */
+        busyOff[0] = 100ull * mib; busyLen[0] = 10ull * mib;
+        hs = Bc250ComputeHiddenSegment(512ull * mib, 256ull * mib,
+            BC250_HIDDEN_SEGMENT_TOP_GUARD_BYTES, busyOff, busyLen, 1u, &base, &bytes);
+        assert(hs == BC250_HIDDEN_SEGMENT_OK && base == 256ull * mib && bytes == 240ull * mib);
+
+        /* Sem VRAM alem da janela, e janela minima: recusa nomeada, segmento 0. */
+        hs = Bc250ComputeHiddenSegment(256ull * mib, 256ull * mib,
+            BC250_HIDDEN_SEGMENT_TOP_GUARD_BYTES, NULL, NULL, 0u, &base, &bytes);
+        assert(hs == BC250_HIDDEN_SEGMENT_NO_HIDDEN_VRAM && base == 0ull && bytes == 0ull);
+        hs = Bc250ComputeHiddenSegment(256ull * mib + 24ull * mib, 256ull * mib,
+            BC250_HIDDEN_SEGMENT_TOP_GUARD_BYTES, NULL, NULL, 0u, &base, &bytes);
+        assert(hs == BC250_HIDDEN_SEGMENT_TOO_SMALL && bytes == 0ull);
+        hs = Bc250ComputeHiddenSegment(512ull * mib, 0ull,
+            BC250_HIDDEN_SEGMENT_TOP_GUARD_BYTES, NULL, NULL, 0u, &base, &bytes);
+        assert(hs == BC250_HIDDEN_SEGMENT_BAD_ARGUMENT);
+        printf("  M2 segmento 3: 512/4096/8192 MiB derivados da topologia, reservas respeitadas: PASS\n");
+    }
+
+    printf("SEGMENT ADDRESS CONTRACT: OK (base do segmento obrigatoria, "           "faixa conferida, fail-closed; offline)\n");
     return 0;
 }

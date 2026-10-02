@@ -17,9 +17,10 @@
 #define W 2560u
 #define H 1080u
 static uint32_t *g_Pixels;
+static unsigned g_MapCalls;
 
 static VkResult VKAPI_CALL FakeMap(VkDevice d, VkDeviceMemory m, VkDeviceSize o, VkDeviceSize s, VkMemoryMapFlags f, void **pp)
-{ (void)d; (void)m; (void)o; (void)s; (void)f; *pp = g_Pixels; return VK_SUCCESS; }
+{ (void)d; (void)m; (void)o; (void)s; (void)f; ++g_MapCalls; *pp = g_Pixels; return VK_SUCCESS; }
 static void VKAPI_CALL FakeUnmap(VkDevice d, VkDeviceMemory m) { (void)d; (void)m; }
 
 int main(void)
@@ -36,6 +37,20 @@ int main(void)
     b.vk.vkMapMemory = FakeMap;
     b.vk.vkUnmapMemory = FakeUnmap;
 
+#if !BC250_UMD_CPU_INSPECTS_LINEAR_BUF
+    /*
+     * 4b (doc 564): com o interruptor em 0 a CPU NAO pode tocar o buffer
+     * linear -- zero mapeamentos, mesmo com conteudo nao nulo, e retorno 0.
+     */
+    for (uint32_t i = 0; i < W * H; ++i) g_Pixels[i] = 0xFF202020u;
+    n = Bc250UmdVkInspectLinearPresentBuf(&b, W, H);
+    CHECK(n == 0u);
+    CHECK(g_MapCalls == 0u);
+    free(g_Pixels);
+    printf("UMD PRESENT GRID: PASS (4b: inspecao desligada, zero vkMapMemory do buffer linear; offline)\n");
+    printf("HARDWARE VERDICT: NAO VALIDADO EM HARDWARE\n");
+    return 0;
+#else
     /* Contraponto: tudo preto. */
     n = Bc250UmdVkInspectLinearPresentBuf(&b, W, H);
     CHECK(n == 0u);
@@ -47,9 +62,11 @@ int main(void)
     CHECK(g_Pixels[0] == 0u && g_Pixels[(H / 2) * W + W / 2] == 0u); /* o metodo antigo leria 0/5 */
     n = Bc250UmdVkInspectLinearPresentBuf(&b, W, H);
     CHECK(n == 10u * (W / 8u)); /* 10 linhas da grade (1 em 4) x 320 colunas */
+    CHECK(g_MapCalls == 2u);
 
     free(g_Pixels);
     printf("UMD PRESENT GRID: PASS (preto=0; barra de 40 linhas vista pela grade e invisivel as 5 amostras; offline)\n");
     printf("HARDWARE VERDICT: NAO VALIDADO EM HARDWARE\n");
     return 0;
+#endif
 }

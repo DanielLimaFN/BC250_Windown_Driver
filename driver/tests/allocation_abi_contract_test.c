@@ -391,11 +391,155 @@ static int TestAbiTokenClassification(void)
         BC250_ALLOCATION_PRIVATE_V1 resourceAlloc;
         uint64_t resToken = ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_RESOURCE <<
             BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 48ull;
+        /* DX.89: RESOURCE sem flag (recurso compartilhado) NAO exige CPU... */
         CHECK(Bc250AllocationAbiFormat(resToken, 4096ull, 4096ull, 0u, NULL, &resourceAlloc) ==
             BC250_ALLOCATION_ABI_OK);
-        CHECK(Bc250AllocationRequiresCpuAccess(&resourceAlloc));
+        CHECK(!Bc250AllocationRequiresCpuAccess(&resourceAlloc));
         CHECK(!Bc250AllocationIsPrimary(&resourceAlloc));
+        /* ...e RESOURCE com a flag (recurso comum) continua exigindo. */
+        CHECK(Bc250AllocationAbiFormat(resToken, 4096ull, 4096ull,
+            BC250_ALLOCATION_FLAG_CPU_VISIBLE, NULL, &resourceAlloc) == BC250_ALLOCATION_ABI_OK);
+        CHECK(Bc250AllocationRequiresCpuAccess(&resourceAlloc));
     }
+    return 1;
+}
+
+/*
+ * M1 (doc 491): GPU_VA_ONLY vale so' para RESOURCE, nos dois lados do
+ * contrato, e e' o unico caminho para o segmento de sistema.
+ */
+static int TestAbiGpuVaOnlySystemSegment(void)
+{
+    const uint64_t resToken =
+        ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_RESOURCE << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 7u;
+    const uint64_t primToken =
+        ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_PRIMARY << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 7u;
+    const uint64_t cmdToken =
+        ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_COMMAND << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 7u;
+    BC250_ALLOCATION_PRIVATE_V1 blob;
+    BC250_ALLOCATION_PRIVATE_V1 parsed;
+    const uint32_t both = BC250_ALLOCATION_FLAG_CPU_VISIBLE | BC250_ALLOCATION_FLAG_GPU_VA_ONLY;
+
+    /* RESOURCE com a flag: aceito, e o unico que pode usar o segmento de sistema. */
+    CHECK(Bc250AllocationAbiFormat(resToken, 4096ull, 4096ull, both, NULL, &blob) ==
+        BC250_ALLOCATION_ABI_OK);
+    CHECK(Bc250AllocationAbiParse(&blob, sizeof(blob), &parsed) == BC250_ALLOCATION_ABI_OK);
+    CHECK(Bc250AllocationMayUseSystemSegment(&parsed));
+    CHECK(Bc250AllocationRequiresCpuAccess(&parsed));
+    /* RESOURCE sem a flag: segmento local somente. */
+    CHECK(Bc250AllocationAbiFormat(resToken, 4096ull, 4096ull,
+        BC250_ALLOCATION_FLAG_CPU_VISIBLE, NULL, &blob) == BC250_ALLOCATION_ABI_OK);
+    CHECK(!Bc250AllocationMayUseSystemSegment(&blob));
+    /* Primaria e comando com a flag: RECUSADOS na formatacao... */
+    CHECK(Bc250AllocationAbiFormat(primToken, 4096ull, 4096ull, both, NULL, &blob) ==
+        BC250_ALLOCATION_ABI_BAD_FLAGS);
+    CHECK(Bc250AllocationAbiFormat(cmdToken, 4096ull, 4096ull, both, NULL, &blob) ==
+        BC250_ALLOCATION_ABI_BAD_FLAGS);
+    /* ...e no parse, se alguem forjar o blob. */
+    CHECK(Bc250AllocationAbiFormat(primToken, 4096ull, 4096ull,
+        BC250_ALLOCATION_FLAG_CPU_VISIBLE, NULL, &blob) == BC250_ALLOCATION_ABI_OK);
+    blob.Flags |= BC250_ALLOCATION_FLAG_GPU_VA_ONLY;
+    CHECK(Bc250AllocationAbiParse(&blob, sizeof(blob), &parsed) ==
+        BC250_ALLOCATION_ABI_BAD_FLAGS);
+    CHECK(!Bc250AllocationMayUseSystemSegment(&blob));
+    CHECK(!Bc250AllocationMayUseSystemSegment(NULL));
+
+    /* M2 (doc 548): segmento 3 so' para alocacao da RADV (token-ponteiro, fora
+     * das classes da UMD) SEM CPU. Cada exclusao recusa sozinha. */
+    memset(&blob, 0, sizeof(blob));
+    blob.AllocationToken = 0x0000023400001000ull;
+    blob.Flags = 0u;
+    CHECK(Bc250AllocationMayUseHiddenSegment(&blob));
+    blob.Flags = BC250_ALLOCATION_FLAG_CPU_VISIBLE;
+    CHECK(!Bc250AllocationMayUseHiddenSegment(&blob));
+    blob.Flags = BC250_ALLOCATION_FLAG_GPU_VA_ONLY;
+    CHECK(!Bc250AllocationMayUseHiddenSegment(&blob));
+    blob.Flags = 0u;
+    blob.AllocationToken = resToken;
+    CHECK(!Bc250AllocationMayUseHiddenSegment(&blob));
+    blob.AllocationToken = primToken;
+    CHECK(!Bc250AllocationMayUseHiddenSegment(&blob));
+    blob.AllocationToken = cmdToken;
+    CHECK(!Bc250AllocationMayUseHiddenSegment(&blob));
+    CHECK(!Bc250AllocationMayUseHiddenSegment(NULL));
+
+    /*
+     * M2.1 (Corrida 196): abertura no conjunto suportado so' para alocacao da
+     * RADV publicada com CPU. Classe da UMD e alocacao sem CPU ficam fora.
+     */
+    blob.Flags = BC250_ALLOCATION_FLAG_CPU_VISIBLE;
+    blob.AllocationToken = 0x0000023400001000ull;
+    CHECK(Bc250AllocationLockNeedsApertureFallback(&blob, 1));
+    CHECK(!Bc250AllocationLockNeedsApertureFallback(&blob, 0));
+    blob.Flags = 0u;
+    CHECK(Bc250AllocationLockNeedsApertureFallback(&blob, 1));
+    blob.AllocationToken = resToken;
+    CHECK(!Bc250AllocationLockNeedsApertureFallback(&blob, 1));
+    blob.AllocationToken = primToken;
+    CHECK(!Bc250AllocationLockNeedsApertureFallback(&blob, 1));
+    blob.AllocationToken = cmdToken;
+    CHECK(!Bc250AllocationLockNeedsApertureFallback(&blob, 1));
+    CHECK(!Bc250AllocationLockNeedsApertureFallback(NULL, 1));
+    return 1;
+}
+
+/*
+ * M1b.1 (doc 554): dominio e comando da RADV. As flags so' valem em token da
+ * RADV; a politica e' a fonte unica de onde a alocacao pode morar.
+ */
+static int TestAbiRadvDomainAndCommand(void)
+{
+    const uint64_t radvToken = 0x0000023400001000ull;
+    const uint64_t resToken =
+        ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_RESOURCE << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 7u;
+    const uint64_t cmdToken =
+        ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_COMMAND << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 7u;
+    BC250_ALLOCATION_PRIVATE_V1 blob;
+    BC250_ALLOCATION_PRIVATE_V1 parsed;
+    BC250_ALLOCATION_SEGMENT_POLICY policy;
+
+    /* Formatacao e parse aceitam as flags em token da RADV... */
+    CHECK(Bc250AllocationAbiFormat(radvToken, 8192ull, 4096ull,
+        BC250_ALLOCATION_FLAG_CPU_VISIBLE | BC250_ALLOCATION_FLAG_RADV_DOMAIN_GTT |
+        BC250_ALLOCATION_FLAG_RADV_COMMAND, NULL, &blob) == BC250_ALLOCATION_ABI_OK);
+    CHECK(Bc250AllocationAbiParse(&blob, sizeof(blob), &parsed) == BC250_ALLOCATION_ABI_OK);
+    /* ...e recusam em classe da UMD, na formatacao e no blob forjado. */
+    CHECK(Bc250AllocationAbiFormat(resToken, 4096ull, 4096ull,
+        BC250_ALLOCATION_FLAG_RADV_DOMAIN_GTT, NULL, &blob) == BC250_ALLOCATION_ABI_BAD_FLAGS);
+    CHECK(Bc250AllocationAbiFormat(cmdToken, 4096ull, 4096ull,
+        BC250_ALLOCATION_FLAG_RADV_COMMAND, NULL, &blob) == BC250_ALLOCATION_ABI_BAD_FLAGS);
+    CHECK(Bc250AllocationAbiFormat(resToken, 4096ull, 4096ull, 0u, NULL, &blob) ==
+        BC250_ALLOCATION_ABI_OK);
+    blob.Flags |= BC250_ALLOCATION_FLAG_RADV_DOMAIN_GTT;
+    CHECK(Bc250AllocationAbiParse(&blob, sizeof(blob), &parsed) == BC250_ALLOCATION_ABI_BAD_FLAGS);
+    /* Bit seguinte continua desconhecido: o contrato nao virou peneira. */
+    CHECK(Bc250AllocationAbiFormat(radvToken, 4096ull, 4096ull, 0x20u, NULL, &blob) ==
+        BC250_ALLOCATION_ABI_BAD_FLAGS);
+
+    memset(&blob, 0, sizeof(blob));
+    blob.AllocationToken = radvToken;
+    /* GTT: segmento 2 primeiro, com ou sem CPU. */
+    blob.Flags = BC250_ALLOCATION_FLAG_RADV_DOMAIN_GTT | BC250_ALLOCATION_FLAG_CPU_VISIBLE;
+    CHECK(Bc250AllocationRadvSystemSegmentPolicy(&blob, 1, &policy));
+    CHECK(policy.SegmentSet == 0x3u && policy.Preferred0 == 2u && policy.Preferred1 == 1u);
+    /* VRAM sem CPU: transborda, local primeiro. */
+    blob.Flags = 0u;
+    CHECK(Bc250AllocationRadvSystemSegmentPolicy(&blob, 0, &policy));
+    CHECK(policy.SegmentSet == 0x3u && policy.Preferred0 == 1u && policy.Preferred1 == 2u);
+    /* VRAM com CPU (buffer linear do Present): fica no 1. */
+    CHECK(!Bc250AllocationRadvSystemSegmentPolicy(&blob, 1, &policy));
+    CHECK(policy.SegmentSet == 0u);
+    /* Comando: fica no 1 mesmo pedido em GTT (DX.43 le o DW0 pela VRAM). */
+    blob.Flags = BC250_ALLOCATION_FLAG_RADV_DOMAIN_GTT | BC250_ALLOCATION_FLAG_RADV_COMMAND;
+    CHECK(!Bc250AllocationRadvSystemSegmentPolicy(&blob, 1, &policy));
+    CHECK(!Bc250AllocationRadvSystemSegmentPolicy(&blob, 0, &policy));
+    /* Classe da UMD: nunca, nem sem CPU. */
+    blob.Flags = 0u;
+    blob.AllocationToken = resToken;
+    CHECK(!Bc250AllocationRadvSystemSegmentPolicy(&blob, 0, &policy));
+    CHECK(!Bc250AllocationRadvSystemSegmentPolicy(NULL, 0, &policy));
+    blob.AllocationToken = radvToken;
+    CHECK(!Bc250AllocationRadvSystemSegmentPolicy(&blob, 0, NULL));
     return 1;
 }
 
@@ -405,6 +549,8 @@ static int Run(void)
     CHECK(TestAbiFormatSuccessAndNegative());
     CHECK(TestAbiParseAllErrorCodes());
     CHECK(TestAbiTokenClassification());
+    CHECK(TestAbiGpuVaOnlySystemSegment());
+    CHECK(TestAbiRadvDomainAndCommand());
     return 1;
 }
 

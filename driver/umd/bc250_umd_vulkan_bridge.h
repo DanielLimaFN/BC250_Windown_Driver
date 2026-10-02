@@ -23,6 +23,7 @@ typedef struct _BC250_VK_DISPATCH {
     PFN_vkEnumeratePhysicalDevices vkEnumeratePhysicalDevices;
     PFN_vkGetPhysicalDeviceProperties vkGetPhysicalDeviceProperties;
     PFN_vkGetPhysicalDeviceQueueFamilyProperties vkGetPhysicalDeviceQueueFamilyProperties;
+    PFN_vkGetPhysicalDeviceFormatProperties vkGetPhysicalDeviceFormatProperties; /* Frente B */
     PFN_vkGetPhysicalDeviceMemoryProperties vkGetPhysicalDeviceMemoryProperties;
     PFN_vkCreateDevice vkCreateDevice;
     PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr;
@@ -36,8 +37,11 @@ typedef struct _BC250_VK_DISPATCH {
     PFN_vkCreateImage vkCreateImage;
     PFN_vkDestroyImage vkDestroyImage;
     PFN_vkGetImageMemoryRequirements vkGetImageMemoryRequirements;
+    PFN_vkGetImageSubresourceLayout vkGetImageSubresourceLayout; /* Frente B */
     PFN_vkCreateImageView vkCreateImageView;
     PFN_vkDestroyImageView vkDestroyImageView;
+    PFN_vkCreateBufferView vkCreateBufferView;   /* SHADER.2: Buffer<T> em t# */
+    PFN_vkDestroyBufferView vkDestroyBufferView;
     PFN_vkCreateSampler vkCreateSampler;
     PFN_vkDestroySampler vkDestroySampler;
     PFN_vkAllocateMemory vkAllocateMemory;
@@ -110,12 +114,14 @@ typedef uint64_t (VKAPI_PTR *PFN_radv_bc250_get_memory_gpu_va)(
 #define BC250_DX54_POOL_UNIFORM_BUFFERS (64u * 28u)
 #define BC250_DX54_POOL_SAMPLED_IMAGES (64u * 32u)
 #define BC250_DX54_POOL_SAMPLERS (64u * 32u)
+#define BC250_DX54_POOL_TEXEL_BUFFERS (64u * 32u) /* SHADER.2 */
 #define BC250_DX54_SAMPLER_CACHE_CAPACITY 64u
 
 /* UMD Vulkan Translation Bridge State */
 typedef struct BC250_VK_DESCRIPTOR_BATCH {
     VkDescriptorPool Pool;
     VkImageView Views[316];
+    VkBufferView BufferViews[316]; /* SHADER.2: SRV de buffer tipado */
     VkSampler Samplers[316];
     VkImageMemoryBarrier RestoreImages[316];
     struct BC250_VK_DESCRIPTOR_BATCH *Next;
@@ -208,6 +214,7 @@ typedef struct _BC250_UMD_VK_BRIDGE {
     VkDeviceSize UploadStagingHead;
     uint64_t UploadCoalescedCount;
     uint64_t UploadFlushCount;
+    uint32_t UploadCoalescedInBatch;
 
     /* Destiled linear presentation buffer for artifact-free scanout */
     VkBuffer LinearPresentBuf;
@@ -286,6 +293,18 @@ VkFormat Bc250UmdVkFormatFromDxgiStrict(uint32_t dxgiFormat);
 /* DX.24: swizzle que uma view de AMOSTRAGEM precisa para imitar o D3D (X8 -> alpha 1, A8 -> so' alpha). */
 VkComponentMapping Bc250UmdVkSrvComponentMapping(uint32_t dxgiFormat);
 BOOL Bc250UmdVkEnsureLinearPresentBuf(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, uint32_t width, uint32_t height);
+/*
+ * 4b (02/10, doc 564): a CPU NAO le mais o buffer linear pela BAR.
+ *
+ * MEDIDO (P0 como correlacao, doc 563): nas tres travas com 256 MB cobertas
+ * pelo coletor (200, 202, 203) um processo parou NO MEIO desta leitura em
+ * grade (~2,7 MB de VRAM pela BAR, ~20-29 ms); chance por acaso ~2e-6. A
+ * leitura e' so' telemetria. Com o interruptor em 0 a funcao nao mapeia nem le
+ * a memoria e devolve 0; a copia pela GPU para o buffer linear, o flush e o
+ * Present continuam identicos -- uma variavel: o acesso da CPU.
+ */
+#define BC250_UMD_CPU_INSPECTS_LINEAR_BUF 0
+
 uint32_t Bc250UmdVkInspectLinearPresentBuf(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, uint32_t width, uint32_t height);
 
 #endif /* BC250_UMD_VULKAN_BRIDGE_H */

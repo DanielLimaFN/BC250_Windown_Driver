@@ -233,6 +233,33 @@ uint32_t Bc250TripodWrapRingPointer(uint32_t Value, uint32_t RingBytes)
     return Value % RingBytes;
 }
 
+uint32_t Bc250TripodRingEntryConsumed(
+    uint32_t RptrRaw,
+    uint32_t StartBytes,
+    uint32_t TargetBytes,
+    uint32_t TailBytes,
+    uint32_t RingBytes)
+{
+    uint32_t start, target, tail, rptr;
+    uint32_t distRptr, distTarget, distTail;
+
+    if (RingBytes == 0u) {
+        return 0u;
+    }
+    start = StartBytes % RingBytes;
+    target = TargetBytes % RingBytes;
+    tail = TailBytes % RingBytes;
+    rptr = RptrRaw % RingBytes;
+    distTarget = (target + RingBytes - start) % RingBytes;
+    distTail = (tail + RingBytes - start) % RingBytes;
+    distRptr = (rptr + RingBytes - start) % RingBytes;
+    /* Entrada vazia ou alvo depois do fim publicado: incoerente. */
+    if (distTarget == 0u || distTarget > distTail) {
+        return 0u;
+    }
+    return (distRptr >= distTarget && distRptr <= distTail) ? 1u : 0u;
+}
+
 uint32_t Bc250PresentCopySucceeded(uint32_t CopyCompleted, uint32_t SameSurface)
 {
     return (CopyCompleted != 0u || SameSurface != 0u) ? 1u : 0u;

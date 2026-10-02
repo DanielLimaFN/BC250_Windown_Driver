@@ -80,6 +80,9 @@ static uint32_t Bc250ReflectSpirvBindings(
         } else if (op == 25 && len >= 9) { /* OpTypeImage: sampled, not buffer/storage */
             uint32_t resId = words[i + 1];
             if (resId < BC250_MAX_SPIRV_IDS && words[i + 3] != 5u && words[i + 7] == 1u) ctx->idType[resId] = 3;
+            /* SHADER.2: Dim=Buffer amostrado = Buffer<T> em t# (uniform texel
+             * buffer). Storage (Sampled=2) continua sem tipo e recusado. */
+            else if (resId < BC250_MAX_SPIRV_IDS && words[i + 3] == 5u && words[i + 7] == 1u) ctx->idType[resId] = 5;
         } else if (op == 27 && len >= 2) { /* OpTypeSampledImage */
             uint32_t resId = words[i + 1];
             if (resId < BC250_MAX_SPIRV_IDS) ctx->idType[resId] = 4;
@@ -110,6 +113,8 @@ static uint32_t Bc250ReflectSpirvBindings(
                 descType = VK_DESCRIPTOR_TYPE_SAMPLER;
             } else if (kind == 3) {
                 descType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+            } else if (kind == 5) {
+                descType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
             } else if (kind == 4) {
                 descType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             }

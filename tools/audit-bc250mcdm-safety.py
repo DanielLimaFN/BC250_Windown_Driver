@@ -760,15 +760,14 @@ def audit_gfx_ring_tripod_and_ib_inspection(errors: list[str]) -> None:
         # so o ARGUMENTO ("..._FLUSH_CNTL, 1u)"), e passava quando a CHAMADA
         # de escrita era removida e o argumento ficava para tras. O invariante
         # agora e a chamada inteira, comparada sem espacos.
-        flush_ws = re.sub(r"\s+", "", flush_map)
-        if ("Bc250MmioTopologyWrite32(&active->Core.MmioTransport,"
-                "BC250_ACTIVE_REG_HDP_MEM_COHERENCY_FLUSH_CNTL,1u)"
-                not in flush_ws):
-            errors.append(
-                "a drenagem do HDP nao e mais uma escrita de verdade: o "
-                "argumento ficou no fonte sem a chamada que o usa")
-        i_hdp = flush_map.find(
-            "BC250_ACTIVE_REG_HDP_MEM_COHERENCY_FLUSH_CNTL, 1u)")
+        #
+        # HDP.1 (28/09, doc 519) -- ESTE PORTAO CONGELAVA O ERRO. Ele exigia a
+        # escrita de 1 em BC250_ACTIVE_REG_HDP_MEM_COHERENCY_FLUSH_CNTL, que
+        # valia 0x3FC4 -- a INVALIDACAO de leitura do HDP. A drenagem nunca
+        # aconteceu. Agora exige o flush de ESCRITA real, pelo helper unico,
+        # ANTES do laco de invalidacao. O detalhe do helper e dos outros sitios
+        # esta em audit_hdp1_write_flush_is_real.
+        i_hdp = flush_map.find('Bc250ActiveHdpWriteFlush(active, "FLUSH_TLB")')
         i_loop = flush_map.find("for (vmid = 1u; vmid < BC250_VMID_COUNT")
         if i_hdp < 0:
             errors.append(
@@ -779,24 +778,19 @@ def audit_gfx_ring_tripod_and_ib_inspection(errors: list[str]) -> None:
             errors.append(
                 "o HDP e drenado DEPOIS da invalidacao de TLB: a ordem esta "
                 "invertida e a janela de visibilidade continua aberta")
-        for needle, label in (
-            ("[HDP_PT_FLUSH] FALHA:",
-             "falha de drenagem do HDP se declara, nunca passa calada"),
-            ("HdpFlush=%u",
-             "a linha da mascara publica se o HDP foi drenado"),
-        ):
-            if needle not in flush_map:
-                errors.append("drenagem do HDP: %s -- ausente" % label)
-        # O offset NAO e novo e nao pode virar numero solto: ele ja existe em
-        # bc250_gfx_ring_transaction.h e nas allowlists do transporte.
-        require(active,
-                "#define BC250_ACTIVE_REG_HDP_MEM_COHERENCY_FLUSH_CNTL 0x00003FC4u",
-                "offset do HDP declarado, igual ao ja catalogado", errors)
+        if "hdpFlushed = Bc250ActiveHdpWriteFlush(" not in flush_map:
+            errors.append(
+                "drenagem do HDP: o resultado do flush nao chega a linha da "
+                "mascara (HdpFlush=%u)")
+        if "HdpFlush=%u" not in flush_map:
+            errors.append("drenagem do HDP: a linha da mascara publica se o HDP foi drenado -- ausente")
+        if "BC250_ACTIVE_REG_HDP_MEM_COHERENCY_FLUSH_CNTL" in active:
+            errors.append(
+                "HDP.1: o nome falso BC250_ACTIVE_REG_HDP_MEM_COHERENCY_FLUSH_CNTL "
+                "voltou ao miniport (0x3FC4 e' invalidacao de leitura)")
         if "0x00003FC4u" not in transport_early:
             errors.append(
-                "o offset do HDP saiu da allowlist do transporte: a drenagem "
-                "seria recusada e o flush de TLB seguiria com a tabela "
-                "possivelmente invisivel")
+                "a invalidacao de leitura do HDP saiu da allowlist do transporte")
     # A REGRA VIVE NO CONTRATO, nao so' no miniport: regra que existe apenas no
     # miniport nao tem como falhar numa suite offline.
     for needle, label in (
@@ -4074,6 +4068,265 @@ def audit_umd_trace_reaches_the_evidence_file(errors: list[str]) -> None:
 
 
 
+def audit_descriptor_binding_never_drains(errors: list[str]) -> None:
+    """T4.3 (30/09) -- Corrida 182, medido:
+
+    dwm.exe (pid 1288) morreu com c0000005 em bc250umd.dll+0x8376. Com um build
+    de simbolos de bytes identicos no ponto, o endereco resolve para o laco de
+    batch->RestoreImages em Bc250UmdBindDrawDescriptors. A carga de superficie
+    aberta rodava DENTRO dessa funcao e drenava o lote; o FlushCommands
+    bem-sucedido chama Bc250UmdVkReleaseDescriptorBatches, que libera o batch
+    em preenchimento, e deixa o command buffer fora de gravacao.
+
+    Este portao trava:
+      1. o corpo de Bc250UmdBindDrawDescriptors nao chama nada que drene ou
+         carregue imagem (dreno, flush, upload de imagem, staging, blt, carga);
+      2. a carga existe em funcao propria;
+      3. Bc250UmdExecuteVkDraw chama a carga, re-obtem o command buffer e SO'
+         depois entra em Bc250UmdBindDrawDescriptors.
+    """
+    desc_path = ROOT / "driver" / "umd" / "bc250_umd_descriptors.c"
+    umd_path = ROOT / "driver" / "umd" / "bc250_d3d_umd.c"
+    for p in (desc_path, umd_path):
+        if not p.exists():
+            errors.append(f"fonte ausente para auditar o binding de descritores: {p.name}")
+            return
+    desc = strip_c_comments(desc_path.read_text(encoding="utf-8", errors="replace"))
+    umd = strip_c_comments(umd_path.read_text(encoding="utf-8", errors="replace"))
+
+    bind = function_body(desc, "static BOOL Bc250UmdBindDrawDescriptors(")
+    if not bind:
+        errors.append("T4.3: corpo de Bc250UmdBindDrawDescriptors nao encontrado")
+        return
+    for forbidden in ("Bc250UmdVkDrainPending(", "Bc250UmdVkFlushCommands(",
+                      "Bc250UmdVkUploadImageData(", "Bc250UmdVkCopyStagingBufferToImage(",
+                      "Bc250UmdBridgeGpuBlt(", "Bc250UmdMaterialize",
+                      "Bc250UmdVkEnsureUploadStaging("):
+        if forbidden in bind:
+            errors.append(
+                f"T4.3: Bc250UmdBindDrawDescriptors chama {forbidden} -- um dreno ali "
+                "libera o batch em preenchimento (Corrida 182, c0000005 em +0x8376)")
+
+    if not function_body(desc, "static void Bc250UmdMaterializeOpenedSrvImage("):
+        errors.append("T4.3: Bc250UmdMaterializeOpenedSrvImage ausente")
+    if not function_body(desc, "static void Bc250UmdMaterializeDrawSrvs("):
+        errors.append("T4.3: Bc250UmdMaterializeDrawSrvs ausente")
+
+    draw = function_body(umd, "static BOOL Bc250UmdExecuteVkDraw(")
+    if not draw:
+        errors.append("T4.3: corpo de Bc250UmdExecuteVkDraw nao encontrado")
+        return
+    pos_bind = draw.find("Bc250UmdBindDrawDescriptors(")
+    pos_mat = draw.find("Bc250UmdMaterializeDrawSrvs(")
+    pos_cmd = draw.find("Bc250UmdVkGetCommandBuffer(", pos_mat if pos_mat >= 0 else 0)
+    if pos_bind < 0 or pos_mat < 0 or pos_mat > pos_bind:
+        errors.append("T4.3: Bc250UmdExecuteVkDraw nao carrega as SRVs abertas ANTES do binding")
+    elif pos_cmd < 0 or pos_cmd > pos_bind:
+        errors.append("T4.3: Bc250UmdExecuteVkDraw nao re-obtem o command buffer entre a carga e o binding")
+
+
+def audit_draw_flush_matches_readback(errors: list[str]) -> None:
+    """T4.5 (30/09) -- Corrida 184, medido: 144 flushes para 143 draws por
+    abertura do menu Iniciar ("Lote=1 Direto=0 FlushAgora=1"). O flush usava
+    so' DrawReadbackCount < 3; a leitura so' roda em alvo >= 1024x512, e o alvo
+    640x640 do menu nunca incrementava o contador. Este portao exige que as
+    duas decisoes saiam de Bc250UmdDrawReadbackTargetQualifies.
+    """
+    umd_path = ROOT / "driver" / "umd" / "bc250_d3d_umd.c"
+    if not umd_path.exists():
+        errors.append("fonte ausente para auditar o flush do draw: bc250_d3d_umd.c")
+        return
+    umd = strip_c_comments(umd_path.read_text(encoding="utf-8", errors="replace"))
+    if not function_body(umd, "static BOOL Bc250UmdDrawReadbackTargetQualifies("):
+        errors.append("T4.5: Bc250UmdDrawReadbackTargetQualifies ausente")
+        return
+    readback = function_body(umd, "static void Bc250UmdReadbackDrawTarget(")
+    if "Bc250UmdDrawReadbackTargetQualifies(" not in readback:
+        errors.append("T4.5: Bc250UmdReadbackDrawTarget nao usa a fonte unica de elegibilidade")
+    if "1024u" in readback or "512u" in readback:
+        errors.append("T4.5: Bc250UmdReadbackDrawTarget voltou a ter checagem de tamanho propria")
+    draw = function_body(umd, "static BOOL Bc250UmdExecuteVkDraw(")
+    decisions = [rhs for rhs in re.findall(r"readbackActive\s*=([^;]*);", draw)
+                 if "DrawReadbackCount" in rhs]
+    if not decisions or any("Bc250UmdDrawReadbackTargetQualifies(" not in rhs for rhs in decisions):
+        errors.append("T4.5: o flush do draw (readbackActive) nao usa a mesma elegibilidade da leitura "
+                      "-- alvo pequeno fazia TODO draw esperar a GPU (Corrida 184)")
+
+
+def audit_opened_surface_is_refreshed_per_frame(errors: list[str]) -> None:
+    """T4.6 (30/09) -- Corrida 185, medido pelo token nos dois logs: o dwm.exe
+    copiava a superficie aberta do menu UMA vez (09:47:12.591) e o menu desenhava
+    nela depois (564 de 564 draws). Este portao exige: OpenResource marca o
+    recurso como aberto; os dois Presents DXGI avancam o contador de quadro; e a
+    etapa de carga da T4.3 recopia o recurso aberto quando o quadro mudou.
+    """
+    umd_path = ROOT / "driver" / "umd" / "bc250_d3d_umd.c"
+    desc_path = ROOT / "driver" / "umd" / "bc250_umd_descriptors.c"
+    for p in (umd_path, desc_path):
+        if not p.exists():
+            errors.append(f"fonte ausente para auditar a recopia de superficie aberta: {p.name}")
+            return
+    umd = strip_c_comments(umd_path.read_text(encoding="utf-8", errors="replace"))
+    desc = strip_c_comments(desc_path.read_text(encoding="utf-8", errors="replace"))
+    if "OpenedShared = TRUE" not in function_body(umd, "VOID APIENTRY Bc250Umd10OpenResource("):
+        errors.append("T4.6: OpenResource nao marca OpenedShared")
+    for sig in ("HRESULT APIENTRY Bc250DxgiPresent(", "HRESULT APIENTRY Bc250DxgiPresent1("):
+        if "++device->DxgiPresentCount" not in function_body(umd, sig):
+            errors.append(f"T4.6: {sig.split()[-1]} nao avanca DxgiPresentCount")
+    mat = function_body(desc, "static void Bc250UmdMaterializeDrawSrvs(")
+    if ("Bc250UmdRefreshOpenedSrvImage(" not in mat or "OpenedShared" not in mat or
+            "SharedRefreshPresent != device->DxgiPresentCount" not in mat):
+        errors.append("T4.6: a etapa de carga nao recopia a superficie aberta quando o quadro muda "
+                      "(Corrida 185: DWM compunha uma foto tirada antes do conteudo)")
+    refresh = function_body(desc, "static void Bc250UmdRefreshOpenedSrvImage(")
+    if "Bc250UmdVkCopyStagingBufferToImage(" not in refresh or "Bc250UmdBridgeGpuBlt(" not in refresh:
+        errors.append("T4.6: a recopia nao usa o caminho SDMA + staging da camada 2")
+
+
+def audit_umd_log_collection_is_bounded_to_the_bind(errors: list[str]) -> None:
+    # Corrida 189 (30/09): o binder copiava e concatenava por Get-Content TODOS os
+    # BC250_UMD_LOG_* das pastas Temp (900 arquivos antigos, 1,1 a 1,7 GB) durante
+    # os primeiros ~5 min da janela fisica, carga de CPU e memoria em cima do ensaio.
+    binder_path = ROOT / "tools" / "bind-bc250mcdm-lab.ps1"
+    if not binder_path.exists():
+        errors.append("binder de laboratorio ausente para auditar o corte da coleta da UMD")
+        return
+    binder = binder_path.read_text(encoding="utf-8", errors="replace")
+    require(binder, "$bindUmdLogCutoffUtc = [datetime]::UtcNow",
+            "corte de tempo da coleta da UMD registrado antes do bind", errors)
+    require(binder, "Where-Object { $_.LastWriteTimeUtc -ge $CutoffUtc }",
+            "coleta da UMD filtrada pelo inicio do bind", errors)
+    if binder.count("Get-Bc250BindUmdLogs ") < 3:
+        errors.append("as tres coletas da UMD (snapshot e duas FINAL) devem passar por Get-Bc250BindUmdLogs")
+    forbid(binder, "(Get-Content -LiteralPath $umdLog.FullName",
+           "agregado do snapshot por Get-Content (carrega o log inteiro em memoria)", errors)
+    forbid(binder, "(Get-Content -LiteralPath $log.FullName",
+           "agregado FINAL por Get-Content (carrega o log inteiro em memoria)", errors)
+
+def audit_frente_b_alias_is_bounded(errors: list[str]) -> None:
+    # Frente B (doc 547): VkImage LINEAR sobre a propria alocacao WDDM, por
+    # importacao de GPUVA numa RADV nossa. Corrida 189: a imagem otimizada de 12 MB
+    # de uma superficie aberta estourou o segmento e o DWM recriou o device.
+    umd = ROOT / "driver" / "umd"
+    res_vk = (umd / "bc250_umd_resource_vk.c").read_text(encoding="utf-8", errors="replace")
+    desc = (umd / "bc250_umd_descriptors.c").read_text(encoding="utf-8", errors="replace")
+    d3d = (umd / "bc250_d3d_umd.c").read_text(encoding="utf-8", errors="replace")
+    mirror = (umd / "bc250_radv_import.h").read_text(encoding="utf-8", errors="replace")
+    require(res_vk, "Bc250UmdFrenteBPreCheck(", "alias decide pela politica pura (pre)", errors)
+    caps = (umd / "bc250_umd_caps_probe.c").read_text(encoding="utf-8", errors="replace")
+    require(caps, "if (RenderTarget) return", "Corrida 190: render target fora do alias ate o mecanismo ser medido", errors)
+    require(caps, "if (!OpenedSurface) return", "Corridas 191/192: alias so em superficie aberta de outro processo", errors)
+    require(res_vk, "Bc250UmdFrenteBLayoutCheck(", "alias confere o layout declarado pela RADV", errors)
+    require(res_vk, "imgInfo.tiling = VK_IMAGE_TILING_LINEAR;", "alias so' com imagem LINEAR", errors)
+    require(res_vk, "imgInfo.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;",
+            "imagem do alias nasce PREINITIALIZED (preserva o conteudo)", errors)
+    require(res_vk, "barrier.oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;",
+            "adocao da superficie aberta parte de PREINITIALIZED", errors)
+    require(desc, "resource->OpenedShared && !resource->VkMemAliased",
+            "T4.6 nao recopia a memoria sobre si mesma quando ha alias", errors)
+    require(d3d, "dst->VkMemAliased = src->VkMemAliased;",
+            "rotacao de identidade leva o vinculo imagem/alocacao junto", errors)
+    radv = ROOT.parent / "bc250-win" / "bc250-win" / "mesa-radv-wddm" / "src" / "amd" / "vulkan" / "radv_bc250_import.h"
+    if radv.exists():
+        radv_text = radv.read_text(encoding="utf-8", errors="replace")
+        for token in ("0x42C25001", "0xBC25FB01u"):
+            if token not in mirror or token not in radv_text:
+                errors.append(f"Frente B: sType/magic {token} divergente entre UMD e RADV")
+    else:
+        errors.append("Frente B: radv_bc250_import.h ausente na arvore da RADV")
+
+def audit_hidden_segment_is_derived_and_bounded(errors: list[str]) -> None:
+    # M2 (doc 548): segmento 3 = VRAM alem do BAR. O tamanho TEM de sair da
+    # topologia lida no boot (UMA da BIOS varia de 512 MB a 8 GB) e o acesso de
+    # CPU nunca pode mapear alem do BAR.
+    wdk = ROOT / "driver" / "wdk"
+    core = ROOT / "driver" / "core"
+    active = (wdk / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    callbacks = (wdk / "bc250_mcdm_callbacks.c").read_text(encoding="utf-8", errors="replace")
+    abi = (core / "bc250_allocation_abi_contract.c").read_text(encoding="utf-8", errors="replace")
+    seg = (core / "bc250_segment_address_contract.c").read_text(encoding="utf-8", errors="replace")
+    require(active, "context->Core.TopologyEvidence.AddressSpace.TotalBytes,\n            context->Core.TopologyEvidence.AddressSpace.CpuVisibleBytes,\n            BC250_HIDDEN_SEGMENT_TOP_GUARD_BYTES,",
+            "segmento 3 calculado da topologia lida (sem constante de tamanho)", errors)
+    require(active, "[M2_SEGMENTO3] VramTotalMiB=%llu CpuVisibleMiB=%llu (lidos da placa)",
+            "o valor lido da placa vai ao log de cada corrida", errors)
+    require(callbacks, "const UINT32 segmentCount = (runtimeCaps.HiddenSegmentBytes != 0u) ? 3u : 2u;",
+            "QUERYSEGMENT4 so declara o segmento 3 quando ele existe", errors)
+    require(callbacks, "hidden->BaseAddress.QuadPart = (LONGLONG)runtimeCaps.HiddenSegmentBaseOffset;",
+            "base do segmento 3 vem das caps", errors)
+    forbid(callbacks, "hidden->Flags.CpuVisible = 1u", "segmento 3 nao pode ser declarado visivel a CPU", errors)
+    require(callbacks, "if (pageOffsetInSegment >= Caps->HiddenSegmentBytes) {",
+            "PTE do segmento 3 confere a faixa", errors)
+    require(callbacks, "Caps->HiddenSegmentBaseOffset + pageOffsetInSegment;",
+            "PTE do segmento 3 usa a base do segmento 3", errors)
+    require(active, "VramOffset > (uint64_t)cpuVisibleBytes - BC250_ACTIVE_PT_ENTRY_BYTES",
+            "mapeamento sob demanda recusa offset alem do BAR", errors)
+    require(abi, "tokenClass == BC250_ALLOCATION_TOKEN_CLASS_RESOURCE;",
+            "classe RESOURCE da UMD conta como classe da UMD", errors)
+    require(abi, "return Bc250AllocationTokenIsUmdClass(Request->AllocationToken) ? 0 : 1;\n}\n\nint Bc250AllocationLockNeedsApertureFallback(",
+            "alocacao da UMD nunca vai ao segmento 3 (fonte unica de classe)", errors)
+    # M2.1 (Corrida 196): com o segmento 3 declarado, Lock2 da RADV exige a
+    # abertura no conjunto suportado (allocation-usage-tracking.md).
+    require(abi, "if (Request == NULL || !CpuVisible) return 0;\n    return Bc250AllocationTokenIsUmdClass(Request->AllocationToken) ? 0 : 1;",
+            "M2.1: abertura so' para alocacao da RADV com CPU", errors)
+    require(active, "Bc250AllocationLockNeedsApertureFallback(&request, 1) &&\n                    InterlockedCompareExchange64(&context->HiddenSegmentBytesPublished, 0, 0) > 0) {",
+            "M2.1: abertura so' quando o segmento 3 foi publicado", errors)
+    require(active, "info->SupportedReadSegmentSet = 0x1u | 0x2u;\n                    info->SupportedWriteSegmentSet = 0x1u | 0x2u;\n                    info->PreferredSegment.Value = 0u;\n                    info->PreferredSegment.SegmentId0 = 1u;",
+            "M2.1: conjunto 1|2 com o segmento 1 preferido", errors)
+    forbid(active, "}                if (CreateAllocation->Flags.Resource", "linha fundida no CreateAllocation (resto do PowerShell)", errors)
+    require(active, "Bc250AllocationMayUseHiddenSegment(&request)",
+            "CreateAllocation usa a politica unica do segmento 3", errors)
+    if "#define BC250_HIDDEN_SEGMENT_TOP_GUARD_BYTES" not in (core / "bc250_segment_address_contract.h").read_text(encoding="utf-8", errors="replace"):
+        errors.append("M2: guarda do topo do segmento 3 ausente")
+    require(seg, "if (CpuVisibleBytes >= VramTotalBytes ||", "sem VRAM alem do BAR = sem segmento 3", errors)
+    require(active, "context->Core.TopologyEvidence.AddressSpace.VramBaseOffset :\n        BC250_GCVM_VRAM_MC_BASE_FALLBACK;", "base PA da VRAM vem da topologia lida (UMA variavel)", errors)
+    forbid(active, "base MC medida 0x%llX diverge de", "MMU nao pode recusar base medida diferente da constante historica", errors)
+    require(active, "config.DummyPagePhysical = topologyBase + Context->GlobalMmuDummyOffset;", "dummy page na base medida", errors)
+    require(active, "if (region->Role == BC250_VRAM_ROLE_PLATFORM_RESERVED &&\n                    region->Offset == context->Core.TopologyEvidence.AddressSpace.CpuVisibleBytes &&", "Corrida 194: so o marcador opaco exato e ignorado no calculo do segmento 3", errors)
+
+def audit_radv_stderr_reaches_evidence(errors: list[str]) -> None:
+    """I.1 (30/09, doc 545): o winsys WDDM2 da RADV so' diz POR QUE falhou em
+    fprintf(stderr). 528 vkCreateDevice -3 e 1.124 vkAllocateMemory -2 ficaram
+    sem causa. A ponte redireciona o stderr do processo para
+    BC250_UMD_LOG_<pid>-RADV.txt logo depois de carregar o ICD, e antes de
+    qualquer vkCreateInstance/vkCreateDevice."""
+    p = ROOT / "driver" / "umd" / "bc250_umd_vulkan_bridge.c"
+    if not p.exists():
+        errors.append("fonte ausente: bc250_umd_vulkan_bridge.c")
+        return
+    code = strip_c_comments(p.read_text(encoding="utf-8", errors="replace"))
+    fn = function_body(code, "static void Bc250UmdVkRedirectRadvStderr(")
+    if not fn or "-RADV.txt" not in fn or "Bc250UmdVkRedirectStderrTo(" not in fn:
+        errors.append("I.1: Bc250UmdVkRedirectRadvStderr ausente ou sem redirecionamento para -RADV.txt")
+    # I.1b (Corrida 187): freopen_s abre SEM compartilhamento; o binder nao
+    # copiou o -RADV com o dwm.exe vivo e a corrida abortou. O arquivo tem de
+    # ser aberto com FILE_SHARE_READ|WRITE e ligado ao stderr por _dup2.
+    to = function_body(code, "static BOOL Bc250UmdVkRedirectStderrTo(")
+    if (not to or "FILE_SHARE_READ" not in to or "FILE_SHARE_WRITE" not in to
+            or "_dup2(" not in to or "freopen_s(&nul, \"NUL\"" not in to):
+        errors.append("I.1b: o -RADV nao e' aberto com compartilhamento e ligado ao stderr por _dup2")
+    if re.search(r"freopen_s\(\s*&\w+\s*,\s*path\b", code):
+        errors.append("I.1b: freopen_s sobre o arquivo de log e' proibido (sem compartilhamento; abortou a Corrida 187)")
+    # I.1c (Corrida 188): o redirecionamento derrubou 3 processos AppContainer
+    # (0xC0000409, reproduzido offline). AppContainer tem de ser excluido ANTES
+    # de qualquer operacao no stderr, e o resto roda sob manipulador de
+    # parametro invalido da thread.
+    p_ac = fn.find("Bc250UmdVkProcessIsAppContainer(")
+    p_to = fn.find("Bc250UmdVkRedirectStderrTo(")
+    if p_ac < 0 or p_to < 0 or p_ac > p_to:
+        errors.append("I.1c: o redirecionamento nao exclui processos AppContainer antes de mexer no stderr")
+    if "_set_thread_local_invalid_parameter_handler(" not in fn:
+        errors.append("I.1c: redirecionamento sem manipulador de parametro invalido da thread")
+    isac = function_body(code, "static BOOL Bc250UmdVkProcessIsAppContainer(")
+    if "TokenIsAppContainer" not in isac or "return TRUE" not in isac:
+        errors.append("I.1c: deteccao de AppContainer ausente ou sem falha fechada (tipo desconhecido = AppContainer)")
+    init = function_body(code, "static BOOL Bc250UmdVkBridgeInitInternal(")
+    p_icd = init.find("Bc250LocateAndLoadIcd(")
+    p_red = init.find("Bc250UmdVkRedirectRadvStderr(")
+    p_inst = init.find("vkCreateInstance(")
+    if p_icd < 0 or p_red < 0 or not (p_icd < p_red) or (p_inst >= 0 and p_red > p_inst):
+        errors.append("I.1: o stderr da RADV nao e' redirecionado entre a carga do ICD e o vkCreateInstance")
+
+
 def audit_composition_never_submits_a_context(errors: list[str]) -> None:
     """Corrida 13/09 08:12 -- o discriminante, medido:
 
@@ -7300,6 +7553,20 @@ def audit_gpuva_snapshot_capacity(errors: list[str]) -> None:
         errors.append(
             "capacidade do journal abaixo do envelope C3.15: "
             f"{journal_match.group(1)} < 1024")
+    # DX.94 (Corrida 152): espaco em 4096 (a 152 ficou em Mapped=1024 com
+    # 26.195 PUBLICACAO_FALHA), journal em 1024 porque ele limita o lote do
+    # commit: 1024 x ~123 us ~ 126 ms no pior caso; com 4096 nos dois seriam
+    # ~500 ms dentro do FLUSH_TLB, o padrao das Corridas 128/129. Subir o
+    # journal exige antes aplicar o lote numa reconstrucao so'.
+    if match is not None and int(match.group(1)) < 4096:
+        errors.append(
+            "DX.94: BC250_GPUVA_SPACE_MAX_RANGES abaixo de 4096 "
+            f"({match.group(1)}); a Corrida 152 esgotou 1024")
+    if journal_match is not None and int(journal_match.group(1)) != 1024:
+        errors.append(
+            "DX.94: BC250_GPUVA_JOURNAL_MAX_CHANGES deve ficar em 1024 "
+            f"({journal_match.group(1)}): ele limita o lote do commit, e o "
+            "commit ainda reconstroi o espaco por mudanca")
     require(journal_test, "C315_SPARSE_RUNS = 461",
             "replay do update esparso medido na corrida 18:21", errors)
     require(journal_test, "c315Journal.ChangeCount == C315_SPARSE_RUNS",
@@ -8545,6 +8812,57 @@ def audit_dx86_no_dbgprint_in_driver(errors: list[str]) -> None:
             errors.append(f"DX.86: chamada de DbgPrint/KdPrint em {path.name}")
 
 
+def audit_dx89_shared_resource_not_cpu_visible(errors: list[str]) -> None:
+    """DX.89: recurso D3D MISC_SHARED nao pede CPU_VISIBLE (hipotese a do doc
+    476); recurso comum da classe RESOURCE continua pedindo, e a suite prova os
+    dois lados."""
+    winsys = strip_c_comments((ROOT / "driver" / "umd" / "bc250_wddm_winsys.c")
+                              .read_text(encoding="cp1252", errors="replace"))
+    umd = strip_c_comments((ROOT / "driver" / "umd" / "bc250_d3d_umd.c")
+                           .read_text(encoding="cp1252", errors="replace"))
+    test = (ROOT / "driver" / "tests" / "bc250_wddm_winsys_test.c").read_text(
+        encoding="utf-8", errors="replace")
+    require(winsys, "(tokenClass == BC250_ALLOCATION_TOKEN_CLASS_RESOURCE && !sharedResource)",
+            "DX.89 recurso compartilhado sem CPU_VISIBLE", errors)
+    require(umd, "binding.Shared = (pCreate->MiscFlags & D3D10_DDI_RESOURCE_MISC_SHARED)",
+            "DX.89 CreateResource marca o recurso compartilhado", errors)
+    require(test, "(g_State.LastAllocateFlags & BC250_ALLOCATION_FLAG_CPU_VISIBLE) == 0u",
+            "DX.89 suite prova o recurso compartilhado sem CPU_VISIBLE", errors)
+    require(test, "(g_State.LastAllocateFlags & BC250_ALLOCATION_FLAG_CPU_VISIBLE) != 0u",
+            "DX.89 suite prova o contraponto (recurso comum com CPU_VISIBLE)", errors)
+    # Corrida 138: a UMD omitiu a flag e o KMD devolveu CpuVisible=1 mesmo assim,
+    # porque a classe RESOURCE exigia CPU pelo token. Para RESOURCE, manda a flag.
+    abi = strip_c_comments((ROOT / "driver" / "core" / "bc250_allocation_abi_contract.c")
+                           .read_text(encoding="utf-8", errors="replace"))
+    cpu = function_body(abi, "int Bc250AllocationRequiresCpuAccess(")
+    if not cpu or "BC250_ALLOCATION_TOKEN_CLASS_RESOURCE" in cpu:
+        errors.append("DX.89: classe RESOURCE voltou a exigir CPU pelo token no KMD")
+
+
+def audit_dx88_log_file_single_owner(errors: list[str]) -> None:
+    """DX.88: uma so' thread escreve no arquivo de log por vez; as demais vao
+    ao anel. Sem isso, linhas partidas na drenagem se intercalavam (Corrida 136:
+    um FLUSH_TLB de 36 ms lido como 78,7 s)."""
+    disp = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_display_ddi.c")
+                            .read_text(encoding="utf-8", errors="replace"))
+    body = function_body(disp, "void Bc250DisplayLog(const char *Format, ...)")
+    if not body:
+        errors.append("DX.88: Bc250DisplayLog nao encontrado")
+        return
+    acquire = body.find("InterlockedCompareExchange(&g_Bc250LogFileOwner, 1, 0)")
+    release = body.rfind("InterlockedExchange(&g_Bc250LogFileOwner, 0);")
+    create = body.find("ZwCreateFile(")
+    if acquire < 0 or release < 0 or create < 0 or not (acquire < create < release):
+        errors.append("DX.88: escrita do arquivo de log fora do dono unico g_Bc250LogFileOwner")
+    for token in ("ZwWriteFile(", "ZwFlushBuffersFile(", "ZwClose("):
+        for m in re.finditer(re.escape(token), body):
+            if not (acquire < m.start() < release):
+                errors.append(f"DX.88: {token} fora da janela do dono unico do arquivo")
+                break
+    drain = function_body(disp, "static VOID Bc250LogRingDrainToFile(")
+    require(drain, "ZwWriteFile(", "DX.88 drenagem do anel escreve no arquivo", errors)
+
+
 def audit_dx87_crumbs_reach_disk(errors: list[str]) -> None:
     """DX.87: as migalhas MMIO tem espelho em RAM e o escritor do rastro DX.56
     as grava em disco a cada periodo; a pagina de VRAM nao sobreviveu ao reset
@@ -8565,6 +8883,1140 @@ def audit_dx87_crumbs_reach_disk(errors: list[str]) -> None:
             "DX.87 escritor do rastro grava o registro de migalhas", errors)
     decoder = (ROOT / "tools" / "decode-bc250-paging-trace.py").read_text(encoding="utf-8")
     require(decoder, "CRUMB_MAGIC = 0x31524342", "DX.87 decodificador le as migalhas", errors)
+
+
+def audit_fps1_gpuva_rebuild_is_linear(errors: list[str]) -> None:
+    """FPS.1 (Corrida 150): o FLUSH_TLB somou 490 s de 600 s; o commit do journal
+    reconstruia o espaco com checagem de sobreposicao contra 1024 slots por faixa
+    e copias byte a byte volatile. A reconstrucao usa a reinsercao confiavel so'
+    para faixas ja validas; a faixa nova continua pela InsertRange completa."""
+    space = strip_c_comments((ROOT / "driver" / "core" / "bc250_gpuva_space_contract.c")
+                             .read_text(encoding="utf-8", errors="replace"))
+    snap = strip_c_comments((ROOT / "driver" / "core" / "bc250_gpuva_snapshot_contract.c")
+                            .read_text(encoding="utf-8", errors="replace"))
+    for label, text, fn in (("espaco", space, "static void Bc250GpuvaCopySpace("),
+                            ("snapshot", snap, "static void Bc250GpuvaCopySnapshot(")):
+        body = function_body(text, fn)
+        if "volatile" in body or "__movsq(" not in body:
+            errors.append(f"FPS.1: copia do {label} voltou a ser byte a byte ou perdeu __movsq")
+    rep = function_body(space, "BC250_GPUVA_STATUS Bc250GpuvaSpaceReplaceRangeTransactional(")
+    if rep.count("Bc250GpuvaSpaceAppendTrusted(Scratch, &fragment)") != 3:
+        errors.append("FPS.1: reconstrucao nao usa a reinsercao confiavel nos tres fragmentos")
+    if "Bc250GpuvaSpaceInsertRange(Scratch, &mapped" not in rep:
+        errors.append("FPS.1: faixa nova deixou de passar pela InsertRange completa")
+    if space.count("Bc250GpuvaSpaceAppendTrusted(") != 4:
+        errors.append("FPS.1: reinsercao confiavel usada fora da reconstrucao")
+    test = (ROOT / "driver" / "tests" / "gpuva_space_contract_test.c").read_text(encoding="utf-8")
+    require(test, "Bc250RunGpuvaRebuildPropertyTest", "FPS.1 teste de propriedade presente", errors)
+
+
+def audit_dx95_set_root_never_touches_vmid8(errors: list[str]) -> None:
+    """DX.95 (Corridas 151 e 153): SetRootPageTable de contexto de usuario
+    escrevia a raiz dele no VMID8 (paginacao) com um fill do SDMA em voo; o
+    SDMA parou (0x10E_4 na 151, TDR na 153). A raiz so' e' registrada; quem
+    instala VMID e' o submit."""
+    miniport = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_active_miniport.c")
+                                .read_text(encoding="utf-8", errors="replace"))
+    body = function_body(miniport, "NTSTATUS Bc250ActiveSetRootPageTableObject(")
+    if not body:
+        errors.append("DX.95: Bc250ActiveSetRootPageTableObject nao encontrada")
+        return
+    for forbidden in ("Bc250GcvmVmid8Install(", "Bc250GcvmVmid8Uninstall(",
+                      "Bc250GcvmInstallVmid(", "Bc250ActiveVmidWrite32",
+                      "Bc250ActiveFlushVmid8Only", "Bc250ActiveFlushVmidTlb"):
+        if forbidden in body:
+            errors.append(f"DX.95: SetRootPageTable voltou a programar VMID ({forbidden})")
+    if "DX95 Node%u: raiz registrada" not in body:
+        errors.append("DX.95: SetRootPageTable perdeu o log de registro da raiz")
+    if "context->Vmid8InstalledContext = NULL;" not in body:
+        errors.append("DX.95: SetRootPageTable nao invalida a contabilidade do VMID8 do proprio contexto")
+
+
+def audit_fps3b_sdma_retire_high_resolution_timer(errors: list[str]) -> None:
+    """FPS.3b (Corrida 154): a conclusao da paginacao esperava o tique de
+    15,6 ms do KTIMER. O timer de alta resolucao so' enfileira o KDPC ja'
+    validado; o RemoveDevice o apaga esperando o callback, com IsActive=0,
+    antes de liberar o contexto."""
+    active = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_active_miniport.c")
+                              .read_text(encoding="utf-8", errors="replace"))
+    cb = function_body(active, "static VOID Bc250ActiveSdmaRetirementHrCallback(")
+    if not cb:
+        errors.append("FPS.3b: callback do timer de alta resolucao ausente")
+    else:
+        if "KeInsertQueueDpc(&context->SdmaRetirementDpc, NULL, NULL);" not in cb:
+            errors.append("FPS.3b: callback nao enfileira o KDPC de aposentadoria")
+        for bad in ("DxgkCbNotifyDpc", "Bc250ActiveSdmaRetireAndNotify(", "DxgkCbSynchronizeExecution"):
+            if bad in cb:
+                errors.append(f"FPS.3b: callback de EX_TIMER chama {bad} (so' o KDPC pode)")
+    arm = function_body(active, "static VOID Bc250ActiveSdmaRetirementArm(")
+    if "ExSetTimer(Context->SdmaRetirementHrTimer" not in arm or "KeSetTimerEx(&Context->SdmaRetirementTimer" not in arm:
+        errors.append("FPS.3b: armar nao usa o timer de alta resolucao com o KTIMER como reserva")
+    ens = function_body(active, "static VOID Bc250ActiveSdmaRetirementEnsureScheduled(")
+    if "Bc250ActiveSdmaRetirementArm(Context);" not in ens or "KeSetTimerEx" in ens:
+        errors.append("FPS.3b: EnsureScheduled nao passa pelo armar unico")
+    if ("ExAllocateTimer(" not in active or
+            "Bc250ActiveSdmaRetirementHrCallback, context, EX_TIMER_HIGH_RESOLUTION)" not in active):
+        errors.append("FPS.3b: alocacao do timer sem EX_TIMER_HIGH_RESOLUTION")
+    rem = function_body(active, "static NTSTATUS Bc250DxgkDdiRemoveDeviceActiveImpl(")
+    i_act = rem.find("InterlockedExchange(&context->IsActive, 0);")
+    i_del = rem.find("ExDeleteTimer(context->SdmaRetirementHrTimer, TRUE, TRUE, NULL);")
+    i_free = rem.find("ExFreePoolWithTag(context,")
+    if not (0 <= i_act < i_del < i_free):
+        errors.append("FPS.3b: RemoveDevice precisa de IsActive=0, depois ExDeleteTimer(Cancel,Wait), antes de liberar o contexto")
+    stop = function_body(active, "void Bc250ActiveSdmaRetirementTimerStop(")
+    if "ExCancelTimer(Context->SdmaRetirementHrTimer, NULL);" not in stop:
+        errors.append("FPS.3b: Stop nao cancela o timer de alta resolucao")
+
+
+def audit_dx96_hdp_misc_written_once(errors: list[str]) -> None:
+    """DX.96-HDP (doc 509): HDP_MISC_CNTL e' escrito uma vez na init (bit 0,
+    FLUSH_INVALIDATE_CACHE, como hdp_v5_0_init_registers), nunca em tempo de
+    execucao. A sequencia antiga o alternava em todo submit e em cada
+    verificacao de conclusao."""
+    present = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_sdma_present.c")
+                               .read_text(encoding="utf-8", errors="replace"))
+    ring = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_sdma_ring_work.c")
+                            .read_text(encoding="utf-8", errors="replace"))
+    hdp = function_body(present, "static void Bc250SdmaPresentHdp(")
+    if not hdp:
+        errors.append("DX.96: Bc250SdmaPresentHdp nao encontrada")
+    elif "HDP_MISC" in hdp:
+        errors.append("DX.96: Bc250SdmaPresentHdp voltou a tocar HDP_MISC em tempo de execucao")
+    init = function_body(present, "static void Bc250SdmaPresentHdpInitOnce(")
+    if not init or "BC250_HDP_MISC_FLUSH_INVALIDATE_CACHE_MASK" not in init:
+        errors.append("DX.96: escrita unica de HDP_MISC (FLUSH_INVALIDATE_CACHE) ausente")
+    # Toda escrita de registrador SDMA e' Bc250SdmaRegWrite(ctx, OFFSET, valor);
+    # conta as que miram HDP_MISC, ignorando espacos e quebras de linha.
+    compact = re.sub(r"\s+", "", present)
+    misc_writes = len(re.findall(
+        r"Bc250SdmaRegWrite\([^;]*?BC250_SDMA0_REG_HDP_MISC-BC250_SDMA0_MMIO_WINDOW_START,", compact))
+    writes = present.count("BC250_SDMA0_REG_HDP_MISC - BC250_SDMA0_MMIO_WINDOW_START, planned")
+    if writes != 1 or misc_writes != 1:
+        errors.append("DX.96: HDP_MISC escrito fora da init unica em bc250_sdma_present.c")
+    init_call = function_body(present, "NTSTATUS Bc250SdmaPresentInit(")
+    if "Bc250SdmaPresentHdpInitOnce(&g_Bc250SdmaPresent);" not in init_call:
+        errors.append("DX.96: Bc250SdmaPresentInit nao chama a init unica de HDP_MISC")
+    ring_hdp = function_body(ring, "static uint32_t Bc250SdmaHdp(")
+    if not ring_hdp or "R_HDP_MISC" in ring_hdp:
+        errors.append("DX.96: Bc250SdmaHdp (ring work) voltou a tocar HDP_MISC")
+    if ring.count("Bc250SdmaWrite(Context, R_HDP_MISC,") != 1:
+        errors.append("DX.96: ring work escreve HDP_MISC fora da restauracao do snapshot (Lei 5)")
+
+
+def audit_hdp1_write_flush_is_real(errors: list[str]) -> None:
+    """HDP.1 / T1 (28/09, doc 519): o "flush de HDP" do driver escrevia 0 em
+    0x4A80, que e' SDMA0_UTCL1_INV0 (gc_10_1_0_offset.h, dw 0x40 do SDMA0), e
+    o nome HDP_MEM_COHERENCY_FLUSH_CNTL estava colado em 0x3FC4, que e' a
+    invalidacao de LEITURA. O flush de escrita real nunca acontecia. Agora:
+    0x385C=0 (BIF_BX_PF_HDP_MEM_COHERENCY_FLUSH_CNTL) precedido de mfence e
+    seguido da leitura de 0x378C, como amdgpu_hdp_generic_flush, em todos os
+    sitios de coerencia, ao fim de todo UpdatePageTable e antes do laco de
+    invalidacao do FLUSH_TLB. Ninguem escreve 0x4A80."""
+    wdk = ROOT / "driver" / "wdk"
+    core = ROOT / "driver" / "core"
+    contract = strip_c_comments((core / "bc250_hdp_contract.h").read_text(
+        encoding="utf-8", errors="replace"))
+    for needle in (
+            "#define BC250_HDP_REG_MEM_COHERENCY_FLUSH_CNTL  0x0000385Cu",
+            "#define BC250_HDP_MEM_FLUSH_VALUE               0x00000000u",
+            "#define BC250_HDP_REG_FLUSH_POSTING_READ        0x0000378Cu",
+            "#define BC250_HDP_REG_READ_CACHE_INVALIDATE     0x00003FC4u",
+            "#define BC250_SDMA0_REG_UTCL1_INV0              0x00004A80u"):
+        if needle not in contract:
+            errors.append("HDP.1: contrato de HDP sem '%s'" % needle)
+
+    # (1) Nenhum nome falso sobrevive e nada liga o nome do flush a 0x3FC4.
+    sources = {}
+    for folder in (wdk, core):
+        for path in sorted(folder.glob("*.[ch]")):
+            sources[path.name] = strip_c_comments(
+                path.read_text(encoding="utf-8", errors="replace"))
+    for name, text in sources.items():
+        for banned in ("BC250_SDMA0_REG_HDP_FLUSH", "R_HDP_MEM_COHERENCY_FLUSH_CNTL",
+                       "BC250_ACTIVE_REG_HDP_MEM_COHERENCY_FLUSH_CNTL",
+                       "BC250_GFX_REG_HDP_MEM_COHERENCY_FLUSH_CNTL"):
+            if re.search(r"\b%s\b" % banned, text):
+                errors.append("HDP.1: %s voltou a usar o nome falso %s" % (name, banned))
+        if re.search(r"\bR_HDP_FLUSH\b", text):
+            errors.append("HDP.1: %s voltou a ter R_HDP_FLUSH (era 0x4A80)" % name)
+        if re.search(r"#define\s+\w*HDP_MEM_COHERENCY_FLUSH_CNTL\w*\s+0x0*3FC4", text, re.I):
+            errors.append("HDP.1: %s liga o nome do flush de escrita a 0x3FC4 (invalidacao de leitura)" % name)
+
+    # (2) 0x4A80 so' existe no contrato e na allowlist de LEITURA; e o nome
+    # verdadeiro so' aparece como argumento de leitura.
+    transport = sources.get("bc250_mmio_topology_transport.c", "")
+    write_allow = function_body(
+        transport, "static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)")
+    read_allow = function_body(
+        transport, "static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)")
+    if not write_allow or not read_allow:
+        errors.append("HDP.1: allowlists do transporte nao localizadas")
+    else:
+        if re.search(r"0x0*4A80u?", write_allow, re.I):
+            errors.append("HDP.1: 0x4A80 (SDMA0_UTCL1_INV0) voltou a allowlist de ESCRITA")
+        if "BC250_HDP_REG_MEM_COHERENCY_FLUSH_CNTL" not in write_allow:
+            errors.append("HDP.1: o flush real 0x385C nao esta na allowlist de ESCRITA; toda escrita seria recusada")
+    for name, text in sources.items():
+        if name in ("bc250_hdp_contract.h", "bc250_mmio_topology_transport.c"):
+            continue
+        if re.search(r"0x0*4A80u?\b", text, re.I):
+            errors.append("HDP.1: %s tem 0x4A80 literal (SDMA0_UTCL1_INV0) fora do contrato" % name)
+        compact = re.sub(r"\s+", "", text)
+        uses = compact.count("BC250_SDMA0_REG_UTCL1_INV0")
+        reads = len(re.findall(r"Bc250SdmaRegRead\([^;]*?BC250_SDMA0_REG_UTCL1_INV0", compact))
+        if uses != reads:
+            errors.append("HDP.1: %s usa BC250_SDMA0_REG_UTCL1_INV0 fora de uma leitura" % name)
+    # O transporte: fora da allowlist de leitura, 0x4A80 nao aparece.
+    transport_rest = transport.replace(read_allow, "") if read_allow else transport
+    if re.search(r"0x0*4A80u?", transport_rest, re.I):
+        errors.append("HDP.1: 0x4A80 aparece no transporte fora da allowlist de LEITURA")
+
+    # (3) A sequencia certa em cada sitio: mfence -> escrita 0x385C -> leitura 0x378C.
+    def ordered(body: str, needles: tuple[str, ...]) -> bool:
+        pos = -1
+        for needle in needles:
+            nxt = body.find(needle, pos + 1)
+            if nxt < 0:
+                return False
+            pos = nxt
+        return True
+
+    present = sources.get("bc250_sdma_present.c", "")
+    hdp = re.sub(r"\s+", "", function_body(present, "static void Bc250SdmaPresentHdp("))
+    if not ordered(hdp, ("_mm_mfence();",
+                         "Bc250SdmaRegWrite(Context,BC250_HDP_REG_MEM_COHERENCY_FLUSH_CNTL-BC250_SDMA0_MMIO_WINDOW_START,BC250_HDP_MEM_FLUSH_VALUE);",
+                         "memsize=Bc250SdmaRegRead(Context,BC250_HDP_REG_FLUSH_POSTING_READ-BC250_SDMA0_MMIO_WINDOW_START);",
+                         "Bc250SdmaRegWrite(Context,BC250_SDMA0_REG_HDP_INVALIDATE-BC250_SDMA0_MMIO_WINDOW_START,1u);")):
+        errors.append("HDP.1: Bc250SdmaPresentHdp nao faz mfence -> flush 0x385C -> leitura 0x378C -> invalidacao, nessa ordem")
+    if "[HDP1_FLUSH]DIVERGENCIA" not in hdp:  # hdp ja' esta sem espacos
+        errors.append("HDP.1: divergencia da leitura de confirmacao nao se declara")
+    init = function_body(present, "static void Bc250SdmaPresentHdpInitOnce(")
+    if "[HDP1_INIT]" not in init or "BC250_SDMA0_REG_UTCL1_INV0" not in init:
+        errors.append("HDP.1: a sonda somente-leitura de UTCL1_INV0 na init sumiu")
+
+    ring = sources.get("bc250_sdma_ring_work.c", "")
+    ring_hdp = re.sub(r"\s+", "", function_body(ring, "static uint32_t Bc250SdmaHdp("))
+    if not ordered(ring_hdp, ("_mm_mfence();",
+                              "Bc250SdmaWrite(Context,R_HDP_FLUSH_REAL,BC250_HDP_MEM_FLUSH_VALUE)",
+                              "Bc250SdmaRead(Context,R_HDP_POSTING_READ,&value)",
+                              "Bc250SdmaWrite(Context,R_HDP_INVALIDATE,1u)")):
+        errors.append("HDP.1: Bc250SdmaHdp (ring work) nao faz a sequencia real de flush")
+
+    mqd = strip_c_comments((core / "bc250_compute_mqd_contract.h").read_text(
+        encoding="utf-8", errors="replace"))
+    if not re.search(r"#define\s+BC250_HQD_MMIO_HDP_FLUSH\s+0x0000385Cu", mqd):
+        errors.append("HDP.1: BC250_HQD_MMIO_HDP_FLUSH nao aponta para o flush real 0x385C")
+    engine = re.sub(r"\s+", "", sources.get("bc250_submission_engine.c", ""))
+    if not ordered(engine, ("_mm_mfence();",
+                            "Bc250SubmissionWrite32(Engine,Context,BC250_HQD_MMIO_HDP_FLUSH,0u)",
+                            "Bc250SubmissionRead32(Engine,Context,BC250_HQD_MMIO_HDP_FLUSH_POSTING_READ,&hdpDummy)")):
+        errors.append("HDP.1: a publicacao do MEC nao faz mfence -> flush 0x385C -> leitura 0x378C")
+
+    # (4) Miniport: helper unico, chamado no FLUSH_TLB e ao fim de todo UpdatePageTable.
+    active = sources.get("bc250_active_miniport.c", "")
+    helper = re.sub(r"\s+", "", function_body(active, "static uint32_t Bc250ActiveHdpWriteFlush("))
+    if not ordered(helper, ("_mm_mfence();",
+                            "Bc250MmioTopologyWrite32(&Active->Core.MmioTransport,BC250_HDP_REG_MEM_COHERENCY_FLUSH_CNTL,BC250_HDP_MEM_FLUSH_VALUE)",
+                            "BC250_HDP_REG_FLUSH_POSTING_READ")):
+        errors.append("HDP.1: Bc250ActiveHdpWriteFlush nao faz mfence -> flush 0x385C -> leitura 0x378C")
+    if helper.count("[HDP_PT_FLUSH]FALHA") < 2:
+        errors.append("HDP.1: falha do flush de page table precisa se declarar nos dois ramos")
+    upd = function_body(active, "static NTSTATUS Bc250ActiveUpdatePageTableHandler(")
+    i_write = upd.find("destination[update->StartIndex + index] = encoded;")
+    i_flush = upd.find('Bc250ActiveHdpWriteFlush(active, "UPDATE_PAGE_TABLE")')
+    i_release = upd.find("ExReleasePushLockExclusive(&active->ObjectLock);")
+    if not (0 <= i_write < i_flush < i_release):
+        errors.append("HDP.1: UpdatePageTable nao faz o flush de HDP depois de escrever as entradas (amdgpu_vm_cpu_commit)")
+
+
+def audit_t31_vram_no_wc_uc_alias(errors: list[str]) -> None:
+    """T3.1 (28/09, doc 520): a janela WC do framebuffer cobria os 256 MB da
+    BAR 0 e as estruturas privadas do driver eram mapeadas UNCACHED por cima
+    dela (migalhas 0xFA00000, SDMA 0xFF00000, anel grafico 0xFF70000, MEC
+    0xFF90000); a sonda de VRAM mapeava a BAR inteira UC com o WC vivo. A
+    janela WC agora termina no inicio da faixa privada, sem fallback UC, a
+    sonda mapeia so' as paginas testadas, e todo mapeamento UC permanente
+    declara a propria faixa."""
+    wdk = ROOT / "driver" / "wdk"
+    policy = strip_c_comments((ROOT / "driver" / "core" / "bc250_vram_cache_policy.h")
+                              .read_text(encoding="utf-8", errors="replace"))
+    if "#define BC250_VRAM_WC_WINDOW_BYTES   0x0FA00000ull" not in policy:
+        errors.append("T3.1: limite da janela WC ausente ou alterado na politica de cache")
+    display = strip_c_comments((wdk / "bc250_display_ddi.c").read_text(
+        encoding="utf-8", errors="replace"))
+    if "C_ASSERT(BC250_VRAM_WC_WINDOW_BYTES == BC250_CRUMB_VRAM_OFFSET);" not in display:
+        errors.append("T3.1: a janela WC deixou de estar amarrada ao inicio da faixa privada (migalhas)")
+    init = function_body(display, "NTSTATUS Bc250DisplayInit(")
+    if not init:
+        errors.append("T3.1: Bc250DisplayInit nao localizada")
+    else:
+        if "PAGE_NOCACHE" in init or "MmNonCached" in init:
+            errors.append("T3.1: Bc250DisplayInit voltou a mapear o framebuffer UNCACHED (aliasaria o WC do VidMm)")
+        if "256u * 1024u * 1024u" in init or "0x10000000" in init:
+            errors.append("T3.1: a janela WC voltou a cobrir a BAR 0 inteira")
+        if "ULONG fbBytes = (ULONG)BC250_VRAM_WC_WINDOW_BYTES;" not in init:
+            errors.append("T3.1: a janela WC nao sai da politica unica (BC250_VRAM_WC_WINDOW_BYTES)")
+        if "[T31_CACHE_MAPA] WC" not in init:
+            errors.append("T3.1: o mapa de tipos de cache nao e' declarado no log")
+    probe = strip_c_comments((wdk / "bc250_vram_probe_transaction.c").read_text(
+        encoding="utf-8", errors="replace"))
+    if "(ULONG)bar->Length" in probe:
+        errors.append("T3.1: a sonda de VRAM voltou a mapear a BAR 0 inteira UNCACHED")
+    if "(ULONG)pageSpan" not in probe or "Offset - pageStart" not in probe:
+        errors.append("T3.1: a sonda de VRAM nao mapeia so' as paginas testadas")
+    # Todo mapeamento UC permanente de VRAM declara a faixa.
+    for rel, site in (
+            ("bc250_sdma_present.c", '"SDMA_PRESENT_RING_WORK"'),
+            ("bc250_active_miniport.c", '"GFX_RING_ONLINE"'),
+            ("bc250_active_miniport.c", '"GFX_RING_BRINGUP"'),
+            ("bc250_active_miniport.c", '"HQD_MQD_PROGRAM"'),
+            ("bc250_active_miniport.c", '"HQD_MQD_ACTIVE"'),
+            ("bc250_active_miniport.c", '"DX66_MIGALHA"'),
+            ("bc250_submission_engine.c", '"MEC_SUBMISSION_BLOCK"'),
+            ("bc250_sdma_ring_work.c", '"SDMA_RING_WORK_RING"'),
+            ("bc250_pfp_direct_load.c", '"PFP_DIRECT_LOAD"')):
+        text = strip_c_comments((wdk / rel).read_text(encoding="utf-8", errors="replace"))
+        if "Bc250LogUcVramMapping(%s" % site not in text:
+            errors.append("T3.1: %s perdeu a declaracao do mapeamento UC %s" % (rel, site))
+    header = strip_c_comments((wdk / "bc250_display_ddi.h").read_text(
+        encoding="utf-8", errors="replace"))
+    helper = function_body(header, "static __inline void Bc250LogUcVramMapping(")
+    if "Bc250VramRangeIsPrivateUc(Offset, Length)" not in helper or "SOBREPOE a janela WC" not in helper:
+        errors.append("T3.1: o helper de mapeamento UC nao confere nem declara a sobreposicao")
+    present = strip_c_comments((wdk / "bc250_sdma_present.c").read_text(
+        encoding="utf-8", errors="replace"))
+    geo = function_body(present, "VOID Bc250SdmaPresentSetSegmentGeometry(")
+    if "[T31_CACHE_MAPA] DIVERGENCIA" not in geo:
+        errors.append("T3.1: segmento do VidMm alem da janela WC nao se declara")
+
+
+def audit_evt1_gpu_event_ring_is_wired(errors: list[str]) -> None:
+    """EVT.1 (29/09, doc 521): o anel de eventos da GPU da DX.96 existia no
+    header sem nenhum escritor nem leitor. Ele e' o que diz, depois de uma
+    trava, qual IB estava em voo. Cada tipo de evento tem de ter escritor, e o
+    leitor tem de validar o check (VRAM decai) e declarar o em-voo por no'."""
+    wdk = ROOT / "driver" / "wdk"
+    active = strip_c_comments((wdk / "bc250_active_miniport.c").read_text(
+        encoding="utf-8", errors="replace"))
+    callbacks = strip_c_comments((wdk / "bc250_mcdm_callbacks.c").read_text(
+        encoding="utf-8", errors="replace"))
+    for text, name, kind in (
+            (callbacks, "bc250_mcdm_callbacks.c", "BC250_CRUMB_EVT_PAGING_FILL"),
+            (callbacks, "bc250_mcdm_callbacks.c", "BC250_CRUMB_EVT_PAGING_TRANSFER"),
+            (callbacks, "bc250_mcdm_callbacks.c", "BC250_CRUMB_EVT_PAGING_DISCARD"),
+            (active, "bc250_active_miniport.c", "BC250_CRUMB_EVT_SUBMIT_SDMA"),
+            (active, "bc250_active_miniport.c", "BC250_CRUMB_EVT_RETIRE_SDMA"),
+            (active, "bc250_active_miniport.c", "BC250_CRUMB_EVT_SUBMIT_GFX"),
+            (active, "bc250_active_miniport.c", "BC250_CRUMB_EVT_RETIRE_GFX")):
+        if "Bc250CrumbEvent(%s" % kind not in text:
+            errors.append("EVT.1: %s nao grava o evento %s" % (name, kind))
+    reader = function_body(active, "static VOID Bc250CrumbReportEvents(")
+    if not reader:
+        errors.append("EVT.1: leitor do anel de eventos ausente")
+    else:
+        if "!= Bc250CrumbEvtCheck(" not in reader:
+            errors.append("EVT.1: o leitor aceita evento sem conferir o check (VRAM decaida)")
+        for needle in ("[EVT1_GPU]", "[EVT1_EM_VOO]", "SEM CONCLUSAO REGISTRADA", "degradados="):
+            if needle not in reader:
+                errors.append("EVT.1: o leitor perdeu '%s'" % needle)
+    report = function_body(active, "static VOID Bc250CrumbReportPrevious(")
+    if "Bc250CrumbReportEvents(events," not in report:
+        errors.append("EVT.1: o reporte do boot seguinte nao le o anel de eventos")
+    if report.count("ExFreePoolWithTag(events,") < 2:
+        errors.append("EVT.1: o buffer do anel nao e' liberado em todos os caminhos")
+
+
+def audit_x1_no_hdp_or_vram_read_while_sdma_busy(errors: list[str]) -> None:
+    """X1 (29/09, doc 522): Corrida 168 parou com um FILL de paginacao em voo,
+    a ultima migalha era a leitura de volta da invalidacao do HDP no laco de
+    espera e a leitura da fence na VRAM logo depois nao tinha migalha. Os lacos
+    de espera do SDMA agora decidem so' pelo registrador RPTR; HDP e leitura
+    de VRAM so' depois que a engine consumiu a entrada."""
+    wdk = ROOT / "driver" / "wdk"
+    present = strip_c_comments((wdk / "bc250_sdma_present.c").read_text(
+        encoding="utf-8", errors="replace"))
+    contract = strip_c_comments((ROOT / "driver" / "core" / "bc250_blt_proof_contract.c")
+                                .read_text(encoding="utf-8", errors="replace"))
+    test = strip_c_comments((ROOT / "driver" / "tests" / "blt_proof_contract_test.c")
+                            .read_text(encoding="utf-8", errors="replace"))
+    if "uint32_t Bc250TripodRingEntryConsumed(" not in contract:
+        errors.append("X1: aritmetica do portao do RPTR ausente do contrato")
+    if "TestRingEntryConsumedByRptrOnly() != 0" not in test or \
+            "Bc250TripodRingEntryConsumed(4050u, 0u, 88u, 88u, 4096u) == 0u" not in test:
+        errors.append("X1: o teste do portao perdeu o caso dos NOPs antes do inicio")
+    poll = function_body(present, "BOOLEAN Bc250SdmaPresentPollRetirement(")
+    # A condicao inteira, sem nada antes: "if (0u && Bc250Tripod..." desligaria
+    # o portao e nenhuma entrada seria aposentada (timeout em serie -> TDR).
+    i_gate = re.sub(r"\s+", " ", poll).find("if (Bc250TripodRingEntryConsumed(rptrGate,")
+    if i_gate >= 0:
+        i_gate = poll.find("Bc250TripodRingEntryConsumed(rptrGate,")
+    i_hdp = poll.find("Bc250SdmaPresentHdp(")
+    i_fence = poll.find("Work[slotFenceOffset / 4u]")
+    if i_gate < 0:
+        errors.append("X1: a aposentadoria assincrona nao decide pelo RPTR")
+    elif (0 <= i_hdp < i_gate) or (0 <= i_fence < i_gate):
+        errors.append("X1: a aposentadoria assincrona mexe no HDP ou le a fence na VRAM antes do portao do RPTR")
+    if "BC250_CRUMB_SITE_VRAM_FENCE_READ" not in poll:
+        errors.append("X1: a leitura da fence na aposentadoria ficou sem migalha")
+    if "FenceLida=%u" not in poll:
+        errors.append("X1: o timeout nao diz se a fence foi lida")
+    reader = function_body(present, "static uint32_t Bc250SdmaReadFenceAfterConsumed(")
+    if "BC250_CRUMB_SITE_VRAM_FENCE_READ" not in reader:
+        errors.append("X1: a leitura de fence dos blts ficou sem migalha")
+    for sig, label in (
+            ("static BOOLEAN Bc250SdmaPresentBltCore(", "blt"),
+            ("static BOOLEAN Bc250SdmaPresentBltRectCore(", "blt retangular")):
+        body = function_body(present, sig)
+        i_loop = body.find("for (poll = 1u; poll <= 10000u; ++poll)")
+        i_gate = body.find("if (!Bc250SdmaSyncEntryConsumed(x1StartBytes, x1TargetBytes))", i_loop)
+        if i_loop < 0 or i_gate < 0:
+            errors.append("X1: o laco do %s nao passa pelo portao do RPTR" % label)
+            continue
+        before = body[i_loop:i_gate]
+        if "Work[" in before or "Bc250SdmaPresentHdp(" in before:
+            errors.append("X1: o laco do %s le VRAM ou mexe no HDP antes do portao" % label)
+        if "(poll & 0x7Fu)" in body:
+            errors.append("X1: o laco do %s voltou a fazer HDP periodico durante a espera" % label)
+        if "Bc250SdmaReadFenceAfterConsumed(BC250_SDMA_PRESENT_FENCE_OFFSET)" not in body:
+            errors.append("X1: o laco do %s nao le a fence pelo caminho com portao" % label)
+
+
+def audit_x2a_paging_fill_sliced_and_vram_crumbed(errors: list[str]) -> None:
+    """X2a (29/09, doc 523): 11 de 11 travas terminam com um FILL de paginacao
+    no SDMA; a TRANSFER (256 KiB por pacote) nunca foi o ultimo trabalho. O
+    FILL passa a ser fatiado em 256 KiB. E os acessos a VRAM pela BAR que vinham
+    logo depois do HDP sem migalha (canarios e anel) passam a te-la."""
+    wdk = ROOT / "driver" / "wdk"
+    callbacks = strip_c_comments((wdk / "bc250_mcdm_callbacks.c").read_text(
+        encoding="utf-8", errors="replace"))
+    if "#define BC250_SDMA_PAGING_FILL_MAX_BYTES (256u * 1024u)" not in callbacks:
+        errors.append("X2a: teto de 256 KiB do FILL de paginacao ausente")
+    fill = function_body(callbacks, "static NTSTATUS Bc250McdmBuildFillVirtual(")
+    if "BC250_SDMA_PAGING_FILL_MAX_BYTES" not in fill or "BC250_SDMA_FILL_MAX_BYTES" in fill:
+        errors.append("X2a: o FILL de paginacao voltou a fatiar pelo teto do pacote (4 MiB)")
+    test = strip_c_comments((ROOT / "driver" / "tests" / "mcdm_callbacks_test.c")
+                            .read_text(encoding="utf-8", errors="replace"))
+    for needle in ("CHECK(g_paging.MultipassOffset == 12u * 262144u);",
+                   "CHECK(covered == 11075584ull);", "CHECK(passes == 4u);",
+                   "CHECK(g_pagingDmaBuffer[packet * 5u + 4u] <= 262144u - 1u);"):
+        if needle not in test:
+            errors.append("X2a: o teste do fatiamento perdeu '%s'" % needle)
+    present = strip_c_comments((wdk / "bc250_sdma_present.c").read_text(
+        encoding="utf-8", errors="replace"))
+    writes = present.count("g_Bc250SdmaPresent.Ring[startCursor + i] = packets[i];")
+    crumbs = present.count("Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_RING_WRITE,")
+    if writes == 0 or writes != crumbs:
+        errors.append("X2a: %d copias de pacotes para o anel e %d migalhas VRAM_RING_WRITE" % (writes, crumbs))
+    poll = function_body(present, "BOOLEAN Bc250SdmaPresentPollRetirement(")
+    if "BC250_CRUMB_SITE_VRAM_CANARY_READ" not in poll:
+        errors.append("X2a: a leitura dos canarios apos a conclusao ficou sem migalha")
+    plants = present.count("*pCanary = dataPlan.Values[planIndex];")
+    if plants != present.count("Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_CANARY_WRITE,"):
+        errors.append("X2a: plantio de canario sem migalha VRAM_CANARY_WRITE")
+
+
+def audit_x3_no_canary_vram_read_while_sdma_busy(errors: list[str]) -> None:
+    """X3 (29/09, doc 524): Corrida 170 parou com a CPU00 dentro da leitura dos
+    canarios do tripe na VRAM pela BAR (VRAM_CANARY_READ fase ANTES) enquanto
+    o SDMA comecava um FILL. A leitura so' acontece com o anel ocioso; senao a
+    perna de dados fica NAO CONFERIDA. Os outros leitores de VRAM pela BAR
+    ganham migalha."""
+    wdk = ROOT / "driver" / "wdk"
+    present = strip_c_comments((wdk / "bc250_sdma_present.c").read_text(
+        encoding="utf-8", errors="replace"))
+    poll = function_body(present, "BOOLEAN Bc250SdmaPresentPollRetirement(")
+    compact = re.sub(r"\s+", " ", poll)
+    need = ("BOOLEAN ringIdle = (g_Bc250SdmaPresent.InFlightCount == 1u && "
+            "(rptrReg % BC250_SDMA_PRESENT_RING_BYTES) == "
+            "(tailBytesX3 % BC250_SDMA_PRESENT_RING_BYTES)) ? TRUE : FALSE;")
+    if need not in compact:
+        errors.append("X3: o criterio de anel ocioso para ler canarios mudou ou sumiu")
+    i_idle = poll.find("if (!ringIdle) {")
+    i_zero = poll.find("dataPlan.Usable = 0u;", i_idle)
+    i_read = poll.find("BC250_CRUMB_SITE_VRAM_CANARY_READ")
+    if not (0 <= i_idle < i_zero < i_read):
+        errors.append("X3: a leitura de canarios nao e' precedida pelo portao de anel ocioso")
+    if "[X3_CANARY]" not in poll or "NAO CONFERIDA" not in poll:
+        errors.append("X3: canario adiado nao se declara no log")
+    active = strip_c_comments((wdk / "bc250_active_miniport.c").read_text(
+        encoding="utf-8", errors="replace"))
+    readu64 = function_body(active, "static BOOLEAN Bc250ActiveReadVramU64(")
+    if "BC250_CRUMB_SITE_VRAM_PT_READ" not in readu64:
+        errors.append("X3: leitura de tabela de pagina pela BAR sem migalha")
+    if active.count("Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_IB_READ,") < 2:
+        errors.append("X3: leitura de IB pela BAR sem migalha")
+    if active.count("Bc250CrumbBefore(BC250_CRUMB_SITE_VRAM_PROOF_READ,") < 3:
+        errors.append("X3: amostras de prova do escape sem migalha")
+
+
+def audit_x4_no_runtime_canaries(errors: list[str]) -> None:
+    """X4 (29/09, doc 525): Corridas 170 e 171 pararam com a CPU dentro da
+    leitura dos canarios (VRAM_CANARY_READ fase ANTES), lendo pela BAR o
+    destino que um FILL acabara de escrever. Os submits em execucao nao
+    plantam nem leem canarios; a perna de dados e' declarada NAO CONFERIDA."""
+    present = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_sdma_present.c")
+                               .read_text(encoding="utf-8", errors="replace"))
+    helper = function_body(present, "static VOID Bc250X4DisableRuntimeCanaries(")
+    if "Plan->Usable = 0u;" not in helper or "NAO CONFERIDA" not in helper:
+        errors.append("X4: o helper nao desliga a perna de dados ou nao a declara")
+    for sig, tag in (("BOOLEAN Bc250SdmaPresentSubmitIndirectAsync(", '"SubmitIndirectAsync"'),
+                     ("BOOLEAN Bc250SdmaPresentSubmitFillAsync(", '"SubmitFillAsync"')):
+        body = function_body(present, sig)
+        i_plan = body.find("Bc250PlanDataProofCanaries(")
+        i_off = body.find("Bc250X4DisableRuntimeCanaries(&dataPlan, %s);" % tag)
+        i_lock = body.find("KeAcquireSpinLock(&g_Bc250SdmaPresent.RingLock")
+        if not (0 <= i_plan < i_off < i_lock):
+            errors.append("X4: %s planta/le canarios em execucao (desligamento ausente ou depois do lock)" % tag)
+
+
+def audit_t33_utcl1_no_force_invalidation(errors: list[str]) -> None:
+    """T3.3 (29/09, alinhamento com Linux Upstream sdma_v5_0.c):
+    No Linux, SDMA0_UTCL1_CNTL e' programado exclusivamente na inicializacao
+    (RESP_MODE=3, REDO_DELAY=9). O bit 14 (FORCE_INVALIDATION) NUNCA e' ligado
+    em tempo de execucao. O FLUSH_TLB (Bc250ActiveFlushMappedGfxhubTlb) nao deve
+    escrever FORCE_INVALIDATION nem tocar em SDMA0_UTCL1_CNTL em runtime.
+    A inicializacao do SDMA deve explicitamente mascarar e zerar FORCE_INVALIDATION."""
+    wdk = ROOT / "driver" / "wdk"
+    active = strip_c_comments((wdk / "bc250_active_miniport.c").read_text(
+        encoding="utf-8", errors="replace"))
+    flush_map = function_body(
+        active, "static uint32_t Bc250ActiveFlushMappedGfxhubTlb(void *Context)")
+    if not flush_map:
+        errors.append("T3.3: Bc250ActiveFlushMappedGfxhubTlb nao localizada")
+    else:
+        if "BC250_SDMA0_UTCL1_CNTL_FORCE_INVALIDATION" in flush_map:
+            errors.append("T3.3: Bc250ActiveFlushMappedGfxhubTlb voltou a referenciar BC250_SDMA0_UTCL1_CNTL_FORCE_INVALIDATION")
+        if "BC250_SDMA0_REG_UTCL1_CNTL" in flush_map:
+            errors.append("T3.3: Bc250ActiveFlushMappedGfxhubTlb voltou a tocar em BC250_SDMA0_REG_UTCL1_CNTL em runtime")
+
+    present = strip_c_comments((wdk / "bc250_sdma_present.c").read_text(
+        encoding="utf-8", errors="replace"))
+    init = function_body(present, "NTSTATUS Bc250SdmaPresentInit(")
+    if not init:
+        errors.append("T3.3: Bc250SdmaPresentInit nao localizada")
+    else:
+        if "BC250_SDMA0_UTCL1_CNTL_FORCE_INVALIDATION" not in init:
+            errors.append("T3.3: Bc250SdmaPresentInit nao mascara explicitamente BC250_SDMA0_UTCL1_CNTL_FORCE_INVALIDATION")
+
+    reinit = function_body(present, "BOOLEAN Bc250SdmaPresentRestartAfterTdr(void)")
+    if not reinit:
+        errors.append("T3.3: Bc250SdmaPresentRestartAfterTdr nao localizada")
+    else:
+        if "BC250_SDMA0_UTCL1_CNTL_FORCE_INVALIDATION" not in reinit:
+            errors.append("T3.3: Bc250SdmaPresentRestartAfterTdr nao mascara explicitamente BC250_SDMA0_UTCL1_CNTL_FORCE_INVALIDATION")
+
+
+def audit_t34_tlb_flush_upstream_aligned(errors: list[str]) -> None:
+    """T3.4 (29/09, alinhamento com Linux Upstream gmc_v10_0.c:289-315):
+    O flush de TLB do GFXHUB deve atuar exclusivamente via Request, Dummy Read e Polling em ACK,
+    sem manipular RangeLow/RangeHigh em tempo de execucao (os ranges sao programados uma unica vez
+    no MMU global).
+    Em Bc250ActiveFlushVmidTlb, os logs nao devem ser emitidos incondicionalmente para cada VMID."""
+    core = ROOT / "driver" / "core"
+    tlb_src = strip_c_comments((core / "bc250_gfxhub_tlb_transaction.c").read_text(
+        encoding="utf-8", errors="replace"))
+    tlb_fn = function_body(tlb_src, "BC250_TLB_TRANSACTION_STATUS Bc250RunGfxhubTlbTransaction(")
+    if not tlb_fn:
+        errors.append("T3.4: Bc250RunGfxhubTlbTransaction nao localizada")
+    else:
+        if "RangeLowRegisterOffset" in tlb_fn or "RangeHighRegisterOffset" in tlb_fn:
+            errors.append("T3.4: Bc250RunGfxhubTlbTransaction voltou a tocar em RangeLow/RangeHigh em runtime")
+        tlb_fn_clean = re.sub(r"\s+", " ", tlb_fn)
+        if "Plan->RequestRegisterOffset, Plan->RequestValue)" not in tlb_fn_clean:
+            errors.append("T3.4: Bc250RunGfxhubTlbTransaction nao escreve RequestRegisterOffset")
+        if "Plan->RequestRegisterOffset, &Evidence->RequestDummyRead)" not in tlb_fn_clean:
+            errors.append("T3.4: Bc250RunGfxhubTlbTransaction nao realiza dummy read em RequestRegisterOffset")
+        if "Plan->AckRegisterOffset, &value)" not in tlb_fn_clean:
+            errors.append("T3.4: Bc250RunGfxhubTlbTransaction nao faz polling em AckRegisterOffset")
+
+    wdk = ROOT / "driver" / "wdk"
+    active_src = strip_c_comments((wdk / "bc250_active_miniport.c").read_text(
+        encoding="utf-8", errors="replace"))
+    flush_vmid = function_body(active_src, "static uint32_t Bc250ActiveFlushVmidTlb(")
+    if not flush_vmid:
+        errors.append("T3.4: Bc250ActiveFlushVmidTlb nao localizada")
+    else:
+        if 'Bc250DisplayLog("[FlushMappedGfxhubTlb] Transport State=' in flush_vmid:
+            errors.append("T3.4: Bc250ActiveFlushVmidTlb continua emitindo log incondicional de Transport State")
+        if 'Bc250DisplayLog("[FlushMappedGfxhubTlb] VMID%02u status=' in flush_vmid:
+            errors.append("T3.4: Bc250ActiveFlushVmidTlb continua emitindo log incondicional por VMID no caminho de sucesso")
+        if 'Bc250DisplayLog("[FlushMappedGfxhubTlb] FALHA' not in flush_vmid:
+            errors.append("T3.4: Bc250ActiveFlushVmidTlb perdeu o log de falha de invalidacao")
+
+
+def audit_dx97_range_walk_only_endpoints(errors: list[str]) -> None:
+    """DX.97 (Corrida 158): SRC/DEST validados so' nas pontas; o IB do anel
+    continua caminhado por inteiro. A caminhada completa das faixas custava
+    ~7.900 paginas/s pela BAR e estava em curso no instante da trava."""
+    active = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_active_miniport.c")
+                              .read_text(encoding="utf-8", errors="replace"))
+    ends = function_body(active, "static BOOLEAN Bc250ActiveValidateGpuVaRangeEnds(")
+    if not ends:
+        errors.append("DX.97: Bc250ActiveValidateGpuVaRangeEnds ausente")
+        return
+    if "for (" in ends or "while (" in ends:
+        errors.append("DX.97: a validacao por pontas voltou a ter laco (caminhada completa)")
+    if ends.count("Bc250ActiveWalkGpuVaQuiet(") != 2:
+        errors.append("DX.97: a validacao por pontas deve caminhar exatamente a primeira e a ultima pagina")
+    for label in ('"SRC"', '"DEST"'):
+        if f"Bc250ActiveValidateGpuVaRangeEnds({label}" not in active:
+            errors.append(f"DX.97: faixa {label} nao usa a validacao por pontas")
+        if f"Bc250ActiveValidateGpuVaRange({label}" in active:
+            errors.append(f"DX.97: faixa {label} voltou a caminhar todas as paginas")
+    if 'Bc250ActiveValidateGpuVaRange("IB"' not in active:
+        errors.append("DX.97: o IB deixou de ser caminhado por inteiro")
+
+
+def audit_shader2_srv_buffer_is_bound_and_named(errors: list[str]) -> None:
+    """SHADER.2 (Corrida 161): o PS do menu Iniciar le Buffer<T> em t0 e o vkd3d
+    recusava com "E2000: Could not find descriptor binding for type 0" porque o
+    vinculo de SRV so' aceitava IMAGE. O vinculo aceita BUFFER|IMAGE, a reflexao
+    tipa Dim=Buffer amostrado como UNIFORM_TEXEL_BUFFER e o gravador cria a view
+    com cada recusa nomeada. Storage (Sampled=2) continua fora."""
+    def code(path: str) -> str:
+        return strip_c_comments((ROOT / path).read_text(encoding="utf-8", errors="replace"))
+    adapter = code("driver/umd/bc250_vkd3d_shader_adapter.c")
+    cache = code("driver/umd/bc250_umd_pipeline_cache.c")
+    desc = code("driver/umd/bc250_umd_descriptors.c")
+    bridge = code("driver/umd/bc250_umd_vulkan_bridge.c")
+    res = code("driver/umd/bc250_umd_resource_vk.c")
+    if not re.search(r"b->flags\s*=\s*kind\s*==\s*0\s*\?\s*1u\s*:\s*\(kind\s*==\s*1\s*\?\s*3u\s*:\s*2u\)", adapter):
+        errors.append("SHADER.2: vinculo de SRV no vkd3d deixou de aceitar BUFFER|IMAGE")
+    if not re.search(r"words\[i \+ 3\]\s*==\s*5u\s*&&\s*words\[i \+ 7\]\s*==\s*1u\)\s*ctx->idType\[resId\]\s*=\s*5", cache):
+        errors.append("SHADER.2: reflexao nao tipa OpTypeImage Dim=Buffer Sampled=1")
+    if not re.search(r"kind\s*==\s*5\)\s*\{\s*descType\s*=\s*VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER", cache):
+        errors.append("SHADER.2: reflexao nao produz UNIFORM_TEXEL_BUFFER")
+    branch = desc[desc.find("VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER) {"):desc.find("VK_DESCRIPTOR_TYPE_SAMPLER) {")]
+    if not branch or "vkCreateBufferView(" not in branch or "pTexelBufferView" not in branch:
+        errors.append("SHADER.2: gravador sem ramo de texel buffer com vkCreateBufferView")
+    for reason in ("SRV_TEXEL_DIMENSAO_NAO_E_BUFFER", "SRV_BUFFER_SEM_VKBUFFER",
+                   "SRV_BUFFER_FORMATO_NAO_SUPORTADO", "SRV_BUFFER_FAIXA_FORA_DO_RECURSO",
+                   "SRV_BUFFER_DESLOCAMENTO_DESALINHADO", "SRV_BUFFER_SEM_SHADOW_DE_CPU",
+                   "SRV_BUFFER_UPLOAD_FALHOU", "SRV_CREATE_BUFFER_VIEW_FALHOU"):
+        if f'refusedReason = "{reason}"' not in branch:
+            errors.append(f"SHADER.2: recusa nomeada ausente no texel buffer: {reason}")
+    if "LOAD_VK_DEV(vkCreateBufferView)" not in bridge or "vkDestroyBufferView(pBridge->Device, batch->BufferViews[i]" not in bridge:
+        errors.append("SHADER.2: ponte nao carrega ou nao destroi as buffer views do lote")
+    if "VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, BC250_DX54_POOL_TEXEL_BUFFERS" not in bridge:
+        errors.append("SHADER.2: pool persistente sem texel buffers")
+    if "VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT" not in res:
+        errors.append("SHADER.2: VkBuffer sem uso UNIFORM_TEXEL_BUFFER")
+    umd = code("driver/umd/bc250_d3d_umd.c")
+    report = function_body(umd, "static void Bc250UmdReportShaderFailure(")
+    if "CREATE_NEW" not in report or "CREATE_ALWAYS" in report or "FlushFileBuffers(file)" not in report:
+        errors.append("SHADER.2: o dump do shader recusado deve ser gravado uma vez (CREATE_NEW) e com FlushFileBuffers")
+
+
+def audit_dx93_owner_walk_and_alloc_map(errors: list[str]) -> None:
+    """DX.93 (Corrida 149): o resolvedor caminha a tabela do DONO quando o
+    snapshot nao tem a faixa, aceita so' o segmento local, e o mapa de alocacao
+    e' logado fora do ObjectLock."""
+    miniport = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_active_miniport.c")
+                                .read_text(encoding="utf-8", errors="replace"))
+    resolver = function_body(miniport, "static BOOLEAN Bc250ActiveResolveDisplayGpuVa(")
+    i = resolver.find("PT_WALK_DONO SUCCESS")
+    walk = resolver[max(0, i - 2200):i] if i >= 0 else ""
+    for token in ("ownerProcess != NULL", "BC250_MCDM_OBJECT_PROCESS",
+                  "ownerRecord.RootPageTableAddress", "Bc250ActiveWalkGpuVaQuiet(",
+                  "pageMc >= localBase", "pageMc < localBase + walkCaps.LocalSegmentBytes"):
+        if token not in walk:
+            errors.append(f"DX.93: caminhada do dono sem {token}")
+    require(resolver, "PT_WALK_DONO RECUSADO", "DX.93 recusa nomeada da caminhada", errors)
+    j = miniport.find('"[DX93_ALLOC_MAP] Handle=')
+    if j < 0:
+        errors.append("DX.93: linha DX93_ALLOC_MAP ausente")
+    else:
+        before = miniport[max(0, j - 800):j]
+        rel = before.rfind("ExReleasePushLockExclusive(&context->ObjectLock);")
+        acq = before.rfind("ExAcquirePushLockExclusive(&context->ObjectLock);")
+        if rel < 0 or acq > rel:
+            errors.append("DX.93: DX93_ALLOC_MAP e' logado com o ObjectLock seguro")
+
+
+def audit_m1_system_segment_only_for_gpu_va_only(errors: list[str]) -> None:
+    """M1 (doc 491): o segmento de sistema (2) so' vale para recurso que a UMD
+    declarou GPU_VA_ONLY. Primaria, compartilhado, render target, depth, UAV e
+    staging ficam no segmento 1, porque o KMD os endereca por MC."""
+    core = strip_c_comments((ROOT / "driver" / "core" / "bc250_allocation_abi_contract.c")
+                            .read_text(encoding="utf-8", errors="replace"))
+    fmt = function_body(core, "BC250_ALLOCATION_ABI_STATUS Bc250AllocationAbiFormat(")
+    parse = function_body(core, "BC250_ALLOCATION_ABI_STATUS Bc250AllocationAbiParse(")
+    for label, body in (("formatacao", fmt), ("parse", parse)):
+        if "BC250_ALLOCATION_FLAG_GPU_VA_ONLY" not in body or \
+                "BC250_ALLOCATION_TOKEN_CLASS_RESOURCE" not in body:
+            errors.append(f"M1: {label} nao restringe GPU_VA_ONLY a classe RESOURCE")
+    may = function_body(core, "int Bc250AllocationMayUseSystemSegment(")
+    require(may, "BC250_ALLOCATION_TOKEN_CLASS_RESOURCE", "M1 decisao exige classe RESOURCE", errors)
+    miniport = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_active_miniport.c")
+                                .read_text(encoding="utf-8", errors="replace"))
+    idx = miniport.find("info->SupportedReadSegmentSet = 0x3u;")
+    if idx < 0 or miniport.count("SupportedReadSegmentSet = 0x3u") != 1:
+        errors.append("M1: segmento de sistema ausente ou em mais de um sitio")
+    else:
+        guard = miniport[max(0, idx - 700):idx]
+        for token in ("Bc250AllocationMayUseSystemSegment(&request)",
+                      "!Bc250AllocationIsPrimary(&request)"):
+            if token not in guard:
+                errors.append(f"M1: segmento de sistema sem a guarda {token}")
+    umd = strip_c_comments((ROOT / "driver" / "umd" / "bc250_d3d_umd.c")
+                           .read_text(encoding="cp1252", errors="replace"))
+    i = umd.find("binding.GpuVaOnly =")
+    block = umd[i:i + 700] if i >= 0 else ""
+    for token in ("!isPrimary", "!isStaging", "D3D10_DDI_BIND_RENDER_TARGET",
+                  "D3D10_DDI_BIND_DEPTH_STENCIL", "D3D11_DDI_BIND_UNORDERED_ACCESS",
+                  "0x2u", "0x8u"):
+        if token not in block:
+            errors.append(f"M1: UMD marca GpuVaOnly sem excluir {token}")
+    winsys = strip_c_comments((ROOT / "driver" / "umd" / "bc250_wddm_winsys.c")
+                              .read_text(encoding="cp1252", errors="replace"))
+    j = winsys.find("flags |= BC250_ALLOCATION_FLAG_GPU_VA_ONLY;")
+    wguard = winsys[max(0, j - 400):j] if j >= 0 else ""
+    for token in ("!sharedResource", "!Binding->Primary",
+                  "tokenClass == BC250_ALLOCATION_TOKEN_CLASS_RESOURCE"):
+        if token not in wguard:
+            errors.append(f"M1: winsys liga GPU_VA_ONLY sem a guarda {token}")
+
+
+def audit_dx92_submit_stages_in_crumbs(errors: list[str]) -> None:
+    """DX.92 (Corrida 147): etapas da submissao do Node 0 nas migalhas BCR1. A
+    etapa envolve as chamadas que podem esperar; o helper so' escreve RAM."""
+    header = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_mmio_breadcrumb.h")
+                              .read_text(encoding="utf-8", errors="replace"))
+    stage = function_body(header, "static __forceinline VOID Bc250CrumbStage(")
+    if not stage:
+        errors.append("DX.92: Bc250CrumbStage ausente")
+        return
+    if "Mmio" in stage or "Read32" in stage or "Write32" in stage:
+        errors.append("DX.92: Bc250CrumbStage toca MMIO; tem de ser so' RAM")
+    miniport = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_active_miniport.c")
+                                .read_text(encoding="utf-8", errors="replace"))
+    body = function_body(miniport, "static NTSTATUS Bc250ActiveSubmitCommandVirtualBody(")
+    for before, call, after in (
+            ("BC250_SUBMIT_STAGE_RETIRE)", "Bc250ActiveSdmaRetireAndNotify(context, FALSE);", "BC250_SUBMIT_STAGE_RETIRE_DONE)"),
+            ("BC250_SUBMIT_STAGE_INSTALL_VMID)", "Bc250GcvmInstallVmid(", "BC250_SUBMIT_STAGE_INSTALL_VMID_DONE)"),
+            ("BC250_SUBMIT_STAGE_PT_WALK)", 'Bc250ActiveValidateGpuVaRange("IB",', "BC250_SUBMIT_STAGE_PT_WALK_DONE)"),
+            ("BC250_SUBMIT_STAGE_RING)", "Bc250SdmaPresentSubmitIndirectAsync(", "BC250_SUBMIT_STAGE_RING_DONE)")):
+        b, c, a = body.find(before), body.find(call), body.find(after)
+        if b < 0 or c < 0 or a < 0 or not (b < c < a):
+            errors.append(f"DX.92: etapa nao envolve {call}")
+    decoder = (ROOT / "tools" / "decode-bc250-paging-trace.py").read_text(encoding="utf-8")
+    require(decoder, "SUBMIT_STAGES = {", "DX.92 decodificador traduz a etapa", errors)
+
+
+def audit_dx91_gpuva_resolve_never_crosses_process(errors: list[str]) -> None:
+    """DX.91 (Corrida 145): o resolvedor de GPUVA da composicao/Present nao pode
+    aceitar faixa de OUTRO processo. Medido: 120 resolucoes estritas falharam
+    (status=10) e a varredura as "resolveu" com faixas alheias, na unica corrida
+    com corrupcao visual. Tambem exige a linha de copia de paginacao isenta."""
+    miniport = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_active_miniport.c")
+                                .read_text(encoding="utf-8", errors="replace"))
+    resolver = function_body(miniport, "static BOOLEAN Bc250ActiveResolveDisplayGpuVa(")
+    if not resolver:
+        errors.append("DX.91: Bc250ActiveResolveDisplayGpuVa ausente")
+        return
+    require(resolver, "record->OwnerProcess != ownerProcess",
+            "DX.91 varredura filtra pelo dono", errors)
+    require(resolver, "candidates == 1u", "DX.91 sem dono so' com candidata unica", errors)
+    require(resolver, "RANGE_SCAN RECUSADO", "DX.91 recusa nomeada", errors)
+    for label, signature in (
+            ("escape resolve", "static BOOLEAN Bc250ActiveEscapeResolveGpuVaToMc("),):
+        body = function_body(miniport, signature)
+        require(body, "pEscape->hContext == NULL && pEscape->hDevice == NULL",
+                f"DX.91 {label} so' resolve sem dono quando o escape nao tem dono", errors)
+    null_calls = miniport.count("Bc250ActiveResolveDisplayGpuVa(NULL,")
+    guarded = len(re.findall(r"pEscape->hContext == NULL && pEscape->hDevice == NULL &&\s*(?:/\*[^*]*\*/\s*)?\n?\s*Bc250ActiveResolveDisplayGpuVa\(NULL,", miniport))
+    if null_calls != guarded:
+        errors.append(f"DX.91: {null_calls - guarded} chamada(s) ao resolvedor sem dono fora da guarda")
+    callbacks = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c")
+                                 .read_text(encoding="utf-8", errors="replace"))
+    for op in ("op=TRANSFER", "op=FILL", "op=DISCARD"):
+        require(callbacks, f"[DX91_PAGING_MOVE] {op}", f"DX.91 linha de paginacao {op}", errors)
+    display = (ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace")
+    require(display, 'Bc250LogTextContains(Text, "DX91_PAGING_MOVE")',
+            "DX.91 linha de paginacao isenta da amostragem", errors)
+
+
+def audit_dx90_gpu_heartbeat_read_only(errors: list[str]) -> None:
+    """DX.90: batimento do GPU na thread do rastro. A fase ANTES vai a disco
+    antes da primeira leitura de registrador (senao uma leitura que nao volta
+    nao deixa rastro), e a sonda so' LE os quatro registradores catalogados."""
+    callbacks = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c")
+                                 .read_text(encoding="utf-8", errors="replace"))
+    miniport = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_active_miniport.c")
+                                .read_text(encoding="utf-8", errors="replace"))
+    tick = function_body(callbacks, "static VOID Bc250GpuHeartbeatTick(")
+    if not tick:
+        errors.append("DX.90: Bc250GpuHeartbeatTick ausente")
+        return
+    before = tick.find("BC250_GPU_HEARTBEAT_PHASE_BEFORE")
+    probe_call = tick.find("probe(&heartbeat)")
+    if before < 0 or probe_call < 0 or before > probe_call:
+        errors.append("DX.90: registro ANTES nao e' gravado antes das leituras da sonda")
+    write = function_body(callbacks, "static NTSTATUS Bc250GpuHeartbeatWrite(")
+    require(write, "ZwFlushBuffersFile(", "DX.90 cada registro de batimento e' descarregado", errors)
+    thread = function_body(callbacks, "static VOID Bc250PagingTraceThread(")
+    require(thread, "Bc250GpuHeartbeatTick(writerTick);", "DX.90 thread do rastro grava o batimento", errors)
+    if thread.find("Bc250GpuHeartbeatTick(") < thread.find("Bc250CrumbTraceSnapshot("):
+        errors.append("DX.90: batimento roda antes do BPX6/BCR1; uma leitura presa os perderia")
+    probe = function_body(miniport, "static BOOLEAN Bc250ActiveGpuHeartbeatProbe(")
+    if not probe:
+        errors.append("DX.90: sonda Bc250ActiveGpuHeartbeatProbe ausente")
+        return
+    if "Write32" in probe or "Write64" in probe or "KeStallExecutionProcessor" in probe:
+        errors.append("DX.90: sonda de batimento escreve registrador ou espera; tem de ser so' leitura")
+    reads = re.findall(r"Bc250MmioTopologyRead32\([^,]+,\s*(\w+)", probe)
+    allowed = {"BC250_GFX_REG_GRBM_STATUS", "BC250_GFX_REG_CP_STAT",
+               "BC250_GFX_REG_CP_RB0_RPTR", "BC250_GFX_REG_CP_RB0_WPTR"}
+    if set(reads) != allowed:
+        errors.append(f"DX.90: sonda le registradores fora do catalogo previsto: {sorted(set(reads))}")
+    require(miniport, "Bc250McdmInstallGpuHeartbeatProbe(Bc250ActiveGpuHeartbeatProbe);",
+            "DX.90 sonda instalada", errors)
+    decoder = (ROOT / "tools" / "decode-bc250-paging-trace.py").read_text(encoding="utf-8")
+    require(decoder, "GPUHB_MAGIC = 0x31484742", "DX.90 decodificador le o batimento", errors)
+    require(decoder, '"read_never_returned"', "DX.90 decodificador diz se a leitura nao voltou", errors)
+
+
+def audit_m1b1_radv_system_segment(errors: list[str]) -> None:
+    """M1b.1 (doc 554): RADV no segmento 2. A decisao sai SO' da politica pura
+    do contrato; o KMD so' a aplica com o interruptor ligado e SEM segmento 3;
+    comando nunca sai do 1 (DX.43 le o DW0 do IB pela VRAM); os interruptores
+    do KMD e da UMD andam juntos."""
+    contract = strip_c_comments((ROOT / "driver" / "core" / "bc250_allocation_abi_contract.c")
+                                .read_text(encoding="utf-8", errors="replace"))
+    miniport_raw = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(
+        encoding="utf-8", errors="replace")
+    miniport = strip_c_comments(miniport_raw)
+    bridge_raw = (ROOT / "driver" / "umd" / "bc250_umd_vulkan_bridge.c").read_text(
+        encoding="utf-8", errors="replace")
+    policy = function_body(contract, "int Bc250AllocationRadvSystemSegmentPolicy(")
+    if not policy:
+        errors.append("M1b.1: politica Bc250AllocationRadvSystemSegmentPolicy ausente")
+        return
+    umd = policy.find("Bc250AllocationTokenIsUmdClass(")
+    cmd = policy.find("BC250_ALLOCATION_FLAG_RADV_COMMAND")
+    gtt = policy.find("BC250_ALLOCATION_FLAG_RADV_DOMAIN_GTT")
+    if not (0 <= umd < cmd < gtt):
+        errors.append("M1b.1: politica tem de excluir classe da UMD e COMANDO antes de honrar o GTT")
+    for name in ("Bc250AllocationAbiFormat(", "Bc250AllocationAbiParse("):
+        body = function_body(contract, "BC250_ALLOCATION_ABI_STATUS " + name)
+        if "BC250_ALLOCATION_RADV_ONLY_FLAGS" not in body:
+            errors.append(f"M1b.1: {name} nao recusa flag da RADV em classe da UMD")
+    # O KMD aplica so' pela politica, com interruptor e sem segmento 3.
+    i = miniport.find("Bc250AllocationRadvSystemSegmentPolicy(")
+    if i < 0:
+        errors.append("M1b.1: KMD nao chama a politica do contrato")
+    else:
+        window = miniport[max(0, i - 600):i]
+        if "BC250_M1B_RADV_SYSTEM_SEGMENT_ENABLED" not in window:
+            errors.append("M1b.1: politica aplicada fora do interruptor BC250_M1B_RADV_SYSTEM_SEGMENT_ENABLED")
+        if "HiddenSegmentBytesPublished, 0, 0) == 0" not in window:
+            errors.append("M1b.1: politica aplicada com segmento 3 publicado (mistura com M2 nunca medida)")
+    if miniport.count("Bc250AllocationRadvSystemSegmentPolicy(") != 1:
+        errors.append("M1b.1: politica chamada em mais de um sitio")
+    k = re.search(r"#define\s+BC250_M1B_RADV_SYSTEM_SEGMENT_ENABLED\s+(\d+)", miniport_raw)
+    u = re.search(r"#define\s+BC250_M1B_PRESENT_DEVICE_LOCAL\s+(\d+)", bridge_raw)
+    if not k or not u:
+        errors.append("M1b.1: interruptor do KMD ou da UMD ausente")
+    elif k.group(1) != u.group(1):
+        errors.append(f"M1b.1: interruptores divergentes KMD={k.group(1)} UMD={u.group(1)}; "
+                      "ligar um sem o outro manda o buffer do Present para o segmento 2")
+    radv = Path(r"C:\Users\Daniel\Desktop\bc250-win\bc250-win\mesa-radv-wddm\src\amd\vulkan\winsys\wddm2\radv_wddm2_winsys.h")
+    if radv.exists() and k:
+        r = re.search(r"#define\s+BC250_M1B_RADV_MEMORY\s+(\d+)", radv.read_text(encoding="utf-8", errors="replace"))
+        if not r or r.group(1) != k.group(1):
+            errors.append("M1b.1: interruptor da RADV (BC250_M1B_RADV_MEMORY) diverge do KMD")
+
+
+def audit_x2b_fill_by_copy(errors: list[str]) -> None:
+    """X2b (doc 561): o FILL de zeramento (padrao 0) vai por COPY_LINEAR a
+    partir de uma regiao de zeros na frente do proprio pedaco do paging buffer,
+    com a fonte = DmaBufferGpuVirtualAddress + DmaBufferWriteOffset; a
+    submissao confere a fonte contra a GPUVA do IB. Uma variavel: o pacote.
+    O destino, as PTEs e o teto de 256 KiB por pacote nao mudam."""
+    wdk = ROOT / "driver" / "wdk"
+    cb = strip_c_comments((wdk / "bc250_mcdm_callbacks.c").read_text(encoding="utf-8", errors="replace"))
+    if "#define BC250_X2B_FILL_BY_COPY 1" not in cb:
+        errors.append("X2b: interruptor BC250_X2B_FILL_BY_COPY nao esta em 1")
+    fill = function_body(cb, "static NTSTATUS Bc250McdmBuildFillVirtual(")
+    i_pat = fill.find("fill->FillPattern == 0u")
+    i_call = fill.find("return Bc250McdmBuildFillByCopy(Args);")
+    i_const = fill.find("Bc250SdmaEmitConstFill(")
+    if i_pat < 0 or i_call < 0 or not (i_pat < i_call < i_const):
+        errors.append("X2b: o FILL de padrao 0 nao desvia para a copia antes do CONST_FILL")
+    body = function_body(cb, "static NTSTATUS Bc250McdmBuildFillByCopy(")
+    if not body:
+        errors.append("X2b: Bc250McdmBuildFillByCopy ausente")
+        return
+    if "Bc250SdmaEmitConstFill" in body:
+        errors.append("X2b: o FILL por copia ainda emite CONST_FILL")
+    if "Bc250SdmaEmitCopyLinear(" not in body:
+        errors.append("X2b: o FILL por copia nao emite COPY_LINEAR")
+    if "Args->DmaBufferGpuVirtualAddress + (UINT64)Args->DmaBufferWriteOffset" not in body:
+        errors.append("X2b: a fonte dos zeros nao sai de DmaBufferGpuVirtualAddress + DmaBufferWriteOffset")
+    if "dmaBuffer[cursor++] = 0u;" not in body:
+        errors.append("X2b: a regiao de zeros nao e' escrita na frente do pedaco da operacao")
+    if "remaining > (UINT64)zeroBytes ? zeroBytes" not in body:
+        errors.append("X2b: a fatia da copia pode exceder a regiao de zeros")
+    if "#define BC250_X2B_ZERO_MAX_BYTES (32u * 1024u)" not in cb:
+        errors.append("X2b: regiao de zeros maior que 32 KiB muda o tamanho das rajadas (outra variavel)")
+    if "op=FILL_POR_COPIA" not in body:
+        errors.append("X2b: o FILL por copia nao e' distinguivel no log DX91_PAGING_MOVE")
+    proof = (ROOT / "driver" / "core" / "bc250_paging_proof_contract.h").read_text(encoding="utf-8", errors="replace")
+    if "BC250_PAGING_PROOF_OP_FILL_BY_COPY" not in proof or "chunk > leadBytes" not in proof:
+        errors.append("X2b: o decodificador de prova nao exige que cada fatia caiba na regiao de zeros")
+    am = strip_c_comments((wdk / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace"))
+    compact = re.sub(r"\s+", " ", am)
+    if "pagingProof.Opcode == BC250_PAGING_PROOF_OP_FILL_BY_COPY" not in am or \
+       "(pagingProof.Source == (UINT64)pSubmitCommand->DmaBufferVirtualAddress)" not in compact:
+        errors.append("X2b: a submissao nao confere a fonte dos zeros contra a GPUVA do IB")
+    if "FONTE DIVERGENTE" not in am:
+        errors.append("X2b: divergencia da fonte ficou muda")
+    t1 = (ROOT / "driver" / "tests" / "mcdm_callbacks_test.c").read_text(encoding="utf-8", errors="replace")
+    for needle in ("CHECK(c[3] == (UINT32)zeroVa && c[4] == 0u);",
+                   "CHECK(proof.Opcode == BC250_PAGING_PROOF_OP_FILL_BY_COPY);",
+                   "CHECK((g_pagingBigDmaBuffer[0] & 0xFFu) == BC250_SDMA_OP_CONST_FILL);"):
+        if needle not in t1:
+            errors.append("X2b: o teste do FILL por copia perdeu '%s'" % needle)
+    t2 = (ROOT / "driver" / "tests" / "sdma_packet_builder_test.c").read_text(encoding="utf-8", errors="replace")
+    if "/* fatia maior que a regiao de zeros */" not in t2:
+        errors.append("X2b: o teste do decodificador perdeu o caso negativo da fatia maior que a regiao")
+
+
+def audit_4b_cpu_does_not_read_linear_buf(errors: list[str]) -> None:
+    """4b (doc 564): a UMD nao le o buffer linear de Present pela CPU (BAR).
+    Nas tres travas cobertas (200, 202, 203) um processo parou no meio dessa
+    leitura em grade. A copia pela GPU, o flush e o Present nao mudam."""
+    umd = ROOT / "driver" / "umd"
+    hdr = (umd / "bc250_umd_vulkan_bridge.h").read_text(encoding="utf-8", errors="replace")
+    if "#define BC250_UMD_CPU_INSPECTS_LINEAR_BUF 0" not in hdr:
+        errors.append("4b: BC250_UMD_CPU_INSPECTS_LINEAR_BUF nao esta em 0")
+    br = strip_c_comments((umd / "bc250_umd_vulkan_bridge.c").read_text(encoding="utf-8", errors="replace"))
+    body = function_body(br, "uint32_t Bc250UmdVkInspectLinearPresentBuf(")
+    i_if = body.find("#if !BC250_UMD_CPU_INSPECTS_LINEAR_BUF")
+    i_ret = body.find("return 0;", i_if if i_if >= 0 else 0)
+    i_else = body.find("#else")
+    i_map = body.find("vkMapMemory(")
+    if not (0 <= i_if < i_ret < i_else < i_map):
+        errors.append("4b: a inspecao ainda pode mapear/ler o buffer linear antes de sair")
+    if "INSPECAO LINEAR_BUF DESLIGADA (4b)" not in body:
+        errors.append("4b: inspecao desligada ficou muda no log")
+    if br.count("vkMapMemory(pBridge->Device, pBridge->LinearPresentMem") != 1:
+        errors.append("4b: ha outro mapeamento do buffer linear pela CPU fora da inspecao")
+    d3d = strip_c_comments((umd / "bc250_d3d_umd.c").read_text(encoding="utf-8", errors="replace"))
+    if "BOOL inspectThis = BC250_UMD_CPU_INSPECTS_LINEAR_BUF &&" not in d3d or "\"DESLIGADA_4B\"" not in d3d:
+        errors.append("4b: o Present pode reportar AMOSTRA_ZERO sem ter lido nada")
+    t = (ROOT / "driver" / "tests" / "umd_present_grid_test.c").read_text(encoding="utf-8", errors="replace")
+    if "CHECK(g_MapCalls == 0u);" not in t:
+        errors.append("4b: o teste deixou de exigir zero vkMapMemory com a inspecao desligada")
+
+
+def audit_tdrg1_ring_tail(errors: list[str]) -> None:
+    """TDR.G1 (doc 559): no TDR, o fim do anel grafico e a fence sao lidos da
+    MEMORIA nossa (anel e fence mapeados), sem nenhum acesso MMIO; ponteiros
+    reduzidos a uma volta (A15) e dump com teto."""
+    src = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_active_miniport.c")
+                           .read_text(encoding="utf-8", errors="replace"))
+    body = function_body(src, "static VOID Bc250ActiveTdrDumpGfxRingTail(")
+    if not body:
+        errors.append("TDR.G1: Bc250ActiveTdrDumpGfxRingTail ausente")
+        return
+    for forbidden in ("Write32", "Read32", "WRITE_REGISTER", "READ_REGISTER", "KeStallExecutionProcessor"):
+        if forbidden in body:
+            errors.append(f"TDR.G1: dump do anel usa {forbidden}; tem de ser so' leitura de memoria nossa")
+    if "RptrDw & (ringDw - 1u)" not in body or "WptrDw & (ringDw - 1u)" not in body:
+        errors.append("TDR.G1: RPTR/WPTR nao sao reduzidos a uma volta do anel (licao da A15)")
+    if "BC250_TDR_RING_TAIL_MAX_DW" not in body:
+        errors.append("TDR.G1: dump sem teto")
+    quiesce = src.find('"[TDR_GFX_QUIESCE] Snapshot:')
+    call = src.find("Bc250ActiveTdrDumpGfxRingTail(activeCtx, cpRb0Rptr, cpRb0Wptr);")
+    reset = src.find("CP_RB0 desativado e soft-reset executado")
+    if not (0 <= quiesce < call < reset):
+        errors.append("TDR.G1: dump do anel tem de rodar depois do snapshot e ANTES do soft-reset")
+
+
+def audit_cg1_sdma0_post_clock_gating(errors: list[str]) -> None:
+    """CG.1 (doc 557): o SDMA0 nao pode rodar a corrida inteira com os
+    SOFT_OVERRIDE forcados. O valor do POST e' capturado ANTES do primeiro
+    force, e os overrides voltam a ele so' DEPOIS do anel provado (tripe do
+    init e NOP de prova do restart pos-TDR), so' nos bits de override."""
+    src = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_sdma_present.c")
+                           .read_text(encoding="utf-8", errors="replace"))
+    raw = (ROOT / "driver" / "wdk" / "bc250_sdma_present.c").read_text(encoding="utf-8", errors="replace")
+    m = re.search(r"#define\s+BC250_SDMA0_RESTORE_POST_CLOCK_GATING\s+(\d+)", raw)
+    if not m or m.group(1) != "1":
+        errors.append("CG.1: BC250_SDMA0_RESTORE_POST_CLOCK_GATING tem de ser 1 neste candidato")
+    helper = function_body(src, "static VOID Bc250SdmaPresentRestorePostClockGating(")
+    if not helper:
+        errors.append("CG.1: helper de restauracao ausente")
+        return
+    if "~BC250_SDMA0_CLK_SOFT_OVERRIDE_MASK" not in helper or "ClockCtrlAtEntry & BC250_SDMA0_CLK_SOFT_OVERRIDE_MASK" not in helper:
+        errors.append("CG.1: restauracao tem de mexer SO' nos bits de override, a partir do valor de entrada (Lei 6)")
+    if "ClockCtrlEntryCaptured" not in helper:
+        errors.append("CG.1: restauracao sem checar se o valor de entrada foi capturado")
+    init = function_body(src, "NTSTATUS Bc250SdmaPresentInit(")
+    cap = init.find("g_Bc250SdmaPresent.ClockCtrlAtEntry = clk;")
+    force = init.find("clk | 0xFF000000u")
+    if not (0 <= cap < force):
+        errors.append("CG.1: valor do POST nao e' capturado antes do primeiro force no init")
+    claim = init.find("TripodValidated = TRUE;")
+    rest = init.find('Bc250SdmaPresentRestorePostClockGating("INIT")')
+    if not (0 <= claim < rest):
+        errors.append("CG.1: restauracao do init fora do ramo do tripe provado")
+    restart = function_body(src, "BOOLEAN Bc250SdmaPresentRestartAfterTdr(")
+    proof = restart.find("proven = Bc250SdmaPresentSyncNop();")
+    rest2 = restart.find('Bc250SdmaPresentRestorePostClockGating("TDR_RESTART")')
+    lastforce = restart.rfind("value | 0xFF000000u")
+    if not (0 <= lastforce < proof < rest2):
+        errors.append("CG.1: restauracao do restart tem de vir depois do ultimo force e do NOP de prova")
+
+
+def audit_isdma_icg_read_only(errors: list[str]) -> None:
+    """I.SDMA0 / I.CG (doc 556): BSQ1 e BCG1 sao SOMENTE LEITURA, por tabelas
+    fixas com procedencia; o ANTES vai a disco antes das leituras; os novos
+    offsets nunca entram na allowlist de escrita."""
+    callbacks = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c")
+                                 .read_text(encoding="utf-8", errors="replace"))
+    miniport = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_active_miniport.c")
+                                .read_text(encoding="utf-8", errors="replace"))
+    header = (ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.h").read_text(
+        encoding="utf-8", errors="replace")
+    transport = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_mmio_topology_transport.c")
+                                 .read_text(encoding="utf-8", errors="replace"))
+    tick = function_body(callbacks, "static VOID Bc250TraceWordsTick(")
+    if not tick:
+        errors.append("I.SDMA0: Bc250TraceWordsTick ausente")
+        return
+    before = tick.find("BC250_GPU_HEARTBEAT_PHASE_BEFORE")
+    call = tick.find("probe(&sample)")
+    if before < 0 or call < 0 or before > call:
+        errors.append("I.SDMA0: registro ANTES nao vai a disco antes das leituras")
+    thread = function_body(callbacks, "static VOID Bc250PagingTraceThread(")
+    if not (0 <= thread.find("Bc250PlatformSampleTick(") < thread.find("BC250_TRACE_SDMA0_MAGIC")):
+        errors.append("I.SDMA0: BSQ1 tem de rodar depois do BPS1 (e do BGH1)")
+    table = function_body(miniport, "static BOOLEAN Bc250ActiveReadProbeTable(")
+    if not table:
+        errors.append("I.SDMA0: leitor de tabela ausente")
+        return
+    for name in ("Bc250ActiveReadProbeTable(", "Bc250ActiveSdma0Probe(", "Bc250ActiveClockGatingProbe("):
+        body = function_body(miniport, "static BOOLEAN " + name)
+        if "Write32" in body or "Write64" in body or "KeStallExecutionProcessor" in body:
+            errors.append(f"I.SDMA0: {name} escreve registrador ou espera; tem de ser so' leitura")
+    expected = {
+        "g_Bc250Sdma0ProbeRegs": ["BC250_SQ_REG_SDMA0_STATUS", "BC250_SQ_REG_SDMA0_STATUS1",
+                                  "BC250_SQ_REG_SDMA0_STATUS2", "BC250_SQ_REG_SDMA0_RB_RPTR",
+                                  "BC250_SQ_REG_SDMA0_RB_WPTR", "BC250_SQ_REG_SDMA0_IB_RPTR",
+                                  "BC250_SQ_REG_SDMA0_CONTEXT_STATUS"],
+        "g_Bc250ClockGatingProbeRegs": ["BC250_CG_REG_SDMA0_POWER_CNTL", "BC250_CG_REG_SDMA0_CLK_CTRL",
+                                        "BC250_CG_REG_SDMA1_POWER_CNTL", "BC250_CG_REG_SDMA1_CLK_CTRL",
+                                        "BC250_CG_REG_RLC_CGTT_MGCG_OVERRIDE",
+                                        "BC250_CG_REG_RLC_CGCG_CGLS_CTRL",
+                                        "BC250_CG_REG_CGTT_SPI_CLK_CTRL"],
+    }
+    for arr, names in expected.items():
+        m = re.search(arr + r"\[7\]\s*=\s*\{([^}]*)\}", miniport)
+        got = re.findall(r"\w+", m.group(1)) if m else []
+        if got != names:
+            errors.append(f"I.SDMA0: tabela {arr} diverge do previsto: {got}")
+    values = {
+        "BC250_SQ_REG_SDMA0_STATUS": "0x00004A14u", "BC250_SQ_REG_SDMA0_STATUS1": "0x00004A18u",
+        "BC250_SQ_REG_SDMA0_STATUS2": "0x00004A60u", "BC250_SQ_REG_SDMA0_RB_RPTR": "0x00004B8Cu",
+        "BC250_SQ_REG_SDMA0_RB_WPTR": "0x00004B94u", "BC250_SQ_REG_SDMA0_IB_RPTR": "0x00004BACu",
+        "BC250_SQ_REG_SDMA0_CONTEXT_STATUS": "0x00004BC4u",
+        "BC250_CG_REG_SDMA0_POWER_CNTL": "0x000049E8u", "BC250_CG_REG_SDMA0_CLK_CTRL": "0x000049ECu",
+        "BC250_CG_REG_SDMA1_POWER_CNTL": "0x000061E8u", "BC250_CG_REG_SDMA1_CLK_CTRL": "0x000061ECu",
+        "BC250_CG_REG_RLC_CGTT_MGCG_OVERRIDE": "0x0003B120u",
+        "BC250_CG_REG_RLC_CGCG_CGLS_CTRL": "0x0003B124u", "BC250_CG_REG_CGTT_SPI_CLK_CTRL": "0x0003C200u",
+    }
+    wr = function_body(transport, "static uint32_t Bc250MmioTopologyWriteOffsetAllowed(")
+    # So' os offsets que ESTA faixa liberou para leitura; os do anel SDMA0 e o
+    # CLK_CTRL ja' tinham escritores legitimos (bring-up/TDR) antes dela.
+    new_read_only = ("0x00004BACu", "0x00004BC4u", "0x000049E8u", "0x000061E8u",
+                     "0x000061ECu", "0x0003B120u", "0x0003B124u", "0x0003C200u")
+    for name, value in values.items():
+        if not re.search(rf"#define\s+{name}\s+{value}", header):
+            errors.append(f"I.SDMA0: {name} nao e' {value} (procedencia no doc 556)")
+    for value in new_read_only:
+        if value in wr:
+            errors.append(f"I.SDMA0: {value} na allowlist de ESCRITA")
+    for install in ("Bc250McdmInstallSdma0Probe(Bc250ActiveSdma0Probe);",
+                    "Bc250McdmInstallClockGatingProbe(Bc250ActiveClockGatingProbe);"):
+        require(miniport, install, "I.SDMA0 sonda instalada", errors)
+    decoder = (ROOT / "tools" / "decode-bc250-paging-trace.py").read_text(encoding="utf-8")
+    require(decoder, "SQ_MAGIC = 0x31515342", "I.SDMA0 decodificador le o BSQ1", errors)
+    require(decoder, "% SDMA_RING_BYTES", "I.SDMA0 decodificador reduz ponteiros a uma volta (A15)", errors)
+
+
+def audit_iplat_platform_probe(errors: list[str]) -> None:
+    """I.PLAT (doc 553): amostra de temperatura (Tctl) e de estado do SDMA1.
+    A UNICA escrita e' o seletor RSMU_INDEX 0x38 com o valor fixo 0x59800, sob
+    lock e com releitura; o SDMA1 so' e' lido; o dado SMN 0x3C nunca e'
+    escrito; e o registro ANTES vai a disco antes da primeira leitura."""
+    callbacks = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c")
+                                 .read_text(encoding="utf-8", errors="replace"))
+    miniport = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_active_miniport.c")
+                                .read_text(encoding="utf-8", errors="replace"))
+    header = (ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.h").read_text(
+        encoding="utf-8", errors="replace")
+    transport = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_mmio_topology_transport.c")
+                                 .read_text(encoding="utf-8", errors="replace"))
+    tick = function_body(callbacks, "static VOID Bc250PlatformSampleTick(")
+    if not tick:
+        errors.append("I.PLAT: Bc250PlatformSampleTick ausente")
+        return
+    before = tick.find("BC250_GPU_HEARTBEAT_PHASE_BEFORE")
+    probe_call = tick.find("probe(&sample)")
+    if before < 0 or probe_call < 0 or before > probe_call:
+        errors.append("I.PLAT: registro ANTES nao e' gravado antes das leituras da sonda")
+    thread = function_body(callbacks, "static VOID Bc250PagingTraceThread(")
+    if thread.find("Bc250PlatformSampleTick(") < thread.find("Bc250GpuHeartbeatTick("):
+        errors.append("I.PLAT: amostra de plataforma roda antes do BGH1; uma escrita SMN presa o perderia")
+    probe = function_body(miniport, "static BOOLEAN Bc250ActivePlatformProbe(")
+    if not probe:
+        errors.append("I.PLAT: sonda Bc250ActivePlatformProbe ausente")
+        return
+    if "Write64" in probe or "KeStallExecutionProcessor" in probe:
+        errors.append("I.PLAT: sonda de plataforma escreve 64 bits ou espera")
+    writes = re.findall(r"Bc250MmioTopologyWrite32\(\s*[^,]+,\s*(\w+)\s*,\s*(\w+)\s*\)", probe)
+    if writes != [("BC250_PLAT_REG_RSMU_INDEX", "BC250_PLAT_SMN_THM_TCTL")]:
+        errors.append(f"I.PLAT: a unica escrita permitida e' RSMU_INDEX=0x59800; achei {writes}")
+    if probe.count("Write32") != 1:
+        errors.append("I.PLAT: sonda de plataforma tem escrita alem do seletor SMN")
+    reads = set(re.findall(r"Bc250MmioTopologyRead32\([^,]+,\s*(\w+)", probe))
+    allowed = {"BC250_PLAT_REG_SDMA1_STATUS", "BC250_PLAT_REG_SDMA1_F32_CNTL",
+               "BC250_PLAT_REG_SDMA1_RB_CNTL", "BC250_PLAT_REG_SDMA1_RB_RPTR",
+               "BC250_PLAT_REG_SDMA1_RB_WPTR", "BC250_PLAT_REG_RSMU_INDEX",
+               "BC250_PLAT_REG_RSMU_DATA"}
+    if reads != allowed:
+        errors.append(f"I.PLAT: sonda le registradores fora do previsto: {sorted(reads)}")
+    lock = probe.find("KeAcquireSpinLock(&g_Bc250SmnIndexLock")
+    unlock = probe.find("KeReleaseSpinLock(&g_Bc250SmnIndexLock")
+    wpos = probe.find("Bc250MmioTopologyWrite32(")
+    dpos = probe.find("BC250_PLAT_REG_RSMU_DATA")
+    if not (0 <= lock < wpos < dpos < unlock):
+        errors.append("I.PLAT: sequencia INDEX/DATA fora do lock unico do SMN (docs/03)")
+    if "indexBack == BC250_PLAT_SMN_THM_TCTL" not in probe:
+        errors.append("I.PLAT: seletor SMN sem releitura conferida antes de ler o dado")
+    for name, value in (("BC250_PLAT_REG_RSMU_INDEX", "0x00000038u"),
+                        ("BC250_PLAT_REG_RSMU_DATA", "0x0000003Cu"),
+                        ("BC250_PLAT_SMN_THM_TCTL", "0x00059800u"),
+                        ("BC250_PLAT_REG_SDMA1_STATUS", "0x00006214u"),
+                        ("BC250_PLAT_REG_SDMA1_F32_CNTL", "0x00006228u"),
+                        ("BC250_PLAT_REG_SDMA1_RB_CNTL", "0x00006380u"),
+                        ("BC250_PLAT_REG_SDMA1_RB_RPTR", "0x0000638Cu"),
+                        ("BC250_PLAT_REG_SDMA1_RB_WPTR", "0x00006394u")):
+        if not re.search(rf"#define\s+{name}\s+{value}", header):
+            errors.append(f"I.PLAT: {name} nao e' {value} (procedencia no doc 553)")
+    wr = function_body(transport, "static uint32_t Bc250MmioTopologyWriteOffsetAllowed(")
+    if "0x0000003Cu" in wr:
+        errors.append("I.PLAT: RSMU_DATA 0x3C na allowlist de ESCRITA -- escreveria no SMN")
+    for off in ("0x00006214u", "0x00006228u", "0x00006380u", "0x0000638Cu", "0x00006394u"):
+        if off in wr:
+            errors.append(f"I.PLAT: registrador do SDMA1 {off} na allowlist de escrita")
+    require(miniport, "Bc250McdmInstallPlatformProbe(Bc250ActivePlatformProbe);",
+            "I.PLAT sonda instalada", errors)
+    decoder = (ROOT / "tools" / "decode-bc250-paging-trace.py").read_text(encoding="utf-8")
+    require(decoder, "PLAT_MAGIC = 0x31535042", "I.PLAT decodificador le o BPS1", errors)
+    require(decoder, "def tctl_milli_c(", "I.PLAT decodificador reconverte o Tctl", errors)
 
 
 def audit_dx85_cpu_wait_timeout_is_failure(errors: list[str]) -> None:
@@ -8825,10 +10277,15 @@ def main() -> int:
     # no gate e amostrados somente na telemetria de sucesso.
     require(active, 'Bc250ActiveValidateGpuVaRange("IB"',
             "IB validado pagina a pagina antes da SDMA", errors)
-    require(active, 'Bc250ActiveValidateGpuVaRange("SRC"',
-            "origem validada pagina a pagina antes da SDMA", errors)
-    require(active, 'Bc250ActiveValidateGpuVaRange("DEST"',
-            "destino validado pagina a pagina antes da SDMA", errors)
+    # DX.97 (Corrida 158, doc 511): SRC/DEST passam a ser conferidos so' nas
+    # pontas. A cobertura integral da C3.16 era precaucao, nao correcao de
+    # defeito medido, e custava ~7.900 paginas/s de leitura de tabelas pela
+    # BAR, em curso no instante da trava. Pagina invalida no miolo cai na
+    # pagina dummy e aparece no GFX_FAULT_SENTINELA. O IB segue integral.
+    require(active, 'Bc250ActiveValidateGpuVaRangeEnds("SRC"',
+            "origem validada nas pontas antes da SDMA (DX.97)", errors)
+    require(active, 'Bc250ActiveValidateGpuVaRangeEnds("DEST"',
+            "destino validado nas pontas antes da SDMA (DX.97)", errors)
     forbid(active, "uint64_t probes[3]",
            "gate de traducao nao pode voltar a amostrar tres paginas", errors)
     require(display, "BC250_VERBOSE_LOG_PERIOD      1024L",
@@ -10375,6 +11832,13 @@ def main() -> int:
     audit_gpuva_snapshot_capacity(errors)
     audit_umd_trace_reaches_the_evidence_file(errors)
     audit_composition_never_submits_a_context(errors)
+    audit_descriptor_binding_never_drains(errors)
+    audit_draw_flush_matches_readback(errors)
+    audit_opened_surface_is_refreshed_per_frame(errors)
+    audit_radv_stderr_reaches_evidence(errors)
+    audit_umd_log_collection_is_bounded_to_the_bind(errors)
+    audit_frente_b_alias_is_bounded(errors)
+    audit_hidden_segment_is_derived_and_bounded(errors)
     audit_primary_allocation_is_declared_to_the_kernel(errors)
     audit_primary_is_not_overbroad(errors)
     audit_dxgi_1_6_table_complete(errors)
@@ -10423,6 +11887,35 @@ def main() -> int:
     audit_dx85_cpu_wait_timeout_is_failure(errors)
     audit_dx86_no_dbgprint_in_driver(errors)
     audit_dx87_crumbs_reach_disk(errors)
+    audit_dx88_log_file_single_owner(errors)
+    audit_dx89_shared_resource_not_cpu_visible(errors)
+    audit_dx90_gpu_heartbeat_read_only(errors)
+    audit_iplat_platform_probe(errors)
+    audit_isdma_icg_read_only(errors)
+    audit_cg1_sdma0_post_clock_gating(errors)
+    audit_tdrg1_ring_tail(errors)
+    audit_x2b_fill_by_copy(errors)
+    audit_4b_cpu_does_not_read_linear_buf(errors)
+    audit_m1b1_radv_system_segment(errors)
+    audit_dx91_gpuva_resolve_never_crosses_process(errors)
+    audit_dx92_submit_stages_in_crumbs(errors)
+    audit_m1_system_segment_only_for_gpu_va_only(errors)
+    audit_dx93_owner_walk_and_alloc_map(errors)
+    audit_fps1_gpuva_rebuild_is_linear(errors)
+    audit_dx95_set_root_never_touches_vmid8(errors)
+    audit_fps3b_sdma_retire_high_resolution_timer(errors)
+    audit_dx96_hdp_misc_written_once(errors)
+    audit_hdp1_write_flush_is_real(errors)
+    audit_t31_vram_no_wc_uc_alias(errors)
+    audit_evt1_gpu_event_ring_is_wired(errors)
+    audit_x1_no_hdp_or_vram_read_while_sdma_busy(errors)
+    audit_x2a_paging_fill_sliced_and_vram_crumbed(errors)
+    audit_x3_no_canary_vram_read_while_sdma_busy(errors)
+    audit_x4_no_runtime_canaries(errors)
+    audit_t33_utcl1_no_force_invalidation(errors)
+    audit_t34_tlb_flush_upstream_aligned(errors)
+    audit_dx97_range_walk_only_endpoints(errors)
+    audit_shader2_srv_buffer_is_bound_and_named(errors)
     audit_dx52_create_allocation_refusal_speaks(errors)
     audit_dx53_vmid_disarm_before_release(errors)
     audit_dx56_paging_trace(errors)
@@ -10434,6 +11927,8 @@ def main() -> int:
         return 1
 
     print("BC250 MCDM SAFETY AUDIT: PASS")
+    print("  T3.4 GFXHUB TLB flush upstream aligned (Linux gmc_v10_0.c 3-step, no range RMW): enforced")
+    print("  T3.3 SDMA UTCL1 no runtime force invalidation (Linux sdma_v5_0.c aligned): enforced")
     print("  DX.80 RTV framebuffer cache with zero-flush rotation: enforced")
     print("  DX.79 texture upload coalescing via staging ring: enforced")
     print("  DX.26 golden settings and CSB snapshot is read-only: enforced")

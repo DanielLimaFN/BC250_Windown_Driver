@@ -178,6 +178,20 @@ typedef struct BC250_WINSYS_RESOURCE_BINDING {
      */
     BOOL   HasGeometry;
     BC250_ALLOCATION_GEOMETRY Geometry;
+    /*
+     * DX.89: recurso criado com D3D10_DDI_RESOURCE_MISC_SHARED. Toda alocacao
+     * compartilhada foi recusada pelo runtime depois de o KMD aceita-la
+     * (Corridas 133-137); o teste desta faixa e' nao pedir CPU_VISIBLE para
+     * ela (hipotese a do doc 476).
+     */
+    BOOL   Shared;
+    /*
+     * M1 (doc 491): recurso so' tocado pela GPU via GPUVA (e pela CPU via Lock)
+     * -- textura so' de leitura, vertex/index/constant buffer. Nenhum caminho
+     * do KMD o endereca por MC. Vira BC250_ALLOCATION_FLAG_GPU_VA_ONLY, e o KMD
+     * o deixa morar no segmento de memoria do sistema.
+     */
+    BOOL   GpuVaOnly;
 } BC250_WINSYS_RESOURCE_BINDING;
 
 /*

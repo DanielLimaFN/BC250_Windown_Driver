@@ -104,6 +104,52 @@ BC250_SEGMENT_ADDRESS_STATUS Bc250SegmentOffsetToVramOffset(
     uint64_t SizeBytes,
     uint64_t *VramOffset);
 
+/*
+ * M2 (doc 548) -- SEGMENTO 3: VRAM LOCAL QUE A CPU NAO ENXERGA.
+ *
+ * MEDIDO na Corrida 193: a placa reserva VramTotalMiB=512 (RCC_CONFIG_MEMSIZE,
+ * conferido contra GCMC_VM_FB_LOCATION) e so' CpuVisibleMiB=256 (BAR). O
+ * segmento 1 so' cobre a janela visivel; a outra metade era marcada como
+ * "opaca" e ficava parada, enquanto o dwm.exe recriava o device 242 vezes por
+ * vkAllocateMemory -2. A BIOS permite UMA de ate 8 GB (Daniel, 01/10), entao
+ * o tamanho NUNCA e' constante: sai da topologia lida no boot.
+ *
+ *   [alinhado(CpuVisible), alinhado(Total - TopGuard))
+ *
+ * menos qualquer regiao interna do driver que caia nessa faixa (os alocadores
+ * internos sao criados com a VRAM TOTAL e uma alocacao top-down sem a flag de
+ * CPU cairia aqui). Regiao que toca o inicio empurra o inicio; regiao acima
+ * dele trunca o fim -- o mesmo criterio do segmento 1 (A16).
+ *
+ * TopGuard e' HIPOTESE declarada: a tabela de descoberta nao foi localizada
+ * (DiscoveryTmrStatus=5) e, no Linux, reservas de firmware (discovery TMR,
+ * vram_usagebyfirmware) ficam no TOPO da VRAM. Trocar por valor medido quando
+ * houver leitura delas.
+ */
+#define BC250_HIDDEN_SEGMENT_ID 3u
+#define BC250_HIDDEN_SEGMENT_TOP_GUARD_BYTES (16ull * 1024ull * 1024ull)
+#define BC250_HIDDEN_SEGMENT_MIN_BYTES (16ull * 1024ull * 1024ull)
+#define BC250_HIDDEN_SEGMENT_ALIGNMENT (64ull * 1024ull)
+
+typedef enum BC250_HIDDEN_SEGMENT_STATUS {
+    BC250_HIDDEN_SEGMENT_OK = 0,
+    BC250_HIDDEN_SEGMENT_BAD_ARGUMENT,
+    BC250_HIDDEN_SEGMENT_NO_HIDDEN_VRAM,
+    BC250_HIDDEN_SEGMENT_TOO_SMALL
+} BC250_HIDDEN_SEGMENT_STATUS;
+
+BC250_HIDDEN_SEGMENT_STATUS Bc250ComputeHiddenSegment(
+    uint64_t VramTotalBytes,
+    uint64_t CpuVisibleBytes,
+    uint64_t TopGuardBytes,
+    const uint64_t *BusyOffsets,
+    const uint64_t *BusyLengths,
+    uint32_t BusyCount,
+    uint64_t *BaseOffset,
+    uint64_t *Bytes);
+
+const char *Bc250HiddenSegmentStatusName(BC250_HIDDEN_SEGMENT_STATUS Status);
+
 #ifdef __cplusplus
 }
 #endif

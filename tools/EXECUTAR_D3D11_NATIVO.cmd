@@ -76,7 +76,14 @@ if "%BC250_CAPTURE_MONITOR_EDID%"=="1" (
         exit /b 1
     )
 )
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bind-bc250mcdm-lab.ps1" -Execute -IAcceptBlackScreenRisk -EnableRenderNode -EnableShaderDispatch -EnablePersistentSubmission -EnableGpuvaLabPromotion -IAcceptGpuvaLabPromotion -EnableNode1JournalGatePerProcess -EnableD3D11LabPromotion -RunD3D11Native -D3D11Frames 60 -WatchdogTimeoutSeconds %BC250_WATCHDOG_SECONDS% -IAcceptAutomaticRecoveryReboot %DWM_CAPTURE_ARG%
+rem Corrida 141: BC250_SKIP_D3D11_HARNESS=1 faz o bind SEM o harness de conformidade,
+rem para separar a carga do Explorer da concorrencia com o harness. Padrao: com harness.
+set "HARNESS_ARGS=-RunD3D11Native -D3D11Frames 60"
+rem Corrida 143: BC250_D3D11_START_DELAY=N atrasa o harness N s depois do display.
+if defined BC250_D3D11_START_DELAY set "HARNESS_ARGS=%HARNESS_ARGS% -D3D11StartDelaySeconds %BC250_D3D11_START_DELAY%"
+if "%BC250_SKIP_D3D11_HARNESS%"=="1" set "HARNESS_ARGS="
+if "%BC250_SKIP_D3D11_HARNESS%"=="1" echo [141] Bind SEM o harness de conformidade D3D11.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bind-bc250mcdm-lab.ps1" -Execute -IAcceptBlackScreenRisk -EnableRenderNode -EnableShaderDispatch -EnablePersistentSubmission -EnableGpuvaLabPromotion -IAcceptGpuvaLabPromotion -EnableNode1JournalGatePerProcess -EnableD3D11LabPromotion %HARNESS_ARGS% -WatchdogTimeoutSeconds %BC250_WATCHDOG_SECONDS% -IAcceptAutomaticRecoveryReboot %DWM_CAPTURE_ARG%
 set "BIND_EXIT=%ERRORLEVEL%"
 echo.
 echo 3. Executando rollback incondicional do ensaio automatizado...

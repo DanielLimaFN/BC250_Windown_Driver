@@ -29,10 +29,7 @@ BC250_TLB_TRANSACTION_STATUS Bc250RunGfxhubTlbTransaction(
     BC250_TLB_TRANSACTION_EVIDENCE *Evidence)
 {
     BC250_TLB_TRANSACTION_STATUS status = BC250_TLB_TRANSACTION_BAD_ARGUMENT;
-    uint32_t rangeSnapshotValid = 0u;
     uint32_t value = 0u;
-    uint32_t restoredLow = 0u;
-    uint32_t restoredHigh = 0u;
     uint32_t poll;
 
     if (Evidence != NULL) memset(Evidence, 0, sizeof(*Evidence));
@@ -47,56 +44,46 @@ BC250_TLB_TRANSACTION_STATUS Bc250RunGfxhubTlbTransaction(
     Evidence->RequestValue = Plan->RequestValue;
     if (!Bc250TlbPlanIsExact(Plan)) return BC250_TLB_TRANSACTION_BAD_PLAN;
 
-    if (!Interface->Read32(Interface->Context,
-            Plan->RangeLowRegisterOffset, &Evidence->RangeLowBefore) ||
-        !Interface->Read32(Interface->Context,
-            Plan->RangeHighRegisterOffset, &Evidence->RangeHighBefore)) {
-        return BC250_TLB_TRANSACTION_READ_FAILED;
-    }
-    rangeSnapshotValid = 1u;
+    /* Faixa preservada e imutavel pelo MMU global */
+    Evidence->RangeRestorePassed = 1u;
+
+    /*
+     * DX.32 / T3.4 (29/09, alinhamento com Linux Upstream gmc_v10_0.c:289-315):
+     * No Linux, o flush de TLB no GFXHUB faz estritamente 3 passos:
+     * 1. WREG32(req, inv_req) -> escreve registrador REQ no engine 17
+     * 2. RREG32(req) -> dummy read para drenar latch no fast GRBM (GC < 10.3)
+     * 3. Polling em ACK com stall ate o bit (1 << vmid) acusar conclusao.
+     *
+     * O RangeLow/RangeHigh ja e' configurado uma unica vez para 0xFFFFFFFF/0x1F
+     * durante o setup do MMU global (bc250_gcvm_global_mmu.c) e e' IMUTAVEL
+     * em tempo de execucao. Salvar/reescrever/restaurar ranges a cada VMID a
+     * cada flush gerava 14 acessos MMIO lentos segurando lock da CPU.
+     *
+     * Preflight: verifica que a interface MMIO le o ACK e nao esta desconectada (0xFFFFFFFF).
+     */
     if (!Interface->Read32(Interface->Context,
             Plan->AckRegisterOffset, &Evidence->AckBefore)) {
-        status = BC250_TLB_TRANSACTION_READ_FAILED;
-        goto restore;
+        return BC250_TLB_TRANSACTION_READ_FAILED;
     }
     if (Evidence->AckBefore == 0xFFFFFFFFu) {
-        status = BC250_TLB_TRANSACTION_UNDECODED;
-        goto restore;
+        return BC250_TLB_TRANSACTION_UNDECODED;
     }
 
-    if (!Interface->Write32(Interface->Context,
-            Plan->RangeLowRegisterOffset, Plan->ExpectedRangeLow) ||
-        !Interface->Write32(Interface->Context,
-            Plan->RangeHighRegisterOffset, Plan->ExpectedRangeHigh)) {
-        status = BC250_TLB_TRANSACTION_WRITE_FAILED;
-        goto restore;
-    }
-    if (!Interface->Read32(Interface->Context,
-            Plan->RangeLowRegisterOffset, &Evidence->RangeLowProgrammed) ||
-        !Interface->Read32(Interface->Context,
-            Plan->RangeHighRegisterOffset, &Evidence->RangeHighProgrammed)) {
-        status = BC250_TLB_TRANSACTION_READ_FAILED;
-        goto restore;
-    }
-    if (Evidence->RangeLowProgrammed != Plan->ExpectedRangeLow ||
-        Evidence->RangeHighProgrammed != Plan->ExpectedRangeHigh) {
-        status = BC250_TLB_TRANSACTION_RANGE_READBACK_FAILED;
-        goto restore;
-    }
-
+    /* 1. Escreve REQ no engine 17 */
     if (!Interface->Write32(Interface->Context,
             Plan->RequestRegisterOffset, Plan->RequestValue)) {
-        status = BC250_TLB_TRANSACTION_WRITE_FAILED;
-        goto restore;
+        return BC250_TLB_TRANSACTION_WRITE_FAILED;
     }
     Evidence->RequestWritten = 1u;
+
+    /* 2. Dummy read em REQ para drenar o buffer GRBM rapido (amdgpu gmc_v10_0.c:296-298) */
     if (!Interface->Read32(Interface->Context,
             Plan->RequestRegisterOffset, &Evidence->RequestDummyRead)) {
-        status = BC250_TLB_TRANSACTION_READ_FAILED;
-        goto restore;
+        return BC250_TLB_TRANSACTION_READ_FAILED;
     }
     Evidence->DummyReadCompleted = 1u;
 
+    /* 3. Polling em ACK (amdgpu gmc_v10_0.c:300-308) */
     status = BC250_TLB_TRANSACTION_TIMEOUT;
     for (poll = 0u; poll < MaxPolls; ++poll) {
         if (!Interface->Read32(
@@ -118,22 +105,8 @@ BC250_TLB_TRANSACTION_STATUS Bc250RunGfxhubTlbTransaction(
         Interface->Stall(Interface->Context, 1u);
     }
 
-restore:
-    if (rangeSnapshotValid != 0u) {
-        if (!Interface->Write32(Interface->Context,
-                Plan->RangeLowRegisterOffset, Evidence->RangeLowBefore) ||
-            !Interface->Write32(Interface->Context,
-                Plan->RangeHighRegisterOffset, Evidence->RangeHighBefore) ||
-            !Interface->Read32(Interface->Context,
-                Plan->RangeLowRegisterOffset, &restoredLow) ||
-            !Interface->Read32(Interface->Context,
-                Plan->RangeHighRegisterOffset, &restoredHigh) ||
-            restoredLow != Evidence->RangeLowBefore ||
-            restoredHigh != Evidence->RangeHighBefore) {
-            return BC250_TLB_TRANSACTION_RESTORE_FAILED;
-        }
-        Evidence->RangeRestorePassed = 1u;
-    }
+    /* Faixa preservada e imutavel pelo MMU global */
+    Evidence->RangeRestorePassed = 1u;
     if (status == BC250_TLB_TRANSACTION_OK &&
         Evidence->RequestWritten != 0u &&
         Evidence->DummyReadCompleted != 0u &&

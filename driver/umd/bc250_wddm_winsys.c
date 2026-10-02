@@ -602,12 +602,41 @@ BC250_WINSYS_STATUS Bc250WinsysAllocateForResource(
     BC250_ALLOCATION_ABI_STATUS abiStatus;
     uint32_t flags = 0u;
     uint32_t tokenClass = BC250_ALLOCATION_TOKEN_CLASS(Token);
+    /*
+     * DX.89 (hipotese a do doc 476): recurso compartilhado NAO pede CPU_VISIBLE.
+     * Medido nas Corridas 133-137: 100% das alocacoes compartilhadas sao
+     * recusadas com E_INVALIDARG depois de o KMD devolver sucesso, e o VidMm
+     * nunca cria o objeto (ETW da 137). Uma variavel por vez: so' esta muda.
+     */
+    BOOL sharedResource = (Binding != NULL && Binding->Shared) ? TRUE : FALSE;
     if (tokenClass == BC250_ALLOCATION_TOKEN_CLASS_STAGING ||
         tokenClass == BC250_ALLOCATION_TOKEN_CLASS_CPU_VISIBLE ||
         tokenClass == BC250_ALLOCATION_TOKEN_CLASS_COMMAND ||
         tokenClass == BC250_ALLOCATION_TOKEN_CLASS_PROOF ||
-        tokenClass == BC250_ALLOCATION_TOKEN_CLASS_RESOURCE) {
+        (tokenClass == BC250_ALLOCATION_TOKEN_CLASS_RESOURCE && !sharedResource)) {
         flags |= BC250_ALLOCATION_FLAG_CPU_VISIBLE;
+    }
+    if (sharedResource) {
+        BC250_WINSYS_LOG("Allocate SHARED: recurso compartilhado sem CPU_VISIBLE "
+            "(DX.89 hipotese a) Token=0x%llX TokenClass=%u Flags=0x%X",
+            (unsigned long long)Token, (unsigned)tokenClass, (unsigned)flags);
+    }
+    /*
+     * M1 (doc 491): so' RESOURCE nao compartilhado e nao primario. A regra de
+     * classe tambem e' verificada no contrato (formatacao e parse), entao um
+     * erro aqui vira recusa, nao alocacao no segmento errado.
+     */
+    if (Binding != NULL && Binding->GpuVaOnly && !Binding->Primary &&
+        !sharedResource && tokenClass == BC250_ALLOCATION_TOKEN_CLASS_RESOURCE) {
+        static volatile LONG s_gpuVaOnlyCount = 0;
+        LONG count = InterlockedIncrement(&s_gpuVaOnlyCount);
+        flags |= BC250_ALLOCATION_FLAG_GPU_VA_ONLY;
+        if (count <= 8 || (count % 256) == 0) {
+            BC250_WINSYS_LOG("Allocate M1 GPU_VA_ONLY #%ld: Token=0x%llX Size=%llu "
+                "Flags=0x%X (pode morar no segmento de sistema)",
+                count, (unsigned long long)Token,
+                (unsigned long long)ByteSize, (unsigned)flags);
+        }
     }
     const BC250_ALLOCATION_GEOMETRY *geometry = NULL;
     if (Binding != NULL && Binding->HasGeometry) {
@@ -1019,6 +1048,7 @@ BC250_WINSYS_STATUS Bc250WinsysReadAllocation(
     memset(&lockArgs, 0, sizeof(lockArgs));
     lockArgs.hAllocation = Allocation->KernelAllocation;
     lockArgs.Flags.LockEntire = 1u;
+    lockArgs.Flags.ReadOnly = 1u;
     BC250_WINSYS_LOG("Read ENTER: hAlloc=0x%x Bytes=%u",
         (unsigned)Allocation->KernelAllocation, ByteCount);
     hr = Context->Callbacks->pfnLockCb(Context->RuntimeDevice, &lockArgs);

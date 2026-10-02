@@ -56,7 +56,13 @@
 #define R_MINOR_PTR 0x04C54u
 #define R_HDP_INVALIDATE 0x03FC4u
 #define R_HDP_MISC 0x03FCCu
-#define R_HDP_FLUSH 0x04A80u
+/*
+ * HDP.1 (28/09, doc 519): R_HDP_FLUSH valia 0x04A80, que e' SDMA0_UTCL1_INV0
+ * e nao flush de HDP. Saiu desta lista E do snapshot/restauracao abaixo, que
+ * tambem o reescrevia. O flush real vem de ../core/bc250_hdp_contract.h.
+ */
+#define R_HDP_FLUSH_REAL BC250_HDP_REG_MEM_COHERENCY_FLUSH_CNTL
+#define R_HDP_POSTING_READ BC250_HDP_REG_FLUSH_POSTING_READ
 
 #define F_RB_ENABLE 0x00000001u
 #define M_RB_SIZE 0x0000003Eu
@@ -83,7 +89,8 @@ C_ASSERT(R_UTCL1_CNTL == BC250_SDMA0_REG_UTCL1_CNTL);
 C_ASSERT(R_UTCL1_PAGE == BC250_SDMA0_REG_UTCL1_PAGE);
 C_ASSERT(R_HDP_INVALIDATE == BC250_SDMA0_REG_HDP_INVALIDATE);
 C_ASSERT(R_HDP_MISC == BC250_SDMA0_REG_HDP_MISC);
-C_ASSERT(R_HDP_FLUSH == BC250_SDMA0_REG_HDP_FLUSH);
+C_ASSERT(R_HDP_FLUSH_REAL == 0x0385Cu);
+C_ASSERT(R_HDP_POSTING_READ == 0x0378Cu);
 C_ASSERT(R_STATUS1 == BC250_SDMA0_REG_STATUS1);
 C_ASSERT(R_ERROR_LOG == BC250_SDMA0_REG_ERROR_LOG);
 C_ASSERT(R_RB_CNTL == BC250_SDMA0_REG_RB_CNTL);
@@ -106,7 +113,7 @@ static const uint32_t g_Bc250SdmaRegisters[] = {
     R_RB_WPTR, R_RB_WPTR_HI, R_WPTR_POLL_CNTL, R_RPTR_ADDR_HI,
     R_RPTR_ADDR_LO, R_IB_CNTL, R_DOORBELL, R_MINOR_PTR,
     R_WPTR_POLL_ADDR_HI, R_WPTR_POLL_ADDR_LO, R_HDP_INVALIDATE,
-    R_HDP_MISC, R_HDP_FLUSH
+    R_HDP_MISC
 };
 
 #define BC250_SDMA_REGISTER_COUNT \
@@ -137,19 +144,23 @@ static uint32_t Bc250SdmaGolden(
     return Bc250SdmaWrite(Context, Offset, value);
 }
 
+/*
+ * DX.96-HDP (doc 509): como em bc250_sdma_present.c, HDP_MISC_CNTL nao e' mais
+ * alternado aqui. Upstream (hdp_v5_0.c) so' faz flush + invalidacao com
+ * leitura em tempo de execucao; FLUSH_INVALIDATE_CACHE e' ligado uma vez na
+ * init (Bc250SdmaPresentHdpInitOnce). NAO VALIDADO EM HARDWARE.
+ */
 static uint32_t Bc250SdmaHdp(
     BC250_DXGK_ACTIVE_CONTEXT *Context)
 {
-    uint32_t misc, value;
-    if (!Bc250SdmaRead(Context, R_HDP_MISC, &misc) ||
-        !Bc250SdmaWrite(Context, R_HDP_FLUSH, 0u) ||
-        !Bc250SdmaRead(Context, R_HDP_FLUSH, &value) ||
+    uint32_t value;
+    /* HDP.1: barreira de CPU, flush de escrita real e leitura de confirmacao
+     * (amdgpu_hdp_generic_flush), depois a invalidacao de leitura. */
+    _mm_mfence();
+    if (!Bc250SdmaWrite(Context, R_HDP_FLUSH_REAL, BC250_HDP_MEM_FLUSH_VALUE) ||
+        !Bc250SdmaRead(Context, R_HDP_POSTING_READ, &value) ||
         !Bc250SdmaWrite(Context, R_HDP_INVALIDATE, 1u) ||
-        !Bc250SdmaRead(Context, R_HDP_INVALIDATE, &value) ||
-        !Bc250SdmaWrite(Context, R_HDP_MISC, misc | 1u) ||
-        !Bc250SdmaRead(Context, R_HDP_MISC, &value) ||
-        !Bc250SdmaWrite(Context, R_HDP_MISC, misc & ~1u) ||
-        !Bc250SdmaRead(Context, R_HDP_MISC, &value)) return 0u;
+        !Bc250SdmaRead(Context, R_HDP_INVALIDATE, &value)) return 0u;
     return 1u;
 }
 
@@ -284,6 +295,10 @@ BC250_SDMA_RING_WORK_STATUS Bc250ActiveRunSdmaRingWork(
         goto Cleanup;
     }
     workMapped = 1u;
+    Bc250LogUcVramMapping("SDMA_RING_WORK_RING", ringRegion.Offset,
+        BC250_SDMA_WORK_PAGE_BYTES);
+    Bc250LogUcVramMapping("SDMA_RING_WORK_WORK", workRegion.Offset,
+        BC250_SDMA_WORK_BYTES);
     ringBackup = (uint32_t *)ExAllocatePool2(POOL_FLAG_NON_PAGED,
         BC250_SDMA_WORK_PAGE_BYTES, BC250_SDMA_RING_POOL_TAG);
     workBackup = (uint32_t *)ExAllocatePool2(POOL_FLAG_NON_PAGED,
@@ -618,7 +633,6 @@ Restore:
         for (j = 0u; j < 5u; ++j) KeStallExecutionProcessor(1000u);
         (void)Bc250SdmaWrite(Context, R_HDP_INVALIDATE, snapshot[24]);
         (void)Bc250SdmaWrite(Context, R_HDP_MISC, snapshot[25]);
-        (void)Bc250SdmaWrite(Context, R_HDP_FLUSH, snapshot[26]);
         Evidence->MemoryRestorePassed = 1u;
         for (i = 0u; i < BC250_SDMA_RING_DWORDS; ++i) {
             if (Bc250SdmaDeviceRead(&ring[i]) != ringBackup[i]) {

@@ -3,6 +3,7 @@
 
 #include <ntddk.h>
 #include <dispmprt.h>
+#include "../core/bc250_vram_cache_policy.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -271,6 +272,23 @@ static __inline void Bc250DisplayLogSamplingSummary(void)
 {
 }
 #endif
+
+/*
+ * T3.1 (28/09, doc 520): todo mapeamento UNCACHED permanente da VRAM declara a
+ * propria faixa e se ela cai inteira na faixa privada UC (fora da janela WC do
+ * framebuffer). A proxima corrida sai com o mapa de tipos de cache MEDIDO, e
+ * uma sobreposicao nova se declara em vez de passar calada.
+ */
+static __inline void Bc250LogUcVramMapping(
+    const char *Site,
+    unsigned long long Offset,
+    unsigned long long Length)
+{
+    unsigned int privateUc = Bc250VramRangeIsPrivateUc(Offset, Length);
+    Bc250DisplayLog("[T31_UC_MAP] %s: VRAM [0x%llX,+0x%llX) UNCACHED privada=%u%s\n",
+        Site, Offset, Length, privateUc,
+        privateUc ? "" : " -- SOBREPOE a janela WC (aliasing WC/UC)");
+}
 
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
 VOID Bc250ActiveSdmaRetirePendingOnAllAdapters(_In_ BOOLEAN FromDpc);

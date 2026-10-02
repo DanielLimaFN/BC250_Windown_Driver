@@ -109,6 +109,10 @@ typedef struct _BC250_UMD_RESOURCE {
     BC250_WINSYS_ALLOCATION Allocation;
     D3D10DDI_HRTRESOURCE hRTResource;
     D3D10DDI_HKMRESOURCE hKMResource;
+    /* T4.6: recurso vindo de OpenResource (superficie de OUTRO processo) e o
+     * DxgiPresentCount do device na ultima recopia para a VkImage. */
+    BOOL OpenedShared;
+    UINT64 SharedRefreshPresent;
     void *pCpuShadow;
     /* Vulkan objects */
     VkBuffer VkBuf;
@@ -116,6 +120,10 @@ typedef struct _BC250_UMD_RESOURCE {
     VkDeviceMemory VkMem;
     VkDeviceSize VkMemSize;
     VkImageLayout VkLayout;
+    /* Frente B (doc 547): a VkImage e' LINEAR e a memoria dela e' a propria
+     * alocacao WDDM deste recurso (VkMem importada pela GPUVA). Sem copia e
+     * sem segunda alocacao; recopiar para ela seria copiar a memoria sobre si. */
+    BOOL VkMemAliased;
     /* Numero de DDIs de escrita de textura que chegaram a fonte unica de
      * sincronia (UpdateSubresourceUP ou Unmap). Diagnostico por recurso; nao
      * afirma que o upload Vulkan concluiu. */
@@ -427,6 +435,7 @@ typedef struct _BC250_UMD_DEVICE {
     /* DX.54: Presents do device, para amostrar a inspecao do buffer linear. */
     UINT32 PresentInspectCount;
     UINT32 DrawReadbackCount; /* DX.25: leituras do alvo logo apos o draw (teto por device) */
+    UINT64 DxgiPresentCount;  /* T4.6: Presents DXGI deste device; marca o quadro */
     /* Motivo exato da ultima tentativa Vulkan. Aponta somente para literais
      * estaticos; Bc250UmdRejectUnbackedDraw o publica em vez do diagnostico
      * historico e falso de "PM4 ausente". */
@@ -516,6 +525,25 @@ VOID APIENTRY Bc250Umd10OpenResource(
     _In_ CONST D3D10DDIARG_OPENRESOURCE* pOpen,
     D3D10DDI_HRESOURCE hResource,
     D3D10DDI_HRTRESOURCE hRTResource);
+
+/*
+ * T4.2 (29/09) -- declarada em bc250_umd_caps_probe.h (regras de versao de
+ * interface ficam juntas e a suite linka o objeto direto, sem exportar da DLL).
+ * Qual struct o runtime entrega em D3D10DDIARG_OPENRESOURCE.
+ *
+ * pOpenAllocationInfo (D3DDDI_OPENALLOCATIONINFO, 24 bytes, SEM GpuVirtualAddress)
+ * e pOpenAllocationInfo2 (D3DDDI_OPENALLOCATIONINFO2, com GpuVirtualAddress no
+ * offset 24) sao um UNION (d3d10umddi.h). O "2" so' vale a partir da interface
+ * WDDM 2.0 (D3DWDDM2_0_DDI_MINOR_VERSION = 17). O dwm.exe negocia 0x000B000B
+ * (D3D11.0.7, minor 11) porque recusamos 0x000B0011 de proposito desde 07/09.
+ *
+ * MEDIDO nas Corridas 180 e 181: ler pOpenAllocationInfo2[0].GpuVirtualAddress
+ * nessa interface deu 0x3F80000000000000, 0x200FFFF, 0xF166610 -- leitura alem
+ * do fim do elemento v1. Zero cargas de superficie compartilhada nas duas.
+ *
+ * TRUE somente quando o array e' de D3DDDI_OPENALLOCATIONINFO2. Funcao pura:
+ * Bc250UmdOpenAllocationArrayIsInfo2.
+ */
 
 VOID APIENTRY Bc250Umd10DestroyResource(
     D3D10DDI_HDEVICE hDevice,
@@ -1057,6 +1085,15 @@ HRESULT APIENTRY Bc250Umd10CreateDevice(
 
 HRESULT APIENTRY Bc250Umd10CloseAdapter(
     D3D10DDI_HADAPTER hAdapter);
+
+HRESULT Bc250UmdBridgeGpuBlt(
+    _Inout_ struct _BC250_UMD_DEVICE *d,
+    uint64_t srcGpuVa,
+    UINT srcPitch,
+    uint64_t dstGpuVa,
+    UINT dstPitch,
+    UINT width,
+    UINT height);
 
 /* D3D10 / D3D11 Adapter Entry Points */
 HRESULT APIENTRY OpenAdapter10(

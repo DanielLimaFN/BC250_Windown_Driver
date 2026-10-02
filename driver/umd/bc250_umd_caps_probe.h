@@ -230,6 +230,22 @@ BOOL Bc250UmdProbeAcceptsInterface10_2(UINT Interface);
 BOOL Bc250UmdProbeAcceptsInterface10(UINT Interface);
 
 /*
+ * T4.2 (29/09): TRUE somente quando D3D10DDIARG_OPENRESOURCE traz o array
+ * D3DDDI_OPENALLOCATIONINFO2 (interface WDDM 2.0, minor 17). Na 0x000B000B
+ * negociada o array e' o v1, sem GpuVirtualAddress. Ver bc250_d3d_umd.h.
+ */
+BOOL Bc250UmdOpenAllocationArrayIsInfo2(UINT Interface);
+
+/*
+ * T4.4 (30/09): sequencia de token retomada entre cargas da DLL no mesmo
+ * processo, guardada na variavel de ambiente BC250_UMD_TOKEN_SEQUENCE como
+ * hexadecimal de 8 digitos. Parse estrito: 1 a 8 digitos hex, nada mais.
+ * Format grava sempre 8 digitos e o terminador (Size >= 9).
+ */
+BOOL Bc250UmdTokenSequenceParse(const char* Text, LONG* Value);
+BOOL Bc250UmdTokenSequenceFormat(LONG Value, char* Text, size_t Size);
+
+/*
  * Zerar um caps e' resposta HONESTA para alguns tipos e MENTIRA para outros.
  *
  * D3D11DDICAPS_3DPIPELINESUPPORT carrega um D3D11DDI_3DPIPELINELEVEL, e nesse
@@ -248,6 +264,18 @@ BOOL Bc250UmdCapsZeroIsTruthful(UINT CapsType);
 
 /* Nome legivel de um D3D10_2DDICAPS_TYPE, para o log da corrida. */
 const char* Bc250UmdCapsTypeName(UINT Type);
+
+/*
+ * Frente B (doc 547): politica pura do alias VkImage LINEAR sobre a alocacao
+ * WDDM do recurso. Devolvem NULL quando o alias e' licito, ou o motivo da
+ * recusa. A primeira roda antes de criar a imagem; a segunda confere o layout
+ * que a RADV declarou contra a alocacao.
+ */
+const char* Bc250UmdFrenteBPreCheck(BOOL AllocCreated, UINT64 GpuVa, UINT64 AllocBytes,
+    UINT MipLevels, UINT ArraySize, UINT SampleCount, BOOL DepthStencil, BOOL RenderTarget, BOOL OpenedSurface,
+    UINT Width, UINT Height, UINT RowPitch);
+const char* Bc250UmdFrenteBLayoutCheck(UINT64 GpuVa, UINT64 AllocBytes, UINT RowPitch,
+    UINT64 LayoutOffset, UINT64 LayoutRowPitch, UINT64 ReqSize, UINT64 ReqAlignment);
 
 #ifdef __cplusplus
 }

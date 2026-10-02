@@ -64,6 +64,47 @@ BOOL Bc250UmdProbeAcceptsInterface10(UINT Interface)
     return (Interface == BC250_UMD_PROBE_IFACE_D3D10_1) ? TRUE : FALSE;
 }
 
+BOOL Bc250UmdOpenAllocationArrayIsInfo2(UINT Interface)
+{
+    /* D3DWDDM2_0_DDI_MINOR_VERSION = 17 (d3d10umddi.h, WDK 10.0.28000). */
+    return ((Interface >> 16) == 11u && (Interface & 0xFFFFu) >= 17u) ? TRUE : FALSE;
+}
+
+BOOL Bc250UmdTokenSequenceParse(const char* Text, LONG* Value)
+{
+    ULONG value = 0u;
+    size_t digits = 0u;
+    if (Value != NULL) *Value = 0;
+    if (Text == NULL || Value == NULL) return FALSE;
+    for (; Text[digits] != '\0'; ++digits) {
+        char c = Text[digits];
+        ULONG nibble;
+        if (digits >= 8u) return FALSE;
+        if (c >= '0' && c <= '9') nibble = (ULONG)(c - '0');
+        else if (c >= 'A' && c <= 'F') nibble = (ULONG)(c - 'A' + 10);
+        else if (c >= 'a' && c <= 'f') nibble = (ULONG)(c - 'a' + 10);
+        else return FALSE;
+        value = (value << 4) | nibble;
+    }
+    if (digits == 0u) return FALSE;
+    *Value = (LONG)value;
+    return TRUE;
+}
+
+BOOL Bc250UmdTokenSequenceFormat(LONG Value, char* Text, size_t Size)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    ULONG value = (ULONG)Value;
+    int i;
+    if (Text == NULL || Size < 9u) return FALSE;
+    for (i = 7; i >= 0; --i) {
+        Text[i] = hex[value & 0xFu];
+        value >>= 4;
+    }
+    Text[8] = '\0';
+    return TRUE;
+}
+
 BOOL Bc250Umd3DPipelineIsDeclared(BOOL NativeReady, BOOL LabPromotionArmed)
 {
     if (NativeReady) return TRUE;
@@ -143,4 +184,37 @@ const char* Bc250UmdCapsTypeName(UINT Type)
     case 143u: return "D3DWDDM2_0DDICAPS_D3D11_OPTIONS2";
     default:   return "(tipo nao catalogado)";
     }
+}
+
+/* Frente B (doc 547) -- ver bc250_umd_caps_probe.h. */
+const char* Bc250UmdFrenteBPreCheck(BOOL AllocCreated, UINT64 GpuVa, UINT64 AllocBytes,
+    UINT MipLevels, UINT ArraySize, UINT SampleCount, BOOL DepthStencil, BOOL RenderTarget, BOOL OpenedSurface,
+    UINT Width, UINT Height, UINT RowPitch)
+{
+    if (!AllocCreated || GpuVa == 0u || AllocBytes < 4096u) return "sem alocacao WDDM mapeada";
+    if (MipLevels > 1u || ArraySize > 1u || SampleCount > 1u) return "mips/array/msaa (linear so' 1x1x1)";
+    if (DepthStencil) return "depth-stencil nao tem layout linear";
+    /* Corrida 190: com alias nos alvos de render do DWM, os buffers do swapchain
+     * perderam o conteudo fora do que era redesenhado (6 de 61 Presents cheios,
+     * contra 28 de 29 na 188). Mecanismo ainda H; render target volta a ter
+     * memoria propria ate ele ser medido. */
+    if (RenderTarget) return "render target fica com memoria propria (Corrida 190)";
+    /* Corridas 191 e 192: o MESMO IB (Fnv64 4092CF3C8621F809, shaders D86B7E93/59C609E5)
+     * travou a GPU duas vezes lendo uma textura propria 256x80 com Alias=1. Mecanismo H;
+     * o alias fica so' nas superficies abertas de outro processo, onde o ganho foi medido. */
+    if (!OpenedSurface) return "textura propria fica com memoria propria (Corridas 191/192)";
+    if (Width == 0u || Height == 0u || RowPitch == 0u) return "geometria incompleta";
+    if ((UINT64)RowPitch * (UINT64)Height > AllocBytes) return "pitch*altura maior que a alocacao";
+    return NULL;
+}
+
+const char* Bc250UmdFrenteBLayoutCheck(UINT64 GpuVa, UINT64 AllocBytes, UINT RowPitch,
+    UINT64 LayoutOffset, UINT64 LayoutRowPitch, UINT64 ReqSize, UINT64 ReqAlignment)
+{
+    const UINT64 pageBytes = AllocBytes & ~0xFFFull;
+    if (LayoutOffset != 0u) return "imagem nao comeca no inicio da memoria";
+    if (LayoutRowPitch != (UINT64)RowPitch) return "pitch da RADV difere do pitch da alocacao";
+    if (ReqSize == 0u || ReqSize > pageBytes) return "imagem maior que a alocacao";
+    if (ReqAlignment != 0u && (GpuVa % ReqAlignment) != 0u) return "GPUVA fora do alinhamento exigido";
+    return NULL;
 }

@@ -3,3 +3,11 @@
 # O indice guarda LF; o checkout em qualquer SO entrega CRLF.
 *.cmd text eol=crlf
 *.bat text eol=crlf
+
+# Copias verificadas do upstream Linux (hash conferido pela auditoria DX.27):
+# byte a byte, sem conversao de fim de linha. Com core.autocrlf=true o checkout
+# de 26/09 as reescreveu em CRLF e o sha256 deixou de bater.
+inc/linux_ref/** -text
+
+# Scripts de Linux (Frente L, 30/09): bash quebra com CRLF.
+*.sh text eol=lf

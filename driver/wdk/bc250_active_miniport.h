@@ -638,6 +638,8 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     volatile LONG RootPageTableAbiReady;
     uint64_t AllocationSegmentBytes;
     uint32_t AllocationSegmentSet;
+    /* M2 (doc 548): tamanho do segmento 3 publicado pela ultima resolucao de caps. */
+    volatile LONG64 HiddenSegmentBytesPublished;
     uint32_t RootPageTableMaxEntries;
     volatile LONG IsActive;
     uint32_t SubmissionsCount;
@@ -689,6 +691,14 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     KDPC SdmaRetirementDpc;
     volatile LONG SdmaRetirementTimerInitialized;
     volatile LONG SdmaRetirementTimerRunning;
+    /*
+     * FPS.3b (Corrida 154): o KTIMER acima so' vence no tique do relogio
+     * (15,6 ms medido): submit -> conclusao plano de 0 a 15 ms e corte em
+     * 16 ms. Timer de alta resolucao (EX_TIMER_HIGH_RESOLUTION) alocado no
+     * AddDevice; NULL = alocacao falhou e o KTIMER continua sendo o caminho.
+     */
+    PEX_TIMER SdmaRetirementHrTimer;
+    uint32_t SdmaRetirementHrFires;
     uint32_t SdmaRetirementDpcRuns;
     uint32_t SdmaRetirementNotifiedTotal;
     uint32_t SdmaRetirementNotifyFailedTotal;

@@ -49,8 +49,23 @@ extern "C" {
  * 4096. Que o teto maior tenha causado ou antecipado o travamento e' HIPOTESE:
  * a Corrida 115 ja travou aos ~2m19s com o mesmo ultimo estagio. 1024 e' o
  * estado medido das Corridas 118..127, inclusive os 600 s da 127.
+ *
+ * DX.94 (28/09, Corrida 152) -- DE VOLTA A 4096, SO' O ESPACO.
+ * A condicao da DX.85 ("medir e cortar o custo do commit antes de reabrir a
+ * capacidade") foi cumprida pela FPS.1: reinsercao confiavel sem varrer os
+ * slots e copia em bloco. Benchmark offline com o codigo atual: 18,8 us por
+ * substituicao com teto 1024; 85,5 us (N=1000) e 122,8 us (N=4000) com 4096 --
+ * ~14x abaixo dos 1.770 us que rodaram 600 s estaveis na Corrida 150 e ~57x
+ * abaixo do que as 128/129 pagavam com 4096. O custo agora e' dominado pelo
+ * tamanho do espaco (zerar e copiar), nao por N. Medido na 152: o espaco
+ * fica em Mapped=1024 Livres=0 com 26.195 PUBLICACAO_FALHA; cada falha
+ * aborta o journal com as PTEs de hardware ja escritas, e a vista de software
+ * deixa de conter mapeamentos que a GPU tem. BC250_GPUVA_JOURNAL_MAX_CHANGES
+ * fica em 1024 de proposito: ele limita o lote, e 1024 x ~123 us ~ 126 ms e'
+ * o pior caso do commit; com 4096 nos dois seriam ~500 ms. Custo estatico:
+ * ~440 KiB por espaco, quatro no contexto ativo. NAO VALIDADO EM HARDWARE.
  */
-#define BC250_GPUVA_SPACE_MAX_RANGES 1024u
+#define BC250_GPUVA_SPACE_MAX_RANGES 4096u
 #define BC250_GPUVA_PAGE_BYTES 4096ull
 #define BC250_GPUVA_PAGE_MASK (BC250_GPUVA_PAGE_BYTES - 1ull)
 /*

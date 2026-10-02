@@ -1,25 +1,25 @@
 ﻿{
-    "evidence_dir":  "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\docs\\evidence\\2026-09-26_22-05-40-DESKTOP-HQAG6T4-lab-binding",
-    "watchdog_token":  "a14b6523-dcb1-4fae-bf0a-4382d7ae30da",
+    "evidence_dir":  "C:\\Users\\Daniel\\Desktop\\NamixWDDM\\docs\\evidence\\2026-10-02_11-44-04-DESKTOP-HQAG6T4-lab-binding",
+    "watchdog_token":  "0106206d-ad2e-4159-99cf-8ec04a9b4c7e",
     "watchdog_disabled":  false,
     "instance_id":  "PCI\\VEN_1002\u0026DEV_13FE\u0026SUBSYS_00001022\u0026REV_00\\4\u002619CAF403\u00260\u00260041",
     "published_inf":  "oem12.inf",
-    "package_sys_sha256":  "F5C9B85EF1C2B52BCAADDFEE358F398F1E032E3DF390B63BE9DBC514D547A702",
+    "package_sys_sha256":  "07859E32883EAC529C29B85EEF0FA5A5AC1E912417F71C473D6851D59173B490",
     "profile":  {
                     "ProfileMode":  "DISPLAY_RENDER_LAB",
                     "RenderNode":  1,
                     "ShaderDispatchEnabled":  true,
                     "PersistentSubmissionEnabled":  true,
                     "GfxWaveProbe":  1,
-                    "DriverVer":  "09/26/2026,3.292.1.0"
+                    "DriverVer":  "10/02/2026,3.351.1.0"
                 },
     "external_libs":  [
                           {
                               "name":  "vulkan_radeon.dll",
                               "path":  "C:\\BC250_LIB\\vulkan_radeon.dll",
-                              "bytes":  16682496,
-                              "modified_utc":  "2026-09-23T17:06:53.2169986Z",
-                              "sha256":  "FCAA11FE9DFEF68225A12D3FC455D9F777651E2AD3F31B2E32525A889DD1008C"
+                              "bytes":  16683008,
+                              "modified_utc":  "2026-10-01T01:25:16.0658915Z",
+                              "sha256":  "5447A17D05FE55344ED766D049219CF7E14AB4552C17EAED789BB4656835DE82"
                           },
                           {
                               "name":  "libvkd3d-shader-1.dll",

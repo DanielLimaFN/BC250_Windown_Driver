@@ -87,6 +87,24 @@ consolidados em `docs/evidence/`. Movidos apenas para desentulhar a raiz. Na 2ª
 
 ---
 
+## 4ª passada — 01/10/2026 (limpeza da raiz e plano mestre)
+
+A pedido do Daniel, a raiz ficou só com os documentos normativos e o plano único
+[`PLANO_MESTRE.md`](../PLANO_MESTRE.md). Tudo foi movido com `git mv` (o untracked com `mv`), nada apagado,
+exceto os `.obj` soltos da raiz (artefatos de compilação não versionados e regeneráveis).
+
+- **`planos-superseded/2026-10-01/`** (6): `PLANO_DESKTOP_ACELERADO.md`, `PLANO_DE_TRABALHO_TRAVA_E_DESKTOP.md`,
+  `PLANO_EXECUCAO_WDDM_GPU.md`, `PLANO_PRESENT_E_FAIL.md`, `IDEIAS_DE_AVANCO.md`, `walkthrough.md`. O conteúdo
+  vivo deles (frentes W/R/B, pendências de driver, regras) foi absorvido pelo `PLANO_MESTRE.md`. Comentários em
+  código que citam `PLANO_PRESENT_E_FAIL.md` ou `PLANO_DESKTOP_ACELERADO.md` apontam para esta pasta.
+- **`raiz-superseded/2026-10-01/`** (44): análises de dump e de disassembly (`dump_*.txt`, `disasm_*.txt`,
+  `frame_analysis.txt`, `call_ddi*.txt`, `call_site.txt`), logs de build e de ensaio (`work_*.log`, `f3-*.log`),
+  saídas soltas (`last_tail.txt`, `paging_stages*.txt`, `scan_out*.txt`, `dbgprint_output.txt`), arquivos de
+  1 linha (`SPIR-V`, `query`, `tmp_evidence.txt`), `capability_status.json`, `comp.spv`, `temp_test.c` e o script
+  `Diagnostico-KDNET.ps1` (KDNET está encerrado).
+
+---
+
 ## Regra de manutenção
 
 Um documento vai para cá quando **as três** condições valem:

@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+static int Bc250AllocationTokenIsUmdClass(uint64_t AllocationToken);
+
 /*
  * Coerencia da geometria. Usada na formatacao E no parse, para que o KMD nunca
  * aceite um blob que a UMD nao produziria -- fonte unica da regra.
@@ -69,6 +71,17 @@ BC250_ALLOCATION_ABI_STATUS Bc250AllocationAbiFormat(
     if ((Flags & BC250_ALLOCATION_FLAG_HAS_GEOMETRY) != 0u) {
         return BC250_ALLOCATION_ABI_BAD_FLAGS;
     }
+    /* M1: GPU_VA_ONLY so' na classe RESOURCE (ver o cabecalho). */
+    if ((Flags & BC250_ALLOCATION_FLAG_GPU_VA_ONLY) != 0u &&
+        BC250_ALLOCATION_TOKEN_CLASS(AllocationToken) !=
+            BC250_ALLOCATION_TOKEN_CLASS_RESOURCE) {
+        return BC250_ALLOCATION_ABI_BAD_FLAGS;
+    }
+    /* M1b.1: flags da RADV so' em token da RADV (ver o cabecalho). */
+    if ((Flags & BC250_ALLOCATION_RADV_ONLY_FLAGS) != 0u &&
+        Bc250AllocationTokenIsUmdClass(AllocationToken)) {
+        return BC250_ALLOCATION_ABI_BAD_FLAGS;
+    }
     if (Alignment < BC250_ALLOCATION_MIN_ALIGNMENT ||
         Alignment > BC250_ALLOCATION_MAX_ALIGNMENT ||
         (Alignment & (Alignment - 1u)) != 0u ||
@@ -130,6 +143,17 @@ BC250_ALLOCATION_ABI_STATUS Bc250AllocationAbiParse(
         return ((candidate.Flags & ~BC250_ALLOCATION_SUPPORTED_FLAGS) != 0u) ?
             BC250_ALLOCATION_ABI_BAD_FLAGS : BC250_ALLOCATION_ABI_BAD_SIZE;
     }
+    /* M1: mesma regra da formatacao -- GPU_VA_ONLY fora de RESOURCE e' recusada. */
+    if ((candidate.Flags & BC250_ALLOCATION_FLAG_GPU_VA_ONLY) != 0u &&
+        BC250_ALLOCATION_TOKEN_CLASS(candidate.AllocationToken) !=
+            BC250_ALLOCATION_TOKEN_CLASS_RESOURCE) {
+        return BC250_ALLOCATION_ABI_BAD_FLAGS;
+    }
+    /* M1b.1: mesma regra da formatacao -- flag da RADV em classe da UMD e' recusada. */
+    if ((candidate.Flags & BC250_ALLOCATION_RADV_ONLY_FLAGS) != 0u &&
+        Bc250AllocationTokenIsUmdClass(candidate.AllocationToken)) {
+        return BC250_ALLOCATION_ABI_BAD_FLAGS;
+    }
     if (candidate.Alignment < BC250_ALLOCATION_MIN_ALIGNMENT ||
         candidate.Alignment > BC250_ALLOCATION_MAX_ALIGNMENT ||
         (candidate.Alignment & (candidate.Alignment - 1u)) != 0u ||
@@ -172,10 +196,79 @@ int Bc250AllocationRequiresCpuAccess(
         tokenClass == BC250_ALLOCATION_TOKEN_CLASS_GDI ||
         tokenClass == BC250_ALLOCATION_TOKEN_CLASS_CPU_VISIBLE ||
         tokenClass == BC250_ALLOCATION_TOKEN_CLASS_COMMAND ||
-        tokenClass == BC250_ALLOCATION_TOKEN_CLASS_PROOF ||
-        tokenClass == BC250_ALLOCATION_TOKEN_CLASS_RESOURCE) {
+        tokenClass == BC250_ALLOCATION_TOKEN_CLASS_PROOF) {
         return 1;
     }
+    /*
+     * DX.89: a classe RESOURCE deixou de exigir CPU pelo token; quem decide e'
+     * a flag BC250_ALLOCATION_FLAG_CPU_VISIBLE, tratada acima. A UMD continua
+     * mandando a flag para recursos comuns e a omite para recursos
+     * compartilhados (MISC_SHARED). Na Corrida 138 a UMD ja' omitia a flag e o
+     * KMD devolveu CpuVisible=1 mesmo assim, por esta regra de classe.
+     */
     return 0;
 }
 
+int Bc250AllocationMayUseSystemSegment(
+    const BC250_ALLOCATION_PRIVATE_V1 *Request)
+{
+    return Request != NULL &&
+        (Request->Flags & BC250_ALLOCATION_FLAG_GPU_VA_ONLY) != 0u &&
+        BC250_ALLOCATION_TOKEN_CLASS(Request->AllocationToken) ==
+            BC250_ALLOCATION_TOKEN_CLASS_RESOURCE;
+}
+
+
+static int Bc250AllocationTokenIsUmdClass(uint64_t AllocationToken)
+{
+    const uint32_t tokenClass = BC250_ALLOCATION_TOKEN_CLASS(AllocationToken);
+    return tokenClass == BC250_ALLOCATION_TOKEN_CLASS_PRIMARY ||
+        tokenClass == BC250_ALLOCATION_TOKEN_CLASS_SHADOW ||
+        tokenClass == BC250_ALLOCATION_TOKEN_CLASS_STAGING ||
+        tokenClass == BC250_ALLOCATION_TOKEN_CLASS_GDI ||
+        tokenClass == BC250_ALLOCATION_TOKEN_CLASS_CPU_VISIBLE ||
+        tokenClass == BC250_ALLOCATION_TOKEN_CLASS_COMMAND ||
+        tokenClass == BC250_ALLOCATION_TOKEN_CLASS_PROOF ||
+        tokenClass == BC250_ALLOCATION_TOKEN_CLASS_RESOURCE;
+}
+
+int Bc250AllocationMayUseHiddenSegment(
+    const BC250_ALLOCATION_PRIVATE_V1 *Request)
+{
+    if (Request == NULL) return 0;
+    if ((Request->Flags & (BC250_ALLOCATION_FLAG_CPU_VISIBLE |
+                           BC250_ALLOCATION_FLAG_GPU_VA_ONLY)) != 0u) {
+        return 0;
+    }
+    return Bc250AllocationTokenIsUmdClass(Request->AllocationToken) ? 0 : 1;
+}
+
+int Bc250AllocationLockNeedsApertureFallback(
+    const BC250_ALLOCATION_PRIVATE_V1 *Request,
+    int CpuVisible)
+{
+    if (Request == NULL || !CpuVisible) return 0;
+    return Bc250AllocationTokenIsUmdClass(Request->AllocationToken) ? 0 : 1;
+}
+
+int Bc250AllocationRadvSystemSegmentPolicy(
+    const BC250_ALLOCATION_PRIVATE_V1 *Request,
+    int CpuVisible,
+    BC250_ALLOCATION_SEGMENT_POLICY *Out)
+{
+    if (Out != NULL) memset(Out, 0, sizeof(*Out));
+    if (Request == NULL || Out == NULL) return 0;
+    if (Bc250AllocationTokenIsUmdClass(Request->AllocationToken)) return 0;
+    if ((Request->Flags & BC250_ALLOCATION_FLAG_RADV_COMMAND) != 0u) return 0;
+    if ((Request->Flags & BC250_ALLOCATION_FLAG_RADV_DOMAIN_GTT) != 0u) {
+        Out->SegmentSet = 0x3u;
+        Out->Preferred0 = 2u;
+        Out->Preferred1 = 1u;
+        return 1;
+    }
+    if (CpuVisible) return 0;
+    Out->SegmentSet = 0x3u;
+    Out->Preferred0 = 1u;
+    Out->Preferred1 = 2u;
+    return 1;
+}

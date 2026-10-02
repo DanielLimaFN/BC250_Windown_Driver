@@ -8,6 +8,13 @@
 #define BC250_PAGING_PROOF_OP_NONE  0u
 #define BC250_PAGING_PROOF_OP_FILL  1u
 #define BC250_PAGING_PROOF_OP_COPY  2u
+/*
+ * X2b (02/10, doc 561): zeramento por copia. O IB comeca com uma regiao de
+ * zeros (cada dword 0 e' um SDMA NOP de 1 DW, P1 sdma_v5_0.c) e segue com
+ * COPY_LINEAR de FONTE CONSTANTE (a propria regiao) para destino contiguo.
+ * Reconhecido so' quando ha regiao de zeros na frente e cada fatia cabe nela.
+ */
+#define BC250_PAGING_PROOF_OP_FILL_BY_COPY 3u
 
 typedef struct BC250_PAGING_PROOF {
     uint64_t CpuPhysical;
@@ -17,12 +24,14 @@ typedef struct BC250_PAGING_PROOF {
     uint32_t Bytes;
     uint32_t Pattern;
     uint32_t Opcode;
+    uint32_t SourceBytes; /* X2b: bytes da regiao de zeros na frente do IB */
 } BC250_PAGING_PROOF;
 
 static inline int Bc250PagingDecodeProof(const uint32_t *Words,
     uint32_t Count, uint64_t Physical, BC250_PAGING_PROOF *Proof)
 {
     uint32_t i = 0u, bytes = 0u, pattern = 0u, opcode = BC250_PAGING_PROOF_OP_NONE;
+    uint32_t leadBytes = 0u, sourceBytes = 0u;
     uint64_t dstStart = 0u, srcStart = 0u;
     if (!Words || !Proof || !Physical || !Count || Count > 0x3fffffffu) return 0;
 
@@ -31,6 +40,7 @@ static inline int Bc250PagingDecodeProof(const uint32_t *Words,
         ++i;
     }
     if (i >= Count) return 0;
+    leadBytes = i * 4u;
 
     if (Words[i] == (BC250_SDMA_OP_CONST_FILL | (2u << 30))) {
         opcode = BC250_PAGING_PROOF_OP_FILL;
@@ -50,6 +60,37 @@ static inline int Bc250PagingDecodeProof(const uint32_t *Words,
             i += 5u;
         }
         if (!bytes || Count * 4u > 4096u - (uint32_t)(Physical & 4095u)) return 0;
+    } else if (leadBytes != 0u &&
+               Words[i] == (BC250_SDMA_OP_COPY | (BC250_SDMA_SUBOP_COPY_LINEAR << 8))) {
+        /* X2b: fonte constante (a regiao de zeros), destino contiguo. */
+        opcode = BC250_PAGING_PROOF_OP_FILL_BY_COPY;
+        while (i < Count) {
+            uint64_t srcAddr, dstAddr;
+            uint32_t chunk;
+            if (Words[i] == BC250_SDMA_OP_NOP) { ++i; continue; }
+            if (Count - i < 7u || Words[i] != (BC250_SDMA_OP_COPY | (BC250_SDMA_SUBOP_COPY_LINEAR << 8)) ||
+                Words[i + 1u] > 0x3fffffu) return 0;
+            chunk = Words[i + 1u] + 1u;
+            srcAddr = Words[i + 3u] | ((uint64_t)Words[i + 4u] << 32);
+            dstAddr = Words[i + 5u] | ((uint64_t)Words[i + 6u] << 32);
+            if ((srcAddr & 3u) || (dstAddr & 3u) || (chunk & 3u) || chunk > leadBytes ||
+                dstAddr + chunk < dstAddr || bytes > 0xffffffffu - chunk) return 0;
+            if (!bytes) {
+                srcStart = srcAddr;
+                dstStart = dstAddr;
+            } else if (srcAddr != srcStart || dstAddr != dstStart + bytes) {
+                return 0;
+            }
+            bytes += chunk;
+            i += 7u;
+        }
+        /*
+         * Sem o teto de uma pagina dos outros ramos: a regiao de zeros ocupa
+         * varias paginas por construcao. O PA de amarracao continua sendo o da
+         * primeira pagina; a submissao confere a FONTE contra a GPUVA do IB.
+         */
+        if (!bytes) return 0;
+        sourceBytes = leadBytes;
     } else if (Words[i] == (BC250_SDMA_OP_COPY | (BC250_SDMA_SUBOP_COPY_LINEAR << 8))) {
         opcode = BC250_PAGING_PROOF_OP_COPY;
         while (i < Count) {
@@ -85,6 +126,7 @@ static inline int Bc250PagingDecodeProof(const uint32_t *Words,
     Proof->Bytes = bytes;
     Proof->Pattern = pattern;
     Proof->Opcode = opcode;
+    Proof->SourceBytes = sourceBytes;
     return 1;
 }
 

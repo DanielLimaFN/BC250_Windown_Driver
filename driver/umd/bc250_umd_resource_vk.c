@@ -1,6 +1,8 @@
 #include "bc250_d3d_umd.h"
 #include "bc250_umd_resource_vk.h"
 #include "bc250_wddm_winsys.h"
+#include "bc250_radv_import.h"
+#include "bc250_umd_caps_probe.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -104,6 +106,216 @@ BOOL Bc250UmdVkComputeImageUploadLayout(
     return *pBufferRowLength >= Width;
 }
 
+/*
+ * FRENTE B (doc 547) -- a VkImage passa a USAR a alocacao WDDM do recurso.
+ *
+ * MEDIDO na Corrida 189: o dwm.exe pediu 12 MB para a VkImage de uma superficie
+ * aberta, o MakeResident da RADV voltou 0xC0000017 (segmento de ~257 MB cheio)
+ * e o DWM destruiu e recriou o device inteiro, 3 s antes da trava. Cada textura
+ * ocupava DUAS vezes a memoria: a alocacao WDDM desta UMD (linear, pitch
+ * RowPitch) e a memoria propria da RADV para a imagem otimizada.
+ *
+ * Aqui a imagem nasce LINEAR, com initialLayout PREINITIALIZED (o conteudo da
+ * alocacao e' preservado), e a memoria Vulkan e' importada pela GPUVA que esta
+ * UMD ja' mapeou e tornou residente (Bc250RadvImportGpuVaInfo). So' e' aceito
+ * quando a RADV confirma, pela propria descricao do layout, que a imagem cabe
+ * exatamente na alocacao: offset 0, rowPitch == RowPitch, tamanho e alinhamento.
+ * Qualquer divergencia devolve FALSE com o motivo nomeado e o chamador segue o
+ * caminho com memoria propria -- que e' o caminho de GPU de hoje, nao fallback
+ * de software.
+ */
+#define BC250_FRENTE_B_LOG_FIRST 32
+static volatile LONG g_Bc250FrenteBLog = 0;
+
+static void Bc250FrenteBTrace(const char *outcome, const BC250_UMD_RESOURCE *pRes, const char *detail,
+                              unsigned long long a, unsigned long long b)
+{
+    LONG n = InterlockedIncrement(&g_Bc250FrenteBLog);
+    if (n <= BC250_FRENTE_B_LOG_FIRST || (n % 256) == 0) {
+        Bc250VkResTrace("[VK_RES] FRENTE_B %s #%ld: %ux%u fmt=%u pitch=%u va=0x%llX alloc=%llu -- %s (%llu/%llu)",
+            outcome, n, pRes->Width, pRes->Height, (unsigned)pRes->Format, pRes->RowPitch,
+            (unsigned long long)pRes->Allocation.GpuVirtualAddress,
+            (unsigned long long)pRes->Allocation.ByteSize, detail, a, b);
+    }
+}
+
+static BOOL Bc250UmdVkTryCreateAliasedImage(
+    _Inout_ BC250_UMD_DEVICE* pDevice,
+    _Inout_ BC250_UMD_RESOURCE* pRes,
+    _In_ CONST D3D10DDIARG_CREATERESOURCE* pCreate,
+    VkFormat vkFormat,
+    VkImageUsageFlags usage)
+{
+    BC250_UMD_VK_BRIDGE *pBridge = &pDevice->VkBridge;
+    VkImageCreateInfo imgInfo;
+    VkImageSubresource sub;
+    VkSubresourceLayout layout;
+    VkMemoryRequirements memReqs;
+    VkMemoryAllocateInfo allocInfo;
+    Bc250RadvImportGpuVaInfo importInfo;
+    VkImage image = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    uint32_t memTypeIndex;
+    uint64_t allocBytes;
+    const char *reason;
+    VkResult res;
+
+    if (pBridge->vk.vkGetImageSubresourceLayout == NULL) {
+        Bc250FrenteBTrace("NAO", pRes, "vkGetImageSubresourceLayout ausente", 0, 0); return FALSE;
+    }
+    reason = Bc250UmdFrenteBPreCheck(pRes->Allocation.Created, pRes->Allocation.GpuVirtualAddress,
+        pRes->Allocation.ByteSize, pRes->MipLevels, pRes->ArraySize, pRes->SampleCount,
+        (pCreate->BindFlags & D3D10_DDI_BIND_DEPTH_STENCIL) != 0u ? TRUE : FALSE,
+        (pCreate->BindFlags & D3D10_DDI_BIND_RENDER_TARGET) != 0u ? TRUE : FALSE,
+        pRes->OpenedShared,
+        pRes->Width, pRes->Height, pRes->RowPitch);
+    if (reason != NULL) {
+        Bc250FrenteBTrace("NAO", pRes, reason, pRes->MipLevels, pRes->ArraySize);
+        return FALSE;
+    }
+
+    /* Criar imagem LINEAR com uso que o formato nao suporta em linear e'
+     * comportamento indefinido: a capacidade e' perguntada antes. */
+    {
+        VkFormatProperties fp;
+        VkFormatFeatureFlags need = VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+        if (usage & VK_IMAGE_USAGE_SAMPLED_BIT) need |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+        if (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) need |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+        if (pBridge->vk.vkGetPhysicalDeviceFormatProperties == NULL) {
+            Bc250FrenteBTrace("NAO", pRes, "vkGetPhysicalDeviceFormatProperties ausente", 0, 0); return FALSE;
+        }
+        memset(&fp, 0, sizeof(fp));
+        pBridge->vk.vkGetPhysicalDeviceFormatProperties(pBridge->PhysicalDevice, vkFormat, &fp);
+        if ((fp.linearTilingFeatures & need) != need) {
+            Bc250FrenteBTrace("NAO", pRes, "formato sem suporte linear para o uso (tem/precisa)",
+                (unsigned long long)fp.linearTilingFeatures, (unsigned long long)need);
+            return FALSE;
+        }
+    }
+
+    memset(&imgInfo, 0, sizeof(imgInfo));
+    imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imgInfo.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+    imgInfo.imageType = VK_IMAGE_TYPE_2D;
+    imgInfo.format = vkFormat;
+    imgInfo.extent.width = pRes->Width;
+    imgInfo.extent.height = pRes->Height;
+    imgInfo.extent.depth = 1;
+    imgInfo.mipLevels = 1;
+    imgInfo.arrayLayers = 1;
+    imgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imgInfo.tiling = VK_IMAGE_TILING_LINEAR;
+    imgInfo.usage = usage;
+    imgInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imgInfo.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+
+    res = pBridge->vk.vkCreateImage(pBridge->Device, &imgInfo, NULL, &image);
+    if (res != VK_SUCCESS) {
+        Bc250FrenteBTrace("NAO", pRes, "vkCreateImage LINEAR recusado", (unsigned long long)(LONG)res, 0); return FALSE;
+    }
+
+    memset(&sub, 0, sizeof(sub));
+    sub.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    memset(&layout, 0, sizeof(layout));
+    pBridge->vk.vkGetImageSubresourceLayout(pBridge->Device, image, &sub, &layout);
+    pBridge->vk.vkGetImageMemoryRequirements(pBridge->Device, image, &memReqs);
+    allocBytes = pRes->Allocation.ByteSize & ~0xFFFull;
+
+    reason = Bc250UmdFrenteBLayoutCheck(pRes->Allocation.GpuVirtualAddress, pRes->Allocation.ByteSize,
+        pRes->RowPitch, layout.offset, layout.rowPitch, memReqs.size, memReqs.alignment);
+    if (reason != NULL) {
+        /* Os dois numeros que decidem: pitch da RADV e tamanho exigido. */
+        Bc250FrenteBTrace("NAO", pRes, reason,
+            (unsigned long long)layout.rowPitch, (unsigned long long)memReqs.size);
+        goto refuse;
+    }
+    memTypeIndex = Bc250UmdVkFindMemoryType(pBridge, memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (memTypeIndex == UINT32_MAX)
+        memTypeIndex = Bc250UmdVkFindMemoryType(pBridge, memReqs.memoryTypeBits, 0);
+    if (memTypeIndex == UINT32_MAX) {
+        Bc250FrenteBTrace("NAO", pRes, "nenhum tipo de memoria compativel", memReqs.memoryTypeBits, 0);
+        goto refuse;
+    }
+
+    memset(&importInfo, 0, sizeof(importInfo));
+    importInfo.sType = BC250_RADV_STRUCTURE_TYPE_IMPORT_GPU_VA;
+    importInfo.magic = BC250_RADV_IMPORT_GPU_VA_MAGIC;
+    importInfo.gpu_va = pRes->Allocation.GpuVirtualAddress;
+    importInfo.size = allocBytes;
+    memset(&allocInfo, 0, sizeof(allocInfo));
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.pNext = &importInfo;
+    allocInfo.allocationSize = memReqs.size;
+    allocInfo.memoryTypeIndex = memTypeIndex;
+    res = pBridge->vk.vkAllocateMemory(pBridge->Device, &allocInfo, NULL, &memory);
+    if (res != VK_SUCCESS) {
+        Bc250FrenteBTrace("NAO", pRes, "RADV recusou a importacao por GPUVA", (unsigned long long)(LONG)res, 0);
+        goto refuse;
+    }
+    res = pBridge->vk.vkBindImageMemory(pBridge->Device, image, memory, 0);
+    if (res != VK_SUCCESS) {
+        Bc250FrenteBTrace("NAO", pRes, "vkBindImageMemory recusou", (unsigned long long)(LONG)res, 0);
+        pBridge->vk.vkFreeMemory(pBridge->Device, memory, NULL);
+        goto refuse;
+    }
+
+    pRes->VkImg = image;
+    pRes->VkMem = memory;
+    pRes->VkMemSize = memReqs.size;
+    /* Recurso proprio sem escrita conhecida: segue "sem conteudo" como antes.
+     * Quem adota o conteudo existente (superficie aberta) faz a transicao
+     * PREINITIALIZED -> SHADER_READ_ONLY explicitamente. */
+    pRes->VkLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    pRes->VkMemAliased = TRUE;
+    pRes->VkResourceCreated = TRUE;
+    Bc250FrenteBTrace("SIM", pRes, "VkImage LINEAR sobre a propria alocacao (req/alloc)",
+        (unsigned long long)memReqs.size, (unsigned long long)allocBytes);
+    return TRUE;
+
+refuse:
+    pBridge->vk.vkDestroyImage(pBridge->Device, image, NULL);
+    return FALSE;
+}
+
+/*
+ * Frente B: a superficie aberta JA' tem o conteudo do outro processo na propria
+ * memoria. A imagem nasceu PREINITIALIZED (unico layout que o Vulkan garante
+ * preservar) e passa a SHADER_READ_ONLY sem copia nenhuma.
+ */
+BOOL Bc250UmdVkAdoptAliasedContent(
+    _Inout_ BC250_UMD_DEVICE* pDevice,
+    _Inout_ BC250_UMD_RESOURCE* pRes)
+{
+    BC250_UMD_VK_BRIDGE *pBridge = &pDevice->VkBridge;
+    VkImageMemoryBarrier barrier;
+    VkCommandBuffer cmd;
+
+    if (!pRes->VkMemAliased || pRes->VkImg == VK_NULL_HANDLE) return FALSE;
+    cmd = Bc250UmdVkGetCommandBuffer(pBridge);
+    if (cmd == VK_NULL_HANDLE) {
+        Bc250FrenteBTrace("ADOCAO_RECUSADA", pRes, "sem command buffer", 0, 0);
+        return FALSE;
+    }
+    memset(&barrier, 0, sizeof(barrier));
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = pRes->VkImg;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    pBridge->vk.vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        0, 0, NULL, 0, NULL, 1, &barrier);
+    pRes->VkLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    Bc250FrenteBTrace("ADOTADA", pRes, "superficie aberta lida na propria memoria, sem copia", 0, 0);
+    return TRUE;
+}
+
 BOOL Bc250UmdVkCreateResource(
     _Inout_ BC250_UMD_DEVICE* pDevice,
     _Inout_ BC250_UMD_RESOURCE* pRes,
@@ -139,6 +351,7 @@ BOOL Bc250UmdVkCreateResource(
         bufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
                         VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                        VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT | /* SHADER.2 */
                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
                         VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -241,6 +454,11 @@ BOOL Bc250UmdVkCreateResource(
         imgInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
+        pRes->VkMemAliased = FALSE;
+        if (Bc250UmdVkTryCreateAliasedImage(pDevice, pRes, pCreate, vkFormat, imgInfo.usage)) {
+            goto image_ready;
+        }
+
         res = pBridge->vk.vkCreateImage(pBridge->Device, &imgInfo, NULL, &pRes->VkImg);
         if (res != VK_SUCCESS) {
             Bc250VkResTrace("[VK_RES] ERRO CRITICO: vkCreateImage falhou: res=%d", res);
@@ -256,8 +474,8 @@ BOOL Bc250UmdVkCreateResource(
             memTypeIndex = Bc250UmdVkFindMemoryType(pBridge, memReqs.memoryTypeBits, 0);
         }
 
-        Bc250VkResTrace("[VK_RES] Image MemoryRequirements: reqSize=%llu, memTypeIndex=%u",
-            memReqs.size, memTypeIndex);
+        Bc250VkResTrace("[VK_RES] Image MemoryRequirements: reqSize=%llu, memTypeIndex=%u, alignment=%llu, typeBits=0x%X",
+            memReqs.size, memTypeIndex, (unsigned long long)memReqs.alignment, (unsigned)memReqs.memoryTypeBits);
 
         memset(&allocInfo, 0, sizeof(allocInfo));
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -288,6 +506,8 @@ BOOL Bc250UmdVkCreateResource(
         pRes->VkResourceCreated = TRUE;
         Bc250VkResTrace("[VK_RES] SUCESSO: Imagem criada (img=%p, mem=%p, size=%llu)",
             (void*)pRes->VkImg, (void*)pRes->VkMem, memReqs.size);
+
+image_ready:
 
         /*
          * CARGA DO SUBRECURSO 0, quando o D3D entregou dado inicial.
@@ -351,6 +571,7 @@ VOID Bc250UmdVkDestroyResource(
         pRes->VkImg = VK_NULL_HANDLE;
         pRes->VkMem = VK_NULL_HANDLE;
         pRes->VkResourceCreated = FALSE;
+        pRes->VkMemAliased = FALSE;
         return;
     }
 
@@ -372,6 +593,7 @@ VOID Bc250UmdVkDestroyResource(
         pRes->VkMem = VK_NULL_HANDLE;
     }
     pRes->VkResourceCreated = FALSE;
+    pRes->VkMemAliased = FALSE;
 }
 
 BOOL Bc250UmdVkCreateRtv(
@@ -981,15 +1203,18 @@ BOOL Bc250UmdVkUploadImageData(
      * Na Corrida 123 (DX.78) o DWM realizou 504 uploads com flush sincrono a cada chamada,
      * somando ~3,5 s de espera em fence. Com o anel de staging, uploads sucessivos
      * gravam em faixas disjuntas alinhadas a 256 B sem necessidade de flush sincrono.
-     * Se o espaco restante no staging for insuficiente, executamos o dreno dos
-     * comandos pendentes (wrap) antes de posicionar o dado no inicio.
+     * Se o espaco restante no staging for insuficiente ou o lote atingir 64 uploads
+     * (T3.7: evita acumulo excessivo de barreiras no menu Iniciar/Explorer),
+     * executamos o dreno dos comandos pendentes (wrap) antes de posicionar o dado no inicio.
      */
+#define BC250_DX79_UPLOAD_COALESCE_MAX_BATCH 64u
     t0 = Bc250VkUploadNowMicros();
     if (pBridge->UploadStagingMapped != NULL && pBridge->UploadStagingSize > 0) {
         alignedHead = (pBridge->UploadStagingHead + (BC250_DX79_UPLOAD_ALIGN - 1u)) &
                       ~(VkDeviceSize)(BC250_DX79_UPLOAD_ALIGN - 1u);
         if (alignedHead > pBridge->UploadStagingSize ||
-            (VkDeviceSize)ByteSize > (pBridge->UploadStagingSize - alignedHead)) {
+            (VkDeviceSize)ByteSize > (pBridge->UploadStagingSize - alignedHead) ||
+            pBridge->UploadCoalescedInBatch >= BC250_DX79_UPLOAD_COALESCE_MAX_BATCH) {
             wrapNeeded = TRUE;
         }
     }
@@ -1083,6 +1308,7 @@ BOOL Bc250UmdVkUploadImageData(
     } else {
         res = VK_SUCCESS;
         pBridge->UploadCoalescedCount++;
+        pBridge->UploadCoalescedInBatch++;
     }
 
     /* Unica fonte de verdade: o layout. SHADER_READ_ONLY_OPTIMAL so' chega
@@ -1104,6 +1330,110 @@ BOOL Bc250UmdVkUploadImageData(
             (unsigned long long)pBridge->UploadCoalescedCount,
             (unsigned long long)pBridge->UploadFlushCount);
     }
+    return TRUE;
+}
+
+BOOL Bc250UmdVkCopyStagingBufferToImage(
+    _Inout_ struct _BC250_UMD_DEVICE* pDevice,
+    _Inout_ struct _BC250_UMD_RESOURCE* pRes,
+    VkDeviceSize BufferOffset,
+    UINT RowPitch,
+    SIZE_T ByteSize)
+{
+    BC250_UMD_VK_BRIDGE* pBridge;
+    VkCommandBuffer cmd;
+    VkImageMemoryBarrier barrier;
+    VkBufferImageCopy region;
+    VkResult res;
+    UINT bufferRowLength = 0u;
+    SIZE_T required = 0u;
+
+    if (pDevice == NULL || pRes == NULL || ByteSize == 0 ||
+        !pDevice->DeviceActive || !pDevice->VkBridgeInitialized || !pDevice->VkBridge.DeviceActive ||
+        pRes->VkImg == VK_NULL_HANDLE ||
+        pRes->Width == 0 || pRes->Height == 0) {
+        return FALSE;
+    }
+    pBridge = &pDevice->VkBridge;
+    if (pBridge->SubmissionFailed) return FALSE;
+
+    if (pBridge->Device == VK_NULL_HANDLE ||
+        pBridge->UploadStagingBuf == VK_NULL_HANDLE ||
+        pBridge->vk.vkCmdPipelineBarrier == NULL ||
+        pBridge->vk.vkCmdCopyBufferToImage == NULL) {
+        Bc250VkResTrace("[VK_RES] CopyStagingBufferToImage RECUSADO: bridge ou staging incompleto");
+        return FALSE;
+    }
+
+    if (!Bc250UmdVkComputeImageUploadLayout(pRes->Format, pRes->Width,
+            pRes->Height, RowPitch, ByteSize, pRes->TotalByteSize,
+            &bufferRowLength, &required)) {
+        Bc250VkResTrace("[VK_RES] CopyStagingBufferToImage RECUSADO: layout invalido Format=%u WxH=%ux%u RowPitch=%u ByteSize=%zu",
+            (UINT)pRes->Format, pRes->Width, pRes->Height, RowPitch, ByteSize);
+        return FALSE;
+    }
+
+    if (BufferOffset + (VkDeviceSize)required > pBridge->UploadStagingSize) {
+        Bc250VkResTrace("[VK_RES] CopyStagingBufferToImage RECUSADO: fora do staging (offset=%llu req=%zu size=%llu)",
+            (unsigned long long)BufferOffset, required, (unsigned long long)pBridge->UploadStagingSize);
+        return FALSE;
+    }
+
+    cmd = Bc250UmdVkGetCommandBuffer(pBridge);
+    if (cmd == VK_NULL_HANDLE) {
+        Bc250VkResTrace("[VK_RES] CopyStagingBufferToImage RECUSADO: sem command buffer");
+        return FALSE;
+    }
+
+    /* Transicao: UNDEFINED -> TRANSFER_DST */
+    memset(&barrier, 0, sizeof(barrier));
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = pRes->VkImg;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.levelCount = pRes->MipLevels ? pRes->MipLevels : 1u;
+    barrier.subresourceRange.layerCount = pRes->ArraySize ? pRes->ArraySize : 1u;
+    barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    pBridge->vk.vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
+
+    memset(&region, 0, sizeof(region));
+    region.bufferOffset = BufferOffset;
+    region.bufferRowLength = bufferRowLength;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageExtent.width = pRes->Width;
+    region.imageExtent.height = pRes->Height;
+    region.imageExtent.depth = 1;
+    pBridge->vk.vkCmdCopyBufferToImage(cmd, pBridge->UploadStagingBuf, pRes->VkImg,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    /* Transicao: TRANSFER_DST -> SHADER_READ_ONLY_OPTIMAL */
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    pBridge->vk.vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        0, 0, NULL, 0, NULL, 1, &barrier);
+
+    res = Bc250UmdVkFlushCommands(pBridge);
+    if (res != VK_SUCCESS) {
+        Bc250VkResTrace("[VK_RES] CopyStagingBufferToImage RECUSADO: flush falhou res=%d", res);
+        return FALSE;
+    }
+    pBridge->UploadFlushCount++;
+
+    pRes->VkLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    Bc250VkResTrace("[VK_RES] CopyStagingBufferToImage SUCESSO: %ux%u pitch=%u offset=%llu bytes=%zu (img=%p)",
+        pRes->Width, pRes->Height, RowPitch, (unsigned long long)BufferOffset, required, (void*)pRes->VkImg);
     return TRUE;
 }
 

@@ -2,6 +2,7 @@
 #include "bc250_mmio_breadcrumb.h"
 #include "../core/bc250_fault_latch_contract.h"
 #include "../core/bc250_golden_settings_contract.h"
+#include "../core/bc250_hdp_contract.h"
 
 static void Bc250MmioTopologyClearMapping(
     BC250_MMIO_TOPOLOGY_CONTEXT *Context)
@@ -412,7 +413,30 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         (ByteOffset >= 0x0000A200u && ByteOffset < 0x0000A240u &&
          (ByteOffset & 3u) == 0u) ||
         (ByteOffset >= 0x0000A3ACu && ByteOffset < 0x0000A42Cu &&
-         (ByteOffset & 3u) == 0u);
+         (ByteOffset & 3u) == 0u) ||
+        /*
+         * I.PLAT (doc 553) -- LEITURA da amostra de plataforma.
+         * SDMA1 STATUS/F32_CNTL/GFX_RB_CNTL/RPTR/WPTR: gc_10_1_0_offset.h,
+         * BASE_IDX 0, base 0x1260 dwords (P1). O SDMA1 nunca e' escrito.
+         * RSMU_INDEX/DATA 0x38/0x3C: docs/03 secao "Acesso indireto SMN" (P0).
+         */
+        ByteOffset == 0x00006214u || ByteOffset == 0x00006228u ||
+        ByteOffset == 0x00006380u || ByteOffset == 0x0000638Cu ||
+        ByteOffset == 0x00006394u ||
+        ByteOffset == 0x00000038u || ByteOffset == 0x0000003Cu ||
+        /*
+         * I.SDMA0 / I.CG (doc 556) -- LEITURA. gc_10_1_0_offset.h (P1):
+         * SDMA0_GFX_IB_RPTR 0x4BAC, SDMA0_GFX_CONTEXT_STATUS 0x4BC4,
+         * SDMA0_POWER_CNTL 0x49E8, SDMA1_POWER_CNTL 0x61E8,
+         * SDMA1_CLK_CTRL 0x61EC, RLC_CGTT_MGCG_OVERRIDE 0x3B120,
+         * RLC_CGCG_CGLS_CTRL 0x3B124, CGTT_SPI_CLK_CTRL 0x3C200.
+         * Os demais da sonda (0x4A14/0x4A18/0x4A60/0x4B8C/0x4B94/0x49EC) ja'
+         * estavam liberados. Nenhum entra na allowlist de escrita.
+         */
+        ByteOffset == 0x00004BACu || ByteOffset == 0x00004BC4u ||
+        ByteOffset == 0x000049E8u || ByteOffset == 0x000061E8u ||
+        ByteOffset == 0x000061ECu || ByteOffset == 0x0003B120u ||
+        ByteOffset == 0x0003B124u || ByteOffset == 0x0003C200u;
 }
 
 static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
@@ -466,9 +490,17 @@ static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == BC250_SDMA0_CNTL ||
         ByteOffset == BC250_SDMA0_F32_CNTL ||
         ByteOffset == 0x00003FC4u || ByteOffset == 0x00003FCCu ||
+        /*
+         * HDP.1 (28/09, doc 519): 0x385C e' o flush de ESCRITA real do HDP
+         * (BIF_BX_PF_HDP_MEM_COHERENCY_FLUSH_CNTL, proveniencia em
+         * ../core/bc250_hdp_contract.h). 0x4A80 SAIU desta lista: e'
+         * SDMA0_UTCL1_INV0, que o upstream nunca escreve e que era zerado aqui
+         * como se fosse flush. Continua na allowlist de LEITURA (sonda).
+         */
+        ByteOffset == BC250_HDP_REG_MEM_COHERENCY_FLUSH_CNTL ||
         ByteOffset == 0x00004A04u || ByteOffset == 0x000049F4u ||
         ByteOffset == 0x000049F8u || ByteOffset == 0x000049FCu ||
-        ByteOffset == 0x00004A70u || ByteOffset == 0x00004A80u ||
+        ByteOffset == 0x00004A70u ||
         ByteOffset == 0x00004AA0u || ByteOffset == 0x00004B80u ||
         ByteOffset == 0x00004B84u || ByteOffset == 0x00004B88u ||
         ByteOffset == 0x00004B8Cu || ByteOffset == 0x00004B90u ||
@@ -554,7 +586,15 @@ static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
          * SQ_IND_DATA devolve. A sonda que a usa restaura GRBM_GFX_INDEX para
          * broadcast com readback e devolve SELECTOR_STUCK se nao conseguir.
          */
-        ByteOffset == 0x00008DE0u;
+        ByteOffset == 0x00008DE0u ||
+        /*
+         * I.PLAT (doc 553) -- RSMU_INDEX 0x38, tambem um SELETOR: escolhe qual
+         * endereco SMN o RSMU_DATA devolve. O UNICO escritor e'
+         * Bc250ActivePlatformProbe, com o valor fixo 0x59800 (Tctl, k10temp),
+         * sob lock e com releitura. RSMU_DATA 0x3C NAO entra aqui: escrever o
+         * dado escreveria no SMN. Portao audit_iplat_platform_probe.
+         */
+        ByteOffset == 0x00000038u;
 }
 
 uint32_t Bc250MmioTopologyRead32(

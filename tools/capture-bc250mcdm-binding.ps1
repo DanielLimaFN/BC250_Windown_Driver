@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$EvidenceDir,
     [Parameter(Mandatory = $true)][string]$InstanceId,
@@ -43,9 +43,15 @@ try {
 
     $umdLogCollected = $false
     $umdAggregate = Join-Path $EvidenceDir 'bc250_umd_log.txt'
-    $umdLogs = @(Get-ChildItem -LiteralPath 'C:\Windows\Temp' `
-        -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue |
-        Sort-Object Name)
+    $umdSources = @('C:\Windows\Temp')
+    if ($env:TEMP -and (Test-Path -LiteralPath $env:TEMP)) { $umdSources += $env:TEMP }
+    $userTemps = @(Get-ChildItem -Path 'C:\Users\*\AppData\Local\Temp' -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+    foreach ($ut in $userTemps) { if ($umdSources -notcontains $ut) { $umdSources += $ut } }
+    $umdLogs = @()
+    foreach ($src in $umdSources) {
+        $umdLogs += @(Get-ChildItem -LiteralPath $src -Filter 'BC250_UMD_LOG_*.txt' -File -ErrorAction SilentlyContinue)
+    }
+    $umdLogs = @($umdLogs | Sort-Object Name -Unique)
     foreach ($umdLog in $umdLogs) {
         Copy-Item -LiteralPath $umdLog.FullName `
             -Destination (Join-Path $EvidenceDir $umdLog.Name.ToLowerInvariant()) -Force

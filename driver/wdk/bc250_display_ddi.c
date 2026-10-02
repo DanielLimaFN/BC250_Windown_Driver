@@ -5,6 +5,10 @@
 #include "bc250_sdma_present.h"
 #include "bc250_mmio_breadcrumb.h"
 
+/* T3.1: a janela WC termina exatamente na pagina de migalhas, a primeira
+ * estrutura privada UC; se uma das duas mudar, o build quebra. */
+C_ASSERT(BC250_VRAM_WC_WINDOW_BYTES == BC250_CRUMB_VRAM_OFFSET);
+
 BC250_DISPLAY_STATE g_Bc250DisplayState = { 0 };
 
 /*
@@ -1156,6 +1160,8 @@ static BOOLEAN Bc250ShouldEmitVerboseLog(
          * ~958 submissoes -- justamente o dado que faltava. Sao raras por
          * natureza (uma por troca de contexto), nao um diluvio.
          */
+        /* DX.91: uma linha por copia/preenchimento/descarte de paginacao. */
+        Bc250LogTextContains(Text, "DX91_PAGING_MOVE") ||
         Bc250LogTextContains(Text, "CTX_PROBE") ||
         Bc250LogTextContains(Text, "CONTEXT SWITCH") ||
         Bc250LogTextContains(Text, "IB EXECUTADO") ||
@@ -1214,6 +1220,46 @@ static BOOLEAN Bc250ShouldEmitVerboseLog(
         (ordinal % BC250_VERBOSE_LOG_PERIOD) == 0L;
 }
 
+/* DX.88: dono unico do arquivo de log; ver o bloco em Bc250DisplayLog. */
+static volatile LONG g_Bc250LogFileOwner = 0;
+
+static VOID Bc250LogRingAppend(_In_reads_(Length) const char *Text, _In_ int Length)
+{
+    KIRQL irql;
+    int i;
+    KeAcquireSpinLock(&g_Bc250PagingLogLock, &irql);
+    for (i = 0; i < Length; ++i) {
+        ULONG next = (g_Bc250PagingLogHead + 1u) % BC250_PAGING_LOG_RING_SIZE;
+        if (next == g_Bc250PagingLogTail) {
+            g_Bc250PagingLogTail = (g_Bc250PagingLogTail + 1u) % BC250_PAGING_LOG_RING_SIZE;
+        }
+        g_Bc250PagingLogRing[g_Bc250PagingLogHead] = Text[i];
+        g_Bc250PagingLogHead = next;
+    }
+    KeReleaseSpinLock(&g_Bc250PagingLogLock, irql);
+}
+
+/* So' a thread dona do arquivo (g_Bc250LogFileOwner) chama isto. */
+static VOID Bc250LogRingDrainToFile(_In_ HANDLE FileHandle)
+{
+    char drainBuf[4096];
+    ULONG drainLen;
+    IO_STATUS_BLOCK ioStatus;
+    do {
+        KIRQL irql;
+        drainLen = 0u;
+        KeAcquireSpinLock(&g_Bc250PagingLogLock, &irql);
+        while (g_Bc250PagingLogTail != g_Bc250PagingLogHead && drainLen < sizeof(drainBuf)) {
+            drainBuf[drainLen++] = g_Bc250PagingLogRing[g_Bc250PagingLogTail];
+            g_Bc250PagingLogTail = (g_Bc250PagingLogTail + 1u) % BC250_PAGING_LOG_RING_SIZE;
+        }
+        KeReleaseSpinLock(&g_Bc250PagingLogLock, irql);
+        if (drainLen > 0u) {
+            (void)ZwWriteFile(FileHandle, NULL, NULL, NULL, &ioStatus, drainBuf, drainLen, NULL, NULL);
+        }
+    } while (drainLen == sizeof(drainBuf));
+}
+
 void Bc250DisplayLog(const char *Format, ...)
 {
     char buffer[512];
@@ -1258,24 +1304,28 @@ void Bc250DisplayLog(const char *Format, ...)
      * Quando g_Bc250PagingActiveCount == 0 em PASSIVE_LEVEL, o buffer e' descarregado
      * em lote para C:\BC250_DISPLAY_LOG.txt.
      */
+    /*
+     * DX.88 -- UM SO' DONO DO ARQUIVO POR VEZ.
+     *
+     * Corrida 136 (P0): uma linha "BC250_HANG ... ENTER" saiu com outra linha
+     * enfiada no meio do qpc, e o parser leu um FLUSH_TLB de 78,7 s que durou
+     * 36 ms. Mecanismo (P1): varias threads podiam estar neste caminho ao mesmo
+     * tempo, cada uma drenando o anel em blocos de 4 KB; os pedacos de uma linha
+     * partida na divisa de dois blocos iam para o arquivo por threads diferentes,
+     * com outra linha gravada entre eles. Agora so' uma thread e' dona do
+     * arquivo (flag atomico, sem bloquear ninguem): quem o encontra ocupado poe
+     * a linha no anel e segue; a dona drena o anel inteiro antes e depois da
+     * propria linha. Assim toda escrita no arquivo sai de uma unica sequencia.
+     */
     if (KeGetCurrentIrql() > PASSIVE_LEVEL ||
-        InterlockedCompareExchange(&g_Bc250PagingActiveCount, 0, 0) > 0) {
-        KIRQL irql;
-        KeAcquireSpinLock(&g_Bc250PagingLogLock, &irql);
-        for (int i = 0; i < len; ++i) {
-            ULONG next = (g_Bc250PagingLogHead + 1u) % BC250_PAGING_LOG_RING_SIZE;
-            if (next == g_Bc250PagingLogTail) {
-                g_Bc250PagingLogTail = (g_Bc250PagingLogTail + 1u) % BC250_PAGING_LOG_RING_SIZE;
-            }
-            g_Bc250PagingLogRing[g_Bc250PagingLogHead] = buffer[i];
-            g_Bc250PagingLogHead = next;
-        }
-        KeReleaseSpinLock(&g_Bc250PagingLogLock, irql);
+        KeAreApcsDisabled() ||
+        InterlockedCompareExchange(&g_Bc250PagingActiveCount, 0, 0) > 0 ||
+        InterlockedCompareExchange(&g_Bc250LogFileOwner, 1, 0) != 0) {
+        Bc250LogRingAppend(buffer, len);
         return;
     }
 
-    if (KeGetCurrentIrql() == PASSIVE_LEVEL &&
-        InterlockedCompareExchange(&g_Bc250PagingActiveCount, 0, 0) == 0) {
+    {
         UNICODE_STRING logFileName = RTL_CONSTANT_STRING(L"\\DosDevices\\C:\\BC250_DISPLAY_LOG.txt");
         OBJECT_ATTRIBUTES objAttr;
         IO_STATUS_BLOCK ioStatus;
@@ -1284,26 +1334,17 @@ void Bc250DisplayLog(const char *Format, ...)
         InitializeObjectAttributes(&objAttr, &logFileName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
         if (NT_SUCCESS(ZwCreateFile(&fileHandle, FILE_APPEND_DATA | SYNCHRONIZE, &objAttr, &ioStatus, NULL, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_OPEN_IF, FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0))) {
             /* Drena logs acumulados em memoria antes do buffer corrente */
-            char drainBuf[4096];
-            ULONG drainLen = 0u;
-            do {
-                KIRQL irql;
-                drainLen = 0u;
-                KeAcquireSpinLock(&g_Bc250PagingLogLock, &irql);
-                while (g_Bc250PagingLogTail != g_Bc250PagingLogHead && drainLen < sizeof(drainBuf)) {
-                    drainBuf[drainLen++] = g_Bc250PagingLogRing[g_Bc250PagingLogTail];
-                    g_Bc250PagingLogTail = (g_Bc250PagingLogTail + 1u) % BC250_PAGING_LOG_RING_SIZE;
-                }
-                KeReleaseSpinLock(&g_Bc250PagingLogLock, irql);
-                if (drainLen > 0u) {
-                    (void)ZwWriteFile(fileHandle, NULL, NULL, NULL, &ioStatus, drainBuf, drainLen, NULL, NULL);
-                }
-            } while (drainLen == sizeof(drainBuf));
-
+            Bc250LogRingDrainToFile(fileHandle);
             (void)ZwWriteFile(fileHandle, NULL, NULL, NULL, &ioStatus, buffer, (ULONG)len, NULL, NULL);
+            /* Linhas que entraram no anel enquanto esta thread era a dona. */
+            Bc250LogRingDrainToFile(fileHandle);
             (void)ZwFlushBuffersFile(fileHandle, &ioStatus);
             ZwClose(fileHandle);
+        } else {
+            /* Arquivo indisponivel: a linha espera no anel em vez de sumir. */
+            Bc250LogRingAppend(buffer, len);
         }
+        InterlockedExchange(&g_Bc250LogFileOwner, 0);
     }
 }
 
@@ -1739,7 +1780,17 @@ NTSTATUS Bc250DisplayInit(
     InterlockedExchange(&g_Bc250DisplayState.PowerStateD0, 1);
 
     if (g_Bc250DisplayState.FrameBufferPhysical.QuadPart != 0) {
-        ULONG fbBytes = 256u * 1024u * 1024u; /* 256 MB cobre 100% do BAR 0 fisico de VRAM */
+        /*
+         * T3.1 (28/09, doc 520): a janela WC para no inicio da faixa privada
+         * (../core/bc250_vram_cache_policy.h). Antes ela cobria os 256 MB da
+         * BAR 0, e anel do SDMA, anel grafico, MQD e migalhas eram mapeados
+         * UC POR CIMA dela -- mesma pagina fisica com dois tipos de memoria,
+         * o que a Intel e a AMD declaram nao suportado. Tambem saiu o
+         * fallback PAGE_NOCACHE: ele aliasaria as alocacoes WC do VidMm.
+         * Quem le a faixa privada pela janela ja confere FrameBufferSize e
+         * passa a recusar (falha fechada) em vez de ler por um alias.
+         */
+        ULONG fbBytes = (ULONG)BC250_VRAM_WC_WINDOW_BYTES;
         g_Bc250DisplayState.FrameBufferSize = fbBytes;
         g_Bc250DisplayState.FrameBufferVirtual = MmMapIoSpaceEx(
             g_Bc250DisplayState.FrameBufferPhysical,
@@ -1761,22 +1812,13 @@ NTSTATUS Bc250DisplayInit(
                 fbBytes,
                 PAGE_READWRITE | PAGE_WRITECOMBINE);
         }
-        if (g_Bc250DisplayState.FrameBufferVirtual == NULL) {
-            g_Bc250DisplayState.FrameBufferVirtual = MmMapIoSpaceEx(
-                g_Bc250DisplayState.FrameBufferPhysical,
-                g_Bc250DisplayState.FrameBufferSize,
-                PAGE_READWRITE | PAGE_NOCACHE);
-        }
-        if (g_Bc250DisplayState.FrameBufferVirtual == NULL) {
-            g_Bc250DisplayState.FrameBufferVirtual = MmMapIoSpace(
-                g_Bc250DisplayState.FrameBufferPhysical,
-                g_Bc250DisplayState.FrameBufferSize,
-                MmWriteCombined);
-        }
         Bc250DisplayLog("[DisplayInit] FrameBuffer mapping: Phys=0x%llX, Size=%u, Virt=%p\n",
             (unsigned long long)g_Bc250DisplayState.FrameBufferPhysical.QuadPart,
             g_Bc250DisplayState.FrameBufferSize,
             g_Bc250DisplayState.FrameBufferVirtual);
+        Bc250DisplayLog("[T31_CACHE_MAPA] WC [0x0,0x%X) scanout+segmento do VidMm | faixa privada UC comeca em 0x%llX -- sem sobreposicao WC/UC\n",
+            g_Bc250DisplayState.FrameBufferSize,
+            (unsigned long long)BC250_VRAM_WC_WINDOW_BYTES);
     }
     Bc250ProbeRecord(
         BC250_PROBE_DMM_DISPLAY_MAPPED,

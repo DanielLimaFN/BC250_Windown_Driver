@@ -118,6 +118,14 @@ typedef struct BC250_MCDM_RUNTIME_CAPS {
     UINT32 RootPageTableIndexBitCount;
     UINT32 PageTableSizeBytes;
     UINT32 PageTableAlignmentBytes;
+    /*
+     * M2 (doc 548): segmento 3, VRAM local SEM acesso de CPU, derivado da
+     * topologia lida no boot (Bc250ComputeHiddenSegment). Bytes == 0 significa
+     * segmento ausente: QUERYSEGMENT4 declara 2 segmentos, como antes.
+     */
+    UINT64 HiddenSegmentBaseOffset;
+    UINT64 HiddenSegmentBytes;
+    UINT32 HiddenSegmentStatus;
 } BC250_MCDM_RUNTIME_CAPS;
 
 typedef NTSTATUS (*BC250_MCDM_QUERY_RUNTIME_CAPS)(
@@ -245,6 +253,143 @@ VOID Bc250McdmInstallTdrExecutors(
 VOID Bc250McdmInstallEngineResponsiveProbe(
     BC250_MCDM_ENGINE_RESPONSIVE_PROBE Probe);
 
+/*
+ * DX.90 (Corrida 141): batimento do GPU gravado pela thread do rastro DX.56.
+ * Nas Corridas 139/140 a maquina parou sem nenhum acesso em andamento no BCR1,
+ * e o rastro nao dizia o que o GPU fazia antes. A sonda so' LE: GRBM_STATUS,
+ * CP_STAT, CP_RB0_RPTR e CP_RB0_WPTR (docs/03), mais o writeback de RPTR e a
+ * fence do anel grafico em memoria. ReadMask diz quais leituras voltaram.
+ */
+#define BC250_GPU_HEARTBEAT_READ_GRBM_STATUS 0x01u
+#define BC250_GPU_HEARTBEAT_READ_CP_STAT     0x02u
+#define BC250_GPU_HEARTBEAT_READ_CP_RPTR     0x04u
+#define BC250_GPU_HEARTBEAT_READ_CP_WPTR     0x08u
+#define BC250_GPU_HEARTBEAT_READ_RPTR_WB     0x10u
+#define BC250_GPU_HEARTBEAT_READ_FENCE_MEM   0x20u
+typedef struct BC250_MCDM_GPU_HEARTBEAT {
+    UINT32 ReadMask;
+    UINT32 GrbmStatus;
+    UINT32 CpStat;
+    UINT32 CpRb0Rptr;
+    UINT32 CpRb0Wptr;
+    UINT32 RptrWriteback;
+    UINT32 FenceMemory;
+    UINT32 LastSubmittedFence;
+} BC250_MCDM_GPU_HEARTBEAT;
+
+/* Devolve FALSE quando nao ha anel grafico/transporte para medir. */
+typedef BOOLEAN (*BC250_MCDM_GPU_HEARTBEAT_PROBE)(
+    _Out_ BC250_MCDM_GPU_HEARTBEAT *Heartbeat);
+
+VOID Bc250McdmInstallGpuHeartbeatProbe(
+    _In_opt_ BC250_MCDM_GPU_HEARTBEAT_PROBE Probe);
+
+/*
+ * I.PLAT (doc 553): amostra de plataforma no rastro, a cada 1 s, registro BPS1.
+ * Motivo: a coleta Linux de 01/10 (doc 552) nao travou sob paginacao pesada a
+ * 79 C; as diferencas nomeadas incluem temperatura e o SDMA1, que o amdgpu usa
+ * e nos nunca tocamos. Esta sonda so' MEDE.
+ *
+ * Procedencia:
+ *  - SDMA1_* (P1): inc/linux_ref/gc_10_1_0_offset.h, BASE_IDX 0, base 0x1260
+ *    dwords (a mesma que da SDMA0_F32_CNTL=0x4A28, ja provada). Bit 0 de
+ *    STATUS_REG=IDLE, F32_CNTL=HALT, GFX_RB_CNTL=RB_ENABLE (gc_10_1_0_sh_mask.h).
+ *  - Tctl (P1): drivers/hwmon/k10temp.c, ZEN_REPORTED_TEMP_CTRL_BASE=0x59800,
+ *    temp = (reg >> 21) * 125 mC, menos 49000 mC com RANGE_SEL (bit 19) ou
+ *    TJ_SEL (bits 17:16) == 3. Lido pelo par indice/dado SMN da propria GPU
+ *    (RSMU 0x38/0x3C, docs/03 P0). Que esse par alcance 0x59800 e' H: a amostra
+ *    se autovalida (faixa plausivel e variacao com a carga) e o decodificador
+ *    marca fora da faixa.
+ * Unica escrita: o indice SMN 0x38 recebe 0x59800. Portao audit_iplat_*.
+ */
+#define BC250_PLAT_REG_RSMU_INDEX       0x00000038u
+#define BC250_PLAT_REG_RSMU_DATA        0x0000003Cu
+#define BC250_PLAT_SMN_THM_TCTL         0x00059800u
+#define BC250_PLAT_REG_SDMA1_STATUS     0x00006214u
+#define BC250_PLAT_REG_SDMA1_F32_CNTL   0x00006228u
+#define BC250_PLAT_REG_SDMA1_RB_CNTL    0x00006380u
+#define BC250_PLAT_REG_SDMA1_RB_RPTR    0x0000638Cu
+#define BC250_PLAT_REG_SDMA1_RB_WPTR    0x00006394u
+
+#define BC250_PLAT_READ_SDMA1_STATUS    0x01u
+#define BC250_PLAT_READ_SDMA1_F32_CNTL  0x02u
+#define BC250_PLAT_READ_SDMA1_RB_CNTL   0x04u
+#define BC250_PLAT_READ_SDMA1_RB_RPTR   0x08u
+#define BC250_PLAT_READ_SDMA1_RB_WPTR   0x10u
+#define BC250_PLAT_READ_TCTL            0x20u
+
+typedef struct BC250_MCDM_PLATFORM_SAMPLE {
+    UINT32 ReadMask;
+    UINT32 Sdma1Status;
+    UINT32 Sdma1F32Cntl;
+    UINT32 Sdma1RbCntl;
+    UINT32 Sdma1RbRptr;
+    UINT32 Sdma1RbWptr;
+    UINT32 TctlRaw;
+    INT32  TctlMilliC;   /* valido so' com BC250_PLAT_READ_TCTL */
+} BC250_MCDM_PLATFORM_SAMPLE;
+
+/* k10temp (P1): conversao pura, testada offline. */
+__inline INT32 Bc250PlatformTctlRawToMilliC(UINT32 Raw)
+{
+    INT32 milliC = (INT32)((Raw >> 21) * 125u);
+    if ((Raw & 0x00080000u) != 0u || (Raw & 0x00030000u) == 0x00030000u) {
+        milliC -= 49000;
+    }
+    return milliC;
+}
+
+typedef BOOLEAN (*BC250_MCDM_PLATFORM_PROBE)(
+    _Out_ BC250_MCDM_PLATFORM_SAMPLE *Sample);
+
+VOID Bc250McdmInstallPlatformProbe(
+    _In_opt_ BC250_MCDM_PLATFORM_PROBE Probe);
+
+/*
+ * I.SDMA0 / I.CG (doc 556): duas amostras SOMENTE LEITURA no rastro.
+ * Motivo: na Corrida 199 a ultima operacao do KMD foi um FILL de 11 MB no
+ * SDMA0 e a trava veio sem calor, com SDMA1 desligado e sem erro no FCH
+ * (doc 555). O batimento DX.90 so' cobre o anel grafico. E o Linux, que nao
+ * trava, liga SDMA/HDP/BIF MGCG (mascara 0x8090800, doc 552) -- nao sabemos
+ * como deixamos o clock gating.
+ * Procedencia (P1): inc/linux_ref/gc_10_1_0_offset.h, GC base 0x1260 (idx 0)
+ * e 0xA000 (idx 1), docs/03.
+ *   SDMA0_STATUS_REG 0x4A14, STATUS1_REG 0x4A18, STATUS2_REG 0x4A60,
+ *   GFX_RB_RPTR 0x4B8C, GFX_RB_WPTR 0x4B94, GFX_IB_RPTR 0x4BAC,
+ *   GFX_CONTEXT_STATUS 0x4BC4;
+ *   SDMA0_POWER_CNTL 0x49E8, SDMA0_CLK_CTRL 0x49EC, SDMA1_POWER_CNTL 0x61E8,
+ *   SDMA1_CLK_CTRL 0x61EC, RLC_CGTT_MGCG_OVERRIDE 0x3B120,
+ *   RLC_CGCG_CGLS_CTRL 0x3B124, CGTT_SPI_CLK_CTRL 0x3C200.
+ * NENHUMA escrita. Portao audit_isdma_icg_read_only.
+ */
+#define BC250_SQ_REG_SDMA0_STATUS          0x00004A14u
+#define BC250_SQ_REG_SDMA0_STATUS1         0x00004A18u
+#define BC250_SQ_REG_SDMA0_STATUS2         0x00004A60u
+#define BC250_SQ_REG_SDMA0_RB_RPTR         0x00004B8Cu
+#define BC250_SQ_REG_SDMA0_RB_WPTR         0x00004B94u
+#define BC250_SQ_REG_SDMA0_IB_RPTR         0x00004BACu
+#define BC250_SQ_REG_SDMA0_CONTEXT_STATUS  0x00004BC4u
+#define BC250_CG_REG_SDMA0_POWER_CNTL      0x000049E8u
+#define BC250_CG_REG_SDMA0_CLK_CTRL        0x000049ECu
+#define BC250_CG_REG_SDMA1_POWER_CNTL      0x000061E8u
+#define BC250_CG_REG_SDMA1_CLK_CTRL        0x000061ECu
+#define BC250_CG_REG_RLC_CGTT_MGCG_OVERRIDE 0x0003B120u
+#define BC250_CG_REG_RLC_CGCG_CGLS_CTRL    0x0003B124u
+#define BC250_CG_REG_CGTT_SPI_CLK_CTRL     0x0003C200u
+
+/* Words[0] = mascara de leituras que voltaram (bit i = Words[i+1] valido). */
+typedef struct BC250_MCDM_TRACE_WORDS {
+    UINT32 Words[8];
+} BC250_MCDM_TRACE_WORDS;
+
+typedef BOOLEAN (*BC250_MCDM_TRACE_WORDS_PROBE)(
+    _Out_ BC250_MCDM_TRACE_WORDS *Sample);
+
+VOID Bc250McdmInstallSdma0Probe(
+    _In_opt_ BC250_MCDM_TRACE_WORDS_PROBE Probe);
+VOID Bc250McdmInstallClockGatingProbe(
+    _In_opt_ BC250_MCDM_TRACE_WORDS_PROBE Probe);
+
 VOID Bc250McdmInstallDebugLifecycle(
     _In_opt_ BC250_MCDM_COLLECT_DEBUG_SNAPSHOT CollectDebugSnapshot);
 
@@ -280,6 +425,13 @@ NTSTATUS Bc250McdmPopulateRenderCallbacks(
 
 VOID Bc250McdmInstallCurrentFenceProvider(
     _In_opt_ BC250_MCDM_CURRENT_FENCE_PROVIDER CurrentFenceProvider);
+
+typedef NTSTATUS (*BC250_MCDM_RESET_ENGINE_HANDLER)(
+    _In_ HANDLE AdapterContext,
+    _Inout_ DXGKARG_RESETENGINE *pResetEngine);
+
+VOID Bc250McdmInstallResetEngineHandler(
+    _In_opt_ BC250_MCDM_RESET_ENGINE_HANDLER Handler);
 
 struct _DXGK_BUILDPAGINGBUFFER_FLUSHTLB;
 

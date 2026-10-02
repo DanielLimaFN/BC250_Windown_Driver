@@ -9,16 +9,16 @@ Driver nativo para Windows e suíte de laboratório para engenharia reversa e br
 
 ---
 
-## 📊 Estado em 25/09/2026
+## 📊 Estado em 01/10/2026
 
 | Frente | Estado medido |
 |---|---|
-| Desktop WDDM | Corrida 118: 180 s com imagem legível e triângulo apenas na janela; 60/60 apresentações do harness e recuperação pelo watchdog no mesmo boot. O triângulo faltou na 117: a apresentação visual ainda é intermitente. |
-| Pixels | 60/60 cópias 1280×720 preservaram centro e canto em amostras antes/depois; essa prova não cobre todos os pixels nem a saída final no monitor. |
-| Velocidade | DWM 2,68 inícios de Present/s nos primeiros 120 s; harness 0,9 FPS. O modo GOP atual é ~56,13 Hz, mas o desempenho ainda está muito abaixo disso. |
-| Estabilidade | Houve travamentos duros em ensaios de 3–8 min e na Corrida 115. Estabilidade de 600 s, 60 FPS e jogos seguem abertos. |
+| Desktop WDDM | Desenhado pela GPU desde a Corrida 134; DWM estável por 600 s; menu Iniciar com ícones, ainda instável entre candidatos. |
+| Memória | VRAM controlada pela CMOS (`tools\vram-cmos\bc250-vram.ps1`, validado na placa). Meta desde 01/10: funcionar com o mínimo (256 MB) e usar a memória do sistema como o Linux (M1b), sem VRAM grande como muleta. |
+| Velocidade | ~12–16 FPS com a tela animando; meta 56–60 FPS. |
+| Estabilidade | Trava dura intermitente ainda aberta: é o bloqueio principal. Jogos não iniciados. |
 
-**Comece pelo [handoff atual](docs/438_HANDOFF_2026-09-25_CORRIDAS_111_A_118_VISUAL_VELOCIDADE_E_TRAVAMENTO.md)**. A [base de avanço](BASE_DE_AVANCO.md) registra o estado e as provas; o [roadmap](docs/164_ROADMAP_WDDM_JOGOS.md) define o escopo do produto.
+**Comece pelo [`PLANO_MESTRE.md`](PLANO_MESTRE.md)**: estado de todas as funcionalidades, o que avançou, o que falhou e as fases até jogos. A [base de avanço](BASE_DE_AVANCO.md) registra cada corrida com as provas; o [roadmap](docs/164_ROADMAP_WDDM_JOGOS.md) define o escopo do produto.
 
 ---
 
@@ -99,6 +99,5 @@ Consulte o documento normativo [BC250_HARDWARE_RULES.md](rules.md) para detalhes
 ---
 
 ## 🗺️ Próximos Passos
-- [ ] Conectar a busca de instrução do CP (Command Processor) à abertura de memória do VMID 0.
-- [ ] Executar a primeira submissão no Ring 0 PM4 com verificação de Fence física.
-- [ ] Iniciar a implementação das DDIs de produção do miniport WDDM / MCDM.
+
+Ver a seção 7 do [`PLANO_MESTRE.md`](PLANO_MESTRE.md).

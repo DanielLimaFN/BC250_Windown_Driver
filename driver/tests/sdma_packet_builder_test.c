@@ -215,6 +215,23 @@ static int Bc250RunSdmaPacketBuilderTest(void)
 
     CHECK(Bc250SdmaEmitConstFill(
         g_ring, TEST_RING_DWORDS, &cursor, 0x1001ull /* misaligned */, 0xAAu, 4096u) == BC250_SDMA_MISALIGNED);
+
+    /*
+     * SDMA.4M (Corridas 135 e 151): 4 MiB exatos (count=0x3FFFFF) NAO pode
+     * sair num pacote so'. Limites da Mesa para SDMA 5.0: fill 0x3FFFFC,
+     * copia 0x3FFF00 (bc250_sdma_packet_builder.h).
+     */
+    cursor = 0;
+    CHECK(Bc250SdmaEmitConstFill(
+        g_ring, TEST_RING_DWORDS, &cursor, 0x3000000ull, 0u, 0x00400000u) == BC250_SDMA_PAYLOAD_TOO_LARGE);
+    CHECK(Bc250SdmaEmitConstFill(
+        g_ring, TEST_RING_DWORDS, &cursor, 0x3000000ull, 0u, 0x003FFFFCu) == BC250_SDMA_OK);
+    CHECK(g_ring[cursor - 1u] == 0x003FFFFBu);
+    cursor = 0;
+    CHECK(Bc250SdmaEmitCopyLinear(
+        g_ring, TEST_RING_DWORDS, &cursor, 0x1000ull, 0x2000ull, 0x00400000u) == BC250_SDMA_PAYLOAD_TOO_LARGE);
+    CHECK(Bc250SdmaEmitCopyLinear(
+        g_ring, TEST_RING_DWORDS, &cursor, 0x1000ull, 0x2000ull, 0x003FFF00u) == BC250_SDMA_OK);
     CHECK(Bc250SdmaEmitFence(
         g_ring, TEST_RING_DWORDS, &cursor, 0x1002ull /* misaligned */, 0x1u) == BC250_SDMA_MISALIGNED);
 
@@ -349,6 +366,47 @@ static int Bc250RunSdmaPacketBuilderTest(void)
         /* Misaligned byte count should fail decode */
         copyWords[1] = 4094u; /* 4095 bytes */
         CHECK(!Bc250PagingDecodeProof(copyWords, 8u, 0x1ce865cc0ull, &proof));
+    }
+
+    /*
+     * X2b (doc 561): regiao de zeros na frente + COPY_LINEAR de fonte
+     * constante para destino contiguo = FILL_BY_COPY. Sem regiao na frente
+     * continua sendo COPY; fatia maior que a regiao, fonte que anda ou
+     * destino com buraco reprovam.
+     */
+    {
+        uint32_t w[32];
+        BC250_PAGING_PROOF proof;
+        uint32_t k;
+        memset(w, 0, sizeof(w));
+        /* 8 DW de zeros (32 B), duas copias de 32 B, 2 NOPs de cauda = 24 DW */
+        for (k = 0u; k < 2u; ++k) {
+            uint32_t *c = w + 8u + k * 7u;
+            c[0] = BC250_SDMA_OP_COPY | (BC250_SDMA_SUBOP_COPY_LINEAR << 8);
+            c[1] = 31u;
+            c[3] = 0x229080u;
+            c[5] = 0x290000u + k * 32u;
+        }
+        CHECK(Bc250PagingDecodeProof(w, 24u, 0x3ac510080ull, &proof));
+        CHECK(proof.Opcode == BC250_PAGING_PROOF_OP_FILL_BY_COPY);
+        CHECK(proof.Source == 0x229080ull);
+        CHECK(proof.SourceBytes == 32u);
+        CHECK(proof.Destination == 0x290000ull);
+        CHECK(proof.Bytes == 64u);
+        CHECK(proof.Pattern == 0u);
+        /* fatia maior que a regiao de zeros */
+        w[9] = 35u;
+        CHECK(!Bc250PagingDecodeProof(w, 24u, 0x3ac510080ull, &proof));
+        w[9] = 31u;
+        /* fonte que anda (seria TRANSFER, nao zeramento) */
+        w[15 + 3] = 0x2290A0u;
+        CHECK(!Bc250PagingDecodeProof(w, 24u, 0x3ac510080ull, &proof));
+        w[15 + 3] = 0x229080u;
+        /* destino com buraco */
+        w[15 + 5] = 0x290040u;
+        CHECK(!Bc250PagingDecodeProof(w, 24u, 0x3ac510080ull, &proof));
+        w[15 + 5] = 0x290020u;
+        CHECK(Bc250PagingDecodeProof(w, 24u, 0x3ac510080ull, &proof));
     }
     return 1;
 }

@@ -7,6 +7,7 @@
 #include "../core/bc250_sdma_f32_transaction.h"
 #include "../core/bc250_compute_mqd_contract.h"
 #include "../core/bc250_gfx_ring_contract.h"
+#include "../core/bc250_hdp_contract.h"
 #include <ntddk.h>
 
 #define BC250_PCI_VENDOR_ID 0x1002u
@@ -455,8 +456,17 @@ static void Bc250ComputeHdpFlush(void)
 {
     ULONG misc, val;
     misc = *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x03FCCu);
-    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x04A80u) = 0u;
-    val = *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x04A80u);
+    /*
+     * HDP.1 (28/09, doc 519): a escrita era 0 em 0x04A80 -- SDMA0_UTCL1_INV0,
+     * nao flush de HDP. Agora e' o flush de escrita real com leitura de
+     * confirmacao (bc250_hdp_contract.h). DIVIDA DECLARADA, nao tocada nesta
+     * faixa: este servico legado ainda alterna HDP_MISC, o que o DX.96 tirou
+     * dos caminhos ativos.
+     */
+    _mm_mfence();
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HDP_REG_MEM_COHERENCY_FLUSH_CNTL) =
+        BC250_HDP_MEM_FLUSH_VALUE;
+    val = *(volatile ULONG *)((ULONG_PTR)g_MmioBase + BC250_HDP_REG_FLUSH_POSTING_READ);
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x03FC4u) = 1u;
     val = *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x03FC4u);
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x03FCCu) = misc | 1u;
@@ -802,7 +812,7 @@ static NTSTATUS Bc250ComputeExecutePm4Dispatch(PBC250_COMPUTE_DISPATCH_REQ req)
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A200u) = 0x007FFE81u; /* R_GCVM_CONTEXT0_CNTL (ENABLE_CONTEXT=1) */
 
     /* Flush HDP e TLB Invalidate */
-    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00003FC4u) = 1u; /* HDP_MEM_COHERENCY_FLUSH_CNTL */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00003FC4u) = 1u; /* HDP_READ_CACHE_INVALIDATE (HDP.1: nome corrigido) */
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A104u) = 3u; /* GCVM_L2_CNTL2 */
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A2D0u) = 1u; /* GCVM_INVALIDATE_REQ */
     KeStallExecutionProcessor(50u);
@@ -1070,7 +1080,7 @@ static NTSTATUS Bc250ComputeExecuteHqdDispatch(PBC250_COMPUTE_DISPATCH_REQ req)
     Bc250ComputeHdpFlush();
 
     /* Coherence Flush (HDP, L2 e ENG17) */
-    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00003FC4u) = 1u; /* HDP_MEM_COHERENCY_FLUSH_CNTL */
+    *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x00003FC4u) = 1u; /* HDP_READ_CACHE_INVALIDATE (HDP.1: nome corrigido) */
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A104u) = 3u; /* GCVM_L2_CNTL2 */
     *(volatile ULONG *)((ULONG_PTR)g_MmioBase + 0x0000A2D0u) = 1u; /* GCVM_INVALIDATE_REQ (ENG17) */
 

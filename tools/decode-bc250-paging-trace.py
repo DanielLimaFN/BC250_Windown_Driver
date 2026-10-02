@@ -43,6 +43,14 @@ CRUMB_SITES = {
     9: "VRAM_COMPARE", 10: "PAGING_DDI", 11: "SUBMIT_DDI",
 }
 CRUMB_BANKS = {0: "INTERNA", 1: "PAGINACAO", 2: "SUBMISSAO"}
+# DX.92: no banco SUBMISSAO o offset e' (no' << 16) | etapa (bc250_active_miniport.c).
+SUBMIT_STAGES = {
+    0x01: "ENTRADA", 0x10: "RETIRE_AND_NOTIFY", 0x11: "RETIRE_FEITO",
+    0x12: "INSTALL_VMID", 0x13: "INSTALL_VMID_FEITO", 0x14: "SNAPSHOT_IB",
+    0x15: "PT_WALK_DEST", 0x16: "PT_WALK_IB", 0x17: "PT_WALK_FEITO",
+    0x18: "ANEL_SDMA", 0x19: "ANEL_SDMA_FEITO",
+    0x1A: "CAMINHO_ESCOLHA", 0x1B: "PRE_RETIRE",
+}
 
 
 def decode_crumb_record(data: bytes) -> dict:
@@ -58,16 +66,217 @@ def decode_crumb_record(data: bytes) -> dict:
     for slot in range(CRUMB_SLOTS):
         seq, site_offset, phase = struct.unpack_from("<III", data, CRUMB_HEADER.size + slot * 12)
         if seq and phase == 0xB0:
-            in_flight.append({
+            item = {
                 "sequence": seq,
                 "cpu": slot % CRUMB_CPUS,
                 "bank": CRUMB_BANKS.get(slot // CRUMB_CPUS, "?"),
                 "site": CRUMB_SITES.get(site_offset >> 24, f"SITE_{site_offset >> 24}"),
                 "offset": f"0x{site_offset & 0xFFFFFF:06X}",
-            })
+            }
+            if (site_offset >> 24) == 11:
+                offset = site_offset & 0xFFFFFF
+                item["submit_node"] = (offset >> 16) & 0xFF
+                stage = offset & 0xFFFF
+                # Antes da DX.92 o offset era so' o no' (etapa 0).
+                item["submit_stage"] = SUBMIT_STAGES.get(stage, f"ETAPA_0x{stage:X}")
+            in_flight.append(item)
     in_flight.sort(key=lambda item: item["sequence"])
     return {"writer_tick": tick, "last_sequence": last,
             "snapshot_time_100ns": when, "in_flight": in_flight}
+
+
+# DX.90: batimento do GPU (BC250_GPU_HEARTBEAT_RECORD). Fase 0xB0 e' gravada
+# e descarregada ANTES das leituras de registrador; 0xA0 traz os valores.
+# Um ANTES sem o DEPOIS do mesmo tick no fim do arquivo = leitura que nao voltou.
+GPUHB_MAGIC = 0x31484742
+GPUHB_HEADER = struct.Struct("<IIIIIIQ")
+GPUHB_BODY = struct.Struct("<8I")
+GPUHB_SIZE = GPUHB_HEADER.size + GPUHB_BODY.size + 8
+# Anel grafico: 64 KB = 16384 dwords (bc250_active_miniport.c, ringBytes do
+# GfxEngine). CP_RB0_RPTR do hardware da' a volta no anel; o WPTR que
+# publicamos e' cursor monotono. Comparar cru e' a armadilha da A15: 0x88D4
+# contra 0x08D4 e' anel OCIOSO (Corrida 142).
+GFX_RING_DWORDS = 16384
+GPUHB_FIELDS = ("read_mask", "grbm_status", "cp_stat", "cp_rb0_rptr",
+                "cp_rb0_wptr", "rptr_writeback", "fence_memory",
+                "last_submitted_fence")
+
+
+def decode_gpu_heartbeat(data: bytes) -> dict:
+    if len(data) != GPUHB_SIZE:
+        raise ValueError("batimento incompleto")
+    magic, version, tick, phase, measured, _reserved, when = GPUHB_HEADER.unpack_from(data)
+    checksum, padding = struct.unpack_from("<II", data, GPUHB_SIZE - 8)
+    if magic != GPUHB_MAGIC or version != 1 or phase not in (0xB0, 0xA0) or padding:
+        raise ValueError("cabecalho de batimento invalido")
+    if checksum != fnv1a(data[: GPUHB_SIZE - 8]):
+        raise ValueError("checksum de batimento divergente")
+    values = dict(zip(GPUHB_FIELDS, GPUHB_BODY.unpack_from(data, GPUHB_HEADER.size)))
+    out = {"writer_tick": tick, "phase": "ANTES" if phase == 0xB0 else "DEPOIS",
+           "measured": measured, "snapshot_time_100ns": when}
+    if phase == 0xA0:
+        for key, value in values.items():
+            out[key] = f"0x{value:08X}"
+        rptr = values["cp_rb0_rptr"] % GFX_RING_DWORDS
+        wptr = values["cp_rb0_wptr"] % GFX_RING_DWORDS
+        out["gfx_ring_pending_dw"] = (wptr - rptr) % GFX_RING_DWORDS
+        out["gfx_ring_idle"] = rptr == wptr
+        # Fence em memoria atras da ultima submetida = trabalho grafico pendente.
+        out["gfx_fence_behind"] = (values["last_submitted_fence"] - values["fence_memory"]) & 0xFFFFFFFF
+    return out
+
+
+def summarize_gpu_heartbeats(records: list) -> dict | None:
+    if not records:
+        return None
+    last = records[-1]
+    tail = [r for r in records if r["phase"] == "DEPOIS"][-5:]
+    return {
+        "records": len(records),
+        "last_phase": last["phase"],
+        "last_writer_tick": last["writer_tick"],
+        # ANTES como ultimo registro: a thread entrou nas leituras e nao voltou.
+        "read_never_returned": last["phase"] == "ANTES",
+        "last_after_records": tail,
+    }
+
+
+# I.PLAT (doc 553): amostra de plataforma (BC250_PLATFORM_SAMPLE_RECORD), 1 s.
+# Mesmo layout e mesma regra ANTES/DEPOIS do BGH1. Tctl pela conversao do
+# k10temp (P1); o par RSMU alcancar 0x59800 e' H, entao valor fora de 0..125 C
+# sai marcado e nao conta como temperatura.
+PLAT_MAGIC = 0x31535042
+PLAT_FIELDS = ("read_mask", "sdma1_status", "sdma1_f32_cntl", "sdma1_rb_cntl",
+               "sdma1_rb_rptr", "sdma1_rb_wptr", "tctl_raw", "tctl_milli_c_kmd")
+PLAT_READ_TCTL = 0x20
+
+
+def tctl_milli_c(raw: int) -> int:
+    value = (raw >> 21) * 125
+    if (raw & 0x00080000) or (raw & 0x00030000) == 0x00030000:
+        value -= 49000
+    return value
+
+
+def decode_platform_sample(data: bytes) -> dict:
+    if len(data) != GPUHB_SIZE:
+        raise ValueError("amostra de plataforma incompleta")
+    magic, version, tick, phase, measured, _reserved, when = GPUHB_HEADER.unpack_from(data)
+    checksum, padding = struct.unpack_from("<II", data, GPUHB_SIZE - 8)
+    if magic != PLAT_MAGIC or version != 1 or phase not in (0xB0, 0xA0) or padding:
+        raise ValueError("cabecalho de amostra de plataforma invalido")
+    if checksum != fnv1a(data[: GPUHB_SIZE - 8]):
+        raise ValueError("checksum de amostra de plataforma divergente")
+    values = dict(zip(PLAT_FIELDS, GPUHB_BODY.unpack_from(data, GPUHB_HEADER.size)))
+    out = {"writer_tick": tick, "phase": "ANTES" if phase == 0xB0 else "DEPOIS",
+           "measured": measured, "snapshot_time_100ns": when}
+    if phase == 0xA0:
+        for key in PLAT_FIELDS[:7]:
+            out[key] = f"0x{values[key]:08X}"
+        out["sdma1_idle"] = bool(values["sdma1_status"] & 1)
+        out["sdma1_halted"] = bool(values["sdma1_f32_cntl"] & 1)
+        out["sdma1_rb_enable"] = bool(values["sdma1_rb_cntl"] & 1)
+        if values["read_mask"] & PLAT_READ_TCTL:
+            milli = tctl_milli_c(values["tctl_raw"])
+            kmd = values["tctl_milli_c_kmd"]
+            if kmd >= 0x80000000:
+                kmd -= 0x100000000
+            out["tctl_c"] = milli / 1000.0
+            out["tctl_kmd_agrees"] = milli == kmd
+            out["tctl_plausible"] = 0 <= milli <= 125000
+    return out
+
+
+def summarize_platform_samples(records: list) -> dict | None:
+    if not records:
+        return None
+    last = records[-1]
+    after = [r for r in records if r["phase"] == "DEPOIS"]
+    temps = [r["tctl_c"] for r in after if r.get("tctl_plausible")]
+    return {
+        "records": len(records),
+        "last_phase": last["phase"],
+        "last_writer_tick": last["writer_tick"],
+        "read_never_returned": last["phase"] == "ANTES",
+        "tctl_samples": len(temps),
+        "tctl_implausible": sum(1 for r in after if "tctl_c" in r and not r["tctl_plausible"]),
+        "tctl_min_c": min(temps) if temps else None,
+        "tctl_max_c": max(temps) if temps else None,
+        "tctl_last_c": temps[-1] if temps else None,
+        "sdma1_state_changes": len({(r.get("sdma1_status"), r.get("sdma1_f32_cntl"),
+                                     r.get("sdma1_rb_cntl")) for r in after}),
+        "last_after_records": after[-5:],
+    }
+
+
+# I.SDMA0 / I.CG (doc 556): BSQ1 (a cada 100 ms) e BCG1 (a cada 10 s), mesmo
+# layout de 72 bytes. Words[0] = mascara das leituras que voltaram.
+SQ_MAGIC = 0x31515342
+CG_MAGIC = 0x31474342
+SQ_FIELDS = ("sdma0_status", "sdma0_status1", "sdma0_status2", "sdma0_rb_rptr",
+             "sdma0_rb_wptr", "sdma0_ib_rptr", "sdma0_context_status")
+CG_FIELDS = ("sdma0_power_cntl", "sdma0_clk_ctrl", "sdma1_power_cntl", "sdma1_clk_ctrl",
+             "rlc_cgtt_mgcg_override", "rlc_cgcg_cgls_ctrl", "cgtt_spi_clk_ctrl")
+SDMA_RING_BYTES = 4096  # anel do SDMA0 (A15: comparar ponteiros reduzidos a uma volta)
+
+
+def decode_words_record(data: bytes, magic_expected: int, fields: tuple) -> dict:
+    if len(data) != GPUHB_SIZE:
+        raise ValueError("registro de palavras incompleto")
+    magic, version, tick, phase, measured, _reserved, when = GPUHB_HEADER.unpack_from(data)
+    checksum, padding = struct.unpack_from("<II", data, GPUHB_SIZE - 8)
+    if magic != magic_expected or version != 1 or phase not in (0xB0, 0xA0) or padding:
+        raise ValueError("cabecalho de registro de palavras invalido")
+    if checksum != fnv1a(data[: GPUHB_SIZE - 8]):
+        raise ValueError("checksum de registro de palavras divergente")
+    words = GPUHB_BODY.unpack_from(data, GPUHB_HEADER.size)
+    out = {"writer_tick": tick, "phase": "ANTES" if phase == 0xB0 else "DEPOIS",
+           "measured": measured, "snapshot_time_100ns": when}
+    if phase == 0xA0:
+        out["read_mask"] = f"0x{words[0]:02X}"
+        for i, name in enumerate(fields):
+            if words[0] & (1 << i):
+                out[name] = f"0x{words[i + 1]:08X}"
+        if magic_expected == SQ_MAGIC and (words[0] & 0x19) == 0x19:
+            status, rptr, wptr = words[1], words[4], words[5]
+            out["sdma0_idle"] = bool(status & 0x1)
+            out["sdma0_rb_empty"] = bool(status & 0x4)
+            out["sdma0_inside_ib"] = bool(status & 0x200)
+            out["sdma0_ring_drained"] = (rptr % SDMA_RING_BYTES) == (wptr % SDMA_RING_BYTES)
+    return out
+
+
+def scan_words(contents: bytes, magic: int, fields: tuple) -> list:
+    records = []
+    m = struct.pack("<I", magic)
+    position = contents.find(m)
+    while position >= 0:
+        try:
+            records.append(decode_words_record(contents[position:position + GPUHB_SIZE], magic, fields))
+            position = contents.find(m, position + GPUHB_SIZE)
+        except ValueError:
+            position = contents.find(m, position + 4)
+    return records
+
+
+def summarize_words(records: list) -> dict | None:
+    if not records:
+        return None
+    after = [r for r in records if r["phase"] == "DEPOIS"]
+    last = records[-1]
+    states = {}
+    for r in after:
+        key = tuple((k, v) for k, v in r.items() if k not in ("writer_tick", "phase", "measured", "snapshot_time_100ns"))
+        states.setdefault(key, 0)
+        states[key] += 1
+    return {
+        "records": len(records),
+        "last_phase": last["phase"],
+        "last_writer_tick": last["writer_tick"],
+        "read_never_returned": last["phase"] == "ANTES",
+        "distinct_states": len(states),
+        "last_after_records": after[-5:],
+    }
 
 
 def fnv1a(data: bytes) -> int:
@@ -177,6 +386,26 @@ def main() -> None:
             "last_sequence": last_crumb["last_sequence"],
             "in_flight_at_last_record": persistent,
         }
+    # DX.90: batimentos do GPU, na ordem do arquivo.
+    gpu_heartbeats = []
+    gpuhb_magic = struct.pack("<I", GPUHB_MAGIC)
+    position = contents.find(gpuhb_magic)
+    while position >= 0:
+        try:
+            gpu_heartbeats.append(decode_gpu_heartbeat(contents[position : position + GPUHB_SIZE]))
+            position = contents.find(gpuhb_magic, position + GPUHB_SIZE)
+        except ValueError:
+            position = contents.find(gpuhb_magic, position + 4)
+    # I.PLAT: amostras de plataforma, na ordem do arquivo.
+    platform_samples = []
+    plat_magic = struct.pack("<I", PLAT_MAGIC)
+    position = contents.find(plat_magic)
+    while position >= 0:
+        try:
+            platform_samples.append(decode_platform_sample(contents[position : position + GPUHB_SIZE]))
+            position = contents.find(plat_magic, position + GPUHB_SIZE)
+        except ValueError:
+            position = contents.find(plat_magic, position + 4)
     # DX.65: batimento depois da ultima paginacao. So' registros v2 com a
     # MESMA latest_sequence no fim, em sequencia de writer_tick, contam.
     heartbeat = None
@@ -205,6 +434,10 @@ def main() -> None:
                 "invalid_records": invalid[-5:],
                 "heartbeat_after_last_paging": heartbeat,
                 "mmio_crumbs": crumb_summary,
+                "gpu_heartbeat": summarize_gpu_heartbeats(gpu_heartbeats),
+                "platform_sample": summarize_platform_samples(platform_samples),
+                "sdma0_sample": summarize_words(scan_words(contents, SQ_MAGIC, SQ_FIELDS)),
+                "clock_gating_sample": summarize_words(scan_words(contents, CG_MAGIC, CG_FIELDS)),
                 "last_snapshots": valid[-args.last :],
             },
             indent=2,

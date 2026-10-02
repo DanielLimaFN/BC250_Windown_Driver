@@ -162,6 +162,26 @@ uint32_t Bc250TripodAllowsClaim(BC250_TRIPOD_VERDICT Verdict);
  */
 uint32_t Bc250TripodWrapRingPointer(uint32_t Value, uint32_t RingBytes);
 
+/*
+ * X1 (29/09, doc 522): a entrada mais antiga do anel ja foi CONSUMIDA pela
+ * engine, decidido SO' pelo registrador RPTR (sem HDP e sem ler VRAM)?
+ *
+ * Todos os valores sao reduzidos a uma volta do anel. As distancias sao
+ * medidas a partir do inicio da entrada (StartBytes) no sentido de avanco:
+ *   consumida  <=>  dist(Start->Rptr) >= dist(Start->Target)
+ *                   e dist(Start->Rptr) <= dist(Start->Tail)
+ * O segundo limite (Tail = ultimo WPTR publicado) impede que um RPTR ainda
+ * ANTES do inicio -- por exemplo nos NOPs de volta do anel -- pareca estar
+ * alem do alvo. Devolve 0 com qualquer argumento incoerente (falha fechada:
+ * "nao sei" nunca vira "concluido").
+ */
+uint32_t Bc250TripodRingEntryConsumed(
+    uint32_t RptrRaw,
+    uint32_t StartBytes,
+    uint32_t TargetBytes,
+    uint32_t TailBytes,
+    uint32_t RingBytes);
+
 /* Nome estavel para log e evidencia. */
 const char *Bc250TripodVerdictName(BC250_TRIPOD_VERDICT Verdict);
 const char *Bc250TripodRptrSourceName(BC250_TRIPOD_RPTR_SOURCE Source);

@@ -53,18 +53,63 @@ static void Bc250UmdTrace(_Printf_format_string_ const char *Format, ...)
 /* Tokens de command buffer sao unicos por processo e nunca usam a classe
  * PRIMARY. O valor anterior era zero e Bc250WinsysAllocate o rejeitava por
  * contrato, portanto nenhum command buffer podia ser criado de verdade. */
-static volatile LONG g_Bc250UmdCommandTokenSequence = 0;
-static volatile LONG g_Bc250UmdProofTokenSequence = 0;
 static volatile LONG g_Bc250UmdProofTriggered = 0;
+
+/*
+ * T4.4 (30/09) -- UMA sequencia de token por PROCESSO, nao por carga da DLL.
+ *
+ * MEDIDO na Corrida 183: o runtime carregou a bc250umd.dll 177 vezes dentro do
+ * StartMenuExperienceHost.exe (pid 6992). Os tres contadores eram estaticos da
+ * DLL e voltavam a 1 a cada carga; o token 0x524553001B50000D foi emitido 176
+ * vezes enquanto alocacoes de cargas anteriores continuavam vivas no KMD. O KMD
+ * procura a alocacao por token em DxgkDdiOpenAllocation e achava a ANTIGA:
+ *   172x [ActiveOpenAlloc] RECUSADO: size/alignment mismatch rec=1638400 req=8192
+ *        (a textura compartilhada 32x32 do menu nunca foi criada; E_INVALIDARG);
+ *   2406x STATUS_OBJECT_NAME_COLLISION no device do dwm.exe (a alocacao
+ *        "nova" resolvia para uma que o device ja tinha aberto).
+ *
+ * A sequencia agora e' unica e retomada: DllMain le BC250_UMD_TOKEN_SEQUENCE
+ * do ambiente DO PROPRIO PROCESSO no attach e grava no detach por FreeLibrary.
+ * O ambiente sobrevive ao descarregamento da DLL e nao e' visivel a outros
+ * processos (o pid ja esta no token). Divida declarada: os 16 bits baixos
+ * ainda dao a volta apos 65.536 alocacoes no mesmo processo.
+ */
+#define BC250_UMD_TOKEN_SEQUENCE_ENV "BC250_UMD_TOKEN_SEQUENCE"
+static volatile LONG g_Bc250UmdTokenSequence = 0;
+
+static ULONG Bc250UmdNextTokenSequence(void)
+{
+    ULONG sequence = (ULONG)InterlockedIncrement(&g_Bc250UmdTokenSequence);
+    if ((sequence & 0xFFFFu) == 0u) {
+        sequence = (ULONG)InterlockedIncrement(&g_Bc250UmdTokenSequence);
+    }
+    return sequence;
+}
+
+static LONG Bc250UmdRestoreTokenSequence(void)
+{
+    char text[16];
+    LONG value = 0;
+    DWORD length = GetEnvironmentVariableA(BC250_UMD_TOKEN_SEQUENCE_ENV, text, (DWORD)sizeof(text));
+    if (length > 0u && length < sizeof(text) && Bc250UmdTokenSequenceParse(text, &value)) {
+        InterlockedExchange(&g_Bc250UmdTokenSequence, value);
+        return value;
+    }
+    return 0;
+}
+
+static void Bc250UmdPersistTokenSequence(void)
+{
+    char text[16];
+    if (Bc250UmdTokenSequenceFormat(InterlockedCompareExchange(&g_Bc250UmdTokenSequence, 0, 0),
+            text, sizeof(text))) {
+        (void)SetEnvironmentVariableA(BC250_UMD_TOKEN_SEQUENCE_ENV, text);
+    }
+}
 
 static uint64_t Bc250UmdNextCommandToken(void)
 {
-    ULONG sequence = (ULONG)InterlockedIncrement(
-        &g_Bc250UmdCommandTokenSequence);
-    if (sequence == 0u) {
-        sequence = (ULONG)InterlockedIncrement(
-            &g_Bc250UmdCommandTokenSequence);
-    }
+    ULONG sequence = Bc250UmdNextTokenSequence();
     return ((uint64_t)0x434D4400u << 32) |
         ((uint64_t)(GetCurrentProcessId() & 0xFFFFu) << 16) |
         (uint64_t)(sequence & 0xFFFFu);
@@ -72,23 +117,15 @@ static uint64_t Bc250UmdNextCommandToken(void)
 
 static uint64_t Bc250UmdNextProofToken(void)
 {
-    ULONG sequence = (ULONG)InterlockedIncrement(&g_Bc250UmdProofTokenSequence);
-    if (sequence == 0u) {
-        sequence = (ULONG)InterlockedIncrement(&g_Bc250UmdProofTokenSequence);
-    }
+    ULONG sequence = Bc250UmdNextTokenSequence();
     return ((uint64_t)0x50524600u << 32) |
         ((uint64_t)(GetCurrentProcessId() & 0xFFFFu) << 16) |
         (uint64_t)(sequence & 0xFFFFu);
 }
 
-static volatile LONG g_Bc250UmdResourceTokenSequence = 0;
-
 static uint64_t Bc250UmdNextResourceToken(BOOL isPrimary, BOOL isStaging)
 {
-    ULONG sequence = (ULONG)InterlockedIncrement(&g_Bc250UmdResourceTokenSequence);
-    if (sequence == 0u) {
-        sequence = (ULONG)InterlockedIncrement(&g_Bc250UmdResourceTokenSequence);
-    }
+    ULONG sequence = Bc250UmdNextTokenSequence();
     if (isPrimary) {
         return ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_PRIMARY << BC250_ALLOCATION_TOKEN_CLASS_SHIFT) |
             (uint64_t)(sequence & 0xFFFFFFFFu);
@@ -105,10 +142,17 @@ static uint64_t Bc250UmdNextResourceToken(BOOL isPrimary, BOOL isStaging)
 
 BOOL WINAPI DllMain(HINSTANCE Instance, DWORD Reason, LPVOID Reserved)
 {
-    UNREFERENCED_PARAMETER(Reserved);
     if (Reason == DLL_PROCESS_ATTACH) {
+        LONG resumed;
         (void)DisableThreadLibraryCalls(Instance);
+        resumed = Bc250UmdRestoreTokenSequence();
         Bc250UmdTrace("=== bc250umd.dll CARREGADA ===");
+        Bc250UmdTrace("T4.4 TOKEN_SEQUENCE retomada em 0x%08lX (0 = primeira carga neste processo)",
+            (unsigned long)resumed);
+    } else if (Reason == DLL_PROCESS_DETACH && Reserved == NULL) {
+        /* FreeLibrary: a proxima carga neste processo continua daqui. Com o
+         * processo terminando (Reserved != NULL) nao ha proxima carga. */
+        Bc250UmdPersistTokenSequence();
     }
     return TRUE;
 }
@@ -450,6 +494,94 @@ static BOOL Bc250UmdShaderTranslatorReadPath(_Out_writes_(Chars) wchar_t* Path, 
     return armed;
 }
 
+/*
+ * Menu Iniciar (Corrida 160, doc 516): um PS SM4.0 de 89 tokens falhou no
+ * vkd3d-shader (status=3) 29 vezes, sem mensagem. Na falha, registra o
+ * resultado e as mensagens do vkd3d (por thread, adaptador) e grava UMA vez por
+ * shader distinto os tokens e as assinaturas em
+ * %TEMP%\BC250_SHADER_FAIL_<pid>_<fnv32>.bin, para reproduzir a traducao offline.
+ * Formato (uint32 LE): 'BCSF', versao 1, tipo (0 token stream, 1 DXBC),
+ * bytes do codigo, n entradas ISGN, n entradas OSGN, codigo, entradas
+ * D3D10DDIARG_SIGNATURE_ENTRY cruas (12 bytes cada). So' leitura do shader.
+ */
+static volatile LONG s_Bc250ShaderFailSeen[16];
+static volatile LONG s_Bc250ShaderFailSeenCount;
+
+static void Bc250UmdReportShaderFailure(
+    _In_ CONST UINT* pShaderCode, UINT CodeBytes, UINT Kind,
+    _In_opt_ CONST D3D10DDIARG_STAGE_IO_SIGNATURES* pSignatures)
+{
+    int vkd3dResult = 0;
+    const char *messages = Bc250Vkd3dShaderAdapterLastMessages(&vkd3dResult);
+    UINT hash = 2166136261u, i, numIn = 0, numOut = 0;
+    const BYTE *bytes = (const BYTE *)pShaderCode;
+    LONG slot, seen;
+    char path[MAX_PATH];
+    DWORD tempLen;
+    HANDLE file;
+
+    Bc250UmdTrace("SHADER_TRANSLATOR: vkd3d resultado=%d mensagens=[%s]",
+        vkd3dResult, (messages && messages[0]) ? messages : "(nenhuma)");
+    /* O tamanho vem do proprio token stream; um valor absurdo nao pode fazer
+     * ler memoria alem do shader. Shaders reais do desktop tem poucos KB. */
+    if (pShaderCode == NULL || CodeBytes == 0u || CodeBytes > (1u << 20)) {
+        Bc250UmdTrace("SHADER_TRANSLATOR: shader recusado NAO gravado (tamanho %u fora de faixa)", CodeBytes);
+        return;
+    }
+    for (i = 0; i < CodeBytes; ++i) { hash ^= bytes[i]; hash *= 16777619u; }
+    seen = InterlockedCompareExchange(&s_Bc250ShaderFailSeenCount, 0, 0);
+    for (slot = 0; slot < seen && slot < 16; ++slot) {
+        if ((UINT)s_Bc250ShaderFailSeen[slot] == hash) return;
+    }
+    slot = InterlockedIncrement(&s_Bc250ShaderFailSeenCount) - 1;
+    if (slot >= 16) return;
+    s_Bc250ShaderFailSeen[slot] = (LONG)hash;
+
+    tempLen = GetTempPathA((DWORD)sizeof(path), path);
+    if (tempLen == 0u || tempLen > sizeof(path) - 48u) return;
+    _snprintf_s(path + tempLen, sizeof(path) - tempLen, _TRUNCATE,
+        "BC250_SHADER_FAIL_%lu_%08X.bin", GetCurrentProcessId(), hash);
+    if (pSignatures != NULL) {
+        numIn = pSignatures->pInputSignature ? pSignatures->NumInputSignatureEntries : 0u;
+        numOut = pSignatures->pOutputSignature ? pSignatures->NumOutputSignatureEntries : 0u;
+    }
+    /*
+     * SHADER.2 (Corrida 161): a DLL recarrega a cada device, a deduplicacao
+     * acima zera, e CREATE_ALWAYS reescrevia o arquivo -- a ultima reescrita
+     * (19:11:31) ficou no cache e a trava de 19:11:33 deixou 452 bytes ZERO.
+     * CREATE_NEW preserva o primeiro arquivo, e FlushFileBuffers o leva ao disco.
+     */
+    file = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        if (err == ERROR_FILE_EXISTS)
+            Bc250UmdTrace("SHADER_TRANSLATOR: shader recusado ja gravado em %s (hash=%08X) -- mantido", path, hash);
+        else
+            Bc250UmdTrace("SHADER_TRANSLATOR: nao foi possivel gravar %s (erro=%lu)", path, err);
+        return;
+    }
+    {
+        UINT header[6];
+        DWORD written = 0;
+        header[0] = 0x46534342u; /* "BCSF" */
+        header[1] = 1u;
+        header[2] = Kind;
+        header[3] = CodeBytes;
+        header[4] = numIn;
+        header[5] = numOut;
+        (void)WriteFile(file, header, (DWORD)sizeof(header), &written, NULL);
+        (void)WriteFile(file, pShaderCode, CodeBytes, &written, NULL);
+        if (numIn) (void)WriteFile(file, pSignatures->pInputSignature,
+            (DWORD)(numIn * sizeof(D3D10DDIARG_SIGNATURE_ENTRY)), &written, NULL);
+        if (numOut) (void)WriteFile(file, pSignatures->pOutputSignature,
+            (DWORD)(numOut * sizeof(D3D10DDIARG_SIGNATURE_ENTRY)), &written, NULL);
+    }
+    (void)FlushFileBuffers(file);
+    CloseHandle(file);
+    Bc250UmdTrace("SHADER_TRANSLATOR: shader recusado gravado em %s (hash=%08X, %u bytes, ISGN=%u OSGN=%u)",
+        path, hash, CodeBytes, numIn, numOut);
+}
+
 static CONST BC250_DXBC_SPIRV_TRANSLATOR* Bc250UmdShaderTranslator(void)
 {
     LONG cached = InterlockedCompareExchange(&s_Bc250ShaderTranslatorState, -1, -1);
@@ -519,6 +651,7 @@ static VOID Bc250UmdAttachSpirvModule(
         if (status != BC250_DXBC_SPIRV_OK) {
             Bc250UmdTrace("SHADER_TRANSLATOR: traducao DXBC falhou (status=%d) -- shader segue sem SPIR-V",
                 (int)status);
+            Bc250UmdReportShaderFailure(pShaderCode, rawHdr->TotalSize, 1u, pSignatures);
             return;
         }
     } else {
@@ -535,6 +668,8 @@ static VOID Bc250UmdAttachSpirvModule(
         if (status != BC250_DXBC_SPIRV_OK) {
             Bc250UmdTrace("SHADER_TRANSLATOR: traducao TokenStream falhou (status=%d, tokens=%u) -- shader segue sem SPIR-V",
                 (int)status, pShaderCode[1]);
+            Bc250UmdReportShaderFailure(pShaderCode,
+                pShaderCode[1] * (UINT)sizeof(UINT), 0u, pSignatures);
             return;
         }
     }
@@ -544,6 +679,32 @@ static VOID Bc250UmdAttachSpirvModule(
         "Traducao NAO e' pipeline: descriptors, render target, anel grafico e Draw seguem ausentes.",
         (pShaderCode[0] == BC250_DXBC_MAGIC_DXBC) ? "DXBC" : "TokenStream",
         pShader->Spirv.SizeBytes, (int)pShader->Spirv.Stage);
+}
+
+/*
+ * I.1 (30/09, doc 545 §5): identidade do shader no log. FNV-1a 32 bits sobre o
+ * stream de tokens inteiro (pShaderCode[1] = comprimento em dwords). Sem isso o
+ * inventario so' distinguia shaders pelo numero de tokens. Comprimento fora de
+ * faixa devolve 0 e o log diz Hash=00000000.
+ */
+static ULONG Bc250UmdShaderTokenHash(_In_opt_ CONST UINT* pShaderCode)
+{
+    ULONG hash = 2166136261u;
+    UINT dwords;
+    UINT i;
+    if (pShaderCode == NULL) return 0u;
+    /* Contêiner DXBC: [1..4] e' o digest; o tamanho total em bytes esta no dword 6. */
+    dwords = (pShaderCode[0] == BC250_DXBC_MAGIC_DXBC) ? (pShaderCode[6] / 4u) : pShaderCode[1];
+    if (dwords < 2u || dwords > (1u << 20)) return 0u;
+    for (i = 0; i < dwords; ++i) {
+        UINT value = pShaderCode[i];
+        UINT b;
+        for (b = 0; b < 4u; ++b) {
+            hash ^= (value >> (8u * b)) & 0xFFu;
+            hash *= 16777619u;
+        }
+    }
+    return hash;
 }
 
 static BOOL Bc250UmdInitShaderInternal(
@@ -619,9 +780,10 @@ VOID APIENTRY Bc250Umd10CreateVertexShader(
         (void)Bc250UmdVkCreateShaderModule(device, shader);
     }
 
-    Bc250UmdTrace("CreateVertexShader: shader=%p SM=%u.%u tokens=%u hRT=%p VkModule=%d",
+    Bc250UmdTrace("CreateVertexShader: shader=%p SM=%u.%u tokens=%u hRT=%p VkModule=%d Hash=%08lX",
         (void*)shader, shader->MajorVersion, shader->MinorVersion,
-        shader->OpcodeTokenCount, (void*)hRTShader.handle, (int)shader->VkModuleCreated);
+        shader->OpcodeTokenCount, (void*)hRTShader.handle, (int)shader->VkModuleCreated,
+        Bc250UmdShaderTokenHash(pShaderCode));
 }
 
 VOID APIENTRY Bc250Umd10CreatePixelShader(
@@ -650,9 +812,10 @@ VOID APIENTRY Bc250Umd10CreatePixelShader(
         (void)Bc250UmdVkCreateShaderModule(device, shader);
     }
 
-    Bc250UmdTrace("CreatePixelShader: shader=%p SM=%u.%u tokens=%u hRT=%p VkModule=%d",
+    Bc250UmdTrace("CreatePixelShader: shader=%p SM=%u.%u tokens=%u hRT=%p VkModule=%d Hash=%08lX",
         (void*)shader, shader->MajorVersion, shader->MinorVersion,
-        shader->OpcodeTokenCount, (void*)hRTShader.handle, (int)shader->VkModuleCreated);
+        shader->OpcodeTokenCount, (void*)hRTShader.handle, (int)shader->VkModuleCreated,
+        Bc250UmdShaderTokenHash(pShaderCode));
 }
 
 VOID APIENTRY Bc250Umd10CreateGeometryShader(
@@ -797,6 +960,24 @@ static UINT Bc250DxgiFormatToD3dddiFormat(DXGI_FORMAT Format)
         return 23u; /* D3DDDIFMT_R5G6B5 */
     default:
         return 0u;  /* desconhecido -- ver o bloco acima */
+    }
+}
+
+static DXGI_FORMAT Bc250D3dddiFormatToDxgiFormat(UINT Format)
+{
+    switch (Format) {
+    case 21u: /* D3DDDIFMT_A8R8G8B8 */
+        return DXGI_FORMAT_B8G8R8A8_UNORM;
+    case 22u: /* D3DDDIFMT_X8R8G8B8 */
+        return DXGI_FORMAT_B8G8R8X8_UNORM;
+    case 28u: /* D3DDDIFMT_A8B8G8R8 */
+        return DXGI_FORMAT_R8G8B8A8_UNORM;
+    case 35u: /* D3DDDIFMT_A2B10G10R10 */
+        return DXGI_FORMAT_R10G10B10A2_UNORM;
+    case 23u: /* D3DDDIFMT_R5G6B5 */
+        return DXGI_FORMAT_B5G6R5_UNORM;
+    default:
+        return DXGI_FORMAT_UNKNOWN;
     }
 }
 
@@ -1177,6 +1358,26 @@ VOID APIENTRY Bc250Umd10CreateResource(
         binding.RuntimeResource = (HANDLE)hRTResource.handle;
         binding.Primary = isPrimary;
         binding.VidPnSourceId = (pCreate->pPrimaryDesc != NULL) ? pCreate->pPrimaryDesc->VidPnSourceId : 0u;
+        /* DX.89: recurso compartilhado (Explorer/DComp) -- ver bc250_wddm_winsys.h. */
+        binding.Shared = (pCreate->MiscFlags & D3D10_DDI_RESOURCE_MISC_SHARED) != 0u ? TRUE : FALSE;
+        /*
+         * M1 (doc 491): so' GPU via GPUVA. Fora: primaria, staging/dynamic (outra
+         * classe de token), render target, depth, UAV, decoder, e qualquer MISC
+         * que envolva outro processo ou o present -- SHARED (0x2),
+         * DISCARD_ON_PRESENT (0x8), KEYEDMUTEX (0x100), GDI_COMPATIBLE (0x200),
+         * REMOTE (0x400), RESTRICTED (0x800/0x1000), CROSS_ADAPTER (0x2000).
+         * Esses sao os que o KMD pode enderecar por MC (composicao, Present,
+         * scanout); os restantes -- texturas so' de leitura e buffers -- sao a
+         * maior parte das alocacoes do Explorer (238 gradientes 1024x1 na 140).
+         */
+        binding.GpuVaOnly =
+            (!isPrimary && !isStaging &&
+             (pCreate->BindFlags & (D3D10_DDI_BIND_RENDER_TARGET |
+                                    D3D10_DDI_BIND_DEPTH_STENCIL |
+                                    D3D11_DDI_BIND_UNORDERED_ACCESS |
+                                    D3D11_DDI_BIND_DECODER)) == 0u &&
+             (pCreate->MiscFlags & (0x2u | 0x8u | 0x100u | 0x200u | 0x400u |
+                                    0x800u | 0x1000u | 0x2000u)) == 0u) ? TRUE : FALSE;
 
         /*
          * F2.1/F2.5 -- a geometria viaja ate o KMD pela ABI de alocacao, e e' o
@@ -1305,11 +1506,14 @@ VOID APIENTRY Bc250Umd10CreateResource(
         (void)Bc250UmdVkCreateResource(device, res, pCreate);
     }
 
-    Bc250UmdTrace("CreateResource: res=%p Dim=%u Fmt=%u Size=%u (%ux%u bpp=%u) GpuVa=0x%llX Primary=%d VkRes=%d",
+    Bc250UmdTrace("CreateResource: res=%p Dim=%u Fmt=%u Size=%u (%ux%u bpp=%u) GpuVa=0x%llX Primary=%d VkRes=%d Alias=%d "
+        "Bind=0x%X Misc=0x%X Usage=%u Mips=%u Array=%u",
         (void*)res, res->ResourceDimension, res->Format, res->TotalByteSize,
         res->Width, res->Height, Bc250DxgiFormatBytesPerPixel(res->Format),
         (unsigned long long)res->Allocation.GpuVirtualAddress, res->IsPrimary,
-        (int)res->VkResourceCreated);
+        (int)res->VkResourceCreated, (int)res->VkMemAliased,
+        (unsigned)pCreate->BindFlags, (unsigned)pCreate->MiscFlags, (unsigned)pCreate->Usage,
+        (unsigned)pCreate->MipLevels, (unsigned)pCreate->ArraySize);
 
     Bc250WinsysHangEvent("CREATE_LOCK_SHARED", "RELEASE", device, hangSpan,
         (UINT64)(ULONG_PTR)res, 0u, S_OK);
@@ -1324,6 +1528,8 @@ VOID APIENTRY Bc250Umd10OpenResource(
 {
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     BC250_UMD_RESOURCE* res = (BC250_UMD_RESOURCE*)hResource.pDrvPrivate;
+    BC250_ALLOCATION_PRIVATE_V1 priv;
+    BOOL hasPriv = FALSE;
     UNREFERENCED_PARAMETER(device);
 
     if (res == NULL || pOpen == NULL) {
@@ -1335,9 +1541,100 @@ VOID APIENTRY Bc250Umd10OpenResource(
     res->hRTResource = hRTResource;
     res->hKMResource = pOpen->hKMResource;
     res->Created = TRUE;
+    res->OpenedShared = TRUE; /* T4.6 */
 
-    Bc250UmdTrace("OpenResource: res=%p hKMResource=%u NumAllocs=%u",
-        (void*)res, (unsigned)pOpen->hKMResource.handle, pOpen->NumAllocations);
+    memset(&priv, 0, sizeof(priv));
+    if (pOpen->pPrivateDriverData != NULL && pOpen->PrivateDriverDataSize > 0) {
+        if (Bc250AllocationAbiParse(pOpen->pPrivateDriverData, pOpen->PrivateDriverDataSize, &priv) == BC250_ALLOCATION_ABI_OK) {
+            hasPriv = TRUE;
+        }
+    }
+    /*
+     * T4.2: o elemento [0] e' lido pela struct v1. hAllocation, pPrivateDriverData
+     * e PrivateDriverDataSize ocupam os MESMOS offsets nas duas versoes, entao a
+     * leitura v1 e' correta em qualquer interface; so' GpuVirtualAddress (offset
+     * 24) nao existe na v1. E a GPUVA do runtime NAO e' usada nem na v2: a VA de
+     * quem criou vale no processo de quem criou. Igual ao Linux
+     * (radv_amdgpu_winsys_bo_from_fd: va_range_alloc + AMDGPU_VA_OP_MAP) e ao
+     * nosso proprio RADV WDDM2 (radv_wddm2_bo.c: MapGpuVirtualAddress sobre o
+     * hAllocation aberto, ignorando alloc_info[0].GpuVirtualAddress).
+     */
+    if (pOpen->NumAllocations > 0 && pOpen->pOpenAllocationInfo != NULL) {
+        const D3DDDI_OPENALLOCATIONINFO* pInfo = &pOpen->pOpenAllocationInfo[0];
+        res->Allocation.KernelAllocation = pInfo->hAllocation;
+        res->Allocation.GpuVirtualAddress = 0u;
+        res->Allocation.Created = (pInfo->hAllocation != 0) ? TRUE : FALSE;
+        if (!hasPriv && pInfo->pPrivateDriverData != NULL && pInfo->PrivateDriverDataSize > 0) {
+            if (Bc250AllocationAbiParse(pInfo->pPrivateDriverData, pInfo->PrivateDriverDataSize, &priv) == BC250_ALLOCATION_ABI_OK) {
+                hasPriv = TRUE;
+            }
+        }
+    }
+    Bc250UmdTrace("OpenResource T4.2: Interface=0x%08X array=%s NumAllocs=%u -- GPUVA do runtime IGNORADA; "
+        "a VA sai do MapGpuVirtualAddress deste processo",
+        (device != NULL) ? device->Interface : 0u,
+        (device != NULL && Bc250UmdOpenAllocationArrayIsInfo2(device->Interface)) ?
+            "OPENALLOCATIONINFO2" : "OPENALLOCATIONINFO(v1)",
+        pOpen->NumAllocations);
+
+    if (hasPriv) {
+        res->Allocation.Token = priv.AllocationToken;
+        res->Allocation.ByteSize = priv.ByteSize;
+        if ((priv.Flags & BC250_ALLOCATION_FLAG_HAS_GEOMETRY) != 0u) {
+            res->ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
+            res->Width = priv.Geometry.Width;
+            res->Height = priv.Geometry.Height;
+            res->RowPitch = priv.Geometry.Pitch;
+            res->Format = Bc250D3dddiFormatToDxgiFormat(priv.Geometry.Format);
+            if (res->Format == DXGI_FORMAT_UNKNOWN) {
+                res->Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+            }
+            res->TotalByteSize = (UINT)priv.ByteSize;
+            res->Depth = 1u;
+            res->MipLevels = 1u;
+            res->ArraySize = 1u;
+            res->SampleCount = 1u;
+            Bc250UmdTrace("OpenResource: geometria extraida %ux%u pitch=%u fmt=%u (dxgi=%u) size=%llu token=0x%llX",
+                res->Width, res->Height, res->RowPitch, priv.Geometry.Format, (unsigned)res->Format,
+                (unsigned long long)priv.ByteSize, (unsigned long long)priv.AllocationToken);
+        }
+    }
+
+    /*
+     * Mapeia no processo que abriu e torna residente. Cada passo registra o
+     * status: "sem VA" deixa de ser mudo, e o criterio da corrida distingue
+     * mapeamento recusado de blt recusado. O tamanho sobe para a pagina de
+     * 4 KiB: a alocacao do kernel e' granular em pagina e nunca menor que o
+     * ByteSize publicado (medido: 3.407.872 publicado, 3.670.016 alocado).
+     */
+    if (res->Allocation.Created && device != NULL && device->WinsysInitialized) {
+        BC250_WINSYS_STATUS mapStatus = BC250_WINSYS_BAD_ARGUMENT;
+        BC250_WINSYS_STATUS residentStatus = BC250_WINSYS_BAD_ARGUMENT;
+        BC250_WINSYS_STATUS waitStatus = BC250_WINSYS_BAD_ARGUMENT;
+        res->Allocation.ByteSize = (res->Allocation.ByteSize + 0xFFFull) & ~0xFFFull;
+        if (res->Allocation.ByteSize == 0u) {
+            Bc250UmdTrace("OpenResource T4.2: MAPEAMENTO RECUSADO -- tamanho desconhecido "
+                "(dados privados ausentes ou invalidos) hAlloc=0x%X",
+                (unsigned)res->Allocation.KernelAllocation);
+        } else {
+            mapStatus = Bc250WinsysMapAllocation(&device->Winsys, &res->Allocation, FALSE);
+            if (mapStatus == BC250_WINSYS_OK) {
+                residentStatus = Bc250WinsysMakeResident(&device->Winsys, &res->Allocation);
+                waitStatus = Bc250WinsysWaitPaging(&device->Winsys, &res->Allocation);
+            }
+            Bc250UmdTrace("OpenResource T4.2: Map=%d Resident=%d WaitPaging=%d hr=0x%08X hAlloc=0x%X Bytes=%llu VA=0x%llX",
+                (int)mapStatus, (int)residentStatus, (int)waitStatus,
+                (unsigned)device->Winsys.LastCallbackHr,
+                (unsigned)res->Allocation.KernelAllocation,
+                (unsigned long long)res->Allocation.ByteSize,
+                (unsigned long long)res->Allocation.GpuVirtualAddress);
+        }
+    }
+
+    Bc250UmdTrace("OpenResource: res=%p hKMResource=%u hAlloc=0x%X GpuVa=0x%llX NumAllocs=%u Geo=%d",
+        (void*)res, (unsigned)pOpen->hKMResource.handle, (unsigned)res->Allocation.KernelAllocation,
+        (unsigned long long)res->Allocation.GpuVirtualAddress, pOpen->NumAllocations,
+        (hasPriv && (priv.Flags & BC250_ALLOCATION_FLAG_HAS_GEOMETRY)) ? 1 : 0);
 }
 
 VOID APIENTRY Bc250Umd10DestroyResource(
@@ -3035,6 +3332,23 @@ static void Bc250UmdTraceDrawVertices(_In_ BC250_UMD_DEVICE *d, BOOL Indexed, UI
  * DECLARADO no log. Nada e' escrito no alvo.
  */
 #define BC250_DRAW_READBACK_MAX 3u
+
+/*
+ * T4.5 (30/09) -- FONTE UNICA de "este alvo e' lido depois do draw".
+ *
+ * MEDIDO na Corrida 184: no StartMenuExperienceHost, 144 flushes para 143 draws
+ * entre o 1o e o 2o Present de cada abertura do menu (~4,4 s), todos com
+ * "Lote=1 Direto=0 FlushAgora=1". O flush do draw usava so'
+ * DrawReadbackCount < 3, mas a leitura so' roda (e so' conta) em alvo
+ * >= 1024x512; os alvos do menu sao 640x640, o contador ficava em 0 e TODO draw
+ * esperava a GPU. As duas decisoes agora saem daqui.
+ */
+static BOOL Bc250UmdDrawReadbackTargetQualifies(_In_opt_ const BC250_UMD_RESOURCE *res)
+{
+    return (res != NULL && res->VkResourceCreated && res->VkImg != VK_NULL_HANDLE &&
+        res->Width >= 1024u && res->Height >= 512u) ? TRUE : FALSE;
+}
+
 static void Bc250UmdReadbackDrawTarget(_Inout_ BC250_UMD_DEVICE *d, _In_opt_ BC250_UMD_RESOURCE *res)
 {
     VkCommandBuffer cmd;
@@ -3043,8 +3357,7 @@ static void Bc250UmdReadbackDrawTarget(_Inout_ BC250_UMD_DEVICE *d, _In_opt_ BC2
     VkBufferImageCopy region;
     uint32_t n;
 
-    if (res == NULL || !res->VkResourceCreated || res->VkImg == VK_NULL_HANDLE ||
-        res->Width < 1024u || res->Height < 512u) {
+    if (!Bc250UmdDrawReadbackTargetQualifies(res)) {
         return;
     }
     if (d->DrawReadbackCount >= BC250_DRAW_READBACK_MAX) {
@@ -3117,6 +3430,10 @@ static void Bc250UmdReadbackDrawTarget(_Inout_ BC250_UMD_DEVICE *d, _In_opt_ BC2
     }
     Bc250UmdTrace("[DRAW_READBACK] #%u VkDraws=%llu RT0=%p %ux%u -- a GRADE seguinte e' do ALVO logo apos este draw, nao do Present",
         n, d->NativeVkDrawCount, (void *)res, res->Width, res->Height);
+    /*
+     * 4b (doc 564): a copia pela GPU e o flush acima ficam IGUAIS; so' a
+     * leitura da CPU pela BAR sai. A funcao devolve 0 e diz DESLIGADA no log.
+     */
     (void)Bc250UmdVkInspectLinearPresentBuf(&d->VkBridge, res->Width, res->Height);
 }
 
@@ -3436,6 +3753,22 @@ static BOOL Bc250UmdExecuteVkDraw(
         }
     }
 
+    /*
+     * T4.3: superficies abertas sao carregadas ANTES do batch de descritores.
+     * A carga drena o lote; o FlushCommands libera os batches e encerra a
+     * gravacao, entao o command buffer e' obtido de novo depois (Corrida 182:
+     * c0000005 em bc250umd.dll+0x8376). Com render pass aberto nao ha binding
+     * de descritor (DX.75 acima), logo nao ha o que carregar.
+     */
+    if (!pDevice->InRenderPass) {
+        Bc250UmdMaterializeDrawSrvs(pDevice, layout);
+        cmd = Bc250UmdVkGetCommandBuffer(&pDevice->VkBridge);
+        if (cmd == VK_NULL_HANDLE) {
+            pDevice->LastVkDrawFailureReason = "COMMAND_BUFFER_AUSENTE_APOS_CARGA_DE_SRV";
+            return FALSE;
+        }
+    }
+
     if (!Bc250UmdBindDrawDescriptors(pDevice, layout, cmd, &hasDescriptors)) return FALSE;
 
     if (!pDevice->InRenderPass || pDevice->ActiveFramebuffer != rtv->VkFb) {
@@ -3590,7 +3923,8 @@ static BOOL Bc250UmdExecuteVkDraw(
      * imediato se houver Present subsequente, unificando Clear+Draw+Destile
      * em UMA UNICA submissao ao hardware por quadro. Flushes ocorrem apenas
      * se directRef for true, no limite de lotes ou durante readback ativo. */
-    readbackActive = (rtv->pResource && pDevice->DrawReadbackCount < BC250_DRAW_READBACK_MAX);
+    readbackActive = (Bc250UmdDrawReadbackTargetQualifies(rtv->pResource) &&
+        pDevice->DrawReadbackCount < BC250_DRAW_READBACK_MAX);
     flushNow = (directRef || readbackActive || batchPosition >= BC250_DX49_BATCH_MAX_DRAWS);
     if (flushNow) {
         if (Bc250UmdVkFlushCommands(&pDevice->VkBridge) != VK_SUCCESS) {
@@ -4278,8 +4612,14 @@ VOID APIENTRY Bc250Umd10_1CreateBlendState(
     state->hRTBlendState = hRTBlendState;
     state->Created = TRUE;
 
-    Bc250UmdTrace("CreateBlendState: state=%p AlphaToCoverage=%d IndBlend=%d",
-        (void*)state, pBlendDesc->AlphaToCoverageEnable, pBlendDesc->IndependentBlendEnable);
+    Bc250UmdTrace("CreateBlendState: state=%p AlphaToCoverage=%d IndBlend=%d "
+        "RT0 En=%d Src=%u Dst=%u Op=%u SrcA=%u DstA=%u OpA=%u Mask=0x%X",
+        (void*)state, pBlendDesc->AlphaToCoverageEnable, pBlendDesc->IndependentBlendEnable,
+        (int)pBlendDesc->RenderTarget[0].BlendEnable,
+        (unsigned)pBlendDesc->RenderTarget[0].SrcBlend, (unsigned)pBlendDesc->RenderTarget[0].DestBlend,
+        (unsigned)pBlendDesc->RenderTarget[0].BlendOp, (unsigned)pBlendDesc->RenderTarget[0].SrcBlendAlpha,
+        (unsigned)pBlendDesc->RenderTarget[0].DestBlendAlpha, (unsigned)pBlendDesc->RenderTarget[0].BlendOpAlpha,
+        (unsigned)pBlendDesc->RenderTarget[0].RenderTargetWriteMask);
 }
 
 VOID APIENTRY Bc250Umd10DestroyBlendState(
@@ -4463,8 +4803,12 @@ VOID APIENTRY Bc250Umd10CreateSampler(
     sampler->hRTSampler = hRTSampler;
     sampler->Created = TRUE;
 
-    Bc250UmdTrace("CreateSampler: sampler=%p Filter=%u AddressU=%u",
-        (void*)sampler, (UINT)pSamplerDesc->Filter, (UINT)pSamplerDesc->AddressU);
+    Bc250UmdTrace("CreateSampler: sampler=%p Filter=%u AddressU=%u AddressV=%u AddressW=%u "
+        "MaxAniso=%u Cmp=%u LodBias=%.2f MinLod=%.2f MaxLod=%.2f",
+        (void*)sampler, (UINT)pSamplerDesc->Filter, (UINT)pSamplerDesc->AddressU,
+        (UINT)pSamplerDesc->AddressV, (UINT)pSamplerDesc->AddressW,
+        (UINT)pSamplerDesc->MaxAnisotropy, (UINT)pSamplerDesc->ComparisonFunc,
+        (double)pSamplerDesc->MipLODBias, (double)pSamplerDesc->MinLOD, (double)pSamplerDesc->MaxLOD);
 }
 
 VOID APIENTRY Bc250Umd10DestroySampler(
@@ -5119,47 +5463,45 @@ VOID Bc250UmdPopulateDeviceFuncs11(_Out_ D3D11DDI_DEVICEFUNCS* pFuncs)
  * DXGI Base DDIs
  * ========================================================================= */
 
-static HRESULT Bc250UmdBridgeLinearToWddm(
+HRESULT Bc250UmdBridgeGpuBlt(
     _Inout_ BC250_UMD_DEVICE *d,
     uint64_t srcGpuVa,
-    _In_ BC250_UMD_RESOURCE *dstRes)
+    UINT srcPitch,
+    uint64_t dstGpuVa,
+    UINT dstPitch,
+    UINT width,
+    UINT height)
 {
     BC250_ESCAPE_COMPOSITE_BLT payload;
     D3DDDICB_ESCAPE args;
     HRESULT hr;
-    UINT pitch;
 
-    if (d == NULL || dstRes == NULL || srcGpuVa == 0 ||
-        dstRes->Allocation.GpuVirtualAddress == 0) {
-        Bc250UmdTrace("BRIDGE VULKAN->WDDM RECUSADO: argumentos invalidos (srcVa=0x%llX dstVa=0x%llX)",
-            (unsigned long long)srcGpuVa,
-            dstRes ? (unsigned long long)dstRes->Allocation.GpuVirtualAddress : 0ULL);
+    if (d == NULL || srcGpuVa == 0 || dstGpuVa == 0 || width == 0 || height == 0) {
+        Bc250UmdTrace("BRIDGE GPU BLT RECUSADO: argumentos invalidos (srcVa=0x%llX dstVa=0x%llX %ux%u)",
+            (unsigned long long)srcGpuVa, (unsigned long long)dstGpuVa, width, height);
         return E_INVALIDARG;
     }
     if (!d->WinsysInitialized || d->pAdapter == NULL ||
         d->pAdapter->hRTAdapter.handle == NULL ||
         d->Winsys.Callbacks == NULL ||
         d->Winsys.Callbacks->pfnEscapeCb == NULL) {
-        Bc250UmdTrace("BRIDGE VULKAN->WDDM RECUSADO: contrato de escape ausente");
+        Bc250UmdTrace("BRIDGE GPU BLT RECUSADO: contrato de escape ausente");
         return E_NOTIMPL;
     }
-    /* DX.49: o KMD le a origem fora da fila Vulkan; nada do lote pode faltar. */
     if (d->VkBridgeInitialized &&
-        Bc250UmdVkDrainPending(&d->VkBridge, "ponte Vulkan->WDDM") != VK_SUCCESS) {
-        Bc250UmdTrace("BRIDGE VULKAN->WDDM RECUSADO: dreno do lote Vulkan falhou");
+        Bc250UmdVkDrainPending(&d->VkBridge, "ponte Vulkan GPU Blt") != VK_SUCCESS) {
+        Bc250UmdTrace("BRIDGE GPU BLT RECUSADO: dreno do lote Vulkan falhou");
         return E_FAIL;
     }
-
-    pitch = dstRes->RowPitch ? dstRes->RowPitch : (dstRes->Width * 4);
 
     memset(&payload, 0, sizeof(payload));
     payload.Opcode = BC250_ESCAPE_OP_COMPOSITE_BLT;
     payload.SourceGpuVa = srcGpuVa;
-    payload.DestGpuVa = dstRes->Allocation.GpuVirtualAddress;
-    payload.Width = dstRes->Width;
-    payload.Height = dstRes->Height;
-    payload.SourcePitch = dstRes->Width * 4;
-    payload.DestPitch = pitch;
+    payload.DestGpuVa = dstGpuVa;
+    payload.Width = width;
+    payload.Height = height;
+    payload.SourcePitch = srcPitch;
+    payload.DestPitch = dstPitch;
     payload.DestX = 0;
     payload.DestY = 0;
 
@@ -5170,8 +5512,8 @@ static HRESULT Bc250UmdBridgeLinearToWddm(
     args.PrivateDriverDataSize = (UINT)sizeof(payload);
     args.Flags.HardwareAccess = 0u;
 
-    Bc250UmdTrace("BRIDGE VULKAN->WDDM ENTER: %ux%u SrcVa=0x%llX DstVa=0x%llX Pitch=%u/%u",
-        dstRes->Width, dstRes->Height,
+    Bc250UmdTrace("BRIDGE GPU BLT ENTER: %ux%u SrcVa=0x%llX DstVa=0x%llX Pitch=%u/%u",
+        width, height,
         (unsigned long long)payload.SourceGpuVa,
         (unsigned long long)payload.DestGpuVa,
         payload.SourcePitch, payload.DestPitch);
@@ -5179,12 +5521,39 @@ static HRESULT Bc250UmdBridgeLinearToWddm(
     hr = d->Winsys.Callbacks->pfnEscapeCb(
         d->pAdapter->hRTAdapter.handle, &args);
 
-    Bc250UmdTrace("BRIDGE VULKAN->WDDM LEAVE: hr=0x%08X ResultCode=0x%08X",
+    Bc250UmdTrace("BRIDGE GPU BLT LEAVE: hr=0x%08X ResultCode=0x%08X",
         (unsigned)hr, payload.ResultCode);
 
     if (FAILED(hr)) return hr;
     if (payload.ResultCode != BC250_PRESENT_BLT_STATUS_SUCCESS) return E_FAIL;
     return S_OK;
+}
+
+static HRESULT Bc250UmdBridgeLinearToWddm(
+    _Inout_ BC250_UMD_DEVICE *d,
+    uint64_t srcGpuVa,
+    _In_ BC250_UMD_RESOURCE *dstRes)
+{
+    UINT pitch;
+
+    if (d == NULL || dstRes == NULL || srcGpuVa == 0 ||
+        dstRes->Allocation.GpuVirtualAddress == 0) {
+        Bc250UmdTrace("BRIDGE VULKAN->WDDM RECUSADO: argumentos invalidos (srcVa=0x%llX dstVa=0x%llX)",
+            (unsigned long long)srcGpuVa,
+            dstRes ? (unsigned long long)dstRes->Allocation.GpuVirtualAddress : 0ULL);
+        return E_INVALIDARG;
+    }
+
+    /* DX.49: o KMD le a origem fora da fila Vulkan; nada do lote pode faltar. */
+    if (d->VkBridgeInitialized &&
+        Bc250UmdVkDrainPending(&d->VkBridge, "ponte Vulkan->WDDM") != VK_SUCCESS) {
+        Bc250UmdTrace("BRIDGE VULKAN->WDDM RECUSADO: dreno do lote Vulkan falhou");
+        return E_FAIL;
+    }
+
+    pitch = dstRes->RowPitch ? dstRes->RowPitch : (dstRes->Width * 4);
+    return Bc250UmdBridgeGpuBlt(d, srcGpuVa, dstRes->Width * 4,
+        dstRes->Allocation.GpuVirtualAddress, pitch, dstRes->Width, dstRes->Height);
 }
 
 static BOOL Bc250UmdPresentVulkanDetileAndScanout(
@@ -5328,11 +5697,14 @@ static BOOL Bc250UmdPresentVulkanDetileAndScanout(
              */
             uint32_t nonZeroSamples = 0u;
             uint32_t presentIndex = ++device->PresentInspectCount;
-            BOOL inspectThis = !s_Bc250Dx54SampledPresentInspection ||
-                presentIndex <= 16u || (presentIndex % 64u) == 0u;
+            /* 4b (doc 564): sem leitura da CPU, o log diz DESLIGADA_4B, nunca AMOSTRA_ZERO. */
+            BOOL inspectThis = BC250_UMD_CPU_INSPECTS_LINEAR_BUF &&
+                (!s_Bc250Dx54SampledPresentInspection ||
+                 presentIndex <= 16u || (presentIndex % 64u) == 0u);
+            (void)presentIndex;
             if (inspectThis) {
                 nonZeroSamples = Bc250UmdVkInspectLinearPresentBuf(&device->VkBridge, srcRes->Width, srcRes->Height);
-            } else if (presentIndex == 17u) {
+            } else if (BC250_UMD_CPU_INSPECTS_LINEAR_BUF && presentIndex == 17u) {
                 Bc250UmdTrace("[DX54_INSPECAO] grade do buffer linear passa a ser amostrada: 1 Present em 64 (NonZeroGrade=NAO_AMOSTRADO nos demais)");
             }
 
@@ -5356,6 +5728,7 @@ static BOOL Bc250UmdPresentVulkanDetileAndScanout(
                 if (FAILED(bridgeHr)) return FALSE;
             }
             Bc250UmdTrace("[DX71_WDDM_ONLY] imagem preparada para pfnPresentCb; scanout direto omitido (NonZeroGrade=%s)",
+                !BC250_UMD_CPU_INSPECTS_LINEAR_BUF ? "DESLIGADA_4B" :
                 inspectThis ? (nonZeroSamples ? "AMOSTRA_NAO_ZERO" : "AMOSTRA_ZERO") : "NAO_AMOSTRADO");
             return TRUE;
         } else {
@@ -5416,6 +5789,8 @@ HRESULT APIENTRY Bc250DxgiPresent(DXGI_DDI_ARG_PRESENT* pPresentData)
     if (device == NULL) {
         return E_INVALIDARG;
     }
+    /* T4.6: fronteira de quadro para a recopia de superficies abertas. */
+    ++device->DxgiPresentCount;
 
     srcRes = (BC250_UMD_RESOURCE*)pPresentData->hSurfaceToPresent;
     dstRes = (BC250_UMD_RESOURCE*)pPresentData->hDstResource;
@@ -5555,6 +5930,8 @@ HRESULT APIENTRY Bc250DxgiPresent1(DXGI1_6_1_DDI_ARG_PRESENT* pPresentData)
     if (device == NULL) {
         return E_INVALIDARG;
     }
+    /* T4.6: fronteira de quadro para a recopia de superficies abertas. */
+    ++device->DxgiPresentCount;
 
     if (pPresentData->SurfacesToPresent > 0 && pPresentData->phSurfacesToPresent != NULL) {
         srcRes = (BC250_UMD_RESOURCE*)pPresentData->phSurfacesToPresent[0].hSurface;
@@ -5918,6 +6295,8 @@ HRESULT APIENTRY Bc250DxgiRotateResourceIdentities(DXGI_DDI_ARG_ROTATE_RESOURCE_
             const VkImageLayout savedLayout = first->VkLayout;
             const BOOL savedVkCreated = first->VkResourceCreated;
             const BOOL savedUploaded = first->WddmAllocationUploaded;
+            /* Frente B: imagem e alocacao sao a MESMA memoria; o vinculo gira junto. */
+            const BOOL savedAliased = first->VkMemAliased;
 
             for (i = 0; i + 1u < pRotateData->Resources; ++i) {
                 BC250_UMD_RESOURCE* dst = (BC250_UMD_RESOURCE*)pRotateData->pResources[i];
@@ -5931,6 +6310,7 @@ HRESULT APIENTRY Bc250DxgiRotateResourceIdentities(DXGI_DDI_ARG_ROTATE_RESOURCE_
                 dst->VkLayout = src->VkLayout;
                 dst->VkResourceCreated = src->VkResourceCreated;
                 dst->WddmAllocationUploaded = src->WddmAllocationUploaded;
+                dst->VkMemAliased = src->VkMemAliased;
             }
 
             {
@@ -5945,6 +6325,7 @@ HRESULT APIENTRY Bc250DxgiRotateResourceIdentities(DXGI_DDI_ARG_ROTATE_RESOURCE_
                 last->VkLayout = savedLayout;
                 last->VkResourceCreated = savedVkCreated;
                 last->WddmAllocationUploaded = savedUploaded;
+                last->VkMemAliased = savedAliased;
             }
 
             Bc250UmdTrace("DXGI RotateResourceIdentities LEAVE: %u recursos rotacionados; "

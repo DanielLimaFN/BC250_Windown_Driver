@@ -76,7 +76,11 @@ extern "C" {
 #define BC250_GFX_REG_CP_RB0_ACTIVE          0x0000C680u
 #define BC250_GFX_REG_CP_MAX_CONTEXT         0x0000C2B8u
 #define BC250_GFX_REG_CP_RB_VMID             0x0000C144u
-#define BC250_GFX_REG_HDP_MEM_COHERENCY_FLUSH_CNTL 0x00003FC4u
+/* HDP.1 (28/09, doc 519): 0x3FC4 e' a INVALIDACAO de leitura do HDP, nao o
+ * flush de escrita; o nome antigo (..._HDP_MEM_COHERENCY_FLUSH_CNTL) era falso.
+ * Os dois usos sao lacos de espera em que a CPU LE a fence: invalidar e' o
+ * certo ali, entao so' o nome mudou. */
+#define BC250_GFX_REG_HDP_READ_CACHE_INVALIDATE 0x00003FC4u
 #define BC250_GFX_REG_CP_RB_WPTR_DELAY       0x00008704u
 
 /*

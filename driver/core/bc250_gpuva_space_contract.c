@@ -1,5 +1,7 @@
 #include "bc250_gpuva_space_contract.h"
 #include <string.h>
+#include <intrin.h>
+#pragma intrinsic(__movsq)
 
 static BC250_GPUVA_STATUS Bc250GpuvaValidateSpace(const BC250_GPUVA_SPACE *Space)
 {
@@ -10,16 +12,78 @@ static BC250_GPUVA_STATUS Bc250GpuvaValidateSpace(const BC250_GPUVA_SPACE *Space
     return BC250_GPUVA_OK;
 }
 
+/*
+ * FPS.1 (28/09, Corrida 150): o FLUSH_TLB somou 490 s de 600 s na thread de
+ * paginacao (95.631 chamadas, mediana 3 ms), e o commit do journal era a parte
+ * cara (media 7,5 ms). Esta copia de ~120 KB rodava byte a byte por ponteiro
+ * volatile, duas vezes por mudanca do lote. O destino e' o slot INATIVO sob
+ * WRITER_LOCK ou um scratch privado -- nenhum leitor o enxerga durante a copia
+ * --, entao uma copia em bloco tem a mesma semantica. NAO usar memcpy: o link
+ * offline das suites nao o tem (LNK2019, armadilha ja' registrada no projeto).
+ * __movsq e' REP MOVSQ intrinseco, sem chamada de biblioteca.
+ */
+typedef char Bc250GpuvaSpaceSizeIsQwordMultiple[
+    (sizeof(BC250_GPUVA_SPACE) % 8u) == 0u ? 1 : -1];
 static void Bc250GpuvaCopySpace(
     BC250_GPUVA_SPACE *Destination,
     const BC250_GPUVA_SPACE *Source)
 {
-    volatile uint8_t *destination = (volatile uint8_t *)Destination;
-    const volatile uint8_t *source = (const volatile uint8_t *)Source;
-    size_t index;
-    for (index = 0u; index < sizeof(*Destination); ++index) {
-        destination[index] = source[index];
+    __movsq((unsigned __int64 *)Destination, (const unsigned __int64 *)Source,
+        sizeof(*Destination) / 8u);
+}
+
+/*
+ * FPS.1: preenchimento do slot + insercao ordenada, fonte unica de
+ * Bc250GpuvaSpaceInsertRange e da reinsercao confiavel da reconstrucao.
+ * A posicao e' procurada DE TRAS PARA A FRENTE: com SortedIndices ordenado por
+ * BaseGpuVa (invariante), o primeiro indice com Base > nova e' o mesmo nos
+ * dois sentidos (empates ficam depois dos iguais), mas a reconstrucao insere
+ * em ordem crescente e o custo cai de O(N) para O(1) por insercao.
+ */
+static void Bc250GpuvaSpaceStoreRange(
+    BC250_GPUVA_SPACE *Space,
+    uint32_t SlotIndex,
+    const BC250_GPUVA_RANGE_RECORD *Param,
+    uint64_t EndGpuVa,
+    uint64_t *RangeId)
+{
+    BC250_GPUVA_RANGE_RECORD *slot = &Space->Ranges[SlotIndex];
+    uint32_t insertPos;
+    uint32_t i;
+
+    memset(slot, 0, sizeof(*slot));
+    slot->State = BC250_GPUVA_RANGE_MAPPED;
+    slot->Generation = ++Space->NextGeneration;
+    slot->RangeId = ++Space->NextRangeId;
+    slot->BaseGpuVa = Param->BaseGpuVa;
+    slot->Size = Param->Size;
+    slot->EndGpuVa = EndGpuVa;
+    slot->OwnerProcess = Param->OwnerProcess;
+    slot->OwnerContext = Param->OwnerContext;
+    slot->Allocation = Param->Allocation;
+    slot->OpenAllocation = Param->OpenAllocation;
+    slot->AllocationToken = Param->AllocationToken;
+    slot->BackingSegmentId = Param->BackingSegmentId;
+    slot->BackingSegmentOffset = Param->BackingSegmentOffset;
+    slot->Permissions = Param->Permissions ? Param->Permissions :
+        (BC250_PTE_READABLE | BC250_PTE_WRITEABLE);
+    slot->IsResident = 1u;
+    slot->PageTableEpoch = Space->PageTableEpoch;
+    slot->TeardownState = 0u;
+
+    insertPos = Space->SortedCount;
+    while (insertPos > 0u &&
+           Space->Ranges[Space->SortedIndices[insertPos - 1u]].BaseGpuVa >
+               slot->BaseGpuVa) {
+        --insertPos;
     }
+    for (i = Space->SortedCount; i > insertPos; --i) {
+        Space->SortedIndices[i] = Space->SortedIndices[i - 1u];
+    }
+    Space->SortedIndices[insertPos] = SlotIndex;
+    ++Space->SortedCount;
+    ++Space->LiveCount;
+    *RangeId = slot->RangeId;
 }
 
 /*
@@ -218,49 +282,7 @@ BC250_GPUVA_STATUS Bc250GpuvaSpaceInsertRange(
         return BC250_GPUVA_NO_SPACE;
     }
 
-    {
-        BC250_GPUVA_RANGE_RECORD *slot = &Space->Ranges[freeSlot];
-        uint32_t insertPos;
-
-        memset(slot, 0, sizeof(*slot));
-        slot->State = BC250_GPUVA_RANGE_MAPPED;
-        slot->Generation = ++Space->NextGeneration;
-        slot->RangeId = ++Space->NextRangeId;
-        slot->BaseGpuVa = Param->BaseGpuVa;
-        slot->Size = Param->Size;
-        slot->EndGpuVa = endGpuVa;
-        slot->OwnerProcess = Param->OwnerProcess;
-        slot->OwnerContext = Param->OwnerContext;
-        slot->Allocation = Param->Allocation;
-        slot->OpenAllocation = Param->OpenAllocation;
-        slot->AllocationToken = Param->AllocationToken;
-        slot->BackingSegmentId = Param->BackingSegmentId;
-        slot->BackingSegmentOffset = Param->BackingSegmentOffset;
-        slot->Permissions = Param->Permissions ? Param->Permissions :
-            (BC250_PTE_READABLE | BC250_PTE_WRITEABLE);
-        slot->IsResident = 1u;
-        slot->PageTableEpoch = Space->PageTableEpoch;
-        slot->TeardownState = 0u;
-
-        /* Inserção ordenada em SortedIndices por BaseGpuVa */
-        insertPos = Space->SortedCount;
-        for (i = 0u; i < Space->SortedCount; ++i) {
-            uint32_t idx = Space->SortedIndices[i];
-            if (Space->Ranges[idx].BaseGpuVa > slot->BaseGpuVa) {
-                insertPos = i;
-                break;
-            }
-        }
-        for (i = Space->SortedCount; i > insertPos; --i) {
-            Space->SortedIndices[i] = Space->SortedIndices[i - 1u];
-        }
-        Space->SortedIndices[insertPos] = (uint32_t)freeSlot;
-        ++Space->SortedCount;
-
-        ++Space->LiveCount;
-        *RangeId = slot->RangeId;
-    }
-
+    Bc250GpuvaSpaceStoreRange(Space, (uint32_t)freeSlot, Param, endGpuVa, RangeId);
     return BC250_GPUVA_OK;
 }
 
@@ -370,6 +392,43 @@ BC250_GPUVA_STATUS Bc250GpuvaSpaceResolveAddress(
         BC250_GPUVA_OWNER_MISMATCH : BC250_GPUVA_NOT_FOUND;
 }
 
+/*
+ * FPS.1: reinsercao de uma faixa que JA pertencia a um espaco valido (ou de um
+ * fragmento dela) num scratch recem-inicializado. A checagem de sobreposicao da
+ * InsertRange percorria os 1024 slots a cada faixa -- N x 1024 comparacoes por
+ * mudanca --, e aqui ela nao pode reprovar: as fontes nao se sobrepoem por
+ * invariante, e as do mesmo dono que sobrepunham Param ja' foram cortadas. As
+ * guardas O(1) ficam. Slot: no scratch fresco as faixas entram em sequencia,
+ * logo o proximo livre e' SortedCount; se nao estiver livre (nao deveria), cai
+ * no caminho completo em vez de sobrescrever.
+ */
+static BC250_GPUVA_STATUS Bc250GpuvaSpaceAppendTrusted(
+    BC250_GPUVA_SPACE *Space,
+    const BC250_GPUVA_RANGE_RECORD *Param)
+{
+    uint64_t endGpuVa;
+    uint64_t rangeId;
+    uint32_t slotIndex;
+
+    if (Param->BaseGpuVa == 0u || Param->Size == 0u || Param->OwnerProcess == NULL) {
+        return BC250_GPUVA_BAD_ARGUMENT;
+    }
+    if ((Param->BaseGpuVa & BC250_GPUVA_PAGE_MASK) != 0u ||
+        (Param->Size & BC250_GPUVA_PAGE_MASK) != 0u) {
+        return BC250_GPUVA_MISALIGNED;
+    }
+    endGpuVa = Param->BaseGpuVa + Param->Size;
+    if (endGpuVa < Param->BaseGpuVa) return BC250_GPUVA_RANGE_OVERFLOW;
+    if (endGpuVa > Space->MaxAddress) return BC250_GPUVA_OUT_OF_BOUNDS;
+    slotIndex = Space->SortedCount;
+    if (slotIndex >= BC250_GPUVA_SPACE_MAX_RANGES) return BC250_GPUVA_NO_SPACE;
+    if (Space->Ranges[slotIndex].State != BC250_GPUVA_RANGE_FREE) {
+        return Bc250GpuvaSpaceInsertRange(Space, Param, &rangeId);
+    }
+    Bc250GpuvaSpaceStoreRange(Space, slotIndex, Param, endGpuVa, &rangeId);
+    return BC250_GPUVA_OK;
+}
+
 BC250_GPUVA_STATUS Bc250GpuvaSpaceReplaceRangeTransactional(
     BC250_GPUVA_SPACE *Space,
     BC250_GPUVA_SPACE *Scratch,
@@ -409,7 +468,6 @@ BC250_GPUVA_STATUS Bc250GpuvaSpaceReplaceRangeTransactional(
         const BC250_GPUVA_RANGE_RECORD *source =
             &Space->Ranges[Space->SortedIndices[i]];
         BC250_GPUVA_RANGE_RECORD fragment;
-        uint64_t ignoredId;
         int overlaps;
 
         if (source->State != BC250_GPUVA_RANGE_MAPPED) continue;
@@ -419,7 +477,7 @@ BC250_GPUVA_STATUS Bc250GpuvaSpaceReplaceRangeTransactional(
         if (!overlaps) {
             fragment = *source;
             fragment.PageTableEpoch = Scratch->PageTableEpoch;
-            status = Bc250GpuvaSpaceInsertRange(Scratch, &fragment, &ignoredId);
+            status = Bc250GpuvaSpaceAppendTrusted(Scratch, &fragment);
             if (status != BC250_GPUVA_OK) return status;
             continue;
         }
@@ -429,7 +487,7 @@ BC250_GPUVA_STATUS Bc250GpuvaSpaceReplaceRangeTransactional(
             fragment.Size = Param->BaseGpuVa - source->BaseGpuVa;
             fragment.EndGpuVa = 0u;
             fragment.PageTableEpoch = Scratch->PageTableEpoch;
-            status = Bc250GpuvaSpaceInsertRange(Scratch, &fragment, &ignoredId);
+            status = Bc250GpuvaSpaceAppendTrusted(Scratch, &fragment);
             if (status != BC250_GPUVA_OK) return status;
         }
         if (source->EndGpuVa > replaceEnd) {
@@ -445,7 +503,7 @@ BC250_GPUVA_STATUS Bc250GpuvaSpaceReplaceRangeTransactional(
                 return BC250_GPUVA_RANGE_OVERFLOW;
             }
             fragment.PageTableEpoch = Scratch->PageTableEpoch;
-            status = Bc250GpuvaSpaceInsertRange(Scratch, &fragment, &ignoredId);
+            status = Bc250GpuvaSpaceAppendTrusted(Scratch, &fragment);
             if (status != BC250_GPUVA_OK) return status;
         }
     }

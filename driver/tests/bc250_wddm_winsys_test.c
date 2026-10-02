@@ -29,6 +29,8 @@ typedef struct TEST_STATE {
     HRESULT WaitResult;
     /* DX.85: o dxgkrnl aceita a espera assincrona mas a fence nunca chega. */
     BOOL WithholdAsyncSignal;
+    /* DX.89: flags do blob privado que chegam ao KMD. */
+    uint32_t LastAllocateFlags;
     BC250_WINSYS_ALLOCATION *PendingAllocation;
     /*
      * 13/09 -- vinculo de recurso. Sem estes campos o teste nao podia distinguir
@@ -110,10 +112,22 @@ static HRESULT APIENTRY TestAllocate(HANDLE Device, D3DDDICB_ALLOCATE *Args)
                    BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x42u) ||
            privateData->AllocationToken ==
                (((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_PRIMARY <<
-                   BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x43u));
+                   BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x43u) ||
+           /* DX.89: recurso comum e recurso compartilhado. */
+           privateData->AllocationToken ==
+               (((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_RESOURCE <<
+                   BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x44u) ||
+           privateData->AllocationToken ==
+               (((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_RESOURCE <<
+                   BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x45u) ||
+           /* M1: recurso GPU_VA_ONLY. */
+           privateData->AllocationToken ==
+               (((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_RESOURCE <<
+                   BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x46u));
     assert(privateData->ByteSize == 0x4000u);
     assert(privateData->Alignment == 0x1000u);
     g_State.AllocateCalls++;
+    g_State.LastAllocateFlags = privateData->Flags;
     g_State.LastAllocateHResource = Args->hResource;
     g_State.LastAllocatePrimary = info->Flags.Primary;
     g_State.LastAllocateVidPnSourceId = (UINT)info->VidPnSourceId;
@@ -656,6 +670,68 @@ static void TestResidencyAndPrimaryClass(void)
         assert(Bc250WinsysDeallocate(&context, &primaryAllocation) == BC250_WINSYS_OK);
         assert(g_State.LastDeallocateHResource == rtResource);
         assert(g_State.LastDeallocateNumAllocations == 0u);
+    }
+
+    /*
+     * DX.89 -- recurso COMPARTILHADO nao pede CPU_VISIBLE (hipotese a do doc
+     * 476); recurso comum da mesma classe continua pedindo. O contraponto
+     * existe para a regra nao virar "RESOURCE nunca e' visivel pela CPU".
+     */
+    {
+        uint64_t plainToken =
+            ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_RESOURCE <<
+                BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x44u;
+        uint64_t sharedToken =
+            ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_RESOURCE <<
+                BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x45u;
+        BC250_WINSYS_RESOURCE_BINDING binding;
+        BC250_WINSYS_ALLOCATION plain;
+        BC250_WINSYS_ALLOCATION shared;
+
+        memset(&binding, 0, sizeof(binding));
+        /*
+         * M1: as estruturas de alocacao TEM de nascer zeradas -- a winsys recusa
+         * (STATE_CONFLICT) se achar Created != 0. Antes da M1 isto passava por
+         * sorte do layout da pilha; o bloco novo abaixo expôs o lixo.
+         */
+        memset(&plain, 0, sizeof(plain));
+        memset(&shared, 0, sizeof(shared));
+        binding.RuntimeResource = (HANDLE)(ULONG_PTR)0xB1D2u;
+        assert(Bc250WinsysAllocateForResource(&context, plainToken, 0x4000u,
+            0x1000u, &binding, &plain) == BC250_WINSYS_OK);
+        assert((g_State.LastAllocateFlags & BC250_ALLOCATION_FLAG_CPU_VISIBLE) != 0u);
+        /* M1: sem GpuVaOnly no vinculo, a flag nao sai. */
+        assert((g_State.LastAllocateFlags & BC250_ALLOCATION_FLAG_GPU_VA_ONLY) == 0u);
+
+        binding.RuntimeResource = (HANDLE)(ULONG_PTR)0xB1D3u;
+        binding.Shared = TRUE;
+        /* M1: compartilhado com GpuVaOnly pedido NAO ganha a flag. */
+        binding.GpuVaOnly = TRUE;
+        assert(Bc250WinsysAllocateForResource(&context, sharedToken, 0x4000u,
+            0x1000u, &binding, &shared) == BC250_WINSYS_OK);
+        assert((g_State.LastAllocateFlags & BC250_ALLOCATION_FLAG_CPU_VISIBLE) == 0u);
+        assert((g_State.LastAllocateFlags & BC250_ALLOCATION_FLAG_GPU_VA_ONLY) == 0u);
+        assert(g_State.LastAllocateHResource == (HANDLE)(ULONG_PTR)0xB1D3u);
+
+        {
+            BC250_WINSYS_ALLOCATION gpuOnly;
+            uint64_t gpuOnlyToken =
+                ((uint64_t)BC250_ALLOCATION_TOKEN_CLASS_RESOURCE <<
+                    BC250_ALLOCATION_TOKEN_CLASS_SHIFT) | 0x46u;
+            memset(&gpuOnly, 0, sizeof(gpuOnly));
+            binding.RuntimeResource = (HANDLE)(ULONG_PTR)0xB1D4u;
+            binding.Shared = FALSE;
+            binding.GpuVaOnly = TRUE;
+            assert(Bc250WinsysAllocateForResource(&context, gpuOnlyToken, 0x4000u,
+                0x1000u, &binding, &gpuOnly) == BC250_WINSYS_OK);
+            /* M1: recurso comum GPU_VA_ONLY leva as duas flags. */
+            assert((g_State.LastAllocateFlags & BC250_ALLOCATION_FLAG_GPU_VA_ONLY) != 0u);
+            assert((g_State.LastAllocateFlags & BC250_ALLOCATION_FLAG_CPU_VISIBLE) != 0u);
+            assert(Bc250WinsysDeallocate(&context, &gpuOnly) == BC250_WINSYS_OK);
+        }
+
+        assert(Bc250WinsysDeallocate(&context, &shared) == BC250_WINSYS_OK);
+        assert(Bc250WinsysDeallocate(&context, &plain) == BC250_WINSYS_OK);
     }
 
     /*

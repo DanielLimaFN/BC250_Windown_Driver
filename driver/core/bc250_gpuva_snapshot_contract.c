@@ -1,5 +1,6 @@
 #include "bc250_gpuva_snapshot_contract.h"
 #include <intrin.h>
+#pragma intrinsic(__movsq)
 
 #pragma intrinsic(_InterlockedCompareExchange)
 #pragma intrinsic(_InterlockedExchange)
@@ -11,16 +12,19 @@ static long Bc250GpuvaAtomicRead(volatile long *Value)
     return _InterlockedCompareExchange(Value, 0L, 0L);
 }
 
+/*
+ * FPS.1 (Corrida 150): copia do slot ativo para o INATIVO, feita pelo
+ * publicador ja' dono do WRITER_LOCK do inativo -- nenhum leitor o enxerga
+ * durante a copia. O laco byte a byte volatile custava ~120 KB de acessos
+ * serializados por publicacao; copia em bloco tem a mesma semantica aqui.
+ * __movsq (REP MOVSQ) em vez de memcpy: o link offline nao tem memcpy.
+ */
 static void Bc250GpuvaCopySnapshot(
     BC250_GPUVA_SPACE *Destination,
     const BC250_GPUVA_SPACE *Source)
 {
-    volatile uint8_t *destination = (volatile uint8_t *)Destination;
-    const volatile uint8_t *source = (const volatile uint8_t *)Source;
-    size_t index;
-    for (index = 0u; index < sizeof(*Destination); ++index) {
-        destination[index] = source[index];
-    }
+    __movsq((unsigned __int64 *)Destination, (const unsigned __int64 *)Source,
+        sizeof(*Destination) / 8u);
 }
 
 BC250_GPUVA_STATUS Bc250GpuvaSnapshotStoreInitialize(

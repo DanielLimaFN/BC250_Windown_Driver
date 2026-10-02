@@ -1186,6 +1186,168 @@ static void TestShaderDDIs(void)
     printf("  -> D3D10 Shader DDIs PASS\n");
 }
 
+/*
+ * T4.2 -- OpenResource nunca usa a GPUVA do runtime. MEDIDO nas Corridas 180 e
+ * 181: com a interface 0x000B000B o runtime entrega D3DDDI_OPENALLOCATIONINFO
+ * (v1, 24 bytes) e a leitura de pOpenAllocationInfo2[0].GpuVirtualAddress caiu
+ * alem do elemento, trazendo 0x3F80000000000000. O lixo abaixo reproduz isso:
+ * se o codigo voltar a ler o campo da v2, a VA aparece e a assercao reprova.
+ */
+static void TestOpenResourceIgnoresRuntimeGpuVa(void)
+{
+    struct {
+        D3DDDI_OPENALLOCATIONINFO info;
+        UINT64 garbageAfterV1;
+        UINT64 reserved[6];
+    } openArray;
+    D3D10DDIARG_OPENRESOURCE open;
+    BC250_UMD_DEVICE dev;
+    BC250_UMD_RESOURCE res;
+    D3D10DDI_HDEVICE hDev;
+    D3D10DDI_HRESOURCE hRes;
+    D3D10DDI_HRTRESOURCE hRTRes;
+    D3D10_1DDI_DEVICEFUNCS funcs;
+
+    printf("[TEST] Testing T4.2 OpenResource GPUVA source...\n");
+
+    memset(&funcs, 0, sizeof(funcs));
+    Bc250UmdPopulateDeviceFuncs10_1(&funcs);
+    assert(funcs.pfnOpenResource != NULL);
+
+    assert(Bc250UmdOpenAllocationArrayIsInfo2(0x000B000Bu) == FALSE); /* D3D11.0.7, medido */
+    assert(Bc250UmdOpenAllocationArrayIsInfo2(0x000A0002u) == FALSE); /* D3D10_1 */
+    assert(Bc250UmdOpenAllocationArrayIsInfo2(0x000B0010u) == FALSE); /* WDDM 1.3 */
+    assert(Bc250UmdOpenAllocationArrayIsInfo2(0x000B0011u) == TRUE);  /* WDDM 2.0 */
+    assert(Bc250UmdOpenAllocationArrayIsInfo2(0x000C0011u) == FALSE); /* outro major */
+
+    memset(&openArray, 0, sizeof(openArray));
+    openArray.info.hAllocation = 0x40004C80u;
+    openArray.garbageAfterV1 = 0x3F80000000000000ull;
+
+    memset(&open, 0, sizeof(open));
+    open.NumAllocations = 1u;
+    open.pOpenAllocationInfo = &openArray.info;
+
+    memset(&dev, 0, sizeof(dev));
+    dev.DeviceActive = TRUE;
+    dev.Interface = 0x000B000Bu;
+    dev.WinsysInitialized = FALSE;
+    memset(&res, 0xCD, sizeof(res));
+    hDev.pDrvPrivate = &dev;
+    hRes.pDrvPrivate = &res;
+    hRTRes.handle = (void*)0x4F50454Eu;
+
+    funcs.pfnOpenResource(hDev, &open, hRes, hRTRes);
+    assert(res.Allocation.KernelAllocation == 0x40004C80u);
+    assert(res.Allocation.Created == TRUE);
+    assert(res.Allocation.GpuVirtualAddress == 0u);
+    assert(res.Allocation.OwnsGpuVaMapping == FALSE);
+
+    /* Mesmo com o array v2 legitimo a VA de quem criou nao vale aqui. */
+    dev.Interface = 0x000B0011u;
+    memset(&res, 0xCD, sizeof(res));
+    funcs.pfnOpenResource(hDev, &open, hRes, hRTRes);
+    assert(res.Allocation.GpuVirtualAddress == 0u);
+
+    printf("  -> T4.2 OpenResource GPUVA source PASS\n");
+}
+
+/*
+ * T4.4 -- a sequencia de token sobrevive a recarga da DLL. MEDIDO na Corrida
+ * 183: 177 cargas da bc250umd.dll no StartMenuExperienceHost.exe e o token
+ * ...1B50000D emitido 176 vezes; o KMD achava a alocacao antiga pelo token.
+ *
+ * O teste carrega uma COPIA da DLL (estaticos proprios, DllMain proprio):
+ *   - ambiente = 00001234 antes do attach  -> o attach tem de retomar 0x1234;
+ *   - ambiente trocado para lixo no meio   -> o detach tem de regravar 00001234.
+ * Sem a retomada o detach gravaria 00000000; sem a gravacao sobraria o lixo.
+ */
+/*
+ * Frente B (doc 547): politica do alias VkImage LINEAR sobre a alocacao WDDM.
+ * Numeros da Corrida 189: superficie aberta 2592x1088, pitch 10496, alocacao
+ * 11.419.648 bytes em VA 0x202C90000; a imagem OTIMIZADA pedia 12.386.304
+ * (o pedido que estourou o segmento). Contrapontos para a politica nao virar
+ * carimbo: cada regra recusa sozinha.
+ */
+static void TestFrenteBAliasPolicy(void)
+{
+    const UINT64 va = 0x202C90000ull;
+    const UINT64 bytes = 11419648ull;
+
+    printf("[TEST] Testing Frente B alias policy...\n");
+
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, FALSE, FALSE, TRUE, 2592, 1088, 10496) == NULL);
+    assert(Bc250UmdFrenteBLayoutCheck(va, bytes, 10496, 0, 10496, bytes, 4096) == NULL);
+
+    assert(Bc250UmdFrenteBPreCheck(FALSE, va, bytes, 1, 1, 1, FALSE, FALSE, TRUE, 2592, 1088, 10496) != NULL);
+    assert(Bc250UmdFrenteBPreCheck(TRUE, 0, bytes, 1, 1, 1, FALSE, FALSE, TRUE, 2592, 1088, 10496) != NULL);
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 2, 1, 1, FALSE, FALSE, TRUE, 2592, 1088, 10496) != NULL);
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 6, 1, FALSE, FALSE, TRUE, 2592, 1088, 10496) != NULL);
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 4, FALSE, FALSE, TRUE, 2592, 1088, 10496) != NULL);
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, TRUE, FALSE, TRUE, 2592, 1088, 10496) != NULL);
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, FALSE, FALSE, TRUE, 2592, 1089, 10496) != NULL);
+    /* Corrida 190: render target (swapchain do DWM) fica fora do alias. */
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, FALSE, TRUE, TRUE, 2592, 1088, 10496) != NULL);
+    /* Corridas 191/192: textura propria (nao aberta de outro processo) fica fora do alias. */
+    assert(Bc250UmdFrenteBPreCheck(TRUE, va, bytes, 1, 1, 1, FALSE, FALSE, FALSE, 256, 80, 1024) != NULL);
+
+    /* pitch sem o alinhamento de 256 B (2592*4) */
+    assert(Bc250UmdFrenteBLayoutCheck(va, bytes, 10496, 0, 10368, bytes, 4096) != NULL);
+    /* o tamanho da imagem otimizada medido na 189 nao cabe */
+    assert(Bc250UmdFrenteBLayoutCheck(va, bytes, 10496, 0, 10496, 12386304ull, 65536) != NULL);
+    assert(Bc250UmdFrenteBLayoutCheck(va, bytes, 10496, 256, 10496, bytes, 4096) != NULL);
+    assert(Bc250UmdFrenteBLayoutCheck(va + 0x1000, bytes, 10496, 0, 10496, bytes, 65536) != NULL);
+    assert(Bc250UmdFrenteBLayoutCheck(va, bytes, 10496, 0, 10496, 0, 4096) != NULL);
+
+    printf("  Frente B alias policy: aceita o layout medido e recusa cada divergencia: PASS\n");
+}
+
+static void TestTokenSequenceSurvivesDllReload(void)
+{
+    char dllPath[MAX_PATH];
+    char copyPath[MAX_PATH];
+    char tempDir[MAX_PATH];
+    char text[16];
+    LONG value = 0;
+    HMODULE loaded;
+    HMODULE copy;
+    DWORD length;
+
+    printf("[TEST] Testing T4.4 token sequence across DLL reload...\n");
+
+    assert(Bc250UmdTokenSequenceParse("00001234", &value) == TRUE && value == 0x1234);
+    assert(Bc250UmdTokenSequenceParse("ffffffff", &value) == TRUE && value == (LONG)0xFFFFFFFFu);
+    assert(Bc250UmdTokenSequenceParse("", &value) == FALSE && value == 0);
+    assert(Bc250UmdTokenSequenceParse("123456789", &value) == FALSE);
+    assert(Bc250UmdTokenSequenceParse("0x12", &value) == FALSE);
+    assert(Bc250UmdTokenSequenceParse("12G4", &value) == FALSE);
+    assert(Bc250UmdTokenSequenceParse(NULL, &value) == FALSE);
+    assert(Bc250UmdTokenSequenceFormat(0x1234, text, sizeof(text)) == TRUE && strcmp(text, "00001234") == 0);
+    assert(Bc250UmdTokenSequenceFormat(0x1234, text, 8u) == FALSE);
+
+    loaded = GetModuleHandleA("bc250umd.dll");
+    assert(loaded != NULL);
+    length = GetModuleFileNameA(loaded, dllPath, (DWORD)sizeof(dllPath));
+    assert(length > 0u && length < sizeof(dllPath));
+    length = GetTempPathA((DWORD)sizeof(tempDir), tempDir);
+    assert(length > 0u && length < sizeof(tempDir));
+    assert(_snprintf_s(copyPath, sizeof(copyPath), _TRUNCATE, "%sbc250umd_t44_%lu.dll",
+        tempDir, (unsigned long)GetCurrentProcessId()) > 0);
+    assert(CopyFileA(dllPath, copyPath, FALSE));
+
+    assert(SetEnvironmentVariableA("BC250_UMD_TOKEN_SEQUENCE", "00001234"));
+    copy = LoadLibraryA(copyPath);
+    assert(copy != NULL && copy != loaded);
+    assert(SetEnvironmentVariableA("BC250_UMD_TOKEN_SEQUENCE", "lixo"));
+    assert(FreeLibrary(copy));
+    length = GetEnvironmentVariableA("BC250_UMD_TOKEN_SEQUENCE", text, (DWORD)sizeof(text));
+    assert(length == 8u && strcmp(text, "00001234") == 0);
+
+    (void)SetEnvironmentVariableA("BC250_UMD_TOKEN_SEQUENCE", NULL);
+    (void)DeleteFileA(copyPath);
+    printf("  -> T4.4 token sequence across DLL reload PASS\n");
+}
+
 static void TestResourceDDIs(void)
 {
     D3D10_1DDI_DEVICEFUNCS deviceFuncs10_1;
@@ -3279,6 +3441,9 @@ int main(void)
     TestShaderDDIs();
     TestShaderSpirvOwnership();
     TestResourceDDIs();
+    TestOpenResourceIgnoresRuntimeGpuVa();
+    TestTokenSequenceSurvivesDllReload();
+    TestFrenteBAliasPolicy();
     TestUpdateSubresourceRowPitch();
     TestVkImageUploadLayout();
     TestViewAndOutputMergerDDIs();

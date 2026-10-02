@@ -4,6 +4,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <io.h>
+#include <fcntl.h>
+
+/*
+ * M1b.1 (doc 554): liga junto com BC250_M1B_RADV_MEMORY (RADV) e
+ * BC250_M1B_RADV_SYSTEM_SEGMENT_ENABLED (KMD). Sozinho nao muda segmento.
+ */
+#ifndef BC250_M1B_PRESENT_DEVICE_LOCAL
+#define BC250_M1B_PRESENT_DEVICE_LOCAL 0
+#endif
 
 static void Bc250VkTrace(const char *fmt, ...)
 {
@@ -110,6 +120,114 @@ static HMODULE Bc250LocateAndLoadIcd(void)
     return NULL;
 }
 
+/*
+ * I.1 (30/09, doc 545 §4.2 e §5) -- o stderr do processo vai para um arquivo.
+ *
+ * O winsys WDDM2 da RADV so' escreve o motivo das falhas em fprintf(stderr):
+ * 528 vkCreateDevice -3 na Pesquisa e 1.124 vkAllocateMemory -2 no Explorer
+ * sairam sem causa porque dwm.exe e os apps nao tem console. A RADV e esta UMD
+ * usam o mesmo UCRT (api-ms-win-crt-stdio), entao redirecionar o stderr aqui
+ * alcanca os fprintf da RADV sem recompila-la. Uma vez por processo, so' quando
+ * o ICD foi carregado (as suites offline nao chegam aqui e mantem o stderr).
+ * Primeiro C:\Windows\Temp (coletado pelo binder); senao o %TEMP% do processo
+ * (AppContainer). Nome BC250_UMD_LOG_<pid>-RADV.txt: a coleta atual ja' o pega.
+ */
+/*
+ * I.1b (30/09, Corrida 187): a primeira versao usava freopen_s, que abre SEM
+ * compartilhamento; o binder nao conseguiu copiar o -RADV com o dwm.exe vivo,
+ * abortou e a corrida virou rollback sem ensaio. Agora o arquivo e' aberto por
+ * CreateFileA com FILE_SHARE_READ|WRITE|DELETE e ligado ao stderr: o stderr
+ * ganha um descritor valido (freopen_s para NUL, necessario em processo sem
+ * console) e _dup2 aponta esse descritor para o handle compartilhado.
+ */
+static BOOL Bc250UmdVkRedirectStderrTo(_In_z_ const char *path)
+{
+    HANDLE h;
+    int fd;
+    FILE *nul = NULL;
+
+    h = CreateFileA(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return FALSE;
+    fd = _open_osfhandle((intptr_t)h, _O_APPEND | _O_TEXT);
+    if (fd < 0) { CloseHandle(h); return FALSE; }
+    if (_fileno(stderr) < 0 && freopen_s(&nul, "NUL", "w", stderr) != 0) { _close(fd); return FALSE; }
+    /* I.1c: _dup2 com descritor invalido dispara o manipulador de parametro
+     * invalido do CRT, que por padrao encerra o processo. */
+    if (_fileno(stderr) < 0 || _dup2(fd, _fileno(stderr)) != 0) { _close(fd); return FALSE; }
+    _close(fd);
+    (void)setvbuf(stderr, NULL, _IONBF, 0);
+    return TRUE;
+}
+
+/*
+ * I.1c (30/09, Corrida 188): o redirecionamento DERRUBOU SearchApp,
+ * ShellExperienceHost e TextInputHost (falha em ucrtbase.dll; o log da UMD de
+ * cada um termina em "ICD carregado", passo imediatamente anterior, e o -RADV
+ * ficou vazio). Os tres sao AppContainer; o teste offline da I.1b so' cobriu
+ * processo sem console comum. Agora: (1) AppContainer nao e' redirecionado --
+ * e, se o tipo do processo nao puder ser lido, tambem nao (fail-closed);
+ * (2) o redirecionamento roda com manipulador de parametro invalido da thread,
+ * que faz o CRT devolver erro em vez de encerrar o processo.
+ */
+static void __cdecl Bc250UmdVkIgnoreInvalidParameter(const wchar_t *Expression, const wchar_t *Function,
+    const wchar_t *File, unsigned int Line, uintptr_t Reserved)
+{
+    (void)Expression; (void)Function; (void)File; (void)Line; (void)Reserved;
+}
+
+static BOOL Bc250UmdVkProcessIsAppContainer(void)
+{
+    HANDLE token = NULL;
+    DWORD isAppContainer = 1u;
+    DWORD returned = 0u;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return TRUE;
+    if (!GetTokenInformation(token, TokenIsAppContainer, &isAppContainer, sizeof(isAppContainer), &returned)) {
+        isAppContainer = 1u;
+    }
+    CloseHandle(token);
+    return (isAppContainer != 0u) ? TRUE : FALSE;
+}
+
+static void Bc250UmdVkRedirectRadvStderr(void)
+{
+    static volatile LONG s_redirected = 0;
+    char path[MAX_PATH];
+    char tempDir[MAX_PATH];
+    DWORD len;
+
+    _invalid_parameter_handler previous;
+    BOOL done = FALSE;
+
+    if (InterlockedCompareExchange(&s_redirected, 1, 0) != 0) return;
+    if (Bc250UmdVkProcessIsAppContainer()) {
+        Bc250VkTrace("[VK_BRIDGE] I.1c stderr da RADV NAO redirecionado: processo AppContainer "
+            "(o redirecionamento derrubou 3 processos do shell na Corrida 188)");
+        return;
+    }
+    previous = _set_thread_local_invalid_parameter_handler(Bc250UmdVkIgnoreInvalidParameter);
+    if (_snprintf_s(path, sizeof(path), _TRUNCATE, "C:\\Windows\\Temp\\BC250_UMD_LOG_%lu-RADV.txt",
+            GetCurrentProcessId()) > 0 &&
+        Bc250UmdVkRedirectStderrTo(path)) {
+        done = TRUE;
+    } else {
+        len = GetTempPathA((DWORD)sizeof(tempDir), tempDir);
+        if (len > 0u && len < sizeof(tempDir) &&
+            _snprintf_s(path, sizeof(path), _TRUNCATE, "%sBC250_UMD_LOG_%lu-RADV.txt",
+                tempDir, GetCurrentProcessId()) > 0 &&
+            Bc250UmdVkRedirectStderrTo(path)) {
+            done = TRUE;
+        }
+    }
+    (void)_set_thread_local_invalid_parameter_handler(previous);
+    if (done) {
+        Bc250VkTrace("[VK_BRIDGE] I.1 stderr da RADV -> %s", path);
+        return;
+    }
+    Bc250VkTrace("[VK_BRIDGE] I.1 stderr da RADV NAO redirecionado (GetLastError=%lu); motivos da RADV seguem invisiveis",
+        GetLastError());
+}
+
 static BOOL Bc250UmdVkBridgeInitInternal(_Out_ BC250_UMD_VK_BRIDGE *pBridge)
 {
     Bc250VkTrace("[VK_BRIDGE] Bc250UmdVkBridgeInitInternal: iniciando ponte Vulkan RADV...");
@@ -137,6 +255,7 @@ static BOOL Bc250UmdVkBridgeInitInternal(_Out_ BC250_UMD_VK_BRIDGE *pBridge)
         Bc250VkTrace("[VK_BRIDGE] RECUSA: modulo ICD nao carregado");
         return FALSE;
     }
+    Bc250UmdVkRedirectRadvStderr();
 
     PFN_vk_icdNegotiateLoaderICDInterfaceVersion negotiate =
         (PFN_vk_icdNegotiateLoaderICDInterfaceVersion)(void *)
@@ -197,6 +316,7 @@ static BOOL Bc250UmdVkBridgeInitInternal(_Out_ BC250_UMD_VK_BRIDGE *pBridge)
     LOAD_VK_INST(vkGetPhysicalDeviceProperties);
     LOAD_VK_INST(vkGetPhysicalDeviceQueueFamilyProperties);
     LOAD_VK_INST(vkGetPhysicalDeviceMemoryProperties);
+    LOAD_VK_INST(vkGetPhysicalDeviceFormatProperties);
     LOAD_VK_INST(vkCreateDevice);
     LOAD_VK_INST(vkGetDeviceProcAddr);
 
@@ -340,8 +460,11 @@ static BOOL Bc250UmdVkBridgeInitInternal(_Out_ BC250_UMD_VK_BRIDGE *pBridge)
     LOAD_VK_DEV(vkCreateImage);
     LOAD_VK_DEV(vkDestroyImage);
     LOAD_VK_DEV(vkGetImageMemoryRequirements);
+    LOAD_VK_DEV(vkGetImageSubresourceLayout);
     LOAD_VK_DEV(vkCreateImageView);
     LOAD_VK_DEV(vkDestroyImageView);
+    LOAD_VK_DEV(vkCreateBufferView);
+    LOAD_VK_DEV(vkDestroyBufferView);
     LOAD_VK_DEV(vkCreateSampler);
     LOAD_VK_DEV(vkDestroySampler);
     LOAD_VK_DEV(vkAllocateMemory);
@@ -598,6 +721,7 @@ VOID Bc250UmdVkReleaseDescriptorBatches(BC250_UMD_VK_BRIDGE *pBridge)
         if (batch->Pool) pBridge->vk.vkDestroyDescriptorPool(pBridge->Device, batch->Pool, NULL);
         for (uint32_t i = 0; i < 316; ++i) {
             if (batch->Views[i]) pBridge->vk.vkDestroyImageView(pBridge->Device, batch->Views[i], NULL);
+            if (batch->BufferViews[i]) pBridge->vk.vkDestroyBufferView(pBridge->Device, batch->BufferViews[i], NULL);
             if (batch->Samplers[i]) pBridge->vk.vkDestroySampler(pBridge->Device, batch->Samplers[i], NULL);
         }
         free(batch);
@@ -613,13 +737,14 @@ VkDescriptorSet Bc250UmdVkAllocPersistentSet(_Inout_ BC250_UMD_VK_BRIDGE *pBridg
     if (pBridge == NULL || pBridge->PersistentPoolFailed || layout == VK_NULL_HANDLE ||
         pBridge->vk.vkResetDescriptorPool == NULL) return VK_NULL_HANDLE;
     if (pBridge->PersistentPool == VK_NULL_HANDLE) {
-        VkDescriptorPoolSize sizes[3] = {
+        VkDescriptorPoolSize sizes[4] = {
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, BC250_DX54_POOL_UNIFORM_BUFFERS},
             {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, BC250_DX54_POOL_SAMPLED_IMAGES},
-            {VK_DESCRIPTOR_TYPE_SAMPLER, BC250_DX54_POOL_SAMPLERS}};
+            {VK_DESCRIPTOR_TYPE_SAMPLER, BC250_DX54_POOL_SAMPLERS},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, BC250_DX54_POOL_TEXEL_BUFFERS}};
         VkDescriptorPoolCreateInfo poolInfo = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
         poolInfo.maxSets = BC250_DX54_POOL_MAX_SETS;
-        poolInfo.poolSizeCount = 3;
+        poolInfo.poolSizeCount = 4;
         poolInfo.pPoolSizes = sizes;
         res = pBridge->vk.vkCreateDescriptorPool(pBridge->Device, &poolInfo, NULL, &pBridge->PersistentPool);
         if (res != VK_SUCCESS) {
@@ -628,9 +753,9 @@ VkDescriptorSet Bc250UmdVkAllocPersistentSet(_Inout_ BC250_UMD_VK_BRIDGE *pBridg
             Bc250VkTrace("[DX54_DESC] POOL PERSISTENTE RECUSADO: vkCreateDescriptorPool res=%d; draws seguem com pool por draw", res);
             return VK_NULL_HANDLE;
         }
-        Bc250VkTrace("[DX54_DESC] POOL PERSISTENTE criado: %u conjuntos, %u CB, %u SRV, %u samplers (pool=%p)",
+        Bc250VkTrace("[DX54_DESC] POOL PERSISTENTE criado: %u conjuntos, %u CB, %u SRV, %u samplers, %u SRV de buffer (pool=%p)",
             BC250_DX54_POOL_MAX_SETS, BC250_DX54_POOL_UNIFORM_BUFFERS, BC250_DX54_POOL_SAMPLED_IMAGES,
-            BC250_DX54_POOL_SAMPLERS, (void *)pBridge->PersistentPool);
+            BC250_DX54_POOL_SAMPLERS, BC250_DX54_POOL_TEXEL_BUFFERS, (void *)pBridge->PersistentPool);
     }
     if (pBridge->PersistentPoolSets >= BC250_DX54_POOL_MAX_SETS) return VK_NULL_HANDLE;
     allocInfo.descriptorPool = pBridge->PersistentPool;
@@ -904,6 +1029,7 @@ VkResult Bc250UmdVkFlushCommands(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
         /* So' com a fence concluida o anel e o staging podem voltar ao inicio. */
         pBridge->DrawRingHead = 0;
         pBridge->UploadStagingHead = 0;
+        pBridge->UploadCoalescedInBatch = 0;
         pBridge->BatchFlushCount++;
         pBridge->BatchDrawsFlushed += drawsInBatch;
         Bc250VkTrace("[VK_BRIDGE] FlushCommands: Execucao e Fence em hardware CONCLUIDOS com SUCESSO! "
@@ -1289,11 +1415,29 @@ BOOL Bc250UmdVkEnsureLinearPresentBuf(
      * inspecionar. O que muda e' que o nivel escolhido passa a ser declarado, e
      * a perda de inspecionabilidade e' anunciada no momento em que acontece.
      */
-    uint32_t memType = Bc250UmdVkFindMemoryType(
-        pBridge, memReqs.memoryTypeBits,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    uint32_t memType = UINT32_MAX;
     const char *memTier = "HOST_VISIBLE|HOST_COHERENT";
     BOOL memHostVisible = TRUE;
+#if BC250_M1B_PRESENT_DEVICE_LOCAL
+    /*
+     * M1b.1 (doc 554, bloqueio 3 do doc 496): com a RADV declarada APU, o
+     * primeiro tipo HOST_VISIBLE|HOST_COHERENT tende a ser GTT, que o KMD
+     * passa a poder pôr no segmento 2 -- e a copia para o scanout e' por MC,
+     * so' no segmento 1. O tipo local e mapeavel vem primeiro; se nao houver,
+     * a cadeia antiga segue e o nivel sai declarado no log.
+     */
+    memType = Bc250UmdVkFindMemoryType(pBridge, memReqs.memoryTypeBits,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    if (memType != UINT32_MAX) {
+        memTier = "DEVICE_LOCAL|HOST_VISIBLE|HOST_COHERENT (M1b: fica no segmento 1)";
+    }
+#endif
+    if (memType == UINT32_MAX) {
+        memType = Bc250UmdVkFindMemoryType(
+            pBridge, memReqs.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    }
     if (memType == UINT32_MAX) {
         memType = Bc250UmdVkFindMemoryType(pBridge, memReqs.memoryTypeBits,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
@@ -1351,6 +1495,18 @@ uint32_t Bc250UmdVkInspectLinearPresentBuf(
     uint32_t width,
     uint32_t height)
 {
+#if !BC250_UMD_CPU_INSPECTS_LINEAR_BUF
+    {
+        static volatile LONG s_skipped = 0;
+        LONG n = InterlockedIncrement(&s_skipped);
+        (void)pBridge;
+        if (n <= 4 || (n % 256) == 0) {
+            Bc250VkTrace("[VK_BRIDGE] INSPECAO LINEAR_BUF DESLIGADA (4b): a CPU nao le a VRAM pela BAR (%ux%u, ocorrencia #%ld)",
+                width, height, n);
+        }
+        return 0;
+    }
+#else
     uint32_t nonZeroSamples = 0;
     if (pBridge == NULL || !pBridge->DeviceActive || pBridge->LinearPresentMem == VK_NULL_HANDLE ||
         pBridge->vk.vkMapMemory == NULL || pBridge->vk.vkUnmapMemory == NULL) {
@@ -1438,5 +1594,6 @@ uint32_t Bc250UmdVkInspectLinearPresentBuf(
         Bc250VkTrace("[VK_BRIDGE] INSPECAO LINEAR_BUF: vkMapMemory retornou %d (memoria nao host-visible ou ocupada)", res);
     }
     return nonZeroSamples;
+#endif
 }
 

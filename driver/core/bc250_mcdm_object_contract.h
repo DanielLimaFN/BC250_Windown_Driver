@@ -38,7 +38,17 @@ extern "C" {
 #define BC250_MCDM_OBJECT_REGISTRY_SIGNATURE 0x524A424Fu /* "OBJR" */
 #define BC250_MCDM_OBJECT_LIVE_SIGNATURE     0x564A424Fu /* "OBJV" */
 #define BC250_MCDM_OBJECT_DEAD_SIGNATURE     0x444A424Fu /* "OBJD" */
-#define BC250_MCDM_MAX_OBJECTS 4096u
+/*
+ * T4.7 (30/09, Corrida 188): 4096 -> 16384. MEDIDO: o Explorer pediu
+ * CreateAllocation2 size=65536 e recebeu 0xC000009A; no mesmo instante o KMD
+ * registrou CREATE_ALLOC_RECUSADO ObjStatus=3 (NO_SPACE). A tabela e' do
+ * adaptador inteiro e cada textura D3D ocupa duas entradas (alocacao da UMD e
+ * da RADV); o Explorer cria milhares. Custo: ~180 B por registro, ~3 MB nao
+ * paginados no contexto do adaptador. O handle x64 carrega o slot em 32 bits
+ * (e 16 bits no x86, onde 16384+1 ainda cabe). Correcao definitiva (tabela
+ * dinamica ou uma alocacao por textura) e' faixa propria.
+ */
+#define BC250_MCDM_MAX_OBJECTS 16384u
 #define BC250_MCDM_SUBMISSION_RUNDOWN_CLOSING 0x40000000L
 #define BC250_MCDM_SUBMISSION_RUNDOWN_COUNT_MASK 0x3FFFFFFFL
 

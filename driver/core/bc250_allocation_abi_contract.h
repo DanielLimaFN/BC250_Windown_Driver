@@ -80,8 +80,31 @@ typedef UINT32 uint32_t;
 
 #define BC250_ALLOCATION_FLAG_CPU_VISIBLE        0x00000001u
 #define BC250_ALLOCATION_FLAG_HAS_GEOMETRY       0x00000002u
+/*
+ * M1 (doc 491, 28/09): a UMD declara que NENHUM caminho do KMD endereca esta
+ * alocacao por endereco fisico -- ela so' e' tocada pela GPU via GPUVA (e pela
+ * CPU via Lock). So' entao ela pode morar no segmento de memoria do sistema
+ * (abertura, segmento 2), que na BC-250 e' a mesma GDDR6. Valida SOMENTE na
+ * classe RESOURCE; qualquer outra classe com a flag e' RECUSADA (fail-closed),
+ * porque primaria, scanout e cópias do KMD enderecam o segmento 1 por MC.
+ */
+#define BC250_ALLOCATION_FLAG_GPU_VA_ONLY        0x00000004u
+/*
+ * M1b.1 (doc 554, 01/10): a RADV declara o DOMINIO que pediu e marca os
+ * buffers de comando. Ate aqui o blob BCA1 so' carregava CPU_VISIBLE, e o KMD
+ * punha tudo no segmento 1 (doc 496 secao 1). Validas SOMENTE em token da RADV
+ * (fora das classes da UMD); em classe da UMD sao RECUSADAS (fail-closed).
+ *   RADV_DOMAIN_GTT: a RADV pediu RADEON_DOMAIN_GTT (memoria do sistema).
+ *   RADV_COMMAND:    BO de comando (prioridade CS). O KMD le o DW0 do IB pela
+ *                    VRAM (DX.43, IB de aquecimento); por isso fica no 1.
+ */
+#define BC250_ALLOCATION_FLAG_RADV_DOMAIN_GTT    0x00000008u
+#define BC250_ALLOCATION_FLAG_RADV_COMMAND       0x00000010u
+#define BC250_ALLOCATION_RADV_ONLY_FLAGS \
+    (BC250_ALLOCATION_FLAG_RADV_DOMAIN_GTT | BC250_ALLOCATION_FLAG_RADV_COMMAND)
 #define BC250_ALLOCATION_SUPPORTED_FLAGS \
-    (BC250_ALLOCATION_FLAG_CPU_VISIBLE | BC250_ALLOCATION_FLAG_HAS_GEOMETRY)
+    (BC250_ALLOCATION_FLAG_CPU_VISIBLE | BC250_ALLOCATION_FLAG_HAS_GEOMETRY | \
+     BC250_ALLOCATION_FLAG_GPU_VA_ONLY | BC250_ALLOCATION_RADV_ONLY_FLAGS)
 
 #define BC250_ALLOCATION_TOKEN_CLASS(Token) \
     ((uint32_t)(((uint64_t)(Token)) >> BC250_ALLOCATION_TOKEN_CLASS_SHIFT))
@@ -170,5 +193,55 @@ int Bc250AllocationIsPrimary(
 
 int Bc250AllocationRequiresCpuAccess(
     const BC250_ALLOCATION_PRIVATE_V1 *Request);
+
+/* M1: verdadeiro so' para RESOURCE com BC250_ALLOCATION_FLAG_GPU_VA_ONLY. */
+int Bc250AllocationMayUseSystemSegment(
+    const BC250_ALLOCATION_PRIVATE_V1 *Request);
+
+/*
+ * M2 (doc 548): alocacao que pode morar no segmento 3 (VRAM sem CPU). So' as
+ * da RADV (token que nao e' de nenhuma classe da UMD) SEM a flag de CPU: as
+ * imagens otimizadas que estouravam o segmento 1 (Corridas 189 e 193). Nenhuma
+ * alocacao da UMD vai para la' -- o KMD copia essas por endereco MC, e o
+ * conversor so' resolve o segmento 1 (fail-closed para o 3).
+ */
+int Bc250AllocationMayUseHiddenSegment(
+    const BC250_ALLOCATION_PRIVATE_V1 *Request);
+
+/*
+ * M2.1 (Corrida 196, doc 548): com um segmento local SEM CPU declarado, o
+ * VidMm deixa de tratar a VRAM como inteiramente visivel e passa a exigir,
+ * para Lock2, que a alocacao acessivel pela CPU tenha o segmento de abertura
+ * no conjunto suportado (allocation-usage-tracking.md). Verdadeiro so' para
+ * alocacao da RADV (token fora das classes da UMD) que o KMD publicou como
+ * CpuVisible -- a UMD D3D11 nao chama Lock e as classes dela sao copiadas
+ * pelo KMD por endereco MC no segmento 1, entao nao podem ir para a abertura.
+ */
+int Bc250AllocationLockNeedsApertureFallback(
+    const BC250_ALLOCATION_PRIVATE_V1 *Request,
+    int CpuVisible);
+
+/*
+ * M1b.1 (doc 554): para onde vai uma alocacao da RADV quando a memoria da
+ * carga real passa a morar no segmento 2 (abertura, a mesma GDDR6). Fonte
+ * unica; o KMD so' aplica com BC250_M1B_RADV_SYSTEM_SEGMENT_ENABLED e sem
+ * segmento 3 publicado. Devolve 1 e preenche Out quando a alocacao PODE ir
+ * ao segmento 2; 0 = fica como esta' (segmento 1).
+ *   classe da UMD                -> 0 (o KMD as enderecam por MC)
+ *   RADV_COMMAND                 -> 0 (DX.43 le o DW0 do IB pela VRAM)
+ *   dominio VRAM com CPU         -> 0 (buffer linear do Present, doc 496 item 3)
+ *   dominio GTT                  -> SegSet 0x3, preferido 2 depois 1
+ *   dominio VRAM sem CPU         -> SegSet 0x3, preferido 1 depois 2 (transborda)
+ */
+typedef struct BC250_ALLOCATION_SEGMENT_POLICY {
+    uint32_t SegmentSet;
+    uint32_t Preferred0;
+    uint32_t Preferred1;
+} BC250_ALLOCATION_SEGMENT_POLICY;
+
+int Bc250AllocationRadvSystemSegmentPolicy(
+    const BC250_ALLOCATION_PRIVATE_V1 *Request,
+    int CpuVisible,
+    BC250_ALLOCATION_SEGMENT_POLICY *Out);
 
 #endif

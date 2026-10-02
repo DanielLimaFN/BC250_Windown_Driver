@@ -7,26 +7,41 @@
 static unsigned creates, allocations, updates, binds, destroys, uploads;
 static int failAllocation;
 static VkBuffer expectedVs, expectedPs;
-static int imageMode;
+static int imageMode, texelMode;
+static unsigned bufferViewsCreated, bufferViewsDestroyed;
 static unsigned barriers, viewsDestroyed, samplersDestroyed;
 static void Bc250UmdTrace(const char *fmt, ...) { (void)fmt; }
 BOOL Bc250UmdVkUploadBufferData(BC250_UMD_DEVICE *d, BC250_UMD_RESOURCE *r, const void *p, SIZE_T n)
 { (void)d; (void)r; (void)p; assert(n == 64); uploads++; return TRUE; }
+BOOL Bc250UmdVkCreateResource(BC250_UMD_DEVICE *pDevice, BC250_UMD_RESOURCE *pRes, CONST D3D10DDIARG_CREATERESOURCE *pCreate)
+{ (void)pDevice; (void)pRes; (void)pCreate; return TRUE; }
+BOOL Bc250UmdVkUploadImageData(BC250_UMD_DEVICE *pDevice, BC250_UMD_RESOURCE *pRes, CONST VOID *pData, UINT RowPitch, SIZE_T ByteSize)
+{ (void)pDevice; (void)pRes; (void)pData; (void)RowPitch; (void)ByteSize; return TRUE; }
+HRESULT Bc250UmdBridgeGpuBlt(BC250_UMD_DEVICE *d, uint64_t src, UINT sp, uint64_t dst, UINT dp, UINT w, UINT h)
+{ (void)d; (void)src; (void)sp; (void)dst; (void)dp; (void)w; (void)h; return S_OK; }
+BOOL Bc250UmdVkCopyStagingBufferToImage(BC250_UMD_DEVICE *d, BC250_UMD_RESOURCE *r, VkDeviceSize o, UINT p, SIZE_T n)
+{ (void)d; (void)r; (void)o; (void)p; (void)n; return TRUE; }
 #include "../umd/bc250_umd_pipeline_cache.c"
 /* DX.54: variavel (nao const) para a suite exercitar os dois caminhos. */
 static BOOL s_Bc250Dx54PersistentDescriptors = FALSE;
 static unsigned persistentCreates, samplerCreates, resets;
 #include "../umd/bc250_umd_descriptors.c"
+/* SHADER.2: o gravador declara o helper de bytes por texel de bc250_d3d_umd.c. */
+static UINT Bc250DxgiFormatBytesPerPixel(DXGI_FORMAT Format)
+{ return Format == DXGI_FORMAT_R8_UINT ? 1u : (Format == DXGI_FORMAT_R32_UINT ? 4u : 0u); }
 static VkResult VKAPI_CALL CreatePool(VkDevice d, const VkDescriptorPoolCreateInfo *p, const VkAllocationCallbacks *a, VkDescriptorPool *out)
 { (void)d; (void)a;
-  if (p->maxSets == BC250_DX54_POOL_MAX_SETS) { assert(s_Bc250Dx54PersistentDescriptors && p->poolSizeCount == 3u); persistentCreates++; *out = (VkDescriptorPool)(uintptr_t)0x5000; return VK_SUCCESS; }
+  if (p->maxSets == BC250_DX54_POOL_MAX_SETS) { assert(s_Bc250Dx54PersistentDescriptors && p->poolSizeCount == 4u); persistentCreates++; *out = (VkDescriptorPool)(uintptr_t)0x5000; return VK_SUCCESS; }
   assert(p->maxSets == 1); assert(p->poolSizeCount == (imageMode ? 2u : 1u)); *out = (VkDescriptorPool)(uintptr_t)++creates; return VK_SUCCESS; }
 static VkResult VKAPI_CALL ResetPool(VkDevice d, VkDescriptorPool p, VkDescriptorPoolResetFlags f)
 { (void)d; (void)f; assert(p == (VkDescriptorPool)(uintptr_t)0x5000); resets++; return VK_SUCCESS; }
 static VkResult VKAPI_CALL Allocate(VkDevice d, const VkDescriptorSetAllocateInfo *p, VkDescriptorSet *out)
 { (void)d; assert(p->descriptorSetCount == 1); allocations++; if (failAllocation) return VK_ERROR_OUT_OF_POOL_MEMORY; *out = (VkDescriptorSet)(uintptr_t)allocations; return VK_SUCCESS; }
 static void VKAPI_CALL Update(VkDevice d, uint32_t n, const VkWriteDescriptorSet *w, uint32_t c, const VkCopyDescriptorSet *copy)
-{ (void)d; (void)c; (void)copy; assert(n == 2);
+{ (void)d; (void)c; (void)copy;
+  if (texelMode) { assert(n == 1 && w[0].dstBinding == 288 && w[0].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER);
+    assert(w[0].pTexelBufferView && *w[0].pTexelBufferView == (VkBufferView)(uintptr_t)0x31); updates++; return; }
+  assert(n == 2);
   if (imageMode) { assert(w[0].dstBinding == 291 && w[1].dstBinding == 418); assert(w[0].pImageInfo->imageView && w[0].pImageInfo->imageLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL); assert(w[1].pImageInfo->sampler); }
   else { assert(w[0].dstBinding == 0 && w[1].dstBinding == 256); assert(w[0].pBufferInfo->buffer == expectedVs && w[1].pBufferInfo->buffer == expectedPs); assert(w[0].pBufferInfo->range == 64 && w[1].pBufferInfo->range == 64); } updates++; }
 static void VKAPI_CALL Bind(VkCommandBuffer c, VkPipelineBindPoint p, VkPipelineLayout l, uint32_t first, uint32_t n, const VkDescriptorSet *s, uint32_t offsets, const uint32_t *o)
@@ -37,6 +52,11 @@ static VkResult VKAPI_CALL View(VkDevice d, const VkImageViewCreateInfo *p, cons
 { (void)d; (void)a; assert(p->image == (VkImage)(uintptr_t)20 && p->subresourceRange.levelCount == 1); *out = (VkImageView)(uintptr_t)21; return VK_SUCCESS; }
 static VkResult VKAPI_CALL Sampler(VkDevice d, const VkSamplerCreateInfo *p, const VkAllocationCallbacks *a, VkSampler *out)
 { (void)d; (void)a; assert(p->minFilter == VK_FILTER_LINEAR && p->addressModeU == VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE); samplerCreates++; *out = (VkSampler)(uintptr_t)22; return VK_SUCCESS; }
+static VkResult VKAPI_CALL BufferView(VkDevice d, const VkBufferViewCreateInfo *p, const VkAllocationCallbacks *a, VkBufferView *out)
+{ (void)d; (void)a; assert(p->buffer == (VkBuffer)(uintptr_t)30 && p->format == VK_FORMAT_R8_UINT && p->offset == 16 && p->range == 32);
+  bufferViewsCreated++; *out = (VkBufferView)(uintptr_t)0x31; return VK_SUCCESS; }
+static void VKAPI_CALL DestroyBufferView(VkDevice d, VkBufferView v, const VkAllocationCallbacks *a)
+{ (void)d; (void)a; assert(v == (VkBufferView)(uintptr_t)0x31); bufferViewsDestroyed++; }
 static void VKAPI_CALL DestroyView(VkDevice d, VkImageView v, const VkAllocationCallbacks *a)
 { (void)d; (void)v; (void)a; viewsDestroyed++; }
 static void VKAPI_CALL DestroySampler(VkDevice d, VkSampler v, const VkAllocationCallbacks *a)
@@ -151,6 +171,56 @@ int main(void)
             s_Bc250Dx54PersistentDescriptors = FALSE;
         }
     }
+    /*
+     * SHADER.2 (Corrida 161): Buffer<uint> em t0 do PS -- o shader do menu
+     * Iniciar. Vinculo 288 = PS + SRV_BASE + 0, UNIFORM_TEXEL_BUFFER, view com
+     * o formato e a faixa da SRV; cada recusa sai com o proprio nome.
+     */
+    {
+        BC250_UMD_RESOURCE buf = {0};
+        BC250_UMD_SRV srv = {0};
+        uint8_t bytes[64] = {7};
+        imageMode = 0; texelMode = 1; failAllocation = 0; d->VkBridge.SubmissionFailed = FALSE;
+        d->VkBridge.vk.vkCreateBufferView = BufferView; d->VkBridge.vk.vkDestroyBufferView = DestroyBufferView;
+        buf.VkBuf = (VkBuffer)(uintptr_t)30; buf.Width = buf.TotalByteSize = 64; buf.pCpuShadow = bytes;
+        srv.Created = TRUE; srv.pResource = &buf; srv.Desc.ResourceDimension = D3D10DDIRESOURCE_BUFFER;
+        srv.Desc.Format = DXGI_FORMAT_R8_UINT; srv.Desc.Buffer.FirstElement = 16; srv.Desc.Buffer.NumElements = 32;
+        d->PipelineState.PsShaderResources[0].pDrvPrivate = &srv;
+        entry->BindingCount = 1;
+        entry->Bindings[0] = (VkDescriptorSetLayoutBinding){288, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL};
+        { unsigned u = uploads, b = binds;
+          assert(Bc250UmdBindDrawDescriptors(d, layout, VK_NULL_HANDLE, &has) && has);
+          assert(uploads == u + 1 && binds == b + 1 && bufferViewsCreated == 1); }
+        Bc250UmdVkReleaseDescriptorBatches(&d->VkBridge);
+        assert(bufferViewsDestroyed == 1);
+        srv.Desc.Buffer.NumElements = 64; /* 16 + 64 > 64 bytes */
+        assert(!Bc250UmdBindDrawDescriptors(d, layout, VK_NULL_HANDLE, &has));
+        assert(strcmp(d->LastVkDrawFailureReason, "SRV_BUFFER_FAIXA_FORA_DO_RECURSO") == 0);
+        Bc250UmdVkReleaseDescriptorBatches(&d->VkBridge); d->VkBridge.SubmissionFailed = FALSE;
+        srv.Desc.Buffer.FirstElement = 3; srv.Desc.Buffer.NumElements = 8;
+        assert(!Bc250UmdBindDrawDescriptors(d, layout, VK_NULL_HANDLE, &has));
+        assert(strcmp(d->LastVkDrawFailureReason, "SRV_BUFFER_DESLOCAMENTO_DESALINHADO") == 0);
+        Bc250UmdVkReleaseDescriptorBatches(&d->VkBridge); d->VkBridge.SubmissionFailed = FALSE;
+        srv.Desc.ResourceDimension = D3D10DDIRESOURCE_TEXTURE2D;
+        assert(!Bc250UmdBindDrawDescriptors(d, layout, VK_NULL_HANDLE, &has));
+        assert(strcmp(d->LastVkDrawFailureReason, "SRV_TEXEL_DIMENSAO_NAO_E_BUFFER") == 0);
+        Bc250UmdVkReleaseDescriptorBatches(&d->VkBridge); d->VkBridge.SubmissionFailed = FALSE;
+        assert(bufferViewsCreated == 1 && bufferViewsDestroyed == 1);
+        texelMode = 0; d->PipelineState.PsShaderResources[0].pDrvPrivate = NULL;
+    }
+    /* Reflexao: OpTypeImage Dim=Buffer Sampled=1 (o que o vkd3d 1.17 emitiu
+     * para o shader reproduzido) -> UNIFORM_TEXEL_BUFFER no vinculo 288;
+     * Sampled=2 (storage) segue sem tipo e recusa o shader inteiro. */
+    { uint32_t spv[] = {0x07230203, 0x10000, 0, 20, 0,
+          (4u << 16) | 71u, 12, 34, 0, (4u << 16) | 71u, 12, 33, 288,
+          (9u << 16) | 25u, 10, 9, 5, 2, 0, 0, 1, 0,
+          (4u << 16) | 32u, 11, 0, 10, (4u << 16) | 59u, 11, 12, 0};
+      VkDescriptorSetLayoutBinding b[2];
+      uint32_t n = (uint32_t)(sizeof(spv) / sizeof(spv[0]));
+      assert(Bc250ReflectSpirvBindings(spv, n, VK_SHADER_STAGE_FRAGMENT_BIT, b, 2) == 1u);
+      assert(b[0].binding == 288 && b[0].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER);
+      spv[20] = 2; /* Sampled=2: storage texel buffer, fora do escopo */
+      assert(Bc250ReflectSpirvBindings(spv, n, VK_SHADER_STAGE_FRAGMENT_BIT, b, 2) == UINT32_MAX); }
     /* Malformed reflection is an error, never an empty descriptor layout. */
     { uint32_t invalid[] = {0x07230203, 0x10000, 0, 4, 0, 0};
       VkDescriptorSetLayoutBinding b[1];

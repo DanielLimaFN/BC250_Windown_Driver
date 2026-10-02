@@ -94,7 +94,11 @@ if ($Start) {
     $session = "BC250HangGraphics$id"
     $providers = Join-Path $dir 'providers.txt'
     @(
-        'Microsoft-Windows-DxgKrnl 0x0000000001708081 5',
+        # DX.88: +Resource (0x40) e +DriverEvents (0x400). O Explorer pede uma
+        # textura compartilhada 1024x832 e o runtime recusa com E_INVALIDARG
+        # DEPOIS de o KMD aceitar (KmdStatus=0), 461 vezes na Corrida 136; sem
+        # estes eventos o ETW nao mostra em que etapa o dxgkrnl recusa.
+        'Microsoft-Windows-DxgKrnl 0x00000000017084C1 5',
         'Microsoft-Windows-Dwm-Core 0x0000000000100021 5',
         'Microsoft-Windows-Kernel-Process 0x0000000000000070 4'
     ) | Set-Content -LiteralPath $providers -Encoding Ascii

@@ -6,6 +6,10 @@
 
 /* Minimal provider ABI mirrored from the public Wine vkd3d_shader.h API. */
 #define BC250_VKD3D_STRUCTURE_TYPE_COMPILE_INFO 0
+/* enum vkd3d_shader_log_level: NONE, ERROR, WARNING, INFO (include/vkd3d_shader.h,
+ * espelho ValveSoftware/vkd3d). */
+#define BC250_VKD3D_LOG_WARNING 2
+typedef void (__cdecl *BC250_PFN_VKD3D_FREE_MESSAGES)(char *);
 #define BC250_VKD3D_SOURCE_DXBC_TPF 1
 #define BC250_VKD3D_TARGET_SPIRV_BINARY 1
 

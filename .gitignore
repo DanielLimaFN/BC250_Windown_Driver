@@ -40,3 +40,6 @@ driver/wdk/output_lab/
 
 *.dmp
 referencias/
+
+# Ferramenta de VRAM pela CMOS (doc 550)
+tools/vram-cmos/out/

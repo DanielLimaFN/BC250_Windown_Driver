@@ -80,6 +80,41 @@ VOID (*__imp_KeInitializeDpc)(PKDPC, PKDEFERRED_ROUTINE, PVOID) = Bc250TestIniti
 BOOLEAN (*__imp_KeSetTimerEx)(PKTIMER, LARGE_INTEGER, LONG, PKDPC) = Bc250TestSetTimerEx;
 BOOLEAN (*__imp_KeCancelTimer)(PKTIMER) = Bc250TestCancelTimer;
 
+/* FPS.3b: timer de alta resolucao. NULL -> o miniport usa o KTIMER. */
+static PEX_TIMER Bc250TestExAllocateTimer(PEXT_CALLBACK Callback, PVOID Context, ULONG Attributes)
+{
+    UNREFERENCED_PARAMETER(Callback);
+    UNREFERENCED_PARAMETER(Context);
+    UNREFERENCED_PARAMETER(Attributes);
+    return NULL;
+}
+static BOOLEAN Bc250TestExSetTimer(PEX_TIMER Timer, LONGLONG DueTime, LONGLONG Period, PEXT_SET_PARAMETERS Parameters)
+{
+    UNREFERENCED_PARAMETER(Timer);
+    UNREFERENCED_PARAMETER(DueTime);
+    UNREFERENCED_PARAMETER(Period);
+    UNREFERENCED_PARAMETER(Parameters);
+    return FALSE;
+}
+static BOOLEAN Bc250TestExCancelTimer(PEX_TIMER Timer, PEXT_CANCEL_PARAMETERS Parameters)
+{
+    UNREFERENCED_PARAMETER(Timer);
+    UNREFERENCED_PARAMETER(Parameters);
+    return FALSE;
+}
+static BOOLEAN Bc250TestExDeleteTimer(PEX_TIMER Timer, BOOLEAN Cancel, BOOLEAN Wait, PEXT_DELETE_PARAMETERS Parameters)
+{
+    UNREFERENCED_PARAMETER(Timer);
+    UNREFERENCED_PARAMETER(Cancel);
+    UNREFERENCED_PARAMETER(Wait);
+    UNREFERENCED_PARAMETER(Parameters);
+    return TRUE;
+}
+PEX_TIMER (*__imp_ExAllocateTimer)(PEXT_CALLBACK, PVOID, ULONG) = Bc250TestExAllocateTimer;
+BOOLEAN (*__imp_ExSetTimer)(PEX_TIMER, LONGLONG, LONGLONG, PEXT_SET_PARAMETERS) = Bc250TestExSetTimer;
+BOOLEAN (*__imp_ExCancelTimer)(PEX_TIMER, PEXT_CANCEL_PARAMETERS) = Bc250TestExCancelTimer;
+BOOLEAN (*__imp_ExDeleteTimer)(PEX_TIMER, BOOLEAN, BOOLEAN, PEXT_DELETE_PARAMETERS) = Bc250TestExDeleteTimer;
+
 /* Estruturas de teste alocadas estaticamente para não exceder a pilha nem invocar __chkstk */
 static BC250_MCDM_OBJECT_REGISTRY g_objects;
 static BC250_GPUVA_SPACE g_gpuvaSpace;

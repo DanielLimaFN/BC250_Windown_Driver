@@ -15,7 +15,8 @@
  * chamadas do VidMm. Se o estado final exceder 1024, a transacao inteira e'
  * abortada; nenhum prefixo pode ficar pronto para publicacao.
  *
- * DX.85: de volta a 1024 junto com BC250_GPUVA_SPACE_MAX_RANGES; ver o bloco
+ * DX.85: de volta a 1024 junto com BC250_GPUVA_SPACE_MAX_RANGES. DX.94 subiu
+ * so' o espaco para 4096; este teto limita o lote do commit e fica. Ver o bloco
  * DX.85 em bc250_gpuva_space_contract.h.
  */
 #define BC250_GPUVA_JOURNAL_MAX_CHANGES 1024u
