@@ -58,6 +58,17 @@ static int Bc250RunMcdmObjectContractTest(void)
         (void *)0xA111, 0xA110u, 65536u, 4096u, &openA) ==
         BC250_MCDM_OBJECT_DUPLICATE_OWNER);
     CHECK(openA == NULL);
+    /* P6 (doc 618): flags da ABI no registro; novo registro nasce com 0. */
+    CHECK(Bc250McdmObjectLookup(&g_registry, allocationA,
+        BC250_MCDM_OBJECT_ALLOCATION, NULL, &record) == BC250_MCDM_OBJECT_OK);
+    CHECK(record.AllocationAbiFlags == 0u);
+    CHECK(Bc250McdmObjectSetAllocationAbiFlags(&g_registry, allocationA,
+        0x30u) == BC250_MCDM_OBJECT_OK);
+    CHECK(Bc250McdmObjectLookup(&g_registry, allocationA,
+        BC250_MCDM_OBJECT_ALLOCATION, NULL, &record) == BC250_MCDM_OBJECT_OK);
+    CHECK(record.AllocationAbiFlags == 0x30u);
+    CHECK(Bc250McdmObjectSetAllocationAbiFlags(&g_registry, contextA,
+        0x20u) != BC250_MCDM_OBJECT_OK);
 
     CHECK(Bc250McdmObjectLookup(&g_registry, contextA,
         BC250_MCDM_OBJECT_CONTEXT, processA, &record) == BC250_MCDM_OBJECT_OK);

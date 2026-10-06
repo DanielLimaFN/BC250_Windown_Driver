@@ -10,6 +10,8 @@
 #define BC250_PSP_LOAD_FW_FRAME_DWORDS    16u
 #define BC250_PSP_LOAD_FW_COMMAND_ID      6u
 #define BC250_PSP_LOAD_FW_SDMA0_TYPE      9u
+/* P4.1 (doc 620): GFX_FW_TYPE_SDMA1 = 10 (psp_gfx_if.h v6.6, P1). */
+#define BC250_PSP_LOAD_FW_SDMA1_TYPE      10u
 #define BC250_PSP_LOAD_FW_RLC_TYPE        8u
 #define BC250_PSP_LOAD_FW_CP_ME_TYPE      1u
 #define BC250_PSP_LOAD_FW_CP_PFP_TYPE     2u
@@ -17,6 +19,8 @@
 #define BC250_PSP_LOAD_FW_CP_MEC_TYPE     4u
 #define BC250_PSP_LOAD_FW_CP_MEC_JT1_TYPE 5u
 #define BC250_SDMA0_UCODE_CHECKSUM        0x00004A24u
+/* mmSDMA1_UCODE_CHECKSUM 0x0629, BASE_IDX 0 -> (0x1260 + 0x629) * 4. */
+#define BC250_SDMA1_UCODE_CHECKSUM        0x00006224u
 
 typedef void (*BC250_PSP_LOAD_FW_BARRIER)(void *Context);
 

@@ -408,6 +408,271 @@ static int Bc250RunSdmaPacketBuilderTest(void)
         w[15 + 5] = 0x290020u;
         CHECK(Bc250PagingDecodeProof(w, 24u, 0x3ac510080ull, &proof));
     }
+
+    /*
+     * 4c (doc 567): invalidacao de TLB pelo SDMA. Gabarito montado A MAO a
+     * partir das macros do Linux (navi10_sdma_pkt_open.h, sdma_v5_0.c),
+     * NAO a partir do nosso encoder -- o teste tem de reprovar se o encoder
+     * divergir do upstream em um bit.
+     *   SRBM_WRITE header = OP(14) | BYTE_EN(0xF)<<28            = 0xF000000E
+     *   REG_WAIT header   = OP(8) | FUNC(3)<<28 | MEM_POLL(0)<<31 = 0x30000008
+     *   REG_WAIT dw5      = RETRY_COUNT(0xFFF)<<16 | INTERVAL(10) = 0x0FFF000A
+     *   ENG1 REQ = 0x1260+0x1643+1 = 0x28A4 dw (0xA290 bytes)
+     *   ENG1 ACK = 0x1260+0x1655+1 = 0x28B6 dw (0xA2D8 bytes)
+     *   REQ(VMID8, flush 0) = 1<<8 | 0xF80000 = 0x00F80100
+     */
+    {
+        static const uint32_t golden[15] = {
+            0xF000000Eu, 0x000028A4u, 0x00F80100u,
+            0x30000008u, 0x0000A290u, 0x00000000u, 0x00000000u, 0x00000000u, 0x0FFF000Au,
+            0x30000008u, 0x0000A2D8u, 0x00000000u, 0x00000100u, 0x00000100u, 0x0FFF000Au
+        };
+        cursor = 0u;
+        memset(g_ring, 0, sizeof(g_ring));
+        CHECK(Bc250SdmaEmitVmInvalidate(g_ring, TEST_RING_DWORDS, &cursor,
+            BC250_SDMA_INVALIDATE_ENGINE, 8u, 0u) == BC250_SDMA_OK);
+        CHECK(cursor == BC250_SDMA_DWORDS_VM_INVALIDATE);
+        CHECK(cursor == 15u);
+        for (i = 0u; i < 15u; ++i) CHECK(g_ring[i] == golden[i]);
+
+        /* o mesmo, isolado: SRBM_WRITE e REG_WAIT */
+        cursor = 0u;
+        CHECK(Bc250SdmaEmitSrbmWrite(g_ring, TEST_RING_DWORDS, &cursor,
+            0x28A4u, 0x12345678u) == BC250_SDMA_OK);
+        CHECK(cursor == BC250_SDMA_DWORDS_SRBM_WRITE);
+        CHECK(g_ring[0] == 0xF000000Eu && g_ring[1] == 0x28A4u && g_ring[2] == 0x12345678u);
+
+        /* recusas: VMID 0 (raiz fisica), engine 17 (CPU), engine fora, endereco >18 bits */
+        cursor = 0u;
+        CHECK(Bc250SdmaEmitVmInvalidate(g_ring, TEST_RING_DWORDS, &cursor, 1u, 0u, 0u) == BC250_SDMA_BAD_ARGUMENT);
+        CHECK(Bc250SdmaEmitVmInvalidate(g_ring, TEST_RING_DWORDS, &cursor, 17u, 8u, 0u) == BC250_SDMA_BAD_ARGUMENT);
+        CHECK(Bc250SdmaEmitVmInvalidate(g_ring, TEST_RING_DWORDS, &cursor, 18u, 8u, 0u) == BC250_SDMA_BAD_ARGUMENT);
+        CHECK(Bc250SdmaEmitVmInvalidate(g_ring, TEST_RING_DWORDS, &cursor, 1u, 16u, 0u) == BC250_SDMA_BAD_ARGUMENT);
+        CHECK(Bc250SdmaEmitSrbmWrite(g_ring, TEST_RING_DWORDS, &cursor, 0x40000u, 0u) == BC250_SDMA_OUT_OF_BOUNDS);
+        CHECK(cursor == 0u);
+
+        /* o pedido e' o mesmo do flush por MMIO (bc250_paging_contract.c) */
+        CHECK(Bc250GcvmInvalidateRequestValue(9u, 0u) == 0x00F80200u);
+    }
+
+    /*
+     * 4c.4 (doc 575): IB de paginacao dividido no anel no ponto do FlushTlb.
+     * Gabarito A MAO: IB 0x22C000 de 64 dw sob VMID 8, split no dw 32 com
+     * invalidacao da VMID 8. RingPosBase=2 -> o primeiro INDIRECT ja cai em
+     * posicao 2 mod 8 (pre-pad 0); o segundo comeca no dw 26 do buffer
+     * (posicao 28) e precisa de 6 NOPs para voltar a 2 mod 8.
+     *   INDIRECT = 4 | VMID<<16, base lo, base hi, tamanho, csa lo, csa hi
+     *   GCR      = 0x11, 0, 0xC3A10000, 0, 0 (o mesmo do caminho de hoje)
+     */
+    {
+        static const uint32_t inv8[15] = {
+            0xF000000Eu, 0x000028A4u, 0x00F80100u,
+            0x30000008u, 0x0000A290u, 0x00000000u, 0x00000000u, 0x00000000u, 0x0FFF000Au,
+            0x30000008u, 0x0000A2D8u, 0x00000000u, 0x00000100u, 0x00000100u, 0x0FFF000Au
+        };
+        BC250_SDMA_IB_SPLIT splits[3];
+        uint32_t lastEnd = 0u;
+        uint32_t k;
+        static uint32_t big[256];
+
+        memset(splits, 0, sizeof(splits));
+        memset(big, 0xCD, sizeof(big));
+        cursor = 0u;
+        splits[0].OffsetDwords = 32u;
+        splits[0].VmidMask = 1u << 8;
+        CHECK(Bc250SdmaEmitSplitIndirect(big, 256u, &cursor, 2u,
+            0x22C000ull, 64u, 8u, splits, 1u, &lastEnd) == BC250_SDMA_OK);
+        CHECK(cursor == 43u);
+        CHECK(big[0] == 0x00080004u && big[1] == 0x0022C000u && big[2] == 0u &&
+              big[3] == 32u && big[4] == 0u && big[5] == 0u);
+        CHECK(big[6] == 0x11u && big[7] == 0u && big[8] == 0xC3A10000u &&
+              big[9] == 0u && big[10] == 0u);
+        for (k = 0u; k < 15u; ++k) CHECK(big[11u + k] == inv8[k]);
+        for (k = 26u; k < 32u; ++k) CHECK(big[k] == 0u); /* pre-pad NOP */
+        CHECK(big[32] == 0x00080004u && big[33] == 0x0022C080u && big[34] == 0u &&
+              big[35] == 32u && big[36] == 0u && big[37] == 0u);
+        CHECK(big[38] == 0x11u && big[40] == 0xC3A10000u);
+        CHECK(lastEnd == 2u + 38u);
+        CHECK(big[43] == 0xCDCDCDCDu); /* nada alem do declarado */
+        CHECK(cursor <= Bc250SdmaSplitIndirectWorstDwords(splits, 1u));
+
+        /* split no inicio e no fim: [flush][IB inteiro][GCR][flush], sem IB vazio */
+        cursor = 0u;
+        splits[0].OffsetDwords = 0u;  splits[0].VmidMask = 1u << 8;
+        splits[1].OffsetDwords = 64u; splits[1].VmidMask = 1u << 7;
+        CHECK(Bc250SdmaEmitSplitIndirect(big, 256u, &cursor, 2u,
+            0x22C000ull, 64u, 8u, splits, 2u, &lastEnd) == BC250_SDMA_OK);
+        for (k = 0u; k < 15u; ++k) CHECK(big[k] == inv8[k]);
+        CHECK(big[15] == 0u); /* pad: posicao 17 -> 18 (2 mod 8) */
+        CHECK(big[16] == 0x00080004u && big[19] == 64u);
+        CHECK(big[22] == 0x11u);
+        CHECK(big[27] == 0xF000000Eu && big[29] == 0x00F80080u); /* REQ da VMID 7 */
+        CHECK(cursor == 27u + 15u);
+
+        /* offsets iguais se fundem: uma passagem, duas VMIDs, nenhum IB vazio */
+        cursor = 0u;
+        splits[0].OffsetDwords = 32u; splits[0].VmidMask = 1u << 8;
+        splits[1].OffsetDwords = 32u; splits[1].VmidMask = 1u << 7;
+        CHECK(Bc250SdmaEmitSplitIndirect(big, 256u, &cursor, 2u,
+            0x22C000ull, 64u, 8u, splits, 2u, &lastEnd) == BC250_SDMA_OK);
+        CHECK(cursor == 11u + 30u + 7u + 11u); /* pad: posicao 43 -> 50 */
+
+        /* recusas, sem escrever nada */
+        cursor = 0u;
+        splits[0].OffsetDwords = 12u; splits[0].VmidMask = 1u << 8;
+        CHECK(Bc250SdmaEmitSplitIndirect(big, 256u, &cursor, 2u,
+            0x22C000ull, 64u, 8u, splits, 1u, &lastEnd) == BC250_SDMA_MISALIGNED);
+        splits[0].OffsetDwords = 32u; splits[0].VmidMask = 1u; /* VMID 0 */
+        CHECK(Bc250SdmaEmitSplitIndirect(big, 256u, &cursor, 2u,
+            0x22C000ull, 64u, 8u, splits, 1u, &lastEnd) == BC250_SDMA_BAD_ARGUMENT);
+        splits[0].OffsetDwords = 40u; splits[0].VmidMask = 1u << 8;
+        splits[1].OffsetDwords = 32u; splits[1].VmidMask = 1u << 8; /* fora de ordem */
+        CHECK(Bc250SdmaEmitSplitIndirect(big, 256u, &cursor, 2u,
+            0x22C000ull, 64u, 8u, splits, 2u, &lastEnd) == BC250_SDMA_BAD_ARGUMENT);
+        splits[0].OffsetDwords = 72u; /* alem do IB */
+        CHECK(Bc250SdmaEmitSplitIndirect(big, 256u, &cursor, 2u,
+            0x22C000ull, 64u, 8u, splits, 1u, &lastEnd) == BC250_SDMA_BAD_ARGUMENT);
+        splits[0].OffsetDwords = 32u;
+        CHECK(Bc250SdmaEmitSplitIndirect(big, 32u, &cursor, 2u, /* buffer pequeno */
+            0x22C000ull, 64u, 8u, splits, 1u, &lastEnd) == BC250_SDMA_RING_FULL);
+        CHECK(cursor == 0u);
+    }
+
+    /*
+     * Corrida 211 (doc 580): 12 pontos com mascara larga davam UMA entrada de
+     * 1.018 dw (> 960) e o IB era recusado -> tela azul. O planejador corta em
+     * pedacos de no maximo 480 dw que cobrem o IB inteiro, em ordem, sem
+     * faixa vazia, e cada pedaco tem ao menos um ponto.
+     */
+    {
+        static uint32_t g_big1024[1024];
+        BC250_SDMA_IB_SPLIT s12[12];
+        uint32_t lastEnd = 0u;
+        uint32_t k, a = 0u, cs = 0u, chunks = 0u, covered = 0u, pre = 15u;
+        memset(s12, 0, sizeof(s12));
+        for (k = 0u; k < 12u; ++k) {
+            s12[k].OffsetDwords = 8u * (k + 1u);
+            s12[k].VmidMask = (k % 2u) ? 0x07FEu : 0x0100u; /* 10 VMIDs ou so' a 8 */
+        }
+        CHECK(15u + Bc250SdmaSplitIndirectWorstDwords(s12, 12u) + 4u > 960u);
+        while (a < 12u) {
+            uint32_t b = Bc250SdmaSplitNextChunk(s12, 12u, a, cs, pre, 480u);
+            uint32_t ce = (b >= 12u) ? 128u : s12[b - 1u].OffsetDwords;
+            BC250_SDMA_IB_SPLIT local[12];
+            memset(local, 0, sizeof(local));
+            for (k = 0u; k < b - a; ++k) {
+                local[k].OffsetDwords = s12[a + k].OffsetDwords - cs;
+                local[k].VmidMask = s12[a + k].VmidMask;
+            }
+            CHECK(b > a);                                   /* progresso */
+            CHECK(ce > cs);                                 /* nunca faixa vazia */
+            CHECK(pre + Bc250SdmaSplitIndirectWorstDwords(local, b - a) + 4u <= 480u);
+            cursor = 0u;
+            CHECK(Bc250SdmaEmitSplitIndirect(g_big1024, 1024u, &cursor, 2u,
+                0x22C000ull + (uint64_t)cs * 4u, ce - cs, 8u, local, b - a,
+                &lastEnd) == BC250_SDMA_OK);
+            covered += ce - cs;
+            cs = ce; a = b; pre = 0u; ++chunks;
+        }
+        CHECK(chunks >= 3u && covered == 128u);
+        /* ponto unico com 15 VMIDs ainda cabe num pedaco */
+        s12[0].OffsetDwords = 8u; s12[0].VmidMask = 0xFFFEu;
+        CHECK(Bc250SdmaSplitNextChunk(s12, 1u, 0u, 0u, 225u, 480u) == 1u);
+    }
+
+    /*
+     * P4.2 (doc 622): faixa [16,32) do IB roda no SDMA1. O SDMA0 roda ate o
+     * inicio da faixa, escreve Go = token (FENCE, MTYPE_UC), espera Done ==
+     * token (POLL_REGMEM de memoria, FUNC 3, RETRY 0xFFF, INTERVAL 4, como
+     * sdma_v5_0_ring_emit_pipeline_sync) e retoma DEPOIS da faixa. O SDMA1
+     * espera Go, roda so' a faixa e escreve Done. A faixa nunca roda nos dois.
+     */
+    {
+        static uint32_t s0[256];
+        static uint32_t s1[256];
+        BC250_SDMA_IB_SPLIT sp[3];
+        BC250_SDMA_CROSS_ENGINE cross;
+        uint32_t lastEnd = 0u, k, fenceAt = 0xFFFFFFFFu, pollAt = 0xFFFFFFFFu, ibs = 0u;
+        memset(sp, 0, sizeof(sp));
+        memset(s0, 0xCD, sizeof(s0));
+        memset(s1, 0xCD, sizeof(s1));
+        cross.GoAddress = 0xE1080ull;
+        cross.DoneAddress = 0xE1088ull;
+        sp[0].OffsetDwords = 16u; sp[0].Sdma1EndDwords = 32u; sp[0].Sdma1Token = 5u;
+        cursor = 0u;
+        CHECK(Bc250SdmaEmitSplitIndirectCross(s0, 256u, &cursor, 2u,
+            0x22C000ull, 64u, 8u, sp, 1u, &cross, &lastEnd) == BC250_SDMA_OK);
+        CHECK(cursor <= Bc250SdmaSplitIndirectWorstDwords(sp, 1u));
+        for (k = 0u; k < cursor; ++k) {
+            if (s0[k] == 0x00080004u) {           /* INDIRECT VMID 8 */
+                ++ibs;
+                if (ibs == 1u) CHECK(s0[k + 1u] == 0x0022C000u && s0[k + 3u] == 16u);
+                if (ibs == 2u) {
+                    CHECK(s0[k + 1u] == 0x0022C000u + 32u * 4u && s0[k + 3u] == 32u);
+                    CHECK(fenceAt < k && pollAt < k); /* retoma so' depois da espera */
+                }
+            }
+            if (s0[k] == 0x00030005u && s0[k + 1u] == 0xE1080u && fenceAt == 0xFFFFFFFFu) {
+                fenceAt = k;
+                CHECK(s0[k + 2u] == 0u && s0[k + 3u] == 5u);
+            }
+            if (s0[k] == 0xB0000008u && pollAt == 0xFFFFFFFFu) {
+                pollAt = k;
+                CHECK(s0[k + 1u] == 0xE1088u && s0[k + 2u] == 0u && s0[k + 3u] == 5u &&
+                      s0[k + 4u] == 0xFFFFFFFFu && s0[k + 5u] == 0x0FFF0004u);
+            }
+        }
+        CHECK(ibs == 2u && fenceAt != 0xFFFFFFFFu && pollAt == fenceAt + 4u);
+        /* O SDMA0 nunca executa [16,32): nenhum INDIRECT cobre a faixa. */
+        /* Lado do SDMA1. */
+        cursor = 0u;
+        CHECK(Bc250SdmaEmitSdma1RangeJob(s1, 256u, &cursor, 0u, &cross, 5u,
+            0x22C000ull, 16u, 32u, 8u) == BC250_SDMA_OK);
+        CHECK(cursor <= BC250_SDMA_DWORDS_SDMA1_RANGE_JOB_WORST);
+        CHECK(s1[0] == 0xB0000008u && s1[1] == 0xE1080u && s1[3] == 5u && s1[5] == 0x0FFF0004u);
+        for (k = 6u; k < cursor && s1[k] != 0x00080004u; ++k) CHECK(s1[k] == 0u); /* pre-pad */
+        CHECK(s1[k] == 0x00080004u && s1[k + 1u] == 0x0022C000u + 16u * 4u && s1[k + 3u] == 16u);
+        CHECK(s1[cursor - 4u] == 0x00030005u && s1[cursor - 3u] == 0xE1088u && s1[cursor - 1u] == 5u);
+        /* Recusas, sem escrever nada. */
+        cursor = 0u;
+        CHECK(Bc250SdmaEmitSplitIndirectCross(s0, 256u, &cursor, 2u,
+            0x22C000ull, 64u, 8u, sp, 1u, NULL, &lastEnd) == BC250_SDMA_BAD_ARGUMENT);
+        CHECK(Bc250SdmaEmitSplitIndirect(s0, 256u, &cursor, 2u,
+            0x22C000ull, 64u, 8u, sp, 1u, &lastEnd) == BC250_SDMA_BAD_ARGUMENT);
+        sp[0].VmidMask = 1u << 8; /* faixa nao invalida */
+        CHECK(Bc250SdmaEmitSplitIndirectCross(s0, 256u, &cursor, 2u,
+            0x22C000ull, 64u, 8u, sp, 1u, &cross, &lastEnd) == BC250_SDMA_BAD_ARGUMENT);
+        sp[0].VmidMask = 0u; sp[0].Sdma1Token = 0u;
+        CHECK(Bc250SdmaEmitSplitIndirectCross(s0, 256u, &cursor, 2u,
+            0x22C000ull, 64u, 8u, sp, 1u, &cross, &lastEnd) == BC250_SDMA_BAD_ARGUMENT);
+        sp[0].Sdma1Token = 5u; sp[0].Sdma1EndDwords = 16u; /* vazia */
+        CHECK(Bc250SdmaEmitSplitIndirectCross(s0, 256u, &cursor, 2u,
+            0x22C000ull, 64u, 8u, sp, 1u, &cross, &lastEnd) == BC250_SDMA_BAD_ARGUMENT);
+        sp[0].Sdma1EndDwords = 72u; /* alem do IB */
+        CHECK(Bc250SdmaEmitSplitIndirectCross(s0, 256u, &cursor, 2u,
+            0x22C000ull, 64u, 8u, sp, 1u, &cross, &lastEnd) == BC250_SDMA_BAD_ARGUMENT);
+        /* ponto de invalidacao DENTRO da faixa: recusa (a ordem quebraria). */
+        sp[0].Sdma1EndDwords = 32u;
+        sp[1].OffsetDwords = 24u; sp[1].VmidMask = 1u << 8;
+        CHECK(Bc250SdmaEmitSplitIndirectCross(s0, 256u, &cursor, 2u,
+            0x22C000ull, 64u, 8u, sp, 2u, &cross, &lastEnd) == BC250_SDMA_BAD_ARGUMENT);
+        CHECK(cursor == 0u);
+        /* invalidacao no FIM da faixa: aceita, e depois da espera do SDMA1. */
+        sp[1].OffsetDwords = 32u;
+        CHECK(Bc250SdmaEmitSplitIndirectCross(s0, 256u, &cursor, 2u,
+            0x22C000ull, 64u, 8u, sp, 2u, &cross, &lastEnd) == BC250_SDMA_OK);
+        CHECK(Bc250SdmaSplitEndDwords(&sp[0]) == 32u && Bc250SdmaSplitEndDwords(&sp[1]) == 32u);
+        /* o pior caso conta a troca */
+        CHECK(Bc250SdmaSplitIndirectWorstDwords(sp, 1u) ==
+              Bc250SdmaSplitIndirectWorstDwords(NULL, 1u) + BC250_SDMA_DWORDS_CROSS_HANDOFF);
+        /* lado do SDMA1 recusa token 0 e faixa vazia */
+        cursor = 0u;
+        CHECK(Bc250SdmaEmitSdma1RangeJob(s1, 256u, &cursor, 0u, &cross, 0u,
+            0x22C000ull, 16u, 32u, 8u) == BC250_SDMA_BAD_ARGUMENT);
+        CHECK(Bc250SdmaEmitSdma1RangeJob(s1, 256u, &cursor, 0u, &cross, 5u,
+            0x22C000ull, 16u, 16u, 8u) == BC250_SDMA_BAD_ARGUMENT);
+        CHECK(cursor == 0u);
+    }
     return 1;
 }
 

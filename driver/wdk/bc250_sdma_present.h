@@ -126,6 +126,39 @@ static inline uint32_t Bc250SdmaAsyncSlotFenceOffset(uint32_t SlotIndex)
 #define BC250_SDMA0_REG_RPTR_ADDR_LO      0x04BA4u
 #define BC250_SDMA0_REG_IB_CNTL           0x04BA8u
 #define BC250_SDMA0_REG_DOORBELL          0x04BC8u
+/*
+ * P2 (doc 598): WPTR do SDMA0 por doorbell, como o amdgpu. Proveniencia (P1):
+ * - SDMA0_GFX_DOORBELL_OFFSET: mmSDMA0_GFX_DOORBELL_OFFSET 0x00AB idx0
+ *   (gc_10_1_0_offset.h), base GC idx0 0x1260 -> (0x1260+0xAB)*4 = 0x4C2C;
+ *   campo OFFSET mascara 0x0FFFFFFC, shift 2 (gc_10_1_0_sh_mask.h).
+ * - BIF_SDMA0_DOORBELL_RANGE: mmBIF_SDMA0_DOORBELL_RANGE 0x01D0 idx2
+ *   (nbio_2_3_offset.h), NBIO_BASE seg2 0x0D20 (navi10_ip_offset.h) ->
+ *   (0xD20+0x1D0)*4 = 0x3BC0; OFFSET 0x00000FFC shift 2, SIZE 0x001F0000
+ *   shift 16 (nbio_2_3_sh_mask.h). A mesma base idx2 da' 0x378C e 0x385C,
+ *   que ja' usamos e provamos no silicio.
+ * - Indice: AMDGPU_NAVI10_DOORBELL_sDMA_ENGINE0 = 0x100 (amdgpu_doorbell.h),
+ *   ring->doorbell_index = 0x100 << 1 = 0x200 (sdma_v5_0_sw_init);
+ *   sdma_doorbell_range = 20 (nv.c). WDOORBELL64(0x200) escreve no byte 0x800.
+ */
+#define BC250_SDMA0_REG_DOORBELL_OFFSET   0x04C2Cu
+/*
+ * P2c (doc 600): abertura de doorbell do BIF. nv_common_hw_init liga
+ * RCC_DEV0_EPF0_RCC_DOORBELL_APER_EN.BIF_DOORBELL_APER_EN antes de qualquer
+ * motor (nbio_v2_3_enable_doorbell_aperture) e nv_common_hw_fini desliga.
+ * mmRCC_DEV0_EPF0_RCC_DOORBELL_APER_EN 0x00C0 idx2 (nbio_2_3_offset.h) ->
+ * (0xD20+0xC0)*4 = 0x3780; campo bit 0, mascara 0x1 (nbio_2_3_sh_mask.h).
+ * Corridas 221/222: sem ela nenhuma doorbell chegou (nem a do MEC: HitObserved=0).
+ */
+#define BC250_NBIO_REG_RCC_DOORBELL_APER_EN 0x03780u
+#define BC250_NBIO_DOORBELL_APER_EN_MASK  0x00000001u
+#define BC250_NBIO_REG_BIF_SDMA0_DOORBELL_RANGE 0x03BC0u
+#define BC250_SDMA0_DOORBELL_OFFSET_MASK  0x0FFFFFFCu
+#define BC250_BIF_DOORBELL_RANGE_OFFSET_MASK 0x00000FFCu
+#define BC250_BIF_DOORBELL_RANGE_SIZE_MASK   0x001F0000u
+#define BC250_P2_SDMA0_DOORBELL_INDEX     0x200u
+#define BC250_P2_SDMA0_DOORBELL_RANGE_SIZE 20u
+#define BC250_P2_SDMA0_DOORBELL_BYTE_OFFSET (BC250_P2_SDMA0_DOORBELL_INDEX * 4u)
+#define BC250_P2_DOORBELL_MAP_BYTES       0x1000u
 #define BC250_SDMA0_REG_WPTR_POLL_ADDR_HI 0x04C48u
 #define BC250_SDMA0_REG_WPTR_POLL_ADDR_LO 0x04C4Cu
 #define BC250_SDMA0_REG_MINOR_PTR         0x04C54u
@@ -183,6 +216,9 @@ typedef struct BC250_SDMA_IN_FLIGHT_SUBMISSION {
     uint32_t ExpectedEffectPattern;
     BC250_DATA_PROOF_PLAN DataPlan;
     LARGE_INTEGER SubmitTime;
+    /* 4c.2: VMIDs invalidados pelo SDMA no anel ANTES deste INDIRECT (0 = nenhum). */
+    uint32_t TlbFlushVmidMask;
+    uint32_t TlbFlushDwords;
 } BC250_SDMA_IN_FLIGHT_SUBMISSION;
 
 typedef struct BC250_SDMA_RETIREMENT_RESULT {
@@ -339,9 +375,185 @@ typedef struct BC250_SDMA_PRESENT_CONTEXT {
     uint32_t InFlightHead;
     uint32_t InFlightTail;
     uint32_t InFlightCount;
+
+    /*
+     * D2 (doc 583): anel e Work do SDMA0 em memoria de sistema, ligados a GPU
+     * pela abertura AGP. O init continua subindo na VRAM (a MMU global ainda
+     * esta no estado do POST); depois da MMU, Bc250SdmaPresentRelocateRing-
+     * ToSystemMemory troca Ring/Work e os enderecos de GPU e reconstroi o anel
+     * pelo mesmo caminho provado do restart do TDR. Os ponteiros da VRAM
+     * ficam guardados para o rollback e para o teardown.
+     */
+    BOOLEAN RingInSystemMemory;
+    PVOID SystemRingWork;
+    PHYSICAL_ADDRESS SystemRingWorkPhysical;
+    volatile uint32_t *VramRing;
+    uint64_t VramRingGpuAddress;
+    volatile uint32_t *VramWork;
+    uint64_t VramWorkGpuAddress;
+    /* D2 por GART: quem desliga a GART no rollback e no teardown. */
+    VOID (*SystemRingHook)(PVOID Context, uint32_t Reason);
+    PVOID SystemRingHookContext;
+    /*
+     * P2 (doc 598): WPTR por doorbell. DoorbellActive so' vai a TRUE depois de
+     * um NOP com fence sobre poison entregue SO' pela doorbell (poll da shadow
+     * desligado na prova). O restart do TDR derruba a doorbell e a rearma.
+     */
+    volatile UCHAR *DoorbellVirtual;
+    BOOLEAN DoorbellRequested;
+    BOOLEAN DoorbellActive;
+    BOOLEAN DoorbellBeforeCaptured;
+    uint32_t DoorbellRegBefore;
+    uint32_t DoorbellOffsetRegBefore;
+    uint32_t BifRangeBefore;
+    uint32_t DoorbellAperBefore;
+    volatile LONG64 DoorbellKicks;
+    /*
+     * P3.1 (doc 609): anel 0 do IH na GART da VMID 0 e TRAP do SDMA0, como o
+     * amdgpu numa APU (navi10_ih_sw_init: AMD_IS_APU -> use_bus_addr=false,
+     * MC_SPACE=4). A conclusao continua por polling nesta etapa; o IH so'
+     * prova que a interrupcao nasce no hardware e chega ao ISR.
+     */
+    volatile uint32_t *IhRing;
+    uint64_t IhRingGpuVa;
+    ULONG IhRingBytes;
+    volatile uint32_t *IhWptrCpu;
+    uint64_t IhWptrGpuVa;
+    uint32_t IhRptr;
+    BOOLEAN IhArmed;
+    BOOLEAN IhMsi;
+    BOOLEAN TrapArmed;
+    BOOLEAN IhBeforeCaptured;
+    uint32_t IhRbCntlBefore;
+    uint32_t IhIntCntlBefore;
+    uint32_t IhIntCntl2Before;
+    volatile LONG64 IhIsrCalls;
+    volatile LONG64 IhIsrClaimed;
+    volatile LONG64 IhEntries;
+    volatile LONG64 IhSdmaTraps;
+    volatile LONG64 IhCpEops;
+    volatile LONG64 IhOther;
+    volatile LONG64 IhOverflows;
+    volatile LONG IhLastClientSrc;
+    volatile LONG64 TrapsEmitted;
+    /* P3.2 (doc 616): DPCs de aposentadoria enfileirados pelo ISR. */
+    volatile LONG64 IhDpcKicks;
+    /*
+     * EOP do CP (doc 618): vetores CP_EOP do anel grafico (me 0, pipe 0),
+     * DPCs de aposentadoria do GFX enfileirados pelo ISR, e RELEASE_MEM do
+     * anel grafico emitidos com INT_SEL=2.
+     */
+    volatile LONG64 IhGfxEops;
+    volatile LONG64 IhGfxDpcKicks;
+    volatile LONG64 CpEopIntsEmitted;
+    /*
+     * P4.2 (doc 622): SDMA1 anexado ao envio do Node 0. Protegido pelo
+     * RingLock. Go/Done ficam na pagina Work do SDMA1 (VMID 0).
+     */
+    BOOLEAN Sdma1Attached;
+    volatile uint32_t *Sdma1Ring;
+    volatile uint32_t *Sdma1Work;
+    uint64_t Sdma1RingGpu;
+    uint64_t Sdma1WorkGpu;
+    uint32_t Sdma1CursorDwords;
+    uint32_t Sdma1NextToken;
+    volatile LONG64 Sdma1RangesRouted;
+    volatile LONG64 Sdma1RangesInline;
+    volatile LONG64 Sdma1RangesNoSpace;
 } BC250_SDMA_PRESENT_CONTEXT;
 
 extern BC250_SDMA_PRESENT_CONTEXT g_Bc250SdmaPresent;
+
+/*
+ * P3.1 (doc 609) -- registradores do IH e do NBIO, P1:
+ *  OSSSYS_BASE seg0 = 0x10A0 (cyan_skillfish_ip_offset.h), osssys_5_0_0_offset.h:
+ *    IH_RB_CNTL 0x80, IH_RB_BASE 0x81, IH_RB_BASE_HI 0x82, IH_RB_RPTR 0x83,
+ *    IH_RB_WPTR 0x84, IH_RB_WPTR_ADDR_HI 0x85, IH_RB_WPTR_ADDR_LO 0x86,
+ *    IH_DOORBELL_RPTR 0x87 (todos BASE_IDX 0) -> bytes = (0x10A0 + reg) * 4.
+ *  NBIO_BASE seg2 = 0xD20, nbio_2_3_offset.h: INTERRUPT_CNTL 0xF1,
+ *    INTERRUPT_CNTL2 0xF2 (BASE_IDX 2) -> bytes = (0xD20 + reg) * 4.
+ * Campos (osssys_5_0_0_sh_mask.h, nbio_2_3_sh_mask.h, gc_10_1_0_sh_mask.h).
+ */
+#define BC250_IH_REG_RB_CNTL            0x04480u
+#define BC250_IH_REG_RB_BASE            0x04484u
+#define BC250_IH_REG_RB_BASE_HI         0x04488u
+#define BC250_IH_REG_RB_RPTR            0x0448Cu
+#define BC250_IH_REG_RB_WPTR            0x04490u
+#define BC250_IH_REG_RB_WPTR_ADDR_HI    0x04494u
+#define BC250_IH_REG_RB_WPTR_ADDR_LO    0x04498u
+#define BC250_IH_REG_DOORBELL_RPTR      0x0449Cu
+#define BC250_NBIO_REG_INTERRUPT_CNTL   0x03844u
+#define BC250_NBIO_REG_INTERRUPT_CNTL2  0x03848u
+
+#define BC250_IH_RB_CNTL_RB_ENABLE              0x00000001u
+#define BC250_IH_RB_CNTL_RB_SIZE_SHIFT          1u
+#define BC250_IH_RB_CNTL_RB_SIZE_MASK           0x0000003Eu
+#define BC250_IH_RB_CNTL_RB_GPU_TS_ENABLE       0x00000080u
+#define BC250_IH_RB_CNTL_WPTR_WRITEBACK_ENABLE  0x00000100u
+#define BC250_IH_RB_CNTL_WPTR_OVERFLOW_ENABLE   0x00010000u
+#define BC250_IH_RB_CNTL_ENABLE_INTR            0x00020000u
+#define BC250_IH_RB_CNTL_MC_SNOOP               0x00100000u
+#define BC250_IH_RB_CNTL_RPTR_REARM             0x00200000u
+#define BC250_IH_RB_CNTL_MC_RO                  0x00400000u
+#define BC250_IH_RB_CNTL_MC_VMID_MASK           0x0F000000u
+#define BC250_IH_RB_CNTL_MC_SPACE_SHIFT         28u
+#define BC250_IH_RB_CNTL_MC_SPACE_MASK          0x70000000u
+#define BC250_IH_RB_CNTL_WPTR_OVERFLOW_CLEAR    0x80000000u
+#define BC250_IH_RB_WPTR_RB_OVERFLOW            0x00000001u
+#define BC250_INTERRUPT_CNTL_IH_DUMMY_RD_OVERRIDE 0x00000001u
+#define BC250_INTERRUPT_CNTL_IH_REQ_NONSNOOP_EN   0x00000008u
+#define BC250_SDMA0_CNTL_TRAP_ENABLE            0x00000001u
+
+/* soc15_ih_clientid.h e irqsrcs (P1). */
+#define BC250_IH_CLIENT_SDMA0       0x08u
+#define BC250_IH_CLIENT_GRBM_CP     0x14u
+#define BC250_IH_SRC_SDMA_TRAP      0xE0u
+#define BC250_IH_SRC_CP_EOP         0xB5u
+#define BC250_IH_ENTRY_BYTES        32u
+
+/*
+ * Arma o anel 0 do IH (sequencia de navi10_ih_irq_init + nbio_v2_3_ih_control)
+ * e o TRAP do SDMA0, e prova: um NOP com TRAP tem de fazer o IH escrever um
+ * vetor (SDMA0, 0xE0) no anel pela GART. Falha fechada: sem vetor, desarma tudo.
+ * O anel e a pagina de writeback ja estao mapeados na GART pelo chamador.
+ */
+BOOLEAN Bc250SdmaPresentIhArm(
+    _In_ volatile uint32_t *RingCpu,
+    _In_ uint64_t RingGpuVa,
+    _In_ ULONG RingBytes,
+    _In_ volatile uint32_t *WptrCpu,
+    _In_ uint64_t WptrGpuVa,
+    _In_ uint64_t DummyPagePa,
+    _In_ BOOLEAN Msi);
+
+/* Desliga o IH e o TRAP e devolve os registradores ao snapshot. */
+VOID Bc250SdmaPresentIhDisarm(_In_z_ const char *Why);
+
+/*
+ * ISR (DIRQL): consome o anel do IH, conta por fonte, atualiza o RPTR.
+ * P3.2: SdmaTrapsThisCall recebe quantos TRAPs do SDMA0 esta chamada consumiu
+ * (0 se nenhum), para o chamador enfileirar o DPC de aposentadoria.
+ * EOP do CP (doc 618): GfxEopsThisCall recebe quantos CP_EOP do anel grafico
+ * (ring_id me 0, pipe 0, como gfx_v10_0_eop_irq) a chamada consumiu.
+ */
+BOOLEAN Bc250SdmaPresentIhIsr(_Out_opt_ ULONG *SdmaTrapsThisCall,
+    _Out_opt_ ULONG *GfxEopsThisCall);
+
+/*
+ * P4.2 (doc 622): anexa o SDMA1 ja provado (Bc250Sdma1BringUp) ao envio do
+ * Node 0: as faixas de PTE do paging buffer passam a rodar nele. Detach
+ * devolve o controle (as faixas voltam a rodar no SDMA0). Halt=TRUE tambem
+ * para o F32 e o anel do SDMA1 (TDR do SDMA0: uma espera do SDMA1 pode ter
+ * ficado sem quem a libere).
+ */
+VOID Bc250SdmaPresentSdma1Attach(
+    _In_ volatile uint32_t *RingCpu, _In_ uint64_t RingGpu,
+    _In_ volatile uint32_t *WorkCpu, _In_ uint64_t WorkGpu,
+    _In_ uint32_t CursorDwords);
+VOID Bc250SdmaPresentSdma1Detach(_In_z_ const char *Why, _In_ BOOLEAN Halt);
+
+/* Relatorio periodico (DISPATCH): contadores e falha fechada se o ISR nao roda. */
+VOID Bc250SdmaPresentIhReport(_In_z_ const char *Why);
 
 /*
  * C3.6: publica a geometria do segmento 1. Escritor unico do par
@@ -374,6 +586,49 @@ BOOLEAN Bc250SdmaPresentBlt(
     _In_ uint64_t DestGpuAddress,
     _In_ ULONG ByteCount);
 
+/*
+ * FB.1 (doc 607): Corrida 227 caiu em 0x119/0x9000 no flip MPO3 depois de um
+ * Bc250SdmaPresentBlt FALSE, e a linha do motivo nao chegou ao disco. Este
+ * registro e' preenchido em TODA saida FALSE do blt, antes do retorno, e fica
+ * na memoria do kernel: o MEMORY.DMP o traz (dt bc250mcdm!g_Bc250SdmaLastBltFailure).
+ */
+#define BC250_SDMA_BLT_FAIL_NOT_READY  1u
+#define BC250_SDMA_BLT_FAIL_BAD_ARGS   2u
+#define BC250_SDMA_BLT_FAIL_EMIT       3u
+#define BC250_SDMA_BLT_FAIL_TIMEOUT    4u
+
+typedef struct _BC250_SDMA_BLT_FAILURE {
+    ULONG Magic;            /* 0x464C5442 'BTLF' quando preenchido */
+    volatile LONG Count;    /* falhas desde o StartDevice */
+    ULONG Reason;           /* BC250_SDMA_BLT_FAIL_* */
+    ULONG Initialized;
+    ULONG HardwareEnabled;
+    ULONG ByteCount;
+    uint64_t Source;
+    uint64_t Dest;
+    ULONG Polls;
+    uint32_t TargetWptr;
+    uint32_t WptrReg;
+    uint32_t RptrReg;
+    uint32_t RptrWb;
+    uint32_t Status;
+    uint32_t Status1;
+    uint32_t ErrLog;
+    uint32_t IbCntl;
+    uint32_t IbRptr;
+    uint32_t CtxStatus;
+    uint32_t FenceExp;
+    uint32_t FenceObs;
+    uint32_t InFlight;
+    ULONG DoorbellActive;
+    ULONG VramViaDram;
+    LONG BltSubmitted;
+    LONG BltCompleted;
+    LONGLONG Qpc;
+} BC250_SDMA_BLT_FAILURE;
+
+extern BC250_SDMA_BLT_FAILURE g_Bc250SdmaLastBltFailure;
+
 /* COPY_LINEAR_SUB_WIND: layout P1, semantica de contagens H, nao validada. */
 BOOLEAN Bc250SdmaPresentBltRect(
     _In_ uint64_t SourceGpuAddress,
@@ -398,6 +653,52 @@ BOOLEAN Bc250SdmaPresentFill(
 
 BOOLEAN Bc250SdmaPresentSyncNop(void);
 
+/*
+ * 4c etapa 1 (doc 567) -- ensaio de pacotes de memoria virtual no boot.
+ *
+ * O SDMA0 executa, em ordem: WRITE_LINEAR de 16 dwords "tipo PTE" numa area
+ * de rascunho do Work, a invalidacao de TLB de UMA VMID pelo SDMA
+ * (SRBM_WRITE do REQ + POLL_REGMEM de um ciclo + POLL_REGMEM do ACK, engine
+ * do SDMA) e a fence. UseIndirect=1 poe o corpo DENTRO de um IB (VMID 0, IB
+ * no Work), que e' onde os pacotes moram em runtime -- o Linux so' emite a
+ * invalidacao no anel, entao SRBM_WRITE dentro de IB e' o que este ensaio
+ * mede. Nao muda NENHUM caminho de runtime. Timeout -> quiesce + restart do
+ * TDR (Lei 5) e Recovered diz se o anel voltou.
+ */
+#define BC250_SDMA_PROBE_SCRATCH_OFFSET 0xA00u
+#define BC250_SDMA_PROBE_IB_OFFSET      0xC00u
+#define BC250_SDMA_PROBE_DATA_DWORDS    16u
+#define BC250_SDMA_PROBE_POISON         0x7A11DEADu
+
+typedef struct _BC250_SDMA_VMFLUSH_PROBE_RESULT {
+    uint32_t UseIndirect;
+    uint32_t Engine;
+    uint32_t Vmid;
+    uint32_t BodyDwords;
+    uint32_t EncodeStatus;
+    uint32_t RbCntl;
+    uint32_t IbCntl;
+    uint32_t TargetWptr;
+    uint32_t RptrRegister;
+    uint32_t RptrWriteback;
+    uint32_t RptrMatched;
+    uint32_t FenceExpected;
+    uint32_t FenceObserved;
+    uint32_t DataMismatches;
+    uint32_t Polls;
+    uint32_t TimedOut;
+    uint32_t StatusReg;
+    uint32_t Status1Reg;
+    uint32_t ErrorLog;
+    uint32_t Recovered;
+} BC250_SDMA_VMFLUSH_PROBE_RESULT;
+
+BOOLEAN Bc250SdmaPresentRunVmFlushProbe(
+    _In_ uint32_t UseIndirect,
+    _In_ uint32_t Engine,
+    _In_ uint32_t Vmid,
+    _Out_ BC250_SDMA_VMFLUSH_PROBE_RESULT *Result);
+
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
 VOID Bc250SdmaPresentFlushHdp(void);
 #else
@@ -414,7 +715,26 @@ BOOLEAN Bc250SdmaPresentSubmitIndirectAsync(
     _In_ uint32_t ExpectedEffectPattern,
     _In_ uint64_t SubmissionFenceId,
     _In_ uint32_t ExecPath,
+    _In_ uint32_t TlbFlushVmidMask,
+    _In_reads_opt_(SplitCount) const BC250_SDMA_IB_SPLIT *Splits,
+    _In_ uint32_t SplitCount,
     _Out_ uint32_t *OutAssignedHardwareFence);
+
+/*
+ * 4c.4 (doc 575): teto de dwords de UMA entrada de IB dividido no anel. A
+ * entrada pode atravessar o fim do anel (como amdgpu_ring_write), entao o
+ * limite e' o anel menos a folga, nao a metade dele.
+ */
+#define BC250_SDMA_SPLIT_ENTRY_MAX_DWORDS 960u
+
+/*
+ * 4c.2 (doc 569): teto de dwords da invalidacao no anel = 15 VMIDs (1..15)
+ * x 15 dwords. Espaco do anel e' conferido contra o RPTR do HARDWARE antes de
+ * escrever, porque estes pacotes sao dez vezes maiores que uma entrada comum
+ * e a fila de 32 slots nao garante mais, sozinha, que o anel nao transborda.
+ */
+#define BC250_SDMA_RING_TLB_FLUSH_MAX_DWORDS (15u * BC250_SDMA_DWORDS_VM_INVALIDATE)
+#define BC250_SDMA_RING_SPACE_MAX_WAIT_POLLS 100000u /* x 10 us = 1 s */
 
 BOOLEAN Bc250SdmaPresentSubmitFillAsync(
     _In_ uint64_t DestGpuAddress,
@@ -488,6 +808,10 @@ typedef struct BC250_SDMA_TDR_SNAPSHOT {
     uint32_t RbCntlBefore;
     uint32_t F32CntlBefore;
     uint32_t HardwareWasEnabled;
+    /* P4.2 (doc 622): SDMA1 desanexado e parado no quiesce, e a troca. */
+    uint32_t Sdma1Detached;
+    uint32_t Sdma1Go;
+    uint32_t Sdma1Done;
 } BC250_SDMA_TDR_SNAPSHOT;
 
 /*
@@ -506,6 +830,23 @@ BOOLEAN Bc250SdmaPresentQuiesceForTdr(_Out_ BC250_SDMA_TDR_SNAPSHOT *Snapshot);
 BOOLEAN Bc250SdmaPresentRestartAfterTdr(void);
 
 /*
+ * Corrida 215: restart do TDR que, com o anel na RAM pela GART, volta para a
+ * VRAM se a prova falhar (gancho desliga a GART antes) e prova de novo, em vez
+ * de devolver falha e deixar o dxgkrnl derrubar a maquina. A RAM fica retida.
+ */
+BOOLEAN Bc250SdmaPresentRestartAfterTdrOrRevert(void);
+
+/*
+ * P2 (doc 598): mapeia uma pagina da BAR de doorbell, arma a doorbell do SDMA0
+ * (SDMA0_GFX_DOORBELL, DOORBELL_OFFSET e BIF_SDMA0_DOORBELL_RANGE) e prova com
+ * NOP + fence. PASSIVE_LEVEL, anel ocioso. Falha = desarma, reconstroi o anel
+ * pelo restart e segue com o WPTR por MMIO (declarado no log).
+ */
+NTSTATUS Bc250SdmaPresentEnableDoorbell(
+    _In_ PHYSICAL_ADDRESS DoorbellBarPhysical,
+    _In_ uint64_t DoorbellBarLength);
+
+/*
  * item 24 (07/09): deteccao propria de travamento por DUAS passagens de
  * RPTR/WPTR, com os ponteiros reduzidos a uma volta do anel. Serve ao
  * DxgkDdiQueryEngineStatus, que antes respondia Responsive=1 sem medir nada.
@@ -521,6 +862,40 @@ BOOLEAN Bc250SdmaPresentProbeResponsive(_Out_ uint32_t *IsResponsive);
  * timeout de 2 s disparar o TDR. Armar e' decisao do dono do projeto.
  */
 BOOLEAN Bc250SdmaPresentInduceHangForTdr(void);
+
+/*
+ * D2 por GART (doc 587). O chamador aloca a RAM (AllocateSystemRingWork),
+ * mapeia as duas paginas na GART da VMID 0 e passa o MC da GART. A relocacao
+ * prova pelo restart do TDR (readback + NOP com fence sobre poison na RAM).
+ * Se falhar: chama Hook(ROLLBACK) para o chamador desligar a GART, volta o
+ * anel para a VRAM e prova de novo. No teardown, Hook(TEARDOWN) roda depois
+ * de a engine soltar a RAM e antes de libera-la.
+ * Posse da memoria: NOT_READY e UNSUCCESSFUL liberam; SUCCESS e
+ * DEVICE_HARDWARE_ERROR ficam com ela (a engine pode apontar para la).
+ *   STATUS_SUCCESS             -> anel na RAM, provado
+ *   STATUS_UNSUCCESSFUL        -> D2 nao ligou, anel de volta na VRAM e provado
+ *   STATUS_DEVICE_NOT_READY    -> preflight recusou, nada mudou
+ *   STATUS_DEVICE_HARDWARE_ERROR -> rollback falhou, SDMA0 indisponivel
+ */
+#define BC250_SDMA_RING_HOOK_ROLLBACK 1u
+#define BC250_SDMA_RING_HOOK_TEARDOWN 2u
+/* Corrida 215: so' fotografa (GART e tabela), sem mudar estado; vale em DISPATCH. */
+#define BC250_SDMA_RING_HOOK_SNAPSHOT 3u
+typedef VOID (*BC250_SDMA_RING_HOOK)(PVOID Context, uint32_t Reason);
+
+NTSTATUS Bc250SdmaPresentAllocateSystemRingWork(
+    _Out_ PVOID *Memory,
+    _Out_ PHYSICAL_ADDRESS *Physical);
+
+/* Libera RAM de AllocateSystemRingWork que nunca chegou a engine. */
+VOID Bc250SdmaPresentFreeSystemRingWork(_In_opt_ PVOID Memory);
+
+NTSTATUS Bc250SdmaPresentRelocateRingToSystemMemory(
+    _In_ PVOID Memory,
+    _In_ PHYSICAL_ADDRESS Physical,
+    _In_ uint64_t RingMc,
+    _In_opt_ BC250_SDMA_RING_HOOK Hook,
+    _In_opt_ PVOID HookContext);
 
 void Bc250SdmaPresentTeardown(void);
 

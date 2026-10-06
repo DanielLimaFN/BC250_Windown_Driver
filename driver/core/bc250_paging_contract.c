@@ -114,6 +114,30 @@ BC250_PAGING_STATUS Bc250PagingBuildGfxhubTlbFlushPlan(
     return Bc250PagingBuildGfxhubTlbFlushPlanForEngine(Params, 17u, Plan);
 }
 
+BC250_PAGING_STATUS Bc250PagingBuildGartTlbFlushPlan(
+    BC250_GFXHUB_TLB_FLUSH_PLAN *Plan)
+{
+    if (Plan == NULL) {
+        return BC250_PAGING_BAD_ARGUMENT;
+    }
+    memset(Plan, 0, sizeof(*Plan));
+    Plan->Vmid = 0u;
+    Plan->EngineId = 17u;
+    Plan->FlushType = 0u;
+    Plan->RequestRegisterOffset = 0xA28Cu + 4u * 17u;
+    Plan->AckRegisterOffset = 0xA2D4u + 4u * 17u;
+    Plan->RangeLowRegisterOffset = 0xA31Cu + 8u * 17u;
+    Plan->RangeHighRegisterOffset = 0xA320u + 8u * 17u;
+    Plan->RequestValue = 1u | 0x00F80000u;
+    Plan->AckMask = 1u;
+    Plan->ExpectedRangeLow = 0xFFFFFFFFu;
+    Plan->ExpectedRangeHigh = 0x0000001Fu;
+    Plan->RequiresDummyRequestRead = 1u;
+    Plan->UsesSemaphore = 0u;
+    Plan->GartVmid0 = 1u;
+    return BC250_PAGING_OK;
+}
+
 /*
  * DX.32 -- plano de invalidacao para QUALQUER engine do GFXHUB.
  *

@@ -124,6 +124,11 @@ typedef struct BC250_MCDM_OBJECT_RECORD {
     uint32_t AllocationHeight;
     uint32_t AllocationPitch;
     uint32_t AllocationFormat;
+    /*
+     * P6 (doc 618): Flags da ABI de alocacao (BC250_ALLOCATION_FLAG_*), gravadas
+     * na criacao. O UpdatePageTable le RADV_GL2_BYPASS daqui para pôr MTYPE_UC.
+     */
+    uint32_t AllocationAbiFlags;
     uint64_t RootPageTableAddress;
     uint32_t RootPageTableSegmentId;
     uint32_t RootPageTableEntries;
@@ -223,6 +228,12 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectFindAllocationByToken(
  * invalido, tipo errado ou geometria nunca declarada devolvem status de erro, e
  * NAO uma geometria zerada que o chamador pudesse confundir com valida.
  */
+/* P6: grava as flags da ABI na alocacao viva. Falha fechado como a geometria. */
+BC250_MCDM_OBJECT_STATUS Bc250McdmObjectSetAllocationAbiFlags(
+    BC250_MCDM_OBJECT_REGISTRY *Registry,
+    BC250_MCDM_HANDLE Allocation,
+    uint32_t AbiFlags);
+
 BC250_MCDM_OBJECT_STATUS Bc250McdmObjectSetAllocationGeometry(
     BC250_MCDM_OBJECT_REGISTRY *Registry,
     BC250_MCDM_HANDLE Allocation,

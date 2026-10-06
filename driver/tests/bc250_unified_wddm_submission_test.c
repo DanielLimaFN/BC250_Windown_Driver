@@ -3,6 +3,24 @@
 #include "../core/bc250_gpuva_space_contract.h"
 #include "../core/bc250_mcdm_object_contract.h"
 
+/* P1b.2: o helper Bc250VramCpuMapMemory referencia o mapeador da DRAM. Nesta
+ * suite a P1b nunca e' armada (traducao identidade), entao o ramo da DRAM nao
+ * roda; o stub falha fechado se um dia rodar. */
+static PVOID Bc250P1bTestMapIoSpaceEx(PHYSICAL_ADDRESS PhysicalAddress, SIZE_T NumberOfBytes, ULONG Protect)
+{
+    UNREFERENCED_PARAMETER(PhysicalAddress);
+    UNREFERENCED_PARAMETER(NumberOfBytes);
+    UNREFERENCED_PARAMETER(Protect);
+    return NULL;
+}
+static VOID Bc250P1bTestUnmapIoSpace(PVOID BaseAddress, SIZE_T NumberOfBytes)
+{
+    UNREFERENCED_PARAMETER(BaseAddress);
+    UNREFERENCED_PARAMETER(NumberOfBytes);
+}
+PVOID (*__imp_MmMapIoSpaceEx)(PHYSICAL_ADDRESS, SIZE_T, ULONG) = Bc250P1bTestMapIoSpaceEx;
+VOID (*__imp_MmUnmapIoSpace)(PVOID, SIZE_T) = Bc250P1bTestUnmapIoSpace;
+
 #ifdef BC250_KERNEL_MODE
 __declspec(dllimport) void __stdcall ExitProcess(unsigned long ExitCode);
 
@@ -28,6 +46,7 @@ void * __cdecl memcpy(void *Destination, const void *Source, size_t Length)
 #define CHECK(Expression) do { if (!(Expression)) return __LINE__; } while (0)
 #else
 #include <stdio.h>
+
 #define CHECK(Expression) do { if (!(Expression)) { printf("FAIL line %d: %s\n", __LINE__, #Expression); return __LINE__; } } while (0)
 #endif
 

@@ -263,12 +263,20 @@ extern volatile LONG g_Bc250PagingActiveCount;
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
 void Bc250DisplayLog(const char *Format, ...);
 void Bc250DisplayLogSamplingSummary(void);
+/*
+ * LOG.1 (doc 585): drena o anel de log em RAM para o arquivo. So' a thread
+ * do rastro duravel chama, em PASSIVE com APCs ligadas, a cada tique.
+ */
+void Bc250DisplayLogDrainFromWorker(void);
 #else
 static __inline void Bc250DisplayLog(const char *Format, ...)
 {
     UNREFERENCED_PARAMETER(Format);
 }
 static __inline void Bc250DisplayLogSamplingSummary(void)
+{
+}
+static __inline void Bc250DisplayLogDrainFromWorker(void)
 {
 }
 #endif

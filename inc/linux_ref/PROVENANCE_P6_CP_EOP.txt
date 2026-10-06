@@ -1,0 +1,27 @@
+P6 e EOP do CP (doc 618) -- fontes do upstream Linux v6.6 (tag v6.6, raw.githubusercontent.com/torvalds/linux/v6.6/<caminho>)
+baixadas em 2026-10-06; SHA-256 como copiado para inc/linux_ref:
+
+940184f8212aa29d75a98e2bfc89443f52e6d01fde79f3138a840f89f18885d5  drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c
+03ac1ee35aaa5696399d36f7f2e6d1efa7d8f0a505ad6c3f370491ffed71046b  drivers/gpu/drm/amd/amdgpu/gmc_v10_0.c (ja presente, P3)
+
+Fatos usados (P1):
+- gmc_v10_0_get_vm_pte: MTYPE da folha vem do mapeamento (default NC); BO com AMDGPU_GEM_CREATE_COHERENT ou
+  UNCACHED forca MTYPE_UC. gmc_v10_0_map_mtype: AMDGPU_VM_MTYPE_UC -> AMDGPU_PTE_MTYPE_NV10(MTYPE_UC) = 3 << 48.
+- RADV Linux (mesa-radv-wddm, src/amd/vulkan/winsys/amdgpu/radv_amdgpu_bo.c, radv_amdgpu_bo_va_op):
+  RADEON_FLAG_GL2_BYPASS -> AMDGPU_VM_MTYPE_UC no mapeamento (gfx_level >= GFX9).
+- gfx_v10_0_ring_emit_fence: RELEASE_MEM DW2 INT_SEL(2) quando AMDGPU_FENCE_FLAG_INT.
+- gfx_v10_0_set_gfx_eop_interrupt_state: me 0 pipe 0 -> mmCP_INT_CNTL_RING0, REG_SET_FIELD TIME_STAMP_INT_ENABLE.
+- gfx_v10_0_eop_irq: me_id = (ring_id & 0x0c) >> 2, pipe_id = ring_id & 0x03; me 0 pipe 0 -> gfx_ring[0] ->
+  amdgpu_fence_process.
+- gc_10_1_0_offset.h: mmCP_INT_CNTL_RING0 0x1e0a BASE_IDX 0; gc_10_1_0_sh_mask.h: TIME_STAMP_INT_ENABLE mask 0x04000000.
+- irqsrcs_gfx_10_1.h: GFX_10_1__SRCID__CP_EOP_INTERRUPT 181 (0xB5); soc15_ih_clientid.h: GRBM_CP 0x14.
+
+P4.1 (doc 620), baixado em 2026-10-06 da mesma tag v6.6:
+e12954cf3e48d5ca0c8c7e65992173b80def621e72451efc4f732b37f5399e00  drivers/gpu/drm/amd/amdgpu/psp_gfx_if.h
+- psp_gfx_if.h: GFX_FW_TYPE_SDMA0 = 9, GFX_FW_TYPE_SDMA1 = 10.
+- sdma_v5_0.c (ja presente): SDMA1_REG_OFFSET 0x600, sdma_v5_0_gfx_resume (laco nas instancias),
+  golden_settings_sdma_cyan_skillfish (SDMA0 e SDMA1).
+- Firmware: cyan_skillfish2_sdma1.bin (33792 bytes, SHA-256 BD1C0B0F...6255, ucode 0x34, feature 50),
+  copiado de bc250-win/AMD-BC-250-Windows-Driver/firmware; a mesma versao (SDMA1 feature 50, 0x34) foi carregada
+  pelo amdgpu na propria placa (coleta Linux de 01/10, amdgpu_firmware_info). Identidade byte a byte com o
+  linux-firmware nao verificada (o .xz da coleta nao foi copiado).

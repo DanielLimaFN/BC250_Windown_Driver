@@ -512,8 +512,16 @@ static int TestAbiRadvDomainAndCommand(void)
         BC250_ALLOCATION_ABI_OK);
     blob.Flags |= BC250_ALLOCATION_FLAG_RADV_DOMAIN_GTT;
     CHECK(Bc250AllocationAbiParse(&blob, sizeof(blob), &parsed) == BC250_ALLOCATION_ABI_BAD_FLAGS);
+    /* P6: GL2_BYPASS vale em token da RADV e e recusada em classe da UMD. */
+    CHECK(Bc250AllocationAbiFormat(radvToken, 4096ull, 4096ull,
+        BC250_ALLOCATION_FLAG_RADV_GL2_BYPASS | BC250_ALLOCATION_FLAG_RADV_COMMAND,
+        NULL, &blob) == BC250_ALLOCATION_ABI_OK);
+    CHECK(Bc250AllocationAbiParse(&blob, sizeof(blob), &parsed) == BC250_ALLOCATION_ABI_OK);
+    CHECK((parsed.Flags & BC250_ALLOCATION_FLAG_RADV_GL2_BYPASS) != 0u);
+    CHECK(Bc250AllocationAbiFormat(resToken, 4096ull, 4096ull,
+        BC250_ALLOCATION_FLAG_RADV_GL2_BYPASS, NULL, &blob) == BC250_ALLOCATION_ABI_BAD_FLAGS);
     /* Bit seguinte continua desconhecido: o contrato nao virou peneira. */
-    CHECK(Bc250AllocationAbiFormat(radvToken, 4096ull, 4096ull, 0x20u, NULL, &blob) ==
+    CHECK(Bc250AllocationAbiFormat(radvToken, 4096ull, 4096ull, 0x40u, NULL, &blob) ==
         BC250_ALLOCATION_ABI_BAD_FLAGS);
 
     memset(&blob, 0, sizeof(blob));

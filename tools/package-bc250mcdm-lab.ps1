@@ -103,6 +103,8 @@ $sourcePdb = Join-Path $root 'driver\wdk\output_lab\bc250mcdm.pdb'
 $sourceInf = Join-Path $root 'driver\wdk\package\bc250mcdm.inf'
 $sourceSdmaFirmware = Join-Path $root 'firmware\cyan_skillfish2_sdma.bin'
 $sourceRlcFirmware = Join-Path $root 'firmware\cyan_skillfish2_rlc.bin'
+# P4.1 (doc 620): firmware da instancia 1 do SDMA, carregado pelo PSP (tipo 10).
+$sourceSdma1Firmware = Join-Path $root 'firmware\cyan_skillfish2_sdma1.bin'
 $sourcePfpFirmware = Join-Path $root 'firmware\cyan_skillfish2_pfp.bin'
 $sourceMeFirmware = Join-Path $root 'firmware\cyan_skillfish2_me.bin'
 $sourceCeFirmware = Join-Path $root 'firmware\cyan_skillfish2_ce.bin'
@@ -134,6 +136,12 @@ if (-not (Test-Path -LiteralPath $sourceUmd -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $sourceInf)) { throw "INF ausente: $sourceInf" }
 if (-not (Test-Path -LiteralPath $sourceSdmaFirmware)) { throw "Firmware SDMA ausente: $sourceSdmaFirmware" }
 if (-not (Test-Path -LiteralPath $sourceRlcFirmware)) { throw "Firmware RLC ausente: $sourceRlcFirmware" }
+if (-not (Test-Path -LiteralPath $sourceSdma1Firmware)) { throw "Firmware SDMA1 ausente: $sourceSdma1Firmware" }
+if ((Get-Item -LiteralPath $sourceSdma1Firmware).Length -ne 33792 -or
+    (Get-FileHash -LiteralPath $sourceSdma1Firmware -Algorithm SHA256).Hash -ne
+        'BD1C0B0F6A6A4F17EDE034F2C844B6553FC444E08915C7BB500C09FDE59D6255') {
+    throw 'Firmware SDMA1 diverge do tamanho/hash aprovado.'
+}
 if (-not (Test-Path -LiteralPath $sourcePfpFirmware)) { throw "Firmware PFP ausente: $sourcePfpFirmware" }
 if (-not (Test-Path -LiteralPath $sourceMeFirmware)) { throw "Firmware ME ausente: $sourceMeFirmware" }
 if (-not (Test-Path -LiteralPath $sourceCeFirmware)) { throw "Firmware CE ausente: $sourceCeFirmware" }
@@ -210,6 +218,7 @@ $packageInf = Join-Path $packageDir 'bc250mcdm.inf'
 $packageCat = Join-Path $packageDir 'bc250mcdm.cat'
 $packageSdmaFirmware = Join-Path $packageDir 'cyan_skillfish2_sdma.bin'
 $packageRlcFirmware = Join-Path $packageDir 'cyan_skillfish2_rlc.bin'
+$packageSdma1Firmware = Join-Path $packageDir 'cyan_skillfish2_sdma1.bin'
 $packagePfpFirmware = Join-Path $packageDir 'cyan_skillfish2_pfp.bin'
 $packageMeFirmware = Join-Path $packageDir 'cyan_skillfish2_me.bin'
 $packageCeFirmware = Join-Path $packageDir 'cyan_skillfish2_ce.bin'
@@ -364,6 +373,7 @@ foreach ($entry in $expectedInfValues.GetEnumerator()) {
 
 Copy-Item -LiteralPath $sourceSdmaFirmware -Destination $packageSdmaFirmware -Force
 Copy-Item -LiteralPath $sourceRlcFirmware -Destination $packageRlcFirmware -Force
+Copy-Item -LiteralPath $sourceSdma1Firmware -Destination $packageSdma1Firmware -Force
 Copy-Item -LiteralPath $sourcePfpFirmware -Destination $packagePfpFirmware -Force
 Copy-Item -LiteralPath $sourceMeFirmware -Destination $packageMeFirmware -Force
 Copy-Item -LiteralPath $sourceCeFirmware -Destination $packageCeFirmware -Force
@@ -483,6 +493,7 @@ $manifest = [ordered]@{
     PackageCatSha256 = (Get-FileHash -LiteralPath $packageCat -Algorithm SHA256).Hash
     SdmaFirmwareSha256 = (Get-FileHash -LiteralPath $packageSdmaFirmware -Algorithm SHA256).Hash
     RlcFirmwareSha256 = (Get-FileHash -LiteralPath $packageRlcFirmware -Algorithm SHA256).Hash
+    Sdma1FirmwareSha256 = (Get-FileHash -LiteralPath $packageSdma1Firmware -Algorithm SHA256).Hash
     PfpFirmwareSha256 = (Get-FileHash -LiteralPath $packagePfpFirmware -Algorithm SHA256).Hash
     MeFirmwareSha256 = (Get-FileHash -LiteralPath $packageMeFirmware -Algorithm SHA256).Hash
     CeFirmwareSha256 = (Get-FileHash -LiteralPath $packageCeFirmware -Algorithm SHA256).Hash

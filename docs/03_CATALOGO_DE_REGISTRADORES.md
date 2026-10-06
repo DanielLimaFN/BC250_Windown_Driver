@@ -1660,3 +1660,125 @@ Lê os pixels da VRAM programados pelo UEFI GOP e alimenta o pipeline de scanout
 | `mmVGA_RENDER_CONTROL` | `0x0000` | 1 | `0x00C0` | `0x00300` | P1 | Controle mestre do decodificador VGA / Emulação. |
 | `mmVGA_MODE_CONTROL` | `0x0002` | 1 | `0x00C2` | `0x00308` | P1 | Modo gráfico vs texto VGA. |
 | `mmDC_MEM_GLOBAL_PWR_REQ_CNTL` | `0x0003` | 1 | `0x00C3` | `0x0030C` | P1 | Controle de gating de clock e energia da memória do DC. |
+
+### Doorbell do SDMA0 (P2, doc 598) — 2026-10-05
+
+Fonte: `inc/linux_ref/PROVENANCE_P2_DOORBELL.txt` (linux v6.6). Confiança **P1**; uso no silício
+**NÃO VALIDADO EM HARDWARE** até a Corrida 221.
+
+| Registro | Fonte (`dw`, idx) | Byte BAR5 | Campos |
+|---|---|---|---|
+| `SDMA0_GFX_DOORBELL_OFFSET` | `0x00AB` idx0 (`gc_10_1_0_offset.h`) | `0x04C2C` = `(0x1260+0xAB)*4` | `OFFSET` `0x0FFFFFFC` shift 2 |
+| `BIF_SDMA0_DOORBELL_RANGE` | `0x01D0` idx2 (`nbio_2_3_offset.h`) | `0x03BC0` = `(0xD20+0x1D0)*4` | `OFFSET` `0x00000FFC` shift 2; `SIZE` `0x001F0000` shift 16 |
+
+A base NBIO idx2 `0x0D20` (`navi10_ip_offset.h`) é a mesma que dá `0x0378C`
+(`RCC_CONFIG_MEMSIZE`, `0xC3`) e `0x0385C` (`HDP_MEM_COHERENCY_FLUSH_CNTL`, `0xF7`), já
+provados no silício. Índice da doorbell: `AMDGPU_NAVI10_DOORBELL_sDMA_ENGINE0 = 0x100`,
+`ring->doorbell_index = 0x100 << 1 = 0x200`; `sdma_doorbell_range = 20` (`nv.c`). O
+`WDOORBELL64(0x200)` escreve no byte `0x800` da BAR de doorbell.
+
+| Registro | Fonte (`dw`, idx) | Byte BAR5 | Campos |
+|---|---|---|---|
+| `RCC_DEV0_EPF0_RCC_DOORBELL_APER_EN` (P2c, doc 600) | `0x00C0` idx2 (`nbio_2_3_offset.h`) | `0x03780` = `(0xD20+0xC0)*4` | `BIF_DOORBELL_APER_EN` bit 0 (`nbio_2_3_sh_mask.h`); ligado por `nv_common_hw_init`, desligado por `hw_fini` |
+
+### IH, NBIO de interrupção e MMHUB (P3, doc 609) — 2026-10-05
+
+Fonte: `inc/linux_ref/PROVENANCE_P3_IH.txt` (linux v6.6). Confiança **P1**. Bases (`cyan_skillfish_ip_offset.h`):
+`OSSSYS_BASE` seg0 `0x10A0`, `NBIO_BASE` seg2 `0xD20`, `MMHUB_BASE` seg0 `0x1A000`. Byte = `(base + reg) * 4`.
+
+| Registro | Fonte (`dw`, idx) | Byte BAR5 | Uso | Campos |
+|---|---|---|---|---|
+| `IH_RB_CNTL` | `0x080` idx0 (`osssys_5_0_0_offset.h`) | `0x04480` | escrita (P3.1, chave 0) | `RB_ENABLE` b0; `RB_SIZE` `0x3E`; `RB_GPU_TS_ENABLE` b7; `WPTR_WRITEBACK_ENABLE` b8; `WPTR_OVERFLOW_ENABLE` b16; `ENABLE_INTR` b17; `MC_SNOOP` b20; `RPTR_REARM` b21; `MC_RO` b22; `MC_VMID` `0x0F000000`; `MC_SPACE` `0x70000000`; `WPTR_OVERFLOW_CLEAR` b31 |
+| `IH_RB_BASE` / `IH_RB_BASE_HI` | `0x081` / `0x082` idx0 | `0x04484` / `0x04488` | escrita (chave 0) | VA[39:8] / VA[47:40] |
+| `IH_RB_RPTR` / `IH_RB_WPTR` | `0x083` / `0x084` idx0 | `0x0448C` / `0x04490` | escrita/leitura (chave 0) | WPTR: `RB_OVERFLOW` b0, `OFFSET` `0x3FFFC` |
+| `IH_RB_WPTR_ADDR_HI` / `_LO` | `0x085` / `0x086` idx0 | `0x04494` / `0x04498` | escrita (chave 0) | endereço do writeback |
+| `IH_DOORBELL_RPTR` | `0x087` idx0 | `0x0449C` | escrita 0 (chave 0) | `ENABLE` b28 |
+| `INTERRUPT_CNTL` | `0x0F1` idx2 (`nbio_2_3_offset.h`) | `0x03844` | escrita (chave 0) | `IH_DUMMY_RD_OVERRIDE` b0; `IH_REQ_NONSNOOP_EN` b3 |
+| `INTERRUPT_CNTL2` | `0x0F2` idx2 | `0x03848` | escrita (chave 0) | `IH_DUMMY_RD_ADDR` = PA da dummy >> 8 |
+| `SDMA0_CNTL.TRAP_ENABLE` | `SDMA0_CNTL` (já catalogado) | `0x049F0` | escrita (chave 0) | bit 0 (`gc_10_1_0_sh_mask.h`) |
+| `MMVM_L2_CNTL` | `0x680` idx0 (`mmhub_2_0_0_offset.h`) | `0x69A00` | **só leitura** (P3.0) | — |
+| `MMVM_L2_PROTECTION_FAULT_STATUS` / `_ADDR_LO32` | `0x68C` / `0x68D` | `0x69A30` / `0x69A34` | só leitura | — |
+| `MMVM_CONTEXT0_CNTL` | `0x6C0` | `0x69B00` | só leitura | — |
+| `MMVM_CONTEXT0_PAGE_TABLE_BASE_ADDR_LO32` / `_HI32` | `0x72B` / `0x72C` | `0x69CAC` / `0x69CB0` | só leitura | — |
+| `MMVM_CONTEXT0_PAGE_TABLE_START_ADDR_LO32` / `END_LO32` | `0x74B` / `0x76B` | `0x69D2C` / `0x69DAC` | só leitura | — |
+| `MMMC_VM_FB_OFFSET` / `SYSTEM_APERTURE_DEFAULT_ADDR_LSB` | `0x857` / `0x858` | `0x6A15C` / `0x6A160` | só leitura | — |
+| `MMMC_VM_FB_LOCATION_BASE` / `TOP` | `0x86C` / `0x86D` | `0x6A1B0` / `0x6A1B4` | só leitura | — |
+| `MMMC_VM_AGP_TOP` / `BOT` | `0x86E` / `0x86F` | `0x6A1B8` / `0x6A1BC` | só leitura | — |
+| `MMMC_VM_SYSTEM_APERTURE_LOW_ADDR` / `HIGH_ADDR` | `0x871` / `0x872` | `0x6A1C4` / `0x6A1C8` | só leitura | — |
+| `MMMC_VM_MX_L1_TLB_CNTL` | `0x873` | `0x6A1CC` | só leitura | — |
+
+Clientes e fontes de interrupção: `SOC15_IH_CLIENTID_SDMA0 = 0x08`, `GRBM_CP = 0x14`
+(`soc15_ih_clientid.h`); `SDMA0_5_0__SRCID__SDMA_TRAP = 0xE0` (`irqsrcs_sdma0_5_0.h`);
+`GFX_10_1__SRCID__CP_EOP_INTERRUPT = 0xB5` (`irqsrcs_gfx_10_1.h`). O IH (OSS) é cliente do
+**MMHUB** (`mmhub_v2_0.c`, tabela de clientes `[15] = "OSS"`): o anel por VA exige a GART da
+VMID 0 também no MMHUB, como `gmc_v10_0_gart_enable`. **Nenhuma escrita no MMHUB até lá.**
+
+### MMHUB: GART da VMID 0 (P3.0b, doc 611) — 2026-10-06
+
+Fonte: `mmhub_v2_0.c` (`mmhub_v2_0_gart_enable`, `set_fault_enable_default`) e `gmc_v10_0.c` (`gmc_v10_0_flush_vm_hub`),
+offsets de `mmhub_2_0_0_offset.h` (BASE_IDX 0, `MMHUB_BASE` seg0 `0x1A000`, byte = (0x1A000 + dw) × 4), campos de
+`mmhub_2_0_0_sh_mask.h`. Confiança **P1**; base confirmada pela foto da Corrida 229 (P0, doc 610). Os registradores da
+tabela da P3.0 acima que entram aqui passam de "só leitura" a **escrita pela P3.0b** (único escritor: `Bc250MmhubGartProgram`
+/ `Restore`, com snapshot, readback e rollback; lista de escrita `Bc250MmhubGartIsWritable`). **`FB_LOCATION_BASE/TOP` e
+`FB_OFFSET` continuam só leitura.**
+
+| Registrador | dw | Byte | Valor da P3.0b |
+|---|---|---|---|
+| `MMVM_CONTEXT0_PAGE_TABLE_BASE_ADDR_LO32/HI32` | `0x72B`/`0x72C` | `0x69CAC`/`0x69CB0` | PA da tabela da D2 \| VALID |
+| `MMVM_CONTEXT0_PAGE_TABLE_START/END_ADDR_LO32/HI32` | `0x74B`/`0x74C`, `0x76B`/`0x76C` | `0x69D2C`/`0x69D30`, `0x69DAC`/`0x69DB0` | 0 / `0x1FF` (2 MB) |
+| `MMMC_VM_AGP_BASE/BOT/TOP` | `0x870`/`0x86F`/`0x86E` | `0x6A1C0`/`0x6A1BC`/`0x6A1B8` | 0 / `0xFFFFFF` / 0 (AGP fechada) |
+| `MMMC_VM_SYSTEM_APERTURE_LOW/HIGH_ADDR` | `0x871`/`0x872` | `0x6A1C4`/`0x6A1C8` | fb_start>>18 / fb_end>>18 |
+| `MMMC_VM_SYSTEM_APERTURE_DEFAULT_ADDR_LSB/MSB` | `0x858`/`0x859` | `0x6A160`/`0x6A164` | dummy >>12 / >>44 |
+| `MMVM_L2_PROTECTION_FAULT_DEFAULT_ADDR_LO32/HI32` | `0x68F`/`0x690` | `0x69A3C`/`0x69A40` | dummy >>12 / >>44 |
+| `MMVM_L2_PROTECTION_FAULT_CNTL` | `0x688` | `0x69A20` | \| `0x1FFC` (os 11 `*_ENABLE_DEFAULT`) |
+| `MMVM_L2_PROTECTION_FAULT_CNTL2` | `0x689` | `0x69A24` | \| `ACTIVE_PAGE_MIGRATION_PTE_READ_RETRY` (b18) |
+| `MMMC_VM_MX_L1_TLB_CNTL` | `0x873` | `0x6A1CC` | `ENABLE_L1_TLB`=1, `SYSTEM_ACCESS_MODE`=3, `ADVANCED_DRIVER_MODEL`=1, `UNMAPPED_ACCESS`=0, `MTYPE`=UC |
+| `MMVM_L2_CNTL` | `0x680` | `0x69A00` | `ENABLE_L2_CACHE`=1, frag=0, `DEFAULT_PAGE_OUT_TO_SYSTEM_MEMORY`=1, `CONTEXT1_IDENTITY_ACCESS_MODE`=1 |
+| `MMVM_L2_CNTL2` | `0x681` | `0x69A04` | gatilhos `INVALIDATE_ALL_L1_TLBS`\|`INVALIDATE_L2_CACHE` (limpos pelo silício) |
+| `MMVM_L2_CNTL3` | `0x682` | `0x69A08` | `BANK_SELECT`=9, `L2_CACHE_BIGK_FRAGMENT_SIZE`=6 (sobre o lido) |
+| `MMVM_L2_CNTL4` / `CNTL5` | `0x698` / `0x6A1` | `0x69A60` / `0x69A84` | `VMC_TAP_PDE/PTE_REQUEST_PHYSICAL`=0 / `SMALLK`=0 (sobre o lido) |
+| `MMVM_CONTEXT0_CNTL` | `0x6C0` | `0x69B00` | `ENABLE_CONTEXT`=1, `PAGE_TABLE_DEPTH`=0, `RETRY_PERMISSION_OR_INVALID_PAGE_FAULT`=0 (resto preservado) |
+| `MMVM_L2_CONTEXT1_IDENTITY_APERTURE_LOW/HIGH_ADDR_LO32/HI32`, `CONTEXT_IDENTITY_PHYSICAL_OFFSET_LO32/HI32` | `0x692`..`0x697` | `0x69A48`..`0x69A5C` | `0xFFFFFFFF`/`0xF`/0/0/0/0 |
+| `MMVM_INVALIDATE_ENG0/ENG17_ADDR_RANGE_LO32/HI32` | `0x707`/`0x708`, `0x729`/`0x72A` | `0x69C1C`/`0x69C20`, `0x69CA4`/`0x69CA8` | `0xFFFFFFFF` / `0x1F` |
+| `MMVM_INVALIDATE_ENG17_SEM` | `0x6E2` | `0x69B88` | **ler adquire** o semáforo; escrever 0 solta |
+| `MMVM_INVALIDATE_ENG17_REQ` / `ACK` | `0x6F4` / `0x706` | `0x69BD0` / `0x69C18` | REQ `0x00F80001` (VMID 0); ACK só leitura, bit 0 |
+
+### CP: interrupção de fim de pipe do anel gráfico (EOP do CP, doc 618) — 2026-10-06
+
+Fonte: `gfx_v10_0.c` v6.6 (`gfx_v10_0_set_gfx_eop_interrupt_state`, `gfx_v10_0_ring_emit_fence`, `gfx_v10_0_eop_irq`),
+offset de `gc_10_1_0_offset.h` (BASE_IDX 0, `GC_BASE` seg0 `0x1260`, byte = (0x1260 + dw) × 4), campo de
+`gc_10_1_0_sh_mask.h`, fonte do IH de `irqsrcs_gfx_10_1.h` e cliente de `soc15_ih_clientid.h`. Confiança **P1**; SHA-256 em
+`inc/linux_ref/PROVENANCE_P6_CP_EOP.txt`. Único escritor: `Bc250ActiveCpEopIrqArm` / `Disarm` (snapshot, só o bit 26,
+readback, restauração).
+
+| Registrador / campo | dw | Byte | Uso |
+|---|---|---|---|
+| `CP_INT_CNTL_RING0` | `0x1E0A` | `0xC1A8` | `TIME_STAMP_INT_ENABLE` (bit 26, `0x04000000`) = 1 com o IH ativo; volta ao snapshot antes de o IH sair |
+| Vetor do IH `CP_EOP` | — | — | cliente `0x14` (GRBM_CP), fonte `0xB5`; `ring_id` [23:16], me = (ring_id & 0x0C) >> 2, pipe = ring_id & 3; anel gráfico = me 0, pipe 0 |
+| `RELEASE_MEM` DW2 `INT_SEL` | — | — | 2 = interrupção depois da confirmação da escrita (`AMDGPU_FENCE_FLAG_INT`) |
+
+### SDMA1 (P4.1, doc 620) — 2026-10-06
+
+Fonte: `gc_10_1_0_offset.h` (`mmSDMA1_*`, BASE_IDX 0, `GC_BASE` seg0 `0x1260`, byte = (0x1260 + dw) × 4), que coincide com
+SDMA0 + 0x600 dw (`sdma_v5_0.c`, `SDMA1_REG_OFFSET`); sequência de `sdma_v5_0_gfx_resume` (instância 1); golden de
+`golden_settings_sdma_cyan_skillfish`; tipo de firmware `GFX_FW_TYPE_SDMA1 = 10` (`psp_gfx_if.h` v6.6). Confiança **P1**;
+estado do POST medido (P0, Corridas 199/200): F32 HALT=1, `RB_ENABLE=0`, `SDMA1_CLK_CTRL=0x000C0100`. Único escritor:
+`Bc250Sdma1BringUp` / `Bc250Sdma1Shutdown` (lista `Bc250Sdma1IsRegister`; `POWER_CNTL` fora).
+
+| Registrador | dw | Byte | Uso |
+|---|---|---|---|
+| `SDMA1_CLK_CTRL` | `0x61B` | `0x61EC` | overrides só durante a configuração; volta ao valor do POST |
+| `SDMA1_CNTL` | `0x61C` | `0x61F0` | `UTC_L1_ENABLE`=1 (sem TRAP) |
+| `SDMA1_CHICKEN_BITS` / `GB_ADDR_CONFIG` / `_READ` | `0x61D`..`0x61F` | `0x61F4`..`0x61FC` | golden (`0x03AB0107`/`0xFFBF1F0F`, `0x44`/`0x001877FF`) |
+| `SDMA1_SEM_WAIT_FAIL_TIMER_CNTL` | `0x621` | `0x6204` | 0 |
+| `SDMA1_STATUS_REG` / `STATUS1_REG` | `0x625`/`0x626` | `0x6214`/`0x6218` | leitura |
+| `SDMA1_UCODE_CHECKSUM` | `0x629` | `0x6224` | prova da carga pelo PSP |
+| `SDMA1_F32_CNTL` | `0x62A` | `0x6228` | HALT 1 → 0 |
+| `SDMA1_UTCL1_CNTL` / `UTCL1_PAGE` | `0x63C`/`0x648` | `0x6270`/`0x62A0` | RESP_MODE=3, REDO_DELAY=9 / política de cache |
+| `SDMA1_GFX_RB_CNTL` .. `RB_WPTR_HI` | `0x680`..`0x686` | `0x6380`..`0x6398` | anel de 4 KB (RB_SIZE=10), writeback do RPTR |
+| `SDMA1_GFX_RB_WPTR_POLL_CNTL` | `0x687` | `0x639C` | `0x00403000` \| `F32_POLL_ENABLE` |
+| `SDMA1_GFX_RB_RPTR_ADDR_HI/LO` | `0x688`/`0x689` | `0x63A0`/`0x63A4` | Work + 8 |
+| `SDMA1_GFX_IB_CNTL` | `0x68A` | `0x63A8` | `IB_ENABLE`=1 |
+| `SDMA1_GFX_DOORBELL` | `0x692` | `0x63C8` | `ENABLE`=0 |
+| `SDMA1_GFX_RB_WPTR_POLL_ADDR_HI/LO` | `0x6B2`/`0x6B3` | `0x6448`/`0x644C` | Work + 0 |
+| `SDMA1_GFX_MINOR_PTR_UPDATE` | `0x6B5` | `0x6454` | 1/0 em volta da escrita do WPTR |

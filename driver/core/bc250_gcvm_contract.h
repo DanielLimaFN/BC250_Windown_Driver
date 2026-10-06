@@ -50,6 +50,14 @@ extern "C" {
 #define BC250_PTE_READABLE   0x00000020u
 #define BC250_PTE_WRITEABLE  0x00000040u
 #define BC250_PTE_PRT        0x00000100u
+/*
+ * P6 (doc 618): MTYPE_UC na folha. Flag de SOFTWARE deste contrato (nao e' bit
+ * de hardware); Bc250GcvmEncodePte a traduz para MTYPE = 3 nos bits 50:48
+ * (P1: AMDGPU_PTE_MTYPE_NV10(MTYPE_UC), gmc_v10_0_map_mtype). Sem ela a PTE
+ * sai com MTYPE = 0 (NC), o default do amdgpu. O PDE a recusa (so' VALID/
+ * SYSTEM/SNOOPED).
+ */
+#define BC250_PTE_MTYPE_UC   0x00000200u
 
 #define BC250_PTE_RW_DEFAULT \
     (BC250_PTE_VALID | BC250_PTE_READABLE | BC250_PTE_WRITEABLE)

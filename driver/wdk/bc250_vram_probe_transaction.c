@@ -1,4 +1,5 @@
 #include "bc250_vram_probe_transaction.h"
+#include "bc250_vram_cpu_path.h"
 
 BC250_VRAM_PROBE_STATUS Bc250RunVramProbeTransaction(
     const DXGKRNL_INTERFACE *DxgkInterface,
@@ -51,9 +52,8 @@ BC250_VRAM_PROBE_STATUS Bc250RunVramProbeTransaction(
     pageStart = Offset & ~0xFFFull;
     pageSpan = ((Offset + BC250_VRAM_PROBE_BYTES + 0xFFFull) & ~0xFFFull) - pageStart;
     physical.QuadPart = (LONGLONG)(bar->Start + pageStart);
-    status = DxgkInterface->DxgkCbMapMemory(
-        DxgkInterface->DeviceHandle, physical, (ULONG)pageSpan,
-        FALSE, FALSE, MmNonCached, &mapping);
+    status = Bc250VramCpuMapMemory(DxgkInterface,
+        (ULONGLONG)physical.QuadPart, (ULONG)pageSpan, MmNonCached, &mapping);
     Evidence->MapStatus = status;
     Evidence->Offset = Offset;
     Evidence->Bytes = BC250_VRAM_PROBE_BYTES;
@@ -85,8 +85,7 @@ BC250_VRAM_PROBE_STATUS Bc250RunVramProbeTransaction(
             break;
         }
     }
-    status = DxgkInterface->DxgkCbUnmapMemory(
-        DxgkInterface->DeviceHandle, mapping);
+    status = Bc250VramCpuUnmapMemory(DxgkInterface, mapping);
     Evidence->UnmapStatus = status;
     if (!NT_SUCCESS(status)) return BC250_VRAM_PROBE_UNMAP_FAILED;
     return result;

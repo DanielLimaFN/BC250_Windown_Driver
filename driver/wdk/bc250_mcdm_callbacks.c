@@ -175,6 +175,309 @@ VOID Bc250PagingTraceMarkExternal(ULONG Stage, ULONG Operation, NTSTATUS Status)
 }
 
 /*
+ * I.PG (doc 571): contadores de paginacao para o registro BPG1 do rastro
+ * duravel, uma vez por segundo. So' software: incrementos atomicos nos
+ * builders, nenhuma leitura de registrador, nenhum log de arquivo na thread de
+ * paginacao. Direcao pela enum do WDK (d3dkmddi.h, P1):
+ * DXGK_MEMORY_TRANSFER_LOCAL_TO_SYSTEM = 0 (despejo da VRAM),
+ * SYSTEM_TO_LOCAL = 1 (volta para a VRAM).
+ * O que responde: a pressao de memoria e o vai-e-volta de alocacoes que
+ * precederam a trava ou o 0x10E/0x34, segundo a segundo, mesmo sem log.
+ */
+static volatile LONG g_Bc250PgEvictCount = 0;
+static volatile LONG64 g_Bc250PgEvictBytes = 0;
+static volatile LONG g_Bc250PgPageInCount = 0;
+static volatile LONG64 g_Bc250PgPageInBytes = 0;
+static volatile LONG g_Bc250PgFillCount = 0;
+static volatile LONG g_Bc250PgFlushTlbCount = 0;
+static volatile LONG g_Bc250PgRingFlushEmitted = 0;
+
+VOID Bc250PagingStatsNoteRingFlush(VOID)
+{
+    InterlockedIncrement(&g_Bc250PgRingFlushEmitted);
+}
+
+/*
+ * 4c.4 (doc 575, corrigido pela Corrida 209 / doc 576): fila dos pontos de
+ * divisao do IB de paginacao (ver o .h).
+ *
+ * MEDIDO NA 209 (P0): o VidMm ALTERNA paging buffers (0x21E..., 0x22E...,
+ * 0x23...) e MONTA o proximo antes de enviar o anterior; as GPUVAs enviadas
+ * nao crescem com a ordem de envio. A regra antiga ("Va menor que o IB
+ * enviado = ponto velho, vai antes do IB") consumiu os pontos do IB 30
+ * (0x21E340) no envio 28 (0x23BB80): o IB 30 rodou SEM invalidacao entre a
+ * escrita das PTEs e o uso, e travou dentro do IB (INSIDE_IB=1), tres vezes.
+ *
+ * Regra agora: um ponto pertence SO' ao envio cujo intervalo o contem
+ * ([IbVa, IbVa+IbBytes]); os outros esperam o envio do proprio buffer. Ponto
+ * no fim de um IB e no inicio do seguinte (buffers contiguos) fica com o
+ * PRIMEIRO enviado: as PTEs que ele cobre estao antes daquele ponto, entao
+ * invalidar no fim do anterior ja precede tudo o que vem depois.
+ * Va == 0 (FlushTlb sem DMA buffer) vai antes do proximo IB de paginacao.
+ * Ponto que sobrevive a BC250_PAGING_SPLIT_MAX_AGE envios sem casar e' ORFAO:
+ * vai antes do IB (invalidacao a mais nao faz mal; a menos, sim) e e' logado.
+ */
+#define BC250_PAGING_SPLIT_SLOTS 64u
+#define BC250_PAGING_SPLIT_MAX_AGE 64u
+typedef struct BC250_PAGING_SPLIT_ENTRY {
+    UINT64 Va;
+    UINT64 EndVa;      /* P4.2: != 0 = faixa de PTE para o SDMA1 */
+    UINT32 VmidMask;
+    UINT32 Age;
+} BC250_PAGING_SPLIT_ENTRY;
+static BC250_PAGING_SPLIT_ENTRY g_Bc250PagingSplits[BC250_PAGING_SPLIT_SLOTS];
+static UINT32 g_Bc250PagingSplitCount = 0u;
+static volatile LONG64 g_Bc250PagingCurrentOpVa = 0;
+static volatile LONG g_Bc250PagingSplitOverflow = 0;
+/* P4.2 (doc 622): rota das faixas de PTE para o SDMA1 e contadores. */
+static volatile LONG g_Bc250P42RouteArmed = 0;
+static volatile LONG64 g_Bc250P42RangesRecorded = 0;
+static volatile LONG64 g_Bc250P42RangesUnaligned = 0;
+static volatile LONG64 g_Bc250P42RangesDropped = 0;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+static KSPIN_LOCK g_Bc250PagingSplitLock;
+#endif
+
+VOID Bc250PagingSplitRecord(UINT32 VmidMask)
+{
+    Bc250PagingSplitRecordAt(
+        (UINT64)InterlockedCompareExchange64(&g_Bc250PagingCurrentOpVa, 0, 0),
+        VmidMask);
+}
+
+VOID Bc250PagingSplitRecordAt(UINT64 Va, UINT32 VmidMask)
+{
+    UINT64 va = Va;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KIRQL irql;
+    KeAcquireSpinLock(&g_Bc250PagingSplitLock, &irql);
+#endif
+    VmidMask &= 0xFFFEu;
+    if (VmidMask != 0u) {
+        if (g_Bc250PagingSplitCount > 0u &&
+            g_Bc250PagingSplits[g_Bc250PagingSplitCount - 1u].Va == va &&
+            g_Bc250PagingSplits[g_Bc250PagingSplitCount - 1u].EndVa == 0ull) {
+            /* Dois FlushTlb no mesmo ponto: uma passagem, mascaras somadas. */
+            g_Bc250PagingSplits[g_Bc250PagingSplitCount - 1u].VmidMask |= VmidMask;
+        } else if (g_Bc250PagingSplitCount < BC250_PAGING_SPLIT_SLOTS) {
+            g_Bc250PagingSplits[g_Bc250PagingSplitCount].Va = va;
+            g_Bc250PagingSplits[g_Bc250PagingSplitCount].EndVa = 0ull;
+            g_Bc250PagingSplits[g_Bc250PagingSplitCount].VmidMask = VmidMask;
+            g_Bc250PagingSplits[g_Bc250PagingSplitCount].Age = 0u;
+            g_Bc250PagingSplitCount++;
+        } else {
+            /* Inalcancavel com o teto do UpdatePageTable; nunca calado. Funde
+             * no ultimo: invalida MAIS tarde, nunca deixa de invalidar. */
+            g_Bc250PagingSplits[BC250_PAGING_SPLIT_SLOTS - 1u].VmidMask |= VmidMask;
+            InterlockedIncrement(&g_Bc250PagingSplitOverflow);
+        }
+    }
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeReleaseSpinLock(&g_Bc250PagingSplitLock, irql);
+#endif
+}
+
+VOID Bc250PagingSdma1RouteSet(BOOLEAN Armed)
+{
+    InterlockedExchange(&g_Bc250P42RouteArmed, Armed ? 1 : 0);
+}
+
+BOOLEAN Bc250PagingSdma1RouteArmed(VOID)
+{
+    return InterlockedCompareExchange(&g_Bc250P42RouteArmed, 0, 0) == 1 ? TRUE : FALSE;
+}
+
+VOID Bc250PagingSdma1RangeStats(LONG64 *Recorded, LONG64 *Unaligned, LONG64 *Dropped)
+{
+    if (Recorded != NULL) *Recorded = InterlockedCompareExchange64(&g_Bc250P42RangesRecorded, 0, 0);
+    if (Unaligned != NULL) *Unaligned = InterlockedCompareExchange64(&g_Bc250P42RangesUnaligned, 0, 0);
+    if (Dropped != NULL) *Dropped = InterlockedCompareExchange64(&g_Bc250P42RangesDropped, 0, 0);
+}
+
+VOID Bc250PagingSdma1RangeRecord(UINT64 StartVa, UINT64 EndVa)
+{
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KIRQL irql;
+#endif
+    if (!Bc250PagingSdma1RouteArmed() || StartVa == 0ull || EndVa <= StartVa) {
+        return;
+    }
+    /* O INDIRECT do SDMA1 comeca em fronteira de 8 dwords (IB_PACKET_ALIGNMENT). */
+    if (((StartVa / sizeof(UINT32)) % BC250_SDMA_IB_PACKET_ALIGNMENT_DWORDS) != 0ull ||
+        ((EndVa / sizeof(UINT32)) % BC250_SDMA_IB_PACKET_ALIGNMENT_DWORDS) != 0ull) {
+        InterlockedIncrement64(&g_Bc250P42RangesUnaligned);
+        return;
+    }
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeAcquireSpinLock(&g_Bc250PagingSplitLock, &irql);
+#endif
+    if (g_Bc250PagingSplitCount > 0u &&
+        g_Bc250PagingSplits[g_Bc250PagingSplitCount - 1u].EndVa == StartVa) {
+        /* UpdatePageTable seguido de UpdatePageTable: uma faixa so'. */
+        g_Bc250PagingSplits[g_Bc250PagingSplitCount - 1u].EndVa = EndVa;
+    } else if (g_Bc250PagingSplitCount < BC250_PAGING_SPLIT_SLOTS) {
+        g_Bc250PagingSplits[g_Bc250PagingSplitCount].Va = StartVa;
+        g_Bc250PagingSplits[g_Bc250PagingSplitCount].EndVa = EndVa;
+        g_Bc250PagingSplits[g_Bc250PagingSplitCount].VmidMask = 0u;
+        g_Bc250PagingSplits[g_Bc250PagingSplitCount].Age = 0u;
+        g_Bc250PagingSplitCount++;
+    } else {
+        /* Sem lugar: a faixa fica no IB do SDMA0, como antes. Contada. */
+        InterlockedIncrement64(&g_Bc250P42RangesDropped);
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+        KeReleaseSpinLock(&g_Bc250PagingSplitLock, irql);
+#endif
+        return;
+    }
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeReleaseSpinLock(&g_Bc250PagingSplitLock, irql);
+#endif
+    InterlockedIncrement64(&g_Bc250P42RangesRecorded);
+}
+
+UINT32 Bc250PagingSplitPendingCount(VOID)
+{
+    UINT32 count;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KIRQL irql;
+    KeAcquireSpinLock(&g_Bc250PagingSplitLock, &irql);
+#endif
+    count = g_Bc250PagingSplitCount;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeReleaseSpinLock(&g_Bc250PagingSplitLock, irql);
+#endif
+    return count;
+}
+
+/*
+ * LC.1 (Corrida 216, doc 589): a recusa por "pontos de divisao demais" conta
+ * SO' os pontos DESTE paging buffer, [BufferVa, BufferVa + WriteOffset].
+ * A versao anterior contava a fila GLOBAL: pontos de outros buffers so' saem
+ * no envio do buffer deles, e no teardown do rollback o VidMm parou de
+ * enviar -- todo buffer novo, ate vazio, era recusado para sempre (2^31
+ * voltas, 25 GB de log, maquina presa ate o reinicio). Buffer sem nada
+ * escrito (WriteOffset == 0) ou sem GPUVA nunca e' recusado: progresso
+ * garantido. O limite continua por IB porque cada ponto vira um pedaco de
+ * IB no anel; pontos alheios saem como invalidacao unica antes do IB.
+ */
+BOOLEAN Bc250PagingSplitMustDefer(UINT64 BufferVa, UINT32 WriteOffset, UINT32 Limit)
+{
+    UINT32 own = 0u;
+    UINT32 i;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KIRQL irql;
+#endif
+    if (BufferVa == 0ull || WriteOffset == 0u || Limit == 0u) {
+        return FALSE;
+    }
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeAcquireSpinLock(&g_Bc250PagingSplitLock, &irql);
+#endif
+    for (i = 0u; i < g_Bc250PagingSplitCount; ++i) {
+        UINT64 va = g_Bc250PagingSplits[i].Va;
+        if (va >= BufferVa && va <= BufferVa + (UINT64)WriteOffset) {
+            ++own;
+        }
+    }
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeReleaseSpinLock(&g_Bc250PagingSplitLock, irql);
+#endif
+    return (own >= Limit) ? TRUE : FALSE;
+}
+
+UINT32 Bc250PagingSplitTake(
+    UINT64 IbVa,
+    ULONG IbBytes,
+    BC250_SDMA_IB_SPLIT *Out,
+    UINT32 OutMax,
+    UINT32 *StaleMask,
+    UINT32 *StaleCount)
+{
+    UINT32 taken = 0u;
+    UINT32 overflowNow = 0u;
+    UINT32 kept = 0u;
+    UINT32 stale = 0u;
+    UINT32 staleMask = 0u;
+    UINT32 i;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KIRQL irql;
+#endif
+    if (StaleMask != NULL) *StaleMask = 0u;
+    if (StaleCount != NULL) *StaleCount = 0u;
+    if (Out == NULL || OutMax == 0u) return 0u;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeAcquireSpinLock(&g_Bc250PagingSplitLock, &irql);
+#endif
+    for (i = 0u; i < g_Bc250PagingSplitCount; ++i) {
+        BC250_PAGING_SPLIT_ENTRY e = g_Bc250PagingSplits[i];
+        if (e.EndVa != 0ull) {
+            /* P4.2: faixa de PTE. Dentro deste IB vira faixa do SDMA1; fora,
+             * espera o envio do buffer dela; orfa e' descartada (roda no
+             * SDMA0, dentro do proprio IB, como antes da P4.2). */
+            if (e.Va >= IbVa && e.EndVa <= IbVa + (UINT64)IbBytes && taken < OutMax) {
+                Out[taken].OffsetDwords = (UINT32)((e.Va - IbVa) / sizeof(UINT32));
+                Out[taken].VmidMask = 0u;
+                Out[taken].Sdma1EndDwords = (UINT32)((e.EndVa - IbVa) / sizeof(UINT32));
+                Out[taken].Sdma1Token = 0u; /* o envio numera, sob o RingLock */
+                ++taken;
+            } else if (e.Age + 1u >= BC250_PAGING_SPLIT_MAX_AGE ||
+                       (e.Va >= IbVa && e.Va <= IbVa + (UINT64)IbBytes)) {
+                InterlockedIncrement64(&g_Bc250P42RangesDropped);
+            } else {
+                e.Age++;
+                g_Bc250PagingSplits[kept++] = e;
+            }
+            continue;
+        }
+        if (e.Va >= IbVa && e.Va <= IbVa + (UINT64)IbBytes && taken < OutMax) {
+            /* Dentro DESTE IB: ponto de divisao no lugar exato. */
+            Out[taken].OffsetDwords = (UINT32)((e.Va - IbVa) / sizeof(UINT32));
+            Out[taken].VmidMask = e.VmidMask;
+            Out[taken].Sdma1EndDwords = 0u;
+            Out[taken].Sdma1Token = 0u;
+            ++taken;
+        } else if (e.Va == 0ull || e.Age + 1u >= BC250_PAGING_SPLIT_MAX_AGE) {
+            /* Sem posicao, ou orfao: invalidacao ANTES deste IB. */
+            staleMask |= e.VmidMask;
+            ++stale;
+        } else {
+            /* De outro paging buffer, ainda nao enviado: espera o dele.
+             * (Dentro deste IB sem lugar na lista e' inalcancavel: 32 contra o
+             * teto de 12 do UpdatePageTable; se ocorrer, e' contado.) */
+            if (e.Va >= IbVa && e.Va <= IbVa + (UINT64)IbBytes) {
+                InterlockedIncrement(&g_Bc250PagingSplitOverflow);
+                ++overflowNow;
+            }
+            e.Age++;
+            g_Bc250PagingSplits[kept++] = e;
+        }
+    }
+    g_Bc250PagingSplitCount = kept;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    KeReleaseSpinLock(&g_Bc250PagingSplitLock, irql);
+#endif
+    if (StaleMask != NULL) *StaleMask = staleMask;
+    if (StaleCount != NULL) *StaleCount = stale;
+    if (overflowNow != 0u) {
+        Bc250DisplayLog("[PT_GPU_SPLIT] EXCEDENTE: %u ponto(s) dentro do IB 0x%llX sem lugar na lista de %u -> ficam pendentes (invalidacao ATRASADA) total=%ld\n",
+            overflowNow, (unsigned long long)IbVa, OutMax,
+            InterlockedCompareExchange(&g_Bc250PagingSplitOverflow, 0, 0));
+    }
+    return taken;
+}
+
+static VOID Bc250PagingStatsNoteTransfer(UINT32 Direction, UINT64 Bytes)
+{
+    if (Direction == 0u) {
+        InterlockedIncrement(&g_Bc250PgEvictCount);
+        InterlockedExchangeAdd64(&g_Bc250PgEvictBytes, (LONG64)Bytes);
+    } else if (Direction == 1u) {
+        InterlockedIncrement(&g_Bc250PgPageInCount);
+        InterlockedExchangeAdd64(&g_Bc250PgPageInBytes, (LONG64)Bytes);
+    }
+}
+
+/*
  * DX.56: amostra duravel dos 16 estagios mais recentes. O writer e' uma thread
  * separada. Bc250PagingStage permanece livre de arquivo, alocacao e lock.
  * Arquivo binario em registros fixos; checksum detecta ultimo write truncado.
@@ -527,6 +830,72 @@ static VOID Bc250TraceWordsTick(
         measured ? 1u : 0u, &sample);
 }
 
+/*
+ * I.PG (doc 571): BPG1 a cada 10 ticks (1 s), mesmo layout de 72 bytes do
+ * BSQ1. Words[0] = mascara 0x7F (as sete palavras valem sempre: sao contadores
+ * de software, nao leituras de registrador). Cumulativos desde o carregamento.
+ */
+#define BC250_TRACE_PAGING_MAGIC 0x31475042u /* BPG1 */
+#define BC250_TRACE_PAGING_PERIOD_TICKS 10u
+static VOID Bc250PagingStatsTick(UINT32 WriterTick)
+{
+    BC250_MCDM_TRACE_WORDS words;
+    if ((WriterTick % BC250_TRACE_PAGING_PERIOD_TICKS) != 0u) return;
+    RtlZeroMemory(&words, sizeof(words));
+    words.Words[0] = 0x7Fu;
+    words.Words[1] = (UINT32)InterlockedCompareExchange(&g_Bc250PgEvictCount, 0, 0);
+    words.Words[2] = (UINT32)(InterlockedCompareExchange64(&g_Bc250PgEvictBytes, 0, 0) >> 10);
+    words.Words[3] = (UINT32)InterlockedCompareExchange(&g_Bc250PgPageInCount, 0, 0);
+    words.Words[4] = (UINT32)(InterlockedCompareExchange64(&g_Bc250PgPageInBytes, 0, 0) >> 10);
+    words.Words[5] = (UINT32)InterlockedCompareExchange(&g_Bc250PgFillCount, 0, 0);
+    words.Words[6] = (UINT32)InterlockedCompareExchange(&g_Bc250PgFlushTlbCount, 0, 0);
+    words.Words[7] = (UINT32)InterlockedCompareExchange(&g_Bc250PgRingFlushEmitted, 0, 0);
+    (void)Bc250TraceWordsWrite(BC250_TRACE_PAGING_MAGIC, WriterTick,
+        BC250_GPU_HEARTBEAT_PHASE_AFTER, 1u, &words);
+}
+
+/*
+ * P1 (doc 594): BEV1 -- os eventos mais recentes do espelho em RAM, um por
+ * registro de palavras (72 bytes), so' os que ainda nao foram gravados.
+ * Words[0]=0x7F; 1 seq, 2 tipo<<24|no<<16|op, 3 bytes, 4 addr lo, 5 addr hi,
+ * 6 fence lo, 7 qpc lo. Ate 16 por tique (o anel tem 48).
+ */
+#define BC250_TRACE_EVENT_MAGIC 0x31564542u /* BEV1 */
+#define BC250_TRACE_EVENTS_PER_TICK 16u
+static ULONG g_Bc250CrumbEventsWritten = 0u;
+static VOID Bc250CrumbEventsTick(UINT32 WriterTick)
+{
+#if defined(BC250_ENABLE_DXGK_REGISTRATION) && !defined(BC250_CRUMB_DISABLED)
+    ULONG latest = (ULONG)InterlockedCompareExchange(&g_Bc250CrumbEvtSeq, 0, 0);
+    ULONG first = g_Bc250CrumbEventsWritten + 1u;
+    ULONG seq;
+    if (latest == 0u || latest < first) return;
+    if (latest - first + 1u > BC250_TRACE_EVENTS_PER_TICK) {
+        first = latest - BC250_TRACE_EVENTS_PER_TICK + 1u;
+    }
+    for (seq = first; seq <= latest; ++seq) {
+        const volatile ULONG *m = g_Bc250CrumbEvtMirror +
+            (seq % BC250_CRUMB_EVT_COUNT) * BC250_CRUMB_EVT_DWORDS;
+        BC250_MCDM_TRACE_WORDS words;
+        if (m[BC250_CRUMB_EVT_SEQ] != seq) continue; /* sobrescrito ou pela metade */
+        RtlZeroMemory(&words, sizeof(words));
+        words.Words[0] = 0x7Fu;
+        words.Words[1] = seq;
+        words.Words[2] = m[BC250_CRUMB_EVT_KIND];
+        words.Words[3] = m[BC250_CRUMB_EVT_SIZE];
+        words.Words[4] = m[BC250_CRUMB_EVT_ADDR_LO];
+        words.Words[5] = m[BC250_CRUMB_EVT_ADDR_HI];
+        words.Words[6] = m[BC250_CRUMB_EVT_FENCE_LO];
+        words.Words[7] = m[BC250_CRUMB_EVT_QPC_LO];
+        (void)Bc250TraceWordsWrite(BC250_TRACE_EVENT_MAGIC, WriterTick,
+            BC250_GPU_HEARTBEAT_PHASE_AFTER, 1u, &words);
+    }
+    g_Bc250CrumbEventsWritten = latest;
+#else
+    UNREFERENCED_PARAMETER(WriterTick);
+#endif
+}
+
 static VOID Bc250PagingTraceThread(_In_ PVOID Context)
 {
     LARGE_INTEGER interval;
@@ -563,6 +932,12 @@ static VOID Bc250PagingTraceThread(_In_ PVOID Context)
                 (void)status;   /* falha de flush nao para o batimento */
             }
         }
+#if BC250_P1_SILENCIO_DA_BAR
+        /* P1 (doc 594): sem leitura de registrador em regime (o amdgpu nao
+         * amostra o GPU em laco). Os eventos de submissao/retirada, que antes
+         * iam para a pagina na VRAM, saem do espelho em RAM. */
+        Bc250CrumbEventsTick(writerTick);
+#else
         /* DX.90: depois do BPX6/BCR1, para que eles saiam mesmo se o GPU parar. */
         Bc250GpuHeartbeatTick(writerTick);
         /* I.PLAT: por ultimo; um travamento aqui nao esconde o BGH1 do tick. */
@@ -572,8 +947,15 @@ static VOID Bc250PagingTraceThread(_In_ PVOID Context)
         if (writerTick == 10u || (writerTick % BC250_TRACE_CG_PERIOD_TICKS) == 0u) {
             Bc250TraceWordsTick(BC250_TRACE_CG_MAGIC, writerTick, &g_Bc250ClockGatingProbe);
         }
+#endif
+        /* I.PG: contadores de software, por ultimo; nao toca hardware. */
+        Bc250PagingStatsTick(writerTick);
+        /* LOG.1 (doc 585): o anel de log em RAM chega ao arquivo mesmo se o
+         * StartDevice falhar e nenhum contexto normal escrever depois. */
+        Bc250DisplayLogDrainFromWorker();
         if (KeReadStateEvent(&g_Bc250PagingTraceStopEvent) != 0) break;
     }
+    Bc250DisplayLogDrainFromWorker();
     ZwClose(g_Bc250PagingTraceFile);
     g_Bc250PagingTraceFile = NULL;
     PsTerminateSystemThread(STATUS_SUCCESS);
@@ -625,6 +1007,7 @@ NTSTATUS Bc250PagingTraceStart(VOID) { return STATUS_SUCCESS; }
 VOID Bc250PagingTraceStop(VOID) { }
 #endif
 static BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER g_Bc250UpdatePageTableHandler;
+static BC250_MCDM_PTE_LEAF_FLAGS_QUERY g_Bc250PteLeafFlagsQuery;
 static BC250_MCDM_ESCAPE_HANDLER g_Bc250EscapeHandler;
 static volatile LONG g_Bc250WddmContractVersion =
     (LONG)DXGKDDI_WDDMv2_7;
@@ -671,6 +1054,17 @@ NTSTATUS Bc250McdmEncodeVidMmPteWithLevel(
     const BC250_MCDM_RUNTIME_CAPS *Caps,
     const DXGK_PTE *Source,
     UINT32 PageTableLevel,
+    UINT64 *Encoded)
+{
+    return Bc250McdmEncodeVidMmPteWithLevelEx(Caps, Source, PageTableLevel,
+        0u, Encoded);
+}
+
+NTSTATUS Bc250McdmEncodeVidMmPteWithLevelEx(
+    const BC250_MCDM_RUNTIME_CAPS *Caps,
+    const DXGK_PTE *Source,
+    UINT32 PageTableLevel,
+    UINT32 ExtraLeafFlags,
     UINT64 *Encoded)
 {
     UINT64 physicalAddress;
@@ -791,6 +1185,12 @@ NTSTATUS Bc250McdmEncodeVidMmPteWithLevel(
         if (Source->ReadOnly == 0u) flags |= BC250_PTE_WRITEABLE;
         if (Source->NoExecute == 0u) flags |= BC250_PTE_EXECUTABLE;
         if (Source->CacheCoherent != 0u) flags |= BC250_PTE_SNOOPED;
+        /*
+         * P6 (doc 618): MTYPE_UC na folha de BO coerente/nao cacheado da RADV,
+         * em qualquer segmento, como gmc_v10_0_get_vm_pte (o Linux nao olha o
+         * dominio). So este bit passa por aqui.
+         */
+        flags |= (ExtraLeafFlags & BC250_PTE_MTYPE_UC);
 
         if (Source->Segment == 1u) {
             /* VRAM Local */
@@ -855,6 +1255,167 @@ NTSTATUS Bc250McdmEncodeVidMmPte(
     return Bc250McdmEncodeVidMmPteWithLevel(Caps, Source, 0u, Encoded);
 }
 
+/*
+ * 4c.4 (doc 575) -- PTE PELO SDMA, NO PAGING BUFFER, COMO O LINUX.
+ *
+ * Com PageTableUpdateMode=GPU_VIRTUAL o VidMm entrega em
+ * PageTableAddress.GpuVirtual a GPUVA da tabela no espaco do processo de
+ * paginacao (o IB roda sob a VMID 8, a mesma raiz) e as entradas a partir de
+ * StartIndex -- a mesma convencao do modo CPU, medida no log da 208
+ * (FirstPteVA=0x280000, Start=128, CpuVa = base da tabela de 0x200000).
+ * Cada pedaco vira um WRITE_LINEAR (P1: sdma_v5_0_vm_write_pte usa o mesmo
+ * pacote) de ate 32 entradas de 64 bits. A ordem com o resto do paging buffer
+ * e' a do proprio IB; a invalidacao da TLB vai no anel, no ponto do FlushTlb.
+ * Multipasse: MultipassOffset conta ENTRADAS ja emitidas.
+ *
+ * Entrada de diretorio com bits reservados [5:3] (tripwire DX.13) ou que nao
+ * codifica NAO e' escrita: o pacote e' quebrado em volta dela, como o caminho
+ * da CPU pula a entrada em vez de gravar zero.
+ */
+#define BC250_PT_GPU_ENTRIES_PER_PACKET 32u
+#define BC250_PT_GPU_PDE_RESERVED_MASK 0x0000000000000038ull
+#define BC250_PT_GPU_SPLITS_PER_BUFFER 12u
+#define BC250_PT_GPU_MTYPE_MASK 0x0007000000000000ull /* bits 50:48 */
+static volatile LONG g_Bc250PtGpuUpdates = 0;
+static volatile LONG64 g_Bc250PtGpuEntries = 0;
+static volatile LONG g_Bc250PtGpuSkipped = 0;
+static volatile LONG g_Bc250PtGpuSplitFull = 0;
+/* P6 (doc 618): folhas escritas com MTYPE_UC e atualizacoes que as contem. */
+static volatile LONG64 g_Bc250P6UcLeafPtes = 0;
+static volatile LONG g_Bc250P6UcUpdates = 0;
+
+static uint32_t Bc250PagingFloorPow2Dwords(uint32_t Dwords);
+
+static NTSTATUS Bc250McdmEmitGpuPageTableUpdate(
+    const BC250_MCDM_RUNTIME_CAPS *Caps,
+    HANDLE AdapterContext,
+    DXGKARG_BUILDPAGINGBUFFER *Args)
+{
+    DXGK_BUILDPAGINGBUFFER_UPDATEPAGETABLE *update = &Args->UpdatePageTable;
+    uint32_t *dmaBuffer = (uint32_t *)Args->pDmaBuffer;
+    uint32_t capacity = Bc250PagingFloorPow2Dwords(Args->DmaSize / (uint32_t)sizeof(uint32_t));
+    uint32_t cursor = 0u;
+    uint32_t done = (uint32_t)Args->MultipassOffset;
+    uint32_t firstDone = done;
+    uint32_t skipped = 0u;
+    uint32_t pad;
+    uint32_t i;
+    UINT64 tableBase = (UINT64)update->PageTableAddress.GpuVirtual +
+        ((UINT64)update->StartIndex * sizeof(UINT64));
+    /*
+     * P6 (doc 618): flags da folha pela alocacao deste UpdatePageTable. A
+     * consulta roda em cada passada (o multipasse nao passa pelo handler).
+     */
+    UINT32 leafExtra = (update->PageTableLevel == 0u &&
+        g_Bc250PteLeafFlagsQuery != NULL) ?
+        (g_Bc250PteLeafFlagsQuery(AdapterContext, update->hProcess,
+            update->hAllocation) & BC250_PTE_MTYPE_UC) : 0u;
+    uint32_t ucWritten = 0u;
+
+    if (done > update->NumPageTableEntries) return STATUS_INVALID_PARAMETER;
+    while (done < update->NumPageTableEntries) {
+        uint32_t chunk = update->NumPageTableEntries - done;
+        uint32_t data[2u * BC250_PT_GPU_ENTRIES_PER_PACKET];
+        uint32_t runStart = 0u;
+        uint32_t runCount = 0u;
+        if (chunk > BC250_PT_GPU_ENTRIES_PER_PACKET) chunk = BC250_PT_GPU_ENTRIES_PER_PACKET;
+        /* pior caso do pedaco: quebrado em runs de 1 entrada, mais o pad final */
+        if (cursor + chunk * (BC250_SDMA_DWORDS_WRITE_LINEAR_BASE + 2u) +
+                (BC250_SDMA_IB_PACKET_ALIGNMENT_DWORDS - 1u) > capacity) {
+            break;
+        }
+        for (i = 0u; i <= chunk; ++i) {
+            BOOLEAN ok = FALSE;
+            if (i < chunk) {
+                const DXGK_PTE *src = (update->Flags.Repeat != 0u) ?
+                    &update->pPageTableEntries[0] :
+                    &update->pPageTableEntries[done + i];
+                UINT64 encoded = 0ull;
+                if (NT_SUCCESS(Bc250McdmEncodeVidMmPteWithLevelEx(Caps, src,
+                        update->PageTableLevel, leafExtra, &encoded)) &&
+                    !(update->PageTableLevel > 0u &&
+                      (encoded & BC250_PT_GPU_PDE_RESERVED_MASK) != 0ull)) {
+                    if (runCount == 0u) runStart = i;
+                    data[2u * runCount] = (uint32_t)encoded;
+                    data[2u * runCount + 1u] = (uint32_t)(encoded >> 32);
+                    ++runCount;
+                    ok = TRUE;
+                    if ((encoded & BC250_PT_GPU_MTYPE_MASK) != 0ull) ++ucWritten;
+                } else {
+                    ++skipped;
+                }
+            }
+            if (!ok && runCount != 0u) {
+                BC250_SDMA_STATUS st = Bc250SdmaEmitWriteLinear(dmaBuffer,
+                    capacity, &cursor,
+                    tableBase + ((UINT64)(done + runStart) * sizeof(UINT64)),
+                    data, 2u * runCount);
+                if (st != BC250_SDMA_OK) {
+                    /* Inalcancavel com a conta de espaco acima; nunca calado. */
+                    Bc250DisplayLog("[PT_GPU] RECUSA: WRITE_LINEAR falhou (%s) Lvl=%u Start=%u done=%u run=%u\n",
+                        Bc250SdmaStatusName(st), update->PageTableLevel,
+                        update->StartIndex, done, runCount);
+                    return STATUS_INVALID_PARAMETER;
+                }
+                runCount = 0u;
+            }
+        }
+        done += chunk;
+    }
+    pad = Bc250SdmaIbSizePadDwords(cursor);
+    for (i = 0u; i < pad; ++i) dmaBuffer[cursor++] = BC250_SDMA_OP_NOP;
+    Args->pDmaBuffer = (PVOID)(dmaBuffer + cursor);
+    /*
+     * P4.2 (doc 622): as PTEs deste pedaco ([inicio, inicio + cursor) do
+     * paging buffer) vao para o SDMA1, como o amdgpu manda atualizacao de VM
+     * para as instancias do SDMA (vm_pte_scheds). So' registra com a rota
+     * armada; senao rodam no SDMA0 dentro do IB, como antes.
+     */
+    if (cursor > pad && Args->DmaBufferGpuVirtualAddress != 0ull) {
+        UINT64 startVa = (UINT64)Args->DmaBufferGpuVirtualAddress +
+            (UINT64)Args->DmaBufferWriteOffset;
+        Bc250PagingSdma1RangeRecord(startVa, startVa + (UINT64)cursor * sizeof(UINT32));
+    }
+    InterlockedExchangeAdd64(&g_Bc250PtGpuEntries, (LONG64)(done - firstDone));
+    if (ucWritten != 0u) {
+        LONG64 ucTotal = InterlockedExchangeAdd64(&g_Bc250P6UcLeafPtes,
+            (LONG64)ucWritten) + (LONG64)ucWritten;
+        LONG ucN = InterlockedIncrement(&g_Bc250P6UcUpdates);
+        if (ucN <= 8 || (ucN % 1024) == 0) {
+            Bc250DisplayLog("[P6_MTYPE] UpdatePT #%ld com MTYPE_UC: hProc=%p hAlloc=%p Start=%u Num=%u folhasUC=%u totalUC=%lld\n",
+                ucN, update->hProcess, update->hAllocation,
+                update->StartIndex, update->NumPageTableEntries,
+                ucWritten, (long long)ucTotal);
+        }
+    }
+    if (skipped != 0u) {
+        LONG total = InterlockedExchangeAdd(&g_Bc250PtGpuSkipped, (LONG)skipped) + (LONG)skipped;
+        Bc250DisplayLog("[PT_GPU] RECUSA: %u entradas de nivel %u NAO escritas (encode recusado ou bits reservados) Start=%u Num=%u total=%ld\n",
+            skipped, update->PageTableLevel, update->StartIndex,
+            update->NumPageTableEntries, total);
+    }
+    if (firstDone == 0u) {
+        LONG n = InterlockedIncrement(&g_Bc250PtGpuUpdates);
+        if (n <= 16 || (n % 1024) == 0) {
+            Bc250DisplayLog("[PT_GPU] UpdatePT #%ld no paging buffer: Lvl=%u PtGpuVa=0x%llX Start=%u Num=%u Repeat=%u FirstPteVA=0x%llX DmaVA=0x%llX+0x%X DW=%u EntradasTotal=%lld\n",
+                n, update->PageTableLevel,
+                (unsigned long long)update->PageTableAddress.GpuVirtual,
+                update->StartIndex, update->NumPageTableEntries,
+                (UINT32)update->Flags.Repeat,
+                (unsigned long long)update->FirstPteVirtualAddress,
+                (unsigned long long)Args->DmaBufferGpuVirtualAddress,
+                Args->DmaBufferWriteOffset, cursor,
+                (long long)InterlockedCompareExchange64(&g_Bc250PtGpuEntries, 0, 0));
+        }
+    }
+    if (done < update->NumPageTableEntries) {
+        Args->MultipassOffset = (UINT)done;
+        return STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER;
+    }
+    Args->MultipassOffset = 0u; /* BC250_PAGING_MULTIPASS_DONE */
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS Bc250McdmBuildCpuPageTableUpdate(
     const BC250_MCDM_RUNTIME_CAPS *Caps,
     HANDLE AdapterContext,
@@ -865,6 +1426,7 @@ static NTSTATUS Bc250McdmBuildCpuPageTableUpdate(
     UINT32 index;
     UINT32 maxEntries;
     UINT32 levelBits;
+    BOOLEAN gpuMode;
 
     if (Caps == NULL || Args == NULL) return STATUS_INVALID_PARAMETER;
     Bc250PagingStage(
@@ -903,8 +1465,14 @@ static NTSTATUS Bc250McdmBuildCpuPageTableUpdate(
         DXGK_OPERATION_UPDATE_PAGE_TABLE,
         STATUS_PENDING);
 
-    if (update->UpdateMode != DXGK_PAGETABLEUPDATE_CPU_VIRTUAL ||
-        update->PageTableAddress.CpuVirtual == NULL ||
+    gpuMode = (update->UpdateMode == DXGK_PAGETABLEUPDATE_GPU_VIRTUAL) ? TRUE : FALSE;
+    if ((gpuMode ?
+            (Caps->PageTableUpdateGpuVirtual == 0u ||
+             update->PageTableAddress.GpuVirtual == 0ull ||
+             (update->PageTableAddress.GpuVirtual & 7ull) != 0ull ||
+             Args->pDmaBuffer == NULL) :
+            (update->UpdateMode != DXGK_PAGETABLEUPDATE_CPU_VIRTUAL ||
+             update->PageTableAddress.CpuVirtual == NULL)) ||
         update->pPageTableEntries == NULL ||
         update->NumPageTableEntries == 0u || update->Reserved0 != 0u ||
         update->pPageTableEntries64KB != NULL ||
@@ -949,8 +1517,30 @@ static NTSTATUS Bc250McdmBuildCpuPageTableUpdate(
             }
         }
     }
+    if (gpuMode && Args->MultipassOffset == 0u &&
+        Bc250PagingSplitMustDefer((UINT64)Args->DmaBufferGpuVirtualAddress,
+            Args->DmaBufferWriteOffset, BC250_PT_GPU_SPLITS_PER_BUFFER)) {
+        /*
+         * 4c.4: este paging buffer ja tem o maximo de FlushTlb que cabe numa
+         * entrada do anel (cada um vira um pedaco de IB + invalidacao). Sem
+         * escrever nada e ANTES do journal: o VidMm envia o buffer atual e
+         * chama de novo com outro (multipasse documentado).
+         */
+        LONG full = InterlockedIncrement(&g_Bc250PtGpuSplitFull);
+        if (full <= 8 || (full % 256) == 0) {
+            Bc250DisplayLog("[PT_GPU] paging buffer 0x%llX+0x%X com %u pontos de divisao proprios -> INSUFFICIENT_DMA_BUFFER, forca o envio #%ld (fila global=%u)\n",
+                (unsigned long long)Args->DmaBufferGpuVirtualAddress,
+                Args->DmaBufferWriteOffset, BC250_PT_GPU_SPLITS_PER_BUFFER, full,
+                Bc250PagingSplitPendingCount());
+        }
+        return STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER;
+    }
     /* O handler ativo distingue leaf de diretórios; ambos precisam participar
-     * da mesma transação de flush, embora só leaf gere ranges GPUVA. */
+     * da mesma transação de flush, embora só leaf gere ranges GPUVA.
+     * 4c.4: no multipasse o journal ja foi encenado na primeira passada. */
+    if (gpuMode && Args->MultipassOffset != 0u) {
+        return Bc250McdmEmitGpuPageTableUpdate(Caps, AdapterContext, Args);
+    }
     if (g_Bc250UpdatePageTableHandler != NULL) {
         NTSTATUS handlerStatus;
         Bc250PagingStage(
@@ -962,7 +1552,13 @@ static NTSTATUS Bc250McdmBuildCpuPageTableUpdate(
             BC250_PAGING_STAGE_UPDATE_AFTER_HANDLER,
             DXGK_OPERATION_UPDATE_PAGE_TABLE,
             handlerStatus);
+        if (gpuMode && NT_SUCCESS(handlerStatus)) {
+            return Bc250McdmEmitGpuPageTableUpdate(Caps, AdapterContext, Args);
+        }
         return handlerStatus;
+    }
+    if (gpuMode) {
+        return Bc250McdmEmitGpuPageTableUpdate(Caps, AdapterContext, Args);
     }
     destination = (UINT64 *)update->PageTableAddress.CpuVirtual;
     if (update->Flags.Repeat != 0u) {
@@ -1377,6 +1973,8 @@ static NTSTATUS Bc250McdmBuildTransferVirtual(
         (ULONG)(done - (UINT64)Args->MultipassOffset),
         (ULONG64)transfer->DestinationVirtualAddress + (UINT64)Args->MultipassOffset,
         (ULONG64)transfer->SourceVirtualAddress + (UINT64)Args->MultipassOffset);
+    Bc250PagingStatsNoteTransfer((UINT32)transfer->TransferDirection,
+        done - (UINT64)Args->MultipassOffset);
     Bc250DisplayLog("[DX91_PAGING_MOVE] op=TRANSFER hAlloc=%p AllocOff=0x%llX Size=%llu Pass=[%llu,%llu) Src=0x%llX Dst=0x%llX Dir=%u Flags=0x%X DW=%u\n",
         transfer->hAllocation,
         (unsigned long long)transfer->AllocationOffsetInBytes,
@@ -1497,6 +2095,7 @@ static NTSTATUS Bc250McdmBuildFillByCopy(
         done += chunk;
     }
 
+    InterlockedIncrement(&g_Bc250PgFillCount);
     count = InterlockedIncrement(&g_Bc250X2bFillsByCopy);
     /* EVT.1: no FILL por copia o parametro de origem e' a GPUVA dos zeros (nunca 0). */
     Bc250CrumbEvent(BC250_CRUMB_EVT_PAGING_FILL, 0u, cursor,
@@ -1620,6 +2219,7 @@ static NTSTATUS Bc250McdmBuildFillVirtual(
         done += chunk;
     }
 
+    InterlockedIncrement(&g_Bc250PgFillCount);
     /* EVT.1 (doc 521): Op = dwords uteis do IB, que casam com o IB submetido. */
     Bc250CrumbEvent(BC250_CRUMB_EVT_PAGING_FILL, 0u, cursor,
         (ULONG)(done - (UINT64)Args->MultipassOffset),
@@ -1757,6 +2357,12 @@ VOID Bc250McdmInstallUpdatePageTableHandler(
     _In_opt_ BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER UpdatePageTableHandler)
 {
     g_Bc250UpdatePageTableHandler = UpdatePageTableHandler;
+}
+
+VOID Bc250McdmInstallPteLeafFlagsQuery(
+    _In_opt_ BC250_MCDM_PTE_LEAF_FLAGS_QUERY Query)
+{
+    g_Bc250PteLeafFlagsQuery = Query;
 }
 
 VOID Bc250McdmInstallEscapeHandler(
@@ -1922,6 +2528,16 @@ static NTSTATUS Bc250McdmBuildPagingBufferBody(
         break;
 
     case DXGK_OPERATION_FLUSH_TLB:
+        InterlockedIncrement(&g_Bc250PgFlushTlbCount);
+        /*
+         * 4c.4 (doc 575): onde este FlushTlb caiu no paging buffer. O handler
+         * registra o ponto de divisao com esta GPUVA; 0 = sem DMA buffer
+         * (vai antes do proximo IB, como na 4c.2).
+         */
+        InterlockedExchange64(&g_Bc250PagingCurrentOpVa,
+            (pBuildPagingBuffer->DmaBufferGpuVirtualAddress != 0ull) ?
+                (LONG64)((UINT64)pBuildPagingBuffer->DmaBufferGpuVirtualAddress +
+                         (UINT64)pBuildPagingBuffer->DmaBufferWriteOffset) : 0);
         if (g_Bc250FlushTlbHandler != NULL) {
             Bc250PagingStage(BC250_PAGING_STAGE_FLUSH_HANDLER_ENTER,
                 operation, STATUS_PENDING);
@@ -3079,11 +3695,21 @@ static NTSTATUS Bc250McdmQueryAdapterInfoWorker(
         caps->ReadOnlyMemorySupported = 1u;
         caps->NoExecuteMemorySupported = 1u;
         caps->ExplicitPageTableInvalidation = 1u;
-        caps->PageTableUpdateMode = DXGK_PAGETABLEUPDATE_CPU_VIRTUAL;
+        /*
+         * 4c.4 (doc 575): GPU_VIRTUAL so' com o flush pelo anel provado no
+         * boot e o tunable PtUpdateGpuVirtual. As tabelas do proprio processo
+         * de paginacao continuam vindo em CPU_VIRTUAL (forcado pelo VidMm na
+         * inicializacao, system-paging-process.md); o handler aceita os dois.
+         */
+        caps->PageTableUpdateMode = (runtimeCaps.PageTableUpdateGpuVirtual != 0u) ?
+            DXGK_PAGETABLEUPDATE_GPU_VIRTUAL : DXGK_PAGETABLEUPDATE_CPU_VIRTUAL;
         caps->VirtualAddressBitCount = runtimeCaps.GpuVaBitCount;
         caps->PageTableLevelCount = runtimeCaps.PageTableLevelCount;
-        Bc250DisplayLog("[McdmQAI] GPUMMUCAPS: VaBits=%u, Levels=%u\n",
-            caps->VirtualAddressBitCount, caps->PageTableLevelCount);
+        Bc250DisplayLog("[McdmQAI] GPUMMUCAPS: VaBits=%u, Levels=%u, PageTableUpdateMode=%s\n",
+            caps->VirtualAddressBitCount, caps->PageTableLevelCount,
+            (caps->PageTableUpdateMode == DXGK_PAGETABLEUPDATE_GPU_VIRTUAL) ?
+                "GPU_VIRTUAL (PTE por WRITE_LINEAR no paging buffer)" :
+                "CPU_VIRTUAL (PTE pela CPU no build)");
         return STATUS_SUCCESS;
     }
 
@@ -3923,6 +4549,7 @@ VOID Bc250McdmUnload(VOID)
     Bc250McdmInstallCurrentFenceProvider(NULL);
     Bc250McdmInstallResetEngineHandler(NULL);
     Bc250McdmInstallUpdatePageTableHandler(NULL);
+    Bc250McdmInstallPteLeafFlagsQuery(NULL);
     Bc250McdmInstallFlushTlbHandler(NULL);
     Bc250McdmInstallInterruptLifecycle(NULL, NULL);
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
@@ -4130,8 +4757,11 @@ NTSTATUS Bc250McdmPopulateRequiredCallbacks(
 {
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
     KeInitializeSpinLock(&g_Bc250PagingProofLock);
+    KeInitializeSpinLock(&g_Bc250PagingSplitLock);
 #endif
     RtlZeroMemory(g_Bc250PagingProofs, sizeof(g_Bc250PagingProofs));
+    RtlZeroMemory(g_Bc250PagingSplits, sizeof(g_Bc250PagingSplits));
+    g_Bc250PagingSplitCount = 0u;
 
     if (InitializationData == NULL) return STATUS_INVALID_PARAMETER;
     InitializationData->DxgkDdiBuildPagingBuffer =

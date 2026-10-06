@@ -3,6 +3,24 @@
 
 __declspec(dllimport) void __stdcall ExitProcess(unsigned long ExitCode);
 
+/* P1b.2: o helper Bc250VramCpuMapMemory referencia o mapeador da DRAM. Nesta
+ * suite a P1b nunca e' armada (traducao identidade), entao o ramo da DRAM nao
+ * roda; o stub falha fechado se um dia rodar. */
+static PVOID Bc250TestMapIoSpaceEx(PHYSICAL_ADDRESS PhysicalAddress, SIZE_T NumberOfBytes, ULONG Protect)
+{
+    UNREFERENCED_PARAMETER(PhysicalAddress);
+    UNREFERENCED_PARAMETER(NumberOfBytes);
+    UNREFERENCED_PARAMETER(Protect);
+    return NULL;
+}
+static VOID Bc250TestUnmapIoSpace(PVOID BaseAddress, SIZE_T NumberOfBytes)
+{
+    UNREFERENCED_PARAMETER(BaseAddress);
+    UNREFERENCED_PARAMETER(NumberOfBytes);
+}
+PVOID (*__imp_MmMapIoSpaceEx)(PHYSICAL_ADDRESS, SIZE_T, ULONG) = Bc250TestMapIoSpaceEx;
+VOID (*__imp_MmUnmapIoSpace)(PVOID, SIZE_T) = Bc250TestUnmapIoSpace;
+
 #pragma function(memset)
 void * __cdecl memset(void *Destination, int Value, size_t Length)
 {

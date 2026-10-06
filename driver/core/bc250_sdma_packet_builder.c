@@ -392,6 +392,350 @@ BC250_SDMA_STATUS Bc250SdmaEmitPollRegMem(
     return BC250_SDMA_OK;
 }
 
+BC250_SDMA_STATUS Bc250SdmaEmitSrbmWrite(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t RegisterDword,
+    uint32_t Value)
+{
+    if (RingBuffer == NULL || CursorDwords == NULL || !Bc250IsPowerOfTwo32(RingDwords)) {
+        return BC250_SDMA_BAD_ARGUMENT;
+    }
+    /* ADDR tem 18 bits (SDMA_PKT_SRBM_WRITE_ADDR_addr_mask); acima disso o
+     * pacote apontaria outro registrador, entao e' recusa, nunca truncamento. */
+    if ((RegisterDword & ~0x0003FFFFu) != 0u) {
+        return BC250_SDMA_OUT_OF_BOUNDS;
+    }
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords,
+        (BC250_SDMA_OP_SRBM_WRITE & 0xFFu) | (0xFu << 28));
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, RegisterDword);
+    Bc250SdmaWriteDword(RingBuffer, RingDwords, CursorDwords, Value);
+    return BC250_SDMA_OK;
+}
+
+BC250_SDMA_STATUS Bc250SdmaEmitRegWait(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t RegisterDword,
+    uint32_t Reference,
+    uint32_t Mask)
+{
+    if ((RegisterDword & ~0x0003FFFFu) != 0u) {
+        return BC250_SDMA_OUT_OF_BOUNDS;
+    }
+    return Bc250SdmaEmitPollRegMem(RingBuffer, RingDwords, CursorDwords,
+        (uint64_t)RegisterDword << 2, Reference, Mask,
+        BC250_SDMA_POLL_FUNC_EQUAL, 0u,
+        BC250_SDMA_REG_WAIT_INTERVAL, BC250_SDMA_REG_WAIT_RETRY_COUNT);
+}
+
+uint32_t Bc250GcvmInvalidateRequestValue(uint32_t Vmid, uint32_t FlushType)
+{
+    return (1u << (Vmid & 0xFu)) | ((FlushType & 0x7u) << 16) |
+        BC250_GCVM_INV_REQ_ALL_LEVELS;
+}
+
+BC250_SDMA_STATUS Bc250SdmaEmitVmInvalidate(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t Engine,
+    uint32_t Vmid,
+    uint32_t FlushType)
+{
+    BC250_SDMA_STATUS status;
+    uint32_t reqDword;
+    uint32_t ackDword;
+    uint32_t ackMask;
+
+    if (RingBuffer == NULL || CursorDwords == NULL || !Bc250IsPowerOfTwo32(RingDwords)) {
+        return BC250_SDMA_BAD_ARGUMENT;
+    }
+    if (Vmid == 0u || Vmid >= 16u || FlushType > 7u ||
+        Engine >= BC250_GCVM_INV_ENG_COUNT || Engine == 17u) {
+        return BC250_SDMA_BAD_ARGUMENT;
+    }
+    reqDword = BC250_GCVM_INV_ENG0_REQ_DWORD + Engine;
+    ackDword = BC250_GCVM_INV_ENG0_ACK_DWORD + Engine;
+    ackMask = 1u << Vmid;
+
+    status = Bc250SdmaEmitSrbmWrite(RingBuffer, RingDwords, CursorDwords,
+        reqDword, Bc250GcvmInvalidateRequestValue(Vmid, FlushType));
+    if (status != BC250_SDMA_OK) return status;
+    /* "wait for a cycle to reset vm_inv_eng*_ack" (sdma_v5_0.c) */
+    status = Bc250SdmaEmitRegWait(RingBuffer, RingDwords, CursorDwords,
+        reqDword, 0u, 0u);
+    if (status != BC250_SDMA_OK) return status;
+    return Bc250SdmaEmitRegWait(RingBuffer, RingDwords, CursorDwords,
+        ackDword, ackMask, ackMask);
+}
+
+static uint32_t Bc250SdmaPopCount16(uint32_t Mask)
+{
+    uint32_t count = 0u;
+    Mask &= 0xFFFFu;
+    while (Mask != 0u) {
+        Mask &= Mask - 1u;
+        ++count;
+    }
+    return count;
+}
+
+uint32_t Bc250SdmaSplitIndirectWorstDwords(
+    const BC250_SDMA_IB_SPLIT *Splits,
+    uint32_t SplitCount)
+{
+    /* Cada segmento: pre-pad (ate 7) + INDIRECT + GCR. Segmentos <= splits+1. */
+    uint32_t total = (SplitCount + 1u) *
+        ((BC250_SDMA_IB_PACKET_ALIGNMENT_DWORDS - 1u) +
+         BC250_SDMA_DWORDS_INDIRECT + BC250_SDMA_DWORDS_GCR_REQ);
+    uint32_t i;
+    if (Splits == NULL) return total;
+    for (i = 0u; i < SplitCount; ++i) {
+        total += Bc250SdmaPopCount16(Splits[i].VmidMask) *
+            BC250_SDMA_DWORDS_VM_INVALIDATE;
+        if (Splits[i].Sdma1EndDwords != 0u) total += BC250_SDMA_DWORDS_CROSS_HANDOFF;
+    }
+    return total;
+}
+
+uint32_t Bc250SdmaSplitNextChunk(
+    const BC250_SDMA_IB_SPLIT *Splits,
+    uint32_t SplitCount,
+    uint32_t First,
+    uint32_t ChunkStartDwords,
+    uint32_t PreDwords,
+    uint32_t MaxDwords)
+{
+    uint32_t b = First;
+    if (Splits == NULL) return First;
+    while (b < SplitCount) {
+        uint32_t w = PreDwords +
+            Bc250SdmaSplitIndirectWorstDwords(&Splits[First], b + 1u - First) +
+            BC250_SDMA_DWORDS_FENCE;
+        if (w > MaxDwords && b > First &&
+            Bc250SdmaSplitEndDwords(&Splits[b - 1u]) > ChunkStartDwords) {
+            break;
+        }
+        ++b;
+    }
+    return b;
+}
+
+static BC250_SDMA_STATUS Bc250SdmaEmitIbSegment(
+    uint32_t *Buffer,
+    uint32_t BufferDwords,
+    uint32_t *CursorDwords,
+    uint32_t RingPosBase,
+    uint64_t IbAddress,
+    uint32_t FirstDword,
+    uint32_t EndDword,
+    uint32_t Vmid,
+    uint32_t *LastIndirectEndDwords)
+{
+    BC250_SDMA_STATUS status;
+    uint32_t pad = Bc250SdmaIndirectPrePadDwords(RingPosBase + *CursorDwords);
+    uint32_t i;
+    for (i = 0u; i < pad; ++i) {
+        status = Bc250SdmaEmitNop(Buffer, BufferDwords, CursorDwords, 0u);
+        if (status != BC250_SDMA_OK) return status;
+    }
+    status = Bc250SdmaEmitIndirect(Buffer, BufferDwords, CursorDwords,
+        IbAddress + ((uint64_t)FirstDword * 4u), EndDword - FirstDword,
+        0ull, Vmid);
+    if (status != BC250_SDMA_OK) return status;
+    if (LastIndirectEndDwords != NULL) {
+        *LastIndirectEndDwords = RingPosBase + *CursorDwords;
+    }
+    return Bc250SdmaEmitGcr(Buffer, BufferDwords, CursorDwords);
+}
+
+uint32_t Bc250SdmaSplitEndDwords(const BC250_SDMA_IB_SPLIT *Split)
+{
+    if (Split == NULL) return 0u;
+    return Split->Sdma1EndDwords != 0u ? Split->Sdma1EndDwords : Split->OffsetDwords;
+}
+
+static BC250_SDMA_STATUS Bc250SdmaEmitFenceUc(
+    uint32_t *Buffer, uint32_t BufferDwords, uint32_t *CursorDwords,
+    uint64_t Address, uint32_t Value)
+{
+    /* Bc250SdmaEmitFence ja' leva MTYPE_UC no cabecalho, como o Linux. */
+    return Bc250SdmaEmitFence(Buffer, BufferDwords, CursorDwords, Address, Value);
+}
+
+static BC250_SDMA_STATUS Bc250SdmaEmitCrossWait(
+    uint32_t *Buffer, uint32_t BufferDwords, uint32_t *CursorDwords,
+    uint64_t Address, uint32_t Value)
+{
+    return Bc250SdmaEmitPollRegMem(Buffer, BufferDwords, CursorDwords,
+        Address, Value, 0xFFFFFFFFu, BC250_SDMA_CROSS_POLL_FUNC, 1u,
+        BC250_SDMA_CROSS_POLL_INTERVAL, BC250_SDMA_CROSS_POLL_RETRY);
+}
+
+BC250_SDMA_STATUS Bc250SdmaEmitSdma1RangeJob(
+    uint32_t *Buffer,
+    uint32_t BufferDwords,
+    uint32_t *CursorDwords,
+    uint32_t RingPosBase,
+    const BC250_SDMA_CROSS_ENGINE *Cross,
+    uint32_t Token,
+    uint64_t IbAddress,
+    uint32_t FirstDword,
+    uint32_t EndDword,
+    uint32_t Vmid)
+{
+    BC250_SDMA_STATUS status;
+    if (Buffer == NULL || CursorDwords == NULL || Cross == NULL ||
+        !Bc250IsPowerOfTwo32(BufferDwords) || Token == 0u ||
+        EndDword <= FirstDword ||
+        (FirstDword % BC250_SDMA_IB_PACKET_ALIGNMENT_DWORDS) != 0u ||
+        (Cross->GoAddress & 3u) != 0u || (Cross->DoneAddress & 3u) != 0u ||
+        Cross->GoAddress == 0ull || Cross->DoneAddress == 0ull) {
+        return BC250_SDMA_BAD_ARGUMENT;
+    }
+    if (*CursorDwords + BC250_SDMA_DWORDS_SDMA1_RANGE_JOB_WORST > BufferDwords) {
+        return BC250_SDMA_RING_FULL;
+    }
+    status = Bc250SdmaEmitCrossWait(Buffer, BufferDwords, CursorDwords,
+        Cross->GoAddress, Token);
+    if (status != BC250_SDMA_OK) return status;
+    status = Bc250SdmaEmitIbSegment(Buffer, BufferDwords, CursorDwords,
+        RingPosBase, IbAddress, FirstDword, EndDword, Vmid, NULL);
+    if (status != BC250_SDMA_OK) return status;
+    return Bc250SdmaEmitFenceUc(Buffer, BufferDwords, CursorDwords,
+        Cross->DoneAddress, Token);
+}
+
+BC250_SDMA_STATUS Bc250SdmaEmitSplitIndirect(
+    uint32_t *Buffer,
+    uint32_t BufferDwords,
+    uint32_t *CursorDwords,
+    uint32_t RingPosBase,
+    uint64_t IbAddress,
+    uint32_t IbDwords,
+    uint32_t Vmid,
+    const BC250_SDMA_IB_SPLIT *Splits,
+    uint32_t SplitCount,
+    uint32_t *LastIndirectEndDwords)
+{
+    return Bc250SdmaEmitSplitIndirectCross(Buffer, BufferDwords, CursorDwords,
+        RingPosBase, IbAddress, IbDwords, Vmid, Splits, SplitCount, NULL,
+        LastIndirectEndDwords);
+}
+
+BC250_SDMA_STATUS Bc250SdmaEmitSplitIndirectCross(
+    uint32_t *Buffer,
+    uint32_t BufferDwords,
+    uint32_t *CursorDwords,
+    uint32_t RingPosBase,
+    uint64_t IbAddress,
+    uint32_t IbDwords,
+    uint32_t Vmid,
+    const BC250_SDMA_IB_SPLIT *Splits,
+    uint32_t SplitCount,
+    const BC250_SDMA_CROSS_ENGINE *Cross,
+    uint32_t *LastIndirectEndDwords)
+{
+    BC250_SDMA_STATUS status;
+    uint32_t prev = 0u;
+    uint32_t i = 0u;
+
+    if (Buffer == NULL || CursorDwords == NULL ||
+        !Bc250IsPowerOfTwo32(BufferDwords) || IbDwords == 0u ||
+        (SplitCount != 0u && Splits == NULL) ||
+        SplitCount > BC250_SDMA_IB_SPLIT_MAX) {
+        return BC250_SDMA_BAD_ARGUMENT;
+    }
+    if ((IbAddress & (uint64_t)(BC250_SDMA_IB_ALIGNMENT_BYTES - 1u)) != 0u) {
+        return BC250_SDMA_MISALIGNED;
+    }
+    /* Validacao inteira ANTES de escrever qualquer dword. */
+    for (i = 0u; i < SplitCount; ++i) {
+        uint32_t mask = Splits[i].VmidMask;
+        uint32_t end = Splits[i].Sdma1EndDwords;
+        if (end != 0u) {
+            /* Faixa do SDMA1: sem invalidacao, alinhada, depois do ponto anterior. */
+            if (Cross == NULL || mask != 0u || Splits[i].Sdma1Token == 0u ||
+                end <= Splits[i].OffsetDwords || end > IbDwords ||
+                (i > 0u && Splits[i].OffsetDwords < Bc250SdmaSplitEndDwords(&Splits[i - 1u]))) {
+                return BC250_SDMA_BAD_ARGUMENT;
+            }
+            if ((Splits[i].OffsetDwords % BC250_SDMA_IB_PACKET_ALIGNMENT_DWORDS) != 0u) {
+                return BC250_SDMA_MISALIGNED;
+            }
+            continue;
+        }
+        if (mask == 0u || (mask & 1u) != 0u || mask > 0xFFFFu ||
+            Splits[i].OffsetDwords > IbDwords ||
+            (i > 0u && Splits[i].OffsetDwords < Bc250SdmaSplitEndDwords(&Splits[i - 1u]))) {
+            return BC250_SDMA_BAD_ARGUMENT;
+        }
+        if ((Splits[i].OffsetDwords % BC250_SDMA_IB_PACKET_ALIGNMENT_DWORDS) != 0u &&
+            Splits[i].OffsetDwords != IbDwords) {
+            return BC250_SDMA_MISALIGNED;
+        }
+    }
+    if (*CursorDwords + Bc250SdmaSplitIndirectWorstDwords(Splits, SplitCount) >
+        BufferDwords) {
+        return BC250_SDMA_RING_FULL;
+    }
+
+    i = 0u;
+    while (i < SplitCount) {
+        uint32_t offset = Splits[i].OffsetDwords;
+        uint32_t mask = Splits[i].VmidMask;
+        uint32_t vmid;
+        uint32_t j = i + 1u;
+        if (Splits[i].Sdma1EndDwords != 0u) {
+            /* P4.2: o SDMA0 roda ate a faixa, entrega a vez e espera o SDMA1. */
+            if (offset > prev) {
+                status = Bc250SdmaEmitIbSegment(Buffer, BufferDwords, CursorDwords,
+                    RingPosBase, IbAddress, prev, offset, Vmid,
+                    LastIndirectEndDwords);
+                if (status != BC250_SDMA_OK) return status;
+            }
+            status = Bc250SdmaEmitFenceUc(Buffer, BufferDwords, CursorDwords,
+                Cross->GoAddress, Splits[i].Sdma1Token);
+            if (status != BC250_SDMA_OK) return status;
+            status = Bc250SdmaEmitCrossWait(Buffer, BufferDwords, CursorDwords,
+                Cross->DoneAddress, Splits[i].Sdma1Token);
+            if (status != BC250_SDMA_OK) return status;
+            prev = Splits[i].Sdma1EndDwords;
+            i = j;
+            continue;
+        }
+        while (j < SplitCount && Splits[j].OffsetDwords == offset &&
+               Splits[j].Sdma1EndDwords == 0u) {
+            mask |= Splits[j].VmidMask;
+            ++j;
+        }
+        if (offset > prev) {
+            status = Bc250SdmaEmitIbSegment(Buffer, BufferDwords, CursorDwords,
+                RingPosBase, IbAddress, prev, offset, Vmid,
+                LastIndirectEndDwords);
+            if (status != BC250_SDMA_OK) return status;
+        }
+        for (vmid = 1u; vmid < 16u; ++vmid) {
+            if (((mask >> vmid) & 1u) == 0u) continue;
+            status = Bc250SdmaEmitVmInvalidate(Buffer, BufferDwords,
+                CursorDwords, BC250_SDMA_INVALIDATE_ENGINE, vmid, 0u);
+            if (status != BC250_SDMA_OK) return status;
+        }
+        prev = offset;
+        i = j;
+    }
+    if (prev < IbDwords) {
+        status = Bc250SdmaEmitIbSegment(Buffer, BufferDwords, CursorDwords,
+            RingPosBase, IbAddress, prev, IbDwords, Vmid,
+            LastIndirectEndDwords);
+        if (status != BC250_SDMA_OK) return status;
+    }
+    return BC250_SDMA_OK;
+}
+
 BC250_SDMA_STATUS Bc250SdmaRingComputeAvailableSpace(
     uint32_t RingDwords,
     uint32_t RptrDwords,

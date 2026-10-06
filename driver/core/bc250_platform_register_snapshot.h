@@ -21,6 +21,15 @@ extern "C" {
 #define BC250_REG_CP_RB0_RPTR_ADDR_HI 0x0000C110u
 #define BC250_REG_CP_RB0_WPTR        0x0000C150u
 #define BC250_REG_CP_RB0_WPTR_HI     0x0000C154u
+/*
+ * EOP do CP (doc 618), P1: mmCP_INT_CNTL_RING0 = 0x1e0a, BASE_IDX 0
+ * (gc_10_1_0_offset.h), GC_BASE seg0 = 0x1260 (cyan_skillfish_ip_offset.h)
+ * -> (0x1260 + 0x1E0A) * 4 = 0xC1A8. TIME_STAMP_INT_ENABLE = bit 26, mascara
+ * 0x04000000 (gc_10_1_0_sh_mask.h). Escritor unico: gfx_v10_0_set_gfx_eop_
+ * interrupt_state (me 0, pipe 0) no amdgpu; aqui Bc250ActiveCpEopIrqArm/Disarm.
+ */
+#define BC250_REG_CP_INT_CNTL_RING0  0x0000C1A8u
+#define BC250_CP_INT_CNTL_RING0_TIME_STAMP_INT_ENABLE 0x04000000u
 #define BC250_REG_SDMA0_RB_CNTL      0x00004B80u
 #define BC250_REG_SDMA0_RB_BASE      0x00004B84u
 #define BC250_REG_SDMA0_RB_BASE_HI   0x00004B88u

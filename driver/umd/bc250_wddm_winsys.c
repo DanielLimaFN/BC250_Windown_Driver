@@ -966,6 +966,18 @@ BC250_WINSYS_STATUS Bc250WinsysSubmitGpuVaForNode(
     return Bc250WinsysSubmitGpuVa(Context, CommandGpuVa, CommandLength);
 }
 
+static unsigned long long Bc250WinsysElapsedMicroseconds(
+    const LARGE_INTEGER *Start, const LARGE_INTEGER *End)
+{
+    LARGE_INTEGER frequency;
+    if (!QueryPerformanceFrequency(&frequency) || frequency.QuadPart <= 0 ||
+        End->QuadPart < Start->QuadPart) {
+        return 0ull;
+    }
+    return (unsigned long long)(((End->QuadPart - Start->QuadPart) * 1000000LL) /
+        frequency.QuadPart);
+}
+
 BC250_WINSYS_STATUS Bc250WinsysUploadAllocation(
     BC250_WINSYS_CONTEXT *Context,
     const BC250_WINSYS_ALLOCATION *Allocation,
@@ -976,6 +988,9 @@ BC250_WINSYS_STATUS Bc250WinsysUploadAllocation(
     D3DDDICB_UNLOCK unlockArgs;
     D3DKMT_HANDLE allocationHandle;
     HRESULT hr;
+    LARGE_INTEGER lockStart;
+    LARGE_INTEGER lockEnd;
+    unsigned long long lockUs;
 
     if (Context == NULL || !Context->Initialized || Allocation == NULL ||
         !Allocation->Created || Source == NULL || ByteCount == 0u ||
@@ -993,9 +1008,15 @@ BC250_WINSYS_STATUS Bc250WinsysUploadAllocation(
     lockArgs.Flags.LockEntire = 1u;
     BC250_WINSYS_LOG("Upload ENTER: hAlloc=0x%x Bytes=%u",
         (unsigned)Allocation->KernelAllocation, ByteCount);
+    /* I.LK (doc 571): quanto o Lock esperou. Lock lento = o VidMm trazendo a
+     * alocacao de volta da RAM; e' o que separa "menu lento" de "menu travado". */
+    QueryPerformanceCounter(&lockStart);
     hr = Context->Callbacks->pfnLockCb(Context->RuntimeDevice, &lockArgs);
+    QueryPerformanceCounter(&lockEnd);
+    lockUs = Bc250WinsysElapsedMicroseconds(&lockStart, &lockEnd);
     if (FAILED(hr)) {
-        BC250_WINSYS_LOG("Upload LOCK falhou: hr=0x%08X", (unsigned)hr);
+        BC250_WINSYS_LOG("Upload LOCK falhou: hr=0x%08X LockUs=%llu", (unsigned)hr,
+            (unsigned long long)lockUs);
         return Bc250WinsysRememberFailure(Context, hr);
     }
     if (lockArgs.pData == NULL) {
@@ -1016,8 +1037,9 @@ BC250_WINSYS_STATUS Bc250WinsysUploadAllocation(
     unlockArgs.NumAllocations = 1u;
     unlockArgs.phAllocations = &allocationHandle;
     hr = Context->Callbacks->pfnUnlockCb(Context->RuntimeDevice, &unlockArgs);
-    BC250_WINSYS_LOG("Upload LEAVE: hr=0x%08X Bytes=%u",
-        (unsigned)hr, ByteCount);
+    BC250_WINSYS_LOG("Upload LEAVE: hr=0x%08X Bytes=%u LockUs=%llu%s",
+        (unsigned)hr, ByteCount, (unsigned long long)lockUs,
+        lockUs >= 50000ull ? " LOCK_LENTO" : "");
     if (FAILED(hr)) return Bc250WinsysRememberFailure(Context, hr);
 
     Context->LastCallbackHr = S_OK;

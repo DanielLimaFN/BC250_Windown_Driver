@@ -4,6 +4,7 @@
 #include "bc250_probe_telemetry.h"
 #include "bc250_sdma_present.h"
 #include "bc250_mmio_breadcrumb.h"
+#include "bc250_vram_cpu_path.h"
 
 /* T3.1: a janela WC termina exatamente na pagina de migalhas, a primeira
  * estrutura privada UC; se uma das duas mudar, o build quebra. */
@@ -555,6 +556,21 @@ BOOLEAN Bc250DisplaySampleSurface(
     if (NonZeroCount != NULL) *NonZeroCount = 0u;
     if (XorHash != NULL) *XorHash = 0u;
     if (NonZeroCount == NULL || XorHash == NULL) return FALSE;
+#if BC250_P1_SILENCIO_DA_BAR && defined(BC250_ENABLE_DXGK_REGISTRATION)
+    /* P1 (doc 594): sem leitura de VRAM pela CPU para prova amostral. So' na
+     * imagem do driver: a suite offline continua exercitando a logica. Os
+     * chamadores ja tratam "nao amostrado" (SAMPLE_UNAVAILABLE): a copia do
+     * Present continua; perdem-se so' os atalhos que dependem de amostra. */
+    UNREFERENCED_PARAMETER(ByteOffset);
+    UNREFERENCED_PARAMETER(ByteCount);
+    UNREFERENCED_PARAMETER(Samples);
+    UNREFERENCED_PARAMETER(base);
+    UNREFERENCED_PARAMETER(stride);
+    UNREFERENCED_PARAMETER(i);
+    UNREFERENCED_PARAMETER(nonZero);
+    UNREFERENCED_PARAMETER(hash);
+    return FALSE;
+#else
     if (g_Bc250DisplayState.FrameBufferVirtual == NULL) return FALSE;
     if (Samples == 0u || ByteCount < sizeof(ULONG)) return FALSE;
     if (ByteOffset > g_Bc250DisplayState.FrameBufferSize) return FALSE;
@@ -582,6 +598,7 @@ BOOLEAN Bc250DisplaySampleSurface(
     *NonZeroCount = nonZero;
     *XorHash = hash;
     return TRUE;
+#endif
 }
 
 BOOLEAN Bc250DisplayCompareSurfaceBytes(
@@ -993,9 +1010,12 @@ NTSYSAPI NTSTATUS NTAPI ZwFlushBuffersFile(
 
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
 #define BC250_PAGING_LOG_RING_SIZE (128u * 1024u)
-static char g_Bc250PagingLogRing[BC250_PAGING_LOG_RING_SIZE];
-static ULONG g_Bc250PagingLogHead = 0u;
-static ULONG g_Bc250PagingLogTail = 0u;
+/* FB.1b (doc 607): globais, NAO static -- o PDB privado so traz simbolos
+ * globais, e o extrator (tools/extrair-anel-do-dump.ps1) le o anel do dump
+ * pelo nome. Corrida 227: com static o cdb nao achou nenhum dos tres. */
+char g_Bc250PagingLogRing[BC250_PAGING_LOG_RING_SIZE];
+ULONG g_Bc250PagingLogHead = 0u;
+ULONG g_Bc250PagingLogTail = 0u;
 static KSPIN_LOCK g_Bc250PagingLogLock;
 static volatile LONG g_Bc250PagingLogLockInitOnce = 0;
 
@@ -1346,6 +1366,49 @@ void Bc250DisplayLog(const char *Format, ...)
         }
         InterlockedExchange(&g_Bc250LogFileOwner, 0);
     }
+}
+
+/*
+ * LOG.1 (doc 585): DriverEntry, AddDevice e StartDevice rodam com APCs
+ * desligadas, entao TODAS as linhas deles vao para o anel em RAM e so' chegam
+ * ao arquivo quando alguem escreve uma linha num contexto normal. Na Corrida
+ * 213 o StartDevice falhou, o dispositivo foi removido e nenhum contexto
+ * normal veio: zero linhas no arquivo, e uma corrida inteira sem diagnostico.
+ * A thread do rastro duravel ja roda em PASSIVE com APCs ligadas a cada
+ * 100 ms e ja faz I/O de arquivo durante a paginacao; ela passa a drenar o
+ * anel, com o mesmo dono unico do arquivo (DX.88) e o mesmo caminho de escrita.
+ */
+void Bc250DisplayLogDrainFromWorker(void)
+{
+    UNICODE_STRING logFileName = RTL_CONSTANT_STRING(L"\\DosDevices\\C:\\BC250_DISPLAY_LOG.txt");
+    OBJECT_ATTRIBUTES objAttr;
+    IO_STATUS_BLOCK ioStatus;
+    HANDLE fileHandle = NULL;
+    BOOLEAN pending;
+    KIRQL irql;
+
+    if (KeGetCurrentIrql() != PASSIVE_LEVEL || KeAreApcsDisabled()) {
+        return;
+    }
+    if (InterlockedCompareExchange(&g_Bc250PagingLogLockInitOnce, 1, 0) == 0) {
+        KeInitializeSpinLock(&g_Bc250PagingLogLock);
+    }
+    KeAcquireSpinLock(&g_Bc250PagingLogLock, &irql);
+    pending = (g_Bc250PagingLogTail != g_Bc250PagingLogHead) ? TRUE : FALSE;
+    KeReleaseSpinLock(&g_Bc250PagingLogLock, irql);
+    if (!pending) {
+        return;
+    }
+    if (InterlockedCompareExchange(&g_Bc250LogFileOwner, 1, 0) != 0) {
+        return;
+    }
+    InitializeObjectAttributes(&objAttr, &logFileName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    if (NT_SUCCESS(ZwCreateFile(&fileHandle, FILE_APPEND_DATA | SYNCHRONIZE, &objAttr, &ioStatus, NULL, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_OPEN_IF, FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0))) {
+        Bc250LogRingDrainToFile(fileHandle);
+        (void)ZwFlushBuffersFile(fileHandle, &ioStatus);
+        ZwClose(fileHandle);
+    }
+    InterlockedExchange(&g_Bc250LogFileOwner, 0);
 }
 
 void Bc250DisplayLogSamplingSummary(void)
@@ -1791,16 +1854,20 @@ NTSTATUS Bc250DisplayInit(
          * passa a recusar (falha fechada) em vez de ler por um alias.
          */
         ULONG fbBytes = (ULONG)BC250_VRAM_WC_WINDOW_BYTES;
+        /* P1b: a janela WC enxerga a VRAM pela DRAM quando armada (aper_base em APU). */
+        PHYSICAL_ADDRESS fbCpuPhysical;
+        fbCpuPhysical.QuadPart = (LONGLONG)Bc250VramCpuTranslate(
+            (ULONGLONG)g_Bc250DisplayState.FrameBufferPhysical.QuadPart);
         g_Bc250DisplayState.FrameBufferSize = fbBytes;
         g_Bc250DisplayState.FrameBufferVirtual = MmMapIoSpaceEx(
-            g_Bc250DisplayState.FrameBufferPhysical,
+            fbCpuPhysical,
             fbBytes,
             PAGE_READWRITE | PAGE_WRITECOMBINE);
         if (g_Bc250DisplayState.FrameBufferVirtual == NULL) {
             fbBytes = 128u * 1024u * 1024u;
             g_Bc250DisplayState.FrameBufferSize = fbBytes;
             g_Bc250DisplayState.FrameBufferVirtual = MmMapIoSpaceEx(
-                g_Bc250DisplayState.FrameBufferPhysical,
+                fbCpuPhysical,
                 fbBytes,
                 PAGE_READWRITE | PAGE_WRITECOMBINE);
         }
@@ -1808,7 +1875,7 @@ NTSTATUS Bc250DisplayInit(
             fbBytes = g_Bc250DisplayState.CurrentMode.Pitch * g_Bc250DisplayState.CurrentMode.Height;
             g_Bc250DisplayState.FrameBufferSize = fbBytes;
             g_Bc250DisplayState.FrameBufferVirtual = MmMapIoSpaceEx(
-                g_Bc250DisplayState.FrameBufferPhysical,
+                fbCpuPhysical,
                 fbBytes,
                 PAGE_READWRITE | PAGE_WRITECOMBINE);
         }
@@ -1882,6 +1949,12 @@ void Bc250DisplayTeardown(void)
     }
     Bc250DisplayClearGpuVaMappings();
     Bc250SdmaPresentTeardown();
+    /* P1b: o proximo StartDevice decide de novo o caminho da CPU ate a VRAM. */
+    if (g_Bc250VramCpuViaDram != 0) {
+        Bc250DisplayLog("[P1B_VRAM_DRAM] TEARDOWN: desarmada (HDP omitido %lld vezes)\n",
+            (long long)g_Bc250VramCpuHdpSkipped);
+    }
+    InterlockedExchange(&g_Bc250VramCpuViaDram, 0);
 #else
     Bc250DisplayClearGpuVaMappings();
 #endif
@@ -4017,6 +4090,10 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                              * amostral por retangulo sai na linha DIRTY_RECTS. */
                             Bc250DisplayLog("[Present #%d] BYTE_PROOF SKIPPED (DIRTY_RECTS n=%u Bytes=%u): prova amostral por retangulo na linha DIRTY_RECTS\n",
                                 count, dirtyRectCount, dirtyRectBytes);
+                        } else if (BC250_P1_SILENCIO_DA_BAR) {
+                            /* P1 (doc 594): a comparacao integral le ~11 MB da VRAM pela BAR. */
+                            Bc250DisplayLog("[Present #%d] BYTE_PROOF SKIPPED (P1 silencio da BAR): sem leitura de VRAM pela CPU; prova so' da engine (RPTR==WPTR e fence)\n",
+                                count);
                         } else {
                             UINT64 mismatchOffset = ~(UINT64)0;
                             ULONG postNz = 0u, postHx = 0u;

@@ -1736,6 +1736,49 @@ static void Bc250UmdSyncTextureToVkImage(
     }
 }
 
+/*
+ * L1 (doc 571) -- o Lock de upload na alocacao WDDM de um BUFFER e' redundante
+ * quando o buffer tem VkBuffer, e e' o gatilho medido do BugCheck 0x10E/0x34.
+ *
+ * Medido (P0, pilhas das Corridas 197 e 206): DxgkLock -> VidMmBeginCPUAccess
+ * -> SetupAllocationForCPUAccess -> VIDMM_RECYCLE_MULTIRANGE::Rotate, sobre
+ * uma alocacao STAGING (DYNAMIC/STAGING caem nessa classe) que o VidMm tinha
+ * acabado de despejar para a RAM e trazer de volta. Na 206 o argumento da
+ * pilha (0x28000 = 163.840 bytes) e' o hAlloc ...D1 do log do KMD, que casa
+ * com o buffer de vertices dinamico de 160.000 bytes do DWM.
+ *
+ * Os draws leem o VkBuffer (Bc250UmdVkUploadBufferData), nunca a alocacao
+ * WDDM do buffer; a composicao do KMD so' copia TEXTURAS. Cada Lock forcava o
+ * VidMm a trazer o buffer de volta a VRAM so' para receber uma copia que
+ * ninguem le -- gastando os 256 MB e provocando despejos de outros.
+ *
+ * Fica de fora (continua com Lock): textura, buffer sem VkBuffer e recurso
+ * compartilhado (MISC_SHARED ou aberto de outro processo), onde a alocacao
+ * WDDM e' o meio de troca entre processos. Uma variavel: so' os buffers.
+ */
+static volatile LONG g_Bc250UmdL1SkippedLocks = 0;
+
+static BOOL Bc250UmdBufferWddmCopyIsRedundant(
+    _In_opt_ const BC250_UMD_DEVICE* device,
+    _In_opt_ const BC250_UMD_RESOURCE* res,
+    _In_z_ const char* origem)
+{
+    LONG skipped;
+    if (device == NULL || res == NULL) return FALSE;
+    if (res->ResourceDimension != D3D10DDIRESOURCE_BUFFER) return FALSE;
+    if ((res->MiscFlags & D3D10_DDI_RESOURCE_MISC_SHARED) != 0u || res->OpenedShared) return FALSE;
+    if (!device->VkBridgeInitialized || !res->VkResourceCreated ||
+        res->VkMem == VK_NULL_HANDLE) return FALSE;
+    skipped = InterlockedIncrement(&g_Bc250UmdL1SkippedLocks);
+    if (skipped <= 8 || (skipped % 1024) == 0) {
+        Bc250UmdTrace("L1 %s: Lock de upload na alocacao WDDM do buffer PULADO #%ld "
+            "(res=%p hAlloc=0x%x %u bytes; o draw le o VkBuffer)",
+            origem, skipped, (void*)res, (unsigned)res->Allocation.KernelAllocation,
+            res->TotalByteSize);
+    }
+    return TRUE;
+}
+
 VOID APIENTRY Bc250Umd10ResourceMap(
     D3D10DDI_HDEVICE hDevice,
     D3D10DDI_HRESOURCE hResource,
@@ -1786,7 +1829,8 @@ VOID APIENTRY Bc250Umd10ResourceUnmap(
     BC250_UMD_RESOURCE* res = (BC250_UMD_RESOURCE*)hResource.pDrvPrivate;
 
     if (device != NULL && device->WinsysInitialized && res != NULL &&
-        res->Allocation.Created && res->pCpuShadow != NULL && res->TotalByteSize > 0u) {
+        res->Allocation.Created && res->pCpuShadow != NULL && res->TotalByteSize > 0u &&
+        !Bc250UmdBufferWddmCopyIsRedundant(device, res, "ResourceUnmap")) {
         BC250_WINSYS_STATUS wsStatus = Bc250WinsysUploadAllocation(&device->Winsys, &res->Allocation,
             res->pCpuShadow, res->TotalByteSize);
         if (wsStatus == BC250_WINSYS_OK) {
@@ -2452,7 +2496,9 @@ VOID APIENTRY Bc250Umd10DefaultConstantBufferUpdateSubresourceUP(
             copyBytes = res->TotalByteSize;
         }
         memcpy(res->pCpuShadow, pSysMemBuffer, copyBytes);
-        if (device != NULL && device->WinsysInitialized && res->Allocation.Created) {
+        if (device != NULL && device->WinsysInitialized && res->Allocation.Created &&
+            !Bc250UmdBufferWddmCopyIsRedundant(device, res,
+                "DefaultConstantBufferUpdateSubresourceUP")) {
             (void)Bc250WinsysUploadAllocation(&device->Winsys, &res->Allocation,
                 res->pCpuShadow, res->TotalByteSize);
         }
@@ -2572,7 +2618,8 @@ VOID APIENTRY Bc250Umd10ResourceUpdateSubresourceUP(
         }
 
         if (!copied) goto update_invalid;
-        if (device != NULL && device->WinsysInitialized && res->Allocation.Created) {
+        if (device != NULL && device->WinsysInitialized && res->Allocation.Created &&
+            !Bc250UmdBufferWddmCopyIsRedundant(device, res, "ResourceUpdateSubresourceUP")) {
             BC250_WINSYS_STATUS wsStatus = Bc250WinsysUploadAllocation(
                 &device->Winsys, &res->Allocation, res->pCpuShadow, res->TotalByteSize);
             if (wsStatus == BC250_WINSYS_OK) {

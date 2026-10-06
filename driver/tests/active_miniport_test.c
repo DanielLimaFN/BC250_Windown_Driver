@@ -108,6 +108,19 @@ PVOID (*__imp_MmMapIoSpace)(PHYSICAL_ADDRESS, SIZE_T, MEMORY_CACHING_TYPE) =
 VOID (*__imp_MmUnmapIoSpace)(PVOID, SIZE_T) =
     Bc250TestUnmapIoSpace;
 
+/* P1b.2: o helper Bc250VramCpuMapMemory referencia o mapeador da DRAM. Nesta
+ * suite a P1b nunca e' armada; o stub falha fechado se um dia rodar. */
+static PVOID Bc250TestMapIoSpaceEx(PHYSICAL_ADDRESS PhysicalAddress,
+    SIZE_T NumberOfBytes, ULONG Protect)
+{
+    UNREFERENCED_PARAMETER(PhysicalAddress);
+    UNREFERENCED_PARAMETER(NumberOfBytes);
+    UNREFERENCED_PARAMETER(Protect);
+    return NULL;
+}
+PVOID (*__imp_MmMapIoSpaceEx)(PHYSICAL_ADDRESS, SIZE_T, ULONG) =
+    Bc250TestMapIoSpaceEx;
+
 static PVOID Bc250TestAllocatePool2(
     POOL_FLAGS Flags,
     SIZE_T NumberOfBytes,
@@ -2096,11 +2109,25 @@ static int Bc250RunActiveMiniportTest(void)
         allocationHandles[0] = allocationInfo[0].hAllocation;
         allocationHandles[1] = allocationInfo[1].hAllocation;
         CHECK(allocationHandles[0] != NULL && allocationHandles[1] != NULL);
-        CHECK(allocationInfo[0].Size == 65536u &&
-            allocationInfo[0].SupportedReadSegmentSet == 1u &&
-            allocationInfo[0].SupportedWriteSegmentSet == 1u &&
-            allocationInfo[0].PreferredSegment.SegmentId0 == 1u &&
-            allocationInfo[0].FlagsWddm2.CpuVisible == 0u);
+        /*
+         * M1b.1 LIGADA (3.358, doc 579): token de RADV sem CPU transborda para o
+         * segmento 2 (SegSet 0x3, preferido 1 -> 2), pela politica do contrato
+         * (fonte unica). Com a M1b desligada este teste reprova de proposito:
+         * o comportamento esperado mudou e tem de ser reescrito, nao herdado.
+         */
+        {
+            BC250_ALLOCATION_SEGMENT_POLICY m1bPolicy;
+            CHECK(Bc250AllocationRadvSystemSegmentPolicy(&allocationPrivate[0],
+                0, &m1bPolicy) == 1);
+            CHECK(m1bPolicy.SegmentSet == 0x3u && m1bPolicy.Preferred0 == 1u &&
+                m1bPolicy.Preferred1 == 2u);
+            CHECK(allocationInfo[0].Size == 65536u &&
+                allocationInfo[0].SupportedReadSegmentSet == m1bPolicy.SegmentSet &&
+                allocationInfo[0].SupportedWriteSegmentSet == m1bPolicy.SegmentSet &&
+                allocationInfo[0].PreferredSegment.SegmentId0 == m1bPolicy.Preferred0 &&
+                allocationInfo[0].PreferredSegment.SegmentId1 == m1bPolicy.Preferred1 &&
+                allocationInfo[0].FlagsWddm2.CpuVisible == 0u);
+        }
 
         /* Verify primary allocation gets CpuVisible = 1u and AccessedPhysically = 1u */
         {

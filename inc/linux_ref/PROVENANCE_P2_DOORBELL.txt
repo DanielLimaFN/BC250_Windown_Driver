@@ -1,0 +1,44 @@
+Proveniencia P2 (doc 598) -- torvalds/linux tag v6.6, raw.githubusercontent.com, baixado em 05/10/2026.
+Arquivos inteiros copiados: sdma_v5_0.c nbio_v2_3.c amdgpu_doorbell.h navi10_ip_offset.h
+Trechos (os headers de NBIO completos tem 1,5 MB e 12,8 MB):
+--- drivers/gpu/drm/amd/include/asic_reg/nbio/nbio_2_3_offset.h
+344:#define mmRCC_DEV0_EPF0_RCC_DOORBELL_APER_EN                                                           0x00c0
+346:#define mmRCC_DEV0_EPF0_RCC_CONFIG_MEMSIZE                                                             0x00c3
+578:#define mmBIF_BX_PF_HDP_MEM_COHERENCY_FLUSH_CNTL                                                       0x00f7
+648:#define mmBIF_SDMA0_DOORBELL_RANGE                                                                     0x01d0
+649:#define mmBIF_SDMA0_DOORBELL_RANGE_BASE_IDX                                                            2
+--- drivers/gpu/drm/amd/include/asic_reg/nbio/nbio_2_3_sh_mask.h
+2210:#define BIF_SDMA0_DOORBELL_RANGE__OFFSET__SHIFT                                                               0x2
+2211:#define BIF_SDMA0_DOORBELL_RANGE__SIZE__SHIFT                                                                 0x10
+2212:#define BIF_SDMA0_DOORBELL_RANGE__OFFSET_MASK                                                                 0x00000FFCL
+2213:#define BIF_SDMA0_DOORBELL_RANGE__SIZE_MASK                                                                   0x001F0000L
+--- P2c: abertura de doorbell (nv.c nv_common_hw_init/hw_fini, nbio_v2_3_enable_doorbell_aperture)
+344:#define mmRCC_DEV0_EPF0_RCC_DOORBELL_APER_EN                                                           0x00c0
+345:#define mmRCC_DEV0_EPF0_RCC_DOORBELL_APER_EN_BASE_IDX                                                  2
+1196:#define RCC_DEV0_EPF0_RCC_DOORBELL_APER_EN__BIF_DOORBELL_APER_EN__SHIFT                                       0x0
+1197:#define RCC_DEV0_EPF0_RCC_DOORBELL_APER_EN__BIF_DOORBELL_APER_EN_MASK                                         0x00000001L
+	/* remap HDP registers to a hole in mmio space,
+	 * for the purpose of expose those registers
+	 * to process space
+	 */
+	if (adev->nbio.funcs->remap_hdp_registers && !amdgpu_sriov_vf(adev))
+		adev->nbio.funcs->remap_hdp_registers(adev);
+	/* enable the doorbell aperture */
+	adev->nbio.funcs->enable_doorbell_aperture(adev, true);
+
+	return 0;
+}
+
+static int nv_common_hw_fini(void *handle)
+{
+	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
+
+	/* Disable the doorbell aperture and selfring doorbell aperture
+	 * separately in hw_fini because nv_enable_doorbell_aperture
+	 * has been removed and there is no need to delay disabling
+	 * selfring doorbell.
+	 */
+	adev->nbio.funcs->enable_doorbell_aperture(adev, false);
+	adev->nbio.funcs->enable_doorbell_selfring_aperture(adev, false);
+
+	return 0;

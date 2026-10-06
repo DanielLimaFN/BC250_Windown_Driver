@@ -221,6 +221,12 @@ if %ERRORLEVEL% NEQ 0 exit /b 1
 echo [cc] bc250_gcvm_global_mmu.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_gcvm_global_mmu.obj" "%ROOTDIR%\driver\core\bc250_gcvm_global_mmu.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
+echo [cc] bc250_mmhub_gart.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_mmhub_gart.obj" "%ROOTDIR%\driver\core\bc250_mmhub_gart.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+echo [cc] bc250_sdma1_bringup.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_sdma1_bringup.obj" "%ROOTDIR%\driver\core\bc250_sdma1_bringup.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
 
 echo [cc] bc250_psp_ring_transaction.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_psp_ring_transaction.obj" "%ROOTDIR%\driver\core\bc250_psp_ring_transaction.c"
@@ -590,6 +596,9 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
+  "%ODIR%\bc250_sdma_packet_builder.obj" ^
   "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\mmio_topology_transport_test.obj" kernel32.lib
@@ -670,6 +679,9 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
+  "%ODIR%\bc250_sdma_packet_builder.obj" ^
   "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\bc250_post_display_reservation.obj" ^
@@ -1211,6 +1223,9 @@ echo [link] gcvm_global_mmu_test.exe
 link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   /OUT:"%ODIR%\gcvm_global_mmu_test.exe" ^
   "%ODIR%\bc250_gcvm_global_mmu.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
+  "%ODIR%\bc250_sdma_packet_builder.obj" ^
   "%ODIR%\gcvm_global_mmu_test.obj" kernel32.lib
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
@@ -1219,6 +1234,39 @@ if %ERRORLEVEL% NEQ 0 (
   echo TESTE FALHOU ^(gcvm_global_mmu_test^) - Linha/Codigo: %errorlevel%
   exit /b 1
 )
+echo [cc] mmhub_gart_test.c
+cl %CFLAGS% /Fo"%ODIR%\mmhub_gart_test.obj" "%ROOTDIR%\driver\tests\mmhub_gart_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+echo [link] mmhub_gart_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\mmhub_gart_test.exe" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\mmhub_gart_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\mmhub_gart_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(mmhub_gart_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
+echo [cc] sdma1_bringup_test.c
+cl %CFLAGS% /Fo"%ODIR%\sdma1_bringup_test.obj" "%ROOTDIR%\driver\tests\sdma1_bringup_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+echo [link] sdma1_bringup_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\sdma1_bringup_test.exe" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
+  "%ODIR%\bc250_sdma_packet_builder.obj" ^
+  "%ODIR%\sdma1_bringup_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\sdma1_bringup_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(sdma1_bringup_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
 
 echo [cc] psp_ring_transaction_test.c
 cl %CFLAGS% /Fo"%ODIR%\psp_ring_transaction_test.obj" "%ROOTDIR%\driver\tests\psp_ring_transaction_test.c"
@@ -1500,6 +1548,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_isa_validator.obj" ^
   "%ODIR%\bc250_vram_allocator.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
   "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_probe_telemetry.obj" ^
   "%ODIR%\bc250_submission_engine.obj" ^
@@ -1533,6 +1583,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_isa_validator.obj" ^
   "%ODIR%\bc250_vram_allocator.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
   "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_probe_telemetry.obj" ^
   "%ODIR%\bc250_submission_engine.obj" ^
@@ -1774,6 +1826,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
   "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\global_readiness_audit_test.obj" kernel32.lib
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -1827,6 +1881,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
   "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\bc250_post_display_reservation.obj" ^
@@ -1906,6 +1962,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
   "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\bc250_dxgk_readonly_ddi.obj" ^
   "%ODIR%\bc250_mcdm_callbacks.obj" ^
@@ -1988,6 +2046,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^
   "%ODIR%\bc250_gcvm_vmid8_transaction.obj" ^
   "%ODIR%\bc250_gcvm_global_mmu.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
   "%ODIR%\bc250_psp_ring_transaction.obj" ^
   "%ODIR%\bc250_psp_load_fw_transaction.obj" ^
   "%ODIR%\bc250_sdma_f32_transaction.obj" ^
@@ -2206,6 +2266,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^
   "%ODIR%\bc250_gcvm_vmid8_transaction.obj" ^
   "%ODIR%\bc250_gcvm_global_mmu.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
   "%ODIR%\bc250_psp_ring_transaction.obj" ^
   "%ODIR%\bc250_psp_load_fw_transaction.obj" ^
   "%ODIR%\bc250_sdma_f32_transaction.obj" ^

@@ -3,7 +3,7 @@ Signature="$Windows NT$"
 Class=Display
 ClassGuid={4d36e968-e325-11ce-bfc1-08002be10318}
 Provider=%ProviderName%
-DriverVer=10/02/2026,3.351.0.0
+DriverVer=10/06/2026,3.384.0.0
 CatalogFile=bc250mcdm.cat
 PnpLockdown=1
 
@@ -19,6 +19,7 @@ BC250Mcdm.DisplayCopyFiles=11
 bc250mcdm.sys=1
 bc250umd.dll=1
 cyan_skillfish2_sdma.bin=1
+cyan_skillfish2_sdma1.bin=1
 cyan_skillfish2_rlc.bin=1
 cyan_skillfish2_pfp.bin=1
 cyan_skillfish2_me.bin=1
@@ -42,6 +43,12 @@ AddReg=BC250Mcdm_HW_AddReg
 
 [BC250Mcdm_HW_AddReg]
 HKR,,Security,,"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;WD)"
+; P3 (doc 609): MSI como o amdgpu (amdgpu_irq_init -> pci_alloc_irq_vectors MSI).
+; O hardware anuncia linha, MSI e MSI-X (DEVPKEY_PciDevice_InterruptSupport=7).
+HKR,"Interrupt Management",,0x00000010
+HKR,"Interrupt Management\MessageSignaledInterruptProperties",,0x00000010
+HKR,"Interrupt Management\MessageSignaledInterruptProperties",MSISupported,0x00010001,1
+HKR,"Interrupt Management\MessageSignaledInterruptProperties",MessageNumberLimit,0x00010001,1
 
 [BC250Mcdm_SoftwareDeviceSettings]
 HKR,,InstalledDisplayDrivers,0x00010000,"bc250umd"
@@ -130,6 +137,7 @@ HKR,Parameters,GfxRingBringup,0x00010001,0
 [BC250Mcdm.CopyFiles]
 bc250mcdm.sys
 cyan_skillfish2_sdma.bin
+cyan_skillfish2_sdma1.bin
 cyan_skillfish2_rlc.bin
 cyan_skillfish2_pfp.bin
 cyan_skillfish2_me.bin

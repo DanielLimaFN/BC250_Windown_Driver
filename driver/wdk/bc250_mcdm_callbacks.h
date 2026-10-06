@@ -16,6 +16,40 @@ VOID Bc250PagingTraceStop(VOID);
 #define BC250_PAGING_HANG_JOURNAL_DONE  45u
 #define BC250_PAGING_HANG_LOCK_RELEASE  46u
 VOID Bc250PagingTraceMarkExternal(ULONG Stage, ULONG Operation, NTSTATUS Status);
+/* I.PG (doc 571): o flush de TLB pelo anel (4c.2) conta no registro BPG1. */
+VOID Bc250PagingStatsNoteRingFlush(VOID);
+
+/*
+ * 4c.4 (doc 575): pontos de divisao do IB de paginacao. O FlushTlb do build
+ * registra a GPUVA do paging buffer onde ele caiu (DmaBufferGpuVirtualAddress
+ * + DmaBufferWriteOffset) e as VMIDs a invalidar; a submissao do Node 0
+ * consome os que caem dentro do IB e executa o IB em pedacos, com a
+ * invalidacao no anel entre eles. Build e submit do Node 0 sao seriais.
+ */
+#include "../core/bc250_sdma_packet_builder.h"
+VOID Bc250PagingSplitRecord(UINT32 VmidMask);
+/* Mesmo registro com a GPUVA explicita (suite offline e Record). */
+VOID Bc250PagingSplitRecordAt(UINT64 Va, UINT32 VmidMask);
+UINT32 Bc250PagingSplitTake(
+    UINT64 IbVa,
+    ULONG IbBytes,
+    BC250_SDMA_IB_SPLIT *Out,
+    UINT32 OutMax,
+    UINT32 *StaleMask,
+    UINT32 *StaleCount);
+UINT32 Bc250PagingSplitPendingCount(VOID);
+/* LC.1 (doc 589): TRUE so' se ESTE buffer ja tem Limit pontos proprios. */
+BOOLEAN Bc250PagingSplitMustDefer(UINT64 BufferVa, UINT32 WriteOffset, UINT32 Limit);
+/*
+ * P4.2 (doc 622): faixa de escrita de PTE do paging buffer [StartVa, EndVa)
+ * que vai rodar no SDMA1. So' registra com a rota armada (SDMA1 vivo e
+ * anexado ao envio); faixa contigua a anterior e' fundida.
+ */
+VOID Bc250PagingSdma1RangeRecord(UINT64 StartVa, UINT64 EndVa);
+VOID Bc250PagingSdma1RouteSet(BOOLEAN Armed);
+BOOLEAN Bc250PagingSdma1RouteArmed(VOID);
+/* P4.2: faixas registradas no build, desalinhadas (ficam no SDMA0) e descartadas. */
+VOID Bc250PagingSdma1RangeStats(LONG64 *Recorded, LONG64 *Unaligned, LONG64 *Dropped);
 
 DXGKDDI_BUILDPAGINGBUFFER Bc250McdmBuildPagingBuffer;
 DXGKDDI_CALIBRATEGPUCLOCK Bc250McdmCalibrateGpuClock;
@@ -126,6 +160,12 @@ typedef struct BC250_MCDM_RUNTIME_CAPS {
     UINT64 HiddenSegmentBaseOffset;
     UINT64 HiddenSegmentBytes;
     UINT32 HiddenSegmentStatus;
+    /*
+     * 4c.4 (doc 575): 1 = GPUMMUCAPS declara GPU_VIRTUAL e o UpdatePageTable
+     * vira WRITE_LINEAR no paging buffer. So' vai a 1 com o tunable
+     * PtUpdateGpuVirtual e o flush pelo anel do SDMA provado no boot.
+     */
+    UINT32 PageTableUpdateGpuVirtual;
 } BC250_MCDM_RUNTIME_CAPS;
 
 typedef NTSTATUS (*BC250_MCDM_QUERY_RUNTIME_CAPS)(
@@ -450,6 +490,19 @@ typedef NTSTATUS (*BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER)(
 VOID Bc250McdmInstallUpdatePageTableHandler(
     _In_opt_ BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER UpdatePageTableHandler);
 
+/*
+ * P6 (doc 618): flags extras da FOLHA para a alocacao do UpdatePageTable
+ * (hoje so BC250_PTE_MTYPE_UC). Devolve 0 quando nao sabe: o default e o NC do
+ * amdgpu. Chamada em PASSIVE_LEVEL pelo BuildPagingBuffer, fora do ObjectLock.
+ */
+typedef UINT32 (*BC250_MCDM_PTE_LEAF_FLAGS_QUERY)(
+    _In_ HANDLE AdapterContext,
+    _In_opt_ HANDLE hProcess,
+    _In_opt_ HANDLE hAllocation);
+
+VOID Bc250McdmInstallPteLeafFlagsQuery(
+    _In_opt_ BC250_MCDM_PTE_LEAF_FLAGS_QUERY Query);
+
 typedef NTSTATUS (*BC250_MCDM_ESCAPE_HANDLER)(
     _In_ HANDLE AdapterContext,
     _In_ CONST DXGKARG_ESCAPE *pEscape);
@@ -473,6 +526,17 @@ NTSTATUS Bc250McdmEncodeVidMmPte(
     _In_ CONST BC250_MCDM_RUNTIME_CAPS *Caps,
     _In_ CONST DXGK_PTE *Source,
     _Out_ UINT64 *Encoded);
+
+/*
+ * P6: como WithLevel, com flags extras na FOLHA (so BC250_PTE_MTYPE_UC passa;
+ * qualquer outro bit e ignorado). Em nivel > 0 ExtraLeafFlags nao tem efeito.
+ */
+NTSTATUS Bc250McdmEncodeVidMmPteWithLevelEx(
+    const BC250_MCDM_RUNTIME_CAPS *Caps,
+    const DXGK_PTE *Source,
+    UINT32 PageTableLevel,
+    UINT32 ExtraLeafFlags,
+    UINT64 *Encoded);
 
 NTSTATUS Bc250McdmEncodeVidMmPteWithLevel(
     _In_ CONST BC250_MCDM_RUNTIME_CAPS *Caps,

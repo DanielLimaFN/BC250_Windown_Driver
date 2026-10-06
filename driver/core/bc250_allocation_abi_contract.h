@@ -100,8 +100,19 @@ typedef UINT32 uint32_t;
  */
 #define BC250_ALLOCATION_FLAG_RADV_DOMAIN_GTT    0x00000008u
 #define BC250_ALLOCATION_FLAG_RADV_COMMAND       0x00000010u
+/*
+ * P6 (doc 618, 06/10): a RADV pediu RADEON_FLAG_GL2_BYPASS (memoria coerente
+ * ou nao cacheada: tipos DEVICE_COHERENT/UNCACHED_AMD, eventos, semaforo de
+ * gang, BO de IB concatenado, destino linear do blit de apresentacao). No
+ * Linux a RADV passa AMDGPU_VM_MTYPE_UC no mapeamento desse BO
+ * (radv_amdgpu_bo_va_op) e o gmc_v10_0_get_vm_pte poe MTYPE_UC na PTE. Aqui o
+ * KMD guarda a flag no registro da alocacao e codifica a folha com
+ * BC250_PTE_MTYPE_UC. Mesma regra das outras: so em token da RADV.
+ */
+#define BC250_ALLOCATION_FLAG_RADV_GL2_BYPASS    0x00000020u
 #define BC250_ALLOCATION_RADV_ONLY_FLAGS \
-    (BC250_ALLOCATION_FLAG_RADV_DOMAIN_GTT | BC250_ALLOCATION_FLAG_RADV_COMMAND)
+    (BC250_ALLOCATION_FLAG_RADV_DOMAIN_GTT | BC250_ALLOCATION_FLAG_RADV_COMMAND | \
+     BC250_ALLOCATION_FLAG_RADV_GL2_BYPASS)
 #define BC250_ALLOCATION_SUPPORTED_FLAGS \
     (BC250_ALLOCATION_FLAG_CPU_VISIBLE | BC250_ALLOCATION_FLAG_HAS_GEOMETRY | \
      BC250_ALLOCATION_FLAG_GPU_VA_ONLY | BC250_ALLOCATION_RADV_ONLY_FLAGS)

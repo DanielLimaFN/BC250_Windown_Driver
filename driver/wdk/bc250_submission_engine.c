@@ -5,6 +5,7 @@
 #include "bc250_probe_telemetry.h"
 #include "bc250_observable_shader.h"
 #include "bc250_sdma_present.h"
+#include "bc250_vram_cpu_path.h"
 
 /*
  * Fase P1 — implementacao do motor de submissao persistente.
@@ -179,8 +180,7 @@ static VOID Bc250SubmissionEngineReleaseResources(
         Engine->DoorbellVirtual = NULL;
     }
     if (Engine->Mapped != NULL) {
-        (void)Context->Core.DxgkInterface.DxgkCbUnmapMemory(
-            Context->Core.DxgkInterface.DeviceHandle,
+        (void)Bc250VramCpuUnmapMemory(&Context->Core.DxgkInterface,
             (PVOID)Engine->Mapped);
         Engine->Mapped = NULL;
     }
@@ -198,6 +198,54 @@ static VOID Bc250SubmissionEngineReleaseResources(
 }
 
 _Check_return_
+/*
+ * V0.1 (Corrida 216, doc 589): ver o prototipo em bc250_active_miniport.h.
+ * Fica aqui porque os dois chamadores (este motor e a transacao HQD do
+ * miniport) linkam este objeto. A coerencia (HDP + invalidacao da VMID 0)
+ * e' feita pelo contrato do HQD depois, como com a tabela propria.
+ */
+BOOLEAN Bc250ActiveD2GartShareWithMec(
+    struct BC250_DXGK_ACTIVE_CONTEXT *Context,
+    uint64_t MecBlockMc,
+    BC250_HQD_MC_BUFFERS *Buffers,
+    const char *Who)
+{
+    volatile uint64_t *table;
+    uint64_t expected;
+    uint32_t i;
+    uint32_t mismatches = 0u;
+
+    if (Context == NULL || Buffers == NULL ||
+        InterlockedCompareExchange(&Context->D2GartProgrammed, 0, 0) != 1 ||
+        Context->D2GartTableCpu == NULL) {
+        return FALSE;
+    }
+    if (MecBlockMc == 0ull || (MecBlockMc & 0xFFFull) != 0ull ||
+        Context->Core.TopologyEvidence.AddressSpace.VramMcStart == 0ull) {
+        Bc250DisplayLog("[D2_GART] MEC (%s) NAO compartilhado: bloco MC=0x%llX invalido -- o MEC usaria a tabela propria e derrubaria a GART; recusado\n",
+            Who, (unsigned long long)MecBlockMc);
+        return FALSE;
+    }
+    table = Context->D2GartTableCpu;
+    for (i = 0u; i < BC250_D2_GART_MEC_ENTRIES; ++i) {
+        table[i] = ((MecBlockMc + ((uint64_t)i << 12)) & 0x0000FFFFFFFFF000ull) | 0xE1ull;
+    }
+    KeMemoryBarrier();
+    for (i = 0u; i < BC250_D2_GART_MEC_ENTRIES; ++i) {
+        expected = ((MecBlockMc + ((uint64_t)i << 12)) & 0x0000FFFFFFFFF000ull) | 0xE1ull;
+        if (table[i] != expected) ++mismatches;
+    }
+    Buffers->PtVirtual = (volatile void *)table;
+    Buffers->PtGpuAddress = Context->Core.TopologyEvidence.AddressSpace.VramMcStart +
+        BC250_D2_GART_TABLE_VRAM_OFFSET;
+    Buffers->PtSizeBytes = BC250_GCVM_GART_ENTRIES * sizeof(uint64_t);
+    Buffers->Context0External = 1u;
+    InterlockedExchange(&Context->D2GartSharedWithMec, 1);
+    Bc250DisplayLog("[D2_GART] MEC (%s) na tabela da GART: PTE[0..31] -> MC 0x%llX.. (0xE1), readback divergentes=%u; o MEC NAO programa o contexto 0 (V0.1, doc 589)\n",
+        Who, (unsigned long long)MecBlockMc, mismatches);
+    return TRUE;
+}
+
 NTSTATUS Bc250SubmissionEngineOnline(
     _Inout_ struct BC250_DXGK_ACTIVE_CONTEXT *Context)
 {
@@ -272,10 +320,9 @@ NTSTATUS Bc250SubmissionEngineOnline(
     }
 
     physical.QuadPart = (LONGLONG)(bar->Start + region.Offset);
-    ntStatus = Context->Core.DxgkInterface.DxgkCbMapMemory(
-        Context->Core.DxgkInterface.DeviceHandle,
-        physical, (ULONG)BC250_SUBMISSION_BLOCK_BYTES,
-        FALSE, FALSE, MmNonCached, (PVOID *)&mapped);
+    ntStatus = Bc250VramCpuMapMemory(&Context->Core.DxgkInterface,
+        (ULONGLONG)physical.QuadPart, (ULONG)BC250_SUBMISSION_BLOCK_BYTES,
+        MmNonCached, (PVOID *)&mapped);
     if (!NT_SUCCESS(ntStatus) || mapped == NULL) {
         Bc250SubmissionEngineReleaseResources(Context, engine);
         return NT_SUCCESS(ntStatus) ? STATUS_UNSUCCESSFUL : ntStatus;
@@ -326,6 +373,13 @@ NTSTATUS Bc250SubmissionEngineOnline(
         basePhysical + BC250_SUBMISSION_RESULT_OFFSET;
     engine->Buffers.ResultSizeBytes = 256u;
 
+    /*
+     * V0.1 (Corrida 216, doc 589): com a GART da D2 ligada, a fila usa a
+     * tabela da GART (PTEs 0..31) e o contrato nao programa o contexto 0;
+     * senao, a tabela propria em +0x3000, como antes.
+     */
+    if (!Bc250ActiveD2GartShareWithMec(Context, basePhysical,
+            &engine->Buffers, "MOTOR_DE_SUBMISSAO")) {
     engine->Buffers.PtVirtual =
         (volatile void *)((PUCHAR)mapped + BC250_SUBMISSION_PT_OFFSET);
     engine->Buffers.PtGpuAddress = basePhysical + BC250_SUBMISSION_PT_OFFSET;
@@ -339,6 +393,7 @@ NTSTATUS Bc250SubmissionEngineOnline(
                 BC250_SUBMISSION_PTE_FLAGS;
         }
         KeMemoryBarrier();
+    }
     }
 
     engine->Buffers.RingVirtual =

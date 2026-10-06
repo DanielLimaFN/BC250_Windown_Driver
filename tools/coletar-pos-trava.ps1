@@ -99,6 +99,32 @@ if (Test-Path -LiteralPath $traceOut) {
     & python (Join-Path $root 'tools\decode-bc250-paging-trace.py') $traceOut | Set-Content -LiteralPath $json -Encoding UTF8
     Write-Host "  paging-trace-decodificado.json escrito (contem tambem o boot atual; a corrida termina na queda do writer_tick)"
 }
+# 4b (doc 571). Se a corrida terminou em BugCheck, a pilha do MEMORY.DMP sai junto
+# (so' leitura do dump; exige o cdb do WDK). So' o dump POSTERIOR ao bind conta.
+$dump = 'C:\Windows\MEMORY.DMP'
+$cdb = 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe'
+$bindTime = (Get-Item -LiteralPath $EvidenceDir).CreationTime
+if ((Test-Path -LiteralPath $dump) -and (Get-Item -LiteralPath $dump).LastWriteTime -gt $bindTime) {
+    if (Test-Path -LiteralPath $cdb) {
+        $dumpOut = Join-Path $EvidenceDir 'dump-analyze-RECUPERADO.txt'
+        Write-Host "  MEMORY.DMP posterior ao bind: rodando cdb (!analyze -v), pode levar alguns minutos..."
+        & $cdb -z $dump -y 'srv*C:\Symbols*https://msdl.microsoft.com/download/symbols' `
+            -c '!analyze -v; lm m bc250*; q' *> $dumpOut
+        Get-Content -LiteralPath $dumpOut | Select-String 'BUGCHECK_CODE|BUGCHECK_P1|PROCESS_NAME|FAILURE_BUCKET_ID' |
+            ForEach-Object { Write-Host "  $_" }
+        # FB.1 (doc 607): o fim do log que o BugCheck nao deixou chegar ao disco
+        # esta no anel em RAM, dentro do dump; junto o registro de falha do blt.
+        try {
+            & (Join-Path $root 'tools\extrair-anel-do-dump.ps1') -EvidenceDir $EvidenceDir -Dump $dump
+        } catch {
+            Write-Host "  extracao do anel do dump falhou: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "  MEMORY.DMP posterior ao bind, mas cdb ausente em $cdb" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host '  sem MEMORY.DMP posterior ao bind (trava dura sem BugCheck, ou sem dump)'
+}
 $hashes = Get-ChildItem -LiteralPath $EvidenceDir -File |
     Where-Object { $_.Name -like '*RECUPERADO*' -or $_.Name -like 'reset-reason-*' } |
     ForEach-Object { '{0}  {1}' -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash, $_.Name }

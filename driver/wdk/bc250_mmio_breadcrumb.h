@@ -21,6 +21,19 @@
  * Fora da imagem do driver (suites offline) tudo vira no-op.
  */
 
+/*
+ * P1 (Corrida 218, doc 594) -- SILENCIO DA BAR: paridade com o amdgpu, que em
+ * regime nao le nem escreve VRAM pela BAR para instrumentacao. Com 1:
+ *   - a pagina de migalhas na VRAM NAO e' armada (o espelho em RAM segue para
+ *     o rastro em disco a cada 100 ms, BCR1);
+ *   - os eventos vao para um espelho em RAM e o rastro grava os 16 mais
+ *     recentes por tique (BEV1);
+ *   - a amostragem de VRAM do Present e as leituras de registrador do rastro
+ *     (GFX, plataforma, SDMA0, clock gating) ficam desligadas.
+ * 0 = comportamento anterior.
+ */
+#define BC250_P1_SILENCIO_DA_BAR 1
+
 #define BC250_CRUMB_VRAM_OFFSET   0x0FA00000ull  /* reserva no inventario antes do bootstrap; DX.67 a exclui do VidMm */
 #define BC250_CRUMB_PAGE_BYTES    0x1000u
 #define BC250_CRUMB_MAGIC         0x42524D43u    /* "CMRB" */
@@ -222,6 +235,9 @@ static __forceinline VOID Bc250CrumbAfter(ULONG Slot)
  * pela metade fica com a sequencia antiga e o check nao fecha.
  */
 __declspec(selectany) volatile LONG g_Bc250CrumbEvtSeq = 0;
+/* P1: espelho dos eventos em RAM, mesmo layout do anel da pagina. */
+__declspec(selectany) volatile ULONG g_Bc250CrumbEvtMirror[
+    BC250_CRUMB_EVT_COUNT * BC250_CRUMB_EVT_DWORDS] = { 0 };
 
 static __forceinline VOID Bc250CrumbEvent(
     ULONG Kind, ULONG Node, ULONG Op, ULONG Size, ULONG64 Addr, ULONG64 Fence)
@@ -230,10 +246,7 @@ static __forceinline VOID Bc250CrumbEvent(
     volatile ULONG *e;
     ULONG seq, kindWord, qpcLo, qpcHi, addrLo, addrHi, fenceLo, fenceHi, cpu;
     LARGE_INTEGER qpc;
-    if (page == NULL) return;
     seq = (ULONG)InterlockedIncrement(&g_Bc250CrumbEvtSeq);
-    e = page + BC250_CRUMB_EVT_BASE_DW +
-        (seq % BC250_CRUMB_EVT_COUNT) * BC250_CRUMB_EVT_DWORDS;
     qpc = KeQueryPerformanceCounter(NULL);
     qpcLo = qpc.LowPart;
     qpcHi = (ULONG)qpc.HighPart;
@@ -243,6 +256,25 @@ static __forceinline VOID Bc250CrumbEvent(
     fenceLo = (ULONG)Fence;
     fenceHi = (ULONG)(Fence >> 32);
     cpu = KeGetCurrentProcessorNumberEx(NULL);
+    {
+        volatile ULONG *m = g_Bc250CrumbEvtMirror +
+            (seq % BC250_CRUMB_EVT_COUNT) * BC250_CRUMB_EVT_DWORDS;
+        m[BC250_CRUMB_EVT_SEQ] = 0u;
+        m[BC250_CRUMB_EVT_QPC_LO] = qpcLo;
+        m[BC250_CRUMB_EVT_QPC_HI] = qpcHi;
+        m[BC250_CRUMB_EVT_KIND] = kindWord;
+        m[BC250_CRUMB_EVT_SIZE] = Size;
+        m[BC250_CRUMB_EVT_ADDR_LO] = addrLo;
+        m[BC250_CRUMB_EVT_ADDR_HI] = addrHi;
+        m[BC250_CRUMB_EVT_FENCE_LO] = fenceLo;
+        m[BC250_CRUMB_EVT_FENCE_HI] = fenceHi;
+        m[BC250_CRUMB_EVT_CPU] = cpu;
+        KeMemoryBarrier();
+        m[BC250_CRUMB_EVT_SEQ] = seq;
+    }
+    if (page == NULL) return;
+    e = page + BC250_CRUMB_EVT_BASE_DW +
+        (seq % BC250_CRUMB_EVT_COUNT) * BC250_CRUMB_EVT_DWORDS;
     e[BC250_CRUMB_EVT_SEQ] = 0u;
     e[BC250_CRUMB_EVT_QPC_LO] = qpcLo;
     e[BC250_CRUMB_EVT_QPC_HI] = qpcHi;

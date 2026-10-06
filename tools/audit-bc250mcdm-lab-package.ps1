@@ -70,6 +70,7 @@ $artifactMap = [ordered]@{
     'bc250mcdm.cat' = [string]$manifest.PackageCatSha256
     'cyan_skillfish2_sdma.bin' = [string]$manifest.SdmaFirmwareSha256
     'cyan_skillfish2_rlc.bin' = [string]$manifest.RlcFirmwareSha256
+    'cyan_skillfish2_sdma1.bin' = [string]$manifest.Sdma1FirmwareSha256
     'cyan_skillfish2_pfp.bin' = [string]$manifest.PfpFirmwareSha256
     'cyan_skillfish2_me.bin' = [string]$manifest.MeFirmwareSha256
     'cyan_skillfish2_ce.bin' = [string]$manifest.CeFirmwareSha256

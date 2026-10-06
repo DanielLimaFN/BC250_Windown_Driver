@@ -279,6 +279,67 @@ def summarize_words(records: list) -> dict | None:
     }
 
 
+# I.PG (doc 571): BPG1 a cada 1 s, contadores de paginacao CUMULATIVOS (software,
+# nenhuma leitura de registrador). Words[0] = 0x7F.
+PG_MAGIC = 0x31475042
+PG_FIELDS = ("evict_count", "evict_kib", "pagein_count", "pagein_kib",
+             "fill_count", "flush_tlb_count", "ring_flush_emitted")
+
+
+def summarize_paging_stats(records: list) -> dict | None:
+    after = [r for r in records if r["phase"] == "DEPOIS"]
+    if not after:
+        return None
+    rows = []
+    for r in after:
+        row = {"writer_tick": r["writer_tick"]}
+        for name in PG_FIELDS:
+            row[name] = int(r[name], 16) if name in r else None
+        rows.append(row)
+    # deltas por segundo nos ultimos 20 registros: mostram o vai-e-volta antes do fim
+    deltas = []
+    for prev, cur in zip(rows[-21:-1], rows[-20:]):
+        d = {"writer_tick": cur["writer_tick"]}
+        for name in PG_FIELDS:
+            if cur[name] is not None and prev[name] is not None:
+                d[name] = cur[name] - prev[name]
+        deltas.append(d)
+    return {"records": len(rows), "last": rows[-1], "last_deltas_per_second": deltas}
+
+
+# P1 (doc 594): BEV1 -- eventos de submissao/retirada do espelho em RAM, um por
+# registro de palavras. Substitui o anel EVT1 da pagina na VRAM (nao armada na P1).
+EV_MAGIC = 0x31564542
+EV_FIELDS = ("seq", "kind_word", "bytes", "addr_lo", "addr_hi", "fence_lo", "qpc_lo")
+EV_KINDS = {1: "PAGING_FILL", 2: "PAGING_TRANSFER", 3: "PAGING_DISCARD", 4: "SUBMIT_SDMA",
+            5: "SUBMIT_GFX", 6: "RETIRE_SDMA", 7: "RETIRE_GFX"}
+
+
+def summarize_events(records: list, last: int = 24) -> dict | None:
+    events = {}
+    for r in records:
+        if r.get("phase") != "DEPOIS" or "seq" not in r:
+            continue
+        seq = int(r["seq"], 16)
+        kw = int(r["kind_word"], 16)
+        events[seq] = {
+            "seq": seq,
+            "writer_tick": r["writer_tick"],
+            "kind": EV_KINDS.get(kw >> 24, f"KIND_{kw >> 24}"),
+            "node": (kw >> 16) & 0xFF,
+            "op": f"0x{kw & 0xFFFF:X}",
+            "bytes": int(r["bytes"], 16),
+            "addr": f"0x{(int(r['addr_hi'], 16) << 32) | int(r['addr_lo'], 16):X}",
+            "fence": int(r["fence_lo"], 16),
+            "qpc_lo": int(r["qpc_lo"], 16),
+        }
+    if not events:
+        return None
+    ordered = [events[k] for k in sorted(events)]
+    return {"events": len(ordered), "last_seq": ordered[-1]["seq"],
+            "last_writer_tick": ordered[-1]["writer_tick"], "last_events": ordered[-last:]}
+
+
 def fnv1a(data: bytes) -> int:
     value = 2166136261
     for byte in data:
@@ -438,6 +499,8 @@ def main() -> None:
                 "platform_sample": summarize_platform_samples(platform_samples),
                 "sdma0_sample": summarize_words(scan_words(contents, SQ_MAGIC, SQ_FIELDS)),
                 "clock_gating_sample": summarize_words(scan_words(contents, CG_MAGIC, CG_FIELDS)),
+                "paging_stats": summarize_paging_stats(scan_words(contents, PG_MAGIC, PG_FIELDS)),
+                "gpu_events_ram": summarize_events(scan_words(contents, EV_MAGIC, EV_FIELDS)),
                 "last_snapshots": valid[-args.last :],
             },
             indent=2,

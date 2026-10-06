@@ -3,6 +3,7 @@
 #include "../core/bc250_firmware_staging.h"
 #include "../core/bc250_psp_load_fw_transaction.h"
 #include "../core/bc250_pm4_packet_builder.h"
+#include "bc250_vram_cpu_path.h"
 
 #define BC250_PFP_FILE_BYTES 263424u
 #define BC250_PFP_PAYLOAD_BYTES_LOCAL 263168u
@@ -659,10 +660,9 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
     }
 
     physical.QuadPart = (LONGLONG)(bar->Start + region.Offset);
-    ntStatus = Context->Core.DxgkInterface.DxgkCbMapMemory(
-        Context->Core.DxgkInterface.DeviceHandle, physical,
-        BC250_CP_QUAD_ALLOCATION_BYTES, FALSE, FALSE, MmNonCached,
-        (PVOID *)&mapped);
+    ntStatus = Bc250VramCpuMapMemory(&Context->Core.DxgkInterface,
+        (ULONGLONG)physical.QuadPart, BC250_CP_QUAD_ALLOCATION_BYTES,
+        MmNonCached, (PVOID *)&mapped);
     if (!NT_SUCCESS(ntStatus) || mapped == NULL) {
         status = BC250_PFP_DIRECT_LOAD_MAP_FAILED;
         goto Cleanup;
@@ -1461,8 +1461,8 @@ Restore:
         } else {
             Evidence->MemoryRestorePassed = 1u;
         }
-        Context->Core.DxgkInterface.DxgkCbUnmapMemory(
-            Context->Core.DxgkInterface.DeviceHandle, (PVOID)mapped);
+        (void)Bc250VramCpuUnmapMemory(&Context->Core.DxgkInterface,
+            (PVOID)mapped);
     }
 
     if (status == BC250_PFP_DIRECT_LOAD_OK)

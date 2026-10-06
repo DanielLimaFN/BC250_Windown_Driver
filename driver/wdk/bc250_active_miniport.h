@@ -15,6 +15,8 @@
 #include "../core/bc250_gfxhub_tlb_transaction.h"
 #include "../core/bc250_gcvm_vmid8_transaction.h"
 #include "../core/bc250_gcvm_global_mmu.h"
+#include "../core/bc250_mmhub_gart.h"
+#include "../core/bc250_sdma1_bringup.h"
 #include "../core/bc250_psp_ring_transaction.h"
 #include "../core/bc250_psp_load_fw_transaction.h"
 #include "../core/bc250_sdma_f32_transaction.h"
@@ -266,6 +268,14 @@ typedef struct BC250_GFX_ENGINE {
     /* Recursos de VRAM e mapeamento de anel */
     BC250_VRAM_TOKEN VramToken;
     uint64_t VramTotalBytes;
+    /* P7 (doc 596): o mapeamento da VRAM fica aqui; com o anel na RAM o
+     * RingCpuVirtual aponta para a RAM e so' o CSB e' lido da VRAM. */
+    PVOID VramCpuMapped;
+    PVOID SystemRingRam;
+    PHYSICAL_ADDRESS SystemRingPa;
+    uint64_t SystemRingBytes;
+    uint64_t SystemRingDummyPte;
+    BOOLEAN RingInSystemMemory;
     uint64_t RingGpuVa;
     uint32_t RingDwords;
     uint32_t *RingCpuVirtual;
@@ -349,6 +359,36 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     BC250_GCVM_GLOBAL_MMU_STATUS GlobalMmuStatus;
     BC250_GCVM_GLOBAL_MMU_EVIDENCE GlobalMmuEvidence;
     BOOLEAN GlobalMmuReady;
+    /* D2 por GART (doc 587): contexto 0 da VMID 0, snapshot para desfazer. */
+    BC250_GCVM_GART_EVIDENCE D2GartEvidence;
+    volatile LONG D2GartProgrammed;
+    /* Corrida 215: mapeamento UC da tabela mantido para a foto no TDR. */
+    volatile uint64_t *D2GartTableCpu;
+    uint64_t D2GartExpected[4]; /* PTE[anel..anel+3] (V0.1: entradas 32..35) */
+    volatile LONG D2GartFotoTimeouts;
+    /* V0.1 (doc 589): o MEC usa a tabela da GART em vez da dele. */
+    volatile LONG D2GartSharedWithMec;
+    /* P3.1 (doc 609): anel 0 do IH + pagina de writeback do WPTR na GART. */
+    uint64_t P3DummyPagePa;
+    PVOID P3IhRam;
+    ULONG P3IhRamBytes;
+    uint64_t P3IhSavedDummyPte;
+    BOOLEAN P3IhMapped;
+    /* P3.0b (doc 611): GART da VMID 0 no MMHUB sobre a mesma tabela da D2. */
+    BC250_MMHUB_GART_EVIDENCE P3bMmhubEvidence;
+    volatile LONG P3bMmhubProgrammed;
+    uint32_t P3bMmhubFlushSemTimeouts;
+    /* EOP do CP (doc 618): TIME_STAMP_INT_ENABLE ligado por nos, e o valor de antes. */
+    volatile LONG CpEopIrqArmed;
+    uint32_t CpEopIntCntlBefore;
+    /* P4.1 (doc 620): SDMA1 vivo e ocioso. */
+    BC250_PSP_LOAD_FW_STATUS P4Sdma1FwStatus;
+    BC250_PSP_LOAD_FW_EVIDENCE P4Sdma1FwEvidence;
+    BC250_SDMA1_EVIDENCE P4Sdma1Evidence;
+    PVOID P4Sdma1Ram;
+    uint64_t P4Sdma1SavedDummyPte;
+    volatile LONG P4Sdma1Active;
+    volatile LONG P4Sdma1Leaked;
     BOOLEAN GlobalMmuDummyAllocated;
     BC250_VRAM_ALLOCATOR GlobalMmuAllocator;
     BC250_VRAM_TOKEN GlobalMmuDummyToken;
@@ -562,6 +602,57 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
      * comentario em Bc250DxgkDdiStartDeviceActive.
      */
     uint32_t SdmaBootTripodValidated;
+    /*
+     * 4c.2 (doc 569) -- flush de TLB pelo SDMA no ANEL, entre IBs.
+     * Armed=1 so' com a passada do anel do ensaio de boot PROVADA e o tunable
+     * SdmaRingTlbFlush != 0. Pending conta FlushTlb do build ainda nao
+     * emitidos; a proxima submissao do Node 0 consome e invalida no anel
+     * ANTES do seu INDIRECT. O dxgkrnl serializa build e submit no Node 0.
+     */
+    uint32_t SdmaRingTlbFlushArmed;
+    uint32_t SdmaRingTlbFlushTunable;
+    volatile LONG SdmaRingTlbFlushPending;
+    volatile LONG SdmaRingTlbFlushEmitted;
+    volatile LONG SdmaRingTlbFlushMmioDegraded;
+    /*
+     * 4c.3 (doc 573) -- gates de submissao sem ler a tabela de pagina pela
+     * CPU. PtWalkOnSubmit=0 (padrao): o IB e' validado pelo journal de
+     * software; a caminhada pela BAR so' roda se o journal nao resolver
+     * (WalkFallback, contado e logado). 1 = comportamento das 204-207.
+     */
+    uint32_t PtWalkOnSubmit;
+    volatile LONG PtJournalGatePass;
+    volatile LONG PtWalkFallback;
+    /*
+     * 4c.4 (doc 575) -- PTE pelo SDMA (GPU_VIRTUAL). Armed=1 so' com o tunable
+     * PtUpdateGpuVirtual (padrao 1) e o flush pelo anel provado no boot; fixo
+     * no StartDevice porque o GPUMMUCAPS e' lido uma vez. Cada FlushTlb do
+     * build vira um ponto de divisao do IB (Bc250PagingSplitRecord), com a
+     * mascara de VMIDs decidida aqui: so' a 8 para o processo de paginacao
+     * (PagingProcessHandle, aprendido na primeira submissao do Node 0).
+     */
+    uint32_t PtUpdateGpuVirtualTunable;
+    uint32_t PtUpdateGpuVirtualArmed;
+    BC250_MCDM_HANDLE PagingProcessHandle;
+    volatile LONG PtGpuSplitSubmissions;
+    volatile LONG PtGpuSplitsEmitted;
+    volatile LONG PtGpuStaleFlushes;
+    /*
+     * 4c.4 -- journal que falha FECHADO no NO_SPACE (doc 574 secao 5): a
+     * faixa cuja transacao foi abortada fica marcada e o gate pelo journal
+     * recusa resolve-la (vai para a caminhada) ate um UpdatePageTable
+     * posterior encenar a faixa inteira com sucesso.
+     */
+#define BC250_ACTIVE_JOURNAL_TAINT_SLOTS 16u
+    KSPIN_LOCK JournalTaintLock;
+    struct {
+        BC250_MCDM_HANDLE Process;
+        uint64_t Start;
+        uint64_t End;
+    } JournalTaint[BC250_ACTIVE_JOURNAL_TAINT_SLOTS];
+    uint32_t JournalTaintAll;
+    volatile LONG JournalTaintHits;
+    volatile LONG JournalTaintAdded;
     PVOID DeferredPspLoadRing;
     PVOID DeferredPspLoadCommand;
     PVOID DeferredPspLoadFence;
@@ -768,6 +859,23 @@ void Bc250ActiveSdmaRetirementTimerStop(
     _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
 
 /* Portao testavel usado por SubmitCommandVirtual e pela corrida Stop/Submit. */
+/* D2 por GART (doc 587): tabela da VMID 0 na VRAM privada; V0.1: 0..31 = MEC. */
+#define BC250_D2_GART_TABLE_VRAM_OFFSET 0x0FF02000ull
+#define BC250_D2_GART_MEC_ENTRIES       32u
+
+/*
+ * V0.1 (Corrida 216, doc 589): uma tabela so' para a VMID 0, como no Linux.
+ * Com a GART da D2 ligada, escreve as 32 PTEs da fila do MEC (VA 0..0x1FFFF,
+ * no formato que o MEC ja' provou: MC | 0xE1) nas entradas 0..31 da tabela
+ * da GART e aponta Buffers para ela com Context0External=1. FALSE = GART
+ * desligada; o chamador segue com a tabela propria do MEC, como antes.
+ */
+BOOLEAN Bc250ActiveD2GartShareWithMec(
+    _Inout_ struct BC250_DXGK_ACTIVE_CONTEXT *Context,
+    _In_ uint64_t MecBlockMc,
+    _Inout_ BC250_HQD_MC_BUFFERS *Buffers,
+    _In_z_ const char *Who);
+
 BOOLEAN Bc250ActiveSubmissionGateEnter(
     _Inout_ BC250_DXGK_ACTIVE_CONTEXT *Context);
 

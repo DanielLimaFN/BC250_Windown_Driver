@@ -12,7 +12,7 @@
  * BC250_M1B_RADV_SYSTEM_SEGMENT_ENABLED (KMD). Sozinho nao muda segmento.
  */
 #ifndef BC250_M1B_PRESENT_DEVICE_LOCAL
-#define BC250_M1B_PRESENT_DEVICE_LOCAL 0
+#define BC250_M1B_PRESENT_DEVICE_LOCAL 1
 #endif
 
 static void Bc250VkTrace(const char *fmt, ...)

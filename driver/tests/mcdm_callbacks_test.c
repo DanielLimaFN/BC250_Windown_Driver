@@ -872,6 +872,29 @@ static int Bc250RunMcdmCallbacksTest(void)
                 &encoded) == STATUS_SUCCESS);
             CHECK((encoded & addrMask) == 0x10721D000ull);
             CHECK((encoded & BC250_PTE_SYSTEM) != 0u);
+            /*
+             * P6 (doc 618): sem flag extra a folha sai NC (MTYPE 0); com
+             * BC250_PTE_MTYPE_UC sai UC (3 << 48) com o mesmo endereco e
+             * SYSTEM. Outro bit extra e ignorado, e no PDE nao tem efeito.
+             */
+            CHECK((encoded & 0x0007000000000000ull) == 0ull);
+            CHECK(Bc250McdmEncodeVidMmPteWithLevelEx(&pteCaps, &pte, 0u,
+                BC250_PTE_MTYPE_UC, &encoded) == STATUS_SUCCESS);
+            CHECK((encoded & 0x0007000000000000ull) == 0x0003000000000000ull);
+            CHECK((encoded & addrMask) == 0x10721D000ull);
+            CHECK((encoded & BC250_PTE_SYSTEM) != 0u);
+            CHECK(Bc250McdmEncodeVidMmPteWithLevelEx(&pteCaps, &pte, 0u,
+                BC250_PTE_PRT, &encoded) == STATUS_SUCCESS);
+            CHECK((encoded & ((1ull << 54) | 0x0007000000000000ull)) == 0ull);
+            pte.Segment = 1u;
+            pte.PageAddress = 0x100ull;
+            CHECK(Bc250McdmEncodeVidMmPteWithLevelEx(&pteCaps, &pte, 1u,
+                BC250_PTE_MTYPE_UC, &encoded) == STATUS_SUCCESS);
+            CHECK((encoded & 0x0007000000000000ull) == 0ull);
+            CHECK(Bc250McdmEncodeVidMmPteWithLevelEx(&pteCaps, &pte, 0u,
+                BC250_PTE_MTYPE_UC, &encoded) == STATUS_SUCCESS);
+            CHECK((encoded & 0x0007000000000000ull) == 0x0003000000000000ull);
+            CHECK((encoded & BC250_PTE_SYSTEM) == 0u);
 
             /*
              * M2 (doc 548): folha no segmento 3 (VRAM sem CPU) leva a MESMA base
@@ -1247,6 +1270,127 @@ static int Bc250RunMcdmCallbacksTest(void)
     }
 
     g_fullMcdmReady = 0u;
+
+    /*
+     * 4c.4 corrigida (doc 576): pontos de divisao casam SO' com o IB que os
+     * contem. Sequencia MEDIDA na Corrida 209: o VidMm monta o buffer
+     * 0x21E340 (pontos em +8 e +56 dw) ANTES de enviar o IB 28 em 0x23BB80;
+     * a regra antiga dava os dois ao 28 como "velhos" e o IB 30 rodava sem
+     * invalidacao entre PTE e uso.
+     */
+    {
+        BC250_SDMA_IB_SPLIT out[BC250_SDMA_IB_SPLIT_MAX];
+        UINT32 staleMask = 0u, staleCount = 0u, n, k;
+
+        /* esvazia restos de outros blocos */
+        (void)Bc250PagingSplitTake(0ull, 0xFFFFFFFFu, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(Bc250PagingSplitPendingCount() == 0u);
+
+        Bc250PagingSplitRecordAt(0x21E340ull + 8u * 4u, 1u << 8);
+        Bc250PagingSplitRecordAt(0x21E340ull + 56u * 4u, 1u << 8);
+        /* envio 28: IB em 0x23BB80, 8128 bytes -- NAO e' dono dos pontos */
+        n = Bc250PagingSplitTake(0x23BB80ull, 8128u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(n == 0u && staleCount == 0u && staleMask == 0u);
+        CHECK(Bc250PagingSplitPendingCount() == 2u);
+        /* envio 29: 0x21E000, 832 bytes, termina em 0x21E340 -- tambem nao */
+        n = Bc250PagingSplitTake(0x21E000ull, 832u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(n == 0u && staleCount == 0u);
+        /* envio 30: o dono -- os dois pontos, nos offsets exatos */
+        n = Bc250PagingSplitTake(0x21E340ull, 36768u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(n == 2u && staleCount == 0u);
+        CHECK(out[0].OffsetDwords == 8u && out[1].OffsetDwords == 56u);
+        CHECK(out[0].VmidMask == (1u << 8));
+        CHECK(Bc250PagingSplitPendingCount() == 0u);
+
+        /* ponto no fim de um IB e no inicio do seguinte fica com o primeiro */
+        Bc250PagingSplitRecordAt(0x21E340ull, 1u << 8);
+        n = Bc250PagingSplitTake(0x21E000ull, 832u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(n == 1u && out[0].OffsetDwords == 832u / 4u);
+
+        /* sem posicao: antes do proximo IB de paginacao */
+        Bc250PagingSplitRecordAt(0ull, 1u << 8);
+        n = Bc250PagingSplitTake(0x22E000ull, 4096u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(n == 0u && staleCount == 1u && staleMask == (1u << 8));
+
+        /* orfao: so' depois de 64 envios sem casar, e entao antes do IB */
+        Bc250PagingSplitRecordAt(0x300000ull, 1u << 7);
+        for (k = 0u; k < 63u; ++k) {
+            n = Bc250PagingSplitTake(0x22E000ull, 4096u, out, BC250_SDMA_IB_SPLIT_MAX,
+                &staleMask, &staleCount);
+            CHECK(n == 0u && staleCount == 0u);
+        }
+        n = Bc250PagingSplitTake(0x22E000ull, 4096u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(n == 0u && staleCount == 1u && staleMask == (1u << 7));
+        CHECK(Bc250PagingSplitPendingCount() == 0u);
+
+        /*
+         * P4.2 (doc 622): faixas de PTE para o SDMA1. Sem a rota armada nada
+         * e' registrado (as PTEs ficam no IB do SDMA0). Com a rota: faixa
+         * desalinhada fica no SDMA0; faixas contiguas fundem; o FlushTlb no
+         * fim da faixa NAO funde nela; a faixa sai so' no envio do buffer dela,
+         * com inicio e fim exatos e sem invalidacao propria.
+         */
+        Bc250PagingSdma1RouteSet(FALSE);
+        Bc250PagingSdma1RangeRecord(0x21E340ull + 32u, 0x21E340ull + 96u);
+        CHECK(Bc250PagingSplitPendingCount() == 0u);
+        Bc250PagingSdma1RouteSet(TRUE);
+        Bc250PagingSdma1RangeRecord(0x21E340ull + 4u, 0x21E340ull + 96u);  /* desalinhada */
+        CHECK(Bc250PagingSplitPendingCount() == 0u);
+        Bc250PagingSdma1RangeRecord(0x21E340ull + 32u, 0x21E340ull + 96u);
+        Bc250PagingSdma1RangeRecord(0x21E340ull + 96u, 0x21E340ull + 160u); /* contigua */
+        CHECK(Bc250PagingSplitPendingCount() == 1u);
+        Bc250PagingSplitRecordAt(0x21E340ull + 160u, 1u << 8);              /* flush no fim */
+        CHECK(Bc250PagingSplitPendingCount() == 2u);
+        n = Bc250PagingSplitTake(0x23BB80ull, 8128u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(n == 0u && Bc250PagingSplitPendingCount() == 2u);              /* outro IB */
+        n = Bc250PagingSplitTake(0x21E340ull, 4096u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(n == 2u && staleCount == 0u);
+        CHECK(out[0].OffsetDwords == 8u && out[0].Sdma1EndDwords == 40u &&
+              out[0].VmidMask == 0u && out[0].Sdma1Token == 0u);
+        CHECK(out[1].OffsetDwords == 40u && out[1].Sdma1EndDwords == 0u &&
+              out[1].VmidMask == (1u << 8));
+        CHECK(Bc250PagingSplitPendingCount() == 0u);
+        /* faixa que sai do IB por um lado: descartada (roda no SDMA0) */
+        Bc250PagingSdma1RangeRecord(0x21E340ull + 4064u, 0x21E340ull + 4160u);
+        n = Bc250PagingSplitTake(0x21E340ull, 4096u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(n == 0u && Bc250PagingSplitPendingCount() == 0u);
+        Bc250PagingSdma1RouteSet(FALSE);
+
+        /*
+         * LC.1 (Corrida 216, doc 589): 12 pontos de um buffer que NAO foi
+         * enviado (0x21E000) nao podem recusar outro buffer. No rollback o
+         * VidMm parou de enviar e a regra global recusou para sempre.
+         */
+        for (k = 0u; k < 12u; ++k) {
+            Bc250PagingSplitRecordAt(0x21E000ull + 0x40ull + (UINT64)k * 0x40ull, 1u << 8);
+        }
+        CHECK(Bc250PagingSplitPendingCount() == 12u);
+        /* buffer novo, vazio: progresso garantido */
+        CHECK(!Bc250PagingSplitMustDefer(0x22E000ull, 0u, 12u));
+        /* buffer novo ja escrito, mas sem pontos proprios */
+        CHECK(!Bc250PagingSplitMustDefer(0x22E000ull, 0x800u, 12u));
+        /* sem GPUVA: pontos sem posicao nao viram pedaco de IB */
+        CHECK(!Bc250PagingSplitMustDefer(0ull, 0x800u, 12u));
+        /* o proprio buffer cheio: ai sim, envia antes */
+        CHECK(Bc250PagingSplitMustDefer(0x21E000ull, 0x340u, 12u));
+        /* 11 proprios: ainda cabe */
+        CHECK(!Bc250PagingSplitMustDefer(0x21E000ull, 0x2C0u, 12u));
+        /* buffer vazio no MESMO endereco do cheio: nunca recusa */
+        CHECK(!Bc250PagingSplitMustDefer(0x21E000ull, 0u, 12u));
+        (void)Bc250PagingSplitTake(0x21E000ull, 0x10000u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(Bc250PagingSplitPendingCount() == 0u);
+    }
 
     return 1;
 }

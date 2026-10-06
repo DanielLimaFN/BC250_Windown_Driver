@@ -61,6 +61,7 @@ BC250_PSP_LOAD_FW_STATUS Bc250RunPspLoadFirmwareTransaction(
         Interface->Barrier == NULL || Interface->Identity !=
             BC250_PSP_LOAD_FW_IDENTITY || MaxPolls == 0u || FirmwareBytes == 0u ||
         (FirmwareType != BC250_PSP_LOAD_FW_SDMA0_TYPE &&
+         FirmwareType != BC250_PSP_LOAD_FW_SDMA1_TYPE &&
          FirmwareType != BC250_PSP_LOAD_FW_RLC_TYPE &&
          FirmwareType != BC250_PSP_LOAD_FW_CP_ME_TYPE &&
          FirmwareType != BC250_PSP_LOAD_FW_CP_PFP_TYPE &&
@@ -91,6 +92,9 @@ BC250_PSP_LOAD_FW_STATUS Bc250RunPspLoadFirmwareTransaction(
             &Evidence->RingSizeBefore)) return BC250_PSP_LOAD_FW_READ_FAILED;
     if (FirmwareType == BC250_PSP_LOAD_FW_SDMA0_TYPE &&
         !Interface->Read32(Interface->Context, BC250_SDMA0_UCODE_CHECKSUM,
+            &Evidence->ChecksumBefore)) return BC250_PSP_LOAD_FW_READ_FAILED;
+    if (FirmwareType == BC250_PSP_LOAD_FW_SDMA1_TYPE &&
+        !Interface->Read32(Interface->Context, BC250_SDMA1_UCODE_CHECKSUM,
             &Evidence->ChecksumBefore)) return BC250_PSP_LOAD_FW_READ_FAILED;
     if ((Evidence->C2pmsg64Before & BC250_PSP_RING_TOS_READY) == 0u ||
         Evidence->C2pmsg64Before == 0xFFFFFFFFu)
@@ -166,8 +170,11 @@ BC250_PSP_LOAD_FW_STATUS Bc250RunPspLoadFirmwareTransaction(
         goto Destroy;
     }
     Evidence->ResponsePassed = 1u;
-    if (FirmwareType == BC250_PSP_LOAD_FW_SDMA0_TYPE) {
-        if (!Interface->Read32(Interface->Context, BC250_SDMA0_UCODE_CHECKSUM,
+    if (FirmwareType == BC250_PSP_LOAD_FW_SDMA0_TYPE ||
+        FirmwareType == BC250_PSP_LOAD_FW_SDMA1_TYPE) {
+        if (!Interface->Read32(Interface->Context,
+                FirmwareType == BC250_PSP_LOAD_FW_SDMA1_TYPE ?
+                    BC250_SDMA1_UCODE_CHECKSUM : BC250_SDMA0_UCODE_CHECKSUM,
                 &Evidence->ChecksumAfter)) {
             status = BC250_PSP_LOAD_FW_READ_FAILED;
             goto Destroy;
