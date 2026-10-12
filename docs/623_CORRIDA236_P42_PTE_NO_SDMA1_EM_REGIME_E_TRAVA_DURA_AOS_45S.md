@@ -7,7 +7,7 @@
 - `paging-trace-this-bind-RECUPERADO.bin` e `paging-trace-decodificado.json`;
 - `umd-logs-pos-travamento/`: dwm, Explorer, ShellExperienceHost, TextInputHost, OneDrive ×2, taskmgr;
 - `reset-reason-pos-trava.txt`;
-- `ramtest-pos-trava.txt` com **0 bytes**: o teste de RAM não rodou ou não terminou (lacuna).
+- `ramtest-pos-trava.txt`: 8.040 MB × 2 passadas, **zero erros** (`ramtest_exit: 0` em `coleta-automatica.json`). **Correção (06/10, depois do doc 624):** a primeira versão deste doc dizia "0 bytes"; foi leitura minha errada, provavelmente feita antes de a coleta terminar de gravar o arquivo. Não houve lacuna.
 
 **Critério:** doc 622 §5.
 

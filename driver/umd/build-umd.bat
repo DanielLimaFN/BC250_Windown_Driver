@@ -3,6 +3,8 @@ setlocal enabledelayedexpansion
 
 set ROOTDIR=%~dp0..\..
 set ODIR=%ROOTDIR%\driver\umd\output
+rem LOGMIN.1 (doc 650): suites offline com o log integral da UMD.
+set BC250_TRACE_FULL=1
 if not exist "%ODIR%" mkdir "%ODIR%"
 
 set VCVARS=

@@ -3,7 +3,7 @@ Signature="$Windows NT$"
 Class=Display
 ClassGuid={4d36e968-e325-11ce-bfc1-08002be10318}
 Provider=%ProviderName%
-DriverVer=10/06/2026,3.384.0.0
+DriverVer=10/12/2026,3.422.0.0
 CatalogFile=bc250mcdm.cat
 PnpLockdown=1
 
@@ -114,6 +114,24 @@ HKR,Parameters,TdrInduceHang,0x00010001,0
 ; dono do projeto. A varredura e' rasa e o orcamento de leituras e' fixo --
 ; laco longo em DISPATCH_LEVEL foi a causa do BugCheck 0x133 em 10/09 12:16.
 HKR,Parameters,GfxWaveProbe,0x00010001,0
+; DebugTrace (DBG.1, doc 704): 1 liga a coleta pesada nova -- validador de
+; endereco fisico das PTEs de memoria de sistema (so' contagem, nada e'
+; recusado), evento PAGING_PTE por UPDATE_PAGE_TABLE e 96 eventos por tique no
+; rastro. Nao escreve registrador. Default 0; o empacotador de laboratorio
+; materializa 1 com -DebugTrace.
+HKR,Parameters,DebugTrace,0x00010001,0
+; DcnFlip (DCN.1, doc 710, P9): 1 aponta o HUBP0 do DCN 2.0.1 para a primaria
+; a cada flip (SetVidPnSourceAddress/MPO3) em vez de copiar 11 MB pelo SDMA0,
+; sobre o pipeline que o GOP deixou (sem timing, clock nem PHY); o HUBP0 volta
+; ao GOP no teardown. ESCREVE registrador de DCN. Default 0; o empacotador de
+; laboratorio materializa 1 com -DcnFlip.
+HKR,Parameters,DcnFlip,0x00010001,0
+; DCN.2 (doc 713): bits sobre o DCN do GOP -- 1 VSYNC/flip pela interrupcao do
+; DCN, 2 CRC do OTG0, 4 cursor por hardware, 8 EDID real por AUX, 0x10 apagar o
+; OTG com o monitor (DPMS), 0x20 timing medido do OTG0 no VidPn. Cada bit escreve
+; so' o seu bloco e volta como o GOP deixou. Default 0; o empacotador de
+; laboratorio materializa 0x3F com -DcnExt.
+HKR,Parameters,DcnExt,0x00010001,0
 ; B.1 (14/09): 1 fotografa o anel grafico CP_RB0 -- CNTL, BASE, RPTR, WPTR,
 ; POLL_CNTL e ME_CNTL -- durante o bring-up de laboratorio. E' SOMENTE LEITURA:
 ; o contrato nao escreve registrador algum, e o transporte MMIO confirma por

@@ -253,6 +253,14 @@ uint64_t Bc250VmidPoolInstalledRootForVmid(
  */
 uint32_t Bc250VmidPoolReadyFlushMask(const BC250_VMID_POOL *Pool);
 
+/*
+ * 263b (doc 695) / FT.1 (doc 697): VMIDs do pool com esta raiz -- READY com
+ * a raiz instalada, ou INSTALLING com ela como alvo. Leitor PURO, sem lock.
+ * Zero = nenhuma VMID do pool aponta (ou vai apontar) para esta raiz.
+ */
+uint32_t Bc250VmidPoolMaskForRoot(const BC250_VMID_POOL *Pool,
+    uint64_t RootPhysical);
+
 BC250_VMID_POOL_STATUS Bc250VmidPoolRootForFaultWalk(
     const BC250_VMID_POOL *Pool,
     uint32_t Vmid,

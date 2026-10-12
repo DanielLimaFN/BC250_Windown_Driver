@@ -115,6 +115,56 @@ static unsigned Bc250WinsysRoutineTraceClass(const char *message)
     return 0u;
 }
 
+/*
+ * LOGMIN.1 (doc 650, Corrida 248) -- LOG MINIMO DA UMD. Na 247 (P0) o dwm.exe
+ * gravou ~23 MB em ~2 min (BC250_UMD_LOG_1292.txt + o -RADV, que recebe a
+ * mesma linha pelo stderr), e cada linha tambem vai ao OutputDebugStringA,
+ * que com o KD ligado atravessa o KDNET. Na BC-250 a CPU e a GPU dividem a
+ * mesma GDDR6, e o Linux nao tem esse trafego. Com BC250_UMD_TRACE_MINIMAL=1:
+ * as primeiras BC250_LOGMIN_HEAD_LINES linhas de cada processo saem inteiras
+ * (contexto de carga do ICD, OpenAdapter, CreateDevice); depois so' saem as
+ * linhas com um marcador de falha/ciclo de vida (Bc250WinsysTraceIsEssential)
+ * e, a cada BC250_LOGMIN_SUMMARY_EVERY suprimidas, uma linha de resumo com o
+ * total. As linhas de estado por draw (PsSetShaderResources, VB Slot,
+ * DRAW_VERTS...), que eram a massa do log, deixam de ser escritas.
+ * Variavel de ambiente BC250_TRACE_FULL=1 restaura o log integral (suites
+ * offline e diagnostico). 0 = log integral (como ate a 247).
+ */
+#define BC250_UMD_TRACE_MINIMAL 1
+#define BC250_LOGMIN_HEAD_LINES 400
+#define BC250_LOGMIN_SUMMARY_EVERY 20000
+static volatile LONG g_Bc250LogMinLines;
+static volatile LONG g_Bc250LogMinSuppressed;
+static INIT_ONCE g_Bc250LogMinOnce = INIT_ONCE_STATIC_INIT;
+static BOOL g_Bc250LogMinActive;
+
+static BOOL CALLBACK Bc250WinsysLogMinInit(PINIT_ONCE Once, PVOID Parameter, PVOID *Context)
+{
+    char full[2] = { 0, 0 };
+    (void)Once; (void)Parameter; (void)Context;
+    g_Bc250LogMinActive = (BC250_UMD_TRACE_MINIMAL != 0) ? TRUE : FALSE;
+    if (GetEnvironmentVariableA("BC250_TRACE_FULL", full, sizeof(full)) == 1u && full[0] == '1') {
+        g_Bc250LogMinActive = FALSE;
+    }
+    return TRUE;
+}
+
+static BOOL Bc250WinsysTraceIsEssential(const char *message)
+{
+    static const char *const keys[] = {
+        "RECUS", "FALH", "ERRO", "FAIL", "Fail", "TIMEOUT", "Timeout", "LOST", "Lost",
+        "REMOVED", "hr=0x8", "res=-", "RECUSA", "ABORT", "INVALID", "NAO ", "AVISO",
+        "Present", "OpenAdapter", "CloseAdapter", "CreateDevice", "DestroyDevice",
+        "CreatePresentContext", "DestroyPresentContext", "BC250_HANG", "I.1", "ICD",
+        "SELECIONADO", "LOGMIN", "DeviceExecutionState", "ExecutionState"
+    };
+    unsigned i;
+    for (i = 0; i < sizeof(keys) / sizeof(keys[0]); ++i) {
+        if (strstr(message, keys[i]) != NULL) return TRUE;
+    }
+    return FALSE;
+}
+
 /* Metadados (tamanho do arquivo) ao disco no maximo a cada BC250_TRACE_FLUSH_MS.
  * Os dados de cada linha ja foram ao disco pelo write-through. */
 static void Bc250WinsysTraceFlushMetadataIfDue(void)
@@ -182,6 +232,7 @@ static BOOL CALLBACK Bc250WinsysTraceInit(PINIT_ONCE Once, PVOID Parameter, PVOI
 
 void Bc250WinsysTraceRaw(const char *Message)
 {
+    char summary[160];
     char line[768];
     int lineLength;
     DWORD written = 0;
@@ -192,6 +243,17 @@ void Bc250WinsysTraceRaw(const char *Message)
 
     if (Message == NULL) {
         return;
+    }
+    (void)InitOnceExecuteOnce(&g_Bc250LogMinOnce, Bc250WinsysLogMinInit, NULL, NULL);
+    if (g_Bc250LogMinActive &&
+        InterlockedIncrement(&g_Bc250LogMinLines) > BC250_LOGMIN_HEAD_LINES &&
+        !Bc250WinsysTraceIsEssential(Message)) {
+        LONG suppressed = InterlockedIncrement(&g_Bc250LogMinSuppressed);
+        if ((suppressed % BC250_LOGMIN_SUMMARY_EVERY) != 0) return;
+        _snprintf_s(summary, sizeof(summary), _TRUNCATE,
+            "[LOGMIN] %ld linhas rotineiras suprimidas ate aqui (LOGMIN.1; BC250_TRACE_FULL=1 restaura)",
+            suppressed);
+        Message = summary;
     }
     routineClass = Bc250WinsysRoutineTraceClass(Message);
     if (routineClass != 0u) {
@@ -819,7 +881,15 @@ BC250_WINSYS_STATUS Bc250WinsysMapAllocation(
     memset(&args, 0, sizeof(args));
     args.hPagingQueue = Context->PagingQueue;
     args.MinimumAddress = 0x10000u;
-    args.MaximumAddress = BC250_ADAPTER_MAX_GPUVA_ADDRESS;
+    /*
+     * P5 (doc 667): o KMD passou a declarar 48 bits (4 niveis, como o amdgpu),
+     * mas a UMD continua mapeando abaixo de 16 GB, a mesma janela dos heaps da
+     * RADV (radv_wddm2_winsys.c, 8..16 GB). E' um subconjunto valido dos 48 bits
+     * e mantem a UMD da Corrida 252 identica a da 251b: uma mudanca por corrida.
+     * Usar VA acima de 16 GB e' melhoria futura, com corrida propria.
+     */
+    args.MaximumAddress = (BC250_ADAPTER_MAX_GPUVA_ADDRESS < 0x00000003FFFFFFFFull) ?
+        BC250_ADAPTER_MAX_GPUVA_ADDRESS : 0x00000003FFFFFFFFull;
     args.hAllocation = Allocation->KernelAllocation;
     args.SizeInPages = Allocation->ByteSize >> 12;
     args.Protection.Write = 1u;

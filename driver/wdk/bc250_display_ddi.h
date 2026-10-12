@@ -74,6 +74,26 @@ NTSTATUS Bc250DisplayInit(
 
 void Bc250DisplaySetMmioBase(_In_ PHYSICAL_ADDRESS MmioPhysical);
 
+/* DCN.1 (doc 710): flip pelo HUBP0 do DCN 2.0.1. Liga so' com a chave DcnFlip
+ * do INF e o pipeline do GOP elegivel; 0 = copia do SDMA0 como antes. */
+void Bc250DisplaySetDcnFlipEnabled(ULONG Enabled);
+ULONG Bc250DisplayDcnFlipArmed(void);
+
+/* DCN.2 (doc 713): bits da chave DcnExt do INF (padrao 0). */
+#define BC250_DCN2_KEY_IRQ     0x01u /* VSYNC e flip pela interrupcao do DCN */
+#define BC250_DCN2_KEY_CRC     0x02u /* CRC continuo do OTG0 */
+#define BC250_DCN2_KEY_CURSOR  0x04u /* cursor por hardware no HUBP0/DPP0 */
+#define BC250_DCN2_KEY_EDID    0x08u /* EDID real por AUX (+ HPD so' leitura) */
+#define BC250_DCN2_KEY_DPMS    0x10u /* apagar/acender o OTG com o monitor */
+#define BC250_DCN2_KEY_TIMING  0x20u /* timing medido do OTG0 no VidPn */
+#define BC250_DCN2_KEY_ALL     0x3Fu
+VOID Bc250DisplaySetDcnExt(ULONG Keys);
+ULONG Bc250DisplayDcnExtKeys(void);
+VOID Bc250DisplaySetDcnCursorVram(UINT64 VramOffset, UINT64 Bytes);
+ULONG Bc250DisplayDcnCursorReady(void);
+/* ISR do IH (DIRQL), cliente DCE: ack e DPC de VSYNC. TRUE = consumido. */
+BOOLEAN Bc250DisplayDcnIsr(ULONG SrcId);
+
 void Bc250DisplaySetSyntheticEdidEnabled(BOOLEAN Enabled);
 BOOLEAN Bc250DisplayGetSyntheticEdidEnabled(void);
 

@@ -2081,7 +2081,7 @@ BOOLEAN Bc250SdmaPresentExecuteIndirect(
      * a regra do upstream. Calculamos o padding somente depois de serializar
      * o anel, pois ele depende do WPTR real.
      */
-    startCursor = Bc250SdmaPresentAllocateRingSlot(22u);
+    startCursor = Bc250SdmaPresentAllocateRingSlot(24u);
     padDwords = Bc250SdmaIndirectPrePadDwords(startCursor);
     cursor = 0u;
     for (i = 0u; i < padDwords; ++i) {
@@ -2493,7 +2493,9 @@ static BOOLEAN Bc250SdmaPresentWaitRingSpaceLocked(
     }
 }
 
-static BOOLEAN Bc250SdmaPresentSubmitSplitChunked(
+static BOOLEAN Bc250SdmaPresentSubmitSplitChunkedWith(
+    _Inout_updates_(BC250_SDMA_PRESENT_RING_DWORDS) uint32_t *s_chunkStream,
+    _Inout_updates_(BC250_SDMA1_RING_BYTES / 4u) uint32_t *s_sdma1Stream,
     _In_ uint64_t DmaBufferGpuVa,
     _In_ ULONG DmaBufferSize,
     _In_ uint32_t IbSizeDwords,
@@ -2511,8 +2513,6 @@ static BOOLEAN Bc250SdmaPresentSubmitSplitChunked(
     _In_ const BC250_DATA_PROOF_PLAN *DataPlan,
     _Out_ uint32_t *OutAssignedHardwareFence)
 {
-    static uint32_t s_chunkStream[BC250_SDMA_PRESENT_RING_DWORDS];
-    static uint32_t s_sdma1Stream[BC250_SDMA1_RING_BYTES / 4u];
     BC250_SDMA_CROSS_ENGINE cross;
     uint32_t nextFence = (uint32_t)InterlockedIncrement(&g_Bc250SdmaPresent.NextFenceSequence);
     uint32_t a = 0u;
@@ -2554,7 +2554,7 @@ static BOOLEAN Bc250SdmaPresentSubmitSplitChunked(
             local[i].Sdma1Token = 0u;
         }
         worst = pre + Bc250SdmaSplitIndirectWorstDwords(local, n) +
-            (last ? BC250_SDMA_DWORDS_FENCE : 0u);
+            BC250_SDMA_DWORDS_GCR_REQ + (last ? (BC250_SDMA_DWORDS_FENCE + BC250_SDMA_DWORDS_TRAP) : 0u);
         if (worst > BC250_SDMA_SPLIT_ENTRY_MAX_DWORDS || (ce <= cs && !last)) {
             /* Inalcancavel: pedaco unitario cabe (16 VMIDs x 15 + 36 < 960). */
             Bc250DisplayLog("[PT_GPU_SPLIT] RECUSADO: pedaco %u impossivel (worst=%u dw, faixa [%u,%u), pontos %u..%u)%s\n",
@@ -2625,8 +2625,10 @@ static BOOLEAN Bc250SdmaPresentSubmitSplitChunked(
                 DmaBufferGpuVa + ((uint64_t)cs * sizeof(uint32_t)), ce - cs, Vmid,
                 local, n, &cross, &lastIndirectEnd);
         } else {
-            /* Ultimo pedaco so' com pontos no fim exato do IB: so' invalidacoes. */
+            /* Ultimo pedaco so' com pontos no fim exato do IB: GCR rinse antes das invalidacoes */
             uint32_t mask = 0u, v;
+            status = Bc250SdmaEmitGcr(s_chunkStream,
+                BC250_SDMA_PRESENT_RING_DWORDS, &streamDwords);
             for (i = 0u; i < n; ++i) mask |= local[i].VmidMask;
             for (v = 1u; v < 16u && status == BC250_SDMA_OK; ++v) {
                 if (((mask >> v) & 1u) == 0u) continue;
@@ -2634,6 +2636,14 @@ static BOOLEAN Bc250SdmaPresentSubmitSplitChunked(
                     BC250_SDMA_PRESENT_RING_DWORDS, &streamDwords,
                     BC250_SDMA_INVALIDATE_ENGINE, v, 0u);
             }
+        }
+        /*
+         * 5D (doc 685): GCR GL2 rinse emitido incondicionalmente em TODOS os chunks
+         * (inclusive intermediarios), espelhando amdgpu sdma_v5_0_ring_emit_mem_sync.
+         */
+        if (status == BC250_SDMA_OK) {
+            status = Bc250SdmaEmitGcr(s_chunkStream,
+                BC250_SDMA_PRESENT_RING_DWORDS, &streamDwords);
         }
         if (status == BC250_SDMA_OK && last) {
             uint32_t slotFenceOffset = Bc250SdmaAsyncSlotFenceOffset(
@@ -2735,6 +2745,53 @@ static BOOLEAN Bc250SdmaPresentSubmitSplitChunked(
         cs = ce;
     }
 }
+
+/*
+ * Auditorias 653/657 (doc 658): os dois fluxos eram `static` dentro da funcao
+ * e o RingLock e' solto entre pedacos do split; duas submissoes divididas
+ * concorrentes escreviam no mesmo buffer. Agora cada chamada tem os seus
+ * (8 KiB de pool nao paginado, fora da pilha do kernel), e falta de memoria
+ * recusa a submissao como as outras falhas desta funcao.
+ */
+#define BC250_SDMA_SPLIT_POOL_TAG 0x53503542u /* 'B5PS' */
+static BOOLEAN Bc250SdmaPresentSubmitSplitChunked(
+    _In_ uint64_t DmaBufferGpuVa,
+    _In_ ULONG DmaBufferSize,
+    _In_ uint32_t IbSizeDwords,
+    _In_ uint32_t Vmid,
+    _In_ uint64_t ExpectedEffectDestMc,
+    _In_ ULONG ExpectedEffectBytes,
+    _In_ uint32_t ExpectedEffectPattern,
+    _In_ uint64_t SubmissionFenceId,
+    _In_ uint32_t ExecPath,
+    _In_ uint32_t TlbFlushVmidMask,
+    _In_reads_(FlushDwords) const uint32_t *FlushStream,
+    _In_ uint32_t FlushDwords,
+    _In_reads_(SplitCount) const BC250_SDMA_IB_SPLIT *Splits,
+    _In_ uint32_t SplitCount,
+    _In_ const BC250_DATA_PROOF_PLAN *DataPlan,
+    _Out_ uint32_t *OutAssignedHardwareFence)
+{
+    uint32_t *streams;
+    BOOLEAN ok;
+    if (OutAssignedHardwareFence != NULL) *OutAssignedHardwareFence = 0u;
+    streams = (uint32_t *)ExAllocatePool2(POOL_FLAG_NON_PAGED,
+        BC250_SDMA_PRESENT_RING_BYTES + BC250_SDMA1_RING_BYTES,
+        BC250_SDMA_SPLIT_POOL_TAG);
+    if (streams == NULL) {
+        Bc250DisplayLog("[SDMA_SPLIT] RECUSADO: sem pool para os fluxos do split (%u bytes)\n",
+            (unsigned)(BC250_SDMA_PRESENT_RING_BYTES + BC250_SDMA1_RING_BYTES));
+        return FALSE;
+    }
+    ok = Bc250SdmaPresentSubmitSplitChunkedWith(
+        streams, streams + BC250_SDMA_PRESENT_RING_DWORDS,
+        DmaBufferGpuVa, DmaBufferSize, IbSizeDwords, Vmid,
+        ExpectedEffectDestMc, ExpectedEffectBytes, ExpectedEffectPattern,
+        SubmissionFenceId, ExecPath, TlbFlushVmidMask, FlushStream, FlushDwords,
+        Splits, SplitCount, DataPlan, OutAssignedHardwareFence);
+    ExFreePoolWithTag(streams, BC250_SDMA_SPLIT_POOL_TAG);
+    return ok;
+}
 #endif
 
 BOOLEAN Bc250SdmaPresentSubmitIndirectAsync(
@@ -2812,7 +2869,9 @@ BOOLEAN Bc250SdmaPresentSubmitIndirectAsync(
     TlbFlushVmidMask &= 0xFFFEu; /* VMID 0 nunca: raiz do MEC/anel fisico */
     if (TlbFlushVmidMask != 0u) {
         uint32_t flushVmid;
-        for (flushVmid = 1u; flushVmid < 16u; ++flushVmid) {
+        /* 5D (doc 685): GCR rinse no anel antes das invalidacoes de TLB */
+        status = Bc250SdmaEmitGcr(flushStream, 256u, &flushDwords);
+        for (flushVmid = 1u; flushVmid < 16u && status == BC250_SDMA_OK; ++flushVmid) {
             if (((TlbFlushVmidMask >> flushVmid) & 1u) == 0u) continue;
             status = Bc250SdmaEmitVmInvalidate(flushStream, 256u, &flushDwords,
                 BC250_SDMA_INVALIDATE_ENGINE, flushVmid, 0u);
@@ -2823,7 +2882,7 @@ BOOLEAN Bc250SdmaPresentSubmitIndirectAsync(
             }
         }
     }
-    neededDwords = flushDwords + 22u;
+    neededDwords = flushDwords + 24u;
     if (SplitCount != 0u) {
         if (Splits == NULL || SplitCount > BC250_SDMA_IB_SPLIT_MAX) {
             Bc250DisplayLog("[PT_GPU_SPLIT] RECUSADO: lista de divisao invalida (n=%u); IB NAO enviado\n",
@@ -3840,8 +3899,12 @@ static VOID Bc250SdmaPresentReleaseSystemRingWork(void)
  * navi10_ih_enable_ring (BASE = va >> 8, BASE_HI = va >> 40, RB_CNTL de
  * navi10_ih_rb_cntl com MC_SPACE=4 porque APU usa endereco virtual, writeback
  * do WPTR, WPTR=RPTR=0, DOORBELL_RPTR com ENABLE=0); liga RB_ENABLE,
- * RB_GPU_TS_ENABLE e ENABLE_INTR. Diferenca DECLARADA: o RPTR vai por MMIO
- * (IH_RB_RPTR); o amdgpu usa doorbell para o IH. Fica para uma etapa propria.
+ * RB_GPU_TS_ENABLE e ENABLE_INTR. P3.1 publicava o RPTR por MMIO (IH_RB_RPTR).
+ * P3.3 (doc 635): com RptrByDoorbell, DOORBELL_RPTR = OFFSET|ENABLE em
+ * navi10_ih_enable_ring, BIF_IH_DOORBELL_RANGE depois do anel e antes de ligar
+ * (nbio_v2_3_ih_doorbell_range), e o ISR escreve o RPTR pela doorbell
+ * (navi10_ih_set_rptr). Prova: IH_RB_RPTR lido = RPTR publicado (nao-zero),
+ * a mesma conferencia de navi10_ih_irq_rearm. Sem prova, volta ao MMIO.
  * =====================================================================
  */
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
@@ -3852,6 +3915,51 @@ static uint32_t Bc250IhRead(uint32_t Reg)
 static VOID Bc250IhWrite(uint32_t Reg, uint32_t Value)
 {
     Bc250SdmaRegWrite(&g_Bc250SdmaPresent, Reg - BC250_SDMA0_MMIO_WINDOW_START, Value);
+}
+
+/* C1 (doc 672): ver o header. */
+BOOLEAN Bc250SdmaPresentDoorbellApertureReady(void)
+{
+    uint32_t aper;
+    if (!g_Bc250SdmaPresent.Initialized || g_Bc250SdmaPresent.DoorbellVirtual == NULL) {
+        return FALSE;
+    }
+    aper = Bc250IhRead(BC250_NBIO_REG_RCC_DOORBELL_APER_EN);
+    return ((aper & BC250_NBIO_DOORBELL_APER_EN_MASK) != 0u) ? TRUE : FALSE;
+}
+
+BOOLEAN Bc250SdmaPresentDoorbellWrite64(_In_ uint32_t ByteOffset, _In_ uint64_t Value)
+{
+    if (g_Bc250SdmaPresent.DoorbellVirtual == NULL || (ByteOffset & 7u) != 0u ||
+        ByteOffset > BC250_P2_DOORBELL_MAP_BYTES - 8u) {
+        return FALSE;
+    }
+    KeMemoryBarrier();
+    *(volatile uint64_t *)(g_Bc250SdmaPresent.DoorbellVirtual + ByteOffset) = Value;
+    KeMemoryBarrier();
+    return TRUE;
+}
+/* navi10_ih_set_rptr: doorbell quando provada, MMIO caso contrario. DIRQL-safe. */
+static VOID Bc250IhPublishRptr(uint32_t Rptr)
+{
+    if (g_Bc250SdmaPresent.IhRptrDoorbellActive && g_Bc250SdmaPresent.DoorbellVirtual != NULL) {
+        *(volatile uint32_t *)(g_Bc250SdmaPresent.DoorbellVirtual + BC250_P33_IH_DOORBELL_BYTE_OFFSET) = Rptr;
+        InterlockedIncrement64(&g_Bc250SdmaPresent.IhRptrDoorbellWrites);
+        return;
+    }
+    Bc250IhWrite(BC250_IH_REG_RB_RPTR, Rptr);
+}
+/* Devolve DOORBELL_RPTR e BIF_IH_DOORBELL_RANGE ao snapshot; RPTR volta ao MMIO. */
+static VOID Bc250IhRptrDoorbellRestore(void)
+{
+    g_Bc250SdmaPresent.IhRptrDoorbellActive = FALSE;
+    KeMemoryBarrier();
+    if (!g_Bc250SdmaPresent.IhRptrDoorbellCaptured) {
+        return;
+    }
+    Bc250IhWrite(BC250_IH_REG_DOORBELL_RPTR, g_Bc250SdmaPresent.IhDoorbellRptrBefore);
+    Bc250IhWrite(BC250_NBIO_REG_BIF_IH_DOORBELL_RANGE, g_Bc250SdmaPresent.IhBifRangeBefore);
+    g_Bc250SdmaPresent.IhRptrDoorbellCaptured = FALSE;
 }
 static uint32_t Bc250IhLog2(ULONG Value)
 {
@@ -3868,13 +3976,17 @@ BOOLEAN Bc250SdmaPresentIhArm(
     _In_ volatile uint32_t *WptrCpu,
     _In_ uint64_t WptrGpuVa,
     _In_ uint64_t DummyPagePa,
-    _In_ BOOLEAN Msi)
+    _In_ BOOLEAN Msi,
+    _In_ BOOLEAN RptrByDoorbell)
 {
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
     uint32_t rbCntl, intCntl, cntl, rd[4];
     ULONG poll;
     uint32_t wptrBefore, wptrAfter = 0u;
     BOOLEAN nopOk;
+    BOOLEAN dbWanted = FALSE;
+    uint32_t dbRptrWant = 0u, bifWant = 0u, dbRd[2] = { 0u, 0u };
+    uint32_t dbProofRptr = 0u, dbProofReg = 0u;
 
     if (!g_Bc250SdmaPresent.Initialized || !g_Bc250SdmaPresent.HardwareEnabled ||
         g_Bc250SdmaPresent.MmioVirtual == NULL || RingCpu == NULL || WptrCpu == NULL ||
@@ -3891,6 +4003,28 @@ BOOLEAN Bc250SdmaPresentIhArm(
     g_Bc250SdmaPresent.IhIntCntlBefore = Bc250IhRead(BC250_NBIO_REG_INTERRUPT_CNTL);
     g_Bc250SdmaPresent.IhIntCntl2Before = Bc250IhRead(BC250_NBIO_REG_INTERRUPT_CNTL2);
     g_Bc250SdmaPresent.IhBeforeCaptured = TRUE;
+
+    /* P3.3: so' com a BAR de doorbell mapeada e a abertura do BIF ligada (P2c). */
+    g_Bc250SdmaPresent.IhRptrDoorbellActive = FALSE;
+    g_Bc250SdmaPresent.IhRptrDoorbellCaptured = FALSE;
+    if (RptrByDoorbell) {
+        uint32_t aper = Bc250IhRead(BC250_NBIO_REG_RCC_DOORBELL_APER_EN);
+        if (g_Bc250SdmaPresent.DoorbellVirtual == NULL || (aper & BC250_NBIO_DOORBELL_APER_EN_MASK) == 0u) {
+            Bc250DisplayLog("[P3_3_IH_DOORBELL] NAO TENTADO: BAR de doorbell %s, RCC_DOORBELL_APER_EN=0x%08X -- RPTR do IH segue por MMIO\n",
+                g_Bc250SdmaPresent.DoorbellVirtual != NULL ? "mapeada" : "NAO mapeada", aper);
+        } else {
+            g_Bc250SdmaPresent.IhDoorbellRptrBefore = Bc250IhRead(BC250_IH_REG_DOORBELL_RPTR);
+            g_Bc250SdmaPresent.IhBifRangeBefore = Bc250IhRead(BC250_NBIO_REG_BIF_IH_DOORBELL_RANGE);
+            g_Bc250SdmaPresent.IhRptrDoorbellCaptured = TRUE;
+            dbRptrWant = (BC250_P33_IH_DOORBELL_INDEX & BC250_IH_DOORBELL_RPTR_OFFSET_MASK) |
+                BC250_IH_DOORBELL_RPTR_ENABLE;
+            bifWant = (g_Bc250SdmaPresent.IhBifRangeBefore &
+                    ~(BC250_BIF_DOORBELL_RANGE_OFFSET_MASK | BC250_BIF_DOORBELL_RANGE_SIZE_MASK)) |
+                ((BC250_P33_IH_DOORBELL_INDEX << 2) & BC250_BIF_DOORBELL_RANGE_OFFSET_MASK) |
+                ((BC250_P33_IH_DOORBELL_RANGE_SIZE << 16) & BC250_BIF_DOORBELL_RANGE_SIZE_MASK);
+            dbWanted = TRUE;
+        }
+    }
 
     g_Bc250SdmaPresent.IhRing = RingCpu;
     g_Bc250SdmaPresent.IhRingGpuVa = RingGpuVa;
@@ -3931,7 +4065,26 @@ BOOLEAN Bc250SdmaPresentIhArm(
     Bc250IhWrite(BC250_IH_REG_RB_WPTR_ADDR_HI, (uint32_t)((WptrGpuVa >> 32) & 0xFFFFull));
     Bc250IhWrite(BC250_IH_REG_RB_WPTR, 0u);
     Bc250IhWrite(BC250_IH_REG_RB_RPTR, 0u);
-    Bc250IhWrite(BC250_IH_REG_DOORBELL_RPTR, 0u);
+    Bc250IhWrite(BC250_IH_REG_DOORBELL_RPTR, dbWanted ? dbRptrWant : 0u);
+
+    /* 3b. P3.3: nbio_v2_3_ih_doorbell_range, depois do anel e antes de ligar. */
+    if (dbWanted) {
+        Bc250IhWrite(BC250_NBIO_REG_BIF_IH_DOORBELL_RANGE, bifWant);
+        dbRd[0] = Bc250IhRead(BC250_IH_REG_DOORBELL_RPTR);
+        dbRd[1] = Bc250IhRead(BC250_NBIO_REG_BIF_IH_DOORBELL_RANGE);
+        if ((dbRd[0] & (BC250_IH_DOORBELL_RPTR_OFFSET_MASK | BC250_IH_DOORBELL_RPTR_ENABLE)) != dbRptrWant ||
+            (dbRd[1] & (BC250_BIF_DOORBELL_RANGE_OFFSET_MASK | BC250_BIF_DOORBELL_RANGE_SIZE_MASK)) !=
+                (bifWant & (BC250_BIF_DOORBELL_RANGE_OFFSET_MASK | BC250_BIF_DOORBELL_RANGE_SIZE_MASK))) {
+            Bc250DisplayLog("[P3_3_IH_DOORBELL] RECUSADO: readback DOORBELL_RPTR=0x%08X (quer 0x%08X) BIF_IH_DOORBELL_RANGE=0x%08X (quer 0x%08X) -- RPTR do IH segue por MMIO\n",
+                dbRd[0], dbRptrWant, dbRd[1], bifWant);
+            Bc250IhRptrDoorbellRestore();
+            dbWanted = FALSE;
+        } else {
+            /* Provisorio: o ISR da prova ja' publica pela doorbell. */
+            g_Bc250SdmaPresent.IhRptrDoorbellActive = TRUE;
+            KeMemoryBarrier();
+        }
+    }
 
     /* 4. navi10_ih_toggle_interrupts(true) */
     rbCntl = Bc250IhRead(BC250_IH_REG_RB_CNTL);
@@ -3972,11 +4125,41 @@ BOOLEAN Bc250SdmaPresentIhArm(
         Bc250SdmaPresentIhDisarm("prova");
         return FALSE;
     }
+    /*
+     * P3.3, prova: o ISR consumiu o vetor e publicou o RPTR pela doorbell; o
+     * IH_RB_RPTR lido tem de ser esse valor (navi10_ih_irq_rearm faz a mesma
+     * conferencia). RPTR 0 nao prova nada (zero contra zero): exige nao-zero.
+     */
+    if (dbWanted) {
+        BOOLEAN dbOk = FALSE;
+        for (poll = 0u; poll < 20000u; ++poll) {      /* ~100 ms */
+            dbProofRptr = g_Bc250SdmaPresent.IhRptr;
+            dbProofReg = Bc250IhRead(BC250_IH_REG_RB_RPTR) & 0x0003FFFCu;
+            if (dbProofRptr != 0u && dbProofReg == dbProofRptr &&
+                g_Bc250SdmaPresent.IhRptrDoorbellWrites != 0) {
+                dbOk = TRUE;
+                break;
+            }
+            KeStallExecutionProcessor(5u);
+        }
+        if (dbOk) {
+            Bc250DisplayLog("[P3_3_IH_DOORBELL] ATIVO: DOORBELL_RPTR=0x%08X BIF_IH_DOORBELL_RANGE=0x%08X (indice 0x%X, byte 0x%X da BAR); prova: RPTR publicado pela doorbell=0x%X == IH_RB_RPTR lido=0x%X, escritas pela doorbell=%lld\n",
+                dbRd[0], dbRd[1], BC250_P33_IH_DOORBELL_INDEX, BC250_P33_IH_DOORBELL_BYTE_OFFSET,
+                dbProofRptr, dbProofReg, g_Bc250SdmaPresent.IhRptrDoorbellWrites);
+        } else {
+            Bc250DisplayLog("[P3_3_IH_DOORBELL] NAO ATIVA: em ~100 ms o IH_RB_RPTR lido=0x%X nao igualou o RPTR publicado=0x%X (escritas pela doorbell=%lld, ISR=%lld) -- doorbell desfeita, RPTR do IH volta ao MMIO\n",
+                dbProofReg, dbProofRptr, g_Bc250SdmaPresent.IhRptrDoorbellWrites, g_Bc250SdmaPresent.IhIsrCalls);
+            Bc250IhRptrDoorbellRestore();
+            Bc250IhWrite(BC250_IH_REG_RB_RPTR, g_Bc250SdmaPresent.IhRptr);
+            dbWanted = FALSE;
+        }
+    }
     Bc250DisplayLog("[P3_IH] ATIVO: anel 0 do IH na GART VA=0x%llX (%lu bytes, MC_SPACE=4, VMID 0), writeback do WPTR em VA=0x%llX, "
         "RB_CNTL=0x%08X, INTERRUPT_CNTL2=dummy 0x%llX>>8, %s; prova: NOP com TRAP -> IH escreveu (WPTR 0x%X -> 0x%X, ISR=%lld, traps vistos=%lld); "
-        "RPTR por MMIO (diferenca declarada: amdgpu usa doorbell)\n",
+        "RPTR %s\n",
         RingGpuVa, RingBytes, WptrGpuVa, rd[0], DummyPagePa, Msi ? "MSI (RPTR_REARM=1)" : "linha (RPTR_REARM=0)",
-        wptrBefore, wptrAfter, g_Bc250SdmaPresent.IhIsrCalls, g_Bc250SdmaPresent.IhSdmaTraps);
+        wptrBefore, wptrAfter, g_Bc250SdmaPresent.IhIsrCalls, g_Bc250SdmaPresent.IhSdmaTraps,
+        dbWanted ? "pela doorbell (P3.3, como o amdgpu)" : "por MMIO (diferenca declarada: amdgpu usa doorbell)");
     return TRUE;
 #else
     UNREFERENCED_PARAMETER(RingCpu);
@@ -3986,6 +4169,7 @@ BOOLEAN Bc250SdmaPresentIhArm(
     UNREFERENCED_PARAMETER(WptrGpuVa);
     UNREFERENCED_PARAMETER(DummyPagePa);
     UNREFERENCED_PARAMETER(Msi);
+    UNREFERENCED_PARAMETER(RptrByDoorbell);
     return FALSE;
 #endif
 }
@@ -4004,10 +4188,15 @@ VOID Bc250SdmaPresentIhDisarm(_In_z_ const char *Why)
     /* navi10_ih_irq_disable: ENABLE_INTR e RB_ENABLE a 0, RPTR=WPTR=0. */
     rbCntl = Bc250IhRead(BC250_IH_REG_RB_CNTL);
     Bc250IhWrite(BC250_IH_REG_RB_CNTL, rbCntl & ~(BC250_IH_RB_CNTL_RB_ENABLE | BC250_IH_RB_CNTL_ENABLE_INTR));
+    /* P3.3: doorbell do RPTR e faixa do BIF de volta ao snapshot antes do RPTR=0 por MMIO. */
+    Bc250IhRptrDoorbellRestore();
     Bc250IhWrite(BC250_IH_REG_RB_RPTR, 0u);
     Bc250IhWrite(BC250_IH_REG_RB_WPTR, 0u);
     g_Bc250SdmaPresent.IhArmed = FALSE;
     KeStallExecutionProcessor(1000u); /* navi10_ih_irq_disable: mdelay(1) */
+    /* Doc 658 (auditoria 657): o ISR testa IhRing != NULL; zerar aqui fecha a
+     * janela entre o desarme e o MmFreeContiguousMemory do anel. */
+    InterlockedExchangePointer((PVOID volatile *)&g_Bc250SdmaPresent.IhRing, NULL);
     Bc250IhWrite(BC250_IH_REG_RB_CNTL, g_Bc250SdmaPresent.IhRbCntlBefore &
         ~(BC250_IH_RB_CNTL_RB_ENABLE | BC250_IH_RB_CNTL_ENABLE_INTR));
     Bc250IhWrite(BC250_NBIO_REG_INTERRUPT_CNTL, g_Bc250SdmaPresent.IhIntCntlBefore);
@@ -4021,6 +4210,22 @@ VOID Bc250SdmaPresentIhDisarm(_In_z_ const char *Why)
     UNREFERENCED_PARAMETER(Why);
 #endif
 }
+
+/*
+ * I.IH (doc 630): na 239 o IH recebeu 992 vetores SE0SH/SE1SH fonte 0xEF
+ * (SQ_INTERRUPT_ID) depois do reset do GFX, e so' cliente/fonte ficavam
+ * guardados. As primeiras entradas "outras" sao copiadas inteiras aqui (o
+ * ISR roda em DIRQL e nao pode logar); o relatorio do IH as publica.
+ */
+#define BC250_IH_OTHER_SAMPLES 8u
+typedef struct _BC250_IH_OTHER_SAMPLE {
+    uint32_t Dw[BC250_IH_ENTRY_BYTES / 4u];
+    ULONGLONG When100ns;
+} BC250_IH_OTHER_SAMPLE;
+static BC250_IH_OTHER_SAMPLE g_Bc250IhOtherSamples[BC250_IH_OTHER_SAMPLES];
+static volatile LONG g_Bc250IhOtherCaptured = 0;
+static volatile LONG g_Bc250IhOtherReady = 0;
+static volatile LONG g_Bc250IhOtherLogged = 0;
 
 /* DIRQL: sem log, sem lock de DISPATCH. So' leituras da RAM do anel e MMIO. */
 BOOLEAN Bc250SdmaPresentIhIsr(ULONG *SdmaTrapsThisCall, ULONG *GfxEopsThisCall)
@@ -4070,14 +4275,27 @@ BOOLEAN Bc250SdmaPresentIhIsr(ULONG *SdmaTrapsThisCall, ULONG *GfxEopsThisCall)
                 InterlockedIncrement64(&g_Bc250SdmaPresent.IhGfxEops);
                 ++gfxEops;
             }
+        } else if (client == 0x04u && Bc250DisplayDcnIsr(src)) {
+            /* DCN.2 (doc 713): cliente DCE (OTG0 VSTARTUP 0x3C, flip do HUBP0 0x4F). */
+            InterlockedIncrement64(&g_Bc250SdmaPresent.IhDcn);
         } else {
+            LONG slot;
             InterlockedIncrement64(&g_Bc250SdmaPresent.IhOther);
             InterlockedExchange(&g_Bc250SdmaPresent.IhLastClientSrc, (LONG)((client << 8) | src));
+            slot = InterlockedIncrement(&g_Bc250IhOtherCaptured) - 1;
+            if (slot >= 0 && (ULONG)slot < BC250_IH_OTHER_SAMPLES) {
+                uint32_t k;
+                for (k = 0u; k < BC250_IH_ENTRY_BYTES / 4u; ++k) {
+                    g_Bc250IhOtherSamples[slot].Dw[k] = g_Bc250SdmaPresent.IhRing[rptr / 4u + k];
+                }
+                g_Bc250IhOtherSamples[slot].When100ns = KeQueryInterruptTime();
+                InterlockedIncrement(&g_Bc250IhOtherReady);
+            }
         }
         rptr = (rptr + BC250_IH_ENTRY_BYTES) & mask;
     }
     g_Bc250SdmaPresent.IhRptr = rptr;
-    Bc250IhWrite(BC250_IH_REG_RB_RPTR, rptr);   /* navi10_ih_set_rptr sem doorbell */
+    Bc250IhPublishRptr(rptr);   /* navi10_ih_set_rptr: doorbell (P3.3) ou MMIO */
     if (claimed) InterlockedIncrement64(&g_Bc250SdmaPresent.IhIsrClaimed);
     if (SdmaTrapsThisCall != NULL) *SdmaTrapsThisCall = traps;
     if (GfxEopsThisCall != NULL) *GfxEopsThisCall = gfxEops;
@@ -4099,6 +4317,22 @@ VOID Bc250SdmaPresentIhReport(_In_z_ const char *Why)
     if (!g_Bc250SdmaPresent.IhArmed) {
         return;
     }
+    /* I.IH: entradas "outras" capturadas saem ja', antes do limite de 10 s
+     * (na 239 a trava veio 9 s depois do ultimo TDR). */
+    for (;;) {
+        LONG logged = InterlockedCompareExchange(&g_Bc250IhOtherLogged, 0, 0);
+        LONG ready = InterlockedCompareExchange(&g_Bc250IhOtherReady, 0, 0);
+        const BC250_IH_OTHER_SAMPLE *s;
+        if (logged >= ready || (ULONG)logged >= BC250_IH_OTHER_SAMPLES ||
+            InterlockedCompareExchange(&g_Bc250IhOtherLogged, logged + 1, logged) != logged) {
+            break;
+        }
+        s = &g_Bc250IhOtherSamples[logged];
+        Bc250DisplayLog("[P3_IH] OUTRO #%ld t=%llu cliente=0x%02X fonte=0x%02X (0x0A/0x0B fonte 0xEF = SQ_INTERRUPT_ID) dw=%08X %08X %08X %08X %08X %08X %08X %08X\n",
+            logged + 1, (unsigned long long)s->When100ns,
+            s->Dw[0] & 0xFFu, (s->Dw[0] >> 8) & 0xFFu,
+            s->Dw[0], s->Dw[1], s->Dw[2], s->Dw[3], s->Dw[4], s->Dw[5], s->Dw[6], s->Dw[7]);
+    }
     /* Uma linha a cada 10 s, de qualquer CPU (o chamador roda em DPC). */
     now = (LONG64)KeQueryInterruptTime();
     last = s_lastReport;
@@ -4106,19 +4340,22 @@ VOID Bc250SdmaPresentIhReport(_In_z_ const char *Why)
         InterlockedCompareExchange64(&s_lastReport, now, last) != last) {
         return;
     }
-    Bc250DisplayLog("[P3_IH] %s: ISR=%lld reclamadas=%lld vetores=%lld traps_sdma=%lld eop_cp=%lld outros=%lld (ultimo cliente/fonte 0x%04X) overflows=%lld traps_emitidos=%lld dpc_por_irq=%lld eop_gfx=%lld eop_emitidos=%lld dpc_gfx_por_irq=%lld RPTR=0x%X WPTR_wb=0x%X\n",
+    Bc250DisplayLog("[P3_IH] %s: ISR=%lld reclamadas=%lld vetores=%lld traps_sdma=%lld eop_cp=%lld outros=%lld (ultimo cliente/fonte 0x%04X) overflows=%lld traps_emitidos=%lld dpc_por_irq=%lld eop_gfx=%lld eop_emitidos=%lld dpc_gfx_por_irq=%lld RPTR=0x%X WPTR_wb=0x%X rptr_por_doorbell=%u escritas_doorbell=%lld\n",
         Why, g_Bc250SdmaPresent.IhIsrCalls, g_Bc250SdmaPresent.IhIsrClaimed, g_Bc250SdmaPresent.IhEntries,
         g_Bc250SdmaPresent.IhSdmaTraps, g_Bc250SdmaPresent.IhCpEops, g_Bc250SdmaPresent.IhOther,
         (unsigned)g_Bc250SdmaPresent.IhLastClientSrc, g_Bc250SdmaPresent.IhOverflows,
         g_Bc250SdmaPresent.TrapsEmitted, g_Bc250SdmaPresent.IhDpcKicks,
         g_Bc250SdmaPresent.IhGfxEops, g_Bc250SdmaPresent.CpEopIntsEmitted,
         g_Bc250SdmaPresent.IhGfxDpcKicks, g_Bc250SdmaPresent.IhRptr,
-        g_Bc250SdmaPresent.IhWptrCpu != NULL ? *g_Bc250SdmaPresent.IhWptrCpu : 0u);
+        g_Bc250SdmaPresent.IhWptrCpu != NULL ? *g_Bc250SdmaPresent.IhWptrCpu : 0u,
+        g_Bc250SdmaPresent.IhRptrDoorbellActive ? 1u : 0u, g_Bc250SdmaPresent.IhRptrDoorbellWrites);
     if (g_Bc250SdmaPresent.Sdma1Attached && g_Bc250SdmaPresent.Sdma1Work != NULL) {
         LONG64 rec = 0, unal = 0, drop = 0;
+        LONG64 dNoSlot = 0, dPartial = 0, dOutFull = 0, dOrphan = 0;
         Bc250PagingSdma1RangeStats(&rec, &unal, &drop);
-        Bc250DisplayLog("[P4_SDMA1] regime: build: registradas=%lld desalinhadas=%lld descartadas=%lld | envio: rotas=%lld inline=%lld sem_espaco=%lld token=%u Go=%u Done=%u RPTR1=%u cursor1=%u\n",
-            rec, unal, drop,
+        Bc250PagingSdma1DropStats(&dNoSlot, &dPartial, &dOutFull, &dOrphan);
+        Bc250DisplayLog("[P4_SDMA1] regime: build: registradas=%lld desalinhadas=%lld descartadas=%lld (sem_lugar=%lld parcial=%lld saida_cheia=%lld orfa=%lld) | envio: rotas=%lld inline=%lld sem_espaco=%lld token=%u Go=%u Done=%u RPTR1=%u cursor1=%u\n",
+            rec, unal, drop, dNoSlot, dPartial, dOutFull, dOrphan,
             g_Bc250SdmaPresent.Sdma1RangesRouted, g_Bc250SdmaPresent.Sdma1RangesInline,
             g_Bc250SdmaPresent.Sdma1RangesNoSpace, g_Bc250SdmaPresent.Sdma1NextToken,
             g_Bc250SdmaPresent.Sdma1Work[BC250_SDMA1_WORK_GO_OFFSET / 4u],
@@ -4392,6 +4629,14 @@ static void Bc250SdmaPresentP2Disarm(_In_z_ const char *Why)
     if (g_Bc250SdmaPresent.MmioVirtual == NULL ||
         !g_Bc250SdmaPresent.DoorbellBeforeCaptured) {
         return;
+    }
+    /* P3.3: a abertura do BIF vai voltar ao snapshot; o RPTR do IH desce para
+     * o MMIO antes, senao as escritas do ISR pela doorbell se perdem. */
+    if (g_Bc250SdmaPresent.IhRptrDoorbellActive) {
+        Bc250IhRptrDoorbellRestore();
+        Bc250IhWrite(BC250_IH_REG_RB_RPTR, g_Bc250SdmaPresent.IhRptr);
+        Bc250DisplayLog("[P3_3_IH_DOORBELL] DESFEITA (%s): a abertura do BIF sai com a P2; RPTR do IH volta ao MMIO (0x%X)\n",
+            Why, g_Bc250SdmaPresent.IhRptr);
     }
     v = Bc250SdmaRegRead(&g_Bc250SdmaPresent,
         BC250_SDMA0_REG_DOORBELL - BC250_SDMA0_MMIO_WINDOW_START);

@@ -438,7 +438,20 @@ static int Bc250RunGpuvaSpaceContractTest(void)
         CHECK(site.AllocationToken == 0x52455300000000AEull);
         CHECK(site.BackingSegmentId == 1u);
         CHECK(site.BackingSegmentOffset == 0x5B00000ull);
+#if BC250_P5_QUATRO_NIVEIS
+        /*
+         * P5 (doc 667): com 48 bits o candidato <<20 (~2^41) deixa de ser
+         * descartado pela largura do VA. Ele passa a ser julgado pelo espaco:
+         * esta dentro do teto, mas nao ha faixa viva nele, e o diagnostico
+         * continua apontando so' o <<12.
+         */
+        CHECK((page << 20) < BC250_GPUVA_TRANSLATABLE_LIMIT);
+        memset(&site, 0, sizeof(site));
+        (void)Bc250GpuvaSpaceDescribeAddress(&targetSpace, page << 20, &site);
+        CHECK(site.Found == 0u);
+#else
         CHECK((page << 20) >= BC250_GPUVA_TRANSLATABLE_LIMIT);
+#endif
     }
     return 0;
 }

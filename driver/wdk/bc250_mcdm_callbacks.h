@@ -18,6 +18,28 @@ VOID Bc250PagingTraceStop(VOID);
 VOID Bc250PagingTraceMarkExternal(ULONG Stage, ULONG Operation, NTSTATUS Status);
 /* I.PG (doc 571): o flush de TLB pelo anel (4c.2) conta no registro BPG1. */
 VOID Bc250PagingStatsNoteRingFlush(VOID);
+/*
+ * 263b (doc 695): contadores do registro BFT1 do rastro duravel. Software,
+ * sem registrador. Class: 0 = FLUSH_TLB do processo de paginacao, 1 = processo
+ * de usuario com VMID instalada para a raiz, 2 = processo sem VMID.
+ */
+VOID Bc250PagingStatsNoteFlushClass(ULONG Class, ULONG VmidsInvalidated);
+VOID Bc250PagingStatsNoteSqRead(VOID);
+VOID Bc250PagingStatsNoteCpuTlbInvalidate(VOID);
+typedef LONG64 (*BC250_MCDM_COUNTER_SOURCE)(VOID);
+VOID Bc250McdmInstallSdma1RangeSource(_In_opt_ BC250_MCDM_COUNTER_SOURCE Source);
+/* MEC.2 (doc 701): polls do MEC, total e com seletor GRBM (registro BMP1). */
+/* DBG.1 (doc 704): modo debug e validador de endereco fisico das PTEs. */
+#include "../core/bc250_pa_validator.h"
+VOID Bc250McdmSetDebugTrace(ULONG Enabled);
+VOID Bc250McdmTraceKick(VOID);
+ULONG Bc250McdmDebugTraceEnabled(VOID);
+VOID Bc250McdmInstallPaRanges(
+    _In_reads_(RamCount) const BC250_PA_RANGE *Ram, ULONG RamCount,
+    _In_reads_(ForbidCount) const BC250_PA_RANGE *Forbid, ULONG ForbidCount);
+VOID Bc250McdmInstallMecPollSources(
+    _In_opt_ BC250_MCDM_COUNTER_SOURCE Calls,
+    _In_opt_ BC250_MCDM_COUNTER_SOURCE WithSelector);
 
 /*
  * 4c.4 (doc 575): pontos de divisao do IB de paginacao. O FlushTlb do build
@@ -50,6 +72,8 @@ VOID Bc250PagingSdma1RouteSet(BOOLEAN Armed);
 BOOLEAN Bc250PagingSdma1RouteArmed(VOID);
 /* P4.2: faixas registradas no build, desalinhadas (ficam no SDMA0) e descartadas. */
 VOID Bc250PagingSdma1RangeStats(LONG64 *Recorded, LONG64 *Unaligned, LONG64 *Dropped);
+/* Pendencia 2 do doc 624: descartadas por motivo (a soma e' o Dropped acima). */
+VOID Bc250PagingSdma1DropStats(LONG64 *NoSlot, LONG64 *Partial, LONG64 *OutFull, LONG64 *Orphan);
 
 DXGKDDI_BUILDPAGINGBUFFER Bc250McdmBuildPagingBuffer;
 DXGKDDI_CALIBRATEGPUCLOCK Bc250McdmCalibrateGpuClock;

@@ -59,6 +59,16 @@ echo [cc] bc250_driver_caps_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_driver_caps_contract.obj" "%ROOTDIR%\driver\core\bc250_driver_caps_contract.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
+echo [cc] bc250_dcn_probe_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_dcn_probe_contract.obj" "%ROOTDIR%\driver\core\bc250_dcn_probe_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+echo [cc] bc250_dcn_flip_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_dcn_flip_contract.obj" "%ROOTDIR%\driver\core\bc250_dcn_flip_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+echo [cc] bc250_dcn_ext_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_dcn_ext_contract.obj" "%ROOTDIR%\driver\core\bc250_dcn_ext_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
 echo [cc] bc250_umd_private_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_umd_private_contract.obj" "%ROOTDIR%\driver\core\bc250_umd_private_contract.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -408,6 +418,15 @@ if %ERRORLEVEL% NEQ 0 exit /b 1
 echo [cc] bc250_display_ddi.c (Dxgk registration)
 cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 ^
   /Fo"%ODIR%\bc250_display_ddi_driver.obj" "%SRCDIR%bc250_display_ddi.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [cc] bc250_dcn_probe.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_dcn_probe.obj" "%SRCDIR%bc250_dcn_probe.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+rem Doc 659: no SYS a sonda precisa do Bc250DisplayLog real; sem DXGK_REGISTRATION ele e' o stub vazio e nada sai no log.
+echo [cc] bc250_dcn_probe.c (Dxgk registration)
+cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 /Fo"%ODIR%\bc250_dcn_probe_driver.obj" "%SRCDIR%bc250_dcn_probe.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
 echo [cc] bc250_boot_fuse.c (offline)
 cl %CFLAGS% /Fo"%ODIR%\bc250_boot_fuse.obj" "%SRCDIR%bc250_boot_fuse.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -2042,6 +2061,10 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
   "%ODIR%\bc250_segment_address_contract.obj" ^
   "%ODIR%\bc250_display_ddi.obj" ^
+  "%ODIR%\bc250_dcn_flip_contract.obj" ^
+  "%ODIR%\bc250_dcn_ext_contract.obj" ^
+  "%ODIR%\bc250_dcn_probe_contract.obj" ^
+  "%ODIR%\bc250_dcn_probe.obj" ^
   "%ODIR%\bc250_probe_telemetry.obj" ^
   "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^
   "%ODIR%\bc250_gcvm_vmid8_transaction.obj" ^
@@ -2173,6 +2196,8 @@ echo [link] display_vidpn_test.exe
 link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   /OUT:"%ODIR%\display_vidpn_test.exe" ^
   "%ODIR%\bc250_display_ddi.obj" ^
+  "%ODIR%\bc250_dcn_flip_contract.obj" ^
+  "%ODIR%\bc250_dcn_ext_contract.obj" ^
   "%ODIR%\bc250_driver_caps_contract.obj" ^
   "%ODIR%\bc250_umd_private_contract.obj" ^
   "%ODIR%\bc250_blt_proof_contract.obj" ^
@@ -2195,6 +2220,60 @@ if %ERRORLEVEL% NEQ 0 exit /b 1
 "%ODIR%\bc250_boot_fuse_test.exe"
 if %ERRORLEVEL% NEQ 0 (
   echo TESTE FALHOU ^(bc250_boot_fuse_test^)
+  exit /b 1
+)
+
+echo [cc] dcn_flip_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\dcn_flip_contract_test.obj" "%ROOTDIR%\driver\tests\dcn_flip_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] dcn_flip_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\dcn_flip_contract_test.exe" ^
+  "%ODIR%\bc250_dcn_flip_contract.obj" ^
+  "%ODIR%\bc250_dcn_ext_contract.obj" ^
+  "%ODIR%\dcn_flip_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\dcn_flip_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(dcn_flip_contract_test^)
+  exit /b 1
+)
+echo DCN FLIP CONTRACT: OK (GOP medido elegivel, 8 recusas isoladas, endereco linear com falha fechada, Lei 6 no FLIP_CONTROL, pendencia como o hubp2, contabilidade do latch fecha, baldes e refresh da 270)
+
+echo [cc] dcn_ext_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\dcn_ext_contract_test.obj" "%ROOTDIR%\driver\tests\dcn_ext_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] dcn_ext_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\dcn_ext_contract_test.exe" ^
+  "%ODIR%\bc250_dcn_ext_contract.obj" ^
+  "%ODIR%\dcn_ext_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\dcn_ext_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(dcn_ext_contract_test^)
+  exit /b 1
+)
+echo DCN EXT CONTRACT: OK (timing do OTG decodificado, refresh pela varredura, DTD ida e volta, EDID com checksum, cursor cor/mono e recorte, CRC, AUX)
+
+echo [cc] dcn_probe_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\dcn_probe_contract_test.obj" "%ROOTDIR%\driver\tests\dcn_probe_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] dcn_probe_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\dcn_probe_contract_test.exe" ^
+  "%ODIR%\bc250_dcn_probe_contract.obj" ^
+  "%ODIR%\dcn_probe_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\dcn_probe_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(dcn_probe_contract_test^)
   exit /b 1
 )
 
@@ -2261,6 +2340,10 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_dxgk_readonly_ddi.obj" ^
   "%ODIR%\bc250_mcdm_callbacks_driver.obj" ^
   "%ODIR%\bc250_display_ddi_driver.obj" ^
+  "%ODIR%\bc250_dcn_flip_contract.obj" ^
+  "%ODIR%\bc250_dcn_ext_contract.obj" ^
+  "%ODIR%\bc250_dcn_probe_contract.obj" ^
+  "%ODIR%\bc250_dcn_probe_driver.obj" ^
   "%ODIR%\bc250_probe_telemetry_driver.obj" ^
   "%ODIR%\bc250_gcvm_backing_transaction.obj" ^
   "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^

@@ -14,14 +14,14 @@ const root=path.resolve(__dirname,'..'),output=path.join(root,'artifacts');fs.mk
  assert.equal(await page.locator('#thermal-board svg').count(),1);await page.screenshot({path:path.join(output,'01-instalacao.png'),fullPage:true});
  await page.locator('[data-page=sensors]').click();assert.equal(await page.locator('#locked-view').isVisible(),true);
  await page.locator('[data-action=go-install]').click();await page.locator('#install-button').click();await page.waitForTimeout(700);await page.locator('#cancel-install').click();assert.equal(await page.locator('#install-button').isVisible(),true);
- await page.locator('#install-button').click();await page.waitForSelector('#donation-dialog[open]',{timeout:15000});assert.match(await page.locator('#install-title').innerText(),/concluída/);
+ await page.locator('#install-button').click();await page.waitForSelector('[data-view=donate]:not([hidden])',{timeout:15000});assert.match(await page.locator('#install-title').innerText(),/concluída/);
  await page.screenshot({path:path.join(output,'02-doacao.png'),fullPage:false});
  await page.locator('[data-method=card]').click();assert.match(await page.locator('#payment-panel').innerText(),/Buy Me a Coffee/i);
  await page.locator('[data-method=crypto]').click();assert.match(await page.locator('#payment-panel').innerText(),/endereço/i);
  await page.locator('[data-method=pix]').click();assert.match(await page.locator('#payment-panel').innerText(),/Pix Copia e Cola/i);
  await page.locator('.skip-donation').click();
  assert.equal(await page.locator('[data-view=overview]').isVisible(),true);await page.waitForTimeout(2100);await page.screenshot({path:path.join(output,'03-dashboard-claro.png'),fullPage:true});
- await page.reload();assert.equal(await page.locator('#install-view').isVisible(),false);assert.equal(await page.locator('#donation-dialog').isVisible(),false);
+ await page.reload();assert.equal(await page.locator('#install-view').isVisible(),false);assert.equal(await page.locator('[data-view=donate]').isVisible(),false);
  await page.locator('[data-component=ram-3]').click();assert.equal(await page.locator('#component-name').innerText(),'Memória 3 · GDDR6');const oldColor=await page.locator('#thermal-board #cpu').getAttribute('fill');
  await page.locator('[data-page=performance]').click();await page.locator('[data-scenario=hot]').click();await page.locator('[data-page=overview]').click();assert.notEqual(await page.locator('#thermal-board #cpu').getAttribute('fill'),oldColor);
  await page.locator('#pause-button').click();const before=await page.locator('#metric-gpu_temp_c .metric-value').innerText();await page.waitForTimeout(1200);assert.equal(await page.locator('#metric-gpu_temp_c .metric-value').innerText(),before);await page.locator('#pause-button').click();
@@ -35,7 +35,7 @@ const root=path.resolve(__dirname,'..'),output=path.join(root,'artifacts');fs.mk
  await page.locator('[data-page=driver]').click();await page.locator('[data-action=reset]').first().click();await page.locator('[data-action=cancel-reset]').click();assert.equal(await page.locator('[data-view=driver]').isVisible(),true);
  await page.locator('[data-action=reset]').first().click();await page.locator('[data-action=confirm-reset]').click();assert.equal(await page.locator('#install-button').isVisible(),true);
  await page.locator('[data-page=sensors]').click();await page.locator('[data-action=skip-install]').click();assert.equal(await page.locator('[data-view=overview]').isVisible(),true);
- await page.locator('[data-action=donate]').first().click();await page.keyboard.press('Escape');assert.equal(await page.locator('#donation-dialog').isVisible(),false);
+ await page.locator('[data-action=donate]').first().click();assert.equal(await page.locator('[data-view=donate]').isVisible(),true);await page.keyboard.press('Escape');assert.equal(await page.locator('[data-view=donate]').isVisible(),false);
  await page.locator('.nav-item[data-page=settings]').click();await page.locator('#theme-select').selectOption('light');await page.locator('#scenario-select').selectOption('balanced');await page.locator('[data-page=overview]').click();
  await page.setViewportSize({width:1024,height:768});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);await page.screenshot({path:path.join(output,'05-dashboard-1024.png'),fullPage:true});assert.deepEqual(errors,[]);
  console.log('PASS: installation, cancel, success, donation methods/amount/skip, persistence, existing driver, 34 sensors, export, live colors, pause, null states, themes, SVG escaping, 1024px layout. Zero renderer errors.');

@@ -58,6 +58,16 @@ BC250_SMU_STATUS Bc250SmuGetGfxVid(
     const BC250_SMU_TRANSPORT *Transport,
     uint32_t *VidMv);
 
+/* Consulta de recursos DPM habilitados no SMU */
+BC250_SMU_STATUS Bc250SmuGetEnabledFeatures(
+    const BC250_SMU_TRANSPORT *Transport,
+    uint32_t *Features);
+
+/* Requisicao de clock GFX (paridade amdgpu RequestGfxclk) */
+BC250_SMU_STATUS Bc250SmuRequestGfxclk(
+    const BC250_SMU_TRANSPORT *Transport,
+    uint32_t FrequencyMhz);
+
 #ifdef __cplusplus
 }
 #endif

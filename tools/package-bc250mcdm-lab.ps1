@@ -54,6 +54,16 @@ param(
     # em seguida pode atingir UM UNICO shader engine. Por isso armar exige
     # aceite explicito, no mesmo padrao de -ArmTdrInducedHang.
     [switch]$ArmGfxWaveProbe,
+    # DBG.1 (doc 704): modo debug -- coleta pesada nova (validador de
+    # endereco fisico das PTEs, evento PAGING_PTE, 96 eventos/tique). Sem
+    # escrita de registrador; materializa DebugTrace=1 no INF do candidato.
+    [switch]$DebugTrace,
+    # DCN.1 (doc 710, P9): flip pelo HUBP0; ESCREVE registrador de DCN;
+    # materializa DcnFlip=1 no INF do candidato.
+    [switch]$DcnFlip,
+    # DCN.2 (doc 713, P9 ampliada): interrupcao, CRC, cursor, EDID real, DPMS
+    # e timing medido; ESCREVE registrador de DCN; materializa DcnExt=0x3F.
+    [switch]$DcnExt,
     [switch]$IAcceptSelectorWritesDuringTdr
 )
 
@@ -318,6 +328,15 @@ $infContent = $infContent | ForEach-Object {
         # Mandato do pacote, NAO default: o valor tem de chegar decidido ao
         # StartDevice. Fail-closed -- sem -ArmGfxWaveProbe sai 0.
         'HKR,Parameters,GfxWaveProbe,0x00010001,{0}' -f $(if ($ArmGfxWaveProbe) { 1 } else { 0 })
+    } elseif ($_ -match 'HKR,Parameters,DebugTrace,0x000100(01|03),\d+') {
+        # DBG.1: mandato do pacote; sem -DebugTrace sai 0.
+        'HKR,Parameters,DebugTrace,0x00010001,{0}' -f $(if ($DebugTrace) { 1 } else { 0 })
+    } elseif ($_ -match 'HKR,Parameters,DcnFlip,0x000100(01|03),\d+') {
+        # DCN.1: mandato do pacote; sem -DcnFlip sai 0.
+        'HKR,Parameters,DcnFlip,0x00010001,{0}' -f $(if ($DcnFlip) { 1 } else { 0 })
+    } elseif ($_ -match 'HKR,Parameters,DcnExt,0x000100(01|03),\d+') {
+        # DCN.2: mandato do pacote; sem -DcnExt sai 0.
+        'HKR,Parameters,DcnExt,0x00010001,{0}' -f $(if ($DcnExt) { 63 } else { 0 })
     } elseif ($_ -match 'HKR,Parameters,Node1JournalGatePerProcess,0x000100(01|03),\d+') {
         # C3.9: DEFAULT, nao mandato. NOCLOBBER para que o operador possa armar
         # antes do bind sem que o AddReg do install apague em silencio -- foi
@@ -346,6 +365,9 @@ $expectedInfValues = [ordered]@{
     'Parameters,GfxRingBringup' = 0
     'Parameters,Node1JournalGatePerProcess' = 0
     'Parameters,GfxWaveProbe' = $(if ($ArmGfxWaveProbe) { 1 } else { 0 })
+    'Parameters,DebugTrace' = $(if ($DebugTrace) { 1 } else { 0 })
+    'Parameters,DcnFlip' = $(if ($DcnFlip) { 1 } else { 0 })
+    'Parameters,DcnExt' = $(if ($DcnExt) { 63 } else { 0 })
     'Parameters,SdmaAutoCtxSw' = $(if ($EnableShaderDispatch) { 0 } else { 1 })
 }
 # GpuvaLabPromotion e SdmaPlanoAFallback sao gravados como DEFAULT (NOCLOBBER);
@@ -444,6 +466,40 @@ if (-not $ArmGfxWaveProbe -and $gfxWaveProbeValue -ne 0) {
     throw 'Pacote de laboratorio bloqueado: GfxWaveProbe saiu armado sem -ArmGfxWaveProbe.'
 }
 
+$debugTraceLine = Get-Content -LiteralPath $packageInf |
+    Where-Object { $_ -match '^HKR,Parameters,DebugTrace,0x000100(?:01|03),(\d+)$' } |
+    Select-Object -First 1
+if (-not $debugTraceLine) {
+    throw 'Pacote de laboratorio bloqueado: INF empacotado sem HKR,Parameters,DebugTrace -- o manifesto nao pode declarar o modo debug.'
+}
+$debugTraceLine -match '^HKR,Parameters,DebugTrace,0x000100(?:01|03),(\d+)$' | Out-Null
+$debugTraceValue = [int]$Matches[1]
+if ([bool]$DebugTrace -ne ($debugTraceValue -eq 1)) {
+    throw 'Pacote de laboratorio bloqueado: DebugTrace do INF empacotado diverge do switch -DebugTrace.'
+}
+$dcnFlipLine = Get-Content -LiteralPath $packageInf |
+    Where-Object { $_ -match '^HKR,Parameters,DcnFlip,0x000100(?:01|03),(\d+)$' } |
+    Select-Object -First 1
+if (-not $dcnFlipLine) {
+    throw 'Pacote de laboratorio bloqueado: INF empacotado sem HKR,Parameters,DcnFlip -- o manifesto nao pode declarar o flip pelo DCN.'
+}
+$dcnFlipLine -match '^HKR,Parameters,DcnFlip,0x000100(?:01|03),(\d+)$' | Out-Null
+$dcnFlipValue = [int]$Matches[1]
+if ([bool]$DcnFlip -ne ($dcnFlipValue -eq 1)) {
+    throw 'Pacote de laboratorio bloqueado: DcnFlip do INF empacotado diverge do switch -DcnFlip.'
+}
+$dcnExtLine = Get-Content -LiteralPath $packageInf |
+    Where-Object { $_ -match '^HKR,Parameters,DcnExt,0x000100(?:01|03),(\d+)$' } |
+    Select-Object -First 1
+if (-not $dcnExtLine) {
+    throw 'Pacote de laboratorio bloqueado: INF empacotado sem HKR,Parameters,DcnExt -- o manifesto nao pode declarar a DCN.2.'
+}
+$dcnExtLine -match '^HKR,Parameters,DcnExt,0x000100(?:01|03),(\d+)$' | Out-Null
+$dcnExtValue = [int]$Matches[1]
+if (([bool]$DcnExt -and $dcnExtValue -ne 63) -or (-not $DcnExt -and $dcnExtValue -ne 0)) {
+    throw 'Pacote de laboratorio bloqueado: DcnExt do INF empacotado diverge do switch -DcnExt.'
+}
+
 $manifest = [ordered]@{
     SchemaVersion = 1
     BuildKind = 'MCDM_LAB_BRINGUP'
@@ -474,6 +530,9 @@ $manifest = [ordered]@{
     GfxRingBringup = $gfxRingBringupValue
     GfxWaveProbe = $gfxWaveProbeValue
     GfxWaveProbeArmed = ($gfxWaveProbeValue -ne 0)
+    DebugTrace = $debugTraceValue
+    DcnFlip = $dcnFlipValue
+    DcnExt = $dcnExtValue
     GfxRingBringupArmed = ($gfxRingBringupValue -ne 0)
     Node1TripodDefaultArmed = $false
     D3D10_11NativeReady = $false

@@ -269,6 +269,31 @@ uint32_t Bc250VmidPoolReadyFlushMask(const BC250_VMID_POOL *Pool)
     return mask & BC250_VMID_POOL_MASK;
 }
 
+uint32_t Bc250VmidPoolMaskForRoot(const BC250_VMID_POOL *Pool,
+    uint64_t RootPhysical)
+{
+    uint32_t mask = 0u;
+    uint32_t i;
+
+    if (Pool == NULL || RootPhysical == 0ull) return 0u;
+    for (i = 0u; i < BC250_VMID_COUNT; ++i) {
+        const BC250_VMID_POOL_ENTRY *entry = &Pool->Entries[i];
+
+        if (entry->Context == NULL) continue;
+        if (entry->Vmid >= BC250_VMID_COUNT) continue;
+        /* READY: raiz provada no hardware. INSTALLING: a raiz alvo ja esta
+         * sendo escrita (FT.1, doc 697) -- uma invalidacao a mais nao faz mal. */
+        if (entry->InstallState == BC250_VMID_POOL_INSTALL_READY &&
+            entry->InstalledRootPhysical == RootPhysical) {
+            mask |= (1u << entry->Vmid);
+        } else if (entry->InstallState == BC250_VMID_POOL_INSTALLING &&
+                   entry->RootPhysical == RootPhysical) {
+            mask |= (1u << entry->Vmid);
+        }
+    }
+    return mask & BC250_VMID_POOL_MASK;
+}
+
 BC250_VMID_POOL_STATUS Bc250VmidPoolNoteRoot(
     BC250_VMID_POOL *Pool,
     BC250_MCDM_HANDLE Context,

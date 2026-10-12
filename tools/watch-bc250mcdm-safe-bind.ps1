@@ -55,9 +55,12 @@ foreach ($name in @('schema_version','task_name','token','instance_id','timeout_
         throw "Safe-bind watchdog recusado: campo ausente: $name"
     }
 }
+# Corrida 269 (doc 710): o binder so' grava short_watchdog=1 com
+# BC250_ALLOW_SHORT_WATCHDOG=1; so' entao o piso cai de 120 para 60 s.
+$minTimeout = if ($null -ne $config.PSObject.Properties['short_watchdog'] -and [int]$config.short_watchdog -eq 1) { 60 } else { 120 }
 if ([uint32]$config.schema_version -ne 1 -or
     [string]$config.instance_id -notmatch '(?i)^PCI\\VEN_1002&DEV_13FE(?:&|\\)' -or
-    [int]$config.timeout_seconds -lt 120 -or [int]$config.timeout_seconds -gt 600) {
+    [int]$config.timeout_seconds -lt $minTimeout -or [int]$config.timeout_seconds -gt 600) {
     throw 'Safe-bind watchdog recusado: contrato invalido.'
 }
 $armedAtUtc = [datetime]::new([long]$config.armed_at_utc_ticks, [DateTimeKind]::Utc)

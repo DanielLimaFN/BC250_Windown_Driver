@@ -21,6 +21,13 @@ CURRENT ARCHITECTURE: display v1 is INHERITED from the UEFI GOP — single-mode 
 scanout allocation in real VRAM, `DxgkDdiPresent` in BLT model via SDMA, VSync READ from
 the OTG frame counter. DCN is NOT on the critical path. Writing to any DCN register is
 FORBIDDEN outside priority P9; reading is allowed.
+P9 OPENED by Daniel on 12/10/2026 (DCN.1, docs/710): writes allowed ONLY to the HUBP0 flip
+registers (DCSURF_FLIP_CONTROL and the primary surface address), behind the DcnFlip key
+(default 0), with the GOP address restored on teardown; timing, clocks, PHY, format, pitch
+and viewport stay untouched.
+Extended by Daniel on 12/10/2026 (DCN.2, docs/713): also the OTG0 VSTARTUP and HUBP0 flip interrupts,
+the OTG0 CRC, the HUBP0/DPP0 cursor, AUX only while reading the EDID, and the OTG blank (DPMS), each
+behind one bit of the DcnExt key (default 0) and restored to the GOP state on teardown.
 
 WHERE WE ACTUALLY ARE (25/09/2026): run 118 with DX.73/3.277.1.0 completed 180 s with
 legible desktop and the triangle only inside its window, 60/60 harness presents, 60/60

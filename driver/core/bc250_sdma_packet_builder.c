@@ -161,7 +161,7 @@ BC250_SDMA_STATUS Bc250SdmaEmitConstFill(
     if (RingBuffer == NULL || CursorDwords == NULL || !Bc250IsPowerOfTwo32(RingDwords)) {
         return BC250_SDMA_BAD_ARGUMENT;
     }
-    if (ByteCount == 0 || ByteCount > BC250_SDMA_FILL_MAX_BYTES) {
+    if (ByteCount == 0 || ByteCount > BC250_SDMA_CONST_FILL_PACKET_MAX_BYTES) {
         return BC250_SDMA_PAYLOAD_TOO_LARGE;
     }
     if ((ByteCount & 3u) != 0 || (DstAddress & 3u) != 0) {
@@ -514,7 +514,8 @@ uint32_t Bc250SdmaSplitNextChunk(
     while (b < SplitCount) {
         uint32_t w = PreDwords +
             Bc250SdmaSplitIndirectWorstDwords(&Splits[First], b + 1u - First) +
-            BC250_SDMA_DWORDS_FENCE;
+            BC250_SDMA_DWORDS_GCR_REQ + BC250_SDMA_DWORDS_FENCE +
+            BC250_SDMA_DWORDS_TRAP;
         if (w > MaxDwords && b > First &&
             Bc250SdmaSplitEndDwords(&Splits[b - 1u]) > ChunkStartDwords) {
             break;

@@ -340,6 +340,22 @@ Instalador e desinstalador, remoção dos tunables de laboratório, RADV e tradu
 
 ## 7. Próximos passos concretos
 
+> **07/10/2026, Corrida 241 pronta ([doc 633](docs/633_ENCADEAMENTO_GFX_DA_RADV_COMO_O_UPSTREAM_E_CRITERIO_CORRIDA241.md)):** RADV `DFD8D120` com o encadeamento GFX como o upstream; KMD igual.
+>
+> **07/10/2026, depois da Corrida 240 ([doc 632](docs/632_CORRIDA240_RLC_PARADO_CONFIRMADO_PREAMBULO_DO_MENU_E_ENCADEAMENTO_DA_RADV_COM_VMID7.md)):** RLC parado (P0); o TDR vem do preâmbulo da RADV, cujo encadeamento GFX tem VMID 7 fixa e sem VALID (fora do upstream). Próximo: Corrida 241 com o encadeamento como o upstream; depois, o bit VALID do KMD e o RLC rodando.
+>
+> **07/10/2026, Corrida 240 pronta ([doc 631](docs/631_INSTRUMENTACAO_RLC_IH_IB_DO_MENU_E_CRITERIO_CORRIDA240.md)):** 3.385.1.0 + RADV 7B82C4AE, só instrumentação; achado: o RLC fica parado em regime (o `pfp_direct_load` devolve `RLC_CNTL` a 0), diferença de paridade nova a confirmar.
+>
+> **07/10/2026, mineração dos TDRs ([doc 630](docs/630_MINERACAO_DOS_TDR_DO_GFX_SQ_ERROS_DEPOIS_DO_RESET_E_RLC_SEM_SAFE_MODE.md)):** erros do SQ só depois do nosso reset do GFX; RLC nunca entra em safe mode; reset diferente do amdgpu. Próximo: instrumentação só de leitura (RLC, IH, IB parado) e, depois, reset do GFX como o amdgpu.
+>
+> **07/10/2026, depois da Corrida 239 ([doc 629](docs/629_CORRIDA239_SO_MENU_TRES_TDR_DO_GFX_E_TRAVA_DURA_22S_DEPOIS.md)):** só o menu basta para travar (n=1): três TDRs do GFX a partir do primeiro IB de um device novo do menu, todos recuperados, e trava dura 22 s depois. Próximo: mineração offline dos TDRs do GFX (239, 231, 216, 208, 201).
+>
+> **06/10/2026, depois da Corrida 238 ([doc 627](docs/627_CORRIDA238_NAO_FOI_PARADA_600S_SEM_TRAVA_COM_USO_LEVE_E_PROXIMO_PASSO.md)):** ~600 s sem trava com uso leve (não foi parada). Bissecção por carga: **Corrida 239 pronta**, só o menu Iniciar ([doc 628](docs/628_CRITERIO_CORRIDA239_SO_O_MENU_INICIAR.md)), `tools\EXECUTAR_CORRIDA239_SO_MENU_600S.cmd`.
+>
+> **06/10/2026, depois da Corrida 237 ([doc 626](docs/626_CORRIDA237_PARADO_600S_SEM_TRAVA_TEARDOWNS_PROVADOS_E_CRITERIO_CORRIDA238.md)):** W1 sem trava (45 min); 237 parada passou 600 s sem trava, com todos os teardowns provados. Próximo: Corrida 238, repetição parada (mesmo `.cmd`); se passar, bissecção por carga.
+>
+> **06/10/2026, depois do doc 625:** W1 (45 min com BasicDisplay) e Corrida 237 (mesmo 3.384.1.0, parado no desktop, n=2 com a 238 se passar), critérios no [doc 625](docs/625_RESET_REASON_RESPONDIDO_POR_MINERACAO_W1_E_CRITERIO_CORRIDA237_PARADO.md). O RESET_REASON de controle saiu por mineração.
+>
 > **06/10/2026, depois da Corrida 236:** os próximos passos vigentes estão no [doc 624 §7](docs/624_PASSAGEM_DE_BASTAO_2026-10-06_TRAVA_DURA_DEPOIS_DA_PARIDADE_P4.md) (passagem de bastão). A tabela abaixo é o histórico da 4c e fica como registro.
 
 > Reescrito em 02/10/2026: o Daniel escolheu a **4c completa em 5 etapas**, uma corrida cada ([doc 567](docs/567_4C_COMPLETA_EM_5_ETAPAS_E_CRITERIO_CORRIDA205.md)). A tabela anterior está no git.

@@ -286,6 +286,18 @@ PG_FIELDS = ("evict_count", "evict_kib", "pagein_count", "pagein_kib",
              "fill_count", "flush_tlb_count", "ring_flush_emitted")
 
 
+def cut_at_reboot(rows: list) -> list:
+    """O arquivo RECUPERADO inclui registros do boot de recuperacao (doc 582):
+    a corrida termina no primeiro recuo do writer_tick. Sem este corte o
+    resumo pega o ultimo registro do boot seguinte (zerado), como na 263b."""
+    out = []
+    for row in rows:
+        if out and row["writer_tick"] < out[-1]["writer_tick"]:
+            break
+        out.append(row)
+    return out
+
+
 def summarize_paging_stats(records: list) -> dict | None:
     after = [r for r in records if r["phase"] == "DEPOIS"]
     if not after:
@@ -296,9 +308,11 @@ def summarize_paging_stats(records: list) -> dict | None:
         for name in PG_FIELDS:
             row[name] = int(r[name], 16) if name in r else None
         rows.append(row)
+    rows = cut_at_reboot(rows)
     # deltas por segundo nos ultimos 20 registros: mostram o vai-e-volta antes do fim
     deltas = []
-    for prev, cur in zip(rows[-21:-1], rows[-20:]):
+    window = rows[-21:]  # com menos de 21 registros o par antigo comparava cada registro com ele mesmo
+    for prev, cur in zip(window[:-1], window[1:]):
         d = {"writer_tick": cur["writer_tick"]}
         for name in PG_FIELDS:
             if cur[name] is not None and prev[name] is not None:
@@ -307,12 +321,162 @@ def summarize_paging_stats(records: list) -> dict | None:
     return {"records": len(rows), "last": rows[-1], "last_deltas_per_second": deltas}
 
 
+# 263b (doc 695): BFT1 no mesmo tique do BPG1, contadores CUMULATIVOS de software.
+# flush_paging = FLUSH_TLB do processo de paginacao; flush_user_vmid = processo cuja
+# raiz esta instalada em alguma VMID; flush_user_sem_vmid = processo sem VMID;
+# vmids_invalidadas = soma das VMIDs na mascara de cada FLUSH_TLB; faixas_pte_sdma1 =
+# faixas roteadas ao SDMA1 (P4.2); leituras_sq = SQ_DEBUG_STS_GLOBAL pela CPU;
+# invalidacoes_cpu_eng17 = invalidacoes de TLB do GFXHUB pela CPU.
+FT_MAGIC = 0x31544642
+FT_FIELDS = ("flush_paging", "flush_user_vmid", "flush_user_sem_vmid",
+             "vmids_invalidadas", "faixas_pte_sdma1", "leituras_sq", "invalidacoes_cpu_eng17")
+
+
+def summarize_flush_classes(records: list, fields: tuple = FT_FIELDS) -> dict | None:
+    after = [r for r in records if r["phase"] == "DEPOIS"]
+    if not after:
+        return None
+    rows = []
+    for r in after:
+        row = {"writer_tick": r["writer_tick"]}
+        for name in fields:
+            row[name] = int(r[name], 16) if name in r else None
+        rows.append(row)
+    rows = cut_at_reboot(rows)
+    deltas = []
+    window = rows[-21:]  # com menos de 21 registros o par antigo comparava cada registro com ele mesmo
+    for prev, cur in zip(window[:-1], window[1:]):
+        d = {"writer_tick": cur["writer_tick"]}
+        for name in fields:
+            if cur[name] is not None and prev[name] is not None:
+                d[name] = cur[name] - prev[name]
+        deltas.append(d)
+    return {"records": len(rows), "last": rows[-1], "last_deltas_per_second": deltas}
+
+
+# MEC.2 (doc 701): BMP1 -- polls do MEC (timer de 1 ms), cumulativos: total, com
+# seletor GRBM e leitura de PQ_RPTR, e sem MMIO. Com a MEC.2 armada, o com_seletor
+# so' cresce quando ha fence do MEC pendente ainda nao vista.
+MP_MAGIC = 0x31504D42
+# DBG.1 (doc 704), so' em modo debug: BPA1 = contadores cumulativos do validador
+# de endereco fisico das folhas de memoria de sistema; BPV1 = amostras (tipo 1 =
+# violacao, tipo 2 = endereco cru de folha do segmento 2), tag = seg<<8 | classe
+# (0 RAM, 1 fora da RAM, 2 atravessa, 3 carve-out da VRAM, 4 abaixo de 1 MiB, 5 sem tabela).
+PA_MAGIC = 0x31415042
+PA_FIELDS = ("pte_sistema_conferidas", "seg0", "seg2", "fora_da_ram", "carve_out_vram",
+             "abaixo_1mib", "sem_tabela", "reservado")
+PV_MAGIC = 0x31565042
+PV_FIELDS = ("tipo", "tag", "pa_lo", "pa_hi")
+
+
+def summarize_pa_samples(records: list) -> list:
+    out = []
+    for r in records:
+        if r.get("phase") != "DEPOIS" or "pa_lo" not in r:
+            continue
+        tag = int(r["tag"], 16)
+        out.append({"writer_tick": r["writer_tick"],
+                    "tipo": "violacao" if int(r["tipo"], 16) == 1 else "seg2_cru",
+                    "segmento": tag >> 8, "classe": tag & 0xFF,
+                    "pa": f"0x{(int(r['pa_hi'], 16) << 32) | int(r['pa_lo'], 16):X}"})
+    return out
+MP_FIELDS = ("polls_mec", "polls_com_seletor", "polls_sem_mmio")
+
+
 # P1 (doc 594): BEV1 -- eventos de submissao/retirada do espelho em RAM, um por
 # registro de palavras. Substitui o anel EVT1 da pagina na VRAM (nao armada na P1).
 EV_MAGIC = 0x31564542
 EV_FIELDS = ("seq", "kind_word", "bytes", "addr_lo", "addr_hi", "fence_lo", "qpc_lo")
 EV_KINDS = {1: "PAGING_FILL", 2: "PAGING_TRANSFER", 3: "PAGING_DISCARD", 4: "SUBMIT_SDMA",
-            5: "SUBMIT_GFX", 6: "RETIRE_SDMA", 7: "RETIRE_GFX"}
+            5: "SUBMIT_GFX", 6: "RETIRE_SDMA", 7: "RETIRE_GFX", 8: "PAGING_PTE",
+            9: "PAGING_OP", 10: "PAGING_DW", 11: "SPLIT_REC", 12: "SUBMIT_SPLIT"}
+
+# DBG.2 (doc 707): nomes das operacoes do DXGK_BUILDPAGINGBUFFER (d3dkmddi.h).
+DXGK_OPS = {1: "TRANSFER", 2: "FILL", 3: "DISCARD", 4: "READ_PHYS_CFG", 5: "WRITE_PHYS_CFG",
+            6: "MAP_APERTURE", 7: "UNMAP_APERTURE", 8: "SPECIAL_LOCK_TRANSFER",
+            9: "VIRTUAL_TRANSFER", 10: "VIRTUAL_FILL", 11: "UPDATE_PAGE_TABLE",
+            12: "FLUSH_TLB", 13: "UPDATE_CONTEXT_ALLOCATION", 14: "NOTIFY_RESIDENCY",
+            15: "SIGNAL_MONITORED_FENCE"}
+# Opcode SDMA (byte baixo do cabecalho), so' os da fonte unica
+# driver/core/bc250_sdma_packet_builder.h; o resto sai como opN.
+SDMA_OPS = {0: "NOP", 1: "COPY", 2: "WRITE", 4: "INDIRECT", 5: "FENCE", 6: "TRAP",
+            7: "SEM", 8: "POLL_REGMEM", 11: "CONST_FILL", 14: "SRBM_WRITE", 17: "GCR_REQ"}
+
+
+def all_events(records: list) -> list:
+    """Eventos BEV1 do boot da corrida, em ordem de seq (para no recuo)."""
+    rows = cut_at_reboot([r for r in records if r.get("phase") == "DEPOIS" and "seq" in r])
+    out = {}
+    for r in rows:
+        kw = int(r["kind_word"], 16)
+        seq = int(r["seq"], 16)
+        out[seq] = {
+            "seq": seq, "kind": EV_KINDS.get(kw >> 24, f"KIND_{kw >> 24}"),
+            "node": (kw >> 16) & 0xFF, "op": kw & 0xFFFF,
+            "bytes": int(r["bytes"], 16),
+            "addr": (int(r["addr_hi"], 16) << 32) | int(r["addr_lo"], 16),
+            "fence": int(r["fence_lo"], 16), "qpc_lo": int(r["qpc_lo"], 16),
+        }
+    return [out[k] for k in sorted(out)]
+
+
+def reconstruct_ibs(events: list, last: int = 6) -> list | None:
+    """DBG.2: remonta os ultimos IBs do SDMA0 a partir de PAGING_OP/PAGING_DW
+    (o que o build escreveu e onde), SPLIT_REC e SUBMIT_SPLIT."""
+    ops = []
+    by_link = {}
+    for e in events:
+        if e["kind"] == "PAGING_OP":
+            op = {"seq": e["seq"], "op": DXGK_OPS.get(e["op"], e["op"]), "va": e["addr"],
+                  "bytes": e["bytes"], "status": f"0x{e['fence']:08X}", "dw": []}
+            ops.append(op)
+            by_link[e["node"]] = op
+        elif e["kind"] == "PAGING_DW" and e["node"] in by_link:
+            op = by_link[e["node"]]
+            if e["op"] == len(op["dw"]):
+                op["dw"] += [e["bytes"], e["addr"] & 0xFFFFFFFF, e["addr"] >> 32, e["fence"]]
+    if not ops:
+        return None
+    splits_rec = [e for e in events if e["kind"] == "SPLIT_REC"]
+    out = []
+    subs = [e for e in events if e["kind"] == "SUBMIT_SDMA"]
+    retired = {e["fence"] for e in events if e["kind"] == "RETIRE_SDMA"}
+    for s in subs[-last:]:
+        ib_va, ib_bytes = s["addr"], s["bytes"]
+        # O VidMm reusa paging buffers: so' contam as operacoes montadas depois
+        # do envio anterior que cobria o mesmo intervalo.
+        prev = max((p["seq"] for p in subs if p["seq"] < s["seq"]
+                    and p["addr"] < ib_va + ib_bytes and ib_va < p["addr"] + p["bytes"]),
+                   default=0)
+        inside = [o for o in ops if o["va"] and ib_va <= o["va"] <= ib_va + ib_bytes
+                  and prev < o["seq"] < s["seq"]]
+        body = []
+        for o in sorted(inside, key=lambda x: (x["va"], x["seq"])):
+            dws = o["dw"][: max(0, o["bytes"] // 4)]
+            body.append({
+                "dw": (o["va"] - ib_va) // 4, "op": o["op"], "bytes": o["bytes"],
+                "status": o["status"],
+                "sdma": [SDMA_OPS.get(d & 0xFF, f"op{d & 0xFF}") for d in dws[:1]],
+                "dwords": [f"0x{d:08X}" for d in dws],
+            })
+        header = [e for e in events if e["kind"] == "SUBMIT_SPLIT" and e["node"] == 0xFF
+                  and e["addr"] == ib_va and e["seq"] < s["seq"]]
+        split_info = None
+        if header:
+            h = header[-1]
+            n = h["op"] & 0xFF
+            pts = [e for e in events if e["kind"] == "SUBMIT_SPLIT" and e["node"] != 0xFF
+                   and e["addr"] == ib_va and h["seq"] < e["seq"] < s["seq"]]
+            split_info = {"pontos": n, "orfaos": h["op"] >> 8,
+                          "mascara_antes_do_ib": f"0x{h['bytes']:04X}",
+                          "divisoes": [{"dw": p["bytes"], "mascara": f"0x{p['fence']:04X}"} for p in pts[:n]]}
+        flushes = [{"dw": (e["addr"] - ib_va) // 4, "mascara": f"0x{e['bytes']:04X}"}
+                   for e in splits_rec if e["addr"] and ib_va <= e["addr"] <= ib_va + ib_bytes
+                   and prev < e["seq"] < s["seq"]]
+        out.append({"fence": s["fence"], "va": f"0x{ib_va:X}", "bytes": ib_bytes,
+                    "aposentado": s["fence"] in retired, "operacoes": body,
+                    "flushtlb_no_buffer": flushes, "envio": split_info})
+    return out
 
 
 def summarize_events(records: list, last: int = 24) -> dict | None:
@@ -500,7 +664,12 @@ def main() -> None:
                 "sdma0_sample": summarize_words(scan_words(contents, SQ_MAGIC, SQ_FIELDS)),
                 "clock_gating_sample": summarize_words(scan_words(contents, CG_MAGIC, CG_FIELDS)),
                 "paging_stats": summarize_paging_stats(scan_words(contents, PG_MAGIC, PG_FIELDS)),
+                "flush_classes": summarize_flush_classes(scan_words(contents, FT_MAGIC, FT_FIELDS)),
+                "mec_poll": summarize_flush_classes(scan_words(contents, MP_MAGIC, MP_FIELDS), MP_FIELDS),
+                "pa_validator": summarize_flush_classes(scan_words(contents, PA_MAGIC, PA_FIELDS), PA_FIELDS),
+                "pa_samples": summarize_pa_samples(scan_words(contents, PV_MAGIC, PV_FIELDS)),
                 "gpu_events_ram": summarize_events(scan_words(contents, EV_MAGIC, EV_FIELDS)),
+                "ib_reconstruido": reconstruct_ibs(all_events(scan_words(contents, EV_MAGIC, EV_FIELDS))),
                 "last_snapshots": valid[-args.last :],
             },
             indent=2,

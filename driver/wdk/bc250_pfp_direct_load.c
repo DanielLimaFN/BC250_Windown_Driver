@@ -4,6 +4,7 @@
 #include "../core/bc250_psp_load_fw_transaction.h"
 #include "../core/bc250_pm4_packet_builder.h"
 #include "bc250_vram_cpu_path.h"
+#include "bc250_display_ddi.h"
 
 #define BC250_PFP_FILE_BYTES 263424u
 #define BC250_PFP_PAYLOAD_BYTES_LOCAL 263168u
@@ -609,19 +610,53 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
         return BC250_PFP_DIRECT_LOAD_ALLOCATION_FAILED;
     }
 
-    /* 2a. Reserva de 4 MiB para TMR em VRAM owned no topo */
-    vramStatus = Bc250VramAllocate(allocator, BC250_PSP_TMR_BYTES,
-        BC250_PSP_TMR_BYTES, BC250_VRAM_ROLE_FIRMWARE,
-        BC250_VRAM_ALLOC_TOP_DOWN | BC250_VRAM_ALLOC_CPU_VISIBLE, &tmrToken);
-    if (vramStatus == BC250_VRAM_OK) {
-        tmrAllocated = 1u;
-        (void)Bc250VramGetRegion(allocator, tmrToken, &tmrRegion);
+    /*
+     * 2a. TMR.1 (doc 658, auditoria 653-TMR): o TMR do PSP e' memoria que o
+     * PSP continua usando depois do SETUP_TMR (o CP busca o microcodigo nele),
+     * entao fica reservado ate o fim, como o amdgpu (psp_tmr_init/sw_fini;
+     * na mesma placa com 256 MB: "reserve 0x400000 from 0xf40f800000 for PSP
+     * TMR", doc 552). Ate a 248b este bloco alocava um TMR proprio e o
+     * devolvia ao alocador no Cleanup: a faixa voltava ao segmento do VidMm.
+     * Primeiro reusa o TMR persistente que o bootstrap do CP ja reservou
+     * (papel TMR); sem ele, aloca um persistente. Nunca e' liberado.
+     */
+    {
+        uint32_t r;
+        for (r = 0u; r < allocator->RegionCount && r < BC250_VRAM_MAX_REGIONS; ++r) {
+            const BC250_VRAM_REGION *cand = &allocator->Regions[r];
+            if (cand->InUse != 0u && cand->Role == BC250_VRAM_ROLE_TMR &&
+                (cand->Flags & BC250_VRAM_REGION_PERSISTENT) != 0u &&
+                cand->Length >= BC250_PSP_TMR_BYTES &&
+                (cand->Offset & (BC250_PSP_TMR_BYTES - 1ull)) == 0ull) {
+                tmrRegion = *cand;
+                tmrAllocated = 2u; /* do bootstrap: nao e' nosso */
+                break;
+            }
+        }
+    }
+    if (tmrAllocated == 0u) {
+        vramStatus = Bc250VramAllocate(allocator, BC250_PSP_TMR_BYTES,
+            BC250_PSP_TMR_BYTES, BC250_VRAM_ROLE_TMR,
+            BC250_VRAM_ALLOC_TOP_DOWN | BC250_VRAM_REGION_PERSISTENT, &tmrToken);
+        if (vramStatus == BC250_VRAM_OK &&
+            Bc250VramGetRegion(allocator, tmrToken, &tmrRegion) == BC250_VRAM_OK) {
+            tmrAllocated = 1u;
+        }
+    }
+    if (tmrAllocated == 0u) {
+        Bc250DisplayLog("[TMR1] RECUSADO: sem TMR persistente nem como alocar 4 MiB; sem fallback (o endereco fixo antigo cai fora da VRAM com 256 MB)\n");
+        ExFreePoolWithTag(mecFileBuffer, BC250_PFP_POOL_TAG);
+        ExFreePoolWithTag(ceFileBuffer, BC250_PFP_POOL_TAG);
+        ExFreePoolWithTag(meFileBuffer, BC250_PFP_POOL_TAG);
+        ExFreePoolWithTag(pfpFileBuffer, BC250_PFP_POOL_TAG);
+        return BC250_PFP_DIRECT_LOAD_ALLOCATION_FAILED;
     }
 
     /* 2b. Reserva de regiao contigua de 1.1 MiB para Ring 0 em VRAM owned */
     vramStatus = Bc250VramAllocate(allocator, BC250_CP_QUAD_ALLOCATION_BYTES,
         PAGE_SIZE, BC250_VRAM_ROLE_FIRMWARE,
-        BC250_VRAM_ALLOC_TOP_DOWN | BC250_VRAM_ALLOC_CPU_VISIBLE, &token);
+        BC250_VRAM_ALLOC_TOP_DOWN | BC250_VRAM_ALLOC_CPU_VISIBLE |
+            BC250_VRAM_REGION_PERSISTENT, &token);
     if (vramStatus != BC250_VRAM_OK) {
         status = BC250_PFP_DIRECT_LOAD_ALLOCATION_FAILED;
         goto Cleanup;
@@ -651,13 +686,24 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
     Evidence->FirmwareMcAddress = addressSpace->VramMcStart + region.Offset;
     firmwarePa = bar->Start + region.Offset;
 
-    if (tmrAllocated != 0u) {
-        tmrMc = addressSpace->VramMcStart + tmrRegion.Offset;
-        tmrPa = bar->Start + tmrRegion.Offset;
-    } else {
-        tmrMc = addressSpace->VramMcStart + 0x1F800000ull;
-        tmrPa = bar->Start + 0x1F800000ull;
+    /*
+     * TMR.1: o PSP recebe a PA da DRAM (GCMC_VM_FB_OFFSET<<24 + offset), como
+     * amdgpu_gmc_vram_pa no psp_tmr_load. Ate a 248b ia a PA da BAR PCI
+     * (bar->Start + offset). Sem a base lida da placa, recusa.
+     */
+    if (addressSpace->VramBaseOffset == 0ull) {
+        Bc250DisplayLog("[TMR1] RECUSADO: base PA da VRAM (GCMC_VM_FB_OFFSET<<24) nao lida; nao se adivinha\n");
+        status = BC250_PFP_DIRECT_LOAD_ALLOCATION_FAILED;
+        goto Cleanup;
     }
+    tmrMc = addressSpace->VramMcStart + tmrRegion.Offset;
+    tmrPa = addressSpace->VramBaseOffset + tmrRegion.Offset;
+    Bc250DisplayLog("[TMR1] TMR persistente: VRAM [0x%llX,+0x%llX) origem=%s MC=0x%llX PA_DRAM=0x%llX (PA da BAR, como ate a 248b, seria 0x%llX); quad do CP persistente em [0x%llX,+0x%llX)\n",
+        (unsigned long long)tmrRegion.Offset, (unsigned long long)tmrRegion.Length,
+        tmrAllocated == 2u ? "bootstrap" : "alocado aqui",
+        (unsigned long long)tmrMc, (unsigned long long)tmrPa,
+        (unsigned long long)(bar->Start + tmrRegion.Offset),
+        (unsigned long long)region.Offset, (unsigned long long)region.Length);
 
     physical.QuadPart = (LONGLONG)(bar->Start + region.Offset);
     ntStatus = Bc250VramCpuMapMemory(&Context->Core.DxgkInterface,
@@ -789,6 +835,10 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
         uint32_t pspFenceValue = 0u;
         uint32_t pspAck = 0u;
         uint32_t cpPspLoadedCount = 0u;
+        uint32_t tmrFenceOk = 0u;
+        uint32_t tmrResp = 0xFFFFFFFFu;
+        uint32_t loadResp[5] = { 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu };
+        uint32_t loadFenceOk[5] = { 0u, 0u, 0u, 0u, 0u };
         volatile uint32_t *pRingBuf;
         uint32_t *pCmdBuf;
         volatile uint32_t *pFenceBuf;
@@ -888,6 +938,8 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
                     KeStallExecutionProcessor(1000u);
                 }
 
+                tmrFenceOk = (*pFenceBuf == pspFenceValue) ? 1u : 0u;
+                tmrResp = pCmdBuf[864u / 4u];
                 if (*pFenceBuf == pspFenceValue && pCmdBuf[864u / 4u] == 0u) {
                     ++cpPspLoadedCount;
 
@@ -924,6 +976,8 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
                             KeStallExecutionProcessor(1000u);
                         }
 
+                        loadFenceOk[k] = (*pFenceBuf == pspFenceValue) ? 1u : 0u;
+                        loadResp[k] = pCmdBuf[864u / 4u];
                         if (*pFenceBuf == pspFenceValue && pCmdBuf[864u / 4u] == 0u) {
                             ++cpPspLoadedCount;
                         }
@@ -933,6 +987,13 @@ BC250_PFP_DIRECT_LOAD_STATUS Bc250ActiveRunPfpDirectLoad(
         }
 
         Evidence->FaultAddressLow = cpPspLoadedCount;
+        /* TMR.1: a contagem acima e' sobrescrita pelo scratch mais adiante;
+         * as respostas do PSP ficam aqui, em linha propria. */
+        Bc250DisplayLog("[TMR1] PSP: anel=%u SETUP_TMR fence=%u resp=0x%08X | LOAD_IP_FW ME %u/0x%08X PFP %u/0x%08X CE %u/0x%08X MEC %u/0x%08X MEC_JT1 %u/0x%08X | aceitos=%u/6\n",
+            pspRingActive, tmrFenceOk, tmrResp,
+            loadFenceOk[0], loadResp[0], loadFenceOk[1], loadResp[1],
+            loadFenceOk[2], loadResp[2], loadFenceOk[3], loadResp[3],
+            loadFenceOk[4], loadResp[4], cpPspLoadedCount);
     }
 
     /* Slice 5: Ring buffer, RPTR writeback, WPTR poll e Fence de silicio */
@@ -1481,10 +1542,12 @@ Cleanup:
     if (pspFence != NULL) MmFreeContiguousMemory(pspFence);
     if (pspCmd != NULL) MmFreeContiguousMemory(pspCmd);
     if (pspRing != NULL) MmFreeContiguousMemory(pspRing);
-    if (allocated != 0u)
-        (void)Bc250VramRelease(allocator, token);
-    if (tmrAllocated != 0u)
-        (void)Bc250VramRelease(allocator, tmrToken);
+    /* TMR.1: TMR e quad do CP ficam reservados (persistentes) ate o fim do
+     * dispositivo; devolve-los punha tabelas de pagina do VidMm em cima do
+     * TMR vivo do PSP (doc 653-TMR). */
+    UNREFERENCED_PARAMETER(token);
+    UNREFERENCED_PARAMETER(tmrToken);
+    (void)allocated;
     if (backup != NULL)
         ExFreePoolWithTag(backup, BC250_PFP_POOL_TAG);
     if (mecFileBuffer != NULL)

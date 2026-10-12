@@ -17,6 +17,7 @@ typedef UINT64 uint64_t;
 
 #include "bc250_mcdm_object_contract.h"
 #include "bc250_gcvm_contract.h"
+#include "bc250_gpuva_geometry.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -124,15 +125,18 @@ extern "C" {
  *   Nivel 1 (Raiz):  13 bits de indice -> ate 8192 PDEs na raiz redimensionavel (cobre 16 GiB)
  * Total: 12 + 9 + 13 = 34 bits.
  * ========================================================================= */
-#define BC250_GPUVA_PT_LEVEL_COUNT 2u
-#define BC250_GPUVA_PT_LEAF_INDEX_BITS 9u
-#define BC250_GPUVA_PT_ROOT_INDEX_BITS 13u
+/*
+ * P5 (doc 667): LEVEL_COUNT, LEAF_INDEX_BITS e ROOT_INDEX_BITS vem de
+ * bc250_gpuva_geometry.h (fonte unica com o GCVM). Com BC250_P5_QUATRO_NIVEIS=1
+ * a geometria e' 4 niveis x 9 bits = 48 bits, como o amdgpu; o texto acima
+ * descreve a geometria de 2 niveis, que segue valendo com a chave em 0.
+ */
 #define BC250_GPUVA_PT_INDEX_BITS  BC250_GPUVA_PT_LEAF_INDEX_BITS
 #define BC250_GPUVA_PT_ENTRY_BYTES 8u
 #define BC250_GPUVA_PT_SIZE_BYTES \
     (BC250_GPUVA_PT_ENTRY_BYTES << BC250_GPUVA_PT_LEAF_INDEX_BITS)
 #define BC250_GPUVA_PT_ALIGN_BYTES 4096u
-#define BC250_GPUVA_PT_VA_BITS (12u + BC250_GPUVA_PT_LEAF_INDEX_BITS + BC250_GPUVA_PT_ROOT_INDEX_BITS)
+#define BC250_GPUVA_PT_VA_BITS (12u + BC250_GPUVA_PT_LEAF_INDEX_BITS * (BC250_GPUVA_PT_LEVEL_COUNT - 1u) + BC250_GPUVA_PT_ROOT_INDEX_BITS)
 #define BC250_GPUVA_PT_ROOT_MAX_ENTRIES (1u << BC250_GPUVA_PT_ROOT_INDEX_BITS)
 #define BC250_GPUVA_DEFAULT_BITS BC250_GPUVA_PT_VA_BITS
 

@@ -287,6 +287,19 @@ typedef struct BC250_GFX_ENGINE {
     volatile uint32_t *WptrPollCpuVirtual;
 
     /*
+     * C1 (doc 672): WPTR do CP_RB0 por doorbell, como
+     * gfx_v10_0_ring_set_wptr_gfx (shadow de 64 bits + WDOORBELL64).
+     * DoorbellActive so' vai a 1 depois da prova (NOPs publicados SO' pela
+     * doorbell e RPTR chegando); Armed = registradores escritos, rollback devido.
+     */
+    uint32_t DoorbellActive;
+    uint32_t DoorbellArmed;
+    uint32_t DoorbellCtrlBefore;
+    uint32_t DoorbellRangeLoBefore;
+    uint32_t DoorbellRangeHiBefore;
+    volatile LONG64 DoorbellKicks;
+
+    /*
      * D0.2 -- MOTIVO DA ULTIMA RECUSA, registrado barato.
      *
      * Duas escritas de campo, nada mais. Existe porque a primeira versao da
@@ -381,6 +394,25 @@ typedef struct BC250_DXGK_ACTIVE_CONTEXT {
     /* EOP do CP (doc 618): TIME_STAMP_INT_ENABLE ligado por nos, e o valor de antes. */
     volatile LONG CpEopIrqArmed;
     uint32_t CpEopIntCntlBefore;
+    /* MEC.1 (doc 640): UPPER da faixa de doorbell do MEC antes de nos. */
+    volatile LONG Mec1Armed;
+    uint32_t Mec1UpperBefore;
+    /* RLC.1 (doc 642): RLC rodando o firmware, como gfx_v10_0_rlc_resume. */
+    volatile LONG Rlc1Armed;
+    uint32_t Rlc1SnapshotValid;
+    uint32_t Rlc1CntlBefore;
+    uint32_t Rlc1PgCntlBefore;
+    uint32_t Rlc1CgcgBefore;
+    uint32_t Rlc1SpmBefore;
+    /* GFXRST.1 (doc 642): reset do GFX como gfx_v10_0_soft_reset. */
+    volatile LONG GfxRst1MecHalted;
+    uint32_t GfxRst1MecCntlBefore;
+    volatile LONG GfxRst1Count;
+    /* G.1 (doc 645): golden settings do Cyan Skillfish, como gfx_v10_0_init_golden_registers. */
+#define BC250_G1_GOLDEN_MAX 34u
+    volatile LONG G1Armed;
+    uint64_t G1AppliedMask;
+    uint32_t G1Original[BC250_G1_GOLDEN_MAX];
     /* P4.1 (doc 620): SDMA1 vivo e ocioso. */
     BC250_PSP_LOAD_FW_STATUS P4Sdma1FwStatus;
     BC250_PSP_LOAD_FW_EVIDENCE P4Sdma1FwEvidence;

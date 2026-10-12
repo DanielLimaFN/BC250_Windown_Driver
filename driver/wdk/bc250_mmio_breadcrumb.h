@@ -99,6 +99,18 @@
 #define BC250_CRUMB_EVT_SUBMIT_GFX      5u
 #define BC250_CRUMB_EVT_RETIRE_SDMA     6u
 #define BC250_CRUMB_EVT_RETIRE_GFX      7u
+#define BC250_CRUMB_EVT_PAGING_PTE      8u  /* DBG.1: UPDATE_PAGE_TABLE (op = seg<<8 | nivel) */
+/* DBG.2 (doc 707), so' no modo debug. "link" = 8 bits no campo node que liga
+ * o cabecalho aos seus dwords. */
+#define BC250_CRUMB_EVT_PAGING_OP       9u  /* node=link op=operacao Size=bytes escritos Addr=GPUVA inicial Fence=NTSTATUS */
+#define BC250_CRUMB_EVT_PAGING_DW       10u /* node=link op=indice do 1o dw Size=dw0 Addr=dw1|dw2<<32 Fence=dw3 */
+#define BC250_CRUMB_EVT_SPLIT_REC       11u /* FlushTlb registrado: Size=VmidMask Addr=GPUVA do ponto */
+#define BC250_CRUMB_EVT_SUBMIT_SPLIT    12u /* node=0xFF: op=pontos|orfaos<<8 Size=mascara antes do IB Addr=IB Fence=FenceId;
+                                             * node=i: Size=dw do ponto Addr=IB Fence=VmidMask */
+/* DBG.1 (doc 704): o espelho em RAM e' maior que o anel da pagina, para o
+ * modo debug drenar mais eventos por tique sem perder os do meio. DBG.2: 2048,
+ * porque cada operacao de paginacao passa a gravar ate 5 eventos. */
+#define BC250_CRUMB_EVT_MIRROR_COUNT    2048u
 
 typedef char Bc250CrumbEvtFitsPage[
     (BC250_CRUMB_EVT_BASE_DW + BC250_CRUMB_EVT_COUNT * BC250_CRUMB_EVT_DWORDS) * 4u
@@ -237,7 +249,7 @@ static __forceinline VOID Bc250CrumbAfter(ULONG Slot)
 __declspec(selectany) volatile LONG g_Bc250CrumbEvtSeq = 0;
 /* P1: espelho dos eventos em RAM, mesmo layout do anel da pagina. */
 __declspec(selectany) volatile ULONG g_Bc250CrumbEvtMirror[
-    BC250_CRUMB_EVT_COUNT * BC250_CRUMB_EVT_DWORDS] = { 0 };
+    BC250_CRUMB_EVT_MIRROR_COUNT * BC250_CRUMB_EVT_DWORDS] = { 0 };
 
 static __forceinline VOID Bc250CrumbEvent(
     ULONG Kind, ULONG Node, ULONG Op, ULONG Size, ULONG64 Addr, ULONG64 Fence)
@@ -258,7 +270,7 @@ static __forceinline VOID Bc250CrumbEvent(
     cpu = KeGetCurrentProcessorNumberEx(NULL);
     {
         volatile ULONG *m = g_Bc250CrumbEvtMirror +
-            (seq % BC250_CRUMB_EVT_COUNT) * BC250_CRUMB_EVT_DWORDS;
+            (seq % BC250_CRUMB_EVT_MIRROR_COUNT) * BC250_CRUMB_EVT_DWORDS;
         m[BC250_CRUMB_EVT_SEQ] = 0u;
         m[BC250_CRUMB_EVT_QPC_LO] = qpcLo;
         m[BC250_CRUMB_EVT_QPC_HI] = qpcHi;

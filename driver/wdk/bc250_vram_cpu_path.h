@@ -55,6 +55,46 @@ static __forceinline BOOLEAN Bc250VramCpuHdpNeeded(void)
  * feitos pela DRAM, nao pelo estado da P1b, que pode mudar entre um e outro
  * (o teardown do display a desarma antes dos demais teardowns).
  */
+/*
+ * C3 (doc 674): UM so' tipo de memoria para a VRAM vista pela CPU, como o
+ * amdgpu em APU (aper_base = get_mc_fb_offset, mapeado write-combined: TTM
+ * ttm_write_combined / ioremap_wc). O VidMm ja' mapeia o segmento 1 pela DRAM
+ * desde a P1b (Bc250ActiveQueryRuntimeCaps traduz CpuPhysicalStart) e usa WC;
+ * o FrameBufferVirtual cobre a abertura inteira em WC; mas os mapeamentos
+ * diretos do KMD na DRAM (anel/CSB do GFX, tabela da GART, bloco do MEC, MQD,
+ * pagina do walker) eram UC -- a mesma pagina fisica com dois tipos. Com a
+ * chave em 1, todo mapeamento traduzido para a DRAM sai WC. Toda escrita do
+ * KMD que a GPU le precisa de barreira antes do kick (KeMemoryBarrier/mfence
+ * esvazia os buffers WC). Chave em 0 volta ao caminho da 253.
+ */
+#ifndef BC250_C3_VRAM_DO_WINDOWS_PELA_DRAM
+#define BC250_C3_VRAM_DO_WINDOWS_PELA_DRAM 1
+#endif
+__declspec(selectany) volatile LONG g_Bc250C3DramWcMaps = 0;
+
+/* Tipo do mapeamento de um endereco ja traduzido: WC na DRAM com a C3, senao o pedido. */
+static __forceinline BOOLEAN Bc250VramCpuUseWc(ULONGLONG Translated, ULONGLONG BarPhysical)
+{
+    return (BC250_C3_VRAM_DO_WINDOWS_PELA_DRAM && Translated != BarPhysical) ? TRUE : FALSE;
+}
+
+/*
+ * C3: os MmMapIoSpace diretos de VRAM do KMD (anel/CSB do GFX, tabela da
+ * GART, pagina do walker) passam por aqui com o endereco ja traduzido.
+ */
+static __inline PVOID Bc250VramCpuMapTranslated(
+    _In_ PHYSICAL_ADDRESS Translated,
+    _In_ ULONGLONG BarPhysical,
+    _In_ SIZE_T Bytes)
+{
+    if (Bc250VramCpuUseWc((ULONGLONG)Translated.QuadPart, BarPhysical)) {
+        PVOID va = MmMapIoSpaceEx(Translated, Bytes, PAGE_READWRITE | PAGE_WRITECOMBINE);
+        if (va != NULL) InterlockedIncrement(&g_Bc250C3DramWcMaps);
+        return va;
+    }
+    return MmMapIoSpace(Translated, Bytes, MmNonCached);
+}
+
 #define BC250_VRAM_CPU_DRAM_MAP_SLOTS 64u
 
 __declspec(selectany) PVOID volatile g_Bc250VramCpuDramMapVa[BC250_VRAM_CPU_DRAM_MAP_SLOTS] = { 0 };
@@ -82,7 +122,9 @@ static __inline NTSTATUS Bc250VramCpuMapMemory(
     }
 
     protect = PAGE_READWRITE;
-    if (CacheType == MmNonCached) {
+    if (Bc250VramCpuUseWc(translated, BarPhysical)) {
+        protect |= PAGE_WRITECOMBINE; /* C3: um so' tipo por pagina fisica */
+    } else if (CacheType == MmNonCached) {
         protect |= PAGE_NOCACHE;
     } else if (CacheType == MmWriteCombined) {
         protect |= PAGE_WRITECOMBINE;
@@ -92,6 +134,7 @@ static __inline NTSTATUS Bc250VramCpuMapMemory(
     if (va == NULL) {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
+    if ((protect & PAGE_WRITECOMBINE) != 0u) InterlockedIncrement(&g_Bc250C3DramWcMaps);
     for (slot = 0u; slot < BC250_VRAM_CPU_DRAM_MAP_SLOTS; ++slot) {
         if (InterlockedCompareExchangePointer(
                 (PVOID volatile *)&g_Bc250VramCpuDramMapVa[slot], va, NULL) == NULL) {

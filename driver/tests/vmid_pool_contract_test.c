@@ -275,6 +275,9 @@ static int Run(void)
         CHECK(g_pool.Entries[maskVmidA].InstallState ==
             BC250_VMID_POOL_INSTALLING);
         CHECK(Bc250VmidPoolReadyFlushMask(&g_pool) == 0u);
+        /* FT.1 (doc 697): a mascara por raiz JA conta a VMID em instalacao. */
+        CHECK(Bc250VmidPoolMaskForRoot(&g_pool, 0x450111000ull) == (1u << maskVmidA));
+        CHECK(Bc250VmidPoolMaskForRoot(&g_pool, 0x450999000ull) == 0u);
 
         /* READY com raiz provada entra. */
         CHECK(Bc250VmidPoolRecordInstall(&g_pool, FakeCtx(201u), maskVmidA,
@@ -298,6 +301,12 @@ static int Run(void)
             0x450222000ull, BC250_GCVM_VMID8_OK) == BC250_VMID_POOL_OK);
         CHECK(Bc250VmidPoolReadyFlushMask(&g_pool) ==
             ((1u << maskVmidA) | (1u << maskVmidB)));
+        /* 263b (doc 695): mascara por raiz -- so' a VMID que tem ESTA raiz. */
+        CHECK(Bc250VmidPoolMaskForRoot(&g_pool, 0x450111000ull) == (1u << maskVmidA));
+        CHECK(Bc250VmidPoolMaskForRoot(&g_pool, 0x450222000ull) == (1u << maskVmidB));
+        CHECK(Bc250VmidPoolMaskForRoot(&g_pool, 0x450333000ull) == 0u);
+        CHECK(Bc250VmidPoolMaskForRoot(&g_pool, 0ull) == 0u);
+        CHECK(Bc250VmidPoolMaskForRoot(NULL, 0x450111000ull) == 0u);
 
         /* Nenhum reservado pode aparecer, sob nenhuma combinacao. */
         CHECK((Bc250VmidPoolReadyFlushMask(&g_pool) &

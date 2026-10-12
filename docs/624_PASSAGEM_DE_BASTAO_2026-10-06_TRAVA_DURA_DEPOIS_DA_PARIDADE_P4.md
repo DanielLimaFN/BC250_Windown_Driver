@@ -134,7 +134,7 @@
 
 **Evidência** em `docs/evidence/<data>_<hora>-DESKTOP-HQAG6T4-lab-binding/`:
 - `display-log-this-bind-RECUPERADO.txt`: log do KMD resgatado do log cumulativo `C:\BC250_DISPLAY_LOG.txt`. A cauda inclui o boot de recuperação, com o StartDevice `0xC0000182` do fusível;
-- `paging-trace-this-bind-RECUPERADO.bin` e `paging-trace-decodificado.json`: rastro de 100 ms. **Corte no primeiro recuo do `writer_tick`**, porque os últimos registros são do boot seguinte;
+- `paging-trace-this-bind-RECUPERADO.bin` e `paging-trace-decodificado.json`: rastro de ~100 ms (na prática 110–130 ms por tique; tempo pelo `snapshot_time_100ns`). **Corte no primeiro recuo do `writer_tick`**, porque os últimos registros são do boot seguinte;
 - `umd-logs-pos-travamento/`: logs por processo da UMD e da RADV. O AppContainer (menu, Pesquisa) grava com prefixo do pacote;
 - `reset-reason-pos-trava.txt`, `ramtest-pos-trava.txt` e `vram-cmos/`.
 
@@ -165,11 +165,13 @@ O anel de log perdido pode ser extraído do dump com `tools\extrair-anel-do-dump
 
 ## 5. Pendências pequenas (código), achadas na 236
 
-1. **`[P4_SDMA1] resultado: ATIVO … nenhuma submissao vai para ele nesta etapa`** é texto da P4.1. Com `BC250_P42_SDMA1_PTE_ROUTE=1` a frase é falsa (Lei 1). Corrigir a mensagem em `Bc250ActiveP4Sdma1Start` (`bc250_active_miniport.c`) e, se algum portão casar a string, o portão junto.
-2. **~21% das faixas de PTE são `descartadas` no envio** (2.985 de 14.014). Elas rodam corretamente dentro do IB do SDMA0. Acrescentar em `Bc250PagingSplitTake` (`bc250_mcdm_callbacks.c`) um contador por motivo: faixa parcial (cruza o fim do envio) ou faixa órfã (buffer nunca enviado). Falta saber se é o VidMm dividindo o paging buffer.
-3. **Teste de RAM pós-trava saiu com 0 bytes** na 236 (na 219 e na 235 funcionou). Conferir `tools\rodar-teste-de-ram.ps1` e a tarefa registrada por `tools\registrar-coleta-automatica.ps1`.
+**Estado em 06/10 (faixa offline depois do 624):** 1 e 2 feitos (suíte EXIT=0, auditoria PASS, 2 mutações reprovadas; NÃO VALIDADO EM HARDWARE, entram no próximo candidato 3.385.x); 3 era falso; 5 resolvido por medição.
+
+1. **Feito:** a mensagem agora depende de `BC250_P42_SDMA1_PTE_ROUTE` ("P4.2: anexado ao envio do Node 0…" ou "P4.1: ocioso…"). Antes: **`[P4_SDMA1] resultado: ATIVO … nenhuma submissao vai para ele nesta etapa`** é texto da P4.1. Com `BC250_P42_SDMA1_PTE_ROUTE=1` a frase é falsa (Lei 1). Corrigir a mensagem em `Bc250ActiveP4Sdma1Start` (`bc250_active_miniport.c`) e, se algum portão casar a string, o portão junto.
+2. **Feito:** `[P4_SDMA1] regime` agora abre as descartadas em `sem_lugar`/`parcial`/`saida_cheia`/`orfa`, e as 8 primeiras parciais logam `[P4_SDMA1] DESCARTE PARCIAL` com quanto a faixa passa do fim do IB. Antes: **~21% das faixas de PTE são `descartadas` no envio** (2.985 de 14.014). Elas rodam corretamente dentro do IB do SDMA0. Acrescentar em `Bc250PagingSplitTake` (`bc250_mcdm_callbacks.c`) um contador por motivo: faixa parcial (cruza o fim do envio) ou faixa órfã (buffer nunca enviado). Falta saber se é o VidMm dividindo o paging buffer.
+3. ~~**Teste de RAM pós-trava saiu com 0 bytes** na 236~~ **Falso, corrigido em 06/10:** o arquivo da 236 tem 8.040 MB × 2 passadas sem erro e `ramtest_exit: 0`; a leitura de "0 bytes" foi feita antes de a coleta terminar. Nada a corrigir no script.
 4. **Teardowns nunca medidos em regime** desde a 233 (SDMA1, EOP, IH, GART do MMHUB): todas as corridas terminaram em trava. Só uma corrida que chegue aos 600 s os exercita.
-5. **Divergência entre o rastro e a QPC:** o rastro da 236 marca `writer_tick` 332 (~33 s) contra 41,5 s de QPC no log. Pode ser a definição do tique; vale conferir antes de usar o rastro para tempo absoluto.
+5. ~~**Divergência entre o rastro e a QPC**~~ **Resolvida em 06/10, sem código:** o tique não vale 100 ms. A thread espera 100 ms e **depois** grava com `WRITE_THROUGH` e flush (`Bc250PagingTraceThread`). Pelos carimbos `KeQueryInterruptTime` do próprio rastro, a 236 tem 331 tiques em **42,17 s** (127 ms/tique, p95 180 ms), o que bate com os 41,5 s de QPC; a 235 tem 2.334 tiques em 267,65 s (115 ms/tique). **Para tempo, use `snapshot_time_100ns`, nunca `writer_tick × 100 ms`.**
 
 ---
 
@@ -199,7 +201,8 @@ O anel de log perdido pode ser extraído do dump com `tools\extrair-anel-do-dump
 | 1 | Recuperação (`BC250_RECOVERY.cmd`, `inspect-boot-fuse.ps1 -Reset`, boot frio) | Daniel |
 | 2 | `git diff` dos arquivos alterados fora da sessão (`bc250_sdma1_bringup.c/.h`); suíte e auditoria | IA |
 | 3 | Pendências 1–3 do §5 (mensagem, contador de descartadas, teste de RAM): uma faixa offline só, sem corrida | IA |
-| 4 | Hipótese 1 do §6 (`RESET_REASON` de controle), com `tools\vram-cmos\bc250-vram.ps1 -Ler` depois de reboot limpo | Daniel, com roteiro da IA |
+| 4 | ~~Hipótese 1 do §6 (`RESET_REASON` de controle)~~ **respondida por mineração de 112 leituras (doc 625 §1)**; no lugar, W1 (`tools\EXECUTAR_W1_PLATAFORMA_SEM_DRIVER.cmd`) | Daniel, com roteiro da IA |
+| 4b | Corrida 237: 600 s parado no desktop, mesmo 3.384.1.0 (doc 625 §4) | Daniel |
 | 5 | Apresentar ao Daniel a escolha entre: linha de base sem uso (n=2), política de paginação, log mínimo da UMD, P3.3, P5 | IA propõe, Daniel decide |
 
 ---

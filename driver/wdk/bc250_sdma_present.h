@@ -427,12 +427,19 @@ typedef struct BC250_SDMA_PRESENT_CONTEXT {
     uint32_t IhRbCntlBefore;
     uint32_t IhIntCntlBefore;
     uint32_t IhIntCntl2Before;
+    /* P3.3 (doc 635): RPTR do IH pela doorbell, so' depois da prova. */
+    BOOLEAN IhRptrDoorbellActive;
+    BOOLEAN IhRptrDoorbellCaptured;
+    uint32_t IhDoorbellRptrBefore;
+    uint32_t IhBifRangeBefore;
+    volatile LONG64 IhRptrDoorbellWrites;
     volatile LONG64 IhIsrCalls;
     volatile LONG64 IhIsrClaimed;
     volatile LONG64 IhEntries;
     volatile LONG64 IhSdmaTraps;
     volatile LONG64 IhCpEops;
     volatile LONG64 IhOther;
+    volatile LONG64 IhDcn;      /* DCN.2 (doc 713): entradas do cliente DCE consumidas */
     volatile LONG64 IhOverflows;
     volatile LONG IhLastClientSrc;
     volatile LONG64 TrapsEmitted;
@@ -484,6 +491,21 @@ extern BC250_SDMA_PRESENT_CONTEXT g_Bc250SdmaPresent;
 #define BC250_IH_REG_DOORBELL_RPTR      0x0449Cu
 #define BC250_NBIO_REG_INTERRUPT_CNTL   0x03844u
 #define BC250_NBIO_REG_INTERRUPT_CNTL2  0x03848u
+/*
+ * P3.3 (doc 635): RPTR do IH por doorbell, como navi10_ih (use_doorbell=true).
+ *  mmBIF_IH_DOORBELL_RANGE 0x01D2 idx2 (nbio_2_3_offset.h) -> (0xD20+0x1D2)*4;
+ *  OFFSET [11:2], SIZE [20:16] (nbio_2_3_sh_mask.h); nbio_v2_3_ih_doorbell_range
+ *  usa SIZE=2. IH_DOORBELL_RPTR: OFFSET [25:0], ENABLE bit 28
+ *  (osssys_5_0_0_sh_mask.h). Indice: AMDGPU_NAVI10_DOORBELL_IH 0x178 << 1 =
+ *  0x2F0 dwords (amdgpu_doorbell.h, navi10_ih.c:573) -> byte 0xBC0 da BAR de
+ *  doorbell; WDOORBELL32 (navi10_ih_set_rptr). A do SDMA0 fica em 0x800.
+ */
+#define BC250_NBIO_REG_BIF_IH_DOORBELL_RANGE 0x03BC8u
+#define BC250_P33_IH_DOORBELL_INDEX          0x2F0u
+#define BC250_P33_IH_DOORBELL_BYTE_OFFSET    (BC250_P33_IH_DOORBELL_INDEX * 4u)
+#define BC250_P33_IH_DOORBELL_RANGE_SIZE     2u
+#define BC250_IH_DOORBELL_RPTR_OFFSET_MASK   0x03FFFFFFu
+#define BC250_IH_DOORBELL_RPTR_ENABLE        0x10000000u
 
 #define BC250_IH_RB_CNTL_RB_ENABLE              0x00000001u
 #define BC250_IH_RB_CNTL_RB_SIZE_SHIFT          1u
@@ -524,7 +546,8 @@ BOOLEAN Bc250SdmaPresentIhArm(
     _In_ volatile uint32_t *WptrCpu,
     _In_ uint64_t WptrGpuVa,
     _In_ uint64_t DummyPagePa,
-    _In_ BOOLEAN Msi);
+    _In_ BOOLEAN Msi,
+    _In_ BOOLEAN RptrByDoorbell);
 
 /* Desliga o IH e o TRAP e devolve os registradores ao snapshot. */
 VOID Bc250SdmaPresentIhDisarm(_In_z_ const char *Why);
@@ -703,6 +726,25 @@ BOOLEAN Bc250SdmaPresentRunVmFlushProbe(
 VOID Bc250SdmaPresentFlushHdp(void);
 #else
 static __inline VOID Bc250SdmaPresentFlushHdp(void) { }
+#endif
+
+/*
+ * C1 (doc 672): a abertura de doorbell mapeada pela P2 serve tambem ao anel
+ * GFX (CP_RB0), como no amdgpu, onde todos os aneis usam a mesma BAR. Ready
+ * exige o mapeamento e o RCC_DOORBELL_APER_EN do BIF ligado (P2c). Write64
+ * recusa offset desalinhado ou fora do mapa (0x1000 bytes).
+ */
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+BOOLEAN Bc250SdmaPresentDoorbellApertureReady(void);
+BOOLEAN Bc250SdmaPresentDoorbellWrite64(_In_ uint32_t ByteOffset, _In_ uint64_t Value);
+#else
+static __inline BOOLEAN Bc250SdmaPresentDoorbellApertureReady(void) { return FALSE; }
+static __inline BOOLEAN Bc250SdmaPresentDoorbellWrite64(uint32_t ByteOffset, uint64_t Value)
+{
+    (void)ByteOffset;
+    (void)Value;
+    return FALSE;
+}
 #endif
 
 BOOLEAN Bc250SdmaPresentSubmitIndirectAsync(

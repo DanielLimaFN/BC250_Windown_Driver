@@ -30,11 +30,11 @@ await page.screenshot({path:path.join(root,'artifacts/donate-pix.png')});
 await page.keyboard.press('Escape');assert.equal(await page.locator('#bmciframe').count(),0);
 await page.locator('[data-action=donate]').first().click();await page.locator('[data-method=pix]').click();
 await page.setViewportSize({width:640,height:560});await page.screenshot({path:path.join(root,'artifacts/donate-small.png')});
-const dialog=await page.locator('#donation-dialog').boundingBox();assert.ok(dialog.x>=0&&dialog.y>=0&&dialog.width<=640&&dialog.height<=560);
-assert.equal(await page.locator('#donation-dialog').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
+const dialog=await page.locator('#donation-card').boundingBox();assert.ok(dialog.x>=0&&dialog.y>=0&&dialog.width<=640);
+assert.equal(await page.locator('#donation-card').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
 await page.keyboard.press('Escape');
 // Preserve the complete installation -> real support invitation -> dashboard flow.
-await page.locator('#install-button').click();await page.waitForSelector('#donation-dialog[open]',{timeout:15000});
+await page.locator('#install-button').click();await page.waitForSelector('[data-view=donate]:not([hidden])',{timeout:15000});
 assert.match(await page.locator('.real-support').innerText(),/real/);await page.locator('.skip-donation').click();assert.equal(await page.locator('[data-view=overview]').isVisible(),true);
 assert.deepEqual(errors,[]);console.log('PASS: Pix/key/BTC/SOL copies intercepted without touching OS clipboard; unconfirmed networks hidden; Ko-fi iframe integration with fixture; close unloads iframe; 640x560 layout; complete installation flow; no simulated receipt.');
 }finally{await browser?.close();server.kill();}})().catch(e=>{console.error(e);process.exitCode=1;});

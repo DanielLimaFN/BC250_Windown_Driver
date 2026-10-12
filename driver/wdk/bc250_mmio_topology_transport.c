@@ -174,6 +174,23 @@ static uint32_t Bc250MmioTopologyGoldenReadAllowed(uint32_t ByteOffset)
     return 0u;
 }
 
+/*
+ * G.1 (doc 645): ESCRITA dos 34 golden settings do Cyan Skillfish, so' os
+ * offsets da tabela (bc250_golden_settings_contract.c, igual a
+ * golden_settings_gc_10_0_cyan_skillfish). Unicos escritores:
+ * Bc250ActiveG1ApplyGolden/RestoreGolden (snapshot, Lei 6, readback, restauracao).
+ * O RLC_CSIB_* continua com a lista propria do DX.27.
+ */
+static uint32_t Bc250MmioTopologyG1GoldenWriteAllowed(uint32_t ByteOffset)
+{
+    uint32_t count = 0u;
+    const BC250_GOLDEN_ENTRY *table = Bc250GoldenSettingsGetTable(&count);
+    for (uint32_t i = 0; table != NULL && i < count; ++i) {
+        if (table[i].BarOffset == ByteOffset) return 1u;
+    }
+    return 0u;
+}
+
 /* P3.0 (doc 609): foto do MMHUB, so' leitura. A escrita da P3.0b tem lista propria abaixo. */
 static uint32_t Bc250MmioTopologyMmhubReadAllowed(uint32_t ByteOffset)
 {
@@ -251,6 +268,12 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == BC250_REG_CP_RB0_WPTR_HI ||
         /* EOP do CP (doc 618): snapshot e readback do CP_INT_CNTL_RING0. */
         ByteOffset == BC250_REG_CP_INT_CNTL_RING0 ||
+        /* MEC.1 (doc 640): faixas de doorbell do CP, LEITURA (snapshot e registro). */
+        ByteOffset == BC250_REG_CP_MEC_DOORBELL_RANGE_LOWER ||
+        ByteOffset == BC250_REG_CP_MEC_DOORBELL_RANGE_UPPER ||
+        ByteOffset == BC250_REG_CP_RB_DOORBELL_RANGE_LOWER ||
+        ByteOffset == BC250_REG_CP_RB_DOORBELL_RANGE_UPPER ||
+        ByteOffset == BC250_REG_CP_RB_DOORBELL_CONTROL ||
         /* P4.1 (doc 620): registradores do SDMA1 do contrato (fonte unica). */
         Bc250Sdma1IsRegister(ByteOffset) ||
         ByteOffset == BC250_REG_SDMA0_RB_RPTR ||
@@ -489,13 +512,20 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == 0x00004BACu || ByteOffset == 0x00004BC4u ||
         ByteOffset == 0x000049E8u || ByteOffset == 0x000061E8u ||
         ByteOffset == 0x000061ECu || ByteOffset == 0x0003B120u ||
-        ByteOffset == 0x0003B124u || ByteOffset == 0x0003C200u;
+        ByteOffset == 0x0003B124u || ByteOffset == 0x0003C200u ||
+        /*
+         * RLC.1 (doc 642) -- LEITURA: RLC_PG_CNTL 0x3B10C e RLC_SPM_MC_CNTL
+         * 0x3B1C4 (gc_10_1_0_offset.h 0x4C43/0x4C71, BASE_IDX 1). RLC_CNTL,
+         * RLC_GPM_STAT, RLC_CGCG_CGLS_CTRL, GRBM_STATUS2 e CP_MEC_CNTL ja' estavam.
+         */
+        ByteOffset == 0x0003B10Cu || ByteOffset == 0x0003B1C4u;
 }
 
 static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
 {
     return Bc250MmioTopologyGlobalMmuOffsetAllowed(ByteOffset) ||
         Bc250MmioTopologyMmhubP3bWriteAllowed(ByteOffset) ||
+        Bc250MmioTopologyG1GoldenWriteAllowed(ByteOffset) ||
         /*
          * 4c (doc 567): faixa do engine 1 (SDMA0), ESCRITA. O UNICO escritor e'
          * Bc250ActiveArmSdmaInvalidateEngine: snapshot, 0xFFFFFFFF/0x1F como
@@ -593,6 +623,28 @@ static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
          * (Lei 6), com snapshot, readback e restauracao.
          */
         ByteOffset == BC250_REG_CP_INT_CNTL_RING0 ||
+        /*
+         * MEC.1 (doc 640): CP_MEC_DOORBELL_RANGE_UPPER, ESCRITA. Unicos
+         * escritores: Bc250ActiveMec1Arm/Disarm (snapshot, readback, restauracao).
+         * O LOWER NAO e' escrito: a fila do MEC deriva dele o offset da doorbell.
+         */
+        ByteOffset == BC250_REG_CP_MEC_DOORBELL_RANGE_UPPER ||
+        /*
+         * C1 (doc 672): CP_RB_DOORBELL_RANGE_LOWER/UPPER, ESCRITA, como
+         * gfx_v10_0_cp_gfx_set_doorbell (gc_10_1_0_offset.h 0x1DFA/0x1DFB,
+         * BASE_IDX 0). Unicos escritores: Bc250ActiveC1GfxDoorbellArm/Disarm
+         * (snapshot, readback e restauracao). CP_RB_DOORBELL_CONTROL ja' estava.
+         */
+        ByteOffset == BC250_REG_CP_RB_DOORBELL_RANGE_LOWER ||
+        ByteOffset == BC250_REG_CP_RB_DOORBELL_RANGE_UPPER ||
+        /*
+         * RLC.1 (doc 642), ESCRITA: RLC_CGCG_CGLS_CTRL 0x3B124, RLC_PG_CNTL
+         * 0x3B10C e RLC_SPM_MC_CNTL 0x3B1C4. Unicos escritores:
+         * Bc250ActiveRlc1Resume/Disarm (gfx_v10_0_rlc_resume, snapshot,
+         * readback e restauracao). RLC_CNTL e CP_MEC_CNTL ja' estavam.
+         */
+        ByteOffset == 0x0003B124u || ByteOffset == 0x0003B10Cu ||
+        ByteOffset == 0x0003B1C4u ||
         /*
          * P4.1 (doc 620): SDMA1, ESCRITA. Unicos escritores: Bc250Sdma1BringUp e
          * Bc250Sdma1Shutdown (snapshot, Lei 6, readback, desligamento provado).

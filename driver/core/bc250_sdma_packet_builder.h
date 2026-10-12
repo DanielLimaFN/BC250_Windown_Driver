@@ -51,6 +51,14 @@ extern "C" {
  */
 #define BC250_SDMA_COPY_MAX_BYTES 0x003FFF00u /* Mesa SDMA_V2_0_COPY_MAX_BYTES */
 #define BC250_SDMA_FILL_MAX_BYTES 0x003FFFFCu /* Mesa: MASK(22) & ~3 */
+/*
+ * C4 (09/10, doc 676): teto do PACOTE = o do amdgpu, fill_max_bytes 0x400000
+ * (sdma_v5_0.c:1880, count = byte_count - 1 = 0x3FFFFF cabe nos 22 bits). O
+ * fatiamento da Mesa (BC250_SDMA_FILL_MAX_BYTES) continua nos chamadores do
+ * present; o FILL de paginacao fatia por este. A ligacao do SDMA.4M com 4 MiB
+ * exatos era H FRACA (333-379 fills de 4 MiB por corrida sem trava).
+ */
+#define BC250_SDMA_CONST_FILL_PACKET_MAX_BYTES 0x00400000u
 
 #define BC250_SDMA_DWORDS_NOP(Extra)  (1u + (Extra))
 #define BC250_SDMA_DWORDS_COPY_LINEAR 7u

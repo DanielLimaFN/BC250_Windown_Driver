@@ -217,16 +217,16 @@ static int Bc250RunSdmaPacketBuilderTest(void)
         g_ring, TEST_RING_DWORDS, &cursor, 0x1001ull /* misaligned */, 0xAAu, 4096u) == BC250_SDMA_MISALIGNED);
 
     /*
-     * SDMA.4M (Corridas 135 e 151): 4 MiB exatos (count=0x3FFFFF) NAO pode
-     * sair num pacote so'. Limites da Mesa para SDMA 5.0: fill 0x3FFFFC,
-     * copia 0x3FFF00 (bc250_sdma_packet_builder.h).
+     * C4 (doc 676): o teto do pacote CONST_FILL e' o do amdgpu,
+     * fill_max_bytes = 0x400000 (sdma_v5_0.c), count = 0x3FFFFF. Acima disso
+     * nao cabe nos 22 bits. A copia segue no limite da Mesa (0x3FFF00).
      */
     cursor = 0;
     CHECK(Bc250SdmaEmitConstFill(
-        g_ring, TEST_RING_DWORDS, &cursor, 0x3000000ull, 0u, 0x00400000u) == BC250_SDMA_PAYLOAD_TOO_LARGE);
+        g_ring, TEST_RING_DWORDS, &cursor, 0x3000000ull, 0u, 0x00400004u) == BC250_SDMA_PAYLOAD_TOO_LARGE);
     CHECK(Bc250SdmaEmitConstFill(
-        g_ring, TEST_RING_DWORDS, &cursor, 0x3000000ull, 0u, 0x003FFFFCu) == BC250_SDMA_OK);
-    CHECK(g_ring[cursor - 1u] == 0x003FFFFBu);
+        g_ring, TEST_RING_DWORDS, &cursor, 0x3000000ull, 0u, 0x00400000u) == BC250_SDMA_OK);
+    CHECK(g_ring[cursor - 1u] == 0x003FFFFFu);
     cursor = 0;
     CHECK(Bc250SdmaEmitCopyLinear(
         g_ring, TEST_RING_DWORDS, &cursor, 0x1000ull, 0x2000ull, 0x00400000u) == BC250_SDMA_PAYLOAD_TOO_LARGE);

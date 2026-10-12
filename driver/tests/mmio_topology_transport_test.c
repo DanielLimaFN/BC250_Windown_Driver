@@ -389,11 +389,16 @@ static int Bc250RunMmioTopologyTransportTest(void)
     CHECK(Bc250MmioTopologyRead32(
         &context, BC250_HQD_MMIO_RLC_PG_ALWAYS_ON_WGP_MASK, &value) == 1u);
     CHECK(value == 0x00000003u);
-    CHECK(Bc250MmioTopologyWrite32(
-        &context, BC250_HQD_MMIO_RLC_PG_CNTL, 0u) == 0u);
+    /*
+     * RLC.1 (doc 642): RLC_PG_CNTL passa a ser escrito, como
+     * gfx_v10_0_rlc_resume (WREG32 mmRLC_PG_CNTL, 0). As mascaras de WGP acima
+     * continuam so' de leitura.
+     */
     CHECK(Bc250MmioTopologyRead32(
         &context, BC250_HQD_MMIO_RLC_PG_CNTL, &value) == 1u);
     CHECK(value == 1u);
+    CHECK(Bc250MmioTopologyWrite32(
+        &context, BC250_HQD_MMIO_RLC_PG_CNTL, 0u) == 1u);
     /* SMUIO_GFX_MISC_CNTL aceita leitura */
     CHECK(Bc250MmioTopologyRead32(
         &context, 0x0005A314u, &value) == 1u);
@@ -414,7 +419,8 @@ static int Bc250RunMmioTopologyTransportTest(void)
     CHECK(Bc250MmioTopologyWrite32(&context, 0x0003F040u, 1u) == 0u);
     CHECK(Bc250MmioTopologyRead32(&context, 0x000032D4u, &value) == 0u);
     CHECK(Bc250MmioTopologyWrite32(&context, 0x000032D4u, 1u) == 0u);
-    CHECK(context.ReadCount == 148u && context.WriteCount == 51u);
+    /* RLC.1 (doc 642): +1 escrita, a do RLC_PG_CNTL. */
+    CHECK(context.ReadCount == 148u && context.WriteCount == 52u);
     /*
      * DX.7: o transporte aceita somente os sete offsets exatos de cada VMID
      * do pool. Este bloco fica depois das assercoes historicas de contadores

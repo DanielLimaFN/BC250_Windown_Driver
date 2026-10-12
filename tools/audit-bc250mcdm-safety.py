@@ -1446,7 +1446,8 @@ def audit_gfx_ring_tripod_and_ib_inspection(errors: list[str]) -> None:
             "o endereco repetido da Corrida 56 tem veredito dedicado", errors)
     require(active, "Nome=%s Token=0x%llX",
             "alocacao que contem o fault sai nomeada, nao so por handle", errors)
-    require(active, "EXCEDE 34 BITS -- fora do espaco traduzivel",
+    # P5 (doc 667): o teto sai da geometria (34 ou 48 bits), nao de literal.
+    require(active, "EXCEDE %u BITS -- fora do espaco traduzivel",
             "<<20 invalido e declarado em vez de competir com <<12", errors)
 
     # Corrida 57 nao reteve fault em nenhum dos cinco TDRs, embora tenha
@@ -7791,8 +7792,10 @@ def audit_dx26_golden_csib_snapshot_is_read_only(errors: list[str]) -> None:
         errors.append("DX.26: offsets de golden/CSB fora da allowlist de leitura")
     # DX.27 abriu ESCRITA so' para RLC_CSIB_* (escritor unico, portao proprio);
     # os golden settings continuam proibidos na allowlist de escrita.
-    if "Golden" in wr_body:
-        errors.append("DX.26: golden settings entraram na allowlist de ESCRITA")
+    # G.1 (doc 645): a UNICA escrita de golden permitida e' a do escritor unico
+    # da G.1 (travado por audit_g1_golden_like_amdgpu).
+    if "Golden" in wr_body.replace("Bc250MmioTopologyG1GoldenWriteAllowed(ByteOffset)", ""):
+        errors.append("DX.26: golden settings entraram na allowlist de ESCRITA fora da G.1")
 
     # Autoteste grafico (controle positivo) tem de rodar ANTES do harness D3D11,
     # nas tres variantes do RADV, e sua ausencia tem de ser declarada.
@@ -8100,9 +8103,10 @@ def audit_dx33_modechange_skip_and_pipe_vmid(errors: list[str]) -> None:
     for sig, route in (("NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay(", "MPO1"),
                        ("NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay3(", "MPO3")):
         body = function_body(disp, sig)
-        c = body.find(f'Bc250DisplayCopyPrimaryToGop("{route}"')
-        call = body[c:body.find(";", c)] if c >= 0 else ""
-        if not call.rstrip(")").rstrip().endswith("FALSE"):
+        # DCN.1: a rota passa por Bc250DisplaySwitchPrimary(Route, Seg, Addr,
+        # ModeChangeOnly, Immediate); o 4o argumento (ModeChangeOnly) e' o que
+        # este portao exige FALSE em flip.
+        if not re.search(r'Bc250DisplaySwitchPrimary\("' + route + r'",\s*[^,]+,\s*[^,]+,\s*FALSE,', body):
             errors.append(f"DX.33: {route} (flip) pode pular a copia pela regra de ModeChange")
 
     if "#define BC250_GFX_REG_CP_ME0_PIPE0_VMID      0x0000C148u" not in ring:
@@ -8655,7 +8659,10 @@ def audit_dx56_paging_trace(errors: list[str]) -> None:
     for token in ("ZwCreateFile", "ZwWriteFile", "ZwFlushBuffersFile", "KeWaitForSingleObject"):
         if token in stage:
             errors.append(f"DX.56: {token} entrou na DDI de paginacao")
-    for token in ("KeWaitForSingleObject(&g_Bc250PagingTraceStopEvent",
+    # DBG.1b (doc 704): a espera passou a ser em dois objetos (parada e chute do
+    # modo debug); a parada continua sendo o objeto 0, que encerra a thread.
+    for token in ("objects[0] = &g_Bc250PagingTraceStopEvent;",
+                  "KeWaitForMultipleObjects(2u, objects, WaitAny",
                   "Bc250PagingTraceSnapshot(&record)", "ZwWriteFile(g_Bc250PagingTraceFile",
                   "status = ZwFlushBuffersFile(g_Bc250PagingTraceFile"):
         require(worker, token, f"DX.56 worker {token}", errors)
@@ -9363,7 +9370,7 @@ def audit_p42_sdma1_pte_route(errors: list[str]) -> None:
     d = job.find("Cross->DoneAddress, Token);")
     if g < 0 or ib < 0 or d < 0 or not (g < ib < d) or "Token == 0u" not in job:
         errors.append("P4.2: o SDMA1 tem de esperar Go, rodar a faixa e so' entao escrever Done (token != 0)")
-    chunk = function_body(sp, "static BOOLEAN Bc250SdmaPresentSubmitSplitChunked(")
+    chunk = function_body(sp, "static BOOLEAN Bc250SdmaPresentSubmitSplitChunkedWith(")
     cc = re.sub(r"\s+", " ", chunk)
     if "if (local[k].Sdma1EndDwords != 0u) continue;" not in cc or "BOOLEAN route = g_Bc250SdmaPresent.Sdma1Attached;" not in cc:
         errors.append("P4.2: faixa sem SDMA1 anexado (ou sem espaco) tem de voltar ao IB do SDMA0, nunca ser descartada")
@@ -9586,6 +9593,859 @@ def audit_p6_mtype_uc_for_gl2_bypass(errors: list[str]) -> None:
     if "Bc250McdmEncodeVidMmPteWithLevelEx( Caps, sourcePte, update->PageTableLevel, cpuLeafExtra, &encoded);" not in handler or \
             "allocationRecordKnown != 0u && update->PageTableLevel == 0u &&" not in handler:
         errors.append("P6: o caminho CPU_VIRTUAL nao aplica a mesma regra de MTYPE da folha")
+
+
+def audit_mec1_doorbell_range(errors: list[str]) -> None:
+    """MEC.1 (doc 640): CP_MEC_DOORBELL_RANGE_UPPER como o amdgpu (0x450). So' o
+    UPPER e' escrito (o LOWER da o offset da doorbell da nossa fila), com
+    readback e restauracao; o teardown devolve o valor do firmware depois de o
+    IH parar de escrever a doorbell."""
+    core = ROOT / "driver" / "core"
+    wdk = ROOT / "driver" / "wdk"
+    hdr = (core / "bc250_platform_register_snapshot.h").read_text(encoding="utf-8", errors="replace")
+    for token, val in (("BC250_REG_CP_MEC_DOORBELL_RANGE_LOWER", "0x0000C170u"),
+                       ("BC250_REG_CP_MEC_DOORBELL_RANGE_UPPER", "0x0000C174u"),
+                       ("BC250_REG_CP_RB_DOORBELL_RANGE_LOWER", "0x0000C168u"),
+                       ("BC250_REG_CP_RB_DOORBELL_RANGE_UPPER", "0x0000C16Cu"),
+                       ("BC250_REG_CP_RB_DOORBELL_CONTROL", "0x0000C3B4u"),
+                       ("BC250_MEC1_DOORBELL_RANGE_UPPER", "0x00000450u")):
+        if not re.search(r"#define\s+" + token + r"\s+" + re.escape(val), hdr):
+            errors.append("MEC.1: " + token + " precisa ser " + val + " (gc_10_1_0_offset.h; gfx_v10_0.c:6699)")
+    tr = strip_c_comments((wdk / "bc250_mmio_topology_transport.c").read_text(encoding="utf-8", errors="replace"))
+    if tr.count("BC250_REG_CP_MEC_DOORBELL_RANGE_LOWER") != 1:
+        errors.append("MEC.1: o LOWER do MEC so' pode estar na lista de LEITURA (a fila deriva dele a doorbell)")
+    if tr.count("BC250_REG_CP_MEC_DOORBELL_RANGE_UPPER") != 2:
+        errors.append("MEC.1: o UPPER do MEC precisa estar na lista de leitura e na de escrita")
+    # C1 (doc 672): o RANGE do RB passa a ter escrita (lista de leitura + de
+    # escrita), com Bc250ActiveC1GfxDoorbellArm/Disarm como unicos escritores
+    # (portao audit_c1_gfx_doorbell_like_amdgpu). CONTROL segue numa so' lista
+    # (a de leitura; a escrita do CONTROL vem do literal 0xC3B4 ja' existente).
+    for rw in ("BC250_REG_CP_RB_DOORBELL_RANGE_LOWER", "BC250_REG_CP_RB_DOORBELL_RANGE_UPPER"):
+        if tr.count(rw) != 2:
+            errors.append("MEC.1/C1: " + rw + " precisa estar na lista de leitura e na de escrita (C1)")
+    if tr.count("BC250_REG_CP_RB_DOORBELL_CONTROL") != 1:
+        errors.append("MEC.1: BC250_REG_CP_RB_DOORBELL_CONTROL fora do esperado na allowlist")
+    am = strip_c_comments((wdk / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace"))
+    arm = function_body(am, "static VOID Bc250ActiveMec1Arm(BC250_DXGK_ACTIVE_CONTEXT *Context)").split("#else")[0]
+    if "after != wanted" not in arm or arm.find("BC250_REG_CP_MEC_DOORBELL_RANGE_UPPER, mecHi)") < 0:
+        errors.append("MEC.1: o arme precisa de readback e restauracao do UPPER (Lei 5)")
+    if "BC250_REG_CP_MEC_DOORBELL_RANGE_LOWER, " in arm.replace("Read32(t, BC250_REG_CP_MEC_DOORBELL_RANGE_LOWER, ", ""):
+        errors.append("MEC.1: o arme nao pode escrever o LOWER do MEC")
+    td = am.find("Bc250ActiveP3UnmapIh(Active);")
+    dis = am.find("Bc250ActiveMec1Disarm(Active, Why);")
+    if td < 0 or dis < 0 or dis < td:
+        errors.append("MEC.1: o desarme precisa vir no teardown, depois de o IH parar (Bc250ActiveP3UnmapIh)")
+    a = am.find("Bc250ActiveMec1Arm(context);")
+    b = am.find("Bc250ActiveP3ArmIh(context);")
+    if a < 0 or b < 0 or a > b:
+        errors.append("MEC.1: a faixa do MEC precisa ser armada antes do IH (antes da doorbell do IH comecar)")
+
+
+def audit_c4_zeramento_como_o_amdgpu(errors: list[str]) -> None:
+    """C4 (09/10, doc 676): o zeramento de alocacao nova volta ao CONST_FILL,
+    em fatias de 4 MiB, como amdgpu_fill_buffer (sdma_v5_0.c: fill_max_bytes
+    0x400000, count = byte_count - 1). A copia de zeros da X2b fica dormente."""
+    wdk = ROOT / "driver" / "wdk"
+    cb = strip_c_comments((wdk / "bc250_mcdm_callbacks.c").read_text(encoding="utf-8", errors="replace"))
+    if "#define BC250_C4_ZERAMENTO_COMO_O_AMDGPU 1" not in cb:
+        errors.append("C4: chave BC250_C4_ZERAMENTO_COMO_O_AMDGPU nao esta em 1")
+    if not re.search(r"#if BC250_C4_ZERAMENTO_COMO_O_AMDGPU\s+#define BC250_X2B_FILL_BY_COPY 0", cb):
+        errors.append("C4: a copia de zeros da X2b nao fica desligada sob a C4")
+    if not re.search(r"#if BC250_C4_ZERAMENTO_COMO_O_AMDGPU\s+#define BC250_SDMA_PAGING_FILL_MAX_BYTES BC250_SDMA_CONST_FILL_PACKET_MAX_BYTES", cb):
+        errors.append("C4: o FILL de paginacao nao fatia pelo teto do amdgpu (4 MiB)")
+    fill = function_body(cb, "static NTSTATUS Bc250McdmBuildFillVirtual(")
+    if "BC250_SDMA_PAGING_FILL_MAX_BYTES" not in fill or "Bc250SdmaEmitConstFill(" not in fill:
+        errors.append("C4: o FILL de paginacao nao emite CONST_FILL fatiado por BC250_SDMA_PAGING_FILL_MAX_BYTES")
+    if "[C4_FILL] chave=" not in fill:
+        errors.append("C4: a linha de prova [C4_FILL] sumiu do FILL de paginacao")
+    hdr = (ROOT / "driver" / "core" / "bc250_sdma_packet_builder.h").read_text(encoding="utf-8", errors="replace")
+    if "#define BC250_SDMA_CONST_FILL_PACKET_MAX_BYTES 0x00400000u" not in hdr:
+        errors.append("C4: teto do pacote CONST_FILL diferente do fill_max_bytes do amdgpu (0x400000)")
+    enc = function_body(strip_c_comments((ROOT / "driver" / "core" / "bc250_sdma_packet_builder.c")
+                        .read_text(encoding="utf-8", errors="replace")), "BC250_SDMA_STATUS Bc250SdmaEmitConstFill(")
+    if "ByteCount > BC250_SDMA_CONST_FILL_PACKET_MAX_BYTES" not in enc or "(ByteCount - 1u) & 0x3FFFFFu" not in enc:
+        errors.append("C4: o encoder do CONST_FILL nao aceita 4 MiB com count = bytes - 1")
+    t1 = strip_c_comments((ROOT / "driver" / "tests" / "mcdm_callbacks_test.c").read_text(encoding="utf-8", errors="replace"))
+    offset_ok = ("CHECK(g_paging.MultipassOffset == 11u * 4194304u);" in t1 or
+                 "CHECK(g_paging.MultipassOffset == 12u * 4194304u);" in t1)
+    if not offset_ok:
+        errors.append("C4: o teste do zeramento perdeu o CHECK de MultipassOffset")
+    for needle in ("CHECK(f[4] == 0x003FFFFFu);",
+                   "CHECK(g_pagingDmaBuffer[14] == 2686976u - 1u);",
+                   "CHECK(proof.Opcode == BC250_PAGING_PROOF_OP_FILL);"):
+        if needle not in t1:
+            errors.append("C4: o teste do zeramento perdeu '%s'" % needle)
+    t2 = strip_c_comments((ROOT / "driver" / "tests" / "sdma_packet_builder_test.c").read_text(encoding="utf-8", errors="replace"))
+    if "0x00400000u) == BC250_SDMA_OK" not in t2 or "0x00400004u) == BC250_SDMA_PAYLOAD_TOO_LARGE" not in t2:
+        errors.append("C4: o teste do encoder nao prova o teto de 4 MiB")
+
+
+def audit_5e_transfer_and_fill_gcr_rinse(errors: list[str]) -> None:
+    """5E (doc 686): GCR rinse incondicional ao final de TransferVirtual,
+    FillVirtual e FillByCopy. Mantido como higiene de cache; a motivacao
+    original (RESET_REASON bit 30) era falsa: o bit e' fixo (docs 625 e 691)."""
+    wdk = ROOT / "driver" / "wdk"
+    cb = strip_c_comments((wdk / "bc250_mcdm_callbacks.c").read_text(encoding="utf-8", errors="replace"))
+    transfer = function_body(cb, "static NTSTATUS Bc250McdmBuildTransferVirtual(")
+    if "Bc250SdmaEmitGcr(dmaBuffer, dwordsAvailable, &cursor);" not in transfer:
+        errors.append("5E: Bc250McdmBuildTransferVirtual nao emite Bc250SdmaEmitGcr antes dos NOPs")
+    if "BC250_SDMA_DWORDS_GCR_REQ" not in transfer:
+        errors.append("5E: Bc250McdmBuildTransferVirtual nao reserva BC250_SDMA_DWORDS_GCR_REQ na capacidade")
+    fill = function_body(cb, "static NTSTATUS Bc250McdmBuildFillVirtual(")
+    if "Bc250SdmaEmitGcr(dmaBuffer, dwordsAvailable, &cursor);" not in fill:
+        errors.append("5E: Bc250McdmBuildFillVirtual nao emite Bc250SdmaEmitGcr antes dos NOPs")
+    if "BC250_SDMA_DWORDS_GCR_REQ" not in fill:
+        errors.append("5E: Bc250McdmBuildFillVirtual nao reserva BC250_SDMA_DWORDS_GCR_REQ na capacidade")
+    t1 = strip_c_comments((ROOT / "driver" / "tests" / "mcdm_callbacks_test.c").read_text(encoding="utf-8", errors="replace"))
+    if "(g_pagingDmaBuffer[21] & 0xFFu) == BC250_SDMA_OP_GCR_REQ" not in t1:
+        errors.append("5E: teste unitario de TransferVirtual nao confere presenca do pacote GCR")
+    if "(g_pagingDmaBuffer[15] & 0xFFu) == BC250_SDMA_OP_GCR_REQ" not in t1:
+        errors.append("5E: teste unitario de FillVirtual nao confere presenca do pacote GCR")
+
+
+def audit_5f_sdma_ring_capacity_and_pt_gcr(errors: list[str]) -> None:
+    """5F (doc 688): reserva de 24 DW no anel SDMA (pre-pad ate 7 + INDIRECT 6
+    + GCR 5 + FENCE 4 + TRAP 2), worst case com TRAP, e GCR ao atualizar PTEs
+    via SDMA. Bug latente real; NAO foi a causa da trava da 261 (doc 691)."""
+    wdk = ROOT / "driver" / "wdk"
+    core = ROOT / "driver" / "core"
+    sdma = strip_c_comments((wdk / "bc250_sdma_present.c").read_text(encoding="utf-8", errors="replace"))
+    cb = strip_c_comments((wdk / "bc250_mcdm_callbacks.c").read_text(encoding="utf-8", errors="replace"))
+    builder = strip_c_comments((core / "bc250_sdma_packet_builder.c").read_text(encoding="utf-8", errors="replace"))
+
+    if "neededDwords = flushDwords + 24u;" not in sdma:
+        errors.append("5F: Bc250SdmaPresentSubmitIndirectAsync nao reserva 24 DW no anel para pacotes")
+    if "Bc250SdmaPresentAllocateRingSlot(24u);" not in sdma:
+        errors.append("5F: Bc250SdmaPresentExecuteIndirect nao reserva 24 DW no anel")
+    if "BC250_SDMA_DWORDS_TRAP" not in sdma:
+        errors.append("5F: Bc250SdmaPresentSubmitSplitChunkedWith nao inclui BC250_SDMA_DWORDS_TRAP no worst case")
+    if "BC250_SDMA_DWORDS_TRAP" not in builder:
+        errors.append("5F: Bc250SdmaSplitNextChunk nao inclui BC250_SDMA_DWORDS_TRAP no pior caso")
+
+    pt_update = function_body(cb, "static NTSTATUS Bc250McdmEmitGpuPageTableUpdate(")
+    if not pt_update or "Bc250SdmaEmitGcr(dmaBuffer, capacity, &cursor);" not in pt_update:
+        errors.append("5F: Bc250McdmEmitGpuPageTableUpdate nao emite Bc250SdmaEmitGcr apos escrita de PTEs")
+    if not pt_update or "BC250_SDMA_DWORDS_GCR_REQ" not in pt_update:
+        errors.append("5F: Bc250McdmEmitGpuPageTableUpdate nao reserva BC250_SDMA_DWORDS_GCR_REQ na capacidade")
+
+
+def audit_t2_pte_mtype_default_nc(errors: list[str]) -> None:
+    """T2 (doc 691): a folha de PTE sai com o MTYPE padrao NC, como
+    gmc_v10_0_get_vm_pte (AMDGPU_VM_MTYPE_DEFAULT -> MTYPE_NC). UC so' por
+    ExtraLeafFlags (P6). A 5B/5C punham UC em toda folha sem snoop; proibido."""
+    cb = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c").read_text(encoding="utf-8", errors="replace"))
+    enc = function_body(cb, "NTSTATUS Bc250McdmEncodeVidMmPteWithLevelEx(")
+    if not enc:
+        errors.append("T2: Bc250McdmEncodeVidMmPteWithLevelEx ausente")
+        return
+    if re.search(r"flags\s*\|=\s*BC250_PTE_MTYPE_UC\s*;", enc):
+        errors.append("T2: o codificador volta a por MTYPE_UC incondicional na folha (5B/5C revertidas; amdgpu usa NC por padrao)")
+    if "flags |= (ExtraLeafFlags & BC250_PTE_MTYPE_UC);" not in enc:
+        errors.append("T2: a folha perdeu o UC explicito da P6 (ExtraLeafFlags)")
+    if "if (Source->CacheCoherent != 0u) flags |= BC250_PTE_SNOOPED;" not in enc:
+        errors.append("T2: snoop deve depender so' de CacheCoherent (5A)")
+    t = strip_c_comments((ROOT / "driver" / "tests" / "mcdm_callbacks_test.c").read_text(encoding="utf-8", errors="replace"))
+    if t.count("CHECK((encoded & 0x0007000000000000ull) == 0ull);") < 3:
+        errors.append("T2: o teste deixou de exigir MTYPE NC na folha padrao (VRAM, sistema e coerente)")
+    am = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    if "[T2_PTE_MTYPE] folha padrao MTYPE=%u" not in am or am.count("Bc250McdmEncodeVidMmPteWithLevelEx(&t2Caps") != 3:
+        errors.append("T2: falta a prova de boot [T2_PTE_MTYPE] que codifica paginas de teste pelo codificador real")
+
+
+def audit_dbg1_debug_trace(errors: list[str]) -> None:
+    """DBG.1 (doc 704): a coleta pesada nova so' roda em modo debug (DebugTrace=1,
+    padrao 0 no INF fonte); o validador de endereco fisico confere toda folha de
+    memoria de sistema, nao recusa nada e nao loga na thread de paginacao."""
+    inf = (ROOT / "driver" / "wdk" / "package" / "bc250mcdm.inf").read_text(encoding="utf-8", errors="replace")
+    if not re.search(r"^HKR,Parameters,DebugTrace,0x00010001,0\s*$", inf, re.M):
+        errors.append("DBG.1: o INF fonte tem de declarar DebugTrace=0 (modo debug desligado por padrao)")
+    cb = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c").read_text(encoding="utf-8", errors="replace"))
+    note = function_body(cb, "static VOID Bc250PaValidatorNote(")
+    if not note:
+        errors.append("DBG.1: Bc250PaValidatorNote ausente")
+        return
+    first_stmt = note.find("if (InterlockedCompareExchange(&g_Bc250DebugTrace, 0, 0) == 0) return;")
+    if first_stmt < 0 or first_stmt > note.find("Bc250PaClassify("):
+        errors.append("DBG.1: o validador tem de sair antes de classificar quando o modo debug esta desligado")
+    if "Bc250DisplayLog" in note:
+        errors.append("DBG.1: o validador roda na thread de paginacao e nao pode logar")
+    enc = function_body(cb, "NTSTATUS Bc250McdmEncodeVidMmPteWithLevelEx(")
+    if not re.search(r"flags \|= BC250_PTE_SYSTEM;\s*Bc250PaValidatorNote\(\(UINT32\)Source->Segment, physicalAddress\);", enc):
+        errors.append("DBG.1: toda folha de segmento 0/2 tem de passar pelo validador")
+    kick = function_body(cb, "VOID Bc250McdmTraceKick(VOID)")
+    if not kick or "g_Bc250DebugTrace" not in kick or "KeWait" in kick or "Zw" in kick:
+        errors.append("DBG.1b: o chute do rastro tem de depender do modo debug e nunca esperar nem tocar arquivo")
+    am = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    if 'L"DebugTrace"' not in am or "Bc250McdmSetDebugTrace(" not in am:
+        errors.append("DBG.1: o StartDevice tem de ler DebugTrace e repassar ao modo debug")
+
+
+def audit_dbg2_paging_ib_no_rastro(errors: list[str]) -> None:
+    """DBG.2 (doc 707): o rastro so' recebe o conteudo dos paging buffers, os
+    FlushTlb e os pontos de divisao no modo debug; nada disso loga, espera ou
+    toca registrador; os eventos sao drenados em lote (um flush por lote)."""
+    cb = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c").read_text(encoding="utf-8", errors="replace"))
+    note = function_body(cb, "static VOID Bc250Dbg2NotePagingOp(")
+    if not note:
+        errors.append("DBG.2: Bc250Dbg2NotePagingOp ausente")
+        return
+    gate = note.find("if (InterlockedCompareExchange(&g_Bc250DebugTrace, 0, 0) == 0) return;")
+    if gate < 0 or gate > note.find("Bc250CrumbEvent("):
+        errors.append("DBG.2: o registro do paging buffer tem de sair antes de gravar quando o modo debug esta desligado")
+    if re.search(r"Bc250DisplayLog|KeWait|Zw\w+\(|Bc250Active\w*Read|Write32", note):
+        errors.append("DBG.2: o registro do paging buffer roda na thread de paginacao: sem log, espera, arquivo ou registrador")
+    wrapper = function_body(cb, "NTSTATUS APIENTRY Bc250McdmBuildPagingBuffer(")
+    if not re.search(r"InterlockedCompareExchange\(&g_Bc250DebugTrace, 0, 0\) != 0\) \{\s*Bc250Dbg2NotePagingOp\(", wrapper):
+        errors.append("DBG.2: o BuildPagingBuffer so' chama o registro no modo debug")
+    split = function_body(cb, "VOID Bc250PagingSplitRecordAt(")
+    if not re.search(r"g_Bc250DebugTrace, 0, 0\) != 0\) \{\s*Bc250CrumbEvent\(BC250_CRUMB_EVT_SPLIT_REC", split):
+        errors.append("DBG.2: SPLIT_REC so' no modo debug")
+    tick = function_body(cb, "static VOID Bc250CrumbEventsTick(")
+    if "Bc250TraceWordsWrite(" in tick or not re.search(
+            r"Bc250TraceEventBatchFlush\(batched\);\s*g_Bc250CrumbEventsWritten = latest;", tick):
+        errors.append("DBG.2: os eventos do rastro tem de ir em lote (um ZwWriteFile/flush por lote) e o resto do lote sai antes de avancar o cursor")
+    am = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace"))
+    if not re.search(r"if \(Bc250McdmDebugTraceEnabled\(\) != 0u\) \{\s*uint32_t s;\s*Bc250CrumbEvent\(BC250_CRUMB_EVT_SUBMIT_SPLIT", am):
+        errors.append("DBG.2: SUBMIT_SPLIT so' no modo debug")
+
+
+def audit_dcn1_flip_pelo_hubp(errors: list[str]) -> None:
+    """DCN.1 (doc 710, P9 aberta pelo Daniel em 12/10/2026): o flip pelo HUBP0
+    so' escreve registrador de DCN com a chave DcnFlip=1 e o pipeline do GOP
+    elegivel; offsets do upstream dcn_2_0_3; endereco alto antes do baixo;
+    readback; o VSYNC so' reporta a primaria latchada; o HUBP0 volta ao GOP no
+    teardown e na passagem de posse ao BasicDisplay."""
+    inf = (ROOT / "driver" / "wdk" / "package" / "bc250mcdm.inf").read_text(encoding="utf-8", errors="replace")
+    if not re.search(r"^HKR,Parameters,DcnFlip,0x00010001,0\s*$", inf, re.M):
+        errors.append("DCN.1: o INF fonte tem de declarar DcnFlip=0 (flip pelo DCN desligado por padrao)")
+    hdr = (ROOT / "driver" / "core" / "bc250_dcn_flip_contract.h").read_text(encoding="utf-8", errors="replace")
+    # (DMU_BASE seg2 0x34C0 + mm) * 4, mm de dcn_2_0_3_offset.h (BASE_IDX 2)
+    expected = {
+        "BC250_DCN_FLIP_REG_HUBP0_SURFACE_CONFIG": 0x05E5, "BC250_DCN_FLIP_REG_HUBP0_PRI_VIEWPORT_DIM": 0x05EA,
+        "BC250_DCN_FLIP_REG_HUBPREQ0_SURFACE_PITCH": 0x0607, "BC250_DCN_FLIP_REG_HUBPREQ0_PRIMARY_ADDR": 0x060A,
+        "BC250_DCN_FLIP_REG_HUBPREQ0_PRIMARY_ADDR_HI": 0x060B, "BC250_DCN_FLIP_REG_HUBPREQ0_SURFACE_CONTROL": 0x061A,
+        "BC250_DCN_FLIP_REG_HUBPREQ0_FLIP_CONTROL": 0x061B, "BC250_DCN_FLIP_REG_HUBPREQ0_EARLIEST_INUSE": 0x0625,
+        "BC250_DCN_FLIP_REG_HUBPREQ0_EARLIEST_INUSE_HI": 0x0626, "BC250_DCN_FLIP_REG_OTG0_CONTROL": 0x1B41,
+        "BC250_DCN_FLIP_REG_OTG0_STATUS_FRAME_COUNT": 0x1B4C, "BC250_DCN_FLIP_REG_OTG0_MASTER_UPDATE_LOCK": 0x1B8B,
+    }
+    for name, mm in expected.items():
+        m = re.search(r"#define\s+" + name + r"\s+0x([0-9A-Fa-f]+)u", hdr)
+        if not m or int(m.group(1), 16) != (0x34C0 + mm) * 4:
+            errors.append(f"DCN.1: {name} diverge de (0x34C0 + 0x{mm:04X}) * 4 (dcn_2_0_3_offset.h)")
+    ddi = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace"))
+    writers = set()
+    for fn in re.finditer(r"\n(?:static\s+)?(?:VOID|BOOLEAN|void|NTSTATUS|ULONG|LONG64)\s+(\w+)\s*\(", ddi):
+        body = function_body(ddi, ddi[fn.start() + 1:fn.end()])
+        if "Bc250DcnWrite(" in body and fn.group(1) != "Bc250DcnWrite":
+            writers.add(fn.group(1))
+    # P9 ampliada pelo Daniel em 12/10/2026 (DCN.2, doc 713): os escritores da
+    # DCN.2 sao nomeados um a um e cada um e' fechado por portao proprio em
+    # audit_dcn2_sobre_o_gop. Qualquer escritor fora desta lista reprova.
+    dcn2_writers = {
+        "Bc250Dcn2AuxAcquire", "Bc250Dcn2AuxPutByte", "Bc250Dcn2AuxRelease", "Bc250Dcn2AuxXfer",
+        "Bc250Dcn2Blank", "Bc250Dcn2CrcArm", "Bc250Dcn2CrcDisarm", "Bc250Dcn2CursorRestore",
+        "Bc250Dcn2CursorSetPosition", "Bc250Dcn2CursorSetShape", "Bc250Dcn2IrqArm",
+        "Bc250Dcn2IrqDisarm", "Bc250Dcn2Teardown", "Bc250DisplayDcnIsr",
+    }
+    if writers - {"Bc250DcnFlipProgram", "Bc250DcnFlipRestoreGop"} - dcn2_writers:
+        errors.append(f"DCN.1: escrita de DCN fora do flip, do retorno ao GOP e da DCN.2: {sorted(writers)}")
+    prog = function_body(ddi, "static BOOLEAN Bc250DcnFlipProgram(")
+    gate = prog.find("if (InterlockedCompareExchange(&s_Bc250Dcn.Armed, 0, 0) == 0")
+    if gate < 0 or gate > prog.find("Bc250DcnWrite("):
+        errors.append("DCN.1: o flip tem de sair antes de escrever quando nao esta armado")
+    hi = prog.find("Bc250DcnWrite(BC250_DCN_FLIP_REG_HUBPREQ0_PRIMARY_ADDR_HI")
+    lo = prog.find("Bc250DcnWrite(BC250_DCN_FLIP_REG_HUBPREQ0_PRIMARY_ADDR,")
+    if hi < 0 or lo < 0 or hi > lo:
+        errors.append("DCN.1: o endereco ALTO tem de ser escrito antes do BAIXO (o baixo dispara o latch)")
+    if "Bc250DcnRead(BC250_DCN_FLIP_REG_HUBPREQ0_PRIMARY_ADDR)" not in prog[lo:]:
+        errors.append("DCN.1: o flip tem de fazer readback do endereco depois de escrever")
+    arm = function_body(ddi, "void Bc250DisplaySetDcnFlipEnabled(")
+    if not re.search(r"if \(s_Bc250Dcn\.Refuse != 0u\) \{.*?return;\s*\}\s*InterlockedExchange\(&s_Bc250Dcn\.Armed, 1\);", arm, re.S) \
+            or "if (Enabled == 0u)" not in arm:
+        errors.append("DCN.1: so' arma com a chave ligada e o GOP elegivel (Bc250DcnFlipEvaluateGop == 0)")
+    teardown = function_body(ddi, "void Bc250DisplayTeardown(")
+    post = function_body(ddi, "NTSTATUS APIENTRY Bc250DxgkDdiStopDeviceAndReleasePostDisplayOwnership(")
+    if 'Bc250DcnFlipRestoreGop("TEARDOWN")' not in teardown or 'Bc250DcnFlipRestoreGop("POST_DISPLAY_OWNERSHIP")' not in post:
+        errors.append("DCN.1: o HUBP0 tem de voltar ao GOP no teardown e na passagem de posse (Lei 5)")
+    vs = function_body(ddi, "static BOOLEAN Bc250SynchronizedVsyncCallback(")
+    if not re.search(r"if \(Bc250DcnFlipDisplayedSegment\(\) != 0\) \{\s*"
+                     r"data\.CrtcVsync\.PhysicalAddress\.QuadPart = Bc250DcnFlipDisplayedSegment\(\);\s*"
+                     r"\} else if \(state->PrimaryAddressValid", vs):
+        errors.append("DCN.1: o VSYNC tem de reportar a primaria latchada pelo HUBP0")
+    if not re.search(r"\} else if \(isFlip && !isSubWindow && Bc250DisplayDcnFlipArmed\(\) != 0u\) \{", ddi):
+        errors.append("DCN.1: o Present so' omite a copia ao scanout em flip de tela cheia com o flip armado")
+    am = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    if 'L"DcnFlip"' not in am or "Bc250DisplaySetDcnFlipEnabled(dcnPresent == 1u && dcnFlip == 1u ? 1u : 0u)" not in am:
+        errors.append("DCN.1: o StartDevice tem de ler DcnFlip e repassar so' com present==1 e valor==1")
+    # Corrida 269 (doc 711): 15 de 881 flips sem destino. Cada flip cai num
+    # balde so' (latchado, substituido, pendente) e o teardown confere a conta.
+    poll = function_body(ddi, "static VOID Bc250DcnFlipPollLatch(")
+    if "DisplayedSeg, 0, 0) == requestedSeg) return;" in poll \
+            or not re.search(r"if \(resolved >= flipsBefore\) return;", poll) \
+            or not re.search(r"InterlockedCompareExchange\(&s_Bc250Dcn\.ResolvedSeq, flipsBefore, resolved\) != resolved\) return;", poll) \
+            or "Bc250DcnFlipSupersededBetween(" not in poll:
+        errors.append("DCN.1: o latch se resolve pela sequencia do flip (CAS em ResolvedSeq) e conta os substituidos")
+    restore = function_body(ddi, "static VOID Bc250DcnFlipRestoreGop(")
+    if "(latched + superseded + pending == flips) ? \"FECHA\" : \"DIVERGE\"" not in restore:
+        errors.append("DCN.1: o teardown tem de conferir latchados + substituidos + pendentes == flips")
+    # Corrida 270 (doc 711): resumo de rotas, baldes do latch e VSYNC contra o
+    # OTG no teardown, e primaria fora do segmento 1 contada (nao some calada).
+    summary = function_body(ddi, "static VOID Bc250DcnFlipLogSummary(")
+    if "Bc250DcnFlipLogSummary(Why);" not in restore or "Bc250DcnWrite(" in summary \
+            or "[DCN1_RESUMO]" not in summary:
+        errors.append("DCN.1: o teardown tem de publicar o [DCN1_RESUMO], que so' le registrador")
+    switch = function_body(ddi, "static NTSTATUS Bc250DisplaySwitchPrimary(")
+    if "InterlockedIncrement(&s_Bc250Dcn.NotSegment1)" not in switch:
+        errors.append("DCN.1: primaria fora do segmento 1 com o flip armado tem de ser contada e nomeada")
+    # Corrida 270 (doc 712): o log de Present nao pode dizer SDMA=YES quando a
+    # DCN.1 pulou a copia, e o resumo periodico sai por tempo, nao por contagem.
+    if "dcnNoCopy = TRUE;" not in ddi or "if (!bltToDestination && dcnNoCopy && (count <= 10 || (count % 60) == 0)) {" not in ddi:
+        errors.append("DCN.1: Present sem copia tem de ser registrado como SEM COPIA, nao como Blt SDMA=YES")
+    if "(l % 1024) == 0) Bc250DcnFlipLogSummary" in poll or "Bc250DcnFrameDelta(s_LastSummaryFrame, nowFrame) >= 256u" not in poll:
+        errors.append("DCN.1: o [DCN1_RESUMO] periodico sai por quadros do OTG, nao por contagem de latches")
+
+
+def audit_dcn2_sobre_o_gop(errors: list[str]) -> None:
+    """DCN.2 (doc 713, P9 ampliada pelo Daniel em 12/10/2026): timing medido no
+    VidPn, VSYNC/flip pela interrupcao do DCN, CRC do OTG, cursor por hardware,
+    EDID real por AUX, HPD so' leitura e DPMS. Cada item so' escreve com o seu
+    bit da chave DcnExt (INF, padrao 0) e volta como o GOP deixou no teardown."""
+    inf = (ROOT / "driver" / "wdk" / "package" / "bc250mcdm.inf").read_text(encoding="utf-8", errors="replace")
+    if not re.search(r"^HKR,Parameters,DcnExt,0x00010001,0\s*$", inf, re.M):
+        errors.append("DCN.2: o INF fonte tem de declarar DcnExt=0 (tudo desligado por padrao)")
+    hdr = (ROOT / "driver" / "core" / "bc250_dcn_ext_contract.h").read_text(encoding="utf-8", errors="replace")
+    up = (ROOT / "inc" / "linux_ref" / "dcn" / "dcn_2_0_3_offset.h").read_text(encoding="utf-8", errors="replace")
+    names = {
+        "OTG0_H_TOTAL": "OTG0_OTG_H_TOTAL", "OTG0_H_BLANK_START_END": "OTG0_OTG_H_BLANK_START_END",
+        "OTG0_H_SYNC_A": "OTG0_OTG_H_SYNC_A", "OTG0_H_SYNC_A_CNTL": "OTG0_OTG_H_SYNC_A_CNTL",
+        "OTG0_V_TOTAL": "OTG0_OTG_V_TOTAL", "OTG0_V_BLANK_START_END": "OTG0_OTG_V_BLANK_START_END",
+        "OTG0_V_SYNC_A": "OTG0_OTG_V_SYNC_A", "OTG0_V_SYNC_A_CNTL": "OTG0_OTG_V_SYNC_A_CNTL",
+        "OTG0_BLANK_CONTROL": "OTG0_OTG_BLANK_CONTROL", "OTG0_STATUS_POSITION": "OTG0_OTG_STATUS_POSITION",
+        "OTG0_CRC_CNTL": "OTG0_OTG_CRC_CNTL", "OTG0_CRC0_WINDOWA_X": "OTG0_OTG_CRC0_WINDOWA_X_CONTROL",
+        "OTG0_CRC0_WINDOWA_Y": "OTG0_OTG_CRC0_WINDOWA_Y_CONTROL", "OTG0_CRC0_WINDOWB_X": "OTG0_OTG_CRC0_WINDOWB_X_CONTROL",
+        "OTG0_CRC0_WINDOWB_Y": "OTG0_OTG_CRC0_WINDOWB_Y_CONTROL", "OTG0_CRC0_DATA_RG": "OTG0_OTG_CRC0_DATA_RG",
+        "OTG0_CRC0_DATA_B": "OTG0_OTG_CRC0_DATA_B", "OTG0_GLOBAL_SYNC_STATUS": "OTG0_OTG_GLOBAL_SYNC_STATUS",
+        "HUBPREQ0_FLIP_INTERRUPT": "HUBPREQ0_DCSURF_SURFACE_FLIP_INTERRUPT",
+        "HUBPREQ0_CURSOR_SETTINGS": "HUBPREQ0_CURSOR_SETTINGS", "CURSOR0_CONTROL": "CURSOR0_0_CURSOR_CONTROL",
+        "CURSOR0_SURFACE_ADDRESS": "CURSOR0_0_CURSOR_SURFACE_ADDRESS",
+        "CURSOR0_SURFACE_ADDR_HIGH": "CURSOR0_0_CURSOR_SURFACE_ADDRESS_HIGH", "CURSOR0_SIZE": "CURSOR0_0_CURSOR_SIZE",
+        "CURSOR0_POSITION": "CURSOR0_0_CURSOR_POSITION", "CURSOR0_HOT_SPOT": "CURSOR0_0_CURSOR_HOT_SPOT",
+        "CURSOR0_DST_OFFSET": "CURSOR0_0_CURSOR_DST_OFFSET", "CNVC_CUR0_CONTROL": "CNVC_CUR0_CURSOR0_CONTROL",
+        "CNVC_CUR0_COLOR0": "CNVC_CUR0_CURSOR0_COLOR0", "CNVC_CUR0_COLOR1": "CNVC_CUR0_CURSOR0_COLOR1",
+        "CNVC_CUR0_FP_SCALE_BIAS": "CNVC_CUR0_CURSOR0_FP_SCALE_BIAS",
+    }
+    for ours, theirs in names.items():
+        m = re.search(r"#define\s+BC250_DCN2_REG_" + ours + r"\s+BC250_DCN_BYTE\(0x([0-9A-Fa-f]+)u\)", hdr)
+        u = re.search(r"#define\s+mm" + theirs + r"\s+0x([0-9A-Fa-f]+)", up)
+        if not m or not u or int(m.group(1), 16) != int(u.group(1), 16):
+            errors.append(f"DCN.2: BC250_DCN2_REG_{ours} diverge de mm{theirs} (dcn_2_0_3_offset.h)")
+    for idx, (ours, theirs) in enumerate([("HPD_INT_STATUS", "HPD{i}_DC_HPD_INT_STATUS"),
+                                          ("AUX_CONTROL", "DP_AUX{i}_AUX_CONTROL"),
+                                          ("AUX_SW_DATA", "DP_AUX{i}_AUX_SW_DATA"),
+                                          ("AUX_SW_STATUS", "DP_AUX{i}_AUX_SW_STATUS")]):
+        m = re.search(r"#define\s+BC250_DCN2_REG_" + ours + r"\(i\)\s+BC250_DCN_BYTE\(0x([0-9A-Fa-f]+)u \+ (0x[0-9A-Fa-f]+|\d+)u \* \(uint32_t\)\(i\)\)", hdr)
+        for i in (0, 1):
+            u = re.search(r"#define\s+mm" + theirs.format(i=i) + r"\s+0x([0-9A-Fa-f]+)", up)
+            if not m or not u or int(m.group(1), 16) + int(m.group(2), 0) * i != int(u.group(1), 16):
+                errors.append(f"DCN.2: BC250_DCN2_REG_{ours}({i}) diverge de mm{theirs.format(i=i)}")
+    ddi = strip_c_comments((ROOT / "driver" / "wdk" / "bc250_display_ddi.c").read_text(encoding="utf-8", errors="replace"))
+    ext = function_body(ddi, "VOID Bc250DisplaySetDcnExt(")
+    for need in ("if (Bc250Dcn2Key(BC250_DCN2_KEY_IRQ)) Bc250Dcn2IrqArm();",
+                 "if (Bc250Dcn2Key(BC250_DCN2_KEY_CRC)) Bc250Dcn2CrcArm();",
+                 "if (Bc250Dcn2Key(BC250_DCN2_KEY_TIMING)) {",
+                 "if (Bc250Dcn2Key(BC250_DCN2_KEY_EDID)) {\n        Bc250Dcn2ReadRealEdid();",
+                 "s_Bc250Dcn2.RealEdidDtd == 0 && s_Bc250Dcn2.TimingApplied"):
+        if need not in ext:
+            errors.append(f"DCN.2: cada item so' arma com o proprio bit de DcnExt ({need[:48]}...)")
+    if "s_Bc250Dcn2.Keys = 0u;\n        return;" not in ext:
+        errors.append("DCN.2: sem GOP lido ou com a chave 0, a DCN.2 inteira fica desligada")
+    if "if (!Bc250Dcn2Key(BC250_DCN2_KEY_DPMS)) return;" not in function_body(ddi, "static VOID Bc250Dcn2Blank("):
+        errors.append("DCN.2: o DPMS so' apaga o OTG com o bit DPMS")
+    shape = function_body(ddi, "static NTSTATUS Bc250Dcn2CursorSetShape(")
+    if "if (!Bc250DisplayDcnCursorReady()) return STATUS_NOT_SUPPORTED;" not in shape \
+            or "Shape->Flags.Value != BC250_DCN_POINTER_COLOR" not in shape:
+        errors.append("DCN.2: o cursor so' escreve com a chave e so' aceita forma de cor (ARGB) nesta rodada")
+    if "Bc250Dcn2Key(BC250_DCN2_KEY_CURSOR) && s_Bc250Dcn2.CursorVramReady" not in function_body(ddi, "ULONG Bc250DisplayDcnCursorReady("):
+        errors.append("DCN.2: cursor pronto exige o bit CURSOR e o buffer de VRAM reservado")
+    isr = function_body(ddi, "BOOLEAN Bc250DisplayDcnIsr(")
+    if isr.count("Bc250DcnWrite(") != 2 or "Bc250DisplayLog" in isr \
+            or "BC250_DCN2_VSTARTUP_EVENT_CLEAR, BC250_DCN2_VSTARTUP_EVENT_CLEAR" not in isr \
+            or "BC250_DCN2_SURFACE_FLIP_CLEAR, BC250_DCN2_SURFACE_FLIP_CLEAR" not in isr:
+        errors.append("DCN.2: o ISR do DCN so' faz o ack (bit CLEAR, Lei 6) e nao loga em DIRQL")
+    rel = function_body(ddi, "static VOID Bc250Dcn2AuxRelease(")
+    if "Bc250DcnWrite(BC250_DCN2_REG_AUX_CONTROL(Ch), SavedControl);" not in rel:
+        errors.append("DCN.2: o AUX volta como o GOP deixou depois da leitura do EDID (Lei 5)")
+    if function_body(ddi, "static VOID Bc250Dcn2ReadRealEdid(").count("Bc250Dcn2AuxRelease(") != 2:
+        errors.append("DCN.2: a leitura do EDID libera o AUX nos dois caminhos (recusa e fim)")
+    teardown = function_body(ddi, "void Bc250DisplayTeardown(")
+    post = function_body(ddi, "NTSTATUS APIENTRY Bc250DxgkDdiStopDeviceAndReleasePostDisplayOwnership(")
+    for body, why in ((teardown, "TEARDOWN"), (post, "POST_DISPLAY_OWNERSHIP")):
+        a = body.find(f'Bc250Dcn2Teardown("{why}")')
+        b = body.find(f'Bc250DcnFlipRestoreGop("{why}")')
+        if a < 0 or b < 0 or a > b:
+            errors.append(f"DCN.2: interrupcao/CRC/cursor/blank voltam antes do HUBP0 no {why} (Lei 5)")
+    td = function_body(ddi, "static VOID Bc250Dcn2Teardown(")
+    for need in ("Bc250Dcn2IrqDisarm();", "Bc250Dcn2CrcDisarm();", "Bc250Dcn2CursorRestore();", "Bc250Dcn2CursorUnmap();"):
+        if need not in td:
+            errors.append(f"DCN.2: o teardown tem de chamar {need}")
+    am = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    if 'L"DcnExt"' not in am or "Bc250DisplaySetDcnExt(extPresent == 1u ? (dcnExt & BC250_DCN2_KEY_ALL) : 0u)" not in am:
+        errors.append("DCN.2: o StartDevice le DcnExt e repassa so' com present==1, mascarado")
+    sp = (ROOT / "driver" / "wdk" / "bc250_sdma_present.c").read_text(encoding="utf-8", errors="replace")
+    if "} else if (client == 0x04u && Bc250DisplayDcnIsr(src)) {" not in sp:
+        errors.append("DCN.2: o ISR do IH entrega o cliente DCE (0x04) ao display")
+    mc = (ROOT / "driver" / "wdk" / "bc250_mcdm_callbacks.c").read_text(encoding="utf-8", errors="replace")
+    if not re.search(r"if \(Bc250DisplayDcnCursorReady\(\) != 0u\) \{\s*caps->PointerCaps\.Color = 1u;", mc) \
+            or "caps->PointerCaps.Monochrome = 1u" in mc:
+        errors.append("DCN.2: caps de ponteiro so' de cor e so' com o cursor pronto")
+
+
+def audit_mec2_poll_sem_seletor(errors: list[str]) -> None:
+    """MEC.2 (doc 701): o poll do MEC (timer de 1 ms) so' escreve o seletor GRBM
+    e le CP_HQD_PQ_RPTR quando ha fence pendente ainda nao vista. A aposentadoria
+    sai da fence e do writeback em memoria, como o amdgpu."""
+    se = (ROOT / "driver" / "wdk" / "bc250_submission_engine.c").read_text(encoding="utf-8", errors="replace")
+    if not re.search(r"#define\s+BC250_MEC2_POLL_SEM_SELETOR\s+1\b", se):
+        errors.append("MEC.2: chave BC250_MEC2_POLL_SEM_SELETOR precisa estar em 1")
+    body = function_body(strip_c_comments(se), "NTSTATUS Bc250SubmissionEnginePoll(")
+    if not body:
+        errors.append("MEC.2: Bc250SubmissionEnginePoll ausente")
+        return
+    gate_at = body.find("if (selectorNeeded) {")
+    first_grbm = body.find("BC250_GRBM_GFX_INDEX_BYTE_OFFSET")
+    first_rptr = body.find("BC250_HQD_MMIO_PQ_RPTR")
+    if gate_at < 0 or first_grbm < gate_at or first_rptr < gate_at:
+        errors.append("MEC.2: escrita do seletor GRBM ou leitura de PQ_RPTR fora do ramo selectorNeeded")
+    if not re.search(r"selectorNeeded = \(engine->ComputeRing\.Vmid == BC250_GCVM_COMPUTE_VMID &&\s*"
+                     r"pendingFence > engine->ComputeRing\.LastRetiredFence &&\s*"
+                     r"observedFence != \(uint32_t\)pendingFence\)", body):
+        errors.append("MEC.2: selectorNeeded tem de exigir fence do MEC pendente e ainda nao vista")
+    if not re.search(r"Bc250PersistentRingRetire\(&engine->ComputeRing,\s*observedFence,", body):
+        errors.append("MEC.2: a aposentadoria do MEC tem de continuar pela fence em memoria")
+    am = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    if "Bc250McdmInstallMecPollSources(Bc250SubmissionMecPollCalls," not in am:
+        errors.append("MEC.2: os contadores do poll do MEC tem de ir ao rastro (BMP1)")
+
+
+def audit_ft1_flush_so_do_processo(errors: list[str]) -> None:
+    """FT.1 (doc 697): FLUSH_TLB de processo de usuario invalida so' as VMIDs
+    desse processo (pool READY/INSTALLING, VMID 7, compute), como o amdgpu;
+    raiz desconhecida falha fechado para a mascara de todas as VMIDs."""
+    am = (ROOT / "driver" / "wdk" / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace")
+    if not re.search(r"#define\s+BC250_FT1_FLUSH_SO_DO_PROCESSO\s+1\b", am):
+        errors.append("FT.1: chave BC250_FT1_FLUSH_SO_DO_PROCESSO precisa estar em 1")
+    handler = function_body(strip_c_comments(am), "NTSTATUS Bc250ActiveFlushTlbHandler(")
+    if not handler:
+        errors.append("FT.1: Bc250ActiveFlushTlbHandler ausente")
+        return
+    if "Bc250VmidPoolMaskForRoot(&active->VmidPool, ftRoot)" not in handler:
+        errors.append("FT.1: a mascara do processo tem de vir de Bc250VmidPoolMaskForRoot")
+    if "ftUserMask = Bc250ActiveRingTlbFlushVmidMask(active);" not in handler:
+        errors.append("FT.1: raiz desconhecida precisa falhar fechado para a mascara de todas as VMIDs")
+    if not re.search(r"\(1u << BC250_GCVM_VMID8\) :\s*#if BC250_FT1_FLUSH_SO_DO_PROCESSO\s*ftUserMask;", handler):
+        errors.append("FT.1: o ponto de divisao do 4c.4 tem de usar ftUserMask para processo de usuario")
+    pool = (ROOT / "driver" / "core" / "bc250_vmid_pool_contract.c").read_text(encoding="utf-8", errors="replace")
+    body = function_body(strip_c_comments(pool), "uint32_t Bc250VmidPoolMaskForRoot(")
+    if "BC250_VMID_POOL_INSTALLING" not in body or "entry->RootPhysical == RootPhysical" not in body:
+        errors.append("FT.1: Bc250VmidPoolMaskForRoot precisa contar a VMID em instalacao (INSTALLING)")
+
+
+def audit_c3_vram_um_so_tipo_wc(errors: list[str]) -> None:
+    """C3 (doc 674): a VRAM vista pela CPU tem UM so' tipo de memoria (WC), como
+    o amdgpu em APU. Todo mapeamento do KMD traduzido para a DRAM sai WC, e
+    nenhum MmMapIoSpace direto UC sobra sobre um endereco traduzido."""
+    path = (ROOT / "driver/wdk/bc250_vram_cpu_path.h").read_text(encoding="utf-8", errors="replace")
+    if not re.search(r"#define\s+BC250_C3_VRAM_DO_WINDOWS_PELA_DRAM\s+1\b", path):
+        errors.append("C3: chave BC250_C3_VRAM_DO_WINDOWS_PELA_DRAM precisa estar em 1")
+    helper = function_body(strip_c_comments(path), "static __inline NTSTATUS Bc250VramCpuMapMemory(")
+    if "Bc250VramCpuUseWc(translated, BarPhysical)" not in helper or helper.find("Bc250VramCpuUseWc(") > helper.find("CacheType == MmNonCached"):
+        errors.append("C3: o helper precisa escolher WC para endereco traduzido ANTES de honrar o tipo pedido")
+    am = strip_c_comments((ROOT / "driver/wdk/bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace"))
+    # Um MmMapIoSpace UC logo depois de um Bc250VramCpuTranslate (ate 400 chars)
+    # e' um mapeamento direto da DRAM fora do helper: dois tipos na mesma pagina.
+    for m in re.finditer(r"MmMapIoSpace\([^;]*MmNonCached\)", am):
+        if "Bc250VramCpuTranslate(" in am[max(0, m.start() - 400):m.start()]:
+            errors.append("C3: MmMapIoSpace UC logo apos Bc250VramCpuTranslate (mapeamento da DRAM fora do helper WC)")
+            break
+    if am.count("Bc250VramCpuMapTranslated(") < 4:
+        errors.append("C3: os 4 mapeamentos diretos de VRAM do KMD (GFX x2, walker, GART) precisam passar por Bc250VramCpuMapTranslated")
+
+
+def audit_c1_gfx_doorbell_like_amdgpu(errors: list[str]) -> None:
+    """C1 (doc 672): WPTR do anel GFX por doorbell como gfx_v10_0_ring_set_wptr_gfx,
+    com prova antes de ativar, rollback sem prova, escritores unicos do RANGE e
+    CP_RB_WPTR_POLL_CNTL no valor da placa."""
+    am = strip_c_comments((ROOT / "driver/wdk/bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace"))
+    if not re.search(r"#define\s+BC250_C1_GFX_DOORBELL\s+1\b", am):
+        errors.append("C1: chave BC250_C1_GFX_DOORBELL precisa estar em 1 para a 253")
+    if not re.search(r"#define\s+BC250_C1_GFX_DOORBELL_INDEX\s+0x116u", am):
+        errors.append("C1: indice da doorbell do GFX precisa ser 0x116 (AMDGPU_NAVI10_DOORBELL_GFX_RING0 << 1)")
+    arm = function_body(am, "static BOOLEAN Bc250ActiveC1GfxDoorbellArm(")
+    if not arm:
+        errors.append("C1: Bc250ActiveC1GfxDoorbellArm ausente")
+        return
+    for need, why in (("Bc250SdmaPresentDoorbellApertureReady()", "preflight da abertura do BIF"),
+                      ("BC250_REG_CP_MEC_DOORBELL_RANGE_UPPER", "preflight da faixa do MEC (MEC.1)"),
+                      ("DoorbellCtrlBefore = ctrl", "snapshot"),
+                      ("loRb != loWant || hiRb != hiWant", "readback"),
+                      ("Bc250SdmaPresentDoorbellWrite64(BC250_C1_GFX_DOORBELL_BYTE_OFFSET", "prova pela doorbell"),
+                      ("rptr == cursor", "prova pelo RPTR"),
+                      ("Bc250ActiveC1GfxDoorbellDisarm(Context, \"prova\")", "rollback sem prova")):
+        if need not in arm:
+            errors.append("C1: falta " + why + " no arme da doorbell do GFX")
+    i_prova = arm.find("Bc250SdmaPresentDoorbellWrite64(")
+    if arm.find("BC250_GFX_REG_CP_RB0_WPTR", 0, i_prova) >= 0:
+        errors.append("C1: a prova da doorbell nao pode publicar o WPTR por MMIO antes do kick")
+    act = arm.find("DoorbellActive = 1u")
+    if act < 0 or act < arm.find("rptr == cursor"):
+        errors.append("C1: DoorbellActive so' pode ir a 1 depois da prova")
+    if "plan.ProgramPollCntl = BC250_C1_GFX_DOORBELL ? 0u : 1u;" not in am:
+        errors.append("C1: CP_RB_WPTR_POLL_CNTL precisa ficar no valor da placa com a doorbell (o amdgpu nao o escreve)")
+    if "if (!gfxDoorbellKicked) {" not in am or "gfxDoorbellKicked = TRUE;" not in am:
+        errors.append("C1: com a doorbell ativa o submit do GFX nao pode fazer GRBM/MMIO de WPTR")
+    if am.count("Bc250ActiveC1GfxDoorbellArm(") != 3:
+        errors.append("C1: o arme so' pode acontecer no ONLINE e depois da prova do restart do TDR")
+    if 'Bc250ActiveC1GfxDoorbellDisarm(activeCtx, "TDR_QUIESCE")' not in am or \
+       'Bc250ActiveC1GfxDoorbellDisarm(Context, "OFFLINE")' not in am:
+        errors.append("C1: a doorbell precisa ser desarmada no quiesce do TDR e no OFFLINE")
+    # escritores do RANGE do RB: so' a C1
+    writes = [m.start() for m in re.finditer(r"Write32\([^;]*BC250_REG_CP_RB_DOORBELL_RANGE_(LOWER|UPPER)", am)]
+    c1a = am.find("static void Bc250ActiveC1GfxDoorbellDisarm(")
+    c1b = am.find("static NTSTATUS Bc250ActiveGfxEngineOnline(")
+    for w in writes:
+        if not (c1a <= w < c1b):
+            errors.append("C1: escrita do CP_RB_DOORBELL_RANGE fora do arme/desarme da C1")
+            break
+
+
+def audit_p5_geometria_unica_de_4_niveis(errors: list[str]) -> None:
+    """P5 (doc 667): a geometria da tabela de paginas sai de UM header
+    (bc250_gpuva_geometry.h). O que o driver declara ao dxgkrnl (GPUMMUCAPS,
+    PAGETABLELEVELDESC, GetRootPageTableSize, UpdatePageTable) e o que programa
+    no silicio (GCVM_CONTEXTn_CNTL DEPTH/BLOCK_SIZE, END) derivam das mesmas
+    constantes; nenhum literal de 2 niveis/34 bits pode sobrar no caminho."""
+    core = ROOT / "driver" / "core"
+    wdk = ROOT / "driver" / "wdk"
+    geo = (core / "bc250_gpuva_geometry.h").read_text(encoding="utf-8", errors="replace")
+    m = re.search(r"#define\s+BC250_P5_QUATRO_NIVEIS\s+(\d+)", geo)
+    if not m:
+        errors.append("P5: chave BC250_P5_QUATRO_NIVEIS ausente do header de geometria")
+        return
+    quatro = m.group(1) != "0"
+    blocks = geo.split("#else")
+    if len(blocks) < 2:
+        errors.append("P5: header de geometria sem os dois ramos (4 e 2 niveis)")
+        return
+    ramo = blocks[0] if quatro else blocks[1]
+
+    def val(name: str):
+        mm = re.search(r"#define\s+" + name + r"\s+(\d+)u", ramo)
+        return int(mm.group(1)) if mm else None
+
+    levels = val("BC250_GPUVA_PT_LEVEL_COUNT")
+    leaf = val("BC250_GPUVA_PT_LEAF_INDEX_BITS")
+    rootb = val("BC250_GPUVA_PT_ROOT_INDEX_BITS")
+    if None in (levels, leaf, rootb):
+        errors.append("P5: LEVEL_COUNT/LEAF/ROOT nao legiveis no ramo ativo do header")
+        return
+    va = 12 + leaf * (levels - 1) + rootb
+    if quatro and (levels, leaf, rootb, va) != (4, 9, 9, 48):
+        errors.append(f"P5: com a chave em 1 a geometria precisa ser 4x9 = 48 bits (achado {levels}x{leaf}/{rootb} = {va})")
+    if not quatro and (levels, leaf, rootb, va) != (2, 9, 13, 34):
+        errors.append("P5: com a chave em 0 a geometria precisa voltar a 2 niveis/34 bits")
+    if va > 48:
+        errors.append("P5: VA acima do teto arquitetural de 48 bits")
+    if "(BC250_GPUVA_PT_LEVEL_COUNT - 1u)" not in geo.split("BC250_GPUVA_PT_GCVM_DEPTH", 1)[1][:80]:
+        errors.append("P5: PAGE_TABLE_DEPTH precisa ser LEVEL_COUNT - 1 (gfxhub_v2_0_setup_vmid_config)")
+    if "(BC250_GPUVA_PT_LEAF_INDEX_BITS - 9u)" not in geo:
+        errors.append("P5: PAGE_TABLE_BLOCK_SIZE precisa ser block_size - 9")
+
+    sc = (core / "bc250_gpuva_space_contract.h").read_text(encoding="utf-8", errors="replace")
+    sc_code = strip_c_comments(sc)
+    if '#include "bc250_gpuva_geometry.h"' not in sc_code:
+        errors.append("P5: bc250_gpuva_space_contract.h nao inclui a geometria unica")
+    for nm in ("BC250_GPUVA_PT_LEVEL_COUNT", "BC250_GPUVA_PT_LEAF_INDEX_BITS", "BC250_GPUVA_PT_ROOT_INDEX_BITS"):
+        if re.search(r"#define\s+" + nm + r"\s+\d", sc_code):
+            errors.append(f"P5: {nm} redefinido no contrato de espaco (segunda fonte de verdade)")
+
+    vm = strip_c_comments((core / "bc250_gcvm_vmid8_transaction.h").read_text(encoding="utf-8", errors="replace"))
+    if '#include "bc250_gpuva_geometry.h"' not in vm:
+        errors.append("P5: bc250_gcvm_vmid8_transaction.h nao inclui a geometria unica")
+    for nm in ("BC250_GCVM_CONTEXT8_CNTL_TARGET_VALUE", "BC250_GCVM_CONTEXT8_CNTL_FAULT_OBSERVABLE_VALUE",
+               "BC250_GCVM_CONTEXT8_PT_END_LO_VALUE", "BC250_GCVM_CONTEXT8_PT_END_HI_VALUE"):
+        if re.search(r"#define\s+" + nm + r"\s+0x[0-9A-Fa-f]+u?\s*$", vm, re.M):
+            errors.append(f"P5: {nm} voltou a ser literal; precisa derivar da geometria")
+    if "BC250_GPUVA_PT_GCVM_DEPTH" not in vm or "BC250_GPUVA_PT_GCVM_END_PFN" not in vm:
+        errors.append("P5: CNTL/END do contexto nao derivam de DEPTH/END_PFN da geometria")
+
+    cb = strip_c_comments((wdk / "bc250_mcdm_callbacks.c").read_text(encoding="utf-8", errors="replace"))
+    if "PageTableLevelCount != 2u" in cb:
+        errors.append("P5: GetRootPageTableSize ainda exige 2 niveis literais")
+    if "caps.PageTableLevelCount != BC250_GPUVA_PT_LEVEL_COUNT" not in cb:
+        errors.append("P5: GetRootPageTableSize precisa conferir LEVEL_COUNT da geometria")
+    if "desc->PageTableIndexBitCount = BC250_GPUVA_PT_LEVEL_INDEX_BITS(in->LevelIndex);" not in cb:
+        errors.append("P5: PAGETABLELEVELDESC precisa sair por nivel da geometria")
+    if "levelBits = BC250_GPUVA_PT_LEVEL_INDEX_BITS(update->PageTableLevel);" not in cb:
+        errors.append("P5: limites do UpdatePageTable precisam sair por nivel da geometria")
+    if re.search(r"PageTableLevel\s*==\s*0u\)\s*\?\s*\n?\s*BC250_GPUVA_PT_LEAF_INDEX_BITS", cb):
+        errors.append("P5: escolha binaria folha x raiz voltou ao UpdatePageTable")
+
+    am = strip_c_comments((wdk / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace"))
+    for fn in ("static BOOLEAN Bc250ActiveWalkGpuVa(\n    _In_ const char *Label,\n    _In_ uint64_t GpuVa,\n    _In_ uint64_t RootMcAddress,\n    _In_ uint64_t VramMcBase,\n    _Out_ uint64_t *ResolvedPhysical)\n{",
+               "static BOOLEAN Bc250ActiveWalkGpuVaQuiet("):
+        i = am.find(fn)
+        if i < 0:
+            errors.append("P5: walker de PT nao encontrado")
+            continue
+        body = am[i:am.find("\n}\n", i)]
+        if "for (level = BC250_GPUVA_PT_LEVEL_COUNT - 1u; level > 0u; --level)" not in body:
+            errors.append("P5: walker de PT nao percorre os niveis da geometria")
+        if "BC250_GPUVA_PT_ROOT_INDEX_BITS" in body:
+            errors.append("P5: walker de PT ainda indexa a raiz por ROOT_INDEX_BITS fixo")
+        if "pdeReserved != 0u" not in body:
+            errors.append("P5: walker de PT perdeu a recusa de PDE com reservado[5:3]")
+    if "BC250_GPUVA_PT_LEVEL_COUNT == 2u &&\n            update->PageTableLevel > 0u &&\n            update->StartIndex <= BC250_ACTIVE_ARENA_ROOT_INDEX" not in am:
+        errors.append("P5: o diagnostico da arena (indice 4096 da raiz de 13 bits) precisa ficar restrito a 2 niveis")
+    if quatro and not re.search(r"#define\s+BC250_SOMBRA1_PRESENT_FORA_DO_SCANOUT\s+0\b", am):
+        errors.append("P5: a Corrida 252 exige o Present no scanout real (SOMBRA.1 em 0)")
+
+
+def audit_tmr1_tmr_persistente_como_amdgpu(errors: list[str]) -> None:
+    """TMR.1 (doc 658): o TMR entregue ao PSP pelo SETUP_TMR fica reservado ate
+    o fim (como psp_tmr_init/sw_fini do amdgpu), com a PA da DRAM e sem o
+    fallback de +0x1F800000; a regiao quad do CP tambem e' persistente; as
+    respostas do PSP saem em linha propria. VRD.1: a CPU so' le a VRAM na prova
+    das primeiras composicoes. DCN.AUX0: as transacoes AUX em 0x4800 ficam
+    atras de chave em 0."""
+    wdk = ROOT / "driver" / "wdk"
+    pfp = strip_c_comments((wdk / "bc250_pfp_direct_load.c").read_text(encoding="utf-8", errors="replace"))
+    if "Bc250VramRelease(allocator, tmrToken)" in pfp or "Bc250VramRelease(allocator, token)" in pfp:
+        errors.append("TMR.1: o TMR ou a regiao quad do CP voltam ao alocador depois do SETUP_TMR")
+    if "0x1F800000" in pfp:
+        errors.append("TMR.1: o fallback do TMR em +0x1F800000 (fora da VRAM com 256 MB) voltou")
+    if "tmrPa = bar->Start" in pfp or "tmrPa = addressSpace->VramBaseOffset + tmrRegion.Offset;" not in pfp:
+        errors.append("TMR.1: o PSP precisa receber a PA da DRAM (VramBaseOffset + offset), nao a da BAR")
+    if "BC250_VRAM_ROLE_TMR" not in pfp or "BC250_VRAM_REGION_PERSISTENT" not in pfp:
+        errors.append("TMR.1: TMR sem papel TMR persistente")
+    if "[TMR1] PSP:" not in pfp or "tmrResp = pCmdBuf[864u / 4u];" not in pfp:
+        errors.append("TMR.1: a resposta do SETUP_TMR e dos LOAD_IP_FW precisa sair no log")
+    am = strip_c_comments((wdk / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace"))
+    if not re.search(r"#define\s+BC250_COMPOSITE_PROOF_FIRST\s+\d+", am) or \
+       "InterlockedIncrement(&s_compositeProofCount) > BC250_COMPOSITE_PROOF_FIRST" not in am:
+        errors.append("VRD.1: a prova de dados do COMPOSITE_BLT precisa parar depois das primeiras composicoes")
+    dcn = strip_c_comments((wdk / "bc250_dcn_probe.c").read_text(encoding="utf-8", errors="replace"))
+    if not re.search(r"#define\s+BC250_DCN_PROBE_AUX_TRANSFERS\s+0\b", dcn):
+        errors.append("DCN.AUX0: transacoes AUX em 0x4800 (offset sem procedencia) ligadas")
+
+
+def audit_rlc1b_and_logmin(errors: list[str]) -> None:
+    """RLC.1b e LOGMIN.1 (doc 650). RLC.1b: com a chave ligada, o resume liga o
+    bit 23 do RLC_PG_CNTL (handshake RLC/SMU desligado, ramo enable=false de
+    gfx_v10_0_rlc_smu_handshake_cntl) ANTES de ligar o F32, e a prova exige o
+    bit lido igual ao esperado. LOGMIN.1: o sink unico da UMD filtra as linhas
+    rotineiras antes de qualquer escrita (OutputDebugStringA, stderr, arquivo),
+    e o build das suites offline restaura o log integral."""
+    wdk = ROOT / "driver" / "wdk"
+    am = strip_c_comments((wdk / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace"))
+    if not re.search(r"#define\s+BC250_RLC1B_SMU_HANDSHAKE_OFF\s+[01]\b", am):
+        errors.append("RLC.1b: chave BC250_RLC1B_SMU_HANDSHAKE_OFF ausente")
+    res = function_body(am, "static BOOLEAN Bc250ActiveRlc1Resume(BC250_DXGK_ACTIVE_CONTEXT *Context, const char *Where)")
+    hs = res.find("(BC250_RLC_PG_CNTL_SMU_HANDSHAKE_OFF & BC250_RLC_PG_CNTL_SMU_HANDSHAKE_OFF)")
+    f32 = res.find("| BC250_RLC_CNTL_ENABLE_F32_MASK)")
+    pg0 = res.find("BC250_REG_RLC_PG_CNTL, 0u)")
+    if not (0 <= pg0 < hs < f32):
+        errors.append("RLC.1b: o bit 23 do RLC_PG_CNTL precisa ir a 1 por RMW depois do PG=0 e antes de ligar o F32")
+    if "(pg2 & BC250_RLC_PG_CNTL_SMU_HANDSHAKE_OFF) == BC250_RLC1_EXPECTED_HANDSHAKE_BIT" not in res or \
+       "w == BC250_RLC1_EXPECTED_WRITES" not in res:
+        errors.append("RLC.1b: a prova precisa conferir o bit 23 lido e o numero de escritas esperado")
+    umd = ROOT / "driver" / "umd"
+    ws = strip_c_comments((umd / "bc250_wddm_winsys.c").read_text(encoding="utf-8", errors="replace"))
+    if not re.search(r"#define\s+BC250_UMD_TRACE_MINIMAL\s+[01]\b", ws):
+        errors.append("LOGMIN.1: chave BC250_UMD_TRACE_MINIMAL ausente")
+    raw = function_body(ws, "void Bc250WinsysTraceRaw(const char *Message)")
+    flt = raw.find("!Bc250WinsysTraceIsEssential(Message)")
+    out = [raw.find("OutputDebugStringA(line)"), raw.find("fputs(line, stderr)"), raw.find("WriteFile(g_Bc250TraceSink.File[i]")]
+    if flt < 0 or any(o < 0 or o < flt for o in out):
+        errors.append("LOGMIN.1: o filtro precisa vir antes de OutputDebugStringA, stderr e WriteFile no sink unico")
+    bat = (umd / "build-umd.bat").read_text(encoding="utf-8", errors="replace")
+    if "set BC250_TRACE_FULL=1" not in bat:
+        errors.append("LOGMIN.1: o build-umd precisa rodar as suites com BC250_TRACE_FULL=1")
+
+
+def audit_rlc1_gfxrst1_like_amdgpu(errors: list[str]) -> None:
+    """RLC.1 e GFXRST.1 (doc 642). RLC.1: gfx_v10_0_rlc_resume (stop, CGCG=0,
+    PG=0, SPM_VMID=0xF, start) depois da carga do RLC pelo PSP, com prova
+    ENABLE_F32=1 e EXEC_ROM_CODE=0 e restauracao sem prova; os unicos escritores
+    de CGCG/PG/SPM do RLC sao o resume e o desarme; o desarme roda no StopDevice
+    e no teardown da GART. GFXRST.1: gfx_v10_0_soft_reset (mascara pelo
+    GRBM_STATUS/STATUS2, rlc_stop, halt do CP grafico e do MEC, sem safe mode)
+    e, no restart, rlc_resume e CP_MEC_CNTL devolvido ANTES de rearmar o CP_RB0."""
+    core = ROOT / "driver" / "core"
+    wdk = ROOT / "driver" / "wdk"
+    hdr = (core / "bc250_gfx_ring_transaction.h").read_text(encoding="utf-8", errors="replace")
+    for token, val in (("BC250_REG_RLC_PG_CNTL", "0x0003B10Cu"),
+                       ("BC250_REG_RLC_CGCG_CGLS_CTRL", "0x0003B124u"),
+                       ("BC250_REG_RLC_SPM_MC_CNTL", "0x0003B1C4u"),
+                       ("BC250_REG_RLC_GPM_STAT", "0x0003B9B8u"),
+                       ("BC250_RLC_GPM_STAT_EXEC_ROM_MASK", "0x00400000u"),
+                       ("BC250_GFX_REG_CP_MEC_CNTL", "0x00008234u"),
+                       ("BC250_GRBM_SOFT_RESET_RLC_MASK", "0x00000004u"),
+                       ("BC250_GRBM_STATUS2_RLC_BUSY", "0x01000000u")):
+        if not re.search(r"#define\s+" + token + r"\s+" + re.escape(val), hdr):
+            errors.append("RLC.1: " + token + " precisa ser " + val + " (gc_10_1_0_offset.h / sh_mask.h)")
+    am = strip_c_comments((wdk / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace"))
+    res = function_body(am, "static BOOLEAN Bc250ActiveRlc1Resume(BC250_DXGK_ACTIVE_CONTEXT *Context, const char *Where)").split("#else")[0]
+    if not res:
+        errors.append("RLC.1: Bc250ActiveRlc1Resume ausente")
+        return
+    order = [res.find("BC250_REG_RLC_CNTL, cntl & ~BC250_RLC_CNTL_ENABLE_F32_MASK)"),
+             res.find("BC250_REG_RLC_CGCG_CGLS_CTRL, 0u)"),
+             res.find("BC250_REG_RLC_PG_CNTL, 0u)"),
+             res.find("BC250_REG_RLC_SPM_MC_CNTL, spmWanted)"),
+             res.find("| BC250_RLC_CNTL_ENABLE_F32_MASK)")]
+    if any(o < 0 for o in order) or order != sorted(order):
+        errors.append("RLC.1: o resume precisa seguir gfx_v10_0_rlc_resume: stop, CGCG=0, PG=0, SPM_VMID, start")
+    if "(gpm2 & BC250_RLC_GPM_STAT_EXEC_ROM_MASK) == 0u" not in res or        "(cntl2 & BC250_RLC_CNTL_ENABLE_F32_MASK) != 0u" not in res:
+        errors.append("RLC.1: a prova exige EXEC_ROM_CODE=0 e ENABLE_F32=1 lidos")
+    if res.find("InterlockedExchange(&Context->Rlc1Armed, 1)") < 0 or        res.find("BC250_REG_RLC_CGCG_CGLS_CTRL, cgcg)") < 0:
+        errors.append("RLC.1: sem prova o resume precisa parar o RLC e restaurar CG/PG/SPM")
+    for reg in ("BC250_REG_RLC_CGCG_CGLS_CTRL", "BC250_REG_RLC_PG_CNTL", "BC250_REG_RLC_SPM_MC_CNTL"):
+        dis = function_body(am, "static VOID Bc250ActiveRlc1Disarm(BC250_DXGK_ACTIVE_CONTEXT *Context, const char *Why)")
+        writers = len(re.findall(r"Write32\(t, " + reg, am))
+        mine = len(re.findall(r"Write32\(t, " + reg, res)) + len(re.findall(r"Write32\(t, " + reg, dis))
+        if writers != mine or re.search(r"Write32\([^;]*" + reg, am.replace(res, "").replace(dis, "")):
+            errors.append("RLC.1: " + reg + " escrito fora de Bc250ActiveRlc1Resume/Disarm")
+    stop = function_body(am, "static NTSTATUS Bc250DxgkDdiStopDeviceActiveReason(")
+    sc = stop.find("(void)Bc250SafeGfxCpReset(&context->Core.MmioTransport);")
+    rd = stop.find('Bc250ActiveRlc1Disarm(context, "StopDevice");')
+    if not (0 <= sc < rd):
+        errors.append("RLC.1: o StopDevice precisa parar o RLC depois do CP grafico")
+    if am.find("Bc250ActiveRlc1Disarm(Active, Why);") < am.find("Bc250ActiveMec1Disarm(Active, Why);"):
+        errors.append("RLC.1: o teardown da GART precisa do desarme do RLC")
+    load = am.find("context->PspRlcLoadStatus = Bc250ActiveLoadRlcFirmware(")
+    sdma1 = am.find("context->P4Sdma1FwStatus = Bc250ActiveLoadSdma1Firmware(")
+    pfp = am.find("Bc250ActiveRunPfpDirectLoad(\n")
+    if not (0 <= sdma1 < load) or (pfp >= 0 and load > pfp):
+        errors.append("RLC.1: a carga do RLC precisa vir no trecho do PSP, depois do SDMA1 e antes do PFP direct load")
+    sr = function_body(am, "static VOID Bc250ActiveGfxRst1SoftReset(BC250_DXGK_ACTIVE_CONTEXT *Context)").split("#else")[0]
+    if not sr:
+        errors.append("GFXRST.1: Bc250ActiveGfxRst1SoftReset ausente")
+        return
+    if "SafeMode" in sr:
+        errors.append("GFXRST.1: o soft-reset do amdgpu nao pede safe mode ao RLC")
+    if "BC250_GRBM_SOFT_RESET_CPF_MASK" in sr or "BC250_GRBM_SOFT_RESET_CPG_MASK" in sr:
+        errors.append("GFXRST.1: o amdgpu nao reseta CPF/CPG no soft-reset do GFX")
+    for need in ("BC250_GRBM_STATUS_GFX_PIPE_BUSY", "BC250_GRBM_STATUS_CP_BUSY_ANY",
+                 "BC250_GRBM_STATUS2_RLC_BUSY", "if (mask == 0u) {"):
+        if need not in sr:
+            errors.append("GFXRST.1: mascara do reset sem " + need + " (gfx_v10_0_soft_reset)")
+    seq = [sr.find("BC250_REG_RLC_CNTL, rlc & ~BC250_RLC_CNTL_ENABLE_F32_MASK)"),
+           sr.find("BC250_CP_ME_CNTL_ME_HALT | BC250_CP_ME_CNTL_PFP_HALT | BC250_CP_ME_CNTL_CE_HALT"),
+           sr.find("BC250_CP_MEC_CNTL_ME1_HALT | BC250_CP_MEC_CNTL_ME2_HALT);"),
+           sr.find("tmp |= mask;"), sr.find("tmp &= ~mask;")]
+    if any(o < 0 for o in seq) or seq != sorted(seq):
+        errors.append("GFXRST.1: ordem do amdgpu: rlc_stop, halt do CP grafico, halt do MEC, pulso")
+    q = am.find("Bc250ActiveGfxRst1SoftReset(activeCtx);")
+    bc = am.rfind("GRBM_GFX_INDEX reposto em broadcast antes do soft-reset", 0, q if q >= 0 else 0)
+    if q < 0 or bc < 0 or q - bc > 3000:
+        errors.append("GFXRST.1: o quiesce precisa repor o broadcast antes do soft-reset novo")
+    post = am.find("Bc250ActiveGfxRst1PostReset(activeCtx);")
+    rearm = am.find("BC250_GFX_REG_CP_RB0_ACTIVE, 0u);", post if post >= 0 else 0)
+    if post < 0 or rearm < 0 or rearm - post > 400:
+        errors.append("GFXRST.1: o restart precisa do rlc_resume e do CP_MEC_CNTL antes de rearmar o CP_RB0")
+    pr = function_body(am, "static VOID Bc250ActiveGfxRst1PostReset(BC250_DXGK_ACTIVE_CONTEXT *Context)").split("#else")[0]
+    if "InterlockedExchange(&Context->GfxRst1MecHalted, 0) == 1" not in pr or        "BC250_GFX_REG_CP_MEC_CNTL, Context->GfxRst1MecCntlBefore)" not in pr:
+        errors.append("GFXRST.1: o restart precisa devolver o CP_MEC_CNTL guardado, so' depois de um reset de fato")
+
+
+def audit_g1_golden_like_amdgpu(errors: list[str]) -> None:
+    """G.1 (doc 645): golden settings como gfx_v10_0_init_golden_registers. A tabela
+    e' a do upstream; o escritor unico aplica com snapshot em duas passadas, RMW
+    SOC15 e readback com restauracao por registrador, ANTES do trecho do PSP; o
+    teardown da GART devolve os originais."""
+    core = ROOT / "driver" / "core"
+    wdk = ROOT / "driver" / "wdk"
+    tab = (core / "bc250_golden_settings_contract.c").read_text(encoding="utf-8", errors="replace")
+    expected = [
+        ("GRBM_GFX_INDEX", "0xFFFFFFFFu", "0xE0000000u"), ("GE_FAST_CLKS", "0x3FFFFFFFu", "0x0000493Eu"),
+        ("CGTT_CPF_CLK_CTRL", "0xFCFF8FFFu", "0xF8000100u"), ("CGTT_SPI_CLK_CTRL", "0xFF7F0FFFu", "0x3C000100u"),
+        ("CB_HW_CONTROL_3", "0xA0000000u", "0xA0000000u"), ("CB_HW_CONTROL_4", "0x00008000u", "0x003C8014u"),
+        ("CH_DRAM_BURST_CTRL", "0x00000010u", "0x00000017u"), ("CH_PIPE_STEER", "0xFFFFFFFFu", "0xD8D8D8D8u"),
+        ("CH_VC5_ENABLE", "0x00000003u", "0x00000003u"), ("CP_SD_CNTL", "0x800007FFu", "0x000005FFu"),
+        ("DB_DEBUG", "0xFFFFFFFFu", "0x20000000u"), ("DB_DEBUG3", "0xFFFFFFFFu", "0x00000200u"),
+        ("DB_DEBUG4", "0xFFFFFFFFu", "0x04800000u"), ("DB_LAST_OF_BURST_CONFIG", "0xFFFFFFFFu", "0x03860210u"),
+        ("GB_ADDR_CONFIG", "0x0C1800FFu", "0x00000044u"), ("GCR_GENERAL_CNTL", "0x00009D00u", "0x00008500u"),
+        ("GCMC_VM_CACHEABLE_DRAM_ADDRESS_END", "0xFFFFFFFFu", "0x000FFFFFu"),
+        ("GL1_DRAM_BURST_CTRL", "0x00000010u", "0x00000017u"), ("GL1_PIPE_STEER", "0xFCFCFCFCu", "0xD8D8D8D8u"),
+        ("GL2_PIPE_STEER_0", "0x77707770u", "0x21302130u"), ("GL2_PIPE_STEER_1", "0x77707770u", "0x21302130u"),
+        ("GL2A_ADDR_MATCH_MASK", "0xFFFFFFFFu", "0xFFFFFFCFu"), ("GL2C_ADDR_MATCH_MASK", "0xFFFFFFFFu", "0xFFFFFFCFu"),
+        ("GL2C_CGTT_SCLK_CTRL", "0x10000000u", "0x10000100u"), ("GL2C_CTRL2", "0xFC02002Fu", "0x9402002Fu"),
+        ("GL2C_CTRL3", "0x00002188u", "0x00000188u"), ("PA_SC_ENHANCE", "0x08000009u", "0x08000009u"),
+        ("PA_SC_BINNER_EVENT_CNTL_0", "0xCC3FCC03u", "0x842A4C02u"), ("PA_SC_LINE_STIPPLE_STATE", "0x0000000Fu", "0x00000000u"),
+        ("RMI_SPARE", "0xFFFF3109u", "0xFFFF3101u"), ("SQ_ARB_CONFIG", "0x00000100u", "0x00000130u"),
+        ("SQ_LDS_CLK_CTRL", "0xFFFFFFFFu", "0xFFFFFFFFu"), ("TA_CNTL_AUX", "0x00030008u", "0x01030000u"),
+        ("UTCL1_CTRL", "0x00800000u", "0x00800000u")]
+    names = re.findall(r'\{\s*"([A-Z0-9_]+)",\s*[01]u,\s*0x[0-9A-F]+u,\s*(0x[0-9A-F]+u),\s*(0x[0-9A-F]+u)\s*\}', tab)
+    if [(n, m, v) for n, m, v in names] != expected:
+        errors.append("G.1: tabela de goldens diverge de golden_settings_gc_10_0_cyan_skillfish (ordem, mascara ou valor)")
+    am = strip_c_comments((wdk / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace"))
+    ap = function_body(am, "static VOID Bc250ActiveG1ApplyGolden(BC250_DXGK_ACTIVE_CONTEXT *Context)").split("#else")[0]
+    if not ap:
+        errors.append("G.1: Bc250ActiveG1ApplyGolden ausente")
+        return
+    if "Bc250GoldenSettingsBuildApplyPlan(&snap, &plan)" not in ap or ap.count("snap.Pass") < 2:
+        errors.append("G.1: o arme precisa do snapshot em duas passadas e do plano do contrato (Lei 5/6)")
+    if "(after & m) == (want & m)" not in ap or "plan.Items[i].BarOffset, orig)" not in ap:
+        errors.append("G.1: readback por registrador com restauracao do original ausente")
+    if "Write32(t, table[i].BarOffset" in ap:
+        errors.append("G.1: o arme escreve fora do plano do contrato")
+    rs = function_body(am, "static VOID Bc250ActiveG1RestoreGolden(BC250_DXGK_ACTIVE_CONTEXT *Context, const char *Why)")
+    if "i-- > 1u" not in rs or "Context->G1Original[i]" not in rs:
+        errors.append("G.1: o desarme precisa devolver os originais em ordem inversa, sem tocar no GRBM_GFX_INDEX")
+    call = am.find("Bc250ActiveG1ApplyGolden(context);")
+    psp = am.find("context->PspRingStatus = Bc250ActiveProbePspRing(")
+    if call < 0 or psp < 0 or call > psp:
+        errors.append("G.1: os goldens precisam ser aplicados antes do trecho do PSP (antes do SDMA0 e do CP)")
+    if am.find("Bc250ActiveG1RestoreGolden(Active, Why);") < am.find("Bc250ActiveRlc1Disarm(Active, Why);"):
+        errors.append("G.1: o teardown da GART precisa devolver os goldens")
+    tr = strip_c_comments((wdk / "bc250_mmio_topology_transport.c").read_text(encoding="utf-8", errors="replace"))
+    users = [m.start() for m in re.finditer(r"Bc250MmioTopologyG1GoldenWriteAllowed\(ByteOffset\)", tr)]
+    if len(users) != 1:
+        errors.append("G.1: a escrita dos goldens precisa estar na allowlist de escrita exatamente uma vez")
+
+
+def audit_p33_ih_rptr_doorbell(errors: list[str]) -> None:
+    """P3.3 (doc 635): RPTR do IH pela doorbell, como navi10_ih_set_rptr. O ISR
+    publica so' por Bc250IhPublishRptr; a doorbell so' fica ativa com prova
+    nao-zero (IH_RB_RPTR lido == RPTR publicado) e falha fechada para o MMIO;
+    o desarme do IH e o da P2 (que fecha a abertura do BIF) rebaixam o RPTR
+    para o MMIO antes."""
+    wdk = ROOT / "driver" / "wdk"
+    sp = strip_c_comments((wdk / "bc250_sdma_present.c").read_text(encoding="utf-8", errors="replace"))
+    hdr = (wdk / "bc250_sdma_present.h").read_text(encoding="utf-8", errors="replace")
+    am = strip_c_comments((wdk / "bc250_active_miniport.c").read_text(encoding="utf-8", errors="replace"))
+    for token, val in (("BC250_NBIO_REG_BIF_IH_DOORBELL_RANGE", "0x03BC8u"),
+                       ("BC250_P33_IH_DOORBELL_INDEX", "0x2F0u"),
+                       ("BC250_IH_DOORBELL_RPTR_ENABLE", "0x10000000u")):
+        if not re.search(r"#define\s+" + token + r"\s+" + re.escape(val), hdr):
+            errors.append("P3.3: " + token + " precisa ser " + val + " (nbio_2_3_offset.h, amdgpu_doorbell.h, osssys_5_0_0_sh_mask.h)")
+    if not re.search(r"#define\s+BC250_P33_IH_RPTR_BY_DOORBELL\s+[01]\b", am):
+        errors.append("P3.3: chave BC250_P33_IH_RPTR_BY_DOORBELL ausente")
+    isr = function_body(sp, "BOOLEAN Bc250SdmaPresentIhIsr(ULONG *SdmaTrapsThisCall, ULONG *GfxEopsThisCall)").split("#else")[0]
+    if "Bc250IhPublishRptr(rptr);" not in isr or "BC250_IH_REG_RB_RPTR" in isr:
+        errors.append("P3.3: o ISR tem de publicar o RPTR so' por Bc250IhPublishRptr")
+    arm = function_body(sp, "BOOLEAN Bc250SdmaPresentIhArm(").split("#else")[0]
+    if "dbProofRptr != 0u && dbProofReg == dbProofRptr" not in arm:
+        errors.append("P3.3: a doorbell do IH precisa de prova nao-zero (IH_RB_RPTR lido == RPTR publicado)")
+    fail = arm.find("[P3_3_IH_DOORBELL] NAO ATIVA")
+    if fail < 0 or arm.find("Bc250IhRptrDoorbellRestore();", fail) < 0:
+        errors.append("P3.3: sem prova a doorbell do IH tem de ser desfeita (falha fechada para o MMIO)")
+    dis = function_body(sp, "VOID Bc250SdmaPresentIhDisarm(")
+    if dis.find("Bc250IhRptrDoorbellRestore();") < 0 or dis.find("Bc250IhRptrDoorbellRestore();") > dis.find("Bc250IhWrite(BC250_IH_REG_RB_RPTR, 0u);"):
+        errors.append("P3.3: o desarme do IH tem de devolver a doorbell antes do RPTR=0 por MMIO")
+    p2 = function_body(sp, "static void Bc250SdmaPresentP2Disarm(")
+    if "IhRptrDoorbellActive" not in p2 or p2.find("Bc250IhRptrDoorbellRestore();") > p2.find("BC250_NBIO_REG_RCC_DOORBELL_APER_EN"):
+        errors.append("P3.3: o desarme da P2 fecha a abertura do BIF; o RPTR do IH tem de descer para o MMIO antes")
 
 
 def audit_p3_ih_waits_for_mmhub_gart(errors: list[str]) -> None:
@@ -10013,9 +10873,18 @@ def audit_p1_silencio_da_bar(errors: list[str]) -> None:
         errors.append("P1: o rastro nao tem o ramo da P1")
     else:
         branch = th[p1:el]
-        for probe in ("Bc250GpuHeartbeatTick(", "Bc250PlatformSampleTick(", "Bc250TraceWordsTick("):
+        for probe in ("Bc250GpuHeartbeatTick(", "Bc250TraceWordsTick("):
             if probe in branch:
                 errors.append("P1: o ramo da P1 do rastro ainda chama " + probe)
+        # MON.1 (doc 672): a amostra de plataforma (Tctl + status do SDMA1) volta
+        # no ramo da P1, so' atras de BC250_MON1_TEMPERATURA e uma vez.
+        if branch.count("Bc250PlatformSampleTick(") > 1:
+            errors.append("P1: amostra de plataforma chamada mais de uma vez no ramo da P1")
+        if "Bc250PlatformSampleTick(" in branch:
+            mon = branch.find("#if BC250_MON1_TEMPERATURA")
+            call = branch.find("Bc250PlatformSampleTick(")
+            if mon < 0 or mon > call or branch.find("#endif", mon) < call:
+                errors.append("P1: a amostra de plataforma no ramo da P1 precisa estar atras de BC250_MON1_TEMPERATURA")
         if "Bc250CrumbEventsTick(writerTick);" not in branch:
             errors.append("P1: o rastro nao grava os eventos do espelho em RAM (BEV1)")
 
@@ -10257,7 +11126,7 @@ def audit_4c4_pte_by_sdma_and_split_ib(errors: list[str]) -> None:
     if "ibSplits, ibSplitCount, &assignedHwFence);" not in compact_am:
         errors.append("4c.4: a submissao nao passa os pontos de divisao ao anel")
     sub = function_body(pr, "BOOLEAN Bc250SdmaPresentSubmitIndirectAsync(")
-    chunk = function_body(pr, "static BOOLEAN Bc250SdmaPresentSubmitSplitChunked(")
+    chunk = function_body(pr, "static BOOLEAN Bc250SdmaPresentSubmitSplitChunkedWith(")
     if "Bc250SdmaPresentSubmitSplitChunked(" not in sub:
         errors.append("4c.4: o IB dividido nao vai pelo caminho de pedacos de anel")
     if "Bc250SdmaEmitSplitIndirect(" not in chunk and "Bc250SdmaEmitSplitIndirectCross(" not in chunk:
@@ -10341,18 +11210,10 @@ def audit_x2a_paging_fill_sliced_and_vram_crumbed(errors: list[str]) -> None:
     wdk = ROOT / "driver" / "wdk"
     callbacks = strip_c_comments((wdk / "bc250_mcdm_callbacks.c").read_text(
         encoding="utf-8", errors="replace"))
-    if "#define BC250_SDMA_PAGING_FILL_MAX_BYTES (256u * 1024u)" not in callbacks:
-        errors.append("X2a: teto de 256 KiB do FILL de paginacao ausente")
-    fill = function_body(callbacks, "static NTSTATUS Bc250McdmBuildFillVirtual(")
-    if "BC250_SDMA_PAGING_FILL_MAX_BYTES" not in fill or "BC250_SDMA_FILL_MAX_BYTES" in fill:
-        errors.append("X2a: o FILL de paginacao voltou a fatiar pelo teto do pacote (4 MiB)")
-    test = strip_c_comments((ROOT / "driver" / "tests" / "mcdm_callbacks_test.c")
-                            .read_text(encoding="utf-8", errors="replace"))
-    for needle in ("CHECK(g_paging.MultipassOffset == 12u * 262144u);",
-                   "CHECK(covered == 11075584ull);", "CHECK(passes == 4u);",
-                   "CHECK(g_pagingDmaBuffer[packet * 5u + 4u] <= 262144u - 1u);"):
-        if needle not in test:
-            errors.append("X2a: o teste do fatiamento perdeu '%s'" % needle)
+    # C4 (doc 676): o fatiamento de 256 KiB deu lugar ao do amdgpu (4 MiB);
+    # quem guarda o tamanho da fatia agora e' audit_c4_zeramento_como_o_amdgpu.
+    if "BC250_C4_ZERAMENTO_COMO_O_AMDGPU" not in callbacks:
+        errors.append("X2a: chave da C4 ausente; o FILL de paginacao ficou sem dono")
     present = strip_c_comments((wdk / "bc250_sdma_present.c").read_text(
         encoding="utf-8", errors="replace"))
     # 4c.4 (doc 575): a entrada de IB dividido copia com indice modulo o anel;
@@ -10789,6 +11650,8 @@ def audit_x2b_fill_by_copy(errors: list[str]) -> None:
     O destino, as PTEs e o teto de 256 KiB por pacote nao mudam."""
     wdk = ROOT / "driver" / "wdk"
     cb = strip_c_comments((wdk / "bc250_mcdm_callbacks.c").read_text(encoding="utf-8", errors="replace"))
+    if "#define BC250_C4_ZERAMENTO_COMO_O_AMDGPU 1" in cb:
+        return  # C4 (doc 676): X2b dormente; audit_c4_zeramento_como_o_amdgpu manda
     if "#define BC250_X2B_FILL_BY_COPY 1" not in cb:
         errors.append("X2b: interruptor BC250_X2B_FILL_BY_COPY nao esta em 1")
     fill = function_body(cb, "static NTSTATUS Bc250McdmBuildFillVirtual(")
@@ -10988,8 +11851,11 @@ def audit_isdma_icg_read_only(errors: list[str]) -> None:
     wr = function_body(transport, "static uint32_t Bc250MmioTopologyWriteOffsetAllowed(")
     # So' os offsets que ESTA faixa liberou para leitura; os do anel SDMA0 e o
     # CLK_CTRL ja' tinham escritores legitimos (bring-up/TDR) antes dela.
+    # RLC.1 (doc 642): RLC_CGCG_CGLS_CTRL 0x3B124 saiu desta lista -- o unico
+    # escritor e' o rlc_resume (Bc250ActiveRlc1Resume/Disarm), travado por
+    # audit_rlc1_gfxrst1_like_amdgpu.
     new_read_only = ("0x00004BACu", "0x00004BC4u", "0x000049E8u", "0x000061E8u",
-                     "0x000061ECu", "0x0003B120u", "0x0003B124u", "0x0003C200u")
+                     "0x000061ECu", "0x0003B120u", "0x0003C200u")
     for name, value in values.items():
         if not re.search(rf"#define\s+{name}\s+{value}", header):
             errors.append(f"I.SDMA0: {name} nao e' {value} (procedencia no doc 556)")
@@ -11026,7 +11892,10 @@ def audit_iplat_platform_probe(errors: list[str]) -> None:
     if before < 0 or probe_call < 0 or before > probe_call:
         errors.append("I.PLAT: registro ANTES nao e' gravado antes das leituras da sonda")
     thread = function_body(callbacks, "static VOID Bc250PagingTraceThread(")
-    if thread.find("Bc250PlatformSampleTick(") < thread.find("Bc250GpuHeartbeatTick("):
+    # MON.1 (doc 672): no ramo da P1 o BGH1 nao roda; a ordem vale no #else.
+    p1e = thread.find("#else", thread.find("#if BC250_P1_SILENCIO_DA_BAR"))
+    tail = thread[p1e:] if p1e >= 0 else thread
+    if tail.find("Bc250PlatformSampleTick(") < tail.find("Bc250GpuHeartbeatTick("):
         errors.append("I.PLAT: amostra de plataforma roda antes do BGH1; uma escrita SMN presa o perderia")
     probe = function_body(miniport, "static BOOLEAN Bc250ActivePlatformProbe(")
     if not probe:
@@ -11177,6 +12046,9 @@ def audit_dx31_primary_copy_is_observable(errors: list[str]) -> None:
     if not helper:
         errors.append("DX.31: helper de copia da primaria ausente")
         return
+    switch = function_body(display, "static NTSTATUS Bc250DisplaySwitchPrimary(")
+    if "return Bc250DisplayCopyPrimaryToGop(Route, SegmentId," not in switch:
+        errors.append("DX.31: a rota unica (DCN.1) tem de cair na copia rastreavel quando o flip nao acontece")
     for token in ("Bc250SdmaPresentBlt(sourceMc,",
                   "if (!copied)", "DATA_UNOBSERVED_CPU_MAP",
                   "Bc250DisplaySampleSurface(SourceOffset",
@@ -11198,7 +12070,9 @@ def audit_dx31_primary_copy_is_observable(errors: list[str]) -> None:
         ("NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay3(", "MPO3"),
     ):
         body = function_body(display, signature)
-        require(body, f'Bc250DisplayCopyPrimaryToGop("{route}"',
+        # DCN.1: a rota unica tenta o flip pelo HUBP0 e, recusado ou desarmado,
+        # cai na copia rastreavel abaixo (exigida no corpo do Switch).
+        require(body, f'Bc250DisplaySwitchPrimary("{route}"',
                 f"DX.31 {route} chama copia rastreavel", errors)
         if route == "MPO3":
             require(body, "if (!NT_SUCCESS(copyStatus)) {",
@@ -12978,6 +13852,25 @@ def main() -> int:
     audit_p1b_vram_cpu_pela_dram(errors)
     audit_fb1_blt_failure_survives_bugcheck(errors)
     audit_p3_ih_waits_for_mmhub_gart(errors)
+    audit_p33_ih_rptr_doorbell(errors)
+    audit_mec1_doorbell_range(errors)
+    audit_rlc1_gfxrst1_like_amdgpu(errors)
+    audit_g1_golden_like_amdgpu(errors)
+    audit_rlc1b_and_logmin(errors)
+    audit_tmr1_tmr_persistente_como_amdgpu(errors)
+    audit_p5_geometria_unica_de_4_niveis(errors)
+    audit_c1_gfx_doorbell_like_amdgpu(errors)
+    audit_c3_vram_um_so_tipo_wc(errors)
+    audit_c4_zeramento_como_o_amdgpu(errors)
+    audit_5e_transfer_and_fill_gcr_rinse(errors)
+    audit_5f_sdma_ring_capacity_and_pt_gcr(errors)
+    audit_t2_pte_mtype_default_nc(errors)
+    audit_ft1_flush_so_do_processo(errors)
+    audit_mec2_poll_sem_seletor(errors)
+    audit_dbg1_debug_trace(errors)
+    audit_dbg2_paging_ib_no_rastro(errors)
+    audit_dcn1_flip_pelo_hubp(errors)
+    audit_dcn2_sobre_o_gop(errors)
     audit_p6_mtype_uc_for_gl2_bypass(errors)
     audit_cp_eop_irq(errors)
     audit_p4_sdma1_alive(errors)

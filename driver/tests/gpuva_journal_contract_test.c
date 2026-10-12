@@ -397,8 +397,13 @@ static int Bc250RunGpuvaJournalContractTest(void)
         const uint64_t lastPage =
             BC250_GPUVA_TRANSLATABLE_LIMIT - BC250_GPUVA_PAGE_BYTES;
 
+        /* P5 (doc 667): o teto traduzivel e' o da geometria (34 ou 48 bits). */
+#if BC250_P5_QUATRO_NIVEIS
+        CHECK(BC250_GPUVA_TRANSLATABLE_LIMIT == (1ull << 48));
+#else
         CHECK(BC250_GPUVA_TRANSLATABLE_LIMIT == (1ull << 34));
-        CHECK(BC250_GPUVA_TRANSLATABLE_LIMIT < BC250_GPUVA_MAX_LIMIT);
+#endif
+        CHECK(BC250_GPUVA_TRANSLATABLE_LIMIT <= BC250_GPUVA_MAX_LIMIT);
         CHECK(Bc250GpuvaJournalInitialize(&limitJournal) ==
             BC250_GPUVA_JOURNAL_OK);
 
@@ -417,10 +422,24 @@ static int Bc250RunGpuvaJournalContractTest(void)
             0x40000000u, lastPage, entries, 2u) ==
             BC250_GPUVA_JOURNAL_BAD_ARGUMENT);
 
-        /* O antigo teto arquitetural continua recusado, obviamente. */
+        /* O teto arquitetural (2^48) continua recusado nas duas geometrias. */
+        CHECK(Bc250GpuvaJournalStageLeafUpdate(&limitJournal, procLimit,
+            0x40000000u, BC250_GPUVA_MAX_LIMIT, entries, 1u) ==
+            BC250_GPUVA_JOURNAL_BAD_ARGUMENT);
+#if BC250_P5_QUATRO_NIVEIS
+        /*
+         * P5: a primeira pagina ACIMA do teto antigo de 34 bits agora e'
+         * traduzivel e precisa entrar -- se o journal ainda recusasse, o
+         * VidMm com 48 bits teria faixas sem PTE registrada (gate fechado).
+         */
+        CHECK(Bc250GpuvaJournalStageLeafUpdate(&limitJournal, procLimit,
+            0x40000000u, (1ull << 34), entries, 1u) == BC250_GPUVA_JOURNAL_OK);
+        Bc250GpuvaJournalAbort(&limitJournal);
+#else
         CHECK(Bc250GpuvaJournalStageLeafUpdate(&limitJournal, procLimit,
             0x40000000u, 0x0000080000000000ull, entries, 1u) ==
             BC250_GPUVA_JOURNAL_BAD_ARGUMENT);
+#endif
     }
 
 

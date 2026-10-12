@@ -27,7 +27,7 @@ if(!Telemetry.scenarios[preferences.scenario])preferences.scenario='balanced';
 for(const key of ['monitor','nvme'])if(typeof preferences[key]!=='string')preferences[key]=defaults[key];
 let page='overview',paused=false,selectedComponent='cpu',timer=null,current=null,installTimer=null,installPercent=0,paymentMethod='card',donationReturn=null,toastTimer;
 let session=new Telemetry.Session();
-const titles={overview:['Visão geral','Um olhar completo sobre a sua placa.'],sensors:['Sensores','Todas as leituras da placa, em um só lugar.'],performance:['Desempenho','Explore o comportamento da sua BC-250.'],driver:['Driver','Gerencie a experiência de instalação da sua placa.'],system:['Sistema','Conheça o hardware por trás da experiência.'],settings:['Configurações','Deixe o Adrenaline do seu jeito.']};
+const titles={overview:['Visão geral','Um olhar completo sobre a sua placa.'],sensors:['Sensores','Todas as leituras da placa, em um só lugar.'],performance:['Desempenho','Explore o comportamento da sua BC-250.'],driver:['Driver','Gerencie a experiência de instalação da sua placa.'],system:['Sistema','Conheça o hardware por trás da experiência.'],settings:['Configurações','Deixe o Adrenaline do seu jeito.'],donate:['Apoiar o desenvolvimento','Um café faz a diferença para o projeto independente.']};
 function save(){try{localStorage.setItem('bc250-adrenaline-v1',JSON.stringify(preferences));}catch{toast('Não foi possível salvar as preferências. Elas valem apenas nesta sessão.');}}
 function toast(message){clearTimeout(toastTimer);$('#toast').textContent=message;$('#toast').hidden=false;toastTimer=setTimeout(()=>$('#toast').hidden=true,4500);}
 const media=matchMedia('(prefers-color-scheme: dark)');
@@ -39,13 +39,15 @@ function navigate(next,focus=false){
   if(!titles[next])return;page=next;
   $$('.nav-item[data-page]').forEach(el=>{el.classList.toggle('selected',el.dataset.page===page);if(el.dataset.page===page)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current');});
   const installation=!preferences.installed&&['overview','driver'].includes(page);
-  const locked=!preferences.installed&&!installation&&page!=='settings';
+  const isDonate=page==='donate';
+  const locked=!preferences.installed&&!installation&&page!=='settings'&&!isDonate;
   $('#install-view').hidden=!installation;$('#locked-view').hidden=!locked;$('#dashboard-view').hidden=installation||locked;
   $('#locked-title').textContent=titles[page][0];$('#page-title').textContent=titles[page][0];$('#page-subtitle').textContent=titles[page][1];
   $$('[data-view]').forEach(el=>el.hidden=el.dataset.view!==page);
   $('#driver-dot').hidden=preferences.installed;
-  $('.page-tools').hidden=!preferences.installed||['settings','driver','system'].includes(page);
+  $('.page-tools').hidden=!preferences.installed||['settings','driver','system','donate'].includes(page);
   if(preferences.installedAt&&Number.isFinite(Date.parse(preferences.installedAt)))$('#installed-at').textContent=new Date(preferences.installedAt).toLocaleDateString('pt-BR');
+  if(page==='donate')renderPayment();else DonationUI.clear();
   if(current)renderTelemetry();
   if(focus){window.scrollTo({top:0});$('#main').focus({preventScroll:true});}
 }
@@ -224,10 +226,12 @@ function startInstall(){
  advance();installTimer=setInterval(advance,180);
 }
 function openDonation(){
- donationReturn=document.activeElement;renderPayment();if(!$('#donation-dialog').open)$('#donation-dialog').showModal();
+ donationReturn=page!=='donate'?page:'overview';
+ navigate('donate',true);
 }
 function closeDonation(){
- $('#donation-dialog').close();DonationUI.clear();if(preferences.installed){navigate('overview',true);}else donationReturn?.focus();
+ DonationUI.clear();
+ if(preferences.installed){navigate('overview',true);}else{navigate(donationReturn||'overview',true);}
 }
 function renderPayment(){
  $$('[data-method]').forEach(el=>{el.setAttribute('aria-selected',String(el.dataset.method===paymentMethod));el.tabIndex=el.dataset.method===paymentMethod?0:-1;});
@@ -259,7 +263,7 @@ $('#cancel-install').addEventListener('click',()=>{clearInterval(installTimer);i
 $('#finish-install').addEventListener('click',()=>navigate('overview',true));
 $('#pause-button').addEventListener('click',()=>setPaused(!paused));
 $('#sensor-search').addEventListener('input',()=>{if(current)renderSensors();});
-$('#donation-dialog').addEventListener('cancel',e=>{e.preventDefault();closeDonation();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&page==='donate')closeDonation();});
 $('.payment-tabs').addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const methods=['card','crypto','pix'];let index=methods.indexOf(paymentMethod);index=e.key==='Home'?0:e.key==='End'?2:(index+(e.key==='ArrowRight'?1:2))%3;paymentMethod=methods[index];renderPayment();$('[data-method="'+paymentMethod+'"]').focus();});
 $('#theme-select').value=preferences.theme;$('#theme-select').addEventListener('change',e=>{preferences.theme=e.target.value;save();applyTheme();});
 $('#interval-select').value=preferences.interval;$('#interval-select').addEventListener('change',e=>{preferences.interval=Number(e.target.value);save();startTimer();renderBoard();});

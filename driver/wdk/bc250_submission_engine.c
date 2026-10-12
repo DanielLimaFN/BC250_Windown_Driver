@@ -31,6 +31,34 @@
 #define BC250_SUBMISSION_DB_OFFSET_MASK 0x0FFFFFFCu
 #define BC250_SUBMISSION_DB_ENABLE      0x40000000u
 
+/*
+ * MEC.2 (doc 701): o poll do MEC (timer de 1 ms) so' escreve o seletor GRBM
+ * (GRBM_GFX_INDEX/GRBM_GFX_CNTL) e le CP_HQD_PQ_RPTR quando ha fence pendente
+ * que ainda nao apareceu na memoria. A aposentadoria sempre saiu da fence e do
+ * writeback em memoria; o RPTR por MMIO so' alimentava log e diagnostico. O
+ * amdgpu nao seleciona fila nem le HQD em regime (amdgpu_fence_process le a
+ * fence em memoria). Chave 0 volta ao comportamento antigo (seletor em todo
+ * tique). Contadores cumulativos vao ao rastro no registro BMP1.
+ */
+#define BC250_MEC2_POLL_SEM_SELETOR 1
+static volatile LONG g_Bc250MecPollCalls = 0;
+static volatile LONG g_Bc250MecPollSelector = 0;
+
+LONG64 Bc250SubmissionMecPollCalls(VOID)
+{
+    return (LONG64)InterlockedCompareExchange(&g_Bc250MecPollCalls, 0, 0);
+}
+
+LONG64 Bc250SubmissionMecPollSelectorCalls(VOID)
+{
+    return (LONG64)InterlockedCompareExchange(&g_Bc250MecPollSelector, 0, 0);
+}
+
+uint32_t Bc250SubmissionMec2PollKey(VOID)
+{
+    return (uint32_t)BC250_MEC2_POLL_SEM_SELETOR;
+}
+
 static VOID Bc250SubmissionBarrier(void *Context)
 {
     UNREFERENCED_PARAMETER(Context);
@@ -1535,6 +1563,7 @@ NTSTATUS Bc250SubmissionEnginePoll(
     uint32_t cpfStalled = 0u, cpcStalled = 0u;
     uint32_t index;
     uint64_t pendingFence = 0ull;
+    BOOLEAN selectorNeeded;
     static const uint32_t queueRegisters[6] = {
         BC250_HQD_MMIO_ACTIVE, BC250_HQD_MMIO_HQD_ERROR,
         BC250_HQD_MMIO_HQ_STATUS0, BC250_HQD_MMIO_PQ_WPTR_LO,
@@ -1572,12 +1601,6 @@ NTSTATUS Bc250SubmissionEnginePoll(
     if (engine->ComputeRptrReportVirtual != NULL) {
         rptrReport = engine->ComputeRptrReportVirtual[0];
     }
-    (void)Bc250SubmissionWrite32(engine, Context,
-        BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
-    (void)Bc250SubmissionWrite32(engine, Context,
-        BC250_GRBM_GFX_CNTL_BYTE_OFFSET, engine->SelectedSelector);
-    (void)Bc250SubmissionRead32(engine, Context,
-        BC250_HQD_MMIO_PQ_RPTR, &rptrMmio);
 
     pendingFence = engine->ComputeRing.LastSubmittedFence;
     if (engine->ComputeRing.Vmid == BC250_GCVM_COMPUTE_VMID &&
@@ -1593,36 +1616,58 @@ NTSTATUS Bc250SubmissionEnginePoll(
         }
     }
 
-    /* Capture the first pending observation before Retire can fault the
-     * engine. The 3.105 time gate could miss failures before 100 ms.
-     * This is not a hang verdict. Failed register reads stay distinguishable. */
-    if (engine->ComputeRing.Vmid == BC250_GCVM_COMPUTE_VMID &&
+    /* MEC.2: seletor e RPTR por MMIO so' com fence pendente ainda nao vista. */
+#if BC250_MEC2_POLL_SEM_SELETOR
+    selectorNeeded = (engine->ComputeRing.Vmid == BC250_GCVM_COMPUTE_VMID &&
         pendingFence > engine->ComputeRing.LastRetiredFence &&
-        observedFence != (uint32_t)pendingFence &&
-        engine->DiagnosticPendingFence != pendingFence) {
-        diagnostic = 1u;
-        engine->DiagnosticPendingFence = pendingFence;
-        for (index = 0u; index < 4u; ++index) {
-            engine->DiagnosticPendingDescriptor[index] = engine->DiagnosticDescriptor[index];
-        }
-        for (index = 0u; index < 6u; ++index) {
-            if (Bc250SubmissionRead32(engine, Context,
-                    queueRegisters[index], &queueRaw[index])) {
-                validReads |= 1u << index;
+        observedFence != (uint32_t)pendingFence) ? TRUE : FALSE;
+#else
+    selectorNeeded = TRUE;
+#endif
+    InterlockedIncrement(&g_Bc250MecPollCalls);
+    if (selectorNeeded) {
+        InterlockedIncrement(&g_Bc250MecPollSelector);
+        (void)Bc250SubmissionWrite32(engine, Context,
+            BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+        (void)Bc250SubmissionWrite32(engine, Context,
+            BC250_GRBM_GFX_CNTL_BYTE_OFFSET, engine->SelectedSelector);
+        (void)Bc250SubmissionRead32(engine, Context,
+            BC250_HQD_MMIO_PQ_RPTR, &rptrMmio);
+
+        /* Capture the first pending observation before Retire can fault the
+         * engine. The 3.105 time gate could miss failures before 100 ms.
+         * This is not a hang verdict. Failed register reads stay distinguishable. */
+        if (engine->ComputeRing.Vmid == BC250_GCVM_COMPUTE_VMID &&
+            pendingFence > engine->ComputeRing.LastRetiredFence &&
+            observedFence != (uint32_t)pendingFence &&
+            engine->DiagnosticPendingFence != pendingFence) {
+            diagnostic = 1u;
+            engine->DiagnosticPendingFence = pendingFence;
+            for (index = 0u; index < 4u; ++index) {
+                engine->DiagnosticPendingDescriptor[index] = engine->DiagnosticDescriptor[index];
             }
-            engine->DiagnosticQueueRaw[index] = queueRaw[index];
+            for (index = 0u; index < 6u; ++index) {
+                if (Bc250SubmissionRead32(engine, Context,
+                        queueRegisters[index], &queueRaw[index])) {
+                    validReads |= 1u << index;
+                }
+                engine->DiagnosticQueueRaw[index] = queueRaw[index];
+            }
+            engine->DiagnosticValidReads = validReads;
+            engine->DiagnosticObservedFence = observedFence;
+            engine->DiagnosticRptr = rptrMmio;
+            engine->DiagnosticWriteback = rptrReport;
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPF_STALLED_STAT1, &cpfStalled);
+            (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPC_STALLED_STAT1, &cpcStalled);
         }
-        engine->DiagnosticValidReads = validReads;
-        engine->DiagnosticObservedFence = observedFence;
-        engine->DiagnosticRptr = rptrMmio;
-        engine->DiagnosticWriteback = rptrReport;
-        (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPF_STALLED_STAT1, &cpfStalled);
-        (void)Bc250SubmissionRead32(engine, Context, BC250_HQD_MMIO_CP_CPC_STALLED_STAT1, &cpcStalled);
+        (void)Bc250SubmissionWrite32(engine, Context,
+            BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
+        (void)Bc250SubmissionWrite32(engine, Context,
+            BC250_GRBM_GFX_CNTL_BYTE_OFFSET, engine->OriginalSelector);
+    } else {
+        /* Sem MMIO: o RPTR fica com a ultima leitura feita por MMIO. */
+        rptrMmio = engine->LastRptrMmio;
     }
-    (void)Bc250SubmissionWrite32(engine, Context,
-        BC250_GRBM_GFX_INDEX_BYTE_OFFSET, BC250_GRBM_GFX_INDEX_BROADCAST);
-    (void)Bc250SubmissionWrite32(engine, Context,
-        BC250_GRBM_GFX_CNTL_BYTE_OFFSET, engine->OriginalSelector);
 
     engine->LastFenceObserved = observedFence;
     engine->LastRptrReportMem = rptrReport;
