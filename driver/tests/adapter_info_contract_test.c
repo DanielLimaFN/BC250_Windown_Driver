@@ -40,12 +40,19 @@ static int Bc250RunAdapterInfoContractTest(void)
     CHECK(Bc250GetAdapterCapabilities(&g_testCaps) == BC250_ADAPTER_INFO_OK);
     CHECK(g_testCaps.NodeCount == 2u);
     /*
-     * 34 bits, nao 48: a hierarquia de 2 niveis cobre 12 + 9 + 13 (docs/03).
      * O valor literal fica aqui de proposito -- se alguem mexer na geometria,
      * este teste tem de ser reescrito conscientemente, nao seguir junto.
+     * Reescrito na P5 (doc 667, 08/10): com BC250_P5_QUATRO_NIVEIS=1 a
+     * hierarquia e' a do amdgpu, 4 niveis x 9 bits = 12 + 36 = 48 bits; com a
+     * chave em 0 volta a de 2 niveis, 12 + 9 + 13 = 34 bits (docs/03).
      */
+#if BC250_P5_QUATRO_NIVEIS
+    CHECK(g_testCaps.GpuVaBits == 48u);
+    CHECK(g_testCaps.MaxVaAddress == 0x0000FFFFFFFFFFFFull);
+#else
     CHECK(g_testCaps.GpuVaBits == 34u);
     CHECK(g_testCaps.MaxVaAddress == 0x00000003FFFFFFFFull);
+#endif
     CHECK(g_testCaps.PageSizeBytes == 4096u);
     CHECK(g_testCaps.VramBarIndex == 0u);
     CHECK(g_testCaps.DoorbellBarIndex == 2u);

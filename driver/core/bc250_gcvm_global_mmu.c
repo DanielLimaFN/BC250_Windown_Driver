@@ -31,6 +31,47 @@ static const uint32_t g_Bc250GlobalMmuRegisters[BC250_GCVM_GLOBAL_MMU_REG_COUNT]
     BC250_REG_GCVM_L2_CNTL5
 };
 
+uint32_t Bc250GcvmPlanAgpAfterFb(
+    uint64_t FbStart, uint64_t FbEnd, uint64_t AgpBytes,
+    uint64_t *AgpStart, uint64_t *AgpEnd)
+{
+    uint64_t start;
+
+    if (AgpStart == NULL || AgpEnd == NULL) return 0u;
+    *AgpStart = 0ull;
+    *AgpEnd = 0ull;
+    if (AgpBytes == 0ull ||
+        (AgpBytes & (BC250_GCVM_AGP_GRANULE_BYTES - 1ull)) != 0ull ||
+        FbEnd < FbStart || FbEnd >= BC250_GCVM_MC_LIMIT) {
+        return 0u;
+    }
+    /* ALIGN(fb_end + 1, 16 GB): FbEnd < 2^48, entao nao ha estouro aqui. */
+    start = (FbEnd + 1ull + (BC250_GCVM_AGP_ALIGN_BYTES - 1ull)) &
+        ~(BC250_GCVM_AGP_ALIGN_BYTES - 1ull);
+    if (start >= BC250_GCVM_MC_LIMIT ||
+        AgpBytes > BC250_GCVM_MC_LIMIT - start) {
+        return 0u;
+    }
+    *AgpStart = start;
+    *AgpEnd = start + AgpBytes - 1ull;
+    return 1u;
+}
+
+uint32_t Bc250GcvmAgpSystemPaToMc(
+    uint64_t AgpStart, uint64_t AgpEnd, uint64_t Pa, uint64_t Bytes,
+    uint64_t *Mc)
+{
+    uint64_t size;
+
+    if (Mc == NULL) return 0u;
+    *Mc = 0ull;
+    if (AgpEnd <= AgpStart || Bytes == 0ull) return 0u;
+    size = AgpEnd - AgpStart + 1ull;
+    if (Pa >= size || Bytes > size - Pa) return 0u;
+    *Mc = AgpStart + Pa;
+    return 1u;
+}
+
 BC250_GCVM_GLOBAL_MMU_STATUS Bc250GcvmGlobalMmuProgram(
     const BC250_GCVM_GLOBAL_MMU_CONFIG *Config,
     const BC250_GCVM_GLOBAL_MMU_INTERFACE *Interface,
@@ -43,6 +84,8 @@ BC250_GCVM_GLOBAL_MMU_STATUS Bc250GcvmGlobalMmuProgram(
     uint64_t fbStart = 0ull;
     uint64_t fbEnd = 0ull;
     uint64_t dummyPa = 0ull;
+    uint64_t agpStart = 0ull;
+    uint64_t agpEnd = 0ull;
 
     if (Evidence != NULL) {
         memset(Evidence, 0, sizeof(*Evidence));
@@ -77,6 +120,15 @@ BC250_GCVM_GLOBAL_MMU_STATUS Bc250GcvmGlobalMmuProgram(
         fbEnd   = (((uint64_t)fbTopReg & 0x00FFFFFFull) << 24) | 0x00FFFFFFull;
     }
 
+    /* D2: plano da AGP antes de qualquer leitura de snapshot ou escrita. */
+    if (Config->AgpBytes != 0ull) {
+        if (Bc250GcvmPlanAgpAfterFb(fbStart, fbEnd, Config->AgpBytes,
+                &agpStart, &agpEnd) == 0u) {
+            Evidence->FailureStep = 7u;
+            return BC250_GCVM_GLOBAL_MMU_BAD_ARGUMENT;
+        }
+    }
+
     /* 2. Snapshot transacional dos 26 registradores antes de qualquer escrita */
     for (i = 0u; i < BC250_GCVM_GLOBAL_MMU_REG_COUNT; ++i) {
         if (!Interface->Read32(Interface->Context,
@@ -96,10 +148,18 @@ BC250_GCVM_GLOBAL_MMU_STATUS Bc250GcvmGlobalMmuProgram(
 
     /* Estagio System */
     planned[0] = 0x00000000u; /* AGP_BASE */
-    planned[1] = 0x00FFFFFFu; /* AGP_BOT */
-    planned[2] = 0x00000000u; /* AGP_TOP */
-    planned[3] = (uint32_t)(fbStart >> 18); /* SYSTEM_APERTURE_LOW_ADDR */
-    planned[4] = (uint32_t)(fbEnd >> 18);   /* SYSTEM_APERTURE_HIGH_ADDR */
+    if (Config->AgpBytes != 0ull) {
+        /* D2: gfxhub_v2_0_init_system_aperture_regs com a AGP ligada. */
+        planned[1] = (uint32_t)(agpStart >> 24); /* AGP_BOT */
+        planned[2] = (uint32_t)(agpEnd >> 24);   /* AGP_TOP */
+        planned[3] = (uint32_t)((fbStart < agpStart ? fbStart : agpStart) >> 18);
+        planned[4] = (uint32_t)((fbEnd > agpEnd ? fbEnd : agpEnd) >> 18);
+    } else {
+        planned[1] = 0x00FFFFFFu; /* AGP_BOT */
+        planned[2] = 0x00000000u; /* AGP_TOP */
+        planned[3] = (uint32_t)(fbStart >> 18); /* SYSTEM_APERTURE_LOW_ADDR */
+        planned[4] = (uint32_t)(fbEnd >> 18);   /* SYSTEM_APERTURE_HIGH_ADDR */
+    }
     planned[5] = (uint32_t)(dummyPa >> 12); /* SYSTEM_APERTURE_DEFAULT_ADDR_LSB */
     planned[6] = (uint32_t)(dummyPa >> 44); /* SYSTEM_APERTURE_DEFAULT_ADDR_MSB */
     planned[7] = (uint32_t)(dummyPa >> 12); /* L2_PROT_FAULT_DEFAULT_ADDR_LO */
@@ -164,6 +224,11 @@ BC250_GCVM_GLOBAL_MMU_STATUS Bc250GcvmGlobalMmuProgram(
         goto Rollback;
     }
     Evidence->TlbFlushPassed = 1u;
+    if (Config->AgpBytes != 0ull) {
+        Evidence->AgpEnabled = 1u;
+        Evidence->AgpStart = agpStart;
+        Evidence->AgpEnd = agpEnd;
+    }
 
     return BC250_GCVM_GLOBAL_MMU_OK;
 
@@ -265,4 +330,183 @@ BC250_GCVM_GLOBAL_MMU_STATUS Bc250GcvmGlobalMmuRestore(
     }
     Evidence->RestorePassed = 1u;
     return BC250_GCVM_GLOBAL_MMU_OK;
+}
+
+/* ---------------------------------------------------------------------
+ * D2 por GART (doc 587) -- contexto 0 da VMID 0, como o Linux.
+ * --------------------------------------------------------------------- */
+
+static const uint32_t g_Bc250GartRegisters[BC250_GCVM_GART_REG_COUNT] = {
+    BC250_REG_GCVM_CONTEXT0_PT_BASE_LO,
+    BC250_REG_GCVM_CONTEXT0_PT_BASE_HI,
+    BC250_REG_GCVM_CONTEXT0_PT_START_LO,
+    BC250_REG_GCVM_CONTEXT0_PT_START_HI,
+    BC250_REG_GCVM_CONTEXT0_PT_END_LO,
+    BC250_REG_GCVM_CONTEXT0_PT_END_HI,
+    BC250_REG_GCVM_CONTEXT0_CNTL      /* por ultimo: liga so' depois da tabela */
+};
+
+uint32_t Bc250GcvmGartBuildTable(
+    uint64_t *Table, uint32_t Entries, uint64_t DummyPa,
+    uint64_t FirstSystemPa, uint32_t FirstEntry, uint32_t SystemPages)
+{
+    uint32_t i;
+
+    if (Table == NULL || Entries != BC250_GCVM_GART_ENTRIES ||
+        DummyPa == 0ull || (DummyPa & 0xFFFull) != 0ull ||
+        (DummyPa & ~BC250_GCVM_GART_PTE_ADDR_MASK) != 0ull ||
+        FirstSystemPa == 0ull || (FirstSystemPa & 0xFFFull) != 0ull ||
+        FirstEntry == 0u || SystemPages == 0u ||
+        FirstEntry > Entries || SystemPages > Entries - FirstEntry) {
+        return 0u;
+    }
+    /* A ultima pagina do sistema tem de caber no campo de endereco da PTE. */
+    if (FirstSystemPa > BC250_GCVM_GART_PTE_ADDR_MASK -
+            ((uint64_t)(SystemPages - 1u) << 12)) {
+        return 0u;
+    }
+    for (i = 0u; i < Entries; ++i) {
+        Table[i] = (DummyPa & BC250_GCVM_GART_PTE_ADDR_MASK) |
+            BC250_GCVM_GART_PTE_DUMMY_FLAGS;
+    }
+    for (i = 0u; i < SystemPages; ++i) {
+        Table[FirstEntry + i] =
+            ((FirstSystemPa + ((uint64_t)i << 12)) & BC250_GCVM_GART_PTE_ADDR_MASK) |
+            BC250_GCVM_GART_PTE_SYSTEM_FLAGS;
+    }
+    return 1u;
+}
+
+static void Bc250GcvmGartWriteBack(
+    const BC250_GCVM_GLOBAL_MMU_INTERFACE *Interface,
+    BC250_GCVM_GART_EVIDENCE *Evidence,
+    uint32_t *FailureCount)
+{
+    uint32_t i, value;
+    /* Desliga o contexto 0 PRIMEIRO; so' depois devolve a raiz e a faixa. */
+    if (!Interface->Write32(Interface->Context,
+            g_Bc250GartRegisters[BC250_GCVM_GART_REG_COUNT - 1u],
+            Evidence->ValuesBefore[BC250_GCVM_GART_REG_COUNT - 1u])) {
+        ++*FailureCount;
+    }
+    for (i = 0u; i + 1u < BC250_GCVM_GART_REG_COUNT; ++i) {
+        if (!Interface->Write32(Interface->Context,
+                g_Bc250GartRegisters[i], Evidence->ValuesBefore[i])) {
+            ++*FailureCount;
+        }
+    }
+    for (i = 0u; i < BC250_GCVM_GART_REG_COUNT; ++i) {
+        if (!Interface->Read32(Interface->Context,
+                g_Bc250GartRegisters[i], &value) ||
+            value != Evidence->ValuesBefore[i]) {
+            ++*FailureCount;
+        }
+    }
+    if (!Interface->Flush(Interface->Context)) {
+        ++*FailureCount;
+    }
+}
+
+BC250_GCVM_GLOBAL_MMU_STATUS Bc250GcvmGartProgram(
+    uint64_t TablePa,
+    const BC250_GCVM_GLOBAL_MMU_INTERFACE *Interface,
+    BC250_GCVM_GART_EVIDENCE *Evidence)
+{
+    uint32_t planned[BC250_GCVM_GART_REG_COUNT];
+    uint32_t i, value;
+    uint32_t failures = 0u;
+
+    if (Evidence != NULL) {
+        memset(Evidence, 0, sizeof(*Evidence));
+    }
+    if (Interface == NULL || Evidence == NULL ||
+        Interface->Read32 == NULL || Interface->Write32 == NULL ||
+        Interface->Flush == NULL ||
+        Interface->Identity != BC250_GCVM_GLOBAL_MMU_IDENTITY ||
+        TablePa == 0ull || (TablePa & 0xFFFull) != 0ull ||
+        (TablePa & ~BC250_GCVM_GART_PTE_ADDR_MASK) != 0ull) {
+        return BC250_GCVM_GLOBAL_MMU_BAD_ARGUMENT;
+    }
+
+    /* SNAPSHOT */
+    for (i = 0u; i < BC250_GCVM_GART_REG_COUNT; ++i) {
+        if (!Interface->Read32(Interface->Context,
+                g_Bc250GartRegisters[i], &Evidence->ValuesBefore[i])) {
+            Evidence->FailureStep = 3u;
+            Evidence->FailureRegister = g_Bc250GartRegisters[i];
+            return BC250_GCVM_GLOBAL_MMU_SNAPSHOT_FAILED;
+        }
+        Evidence->Registers[i] = g_Bc250GartRegisters[i];
+    }
+    Evidence->SnapshotPresent = 1u;
+
+    planned[0] = (uint32_t)((TablePa | 1ull) & 0xFFFFFFFFull); /* | VALID (pd_addr) */
+    planned[1] = (uint32_t)(TablePa >> 32);
+    planned[2] = 0u;                                            /* gart_start >> 12 */
+    planned[3] = 0u;                                            /* gart_start >> 44 */
+    planned[4] = (uint32_t)((BC250_GCVM_GART_BYTES - 1ull) >> 12); /* gart_end >> 12 */
+    planned[5] = 0u;                                            /* gart_end >> 44 */
+    planned[6] = (Evidence->ValuesBefore[6] & ~BC250_GCVM_CONTEXT0_CNTL_GART_MASK) |
+        BC250_GCVM_CONTEXT0_CNTL_GART_VALUE;                    /* Lei 6 */
+
+    /* APPLY: tabela e faixa antes, CNTL por ultimo */
+    for (i = 0u; i < BC250_GCVM_GART_REG_COUNT; ++i) {
+        if (!Interface->Write32(Interface->Context,
+                g_Bc250GartRegisters[i], planned[i])) {
+            Evidence->FailureStep = 4u;
+            Evidence->FailureRegister = g_Bc250GartRegisters[i];
+            Evidence->FailureValue = planned[i];
+            goto Rollback;
+        }
+        Evidence->ValuesProgrammed[i] = planned[i];
+    }
+    Evidence->ProgramPassed = 1u;
+
+    /* READBACK */
+    for (i = 0u; i < BC250_GCVM_GART_REG_COUNT; ++i) {
+        if (!Interface->Read32(Interface->Context,
+                g_Bc250GartRegisters[i], &value) || value != planned[i]) {
+            Evidence->FailureStep = 5u;
+            Evidence->FailureRegister = g_Bc250GartRegisters[i];
+            Evidence->FailureValue = value;
+            goto Rollback;
+        }
+    }
+    Evidence->ReadbackPassed = 1u;
+
+    /* Invalidacao da VMID 0 pela engine 17 */
+    if (!Interface->Flush(Interface->Context)) {
+        Evidence->FailureStep = 6u;
+        goto Rollback;
+    }
+    Evidence->TlbFlushPassed = 1u;
+    return BC250_GCVM_GLOBAL_MMU_OK;
+
+Rollback:
+    Bc250GcvmGartWriteBack(Interface, Evidence, &failures);
+    Evidence->RollbackFailureCount = failures;
+    Evidence->RollbackPassed = failures == 0u;
+    if (Evidence->FailureStep == 4u) return BC250_GCVM_GLOBAL_MMU_WRITE_FAILED;
+    if (Evidence->FailureStep == 5u) return BC250_GCVM_GLOBAL_MMU_READBACK_FAILED;
+    return BC250_GCVM_GLOBAL_MMU_TLB_FAILED;
+}
+
+BC250_GCVM_GLOBAL_MMU_STATUS Bc250GcvmGartRestore(
+    const BC250_GCVM_GLOBAL_MMU_INTERFACE *Interface,
+    BC250_GCVM_GART_EVIDENCE *Evidence)
+{
+    uint32_t failures = 0u;
+
+    if (Interface == NULL || Evidence == NULL ||
+        Interface->Read32 == NULL || Interface->Write32 == NULL ||
+        Interface->Flush == NULL ||
+        Interface->Identity != BC250_GCVM_GLOBAL_MMU_IDENTITY ||
+        Evidence->SnapshotPresent == 0u) {
+        return BC250_GCVM_GLOBAL_MMU_BAD_ARGUMENT;
+    }
+    Bc250GcvmGartWriteBack(Interface, Evidence, &failures);
+    Evidence->RestoreFailureCount = failures;
+    Evidence->RestorePassed = failures == 0u;
+    return failures == 0u ? BC250_GCVM_GLOBAL_MMU_OK :
+        BC250_GCVM_GLOBAL_MMU_RESTORE_FAILED;
 }

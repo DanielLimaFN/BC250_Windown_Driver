@@ -62,6 +62,13 @@ if ($ler -and $ler.LastWriteTime -ge $bootTime) {
     Write-Host '  AVISO: leitura da CMOS deste boot nao encontrada; o motivo do reset NAO foi medido.' -ForegroundColor Yellow
 }
 
+# 1b. Diagnostico WHEA e Hardware Errors (MCA)
+Write-Host "`n[1b/4] Diagnostico WHEA e Hardware Errors (MCA)" -ForegroundColor Cyan
+$mcaScript = Join-Path $root 'tools\coletar-mca-whea.ps1'
+if (Test-Path -LiteralPath $mcaScript) {
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $mcaScript -EvidenceDir $EvidenceDir
+}
+
 # 2. Logs da UMD do fim da corrida.
 Write-Host "`n[2/4] Logs da UMD (Windows\Temp e AppContainer)" -ForegroundColor Cyan
 $bindTime = (Get-Item -LiteralPath $EvidenceDir).CreationTime.AddMinutes(-5)
@@ -82,6 +89,30 @@ foreach ($r in $acRoots) {
 }
 Write-Host "  $n arquivo(s) em umd-logs-pos-travamento\"
 
+# 2b. Doc 630: IBs despejados pela RADV (anel dos ultimos 256 por processo).
+# O menu Iniciar (AppContainer) grava na Temp do proprio pacote.
+$ibDir = Join-Path $EvidenceDir 'gfx-ib-dump-pos-trava'
+$ibSources = @()
+if (Test-Path -LiteralPath 'C:\Windows\Temp\BC250_GFX_IB_DUMP') {
+    $ibSources += [pscustomobject]@{ Path = 'C:\Windows\Temp\BC250_GFX_IB_DUMP'; Prefix = '' }
+}
+foreach ($r in $acRoots) {
+    $d = Join-Path $r.FullName 'BC250_GFX_IB_DUMP'
+    if (Test-Path -LiteralPath $d) {
+        $pkg = Split-Path -Leaf (Split-Path -Parent (Split-Path -Parent $r.FullName))
+        $ibSources += [pscustomobject]@{ Path = $d; Prefix = ($pkg + '__') }
+    }
+}
+$nIb = 0
+foreach ($s in $ibSources) {
+    foreach ($f in @(Get-ChildItem -LiteralPath $s.Path -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.LastWriteTime -ge $bindTime -and $_.Name -match '^bc250_(ib|flow)_' })) {
+        if ($nIb -eq 0) { New-Item -ItemType Directory -Force -Path $ibDir | Out-Null }
+        Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $ibDir ($s.Prefix + $f.Name)) -Force; $nIb++
+    }
+}
+Write-Host "  $nIb arquivo(s) de IB/fluxo da RADV em gfx-ib-dump-pos-trava\"
+
 # 3. Caudas do KMD e do rastro.
 Write-Host "`n[3/4] Caudas do log do KMD e do rastro de paginacao" -ForegroundColor Cyan
 $dl = Read-Baseline 'display-log-baseline.json'
@@ -92,12 +123,50 @@ $traceOut = Join-Path $EvidenceDir 'paging-trace-this-bind-RECUPERADO.bin'
 if ($pt) { Copy-Tail $pt.path ([int64]$pt.start_offset) $traceOut }
 else { Write-Host '  paging-trace-baseline.json ausente' -ForegroundColor Yellow }
 
+# 3b. T3 (doc 691): log do gatilho de processo novo e CSV do monitor. Sao
+# cumulativos; cada linha do log da T3 traz data, hora e sessao, entao a
+# analise separa a corrida pela hora do bind.
+foreach ($extra in @('C:\BC250_PROCESSO_NOVO.log', 'C:\BC250_MONITOR.csv')) {
+    if (Test-Path -LiteralPath $extra) {
+        Copy-Item -LiteralPath $extra -Destination (Join-Path $EvidenceDir ([IO.Path]::GetFileName($extra))) -Force
+        Write-Host "  copiado: $extra"
+    } else {
+        Write-Host "  ausente: $extra" -ForegroundColor Yellow
+    }
+}
+
 # 4. Decodificacao e hashes.
 Write-Host "`n[4/4] Decodificacao e SHA-256" -ForegroundColor Cyan
 if (Test-Path -LiteralPath $traceOut) {
     $json = Join-Path $EvidenceDir 'paging-trace-decodificado.json'
     & python (Join-Path $root 'tools\decode-bc250-paging-trace.py') $traceOut | Set-Content -LiteralPath $json -Encoding UTF8
     Write-Host "  paging-trace-decodificado.json escrito (contem tambem o boot atual; a corrida termina na queda do writer_tick)"
+}
+# 4b (doc 571). Se a corrida terminou em BugCheck, a pilha do MEMORY.DMP sai junto
+# (so' leitura do dump; exige o cdb do WDK). So' o dump POSTERIOR ao bind conta.
+$dump = 'C:\Windows\MEMORY.DMP'
+$cdb = 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe'
+$bindTime = (Get-Item -LiteralPath $EvidenceDir).CreationTime
+if ((Test-Path -LiteralPath $dump) -and (Get-Item -LiteralPath $dump).LastWriteTime -gt $bindTime) {
+    if (Test-Path -LiteralPath $cdb) {
+        $dumpOut = Join-Path $EvidenceDir 'dump-analyze-RECUPERADO.txt'
+        Write-Host "  MEMORY.DMP posterior ao bind: rodando cdb (!analyze -v), pode levar alguns minutos..."
+        & $cdb -z $dump -y 'srv*C:\Symbols*https://msdl.microsoft.com/download/symbols' `
+            -c '!analyze -v; lm m bc250*; q' *> $dumpOut
+        Get-Content -LiteralPath $dumpOut | Select-String 'BUGCHECK_CODE|BUGCHECK_P1|PROCESS_NAME|FAILURE_BUCKET_ID' |
+            ForEach-Object { Write-Host "  $_" }
+        # FB.1 (doc 607): o fim do log que o BugCheck nao deixou chegar ao disco
+        # esta no anel em RAM, dentro do dump; junto o registro de falha do blt.
+        try {
+            & (Join-Path $root 'tools\extrair-anel-do-dump.ps1') -EvidenceDir $EvidenceDir -Dump $dump
+        } catch {
+            Write-Host "  extracao do anel do dump falhou: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "  MEMORY.DMP posterior ao bind, mas cdb ausente em $cdb" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host '  sem MEMORY.DMP posterior ao bind (trava dura sem BugCheck, ou sem dump)'
 }
 $hashes = Get-ChildItem -LiteralPath $EvidenceDir -File |
     Where-Object { $_.Name -like '*RECUPERADO*' -or $_.Name -like 'reset-reason-*' } |

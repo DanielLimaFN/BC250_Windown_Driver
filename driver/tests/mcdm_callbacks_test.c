@@ -243,6 +243,21 @@ static BOOLEAN TestTdrExecutorFails(void)
 
 static int Bc250RunMcdmCallbacksTest(void)
 {
+    /* DBG.1 (doc 704): classificador de endereco fisico do validador do modo debug. */
+    {
+        static const BC250_PA_RANGE ram[2] = {
+            { 0x1000ull, 0x9F000ull }, { 0x100000000ull, 0x300000000ull } };
+        static const BC250_PA_RANGE forbid[1] = { { 0x450000000ull, 0x10000000ull } };
+        CHECK(Bc250PaClassify(ram, 2u, forbid, 1u, 0x200000000ull, 4096u) == BC250_PA_CLASS_IN_RAM);
+        CHECK(Bc250PaClassify(ram, 2u, forbid, 1u, 0x0F0000000ull, 4096u) == BC250_PA_CLASS_OUTSIDE_RAM);
+        CHECK(Bc250PaClassify(ram, 2u, forbid, 1u, 0x3FFFFF000ull, 0x2000u) == BC250_PA_CLASS_STRADDLE);
+        CHECK(Bc250PaClassify(ram, 2u, forbid, 1u, 0x451000000ull, 4096u) == BC250_PA_CLASS_FORBIDDEN);
+        CHECK(Bc250PaClassify(ram, 2u, forbid, 1u, 0x2000ull, 4096u) == BC250_PA_CLASS_LOW_LEGACY);
+        CHECK(Bc250PaClassify(NULL, 0u, forbid, 1u, 0x200000000ull, 4096u) == BC250_PA_CLASS_NO_MAP);
+        /* contraponto: a faixa proibida manda mesmo quando a RAM tambem cobre o endereco */
+        CHECK(Bc250PaClassify(ram, 2u, forbid, 1u, 0x44FFFF000ull, 0x2000u) == BC250_PA_CLASS_FORBIDDEN);
+        CHECK(Bc250PaClassify(ram, 2u, forbid, 1u, 0xFFFFFFFFFFFFF000ull, 0x2000u) == BC250_PA_CLASS_OUTSIDE_RAM);
+    }
     /* 0. I.PLAT: conversao do Tctl igual a do k10temp (P1), nos dois ramos. */
     CHECK(Bc250PlatformTctlRawToMilliC(440u << 21) == 55000);
     CHECK(Bc250PlatformTctlRawToMilliC((832u << 21) | 0x00080000u) == 55000);
@@ -446,11 +461,26 @@ static int Bc250RunMcdmCallbacksTest(void)
     g_pageLevelIn.LevelIndex = 4u;
     CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) ==
         STATUS_INVALID_PARAMETER);
-    g_pageLevelIn.LevelIndex = 1u;
-    CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) ==
-        STATUS_SUCCESS);
-    CHECK(g_pageLevelDesc.PageTableIndexBitCount == 13u);
-    CHECK(g_pageLevelDesc.PageTableSizeInBytes == 65536u);
+    /*
+     * P5 (doc 667): cada nivel sai de BC250_GPUVA_PT_LEVEL_INDEX_BITS. Com 4
+     * niveis os quatro sao 9 bits / 4 KiB (PTB, PDB0, PDB1, PDB2 do amdgpu);
+     * com 2 niveis o nivel 1 e' a raiz de 13 bits / 64 KiB.
+     */
+    {
+        UINT32 lvl;
+        for (lvl = 1u; lvl < BC250_GPUVA_PT_LEVEL_COUNT; ++lvl) {
+            g_pageLevelIn.LevelIndex = (WORD)lvl;
+            CHECK(Bc250McdmQueryAdapterInfo((HANDLE)0x250, &g_queryInfo) ==
+                STATUS_SUCCESS);
+#if BC250_P5_QUATRO_NIVEIS
+            CHECK(g_pageLevelDesc.PageTableIndexBitCount == 9u);
+            CHECK(g_pageLevelDesc.PageTableSizeInBytes == 4096u);
+#else
+            CHECK(g_pageLevelDesc.PageTableIndexBitCount == 13u);
+            CHECK(g_pageLevelDesc.PageTableSizeInBytes == 65536u);
+#endif
+        }
+    }
     g_pageLevelIn.LevelIndex = 0u;
     {
         DXGKARG_SETROOTPAGETABLE setRoot;
@@ -562,28 +592,34 @@ static int Bc250RunMcdmCallbacksTest(void)
         g_paging.Operation = DXGK_OPERATION_VIRTUAL_FILL;
         g_paging.pDmaBuffer = g_pagingDmaBuffer;
         g_paging.DmaSize = sizeof(g_pagingDmaBuffer);
+        /* C4: com a GPUVA do DMA buffer presente (a X2b a usava como fonte de zeros). */
+        g_paging.DmaBufferGpuVirtualAddress = 0x229000ull;
         g_paging.FillVirtual.DestinationVirtualAddress = 0x260000ull;
-        g_paging.FillVirtual.FillSizeInBytes = 11075584ull;
-        /* X2b: padrao 0 vai por copia; o fatiamento do CONST_FILL e' testado com padrao != 0. */
-        g_paging.FillVirtual.FillPattern = 0xA5A5A5A5u;
+        g_paging.FillVirtual.FillSizeInBytes = 13ull * 4194304ull;
+        g_paging.FillVirtual.FillPattern = 0u;
         /*
-         * X2a (doc 523): o FILL de paginacao e' fatiado em 256 KiB. A
-         * primaria de 11.075.584 bytes (medida nas travas) vira 43 pacotes e
-         * NAO cabe num buffer de 64 DW: o primeiro passo enche o buffer com 12
-         * pacotes (60 DW + 4 NOPs de alinhamento) e pede outro passo pelo
-         * mecanismo legal (INSUFFICIENT_DMA_BUFFER + MultipassOffset).
+         * C4 (doc 676): zeramento como amdgpu_fill_buffer -- padrao 0 vai em
+         * CONST_FILL, em fatias de fill_max_bytes = 0x400000 (sdma_v5_0.c).
+         * 5E (doc 686): 5 DW de GCR rinse ao final do buffer de paginacao.
+         * 13 fatias de 4 MiB nao cabem num buffer de 64 DW: o primeiro passo
+         * leva 11 pacotes (55 DW + 5 DW GCR = 60 DW + 4 NOPs de alinhamento) e pede outro passo
+         * pelo mecanismo legal (INSUFFICIENT_DMA_BUFFER + MultipassOffset).
          */
         {
             UINT32 packet;
             CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
                 STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER);
             CHECK((UINT32 *)g_paging.pDmaBuffer == g_pagingDmaBuffer + 64u);
-            CHECK(g_paging.MultipassOffset == 12u * 262144u);
-            for (packet = 0u; packet < 12u; ++packet) {
-                CHECK((g_pagingDmaBuffer[packet * 5u] & 0xFFu) == BC250_SDMA_OP_CONST_FILL);
-                /* contagem = bytes - 1: nenhuma fatia passa de 256 KiB */
-                CHECK(g_pagingDmaBuffer[packet * 5u + 4u] == 262144u - 1u);
+            CHECK(g_paging.MultipassOffset == 11u * 4194304u);
+            for (packet = 0u; packet < 11u; ++packet) {
+                const UINT32 *f = g_pagingDmaBuffer + packet * 5u;
+                CHECK(f[0] == (BC250_SDMA_OP_CONST_FILL | (2u << 30)));
+                CHECK(f[1] == (UINT32)(0x260000ull + (UINT64)packet * 4194304ull) && f[2] == 0u);
+                CHECK(f[3] == 0u);
+                /* contagem = bytes - 1: 4 MiB exatos, como o amdgpu */
+                CHECK(f[4] == 0x003FFFFFu);
             }
+            CHECK((g_pagingDmaBuffer[55] & 0xFFu) == BC250_SDMA_OP_GCR_REQ);
             CHECK(g_pagingDmaBuffer[60] == BC250_SDMA_OP_NOP);
             CHECK(g_pagingDmaBuffer[63] == BC250_SDMA_OP_NOP);
         }
@@ -600,18 +636,15 @@ static int Bc250RunMcdmCallbacksTest(void)
          * P6_PAGING_IB_DEST_RANGE_OFFLINE
          *
          * A faixa que o IB vai ESCREVER precisa chegar a submissao para ser
-         * caminhada. Na corrida de 05/09 01:12 so a GPUVA do IB era validada;
-         * a engine resolveu o IB, entrou nele e parou, com o UTCL1 acordando
-         * do lado de escrita. Leitura nao destrutiva.
+         * caminhada. Leitura nao destrutiva.
          */
         {
             UINT64 destStart = 0ull;
             UINT64 destEnd = 0ull;
             CHECK(Bc250PagingPeekIbDestRange(&destStart, &destEnd));
             CHECK(destStart == 0x260000ull);
-            /* So' a faixa DESTE passo: 12 fatias de 256 KiB. */
-            CHECK(destEnd == 0x260000ull + 12ull * 262144ull);
-            /* Nao destrutiva: a segunda leitura devolve o mesmo. */
+            /* So' a faixa DESTE passo: 11 fatias de 4 MiB. */
+            CHECK(destEnd == 0x260000ull + 11ull * 4194304ull);
             CHECK(Bc250PagingPeekIbDestRange(&destStart, &destEnd));
             CHECK(destStart == 0x260000ull);
         }
@@ -619,58 +652,34 @@ static int Bc250RunMcdmCallbacksTest(void)
         /* Consumo destrutivo: a segunda leitura nao reaproveita. */
         CHECK(Bc250PagingConsumeIbUsefulDwords(64u) == 0u);
 
-        /*
-         * X2a: os passos seguintes continuam do MultipassOffset e cobrem o
-         * pedido inteiro, sem buraco e sem fatia maior que 256 KiB.
-         */
+        /* C4: o passo seguinte continua do MultipassOffset e fecha o pedido. */
         {
-            UINT64 covered = (UINT64)g_paging.MultipassOffset;
-            UINT32 passes = 1u;
-            NTSTATUS passStatus;
-            do {
-                UINT32 before = g_paging.MultipassOffset;
-                UINT32 used;
-                UINT32 packet;
-                memset(g_pagingDmaBuffer, 0xCC, sizeof(g_pagingDmaBuffer));
-                g_paging.pDmaBuffer = g_pagingDmaBuffer;
-                g_paging.DmaSize = sizeof(g_pagingDmaBuffer);
-                passStatus = Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging);
-                CHECK(passStatus == STATUS_SUCCESS ||
-                    passStatus == STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER);
-                used = (UINT32)((UINT32 *)g_paging.pDmaBuffer - g_pagingDmaBuffer);
-                CHECK((used & 7u) == 0u);
-                for (packet = 0u; packet * 5u + 4u < used &&
-                        (g_pagingDmaBuffer[packet * 5u] & 0xFFu) == BC250_SDMA_OP_CONST_FILL; ++packet) {
-                    CHECK(g_pagingDmaBuffer[packet * 5u + 4u] <= 262144u - 1u);
-                    covered += (UINT64)g_pagingDmaBuffer[packet * 5u + 4u] + 1ull;
-                }
-                CHECK(packet != 0u);
-                if (passStatus == STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER) {
-                    CHECK(g_paging.MultipassOffset > before);
-                }
-                ++passes;
-            } while (passStatus == STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER && passes < 16u);
-            CHECK(passStatus == STATUS_SUCCESS);
-            CHECK(covered == 11075584ull);
-            CHECK(passes == 4u); /* 43 fatias: 12 + 12 + 12 + 7 */
+            memset(g_pagingDmaBuffer, 0xCC, sizeof(g_pagingDmaBuffer));
+            g_paging.pDmaBuffer = g_pagingDmaBuffer;
+            g_paging.DmaSize = sizeof(g_pagingDmaBuffer);
+            CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) == STATUS_SUCCESS);
+            CHECK((UINT32 *)g_paging.pDmaBuffer == g_pagingDmaBuffer + 16u);
+            CHECK(g_pagingDmaBuffer[0] == (BC250_SDMA_OP_CONST_FILL | (2u << 30)));
+            CHECK(g_pagingDmaBuffer[1] == (UINT32)(0x260000ull + 11ull * 4194304ull));
+            CHECK(g_pagingDmaBuffer[4] == 0x003FFFFFu);
+            CHECK((g_pagingDmaBuffer[10] & 0xFFu) == BC250_SDMA_OP_GCR_REQ);
+            CHECK(g_pagingDmaBuffer[15] == BC250_SDMA_OP_NOP);
             (void)Bc250PagingConsumeIbUsefulDwords(0u);
         }
 
         /*
-         * X2b (doc 561): padrao 0 zera por COPIA a partir de uma regiao de
-         * zeros na frente do proprio pedaco do paging buffer. A primaria
-         * medida (11.075.584 B) num buffer de 64 KiB: 32 KiB de zeros + 338
-         * copias de 32 KiB com FONTE CONSTANTE = DmaBufferGpuVirtualAddress +
-         * DmaBufferWriteOffset, destino contiguo, um passo so'.
+         * C4: a primaria medida nas travas (11.075.584 B) zerada como o amdgpu:
+         * 3 CONST_FILL (4 MiB, 4 MiB, 2.686.976 B) num passo so', nenhuma copia
+         * (a X2b emitia 8192 DW de zeros + 338 copias de 32 KiB).
          */
         {
             UINT32 packet;
-            UINT64 zeroVa = 0x229000ull + 0x80ull;
+            BC250_PAGING_PROOF proof;
             memset(&g_paging, 0, sizeof(g_paging));
-            memset(g_pagingBigDmaBuffer, 0xCC, sizeof(g_pagingBigDmaBuffer));
+            memset(g_pagingDmaBuffer, 0xCC, sizeof(g_pagingDmaBuffer));
             g_paging.Operation = DXGK_OPERATION_VIRTUAL_FILL;
-            g_paging.pDmaBuffer = g_pagingBigDmaBuffer;
-            g_paging.DmaSize = sizeof(g_pagingBigDmaBuffer);
+            g_paging.pDmaBuffer = g_pagingDmaBuffer;
+            g_paging.DmaSize = sizeof(g_pagingDmaBuffer);
             g_paging.DmaBufferGpuVirtualAddress = 0x229000ull;
             g_paging.DmaBufferWriteOffset = 0x80u;
             g_paging.FillVirtual.DestinationVirtualAddress = 0x290000ull;
@@ -678,63 +687,40 @@ static int Bc250RunMcdmCallbacksTest(void)
             g_paging.FillVirtual.FillPattern = 0u;
             CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) == STATUS_SUCCESS);
             CHECK(g_paging.MultipassOffset == 0u); /* BC250_PAGING_MULTIPASS_DONE */
-            /* 8192 DW de zeros + 338 * 7 = 10558, alinhado a 10560. */
-            CHECK((UINT32 *)g_paging.pDmaBuffer == g_pagingBigDmaBuffer + 10560u);
-            for (packet = 0u; packet < 8192u; ++packet) {
-                if (g_pagingBigDmaBuffer[packet] != 0u) break;
+            CHECK((UINT32 *)g_paging.pDmaBuffer == g_pagingDmaBuffer + 24u);
+            for (packet = 0u; packet < 3u; ++packet) {
+                CHECK(g_pagingDmaBuffer[packet * 5u] == (BC250_SDMA_OP_CONST_FILL | (2u << 30)));
+                CHECK(g_pagingDmaBuffer[packet * 5u + 3u] == 0u);
             }
-            CHECK(packet == 8192u);
-            for (packet = 0u; packet < 338u; ++packet) {
-                const UINT32 *c = g_pagingBigDmaBuffer + 8192u + packet * 7u;
-                CHECK(c[0] == (BC250_SDMA_OP_COPY | (BC250_SDMA_SUBOP_COPY_LINEAR << 8)));
-                CHECK(c[1] == 32768u - 1u);
-                CHECK(c[3] == (UINT32)zeroVa && c[4] == 0u);
-                CHECK(c[5] == (UINT32)(0x290000ull + (UINT64)packet * 32768ull) && c[6] == 0u);
-            }
-            CHECK(g_pagingBigDmaBuffer[10558] == BC250_SDMA_OP_NOP);
-            CHECK(g_pagingBigDmaBuffer[10559] == BC250_SDMA_OP_NOP);
-            {
-                BC250_PAGING_PROOF proof;
-                CHECK(Bc250PagingDecodeProof(g_pagingBigDmaBuffer, 10560u, 0x3AC510000ull, &proof));
-                CHECK(proof.Opcode == BC250_PAGING_PROOF_OP_FILL_BY_COPY);
-                CHECK(proof.Source == zeroVa);
-                CHECK(proof.SourceBytes == 32768u);
-                CHECK(proof.Destination == 0x290000ull);
-                CHECK(proof.Bytes == 11075584u);
-            }
+            CHECK(g_pagingDmaBuffer[4] == 0x003FFFFFu);
+            CHECK(g_pagingDmaBuffer[9] == 0x003FFFFFu);
+            CHECK(g_pagingDmaBuffer[14] == 2686976u - 1u);
+            CHECK((g_pagingDmaBuffer[15] & 0xFFu) == BC250_SDMA_OP_GCR_REQ);
+            CHECK(g_pagingDmaBuffer[20] == BC250_SDMA_OP_NOP);
+            CHECK(g_pagingDmaBuffer[23] == BC250_SDMA_OP_NOP);
+            CHECK(Bc250PagingDecodeProof(g_pagingDmaBuffer, 24u, 0x3AC510000ull, &proof));
+            CHECK(proof.Opcode == BC250_PAGING_PROOF_OP_FILL);
+            CHECK(proof.Destination == 0x290000ull);
+            CHECK(proof.Bytes == 11075584u);
+            CHECK(proof.Pattern == 0u);
             {
                 UINT64 destStart = 0ull, destEnd = 0ull;
                 CHECK(Bc250PagingPeekIbDestRange(&destStart, &destEnd));
                 CHECK(destStart == 0x290000ull && destEnd == 0x290000ull + 11075584ull);
             }
-            (void)Bc250PagingConsumeIbUsefulDwords(0u);
+            CHECK(Bc250PagingConsumeIbUsefulDwords(24u) == 20u);
 
-            /* Sem GPUVA do DMA buffer nao ha fonte: fica em CONST_FILL e fala. */
-            memset(&g_paging, 0, sizeof(g_paging));
-            memset(g_pagingBigDmaBuffer, 0xCC, sizeof(g_pagingBigDmaBuffer));
-            g_paging.Operation = DXGK_OPERATION_VIRTUAL_FILL;
-            g_paging.pDmaBuffer = g_pagingBigDmaBuffer;
-            g_paging.DmaSize = sizeof(g_pagingBigDmaBuffer);
-            g_paging.FillVirtual.DestinationVirtualAddress = 0x290000ull;
-            g_paging.FillVirtual.FillSizeInBytes = 65536ull;
-            g_paging.FillVirtual.FillPattern = 0u;
-            CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) == STATUS_SUCCESS);
-            CHECK((g_pagingBigDmaBuffer[0] & 0xFFu) == BC250_SDMA_OP_CONST_FILL);
-            (void)Bc250PagingConsumeIbUsefulDwords(0u);
-
-            /* Buffer sem lugar nem para 4 KiB de zeros: multipasse sem progresso. */
+            /* Buffer sem lugar nem para um CONST_FILL: multipasse sem progresso. */
             memset(&g_paging, 0, sizeof(g_paging));
             g_paging.Operation = DXGK_OPERATION_VIRTUAL_FILL;
             g_paging.pDmaBuffer = g_pagingDmaBuffer;
-            g_paging.DmaSize = sizeof(g_pagingDmaBuffer);
-            g_paging.DmaBufferGpuVirtualAddress = 0x229000ull;
+            g_paging.DmaSize = 16u;
             g_paging.FillVirtual.DestinationVirtualAddress = 0x290000ull;
             g_paging.FillVirtual.FillSizeInBytes = 65536ull;
             g_paging.FillVirtual.FillPattern = 0u;
             CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
                 STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER);
             CHECK(g_paging.MultipassOffset == 0u);
-            CHECK((UINT32 *)g_paging.pDmaBuffer == g_pagingDmaBuffer);
         }
 
         memset(&g_paging, 0, sizeof(g_paging));
@@ -747,12 +733,12 @@ static int Bc250RunMcdmCallbacksTest(void)
         g_paging.TransferVirtual.TransferSizeInBytes = 786432ull;
         CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
             STATUS_SUCCESS);
-        CHECK((UINT32 *)g_paging.pDmaBuffer == g_pagingDmaBuffer + 24u);
-        CHECK(g_pagingDmaBuffer[21] == BC250_SDMA_OP_NOP);
-        CHECK(g_pagingDmaBuffer[22] == BC250_SDMA_OP_NOP);
-        CHECK(g_pagingDmaBuffer[23] == BC250_SDMA_OP_NOP);
+        CHECK((UINT32 *)g_paging.pDmaBuffer == g_pagingDmaBuffer + 32u);
+        CHECK((g_pagingDmaBuffer[21] & 0xFFu) == BC250_SDMA_OP_GCR_REQ);
+        CHECK(g_pagingDmaBuffer[26] == BC250_SDMA_OP_NOP);
+        CHECK(g_pagingDmaBuffer[31] == BC250_SDMA_OP_NOP);
 
-        /* 21 DW uteis + 3 NOPs; o total publicado e 24 DW / 96 bytes. */
+        /* 26 DW uteis + 6 NOPs; o total publicado e 32 DW / 128 bytes. */
         {
             UINT64 destStart = 0ull;
             UINT64 destEnd = 0ull;
@@ -760,7 +746,7 @@ static int Bc250RunMcdmCallbacksTest(void)
             CHECK(destStart == 0x400000ull);
             CHECK(destEnd == 0x400000ull + 786432ull);
         }
-        CHECK(Bc250PagingConsumeIbUsefulDwords(24u) == 21u);
+        CHECK(Bc250PagingConsumeIbUsefulDwords(32u) == 26u);
 
         /*
          * WDDM 2.2+ Monitored Fence Signaling (Op=16).
@@ -861,6 +847,8 @@ static int Bc250RunMcdmCallbacksTest(void)
                 &encoded) == STATUS_SUCCESS);
             CHECK((encoded & addrMask) == (base + segBase + 0x100000ull));
             CHECK((encoded & BC250_PTE_SYSTEM) == 0u);
+            /* T2 (doc 691): folha de VRAM sem pedido explicito sai NC, nao UC. */
+            CHECK((encoded & 0x0007000000000000ull) == 0ull);
 
             /* PTE folha em memoria de sistema (Segment 0) -> endereco cru. */
             memset(&pte, 0, sizeof(pte));
@@ -872,6 +860,37 @@ static int Bc250RunMcdmCallbacksTest(void)
                 &encoded) == STATUS_SUCCESS);
             CHECK((encoded & addrMask) == 0x10721D000ull);
             CHECK((encoded & BC250_PTE_SYSTEM) != 0u);
+            /* Item 5A (Corrida 257): sem CacheCoherent a folha de sistema nao tem snoop */
+            CHECK((encoded & (1ull << 2)) == 0u);
+            /* T2 (doc 691): MTYPE padrao NC (50:48 = 0), como gmc_v10_0_get_vm_pte */
+            CHECK((encoded & 0x0007000000000000ull) == 0ull);
+            pte.CacheCoherent = 1u;
+            CHECK(Bc250McdmEncodeVidMmPteWithLevel(&pteCaps, &pte, 0u,
+                &encoded) == STATUS_SUCCESS);
+            CHECK((encoded & (1ull << 2)) != 0u);
+            CHECK((encoded & 0x0007000000000000ull) == 0ull);
+            pte.CacheCoherent = 0u;
+            /*
+             * P6 (doc 618): com BC250_PTE_MTYPE_UC explicitamente, mantem MTYPE_UC
+             * (3 << 48) com o mesmo endereco e SYSTEM. Outro bit extra e ignorado.
+             */
+            CHECK(Bc250McdmEncodeVidMmPteWithLevelEx(&pteCaps, &pte, 0u,
+                BC250_PTE_MTYPE_UC, &encoded) == STATUS_SUCCESS);
+            CHECK((encoded & 0x0007000000000000ull) == 0x0003000000000000ull);
+            CHECK((encoded & addrMask) == 0x10721D000ull);
+            CHECK((encoded & BC250_PTE_SYSTEM) != 0u);
+            CHECK(Bc250McdmEncodeVidMmPteWithLevelEx(&pteCaps, &pte, 0u,
+                BC250_PTE_PRT, &encoded) == STATUS_SUCCESS);
+            CHECK((encoded & ((1ull << 54) | 0x0007000000000000ull)) == 0ull);
+            pte.Segment = 1u;
+            pte.PageAddress = 0x100ull;
+            CHECK(Bc250McdmEncodeVidMmPteWithLevelEx(&pteCaps, &pte, 1u,
+                BC250_PTE_MTYPE_UC, &encoded) == STATUS_SUCCESS);
+            CHECK((encoded & 0x0007000000000000ull) == 0ull);
+            CHECK(Bc250McdmEncodeVidMmPteWithLevelEx(&pteCaps, &pte, 0u,
+                BC250_PTE_MTYPE_UC, &encoded) == STATUS_SUCCESS);
+            CHECK((encoded & 0x0007000000000000ull) == 0x0003000000000000ull);
+            CHECK((encoded & BC250_PTE_SYSTEM) == 0u);
 
             /*
              * M2 (doc 548): folha no segmento 3 (VRAM sem CPU) leva a MESMA base
@@ -957,10 +976,9 @@ static int Bc250RunMcdmCallbacksTest(void)
         g_paging.pDmaBuffer = g_pagingDmaBuffer;
         g_paging.DmaSize = sizeof(g_pagingDmaBuffer);
         g_paging.FillVirtual.DestinationVirtualAddress = 0x260000ull;
-        g_paging.FillVirtual.FillSizeInBytes = 11075584ull;
-        /* X2b: padrao 0 vai por copia; o fatiamento do CONST_FILL e' testado com padrao != 0. */
+        /* C4: 13 fatias de 4 MiB pedem multipasse num buffer de 64 DW. */
+        g_paging.FillVirtual.FillSizeInBytes = 13ull * 4194304ull;
         g_paging.FillVirtual.FillPattern = 0xA5A5A5A5u;
-        /* X2a: com fatias de 256 KiB este pedido pede multipasse. */
         CHECK(Bc250McdmBuildPagingBuffer((HANDLE)0x250, &g_paging) ==
             STATUS_GRAPHICS_INSUFFICIENT_DMA_BUFFER);
         /*
@@ -1152,7 +1170,8 @@ static int Bc250RunMcdmCallbacksTest(void)
     {
         static DXGKARG_SETSTABLEPOWERSTATE stablePower;
         CHECK(Bc250McdmSetPowerState(NULL, 0u, PowerDeviceD3, PowerActionNone) == STATUS_NOT_SUPPORTED);
-        CHECK(Bc250McdmSetPowerState(NULL, 0u, PowerDeviceD0, PowerActionNone) == STATUS_NOT_SUPPORTED);
+        /* Doc 658: ja estamos em D0; D0 devolve sucesso, D1-D3 seguem recusados. */
+        CHECK(Bc250McdmSetPowerState(NULL, 0u, PowerDeviceD0, PowerActionNone) == STATUS_SUCCESS);
         CHECK(Bc250McdmSetPowerState(NULL, 0u, PowerDeviceUnspecified, PowerActionNone) == STATUS_INVALID_PARAMETER);
 
         memset(&stablePower, 0, sizeof(stablePower));
@@ -1247,6 +1266,165 @@ static int Bc250RunMcdmCallbacksTest(void)
     }
 
     g_fullMcdmReady = 0u;
+
+    /*
+     * 4c.4 corrigida (doc 576): pontos de divisao casam SO' com o IB que os
+     * contem. Sequencia MEDIDA na Corrida 209: o VidMm monta o buffer
+     * 0x21E340 (pontos em +8 e +56 dw) ANTES de enviar o IB 28 em 0x23BB80;
+     * a regra antiga dava os dois ao 28 como "velhos" e o IB 30 rodava sem
+     * invalidacao entre PTE e uso.
+     */
+    {
+        BC250_SDMA_IB_SPLIT out[BC250_SDMA_IB_SPLIT_MAX];
+        UINT32 staleMask = 0u, staleCount = 0u, n, k;
+
+        /* esvazia restos de outros blocos */
+        (void)Bc250PagingSplitTake(0ull, 0xFFFFFFFFu, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(Bc250PagingSplitPendingCount() == 0u);
+
+        Bc250PagingSplitRecordAt(0x21E340ull + 8u * 4u, 1u << 8);
+        Bc250PagingSplitRecordAt(0x21E340ull + 56u * 4u, 1u << 8);
+        /* envio 28: IB em 0x23BB80, 8128 bytes -- NAO e' dono dos pontos */
+        n = Bc250PagingSplitTake(0x23BB80ull, 8128u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(n == 0u && staleCount == 0u && staleMask == 0u);
+        CHECK(Bc250PagingSplitPendingCount() == 2u);
+        /* envio 29: 0x21E000, 832 bytes, termina em 0x21E340 -- tambem nao */
+        n = Bc250PagingSplitTake(0x21E000ull, 832u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(n == 0u && staleCount == 0u);
+        /* envio 30: o dono -- os dois pontos, nos offsets exatos */
+        n = Bc250PagingSplitTake(0x21E340ull, 36768u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(n == 2u && staleCount == 0u);
+        CHECK(out[0].OffsetDwords == 8u && out[1].OffsetDwords == 56u);
+        CHECK(out[0].VmidMask == (1u << 8));
+        CHECK(Bc250PagingSplitPendingCount() == 0u);
+
+        /* ponto no fim de um IB e no inicio do seguinte fica com o primeiro */
+        Bc250PagingSplitRecordAt(0x21E340ull, 1u << 8);
+        n = Bc250PagingSplitTake(0x21E000ull, 832u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(n == 1u && out[0].OffsetDwords == 832u / 4u);
+
+        /* sem posicao: antes do proximo IB de paginacao */
+        Bc250PagingSplitRecordAt(0ull, 1u << 8);
+        n = Bc250PagingSplitTake(0x22E000ull, 4096u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(n == 0u && staleCount == 1u && staleMask == (1u << 8));
+
+        /* orfao: so' depois de 64 envios sem casar, e entao antes do IB */
+        Bc250PagingSplitRecordAt(0x300000ull, 1u << 7);
+        for (k = 0u; k < 63u; ++k) {
+            n = Bc250PagingSplitTake(0x22E000ull, 4096u, out, BC250_SDMA_IB_SPLIT_MAX,
+                &staleMask, &staleCount);
+            CHECK(n == 0u && staleCount == 0u);
+        }
+        n = Bc250PagingSplitTake(0x22E000ull, 4096u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(n == 0u && staleCount == 1u && staleMask == (1u << 7));
+        CHECK(Bc250PagingSplitPendingCount() == 0u);
+
+        /*
+         * P4.2 (doc 622): faixas de PTE para o SDMA1. Sem a rota armada nada
+         * e' registrado (as PTEs ficam no IB do SDMA0). Com a rota: faixa
+         * desalinhada fica no SDMA0; faixas contiguas fundem; o FlushTlb no
+         * fim da faixa NAO funde nela; a faixa sai so' no envio do buffer dela,
+         * com inicio e fim exatos e sem invalidacao propria.
+         */
+        Bc250PagingSdma1RouteSet(FALSE);
+        Bc250PagingSdma1RangeRecord(0x21E340ull + 32u, 0x21E340ull + 96u);
+        CHECK(Bc250PagingSplitPendingCount() == 0u);
+        Bc250PagingSdma1RouteSet(TRUE);
+        Bc250PagingSdma1RangeRecord(0x21E340ull + 4u, 0x21E340ull + 96u);  /* desalinhada */
+        CHECK(Bc250PagingSplitPendingCount() == 0u);
+        Bc250PagingSdma1RangeRecord(0x21E340ull + 32u, 0x21E340ull + 96u);
+        Bc250PagingSdma1RangeRecord(0x21E340ull + 96u, 0x21E340ull + 160u); /* contigua */
+        CHECK(Bc250PagingSplitPendingCount() == 1u);
+        Bc250PagingSplitRecordAt(0x21E340ull + 160u, 1u << 8);              /* flush no fim */
+        CHECK(Bc250PagingSplitPendingCount() == 2u);
+        n = Bc250PagingSplitTake(0x23BB80ull, 8128u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(n == 0u && Bc250PagingSplitPendingCount() == 2u);              /* outro IB */
+        n = Bc250PagingSplitTake(0x21E340ull, 4096u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(n == 2u && staleCount == 0u);
+        CHECK(out[0].OffsetDwords == 8u && out[0].Sdma1EndDwords == 40u &&
+              out[0].VmidMask == 0u && out[0].Sdma1Token == 0u);
+        CHECK(out[1].OffsetDwords == 40u && out[1].Sdma1EndDwords == 0u &&
+              out[1].VmidMask == (1u << 8));
+        CHECK(Bc250PagingSplitPendingCount() == 0u);
+        {
+            /*
+             * Pendencia 2 do doc 624: cada descarte soma no total E em
+             * exatamente um motivo. Sem isso os ~21% da 236 seguem sem causa.
+             */
+            LONG64 d0 = 0, d1 = 0, ns0 = 0, p0 = 0, of0 = 0, o0 = 0;
+            LONG64 ns1 = 0, p1 = 0, of1 = 0, o1 = 0;
+            Bc250PagingSdma1RangeStats(NULL, NULL, &d0);
+            Bc250PagingSdma1DropStats(&ns0, &p0, &of0, &o0);
+
+            /* parcial: comeca no IB e passa do fim (roda no SDMA0) */
+            Bc250PagingSdma1RangeRecord(0x21E340ull + 4064u, 0x21E340ull + 4160u);
+            n = Bc250PagingSplitTake(0x21E340ull, 4096u, out, BC250_SDMA_IB_SPLIT_MAX,
+                &staleMask, &staleCount);
+            CHECK(n == 0u && Bc250PagingSplitPendingCount() == 0u);
+            Bc250PagingSdma1RangeStats(NULL, NULL, &d1);
+            Bc250PagingSdma1DropStats(&ns1, &p1, &of1, &o1);
+            CHECK(d1 - d0 == 1 && p1 - p0 == 1 && of1 == of0 && o1 == o0 && ns1 == ns0);
+
+            /* saida cheia: duas faixas inteiras no IB, lista de saida de 1 */
+            Bc250PagingSdma1RangeRecord(0x21E340ull + 32u, 0x21E340ull + 96u);
+            Bc250PagingSdma1RangeRecord(0x21E340ull + 160u, 0x21E340ull + 224u);
+            CHECK(Bc250PagingSplitPendingCount() == 2u);
+            n = Bc250PagingSplitTake(0x21E340ull, 4096u, out, 1u, &staleMask, &staleCount);
+            CHECK(n == 1u && out[0].OffsetDwords == 8u && Bc250PagingSplitPendingCount() == 0u);
+            Bc250PagingSdma1RangeStats(NULL, NULL, &d0);
+            Bc250PagingSdma1DropStats(&ns0, &p0, &of0, &o0);
+            CHECK(d0 - d1 == 1 && of0 - of1 == 1 && p0 == p1 && o0 == o1 && ns0 == ns1);
+
+            /* orfa: nunca cai num IB enviado; so' sai na idade maxima */
+            Bc250PagingSdma1RangeRecord(0x300000ull, 0x300040ull);
+            for (k = 0u; k < 63u; ++k) {
+                n = Bc250PagingSplitTake(0x22E000ull, 4096u, out, BC250_SDMA_IB_SPLIT_MAX,
+                    &staleMask, &staleCount);
+                CHECK(n == 0u && Bc250PagingSplitPendingCount() == 1u);
+            }
+            n = Bc250PagingSplitTake(0x22E000ull, 4096u, out, BC250_SDMA_IB_SPLIT_MAX,
+                &staleMask, &staleCount);
+            CHECK(n == 0u && staleCount == 0u && Bc250PagingSplitPendingCount() == 0u);
+            Bc250PagingSdma1RangeStats(NULL, NULL, &d1);
+            Bc250PagingSdma1DropStats(&ns1, &p1, &of1, &o1);
+            CHECK(d1 - d0 == 1 && o1 - o0 == 1 && p1 == p0 && of1 == of0 && ns1 == ns0);
+        }
+        Bc250PagingSdma1RouteSet(FALSE);
+
+        /*
+         * LC.1 (Corrida 216, doc 589): 12 pontos de um buffer que NAO foi
+         * enviado (0x21E000) nao podem recusar outro buffer. No rollback o
+         * VidMm parou de enviar e a regra global recusou para sempre.
+         */
+        for (k = 0u; k < 12u; ++k) {
+            Bc250PagingSplitRecordAt(0x21E000ull + 0x40ull + (UINT64)k * 0x40ull, 1u << 8);
+        }
+        CHECK(Bc250PagingSplitPendingCount() == 12u);
+        /* buffer novo, vazio: progresso garantido */
+        CHECK(!Bc250PagingSplitMustDefer(0x22E000ull, 0u, 12u));
+        /* buffer novo ja escrito, mas sem pontos proprios */
+        CHECK(!Bc250PagingSplitMustDefer(0x22E000ull, 0x800u, 12u));
+        /* sem GPUVA: pontos sem posicao nao viram pedaco de IB */
+        CHECK(!Bc250PagingSplitMustDefer(0ull, 0x800u, 12u));
+        /* o proprio buffer cheio: ai sim, envia antes */
+        CHECK(Bc250PagingSplitMustDefer(0x21E000ull, 0x340u, 12u));
+        /* 11 proprios: ainda cabe */
+        CHECK(!Bc250PagingSplitMustDefer(0x21E000ull, 0x2C0u, 12u));
+        /* buffer vazio no MESMO endereco do cheio: nunca recusa */
+        CHECK(!Bc250PagingSplitMustDefer(0x21E000ull, 0u, 12u));
+        (void)Bc250PagingSplitTake(0x21E000ull, 0x10000u, out, BC250_SDMA_IB_SPLIT_MAX,
+            &staleMask, &staleCount);
+        CHECK(Bc250PagingSplitPendingCount() == 0u);
+    }
 
     return 1;
 }

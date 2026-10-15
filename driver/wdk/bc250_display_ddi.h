@@ -74,6 +74,31 @@ NTSTATUS Bc250DisplayInit(
 
 void Bc250DisplaySetMmioBase(_In_ PHYSICAL_ADDRESS MmioPhysical);
 
+/* DCN.1 (doc 710): flip pelo HUBP0 do DCN 2.0.1. Liga so' com a chave DcnFlip
+ * do INF e o pipeline do GOP elegivel; 0 = copia do SDMA0 como antes. */
+void Bc250DisplaySetDcnFlipEnabled(ULONG Enabled);
+ULONG Bc250DisplayDcnFlipArmed(void);
+
+/* DCN.2 (doc 713): bits da chave DcnExt do INF (padrao 0). */
+#define BC250_DCN2_KEY_IRQ     0x01u /* VSYNC e flip pela interrupcao do DCN */
+#define BC250_DCN2_KEY_CRC     0x02u /* CRC continuo do OTG0 */
+#define BC250_DCN2_KEY_CURSOR  0x04u /* cursor por hardware no HUBP0/DPP0 */
+#define BC250_DCN2_KEY_EDID    0x08u /* EDID real por AUX (+ HPD so' leitura) */
+#define BC250_DCN2_KEY_DPMS    0x10u /* apagar/acender o OTG com o monitor */
+#define BC250_DCN2_KEY_TIMING  0x20u /* timing medido do OTG0 no VidPn */
+/* Propostos para a 274 (doc 716 par.5, doc 718). */
+#define BC250_DCN2_KEY_IRQ_DEST    0x40u  /* D06, SO' LEITURA: roteamento OTG0_INTERRUPT_DEST/DCHUB_INTERRUPT_DEST2 */
+#define BC250_DCN2_KEY_AUX_HW_MODE 0x80u  /* D12, ESCREVE: pad DDC1/AUX0 em modo hardware/AUX so' durante o EDID */
+/* Proposto para a 275 (doc 720). */
+#define BC250_DCN2_KEY_VTOTAL_TEST 0x100u /* D19, ESCREVE: prova que V_TOTAL muda o refresh; autocontido, devolve antes do desktop */
+#define BC250_DCN2_KEY_ALL     0x1FFu
+VOID Bc250DisplaySetDcnExt(ULONG Keys);
+ULONG Bc250DisplayDcnExtKeys(void);
+VOID Bc250DisplaySetDcnCursorVram(UINT64 VramOffset, UINT64 Bytes);
+ULONG Bc250DisplayDcnCursorReady(void);
+/* ISR do IH (DIRQL), cliente DCE: ack e DPC de VSYNC. TRUE = consumido. */
+BOOLEAN Bc250DisplayDcnIsr(ULONG SrcId, ULONG ExtId);
+
 void Bc250DisplaySetSyntheticEdidEnabled(BOOLEAN Enabled);
 BOOLEAN Bc250DisplayGetSyntheticEdidEnabled(void);
 
@@ -263,12 +288,48 @@ extern volatile LONG g_Bc250PagingActiveCount;
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
 void Bc250DisplayLog(const char *Format, ...);
 void Bc250DisplayLogSamplingSummary(void);
+/*
+ * LOG.1 (doc 585): drena o anel de log em RAM para o arquivo. So' a thread
+ * do rastro duravel chama, em PASSIVE com APCs ligadas, a cada tique.
+ */
+void Bc250DisplayLogDrainFromWorker(void);
+/*
+ * TDRLOG.1 (Corrida 301, doc 762): passo do TDR gravado em
+ * C:\BC250_TDR_PASSOS.txt com write-through e flush ANTES de o passo rodar.
+ * Na 300 a maquina morreu entre o ResetFromTimeout e o restart, e as linhas
+ * do anel em RAM se perderam. Tambem vai ao log normal. Ativa uma janela de
+ * "TDR em curso" em que DDIs de paginacao/submissao deixam a propria linha.
+ */
+void Bc250TdrStep(const char *Format, ...);
+/* Mesma linha, sem disco: para DDIs que podem rodar na thread de paginacao. */
+void Bc250TdrStepRam(const char *Format, ...);
+void Bc250TdrWindowSet(_In_ BOOLEAN Open);
+_Check_return_ BOOLEAN Bc250TdrWindowIsOpen(void);
 #else
 static __inline void Bc250DisplayLog(const char *Format, ...)
 {
     UNREFERENCED_PARAMETER(Format);
 }
+static __inline void Bc250TdrStep(const char *Format, ...)
+{
+    UNREFERENCED_PARAMETER(Format);
+}
+static __inline void Bc250TdrStepRam(const char *Format, ...)
+{
+    UNREFERENCED_PARAMETER(Format);
+}
+static __inline void Bc250TdrWindowSet(_In_ BOOLEAN Open)
+{
+    UNREFERENCED_PARAMETER(Open);
+}
+static __inline BOOLEAN Bc250TdrWindowIsOpen(void)
+{
+    return FALSE;
+}
 static __inline void Bc250DisplayLogSamplingSummary(void)
+{
+}
+static __inline void Bc250DisplayLogDrainFromWorker(void)
 {
 }
 #endif

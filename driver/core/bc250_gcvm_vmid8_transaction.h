@@ -12,6 +12,8 @@ typedef UINT32 uint32_t;
 #include <stdint.h>
 #endif
 
+#include "bc250_gpuva_geometry.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -125,8 +127,16 @@ extern "C" {
 /* Defaults aggregate: 0x00555400 (bits 10, 12, 14, 16, 18, 20, 22) */
 #define BC250_GCVM_CONTEXT_CNTL_FAULT_DEFAULTS_MASK                           0x00555400u
 
-/* Valor alvo pretendido para WDDM 34-bit / 2-level space: 0x00555403 */
-#define BC250_GCVM_CONTEXT8_CNTL_TARGET_VALUE                                 0x00555403u
+/*
+ * Valor alvo: ENABLE + os 7 *_ENABLE_DEFAULT + DEPTH/BLOCK_SIZE da geometria
+ * (bc250_gpuva_geometry.h). 2 niveis: 0x00555403. 4 niveis (P5): 0x00555407.
+ */
+#define BC250_GCVM_CONTEXT8_CNTL_TARGET_VALUE \
+    (BC250_GCVM_CONTEXT_CNTL_FAULT_DEFAULTS_MASK | 0x00000001u | \
+     ((BC250_GPUVA_PT_GCVM_DEPTH << BC250_GCVM_CONTEXT_CNTL_PAGE_TABLE_DEPTH_SHIFT) & \
+      BC250_GCVM_CONTEXT_CNTL_PAGE_TABLE_DEPTH_MASK) | \
+     ((BC250_GPUVA_PT_GCVM_BLOCK_SIZE << BC250_GCVM_CONTEXT_CNTL_PAGE_TABLE_BLOCK_SIZE_SHIFT) & \
+      BC250_GCVM_CONTEXT_CNTL_PAGE_TABLE_BLOCK_SIZE_MASK))
 
 /* Valor baseline medido no POST em silicio: 0x007FFE80 */
 #define BC250_GCVM_CONTEXT8_CNTL_POST_BASELINE                                0x007FFE80u
@@ -156,12 +166,18 @@ extern "C" {
  * =====================================================================
  */
 #define BC250_GCVM_CONTEXT_CNTL_FAULT_INTERRUPTS_MASK                         0x002AAA00u
-#define BC250_GCVM_CONTEXT8_CNTL_FAULT_OBSERVABLE_VALUE                       0x007FFE03u
+/* DEFAULT + INTERRUPT das 7 classes, mais ENABLE e a geometria. 2 niveis: 0x007FFE03; 4 niveis: 0x007FFE07. */
+#define BC250_GCVM_CONTEXT8_CNTL_FAULT_OBSERVABLE_VALUE \
+    (BC250_GCVM_CONTEXT8_CNTL_TARGET_VALUE | BC250_GCVM_CONTEXT_CNTL_FAULT_INTERRUPTS_MASK)
 
-/* Limites de enderecamento para espaco virtual de 34 bits (16 GiB = 4.194.304 paginas de 4 KiB) */
-#define BC250_GCVM_CONTEXT8_PT_START_VALUE                                    0x00000000u
-#define BC250_GCVM_CONTEXT8_PT_END_LO_VALUE                                   0x003FFFFFu
-#define BC250_GCVM_CONTEXT8_PT_END_HI_VALUE                                   0x00000000u
+/*
+ * Limites do espaco: START 0 e END = max_pfn - 1 da geometria. 34 bits:
+ * 0x00000000:003FFFFF (2^22 - 1). 48 bits (P5): 0x0000000F:FFFFFFFF (2^36 - 1),
+ * como gfxhub_v2_0_setup_vmid_config.
+ */
+#define BC250_GCVM_CONTEXT8_PT_START_VALUE  0x00000000u
+#define BC250_GCVM_CONTEXT8_PT_END_LO_VALUE ((uint32_t)(BC250_GPUVA_PT_GCVM_END_PFN & 0xFFFFFFFFull))
+#define BC250_GCVM_CONTEXT8_PT_END_HI_VALUE ((uint32_t)(BC250_GPUVA_PT_GCVM_END_PFN >> 32))
 
 typedef enum BC250_GCVM_VMID8_STATUS {
     BC250_GCVM_VMID8_OK = 0,

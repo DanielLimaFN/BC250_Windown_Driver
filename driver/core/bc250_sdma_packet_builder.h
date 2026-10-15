@@ -51,6 +51,14 @@ extern "C" {
  */
 #define BC250_SDMA_COPY_MAX_BYTES 0x003FFF00u /* Mesa SDMA_V2_0_COPY_MAX_BYTES */
 #define BC250_SDMA_FILL_MAX_BYTES 0x003FFFFCu /* Mesa: MASK(22) & ~3 */
+/*
+ * C4 (09/10, doc 676): teto do PACOTE = o do amdgpu, fill_max_bytes 0x400000
+ * (sdma_v5_0.c:1880, count = byte_count - 1 = 0x3FFFFF cabe nos 22 bits). O
+ * fatiamento da Mesa (BC250_SDMA_FILL_MAX_BYTES) continua nos chamadores do
+ * present; o FILL de paginacao fatia por este. A ligacao do SDMA.4M com 4 MiB
+ * exatos era H FRACA (333-379 fills de 4 MiB por corrida sem trava).
+ */
+#define BC250_SDMA_CONST_FILL_PACKET_MAX_BYTES 0x00400000u
 
 #define BC250_SDMA_DWORDS_NOP(Extra)  (1u + (Extra))
 #define BC250_SDMA_DWORDS_COPY_LINEAR 7u
@@ -188,6 +196,212 @@ BC250_SDMA_STATUS Bc250SdmaEmitPollRegMem(
     uint32_t MemPoll,
     uint32_t IntervalUs,
     uint32_t RetryCount);
+
+/*
+ * 4c (doc 567) -- escrita de registrador e invalidacao de TLB PELO SDMA, em
+ * ordem com o trabalho da GPU, como o Linux faz no anel do kernel.
+ *
+ * Proveniencia (P1, copias locais em referencias/linux_upstream_2026-09-29/,
+ * SHA-256 no doc 567):
+ *   - navi10_sdma_pkt_open.h: SDMA_OP_SRBM_WRITE = 14; HEADER_BYTE_EN nos
+ *     bits 31:28; ADDR no dw1 (18 bits, offset de registrador em DWORDS);
+ *     POLL_REGMEM: FUNC 30:28, MEM_POLL 31, DW5 INTERVAL 15:0 e
+ *     RETRY_COUNT 27:16.
+ *   - sdma_v5_0.c: emit_wreg (SRBM_WRITE com BYTE_EN=0xF), emit_reg_wait
+ *     (POLL_REGMEM FUNC=3 "igual", MEM_POLL=0, endereco = reg << 2,
+ *     RETRY 0xFFF, INTERVAL 10) e emit_reg_write_reg_wait (escreve REQ,
+ *     espera um ciclo em REQ com ref=0/mask=0, espera ACK & mask == mask).
+ *   - gmc_v10_0.c: emit_flush_gpu_tlb; no GFXHUB o Linux NAO usa o semaforo.
+ *   - amdgpu_gmc.c: amdgpu_gmc_allocate_vm_inv_eng da um engine por anel
+ *     (bitmap 0x1FFF3; 17 fica para o flush de GART pela CPU).
+ *
+ * Engines nossos: 17 = CPU por MMIO, 0 = anel grafico (DX.32), 1 = SDMA0.
+ * Offsets absolutos em DWORDS (GC_BASE seg0 = 0x1260, gc_10_1_0_offset.h):
+ *   REQ_ENGn = 0x1260 + 0x1643 + n   (ENG1 = 0x28A4, byte 0xA290)
+ *   ACK_ENGn = 0x1260 + 0x1655 + n   (ENG1 = 0x28B6, byte 0xA2D8)
+ */
+#define BC250_SDMA_OP_SRBM_WRITE        14u
+#define BC250_SDMA_DWORDS_SRBM_WRITE    3u
+#define BC250_SDMA_DWORDS_REG_WAIT      BC250_SDMA_DWORDS_POLL_REGMEM
+#define BC250_SDMA_DWORDS_VM_INVALIDATE \
+    (BC250_SDMA_DWORDS_SRBM_WRITE + 2u * BC250_SDMA_DWORDS_REG_WAIT)
+
+#define BC250_SDMA_REG_WAIT_RETRY_COUNT 0xFFFu /* sdma_v5_0_ring_emit_reg_wait */
+#define BC250_SDMA_REG_WAIT_INTERVAL    10u    /* idem */
+#define BC250_SDMA_POLL_FUNC_EQUAL      3u
+
+#define BC250_SDMA_INVALIDATE_ENGINE    1u
+#define BC250_GCVM_INV_ENG0_REQ_DWORD   (0x1260u + 0x1643u)
+#define BC250_GCVM_INV_ENG0_ACK_DWORD   (0x1260u + 0x1655u)
+#define BC250_GCVM_INV_ENG_COUNT        18u
+/* Bits 19..23 de GCVM_INVALIDATE_ENG*_REQ: L2 PTEs, PDE0/1/2 e L1 PTEs
+ * (gfxhub_v2_0_get_invalidate_req); o mesmo valor do flush por MMIO. */
+#define BC250_GCVM_INV_REQ_ALL_LEVELS   0x00F80000u
+
+BC250_SDMA_STATUS Bc250SdmaEmitSrbmWrite(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t RegisterDword,
+    uint32_t Value);
+
+/* POLL_REGMEM sobre registrador, identico a sdma_v5_0_ring_emit_reg_wait. */
+BC250_SDMA_STATUS Bc250SdmaEmitRegWait(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t RegisterDword,
+    uint32_t Reference,
+    uint32_t Mask);
+
+uint32_t Bc250GcvmInvalidateRequestValue(uint32_t Vmid, uint32_t FlushType);
+
+/*
+ * Invalidacao de UMA VMID do GFXHUB pelo SDMA, sequencia de
+ * sdma_v5_0_ring_emit_reg_write_reg_wait. 15 dwords. Recusa VMID 0 (a raiz
+ * do MEC/anel fisico) e engine 17 (reservado a CPU).
+ */
+BC250_SDMA_STATUS Bc250SdmaEmitVmInvalidate(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t Engine,
+    uint32_t Vmid,
+    uint32_t FlushType);
+
+/*
+ * COMP.VA (doc 743): invalidacao da VMID 0 (GART) pelo SDMA, no anel, com a
+ * mesma sequencia de 15 dwords. Uso UNICO: a janela de transferencia da GART
+ * (entradas 256..511), regravada pela CPU antes de cada pedaco da composicao,
+ * como amdgpu_ttm_map_buffer usa a janela de GTT do buffer_funcs_ring. A
+ * invalidacao so' descarta traducoes em cache; as entradas do MEC, do anel e
+ * do IH nao mudam, entao sao re-caminhadas com o mesmo valor.
+ */
+BC250_SDMA_STATUS Bc250SdmaEmitGartInvalidate(
+    uint32_t *RingBuffer,
+    uint32_t RingDwords,
+    uint32_t *CursorDwords,
+    uint32_t Engine);
+
+/*
+ * 4c.4 (doc 575) -- IB DE PAGINACAO DIVIDIDO NO ANEL NOS PONTOS DE FlushTlb.
+ *
+ * Com PageTableUpdateMode=GPU_VIRTUAL o contrato poe no MESMO paging buffer
+ * UpdatePageTable (PTE por WRITE_LINEAR), FlushTlb e a operacao que usa o
+ * mapeamento novo (examples.md do WDDM). A invalidacao nao pode ir DENTRO do
+ * IB: o SDMA para no SRBM_WRITE (P0, Corrida 205, doc 568). Por isso o IB e'
+ * executado em PEDACOS, com a invalidacao no anel entre eles:
+ *
+ *   [flush(off=0)] [pad][INDIRECT seg0][GCR] [flush] [pad][INDIRECT seg1][GCR] ... [flush(off=fim)]
+ *
+ * Splits: OffsetDwords crescente, multiplo de 8 (base de IB alinhada a 32 B),
+ * <= IbDwords; offsets iguais se fundem (OR das mascaras). Mascara vazia ou
+ * com bit 0 e' recusada. RingPosBase e' a posicao ABSOLUTA no anel de
+ * Buffer[0], porque o pre-pad do INDIRECT depende dela. A fence fica com o
+ * chamador.
+ */
+#define BC250_SDMA_IB_SPLIT_MAX 32u /* doc 580: folga sobre o teto de 12 do UpdatePageTable */
+
+typedef struct BC250_SDMA_IB_SPLIT {
+    uint32_t OffsetDwords;
+    uint32_t VmidMask;
+    /*
+     * P4.2 (doc 622): faixa [OffsetDwords, Sdma1EndDwords) do IB que roda no
+     * SDMA1 (escrita de PTE), com troca de sinais entre os aneis; 0 = ponto
+     * de divisao comum (invalidacao). Sdma1Token e' o valor da troca.
+     */
+    uint32_t Sdma1EndDwords;
+    uint32_t Sdma1Token;
+} BC250_SDMA_IB_SPLIT;
+
+/*
+ * P4.2 (doc 622): troca de sinais entre SDMA0 e SDMA1, na forma do Linux
+ * (P1, sdma_v5_0.c): FENCE com MTYPE_UC (sdma_v5_0_ring_emit_fence) e
+ * POLL_REGMEM de memoria, FUNC=3 "igual", mascara 0xFFFFFFFF, RETRY 0xFFF e
+ * INTERVAL 4 (sdma_v5_0_ring_emit_pipeline_sync).
+ *   SDMA0: ... IB ate o inicio da faixa | FENCE(Go = T) | POLL(Done == T) | ...
+ *   SDMA1: POLL(Go == T) | IB da faixa (mesma VMID) | GCR | FENCE(Done = T)
+ * Go e Done sao dwords em memoria que os dois aneis enxergam (VMID 0).
+ */
+typedef struct BC250_SDMA_CROSS_ENGINE {
+    uint64_t GoAddress;
+    uint64_t DoneAddress;
+} BC250_SDMA_CROSS_ENGINE;
+
+#define BC250_SDMA_CROSS_POLL_FUNC     3u      /* igual */
+#define BC250_SDMA_CROSS_POLL_RETRY    0xFFFu  /* sdma_v5_0_ring_emit_pipeline_sync */
+#define BC250_SDMA_CROSS_POLL_INTERVAL 4u
+#define BC250_SDMA_DWORDS_CROSS_HANDOFF (BC250_SDMA_DWORDS_FENCE + BC250_SDMA_DWORDS_POLL_REGMEM)
+
+/* Fim da faixa coberta pelo ponto: Sdma1EndDwords nas faixas, OffsetDwords nos pontos. */
+uint32_t Bc250SdmaSplitEndDwords(const BC250_SDMA_IB_SPLIT *Split);
+
+/*
+ * Como Bc250SdmaEmitSplitIndirect, aceitando faixas do SDMA1: a faixa NAO
+ * roda no SDMA0; no lugar dela vai o FENCE(Go) + POLL(Done). Cross NULL com
+ * faixa presente = BAD_ARGUMENT.
+ */
+BC250_SDMA_STATUS Bc250SdmaEmitSplitIndirectCross(
+    uint32_t *Buffer,
+    uint32_t BufferDwords,
+    uint32_t *CursorDwords,
+    uint32_t RingPosBase,
+    uint64_t IbAddress,
+    uint32_t IbDwords,
+    uint32_t Vmid,
+    const BC250_SDMA_IB_SPLIT *Splits,
+    uint32_t SplitCount,
+    const BC250_SDMA_CROSS_ENGINE *Cross,
+    uint32_t *LastIndirectEndDwords);
+
+/* Lado do SDMA1 de uma faixa: POLL(Go == Token) | IB [First, End) | GCR | FENCE(Done = Token). */
+BC250_SDMA_STATUS Bc250SdmaEmitSdma1RangeJob(
+    uint32_t *Buffer,
+    uint32_t BufferDwords,
+    uint32_t *CursorDwords,
+    uint32_t RingPosBase,
+    const BC250_SDMA_CROSS_ENGINE *Cross,
+    uint32_t Token,
+    uint64_t IbAddress,
+    uint32_t FirstDword,
+    uint32_t EndDword,
+    uint32_t Vmid);
+
+#define BC250_SDMA_DWORDS_SDMA1_RANGE_JOB_WORST \
+    (BC250_SDMA_DWORDS_POLL_REGMEM + (BC250_SDMA_IB_PACKET_ALIGNMENT_DWORDS - 1u) + \
+     BC250_SDMA_DWORDS_INDIRECT + BC250_SDMA_DWORDS_GCR_REQ + BC250_SDMA_DWORDS_FENCE)
+
+BC250_SDMA_STATUS Bc250SdmaEmitSplitIndirect(
+    uint32_t *Buffer,
+    uint32_t BufferDwords,
+    uint32_t *CursorDwords,
+    uint32_t RingPosBase,
+    uint64_t IbAddress,
+    uint32_t IbDwords,
+    uint32_t Vmid,
+    const BC250_SDMA_IB_SPLIT *Splits,
+    uint32_t SplitCount,
+    uint32_t *LastIndirectEndDwords);
+
+/*
+ * 4c.4 (doc 580): onde termina o proximo pedaco de anel de um IB dividido.
+ * Devolve o indice (exclusivo) do ultimo ponto incluido a partir de First:
+ * cresce enquanto PreDwords + pior caso + FENCE <= MaxDwords, inclui sempre
+ * pelo menos um ponto e nunca corta numa faixa vazia do IB (ponto no mesmo
+ * offset do inicio do pedaco).
+ */
+uint32_t Bc250SdmaSplitNextChunk(
+    const BC250_SDMA_IB_SPLIT *Splits,
+    uint32_t SplitCount,
+    uint32_t First,
+    uint32_t ChunkStartDwords,
+    uint32_t PreDwords,
+    uint32_t MaxDwords);
+
+/* Pior caso de dwords de Bc250SdmaEmitSplitIndirect (para reservar o anel). */
+uint32_t Bc250SdmaSplitIndirectWorstDwords(
+    const BC250_SDMA_IB_SPLIT *Splits,
+    uint32_t SplitCount);
 
 BC250_SDMA_STATUS Bc250SdmaRingComputeAvailableSpace(
     uint32_t RingDwords,

@@ -17,17 +17,294 @@ const icons={
 };
 function icon(name){return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="'+(icons[name]||icons.info)+'"/></svg>';}
 function paintIcons(){$$('[data-icon]').forEach(el=>{el.innerHTML=icon(el.dataset.icon);el.removeAttribute('data-icon');});}
-const defaults={installed:false,installedAt:null,theme:'system',interval:1000,scenario:'balanced',monitor:'LG UltraWide 29"',nvme:'Kingston NV2 · 1 TB'};
+const defaults={installed:false,installedAt:null,theme:'system',interval:1000,scenario:'balanced',monitor:'LG UltraWide 29"',nvme:'Kingston NV2 · 1 TB',language:'pt',vram:512,installPath:'C:\\Program Files\\AMD\\BC-250 Adrenaline'};
 let preferences={...defaults};
 try{const saved=JSON.parse(localStorage.getItem('bc250-adrenaline-v1')||'null');if(saved&&typeof saved==='object')preferences={...defaults,...saved};}catch{}
 preferences.installed=preferences.installed===true;
 if(!['system','light','dark'].includes(preferences.theme))preferences.theme='system';
 if(![700,1000,2000].includes(preferences.interval))preferences.interval=1000;
 if(!Telemetry.scenarios[preferences.scenario])preferences.scenario='balanced';
-for(const key of ['monitor','nvme'])if(typeof preferences[key]!=='string')preferences[key]=defaults[key];
+if(!['pt','en','es','ru'].includes(preferences.language))preferences.language='pt';
+if(![256,512,2048,4096,8192].includes(preferences.vram))preferences.vram=512;
+for(const key of ['monitor','nvme','installPath'])if(typeof preferences[key]!=='string')preferences[key]=defaults[key];
+const i18n = {
+  pt: {
+    eyebrowWelcome: 'CONFIGURAÇÃO INICIAL DA PLACA',
+    step1: 'Idioma', step2: 'Destino & VRAM', step3: 'Modo Beta', step4: 'Administrador (UAC)', step5: 'Instalação', step6: 'Conclusão',
+    vstep1Desc: 'Interface e região',
+    vstep2Desc: 'Diretório e memória',
+    vstep3Desc: 'Assinatura de teste',
+    vstep4Desc: 'Elevação UAC',
+    vstep5Desc: 'Execução de scripts',
+    vstep6Desc: 'Pós-boot e ativação',
+    langTitle: 'Selecione o Idioma do Assistente',
+    langSubtitle: 'Escolha o idioma preferencial para a interface, instalação e telemetria da sua BC-250.',
+    btnContinue: 'Continuar', btnBack: 'Voltar',
+    installPathTitle: 'Pasta de Destino da Instalação',
+    installPathSubtitle: 'Os binários do driver KMD/UMD, arquivos INF e serviços WDDM serão gravados neste local.',
+    btnBrowse: 'Procurar…',
+    spaceRequiredLabel: 'Espaço necessário:',
+    spaceAvailableLabel: 'Espaço livre em C:\\:',
+    vramTitle: 'Destino da Instalação e Memória de Vídeo (VRAM)',
+    vramSubtitle: 'Defina o diretório dos componentes do driver e os limites de memória da APU AMD BC-250.',
+    vramRecommended: 'Recomendado',
+    vramBarVram: 'VRAM Dedicada Fixa',
+    vramBarRam: 'RAM Livre p/ Sistema',
+    noticeHeader: 'Aviso Técnico de Alocação de Memória',
+    vramWarning: 'Independente do valor selecionado o windows podera alocar mais memoria de video para o seu jogo sendo, sendo sua escolha apenas o valor minimo, que sera reduzido da memoria ram e o recomendando é 512mb',
+    vramOpt256Desc: 'Leve · Foco em máxima memória RAM para a CPU',
+    vramOpt512Desc: 'Equilíbrio ideal recomendado · Testado e validado',
+    vramOpt2gDesc: 'Jogos casuais · Texturas médias e estabilidade',
+    vramOpt4gDesc: 'Jogos pesados · Texturas altas e resoluções maiores',
+    vramOpt8gDesc: 'Cargas intensas · 50% de VRAM dedicada (8 GB RAM restantes)',
+    betaTitle: 'Assinatura Digital e Modo de Teste do Windows',
+    betaSubtitle: 'Autorização para execução do driver em ambiente WDDM de desenvolvimento independente.',
+    betaCardTitle: 'Driver Comunitário e Modo Testsigning',
+    betaParagraph1: 'Por ser um projeto independente desenvolvido pela comunidade, este driver não possui o selo de certificação digital WHQL da Microsoft.',
+    betaParagraph2: 'Para permitir que o subsistema gráfico do Windows 10/11 carregue o driver em modo kernel (KMD), é necessário colocar o Windows em um modo que aceite instalar e executar drivers beta (Modo de Teste / Testsigning).',
+    betaItem1: 'Procedimento oficial suportado pela Microsoft para testes de engenharia de hardware.',
+    betaItem2: 'Não compromete permanentemente a segurança nem altera arquivos de sistema.',
+    betaItem3: 'Pode ser revertido a qualquer momento pelas configurações de boot do Windows.',
+    betaConsent: 'Compreendo que este é um driver comunitário em estágio beta e autorizo a ativação do Modo de Teste no Windows.',
+    stepUac: 'Administrador (UAC)',
+    uacTitle: 'Privilégios de Administrador Necessários',
+    uacSubtitle: 'A configuração de baixo nível do subsistema gráfico exige autorização administrativa do Windows.',
+    uacCardTitle: 'Controle de Conta de Usuário (UAC)',
+    uacDesc1: 'Execução de bcdedit.exe /set testsigning on no repositório BCD do sistema operacional.',
+    uacDesc2: 'Gravação dos parâmetros de alocação de memória no Registro do Sistema (HKLM\\SYSTEM\\CurrentControlSet).',
+    uacDesc3: 'Criação de tarefa no Agendador do Windows com os privilégios mais altos (Highest) para inicialização pós-boot.',
+    uacWaiting: 'Aguardando autorização de Administrador',
+    uacGranted: 'Privilégios Concedidos (Administrador: Ativo)',
+    btnRequestAdmin: 'Conceder Acesso de Administrador (Solicitar UAC)',
+    btnStartConfig: 'Confirmar e Iniciar Instalação',
+    loadingTitle: 'Preparando o Ambiente do Sistema',
+    loadingSubtitle: 'Executando procedimentos de configuração de boot, registro e tarefas agendadas...',
+    step1Label: '1. Liberando instalação de drivers beta (Testsigning)',
+    step2Label: '2. Configurando alocação mínima de VRAM no Registro',
+    step3Label: '3. Criando tarefa pós-reinicialização (Vincular Hardware)',
+    btnCancel: 'Cancelar',
+    successTitle: 'Configuração do Sistema Concluída!',
+    successSubtitle: 'O Windows foi preparado para carregar o driver após a próxima reinicialização.',
+    postBootNoticeTitle: 'Próxima Etapa: Vincular driver ao Hardware',
+    postBootNoticeText: 'A tarefa agendada foi registrada. Quando o computador ligar novamente, o aplicativo abrirá na tela "Vincular driver ao Hardware" para finalizar a ativação da BC-250.',
+    btnSimulateLink: 'Vincular driver ao Hardware Agora (Simular Pós-Boot) ↗',
+    btnFinishDashboard: 'Concluir e Ir para a Visão Geral →',
+    donateSupportEyebrow: 'APOIO REAL · PROJETO INDEPENDENTE',
+    donateTitle: 'Apoie o Desenvolvimento Independente',
+    donateSubtitle: 'A AMD possui equipes inteiras para desenvolvimento de drivers. Este driver é feito por um único desenvolvedor com apoio da comunidade.',
+    linkViewTitle: 'Vincular driver ao Hardware',
+    linkViewSubtitle: 'Finalize a vinculação do driver WDDM ao silício AMD BC-250 detectado.',
+    btnBindHardware: 'Vincular e Ativar Driver WDDM'
+  },
+  en: {
+    eyebrowWelcome: 'INITIAL HARDWARE SETUP',
+    step1: 'Language', step2: 'Destination & VRAM', step3: 'Beta Mode', step4: 'Administrator (UAC)', step5: 'Installation', step6: 'Complete',
+    vstep1Desc: 'Interface & region',
+    vstep2Desc: 'Directory & memory',
+    vstep3Desc: 'Test-signing mode',
+    vstep4Desc: 'UAC elevation',
+    vstep5Desc: 'Script execution',
+    vstep6Desc: 'Post-boot & activation',
+    langTitle: 'Select Setup Language',
+    langSubtitle: 'Choose your preferred language for the interface, setup, and telemetry of your BC-250.',
+    btnContinue: 'Continue', btnBack: 'Back',
+    installPathTitle: 'Installation Destination Folder',
+    installPathSubtitle: 'KMD/UMD driver binaries, INF files, and WDDM services will be written to this location.',
+    btnBrowse: 'Browse…',
+    spaceRequiredLabel: 'Required space:',
+    spaceAvailableLabel: 'Free space on C:\\:',
+    vramTitle: 'Installation Destination & Video Memory (VRAM)',
+    vramSubtitle: 'Configure the driver component directory and memory limits for the AMD BC-250 APU.',
+    vramRecommended: 'Recommended',
+    vramBarVram: 'Dedicated Fixed VRAM',
+    vramBarRam: 'Free System RAM',
+    noticeHeader: 'Technical Memory Allocation Notice',
+    vramWarning: 'Regardless of the selected value, Windows can dynamically allocate additional video memory to your game, your choice being only the minimum value subtracted from system RAM, and 512 MB is recommended.',
+    vramOpt256Desc: 'Light · Focus on maximum RAM for the CPU',
+    vramOpt512Desc: 'Optimal balanced recommendation · Tested and validated',
+    vramOpt2gDesc: 'Casual gaming · Medium textures and stability',
+    vramOpt4gDesc: 'Heavy gaming · High textures and higher resolutions',
+    vramOpt8gDesc: 'Intense workloads · 50% dedicated VRAM (8 GB system RAM remaining)',
+    betaTitle: 'Digital Signature & Windows Test Mode',
+    betaSubtitle: 'Authorization to load the driver in an independent WDDM development environment.',
+    betaCardTitle: 'Community Driver & Testsigning Mode',
+    betaParagraph1: 'As an independent open-source community project, this driver does not carry Microsoft WHQL certification.',
+    betaParagraph2: 'To allow the Windows 10/11 graphics subsystem to load the kernel-mode driver (KMD), Windows must be configured to accept beta/test-signed drivers (Testsigning Mode).',
+    betaItem1: 'Official Microsoft-supported procedure for engineering and hardware testing.',
+    betaItem2: 'Does not permanently compromise security or modify core system files.',
+    betaItem3: 'Can be reverted at any time via Windows boot settings.',
+    betaConsent: 'I understand this is a beta community driver and authorize enabling Testsigning Mode in Windows.',
+    stepUac: 'Administrator (UAC)',
+    uacTitle: 'Administrator Privileges Required',
+    uacSubtitle: 'Low-level configuration of the graphics subsystem requires Windows administrative authorization.',
+    uacCardTitle: 'User Account Control (UAC)',
+    uacDesc1: 'Executing bcdedit.exe /set testsigning on in the system BCD bootloader.',
+    uacDesc2: 'Writing memory allocation parameters into the System Registry (HKLM\\SYSTEM\\CurrentControlSet).',
+    uacDesc3: 'Creating a task in Windows Task Scheduler with highest privileges (Highest) for post-boot initialization.',
+    uacWaiting: 'Waiting for Administrator authorization',
+    uacGranted: 'Privileges Granted (Administrator: Active)',
+    btnRequestAdmin: 'Grant Administrator Access (Request UAC)',
+    btnStartConfig: 'Confirm and Begin Installation',
+    loadingTitle: 'Preparing System Environment',
+    loadingSubtitle: 'Applying boot configuration, registry keys, and scheduled tasks...',
+    step1Label: '1. Enabling beta driver installation (Testsigning)',
+    step2Label: '2. Configuring minimum VRAM allocation in Registry',
+    step3Label: '3. Creating post-reboot task (Link Driver to Hardware)',
+    btnCancel: 'Cancel',
+    successTitle: 'System Configuration Complete!',
+    successSubtitle: 'Windows is prepared to load the driver upon the next system restart.',
+    postBootNoticeTitle: 'Next Step: Link Driver to Hardware',
+    postBootNoticeText: 'The scheduled task has been created. When your computer reboots, the app will open directly to "Link Driver to Hardware" to complete BC-250 activation.',
+    btnSimulateLink: 'Simulate Reboot / Link Hardware ↗',
+    btnFinishDashboard: 'Finish and Go to Overview →',
+    donateSupportEyebrow: 'REAL SUPPORT · INDEPENDENT PROJECT',
+    donateTitle: 'Support Independent Development',
+    donateSubtitle: 'AMD has full engineering teams for driver development. This driver is built by a solo developer supported by the community.',
+    linkViewTitle: 'Link Driver to Hardware',
+    linkViewSubtitle: 'Finalize binding the WDDM driver to the detected AMD BC-250 silicon.',
+    btnBindHardware: 'Bind and Activate WDDM Driver'
+  },
+  es: {
+    eyebrowWelcome: 'CONFIGURACIÓN INICIAL DE LA TARJETA',
+    step1: 'Idioma', step2: 'Destino y VRAM', step3: 'Modo Beta', step4: 'Administrador (UAC)', step5: 'Instalación', step6: 'Finalizado',
+    vstep1Desc: 'Interfaz y región',
+    vstep2Desc: 'Carpeta y memoria',
+    vstep3Desc: 'Firma de prueba',
+    vstep4Desc: 'Elevación UAC',
+    vstep5Desc: 'Ejecución de scripts',
+    vstep6Desc: 'Post-reinicio y activación',
+    langTitle: 'Seleccione el Idioma del Asistente',
+    langSubtitle: 'Elija el idioma preferido para la interfaz, instalación y telemetría de su BC-250.',
+    btnContinue: 'Continuar', btnBack: 'Volver',
+    installPathTitle: 'Carpeta de Destino de la Instalación',
+    installPathSubtitle: 'Los binarios del controlador KMD/UMD, archivos INF y servicios WDDM se instalarán aquí.',
+    btnBrowse: 'Examinar…',
+    spaceRequiredLabel: 'Espacio requerido:',
+    spaceAvailableLabel: 'Espacio libre en C:\\:',
+    vramTitle: 'Destino de la Instalación y Memoria de Video (VRAM)',
+    vramSubtitle: 'Configure la carpeta de componentes y los límites de memoria para la APU AMD BC-250.',
+    vramRecommended: 'Recomendado',
+    vramBarVram: 'VRAM Dedicada Fija',
+    vramBarRam: 'RAM Libre para Sistema',
+    noticeHeader: 'Aviso Técnico de Asignación de Memoria',
+    vramWarning: 'Independientemente del valor seleccionado, Windows podrá asignar más memoria de video para su juego, siendo su elección solo el valor mínimo que se reducirá de la memoria RAM, y lo recomendado son 512 MB.',
+    vramOpt256Desc: 'Ligero · Máxima memoria RAM para la CPU',
+    vramOpt512Desc: 'Equilibrio óptimo recomendado · Probado y validado',
+    vramOpt2gDesc: 'Juegos casuales · Texturas medias y estabilidad',
+    vramOpt4gDesc: 'Juegos pesados · Texturas altas y mayores resoluciones',
+    vramOpt8gDesc: 'Cargas intensas · 50% de VRAM fija (8 GB de RAM restantes)',
+    betaTitle: 'Firma Digital y Modo de Prueba de Windows',
+    betaSubtitle: 'Autorización para cargar el controlador en entorno de desarrollo WDDM independiente.',
+    betaCardTitle: 'Controlador Comunitario y Modo Testsigning',
+    betaParagraph1: 'Al ser un proyecto independiente de la comunidad, este controlador no posee certificación digital WHQL de Microsoft.',
+    betaParagraph2: 'Para permitir que Windows 10/11 cargue el controlador en modo kernel (KMD), es necesario habilitar el Modo de Prueba (Testsigning) que acepta controladores beta.',
+    betaItem1: 'Procedimiento oficial soportado por Microsoft para pruebas de ingeniería.',
+    betaItem2: 'No compromete de forma permanente la seguridad ni altera archivos base del sistema.',
+    betaItem3: 'Se puede revertir en cualquier momento desde la configuración de Windows.',
+    betaConsent: 'Entiendo que es un controlador beta comunitario y autorizo la activación del Modo de Prueba en Windows.',
+    stepUac: 'Administrador (UAC)',
+    uacTitle: 'Privilegios de Administrador Requeridos',
+    uacSubtitle: 'La configuración de bajo nivel del subsistema gráfico requiere autorización administrativa de Windows.',
+    uacCardTitle: 'Control de Cuentas de Usuario (UAC)',
+    uacDesc1: 'Ejecución de bcdedit.exe /set testsigning on en el almacén BCD del sistema operativo.',
+    uacDesc2: 'Escritura de parámetros de asignación de memoria en el Registro del Sistema (HKLM\\SYSTEM\\CurrentControlSet).',
+    uacDesc3: 'Creación de tarea en el Programador de Windows con privilegios elevados (Highest).',
+    uacWaiting: 'Esperando autorización de Administrador',
+    uacGranted: 'Privilegios Concedidos (Administrador: Activo)',
+    btnRequestAdmin: 'Conceder Acceso de Administrador (Solicitar UAC)',
+    btnStartConfig: 'Confirmar e Iniciar Instalación',
+    loadingTitle: 'Preparando el Entorno del Sistema',
+    loadingSubtitle: 'Aplicando configuración de arranque, claves de registro y tareas programadas...',
+    step1Label: '1. Habilitando instalación de controladores beta (Testsigning)',
+    step2Label: '2. Configurando asignación mínima de VRAM en Registro',
+    step3Label: '3. Creando tarea post-reinicio (Vincular Hardware)',
+    btnCancel: 'Cancelar',
+    successTitle: '¡Configuración del Sistema Completada!',
+    successSubtitle: 'Windows está preparado para cargar el controlador tras el próximo reinicio.',
+    postBootNoticeTitle: 'Siguiente Paso: Vincular controlador al Hardware',
+    postBootNoticeText: 'La tarea programada ha sido registrada. Al reiniciar el equipo, la aplicación se abrirá en la pantalla "Vincular controlador al Hardware" para finalizar la activación.',
+    btnSimulateLink: 'Simular Reinicio / Vincular Hardware ↗',
+    btnFinishDashboard: 'Finalizar e Ir a la Vista General →',
+    donateSupportEyebrow: 'APOYO REAL · PROJETO INDEPENDIENTE',
+    donateTitle: 'Apoye el Desarrollo Independiente',
+    donateSubtitle: 'AMD cuenta con departamentos enteros para controladores. Este proyecto es desarrollado por una sola persona con el apoyo de la comunidad.',
+    linkViewTitle: 'Vincular controlador al Hardware',
+    linkViewSubtitle: 'Finalice la vinculación del controlador WDDM al silicio AMD BC-250 detectado.',
+    btnBindHardware: 'Vincular y Activar Controlador WDDM'
+  },
+  ru: {
+    eyebrowWelcome: 'НАЧАЛЬНАЯ НАСТРОЙКА ВИДЕОКАРТЫ',
+    step1: 'Язык', step2: 'Путь и VRAM', step3: 'Бета-режим', step4: 'Администратор (UAC)', step5: 'Установка', step6: 'Завершено',
+    vstep1Desc: 'Интерфейс и регион',
+    vstep2Desc: 'Папка и память',
+    vstep3Desc: 'Тестовая подпись',
+    vstep4Desc: 'Повышение прав UAC',
+    vstep5Desc: 'Запуск скриптов',
+    vstep6Desc: 'После перезагрузки',
+    langTitle: 'Выберите язык мастера настройки',
+    langSubtitle: 'Выберите предпочтительный язык для интерфейса, установки и телеметрии BC-250.',
+    btnContinue: 'Продолжить', btnBack: 'Назад',
+    installPathTitle: 'Папка назначения установки',
+    installPathSubtitle: 'Бинарные файлы KMD/UMD, файлы INF и службы WDDM будут установлены в эту папку.',
+    btnBrowse: 'Обзор…',
+    spaceRequiredLabel: 'Требуемое место:',
+    spaceAvailableLabel: 'Свободно на C:\\:',
+    vramTitle: 'Папка установки и выделение видеопамяти (VRAM)',
+    vramSubtitle: 'Настройте папку компонентов драйвера и лимиты памяти для APU AMD BC-250.',
+    vramRecommended: 'Рекомендуется',
+    vramBarVram: 'Выделенная VRAM',
+    vramBarRam: 'Свободная RAM системы',
+    noticeHeader: 'Техническое уведомление о памяти',
+    vramWarning: 'Независимо от выбранного значения, Windows сможет выделить больше видеопамяти для вашей игры, ваш выбор определяет только минимальный объем, который вычитается из оперативной памяти, и рекомендуется 512 МБ.',
+    vramOpt256Desc: 'Легкий · Максимум ОЗУ для процессора',
+    vramOpt512Desc: 'Оптимальный баланс · Протестировано и подтверждено',
+    vramOpt2gDesc: 'Обычные игры · Средние текстуры и стабильность',
+    vramOpt4gDesc: 'Требовательные игры · Высокие текстуры и разрешения',
+    vramOpt8gDesc: 'Тяжелые нагрузки · 50% выделенной VRAM (остается 8 ГБ ОЗУ)',
+    betaTitle: 'Цифровая подпись и тестовый режим Windows',
+    betaSubtitle: 'Авторизация загрузки драйвера в среде независимой разработки WDDM.',
+    betaCardTitle: 'Драйвер сообщества и режим Testsigning',
+    betaParagraph1: 'Будучи независимым проектом с открытым исходным кодом, этот драйвер не имеет сертификата Microsoft WHQL.',
+    betaParagraph2: 'Чтобы графическая подсистема Windows 10/11 могла загрузить драйвер режима ядра (KMD), необходимо перевести Windows в режим загрузки бета-драйверов (Testsigning).',
+    betaItem1: 'Официальная процедура Microsoft для инженерных испытаний оборудования.',
+    betaItem2: 'Не снижает безопасность на постоянной основе и не меняет системные файлы ядра.',
+    betaItem3: 'Может быть отключен в любой момент через параметры загрузки Windows.',
+    betaConsent: 'Я понимаю, что это бета-драйвер сообщества, и разрешаю включение тестового режима Windows.',
+    stepUac: 'Администратор (UAC)',
+    uacTitle: 'Требуются права администратора',
+    uacSubtitle: 'Низкоуровневая настройка графической подсистемы требует прав администратора Windows.',
+    uacCardTitle: 'Контроль учетных записей (UAC)',
+    uacDesc1: 'Выполнение bcdedit.exe /set testsigning on в хранилище BCD операционной системы.',
+    uacDesc2: 'Запись параметров выделения памяти в системный реестр (HKLM\\SYSTEM\\CurrentControlSet).',
+    uacDesc3: 'Создание задачи в Планировщике Windows с наивысшими правами (Highest) для запуска после перезагрузки.',
+    uacWaiting: 'Ожидание авторизации администратора',
+    uacGranted: 'Права предоставлены (Администратор: Активен)',
+    btnRequestAdmin: 'Предоставить права администратора (Запросить UAC)',
+    btnStartConfig: 'Подтвердить и начать установку',
+    loadingTitle: 'Подготовка системной среды',
+    loadingSubtitle: 'Применение параметров загрузки, реестра и планировщика задач...',
+    step1Label: '1. Разрешение установки бета-драйверов (Testsigning)',
+    step2Label: '2. Настройка минимального объема VRAM в реестре',
+    step3Label: '3. Создание задачи после перезагрузки (Привязка к оборудованию)',
+    btnCancel: 'Отмена',
+    successTitle: 'Настройка системы завершена!',
+    successSubtitle: 'Windows готова к загрузке драйвера после следующей перезагрузки.',
+    postBootNoticeTitle: 'Следующий шаг: Привязка драйвера к оборудованию',
+    postBootNoticeText: 'Задача планировщика зарегистрирована. При следующем входе в Windows приложение откроется на экране "Привязка драйвера к оборудованию" для завершения активации BC-250.',
+    btnSimulateLink: 'Имитировать перезагрузку / Привязать к железу ↗',
+    btnFinishDashboard: 'Завершить и перейти к обзору →',
+    donateSupportEyebrow: 'ПОДДЕРЖКА ПРОЕКТА СООБЩЕСТВА',
+    donateTitle: 'Поддержать независимую разработку',
+    donateSubtitle: 'У AMD есть огромные команды разработчиков. Этот драйвер создается одним разработчиком при поддержке сообщества.',
+    linkViewTitle: 'Привязка драйвера к оборудованию',
+    linkViewSubtitle: 'Завершите связывание драйвера WDDM с обнаруженным чипом AMD BC-250.',
+    btnBindHardware: 'Привязать и активировать драйвер WDDM'
+  }
+};
+let currentOnboardingStep = 1;
 let page='overview',paused=false,selectedComponent='cpu',timer=null,current=null,installTimer=null,installPercent=0,paymentMethod='card',donationReturn=null,toastTimer;
 let session=new Telemetry.Session();
-const titles={overview:['Visão geral','Um olhar completo sobre a sua placa.'],sensors:['Sensores','Todas as leituras da placa, em um só lugar.'],performance:['Desempenho','Explore o comportamento da sua BC-250.'],driver:['Driver','Gerencie a experiência de instalação da sua placa.'],system:['Sistema','Conheça o hardware por trás da experiência.'],settings:['Configurações','Deixe o Adrenaline do seu jeito.']};
+const titles={overview:['Visão geral','Um olhar completo sobre a sua placa.'],sensors:['Sensores','Todas as leituras da placa, em um só lugar.'],performance:['Desempenho','Explore o comportamento da sua BC-250.'],driver:['Driver','Gerencie a experiência de instalação da sua placa.'],system:['Sistema','Conheça o hardware por trás da experiência.'],settings:['Configurações','Deixe o Adrenaline do seu jeito.'],donate:['Apoiar o desenvolvimento','Um café faz a diferença para o projeto independente.']};
 function save(){try{localStorage.setItem('bc250-adrenaline-v1',JSON.stringify(preferences));}catch{toast('Não foi possível salvar as preferências. Elas valem apenas nesta sessão.');}}
 function toast(message){clearTimeout(toastTimer);$('#toast').textContent=message;$('#toast').hidden=false;toastTimer=setTimeout(()=>$('#toast').hidden=true,4500);}
 const media=matchMedia('(prefers-color-scheme: dark)');
@@ -38,16 +315,27 @@ function escapeHtml(value){return String(value).replace(/[&<>"']/g,c=>({'&':'&am
 function navigate(next,focus=false){
   if(!titles[next])return;page=next;
   $$('.nav-item[data-page]').forEach(el=>{el.classList.toggle('selected',el.dataset.page===page);if(el.dataset.page===page)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current');});
-  const installation=!preferences.installed&&['overview','driver'].includes(page);
-  const locked=!preferences.installed&&!installation&&page!=='settings';
-  $('#install-view').hidden=!installation;$('#locked-view').hidden=!locked;$('#dashboard-view').hidden=installation||locked;
-  $('#locked-title').textContent=titles[page][0];$('#page-title').textContent=titles[page][0];$('#page-subtitle').textContent=titles[page][1];
+  const isInstalled = !!preferences.installed;
+  const isDonate = page === 'donate';
+  const showInstaller = !isInstalled && !isDonate;
+
+  document.body.classList.toggle('installer-active', showInstaller);
+  const installerApp = $('#installer-app');
+  const dashboardApp = $('#dashboard-app');
+  if(installerApp) installerApp.hidden = !showInstaller;
+  if(dashboardApp) dashboardApp.hidden = showInstaller;
+
+  $('#install-view').hidden=true;
+  $('#locked-view').hidden=true;
+  $('#dashboard-view').hidden=showInstaller;
+  $('#page-title').textContent=titles[page][0];$('#page-subtitle').textContent=titles[page][1];
   $$('[data-view]').forEach(el=>el.hidden=el.dataset.view!==page);
   $('#driver-dot').hidden=preferences.installed;
-  $('.page-tools').hidden=!preferences.installed||['settings','driver','system'].includes(page);
+  $('.page-tools').hidden=!preferences.installed||['settings','driver','system','donate'].includes(page);
   if(preferences.installedAt&&Number.isFinite(Date.parse(preferences.installedAt)))$('#installed-at').textContent=new Date(preferences.installedAt).toLocaleDateString('pt-BR');
+  if(page==='donate')renderPayment();else DonationUI.clear();
   if(current)renderTelemetry();
-  if(focus){window.scrollTo({top:0});$('#main').focus({preventScroll:true});}
+  if(focus){window.scrollTo({top:0});$('#main')?.focus({preventScroll:true});}
 }
 function boardSetup(){
   $('#thermal-board').innerHTML=window.BC250_BOARD;
@@ -206,28 +494,236 @@ async function tick(){
 }
 function startTimer(){clearInterval(timer);timer=setInterval(tick,preferences.interval);}
 function setPaused(value){paused=value;$('#pause-button').innerHTML='<i>'+icon(paused?'play':'pause')+'</i><span>'+(paused?'Continuar':'Pausar')+'</span>';$('#pause-button').title=paused?'Continuar telemetria simulada':'Pausar telemetria simulada';if(!paused)tick();else renderTelemetry();}
+function applyLanguage(lang) {
+  if (!i18n[lang]) lang = 'pt';
+  preferences.language = lang;
+  save();
+  document.documentElement.lang = lang;
+  const dict = i18n[lang];
+  $$('[data-i18n]').forEach(el => {
+    const key = el.dataset.i18n;
+    if (dict[key]) el.textContent = dict[key];
+  });
+  $$('[data-lang]').forEach(el => {
+    const active = el.dataset.lang === lang;
+    el.classList.toggle('selected', active);
+    el.setAttribute('aria-checked', String(active));
+  });
+  updateMemoryVisualizer();
+}
+
+function updateMemoryVisualizer() {
+  const vram = preferences.vram || 512;
+  const total = 16384;
+  const pct = Math.max(1.5, (vram / total) * 100);
+  const ramMb = total - vram;
+  const ramGb = (ramMb / 1024).toFixed(1);
+  const vramLabel = vram >= 1024 ? (vram / 1024) + ' GB' : vram + ' MB';
+  
+  const vramBar = $('#mem-bar-vram');
+  const ramBar = $('#mem-bar-ram');
+  if (vramBar) vramBar.style.width = pct + '%';
+  if (ramBar) ramBar.style.width = (100 - pct) + '%';
+  
+  const summary = $('#mem-viz-summary');
+  if (summary) summary.textContent = `VRAM: ${vramLabel} · RAM Livre: ${ramGb} GB`;
+  const vramVal = $('#vram-val-legend');
+  if (vramVal) vramVal.textContent = vramLabel;
+  const ramVal = $('#ram-val-legend');
+  if (ramVal) ramVal.textContent = `${ramGb} GB`;
+  const linkVram = $('#link-vram-tag');
+  if (linkVram) linkVram.textContent = `VRAM Mínima: ${vramLabel}`;
+  
+  $$('[data-vram]').forEach(el => {
+    const active = Number(el.dataset.vram) === vram;
+    el.classList.toggle('selected', active);
+    el.setAttribute('aria-checked', String(active));
+  });
+}
+
+function setOnboardingStep(step) {
+  currentOnboardingStep = step;
+  $$('.vstep').forEach(el => {
+    const s = Number(el.dataset.vstep);
+    el.classList.toggle('active', s === step);
+    el.classList.toggle('done', s < step);
+  });
+  
+  const cards = {
+    1: '#step-lang-card',
+    2: '#step-vram-card',
+    3: '#step-beta-card',
+    4: '#step-uac-card',
+    5: '#step-loading-card',
+    6: '#step-success-card'
+  };
+  
+  Object.entries(cards).forEach(([s, selector]) => {
+    const el = $(selector);
+    if (el) el.hidden = Number(s) !== step;
+  });
+  const linkView = $('#hardware-link-view');
+  if (linkView) linkView.hidden = true;
+  
+  if (step === 6) {
+    DonationUI.render(paymentMethod);
+  }
+}
+
+function requestUacElevation() {
+  const btn = $('#btn-request-admin');
+  const badge = $('#uac-status-badge');
+  const note = $('#uac-verified-note');
+  if (btn) btn.disabled = true;
+  if (badge) {
+    badge.className = 'pill blue';
+    badge.innerHTML = '<span class="live-dot" style="background:var(--accent)"></span><span>Solicitando autorização UAC…</span>';
+  }
+  setTimeout(() => {
+    if (btn) btn.disabled = false;
+    if (badge) {
+      badge.className = 'pill green';
+      const dict = i18n[preferences.language] || i18n.pt;
+      badge.innerHTML = `<span class="live-dot" style="background:var(--green)"></span><span>${dict.uacGranted}</span>`;
+    }
+    if (note) note.hidden = false;
+    toast('Privilégios de Administrador concedidos com sucesso!');
+  }, 400);
+}
+
 function resetInstallUI(){
- installPercent=0;$('#installation-progress').hidden=true;$('#install-button').hidden=false;$('#cancel-install').hidden=true;$('#finish-install').hidden=true;$('#install-title').textContent='Prepare sua placa';$('#install-description').textContent='O driver ainda não está instalado neste cenário de demonstração.';$('#install-state').textContent='Instalação pendente';$('#install-state').className='pill amber';$('#install-progress').value=0;
+  clearInterval(installTimer);
+  installTimer = null;
+  installPercent = 0;
+  setOnboardingStep(1);
 }
+
 function startInstall(){
- if(installTimer)return;
- $('#installation-progress').hidden=false;$('#install-button').hidden=true;$('#cancel-install').hidden=false;$('#install-title').textContent='Preparando sua experiência';$('#install-description').textContent='Acompanhe as etapas da instalação simulada.';$('#install-state').textContent='Em andamento · demo';$('#install-state').className='pill blue';
- const steps=['Verificando compatibilidade simulada…','Preparando o pacote de demonstração…','Simulando instalação do driver…','Verificando o ambiente de demonstração…'];
- installPercent=0;
- const advance=()=>{
-  installPercent=Math.min(100,installPercent+2);const index=Math.min(3,Math.floor(installPercent/25));
-  $('#install-progress').value=installPercent;$('#step-percent').textContent=installPercent+'%';$('#step-label').textContent=steps[index];
-  $$('#install-steps li').forEach((el,i)=>{el.className=i<index?'done':i===index?'active':'';});
-  if(installPercent%25===0)$('#install-live').textContent=steps[index];
-  if(installPercent===100){clearInterval(installTimer);installTimer=null;preferences.installed=true;preferences.installedAt=new Date().toISOString();save();$('#cancel-install').hidden=true;$('#finish-install').hidden=false;$('#install-title').textContent='Instalação simulada concluída!';$('#install-description').textContent='Tudo pronto para conhecer sua BC-250. Nenhum driver real foi instalado.';$('#install-state').textContent='Sucesso · demonstração';$('#install-state').className='pill green';$('#step-label').textContent='Todas as etapas concluídas';$('#install-live').textContent='Instalação simulada concluída com sucesso.';$$('#install-steps li').forEach(el=>el.className='done');tick();openDonation();}
- };
- advance();installTimer=setInterval(advance,180);
+  if(installTimer) return;
+  setOnboardingStep(5);
+  const term = $('#terminal-log');
+  if (term) term.textContent = 'PS C:\\Windows\\System32> Initializing BC-250 environment setup...\n';
+  const progressEl = $('#install-progress');
+  if (progressEl) progressEl.value = 0;
+  const stepPercent = $('#script-step-percent');
+  if (stepPercent) stepPercent.textContent = '0%';
+  
+  installPercent = 0;
+  const vramVal = preferences.vram || 512;
+  const vramBytes = vramVal * 1024 * 1024;
+  const vramLabel = vramVal >= 1024 ? (vramVal / 1024) + ' GB' : vramVal + ' MB';
+  const targetDir = preferences.installPath || 'C:\\Program Files\\AMD\\BC-250 Adrenaline';
+  
+  const b1 = $('#badge-script-1'), b2 = $('#badge-script-2'), b3 = $('#badge-script-3');
+  if(b1) b1.className = 'script-badge active';
+  if(b2) b2.className = 'script-badge';
+  if(b3) b3.className = 'script-badge';
+
+  const log = (msg) => {
+    if(term) {
+      term.textContent += msg + '\n';
+      term.scrollTop = term.scrollHeight;
+    }
+  };
+
+  const advance = () => {
+    installPercent += 2;
+    if(progressEl) progressEl.value = installPercent;
+    if(stepPercent) stepPercent.textContent = installPercent + '%';
+
+    if(installPercent === 10) {
+      log('> bcdedit.exe /set testsigning on');
+    }
+    if(installPercent === 26) {
+      log('Operação concluída com êxito. Modo Testsigning ativado no bootloader.');
+      if(b1) b1.className = 'script-badge done';
+      if(b2) b2.className = 'script-badge active';
+      const dict = i18n[preferences.language] || i18n.pt;
+      if($('#script-step-label')) $('#script-step-label').textContent = dict.step2Label;
+    }
+    if(installPercent === 42) {
+      log(`> reg.exe add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E968-E325-11CE-BFC1-08002BE10318}\\0001" /v "DedicatedVideoMemoryAllocation" /t REG_DWORD /d ${vramBytes} /f`);
+    }
+    if(installPercent === 62) {
+      log(`Operação concluída com êxito. VRAM Mínima configurada para ${vramLabel}.`);
+      if(b2) b2.className = 'script-badge done';
+      if(b3) b3.className = 'script-badge active';
+      const dict = i18n[preferences.language] || i18n.pt;
+      if($('#script-step-label')) $('#script-step-label').textContent = dict.step3Label;
+    }
+    if(installPercent === 76) {
+      log(`> schtasks.exe /create /tn "BC250_HardwareLink" /tr "\\"${targetDir}\\BC-250-Adrenaline.exe\\" --link-hardware" /sc ONLOGON /rl HIGHEST /f`);
+    }
+    if(installPercent === 94) {
+      log('ÊXITO: A tarefa agendada "BC250_HardwareLink" foi criada com êxito.');
+      if(b3) b3.className = 'script-badge done';
+    }
+
+    if(installPercent >= 100) {
+      clearInterval(installTimer);
+      installTimer = null;
+      log('[CONCLUÍDO] Políticas de ambiente aplicadas com sucesso.');
+      setOnboardingStep(6);
+    }
+  };
+
+  installTimer = setInterval(advance, 65);
 }
+
+function simulateHardwareLink() {
+  const cards = ['#step-lang-card', '#step-vram-card', '#step-beta-card', '#step-uac-card', '#step-loading-card', '#step-success-card'];
+  cards.forEach(c => { const el = $(c); if(el) el.hidden = true; });
+  const linkView = $('#hardware-link-view');
+  if(linkView) linkView.hidden = false;
+  const bindingBox = $('#binding-progress-box');
+  if(bindingBox) bindingBox.hidden = true;
+  const btnBind = $('#btn-bind-hardware');
+  if(btnBind) btnBind.disabled = false;
+}
+
+function bindHardwareDriver() {
+  const bindingBox = $('#binding-progress-box');
+  if(bindingBox) bindingBox.hidden = false;
+  const btnBind = $('#btn-bind-hardware');
+  if(btnBind) btnBind.disabled = true;
+  const pBar = $('#binding-progress-bar');
+  const pLabel = $('#binding-step-label');
+  const pPct = $('#binding-percent');
+
+  let pct = 0;
+  const msgs = [
+    'Carregando serviço bc250mcdm em modo Testsigning...',
+    'Inicializando adaptador PCI\\VEN_1002&DEV_13FE...',
+    'Vinculando scanout DisplayPort e 24 Compute Units...',
+    'Driver WDDM ativo!'
+  ];
+
+  const timer = setInterval(() => {
+    pct += 10;
+    if(pBar) pBar.value = pct;
+    if(pPct) pPct.textContent = pct + '%';
+    const msgIdx = Math.min(msgs.length - 1, Math.floor(pct / 30));
+    if(pLabel) pLabel.textContent = msgs[msgIdx];
+
+    if(pct >= 100) {
+      clearInterval(timer);
+      preferences.installed = true;
+      preferences.installedAt = new Date().toISOString();
+      save();
+      tick();
+      toast('Driver WDDM vinculado com sucesso!');
+      navigate('overview', true);
+    }
+  }, 100);
+}
+
 function openDonation(){
- donationReturn=document.activeElement;renderPayment();if(!$('#donation-dialog').open)$('#donation-dialog').showModal();
+ donationReturn=page!=='donate'?page:'overview';
+ navigate('donate',true);
 }
 function closeDonation(){
- $('#donation-dialog').close();DonationUI.clear();if(preferences.installed){navigate('overview',true);}else donationReturn?.focus();
+ DonationUI.clear();
+ if(preferences.installed){navigate('overview',true);}else{navigate(donationReturn||'overview',true);}
 }
 function renderPayment(){
  $$('[data-method]').forEach(el=>{el.setAttribute('aria-selected',String(el.dataset.method===paymentMethod));el.tabIndex=el.dataset.method===paymentMethod?0:-1;});
@@ -243,6 +739,9 @@ document.addEventListener('click',e=>{
  const component=e.target.closest('[data-component]');if(component){selectComponent(component.dataset.component);return;}
  const scenario=e.target.closest('[data-scenario]');if(scenario){setScenario(scenario.dataset.scenario);return;}
  const method=e.target.closest('[data-method]');if(method){paymentMethod=method.dataset.method;renderPayment();return;}
+ const onbMethod=e.target.closest('[data-onboarding-method]');if(onbMethod){paymentMethod=onbMethod.dataset.onboardingMethod;$$('#step-success-card [data-onboarding-method]').forEach(b=>b.setAttribute('aria-selected',String(b===onbMethod)));renderPayment();return;}
+ const langCard=e.target.closest('[data-lang]');if(langCard){applyLanguage(langCard.dataset.lang);return;}
+ const vramCard=e.target.closest('[data-vram]');if(vramCard){preferences.vram=Number(vramCard.dataset.vram);save();updateMemoryVisualizer();return;}
  const action=e.target.closest('[data-action]')?.dataset.action;
  if(action==='donate')openDonation();
  if(action==='close-donation')closeDonation();
@@ -250,16 +749,41 @@ document.addEventListener('click',e=>{
  if(action==='reset')$('#reset-dialog').showModal();
  if(action==='cancel-reset')$('#reset-dialog').close();
  if(action==='confirm-reset')resetDemo();
- if(action==='go-install')navigate('driver',true);
+ if(action==='go-install'){navigate('driver',true);setOnboardingStep(1);}
  if(action==='skip-install'){preferences.installed=true;preferences.installedAt=new Date().toISOString();save();tick();navigate('overview',true);}
  if(action==='check-update'){$('#update-result').textContent='Demonstração: você está na versão mais recente do cenário (0.1-demo). Nenhum servidor foi consultado.';}
 });
-$('#install-button').addEventListener('click',startInstall);
-$('#cancel-install').addEventListener('click',()=>{clearInterval(installTimer);installTimer=null;resetInstallUI();toast('Instalação simulada cancelada. Você pode começar novamente.');});
-$('#finish-install').addEventListener('click',()=>navigate('overview',true));
-$('#pause-button').addEventListener('click',()=>setPaused(!paused));
+$('#install-button')?.addEventListener('click',()=>{
+  if(currentOnboardingStep===1) setOnboardingStep(2);
+  else if(currentOnboardingStep===2) setOnboardingStep(3);
+  else startInstall();
+});
+$('#btn-step2-back')?.addEventListener('click',()=>setOnboardingStep(1));
+$('#btn-step2-next')?.addEventListener('click',()=>setOnboardingStep(3));
+$('#btn-step3-back')?.addEventListener('click',()=>setOnboardingStep(2));
+$('#btn-step3-next')?.addEventListener('click',()=>setOnboardingStep(4));
+$('#btn-step4-back')?.addEventListener('click',()=>setOnboardingStep(3));
+$('#btn-request-admin')?.addEventListener('click',requestUacElevation);
+$('#btn-start-install')?.addEventListener('click',startInstall);
+$('#btn-start-install-step4')?.addEventListener('click',startInstall);
+$('#cancel-install')?.addEventListener('click',()=>{clearInterval(installTimer);installTimer=null;setOnboardingStep(3);toast('Configuração cancelada.');});
+$('#btn-simulate-link')?.addEventListener('click',simulateHardwareLink);
+$('#btn-back-from-link')?.addEventListener('click',()=>setOnboardingStep(6));
+$('#btn-bind-hardware')?.addEventListener('click',bindHardwareDriver);
+$('#finish-install')?.addEventListener('click',()=>{preferences.installed=true;preferences.installedAt=new Date().toISOString();save();tick();navigate('overview',true);});
+$('#btn-browse-path')?.addEventListener('click',()=>{
+  const currentPath=$('#install-path-input').value;
+  const paths=['C:\\Program Files\\AMD\\BC-250 Adrenaline','D:\\Games\\AMD\\BC-250 Adrenaline','C:\\AMD\\BC-250'];
+  let nextIdx=(paths.indexOf(currentPath)+1)%paths.length;
+  $('#install-path-input').value=paths[nextIdx];
+  preferences.installPath=paths[nextIdx];
+  save();
+  toast('Diretório definido: '+paths[nextIdx]);
+});
+$('#install-path-input')?.addEventListener('input',e=>{preferences.installPath=e.target.value;save();});
+$('#pause-button')?.addEventListener('click',()=>setPaused(!paused));
 $('#sensor-search').addEventListener('input',()=>{if(current)renderSensors();});
-$('#donation-dialog').addEventListener('cancel',e=>{e.preventDefault();closeDonation();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&page==='donate')closeDonation();});
 $('.payment-tabs').addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const methods=['card','crypto','pix'];let index=methods.indexOf(paymentMethod);index=e.key==='Home'?0:e.key==='End'?2:(index+(e.key==='ArrowRight'?1:2))%3;paymentMethod=methods[index];renderPayment();$('[data-method="'+paymentMethod+'"]').focus();});
 $('#theme-select').value=preferences.theme;$('#theme-select').addEventListener('change',e=>{preferences.theme=e.target.value;save();applyTheme();});
 $('#interval-select').value=preferences.interval;$('#interval-select').addEventListener('change',e=>{preferences.interval=Number(e.target.value);save();startTimer();renderBoard();});
@@ -279,15 +803,12 @@ async function initDriverStatus(){
           statePill.textContent = 'Driver ativo · ' + (res.service || 'WDDM');
           statePill.className = 'pill green';
         }
-      } else if(res && !res.installed){
-        preferences.installed = false;
-        save();
+        navigate('overview');
       }
     } catch(err) {
       console.warn('Erro ao verificar driver:', err);
     }
   }
-  navigate('overview');
 }
 
 async function initCpuOverclockUI(){
@@ -415,6 +936,6 @@ async function initSystemTelemetry(){
   }
 }
 
-applyTheme();paintIcons();boardSetup();setupMetrics();initCpuOverclockUI();initSystemTelemetry();initDriverStatus();tick();startTimer();
+applyTheme();paintIcons();boardSetup();setupMetrics();initCpuOverclockUI();initSystemTelemetry();initDriverStatus();applyLanguage(preferences.language);updateMemoryVisualizer();setOnboardingStep(1);navigate('overview');tick();startTimer();
 window.addEventListener('beforeunload',()=>{clearInterval(timer);clearInterval(installTimer);});
 

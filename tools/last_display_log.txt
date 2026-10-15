@@ -1,0 +1,150 @@
+﻿[Present #2431] Source=PRESENT_SLOT SegOff=0x40000 Seg=1 SegBase=0xA8C000 -> VramOff=0xACC000 (resolved=1, Flip=1, Blt=0)
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28237 tid=0000000000002FE8 qpc=2754389046 operation=12 status=0x00000000
+[DX91_PAGING_MOVE] op=TRANSFER hAlloc=00001DAF00001DAF AllocOff=0x0 Size=15335424 Pass=[0,15335424) Src=0x240000 Dst=0x1100000 Dir=0 Flags=0x0 DW=413
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28238 tid=0000000000002FE8 qpc=2754392798 operation=12
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28238 tid=0000000000002FE8 qpc=2754410845 operation=12 status=0x00000000
+[DX91_PAGING_MOVE] op=TRANSFER hAlloc=00001DAF00001DAF AllocOff=0xEA0000 Size=1441792 Pass=[0,1441792) Src=0x1FC0000 Dst=0x2140000 Dir=0 Flags=0x0 DW=42
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28239 tid=0000000000002FE8 qpc=2754412062 operation=12
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28239 tid=0000000000002FE8 qpc=2754417993 operation=12 status=0x00000000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28240 tid=0000000000002FE8 qpc=2754418694 operation=12
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=0000000400000004, Proc=0000000100000001, hasRoot=1, targetPtPhys=0x460A8C000, Vmid=8, instCtx=0000000400000004, instRoot=0x460A8C000
+[PT_WALK] RootMC=0x460A8C000 VramMcBase=0x460000000 LocalSegBase=0xA8C000 Janela=262144000 bytes
+[PT_WALK] IB_PROOF_BIND: PA=0x25CFCC000 Bytes=25344 ExactMetadata=0 (miss: no poison)
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+BC250_DIAG schema=1 level=INFO event=KMD_SDMA_SUBMIT ctx=0000000400000004 node=0 dxg_fence=8189 hw_fence=19592 vmid=8 path=INDIRECT accepted=1 va=0x21E000 bytes=25344 qpc=2754421173
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28240 tid=0000000000002FE8 qpc=2754424558 operation=12 status=0x00000000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28241 tid=0000000000002FE8 qpc=2754425352 operation=12
+[SubmitVirtual Node0 SDMA] IB_ENGINE_2LEGS #8193 (RPTR==WPTR + fence sobre poison; PERNA DE DADOS NAO CONFERIDA): WPTR=2404 RPTR=2404 Fence=00004C88 Poison=43DAFFFE Size=25344 Vmid=8 EfeitoDeclarado=0x0/0/0x00000000 (async)
+[SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 25344 bytes em VA=0x21E000; FenceId=8189 (batch #1) retire_qpc=2754426589 FromDpc=1
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28241 tid=0000000000002FE8 qpc=2754431599 operation=12 status=0x00000000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28242 tid=0000000000002FE8 qpc=2754435447 operation=12
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=0000000400000004, Proc=0000000100000001, hasRoot=1, targetPtPhys=0x460A8C000, Vmid=8, instCtx=0000000400000004, instRoot=0x460A8C000
+[PT_WALK] RootMC=0x460A8C000 VramMcBase=0x460000000 LocalSegBase=0xA8C000 Janela=262144000 bytes
+[PT_WALK] IB_PROOF_BIND: PA=0x25B7D2300 Bytes=37344 ExactMetadata=0 (miss: no poison)
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+BC250_DIAG schema=1 level=INFO event=KMD_SDMA_SUBMIT ctx=0000000400000004 node=0 dxg_fence=8190 hw_fence=19593 vmid=8 path=INDIRECT accepted=1 va=0x224300 bytes=37344 qpc=2754436946
+[SubmitVirtual Node0 SDMA] IB_ENGINE_2LEGS #8194 (RPTR==WPTR + fence sobre poison; PERNA DE DADOS NAO CONFERIDA): WPTR=2696 RPTR=2696 Fence=00004C89 Poison=43DAFFFE Size=37344 Vmid=8 EfeitoDeclarado=0x0/0/0x00000000 (async)
+[SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 37344 bytes em VA=0x224300; FenceId=8190 (batch #1) retire_qpc=2754439186 FromDpc=1
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28242 tid=0000000000002FE8 qpc=2754441347 operation=12 status=0x00000000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28243 tid=0000000000002FE8 qpc=2754444426 operation=12
+=== SetVidPnSourceAddressWithMultiPlaneOverlay3 (SourceId=0, Seg=1, Addr=0xACC000, hAlloc=0000013100000131, PlaneCount=1) ===
+[PRIMARY_COPY #2434] SAMPLE_UNAVAILABLE Route=MPO3 SrcSample=0 DstBeforeSample=0; CPU BAR may cover less than local VRAM; SDMA still attempted
+[PRIMARY_COPY #2434] BEGIN Route=MPO3 Seg=1 SrcOff=0xACC000 SrcMc=0xF400ACC000 DstOff=0x0 DstMc=0xF400000000 Bytes=11059200 Pitch=10240 SrcSample=0 SrcNZ=0/256 SrcHash=00000000 DstBeforeSample=0 DstBeforeNZ=0/256 DstBeforeHash=00000000
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28243 tid=0000000000002FE8 qpc=2754450568 operation=12 status=0x00000000
+[PRIMARY_COPY #2434] END Route=MPO3 Sdma=YES FenceAndRptr=YES Proof=DATA_UNOBSERVED_CPU_MAP SrcSample=0 DstAfterSample=0 Visibility=NOT_PROVEN Status=SUCCESS_ENGINE_ONLY
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28244 tid=0000000000002FE8 qpc=2754453339 operation=12
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28244 tid=0000000000002FE8 qpc=2754459198 operation=12 status=0x00000000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28245 tid=0000000000002FE8 qpc=2754459977 operation=12
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28245 tid=0000000000002FE8 qpc=2754466106 operation=12 status=0x00000000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28246 tid=0000000000002FE8 qpc=2754466517 operation=12
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28246 tid=0000000000002FE8 qpc=2754472814 operation=12 status=0x00000000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28247 tid=0000000000002FE8 qpc=2754473237 operation=12
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28247 tid=0000000000002FE8 qpc=2754479506 operation=12 status=0x00000000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=0000000400000004, Proc=0000000100000001, hasRoot=1, targetPtPhys=0x460A8C000, Vmid=8, instCtx=0000000400000004, instRoot=0x460A8C000
+[PT_WALK] RootMC=0x460A8C000 VramMcBase=0x460000000 LocalSegBase=0xA8C000 Janela=262144000 bytes
+[PT_WALK] IB_PROOF_BIND: PA=0x25B7DC000 Bytes=40672 ExactMetadata=0 (miss: no poison)
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28248 tid=0000000000002FE8 qpc=2754480723 operation=12
+BC250_DIAG schema=1 level=INFO event=KMD_SDMA_SUBMIT ctx=0000000400000004 node=0 dxg_fence=8191 hw_fence=19595 vmid=8 path=INDIRECT accepted=1 va=0x22E000 bytes=40672 qpc=2754481481
+[SubmitVirtual Node0 SDMA] IB_ENGINE_2LEGS #8195 (RPTR==WPTR + fence sobre poison; PERNA DE DADOS NAO CONFERIDA): WPTR=3460 RPTR=3460 Fence=00004C8B Poison=43DAFFFE Size=40672 Vmid=8 EfeitoDeclarado=0x0/0/0x00000000 (async)
+[SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 40672 bytes em VA=0x22E000; FenceId=8191 (batch #1) retire_qpc=2754484043 FromDpc=1
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28248 tid=0000000000002FE8 qpc=2754486917 operation=12 status=0x00000000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28249 tid=0000000000002FE8 qpc=2754488493 operation=12
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=0000000400000004, Proc=0000000100000001, hasRoot=1, targetPtPhys=0x460A8C000, Vmid=8, instCtx=0000000400000004, instRoot=0x460A8C000
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28249 tid=0000000000002FE8 qpc=2754494729 operation=12 status=0x00000000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28250 tid=0000000000002FE8 qpc=2754495846 operation=12
+[PT_WALK] RootMC=0x460A8C000 VramMcBase=0x460000000 LocalSegBase=0xA8C000 Janela=262144000 bytes
+[PT_WALK] IB_PROOF_BIND: PA=0x25CFCC000 Bytes=4384 ExactMetadata=0 (miss: no poison)
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+BC250_DIAG schema=1 level=INFO event=KMD_SDMA_SUBMIT ctx=0000000400000004 node=0 dxg_fence=8192 hw_fence=19596 vmid=8 path=INDIRECT accepted=1 va=0x21E000 bytes=4384 qpc=2754500472
+[SubmitVirtual Node0 SDMA] IB_ALIGN: StartDW=865 PadDW=0 IndirectEndDW=896 EndModulo8=0 TargetWPTR=5361216 IbSizeDW=1096 PublishedDW=1096
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=0000000400000004, Proc=0000000100000001, hasRoot=1, targetPtPhys=0x460A8C000, Vmid=8, instCtx=0000000400000004, instRoot=0x460A8C000
+[SubmitVirtual Node0 SDMA] IB_ENGINE_2LEGS #8196 (RPTR==WPTR + fence sobre poison; PERNA DE DADOS NAO CONFERIDA): WPTR=3648 RPTR=3648 Fence=00004C8C Poison=43DAFFFE Size=4384 Vmid=8 EfeitoDeclarado=0x0/0/0x00000000 (async)
+[SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 4384 bytes em VA=0x21E000; FenceId=8192 (batch #1) retire_qpc=2754501042 FromDpc=1
+[PT_WALK] RootMC=0x460A8C000 VramMcBase=0x460000000 LocalSegBase=0xA8C000 Janela=262144000 bytes
+[PT_WALK] IB_PROOF_BIND: PA=0x25CFCD120 Bytes=4384 ExactMetadata=0 (miss: no poison)
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+BC250_DIAG schema=1 level=INFO event=KMD_SDMA_SUBMIT ctx=0000000400000004 node=0 dxg_fence=8193 hw_fence=19597 vmid=8 path=INDIRECT accepted=1 va=0x21F120 bytes=4384 qpc=2754501656
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28250 tid=0000000000002FE8 qpc=2754501842 operation=12 status=0x00000000
+[SubmitVirtual Node0 SDMA] IB_ENGINE_2LEGS #8197 (RPTR==WPTR + fence sobre poison; PERNA DE DADOS NAO CONFERIDA): WPTR=3872 RPTR=3872 Fence=00004C8D Poison=43DAFFFE Size=4384 Vmid=8 EfeitoDeclarado=0x0/0/0x00000000 (async)
+[SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 4384 bytes em VA=0x21F120; FenceId=8193 (batch #1) retire_qpc=2754502160 FromDpc=1
+[SubmitVirtual Node1 GFX] ENTER: FenceId=2804 DmaSize=1152 DmaVA=0x2422CC000
+[SubmitVirtual Node1 GFX] GATE FISICO PASS: Root=0x46F3E1000 VA=[0x2422CC000,0x2422CC480) FirstPA=0x462860000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28251 tid=0000000000002FE8 qpc=2754502714 operation=12
+[GfxEngine] SUBMIT SUCESSO: Fence=2805 NewWptr=35652 DmaVA=0x2422CC000 SizeDW=288 VMID=1 submit_qpc=2754502847
+BC250_DIAG schema=1 level=INFO event=KMD_GFX_SWITCH ring_fence=2805 prev_vmid=1 vmid=1 switch=0 trigger=VMID_CHANGE wait_fence=0 root=0x0 pm4_dw=0 context_control=0 ib_header=0xC0023F00 ib_control=0x01800120 ib_valid=1 ib_inherit_vmid=0 ib_vmid=1 new_wptr=35652
+[GFX_IB_IDENTITY] Ctx=0000004D0000004D DxgFence=2804 RingFence=2805 VMID=1 Root=0x46F3E1000 VA=0x2422CC000 DW=288 Fnv64=0000000000000000 Complete=0 -- hash dos bytes vistos pelo KMD antes do submit; NAO prova execucao
+[SubmitVirtual Node1 GFX] FENCE COMMIT: Token=2804 RingFence=2805 committed=1 accepted=1
+BC250_DIAG schema=1 level=INFO event=KMD_GFX_SUBMIT ctx=0000004D0000004D node=1 engine=0 dxg_fence=2804 ring_fence=2805 vmid=1 root=0x46F3E1000 va=0x2422CC000 dw=288 fnv64=0000000000000000 hash_complete=0 committed=1 commit_status=0x00000000 rptr=2876 rptr_read=1 wptr=35652 wptr_read=1 sq=0x00EE0EE1 sq_read=1 fence_observed=2804 fence_map=1
+[GfxRetire] Retiradas=1 UltimaFence=2805 retire_qpc=2754504180 FromDpc=1
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28251 tid=0000000000002FE8 qpc=2754509515 operation=12 status=0x00000000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28252 tid=0000000000002FE8 qpc=2754509975 operation=12
+[McdmEscape] ENTER #2441: DataSize=56 Dword0=0xBC250002 hDevice=0000003D0000003D hContext=0000005800000058 Flags=0x00000000 handler=instalado
+[Bc250Escape] COMPOSITE_BLT ENTER: DataSize=56 (esperado=56)
+[ResolveGpuVa] SUCCESS: Hdl=0000005800000058 Proc=0000003C0000003C VA=0x2465C0000 -> Phys=0x3000000 Seg=1
+[ResolveGpuVa] SUCCESS: Hdl=0000005800000058 Proc=0000003C0000003C VA=0x202070000 -> Phys=0x40000 Seg=1
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28252 tid=0000000000002FE8 qpc=2754515979 operation=12 status=0x00000000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=0000000400000004, Proc=0000000100000001, hasRoot=1, targetPtPhys=0x460A8C000, Vmid=8, instCtx=0000000400000004, instRoot=0x460A8C000
+[PT_WALK] RootMC=0x460A8C000 VramMcBase=0x460000000 LocalSegBase=0xA8C000 Janela=262144000 bytes
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28253 tid=0000000000002FE8 qpc=2754516853 operation=12
+[Bc250Escape] COMPOSITE_DATA_PROOF INDISPONIVEL: SrcMc=0xF403A8C000 DstMc=0xF400ACC000 Bytes=11059200 Apertura=262144000
+[Bc250Escape] COMPOSITE_BLT OK RECT 1:1: 2560x1080 srcPitch=10240 dstPitch=10240 DstXY=0,0 SrcMc=0xF403A8C000 DstMc=0xF400ACC000 Bytes=11059200 Prova=SOMENTE_ENGINE
+[PT_WALK] IB_PROOF_BIND: PA=0x2587CE240 Bytes=4448 ExactMetadata=0 (miss: no poison)
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28253 tid=0000000000002FE8 qpc=2754523001 operation=12 status=0x00000000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28254 tid=0000000000002FE8 qpc=2754524081 operation=12
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+BC250_DIAG schema=1 level=INFO event=KMD_SDMA_SUBMIT ctx=0000000400000004 node=0 dxg_fence=8194 hw_fence=19599 vmid=8 path=INDIRECT accepted=1 va=0x220240 bytes=4448 qpc=2754525818
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=0000000400000004, Proc=0000000100000001, hasRoot=1, targetPtPhys=0x460A8C000, Vmid=8, instCtx=0000000400000004, instRoot=0x460A8C000
+[PT_WALK] RootMC=0x460A8C000 VramMcBase=0x460000000 LocalSegBase=0xA8C000 Janela=262144000 bytes
+[PT_WALK] IB_PROOF_BIND: PA=0x2587CF3A0 Bytes=4384 ExactMetadata=0 (miss: no poison)
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+[SubmitVirtual Node0 SDMA] IB_ENGINE_2LEGS #8198 (RPTR==WPTR + fence sobre poison; PERNA DE DADOS NAO CONFERIDA): WPTR=260 RPTR=260 Fence=00004C8F Poison=43DAFFFE Size=4448 Vmid=8 EfeitoDeclarado=0x0/0/0x00000000 (async)
+[DescribeAlloc] geometria do registro: hAlloc=0000013100000131 2560x1080 pitch=10240 fmt=21
+[SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 4448 bytes em VA=0x220240; FenceId=8194 (batch #1) retire_qpc=2754526844 FromDpc=1
+BC250_DIAG schema=1 level=INFO event=KMD_SDMA_SUBMIT ctx=0000000400000004 node=0 dxg_fence=8195 hw_fence=19600 vmid=8 path=INDIRECT accepted=1 va=0x2213A0 bytes=4384 qpc=2754527090
+[ResolveGpuVa] SUCCESS: Hdl=0000005800000058 Proc=0000003C0000003C VA=0x202070000 -> Phys=0x40000 Seg=1
+[Present #2432] Source=PRESENT_SLOT SegOff=0x40000 Seg=1 SegBase=0xA8C000 -> VramOff=0xACC000 (resolved=1, Flip=1, Blt=0)
+[SubmitVirtual Node0 SDMA] IB_ENGINE_2LEGS #8199 (RPTR==WPTR + fence sobre poison; PERNA DE DADOS NAO CONFERIDA): WPTR=480 RPTR=480 Fence=00004C90 Poison=43DAFFFE Size=4384 Vmid=8 EfeitoDeclarado=0x0/0/0x00000000 (async)
+[SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 4384 bytes em VA=0x2213A0; FenceId=8195 (batch #1) retire_qpc=2754528074 FromDpc=1
+[DX74_PRESENT_KMD_TEMPO] n=2432 hContext=0000005800000058 Blt=0 Flip=1 Status=0x00000000 StartQpc=2754527089 EndQpc=2754529825 ElapsedUs=273
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28254 tid=0000000000002FE8 qpc=2754530148 operation=12 status=0x00000000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28255 tid=0000000000002FE8 qpc=2754531003 operation=12
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28255 tid=0000000000002FE8 qpc=2754537314 operation=12 status=0x00000000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28256 tid=0000000000002FE8 qpc=2754537736 operation=12
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28256 tid=0000000000002FE8 qpc=2754543589 operation=12 status=0x00000000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28257 tid=0000000000002FE8 qpc=2754544338 operation=12
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=0000000400000004, Proc=0000000100000001, hasRoot=1, targetPtPhys=0x460A8C000, Vmid=8, instCtx=0000000400000004, instRoot=0x460A8C000
+[PT_WALK] RootMC=0x460A8C000 VramMcBase=0x460000000 LocalSegBase=0xA8C000 Janela=262144000 bytes
+[PT_WALK] IB_PROOF_BIND: PA=0x25B7D04C0 Bytes=4448 ExactMetadata=0 (miss: no poison)
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+BC250_DIAG schema=1 level=INFO event=KMD_SDMA_SUBMIT ctx=0000000400000004 node=0 dxg_fence=8196 hw_fence=19602 vmid=8 path=INDIRECT accepted=1 va=0x2224C0 bytes=4448 qpc=2754545932
+[SubmitVirtual Node0 SDMA] IB_ENGINE_2LEGS #8200 (RPTR==WPTR + fence sobre poison; PERNA DE DADOS NAO CONFERIDA): WPTR=964 RPTR=964 Fence=00004C92 Poison=43DAFFFE Size=4448 Vmid=8 EfeitoDeclarado=0x0/0/0x00000000 (async)
+[SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 4448 bytes em VA=0x2224C0; FenceId=8196 (batch #1) retire_qpc=2754546848 FromDpc=1
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28257 tid=0000000000002FE8 qpc=2754550596 operation=12 status=0x00000000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28258 tid=0000000000002FE8 qpc=2754551403 operation=12
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28258 tid=0000000000002FE8 qpc=2754557242 operation=12 status=0x00000000
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=0000000400000004, Proc=0000000100000001, hasRoot=1, targetPtPhys=0x460A8C000, Vmid=8, instCtx=0000000400000004, instRoot=0x460A8C000
+[PT_WALK] RootMC=0x460A8C000 VramMcBase=0x460000000 LocalSegBase=0xA8C000 Janela=262144000 bytes
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28259 tid=0000000000002FE8 qpc=2754557880 operation=12
+[PT_WALK] IB_PROOF_BIND: PA=0x25B7D1620 Bytes=4416 ExactMetadata=0 (miss: no poison)
+[PT_WALK] DEST: encoder nao publicou faixa de escrita
+BC250_DIAG schema=1 level=INFO event=KMD_SDMA_SUBMIT ctx=0000000400000004 node=0 dxg_fence=8197 hw_fence=19603 vmid=8 path=INDIRECT accepted=1 va=0x223620 bytes=4416 qpc=2754558437
+[SubmitVirtual Node0 SDMA] IB_ENGINE_2LEGS #8201 (RPTR==WPTR + fence sobre poison; PERNA DE DADOS NAO CONFERIDA): WPTR=1216 RPTR=1216 Fence=00004C93 Poison=43DAFFFE Size=4416 Vmid=8 EfeitoDeclarado=0x0/0/0x00000000 (async)
+[SubmitVirtual Node0 SDMA] IB EXECUTADO (INDIRECT): a GPU leu o DMA buffer de 4416 bytes em VA=0x223620; FenceId=8197 (batch #1) retire_qpc=2754559217 FromDpc=1
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28259 tid=0000000000002FE8 qpc=2754564105 operation=12 status=0x00000000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28260 tid=0000000000002FE8 qpc=2754564883 operation=12
+BC250_HANG v=1 op=PAGING_DDI phase=LEAVE id=28260 tid=0000000000002FE8 qpc=2754570731 operation=12 status=0x00000000
+BC250_HANG v=1 op=PAGING_DDI phase=ENTER id=28261 tid=0000000000002FE8 qpc=2754571342 operation=12
+[SubmitVirtual Node0 SDMA] CTX_PROBE: Ctx=0000000400000004, Proc=0000000100000001, hasRoot=1, targetPtPhys=0x460A8C000, Vmid=8, instCtx=0000000400000004, instRoot=0x460A8C000
+[DX56_PAGING_TRACE] START arquivo=C:\BC250_PAGING_TRACE.bin periodo=100ms slots=16
+[DX48_LIFECYCLE] AddDevice ENTER #1 PDO=FFFFDE0BC809B060 -- instancia numero 1 deste driver carregado
+[FPS3B] aposentadoria do SDMA: timer de alta resolucao ATIVO (HrTimer=FFFFDE0BC8B4C530)
+[DX48_LIFECYCLE] AddDevice LEAVE #1 PDO=FFFFDE0BC809B060 Contexto=FFFFDE0BC7210000 status=0x00000000
+[McdmQAI] Type=29, OutSize=4, CapsStatus=0xC00000A3 hAdapter=FFFFDE0BC7210000
+[DX48_LIFECYCLE] StartDevice ENTER Contexto=FFFFDE0BC7210000
+[DX66_MIGALHA] ANTERIOR AUSENTE: magic=0x2DD94E0C versao=773967352 (Phys=0xCFA00000) -- VRAM nao preservou a pagina ou nunca foi armada
+[FUSE] STARTDEVICE RECUSADO: Fusivel disparado (State=2, Boots=2, LastStatus=c0000001)
+[StartDevice] FUSIVEL ANTI-BOOT-LOOP DISPARADO: recusa StartDevice (fuseStatus=00000000, prevFuseState=1)
+[DX48_LIFECYCLE] StartDevice LEAVE Contexto=FFFFDE0BC7210000 status=0xC0000182
+[DX48_LIFECYCLE] RemoveDevice ENTER Contexto=FFFFDE0BC7210000
+[DX48_LIFECYCLE] RemoveDevice LEAVE Contexto=FFFFDE0BC7210000 status=0x00000000

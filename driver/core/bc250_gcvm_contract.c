@@ -5,6 +5,8 @@
 #define BC250_UINT64_MAX_VALUE ((uint64_t)~(uint64_t)0)
 #define BC250_PTE_ADDR_MASK    0x0000FFFFFFFFF000ull
 #define BC250_PTE_PRT_BIT      (1ull << 54)
+/* P6: AMDGPU_PTE_MTYPE_NV10(MTYPE_UC) = 3 << 48 (gmc_v10_0.c, amdgpu_vm.h). */
+#define BC250_PTE_MTYPE_UC_BITS (3ull << 48)
 
 /*
  * Num PDE o campo de endereco e [47:6] e os bits [5:3] sao reservados.
@@ -39,6 +41,7 @@ BC250_GCVM_STATUS Bc250GcvmEncodePte(
     if (Flags & BC250_PTE_WRITEABLE)  pte |= (1ull << 6);
     if (Flags & BC250_PTE_EXECUTABLE) pte |= (1ull << 4);
     if (Flags & BC250_PTE_PRT)        pte |= BC250_PTE_PRT_BIT;
+    if (Flags & BC250_PTE_MTYPE_UC)   pte |= BC250_PTE_MTYPE_UC_BITS;
 
     *PteOut = pte;
     return BC250_GCVM_OK;

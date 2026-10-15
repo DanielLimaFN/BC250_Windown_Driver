@@ -5,7 +5,9 @@
 static uint32_t Bc250TlbPlanIsExact(
     const BC250_GFXHUB_TLB_FLUSH_PLAN *Plan)
 {
-    if (Plan == NULL || Plan->Vmid == 0u || Plan->Vmid >= 16u ||
+    /* VMID 0 so' com o plano da GART (Bc250PagingBuildGartTlbFlushPlan). */
+    if (Plan == NULL || (Plan->Vmid == 0u && Plan->GartVmid0 != 1u) ||
+        Plan->Vmid >= 16u ||
         Plan->EngineId != 17u || Plan->FlushType > 7u ||
         Plan->RequestRegisterOffset != 0xA2D0u ||
         Plan->AckRegisterOffset != 0xA318u ||

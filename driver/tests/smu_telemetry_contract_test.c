@@ -54,6 +54,11 @@ static void MockSmuWrite32(void *Context, uint32_t ByteOffset, uint32_t Value)
         } else if (Value == BC250_PPSMC_MSG_GetGfxVid) {
             g_c2pmsg82 = 1050u; /* 1050 mV */
             g_c2pmsg66 = BC250_SMU_RESP_OK;
+        } else if (Value == BC250_PPSMC_MSG_GetEnabledSmuFeatures) {
+            g_c2pmsg82 = 0x00000007u; /* FCLK, SOC, GFX DPM */
+            g_c2pmsg66 = BC250_SMU_RESP_OK;
+        } else if (Value == BC250_PPSMC_MSG_RequestGfxclk) {
+            g_c2pmsg66 = BC250_SMU_RESP_OK;
         } else {
             g_c2pmsg66 = BC250_SMU_RESP_CMD_REJECT;
         }
@@ -87,6 +92,12 @@ static int Bc250RunSmuTelemetryTest(void)
 
     CHECK(Bc250SmuGetGfxVid(&transport, &val) == BC250_SMU_STATUS_OK);
     CHECK(val == 1050u);
+
+    /* 4. DPM Features & Request */
+    CHECK(Bc250SmuGetEnabledFeatures(&transport, &val) == BC250_SMU_STATUS_OK);
+    CHECK(val == 0x00000007u);
+
+    CHECK(Bc250SmuRequestGfxclk(&transport, 1500u) == BC250_SMU_STATUS_OK);
 
     return 1;
 }

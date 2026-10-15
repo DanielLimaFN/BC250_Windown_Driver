@@ -116,8 +116,8 @@ static int Run(void)
     CHECK(instEv.BaseHighProgrammed == 0x000000F4u);
     CHECK(instEv.StartLowProgrammed == 0x00000000u);
     CHECK(instEv.StartHighProgrammed == 0x00000000u);
-    CHECK(instEv.EndLowProgrammed == 0x003FFFFFu);
-    CHECK(instEv.EndHighProgrammed == 0x00000000u);
+    CHECK(instEv.EndLowProgrammed == BC250_GCVM_CONTEXT8_PT_END_LO_VALUE);
+    CHECK(instEv.EndHighProgrammed == BC250_GCVM_CONTEXT8_PT_END_HI_VALUE);
     CHECK(instEv.ContextControlProgrammed == BC250_GCVM_CONTEXT8_CNTL_FAULT_OBSERVABLE_VALUE);
     CHECK(instEv.ProgramReadbackPassed == 1u);
     CHECK(instEv.TlbFlushPassed == 1u);
@@ -128,8 +128,8 @@ static int Run(void)
     CHECK(f->Registers[BC250_GCVM_VMID8_PT_BASE_HI / 4u] == 0x000000F4u);
     CHECK(f->Registers[BC250_GCVM_VMID8_PT_START_LO / 4u] == 0x00000000u);
     CHECK(f->Registers[BC250_GCVM_VMID8_PT_START_HI / 4u] == 0x00000000u);
-    CHECK(f->Registers[BC250_GCVM_VMID8_PT_END_LO / 4u] == 0x003FFFFFu);
-    CHECK(f->Registers[BC250_GCVM_VMID8_PT_END_HI / 4u] == 0x00000000u);
+    CHECK(f->Registers[BC250_GCVM_VMID8_PT_END_LO / 4u] == BC250_GCVM_CONTEXT8_PT_END_LO_VALUE);
+    CHECK(f->Registers[BC250_GCVM_VMID8_PT_END_HI / 4u] == BC250_GCVM_CONTEXT8_PT_END_HI_VALUE);
 
     /* 3. Bc250GcvmVmid8Install - Falha de Flush da TLB (deve desabilitar CNTL) */
     f->FlushResult = 0u;
@@ -183,7 +183,15 @@ static int Run(void)
     CHECK(binding.Ready && binding.Root == 0x45FFB0000ull);
     CHECK(f->Registers[BC250_GCVM_VMID9_PT_BASE_LO / 4u] == 0x5FFB0001u);
     CHECK(f->Registers[BC250_GCVM_VMID9_PT_BASE_HI / 4u] == 4u);
+    /*
+     * P5: a raiz do VMID9 e' a raiz do VidMm (SetRootPageTable), entao o
+     * DEPTH acompanha a geometria: 3 com 4 niveis, 1 com 2.
+     */
+#if BC250_P5_QUATRO_NIVEIS
+    CHECK(f->Registers[BC250_GCVM_VMID9_CNTL / 4u] == 0x80555407u);
+#else
     CHECK(f->Registers[BC250_GCVM_VMID9_CNTL / 4u] == 0x80555403u);
+#endif
     CHECK(f->Registers[BC250_GCVM_VMID8_PT_BASE_LO / 4u] == 0x50A8C001u);
     i = f->WriteCalls;
     CHECK(Bc250GcvmComputeInstall(0x45FFC0000ull, 18ull, 17ull, &io, &binding) == BC250_GCVM_VMID8_CONTEXT_ENABLED);
@@ -228,8 +236,8 @@ static int Run(void)
     CHECK(f->Registers[BC250_GCVM_VMID7_PT_BASE_HI / 4u] == 0x000000F4u);
     CHECK(f->Registers[BC250_GCVM_VMID7_PT_START_LO / 4u] == 0x00000000u);
     CHECK(f->Registers[BC250_GCVM_VMID7_PT_START_HI / 4u] == 0x00000000u);
-    CHECK(f->Registers[BC250_GCVM_VMID7_PT_END_LO / 4u] == 0x003FFFFFu);
-    CHECK(f->Registers[BC250_GCVM_VMID7_PT_END_HI / 4u] == 0x00000000u);
+    CHECK(f->Registers[BC250_GCVM_VMID7_PT_END_LO / 4u] == BC250_GCVM_CONTEXT8_PT_END_LO_VALUE);
+    CHECK(f->Registers[BC250_GCVM_VMID7_PT_END_HI / 4u] == BC250_GCVM_CONTEXT8_PT_END_HI_VALUE);
 
     /* O callback recebe o VMID exato; nao existe mais wrapper fixo em 7/8. */
     {

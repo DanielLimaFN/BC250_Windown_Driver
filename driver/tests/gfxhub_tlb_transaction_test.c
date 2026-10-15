@@ -123,6 +123,34 @@ static int Bc250RunGfxhubTlbTransactionTest(void)
         BC250_TLB_TRANSACTION_UNDECODED);
     CHECK(evidence.RequestWritten == 0u && evidence.PhysicalReady == 0u);
     CHECK(evidence.RangeRestorePassed == 1u);
+
+    /* D2 por GART (doc 587): VMID 0 pela engine 17, so' com o plano da GART. */
+    CHECK(Bc250PagingBuildGartTlbFlushPlan(&plan) == BC250_PAGING_OK);
+    CHECK(plan.Vmid == 0u && plan.EngineId == 17u && plan.GartVmid0 == 1u);
+    CHECK(plan.RequestRegisterOffset == 0xA2D0u && plan.AckRegisterOffset == 0xA318u);
+    CHECK(plan.RequestValue == 0x00F80001u && plan.AckMask == 1u);
+    memset(&transport, 0, sizeof(transport));
+    transport.RangeLow = 0xFFFFFFFFu;
+    transport.RangeHigh = 0x1Fu;
+    transport.AckOnRequest = 1u;
+    interfaceData.Context = &transport;
+    CHECK(Bc250RunGfxhubTlbTransaction(
+        &plan, &interfaceData, 100u, &evidence) == BC250_TLB_TRANSACTION_OK);
+    CHECK(evidence.AckObserved == 1u && evidence.PhysicalReady == 1u);
+    CHECK(transport.Request == 0x00F80001u);
+    /* O mesmo plano sem a chave da GART e' recusado: VMID 0 segue fechada. */
+    plan.GartVmid0 = 0u;
+    memset(&transport, 0, sizeof(transport));
+    transport.AckOnRequest = 1u;
+    interfaceData.Context = &transport;
+    CHECK(Bc250RunGfxhubTlbTransaction(
+        &plan, &interfaceData, 100u, &evidence) != BC250_TLB_TRANSACTION_OK);
+    CHECK(transport.Request == 0u);
+    /* E o construtor generico continua recusando a VMID 0. */
+    memset(&params, 0, sizeof(params));
+    params.Vmid = 0u;
+    CHECK(Bc250PagingBuildGfxhubTlbFlushPlan(&params, &plan) ==
+        BC250_PAGING_BAD_ARGUMENT);
     return 1;
 }
 

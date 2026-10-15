@@ -191,6 +191,114 @@ SIZE_T APIENTRY Bc250Umd10CalcPrivateDeviceSize(
     return sizeof(BC250_UMD_DEVICE);
 }
 
+/* =========================================================================
+ * MENU.1 e PAG.1 (doc 754)
+ * ========================================================================= */
+static UINT64 Bc250UmdMenu1Since(LARGE_INTEGER Start)
+{
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    return (now.QuadPart > Start.QuadPart) ? (UINT64)(now.QuadPart - Start.QuadPart) : 0u;
+}
+
+static double Bc250UmdMenu1Ms(UINT64 Ticks)
+{
+    LARGE_INTEGER freq;
+    if (!QueryPerformanceFrequency(&freq) || freq.QuadPart <= 0) return 0.0;
+    return (double)Ticks * 1000.0 / (double)freq.QuadPart;
+}
+
+static BOOL Bc250UmdMenu1TimedBridgeInit(_Inout_ BC250_UMD_DEVICE* pDevice)
+{
+    LARGE_INTEGER t0;
+    BOOL ok;
+    QueryPerformanceCounter(&t0);
+    ok = Bc250UmdVkBridgeInit(&pDevice->VkBridge);
+    pDevice->Menu1BridgeTicks = Bc250UmdMenu1Since(t0);
+    return ok;
+}
+
+/*
+ * Uma linha por device: do CreateDevice ao 1o Present (Reason="1o Present") ou
+ * ao teardown sem Present. As fases medidas se sobrepoem (WaitPaging e o Vk
+ * ficam dentro do CreateResource); "fora" e o tempo fora das fases contadas
+ * (DDIs nao medidas, o proprio app e o compositor).
+ */
+static void Bc250UmdMenu1Report(_Inout_ BC250_UMD_DEVICE* pDevice, _In_z_ const char* Reason)
+{
+    UINT64 total;
+    double outside;
+    if (pDevice == NULL || pDevice->Menu1Reported || pDevice->Menu1Start.QuadPart == 0) return;
+    pDevice->Menu1Reported = TRUE;
+    total = Bc250UmdMenu1Since(pDevice->Menu1Start);
+    outside = Bc250UmdMenu1Ms(total) - Bc250UmdMenu1Ms(pDevice->Menu1InitTicks) -
+        Bc250UmdMenu1Ms(pDevice->Menu1CreateTicks) - Bc250UmdMenu1Ms(pDevice->Menu1UploadTicks) -
+        Bc250UmdMenu1Ms(pDevice->VkBridge.Menu1FlushTicks);
+    Bc250UmdTrace("[MENU1] device=%p ate o %s: total=%.1f ms | init=%.1f ms (ponte Vk %.1f) | "
+        "CreateResource n=%u %.1f ms (WaitPaging n=%u %.1f ms, adiadas PAG1=%u; Vk n=%u %.1f ms) | "
+        "Upload n=%u %.1f ms | Flush n=%u %.1f ms | Draws=%llu | fora das fases=%.1f ms",
+        (void*)pDevice, Reason, Bc250UmdMenu1Ms(total),
+        Bc250UmdMenu1Ms(pDevice->Menu1InitTicks), Bc250UmdMenu1Ms(pDevice->Menu1BridgeTicks),
+        pDevice->Menu1Creates, Bc250UmdMenu1Ms(pDevice->Menu1CreateTicks),
+        pDevice->Menu1Waits, Bc250UmdMenu1Ms(pDevice->Menu1WaitTicks), pDevice->Pag1Deferred,
+        pDevice->Menu1VkRes, Bc250UmdMenu1Ms(pDevice->Menu1VkResTicks),
+        pDevice->Menu1Uploads, Bc250UmdMenu1Ms(pDevice->Menu1UploadTicks),
+        pDevice->VkBridge.Menu1Flushes, Bc250UmdMenu1Ms(pDevice->VkBridge.Menu1FlushTicks),
+        (unsigned long long)pDevice->NativeVkDrawCount, outside);
+}
+
+/* WaitPaging medida (MENU.1). */
+static BC250_WINSYS_STATUS Bc250UmdMenu1WaitPaging(_Inout_ BC250_UMD_DEVICE* pDevice,
+    _In_ const BC250_WINSYS_ALLOCATION* Allocation)
+{
+    LARGE_INTEGER t0;
+    BC250_WINSYS_STATUS st;
+    QueryPerformanceCounter(&t0);
+    st = Bc250WinsysWaitPaging(&pDevice->Winsys, Allocation);
+    pDevice->Menu1WaitTicks += Bc250UmdMenu1Since(t0);
+    ++pDevice->Menu1Waits;
+    return st;
+}
+
+/*
+ * PAG.1 (doc 754): na 294 cada CreateResource do menu esperava a paginacao na
+ * CPU (~5-7 ms, 55-59 vezes por abertura). Um recurso com memoria Vulkan
+ * propria (FRENTE_B NAO, buffers L1) nao usa a alocacao WDDM na GPU logo em
+ * seguida: a espera fica para quem precisar dela -- alias de memoria (ZC.1,
+ * FRENTE_B SIM), Lock/Read da alocacao (o winsys espera antes) e o Present
+ * (espera antes do pfnPresentCb). Primaria e compartilhado esperam como antes.
+ * Nao muda o que a GPU faz: so tira a CPU da espera.
+ */
+/* PAG.1: espera "atrasada" por quem precisa da alocacao. Instantanea se a
+ * cerca ja passou; conta so as que de fato esperaram. */
+static BC250_WINSYS_STATUS Bc250UmdPag1WaitNow(_Inout_ BC250_UMD_DEVICE* pDevice,
+    _In_ const BC250_WINSYS_ALLOCATION* Allocation, _In_z_ const char* Why)
+{
+    BOOL pending;
+    UINT64 current;
+    BC250_WINSYS_STATUS st;
+    if (pDevice == NULL || Allocation == NULL || !Allocation->Created ||
+        Allocation->PagingFenceValue == 0u || !pDevice->WinsysInitialized) return BC250_WINSYS_OK;
+    current = (pDevice->Winsys.PagingFenceCpuVa != NULL) ? *pDevice->Winsys.PagingFenceCpuVa : 0u;
+    pending = (current < Allocation->PagingFenceValue) ? TRUE : FALSE;
+    if (!pending) return BC250_WINSYS_OK;
+    st = Bc250UmdMenu1WaitPaging(pDevice, Allocation);
+    ++pDevice->Pag1WaitedLater;
+    if (pDevice->Pag1WaitedLater <= 8u) {
+        Bc250UmdTrace("[PAG1] espera de paginacao feita depois (%s): alvo=%llu atual=%llu -> %s (#%u)",
+            Why, (unsigned long long)Allocation->PagingFenceValue, (unsigned long long)current,
+            Bc250WinsysStatusName(st), pDevice->Pag1WaitedLater);
+    }
+    return st;
+}
+
+static BOOL Bc250UmdPag1MayDefer(_In_ CONST D3D10DDIARG_CREATERESOURCE* pCreate, BOOL IsPrimary)
+{
+    if (IsPrimary) return FALSE;
+    if ((pCreate->MiscFlags & D3D10_DDI_RESOURCE_MISC_SHARED) != 0u) return FALSE;
+    return TRUE;
+}
+
 HRESULT Bc250UmdDeviceInit(
     _Out_ BC250_UMD_DEVICE* pDevice,
     _In_ BC250_UMD_ADAPTER* pAdapter,
@@ -209,6 +317,7 @@ HRESULT Bc250UmdDeviceInit(
     }
 
     memset(pDevice, 0, sizeof(*pDevice));
+    QueryPerformanceCounter(&pDevice->Menu1Start); /* MENU.1 */
     InitializeSRWLock(&pDevice->DeviceLock);
     pDevice->hRTDevice = pCreateData->hRTDevice;
     pDevice->hRTCoreLayer = pCreateData->hRTCoreLayer;
@@ -238,7 +347,7 @@ HRESULT Bc250UmdDeviceInit(
     /* Initialize Vulkan Graphics Translation Bridge if kernel callbacks are operational */
     if (pCreateData->pKTCallbacks != NULL &&
         pCreateData->pKTCallbacks->pfnCreateContextVirtualCb != NULL &&
-        Bc250UmdVkBridgeInit(&pDevice->VkBridge)) {
+        Bc250UmdMenu1TimedBridgeInit(pDevice)) {
         pDevice->VkBridgeInitialized = TRUE;
         /* DX.49: todo flush fecha o render pass aberto por um clear. */
         pDevice->VkBridge.pRenderPassOpen = &pDevice->InRenderPass;
@@ -252,11 +361,14 @@ HRESULT Bc250UmdDeviceInit(
 
     Bc250UmdTrace("Bc250UmdDeviceInit: device=%p inicializado com sucesso (Interface=0x%08X, Version=0x%08X, Winsys=OK, VkBridge=%d)",
         (void*)pDevice, pDevice->Interface, pDevice->Version, (int)pDevice->VkBridgeInitialized);
+    pDevice->Menu1InitTicks = Bc250UmdMenu1Since(pDevice->Menu1Start);
     return S_OK;
 }
 
 /* SDMA GPU Blt implementation */
 #include "bc250_umd_blt.inl"
+
+static VOID Bc250UmdWsiDeviceTeardown(_Inout_ BC250_UMD_DEVICE *device);
 
 VOID Bc250UmdDeviceTeardown(
     _Inout_ BC250_UMD_DEVICE* pDevice)
@@ -281,6 +393,9 @@ VOID Bc250UmdDeviceTeardown(
     Bc250WinsysHangEvent("LOCK_EXCLUSIVE", "ACQUIRED", pDevice, hangSpan, 0u, 0u, S_OK);
 
     Bc250UmdTrace("Bc250UmdDeviceTeardown: device=%p iniciando teardown seguro", (void*)pDevice);
+    Bc250UmdMenu1Report(pDevice, "teardown sem Present");
+    Bc250UmdTrace("[PAG1] device=%p esperas de paginacao adiadas=%u, feitas depois=%u",
+        (void*)pDevice, pDevice->Pag1Deferred, pDevice->Pag1WaitedLater);
 
     /*
      * Nao ha mais teardown de blt: a composicao passou a ser executada pelo
@@ -294,6 +409,9 @@ VOID Bc250UmdDeviceTeardown(
     if (pDevice->Node1CmdBuffer.Initialized) {
         Bc250UmdCommandBufferTeardown(pDevice, &pDevice->Node1CmdBuffer);
     }
+
+    /* WSI.2: as fences compartilhadas sao do runtime deste device. */
+    Bc250UmdWsiDeviceTeardown(pDevice);
 
     if (pDevice->WinsysInitialized) {
         if (pDevice->Winsys.PagingQueueCreated) {
@@ -336,6 +454,8 @@ VOID Bc250UmdDeviceTeardown(
 /* Vulkan Resource and Pipeline Cache translation implementations */
 #include "bc250_umd_resource_vk.c"
 #include "bc250_umd_pipeline_cache.c"
+/* WSI.1 (doc 757): GPUVA de textura D3D11 para a WSI Win32 da RADV do mesmo processo */
+#include "bc250_umd_wsi.c"
 /*
  * DX.54 -- VELOCIDADE (Corrida 98R, P0 de tempo no log do dwm.exe): ~14-24 ms
  * por draw entre o upload do CB e "[VK_DESCRIPTOR] BOUND", onde so' ha a
@@ -1189,7 +1309,7 @@ static void Bc250UmdProbeAllocationCallback(
         payload.DestroyCalls, payload.DestroyLastStatus);
 }
 
-VOID APIENTRY Bc250Umd10CreateResource(
+static VOID Bc250Umd10CreateResourceBody(
     D3D10DDI_HDEVICE hDevice,
     _In_ CONST D3D10DDIARG_CREATERESOURCE* pCreate,
     D3D10DDI_HRESOURCE hResource,
@@ -1203,6 +1323,7 @@ VOID APIENTRY Bc250Umd10CreateResource(
     BOOL isPrimary = FALSE;
     BC250_WINSYS_STATUS wsStatus;
     UINT64 hangSpan = Bc250WinsysHangSpan();
+    BOOL pag1Deferred = FALSE;
 
     if (res == NULL || pCreate == NULL) {
         Bc250UmdTrace("CreateResource: argumento invalido (res=%p, create=%p)",
@@ -1417,8 +1538,14 @@ VOID APIENTRY Bc250Umd10CreateResource(
             wsStatus = Bc250WinsysMapAllocation(&device->Winsys, &res->Allocation, FALSE);
         if (wsStatus == BC250_WINSYS_OK)
             wsStatus = Bc250WinsysMakeResident(&device->Winsys, &res->Allocation);
-        if (wsStatus == BC250_WINSYS_OK)
-            wsStatus = Bc250WinsysWaitPaging(&device->Winsys, &res->Allocation);
+        if (wsStatus == BC250_WINSYS_OK) {
+            if (Bc250UmdPag1MayDefer(pCreate, isPrimary)) {
+                pag1Deferred = TRUE; /* PAG.1: espera adiada */
+                ++device->Pag1Deferred;
+            } else {
+                wsStatus = Bc250UmdMenu1WaitPaging(device, &res->Allocation);
+            }
+        }
         if (wsStatus != BC250_WINSYS_OK) {
             /* F3.3: the runtime will not DestroyResource after SetErrorCb.
              * Release the partially allocated resource here before reporting. */
@@ -1503,8 +1630,41 @@ VOID APIENTRY Bc250Umd10CreateResource(
     }
 
     if (device != NULL && !device->TeardownActive && device->VkBridgeInitialized && device->VkBridge.DeviceActive) {
+        LARGE_INTEGER vkStart;
+        QueryPerformanceCounter(&vkStart);
         (void)Bc250UmdVkCreateResource(device, res, pCreate);
+        device->Menu1VkResTicks += Bc250UmdMenu1Since(vkStart);
+        ++device->Menu1VkRes;
     }
+
+    /*
+     * PAG.1: memoria Vulkan sobre a alocacao WDDM (ZC.1, FRENTE_B SIM) vai ser
+     * lida/escrita pela GPU na proxima submissao da RADV, que nao conhece a
+     * cerca de paginacao deste device: espera agora, como antes.
+     */
+    if (device != NULL && pag1Deferred &&
+        (res->VkMemAliased || res->ZeroCopyTarget)) {
+        BC250_WINSYS_STATUS late = Bc250UmdPag1WaitNow(device, &res->Allocation, "alias de memoria");
+        if (late != BC250_WINSYS_OK) {
+            HRESULT failure = device->Winsys.LastCallbackHr;
+            if (device->VkBridgeInitialized && device->VkBridge.DeviceActive) {
+                Bc250UmdVkDestroyResource(device, res);
+            }
+            (void)Bc250WinsysDeallocate(&device->Winsys, &res->Allocation);
+            res->Created = FALSE;
+            Bc250UmdTrace("CreateResource RECUSADO: PAG1 espera de paginacao do alias falhou (status=%s hr=0x%08X)",
+                Bc250WinsysStatusName(late), (unsigned)failure);
+            if (device->pUMCallbacks != NULL && device->pUMCallbacks->pfnSetErrorCb != NULL)
+                device->pUMCallbacks->pfnSetErrorCb(device->hRTCoreLayer,
+                    FAILED(failure) ? failure : E_FAIL);
+            Bc250WinsysHangEvent("CREATE_LOCK_SHARED", "RELEASE", device, hangSpan,
+                (UINT64)(ULONG_PTR)res, 0u, failure);
+            ReleaseSRWLockShared(&device->DeviceLock);
+            return;
+        }
+    }
+
+    Bc250UmdWsiNoteCreated(device, res);
 
     Bc250UmdTrace("CreateResource: res=%p Dim=%u Fmt=%u Size=%u (%ux%u bpp=%u) GpuVa=0x%llX Primary=%d VkRes=%d Alias=%d "
         "Bind=0x%X Misc=0x%X Usage=%u Mips=%u Array=%u",
@@ -1519,6 +1679,24 @@ VOID APIENTRY Bc250Umd10CreateResource(
         (UINT64)(ULONG_PTR)res, 0u, S_OK);
     ReleaseSRWLockShared(&device->DeviceLock);
 }
+
+/* MENU.1 (doc 754): o CreateResource conta e mede o proprio tempo. */
+VOID APIENTRY Bc250Umd10CreateResource(
+    D3D10DDI_HDEVICE hDevice,
+    _In_ CONST D3D10DDIARG_CREATERESOURCE* pCreate,
+    D3D10DDI_HRESOURCE hResource,
+    D3D10DDI_HRTRESOURCE hRTResource)
+{
+    BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
+    LARGE_INTEGER t0;
+    QueryPerformanceCounter(&t0);
+    Bc250Umd10CreateResourceBody(hDevice, pCreate, hResource, hRTResource);
+    if (device != NULL) {
+        device->Menu1CreateTicks += Bc250UmdMenu1Since(t0);
+        ++device->Menu1Creates;
+    }
+}
+
 
 VOID APIENTRY Bc250Umd10OpenResource(
     D3D10DDI_HDEVICE hDevice,
@@ -1736,7 +1914,72 @@ static void Bc250UmdSyncTextureToVkImage(
     }
 }
 
+/*
+ * L1 (doc 571) -- o Lock de upload na alocacao WDDM de um BUFFER e' redundante
+ * quando o buffer tem VkBuffer, e e' o gatilho medido do BugCheck 0x10E/0x34.
+ *
+ * Medido (P0, pilhas das Corridas 197 e 206): DxgkLock -> VidMmBeginCPUAccess
+ * -> SetupAllocationForCPUAccess -> VIDMM_RECYCLE_MULTIRANGE::Rotate, sobre
+ * uma alocacao STAGING (DYNAMIC/STAGING caem nessa classe) que o VidMm tinha
+ * acabado de despejar para a RAM e trazer de volta. Na 206 o argumento da
+ * pilha (0x28000 = 163.840 bytes) e' o hAlloc ...D1 do log do KMD, que casa
+ * com o buffer de vertices dinamico de 160.000 bytes do DWM.
+ *
+ * Os draws leem o VkBuffer (Bc250UmdVkUploadBufferData), nunca a alocacao
+ * WDDM do buffer; a composicao do KMD so' copia TEXTURAS. Cada Lock forcava o
+ * VidMm a trazer o buffer de volta a VRAM so' para receber uma copia que
+ * ninguem le -- gastando os 256 MB e provocando despejos de outros.
+ *
+ * Fica de fora (continua com Lock): textura, buffer sem VkBuffer e recurso
+ * compartilhado (MISC_SHARED ou aberto de outro processo), onde a alocacao
+ * WDDM e' o meio de troca entre processos. Uma variavel: so' os buffers.
+ */
+static volatile LONG g_Bc250UmdL1SkippedLocks = 0;
+
+static BOOL Bc250UmdBufferWddmCopyIsRedundant(
+    _In_opt_ const BC250_UMD_DEVICE* device,
+    _In_opt_ const BC250_UMD_RESOURCE* res,
+    _In_z_ const char* origem)
+{
+    LONG skipped;
+    if (device == NULL || res == NULL) return FALSE;
+    if (res->ResourceDimension != D3D10DDIRESOURCE_BUFFER) return FALSE;
+    if ((res->MiscFlags & D3D10_DDI_RESOURCE_MISC_SHARED) != 0u || res->OpenedShared) return FALSE;
+    if (!device->VkBridgeInitialized || !res->VkResourceCreated ||
+        res->VkMem == VK_NULL_HANDLE) return FALSE;
+    skipped = InterlockedIncrement(&g_Bc250UmdL1SkippedLocks);
+    if (skipped <= 8 || (skipped % 1024) == 0) {
+        Bc250UmdTrace("L1 %s: Lock de upload na alocacao WDDM do buffer PULADO #%ld "
+            "(res=%p hAlloc=0x%x %u bytes; o draw le o VkBuffer)",
+            origem, skipped, (void*)res, (unsigned)res->Allocation.KernelAllocation,
+            res->TotalByteSize);
+    }
+    return TRUE;
+}
+
+static VOID Bc250Umd10ResourceMapBody(
+    D3D10DDI_HDEVICE hDevice,
+    D3D10DDI_HRESOURCE hResource,
+    UINT Subresource,
+    D3D10_DDI_MAP MapType,
+    UINT MapFlags,
+    _Out_ D3D10DDI_MAPPED_SUBRESOURCE* pMappedSubResource);
+
+/* FRAME1 (doc 762): tempo do Map (inclui as esperas que ele faz). */
 VOID APIENTRY Bc250Umd10ResourceMap(
+    D3D10DDI_HDEVICE hDevice,
+    D3D10DDI_HRESOURCE hResource,
+    UINT Subresource,
+    D3D10_DDI_MAP MapType,
+    UINT MapFlags,
+    _Out_ D3D10DDI_MAPPED_SUBRESOURCE* pMappedSubResource)
+{
+    const UINT64 t0 = Bc250WinsysFrame1Now();
+    Bc250Umd10ResourceMapBody(hDevice, hResource, Subresource, MapType, MapFlags, pMappedSubResource);
+    Bc250WinsysFrame1Add(BC250_FRAME1_MAP, Bc250WinsysFrame1Now() - t0);
+}
+
+static VOID Bc250Umd10ResourceMapBody(
     D3D10DDI_HDEVICE hDevice,
     D3D10DDI_HRESOURCE hResource,
     UINT Subresource,
@@ -1786,7 +2029,8 @@ VOID APIENTRY Bc250Umd10ResourceUnmap(
     BC250_UMD_RESOURCE* res = (BC250_UMD_RESOURCE*)hResource.pDrvPrivate;
 
     if (device != NULL && device->WinsysInitialized && res != NULL &&
-        res->Allocation.Created && res->pCpuShadow != NULL && res->TotalByteSize > 0u) {
+        res->Allocation.Created && res->pCpuShadow != NULL && res->TotalByteSize > 0u &&
+        !Bc250UmdBufferWddmCopyIsRedundant(device, res, "ResourceUnmap")) {
         BC250_WINSYS_STATUS wsStatus = Bc250WinsysUploadAllocation(&device->Winsys, &res->Allocation,
             res->pCpuShadow, res->TotalByteSize);
         if (wsStatus == BC250_WINSYS_OK) {
@@ -2452,7 +2696,9 @@ VOID APIENTRY Bc250Umd10DefaultConstantBufferUpdateSubresourceUP(
             copyBytes = res->TotalByteSize;
         }
         memcpy(res->pCpuShadow, pSysMemBuffer, copyBytes);
-        if (device != NULL && device->WinsysInitialized && res->Allocation.Created) {
+        if (device != NULL && device->WinsysInitialized && res->Allocation.Created &&
+            !Bc250UmdBufferWddmCopyIsRedundant(device, res,
+                "DefaultConstantBufferUpdateSubresourceUP")) {
             (void)Bc250WinsysUploadAllocation(&device->Winsys, &res->Allocation,
                 res->pCpuShadow, res->TotalByteSize);
         }
@@ -2572,7 +2818,8 @@ VOID APIENTRY Bc250Umd10ResourceUpdateSubresourceUP(
         }
 
         if (!copied) goto update_invalid;
-        if (device != NULL && device->WinsysInitialized && res->Allocation.Created) {
+        if (device != NULL && device->WinsysInitialized && res->Allocation.Created &&
+            !Bc250UmdBufferWddmCopyIsRedundant(device, res, "ResourceUpdateSubresourceUP")) {
             BC250_WINSYS_STATUS wsStatus = Bc250WinsysUploadAllocation(
                 &device->Winsys, &res->Allocation, res->pCpuShadow, res->TotalByteSize);
             if (wsStatus == BC250_WINSYS_OK) {
@@ -2604,6 +2851,35 @@ update_invalid:
         device->pUMCallbacks->pfnSetErrorCb != NULL) {
         device->pUMCallbacks->pfnSetErrorCb(device->hRTCoreLayer, E_INVALIDARG);
     }
+}
+
+/*
+ * ZC.1b (doc 750): na Corrida 293 o alias do render target apresentavel deixou
+ * a tela preta fora do que era redesenhado. Causa (P1 pelo codigo): depois da
+ * copia de GPU da caixa pedida, ResourceCopy/ResourceCopyRegion copiavam a
+ * SOMBRA DE CPU (zeros: o conteudo foi desenhado pela GPU) e subiam a sombra
+ * INTEIRA para a alocacao de destino. Sem alias isso so' sujava a alocacao WDDM,
+ * que o Present sobrescrevia com a imagem inteira; com alias a alocacao E' a
+ * imagem, e os zeros apagavam tudo fora da caixa (o mesmo da Corrida 190).
+ * Quando a copia de GPU foi feita e o destino tem alias, a sombra nao e' a
+ * fonte da verdade e nao sobe.
+ */
+static volatile LONG g_Bc250Zc1bShadowUploadsSkipped = 0;
+
+static BOOL Bc250UmdCopySkipsShadowUpload(
+    _In_ const BC250_UMD_RESOURCE* dst,
+    BOOL gpuCopied,
+    _In_z_ const char* origem)
+{
+    LONG n;
+    if (!gpuCopied || !dst->VkMemAliased) return FALSE;
+    n = InterlockedIncrement(&g_Bc250Zc1bShadowUploadsSkipped);
+    if (n <= 16 || (n % 256) == 0) {
+        Bc250UmdTrace("[ZC1B] %s: upload da sombra de CPU NAO feito #%ld (destino com alias: a copia de GPU "
+            "ja escreveu a propria alocacao; a sombra e' zeros e apagaria a tela) dst=%p %ux%u",
+            origem, (long)n, (const void*)dst, dst->Width, dst->Height);
+    }
+    return TRUE;
 }
 
 static BOOL Bc250UmdVkCopyImageInternal(
@@ -2817,9 +3093,10 @@ VOID APIENTRY Bc250Umd10ResourceCopy(
     if (dst == NULL || src == NULL) return;
 
     /* Sincronizacao de imagens Vulkan para composicao DWM / texturas GPU */
+    BOOL gpuCopied = FALSE;
     if (device != NULL && device->VkBridgeInitialized &&
         dst->VkImg != VK_NULL_HANDLE && src->VkImg != VK_NULL_HANDLE) {
-        (void)Bc250UmdVkCopyImageInternal(device, dst, 0, 0, src, NULL);
+        gpuCopied = Bc250UmdVkCopyImageInternal(device, dst, 0, 0, src, NULL);
     }
 
     /* Pipeline Blt GPU Real via SDMA quando recursos possuem alocacao em VRAM residente */
@@ -2840,6 +3117,11 @@ VOID APIENTRY Bc250Umd10ResourceCopy(
         bltArgs.DstBottom = dst->Height;
         bltArgs.Rotate = DXGI_DDI_MODE_ROTATION_IDENTITY;
         (void)Bc250UmdBltGpu(device, dst, src, &bltArgs);
+    }
+
+    if (Bc250UmdCopySkipsShadowUpload(dst, gpuCopied, "ResourceCopy")) {
+        Bc250UmdTrace("ResourceCopy: dst=%p src=%p (so' GPU)", (void*)dst, (void*)src);
+        return;
     }
 
     if (dst->pCpuShadow == NULL && dst->TotalByteSize > 0u) {
@@ -2878,10 +3160,11 @@ VOID APIENTRY Bc250Umd10ResourceCopyRegion(
 
     if (dst == NULL || src == NULL) return;
 
+    BOOL gpuCopied = FALSE;
     /* Sincronizacao de sub-regioes de imagem Vulkan para composicao DWM */
     if (device != NULL && device->VkBridgeInitialized &&
         dst->VkImg != VK_NULL_HANDLE && src->VkImg != VK_NULL_HANDLE) {
-        (void)Bc250UmdVkCopyImageInternal(device, dst, DstX, DstY, src, pSrcBox);
+        gpuCopied = Bc250UmdVkCopyImageInternal(device, dst, DstX, DstY, src, pSrcBox);
     }
 
     /*
@@ -2911,6 +3194,12 @@ VOID APIENTRY Bc250Umd10ResourceCopyRegion(
         Bc250UmdTrace("ResourceCopyRegion RECUSADO: recurso nao criado (dstCreated=%d srcCreated=%d) -- "
             "TotalByteSize e pCpuShadow seriam lidos de memoria nao inicializada",
             (int)dst->Created, (int)src->Created);
+        return;
+    }
+
+    if (Bc250UmdCopySkipsShadowUpload(dst, gpuCopied, "ResourceCopyRegion")) {
+        Bc250UmdTrace("ResourceCopyRegion: dst=%p src=%p DstX=%u DstY=%u (so' GPU)",
+            (void*)dst, (void*)src, DstX, DstY);
         return;
     }
 
@@ -3949,6 +4238,23 @@ static BOOL Bc250UmdExecuteVkDraw(
     return TRUE;
 }
 
+/* FRAME1 (doc 762): tempo de CPU de cada desenho traduzido, sem mudar o corpo. */
+static BOOL Bc250UmdExecuteVkDrawTimed(
+    _Inout_ BC250_UMD_DEVICE* pDevice,
+    UINT VertexCount,
+    UINT StartVertexLocation,
+    UINT InstanceCount,
+    UINT StartInstanceLocation,
+    BOOL Indexed,
+    INT BaseVertexLocation)
+{
+    const UINT64 t0 = Bc250WinsysFrame1Now();
+    const BOOL ok = Bc250UmdExecuteVkDraw(pDevice, VertexCount, StartVertexLocation,
+        InstanceCount, StartInstanceLocation, Indexed, BaseVertexLocation);
+    Bc250WinsysFrame1Add(BC250_FRAME1_DRAW, Bc250WinsysFrame1Now() - t0);
+    return ok;
+}
+
 VOID APIENTRY Bc250Umd10Draw(
     D3D10DDI_HDEVICE hDevice,
     UINT VertexCount,
@@ -3956,7 +4262,7 @@ VOID APIENTRY Bc250Umd10Draw(
 {
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     if (device == NULL) return;
-    if (Bc250UmdExecuteVkDraw(device, VertexCount, StartVertexLocation, 1, 0, FALSE, 0)) return;
+    if (Bc250UmdExecuteVkDrawTimed(device, VertexCount, StartVertexLocation, 1, 0, FALSE, 0)) return;
     if (!device->VkBridgeInitialized && Bc250UmdSubstituteDrawWithBlt(device)) return;
     Bc250UmdRejectUnbackedDraw(device, "Draw");
 }
@@ -3969,7 +4275,7 @@ VOID APIENTRY Bc250Umd10DrawIndexed(
 {
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
     if (device == NULL) return;
-    if (Bc250UmdExecuteVkDraw(device, IndexCount, StartIndexLocation, 1, 0, TRUE, BaseVertexLocation)) return;
+    if (Bc250UmdExecuteVkDrawTimed(device, IndexCount, StartIndexLocation, 1, 0, TRUE, BaseVertexLocation)) return;
     if (!device->VkBridgeInitialized && Bc250UmdSubstituteDrawWithBlt(device)) return;
     Bc250UmdRejectUnbackedDraw(device, "DrawIndexed");
 }
@@ -3984,7 +4290,7 @@ VOID APIENTRY Bc250Umd10DrawInstanced(
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
 
     if (device == NULL) return;
-    if (Bc250UmdExecuteVkDraw(device, VertexCountPerInstance, StartVertexLocation, InstanceCount, StartInstanceLocation, FALSE, 0)) return;
+    if (Bc250UmdExecuteVkDrawTimed(device, VertexCountPerInstance, StartVertexLocation, InstanceCount, StartInstanceLocation, FALSE, 0)) return;
     if (!device->VkBridgeInitialized && Bc250UmdSubstituteDrawWithBlt(device)) return;
     Bc250UmdRejectUnbackedDraw(device, "DrawInstanced");
 }
@@ -4000,7 +4306,7 @@ VOID APIENTRY Bc250Umd10DrawIndexedInstanced(
     BC250_UMD_DEVICE* device = (BC250_UMD_DEVICE*)hDevice.pDrvPrivate;
 
     if (device == NULL) return;
-    if (Bc250UmdExecuteVkDraw(device, IndexCountPerInstance, StartIndexLocation, InstanceCount, StartInstanceLocation, TRUE, BaseVertexLocation)) return;
+    if (Bc250UmdExecuteVkDrawTimed(device, IndexCountPerInstance, StartIndexLocation, InstanceCount, StartInstanceLocation, TRUE, BaseVertexLocation)) return;
     if (!device->VkBridgeInitialized && Bc250UmdSubstituteDrawWithBlt(device)) return;
     Bc250UmdRejectUnbackedDraw(device, "DrawIndexedInstanced");
 }
@@ -5608,6 +5914,45 @@ static BOOL Bc250UmdPresentVulkanDetileAndScanout(
      * Destila a imagem Vulkan para a alocacao WDDM. O callback DXGI Present
      * entrega essa alocacao ao KMD; a UMD nao escreve no scanout fisico.
      */
+    /*
+     * ZC.1 (doc 749): o render target e' a propria alocacao WDDM que o
+     * pfnPresentCb entrega (e que o MPO3 do DCN mostra). Nada a copiar: fecha
+     * o render pass, torna as escritas visiveis e espera a GPU terminar antes
+     * de o flip apontar o HUBP0 para ela.
+     */
+    if (vkRendered && srcRes->VkResourceCreated && srcRes->VkMemAliased &&
+        srcRes->ZeroCopyTarget && srcRes->VkImg != VK_NULL_HANDLE) {
+        static volatile LONG s_zc1Presents = 0;
+        LONG zcN;
+        VkResult zcRes;
+        VkCommandBuffer zcCmd = Bc250UmdVkGetCommandBuffer(&device->VkBridge);
+        if (zcCmd != VK_NULL_HANDLE) {
+            VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+            if (device->InRenderPass) {
+                device->VkBridge.vk.vkCmdEndRenderPass(zcCmd);
+                device->InRenderPass = FALSE;
+            }
+            mb.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+            mb.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+            device->VkBridge.vk.vkCmdPipelineBarrier(zcCmd,
+                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
+        }
+        zcRes = Bc250UmdVkFlushCommands(&device->VkBridge);
+        zcN = InterlockedIncrement(&s_zc1Presents);
+        if (zcN <= 16 || (zcN % 256) == 0) {
+            Bc250UmdTrace("[ZC1_PRESENT] #%ld %s %ux%u Va=0x%llX: quadro desenhado direto na alocacao WDDM, sem copia "
+                "(flush res=%d)", (long)zcN, srcRes->IsPrimary ? "PRIMARIA" : "COMPARTILHADA",
+                srcRes->Width, srcRes->Height,
+                (unsigned long long)srcRes->Allocation.GpuVirtualAddress, (int)zcRes);
+        }
+        if (zcRes != VK_SUCCESS) {
+            Bc250UmdTrace("DXGI Present RECUSADO: [ZC1] flush do quadro falhou (res=%d); a alocacao nao tem conclusao provada", (int)zcRes);
+            return FALSE;
+        }
+        return TRUE;
+    }
+
     if (vkRendered && srcRes->VkResourceCreated &&
         srcRes->VkImg != VK_NULL_HANDLE && srcRes->Width > 0 && srcRes->Height > 0) {
 
@@ -5744,6 +6089,7 @@ static BOOL Bc250UmdPresentVulkanDetileAndScanout(
             }
             {
                 uint64_t rawGpuVa = device->VkBridge.pfnGetMemoryGpuVa(srcRes->VkMem);
+                if (rawGpuVa != 0) rawGpuVa += (uint64_t)srcRes->VkMemOffset;   /* SUBALOC.1 */
                 HRESULT bridgeHr;
                 if (rawGpuVa == 0) {
                     Bc250UmdTrace("DXGI Present RECUSADO: ponte RAW sem GPUVA Vulkan");
@@ -5800,7 +6146,19 @@ HRESULT APIENTRY Bc250DxgiPresent(DXGI_DDI_ARG_PRESENT* pPresentData)
         pPresentData->Flags.Value,
         (int)pPresentData->FlipInterval);
 
-    if (!Bc250UmdPresentVulkanDetileAndScanout(device, srcRes)) {
+    /* MENU.1: fecha a medicao do device no 1o Present. PAG.1: a origem e o
+     * destino precisam estar residentes antes de a GPU os ler. */
+    Bc250UmdMenu1Report(device, "1o Present");
+    if (srcRes != NULL) (void)Bc250UmdPag1WaitNow(device, &srcRes->Allocation, "Present origem");
+    if (dstRes != NULL) (void)Bc250UmdPag1WaitNow(device, &dstRes->Allocation, "Present destino");
+
+    /*
+     * WSI.2 (doc 759): a RADV do app ja escreveu a alocacao WDDM do back buffer
+     * pela GPU; a VkImage desta UMD nao tem o quadro. Nada a copiar aqui: a
+     * ordem sai da espera pela GPU antes do pfnPresentCb.
+     */
+    const BOOL wsiArmed = Bc250UmdWsiPresentIsArmed(device, srcRes);
+    if (!wsiArmed && !Bc250UmdPresentVulkanDetileAndScanout(device, srcRes)) {
         Bc250UmdTrace("DXGI Present RECUSADO: preparacao de scanout falhou ou divergiu -> E_FAIL");
         return E_FAIL;
     }
@@ -5885,6 +6243,16 @@ HRESULT APIENTRY Bc250DxgiPresent(DXGI_DDI_ARG_PRESENT* pPresentData)
             qpcFreq.QuadPart = 1;
         }
 
+        if (wsiArmed) {
+            HRESULT waitHr = Bc250UmdWsiPresentWaitRender(device);
+            if (FAILED(waitHr)) {
+                InterlockedExchange(&device->WsiArmed, 0);
+                Bc250UmdTrace("DXGI Present RECUSADO: [WSI2] espera pela GPU do blit do app falhou (hr=0x%08X)",
+                    (unsigned)waitHr);
+                return waitHr;
+            }
+        }
+
         Bc250WinsysHangEvent("PRESENT_CB", "ENTER", device, hangSpan,
             (UINT64)(UINT32)presentCb.hSrcAllocation,
             (UINT64)(ULONG_PTR)presentCb.hContext, S_OK);
@@ -5893,6 +6261,17 @@ HRESULT APIENTRY Bc250DxgiPresent(DXGI_DDI_ARG_PRESENT* pPresentData)
         Bc250WinsysHangEvent("PRESENT_CB", "LEAVE", device, hangSpan,
             (UINT64)(UINT32)presentCb.hSrcAllocation,
             (UINT64)(ULONG_PTR)presentCb.hContext, presentHr);
+
+        if (wsiArmed) {
+            /* Sinal mesmo com Present falho: o blit seguinte do app espera esta
+             * fence; sem o sinal ele ficaria parado para sempre. A ordem e' a
+             * do contexto de apresentacao. */
+            HRESULT signalHr = Bc250UmdWsiPresentSignalDone(device);
+            InterlockedExchange(&device->WsiArmed, 0);
+            if (SUCCEEDED(presentHr) && FAILED(signalHr)) {
+                presentHr = signalHr;
+            }
+        }
 
         QueryPerformanceCounter(&qpcEnd);
         if (qpcFreq.QuadPart > 0 && qpcEnd.QuadPart >= qpcStart.QuadPart) {
@@ -5943,6 +6322,12 @@ HRESULT APIENTRY Bc250DxgiPresent1(DXGI1_6_1_DDI_ARG_PRESENT* pPresentData)
         pPresentData->Flags.Value,
         (int)pPresentData->FlipInterval,
         pPresentData->DirtyRects);
+
+    /* MENU.1: fecha a medicao do device no 1o Present. PAG.1: a origem e o
+     * destino precisam estar residentes antes de a GPU os ler. */
+    Bc250UmdMenu1Report(device, "1o Present");
+    if (srcRes != NULL) (void)Bc250UmdPag1WaitNow(device, &srcRes->Allocation, "Present origem");
+    if (dstRes != NULL) (void)Bc250UmdPag1WaitNow(device, &dstRes->Allocation, "Present destino");
 
     if (!Bc250UmdPresentVulkanDetileAndScanout(device, srcRes)) {
         Bc250UmdTrace("DXGI Present1 RECUSADO: preparacao de scanout falhou ou divergiu -> E_FAIL");
@@ -6292,11 +6677,15 @@ HRESULT APIENTRY Bc250DxgiRotateResourceIdentities(DXGI_DDI_ARG_ROTATE_RESOURCE_
             const VkImage savedImg = first->VkImg;
             const VkDeviceMemory savedMem = first->VkMem;
             const VkDeviceSize savedMemSize = first->VkMemSize;
+            const VkDeviceSize savedMemOffset = first->VkMemOffset;   /* SUBALOC.1 */
+            void *const savedSubBlock = first->VkSubAllocBlock;
             const VkImageLayout savedLayout = first->VkLayout;
             const BOOL savedVkCreated = first->VkResourceCreated;
             const BOOL savedUploaded = first->WddmAllocationUploaded;
             /* Frente B: imagem e alocacao sao a MESMA memoria; o vinculo gira junto. */
             const BOOL savedAliased = first->VkMemAliased;
+            /* ZC.1 (doc 749): o alvo sem copia gira junto com a alocacao. */
+            const BOOL savedZeroCopy = first->ZeroCopyTarget;
 
             for (i = 0; i + 1u < pRotateData->Resources; ++i) {
                 BC250_UMD_RESOURCE* dst = (BC250_UMD_RESOURCE*)pRotateData->pResources[i];
@@ -6307,10 +6696,13 @@ HRESULT APIENTRY Bc250DxgiRotateResourceIdentities(DXGI_DDI_ARG_ROTATE_RESOURCE_
                 dst->VkImg = src->VkImg;
                 dst->VkMem = src->VkMem;
                 dst->VkMemSize = src->VkMemSize;
+                dst->VkMemOffset = src->VkMemOffset;
+                dst->VkSubAllocBlock = src->VkSubAllocBlock;
                 dst->VkLayout = src->VkLayout;
                 dst->VkResourceCreated = src->VkResourceCreated;
                 dst->WddmAllocationUploaded = src->WddmAllocationUploaded;
                 dst->VkMemAliased = src->VkMemAliased;
+                dst->ZeroCopyTarget = src->ZeroCopyTarget;
             }
 
             {
@@ -6322,10 +6714,13 @@ HRESULT APIENTRY Bc250DxgiRotateResourceIdentities(DXGI_DDI_ARG_ROTATE_RESOURCE_
                 last->VkImg = savedImg;
                 last->VkMem = savedMem;
                 last->VkMemSize = savedMemSize;
+                last->VkMemOffset = savedMemOffset;
+                last->VkSubAllocBlock = savedSubBlock;
                 last->VkLayout = savedLayout;
                 last->VkResourceCreated = savedVkCreated;
                 last->WddmAllocationUploaded = savedUploaded;
                 last->VkMemAliased = savedAliased;
+                last->ZeroCopyTarget = savedZeroCopy;
             }
 
             Bc250UmdTrace("DXGI RotateResourceIdentities LEAVE: %u recursos rotacionados; "
@@ -7241,6 +7636,17 @@ HRESULT APIENTRY OpenAdapter10_2(_Inout_ D3D10DDIARG_OPENADAPTER* pOpenData)
             "-> publicando ponteiro para a nossa tabela estatica");
         pOpenData->pAdapterFuncs_2 = (D3D10_2DDI_ADAPTERFUNCS*)&g_Bc250UmdAdapterFuncs10_2;
     }
+
+    /*
+     * SHD.1 (doc 752): o tradutor DXBC->SPIR-V (libvkd3d-shader) era aberto so'
+     * no 1o shader. No WebView2 da Pesquisa (Corrida 293b) isso ja' era depois
+     * de o Chromium travar o processo de GPU, e o LoadLibrary devolveu 577
+     * (ERROR_INVALID_IMAGE_HASH): nenhum shader traduziu, o ANGLE nao compilou
+     * e a Pesquisa caiu para software (H). Abrir aqui, junto com a RADV, antes
+     * do travamento. Falha continua nao-fatal e nomeada pelo proprio tradutor.
+     */
+    Bc250UmdTrace("SHADER_TRANSLATOR: SHD1 pre-carga no OpenAdapter -> %s",
+        Bc250UmdShaderTranslator() != NULL ? "ARMADO" : "INDISPONIVEL");
 
     Bc250UmdTrace("OpenAdapter10_2: Interface=0x%08X, Version=0x%08X -> S_OK (BC250 Native)",
         pOpenData->Interface, pOpenData->Version);

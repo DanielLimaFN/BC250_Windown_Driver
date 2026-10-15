@@ -370,7 +370,11 @@ BC250_GCVM_VMID8_STATUS Bc250GcvmInstallVmid(
     Evidence->EndLowProgrammed = programmed[4];
     Evidence->EndHighProgrammed = programmed[5];
 
-    /* 3. Programar e conferir CNTL com geometria 34-bit / 2-level e observabilidade de faults (0x007FFE03) */
+    /*
+     * 3. Programar e conferir CNTL com a geometria de bc250_gpuva_geometry.h e
+     * observabilidade de faults: 0x007FFE03 com 2 niveis/34 bits, 0x007FFE07
+     * com 4 niveis/48 bits (P5, DEPTH=3). O readback exato abaixo confere o DEPTH.
+     */
     cntl = BC250_GCVM_CONTEXT8_CNTL_FAULT_OBSERVABLE_VALUE;
     if (!Interface->Write32(Interface->Context, cntlReg, cntl)) {
         Evidence->FailureStep = 3u;

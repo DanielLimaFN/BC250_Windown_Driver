@@ -178,7 +178,8 @@ static HRESULT APIENTRY TestMapGpuVa(
     assert(Args->SizeInPages == 4u);
     assert(Args->Protection.Write == 1u);
     assert(Args->MinimumAddress == 0x10000u);
-    assert(Args->MaximumAddress == BC250_ADAPTER_MAX_GPUVA_ADDRESS);
+    /* P5: a UMD fica abaixo de 16 GB (janela da RADV), dentro do teto do KMD. */
+    assert(Args->MaximumAddress <= BC250_ADAPTER_MAX_GPUVA_ADDRESS);
     assert(Args->MaximumAddress == 0x00000003FFFFFFFFull);
     g_State.MapCalls++;
     if (g_State.ForcedResult == (HRESULT)0x8000000AL /* E_PENDING */) {

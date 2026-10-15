@@ -158,17 +158,26 @@ static BOOL Bc250UmdVkTryCreateAliasedImage(
     uint32_t memTypeIndex;
     uint64_t allocBytes;
     const char *reason;
+    BOOL presentable = FALSE;
     VkResult res;
 
     if (pBridge->vk.vkGetImageSubresourceLayout == NULL) {
         Bc250FrenteBTrace("NAO", pRes, "vkGetImageSubresourceLayout ausente", 0, 0); return FALSE;
     }
-    reason = Bc250UmdFrenteBPreCheck(pRes->Allocation.Created, pRes->Allocation.GpuVirtualAddress,
-        pRes->Allocation.ByteSize, pRes->MipLevels, pRes->ArraySize, pRes->SampleCount,
-        (pCreate->BindFlags & D3D10_DDI_BIND_DEPTH_STENCIL) != 0u ? TRUE : FALSE,
-        (pCreate->BindFlags & D3D10_DDI_BIND_RENDER_TARGET) != 0u ? TRUE : FALSE,
-        pRes->OpenedShared,
-        pRes->Width, pRes->Height, pRes->RowPitch);
+    {
+        BOOL isRt = (pCreate->BindFlags & D3D10_DDI_BIND_RENDER_TARGET) != 0u ? TRUE : FALSE;
+        BOOL isShared = (pCreate->MiscFlags & D3D10_DDI_RESOURCE_MISC_SHARED) != 0u ? TRUE : FALSE;
+        /* ZC.1 (doc 749): so' render target do proprio processo, primario ou
+         * compartilhado; superficie aberta segue a regra de adocao. */
+        presentable = (isRt && !pRes->OpenedShared &&
+            ((BC250_UMD_ZC1_PRIMARY_RT_ALIAS && pRes->IsPrimary) ||
+             (BC250_UMD_ZC1_SHARED_RT_ALIAS && isShared && !pRes->IsPrimary))) ? TRUE : FALSE;
+        reason = Bc250UmdFrenteBPreCheck(pRes->Allocation.Created, pRes->Allocation.GpuVirtualAddress,
+            pRes->Allocation.ByteSize, pRes->MipLevels, pRes->ArraySize, pRes->SampleCount,
+            (pCreate->BindFlags & D3D10_DDI_BIND_DEPTH_STENCIL) != 0u ? TRUE : FALSE,
+            isRt, pRes->OpenedShared, presentable,
+            pRes->Width, pRes->Height, pRes->RowPitch);
+    }
     if (reason != NULL) {
         Bc250FrenteBTrace("NAO", pRes, reason, pRes->MipLevels, pRes->ArraySize);
         return FALSE;
@@ -268,7 +277,10 @@ static BOOL Bc250UmdVkTryCreateAliasedImage(
     pRes->VkLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     pRes->VkMemAliased = TRUE;
     pRes->VkResourceCreated = TRUE;
-    Bc250FrenteBTrace("SIM", pRes, "VkImage LINEAR sobre a propria alocacao (req/alloc)",
+    pRes->ZeroCopyTarget = presentable;
+    Bc250FrenteBTrace(presentable ? (pRes->IsPrimary ? "SIM_ZC1_PRIMARIA" : "SIM_ZC1_COMPARTILHADA") : "SIM", pRes,
+        presentable ? "render target apresentavel desenha direto na propria alocacao WDDM (req/alloc)" :
+                      "VkImage LINEAR sobre a propria alocacao (req/alloc)",
         (unsigned long long)memReqs.size, (unsigned long long)allocBytes);
     return TRUE;
 
@@ -381,7 +393,15 @@ BOOL Bc250UmdVkCreateResource(
         allocInfo.allocationSize = memReqs.size;
         allocInfo.memoryTypeIndex = (memTypeIndex != UINT32_MAX) ? memTypeIndex : 0;
 
-        res = pBridge->vk.vkAllocateMemory(pBridge->Device, &allocInfo, NULL, &pRes->VkMem);
+        pRes->VkMemOffset = 0;
+        pRes->VkSubAllocBlock = NULL;
+        if ((pCreate->MiscFlags & D3D10_DDI_RESOURCE_MISC_SHARED) == 0u &&
+            Bc250UmdVkSubAllocTake(pBridge, allocInfo.memoryTypeIndex, memReqs.size, memReqs.alignment,
+                &pRes->VkMem, &pRes->VkMemOffset, &pRes->VkSubAllocBlock)) {
+            res = VK_SUCCESS;
+        } else {
+            res = pBridge->vk.vkAllocateMemory(pBridge->Device, &allocInfo, NULL, &pRes->VkMem);
+        }
         if (res != VK_SUCCESS) {
             Bc250VkResTrace("[VK_RES] ERRO CRITICO: vkAllocateMemory falhou: res=%d (size=%llu, typeIndex=%u)",
                 res, memReqs.size, allocInfo.memoryTypeIndex);
@@ -390,10 +410,15 @@ BOOL Bc250UmdVkCreateResource(
             return FALSE;
         }
 
-        res = pBridge->vk.vkBindBufferMemory(pBridge->Device, pRes->VkBuf, pRes->VkMem, 0);
+        res = pBridge->vk.vkBindBufferMemory(pBridge->Device, pRes->VkBuf, pRes->VkMem, pRes->VkMemOffset);
         if (res != VK_SUCCESS) {
             Bc250VkResTrace("[VK_RES] ERRO CRITICO: vkBindBufferMemory falhou: res=%d", res);
-            pBridge->vk.vkFreeMemory(pBridge->Device, pRes->VkMem, NULL);
+            if (pRes->VkSubAllocBlock != NULL) {
+                Bc250UmdVkSubAllocRelease(pBridge, pRes->VkSubAllocBlock, pRes->VkMemOffset);
+                pRes->VkSubAllocBlock = NULL;
+            } else {
+                pBridge->vk.vkFreeMemory(pBridge->Device, pRes->VkMem, NULL);
+            }
             pBridge->vk.vkDestroyBuffer(pBridge->Device, pRes->VkBuf, NULL);
             pRes->VkMem = VK_NULL_HANDLE;
             pRes->VkBuf = VK_NULL_HANDLE;
@@ -482,7 +507,16 @@ BOOL Bc250UmdVkCreateResource(
         allocInfo.allocationSize = memReqs.size;
         allocInfo.memoryTypeIndex = (memTypeIndex != UINT32_MAX) ? memTypeIndex : 0;
 
-        res = pBridge->vk.vkAllocateMemory(pBridge->Device, &allocInfo, NULL, &pRes->VkMem);
+        pRes->VkMemOffset = 0;
+        pRes->VkSubAllocBlock = NULL;
+        if ((pCreate->MiscFlags & D3D10_DDI_RESOURCE_MISC_SHARED) == 0u &&
+            (pCreate->BindFlags & (D3D10_DDI_BIND_RENDER_TARGET | D3D10_DDI_BIND_DEPTH_STENCIL)) == 0u &&
+            Bc250UmdVkSubAllocTake(pBridge, allocInfo.memoryTypeIndex, memReqs.size, memReqs.alignment,
+                &pRes->VkMem, &pRes->VkMemOffset, &pRes->VkSubAllocBlock)) {
+            res = VK_SUCCESS;
+        } else {
+            res = pBridge->vk.vkAllocateMemory(pBridge->Device, &allocInfo, NULL, &pRes->VkMem);
+        }
         if (res != VK_SUCCESS) {
             Bc250VkResTrace("[VK_RES] ERRO CRITICO: vkAllocateMemory (Image) falhou: res=%d (size=%llu, typeIndex=%u)",
                 res, memReqs.size, allocInfo.memoryTypeIndex);
@@ -491,10 +525,15 @@ BOOL Bc250UmdVkCreateResource(
             return FALSE;
         }
 
-        res = pBridge->vk.vkBindImageMemory(pBridge->Device, pRes->VkImg, pRes->VkMem, 0);
+        res = pBridge->vk.vkBindImageMemory(pBridge->Device, pRes->VkImg, pRes->VkMem, pRes->VkMemOffset);
         if (res != VK_SUCCESS) {
             Bc250VkResTrace("[VK_RES] ERRO CRITICO: vkBindImageMemory falhou: res=%d", res);
-            pBridge->vk.vkFreeMemory(pBridge->Device, pRes->VkMem, NULL);
+            if (pRes->VkSubAllocBlock != NULL) {
+                Bc250UmdVkSubAllocRelease(pBridge, pRes->VkSubAllocBlock, pRes->VkMemOffset);
+                pRes->VkSubAllocBlock = NULL;
+            } else {
+                pBridge->vk.vkFreeMemory(pBridge->Device, pRes->VkMem, NULL);
+            }
             pBridge->vk.vkDestroyImage(pBridge->Device, pRes->VkImg, NULL);
             pRes->VkMem = VK_NULL_HANDLE;
             pRes->VkImg = VK_NULL_HANDLE;
@@ -570,6 +609,8 @@ VOID Bc250UmdVkDestroyResource(
         pRes->VkBuf = VK_NULL_HANDLE;
         pRes->VkImg = VK_NULL_HANDLE;
         pRes->VkMem = VK_NULL_HANDLE;
+        pRes->VkSubAllocBlock = NULL;
+        pRes->VkMemOffset = 0;
         pRes->VkResourceCreated = FALSE;
         pRes->VkMemAliased = FALSE;
         return;
@@ -588,7 +629,12 @@ VOID Bc250UmdVkDestroyResource(
         pBridge->vk.vkDestroyImage(pBridge->Device, pRes->VkImg, NULL);
         pRes->VkImg = VK_NULL_HANDLE;
     }
-    if (pRes->VkMem != VK_NULL_HANDLE) {
+    if (pRes->VkSubAllocBlock != NULL) {
+        Bc250UmdVkSubAllocRelease(pBridge, pRes->VkSubAllocBlock, pRes->VkMemOffset);
+        pRes->VkSubAllocBlock = NULL;
+        pRes->VkMemOffset = 0;
+        pRes->VkMem = VK_NULL_HANDLE;
+    } else if (pRes->VkMem != VK_NULL_HANDLE) {
         pBridge->vk.vkFreeMemory(pBridge->Device, pRes->VkMem, NULL);
         pRes->VkMem = VK_NULL_HANDLE;
     }
@@ -1109,7 +1155,7 @@ static uint64_t Bc250VkUploadNowMicros(void)
            (uint64_t)((now.QuadPart % freq.QuadPart) * 1000000ll / freq.QuadPart);
 }
 
-BOOL Bc250UmdVkUploadImageData(
+static BOOL Bc250UmdVkUploadImageDataBody(
     _Inout_ struct _BC250_UMD_DEVICE* pDevice,
     _Inout_ struct _BC250_UMD_RESOURCE* pRes,
     _In_reads_bytes_(ByteSize) CONST VOID* pData,
@@ -1333,6 +1379,27 @@ BOOL Bc250UmdVkUploadImageData(
     return TRUE;
 }
 
+/* MENU.1 (doc 754): o upload conta e mede o proprio tempo; o corpo e o de sempre. */
+BOOL Bc250UmdVkUploadImageData(
+    _Inout_ struct _BC250_UMD_DEVICE* pDevice,
+    _Inout_ struct _BC250_UMD_RESOURCE* pRes,
+    _In_reads_bytes_(ByteSize) CONST VOID* pData,
+    UINT RowPitch,
+    SIZE_T ByteSize)
+{
+    LARGE_INTEGER t0, t1;
+    BOOL ok;
+    QueryPerformanceCounter(&t0);
+    ok = Bc250UmdVkUploadImageDataBody(pDevice, pRes, pData, RowPitch, ByteSize);
+    QueryPerformanceCounter(&t1);
+    if (pDevice != NULL) {
+        pDevice->Menu1UploadTicks += (UINT64)(t1.QuadPart - t0.QuadPart);
+        ++pDevice->Menu1Uploads;
+    }
+    return ok;
+}
+
+
 BOOL Bc250UmdVkCopyStagingBufferToImage(
     _Inout_ struct _BC250_UMD_DEVICE* pDevice,
     _Inout_ struct _BC250_UMD_RESOURCE* pRes,
@@ -1453,6 +1520,26 @@ BOOL Bc250UmdVkUploadBufferData(
         return FALSE;
     }
     pBridge = &pDevice->VkBridge;
+
+    if (pRes->VkSubAllocBlock != NULL) {
+        /* SUBALOC.1: bloco mapeado uma vez; um VkDeviceMemory nao pode ser mapeado duas vezes. */
+        mapped = Bc250UmdVkSubAllocMapped(pRes->VkSubAllocBlock, pRes->VkMemOffset);
+        if (mapped == NULL) {
+            Bc250VkResTrace("[VK_RES] UploadBufferData RECUSADO: [SUBALOC1] fatia sem mapeamento de CPU (res=%p)", (void*)pRes);
+            return FALSE;
+        }
+        memcpy(mapped, pData, ByteSize);
+        if (pBridge->vk.vkFlushMappedMemoryRanges != NULL) {
+            VkMappedMemoryRange range;
+            memset(&range, 0, sizeof(range));
+            range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+            range.memory = pRes->VkMem;
+            range.offset = pRes->VkMemOffset;
+            range.size = pRes->VkMemSize;
+            (void)pBridge->vk.vkFlushMappedMemoryRanges(pBridge->Device, 1, &range);
+        }
+        return TRUE;
+    }
 
     res = pBridge->vk.vkMapMemory(pBridge->Device, pRes->VkMem, 0, VK_WHOLE_SIZE, 0, &mapped);
     if (res == VK_SUCCESS && mapped != NULL) {

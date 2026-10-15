@@ -141,6 +141,8 @@ typedef struct BC250_VMID_POOL_ENTRY {
     BC250_VMID_POOL_INSTALL_STATE InstallState;
     BC250_GCVM_VMID8_STATUS LastInstallStatus;
     uint32_t Generation;         /* sobe a cada alocacao deste VMID */
+    /* C07 (doc 764): relogio do ultimo Release deste VMID; 0 = nunca usado. */
+    uint32_t FreedStamp;
 } BC250_VMID_POOL_ENTRY;
 
 /*
@@ -179,6 +181,7 @@ typedef struct BC250_VMID_POOL {
     uint32_t FreeCount;
     uint32_t ExhaustedCount;     /* quantas vezes faltou VMID -- nunca mascarar */
     uint32_t NextGeneration;
+    uint32_t ReleaseClock;       /* C07: sobe a cada Release */
 } BC250_VMID_POOL;
 
 void Bc250VmidPoolInitialize(BC250_VMID_POOL *Pool);
@@ -252,6 +255,14 @@ uint64_t Bc250VmidPoolInstalledRootForVmid(
  * gastar centenas de polls em DISPATCH_LEVEL.
  */
 uint32_t Bc250VmidPoolReadyFlushMask(const BC250_VMID_POOL *Pool);
+
+/*
+ * 263b (doc 695) / FT.1 (doc 697): VMIDs do pool com esta raiz -- READY com
+ * a raiz instalada, ou INSTALLING com ela como alvo. Leitor PURO, sem lock.
+ * Zero = nenhuma VMID do pool aponta (ou vai apontar) para esta raiz.
+ */
+uint32_t Bc250VmidPoolMaskForRoot(const BC250_VMID_POOL *Pool,
+    uint64_t RootPhysical);
 
 BC250_VMID_POOL_STATUS Bc250VmidPoolRootForFaultWalk(
     const BC250_VMID_POOL *Pool,

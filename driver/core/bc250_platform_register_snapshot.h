@@ -21,6 +21,31 @@ extern "C" {
 #define BC250_REG_CP_RB0_RPTR_ADDR_HI 0x0000C110u
 #define BC250_REG_CP_RB0_WPTR        0x0000C150u
 #define BC250_REG_CP_RB0_WPTR_HI     0x0000C154u
+/*
+ * EOP do CP (doc 618), P1: mmCP_INT_CNTL_RING0 = 0x1e0a, BASE_IDX 0
+ * (gc_10_1_0_offset.h), GC_BASE seg0 = 0x1260 (cyan_skillfish_ip_offset.h)
+ * -> (0x1260 + 0x1E0A) * 4 = 0xC1A8. TIME_STAMP_INT_ENABLE = bit 26, mascara
+ * 0x04000000 (gc_10_1_0_sh_mask.h). Escritor unico: gfx_v10_0_set_gfx_eop_
+ * interrupt_state (me 0, pipe 0) no amdgpu; aqui Bc250ActiveCpEopIrqArm/Disarm.
+ */
+#define BC250_REG_CP_INT_CNTL_RING0  0x0000C1A8u
+#define BC250_CP_INT_CNTL_RING0_TIME_STAMP_INT_ENABLE 0x04000000u
+/*
+ * MEC.1 (doc 640), P1: faixas de doorbell do CP (gc_10_1_0_offset.h, BASE_IDX 0,
+ * GC_BASE seg0 = 0x1260): mmCP_RB_DOORBELL_RANGE_LOWER 0x1dfa -> 0xC168,
+ * _UPPER 0x1dfb -> 0xC16C, mmCP_MEC_DOORBELL_RANGE_LOWER 0x1dfc -> 0xC170,
+ * _UPPER 0x1dfd -> 0xC174, mmCP_RB_DOORBELL_CONTROL 0x1e8d -> 0xC3B4. Campo
+ * DOORBELL_RANGE_* = bits [27:2] (gc_10_1_0_sh_mask.h). O amdgpu programa o
+ * UPPER do MEC com (AMDGPU_NAVI10_DOORBELL_USERQUEUE_END 0x8A * 2) << 2 = 0x450
+ * (gfx_v10_0.c:6699, nv.c:572); o firmware deixa 0x0FFFFFFC (P0, probes 241/241b).
+ */
+#define BC250_REG_CP_RB_DOORBELL_RANGE_LOWER   0x0000C168u
+#define BC250_REG_CP_RB_DOORBELL_RANGE_UPPER   0x0000C16Cu
+#define BC250_REG_CP_MEC_DOORBELL_RANGE_LOWER  0x0000C170u
+#define BC250_REG_CP_MEC_DOORBELL_RANGE_UPPER  0x0000C174u
+#define BC250_REG_CP_RB_DOORBELL_CONTROL       0x0000C3B4u
+#define BC250_CP_DOORBELL_RANGE_MASK           0x0FFFFFFCu
+#define BC250_MEC1_DOORBELL_RANGE_UPPER        0x00000450u
 #define BC250_REG_SDMA0_RB_CNTL      0x00004B80u
 #define BC250_REG_SDMA0_RB_BASE      0x00004B84u
 #define BC250_REG_SDMA0_RB_BASE_HI   0x00004B88u

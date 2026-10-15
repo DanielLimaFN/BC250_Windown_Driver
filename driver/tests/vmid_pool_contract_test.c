@@ -87,6 +87,30 @@ static int Run(void)
     CHECK(g_pool.InUseMask == 0u);
     CHECK(g_pool.AllocCount == 0u);
     CHECK(g_pool.ExhaustedCount == 0u);
+    /*
+     * C07 (doc 764): LRU como o amdgpu. O VMID devolvido agora NAO volta no
+     * proximo contexto enquanto houver outro livre que nunca foi usado ou foi
+     * devolvido antes. Mutacao: voltar a "menor livre" reprova aqui.
+     */
+    {
+        uint32_t first = BC250_VMID_COUNT, second = BC250_VMID_COUNT, third = BC250_VMID_COUNT;
+        uint32_t rel = BC250_VMID_COUNT, again2 = 0u;
+        CHECK(Bc250VmidPoolAcquire(&g_pool, FakeCtx(501u), &first, &again2) == BC250_VMID_POOL_OK);
+        CHECK(Bc250VmidPoolRelease(&g_pool, FakeCtx(501u), &rel) == BC250_VMID_POOL_OK);
+        CHECK(rel == first);
+        CHECK(Bc250VmidPoolAcquire(&g_pool, FakeCtx(502u), &second, &again2) == BC250_VMID_POOL_OK);
+        CHECK(second != first);
+        CHECK(Bc250VmidPoolRelease(&g_pool, FakeCtx(502u), &rel) == BC250_VMID_POOL_OK);
+        /* com todos os nunca-usados ocupados, volta o devolvido HA MAIS TEMPO */
+        for (i = 0u; i < 10u; ++i) {
+            uint32_t v = BC250_VMID_COUNT;
+            CHECK(Bc250VmidPoolAcquire(&g_pool, FakeCtx(600u + i), &v, &again2) == BC250_VMID_POOL_OK);
+            CHECK(v != first && v != second);
+        }
+        CHECK(Bc250VmidPoolAcquire(&g_pool, FakeCtx(700u), &third, &again2) == BC250_VMID_POOL_OK);
+        CHECK(third == first);
+        Bc250VmidPoolInitialize(&g_pool);
+    }
 
     /* --- alocacao nunca devolve reservado --- */
     for (i = 0u; i < 12u; ++i) {
@@ -275,6 +299,9 @@ static int Run(void)
         CHECK(g_pool.Entries[maskVmidA].InstallState ==
             BC250_VMID_POOL_INSTALLING);
         CHECK(Bc250VmidPoolReadyFlushMask(&g_pool) == 0u);
+        /* FT.1 (doc 697): a mascara por raiz JA conta a VMID em instalacao. */
+        CHECK(Bc250VmidPoolMaskForRoot(&g_pool, 0x450111000ull) == (1u << maskVmidA));
+        CHECK(Bc250VmidPoolMaskForRoot(&g_pool, 0x450999000ull) == 0u);
 
         /* READY com raiz provada entra. */
         CHECK(Bc250VmidPoolRecordInstall(&g_pool, FakeCtx(201u), maskVmidA,
@@ -298,6 +325,12 @@ static int Run(void)
             0x450222000ull, BC250_GCVM_VMID8_OK) == BC250_VMID_POOL_OK);
         CHECK(Bc250VmidPoolReadyFlushMask(&g_pool) ==
             ((1u << maskVmidA) | (1u << maskVmidB)));
+        /* 263b (doc 695): mascara por raiz -- so' a VMID que tem ESTA raiz. */
+        CHECK(Bc250VmidPoolMaskForRoot(&g_pool, 0x450111000ull) == (1u << maskVmidA));
+        CHECK(Bc250VmidPoolMaskForRoot(&g_pool, 0x450222000ull) == (1u << maskVmidB));
+        CHECK(Bc250VmidPoolMaskForRoot(&g_pool, 0x450333000ull) == 0u);
+        CHECK(Bc250VmidPoolMaskForRoot(&g_pool, 0ull) == 0u);
+        CHECK(Bc250VmidPoolMaskForRoot(NULL, 0x450111000ull) == 0u);
 
         /* Nenhum reservado pode aparecer, sob nenhuma combinacao. */
         CHECK((Bc250VmidPoolReadyFlushMask(&g_pool) &

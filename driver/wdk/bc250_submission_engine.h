@@ -477,6 +477,11 @@ NTSTATUS Bc250SubmissionEngineSubmitDirect(
  * Le a fence e o RPTR gravados pela GPU e aposenta o que estiver concluido.
  * Nao escreve fence nenhuma: se a GPU nao gravou, nada avanca.
  */
+/* MEC.2 (doc 701): contadores cumulativos do poll do MEC e a chave. */
+LONG64 Bc250SubmissionMecPollCalls(VOID);
+LONG64 Bc250SubmissionMecPollSelectorCalls(VOID);
+uint32_t Bc250SubmissionMec2PollKey(VOID);
+
 _Check_return_
 NTSTATUS Bc250SubmissionEnginePoll(
     _Inout_ struct BC250_DXGK_ACTIVE_CONTEXT *Context,

@@ -16,6 +16,64 @@ VOID Bc250PagingTraceStop(VOID);
 #define BC250_PAGING_HANG_JOURNAL_DONE  45u
 #define BC250_PAGING_HANG_LOCK_RELEASE  46u
 VOID Bc250PagingTraceMarkExternal(ULONG Stage, ULONG Operation, NTSTATUS Status);
+/* I.PG (doc 571): o flush de TLB pelo anel (4c.2) conta no registro BPG1. */
+VOID Bc250PagingStatsNoteRingFlush(VOID);
+/*
+ * 263b (doc 695): contadores do registro BFT1 do rastro duravel. Software,
+ * sem registrador. Class: 0 = FLUSH_TLB do processo de paginacao, 1 = processo
+ * de usuario com VMID instalada para a raiz, 2 = processo sem VMID.
+ */
+VOID Bc250PagingStatsNoteFlushClass(ULONG Class, ULONG VmidsInvalidated);
+VOID Bc250PagingStatsNoteSqRead(VOID);
+VOID Bc250PagingStatsNoteCpuTlbInvalidate(VOID);
+typedef LONG64 (*BC250_MCDM_COUNTER_SOURCE)(VOID);
+VOID Bc250McdmInstallSdma1RangeSource(_In_opt_ BC250_MCDM_COUNTER_SOURCE Source);
+/* MEC.2 (doc 701): polls do MEC, total e com seletor GRBM (registro BMP1). */
+/* DBG.1 (doc 704): modo debug e validador de endereco fisico das PTEs. */
+#include "../core/bc250_pa_validator.h"
+VOID Bc250McdmSetDebugTrace(ULONG Enabled);
+VOID Bc250McdmTraceKick(VOID);
+ULONG Bc250McdmDebugTraceEnabled(VOID);
+VOID Bc250McdmInstallPaRanges(
+    _In_reads_(RamCount) const BC250_PA_RANGE *Ram, ULONG RamCount,
+    _In_reads_(ForbidCount) const BC250_PA_RANGE *Forbid, ULONG ForbidCount);
+VOID Bc250McdmInstallMecPollSources(
+    _In_opt_ BC250_MCDM_COUNTER_SOURCE Calls,
+    _In_opt_ BC250_MCDM_COUNTER_SOURCE WithSelector);
+
+/*
+ * 4c.4 (doc 575): pontos de divisao do IB de paginacao. O FlushTlb do build
+ * registra a GPUVA do paging buffer onde ele caiu (DmaBufferGpuVirtualAddress
+ * + DmaBufferWriteOffset) e as VMIDs a invalidar; a submissao do Node 0
+ * consome os que caem dentro do IB e executa o IB em pedacos, com a
+ * invalidacao no anel entre eles. Build e submit do Node 0 sao seriais.
+ */
+#include "../core/bc250_sdma_packet_builder.h"
+VOID Bc250PagingSplitRecord(UINT32 VmidMask);
+/* Mesmo registro com a GPUVA explicita (suite offline e Record). */
+VOID Bc250PagingSplitRecordAt(UINT64 Va, UINT32 VmidMask);
+UINT32 Bc250PagingSplitTake(
+    UINT64 IbVa,
+    ULONG IbBytes,
+    BC250_SDMA_IB_SPLIT *Out,
+    UINT32 OutMax,
+    UINT32 *StaleMask,
+    UINT32 *StaleCount);
+UINT32 Bc250PagingSplitPendingCount(VOID);
+/* LC.1 (doc 589): TRUE so' se ESTE buffer ja tem Limit pontos proprios. */
+BOOLEAN Bc250PagingSplitMustDefer(UINT64 BufferVa, UINT32 WriteOffset, UINT32 Limit);
+/*
+ * P4.2 (doc 622): faixa de escrita de PTE do paging buffer [StartVa, EndVa)
+ * que vai rodar no SDMA1. So' registra com a rota armada (SDMA1 vivo e
+ * anexado ao envio); faixa contigua a anterior e' fundida.
+ */
+VOID Bc250PagingSdma1RangeRecord(UINT64 StartVa, UINT64 EndVa);
+VOID Bc250PagingSdma1RouteSet(BOOLEAN Armed);
+BOOLEAN Bc250PagingSdma1RouteArmed(VOID);
+/* P4.2: faixas registradas no build, desalinhadas (ficam no SDMA0) e descartadas. */
+VOID Bc250PagingSdma1RangeStats(LONG64 *Recorded, LONG64 *Unaligned, LONG64 *Dropped);
+/* Pendencia 2 do doc 624: descartadas por motivo (a soma e' o Dropped acima). */
+VOID Bc250PagingSdma1DropStats(LONG64 *NoSlot, LONG64 *Partial, LONG64 *OutFull, LONG64 *Orphan);
 
 DXGKDDI_BUILDPAGINGBUFFER Bc250McdmBuildPagingBuffer;
 DXGKDDI_CALIBRATEGPUCLOCK Bc250McdmCalibrateGpuClock;
@@ -126,6 +184,12 @@ typedef struct BC250_MCDM_RUNTIME_CAPS {
     UINT64 HiddenSegmentBaseOffset;
     UINT64 HiddenSegmentBytes;
     UINT32 HiddenSegmentStatus;
+    /*
+     * 4c.4 (doc 575): 1 = GPUMMUCAPS declara GPU_VIRTUAL e o UpdatePageTable
+     * vira WRITE_LINEAR no paging buffer. So' vai a 1 com o tunable
+     * PtUpdateGpuVirtual e o flush pelo anel do SDMA provado no boot.
+     */
+    UINT32 PageTableUpdateGpuVirtual;
 } BC250_MCDM_RUNTIME_CAPS;
 
 typedef NTSTATUS (*BC250_MCDM_QUERY_RUNTIME_CAPS)(
@@ -345,6 +409,19 @@ typedef BOOLEAN (*BC250_MCDM_PLATFORM_PROBE)(
 VOID Bc250McdmInstallPlatformProbe(
     _In_opt_ BC250_MCDM_PLATFORM_PROBE Probe);
 
+/* SMU.1/SMU.2/SMU.3/SMU.4: Consulta periodica do clock GFX (Msg 0x37), tensao VDDGFX (Msg 0x38), versao FW (Msg 0x02), versao IF (Msg 0x03), features (Msg 0x3D), P-State (Msg 0x0C) e Target Gfxclk (Msg 0x0F) */
+typedef BOOLEAN (*BC250_MCDM_SMU_CLOCK_PROBE)(
+    _Out_ UINT32 *GfxclkMhz,
+    _Out_opt_ UINT32 *GfxVidMv,
+    _Out_opt_ UINT32 *SmuVersion,
+    _Out_opt_ UINT32 *DriverIfVer,
+    _Out_opt_ UINT32 *Features,
+    _Out_opt_ UINT32 *CorePstate,
+    _Out_opt_ UINT32 *TargetGfxclk);
+
+VOID Bc250McdmInstallSmuClockProbe(
+    _In_opt_ BC250_MCDM_SMU_CLOCK_PROBE Probe);
+
 /*
  * I.SDMA0 / I.CG (doc 556): duas amostras SOMENTE LEITURA no rastro.
  * Motivo: na Corrida 199 a ultima operacao do KMD foi um FILL de 11 MB no
@@ -450,6 +527,19 @@ typedef NTSTATUS (*BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER)(
 VOID Bc250McdmInstallUpdatePageTableHandler(
     _In_opt_ BC250_MCDM_UPDATE_PAGE_TABLE_HANDLER UpdatePageTableHandler);
 
+/*
+ * P6 (doc 618): flags extras da FOLHA para a alocacao do UpdatePageTable
+ * (hoje so BC250_PTE_MTYPE_UC). Devolve 0 quando nao sabe: o default e o NC do
+ * amdgpu. Chamada em PASSIVE_LEVEL pelo BuildPagingBuffer, fora do ObjectLock.
+ */
+typedef UINT32 (*BC250_MCDM_PTE_LEAF_FLAGS_QUERY)(
+    _In_ HANDLE AdapterContext,
+    _In_opt_ HANDLE hProcess,
+    _In_opt_ HANDLE hAllocation);
+
+VOID Bc250McdmInstallPteLeafFlagsQuery(
+    _In_opt_ BC250_MCDM_PTE_LEAF_FLAGS_QUERY Query);
+
 typedef NTSTATUS (*BC250_MCDM_ESCAPE_HANDLER)(
     _In_ HANDLE AdapterContext,
     _In_ CONST DXGKARG_ESCAPE *pEscape);
@@ -473,6 +563,17 @@ NTSTATUS Bc250McdmEncodeVidMmPte(
     _In_ CONST BC250_MCDM_RUNTIME_CAPS *Caps,
     _In_ CONST DXGK_PTE *Source,
     _Out_ UINT64 *Encoded);
+
+/*
+ * P6: como WithLevel, com flags extras na FOLHA (so BC250_PTE_MTYPE_UC passa;
+ * qualquer outro bit e ignorado). Em nivel > 0 ExtraLeafFlags nao tem efeito.
+ */
+NTSTATUS Bc250McdmEncodeVidMmPteWithLevelEx(
+    const BC250_MCDM_RUNTIME_CAPS *Caps,
+    const DXGK_PTE *Source,
+    UINT32 PageTableLevel,
+    UINT32 ExtraLeafFlags,
+    UINT64 *Encoded);
 
 NTSTATUS Bc250McdmEncodeVidMmPteWithLevel(
     _In_ CONST BC250_MCDM_RUNTIME_CAPS *Caps,

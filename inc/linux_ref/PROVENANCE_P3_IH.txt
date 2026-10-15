@@ -1,0 +1,29 @@
+P3 (doc 609) -- fontes do upstream Linux v6.6 (tag v6.6, raw.githubusercontent.com/torvalds/linux/v6.6/<caminho>)
+baixadas em 2026-10-05; SHA-256 de cada arquivo como copiado para inc/linux_ref:
+
+3a68d06ccbc7447f86b2aac4b24c90aa5d1fa509f4f033abd77eae73a03205b3  drivers/gpu/drm/amd/amdgpu/amdgpu_ih.c
+38f1d2f9acf24de15ebca1c412feb69e85fafc7d5adf9aa42fc7afd4418774e8  drivers/gpu/drm/amd/amdgpu/amdgpu_ih.h
+03ac1ee35aaa5696399d36f7f2e6d1efa7d8f0a505ad6c3f370491ffed71046b  drivers/gpu/drm/amd/amdgpu/gmc_v10_0.c
+2c3eba4cd5306319e9a98409a0cd9dc73f8bc136dce083d5c25e41d8bb075118  drivers/gpu/drm/amd/amdgpu/mmhub_v2_0.c
+f60b1d9b956457a6ae47ebd9dfdb1bc29c0ab4c9297453029d578c6f66fdde97  drivers/gpu/drm/amd/amdgpu/navi10_ih.c
+f15a9e66ae9d919cc241ddae144879cc856323a05ae26e427bedb6184373e3c1  drivers/gpu/drm/amd/amdgpu/navi10_sdma_pkt_open.h
+8160f69caa71331f305d8b8fc3f82b4c1c213e48a81c529efce47c4c6ea0c291  drivers/gpu/drm/amd/include/asic_reg/mmhub/mmhub_2_0_0_offset.h
+90c66fa3730d8450bcdacdaef8ed1d8f525957ce1a75ba5e552f92fef206cdee  drivers/gpu/drm/amd/include/asic_reg/mmhub/mmhub_2_0_0_sh_mask.h
+20157d63ad73607543c62b63245671dd76658c31acfa1036ab01efe96cdb6e1c  drivers/gpu/drm/amd/include/asic_reg/nbio/nbio_2_3_offset.h
+1a7ba6c5f821be95fe0ba4396f2c366ddc072b2e949b91154e48b706cc5dc0ba  drivers/gpu/drm/amd/include/asic_reg/nbio/nbio_2_3_sh_mask.h
+cfb1f3e0d207e354bb232ff75ecaaaf7002c2ccc2e18520abb6dbfa18373e9ef  drivers/gpu/drm/amd/include/asic_reg/oss/osssys_5_0_0_offset.h
+7de95f6de08d14cae300ecc3614de639cfff3a08623db1e6841c340423a9b7f5  drivers/gpu/drm/amd/include/asic_reg/oss/osssys_5_0_0_sh_mask.h
+9ec90b1009dfabcfd718fd979fa15519aa0d07e9fbc0317b00e42f00ce58fc6d  drivers/gpu/drm/amd/include/cyan_skillfish_ip_offset.h
+940eda0af423d130acb295e2262a3225e766bab994e167619b7238e9cd3bac05  drivers/gpu/drm/amd/include/ivsrcid/gfx/irqsrcs_gfx_10_1.h
+5f2729a1f2a65e9d58f7f206c084b1db09d4cd7620f5553429d212a118a446a3  drivers/gpu/drm/amd/include/ivsrcid/sdma0/irqsrcs_sdma0_5_0.h
+9d7ec8a581663a128ba628157fa7790806f6881b37ea6d839038f5545dbf9ab8  drivers/gpu/drm/amd/include/soc15_ih_clientid.h
+
+Fatos usados (P1):
+- navi10_ih_sw_init: AMD_IS_APU -> use_bus_addr=false -> anel do IH por VA (MC_SPACE=4), VMID 0, IH_RING_SIZE 256 KB, doorbell para o RPTR.
+- navi10_ih_irq_init / navi10_ih_enable_ring / navi10_ih_rb_cntl / navi10_ih_get_wptr / navi10_ih_set_rptr: sequencia, campos do IH_RB_CNTL, overflow.
+- nbio_v2_3_ih_control (nbio_v2_3.c, ja em inc/linux_ref): INTERRUPT_CNTL2 = dummy>>8; IH_DUMMY_RD_OVERRIDE=0; IH_REQ_NONSNOOP_EN=0.
+- sdma_v5_0_ring_emit_fence: TRAP depois da fence com FLAG_INT; sdma_v5_0_set_trap_irq_state: SDMA0_CNTL.TRAP_ENABLE.
+- soc15_ih_clientid.h: SDMA0=0x08, GRBM_CP=0x14; irqsrcs: SDMA_TRAP=0xE0, CP_EOP=0xB5.
+- mmhub_v2_0.c: tabela de clientes [15]="OSS" -> o IH traduz pelo MMHUB; gmc_v10_0_gart_enable liga a GART no GFXHUB e no MMHUB.
+- cyan_skillfish_ip_offset.h: OSSSYS_BASE 0x10A0, NBIO_BASE seg2 0xD20, MMHUB_BASE 0x1A000.
+- Coleta Linux da BC-250 (docs/evidence/2026-10-01_15-01-LINUX-REFERENCIA-UMA256): ih_v5_0_0 (navi10_ih), GART 512M em 0x0-0x1FFFFFFF, PCI-MSIX-0000:01:00.0 0-edge amdgpu.

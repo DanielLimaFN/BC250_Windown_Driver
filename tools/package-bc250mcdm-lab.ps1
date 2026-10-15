@@ -54,10 +54,53 @@ param(
     # em seguida pode atingir UM UNICO shader engine. Por isso armar exige
     # aceite explicito, no mesmo padrao de -ArmTdrInducedHang.
     [switch]$ArmGfxWaveProbe,
-    [switch]$IAcceptSelectorWritesDuringTdr
+    # DBG.1 (doc 704): modo debug -- coleta pesada nova (validador de
+    # endereco fisico das PTEs, evento PAGING_PTE, 96 eventos/tique). Sem
+    # escrita de registrador; materializa DebugTrace=1 no INF do candidato.
+    [switch]$DebugTrace,
+    # DCN.1 (doc 710, P9): flip pelo HUBP0; ESCREVE registrador de DCN;
+    # materializa DcnFlip=1 no INF do candidato.
+    [switch]$DcnFlip,
+    # DCN.2/DCN.3 (doc 713, P9 ampliada) + D06 (doc 716/718, SO' LEITURA):
+    # interrupcao, CRC, cursor, EDID real, DPMS, timing medido e leitura do
+    # roteamento de IRQ do OTG; materializa DcnExt=0x7D (125 = 0x3D da 273,
+    # CRC 0x02 fora desde a doc 714, + 0x40 de D06). D12 (0x80, ESCREVE
+    # DC_GPIO_DDC1_MASK) fica de fora deste switch -- precisa de -ArmAuxHwMode.
+    [switch]$DcnExt,
+    # D12 (doc 716 par.5.2, doc 718): pad DDC1/AUX0 em modo hardware/AUX,
+    # so' durante a leitura do EDID, com volta ao GOP (Lei 5). ESCREVE
+    # DC_GPIO_DDC1_MASK -- por isso, como a sonda de onda, exige aceite
+    # explicito em vez de entrar no -DcnExt de sempre. Soma 0x80 ao DcnExt
+    # materializado; so' tem efeito junto com -DcnExt.
+    [switch]$ArmAuxHwMode,
+    [switch]$IAcceptAuxPadRegisterWrite,
+    # D19 (doc 716 par.6.4, doc 720): prova autocontida de que o V_TOTAL muda
+    # o refresh medido de verdade -- muda, mede pela varredura e devolve ao
+    # GOP antes do desktop aparecer (Lei 5). ESCREVE OTG0_V_TOTAL -- por isso,
+    # como D12 e a sonda de onda, exige aceite explicito. Soma 0x100 ao
+    # DcnExt materializado; so' tem efeito junto com -DcnExt.
+    [switch]$ArmVTotalRefreshTest,
+    [switch]$IAcceptVTotalRegisterWrite,
+    [switch]$IAcceptSelectorWritesDuringTdr,
+    # CLK.1 (doc 762): clock do GFX pedido a SMU no StartDevice (RequestGfxclk,
+    # tensao automatica), devolvido no StopDevice. 0 = nao mexe; 1000..2000 MHz
+    # (faixa do cyan_skillfish_ppt.c do amdgpu).
+    [int]$GfxClkMhz = 0,
+    # C08 / DPM.1 (doc 765): teto do governador de clock pela carga. 0 = desligado;
+    # 1000..2000 MHz. Nao convive com -GfxClkMhz.
+    [int]$DpmMaxMhz = 0
 )
 
 $ErrorActionPreference = 'Stop'
+if ($GfxClkMhz -ne 0 -and ($GfxClkMhz -lt 1000 -or $GfxClkMhz -gt 2000)) {
+    throw '-GfxClkMhz aceita 0 (nao mexe) ou 1000..2000 MHz, a faixa do amdgpu para o Cyan Skillfish.'
+}
+if ($DpmMaxMhz -ne 0 -and ($DpmMaxMhz -lt 1000 -or $DpmMaxMhz -gt 2000)) {
+    throw '-DpmMaxMhz aceita 0 (desligado) ou 1000..2000 MHz.'
+}
+if ($DpmMaxMhz -ne 0 -and $GfxClkMhz -ne 0) {
+    throw '-DpmMaxMhz e -GfxClkMhz nao convivem: o governador (C08) substitui o clock fixo da CLK.1.'
+}
 if ($ArmGfxWaveProbe -and -not $IAcceptSelectorWritesDuringTdr) {
     throw ('Armar GfxWaveProbe exige -IAcceptSelectorWritesDuringTdr. A sonda escreve ' +
            'GRBM_GFX_INDEX e SQ_IND_INDEX durante o quiesce do TDR; se o broadcast nao ' +
@@ -66,6 +109,34 @@ if ($ArmGfxWaveProbe -and -not $IAcceptSelectorWritesDuringTdr) {
 if (-not $ArmGfxWaveProbe -and $IAcceptSelectorWritesDuringTdr) {
     throw '-IAcceptSelectorWritesDuringTdr so e valido com -ArmGfxWaveProbe.'
 }
+if ($ArmAuxHwMode -and -not $IAcceptAuxPadRegisterWrite) {
+    throw ('Armar D12 (-ArmAuxHwMode) exige -IAcceptAuxPadRegisterWrite. A chave escreve ' +
+           'DC_GPIO_DDC1_MASK (pad DDC1/AUX0) so durante a leitura do EDID, com readback e ' +
+           'devolucao ao valor do GOP; decisao do dono do projeto, nao do empacotador (doc 716/718).')
+}
+if (-not $ArmAuxHwMode -and $IAcceptAuxPadRegisterWrite) {
+    throw '-IAcceptAuxPadRegisterWrite so e valido com -ArmAuxHwMode.'
+}
+if ($ArmAuxHwMode -and -not $DcnExt) {
+    throw '-ArmAuxHwMode so tem efeito junto com -DcnExt (D12 e um bit de DcnExt).'
+}
+if ($ArmVTotalRefreshTest -and -not $IAcceptVTotalRegisterWrite) {
+    throw ('Armar D19 (-ArmVTotalRefreshTest) exige -IAcceptVTotalRegisterWrite. A prova escreve ' +
+           'OTG0_V_TOTAL, mede pela varredura e devolve ao valor do GOP antes do desktop aparecer; ' +
+           'decisao do dono do projeto, nao do empacotador (doc 716/720).')
+}
+if (-not $ArmVTotalRefreshTest -and $IAcceptVTotalRegisterWrite) {
+    throw '-IAcceptVTotalRegisterWrite so e valido com -ArmVTotalRefreshTest.'
+}
+if ($ArmVTotalRefreshTest -and -not $DcnExt) {
+    throw '-ArmVTotalRefreshTest so tem efeito junto com -DcnExt (D19 e um bit de DcnExt).'
+}
+# Fonte unica do valor de DcnExt materializado: usada pelo gerador do INF, pela
+# lista de valores esperados e pela conferencia pos-pacote, para nao haver tres
+# lugares que possam divergir em silencio (a classe de defeito da faixa A11).
+$dcnExtTargetValue = if ($DcnExt) {
+    125 + $(if ($ArmAuxHwMode) { 128 } else { 0 }) + $(if ($ArmVTotalRefreshTest) { 256 } else { 0 })
+} else { 0 }
 if ($EnablePersistentSubmission -and -not $EnableShaderDispatch) {
     throw ('-EnablePersistentSubmission exige -EnableShaderDispatch; ' +
            'sem a receita F8b (CpSoftReset=1) a carga do PFP assenta no laco 0x218..0x21B.')
@@ -103,11 +174,19 @@ $sourcePdb = Join-Path $root 'driver\wdk\output_lab\bc250mcdm.pdb'
 $sourceInf = Join-Path $root 'driver\wdk\package\bc250mcdm.inf'
 $sourceSdmaFirmware = Join-Path $root 'firmware\cyan_skillfish2_sdma.bin'
 $sourceRlcFirmware = Join-Path $root 'firmware\cyan_skillfish2_rlc.bin'
+# P4.1 (doc 620): firmware da instancia 1 do SDMA, carregado pelo PSP (tipo 10).
+$sourceSdma1Firmware = Join-Path $root 'firmware\cyan_skillfish2_sdma1.bin'
 $sourcePfpFirmware = Join-Path $root 'firmware\cyan_skillfish2_pfp.bin'
 $sourceMeFirmware = Join-Path $root 'firmware\cyan_skillfish2_me.bin'
 $sourceCeFirmware = Join-Path $root 'firmware\cyan_skillfish2_ce.bin'
 $sourceMecFirmware = Join-Path $root 'firmware\cyan_skillfish2_mec.bin'
 $sourceUmd = Join-Path $root 'driver\umd\output\bc250umd.dll'
+# WSI.1\ICD.1 (doc 757): a RADV vai no DriverStore e o loader do Vulkan a acha
+# pelo adaptador (VulkanDriverName no INF), como nos drivers da AMD. E' a mesma
+# DLL que a UMD carrega da pasta de build.
+$sourceRadv = 'C:\Users\Daniel\Desktop\bc250-win\bc250-win\mesa-radv-wddm\build\src\amd\vulkan\vulkan_radeon.dll'
+$sourceZlib = 'C:\Users\Daniel\Desktop\bc250-win\bc250-win\mesa-radv-wddm\build\src\amd\vulkan\z-1.dll'
+$sourceVkIcd = Join-Path $root 'driver\wdk\package\bc250_vk_icd.json'
 $packageDir = Join-Path $root 'driver\wdk\package\output_lab'
 $packageManifest = Join-Path $root 'driver\wdk\package\output_lab.manifest.json'
 $recoveryRoot = 'C:\BC250_RECOVERY.cmd'
@@ -132,8 +211,19 @@ if (-not (Test-Path -LiteralPath $sourceUmd -PathType Leaf)) {
     throw "UMD auditada ausente: $sourceUmd. Execute driver\umd\build-umd.bat."
 }
 if (-not (Test-Path -LiteralPath $sourceInf)) { throw "INF ausente: $sourceInf" }
+foreach ($vulkanSource in @($sourceRadv, $sourceZlib, $sourceVkIcd)) {
+    if (-not (Test-Path -LiteralPath $vulkanSource -PathType Leaf)) {
+        throw "Arquivo do driver Vulkan ausente: $vulkanSource. Compile a RADV (build_radv.bat)."
+    }
+}
 if (-not (Test-Path -LiteralPath $sourceSdmaFirmware)) { throw "Firmware SDMA ausente: $sourceSdmaFirmware" }
 if (-not (Test-Path -LiteralPath $sourceRlcFirmware)) { throw "Firmware RLC ausente: $sourceRlcFirmware" }
+if (-not (Test-Path -LiteralPath $sourceSdma1Firmware)) { throw "Firmware SDMA1 ausente: $sourceSdma1Firmware" }
+if ((Get-Item -LiteralPath $sourceSdma1Firmware).Length -ne 33792 -or
+    (Get-FileHash -LiteralPath $sourceSdma1Firmware -Algorithm SHA256).Hash -ne
+        'BD1C0B0F6A6A4F17EDE034F2C844B6553FC444E08915C7BB500C09FDE59D6255') {
+    throw 'Firmware SDMA1 diverge do tamanho/hash aprovado.'
+}
 if (-not (Test-Path -LiteralPath $sourcePfpFirmware)) { throw "Firmware PFP ausente: $sourcePfpFirmware" }
 if (-not (Test-Path -LiteralPath $sourceMeFirmware)) { throw "Firmware ME ausente: $sourceMeFirmware" }
 if (-not (Test-Path -LiteralPath $sourceCeFirmware)) { throw "Firmware CE ausente: $sourceCeFirmware" }
@@ -210,11 +300,15 @@ $packageInf = Join-Path $packageDir 'bc250mcdm.inf'
 $packageCat = Join-Path $packageDir 'bc250mcdm.cat'
 $packageSdmaFirmware = Join-Path $packageDir 'cyan_skillfish2_sdma.bin'
 $packageRlcFirmware = Join-Path $packageDir 'cyan_skillfish2_rlc.bin'
+$packageSdma1Firmware = Join-Path $packageDir 'cyan_skillfish2_sdma1.bin'
 $packagePfpFirmware = Join-Path $packageDir 'cyan_skillfish2_pfp.bin'
 $packageMeFirmware = Join-Path $packageDir 'cyan_skillfish2_me.bin'
 $packageCeFirmware = Join-Path $packageDir 'cyan_skillfish2_ce.bin'
 $packageMecFirmware = Join-Path $packageDir 'cyan_skillfish2_mec.bin'
 $packageUmd = Join-Path $packageDir 'bc250umd.dll'
+$packageRadv = Join-Path $packageDir 'vulkan_radeon.dll'
+$packageZlib = Join-Path $packageDir 'z-1.dll'
+$packageVkIcd = Join-Path $packageDir 'bc250_vk_icd.json'
 
 Remove-Item -LiteralPath $packageCat -Force -ErrorAction SilentlyContinue
 Copy-Item -LiteralPath $sourceSys -Destination $packageSys -Force
@@ -309,6 +403,24 @@ $infContent = $infContent | ForEach-Object {
         # Mandato do pacote, NAO default: o valor tem de chegar decidido ao
         # StartDevice. Fail-closed -- sem -ArmGfxWaveProbe sai 0.
         'HKR,Parameters,GfxWaveProbe,0x00010001,{0}' -f $(if ($ArmGfxWaveProbe) { 1 } else { 0 })
+    } elseif ($_ -match 'HKR,Parameters,DebugTrace,0x000100(01|03),\d+') {
+        # DBG.1: mandato do pacote; sem -DebugTrace sai 0.
+        'HKR,Parameters,DebugTrace,0x00010001,{0}' -f $(if ($DebugTrace) { 1 } else { 0 })
+    } elseif ($_ -match 'HKR,Parameters,DcnFlip,0x000100(01|03),\d+') {
+        # DCN.1: mandato do pacote; sem -DcnFlip sai 0.
+        'HKR,Parameters,DcnFlip,0x00010001,{0}' -f $(if ($DcnFlip) { 1 } else { 0 })
+    } elseif ($_ -match 'HKR,Parameters,DcnExt,0x000100(01|03),\d+') {
+        # DCN.2/D06/D12: mandato do pacote; sem -DcnExt sai 0.
+        'HKR,Parameters,DcnExt,0x00010001,{0}' -f $dcnExtTargetValue
+    } elseif ($_ -match 'HKR,Parameters,GfxClkMhz,0x000100(01|03),\d+') {
+        # CLK.1: mandato do pacote; sem -GfxClkMhz sai 0.
+        'HKR,Parameters,GfxClkMhz,0x00010001,{0}' -f $GfxClkMhz
+    } elseif ($_ -match 'HKR,Parameters,DpmMaxMhz,0x000100(01|03),\d+') {
+        # C08 / DPM.1: mandato do pacote; sem -DpmMaxMhz sai 0.
+        'HKR,Parameters,DpmMaxMhz,0x00010001,{0}' -f $DpmMaxMhz
+    } elseif ($_ -match 'HKR,Parameters,ApuUnifiedMemory,0x000100(01|03),\d+') {
+        # APU.1 (Corrida 288): Modelo de memoria unificada da APU; habilitado por padrao.
+        'HKR,Parameters,ApuUnifiedMemory,0x00010001,1'
     } elseif ($_ -match 'HKR,Parameters,Node1JournalGatePerProcess,0x000100(01|03),\d+') {
         # C3.9: DEFAULT, nao mandato. NOCLOBBER para que o operador possa armar
         # antes do bind sem que o AddReg do install apague em silencio -- foi
@@ -337,6 +449,12 @@ $expectedInfValues = [ordered]@{
     'Parameters,GfxRingBringup' = 0
     'Parameters,Node1JournalGatePerProcess' = 0
     'Parameters,GfxWaveProbe' = $(if ($ArmGfxWaveProbe) { 1 } else { 0 })
+    'Parameters,DebugTrace' = $(if ($DebugTrace) { 1 } else { 0 })
+    'Parameters,DcnFlip' = $(if ($DcnFlip) { 1 } else { 0 })
+    'Parameters,DcnExt' = $dcnExtTargetValue
+    'Parameters,GfxClkMhz' = $GfxClkMhz
+    'Parameters,DpmMaxMhz' = $DpmMaxMhz
+    'Parameters,ApuUnifiedMemory' = 1
     'Parameters,SdmaAutoCtxSw' = $(if ($EnableShaderDispatch) { 0 } else { 1 })
 }
 # GpuvaLabPromotion e SdmaPlanoAFallback sao gravados como DEFAULT (NOCLOBBER);
@@ -364,10 +482,19 @@ foreach ($entry in $expectedInfValues.GetEnumerator()) {
 
 Copy-Item -LiteralPath $sourceSdmaFirmware -Destination $packageSdmaFirmware -Force
 Copy-Item -LiteralPath $sourceRlcFirmware -Destination $packageRlcFirmware -Force
+Copy-Item -LiteralPath $sourceSdma1Firmware -Destination $packageSdma1Firmware -Force
 Copy-Item -LiteralPath $sourcePfpFirmware -Destination $packagePfpFirmware -Force
 Copy-Item -LiteralPath $sourceMeFirmware -Destination $packageMeFirmware -Force
 Copy-Item -LiteralPath $sourceCeFirmware -Destination $packageCeFirmware -Force
 Copy-Item -LiteralPath $sourceMecFirmware -Destination $packageMecFirmware -Force
+Copy-Item -LiteralPath $sourceVkIcd -Destination $packageVkIcd -Force
+foreach ($vulkanDll in @(@($sourceRadv, $packageRadv), @($sourceZlib, $packageZlib))) {
+    Copy-Item -LiteralPath $vulkanDll[0] -Destination $vulkanDll[1] -Force
+    & $signtool sign /sha1 $certificateThumbprint /fd SHA256 $vulkanDll[1]
+    if ($LASTEXITCODE -ne 0) { throw "Assinatura de $($vulkanDll[1]) falhou." }
+    & $signtool verify /pa /v $vulkanDll[1] | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Verificacao Authenticode de $($vulkanDll[1]) falhou." }
+}
 if (Test-Path -LiteralPath $sourceUmd) {
     Copy-Item -LiteralPath $sourceUmd -Destination $packageUmd -Force
     & $signtool sign /sha1 $certificateThumbprint /fd SHA256 $packageUmd
@@ -434,6 +561,40 @@ if (-not $ArmGfxWaveProbe -and $gfxWaveProbeValue -ne 0) {
     throw 'Pacote de laboratorio bloqueado: GfxWaveProbe saiu armado sem -ArmGfxWaveProbe.'
 }
 
+$debugTraceLine = Get-Content -LiteralPath $packageInf |
+    Where-Object { $_ -match '^HKR,Parameters,DebugTrace,0x000100(?:01|03),(\d+)$' } |
+    Select-Object -First 1
+if (-not $debugTraceLine) {
+    throw 'Pacote de laboratorio bloqueado: INF empacotado sem HKR,Parameters,DebugTrace -- o manifesto nao pode declarar o modo debug.'
+}
+$debugTraceLine -match '^HKR,Parameters,DebugTrace,0x000100(?:01|03),(\d+)$' | Out-Null
+$debugTraceValue = [int]$Matches[1]
+if ([bool]$DebugTrace -ne ($debugTraceValue -eq 1)) {
+    throw 'Pacote de laboratorio bloqueado: DebugTrace do INF empacotado diverge do switch -DebugTrace.'
+}
+$dcnFlipLine = Get-Content -LiteralPath $packageInf |
+    Where-Object { $_ -match '^HKR,Parameters,DcnFlip,0x000100(?:01|03),(\d+)$' } |
+    Select-Object -First 1
+if (-not $dcnFlipLine) {
+    throw 'Pacote de laboratorio bloqueado: INF empacotado sem HKR,Parameters,DcnFlip -- o manifesto nao pode declarar o flip pelo DCN.'
+}
+$dcnFlipLine -match '^HKR,Parameters,DcnFlip,0x000100(?:01|03),(\d+)$' | Out-Null
+$dcnFlipValue = [int]$Matches[1]
+if ([bool]$DcnFlip -ne ($dcnFlipValue -eq 1)) {
+    throw 'Pacote de laboratorio bloqueado: DcnFlip do INF empacotado diverge do switch -DcnFlip.'
+}
+$dcnExtLine = Get-Content -LiteralPath $packageInf |
+    Where-Object { $_ -match '^HKR,Parameters,DcnExt,0x000100(?:01|03),(\d+)$' } |
+    Select-Object -First 1
+if (-not $dcnExtLine) {
+    throw 'Pacote de laboratorio bloqueado: INF empacotado sem HKR,Parameters,DcnExt -- o manifesto nao pode declarar a DCN.2.'
+}
+$dcnExtLine -match '^HKR,Parameters,DcnExt,0x000100(?:01|03),(\d+)$' | Out-Null
+$dcnExtValue = [int]$Matches[1]
+if ($dcnExtValue -ne $dcnExtTargetValue) {
+    throw 'Pacote de laboratorio bloqueado: DcnExt do INF empacotado diverge dos switches -DcnExt/-ArmAuxHwMode.'
+}
+
 $manifest = [ordered]@{
     SchemaVersion = 1
     BuildKind = 'MCDM_LAB_BRINGUP'
@@ -464,6 +625,12 @@ $manifest = [ordered]@{
     GfxRingBringup = $gfxRingBringupValue
     GfxWaveProbe = $gfxWaveProbeValue
     GfxWaveProbeArmed = ($gfxWaveProbeValue -ne 0)
+    DebugTrace = $debugTraceValue
+    DcnFlip = $dcnFlipValue
+    DcnExt = $dcnExtValue
+    ApuUnifiedMemory = 1
+    DcnExtAuxHwModeArmed = [bool]$ArmAuxHwMode
+    DcnExtVTotalRefreshTestArmed = [bool]$ArmVTotalRefreshTest
     GfxRingBringupArmed = ($gfxRingBringupValue -ne 0)
     Node1TripodDefaultArmed = $false
     D3D10_11NativeReady = $false
@@ -483,10 +650,15 @@ $manifest = [ordered]@{
     PackageCatSha256 = (Get-FileHash -LiteralPath $packageCat -Algorithm SHA256).Hash
     SdmaFirmwareSha256 = (Get-FileHash -LiteralPath $packageSdmaFirmware -Algorithm SHA256).Hash
     RlcFirmwareSha256 = (Get-FileHash -LiteralPath $packageRlcFirmware -Algorithm SHA256).Hash
+    Sdma1FirmwareSha256 = (Get-FileHash -LiteralPath $packageSdma1Firmware -Algorithm SHA256).Hash
     PfpFirmwareSha256 = (Get-FileHash -LiteralPath $packagePfpFirmware -Algorithm SHA256).Hash
     MeFirmwareSha256 = (Get-FileHash -LiteralPath $packageMeFirmware -Algorithm SHA256).Hash
     CeFirmwareSha256 = (Get-FileHash -LiteralPath $packageCeFirmware -Algorithm SHA256).Hash
     MecFirmwareSha256 = (Get-FileHash -LiteralPath $packageMecFirmware -Algorithm SHA256).Hash
+    SourceRadvSha256 = (Get-FileHash -LiteralPath $sourceRadv -Algorithm SHA256).Hash
+    PackageRadvSha256 = (Get-FileHash -LiteralPath $packageRadv -Algorithm SHA256).Hash
+    PackageZlibSha256 = (Get-FileHash -LiteralPath $packageZlib -Algorithm SHA256).Hash
+    PackageVkIcdSha256 = (Get-FileHash -LiteralPath $packageVkIcd -Algorithm SHA256).Hash
     RecoverySha256 = (Get-FileHash -LiteralPath $recoveryRoot -Algorithm SHA256).Hash
     SignerThumbprint = $certificateThumbprint
     Verdict = 'NAO VALIDADO EM HARDWARE'

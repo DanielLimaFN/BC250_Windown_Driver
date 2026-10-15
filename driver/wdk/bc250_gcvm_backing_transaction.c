@@ -1,4 +1,5 @@
 #include "bc250_gcvm_backing_transaction.h"
+#include "bc250_vram_cpu_path.h"
 
 BC250_GCVM_BACKING_STATUS Bc250RunGcvmBackingTransaction(
     BC250_VRAM_ALLOCATOR *Allocator,
@@ -75,9 +76,9 @@ BC250_GCVM_BACKING_STATUS Bc250RunGcvmBackingTransaction(
     Evidence->PageTableBytes = BC250_GCVM_BACKING_BYTES;
     Evidence->OwnershipPassed = 1u;
     physical.QuadPart = (LONGLONG)(bar->Start + tableRegion.Offset);
-    callbackStatus = DxgkInterface->DxgkCbMapMemory(
-        DxgkInterface->DeviceHandle, physical, BC250_GCVM_BACKING_BYTES,
-        FALSE, FALSE, MmNonCached, &mapping);
+    callbackStatus = Bc250VramCpuMapMemory(DxgkInterface,
+        (ULONGLONG)physical.QuadPart, BC250_GCVM_BACKING_BYTES,
+        MmNonCached, &mapping);
     if (!NT_SUCCESS(callbackStatus) || mapping == NULL) {
         result = BC250_GCVM_BACKING_MAP_FAILED;
         goto Cleanup;
@@ -132,8 +133,7 @@ Restore:
 Cleanup:
     if (backup != NULL) ExFreePoolWithTag(backup, BC250_GCVM_BACKING_POOL_TAG);
     if (mapping != NULL) {
-        callbackStatus = DxgkInterface->DxgkCbUnmapMemory(
-            DxgkInterface->DeviceHandle, mapping);
+        callbackStatus = Bc250VramCpuUnmapMemory(DxgkInterface, mapping);
         if (!NT_SUCCESS(callbackStatus) && result == BC250_GCVM_BACKING_OK) {
             result = BC250_GCVM_BACKING_UNMAP_FAILED;
         }

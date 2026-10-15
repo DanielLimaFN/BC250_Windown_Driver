@@ -46,9 +46,10 @@ void * __cdecl memcpy(void *Destination, const void *Source, size_t Length)
  * Fase P1: o contexto do adaptador passou a carregar o motor de submissao
  * persistente (estado de teardown do HQD + duas evidencias completas), o que
  * o levou acima de 32 KiB. DX.81: expansao de ranges GPUVA para 4096 elevou
- * o contexto acima de 2 MiB. O pool do fixture acompanha (8 MiB).
+ * o contexto acima de 2 MiB. Expansao de slots de journal GPUVA para 16
+ * elevou o contexto acima de 8 MiB. O pool do fixture acompanha (16 MiB).
  */
-static __declspec(align(16)) unsigned char g_pool[8388608];
+static __declspec(align(16)) unsigned char g_pool[16777216];
 static int g_poolAllocated;
 static BC250_DXGK_ACTIVE_CONTEXT g_diagnosticContext;
 static __declspec(align(4096)) unsigned char g_contiguousPage[4096];
@@ -107,6 +108,106 @@ PVOID (*__imp_MmMapIoSpace)(PHYSICAL_ADDRESS, SIZE_T, MEMORY_CACHING_TYPE) =
     Bc250TestMapIoSpace;
 VOID (*__imp_MmUnmapIoSpace)(PVOID, SIZE_T) =
     Bc250TestUnmapIoSpace;
+
+/* P1b.2: o helper Bc250VramCpuMapMemory referencia o mapeador da DRAM. Nesta
+ * suite a P1b nunca e' armada; o stub falha fechado se um dia rodar. */
+static PVOID Bc250TestMapIoSpaceEx(PHYSICAL_ADDRESS PhysicalAddress,
+    SIZE_T NumberOfBytes, ULONG Protect)
+{
+    UNREFERENCED_PARAMETER(PhysicalAddress);
+    UNREFERENCED_PARAMETER(NumberOfBytes);
+    UNREFERENCED_PARAMETER(Protect);
+    return NULL;
+}
+PVOID (*__imp_MmMapIoSpaceEx)(PHYSICAL_ADDRESS, SIZE_T, ULONG) =
+    Bc250TestMapIoSpaceEx;
+
+static NTSTATUS NTAPI Bc250TestZwOpenFile(
+    PHANDLE FileHandle,
+    ACCESS_MASK DesiredAccess,
+    POBJECT_ATTRIBUTES ObjectAttributes,
+    PIO_STATUS_BLOCK IoStatusBlock,
+    ULONG ShareAccess,
+    ULONG OpenOptions)
+{
+    UNREFERENCED_PARAMETER(FileHandle);
+    UNREFERENCED_PARAMETER(DesiredAccess);
+    UNREFERENCED_PARAMETER(ObjectAttributes);
+    UNREFERENCED_PARAMETER(IoStatusBlock);
+    UNREFERENCED_PARAMETER(ShareAccess);
+    UNREFERENCED_PARAMETER(OpenOptions);
+    return STATUS_OBJECT_NAME_NOT_FOUND;
+}
+NTSTATUS (NTAPI *__imp_ZwOpenFile)(PHANDLE, ACCESS_MASK, POBJECT_ATTRIBUTES, PIO_STATUS_BLOCK, ULONG, ULONG) =
+    Bc250TestZwOpenFile;
+
+static NTSTATUS NTAPI Bc250TestZwQueryInformationFile(
+    HANDLE FileHandle,
+    PIO_STATUS_BLOCK IoStatusBlock,
+    PVOID FileInformation,
+    ULONG Length,
+    FILE_INFORMATION_CLASS FileInformationClass)
+{
+    UNREFERENCED_PARAMETER(FileHandle);
+    UNREFERENCED_PARAMETER(IoStatusBlock);
+    UNREFERENCED_PARAMETER(FileInformation);
+    UNREFERENCED_PARAMETER(Length);
+    UNREFERENCED_PARAMETER(FileInformationClass);
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS (NTAPI *__imp_ZwQueryInformationFile)(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, FILE_INFORMATION_CLASS) =
+    Bc250TestZwQueryInformationFile;
+
+static NTSTATUS NTAPI Bc250TestZwReadFile(
+    HANDLE FileHandle,
+    HANDLE Event,
+    PIO_APC_ROUTINE ApcRoutine,
+    PVOID ApcContext,
+    PIO_STATUS_BLOCK IoStatusBlock,
+    PVOID Buffer,
+    ULONG Length,
+    PLARGE_INTEGER ByteOffset,
+    PULONG Key)
+{
+    UNREFERENCED_PARAMETER(FileHandle);
+    UNREFERENCED_PARAMETER(Event);
+    UNREFERENCED_PARAMETER(ApcRoutine);
+    UNREFERENCED_PARAMETER(ApcContext);
+    UNREFERENCED_PARAMETER(IoStatusBlock);
+    UNREFERENCED_PARAMETER(Buffer);
+    UNREFERENCED_PARAMETER(Length);
+    UNREFERENCED_PARAMETER(ByteOffset);
+    UNREFERENCED_PARAMETER(Key);
+    return STATUS_NOT_IMPLEMENTED;
+}
+NTSTATUS (NTAPI *__imp_ZwReadFile)(HANDLE, HANDLE, PIO_APC_ROUTINE, PVOID, PIO_STATUS_BLOCK, PVOID, ULONG, PLARGE_INTEGER, PULONG) =
+    Bc250TestZwReadFile;
+
+static NTSTATUS NTAPI Bc250TestZwClose(HANDLE Handle)
+{
+    UNREFERENCED_PARAMETER(Handle);
+    return STATUS_SUCCESS;
+}
+NTSTATUS (NTAPI *__imp_ZwClose)(HANDLE) =
+    Bc250TestZwClose;
+
+static VOID NTAPI Bc250TestRtlInitUnicodeString(PUNICODE_STRING DestinationString, PCWSTR SourceString)
+{
+    if (DestinationString != NULL) {
+        DestinationString->Buffer = (PWSTR)SourceString;
+        if (SourceString != NULL) {
+            USHORT len = 0;
+            while (SourceString[len] != 0) ++len;
+            DestinationString->Length = (USHORT)(len * sizeof(WCHAR));
+            DestinationString->MaximumLength = (USHORT)((len + 1) * sizeof(WCHAR));
+        } else {
+            DestinationString->Length = 0;
+            DestinationString->MaximumLength = 0;
+        }
+    }
+}
+VOID (NTAPI *__imp_RtlInitUnicodeString)(PUNICODE_STRING, PCWSTR) =
+    Bc250TestRtlInitUnicodeString;
 
 static PVOID Bc250TestAllocatePool2(
     POOL_FLAGS Flags,
@@ -218,6 +319,34 @@ KIRQL (*__imp_KeAcquireSpinLockRaiseToDpc)(PKSPIN_LOCK) =
     Bc250TestAcquireSpinLockRaiseToDpc;
 VOID (*__imp_KeReleaseSpinLock)(PKSPIN_LOCK, KIRQL) =
     Bc250TestReleaseSpinLock;
+
+/* COMP.VA.2 (doc 745): a janela da composicao serializa com KGUARDED_MUTEX
+ * (o escape roda em PASSIVE_LEVEL). Offline vira no-op. */
+static VOID FASTCALL Bc250TestInitializeGuardedMutex(PKGUARDED_MUTEX Mutex)
+{
+    if (Mutex != NULL) RtlZeroMemory(Mutex, sizeof(*Mutex));
+}
+
+static VOID FASTCALL Bc250TestAcquireGuardedMutex(PKGUARDED_MUTEX Mutex)
+{
+    UNREFERENCED_PARAMETER(Mutex);
+}
+
+VOID (FASTCALL *__imp_KeInitializeGuardedMutex)(PKGUARDED_MUTEX) =
+    Bc250TestInitializeGuardedMutex;
+VOID (FASTCALL *__imp_KeAcquireGuardedMutex)(PKGUARDED_MUTEX) =
+    Bc250TestAcquireGuardedMutex;
+
+static BOOLEAN FASTCALL Bc250TestTryToAcquireGuardedMutex(PKGUARDED_MUTEX Mutex)
+{
+    UNREFERENCED_PARAMETER(Mutex);
+    return TRUE;
+}
+
+VOID (FASTCALL *__imp_KeReleaseGuardedMutex)(PKGUARDED_MUTEX) =
+    Bc250TestAcquireGuardedMutex;
+BOOLEAN (FASTCALL *__imp_KeTryToAcquireGuardedMutex)(PKGUARDED_MUTEX) =
+    Bc250TestTryToAcquireGuardedMutex;
 
 /* DX.45b: o detector de reset do CP decide por IRQL. Offline tudo roda como
  * PASSIVE_LEVEL, que e' o ramo da escrita sincrona. */
@@ -2096,11 +2225,25 @@ static int Bc250RunActiveMiniportTest(void)
         allocationHandles[0] = allocationInfo[0].hAllocation;
         allocationHandles[1] = allocationInfo[1].hAllocation;
         CHECK(allocationHandles[0] != NULL && allocationHandles[1] != NULL);
-        CHECK(allocationInfo[0].Size == 65536u &&
-            allocationInfo[0].SupportedReadSegmentSet == 1u &&
-            allocationInfo[0].SupportedWriteSegmentSet == 1u &&
-            allocationInfo[0].PreferredSegment.SegmentId0 == 1u &&
-            allocationInfo[0].FlagsWddm2.CpuVisible == 0u);
+        /*
+         * M1b.1 LIGADA (3.358, doc 579): token de RADV sem CPU transborda para o
+         * segmento 2 (SegSet 0x3, preferido 1 -> 2), pela politica do contrato
+         * (fonte unica). Com a M1b desligada este teste reprova de proposito:
+         * o comportamento esperado mudou e tem de ser reescrito, nao herdado.
+         */
+        {
+            BC250_ALLOCATION_SEGMENT_POLICY m1bPolicy;
+            CHECK(Bc250AllocationRadvSystemSegmentPolicy(&allocationPrivate[0],
+                0, &m1bPolicy) == 1);
+            CHECK(m1bPolicy.SegmentSet == 0x3u && m1bPolicy.Preferred0 == 1u &&
+                m1bPolicy.Preferred1 == 2u);
+            CHECK(allocationInfo[0].Size == 65536u &&
+                allocationInfo[0].SupportedReadSegmentSet == m1bPolicy.SegmentSet &&
+                allocationInfo[0].SupportedWriteSegmentSet == m1bPolicy.SegmentSet &&
+                allocationInfo[0].PreferredSegment.SegmentId0 == m1bPolicy.Preferred0 &&
+                allocationInfo[0].PreferredSegment.SegmentId1 == m1bPolicy.Preferred1 &&
+                allocationInfo[0].FlagsWddm2.CpuVisible == 0u);
+        }
 
         /* Verify primary allocation gets CpuVisible = 1u and AccessedPhysically = 1u */
         {

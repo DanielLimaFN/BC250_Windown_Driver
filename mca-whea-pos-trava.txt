@@ -1,0 +1,65 @@
+﻿================================================================================
+   AMD BC-250 -- DIAGNOSTICO DE HARDWARE ERRORS, MCA BANKS E WHEA (POS-TRAVA)   
+================================================================================
+Gerado em: 2026-10-09 13:52:06
+
+--- [1] EVENTOS KERNEL-POWER 41 (ULTIMOS REINICIOS ABRUPTOS) ---
+  Hora: 10/09/2026 13:49:35 | BugcheckCode: 0 | P1=0x0 P2=0x0 P3=0x0 P4=0x0
+  Hora: 10/09/2026 11:29:02 | BugcheckCode: 0 | P1=0x0 P2=0x0 P3=0x0 P4=0x0
+  Hora: 10/09/2026 10:53:24 | BugcheckCode: 0 | P1=0x0 P2=0x0 P3=0x0 P4=0x0
+  Hora: 10/09/2026 10:13:27 | BugcheckCode: 0 | P1=0x0 P2=0x0 P3=0x0 P4=0x0
+  Hora: 10/09/2026 08:54:46 | BugcheckCode: 0 | P1=0x0 P2=0x0 P3=0x0 P4=0x0
+
+--- [2] EVENTOS MICROSOFT-WINDOWS-WHEA-LOGGER (SYSTEM) ---
+  Nenhum evento em Microsoft-Windows-WHEA-Logger.
+
+--- [3] REGISTROS BRUTOS WHEA (KERNEL-WHEA OPERATIONAL E ERRORS) ---
+  [ID 42] Hora: 10/09/2026 13:49:34 Log: Microsoft-Windows-Kernel-WHEA/Operational Tipo: 0 Len: 5392
+    Assinatura: WhLg | Criador: KRNL | Bytes totais: 5392
+    Secoes CPER: 0 | Severidade: 0x00001510
+    Hex inicial: 57-68-4C-67-01-00-00-00-10-15-00-00-00-00-00-00-4B-52-4E-4C-02-00-00-80-02-00-00-00-F0-14-00-00-A0-18-63-DF-0E-BE-FF-FF-A8-AF-0D-55-04-F8-FF-FF-00-00-00-00-00-00-00-00-00-00-00-00-01-00-00-00
+  [ID 5] Hora: 10/09/2026 13:49:34 Log: Microsoft-Windows-Kernel-WHEA/Operational Tipo:  Len: 
+  [ID 42] Hora: 10/09/2026 13:49:34 Log: Microsoft-Windows-Kernel-WHEA/Operational Tipo: 0 Len: 34
+    Assinatura: WhLg | Criador: PSHD | Bytes totais: 34
+    Hex inicial: 57-68-4C-67-01-00-00-00-22-00-00-00-00-00-00-00-50-53-48-44-0A-00-00-80-02-00-00-00-02-00-00-00-00-01
+  [ID 42] Hora: 10/09/2026 13:49:31 Log: Microsoft-Windows-Kernel-WHEA/Operational Tipo: 0 Len: 133
+    Assinatura: WhLg | Criador: PSHD | Bytes totais: 133
+    Secoes CPER: 0 | Severidade: 0x00000085
+    Hex inicial: 57-68-4C-67-01-00-00-00-85-00-00-00-00-00-00-00-50-53-48-44-14-00-00-80-02-00-00-00-65-00-00-00-4E-6F-5F-48-45-53-54-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00
+  [ID 42] Hora: 10/09/2026 13:49:31 Log: Microsoft-Windows-Kernel-WHEA/Operational Tipo: 0 Len: 1009
+    Assinatura: WhLg | Criador: KRNL | Bytes totais: 1009
+    Secoes CPER: 0 | Severidade: 0x000003F1
+    Hex inicial: 57-68-4C-67-01-00-00-00-F1-03-00-00-00-00-00-00-4B-52-4E-4C-0C-00-00-80-02-00-00-00-D1-03-00-00-CC-03-00-00-0B-00-00-00-10-00-00-00-01-00-00-00-2C-0D-00-00-01-00-00-00-03-00-00-00-00-00-00-00
+  [ID 42] Hora: 10/09/2026 13:44:58 Log: Microsoft-Windows-Kernel-WHEA/Operational Tipo: 0 Len: 5392
+    Assinatura: WhLg | Criador: KRNL | Bytes totais: 5392
+    Secoes CPER: 0 | Severidade: 0x00001510
+    Hex inicial: 57-68-4C-67-01-00-00-00-10-15-00-00-00-00-00-00-4B-52-4E-4C-02-00-00-80-02-00-00-00-F0-14-00-00-A0-E8-DB-09-81-BC-FF-FF-A8-AF-AD-0F-06-F8-FF-FF-00-00-00-00-00-00-00-00-00-00-00-00-01-00-00-00
+  [ID 5] Hora: 10/09/2026 13:44:58 Log: Microsoft-Windows-Kernel-WHEA/Operational Tipo:  Len: 
+  [ID 42] Hora: 10/09/2026 13:44:58 Log: Microsoft-Windows-Kernel-WHEA/Operational Tipo: 0 Len: 34
+    Assinatura: WhLg | Criador: PSHD | Bytes totais: 34
+    Hex inicial: 57-68-4C-67-01-00-00-00-22-00-00-00-00-00-00-00-50-53-48-44-0A-00-00-80-02-00-00-00-02-00-00-00-00-01
+  [ID 42] Hora: 10/09/2026 13:44:55 Log: Microsoft-Windows-Kernel-WHEA/Operational Tipo: 0 Len: 133
+    Assinatura: WhLg | Criador: PSHD | Bytes totais: 133
+    Secoes CPER: 0 | Severidade: 0x00000085
+    Hex inicial: 57-68-4C-67-01-00-00-00-85-00-00-00-00-00-00-00-50-53-48-44-14-00-00-80-02-00-00-00-65-00-00-00-4E-6F-5F-48-45-53-54-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00
+  [ID 42] Hora: 10/09/2026 13:44:55 Log: Microsoft-Windows-Kernel-WHEA/Operational Tipo: 0 Len: 1009
+    Assinatura: WhLg | Criador: KRNL | Bytes totais: 1009
+    Secoes CPER: 0 | Severidade: 0x000003F1
+    Hex inicial: 57-68-4C-67-01-00-00-00-F1-03-00-00-00-00-00-00-4B-52-4E-4C-0C-00-00-80-02-00-00-00-D1-03-00-00-CC-03-00-00-0B-00-00-00-10-00-00-00-01-00-00-00-2C-0D-00-00-01-00-00-00-03-00-00-00-00-00-00-00
+  [ID 42] Hora: 10/09/2026 13:19:18 Log: Microsoft-Windows-Kernel-WHEA/Operational Tipo: 0 Len: 5392
+    Assinatura: WhLg | Criador: KRNL | Bytes totais: 5392
+    Secoes CPER: 0 | Severidade: 0x00001510
+    Hex inicial: 57-68-4C-67-01-00-00-00-10-15-00-00-00-00-00-00-4B-52-4E-4C-02-00-00-80-02-00-00-00-F0-14-00-00-A0-18-65-97-88-D9-FF-FF-A8-AF-ED-04-02-F8-FF-FF-00-00-00-00-00-00-00-00-00-00-00-00-01-00-00-00
+  [ID 5] Hora: 10/09/2026 13:19:18 Log: Microsoft-Windows-Kernel-WHEA/Operational Tipo:  Len: 
+  [ID 42] Hora: 10/09/2026 13:19:18 Log: Microsoft-Windows-Kernel-WHEA/Operational Tipo: 0 Len: 34
+    Assinatura: WhLg | Criador: PSHD | Bytes totais: 34
+    Hex inicial: 57-68-4C-67-01-00-00-00-22-00-00-00-00-00-00-00-50-53-48-44-0A-00-00-80-02-00-00-00-02-00-00-00-00-01
+  [ID 42] Hora: 10/09/2026 13:19:15 Log: Microsoft-Windows-Kernel-WHEA/Operational Tipo: 0 Len: 133
+    Assinatura: WhLg | Criador: PSHD | Bytes totais: 133
+    Secoes CPER: 0 | Severidade: 0x00000085
+    Hex inicial: 57-68-4C-67-01-00-00-00-85-00-00-00-00-00-00-00-50-53-48-44-14-00-00-80-02-00-00-00-65-00-00-00-4E-6F-5F-48-45-53-54-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00
+  [ID 42] Hora: 10/09/2026 13:19:15 Log: Microsoft-Windows-Kernel-WHEA/Operational Tipo: 0 Len: 1009
+    Assinatura: WhLg | Criador: KRNL | Bytes totais: 1009
+    Secoes CPER: 0 | Severidade: 0x000003F1
+    Hex inicial: 57-68-4C-67-01-00-00-00-F1-03-00-00-00-00-00-00-4B-52-4E-4C-0C-00-00-80-02-00-00-00-D1-03-00-00-CC-03-00-00-0B-00-00-00-10-00-00-00-01-00-00-00-2C-0D-00-00-01-00-00-00-03-00-00-00-00-00-00-00
+

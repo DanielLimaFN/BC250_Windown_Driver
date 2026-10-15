@@ -48,6 +48,16 @@ static int Bc250RunGcvmContractTest(void)
     CHECK(decodedPhys == 0x0FD01000ull);
     CHECK(decodedFlags == BC250_PTE_RW_DEFAULT);
 
+    /* P6 (doc 618): MTYPE_UC = 3 nos bits 50:48; sem a flag, MTYPE = 0 (NC). */
+    CHECK((pte & 0x0007000000000000ull) == 0ull);
+    CHECK(Bc250GcvmEncodePte(0x0FD01000ull,
+        BC250_PTE_RW_DEFAULT | BC250_PTE_MTYPE_UC, &pte) == BC250_GCVM_OK);
+    CHECK((pte & 0x0007000000000000ull) == 0x0003000000000000ull);
+    CHECK((pte & 0x0000FFFFFFFFF000ull) == 0x0FD01000ull);
+    /* O PDE recusa a flag (so VALID/SYSTEM/SNOOPED). */
+    CHECK(Bc250GcvmEncodePde(0x0FD01000ull,
+        BC250_PTE_VALID | BC250_PTE_MTYPE_UC, &pte) != BC250_GCVM_OK);
+
     /* Test misaligned encoding rejection */
     CHECK(Bc250GcvmEncodePte(
         0x0FD01001ull, BC250_PTE_RW_DEFAULT, &pte) == BC250_GCVM_MISALIGNED);

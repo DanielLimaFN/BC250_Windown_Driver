@@ -22,6 +22,7 @@ $packageInf = Join-Path $packageDir 'bc250mcdm.inf'
 $packageCat = Join-Path $packageDir 'bc250mcdm.cat'
 $packageSdmaFirmware = Join-Path $packageDir 'cyan_skillfish2_sdma.bin'
 $packageRlcFirmware = Join-Path $packageDir 'cyan_skillfish2_rlc.bin'
+$packageSdma1Firmware = Join-Path $packageDir 'cyan_skillfish2_sdma1.bin'
 $packagePfpFirmware = Join-Path $packageDir 'cyan_skillfish2_pfp.bin'
 $packageMeFirmware = Join-Path $packageDir 'cyan_skillfish2_me.bin'
 $packageCeFirmware = Join-Path $packageDir 'cyan_skillfish2_ce.bin'
@@ -34,6 +35,7 @@ $requiredFiles = @(
     @{ Path = $packageCat; Label = 'catalogo' },
     @{ Path = $packageSdmaFirmware; Label = 'firmware SDMA' },
     @{ Path = $packageRlcFirmware; Label = 'firmware RLC' },
+    @{ Path = $packageSdma1Firmware; Label = 'firmware SDMA1' },
     @{ Path = $packagePfpFirmware; Label = 'firmware PFP' },
     @{ Path = $packageMeFirmware; Label = 'firmware ME' },
     @{ Path = $packageCeFirmware; Label = 'firmware CE' },
@@ -92,6 +94,7 @@ $hashChecks = @(
     @{ Path = $packageCat; Expected = $manifest.PackageCatSha256; Label = 'catalogo' },
     @{ Path = $packageSdmaFirmware; Expected = $manifest.SdmaFirmwareSha256; Label = 'firmware SDMA' },
     @{ Path = $packageRlcFirmware; Expected = $manifest.RlcFirmwareSha256; Label = 'firmware RLC' },
+    @{ Path = $packageSdma1Firmware; Expected = $manifest.Sdma1FirmwareSha256; Label = 'firmware SDMA1' },
     @{ Path = $packagePfpFirmware; Expected = $manifest.PfpFirmwareSha256; Label = 'firmware PFP' },
     @{ Path = $packageMeFirmware; Expected = $manifest.MeFirmwareSha256; Label = 'firmware ME' },
     @{ Path = $packageCeFirmware; Expected = $manifest.CeFirmwareSha256; Label = 'firmware CE' },
@@ -123,6 +126,7 @@ foreach ($needle in @(
     'CatalogFile=bc250mcdm.cat',
     'cyan_skillfish2_sdma.bin',
     'cyan_skillfish2_rlc.bin',
+    'cyan_skillfish2_sdma1.bin',
     'cyan_skillfish2_pfp.bin',
     'cyan_skillfish2_me.bin',
     'cyan_skillfish2_ce.bin',

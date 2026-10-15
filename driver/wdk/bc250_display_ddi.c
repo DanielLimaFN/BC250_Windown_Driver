@@ -4,6 +4,9 @@
 #include "bc250_probe_telemetry.h"
 #include "bc250_sdma_present.h"
 #include "bc250_mmio_breadcrumb.h"
+#include "bc250_vram_cpu_path.h"
+#include "bc250_dcn_flip_contract.h"
+#include "bc250_dcn_ext_contract.h"
 
 /* T3.1: a janela WC termina exatamente na pagina de migalhas, a primeira
  * estrutura privada UC; se uma das duas mudar, o build quebra. */
@@ -472,11 +475,12 @@ static const char *Bc250DisplayBltToDestination(
         return "GEOMETRIA_DO_DESTINO_DESCONHECIDA";
     }
     /*
-     * D3DDDIFMT_A8R8G8B8 = 21, D3DDDIFMT_X8R8G8B8 = 22: 4 bytes por pixel na
-     * mesma ordem de bytes; copiar um para o outro e' copia byte a byte.
-     * Qualquer outro formato, em qualquer lado, e' recusado.
+     * DCN.4 (Corrida 289): Formatos 32bpp compativeis (4 bytes por pixel).
+     * D3DDDIFMT_A8R8G8B8 = 21, D3DDDIFMT_X8R8G8B8 = 22, D3DDDIFMT_A8B8G8R8 = 28 / DXGI_FORMAT_R8G8B8A8_UNORM.
+     * Copia byte a byte e' valida se srcFmt == dstFmt (21, 22 ou 28), ou entre 21 e 22 (BGRA <-> BGRX).
      */
-    if ((srcFmt != 21u && srcFmt != 22u) || (dstFmt != 21u && dstFmt != 22u)) {
+    if (!((srcFmt == dstFmt && (srcFmt == 21u || srcFmt == 22u || srcFmt == 28u)) ||
+          ((srcFmt == 21u || srcFmt == 22u) && (dstFmt == 21u || dstFmt == 22u)))) {
         return "FORMATO_DIVERGENTE_OU_NAO_32BPP";
     }
     if (srcPitch < srcW * 4u || dstPitch < dstW * 4u) return "PITCH_MENOR_QUE_A_LINHA";
@@ -555,6 +559,21 @@ BOOLEAN Bc250DisplaySampleSurface(
     if (NonZeroCount != NULL) *NonZeroCount = 0u;
     if (XorHash != NULL) *XorHash = 0u;
     if (NonZeroCount == NULL || XorHash == NULL) return FALSE;
+#if BC250_P1_SILENCIO_DA_BAR && defined(BC250_ENABLE_DXGK_REGISTRATION)
+    /* P1 (doc 594): sem leitura de VRAM pela CPU para prova amostral. So' na
+     * imagem do driver: a suite offline continua exercitando a logica. Os
+     * chamadores ja tratam "nao amostrado" (SAMPLE_UNAVAILABLE): a copia do
+     * Present continua; perdem-se so' os atalhos que dependem de amostra. */
+    UNREFERENCED_PARAMETER(ByteOffset);
+    UNREFERENCED_PARAMETER(ByteCount);
+    UNREFERENCED_PARAMETER(Samples);
+    UNREFERENCED_PARAMETER(base);
+    UNREFERENCED_PARAMETER(stride);
+    UNREFERENCED_PARAMETER(i);
+    UNREFERENCED_PARAMETER(nonZero);
+    UNREFERENCED_PARAMETER(hash);
+    return FALSE;
+#else
     if (g_Bc250DisplayState.FrameBufferVirtual == NULL) return FALSE;
     if (Samples == 0u || ByteCount < sizeof(ULONG)) return FALSE;
     if (ByteOffset > g_Bc250DisplayState.FrameBufferSize) return FALSE;
@@ -582,6 +601,7 @@ BOOLEAN Bc250DisplaySampleSurface(
     *NonZeroCount = nonZero;
     *XorHash = hash;
     return TRUE;
+#endif
 }
 
 BOOLEAN Bc250DisplayCompareSurfaceBytes(
@@ -778,6 +798,1693 @@ static ULONG Bc250DisplayPairedSampleCompare(
     return index;
 }
 
+/*
+ * DCN.1 (doc 710, P9 aberta pelo Daniel em 12/10/2026): flip pelo HUBP0.
+ *
+ * D2 (so' leitura): no StartDevice, le o HUBP0/OTG0 como o GOP deixou e decide
+ *   se o pipeline serve para flip sem reprogramar formato, pitch, viewport,
+ *   timing, clock ou PHY (Bc250DcnFlipEvaluateGop).
+ * D3 (escrita): a cada SetVidPnSourceAddress/MPO3 aponta o HUBP0 para a
+ *   primaria (FLIP_CONTROL, endereco alto, endereco baixo, readback), como
+ *   hubp2_program_surface_flip_and_addr, em vez de copiar 11 MB pelo SDMA0. O
+ *   Present de flip deixa de copiar para o scanout do GOP.
+ * D4 (so' leitura): no DPC de VSYNC le FLIP_CONTROL/EARLIEST_INUSE; o VSYNC so'
+ *   reporta a primaria nova depois do latch (hubp2_is_flip_pending). O VSYNC
+ *   continua pelo contador de quadros do OTG0 com poll de 4 ms: a interrupcao
+ *   do DCN pelo IH NAO esta nesta etapa.
+ * Teardown (Lei 5): o HUBP0 volta ao endereco e ao FLIP_CONTROL do GOP antes de
+ *   o BasicDisplay assumir.
+ * Chave DcnFlip do INF (padrao 0). Com 0 nada disto escreve registrador.
+ */
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+typedef struct BC250_DCN_FLIP_RUNTIME {
+    volatile UCHAR *Window;
+    BC250_DCN_GOP_STATE Gop;
+    BC250_DCN_FLIP_PLAN Plan;
+    ULONG Refuse;
+    BOOLEAN GopRead;
+    volatile LONG Enabled;
+    volatile LONG Armed;
+    volatile LONG OnUserSurface;
+    volatile LONG64 RequestedDcn;
+    volatile LONG64 RequestedSeg;
+    volatile LONG64 DisplayedSeg;
+    volatile LONG64 RequestQpc;
+    volatile LONG Flips;
+    volatile LONG Latched;
+    volatile LONG ResolvedSeq;  /* ultimo flip com latch visto (D4) */
+    volatile LONG Superseded;   /* trocados por um mais novo antes do latch */
+    /* Medicao da Corrida 270 (doc 711): so' contadores. */
+    volatile LONG RouteSetAddress;
+    volatile LONG RouteMpo1;
+    volatile LONG RouteMpo3;
+    volatile LONG RouteImmediate;
+    volatile LONG NotSegment1;  /* primaria fora do segmento 1: copia, sem flip */
+    volatile LONG RequestFrame; /* OTG0 FRAME_COUNT no pedido */
+    volatile LONG LatchFrames[4];
+    volatile LONG LatchUs[4];
+    /* PISC.1 (doc 749): o balde "3+" da 292c (364 de 5.373) vinha do
+     * LastOtgFrameCount guardado no VSYNC, que fica um quadro atras quando
+     * a interrupcao do flip resolve antes do VSYNC: a diferenca mascarada
+     * dava a volta. Agora o quadro sai do registrador no latch; estes
+     * contam o artefato antigo e os latches tardios de verdade. */
+    volatile LONG LatchStaleCounter;
+    volatile LONG LatchLateReal;
+    ULONG ArmFrame;
+    LONG ArmHwVsync;
+    LONG ArmVsync;
+    LONGLONG ArmQpc;
+    volatile LONG Refused;
+    volatile LONG ReadbackFail;
+    volatile LONG CopiesSkipped;
+    volatile LONG MaxLatchUs;
+    /* Completar o flip pela interrupcao (doc 716 par.6.1, doc 717): quantos
+     * latches foram vistos numa chamada do DPC que a propria interrupcao do
+     * flip (nao o timer de 4 ms) disparou. Ver Bc250DcnFlipLatchIsViaIrq. */
+    volatile LONG LatchedViaFlipIrq;
+} BC250_DCN_FLIP_RUNTIME;
+static BC250_DCN_FLIP_RUNTIME s_Bc250Dcn;
+/* DCN.2 (doc 713), definidas mais abaixo neste bloco. */
+static VOID Bc250Dcn2MeasureTiming(void);
+static VOID Bc250Dcn2LogSummary(_In_ const char *Why);
+static ULONG Bc250Dcn2KeysArmed(void);
+
+static ULONG Bc250DcnRead(ULONG AbsOffset)
+{
+    return *(volatile ULONG *)(s_Bc250Dcn.Window + (AbsOffset - BC250_DCN_FLIP_WINDOW_BASE));
+}
+
+static VOID Bc250DcnWrite(ULONG AbsOffset, ULONG Value)
+{
+    *(volatile ULONG *)(s_Bc250Dcn.Window + (AbsOffset - BC250_DCN_FLIP_WINDOW_BASE)) = Value;
+}
+
+/* D2: mapeia a janela e fotografa o estado do GOP. So' leitura. */
+static VOID Bc250DcnFlipReadGop(_In_ PHYSICAL_ADDRESS MmioPhysical)
+{
+    PHYSICAL_ADDRESS window;
+    if (MmioPhysical.QuadPart == 0 || s_Bc250Dcn.Window != NULL) return;
+    window.QuadPart = MmioPhysical.QuadPart + BC250_DCN_FLIP_WINDOW_BASE;
+    s_Bc250Dcn.Window = (volatile UCHAR *)MmMapIoSpace(window, BC250_DCN_FLIP_WINDOW_BYTES, MmNonCached);
+    if (s_Bc250Dcn.Window == NULL) {
+        Bc250DisplayLog("[DCN1_D2] AVISO: falha ao mapear a janela do DCN (0x%llX, 0x%X bytes); flip pelo HUBP indisponivel\n",
+            (unsigned long long)window.QuadPart, BC250_DCN_FLIP_WINDOW_BYTES);
+        return;
+    }
+    s_Bc250Dcn.Gop.SurfaceConfig = Bc250DcnRead(BC250_DCN_FLIP_REG_HUBP0_SURFACE_CONFIG);
+    s_Bc250Dcn.Gop.ViewportDim = Bc250DcnRead(BC250_DCN_FLIP_REG_HUBP0_PRI_VIEWPORT_DIM);
+    s_Bc250Dcn.Gop.SurfacePitch = Bc250DcnRead(BC250_DCN_FLIP_REG_HUBPREQ0_SURFACE_PITCH);
+    s_Bc250Dcn.Gop.PrimaryAddrLo = Bc250DcnRead(BC250_DCN_FLIP_REG_HUBPREQ0_PRIMARY_ADDR);
+    s_Bc250Dcn.Gop.PrimaryAddrHi = Bc250DcnRead(BC250_DCN_FLIP_REG_HUBPREQ0_PRIMARY_ADDR_HI);
+    s_Bc250Dcn.Gop.SurfaceControl = Bc250DcnRead(BC250_DCN_FLIP_REG_HUBPREQ0_SURFACE_CONTROL);
+    s_Bc250Dcn.Gop.FlipControl = Bc250DcnRead(BC250_DCN_FLIP_REG_HUBPREQ0_FLIP_CONTROL);
+    s_Bc250Dcn.Gop.OtgControl = Bc250DcnRead(BC250_DCN_FLIP_REG_OTG0_CONTROL);
+    s_Bc250Dcn.Gop.MasterUpdateLock = Bc250DcnRead(BC250_DCN_FLIP_REG_OTG0_MASTER_UPDATE_LOCK);
+    s_Bc250Dcn.GopRead = TRUE;
+    Bc250DisplayLog("[DCN1_D2] HUBP0/OTG0 como o GOP deixou (so' leitura): SURFACE_CONFIG=0x%08X VIEWPORT=0x%08X PITCH=0x%08X ADDR=0x%04X:%08X SURFACE_CONTROL=0x%08X FLIP_CONTROL=0x%08X EARLIEST_INUSE=0x%04X:%08X OTG_CONTROL=0x%08X MASTER_UPDATE_LOCK=0x%08X FRAME=%u\n",
+        s_Bc250Dcn.Gop.SurfaceConfig, s_Bc250Dcn.Gop.ViewportDim, s_Bc250Dcn.Gop.SurfacePitch,
+        s_Bc250Dcn.Gop.PrimaryAddrHi & 0xFFFFu, s_Bc250Dcn.Gop.PrimaryAddrLo,
+        s_Bc250Dcn.Gop.SurfaceControl, s_Bc250Dcn.Gop.FlipControl,
+        Bc250DcnRead(BC250_DCN_FLIP_REG_HUBPREQ0_EARLIEST_INUSE_HI) & 0xFFFFu,
+        Bc250DcnRead(BC250_DCN_FLIP_REG_HUBPREQ0_EARLIEST_INUSE),
+        s_Bc250Dcn.Gop.OtgControl, s_Bc250Dcn.Gop.MasterUpdateLock,
+        Bc250DcnRead(BC250_DCN_FLIP_REG_OTG0_STATUS_FRAME_COUNT) & BC250_DCN_FRAME_COUNT_MASK);
+    Bc250Dcn2MeasureTiming(); /* DCN.2 item 1, so' leitura */
+}
+
+/* D0/D2: liga o flip so' com a chave do INF E o pipeline do GOP elegivel. */
+void Bc250DisplaySetDcnFlipEnabled(ULONG Enabled)
+{
+    InterlockedExchange(&s_Bc250Dcn.Enabled, Enabled != 0u ? 1 : 0);
+    InterlockedExchange(&s_Bc250Dcn.Armed, 0);
+    if (Enabled == 0u) {
+        Bc250DisplayLog("[DCN1_FLIP] chave DcnFlip=0: apresentacao pela copia do SDMA0 no scanout do GOP (como antes); nenhuma escrita no DCN\n");
+        return;
+    }
+    if (!s_Bc250Dcn.GopRead) {
+        Bc250DisplayLog("[DCN1_FLIP] RECUSADO: estado do GOP nao lido (janela do DCN sem mapa); copia do SDMA0 mantida\n");
+        return;
+    }
+    s_Bc250Dcn.Refuse = Bc250DcnFlipEvaluateGop(&s_Bc250Dcn.Gop,
+        g_Bc250DisplayState.CurrentMode.Width, g_Bc250DisplayState.CurrentMode.Height,
+        g_Bc250DisplayState.CurrentMode.Pitch, &s_Bc250Dcn.Plan);
+    if (s_Bc250Dcn.Refuse != 0u) {
+        Bc250DisplayLog("[DCN1_FLIP] RECUSADO: pipeline do GOP nao serve para flip (recusas=0x%04X: 1=OTG desligado 2=viewport 4=pitch 8=DCC 10=lock de superficie 20=master lock 40=endereco do GOP 80=bloco morto 100=modo) Modo=%ux%u pitch=%u Viewport=%ux%u PitchPx=%u; copia do SDMA0 mantida\n",
+            s_Bc250Dcn.Refuse,
+            g_Bc250DisplayState.CurrentMode.Width, g_Bc250DisplayState.CurrentMode.Height,
+            g_Bc250DisplayState.CurrentMode.Pitch,
+            s_Bc250Dcn.Plan.Width, s_Bc250Dcn.Plan.Height, s_Bc250Dcn.Plan.PitchPixels);
+        return;
+    }
+    InterlockedExchange(&s_Bc250Dcn.Armed, 1);
+    s_Bc250Dcn.ArmFrame = Bc250DcnRead(BC250_DCN_FLIP_REG_OTG0_STATUS_FRAME_COUNT) & BC250_DCN_FRAME_COUNT_MASK;
+    s_Bc250Dcn.ArmHwVsync = InterlockedCompareExchange(&g_Bc250DisplayState.HardwareVsyncCount, 0, 0);
+    s_Bc250Dcn.ArmVsync = InterlockedCompareExchange(&g_Bc250DisplayState.VsyncCount, 0, 0);
+    s_Bc250Dcn.ArmQpc = KeQueryPerformanceCounter(NULL).QuadPart;
+    Bc250DisplayLog("[DCN1_FLIP] ARMADO: flip pelo HUBP0 sobre o pipeline do GOP (endereco do GOP 0x%llX, %ux%u, pitch %u px, formato %u, FLIP_CONTROL base 0x%08X); Present de flip sem copia ao scanout; VSYNC so' depois do latch\n",
+        (unsigned long long)s_Bc250Dcn.Plan.GopAddress, s_Bc250Dcn.Plan.Width, s_Bc250Dcn.Plan.Height,
+        s_Bc250Dcn.Plan.PitchPixels, s_Bc250Dcn.Plan.PixelFormat, s_Bc250Dcn.Plan.BaseFlipControl);
+}
+
+ULONG Bc250DisplayDcnFlipArmed(void)
+{
+    return (ULONG)InterlockedCompareExchange(&s_Bc250Dcn.Armed, 0, 0);
+}
+
+/* D3: aponta o HUBP0 para a primaria em SourceVramOffset. FALSE = nao feito
+ * (o chamador usa a copia do SDMA0 como antes). */
+static BOOLEAN Bc250DcnFlipProgram(
+    _In_ const char *Route, _In_ UINT64 SourceVramOffset,
+    _In_ PHYSICAL_ADDRESS SegmentAddress, _In_ BOOLEAN Immediate)
+{
+    UINT64 address = 0ull;
+    UINT64 scanoutOffset;
+    ULONG bytes;
+    ULONG flipCtl, hiRb, loRb, frame;
+    LONG n;
+
+    if (InterlockedCompareExchange(&s_Bc250Dcn.Armed, 0, 0) == 0 || s_Bc250Dcn.Window == NULL)
+        return FALSE;
+    bytes = g_Bc250DisplayState.CurrentMode.Pitch * g_Bc250DisplayState.CurrentMode.Height;
+    scanoutOffset = (g_Bc250SdmaPresent.ScanoutGpuAddress >= g_Bc250SdmaPresent.VramMcStart) ?
+        g_Bc250SdmaPresent.ScanoutGpuAddress - g_Bc250SdmaPresent.VramMcStart : ~(UINT64)0;
+    if (scanoutOffset == ~(UINT64)0 ||
+        !Bc250DcnFlipAddressForVramOffset(s_Bc250Dcn.Plan.GopAddress, scanoutOffset,
+            SourceVramOffset, bytes, g_Bc250DisplayState.FrameBufferSize, &address)) {
+        LONG r = InterlockedIncrement(&s_Bc250Dcn.Refused);
+        if (r <= 16 || (r % 256) == 0) {
+            Bc250DisplayLog("[DCN1_FLIP] RECUSA #%ld Route=%s VramOff=0x%llX Bytes=%u ScanoutOff=0x%llX VramMapBytes=%u: endereco fora da VRAM mapeada ou desalinhado; copia do SDMA0 neste flip\n",
+                r, Route, (unsigned long long)SourceVramOffset, bytes,
+                (unsigned long long)scanoutOffset, g_Bc250DisplayState.FrameBufferSize);
+        }
+        return FALSE;
+    }
+    flipCtl = Bc250DcnRead(BC250_DCN_FLIP_REG_HUBPREQ0_FLIP_CONTROL);
+    if ((flipCtl & BC250_DCN_SURFACE_UPDATE_LOCK_MASK) != 0u) {
+        LONG r = InterlockedIncrement(&s_Bc250Dcn.Refused);
+        if (r <= 16 || (r % 256) == 0) {
+            Bc250DisplayLog("[DCN1_FLIP] RECUSA #%ld Route=%s: SURFACE_UPDATE_LOCK ligado (FLIP_CONTROL=0x%08X); copia do SDMA0 neste flip\n",
+                r, Route, flipCtl);
+        }
+        return FALSE;
+    }
+    Bc250DcnWrite(BC250_DCN_FLIP_REG_HUBPREQ0_FLIP_CONTROL,
+        Bc250DcnFlipControlValue(flipCtl, Immediate ? 1 : 0));
+    /* Alto primeiro, baixo por ultimo: a escrita do baixo dispara o latch. */
+    Bc250DcnWrite(BC250_DCN_FLIP_REG_HUBPREQ0_PRIMARY_ADDR_HI,
+        (ULONG)(address >> 32) & BC250_DCN_PRIMARY_ADDR_HIGH_MASK);
+    Bc250DcnWrite(BC250_DCN_FLIP_REG_HUBPREQ0_PRIMARY_ADDR, (ULONG)address);
+    hiRb = Bc250DcnRead(BC250_DCN_FLIP_REG_HUBPREQ0_PRIMARY_ADDR_HI) & BC250_DCN_PRIMARY_ADDR_HIGH_MASK;
+    loRb = Bc250DcnRead(BC250_DCN_FLIP_REG_HUBPREQ0_PRIMARY_ADDR);
+    if ((((UINT64)hiRb << 32) | loRb) != address) {
+        LONG f = InterlockedIncrement(&s_Bc250Dcn.ReadbackFail);
+        Bc250DisplayLog("[DCN1_FLIP] READBACK FALHOU #%ld Route=%s pedido=0x%llX lido=0x%04X:%08X; HUBP0 devolvido ao GOP e flip desarmado (falha fechada)\n",
+            f, Route, (unsigned long long)address, hiRb, loRb);
+        Bc250DcnWrite(BC250_DCN_FLIP_REG_HUBPREQ0_FLIP_CONTROL, s_Bc250Dcn.Plan.BaseFlipControl);
+        Bc250DcnWrite(BC250_DCN_FLIP_REG_HUBPREQ0_PRIMARY_ADDR_HI,
+            (ULONG)(s_Bc250Dcn.Plan.GopAddress >> 32) & BC250_DCN_PRIMARY_ADDR_HIGH_MASK);
+        Bc250DcnWrite(BC250_DCN_FLIP_REG_HUBPREQ0_PRIMARY_ADDR, (ULONG)s_Bc250Dcn.Plan.GopAddress);
+        InterlockedExchange(&s_Bc250Dcn.OnUserSurface, 0);
+        InterlockedExchange(&s_Bc250Dcn.Armed, 0);
+        return FALSE;
+    }
+    frame = Bc250DcnRead(BC250_DCN_FLIP_REG_OTG0_STATUS_FRAME_COUNT) & BC250_DCN_FRAME_COUNT_MASK;
+    InterlockedExchange(&s_Bc250Dcn.RequestFrame, (LONG)frame);
+    if (Route[0] == 'S') InterlockedIncrement(&s_Bc250Dcn.RouteSetAddress);
+    else if (Route[0] == 'M' && Route[3] == '1') InterlockedIncrement(&s_Bc250Dcn.RouteMpo1);
+    else if (Route[0] == 'M' && Route[3] == '3') InterlockedIncrement(&s_Bc250Dcn.RouteMpo3);
+    if (Immediate) InterlockedIncrement(&s_Bc250Dcn.RouteImmediate);
+    InterlockedExchange64(&s_Bc250Dcn.RequestQpc, KeQueryPerformanceCounter(NULL).QuadPart);
+    InterlockedExchange64(&s_Bc250Dcn.RequestedDcn, (LONG64)address);
+    InterlockedExchange64(&s_Bc250Dcn.RequestedSeg, SegmentAddress.QuadPart);
+    InterlockedExchange(&s_Bc250Dcn.OnUserSurface, address != s_Bc250Dcn.Plan.GopAddress ? 1 : 0);
+    n = InterlockedIncrement(&s_Bc250Dcn.Flips);
+    if (n <= 16 || (n % 256) == 0) {
+        Bc250DisplayLog("[DCN1_FLIP] #%ld Route=%s VramOff=0x%llX -> HUBP0 0x%llX (readback OK) Tipo=%s FLIP_CONTROL 0x%08X->0x%08X Frame=%u Latchados=%ld Recusas=%ld CopiasOmitidas=%ld\n",
+            n, Route, (unsigned long long)SourceVramOffset, (unsigned long long)address,
+            Immediate ? "IMEDIATO" : "VSYNC", flipCtl,
+            Bc250DcnFlipControlValue(flipCtl, Immediate ? 1 : 0),
+            frame,
+            (long)s_Bc250Dcn.Latched, (long)s_Bc250Dcn.Refused, (long)s_Bc250Dcn.CopiesSkipped);
+    }
+    return TRUE;
+}
+
+/* Corrida 270 (doc 711): resumo das rotas, baldes do latch e VSYNC contra os
+ * quadros do OTG desde o arme. So' leitura do contador de quadros. */
+static VOID Bc250DcnFlipLogSummary(_In_ const char *Why)
+{
+    LARGE_INTEGER freq;
+    LONGLONG now = KeQueryPerformanceCounter(&freq).QuadPart;
+    UINT64 elapsedUs = (freq.QuadPart > 0 && now > s_Bc250Dcn.ArmQpc) ?
+        (UINT64)(((now - s_Bc250Dcn.ArmQpc) * 1000000LL) / freq.QuadPart) : 0ull;
+    ULONG frames = Bc250DcnFrameDelta(s_Bc250Dcn.ArmFrame,
+        Bc250DcnRead(BC250_DCN_FLIP_REG_OTG0_STATUS_FRAME_COUNT) & BC250_DCN_FRAME_COUNT_MASK);
+    LONG hw = InterlockedCompareExchange(&g_Bc250DisplayState.HardwareVsyncCount, 0, 0) - s_Bc250Dcn.ArmHwVsync;
+    LONG vs = InterlockedCompareExchange(&g_Bc250DisplayState.VsyncCount, 0, 0) - s_Bc250Dcn.ArmVsync;
+    ULONG mhz = Bc250DcnRefreshMilliHz(frames, elapsedUs);
+    Bc250DisplayLog("[DCN1_RESUMO] %s: %llu ms armado | rotas SET_ADDRESS=%ld MPO1=%ld MPO3=%ld imediatos=%ld fora_do_seg1=%ld | "
+        "latch em quadros 0=%ld 1=%ld 2=%ld 3+=%ld | latch em ms <16,7=%ld <33,4=%ld <50=%ld 50+=%ld | "
+        "latchados_via_irq_do_flip=%ld de latchados=%ld | PISC1 contador_atrasado=%ld tardios_reais=%ld | "
+        "OTG %lu quadros = %lu.%03lu Hz; VSYNC do OTG visto %ld (perdidos %ld); VSYNC notificados %ld\n",
+        Why, (unsigned long long)(elapsedUs / 1000ull),
+        (long)s_Bc250Dcn.RouteSetAddress, (long)s_Bc250Dcn.RouteMpo1, (long)s_Bc250Dcn.RouteMpo3,
+        (long)s_Bc250Dcn.RouteImmediate, (long)s_Bc250Dcn.NotSegment1,
+        (long)s_Bc250Dcn.LatchFrames[0], (long)s_Bc250Dcn.LatchFrames[1],
+        (long)s_Bc250Dcn.LatchFrames[2], (long)s_Bc250Dcn.LatchFrames[3],
+        (long)s_Bc250Dcn.LatchUs[0], (long)s_Bc250Dcn.LatchUs[1],
+        (long)s_Bc250Dcn.LatchUs[2], (long)s_Bc250Dcn.LatchUs[3],
+        (long)s_Bc250Dcn.LatchedViaFlipIrq, (long)InterlockedCompareExchange(&s_Bc250Dcn.Latched, 0, 0),
+        (long)s_Bc250Dcn.LatchStaleCounter, (long)s_Bc250Dcn.LatchLateReal,
+        (unsigned long)frames, (unsigned long)(mhz / 1000u), (unsigned long)(mhz % 1000u),
+        (long)hw, (long)((LONG)frames - hw), (long)vs);
+    if (Bc250Dcn2KeysArmed() != 0u) Bc250Dcn2LogSummary(Why);
+}
+
+/* D4: chamado no DPC de VSYNC; marca o flip como exibido so' depois do latch.
+ * Devolve TRUE so' na chamada que resolveu um latch NOVO (doc 716 par.6.1,
+ * doc 717): o chamador usa isso com Bc250DcnFlipLatchIsViaIrq para saber se
+ * foi a interrupcao do flip, nao o timer de 4 ms, que pegou esta resolucao. */
+static BOOLEAN Bc250DcnFlipPollLatch(void)
+{
+    LONG flipsBefore;
+    LONG resolved;
+    LONG skipped;
+    UINT64 requested;
+    LONG64 requestedSeg;
+    ULONG flipCtl, lo, hi;
+
+    if (InterlockedCompareExchange(&s_Bc250Dcn.Armed, 0, 0) == 0 || s_Bc250Dcn.Window == NULL)
+        return FALSE;
+    flipsBefore = InterlockedCompareExchange(&s_Bc250Dcn.Flips, 0, 0);
+    if (flipsBefore == 0) return FALSE;
+    /* Pela sequencia, nao pelo segmento: flip repetido para o endereco ja
+     * exibido tambem precisa ser resolvido (Corrida 269, doc 711). */
+    resolved = InterlockedCompareExchange(&s_Bc250Dcn.ResolvedSeq, 0, 0);
+    if (resolved >= flipsBefore) return FALSE;
+    requestedSeg = InterlockedCompareExchange64(&s_Bc250Dcn.RequestedSeg, 0, 0);
+    requested = (UINT64)InterlockedCompareExchange64(&s_Bc250Dcn.RequestedDcn, 0, 0);
+    flipCtl = Bc250DcnRead(BC250_DCN_FLIP_REG_HUBPREQ0_FLIP_CONTROL);
+    lo = Bc250DcnRead(BC250_DCN_FLIP_REG_HUBPREQ0_EARLIEST_INUSE);
+    hi = Bc250DcnRead(BC250_DCN_FLIP_REG_HUBPREQ0_EARLIEST_INUSE_HI);
+    if (InterlockedCompareExchange(&s_Bc250Dcn.Flips, 0, 0) != flipsBefore) return FALSE; /* flip novo no meio */
+    if (Bc250DcnFlipIsPending(flipCtl, lo, hi, requested)) return FALSE;
+    if (InterlockedCompareExchange(&s_Bc250Dcn.ResolvedSeq, flipsBefore, resolved) != resolved) return FALSE;
+    skipped = (LONG)Bc250DcnFlipSupersededBetween((uint32_t)resolved, (uint32_t)flipsBefore);
+    if (skipped != 0) InterlockedAdd(&s_Bc250Dcn.Superseded, skipped);
+    InterlockedExchange64(&s_Bc250Dcn.DisplayedSeg, requestedSeg);
+    {
+        LARGE_INTEGER freq;
+        LONGLONG now = KeQueryPerformanceCounter(&freq).QuadPart;
+        LONG us = (freq.QuadPart > 0) ?
+            (LONG)(((now - InterlockedCompareExchange64(&s_Bc250Dcn.RequestQpc, 0, 0)) * 1000000LL) / freq.QuadPart) : 0;
+        uint32_t reqFrame = (uint32_t)InterlockedCompareExchange(&s_Bc250Dcn.RequestFrame, 0, 0);
+        uint32_t nowFrameReg = Bc250DcnRead(BC250_DCN_FLIP_REG_OTG0_STATUS_FRAME_COUNT) & BC250_DCN_FRAME_COUNT_MASK;
+        ULONG framesOld = Bc250DcnFrameDelta(reqFrame, g_Bc250DisplayState.LastOtgFrameCount);
+        ULONG frames = Bc250DcnFrameDelta(reqFrame, nowFrameReg);
+        LONG l = InterlockedIncrement(&s_Bc250Dcn.Latched);
+        if (framesOld >= 3u && frames < 3u) {
+            LONG st = InterlockedIncrement(&s_Bc250Dcn.LatchStaleCounter);
+            if (st <= 8 || (st % 256) == 0) {
+                Bc250DisplayLog("[PISC1_LATCH] CONTADOR_ATRASADO #%ld: pedido no quadro %u, registrador agora %u (%lu quadros), guardado no VSYNC %u (dava %lu) -- o balde 3+ antigo era contagem, nao latch tardio; %ld us\n",
+                    st, reqFrame, nowFrameReg, (unsigned long)frames,
+                    (unsigned)(g_Bc250DisplayState.LastOtgFrameCount & BC250_DCN_FRAME_COUNT_MASK),
+                    (unsigned long)framesOld, us);
+            }
+        }
+        if (frames >= 2u || us >= 33400) {
+            LONG lr = InterlockedIncrement(&s_Bc250Dcn.LatchLateReal);
+            if (lr <= 32 || (lr % 64) == 0) {
+                Bc250DisplayLog("[PISC1_LATCH] TARDIO #%ld: flip %ld pedido no quadro %u latchou no %u (%lu quadros, %ld us) HUBP0 0x%llX Seg 0x%llX substituidos=%ld\n",
+                    lr, (long)flipsBefore, reqFrame, nowFrameReg, (unsigned long)frames, us,
+                    (unsigned long long)requested, (unsigned long long)requestedSeg,
+                    (long)s_Bc250Dcn.Superseded);
+            }
+        }
+        if (us > s_Bc250Dcn.MaxLatchUs) InterlockedExchange(&s_Bc250Dcn.MaxLatchUs, us);
+        InterlockedIncrement(&s_Bc250Dcn.LatchFrames[Bc250DcnLatchFrameBucket(frames)]);
+        InterlockedIncrement(&s_Bc250Dcn.LatchUs[Bc250DcnLatchUsBucket(us > 0 ? (uint32_t)us : 0u)]);
+        if (l <= 16 || (l % 256) == 0) {
+            Bc250DisplayLog("[DCN1_LATCH] #%ld HUBP0 0x%llX latchado (EARLIEST_INUSE=0x%04X:%08X, FLIP_PENDING=0) em %ld us depois do pedido; VSYNC passa a reportar Seg 0x%llX (max %ld us) flip=%ld substituidos=%ld\n",
+                l, (unsigned long long)requested, hi & 0xFFFFu, lo, us,
+                (unsigned long long)requestedSeg, (long)s_Bc250Dcn.MaxLatchUs,
+                (long)flipsBefore, (long)s_Bc250Dcn.Superseded);
+        }
+        if (l == 1) {
+            /* doc 724: mesma base de QPC do [DCN2_VTOTAL] DEVOLVIDO (ambos
+             * sao KeQueryPerformanceCounter, mesmo contador do sistema) --
+             * da para subtrair os dois qpc_abs e saber o tempo real entre a
+             * volta do V_TOTAL ao GOP e o primeiro flip latchar, em vez de
+             * inferir so' pela posicao das linhas no log (Corrida 275). */
+            Bc250DisplayLog("[DCN1_LATCH] #1 qpc_abs=%lld freq=%lld (doc 724, isola a 275: comparar com qpc do DCN2_VTOTAL DEVOLVIDO)\n",
+                (long long)now, (long long)freq.QuadPart);
+        }
+        {
+            /* Corrida 270 (doc 712): por contagem o resumo nunca saiu numa trava
+             * precoce. Agora a cada 256 quadros do OTG (~4 s). */
+            static ULONG s_LastSummaryFrame = 0;
+            ULONG nowFrame = g_Bc250DisplayState.LastOtgFrameCount & BC250_DCN_FRAME_COUNT_MASK;
+            if (Bc250DcnFrameDelta(s_LastSummaryFrame, nowFrame) >= 256u) {
+                s_LastSummaryFrame = nowFrame;
+                Bc250DcnFlipLogSummary("PERIODICO");
+            }
+        }
+    }
+    return TRUE;
+}
+
+/* D4: endereco de segmento que o VSYNC deve reportar (0 = sem flip latchado). */
+static LONG64 Bc250DcnFlipDisplayedSegment(void)
+{
+    if (InterlockedCompareExchange(&s_Bc250Dcn.Armed, 0, 0) == 0) return 0;
+    return InterlockedCompareExchange64(&s_Bc250Dcn.DisplayedSeg, 0, 0);
+}
+
+/* Lei 5: devolve o HUBP0 ao scanout do GOP antes do BasicDisplay. */
+static VOID Bc250DcnFlipRestoreGop(_In_ const char *Why)
+{
+    ULONG hiRb = 0u, loRb = 0u;
+    if (s_Bc250Dcn.Window == NULL) return;
+    InterlockedExchange(&s_Bc250Dcn.Armed, 0);
+    if (s_Bc250Dcn.GopRead && InterlockedCompareExchange(&s_Bc250Dcn.Flips, 0, 0) != 0) {
+        LONG flips = InterlockedCompareExchange(&s_Bc250Dcn.Flips, 0, 0);
+        LONG latched = InterlockedCompareExchange(&s_Bc250Dcn.Latched, 0, 0);
+        LONG superseded = InterlockedCompareExchange(&s_Bc250Dcn.Superseded, 0, 0);
+        LONG pending = flips - InterlockedCompareExchange(&s_Bc250Dcn.ResolvedSeq, 0, 0);
+        Bc250DcnWrite(BC250_DCN_FLIP_REG_HUBPREQ0_FLIP_CONTROL, s_Bc250Dcn.Gop.FlipControl);
+        Bc250DcnWrite(BC250_DCN_FLIP_REG_HUBPREQ0_PRIMARY_ADDR_HI, s_Bc250Dcn.Gop.PrimaryAddrHi);
+        Bc250DcnWrite(BC250_DCN_FLIP_REG_HUBPREQ0_PRIMARY_ADDR, s_Bc250Dcn.Gop.PrimaryAddrLo);
+        hiRb = Bc250DcnRead(BC250_DCN_FLIP_REG_HUBPREQ0_PRIMARY_ADDR_HI);
+        loRb = Bc250DcnRead(BC250_DCN_FLIP_REG_HUBPREQ0_PRIMARY_ADDR);
+        InterlockedExchange(&s_Bc250Dcn.OnUserSurface, 0);
+        Bc250DcnFlipLogSummary(Why);
+        Bc250DisplayLog("[DCN1_TEARDOWN] %s: HUBP0 devolvido ao GOP 0x%04X:%08X (readback 0x%04X:%08X %s) FLIP_CONTROL=0x%08X | flips=%ld latchados=%ld via_irq_do_flip=%ld substituidos=%ld pendentes=%ld conta=%s recusas=%ld readback_falhou=%ld copias_omitidas=%ld latch_max=%ld us\n",
+            Why, s_Bc250Dcn.Gop.PrimaryAddrHi & 0xFFFFu, s_Bc250Dcn.Gop.PrimaryAddrLo,
+            hiRb & 0xFFFFu, loRb,
+            ((hiRb & 0xFFFFu) == (s_Bc250Dcn.Gop.PrimaryAddrHi & 0xFFFFu) && loRb == s_Bc250Dcn.Gop.PrimaryAddrLo) ? "OK" : "DIVERGE",
+            s_Bc250Dcn.Gop.FlipControl,
+            (long)flips, (long)latched, (long)InterlockedCompareExchange(&s_Bc250Dcn.LatchedViaFlipIrq, 0, 0),
+            (long)superseded, (long)pending,
+            (latched + superseded + pending == flips) ? "FECHA" : "DIVERGE",
+            (long)s_Bc250Dcn.Refused,
+            (long)s_Bc250Dcn.ReadbackFail, (long)s_Bc250Dcn.CopiesSkipped, (long)s_Bc250Dcn.MaxLatchUs);
+    }
+}
+
+static VOID Bc250DcnFlipUnmap(void)
+{
+    if (s_Bc250Dcn.Window != NULL) {
+        MmUnmapIoSpace((PVOID)s_Bc250Dcn.Window, BC250_DCN_FLIP_WINDOW_BYTES);
+        s_Bc250Dcn.Window = NULL;
+    }
+    s_Bc250Dcn.GopRead = FALSE;
+}
+
+/* =========================================================================
+ * DCN.2 (doc 713, P9 ampliada pelo Daniel em 12/10/2026): timing real do OTG
+ * no VidPn, VSYNC e flip pela interrupcao do DCN, CRC do OTG, cursor por
+ * hardware e o lado seguro do conector (EDID real por AUX, HPD so' leitura,
+ * apagar/acender o OTG). Cada item tem um bit na chave DcnExt (INF, padrao 0)
+ * e falha fechado sozinho. Offsets e sequencias: bc250_dcn_ext_contract.h.
+ * ========================================================================= */
+/* Janela de CPU da VRAM (256 MB, doc 200): limite para o cursor. */
+#define BC250_DCN2_CPU_WINDOW_BYTES 0x10000000ull
+
+/* DIRQL.1 (doc 714): contadores do log sem trava, definidos junto ao anel. */
+extern volatile LONG g_Bc250HirqlLogLines;
+extern volatile LONG g_Bc250HirqlLogDropped;
+
+typedef struct BC250_DCN2_CRC_BUFFER {
+    LONG64 Seg;
+    ULONG Crc;
+    LONG Samples;
+    LONG Changes;
+} BC250_DCN2_CRC_BUFFER;
+
+typedef struct BC250_DCN2_RUNTIME {
+    ULONG Keys;
+    /* 1. timing */
+    BC250_DCN_TIMING Timing;
+    ULONG TimingRefuse;
+    BOOLEAN TimingMeasured;
+    BOOLEAN TimingApplied;
+    /* 6. EDID / HPD / AUX */
+    UCHAR RealEdid[256];
+    ULONG RealEdidBytes;
+    LONG RealEdidDtd;
+    BOOLEAN RealEdidPublished;
+    ULONG HpdStatus[BC250_DCN2_HPD_COUNT];
+    ULONG AuxChannel;
+    ULONG AuxTransactions;
+    ULONG AuxFailures;
+    UCHAR Dpcd[16];
+    BOOLEAN DpcdRead;
+    ULONG AuxLastStatus;     /* DCN.3: AUX_SW_STATUS da ultima falha */
+    ULONG AuxLastDone;
+    /* 2. interrupcao */
+    volatile LONG IrqArmed;
+    ULONG SavedGlobalSync;
+    ULONG SavedFlipInt;
+    volatile LONG64 IrqVstartup;
+    volatile LONG64 IrqFlip;
+    /* Completar o flip pela interrupcao (doc 716 par.6.1, doc 717): ligado
+     * pelo ISR a cada interrupcao de flip do HUBP0 e consumido (zerado) pelo
+     * DPC de VSYNC na proxima chamada -- diz se FOI o flip, nao o timer de
+     * 4 ms, que acordou aquela chamada especifica do DPC. */
+    volatile LONG FlipIrqDpcPending;
+    volatile LONG IrqPending;
+    volatile LONG64 IrqLastQpc;
+    volatile LONG IrqVsyncNotified;
+    volatile LONG IrqCoalesced;
+    volatile LONG IrqFallbackTicks;
+    /* DCN.3 (doc 714): VUPDATE sem lock e VLINE0 em paralelo com a VSTARTUP. */
+    ULONG SavedVint0Pos;
+    ULONG SavedVint0Ctl;
+    volatile LONG64 IrqVupdate;
+    volatile LONG64 IrqVline0;
+    volatile LONG IrqSameFrame;
+    ULONG VstartupParam;
+    ULONG C06AfterClear;      /* C06 (doc 764): GLOBAL_SYNC lido entre o ack e o enable */
+    ULONG FmtControl;
+    ULONG FmtBitDepth;
+    /* 3. CRC */
+    volatile LONG CrcArmed;
+    ULONG SavedCrcCntl;
+    ULONG SavedCrcWin[4];
+    ULONG LastCrc;
+    LONG CrcSamples;
+    LONG CrcChanges;
+    LONG CrcStableRun;
+    LONG CrcStableMax;
+    LONG64 CrcLastSeg;
+    LONG CrcSegFrames;
+    BC250_DCN2_CRC_BUFFER CrcBuf[4];
+    /* 4. cursor */
+    UINT64 CursorVramOffset;
+    PVOID CursorCpu;
+    UINT64 CursorDcnAddress[2];
+    BOOLEAN CursorVramReady;
+    BOOLEAN CursorSaved;
+    ULONG CursorSlot;
+    ULONG CursorWidth;
+    ULONG CursorHeight;
+    BOOLEAN CursorHasShape;
+    ULONG SavedCursorControl;
+    ULONG SavedCursorSettings;
+    ULONG SavedCursorAddr;
+    ULONG SavedCursorAddrHi;
+    ULONG SavedCursorSize;
+    ULONG SavedCnvcControl;
+    ULONG SavedCnvcScaleBias;
+    LONG CursorShapes;
+    LONG CursorShapeRefused;
+    LONG CursorMoves;
+    LONG CursorHidden;
+    LONG CursorNeedsXor;
+    LONG CursorMono;
+    LONG CursorMasked;
+    /* 6. DPMS */
+    ULONG SavedBlankControl;
+    BOOLEAN BlankSaved;
+    LONG Blanks;
+    LONG Unblanks;
+    /* 7. D06 (so' leitura, doc 716/718): roteamento das interrupcoes. */
+    ULONG IrqDestOtg;      /* ultimo OTG0_INTERRUPT_DEST lido */
+    ULONG IrqDestDchub2;   /* ultimo DCHUB_INTERRUPT_DEST2 lido */
+    BOOLEAN IrqDestRead;
+    /* 8. D12 (doc 716/718): pad DDC1/AUX0 em modo hardware/AUX. */
+    LONG AuxPadAcquires;
+    LONG AuxPadReadbackFail;
+    LONG AuxPadReleaseFail; /* doc 725: a 276 nao tinha prova P0 da devolucao (so' a escrita, sem log) */
+    /* 9. D19 (doc 716/720): prova de troca de refresh pelo V_TOTAL. */
+    LONG VTotalProved;
+    LONG VTotalReadbackFail;
+    LONG VTotalRestoreFail;
+    /* doc 727 (Corrida 279): MIN/MAX acompanham o V_TOTAL, como
+     * optc1_program_timing (dcn10_optc.c) faz em toda troca -- o D19 ate
+     * aqui so' escrevia V_TOTAL, e nunca conferiu se MIN_SEL/MAX_SEL do GOP
+     * fazem o hardware ignorar esse valor. */
+    LONG VTotalMinMaxReadbackFail;
+    LONG VTotalMinMaxRestoreFail;
+    /* doc 730/731 (Caminho B): o GOP nunca escreve V_TOTAL com o pipe ativo
+     * sem apagar antes (program_timing so' roda com blank_pixel_data(true)
+     * ja aplicado, dcn20_hwseq.c). Apaga pelo OTG_BLANK_CONTROL (mesmo
+     * registrador do D08), so' durante a janela do D19, com confirmacao por
+     * OTG_CURRENT_BLANK_STATE antes de tocar V_TOTAL e depois de devolver. */
+    LONG VTotalBlankConfirmFail;
+    LONG VTotalUnblankConfirmFail;
+} BC250_DCN2_RUNTIME;
+static BC250_DCN2_RUNTIME s_Bc250Dcn2;
+static uint32_t s_Bc250Dcn2CursorScratch[BC250_DCN_CURSOR_MAX * BC250_DCN_CURSOR_MAX];
+
+static BOOLEAN Bc250Dcn2Key(ULONG Bit)
+{
+    return (s_Bc250Dcn2.Keys & Bit) != 0u && s_Bc250Dcn.Window != NULL && s_Bc250Dcn.GopRead;
+}
+
+/* ---- 1. Timing real (so' leitura; chamado no D2, PASSIVE_LEVEL) ---------- */
+static BOOLEAN Bc250Dcn2ReadScanPair(ULONG *Frame, ULONG *Vert)
+{
+    ULONG k;
+    for (k = 0u; k < 8u; ++k) {
+        ULONG f1 = Bc250DcnRead(BC250_DCN_FLIP_REG_OTG0_STATUS_FRAME_COUNT) & BC250_DCN_FRAME_COUNT_MASK;
+        ULONG v = Bc250DcnRead(BC250_DCN2_REG_OTG0_STATUS_POSITION) & BC250_DCN2_VERT_COUNT_MASK;
+        ULONG f2 = Bc250DcnRead(BC250_DCN_FLIP_REG_OTG0_STATUS_FRAME_COUNT) & BC250_DCN_FRAME_COUNT_MASK;
+        if (f1 == f2) { *Frame = f1; *Vert = v; return TRUE; }
+    }
+    return FALSE;
+}
+
+static VOID Bc250Dcn2MeasureTiming(void)
+{
+    ULONG f1 = 0u, v1 = 0u, f2 = 0u, v2 = 0u;
+    LARGE_INTEGER freq, t1, t2, delay;
+    UINT64 elapsed100ns;
+    ULONG mhz = 0u;
+    if (s_Bc250Dcn.Window == NULL || KeGetCurrentIrql() != PASSIVE_LEVEL) return;
+    s_Bc250Dcn2.TimingRefuse = Bc250DcnTimingDecode(
+        Bc250DcnRead(BC250_DCN2_REG_OTG0_H_TOTAL), Bc250DcnRead(BC250_DCN2_REG_OTG0_H_BLANK_START_END),
+        Bc250DcnRead(BC250_DCN2_REG_OTG0_H_SYNC_A), Bc250DcnRead(BC250_DCN2_REG_OTG0_H_SYNC_A_CNTL),
+        Bc250DcnRead(BC250_DCN2_REG_OTG0_V_TOTAL), Bc250DcnRead(BC250_DCN2_REG_OTG0_V_BLANK_START_END),
+        Bc250DcnRead(BC250_DCN2_REG_OTG0_V_SYNC_A), Bc250DcnRead(BC250_DCN2_REG_OTG0_V_SYNC_A_CNTL),
+        g_Bc250DisplayState.CurrentMode.Width, g_Bc250DisplayState.CurrentMode.Height,
+        &s_Bc250Dcn2.Timing);
+    /* Medida: linhas varridas em ~200 ms (quadros * VTotal + delta vertical). */
+    if (Bc250Dcn2ReadScanPair(&f1, &v1)) {
+        t1 = KeQueryPerformanceCounter(&freq);
+        delay.QuadPart = -2000000LL;
+        (void)KeDelayExecutionThread(KernelMode, FALSE, &delay);
+        if (Bc250Dcn2ReadScanPair(&f2, &v2)) {
+            t2 = KeQueryPerformanceCounter(NULL);
+            elapsed100ns = (freq.QuadPart > 0) ?
+                (UINT64)(((t2.QuadPart - t1.QuadPart) * 10000000LL) / freq.QuadPart) : 0ull;
+            mhz = Bc250DcnRefreshFromScan(Bc250DcnFrameDelta(f1, f2), (int32_t)v2 - (int32_t)v1,
+                s_Bc250Dcn2.Timing.VTotal, elapsed100ns);
+        }
+    }
+    s_Bc250Dcn2.TimingRefuse |= Bc250DcnTimingApplyRefresh(&s_Bc250Dcn2.Timing, mhz);
+    s_Bc250Dcn2.TimingMeasured = (s_Bc250Dcn2.TimingRefuse == 0u) ? TRUE : FALSE;
+    Bc250DisplayLog("[DCN2_TIMING] OTG0 lido: ativo %ux%u total %ux%u porch/sync H %u/%u V %u/%u pol H%c V%c | medido %lu.%03lu Hz, clock de pixel %llu Hz | recusa=0x%02X (1=total 2=ativo!=GOP 4=sync 8=refresh) | constante antiga: 56,130 Hz, 173611437 Hz\n",
+        s_Bc250Dcn2.Timing.HActive, s_Bc250Dcn2.Timing.VActive,
+        s_Bc250Dcn2.Timing.HTotal, s_Bc250Dcn2.Timing.VTotal,
+        s_Bc250Dcn2.Timing.HFrontPorch, s_Bc250Dcn2.Timing.HSyncWidth,
+        s_Bc250Dcn2.Timing.VFrontPorch, s_Bc250Dcn2.Timing.VSyncWidth,
+        s_Bc250Dcn2.Timing.HSyncPositive ? '+' : '-', s_Bc250Dcn2.Timing.VSyncPositive ? '+' : '-',
+        (unsigned long)(mhz / 1000u), (unsigned long)(mhz % 1000u),
+        (unsigned long long)s_Bc250Dcn2.Timing.PixelRateHz, s_Bc250Dcn2.TimingRefuse);
+}
+
+/* doc 727 (Corrida 279), so' leitura: optc1_program_timing (dcn10_optc.c)
+ * escreve MIN/MAX junto com V_TOTAL "In case of V_TOTAL_CONTROL is on"; o
+ * D19 nunca leu estes tres. Se o GOP deixou MIN_SEL/MAX_SEL ligado, o
+ * V_TOTAL "normal" que escrevemos pode nao ser o que governa a varredura de
+ * verdade -- hipotese para os artefatos persistentes de 276 a 279, que nao
+ * se resolveram religando o monitor nem o cabo (o estado seria do nosso
+ * OTG, nao do monitor). */
+static VOID Bc250Dcn2LogVTotalControl(_In_ const char *When)
+{
+    ULONG ctl = Bc250DcnRead(BC250_DCN2_REG_OTG0_V_TOTAL_CONTROL);
+    Bc250DisplayLog("[DCN2_VTOTAL_CONTROL] %s: V_TOTAL=%lu V_TOTAL_MIN=%lu V_TOTAL_MAX=%lu CONTROL=0x%08X (MIN_SEL=%u MAX_SEL=%u MID_REPL_MAX=%u MID_REPL_MIN=%u FORCE_LOCK=%u)\n",
+        When,
+        Bc250DcnRead(BC250_DCN2_REG_OTG0_V_TOTAL) & BC250_DCN2_TOTAL_MASK,
+        Bc250DcnRead(BC250_DCN2_REG_OTG0_V_TOTAL_MIN) & BC250_DCN2_TOTAL_MASK,
+        Bc250DcnRead(BC250_DCN2_REG_OTG0_V_TOTAL_MAX) & BC250_DCN2_TOTAL_MASK,
+        ctl,
+        (ctl & BC250_DCN2_V_TOTAL_MIN_SEL) ? 1u : 0u, (ctl & BC250_DCN2_V_TOTAL_MAX_SEL) ? 1u : 0u,
+        (ctl & BC250_DCN2_VTOTAL_MID_REPLACING_MAX_EN) ? 1u : 0u, (ctl & BC250_DCN2_VTOTAL_MID_REPLACING_MIN_EN) ? 1u : 0u,
+        (ctl & BC250_DCN2_FORCE_LOCK_ON_EVENT) ? 1u : 0u);
+}
+
+/* doc 730/731 (Caminho B, Corrida 282): a AMD real so' escreve OTG_V_TOTAL
+ * com o pipe ja apagado (dcn20_hwseq.c: blank_pixel_data(dc, pipe_ctx, true)
+ * roda ANTES de qualquer troca de temporizacao num pipe que ja estava
+ * ativo; o outro caminho -- DRR de verdade -- nunca toca o V_TOTAL simples,
+ * so' MIN/MAX+SEL+gatilho). O D19 escrevia V_TOTAL com o pipe ACESO, um
+ * terceiro caminho que a AMD nunca usa (doc 730) -- funcionou por sorte na
+ * 275 e falhou nas 276-280. Aqui: mesmo registrador do D08
+ * (OTG0_BLANK_CONTROL), mas salvo/devolvido localmente (sem tocar o estado
+ * estatico do DPMS) e com CONFIRMACAO por OTG_CURRENT_BLANK_STATE antes de
+ * tocar V_TOTAL e depois de devolver -- falha fechada: se o apagamento nao
+ * confirmar, o V_TOTAL NAO e' tocado. */
+static BOOLEAN Bc250Dcn2VTotalBlank(_Out_ ULONG *SavedBlankControl)
+{
+    ULONG before, want, waitedUs;
+    before = Bc250DcnRead(BC250_DCN2_REG_OTG0_BLANK_CONTROL);
+    *SavedBlankControl = before;
+    want = Bc250DcnField(before, BC250_DCN2_BLANK_DATA_EN | BC250_DCN2_BLANK_DE_MODE, BC250_DCN2_BLANK_DATA_EN);
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_BLANK_CONTROL, want);
+    for (waitedUs = 0u; waitedUs <= 20000u; waitedUs += 50u) {
+        if ((Bc250DcnRead(BC250_DCN2_REG_OTG0_BLANK_CONTROL) & BC250_DCN2_BLANK_CURRENT_STATE) != 0u) {
+            Bc250DisplayLog("[DCN2_VTOTAL_BLANK] APAGADO: OTG_BLANK_CONTROL 0x%08X->0x%08X confirmado por OTG_CURRENT_BLANK_STATE em %lu us (so' para esta troca; devolve antes de acender)\n",
+                before, want, (unsigned long)waitedUs);
+            return TRUE;
+        }
+        KeStallExecutionProcessor(50u);
+    }
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_BLANK_CONTROL, before); /* falha fechada: nao segue sem confirmar */
+    InterlockedIncrement(&s_Bc250Dcn2.VTotalBlankConfirmFail);
+    Bc250DisplayLog("[DCN2_VTOTAL_BLANK] RECUSADO: OTG_CURRENT_BLANK_STATE nao confirmou apagado em 20 ms; V_TOTAL NAO sera tocado (falha fechada)\n");
+    return FALSE;
+}
+
+static VOID Bc250Dcn2VTotalUnblank(ULONG SavedBlankControl)
+{
+    ULONG wantState, waitedUs;
+    wantState = SavedBlankControl & BC250_DCN2_BLANK_CURRENT_STATE;
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_BLANK_CONTROL, SavedBlankControl);
+    for (waitedUs = 0u; waitedUs <= 20000u; waitedUs += 50u) {
+        if ((Bc250DcnRead(BC250_DCN2_REG_OTG0_BLANK_CONTROL) & BC250_DCN2_BLANK_CURRENT_STATE) == wantState) {
+            Bc250DisplayLog("[DCN2_VTOTAL_BLANK] ACESO: OTG_BLANK_CONTROL de volta a 0x%08X confirmado por OTG_CURRENT_BLANK_STATE em %lu us\n",
+                SavedBlankControl, (unsigned long)waitedUs);
+            return;
+        }
+        KeStallExecutionProcessor(50u);
+    }
+    InterlockedIncrement(&s_Bc250Dcn2.VTotalUnblankConfirmFail);
+    Bc250DisplayLog("[DCN2_VTOTAL_BLANK] AVISO: devolucao do blank ao valor do GOP (0x%08X) nao confirmou por OTG_CURRENT_BLANK_STATE em 20 ms\n",
+        SavedBlankControl);
+}
+
+/* D19 (doc 716 par.6.4, doc 720, proposto para a 275): prova que o V_TOTAL
+ * muda o refresh medido de verdade (nao so' o readback do nosso proprio
+ * registrador) -- sem tocar H_TOTAL, blank, sync, clock, PHY nem link. So'
+ * diminui o refresh (aumenta V_TOTAL, Bc250DcnComputeVTotalForRefresh);
+ * autocontido: muda, mede pela varredura (~200 ms), e devolve ao V_TOTAL do
+ * GOP antes do desktop aparecer, para nao confundir o resto da corrida com
+ * um refresh que o Windows nao sabe que mudou (Lei 5). */
+static VOID Bc250Dcn2VTotalProve(void)
+{
+    uint32_t newVTotal = 0u, refuse;
+    uint32_t currentMilliHz, desiredMilliHz;
+    ULONG before, want, after;
+    ULONG savedMin, savedMax, wantMinMax, afterMin, afterMax;
+    ULONG savedBlank;
+    LARGE_INTEGER startQpc, freqQpc, nowQpc;
+    uint64_t elapsedMs;
+
+    startQpc = KeQueryPerformanceCounter(&freqQpc);
+
+    if (s_Bc250Dcn.Window == NULL || !s_Bc250Dcn2.TimingMeasured) {
+        Bc250DisplayLog("[DCN2_VTOTAL] RECUSADO: timing ainda nao medido\n");
+        return;
+    }
+    Bc250Dcn2LogVTotalControl("ANTES (como o GOP deixou)");
+    currentMilliHz = s_Bc250Dcn2.Timing.RefreshMilliHz;
+    desiredMilliHz = (currentMilliHz > 10000u) ? currentMilliHz - 10000u : 0u; /* -10 Hz, so' prova */
+    refuse = Bc250DcnComputeVTotalForRefresh(s_Bc250Dcn2.Timing.VTotal, currentMilliHz, desiredMilliHz, &newVTotal);
+    if (refuse != 0u) {
+        Bc250DisplayLog("[DCN2_VTOTAL] RECUSADO: recusa=0x%02X (atual %lu.%03lu Hz, pedido %lu.%03lu Hz)\n",
+            refuse, currentMilliHz / 1000u, currentMilliHz % 1000u, desiredMilliHz / 1000u, desiredMilliHz % 1000u);
+        return;
+    }
+    if (!Bc250Dcn2VTotalBlank(&savedBlank)) return; /* falha fechada: sem apagar confirmado, V_TOTAL fica intocado */
+    before = Bc250DcnRead(BC250_DCN2_REG_OTG0_V_TOTAL);
+    want = Bc250DcnField(before, BC250_DCN2_TOTAL_MASK, (newVTotal - 1u) & BC250_DCN2_TOTAL_MASK);
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_V_TOTAL, want);
+    after = Bc250DcnRead(BC250_DCN2_REG_OTG0_V_TOTAL);
+    if (after != want) {
+        Bc250DcnWrite(BC250_DCN2_REG_OTG0_V_TOTAL, before); /* falha fechada */
+        InterlockedIncrement(&s_Bc250Dcn2.VTotalReadbackFail);
+        Bc250DisplayLog("[DCN2_VTOTAL] READBACK FALHOU: pedido=0x%08X lido=0x%08X; V_TOTAL devolvido ao do GOP (falha fechada)\n",
+            want, after);
+        Bc250Dcn2VTotalUnblank(savedBlank);
+        return;
+    }
+    Bc250DisplayLog("[DCN2_VTOTAL] APLICADO: OTG0_V_TOTAL 0x%08X->0x%08X (V_TOTAL %lu->%lu, pedido %lu.%03lu Hz); medindo pela varredura...\n",
+        before, want, s_Bc250Dcn2.Timing.VTotal, newVTotal, desiredMilliHz / 1000u, desiredMilliHz % 1000u);
+    /* doc 727 (Corrida 279): optc1_program_timing (dcn10_optc.c:226-229)
+     * escreve MIN e MAX junto com V_TOTAL em TODA troca, "In case of
+     * V_TOTAL_CONTROL is on" -- fazemos o mesmo, sem depender de MIN_SEL/
+     * MAX_SEL estarem ligados (se estiverem em 0, isto e' inofensivo; se
+     * estiverem em 1, e' o que faltava para o V_TOTAL novo valer de verdade). */
+    savedMin = Bc250DcnRead(BC250_DCN2_REG_OTG0_V_TOTAL_MIN);
+    savedMax = Bc250DcnRead(BC250_DCN2_REG_OTG0_V_TOTAL_MAX);
+    wantMinMax = (newVTotal - 1u) & BC250_DCN2_TOTAL_MASK;
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_V_TOTAL_MIN, Bc250DcnField(savedMin, BC250_DCN2_TOTAL_MASK, wantMinMax));
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_V_TOTAL_MAX, Bc250DcnField(savedMax, BC250_DCN2_TOTAL_MASK, wantMinMax));
+    afterMin = Bc250DcnRead(BC250_DCN2_REG_OTG0_V_TOTAL_MIN);
+    afterMax = Bc250DcnRead(BC250_DCN2_REG_OTG0_V_TOTAL_MAX);
+    if ((afterMin & BC250_DCN2_TOTAL_MASK) != wantMinMax || (afterMax & BC250_DCN2_TOTAL_MASK) != wantMinMax) {
+        Bc250DcnWrite(BC250_DCN2_REG_OTG0_V_TOTAL_MIN, savedMin); /* falha fechada */
+        Bc250DcnWrite(BC250_DCN2_REG_OTG0_V_TOTAL_MAX, savedMax);
+        Bc250DcnWrite(BC250_DCN2_REG_OTG0_V_TOTAL, before);
+        InterlockedIncrement(&s_Bc250Dcn2.VTotalMinMaxReadbackFail);
+        Bc250DisplayLog("[DCN2_VTOTAL] MIN/MAX READBACK FALHOU: pedido=0x%08X lido_min=0x%08X lido_max=0x%08X; V_TOTAL/MIN/MAX devolvidos ao do GOP (falha fechada)\n",
+            wantMinMax, afterMin, afterMax);
+        Bc250Dcn2VTotalUnblank(savedBlank);
+        return;
+    }
+    Bc250DisplayLog("[DCN2_VTOTAL] MIN/MAX ACOMPANHARAM: OTG0_V_TOTAL_MIN 0x%08X->0x%08X, OTG0_V_TOTAL_MAX 0x%08X->0x%08X (readback OK, como optc1_program_timing)\n",
+        savedMin, afterMin, savedMax, afterMax);
+    Bc250Dcn2LogVTotalControl("DEPOIS DO APLICADO");
+    Bc250Dcn2MeasureTiming(); /* re-mede com o V_TOTAL novo, ~200 ms */
+    InterlockedIncrement(&s_Bc250Dcn2.VTotalProved);
+    nowQpc = KeQueryPerformanceCounter(NULL);
+    elapsedMs = Bc250DcnElapsedMs(startQpc.QuadPart, nowQpc.QuadPart, freqQpc.QuadPart);
+    Bc250DisplayLog("[DCN2_VTOTAL] MEDIDO: %lu.%03lu Hz com V_TOTAL=%lu lido de volta (pedido era %lu.%03lu Hz) | decorrido_desde_inicio=%llu ms (doc 724, isola a 275)\n",
+        s_Bc250Dcn2.Timing.RefreshMilliHz / 1000u, s_Bc250Dcn2.Timing.RefreshMilliHz % 1000u,
+        s_Bc250Dcn2.Timing.VTotal, desiredMilliHz / 1000u, desiredMilliHz % 1000u,
+        (unsigned long long)elapsedMs);
+    /* Lei 5: devolve V_TOTAL, MIN e MAX ao valor do GOP e confere de novo, antes do desktop. */
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_V_TOTAL, before);
+    if (Bc250DcnRead(BC250_DCN2_REG_OTG0_V_TOTAL) != before) {
+        InterlockedIncrement(&s_Bc250Dcn2.VTotalRestoreFail);
+        Bc250DisplayLog("[DCN2_VTOTAL] AVISO: devolucao ao V_TOTAL do GOP nao confirmou por readback\n");
+    }
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_V_TOTAL_MIN, savedMin);
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_V_TOTAL_MAX, savedMax);
+    if (Bc250DcnRead(BC250_DCN2_REG_OTG0_V_TOTAL_MIN) != savedMin || Bc250DcnRead(BC250_DCN2_REG_OTG0_V_TOTAL_MAX) != savedMax) {
+        InterlockedIncrement(&s_Bc250Dcn2.VTotalMinMaxRestoreFail);
+        Bc250DisplayLog("[DCN2_VTOTAL] AVISO: devolucao de MIN/MAX ao do GOP nao confirmou por readback\n");
+    }
+    Bc250Dcn2MeasureTiming(); /* confirma a volta ao refresh original, ainda apagado */
+    /* so' acende depois de V_TOTAL/MIN/MAX e o Hz medido confirmarem a volta
+     * ao estado do GOP -- a tela nunca mostra o estado de transicao. */
+    Bc250Dcn2VTotalUnblank(savedBlank);
+    nowQpc = KeQueryPerformanceCounter(NULL);
+    elapsedMs = Bc250DcnElapsedMs(startQpc.QuadPart, nowQpc.QuadPart, freqQpc.QuadPart);
+    Bc250DisplayLog("[DCN2_VTOTAL] DEVOLVIDO: %lu.%03lu Hz com V_TOTAL=%lu (GOP) | duracao_total_com_v_total_alterado=%llu ms desde o APLICADO | qpc_abs=%lld freq=%lld (doc 724, isola a 275: comparar com qpc_abs do DCN1_LATCH #1)\n",
+        s_Bc250Dcn2.Timing.RefreshMilliHz / 1000u, s_Bc250Dcn2.Timing.RefreshMilliHz % 1000u,
+        s_Bc250Dcn2.Timing.VTotal, (unsigned long long)elapsedMs,
+        (long long)nowQpc.QuadPart, (long long)freqQpc.QuadPart);
+    Bc250Dcn2LogVTotalControl("DEPOIS DO DEVOLVIDO");
+}
+
+/* ---- 6. AUX por software (dce_aux.c), PASSIVE_LEVEL ----------------------- */
+static BOOLEAN Bc250Dcn2AuxWait(ULONG Ch, ULONG Mask, ULONG Want, ULONG MaxUs, ULONG *Last)
+{
+    ULONG us, v = 0u;
+    for (us = 0u; us <= MaxUs; us += 10u) {
+        v = Bc250DcnRead(BC250_DCN2_REG_AUX_SW_STATUS(Ch));
+        if ((v & Mask) == Want) { if (Last) *Last = v; return TRUE; }
+        KeStallExecutionProcessor(10u);
+    }
+    if (Last) *Last = v;
+    return FALSE;
+}
+
+/* DCN.3 (doc 714): foto do AUX (so' leitura) para saber por que ele nao responde. */
+static VOID Bc250Dcn2AuxSnapshot(ULONG Ch, _In_ const char *When)
+{
+    Bc250DisplayLog("[DCN3_AUX] AUX%u %s: CONTROL=0x%08X (EN=%u HPD_SEL=%u LS_READ_EN=%u) ARB=0x%08X SW_STATUS=0x%08X LS_STATUS=0x%08X DPHY_TX=0x%08X RX0=0x%08X RX1=0x%08X\n",
+        Ch, When, Bc250DcnRead(BC250_DCN2_REG_AUX_CONTROL(Ch)),
+        Bc250DcnRead(BC250_DCN2_REG_AUX_CONTROL(Ch)) & BC250_DCN2_AUX_EN,
+        (Bc250DcnRead(BC250_DCN2_REG_AUX_CONTROL(Ch)) & BC250_DCN2_AUX_HPD_SEL_MASK) >> BC250_DCN2_AUX_HPD_SEL_SHIFT,
+        (Bc250DcnRead(BC250_DCN2_REG_AUX_CONTROL(Ch)) & BC250_DCN2_AUX_LS_READ_EN) ? 1u : 0u,
+        Bc250DcnRead(BC250_DCN2_REG_AUX_ARB_CONTROL(Ch)), Bc250DcnRead(BC250_DCN2_REG_AUX_SW_STATUS(Ch)),
+        Bc250DcnRead(BC250_DCN2_REG_AUX_LS_STATUS(Ch)), Bc250DcnRead(BC250_DCN2_REG_AUX_DPHY_TX_CONTROL(Ch)),
+        Bc250DcnRead(BC250_DCN2_REG_AUX_DPHY_RX_CONTROL0(Ch)), Bc250DcnRead(BC250_DCN2_REG_AUX_DPHY_RX_CONTROL1(Ch)));
+}
+
+static BOOLEAN Bc250Dcn2AuxAcquire(ULONG Ch, ULONG HpdSel, ULONG *SavedControl, ULONG *SavedRx0)
+{
+    ULONG arb = Bc250DcnRead(BC250_DCN2_REG_AUX_ARB_CONTROL(Ch));
+    ULONG ctl, k;
+    if (((arb & BC250_DCN2_AUX_REG_RW_CNTL_STATUS_MASK) >> BC250_DCN2_AUX_REG_RW_CNTL_STATUS_SHIFT) ==
+        BC250_DCN2_DMCU_CAN_ACCESS_AUX) return FALSE;
+    ctl = Bc250DcnRead(BC250_DCN2_REG_AUX_CONTROL(Ch));
+    *SavedControl = ctl;
+    *SavedRx0 = Bc250DcnRead(BC250_DCN2_REG_AUX_DPHY_RX_CONTROL0(Ch));
+    /* dcn10_aux_initialize (dcn10_link_encoder.c, chamado no hw_init do
+     * encoder): AUX_HPD_SEL = hpd do conector, AUX_LS_READ_EN = 0, janela de
+     * recepcao 1/4. O GOP pode ter deixado outro HPD selecionado. */
+    ctl = Bc250DcnAuxInitControl(ctl, HpdSel);
+    Bc250DcnWrite(BC250_DCN2_REG_AUX_CONTROL(Ch), ctl);
+    Bc250DcnWrite(BC250_DCN2_REG_AUX_DPHY_RX_CONTROL0(Ch), Bc250DcnAuxInitRxControl0(*SavedRx0));
+    if ((ctl & BC250_DCN2_AUX_EN) == 0u) {
+        /* acquire_engine: AUX_EN com AUX_RESET, espera RESET_DONE, solta o reset. */
+        ULONG on = Bc250DcnField(ctl, BC250_DCN2_AUX_EN | 0x10u, BC250_DCN2_AUX_EN | 0x10u);
+        Bc250DcnWrite(BC250_DCN2_REG_AUX_CONTROL(Ch), on);
+        for (k = 0u; k < 11u && (Bc250DcnRead(BC250_DCN2_REG_AUX_CONTROL(Ch)) & 0x20u) == 0u; ++k)
+            KeStallExecutionProcessor(1u);
+        Bc250DcnWrite(BC250_DCN2_REG_AUX_CONTROL(Ch), Bc250DcnField(on, 0x10u, 0u));
+        for (k = 0u; k < 11u && (Bc250DcnRead(BC250_DCN2_REG_AUX_CONTROL(Ch)) & 0x20u) != 0u; ++k)
+            KeStallExecutionProcessor(1u);
+    }
+    Bc250DcnWrite(BC250_DCN2_REG_AUX_ARB_CONTROL(Ch),
+        Bc250DcnField(Bc250DcnRead(BC250_DCN2_REG_AUX_ARB_CONTROL(Ch)),
+            BC250_DCN2_AUX_SW_USE_AUX_REG_REQ, BC250_DCN2_AUX_SW_USE_AUX_REG_REQ));
+    arb = Bc250DcnRead(BC250_DCN2_REG_AUX_ARB_CONTROL(Ch));
+    return (((arb & BC250_DCN2_AUX_REG_RW_CNTL_STATUS_MASK) >> BC250_DCN2_AUX_REG_RW_CNTL_STATUS_SHIFT) ==
+        BC250_DCN2_SW_CAN_ACCESS_AUX) ? TRUE : FALSE;
+}
+
+static VOID Bc250Dcn2AuxRelease(ULONG Ch, ULONG SavedControl, ULONG SavedRx0)
+{
+    ULONG arb = Bc250DcnRead(BC250_DCN2_REG_AUX_ARB_CONTROL(Ch));
+    arb = Bc250DcnField(arb, BC250_DCN2_AUX_SW_DONE_USING_AUX_REG, BC250_DCN2_AUX_SW_DONE_USING_AUX_REG);
+    arb = Bc250DcnField(arb, BC250_DCN2_AUX_SW_USE_AUX_REG_REQ, 0u);
+    Bc250DcnWrite(BC250_DCN2_REG_AUX_ARB_CONTROL(Ch), arb);
+    /* Lei 5: o AUX volta como o GOP deixou. */
+    Bc250DcnWrite(BC250_DCN2_REG_AUX_DPHY_RX_CONTROL0(Ch), SavedRx0);
+    Bc250DcnWrite(BC250_DCN2_REG_AUX_CONTROL(Ch), SavedControl);
+}
+
+/* D12 (doc 716 par.5.2, doc 718): pad DDC1/AUX0 em modo hardware/AUX, como
+ * dal_ddc_open(GPIO_MODE_HARDWARE, MODE_AUX). So' DC_GPIO_DDC1_MASK; Lei 5
+ * no release. Devolve FALSE se o readback nao confirmar -- falha fechada,
+ * sem seguir para a transacao AUX com o pad possivelmente ainda em modo DDC. */
+static BOOLEAN Bc250Dcn2AuxPadAcquire(ULONG *SavedMask, ULONG *SavedCtrl5)
+{
+    ULONG read = Bc250DcnRead(BC250_DCN2_REG_GPIO_DDC1_MASK);
+    ULONG want = Bc250DcnAuxPadHardwareModeValue(read);
+    ULONG ctrl5, ctrl5Want;
+    *SavedMask = read;
+    *SavedCtrl5 = Bc250DcnRead(BC250_DCN2_REG_GPIO_AUX_CTRL_5);
+    Bc250DcnWrite(BC250_DCN2_REG_GPIO_DDC1_MASK, want);
+    InterlockedIncrement(&s_Bc250Dcn2.AuxPadAcquires);
+    if (Bc250DcnRead(BC250_DCN2_REG_GPIO_DDC1_MASK) != want) {
+        InterlockedIncrement(&s_Bc250Dcn2.AuxPadReadbackFail);
+        Bc250DcnWrite(BC250_DCN2_REG_GPIO_DDC1_MASK, *SavedMask);
+        Bc250DisplayLog("[DCN2_AUXPAD] READBACK FALHOU: pedido=0x%08X lido=0x%08X; pad devolvido ao GOP (falha fechada)\n",
+            want, Bc250DcnRead(BC250_DCN2_REG_GPIO_DDC1_MASK));
+        return FALSE;
+    }
+    /* C09 (doc 765): segunda metade do set_config(MODE_AUX) -- DDC_PAD1_I2CMODE a 0. */
+    ctrl5 = *SavedCtrl5;
+    ctrl5Want = Bc250DcnAuxPadI2cModeOffValue(ctrl5);
+    Bc250DcnWrite(BC250_DCN2_REG_GPIO_AUX_CTRL_5, ctrl5Want);
+    if (Bc250DcnRead(BC250_DCN2_REG_GPIO_AUX_CTRL_5) != ctrl5Want) {
+        InterlockedIncrement(&s_Bc250Dcn2.AuxPadReadbackFail);
+        Bc250DcnWrite(BC250_DCN2_REG_GPIO_AUX_CTRL_5, ctrl5);
+        Bc250DcnWrite(BC250_DCN2_REG_GPIO_DDC1_MASK, *SavedMask);
+        Bc250DisplayLog("[DCN2_AUXPAD] READBACK FALHOU no AUX_CTRL_5: pedido=0x%08X lido=0x%08X; pad devolvido ao GOP (falha fechada)\n",
+            ctrl5Want, Bc250DcnRead(BC250_DCN2_REG_GPIO_AUX_CTRL_5));
+        return FALSE;
+    }
+    Bc250DisplayLog("[DCN2_AUXPAD] ADQUIRIDO: DC_GPIO_DDC1_MASK 0x%08X -> 0x%08X (CLK/DATA_MASK=0, AUX_PAD1_MODE=1), DC_GPIO_AUX_CTRL_5 0x%08X -> 0x%08X (DDC_PAD1_I2CMODE=0; Linux 0x0003F55A -> 0x0003E55A), readback OK\n",
+        read, want, ctrl5, ctrl5Want);
+    return TRUE;
+}
+
+/* Lei 5: o pad volta ao valor do GOP em toda saida, com ou sem sucesso.
+ * doc 725 (Corrida 276): a versao anterior escrevia sem logar -- a volta era
+ * so' P1 (lida no fonte), nunca P0 (medida). Agora confere por readback e
+ * fala sempre, inclusive se nao confirmar (nao ha para onde mais devolver). */
+static VOID Bc250Dcn2AuxPadRelease(ULONG SavedMask, ULONG SavedCtrl5)
+{
+    ULONG after;
+    /* C09: ordem inversa da aquisicao -- AUX_CTRL_5 primeiro, depois o MASK. */
+    Bc250DcnWrite(BC250_DCN2_REG_GPIO_AUX_CTRL_5, SavedCtrl5);
+    if (Bc250DcnRead(BC250_DCN2_REG_GPIO_AUX_CTRL_5) != SavedCtrl5) {
+        InterlockedIncrement(&s_Bc250Dcn2.AuxPadReleaseFail);
+        Bc250DisplayLog("[DCN2_AUXPAD] AVISO: AUX_CTRL_5 nao voltou a 0x%08X (lido 0x%08X)\n",
+            SavedCtrl5, Bc250DcnRead(BC250_DCN2_REG_GPIO_AUX_CTRL_5));
+    }
+    Bc250DcnWrite(BC250_DCN2_REG_GPIO_DDC1_MASK, SavedMask);
+    after = Bc250DcnRead(BC250_DCN2_REG_GPIO_DDC1_MASK);
+    if (after != SavedMask) {
+        InterlockedIncrement(&s_Bc250Dcn2.AuxPadReleaseFail);
+        Bc250DisplayLog("[DCN2_AUXPAD] AVISO: devolucao ao valor do GOP (0x%08X) nao confirmou por readback (lido 0x%08X)\n",
+            SavedMask, after);
+        return;
+    }
+    Bc250DisplayLog("[DCN2_AUXPAD] DEVOLVIDO: DC_GPIO_DDC1_MASK de volta a 0x%08X (readback OK)\n", SavedMask);
+}
+
+static VOID Bc250Dcn2AuxPutByte(ULONG Ch, ULONG *Shadow, ULONG Byte)
+{
+    *Shadow = Bc250DcnField(*Shadow, BC250_DCN2_AUX_SW_DATA_MASK, Byte << BC250_DCN2_AUX_SW_DATA_SHIFT);
+    Bc250DcnWrite(BC250_DCN2_REG_AUX_SW_DATA(Ch), *Shadow);
+}
+
+/* Uma transacao: devolve o codigo de resposta (BC250_AUX_REPLY_*) ou INVALID. */
+static ULONG Bc250Dcn2AuxXfer(ULONG Ch, ULONG Action, ULONG Address,
+    _In_reads_opt_(WrLen) const UCHAR *Wr, ULONG WrLen, ULONG RdLen,
+    _Out_writes_opt_(RdLen) UCHAR *Rd, ULONG *RdGot)
+{
+    UCHAR hdr[4];
+    ULONG hdrLen, len, data, status = 0u, replied, i, k;
+    BOOLEAN isWrite = (Action == BC250_AUX_ACTION_I2C_WRITE || Action == BC250_AUX_ACTION_I2C_WRITE_MOT) ? TRUE : FALSE;
+    if (RdGot) *RdGot = 0u;
+    s_Bc250Dcn2.AuxTransactions++;
+    hdrLen = Bc250DcnAuxComposeHeader(Action, Address, isWrite ? WrLen : RdLen, hdr);
+    len = hdrLen + (isWrite ? WrLen : 0u);
+    Bc250DcnWrite(BC250_DCN2_REG_AUX_INTERRUPT_CONTROL(Ch),
+        Bc250DcnField(Bc250DcnRead(BC250_DCN2_REG_AUX_INTERRUPT_CONTROL(Ch)),
+            BC250_DCN2_AUX_SW_DONE_ACK, BC250_DCN2_AUX_SW_DONE_ACK));
+    (void)Bc250Dcn2AuxWait(Ch, BC250_DCN2_AUX_SW_DONE, 0u, 2400u, NULL);
+    Bc250DcnWrite(BC250_DCN2_REG_AUX_SW_CONTROL(Ch),
+        Bc250DcnField(Bc250DcnField(Bc250DcnRead(BC250_DCN2_REG_AUX_SW_CONTROL(Ch)),
+            BC250_DCN2_AUX_SW_START_DELAY_MASK, 0u),
+            BC250_DCN2_AUX_SW_WR_BYTES_MASK, len << BC250_DCN2_AUX_SW_WR_BYTES_SHIFT));
+    /* indice 0 sem autoincremento no 1o byte; depois autoincremento */
+    data = Bc250DcnRead(BC250_DCN2_REG_AUX_SW_DATA(Ch));
+    data = Bc250DcnField(data, BC250_DCN2_AUX_SW_INDEX_MASK | BC250_DCN2_AUX_SW_DATA_RW |
+        BC250_DCN2_AUX_SW_AUTOINC_DISABLE, BC250_DCN2_AUX_SW_AUTOINC_DISABLE);
+    Bc250Dcn2AuxPutByte(Ch, &data, hdr[0]);
+    data = Bc250DcnField(data, BC250_DCN2_AUX_SW_AUTOINC_DISABLE, 0u);
+    Bc250Dcn2AuxPutByte(Ch, &data, hdr[1]);
+    Bc250Dcn2AuxPutByte(Ch, &data, hdr[2]);
+    if (hdrLen == 4u) Bc250Dcn2AuxPutByte(Ch, &data, hdr[3]);
+    if (isWrite && Wr != NULL) {
+        for (i = 0u; i < WrLen; ++i) Bc250Dcn2AuxPutByte(Ch, &data, Wr[i]);
+    }
+    Bc250DcnWrite(BC250_DCN2_REG_AUX_SW_CONTROL(Ch),
+        Bc250DcnField(Bc250DcnRead(BC250_DCN2_REG_AUX_SW_CONTROL(Ch)), BC250_DCN2_AUX_SW_GO, BC250_DCN2_AUX_SW_GO));
+    if (!Bc250Dcn2AuxWait(Ch, BC250_DCN2_AUX_SW_DONE, BC250_DCN2_AUX_SW_DONE, 14400u, &status) ||
+        (status & (BC250_DCN2_AUX_SW_HPD_DISCON | BC250_DCN2_AUX_SW_RX_TIMEOUT |
+            BC250_DCN2_AUX_SW_RX_TIMEOUT_STATE_MASK | BC250_DCN2_AUX_SW_RX_INVALID_STOP |
+            BC250_DCN2_AUX_SW_RX_RECV_NO_DET | BC250_DCN2_AUX_SW_RX_RECV_INVALID_H |
+            BC250_DCN2_AUX_SW_RX_RECV_INVALID_L)) != 0u) {
+        s_Bc250Dcn2.AuxFailures++;
+        s_Bc250Dcn2.AuxLastStatus = status;
+        s_Bc250Dcn2.AuxLastDone = (status & BC250_DCN2_AUX_SW_DONE) ? 1u : 0u;
+        return BC250_AUX_REPLY_INVALID;
+    }
+    replied = (status & BC250_DCN2_AUX_SW_REPLY_BYTE_COUNT_MASK) >> BC250_DCN2_AUX_SW_REPLY_BYTE_COUNT_SHIFT;
+    if (replied == 0u) {
+        s_Bc250Dcn2.AuxFailures++;
+        s_Bc250Dcn2.AuxLastStatus = status;
+        s_Bc250Dcn2.AuxLastDone = 1u;
+        return BC250_AUX_REPLY_INVALID;
+    }
+    data = Bc250DcnRead(BC250_DCN2_REG_AUX_SW_DATA(Ch));
+    data = Bc250DcnField(data, BC250_DCN2_AUX_SW_INDEX_MASK | BC250_DCN2_AUX_SW_AUTOINC_DISABLE |
+        BC250_DCN2_AUX_SW_DATA_RW, BC250_DCN2_AUX_SW_AUTOINC_DISABLE | BC250_DCN2_AUX_SW_DATA_RW);
+    Bc250DcnWrite(BC250_DCN2_REG_AUX_SW_DATA(Ch), data);
+    k = Bc250DcnAuxDecodeReply(((Bc250DcnRead(BC250_DCN2_REG_AUX_SW_DATA(Ch)) &
+        BC250_DCN2_AUX_SW_DATA_MASK) >> BC250_DCN2_AUX_SW_DATA_SHIFT) >> 4);
+    if (k != BC250_AUX_REPLY_ACK) return k;
+    for (i = 0u; i + 1u < replied && i < RdLen && Rd != NULL; ++i) {
+        Rd[i] = (UCHAR)((Bc250DcnRead(BC250_DCN2_REG_AUX_SW_DATA(Ch)) & BC250_DCN2_AUX_SW_DATA_MASK) >>
+            BC250_DCN2_AUX_SW_DATA_SHIFT);
+    }
+    if (RdGot) *RdGot = i;
+    return BC250_AUX_REPLY_ACK;
+}
+
+static ULONG Bc250Dcn2AuxRetry(ULONG Ch, ULONG Action, ULONG Address, const UCHAR *Wr, ULONG WrLen,
+    ULONG RdLen, UCHAR *Rd, ULONG *RdGot)
+{
+    ULONG r = BC250_AUX_REPLY_INVALID, k;
+    for (k = 0u; k < 7u; ++k) {   /* AUX_DEFER_RETRY_COUNTER = 6 */
+        r = Bc250Dcn2AuxXfer(Ch, Action, Address, Wr, WrLen, RdLen, Rd, RdGot);
+        if (r != BC250_AUX_REPLY_DEFER && r != BC250_AUX_REPLY_I2C_DEFER) break;
+        KeStallExecutionProcessor(500u);
+    }
+    return r;
+}
+
+/* EDID por I2C sobre AUX (0x50): escrita MOT do offset 0, leituras MOT de 16
+ * bytes, parada sem MOT. So' leitura do monitor. */
+/* DCN.3 (doc 714): um canal AUX; devolve TRUE se o DPCD respondeu. O AUX
+ * volta como o GOP deixou em qualquer saida. */
+static BOOLEAN Bc250Dcn2AuxProbeDpcd(ULONG Ch, ULONG HpdSel, ULONG *SavedCtl, ULONG *SavedRx0)
+{
+    ULONG got = 0u, r;
+    Bc250Dcn2AuxSnapshot(Ch, "antes (como o GOP deixou)");
+    if (!Bc250Dcn2AuxAcquire(Ch, HpdSel, SavedCtl, SavedRx0)) {
+        Bc250DisplayLog("[DCN2_EDID] RECUSADO: AUX%u nao cedido ao software (ARB=0x%08X CONTROL=0x%08X)\n",
+            Ch, Bc250DcnRead(BC250_DCN2_REG_AUX_ARB_CONTROL(Ch)), Bc250DcnRead(BC250_DCN2_REG_AUX_CONTROL(Ch)));
+        Bc250Dcn2AuxRelease(Ch, *SavedCtl, *SavedRx0);
+        return FALSE;
+    }
+    s_Bc250Dcn2.AuxLastStatus = 0u;
+    r = Bc250Dcn2AuxRetry(Ch, BC250_AUX_ACTION_DP_READ, 0x00000u, NULL, 0u, 16u, s_Bc250Dcn2.Dpcd, &got);
+    s_Bc250Dcn2.DpcdRead = (r == BC250_AUX_REPLY_ACK && got == 16u) ? TRUE : FALSE;
+    Bc250DisplayLog("[DCN2_AUX] AUX%u (HPD_SEL=%u) DPCD 0x000 x16 resposta=%lu bytes=%lu: REV=0x%02X MAX_LINK_RATE=0x%02X MAX_LANES=0x%02X | ultima falha SW_STATUS=0x%08X (DONE=%u HPD_DISCON=%u RX_TIMEOUT=%u TIMEOUT_STATE=%u NO_DET=%u INVALID_STOP=%u INVALID_H=%u INVALID_L=%u)\n",
+        Ch, HpdSel, r, got, s_Bc250Dcn2.Dpcd[0], s_Bc250Dcn2.Dpcd[1], s_Bc250Dcn2.Dpcd[2] & 0x1Fu,
+        s_Bc250Dcn2.AuxLastStatus, s_Bc250Dcn2.AuxLastDone,
+        (s_Bc250Dcn2.AuxLastStatus & BC250_DCN2_AUX_SW_HPD_DISCON) ? 1u : 0u,
+        (s_Bc250Dcn2.AuxLastStatus & BC250_DCN2_AUX_SW_RX_TIMEOUT) ? 1u : 0u,
+        (s_Bc250Dcn2.AuxLastStatus & BC250_DCN2_AUX_SW_RX_TIMEOUT_STATE_MASK) >> 4,
+        (s_Bc250Dcn2.AuxLastStatus & BC250_DCN2_AUX_SW_RX_RECV_NO_DET) ? 1u : 0u,
+        (s_Bc250Dcn2.AuxLastStatus & BC250_DCN2_AUX_SW_RX_INVALID_STOP) ? 1u : 0u,
+        (s_Bc250Dcn2.AuxLastStatus & BC250_DCN2_AUX_SW_RX_RECV_INVALID_H) ? 1u : 0u,
+        (s_Bc250Dcn2.AuxLastStatus & BC250_DCN2_AUX_SW_RX_RECV_INVALID_L) ? 1u : 0u);
+    if (!s_Bc250Dcn2.DpcdRead) {
+        Bc250Dcn2AuxSnapshot(Ch, "depois da falha (AUX ainda nosso)");
+        Bc250Dcn2AuxRelease(Ch, *SavedCtl, *SavedRx0);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static VOID Bc250Dcn2ReadRealEdid(void)
+{
+    ULONG ch, saved = 0u, savedRx0 = 0u, got, r, off, blocks = 1u, i, hpd;
+    ULONG savedGpioMask = 0u;
+    ULONG savedGpioCtrl5 = 0u;
+    /* D12 (doc 716 par.5.2, doc 718): pad em modo AUX so' durante esta leitura
+     * (Lei 5); se o readback nao confirmar, Bc250Dcn2AuxPadAcquire ja devolve
+     * o pad ao GOP por conta propria e a leitura segue como sem a chave. */
+    BOOLEAN padHwMode = Bc250Dcn2Key(BC250_DCN2_KEY_AUX_HW_MODE);
+    UCHAR zero = 0u;
+    if (padHwMode) (void)Bc250Dcn2AuxPadAcquire(&savedGpioMask, &savedGpioCtrl5);
+    for (i = 0u; i < BC250_DCN2_HPD_COUNT; ++i) {
+        s_Bc250Dcn2.HpdStatus[i] = Bc250DcnRead(BC250_DCN2_REG_HPD_INT_STATUS(i));
+    }
+    hpd = ((s_Bc250Dcn2.HpdStatus[0] & BC250_DCN2_HPD_SENSE) == 0u &&
+        (s_Bc250Dcn2.HpdStatus[1] & BC250_DCN2_HPD_SENSE) != 0u) ? 1u : 0u;
+    ch = hpd;
+    Bc250DisplayLog("[DCN2_HPD] HPD0 STATUS=0x%08X (sense=%u) HPD1 STATUS=0x%08X (sense=%u) -> AUX%u primeiro, HPD_SEL=%u (so' leitura)\n",
+        s_Bc250Dcn2.HpdStatus[0], (s_Bc250Dcn2.HpdStatus[0] & BC250_DCN2_HPD_SENSE) ? 1u : 0u,
+        s_Bc250Dcn2.HpdStatus[1], (s_Bc250Dcn2.HpdStatus[1] & BC250_DCN2_HPD_SENSE) ? 1u : 0u, ch, hpd);
+    /* DCN.3: o conector pode estar no outro motor AUX (o DCN 2.0.3 tem dois). */
+    if (!Bc250Dcn2AuxProbeDpcd(ch, hpd, &saved, &savedRx0)) {
+        ch ^= 1u;
+        if (!Bc250Dcn2AuxProbeDpcd(ch, hpd, &saved, &savedRx0)) {
+            s_Bc250Dcn2.AuxChannel = 0xFFu;
+            s_Bc250Dcn2.RealEdidBytes = 0u;
+            s_Bc250Dcn2.RealEdidDtd = -1;
+            Bc250DisplayLog("[DCN2_EDID] AUX0 e AUX1 sem resposta no DPCD (transacoes=%lu, falhas=%lu); EDID sintetizado mantido\n",
+                s_Bc250Dcn2.AuxTransactions, s_Bc250Dcn2.AuxFailures);
+            if (padHwMode) Bc250Dcn2AuxPadRelease(savedGpioMask, savedGpioCtrl5);
+            return;
+        }
+    }
+    s_Bc250Dcn2.AuxChannel = ch;
+    r = Bc250Dcn2AuxRetry(ch, BC250_AUX_ACTION_I2C_WRITE_MOT, BC250_EDID_I2C_ADDRESS, &zero, 1u, 0u, NULL, NULL);
+    for (off = 0u; r == BC250_AUX_REPLY_ACK && off < blocks * 128u && off < sizeof(s_Bc250Dcn2.RealEdid); off += 16u) {
+        r = Bc250Dcn2AuxRetry(ch, BC250_AUX_ACTION_I2C_READ_MOT, BC250_EDID_I2C_ADDRESS, NULL, 0u, 16u,
+            &s_Bc250Dcn2.RealEdid[off], &got);
+        if (r == BC250_AUX_REPLY_ACK && got != 16u) r = BC250_AUX_REPLY_INVALID;
+        if (off == 112u && r == BC250_AUX_REPLY_ACK && s_Bc250Dcn2.RealEdid[126] != 0u) blocks = 2u;
+    }
+    (void)Bc250Dcn2AuxRetry(ch, BC250_AUX_ACTION_I2C_READ, BC250_EDID_I2C_ADDRESS, NULL, 0u, 0u, NULL, NULL);
+    Bc250Dcn2AuxRelease(ch, saved, savedRx0);
+    s_Bc250Dcn2.RealEdidBytes = (r == BC250_AUX_REPLY_ACK) ? off : 0u;
+    s_Bc250Dcn2.RealEdidDtd = (s_Bc250Dcn2.RealEdidBytes >= 128u) ?
+        Bc250DcnEdidFindTiming(s_Bc250Dcn2.RealEdid, &s_Bc250Dcn2.Timing) : -1;
+    Bc250DisplayLog("[DCN2_EDID] AUX%u: %lu bytes lidos (resposta=%lu, blocos=%lu, transacoes=%lu, falhas=%lu) checksum=%s fabricante=%02X%02X produto=%02X%02X DTD_igual_ao_OTG=%ld\n",
+        ch, s_Bc250Dcn2.RealEdidBytes, r, blocks, s_Bc250Dcn2.AuxTransactions, s_Bc250Dcn2.AuxFailures,
+        (s_Bc250Dcn2.RealEdidBytes >= 128u && Bc250DcnEdidBlockValid(s_Bc250Dcn2.RealEdid)) ? "OK" : "FALHOU",
+        s_Bc250Dcn2.RealEdid[8], s_Bc250Dcn2.RealEdid[9], s_Bc250Dcn2.RealEdid[11], s_Bc250Dcn2.RealEdid[10],
+        (long)s_Bc250Dcn2.RealEdidDtd);
+    for (i = 0u; i + 16u <= s_Bc250Dcn2.RealEdidBytes; i += 16u) {
+        const UCHAR *e = &s_Bc250Dcn2.RealEdid[i];
+        Bc250DisplayLog("[DCN2_EDID %03lu] %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n",
+            i, e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10], e[11], e[12], e[13], e[14], e[15]);
+    }
+    if (padHwMode) Bc250Dcn2AuxPadRelease(savedGpioMask, savedGpioCtrl5);
+}
+
+/* ---- 2. Interrupcao do DCN ---------------------------------------------------
+ * irq_service_dcn201.c: VBLANK1 = OTG0 VSTARTUP (0x3C), VUPDATE1 = OTG0 VUPDATE
+ * sem lock (0x57), DC1_VLINE0 = OTG0 VERTICAL_INTERRUPT0 (0x1E/6), PFLIP1 =
+ * HUBP0 (0x4F). Corrida 272: a VSTARTUP nunca chegou ao IH (0 em ~8.580
+ * quadros, nenhuma entrada DCE desconhecida) e o flip chegou 1:1. DCN.3 arma
+ * as tres fontes de quadro juntas e usa a que chegar; o VSYNC sai uma vez por
+ * quadro do OTG, qualquer que seja a fonte.
+ * C06 (doc 764): na 273 as tres ficaram com INT_STATUS=1 e nenhuma chegou. O
+ * rastro do amdgpu nesta placa (Nagi, evidence/linux/2026-09-21-E03-init-trace,
+ * t=124.694285..124.697173) arma SO' a VUPDATE sem lock, em duas escritas
+ * (0x00104104 -> 0x00114104 = so' EVENT_CLEAR; releitura 0x00100104 ->
+ * 0x00101104 = INT_EN), sem tocar OTG0_INTERRUPT_DEST nem nenhum outro
+ * registrador de roteamento, e a interrupcao chega 2,9 ms depois (ack no ISR
+ * 0x0011D104). 1 = exatamente essa sequencia, sem VSTARTUP nem VLINE0;
+ * 0 = as tres fontes da DCN.3. */
+#define BC250_C06_VSYNC_SO_VUPDATE_COMO_LINUX 1
+static VOID Bc250Dcn2IrqArm(void)
+{
+    ULONG g = Bc250DcnRead(BC250_DCN2_REG_OTG0_GLOBAL_SYNC_STATUS);
+    ULONG f = Bc250DcnRead(BC250_DCN2_REG_HUBPREQ0_FLIP_INTERRUPT);
+    ULONG vp = Bc250DcnRead(BC250_DCN2_REG_OTG0_VINT0_POSITION);
+    ULONG vc = Bc250DcnRead(BC250_DCN2_REG_OTG0_VINT0_CONTROL);
+    ULONG vline = 0u;
+    ULONG vTotal = s_Bc250Dcn2.TimingMeasured ? s_Bc250Dcn2.Timing.VTotal : 0u;
+    ULONG vBlankStart = Bc250DcnRead(BC250_DCN2_REG_OTG0_V_BLANK_START_END) & BC250_DCN2_START_MASK;
+    s_Bc250Dcn2.SavedGlobalSync = g;
+    s_Bc250Dcn2.SavedFlipInt = f;
+    s_Bc250Dcn2.SavedVint0Pos = vp;
+    s_Bc250Dcn2.SavedVint0Ctl = vc;
+    /* So' leitura, para a pergunta da VSTARTUP (doc 714). */
+    s_Bc250Dcn2.VstartupParam = Bc250DcnRead(BC250_DCN2_REG_OTG0_VSTARTUP_PARAM);
+#if BC250_C06_VSYNC_SO_VUPDATE_COMO_LINUX
+    /* C06: dal_irq_service_set como o rastro E03 -- primeiro so' o ack (a
+     * releitura confirma o evento limpo), depois so' o enable. */
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_GLOBAL_SYNC_STATUS,
+        Bc250DcnField(g, BC250_DCN2_VUPDATE_NO_LOCK_EVENT_CLEAR, BC250_DCN2_VUPDATE_NO_LOCK_EVENT_CLEAR));
+    s_Bc250Dcn2.C06AfterClear = Bc250DcnRead(BC250_DCN2_REG_OTG0_GLOBAL_SYNC_STATUS);
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_GLOBAL_SYNC_STATUS,
+        Bc250DcnField(s_Bc250Dcn2.C06AfterClear, BC250_DCN2_VUPDATE_NO_LOCK_INT_EN,
+            BC250_DCN2_VUPDATE_NO_LOCK_INT_EN));
+    UNREFERENCED_PARAMETER(vTotal);
+    UNREFERENCED_PARAMETER(vBlankStart);
+#else
+    /* dal_irq_service_set: ack, depois enable (Lei 6, so' os bits do enable). */
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_GLOBAL_SYNC_STATUS,
+        Bc250DcnField(g,
+            BC250_DCN2_VSTARTUP_EVENT_CLEAR | BC250_DCN2_VSTARTUP_INT_EN |
+            BC250_DCN2_VUPDATE_NO_LOCK_EVENT_CLEAR | BC250_DCN2_VUPDATE_NO_LOCK_INT_EN,
+            BC250_DCN2_VSTARTUP_EVENT_CLEAR | BC250_DCN2_VSTARTUP_INT_EN |
+            BC250_DCN2_VUPDATE_NO_LOCK_EVENT_CLEAR | BC250_DCN2_VUPDATE_NO_LOCK_INT_EN));
+#endif
+    /* optc1_setup_vertical_interrupt0 no inicio do blank vertical, depois o
+     * enable (vline0_irq_info_funcs). So' com VTotal medido e linha valida. */
+#if !BC250_C06_VSYNC_SO_VUPDATE_COMO_LINUX
+    if (vTotal != 0u) vline = Bc250DcnVline0Position(vBlankStart, vTotal);
+#endif
+    if (vline != 0u) {
+        Bc250DcnWrite(BC250_DCN2_REG_OTG0_VINT0_POSITION, vline);
+        Bc250DcnWrite(BC250_DCN2_REG_OTG0_VINT0_CONTROL,
+            Bc250DcnField(vc, BC250_DCN2_VINT0_CLEAR | BC250_DCN2_VINT0_INT_ENABLE,
+                BC250_DCN2_VINT0_CLEAR | BC250_DCN2_VINT0_INT_ENABLE));
+    }
+    Bc250DcnWrite(BC250_DCN2_REG_HUBPREQ0_FLIP_INTERRUPT,
+        Bc250DcnField(f, BC250_DCN2_SURFACE_FLIP_CLEAR | BC250_DCN2_SURFACE_FLIP_INT_MASK,
+            BC250_DCN2_SURFACE_FLIP_CLEAR | BC250_DCN2_SURFACE_FLIP_INT_MASK));
+    InterlockedExchange(&s_Bc250Dcn2.IrqArmed, 1);
+#if BC250_C06_VSYNC_SO_VUPDATE_COMO_LINUX
+    Bc250DisplayLog("[C06_VSYNC] ARMADO como o amdgpu: so' VUPDATE sem lock (fonte 0x%02X, cliente 0x%02X); GLOBAL_SYNC 0x%08X -> ack -> 0x%08X -> enable -> 0x%08X (Linux: 0x00104104 -> 0x00100104 -> 0x00101104); VSTARTUP e VLINE0 desligadas; flip do HUBP0 FLIP_INT 0x%08X->0x%08X; o timer de 4 ms fica como rede\n",
+        BC250_IH_SRCID_DCN_OTG0_VUPDATE_NO_LOCK, BC250_IH_CLIENTID_DCE, g, s_Bc250Dcn2.C06AfterClear,
+        Bc250DcnRead(BC250_DCN2_REG_OTG0_GLOBAL_SYNC_STATUS),
+        f, Bc250DcnRead(BC250_DCN2_REG_HUBPREQ0_FLIP_INTERRUPT));
+#endif
+    Bc250DisplayLog("[DCN2_IRQ] ARMADO: OTG0 VSTARTUP (fonte 0x%02X) + VUPDATE sem lock (0x%02X) + VLINE0 (0x%02X/%u, linha %u de %u%s) e flip do HUBP0 (0x%02X), IH cliente 0x%02X; GLOBAL_SYNC 0x%08X->0x%08X VINT0 POS 0x%08X->0x%08X CTL 0x%08X->0x%08X FLIP_INT 0x%08X->0x%08X; VSTARTUP_PARAM=0x%08X (so' leitura); o timer de 4 ms fica como rede\n",
+        BC250_IH_SRCID_DCN_OTG0_VSTARTUP, BC250_IH_SRCID_DCN_OTG0_VUPDATE_NO_LOCK,
+        BC250_IH_SRCID_DCN_OTG0_VLINE0, BC250_IH_CTXID_DCN_OTG0_VLINE0,
+        vBlankStart, vTotal, (vline != 0u) ? "" : " NAO ARMADA",
+        BC250_IH_SRCID_DCN_HUBP0_FLIP, BC250_IH_CLIENTID_DCE,
+        g, Bc250DcnRead(BC250_DCN2_REG_OTG0_GLOBAL_SYNC_STATUS),
+        vp, Bc250DcnRead(BC250_DCN2_REG_OTG0_VINT0_POSITION),
+        vc, Bc250DcnRead(BC250_DCN2_REG_OTG0_VINT0_CONTROL),
+        f, Bc250DcnRead(BC250_DCN2_REG_HUBPREQ0_FLIP_INTERRUPT),
+        s_Bc250Dcn2.VstartupParam);
+}
+
+static VOID Bc250Dcn2IrqDisarm(void)
+{
+    if (InterlockedExchange(&s_Bc250Dcn2.IrqArmed, 0) == 0 || s_Bc250Dcn.Window == NULL) return;
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_GLOBAL_SYNC_STATUS,
+        Bc250DcnField(Bc250DcnRead(BC250_DCN2_REG_OTG0_GLOBAL_SYNC_STATUS),
+            BC250_DCN2_VSTARTUP_INT_EN | BC250_DCN2_VSTARTUP_EVENT_CLEAR |
+            BC250_DCN2_VUPDATE_NO_LOCK_INT_EN | BC250_DCN2_VUPDATE_NO_LOCK_EVENT_CLEAR,
+            (s_Bc250Dcn2.SavedGlobalSync & (BC250_DCN2_VSTARTUP_INT_EN | BC250_DCN2_VUPDATE_NO_LOCK_INT_EN)) |
+            BC250_DCN2_VSTARTUP_EVENT_CLEAR | BC250_DCN2_VUPDATE_NO_LOCK_EVENT_CLEAR));
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_VINT0_CONTROL,
+        Bc250DcnField(Bc250DcnRead(BC250_DCN2_REG_OTG0_VINT0_CONTROL),
+            BC250_DCN2_VINT0_INT_ENABLE | BC250_DCN2_VINT0_CLEAR,
+            (s_Bc250Dcn2.SavedVint0Ctl & BC250_DCN2_VINT0_INT_ENABLE) | BC250_DCN2_VINT0_CLEAR));
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_VINT0_POSITION, s_Bc250Dcn2.SavedVint0Pos);
+    Bc250DcnWrite(BC250_DCN2_REG_HUBPREQ0_FLIP_INTERRUPT,
+        Bc250DcnField(Bc250DcnRead(BC250_DCN2_REG_HUBPREQ0_FLIP_INTERRUPT),
+            BC250_DCN2_SURFACE_FLIP_INT_MASK | BC250_DCN2_SURFACE_FLIP_CLEAR,
+            (s_Bc250Dcn2.SavedFlipInt & BC250_DCN2_SURFACE_FLIP_INT_MASK) | BC250_DCN2_SURFACE_FLIP_CLEAR));
+}
+
+/* D06 (so' leitura, doc 716 par.5.1, doc 718): le o roteamento das quatro
+ * fontes do cliente DCE e compara a do flip (chega ao IH, D05) contra as
+ * tres do OTG que nao chegam (D06, doc 715). Nenhum registrador e' escrito. */
+static VOID Bc250Dcn2ReadIrqDest(void)
+{
+    BC250_DCN_IRQ_DEST dest;
+    if (s_Bc250Dcn.Window == NULL) return;
+    s_Bc250Dcn2.IrqDestOtg = Bc250DcnRead(BC250_DCN2_REG_OTG0_INTERRUPT_DEST);
+    s_Bc250Dcn2.IrqDestDchub2 = Bc250DcnRead(BC250_DCN2_REG_DCHUB_INTERRUPT_DEST2);
+    s_Bc250Dcn2.IrqDestRead = TRUE;
+    Bc250DcnIrqDestDecode(s_Bc250Dcn2.IrqDestOtg, s_Bc250Dcn2.IrqDestDchub2, &dest);
+    Bc250DisplayLog("[DCN2_IRQDEST] SO' LEITURA: OTG0_INTERRUPT_DEST=0x%08X (VSTARTUP_DEST=%u VUPDATE_NO_LOCK_DEST=%u VLINE0_DEST=%u) "
+        "DCHUB_INTERRUPT_DEST2=0x%08X (HUBP0_FLIP_DEST=%u) -- comparar o bit do flip (chega ao IH) contra os tres do OTG "
+        "(nao chegam, D06); se o do flip divergir dos outros tres, o bit provavelmente significa destino=host; semantica "
+        "ainda H, nao escrever sem confirmar por outra via\n",
+        s_Bc250Dcn2.IrqDestOtg, dest.VstartupDest, dest.VupdateNoLockDest, dest.Vline0Dest,
+        s_Bc250Dcn2.IrqDestDchub2, dest.FlipDest);
+}
+
+/* Chamado do ISR do IH (DIRQL) para o cliente DCE. So' ack e enfileira o DPC;
+ * sem log e sem lock (DIRQL.1). */
+BOOLEAN Bc250DisplayDcnIsr(ULONG SrcId, ULONG ExtId)
+{
+    ULONG kind;
+    if (InterlockedCompareExchange(&s_Bc250Dcn2.IrqArmed, 0, 0) == 0 || s_Bc250Dcn.Window == NULL)
+        return FALSE;
+    kind = Bc250DcnIrqClassify(SrcId, ExtId);
+    if (kind == BC250_DCN_IRQ_VSTARTUP) {
+        Bc250DcnWrite(BC250_DCN2_REG_OTG0_GLOBAL_SYNC_STATUS,
+            Bc250DcnField(Bc250DcnRead(BC250_DCN2_REG_OTG0_GLOBAL_SYNC_STATUS),
+                BC250_DCN2_VSTARTUP_EVENT_CLEAR, BC250_DCN2_VSTARTUP_EVENT_CLEAR));
+        InterlockedIncrement64(&s_Bc250Dcn2.IrqVstartup);
+    } else if (kind == BC250_DCN_IRQ_VUPDATE) {
+        Bc250DcnWrite(BC250_DCN2_REG_OTG0_GLOBAL_SYNC_STATUS,
+            Bc250DcnField(Bc250DcnRead(BC250_DCN2_REG_OTG0_GLOBAL_SYNC_STATUS),
+                BC250_DCN2_VUPDATE_NO_LOCK_EVENT_CLEAR, BC250_DCN2_VUPDATE_NO_LOCK_EVENT_CLEAR));
+        InterlockedIncrement64(&s_Bc250Dcn2.IrqVupdate);
+    } else if (kind == BC250_DCN_IRQ_VLINE0) {
+        Bc250DcnWrite(BC250_DCN2_REG_OTG0_VINT0_CONTROL,
+            Bc250DcnField(Bc250DcnRead(BC250_DCN2_REG_OTG0_VINT0_CONTROL),
+                BC250_DCN2_VINT0_CLEAR, BC250_DCN2_VINT0_CLEAR));
+        InterlockedIncrement64(&s_Bc250Dcn2.IrqVline0);
+    } else if (kind == BC250_DCN_IRQ_FLIP) {
+        Bc250DcnWrite(BC250_DCN2_REG_HUBPREQ0_FLIP_INTERRUPT,
+            Bc250DcnField(Bc250DcnRead(BC250_DCN2_REG_HUBPREQ0_FLIP_INTERRUPT),
+                BC250_DCN2_SURFACE_FLIP_CLEAR, BC250_DCN2_SURFACE_FLIP_CLEAR));
+        InterlockedIncrement64(&s_Bc250Dcn2.IrqFlip);
+        /* Completar o flip pela interrupcao (doc 716 par.6.1, doc 717): so'
+         * um InterlockedExchange, DIRQL-safe (sem log, sem lock, DIRQL.1).
+         * O DPC consome este sinalizador no proximo Bc250DcnFlipPollLatch. */
+        InterlockedExchange(&s_Bc250Dcn2.FlipIrqDpcPending, 1);
+    } else {
+        return FALSE;
+    }
+    if (kind != BC250_DCN_IRQ_FLIP) {
+        InterlockedIncrement(&s_Bc250Dcn2.IrqPending);
+        InterlockedExchange64(&s_Bc250Dcn2.IrqLastQpc, KeQueryPerformanceCounter(NULL).QuadPart);
+    }
+    if (g_Bc250DisplayState.VsyncTimerInitialized) {
+        (void)KeInsertQueueDpc(&g_Bc250DisplayState.VsyncDpc, NULL, NULL);
+    }
+    return TRUE;
+}
+
+/* No DPC de VSYNC: com a interrupcao viva (<50 ms), so' ela gera VSYNC; o
+ * timer de 4 ms vira rede. Devolve 1 = notificar, 0 = nao, -1 = sem IRQ. */
+static LONG Bc250Dcn2VsyncFromIrq(ULONG CurrentFrame)
+{
+    LARGE_INTEGER freq;
+    LONGLONG now, last;
+    LONG pending;
+    if (InterlockedCompareExchange(&s_Bc250Dcn2.IrqArmed, 0, 0) == 0) return -1;
+    now = KeQueryPerformanceCounter(&freq).QuadPart;
+    last = InterlockedCompareExchange64(&s_Bc250Dcn2.IrqLastQpc, 0, 0);
+    if (last == 0 || freq.QuadPart <= 0 || (now - last) > freq.QuadPart / 20) {
+        InterlockedIncrement(&s_Bc250Dcn2.IrqFallbackTicks);
+        return -1;
+    }
+    pending = InterlockedExchange(&s_Bc250Dcn2.IrqPending, 0);
+    if (pending <= 0) return 0;
+    if (pending > 1) InterlockedAdd(&s_Bc250Dcn2.IrqCoalesced, pending - 1);
+    /* DCN.3: ate tres fontes por quadro; um VSYNC por quadro do OTG. */
+    if (CurrentFrame == g_Bc250DisplayState.LastOtgFrameCount) {
+        InterlockedIncrement(&s_Bc250Dcn2.IrqSameFrame);
+        return 0;
+    }
+    g_Bc250DisplayState.LastOtgFrameCount = CurrentFrame;
+    InterlockedIncrement(&g_Bc250DisplayState.HardwareVsyncCount);
+    InterlockedIncrement(&s_Bc250Dcn2.IrqVsyncNotified);
+    return 1;
+}
+
+/* ---- 3. CRC do OTG ------------------------------------------------------- */
+static VOID Bc250Dcn2CrcArm(void)
+{
+    s_Bc250Dcn2.SavedCrcCntl = Bc250DcnRead(BC250_DCN2_REG_OTG0_CRC_CNTL);
+    s_Bc250Dcn2.SavedCrcWin[0] = Bc250DcnRead(BC250_DCN2_REG_OTG0_CRC0_WINDOWA_X);
+    s_Bc250Dcn2.SavedCrcWin[1] = Bc250DcnRead(BC250_DCN2_REG_OTG0_CRC0_WINDOWA_Y);
+    s_Bc250Dcn2.SavedCrcWin[2] = Bc250DcnRead(BC250_DCN2_REG_OTG0_CRC0_WINDOWB_X);
+    s_Bc250Dcn2.SavedCrcWin[3] = Bc250DcnRead(BC250_DCN2_REG_OTG0_CRC0_WINDOWB_Y);
+    /* optc1_configure_crc: zera, janelas, depois CONT_EN/SELECT/EN. */
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_CRC_CNTL, 0u);
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_CRC0_WINDOWA_X, Bc250DcnCrcWindowX(g_Bc250DisplayState.CurrentMode.Width));
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_CRC0_WINDOWA_Y, Bc250DcnCrcWindowY(g_Bc250DisplayState.CurrentMode.Height));
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_CRC0_WINDOWB_X, Bc250DcnCrcWindowX(g_Bc250DisplayState.CurrentMode.Width));
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_CRC0_WINDOWB_Y, Bc250DcnCrcWindowY(g_Bc250DisplayState.CurrentMode.Height));
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_CRC_CNTL, Bc250DcnCrcCntlEnable(0u));
+    InterlockedExchange(&s_Bc250Dcn2.CrcArmed, 1);
+    Bc250DisplayLog("[DCN2_CRC] ARMADO: CRC0 continuo do OTG0 no quadro ativo inteiro (CNTL 0x%08X->0x%08X); NAO e' prova byte a byte (sem gabarito do algoritmo): mede se o quadro exibido muda\n",
+        s_Bc250Dcn2.SavedCrcCntl, Bc250DcnRead(BC250_DCN2_REG_OTG0_CRC_CNTL));
+}
+
+static VOID Bc250Dcn2CrcDisarm(void)
+{
+    if (InterlockedExchange(&s_Bc250Dcn2.CrcArmed, 0) == 0 || s_Bc250Dcn.Window == NULL) return;
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_CRC_CNTL, 0u);
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_CRC0_WINDOWA_X, s_Bc250Dcn2.SavedCrcWin[0]);
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_CRC0_WINDOWA_Y, s_Bc250Dcn2.SavedCrcWin[1]);
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_CRC0_WINDOWB_X, s_Bc250Dcn2.SavedCrcWin[2]);
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_CRC0_WINDOWB_Y, s_Bc250Dcn2.SavedCrcWin[3]);
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_CRC_CNTL, s_Bc250Dcn2.SavedCrcCntl);
+}
+
+/* Uma amostra por quadro novo (DPC de VSYNC). */
+static VOID Bc250Dcn2CrcSample(void)
+{
+    ULONG rg, b, crc, k;
+    LONG64 seg;
+    if (InterlockedCompareExchange(&s_Bc250Dcn2.CrcArmed, 0, 0) == 0 || s_Bc250Dcn.Window == NULL) return;
+    rg = Bc250DcnRead(BC250_DCN2_REG_OTG0_CRC0_DATA_RG);
+    b = Bc250DcnRead(BC250_DCN2_REG_OTG0_CRC0_DATA_B) & BC250_DCN2_CRC_B_MASK;
+    crc = rg ^ (b * 0x9E37u);
+    s_Bc250Dcn2.CrcSamples++;
+    if (s_Bc250Dcn2.CrcSamples > 1 && crc != s_Bc250Dcn2.LastCrc) {
+        s_Bc250Dcn2.CrcChanges++;
+        s_Bc250Dcn2.CrcStableRun = 0;
+    } else if (++s_Bc250Dcn2.CrcStableRun > s_Bc250Dcn2.CrcStableMax) {
+        s_Bc250Dcn2.CrcStableMax = s_Bc250Dcn2.CrcStableRun;
+    }
+    s_Bc250Dcn2.LastCrc = crc;
+    /* Por buffer exibido: so' depois de 2 quadros parados no mesmo buffer. */
+    seg = InterlockedCompareExchange64(&s_Bc250Dcn.DisplayedSeg, 0, 0);
+    if (seg != s_Bc250Dcn2.CrcLastSeg) { s_Bc250Dcn2.CrcLastSeg = seg; s_Bc250Dcn2.CrcSegFrames = 0; return; }
+    if (++s_Bc250Dcn2.CrcSegFrames < 2 || seg == 0) return;
+    for (k = 0u; k < 4u; ++k) {
+        if (s_Bc250Dcn2.CrcBuf[k].Samples != 0 && s_Bc250Dcn2.CrcBuf[k].Seg == seg) break;
+    }
+    if (k == 4u) {
+        for (k = 0u; k < 4u && s_Bc250Dcn2.CrcBuf[k].Samples != 0; ++k) { }
+        if (k == 4u) return;
+        s_Bc250Dcn2.CrcBuf[k].Seg = seg;
+        s_Bc250Dcn2.CrcBuf[k].Crc = crc;
+    } else if (s_Bc250Dcn2.CrcBuf[k].Crc != crc) {
+        s_Bc250Dcn2.CrcBuf[k].Changes++;
+        s_Bc250Dcn2.CrcBuf[k].Crc = crc;
+    }
+    s_Bc250Dcn2.CrcBuf[k].Samples++;
+}
+
+/* ---- 4. Cursor por hardware (HUBP0 + DPP0) -------------------------------- */
+VOID Bc250DisplaySetDcnCursorVram(UINT64 VramOffset, UINT64 Bytes)
+{
+    UINT64 a0 = 0ull, a1 = 0ull;
+    if (s_Bc250Dcn2.CursorCpu != NULL) return;
+    UINT64 scanoutOffset = (g_Bc250SdmaPresent.ScanoutGpuAddress >= g_Bc250SdmaPresent.VramMcStart) ?
+        g_Bc250SdmaPresent.ScanoutGpuAddress - g_Bc250SdmaPresent.VramMcStart : ~(UINT64)0;
+    s_Bc250Dcn2.CursorVramReady = FALSE;
+    if (Bytes < 2ull * BC250_DCN_CURSOR_BYTES || scanoutOffset == ~(UINT64)0 || !s_Bc250Dcn.GopRead ||
+        !Bc250DcnFlipAddressForVramOffset(s_Bc250Dcn.Plan.GopAddress, scanoutOffset, VramOffset,
+            BC250_DCN_CURSOR_BYTES, BC250_DCN2_CPU_WINDOW_BYTES, &a0) ||
+        !Bc250DcnFlipAddressForVramOffset(s_Bc250Dcn.Plan.GopAddress, scanoutOffset,
+            VramOffset + BC250_DCN_CURSOR_BYTES, BC250_DCN_CURSOR_BYTES,
+            BC250_DCN2_CPU_WINDOW_BYTES, &a1) ||
+        g_Bc250DisplayState.FrameBufferPhysical.QuadPart == 0 ||
+        !NT_SUCCESS(Bc250VramCpuMapMemory(&g_Bc250DisplayState.DxgkInterface,
+            (ULONGLONG)g_Bc250DisplayState.FrameBufferPhysical.QuadPart + VramOffset,
+            (ULONG)(2u * BC250_DCN_CURSOR_BYTES), MmWriteCombined, &s_Bc250Dcn2.CursorCpu)) ||
+        s_Bc250Dcn2.CursorCpu == NULL) {
+        s_Bc250Dcn2.CursorCpu = NULL;
+        Bc250DisplayLog("[DCN2_CURSOR] RECUSADO: buffer de cursor VRAM 0x%llX (%llu bytes) fora da janela ou GOP nao lido; o Windows mantem o cursor por software\n",
+            (unsigned long long)VramOffset, (unsigned long long)Bytes);
+        return;
+    }
+    s_Bc250Dcn2.CursorVramOffset = VramOffset;
+    s_Bc250Dcn2.CursorDcnAddress[0] = a0;
+    s_Bc250Dcn2.CursorDcnAddress[1] = a1;
+    s_Bc250Dcn2.CursorVramReady = TRUE;
+    Bc250DisplayLog("[DCN2_CURSOR] buffer: VRAM 0x%llX, dois slots de %u bytes no DCN em 0x%llX e 0x%llX\n",
+        (unsigned long long)VramOffset, BC250_DCN_CURSOR_BYTES, (unsigned long long)a0, (unsigned long long)a1);
+}
+
+ULONG Bc250DisplayDcnCursorReady(void)
+{
+    return (Bc250Dcn2Key(BC250_DCN2_KEY_CURSOR) && s_Bc250Dcn2.CursorVramReady) ? 1u : 0u;
+}
+
+static VOID Bc250Dcn2CursorSave(void)
+{
+    if (s_Bc250Dcn2.CursorSaved) return;
+    s_Bc250Dcn2.SavedCursorControl = Bc250DcnRead(BC250_DCN2_REG_CURSOR0_CONTROL);
+    s_Bc250Dcn2.SavedCursorSettings = Bc250DcnRead(BC250_DCN2_REG_HUBPREQ0_CURSOR_SETTINGS);
+    s_Bc250Dcn2.SavedCursorAddr = Bc250DcnRead(BC250_DCN2_REG_CURSOR0_SURFACE_ADDRESS);
+    s_Bc250Dcn2.SavedCursorAddrHi = Bc250DcnRead(BC250_DCN2_REG_CURSOR0_SURFACE_ADDR_HIGH);
+    s_Bc250Dcn2.SavedCursorSize = Bc250DcnRead(BC250_DCN2_REG_CURSOR0_SIZE);
+    s_Bc250Dcn2.SavedCnvcControl = Bc250DcnRead(BC250_DCN2_REG_CNVC_CUR0_CONTROL);
+    s_Bc250Dcn2.SavedCnvcScaleBias = Bc250DcnRead(BC250_DCN2_REG_CNVC_CUR0_FP_SCALE_BIAS);
+    s_Bc250Dcn2.CursorSaved = TRUE;
+}
+
+static NTSTATUS Bc250Dcn2CursorSetShape(CONST DXGKARG_SETPOINTERSHAPE *Shape)
+{
+    ULONG slot, i, hiAddr, loAddr, ctl, cnvc;
+    volatile ULONG *dst;
+    LONG n;
+    int conv;
+    if (!Bc250DisplayDcnCursorReady()) return STATUS_NOT_SUPPORTED;
+    /* DCN.3 (doc 714): cor, monocromatico e cor mascarada. Layout do
+     * monocromatico: AND Width x Height e depois XOR do mesmo tamanho
+     * (DXGKARG_SETPOINTERSHAPE no WDK; VBoxMPWddm.cpp le o XOR em
+     * pPixels + Height * Pitch). Pixel de inversao nao existe em ARGB: a forma
+     * fica no software do Windows, sem aproximar. */
+    conv = (Shape->pPixels == NULL) ? BC250_DCN_CURSOR_REFUSED :
+        Bc250DcnCursorConvert(Shape->Flags.Value, Shape->Width, Shape->Height, Shape->Pitch,
+            (const uint8_t *)Shape->pPixels, s_Bc250Dcn2CursorScratch);
+    if (conv != BC250_DCN_CURSOR_OK) {
+        n = InterlockedIncrement(&s_Bc250Dcn2.CursorShapeRefused);
+        if (conv == BC250_DCN_CURSOR_NEEDS_XOR) InterlockedIncrement(&s_Bc250Dcn2.CursorNeedsXor);
+        if (n <= 16 || (n % 256) == 0) {
+            Bc250DisplayLog("[DCN2_CURSOR] forma RECUSADA #%ld: Flags=0x%X %ux%u pitch=%u motivo=%s; o Windows usa o cursor por software\n",
+                n, Shape->Flags.Value, Shape->Width, Shape->Height, Shape->Pitch,
+                (conv == BC250_DCN_CURSOR_NEEDS_XOR) ? "INVERSAO (XOR com a tela)" : "forma invalida ou maior que 64x64");
+        }
+        /* A forma anterior nao pode ficar na tela junto com a do software. */
+        if (s_Bc250Dcn2.CursorSaved) {
+            Bc250DcnWrite(BC250_DCN2_REG_CURSOR0_CONTROL,
+                Bc250DcnField(Bc250DcnRead(BC250_DCN2_REG_CURSOR0_CONTROL), BC250_DCN2_CURSOR_ENABLE, 0u));
+            Bc250DcnWrite(BC250_DCN2_REG_CNVC_CUR0_CONTROL,
+                Bc250DcnField(Bc250DcnRead(BC250_DCN2_REG_CNVC_CUR0_CONTROL), BC250_DCN2_CUR0_ENABLE, 0u));
+        }
+        s_Bc250Dcn2.CursorHasShape = FALSE;
+        return STATUS_NOT_SUPPORTED;
+    }
+    if (Shape->Flags.Value == BC250_DCN_POINTER_MONOCHROME) InterlockedIncrement(&s_Bc250Dcn2.CursorMono);
+    else if (Shape->Flags.Value == BC250_DCN_POINTER_MASKED_COLOR) InterlockedIncrement(&s_Bc250Dcn2.CursorMasked);
+    Bc250Dcn2CursorSave();
+    slot = s_Bc250Dcn2.CursorSlot ^ 1u;
+    dst = (volatile ULONG *)((PUCHAR)s_Bc250Dcn2.CursorCpu + (SIZE_T)slot * BC250_DCN_CURSOR_BYTES);
+    for (i = 0u; i < BC250_DCN_CURSOR_MAX * BC250_DCN_CURSOR_MAX; ++i) dst[i] = s_Bc250Dcn2CursorScratch[i];
+    KeMemoryBarrier();
+    s_Bc250Dcn2.CursorWidth = Shape->Width;
+    s_Bc250Dcn2.CursorHeight = Shape->Height;
+    hiAddr = (ULONG)(s_Bc250Dcn2.CursorDcnAddress[slot] >> 32) & BC250_DCN_PRIMARY_ADDR_HIGH_MASK;
+    loAddr = (ULONG)s_Bc250Dcn2.CursorDcnAddress[slot];
+    /* hubp2_cursor_set_attributes: endereco, tamanho, controle, settings. */
+    Bc250DcnWrite(BC250_DCN2_REG_CURSOR0_SURFACE_ADDR_HIGH, hiAddr);
+    Bc250DcnWrite(BC250_DCN2_REG_CURSOR0_SURFACE_ADDRESS, loAddr);
+    Bc250DcnWrite(BC250_DCN2_REG_CURSOR0_SIZE,
+        ((BC250_DCN_CURSOR_MAX & 0x1FFu) << BC250_DCN2_CURSOR_WIDTH_SHIFT) | (BC250_DCN_CURSOR_MAX & BC250_DCN2_CURSOR_HEIGHT_MASK));
+    ctl = Bc250DcnRead(BC250_DCN2_REG_CURSOR0_CONTROL);
+    Bc250DcnWrite(BC250_DCN2_REG_CURSOR0_CONTROL,
+        Bc250DcnCursorControl(ctl, BC250_DCN_CURSOR_MAX, (ctl & BC250_DCN2_CURSOR_ENABLE) ? 1u : 0u));
+    Bc250DcnWrite(BC250_DCN2_REG_HUBPREQ0_CURSOR_SETTINGS,
+        Bc250DcnField(0u, BC250_DCN2_CURSOR0_CHUNK_HDL_ADJUST_MASK, 3u << BC250_DCN2_CURSOR0_CHUNK_HDL_ADJUST_SHIFT));
+    /* dpp2_set_cursor_attributes + escala 1.0 (dcn10_set_cursor_sdr_white_level). */
+    cnvc = Bc250DcnRead(BC250_DCN2_REG_CNVC_CUR0_CONTROL);
+    cnvc = Bc250DcnField(cnvc, BC250_DCN2_CUR0_MODE_MASK, BC250_DCN_CURSOR_MODE_UN_PREMULT << BC250_DCN2_CUR0_MODE_SHIFT);
+    cnvc = Bc250DcnField(cnvc, BC250_DCN2_CUR0_EXPANSION_MODE | BC250_DCN2_CUR0_ROM_EN, 0u);
+    Bc250DcnWrite(BC250_DCN2_REG_CNVC_CUR0_CONTROL, cnvc);
+    Bc250DcnWrite(BC250_DCN2_REG_CNVC_CUR0_FP_SCALE_BIAS, BC250_DCN2_CUR0_FP_SCALE_ONE);
+    s_Bc250Dcn2.CursorSlot = slot;
+    s_Bc250Dcn2.CursorHasShape = TRUE;
+    n = InterlockedIncrement(&s_Bc250Dcn2.CursorShapes);
+    if (n <= 8 || (n % 64) == 0) {
+        Bc250DisplayLog("[DCN2_CURSOR] forma #%ld %s %ux%u hot=(%u,%u) slot=%u DCN=0x%04X:%08X (readback 0x%04X:%08X)\n",
+            n, (Shape->Flags.Value == BC250_DCN_POINTER_MONOCHROME) ? "mono" :
+                (Shape->Flags.Value == BC250_DCN_POINTER_MASKED_COLOR) ? "mascarada" : "cor",
+            Shape->Width, s_Bc250Dcn2.CursorHeight,
+            Shape->XHot, Shape->YHot, slot, hiAddr, loAddr,
+            Bc250DcnRead(BC250_DCN2_REG_CURSOR0_SURFACE_ADDR_HIGH) & 0xFFFFu,
+            Bc250DcnRead(BC250_DCN2_REG_CURSOR0_SURFACE_ADDRESS));
+    }
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS Bc250Dcn2CursorSetPosition(CONST DXGKARG_SETPOINTERPOSITION *Pos)
+{
+    BC250_DCN_CURSOR_POS p;
+    LONG n;
+    if (!Bc250DisplayDcnCursorReady() || !s_Bc250Dcn2.CursorHasShape) return STATUS_NOT_SUPPORTED;
+    Bc250DcnCursorPosition(Pos->X, Pos->Y, Pos->Flags.Visible, BC250_DCN_CURSOR_MAX, BC250_DCN_CURSOR_MAX,
+        g_Bc250DisplayState.CurrentMode.Width, g_Bc250DisplayState.CurrentMode.Height, &p);
+    /* hubp2_cursor_set_position + dpp1_set_cursor_position */
+    Bc250DcnWrite(BC250_DCN2_REG_CURSOR0_CONTROL,
+        Bc250DcnField(Bc250DcnRead(BC250_DCN2_REG_CURSOR0_CONTROL), BC250_DCN2_CURSOR_ENABLE,
+            p.Enable ? BC250_DCN2_CURSOR_ENABLE : 0u));
+    Bc250DcnWrite(BC250_DCN2_REG_CURSOR0_POSITION, p.PositionReg);
+    Bc250DcnWrite(BC250_DCN2_REG_CURSOR0_HOT_SPOT, p.HotSpotReg);
+    Bc250DcnWrite(BC250_DCN2_REG_CURSOR0_DST_OFFSET, 0u);
+    Bc250DcnWrite(BC250_DCN2_REG_CNVC_CUR0_CONTROL,
+        Bc250DcnField(Bc250DcnRead(BC250_DCN2_REG_CNVC_CUR0_CONTROL), BC250_DCN2_CUR0_ENABLE,
+            p.Enable ? BC250_DCN2_CUR0_ENABLE : 0u));
+    n = InterlockedIncrement(&s_Bc250Dcn2.CursorMoves);
+    if (!p.Enable) InterlockedIncrement(&s_Bc250Dcn2.CursorHidden);
+    if (n <= 4 || (n % 4096) == 0) {
+        Bc250DisplayLog("[DCN2_CURSOR] posicao #%ld (%d,%d) visivel=%u -> enable=%u POS=0x%08X HOT=0x%08X\n",
+            n, Pos->X, Pos->Y, Pos->Flags.Visible, p.Enable, p.PositionReg, p.HotSpotReg);
+    }
+    return STATUS_SUCCESS;
+}
+
+static VOID Bc250Dcn2CursorRestore(void)
+{
+    if (!s_Bc250Dcn2.CursorSaved || s_Bc250Dcn.Window == NULL) return;
+    Bc250DcnWrite(BC250_DCN2_REG_CURSOR0_CONTROL,
+        Bc250DcnField(Bc250DcnRead(BC250_DCN2_REG_CURSOR0_CONTROL), BC250_DCN2_CURSOR_ENABLE, 0u));
+    Bc250DcnWrite(BC250_DCN2_REG_CNVC_CUR0_CONTROL,
+        Bc250DcnField(Bc250DcnRead(BC250_DCN2_REG_CNVC_CUR0_CONTROL), BC250_DCN2_CUR0_ENABLE, 0u));
+    Bc250DcnWrite(BC250_DCN2_REG_CURSOR0_SURFACE_ADDR_HIGH, s_Bc250Dcn2.SavedCursorAddrHi);
+    Bc250DcnWrite(BC250_DCN2_REG_CURSOR0_SURFACE_ADDRESS, s_Bc250Dcn2.SavedCursorAddr);
+    Bc250DcnWrite(BC250_DCN2_REG_CURSOR0_SIZE, s_Bc250Dcn2.SavedCursorSize);
+    Bc250DcnWrite(BC250_DCN2_REG_HUBPREQ0_CURSOR_SETTINGS, s_Bc250Dcn2.SavedCursorSettings);
+    Bc250DcnWrite(BC250_DCN2_REG_CNVC_CUR0_FP_SCALE_BIAS, s_Bc250Dcn2.SavedCnvcScaleBias);
+    Bc250DcnWrite(BC250_DCN2_REG_CNVC_CUR0_CONTROL, s_Bc250Dcn2.SavedCnvcControl);
+    Bc250DcnWrite(BC250_DCN2_REG_CURSOR0_CONTROL, s_Bc250Dcn2.SavedCursorControl);
+    s_Bc250Dcn2.CursorSaved = FALSE;
+    s_Bc250Dcn2.CursorHasShape = FALSE;
+}
+
+static VOID Bc250Dcn2CursorUnmap(void)
+{
+    if (s_Bc250Dcn2.CursorCpu != NULL) {
+        (void)Bc250VramCpuUnmapMemory(&g_Bc250DisplayState.DxgkInterface, s_Bc250Dcn2.CursorCpu);
+        s_Bc250Dcn2.CursorCpu = NULL;
+    }
+    s_Bc250Dcn2.CursorVramReady = FALSE;
+}
+
+/* ---- 6. DPMS: apagar/acender o OTG (optc1_blank_crtc/unblank_crtc) -------- */
+static VOID Bc250Dcn2Blank(BOOLEAN Blank)
+{
+    ULONG v;
+    if (!Bc250Dcn2Key(BC250_DCN2_KEY_DPMS)) return;
+    v = Bc250DcnRead(BC250_DCN2_REG_OTG0_BLANK_CONTROL);
+    if (!s_Bc250Dcn2.BlankSaved) { s_Bc250Dcn2.SavedBlankControl = v; s_Bc250Dcn2.BlankSaved = TRUE; }
+    v = Bc250DcnField(v, BC250_DCN2_BLANK_DATA_EN | BC250_DCN2_BLANK_DE_MODE,
+        Blank ? BC250_DCN2_BLANK_DATA_EN : 0u);
+    Bc250DcnWrite(BC250_DCN2_REG_OTG0_BLANK_CONTROL, v);
+    if (Blank) InterlockedIncrement(&s_Bc250Dcn2.Blanks); else InterlockedIncrement(&s_Bc250Dcn2.Unblanks);
+    Bc250DisplayLog("[DCN2_DPMS] monitor %s: OTG_BLANK_CONTROL 0x%08X (estado atual do blank=%u)\n",
+        Blank ? "D3 -> OTG apagado" : "D0 -> OTG aceso", v,
+        Bc250DcnRead(BC250_DCN2_REG_OTG0_BLANK_CONTROL) & BC250_DCN2_BLANK_CURRENT_STATE);
+}
+
+/* ---- arme e teardown ------------------------------------------------------ */
+static VOID Bc250Dcn2LogSummary(_In_ const char *Why)
+{
+    ULONG k;
+    ULONG gs = (s_Bc250Dcn.Window != NULL) ? Bc250DcnRead(BC250_DCN2_REG_OTG0_GLOBAL_SYNC_STATUS) : 0u;
+    ULONG vc = (s_Bc250Dcn.Window != NULL) ? Bc250DcnRead(BC250_DCN2_REG_OTG0_VINT0_CONTROL) : 0u;
+    Bc250DisplayLog("[DCN2_RESUMO] %s: chaves=0x%02lX | IRQ vstartup=%lld vupdate=%lld vline0=%lld flip=%lld vsync_por_irq=%ld mesmo_quadro=%ld juntadas=%ld ticks_sem_irq=%ld | INT_STATUS agora: vstartup=%u vupdate=%u vline0=%u (GLOBAL_SYNC=0x%08X VINT0_CTL=0x%08X) | cursor formas=%ld recusadas=%ld com_xor=%ld mono=%ld mascaradas=%ld movimentos=%ld ocultos=%ld | DPMS apagar=%ld acender=%ld | EDID real %lu bytes publicado=%u | log em DIRQL linhas=%ld descartadas=%ld | CRC amostras=%ld mudancas=%ld maior_sequencia_estavel=%ld | D06 lido=%u OTG0_INTERRUPT_DEST=0x%08X DCHUB_INTERRUPT_DEST2=0x%08X | D12 pad_adquirido=%ld readback_falhou=%ld devolucao_falhou=%ld | D19 provado=%ld readback_falhou=%ld devolucao_falhou=%ld minmax_readback_falhou=%ld minmax_devolucao_falhou=%ld blank_falhou=%ld unblank_falhou=%ld\n",
+        Why, s_Bc250Dcn2.Keys,
+        (long long)s_Bc250Dcn2.IrqVstartup, (long long)s_Bc250Dcn2.IrqVupdate,
+        (long long)s_Bc250Dcn2.IrqVline0, (long long)s_Bc250Dcn2.IrqFlip,
+        (long)s_Bc250Dcn2.IrqVsyncNotified, (long)s_Bc250Dcn2.IrqSameFrame,
+        (long)s_Bc250Dcn2.IrqCoalesced, (long)s_Bc250Dcn2.IrqFallbackTicks,
+        (gs & BC250_DCN2_VSTARTUP_INT_STATUS) ? 1u : 0u,
+        (gs & BC250_DCN2_VUPDATE_NO_LOCK_INT_STATUS) ? 1u : 0u,
+        (vc & BC250_DCN2_VINT0_INT_STATUS) ? 1u : 0u, gs, vc,
+        (long)s_Bc250Dcn2.CursorShapes, (long)s_Bc250Dcn2.CursorShapeRefused,
+        (long)s_Bc250Dcn2.CursorNeedsXor, (long)s_Bc250Dcn2.CursorMono, (long)s_Bc250Dcn2.CursorMasked,
+        (long)s_Bc250Dcn2.CursorMoves, (long)s_Bc250Dcn2.CursorHidden,
+        (long)s_Bc250Dcn2.Blanks, (long)s_Bc250Dcn2.Unblanks,
+        s_Bc250Dcn2.RealEdidBytes, s_Bc250Dcn2.RealEdidPublished ? 1u : 0u,
+        (long)g_Bc250HirqlLogLines, (long)g_Bc250HirqlLogDropped,
+        (long)s_Bc250Dcn2.CrcSamples, (long)s_Bc250Dcn2.CrcChanges, (long)s_Bc250Dcn2.CrcStableMax,
+        s_Bc250Dcn2.IrqDestRead ? 1u : 0u, s_Bc250Dcn2.IrqDestOtg, s_Bc250Dcn2.IrqDestDchub2,
+        (long)s_Bc250Dcn2.AuxPadAcquires, (long)s_Bc250Dcn2.AuxPadReadbackFail, (long)s_Bc250Dcn2.AuxPadReleaseFail,
+        (long)s_Bc250Dcn2.VTotalProved, (long)s_Bc250Dcn2.VTotalReadbackFail, (long)s_Bc250Dcn2.VTotalRestoreFail,
+        (long)s_Bc250Dcn2.VTotalMinMaxReadbackFail, (long)s_Bc250Dcn2.VTotalMinMaxRestoreFail,
+        (long)s_Bc250Dcn2.VTotalBlankConfirmFail, (long)s_Bc250Dcn2.VTotalUnblankConfirmFail);
+    for (k = 0u; k < 4u; ++k) {
+        if (s_Bc250Dcn2.CrcBuf[k].Samples == 0) continue;
+        Bc250DisplayLog("[DCN2_CRC] buffer Seg 0x%llX: CRC 0x%08X, %ld amostras paradas, %ld trocas de conteudo\n",
+            (unsigned long long)s_Bc250Dcn2.CrcBuf[k].Seg, s_Bc250Dcn2.CrcBuf[k].Crc,
+            (long)s_Bc250Dcn2.CrcBuf[k].Samples, (long)s_Bc250Dcn2.CrcBuf[k].Changes);
+    }
+}
+
+static VOID Bc250Dcn2Teardown(_In_ const char *Why)
+{
+    if (s_Bc250Dcn.Window == NULL || s_Bc250Dcn2.Keys == 0u) return;
+    Bc250Dcn2LogSummary(Why);
+    Bc250Dcn2IrqDisarm();
+    Bc250Dcn2CrcDisarm();
+    Bc250Dcn2CursorRestore();
+    Bc250Dcn2CursorUnmap();
+    if (s_Bc250Dcn2.BlankSaved) {
+        Bc250DcnWrite(BC250_DCN2_REG_OTG0_BLANK_CONTROL, s_Bc250Dcn2.SavedBlankControl);
+        s_Bc250Dcn2.BlankSaved = FALSE;
+    }
+    Bc250DisplayLog("[DCN2_TEARDOWN] %s: interrupcao, CRC, cursor e blank devolvidos como o GOP deixou\n", Why);
+    s_Bc250Dcn2.Keys = 0u;
+}
+
+static VOID Bc250BuildEdid(void);
+
+VOID Bc250DisplaySetDcnExt(ULONG Keys)
+{
+    s_Bc250Dcn2.Keys = Keys & BC250_DCN2_KEY_ALL;
+    Bc250DisplayLog("[DCN2] chave DcnExt=0x%02lX (1=IRQ 2=CRC 4=cursor 8=EDID real 0x10=DPMS 0x20=timing real) GOP lido=%u\n",
+        s_Bc250Dcn2.Keys, s_Bc250Dcn.GopRead ? 1u : 0u);
+    if (s_Bc250Dcn2.Keys == 0u || s_Bc250Dcn.Window == NULL || !s_Bc250Dcn.GopRead) {
+        s_Bc250Dcn2.Keys = 0u;
+        return;
+    }
+    if (Bc250Dcn2Key(BC250_DCN2_KEY_TIMING)) {
+        if (s_Bc250Dcn2.TimingMeasured) {
+            s_Bc250Dcn2.TimingApplied = TRUE;
+            g_Bc250DisplayState.CurrentMode.RefreshRateNumerator = s_Bc250Dcn2.Timing.RefreshMilliHz;
+            g_Bc250DisplayState.CurrentMode.RefreshRateDenominator = 1000u;
+            Bc250BuildEdid();
+            Bc250DisplayLog("[DCN2_TIMING] APLICADO ao VidPn e ao EDID sintetizado: %lu/1000 Hz, clock %llu Hz\n",
+                s_Bc250Dcn2.Timing.RefreshMilliHz, (unsigned long long)s_Bc250Dcn2.Timing.PixelRateHz);
+        } else {
+            Bc250DisplayLog("[DCN2_TIMING] RECUSADO (recusa=0x%02X): VidPn segue com a constante de 56,13 Hz\n",
+                s_Bc250Dcn2.TimingRefuse);
+        }
+    }
+    /* DCN.3 (doc 714), so' leitura: o dithering do FMT0 que o GOP deixou e' a
+     * hipotese para o CRC mudar todo quadro com a tela parada (Corrida 272). */
+    s_Bc250Dcn2.FmtControl = Bc250DcnRead(BC250_DCN2_REG_FMT0_CONTROL);
+    s_Bc250Dcn2.FmtBitDepth = Bc250DcnRead(BC250_DCN2_REG_FMT0_BIT_DEPTH_CONTROL);
+    Bc250DisplayLog("[DCN3_FMT] FMT0_CONTROL=0x%08X FMT0_BIT_DEPTH_CONTROL=0x%08X (so' leitura; campos de dithering em dcn_2_0_3_sh_mask.h)\n",
+        s_Bc250Dcn2.FmtControl, s_Bc250Dcn2.FmtBitDepth);
+    /* D23 (doc 737), so' leitura do estado GOP: modo de LUT/Gamma do DPP0/CM0 */
+    {
+        ULONG blndgam = Bc250DcnRead(BC250_DCN2_REG_CM0_BLNDGAM_CONTROL);
+        Bc250DisplayLog("[DCN2_GAMMA] CM0_BLNDGAM_CONTROL=0x%08X (Mode=%lu: 0=Bypass, 1=sRGB, 2=RAM_A, 3=RAM_B)\n",
+            blndgam, blndgam & 3u);
+    }
+    if (Bc250Dcn2Key(BC250_DCN2_KEY_EDID)) {
+        Bc250Dcn2ReadRealEdid();
+        if (s_Bc250Dcn2.RealEdidBytes >= 128u && Bc250DcnEdidBlockValid(s_Bc250Dcn2.RealEdid) &&
+            s_Bc250Dcn2.RealEdidDtd == 0 && s_Bc250Dcn2.TimingApplied) {
+            s_Bc250Dcn2.RealEdidPublished = TRUE;
+            Bc250DisplayLog("[DCN2_EDID] PUBLICADO ao Windows: o timing preferido do monitor (DTD %ld) e' o que o OTG varre\n",
+                (long)s_Bc250Dcn2.RealEdidDtd);
+        } else {
+            Bc250DisplayLog("[DCN2_EDID] NAO publicado (bytes=%lu dtd=%ld timing=%u): o Windows segue com o modo recomendado pelo driver\n",
+                s_Bc250Dcn2.RealEdidBytes, (long)s_Bc250Dcn2.RealEdidDtd, s_Bc250Dcn2.TimingApplied ? 1u : 0u);
+        }
+    }
+    if (Bc250Dcn2Key(BC250_DCN2_KEY_IRQ)) Bc250Dcn2IrqArm();
+    if (Bc250Dcn2Key(BC250_DCN2_KEY_CRC)) Bc250Dcn2CrcArm();
+    if (Bc250Dcn2Key(BC250_DCN2_KEY_CURSOR)) {
+        Bc250DisplayLog("[DCN2_CURSOR] chave ligada; caps de ponteiro so' com o buffer de VRAM reservado (pronto=%u)\n",
+            s_Bc250Dcn2.CursorVramReady ? 1u : 0u);
+    }
+    if (Bc250Dcn2Key(BC250_DCN2_KEY_IRQ_DEST)) Bc250Dcn2ReadIrqDest();
+    if (Bc250Dcn2Key(BC250_DCN2_KEY_VTOTAL_TEST)) Bc250Dcn2VTotalProve();
+}
+
+/* Timing nativo para o VidPn: o medido quando aplicado, senao a constante. */
+static VOID Bc250NativeTiming(_Out_ BC250_DCN_TIMING *T)
+{
+    if (s_Bc250Dcn2.TimingApplied) { *T = s_Bc250Dcn2.Timing; return; }
+    RtlZeroMemory(T, sizeof(*T));
+}
+
+static BOOLEAN Bc250DcnRealEdid(_Outptr_result_maybenull_ const UCHAR **Edid, _Out_ ULONG *Bytes)
+{
+    *Edid = s_Bc250Dcn2.RealEdidPublished ? s_Bc250Dcn2.RealEdid : NULL;
+    *Bytes = s_Bc250Dcn2.RealEdidPublished ? s_Bc250Dcn2.RealEdidBytes : 0u;
+    return s_Bc250Dcn2.RealEdidPublished;
+}
+
+static ULONG Bc250Dcn2KeysArmed(void) { return s_Bc250Dcn2.Keys; }
+ULONG Bc250DisplayDcnExtKeys(void) { return s_Bc250Dcn2.Keys; }
+#else
+void Bc250DisplaySetDcnFlipEnabled(ULONG Enabled) { UNREFERENCED_PARAMETER(Enabled); }
+VOID Bc250DisplaySetDcnExt(ULONG Keys) { UNREFERENCED_PARAMETER(Keys); }
+ULONG Bc250DisplayDcnExtKeys(void) { return 0u; }
+VOID Bc250DisplaySetDcnCursorVram(UINT64 VramOffset, UINT64 Bytes) { UNREFERENCED_PARAMETER(VramOffset); UNREFERENCED_PARAMETER(Bytes); }
+ULONG Bc250DisplayDcnCursorReady(void) { return 0u; }
+BOOLEAN Bc250DisplayDcnIsr(ULONG SrcId, ULONG ExtId) { UNREFERENCED_PARAMETER(SrcId); UNREFERENCED_PARAMETER(ExtId); return FALSE; }
+static NTSTATUS Bc250Dcn2CursorSetShape(CONST DXGKARG_SETPOINTERSHAPE *Shape) { UNREFERENCED_PARAMETER(Shape); return STATUS_NOT_SUPPORTED; }
+static NTSTATUS Bc250Dcn2CursorSetPosition(CONST DXGKARG_SETPOINTERPOSITION *Pos) { UNREFERENCED_PARAMETER(Pos); return STATUS_NOT_SUPPORTED; }
+static VOID Bc250Dcn2Blank(BOOLEAN Blank) { UNREFERENCED_PARAMETER(Blank); }
+static VOID Bc250NativeTiming(_Out_ BC250_DCN_TIMING *T) { RtlZeroMemory(T, sizeof(*T)); }
+static BOOLEAN Bc250DcnRealEdid(_Outptr_result_maybenull_ const UCHAR **Edid, _Out_ ULONG *Bytes) { *Edid = NULL; *Bytes = 0u; return FALSE; }
+ULONG Bc250DisplayDcnFlipArmed(void) { return 0u; }
+static BOOLEAN Bc250DcnFlipProgram(
+    _In_ const char *Route, _In_ UINT64 SourceVramOffset,
+    _In_ PHYSICAL_ADDRESS SegmentAddress, _In_ BOOLEAN Immediate)
+{
+    UNREFERENCED_PARAMETER(Route); UNREFERENCED_PARAMETER(SourceVramOffset);
+    UNREFERENCED_PARAMETER(SegmentAddress); UNREFERENCED_PARAMETER(Immediate);
+    return FALSE;
+}
+#endif
+
 static NTSTATUS Bc250DisplayCopyPrimaryToGop(
     _In_ const char *Route,
     _In_ UINT32 SegmentId,
@@ -946,6 +2653,58 @@ static NTSTATUS Bc250DisplayCopyPrimaryToGop(
     return STATUS_SUCCESS;
 }
 
+/*
+ * DCN.1: rota unica de comutacao de primaria. Com o flip armado, o HUBP0
+ * aponta para a primaria e a copia do SDMA0 nao acontece; recusado ou
+ * desarmado, a copia de antes (Bc250DisplayCopyPrimaryToGop).
+ */
+static NTSTATUS Bc250DisplaySwitchPrimary(
+    _In_ const char *Route,
+    _In_ UINT32 SegmentId,
+    _In_ PHYSICAL_ADDRESS SegmentAddress,
+    _In_ BOOLEAN ModeChangeOnly,
+    _In_ BOOLEAN Immediate)
+{
+    if (SegmentId == 1u &&
+        Bc250DcnFlipProgram(Route, (UINT64)SegmentAddress.QuadPart, SegmentAddress, Immediate)) {
+        return STATUS_SUCCESS;
+    }
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    if (SegmentId != 1u && InterlockedCompareExchange(&s_Bc250Dcn.Armed, 0, 0) != 0) {
+        LONG o = InterlockedIncrement(&s_Bc250Dcn.NotSegment1);
+        if (o <= 8 || (o % 256) == 0) {
+            Bc250DisplayLog("[DCN1_FLIP] FORA_DO_SEG1 #%ld Route=%s Segment=%u Addr=0x%llX: primaria fora do segmento 1, copia do SDMA0\n",
+                o, Route, SegmentId, (unsigned long long)SegmentAddress.QuadPart);
+        }
+    }
+    /* Flip recusado com o HUBP0 numa primaria do DWM: a copia abaixo vai ao
+     * scanout do GOP, que ninguem estaria exibindo. Volta ao GOP e desarma
+     * (falha fechada): o resto da corrida segue no modelo de copia. */
+    if (InterlockedCompareExchange(&s_Bc250Dcn.Armed, 0, 0) != 0 &&
+        InterlockedCompareExchange(&s_Bc250Dcn.OnUserSurface, 0, 0) != 0) {
+        Bc250DcnFlipRestoreGop("FLIP_RECUSADO_VOLTA_A_COPIA");
+    }
+    /*
+     * DIRQL.1 (doc 714): o flip MPO3 chega em DIRQL (KeSynchronizeExecution).
+     * A copia pelo SDMA0 toma g_Bc250SdmaPresent.RingLock; com o IH armado,
+     * outra CPU pode estar com o RingLock em DISPATCH e receber a nossa
+     * interrupcao, que espera o spinlock de interrupcao que esta CPU segura:
+     * deadlock (Corrida 272, mesma familia). Falha fechada, contada.
+     */
+    if (KeGetCurrentIrql() > DISPATCH_LEVEL && g_Bc250SdmaPresent.IhArmed) {
+        static volatile LONG s_DirqlCopyRefused = 0;
+        LONG r = InterlockedIncrement(&s_DirqlCopyRefused);
+        if (r <= 16 || (r % 256) == 0) {
+            Bc250DisplayLog("[DIRQL1] COPIA RECUSADA #%ld Route=%s Segment=%u: copia do SDMA0 em DIRQL com o IH armado (risco de deadlock); flip falha fechado\n",
+                r, Route, SegmentId);
+        }
+        return STATUS_INVALID_DEVICE_STATE;
+    }
+#endif
+    return Bc250DisplayCopyPrimaryToGop(Route, SegmentId,
+        (UINT64)SegmentAddress.QuadPart, ModeChangeOnly);
+}
+
 static volatile LONG g_Bc250DisplaySyntheticEdidEnabled = 0; /* Default: 0 (disabled) para forçar o DMM a usar DxgkDdiRecommendMonitorModes */
 
 void Bc250DisplaySetSyntheticEdidEnabled(BOOLEAN Enabled)
@@ -993,9 +2752,12 @@ NTSYSAPI NTSTATUS NTAPI ZwFlushBuffersFile(
 
 #if defined(BC250_ENABLE_DXGK_REGISTRATION)
 #define BC250_PAGING_LOG_RING_SIZE (128u * 1024u)
-static char g_Bc250PagingLogRing[BC250_PAGING_LOG_RING_SIZE];
-static ULONG g_Bc250PagingLogHead = 0u;
-static ULONG g_Bc250PagingLogTail = 0u;
+/* FB.1b (doc 607): globais, NAO static -- o PDB privado so traz simbolos
+ * globais, e o extrator (tools/extrair-anel-do-dump.ps1) le o anel do dump
+ * pelo nome. Corrida 227: com static o cdb nao achou nenhum dos tres. */
+char g_Bc250PagingLogRing[BC250_PAGING_LOG_RING_SIZE];
+ULONG g_Bc250PagingLogHead = 0u;
+ULONG g_Bc250PagingLogTail = 0u;
 static KSPIN_LOCK g_Bc250PagingLogLock;
 static volatile LONG g_Bc250PagingLogLockInitOnce = 0;
 
@@ -1036,7 +2798,7 @@ static volatile LONG g_Bc250PagingLogLockInitOnce = 0;
  *
  * Cada tag da classe 9 passa a ter contador proprio (9, 15, 16 e 17).
  */
-#define BC250_VERBOSE_LOG_CLASS_COUNT 18u
+#define BC250_VERBOSE_LOG_CLASS_COUNT 19u
 #define BC250_VERBOSE_LOG_FIRST       16L
 #define BC250_VERBOSE_LOG_PERIOD      1024L
 static volatile LONG g_Bc250VerboseLogOrdinal[BC250_VERBOSE_LOG_CLASS_COUNT];
@@ -1150,7 +2912,7 @@ static BOOLEAN Bc250ShouldEmitVerboseLog(
         Bc250LogTextContains(Text, "REJECT") ||
         Bc250LogTextContains(Text, "ERROR") ||
         Bc250LogTextContains(Text, "FAILED") ||
-        Bc250LogTextContains(Text, "PASS") ||
+        (Bc250LogTextContains(Text, "PASS") && !Bc250LogTextContains(Text, "GATE FISICO")) ||
         Bc250LogTextContains(Text, "PROVADO") ||
         Bc250LogTextContains(Text, "VEREDITO") ||
         /*
@@ -1209,6 +2971,9 @@ static BOOLEAN Bc250ShouldEmitVerboseLog(
         classId = 13u;
     } else if (Bc250LogTextStartsWith(Text, "[McdmCreateContext]")) {
         classId = 14u;
+    } else if (Bc250LogTextStartsWith(Text, "[SubmitVirtual Node1 GFX] GATE FISICO") ||
+               Bc250LogTextStartsWith(Text, "[SubmitVirtual Node1 GFX] FENCE COMMIT")) {
+        classId = 18u;
     } else {
         return TRUE;
     }
@@ -1223,11 +2988,89 @@ static BOOLEAN Bc250ShouldEmitVerboseLog(
 /* DX.88: dono unico do arquivo de log; ver o bloco em Bc250DisplayLog. */
 static volatile LONG g_Bc250LogFileOwner = 0;
 
+/*
+ * DIRQL.1 (doc 714) -- LOG SEM TRAVA ACIMA DE DISPATCH_LEVEL.
+ *
+ * Corrida 272 (P0, dump 0x133): o dxgmms2 chama o flip MPO3 em DIRQL, dentro
+ * do KeSynchronizeExecution, com o spinlock de interrupcao do dispositivo
+ * preso. O log pegava g_Bc250PagingLogLock com KeAcquireSpinLock, que BAIXA o
+ * IRQL para DISPATCH; a interrupcao do IH chegou na mesma CPU e o ISR girou
+ * para sempre no spinlock que a propria CPU segurava. Tomar o lock com
+ * AtDpcLevel tambem nao serve: outra CPU com o lock em DISPATCH pode receber
+ * a nossa interrupcao e esperar o spinlock de interrupcao que esta CPU segura
+ * (ordem invertida). Acima de DISPATCH o log nao toma lock nenhum: cada linha
+ * vai para um slot proprio, reservado por InterlockedIncrement, e o slot e'
+ * copiado para o anel pelo proximo log em <= DISPATCH (dentro do lock).
+ */
+#define BC250_HIRQL_LOG_SLOTS     64u
+#define BC250_HIRQL_LOG_SLOT_TEXT 248u
+typedef struct BC250_HIRQL_LOG_SLOT {
+    volatile LONG Ready;    /* = numero de sequencia (1..) quando o texto esta completo */
+    USHORT Length;
+    char Text[BC250_HIRQL_LOG_SLOT_TEXT];
+} BC250_HIRQL_LOG_SLOT;
+static BC250_HIRQL_LOG_SLOT g_Bc250HirqlLog[BC250_HIRQL_LOG_SLOTS];
+static volatile LONG g_Bc250HirqlLogWrite = 0;   /* ultima sequencia reservada */
+static LONG g_Bc250HirqlLogRead = 0;             /* ultima copiada (so' sob o lock) */
+volatile LONG g_Bc250HirqlLogDropped = 0;
+volatile LONG g_Bc250HirqlLogLines = 0;
+
+static VOID Bc250LogHirqlAppend(_In_reads_(Length) const char *Text, _In_ int Length)
+{
+    LONG seq;
+    BC250_HIRQL_LOG_SLOT *slot;
+    int i, n;
+    /* Reserva sem lacuna: com o leitor uma volta atras, descarta (contado)
+     * sem reservar, para toda sequencia reservada ser escrita. */
+    for (;;) {
+        LONG w = InterlockedCompareExchange(&g_Bc250HirqlLogWrite, 0, 0);
+        if ((ULONG)(w - *(volatile LONG *)&g_Bc250HirqlLogRead) >= BC250_HIRQL_LOG_SLOTS) {
+            InterlockedIncrement(&g_Bc250HirqlLogDropped);
+            return;
+        }
+        if (InterlockedCompareExchange(&g_Bc250HirqlLogWrite, w + 1, w) == w) { seq = w + 1; break; }
+    }
+    slot = &g_Bc250HirqlLog[(ULONG)(seq - 1) % BC250_HIRQL_LOG_SLOTS];
+    n = (Length < (int)BC250_HIRQL_LOG_SLOT_TEXT) ? Length : (int)BC250_HIRQL_LOG_SLOT_TEXT;
+    for (i = 0; i < n; ++i) ((volatile char *)slot->Text)[i] = Text[i];
+    slot->Length = (USHORT)n;
+    InterlockedIncrement(&g_Bc250HirqlLogLines);
+    InterlockedExchange(&slot->Ready, seq);
+}
+
+/* Chamado com g_Bc250PagingLogLock preso (<= DISPATCH). */
+static VOID Bc250LogHirqlDrainLocked(void)
+{
+    while (g_Bc250HirqlLogRead != InterlockedCompareExchange(&g_Bc250HirqlLogWrite, 0, 0)) {
+        LONG want = g_Bc250HirqlLogRead + 1;
+        BC250_HIRQL_LOG_SLOT *slot = &g_Bc250HirqlLog[(ULONG)(want - 1) % BC250_HIRQL_LOG_SLOTS];
+        int i;
+        if (InterlockedCompareExchange(&slot->Ready, 0, 0) != want) {
+            break;  /* reservado e ainda sendo escrito em DIRQL: fica para o proximo */
+        }
+        for (i = 0; i < (int)slot->Length; ++i) {
+            ULONG next = (g_Bc250PagingLogHead + 1u) % BC250_PAGING_LOG_RING_SIZE;
+            if (next == g_Bc250PagingLogTail) {
+                g_Bc250PagingLogTail = (g_Bc250PagingLogTail + 1u) % BC250_PAGING_LOG_RING_SIZE;
+            }
+            g_Bc250PagingLogRing[g_Bc250PagingLogHead] = slot->Text[i];
+            g_Bc250PagingLogHead = next;
+        }
+        InterlockedExchange(&slot->Ready, 0);
+        g_Bc250HirqlLogRead = want;
+    }
+}
+
 static VOID Bc250LogRingAppend(_In_reads_(Length) const char *Text, _In_ int Length)
 {
     KIRQL irql;
     int i;
+    if (KeGetCurrentIrql() > DISPATCH_LEVEL) {
+        Bc250LogHirqlAppend(Text, Length);
+        return;
+    }
     KeAcquireSpinLock(&g_Bc250PagingLogLock, &irql);
+    Bc250LogHirqlDrainLocked();
     for (i = 0; i < Length; ++i) {
         ULONG next = (g_Bc250PagingLogHead + 1u) % BC250_PAGING_LOG_RING_SIZE;
         if (next == g_Bc250PagingLogTail) {
@@ -1249,6 +3092,7 @@ static VOID Bc250LogRingDrainToFile(_In_ HANDLE FileHandle)
         KIRQL irql;
         drainLen = 0u;
         KeAcquireSpinLock(&g_Bc250PagingLogLock, &irql);
+        Bc250LogHirqlDrainLocked();
         while (g_Bc250PagingLogTail != g_Bc250PagingLogHead && drainLen < sizeof(drainBuf)) {
             drainBuf[drainLen++] = g_Bc250PagingLogRing[g_Bc250PagingLogTail];
             g_Bc250PagingLogTail = (g_Bc250PagingLogTail + 1u) % BC250_PAGING_LOG_RING_SIZE;
@@ -1338,7 +3182,7 @@ void Bc250DisplayLog(const char *Format, ...)
             (void)ZwWriteFile(fileHandle, NULL, NULL, NULL, &ioStatus, buffer, (ULONG)len, NULL, NULL);
             /* Linhas que entraram no anel enquanto esta thread era a dona. */
             Bc250LogRingDrainToFile(fileHandle);
-            (void)ZwFlushBuffersFile(fileHandle, &ioStatus);
+            /* LOG.2 (Corrida 289): ZwFlushBuffersFile sincrono removido para nao congelar a CPU em regime */
             ZwClose(fileHandle);
         } else {
             /* Arquivo indisponivel: a linha espera no anel em vez de sumir. */
@@ -1346,6 +3190,142 @@ void Bc250DisplayLog(const char *Format, ...)
         }
         InterlockedExchange(&g_Bc250LogFileOwner, 0);
     }
+}
+
+/*
+ * LOG.1 (doc 585): DriverEntry, AddDevice e StartDevice rodam com APCs
+ * desligadas, entao TODAS as linhas deles vao para o anel em RAM e so' chegam
+ * ao arquivo quando alguem escreve uma linha num contexto normal. Na Corrida
+ * 213 o StartDevice falhou, o dispositivo foi removido e nenhum contexto
+ * normal veio: zero linhas no arquivo, e uma corrida inteira sem diagnostico.
+ * A thread do rastro duravel ja roda em PASSIVE com APCs ligadas a cada
+ * 100 ms e ja faz I/O de arquivo durante a paginacao; ela passa a drenar o
+ * anel, com o mesmo dono unico do arquivo (DX.88) e o mesmo caminho de escrita.
+ */
+void Bc250DisplayLogDrainFromWorker(void)
+{
+    UNICODE_STRING logFileName = RTL_CONSTANT_STRING(L"\\DosDevices\\C:\\BC250_DISPLAY_LOG.txt");
+    OBJECT_ATTRIBUTES objAttr;
+    IO_STATUS_BLOCK ioStatus;
+    HANDLE fileHandle = NULL;
+    BOOLEAN pending;
+    KIRQL irql;
+
+    if (KeGetCurrentIrql() != PASSIVE_LEVEL || KeAreApcsDisabled()) {
+        return;
+    }
+    if (InterlockedCompareExchange(&g_Bc250PagingLogLockInitOnce, 1, 0) == 0) {
+        KeInitializeSpinLock(&g_Bc250PagingLogLock);
+    }
+    KeAcquireSpinLock(&g_Bc250PagingLogLock, &irql);
+    Bc250LogHirqlDrainLocked();
+    pending = (g_Bc250PagingLogTail != g_Bc250PagingLogHead) ? TRUE : FALSE;
+    KeReleaseSpinLock(&g_Bc250PagingLogLock, irql);
+    if (!pending) {
+        return;
+    }
+    if (InterlockedCompareExchange(&g_Bc250LogFileOwner, 1, 0) != 0) {
+        return;
+    }
+    InitializeObjectAttributes(&objAttr, &logFileName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    if (NT_SUCCESS(ZwCreateFile(&fileHandle, FILE_APPEND_DATA | SYNCHRONIZE, &objAttr, &ioStatus, NULL, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_OPEN_IF, FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0))) {
+        Bc250LogRingDrainToFile(fileHandle);
+        (void)ZwFlushBuffersFile(fileHandle, &ioStatus);
+        ZwClose(fileHandle);
+    }
+    InterlockedExchange(&g_Bc250LogFileOwner, 0);
+}
+
+/*
+ * TDRLOG.1 (Corrida 301, doc 762). Cada passo do TDR vai a um arquivo proprio
+ * com FILE_WRITE_THROUGH e ZwFlushBuffersFile ANTES de o passo executar: numa
+ * trava dura, a ultima linha do arquivo e' o passo que comecou e nao voltou.
+ * Fora de PASSIVE (ou com APCs desligadas) nao ha disco; o passo fica no anel
+ * g_Bc250TdrSteps, que o dump preserva, e no log normal.
+ */
+#define BC250_TDR_STEP_SLOTS 64u
+#define BC250_TDR_STEP_CHARS 192u
+char g_Bc250TdrSteps[BC250_TDR_STEP_SLOTS][BC250_TDR_STEP_CHARS];
+volatile LONG g_Bc250TdrStepSeq = 0;
+static volatile LONG g_Bc250TdrWindowOpen = 0;
+
+void Bc250TdrWindowSet(_In_ BOOLEAN Open)
+{
+    InterlockedExchange(&g_Bc250TdrWindowOpen, Open ? 1 : 0);
+}
+
+BOOLEAN Bc250TdrWindowIsOpen(void)
+{
+    return InterlockedCompareExchange(&g_Bc250TdrWindowOpen, 0, 0) != 0 ? TRUE : FALSE;
+}
+
+static int Bc250TdrSnprintf(char *Buffer, size_t Size, const char *Format, ...)
+{
+    va_list args;
+    int len;
+    va_start(args, Format);
+    len = _vsnprintf(Buffer, Size, Format, args);
+    va_end(args);
+    return len;
+}
+
+static void Bc250TdrStepV(BOOLEAN AllowDisk, const char *Format, va_list args)
+{
+    char buffer[BC250_TDR_STEP_CHARS];
+    char line[BC250_TDR_STEP_CHARS + 64];
+    int len;
+    LONG seq;
+    LARGE_INTEGER qpc;
+    KIRQL irql = KeGetCurrentIrql();
+
+    len = _vsnprintf(buffer, sizeof(buffer) - 1, Format, args);
+    if (len < 0) len = (int)sizeof(buffer) - 1;
+    buffer[len] = '\0';
+
+    seq = InterlockedIncrement(&g_Bc250TdrStepSeq);
+    qpc = KeQueryPerformanceCounter(NULL);
+    len = Bc250TdrSnprintf(line, sizeof(line) - 1, "[TDRSTEP] #%ld qpc=%lld irql=%u %s\r\n",
+        (long)seq, (long long)qpc.QuadPart, (unsigned)irql, buffer);
+    if (len < 0) len = (int)sizeof(line) - 1;
+    line[len] = '\0';
+    RtlCopyMemory(g_Bc250TdrSteps[(ULONG)seq % BC250_TDR_STEP_SLOTS], line,
+        ((ULONG)len < BC250_TDR_STEP_CHARS - 1u) ? (SIZE_T)len : (SIZE_T)(BC250_TDR_STEP_CHARS - 1u));
+    g_Bc250TdrSteps[(ULONG)seq % BC250_TDR_STEP_SLOTS][BC250_TDR_STEP_CHARS - 1u] = '\0';
+
+    /* Disco so' fora da paginacao: I/O sincrono na thread de paginacao trava o
+     * NTFS (comentario do Bc250DisplayLog acima). */
+    if (AllowDisk && irql == PASSIVE_LEVEL && !KeAreApcsDisabled() &&
+        InterlockedCompareExchange(&g_Bc250PagingActiveCount, 0, 0) == 0) {
+        UNICODE_STRING fileName = RTL_CONSTANT_STRING(L"\\DosDevices\\C:\\BC250_TDR_PASSOS.txt");
+        OBJECT_ATTRIBUTES objAttr;
+        IO_STATUS_BLOCK ioStatus;
+        HANDLE fileHandle = NULL;
+        InitializeObjectAttributes(&objAttr, &fileName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+        if (NT_SUCCESS(ZwCreateFile(&fileHandle, FILE_APPEND_DATA | SYNCHRONIZE, &objAttr, &ioStatus, NULL,
+                FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_OPEN_IF,
+                FILE_SYNCHRONOUS_IO_NONALERT | FILE_WRITE_THROUGH, NULL, 0))) {
+            (void)ZwWriteFile(fileHandle, NULL, NULL, NULL, &ioStatus, line, (ULONG)len, NULL, NULL);
+            (void)ZwFlushBuffersFile(fileHandle, &ioStatus);
+            ZwClose(fileHandle);
+        }
+    }
+    Bc250DisplayLog("%s", line);
+}
+
+void Bc250TdrStep(const char *Format, ...)
+{
+    va_list args;
+    va_start(args, Format);
+    Bc250TdrStepV(TRUE, Format, args);
+    va_end(args);
+}
+
+void Bc250TdrStepRam(const char *Format, ...)
+{
+    va_list args;
+    va_start(args, Format);
+    Bc250TdrStepV(FALSE, Format, args);
+    va_end(args);
 }
 
 void Bc250DisplayLogSamplingSummary(void)
@@ -1413,6 +3393,10 @@ static VOID Bc250FillNativeSignalInfo(
     ULONGLONG refreshDenominator;
     ULONGLONG pixelRate;
 
+    BC250_DCN_TIMING native;
+    UINT hsyncNumerator = BC250_NATIVE_HSYNC_NUM;
+    UINT hsyncDenominator = BC250_NATIVE_HSYNC_DEN;
+
     RtlZeroMemory(SignalInfo, sizeof(*SignalInfo));
     horizontalTotal = (ULONGLONG)g_Bc250DisplayState.CurrentMode.Width +
         BC250_NATIVE_HBLANK;
@@ -1421,6 +3405,17 @@ static VOID Bc250FillNativeSignalInfo(
     refreshNumerator = BC250_NATIVE_REFRESH_NUM;
     refreshDenominator = BC250_NATIVE_REFRESH_DEN;
     pixelRate = BC250_NATIVE_PIXEL_RATE;
+    /* DCN.2 item 1 (doc 713): o timing que o OTG0 varre, medido no D2. */
+    Bc250NativeTiming(&native);
+    if (native.RefreshMilliHz != 0u) {
+        horizontalTotal = native.HTotal;
+        verticalTotal = native.VTotal;
+        refreshNumerator = native.RefreshMilliHz;
+        refreshDenominator = 1000u;
+        pixelRate = native.PixelRateHz;
+        hsyncNumerator = native.RefreshMilliHz * native.VTotal;
+        hsyncDenominator = 1000u;
+    }
 
     SignalInfo->VideoStandard = D3DKMDT_VSS_OTHER;
     SignalInfo->TotalSize.cx = (UINT)horizontalTotal;
@@ -1431,8 +3426,8 @@ static VOID Bc250FillNativeSignalInfo(
         g_Bc250DisplayState.CurrentMode.Height;
     SignalInfo->VSyncFreq.Numerator = (UINT)refreshNumerator;
     SignalInfo->VSyncFreq.Denominator = (UINT)refreshDenominator;
-    SignalInfo->HSyncFreq.Numerator = BC250_NATIVE_HSYNC_NUM;
-    SignalInfo->HSyncFreq.Denominator = BC250_NATIVE_HSYNC_DEN;
+    SignalInfo->HSyncFreq.Numerator = hsyncNumerator;
+    SignalInfo->HSyncFreq.Denominator = hsyncDenominator;
     SignalInfo->PixelRate = pixelRate;
     SignalInfo->ScanLineOrdering = D3DDDI_VSSLO_PROGRESSIVE;
 
@@ -1467,7 +3462,10 @@ static BOOLEAN Bc250SynchronizedVsyncCallback(
         interruptType == (LONG)DXGK_INTERRUPT_CRTC_VSYNC_WITH_MULTIPLANE_OVERLAY) {
         data.InterruptType = DXGK_INTERRUPT_CRTC_VSYNC;
         data.CrtcVsync.VidPnTargetId = 1;
-        if (state->PrimaryAddressValid && state->PrimaryAddress.QuadPart != 0) {
+        if (Bc250DcnFlipDisplayedSegment() != 0) {
+            /* DCN.1 D4: so' a primaria que o HUBP0 ja latchou. */
+            data.CrtcVsync.PhysicalAddress.QuadPart = Bc250DcnFlipDisplayedSegment();
+        } else if (state->PrimaryAddressValid && state->PrimaryAddress.QuadPart != 0) {
             data.CrtcVsync.PhysicalAddress = state->PrimaryAddress;
         } else {
             data.CrtcVsync.PhysicalAddress = state->FrameBufferPhysical;
@@ -1502,6 +3500,8 @@ static VOID Bc250VsyncDpcRoutine(
 {
     BOOLEAN notified = FALSE;
     NTSTATUS status;
+    LONG viaFlipIrq;
+    BOOLEAN latchedNow;
     UNREFERENCED_PARAMETER(Dpc);
     UNREFERENCED_PARAMETER(DeferredContext);
     UNREFERENCED_PARAMETER(SystemArgument1);
@@ -1518,22 +3518,49 @@ static VOID Bc250VsyncDpcRoutine(
         return;
     }
 
+    /* Completar o flip pela interrupcao (doc 716 par.6.1, doc 717): o flip do
+     * HUBP0 so' enfileira este DPC (Bc250DisplayDcnIsr) e nao marca "VSYNC
+     * pendente" -- so' VSTARTUP/VUPDATE/VLINE0 marcam, e nenhum dos tres
+     * chega ao IH (D06, doc 715). Por isso o latch tem de ser conferido
+     * ANTES de qualquer saida antecipada ligada a notificar VSYNC ao DXGK
+     * (fromIrq==0/-1 abaixo so' quer dizer "sem VSYNC novo", nao "sem flip");
+     * senao o flip so' seria pego no tique periodico de 4 ms seguinte. */
+    viaFlipIrq = InterlockedExchange(&s_Bc250Dcn2.FlipIrqDpcPending, 0);
+    latchedNow = Bc250DcnFlipPollLatch(); /* DCN.1 D4 */
+    if (Bc250DcnFlipLatchIsViaIrq((int)viaFlipIrq, latchedNow ? 1 : 0)) {
+        InterlockedIncrement(&s_Bc250Dcn.LatchedViaFlipIrq);
+    }
+
     if (g_Bc250DisplayState.OtgVsyncActive &&
         g_Bc250DisplayState.OtgFrameCountRegister != NULL) {
         static ULONG s_StallTicks = 0;
         ULONG otgCrumb = Bc250CrumbBefore(BC250_CRUMB_SITE_OTG_READ, 0x14030u);
         ULONG currentFrame = *g_Bc250DisplayState.OtgFrameCountRegister;
+        LONG fromIrq;
         Bc250CrumbAfter(otgCrumb);
-        if (currentFrame == g_Bc250DisplayState.LastOtgFrameCount) {
-            /* Quadro de hardware ainda nao avancou; se atrasar mais de 32ms (8 ticks de 4ms), libera Vsync por tempo */
-            if (++s_StallTicks < 8u) {
-                return;
-            }
+        /* DCN.2 item 2 (doc 713): com a interrupcao do OTG0 viva, so' ela
+         * gera VSYNC; o timer de 4 ms vira rede (fromIrq = -1). */
+        fromIrq = Bc250Dcn2VsyncFromIrq(currentFrame);
+        if (fromIrq == 0) {
+            return;
         }
-        s_StallTicks = 0u;
-        g_Bc250DisplayState.LastOtgFrameCount = currentFrame;
-        InterlockedIncrement(&g_Bc250DisplayState.HardwareVsyncCount);
+        if (fromIrq < 0) {
+            /* Zero-Stall no Flip (Opcao 4): se um flip acabou de ser latchado
+             * (latchedNow == TRUE), o hardware ja comutou a superficie no scanout.
+             * Nao devemos reter o Vsync esperando o tick de frame do OTG mudar,
+             * permitindo apresentacao instantanea com minima latencia no DWM/MPO3. */
+            if (!latchedNow && currentFrame == g_Bc250DisplayState.LastOtgFrameCount) {
+                /* Quadro de hardware ainda nao avancou; se atrasar mais de 32ms (8 ticks de 4ms), libera Vsync por tempo */
+                if (++s_StallTicks < 8u) {
+                    return;
+                }
+            }
+            s_StallTicks = 0u;
+            g_Bc250DisplayState.LastOtgFrameCount = currentFrame;
+            InterlockedIncrement(&g_Bc250DisplayState.HardwareVsyncCount);
+        }
     }
+    Bc250Dcn2CrcSample();    /* DCN.2 item 3 */
 
     status = g_Bc250DisplayState.DxgkInterface.DxgkCbSynchronizeExecution(
         g_Bc250DisplayState.DxgkInterface.DeviceHandle,
@@ -1687,6 +3714,16 @@ static void Bc250BuildEdid(void)
 
     /* Detailed timing descriptor 1: native mode */
     d = &e[54];
+    {
+        BC250_DCN_TIMING native;
+        Bc250NativeTiming(&native);
+        if (native.RefreshMilliHz != 0u) {
+            /* DCN.2 item 1 (doc 713): DTD do timing que o OTG0 varre. */
+            Bc250DcnEncodeDtd(&native, hSizeMm, vSizeMm, d);
+            clock10kHz = (ULONG)((native.PixelRateHz + 5000ULL) / 10000ULL);
+            goto Bc250EdidDtdDone;
+        }
+    }
     d[0] = (UCHAR)(clock10kHz & 0xFF);
     d[1] = (UCHAR)((clock10kHz >> 8) & 0xFF);
     d[2] = (UCHAR)(hActive & 0xFF);
@@ -1702,6 +3739,7 @@ static void Bc250BuildEdid(void)
     d[13] = (UCHAR)(vSizeMm & 0xFF);
     d[14] = (UCHAR)((((hSizeMm >> 8) & 0x0F) << 4) | ((vSizeMm >> 8) & 0x0F));
     d[15] = 0; d[16] = 0; d[17] = 0x1E;
+Bc250EdidDtdDone:
 
     /* Detailed descriptor 2: range limits */
     d = &e[72];
@@ -1791,16 +3829,20 @@ NTSTATUS Bc250DisplayInit(
          * passa a recusar (falha fechada) em vez de ler por um alias.
          */
         ULONG fbBytes = (ULONG)BC250_VRAM_WC_WINDOW_BYTES;
+        /* P1b: a janela WC enxerga a VRAM pela DRAM quando armada (aper_base em APU). */
+        PHYSICAL_ADDRESS fbCpuPhysical;
+        fbCpuPhysical.QuadPart = (LONGLONG)Bc250VramCpuTranslate(
+            (ULONGLONG)g_Bc250DisplayState.FrameBufferPhysical.QuadPart);
         g_Bc250DisplayState.FrameBufferSize = fbBytes;
         g_Bc250DisplayState.FrameBufferVirtual = MmMapIoSpaceEx(
-            g_Bc250DisplayState.FrameBufferPhysical,
+            fbCpuPhysical,
             fbBytes,
             PAGE_READWRITE | PAGE_WRITECOMBINE);
         if (g_Bc250DisplayState.FrameBufferVirtual == NULL) {
             fbBytes = 128u * 1024u * 1024u;
             g_Bc250DisplayState.FrameBufferSize = fbBytes;
             g_Bc250DisplayState.FrameBufferVirtual = MmMapIoSpaceEx(
-                g_Bc250DisplayState.FrameBufferPhysical,
+                fbCpuPhysical,
                 fbBytes,
                 PAGE_READWRITE | PAGE_WRITECOMBINE);
         }
@@ -1808,7 +3850,7 @@ NTSTATUS Bc250DisplayInit(
             fbBytes = g_Bc250DisplayState.CurrentMode.Pitch * g_Bc250DisplayState.CurrentMode.Height;
             g_Bc250DisplayState.FrameBufferSize = fbBytes;
             g_Bc250DisplayState.FrameBufferVirtual = MmMapIoSpaceEx(
-                g_Bc250DisplayState.FrameBufferPhysical,
+                fbCpuPhysical,
                 fbBytes,
                 PAGE_READWRITE | PAGE_WRITECOMBINE);
         }
@@ -1851,6 +3893,7 @@ void Bc250DisplaySetMmioBase(_In_ PHYSICAL_ADDRESS MmioPhysical)
             Bc250DisplayLog("[DisplayInit] WARNING: Failed to map OTG frame counter at 0x%llX\n",
                 otgRegPhysical.QuadPart);
         }
+        Bc250DcnFlipReadGop(MmioPhysical); /* DCN.1 D2, so' leitura */
     }
 #else
     UNREFERENCED_PARAMETER(MmioPhysical);
@@ -1870,6 +3913,9 @@ void Bc250DisplayTeardown(void)
         ExWaitForRundownProtectionRelease(&g_Bc250DisplayState.PresentRundown);
         g_Bc250DisplayState.PresentRundownInitialized = FALSE;
     }
+    Bc250Dcn2Teardown("TEARDOWN");      /* DCN.2, Lei 5 */
+    Bc250DcnFlipRestoreGop("TEARDOWN"); /* DCN.1, Lei 5 */
+    Bc250DcnFlipUnmap();
     if (g_Bc250DisplayState.OtgFrameCountRegister != NULL) {
         MmUnmapIoSpace((PVOID)g_Bc250DisplayState.OtgFrameCountRegister, sizeof(ULONG));
         g_Bc250DisplayState.OtgFrameCountRegister = NULL;
@@ -1882,6 +3928,12 @@ void Bc250DisplayTeardown(void)
     }
     Bc250DisplayClearGpuVaMappings();
     Bc250SdmaPresentTeardown();
+    /* P1b: o proximo StartDevice decide de novo o caminho da CPU ate a VRAM. */
+    if (g_Bc250VramCpuViaDram != 0) {
+        Bc250DisplayLog("[P1B_VRAM_DRAM] TEARDOWN: desarmada (HDP omitido %lld vezes)\n",
+            (long long)g_Bc250VramCpuHdpSkipped);
+    }
+    InterlockedExchange(&g_Bc250VramCpuViaDram, 0);
 #else
     Bc250DisplayClearGpuVaMappings();
 #endif
@@ -2036,6 +4088,29 @@ NTSTATUS APIENTRY Bc250DxgkDdiQueryDeviceDescriptor(
     }
     Bc250DisplayLog("[QueryDeviceDescriptor] ChildUid=%u, Offset=%u, Len=%u\n",
         ChildUid, DeviceDescriptor->DescriptorOffset, DeviceDescriptor->DescriptorLength);
+
+    {
+        /* DCN.2 item 6 (doc 713): o EDID real lido por AUX, so' quando o DTD
+         * dele e' o timing que o OTG varre. */
+        const UCHAR *real = NULL;
+        ULONG realBytes = 0u;
+        if (ChildUid == 1 && Bc250DcnRealEdid(&real, &realBytes) && real != NULL) {
+            if (DeviceDescriptor->DescriptorOffset >= realBytes ||
+                DeviceDescriptor->DescriptorBuffer == NULL ||
+                DeviceDescriptor->DescriptorLength == 0) {
+                return STATUS_MONITOR_NO_MORE_DESCRIPTOR_DATA;
+            }
+            available = realBytes - DeviceDescriptor->DescriptorOffset;
+            copy = (DeviceDescriptor->DescriptorLength < available)
+                 ? DeviceDescriptor->DescriptorLength : available;
+            RtlCopyMemory(DeviceDescriptor->DescriptorBuffer,
+                &real[DeviceDescriptor->DescriptorOffset], copy);
+            DeviceDescriptor->DescriptorLength = copy;
+            Bc250DisplayLog("[QueryDeviceDescriptor] EDID REAL (DCN.2): Offset=%u Len=%u de %lu\n",
+                DeviceDescriptor->DescriptorOffset, copy, realBytes);
+            return STATUS_SUCCESS;
+        }
+    }
 
     if (ChildUid != 1 || !Bc250DisplayGetSyntheticEdidEnabled() || !g_Bc250DisplayState.EdidValid) {
         Bc250DisplayLog("[QueryDeviceDescriptor] ChildUid=%u, SyntheticEdid=%d, EdidValid=%d -> STATUS_MONITOR_NO_MORE_DESCRIPTOR_DATA (forcing DxgkDdiRecommendMonitorModes)\n",
@@ -2194,8 +4269,13 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetPowerState(
     POWER_ACTION ActionType)
 {
     UNREFERENCED_PARAMETER(MiniportDeviceContext);
-    UNREFERENCED_PARAMETER(HardwareUid);
     UNREFERENCED_PARAMETER(ActionType);
+
+    /* DCN.2 item 6 (doc 713): o filho 1 e' o monitor; D3 apaga o OTG, D0 acende. */
+    if (HardwareUid == 1u &&
+        (DevicePowerState == PowerDeviceD0 || DevicePowerState == PowerDeviceD3)) {
+        Bc250Dcn2Blank(DevicePowerState == PowerDeviceD3 ? TRUE : FALSE);
+    }
 
     if (DevicePowerState == PowerDeviceD0 ||
         DevicePowerState == PowerDeviceD1 ||
@@ -2243,7 +4323,11 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetPalette(
     CONST DXGKARG_SETPALETTE *pSetPalette)
 {
     UNREFERENCED_PARAMETER(MiniportDeviceContext);
-    UNREFERENCED_PARAMETER(pSetPalette);
+    if (pSetPalette == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    Bc250DisplayLog("[SetPalette] VidPnSourceId=%u FirstEntry=%u NumEntries=%u\n",
+        pSetPalette->VidPnSourceId, pSetPalette->FirstEntry, pSetPalette->NumEntries);
     return STATUS_SUCCESS;
 }
 
@@ -2340,8 +4424,21 @@ static BOOLEAN Bc250SourceModeMatchesGop(
 static BOOLEAN Bc250TargetModeMatchesGop(
     _In_ CONST D3DKMDT_VIDPN_TARGET_MODE *Mode)
 {
+    BC250_DCN_TIMING native;
     if (Mode == NULL) {
         return FALSE;
+    }
+    /* DCN.2 item 1 (doc 713): com o timing medido aplicado, um modo-alvo com
+     * refresh conhecido e diferente (>1%) do que o OTG varre nao e' o do GOP. */
+    Bc250NativeTiming(&native);
+    if (native.RefreshMilliHz != 0u && Mode->VideoSignalInfo.VSyncFreq.Denominator != 0u &&
+        Mode->VideoSignalInfo.VSyncFreq.Numerator != 0u) {
+        ULONGLONG mhz = ((ULONGLONG)Mode->VideoSignalInfo.VSyncFreq.Numerator * 1000ULL) /
+            Mode->VideoSignalInfo.VSyncFreq.Denominator;
+        ULONGLONG want = native.RefreshMilliHz;
+        if (mhz + want / 100ULL < want || mhz > want + want / 100ULL) {
+            return FALSE;
+        }
     }
     return Mode->VideoSignalInfo.ActiveSize.cx == g_Bc250DisplayState.CurrentMode.Width &&
            Mode->VideoSignalInfo.ActiveSize.cy == g_Bc250DisplayState.CurrentMode.Height &&
@@ -2987,12 +5084,13 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddress(
         *(CONST ULONG *)&pSetVidPnSourceAddress->Flags);
 
     if (pSetVidPnSourceAddress->PrimarySegment == 1u) {
-        NTSTATUS copyStatus = Bc250DisplayCopyPrimaryToGop("SET_ADDRESS",
+        NTSTATUS copyStatus = Bc250DisplaySwitchPrimary("SET_ADDRESS",
             pSetVidPnSourceAddress->PrimarySegment,
-            (UINT64)pSetVidPnSourceAddress->PrimaryAddress.QuadPart,
+            pSetVidPnSourceAddress->PrimaryAddress,
             (pSetVidPnSourceAddress->Flags.ModeChange != 0u &&
              pSetVidPnSourceAddress->Flags.FlipImmediate == 0u &&
-             pSetVidPnSourceAddress->Flags.FlipOnNextVSync == 0u) ? TRUE : FALSE);
+             pSetVidPnSourceAddress->Flags.FlipOnNextVSync == 0u) ? TRUE : FALSE,
+            pSetVidPnSourceAddress->Flags.FlipImmediate != 0u ? TRUE : FALSE);
         if (!NT_SUCCESS(copyStatus)) return copyStatus;
     } else if (pSetVidPnSourceAddress->PrimarySegment != 0u) {
         Bc250DisplayLog("[PRIMARY_COPY] REJECT Route=SET_ADDRESS Seg=%u Status=NOT_SUPPORTED\n",
@@ -3036,9 +5134,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay(
                 pPlane0->hAllocation,
                 pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount);
             if (pPlane0->AllocationSegment == 1u) {
-                NTSTATUS copyStatus = Bc250DisplayCopyPrimaryToGop("MPO1",
+                NTSTATUS copyStatus = Bc250DisplaySwitchPrimary("MPO1",
                     pPlane0->AllocationSegment,
-                    (UINT64)pPlane0->AllocationAddress.QuadPart, FALSE);
+                    pPlane0->AllocationAddress, FALSE, FALSE);
                 if (!NT_SUCCESS(copyStatus)) return copyStatus;
             } else {
                 Bc250DisplayLog("[PRIMARY_COPY] REJECT Route=MPO1 Seg=%u Status=NOT_SUPPORTED\n",
@@ -3160,9 +5258,9 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetVidPnSourceAddressWithMultiPlaneOverlay3(
                     pCtx->hAllocation,
                     pSetVidPnSourceAddressWithMultiPlaneOverlay->PlaneCount);
                 if (pCtx->SegmentId == 1u) {
-                    NTSTATUS copyStatus = Bc250DisplayCopyPrimaryToGop("MPO3",
+                    NTSTATUS copyStatus = Bc250DisplaySwitchPrimary("MPO3",
                         (UINT32)pCtx->SegmentId,
-                        (UINT64)pCtx->SegmentAddress.QuadPart, FALSE);
+                        pCtx->SegmentAddress, FALSE, FALSE);
                     if (!NT_SUCCESS(copyStatus)) {
                         /* MPO3 documenta INVALID_PARAMETER para flip que nao
                          * pode ser processado. O motivo preciso fica no log. */
@@ -3379,8 +5477,8 @@ NTSTATUS APIENTRY Bc250DxgkDdiRecommendMonitorModes(
     Bc250DisplayLog("=== DxgkDdiRecommendMonitorModes SUCCESS: Added %ux%u @ %u/%u Hz to Target %u ===\n",
         g_Bc250DisplayState.CurrentMode.Width,
         g_Bc250DisplayState.CurrentMode.Height,
-        BC250_NATIVE_REFRESH_NUM,
-        BC250_NATIVE_REFRESH_DEN,
+        g_Bc250DisplayState.CurrentMode.RefreshRateNumerator,
+        g_Bc250DisplayState.CurrentMode.RefreshRateDenominator,
         pRecommendMonitorModes->VideoPresentTargetId);
 
     return STATUS_SUCCESS;
@@ -3864,6 +5962,7 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                 effectiveSrcPhys <= g_Bc250DisplayState.FrameBufferSize &&
                 requiredSrcBytes <= g_Bc250DisplayState.FrameBufferSize - effectiveSrcPhys) {
                 BOOLEAN sdmaDone = FALSE;
+                BOOLEAN dcnNoCopy = FALSE; /* DCN.1: flip pelo HUBP0, nenhuma copia */
                 BOOLEAN bltToDestination = (pPresent->Flags.Blt != 0u) ? TRUE : FALSE;
                 const char *bltDestinationVerdict = NULL;
                 BOOLEAN dirtyRectsUsed = FALSE;
@@ -3910,6 +6009,23 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                                 pPresent->DstRect.left, pPresent->DstRect.top,
                                 pPresent->DstRect.right, pPresent->DstRect.bottom);
                         }
+                    } else if (isFlip && !isSubWindow && Bc250DisplayDcnFlipArmed() != 0u) {
+                        /*
+                         * DCN.1 D3: o scanout passa a ser a propria primaria; o
+                         * SetVidPnSourceAddress/MPO3 aponta o HUBP0 para ela. A
+                         * copia de 11 MB pelo SDMA0 deixa de existir neste caminho.
+                         */
+                        sdmaDone = TRUE;
+                        dcnNoCopy = TRUE;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+                        {
+                            LONG skipped = InterlockedIncrement(&s_Bc250Dcn.CopiesSkipped);
+                            if (skipped <= 8 || (skipped % 512) == 0) {
+                                Bc250DisplayLog("[Present #%d] DCN1_SEM_COPIA #%ld: flip pelo HUBP0, nenhuma escrita no scanout do GOP (VramOff=0x%llX)\n",
+                                    count, skipped, (unsigned long long)effectiveSrcPhys);
+                            }
+                        }
+#endif
                     } else if (skipBlankUnderEscape) {
                         sdmaDone = TRUE;
                         if (count <= 10 || (count % 60) == 0) {
@@ -4017,6 +6133,10 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                              * amostral por retangulo sai na linha DIRTY_RECTS. */
                             Bc250DisplayLog("[Present #%d] BYTE_PROOF SKIPPED (DIRTY_RECTS n=%u Bytes=%u): prova amostral por retangulo na linha DIRTY_RECTS\n",
                                 count, dirtyRectCount, dirtyRectBytes);
+                        } else if (BC250_P1_SILENCIO_DA_BAR) {
+                            /* P1 (doc 594): a comparacao integral le ~11 MB da VRAM pela BAR. */
+                            Bc250DisplayLog("[Present #%d] BYTE_PROOF SKIPPED (P1 silencio da BAR): sem leitura de VRAM pela CPU; prova so' da engine (RPTR==WPTR e fence)\n",
+                                count);
                         } else {
                             UINT64 mismatchOffset = ~(UINT64)0;
                             ULONG postNz = 0u, postHx = 0u;
@@ -4088,7 +6208,12 @@ NTSTATUS APIENTRY Bc250DxgkDdiPresent(
                         }
                     }
 
-                    if (!bltToDestination && (count <= 10 || (count % 60) == 0)) {
+                    if (!bltToDestination && dcnNoCopy && (count <= 10 || (count % 60) == 0)) {
+                        /* Corrida 270 (doc 712): sem isto a linha abaixo dizia
+                         * "Blt ... SDMA=YES" para um Present que nao copiou nada. */
+                        Bc250DisplayLog("[Present #%d] SEM COPIA ao scanout do GOP (flip pelo HUBP0, DCN.1); src 0x%llX\n",
+                            count, effectiveSrcPhys);
+                    } else if (!bltToDestination && (count <= 10 || (count % 60) == 0)) {
                         if (isSubWindow) {
                             Bc250DisplayLog("[Present #%d] Blt 2D %ux%u srcPitch=%u (src 0x%llX -> scanout 0x0 DstXY=%u,%u): SDMA=%s\n",
                                 count, presentW, presentH, presentW * 4u,
@@ -4377,6 +6502,12 @@ NTSTATUS APIENTRY Bc250DxgkDdiStopDeviceAndReleasePostDisplayOwnership(
     UNREFERENCED_PARAMETER(TargetId);
 
     if (DisplayInfo == NULL) return STATUS_INVALID_PARAMETER;
+#if defined(BC250_ENABLE_DXGK_REGISTRATION)
+    /* DCN.1 (Lei 5): o BasicDisplay recebe o scanout do GOP, entao o HUBP0
+     * tem de voltar a ele antes da passagem de posse. */
+    Bc250Dcn2Teardown("POST_DISPLAY_OWNERSHIP");
+    Bc250DcnFlipRestoreGop("POST_DISPLAY_OWNERSHIP");
+#endif
 
     if (g_Bc250DisplayState.DisplayAcquired != 0u) {
         RtlCopyMemory(DisplayInfo, &g_Bc250DisplayState.PostDisplayInfo, sizeof(DXGK_DISPLAY_INFORMATION));
@@ -4463,6 +6594,10 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetPointerPosition(
         pSetPointerPosition->VidPnSourceId != 0) {
         return STATUS_INVALID_PARAMETER;
     }
+    /* DCN.2 item 4 (doc 713): cursor por hardware no HUBP0/DPP0. */
+    if (Bc250DisplayDcnCursorReady() != 0u) {
+        return Bc250Dcn2CursorSetPosition(pSetPointerPosition);
+    }
     return STATUS_SUCCESS;
 }
 
@@ -4473,6 +6608,10 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetPointerShape(
     UNREFERENCED_PARAMETER(hAdapter);
     if (pSetPointerShape == NULL) {
         return STATUS_INVALID_PARAMETER;
+    }
+    /* DCN.2 item 4 (doc 713): forma recusada -> o Windows desenha por software. */
+    if (Bc250DisplayDcnCursorReady() != 0u) {
+        return Bc250Dcn2CursorSetShape(pSetPointerShape);
     }
     return STATUS_SUCCESS;
 }
@@ -4531,7 +6670,8 @@ NTSTATUS APIENTRY Bc250DxgkDdiSetTargetGamma(
     if (pSetTargetGammaArg == NULL) return STATUS_INVALID_PARAMETER;
     Bc250ProbeRecord(BC250_PROBE_DMM_CHILD_STATUS_CALLED,
         (ULONG)pSetTargetGammaArg->TargetId);
-    Bc250DisplayLog("[SetTargetGamma] TargetId=%u\n", pSetTargetGammaArg->TargetId);
+    Bc250DisplayLog("[SetTargetGamma] TargetId=%u RampType=%u\n",
+        pSetTargetGammaArg->TargetId, (ULONG)pSetTargetGammaArg->GammaRamp.Type);
     return STATUS_SUCCESS;
 }
 #endif

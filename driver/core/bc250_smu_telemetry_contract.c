@@ -128,3 +128,19 @@ BC250_SMU_STATUS Bc250SmuGetGfxVid(
     return Bc250SmuSendMsgWithParam(
         Transport, BC250_PPSMC_MSG_GetGfxVid, 0u, VidMv);
 }
+
+BC250_SMU_STATUS Bc250SmuGetEnabledFeatures(
+    const BC250_SMU_TRANSPORT *Transport,
+    uint32_t *Features)
+{
+    return Bc250SmuSendMsgWithParam(
+        Transport, BC250_PPSMC_MSG_GetEnabledSmuFeatures, 0u, Features);
+}
+
+BC250_SMU_STATUS Bc250SmuRequestGfxclk(
+    const BC250_SMU_TRANSPORT *Transport,
+    uint32_t FrequencyMhz)
+{
+    return Bc250SmuSendMsgWithParam(
+        Transport, BC250_PPSMC_MSG_RequestGfxclk, FrequencyMhz, NULL);
+}

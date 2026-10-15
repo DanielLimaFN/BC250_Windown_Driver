@@ -533,6 +533,15 @@ typedef struct BC250_HQD_MC_BUFFERS {
     volatile void *PtVirtual;
     uint64_t PtGpuAddress;
     uint32_t PtSizeBytes;
+
+    /*
+     * V0.1 (Corrida 216, doc 589): 1 = o contexto 0 (VMID 0) ja' tem dono --
+     * a GART da D2 -- e PtVirtual aponta para a tabela DELA, onde o chamador
+     * ja' escreveu as PTEs da fila. O contrato NAO escreve nem restaura os
+     * registradores do contexto 0 (era isso que derrubava a GART); a
+     * invalidacao da VMID 0 continua. 0 = comportamento anterior.
+     */
+    uint32_t Context0External;
 } BC250_HQD_MC_BUFFERS;
 
 typedef struct BC250_HQD_PROGRAM_EVIDENCE {
@@ -849,6 +858,7 @@ typedef struct BC250_HQD_ACTIVE_SUBMISSION_EVIDENCE {
     uint32_t GcvmContext0PtEndLoBefore;
     uint32_t GcvmContext0PtBaseLoApplied;
     uint32_t GcvmContext0RestorePassed;
+    uint32_t GcvmContext0External;
     uint32_t CoherencyPassed;
 
     uint32_t GfxOffApplicable;

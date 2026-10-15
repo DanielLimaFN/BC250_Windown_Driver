@@ -2753,7 +2753,9 @@ static BC250_HQD_ACTIVE_STATUS Bc250ComputeRunActiveHqdSubmissionTransactionInte
      * Garante que o microengine MEC consiga traduzir a memoria da fila
      * (Ring 64KB, MQD 512B, EOP 4KB, Fences/Pointers).
      */
-    if (Buffers->PtVirtual != NULL && Buffers->PtGpuAddress != 0u) {
+    Evidence->GcvmContext0External = (Buffers->Context0External != 0u) ? 1u : 0u;
+    if (Buffers->Context0External == 0u &&
+        Buffers->PtVirtual != NULL && Buffers->PtGpuAddress != 0u) {
         Evidence->GcvmContext0PtBaseLoApplied = (uint32_t)Buffers->PtGpuAddress;
         Evidence->GcvmContext0CntlApplied = 0x007FFE01u;
         st.GcvmCtx0Written = 1u;

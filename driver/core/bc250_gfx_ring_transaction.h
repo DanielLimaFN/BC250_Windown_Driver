@@ -95,6 +95,71 @@ extern "C" {
 #define BC250_RLC_SAFE_MODE_EXIT_CMD         0x00000001u /* CMD=1, MESSAGE=0 */
 
 /*
+ * I.RLC / I.IB1 (doc 630) -- somente leitura. Procedencia P1:
+ * inc/linux_ref/gc_10_1_0_offset.h, todos BASE_IDX 1 -> (0xA000 + reg) * 4.
+ *   mmRLC_CNTL       0x4C00 -> 0x3B000   (RLC_CNTL__RLC_ENABLE_F32_MASK = 0x1, sh_mask)
+ *   mmRLC_STAT       0x4C04 -> 0x3B010
+ *   mmCP_IB2_BASE_LO 0x20CF -> 0x3033C, _HI 0x20D0 -> 0x30340, mmCP_IB2_BUFSZ 0x20D1 -> 0x30344
+ *   (o CP_IB1_* ja' e' lido no [TDR_GFX_PACKET]; defines mais abaixo neste arquivo)
+ * Motivo: o RLC nunca confirmou safe mode (0 de 41) e o pfp_direct_load
+ * devolve RLC_CNTL ao valor de antes (0). A RADV encadeia IB2 dentro do IB1.
+ */
+#define BC250_REG_RLC_CNTL                   0x0003B000u
+#define BC250_RLC_CNTL_ENABLE_F32_MASK       0x00000001u
+#define BC250_REG_RLC_STAT                   0x0003B010u
+#define BC250_GFX_REG_CP_IB2_BASE_LO         0x0003033Cu
+#define BC250_GFX_REG_CP_IB2_BASE_HI         0x00030340u
+#define BC250_GFX_REG_CP_IB2_BUFSZ           0x00030344u
+
+/*
+ * RLC.1 e GFXRST.1 (doc 642) -- gfx_v10_0_rlc_resume e gfx_v10_0_soft_reset.
+ * Procedencia P1: inc/linux_ref/gc_10_1_0_offset.h e gc_10_1_0_sh_mask.h.
+ * BASE_IDX 1 -> (0xA000 + reg) * 4; BASE_IDX 0 -> (0x1260 + reg) * 4.
+ *   mmRLC_PG_CNTL        0x4C43 idx1 -> 0x3B10C
+ *   mmRLC_CGCG_CGLS_CTRL 0x4C49 idx1 -> 0x3B124
+ *   mmRLC_SPM_MC_CNTL    0x4C71 idx1 -> 0x3B1C4 (RLC_SPM_VMID_MASK 0xF)
+ *   mmRLC_GPM_STAT       0x4E6E idx1 -> 0x3B9B8 (RLC_EXEC_ROM_CODE_MASK 0x00400000)
+ *   mmGRBM_STATUS2       0x0DA2 idx0 -> 0x08008 (RLC_BUSY_MASK 0x01000000)
+ *   mmCP_MEC_CNTL        0x0E2D idx0 -> 0x08234 (MEC_ME1_HALT 0x40000000, MEC_ME2_HALT 0x10000000)
+ *   CP_ME_CNTL: ME_HALT 0x10000000, PFP_HALT 0x04000000, CE_HALT 0x01000000
+ *   GRBM_SOFT_RESET: SOFT_RESET_RLC 0x00000004
+ *   GRBM_STATUS: PA 0x02000000 SC 0x01000000 BCI 0x00800000 SX 0x00100000
+ *     TA 0x00004000 DB 0x04000000 CB 0x40000000 GDS 0x00008000
+ *     SPI 0x00400000 GE_BUSY_NO_DMA 0x00010000; CP 0x20000000 CP_COHERENCY 0x10000000
+ * RLC_PG_CNTL bit 23 (0x800000): handshake RLC/SMU, que o rlc_start limpa
+ * quando amdgpu_pp_feature_mask tem GFXOFF (default 0xfff7bfff).
+ */
+#define BC250_REG_RLC_PG_CNTL                0x0003B10Cu
+#define BC250_REG_RLC_CGCG_CGLS_CTRL         0x0003B124u
+#define BC250_REG_RLC_SPM_MC_CNTL            0x0003B1C4u
+#define BC250_RLC_SPM_MC_CNTL_VMID_MASK      0x0000000Fu
+#define BC250_REG_RLC_GPM_STAT               0x0003B9B8u
+#define BC250_RLC_GPM_STAT_EXEC_ROM_MASK     0x00400000u
+#define BC250_RLC_PG_CNTL_SMU_HANDSHAKE_OFF  0x00800000u
+#define BC250_GFX_REG_CP_MEC_CNTL            0x00008234u
+#define BC250_CP_MEC_CNTL_ME1_HALT           0x40000000u
+#define BC250_CP_MEC_CNTL_ME2_HALT           0x10000000u
+#define BC250_CP_ME_CNTL_ME_HALT             0x10000000u
+#define BC250_CP_ME_CNTL_PFP_HALT            0x04000000u
+#define BC250_CP_ME_CNTL_CE_HALT             0x01000000u
+#define BC250_GRBM_SOFT_RESET_RLC_MASK       0x00000004u
+#define BC250_GRBM_STATUS2_RLC_BUSY          0x01000000u
+#define BC250_GRBM_STATUS_GFX_PIPE_BUSY      (0x02000000u | 0x01000000u | \
+    0x00800000u | 0x00100000u | 0x00004000u | 0x04000000u | 0x40000000u | \
+    0x00008000u | 0x00400000u | 0x00010000u)
+#define BC250_GRBM_STATUS_CP_BUSY_ANY        (0x20000000u | 0x10000000u)
+/*
+ * C05 (doc 764): gfx_v10_0_ring_soft_recovery (inc/linux_ref/gfx_v10_0.c:8753).
+ * mmSQ_CMD = 0x111B, BASE_IDX 0 -> (0x1260 + 0x111B) * 4 = 0x8DEC (regcalc do
+ * Nagi confere). Campos de gc_10_1_0_sh_mask.h: CMD [3:0], MODE [6:4],
+ * CHECK_VMID [7], VM_ID [31:28]. CMD 3 = mata a onda, MODE 1 = broadcast.
+ */
+#define BC250_GFX_REG_SQ_CMD                 0x00008DECu
+#define BC250_SQ_CMD_KILL_BROADCAST          (0x3u | (0x1u << 4))
+#define BC250_SQ_CMD_CHECK_VMID              0x00000080u
+#define BC250_SQ_CMD_VM_ID_SHIFT             28u
+
+/*
  * DIAGNOSTICO EM TEMPO REAL E TELEMETRIA DE HARDWARE -- classe P1 (docs/03 e gc_10_1_0).
  */
 #define BC250_GFX_REG_GRBM_STATUS            0x00008010u

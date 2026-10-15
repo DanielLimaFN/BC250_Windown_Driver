@@ -271,9 +271,21 @@ const char* Bc250UmdCapsTypeName(UINT Type);
  * recusa. A primeira roda antes de criar a imagem; a segunda confere o layout
  * que a RADV declarou contra a alocacao.
  */
+/*
+ * ZC.1 (doc 749): render target APRESENTAVEL -- primaria do swapchain do DWM
+ * (o MPO3 do DCN mostra a propria alocacao) ou superficie compartilhada que o
+ * DWM compoe -- volta a ter alias sobre a propria alocacao WDDM, que mora na
+ * VRAM (APU.2c). O Present deixa de copiar imagem -> buffer linear -> alocacao
+ * (duas copias de 11 MB e o buffer linear no segmento 2, Corrida 292c). Os
+ * outros render targets seguem com memoria propria (Corrida 190). Cada chave
+ * desliga a sua metade sozinha se a 190 voltar.
+ */
+#define BC250_UMD_ZC1_PRIMARY_RT_ALIAS 1
+#define BC250_UMD_ZC1_SHARED_RT_ALIAS  1
+
 const char* Bc250UmdFrenteBPreCheck(BOOL AllocCreated, UINT64 GpuVa, UINT64 AllocBytes,
     UINT MipLevels, UINT ArraySize, UINT SampleCount, BOOL DepthStencil, BOOL RenderTarget, BOOL OpenedSurface,
-    UINT Width, UINT Height, UINT RowPitch);
+    BOOL PresentableTarget, UINT Width, UINT Height, UINT RowPitch);
 const char* Bc250UmdFrenteBLayoutCheck(UINT64 GpuVa, UINT64 AllocBytes, UINT RowPitch,
     UINT64 LayoutOffset, UINT64 LayoutRowPitch, UINT64 ReqSize, UINT64 ReqAlignment);
 

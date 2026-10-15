@@ -48,6 +48,11 @@ static inline int Bc250PagingDecodeProof(const uint32_t *Words,
             uint64_t address;
             uint32_t chunk;
             if (Words[i] == BC250_SDMA_OP_NOP) { ++i; continue; }
+            if ((Words[i] & 0xFFu) == BC250_SDMA_OP_GCR_REQ) {
+                if (Count - i < 5u) return 0;
+                i += 5u;
+                continue;
+            }
             if (Count - i < 5u || Words[i] != (BC250_SDMA_OP_CONST_FILL | (2u << 30)) ||
                 Words[i + 4u] > 0x3fffffu) return 0;
             address = Words[i + 1u] | ((uint64_t)Words[i + 2u] << 32);
@@ -68,6 +73,11 @@ static inline int Bc250PagingDecodeProof(const uint32_t *Words,
             uint64_t srcAddr, dstAddr;
             uint32_t chunk;
             if (Words[i] == BC250_SDMA_OP_NOP) { ++i; continue; }
+            if ((Words[i] & 0xFFu) == BC250_SDMA_OP_GCR_REQ) {
+                if (Count - i < 5u) return 0;
+                i += 5u;
+                continue;
+            }
             if (Count - i < 7u || Words[i] != (BC250_SDMA_OP_COPY | (BC250_SDMA_SUBOP_COPY_LINEAR << 8)) ||
                 Words[i + 1u] > 0x3fffffu) return 0;
             chunk = Words[i + 1u] + 1u;
@@ -97,6 +107,11 @@ static inline int Bc250PagingDecodeProof(const uint32_t *Words,
             uint64_t srcAddr, dstAddr;
             uint32_t chunk;
             if (Words[i] == BC250_SDMA_OP_NOP) { ++i; continue; }
+            if ((Words[i] & 0xFFu) == BC250_SDMA_OP_GCR_REQ) {
+                if (Count - i < 5u) return 0;
+                i += 5u;
+                continue;
+            }
             if (Count - i < 7u || Words[i] != (BC250_SDMA_OP_COPY | (BC250_SDMA_SUBOP_COPY_LINEAR << 8)) ||
                 Words[i + 1u] > 0x3fffffu) return 0;
             chunk = Words[i + 1u] + 1u;

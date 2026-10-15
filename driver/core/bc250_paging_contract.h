@@ -75,6 +75,13 @@ typedef struct BC250_GFXHUB_TLB_FLUSH_PLAN {
     uint32_t ExpectedRangeHigh;
     uint32_t RequiresDummyRequestRead;
     uint32_t UsesSemaphore;
+    /*
+     * D2 por GART (doc 587): 1 SO' no plano montado por
+     * Bc250PagingBuildGartTlbFlushPlan. E' a unica chave que deixa a VMID 0
+     * passar no validador da transacao; o resto do driver continua recusando
+     * a VMID 0, que e' do MEC fora da GART.
+     */
+    uint32_t GartVmid0;
 } BC250_GFXHUB_TLB_FLUSH_PLAN;
 
 typedef struct BC250_PAGING_REQUEST {
@@ -113,6 +120,15 @@ BC250_PAGING_STATUS Bc250PagingBuildFlushTlb(
 
 BC250_PAGING_STATUS Bc250PagingBuildGfxhubTlbFlushPlan(
     const BC250_PAGING_FLUSH_TLB_PARAMS *Params,
+    BC250_GFXHUB_TLB_FLUSH_PLAN *Plan);
+
+/*
+ * D2 por GART (doc 587): invalidacao da VMID 0 (contexto 0 = GART) pela
+ * engine 17, como gmc_v10_0_flush_gpu_tlb ("Use register 17 for GART") com
+ * gfxhub_v2_0_get_invalidate_req(0, 0): PER_VMID=1<<0 | L2_PTES|PDE0|PDE1|
+ * PDE2|L1_PTES (0x00F80000).
+ */
+BC250_PAGING_STATUS Bc250PagingBuildGartTlbFlushPlan(
     BC250_GFXHUB_TLB_FLUSH_PLAN *Plan);
 
 /* DX.32: plano para o engine 0 (anel grafico) ou 17 (CPU). */

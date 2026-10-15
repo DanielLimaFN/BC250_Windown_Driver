@@ -8,7 +8,7 @@ const root=path.resolve(__dirname,'..');
  assert.equal(security.title,'BC-250 Adrenaline');assert.equal(security.web.nodeIntegration,false);assert.equal(security.web.contextIsolation,true);assert.equal(security.web.sandbox,true);
  assert.equal(await window.evaluate(()=>typeof window.desktop?.setTheme),'function');
  await window.screenshot({path:path.join(root,'artifacts/06-executavel-windows.png')});
- await window.locator('[data-page=sensors]').click();await window.locator('[data-action=skip-install]').click();
+ await window.locator('#installer-skip-btn').click();
  await window.waitForTimeout(1200);assert.notEqual(await window.locator('.sparkline path').first().getAttribute('d'),null);
  assert.equal(await window.locator('#thermal-board #cpu').getAttribute('role'),'button');
  await window.locator('.nav-item[data-page=settings]').click();await window.locator('#theme-select').selectOption('dark');

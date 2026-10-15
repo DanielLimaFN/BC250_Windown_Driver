@@ -21,6 +21,17 @@ CURRENT ARCHITECTURE: display v1 is INHERITED from the UEFI GOP — single-mode 
 scanout allocation in real VRAM, `DxgkDdiPresent` in BLT model via SDMA, VSync READ from
 the OTG frame counter. DCN is NOT on the critical path. Writing to any DCN register is
 FORBIDDEN outside priority P9; reading is allowed.
+P9 OPENED by Daniel on 12/10/2026 (DCN.1, docs/710): writes allowed ONLY to the HUBP0 flip
+registers (DCSURF_FLIP_CONTROL and the primary surface address), behind the DcnFlip key
+(default 0), with the GOP address restored on teardown; timing, clocks, PHY, format, pitch
+and viewport stay untouched.
+Extended by Daniel on 12/10/2026 (DCN.2, docs/713): also the OTG0 VSTARTUP and HUBP0 flip interrupts,
+the OTG0 CRC, the HUBP0/DPP0 cursor, AUX only while reading the EDID, and the OTG blank (DPMS), each
+behind one bit of the DcnExt key (default 0) and restored to the GOP state on teardown.
+DCN.3 (Daniel, 12/10/2026, docs/714): also the OTG0 VUPDATE-no-lock and VLINE0 interrupts
+(OTG_VERTICAL_INTERRUPT0_POSITION/CONTROL) under the IRQ bit, and the dcn10_aux_initialize AUX setup
+(AUX_HPD_SEL, AUX_LS_READ_EN, AUX_DPHY_RX_CONTROL0) only while reading the EDID, restored afterwards.
+Code that can run at DIRQL (MPO3 flip, SynchronizeExecution callbacks, ISR) never takes a DISPATCH spinlock.
 
 WHERE WE ACTUALLY ARE (25/09/2026): run 118 with DX.73/3.277.1.0 completed 180 s with
 legible desktop and the triangle only inside its window, 60/60 harness presents, 60/60
@@ -81,6 +92,9 @@ Esta decisão do proprietário prevalece sobre orientações históricas conflit
   4. **Veredito:** sucesso, parcial, falha ou inconclusivo frente ao critério definido antes do ensaio. Código 0 e Exit 0 isolados não fecham o teste.
   5. **Recuperação e pendências:** driver ativo ao final, resultado do rollback, o que continua NÃO VALIDADO EM HARDWARE e próximo passo justificado.
 - Identificar data/hora, candidato e pasta de evidência. Se faltarem logs ou medições, declarar a lacuna, sem inventar métricas. Desktop restaurado pelo BasicDisplay é recuperação, não sucesso do nosso DWM.
+- **Tabelas obrigatórias depois de toda corrida, até o DCN estar completo (decisão do Daniel, 12/10/2026):**
+  1. a tabela-checklist da corrida (✅ 🟡 ❌ ⏸️ ⬜, um item por linha, só ✅ com prova P0);
+  2. a **Tabela viva do DCN** inteira (D01–D33: flip, VSYNC, cursor, AUX/EDID, DPMS, CRC, troca de resolução e refresh, escala, rotação, formatos, gamma, MPO, DirectFlip, VRR, link, áudio, clocks), atualizada com o resultado. HDR, segundo monitor e hotplug estão fora do escopo e não serão feitos (decisão do Daniel, 12/10/2026: uma única saída DP e HPD defeituoso até no Linux). A fonte é a seção P9 da [`BASE_DE_AVANCO.md`](BASE_DE_AVANCO.md), que também é atualizada a cada corrida, com o histórico das corridas do DCN.
 - Arquivar provas e atualizar BASE_DE_AVANCO.md quando houver conclusão nova. Alteração offline não é corrida. Não repetir percentuais históricos como medida de prontidão do produto.
 
 ### Registro histórico — não reproduzir automaticamente

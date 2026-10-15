@@ -1,0 +1,155 @@
+[Version]
+Signature="$Windows NT$"
+Class=Display
+ClassGuid={4d36e968-e325-11ce-bfc1-08002be10318}
+Provider=%ProviderName%
+DriverVer=10/10/2026,3.412.1.0
+CatalogFile=bc250mcdm.cat
+PnpLockdown=1
+
+[DestinationDirs]
+DefaultDestDir=12
+BC250Mcdm.CopyFiles=12
+BC250Mcdm.DisplayCopyFiles=11
+
+[SourceDisksNames]
+1=%DiskName%,,,""
+
+[SourceDisksFiles]
+bc250mcdm.sys=1
+bc250umd.dll=1
+cyan_skillfish2_sdma.bin=1
+cyan_skillfish2_sdma1.bin=1
+cyan_skillfish2_rlc.bin=1
+cyan_skillfish2_pfp.bin=1
+cyan_skillfish2_me.bin=1
+cyan_skillfish2_ce.bin=1
+cyan_skillfish2_mec.bin=1
+
+[Manufacturer]
+%ManufacturerName%=Standard,NTamd64.10.0
+
+[Standard.NTamd64.10.0]
+%DeviceName%=BC250Mcdm_Device, PCI\VEN_1002&DEV_13FE&SUBSYS_00001022&REV_00
+%DeviceName%=BC250Mcdm_Device, PCI\VEN_1002&DEV_13FE
+
+[BC250Mcdm_Device.NT]
+CopyFiles=BC250Mcdm.CopyFiles, BC250Mcdm.DisplayCopyFiles
+AddReg=BC250Mcdm_SoftwareDeviceSettings
+FeatureScore=FC
+
+[BC250Mcdm_Device.NT.HW]
+AddReg=BC250Mcdm_HW_AddReg
+
+[BC250Mcdm_HW_AddReg]
+HKR,,Security,,"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;WD)"
+; P3 (doc 609): MSI como o amdgpu (amdgpu_irq_init -> pci_alloc_irq_vectors MSI).
+; O hardware anuncia linha, MSI e MSI-X (DEVPKEY_PciDevice_InterruptSupport=7).
+HKR,"Interrupt Management",,0x00000010
+HKR,"Interrupt Management\MessageSignaledInterruptProperties",,0x00000010
+HKR,"Interrupt Management\MessageSignaledInterruptProperties",MSISupported,0x00010001,1
+HKR,"Interrupt Management\MessageSignaledInterruptProperties",MessageNumberLimit,0x00010001,1
+
+[BC250Mcdm_SoftwareDeviceSettings]
+HKR,,InstalledDisplayDrivers,0x00010000,"bc250umd"
+HKR,,UserModeDriverName,0x00010000,"bc250umd.dll","bc250umd.dll","bc250umd.dll","bc250umd.dll"
+HKR,,UserModeDriverNameWow,0x00010000,"bc250umd.dll","bc250umd.dll","bc250umd.dll","bc250umd.dll"
+HKR,,D3D10UMD,,"bc250umd.dll"
+HKR,,D3D11UMD,,"bc250umd.dll"
+HKR,,D3D12UMD,,"bc250umd.dll"
+
+[BC250Mcdm_Device.NT.Services]
+AddService=bc250mcdm,0x00000002,BC250Mcdm_Service_Inst
+
+[BC250Mcdm_Service_Inst]
+ServiceType=1
+StartType=3
+ErrorControl=0
+ServiceBinary=%12%\bc250mcdm.sys
+AddReg=BC250Mcdm.DriverReg
+
+[BC250Mcdm.DriverReg]
+HKR,Parameters\Probe,SchemaVersion,0x00010001,135
+HKR,Parameters,WddmContractVersion,0x00010001,27
+HKR,Parameters\Driver,ActiveMode,0x00010001,1
+HKR,Parameters,RenderNode,0x00010001,1
+HKR,Parameters,GpuMmuDeclare,0x00010001,1
+HKR,Parameters,EnableSyntheticEdid,0x00010001,0
+HKR,Parameters,RenderOnlyLab,0x00010001,0
+HKR,Parameters,SkipHwBringup,0x00010001,0
+HKR,Parameters,ShaderDispatch,0x00010001,1
+HKR,Parameters,CpSoftReset,0x00010001,1
+HKR,Parameters,Vmid0PageTable,0x00010001,0
+HKR,Parameters,SdmaAutoCtxSw,0x00010001,0
+HKR,Parameters,PersistentSubmission,0x00010001,1
+HKR,Parameters,GpuvaLabPromotion,0x00010003,0
+; C3.9 (12/09): granularidade do bloqueio por journal no gate do Node 1.
+; 0 = qualquer slot pendente fecha o gate (default, comportamento medido
+;     na corrida 13:29, em que o dwm.exe vivo impediu o compute do RADV).
+; 1 = fecha apenas se o PROCESSO QUE SUBMETE tiver pendencia propria.
+; NOCLOBBER para que o valor armado ANTES do bind sobreviva ao install.
+HKR,Parameters,Node1JournalGatePerProcess,0x00010003,0
+; B3 (07/09): o driver executa SOMENTE o caminho INDIRECT por default -- ele
+; le o DMA buffer que o dxgkrnl entrega, e em 17:43/18:16 produziu o tripe
+; completo sob VMID8 (5 canarios substituidos). SdmaPlanoAFallback=1 RESTAURA
+; a precedencia dos caminhos PLANO A, que reimplementam a operacao no anel e
+; NAO leem o DMA buffer; serve apenas para bisseccao. Alteracao por registro
+; so vale no proximo StartDevice; nao altera o bind corrente.
+HKR,Parameters,SdmaPlanoAFallback,0x00010003,0
+; item 25 (07/09): 1 arma UM hang de proposito no Node 0 (POLL_REGMEM que nunca
+; satisfaz) e NAO notifica completion, para que o timeout de 2 s do dxgkrnl dispare
+; o TDR e a cadeia deteccao -> reset -> readmissao -> display possa ser medida.
+; Consequencia possivel: BugCheck, se o TDR nao funcionar. Default 0, fail-closed.
+; A primeira corrida deve usar INF empacotado com 1; alterar o registro depois
+; do bind so vale no proximo StartDevice. Nao crie a chave de servico a mao.
+HKR,Parameters,TdrInduceHang,0x00010001,0
+; GfxWaveProbe (19/09, apos a Corrida 35): 1 arma a inspecao INDIRETA de onda
+; no quiesce do TDR. A Corrida 35 mediu SQ_DEBUG_STS_GLOBAL WaveLevelSA0=3 e
+; SA1=3 -- seis ondas em voo que nao retiram -- e nao teve como dizer ONDE.
+; A sonda le PC, IB_STS e a instrucao de cada onda presa.
+; RISCO DECLARADO: e' a unica parte da faixa que ESCREVE registrador. Escreve
+; dois SELETORES (GRBM_GFX_INDEX fora de broadcast e SQ_IND_INDEX) e restaura
+; broadcast com readback; se a restauracao falhar, o soft-reset seguinte pode
+; atingir um unico shader engine. Por isso o default e 0 e armar e decisao do
+; dono do projeto. A varredura e' rasa e o orcamento de leituras e' fixo --
+; laco longo em DISPATCH_LEVEL foi a causa do BugCheck 0x133 em 10/09 12:16.
+HKR,Parameters,GfxWaveProbe,0x00010001,0
+; B.1 (14/09): 1 fotografa o anel grafico CP_RB0 -- CNTL, BASE, RPTR, WPTR,
+; POLL_CNTL e ME_CNTL -- durante o bring-up de laboratorio. E' SOMENTE LEITURA:
+; o contrato nao escreve registrador algum, e o transporte MMIO confirma por
+; contador proprio (se registrar UMA escrita, a medicao e' descartada). Nao
+; altera o veredito do StartDevice em desfecho nenhum. O anel grafico e' a
+; unica engine desta placa sem medicao, e ele e' pre-requisito da Parede B.
+; O probe fisico so' existe na imagem de laboratorio; na de producao a linha
+; [GfxRing] PREFLIGHT ARMADO mas AUSENTE diz isso em voz alta. Alteracao por
+; registro so vale no proximo StartDevice. Default 0, fail-closed.
+HKR,Parameters,GfxRingPreflight,0x00010003,0
+; B.1 (14/09): ensaio ESCALONADO do anel grafico, so' na imagem de laboratorio.
+; 0 = nenhum ensaio (default). 1 = configura CP_RB0 (BASE/CNTL/ponteiros) e
+; confere por readback, com as micro-engines ainda HALTED -- nenhum pacote pode
+; ser buscado. 2 = acrescenta o desalt de CE/PFP/ME e a partida via
+; CP_RB0_ACTIVE, cada um provado por readback. O ROLLBACK e' sempre executado e
+; tambem conferido: o StartDevice termina com a placa como a encontrou, e o
+; veredito do bind nao muda em desfecho algum. Alteracao por registro so' vale
+; no proximo StartDevice. Fail-closed.
+HKR,Parameters,GfxRingBringup,0x00010003,0
+
+[BC250Mcdm.CopyFiles]
+bc250mcdm.sys
+cyan_skillfish2_sdma.bin
+cyan_skillfish2_sdma1.bin
+cyan_skillfish2_rlc.bin
+cyan_skillfish2_pfp.bin
+cyan_skillfish2_me.bin
+cyan_skillfish2_ce.bin
+cyan_skillfish2_mec.bin
+
+[BC250Mcdm.DisplayCopyFiles]
+bc250umd.dll
+
+[Strings]
+ProviderName="AMD BC-250 Driver Project"
+ManufacturerName="AMD BC-250 Graphics Project"
+DiskName="AMD BC-250 WDDM Graphics & Gaming Driver Installation Media"
+DeviceName="AMD BC-250 Graphics (Cyan Skillfish 2)"
+ServiceName="AMD BC-250 WDDM Graphics Driver"

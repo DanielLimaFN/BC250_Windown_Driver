@@ -12,11 +12,18 @@ $sourceSys = Join-Path $root 'driver\wdk\output\bc250mcdm.sys'
 $sourceInf = Join-Path $root 'driver\wdk\package\bc250mcdm.inf'
 $sourceSdmaFirmware = Join-Path $root 'firmware\cyan_skillfish2_sdma.bin'
 $sourceRlcFirmware = Join-Path $root 'firmware\cyan_skillfish2_rlc.bin'
+$sourceSdma1Firmware = Join-Path $root 'firmware\cyan_skillfish2_sdma1.bin'
 $sourcePfpFirmware = Join-Path $root 'firmware\cyan_skillfish2_pfp.bin'
 $sourceMeFirmware = Join-Path $root 'firmware\cyan_skillfish2_me.bin'
 $sourceCeFirmware = Join-Path $root 'firmware\cyan_skillfish2_ce.bin'
 $sourceMecFirmware = Join-Path $root 'firmware\cyan_skillfish2_mec.bin'
 $sourceUmd = Join-Path $root 'driver\umd\output\bc250umd.dll'
+# WSI.1\ICD.1 (doc 757): a RADV vai no DriverStore e o loader do Vulkan a acha
+# pelo adaptador (VulkanDriverName no INF), como nos drivers da AMD. E' a mesma
+# DLL que a UMD carrega da pasta de build.
+$sourceRadv = 'C:\Users\Daniel\Desktop\bc250-win\bc250-win\mesa-radv-wddm\build\src\amd\vulkan\vulkan_radeon.dll'
+$sourceZlib = 'C:\Users\Daniel\Desktop\bc250-win\bc250-win\mesa-radv-wddm\build\src\amd\vulkan\z-1.dll'
+$sourceVkIcd = Join-Path $root 'driver\wdk\package\bc250_vk_icd.json'
 $driverObject = Join-Path $root 'driver\wdk\output\bc250_active_miniport_driver.obj'
 $buildContract = Join-Path $root 'driver\wdk\build-contract.bat'
 $packageDir = Join-Path $root 'driver\wdk\package\output_active'
@@ -66,6 +73,12 @@ if ($ArmTdrInducedHang -and
 }
 if (-not (Test-Path -LiteralPath $sourceSdmaFirmware)) { throw "Firmware SDMA ausente: $sourceSdmaFirmware" }
 if (-not (Test-Path -LiteralPath $sourceRlcFirmware)) { throw "Firmware RLC ausente: $sourceRlcFirmware" }
+if (-not (Test-Path -LiteralPath $sourceSdma1Firmware)) { throw "Firmware SDMA1 ausente: $sourceSdma1Firmware" }
+if ((Get-Item -LiteralPath $sourceSdma1Firmware).Length -ne 33792 -or
+    (Get-FileHash -LiteralPath $sourceSdma1Firmware -Algorithm SHA256).Hash -ne
+        'BD1C0B0F6A6A4F17EDE034F2C844B6553FC444E08915C7BB500C09FDE59D6255') {
+    throw 'Firmware SDMA1 diverge do tamanho/hash aprovado.'
+}
 if (-not (Test-Path -LiteralPath $sourcePfpFirmware)) { throw "Firmware PFP ausente: $sourcePfpFirmware" }
 if (-not (Test-Path -LiteralPath $sourceMecFirmware)) { throw "Firmware MEC ausente: $sourceMecFirmware" }
 if ((Get-Item -LiteralPath $sourceSdmaFirmware).Length -ne 33792 -or
@@ -179,20 +192,30 @@ $packageInf = Join-Path $packageDir 'bc250mcdm.inf'
 $packageCat = Join-Path $packageDir 'bc250mcdm.cat'
 $packageSdmaFirmware = Join-Path $packageDir 'cyan_skillfish2_sdma.bin'
 $packageRlcFirmware = Join-Path $packageDir 'cyan_skillfish2_rlc.bin'
+$packageSdma1Firmware = Join-Path $packageDir 'cyan_skillfish2_sdma1.bin'
 $packagePfpFirmware = Join-Path $packageDir 'cyan_skillfish2_pfp.bin'
 $packageMeFirmware = Join-Path $packageDir 'cyan_skillfish2_me.bin'
 $packageCeFirmware = Join-Path $packageDir 'cyan_skillfish2_ce.bin'
 $packageMecFirmware = Join-Path $packageDir 'cyan_skillfish2_mec.bin'
 $packageUmd = Join-Path $packageDir 'bc250umd.dll'
+$packageRadv = Join-Path $packageDir 'vulkan_radeon.dll'
+$packageZlib = Join-Path $packageDir 'z-1.dll'
+$packageVkIcd = Join-Path $packageDir 'bc250_vk_icd.json'
 Remove-Item -LiteralPath $packageCat -Force -ErrorAction SilentlyContinue
 Copy-Item -LiteralPath $sourceSys -Destination $packageSys -Force
 Copy-Item -LiteralPath $sourceInf -Destination $packageInf -Force
 Copy-Item -LiteralPath $sourceSdmaFirmware -Destination $packageSdmaFirmware -Force
 Copy-Item -LiteralPath $sourceRlcFirmware -Destination $packageRlcFirmware -Force
+Copy-Item -LiteralPath $sourceSdma1Firmware -Destination $packageSdma1Firmware -Force
 Copy-Item -LiteralPath $sourcePfpFirmware -Destination $packagePfpFirmware -Force
 Copy-Item -LiteralPath $sourceMeFirmware -Destination $packageMeFirmware -Force
 Copy-Item -LiteralPath $sourceCeFirmware -Destination $packageCeFirmware -Force
 Copy-Item -LiteralPath $sourceMecFirmware -Destination $packageMecFirmware -Force
+foreach ($vulkanSource in @($sourceRadv, $sourceZlib, $sourceVkIcd)) {
+    if (-not (Test-Path -LiteralPath $vulkanSource -PathType Leaf)) {
+        throw "Arquivo do driver Vulkan ausente: $vulkanSource. Compile a RADV (build_radv.bat)."
+    }
+}
 
 # item 25: o pacote de uma unica corrida precisa nascer armado, porque o AddReg
 # cria a chave durante a instalacao e StartDevice le o valor no mesmo bind. A
@@ -219,6 +242,14 @@ if ($ArmTdrInducedHang) {
         'HKR,Parameters,TdrInduceHang,0x00010001,1')
 }
 [System.IO.File]::WriteAllText($packageInf, $packageInfText, [System.Text.UTF8Encoding]::new($false))
+Copy-Item -LiteralPath $sourceVkIcd -Destination $packageVkIcd -Force
+foreach ($vulkanDll in @(@($sourceRadv, $packageRadv), @($sourceZlib, $packageZlib))) {
+    Copy-Item -LiteralPath $vulkanDll[0] -Destination $vulkanDll[1] -Force
+    & $signtool sign /sha1 $certificateThumbprint /fd SHA256 $vulkanDll[1]
+    if ($LASTEXITCODE -ne 0) { throw "Assinatura de $($vulkanDll[1]) falhou." }
+    & $signtool verify /pa /v $vulkanDll[1] | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Verificacao Authenticode de $($vulkanDll[1]) falhou." }
+}
 if (Test-Path -LiteralPath $sourceUmd) {
     Copy-Item -LiteralPath $sourceUmd -Destination $packageUmd -Force
     & $signtool sign /sha1 $certificateThumbprint /fd SHA256 $packageUmd
@@ -332,6 +363,7 @@ $manifest = [ordered]@{
     PackageCatSha256 = (Get-FileHash -LiteralPath $packageCat -Algorithm SHA256).Hash
     SdmaFirmwareSha256 = (Get-FileHash -LiteralPath $packageSdmaFirmware -Algorithm SHA256).Hash
     RlcFirmwareSha256 = (Get-FileHash -LiteralPath $packageRlcFirmware -Algorithm SHA256).Hash
+    Sdma1FirmwareSha256 = (Get-FileHash -LiteralPath $packageSdma1Firmware -Algorithm SHA256).Hash
     PfpFirmwareSha256 = (Get-FileHash -LiteralPath $packagePfpFirmware -Algorithm SHA256).Hash
     MeFirmwareSha256 = (Get-FileHash -LiteralPath $packageMeFirmware -Algorithm SHA256).Hash
     CeFirmwareSha256 = (Get-FileHash -LiteralPath $packageCeFirmware -Algorithm SHA256).Hash

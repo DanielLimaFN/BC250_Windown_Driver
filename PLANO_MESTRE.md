@@ -1,6 +1,6 @@
 # PLANO MESTRE — BC-250 no Windows
 
-> **Escrito em 01/10/2026**, depois da Corrida 196 e da validação do controle de VRAM pela CMOS.
+> **Escrito em 01/10/2026**, depois da Corrida 196 e da validação do controle de VRAM pela CMOS. **§3 revisada em 06/10/2026** (Corrida 236, paridade com o amdgpu até a P4.2).
 > Substitui os planos anteriores da raiz (`PLANO_DESKTOP_ACELERADO`, `PLANO_DE_TRABALHO_TRAVA_E_DESKTOP`, `PLANO_EXECUCAO_WDDM_GPU`, `PLANO_PRESENT_E_FAIL`, `IDEIAS_DE_AVANCO`), arquivados em [`DocsObsoletos/planos-superseded/2026-10-01/`](DocsObsoletos/planos-superseded/2026-10-01/).
 > **Fonte de verdade por corrida:** [`BASE_DE_AVANCO.md`](BASE_DE_AVANCO.md). **Regras:** [`CLAUDE.md`](CLAUDE.md) (Leis 1–10) e [`DIRETRIZ_QUALIDADE_UMD_DX11_E_MARCOS_GRAPHICS.md`](DIRETRIZ_QUALIDADE_UMD_DX11_E_MARCOS_GRAPHICS.md).
 > **Legenda:** ✅ provado na placa (P0) · 🟡 parcial · ❌ falta · ⛔ bloqueado · ⏸️ dormente por decisão. Nada aqui é marcado ✅ sem prova física arquivada.
@@ -40,97 +40,126 @@ aplicação / DWM (D3D11, sem modificação)
 | 29/09 – 30/09 | Menu Iniciar: texturas compartilhadas, descritores, tokens, cópias (T4.0–T4.7); ícones aparecem (182) | 🟡 menu funciona às vezes |
 | 30/09 – 01/10 | **Memória**: tabela de objetos cheia (188); Frente B (alias sem cópia, 190–193); M2 (segmento de VRAM além do BAR, 194–196) | 🟡 falta memória; M2.1 pronto |
 | 01/10 | Descoberta: a VRAM é controlada pela **CMOS APCB**, não pelo menu da BIOS; ferramenta Windows `bc250-vram` gravou 4096 MB e o firmware aplicou | ✅ controle da VRAM no Windows |
+| 01/10 – 06/10 | VRAM mínima de 256 MB; caça à trava por **paridade com o amdgpu** (Corridas 199–236): CG.1, 4c, M1b.1, D2/GART, P1, P7, P2 (doorbell), P1b, P3.0 (MSI), P3.0b (GART do MMHUB), P3.1/P3.2 (IH e conclusão por interrupção), P6, EOP do CP, P4.1/P4.2 (SDMA1) | ✅ cada item provado na placa; 🟡 nenhum tirou a trava. Passagem de bastão: [doc 624](docs/624_PASSAGEM_DE_BASTAO_2026-10-06_TRAVA_DURA_DEPOIS_DA_PARIDADE_P4.md) |
 
 ---
 
 ## 3. Todas as funcionalidades que queremos, e o estado de cada uma
 
+> **Revisado em 06/10/2026, depois da Corrida 231.** As subseções 3.4 (UMD) e 3.5 (Desktop) vêm do estado de 01/10 e não foram reavaliadas linha a linha depois disso.
+
 ### 3.1 Plataforma e firmware
 
 | Status | Funcionalidade | Situação hoje (evidência) |
-|:---:|---|---|
-| ✅ | Firmware da GPU carregado pelo nosso driver (PSP, RLC, PFP, ME, CE, MEC, SDMA) | Tabela 1 da BASE |
-| ✅ | Recuperação: watchdog, rollback para o BasicDisplay, fusível anti-boot-loop, WinRE | Tabela 1 (itens 7–12b, 174–175) |
-| ✅ | **Controle da VRAM no Windows** (`tools\vram-cmos\bc250-vram.ps1`) | 01/10: leu 2048, gravou 4096, firmware aplicou 4096 após boot frio; RAM do Windows caiu exatamente 2 GiB ([doc 550](docs/550_CONTROLE_DA_VRAM_PELA_CMOS_NO_WINDOWS.md), `docs/evidence/vram-cmos/`) |
-| ✅ | Driver lê o tamanho e a base da VRAM da placa a cada boot | Corridas 194–196 leram 512 MiB, igual à CMOS |
-| ❌ | Temperatura e relógios da GPU/CPU medidos durante as corridas | **Nunca medidos no Windows** (o `bc250dbg` lê as sondas, mas sem escala calibrada). No Linux a CPU chegou a 89 °C sob carga |
-| ❌ | Conversa com o SMU (relógios, energia, térmico) | O driver não manda mensagem ao SMU; a placa roda no estado de fábrica |
+|---|---|---|
+| ✅ | Firmware da GPU carregado pelo nosso driver (PSP, RLC, PFP, ME, CE, MEC, SDMA) | Desde 26/08; idêntico ao do Linux (doc 552) |
+| ✅ | Recuperação: watchdog, rollback, fusível anti-boot-loop, coleta automática no boot, WinRE | A coleta e o rollback rodaram sozinhos depois da trava da 231 |
+| ✅ | **Controle da VRAM no Windows** pela CMOS APCB (`tools\vram-cmos\bc250-vram.ps1`), decisão de 256 MB | [doc 550](docs/550_CONTROLE_DA_VRAM_PELA_CMOS_NO_WINDOWS.md), [doc 551](docs/551_DECISAO_VRAM_MINIMA_256MB_E_CRITERIO_CORRIDA199.md) |
+| ✅ | Driver lê o tamanho e a base da VRAM da placa a cada boot | Desde a 194 |
+| ✅ | Teste de RAM e motivo do reset lidos depois da trava | 8 GB sem erro (219, 231); reset pelo `0xCF9` em todas |
+| 🟡 | Temperatura nas corridas | Tctl medido na 199 (80 °C, sem calor); GPU e memória sem escala calibrada |
+| ✅ | SMU gerenciada pelo firmware, como no Linux | [doc 556](docs/556_W3_SMU_NAO_E_DIFERENCA_SDMA0_E_CLOCK_GATING_NO_RASTRO_CRITERIO_CORRIDA200.md) |
 
 ### 3.2 Driver de kernel (WDDM)
 
 | Status | Funcionalidade | Situação hoje |
-|:---:|---|---|
-| ✅ | Miniport WDDM 2.7 display+render em Código 0 | Desde 02/09 |
-| ✅ | Display herdado do GOP (VidPn comitado, VSync do OTG) | Desde 03/09 |
-| ✅ | Segmentos de memória, paginação, GPUVA por processo, tabelas de página | Milhares de draws sem `GFXHUB_FAULT` (182–186) |
-| ✅ | Submissão SDMA assíncrona e anel gráfico executando trabalho do DWM | Pixels conferidos 86.400/86.400 (181) |
-| ✅ | TDR: detecção, reset, readmissão | 07/09, 17/09; **desktop sobreviveu a um TDR real na 153** (uma vez) |
-| ⏸️ | Segmento de VRAM além do BAR (M2) | **Dormente desde 01/10** (decisão dos 256 MB). Provado antes de parar: `Lock2` fechado pelo M2.1 (197) e 2.086 imagens no segmento 3 sem fault (198) |
-| ❌ | Memória do sistema para a GPU (M1b, como o GTT do Linux) | Caminho de memória desde 01/10; 3 bloqueios do doc 496 + paginação robusta ([doc 551 §2.3](docs/551_DECISAO_VRAM_MINIMA_256MB_E_CRITERIO_CORRIDA199.md)) |
+|---|---|---|
+| ✅ | Miniport WDDM 2.7 display+render em Código 0, display herdado do GOP (VidPn, VSync do OTG) | Desde 02–03/09 |
+| ✅ | Segmentos, paginação, GPUVA por processo; PTE escrita pelo SDMA (4c.4) | 210 |
+| ✅ | Submissão SDMA assíncrona e anel gráfico executando o trabalho do DWM | Milhares de IBs por corrida (13.115 na 231) |
+| ✅ | TDR: detecção, reset e readmissão; desktop sobreviveu a TDR real | 153 e 231 (TDR do GFX em VMID 10 recuperado) |
+| ✅ | Memória da RADV no segmento 2, como o GTT do Linux (M1b.1) | 211–212 |
+| ⏸️ | Segmento de VRAM além do BAR (M2) | Dormente desde 01/10 (decisão dos 256 MB); `Lock2` e segmento 3 provados (197–198) |
 | 🟡 | Tabela de objetos do KMD | 4.096 → 16.384 (paliativo T4.7); definitiva não feita |
 | ❌ | Prova formal D0.7 (canários no destino do IB gráfico) | Retirada na X4 por risco de leitura pela BAR |
 | ❌ | Preempção, prioridades, multi-contexto auditado, suspend/resume | Não iniciados |
 
-### 3.3 UMD D3D11 (o que o DWM e os apps usam)
+### 3.3 Paridade com o amdgpu (caça à trava dura)
+
+Decisão do Daniel de 05/10: driver igual ao amdgpu, uma diferença por corrida ([doc 593 §4](docs/593_CORRIDA218_UC1_FUNCIONOU_D2_DE_PE_TRAVA_DURA_IGUAL_E_INVENTARIO_DE_PARIDADE_COM_O_AMDGPU.md)).
+
+| Status | Item | Situação hoje |
+|---|---|---|
+| ✅ | Clock gating como o POST deixa (CG.1) | 201; não basta (202) |
+| ✅ | 4c: PTE pelo SDMA, flush pelo anel, sem a CPU ler tabela de página | 205–210; não basta |
+| ✅ | D2: anel e fences do SDMA0 na RAM pela GART da VMID 0, tabela única, MTYPE_UC | 215–218; não basta |
+| ✅ | P1: sem instrumentação lendo a VRAM em regime | 219; não basta |
+| ✅ | P7: anel e fences do GFX na GTT | 220; não basta |
+| ✅ | P2: WPTR do SDMA0 por doorbell (abertura do BIF ligada) | 223; não basta |
+| ✅ | P1b: CPU na VRAM pela DRAM, sem HDP (como o amdgpu em APU) | 226/228; não basta |
+| ✅ | P3.0: MSI entregue pelo Windows | 229 |
+| ✅ | P3.0b: GART da VMID 0 no MMHUB (armada depois do PSP, que é cliente do MMHUB com buffers em RAM física) | 230/231; não basta |
+| ✅ | P3.1: IH ligado (anel na GART, TRAP do SDMA0, ISR, prova por vetor) | 232: 2.341 TRAPs = 2.341 vetores = 2.341 ISR; trava aos ~77 s ([doc 615](docs/615_CORRIDA232_IH_VIVO_EM_REGIME_TRAPS_1_PARA_1_E_TRAVA_DURA_AOS_77S.md)) |
+| ✅ | P3.2: conclusão do SDMA0 por interrupção | 233: 10.931 DPCs pelo ISR em ~584 s, zero TDR/timeout; trava dura no fim; não basta ([doc 617](docs/617_CORRIDA233_CONCLUSAO_POR_INTERRUPCAO_EM_REGIME_584S_E_TRAVA_DURA.md)) |
+| ❌ | P3.3: RPTR do IH por doorbell | Depois da P3.2 |
+| ✅ | P6: MTYPE_UC na folha dos BOs da RADV com `GL2_BYPASS` (RADV nova declara a flag) | 234: folhas UC nos IBs concatenados da RADV, zero recusa de ABI; não basta ([doc 619](docs/619_CORRIDA234_P6_E_EOP_DO_CP_EM_REGIME_TRAVA_DURA_AOS_136S.md)) |
+| ✅ | EOP do CP: conclusão do anel gráfico pela interrupção | 234: 1.236 emitidos = 1.236 vetores = 1.236 DPCs; não basta ([doc 619](docs/619_CORRIDA234_P6_E_EOP_DO_CP_EM_REGIME_TRAVA_DURA_AOS_136S.md)) |
+| ✅ | P4.1: SDMA1 vivo e ocioso (firmware pelo PSP tipo 10, anel provado) | 235: prova em 1 poll, ATIVO, zero vetor sem dono; não basta ([doc 621](docs/621_CORRIDA235_P41_SDMA1_VIVO_E_TRAVA_DURA_AOS_267S.md)) |
+| ✅ | P4.2: escritas de PTE no SDMA1 (troca FENCE/POLL entre os anéis); paginação segue no SDMA0, como o amdgpu | 236: 8.414 faixas no SDMA1, Done = Go em todas as linhas, zero fault/TDR; não basta ([doc 623](docs/623_CORRIDA236_P42_PTE_NO_SDMA1_EM_REGIME_E_TRAVA_DURA_AOS_45S.md)) |
+| ❌ | P5: VM de 4 níveis e 48 bits (nós: 2 níveis, 34 bits) | Custo alto |
+| ⛔ | **Trava dura** | 226 e 229 passaram dos 600 s (a 229 sem abrir o menu); 228, 231, 232, 233, 234, 235 e 236 travaram (~454, ~325, ~77, ~584, ~136, ~267 e ~45 s). Fecha com 600 s repetidos com uso normal |
+
+### 3.4 UMD D3D11 (o que o DWM e os apps usam)
 
 | Status | Funcionalidade | Situação hoje |
-|:---:|---|---|
+|---|---|---|
 | ✅ | Runtime D3D11 abre a nossa UMD e cria device (feature level 10_1) | 17/09 |
 | ✅ | Tradução de shaders DXBC → SPIR-V | Shaders do DWM e do menu traduzem (184) |
-| ✅ | Draw D3D11 vira draw Vulkan na GPU | Triângulo em janela composto pelo DWM (106); grade do DWM (181) |
-| 🟡 | Recursos compartilhados entre processos (menu → DWM) | Frente B v3: alias só em superfície aberta de outro processo. Render target com alias → tela preta (190); textura própria com alias → TDR (191/192) |
-| 🟡 | Cobertura de DDIs do Explorer | Draws recusados com `draw PM4 ausente`; inventário do DWM feito ([doc 545](docs/545_INVENTARIO_UMD_DWM_E_SHELL_CORRIDAS_181_186.md)) |
-| ❌ | Pesquisa / apps AppContainer | `vkCreateDevice -3` 528 vezes, motivo sem canal de log |
-| 🟡 | Tradutor de shader **dentro do pacote** | Carregado de `C:\BC250_LIB\libvkd3d-shader-1.dll` (fora do pacote) |
+| ✅ | Draw D3D11 vira draw Vulkan na GPU | Triângulo composto pelo DWM (106); grade do DWM (181); desktop desde a 134 |
+| 🟡 | Recursos compartilhados entre processos (menu → DWM) | Frente B v3; recusas e artefatos no Clima (223, 226) |
+| 🟡 | Cobertura de DDIs do Explorer | Draws recusados com `draw PM4 ausente`; inventário em [doc 545](docs/545_INVENTARIO_UMD_DWM_E_SHELL_CORRIDAS_181_186.md) |
+| ❌ | Pesquisa / apps AppContainer | `vkCreateDevice -3` (01/10); não reavaliado |
+| 🟡 | Tradutor de shader **dentro do pacote** | Carregado de `C:\BC250_LIB\libvkd3d-shader-1.dll` |
 | ❌ | Feature level 11_0+, D3D9/10 transparentes | Não iniciados |
 
-### 3.4 Desktop
+### 3.5 Desktop
 
 | Status | Funcionalidade | Situação hoje |
-|:---:|---|---|
-| ✅ | Desktop visível desenhado pela GPU | Desde a Corrida 134 |
-| ✅ | DWM sem crash a corrida inteira | 183–185 (600 s) |
-| 🟡 | Menu Iniciar com ícones e rápido | Ícones em ~1 s na 192; instável entre candidatos |
-| ❌ | Explorer sem falta de memória | 346 faltas na 190; laço de 242 recriações na 193 (VRAM declarada de ~251 MB) |
-| ❌ | Janelas, texto, transparência, resize, navegador por 60 min (gate DESKTOP-60MIN) | Nunca tentado |
-| ❌ | 60 FPS no desktop | ~12–16 FPS com a tela animando (30/09); o modo do GOP é ~56 Hz |
+|---|---|---|
+| ✅ | Desktop visível desenhado pela GPU | Desde a 134; ~325 s na 231 |
+| ✅ | DWM sem crash a corrida inteira | 183–185, 226, 229 |
+| 🟡 | Menu Iniciar com ícones e rápido | Funciona; instável entre candidatos |
+| ❌ | Explorer sem falta de memória | Faltas e laços de recriação em 190/193 |
+| ❌ | Janelas, texto, transparência, resize, Alt+Tab, navegador por 60 min (gate DESKTOP-60MIN) | Nunca tentado |
+| ❌ | 60 FPS no desktop | ~12–16 FPS (30/09); o modo do GOP é ~56 Hz |
 
-### 3.5 Estabilidade
-
-| Status | Funcionalidade | Situação hoje |
-|:---:|---|---|
-| 🟡 | 600 s sem trava | Já houve (134, 136, 137, 182–185, 190), mas não é a regra |
-| ⛔ | **Sem trava dura** | 189, 191, 192, 193 e 196 terminaram em trava ou reset. Assinatura: um FILL/TRANSFER de paginação no SDMA que nunca conclui, VRAM perdendo conteúdo, CPU sem relógio; abaixo do Windows (sem BugCheck em 48 min, Corrida 157) |
-| ❌ | 8 horas (gate ROBUSTEZ-8H) | Nunca tentado |
-| 🟡 | TDR com o desktop sobrevivendo (gate TDR-DISPLAY) | Uma vez (153) |
-
-### 3.6 Vulkan, jogos e além
+### 3.6 Estabilidade
 
 | Status | Funcionalidade | Situação hoje |
-|:---:|---|---|
-| ✅ | Vulkan executando na placa (RADV + nosso KMD) | Marcos 1–4 |
-| 🟡 | Gates gráficos formais M3-GFX e M4-GFX (`vkCreateGraphicsPipelines` + `vkCmdDraw`) | Programas compilados; **nunca rodaram na placa** |
+|---|---|---|
+| 🟡 | 600 s sem trava | Acontece (134, 136, 137, 182–185, 201, 222, 226, 229), mas não é a regra |
+| ⛔ | **Sem trava dura** | Ver 3.3: mesma assinatura desde a 199 (GPU ociosa, máquina morta entre duas observações) |
+| ❌ | 8 horas (gate ROBUSTEZ-8H) | Depende da trava dura |
+| 🟡 | TDR com o desktop sobrevivendo (gate TDR-DISPLAY) | 153 e 231; falta repetir |
+
+### 3.7 Vulkan, jogos e além
+
+| Status | Funcionalidade | Situação hoje |
+|---|---|---|
+| ✅ | Vulkan executando na placa (RADV + nosso KMD), cubo texturizado | Marcos 1–4 |
+| 🟡 | Gates gráficos formais M3-GFX e M4-GFX (`vkCreateGraphicsPipelines` + `vkCmdDraw`) | Programas compilados; nunca rodados como gate |
 | ❌ | ICD Vulkan instalado para qualquer aplicativo (loader do sistema) | RADV só carregada pela nossa UMD a partir de `C:\BC250_LIB` |
 | ❌ | WSI Vulkan integrado ao DWM (janela, não scanout direto) | Não iniciado |
-| ❌ | Jogo D3D11 real | Não iniciado |
-| ❌ | Jogo Vulkan real | Não iniciado |
-| ❌ | D3D12 (UMD D3D12 traduzida) | Não iniciado |
-| ❌ | OpenGL (Zink) | Não iniciado |
+| ❌ | Jogo D3D11 real / jogo Vulkan real | Não iniciados |
+| ❌ | D3D12 (UMD D3D12 traduzida) / OpenGL (Zink) | Não iniciados |
 
-### 3.7 Display (DCN, opcional para jogar)
+### 3.8 Display (DCN, P9) e produto
 
 | Status | Funcionalidade | Situação hoje |
-|:---:|---|---|
+|---|---|---|
 | ✅ | Inventário somente leitura do DCN, frame counter | Tabela 1 |
 | ❌ | Trocar resolução, EDID real, hotplug, segundo monitor, VRR/HDR, flip sem cópia | P9, depois de tudo |
-
-### 3.8 Produto
-
-| Status | Funcionalidade | Situação hoje |
-|:---:|---|---|
 | 🟡 | Pacote assinado (teste) com auditorias | Cada candidato; assinatura de teste, `testsigning` ligado |
 | ❌ | Instalador/desinstalador de produto, sem tunables de laboratório | Não iniciado |
 | ❌ | RADV e vkd3d-shader empacotados com o driver | Hoje vêm de `C:\BC250_LIB` |
+
+### 3.9 Caminho mais curto até finalizar
+
+1. **Trava dura:** P3.1, P3.2, P6, EOP do CP, P4.1 e P4.2 feitas (232–236) e nenhuma tirou a trava. Sobram P3.3 (barata, improvável) e P5 (cara), mais as diferenças de **política** de paginação ainda não inventariadas (doc 624 §6). Ela bloqueia tudo o que vem depois.
+2. **Desktop completo:** memória do Explorer, recursos compartilhados, Pesquisa/AppContainer e o gate DESKTOP-60MIN.
+3. **Estabilidade:** ROBUSTEZ-8H e TDR-DISPLAY repetido.
+4. **Jogos:** ICD Vulkan no sistema, WSI em janela, jogo Vulkan e jogo D3D11 reais.
+5. **Produto e P9:** pacote sem `C:\BC250_LIB`, instalador, DCN.
 
 ---
 
@@ -311,16 +340,41 @@ Instalador e desinstalador, remoção dos tunables de laboratório, RADV e tradu
 
 ## 7. Próximos passos concretos
 
-> Reescrito em 02/10/2026, depois da Corrida 204. A tabela anterior (da 199) está no git.
+> **07/10/2026, Corrida 241 pronta ([doc 633](docs/633_ENCADEAMENTO_GFX_DA_RADV_COMO_O_UPSTREAM_E_CRITERIO_CORRIDA241.md)):** RADV `DFD8D120` com o encadeamento GFX como o upstream; KMD igual.
+>
+> **07/10/2026, depois da Corrida 240 ([doc 632](docs/632_CORRIDA240_RLC_PARADO_CONFIRMADO_PREAMBULO_DO_MENU_E_ENCADEAMENTO_DA_RADV_COM_VMID7.md)):** RLC parado (P0); o TDR vem do preâmbulo da RADV, cujo encadeamento GFX tem VMID 7 fixa e sem VALID (fora do upstream). Próximo: Corrida 241 com o encadeamento como o upstream; depois, o bit VALID do KMD e o RLC rodando.
+>
+> **07/10/2026, Corrida 240 pronta ([doc 631](docs/631_INSTRUMENTACAO_RLC_IH_IB_DO_MENU_E_CRITERIO_CORRIDA240.md)):** 3.385.1.0 + RADV 7B82C4AE, só instrumentação; achado: o RLC fica parado em regime (o `pfp_direct_load` devolve `RLC_CNTL` a 0), diferença de paridade nova a confirmar.
+>
+> **07/10/2026, mineração dos TDRs ([doc 630](docs/630_MINERACAO_DOS_TDR_DO_GFX_SQ_ERROS_DEPOIS_DO_RESET_E_RLC_SEM_SAFE_MODE.md)):** erros do SQ só depois do nosso reset do GFX; RLC nunca entra em safe mode; reset diferente do amdgpu. Próximo: instrumentação só de leitura (RLC, IH, IB parado) e, depois, reset do GFX como o amdgpu.
+>
+> **07/10/2026, depois da Corrida 239 ([doc 629](docs/629_CORRIDA239_SO_MENU_TRES_TDR_DO_GFX_E_TRAVA_DURA_22S_DEPOIS.md)):** só o menu basta para travar (n=1): três TDRs do GFX a partir do primeiro IB de um device novo do menu, todos recuperados, e trava dura 22 s depois. Próximo: mineração offline dos TDRs do GFX (239, 231, 216, 208, 201).
+>
+> **06/10/2026, depois da Corrida 238 ([doc 627](docs/627_CORRIDA238_NAO_FOI_PARADA_600S_SEM_TRAVA_COM_USO_LEVE_E_PROXIMO_PASSO.md)):** ~600 s sem trava com uso leve (não foi parada). Bissecção por carga: **Corrida 239 pronta**, só o menu Iniciar ([doc 628](docs/628_CRITERIO_CORRIDA239_SO_O_MENU_INICIAR.md)), `tools\EXECUTAR_CORRIDA239_SO_MENU_600S.cmd`.
+>
+> **06/10/2026, depois da Corrida 237 ([doc 626](docs/626_CORRIDA237_PARADO_600S_SEM_TRAVA_TEARDOWNS_PROVADOS_E_CRITERIO_CORRIDA238.md)):** W1 sem trava (45 min); 237 parada passou 600 s sem trava, com todos os teardowns provados. Próximo: Corrida 238, repetição parada (mesmo `.cmd`); se passar, bissecção por carga.
+>
+> **06/10/2026, depois do doc 625:** W1 (45 min com BasicDisplay) e Corrida 237 (mesmo 3.384.1.0, parado no desktop, n=2 com a 238 se passar), critérios no [doc 625](docs/625_RESET_REASON_RESPONDIDO_POR_MINERACAO_W1_E_CRITERIO_CORRIDA237_PARADO.md). O RESET_REASON de controle saiu por mineração.
+>
+> **06/10/2026, depois da Corrida 236:** os próximos passos vigentes estão no [doc 624 §7](docs/624_PASSAGEM_DE_BASTAO_2026-10-06_TRAVA_DURA_DEPOIS_DA_PARIDADE_P4.md) (passagem de bastão). A tabela abaixo é o histórico da 4c e fica como registro.
+
+> Reescrito em 02/10/2026: o Daniel escolheu a **4c completa em 5 etapas**, uma corrida cada ([doc 567](docs/567_4C_COMPLETA_EM_5_ETAPAS_E_CRITERIO_CORRIDA205.md)). A tabela anterior está no git.
 
 | # | Passo | Quem | Depende de |
 |---:|---|---|---|
-| 1 | Recuperação (`tools\BC250_RECOVERY.cmd`, fusível) e boot frio: a placa está em Código 43 desde a 204 | Daniel | — |
-| 2 | Escolher entre **4c-ordem** e **4c completa** ([doc 566](docs/566_4C_DESENHO_PTE_PELA_GPU_COMO_O_LINUX_E_O_TESTE_DE_ORDEM.md)) | Daniel | — |
-| 3 | Implementar a opção escolhida, com testes, portão por mutação, pacote e critério A–E | Eu | 2 |
-| 4 | Corrida 205 com o mesmo uso da 201–204 (menu, Pesquisa, Gerenciador de Tarefas, Configurações) e `coletar-pos-trava.ps1` se travar | Daniel | 3 |
-| 5 | Decidir se X2b (zerar por cópia) e 4b (sem leitura da CPU) ficam ou voltam, depois que a trava tiver causa | Daniel e eu | 4 |
-| 6 | M1b (memória do sistema para a GPU) segue estacionado até a trava ter causa ou reprodutor | — | 4 |
+| 1 | ~~Recuperação e boot frio~~ feito | Daniel | — |
+| 2 | ~~Corrida 205 (4c.1)~~ **feita, desfecho C** ([doc 568](docs/568_CORRIDA205_4C1_ANEL_PROVADO_IB_TRAVA_NO_SRBM_WRITE_600S_SEM_TRAVA_DURA.md)): flush pelo SDMA provado no anel; dentro de IB para no `SRBM_WRITE` | Daniel | 1 |
+| 3 | 4c.2 **pronta** ([doc 569](docs/569_4C2_FLUSH_TLB_PELO_SDMA_NO_ANEL_E_CRITERIO_CORRIDA206.md)): `FlushTlb` pelo SDMA no anel antes do IB seguinte, lab 3.353.1.0 → **Corrida 206**, `tools\EXECUTAR_CORRIDA206_4C2_FLUSH_TLB_NO_ANEL_600S.cmd` | Daniel | 2 |
+| 4 | ~~Corrida 208 (4c.3)~~ **feita, desfecho B** ([doc 574](docs/574_CORRIDA208_4C3_JOURNAL_RESOLVEU_99_95_E_TRAVA_DURA_NO_ZERAMENTO.md)): journal resolveu 99,95% dos gates; trava dura aos ~290 s no zeramento | Daniel | 3 |
+| 5 | 4c.4 **pronta** ([doc 575](docs/575_4C4_PTE_PELO_SDMA_IB_DIVIDIDO_NO_ANEL_E_CRITERIO_CORRIDA209.md)): `GPU_VIRTUAL`, PTE por `WRITE_LINEAR`, IB dividido no anel, journal fechado no `NO_SPACE`, lab 3.356.1.0 → **Corrida 209**, `tools\EXECUTAR_CORRIDA209_4C4_PTE_PELO_SDMA_600S.cmd` | Daniel | 4 |
+| 5b | ~~Corrida 209~~ **feita, desfecho C** ([doc 576](docs/576_CORRIDA209_4C4_RODOU_PONTO_DE_DIVISAO_NO_IB_ERRADO_E_CRITERIO_CORRIDA210.md)): ponto de divisão no IB errado (defeito meu); corrigido em lab 3.357.1.0 → **Corrida 210**, `tools\EXECUTAR_CORRIDA210_4C4_DIVISAO_CORRIGIDA_600S.cmd` | Daniel | 5 |
+| 5c | ~~Corrida 210~~ **feita, desfecho B** ([doc 577](docs/577_CORRIDA210_4C4_PTE_PELO_SDMA_ESTAVEL_DESKTOP_DESENHADO_TRAVA_DURA_AOS_228S.md)): 4c.4 estável (20.071 IBs, zero timeout, desktop desenhado), trava dura aos ~228 s; a 4c sai das causas suficientes | Daniel | 5b |
+| 5d | M1b.1 **ligada** ([doc 579](docs/579_M1B1_LIGADA_RADV_NO_SEGMENTO2_E_CRITERIO_CORRIDA211.md)): RADV no segmento 2, lab 3.358.1.0 → **Corrida 211**, `tools\EXECUTAR_CORRIDA211_M1B1_RADV_SEGMENTO2_600S.cmd` | Daniel | 5c |
+| 5e | ~~Corrida 211~~ M1b.1 ativa, tela azul por recusa de IB dividido (doc 580); corrigido em 3.360.1.0 → **Corrida 212**, `tools\EXECUTAR_CORRIDA212_M1B1_PEDACOS_DE_ANEL_600S.cmd` | Daniel | 5d |
+| 5f | ~~Corrida 212~~ **feita, desfecho B** ([doc 581](docs/581_CORRIDA212_SEM_FALTA_DE_MEMORIA_SEM_DEFEITO_DE_HOST_TRAVA_DURA_AOS_259S.md)): M1b.1 fecha a cascata (n=2); trava dura aos ~259 s, independente da memória e da 4c | Daniel | 5e |
+| 6 | Mineração feita ([doc 582](docs/582_MINERACAO_DAS_TRAVAS_256MB_GPU_OCIOSA_MAQUINA_MORRE_ENTRE_DUAS_OBSERVACOES_E_O_QUE_O_LINUX_FAZ_DIFERENTE.md)): SMU e SDMA1 fora, memória fora; sobram D2 (anel e fences em memória de sistema, proposta) e D1 (interrupção) | Daniel decide, eu implemento | 5f |
+| 6a | ~~D2 por AGP~~ refutada (Corridas 213/214, doc 586); **D2 por GART pronta** ([doc 587](docs/587_D2_POR_GART_DA_VMID0_COMO_O_LINUX_E_CRITERIO_CORRIDA215.md)), lab 3.363.1.0 → **Corrida 215**, `tools\EXECUTAR_CORRIDA215_D2_POR_GART_600S.cmd` | Daniel | 6 |
+| 7 | Decidir se X2b e 4b ficam ou voltam, e retomar o M1b, quando a trava tiver causa | Daniel e eu | — |
 
 ## 8. Regras que continuam valendo
 

@@ -3,6 +3,10 @@
 #include "../core/bc250_fault_latch_contract.h"
 #include "../core/bc250_golden_settings_contract.h"
 #include "../core/bc250_hdp_contract.h"
+#include "../core/bc250_mmhub_gart.h"
+#include "../core/bc250_sdma1_bringup.h"
+#include "../core/bc250_gfx_ring_transaction.h"
+#include "../core/bc250_c01_init_parity.h"
 
 static void Bc250MmioTopologyClearMapping(
     BC250_MMIO_TOPOLOGY_CONTEXT *Context)
@@ -172,10 +176,76 @@ static uint32_t Bc250MmioTopologyGoldenReadAllowed(uint32_t ByteOffset)
     return 0u;
 }
 
+/*
+ * G.1 (doc 645): ESCRITA dos 34 golden settings do Cyan Skillfish, so' os
+ * offsets da tabela (bc250_golden_settings_contract.c, igual a
+ * golden_settings_gc_10_0_cyan_skillfish). Unicos escritores:
+ * Bc250ActiveG1ApplyGolden/RestoreGolden (snapshot, Lei 6, readback, restauracao).
+ * O RLC_CSIB_* continua com a lista propria do DX.27.
+ */
+static uint32_t Bc250MmioTopologyG1GoldenWriteAllowed(uint32_t ByteOffset)
+{
+    uint32_t count = 0u;
+    const BC250_GOLDEN_ENTRY *table = Bc250GoldenSettingsGetTable(&count);
+    for (uint32_t i = 0; table != NULL && i < count; ++i) {
+        if (table[i].BarOffset == ByteOffset) return 1u;
+    }
+    return 0u;
+}
+
+/* P3.0 (doc 609): foto do MMHUB, so' leitura. A escrita da P3.0b tem lista propria abaixo. */
+static uint32_t Bc250MmioTopologyMmhubReadAllowed(uint32_t ByteOffset)
+{
+    static const uint32_t s_mmhub[BC250_MMHUB_P30_READ_COUNT] = {
+        BC250_MMHUB_REG_VM_L2_CNTL, BC250_MMHUB_REG_VM_L2_PROT_FAULT_STATUS,
+        BC250_MMHUB_REG_VM_L2_PROT_FAULT_ADDR_LO32, BC250_MMHUB_REG_VM_CONTEXT0_CNTL,
+        BC250_MMHUB_REG_VM_CONTEXT0_PT_BASE_LO32, BC250_MMHUB_REG_VM_CONTEXT0_PT_BASE_HI32,
+        BC250_MMHUB_REG_VM_CONTEXT0_PT_START_LO32, BC250_MMHUB_REG_VM_CONTEXT0_PT_END_LO32,
+        BC250_MMHUB_REG_MC_VM_FB_OFFSET, BC250_MMHUB_REG_MC_VM_SYS_APERTURE_DEFAULT_LSB,
+        BC250_MMHUB_REG_MC_VM_FB_LOCATION_BASE, BC250_MMHUB_REG_MC_VM_FB_LOCATION_TOP,
+        BC250_MMHUB_REG_MC_VM_AGP_TOP, BC250_MMHUB_REG_MC_VM_AGP_BOT,
+        BC250_MMHUB_REG_MC_VM_SYS_APERTURE_LOW, BC250_MMHUB_REG_MC_VM_SYS_APERTURE_HIGH,
+        BC250_MMHUB_REG_MC_VM_MX_L1_TLB_CNTL
+    };
+    uint32_t i;
+    for (i = 0u; i < BC250_MMHUB_P30_READ_COUNT; ++i) {
+        if (s_mmhub[i] == ByteOffset) return 1u;
+    }
+    /*
+     * P3.0b (doc 611): o conjunto que a GART do MMHUB escreve tambem e' lido
+     * (snapshot e readback), mais o ACK do engine 17. O SEM do engine 17 entra
+     * pela mesma regra: LER o SEM ADQUIRE o semaforo (gmc_v10_0_flush_vm_hub),
+     * e o unico leitor e' o flush do MMHUB, que o libera escrevendo 0.
+     */
+    return Bc250MmhubGartIsWritable(ByteOffset) ||
+        ByteOffset == BC250_MMHUB_VM_INV_ENG17_ACK;
+}
+
+/*
+ * P3.0b (doc 611): ESCRITA no MMHUB so' no conjunto da GART da VMID 0
+ * (Bc250MmhubGartIsWritable, fonte unica em ../core/bc250_mmhub_gart.c). O FB,
+ * o FB_OFFSET e os contextos 1..15 ficam fora. Unicos escritores:
+ * Bc250MmhubGartProgram/Restore e o flush do MMHUB no miniport.
+ */
+static uint32_t Bc250MmioTopologyMmhubP3bWriteAllowed(uint32_t ByteOffset)
+{
+    return Bc250MmhubGartIsWritable(ByteOffset);
+}
+
 static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
 {
     return Bc250MmioTopologyGlobalMmuOffsetAllowed(ByteOffset) ||
+        /* C01 (doc 764): snapshot e readback do que o C01 escreve. */
+        Bc250C01InitParityWriteAllowed(ByteOffset) ||
+        Bc250MmioTopologyMmhubReadAllowed(ByteOffset) ||
         Bc250MmioTopologyGoldenReadAllowed(ByteOffset) ||
+        /* 4c (doc 567): REQ/ACK do engine 1 so' em LEITURA -- quem escreve o
+         * REQ e' o SDMA0 por SRBM_WRITE. Ler o SEM adquire o semaforo
+         * (docs/03, AVISO) e por isso ele NAO entra aqui. */
+        ByteOffset == BC250_REG_GCVM_INVALIDATE_ENG1_REQ ||
+        ByteOffset == BC250_REG_GCVM_INVALIDATE_ENG1_ACK ||
+        ByteOffset == BC250_REG_GCVM_INVALIDATE_ENG1_ADDR_RANGE_LO ||
+        ByteOffset == BC250_REG_GCVM_INVALIDATE_ENG1_ADDR_RANGE_HI ||
         ByteOffset == BC250_RCC_CONFIG_MEMSIZE_BYTE_OFFSET ||
         ByteOffset == BC250_DRIVER_SCRATCH_0_BYTE_OFFSET ||
         ByteOffset == BC250_DRIVER_SCRATCH_1_BYTE_OFFSET ||
@@ -200,6 +270,16 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == BC250_REG_CP_RB0_RPTR_ADDR_HI ||
         ByteOffset == BC250_REG_CP_RB0_WPTR ||
         ByteOffset == BC250_REG_CP_RB0_WPTR_HI ||
+        /* EOP do CP (doc 618): snapshot e readback do CP_INT_CNTL_RING0. */
+        ByteOffset == BC250_REG_CP_INT_CNTL_RING0 ||
+        /* MEC.1 (doc 640): faixas de doorbell do CP, LEITURA (snapshot e registro). */
+        ByteOffset == BC250_REG_CP_MEC_DOORBELL_RANGE_LOWER ||
+        ByteOffset == BC250_REG_CP_MEC_DOORBELL_RANGE_UPPER ||
+        ByteOffset == BC250_REG_CP_RB_DOORBELL_RANGE_LOWER ||
+        ByteOffset == BC250_REG_CP_RB_DOORBELL_RANGE_UPPER ||
+        ByteOffset == BC250_REG_CP_RB_DOORBELL_CONTROL ||
+        /* P4.1 (doc 620): registradores do SDMA1 do contrato (fonte unica). */
+        Bc250Sdma1IsRegister(ByteOffset) ||
         ByteOffset == BC250_REG_SDMA0_RB_RPTR ||
         ByteOffset == BC250_REG_SDMA0_RB_RPTR_HI ||
         ByteOffset == BC250_REG_SDMA0_RB_WPTR ||
@@ -436,12 +516,33 @@ static uint32_t Bc250MmioTopologyOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == 0x00004BACu || ByteOffset == 0x00004BC4u ||
         ByteOffset == 0x000049E8u || ByteOffset == 0x000061E8u ||
         ByteOffset == 0x000061ECu || ByteOffset == 0x0003B120u ||
-        ByteOffset == 0x0003B124u || ByteOffset == 0x0003C200u;
+        ByteOffset == 0x0003B124u || ByteOffset == 0x0003C200u ||
+        /*
+         * RLC.1 (doc 642) -- LEITURA: RLC_PG_CNTL 0x3B10C e RLC_SPM_MC_CNTL
+         * 0x3B1C4 (gc_10_1_0_offset.h 0x4C43/0x4C71, BASE_IDX 1). RLC_CNTL,
+         * RLC_GPM_STAT, RLC_CGCG_CGLS_CTRL, GRBM_STATUS2 e CP_MEC_CNTL ja' estavam.
+         */
+        ByteOffset == 0x0003B10Cu || ByteOffset == 0x0003B1C4u;
 }
 
 static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
 {
     return Bc250MmioTopologyGlobalMmuOffsetAllowed(ByteOffset) ||
+        /* C05 (doc 764): SQ_CMD, ESCRITA. Unico escritor: Bc250ActiveC05WaveKill,
+         * no quiesce do TDR do GFX (gfx_v10_0_ring_soft_recovery). */
+        ByteOffset == BC250_GFX_REG_SQ_CMD ||
+        /* C01 (doc 764): constantes do gfx_v10_0_constants_init e afins. Unicos
+         * escritores: Bc250ActiveC01ApplyInitParity/RestoreInitParity. */
+        Bc250C01InitParityWriteAllowed(ByteOffset) ||
+        Bc250MmioTopologyMmhubP3bWriteAllowed(ByteOffset) ||
+        Bc250MmioTopologyG1GoldenWriteAllowed(ByteOffset) ||
+        /*
+         * 4c (doc 567): faixa do engine 1 (SDMA0), ESCRITA. O UNICO escritor e'
+         * Bc250ActiveArmSdmaInvalidateEngine: snapshot, 0xFFFFFFFF/0x1F como
+         * gfxhub_v2_0_program_invalidation, readback, e restaura se divergir.
+         */
+        ByteOffset == BC250_REG_GCVM_INVALIDATE_ENG1_ADDR_RANGE_LO ||
+        ByteOffset == BC250_REG_GCVM_INVALIDATE_ENG1_ADDR_RANGE_HI ||
         /*
          * 0xA120 GCVM_L2_PROTECTION_FAULT_CNTL -- ESCRITA, aberta na Corrida 56.
          *
@@ -526,6 +627,40 @@ static uint32_t Bc250MmioTopologyWriteOffsetAllowed(uint32_t ByteOffset)
         ByteOffset == BC250_REG_CP_RB0_RPTR ||
         ByteOffset == BC250_REG_CP_RB0_WPTR ||
         ByteOffset == BC250_REG_CP_RB0_WPTR_HI ||
+        /*
+         * EOP do CP (doc 618): CP_INT_CNTL_RING0, ESCRITA. Unicos escritores:
+         * Bc250ActiveCpEopIrqArm/Disarm, que mudam SO o TIME_STAMP_INT_ENABLE
+         * (Lei 6), com snapshot, readback e restauracao.
+         */
+        ByteOffset == BC250_REG_CP_INT_CNTL_RING0 ||
+        /*
+         * MEC.1 (doc 640): CP_MEC_DOORBELL_RANGE_UPPER, ESCRITA. Unicos
+         * escritores: Bc250ActiveMec1Arm/Disarm (snapshot, readback, restauracao).
+         * O LOWER NAO e' escrito: a fila do MEC deriva dele o offset da doorbell.
+         */
+        ByteOffset == BC250_REG_CP_MEC_DOORBELL_RANGE_UPPER ||
+        /*
+         * C1 (doc 672): CP_RB_DOORBELL_RANGE_LOWER/UPPER, ESCRITA, como
+         * gfx_v10_0_cp_gfx_set_doorbell (gc_10_1_0_offset.h 0x1DFA/0x1DFB,
+         * BASE_IDX 0). Unicos escritores: Bc250ActiveC1GfxDoorbellArm/Disarm
+         * (snapshot, readback e restauracao). CP_RB_DOORBELL_CONTROL ja' estava.
+         */
+        ByteOffset == BC250_REG_CP_RB_DOORBELL_RANGE_LOWER ||
+        ByteOffset == BC250_REG_CP_RB_DOORBELL_RANGE_UPPER ||
+        /*
+         * RLC.1 (doc 642), ESCRITA: RLC_CGCG_CGLS_CTRL 0x3B124, RLC_PG_CNTL
+         * 0x3B10C e RLC_SPM_MC_CNTL 0x3B1C4. Unicos escritores:
+         * Bc250ActiveRlc1Resume/Disarm (gfx_v10_0_rlc_resume, snapshot,
+         * readback e restauracao). RLC_CNTL e CP_MEC_CNTL ja' estavam.
+         */
+        ByteOffset == 0x0003B124u || ByteOffset == 0x0003B10Cu ||
+        ByteOffset == 0x0003B1C4u ||
+        /*
+         * P4.1 (doc 620): SDMA1, ESCRITA. Unicos escritores: Bc250Sdma1BringUp e
+         * Bc250Sdma1Shutdown (snapshot, Lei 6, readback, desligamento provado).
+         * A lista e' a do contrato; POWER_CNTL e o resto do bloco ficam fora.
+         */
+        Bc250Sdma1IsRegister(ByteOffset) ||
         ByteOffset == 0x0000C680u || ByteOffset == 0x0000C144u ||
         ByteOffset == 0x00008704u || ByteOffset == 0x00008708u ||
         ByteOffset == 0x0000C168u || ByteOffset == 0x0000C16Cu ||

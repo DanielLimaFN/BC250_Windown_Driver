@@ -185,7 +185,9 @@ function Copy-Bc250SharedLog([string]$Source, [string]$Destination) {
         try {
             $out = [System.IO.File]::Open($Destination, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write,
                 [System.IO.FileShare]::Read)
-            try { $in.CopyTo($out) } finally { $out.Dispose() }
+            # Corrida 248 (doc 651): a copia ficou no cache e a trava zerou os seis
+            # snapshots (tamanho certo, so' zeros). Flush(true) forca os dados ao disco.
+            try { $in.CopyTo($out); $out.Flush($true) } finally { $out.Dispose() }
         } finally { $in.Dispose() }
         return $true
     } catch {
@@ -218,7 +220,7 @@ function Add-Bc250LogToAggregate([string]$Source, [string]$Aggregate) {
             $out.Write($header, 0, $header.Length)
             $in = [System.IO.File]::Open($Source, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read,
                 [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete)
-            try { $in.CopyTo($out) } finally { $in.Dispose() }
+            try { $in.CopyTo($out); $out.Flush($true) } finally { $in.Dispose() }
         } finally { $out.Dispose() }
     } catch {
         Write-Host ("  AVISO: nao agreguei {0}: {1}" -f $Source, $_.Exception.Message) -ForegroundColor Yellow
@@ -639,6 +641,7 @@ Assert-ArtifactHash $packageInf $manifest.PackageInfSha256 'INF'
 Assert-ArtifactHash $packageCat $manifest.PackageCatSha256 'CAT'
 Assert-ArtifactHash (Join-Path $packageDir 'cyan_skillfish2_sdma.bin') $manifest.SdmaFirmwareSha256 'SDMA firmware'
 Assert-ArtifactHash (Join-Path $packageDir 'cyan_skillfish2_rlc.bin') $manifest.RlcFirmwareSha256 'RLC firmware'
+Assert-ArtifactHash (Join-Path $packageDir 'cyan_skillfish2_sdma1.bin') $manifest.Sdma1FirmwareSha256 'SDMA1 firmware'
 Assert-ArtifactHash (Join-Path $packageDir 'cyan_skillfish2_pfp.bin') $manifest.PfpFirmwareSha256 'PFP firmware'
 Assert-ArtifactHash (Join-Path $packageDir 'cyan_skillfish2_me.bin') $manifest.MeFirmwareSha256 'ME firmware'
 Assert-ArtifactHash (Join-Path $packageDir 'cyan_skillfish2_ce.bin') $manifest.CeFirmwareSha256 'CE firmware'
@@ -1124,8 +1127,16 @@ if (-not $Execute -or -not $IAcceptBlackScreenRisk) {
 if (-not $DisableWatchdog -and -not $IAcceptAutomaticRecoveryReboot) {
     throw 'O watchdog SYSTEM exige -IAcceptAutomaticRecoveryReboot.'
 }
-if (-not $DisableWatchdog -and $WatchdogTimeoutSeconds -lt 120) {
-    throw 'O watchdog SYSTEM exige WatchdogTimeoutSeconds entre 120 e 600.'
+# Corrida 269 (doc 710, pedido do Daniel): ensaio curto so' do DCN pode usar
+# watchdog de 60 a 119 s com BC250_ALLOW_SHORT_WATCHDOG=1. A excecao vai no
+# contrato do guardiao (short_watchdog=1), que so' entao aceita menos de 120 s.
+$shortWatchdog = ($env:BC250_ALLOW_SHORT_WATCHDOG -eq '1')
+$watchdogFloor = if ($shortWatchdog) { 60 } else { 120 }
+if (-not $DisableWatchdog -and $WatchdogTimeoutSeconds -lt $watchdogFloor) {
+    throw ("O watchdog SYSTEM exige WatchdogTimeoutSeconds entre {0} e 600." -f $watchdogFloor)
+}
+if ($shortWatchdog -and $WatchdogTimeoutSeconds -lt 120) {
+    Write-Host ("  WATCHDOG CURTO: {0} s (BC250_ALLOW_SHORT_WATCHDOG=1, ensaio so' do DCN); rollback automatico em {0} s." -f $WatchdogTimeoutSeconds) -ForegroundColor Yellow
 }
 # A janela do binder tem de caber com folga dentro da do guardiao. Se as duas
 # expirarem juntas, binder e guardiao disparam a MESMA recovery em paralelo:
@@ -1360,6 +1371,7 @@ if ($DisableWatchdog) {
         deadline_task_name = $deadlineTaskName; token = $watchdogToken
         instance_id = [string]$device.PNPDeviceID
         timeout_seconds = $WatchdogTimeoutSeconds; evidence_dir = $evidenceDir
+        short_watchdog = $(if ($shortWatchdog) { 1 } else { 0 })
         recovery_path = $recoveryPath
         recovery_sha256 = (Get-FileHash $recoveryPath -Algorithm SHA256).Hash
         expected_sys_sha256 = [string]$manifest.PackageSysSha256
@@ -2447,6 +2459,32 @@ if (-not $DisableWatchdog) {
         Write-Host ("  AVISO: coleta FINAL do despejo de IB falhou: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
     }
 
+    # Doc 634 (Corrida 241): menu Iniciar e Pesquisa sao AppContainer e a RADV
+    # grava o despejo de IB em <pacote>\AC\Temp\BC250_GFX_IB_DUMP. So a coleta
+    # pos-trava pegava esses arquivos; numa corrida sem trava a pre-condicao do
+    # doc 633 (controle do preambulo do menu) ficou sem prova automatica.
+    try {
+        $acIbStartLocal = $collectionDeadlineUtc.ToLocalTime().AddSeconds(-($WatchdogTimeoutSeconds + 180))
+        $acIbEvidence = Join-Path $evidenceDir 'gfx-ib-dump-appcontainer'
+        $acIbCount = 0
+        $acIbRoots = @(Get-ChildItem -Path 'C:\Users\*\AppData\Local\Packages\*\AC\Temp\BC250_GFX_IB_DUMP' -Directory -ErrorAction SilentlyContinue)
+        foreach ($acIbRoot in $acIbRoots) {
+            $acIbPkg = Split-Path -Leaf (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $acIbRoot.FullName)))
+            $acIbFiles = @(Get-ChildItem -LiteralPath $acIbRoot.FullName -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.LastWriteTime -ge $acIbStartLocal })
+            if ($acIbFiles.Count -eq 0) { continue }
+            $acIbDest = Join-Path $acIbEvidence $acIbPkg
+            New-Item -ItemType Directory -Force -Path $acIbDest | Out-Null
+            foreach ($acIbFile in $acIbFiles) {
+                Copy-Item -LiteralPath $acIbFile.FullName -Destination (Join-Path $acIbDest $acIbFile.Name) -Force
+                $acIbCount++
+            }
+        }
+        Write-Host ("  Coleta FINAL dos IBs da RADV em AppContainer: {0} arquivo(s) em {1}." -f $acIbCount, $acIbEvidence) -ForegroundColor Yellow
+    } catch {
+        Write-Host ("  AVISO: coleta FINAL dos IBs da RADV em AppContainer falhou: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+    }
+
     if ($EnableDwmCrashCapture) {
         try {
             & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $restoreDwmCapture `
@@ -2477,6 +2515,17 @@ if (-not $DisableWatchdog) {
     # os dois tamanhos. Se a segunda ainda crescer, o arquivo diz que cresceu,
     # em vez de o leitor descobrir dias depois que analisou meia corrida.
     # -----------------------------------------------------------------------
+    # T3 (doc 691): log do gatilho de processo novo e CSV do monitor (cumulativos;
+    # o log da T3 traz data, hora e sessao por linha). So' copia; falha so' avisa.
+    foreach ($extra in @('C:\BC250_PROCESSO_NOVO.log', 'C:\BC250_MONITOR.csv')) {
+        try {
+            if (Test-Path -LiteralPath $extra) {
+                Copy-Item -LiteralPath $extra -Destination (Join-Path $evidenceDir ([IO.Path]::GetFileName($extra))) -Force
+            }
+        } catch {
+            Write-Warning "Nao copiei $extra para a evidencia: $($_.Exception.Message)"
+        }
+    }
     $finalTailPath = Join-Path $evidenceDir 'display-log-this-bind-FINAL.txt'
     $tailPass1 = -1
     $tailPass2 = -1

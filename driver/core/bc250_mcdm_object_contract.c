@@ -577,6 +577,28 @@ BC250_MCDM_OBJECT_STATUS Bc250McdmObjectFindAllocationByToken(
  * ser obrigado a distinguir "nao sei" de "e' 0x0", que e' exatamente o tipo de
  * confusao que a Lei 4 proibe.
  */
+BC250_MCDM_OBJECT_STATUS Bc250McdmObjectSetAllocationAbiFlags(
+    BC250_MCDM_OBJECT_REGISTRY *Registry,
+    BC250_MCDM_HANDLE Allocation,
+    uint32_t AbiFlags)
+{
+    BC250_MCDM_OBJECT_RECORD probe;
+    BC250_MCDM_OBJECT_RECORD *record;
+    BC250_MCDM_OBJECT_STATUS status;
+
+    status = Bc250McdmObjectLookup(Registry, Allocation,
+        BC250_MCDM_OBJECT_ALLOCATION, NULL, &probe);
+    if (status != BC250_MCDM_OBJECT_OK) return status;
+    record = Bc250McdmFindObject(Registry, Allocation);
+    if (record == NULL ||
+        record->Signature != BC250_MCDM_OBJECT_LIVE_SIGNATURE ||
+        record->Type != BC250_MCDM_OBJECT_ALLOCATION) {
+        return BC250_MCDM_OBJECT_BAD_REGISTRY;
+    }
+    record->AllocationAbiFlags = AbiFlags;
+    return BC250_MCDM_OBJECT_OK;
+}
+
 BC250_MCDM_OBJECT_STATUS Bc250McdmObjectSetAllocationGeometry(
     BC250_MCDM_OBJECT_REGISTRY *Registry,
     BC250_MCDM_HANDLE Allocation,

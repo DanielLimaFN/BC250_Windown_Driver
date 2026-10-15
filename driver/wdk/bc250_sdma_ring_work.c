@@ -2,6 +2,7 @@
 #include "../core/bc250_sdma_packet_builder.h"
 #include "bc250_sdma_present.h"
 #include "bc250_mmio_breadcrumb.h"
+#include "bc250_vram_cpu_path.h"
 
 #define BC250_SDMA_WORK_PAGE_BYTES 4096u
 #define BC250_SDMA_WORK_BYTES (4u * BC250_SDMA_WORK_PAGE_BYTES)
@@ -153,6 +154,11 @@ static uint32_t Bc250SdmaGolden(
 static uint32_t Bc250SdmaHdp(
     BC250_DXGK_ACTIVE_CONTEXT *Context)
 {
+    if (!Bc250VramCpuHdpNeeded()) {
+        /* P1b: sem BAR no caminho, sem HDP (amdgpu_device_flush_hdp em APU). */
+        UNREFERENCED_PARAMETER(Context);
+        return 1u;
+    }
     uint32_t value;
     /* HDP.1: barreira de CPU, flush de escrita real e leitura de confirmacao
      * (amdgpu_hdp_generic_flush), depois a invalidacao de leitura. */
@@ -278,18 +284,18 @@ BC250_SDMA_RING_WORK_STATUS Bc250ActiveRunSdmaRingWork(
     Evidence->RingMcAddress = addressSpace->VramMcStart + ringRegion.Offset;
     Evidence->WorkMcAddress = addressSpace->VramMcStart + workRegion.Offset;
     physical.QuadPart = (LONGLONG)(bar->Start + ringRegion.Offset);
-    ntStatus = Context->Core.DxgkInterface.DxgkCbMapMemory(
-        Context->Core.DxgkInterface.DeviceHandle, physical,
-        BC250_SDMA_WORK_PAGE_BYTES, FALSE, FALSE, MmNonCached, (PVOID *)&ring);
+    ntStatus = Bc250VramCpuMapMemory(&Context->Core.DxgkInterface,
+        (ULONGLONG)physical.QuadPart, BC250_SDMA_WORK_PAGE_BYTES,
+        MmNonCached, (PVOID *)&ring);
     if (!NT_SUCCESS(ntStatus) || ring == NULL) {
         status = BC250_SDMA_RING_WORK_MAP_FAILED;
         goto Cleanup;
     }
     ringMapped = 1u;
     physical.QuadPart = (LONGLONG)(bar->Start + workRegion.Offset);
-    ntStatus = Context->Core.DxgkInterface.DxgkCbMapMemory(
-        Context->Core.DxgkInterface.DeviceHandle, physical,
-        BC250_SDMA_WORK_BYTES, FALSE, FALSE, MmNonCached, (PVOID *)&work);
+    ntStatus = Bc250VramCpuMapMemory(&Context->Core.DxgkInterface,
+        (ULONGLONG)physical.QuadPart, BC250_SDMA_WORK_BYTES,
+        MmNonCached, (PVOID *)&work);
     if (!NT_SUCCESS(ntStatus) || work == NULL) {
         status = BC250_SDMA_RING_WORK_MAP_FAILED;
         goto Cleanup;
@@ -666,13 +672,13 @@ Cleanup:
     if (workBackup != NULL) ExFreePoolWithTag(workBackup, BC250_SDMA_RING_POOL_TAG);
     if (ringBackup != NULL) ExFreePoolWithTag(ringBackup, BC250_SDMA_RING_POOL_TAG);
     if (workMapped != 0u && !NT_SUCCESS(
-            Context->Core.DxgkInterface.DxgkCbUnmapMemory(
-                Context->Core.DxgkInterface.DeviceHandle, (PVOID)work)) &&
+            Bc250VramCpuUnmapMemory(&Context->Core.DxgkInterface,
+                (PVOID)work)) &&
         status == BC250_SDMA_RING_WORK_OK)
         status = BC250_SDMA_RING_WORK_UNMAP_FAILED;
     if (ringMapped != 0u && !NT_SUCCESS(
-            Context->Core.DxgkInterface.DxgkCbUnmapMemory(
-                Context->Core.DxgkInterface.DeviceHandle, (PVOID)ring)) &&
+            Bc250VramCpuUnmapMemory(&Context->Core.DxgkInterface,
+                (PVOID)ring)) &&
         status == BC250_SDMA_RING_WORK_OK)
         status = BC250_SDMA_RING_WORK_UNMAP_FAILED;
     if (ringAllocated != 0u &&

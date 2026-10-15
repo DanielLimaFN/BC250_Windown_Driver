@@ -61,6 +61,12 @@ static HRESULT Bc250UmdBltViaKmd(BC250_UMD_DEVICE *d, BC250_UMD_RESOURCE *dst,
         Bc250UmdTrace("BltViaKmd RECUSADO: dreno do lote Vulkan falhou; a origem nao tem conclusao provada");
         return E_FAIL;
     }
+    /* PAG.1 (doc 754): a copia do KMD le/escreve as duas alocacoes WDDM. */
+    if (Bc250UmdPag1WaitNow(d, &src->Allocation, "BltViaKmd origem") != BC250_WINSYS_OK ||
+        Bc250UmdPag1WaitNow(d, &dst->Allocation, "BltViaKmd destino") != BC250_WINSYS_OK) {
+        Bc250UmdTrace("BltViaKmd RECUSADO: PAG1 espera de paginacao falhou");
+        return E_FAIL;
+    }
 
     memset(&payload, 0, sizeof(payload));
     payload.Opcode = BC250_ESCAPE_OP_COMPOSITE_BLT;

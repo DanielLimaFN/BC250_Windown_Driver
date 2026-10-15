@@ -1050,6 +1050,40 @@ static int Bc250RunComputeMqdContractTest(void)
         g_eopInitAutoClear = 0u;
 
         /*
+         * V0.1 (Corrida 216, doc 589): com o contexto 0 da GART da D2, o
+         * contrato NAO pode reescrever nem restaurar os registradores dele.
+         * A foto mediu PT_BASE trocado para a raiz do MEC e o 1o IB do SDMA0
+         * faultou na VMID 0. A invalidacao da VMID 0 continua.
+         */
+        g_wptrRegister = 0u;
+        g_activeRegister = 0u;
+        g_seenActiveOne = 0u;
+        g_gcvmCtx0Cntl = 0x007FFE01u;
+        g_gcvmCtx0PtBaseLo = 0x6FF02001u;
+        g_gcvmCtx0PtBaseHi = 0x4u;
+        g_gcvmCtx0PtStartLo = 0u;
+        g_gcvmCtx0PtEndLo = 0x1FFu;
+        g_gcvmInvalidateReq = 0u;
+        buffers.Context0External = 1u;
+        CHECK(Bc250ComputeRunActiveHqdSubmissionTransaction(
+            &selectorInterface, &buffers, &g_testProps, &g_testMqd,
+            &actEvidence) == BC250_HQD_ACTIVE_PM4_NOT_CONSUMED);
+        CHECK(actEvidence.GcvmContext0External == 1u);
+        CHECK(actEvidence.GcvmContext0CntlApplied == 0u);
+        CHECK(actEvidence.GcvmContext0PtBaseLoApplied == 0u);
+        CHECK(g_gcvmCtx0Cntl == 0x007FFE01u);
+        CHECK(g_gcvmCtx0PtBaseLo == 0x6FF02001u);
+        CHECK(g_gcvmCtx0PtBaseHi == 0x4u);
+        CHECK(g_gcvmCtx0PtEndLo == 0x1FFu);
+        CHECK(g_gcvmInvalidateReq == BC250_HQD_GCVM_INVALIDATE_REQ_VMID0);
+        CHECK(actEvidence.RestorePassed == 1u);
+        buffers.Context0External = 0u;
+        g_gcvmCtx0Cntl = 0u;
+        g_gcvmCtx0PtBaseLo = 0u;
+        g_gcvmCtx0PtBaseHi = 0u;
+        g_gcvmCtx0PtEndLo = 0u;
+
+        /*
          * 9.2.1 A mascara de fila vem da topologia possuida pelo miniport.
          * ME2/pipe 1 deve produzir bit 8 (1 << (1*8 + 0)).
          */

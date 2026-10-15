@@ -7,12 +7,140 @@
 #include <io.h>
 #include <fcntl.h>
 
+static void Bc250VkTrace(const char *fmt, ...);
+/* ===================== PSO.1 (doc 751) ===================== */
+#define BC250_PSO_CACHE_FILE "bc250_pso_v1.bin"
+#define BC250_PSO_CACHE_MAX_BYTES (64u * 1024u * 1024u)
+#define BC250_PSO_CACHE_SAVE_EVERY 8u
+
+static VOID Bc250UmdVkPsoCacheOpen(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
+{
+    VkPipelineCacheCreateInfo info = {VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+    void *data = NULL;
+    DWORD dataBytes = 0;
+    DWORD tempLen;
+    HANDLE h;
+    VkResult res;
+
+    pBridge->PsoCache = VK_NULL_HANDLE;
+    pBridge->PsoCacheNewSinceSave = 0;
+    pBridge->PsoCacheLoadedBytes = 0;
+    pBridge->pfnCreatePipelineCache = (PFN_vkCreatePipelineCache)
+        pBridge->vk.vkGetDeviceProcAddr(pBridge->Device, "vkCreatePipelineCache");
+    pBridge->pfnGetPipelineCacheData = (PFN_vkGetPipelineCacheData)
+        pBridge->vk.vkGetDeviceProcAddr(pBridge->Device, "vkGetPipelineCacheData");
+    pBridge->pfnDestroyPipelineCache = (PFN_vkDestroyPipelineCache)
+        pBridge->vk.vkGetDeviceProcAddr(pBridge->Device, "vkDestroyPipelineCache");
+    if (pBridge->pfnCreatePipelineCache == NULL || pBridge->pfnGetPipelineCacheData == NULL ||
+        pBridge->pfnDestroyPipelineCache == NULL) {
+        Bc250VkTrace("[PSO1] cache de pipelines INDISPONIVEL: funcoes ausentes; pipelines sem cache como antes");
+        return;
+    }
+    tempLen = GetTempPathA((DWORD)sizeof(pBridge->PsoCachePath), pBridge->PsoCachePath);
+    if (tempLen == 0u || tempLen + sizeof(BC250_PSO_CACHE_FILE) >= sizeof(pBridge->PsoCachePath)) {
+        pBridge->PsoCachePath[0] = '\0';
+    } else {
+        memcpy(pBridge->PsoCachePath + tempLen, BC250_PSO_CACHE_FILE, sizeof(BC250_PSO_CACHE_FILE));
+        h = CreateFileA(pBridge->PsoCachePath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL,
+            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (h != INVALID_HANDLE_VALUE) {
+            DWORD size = GetFileSize(h, NULL);
+            if (size != INVALID_FILE_SIZE && size > 0u && size <= BC250_PSO_CACHE_MAX_BYTES) {
+                data = malloc(size);
+                if (data != NULL && (!ReadFile(h, data, size, &dataBytes, NULL) || dataBytes != size)) {
+                    free(data);
+                    data = NULL;
+                    dataBytes = 0;
+                }
+            }
+            CloseHandle(h);
+        }
+    }
+    info.initialDataSize = data != NULL ? (size_t)dataBytes : 0u;
+    info.pInitialData = data;
+    res = pBridge->pfnCreatePipelineCache(pBridge->Device, &info, NULL, &pBridge->PsoCache);
+    if (res != VK_SUCCESS && data != NULL) {
+        /* Dados de outra RADV ou corrompidos: cache vazio, nunca fatal. */
+        info.initialDataSize = 0u;
+        info.pInitialData = NULL;
+        res = pBridge->pfnCreatePipelineCache(pBridge->Device, &info, NULL, &pBridge->PsoCache);
+        dataBytes = 0;
+    }
+    if (res != VK_SUCCESS) pBridge->PsoCache = VK_NULL_HANDLE;
+    pBridge->PsoCacheLoadedBytes = (uint32_t)dataBytes;
+    /* PSO.1b: o que veio do disco ja esta gravado. */
+    pBridge->PsoCacheSavedBytes = (uint32_t)dataBytes;
+    pBridge->PsoCacheSkippedSaves = 0;
+    Bc250VkTrace("[PSO1] cache de pipelines %s: %lu bytes carregados de %s (res=%d)",
+        pBridge->PsoCache != VK_NULL_HANDLE ? "ATIVO" : "INDISPONIVEL",
+        (unsigned long)dataBytes, pBridge->PsoCachePath[0] ? pBridge->PsoCachePath : "(sem caminho)", (int)res);
+    free(data);
+}
+
+VOID Bc250UmdVkPsoCacheSave(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, _In_z_ const char *why)
+{
+    size_t size = 0;
+    void *data;
+    char tmp[MAX_PATH + 32];
+    HANDLE h;
+    DWORD written = 0;
+    BOOL ok = FALSE;
+
+    if (pBridge == NULL || pBridge->PsoCache == VK_NULL_HANDLE || pBridge->PsoCachePath[0] == '\0' ||
+        pBridge->pfnGetPipelineCacheData == NULL) return;
+    if (pBridge->pfnGetPipelineCacheData(pBridge->Device, pBridge->PsoCache, &size, NULL) != VK_SUCCESS ||
+        size == 0u || size > BC250_PSO_CACHE_MAX_BYTES) return;
+    /*
+     * PSO.1b (doc 754): o cache da RADV so cresce quando entra pipeline novo;
+     * mesmo tamanho da ultima gravacao = nada a gravar. A 294 regravava os
+     * mesmos 39.664 bytes a cada 8 pipelines (acertos do cache contavam como
+     * novos). Silencioso: so o resumo da destruicao conta os pulos.
+     */
+    if ((uint32_t)size == pBridge->PsoCacheSavedBytes) {
+        pBridge->PsoCacheNewSinceSave = 0;
+        ++pBridge->PsoCacheSkippedSaves;
+        if (strcmp(why, "destruicao do device") == 0) {
+            Bc250VkTrace("[PSO1] cache de pipelines sem mudanca (%s): %lu bytes, %lu gravacoes evitadas (PSO.1b)",
+                why, (unsigned long)size, (unsigned long)pBridge->PsoCacheSkippedSaves);
+        }
+        return;
+    }
+    data = malloc(size);
+    if (data == NULL) return;
+    if (pBridge->pfnGetPipelineCacheData(pBridge->Device, pBridge->PsoCache, &size, data) == VK_SUCCESS &&
+        _snprintf_s(tmp, sizeof(tmp), _TRUNCATE, "%s.%lu.tmp", pBridge->PsoCachePath,
+            (unsigned long)GetCurrentProcessId()) > 0) {
+        h = CreateFileA(tmp, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (h != INVALID_HANDLE_VALUE) {
+            ok = WriteFile(h, data, (DWORD)size, &written, NULL) && written == (DWORD)size;
+            CloseHandle(h);
+            if (ok) ok = MoveFileExA(tmp, pBridge->PsoCachePath, MOVEFILE_REPLACE_EXISTING);
+            if (!ok) DeleteFileA(tmp);
+        }
+    }
+    free(data);
+    pBridge->PsoCacheNewSinceSave = 0;
+    if (ok) pBridge->PsoCacheSavedBytes = (uint32_t)size;
+    Bc250VkTrace("[PSO1] cache de pipelines gravado (%s): %lu bytes em %s -> %s (%lu evitadas)",
+        why, (unsigned long)size, pBridge->PsoCachePath, ok ? "OK" : "FALHOU",
+        (unsigned long)pBridge->PsoCacheSkippedSaves);
+}
+
+VOID Bc250UmdVkPsoCacheNoteNewPipeline(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
+{
+    if (pBridge == NULL || pBridge->PsoCache == VK_NULL_HANDLE) return;
+    /* Gravacao a cada N pipelines novos: o menu e a Pesquisa podem morrer sem destruir o device. */
+    if (++pBridge->PsoCacheNewSinceSave >= BC250_PSO_CACHE_SAVE_EVERY) {
+        Bc250UmdVkPsoCacheSave(pBridge, "pipelines novos");
+    }
+}
+
 /*
  * M1b.1 (doc 554): liga junto com BC250_M1B_RADV_MEMORY (RADV) e
  * BC250_M1B_RADV_SYSTEM_SEGMENT_ENABLED (KMD). Sozinho nao muda segmento.
  */
 #ifndef BC250_M1B_PRESENT_DEVICE_LOCAL
-#define BC250_M1B_PRESENT_DEVICE_LOCAL 0
+#define BC250_M1B_PRESENT_DEVICE_LOCAL 1
 #endif
 
 static void Bc250VkTrace(const char *fmt, ...)
@@ -427,14 +555,30 @@ static BOOL Bc250UmdVkBridgeInitInternal(_Out_ BC250_UMD_VK_BRIDGE *pBridge)
     static const char *const kIrExtensions[] = {VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME};
     VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR irFeature =
         {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
+    /*
+     * PSO.1 (doc 751): a captura tornava CADA pipeline mais caro (a RADV guarda
+     * IR e disassembly com CAPTURE_INTERNAL_REPRESENTATIONS) e era a 1a coisa
+     * na abertura do menu. Agora so' com HKLM\SOFTWARE\BC250\Umd
+     * PipelineIrCapture=1; sem a chave, o device nasce sem a extensao.
+     */
+    BOOL irWanted = FALSE;
+    {
+        DWORD v = 0, cb = sizeof(v);
+        if (RegGetValueA(HKEY_LOCAL_MACHINE, "SOFTWARE\\BC250\\Umd", "PipelineIrCapture",
+                RRF_RT_REG_DWORD, NULL, &v, &cb) == ERROR_SUCCESS && v == 1u) {
+            irWanted = TRUE;
+        }
+    }
     irFeature.pipelineExecutableInfo = VK_TRUE;
-    deviceCreateInfo.pNext = &irFeature;
-    deviceCreateInfo.enabledExtensionCount = 1;
-    deviceCreateInfo.ppEnabledExtensionNames = kIrExtensions;
+    if (irWanted) {
+        deviceCreateInfo.pNext = &irFeature;
+        deviceCreateInfo.enabledExtensionCount = 1;
+        deviceCreateInfo.ppEnabledExtensionNames = kIrExtensions;
+    }
 
     res = pBridge->vk.vkCreateDevice(pBridge->PhysicalDevice, &deviceCreateInfo, NULL, &pBridge->Device);
     if (res == VK_SUCCESS && pBridge->Device != VK_NULL_HANDLE) {
-        pBridge->PipelineIrCaptureEnabled = TRUE;
+        pBridge->PipelineIrCaptureEnabled = irWanted;
     } else {
         Bc250VkTrace("[VK_PIPELINE_IR] INDISPONIVEL: vkCreateDevice com %s devolveu res=%d; "
             "device recriado SEM a extensao, programas de shader NAO serao despejados",
@@ -538,6 +682,8 @@ static BOOL Bc250UmdVkBridgeInitInternal(_Out_ BC250_UMD_VK_BRIDGE *pBridge)
         pBridge->PipelineIrCaptureEnabled ? "ARMADA" : "DESARMADA",
         (void*)pBridge->pfnGetPipelineExecutableProperties,
         (void*)pBridge->pfnGetPipelineExecutableInternalRepresentations);
+
+    Bc250UmdVkPsoCacheOpen(pBridge);
 
     pBridge->vk.vkGetDeviceQueue(pBridge->Device, pBridge->GraphicsQueueFamily, 0, &pBridge->GraphicsQueue);
     Bc250VkTrace("[VK_BRIDGE] vkGetDeviceQueue: GraphicsQueue=%p", (void*)pBridge->GraphicsQueue);
@@ -856,6 +1002,14 @@ VOID Bc250UmdVkBridgeShutdown(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
             pBridge->vk.vkDestroyCommandPool(pBridge->Device, pBridge->CommandPool, NULL);
             pBridge->CommandPool = VK_NULL_HANDLE;
         }
+        if (pBridge->PsoCache != VK_NULL_HANDLE) {
+            Bc250UmdVkPsoCacheSave(pBridge, "destruicao do device");
+            if (pBridge->pfnDestroyPipelineCache != NULL) {
+                pBridge->pfnDestroyPipelineCache(pBridge->Device, pBridge->PsoCache, NULL);
+            }
+            pBridge->PsoCache = VK_NULL_HANDLE;
+        }
+        Bc250UmdVkSubAllocTeardown(pBridge);
         if (pBridge->vk.vkDestroyDevice != NULL) {
             Bc250WinsysHangEvent("VK_DESTROY_DEVICE", "ENTER", pBridge, hangSpan,
                 (UINT64)(uintptr_t)pBridge->Device, 0u, S_OK);
@@ -913,6 +1067,174 @@ BOOL Bc250UmdVkBridgeInit(_Out_ BC250_UMD_VK_BRIDGE *pBridge)
     }
 }
 
+/* ===================== SUBALOC.1 (Corrida 301, doc 762) ===================== */
+#define BC250_SUBALOC_BLOCK_BYTES (4ull * 1024ull * 1024ull)
+#define BC250_SUBALOC_MIN_SLOT (4096ull)
+#define BC250_SUBALOC_MAX_SLOT (1024ull * 1024ull)
+#define BC250_SUBALOC_SLOTS_MAX ((uint32_t)(BC250_SUBALOC_BLOCK_BYTES / BC250_SUBALOC_MIN_SLOT))
+
+typedef struct BC250_SUBALOC_BLOCK {
+    struct BC250_SUBALOC_BLOCK *Next;
+    VkDeviceMemory Memory;
+    void *Mapped;
+    uint32_t TypeIndex;
+    VkDeviceSize SlotBytes;
+    uint32_t SlotCount;
+    uint32_t Used;
+    uint64_t Bitmap[BC250_SUBALOC_SLOTS_MAX / 64u];
+} BC250_SUBALOC_BLOCK;
+
+static BOOL Bc250SubAllocIsEnabled(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
+{
+    if (pBridge->SubAllocEnabled == 0) {
+        DWORD value = 1u, bytes = sizeof(value);
+        if (RegGetValueA(HKEY_LOCAL_MACHINE, "SOFTWARE\\BC250\\Umd", "SubAlloc",
+                RRF_RT_REG_DWORD, NULL, &value, &bytes) != ERROR_SUCCESS) {
+            value = 1u;
+        }
+        pBridge->SubAllocEnabled = value != 0u ? 1 : 2;
+        Bc250VkTrace("[SUBALOC1] sub-alocacao %s (blocos de 4 MiB, fatias de 4 KiB a 1 MiB; chave SubAlloc)",
+            value != 0u ? "LIGADA" : "DESLIGADA pela chave");
+    }
+    return pBridge->SubAllocEnabled == 1 ? TRUE : FALSE;
+}
+
+BOOL Bc250UmdVkSubAllocTake(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, uint32_t TypeIndex,
+    VkDeviceSize Size, VkDeviceSize Alignment, _Out_ VkDeviceMemory *pMemory,
+    _Out_ VkDeviceSize *pOffset, _Out_ void **ppBlock)
+{
+    VkDeviceSize slot = BC250_SUBALOC_MIN_SLOT;
+    BC250_SUBALOC_BLOCK *blk;
+    BOOL ok = FALSE;
+
+    *pMemory = VK_NULL_HANDLE;
+    *pOffset = 0;
+    *ppBlock = NULL;
+    if (pBridge == NULL || pBridge->Device == VK_NULL_HANDLE || Size == 0 ||
+        TypeIndex >= pBridge->MemProperties.memoryTypeCount || !Bc250SubAllocIsEnabled(pBridge)) {
+        return FALSE;
+    }
+    while (slot < Size || slot < Alignment) slot <<= 1;
+    if (slot > BC250_SUBALOC_MAX_SLOT) return FALSE;
+
+    AcquireSRWLockExclusive(&pBridge->SubAllocLock);
+    for (blk = pBridge->SubAllocBlocks; blk != NULL && !ok; blk = blk->Next) {
+        uint32_t w;
+        if (blk->TypeIndex != TypeIndex || blk->SlotBytes != slot || blk->Used >= blk->SlotCount) continue;
+        for (w = 0; w < (blk->SlotCount + 63u) / 64u && !ok; ++w) {
+            uint64_t freeBits = ~blk->Bitmap[w];
+            if (freeBits != 0u) {
+                unsigned long bit;
+                (void)_BitScanForward64(&bit, freeBits);
+                if (w * 64u + bit < blk->SlotCount) {
+                    blk->Bitmap[w] |= (1ull << bit);
+                    blk->Used++;
+                    *pMemory = blk->Memory;
+                    *pOffset = (VkDeviceSize)(w * 64u + bit) * slot;
+                    *ppBlock = blk;
+                    ok = TRUE;
+                }
+            }
+        }
+    }
+    if (!ok) {
+        VkMemoryAllocateInfo ai;
+        BC250_SUBALOC_BLOCK *nb = (BC250_SUBALOC_BLOCK *)calloc(1, sizeof(*nb));
+        if (nb != NULL) {
+            memset(&ai, 0, sizeof(ai));
+            ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            ai.allocationSize = BC250_SUBALOC_BLOCK_BYTES;
+            ai.memoryTypeIndex = TypeIndex;
+            if (pBridge->vk.vkAllocateMemory(pBridge->Device, &ai, NULL, &nb->Memory) == VK_SUCCESS) {
+                nb->TypeIndex = TypeIndex;
+                nb->SlotBytes = slot;
+                nb->SlotCount = (uint32_t)(BC250_SUBALOC_BLOCK_BYTES / slot);
+                if ((pBridge->MemProperties.memoryTypes[TypeIndex].propertyFlags &
+                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0u &&
+                    pBridge->vk.vkMapMemory(pBridge->Device, nb->Memory, 0, VK_WHOLE_SIZE, 0,
+                        &nb->Mapped) != VK_SUCCESS) {
+                    nb->Mapped = NULL;
+                }
+                nb->Bitmap[0] = 1ull;
+                nb->Used = 1u;
+                nb->Next = pBridge->SubAllocBlocks;
+                pBridge->SubAllocBlocks = nb;
+                pBridge->SubAllocBlocksCreated++;
+                *pMemory = nb->Memory;
+                *pOffset = 0;
+                *ppBlock = nb;
+                ok = TRUE;
+                Bc250VkTrace("[SUBALOC1] bloco novo #%u: tipo=%u fatia=%llu bytes x %u, mapeado=%d",
+                    pBridge->SubAllocBlocksCreated, TypeIndex, (unsigned long long)slot,
+                    nb->SlotCount, nb->Mapped != NULL ? 1 : 0);
+            } else {
+                free(nb);
+            }
+        }
+    }
+    if (ok) {
+        pBridge->SubAllocTaken++;
+    } else {
+        pBridge->SubAllocRefused++;
+    }
+    ReleaseSRWLockExclusive(&pBridge->SubAllocLock);
+    return ok;
+}
+
+VOID Bc250UmdVkSubAllocRelease(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, _In_ void *pBlock, VkDeviceSize Offset)
+{
+    BC250_SUBALOC_BLOCK *blk = (BC250_SUBALOC_BLOCK *)pBlock;
+    uint32_t idx;
+    if (pBridge == NULL || blk == NULL || blk->SlotBytes == 0) return;
+    idx = (uint32_t)(Offset / blk->SlotBytes);
+    AcquireSRWLockExclusive(&pBridge->SubAllocLock);
+    if (idx < blk->SlotCount && (blk->Bitmap[idx / 64u] & (1ull << (idx % 64u))) != 0u) {
+        blk->Bitmap[idx / 64u] &= ~(1ull << (idx % 64u));
+        blk->Used--;
+        pBridge->SubAllocReleased++;
+    }
+    ReleaseSRWLockExclusive(&pBridge->SubAllocLock);
+}
+
+void *Bc250UmdVkSubAllocMapped(_In_ void *pBlock, VkDeviceSize Offset)
+{
+    BC250_SUBALOC_BLOCK *blk = (BC250_SUBALOC_BLOCK *)pBlock;
+    if (blk == NULL || blk->Mapped == NULL) return NULL;
+    return (unsigned char *)blk->Mapped + Offset;
+}
+
+VOID Bc250UmdVkSubAllocTeardown(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
+{
+    BC250_SUBALOC_BLOCK *blk;
+    uint32_t blocks = 0u, liveSlots = 0u;
+    if (pBridge == NULL) return;
+    AcquireSRWLockExclusive(&pBridge->SubAllocLock);
+    blk = pBridge->SubAllocBlocks;
+    pBridge->SubAllocBlocks = NULL;
+    ReleaseSRWLockExclusive(&pBridge->SubAllocLock);
+    while (blk != NULL) {
+        BC250_SUBALOC_BLOCK *next = blk->Next;
+        liveSlots += blk->Used;
+        if (pBridge->Device != VK_NULL_HANDLE) {
+            if (blk->Mapped != NULL && pBridge->vk.vkUnmapMemory != NULL) {
+                pBridge->vk.vkUnmapMemory(pBridge->Device, blk->Memory);
+            }
+            if (pBridge->vk.vkFreeMemory != NULL) {
+                pBridge->vk.vkFreeMemory(pBridge->Device, blk->Memory, NULL);
+            }
+        }
+        free(blk);
+        blk = next;
+        blocks++;
+    }
+    if (pBridge->SubAllocTaken != 0u || pBridge->SubAllocRefused != 0u) {
+        Bc250VkTrace("[SUBALOC1] resumo do device: fatias tomadas=%u devolvidas=%u ainda vivas=%u blocos=%u "
+            "(criados %u) recusas (tamanho/tipo/memoria)=%u",
+            pBridge->SubAllocTaken, pBridge->SubAllocReleased, liveSlots, blocks,
+            pBridge->SubAllocBlocksCreated, pBridge->SubAllocRefused);
+    }
+}
+
 uint32_t Bc250UmdVkFindMemoryType(
     _In_ const BC250_UMD_VK_BRIDGE *pBridge,
     uint32_t typeFilter,
@@ -959,7 +1281,7 @@ static uint64_t Bc250VkNowMicros(void)
            (uint64_t)((now.QuadPart % freq.QuadPart) * 1000000ll / freq.QuadPart);
 }
 
-VkResult Bc250UmdVkFlushCommands(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
+static VkResult Bc250UmdVkFlushCommandsBody(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
 {
     uint64_t waitStart, waitMicros, flushStart, submitStart, submitMicros, endMicros;
     uint32_t drawsInBatch;
@@ -1013,6 +1335,9 @@ VkResult Bc250UmdVkFlushCommands(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
     waitStart = Bc250VkNowMicros();
     res = pBridge->vk.vkWaitForFences(pBridge->Device, 1, &pBridge->Fence, VK_TRUE, 2000000000ull);
     waitMicros = Bc250VkNowMicros() - waitStart;
+    /* FRAME1 (doc 762): fim do CB + vkQueueSubmit, e a espera da CPU pela GPU de todo flush. */
+    Bc250WinsysFrame1AddMicros(BC250_FRAME1_FLUSH_SUBMIT, endMicros + submitMicros);
+    Bc250WinsysFrame1AddMicros(BC250_FRAME1_FLUSH_GPU_WAIT, waitMicros);
     if (res != VK_SUCCESS) {
         Bc250VkTrace("[VK_BRIDGE] FlushCommands: vkWaitForFences retorno nao-sucesso: res=%d (TIMEOUT ou ERRO) DrawsNoLote=%u "
             "-- os draws deste lote foram gravados e NAO tem conclusao provada", res, drawsInBatch);
@@ -1047,6 +1372,22 @@ VkResult Bc250UmdVkFlushCommands(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
     pBridge->RecordingActive = FALSE;
     return res;
 }
+
+/* MENU.1 (doc 754): a submissao conta e mede o proprio tempo; o corpo e o de sempre. */
+VkResult Bc250UmdVkFlushCommands(_Inout_ BC250_UMD_VK_BRIDGE *pBridge)
+{
+    LARGE_INTEGER t0, t1;
+    VkResult res;
+    QueryPerformanceCounter(&t0);
+    res = Bc250UmdVkFlushCommandsBody(pBridge);
+    QueryPerformanceCounter(&t1);
+    if (pBridge != NULL) {
+        pBridge->Menu1FlushTicks += (uint64_t)(t1.QuadPart - t0.QuadPart);
+        ++pBridge->Menu1Flushes;
+    }
+    return res;
+}
+
 
 VkResult Bc250UmdVkDrainPending(_Inout_ BC250_UMD_VK_BRIDGE *pBridge, _In_z_ const char *reason)
 {

@@ -601,9 +601,11 @@ BOOL Bc250UmdPipelineCacheGetOrCreate(
 
     BOOL psoSuccess = FALSE;
     __try {
-        res = pBridge->vk.vkCreateGraphicsPipelines(pBridge->Device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &pipeline);
+        /* PSO.1 (doc 751): cache de pipelines persistente em vez de VK_NULL_HANDLE. */
+        res = pBridge->vk.vkCreateGraphicsPipelines(pBridge->Device, pBridge->PsoCache, 1, &pipelineInfo, NULL, &pipeline);
         if (res == VK_SUCCESS && pipeline != VK_NULL_HANDLE) {
             psoSuccess = TRUE;
+            Bc250UmdVkPsoCacheNoteNewPipeline(pBridge);
         } else {
             Bc250PsoTrace("[VK_PSO] AVISO: vkCreateGraphicsPipelines retornou res=%d (VS=%p, PS=%p, Layout=%p)",
                 res, (void*)effectiveKey.VsModule, (void*)effectiveKey.PsModule, (void*)pipelineLayout);

@@ -70,10 +70,15 @@ $artifactMap = [ordered]@{
     'bc250mcdm.cat' = [string]$manifest.PackageCatSha256
     'cyan_skillfish2_sdma.bin' = [string]$manifest.SdmaFirmwareSha256
     'cyan_skillfish2_rlc.bin' = [string]$manifest.RlcFirmwareSha256
+    'cyan_skillfish2_sdma1.bin' = [string]$manifest.Sdma1FirmwareSha256
     'cyan_skillfish2_pfp.bin' = [string]$manifest.PfpFirmwareSha256
     'cyan_skillfish2_me.bin' = [string]$manifest.MeFirmwareSha256
     'cyan_skillfish2_ce.bin' = [string]$manifest.CeFirmwareSha256
     'cyan_skillfish2_mec.bin' = [string]$manifest.MecFirmwareSha256
+    # WSI.1/ICD.1 (doc 757): driver Vulkan no DriverStore
+    'vulkan_radeon.dll' = [string]$manifest.PackageRadvSha256
+    'z-1.dll' = [string]$manifest.PackageZlibSha256
+    'bc250_vk_icd.json' = [string]$manifest.PackageVkIcdSha256
 }
 foreach ($entry in $artifactMap.GetEnumerator()) {
     $path = Join-Path $packageDir $entry.Key

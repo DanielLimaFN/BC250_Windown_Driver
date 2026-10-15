@@ -102,3 +102,22 @@ sudo bash bc250-linux-referencia.sh -d 600
 O script gera um arquivo compactado `bc250-linux-YYYYMMDD-HHMMSS.tar.gz`.
 Basta copiar esse arquivo ou a pasta gerada para o Windows no repositório em:
 `docs/evidence/`
+
+---
+
+## L1: Linux com `amdgpu.dc=0` (doc 661)
+
+Ensaio sem display: o `amdgpu` cuida de GFX/SDMA/MMHUB/GART/IH/SMU e deixa o DCN como o GOP deixou, como o nosso driver Windows. Roteiro completo e critério no [doc 661](../../docs/661_L1_LINUX_COM_AMDGPU_DC0_DCN_COMO_O_GOP_DEIXOU_ROTEIRO_E_CRITERIO.md).
+
+1. GRUB, `e`, fim da linha `linux`: `amdgpu.dc=0 modprobe.blacklist=amdgpu systemd.unit=multi-user.target`, depois Ctrl+X.
+2. Login no console de texto com o seu usuário.
+3. `sudo bash bc250-l1-dc0.sh -o /caminho/do/pendrive/l1 --sessao 1` e Enter. A tela some (esperado).
+4. A máquina reinicia sozinha no fim (~11 min) = não travou. Se não reiniciar até a hora mostrada, travou: Reset, e depois `--pos-trava`.
+
+Exige `weston` e `vulkan-tools` (`sudo dnf install -y weston vulkan-tools`).
+
+**Automático (Fedora instalado):** `sudo bash bc250-l1-auto.sh preparar`. A máquina desliga; ligue. Cada sessão desliga sozinha no fim (= não travou). O terceiro boot é normal e deixa `~/BC250_L1_RESULTADO.txt` e o `.tar.gz`. Comandos `status`, `controle` e `cancelar`.
+
+## L1b: VRAM cheia + coleta de gabarito (doc 663)
+
+`sudo bash bc250-l1-auto.sh preparar --perfil l1b`, com o monitor ligado ao DP da placa. Ele compila o `bc250_vram_stress.c`, coleta a referência com o `amdgpu` completo (EDID, DTN log do DCN, 435 registradores) e arma 2 sessões: a 1 limpa e a 2 com varredura de registradores e `gpu_metrics`. O resto é igual à L1: ligar, esperar desligar, ligar.

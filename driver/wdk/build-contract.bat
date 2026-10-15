@@ -59,6 +59,16 @@ echo [cc] bc250_driver_caps_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_driver_caps_contract.obj" "%ROOTDIR%\driver\core\bc250_driver_caps_contract.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
+echo [cc] bc250_dcn_probe_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_dcn_probe_contract.obj" "%ROOTDIR%\driver\core\bc250_dcn_probe_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+echo [cc] bc250_dcn_flip_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_dcn_flip_contract.obj" "%ROOTDIR%\driver\core\bc250_dcn_flip_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+echo [cc] bc250_dcn_ext_contract.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_dcn_ext_contract.obj" "%ROOTDIR%\driver\core\bc250_dcn_ext_contract.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
 echo [cc] bc250_umd_private_contract.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_umd_private_contract.obj" "%ROOTDIR%\driver\core\bc250_umd_private_contract.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -220,6 +230,12 @@ if %ERRORLEVEL% NEQ 0 exit /b 1
 
 echo [cc] bc250_gcvm_global_mmu.c
 cl %CFLAGS% /Fo"%ODIR%\bc250_gcvm_global_mmu.obj" "%ROOTDIR%\driver\core\bc250_gcvm_global_mmu.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+echo [cc] bc250_mmhub_gart.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_mmhub_gart.obj" "%ROOTDIR%\driver\core\bc250_mmhub_gart.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+echo [cc] bc250_sdma1_bringup.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_sdma1_bringup.obj" "%ROOTDIR%\driver\core\bc250_sdma1_bringup.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
 echo [cc] bc250_psp_ring_transaction.c
@@ -402,6 +418,15 @@ if %ERRORLEVEL% NEQ 0 exit /b 1
 echo [cc] bc250_display_ddi.c (Dxgk registration)
 cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 ^
   /Fo"%ODIR%\bc250_display_ddi_driver.obj" "%SRCDIR%bc250_display_ddi.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [cc] bc250_dcn_probe.c
+cl %CFLAGS% /Fo"%ODIR%\bc250_dcn_probe.obj" "%SRCDIR%bc250_dcn_probe.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+rem Doc 659: no SYS a sonda precisa do Bc250DisplayLog real; sem DXGK_REGISTRATION ele e' o stub vazio e nada sai no log.
+echo [cc] bc250_dcn_probe.c (Dxgk registration)
+cl %CFLAGS% /DBC250_ENABLE_DXGK_REGISTRATION=1 /Fo"%ODIR%\bc250_dcn_probe_driver.obj" "%SRCDIR%bc250_dcn_probe.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
 echo [cc] bc250_boot_fuse.c (offline)
 cl %CFLAGS% /Fo"%ODIR%\bc250_boot_fuse.obj" "%SRCDIR%bc250_boot_fuse.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -590,6 +615,9 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
+  "%ODIR%\bc250_sdma_packet_builder.obj" ^
   "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\mmio_topology_transport_test.obj" kernel32.lib
@@ -670,6 +698,9 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
+  "%ODIR%\bc250_sdma_packet_builder.obj" ^
   "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\bc250_post_display_reservation.obj" ^
@@ -1165,6 +1196,38 @@ if %ERRORLEVEL% NEQ 0 (
 )
 echo VMID POOL: OK ^(12 slots, reservados 0/7/8/9 medidos, exaustao falha fechada^)
 
+echo [cc] dpm_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\dpm_contract_test.obj" "%ROOTDIR%\driver\tests\dpm_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] dpm_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\dpm_contract_test.exe" ^
+  "%ODIR%\dpm_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+"%ODIR%\dpm_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(dpm_contract_test^) - Linha/Codigo: %ERRORLEVEL%
+  exit /b 1
+)
+echo DPM CONTRACT: OK ^(C08: sobe pela carga, desce com histerese, teto termico 87/90/82 C, sem oscilacao^)
+
+echo [cc] dcn_scale_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\dcn_scale_contract_test.obj" "%ROOTDIR%\driver\tests\dcn_scale_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] dcn_scale_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\dcn_scale_contract_test.exe" ^
+  "%ODIR%\dcn_scale_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+"%ODIR%\dcn_scale_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(dcn_scale_contract_test^) - Linha/Codigo: %ERRORLEVEL%
+  exit /b 1
+)
+echo DCN SCALE CONTRACT: OK ^(C10: modos de largura multipla de 64, escalas por tamanho, recout/razoes/inits/taps, line buffer e filtro do upstream^)
+
 echo [cc] gcvm_vmid8_transaction_test.c
 cl %CFLAGS% /Fo"%ODIR%\gcvm_vmid8_transaction_test.obj" "%ROOTDIR%\driver\tests\gcvm_vmid8_transaction_test.c"
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -1211,6 +1274,9 @@ echo [link] gcvm_global_mmu_test.exe
 link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   /OUT:"%ODIR%\gcvm_global_mmu_test.exe" ^
   "%ODIR%\bc250_gcvm_global_mmu.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
+  "%ODIR%\bc250_sdma_packet_builder.obj" ^
   "%ODIR%\gcvm_global_mmu_test.obj" kernel32.lib
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
@@ -1219,6 +1285,39 @@ if %ERRORLEVEL% NEQ 0 (
   echo TESTE FALHOU ^(gcvm_global_mmu_test^) - Linha/Codigo: %errorlevel%
   exit /b 1
 )
+echo [cc] mmhub_gart_test.c
+cl %CFLAGS% /Fo"%ODIR%\mmhub_gart_test.obj" "%ROOTDIR%\driver\tests\mmhub_gart_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+echo [link] mmhub_gart_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\mmhub_gart_test.exe" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\mmhub_gart_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\mmhub_gart_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(mmhub_gart_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
+echo [cc] sdma1_bringup_test.c
+cl %CFLAGS% /Fo"%ODIR%\sdma1_bringup_test.obj" "%ROOTDIR%\driver\tests\sdma1_bringup_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+echo [link] sdma1_bringup_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\sdma1_bringup_test.exe" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
+  "%ODIR%\bc250_sdma_packet_builder.obj" ^
+  "%ODIR%\sdma1_bringup_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\sdma1_bringup_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(sdma1_bringup_test^) - Linha/Codigo: %errorlevel%
+  exit /b 1
+)
+
 
 echo [cc] psp_ring_transaction_test.c
 cl %CFLAGS% /Fo"%ODIR%\psp_ring_transaction_test.obj" "%ROOTDIR%\driver\tests\psp_ring_transaction_test.c"
@@ -1500,6 +1599,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_isa_validator.obj" ^
   "%ODIR%\bc250_vram_allocator.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
   "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_probe_telemetry.obj" ^
   "%ODIR%\bc250_submission_engine.obj" ^
@@ -1533,6 +1634,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_isa_validator.obj" ^
   "%ODIR%\bc250_vram_allocator.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
   "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_probe_telemetry.obj" ^
   "%ODIR%\bc250_submission_engine.obj" ^
@@ -1774,6 +1877,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
   "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\global_readiness_audit_test.obj" kernel32.lib
 if %ERRORLEVEL% NEQ 0 exit /b 1
@@ -1827,6 +1932,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
   "%ODIR%\bc250_golden_settings_contract.obj" ^
   "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\bc250_post_display_reservation.obj" ^
@@ -1906,6 +2013,8 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_vram_topology_reader.obj" ^
   "%ODIR%\bc250_discovery_tmr_reader.obj" ^
   "%ODIR%\bc250_mmio_topology_transport.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
   "%ODIR%\bc250_platform_register_snapshot.obj" ^
   "%ODIR%\bc250_dxgk_readonly_ddi.obj" ^
   "%ODIR%\bc250_mcdm_callbacks.obj" ^
@@ -1984,10 +2093,16 @@ link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   "%ODIR%\bc250_sdma_queue_state_contract.obj" ^
   "%ODIR%\bc250_segment_address_contract.obj" ^
   "%ODIR%\bc250_display_ddi.obj" ^
+  "%ODIR%\bc250_dcn_flip_contract.obj" ^
+  "%ODIR%\bc250_dcn_ext_contract.obj" ^
+  "%ODIR%\bc250_dcn_probe_contract.obj" ^
+  "%ODIR%\bc250_dcn_probe.obj" ^
   "%ODIR%\bc250_probe_telemetry.obj" ^
   "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^
   "%ODIR%\bc250_gcvm_vmid8_transaction.obj" ^
   "%ODIR%\bc250_gcvm_global_mmu.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
   "%ODIR%\bc250_psp_ring_transaction.obj" ^
   "%ODIR%\bc250_psp_load_fw_transaction.obj" ^
   "%ODIR%\bc250_sdma_f32_transaction.obj" ^
@@ -2113,6 +2228,8 @@ echo [link] display_vidpn_test.exe
 link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
   /OUT:"%ODIR%\display_vidpn_test.exe" ^
   "%ODIR%\bc250_display_ddi.obj" ^
+  "%ODIR%\bc250_dcn_flip_contract.obj" ^
+  "%ODIR%\bc250_dcn_ext_contract.obj" ^
   "%ODIR%\bc250_driver_caps_contract.obj" ^
   "%ODIR%\bc250_umd_private_contract.obj" ^
   "%ODIR%\bc250_blt_proof_contract.obj" ^
@@ -2135,6 +2252,60 @@ if %ERRORLEVEL% NEQ 0 exit /b 1
 "%ODIR%\bc250_boot_fuse_test.exe"
 if %ERRORLEVEL% NEQ 0 (
   echo TESTE FALHOU ^(bc250_boot_fuse_test^)
+  exit /b 1
+)
+
+echo [cc] dcn_flip_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\dcn_flip_contract_test.obj" "%ROOTDIR%\driver\tests\dcn_flip_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] dcn_flip_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\dcn_flip_contract_test.exe" ^
+  "%ODIR%\bc250_dcn_flip_contract.obj" ^
+  "%ODIR%\bc250_dcn_ext_contract.obj" ^
+  "%ODIR%\dcn_flip_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\dcn_flip_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(dcn_flip_contract_test^)
+  exit /b 1
+)
+echo DCN FLIP CONTRACT: OK (GOP medido elegivel, 8 recusas isoladas, endereco linear com falha fechada, Lei 6 no FLIP_CONTROL, pendencia como o hubp2, contabilidade do latch fecha, baldes e refresh da 270)
+
+echo [cc] dcn_ext_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\dcn_ext_contract_test.obj" "%ROOTDIR%\driver\tests\dcn_ext_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] dcn_ext_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\dcn_ext_contract_test.exe" ^
+  "%ODIR%\bc250_dcn_ext_contract.obj" ^
+  "%ODIR%\dcn_ext_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\dcn_ext_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(dcn_ext_contract_test^)
+  exit /b 1
+)
+echo DCN EXT CONTRACT: OK (timing do OTG decodificado, refresh pela varredura, DTD ida e volta, EDID com checksum, cursor cor/mono e recorte, CRC, AUX)
+
+echo [cc] dcn_probe_contract_test.c
+cl %CFLAGS% /Fo"%ODIR%\dcn_probe_contract_test.obj" "%ROOTDIR%\driver\tests\dcn_probe_contract_test.c"
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+echo [link] dcn_probe_contract_test.exe
+link /NOLOGO /Brepro /NODEFAULTLIB /SUBSYSTEM:CONSOLE /ENTRY:mainCRTStartup ^
+  /OUT:"%ODIR%\dcn_probe_contract_test.exe" ^
+  "%ODIR%\bc250_dcn_probe_contract.obj" ^
+  "%ODIR%\dcn_probe_contract_test.obj" kernel32.lib
+if %ERRORLEVEL% NEQ 0 exit /b 1
+
+"%ODIR%\dcn_probe_contract_test.exe"
+if %ERRORLEVEL% NEQ 0 (
+  echo TESTE FALHOU ^(dcn_probe_contract_test^)
   exit /b 1
 )
 
@@ -2201,11 +2372,17 @@ link /NOLOGO /Brepro /NODEFAULTLIB /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry 
   "%ODIR%\bc250_dxgk_readonly_ddi.obj" ^
   "%ODIR%\bc250_mcdm_callbacks_driver.obj" ^
   "%ODIR%\bc250_display_ddi_driver.obj" ^
+  "%ODIR%\bc250_dcn_flip_contract.obj" ^
+  "%ODIR%\bc250_dcn_ext_contract.obj" ^
+  "%ODIR%\bc250_dcn_probe_contract.obj" ^
+  "%ODIR%\bc250_dcn_probe_driver.obj" ^
   "%ODIR%\bc250_probe_telemetry_driver.obj" ^
   "%ODIR%\bc250_gcvm_backing_transaction.obj" ^
   "%ODIR%\bc250_gfxhub_tlb_transaction.obj" ^
   "%ODIR%\bc250_gcvm_vmid8_transaction.obj" ^
   "%ODIR%\bc250_gcvm_global_mmu.obj" ^
+  "%ODIR%\bc250_mmhub_gart.obj" ^
+  "%ODIR%\bc250_sdma1_bringup.obj" ^
   "%ODIR%\bc250_psp_ring_transaction.obj" ^
   "%ODIR%\bc250_psp_load_fw_transaction.obj" ^
   "%ODIR%\bc250_sdma_f32_transaction.obj" ^

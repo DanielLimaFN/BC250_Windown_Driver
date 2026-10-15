@@ -83,4 +83,32 @@ const char *Bc250MmioTopologyStatusName(BC250_MMIO_TOPOLOGY_STATUS Status);
 }
 #endif
 
+
+/*
+ * P3.0 (doc 609): foto SO' DE LEITURA do MMHUB. O IH (bloco OSS) e' cliente do
+ * MMHUB (mmhub_v2_0.c, tabela de clientes [15] = "OSS"), e o amdgpu liga a GART
+ * nos dois hubs (gmc_v10_0_gart_enable). Antes de escrever qualquer registrador
+ * do MMHUB, medir o que o firmware deixou. MMHUB_BASE seg0 = 0x1A000
+ * (cyan_skillfish_ip_offset.h); offsets de mmhub_2_0_0_offset.h, BASE_IDX 0;
+ * bytes = (0x1A000 + reg) * 4. Estes offsets entram SO' na lista de leitura.
+ */
+#define BC250_MMHUB_REG_VM_L2_CNTL                     0x00069A00u /* 0x680 */
+#define BC250_MMHUB_REG_VM_L2_PROT_FAULT_STATUS        0x00069A30u /* 0x68C */
+#define BC250_MMHUB_REG_VM_L2_PROT_FAULT_ADDR_LO32     0x00069A34u /* 0x68D */
+#define BC250_MMHUB_REG_VM_CONTEXT0_CNTL               0x00069B00u /* 0x6C0 */
+#define BC250_MMHUB_REG_VM_CONTEXT0_PT_BASE_LO32       0x00069CACu /* 0x72B */
+#define BC250_MMHUB_REG_VM_CONTEXT0_PT_BASE_HI32       0x00069CB0u /* 0x72C */
+#define BC250_MMHUB_REG_VM_CONTEXT0_PT_START_LO32      0x00069D2Cu /* 0x74B */
+#define BC250_MMHUB_REG_VM_CONTEXT0_PT_END_LO32        0x00069DACu /* 0x76B */
+#define BC250_MMHUB_REG_MC_VM_FB_OFFSET                0x0006A15Cu /* 0x857 */
+#define BC250_MMHUB_REG_MC_VM_SYS_APERTURE_DEFAULT_LSB 0x0006A160u /* 0x858 */
+#define BC250_MMHUB_REG_MC_VM_FB_LOCATION_BASE         0x0006A1B0u /* 0x86C */
+#define BC250_MMHUB_REG_MC_VM_FB_LOCATION_TOP          0x0006A1B4u /* 0x86D */
+#define BC250_MMHUB_REG_MC_VM_AGP_TOP                  0x0006A1B8u /* 0x86E */
+#define BC250_MMHUB_REG_MC_VM_AGP_BOT                  0x0006A1BCu /* 0x86F */
+#define BC250_MMHUB_REG_MC_VM_SYS_APERTURE_LOW         0x0006A1C4u /* 0x871 */
+#define BC250_MMHUB_REG_MC_VM_SYS_APERTURE_HIGH        0x0006A1C8u /* 0x872 */
+#define BC250_MMHUB_REG_MC_VM_MX_L1_TLB_CNTL           0x0006A1CCu /* 0x873 */
+#define BC250_MMHUB_P30_READ_COUNT 17u
+
 #endif
